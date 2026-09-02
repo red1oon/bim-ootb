@@ -1,0 +1,24 @@
+{
+  "_provenance": {
+    "source": "scripts/seed_hba_erp.js over erp/ad_seed.db + fixtures/hhs_rooms.json",
+    "note": "REAL M_Locator ids seeded in ad_seed.db — Stage 1 of RESUME_HBA_ERP_GOVERNED_DISPLAY.md; do not regenerate per session"
+  },
+  "m_warehouse_id": 990000,
+  "warehouse_value": "HHS_Office_Federated",
+  "locators": {
+    "RM_Level_1_1": 990000,
+    "RM_Level_1_2": 990001,
+    "RM_Level_1_3": 990002,
+    "RM_Level_1_4": 990003,
+    "RM_Level_1_5": 990004,
+    "RM_Level_1_6": 990005,
+    "RM_Level_1_7": 990006,
+    "RM_Level_1_8": 990007,
+    "RM_Level_2_1": 990008,
+    "RM_Level_2_2": 990009,
+    "RM_Level_2_3": 990010,
+    "RM_Level_2_4": 990011,
+    "RM_Level_3_1": 990012,
+    "RM_Level_3_2": 990013
+  }
+}

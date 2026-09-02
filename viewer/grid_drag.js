@@ -822,15 +822,21 @@ var GridDrag = (function() {
       });
     }
 
-    // Implementing 2D_029 §4.4 — Witness: W-2D29
-    // Ctrl+Z = undo last kernel_op, Ctrl+Shift+Z = redo
+    // Implementing 2D_029 §4.4 + Red Pill B1 (RedPillRosetta.md §7b.4) — ONE op-log, one playback.
+    // Ctrl+Z/Y route through UniversalHistory.undo()/redo() — the SHARED HB timeline — so the keyboard
+    // and the timeline drive the SAME op-log (universal_history._applyOp flips the signed kernel op AND
+    // calls applyReplayedMove). This kills the DOUBLE: previously this handler called KernelOps.undoOp
+    // directly behind the timeline's back, and the private `hist[]` compound-undo was a redundant shadow.
+    // Fall back to the legacy direct path ONLY if UniversalHistory is absent (defensive).
     document.addEventListener('keydown', function (e) {
       if (!A || !A.db || !window.KernelOps) return;
       if (!st || !st.active) return;
       var key = (e.key || '').toLowerCase();
+      var UH = window.UniversalHistory;
       if (e.ctrlKey && key === 'z' && !e.shiftKey) {
         e.preventDefault();
-        var op = KernelOps.undoOp(A.db);
+        if (UH && UH.undo) { UH.undo(); log('§GRID_UNDO via UniversalHistory.undo (shared timeline)'); return; }
+        var op = KernelOps.undoOp(A.db);                 // legacy fallback (no shared timeline)
         log('§GRID_UNDO attempt op=' + (op ? op.op_type : 'none'));
         if (op && op.op_type === 'GRID_MOVE') {
           applyReplayedMove(op.parameters.axis, op.parameters.label, op.parameters.from,
@@ -839,11 +845,12 @@ var GridDrag = (function() {
       }
       if ((e.ctrlKey && key === 'z' && e.shiftKey) || (e.ctrlKey && key === 'y')) {
         e.preventDefault();
-        var op = KernelOps.redoOp(A.db);
-        log('§GRID_REDO attempt op=' + (op ? op.op_type : 'none'));
-        if (op && op.op_type === 'GRID_MOVE') {
-          applyReplayedMove(op.parameters.axis, op.parameters.label, op.parameters.to,
-                            op.parameters.cascade, +1);
+        if (UH && UH.redo) { UH.redo(); log('§GRID_REDO via UniversalHistory.redo (shared timeline)'); return; }
+        var op2 = KernelOps.redoOp(A.db);                // legacy fallback
+        log('§GRID_REDO attempt op=' + (op2 ? op2.op_type : 'none'));
+        if (op2 && op2.op_type === 'GRID_MOVE') {
+          applyReplayedMove(op2.parameters.axis, op2.parameters.label, op2.parameters.to,
+                            op2.parameters.cascade, +1);
         }
       }
     });
@@ -856,6 +863,13 @@ var GridDrag = (function() {
    *  direction: +1 = apply forward (redo), -1 = revert (undo). */
   function applyReplayedMove(axis, label, targetPos, cascade, direction) {
     if (!st || !st.gridData) return;
+    // Red Pill B1 — a BOM-governed GRID_MOVE (axis='BOM') has no physical grid line; replay its
+    // cascade directly (the cascade IS the governed set's source of truth). DB-persist + scene sync.
+    if (axis === 'BOM') {
+      _replayCascade(cascade, direction);
+      log('§GRID_DRAG replayed BOM-governed label=' + label + ' cascade=' + (cascade ? cascade.length : 0));
+      return;
+    }
     var lines = axis === 'X' ? st.gridData.xLines : st.gridData.yLines;
     if (!lines) return;
     for (var i = 0; i < lines.length; i++) {
@@ -866,19 +880,7 @@ var GridDrag = (function() {
         rebuildAnnotations();
 
         // Replay cascade element positions in DB + scene
-        if (cascade && cascade.length && A.db) {
-          for (var ci = 0; ci < cascade.length; ci++) {
-            var cm = cascade[ci];
-            var tx = direction > 0 ? cm.newX : cm.oldX;
-            var ty = direction > 0 ? cm.newY : cm.oldY;
-            try {
-              A.db.run('UPDATE element_transforms SET center_x = ?, center_y = ? WHERE guid = ?',
-                       [tx, ty, cm.guid]);
-            } catch (e) { log('§REPLAY_PERSIST_ERR guid=' + cm.guid + ' ' + e.message); }
-          }
-          moveSceneMeshes(cascade, direction || 1);
-          log('§GRID_REPLAY_CASCADE elements=' + cascade.length + ' direction=' + direction);
-        }
+        _replayCascade(cascade, direction);
 
         if (window.CostPanel) CostPanel.refresh(A, st.gridData);
         A.markDirty();
@@ -886,6 +888,23 @@ var GridDrag = (function() {
         return;
       }
     }
+  }
+
+  /** Replay a cascade's element positions to element_transforms + scene meshes.
+   *  direction: +1 = forward (newX/newY), -1 = revert (oldX/oldY). */
+  function _replayCascade(cascade, direction) {
+    if (!cascade || !cascade.length || !A.db) return;
+    for (var ci = 0; ci < cascade.length; ci++) {
+      var cm = cascade[ci];
+      var tx = direction > 0 ? cm.newX : cm.oldX;
+      var ty = direction > 0 ? cm.newY : cm.oldY;
+      try {
+        A.db.run('UPDATE element_transforms SET center_x = ?, center_y = ? WHERE guid = ?',
+                 [tx, ty, cm.guid]);
+      } catch (e) { log('§REPLAY_PERSIST_ERR guid=' + cm.guid + ' ' + e.message); }
+    }
+    moveSceneMeshes(cascade, direction || 1);
+    log('§GRID_REPLAY_CASCADE elements=' + cascade.length + ' direction=' + direction);
   }
 
   return {

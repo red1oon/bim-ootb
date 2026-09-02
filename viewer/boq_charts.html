@@ -61,6 +61,11 @@
 <script src="lib/chart.umd.min.js"></script>
 <script src="rates.js?v=7"></script>
 <script src="analysis_sidecar.js?v=1"></script>
+<!-- §GANTT_EDIT/BOQ4D: read the REAL persisted schedule (tasks/task_elements/task_sequences)
+     instead of recomputing a fourth private one. schedule_author.js supplies activeSchedule()
+     (the single existing "which schedule is active" verb — not a fourth copy of it). -->
+<script src="schedule_author.js?v=7"></script>
+<script src="schedule_read_4d.js?v=1"></script>
 <script src="export_5d.js?v=1"></script>
 <script src="export_4d.js?v=1"></script>
 
@@ -385,6 +390,38 @@ let chartInstances = [];
 // calcLabor(), calcEquipment() — from rates.js
 
 // ============================================================================
+// PHASE ORDER — DERIVED, never hardcoded (§GANTT_EDIT/BOQ4D B0)
+// ============================================================================
+// This file carried THREE identical hardcoded copies of the phase order — Substructure, then
+// Superstructure, then MEP rough-in, then Architecture, then MEP final, then Finishes — in
+// generateSchedule(), audit4DSchedule() and buildScheduleFromOps(). All three were STALE:
+// they sequence MEP rough-in BEFORE the building envelope, the exact ordering PR #1165 corrected
+// across all 18 rate-template sources and which these copies never received. The stale copy in
+// audit4DSchedule() was the worst of the three: §4D_AUDIT_PHASE_ORDER was grading the schedule
+// against the WRONG order, so a correct schedule reported as inverted and vice versa.
+//
+// The truth is SEQUENCE_RULES' own sequence numbers (min sequence per phase):
+//   Substructure(1) → Superstructure(2) → Architecture(5) → MEP Rough-in(7) → MEP Final(9) → Finishes(10)
+// Derived per call because initRateTemplate() mutates SEQUENCE_RULES in place at runtime.
+function phaseOrder() {
+  if (window.ScheduleRead4D) {
+    var o = window.ScheduleRead4D.phaseOrder(typeof SEQUENCE_RULES !== 'undefined' ? SEQUENCE_RULES : null);
+    if (o && o.length) return o;
+  }
+  // schedule_read_4d.js failed to load AND/OR rules are empty. Derive locally from whatever rules
+  // exist rather than substituting a hardcoded list (that is the bug being fixed).
+  var minSeq = {};
+  if (typeof SEQUENCE_RULES !== 'undefined') {
+    for (var k in SEQUENCE_RULES) {
+      var r = SEQUENCE_RULES[k];
+      if (!r || !r.phase || r.sequence == null) continue;
+      if (minSeq[r.phase] == null || r.sequence < minSeq[r.phase]) minSeq[r.phase] = r.sequence;
+    }
+  }
+  return Object.keys(minSeq).sort(function (a, b) { return minSeq[a] - minSeq[b]; });
+}
+
+// ============================================================================
 // SCHEDULE GENERATION — realistic storey-by-storey, phase-dependent
 // ============================================================================
 // Model:
@@ -420,10 +457,18 @@ function generateSchedule(activities, startDateStr) {
     return isNaN(n) ? 50 : n;
   }
 
-  const PHASE_ORDER = ['Substructure','Superstructure','MEP Rough-in','Architecture','MEP Final','Finishes'];
-  const INTER_PHASE_LAG = 5;   // working days between phases on same storey
-  const INTER_STOREY_LAG = 2;  // working days between storeys in same phase
-  const MAX_TASK_DAYS = 20;    // cap before adding parallel crews
+  const PHASE_ORDER = phaseOrder();   // §BOQ4D B0 — derived from SEQUENCE_RULES, was hardcoded+stale
+  // §BOQ4D_FALLBACK_ASSUMPTIONS — this function only runs when NO real schedule is authored, so it is
+  // an estimate by construction. These two lags have no real data source: they are declared coarse
+  // planning assumptions, not measurements, and they are logged below so a reader can see exactly
+  // which numbers in this chart were assumed rather than derived. They are deliberately NOT replaced
+  // with different guesses — substituting one invented constant for another proves nothing.
+  // (MAX_TASK_DAYS is gone — crew parallelism now comes from the real LABOR_RATES max_crews.)
+  const INTER_PHASE_LAG = 5;   // ASSUMED working days between phases on same storey — no data source
+  const INTER_STOREY_LAG = 2;  // ASSUMED working days between storeys in same phase — no data source
+  console.log('§BOQ4D_FALLBACK_ASSUMPTIONS interPhaseLag=' + INTER_PHASE_LAG + 'd interStoreyLag=' +
+    INTER_STOREY_LAG + 'd (ASSUMED, no data source) — crews now from real LABOR_RATES.max_crews. ' +
+    'This path runs only because no real schedule is authored for this building.');
 
   // Group activities by phase -> storey
   const grouped = {};  // phase|||storey -> [act, ...]
@@ -499,13 +544,16 @@ function generateSchedule(activities, startDateStr) {
       const equipments = new Set();
 
       for (const act of acts) {
+        // §BOQ4D_REAL_CREWS: parallelism used to come from MAX_TASK_DAYS=20 — an invented threshold
+        // that then invented a crew count to get under it (crews = ceil(duration/20)). Both are now
+        // taken from the SAME real per-trade cap the actual engine uses: LABOR_RATES[trade].max_crews,
+        // which schedule_gate.js computeSchedule() is crew-capped on via materializeZones' maxCrews.
+        // All 10 trades carry a real value (ROOFER/LABORER 1 … STEEL_ERECTOR/CONCRETE_GANG 3), so
+        // nothing here is guessed. Falls back to 1 crew — never to a fabricated number — if absent.
         const prod = act.labor.prod || 10;
         let duration = Math.max(1, act.qty / prod);
-        let crews = 1;
-        if (duration > MAX_TASK_DAYS) {
-          crews = Math.ceil(duration / MAX_TASK_DAYS);
-          duration = Math.ceil(duration / crews);
-        }
+        let crews = Math.max(1, act.labor.max_crews || 1);
+        duration = Math.max(1, Math.ceil(duration / crews));
         if (duration > maxDuration) maxDuration = duration;
         totalQtyGroup += act.qty;
         totalCrew = Math.max(totalCrew, (act.labor.crew || 2) * crews);
@@ -557,7 +605,9 @@ function generateSchedule(activities, startDateStr) {
 // ============================================================================
 function audit4DSchedule(scheduleData, db, qtoData) {
   const results = [];
-  const PHASE_ORDER = ['Substructure','Superstructure','MEP Rough-in','Architecture','MEP Final','Finishes'];
+  // §BOQ4D B0 — was a hardcoded STALE copy, so this audit graded the schedule against the wrong
+  // order (MEP rough-in before the envelope): a correct schedule reported as inverted.
+  const PHASE_ORDER = phaseOrder();
 
   // Check 1: Task coverage — every IFC class in DB maps to SEQUENCE_RULES (no DEFAULT)
   const dbClasses = qtoData.map(r => r.cls);
@@ -632,10 +682,21 @@ function audit4DSchedule(scheduleData, db, qtoData) {
   console.log('§4D_AUDIT_STOREY_ORDER ' + (c3 ? 'PASS' : 'FAIL') + (storeyViolations.length ? ' violations=[' + storeyViolations.join(',') + ']' : ' ok=true'));
   results.push({name:'STOREY_ORDER', pass:c3});
 
-  // Check 4: Duration sanity — no task >120 days, no task <1 day
-  const outliers = scheduleData.filter(t => t.duration > 120 || t.duration < 1).map(t => t.name + '=' + t.duration + 'd');
+  // Check 4: Duration sanity. The ceiling used to be a hardcoded 120 days, which was invented and is
+  // WRONG against real data: once §4D_REAL_TASKS made this page read the real schedule, Hospital's own
+  // zone tasks put 6 of 35 over that line — the longest legitimately 253d ("Architecture — Level 7")
+  // inside a real 416d programme. A permanently-red audit teaches people to ignore the audit.
+  // Re-expressed against something REAL instead of a re-guessed constant: no single task may run
+  // longer than the whole programme it belongs to (derived from this schedule's own span), and no
+  // task may be shorter than a day. Both are structural impossibilities rather than opinions.
+  const _spanStart = Math.min.apply(null, scheduleData.map(t => +new Date(t.start)));
+  const _spanEnd = Math.max.apply(null, scheduleData.map(t => +new Date(t.finish || t.end || t.start)));
+  const PROJECT_DAYS = Math.max(1, Math.round((_spanEnd - _spanStart) / 86400000));
+  const outliers = scheduleData.filter(t => t.duration > PROJECT_DAYS || t.duration < 1).map(t => t.name + '=' + t.duration + 'd');
   const c4 = outliers.length === 0;
-  console.log('§4D_AUDIT_DURATION ' + (c4 ? 'PASS' : 'FAIL') + ' outliers=[' + outliers.join(',') + ']');
+  console.log('§4D_AUDIT_DURATION ' + (c4 ? 'PASS' : 'FAIL') + ' projectDays=' + PROJECT_DAYS +
+    ' (ceiling derived from the real programme span, not a constant)' +
+    ' outliers=[' + outliers.join(',') + ']');
   results.push({name:'DURATION', pass:c4});
 
   // Check 5: Overlap sanity — no two tasks with same phase on same storey (grouped = impossible, but verify)
@@ -673,6 +734,10 @@ function audit4DSchedule(scheduleData, db, qtoData) {
   const orphaned = [];
   if (db) {
     for (const t of scheduleData) {
+      // §BOQ4D — an authored task already CARRIES its real task_elements guids. Re-deriving them by
+      // (class, storey) would fail it wrongly: deriveZones names a zone on collapsePhase(storey),
+      // which need not equal any elements_meta.storey literal (K0's measured Hospital case).
+      if (t.guids && t.guids.length) continue;
       const classes = t.ifcClasses || (t.ifcClass ? [t.ifcClass] : []);
       if (!classes.length) { orphaned.push(t.name); c8 = false; continue; }
       let totalCount = 0;
@@ -717,13 +782,38 @@ function audit4DSchedule(scheduleData, db, qtoData) {
 // ============================================================================
 // INIT — load DB, compute everything
 // ============================================================================
+// Peek the IDB cache without ever hitting the network — returns cached buf or null.
+// Lets 4D/5D run fully offline once a building's DB is in cache (meta OR full).
+async function peekDbCache(url) {
+  try {
+    const cacheDb = await new Promise(resolve => {
+      // §KRN_PERSIST_FIX (F2, SEAM_IDENTITY_AUDIT.md): no version arg → opens at whatever version
+      // is actually stored (scene.js's canonical opener is v2+). A hardcoded v1 here throws
+      // VersionError forever once scene.js has run in the profile, so this always fell through to
+      // resolve(null) and forced a full network re-download of the building on every 4D/5D open.
+      const req = indexedDB.open('bim_ootb_cache');
+      req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+    if (!cacheDb) return null;
+    return await new Promise(resolve => {
+      const tx = cacheDb.transaction('dbs', 'readonly');
+      const req = tx.objectStore('dbs').get(url);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch(e) { return null; }
+}
+
 // S238: Fetch DB buffer — checks bim_ootb_cache IDB first (same cache as scene.js), falls back to fetch
 // import:// URLs: IDB only (no network). OCI URLs: IDB first (scene.js wrote it), then network.
 async function fetchDbBuffer(url) {
   const _tFetch = performance.now();
   const cacheDb = await new Promise(resolve => {
-    const req = indexedDB.open('bim_ootb_cache', 1);
-    req.onupgradeneeded = () => req.result.createObjectStore('dbs');
+    // §KRN_PERSIST_FIX (F2, SEAM_IDENTITY_AUDIT.md) — same fix as peekDbCache() above.
+    const req = indexedDB.open('bim_ootb_cache');
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
   });
@@ -790,7 +880,7 @@ async function _tryScheduleRelay(timeoutMs) {
 
 // S253d: Build scheduleData from kernel_ops — single source of truth with hourglass
 function buildScheduleFromOps(ops) {
-  const PHASE_ORDER = ['Substructure','Superstructure','MEP Rough-in','Architecture','MEP Final','Finishes'];
+  const PHASE_ORDER = phaseOrder();   // §BOQ4D B0 — third hardcoded stale copy, now derived
 
   // Group ops by phase+storey (same grouping as generateSchedule)
   var groups = {};  // "phase|||storey" → { ops[], minTs, maxTs, ... }
@@ -817,10 +907,11 @@ function buildScheduleFromOps(ops) {
     // Derive discipline from SEQUENCE_RULES
     var rule = SEQUENCE_RULES[op.cls];
     if (rule && rule.resource) {
-      var res = rule.resource;
-      if (res === 'HVAC_TECH' || res === 'PLUMBER' || res === 'ELECTRICIAN') g.disciplines.add('MEP');
-      else if (res === 'STEEL_ERECTOR' || res === 'CONCRETE_GANG') g.disciplines.add('STR');
-      else g.disciplines.add('ARC');
+      // §BOQ4D — one shared mapping (schedule_read_4d.js), so an authored task and a kernel_ops
+      // task never disagree about what discipline the same resource belongs to.
+      g.disciplines.add(window.ScheduleRead4D
+        ? window.ScheduleRead4D.discOfResource(rule.resource)
+        : 'ARC');
     }
   }
 
@@ -958,17 +1049,28 @@ async function init() {
     // Fallback — load DB the slow way (viewer not open or no response)
     console.log('§QTO_RELAY_MISS reason=' + (relay ? relay.error || 'empty' : 'timeout') +
       ' — loading DB from ' + (DB_URL.startsWith('import://') ? 'IndexedDB' : 'OCI'));
-    // §S260b+S274: Try _meta.db first (4D5D only needs metadata, not geometry)
+    // §S260b+S274: Try _meta.db first (4D5D only needs metadata, not geometry).
+    // OFFLINE-FIRST: peek the IDB cache before any network probe — serve whatever the
+    // viewer already cached (meta OR full _extracted.db) with zero network, so 4D/5D
+    // works offline for EVERY building once its DB is in. The HEAD probe (online-only)
+    // ran unconditionally before and threw offline, pointing at an uncached key.
     var _actualUrl = DB_URL;
     if (DB_URL.indexOf('_extracted.db') > -1) {
       var _metaUrl = DB_URL.replace('_extracted.db', '_meta.db');
-      if (DB_URL.startsWith('import://')) {
+      if (await peekDbCache(_metaUrl)) {
+        _actualUrl = _metaUrl;
+        console.log('§QTO_SPLIT_HIT_CACHE using cached ' + _metaUrl.split('/').pop());
+      } else if (await peekDbCache(DB_URL)) {
+        _actualUrl = DB_URL;
+        console.log('§QTO_FULL_HIT_CACHE using cached ' + DB_URL.split('/').pop());
+      } else if (DB_URL.startsWith('import://')) {
         // §S274: import:// URLs live in IDB — check cache via fetchDbBuffer
         try {
           var _metaBuf = await fetchDbBuffer(_metaUrl);
           if (_metaBuf) { _actualUrl = _metaUrl; console.log('§QTO_SPLIT_HIT_IDB using ' + _metaUrl + ' (' + Math.round(_metaBuf.byteLength/1024/1024) + 'MB)'); }
         } catch(e) {}
       } else {
+        // online: probe for a _meta.db to save bandwidth
         try {
           var _headResp = await fetch(_metaUrl, { method: 'HEAD' });
           if (_headResp.ok) {
@@ -982,7 +1084,23 @@ async function init() {
       locateFile: f => 'lib/' + f
     });
     document.getElementById('info').textContent = 'Loading ' + _actualUrl + '...';
-    const buf = await fetchDbBuffer(_actualUrl);
+    // _meta.db split is an OPTIMIZATION, never a hard dependency — fall back to the sibling.
+    var buf = null;
+    try {
+      buf = await fetchDbBuffer(_actualUrl);
+    } catch(e) {
+      var _fallback = (_actualUrl === DB_URL) ? DB_URL.replace('_extracted.db', '_meta.db') : DB_URL;
+      console.log('§QTO_DB_FALLBACK ' + _actualUrl.split('/').pop() + ' failed (' + e.message + ') — trying ' + _fallback.split('/').pop());
+      try { _actualUrl = _fallback; buf = await fetchDbBuffer(_actualUrl); }
+      catch(e2) { console.log('§QTO_DB_UNAVAILABLE offline + not cached — prompting to load building first'); }
+    }
+    // No DB anywhere (offline and this building was never opened in the viewer) — don't crash;
+    // tell the user to load it first: open it in the viewer while online.
+    if (!buf) {
+      document.getElementById('info').innerHTML =
+        '⏳ ' + (typeof _t === 'function' ? _t('ui_load_db_first','Load the building first — open it in the 3D viewer while online to cache its data, then reopen this report.') : 'Load the building first — open it in the 3D viewer while online to cache its data, then reopen this report.');
+      return;
+    }
     db = new SQL.Database(new Uint8Array(buf));
     console.log('§DB_INIT loadMs=' + Math.round(performance.now() - _t0) + ' size=' + Math.round(buf.byteLength / 1024 / 1024) + 'MB');
 
@@ -1157,23 +1275,63 @@ async function init() {
   // (captured-or-CPM) is the always-valid BASE; kernel_ops is an OVERRIDE applied
   // only if it yields tasks. A broken/empty/throwing kernel_ops (e.g. TM's drone
   // regenerate drift) falls back to the default → the Gantt is never broken.
-  // capturedFn=null until the native-tasks→Gantt mapping lands (no served DB
-  // carries IfcWorkSchedule yet — non-invent).
   // §T5: get4D = lazy OPFS bake of the default (first open computes+persists,
   // repeat opens read OPFS → §4D_SIDECAR source=opfs). resolve4D still applies the
   // live kernel_ops override on top, so edits are never stale-cached.
+  //
+  // §GANTT_EDIT/BOQ4D (2026-08-04) — capturedFn is no longer null. This page used to be a FOURTH
+  // disconnected scheduler: it never read schedule_author.js's tasks/task_elements/task_sequences,
+  // it recomputed its own coarse phase×storey schedule from element counts. Now the REAL persisted
+  // schedule is read first, through compute4D's capturedFn hook (schedule_read_4d.js). generateSchedule
+  // stays untouched as the honest "nothing authored yet" fallback.
+  // Memoized: readTasks walks every task_elements row (63,415 on Hospital), and the hook is
+  // consulted twice below (once to decide bake-vs-fresh, once inside compute4D).
+  let _realMemo;
+  const _capturedFn = function () {
+    if (_realMemo !== undefined) return _realMemo;
+    _realMemo = null;
+    if (window.ScheduleRead4D && db) {
+      var real = window.ScheduleRead4D.readTasks(db, {
+        rules: typeof SEQUENCE_RULES !== 'undefined' ? SEQUENCE_RULES : null,
+        laborRates: typeof LABOR_RATES !== 'undefined' ? LABOR_RATES : null,
+        equipmentAllocation: typeof EQUIPMENT_ALLOCATION !== 'undefined' ? EQUIPMENT_ALLOCATION : null,
+        equipmentRates: typeof EQUIPMENT_RATES !== 'undefined' ? EQUIPMENT_RATES : null
+      });
+      if (real && real.length) _realMemo = { source: 'authored', tasks: real };
+    }
+    return _realMemo;
+  };
+
+  // The OPFS bake (get4D) is keyed on building name only, so it cannot tell "authored" from
+  // "generated" — a bake taken before the user authored a schedule would keep serving the coarse
+  // generated one forever. So: compute FRESH through compute4D whenever a real schedule exists,
+  // and bake only the generated default (unchanged behaviour for un-authored models).
+  const _real4D = _capturedFn();
   const _default4D = window.AnalysisSidecar
-    ? await window.AnalysisSidecar.get4D(bldName, null, generateSchedule, qtoData, '2025-01-06')
-    : { source: 'generated', tasks: generateSchedule(qtoData, '2025-01-06') };
+    ? (_real4D
+        ? window.AnalysisSidecar.compute4D(bldName, _capturedFn, generateSchedule, qtoData, '2025-01-06')
+        : await window.AnalysisSidecar.get4D(bldName, _capturedFn, generateSchedule, qtoData, '2025-01-06'))
+    : { source: _real4D ? 'authored' : 'generated',
+        tasks: _real4D ? _real4D.tasks : generateSchedule(qtoData, '2025-01-06') };
 
   // Gather kernel_ops to OVERRIDE with: DB first, else BroadcastChannel relay.
   let _ops = _dbOps;
-  if (!_ops.length) {
+  if (!_ops.length && !_real4D) {
     const schedRelay = await _tryScheduleRelay(500);
     if (schedRelay && !schedRelay.error && schedRelay.ops) _ops = schedRelay.ops;
   }
 
-  if (window.AnalysisSidecar) {
+  if (_real4D) {
+    // §BOQ4D B4 — the real model WINS; the kernel_ops override is deliberately skipped. That
+    // override re-groups ops on `storey|||phase`, the exact key K0 measured as wrong (Hospital
+    // drew 60 groups for 35 real tasks, because collapsePhase() merges storey aliases the raw
+    // op storey does not). Overriding real task rows with a name-keyed rollup would re-introduce it.
+    scheduleData = _default4D.tasks;
+    _scheduleSource = _default4D.source;      // 'authored', carried through compute4D
+    console.log('§4D_SCHEDULE_SOURCE ' + _default4D.source + ' tasks=' + scheduleData.length +
+      ' overridden=false ops=' + (_ops ? _ops.length : 0) +
+      ' (real tasks/task_elements — kernel_ops override skipped by design)');
+  } else if (window.AnalysisSidecar) {
     const _r = window.AnalysisSidecar.resolve4D(_default4D, _ops, buildScheduleFromOps);
     scheduleData = _r.tasks;
     _scheduleSource = _r.source;
@@ -1189,9 +1347,10 @@ async function init() {
   // S240 §0.1: Run 8-check audit before any 4D sync
   const auditResult = audit4DSchedule(scheduleData, db, qtoData);
 
-  // Resolve GUIDs — kernel_ops path already has them, generateSchedule path needs DB lookup
+  // Resolve GUIDs — kernel_ops AND authored paths already carry real guids (kernel_ops.output_guid /
+  // task_elements.guid); only the generated fallback needs the (class, storey) DB lookup.
   let _guidsAfter = 0;
-  if (_scheduleSource === 'kernel_ops') {
+  if (_scheduleSource === 'kernel_ops' || _scheduleSource === 'authored') {
     // GUIDs already populated from kernel_ops output_guid — just dedup
     const _assignedGuids = new Set();
     let _guidsBefore = 0;
@@ -1201,7 +1360,7 @@ async function init() {
       t.guids.forEach(g => _assignedGuids.add(g));
       _guidsAfter += t.guids.length;
     }
-    console.log('§4D_GUID_DEDUP before=' + _guidsBefore + ' after=' + _guidsAfter + ' stripped=' + (_guidsBefore - _guidsAfter) + ' source=kernel_ops');
+    console.log('§4D_GUID_DEDUP before=' + _guidsBefore + ' after=' + _guidsAfter + ' stripped=' + (_guidsBefore - _guidsAfter) + ' source=' + _scheduleSource);
   } else {
     // S240c §P1a: Resolve GUIDs per grouped task
     // Use relayed GUIDs if available (relay path), otherwise DB query (fallback path)
@@ -1529,8 +1688,10 @@ function renderCharts() {
   const ganttBox = el('div','chart-box full');
   const ganttHeader = document.createElement('div');
   ganttHeader.style.cssText = 'display:flex;align-items:center;gap:12px;margin-bottom:8px;';
-  var _syncColor = _scheduleSource === 'kernel_ops' ? '#44cc44' : '#ff8c00';
-  var _syncText = _scheduleSource === 'kernel_ops' ? 'Hourglass OK' : 'Run Hourglass first';
+  // §BOQ4D — 'authored' is a REAL model source (tasks/task_elements), same standing as kernel_ops.
+  var _realSrc = (_scheduleSource === 'kernel_ops' || _scheduleSource === 'authored');
+  var _syncColor = _realSrc ? '#44cc44' : '#ff8c00';
+  var _syncText = _scheduleSource === 'authored' ? 'Real schedule' : (_realSrc ? 'Hourglass OK' : 'Run Hourglass first');
   ganttHeader.innerHTML = '<h2 style="margin:0">' + (_TRL && _TRL.t_gantt || '4D — Gantt Timeline') + '</h2>' +
     '<span style="font-size:11px;color:' + _syncColor + '">&#9203; ' + _syncText + '</span>';
   ganttBox.appendChild(ganttHeader);
@@ -1701,7 +1862,8 @@ function renderCharts() {
     '<strong style="color:#fff">' + Object.keys(resCounts).length + '</strong> trades \u00b7 ' +
     '<strong style="color:#fff">' + machKeys.length + '</strong> machines \u00b7 ' +
     '<strong style="color:#fff">' + scheduleData.length + '</strong> tasks \u00b7 ' +
-    'Source: ' + (_scheduleSource === 'kernel_ops' ? '\u2705 kernel_ops' : '\u26a0\ufe0f generated') + '</div>';
+    'Source: ' + (_scheduleSource === 'authored' ? '\u2705 real schedule (tasks)'
+      : _scheduleSource === 'kernel_ops' ? '\u2705 kernel_ops' : '\u26a0\ufe0f generated') + '</div>';
   resBox.innerHTML += resHtml;
   c.appendChild(resBox);
   logChart(10,'Panel','Site Resources',Object.keys(resCounts).length);

@@ -7,10 +7,14 @@
 //   real ids+icons; new ERP ids carry either an existing set glyph or an explicit NEEDS-ICON flag; and
 //   NO pill inlines a raw SVG. §-log first; READ the log before any conclusion.
 // Run:  node tests/test_pills_manifest.js 2>&1 | tee tests/test_pills_manifest.log   (cwd = bim-ootb/viewer)
+// PATHS REPAIRED 2026-07-03 (PILLS_CONSOLIDATION_REVIEW): the manifest + icons.js + raster assets
+//   live in erp/ (they moved after this test was written — it had gone silently red on ENOENT).
+//   panels.js stays the icon REGISTRY (source of truth); erp/icons.js is its extracted subset.
 'use strict';
 var fs = require('fs'), path = require('path');
 var VIEWER = path.join(__dirname, '..');
-var MANIFEST = JSON.parse(fs.readFileSync(path.join(VIEWER, 'pills.json'), 'utf8'));
+var ERP = path.join(__dirname, '..', '..', 'erp');
+var MANIFEST = JSON.parse(fs.readFileSync(path.join(ERP, 'pills.json'), 'utf8'));
 var PANELS = fs.readFileSync(path.join(VIEWER, 'panels.js'), 'utf8');
 
 var fails = 0;
@@ -21,6 +25,9 @@ function ok(cond, msg) { if (!cond) { fails++; console.log('  ✗ FAIL: ' + msg)
 var iconSet = {}; var im;
 var iconRe = /\b([a-zA-Z][a-zA-Z0-9]*):\s*\{\s*svg:/g;
 while ((im = iconRe.exec(PANELS))) iconSet[im[1]] = true;
+// The RUNTIME resolver on the erp pages is window.ICONS = erp/icons.js (erp_pills.js _resolveIcon) —
+// so a manifest glyph is "real" if it exists there; shared-key parity vs panels.js is I1.5's job.
+var ERP_ICONS = require(path.join(ERP, 'icons.js'));
 // BIM pill actions: id -> its icon binding, in ANY of the registry's three forms:
 //   icon: I.<name>.svg  (named set) · icon: '<inline svg>'  (literal) · img: '<file>'  (png).
 // @bim means "adopt BIM's binding verbatim" — reusing an inline gear IS parity, not invention.
@@ -67,48 +74,54 @@ pills.filter(function (p) { return p.reuse === 'new'; }).forEach(function (p) {
   newErp.push(p.id);
   var ic = String(p.icon);
   if (p.img) {                                            // img form (a real asset file, like redpill.png) — truth-bound
-    var exists = fs.existsSync(path.join(VIEWER, p.img));
+    var exists = fs.existsSync(path.join(ERP, p.img));
     imgAssets.push(p.id + '=' + p.img);
-    ok(exists, 'pill "' + p.id + '" img asset exists in the viewer dir (' + p.img + ')');
+    ok(exists, 'pill "' + p.id + '" img asset exists in the erp dir (' + p.img + ')');
   } else if (ic.indexOf('NEEDS-ICON:') === 0) {
     iconsNeeded.push(p.id + '(' + ic.slice(11) + ')');
     ok(true, 'pill "' + p.id + '" honestly flags a missing glyph: ' + ic + ' (to add to the set, reviewed)');
   } else {
     iconsFromSet.push(p.id + '=' + ic);
-    ok(!!iconSet[ic], 'pill "' + p.id + '" uses an EXISTING set glyph I.' + ic + '.svg');
+    ok(!!(iconSet[ic] || ERP_ICONS[ic]), 'pill "' + p.id + '" uses an EXISTING registry glyph "' + ic + '" (panels.js or erp/icons.js)');
   }
 });
 
-// ── ISSUE I1.4: the ledger/report id does NOT collide with BIM report=4D/5D ──
-console.log('\n[ISSUE I1.4] ERP financial Report uses a distinct id (no clash with BIM report=4D/5D)');
+// ── ISSUE I1.4: no ERP pill id collides with BIM report=4D/5D ──
+// (The original "ledger" pill has since been renamed "verify" — the live requirement is only
+//  that the BIM-reserved id "report" is never claimed by an ERP pill.)
+console.log('\n[ISSUE I1.4] no ERP pill claims the BIM-reserved id "report" (report=4D/5D untouched)');
 var ids = pills.map(function (p) { return p.id; });
-ok(ids.indexOf('report') < 0 && ids.indexOf('ledger') >= 0, 'manifest uses "ledger" for the ERP report, not "report" (BIM report=4D/5D untouched)');
+ok(ids.indexOf('report') < 0, 'manifest does not use "report" (BIM report=4D/5D untouched); ids=[' + ids.join(',') + ']');
 
 // ── ISSUE I1.5: icons.js is VERBATIM from panels.js (no drift, no invented art) ──
 // erp_pills.js resolves pill icons from icons.js (panels.js cannot load standalone on erp.html).
 // Prove every icons.js svg byte-matches its panels.js source: named ICONS entries, or for `settings`
 // the inline gear the BIM settings pill binds. Any future divergence fails here.
-console.log('\n[ISSUE I1.5] icons.js carries panels.js icons VERBATIM (single source, no drift)');
-var ICONS_JS = require(path.join(VIEWER, 'icons.js'));
+console.log('\n[ISSUE I1.5] shared icons.js keys carry panels.js icons VERBATIM (single source, no drift)');
+// erp/icons.js also carries ERP-ONLY glyphs with no panels.js counterpart (documented precedent —
+// overlay-kit / BIM_EMBED sets, extracted verbatim from lucide.dev). Parity is enforced on every key
+// that exists in BOTH files: a shared key whose svg differs = the registry has FORKED — fail.
+var ICONS_JS = ERP_ICONS;
 function panelsNamedSvg(name) { var m = PANELS.match(new RegExp('\\b' + name + ':\\s*\\{\\s*svg:\\s*\'([^\']*)\'')); return m ? m[1] : null; }
 function panelsSettingsGear() { var m = PANELS.match(/id:\s*'settings'[\s\S]{0,80}?icon:\s*'([^']*)'/); return m ? m[1] : null; }
-var iconsParity = [];
+var iconsParity = [], erpOnly = [];
 Object.keys(ICONS_JS).forEach(function (name) {
   var want = (name === 'settings') ? panelsSettingsGear() : panelsNamedSvg(name);
-  var got = ICONS_JS[name].svg;
-  ok(want != null, 'panels.js has a source for icons.js "' + name + '"');
-  ok(want === got, 'icons.js "' + name + '" svg is VERBATIM from panels.js');
+  if (want == null) { erpOnly.push(name); return; }        // ERP-only glyph — allowed, listed below
+  ok(want === ICONS_JS[name].svg, 'icons.js "' + name + '" svg is VERBATIM from panels.js');
   iconsParity.push(name);
 });
-console.log('§ICONS-PARITY source=panels.js icons=[' + iconsParity.join(',') + '] verbatim=' + iconsParity.length + ' drift=0');
+ok(iconsParity.length > 0, 'shared icon vocabulary is non-empty (' + iconsParity.length + ' keys checked)');
+console.log('§ICONS-PARITY source=panels.js shared=[' + iconsParity.join(',') + '] verbatim=' + iconsParity.length +
+  '\n  erpOnly=[' + erpOnly.join(',') + '] (no panels.js counterpart — allowed, extracted verbatim from lucide.dev)');
 
 // ── ISSUE I1.6: the idempiere pill uses the user's A+ raster; no trademarked logo on disk ──
 // prompts/IDEMPIERE_PILL_HANDOFF.md + docs/IDEMPIERE_2.md §Guardrails 3 — clean identity.
 console.log('\n[ISSUE I1.6] idempiere pill = A+ raster (aplus.png); erp_mark superseded; logo absent');
 var idmpPill = pills.filter(function (p) { return p.id === 'idempiere'; })[0];
-var aplusExists = fs.existsSync(path.join(VIEWER, 'aplus.png'));
-var ermarkGone = !fs.existsSync(path.join(VIEWER, 'erp_mark.svg'));
-var logoGone = !fs.existsSync(path.join(VIEWER, 'idempiere_logo.png'));
+var aplusExists = fs.existsSync(path.join(ERP, 'aplus.png'));
+var ermarkGone = !fs.existsSync(path.join(ERP, 'erp_mark.svg'));
+var logoGone = !fs.existsSync(path.join(ERP, 'idempiere_logo.png'));
 ok(!!idmpPill && idmpPill.img === 'aplus.png', 'idempiere pill img = aplus.png (the user\'s A+ raster)');
 ok(aplusExists, 'aplus.png present in viewer dir');
 ok(ermarkGone, 'erp_mark.svg superseded (removed)');

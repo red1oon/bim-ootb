@@ -599,11 +599,33 @@ function renderTab(name){var id=dossierId,n=N[idx[id]],doss=(n&&n.dossier)||{col
  if(name==="Rules")return renderRulesTab(doss);
  if(name==="Columns")return renderColumnsTab(doss);
  if(name==="History")return renderHistoryTab(id);}
+function crudListOverlay(table,cs,valueRows,cb){
+ try{var CR=window.__crud;var CORE=CR&&CR.core;
+  if(!CR||!CORE||typeof CORE.listTip!=='function'||typeof CR.withSidecar!=='function'){cb(valueRows,null);return;}
+  CR.withSidecar(function(db){
+   try{if(!db){cb(valueRows,null);return;}
+    var pk=table+'_id';var lc=cs.map(function(c){return String(c).toLowerCase();});
+    // build object rows keyed by the lower-cased column names listTip reads.
+    var objRows=valueRows.map(function(v){var o={};lc.forEach(function(c,i){o[c]=v[i];});return o;});
+    var t=CORE.listTip(db,table,pk,objRows);
+    // flatten back to value-arrays in the SAME column order; new rows fill columns they carry.
+    var out=t.rows.map(function(o){return lc.map(function(c){return o.hasOwnProperty(c)?o[c]:null;});});
+    console.log('\u00a7CRUD-LIST key='+table+' created='+t.created.length+' hidden='+t.hidden.length+' rows='+out.length+' source=sidecar');
+    cb(out,t);
+   }catch(e){cb(valueRows,null);}
+  });
+ }catch(e){cb(valueRows,null);}
+}
 function renderDataTab(id){DBODY.innerHTML='<div class=dlead>the actual records for this document \u2014 the GardenWorld instance layer.</div>';
  if(BUNDLE_T.indexOf(id)<0){DBODY.innerHTML+='<div class=none>records not carried in this dataset</div>';return;}
  var load=document.createElement("div");load.className="none";load.textContent="loading\u2026";DBODY.appendChild(load);
  withBundle(function(db){if(dossierId!==id)return;var cols=recCols(db,id);if(!cols){DBODY.innerHTML='<div class=none>records not carried in this dataset</div>';return;}var sel=cols.map(function(o){return o.c;}).join(", "),res;try{res=db.exec("SELECT "+sel+" FROM "+id+" LIMIT 20");}catch(e){DBODY.innerHTML='<div class=none>records not carried in this dataset</div>';return;}
-  if(!res.length||!res[0].values.length){DBODY.innerHTML='<div class=none>no rows</div>';return;}var cs=res[0].columns,h='<table class=dt data-rows="'+res[0].values.length+'"><tr>';cs.forEach(function(c){h+="<th>"+esc(c)+"</th>";});h+="</tr>";res[0].values.forEach(function(v){h+="<tr>";cols.forEach(function(o,i){var raw=v[i],val=raw==null?"\u2014":(o.cls==="amt"&&!isNaN(Number(raw))?Number(raw).toFixed(2):String(raw));h+='<td title="'+esc(val)+'">'+esc(val)+"</td>";});h+="</tr>";});h+="</table>";DBODY.innerHTML='<div class=dlead>the actual records for this document.</div>'+h;});}
+  if(!res.length||!res[0].values.length){DBODY.innerHTML='<div class=none>no rows</div>';return;}var cs=res[0].columns;
+  // T2: surface CRUD_CREATE rows + hide CRUD_DELETE tombstones from the signed sidecar (falls back to baseline if overlay absent).
+  crudListOverlay(id,cs,res[0].values,function(rows,tip){if(dossierId!==id)return;
+   var h='<table class=dt data-rows="'+rows.length+'"><tr>';cs.forEach(function(c){h+="<th>"+esc(c)+"</th>";});h+="</tr>";rows.forEach(function(v){h+="<tr>";cols.forEach(function(o,i){var raw=v[i],val=raw==null?"\u2014":(o.cls==="amt"&&!isNaN(Number(raw))?Number(raw).toFixed(2):String(raw));h+='<td title="'+esc(val)+'">'+esc(val)+"</td>";});h+="</tr>";});h+="</table>";
+   var lead=tip&&(tip.created.length||tip.hidden.length)?'the actual records for this document \u2014 incl. '+tip.created.length+' you created'+(tip.hidden.length?', '+tip.hidden.length+' hidden':'')+' (from the signed sidecar).':'the actual records for this document.';
+   DBODY.innerHTML='<div class=dlead>'+lead+'</div>'+h;});});}
 function renderRulesTab(doss){if(!doss.ruleCount){DBODY.innerHTML='<div class=none>no validation rules recorded for this table</div>';return;}
  var h='<div class=dlead>the checks the system runs before saving ('+doss.ruleCount+' validation rule'+(doss.ruleCount==1?"":"s")+') \u2014 read-only.</div>';
  (doss.rules||[]).forEach(function(rr){h+='<div class=rule><div class=rb>'+esc(rr.binding)+'</div><code>'+esc(rr.body)+'</code></div>';});DBODY.innerHTML=h;}
@@ -773,7 +795,9 @@ window.GlassbowlHistoryReset=function(){viewHist=[];viewIdx=-1;window.__viewHist
 // keystroke (typing stays in the field's native undo). PAGE-LOCAL by design: no WholeHistory mirror — CRUD
 // detail never crowds W. docSeq keeps consecutive same-label commits distinct (two saves = two dots).
 var docSeq=0;
-window.recordDocMoment=function(label){if(vlRestoring)return;var v=captureView();v.hint=label;v.docSeq=++docSeq;viewHist=viewHist.slice(0,viewIdx+1);viewHist.push(v);viewIdx=viewHist.length-1;renderScrub();console.log("§DOC-DOT idx="+viewIdx+" total="+viewHist.length+" label="+label);};
+// §A-GRAIL: op (from crud_overlay docDot) carries {op_type,key,from,to} — stored on the dot so
+// foldDocOps can call crudFoldBack/crudFoldForward when scrubbing past it.
+window.recordDocMoment=function(label,op){if(vlRestoring)return;var v=captureView();v.hint=label;v.docSeq=++docSeq;v.docOp=op||null;viewHist=viewHist.slice(0,viewIdx+1);viewHist.push(v);viewIdx=viewHist.length-1;window.__viewHist=viewHist;renderScrub();console.log("§DOC-DOT idx="+viewIdx+" total="+viewHist.length+" label="+label+(op?" op="+op.op_type:""));};
 // restore a captured view (PURE-READ): re-apply focus/trace/spine-toggles/orbit. No persistence writes.
 function applyView(v){vlRestoring=true;try{
  ["containment","derivation","settlement","reference"].forEach(function(kk,i){show[kk]=v.show[kk];var cb=document.querySelectorAll("#legend input[type=checkbox]")[i];if(cb)cb.checked=v.show[kk];});
@@ -783,7 +807,11 @@ function applyView(v){vlRestoring=true;try{
  if(v.pos&&v.pos.length===N.length)N.forEach(function(nn,i){nn.x=v.pos[i][0];nn.y=v.pos[i][1];});yaw=v.yaw||0;pitch=v.pitch||0;window.__yaw=yaw;window.__pitch=pitch;updateBall();draw();
 }catch(e){}vlRestoring=false;scrubJive();renderScrub();}
 window.applyView=applyView;
-function scrubTo(i){if(i<0||i>=viewHist.length||i===viewIdx)return;viewIdx=i;applyView(viewHist[i]);}
+// §A-GRAIL (HISTORY_SESSION_EVENTS.md): when scrubbing past a DOC_ACTION dot, fold the doc
+// back (backward) or re-apply (forward) via crudFoldBack / crudFoldForward (crud_overlay.js).
+// READ-ONLY events (CRUD_UPDATE etc.) restore the LOOK only — applyView handles that.
+function foldDocOps(from,to){if(from===to)return;var j,v;if(from>to){for(j=from;j>to;j--){v=viewHist[j];if(v&&v.docOp&&v.docOp.op_type==='DOC_ACTION'&&typeof window.crudFoldBack==='function')window.crudFoldBack(v.docOp.key,v.docOp.from,v.docOp.to);}}else{for(j=from+1;j<=to;j++){v=viewHist[j];if(v&&v.docOp&&v.docOp.op_type==='DOC_ACTION'&&typeof window.crudFoldForward==='function')window.crudFoldForward(v.docOp.key,v.docOp.to);}}}
+function scrubTo(i){if(i<0||i>=viewHist.length||i===viewIdx)return;foldDocOps(viewIdx,i);viewIdx=i;applyView(viewHist[i]);}
 function undoView(){if(viewIdx>0){viewIdx--;applyView(viewHist[viewIdx]);}}
 function redoView(){if(viewIdx<viewHist.length-1){viewIdx++;applyView(viewHist[viewIdx]);}}
 window.undoView=undoView;window.redoView=redoView;
@@ -842,8 +870,16 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <script src="erp_signer.js"></script>
 <!-- AD logic-expression evaluator (W-LOGIC-EVAL / W-AD-LOGIC-LIVE) — window.AdEvaluator; crud_overlay.applyAdLogic reads it so form fields show/hide/enable/require off the AD's Display/ReadOnly/Mandatory logic. MUST load before crud_overlay. -->
 <script src="ad_evaluator.js"></script>
-<!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). -->
-<script src="crud_overlay.js"></script>
+<!-- model-validator beforeSave hooks (W-*-SAVE, faithful M*.beforeSave ports) — window.AdModelVal; crud_overlay.saveForm fires BEFORE_SAVE: reject blocks, derived fills (§AD-MODELVAL-LIVE, UI_UNPARK B-3). MUST load before crud_overlay. -->
+<script src="ad_modelval.js"></script>
+<!-- T1 (SO_FULL_CRUD_GAP.md, W-SO-COMPLETE-UI): the PROVEN engine (UMD of bim-compiler scripts/erp_engine.js — window.ERPEngine, same file idempiere.html loads). crud_overlay.completeFanout extracts the completeIt consequence set (ship+invoice creates) from it. MUST load before crud_overlay. -->
+<script src="erp_engine.js?v=1"></script>
+<!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). T1: Complete a c_order = the WHOLE document process committed as ONE group. T2: renderDataTab unions CRUD_CREATE rows + hides DELETE tombstones (CORE.listTip). -->
+<!-- T7 (W-T7-INC): memoized tip-folds — load BEFORE crud_overlay so readTip/tipValues delegate. -->
+<script src="tip_fold.js?v=1"></script>
+<!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
+<script src="crud_core.js?v=1"></script>
+<script src="crud_overlay.js?v=7"></script>
 <!-- Period-close in-app (§INTEG-WIRE) — fold the live sidecar op-log → ONE signed checkpoint = balance b/f; bootstrap from it on load. -->
 <script src="erp_period_close.js"></script>
 <script src="period_close_ui.js"></script>
@@ -853,7 +889,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <script>(function(){function m(){if(!(window.PeriodClose&&window.__crud&&window.ErpPeriodClose)){return setTimeout(m,300);}var p=document.getElementById('panel');if(p&&!p.querySelector('.pclose-ctl')){try{window.PeriodClose.renderInto(p,{});console.log('§INTEG-WIRE control mounted in #panel');}catch(e){console.warn('§INTEG-WIRE mount',e&&e.message);}}}if(document.readyState!=='loading')m();else document.addEventListener('DOMContentLoaded',m);})();</script>
 <!-- §GB-PILLS — shared ⋯ pill registry (PILLS_TO_GLASSBOWL_CONSOLIDATE.md): icons.js (glyph DATA) + pill_builder.js (renderer, used as-is) + glassbowl_pills.js (binds fn BY ID) + pills_glassbowl.json (manifest). Replaces the hand-rolled .ctl bar + loose about/qr/needHelp/crud-mode controls. -->
 <script src="icons.js?v=3"></script>
-<script src="pill_builder.js?v=4"></script>
+<script src="../common/pill_builder.js?v=1"></script>
 <script src="glassbowl_pills.js?v=5"></script>
 <script>(function(){
   // Bind the registry fn BY ID to the REAL existing host handlers (published as window.* by the inline scripts above).
@@ -887,7 +923,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
       showme:function(){return _ckOn('needHelpCk');},
       about: function(){var a=document.getElementById('about');return !!(a&&a.classList.contains('open'));}
     };
-    window.GlassbowlPills.mount({manifest:'pills_glassbowl.json?v=2',storageKey:'glassbowl_pill_config',tag:'§GB-PILLS'});
+    window.GlassbowlPills.mount({manifest:'pills_glassbowl.json?v=3',storageKey:'glassbowl_pill_config',tag:'§GB-PILLS'});
   }
   if(document.readyState!=='loading')mount();else window.addEventListener('load',mount);
 })();</script>

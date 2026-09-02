@@ -1,0 +1,528 @@
+{
+ "aggregates": [
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomK",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomL",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomM",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomN",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomO",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomP",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomQ",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomR",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomS",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomT",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "3cUkl32yn9qRSPvBJVyW$Y",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "3cUkl32yn9qRSPvBJVyW$j",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "3cUkl32yn9qRSPvBJVyW$l",
+   "parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMom0",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMom1",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMom3",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMom4",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMom5",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMom7",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMom8",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMom9",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomB",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "09J5N7xMHBfQZeQGAEMomU",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "3cUkl32yn9qRSPvBJVyW_3",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "3cUkl32yn9qRSPvBJVyW_5",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "child": "3cUkl32yn9qRSPvBJVyW_O",
+   "parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  }
+ ],
+ "building": "SH",
+ "coverage": {
+  "corpus": 60,
+  "hits": {
+   "aggregates_parent": 26,
+   "fills_host": 7,
+   "space": 14,
+   "storey": 34,
+   "type_name": 34
+  },
+  "joined": 60,
+  "space_boundary_elements": 0
+ },
+ "db": "deploy/buildings/SampleHouse_extracted.db",
+ "db_frame": {
+  "frame": "world-zup",
+  "rotation_semantics": "none-baked-into-mesh",
+  "units": "m"
+ },
+ "elements": {
+  "09J5N7xMHBfQZeQGAEMom0": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "09J5N7xMHBfQZeQGAEMom1": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "09J5N7xMHBfQZeQGAEMom3": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "09J5N7xMHBfQZeQGAEMom4": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "09J5N7xMHBfQZeQGAEMom5": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "09J5N7xMHBfQZeQGAEMom7": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "09J5N7xMHBfQZeQGAEMom8": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "09J5N7xMHBfQZeQGAEMom9": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "09J5N7xMHBfQZeQGAEMomB": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "09J5N7xMHBfQZeQGAEMomK": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomL": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomM": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomN": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomO": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomP": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomQ": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomR": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomS": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomT": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z"
+  },
+  "09J5N7xMHBfQZeQGAEMomU": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P"
+  },
+  "1RS53LK$j6KOlAGwxTiY8D": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0J",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "1525x2007x355mm-Queen"
+  },
+  "3cUkl32yn9qRSPvBJVyW$Y": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "type_class": "IfcPlateType",
+   "type_name": "Glazed"
+  },
+  "3cUkl32yn9qRSPvBJVyW$Z": {
+   "storey": "Ground Floor",
+   "type_class": "IfcCurtainWallType",
+   "type_name": "Curtain Wall:Curtain_Wall-Exterior_Glazing"
+  },
+  "3cUkl32yn9qRSPvBJVyW$j": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "type_class": "IfcPlateType",
+   "type_name": "Glazed"
+  },
+  "3cUkl32yn9qRSPvBJVyW$l": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW$Z",
+   "type_class": "IfcPlateType",
+   "type_name": "Glazed"
+  },
+  "3cUkl32yn9qRSPvBJVyWXt": {
+   "storey": "Ground Floor",
+   "type_class": "IfcWallType",
+   "type_name": "Basic Wall:Wall-Partn_12P-70MStd-12P"
+  },
+  "3cUkl32yn9qRSPvBJVyWY1": {
+   "storey": "Ground Floor",
+   "type_class": "IfcWallType",
+   "type_name": "Basic Wall:Wall-Partn_12P-70MStd-12P"
+  },
+  "3cUkl32yn9qRSPvBJVyWYp": {
+   "fills_host": "3cUkl32yn9qRSPvBJVyWy4",
+   "storey": "Ground Floor",
+   "type_class": "IfcDoorType",
+   "type_name": "1810x2110mm"
+  },
+  "3cUkl32yn9qRSPvBJVyW_3": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "type_class": "IfcPlateType",
+   "type_name": "Glazed"
+  },
+  "3cUkl32yn9qRSPvBJVyW_5": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "type_class": "IfcPlateType",
+   "type_name": "Glazed"
+  },
+  "3cUkl32yn9qRSPvBJVyW_O": {
+   "aggregates_parent": "3cUkl32yn9qRSPvBJVyW_P",
+   "type_class": "IfcPlateType",
+   "type_name": "Glazed"
+  },
+  "3cUkl32yn9qRSPvBJVyW_P": {
+   "storey": "Ground Floor",
+   "type_class": "IfcCurtainWallType",
+   "type_name": "Curtain Wall:Curtain_Wall-Exterior_Glazing"
+  },
+  "3cUkl32yn9qRSPvBJVyWaG": {
+   "fills_host": "3cUkl32yn9qRSPvBJVyWXt",
+   "storey": "Ground Floor",
+   "type_class": "IfcDoorType",
+   "type_name": "810x2110mm"
+  },
+  "3cUkl32yn9qRSPvBJVyWax": {
+   "fills_host": "3cUkl32yn9qRSPvBJVyWXt",
+   "storey": "Ground Floor",
+   "type_class": "IfcDoorType",
+   "type_name": "810x2110mm"
+  },
+  "3cUkl32yn9qRSPvBJVyWcE": {
+   "fills_host": "3cUkl32yn9qRSPvBJVyWw5",
+   "storey": "Ground Floor",
+   "type_class": "IfcWindowType",
+   "type_name": "1810x1210mm"
+  },
+  "3cUkl32yn9qRSPvBJVyWdx": {
+   "fills_host": "3cUkl32yn9qRSPvBJVyWw5",
+   "storey": "Ground Floor",
+   "type_class": "IfcWindowType",
+   "type_name": "1810x1210mm"
+  },
+  "3cUkl32yn9qRSPvBJVyWe9": {
+   "fills_host": "3cUkl32yn9qRSPvBJVyWw5",
+   "storey": "Ground Floor",
+   "type_class": "IfcWindowType",
+   "type_name": "1810x1210mm"
+  },
+  "3cUkl32yn9qRSPvBJVyWfk": {
+   "storey": "Ground Floor"
+  },
+  "3cUkl32yn9qRSPvBJVyWfu": {
+   "storey": "Ground Floor"
+  },
+  "3cUkl32yn9qRSPvBJVyWgM": {
+   "storey": "Ground Floor"
+  },
+  "3cUkl32yn9qRSPvBJVyWgQ": {
+   "storey": "Ground Floor"
+  },
+  "3cUkl32yn9qRSPvBJVyWh4": {
+   "storey": "Roof"
+  },
+  "3cUkl32yn9qRSPvBJVyWw5": {
+   "storey": "Ground Floor",
+   "type_class": "IfcWallType",
+   "type_name": "Basic Wall:Wall-Ext_102Bwk-75Ins-100LBlk-12P"
+  },
+  "3cUkl32yn9qRSPvBJVyWx4": {
+   "storey": "Ground Floor",
+   "type_class": "IfcWallType",
+   "type_name": "Basic Wall:Wall-Ext_102Bwk-75Ins-100LBlk-12P"
+  },
+  "3cUkl32yn9qRSPvBJVyWy4": {
+   "storey": "Ground Floor",
+   "type_class": "IfcWallType",
+   "type_name": "Basic Wall:Wall-Ext_102Bwk-75Ins-100LBlk-12P"
+  },
+  "3cUkl32yn9qRSPvBJVyY1R": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "1120x940x350mm"
+  },
+  "3cUkl32yn9qRSPvBJVyY48": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "1120x940x350mm"
+  },
+  "3cUkl32yn9qRSPvBJVyYGp": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "2290x950x340mm"
+  },
+  "3cUkl32yn9qRSPvBJVyYXU": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "1370x600x1170mm"
+  },
+  "3cUkl32yn9qRSPvBJVyYoX": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "1200x550x450mm"
+  },
+  "3cUkl32yn9qRSPvBJVyZ$$": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "2000x1000x750mm_w-6_Seats"
+  },
+  "3cUkl32yn9qRSPvBJVyZ$_": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "Chair - Dining"
+  },
+  "3cUkl32yn9qRSPvBJVyZ$x": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "Chair - Dining"
+  },
+  "3cUkl32yn9qRSPvBJVyZ$y": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "Chair - Dining"
+  },
+  "3cUkl32yn9qRSPvBJVyZ$z": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "Chair - Dining"
+  },
+  "3cUkl32yn9qRSPvBJVyZTO": {
+   "fills_host": "3cUkl32yn9qRSPvBJVyWy4",
+   "storey": "Ground Floor",
+   "type_class": "IfcWindowType",
+   "type_name": "1810x1210mm"
+  },
+  "3cUkl32yn9qRSPvBJVyZVU": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0J",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "1525x762mm"
+  },
+  "3cUkl32yn9qRSPvBJVyZab": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "Chair - Dining"
+  },
+  "3cUkl32yn9qRSPvBJVyZac": {
+   "space": "3w0zWKm7n8SB1qbfwUzt0U",
+   "storey": "Ground Floor",
+   "type_class": "IfcFurnitureType",
+   "type_name": "Chair - Dining"
+  },
+  "3ntFzSulnDNeQ4nJrMgcOt": {
+   "storey": "Roof"
+  }
+ },
+ "sources": [
+  {
+   "file": "internal/sources/Ifc4_SampleHouse.ifc",
+   "md5": "372136c466162125b77cbbfd662de446",
+   "schema": "IFC4"
+  }
+ ],
+ "space_boundaries": [],
+ "spaces": {
+  "09J5N7xMHBfQZeQGAEMota": {
+   "long_name": "Roof",
+   "name": "4 - Roof",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc",
+   "storey": "Roof"
+  },
+  "3w0zWKm7n8SB1qbfwUzt0G": {
+   "long_name": "Entrance hall",
+   "name": "3 - Entrance hall",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc",
+   "storey": "Ground Floor"
+  },
+  "3w0zWKm7n8SB1qbfwUzt0J": {
+   "long_name": "Bedroom",
+   "name": "2 - Bedroom",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc",
+   "storey": "Ground Floor"
+  },
+  "3w0zWKm7n8SB1qbfwUzt0U": {
+   "long_name": "Living room",
+   "name": "1 - Living room",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc",
+   "storey": "Ground Floor"
+  }
+ },
+ "storeys": {
+  "Ground Floor": {
+   "elevation": 0.0,
+   "guid": "1o0c33arXF9AEePDYchjCY",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  "Roof": {
+   "elevation": 2500.0,
+   "guid": "1o0c33arXF9AEePDYchj2Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  }
+ },
+ "wall_connects": [
+  {
+   "a": "3cUkl32yn9qRSPvBJVyWXt",
+   "a_end": "ATPATH",
+   "b": "3cUkl32yn9qRSPvBJVyWY1",
+   "b_end": "ATSTART",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "a": "3cUkl32yn9qRSPvBJVyWw5",
+   "a_end": "ATPATH",
+   "b": "3cUkl32yn9qRSPvBJVyWXt",
+   "b_end": "ATSTART",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "a": "3cUkl32yn9qRSPvBJVyWw5",
+   "a_end": "ATPATH",
+   "b": "3cUkl32yn9qRSPvBJVyW_P",
+   "b_end": "ATSTART",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "a": "3cUkl32yn9qRSPvBJVyWw5",
+   "a_end": "ATEND",
+   "b": "3cUkl32yn9qRSPvBJVyWx4",
+   "b_end": "ATSTART",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "a": "3cUkl32yn9qRSPvBJVyWx4",
+   "a_end": "ATPATH",
+   "b": "3cUkl32yn9qRSPvBJVyWY1",
+   "b_end": "ATEND",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "a": "3cUkl32yn9qRSPvBJVyWx4",
+   "a_end": "ATEND",
+   "b": "3cUkl32yn9qRSPvBJVyWy4",
+   "b_end": "ATSTART",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "a": "3cUkl32yn9qRSPvBJVyWy4",
+   "a_end": "ATEND",
+   "b": "3cUkl32yn9qRSPvBJVyW$Z",
+   "b_end": "ATEND",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  {
+   "a": "3cUkl32yn9qRSPvBJVyWy4",
+   "a_end": "ATPATH",
+   "b": "3cUkl32yn9qRSPvBJVyWXt",
+   "b_end": "ATEND",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  }
+ ]
+}

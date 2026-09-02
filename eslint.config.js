@@ -23,10 +23,12 @@ module.exports = [
       'viewer/*_test.js',       // node CLI test harnesses (shebang + require)
       'viewer/test_*.js',       // node CLI test runner
       'viewer/mep_qto_populate.js', // node CLI populate utility
+      'modeller/lib/**',        // third-party bundles (the modeller's own lib copy)
+      'modeller/tests/**',      // node CLI test harnesses (playwright/puppeteer + require)
     ],
   },
   {
-    files: ['viewer/**/*.js'],
+    files: ['viewer/**/*.js', 'modeller/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',
@@ -45,6 +47,15 @@ module.exports = [
     },
     rules: {
       'no-undef': 'error',
+    },
+  },
+  {
+    // bonsai_kernel_worker.js is a MODULE Web Worker (ESM `import` of the occt kernel),
+    // unlike the rest of viewer/ which are global-scope <script> files. Parse it as a module
+    // so its import statements aren't a syntax error under the no-undef gate.
+    files: ['modeller/bonsai_kernel_worker.js'],
+    languageOptions: {
+      sourceType: 'module',
     },
   },
 ];

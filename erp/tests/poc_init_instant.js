@@ -12,9 +12,9 @@
 //   (first paint from the tiny shard, big DB deferred)." PASS = bubblePaint ≤300ms cold AND warm + dbStartsAfterBubble.
 // Run:  node tests/poc_init_instant.js 2>&1 | tee tests/poc_init_instant.log   (cwd = bim-ootb/erp)
 'use strict';
-const { chromium } = require(__dirname + '/../../tests/node_modules/playwright');
+const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));   // PW-override pattern (worktree-safe), matches the other poc tests
 const http = require('http'), fs = require('fs'), path = require('path');
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', '..');   // repo root — pages moved to /erp/ URLs so ../common/pill_builder.js resolves (PILLS_CONSOLIDATION_REVIEW_2026-07-03)
 const MIME = { '.html':'text/html','.js':'text/javascript','.json':'application/json','.db':'application/octet-stream','.wasm':'application/wasm','.css':'text/css','.png':'image/png' };
 const THRESHOLD = 300;   // ms — the "instant" target (navigationStart → bubble first paint)
 // REALISTIC NETWORK: localhost has ~0 latency, so a plain load can't tell network-first from cache-first
@@ -37,7 +37,7 @@ const server = http.createServer((q, r) => {
 // Performance API in-page. performance.now() is relative to navigationStart (timeOrigin), so it IS the
 // navStart→event elapsed. Resource Timing gives per-asset startTime/responseEnd.
 async function measure(pg, port, label) {
-  await pg.goto(`http://localhost:${port}/erp.html`, { waitUntil: 'commit' });
+  await pg.goto(`http://localhost:${port}/erp/erp.html`, { waitUntil: 'commit' });
   // bubble first paint = #loading gone (display:none or removed) — that is exactly when erp.html reveals
   // the globe (line ~117). Fall back to a visible globe canvas if the overlay id ever changes.
   await pg.waitForFunction(() => {

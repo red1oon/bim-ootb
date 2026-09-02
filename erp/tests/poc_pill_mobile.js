@@ -32,7 +32,7 @@ const server = http.createServer((req, res) => {
 
 const VW = 390, VH = 844;
 const PRE_CLIENT = ['install', 'migrate', 'erpdoc'];   // front-door pills that MUST be visible pre-auth
-const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
+const LENS = ['reports', 'graph', 'kanban', 'rule'];     // always present (posted/preview retired → Posted column/button)
 
 (async () => {
   await new Promise(r => server.listen(0, r));
@@ -89,7 +89,7 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
   const dflt = await page.evaluate(() => {
     var trig = document.getElementById('idmp-pill-trigger');
     var open = window.IdmpPills.builder.isOpen();
-    var anyPillVisible = ['install','migrate','erpdoc','posted','graph','kanban','rule']
+    var anyPillVisible = ['install','migrate','erpdoc','reports','graph','kanban','rule']
       .some(function (id) { var b = document.getElementById('pill-' + id); return b && b.offsetParent !== null; });
     return { open: open, trigOnScreen: !!(trig && trig.offsetParent !== null),
              cueArmed: !!(trig && /idmp-pill-attract/.test(trig.className)), anyPillVisible: anyPillVisible };
@@ -105,7 +105,7 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
   //    pills out and re-collapsed is GONE ("and not collapse"). Names the bug "the reveal recollapses". ──
   const revealProbe = () => page.evaluate(() => {
     var p = document.getElementById('idmp-pill');
-    var anyPill = ['install','migrate','erpdoc','posted','graph','kanban','rule']
+    var anyPill = ['install','migrate','erpdoc','reports','graph','kanban','rule']
       .some(function (id) { var b = document.getElementById('pill-' + id); return b && b.offsetParent !== null; });
     return { rising: !!(p && p.classList.contains('pill-revealing')),
              display: p ? getComputedStyle(p).display : 'none', anyPillVisible: anyPill,

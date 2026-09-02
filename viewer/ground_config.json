@@ -4,9 +4,34 @@
   "repeat": 64,
   "anisotropy": 8,
   "options": [
-    { "key": "none",  "label": "None",  "src": null },
-    { "key": "grass", "label": "Grass", "src": "textures/ground/grass_1k.jpg" },
-    { "key": "earth", "label": "Earth", "src": "textures/ground/earth_1k.jpg" },
-    { "key": "paved", "label": "Paved", "src": "textures/ground/paved_1k.jpg" }
+    {
+      "key": "none",
+      "label": "None",
+      "src": null
+    },
+    {
+      "key": "grass",
+      "label": "Grass",
+      "src": "textures/ground/grass_1k.jpg",
+      "nor": "textures/ground/grass_nor_1k.jpg",
+      "rough": "textures/ground/grass_rough_1k.jpg",
+      "detailMean": 0.1262
+    },
+    {
+      "key": "earth",
+      "label": "Earth",
+      "src": "textures/ground/earth_1k.jpg",
+      "nor": "textures/ground/earth_nor_1k.jpg",
+      "rough": "textures/ground/earth_rough_1k.jpg",
+      "detailMean": 0.1599
+    },
+    {
+      "key": "paved",
+      "label": "Paved",
+      "src": "textures/ground/paved_1k.jpg",
+      "nor": "textures/ground/paved_nor_1k.jpg",
+      "rough": "textures/ground/paved_rough_1k.jpg",
+      "detailMean": 0.1629
+    }
   ]
 }

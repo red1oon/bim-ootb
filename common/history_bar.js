@@ -86,7 +86,7 @@ window.HistoryBar = (function () {
   // ── The KNOB (HISTORY_KNOB_SIGNAL_TAP §LOCKED-KNOB) ──────────────────────
   // The old 3-state cycle (all/doc/off) is a 5-stop magnitude DIAL: Off·Low·Mid·High·Max, default
   // High. TURN (drag/tap) = BREADTH (how wide the §-net). PRESS (long-press) = RICHNESS (dot→chip,
-  // unified with the double-tap bloom). SOUND = a pitched detent tick per stop (∝ breadth, mute-aware).
+  // unified with the double-tap bloom).
   // Persisted legacy values migrate: off→Off · doc→Mid · all→High (keeps any prior/ERP value working).
   var _STOPS = ['off', 'low', 'mid', 'high', 'max'];
   var _depth = 'high';
@@ -105,9 +105,20 @@ window.HistoryBar = (function () {
   function configure(opts) {
     for (var k in opts) { if (Object.prototype.hasOwnProperty.call(opts, k)) _cfg[k] = opts[k]; }
     // depth: persisted choice wins (legacy all/doc/off migrate to stops); else the app's default.
-    try { _depth = _migrateDepth(localStorage.getItem(_cfg.depthKey)) || _migrateDepth(_cfg.defaultDepth()) || 'high'; }
+    // ignorePersistedDepth: an app with NO depth knob (the viewer — knob scrapped per
+    // HISTORY_KNOB_DIAL) passes this so a STALE persisted stop from the knob era can't pin it
+    // forever with no UI to change it. Such apps always boot at their defaultDepth().
+    try {
+      var _storedDepth = _cfg.ignorePersistedDepth ? null : localStorage.getItem(_cfg.depthKey);
+      _depth = _migrateDepth(_storedDepth) || _migrateDepth(_cfg.defaultDepth()) || 'high';
+    }
     catch (e) { _depth = _migrateDepth(_cfg.defaultDepth()) || 'high'; }
-    if (!_configured) { _wireKeyboard(); _wireCrossTab(); _configured = true; }
+    // skipKeyboard: an app that already owns Ctrl+Z/Ctrl+Y itself (with its own undo/redo UI wrap-up —
+    // audio cue, status text, selection sync) opts out of this module's OWN document-level keyboard
+    // wiring, so one keypress doesn't fire the underlying undo/redo twice. Default false — every other
+    // app keeps wiring keyboard here exactly as before.
+    if (!_configured) { if (!_cfg.skipKeyboard) _wireKeyboard(); _wireCrossTab(); _configured = true; }
+    _syncTapKnob();                     // ONE KNOB: push the loaded depth onto the §-tap at startup
     if (_cfg.treeKey) _persistLoad();   // restore persisted universes for this building (item 4)
     console.log('§HIST_CONFIGURE source=' + _cfg.source + ' depth=' + _depth + ' host=' + (_cfg.mountHostId || 'body') + ' treeKey=' + (_cfg.treeKey || '-'));
   }
@@ -152,7 +163,10 @@ window.HistoryBar = (function () {
   // snapshotted into a node.
   function push(entry) {
     if (!_on() || _suppress) return;
-    if (!entry || !significant(entry.bucket, entry.type, entry.label)) return;
+    // fromTap entries arrive PRE-FILTERED by the §-tap's knob (the single breadth dial) → they bypass the
+    // bar's per-stop significant() gate, which is the DUPLICATE breadth logic this unification retires for
+    // the read-only tier (HISTORY_KNOB_SIGNAL_TAP §THE WORK step 1/2). _on() (off) still suppresses all.
+    if (!entry || (!entry.fromTap && !significant(entry.bucket, entry.type, entry.label))) return;
     if (entry.ts == null) entry.ts = _now();
     // Coalesce rapid same-signature repeats — only at a TRUE tip (cursor node has no children, so
     // there is no sibling/redo subtree we'd quietly mutate).
@@ -168,9 +182,19 @@ window.HistoryBar = (function () {
         return;
       }
     }
+    var kids = _kidsOf(_cursorNode);
+    // HISTORY_TIMELINE_UNDO_DOTS: fork-don't-wipe is for genuine model divergence (a real op,
+    // readonly:false) — undo-then-edit legitimately opens a new universe. A read-only crumb
+    // (view/pick/tap-drained NAVIGATE/XRAY/FOCUS/PICK) never mutates the model, so after an undo
+    // (cursor sits on a node that already has a kid) it must NOT fork a new sibling dot — that's
+    // what made the timeline look like it "spawns more dots on undo" for routine looking-around.
+    // Drop it instead; it only ever existed to paint a dot, and forking one for it is the bug.
+    if (entry.readonly && kids.length > 0) {
+      console.log('§HIST_DROP source=' + entry.bucket + ' type=' + entry.type + ' reason=readonly-post-undo label="' + (entry.label || '') + '"');
+      return;
+    }
     entry.seq = ++_seq;
     entry.kids = []; entry.active = 0; entry.parent = _cursorNode;
-    var kids = _kidsOf(_cursorNode);
     var forked = kids.length > 0;          // already had a child → this push FORKS a sibling universe
     var keptSibling = forked ? _tipOf(kids[_activeOf(_cursorNode)]) : null;
     kids.push(entry);
@@ -365,32 +389,27 @@ window.HistoryBar = (function () {
   }
   function _afterApply(when) { try { _cfg.afterApply(when); } catch (e) { console.warn('§HIST_AFTER_ERR', e); } }
 
-  // ── The KNOB: breadth (turn) + sound (detent) ─────────────────────────
-  function setDepth(d, silent) {
+  // ── Breadth (the 5-stop significance ladder) ──────────────────────────
+  // ONE KNOB (HISTORY_KNOB_SIGNAL_TAP §THE WORK step 2): the bar's depth IS the §-tap's knob. Off keeps
+  // the tap level (the bar suppresses via _on()); low/mid/high/max map 1:1 onto the tap's STOP sets. The
+  // bar's depthKey is the SINGLE persisted source of truth — the tap level is DERIVED, never separately
+  // persisted. This collapses the two knobs that used to disagree (tap level='mid' vs bar _depth='high').
+  function _syncTapKnob() {
+    try { if (typeof window !== 'undefined' && window.HistoryTap && window.HistoryTap.setKnob && _depth !== 'off') window.HistoryTap.setKnob(_depth); } catch (e) {}
+  }
+  function setDepth(d, silent) {   // silent kept for API compat (callers pass it)
     d = _migrateDepth(d); if (!d) return;
-    var changed = d !== _depth;
     _depth = d;
     try { localStorage.setItem(_cfg.depthKey, d); } catch (e) {}
+    _syncTapKnob();
     _render();
-    console.log('§HIST_DEPTH depth=' + _depth + ' stop=' + _stopIdx(_depth) + '/4');
-    if (changed && !silent) _detentTick();   // the KNOB-DIAL owns its own detent → passes silent=true
+    console.log('§HIST_DEPTH depth=' + _depth + ' stop=' + _stopIdx(_depth) + '/4 tapKnob=' + ((typeof window !== 'undefined' && window.HistoryTap && window.HistoryTap.getKnob) ? window.HistoryTap.getKnob() : '-'));
   }
   function cycleDepth() { setDepth(_STOPS[(_stopIdx(_depth) + 1) % _STOPS.length]); }  // tap = one step (wraps)
   function setEnabled(on) { setDepth(on ? 'high' : 'off'); }
   function isEnabled() { return _on(); }
   function getDepth() { return _depth; }
 
-  // SOUND axis: a crisp pitched detent tick per stop (pitch ∝ breadth), eyes-free confirmation.
-  // FREE — reuses the SFX synth; MUST stay silent under the global mute (`v` / §SFX_TOGGLE).
-  var _DETENT_HZ = { off: 150, low: 300, mid: 392, high: 494, max: 622 };
-  function _detentTick() {
-    try {
-      if (!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn())) { console.log('§HIST_DETENT muted stop=' + _depth); return; }
-      var hz = _DETENT_HZ[_depth] || 440;
-      console.log('§HIST_DETENT stop=' + _depth + ' hz=' + hz);
-      window.__sfx.voice(_depth === 'off' ? 'knock' : 'pluck', hz, 55, 0);
-    } catch (e) {}
-  }
   // RICHNESS axis (press): dot → chip (unified with the double-tap bloom). The 3rd level (thumbnail)
   // is desktop-only + ephemeral (HISTORY_PERSIST_RECALL §LOCKED-5) — deferred, not faked here.
   function _cycleRichness() { _bloom = !_bloom; _render(); console.log('§HIST_BLOOM ' + (_bloom ? 'on' : 'off') + ' via=press'); }

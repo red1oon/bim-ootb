@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- ⚠ DO NOT REMOVE — MODELLER TEAMS-EMBED HOST FIXTURE (modeller/tests/wire_teams_embed_modeller.js). A
+     MINIMAL stand-in for the modeller chrome: a #bonsai-outliner with [data-fid] rows + a read-only op-log
+     hook. Loads ONLY the production /modeller/teams_embed.js (one guarded script) — it lazy-loads the teams/
+     modules ITSELF when ON, exactly as production does. Isolates the EMBED contract: OFF=pixel-identical ·
+     ON=floating pill → contextual dots on Outliner rows + presence pane. NOT the full 3D app. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>modeller (embed host fixture)</title>
+<style>body{margin:0;background:#101216;font:13px system-ui;color:#c7cdd8}
+  #bonsai-outliner{position:fixed;top:0;left:0;width:240px;height:100vh;background:#1b1d23;border-right:1px solid #2c303a}
+  #bo-tree [data-fid]{padding:4px 8px;cursor:pointer}</style></head>
+<body>
+  <div id="bonsai-outliner"><div style="padding:9px 11px;color:#5b6473">OUTLINER</div>
+    <div id="bo-tree">
+      <div data-fid="W1">Wall W1</div><div data-fid="W2">Wall W2</div><div data-fid="C3">Column C3</div>
+    </div></div>
+
+  <script>
+    // the host hands the embed a READ-ONLY signed op-log (seeded NON-INVENT; in production = the live
+    // kernel_ops fold). target = the element fid (matches data-fid). The embed folds it; it never writes.
+    (function () {
+      var T = 1719700000000;
+      function op(id, ts, a, verb, fid) { return { id: id, ts: ts, author: a, role: null, branch: null, cls: 'geom', verb: verb, target: fid, params: {} }; }
+      var OPS = [ op('o1', T + 10, 'alice', 'INSERT', 'W1'), op('o2', T + 20, 'bob', 'MOVE', 'W1'),
+                  op('o3', T + 30, 'carol', 'INSERT', 'W2'), op('o4', T + 40, 'alice', 'SIZE', 'C3') ];
+      window.TeamsEmbedOps = function () { return OPS; };
+      window.TeamsEmbedUser = 'red1';                 // current modeller actor
+    })();
+  </script>
+  <script src="/modeller/teams_embed.js"></script>
+  <script>
+    // production modeller.html calls this once after boot; OFF (default) → inert.
+    window.TeamsEmbedBim.init({ location: { discipline: 'STR', level: 2, space: 'Grid-A' }, now: 1719700000099 })
+      .then(function (r) { window.__embedInit = r; });
+  </script>
+</body>
+</html>

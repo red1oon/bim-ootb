@@ -12,10 +12,14 @@ var ICONS = {
   search:    { svg: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', trl: 'ui_tt_find', key: null, desc: 'Find' },
   share:     { svg: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', trl: 'ui_tt_share', key: null, desc: 'Share' },
   lifeBuoy:  { svg: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>', trl: 'ui_tt_help', key: 'F1', desc: 'Help' },
+  circleHelp:{ svg: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>', trl: 'ui_tt_help', key: 'F1', desc: 'Help' },
   moreVert:  { svg: '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>', trl: null, key: '.', desc: 'More' },
   moreHoriz: { svg: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>', trl: null, key: '.', desc: 'More' },  // FLAT kebab — mobile ⋯ trigger (differs from Android's vertical ⋮); parity with erp/icons.js
   scissors:  { svg: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>', trl: 'ui_tt_section', key: null, desc: 'Section Cut' },
-  eye:       { svg: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', trl: 'ui_tt_xray', key: 'X', desc: 'X-Ray' },
+  // §OUTLINER_TAXONOMY_REDESIGN.md §6b: X-Ray moved to `bone` (below) — Eye freed, repurposed as
+  // the Role/Profession view-filter toggle (id:'roleFilter' in _actions). trl/desc updated so a
+  // stale X-Ray tooltip can't leak if A.icon('eye',...) is ever called directly.
+  eye:       { svg: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', trl: null, key: 'r', desc: 'Role View' },
   clipboard: { svg: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>', trl: 'ui_tt_issues', key: 'I', desc: 'Issues' },
   triangle:  { svg: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', trl: 'ui_tt_clash', key: null, desc: 'Clash Matrix' },
   plane:     { svg: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>', trl: 'ui_tt_fly', key: 'L', desc: 'Fly Tour' },
@@ -25,13 +29,23 @@ var ICONS = {
   cloud:     { svg: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', trl: 'ui_tt_shadow', key: 'H', desc: 'Shadow' },
   contrast:  { svg: '<circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/>', trl: 'ui_tt_bg', key: 'B', desc: 'Background' },
   maximize:  { svg: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>', trl: 'ui_tt_fullscreen', key: null, desc: 'Fullscreen' },
-  box:       { svg: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>', trl: 'ui_tt_bbox', key: 'Alt+X', desc: 'Bounding Boxes' },
-  camera:    { svg: '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', trl: 'ui_tt_screenshot', key: 'S', desc: 'Screenshot' },
+  box:       { svg: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>', trl: 'ui_tt_bbox', key: 'Alt+Z', desc: 'Bounding Boxes' },
+  camera:    { svg: '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', trl: null, key: null, desc: 'Camera / View' },
+  video:     { svg: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>', trl: 'ui_tt_cinema', key: null, desc: 'Cinema Orbit' },
+  // §CINEMA_ROW_ICONS (2026-07-18, user ask): Lucide, pulled verbatim (unpkg.com/lucide-static@1.25.0)
+  aperture:  { svg: '<circle cx="12" cy="12" r="10" /><path d="m14.31 8 5.74 9.94" /><path d="M9.69 8h11.48" /><path d="m7.38 12 5.74-9.94" /><path d="M9.69 16 3.95 6.06" /><path d="M14.31 16H2.83" /><path d="m16.62 12-5.74 9.94" />', trl: null, key: 'Alt+S', desc: 'Still Refine' },
+  footprints:{ svg: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" /><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" /><path d="M16 17h4" /><path d="M4 13h4" />', trl: null, key: 'Alt+P', desc: 'Populate' },
+  // PILL_DRAWER_REORGANIZATION.md §NEW ICONS — Lucide, pulled verbatim 2026-07-05 (unpkg.com/lucide-static)
+  bone:      { svg: '<path d="M17 10c.7-.7 1.69 0 2.5 0a2.5 2.5 0 1 0 0-5 .5.5 0 0 1-.5-.5 2.5 2.5 0 1 0-5 0c0 .81.7 1.8 0 2.5l-7 7c-.7.7-1.69 0-2.5 0a2.5 2.5 0 0 0 0 5c.28 0 .5.22.5.5a2.5 2.5 0 1 0 5 0c0-.81-.7-1.8 0-2.5Z" />', trl: 'ui_tt_xray', key: null, desc: 'X-Ray' },
+  hardHat:   { svg: '<path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" /><path d="M14 6a6 6 0 0 1 6 6v3" /><path d="M4 15v-3a6 6 0 0 1 6-6" /><rect x="2" y="15" width="20" height="4" rx="1" />', trl: null, key: null, desc: 'Inspect (unused, replaced by draftingCompass)' },
+  draftingCompass: { svg: '<path d="m12.99 6.74 1.93 3.44" /><path d="M19.136 12a10 10 0 0 1-14.271 0" /><path d="m21 21-2.16-3.84" /><path d="m3 21 8.02-14.26" /><circle cx="12" cy="5" r="2" />', trl: null, key: null, desc: 'Inspect' },
+  sailboat:  { svg: '<path d="M10 2v15" /><path d="M7 22a4 4 0 0 1-4-4 1 1 0 0 1 1-1h16a1 1 0 0 1 1 1 4 4 0 0 1-4 4z" /><path d="M9.159 2.46a1 1 0 0 1 1.521-.193l9.977 8.98A1 1 0 0 1 20 13H4a1 1 0 0 1-.824-1.567z" />', trl: null, key: null, desc: 'Navigate' },
   barChart:  { svg: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: 'ui_tt_export', key: null, desc: '4D/5D Export' },
   home:      { svg: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', trl: 'ui_tt_home', key: null, desc: 'Home' },
   // S266: Doc pill icons — New From Reference designer
   doc:       { svg: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>', trl: 'ui_tt_doc', key: 'D', desc: 'Document' },
   grid:      { svg: '<path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/>', trl: 'ui_tt_grid', key: null, desc: 'Grid' },
+  table:     { svg: '<path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/>', trl: 'ui_tt_table', key: null, desc: 'Table' },
   next:      { svg: '<path d="m9 18 6-6-6-6"/>', trl: 'ui_tt_next', key: null, desc: 'Next Phase' },
   save:      { svg: '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>', trl: 'ui_tt_save', key: null, desc: 'Save Design' },
   folderOpen: { svg: '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>', trl: 'ui_tt_open', key: null, desc: 'Open Design' },
@@ -54,16 +68,45 @@ var ICONS = {
   sunDim:    { svg: '<circle cx="12" cy="12" r="4"/><path d="M12 4h.01"/><path d="M20 12h.01"/><path d="M12 20h.01"/><path d="M4 12h.01"/><path d="M17.66 6.34h.01"/><path d="M17.66 17.66h.01"/><path d="M6.34 17.66h.01"/><path d="M6.34 6.34h.01"/>', trl: 'ui_exposure', key: null, desc: 'Exposure' },
   lightbulb: { svg: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>', trl: 'ui_ambient', key: null, desc: 'Ambient' },
   sunrise:   { svg: '<path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="M16 18a4 4 0 0 0-8 0"/>', trl: 'ui_hemisphere', key: null, desc: 'Hemisphere' },
+  // SPATIAL_PICKING_SPEC §S-3 — Lucide "route" verbatim (the warehouse pick-walk lens pill).
+  route:     { svg: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>', trl: null, key: null, desc: 'Pick Walk' },
+  // WH Walk UX §C-5 — switch-source mid-walk (Lucide rotateCcw, verbatim).
+  rotateCcw: { svg: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>', trl: null, key: null, desc: 'Switch source' },
   // HISTORY_KNOB_DIAL.md rework: "W" = World history (cross-page) — two overlapping outline circles.
   worldHist: { svg: '<circle cx="9.5" cy="12" r="6.5"/><circle cx="14.5" cy="12" r="6.5"/>', trl: null, key: 'w', desc: 'World History' },
   // "Z" per-page timeline — three small overlapping dots, the MIDDLE one filled.
   docHist:   { svg: '<circle cx="8" cy="12" r="3"/><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="16" cy="12" r="3"/>', trl: null, key: 'z', desc: 'Page history' },
   // Clear history (bomb) — Lucide bomb (lives in the W long-press drawer, NO keyboard shortcut).
-  bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' }
+  bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' },
+  // HR_BIM_Asset — ONE "FM / Operate" family icon (the 6 lenses now live in a drawer owned by hba_lens.js,
+  // which carries its own per-lens icons). Lucide 'building-2' = the operate-phase / facilities cockpit.
+  fmCockpit: { svg: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>', trl: null, key: null, desc: 'FM / Operate (unused, replaced by twoHeads)' },
+  twoHeads:  { svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><path d="M16 3.128a4 4 0 0 1 0 7.744" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><circle cx="9" cy="7" r="4" />', trl: null, key: null, desc: 'Human-Asset' },
+  barChart:  { svg: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: null, key: null, desc: 'Occupancy dashboard' },
+  // PILLS_CONSOLIDATION_REVIEW_2026-07-03 §ICON MAP — one glyph = ONE meaning everywhere. These five
+  // (Lucide, verbatim) break up the confirmed glyph collisions: checkList stays UBBL-only, maximize stays
+  // Fullscreen-only, share stays Share-only, disciplines stays Disciplines-only, rotateCcw stays Switch-source-only.
+  shieldCheck: { svg: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>', trl: null, key: null, desc: 'Verify Ledger' },
+  scale:       { svg: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>', trl: null, key: null, desc: 'Business Rule' },
+  locateFixed: { svg: '<line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/>', trl: null, key: null, desc: 'Reset / Re-center View' },
+  footprints:  { svg: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>', trl: null, key: null, desc: 'Trace Lineage' },
+  orbit:       { svg: '<circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M10.4 21.9a10 10 0 0 0 9.941-15.416"/><path d="M13.5 2.1a10 10 0 0 0-9.841 15.416"/>', trl: null, key: null, desc: 'Gravity View' },
+  waypoints:   { svg: '<circle cx="12" cy="4.5" r="2.5"/><path d="m10.2 6.3-3.9 3.9"/><circle cx="4.5" cy="12" r="2.5"/><path d="M7 12h10"/><circle cx="19.5" cy="12" r="2.5"/><path d="m13.8 17.7 3.9-3.9"/><circle cx="12" cy="19.5" r="2.5"/>', trl: null, key: null, desc: 'Untangle Graph' }
 };
 
-// HISTORY_KNOB_DIAL.md — the W pill's long-press drawer: two stacked chips above the pill.
-//   Z (docHist) = open THIS page's dot-timeline bar · bomb = clear history (warns first, no shortcut).
+// §OUTLINER_TAXONOMY_REDESIGN.md §2 Layer 1: DISPLAY-ONLY word mapping for the raw discipline
+// CODE (ACMV/ELEC/PLB/FP/MEP/STR/ARC) as stored in elements_meta.discipline / BOM discipline
+// names. Every filter/query/DocCanvas.setActiveDisc still runs on the raw code — this only
+// swaps rendered text. Fixed list, unmapped code falls back to itself (never blank/invented).
+var DISC_LABELS = {
+  ACMV: 'Air-Conditioning', ELEC: 'Electrical', PLB: 'Plumbing', PLMB: 'Plumbing',
+  FP: 'Fire Protection', STR: 'Structure', ARC: 'Architecture', MEP: 'Mechanical & Electrical'
+};
+function friendlyDisc(code) { return DISC_LABELS[code] || code; }
+
+// HISTORY_KNOB_DIAL.md — the W pill's long-press drawer.
+//   §2026-07-06: Z (docHist) moved OUT to its own row in the Navigate drawer (see panels.js
+//   _actions 'docHist') — only the dangerous bomb (clear history, warns first) stays hidden here.
 function _histIconSvg(name, color) {
   var ic = ICONS[name];
   return '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" ' +
@@ -96,8 +139,22 @@ function _worldHistDrawer(srcBtn) {
   if (!srcBtn) return;
   var r = srcBtn.getBoundingClientRect();
   var d = document.createElement('div'); d.id = 'whist-drawer';
-  d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:row;align-items:center;gap:6px;' +
-    'top:' + (r.top - 2) + 'px;left:' + Math.max(8, r.left - 104) + 'px;';   // SIDEWAYS: chips to the LEFT of the W pill (matches the _revealChip convention), not stacked above
+  // PERPENDICULAR auto-layout — draw the drawer ACROSS the pill strip, never ALONG it (a parallel drawer
+  // covers the neighbouring pills). Measure the strip container: a VERTICAL strip (viewer right-edge
+  // #mobile-pill) → a ROW to the LEFT of W; a HORIZONTAL strip → a COLUMN ABOVE. Same dynamic rule as
+  // erp idmp_pills/glassbowl_pills — self-correcting if a bar's orientation flips (the regression that bit
+  // the ERP bar when it went vertical). Chip order (bomb, then Z): row → bomb left/far, Z right/adjacent.
+  var _host = srcBtn.parentElement, _hr = _host ? _host.getBoundingClientRect() : r;
+  var _vertical = _hr.height >= _hr.width;
+  var _base = 'position:fixed;z-index:10000;display:flex;align-items:center;gap:6px;';
+  if (_vertical) {
+    d.style.cssText = _base + 'flex-direction:row;top:' + r.top + 'px;right:' +
+      Math.max(8, Math.round(window.innerWidth - r.left + 6)) + 'px;';
+  } else {
+    d.style.cssText = _base + 'flex-direction:column;bottom:' + (window.innerHeight - r.top + 6) +
+      'px;left:' + Math.max(8, r.left) + 'px;';
+  }
+  console.log('§PILL_DRAWER orient=' + (_vertical ? 'row(vertical-strip)' : 'col(horizontal-strip)'));
   function chip(name, title, color, onTap) {
     var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
     b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
@@ -106,15 +163,13 @@ function _worldHistDrawer(srcBtn) {
     b.addEventListener('pointerup', function (e) { e.stopPropagation(); onTap(); var dd = document.getElementById('whist-drawer'); if (dd) dd.remove(); });
     return b;
   }
-  d.appendChild(chip('docHist', 'Page history (Z) — this page\'s dot timeline', '#4fc3f7',
-    function () { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }));
   d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearHistoryWithWarning));
   document.body.appendChild(d);
   setTimeout(function () {
     var off = function (ev) { var dd = document.getElementById('whist-drawer'); if (dd && !dd.contains(ev.target)) { dd.remove(); document.removeEventListener('pointerdown', off, true); } };
     document.addEventListener('pointerdown', off, true);
   }, 0);
-  console.log('§PILL_DRAWER worldhist items=Z,bomb');
+  console.log('§PILL_DRAWER worldhist items=bomb');
 }
 
 function setupPanels(A) {
@@ -135,6 +190,17 @@ function setupPanels(A) {
   };
 
   // ── S265 Phase 5: A.createPanel() — reusable panel factory ──
+  // §PANEL-ABSTRACTION (2026-07-06) — every caller of createPanel gets, for free:
+  //   · draggable + close-by-× (pre-existing)
+  //   · correct pill highlight even when THIS panel's own × closes it (common/pill_builder.js's
+  //     MutationObserver auto-resyncs on any element add/remove — no manual call needed here)
+  //   · Tab (native, real <button> rows) + Arrow-key row traversal (viewer/panel_nav.js, already
+  //     built for the Find panel, now wired as every panel's default unless it opts out or brings
+  //     its own richer opts.zones)
+  //   · no-overlap desktop placement (A._placePanel) instead of every pane author hand-picking the
+  //     next unused magic-number offset (see the row-of-hardcoded right:12/428/864 columns in
+  //     hba_bom.js/hba_iot.js/hba_dashboard.js — that pattern silently collides the moment someone
+  //     adds a 4th pane and forgets to bump the number)
   A.createPanel = function(id, opts) {
     opts = opts || {};
     var el = document.createElement('div');
@@ -158,6 +224,14 @@ function setupPanels(A) {
       if (typeof opts.content === 'string') { el.insertAdjacentHTML('beforeend', opts.content); }
       else { el.appendChild(opts.content); }
     }
+    // §PANEL-NAV-AUTO: Arrow Up/Down through this panel's own <button> rows (Tab already reaches
+    // them natively; Enter/Space already fire native <button> clicks). Opt out with opts.nav:false
+    // (e.g. a panel with no row-shaped content), or supply opts.zones for accordion-style panels
+    // (see navigate_find.js's own richer zones — this default only covers the common flat-list case).
+    if (opts.nav !== false && window.PanelNav) {
+      var _zones = opts.zones || [{ id: 'rows', items: function() { return el.querySelectorAll('button:not(.bim-panel-close)'); } }];
+      window.PanelNav({ panel: el, zones: _zones, id: id, onClose: opts.onClose || function() { el.style.display = 'none'; } });
+    }
     // Draggable
     if (opts.draggable !== false && A._makeDraggable) {
       A._makeDraggable(el);
@@ -175,13 +249,68 @@ function setupPanels(A) {
     return el;
   };
 
+  // §PANEL-PLACE (2026-07-06) — nearest free slot instead of a hardcoded magic-number column.
+  // opts: { top, right, width, height } — width/height only need to be given when the panel is
+  // still display:none at call time (can't measure a hidden element's real box); pass the same
+  // numbers the panel's own inline style declares. Tries the default column, then cascades right→
+  // left in (width+gap) steps against every OTHER currently-visible .bim-panel (from window._panels,
+  // the existing panel-focus registry in scene.js — no new tracking list invented); falls back to
+  // the default slot (stacked) if every column in range is occupied, never throws/loops forever.
+  A._placePanel = function(el, opts) {
+    opts = opts || {};
+    var top = opts.top != null ? opts.top : 54;
+    var right0 = opts.right != null ? opts.right : 12;
+    var gap = 16;
+    var width = opts.width || el.offsetWidth || 320;
+    var height = opts.height || el.offsetHeight || 300;
+    function rectAt(right) {
+      var left = window.innerWidth - right - width;
+      return { left: left, right: left + width, top: top, bottom: top + height };
+    }
+    function overlaps(a, b) { return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; }
+    var others = (window._panels || []).filter(function(p) {
+      return p.el !== el && p.el.classList && p.el.classList.contains('bim-panel') &&
+             p.el.style.display !== 'none' && p.el.offsetWidth > 0;
+    }).map(function(p) { var r = p.el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; });
+    for (var col = 0; col < 12; col++) {
+      var right = right0 + col * (width + gap);
+      var cand = rectAt(right);
+      if (cand.left < 8) break;   // ran off the left edge of the viewport
+      if (!others.some(function(o) { return overlaps(cand, o); })) {
+        el.style.right = right + 'px'; el.style.left = 'auto'; el.style.top = top + 'px';
+        console.log('§PANEL_PLACE id=' + el.id + ' col=' + col + ' right=' + right + ' others=' + others.length);
+        return;
+      }
+    }
+    el.style.right = right0 + 'px'; el.style.top = top + 'px';
+    console.log('§PANEL_PLACE_FALLBACK id=' + el.id + ' (no free column in range, others=' + others.length + ')');
+  };
+
+  // §PANEL-AUTOPLACE — call A._placePanel automatically the instant ANY .bim-panel transitions from
+  // hidden to visible, regardless of who created it or how. Only fires on that one transition (a
+  // per-element _bimPanelVisible flag), so it never fights A._makeDraggable's own left/top writes
+  // while a panel is already open and being dragged around.
+  if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body) {
+    var _placeObserver = new MutationObserver(function(muts) {
+      muts.forEach(function(m) {
+        var pel = m.target;
+        if (!pel.classList || !pel.classList.contains('bim-panel')) return;
+        var visibleNow = pel.style.display !== 'none';
+        if (visibleNow && !pel._bimPanelVisible && !window._isMobile) A._placePanel(pel);
+        pel._bimPanelVisible = visibleNow;
+      });
+    });
+    _placeObserver.observe(document.body, { attributes: true, attributeFilter: ['style'], subtree: true });
+  }
+
   // ── S265 Phase 5 P1: Build Color Palette slider panel ──
   A._buildSunglassPanel = function() {
     var existing = document.getElementById('sunglass-slider-panel');
     if (!existing) return;
     // Replace the placeholder with a proper bim-panel
     existing.className = 'bim-panel';
-    existing.style.cssText = 'display:none; top:90px; right:70px; min-width:220px; max-width:280px;';
+    // §PANEL-SPREAD: upper-left — was top:90/right:70, same spot as Settings/drawers/JSON editor.
+    existing.style.cssText = 'display:none; top:70px; left:16px; min-width:220px; max-width:280px;';
 
     // Close button
     var closeBtn = document.createElement('span');
@@ -252,58 +381,72 @@ function setupPanels(A) {
       if (typeof updateLighting === 'function') updateLighting('hemi', v);
     }));
 
+    // §SHADOW-GROUND MERGE (PILL_DRAWER_REORGANIZATION.md): the old separate 4-button Ground
+    // picker (None/Grass/Earth/Paved) is REMOVED here — replaced by the single Shadow+Ground
+    // cycle swatch appended by _extendVisualFxPanel()/_buildShadowGroundRow() further down
+    // (runs after _actions exists, reusing the 'shadow' action's real fn/isActive).
+
     // Separator
-    var sep2 = document.createElement('hr');
-    sep2.style.cssText = 'border:none;border-top:1px solid rgba(255,255,255,0.1);margin:4px 0';
-    existing.appendChild(sep2);
+    var sepCinema = document.createElement('hr');
+    sepCinema.style.cssText = 'border:none;border-top:1px solid rgba(255,255,255,0.1);margin:4px 0';
+    existing.appendChild(sepCinema);
 
-    // Row 6: Ground texture (config-driven via ground_config.json). §S280g.
-    // Appears with Shadow (default applied on shadow-ON); retune live here.
-    var groundRow = document.createElement('div');
-    groundRow.className = 'bim-slider-row';
-    groundRow.style.cssText = 'flex-wrap:wrap;gap:4px;align-items:center';
-    var glabel = document.createElement('span');
-    glabel.textContent = 'Ground';
-    glabel.style.cssText = 'font-size:11px;color:#aaa;width:46px;flex-shrink:0';
-    groundRow.appendChild(glabel);
-    existing.appendChild(groundRow);
+    // §CINEMA_ROW_ICONS (2026-07-18, user ask): Still Refine (Alt+S) / Populate (Alt+P) / Cinema
+    // Orbit (Alt+C) — one icon-only row, no label text (dropped "Cinema Orbit (24s)" so all 3 fit
+    // on a single line). Was 1 button + text; now 3 buttons, active-state highlighted via the
+    // existing .bim-slider-row button.active CSS rule (viewer.html).
+    var cinemaRow = document.createElement('div');
+    cinemaRow.className = 'bim-slider-row';
+    cinemaRow.style.cssText = 'gap:8px;align-items:center;justify-content:center';
 
-    // §S280g-fix: setupPanels runs BEFORE setupTools (main.js), so A._loadGroundConfig is
-    // not defined yet at build time → zero buttons. Defer one tick so tools.js is ready,
-    // and fall back to a built-in option list if config can't load.
-    function _buildGroundButtons(opts) {
-      A._groundBtns = {};
-      A._refreshGroundBtns = function() {
-        Object.keys(A._groundBtns).forEach(function(k) {
-          var on = (A._groundTexKey || 'none') === k;
-          A._groundBtns[k].style.background = on ? 'rgba(79,195,247,0.30)' : 'rgba(255,255,255,0.06)';
-          A._groundBtns[k].style.color = on ? '#4fc3f7' : '#ccc';
-        });
-      };
-      opts.forEach(function(o) {
-        var b = document.createElement('button');
-        b.textContent = o.label;
-        b.style.cssText = 'flex:0 0 auto;padding:3px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:rgba(255,255,255,0.06);color:#ccc';
-        b.addEventListener('pointerup', function(e) {
-          e.stopPropagation();
-          if (A.setGroundTexture) A.setGroundTexture(o.key);
-          A._refreshGroundBtns();
-        });
-        A._groundBtns[o.key] = b;
-        groundRow.appendChild(b);
-      });
-      A._refreshGroundBtns();
-      console.log('§GROUND_ROW built opts=' + opts.length);
+    function _refreshCinemaRowIcons() {
+      // §CINEMA_ROW_BUSY: busy (pulsing) takes priority over active (steady) — both flags can be
+      // true at once (e.g. _stillRefineActive is true for the whole frozen-still lifetime, busy
+      // only while it's still converging) so busy must be checked first to show the right state.
+      stillBtn.classList.toggle('busy', !!A._stillRefineBusy);
+      stillBtn.classList.toggle('active', !A._stillRefineBusy && !!A._stillRefineActive);
+      var populateOn = !!(A.populateActive && A.populateActive());
+      populateBtn.classList.toggle('busy', !!A._populateBusy);
+      populateBtn.classList.toggle('active', !A._populateBusy && populateOn);
     }
-    var _GROUND_FALLBACK = [
-      { key: 'none', label: 'None' }, { key: 'grass', label: 'Grass' },
-      { key: 'earth', label: 'Earth' }, { key: 'paved', label: 'Paved' }
-    ];
-    setTimeout(function() {
-      var p = (typeof A._loadGroundConfig === 'function') ? A._loadGroundConfig() : Promise.resolve(null);
-      p.then(function(cfg) { _buildGroundButtons((cfg && cfg.options) || _GROUND_FALLBACK); })
-       .catch(function() { _buildGroundButtons(_GROUND_FALLBACK); });
-    }, 0);
+
+    var stillBtn = A.icon('aperture', { size: 18, title: 'Still Refine (Alt+S)', onClick: function() {
+      if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine();
+      _refreshCinemaRowIcons();
+    }});
+    cinemaRow.appendChild(stillBtn);
+
+    var populateBtn = A.icon('footprints', { size: 18, title: 'Populate (Alt+P)', onClick: function() {
+      if (typeof A.togglePopulate === 'function') A.togglePopulate();
+      _refreshCinemaRowIcons();
+    }});
+    cinemaRow.appendChild(populateBtn);
+
+    // §MAXQ: this icon now runs the Max-Quality Orbiter export (each frame a full Alt+S fold,
+    // ~8 min for the 24s clip). Click while running = cancel (start() toggles), so the icon
+    // stays CLICKABLE during the cook — no pointerEvents lock like the old live-capture orbit.
+    // Old A.startCinemaOrbit stays console-callable as the quick live-capture fallback.
+    var cinemaBtn = A.icon('video', { size: 18, title: 'MaxQ Movie (Alt+C — press again to cancel)', onClick: function() {
+      if (typeof A.startMaxQualityOrbit !== 'function') {
+        if (typeof A.startCinemaOrbit === 'function' && !A._stillRefineActive) A.startCinemaOrbit();
+        return;
+      }
+      A.startMaxQualityOrbit();
+      cinemaBtn.classList.add('active');
+      var _checkDone = setInterval(function() {
+        if (A._maxqActive || A._stillRefineActive) return;
+        clearInterval(_checkDone);
+        cinemaBtn.classList.remove('active');
+        _refreshCinemaRowIcons();
+      }, 500);
+    }});
+    cinemaRow.appendChild(cinemaBtn);
+    existing.appendChild(cinemaRow);
+
+    // Keep icon highlight honest against the Alt+S/Alt+P keyboard shortcuts too, not just this
+    // row's own clicks — cheap poll (same 500ms cadence as the cinema-done check above), only
+    // while the panel is actually visible.
+    setInterval(function() { if (existing.style.display !== 'none') _refreshCinemaRowIcons(); }, 500);
 
     // Draggable + pointer isolation
     if (A._makeDraggable) A._makeDraggable(existing);
@@ -320,6 +463,20 @@ function setupPanels(A) {
   if (_sb) _sb.classList.remove('overflow-open');
   var _sc = document.getElementById('overflow-scrim');
   if (_sc) _sc.classList.remove('active');
+
+  // §FIND_VIS_TRACE (diagnostic, 2026-07-06): same "appears on its own" report could also be
+  // THIS element (legacy id, today only hosts unrelated overflow buttons) rather than the real
+  // Find panel — watch it too so the class-toggle path isn't ruled out by assumption.
+  if (_sb) {
+    var _sbLastVis = _sb.classList.contains('overflow-open');
+    new MutationObserver(function () {
+      var vis = _sb.classList.contains('overflow-open');
+      if (vis === _sbLastVis) return;
+      _sbLastVis = vis;
+      console.log('§FIND_VIS_TRACE search-box overflow-open=' + vis + ' at=' + Date.now() +
+        '\n' + (new Error().stack));
+    }).observe(_sb, { attributes: true, attributeFilter: ['class'] });
+  }
 
   // Prevent touch/click on floating panels from reaching canvas underneath
   // S265 Phase 4: storey-panel/disc-panel removed (inside HUD now)
@@ -567,6 +724,7 @@ function setupPanels(A) {
       A.filterBatchedMesh(mesh, meta => A._storeyVisible(meta.storey));
     });
     console.log(`[S200] §STOREY_FILTER ${Array.isArray(storey) ? '[' + storey.join(',') + ']' : (storey || 'ALL')}`);
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -594,13 +752,64 @@ function setupPanels(A) {
     A.hiddenDiscs.clear();
     if (list && list.length) {
       var keep = new Set(list);
-      // Build hiddenDiscs from scene — hide everything not in the keep set
+      // Build hiddenDiscs from scene — hide everything not in the keep set.
+      // Must enumerate ALL three mesh representations (plain Mesh, InstancedMesh,
+      // BatchedMesh), not just plain Mesh — a discipline that's ENTIRELY batched
+      // (e.g. a large, uniform discipline like Architecture) was invisible here,
+      // so it never got added to `keep`'s complement and stayed permanently hidden
+      // the first time ANY isolate/multi-select ran, even after switching back to
+      // "ALL" — because _applyDiscVisibility only re-applies whatever's already in
+      // hiddenDiscs, it never rediscovers a wrongly-omitted discipline.
       A.collectMeshes(o => o.isMesh && o.userData.disc).forEach(obj => {
         if (!keep.has(obj.userData.disc)) A.hiddenDiscs.add(obj.userData.disc);
       });
+      for (var _bmId in A._batchMeta) {
+        A._batchMeta[_bmId].forEach(function(meta) {
+          if (meta.disc && !keep.has(meta.disc)) A.hiddenDiscs.add(meta.disc);
+        });
+      }
+      for (var _imId in A._instanceMeta) {
+        A._instanceMeta[_imId].forEach(function(meta) {
+          if (meta.disc && !keep.has(meta.disc)) A.hiddenDiscs.add(meta.disc);
+        });
+      }
     }
     A._applyDiscVisibility();
     console.log('[S200] §DISC_FILTER ' + (list && list.length ? '[' + list.join(',') + ']' : 'ALL'));
+  };
+
+  // §OUTLINER_TAXONOMY_REDESIGN.md §3/§6b — Role/profession VIEW FILTER. Convenience only, NOT
+  // access control: no auth, no gating, anyone can cycle it, same as any other view toggle (xray,
+  // section, night...). Reuses A.filterDiscs (§NAV_FIND_002) exclusively — the ONLY filtering
+  // mechanism in this app; no new filter engine built here. Discipline codes limited to what was
+  // actually confirmed present in elements_meta.discipline this session (ACMV/ELEC/PLB/FP/MEP/
+  // STR/ARC) — no invented trade categories.
+  // Cleaner: no discipline code represents "cleaning" — it's not an equipment trade, it's
+  // whole-building access. Tagging a cleaner to one system code would misrepresent their scope,
+  // so the honest preset is discs:[] (no filter — sees everything), distinguished from the plain
+  // "All" state only by its label/console role key, not by different scene visibility.
+  var ROLE_PRESETS = [
+    { key: 'plumber',     label: 'Plumber',     discs: ['PLB', 'FP'] },
+    { key: 'electrician', label: 'Electrician', discs: ['ELEC'] },
+    { key: 'acmv',        label: 'ACMV Tech',   discs: ['ACMV'] },
+    { key: 'structural',  label: 'Structural',  discs: ['STR'] },
+    { key: 'cleaner',     label: 'Cleaner',     discs: [] }
+  ];
+  A._roleFilterIdx = -1;  // -1 = All (no role active)
+
+  // Cycle: All -> Plumber -> Electrician -> ACMV Tech -> Structural -> Cleaner -> All ...
+  A.cycleRoleFilter = function() {
+    A._roleFilterIdx += 1;
+    if (A._roleFilterIdx >= ROLE_PRESETS.length) A._roleFilterIdx = -1;
+    var preset = A._roleFilterIdx === -1 ? null : ROLE_PRESETS[A._roleFilterIdx];
+    var discs = preset ? preset.discs : [];
+    A.filterDiscs(discs);
+    console.log('[S200] §ROLE_FILTER role=' + (preset ? preset.key : 'all') + ' discs=[' + discs.join(',') + ']');
+    return preset;
+  };
+
+  A._roleFilterLabel = function() {
+    return A._roleFilterIdx === -1 ? 'All' : ROLE_PRESETS[A._roleFilterIdx].label;
   };
 
   // §S280d: shared traversal for disc + storey combined visibility
@@ -619,6 +828,7 @@ function setupPanels(A) {
         return !A.hiddenDiscs.has(meta.disc) && A._storeyVisible(meta.storey);
       });
     });
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -640,7 +850,17 @@ function setupPanels(A) {
     A.collectMeshes(o => o.isBatchedMesh).forEach(mesh => {
       A.filterBatchedMesh(mesh, meta => keep(meta.guid));
     });
-    console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)));
+    // §MERGED_GUID: merged meshes are plain isMesh with no userData.guid — they matched NONE of the
+    // three collectors above, so an isolate used to leave them fully visible. Fourth collector, same
+    // keep() predicate, per-element via the index-range map.
+    var _mgVis = 0, _mgMeshes = 0;
+    A.collectMeshes(o => o.userData && o.userData.isMerged).forEach(mesh => {
+      _mgMeshes++;
+      A.filterMergedMesh(mesh, meta => { var k = keep(meta.guid); if (k) _mgVis++; return k; });
+    });
+    console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)) +
+      (_mgMeshes ? ' merged_meshes=' + _mgMeshes + ' merged_visible=' + _mgVis : ''));
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -722,22 +942,22 @@ function setupPanels(A) {
       Object.entries(A.discCounts).slice(0, 6).map(([d, c]) => `${d}:${c.toLocaleString()}`).join(' ') + '</small>';
   };
 
-  // §S281 P3: register overflow pill icons with InputReg once (idempotent).
-  // Exact same 7 button/flag pairs the old inline _s() block synced — pure refactor.
-  var _overflowIconsRegistered = false;
-  function _registerOverflowIcons() {
-    if (_overflowIconsRegistered || !window.InputReg) return;
-    var R = window.InputReg;
-    R.register({ id: 'xray',     kind: 'icon', btnId: 'xray-btn',           isActive: function() { return A.xrayOn; },     release: function() { if (A.xrayOn && A.toggleXray) A.toggleXray(); } });
-    R.register({ id: 'section',  kind: 'icon', btnId: 'section-btn',        isActive: function() { return A.sectionOn; },  release: function() { if (A.sectionOn && A.toggleSection) A.toggleSection(); } });
-    R.register({ id: 'sunglass', kind: 'icon', btnId: 'sunglass-btn',       isActive: function() { return A.sunglassOn; }, release: function() { if (A.sunglassOn && window.toggleSunglass) window.toggleSunglass(); } });
-    R.register({ id: 'fly',      kind: 'icon', btnId: 'fly-btn',            isActive: function() { return !!A.flyActive; }, release: function() { if (A.flyActive && window.toggleFlyAround) window.toggleFlyAround(); } });
-    R.register({ id: 'shadow',   kind: 'icon', btnId: 'shadow-overflow-btn', isActive: function() { return A._shadowOn; }, release: function() { if (A._shadowOn && window.toggleShadow) window.toggleShadow(); } });
-    R.register({ id: 'bg',       kind: 'icon', btnId: 'bg-overflow-btn',     isActive: function() { return A._whiteBg; },  release: function() { if (A._whiteBg && window.toggleBackground) window.toggleBackground(); } });
-    R.register({ id: 'grid2d',   kind: 'icon', btnId: 'grid-2d-btn',         isActive: function() { return !!(A._gridOverlayState && A._gridOverlayState.active); }, release: function() {} });
-    _overflowIconsRegistered = true;
-    console.log('§S281 overflow icons registered with InputReg');
-  }
+  // §PILL-AUDIT (WATCHDOG_SCALE_AND_UX_SWEEP.md / SCALE_AND_UX_SWEEP.md §3.6, 2026-07-05): the old
+  // _registerOverflowIcons() below registered 7 InputReg `kind:'icon'` entries (xray/section/sunglass/fly/
+  // shadow/bg/grid2d) keyed to a pre-§S280 overflow-menu's button ids (xray-btn, section-btn, sunglass-btn,
+  // fly-btn, shadow-overflow-btn, bg-overflow-btn, grid-2d-btn). Audited every one against the live DOM:
+  // #search-box (their container) is `display:none !important` in viewer.html (permanently retired), #more-btn
+  // doesn't exist at all, and only #section-btn survives as an empty hidden stub — the other 6 ids don't exist
+  // anywhere in the HTML or any createElement/innerHTML call (grepped clean). viewer/tour.js and
+  // viewer/grid_overlay.js already carry their own "may be null (pill removed button)" defensive null-checks
+  // for fly-btn/grid-2d-btn — the codebase already knows these are gone. The CANONICAL, live highlight path for
+  // these exact same toggles is common/pill_builder.js's own _sync() over the `_actions` array below (ids
+  // xray/section/shadow/fly/palette/background/2d, driving #pill-<id> buttons) — this stale registration was a
+  // pure pre-consolidation leftover (PR #635's "ONE canonical pill_builder.js" pass missed it), never fixed
+  // anything, and only risked shadowing a future InputReg._icons lookup with a dead entry. Deleted (not just
+  // 'shadow' — all 7, since none of their DOM targets are live); the canonical _actions-array path is unchanged.
+  // §PILL_AUDIT ids_checked=7 collisions=[xray,section,sunglass,fly,shadow,bg,grid2d] removed=[xray,section,sunglass,fly,shadow,bg,grid2d]
+  console.log('§PILL_AUDIT ids_checked=7 collisions=[xray,section,sunglass,fly,shadow,bg,grid2d] removed=[xray,section,sunglass,fly,shadow,bg,grid2d] (dead overflow-menu registration removed — canonical path = pill_builder.js _actions/_sync)');
 
   // ── S265: Icon Pill overflow toggle + §-tags ──
   window.toggleOverflow = function() {
@@ -749,24 +969,10 @@ function setupPanels(A) {
     box.classList.toggle('overflow-open', opening);
     if (scrim) scrim.classList.toggle('active', opening);
     if (moreBtn) moreBtn.classList.toggle('active', opening);
-    // S265: sync active state on open. §S281 P3: InputReg.syncActiveButtons() is the
-    // single highlight authority (icons registered once below). Identical button/flag
-    // mapping to the prior inline _s() block; falls back to inline if registry absent.
-    if (opening) {
-      if (window.InputReg) {
-        _registerOverflowIcons();
-        window.InputReg.syncActiveButtons();
-      } else {
-        var _s = function(id, on) { var b = document.getElementById(id); if (b) b.classList.toggle('active', !!on); };
-        _s('xray-btn', A.xrayOn);
-        _s('section-btn', A.sectionOn);
-        _s('sunglass-btn', A.sunglassOn);
-        _s('fly-btn', A.flyActive);
-        _s('shadow-overflow-btn', A._shadowOn);
-        _s('bg-overflow-btn', A._whiteBg);
-        _s('grid-2d-btn', A._gridOverlayState && A._gridOverlayState.active);
-      }
-    }
+    // §PILL-AUDIT: the legacy per-button _s() sync (and its InputReg _registerOverflowIcons() twin) targeted
+    // the same retired #search-box overflow menu (see note above) — removed. #search-box is permanently
+    // display:none, so this toggle is a harmless no-op today; kept only as the '.' shortcut's defensive
+    // fallback when window.toggleMobilePill is somehow absent (scene.js).
     console.log('§UI_OVERFLOW ' + (opening ? 'open' : 'close'));
   };
   // §-tag: pill rendered
@@ -875,7 +1081,7 @@ function setupPanels(A) {
             row.appendChild(ic);
             // Label
             var lbl = document.createElement('span');
-            lbl.textContent = d;
+            lbl.textContent = friendlyDisc(d);
             lbl.style.cssText = 'color:' + (_discColorMap[d] || '#ccc') + ';font:bold 13px monospace;';
             row.appendChild(lbl);
             // Active indicator
@@ -1100,58 +1306,127 @@ function setupPanels(A) {
     // pill:false entries appear in Help/Settings but not in the pill strip.
     var I = ICONS; // shorthand
     var _actions = [
-      { id: 'redpill',    name: 'Doc Mode',       key: ',', platform: 'desktop', img: 'redpill.png', icon: '', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); }, isActive: function() { return !!window._docMode; } },
-      { id: 'find',       name: 'Find / Navigate', key: 'f', icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
+      // Document verbs — Save the open building / Open a saved one. Native OS dialogs, no card.
+      { id: 'save',       name: 'Save Building',  key: 'Ctrl+S', icon: I.save.svg,
+        fn: function() { if (A.saveModelDb) A.saveModelDb(); },
+        children: [ { name: 'Save the open building to a .db file' }, { name: 'Native Save As… dialog — pick name + folder' }, { name: 'Re-openable with Open (Ctrl+O)' } ] },
+      { id: 'open',       name: 'Open Building',  key: 'Ctrl+O', icon: I.folderOpen.svg,
+        fn: function() { if (A.openModelDb) A.openModelDb(); },
+        children: [ { name: 'Open a saved .db file' }, { name: 'Native Open… dialog' }, { name: 'Replaces the current scene' } ] },
+      // PILL_DRAWER_REORGANIZATION.md §2 Navigate — absorbed into the Sailboat drawer below.
+      // pill:false + keepOpen removed from rail; fn/isActive/hold/key wiring UNCHANGED (single
+      // source of truth — the Navigate drawer rows call these SAME entries by id).
+      { id: 'find',       name: 'Find / Navigate', key: 'f', pill: false, icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
         children: [ { name: 'Search by name/class' }, { name: 'Filter by storey/type' }, { name: 'Voice search (mic)' }, { name: 'Navigate to element' } ] },
-      { id: 'help',       name: 'Help',            key: 'F1', icon: I.lifeBuoy.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
+      // §OUTLINER_TAXONOMY_REDESIGN.md §3/§6b: Eye icon freed by the bone/X-Ray swap, repurposed
+      // as the Role/Profession view filter — cycles All -> Plumber -> Electrician -> ACMV Tech ->
+      // Structural -> Cleaner -> All, each tap calling A.filterDiscs (§NAV_FIND_002), the ONLY
+      // filtering mechanism reused here. Convenience view toggle, NOT access control (no auth).
+      { id: 'roleFilter', name: 'Role View',       key: 'r', pill: false, icon: I.eye.svg,
+        fn: function() { if (typeof A.cycleRoleFilter === 'function') A.cycleRoleFilter(); },
+        isActive: function() { return typeof A._roleFilterIdx === 'number' && A._roleFilterIdx !== -1; },
+        stateLabel: function() { return typeof A._roleFilterLabel === 'function' ? A._roleFilterLabel() : 'All'; },
+        children: [ { name: 'Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner)' }, { name: 'Filters the 3D scene + Outliner to that role\'s disciplines' }, { name: 'Convenience filter only — not access control' } ] },
+      { id: 'help',       name: 'Help',            key: 'F1', icon: I.circleHelp.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
       // HISTORY_KNOB_DIAL.md rework: ONE "W" World-history pill replaces the old History pill.
       //   TAP        = open the cross-page overlay (which building/doc/page).
-      //   LONG-PRESS = a small drawer: Z (this page's dot-timeline bar) + bomb (clear history, warns first).
-      { id: 'worldhist',  name: 'World History',   key: 'w', icon: I.worldHist.svg,
+      //   LONG-PRESS = the bomb only now (clear history, warns first) — Z moved out, see 'docHist'
+      //     below (2026-07-06, user: the dangerous action stays hidden, the safe one doesn't).
+      // PILL_DRAWER_REORGANIZATION.md §2: absorbed into Navigate — own tap/long-press UNCHANGED per spec.
+      { id: 'worldhist',  name: 'World History',   key: 'w', pill: false, icon: I.worldHist.svg,
         fn: function() { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); },
         hold: function(btn) { _worldHistDrawer(btn); },
         isActive: function() { var p = document.getElementById('whole-hist-panel'); return !!(p && p.classList.contains('show')); },
-        children: [ { name: 'History across ALL pages — viewer, iDempiere, Gravity' }, { name: 'Whole | This page toggle' }, { name: 'Day strip — step back/forward by day' }, { name: 'Tap a card to jump to that building/doc' }, { name: 'Long-press → Z page-timeline + clear (bomb)' } ] },
-      { id: 'walk',       name: 'Walk',            platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }, isActive: function() { return !!A._walkMode; } },
+        children: [ { name: 'History across ALL pages — viewer, iDempiere, Gravity' }, { name: 'Whole | This page toggle' }, { name: 'Day strip — step back/forward by day' }, { name: 'Tap a card to jump to that building/doc' }, { name: 'Long-press → clear (bomb), warns first' } ] },
+      // §2026-07-06 (user): the Z page-timeline used to live ONLY behind World History's long-press
+      // chip, alongside the bomb — buried next to a genuinely dangerous action for no reason (Z is
+      // read-only). Promoted to its own visible row in the SAME panel (Navigate drawer), right next
+      // to World History. Existing 'z' key (already wired in scene.js _shortcuts, ICONS.docHist.key)
+      // is unchanged — now it's actually discoverable (shows in this row + Help) instead of hiding
+      // inside a hold-only chip. Bomb stays long-press-only on 'worldhist' above, unchanged.
+      { id: 'docHist',    name: 'Page History',    key: 'z', pill: false, icon: I.docHist.svg,
+        fn: function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); },
+        isActive: function() { var b = document.getElementById('universal-hist-btns'); return !!(b && b.style.display !== 'none'); },
+        children: [ { name: 'This page\'s own dot timeline' }, { name: 'Step back/forward through your edits' } ] },
+      // PILL_DRAWER_REORGANIZATION.md §2: absorbed into Navigate on mobile — still NEVER on desktop
+      // (the Navigate drawer row-builder re-applies the same platform gate).
+      { id: 'walk',       name: 'Walk',            platform: 'mobile', pill: false, icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }, isActive: function() { return !!A._walkMode; } },
+      // SPATIAL_PICKING_SPEC §S-3 — DATA-GATED (the pos-pill showWhen precedent): starts pill:false;
+      // wh_walk.js flips it on + rebuilds ONLY when the loaded model carries locator-GUID bins (§S-1).
+      { id: 'whwalk',     name: 'Pick Walk',       pill: false, icon: I.route.svg,
+        fn: function() { if (window.WHWalk) WHWalk.toggle(); },
+        isActive: function() { return !!(window.WHWalk && WHWalk.isOpen && WHWalk.isOpen()); },
+        children: [ { name: 'Route over locators (walk order)' }, { name: 'Fly-to next bin, FIND-lens depth' }, { name: 'Scan bin QR / type code' }, { name: 'Signed pick group per bin' } ] },
       { id: 'share',      name: 'Share',           key: '/', icon: I.share.svg, fn: function() { if (A.quickShare) A.quickShare(); } },
-      { id: 'measure',    name: 'Measure',         key: 'm', keepOpen: true, icon: I.ruler.svg,
+      // HR_BIM_Asset — ONE "Human-Asset" family pill (RESUME_HR_BIM_ASSET.md §FM-FAMILY + §P10a, user 2026-07-01
+      // / renamed 2026-07-02). De-clutter: the HBA lenses+panes (Tenancy folded into Occupancy = de-conflate)
+      // live under one pill that opens a wake-aware drawer. DATA-GATED like whwalk: pill:false until
+      // viewer/hba_lens.js detects ≥1 lens with data in the loaded building. The drawer logic + per-lens greying
+      // live in hba_lens.js (the additive HBA module) — panels.js carries ONLY this one entry, keeping the
+      // shared bar (and the Teams-adjacent file) minimal. Inert if hr_bim_asset/* did not load. id stays `hbaFM`
+      // (internal, unrenamed — 29+ witness files reference it); only the user-visible label changed.
+      { id: 'hbaFM',      name: 'Human-Asset',     pill: false, icon: I.twoHeads.svg,
+        fn: function() { if (window.HBALens && HBALens.openFamilyDrawer) HBALens.openFamilyDrawer(A); },
+        isActive: function() { return !!(window.HBALens && HBALens.familyActive && HBALens.familyActive()); },
+        children: [ { name: 'Operate-phase (7D) cockpit — one model, lenses each answering ONE question' }, { name: 'Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard' }, { name: 'Wake-aware: only lenses with data in THIS building are enabled (others greyed)' }, { name: 'All off one signed op-log; toggle a lens off restores the model' } ] },
+      // PILL_DRAWER_REORGANIZATION.md §4 Inspect — absorbed into the HardHat drawer below.
+      // Long-press→Clash chip UNCHANGED (clash entry itself untouched, still pill:false/chip-only).
+      { id: 'measure',    name: 'Measure',         key: 'm', pill: false, icon: I.ruler.svg,
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
         hold: function(btn) { _revealChip(btn, 'clash', I.triangle.svg, function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },
-        isActive: function() { return !!A._measureOn; } },
+        isActive: function() { return !!A.measureActive; } },
       { id: 'clash',      name: 'Clash Matrix',    key: 'c', pill: false, icon: I.triangle.svg,
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
-        children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1\u2013100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
-      { id: 'xray',       name: 'X-Ray',           key: 'Alt+Z', icon: I.eye.svg, fn: function() { if (typeof toggleXray === 'function') toggleXray(); },
-        hold: function(btn) { _revealChip(btn, 'bbox', I.box.svg, function(){ if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }); },
-        isActive: function() { return !!A._xrayOn; } },
-      // Alt+X bounding-box envelope ghost — hold-chip off X-Ray (sibling x-ray mode); pill:false → Help/Settings only, no standalone pill.
-      { id: 'bbox',       name: 'Bounding Boxes',  key: 'Alt+X', pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
-      { id: 'tm',         name: 'Time Machine',    key: 't', icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
-        children: [ { name: 'Gantt timeline' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
-      { id: 'section',    name: 'Section Cut',     key: 'x', icon: I.scissors.svg, fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; },
-        children: [ { name: 'Y axis (vertical)' }, { name: 'X axis (lateral)' }, { name: 'Z axis (depth)' }, { name: 'Slider 0\u2013100%' }, { name: 'Bookmarks' } ] },
-      { id: 'background', name: 'Background',      key: 'b', keepOpen: true, icon: I.contrast.svg,
+        children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1–100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
+      // PILL_DRAWER_REORGANIZATION.md §4: icon Eye→Bone (Eye freed, Bone = X-ray metaphor).
+      // REVISED (user, 2026-07-06): Alt+X retired — this row is now a 3-state cycle
+      // Off→X-Ray→Bbox→Off (A.cycleXrayBboxMode, tools.js), no more hold-to-reveal chip.
+      { id: 'xray',       name: 'X-Ray / Bbox',    key: 'Alt+Z', pill: false, icon: I.bone.svg,
+        fn: function() { if (typeof A.cycleXrayBboxMode === 'function') A.cycleXrayBboxMode(); },
+        isActive: function() { return !!A.xrayOn || (typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()); },
+        stateLabel: function() { return A.xrayOn ? 'X-Ray' : ((typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()) ? 'Bbox' : 'Off'); } },
+      // Bounding-box envelope ghost — absorbed into the 'xray' cycle above, key removed (was
+      // Alt+X). Entry kept (pill:false) only so Settings' pill editor still has a stable id.
+      { id: 'bbox',       name: 'Bounding Boxes',  key: null, pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
+      { id: 'tm',         name: 'Time Machine',    key: 't', pill: false, icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
+        children: [ { name: 'Gantt timeline' }, { name: 'Author 4D schedule (✎)' }, { name: 'What-if (slip a phase)' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
+      { id: 'section',    name: 'Section Cut',     key: 'x', pill: false, icon: I.scissors.svg, fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; },
+        children: [ { name: 'Y axis (vertical)' }, { name: 'X axis (lateral)' }, { name: 'Z axis (depth)' }, { name: 'Slider 0–100%' }, { name: 'Bookmarks' } ] },
+      // PILL_DRAWER_REORGANIZATION.md §1 Visual FX — absorbed into the Palette (sunglass) panel.
+      // Screenshot hold-chip DELETED (§DELETIONS — screenshot itself removed below).
+      { id: 'background', name: 'Background',      key: 'b', pill: false, icon: I.contrast.svg,
         fn: function() { if (typeof window.toggleBackground === 'function') window.toggleBackground(); },
-        hold: function(btn) { _revealChip(btn, 'screenshot', I.camera.svg, function(){ if (A.screenshot) A.screenshot(); }); },
         isActive: function() { return !!A._whiteBg; } },
-      { id: 'screenshot', name: 'Screenshot',      key: 's', pill: false, icon: I.camera.svg, fn: function() { if (A.screenshot) A.screenshot(); } },
-      { id: 'night',      name: 'Night',           key: 'n', icon: I.moon.svg, fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightOn; } },
+      { id: 'night',      name: 'Night',           key: 'n', pill: false, icon: I.moon.svg, fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightMode; } },
       { id: 'palette',    name: 'Palette',         key: 'p', icon: I.palette.svg, fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); }, isActive: function() { return !!A.sunglassOn; },
-        children: [ { name: 'Ambience 0\u2013100' }, { name: 'Sun 0\u20135' }, { name: 'Exposure 0.1\u20133' }, { name: 'Ambient 0\u20132' }, { name: 'Hemisphere 0\u20132' } ] },
-      { id: 'shadow',     name: 'Shadow',          key: 'h', icon: I.cloud.svg, fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
-      { id: 'fly',        name: 'Fly Tour',        key: 'l', icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A._flyOn; } },
-      { id: 'report',     name: '4D / 5D',         key: '4', icon: I.barChart.svg, fn: function() { if (A.export4D5D) A.export4D5D(); } },
-      { id: '2d',         name: '2D Grid',         key: '2', pill: false, icon: I.layout.svg, fn: function() { if (typeof window.open2DPlans === 'function') window.open2DPlans(); } },
+        children: [ { name: 'Ambience 0–100' }, { name: 'Sun 0–5' }, { name: 'Exposure 0.1–3' }, { name: 'Ambient 0–2' }, { name: 'Hemisphere 0–2' }, { name: 'Night' }, { name: 'Shadow + Ground (cycle)' }, { name: 'Reverse background' }, { name: 'Sound FX' } ] },
+      // §SHADOW-GROUND MERGE: one 4-state cycle (Off→Grass→Earth→Paved→Off) — A.toggleShadow's
+      // BODY changed in tools.js to do the cycling; this entry (id/key/fn UNCHANGED) still drives
+      // the 'h' shortcut + Help listing. Row rendered specially (real texture-swatch) — see
+      // _buildShadowGroundRow() below, not the generic drawer-row.
+      { id: 'shadow',     name: 'Shadow + Ground', key: 'h', pill: false, icon: I.cloud.svg, fn: function() { if (typeof A.toggleShadow === 'function') A.toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
+      { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A.flyActive; } },
+      // FLY_TOUR_DLOD_SCALE.md §9: nav-scope DLOD pill — sibling of Fly Tour (must be reachable
+      // during tours/orbit, unlike TM's tm-lod which dies with the TM panel). Same box glyph as
+      // tm-lod. Default OFF; no-ops with a toast on <50k-element buildings (§DLOD_NAV_GATE).
+      // 2026-07-21 user feedback: key 'o' (bOx; 'b' is Background) + listed in Navigate drawer —
+      // v1 registered the entry but put it in NO drawer id-list, so the icon rendered nowhere.
+      { id: 'dlodnav',    name: 'Nav LOD (large bldgs)', key: 'o', pill: false,
+        icon: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+        fn: function() { if (typeof window.toggleDlodNav === 'function') window.toggleDlodNav(); },
+        isActive: function() { return !!window._dlodNavOn; },
+        children: [ { name: 'Boxes far/off-screen elements while you fly/orbit' }, { name: 'Real mesh within 50 m + in view' }, { name: 'Off during Time Machine, Find isolate, Cinema' } ] },
+      { id: 'report',     name: '4D / 5D',         key: '4', pill: false, icon: I.barChart.svg, fn: function() { if (A.export4D5D) A.export4D5D(); } },
       { id: 'issues',     name: 'Issues',          key: 'i', pill: false, icon: I.clipboard.svg,
         fn: function() { if (typeof toggleIssues === 'function') toggleIssues(); },
         children: [ { name: 'Snag photo + annotation' }, { name: 'Fly to clash deep-link' }, { name: 'Export Excel' } ] },
-      { id: 'record',     name: 'Record',          key: 'r', pill: false, icon: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
-        fn: function() { if (typeof toggleRecord === 'function') toggleRecord(); } },
       { id: 'fullscreen', name: 'Fullscreen',      key: 'F11', pill: false, icon: I.maximize.svg,
         fn: function() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } },
-      { id: 'precision',  name: 'Precision (Fine)', key: 'Caps Lock', keepOpen: true, icon: '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/>',
+      // PILL_DRAWER_REORGANIZATION.md §2 Camera/View — absorbed into the Camera drawer below.
+      // §MASTER-ICON BEHAVIOR fix: Feather no longer dual-fires (old `hold` reveal-chip to
+      // Reset/Pivot REMOVED — those are now their own rows inside the Camera/View drawer).
+      { id: 'precision',  name: 'Precision (Fine)', key: 'Caps Lock', pill: false, icon: '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/>',
         fn: function() { if (typeof window.togglePrecisionFine === 'function') window.togglePrecisionFine(); },
-        hold: function(btn) { if (typeof window.revealPrecisionReset === 'function') window.revealPrecisionReset(btn); },
         isActive: function() { return !!window._precisionFine; } },
       { id: 'cam-reset',  name: 'Reset Camera',    key: 'a', pill: false,
         icon: '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/>',
@@ -1160,23 +1435,297 @@ function setupPanels(A) {
         icon: '<path d="M20.341 6.484A10 10 0 0 1 10.266 21.85"/><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152"/><circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/>',
         fn: function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },
         isActive: function() { return !!window._autoPivot; } },
-      { id: 'home',       name: 'Home',            icon: I.home.svg, fn: function() {
-          // §S283: In standalone PWA, open online hub in system browser (backdoor)
-          if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+      { id: 'home',       name: 'Home',            pill: false, icon: I.home.svg, fn: function() {
+          // §S283: Standalone PWA — open live hub only when online; fall back to cached index offline
+          if ((window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) && navigator.onLine) {
             window.open('https://red1oon.github.io/bim-ootb/', '_blank');
             console.log('§PWA_HOME opened');
           } else {
             location.href = '../index.html';
           }
         } },
-      { id: 'audio',      name: 'Sound FX',        key: 'v', icon: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
+      { id: 'audio',      name: 'Sound FX',        key: 'v', pill: false, icon: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
         fn: function() { if (typeof window.toggleSfx === 'function') window.toggleSfx(); },
         isActive: function() { return !!(window.__sfx && window.__sfx.isOn()); },
         children: [ { name: 'Time Machine: earcon per construction phase' }, { name: 'Fly Tour: positional waypoint cues' }, { name: 'UI: soft tap tick' }, { name: 'Synthesized — no audio files, default OFF' } ] },
       { id: 'settings',   name: 'Settings',        key: '=', icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
         fn: function() { _openSettingsPanel(); },
-        isActive: function() { var p = document.getElementById('settings-panel'); return p && p.style.display !== 'none'; } }
+        isActive: function() { var p = document.getElementById('settings-panel'); return p && p.style.display !== 'none'; } },
+      // PILL_DRAWER_REORGANIZATION.md — the 4 real drawer masters. §MASTER-ICON BEHAVIOR: fn
+      // ONLY opens/closes the panel below, NEVER fires a sub-action itself. No keyboard shortcut
+      // (tap/click-only per spec). Toggle/isOpen closures come from _buildMasterDrawer() further
+      // down (defined after _actions closes, so it can look up each absorbed sub-action's real
+      // fn/isActive/hold by id) — safe because these are closures, only invoked on click, long
+      // after _navigateDrawer/_inspectDrawer/_camviewDrawer are assigned.
+      { id: 'navigate',   name: 'Navigate',        icon: I.sailboat.svg,
+        fn: function() { _navigateDrawer.toggle(); }, isActive: function() { return _navigateDrawer.isOpen(); } },
+      { id: 'inspect',    name: 'Inspect',         icon: I.draftingCompass.svg,
+        fn: function() { _inspectDrawer.toggle(); }, isActive: function() { return _inspectDrawer.isOpen(); } },
+      { id: 'camview',    name: 'Camera / View',   icon: I.camera.svg,
+        fn: function() { _camviewDrawer.toggle(); }, isActive: function() { return _camviewDrawer.isOpen(); } }
     ];
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PILL_DRAWER_REORGANIZATION.md §STEPS 3/5 — the drawer mechanism.
+    // One reusable master-drawer builder: tap master → open/close panel ONLY, per
+    // §MASTER-ICON BEHAVIOR (never fires a sub-action). Each row inside reuses the SAME
+    // fn/isActive/hold a sub-action already carries in _actions — single source of truth,
+    // no duplicated logic. Defined AFTER _actions closes so _actionById can find every id;
+    // safe to reference from the master entries above because those are closures, only
+    // invoked on click (well after this whole block has run).
+    // ═══════════════════════════════════════════════════════════════════
+    function _actionById(id) {
+      for (var i = 0; i < _actions.length; i++) { if (_actions[i].id === id) return _actions[i]; }
+      return null;
+    }
+    // prompts/Viewer/SAVE_DB_SCENE_STATE.md — the one generic hook the combined scene-state restore
+    // needs: fire an action's own fn() by id, the same call its pill/drawer row already makes on tap.
+    // No new open logic — reuses the single source of truth (_actions) this whole module already is.
+    A.runPanelAction = function(id) {
+      var act = _actionById(id);
+      if (act && act.fn) { act.fn(); return true; }
+      return false;
+    };
+
+    // One row = icon + label, reusing act.fn/isActive/hold verbatim. hold (Measure→Clash,
+    // X-Ray→Bbox, World History→Z-drawer) replays the SAME long-press-then-tap mechanics as
+    // the top-level rail (pill_builder.js _build()) so nested chip-reveals are UNCHANGED.
+    function _buildDrawerActionRow(act) {
+      var row = document.createElement('button');
+      row.id = 'drawer-row-' + act.id;
+      row.className = 'bim-drawer-row';
+      row.title = act.name || act.id;
+      var iconWrap = document.createElement('span');
+      iconWrap.className = 'bim-drawer-row-icon';
+      iconWrap.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (act.icon || '') + '</svg>';
+      row.appendChild(iconWrap);
+      var label = document.createElement('span');
+      label.className = 'bim-drawer-row-label';
+      label.textContent = act.name + (act.key ? '  ·  ' + act.key : '');
+      row.appendChild(label);
+
+      function _sync() {
+        if (act.stateLabel) { try { label.textContent = act.name + '  ·  ' + act.stateLabel(); } catch (e) {} }
+        if (!act.isActive) return;
+        var on = false; try { on = !!act.isActive(); } catch (e) {}
+        row.classList.toggle('active', on);
+      }
+      row._sync = _sync;
+
+      function _fire() {
+        act.fn(); _sync();
+        setTimeout(_sync, 350);  // re-sync for actions that activate asynchronously (e.g. Time Machine op-log load)
+        console.log('§DRAWER_ROW action=' + act.id);
+      }
+
+      if (act.hold) {
+        var _holdTimer = 0, _held = false;
+        row.addEventListener('pointerdown', function(e) {
+          e.stopPropagation(); _held = false;
+          _holdTimer = setTimeout(function() { _held = true; act.hold(row); }, 450);
+        });
+        var _cancelHold = function() { if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = 0; } };
+        row.addEventListener('pointerup', function(e) {
+          e.stopPropagation(); _cancelHold();
+          if (_held) { _held = false; return; }
+          _fire();
+        });
+        row.addEventListener('pointerleave', _cancelHold);
+        row.addEventListener('pointercancel', _cancelHold);
+      } else {
+        row.addEventListener('pointerup', function(e) {
+          e.stopPropagation();
+          _fire();
+        });
+      }
+      // §KEYBOARD-ACTIVATE (PILL_DRAWER_REORGANIZATION.md item 2, 2026-07-06): rows are real
+      // <button> elements so Tab already reaches them natively; the browser's own Space/Enter
+      // activation dispatches a synthetic 'click' with event.detail===0 (a real pointer click's
+      // 'click' always has detail>=1), which nothing here listened for — so keyboard activation
+      // silently did nothing. Listen for that synthetic click only, so a real pointer click can't
+      // double-fire through both this and the pointerup handler above.
+      row.addEventListener('click', function(e) {
+        if (e.detail !== 0) return;
+        e.stopPropagation();
+        _fire();
+        console.log('§DRAWER_ROW_KEY action=' + act.id);
+      });
+      return row;
+    }
+
+    // §SHADOW-GROUND MERGE: the one 4-state cycle row — real texture-swatch thumbnail (not an
+    // abstract icon/text label), per spec. Reads the SAME 'shadow' action (id/key/fn unchanged;
+    // A.toggleShadow's BODY now cycles Off→Grass→Earth→Paved→Off, see tools.js).
+    function _sgSwatchSrc(key) {
+      if (!key || key === 'off') return null;
+      var cfg = (A._groundConfig || A._groundCfgDefault || { options: [] });
+      var opt = (cfg.options || []).filter(function(o) { return o.key === key; })[0];
+      return opt && opt.src;
+    }
+    // REVISED (user, 2026-07-06): no text label — Cloud icon + the 3 ground types as static
+    // sample-image boxes, side by side. The boxes NEVER change image (each is a fixed real
+    // texture sample — grass/earth/paved); only the Cloud click advances WHICH box is lit
+    // (Off -> Grass -> Earth -> Paved -> Off). The boxes themselves aren't separately clickable.
+    function _buildShadowGroundRow() {
+      var act = _actionById('shadow');
+      var row = document.createElement('div');
+      row.id = 'drawer-row-shadow';
+      row.className = 'bim-drawer-row';
+      row.title = 'Shadow + Ground — cycle Off → Earth → Grass → Paved';
+
+      var cloudBtn = document.createElement('button');
+      cloudBtn.id = 'shadow-ground-cloud-btn';
+      // §2026-07-06 FIX (item 3 root cause, live-confirmed): viewer.html's shared CSS rule
+      // `.bim-drawer-row .bim-drawer-row-icon { pointer-events:none }` exists so the pure-decoration
+      // icon spans in the generic _buildDrawerActionRow rows never steal clicks from their parent
+      // <button>. This row reused that same class name for its ONE real interactive control —
+      // silently disabling every click on the cloud icon. Distinct class, flex-shrink kept inline.
+      cloudBtn.className = 'shadow-ground-cloud-icon';
+      cloudBtn.style.cssText = 'border:none;background:transparent;padding:0;cursor:pointer;color:inherit;flex-shrink:0;display:flex;';
+      cloudBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + I.cloud.svg + '</svg>';
+      row.appendChild(cloudBtn);
+
+      var _keys = ['earth', 'grass', 'paved'];  // §GROUND_EARTH_DEFAULT — matches _SG_CYCLE order
+      var _boxes = {};
+      _keys.forEach(function(key) {
+        var box = document.createElement('span');
+        box.id = 'shadow-ground-box-' + key;
+        box.className = 'bim-drawer-swatch';
+        box.title = key.charAt(0).toUpperCase() + key.slice(1);
+        row.appendChild(box);
+        _boxes[key] = box;
+      });
+      // setupPanels() runs BEFORE setupTools() (main.js _mods order) — A._groundCfgDefault
+      // doesn't exist yet at construction time. Defer one tick so tools.js has run, then set
+      // each box's image ONCE (fixed per box, real sample — never re-painted after this).
+      setTimeout(function() {
+        _keys.forEach(function(key) {
+          if (_boxes[key].style.backgroundImage) return;
+          var src = _sgSwatchSrc(key);
+          if (src) _boxes[key].style.backgroundImage = 'url(' + src + ')';
+        });
+      }, 0);
+
+      function _paint() {
+        var cur = A._shadowGroundKey || 'off';
+        _keys.forEach(function(key) {
+          _boxes[key].style.border = (key === cur) ? '2px solid #4fc3f7' : '1px solid rgba(255,255,255,0.25)';
+        });
+        row.classList.toggle('active', cur !== 'off');
+        console.log('§SHADOW_GROUND_SWATCH key=' + cur);
+      }
+      row._sync = _paint;
+      // Re-paint whenever the ground texture actually changes (A._applyGroundTexture already
+      // calls this hook — reused verbatim, no tools.js change needed beyond the cycle itself).
+      A._refreshGroundBtns = _paint;
+
+      cloudBtn.addEventListener('pointerup', function(e) {
+        e.stopPropagation();
+        if (act && act.fn) act.fn(); else if (typeof window.toggleShadow === 'function') window.toggleShadow();
+        _paint();
+        console.log('§DRAWER_ROW action=shadow-ground');
+      });
+
+      _paint();  // initial Off state
+      return row;
+    }
+
+    // One master drawer: builds its panel lazily (first open), lists each absorbed sub-action
+    // as its own row. §INTERACTION MODEL: stays open until the explicit ✕ (A.createPanel's
+    // built-in bim-panel-close), never outside-tap/auto-collapse.
+    function _buildMasterDrawer(masterId, title, subIds) {
+      var panelId = masterId + '-drawer-panel';
+      var panel = null, rows = [];
+      function _ensure() {
+        if (panel) return panel;
+        var wrap = document.createElement('div');
+        subIds.forEach(function(id) {
+          var act = _actionById(id);
+          if (!act) { console.warn('§DRAWER_MISSING id=' + id + ' master=' + masterId); return; }
+          // Walk: platform-gated mobile-only, per spec "never appears on desktop" — omit the
+          // row entirely on desktop (not just greyed) inside this drawer.
+          var _onMobile = !!window._isMobile;
+          if (act.platform === 'mobile' && !_onMobile) return;
+          if (act.platform === 'desktop' && _onMobile) return;
+          var row = _buildDrawerActionRow(act);
+          rows.push(row);
+          wrap.appendChild(row);
+        });
+        // §PANEL-SPREAD: left side of screen, staggered per drawer — was hardcoded top:90/
+        // right:70 for ALL 3 drawers (+ Palette/Settings/JSON-editor also clustered there),
+        // stacking directly on top of each other and covering the pill rail. Fixed 2026-07-06.
+        // Own dedicated column (left:928), stacked vertically — kept OUT of Settings'/JSON-
+        // editor's columns since those run much taller (700px+) and would otherwise overlap
+        // anything sharing their column further down the same column.
+        // §MOBILE-DRAWER-FIX (2026-07-11): left:928 assumes a >=1158px-wide desktop viewport.
+        // A.createPanel's §PANEL-AUTOPLACE MutationObserver would normally correct a bad
+        // hardcoded position via A._placePanel — but that observer explicitly skips mobile
+        // (`!window._isMobile`), so on a phone (~375-430px wide) these 3 drawers opened fully
+        // off-screen: toggle()/isOpen() fired correctly (master icon lit "active") but nothing
+        // was visible or reachable — witnessed via §NAV_DRAWER_RECT left=928 on a 390px viewport.
+        // Mobile gets its own right-anchored column instead (same per-drawer vertical stagger,
+        // width 230px fits any phone down to ~254px wide) — no autoplace dependency needed.
+        var _onMobileDrawer = !!window._isMobile;
+        var _pos = _onMobileDrawer
+          ? { navigate: { top: '70px', right: '12px' }, inspect: { top: '250px', right: '12px' },
+              camview: { top: '430px', right: '12px' } }[masterId] || { top: '70px', right: '12px' }
+          : { navigate: { top: '70px', left: '928px' }, inspect: { top: '250px', left: '928px' },
+              camview: { top: '640px', left: '928px' } }[masterId] || { top: '70px', left: '928px' };
+        panel = A.createPanel(panelId, {
+          closable: true,
+          style: Object.assign({ position: 'fixed', zIndex: '1100', width: '230px', padding: '10px 8px' }, _pos),
+          content: '<h3 style="margin:0 0 8px 6px;color:#4fc3f7;font-size:13px">' + title + '</h3>',
+          onClose: function() { console.log('§DRAWER_CLOSE id=' + masterId); _syncPillHighlights(); }
+        });
+        panel.appendChild(wrap);
+        if (window.InputReg) InputReg.register({ id: masterId + '-drawer', el: panel, kind: 'panel', release: function() { panel.style.display = 'none'; } });
+        console.log('§DRAWER_BUILD id=' + masterId + ' rows=' + rows.length);
+        return panel;
+      }
+      return {
+        toggle: function() {
+          var p = _ensure();
+          var opening = p.style.display === 'none';
+          p.style.display = opening ? '' : 'none';
+          if (opening) rows.forEach(function(r) { if (r._sync) r._sync(); });
+          console.log('§DRAWER toggle=' + masterId + ' open=' + opening);
+        },
+        isOpen: function() { return !!(panel && panel.style.display !== 'none'); }
+      };
+    }
+
+    // §FLY_TO_NAVIGATE (2026-07-18, user ask): Fly Tour is camera navigation, not inspection — moved
+    // from Inspect to Navigate. id/key/fn/isActive on the shared 'fly' entry above are unchanged;
+    // this only changes which drawer lists it.
+    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly', 'dlodnav']);
+    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'clash', 'xray', 'section', 'tm', 'report']);
+    var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
+
+    // §1 Visual FX — extend the EXISTING Palette/sunglass panel (built earlier at
+    // A._buildSunglassPanel(), before _actions existed — this runs AFTER, so it can reuse the
+    // absorbed actions' real fn/isActive by id). Appends Night, the merged Shadow+Ground
+    // swatch, Reverse-background, Audio as rows — same ✕-close panel, nothing new to open.
+    function _extendVisualFxPanel() {
+      var panel = document.getElementById('sunglass-slider-panel');
+      if (!panel) { console.warn('§VISUALFX_EXTEND panel missing'); return; }
+      var sep = document.createElement('hr');
+      sep.style.cssText = 'border:none;border-top:1px solid rgba(255,255,255,0.1);margin:6px 0';
+      panel.appendChild(sep);
+
+      var nightAct = _actionById('night');
+      if (nightAct) panel.appendChild(_buildDrawerActionRow(nightAct));
+
+      panel.appendChild(_buildShadowGroundRow());
+
+      var bgAct = _actionById('background');
+      if (bgAct) panel.appendChild(_buildDrawerActionRow(bgAct));
+
+      var audioAct = _actionById('audio');
+      if (audioAct) panel.appendChild(_buildDrawerActionRow(audioAct));
+
+      console.log('§VISUALFX_EXTEND rows=4');
+    }
+    _extendVisualFxPanel();
 
     // §S282: Settings property sheet — accordion sections → rows → fields
     function _openSettingsPanel() {
@@ -1195,6 +1744,9 @@ function setupPanels(A) {
       // ── JSON registry hub: open ANY registered project JSON in the same editor ──
       _buildJsonHub(content);
 
+      // ── §5D Rate Pack (BIM→Project TASK A, docs/BIMtoProject.md §A): pick the active cost pack ──
+      content.appendChild(_buildSection('5D Rate Pack', false, _rate5dBody));
+
       // ── §9 Cache Info: per-store size + clear (history-clear keeps the signed kernel) ──
       content.appendChild(_buildSection('Cache Info', false, _cacheInfoBody));
 
@@ -1211,7 +1763,9 @@ function setupPanels(A) {
       });
       content.appendChild(resetBtn);
 
-      p = A.createPanel('settings-panel', { closable: true, style: { position:'fixed', top:'60px', right:'60px', zIndex:'1100', width:'300px', padding:'0' },
+      // §PANEL-SPREAD: top row (tall content needs headroom) — was top:60/right:60, same
+      // cluster as Palette/drawers/JSON editor, all stacking on the pill rail.
+      p = A.createPanel('settings-panel', { closable: true, style: { position:'fixed', top:'70px', left:'320px', zIndex:'1100', width:'300px', padding:'0' },
         content: content,
         onClose: function() { _syncPillHighlights(); } });
       document.body.appendChild(p);
@@ -1363,6 +1917,49 @@ function setupPanels(A) {
       }
       refresh();
       console.log('§CACHE_INFO panel built rows=' + rows.length);
+      return box;
+    }
+
+    // §5D Rate Pack body (BIM→Project TASK A) — picks the active cost pack, persisted to
+    // localStorage[bim_5d_pack] (read with priority by rates.js initRateTemplate). On change it
+    // loads the pack LIVE (loadRateTemplate → RATES + _TRL.cur), so the Find-panel cost + future
+    // BIM→ERP export bill from the chosen pack. The 4D sequence is edited via the JSON registry hub.
+    function _rate5dBody() {
+      var box = document.createElement('div');
+      box.style.cssText = 'padding:8px 14px 14px;font-size:12px;color:#bbb;';
+      var note = document.createElement('div');
+      note.style.cssText = 'color:#888;font-size:11px;margin-bottom:8px;line-height:1.4;';
+      note.textContent = 'Currency + unit rates for the Find-panel cost and BIM→ERP export. Editing the 4D sequence: use the JSON registry above (sequence_rules).';
+      box.appendChild(note);
+      // The shipped locale packs (rates/<id>.json). Value = file id; the pack carries its own currency.
+      var PACKS = ['cidb2024_my', 'bcis2024_uk', 'rsmeans2024_us', 'rawlinsons2024_au', 'bki2024_de',
+        'untec2024_fr', 'cype2024_es', 'gb50500_cn', 'dpt2024_th', 'jbci2024_jp', 'kict2024_kr',
+        'aramco2024_sa', 'sinapi2024_br', 'sni2024_id', 'asaqs2024_za', 'pwd2024_bd'];
+      var active = (function () { try { return localStorage.getItem('bim_5d_pack'); } catch (e) { return null; } })()
+        || (window.RATE_TEMPLATE_NAME) || 'cidb2024_my';
+      var sel = document.createElement('select');
+      sel.style.cssText = 'width:100%;padding:6px 8px;border:1px solid rgba(108,159,255,0.3);border-radius:6px;background:#1a1a1a;color:#cfe;font-size:12px;';
+      PACKS.forEach(function (id) {
+        var o = document.createElement('option'); o.value = id; o.textContent = id;
+        if (id === active) o.selected = true; sel.appendChild(o);
+      });
+      var status = document.createElement('div');
+      status.style.cssText = 'color:#8ab4ff;font-size:11px;margin-top:8px;min-height:14px;';
+      var curNow = (window._TRL && window._TRL.cur) || '';
+      status.textContent = 'Active: ' + active + (curNow ? (' (' + curNow + ')') : '');
+      sel.addEventListener('change', function () {
+        var name = sel.value;
+        try { localStorage.setItem('bim_5d_pack', name); } catch (e) {}
+        if (typeof window.loadRateTemplate === 'function') {
+          window.loadRateTemplate(name).then(function () {
+            var cur = (window._TRL && window._TRL.cur) || '';
+            status.textContent = 'Active: ' + (window.RATE_TEMPLATE_NAME || name) + (cur ? (' (' + cur + ')') : '');
+            console.log('§FIND_COST_PACK set=' + name + ' active=' + (window.RATE_TEMPLATE_NAME || name) + ' cur=' + cur);
+            if (A.status) A.status.textContent = '5D pack: ' + name;
+          });
+        }
+      });
+      box.appendChild(sel); box.appendChild(status);
       return box;
     }
 
@@ -1679,8 +2276,10 @@ function setupPanels(A) {
           }
         }
 
+        // §PANEL-SPREAD: own dedicated column (tall content) — was top:80/right:80, same
+        // cluster as the rest.
         var p = A.createPanel(id, { closable: true,
-          style: { position:'fixed', top:'80px', right:'80px', zIndex:'1101', width:'320px', padding:'16px' },
+          style: { position:'fixed', top:'70px', left:'624px', zIndex:'1101', width:'320px', padding:'16px' },
           content: content });
         document.body.appendChild(p);
         p.style.display = '';   // createPanel returns hidden; reveal this fresh panel
@@ -1691,15 +2290,19 @@ function setupPanels(A) {
       });
     }
 
-    // Default order: redpill at top (scroll away), home nearest ⋯ trigger (bottom)
-    // Usefulness: frequent tools near bottom (thumb reach), rare at top
-    var _defaultOrder = ['settings','audio','redpill','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
+    // PILL_DRAWER_REORGANIZATION.md §FINAL RAIL ORDER: Document(Save,Open) → Navigate → Inspect
+    // → Visual FX → Camera/View → Share → Settings, Help. 9 visible icons (rest are pill:false,
+    // absorbed into a drawer or Help/Settings-only — still present here so Settings' pill editor
+    // and any localStorage-order migration have a stable position for them).
+    var _defaultOrder = ['save','open','navigate','inspect','palette','camview','share','settings','help',
+      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','roleFilter','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk'];
 
     // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
     var _mainPill = PillBuilder({
       pill: pill, trigger: trigger, APP: A,
       actions: _actions, order: _defaultOrder,
-      storageKey: 'bim_pill_config'
+      storageKey: 'bim_pill_config',
+      layout: 'rail'   // L-PATH position:fixed rail — viewer.html CSS declares the buttons fixed
     });
 
     // Expose for toggleDocPill restore + keyboard shortcut
@@ -1868,6 +2471,17 @@ function setupPanels(A) {
         tx.objectStore('data').put(val, key);
       };
     } catch(e) { /* ignore */ }
+  }
+
+  // §WH-HOME — if the viewer was opened with ?home=<url>, render a back button in the top-left HUD.
+  if (A.HOME_URL) {
+    var whHomeBtn = A.icon('home', { size: 22, title: 'Back to iDempiere',
+      onClick: function () { location.href = A.HOME_URL; }
+    });
+    whHomeBtn.style.cssText = 'position:fixed;top:10px;left:10px;z-index:900;' +
+      'background:rgba(0,0,0,0.45);border-radius:8px;padding:5px;cursor:pointer';
+    document.body.appendChild(whHomeBtn);
+    console.log('§WH-HOME rendered href=' + A.HOME_URL);
   }
 
   // These exist in HTML from page load — section, sunglasses, toolbar

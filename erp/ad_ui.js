@@ -1261,8 +1261,9 @@
   function _resolveDisplay(rec, colName) {
     var val = _caseGet(rec, colName);
     if (val === null || val === undefined || val === '') return null;
-    // If column ends with _ID, try FK resolution
-    if (colName.indexOf('_ID') >= 0 && typeof ADData !== 'undefined' && ADData.resolveFK) {
+    // REFRESOLVE_SPEC.md W-REFRESOLVE: attempt reference resolution for EVERY column (not just _ID) —
+    // List refs (PaymentRule/DeliveryVia) carry no _ID; resolveFK returns null when nothing resolves.
+    if (typeof ADData !== 'undefined' && ADData.resolveFK) {
       var resolved = ADData.resolveFK(_db, colName, val);
       if (resolved) return resolved;
     }
@@ -1575,11 +1576,16 @@
         _graphDrillCallback, _graphLongPressCallback);
     }
 
-    // Auto-maximize globe — first load or if was maximized before client switch
+    // Auto-maximize globe — first load or if was maximized before client switch.
+    // §INIT-REBURST fix: maximize SYNCHRONOUSLY (same tick as initFromBubbles, before the first rAF paint)
+    // so the globe's first visible frame is already at final size. The old setTimeout(…,100) painted the
+    // canvas at its small height (360) then grew it to viewport (600) ~100ms later — a visible size/position
+    // JUMP on every load + refresh (witness tests/poc_init_reburst.js: resizedAfterPaint Y→N). resize-in-place
+    // (ADGraph.resize) means no destroy/reinit, so this does NOT reintroduce the old bubble-burst.
     if (!_graphAutoMaxed || _graphIsMaxed) {
       _graphAutoMaxed = true;
       _graphIsMaxed = true;
-      setTimeout(function () { _resizeGraph(true); }, 100);
+      _resizeGraph(true);
     }
 
     console.log('§AD_UI graphView rendered client=' + _currentClient);
@@ -2122,8 +2128,20 @@
       // Hidden fields: isKey, not displayed
       if (f.isKey || !f.isDisplayed) continue;
 
-      // DisplayLogic evaluation
-      if (f.displayLogic && !ADParser.evaluateDisplayLogic(f.displayLogic, rec)) continue;
+      // DisplayLogic evaluation — proven engine first (ad_evaluator.js, W-LOGIC-EVAL 3044/3044;
+      // ERP_COVERAGE_MATRIX.md §AD_Field·DisplayLogic), legacy ADParser only if AdEvaluator absent
+      if (f.displayLogic) {
+        var _show;
+        if (typeof window !== 'undefined' && window.AdEvaluator) {
+          try { _show = window.AdEvaluator.evaluate(f.displayLogic, rec || {}, rec || {}) !== false; }
+          catch (e) { _show = true; }
+          if (!_show) console.log('§AD-DISPLAYLOGIC-LIVE card table=' + (tab.tableName || tab.name) +
+            ' hiddenCol=' + f.columnName + ' logic=' + f.displayLogic);
+        } else {
+          _show = ADParser.evaluateDisplayLogic(f.displayLogic, rec);
+        }
+        if (!_show) continue;
+      }
 
       var val = rec[f.columnName];
       var isEmpty = (val === null || val === undefined || val === '');

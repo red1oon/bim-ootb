@@ -1,0 +1,1 @@
+window.APP && APP.guidMap && Object.keys(APP.guidMap).length>3000 && !APP.streaming && !!window.HBALens && !!APP._hbaRoomMembers && Object.keys(APP._hbaRoomMembers).length>0 && !!APP._hbaAttendanceSpec && !!APP._hbaBomSpec && !!APP.erpQuery

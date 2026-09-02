@@ -7,7 +7,8 @@
 //   its inner <svg>/<circle>, so the trigger's OWN tap was mis-read as "outside" → _close() on pointerdown,
 //   then _toggle() re-opened on pointerup → the pill flickered shut-then-open and never folded.
 //   PROVES (both PillBuilder surfaces, mobile 390x844 + touch):
-//     erp.html  (non-persistent: outside-tap close ACTIVE — this is where it broke):
+//     erp.html  (HISTORICAL: outside-tap close was ACTIVE here when it broke; the canonical builder
+//        has NO outside-close since PILLS_CONSOLIDATION_REVIEW_2026-07-03 — ⋯ toggle still must work):
 //        tap ⋯ #erp-pill-trigger  -> collapses (display:none)  -> tap again -> re-expands (display:block).
 //     idempiere.html (persistent dock): tap ⋯ collapses; tap again re-expands.
 //   §-log first — READ tests/poc_pill_reopen.log before any conclusion (exit code is NOT evidence).
@@ -16,11 +17,11 @@
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path');
 
-const ROOT = path.join(__dirname, '..');                       // bim-ootb/erp
+const ROOT = path.join(__dirname, '..', '..');   // repo root — pages moved to /erp/ URLs so ../common/pill_builder.js resolves (PILLS_CONSOLIDATION_REVIEW_2026-07-03)
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.json':'application/json',
   '.db':'application/octet-stream', '.png':'image/png', '.css':'text/css', '.wasm':'application/wasm' };
 
-let DEFAULT = '/idempiere.html';
+let DEFAULT = '/erp/idempiere.html';
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
   if (p === '/') p = DEFAULT;
@@ -63,10 +64,10 @@ async function cycle(page, port, file, pillSel, trigSel, logs) {
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
 
-  DEFAULT = '/erp.html';
-  const erpOk  = await cycle(page, port, 'erp.html',       '#erp-pill',  '#erp-pill-trigger',  logs);
-  DEFAULT = '/idempiere.html';
-  const idmpOk = await cycle(page, port, 'idempiere.html', '#idmp-pill', '#idmp-pill-trigger', logs);
+  DEFAULT = '/erp/erp.html';
+  const erpOk  = await cycle(page, port, 'erp/erp.html',       '#erp-pill',  '#erp-pill-trigger',  logs);
+  DEFAULT = '/erp/idempiere.html';
+  const idmpOk = await cycle(page, port, 'erp/idempiere.html', '#idmp-pill', '#idmp-pill-trigger', logs);
 
   await page.screenshot({ path: path.join(__dirname, 'pill_reopen_mobile_390.png') });
 

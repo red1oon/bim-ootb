@@ -72,8 +72,22 @@
     if (!srcBtn) return;
     var r = srcBtn.getBoundingClientRect();
     var d = document.createElement('div'); d.id = 'idmp-whist-drawer';
-    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:row;align-items:center;gap:6px;' +
-      'top:' + (r.top - 2) + 'px;left:' + Math.max(8, r.left - 104) + 'px;';   // SIDEWAYS: chips to the LEFT of the W pill (matches the _revealChip convention), not stacked above
+    // PERPENDICULAR auto-layout — draw the drawer ACROSS the pill strip, never ALONG it (a parallel drawer
+    // covers the neighbouring pills; that was the regression). Measure the strip container: a VERTICAL strip
+    // (viewer/idmp right edge) → a ROW to the LEFT of W; a HORIZONTAL strip (glassbowl/gravity bottom bar) →
+    // a COLUMN ABOVE W. Self-correcting if a bar's orientation ever flips again — no per-surface hardcoding.
+    // Chip append order (bomb, then Z): row → bomb left/far, Z right/adjacent · column → bomb top/far, Z bottom/adjacent.
+    var _host = srcBtn.parentElement, _hr = _host ? _host.getBoundingClientRect() : r;
+    var _vertical = _hr.height >= _hr.width;
+    var _base = 'position:fixed;z-index:10000;display:flex;align-items:center;gap:6px;';
+    if (_vertical) {
+      d.style.cssText = _base + 'flex-direction:row;top:' + r.top + 'px;right:' +
+        Math.max(8, Math.round(window.innerWidth - r.left + 6)) + 'px;';
+    } else {
+      d.style.cssText = _base + 'flex-direction:column;bottom:' + (window.innerHeight - r.top + 6) +
+        'px;left:' + Math.max(8, r.left) + 'px;';
+    }
+    console.log('§IDMP-PILL drawer-orient=' + (_vertical ? 'row(vertical-strip)' : 'col(horizontal-strip)'));
     function chip(name, title, color, onTap) {
       var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
       b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
@@ -82,9 +96,9 @@
       b.addEventListener('pointerup', function (e) { e.stopPropagation(); onTap(); var dd = document.getElementById('idmp-whist-drawer'); if (dd) dd.remove(); });
       return b;
     }
+    d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearIdmpHistory));
     d.appendChild(chip('docHist', 'Page history (Z) — this page\'s dot timeline', '#6c9fff',
       function () { if (window.IdmpHistory && window.IdmpHistory.toggleBar) window.IdmpHistory.toggleBar(); else if (window.IdmpHistory) window.IdmpHistory.render(); }));
-    d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearIdmpHistory));
     document.body.appendChild(d);
     setTimeout(function () {
       var off = function (ev) { var dd = document.getElementById('idmp-whist-drawer'); if (dd && !dd.contains(ev.target)) { dd.remove(); document.removeEventListener('pointerdown', off, true); } };
@@ -110,6 +124,18 @@
     // window.IdmpPillDocGate(); absent/false → the pill is fully off the bar (pill=false), not just overflow.
     var _docOk = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
     _actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk ? undefined : false; });
+    // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): the POS pill surfaces only when the tenant
+    // carries a c_pos row (data-gated like Posting-Preview). Host answers via window.IdmpPillPosGate().
+    var _posOk = (typeof window.IdmpPillPosGate === 'function') ? !!window.IdmpPillPosGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'pos-station') a.pill = _posOk ? undefined : false; });
+    // GRID_BATCH_FORM_PILL_SPEC item 5 — showWhen:"form-view": the relocated record toolbar pills (New/Save/
+    // Process) surface ONLY with a record open in FORM view. Host answers via window.IdmpPillFormGate().
+    var _formOk = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'form-view') a.pill = _formOk ? undefined : false; });
+    // §AD-GATE — showWhen:"zoom-across": the RED "Zoom Across" pill surfaces when ANY cross-surface destination
+    // is available for the focused record (window.ZoomAcross). Host answers via window.IdmpPillZoomGate().
+    var _zoomOk = (typeof window.IdmpPillZoomGate === 'function') ? !!window.IdmpPillZoomGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'zoom-across') a.pill = _zoomOk ? undefined : false; });
     var cfg = _PB.getConfig();
     var hidden = (cfg.hidden || []).filter(function (id) { return lifecycleIds.indexOf(id) < 0; }); // drop managed ids
     if (stage !== 'pre-client') hidden = hidden.concat(lifecycleIds);                                // in-client → overflow
@@ -158,13 +184,14 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=27').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=37').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
       var actions = pills.map(function (p) {
         var act = { id: p.id, name: p.name, key: p.key || '' };
         if (p.img) act.img = p.img; else act.icon = _resolveIcon(p) || '';
+        if (p.title) act.title = p.title;                    // friendly hover label (e.g. "Link to BIM Viewer")
         if (p.stage) act._stage = p.stage;                   // §C lifecycle tag (carried from the manifest)
         if (p.showWhen) act._showWhen = p.showWhen;           // §AD-GATE condition (e.g. "posting-doc") carried from the manifest
         // fn binds BY ID to the host's real handler; honest toast if a handler is missing (NON-INVENT).
@@ -180,6 +207,14 @@
       // the host's IdmpPillDocGate() is false → showWhen:"posting-doc" pills (Posting-Preview) start OFF the bar.
       var _docOk0 = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
       actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk0 ? undefined : false; });
+      // §AD-GATE — pos-station at BUILD too (POS pill off the bar until a c_pos tenant is open)
+      var _posOk0 = (typeof window.IdmpPillPosGate === 'function') ? !!window.IdmpPillPosGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'pos-station') a.pill = _posOk0 ? undefined : false; });
+      // form-view at BUILD too (the New/Save/Process pills start OFF the bar until a record is open in form view)
+      var _formOk0 = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'form-view') a.pill = _formOk0 ? undefined : false; });
+      var _zoomOk0 = (typeof window.IdmpPillZoomGate === 'function') ? !!window.IdmpPillZoomGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'zoom-across') a.pill = _zoomOk0 ? undefined : false; });
 
       _injectStyle();
       var wrap = document.createElement('div');

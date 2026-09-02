@@ -18,11 +18,32 @@ function setupDLOD(A) {
   var EVAL_EVERY = 6;             // frames between evaluations
   var MIN_ELEMENTS = 5000;        // §S271: frustum culling for all non-trivial buildings
   var _frustum = new THREE.Frustum();
+  // §CPE_DLOD_VF_UNION (2026-08-05, CINEMA_PATH_EDITOR.md OPEN 4) — this culler zero-scales
+  // InstancedMesh instances GLOBALLY (both cameras share the same real geometry, this is not a
+  // per-camera visibility flag), but was built keyed to A.camera (the main camera) exclusively —
+  // predates B/vfCam entirely. During a POV-only rehearsal (§CPE_SCRUB_POV_ONLY) the main camera is
+  // PARKED at the overview pose for the whole flight while vfCam walks through the building, so
+  // anything the walk passes near that's outside the parked main frustum gets zeroed here — invisible
+  // to B's render too, looking exactly like "buildup not reflected in POV" even though Time Machine's
+  // own visibility flags are correct (confirmed separately, see time_machine.js §DLOD_VF_CAMGUARD).
+  // Fix: while B is on, an instance is only hidden if it's outside BOTH frustums (union), not just
+  // the main camera's — same `activePOVCamera()` accessor time_machine.js's own §DLOD_VF_CAMGUARD
+  // already established, no new coupling.
+  var _frustumVF = new THREE.Frustum();
+  var _projScreenMatrixVF = new THREE.Matrix4();
   var _projScreenMatrix = new THREE.Matrix4();
   var _sphere = new THREE.Sphere();
   var _zeroScale = new THREE.Matrix4().makeScale(0, 0, 0);
   var _lastCamX = 0, _lastCamY = 0, _lastCamZ = 0;  // §S260b: skip tick when camera idle
   var _lastTargX = 0, _lastTargY = 0, _lastTargZ = 0;
+  var _lastVfX = 0, _lastVfY = 0, _lastVfZ = 0;  // §CPE_DLOD_VF_UNION: vfCam's own idle check —
+  // main camera can be PARKED (POV-only rehearsal) while vfCam alone is moving; without this the
+  // §S260b skip above would never re-evaluate at all during that flight.
+  // §DLOD_TICK whitebox (2026-07-23): testing whether this always-on, UNCHUNKED per-slot culler
+  // (full instancedMatrix re-upload on any flip — see §S274 comment below) is the source of
+  // bbox-mode's fly > orbit lag reported after nav-DLOD (dlod_nav.js, separate module) was ruled
+  // out — bbox mode gates dlod_nav off entirely but this tick still runs unconditionally.
+  var _tickN = 0, _tickMs = 0, _tickFlips = 0, _tickLastLogT = 0;
 
   // ── §S274: Direct refs built once after streaming ──
   var _instancedMeshes = []; // [{obj, meta}, ...] — IM only, BM handled by r160 native
@@ -108,15 +129,23 @@ function setupDLOD(A) {
     A._dlodFrame++;
     if (A._dlodFrame % EVAL_EVERY !== 0) return;
 
-    // §S260b: Skip when camera hasn't moved
+    // §CPE_DLOD_VF_UNION: resolve B's POV camera the SAME way time_machine.js's own
+    // §DLOD_VF_CAMGUARD already does — no new coupling, just reused.
+    var _cpe = A.cinemaPathEditor;
+    var vfCam = (_cpe && _cpe.activePOVCamera) ? _cpe.activePOVCamera() : null;
+
+    // §S260b: Skip when NEITHER camera has moved (vfCam included — see _lastVfX above).
     var cp = A.camera.position, ct = A.controls ? A.controls.target : cp;
-    if (Math.abs(cp.x - _lastCamX) < 0.01 && Math.abs(cp.y - _lastCamY) < 0.01 &&
+    var vfp = vfCam ? vfCam.position : null;
+    var camIdle = Math.abs(cp.x - _lastCamX) < 0.01 && Math.abs(cp.y - _lastCamY) < 0.01 &&
         Math.abs(cp.z - _lastCamZ) < 0.01 && Math.abs(ct.x - _lastTargX) < 0.01 &&
-        Math.abs(ct.y - _lastTargY) < 0.01 && Math.abs(ct.z - _lastTargZ) < 0.01) {
-      return;
-    }
+        Math.abs(ct.y - _lastTargY) < 0.01 && Math.abs(ct.z - _lastTargZ) < 0.01;
+    var vfIdle = !vfp || (Math.abs(vfp.x - _lastVfX) < 0.01 && Math.abs(vfp.y - _lastVfY) < 0.01 &&
+        Math.abs(vfp.z - _lastVfZ) < 0.01);
+    if (camIdle && vfIdle) return;
     _lastCamX = cp.x; _lastCamY = cp.y; _lastCamZ = cp.z;
     _lastTargX = ct.x; _lastTargY = ct.y; _lastTargZ = ct.z;
+    if (vfp) { _lastVfX = vfp.x; _lastVfY = vfp.y; _lastVfZ = vfp.z; }
 
     _buildRefs();
     var t0 = performance.now();
@@ -124,6 +153,11 @@ function setupDLOD(A) {
     A.camera.updateMatrixWorld();
     _projScreenMatrix.multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_projScreenMatrix);
+    if (vfCam) {
+      vfCam.updateMatrixWorld();
+      _projScreenMatrixVF.multiplyMatrices(vfCam.projectionMatrix, vfCam.matrixWorldInverse);
+      _frustumVF.setFromProjectionMatrix(_projScreenMatrixVF);
+    }
 
     var imVis = 0, imHid = 0, skipCount = 0;
     var hiddenDiscs = A.hiddenDiscs;
@@ -134,6 +168,7 @@ function setupDLOD(A) {
     // ── InstancedMesh: per-instance zero-scale (desktop only) ──
     // §S274: On mobile, instanceMatrix.needsUpdate re-uploads entire buffer to GPU per tick.
     // Cost exceeds savings. BatchedMesh setVisibleAt is cheap (indirect draw flag only).
+    var flips = 0; // §DLOD_TICK whitebox
     if (A._isMobile) { /* skip IM culling on mobile */ }
     else for (var ii = 0; ii < _instancedMeshes.length; ii++) {
       var im = _instancedMeshes[ii];
@@ -155,11 +190,15 @@ function setupDLOD(A) {
         _sphere.center.set(m._wx, m._wy, m._wz);
         _sphere.radius = m._radius;
 
-        if (!_frustum.intersectsSphere(_sphere)) {
+        // §CPE_DLOD_VF_UNION: hidden only if outside BOTH the main camera's frustum AND (when B is
+        // on) vfCam's — an instance visible to either camera must survive, since this culling is
+        // global (zero-scale), not per-camera.
+        if (!_frustum.intersectsSphere(_sphere) && (!vfCam || !_frustumVF.intersectsSphere(_sphere))) {
           if (!m._dlodHid) {
             obj.setMatrixAt(m.instanceIndex, _zeroScale);
             m._dlodHid = true;
             changed = true;
+            flips++;
           }
           imHid++;
         } else {
@@ -167,12 +206,42 @@ function setupDLOD(A) {
             obj.setMatrixAt(m.instanceIndex, m._origMatrix);
             m._dlodHid = false;
             changed = true;
+            flips++;
           }
           imVis++;
         }
       }
 
+      // §DLOD_TICK partial-upload idea EXPLORED, NOT APPLIED (2026-07-24, FLY_TOUR_DLOD_SCALE.md):
+      // instanceMatrix.addUpdateRange(idx*16,16) per flip would shrink this full-buffer re-upload
+      // (confirmed via vendored three.js source: empty updateRanges = full bufferSubData) to just
+      // the changed instances — real, verified win in isolation. NOT applied: helpers.js
+      // (filterInstancedMesh — Find isolate/room-isolate/storey+discipline filters),
+      // navigate_find.js, and time_machine.js's own DLOD ALL call setMatrixAt+needsUpdate on these
+      // SAME InstancedMesh objects without ever calling addUpdateRange. If any of them mutate the
+      // same mesh in the same frame as a dlod.js flip, a non-empty updateRanges (from this file
+      // alone) would make the renderer upload ONLY dlod.js's ranges — silently dropping the other
+      // caller's change for that frame. Before this exploration, every plain needsUpdate=true
+      // always forced a full upload, so no caller could ever starve another's write; partial
+      // ranges break that safety net for everyone else unless every setMatrixAt caller on shared
+      // buffers adopts the same convention. That's real cross-file work, not a dlod.js-only fix —
+      // exactly the kind of thing the DLOD consolidation (dlod.js/dlod_nav.js/time_machine.js DLOD/
+      // Find's filter, unified) should settle once, not something to patch piecemeal per-caller.
+      // Left as plain needsUpdate=true here, unchanged from before this session.
       if (changed) obj.instanceMatrix.needsUpdate = true;
+    }
+
+    // §DLOD_TICK whitebox — throttled ~2s like every other §-log in this codebase (dlod_nav.js's
+    // own idiom). ms = this tick's own cost; flips = instances whose full-buffer re-upload fired.
+    var _tms = performance.now() - t0;
+    _tickN++; _tickMs += _tms; _tickFlips += flips;
+    var _now = performance.now();
+    if (_now - _tickLastLogT >= 2000) {
+      console.log('§DLOD_TICK n=' + _tickN + ' ms_mean=' + (_tickMs / _tickN).toFixed(2) +
+        ' ms_max=' + _tms.toFixed(2) + ' flips_mean=' + (_tickFlips / _tickN).toFixed(1) +
+        ' fly=' + (A.flyActive ? 1 : 0) +
+        ' vfCamActive=' + (vfCam ? 1 : 0) + ' imHid=' + imHid + ' imVis=' + imVis);
+      _tickN = 0; _tickMs = 0; _tickFlips = 0; _tickLastLogT = _now;
     }
 
     if ((imHid > 0 || imVis > 0) && A.markDirty) A.markDirty();

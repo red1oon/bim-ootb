@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-08-27T01:13:57.436Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-storey-oci",
+    "sha": "515b520de8a67a85d03c6651d8794fded997e3d5",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 1,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Duplex_extracted.db",
+    "etag": "9d85d487-99bf-4083-9603-05a61b39248e",
+    "content-md5": "sHANmqrU2zgwa11XfgP44A==",
+    "size": "14958592",
+    "last-modified": "Fri, 05 Jun 2026 00:40:48 GMT",
+    "content-encoding": null
+  },
+  "artifact": {
+    "file": "buildings/patches/Duplex_extracted.db.sql",
+    "bytes": 7792,
+    "md5": "02f56c04c0e63bc6c919ee5d48af2b27",
+    "md5_b64": "AvVsBMDmO8bJGe5dSK8rJw==",
+    "object": "buildings/patches/Duplex_extracted.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "a5898929-65fb-4a84-aae1-f265deff1721",
+    "size": "2057",
+    "last-modified": "Mon, 10 Aug 2026 02:59:15 GMT"
+  },
+  "verification": {
+    "cmd": "node scripts/probe_s18_elevation_deploy.js --gate-db \"$GATE_DB\"",
+    "exit": 0,
+    "tail": [
+      "§S18_DEPLOY gate-db PASS — 4 storey datums survive the room compile, 4 names -> 4 bands"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-08-27T01:14:01.572Z",
+    "etag": "d780fe1c-c21f-4175-ad03-f1cd0e4a798a",
+    "verified": true
+  }
+}

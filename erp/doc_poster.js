@@ -26,13 +26,28 @@
 function cents(n) { return Math.round(Number(n || 0) * 100); }
 function num(x) { return Number(x); }
 
+// ── Case-insensitive row reads (NEW_CLIENT_MGMT.md BLOCKER fix, 2026-06-11) ──
+// The deployed ad_seed.db stores DOCUMENT tables in canonical CamelCase (C_BPartner_ID, M_Product_ID); SQLite
+// returns unaliased result keys in the DECLARED case, so the lowercase reads below (hdr.c_bpartner_id, l.m_product_id)
+// come back `undefined` → receivable+revenue go absent → blank/coverage:partial preview. Expose lowercase key
+// ALIASES on every row so reads resolve regardless of stored case. ADDITIVE + NON-INVENT: all-lowercase rows
+// (ad_full/glassbowl/migrated shards) lowercase to themselves → no-op → every FOLD witness stays byte-green. One
+// place covers node better-sqlite3 AND the browser sql.js facade (erp_preview.js), both flowing through this consumer.
+function lc(row) {
+  if (!row || typeof row !== 'object') return row;
+  Object.keys(row).forEach(function (k) { var lk = k.toLowerCase(); if (lk !== k && !(lk in row)) row[lk] = row[k]; });
+  return row;
+}
+function getRow(db, sql, params) { return lc(db.prepare(sql).get(params)); }
+function allRows(db, sql, params) { return (db.prepare(sql).all(params) || []).map(lc); }
+
 // ── INVOICE sales manifest — EXTRACTED VERBATIM from poc_fold_complete.deriveInvoice (W-FOLD-COMPLETE) ──
 // DR {BPartner.Receivable}=grandtotal / CR {Product.Revenue}=linenetamt per line / CR {Tax.Due}=taxamt.
 function deriveInvoice(db, R, invId, schema) {
-  var hdr = db.prepare('SELECT c_invoice_id,c_bpartner_id,grandtotal,issotrx FROM c_invoice WHERE c_invoice_id=?').get(num(invId));
+  var hdr = getRow(db, 'SELECT c_invoice_id,c_bpartner_id,grandtotal,issotrx FROM c_invoice WHERE c_invoice_id=?', num(invId));
   if (!hdr) return null;
-  var lines = db.prepare('SELECT m_product_id,linenetamt FROM c_invoiceline WHERE c_invoice_id=?').all(num(invId));
-  var taxes = db.prepare('SELECT c_tax_id,taxamt FROM c_invoicetax WHERE c_invoice_id=?').all(num(invId));
+  var lines = allRows(db, 'SELECT m_product_id,linenetamt FROM c_invoiceline WHERE c_invoice_id=?', num(invId));
+  var taxes = allRows(db, 'SELECT c_tax_id,taxamt FROM c_invoicetax WHERE c_invoice_id=?', num(invId));
   var by = {}, absent = [];
   function add(side, el, amt) {
     var k = el.id;
@@ -49,18 +64,18 @@ function deriveInvoice(db, R, invId, schema) {
 
 // the invoice an order generated — linked via the order line (NON-INVENT lineage; poc_fold_complete:75).
 function invoiceForOrder(db, oid) {
-  var r = db.prepare('SELECT DISTINCT il.c_invoice_id AS id FROM c_invoiceline il JOIN c_orderline ol ON ol.c_orderline_id=il.c_orderline_id WHERE ol.c_order_id=?').get(num(oid));
+  var r = getRow(db, 'SELECT DISTINCT il.c_invoice_id AS id FROM c_invoiceline il JOIN c_orderline ol ON ol.c_orderline_id=il.c_orderline_id WHERE ol.c_order_id=?', num(oid));
   return r ? r.id : null;
 }
 
 // projected manifest for a DRAFT order (no invoice yet) — SAME tokens, off the ORDER rows. Equals the
 // invoice manifest when qtyinvoiced==qtyordered; for a true draft it is a PROJECTION (no fact_acct oracle).
 function deriveOrder(db, R, oid, schema) {
-  var hdr = db.prepare('SELECT c_order_id,c_bpartner_id,grandtotal FROM c_order WHERE c_order_id=?').get(num(oid));
+  var hdr = getRow(db, 'SELECT c_order_id,c_bpartner_id,grandtotal FROM c_order WHERE c_order_id=?', num(oid));
   if (!hdr) return null;
-  var lines = db.prepare('SELECT m_product_id,linenetamt FROM c_orderline WHERE c_order_id=?').all(num(oid));
+  var lines = allRows(db, 'SELECT m_product_id,linenetamt FROM c_orderline WHERE c_order_id=?', num(oid));
   var taxes = [];
-  try { taxes = db.prepare('SELECT c_tax_id,taxamt FROM c_ordertax WHERE c_order_id=?').all(num(oid)); } catch (e) { taxes = []; }
+  try { taxes = allRows(db, 'SELECT c_tax_id,taxamt FROM c_ordertax WHERE c_order_id=?', num(oid)); } catch (e) { taxes = []; }
   var by = {}, absent = [];
   function add(side, el, amt) { var k = el.id; if (!by[k]) by[k] = { account_id: el.id, value: el.value, name: el.name, dr: 0, cr: 0 }; if (side === 'DR') by[k].dr += cents(amt); else by[k].cr += cents(amt); }
   function el(res) { if (res.acct == null || !res.element) { absent.push(res.token); return null; } return res.element; }

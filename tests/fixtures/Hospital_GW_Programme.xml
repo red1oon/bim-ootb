@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<APIBusinessObjects xmlns="http://xmlns.oracle.com/Primavera/P6/V8.2/API/BusinessObjects">
+  <Project>
+    <Id>GW-HOSP</Id>
+    <Name>GW Hospital — Construction Programme</Name>
+    <PlannedStartDate>2026-02-02T08:00:00</PlannedStartDate>
+    <Calendar>
+      <ObjectId>1</ObjectId>
+      <Name>Standard 5-Day</Name>
+      <HoursPerDay>8</HoursPerDay>
+    </Calendar>
+    <WBS>
+      <ObjectId>W1</ObjectId>
+      <Code>1</Code>
+      <Name>Substructure</Name>
+      <ParentObjectId></ParentObjectId>
+    </WBS>
+    <WBS>
+      <ObjectId>W2</ObjectId>
+      <Code>2</Code>
+      <Name>Superstructure</Name>
+      <ParentObjectId></ParentObjectId>
+    </WBS>
+    <WBS>
+      <ObjectId>W3</ObjectId>
+      <Code>3</Code>
+      <Name>Building Envelope</Name>
+      <ParentObjectId></ParentObjectId>
+    </WBS>
+    <WBS>
+      <ObjectId>W4</ObjectId>
+      <Code>4</Code>
+      <Name>MEP First Fix</Name>
+      <ParentObjectId></ParentObjectId>
+    </WBS>
+    <WBS>
+      <ObjectId>W5</ObjectId>
+      <Code>5</Code>
+      <Name>Finishes &amp; Fit-out</Name>
+      <ParentObjectId></ParentObjectId>
+    </WBS>
+    <WBS>
+      <ObjectId>W6</ObjectId>
+      <Code>6</Code>
+      <Name>Commissioning</Name>
+      <ParentObjectId></ParentObjectId>
+    </WBS>
+    <Activity>
+      <Id>A1010</Id>
+      <Name>Footings &amp; Foundations</Name>
+      <WBSObjectId>W1</WBSObjectId>
+      <PlannedDuration>240</PlannedDuration>
+      <PlannedStartDate>2026-02-02T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-03-04T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A2010</Id>
+      <Name>Columns</Name>
+      <WBSObjectId>W2</WBSObjectId>
+      <PlannedDuration>200</PlannedDuration>
+      <PlannedStartDate>2026-03-04T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-03-29T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A2020</Id>
+      <Name>Beams</Name>
+      <WBSObjectId>W2</WBSObjectId>
+      <PlannedDuration>240</PlannedDuration>
+      <PlannedStartDate>2026-03-29T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-04-28T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A2030</Id>
+      <Name>Structural Framing</Name>
+      <WBSObjectId>W2</WBSObjectId>
+      <PlannedDuration>280</PlannedDuration>
+      <PlannedStartDate>2026-04-28T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-06-02T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A3010</Id>
+      <Name>External &amp; Internal Walls</Name>
+      <WBSObjectId>W3</WBSObjectId>
+      <PlannedDuration>320</PlannedDuration>
+      <PlannedStartDate>2026-06-02T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-07-12T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A3020</Id>
+      <Name>Curtain Walling</Name>
+      <WBSObjectId>W3</WBSObjectId>
+      <PlannedDuration>200</PlannedDuration>
+      <PlannedStartDate>2026-06-12T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-07-07T17:00:00</PlannedFinishDate>
+      <TotalFloat>1160</TotalFloat>
+      <FreeFloat>1160</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A3030</Id>
+      <Name>Doors &amp; Windows</Name>
+      <WBSObjectId>W3</WBSObjectId>
+      <PlannedDuration>160</PlannedDuration>
+      <PlannedStartDate>2026-07-12T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-08-01T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A4010</Id>
+      <Name>Plumbing Pipework</Name>
+      <WBSObjectId>W4</WBSObjectId>
+      <PlannedDuration>360</PlannedDuration>
+      <PlannedStartDate>2026-07-17T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-08-31T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A4020</Id>
+      <Name>HVAC Ductwork</Name>
+      <WBSObjectId>W4</WBSObjectId>
+      <PlannedDuration>400</PlannedDuration>
+      <PlannedStartDate>2026-07-22T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-09-10T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A4030</Id>
+      <Name>Fire Protection</Name>
+      <WBSObjectId>W4</WBSObjectId>
+      <PlannedDuration>240</PlannedDuration>
+      <PlannedStartDate>2026-07-27T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-08-26T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A4040</Id>
+      <Name>Electrical &amp; Lighting</Name>
+      <WBSObjectId>W4</WBSObjectId>
+      <PlannedDuration>320</PlannedDuration>
+      <PlannedStartDate>2026-08-01T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-09-10T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A5010</Id>
+      <Name>Internal Finishes</Name>
+      <WBSObjectId>W5</WBSObjectId>
+      <PlannedDuration>280</PlannedDuration>
+      <PlannedStartDate>2026-09-10T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-10-15T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A5020</Id>
+      <Name>Medical Equipment &amp; Furniture</Name>
+      <WBSObjectId>W5</WBSObjectId>
+      <PlannedDuration>160</PlannedDuration>
+      <PlannedStartDate>2026-10-15T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-11-04T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Activity>
+      <Id>A6010</Id>
+      <Name>MEP Commissioning</Name>
+      <WBSObjectId>W6</WBSObjectId>
+      <PlannedDuration>200</PlannedDuration>
+      <PlannedStartDate>2026-11-04T08:00:00</PlannedStartDate>
+      <PlannedFinishDate>2026-11-29T17:00:00</PlannedFinishDate>
+      <TotalFloat>0</TotalFloat>
+      <FreeFloat>0</FreeFloat>
+      <Status>Not Started</Status>
+    </Activity>
+    <Relationship>
+      <PredecessorActivityId>A1010</PredecessorActivityId>
+      <SuccessorActivityId>A2010</SuccessorActivityId>
+      <Type>Finish to Start</Type>
+      <Lag>0</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A2010</PredecessorActivityId>
+      <SuccessorActivityId>A2020</SuccessorActivityId>
+      <Type>Finish to Start</Type>
+      <Lag>0</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A2020</PredecessorActivityId>
+      <SuccessorActivityId>A2030</SuccessorActivityId>
+      <Type>Finish to Start</Type>
+      <Lag>0</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A2030</PredecessorActivityId>
+      <SuccessorActivityId>A3010</SuccessorActivityId>
+      <Type>Finish to Start</Type>
+      <Lag>0</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A3010</PredecessorActivityId>
+      <SuccessorActivityId>A3020</SuccessorActivityId>
+      <Type>Start to Start</Type>
+      <Lag>80</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A3010</PredecessorActivityId>
+      <SuccessorActivityId>A3030</SuccessorActivityId>
+      <Type>Finish to Start</Type>
+      <Lag>0</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A3030</PredecessorActivityId>
+      <SuccessorActivityId>A4010</SuccessorActivityId>
+      <Type>Start to Start</Type>
+      <Lag>40</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A4010</PredecessorActivityId>
+      <SuccessorActivityId>A4020</SuccessorActivityId>
+      <Type>Start to Start</Type>
+      <Lag>40</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A4020</PredecessorActivityId>
+      <SuccessorActivityId>A4030</SuccessorActivityId>
+      <Type>Start to Start</Type>
+      <Lag>40</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A4030</PredecessorActivityId>
+      <SuccessorActivityId>A4040</SuccessorActivityId>
+      <Type>Start to Start</Type>
+      <Lag>40</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A4040</PredecessorActivityId>
+      <SuccessorActivityId>A5010</SuccessorActivityId>
+      <Type>Finish to Start</Type>
+      <Lag>0</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A5010</PredecessorActivityId>
+      <SuccessorActivityId>A5020</SuccessorActivityId>
+      <Type>Finish to Start</Type>
+      <Lag>0</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A4040</PredecessorActivityId>
+      <SuccessorActivityId>A6010</SuccessorActivityId>
+      <Type>Finish to Finish</Type>
+      <Lag>0</Lag>
+    </Relationship>
+    <Relationship>
+      <PredecessorActivityId>A5020</PredecessorActivityId>
+      <SuccessorActivityId>A6010</SuccessorActivityId>
+      <Type>Finish to Start</Type>
+      <Lag>0</Lag>
+    </Relationship>
+  </Project>
+</APIBusinessObjects>

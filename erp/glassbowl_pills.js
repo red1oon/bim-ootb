@@ -108,8 +108,21 @@
     if (!srcBtn) return;
     var r = srcBtn.getBoundingClientRect();
     var d = document.createElement('div'); d.id = 'gb-whist-drawer';
-    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:row;align-items:center;gap:6px;' +
-      'top:' + (r.top - 2) + 'px;left:' + Math.max(8, r.left - 104) + 'px;';   // SIDEWAYS: chips to the LEFT of the W pill (matches the _revealChip convention), not stacked above
+    // PERPENDICULAR auto-layout — draw ACROSS the strip, never along it (parallel covers neighbour pills).
+    // Glassbowl/Gravity strip is HORIZONTAL (bottom bar) → a COLUMN ABOVE; a VERTICAL strip → a ROW to the
+    // LEFT. Same dynamic rule as idmp_pills/panels — self-correcting if orientation flips. Chip order
+    // (bomb, then Z): column → bomb top/far, Z bottom/adjacent · row → bomb left/far, Z right/adjacent.
+    var _host = srcBtn.parentElement, _hr = _host ? _host.getBoundingClientRect() : r;
+    var _vertical = _hr.height >= _hr.width;
+    var _base = 'position:fixed;z-index:10000;display:flex;align-items:center;gap:6px;';
+    if (_vertical) {
+      d.style.cssText = _base + 'flex-direction:row;top:' + r.top + 'px;right:' +
+        Math.max(8, Math.round(window.innerWidth - r.left + 6)) + 'px;';
+    } else {
+      d.style.cssText = _base + 'flex-direction:column;bottom:' + (window.innerHeight - r.top + 6) +
+        'px;left:' + Math.max(8, r.left) + 'px;';
+    }
+    console.log('§GB-PILL drawer-orient=' + (_vertical ? 'row(vertical-strip)' : 'col(horizontal-strip)'));
     function chip(name, title, color, onTap) {
       var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
       b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
@@ -118,9 +131,9 @@
       b.addEventListener('pointerup', function (e) { e.stopPropagation(); onTap(); var dd = document.getElementById('gb-whist-drawer'); if (dd) dd.remove(); });
       return b;
     }
+    d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearHistory));
     d.appendChild(chip('docHist', 'Page history (Z) — this page\'s view-log timeline', '#6c9fff',
       function () { var A = window.GlassbowlPillActions || {}; if (A.pagehistory) A.pagehistory(); }));
-    d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearHistory));
     document.body.appendChild(d);
     setTimeout(function () {
       var off = function (ev) { var dd = document.getElementById('gb-whist-drawer'); if (dd && !dd.contains(ev.target)) { dd.remove(); document.removeEventListener('pointerdown', off, true); } };

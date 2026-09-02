@@ -1,0 +1,16 @@
+{
+  "_comment": "ERP-surface SFX config (idempiere.html). FOLLOW-UP ROUND 2 §R2-AUDIO: subtle POS earcons ON by default (enabled:true), but NO per-button tick spam (ui_clicks:false) — only the explicit POS ring/pay/complete earcons that pos_lens.js fires via window.__sfx.play(). The viewer keeps its own viewer/sfx.json (default OFF). A mute/settings affordance can be added if the user asks (dictation 2026-06-14).",
+  "master": {
+    "enabled": true,
+    "volume": 1.0,
+    "ui_clicks": false,
+    "style": "clean",
+    "musical": false,
+    "scene_bed": false
+  },
+  "ui_sounds": [
+    { "id": "pos_ring",     "voice": "pluck", "freq": 1047, "ms": 80,  "label": "POS — item rung into cart (C6 tick)" },
+    { "id": "pos_pay",      "voice": "bell",  "freq": 784,  "ms": 180, "label": "POS — Pay tapped (G5)" },
+    { "id": "pos_complete", "voice": "harp",  "freq": 1047, "ms": 320, "label": "POS — sale complete (C6 chime)" }
+  ]
+}

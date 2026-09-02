@@ -1,0 +1,205 @@
+{
+  "_provenance": {
+    "source": "buildings/HHS_Office_Federated_extracted.db",
+    "source_sha16": "6498f86f43598350",
+    "tables": "spatial_structure(IfcSpace) + elements_meta(IfcFlowTerminal)",
+    "extracted_by": "fixtures/build_hhs_rooms.js",
+    "note": "EXTRACTED not invented — real IfcSpace rooms + real equipment elements of HHS_Office_Federated"
+  },
+  "count": 14,
+  "rooms": [
+    {
+      "guid": "RM_Level_1_1",
+      "name": "≈ Level 1 R1",
+      "storey": "Level 1",
+      "center": [
+        -0.118,
+        -9.72,
+        1.686
+      ],
+      "contained": 2
+    },
+    {
+      "guid": "RM_Level_1_2",
+      "name": "≈ Level 1 R2",
+      "storey": "Level 1",
+      "center": [
+        2.782,
+        -9.72,
+        1.686
+      ],
+      "contained": 8
+    },
+    {
+      "guid": "RM_Level_1_3",
+      "name": "≈ Level 1 R3",
+      "storey": "Level 1",
+      "center": [
+        5.682,
+        -9.72,
+        1.686
+      ],
+      "contained": 2
+    },
+    {
+      "guid": "RM_Level_1_4",
+      "name": "≈ Level 1 R4",
+      "storey": "Level 1",
+      "center": [
+        8.082,
+        -9.72,
+        1.686
+      ],
+      "contained": 2
+    },
+    {
+      "guid": "RM_Level_1_5",
+      "name": "≈ Level 1 R5",
+      "storey": "Level 1",
+      "center": [
+        13.382,
+        35.18,
+        1.686
+      ],
+      "contained": 7
+    },
+    {
+      "guid": "RM_Level_1_6",
+      "name": "≈ Level 1 R6",
+      "storey": "Level 1",
+      "center": [
+        16.582,
+        35.18,
+        1.686
+      ],
+      "contained": 8
+    },
+    {
+      "guid": "RM_Level_1_7",
+      "name": "≈ Level 1 R7",
+      "storey": "Level 1",
+      "center": [
+        19.482,
+        36.48,
+        1.686
+      ],
+      "contained": 4
+    },
+    {
+      "guid": "RM_Level_1_8",
+      "name": "≈ Level 1 R8",
+      "storey": "Level 1",
+      "center": [
+        51.582,
+        -8.82,
+        1.686
+      ],
+      "contained": 0
+    },
+    {
+      "guid": "RM_Level_2_1",
+      "name": "≈ Level 2 R1",
+      "storey": "Level 2",
+      "center": [
+        -0.118,
+        -9.806,
+        5.364
+      ],
+      "contained": 7
+    },
+    {
+      "guid": "RM_Level_2_2",
+      "name": "≈ Level 2 R2",
+      "storey": "Level 2",
+      "center": [
+        2.782,
+        -9.806,
+        5.364
+      ],
+      "contained": 12
+    },
+    {
+      "guid": "RM_Level_2_3",
+      "name": "≈ Level 2 R3",
+      "storey": "Level 2",
+      "center": [
+        5.582,
+        -9.806,
+        5.364
+      ],
+      "contained": 7
+    },
+    {
+      "guid": "RM_Level_2_4",
+      "name": "≈ Level 2 R4",
+      "storey": "Level 2",
+      "center": [
+        8.082,
+        -9.806,
+        5.364
+      ],
+      "contained": 13
+    },
+    {
+      "guid": "RM_Level_3_1",
+      "name": "≈ Level 3 R1",
+      "storey": "Level 3",
+      "center": [
+        5.682,
+        -9.82,
+        8.746
+      ],
+      "contained": 9
+    },
+    {
+      "guid": "RM_Level_3_2",
+      "name": "≈ Level 3 R2",
+      "storey": "Level 3",
+      "center": [
+        8.082,
+        -9.82,
+        8.746
+      ],
+      "contained": 7
+    }
+  ],
+  "asset_count": 6,
+  "assets": [
+    {
+      "guid": "04i7IlvuLBuOmBXGMxmbgo",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:490149",
+      "storey": "Level 3"
+    },
+    {
+      "guid": "07A8OFMrj5IeMQd6aflvMZ",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414359",
+      "storey": "Level 2"
+    },
+    {
+      "guid": "0B2Nysi4bEIBgg6BXJzBCa",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414296",
+      "storey": "Level 2"
+    },
+    {
+      "guid": "0B2Nysi4bEIBgg6BXJzBCb",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414297",
+      "storey": "Level 2"
+    },
+    {
+      "guid": "0B2Nysi4bEIBgg6BXJzBCu",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414276",
+      "storey": "Level 2"
+    },
+    {
+      "guid": "0BO$IIcSv1beKQqgkpQd4O",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414681",
+      "storey": "Level 2"
+    }
+  ]
+}

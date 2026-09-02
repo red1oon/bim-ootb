@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> — SPDX-License-Identifier: MIT
+  ⚠ DO NOT REMOVE — W-POS-PILLBAR fixture (FABLE5_FOLLOWUP_2026-07-04 §Item 3). A minimal HOST for the
+  REAL erp/pos_lens.js (same idea as teams/tests/fixtures/idmp_host.html): real sql.js seed with the
+  exact tables pos_lens queries, real KernelOps op log, real POSCore/ERPEngine — only the PAGE chrome
+  (login, kanban, pills) is absent, because the witness targets the POS pill-button bar, not the page.
+  The seed rows are witness INPUTS (the memStore idiom), not invented product data claims. -->
+<html><head><meta charset="utf-8"><title>POS pillbar fixture</title></head>
+<body>
+<div id="mountpt"></div>
+<script src="../../lib/sql-wasm-fts5.js"></script>
+<script src="../../icons.js"></script>
+<script src="../../kernel_ops.js"></script>
+<script src="../../erp_kernel.js"></script>
+<script src="../../erp_engine.js"></script>
+<script src="../../pos_core.js"></script>
+<script src="../../pos_lens.js"></script>
+<script>
+(async function () {
+  var SQL = await initSqlJs({ locateFile: function () { return '../../lib/sql-wasm-fts5.wasm'; } });
+
+  // ── the b3 seed: ONLY what pos_lens actually SELECTs (enumerated from its q1/qa calls) ──
+  var seed = new SQL.Database();
+  seed.run([
+    "CREATE TABLE c_pos (c_pos_id INT, name TEXT, m_pricelist_id INT, c_poskeylayout_id INT, c_doctype_id INT, c_bpartnercashtrx_id INT)",
+    "INSERT INTO c_pos VALUES (100,'Fixture POS',101,102,135,118)",
+    "CREATE TABLE m_pricelist_version (m_pricelist_version_id INT, m_pricelist_id INT)",
+    "INSERT INTO m_pricelist_version VALUES (201,101)",
+    "CREATE TABLE c_poskey (c_poskey_id INT, m_product_id INT, c_poskeylayout_id INT, seqno INT, ad_client_id INT, ad_org_id INT, qty REAL)",
+    "INSERT INTO c_poskey VALUES (301,124,102,10,11,0,1),(302,125,102,20,11,0,1)",
+    "CREATE TABLE m_product (m_product_id INT, name TEXT, upc TEXT, value TEXT, isactive TEXT)",
+    "INSERT INTO m_product VALUES (124,'Fixture Oak','790000124','OAK','Y'),(125,'Fixture Elm','790000125','ELM','Y')",
+    "CREATE TABLE m_productprice (m_product_id INT, m_pricelist_version_id INT, pricestd REAL, ad_client_id INT, ad_org_id INT)",
+    "INSERT INTO m_productprice VALUES (124,201,45.5,11,0),(125,201,12.0,11,0)",
+    "CREATE TABLE c_doctype (c_doctype_id INT, name TEXT, docsubtypeso TEXT, isactive TEXT)",
+    "INSERT INTO c_doctype VALUES (135,'POS Order','WR','Y'),(136,'Standard Order','SO','Y')",
+    "CREATE TABLE c_bpartner (c_bpartner_id INT, name TEXT, isactive TEXT)",
+    "INSERT INTO c_bpartner VALUES (118,'Walk-in Fixture','Y')",
+    // queried-but-empty surfaces (replenish / register / deliver-later legs)
+    "CREATE TABLE m_replenish (m_product_id INT, m_warehouse_id INT, level_min REAL, level_max REAL, replenishtype TEXT, qtybatchsize REAL, m_warehousesource_id INT)",
+    "CREATE TABLE m_locator (m_locator_id INT, m_warehouse_id INT, isdefault TEXT)",
+    "CREATE TABLE m_transaction (m_product_id INT, m_locator_id INT, movementtype TEXT, movementqty REAL)",
+    "CREATE TABLE m_storagereservation (m_product_id INT, m_warehouse_id INT, qty REAL, issotrx TEXT)",
+    "CREATE TABLE m_product_po (m_product_id INT, c_bpartner_id INT, pricepo REAL, iscurrentvendor TEXT)",
+    "CREATE TABLE pp_product_bom (pp_product_bom_id INT, m_product_id INT)",
+    "CREATE TABLE pp_product_bomline (pp_product_bomline_id INT, pp_product_bom_id INT, m_product_id INT, qtybom REAL)",
+    "CREATE TABLE ad_table (ad_table_id INT, tablename TEXT)",
+    "CREATE TABLE ad_column (ad_column_id INT, ad_table_id INT, columnname TEXT, defaultvalue TEXT, ismandatory TEXT)",
+    "CREATE TABLE ad_sysconfig (name TEXT, value TEXT)",
+    "CREATE TABLE ad_image (ad_image_id INT, ad_client_id INT, ad_org_id INT, entitytype TEXT)"
+  ].join(';'));
+
+  // read-only better-sqlite3-shaped shim (the idempiere.html _b3 pattern, lowercased keys)
+  function b3(dbh) {
+    function lc(o) { if (!o) return o; var r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; }
+    function exec(sql, args, all) {
+      var st = dbh.prepare(sql), out = all ? [] : undefined;
+      try { st.bind(args.slice()); if (all) { while (st.step()) out.push(lc(st.getAsObject())); } else if (st.step()) out = lc(st.getAsObject()); }
+      finally { st.free(); } return out;
+    }
+    return { prepare: function (sql) { return {
+      get: function () { return exec(sql, [].slice.call(arguments), false); },
+      all: function () { return exec(sql, [].slice.call(arguments), true); } }; } };
+  }
+
+  var opDb = new SQL.Database();
+  window.ERPKernel.initProjection(opDb);
+
+  function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = String(txt); return e; }
+  window.PosLens.open({
+    b3: b3(seed), opDb: opDb, KO: window.KernelOps,
+    seal: function () { return window.KernelOps.sealFrom(opDb); },
+    chainVerify: function () { return (window.KernelOps.verifyChainIncremental || window.KernelOps.verifyChain)(opDb); },
+    overlay: function (title, node) { var h = el('div', '', title); h.id = 'fixture-title'; document.getElementById('mountpt').appendChild(h); document.getElementById('mountpt').appendChild(node); },
+    el: el, status: function (m) { console.log('§FIXTURE-STATUS ' + m); }
+  });
+  window.__posFixtureReady = true;
+})().catch(function (e) { console.log('§FIXTURE-FAIL ' + (e && e.message)); window.__posFixtureError = String(e && e.message); });
+</script>
+</body></html>
