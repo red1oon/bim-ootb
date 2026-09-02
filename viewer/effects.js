@@ -2819,6 +2819,18 @@ async function setupEffects(A, renderer, scene, camera) {
   // CURRENT `A._envMap` unconditionally, every reassert tick (cheap reference swap) — decoupled
   // from the one-time `_photoBoosted` intensity/roughness flag below, since the fresh dusk texture
   // can arrive (2s-throttled) well after a material was already flagged boosted.
+  // §SUN_FILL_RATIO (2026-09-02, PHOTOREAL_STILL_RENDER.md — user, film review: "Wall away from
+  // Sun shadow?"). Shared glossiness predicate, so _reassertPhotoEnvMap below and
+  // _reassertPhotoMatBoost cannot disagree about which materials are "reflective" — and so the
+  // envMap decision does not depend on which of the two ran first this tick.
+  function _isPhotoGlossyMat(m) {
+    if (!m) return false;
+    if (m.userData && m.userData._photoRoomProbeEligible) return true;   // mirror/room-probe set
+    if (typeof m.metalness === 'number' && m.metalness > PHOTO_METAL_THRESHOLD) return true;
+    return typeof m.roughness === 'number' && m.roughness <= PHOTO_GLOSSY_ROUGHNESS_MAX;
+  }
+  A._isPhotoGlossyMat = _isPhotoGlossyMat;  // witness reads the SAME predicate, never a copy of it
+  A._photoMatteSkyEnv = true;               // §SUN_FILL_RATIO is present in this build
   function _reassertPhotoEnvMap() {
     if (!A._matCache || !A._envMap) return;
     Object.keys(A._matCache).forEach(function(k) {
@@ -2828,8 +2840,23 @@ async function setupEffects(A, renderer, scene, camera) {
       // below) reflect the local room-probe capture instead of the static sky, once it's built —
       // this function already runs every accumulation tick, so it naturally upgrades them from the
       // sky fallback to the real probe the moment _buildRoomProbe() finishes, no separate loop needed.
+      //
+      // §SUN_FILL_RATIO: MATTE materials stay on the plain-navigation sky env map instead of taking
+      // the staged HDRI. This is not a new policy — it is the SAME policy PHOTO_GLOSSY_ROUGHNESS_MAX
+      // already states above ("excludes concrete/plaster/wood, whose shadow-darkened diffuse read
+      // must stay untouched"), closing the route that bypassed it. That gate limits the INTENSITY
+      // multiplier, but staging also swaps the MAP itself to belfast_sunset_puresky_1k.hdr for every
+      // material, and IBL is NOT shadow-map-occluded in three.js (the documented root cause of the
+      // earlier "all shadows on building are gone" report, see PHOTO_ENVMAP_BOOST's history above).
+      // MEASURED on Clinic, real render, scene-linear: on a wall facing AWAY from the live sun the
+      // env term is 0.033 of 0.153 total in plain navigation (21%) but 0.440 of 0.582 (76%) once
+      // staged — a 13x unshadowed fill that took the away/sun separation from 0.24 to 0.74 and
+      // erased §WALL_SIDE_AND_LIGHT_FLOOR's (PR #1601) shipped contrast in the photoreal path.
+      // The HDRI stays exactly where it was introduced to work: reflections on glass and metal.
+      // Witness: viewer/tests/witness_sun_fill_ratio.js (§SFR_* lines).
       var target = (m.userData && m.userData._photoRoomProbeEligible && _roomProbeRT)
-        ? _roomProbeRT.texture : A._envMap;
+        ? _roomProbeRT.texture
+        : (_isPhotoGlossyMat(m) ? A._envMap : (_photoEnvMapSaved || A._envMap));
       if (m.envMap !== target) { m.envMap = target; m.needsUpdate = true; }
     });
   }
@@ -3706,6 +3733,29 @@ async function setupEffects(A, renderer, scene, camera) {
       m.needsUpdate = true;
     });
     _photoEnvBoostedMats = [];
+    // §SUN_FILL_RATIO (2026-09-02): matte materials were held on the PRE-STAGING sky env map, not
+    // the HDRI, so they are not in the boosted list above and would keep a reference to it after
+    // teardown. A later A.updateSky() regen DISPOSES the previous render target
+    // (§MEMLEAK_PMREM_DISPOSE, scene.js:227), so that reference must not outlive staging. One pass
+    // points every cached material back at the live A._envMap — the same thing the loop above
+    // already does for the boosted set, extended to the rest. (It also closes a pre-existing leak:
+    // before this change matte materials kept the staged HDRI as their envMap after Alt+S exited.)
+    // The same pass clears `_photoBoosted`. _reassertPhotoMatBoost sets that flag on EVERY material
+    // it visits, but only the glossy ones land in _photoEnvBoostedMats — so matte materials kept a
+    // stale `_photoBoosted:true` for the rest of the session and were skipped by the early-return on
+    // every later Alt+S. Harmless today (nothing is applied to them) but it is a lie in the state,
+    // and the witness teardown census reads it: measured 11 of 53 stale on Clinic before this line.
+    if (A._envMap && A._matCache) {
+      var _mattePut = 0, _flagClr = 0;
+      Object.keys(A._matCache).forEach(function(k) {
+        var m = A._matCache[k];
+        if (!m) return;
+        if ('envMap' in m && m.envMap !== A._envMap) { m.envMap = A._envMap; m.needsUpdate = true; _mattePut++; }
+        if (m.userData && m.userData._photoBoosted) { delete m.userData._photoBoosted; _flagClr++; }
+      });
+      if (_mattePut || _flagClr) console.log('§SUN_FILL_RATIO teardown envMap restored on ' + _mattePut +
+        ' material(s), stale _photoBoosted cleared on ' + _flagClr);
+    }
     _disablePhotoShadows();
     if (A.ground && A._applyGroundTexture) {
       // §GROUND_ALBEDO: hand the gain back BEFORE restoring, or the lift follows the user out of
@@ -5931,7 +5981,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // that: §CPE_AIM_PIN (Part C) added real behaviour here (`_buildPinZones`/`_pinLookAtAt` inside
   // `_beat3Pose`) but this string was never bumped for it, breaking the file's own "bump on EVERY
   // behaviour change" rule for one release. Fixed now, not left for a future session to rediscover.
-  var EFFECTS_V = 'v23 (' +
+  var EFFECTS_V = 'v24 (' +
     '§CPE_DISCIPLINE_REVEAL_FLYBACK new fast eased retrace sub-beat replaces the pull-out->round-2 ' +
       'teleport cut; §CPE_DISCIPLINE_REVEAL_ORDER discs sorted ascending by real avg bbox volume, ' +
       'MEP forced last; §CPE_DISCIPLINE_REVEAL_FADE tail-parade boundaries get a brief overlap ' +
