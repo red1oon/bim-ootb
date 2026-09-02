@@ -1901,6 +1901,17 @@ async function setupScene(A) {
         geo.computeVertexNormals();
         if (A) { A._normalsComputed = (A._normalsComputed || 0) + 1; }
       }
+      // §DUCT_SILHOUETTE — the ONE choke point every streamed element passes through, and the only
+      // place refinement can happen: both batch paths in streaming.js size their BatchedMesh from
+      // `item.geo` at flush time (:2055 totalVerts, :2412 rv/ri reservation), so a geometry that is
+      // already refined HERE is reserved for correctly with no batch change at all. Refining after
+      // the batch is built is impossible — the slot's vertex range is fixed.
+      // Declines silently and leaves `geo` untouched for everything that does not qualify, which is
+      // the overwhelming majority; see viewer/silhouette_refine.js for the gate and W-DUCT-SIL for
+      // the proof that a non-curve surface is not moved.
+      if (window.SilhouetteRefine) {
+        try { window.SilhouetteRefine.refineGeometry(geo, THREE); } catch (e) { /* never block a load */ }
+      }
       geo.computeBoundingSphere();
       // §S258: BVH deferred — don't build during streaming (86K builds = ~9s lag).
       // acceleratedRaycast falls back to normal raycast when boundsTree is absent.
