@@ -50,6 +50,15 @@ function setupCpeDayCounter(A) {
   // make, not ours to forbid — but it is why top right remains the default rather than a mere
   // first-in-list accident.
   var POS = { tr: 1, tl: 1, br: 1, bl: 1 };
+  // §CPE_HUD_STACK (2026-08-30, user: the overview and the resource panel belong "by where the Day
+  // counting is, to be same top/down/left/right panel preference setting"). The counter is the top
+  // of that column, so everything below it needs its height — and must NOT recompute it. This is
+  // the one owner of that arithmetic; callers ask, they never re-derive.
+  A.dayCounterBoxSize = function(h) {
+    var fontPx = Math.max(14, Math.round(h * 0.026));
+    var padY = Math.round(fontPx * 0.55);
+    return { h: padY * 2 + fontPx, margin: Math.round(h * 0.028) };
+  };
   A.dayCounterCompositeOntoCanvas = function(ctx, w, h, info, opacity, pos) {
     if (!ctx || !info || !(opacity > 0)) return;
     var op = Math.min(1, opacity);

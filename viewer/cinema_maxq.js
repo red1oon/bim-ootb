@@ -92,6 +92,26 @@
   var BUILDUP_EVEN_TEMPO = true;   // false restores §CPE_BUILDUP_WORK_PACED
   var _wpSched = null, _wpTried = false;
 
+  // ══ §CPE_BUILDUP_ONSET_BLEND (2026-08-27, CINEMA_PATH_EDITOR.md §CPE_BUILDUP_ONSET_BURST) ═════
+  // Re-raised by the user after §CPE_BUILDUP_ONSET_BURST (2026-08-13) was deprioritized, not fixed:
+  // "the movie is not reflecting the build up construction speed on the very first day... captures
+  // frames right away to days past... first few secs should take on Day 0 as most 4D rush onset."
+  // §CPE_BUILDUP_EVEN_TEMPO's day counter is still correct system-wide (kept, unchanged below) but a
+  // schedule that clusters completions early still LOOKS bursty under a pure calendar cursor —
+  // measured then: Duplex, 24.6% of the whole building already placed 5.5s into a 55s film. This is
+  // the minimal fix the prior write-up named and left unbuilt ("blend the cursor toward the
+  // already-present element-paced formula only within roughly the first ~10s of film... fading back
+  // to pure calendar-linear after") — scoped exactly to the user's own ask ("correct only the first
+  // 10 secs"), never reopening "two mechanisms compete for the whole film"
+  // (§CPE_BUILDUP_EVEN_TEMPO's own reason for retiring §CPE_BUILDUP_WORK_PACED as the default).
+  var ONSET_BLEND_SEC = 10;        // film seconds; user's own scoping, not invented
+  var _wpOnsetTried = false;       // separate one-shot arm flag — independent of _wpTried, which
+                                   // already gates BOTH the even-tempo mode-log AND the (unused
+                                   // while even-tempo is on) full-film work-pacing arm below; reusing
+                                   // it here would make _workPacingArm()'s own `_wpTried = true` first
+                                   // line silently suppress the even-tempo mode-log this same call
+                                   // still needs to print.
+
   function _workPacingArm() {
     _wpTried = true; _wpSched = null;
     if (typeof window.tmWorkSchedule !== 'function') {
@@ -112,21 +132,54 @@
     return true;
   }
 
-  // The cursor this frame should ask for. Pure function of the film fraction, so preview and bake
-  // cannot diverge and two runs of the same film ask for identical cursors.
-  function _workCursorAt(tFilm, bkState) {
+  // The cursor this frame should ask for. Pure function of (tFilm, bkState, totalSec) — `totalSec`
+  // is a per-plan constant (the film's own designed length), identical for preview and bake of the
+  // same film, so preview and bake still cannot diverge and two runs of the same film still ask for
+  // identical cursors. `totalSec` is optional (older call sites omit it) — onset blend simply stays
+  // off when it is not supplied, same DEGRADE-DON'T-DISABLE contract every other lever in this file
+  // already follows.
+  function _workCursorAt(tFilm, bkState, totalSec) {
     var t = Math.max(0, Math.min(1, tFilm));
+    var calMs = bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
     // §CPE_BUILDUP_EVEN_TEMPO — the straight line, before any schedule is consulted. Gated ahead of
     // _workPacingArm() so an even-tempo film never even arms work pacing: arming logs a mode line
     // that would then describe a pacing that is not in force, which is exactly the kind of log that
     // costs a live debugging round-trip.
     if (BUILDUP_EVEN_TEMPO) {
+      // §CPE_BUILDUP_ONSET_BLEND — onsetU is the ONSET_BLEND_SEC window expressed as a tFilm
+      // fraction of THIS film (so "10 seconds" means the same thing on a 30s and a 300s bake),
+      // capped at half the film so a very short test/preview clip can't blend past its midpoint.
+      var onsetU = (totalSec > 0) ? Math.min(0.5, ONSET_BLEND_SEC / totalSec) : 0;
+      if (onsetU > 0 && t < onsetU) {
+        if (!_wpOnsetTried) { _wpOnsetTried = true; _workPacingArm(); }
+        if (_wpSched) {
+          var _k = Math.max(1, Math.min(_wpSched.total, Math.round(t * _wpSched.total)));
+          var elMs = _wpSched.ends[_k - 1];
+          // w: 0 at t=0 (fully element-paced, matching the burst's own true completion order) ->
+          // 1 at t=onsetU (fully calendar-linear, handing off to §CPE_BUILDUP_EVEN_TEMPO cleanly —
+          // blendedMs === calMs exactly at the handoff instant, no seam).
+          var w = t / onsetU;
+          var blendedMs = elMs + (calMs - elMs) * w;
+          if (!_wpTried) {
+            _wpTried = true;
+            console.log('§CPE_BUILDUP_PACING mode=even-calendar+onset-blend (§CPE_BUILDUP_ONSET_BLEND) ' +
+              'onsetSec=' + ONSET_BLEND_SEC + '/' + totalSec.toFixed(1) + ' onsetU=' + onsetU.toFixed(4) +
+              ' — first ' + ONSET_BLEND_SEC + 's blend toward element-paced order, fading to pure ' +
+              'calendar by t=' + onsetU.toFixed(4) + '; day counter and the rest of the film unaffected');
+          }
+          return blendedMs;
+        }
+        // Work schedule unavailable (older time_machine.js / no usable schedule) — DEGRADE to pure
+        // calendar exactly as §CPE_BUILDUP_EVEN_TEMPO always has; _workPacingArm() already logged why.
+      }
       if (!_wpTried) {
         _wpTried = true;
         console.log('§CPE_BUILDUP_PACING mode=even-calendar (§CPE_BUILDUP_EVEN_TEMPO) — every film ' +
-          'second advances the SAME number of days; dwell/tempo is the path editor\'s job (sticks + timings)');
+          'second advances the SAME number of days; dwell/tempo is the path editor\'s job (sticks + timings)' +
+          (onsetU > 0 ? ' (onset-blend window armed but no usable work schedule — see §CPE_BUILDUP_PACING arm log above)'
+                      : ' (onset-blend inactive — no totalSec passed by this caller)'));
       }
-      return bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
+      return calMs;
     }
     if (!_wpTried) _workPacingArm();
     if (!_wpSched) return bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
@@ -139,7 +192,7 @@
     return _wpSched.ends[k - 1];
   }
 
-  function _workPacingReset() { _wpSched = null; _wpTried = false; _fcIdx = null; }
+  function _workPacingReset() { _wpSched = null; _wpTried = false; _wpOnsetTried = false; _fcIdx = null; }
 
   // ══ §CPE_BUILDUP_TOPOUT (2026-08-02) — the ending beats dwell on the FINISHED building ═════════
   // User, on the 1761-frame Hospital bake: "the top roof solar panels never gets to be shown - it
@@ -155,6 +208,26 @@
   var BUILDUP_TOPOUT_FALLBACK_U = 0.92;  // ≈ the orbit boundary on measured plans (Hospital 0.929),
                                          // used only when a plan carries no beats (older cache).
   function _buildupTopoutU(plan) {
+    // §CPE_DISCIPLINE_REVEAL (2026-08-14, real defect found on a Hospital bake — user: "2nd round
+    // seems to cut over way before the stop stick without finishing the full buildup"). The reveal
+    // round exists to show off the FINISHED building; topping out at plan.beats.rise (orbit start,
+    // unchanged from §CPE_BUILDUP_TOPOUT above) leaves buildup only ~tO/tR complete when the round
+    // BEGINS, since the round itself now sits between tO and tR and pushed tR back.
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT (2026-08-14, pull-out restructure) — per the spec file's own
+    // wording, buildup's 100%-complete moment moves to the END of the pull-out sub-beat (tP), not the
+    // instant of arrival (tO): completing exactly AT arrival was itself the bug this restructure
+    // fixes (the user's "way before" complaint), and completing "way after" (the pre-#1353 bug) is
+    // the other failure mode this must not reintroduce — tP sits deliberately between the two.
+    // `plan.beats.pullout` degrades to `plan.beats.out` (DEGRADE, DON'T DISABLE — this lane's own
+    // rule, see §GHOST_GROUND's comment) for an older cached plan built before this restructure.
+    if (plan && plan.beats && plan.beats.reveal > plan.beats.out &&
+        plan.beats.out > 0 && plan.beats.out < 1) {
+      var _tp = (plan.beats.pullout != null && plan.beats.pullout > plan.beats.out &&
+                 plan.beats.pullout < 1) ? plan.beats.pullout : plan.beats.out;
+      var _src = (_tp === plan.beats.pullout) ? 'plan.beats.pullout (reveal round active)'
+                                               : 'plan.beats.out (reveal round active, no pullout on plan)';
+      return { u: _tp, src: _src };
+    }
     if (plan && plan.beats && plan.beats.rise > 0 && plan.beats.rise < 1) {
       return { u: plan.beats.rise, src: 'plan.beats.rise' };
     }
@@ -406,6 +479,28 @@
   var MAXQ_V = 'v22';
   console.log('§MAXQ_LOADED ' + MAXQ_V + ' — full changelog moved to this file\'s own comment above (search any §TAG)');
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
+  // ══ §MAXQ_FRAME_BUDGET (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R10) ═══════════════════
+  // A BAKE and a STILL are not the same job, and they were paying the same bill. Alt+S is ONE frame
+  // a human studies; a bake is thousands that flick past at 15 fps. Both were folding
+  // 16 TAA + 24 AO = 40 composer renders per frame — MEASURED as 85% of Hospital's perFrameMs=1989
+  // (§STILL_REFINE ~1,200 = 62%, §PHOTO_AO ~450 = 23%) and 137,880 composer renders for one film.
+  // These are the ONLY two numbers that move the bake clock; the session record already says not to
+  // expect HUD or smoothing work to touch it.
+  // Chosen by MEASUREMENT, not by taste — witness_maxq_frame_budget.js + score_frame_budget.py,
+  // HHS_Office_Federated, one SEEDED page load per condition, scored against a CONTROL run at the
+  // full 16/24 on its own fresh load. Noise floor RMS 0.21 (0-255 luma):
+  //     taa=12 ao=16  28 renders  RMS 0.21   AT THE FLOOR
+  //     taa= 8 ao=12  20 renders  RMS 0.24   AT THE FLOOR   <-- shipped
+  //     taa= 8 ao= 8  16 renders  RMS 0.37   AT THE FLOOR
+  //     taa= 4 ao= 8  12 renders  RMS 21.33  DISTINGUISHABLE — a real loss, rejected
+  // So 40 renders and 20 renders are the SAME IMAGE to within a fifth of one luma level, and the
+  // floor is real: 4/8 is 100x above it, which is what a genuine difference looks like here.
+  // 8/8 also measured at the floor and would be 55%. Shipping 8/12 anyway — one AO step of MARGIN,
+  // because this is ONE pose on ONE building and AO is exactly what interior corners lean on. The
+  // margin costs 75 ms/frame (1,164 vs 1,089); that is the deliberate price of the sample size.
+  // Alt+S is UNTOUCHED: A._stillBudget is set only around the bake's frame loop and cleared on
+  // every exit path, so a still keeps all 40 renders.
+  var MAXQ_STILL_BUDGET = { taa: 8, ao: 12 };
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
                          // staging captures mid-restore sun-tint/exposure values as "original"
                          // and the whole building oscillates color frame-to-frame.
@@ -438,6 +533,9 @@
       }
     } catch (e) { console.log('§MAXQ_WAKELOCK denied: ' + e.message); }
   }
+  // §MAXQ_FRAME_BUDGET — the bake's cheaper fold must never outlive the bake. Paired with every
+  // _wakeRelease() call site, which is this file's existing "the run is over" marker.
+  function _bakeBudgetRelease() { try { window.APP._stillBudget = null; } catch (e) {} }
   function _wakeRelease() {
     try { if (_wakeLock && !_wakeLock.released) _wakeLock.release(); } catch (e) {}
     _wakeLock = null;
@@ -666,7 +764,7 @@
   // §CPE_DAY_COUNTER: dayInfo ({day,totalDays} or null) rides the SAME 2D context for the SAME
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
-  function _captureFrame(w, h, titleInfo, dayInfo) {
+  function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo) {
     var A = window.APP;
     if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
@@ -678,6 +776,38 @@
     }
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
       A.dayCounterCompositeOntoCanvas(ctx, w, h, dayInfo, 1, dayInfo.pos);
+    }
+    // §CPE_PATH_OVERVIEW — drawn LAST so its backdrop-blur samples the finished frame and never
+    // smears the caption or the counter into its own glass. `ovInfo.pose` is the REAL pose this
+    // frame was rendered with, captured by the caller immediately before this call.
+    // §CPE_RESOURCE_PANEL — drawn between the counter and the overview, one column, one corner.
+    // Same never-kills-a-bake contract as the box below it.
+    // §CPE_HUD_ORDER (2026-08-30, user after seeing a real baked frame): counter -> PATH BOX -> pie.
+    // The path box answers "where am I", which a viewer tracks continuously, so it sits directly
+    // under the clock; the pie is a readout you consult rather than follow, so it goes below.
+    // ONE running offset builds the column so the three can never overlap or leave a gap.
+    var _gapY = Math.round(h * 0.012);
+    var _stackY = 0;
+    if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _stackY = A.dayCounterBoxSize(h).h + _gapY;
+    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
+      A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stackY);
+      _stackY += Math.round(h * 0.20) + _gapY;   // the box's own bh, from cpe_path_overview.js
+    } catch (eOvD) {
+      if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
+        console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
+    }
+    if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) try {
+      A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, 1, resInfo.pos, _stackY);
+    } catch (eRp) {
+      if (!A._resDrawErrLogged) { A._resDrawErrLogged = true;
+        console.warn('§CPE_RESOURCE_PANEL_ERR draw: ' + eRp.message + ' — panel skipped, frames continue'); }
+    }
+    if (statInfo && statInfo.shown && A.bigStatsCompositeOntoCanvas) try {
+      // §CPE_PIE_HOLD — statInfo.held is the composition the pie holds beside the card.
+      A.bigStatsCompositeOntoCanvas(ctx, w, h, statInfo.shown, 1, statInfo.pos, _stackY, statInfo.held);
+    } catch (eBs) {
+      if (!A._bsDrawErrLogged) { A._bsDrawErrLogged = true;
+        console.warn('§CPE_BIG_STATS_ERR draw: ' + eBs.message + ' — card skipped, frames continue'); }
     }
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
   }
@@ -781,11 +911,22 @@
 
       var mp4 = window.MP4Mux.mux({ width: ew, height: eh, fps: fps, avcC: avcC, samples: chunks });
       var blob = new Blob([mp4], { type: 'video/mp4' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'BIM_MaxQ_' + (A.activeBuilding || 'building') + '_' + Date.now() + '.mp4';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+      var _dlName = 'BIM_MaxQ_' + (A.activeBuilding || 'building') + '_' + Date.now() + '.mp4';
+      // §CLI_SILENT_BAKE item 3 — the a.click() below is INERT headless. When a scripted runner
+      // installed __maxqDeliverBlob, hand it the finished bytes so node writes + asserts the file.
+      if (typeof window.__maxqDeliverBlob === 'function') {
+        try {
+          await window.__maxqDeliverBlob(blob, _dlName, 'video/mp4');
+          window.__maxqDeliveredBytes = blob.size;
+          console.log('§MAXQ_DELIVERED bytes=' + blob.size + ' name=' + _dlName);
+        } catch (eDl) { console.warn('§MAXQ_DELIVER_FAIL ' + eDl.message); }
+      } else {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = _dlName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+      }
       console.log('§MAXQ_DONE frames=' + framesDone + ' bytes=' + blob.size + ' type=video/mp4 codec=' + chosen);
       _status('🎬 MaxQ mp4 saved (' + (blob.size / 1e6).toFixed(1) + ' MB) — plays on iPhone/WhatsApp');
       return true;
@@ -825,11 +966,22 @@
     rec.stop();
     await stopped;
     var blob = new Blob(chunks, { type: mime });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'BIM_MaxQ_' + (A.activeBuilding || 'building') + '_' + Date.now() + '.webm';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+    var _dlName = 'BIM_MaxQ_' + (A.activeBuilding || 'building') + '_' + Date.now() + '.webm';
+    // §CLI_SILENT_BAKE item 3 — same delivery seam as _stitchMp4: the fallback container must be
+    // capturable headlessly too (§MAXQ_MP4_FALLBACK is expected there, not a blocker).
+    if (typeof window.__maxqDeliverBlob === 'function') {
+      try {
+        await window.__maxqDeliverBlob(blob, _dlName, mime);
+        window.__maxqDeliveredBytes = blob.size;
+        console.log('§MAXQ_DELIVERED bytes=' + blob.size + ' name=' + _dlName);
+      } catch (eDl2) { console.warn('§MAXQ_DELIVER_FAIL ' + eDl2.message); }
+    } else {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = _dlName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+    }
     console.log('§MAXQ_DONE frames=' + framesDone + ' bytes=' + blob.size + ' type=' + mime);
     _status('🎬 MaxQ movie saved (' + (blob.size / 1e6).toFixed(1) + ' MB)');
   }
@@ -862,6 +1014,12 @@
     // not inherit the first one's pauses or its unconverged count and report someone else's health.
     _hiddenMsTotal = 0; _hiddenPauses = 0; _unconverged = 0;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
+    // §MAXQ_FRAME_BUDGET — the bake's still fold, cheaper than Alt+S's. Cleared on every exit path
+    // below (_bakeBudgetRelease), so a still after a bake is never quietly degraded.
+    A._stillBudget = { taa: MAXQ_STILL_BUDGET.taa, ao: MAXQ_STILL_BUDGET.ao };
+    console.log('§MAXQ_FRAME_BUDGET taa=' + A._stillBudget.taa + ' ao=' + A._stillBudget.ao +
+      ' renders/frame=' + (A._stillBudget.taa + A._stillBudget.ao) + ' (was 16+24=40) — bake only,' +
+      ' Alt+S stills keep the full fold');
     _wakeAcquire();
     _dampHold();   // §CINEMA_DAMPING_BLEED — the preview and the bake are both authored cameras
     // §MAXQ_STREAM_FIRST (user report, LTU_AHouse/122k: preview was SEEN showing boxes — initial
@@ -890,7 +1048,7 @@
       console.log('§MAXQ_CANCEL during stream-wait — nothing baked, nothing saved');
       _status('🎬 MaxQ cancelled');
       _active = false; _cancel = false; A._maxqActive = false;
-      _wakeRelease(); _dampRelease();
+      _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       return;
     }
     // §CINEMA_PATH: fly the SAME orbit-path formula as the live-capture Cinema Orbit (push-in to
@@ -934,7 +1092,13 @@
     // Set from the editor's override below. `poseAt` is the ONE place the window is applied, so
     // every consumer — the preview, the bake loop, and anything added later — flies the clip through
     // the same function, and there is no second notion of "which part of the film this is".
-    var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null;
+    var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null, _reveal = false;
+    // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
+    // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
+    // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
+    var _ovPath = null, _ovPos = 'tl', _resOps = null, _bigCards = null;
+    // §CPE_STATS_TAIL — the Reveal 2nd round's film fraction, read off the plan's own topout.
+    var _revealU = null;
     var _dayPos = 'tr';
     function _tFilm(tNorm) { return _clip ? _clip.in + tNorm * (_clip.out - _clip.in) : tNorm; }
     function poseAt(tNorm) {
@@ -997,7 +1161,7 @@
       console.log('§MAXQ_CANCEL during ' + where + ' — nothing baked, nothing saved');
       _status('🎬 MaxQ cancelled during ' + where);
       _active = false; _cancel = false; A._maxqActive = false;
-      _wakeRelease(); _dampRelease();
+      _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
     }
     // ══ §CPE_PREVIEW_REDUNDANT (user, 2026-07-28, after flying it: "I see the initial preview is
     // redundant. Straight showing this is good as preview button is always there and serving well.
@@ -1026,12 +1190,12 @@
     // user editing for five minutes would otherwise hold a screen wake lock and run Terminal/Hospital
     // at full detail with no LOD the entire time. So all three are released for the duration of the
     // editor and re-claimed on OK. Gated by G11 — proven released, not merely described as released.
-    if (A.cinemaPathEditor && plan && plan.waypoints && opts.editor !== false) {
+    var _cpeRes = null;
+    if (A.cinemaPathEditor && plan && plan.waypoints && opts.editor !== false && !opts.override) {
       A._maxqActive = false;
-      _wakeRelease(); _dampRelease();
+      _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       console.log('§CPE_LOCKS released for editing (maxqActive=false, wake+damping released)');
       _status('🎬 Edit the path, then OK to record');
-      var _cpeRes = null;
       try {
         _cpeRes = await A.cinemaPathEditor.open({ plan: plan, durationSec: nFrames / fps, fps: fps });
       } catch (eE) { console.warn('§CPE_FAIL ' + eE.message + ' — proceeding with the derived path'); }
@@ -1042,10 +1206,47 @@
         console.log('§MAXQ_CANCEL from path editor — nothing baked, nothing saved');
         _status('🎬 Cancelled');
         _active = false; _cancel = false; A._maxqActive = false;
-        _wakeRelease(); _dampRelease();
+        _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
         return;
       }
-      if (_cpeRes && _cpeRes.override) {
+      if (!(_cpeRes && _cpeRes.override)) {
+        // Guardrail 2: OK with no edit re-uses the plan object computed before the editor opened —
+        // literally the same object, so the film is byte-identical to one recorded without the
+        // editor existing. The default cost of this feature is one click and nothing else.
+        console.log('§CPE_APPLIED none — derived plan unchanged (guardrail 2: OK is a no-op)');
+      }
+    } else if (opts.override) {
+      // ══ §CLI_SILENT_BAKE item 2 (spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md) — a
+      // scripted bake hands the stored override straight in, and it becomes the SAME _cpeRes shape
+      // the editor returns, so the application block below runs unchanged for both sources: one
+      // code path, no second format, no drift. The editor path stays byte-identical (its gate
+      // above merely adds `&& !opts.override`).
+      var _ovIn = opts.override;
+      var _durIn;
+      if (opts.frames) {
+        // An explicit frame count wins outright — durationSec must reproduce it exactly, because
+        // the application block below re-derives nFrames from durationSec (round-trip identity).
+        _durIn = nFrames / fps;
+      } else {
+        _durIn = (typeof _ovIn._total === 'number' && isFinite(_ovIn._total) && _ovIn._total > 0)
+          ? _ovIn._total : nFrames / fps;
+        // §CPE_PACING, applied to the OVERRIDE plan: a stored _total that predates caller-added
+        // reveal/hose flags must still buy those beats real frames — the plan's own naturalTotal
+        // is the authority, same contract as the derived path above.
+        try {
+          var _pIn = A.cinemaPathPlan(_durIn, _ovIn);
+          if (_pIn && _pIn.naturalTotal && isFinite(_pIn.naturalTotal) && _pIn.naturalTotal > 0)
+            _durIn = _pIn.naturalTotal;
+        } catch (eOvP) { console.warn('§MAXQ_OVERRIDE_IN plan-probe failed: ' + eOvP.message); }
+      }
+      _cpeRes = { action: 'ok', override: _ovIn, durationSec: _durIn, saved: false };
+      console.log('§MAXQ_OVERRIDE_IN source=' + (opts.overrideSource || 'caller') +
+        ' bands=' + (_ovIn.bands ? _ovIn.bands.length : 0) +
+        ' hoseOps=' + (_ovIn.hose ? _ovIn.hose.length : 0) +
+        ' buildup=' + (_ovIn.buildup ? 1 : 0) + ' roomTitle=' + (_ovIn.roomTitle ? 1 : 0) +
+        ' reveal=' + (_ovIn.reveal ? 1 : 0) + ' durationSec=' + _durIn.toFixed(1));
+    }
+    if (_cpeRes && _cpeRes.override) {
         // Constant speed means an edited path generally changes the total, so the frame count is
         // re-derived from it (item 11 — this is the render cost the editor surfaced).
         var _framesWas = nFrames;
@@ -1070,10 +1271,22 @@
         }
         _buildup = !!_ov.buildup;
         _roomTitle = !!_ov.roomTitle; // §CPE_ROOM_TITLE — off unless the editor's checkbox set it
+        // §CPE_DISCIPLINE_REVEAL Mechanism C (prompts/CINEMA_DISCIPLINE_REVEAL.md) — both the round
+        // and its visuals are real. effects.js's _cinemaPathPlan/poseAt inserts the retrace via this
+        // same _ov.reveal flag, transparently to this file (plan.poseAt already returns the extended
+        // film); A.cpeRevealApplyVisual(plan,_tn), called from the per-frame loop below, drives the
+        // ARC/STR hide via A.filterDiscs. _reveal itself is only captured here for logging.
+        _reveal = !!_ov.reveal;
+        if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round + ARC/STR reveal are real ' +
+          '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
         // that never opened the editor) means TOP RIGHT, which is what shipped, so nothing re-bakes
         // differently by accident.
         _dayPos = _ov.dayCounter || 'tr';
+        // §CPE_PATH_OVERVIEW — follows the DAY COUNTER's corner by default (§CPE_HUD_STACK):
+        // the user's ruling is one top/down/left/right preference for the whole column, not a
+        // separate corner per overlay.
+        _ovPos = _ov.pathOverview || _dayPos;   // §CPE_HUD_STACK: one corner preference for the column
         var _wpN = _ov.bands ? _ov.bands.length * 2 : (_ov.waypoints ? _ov.waypoints.length : '?');
         console.log('§CPE_APPLIED total=' + _cpeRes.durationSec.toFixed(1) + 's frames=' + nFrames +
           ' waypoints=' + _wpN + ' saved=' + !!_cpeRes.saved);
@@ -1102,12 +1315,6 @@
         // `_runPreview` STAYS — the `opts.editor === false` branch above (scripted/witness bakes: no
         // panel, therefore no Preview button) is the one caller that still needs a rehearsal, and
         // `opts.preview` keeps its meaning for it.
-      } else {
-        // Guardrail 2: OK with no edit re-uses the plan object computed before the editor opened —
-        // literally the same object, so the film is byte-identical to one recorded without the
-        // editor existing. The default cost of this feature is one click and nothing else.
-        console.log('§CPE_APPLIED none — derived plan unchanged (guardrail 2: OK is a no-op)');
-      }
     }
     var db = null;
     var framesDone = 0;
@@ -1163,6 +1370,15 @@
         if (typeof window.tmOrderByCameraPath !== 'function' || typeof window.tmActivateForBake !== 'function') {
           console.warn('§CPE_BUILDUP_SKIP reason=time_machine.js not loaded — baking without the buildup');
           _buildup = false;
+        } else if (typeof window.tmHasExistingSchedule === 'function' && !(await window.tmHasExistingSchedule())) {
+          // §CPE_BUILDUP_REQUIRE_TM_FIRST — never let the movie button generate a building's FIRST
+          // schedule; that's Time Machine's job, once, so the user actually sees the buildup before
+          // it's baked. A visible status (not just a console warning) since this is a one-time thing
+          // the user needs to go DO, not a background detail.
+          console.warn('§CPE_BUILDUP_SKIP reason=no schedule generated yet — open Time Machine first');
+          _status('🎬 Open Time Machine first to build the construction schedule — baking without it this time');
+          await _sleep(2000);
+          _buildup = false;
         } else if (!(await window.tmActivateForBake())) {
           console.warn('§CPE_BUILDUP_SKIP reason=no derived build order (Time Machine has no ops for this building)');
           _buildup = false;
@@ -1184,6 +1400,7 @@
           if (!_bkState) { console.warn('§CPE_BUILDUP_SKIP reason=no timeline to follow — baking without the buildup'); _buildup = false; }
           if (_bkState) {
             var _top = _buildupTopoutU(plan);
+            _revealU = _top.u;   // §CPE_STATS_TAIL — where the Reveal 2nd round starts
             console.log('§CPE_BUILDUP_TOPOUT topoutU=' + _top.u.toFixed(3) + ' src=' + _top.src +
               ' — construction completes at the closing-orbit boundary; the pull-back shows the' +
               ' topping-out and the orbit circles the FINISHED building (solar-panel lesson 2026-08-02)');
@@ -1215,6 +1432,57 @@
         catch (eT) { console.warn('§CPE_ROOM_TITLE_ERR ' + eT.message); _titleSegs = null; }
       }
       t0 = _etaPrev = performance.now();
+      // §CPE_PATH_OVERVIEW — prepared ONCE here, never in the loop. The projection, the path
+      // polyline and the envelope are all static by design, so the per-frame cost is two projected
+      // points (camera position + look target) and a triangle. Gated on the Label ON checkbox per
+      // the user's ruling. The envelope traverse is a single Box3 pass at bake START — one ~48k
+      // element walk against a multi-minute bake, not a per-frame cost.
+      // §CPE_PATH_OVERVIEW_NEVER_KILLS_A_BAKE (2026-08-30 — real failure, user's HHS bake aborted
+      // here). This block referenced `_ovCam`, a variable an earlier edit of mine had deleted along
+      // with the Box3 envelope traverse it belonged to. The ReferenceError threw between
+      // §CPE_ROOM_TITLE_COLLECTIVE and the frame loop, so a 3,048-frame bake set up staging, the
+      // schedule, the buildup and the captions — then stopped without capturing a single frame and
+      // without printing a §CPE_PATH_OVERVIEW line at all. The missing log line is what located it.
+      //
+      // The variable is fixed below, but the REAL fix is this try/catch: a decorative corner box
+      // must never be able to abort a bake. Any failure here now costs the box, not the film.
+      try {
+        if (_roomTitle && A.pathOverviewPrepare && plan && plan.waypoints) {
+          // Framing is the crafted stick span only (§CPE_PATH_OVERVIEW_FRAME, user ruling), so no
+          // camera trajectory is sampled or passed — the head is clamped to the panel edge instead.
+          _ovPath = A.pathOverviewPrepare(plan, null, null);
+          console.log('§CPE_PATH_OVERVIEW ' + (_ovPath
+            ? ('on waypoints=' + _ovPath.wpCount + ' pos=' + _ovPos)
+            : 'INCONCLUSIVE reason=no-path-to-draw (plan has <2 waypoints) — box omitted, not blank'));
+        } else if (!_roomTitle) {
+          console.log('§CPE_PATH_OVERVIEW off — rides the Label ON checkbox, which is off for this bake');
+        }
+      } catch (eOv) {
+        _ovPath = null;
+        console.warn('§CPE_PATH_OVERVIEW_ERR ' + eOv.message + ' — box disabled, bake continues');
+      }
+      // §CPE_RESOURCE_PANEL — the ops snapshot is taken ONCE (read-only copy, §TM_OPS_SNAPSHOT);
+      // per frame only the day's composition is recomputed, and the pie bitmap is cached on dayKey.
+      // Rides the same Label ON checkbox and refuses honestly when there is no schedule to read.
+      try {
+        if (_roomTitle && A.resourcePanelAt && typeof window.tmOpsSnapshot === 'function' && _bkState) {
+          A._resHoldFrames = 0; A._resHoldLogged = false;   // §CPE_PIE_HOLD counts are per-bake
+          A._statTailFrames = 0; A._statTailLogged = false; // §CPE_STATS_TAIL, same
+          _resOps = window.tmOpsSnapshot();
+          console.log('§CPE_RESOURCE_PANEL ' + (_resOps && _resOps.length
+            ? ('on ops=' + _resOps.length + ' rates=' + (!!(window.LABOR_RATES)) + ' pos=' + _ovPos)
+            : 'INCONCLUSIVE reason=no-ops — panel omitted, not blank'));
+        } else if (_roomTitle) {
+          console.log('§CPE_RESOURCE_PANEL INCONCLUSIVE reason=' +
+            (!_bkState ? 'no-buildup-timeline' : 'no-ops-snapshot') + ' — panel omitted, not blank');
+        }
+        // §CPE_BIG_STATS — the second half's cards, built ONCE from real sources. The pie answers
+        // "who is on site today", which is dead after §CPE_BUILDUP_TOPOUT: construction has finished
+        // and no trade is active, so the panel drew nothing for the whole reveal round.
+        if (_roomTitle && A.bigStatsBuild && _bkState) {
+          _bigCards = A.bigStatsBuild(_resOps, _bkState.projectStart, _bkState.projectEnd);
+        }
+      } catch (eR) { _resOps = null; _bigCards = null; console.warn('§CPE_RESOURCE_PANEL_ERR ' + eR.message + ' — panel disabled, bake continues'); }
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
@@ -1246,6 +1514,11 @@
         A.camera.position.set(pose.x, pose.y, pose.z);
         A.controls.target.set(pose.tx, pose.ty, pose.tz);
         A.controls.update();
+        // §CLI_SILENT_BAKE item 4 — dev pose tap: undefined in every user session. A scripted
+        // runner records the REAL pose each frame and asserts it numerically against the stored
+        // path (a bake that runs but ignores the passed path is the silent failure this catches).
+        if (typeof window.__maxqPoseTap === 'function')
+          try { window.__maxqPoseTap(i, pose.x, pose.y, pose.z, pose.tx, pose.ty, pose.tz); } catch (ePT) {}
         if (A._updateCamLight) A._updateCamLight(pose.tx, pose.ty, pose.tz);
         // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
         // only the camera, this adds construction state). _tFilm keeps the cursor on the film's own
@@ -1258,7 +1531,7 @@
           // §CPE_BUILDUP_WORK_PACED: was `projectStart + t*span` — linear in DAYS. Now linear in
           // ELEMENTS, so the building rises at an even rate regardless of how the derived 4D order
           // clusters its timestamps.
-          var _bkMs = _workCursorAt(_bkT, _bkState);
+          var _bkMs = _workCursorAt(_bkT, _bkState, nFrames / fps);
           window.tmSetCursor(_bkMs);
           // §CPE_GHOST_GROUND: same film fraction the cursor rides, so the ghost cannot drift out of
           // step with what is actually placed.
@@ -1282,6 +1555,10 @@
               (_ggO == null ? '' : ' groundOpacity=' + _ggO.toFixed(3)));
           }
         }
+        // §CPE_DISCIPLINE_REVEAL Mechanism C — pure function of (plan, tNorm), same call the preview
+        // loop makes (cinema_path_editor.js's _previewFly) so bake and preview cannot diverge. No-op
+        // (returns immediately, does nothing) when reveal is off or tNorm is outside the round.
+        if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tn);
         A.startStillRefine();
         // §SUN_ARC_STOMP_FIX (found live, 2026-08-11 — user report "not high noon" on a real
         // HHS_Office_Federated bake): startStillRefine() calls _applyPhotoStaging() synchronously,
@@ -1343,15 +1620,38 @@
               ' groupGuids=' + _fcIdx.group.size + ' ms=' + (performance.now() - _fcT0).toFixed(1));
           }
           var _fSeenGroups = new Set();
+          // §VAC / §R14.1 (CPE_4D_PERF_MEM_STUDY.md): _fUnmatched counts the third outcome this
+          // forEach always had and never reported — a frontier guid present in NEITHER index.
+          // Without it, "frontierGuids=10 batchObjsContainingFrontier=4" cannot distinguish six
+          // guids DEDUPED into already-seen batch objects from six guids the indexes never had
+          // (the streamed set is 63,182 guids; TM places 63,417 — a 235-guid gap that nothing on
+          // disk can currently attribute). This is a counter on an existing else-branch, not a
+          // new measurement.
+          var _fUnmatched = 0;
           _fGuids.forEach(function(g) {
             var _ml = _fcIdx.mesh.get(g);
             if (_ml) { for (var _mi = 0; _mi < _ml.length; _mi++) { _fMatched++; if (_ml[_mi].castShadow) _fTrue++; else _fFalse++; } return; }
             var _go = _fcIdx.group.get(g);
-            if (_go && !_fSeenGroups.has(_go)) { _fSeenGroups.add(_go); _fBatchObjs++; if (_go.castShadow) _fBatchTrue++; else _fBatchFalse++; }
+            if (_go) { if (!_fSeenGroups.has(_go)) { _fSeenGroups.add(_go); _fBatchObjs++; if (_go.castShadow) _fBatchTrue++; else _fBatchFalse++; } return; }
+            _fUnmatched++;
           });
+          // §VAC V1 — the singleMesh_* triplet is VACUOUS whenever the single-mesh index is empty,
+          // and on a device that took the fast batched path it always is. MEASURED, s5_hospital.log
+          // (2,027 frames): §SHADOW_FRONTIER_IDX meshGuids=0 groupGuids=63182, §BATCHED_FAIL count 0,
+          // §RENDERER_CAPS multi_draw=on — so all three streaming.js fallbacks that give a lone
+          // THREE.Mesh a userData.guid (BatchedMesh ctor throw / BatchedMesh unavailable / oversized
+          // spill) were never taken. The matcher is NOT broken: it is a Map.get against a Map of
+          // size 0. Printing three bare zeros made 286 firings look like a judged result; they were
+          // never a result. The batch half of the line IS judging (batchObjsContainingFrontier was
+          // non-zero on every one of those 286 firings) and is printed unchanged.
+          var _fSingle = (_fcIdx.mesh.size === 0)
+            ? 'singleMesh=VACUOUS (no individually-meshed elements in this scene — §SHADOW_FRONTIER_IDX meshGuids=0; all geometry is batched/instanced)'
+            : 'singleMesh_matched=' + _fMatched + ' castShadowTrue=' + _fTrue + ' castShadowFalse=' + _fFalse;
           console.log('§SHADOW_FRONTIER_AT_CAPTURE frame=' + i + ' frontierGuids=' + _fGuids.size +
-            ' singleMesh_matched=' + _fMatched + ' castShadowTrue=' + _fTrue + ' castShadowFalse=' + _fFalse +
-            ' batchObjsContainingFrontier=' + _fBatchObjs + ' batchCastShadowTrue=' + _fBatchTrue + ' batchCastShadowFalse=' + _fBatchFalse);
+            ' ' + _fSingle +
+            ' batchObjsContainingFrontier=' + _fBatchObjs + ' batchCastShadowTrue=' + _fBatchTrue + ' batchCastShadowFalse=' + _fBatchFalse +
+            ' unmatched=' + _fUnmatched +
+            ((_fcIdx.mesh.size === 0 && _fBatchObjs === 0) ? ' VERDICT=INCONCLUSIVE (nothing judged this frame)' : ''));
         }
         _restoreRandom();
         // A timeout can now only mean a genuinely slow frame, since hidden time no longer counts
@@ -1359,8 +1659,79 @@
         // state its own health at the end instead of leaving a degraded film to look identical to
         // a good one.
         if (!ok) { _unconverged++; console.warn('§MAXQ_FRAME_TIMEOUT i=' + i + ' — capturing as-is (UNCONVERGED, count=' + _unconverged + ')'); }
-        var _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
-        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo);
+        // §CPE_DISCIPLINE_REVEAL_PULLOUT: the tail's disc-parade caption REPLACES the room title for
+        // exactly its slots ('tail-one'/'tail-all') — pure function of (plan, tNorm), checked FIRST so
+        // it can override; returns null everywhere else (round 1, pull-out, round 2, rise proper), in
+        // which case the normal room-title lookup below runs untouched. Same call the preview tick
+        // makes (cpe_room_title.js's roomTitleLiveTick) so bake and preview cannot diverge.
+        var _titleInfo = (A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, _tn) : null;
+        if (!_titleInfo) {
+          _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
+        }
+        // §CPE_PATH_OVERVIEW — the pose is read HERE, after every camera write for this frame and
+        // immediately before the capture, so the head marks the shot that was actually rendered.
+        // §CPE_POV_MARKER's rule (cinema_path_editor.js:3789): read the REAL transform, never
+        // re-derive it from the path parameter.
+        var _ovInfo = null;
+        if (_ovPath && A.camera) {
+          _ovInfo = { ov: _ovPath, pos: _ovPos,
+                      pose: { pos: { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z },
+                              target: (A.controls && A.controls.target)
+                                ? { x: A.controls.target.x, y: A.controls.target.y, z: A.controls.target.z }
+                                : null } };
+        }
+        // §CPE_BIG_STATS — ONE panel slot, two answers. While trades are working it is the
+        // composition pie; once the programme has topped out (nothing is being built, so the pie is
+        // honestly empty) the same slot revolves big headline numbers instead. The switch is the
+        // pie's OWN emptiness, not a hardcoded film fraction — a building whose work runs to the
+        // last frame keeps the pie the whole way, with no second opinion about when topout was.
+        // §CPE_PIE_HOLD + §CPE_STATS_TAIL — TWO ROUNDS, and the user's ruling is that they behave
+        // differently (2026-08-30): "In the first round, if nothing is added, that last info holds
+        // and wait till a new one arrives, not intersperse" … "[the highlights] should all be in
+        // play during the 'Reveal' 2nd round."
+        //   ROUND 1 (buildup, u < topoutU): the panel is the schedule and NOTHING rotates. If the
+        //     day has no staffed op the last real composition HOLDS until a new one arrives.
+        //   ROUND 2 (the Reveal, u >= topoutU): the schedule has topped out and the counter is
+        //     pinned — MEASURED at ≈125 s of the user's 229.8 s Hospital film — so the whole set of
+        //     highlights revolves here, with the roster as one of the slots so nothing is lost.
+        // The boundary is the plan's own topout (§CPE_BUILDUP_TOPOUT), not a new constant. With no
+        // plan beats to read it degrades to "the ops can no longer change" — DEGRADE, DON'T DISABLE.
+        var _resInfo = null, _statInfo = null, _holdInfo = null;
+        if (_resOps && _bkState && A.resourcePanelHoldAt) {
+          _holdInfo = A.resourcePanelHoldAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd);
+        }
+        var _inReveal = (_revealU != null)
+          ? (nFrames > 1 ? (i / (nFrames - 1)) >= _revealU : false)
+          : !!(_resOps && _bkState && A.resourcePanelFrozenAt &&
+               A.resourcePanelFrozenAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd));
+        if (!_inReveal) {
+          if (_holdInfo) _resInfo = { info: _holdInfo, pos: _ovPos };   // round 1: hold, never rotate
+        } else if (A.tailPanelAt) {
+          var _si = A.tailPanelAt(_bigCards, i / fps, _holdInfo);
+          if (_si) {
+            // §CPE_PIE_FLYOUT_DROP (2026-09-01, user: "during last fly out, the last pie is not
+            // needed. Remove to give max space to the revolving highlights."): in the Reveal round
+            // the held pie is NOT drawn — held:null — so the cards and the roster slot take the
+            // full panel width. The boundary is THIS branch's own _inReveal (topoutU / ops-frozen
+            // degrade), no new constant, so the drop can never diverge from the rotation. Round 1
+            // is untouched: §CPE_PIE_HOLD still owns every frame before the boundary. The crew is
+            // NOT lost — tailPanelAt above still receives _holdInfo, so the roster stays one of
+            // the revolving slots (§CPE_STATS_TAIL), now full-width like the cards.
+            _statInfo = { shown: _si, pos: _ovPos, held: null };
+            A._statTailFrames = (A._statTailFrames || 0) + 1;
+            if (!A._statTailLogged) {
+              A._statTailLogged = true;
+              console.log('§CPE_STATS_TAIL reveal round entered at frame ' + i + '/' + nFrames +
+                ' u=' + (nFrames > 1 ? (i / (nFrames - 1)).toFixed(3) : '1.000') +
+                ' boundary=' + (_revealU != null ? 'topoutU ' + _revealU.toFixed(3) : 'ops-frozen (no plan beats)') +
+                ' slots=' + _si.n + ' (roster' + (_bigCards ? ' + ' + _bigCards.length + ' cards' : ', NO cards built') + ')' +
+                ' pie=dropped (§CPE_PIE_FLYOUT_DROP)');
+            }
+          } else if (_holdInfo) {
+            _resInfo = { info: _holdInfo, pos: _ovPos };   // nothing to revolve — hold, never blank
+          }
+        }
+        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
         // connection out from under it (confirmed live: two consecutive rAF gaps of 29s and 67s right
@@ -1431,10 +1802,33 @@
       if (_bkState && typeof window.tmRestoreDerivedOrder === 'function') {
         window.tmRestoreDerivedOrder(); _bkState = null;
       }
+      // §CPE_BUILDUP_ACTIVATE_POPS_PANEL: same contract — a bake that silently turned Time Machine
+      // on (tmActivateForBake, no real Play involved) must silently turn it back off, or the scene
+      // is left mid-construction with nothing offering to restore it (the panel was never shown, so
+      // there's no close button to do it).
+      try { if (typeof window.tmDeactivateIfBakeOwned === 'function') window.tmDeactivateIfBakeOwned(); } catch (eTM) {}
       // §CPE_GHOST_GROUND: same contract, same exit — a ghosted ground left behind would follow the
       // user into normal navigation for the rest of the session.
       try { _ghostGroundRestore(); } catch (eGG) {}
+      // §CPE_DISCIPLINE_REVEAL: same contract — ARC/STR left hidden after a bake would follow the
+      // user into normal navigation. plan=null is the explicit "force restore" signal.
+      try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
       _workPacingReset();
+      // §CPE_PIE_HOLD — say how much of the film the pie HELD a past composition rather than
+      // showing today's. A bake where this equals framesDone means no day was ever staffed and the
+      // whole panel was a hold: that is a schedule problem, not a HUD one, and must be visible.
+      console.log('§CPE_PIE_HOLD heldFrames=' + (A._resHoldFrames || 0) + '/' + framesDone +
+        (framesDone ? ' (' + Math.round((A._resHoldFrames || 0) / framesDone * 100) + '% of the film)' : '') +
+        ((A._resHoldFrames || 0) === 0 ? ' — trades were active for every frame, the pie was never held'
+          : ((A._resHoldFrames || 0) >= framesDone ? ' ⚠ NO frame had a live crew — the pie held throughout'
+             : ' — pie holds the last real crew through the silent tail')));
+      // §CPE_STATS_TAIL — how much of the film the Reveal round reclaimed. 0 on a bake whose plan
+      // has no topout AND whose ops never freeze: that is the case where the dead tail stays dead.
+      console.log('§CPE_STATS_TAIL revolvedFrames=' + (A._statTailFrames || 0) + '/' + framesDone +
+        (framesDone ? ' (' + Math.round((A._statTailFrames || 0) / framesDone * 100) + '% of the film)' : '') +
+        ((A._statTailFrames || 0) === 0
+          ? ' — the Reveal round never revolved: no topout on the plan and the ops never froze'
+          : ' — highlights in play for the whole Reveal round, roster included'));
       // ══ §MAXQ_QUALITY — the run states its own health, ALWAYS, before anything is stitched.
       // The defect this exists for is a film that looks complete and plays fine while its last
       // seconds are visually dead. A degraded bake must never finish quietly: `unconverged` is the
@@ -1484,14 +1878,17 @@
       // §CPE_BUILDUP: same restore on the THROW path. A re-keyed op-log left behind by a crashed
       // bake would look like a corrupted schedule to the next person who opens the timeline.
       try { if (_bkState && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); _bkState = null; } } catch (e3) {}
+      // §CPE_BUILDUP_ACTIVATE_POPS_PANEL: same restore on the THROW path — see the in-try comment above.
+      try { if (window.tmDeactivateIfBakeOwned) window.tmDeactivateIfBakeOwned(); } catch (eTM2) {}
       try { _ghostGroundRestore(); } catch (e4) {}
+      try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { _workPacingReset(); } catch (e5) {}
       // Recoverability FIRST: clearing the store can itself block for seconds behind the very
       // zombie connection that failed this run, and until these flags reset the next Alt+C is
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.
       _active = false; _cancel = false;
       A._maxqActive = false;
-      _wakeRelease(); _dampRelease();
+      _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       await _idbDestroy(db);
     }
   }
@@ -1532,6 +1929,63 @@
       // §CPE_MAXQ_STATUS_DAY_LABEL — exposed for the witness (gates the pure formatter directly,
       // same precedent as the other pure functions on this line, instead of sitting through a bake).
       window.APP.maxqStatusDayRoomSegs = _maxqStatusDayRoomSegs;
+      // ══ §CLI_SILENT_BAKE item 1 (spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md) — dev-only
+      // scripted entry, defined ONLY when the launcher pre-set __MAXQ_SILENT before any page
+      // script ran (puppeteer evaluateOnNewDocument), so no user session ever sees it. Resolves
+      // the stored path — object | named IndexedDB plan | the building DB's own cinema_path
+      // table — into the ONE _buildOverride() shape and hands it to start(). No second schema.
+      if (window.__MAXQ_SILENT) window.__maxqBake = async function(o) {
+        o = o || {};
+        var a = window.APP;
+        var ov = null, src = null;
+        if (o.override) { ov = o.override; src = 'caller-object'; }
+        else if (o.name) {
+          var bld = a.activeBuilding || a.buildingName || 'building';
+          var rec = await new Promise(function(res, rej) {
+            var rq = indexedDB.open('bim_ootb_cinema_paths', 1);
+            rq.onupgradeneeded = function() {
+              var d = rq.result;
+              if (!d.objectStoreNames.contains('paths')) d.createObjectStore('paths', { keyPath: 'key' });
+            };
+            rq.onsuccess = function() {
+              var db = rq.result;
+              try {
+                var g = db.transaction('paths', 'readonly').objectStore('paths').get(bld + '|' + o.name);
+                g.onsuccess = function() { db.close(); res(g.result || null); };
+                g.onerror = function() { db.close(); rej(g.error || new Error('idb-get-failed')); };
+              } catch (e) { db.close(); rej(e); }
+            };
+            rq.onerror = function() { rej(rq.error || new Error('idb-open-failed')); };
+          });
+          if (!rec || !rec.override) throw new Error('no stored plan "' + o.name + '" for building ' + bld);
+          ov = rec.override; src = 'idb:' + bld + '|' + o.name;
+        } else {
+          // The PORTABLE store: trigger effects.js's own lazy _cpeLoadFromDb via a throwaway
+          // plan, then read the staged result — the shipped loader, never a re-implementation.
+          // Guard FIRST: _cpeLoadFromDb latches _cpeLoaded=true on entry, so probing before the
+          // DB is open would permanently blind this session to the stored path (found live on the
+          // very first CLI smoke run, 2026-09-01 — the runner's readiness wait raced the load).
+          if (!a.db) throw new Error('building DB not open yet — wait for load before __maxqBake');
+          if (typeof a.cinemaPathPlan === 'function') try { a.cinemaPathPlan(60); } catch (ePl) {}
+          var staged = (a._getCinemaPathEdit && a._getCinemaPathEdit()) || null;
+          if (!staged) throw new Error('no stored path: cinema_path table absent/empty and no plan named');
+          ov = staged; src = 'db:cinema_path';
+        }
+        // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
+        // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
+        var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter'].forEach(function(fk) {
+          if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
+        });
+        window.__maxqResolvedOverride = ov;   // for the runner's post-bake pose assertion
+        console.log('§CLI_BAKE_RESOLVED source=' + src + ' bands=' + (ov.bands ? ov.bands.length : 0) +
+          ' total=' + (ov._total != null ? (+ov._total).toFixed(1) : '?') + 's' +
+          ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
+          ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr'));
+        await start({ editor: false, preview: false, override: ov, overrideSource: src,
+                      frames: o.frames, fps: o.fps, forceWebm: o.forceWebm });
+        return { source: src, deliveredBytes: window.__maxqDeliveredBytes || 0 };
+      };
       clearInterval(_attach);
     }
   }, 500);

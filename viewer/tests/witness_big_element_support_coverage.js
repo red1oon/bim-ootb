@@ -32,6 +32,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const ZoneIndex = require(path.join(__dirname, '..', 'zone_index.js'));   // §S62
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 
 let pass = 0, fail = 0;
@@ -62,6 +63,26 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 // witness's own logged runs (repo convention, cf. witness_tm_geo_order_cycles.js floating=8): if
 // it moves EITHER way that is a real behavior change to examine, never to absorb silently.
 const BUILDINGS = [
+  // RE-LOCKED 2026-08-27 (§STAIR_FLIGHT_GRID_VISIBILITY audit twin, bim-compiler
+  // prompts/4D_MODEL_INTEGRITY.md §I.5a) — HHS 17->14, LTU_AHouse 626->624. Two baselines moved
+  // DOWN and, unlike §S64's rise, this is a COVERAGE GAIN, not a trade.
+  //   Cause: auditFloating's structGrid re-typed the scheduler's support pool MINUS stair flights
+  //   (IfcStairFlight is seq 6, so `seq<=4` misses it and the `else if` only catches IfcWall*), so
+  //   a flight was in NEITHER grid. It now calls the exported supportPool() — one definition, the
+  //   scheduler's own. Elements whose only candidate was a stair flight had ZERO candidates in
+  //   either pool and were therefore honest §SUPPORT_UNCHECKED findings; they now have a real one
+  //   and leave the exception set.
+  //   The exchange is exact and attributable by class, MEASURED both sides:
+  //     HHS        17->14  = IfcStairFlight 4->2, IfcSlab 5->4   (a flight resting on a flight had
+  //                          no candidate at all — the self-referential case the old pool excluded)
+  //     LTU_AHouse 626->624 = IfcWallStandardCase 355->353
+  //     Terminal / Hospital / Duplex / Clinic / JKR — class histograms BYTE-IDENTICAL, no move.
+  //   Direction check: this witness asserts `unchecked` (zero-candidate elements), which can only
+  //   FALL when a pool widens. The floating count, which this witness does not assert, moves the
+  //   other way for the same reason — +204 fleet-wide, measured in
+  //   viewer/tests/probe_stair_flight_support_pool.js. Both are the same false NEGATIVE being
+  //   repaired: the audit could not see a support the scheduler had already used.
+  //
   // Baselines RE-MEASURED 2026-08-11 (big-element follow-up, bigsup_after_fix2.log) after three
   // deliberate changes, each with its own delta reasoned below (first-run baselines in parens):
   //  (1) §HANG_NEAREST fallback (schedule_gate.js) — big pure-sink hangers (rod-suspended MEP etc.)
@@ -78,6 +99,23 @@ const BUILDINGS = [
   //   Duplex   big=49   unchecked=6   (IfcSlab:4,IfcWallStandardCase:2)     floating=0 (HELD)
   //   HHS      big=239  unchecked=13  (IfcSlab:5,IfcFlowSegment:3,…)        floating=0 (HELD)
   //   Clinic   big=442  unchecked=22  (IfcWallStandardCase:15,IfcMember:3,…) floating=1 (HELD)
+  // The floating column above is COMMENTARY (this witness asserts `unchecked`, never floating) and
+  // has drifted since. Re-measured 2026-08-22 (§S63, this witness's own green run): Terminal=12
+  // Hospital=0 Duplex=0 HHS=9 Clinic=1 LTU_AHouse=360 JKR=80. Terminal 8->12 is bisected and
+  // explained in witness_tm_geo_order_cycles.js (which DOES lock it, count + composition); the rest
+  // are recorded here so the next reader compares against a real number, not a stale one.
+  //
+  // RE-LOCKED 2026-08-22 (§S64, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S64) — Terminal 32->36,
+  // HHS 13->17, LTU_AHouse 626 (was 611). Three baselines moved UP and that is the INTENDED trade,
+  // not a regression: auditFloating stopped handing a stair flight a false hang-carrier above it
+  // (its tPool now mirrors hangGate's elPool) and stopped counting a wall whose crown rises past a
+  // promoted slab's underside (its wall pool now carries wallCarries' carry-at-top bound). An
+  // element that was being given a support it never had is now an HONEST §SUPPORT_UNCHECKED finding
+  // — named, counted, warn-only, never a gate. The exchange is exact: floating fell 462->362
+  // fleet-wide while unchecked rose 863->886, and every added warn is one of the elements whose
+  // false carrier was removed. Floating re-measured the same day: Terminal=0 Hospital=0 Duplex=0
+  // HHS=5 Clinic=0 LTU_AHouse=277 JKR=80 (the 350 remaining are the §SUPPORT_CYCLE fallback on
+  // JKR+LTU_AHouse — 350/350 measured cycle-set membership, an upstream modelling fact).
   // RE-MEASURED 2026-08-11 (closure pass, bigsup_after_fix.log) after the
   // 'slab_on_grade_substructure' name-override (rates.js/sequence_rules.json — slab-on-grade is
   // the 1c spec's own named ground-bearing class, pattern measured to exactly Duplex 4 + Clinic 4
@@ -88,10 +126,10 @@ const BUILDINGS = [
   // IfcPile SEQUENCE_RULES entry added the same pass (Gap A close) changed nothing anywhere —
   // latent by construction (no shipped building models the class; Terminal's real piles arrive
   // via the IfcSlab name-override). TOTAL 250→246.
-  { file: 'Terminal_extracted.db',             name: 'Terminal', bms: true,  expectedUnchecked: 32 },   // was bms:false/279
+  { file: 'Terminal_extracted.db',             name: 'Terminal', bms: true,  expectedUnchecked: 36 },   // was bms:false/279; 32->36 §S64
   { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 177 },  // was 503
   { file: 'Duplex_extracted.db',               name: 'Duplex',   bms: true,  expectedUnchecked: 2 },    // was 6 — SoG override, see above
-  { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 13 },   // was 21
+  { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 14 },   // was 21; 13->17 §S64; 17->14 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
   { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 22 },   // count HELD, mix changed (see 3)
   // Coverage extended 2026-08-11 (chase-to-zero pass) — first witness coverage for these two; the
   // 5-building locked set above is UNTOUCHED (its 246 total stands; these rows are additive).
@@ -105,7 +143,7 @@ const BUILDINGS = [
   // member in a mutual pair never converges — measured Clinic 43k pushes/400 sweeps).
   // JKR: bms=false (zero seq-1 elements — its foundation slabs are authored plain IfcSlab at the
   // z≈84m site datum), unchecked=6, floating=81 (same steel co-planar family: CHS members/columns).
-  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 611 },
+  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 624 },   // 611->626 §S64; 626->624 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
   { file: 'JKR_extracted.db',                  name: 'JKR',        bms: false, expectedUnchecked: 6 },
 ];
 
@@ -116,6 +154,15 @@ const BUILDINGS = [
 
   const names = ['_buildXrayElements'];
   if (tmSrc.indexOf('function _promoteRoofLoadPath(') >= 0) names.unshift('_promoteRoofLoadPath');
+  // §S62: _buildXrayElements' real dependency closure. It calls _classifyRule (which calls
+  // _classifyNameOverride) and _zoneIndex — none of which were in this slice set, so the witness
+  // died on ReferenceError before its first assertion. _zoneIndex now comes from the zone_index.js
+  // module via the sandbox; these two are still text slices, added here the same way
+  // witness_midair_zero.js:136 already does it. Each name added is a dependency that was
+  // ALWAYS required and never declared — the text-slice pattern cannot state its own needs.
+  for (const dep of ['_classifyNameOverride', '_classifyRule']) {
+    if (tmSrc.indexOf('function ' + dep + '(') >= 0) names.push(dep);
+  }
   let sliced;
   try { sliced = names.map(n => sliceFn(tmSrc, n)).join('\n'); }
   catch (e) { assert(false, 'W-BIGSUP-SLICE failed: ' + e.message); finish(); return; }
@@ -133,6 +180,12 @@ const BUILDINGS = [
       performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [] },
       A: function () { return { db: db }; },
+      // §S62: _buildXrayElements calls _zoneIndex(), which was in NEITHER the slice set nor the
+      // sandbox — this witness died on `ReferenceError: _zoneIndex is not defined` before its first
+      // assertion. The builder is a real module now, so the accessor is provided here (no memo
+      // needed: one build per run) instead of hoping a text slice happens to include it.
+      ZoneIndex: ZoneIndex,
+      _zoneIndex: function () { return ZoneIndex.build(db); },
     };
     vm.createContext(sandbox);
     vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements;', sandbox);

@@ -37,20 +37,33 @@ const path = require('path');
 const vm = require('vm');
 const initSqlJs = require('/home/red1/bim-ootb/node_modules/sql.js');
 const SQLJS_DIST = '/home/red1/bim-ootb/node_modules/sql.js/dist';
+// The SHIPPED gate module, for its exported supportPool() — this witness's detection pool is the
+// production pool, asked of its owner, never re-typed here (§I.4). NOTE this is the real module;
+// the `ScheduleGate: { CELL: 4 }` stub inside the vm sandbox below (~:114) is a deliberately
+// minimal fake for the guard-under-test and is a different object.
+const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
+// §S58: the guard block now lives in viewer/support_sweep.js as a real function. This witness still
+// needs SOURCE TEXT (it builds reference variants by substring substitution), but it slices BY
+// FUNCTION NAME instead of by raw text markers — immune to indentation and to log wording, the two
+// things that rotted the old marker slice once already.
+const ssSrc = fs.readFileSync(path.join(__dirname, '..', 'support_sweep.js'), 'utf8');
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
-
-// ── slice the guard block (same marks as witness_gantt_og_grid_perf.js) ──
-const startMark = 'var _ogCELL = ';
-const endMark = "if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +\n        ' (sweeps=' + _ogSweeps + ', bearing+hang) elements later than their §PHASE_OVERLAP_BAND window to stay after their real support');";
-const si = tmSrc.indexOf(startMark);
-const ei = tmSrc.indexOf(endMark, si);
-if (si < 0 || ei < 0) throw new Error('guard block marks not found — has the block been renamed/moved?');
-const guardBlock = tmSrc.slice(si, ei + endMark.length);
+function _sliceNamed(src, name) {
+  const idx = src.indexOf('function ' + name + '(');
+  if (idx < 0) throw new Error(name + ' not found in support_sweep.js — renamed?');
+  let d = 0, i = idx, open = false;
+  for (; i < src.length; i++) {
+    if (src[i] === '{') { d++; open = true; }
+    else if (src[i] === '}') { d--; if (open && d === 0) break; }
+  }
+  return src.slice(idx, i + 1);
+}
+const guardBlock = _sliceNamed(ssSrc, '_ogSupportSweep');
 
 // ── slice the judge (named function — the standard sliceFn convention) ──
 function sliceFn(src, name) {
@@ -103,9 +116,11 @@ function runGuard(scheduled, unboundedVariant) {
   }
   const origS = {};
   copy.forEach(e => { origS[e.guid] = e.s; });   // by guid — the block SORTS the array in place
-  const sandbox = { _allScheduled: copy, ScheduleGate: { CELL: 4 }, console: { log: function () {} }, Math: Math };
+  const sandbox = { _allScheduled: copy, ScheduleGate: { CELL: 4 }, taskWin: undefined, console: { log: function () {} }, Math: Math };
   vm.createContext(sandbox);
-  vm.runInContext(block, sandbox);
+  // §S58: the slice is now the whole named function rather than a bare statement sequence, so it is
+  // DEFINED then INVOKED here — same physics, same in-place mutation of sandbox._allScheduled.
+  vm.runInContext(block + '\n_ogSupportSweep(_allScheduled, taskWin);', sandbox);
   const pushed = {};
   copy.forEach(e => { if (e.s !== origS[e.guid]) pushed[e.guid] = true; });
   return { out: copy, pushedN: Object.keys(pushed).length, pushed: pushed };
@@ -127,7 +142,25 @@ function detectionSet(scheduled) {
   scheduled.forEach(e => {
     // §PROMOTED_CARRIER_POOL (2026-08-11): detection pool = seq<=4 ∪ promoted slabs (audit parity,
     // finding-A fix — see time_machine.js _buildXraySupportCache).
-    if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) cellsFor(e, e.bz, e.tz).forEach(c => (grid[c] = grid[c] || []).push(e));
+    //
+    // §STAIR_FLIGHT_GRID_VISIBILITY, JUDGE TWIN (2026-08-27, §I.5a). W-OGB-3a asserts "guard and
+    // judge are one physics" — and this line used to make that true by RE-TYPING the guard's pool,
+    // which is a weaker thing than sharing its definition: two copies of the same mistake also read
+    // as "one physics". It now asks the OWNER (schedule_gate.js supportPool), so the parity is
+    // structural. This is the SEVENTH copy of that pool found; §I.5a counted six.
+    // Widening detection can only REDUCE W-OGB-2 violations, and it stays 0 on both fixtures.
+    //
+    // ⚠ WHAT THIS UNCOVERED, DEFERRED ON PURPOSE — see §I.5a in the spec. The matching pool fix in
+    // time_machine.js `_buildXraySupportCache` is NOT in this change. Applied, it makes W-OGB-3a
+    // fail with Terminal staged=0 -> 14 (isolated by reverting only that file: 9/0 green without
+    // it, 8/1 with it). Those 14 are not a harness artifact — they are real Terminal elements that
+    // start before a stair-flight carrier finishes, and they surface because the x-ray JUDGE would
+    // then see flights as carriers while the GUARD (`_ogSupportSweep`) still repairs against WALL
+    // carriers only. So guard and judge genuinely would not be one physics for this class, and the
+    // honest fix is a decision about whether the guard must repair stair-flight carriers too — not
+    // a re-baseline of this number. Landing the x-ray half without that decision would either
+    // break this witness or bake in an asymmetry it exists to forbid.
+    if (ScheduleGate.supportPool(e)) cellsFor(e, e.bz, e.tz).forEach(c => (grid[c] = grid[c] || []).push(e));
   });
   const withBearing = {};
   scheduled.forEach(T => {

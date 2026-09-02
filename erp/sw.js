@@ -10,7 +10,24 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v766';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v772';   // bump on each deploy; per-change detail is the git commit message.
+// v772 (rebase of PR #203 onto origin/main) §INTEG-WIRE-B: disposable-host persistence in-app
+// (erp_replica_client.js + erp_persist_ui.js) — back the books up to a SIGNED snapshot the user
+// owns (signed by the edge key), restore on a FRESH device -> replay recomputes tip == signed
+// tip + books to the cent; a tampered/forged file is rejected (no private key). Substrate
+// prompts/ERP_SUBSTRATE_INTEGRATION.md Phase 2 slice B; witness erp/tests/poc_persist_wire.js.
+// v771 (#429 rebase onto origin/main@e9daafa0): OK feedback dialog after both System Monitor resets
+//   (erp/system_monitor.js) — merged forward past v770's independent bumps below, neither dropped.
+// v770 (T-0 item 4, prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md): commitCrud's UPDATE/DELETE path now
+//   consults ad_access.js's gateRecord (canView AccessLevel + org/client scope) before sealing, not just
+//   owner/CAS — idempiere.html's applySession wires window.APP.gateRecordFor; crud_core.js/crud_overlay.js
+//   gain recordAccessGate/_gateRecordAccess. New witness: scripts/poc_record_gate_live.js (bim-compiler).
+// v769 (2026-08-23) merge of two independent v768 bumps — both applied, neither dropped:
+// v768a: ad_seed.db gains AD_Form (49) + ad_val_rule (332) — see erp/tests/bake_forms_valrules_seed.js.
+//   ad_seed_v16 -> ad_seed_v17 IDB cache key bump forces re-fetch of the seed for returning users.
+// v768b (ERP_PROJECT_REVIEW.md §2.1 W-ACCESS-GATE-LIVE): ad_access.js shipped as a twin of
+//   build/erp/ad_access.js; idmp_session.js now delegates window/process/form access decisions to
+//   it (IsReadWrite/canView/org-client gateRecord) instead of a weaker independent implementation.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -62,6 +79,7 @@ const PRECACHE_ASSETS = [
   'erp_snapshot_sign.js', // ECDSA P-256 signer (UMD, window.ErpSnapshotSign) — signs the genesis bundle head
   'erp_key_epochs.js', // T1 (W-ROSTER-VERIFY): HQ-signed device roster + ROTATE/REVOKE key epochs on verify/import
   '14-sap-chain.json', // SAP /DMO/ Flight PoC oracle (fetch-fold-install demo data; user can replace via file-drop)
+  'ad_access.js',       // W-ACCESS-GATE-LIVE — MRole-faithful gate engine, twin of build/erp/ad_access.js
   'idmp_session.js',
   'erp_descriptor.js',  // DESCRIPTOR SEAM (IDEMPIERE_2.md pivot, renderer #2) — one chrome, N dictionaries; AD = first descriptor
   'odoo_descriptor.js', // RENDERER #2 — the Odoo descriptor (?erp=odoo); reads the two pulled artifacts below
@@ -96,6 +114,7 @@ const PRECACHE_ASSETS = [
   'bim_orders_overlay.js', // BIM→Project §B round-trip: overlay viewer-folded Project Orders + VO amendments from OPFS at boot
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
   'erp_engine.js',     // POS_ADDON_SPEC — engine verbs (UMD of bim-compiler scripts/erp_engine.js, window.ERPEngine)
+  'crud_core.js',      // §S60 physical split — the PURE CORE (window.CrudCore); MUST precede crud_overlay.js in page load order
   'crud_overlay.js',   // SO_FULL_CRUD_GAP.md T1-T4 — CRUD ring-of-fire + DocAction overlay (window.__crud); glassbowl + idempiere both mount it
   'erp_relay_client.js', // ERP_MULTIUSER_CONCURRENCY_POC.md — relay transport client (idempiere.html loads it; precache so cross-device sync works offline-installed)
   'erp_sync_fsm.js',   // ERP_MULTIUSER_CONCURRENCY_POC.md — engine-proven rebase loop (W-N-CONVERGE); idempiere.html loads it
@@ -115,6 +134,8 @@ const PRECACHE_ASSETS = [
   'ninja_sample.xlsx',// runnable sample workbook (generated from ad_seed.db stored columns)
   'erp_period_close.js', // §INTEG-WIRE — period-close fold = signed checkpoint = balance b/f (window.ErpPeriodClose)
   'period_close_ui.js',  // §INTEG-WIRE — in-app close/bootstrap on the live sidecar op-log (window.PeriodClose)
+  'erp_replica_client.js', // §INTEG-WIRE-B — FROZEN read side: replay snapshot → recompute tip (window.ErpReplicaClient)
+  'erp_persist_ui.js',     // §INTEG-WIRE-B — disposable-host persistence gesture: signed backup/restore (window.ErpPersist)
   'migrate_compare.html', // evaluator-facing comparison paper (docs/MigrateComparisonPaper.md) — linked from erp.html+idempiere.html
   'migrate_compare.md',   // its single source; deep papers (ERP/HolyGrail/OpLog/Distributed/BIMERP .md) fetch on-demand, not precached
   'qrcode.min.js',

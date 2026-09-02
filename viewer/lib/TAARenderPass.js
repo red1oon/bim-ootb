@@ -32,7 +32,13 @@ class TAARenderPass extends SSAARenderPass {
 
 		}
 
-		const jitterOffsets = _JitterVectors[ 5 ];
+		// §RED_GREY_MYSTERY / §STILL_REFINE_JITTER_MISMATCH (2026-08-15): was index 5 (32-entry
+		// table) while effects.js's still-refine loop only ever runs 16 accumulate frames — the
+		// mismatch left accumulationWeight at 16/32=0.5 when the loop stopped, so the "converged"
+		// still silently blended in 0.5 weight of a single unjittered hold-frame (see
+		// SSAARenderPass's accumulationWeight<1 branch below), halving real supersampling and
+		// leaving edges visibly jagged. Index 4 is the 16-entry table — matches the loop count.
+		const jitterOffsets = _JitterVectors[ 4 ];
 
 		if ( this._sampleRenderTarget === null ) {
 

@@ -2,7 +2,7 @@
   "meta": {
     "name": "Default Sequence + Labour Rules",
     "version": "2024.2",
-    "note": "Timeline default steps (ifc_class -> phase/sequence/resource + labour productivity) used by Time Machine injectGantt and 4D/5D consumers. Values copied verbatim from rates.js (schedule_generator.py / boq_export.py origins). Editable via Settings JSON editor; rates.js keeps these as the in-file sync default."
+    "note": "Timeline default steps (ifc_class -> phase/sequence/resource + labour productivity). Values copied verbatim from rates.js (schedule_generator.py / boq_export.py origins). READ THIS BEFORE CITING A NUMBER FROM THIS FILE (corrected 2026-08-13, §RULES_TABLE_SOURCE): this file is NOT what Time Machine injectGantt runs on. viewer.html never calls loadSequenceRules() — only mep_report.html and boq_charts.html do — so rates.js's hardcoded SEQUENCE_RULES/LABOR_RATES/SEQUENCE_DEFAULT/SEQUENCE_NAME_OVERRIDES are what the viewer, Time Machine and the Author wizard actually execute, and this file is their MIRROR plus the Settings-JSON-editor override surface. The previous wording here claimed the opposite and is why every Node probe and viewer/tests/witness_*.js measured this file instead of ship: they had drifted (LABOR_RATES.ELECTRICIAN.productivity held 8 class keys here against rates.js's 15 — IfcSwitchingDevice/IfcSensor/IfcActuator/IfcFlowInstrument/IfcDistributionControlElement/IfcProtectiveDeviceTrippingUnit/IfcUnitaryControlElement were missing), worth 1889.4d vs 1926.4d of Hospital programme. Re-synced 2026-08-13. When you edit rates.js, edit this file in the same commit. | 2026-08-25 §S65 (bim-compiler prompts/4D_SCHEDULE_PERFECTION.md): six §TPL_ZERO_MINUTE fixes — IfcBuildingElementProxy and SEQUENCE_DEFAULT no longer carry resource:null (both -> MASON, productivity copied from the sibling IfcBuildingElementPart:15); MASON.default_productivity added because the productivity lookup is a SUBSTRING match an unmatched class can never satisfy; CARPENTER gained IfcPlate:12/IfcMember:10 (copied from STEEL_ERECTOR) and FINISHER gained IfcBuildingElementPart/Proxy:15 (copied from MASON) so the glazed_curtainwall_facade and furniture_generic_bucket NAME_OVERRIDES stop silently destroying the duration of the elements they reassign; IfcRoof sequence 8 -> 6 (user ruling) so the roof precedes MEP Rough-in and the Architecture band stops overlapping it. Locked by viewer/tests/witness_sequence_template_lock.js."
   },
   "NAME_OVERRIDES": [
     {
@@ -13,8 +13,8 @@
       ],
       "pattern": "glaz|glass|verglas|vitrage|vidrio|curtain|mullion",
       "flags": "i",
-      "phase": "Architecture",
-      "sequence": 7,
+      "phase": "Architecture Envelope",
+      "sequence": 6,
       "resource": "CARPENTER",
       "reason": "ifc_class alone cannot separate curtain-wall glazing/framing from structural steel plates/members — a Revit curtain-wall panel is IfcPlate and its mullions are IfcMember, same classes as genuinely structural plates/members (e.g. Terminal's 33,324 Metal Deck IfcPlate, JKR's CHS/RHS steel framing, LTU_AHouse's timber beams, which must all stay at their structural seq). Name is the only extracted signal that discriminates them. Matched, measured against 8 shipped buildings: Hospital 'System Panel:Glazed' (2211/2211 IfcPlate) + 'Curtain Wall:...Framing'/'Curtain System' (7122/7127 IfcMember), Clinic 'Rectangular/Circular Mullion' (522/534 IfcMember), HHS 'Systemelement:Verglasung' (438/629 IfcPlate, German) — zero false positives on Terminal/JKR/LTU_AHouse/TermRooms. See bim-compiler prompts/RESUME_4D_TRUTH_AND_BE_HERE_WHEN.md §STAGE A A.3/A.4 and prompts/GANTT_ACCURACY.md §4D_HOST_BEFORE_HOSTED. Elements not matching this pattern keep their class-default seq (measured, never guessed) — known remaining blind spot: HHS 'Rechteckiger Pfosten' (German curtain-wall posts, 1450 IfcMember) not matched, deliberately not covered by a generic 'post' pattern (too ambiguous vs real structural posts) — reported, not silently dropped."
     },
@@ -238,77 +238,77 @@
       "resource": "ELECTRICIAN"
     },
     "IfcWall": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": "MASON"
     },
     "IfcWallStandardCase": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": "MASON"
     },
     "IfcOpeningElement": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": "MASON"
     },
     "IfcSpace": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": null
     },
     "IfcBuildingElementPart": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": "MASON"
     },
     "IfcDoor": {
-      "phase": "Architecture",
-      "sequence": 6,
+      "phase": "Architecture Closeup",
+      "sequence": 8,
       "resource": "CARPENTER"
     },
     "IfcWindow": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcStair": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcStairFlight": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcRailing": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcRamp": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CONCRETE_GANG"
     },
     "IfcRampFlight": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CONCRETE_GANG"
     },
     "IfcRoof": {
-      "phase": "Architecture",
-      "sequence": 8,
+      "phase": "Architecture Envelope",
+      "sequence": 6,
       "resource": "ROOFER"
     },
     "IfcBuildingElementProxy": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
-      "resource": null
+      "resource": "MASON"
     },
     "IfcCurtainWall": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
@@ -349,9 +349,9 @@
     }
   },
   "SEQUENCE_DEFAULT": {
-    "phase": "Architecture",
+    "phase": "Architecture Envelope",
     "sequence": 6,
-    "resource": null
+    "resource": "MASON"
   },
   "LABOR_RATES": {
     "HVAC_TECH": {
@@ -399,8 +399,15 @@
         "IfcOutlet": 25,
         "IfcElectricAppliance": 15,
         "IfcFlowController": 10,
+        "IfcSwitchingDevice": 10,
         "IfcAlarm": 25,
-        "IfcController": 10
+        "IfcController": 10,
+        "IfcDistributionControlElement": 10,
+        "IfcActuator": 10,
+        "IfcSensor": 10,
+        "IfcFlowInstrument": 10,
+        "IfcProtectiveDeviceTrippingUnit": 10,
+        "IfcUnitaryControlElement": 10
       }
     },
     "STEEL_ERECTOR": {
@@ -438,8 +445,10 @@
         "IfcWall": 12,
         "IfcWallStandardCase": 12,
         "IfcOpeningElement": 20,
-        "IfcBuildingElementPart": 15
-      }
+        "IfcBuildingElementPart": 15,
+        "IfcBuildingElementProxy": 15
+      },
+      "default_productivity": 15
     },
     "CARPENTER": {
       "rate_per_day": 165,
@@ -452,7 +461,9 @@
         "IfcStair": 2,
         "IfcStairFlight": 3,
         "IfcRailing": 15,
-        "IfcCurtainWall": 8
+        "IfcCurtainWall": 8,
+        "IfcPlate": 12,
+        "IfcMember": 10
       }
     },
     "ROOFER": {
@@ -472,7 +483,9 @@
       "productivity": {
         "IfcCovering": 20,
         "IfcFurniture": 8,
-        "IfcFurnishingElement": 8
+        "IfcFurnishingElement": 8,
+        "IfcBuildingElementPart": 15,
+        "IfcBuildingElementProxy": 15
       }
     },
     "LABORER": {

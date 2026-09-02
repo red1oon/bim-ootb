@@ -13,7 +13,7 @@ async function initViewer() {
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
-    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
+    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupCpePathOverview, setupCpeResourcePanel, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
   // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
   // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
@@ -172,7 +172,14 @@ async function initViewer() {
         // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
         '../common/hallway_backbone.js?v=1',
         // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
-        'navigate_find.js?v=57',
+        // §S59 candidate 2 (SCRIPT_LENGTH_REFACTOR_SEAMS.md, 2026-08-23): the Find panel's 5D-cost/
+        // ERP-push block, extracted from navigate_find.js. Must load BEFORE navigate_find.js — its
+        // init() calls FindErpPush.create() at closure-build time (honest §ERP_PUSH_MODULE_ABSENT
+        // no-op if missing, but then every › ERP surface is inert).
+        'find_erp_push.js?v=1',
+        // v58 (§S59, 2026-08-23): ERP-push block extracted to find_erp_push.js above — a stale v57
+        // would still carry its own copy AND the new wiring would never run.
+        'navigate_find.js?v=58',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -865,9 +872,16 @@ async function initViewer() {
       _rafId = null;
       if (!_idleLogged) {
         _idleCycles = (_idleCycles || 0) + 1;
+        // §VAC / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): this tag is the ONE of
+        // the nine audited that was already compliant — its mechanism is unchanged here. What was
+        // wrong is that the line INVITED a misread, and got one: §R13.9 recorded "165 park + 165
+        // wake pairs" from s5_hospital.log as if that were the event count. It is the SAMPLE
+        // count — `cycles=4050` on the last line is the real number of park/wake cycles during
+        // that bake, ~2 per exported frame. Saying the sample rate and the running total on the
+        // line itself is the whole fix; `(throttled: every 25th)` did not make that readable.
         if (_idleCycles <= 3 || _idleCycles % 25 === 0)
-          console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=' + _idleCycles +
-            (_idleCycles > 3 ? ' (throttled: every 25th)' : ''));
+          console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) parks=' + _idleCycles +
+            (_idleCycles > 3 ? ' (1-in-25 sample; every park is counted in parks=, only the line is sampled)' : ''));
         _idleLogged = true;
       }
       return;
@@ -927,7 +941,8 @@ async function initViewer() {
         if (APP._cpeViewfinderRender) APP._cpeViewfinderRender();
         _needsRender = false;
         if (_idleLogged) {
-          if ((_idleCycles || 0) <= 3 || (_idleCycles || 0) % 25 === 0) console.log('§IDLE_GATE wake cycles=' + (_idleCycles || 0));
+          // §VAC — same 1-in-25 sample as the park line above; parks= is the true event count.
+          if ((_idleCycles || 0) <= 3 || (_idleCycles || 0) % 25 === 0) console.log('§IDLE_GATE wake parks=' + (_idleCycles || 0) + ' (1-in-25 sample)');
           _idleLogged = false;
         }
       } else if (!_idleLogged) {

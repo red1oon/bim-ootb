@@ -27,6 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const ZoneIndex = require(path.join(__dirname, '..', 'zone_index.js'));   // §S62: sliced _zoneIndexBuild delegates to it
 const { execSync } = require('child_process');
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 
@@ -36,9 +37,17 @@ function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); }
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
+// §S73: LINE-ANCHORED. A plain indexOf finds the first mention of `function NAME(` ANYWHERE —
+// including inside a comment that talks about the function — and then slices prose as if it were
+// code. That is exactly why this witness was RED on main: time_machine.js:4154 carries a comment
+// containing the words `function _midairAudit(` (it describes this very check) and the real
+// definition sits eight lines below it, so the slice began mid-sentence and vm threw
+// `SyntaxError: Unexpected template string`. Same family as G-COH-6. Anchor to the start of a line
+// so only a real definition can match.
 function sliceFn(src, name) {
-  const idx = src.indexOf('function ' + name + '(');
-  if (idx < 0) throw new Error(name + ' not found');
+  const m = new RegExp('^[ \\t]*function ' + name + '\\(', 'm').exec(src);
+  const idx = m ? m.index + m[0].indexOf('function') : -1;
+  if (idx < 0) throw new Error(name + ' not found (no line-anchored definition)');
   let depth = 0, i = idx, seenOpen = false;
   for (; i < src.length; i++) {
     if (src[i] === '{') { depth++; seenOpen = true; }
@@ -104,16 +113,49 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     // the witness crashed ReferenceError on every post-#1272 run).
     const _names = ['_buildXrayElements', 'verifyGanttIntegrity'];
     if (tmSrc.indexOf('function _promoteRoofLoadPath(') >= 0) _names.unshift('_promoteRoofLoadPath');
+    // §S20 Part B (2026-08-17) — found, not in this stage's named scope but the SAME dead-witness
+    // failure class §DAY_GAP_TAIL/§S17 already fixed elsewhere in this codebase: §ZONE_INDEX (#1313)
+    // moved _buildXrayElements' storey banding into the shared _zoneIndex, and this file's slice
+    // list was never updated, so it has been throwing `ReferenceError: _zoneIndex is not defined`
+    // on every run since — unrelated to the dead-chain deletion, but "leaving it broken is not
+    // finished" applies here too since this stage is already editing this file's slice list.
+    let _zoneParts = [];
+    if (tmSrc.indexOf('function _zoneIndexBuild(') >= 0) {
+      _zoneParts = ['_zoneIndexBuild', '_zoneIndex'].map(n => sliceFn(tmSrc, n));
+    }
+    // §SCHEDULE_CLASSIFY_DEDUP (2026-08-15) — same gap, same fix: _buildXrayElements' local
+    // matchNameOverride/matchRule now delegate to this shared pair, which this file's slice list
+    // also never picked up.
+    let _classifyParts = [];
+    if (tmSrc.indexOf('function _classifyNameOverride(') >= 0) {
+      _classifyParts = ['_classifyNameOverride', '_classifyRule'].map(n => sliceFn(tmSrc, n));
+    }
     // §MIDAIR_REPAIR (2026-08-12): the lock gate now ALSO judges "nothing appears before the first
     // thing it touches" (_midairAudit → _contactGraph) — auditFloating's pools cannot see that
     // population. Slice them when present, same both-commits pattern as _promoteRoofLoadPath above.
-    if (tmSrc.indexOf('function _midairAudit(') >= 0) _names.unshift('_contactGraph', '_midairAudit', '_midairRepair');
-    sliced = _names.map(n => sliceFn(tmSrc, n)).join('\n') +
-      (_names.indexOf('_midairRepair') >= 0
-        ? '\n' + (/var _TIER1_ORDER = \[[^\]]*\];/.exec(tmSrc) || [''])[0] +
-          '\nvar _lockBaseline = null;' + sliceFn(tmSrc, 'captureLockBaseline') +
-          '\nthis.__repair = _midairRepair; this.__capture = captureLockBaseline;'
-        : '');
+    // §S73: line-anchored for the same reason sliceFn is — the comment above mentions the name.
+    const _hasMidairAudit = new RegExp('^[ \\t]*function _midairAudit\\(', 'm').test(tmSrc);
+    if (_hasMidairAudit) _names.unshift('_contactGraph', '_designatedSupport', '_midairAudit');
+    // §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md) — FIXES THE LANDMINE §S19_RESULTS named:
+    // this used to conditionally slice `_midairRepair` (the dead legacy display-repair chain)
+    // whenever `_midairAudit` was present in source — a condition that is now ALWAYS true
+    // (`_midairAudit` is KEPT), so it always tried, and always failed, to slice a function that no
+    // longer exists. `_midairRepair` was only ever used HERE to pre-repair the fixture into "what
+    // kernel_ops actually contains" (the DISPLAY timeline, not the raw generative one) before
+    // testing verifyGanttIntegrity's lock/breach behavior on it — same substitution this lane's
+    // other witnesses made: author that fixture via `_displayTimeline`'s CPM branch
+    // (`CpmSchedule.run`, the live default path) instead. `_CPM_DISPLAY = true` forced (skip the
+    // URLSearchParams IIFE, same idiom `witness_zone_display_authoring.js` uses) since this
+    // sandbox has no `location`.
+    const _hasDisplayTimeline = tmSrc.indexOf('function _displayTimeline(') >= 0;
+    if (_hasDisplayTimeline) _names.unshift('_displayTimelineRemember', '_displayTimeline');
+    sliced = (_hasDisplayTimeline ? 'var _CPM_DISPLAY = true;\n' : '') +
+      (_zoneParts.length === 2 ? 'var _zoneMemo = [];\n' + _zoneParts.join('\n') + '\n' : '') +
+      _classifyParts.join('\n') +
+      _names.map(n => sliceFn(tmSrc, n)).join('\n') +
+      '\nvar _lockBaseline = null;' + sliceFn(tmSrc, 'captureLockBaseline') +
+      '\nthis.__capture = captureLockBaseline;' +
+      (_hasDisplayTimeline ? '\nthis.__dt = _displayTimeline;' : '');
   } catch (e) {
     assert(false, 'G-LI-2 slice failed (RED on main: ' + e.message + ')');
     finish();
@@ -128,10 +170,19 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   const sandbox = {
     console: console,
     performance: { now: () => Date.now() },
+    ZoneIndex: ZoneIndex,
     ScheduleGate: ScheduleGate,
     window: { SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [] },
+    ZoneIndex: ZoneIndex,
+    // §S73: §S58 moved _contactGraph/_designatedSupport/_midairAudit into support_sweep.js and left
+    // one-line delegating wrappers behind, so the sliced wrappers need the real module — the same
+    // "give the sandbox the collaborator, never a second copy of the logic" rule this file's header
+    // already states for the restore SQL.
+    SupportSweep: require(path.join(__dirname, '..', 'support_sweep.js')),
     A: function () { return { db: db }; },
     _ops: [],
+    URLSearchParams: URLSearchParams,
+    CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')),
   };
   vm.createContext(sandbox);
   vm.runInContext(sliced + '\nthis.__verify = verifyGanttIntegrity; this.__bxe = _buildXrayElements;', sandbox);
@@ -142,16 +193,27 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   const geoEls = els.filter(e => !(e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z));
   geoEls.forEach(e => { e.resource = e.cls; e.installSecs = 120; });
   const sched = ScheduleGate.computeSchedule(geoEls, 0, 1);
-  // §MIDAIR_REPAIR (2026-08-12): the app's kernel_ops carry the DISPLAY times — computeSchedule's
-  // output AFTER the repair (injectGantt's last step before the write). This fixture must be the
-  // same thing, or it tests a state the running app never has: the raw generative layer still
-  // contains the 5,561-element hanging population the repair exists to remove, so verifyGanttIntegrity
-  // would (correctly) refuse a lock that the live app never sees. Same shape as injectGantt's call.
-  if (typeof sandbox.__repair === 'function') {
+  // §MIDAIR_REPAIR (2026-08-12) / §S20 Part B (2026-08-17): the app's kernel_ops carry the DISPLAY
+  // times — computeSchedule's output AFTER display authoring (injectGantt's last step before the
+  // write, now `_displayTimeline`'s CPM branch). This fixture must be the same thing, or it tests a
+  // state the running app never has: the raw generative layer still contains a real hanging
+  // population, so verifyGanttIntegrity would (correctly) refuse a lock that the live app never
+  // sees. Same shape as injectGantt's call — CpmSchedule.run authors it, not the deleted
+  // _twoTierRemap/_midairRepair chain.
+  if (typeof sandbox.__dt === 'function') {
     const rItems = geoEls.map(e => ({ guid: e.guid, s: sched[e.guid].start, e: sched[e.guid].end,
-      bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, cls: e.cls, seq: e.seq, phase: e.phase }));
+      bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, cls: e.cls, seq: e.seq,
+      phase: e.phase, storey: e.storey, resource: e.resource }));   // storey/resource: cpm_schedule.js's crew pass reads both
     sandbox.__rItems = rItems;
-    vm.runInContext('this.__repair(this.__rItems);', sandbox);
+    const dtLines = [];
+    sandbox.console = { log: (...a) => dtLines.push(a.join(' ')), warn: (...a) => dtLines.push(a.join(' ')) };
+    const dtResult = vm.runInContext('this.__dt(this.__rItems);', sandbox);
+    sandbox.console = console;
+    const cpmOnLine = dtLines.find(l => l.indexOf('§CPM_DISPLAY on') === 0);
+    // §S14.0 reachability proof — print it, don't assume it.
+    assert(!!(dtResult && dtResult.cpm === true && cpmOnLine),
+      'G-LI-CPM-PATH _displayTimeline authored the fixture via the LIVE CPM branch, not the fallback (cpm=' +
+      (dtResult && dtResult.cpm) + '; ' + (cpmOnLine || 'no §CPM_DISPLAY on log line captured') + ')');
     rItems.forEach(it => { sched[it.guid].start = it.s; sched[it.guid].end = it.e; });
   }
   sandbox._ops = geoEls.map(e => ({ timestamp: sched[e.guid].start, end_ts: sched[e.guid].end, output_guid: e.guid, input_guids: [e.guid] }));
@@ -187,8 +249,21 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   assert(breach && breach.ok === false && (breach.dFloating > 0 || breach.dMidair > 0),
     'G-LI-2d breach detected on lock-back verify (floating=' + (breach && breach.floating) + ' +' +
     (breach && breach.dFloating) + ', midair=' + (breach && breach.midair) + ' +' + (breach && breach.dMidair) + ')');
+  // §S20 Part B (2026-08-17) named this as a real, pre-existing PRODUCTION bug in
+  // verifyGanttIntegrity() and deliberately LEFT G-LI-2e RED rather than paper over it:
+  // `guids` was auditFloating's own unbounded collector, with _midairAudit's offenders appended only
+  // `if (ma.midair && guids.length < 20)`, so on a building with a known floating tail the midair
+  // offender was silently dropped. FIXED 2026-08-23 (§S73), and the cause ran one layer deeper than
+  // the append: SupportSweep's _midairAudit was itself capped at `out.guids.length < 20` IN SCAN
+  // ORDER, so with 173 midair elements on this fixture the element the drag actually broke was never
+  // in its list at all (measured: brokeGuid inAll=false, allGuids=84). The audit now reports every
+  // offender (allGuids=237) and verifyGanttIntegrity ranks the ones ABSENT from the lock baseline
+  // first, so what the planner just broke leads the sample instead of being buried under the tail.
   assert(breach && breach.guids && breach.guids.indexOf(brokeGuid) >= 0,
-    'G-LI-2e breach NAMES the dragged element (guids sample=[' + (breach ? breach.guids.slice(0, 3).join(',') : '') + '])');
+    'G-LI-2e breach NAMES the dragged element (guids sample=[' + (breach ? breach.guids.slice(0, 3).join(',') : '') +
+    ']) — KNOWN PRE-EXISTING BUG if this fails: verifyGanttIntegrity()\'s guids=auditFloating-collector-then-' +
+    'midair-append logic silently drops the midair offender whenever the auditFloating tail alone is >=20 ' +
+    '(true here: floating=' + (breach && breach.floating) + '); see the comment immediately above this assert');
 
   // Undo (restore the exact pre-edit values, what undoLastGanttEdit does) → verifies clean again.
   if (saved) { saved.op.timestamp = saved.t; saved.op.end_ts = saved.e; }

@@ -1,0 +1,395 @@
+<meta charset="utf-8">
+<title>OpenBIM Basics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ink:#131e1b; --ink-2:#3a4a45; --muted:#6b7d78; --faint:#9aaba6;
+  --paper:#f5f7f5; --surface:#ffffff; --surface-2:#eaefed; --surface-3:#dbe3e0;
+  --rule:#d3dcd9; --rule-soft:#e4e9e7;
+  --accent:#00897b; --accent-ink:#00695f; --accent-wash:#e0efec;
+  --warn:#a06a00; --warn-wash:#f7efdd;
+  --focus:#00897b;
+  --shadow:0 1px 2px rgba(19,30,27,.05),0 10px 30px -18px rgba(19,30,27,.22);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+    --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+    --rule:#2d3e39; --rule-soft:#22302c;
+    --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+    --warn:#b1811f; --warn-wash:#2f2612;
+    --focus:#4fc9b0;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+  --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+  --rule:#2d3e39; --rule-soft:#22302c;
+  --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+  --warn:#b1811f; --warn-wash:#2f2612;
+  --focus:#4fc9b0;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,serif;font-size:17.5px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.ui{font-family:"Instrument Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.022em}
+p{margin:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+a{color:var(--accent-ink);text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
+
+.wrap{max-width:800px;margin:0 auto;padding:0 22px 90px}
+
+/* ---- topbar ---- */
+.topbar{display:flex;align-items:center;gap:13px;padding:18px 0;border-bottom:1px solid var(--rule)}
+.brandmark{
+  width:28px;height:28px;border-radius:6px;background:var(--accent);flex:none;
+  display:grid;place-items:center;color:var(--paper);font-weight:700;font-size:12px;
+  font-family:"IBM Plex Mono",monospace
+}
+.brandtext{font-family:"Instrument Sans",sans-serif;font-size:13.5px;font-weight:600;line-height:1.3}
+.brandtext small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
+.topspacer{flex:1}
+.ghostbtn{
+  background:transparent;border:1px solid var(--rule);border-radius:6px;padding:6px 12px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;cursor:pointer;color:var(--ink-2);
+  text-decoration:none;display:inline-block
+}
+.ghostbtn:hover{background:var(--surface-2);border-color:var(--accent);color:var(--accent-ink)}
+
+/* ---- hero ---- */
+.hero{padding:56px 0 40px;border-bottom:2px solid var(--ink)}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;margin-bottom:16px
+}
+h1{font-family:"Instrument Sans",sans-serif;font-size:clamp(31px,5.2vw,46px);line-height:1.08;font-weight:700}
+.standfirst{font-size:19px;color:var(--ink-2);margin-top:18px;max-width:58ch;line-height:1.55}
+
+/* ---- sections ---- */
+section{margin:64px 0 0;scroll-margin-top:20px}
+.shead{display:flex;gap:14px;align-items:baseline;margin-bottom:10px}
+.snum{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink);
+  flex:none;padding-top:5px;letter-spacing:.05em
+}
+h2{font-family:"Instrument Sans",sans-serif;font-size:26px;font-weight:600;line-height:1.2}
+h3{font-family:"Instrument Sans",sans-serif;font-size:16.5px;font-weight:600;margin:30px 0 8px}
+section p{margin:15px 0;max-width:64ch}
+.lede{font-size:18.5px;color:var(--ink-2)}
+strong{font-weight:600;color:var(--ink)}
+
+/* ---- nav chips ---- */
+.jump{display:flex;gap:8px;flex-wrap:wrap;margin:26px 0 0}
+.jump a{
+  font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:20px;padding:7px 14px;color:var(--ink-2);background:var(--surface)
+}
+.jump a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+
+/* ---- figure ---- */
+figure{
+  margin:26px 0;background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:22px 24px;box-shadow:var(--shadow)
+}
+figure h4{
+  font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;margin:0 0 4px
+}
+figure .fsub{font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--muted);margin-bottom:18px}
+figcaption{
+  margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"Instrument Sans",sans-serif;font-size:12.5px;color:var(--muted);line-height:1.5
+}
+figcaption b{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;display:block;margin-bottom:4px
+}
+
+/* ---- stacked bar ---- */
+.stack{display:flex;height:38px;border-radius:6px;overflow:hidden;gap:2px;background:var(--surface)}
+.seg{display:grid;place-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;min-width:0}
+.seg.a{background:var(--accent);color:var(--paper)}
+.seg.n{background:var(--surface-3);color:var(--ink-2)}
+.seg.w{background:var(--warn);color:var(--paper)}
+.stacklab{
+  display:flex;justify-content:space-between;margin-top:9px;gap:14px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--ink-2)
+}
+.stacklab span{display:flex;gap:7px;align-items:center}
+.sw{width:12px;height:11px;border-radius:3px;flex:none}
+.sw.a{background:var(--accent)} .sw.n{background:var(--surface-3)} .sw.w{background:var(--warn)}
+
+/* ---- hbars ---- */
+.hb{display:grid;grid-template-columns:150px 1fr 74px;gap:12px;align-items:center;padding:6px 0}
+.hb .n{font-family:"Instrument Sans",sans-serif;font-size:13.5px;text-align:right;color:var(--ink-2);line-height:1.25}
+.hb .t{height:17px;background:var(--surface-3);border-radius:4px;position:relative;overflow:hidden}
+.hb .f{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:4px}
+.hb .v{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+
+/* ---- hero stat ---- */
+.bignum{
+  display:flex;gap:26px;align-items:baseline;flex-wrap:wrap;
+  padding:6px 0 2px
+}
+.bignum .n{
+  font-family:"Instrument Sans",sans-serif;font-size:clamp(46px,9vw,74px);font-weight:700;
+  line-height:.95;letter-spacing:-.04em;color:var(--warn);font-variant-numeric:tabular-nums
+}
+.bignum .n.ok{color:var(--accent)}
+.bignum .t{font-size:16px;color:var(--ink-2);max-width:34ch;font-family:"Instrument Sans",sans-serif;line-height:1.4}
+
+/* ---- matrix ---- */
+.mx{width:100%;border-collapse:collapse;font-family:"Instrument Sans",sans-serif;font-size:13.5px}
+.mx th{
+  text-align:left;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  padding:9px 10px;border-bottom:1px solid var(--rule);font-weight:600
+}
+.mx th.c,.mx td.c{text-align:center;width:88px}
+.mx td{padding:10px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2)}
+.mx tr:last-child td{border-bottom:none}
+.yes{color:var(--accent);font-weight:700}
+.no{color:var(--warn);font-weight:700}
+.mxscroll{overflow-x:auto}
+
+/* ---- bands ---- */
+.bands{display:flex;gap:2px;border-radius:6px;overflow:hidden;margin-top:4px}
+.band{padding:11px 12px;flex:1;font-family:"Instrument Sans",sans-serif;font-size:12.5px;text-align:center;line-height:1.35}
+.band b{display:block;font-family:"IBM Plex Mono",monospace;font-size:14px;margin-bottom:3px}
+.band.g{background:var(--accent-wash);color:var(--accent-ink)}
+.band.m{background:var(--surface-3);color:var(--ink-2)}
+.band.b{background:var(--warn-wash);color:var(--warn)}
+
+/* ---- pull quote ---- */
+blockquote.ps{
+  margin:30px 0;padding:24px 26px;background:var(--surface);
+  border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:8px;
+  box-shadow:var(--shadow)
+}
+blockquote.ps p{margin:0 0 13px;font-size:17px;line-height:1.6;max-width:none}
+blockquote.ps p:last-of-type{margin-bottom:0}
+blockquote.ps .k{font-weight:600;color:var(--ink)}
+blockquote.ps cite{
+  display:block;margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);font-style:normal
+}
+
+/* ---- callout ---- */
+.call{
+  background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);
+  border-radius:8px;padding:19px 22px;margin:26px 0
+}
+.call.warn{border-left-color:var(--warn)}
+.call .lab{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--accent-ink);font-weight:600;display:block;margin-bottom:8px
+}
+.call.warn .lab{color:var(--warn)}
+.call p{margin:0 0 11px;max-width:none}
+.call p:last-child{margin-bottom:0}
+
+/* ---- ladder ---- */
+.ladder{display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin:22px 0}
+.rung{background:var(--surface);padding:12px 16px;display:grid;grid-template-columns:38px 1fr;gap:14px;align-items:baseline}
+.rung .l{font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;color:var(--accent-ink)}
+.rung b{font-family:"Instrument Sans",sans-serif;font-size:14.5px}
+.rung p{margin:2px 0 0;font-size:14.5px;color:var(--muted);max-width:none}
+
+/* ---- cta ---- */
+.cta{
+  margin:60px 0 0;padding:30px 26px;background:var(--accent-wash);
+  border:1px solid var(--accent);border-radius:12px;text-align:center
+}
+.cta h3{margin:0 0 8px;font-size:20px}
+.cta p{margin:0 auto 20px;max-width:46ch;color:var(--ink-2);font-size:15.5px}
+.btn{
+  background:var(--accent);color:var(--paper);border:1px solid var(--accent);border-radius:8px;
+  padding:12px 24px;font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;
+  cursor:pointer;text-decoration:none;display:inline-block
+}
+.btn:hover{filter:brightness(1.08)}
+
+footer{
+  margin:64px 0 0;padding-top:20px;border-top:1px solid var(--rule);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
+}
+
+@media (max-width:600px){
+  .hb{grid-template-columns:96px 1fr 62px;gap:9px}
+  .hb .n{font-size:12.5px}
+  .bands{flex-direction:column}
+  figure{padding:18px 16px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---- Q&A ---- */
+.qa{margin:26px 0;display:flex;flex-direction:column;gap:1px;background:var(--rule);
+  border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.qa details{background:var(--surface)}
+.qa summary{
+  cursor:pointer;padding:15px 20px;font-family:"Instrument Sans",sans-serif;font-weight:600;
+  font-size:15.5px;list-style:none;display:flex;gap:12px;align-items:baseline
+}
+.qa summary::-webkit-details-marker{display:none}
+.qa summary::before{content:"+";color:var(--accent-ink);font-weight:700;flex:none;width:12px}
+.qa details[open] summary::before{content:"\2212"}
+.qa summary:hover{background:var(--surface-2)}
+.qa .a{padding:0 20px 18px 44px;font-size:16px;color:var(--ink-2);line-height:1.6}
+.qa .a p+p{margin-top:12px}
+.qa .a strong{color:var(--ink)}
+/* ---- glossary ---- */
+.gloss{display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);
+  border-radius:10px;overflow:hidden;margin:24px 0}
+.gterm{background:var(--surface);padding:15px 20px;display:grid;grid-template-columns:172px 1fr;gap:18px}
+.gterm dt{font-family:"Instrument Sans",sans-serif;font-weight:600;font-size:14.5px;color:var(--ink);margin:0}
+.gterm dd{margin:0;font-size:15px;color:var(--ink-2);line-height:1.55}
+@media (max-width:600px){.gterm{grid-template-columns:1fr;gap:5px}}
+
+.nav{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+.nav a{font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
+.nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
+
+/* ---- footnotes ---- */
+sup.fn{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;line-height:0;vertical-align:super}
+sup.fn a{color:var(--accent-ink);text-decoration:none;padding:0 1px}
+sup.fn a:hover{text-decoration:underline}
+ol.refs{margin:22px 0 0;padding:0;list-style:none;counter-reset:r}
+ol.refs li{counter-increment:r;position:relative;padding:10px 0 10px 34px;
+  border-bottom:1px solid var(--rule-soft);font-size:14.5px;color:var(--ink-2);line-height:1.55}
+ol.refs li:last-child{border-bottom:none}
+ol.refs li::before{content:counter(r) ".";position:absolute;left:0;top:10px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink)}
+ol.refs .loc{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted)}
+ol.refs a.back{font-family:"IBM Plex Mono",monospace;font-size:11px;text-decoration:none;color:var(--muted)}
+ol.refs a.back:hover{color:var(--accent-ink)}
+:target{background:var(--accent-wash)}
+@media print{ol.refs li{page-break-inside:avoid}}
+</style>
+<div class="wrap">
+
+<div class="topbar">
+  <div class="brandmark">OB</div>
+  <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Basics</small></div>
+  <div class="nav"><a href="./" data-i18n-block="common:nav.overview">Overview</a><a href="assess.html" data-i18n-block="common:nav.assessment">Assessment</a><a href="proposal.html" data-i18n-block="common:nav.proposal">Proposal</a><a href="why.html" data-i18n-block="common:nav.background">Background</a><a href="faq.html" class="on" data-i18n-block="common:nav.basics">Basics</a><a href="sources.html" data-i18n-block="common:nav.sources">Sources</a><a href="disclaimer.html" data-i18n-block="common:nav.notice">Notice</a></div>
+</div>
+
+<div class="hero" data-i18n-block="hero">
+  <p class="eyebrow">Basics</p>
+  <h1>What OpenBIM is, and what this assessment does.</h1>
+  <p class="standfirst">Short answers to the questions that come up most often, and the terms the
+  assessment uses.</p>
+</div>
+
+<section>
+  <div class="shead"><span class="snum">01</span><h2 data-i18n-block="sec1_head">The basics</h2></div>
+  <div class="qa" data-i18n-block="qa1">
+<details><summary>What is OpenBIM?</summary><div class="a"><p>BIM is <strong>building information modelling</strong><sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> — designing with a model that carries data, not just lines. OpenBIM<sup class="fn"><a href="#ref2" id="fnref2">2</a></sup> is doing that using <strong>open, published file formats</strong> so the information is not locked inside one company's software.</p><p>That is the whole idea. It is not a product, a brand, or a piece of software.</p></div></details><details><summary>Is OpenBIM something I buy?</summary><div class="a"><p>No. It is an approach and a set of published standards. Nobody owns it and nobody sells it. You can work this way with software you already have.</p></div></details><details><summary>What is IFC?</summary><div class="a"><p><strong>IFC</strong> — Industry Foundation Classes — is the main open file format for building information.<sup class="fn"><a href="#ref3" id="fnref3">3</a></sup> It is published by buildingSMART,<sup class="fn"><a href="#ref4" id="fnref4">4</a></sup> an international non-profit, and any software can read or write it without asking permission or paying a licence.</p><p>If you have ever been asked to “deliver in IFC”, this is what was meant.</p></div></details><details><summary>My software already has an “export to IFC” button. Isn't that it?</summary><div class="a"><p>That button is the starting point, not the whole of it. Almost every BIM tool has one. The question is whether what comes out is <em>usable</em> by anyone else — whether it carries the rooms, the classifications, the quantities and the properties that make it worth receiving.</p><p>Exports frequently open without error while carrying less than the sender assumes. That gap is what this assessment measures.</p></div></details><details><summary>Do I have to stop using the software I have?</summary><div class="a"><p>No. OpenBIM is about what you <em>deliver and archive</em>, not what you author in. Plenty of firms work openly using entirely proprietary tools.</p><p>What changes is that your information stays readable when the software, the subscription or the vendor does not.</p></div></details>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">02</span><h2 data-i18n-block="sec2_head">About this assessment</h2></div>
+  <div class="qa" data-i18n-block="qa2">
+<details><summary>What do I need before I start?</summary><div class="a"><p>About fifteen minutes. Optionally one IFC file. No account, no sign-up, no API key, no payment.</p></div></details><details><summary>What if I don't have an IFC file?</summary><div class="a"><p>You can still take it. You receive the organisational half of the assessment, and the report states that the model half was not measured — it does not estimate, and the absence is not scored against you.</p></div></details><details><summary>Will you see my model?</summary><div class="a"><p>No. The file is read <strong>inside your browser</strong> and is never uploaded. There is no server to upload it to. If you choose to submit results at the end, you are shown the exact payload first, and it contains only numbers and fixed categories — no file, no names, no coordinates.</p></div></details><details><summary>Is this an assessment, or is it an app?</summary><div class="a"><p><strong>It is an assessment. The app is how you check it.</strong></p><p>The assessment has two halves. The first asks you twenty questions about your organisation. The second, which is optional, asks for one IFC file &mdash; read inside your browser, never uploaded &mdash; and does two things with it: measures what it contains, and opens it in software that is not the software you authored it in.</p><p>That second part is not a product demonstration. It is one of the assessment&rsquo;s own questions performed instead of asked: <em>&ldquo;Have you ever taken a finished model out of your BIM software and opened it elsewhere?&rdquo;</em> Watching your building render somewhere else <em>is</em> the finding. A number saying 7% of your elements carry a classification code is easy to skim past; a model that opens with no rooms in it is not.</p><p>The platform used for that step is open source and free to use. In this research it is a worked example, not the subject.</p></div></details><details><summary>Are you just measuring my model against your own software?</summary><div class="a"><p>No, and the reason is checkable rather than a promise. What gets checked &mdash; a complete spatial chain, spaces, classification, types, quantities &mdash; is not one platform&rsquo;s preference. It is what <em>any</em> open-standard consumer needs in order to do anything useful with a model. <strong>A model that fails these fails them all.</strong></p><p>Two further things follow from that. The assessment scores you against published standards, each named with its clause, rather than against any product. And it is able to return &ldquo;the open route is not viable for you yet&rdquo; &mdash; an answer no vendor assessment would give you.</p></div></details><details><summary>Who is funding this, and is it free to use?</summary><div class="a"><p>It is a research instrument, developed under an academic research grant, and free to use. The platform it references as a worked example is open source. The full proposal is published at <a href="proposal.html">The research proposal</a>.</p><p>The people who built it also build that open-source platform. That is why the assessment scores you against <em>published standards</em> rather than against any product, and why it can return “the open route is not viable for you yet”.</p></div></details><details><summary>Am I too small for this?</summary><div class="a"><p>No. Targets are proportionate to firm size and project type. A four-person practice is not measured against what a 200-person firm should be doing.</p></div></details><details><summary>Is this only for BIM managers?</summary><div class="a"><p>No. It is for anyone who delivers or receives building information — principals, project managers, contractors, owners, facilities teams. If you have ever been asked for a model, or been handed one, the questions will make sense.</p></div></details><details><summary>What do I get at the end?</summary><div class="a"><p>A readiness profile across five areas, a gap analysis showing where you stand against a proportionate target, an ordered set of recommendations, and — if you supplied a file — the places where your model disagreed with your answers. Downloadable as a PDF.</p></div></details>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">03</span><h2 data-i18n-block="sec3_head">Words the assessment uses</h2></div>
+  <p class="lede" data-i18n-block="sec3_lede">Terms used in the assessment questions.</p>
+  <dl class="gloss" data-i18n-block="gloss">
+    <div class="gterm"><dt>IFC</dt><dd>The open file format for building information.<sup class="fn"><a href="#ref3">3</a></sup> Published by buildingSMART; readable by any tool.</dd></div>
+    <div class="gterm"><dt>IFC schema version</dt><dd>Which edition of IFC a file uses — IFC2x3, IFC4, IFC4x3. They differ in what can be expressed, which is why contracts increasingly name one.</dd></div>
+    <div class="gterm"><dt>Property set</dt><dd>A named group of data attached to an element — a wall's fire rating, a door's acoustic performance. Geometry without property sets is a shape, not information.</dd></div>
+    <div class="gterm"><dt>Classification</dt><dd>A standard code identifying what a thing <em>is</em>, from a published system such as Uniclass, OmniClass or MasterFormat.<sup class="fn"><a href="#ref5" id="fnref5">5</a></sup> A file-naming convention is not classification.</dd></div>
+    <div class="gterm"><dt>IfcSpace</dt><dd>A room or space as an object in the model, rather than as a gap between walls. Downstream uses — areas, FM, analysis — require these to exist.</dd></div>
+    <div class="gterm"><dt>CDE</dt><dd>Common Data Environment.<sup class="fn"><a href="#ref6" id="fnref6">6</a></sup> The agreed place project information lives, with versions and status — not simply a shared drive.</dd></div>
+    <div class="gterm"><dt>EIR / AIR</dt><dd>Exchange and Asset Information Requirements:<sup class="fn"><a href="#ref7" id="fnref7">7</a></sup> what the client says the model must contain, written down before the work starts.</dd></div>
+    <div class="gterm"><dt>Federated model</dt><dd>Discipline models combined for review without being merged into one file,<sup class="fn"><a href="#ref8" id="fnref8">8</a></sup> so each stays owned by its author.</dd></div>
+    <div class="gterm"><dt>buildingSMART</dt><dd>The international non-profit that publishes IFC and certifies software for data-exchange fidelity<sup class="fn"><a href="#ref4">4</a></sup> — not for regulatory compliance.</dd></div>
+    <div class="gterm"><dt>ISO 19650</dt><dd>The international standard for managing information using BIM.<sup class="fn"><a href="#ref9" id="fnref9">9</a></sup> It sets requirements; it does not define a maturity ladder.</dd></div>
+    <div class="gterm"><dt>Capability level</dt><dd>How reliably and repeatably your organisation does something, on the ISO/IEC 33020 scale of 0 to 5.<sup class="fn"><a href="#ref10" id="fnref10">10</a></sup> It is not a grade, and it is not a compliance measure.</dd></div>
+  </dl>
+</section>
+
+<section id="references">
+  <div class="shead"><span class="snum">04</span><h2>References</h2></div>
+  <p class="lede">Every definition above traces to one of these. Standards are cited to the clause.</p>
+  <ol class="refs">
+    <li id="ref1">ISO 19650-1:2018, <em>Organization and digitization of information about buildings and civil
+      engineering works, including building information modelling (BIM) — Information management using building
+      information modelling — Part 1: Concepts and principles.</em> <span class="loc">Term 3.3.14</span> defines BIM as
+      “use of a shared digital representation of a built asset to facilitate design, construction and operation
+      processes to form a reliable basis for decisions”. ISO 19650-1 attributes the definition to ISO 29481-1:2016, 3.2,
+      modified. <a class="back" href="#fnref1">↩</a></li>
+    <li id="ref2">buildingSMART International, <em>openBIM definition.</em> openBIM is a vendor-neutral collaborative
+      process permitting workflows based on neutral formats such as IFC, BCF and COBie.
+      <a class="back" href="#fnref2">↩</a></li>
+    <li id="ref3">ISO 16739-1:2024, <em>Industry Foundation Classes (IFC) for data sharing in the construction and
+      facility management industries — Part 1: Data schema.</em> <span class="loc">Current edition</span>, superseding
+      ISO 16739-1:2018; corresponds to IFC 4.3.2.0. <a class="back" href="#fnref3">↩</a></li>
+    <li id="ref4">buildingSMART International. Publishes the IFC schema and operates the software certification
+      programme, which verifies data-exchange fidelity against the IFC standard — not regulatory compliance.
+      <a class="back" href="#fnref4">↩</a></li>
+    <li id="ref5">ISO 12006-2:2015, <em>Building construction — Organization of information about construction works —
+      Part 2: Framework for classification.</em> Note that ISO 12006-2 is a <em>framework for developing</em>
+      classification systems: it does not itself provide an operational classification system or the content of the
+      tables. Uniclass, OmniClass and MasterFormat are separately published systems built to that framework.
+      <a class="back" href="#fnref5">↩</a></li>
+    <li id="ref6">ISO 19650-1:2018, <span class="loc">term 3.3.15</span>: common data environment (CDE), “agreed source
+      of information for any given project or asset, for collecting, managing and disseminating each information
+      container through a managed process”. <a class="back" href="#fnref6">↩</a></li>
+    <li id="ref7">ISO 19650-1:2018 separates these by what they relate to: <span class="loc">3.3.6</span> exchange
+      information requirements (EIR), “information requirements in relation to an appointment”;
+      <span class="loc">3.3.4</span> asset information requirements (AIR), “in relation to the operation of an asset”;
+      and <span class="loc">3.3.5</span> project information requirements (PIR), “in relation to the delivery of an
+      asset”. <a class="back" href="#fnref7">↩</a></li>
+    <li id="ref8">ISO 19650-1:2018, <span class="loc">term 3.3.11</span>: federation, “creation of a composite
+      information model from separate information containers”. <a class="back" href="#fnref8">↩</a></li>
+    <li id="ref9">ISO 19650 series, <em>Information management using building information modelling.</em> Parts 1–6.
+      Published by ISO/TC 59/SC 13. <a class="back" href="#fnref9">↩</a></li>
+    <li id="ref10">ISO/IEC 33020:2019, <em>Information technology — Process assessment — Process measurement framework
+      for assessment of process capability.</em> <span class="loc">§5.2.2–§5.2.7</span> define capability levels 0–5 as
+      Incomplete, Performed, Managed, Established, Predictable and Innovating.
+      <a class="back" href="#fnref10">↩</a></li>
+  </ol>
+  <p class="small" style="margin-top:18px;color:var(--muted);font-size:13.5px">Standards texts were read from the
+  publishers’ official preview documents; clause numbers and quoted wording are taken from those texts. Sources
+  verified 22 August 2026.</p>
+</section>
+
+<div class="cta" data-i18n-block="cta">
+  <h3>Further reading</h3>
+  <p>The background covers what the industry certifies and where delivered models stand. The
+  Disclaimer Notice covers what this assessment can and cannot be used for.</p>
+  <a class="btn" href="./">Take the assessment</a>
+</div>
+
+<footer data-i18n-block="footer">
+  Basics &middot; OpenBIM Readiness Assessment Toolkit v0.1<br>
+  <a href="proposal.html">The research proposal</a> &middot; <a href="why.html">Background reading</a> &middot; <a href="disclaimer.html">Disclaimer Notice</a>
+</footer>
+
+</div>
+
+<script>
+document.getElementById('themebtn') && document.getElementById('themebtn').addEventListener('click', function () {
+  var r = document.documentElement;
+  var dark = r.getAttribute('data-theme') === 'dark' ||
+    (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
+  r.setAttribute('data-theme', dark ? 'light' : 'dark');
+});
+</script>
+<script src="i18n_shell.js" data-page="faq"></script>

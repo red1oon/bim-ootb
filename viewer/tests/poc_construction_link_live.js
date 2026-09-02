@@ -43,18 +43,44 @@ const seen = re => log.some(l => re.test(l));
   await page.goto('http://127.0.0.1:' + port + '/viewer/viewer.html?db=buildings/HHS_Office_Federated_extracted.db&bld=HHS_Office_Federated',
     { waitUntil: 'networkidle' });
 
-  let ready = false;
+  // §HBA_LAZY (hba_lens.js, user directive 2026-07-28, PR #1071): HBA no longer compiles at page load —
+  // A._hbaTenancySpec only exists after the Human-Asset pill (or the public wake seam exposed FOR
+  // witnesses, HBALens.ensureHbaData) wakes it. This witness predates that change and was polling for
+  // a spec that can never appear unbidden. Wake it once via the seam, then poll as before — every
+  // assertion below is unchanged (governed warehouse id, §CONSTRUCTION_LINK, link href, 0 pageerrors).
+  let ready = false, woke = false;
   for (let i = 0; i < 60 && !ready; i++) {
     await page.waitForTimeout(1000);
-    try { ready = await page.evaluate(() => !!(window.APP && window.APP.db && window.APP.dbQuery
-      && window.APP._hbaTenancySpec && window.APP._hbaTenancySpec.warehouse)); } catch (e) {}
+    try {
+      if (!woke) woke = await page.evaluate(() => {
+        if (window.APP && window.APP.db && window.HBALens && window.HBALens.ensureHbaData) {
+          window.HBALens.ensureHbaData(window.APP); return true;
+        } return false;
+      });
+      // _governed too, not just .warehouse: _ensureErpGovern's ad_seed.db fetch is async, and before it
+      // resolves the spec carries the throwaway session mint (always literal 1) that §GOVERNANCE-GATE
+      // exists to reject — _surfaceConstructionLink itself refuses to link off it. Asserting on the
+      // ungoverned mint was a race, not a pass.
+      ready = await page.evaluate(() => !!(window.APP && window.APP.db && window.APP.dbQuery
+        && window.APP._hbaTenancySpec && window.APP._hbaTenancySpec.warehouse
+        && window.APP._hbaTenancySpec._governed));
+    } catch (e) {}
   }
-  verdict(ready, 'viewer model + HBA compiled warehouse ready (A._hbaTenancySpec.warehouse)');
+  verdict(ready, 'viewer model + HBA GOVERNED warehouse ready (A._hbaTenancySpec.warehouse + _governed)');
   const whId = await page.evaluate(() => window.APP._hbaTenancySpec.warehouse.m_warehouse_id);
   S('   warehouse m_warehouse_id=' + whId);
 
   await page.evaluate(() => window.APP.openFindPanel());
-  await page.waitForTimeout(1500);
+  // openFindPanel lazy-loads the whole navigate module chain (main.js A.loadNavigate — 9 scripts,
+  // §NAVIGATE_LAZY_LOADED) before the panel exists; a fixed 1500ms loses that race on a loaded
+  // machine (observed: §LENS_AXES rendered AFTER this witness had already polled and given up).
+  // Poll for the axis toggle itself instead — same budget style as the readiness loop above.
+  let panelUp = false;
+  for (let i = 0; i < 30 && !panelUp; i++) {
+    await page.waitForTimeout(1000);
+    try { panelUp = await page.evaluate(() => !!document.getElementById('find-axis-toggle')); } catch (e) {}
+  }
+  verdict(panelUp, 'Find panel + axis toggle rendered (navigate modules lazy-loaded)');
 
   // cycle the single axis-toggle button until it reaches 'room' (storey→disc→[room]→…) — REAL clicks
   // (the row's own tap listener lives on the inner text/badge spans, not the row div — hit-test, don't dispatch)
@@ -70,10 +96,19 @@ const seen = re => log.some(l => re.test(l));
   verdict(axis === 'room', 'Find axis reached "room"', 'axis=' + axis);
 
   await page.waitForTimeout(800);
+  // §LENS_GROUPS (post-2026-07-04 tree): the Room axis now renders STOREY GROUP headers first, with the
+  // room leaves lazy-expanded via each group row's arrow span (a group-header tap = §CATEGORY_REVEAL, NOT
+  // a room select — observed live: tapping the first row fired §CATEGORY_REVEAL and no §CONSTRUCTION_LINK,
+  // because _surfaceConstructionLink is only called from _roomSelect, a LEAF tap). Expand the first group
+  // (arrow = first span, the only expand affordance), then tap a leaf row's text span — leaf rows carry
+  // no data-find-parent attribute. Assertions below are unchanged.
   const rowCount = await page.evaluate(() => document.querySelectorAll('.find-tree-row').length);
+  await page.click('.find-tree-row > span:first-child');   // expand group 1 (arrow pointerup)
+  await page.waitForTimeout(800);
   let tapped = false;
-  if (rowCount > 0) { await page.click('.find-tree-row'); tapped = true; }
-  verdict(tapped, 'a Room/storey tree row was tappable', 'rows=' + rowCount);
+  const leafCount = await page.evaluate(() => document.querySelectorAll('.find-tree-row:not([data-find-parent])').length);
+  if (leafCount > 0) { await page.click('.find-tree-row:not([data-find-parent]) > span:nth-child(2)'); tapped = true; }
+  verdict(tapped, 'a Room LEAF row was tappable (group expanded first)', 'groups+rows=' + rowCount + ' leaves=' + leafCount);
   await page.waitForTimeout(1500);
 
   verdict(seen(/§CONSTRUCTION_LINK guid=.*warehouse=\d+/), '§CONSTRUCTION_LINK logged with a real (numeric) warehouse id');

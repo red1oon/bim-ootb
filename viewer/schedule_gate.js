@@ -44,6 +44,132 @@
   // class mix, less coverage). EXTRACTED, not invented — do not retune without re-measuring.
   var BIG_ELEMENT_VOL = 1.556;  // m³
   var MAX_CREWS_DEFAULT = 3;  // §CREW-CAP: fallback crew count per resource when no lookup is given
+  // ══ §ARCH_START_TEMPO / M1 — THE 8-HOUR CREW DAY (2026-08-12) ═══════════════════════════════
+  // `el.installSecs` is 28800/productivity — 28800 s IS one 8-hour crew-day (schedule_author.js
+  // _installSecs line 71, and its own phase widths already divide by `28800 * maxCrews`). But
+  // place() below spent those seconds as PURE CONTINUOUS WALL-CLOCK ms: nothing capped how many of
+  // them could land inside one calendar day, so a crew that ran out of one day's quota simply
+  // started the next day's work in the same day's hour 9. Effective model: every crew works 24 real
+  // hours, non-stop, forever — 3x the shift the productivity table is quoted in.
+  // MEASURED (Terminal Substructure): 236 IfcSlab x 822.9 s / 3 CONCRETE_GANG crews = 64,732 s =
+  // 0.75 wall-clock days, and the probe reported Substructure=[0.0..0.8]d. On a real 8-h shift the
+  // same labour is 2.25 days — exactly 24/8, structural, not a coincidence.
+  //
+  // THE FIX, at the ONE layer every gate and every crew slot already funnels through: a crew's clock
+  // is kept in PRODUCTIVE ms and mapped to wall-clock ms for storage. Each calendar day donates
+  // SHIFT_MS productive ms; the remaining 16 h are idle for that crew and the work rolls over to the
+  // START of the next day's window — never lost, never double-counted, and a `dur` longer than one
+  // window consumes as many following windows as it needs (toWall's floor/mod does that by
+  // construction, no per-day loop).
+  //
+  // WHAT DOES NOT CHANGE, deliberately: the calendar stays 24/7 — no weekend, no holiday, work may
+  // start or continue on ANY day. That settled ruling is about not SKIPPING days; this is about the
+  // length of a day's shift, which it never spoke to.
+  // Because toWall is strictly increasing and toProductive is its exact left inverse on every time
+  // this module produces, the whole generative schedule is toWall(old schedule): every gate max,
+  // every ordering and every start<end comparison is preserved element-for-element. Only the
+  // wall-clock SPAN grows (~3x on crew-bound phases) — which is the fix.
+  var SHIFT_MS = 8 * 3600 * 1000;    // productive ms one crew can spend in one calendar day
+  var DAY_MS   = 24 * 3600 * 1000;   // the calendar day the film advances through (24/7, unchanged)
+  // toProductive(t, base): wall-clock ms -> productive ms elapsed for a crew since `base`.
+  // toWall(p, base): the inverse. toProductive(toWall(p)) === p for every p >= 0, so a duration can
+  // be recovered from a stored [start,end] pair without carrying it alongside (the repair loop).
+  function toProductive(t, base) {
+    var off = t - base; if (off <= 0) return 0;
+    var d = Math.floor(off / DAY_MS), r = off - d * DAY_MS;
+    return d * SHIFT_MS + (r < SHIFT_MS ? r : SHIFT_MS);
+  }
+  function toWall(p, base) {
+    if (p <= 0) return base;
+    var d = Math.floor(p / SHIFT_MS), r = p - d * SHIFT_MS;
+    return base + d * DAY_MS + r;
+  }
+  // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═══════════
+  // The class sets and the ±HOST_Z bracket below are NOT new: they are verbatim the host inference
+  // that bim-compiler scripts/probe_arch_start.js measured the defect with (§HOSTED_BEFORE_HOST),
+  // so the scheduler now enforces exactly the predicate the witness asserts — one rule, every
+  // consumer, the same discipline §HANG_NEAREST follows. IFC ships no host link for these elements
+  // (no IfcRelVoidsElement/host column exists in the shipped extracted DBs — same fact
+  // §DOOR_WINDOW_HOST_WALL records), so the host is inferred geometrically and nothing is invented.
+  var HOSTED_CLS = /^(IfcOutlet|IfcLightFixture|IfcSwitchingDevice|IfcSensor|IfcAlarm|IfcFlowTerminal|IfcAirTerminal|IfcElectricAppliance|IfcFireSuppressionTerminal)$/;
+  var HOST_CLS   = /^(IfcWall|IfcWallStandardCase|IfcSlab|IfcRoof|IfcCovering|IfcCurtainWall)$/;
+  // ══ §CURTAIN_WALL_OPENING (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═════════
+  // User, live: HHS_Office_Federated Level 3 doors float — visible before their host wall exists.
+  // MEASURED (bim-compiler scripts/probe_door_wall.js, the file §DOOR_WINDOW_HOST_WALL below cites
+  // but which was never actually committed until today): openingGate holds PERFECTLY where it
+  // applies — rawEARLY=0.0% against wallGrid on all 7 shipped buildings. The defect is COVERAGE, not
+  // the predicate: 34 of HHS's 133 openings (25.6%) have ZERO wallGrid candidate, because place()
+  // fills wallGrid from `cls.indexOf('IfcWall') === 0` and HHS's façade is a CURTAIN WALL, whose
+  // openings are framed by parts that are not prefixed IfcWall at all. openingGate therefore fell
+  // straight through to baseMs for them and they were ungated from day 0 — the same shape of bug as
+  // §HOSTED_BEFORE_HOST's IfcCovering (a real class in NO pool), one layer over.
+  //
+  // The classes are EXTRACTED from the data, never guessed — HHS's own element_name column names
+  // them: IfcCurtainWall = "Curtain Wall:Standard" (the assembly), IfcPlate = "Systemelement:
+  // Verglasung" (glazing infill), IfcMember = "Rechteckiger Pfosten:6 x 15 mit Deckprofil"
+  // (rectangular mullion). That is the standard IFC curtain-wall decomposition, and it is the ONLY
+  // representation available: the shipped DBs carry no IfcRelAggregates/IfcRelFillsElement (checked
+  // — spatial_structure holds only IfcBuildingStorey/IfcSpace, and no IfcPlate/IfcMember has a
+  // parent row), so the assembly exists solely as its geometric parts. Note IfcCurtainWall itself
+  // has ZERO geometry rows in HHS — it is a pure container — which is exactly why gating on the
+  // assembly class alone would have been a no-op and the parts are what must be indexed.
+  //
+  // Why these parts are invisible to every OTHER gate, and it is one fact: IfcMember is seq 3 and
+  // IfcPlate seq 4, so both live in the STRUCTURE grid, where geoGate only tests bearing-below
+  // (S.base_z < el.base_z - EPS) or contained-in-my-lower-half. A full-height mullion beside a door
+  // starts at the SAME floor level as the door, so it satisfies neither — a door cut into a curtain
+  // wall is a SIDEWAYS relationship, precisely the one §DOOR_WINDOW_HOST_WALL was written for, and
+  // the only reason it was missed is that the pool it reads is keyed on a class-name prefix.
+  var CW_HOST_CLS = /^(IfcCurtainWall|IfcPlate|IfcMember)$/;
+  var HOST_Z     = 1.0;  // m — hosted centre must sit within the host's Z extent ± this (probe's measured bracket)
+  // ONE host-inference definition at module scope, three consumers: computeSchedule's hostGate, its
+  // DAG edge, and time_machine.js's display-layer repair (exported as hostPairs below, the same
+  // reason EPS/GAP are exported — "a second copy is a second thing to drift").
+  // Nearest bracketing host: among hosts whose bbox spans the hosted element's own XY cell and whose
+  // Z extent brackets its centre (±HOST_Z), the one nearest in XY. Verbatim probe_arch_start.js.
+  // isHosted needs no wall/slab guard — HOSTED_CLS ∩ HOST_CLS = ∅ by construction, which is also
+  // what makes a hosted element a pure DAG sink (see the host edge's cycle argument).
+  function isHosted(el) { return HOSTED_CLS.test(el.cls || '') && el.seq > 4; }
+  function hostCellKey(el) {
+    return Math.floor((el.x0 + el.x1) / 2 / CELL) + ',' + Math.floor((el.y0 + el.y1) / 2 / CELL);
+  }
+  function nearestHostAt(el, list, els) {   // list: indices into els
+    var cx = (el.x0 + el.x1) / 2, cy = (el.y0 + el.y1) / 2, cz = (el.base_z + el.top_z) / 2;
+    var bi = -1, bd = Infinity, q, H, d;
+    for (q = 0; q < list.length; q++) {
+      H = els[list[q]];
+      if (H.guid === el.guid) continue;
+      if (cz < H.base_z - HOST_Z || cz > H.top_z + HOST_Z) continue;   // not at this host's height
+      d = Math.abs((H.x0 + H.x1) / 2 - cx) + Math.abs((H.y0 + H.y1) / 2 - cy);
+      if (d < bd) { bd = d; bi = q; }
+    }
+    return bi;
+  }
+  // hostPairs(els) -> [{ i, h }] index pairs into els (i = hosted, h = its inferred host).
+  // els: [{ guid, cls, seq, x0,x1,y0,y1, base_z, top_z }]. Pure geometry — no timing read, so a
+  // caller can pair once and then compare whatever stage of the timeline it owns.
+  function hostPairs(els) {
+    var idx = {}, out = [], t, cs, c, e, k, bi;
+    // §S58 (§S58.1b): §HOSTED_BEFORE_HOST had NO log line anywhere — it is the fix for the reported
+    // "outlets and hanging elements appearing a bit early" bug, and §GEO_ORDER reported only
+    // hostEdges= (matches found), with no denominator and no count of hosted elements that fell
+    // through UNGUARDED to baseMs. Its own sibling §CURTAIN_WALL_OPENING already reports
+    // cwGated=/stillUngated=; this is the same shape. Counted here, reported by the caller.
+    var _hostedTotal = 0, _noCell = 0, _noNearest = 0;
+    for (t = 0; t < els.length; t++) { e = els[t];
+      if (!HOST_CLS.test(e.cls || '')) continue;
+      cs = cellsOf(e); for (c = 0; c < cs.length; c++) (idx[cs[c]] = idx[cs[c]] || []).push(t); }
+    for (t = 0; t < els.length; t++) { e = els[t];
+      if (!isHosted(e)) continue;
+      _hostedTotal++;
+      k = idx[hostCellKey(e)]; if (!k) { _noCell++; continue; }
+      bi = nearestHostAt(e, k, els);
+      if (bi >= 0) out.push({ i: t, h: k[bi] }); else _noNearest++;
+    }
+    out.census = { hostedTotal: _hostedTotal, matched: out.length,
+                   fellThroughNoHostCell: _noCell, fellThroughNoNearest: _noNearest };
+    return out;
+  }
 
   function cellsOf(e) {
     var o = [], i, j;
@@ -52,6 +178,146 @@
     return o;
   }
   function overlap(a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; }
+  // ══ §GROUNDWORK_SLAB (2026-08-16, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S9 / M5 v4) ═══
+  // groundworkSlabs(els) -> { guid: 1 } for every IfcSlab/IfcBeam currently classified
+  // Superstructure that is GROUNDWORK, not deck/frame. Two membership routes, both extracted:
+  //  (a) ZERO structural bearings (slab-on-grade over soil): joins iff its 3m z-band (the shipped
+  //      §GANTT quantum) equals the LOWEST band among the candidate classes themselves (IfcSlab/
+  //      IfcBeam Superstructure — NOT all Superstructure: measured live, 3 stray IfcColumn bases
+  //      one band below Terminal's plate voided every candidate, and band quantization shifts
+  //      between z-datums; keying on the candidate population is frame-invariant).
+  //  (b) HAS structural bearings: FIXPOINT — joins when every structure-pool bearing-below contact
+  //      (seq<=4 / IfcWall* / promoted slab / stair flight — the module's own bearing definition;
+  //      under-slab MEP never counts, a pipe cannot bear a slab) is Substructure-phase or already
+  //      a member. Grade beams join first (they bear on piles/footings), the plate joins next
+  //      (piles + grade beams), toppings join off the plate. A deck slab bears on frame beams and
+  //      a frame beam on columns — columns are not candidates, so neither ever joins.
+  // The SEQUENCE_RULES class defaults (IfcBeam seq 3 / IfcSlab seq 4, Superstructure) are FRAME
+  // logic, right for upper floors — groundwork sequenced by them appears with the steel all round
+  // it, the user-reported symptom. Same shared-pure-function status as hostPairs: one definition,
+  // both element recipes call it, so zone authoring, task bars, milestones (E3's existing
+  // Substructure→Superstructure chain then orders groundwork-before-frame with zero solver
+  // changes) and the movie stay one truth. Pure geometry — no timing read.
+  function groundworkSlabs(els) {
+    var out = {}, idx = {}, t, e, cs, c, k, S;
+    function isStructBearing(s2) {
+      return s2.seq <= 4 || (s2.cls && s2.cls.indexOf('IfcWall') === 0) ||
+             (s2.cls === 'IfcSlab' && s2.seq > 4) || s2.cls === 'IfcStairFlight';
+    }
+    function isCand(e2) {
+      return (e2.cls === 'IfcSlab' || e2.cls === 'IfcBeam') && e2.phase === 'Superstructure';
+    }
+    // v6: the ground window is PER CANDIDATE CLASS and DATUM-INVARIANT. Two measured traps led
+    // here: (v5) Terminal's grade beams base one 3m band below the plate, so one shared minimum
+    // starved the plate — the ground reference must be each class's own; and (v6) the viewer
+    // rebases the z-datum in its in-memory DB, so floor(z/3) BIN EQUALITY gave 233 members on the
+    // raw datum and 29 on the shifted one for the SAME building — the same 3m quantum must be
+    // applied as a continuous window above the class's own minimum base_z, not as a bin boundary.
+    var minZByCls = {};
+    for (t = 0; t < els.length; t++) {
+      if (isCand(els[t])) {
+        if (!(els[t].cls in minZByCls) || els[t].base_z < minZByCls[els[t].cls]) minZByCls[els[t].cls] = els[t].base_z;
+      }
+    }
+    if (!('IfcSlab' in minZByCls) && !('IfcBeam' in minZByCls)) return out;
+    for (t = 0; t < els.length; t++) {
+      e = els[t];
+      if (e.phase === 'Substructure') continue;   // only non-Substructure can disqualify a bearing
+      if (!isStructBearing(e)) continue;
+      cs = cellsOf(e);
+      for (c = 0; c < cs.length; c++) (idx[cs[c]] = idx[cs[c]] || []).push(t);
+    }
+    // candidates + their potentially-disqualifying structural bearing lists, computed once
+    var cand = [], bearings = [];
+    for (t = 0; t < els.length; t++) {
+      e = els[t];
+      if (!isCand(e)) continue;
+      var bl = [], seen = {};
+      cs = cellsOf(e);
+      for (c = 0; c < cs.length; c++) {
+        var arr = idx[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) {
+          S = els[arr[k]];
+          if (S.guid === e.guid || seen[arr[k]]) continue;
+          seen[arr[k]] = 1;
+          if (S.base_z < e.base_z - EPS && S.top_z >= e.base_z - GAP && overlap(S, e)) bl.push(arr[k]);
+        }
+      }
+      // route (a): no structural bearing — within one 3m quantum of its own class's lowest base
+      if (!bl.length) {
+        if (e.base_z <= minZByCls[e.cls] + 3) out[e.guid] = 1;
+        continue;
+      }
+      cand.push(t); bearings.push(bl);
+    }
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (t = 0; t < cand.length; t++) {
+        e = els[cand[t]];
+        if (out[e.guid]) continue;
+        var blocked = false;
+        for (k = 0; k < bearings[t].length; k++) {
+          S = els[bearings[t][k]];
+          if (S.phase !== 'Substructure' && !out[S.guid]) { blocked = true; break; }
+        }
+        if (!blocked) { out[e.guid] = 1; changed = true; }
+      }
+    }
+    return out;
+  }
+  // ══ §DOOR_WINDOW_HOST_WALL_DISPLAY (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══
+  // MEASURED (witness_curtain_wall_opening's own G-CWO-DISPLAY, left non-asserting on purpose so a
+  // fix could promote it): openingGate holds PERFECTLY on the generative timeline — rawEARLY 0.0% on
+  // all 7 shipped buildings — and the DISPLAY timeline the movie actually plays undoes it, LTU_AHouse
+  // 28.5%, Terminal 16.4%, JKR 10.1%, Hospital 2.5% of openings starting before their own host wall
+  // FINISHES. Identical shape to §HOSTED_BEFORE_HOST one layer over: a gate that is correct where it
+  // runs, re-broken by _twoTierRemap/_midairRepair rewriting the times afterwards. Same remedy, and
+  // deliberately the same SHAPE as hostPairs above rather than a second mechanism: one pairing at
+  // module scope, so the display-layer repair enforces the exact relation openingGate enforces.
+  //
+  // isOpening/openingBrackets are hoisted here so openingGate's openingScan and this twin test ONE
+  // predicate (the reason EPS/GAP are exported rather than re-typed — "a second copy is a second
+  // thing to drift"). Pool ORDER is openingGate's, verbatim: the IfcWall* pool when the opening has
+  // ANY wall host, else the §CURTAIN_WALL_OPENING fallback pool. Getting that order wrong would make
+  // the display layer enforce something the scheduler was never asked to.
+  function isOpening(e) { return e.cls === 'IfcDoor' || e.cls === 'IfcWindow'; }
+  function openingBrackets(S, el) {                 // openingScan's own bracket, one definition
+    return S.base_z <= el.top_z + EPS && S.top_z >= el.base_z - EPS && overlap(S, el);
+  }
+  // openingPairs(els) -> [{ i, h }] index pairs into els (i = opening, h = a host bracketing it).
+  // EVERY host of the chosen pool is returned, not the nearest — openingGate returns the MAX end
+  // over its whole pool, so a consumer that honours every pair reproduces the gate's exact bound.
+  // Pure geometry, no timing read: a caller pairs once and then compares whatever stage it owns.
+  function openingPairs(els) {
+    var wallIdx = {}, cwIdx = {}, out = [], t, e, cs, c, isW;
+    for (t = 0; t < els.length; t++) { e = els[t];
+      isW = !!(e.cls && e.cls.indexOf('IfcWall') === 0);
+      if (!isW && !CW_HOST_CLS.test(e.cls || '')) continue;
+      cs = cellsOf(e);
+      for (c = 0; c < cs.length; c++)
+        if (isW) (wallIdx[cs[c]] = wallIdx[cs[c]] || []).push(t);
+        else (cwIdx[cs[c]] = cwIdx[cs[c]] || []).push(t);
+    }
+    var seen = {}, gen = 0;
+    function scan(idx, el, into) {                  // dedup by index — an element spans many cells
+      var cs2 = cellsOf(el), c2, arr, k2, si;
+      into.length = 0; gen++;
+      for (c2 = 0; c2 < cs2.length; c2++) { arr = idx[cs2[c2]]; if (!arr) continue;
+        for (k2 = 0; k2 < arr.length; k2++) { si = arr[k2]; if (seen[si] === gen) continue;
+          seen[si] = gen;
+          if (openingBrackets(els[si], el)) into.push(si); } }
+      return into;
+    }
+    var wall = [], cw = [], pool, q;
+    for (t = 0; t < els.length; t++) { e = els[t];
+      if (!isOpening(e)) continue;
+      pool = scan(wallIdx, e, wall);
+      if (!pool.length) pool = scan(cwIdx, e, cw);
+      for (q = 0; q < pool.length; q++) out.push({ i: t, h: pool[q] });
+    }
+    return out;
+  }
   // bbox volume — the same m³ the BIG_ELEMENT_VOL p95 was measured in (§SUPPORT_UNCHECKED 1a and
   // the §HANG_NEAREST fallback below share this one definition so their populations can never drift)
   function bboxVol(e) { return (e.x1 - e.x0) * (e.y1 - e.y0) * (e.top_z - e.base_z); }
@@ -63,10 +329,17 @@
   // a second consumer (schedule_author.js's zone-level CPM rollup) can get the SAME real floor order
   // without a duplicate copy of this math to drift out of sync with the live scheduler.
   // Returns { bandRank: {collapsedStorey: rank}, rankList: [{ph,z,n}, ...], unbanded: N }.
-  function deriveBandRanks(elements) {
+  // storeyMergeMap: OPTIONAL {collapsedName: canonicalName}, built by deriveStoreyMergeMap() below
+  // from spatial_structure's EXTRACTED IfcBuildingStorey.Elevation (§S18, 2026-08-17,
+  // prompts/4D_GANTT_TM_REFACTOR.md). When supplied, storey names that share one physical floor
+  // collapse to ONE band before ranking — DISPLAY/AUDIT layer only. computeSchedule's own internal
+  // call to this function (line ~418, inside PASS-B's band-monotonic trade gate) never passes this
+  // map, so engine timing and the floating=0 gate are provably unaffected by this parameter existing.
+  function deriveBandRanks(elements, storeyMergeMap) {
     var byPhase = {};
     elements.forEach(function (e) {
       var ph = collapsePhase(e.storey);
+      if (storeyMergeMap && storeyMergeMap[ph]) ph = storeyMergeMap[ph];
       (byPhase[ph] = byPhase[ph] || []).push(e.base_z);
     });
     var rows = [], bandRank = {}, unbanded = 0;
@@ -80,6 +353,50 @@
     rows.sort(function (a, b) { return a.z - b.z; });
     rows.forEach(function (r, i) { bandRank[r.ph] = i; });
     return { bandRank: bandRank, rankList: rows, unbanded: unbanded };
+  }
+
+  // deriveStoreyMergeMap(spatialStructure) — §S18 (2026-08-17): groups storey NAMES that share one
+  // physical floor using EXTRACTED IfcBuildingStorey.Elevation, never inferred from element z-values
+  // (§PATHS NOT TO TAKE #7 forbids exactly that — mean/median-Z-of-ELEMENTS proximity). Each
+  // collapsePhase()'d name's representative elevation is the MEDIAN of every spatial_structure row
+  // with that name — robust to a single mis-scaled outlier (measured need: one of Clinic's 5
+  // federated discipline files has a "Second Floor" row reading 4570 where its own IfcProject
+  // declares LENGTHUNIT=METRE — a real source-file authoring defect, not a units-conversion miss;
+  // 3 of that name's 4 rows agree at ~4.57, so the median rejects the one bad row the same way this
+  // project's other Tukey/median derivations already do). Names within GAP (this module's own 0.5m
+  // "audit: within this of" constant, line ~39 — reused, not a new tuned constant) of a lower band's
+  // representative elevation join that band; chaining compares to the BAND'S elevation, not the
+  // previous row's, so a band stays bounded to within GAP of where it started rather than drifting
+  // through a long chain of small steps. Measured same-floor agreement in real data is far tighter
+  // than GAP (~1e-13m — floating-point noise between independently-authored files) — GAP is
+  // deliberately generous headroom above that, not a floor-height heuristic; it is far below every
+  // measured real floor-to-floor gap in the fleet (Clinic's smallest is 4.57m).
+  //
+  // Parentage (spatial_structure.parent_guid, IfcBuilding<-IfcBuildingStorey, also extracted by
+  // §S18) is NOT used as a hard partition here. Every federated "IfcBuilding" row measured in the
+  // fleet so far (Clinic's 5 discipline files, LTU_AHouse's 9) represents ONE physical building
+  // split across per-discipline exports, not genuinely distinct structures sharing a site — there is
+  // no fleet case yet where an elevation coincidence could falsely merge two REAL different
+  // buildings. If one appears, gate this merge to same-building parentage groups first; inventing
+  // that partition today, with no case to verify it against, is exactly what Prime Rule forbids.
+  function deriveStoreyMergeMap(spatialStructure) {
+    var byName = {};
+    (spatialStructure || []).forEach(function (r) {
+      if (!r || r.type !== 'IfcBuildingStorey' || r.elevation == null || r.name == null) return;
+      var name = collapsePhase(r.name);
+      (byName[name] = byName[name] || []).push(r.elevation);
+    });
+    var rows = Object.keys(byName).map(function (name) {
+      var zs = byName[name].slice().sort(function (a, b) { return a - b; });
+      return { name: name, z: zs[Math.floor(zs.length / 2)] };
+    });
+    rows.sort(function (a, b) { return a.z - b.z; });
+    var map = {}, bandName = null, bandZ = null;
+    rows.forEach(function (r) {
+      if (bandName === null || Math.abs(r.z - bandZ) > GAP) { bandName = r.name; bandZ = r.z; }
+      map[r.name] = bandName;
+    });
+    return map;
   }
 
   // Collapse sub-storeys onto their Level so the phase list stays ~8 (user: "collapsing is better").
@@ -96,9 +413,28 @@
   //   when omitted or a resource has no entry. Shared PROJECT-WIDE across both passes (not per-band,
   //   not per-Level) — see §CREW-CAP header comment.
   // returns { guid: { start, end } } ms.
-  function computeSchedule(elements, baseMs, scaleFactor, maxCrews) {
+  // shiftHours: §SHIFT_HOURS (rates.js, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — productive
+  // hours per calendar day. Optional; when omitted this module's own 8h default holds (every caller
+  // that doesn't pass it — the witnesses/probes — is unaffected, since a uniform time rescale changes
+  // no order/floating assertion). Reassigned fresh at the TOP of every call, never inherited from a
+  // previous one, so back-to-back calls with different values (or none) never cross-contaminate.
+  function computeSchedule(elements, baseMs, scaleFactor, maxCrews, shiftHours) {
     baseMs = baseMs || 0; scaleFactor = scaleFactor || 1;
-    var grid = {}, wallGrid = {}, out = {}, c, cs, k, arr, S;
+    SHIFT_MS = (shiftHours > 0 ? shiftHours : 8) * 3600 * 1000;
+    var grid = {}, wallGrid = {}, cwGrid = {}, out = {}, c, cs, k, arr, S;
+    // §CURTAIN_WALL_OPENING observability — keyed by guid, not a counter: openingGate is called
+    // several times per element (placeNonst plus every §DEQ_REPAIR sweep), so a bare ++ would report
+    // sweeps rather than openings.
+    var _cwSeen = {}, _cwFellThrough = {};
+    // §HOSTED_BEFORE_HOST: the host pairing is resolved ONCE, up front, off pure geometry — NOT from
+    // an incremental placement grid. That is deliberate and it was a measured bug before it was a
+    // design: a grid filled in PLACEMENT order and the DAG's index built in ELEMENT order break
+    // Manhattan-distance ties differently, so the gate could wait on one host while the DAG had
+    // ordered a different one — 125 of LTU_AHouse's 5,466 hosted elements survived the gate that way.
+    // One pairing, shared by the gate below, the DAG edge, and (through hostPairs) the display layer.
+    var _hostOf = {}, _hostPairs = hostPairs(elements), _hp;
+    for (_hp = 0; _hp < _hostPairs.length; _hp++)
+      _hostOf[elements[_hostPairs[_hp].i].guid] = elements[_hostPairs[_hp].h].guid;
     function crewCapFor(resource) {
       if (typeof maxCrews === 'number') return maxCrews;
       if (maxCrews && maxCrews[resource]) return maxCrews[resource];
@@ -180,7 +516,7 @@
       // The DAG makes the rule explicit and uniform: between two pool members only BELOW orders
       // them; the §GEO_SUPPORT_LEAK cases this clause exists for were all non-pool consumers
       // (IfcWallStandardCase / Proxy) and keep it unchanged.
-      var elPool = el.seq <= 4 || isPromotedSlab(el);
+      var elPool = supportPool(el);   // §S26.2: same test, one definition (was inline here)
       for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
         for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
           var below = S.base_z < el.base_z - EPS;
@@ -211,18 +547,47 @@
     // joins the same support grid as PASS-A structure. As a support it sits ABOVE what it carries, so
     // the bearing-below predicate almost never matches it; only hangGate reads it upward.
     function isPromotedSlab(e) { return e.cls === 'IfcSlab' && e.seq > 4; }
+    // §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): a flight is
+    // real structure but routes through placeNonst (seq=6), so it was never inserted into
+    // structIdxGrid/grid — invisible AS SUPPORT to anything resting on it (a mid-landing, a floor
+    // above). Same shape as isPromotedSlab: one narrow class admitted to the support-visibility
+    // index without becoming a structure-pool member for GATE-ROUTING purposes (placeNonst,
+    // its own full gate set, is unchanged for the flight itself).
+    function isStairFlight(e) { return e.cls === 'IfcStairFlight'; }
+    // §ARCH_START_TEMPO / M1 — the crew day, bound to this run's epoch (see the module header).
+    // Every crew slot, every gate and the repair loop below read/write wall-clock ms exactly as
+    // before; only the ADVANCE of the clock by a duration goes through the shift window.
+    function prodAt(t) { return toProductive(t, baseMs); }
+    function wallAt(p) { return toWall(p, baseMs); }
+    var _prodMsTot = 0;   // §CREW_DAY audit: productive ms actually committed
     function place(el, start) {
       var dur = Math.round((el.installSecs || 120) * scaleFactor * 1000);
-      var end = start + dur; out[el.guid] = { start: start, end: end };
-      if (el.seq <= 4 || isPromotedSlab(el)) {
+      // 8 productive h per calendar day: the remainder rolls to the next day's window start, and a
+      // multi-window `dur` consumes as many following windows as it needs.
+      var end = wallAt(prodAt(start) + dur); _prodMsTot += dur;
+      out[el.guid] = { start: start, end: end };
+      var prec = null;   // §CURTAIN_WALL_OPENING: the rec this element contributes, reused by cwGrid
+      if (el.seq <= 4 || isPromotedSlab(el) || isStairFlight(el)) {
         var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid,
                     promoted: isPromotedSlab(el) };
-        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(rec);
+        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(rec); prec = rec;
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (grid[cs[c]] = grid[cs[c]] || []).push(rec); }
       else if (el.cls && el.cls.indexOf('IfcWall') === 0) {   // §4D_WALLS_BEFORE_ROOF M5
         var wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid };
-        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(wrec);
+        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(wrec); prec = wrec;
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(wrec); }
+      // §CURTAIN_WALL_OPENING — a SECOND INDEX over records that already exist, not a second pool
+      // membership: the mullion/glazing rec is the SAME object the structure grid holds, so a
+      // §DEQ_REPAIR shift of that part is seen through both indexes with no copy to drift. Only
+      // IfcCurtainWall itself (seq 6, not IfcWall-prefixed ⇒ no rec today) ever mints a new one.
+      // Nothing is REMOVED from any existing grid, so geoGate/wallGate/hangGate are untouched.
+      if (el.cls && CW_HOST_CLS.test(el.cls)) {
+        if (!prec) {
+          prec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid };
+          (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(prec);
+        }
+        cs = cellsOf(el); for (c = 0; c < cs.length; c++) (cwGrid[cs[c]] = cwGrid[cs[c]] || []).push(prec);
+      }
       return end;
     }
     var recsByGuid = {};   // §DEQ_V1 repair loop: guid -> its support-grid recs, so a shift updates them
@@ -243,7 +608,7 @@
     function hangGate(el) {                // latest finish of the structure this element hangs from
       if (el.seq <= 4 || hasBearingBelow(el)) return baseMs;
       var g = baseMs; cs = cellsOf(el);
-      var elPool = isPromotedSlab(el);     // §GEOMETRIC_SUPPORT_ORDER — see geoGate's pool rule
+      var elPool = isPromotedSlab(el) || isStairFlight(el);     // §GEOMETRIC_SUPPORT_ORDER — see geoGate's pool rule
       for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
         for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
           // carrier's TOP strictly above mine (antisymmetric — same-z sibling slabs otherwise carry
@@ -326,14 +691,69 @@
     // wallGate already uses, XY/Z bbox overlap instead of the "rests on top of" band wallGate
     // tests. STRICT ADDITION: only Door/Window elements are gated; every other element's timing,
     // and wallGate's own existing roof-slab-on-wall behavior, are untouched.
-    function openingGate(el) {
-      if (el.cls !== 'IfcDoor' && el.cls !== 'IfcWindow') return baseMs;
-      var g = baseMs; cs = cellsOf(el);
-      for (c = 0; c < cs.length; c++) { arr = wallGrid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) { S = arr[k];
-          if (S.base_z <= el.top_z + EPS && S.top_z >= el.base_z - EPS &&
-              S.end > g && overlap(S, el)) g = S.end; } }
+    // The bracket predicate, hoisted verbatim so both pools are tested by ONE definition. Returns
+    // the latest end among bracketing hosts in `gr`, or -1 when NOTHING in that pool brackets el —
+    // the distinction the old single-pool version could not make (it returned baseMs both for "no
+    // host" and "host already finished", which is exactly why a missing pool was silent).
+    function openingScan(gr, el) {
+      var g = -1, cs2 = cellsOf(el), c2, k2, arr2, S2;
+      for (c2 = 0; c2 < cs2.length; c2++) { arr2 = gr[cs2[c2]]; if (!arr2) continue;
+        for (k2 = 0; k2 < arr2.length; k2++) { S2 = arr2[k2];
+          // §DOOR_WINDOW_HOST_WALL_DISPLAY: the bracket now lives at module scope (openingBrackets)
+          // so this gate and its display-layer twin can never test different geometry.
+          if (openingBrackets(S2, el) && S2.end > g) g = S2.end; } }
       return g;
+    }
+    // §CURTAIN_WALL_OPENING: STRICT ADDITION, and the fallback ordering is what makes it strict —
+    // the curtain-wall pool is consulted ONLY when the opening has no IfcWall* host at all. An
+    // opening that is gated today keeps its EXACT current start (measured: Terminal/JKR have 0
+    // ungated openings ⇒ literally zero elements move there). No new threshold is introduced: the
+    // fallback reuses openingScan's own EPS bracket. Cannot cycle — IfcMember/IfcPlate are seq 3/4,
+    // so the §DEQ_REPAIR loop (which shifts seq>4 only) never moves them, and the one seq>4 member
+    // of the pool, IfcCurtainWall, is not an opening so nothing ever gates it back.
+    function openingGate(el) {
+      if (!isOpening(el)) return baseMs;
+      var g = openingScan(wallGrid, el);
+      if (g < 0) {
+        g = openingScan(cwGrid, el);
+        // cwGrid GROWS during placement, so an opening reached early can fall through and be gated
+        // on a later sweep — the two tallies must not double-count it. The §DEQ_REPAIR loop
+        // re-evaluates every opening against the FINAL grid, so the last verdict is the true one.
+        if (g >= 0) { _cwSeen[el.guid] = 1; delete _cwFellThrough[el.guid]; }
+        else if (!_cwSeen[el.guid]) _cwFellThrough[el.guid] = 1;
+      }
+      return g > baseMs ? g : baseMs;
+    }
+    // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═════════
+    // User, live 2026-08-12: "electrical outlets and hanging elements appearing bit early." MEASURED
+    // on the DISPLAY timeline before this gate existed (probe_arch_start.js §HOSTED_BEFORE_HOST, all
+    // 7 shipped buildings): Hospital 1480/2830 (52.3%) hosted elements start before the element they
+    // are mounted in, worst 147.7d; Terminal 25.6%, LTU_AHouse 37.8% (worst 573.9d), Clinic 24.1%,
+    // HHS 17.8%, Duplex 8.7%, JKR 5.9%. Long-standing, NOT a §TIER_SERIAL_BY_ZONE regression — the
+    // same probe run against 42539c9 (pre-#1313) reports 50.3/25.2/37.7/23.2/17.7/9.6/5.7%.
+    //
+    // WHY NO EXISTING GATE CAUGHT IT, and it is one fact: the host of essentially every offender is
+    // IfcCovering — a ceiling — and IfcCovering is in NO support pool. geoGate/hangGate read the
+    // structure grid (seq<=4 + promoted slabs), wallGate/openingGate read the wall grid. A ceiling is
+    // in neither, so a light fixture had literally nothing to be checked against. Worse, the shipped
+    // trade order makes the inversion the DEFAULT rather than an accident: sequence_rules.json puts
+    // MEP Final at seq 9 and Finishes (IfcCovering) at seq 10, so a lay-in fixture is scheduled
+    // BEFORE the ceiling it drops into, by rule, everywhere. hangGate cannot save it either — its
+    // §HANG_NEAREST fallback is scoped to BIG (>BIG_ELEMENT_VOL) elements, and outlets/fixtures are
+    // exactly the small ones it deliberately leaves ungated.
+    //
+    // THE RULE: a hosted element inherits its HOST's floor — it may not start before the host it is
+    // mounted in/on has FINISHED (the same S.end every other gate in this module returns). STRICT
+    // ADDITION: only HOSTED_CLS elements are gated, nothing else's timing moves, and an element with
+    // no bracketing host in its cell keeps exactly its previous behaviour.
+    // Reads the host's CURRENT end straight out of `out`, so a §DEQ_REPAIR shift of a host is seen
+    // by what it hosts on the very next sweep — no stale grid copy to keep in step. An unplaced host
+    // (a §SUPPORT_CYCLE fallback member) yields baseMs here and the repair loop closes it after.
+    function hostGate(el) {                // finish of the wall/slab/ceiling this element is mounted in
+      var hg = _hostOf[el.guid];
+      if (!hg) return baseMs;
+      var o = out[hg];
+      return (o && o.end > baseMs) ? o.end : baseMs;
     }
     // ══ §GEOMETRIC_SUPPORT_ORDER (2026-08-07, 4D_SCHEDULE_PERFECTION.md) ════════════════════════
     // Placement order is derived from GEOMETRY FIRST: a support DAG built from XYZ data alone —
@@ -364,7 +784,7 @@
     // pools auditFloating scans, so scheduler order and audit test the same physics
     var structIdxGrid = {}, wallIdxGrid = {};
     for (t = 0; t < N; t++) { var P = elements[t];
-      if (P.seq <= 4 || isPromotedSlab(P)) { cs = cellsOf(P); for (c = 0; c < cs.length; c++) (structIdxGrid[cs[c]] = structIdxGrid[cs[c]] || []).push(t); }
+      if (P.seq <= 4 || isPromotedSlab(P) || isStairFlight(P)) { cs = cellsOf(P); for (c = 0; c < cs.length; c++) (structIdxGrid[cs[c]] = structIdxGrid[cs[c]] || []).push(t); }
       else if (P.cls && P.cls.indexOf('IfcWall') === 0) { cs = cellsOf(P); for (c = 0; c < cs.length; c++) (wallIdxGrid[cs[c]] = wallIdxGrid[cs[c]] || []).push(t); } }
     // pair predicates — one definition, used for both indegree count and decrement-on-place
     function edgeBelow(S, E)     { return S.base_z < E.base_z - EPS; }                          // geoGate "below"
@@ -377,12 +797,13 @@
     function wallCarries(S, E)   { return edgeBearing(S, E) && S.top_z <= E.base_z + GAP; }
     function edgeCarrier(S, E)   { return S.base_z >= E.top_z - GAP && S.base_z <= E.top_z + GAP && S.top_z > E.top_z + EPS; }  // hangGate
     var indeg = new Int32Array(N), succs = new Array(N), hangs = new Uint8Array(N), _edges = 0,
-        _hangNearest = 0;  // §HANG_NEAREST fallback edges added (logged in §GEO_ORDER)
+        _hangNearest = 0,  // §HANG_NEAREST fallback edges added (logged in §GEO_ORDER)
+        _hostEdges = 0;    // §HOSTED_BEFORE_HOST host→hosted edges added (logged in §GEO_ORDER)
     // stamp-array dedup (an {} per element measured 28s at 15k elements — dictionary churn), and a
     // reused cands array; _gen is bumped once per scan so stamps never need clearing
     var stamp = new Int32Array(N), _gen = 0, cands = [], nc;
     for (t = 0; t < N; t++) {
-      var E = elements[t], hasB = false, isPoolE = E.seq <= 4 || isPromotedSlab(E);
+      var E = elements[t], hasB = false, isPoolE = E.seq <= 4 || isPromotedSlab(E) || isStairFlight(E);
       _gen++; cands.length = 0;
       cs = cellsOf(E);
       for (c = 0; c < cs.length; c++) { arr = structIdxGrid[cs[c]]; if (!arr) continue;
@@ -429,6 +850,16 @@
             if (wallCarries(S, E)) { (succs[si] = succs[si] || []).push(t); indeg[t]++; _edges++; } } }   // §TM_GEO_ORDER_CYCLES: bounded, carry-at-top
       }
     }
+    // §HOSTED_BEFORE_HOST — the DAG twin of hostGate, from the SAME _hostPairs the gate reads, so
+    // placement order and runtime gate cannot pick different hosts (they did, until they shared one
+    // pairing — see _hostOf's header). CANNOT CREATE A CYCLE, structurally, not by luck: HOSTED_CLS
+    // ∩ HOST_CLS = ∅ and isHosted requires seq>4, so a hosted element is in NO pool — struct, wall
+    // or host — hence has zero outgoing edges and an added in-edge closes nothing. Same argument
+    // §HANG_NEAREST rests on (W-TMREPRO-4 cycles=0 stays structural).
+    for (_hp = 0; _hp < _hostPairs.length; _hp++) {
+      si = _hostPairs[_hp].h; t = _hostPairs[_hp].i;
+      (succs[si] = succs[si] || []).push(t); indeg[t]++; _edges++; _hostEdges++;
+    }
     // tiebreak = the old seq-primary processing order (precomputed keys — collapsePhase is regex)
     var rankKey = new Float64Array(N), seqKey = new Float64Array(N);
     for (t = 0; t < N; t++) { rankKey[t] = _bandRank[collapsePhase(elements[t].storey)] || 0; seqKey[t] = elements[t].seq; }
@@ -466,8 +897,12 @@
       var slot = claimCrew(el.resource);
       // §4D_BAND_MONOTONIC: the "upper floors gets walled first" half — the cross-storey term.
       var bg = bandGate(el);
-      var start = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1 + §DOOR_WINDOW_HOST_WALL
-      if (bg > baseMs && bg >= Math.max(geoGate(el), wallGate(el), tg)) _bmGatedB++;
+      // §PERF_GATE_DEDUP (2026-08-14): geoGate/wallGate are pure (read-only over the grids built so
+      // far), so the audit line below reuses these instead of re-scanning the same grid cells twice
+      // per element — same values, half the grid work, byte-identical decisions.
+      var gg = geoGate(el), wg = wallGate(el);
+      var start = Math.max(gg, wg, hangGate(el), openingGate(el), hostGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1 + §DOOR_WINDOW_HOST_WALL + §HOSTED_BEFORE_HOST
+      if (bg > baseMs && bg >= Math.max(gg, wg, tg)) _bmGatedB++;
       var end = place(el, start);
       if (bg > baseMs && start - bg > _bmMaxLagMs) _bmMaxLagMs = start - bg;
       bandCommit(el, end);
@@ -501,7 +936,17 @@
       console.log('§SUPPORT_CYCLE cycles=' + _cyc.length +
         (_cyc.length ? ' sample=[' + _cyc.slice(0, 5).map(function (x) { return elements[x].guid; }).join(',') + ']' : ''));
       console.log('§GEO_ORDER n=' + N + ' edges=' + _edges + ' hangNearest=' + _hangNearest +
-        ' orderMs=' + (Date.now() - _t0));
+        ' hostEdges=' + _hostEdges + ' orderMs=' + (Date.now() - _t0));
+      // §S58 (§S58.1b) — §HOSTED_BEFORE_HOST's own proof line. hostEdges above is the numerator
+      // only; this is the denominator and the miss breakdown, so "did the outlets-appear-early fix
+      // actually cover this building" is readable from the log instead of inferred. Same shape as
+      // §CURTAIN_WALL_OPENING's cwGated=/stillUngated=. matched+fellThrough == hostedTotal is an
+      // accounting identity a witness can assert, not a bare count.
+      var _hc = _hostPairs && _hostPairs.census;
+      if (_hc) console.log('§HOSTED_BEFORE_HOST hostedTotal=' + _hc.hostedTotal +
+        ' matched=' + _hc.matched + ' fellThrough=' + (_hc.fellThroughNoHostCell + _hc.fellThroughNoNearest) +
+        ' (noHostCell=' + _hc.fellThroughNoHostCell + ' noNearest=' + _hc.fellThroughNoNearest + ')' +
+        ' — fellThrough elements are gated at baseMs only, i.e. NOT held behind their host');
     }
     var nonst = elements.filter(function (e) { return e.seq > 4; });
     // §DEQ_V1 repair loop — the zero-contradiction guarantee. The gates above are only as good as
@@ -513,25 +958,104 @@
     // start order so support chains settle in few sweeps, measured 8 residual at cap=4 on Hospital
     // from a wall-on-roof chain deeper than the cap). Crew slots are NOT re-solved for shifted
     // elements — counted and logged, accepted v1 tradeoff (4D_SCHEDULE_PERFECTION.md §DEQ_V1_IMPL #4).
-    var _rIter = 0, _rMovedTot = 0;
+    var _rIter = 0, _rMovedTot = 0, _crewPackMovedTot = 0;
     for (; _rIter < 16; _rIter++) {
       var _moved = 0;
+      // §CURTAIN_WALL_OPENING tally reset — cwGrid/wallGrid are complete by now, so the LAST sweep's
+      // verdicts are the true ones. Without this the counts keep entries from placement time, when
+      // the grids were still filling and an opening could transiently have no wall in its cell.
+      _cwSeen = {}; _cwFellThrough = {};
       nonst.slice().sort(function (a, b) { return out[a.guid].start - out[b.guid].start; })
         .forEach(function (el) {
-        var need = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el));
+        var need = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), hostGate(el));
         var o = out[el.guid];
         if (o.start < need) {
-          var dur = o.end - o.start; o.start = need; o.end = need + dur;
+          // §ARCH_START_TEMPO / M1: a shift preserves the element's PRODUCTIVE duration, not its
+          // wall-clock width — moving it across a different number of idle windows would otherwise
+          // silently invent or destroy crew hours. toProductive is toWall's exact inverse on both
+          // stored times, so the duration is recovered, never carried.
+          var dur = prodAt(o.end) - prodAt(o.start);
+          o.start = need; o.end = wallAt(prodAt(need) + dur);
           var rl = recsByGuid[el.guid];
           if (rl) for (var q = 0; q < rl.length; q++) rl[q].end = o.end;
           _moved++;
         }
       });
+      // ══ §CREW_CAP_FINAL (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S67) ═══
+      // THE CREW CAP HAS TO BIND THE FINAL TIMES, NOT ONLY PLACEMENT.
+      //
+      // claimCrew above enforces LABOR_RATES[trade].max_crews correctly — but only at the moment an
+      // element is first placed. The geometry sweep immediately above then writes o.start/o.end
+      // DIRECTLY, so every shifted element lands wherever its gate demands with no regard for
+      // whether that trade has a free crew there. hostGate is the biggest shifter and its whole
+      // population is hosted openings (IfcDoor/IfcWindow = CARPENTER), so they pile onto the same
+      // instants: MEASURED 2026-08-25, final emitted times, 24h shift —
+      //   Terminal CARPENTER peak 20 vs cap 2 (10.0x) · HHS 8 vs 2 (4.0x) · Duplex 3 vs 2 (1.5x),
+      // every other trade legal on every building. A/B with this loop disabled returns all three to
+      // their caps, which isolates the sweep as the cause. The breach never shortened the programme
+      // (HHS span 46.9d either way) — it just authored work no crew exists to do.
+      //
+      // The fix re-packs crews over the CURRENT times, inside the SAME convergence loop, so the two
+      // constraints settle together instead of one undoing the other: geometry may only push an
+      // element later, and so may the re-pack, so the loop is monotone and terminates. A re-pack
+      // move counts as _moved, which is what makes the next geometry sweep re-check what it broke.
+      // Duration is carried in PRODUCTIVE ms exactly as the geometry sweep does it (§ARCH_START_TEMPO
+      // / M1) — a shift across a different number of idle windows must not invent or destroy hours.
+      var _packSlots = {};
+      function _packClaim(resource, notBefore) {
+        var cap = crewCapFor(resource);
+        var slots = _packSlots[resource] || (_packSlots[resource] = new Array(cap).fill(baseMs));
+        var idx = 0;
+        for (var pi = 1; pi < slots.length; pi++) if (slots[pi] < slots[idx]) idx = pi;
+        return { start: Math.max(notBefore, slots[idx]), commit: function (e) { slots[idx] = e; } };
+      }
+      var _packMoved = 0;
+      elements.slice().filter(function (e) { return out[e.guid]; })
+        .sort(function (a, b) { return (out[a.guid].start - out[b.guid].start) || (a.seq - b.seq); })
+        .forEach(function (el) {
+          var o = out[el.guid];
+          var dur = prodAt(o.end) - prodAt(o.start);
+          var cl = _packClaim(el.resource, o.start);
+          var end = wallAt(prodAt(cl.start) + dur);
+          cl.commit(end);
+          if (cl.start > o.start) {
+            o.start = cl.start; o.end = end;
+            var prl = recsByGuid[el.guid];
+            if (prl) for (var pq = 0; pq < prl.length; pq++) prl[pq].end = o.end;
+            _moved++; _packMoved++;
+          }
+        });
+      _crewPackMovedTot += _packMoved;
       _rMovedTot += _moved;
       if (!_moved) break;
     }
     if (typeof console !== 'undefined' && console.log)
       console.log('§DEQ_REPAIR sweeps=' + _rIter + ' shifted=' + _rMovedTot + ' (0=order already dependency-consistent)');
+    if (typeof console !== 'undefined' && console.log)
+      console.log('§CREW_CAP_FINAL crewRepacked=' + _crewPackMovedTot +
+        ' (elements pushed later because their trade had no free crew at the time a geometry gate wanted them; 0=every gate landing already had a crew)');
+    // §CURTAIN_WALL_OPENING — the coverage number, so the pool is auditable rather than trusted.
+    // cwGated = openings with NO IfcWall* host that the curtain-wall pool caught; stillUngated =
+    // openings bracketed by neither pool (a genuinely wall-less opening — reported, never invented
+    // a host for). Both 0 on a building with no curtain wall, which is the no-op proof.
+    if (typeof console !== 'undefined' && console.log)
+      console.log('§CURTAIN_WALL_OPENING cwGated=' + Object.keys(_cwSeen).length +
+        ' stillUngated=' + Object.keys(_cwFellThrough).length +
+        ' cwCells=' + Object.keys(cwGrid).length);
+    // §CREW_DAY (§ARCH_START_TEMPO / M1) — the whitebox proof that the shift cap is live and that it
+    // neither lost nor invented labour. spanD = wall-clock days the programme now occupies;
+    // serialProdD = the same labour on ONE crew at 8 h/day (Σ installSecs*scale / SHIFT_MS) — the
+    // number materializeDefault's phase widths have always been quoted in. spanD24 is what the same
+    // schedule would have spanned on the old 24-h clock, printed so the 3x is measured, not claimed.
+    if (typeof console !== 'undefined' && console.log) {
+      var _cdEnd = baseMs, _cdG;
+      for (_cdG in out) if (out[_cdG].end > _cdEnd) _cdEnd = out[_cdG].end;
+      console.log('§CREW_DAY shift=' + (SHIFT_MS / 3600000) + 'h/' + (DAY_MS / 3600000) + 'h n=' + N +
+        ' spanD=' + ((_cdEnd - baseMs) / DAY_MS).toFixed(1) +
+        ' spanD24=' + (toProductive(_cdEnd, baseMs) / DAY_MS).toFixed(1) +
+        ' serialProdD=' + (_prodMsTot / SHIFT_MS).toFixed(1) +
+        ' (a crew works ' + (SHIFT_MS / 3600000) + 'h of every calendar day — 24/7 calendar unchanged)');
+    }
     // The ladder this rule is standing on, printed so it can be audited rather than trusted — see
     // the §GANTT_STOREY_Z reassignment warning in the header comment above.
     if (typeof console !== 'undefined' && console.log) {
@@ -597,8 +1121,19 @@
   // occurrence counts on shipped buildings are known.
   function auditFloating(elements, sched, classFilter, collectGuids, collectUnchecked) {
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S;
+    // §STAIR_FLIGHT_GRID_VISIBILITY, AUDIT TWIN (2026-08-27, §I.5a). This grid used to re-type
+    // `e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)`, which is the scheduler's pool MINUS stair
+    // flights: IfcStairFlight carries sequence 6 (rates.js:259) so `seq<=4` is false, and the
+    // `else if` below only catches IfcWall* — so a flight landed in NEITHER grid and was invisible
+    // AS SUPPORT to this audit, while structIdxGrid (:787) and place() (:570) both admit it. That
+    // is a FALSE NEGATIVE: a target resting on a flight finds no bearing candidate, `se` stays 0,
+    // and :1204's `if (se > 0 && ...)` can never fire, so floating was UNDER-reported.
+    // The §S64 note at :1154 asserted "structGrid (p===0) ... already agrees with the gate". It did
+    // not — :787 and :1125 disagreed, 338 lines apart in one file. Now it does, because it no
+    // longer re-types the test at all: supportPool() (:1312) is the exported single definition and
+    // is verbatim the scheduler's inline pool. §I.4 — never a second copy.
     for (i = 0; i < elements.length; i++) { var e = elements[i];
-      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      if (supportPool(e)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
       else if (e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); } }
     // buildingModelsSubstructure — "Gap B exemption DECIDED" (4D_SCHEDULE_PERFECTION.md 2026-08-11):
     // annotate, don't suppress. true iff ≥1 element resolves to phase==='Substructure' — seq===1 is
@@ -620,14 +1155,32 @@
       for (var p = 0; p < pools.length; p++) {
         for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
           for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
+            // §S64 (2026-08-22) — the WALL pool (p===1, offered only to a promoted slab) must carry
+            // the same CARRY-AT-TOP bound the scheduler puts on the identical relation: wallGate
+            // (:684) and the DAG's wallCarries (:797) both require S.top_z <= T.base_z + GAP, the
+            // §TM_GEO_ORDER_CYCLES rule that "a wall carries a promoted slab AT ITS TOP, never one
+            // embedded metres below its crown". Without it the audit counted a wall the scheduler
+            // never gated on — measured: Terminal IfcWall top 37.06 against a slab base 30.57,
+            // LTU_AHouse 10.80 against 8.60 — 73 fleet-wide false "floating" verdicts (Terminal 8,
+            // Clinic 1, LTU_AHouse 64). structGrid (p===0) is unbounded here as before: that pool's
+            // bearing test is edgeBearing's exact twin and already agrees with the gate.
+            if (p === 1 && !(S.top_z <= T.base_z + GAP)) continue;
             if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) {
               hasBearing = true;
               var en = sched[S.guid].end; if (en > se) se = en; } } }
       }
       if (!hasBearing && T.seq > 4) {      // hangs — audit against its carrier above instead
-        // §GEOMETRIC_SUPPORT_ORDER: a pool member (promoted slab) never hangs from what it sits
-        // BELOW of — mirrors the scheduler's hangGate pool rule, so audit and scheduler agree
-        var tPool = T.cls === 'IfcSlab' && T.seq > 4;
+        // §GEOMETRIC_SUPPORT_ORDER: a pool member never hangs from what it sits BELOW of —
+        // mirrors the scheduler's hangGate pool rule, so audit and scheduler agree.
+        // §S64 (2026-08-22, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — Witness:
+        // witness_tm_geo_order_cycles.js W-TMREPRO-5/5b, scripts/probe_support_asymmetry.js):
+        // this line STOPPED mirroring at #1345, which added isStairFlight() to hangGate's elPool
+        // (:611) and to the scheduler's whole support pool (supportPool(), :1246) without touching
+        // the audit twin here. Result, measured on 3 of 7 buildings: the scheduler REFUSES to hang
+        // a stair flight on the landing it sits below, and the audit hangs it there anyway — 17
+        // fleet-wide false "floating" verdicts (Terminal 4, HHS 4, LTU_AHouse 9), deficits as small
+        // as 0.006 d. elPool's exact test, one concept, both sides.
+        var tPool = (T.cls === 'IfcSlab' && T.seq > 4) || T.cls === 'IfcStairFlight';
         var tWall = T.cls.indexOf('IfcWall') === 0;
         var seenH = {};
         for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
@@ -691,12 +1244,15 @@
   // whole graph is consistent with one global "real start time" ordering and cannot cycle by
   // construction; computeCpm's cycle guard is defence-in-depth, not the primary safeguard here.
   // Returns { zones: [{id,phase,storey,rank,start,end,guids,count}], edges: [{predId,succId,lagMs}] }.
-  function deriveZones(elements, schedule) {
-    var ranks = deriveBandRanks(elements).bandRank;
+  // storeyMergeMap: same optional §S18 parameter as deriveBandRanks — applied identically here so a
+  // zone's storey label and the rank it looks up (both keyed by the SAME merged name) never diverge.
+  function deriveZones(elements, schedule, storeyMergeMap) {
+    var ranks = deriveBandRanks(elements, storeyMergeMap).bandRank;
     var byZone = {};   // zoneId -> { phase, storey, rank, seq, guids:[], start:Infinity, end:-Infinity }
     elements.forEach(function (e) {
       var st = schedule[e.guid]; if (!st) return;   // unscheduled (e.g. a class computeSchedule skipped)
       var storey = collapsePhase(e.storey);
+      if (storeyMergeMap && storeyMergeMap[storey]) storey = storeyMergeMap[storey];
       var zid = (e.phase || '_UNPHASED') + '||' + storey;
       var z = byZone[zid] || (byZone[zid] = {
         id: zid, phase: e.phase || '_UNPHASED', storey: storey, rank: ranks[storey],
@@ -753,7 +1309,24 @@
   // EPS/GAP exported alongside CELL so a consumer of the same geometry (time_machine.js
   // §MIDAIR_REPAIR) can test contact with THIS module's measured constants instead of re-typing
   // them — a second copy is a second thing to drift.
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL };
+  // SHIFT_MS/DAY_MS + the two mappers are exported for the same reason EPS/GAP/CELL are: the live
+  // movie clock (time_machine.js injectGantt's scaleFactor/projectDays) must size a day with THIS
+  // module's shift, not a second hand-typed 8h constant to drift (§TM_DURATION_SYNC's lesson).
+  // §S26.2 (2026-08-19, prompts/4D_GANTT_TM_REFACTOR.md) — the SUPPORT POOL, expressed once and
+  // exported. This is not a new concept: it is verbatim the membership test computeSchedule's
+  // geoGate already used inline (`el.seq <= 4 || isPromotedSlab(el) || isStairFlight(el)`), lifted
+  // to module scope so designatedSupport() in cpm_schedule.js and _designatedSupport() in
+  // time_machine.js can ask the same question instead of treating every touching box as structure.
+  // Measured on Duplex (§S26.2): support = anything below gives 4,706 bearing relations and 761
+  // physics-vs-phase contradictions; support = load-bearing classes gives 702 and 1. The 760
+  // difference is the engine insisting a pipe must be installed before the wall above it.
+  function supportPool(e) {
+    return e.seq <= 4 ||                                   // PASS-A structure
+           (e.cls === 'IfcSlab' && e.seq > 4) ||           // §DEQ_V1 promoted roof slab
+           e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
+  }
+
+  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

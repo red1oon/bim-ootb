@@ -9471,3 +9471,19 @@ INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0KbYdy_nD
 INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0nLMa_hqjDM9PNHQIvZ_TB','2wdkzews5FrOpF4P5iHYk8');
 INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0nLMa_hqjDM9PNHQIvZ_TB','0nLMa_hqjDM9PNHQIvZ$uz');
 INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0nLMa_hqjDM9PNHQIvZ_TB','0nLMa_hqjDM9PNHQIvZ$BU');
+
+-- §HOSPITAL_COLOUR_BACKFILL (2026-08-16 — PHOTOREAL_STILL_RENDER.md §HOSPITAL_META_DB_STALE):
+-- IndexedDB-cached copies of the June-2026 split meta predate the extraction that filled
+-- material_rgba for the 23 classes below (verified against the served bucket bytes: 0/N in the
+-- cached vintage, N/N in the current served DB). The value is copied verbatim from the current
+-- served Hospital_meta.db — a single uniform value across every gained element (checked by
+-- DISTINCT per class). Guarded to empty rows only, so it is a no-op on the current served DB and
+-- never invents colour for the 233 geometry-less aggregate ghosts (IfcCurtainWall/IfcStair/
+-- IfcRoof), whose material_rgba stays empty in the current extraction too.
+UPDATE elements_meta SET material_rgba='0.920,0.900,0.850,1.000'
+ WHERE (material_rgba IS NULL OR material_rgba='')
+   AND ifc_class IN ('IfcBeam','IfcBuildingElementProxy','IfcCableCarrierFitting',
+    'IfcCableCarrierSegment','IfcColumn','IfcCovering','IfcDistributionControlElement','IfcDoor',
+    'IfcDuctFitting','IfcDuctSegment','IfcElectricAppliance','IfcFireSuppressionTerminal',
+    'IfcFooting','IfcLightFixture','IfcMember','IfcPipeFitting','IfcPipeSegment','IfcRailing',
+    'IfcSlab','IfcSwitchingDevice','IfcValve','IfcWall','IfcWallStandardCase');

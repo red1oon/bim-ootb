@@ -34,7 +34,16 @@ function sliceFn(src, name) {
 }
 
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+  // §S56: commitGanttDrag/generateGanttSchedule now call _tmBusyRecording (the §TM_BAKE_LOCK
+  // guard). Declared here because a sliced function cannot state its own dependencies — the
+  // same undeclared-dep class that killed two witnesses in §S62. Adding the name is the fix;
+  // the suite runner caught the omission the moment the guard landed.
 const sliced = [
+  '_tmBusyRecording',
+  // §S69: the per-site refusal moved into one helper, so the sliced verbs call THIS now. Sliced
+  // rather than stubbed — it is five lines and slicing the real one keeps the sandbox honest about
+  // what the guard actually does (with no recording flag set on the fake app, it returns false).
+  '_tmEditLocked',
   'loadOps', '_retimeSpan', 'retimeTaskElements', 'commitGanttDrag', 'undoLastGanttEdit'
 ].map(function (n) { return sliceFn(tmSrc, n); }).join('\n');
 
@@ -94,7 +103,18 @@ const BUILDING = process.argv[2] || 'Duplex';
     invalidateGanttModel: function () {}, computeDays: function () {}, drawGanttMini: function () {}, renderAtTime: function () {},
     // §GANTT_RETIME_RESYNC (PR #1240) added this call to every retime commit path; a cache/index
     // rebuild is a no-op here (the witness asserts on the DB rows, not the render caches)
-    _tmResyncAfterRetime: function () {}
+    _tmResyncAfterRetime: function () {},
+    // §GANTT_CPM_ANNOTATE (§S68) added a second such call to the same paths. Stubbed for the same
+    // reason — it only writes early_*/late_*/float/is_critical and this witness asserts on
+    // schedule_start/schedule_finish. That annotate cannot touch those columns is proven separately,
+    // on the real verb rather than a stub, by witness_gantt_cpm_annotate.js W-CPM-2.
+    _tmAnnotateCpm: function () {},
+    // §S70 added a debounced IndexedDB write-back to the same commit paths. STUBBED, unlike
+    // _tmEditLocked which is sliced: the lock can PREVENT the edit, so slicing it is required for
+    // this sandbox to be honest; the persist is a pure side effect that cannot change a single row
+    // this witness asserts on, and there is no IndexedDB in node. That the edit actually survives a
+    // reload is proven where it can be — live, by §S70's round-trip probe.
+    _tmPersistEdit: function () {}
   };
   vm.createContext(sandbox);
   vm.runInContext(sliced + '\nglobalThis.__ops = _ops = loadOps(); ' +

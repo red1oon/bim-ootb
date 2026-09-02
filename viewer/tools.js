@@ -93,13 +93,24 @@ function setupTools(A) {
   // §S280g: Ground texture engine — config-driven (ground_config.json), selectable in the
   // Palette/Sunglass panel. Default applies when Shadow is turned ON. Static photo on the
   // existing ground plane → zero per-frame cost. See docs/GROUND_SHADOW_BAKING.md §2.A.
+  // §GROUND_DETAIL (2026-08-16, user: "suggest something about the ground surface material. It is
+  // not that realistic"): the ground was a single 1k diffuse tiled 64x over the 50km plane —
+  // ~0.8m per texel underfoot, no normal/roughness response, visible 780m tiling. Three additions,
+  // all data-driven from this config: (1) matching Poly Haven nor_gl/rough 1k maps per option
+  // (same CC0 source the diffuse came from — textures/ground/NOTICE.txt) so sunlight shows
+  // relief; (2) a fine second sample of the SAME diffuse multiplied in as luminance detail
+  // (~3m tile; detailMean is the diffuse's measured LINEAR luminance mean — §TRINORM_LINEAR
+  // lesson, never normalize by sRGB means — so the multiply is brightness-neutral);
+  // (3) a §PHOTO_PAINT-style two-scale blotch (90m patch + 7m freckle, subtle 0.86..1.10) to
+  // break the tile repetition. (2)+(3) live in one onBeforeCompile on the ground material
+  // (_installGroundShader below).
   A._groundCfgDefault = {
     default: 'grass', repeat: 64, anisotropy: 8,
     options: [
       { key: 'none',  label: 'None',  src: null },
-      { key: 'grass', label: 'Grass', src: 'textures/ground/grass_1k.jpg' },
-      { key: 'earth', label: 'Earth', src: 'textures/ground/earth_1k.jpg' },
-      { key: 'paved', label: 'Paved', src: 'textures/ground/paved_1k.jpg' }
+      { key: 'grass', label: 'Grass', src: 'textures/ground/grass_1k.jpg', nor: 'textures/ground/grass_nor_1k.jpg', rough: 'textures/ground/grass_rough_1k.jpg', detailMean: 0.1262 },
+      { key: 'earth', label: 'Earth', src: 'textures/ground/earth_1k.jpg', nor: 'textures/ground/earth_nor_1k.jpg', rough: 'textures/ground/earth_rough_1k.jpg', detailMean: 0.1599 },
+      { key: 'paved', label: 'Paved', src: 'textures/ground/paved_1k.jpg', nor: 'textures/ground/paved_nor_1k.jpg', rough: 'textures/ground/paved_rough_1k.jpg', detailMean: 0.1629 }
     ]
   };
   A._groundConfig = null;
@@ -110,7 +121,7 @@ function setupTools(A) {
 
   A._loadGroundConfig = function() {
     if (A._groundConfig) return Promise.resolve(A._groundConfig);
-    return fetch('ground_config.json?v=1')
+    return fetch('ground_config.json?v=2')
       .then(function(r) { return r.json(); })
       .then(function(j) { A._groundConfig = j; return j; })
       .catch(function(e) {
@@ -159,6 +170,48 @@ function setupTools(A) {
     A.ground.material.needsUpdate = true;
   };
 
+  // §GROUND_DETAIL shader patch — installed ONCE on the ground material; #ifdef USE_MAP so the
+  // 'none' (map=null) compile is untouched. Plain property for the shader ref, never userData
+  // (§TRIPLANAR_CLONE_BOMB). detailMean is re-pushed on every texture switch from live state, so
+  // a silent recompile self-heals exactly like §TRIPLANAR_RECOMPILE_FIX.
+  A._groundDetailMean = 0.16;
+  A._installGroundShader = function() {
+    var mat = A.ground && A.ground.material;
+    if (!mat || mat._groundShaderInstalled) return;
+    mat._groundShaderInstalled = true;
+    mat.onBeforeCompile = function(shader) {
+      shader.uniforms.uGndDetailMean = { value: A._groundDetailMean };
+      shader.uniforms.uGndDetailStr = { value: 0.5 };
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', [
+          '#include <common>',
+          'uniform float uGndDetailMean;',
+          'uniform float uGndDetailStr;'
+        ].join('\n'))
+        .replace('#include <map_fragment>', [
+          '#include <map_fragment>',
+          '#ifdef USE_MAP',
+          '{',
+          // fine second sample of the same diffuse: ~3m tile (base tile 50000/64 = 781m, x256).
+          // Luminance-only, normalized by the texture's measured LINEAR mean -> brightness-neutral.
+          '  vec3 gndD = texture2D(map, vMapUv * 256.0).rgb;',
+          '  float gndLum = dot(gndD, vec3(0.2126, 0.7152, 0.0722)) / max(uGndDetailMean, 1e-4);',
+          '  diffuseColor.rgb *= mix(1.0, gndLum, uGndDetailStr);',
+          // two-scale blotch to break the 781m tiling: 90m weathering patch + 7m freckle, subtle.
+          '  vec2 gndM = vMapUv * 781.25;',
+          '  float gndPa = fract(sin(dot(floor(gndM / 90.0), vec2(12.9898, 78.233))) * 43758.5453);',
+          '  float gndPb = fract(sin(dot(floor(gndM / 7.0), vec2(39.201, 61.789))) * 24634.6345);',
+          '  float gndB = mix(gndPa, gndPb, 0.35);',
+          '  diffuseColor.rgb *= mix(vec3(0.86, 0.86, 0.85), vec3(1.10, 1.09, 1.06), gndB);',
+          '}',
+          '#endif'
+        ].join('\n'));
+      mat._groundShader = shader;
+      shader.uniforms.uGndDetailMean.value = A._groundDetailMean;
+    };
+    mat.needsUpdate = true;
+  };
+
   A._applyGroundTexture = function(key) {
     if (!A.ground) return;
     A._groundTexKey = key;
@@ -166,6 +219,9 @@ function setupTools(A) {
     var opt = (cfg.options || []).filter(function(o) { return o.key === key; })[0];
     if (!opt || !opt.src) {                 // 'none' → clear map, restore flat color
       A.ground.material.map = null;
+      A.ground.material.normalMap = null;
+      A.ground.material.roughnessMap = null;
+      A.ground.material.needsUpdate = true;
       A._setGroundColor(A._groundSolidColor);
       console.log('§GROUND_MAP key=none map=cleared color=0x' + A._groundSolidColor.toString(16));
       if (A._refreshGroundBtns) A._refreshGroundBtns();
@@ -173,20 +229,42 @@ function setupTools(A) {
       return;
     }
     var repeat = cfg.repeat || 64, aniso = cfg.anisotropy || 8;
+    // §GROUND_DETAIL: nor/rough are linear data maps — same wrap/repeat as the diffuse, NO
+    // SRGBColorSpace (that transfer is for colour only; §TRINORM_LINEAR class of mistake).
+    function _dataTex(cacheKey, src, cb) {
+      if (!src) { cb(null); return; }
+      if (A._groundTexCache[cacheKey]) { cb(A._groundTexCache[cacheKey]); return; }
+      new THREE.TextureLoader().load(src, function(t) {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(repeat, repeat);
+        try { t.anisotropy = Math.min(aniso, A.renderer.capabilities.getMaxAnisotropy()); } catch(e) {}
+        A._groundTexCache[cacheKey] = t; cb(t);
+      }, undefined, function() { console.warn('§GROUND_MAP data-map load FAIL ' + src); cb(null); });
+    }
     function applyTex(tex) {
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
       tex.repeat.set(repeat, repeat);
       if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
       else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding;
       try { tex.anisotropy = Math.min(aniso, A.renderer.capabilities.getMaxAnisotropy()); } catch(e) {}
+      A._installGroundShader();
       A.ground.material.map = tex;
-      A._setGroundColor(A._groundSolidColor);  // photo true (or dimmed at night)
-      A.ground.material.needsUpdate = true;
-      A.ground.visible = true;                 // preview even if shadow is off
-      A._calcGroundY();
-      console.log('§GROUND_MAP key=' + key + ' src=' + opt.src + ' repeat=' + repeat + ' aniso=' + (tex.anisotropy || 0));
-      if (A._refreshGroundBtns) A._refreshGroundBtns();
-      if (A.markDirty) A.markDirty();
+      A._groundDetailMean = opt.detailMean || 0.16;
+      if (A.ground.material._groundShader) A.ground.material._groundShader.uniforms.uGndDetailMean.value = A._groundDetailMean;
+      _dataTex(key + ':nor', opt.nor, function(nt) {
+        A.ground.material.normalMap = nt;
+        _dataTex(key + ':rough', opt.rough, function(rt) {
+          A.ground.material.roughnessMap = rt;
+          A._setGroundColor(A._groundSolidColor);  // photo true (or dimmed at night)
+          A.ground.material.needsUpdate = true;
+          A.ground.visible = true;                 // preview even if shadow is off
+          A._calcGroundY();
+          console.log('§GROUND_MAP key=' + key + ' src=' + opt.src + ' repeat=' + repeat + ' aniso=' + (tex.anisotropy || 0) +
+            ' nor=' + (nt ? 'ok' : 'none') + ' rough=' + (rt ? 'ok' : 'none') + ' detailMean=' + A._groundDetailMean);
+          if (A._refreshGroundBtns) A._refreshGroundBtns();
+          if (A.markDirty) A.markDirty();
+        });
+      });
     }
     if (A._groundTexCache[key]) { applyTex(A._groundTexCache[key]); return; }
     var loader = new THREE.TextureLoader();
@@ -241,9 +319,23 @@ function setupTools(A) {
           mat.opacity = 0.3;
           mat.side = THREE.DoubleSide;
         } else {
-          mat.transparent = mat._origTransparent !== undefined ? mat._origTransparent : false;
-          mat.opacity = mat._origOpacity !== undefined ? mat._origOpacity : 1;
-          mat.side = mat._origSide !== undefined ? mat._origSide : THREE.FrontSide;
+          // §XRAY_RESTORE_USERDATA_FIX: mat._origTransparent/_origOpacity/_origSide are only
+          // captured for materials that already existed in _matCache at the moment xray turned ON
+          // (the loop above). A material first created WHILE xray was already active
+          // (streaming.js:850 sets opacity=0.3 unconditionally at creation time, no _orig* ever
+          // recorded for it) restored here to the hardcoded default (opaque, FrontSide) instead of
+          // its real material — permanently flattening any such material transparent (e.g. glass)
+          // opaque for the rest of the session, since it then sits cached in A._matCache and is
+          // reused for every future element sharing the same cacheKey. streaming.js:848-849 already
+          // records the true per-material value in userData.origOpacity/origSide for EVERY material
+          // at creation time, xray-on-or-not — prefer that over the hardcoded default.
+          var _ud = mat.userData || {};
+          mat.transparent = mat._origTransparent !== undefined ? mat._origTransparent
+            : (_ud.origOpacity !== undefined ? _ud.origOpacity < 1.0 : false);
+          mat.opacity = mat._origOpacity !== undefined ? mat._origOpacity
+            : (_ud.origOpacity !== undefined ? _ud.origOpacity : 1);
+          mat.side = mat._origSide !== undefined ? mat._origSide
+            : (_ud.origSide !== undefined ? _ud.origSide : THREE.FrontSide);
         }
         mat.needsUpdate = true;
       }
@@ -258,9 +350,14 @@ function setupTools(A) {
           m._origSide = m.side;
           m.transparent = true; m.opacity = 0.3; m.side = THREE.DoubleSide;
         } else {
-          m.transparent = m._origTransparent !== undefined ? m._origTransparent : false;
-          m.opacity = m._origOpacity !== undefined ? m._origOpacity : 1;
-          m.side = m._origSide !== undefined ? m._origSide : THREE.FrontSide;
+          // Same §XRAY_RESTORE_USERDATA_FIX as above, applied to the scene.traverse fallback path.
+          var _mud = m.userData || {};
+          m.transparent = m._origTransparent !== undefined ? m._origTransparent
+            : (_mud.origOpacity !== undefined ? _mud.origOpacity < 1.0 : false);
+          m.opacity = m._origOpacity !== undefined ? m._origOpacity
+            : (_mud.origOpacity !== undefined ? _mud.origOpacity : 1);
+          m.side = m._origSide !== undefined ? m._origSide
+            : (_mud.origSide !== undefined ? _mud.origSide : THREE.FrontSide);
         }
         m.needsUpdate = true;
       });
@@ -534,6 +631,46 @@ function setupTools(A) {
     return g;
   };
 
+  // §SUNGLASS_GROUPING_RULES (2026-09-01, bim-compiler prompts/CINEMA_PATH_EDITOR.md
+  // §SESSION_2026-09-01C): ordinal groupings (storey) are coloured by ORDINAL POSITION on a
+  // monotonic ramp, never by the alphabetic/size rank the categorical bands use. The ordinal is
+  // EXTRACTED from geometry — world bbox-centre Y per mesh, median per group — not parsed from
+  // storey names (which sort "First Floor" before "TOF Footing" on Clinic).
+  A._paletteMeshY = function(mesh) {
+    if (mesh.__paletteY !== undefined) return mesh.__paletteY;
+    var box = null;
+    try {
+      if (mesh.isInstancedMesh || mesh.isBatchedMesh) {
+        if (!mesh.boundingBox) mesh.computeBoundingBox();   // unions all instances, local space
+        box = mesh.boundingBox;
+      } else if (mesh.geometry) {
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        box = mesh.geometry.boundingBox;
+      }
+    } catch (e) { box = null; }
+    if (!box || !isFinite(box.min.y) || !isFinite(box.max.y)) { mesh.__paletteY = null; return null; }
+    var c = box.getCenter(new THREE.Vector3());
+    mesh.updateWorldMatrix(true, false);
+    mesh.localToWorld(c);
+    mesh.__paletteY = c.y;
+    return mesh.__paletteY;
+  };
+
+  // Keys of `groups` sorted by real vertical position (median member centre-Y), ascending.
+  // Deterministic: name tiebreak; groups with no measurable geometry sort last.
+  A._storeyOrdinalKeys = function(groups) {
+    var keys = Object.keys(groups);
+    var elev = {};
+    keys.forEach(function(k) {
+      var ys = [];
+      groups[k].forEach(function(m) { var y = A._paletteMeshY(m); if (y !== null) ys.push(y); });
+      ys.sort(function(a, b) { return a - b; });
+      elev[k] = ys.length ? ys[Math.floor(ys.length / 2)] : Infinity;
+    });
+    keys.sort(function(a, b) { return (elev[a] - elev[b]) || (a < b ? -1 : 1); });
+    return { keys: keys, elev: elev };
+  };
+
   A.updateAmbience = function(val) {
     var tick = Math.round(Number(val));
     A._ambienceTick = tick;   // §-tap palette field reads this (one scalar = the whole palette state)
@@ -575,6 +712,75 @@ function setupTools(A) {
       });
     }
 
+    // ══ §MEP_DISC_PALETTE (2026-09-02) ══════════════════════════════════════════════════════════
+    // Spec: bim-compiler prompts/RESUME_2026-09-02_FILM_REVIEW.md §MEP_SYNTHETIC_PALETTE.
+    // User, 2026-09-02: "On Hospital or any building having zero usable material_name, can the
+    // synthetic colouring be more MEP standard? ... All i want is minimalist better coluring
+    // surface rules."
+    //
+    // ⚠ THIS MAPPING IS AN AUTHORED CHOICE, NOT AN INDUSTRY STANDARD. Saying otherwise would be
+    // invention (PRIME RULE). No MEP colour convention exists anywhere in the model data: Hospital's
+    // 6,664 `material_name` rows are 100% `≈`-prefixed synthetic approximations (`≈ Grey`), and
+    // there is no IfcSystem / `system` column on ANY shipped building DB (grepped, 2026-09-02).
+    // So the KEY is EXTRACTED — `elements_meta.discipline`, non-null on 100% of rows on all six
+    // shipped buildings — while the discipline→colour ASSIGNMENT is authored. It is not authored
+    // HERE, though: it reuses `A.DISC_COLORS` (config.js) VERBATIM, the same map the discipline HUD
+    // bars (panels.js), the bbox placeholders (streaming.js) and city/measure already paint with.
+    // The win is CONSISTENCY, not novelty — a discipline now gets the same colour in the film that
+    // the viewer's own legend gives it.
+    //
+    // MINIMALIST, and checkable rather than asserted: ONE hue per discipline. No cycling, no
+    // per-element hue, no per-class subdivision. A building's palette is therefore exactly as large
+    // as its discipline count (measured: Hospital 6, LTU_AHouse 8, Clinic 6, JKR 7, HHS 3, Duplex 5)
+    // — never a 40-hue soup. `sub` (0-9 across the band) keeps the in-band meaning it has in
+    // applyPalette: deepen saturation, darken lightness. It shifts no hue, so the hue COUNT is
+    // invariant across the whole band and the witness can assert it at any tick.
+    // A discipline outside A.DISC_COLORS (VALID_DISCS carries 29 codes, the colour map 12) falls
+    // back to the existing earthTone cycle rather than going uncoloured — counted in the log.
+    function applyDiscPalette(groups, keys, sub) {
+      var used = {}, mapped = 0, fell = 0, shown = [];
+      keys.forEach(function(k) {
+        var hex = (A.DISC_COLORS && A.DISC_COLORS[k] != null) ? A.DISC_COLORS[k] : null;
+        var color = new THREE.Color();
+        if (hex != null) { color.setHex(hex); mapped++; }
+        else { var p = earthTone[fell % earthTone.length]; color.setHSL(p[0], p[1], p[2]); fell++; }
+        var hsl = { h: 0, s: 0, l: 0 };
+        color.getHSL(hsl);
+        color.setHSL(hsl.h, Math.min(1, hsl.s + sub * 0.05), Math.max(0, hsl.l - sub * 0.03));
+        var hexStr = '#' + color.getHexString();
+        used[hexStr] = (used[hexStr] || 0) + 1;
+        shown.push(k + '=' + hexStr + (hex == null ? '(fallback)' : ''));
+        groups[k].forEach(function(m) { A._recolorMesh(m, color); });
+      });
+      var hues = Object.keys(used).length;
+      // Self-failure: a VACUOUS population and a hue COLLISION are different failures and must read
+      // differently. Neither may print as a quiet success.
+      console.log('[S200] §MEP_DISC_PALETTE discs=' + keys.length + ' distinctHues=' + hues +
+        ' fromLegend=' + mapped + ' fallback=' + fell + ' sub=' + sub +
+        (keys.length === 0 ? ' ⚠ VACUOUS — no discipline group to colour, nothing judged'
+          : hues === keys.length ? ' — one hue per discipline, no collision'
+          : ' ⚠ COLLISION ' + keys.length + ' discs share only ' + hues + ' hues') +
+        ' [' + shown.join(' ') + ']');
+    }
+
+    // §SUNGLASS_GROUPING_RULES: monotonic RAMP for ORDINAL groupings — the colour index is the
+    // ordinal position (lowest storey darkest), not the alphabetic rank + cycling palette that
+    // applyPalette keeps for categorical groupings. Hue h0→h1 and lightness 0.36→0.78 both
+    // strictly increase with elevation; `sub` keeps its in-band meaning as saturation depth.
+    function applyRamp(groups, ord, h0, h1, sub) {
+      var n = Math.max(ord.keys.length - 1, 1);
+      ord.keys.forEach(function(k, i) {
+        var t = ord.keys.length === 1 ? 0.5 : i / n;
+        var color = new THREE.Color().setHSL(h0 + (h1 - h0) * t,
+                                             Math.min(0.45 + sub * 0.02, 0.9),
+                                             0.36 + 0.42 * t);
+        groups[k].forEach(function(m) { A._recolorMesh(m, color); });
+      });
+      console.log('[S200] §SUNGLASS_ORDINAL ' + ord.keys.map(function(k) {
+        return k + '@' + (isFinite(ord.elev[k]) ? ord.elev[k].toFixed(2) : 'inf');
+      }).join(' < '));
+    }
+
     if (tick <= 10) {
       // ── 1-10: Warm pastels by IFC class, subtle contrast growing ──
       phase = 'Warm';
@@ -600,27 +806,30 @@ function setupTools(A) {
       strategy = keys.length + ' types';
 
     } else if (tick <= 45) {
-      // ── 31-45: Warm pastels by storey ──
+      // ── 31-45: Warm RAMP by storey ORDINAL (§SUNGLASS_GROUPING_RULES — was alphabetic cycle) ──
       phase = 'Storey warm';
       var g = A._groupBy(allMeshes, 'storey');
-      var keys = Object.keys(g).sort();
-      applyPalette(g, keys, warmPastel, tick - 31);
-      strategy = keys.length + ' storeys';
+      var ord = A._storeyOrdinalKeys(g);
+      applyRamp(g, ord, 0.02, 0.13, tick - 31);
+      strategy = ord.keys.length + ' storeys';
 
     } else if (tick <= 55) {
-      // ── 46-55: Cool pastels by storey ──
+      // ── 46-55: Cool RAMP by storey ORDINAL (§SUNGLASS_GROUPING_RULES) ──
       phase = 'Storey cool';
       var g = A._groupBy(allMeshes, 'storey');
-      var keys = Object.keys(g).sort();
-      applyPalette(g, keys, coolPastel, tick - 46);
-      strategy = keys.length + ' storeys';
+      var ord = A._storeyOrdinalKeys(g);
+      applyRamp(g, ord, 0.50, 0.66, tick - 46);
+      strategy = ord.keys.length + ' storeys';
 
     } else if (tick <= 65) {
-      // ── 56-65: Earth by discipline ──
+      // ── 56-65: discipline, painted with the viewer's OWN legend (§MEP_DISC_PALETTE) ──
+      // Was: applyPalette(g, keys, earthTone, tick - 56) — an alphabetic-rank cycle through a
+      // generic 10-entry earth ramp, so a discipline's colour depended on which OTHER disciplines
+      // happened to be in the building and never matched the HUD's own discipline bars.
       phase = 'Discipline';
       var g = A._groupBy(allMeshes, 'disc');
       var keys = Object.keys(g).sort();
-      applyPalette(g, keys, earthTone, tick - 56);
+      applyDiscPalette(g, keys, tick - 56);
       strategy = keys.length + ' discs';
 
     } else if (tick <= 80) {
@@ -713,7 +922,11 @@ function setupTools(A) {
   // which only needs to swap the ground texture — shadow map itself doesn't change).
   A._shadowOn = false;
   A._shadowGroundKey = 'off';                 // 'off' | 'grass' | 'earth' | 'paved'
-  var _SG_CYCLE = ['off', 'grass', 'earth', 'paved'];
+  // §GROUND_EARTH_DEFAULT (2026-08-16, user: "more realistic even surface feel" — 'earth' has no
+  // rectangular slab-joint relief the way 'paved' does): 'earth' is now the first real choice the
+  // Shadow toggle lands on, matching the same default the Alt+S/Alt+C bake staging switched to
+  // (effects.js _applyPhotoStaging). Was ['off','grass','earth','paved'].
+  var _SG_CYCLE = ['off', 'earth', 'grass', 'paved'];
   A.toggleShadow = function() {
     var prev = A._shadowGroundKey || 'off';
     var next = _SG_CYCLE[(_SG_CYCLE.indexOf(prev) + 1) % _SG_CYCLE.length];
@@ -875,6 +1088,16 @@ function setupTools(A) {
   A._nightStillBoost = true;       // re-armed 2026-08-07 — see effects.js §NIGHT_STILL_LIGHTS
   A._nightNearFadeFloor = 0.3;     // navigation: a light at the eye dims to 30% (anti-blowout)
   A._nightNearFadeFloorStill = 1.0;// still: no proximity penalty at all
+  // §STAGED_PL_CUT (2026-08-16, user directive: staged lighting "too bright … reduce PLs or
+  // intensity. As it also wipe out the ground slab shadow play during alt-c movie baking"):
+  // point lights never cast shadows (NIGHT_AND_FIXTURE_LIGHTING.md §RAM), so during Alt+S/Alt+C
+  // staging their light is pure additive shadow-fill on every slab in range — additive light is
+  // exactly what collapses the lit/shadow ratio (§GROUND_ALBEDO's own multiplicative-vs-additive
+  // analysis). NIGHT_LIGHT_INTENSITY's history is all "too bright" cuts (8.0→6.5→4.5→2.5→2.0)
+  // yet nav Night Mode is now tuned and liked — so this cut is STAGING-SCOPED only: 0.5× during
+  // the still/bake boost, reset to 1.0 at teardown. Nav Night Mode is byte-identical.
+  A._nightPLScale = 1.0;           // CURRENT multiplier on every night PL's intensity
+  A._nightPLScaleStill = 0.5;      // staging (Alt+S/Alt+C) value — §STAGED_PL_CUT
   // §NIGHT_LIGHT_MIX (2026-07-27, user: "if we can have a mix of amber, and bluish etc").
   // One flat 0xffe4b5 for every fixture is what makes a lit building read as a single lamp repeated
   // N times. Real interiors mix colour temperature by FITTING TYPE, so derive it from the fitting
@@ -948,8 +1171,19 @@ function setupTools(A) {
     return NIGHT_AMBER;
   };
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
-  var NIGHT_LIGHT_INTENSITY = 2.5; // §S277d, reduced 8.0->6.5->4.5->2.5 2026-08-08 (user: still too bright to make out individual PLs)
-  var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
+  var NIGHT_LIGHT_INTENSITY = 2.0; // §S277d, reduced 8.0->6.5->4.5->2.5 2026-08-08, ->2.0 2026-08-14 (user: -20%, indoor MEP-reveal bake still reads too bright)
+  // §NIGHT_LIGHT_NEARFIELD (2026-08-13, user: "bright lighting up surrounding when afar, but when
+  // near not evident"). Confirmed against three.module.min.js's own shader (not guessed):
+  // `getDistanceAttenuation` = 1 / max(pow(lightDistance, decayExponent), 0.01) — no lower
+  // distance clamp beyond that 0.01 floor (~4.6cm). At decay=1.5, falloff hits ~11.2x base
+  // intensity at 0.2m and ~2.8x at 0.5m; under ACESFilmic tonemapping (exposure=0.45) that's
+  // enough to clip a close surface to a flat/blown highlight instead of a readable graded glow —
+  // reading as "nothing visible" up close for the opposite reason of being too dim. Lowered
+  // 1.5->1.0 (linear): same maths at 0.2m/0.5m falls to ~5x/2x instead of ~11.2x/2.8x, AND at long
+  // range decay=1.0 falls off SLOWER than 1.5 (reaches further, not less), so the "bright from
+  // afar" character this is deliberately NOT trading away. First-pass value, like every other
+  // constant in this file — verify live, no pixel-level A/B run (would need a real close-up bake).
+  var NIGHT_LIGHT_DECAY = 1.0; // was 1.5 — between linear (1) and quadratic (2), reaches further than physics
 
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
   // while night mode / photo-staging is active — see the comment at its call site below for why.
@@ -1440,6 +1674,15 @@ function setupTools(A) {
   };
 
   A._nightUpdateLights = function() {
+    // §NIGHT_BAKE_POOL teardown — first update after a bake releases the frozen pool. Checked
+    // BEFORE the _nightMode gate so a night-off session still cleans up.
+    if (A._nightBakePool && !A._maxqActive) {
+      for (var _di = 0; _di < A._nightBakePool.length; _di++) {
+        A.scene.remove(A._nightBakePool[_di]); A._nightBakePool[_di].dispose();
+      }
+      console.log('§NIGHT_BAKE_POOL disposed n=' + A._nightBakePool.length + ' — bake over, nav path restored');
+      A._nightBakePool = null;
+    }
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
     var camPos = A.camera.position;
@@ -1507,6 +1750,49 @@ function setupTools(A) {
       }
       needed = picked.map(function(p) { return { pos: p }; });
     }
+    // ══ §NIGHT_BAKE_POOL (2026-09-01, found by the first headless CLI bake — bim-compiler
+    // prompts/CINEMA_PATH_EDITOR.md §CLI_SILENT_BAKE stage 4): during a MaxQ bake the in-frustum
+    // fixture census changes nearly every frame (the camera flies the path while the buildup keeps
+    // placing fixtures), and EVERY add/remove changes the scene's point-light COUNT — a shader
+    // DEFINE, so three.js recompiles every program in the scene. MEASURED (s4_300.log, Hospital
+    // 1854x963, RTX 4060 headless): count-stable frames fold in 0.8-1.3 s — even at the full 200
+    // lights — while every count-changed frame costs 13-53 s (21 §MAXQ_FRAME_TIMEOUTs, per-frame
+    // climbing to 26.4 s, a 9 h projection for a film whose budget is 2 h). §NIGHT_LIGHT_CHURN_FIX
+    // above already named this exact recompile cost but its delta reuse still lets the COUNT move.
+    // FIX, bake-only (gate A._maxqActive): the pool size is FROZEN at the still cap for the whole
+    // bake — created once, assigned per frame by slot (position/color/intensity are uniform
+    // updates, no recompile), unused slots dim to intensity 0 (contributes nothing — quality-
+    // identical). Interactive navigation and Alt+S keep the churn-fix path below, untouched.
+    if (A._maxqActive) {
+      if (!A._nightBakePool) {
+        var _poolN = Math.min(200, Math.max(1, allPos.length));
+        A._nightBakePool = [];
+        for (var _bi = 0; _bi < _poolN; _bi++) {
+          var _bl = new THREE.PointLight(0xffe4b5, 0, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+          A.scene.add(_bl);
+          A._nightBakePool.push(_bl);
+        }
+        console.log('§NIGHT_BAKE_POOL created n=' + _poolN +
+          ' — point-light COUNT frozen for the bake; unused slots ride at intensity 0');
+      }
+      var _pool = A._nightBakePool;
+      for (var _pi = 0; _pi < _pool.length; _pi++) {
+        var _f = needed[_pi];
+        if (_f) {
+          var _dist = camPos.distanceTo(_f.pos);
+          var _fade = Math.min(1.0, _dist / 15);
+          var _floor = A._nightNearFadeFloor;
+          _pool[_pi].position.copy(_f.pos);
+          _pool[_pi].color.set(_f.pos.__color || 0xffe4b5);
+          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._nightPLScale || 1);   // §STAGED_PL_CUT
+        } else {
+          _pool[_pi].intensity = 0;
+        }
+      }
+      A._nightLights = _pool.slice();
+      if (A.markDirty) A.markDirty();
+      return;
+    }
     // §NIGHT_LIGHT_CHURN_FIX (2026-08-08): this used to dispose EVERY light and rebuild the whole
     // set from scratch on every call — called on every 5m of camera travel while night mode is on,
     // so a normal orbit/fly repeatedly churned three.js's per-material light-uniform list (the
@@ -1532,7 +1818,7 @@ function setupTools(A) {
       // to protect and where the whole point is that the fixture you are standing under reads as
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
-      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade);
+      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._nightPLScale || 1);   // §STAGED_PL_CUT
       stillWanted.add(f.pos);
       var light = A._nightLightByPos.get(f.pos);
       if (light) {

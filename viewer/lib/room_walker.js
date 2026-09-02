@@ -1188,7 +1188,19 @@
       var rescued = rooms.filter(function (r) { return r.door_rescued; }).length;
       var partitioned = rooms.filter(function (r) { return r.door_partitioned; }).length;
       var suspects = rooms.filter(function (r) { return r.suspect; }).length;
-      stZ[st] = ws.reduce(function (s, w) { return s + w[2]; }, 0) / ws.length; // storey z = mean wall centre-z
+      // §STOREY_DATUM_FLOOR (bim-compiler prompts/4D_MODEL_INTEGRITY.md §K.4, 2026-08-27):
+      // a storey datum is its FLOOR, not wall mid-height. The wall row is [cx,cy,cz,bx,by,bz], so a
+      // wall's base is `w[2] - w[5]/2`. This line read `w[2]` (the CENTRE) until 2026-08-27, which
+      // put every Terminal datum 0.64-3.07 m above the real floor; since `schedule_author.js`
+      // §STOREY_DATUM bands by `base_z ∈ [datum_i, datum_i+1)`, an element standing on the Aras 03
+      // floor (base_z ≈ 16.11) fell into the Aras 02 band — EVERY element on EVERY floor was
+      // assigned one level DOWN, uniformly. The uniformity is why §W_D0 passed over it.
+      var _mCentre = ws.reduce(function (s, w) { return s + w[2]; }, 0) / ws.length;
+      stZ[st] = ws.reduce(function (s, w) { return s + (w[2] - w[5] / 2); }, 0) / ws.length; // storey z = mean wall BASE-z (the floor)
+      // §-log the pair, so the next session reads the datum instead of re-deriving it (PRIMAL LAW 3).
+      console.log('§STOREY_DATUM_FLOOR st=' + st + ' walls=' + ws.length +
+        ' meanCentreZ=' + _mCentre.toFixed(3) + ' meanBaseZ=' + stZ[st].toFixed(3) +
+        ' drop=' + (_mCentre - stZ[st]).toFixed(3));
       report.push({
         storey: st, walls: ws.length, doors: doors.length, method: method, roomCount: rooms.length,
         doorRescued: rescued, doorPartitioned: partitioned, suspect: suspects,
@@ -1349,11 +1361,31 @@
     // per floor via parent_guid -> IfcBuildingStorey.name. Idempotent on the STC_ prefix.
     db.run("DELETE FROM spatial_structure WHERE type='IfcBuildingStorey' AND guid LIKE 'STC\\_%' ESCAPE '\\'");
     var stStmt = db.prepare("INSERT INTO spatial_structure (guid,type,name,parent_guid,object_type,predefined_type,center_z) VALUES (?,?,?,?,?,?,?)");
-    Object.keys(stZ).sort().forEach(function (st) {
-      if (!allrooms.some(function (r) { return r.storey === st; })) return;
+    // §STOREY_ROW_EMIT (bim-compiler prompts/4D_MODEL_INTEGRITY.md §K.3/§K.4, 2026-08-27):
+    // emit a row for EVERY storey the walker walked, not only those where a room happened to
+    // compile. The old guard here was `if (!allrooms.some(r => r.storey === st)) return;`, which
+    // silently dropped real storeys from spatial_structure — a storey whose rooms were all merged
+    // or rejected still HAS a floor, and `schedule_author.js` §STOREY_DATUM reads these rows as its
+    // band source (`WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL`). A missing row is a
+    // missing band, so every element on that floor was banded onto the floor below it.
+    // The guard was NOT protecting against duplicates: it keyed on rooms, not on whether the DB
+    // already had a storey of that name, and MEASURED on Terminal the shipped DB already carries 6
+    // same-name real rows per storey alongside each STC_ row. Those real rows have center_z NULL on
+    // every shipped DB, so the datum consumer never sees them and cannot be confused by them.
+    // `stZ` only ever holds storeys that PASSED the >=3-wall gate, so this cannot emit a row for a
+    // storey the walker never actually walked.
+    var stKeys = Object.keys(stZ).sort(), stWithRooms = 0;
+    stKeys.forEach(function (st) {
+      if (allrooms.some(function (r) { return r.storey === st; })) stWithRooms++;
       stStmt.run([('STC_' + st).replace(/ /g, '_'), 'IfcBuildingStorey', st, null, 'COMPILED', null, stZ[st]]);
     });
     stStmt.free();
+    // A pass that cannot report a no-op is not a witness (PRIMAL LAW 4): say how many rows the old
+    // guard would have dropped, and say VACUOUS out loud when there was nothing to emit at all.
+    console.log('§STOREY_ROW_EMIT walked=' + stKeys.length + ' withRooms=' + stWithRooms +
+      ' withoutRooms=' + (stKeys.length - stWithRooms) + ' emitted=' + stKeys.length +
+      ' (old guard would have emitted ' + stWithRooms + ')' +
+      (stKeys.length === 0 ? ' VACUOUS: no storey passed the >=3-wall gate — this 0 means nothing' : ''));
     // remove any prior compiled rooms (idempotent)
     db.run("DELETE FROM spatial_structure WHERE type='IfcSpace' AND guid LIKE 'RM\\_%' ESCAPE '\\'");
     var roomStmt = db.prepare("INSERT INTO spatial_structure (guid,type,name,parent_guid,object_type,predefined_type," +
@@ -1460,6 +1492,10 @@
     mergeRooms: mergeRooms, rejectRooms: rejectRooms, allWallsRaw: allWallsRaw, allDoorsRaw: allDoorsRaw,
     compileRooms: compileRooms, writeRooms: writeRooms, walk: walk,
     buildCameraRoomIndex: buildCameraRoomIndex,
+    // §S50 (4D_GANTT_TM_REFACTOR.md, 2026-08-21): the containment join, exported so the runtime
+    // location axis (location_axis.js) assigns elements to compiled rooms IN MEMORY with the
+    // IDENTICAL math writeRooms persists — one join, no re-derivation, no drift.
+    _canonicalFloor: _canonicalFloor, _makeJoinKey: _makeJoinKey,
     RES: RES, MIN_AREA: MIN_AREA, DOOR_SHORTFALL_RATIO: DOOR_SHORTFALL_RATIO,
     VERT_FACTOR: VERT_FACTOR, OPEN_PERIM_FACTOR: OPEN_PERIM_FACTOR,
     MERGE_GAP_TOL_FACTOR: MERGE_GAP_TOL_FACTOR, MERGE_SHARE_MIN: MERGE_SHARE_MIN,

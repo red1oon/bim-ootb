@@ -192,6 +192,18 @@ async function setupEffects(A, renderer, scene, camera) {
     return false;
   }
   var _staffageTexCache = {};
+  // §STAFFAGE_TEX_CAP (housekeeping/sqljs-close-leaks): the cache's key space is strictly bounded
+  // by the static roster (12 files — _STAFFAGE_PEOPLE 6 + _STAFFAGE_TREES 6; a DB-saved file name
+  // outside the roster never reaches _staffageTex, _restoreStaffageInstances drops it via its
+  // `if (!entry) return`), and session-lifetime caching is the documented design
+  // (§PHOTO_STAFFAGE_PRELOAD below: cutouts are building-independent, "loaded once per session" so
+  // the second Alt+P is instant). There is deliberately NO clear-on-teardown: _disposeStaffage()
+  // keeps textures cached across building switches by design, and clearRouteCache()'s trigger
+  // (Find-panel open, navigate_find.js) is semantically unrelated to staffage. So: a dormant size
+  // cap at 2x roster instead — it can only ever fire if a future change makes the key space dynamic,
+  // at which point oldest-in is disposed+evicted (three.js re-uploads from tex.image if a live
+  // sprite still references an evicted texture, so eviction can never break a rendered sprite).
+  var _STAFFAGE_TEX_CAP = 24;
   var _STAFFAGE_BASE = 'textures/staffage/';
   // §STAFFAGE_OFFLINE (2026-07-18): adding/removing a `file:` entry below or in _STAFFAGE_TREES?
   // Mirror it in viewer/sw.js's STAFFAGE_ASSETS list too. These pngs load via _STAFFAGE_BASE, not
@@ -317,7 +329,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // light already in this scene (no bounce anywhere in this pipeline — see PHOTOREAL_STILL_RENDER.md
   // GI history) and deliberately SHORT distance so it is a no-op anywhere the camera isn't already
   // close to a surface — not a general-purpose fill light, not meant to change any establishing shot.
-  var CAM_LIGHT_COLOR = 0xfff2e0, CAM_LIGHT_INTENSITY = 3, CAM_LIGHT_DISTANCE = 4, CAM_LIGHT_DECAY = 2;
+  var CAM_LIGHT_COLOR = 0xffdca8, CAM_LIGHT_INTENSITY = 3, CAM_LIGHT_DISTANCE = 4, CAM_LIGHT_DECAY = 2;
   var CAM_LIGHT_FORWARD_OFFSET = 0.4;  // metres in front of the camera, toward the look target — off
                                         // the lens itself so it doesn't floodlight whatever the near
                                         // clip plane happens to be pressed against.
@@ -359,6 +371,7 @@ async function setupEffects(A, renderer, scene, camera) {
                                        // paired with the roof-corner twin spot, not just the dim baseline
   var _photoRoofCorners = [], _photoRoofSpotA = null, _photoRoofSpotB = null;
   var _photoSparkles = [];  // [{sprite:THREE.Sprite, mid3:{x,y,z}(three), normalThree:{x,z}}]
+  var _glowFirstMs = null, _glowSkipLogged = false;   // §GLOW_BUILDUP_EARLY_OUT
   var _sparkleTexCache = null;
   var PHOTO_SPARKLE_DOT_MIN = 0.90;   // half-vector/normal alignment needed before any glint shows
   var PHOTO_SPARKLE_SCALE_MAX = 8;    // world-units sprite size at perfect alignment
@@ -565,11 +578,44 @@ async function setupEffects(A, renderer, scene, camera) {
       s.sprite.visible = true;
     });
   }
+  // §LTU_SUBSURFACE_BBOX (2026-08-16, prompts/CINEMA_PATH_EDITOR.md): both bbox helpers below used
+  // raw MIN/MAX(center_z), so a handful of junk-placement rows (LTU: 13 IfcColumn at −5.6…−45.6m,
+  // tagged to ABOVE-ground storeys — export garbage, not a basement) sank the orbit pivot
+  // (pivot.y = zMin + 0.35·span) ~30m underground and Beat 4/5 flew below the slab. Fence: rows
+  // outside p01 − 0.25·(p99−p01) … p99 + 0.25·(p99−p01) of the SAME filtered set are excluded from
+  // the aggregate (whole row — a z-junk row shouldn't vote on x/y either). Measured before shipping:
+  // healthy buildings are BIT-IDENTICAL through their active path (Hospital ARC+IFC, Terminal ARC:
+  // excluded=0, raw==fenced), LTU excludes exactly the 13 junk rows (ARC pivot −23.90 → +3.64).
+  // Skipped entirely (raw behavior) for tiny sets (n<100) or degenerate span, where percentiles
+  // aren't meaningful. DB rows themselves are untouched — presentation-layer exclusion only.
+  function _bboxZFenced(selectFrom, whereClause) {
+    var glue = whereClause ? whereClause + ' AND ' : 'WHERE ';
+    var raw = A.dbQuery('SELECT MIN(et.center_x), MAX(et.center_x), MIN(et.center_y), MAX(et.center_y), MIN(et.center_z), MAX(et.center_z) ' + selectFrom + ' ' + whereClause);
+    if (!raw.length || raw[0][0] == null) return null;
+    var out = { xMin: raw[0][0], xMax: raw[0][1], yMin: raw[0][2], yMax: raw[0][3], zMin: raw[0][4], zMax: raw[0][5] };
+    try {
+      var n = A.dbQuery('SELECT COUNT(*) ' + selectFrom + ' ' + whereClause)[0][0];
+      if (n >= 100) {
+        var p01 = A.dbQuery('SELECT et.center_z ' + selectFrom + ' ' + whereClause + ' ORDER BY et.center_z LIMIT 1 OFFSET ' + Math.floor(n / 100))[0][0];
+        var p99 = A.dbQuery('SELECT et.center_z ' + selectFrom + ' ' + whereClause + ' ORDER BY et.center_z LIMIT 1 OFFSET ' + Math.min(n - 1, Math.floor(n * 99 / 100)))[0][0];
+        var span = p99 - p01;
+        if (span > 0) {
+          var lo = p01 - 0.25 * span, hi = p99 + 0.25 * span;
+          if (out.zMin < lo || out.zMax > hi) {
+            var f = A.dbQuery('SELECT MIN(et.center_x), MAX(et.center_x), MIN(et.center_y), MAX(et.center_y), MIN(et.center_z), MAX(et.center_z), COUNT(*) ' + selectFrom + ' ' + glue + 'et.center_z >= ' + lo + ' AND et.center_z <= ' + hi);
+            if (f.length && f[0][0] != null) {
+              console.log('§CINEMA_BBOX_FENCE excluded=' + (n - f[0][6]) + '/' + n + ' rawZ=[' + out.zMin.toFixed(2) + ',' + out.zMax.toFixed(2) + '] fencedZ=[' + f[0][4].toFixed(2) + ',' + f[0][5].toFixed(2) + '] fence=[' + lo.toFixed(2) + ',' + hi.toFixed(2) + ']');
+              out = { xMin: f[0][0], xMax: f[0][1], yMin: f[0][2], yMax: f[0][3], zMin: f[0][4], zMax: f[0][5] };
+            }
+          }
+        }
+      }
+    } catch (e) { /* fence is best-effort — raw bbox stands */ }
+    return out;
+  }
   function _buildingBBoxIfc() {
     if (!A.dbQuery) return null;
-    var r = A.dbQuery('SELECT MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MIN(center_z), MAX(center_z) FROM element_transforms');
-    if (!r.length || r[0][0] == null) return null;
-    return { xMin: r[0][0], xMax: r[0][1], yMin: r[0][2], yMax: r[0][3], zMin: r[0][4], zMax: r[0][5] };
+    return _bboxZFenced('FROM element_transforms et', '');
   }
   // §CINEMA_ARC_BBOX (2026-07-16, user ask: "ignore any non ARC elements outside frame" —
   // "solves LTU too far"): the whole-building bbox above includes every discipline, including
@@ -579,12 +625,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // no hardcoding (a building with zero ARC rows falls back to the whole-building bbox below).
   function _buildingBBoxArc() {
     if (!A.dbQuery) return null;
-    var r = A.dbQuery(
-      "SELECT MIN(et.center_x), MAX(et.center_x), MIN(et.center_y), MAX(et.center_y), MIN(et.center_z), MAX(et.center_z) " +
-      "FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid WHERE em.discipline = 'ARC'"
-    );
-    if (!r.length || r[0][0] == null) return null;
-    return { xMin: r[0][0], xMax: r[0][1], yMin: r[0][2], yMax: r[0][3], zMin: r[0][4], zMax: r[0][5] };
+    return _bboxZFenced('FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid', "WHERE em.discipline = 'ARC'");
   }
   function _disposePhotoProps() {
     _photoUplights.forEach(function(l) { A.scene.remove(l); });
@@ -887,6 +928,15 @@ async function setupEffects(A, renderer, scene, camera) {
   // aspect once the pixels are known (no hardcoded widths), anchor its bottom to the ground.
   function _staffageTex(path) {
     if (_staffageTexCache[path]) return _staffageTexCache[path];
+    // §STAFFAGE_TEX_CAP — see the cap's comment at its declaration. Dormant at roster scale
+    // (12 keys < 24): fires only if the key space ever becomes dynamic.
+    var _tcKeys = Object.keys(_staffageTexCache);
+    if (_tcKeys.length >= _STAFFAGE_TEX_CAP) {
+      var _evict = _staffageTexCache[_tcKeys[0]];
+      if (_evict && typeof _evict.dispose === 'function') { try { _evict.dispose(); } catch (e) {} }
+      delete _staffageTexCache[_tcKeys[0]];
+      console.log('§STAFFAGE_TEX_EVICT ' + _tcKeys[0] + ' cap=' + _STAFFAGE_TEX_CAP);
+    }
     var tex = new THREE.TextureLoader().load(_STAFFAGE_BASE + path,
       function() { console.log('§STAFFAGE_TEX_READY ' + path); },
       undefined,
@@ -2159,6 +2209,56 @@ async function setupEffects(A, renderer, scene, camera) {
     if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 6000 });
     else setTimeout(run, 4000);
   })();
+  // ══ §PHOTO_PREWARM (§R11, bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md) ══════════════════════
+  // User, 2026-09-01, on a real v1111 Hospital session: "it seems slow to come on first time."
+  //
+  // MEASURED from that session's own log — the FIRST Alt+S costs ~27 s and every one after it ~7 s:
+  //   §MEP_SMOOTH_NORMALS ms=8923.6   (once per session, 23,735,190 verts over 1,705 geoms)
+  //   §STILL_REFINE done elapsedMs=17933 first vs 6868 second
+  //   §PHOTO_AO done totalMs=576      (not worth touching — 2% of the press)
+  // The 20 s gap is ALL one-time work that happened to be sitting on the press. Two causes:
+  //   1. the smoothing pass itself, 8.9 s;
+  //   2. assets arriving DURING the fold — the run logged §STILL_REFINE_RESTART TWICE, with
+  //      §LAYER2_HDRI_READY and §GROUND_MAP key=earth landing in between, and every restart throws
+  //      away the samples accumulated so far.
+  //
+  // So this is a SCHEDULING change, not a behaviour change: the same work, done at idle once the
+  // model is fully streamed (streaming.js calls this from the point its own comment already calls
+  // "the model is fully streamed here"). The staging path KEEPS its own call as a fallback — if
+  // prewarm has not run yet, the first Alt+S still does the work itself. DEGRADE, DON'T DISABLE.
+  //
+  // Idle, not eager: requestIdleCallback with a timeout, the same idiom §PHOTO_STAFFAGE_PRELOAD
+  // above already uses, so a user who never presses Alt+S pays nothing on the interactive path.
+  A._photoPrewarm = function () {
+    if (A._photoPrewarmDone) return false;   // idempotent — streaming can flush more than once
+    A._photoPrewarmDone = true;
+    var run = function () {
+      var t0 = performance.now(), did = [], skipped = [];
+      try {
+        if (!A._mepSmoothDone && A.mepSmoothNormals) {
+          A.mepSmoothNormals(); A._mepSmoothDone = true; did.push('mepSmooth');
+        } else skipped.push('mepSmooth(already done)');
+      } catch (e) { skipped.push('mepSmooth:' + e.message); }
+      // Both of these are cached+idempotent, and both were landing mid-fold and restarting it.
+      try { _ensureHdriEnvMap(); did.push('hdri'); } catch (e) { skipped.push('hdri:' + e.message); }
+      try {
+        // The ground texture is loaded by tools.js on staging; warming the HTTP cache here is the
+        // whole cost of it and needs no handle into that module.
+        if (typeof fetch === 'function') {
+          fetch('textures/ground/earth_1k.jpg', { cache: 'force-cache' }).then(function (r) { return r && r.blob(); })
+            .catch(function () {});
+          did.push('groundTex');
+        }
+      } catch (e) { skipped.push('groundTex:' + e.message); }
+      console.log('§PHOTO_PREWARM ms=' + Math.round(performance.now() - t0) +
+        ' did=[' + did.join(',') + ']' + (skipped.length ? ' skipped=[' + skipped.join(',') + ']' : '') +
+        ' — this work is now OFF the first Alt+S press (measured 8,923.6 ms of it on Hospital)');
+    };
+    if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 8000 });
+    else setTimeout(run, 2000);
+    return true;
+  };
+
   // ══ §BILLBOARD_ART (2026-07-28, user: "make it pick a png image i can place later in the same
   // DB folder. For now just 'RUANG IKLAN UNTUK DI SEWA'… if no image, it gives that notice.")
   //
@@ -2471,7 +2571,18 @@ async function setupEffects(A, renderer, scene, camera) {
   var PHOTO_SUN_COLOR = 0xffa55c;       // warm golden-hour sun, not neutral white
   var PHOTO_AMBIENT_COLOR = 0x8a6a55;   // warm dim ambient — shadow side reads dusk-toned, not grey
   var PHOTO_HEMI_SKY_COLOR = 0x6a5a7a;  // dusky violet-warm sky half of the hemi light
-  var PHOTO_SUN_INTENSITY_SCALE = 0.7;  // dimmer than full daylight — evening, not noon
+  // §MOVIE_SHADOW_TM (2026-08-12, user, verbatim: "MAKE SHADOW FOR MOVIE MAKER AS STRONG AS IN TM").
+  // These three scales are what made baked shadows read lighter than Time Machine's own shadow play.
+  // Measured against scene.js's native lights (sun 4.4, ambient 0.785, hemi 1.257 — TM's sun/fill
+  // ratio 4.4/2.042 = 2.155):
+  //     was  sun x0.7 = 3.08, ambient x1.15 = 0.903, hemi x1.25 = 1.571  -> ratio 1.245
+  //     i.e. 57.8% of TM's contrast, 42% weaker. Two moves compounded — the sun scaled DOWN while
+  //     the fill scaled UP (0.7 / 1.2115 = 0.578).
+  // Set to 1.0 so the bake uses TM's own balance verbatim; ratio is now 2.155, identical to TM.
+  // The old dusk-dimmed values are recorded above, not deleted, because everything else here
+  // (PHOTO_SUN_COLOR, the fog/exposure/albedo constants) was tuned against them and is deliberately
+  // left untouched — this changes the light BALANCE only, nothing about colour or exposure.
+  var PHOTO_SUN_INTENSITY_SCALE = 1.0;  // was 0.7 — §MOVIE_SHADOW_TM, match TM's shadow strength
   var PHOTO_EXPOSURE_SCALE = 0.85;      // slightly underexposed overall — "materials in little light"
   // §PHOTO_EXPOSURE_LIFT (2026-07-27, user: "Scene still too dark drab"). The still was rendering at
   // 0.45 x 0.85 = 0.3825 — about a stop and a half under three.js's default, which is most of why
@@ -2529,10 +2640,31 @@ async function setupEffects(A, renderer, scene, camera) {
       ' (start=' + PHOTO_SUN_ELEVATION_START + ' end=' + PHOTO_SUN_ELEVATION_END + ')');
   }
   A._sunArcStep = _sunArcStep;
-  var PHOTO_ENVMAP_BOOST = 3.0;   // multiply each material's existing envMapIntensity — stronger
+  var PHOTO_ENVMAP_BOOST = 2.0;   // multiply each material's existing envMapIntensity — stronger
                                    // glass/metal reflections without changing overall scene exposure
-                                   // (history: 2.2 -> 3.2 -> 4.5 -> 3.0. The 4.5 step, combined with
-                                   // the §PHOTO_ENVMAP_STALE fix below finally pointing every
+                                   // (history: 2.2 -> 3.2 -> 4.5 -> 3.0 -> 2.0. §PHOTO_REALISM_RETUNE
+                                   // (2026-08-27, PHOTOREAL_STILL_RENDER.md, this session): 3.0 was
+                                   // tuned BEFORE §MIRROR_ROOM_PROBE (2026-08-16) gave glossy/metal
+                                   // materials a real local-scene reflection on top of the sky/HDRI
+                                   // env map — with the room probe now doing part of the reflection
+                                   // work, 3.0 double-counts and reads "too bright, shiny reflection"
+                                   // (user's own words). One controlled step down (not back to the
+                                   // pre-room-probe 2.2 floor — same "single controlled increment,
+                                   // not guess-and-hope" discipline as §PHOTO_AO_EDGE's 2->4 step),
+                                   // verified live via witness_envmap_retune.js on Clinic (real,
+                                   // room-probe-applied, apples-to-apples before/after): meanBoostRatio
+                                   // 3.0000->2.0000, meanBoostedEnvMapIntensity 1.8000->1.2000 (both
+                                   // exactly track the constant, as expected); frame-level meanLuma
+                                   // 174.19->178.02, stdLuma 69.65->66.57, clippedWhiteFrac 0.00%
+                                   // unchanged — near-flat at the whole-frame level because Clinic has
+                                   // only 1 glossy/room-probe-eligible material of 7 in _matCache, so
+                                   // the material-level halo shrink is real but diluted by the rest of
+                                   // the frame. Hospital not re-verified after this same session hit a
+                                   // pre-existing CPE/Hospital environment flakiness (hang, then a
+                                   // detached-Frame puppeteer crash on retry, both unrelated to this
+                                   // diff) — see prompts/PHOTOREAL_STILL_RENDER.md §PHOTO_REALISM_RETUNE.
+                                   // (history predating this line, still true: the 4.5 step, combined
+                                   // with the §PHOTO_ENVMAP_STALE fix below finally pointing every
                                    // material at the CORRECT dusk env map, made the glint work for
                                    // the first time — but also overshot: user reported "all shadows
                                    // on building are gone." Root cause of THAT: env-map/IBL
@@ -2544,7 +2676,7 @@ async function setupEffects(A, renderer, scene, camera) {
                                    // the `typeof m.envMapIntensity !== 'number'` check never actually
                                    // excluded plain concrete/plaster walls. Fixed by gating on
                                    // glossiness below; boost itself also dialed back one notch
-                                   // per "glint is slightly too much."
+                                   // per "glint is slightly too much.")
   var PHOTO_GLOSSY_ROUGHNESS_MAX = 0.5;  // only materials this glossy or better (glass ~0.05-0.08,
                                           // tightened/native metal ~0.3-0.5) get the envMap boost —
                                           // excludes concrete/plaster/wood (STD_MAT rough 0.6-0.95),
@@ -2557,6 +2689,47 @@ async function setupEffects(A, renderer, scene, camera) {
   // streaming.js's own STD_MAT table already uses for "metal" elsewhere), not every surface.
   var PHOTO_METAL_THRESHOLD = 0.3;
   var PHOTO_METAL_ROUGHNESS_SCALE = 0.4;  // tighter/brighter specular highlight (was 0.6)
+  // ══ §MIRROR_TRUE_REFLECT (PHOTOREAL_STILL_RENDER.md ▶RESUME item 1) — mirrors are IfcFlowTerminal,
+  // and STD_MAT.IfcFlowTerminal carries envInt:0.05 (§HOSPITAL_BLUE_TINT/§PIPE_DUCT_BLUE_TINT — a
+  // fix meant to kill a blue-sky-tint on pipes/ducts, applied class-wide). That sets
+  // mat.userData._photoEnvExempt=true in streaming.js's _getMaterial(), which is
+  // _reassertPhotoMatBoost's very FIRST early-return guard below — mirrors get swept up in a fix
+  // meant for a different fixture and never get boosted, never get room-probe-eligible, never get a
+  // true-mirror roughness. Confirmed exclusive by direct DB query (Clinic): the 22 real
+  // "M_Mirror:Mirror 600mm x 900mm" elements carry material_rgba 0.843,0.843,0.843,1.000 — not
+  // shared with any other IfcFlowTerminal fixture in the building (grab bars/lights/exit signs/etc
+  // all carry distinct rgba values). streaming.js _getMaterial's cacheKey includes rgba+class, so
+  // this is a genuinely exclusive material — excluding it from the exemption cannot leak into
+  // diffusers/grilles/any other fixture sharing the class. Lookup uses the same
+  // name-keyword-query-via-elements_meta pattern as §PHOTO_EMBER's EMBER_WORDS, cached per building.
+  var _mirrorMatSet = null, _mirrorMatBuilding = null;
+  function _mirrorReflectMats() {
+    if (_mirrorMatSet && _mirrorMatBuilding === A.activeBuilding) return _mirrorMatSet;
+    _mirrorMatSet = Object.create(null);
+    _mirrorMatBuilding = A.activeBuilding;
+    if (typeof A.dbQuery !== 'function' || !A.guidMap || !A.collectMeshes) return _mirrorMatSet;
+    var rows;
+    try {
+      rows = A.dbQuery("SELECT guid FROM elements_meta WHERE ifc_class='IfcFlowTerminal' AND lower(element_name) LIKE '%mirror%'") || [];
+    } catch (e) { console.warn('§MIRROR_TRUE_REFLECT query failed: ' + e.message); return _mirrorMatSet; }
+    if (!rows.length) { console.log('§MIRROR_TRUE_REFLECT bld=' + A.activeBuilding + ' no mirrors — nothing to fix'); return _mirrorMatSet; }
+    var want = Object.create(null);
+    for (var i = 0; i < rows.length; i++) want[rows[i][0]] = 1;
+    var ids = Object.create(null), hits = 0;
+    for (var k in A.guidMap) if (want[A.guidMap[k]]) { ids[parseInt(String(k).split('_')[0], 10)] = 1; hits++; }
+    var meshes = 0, mats = 0;
+    A.collectMeshes(function(o) { return o.isMesh; }).forEach(function(o) {
+      if (!ids[o.id]) return;
+      meshes++;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function(m) {
+        if (!m || _mirrorMatSet[m.uuid]) return;
+        _mirrorMatSet[m.uuid] = m; mats++;
+      });
+    });
+    console.log('§MIRROR_TRUE_REFLECT bld=' + A.activeBuilding + ' guids=' + rows.length +
+      ' guidMapHits=' + hits + ' meshes=' + meshes + ' materials=' + mats);
+    return _mirrorMatSet;
+  }
   // §PHOTO_HEMI_FILL (user ask, "Ground still too dark"): re-read _setGroundColor (tools.js) and
   // found the actual bug — when the ground has a texture map (which it does, 'paved'), that
   // function IGNORES whatever hex tint is passed and forces plain WHITE (full brightness, no
@@ -2574,8 +2747,8 @@ async function setupEffects(A, renderer, scene, camera) {
   // scene toward the same brightness, which dilutes the RELATIVE contrast the shadow and the
   // discrete point-light addons depend on to read as distinct. Dialed back — some lift over the
   // raw sin(6 deg) ground darkness, not enough to wash out contrast.
-  var PHOTO_HEMI_INTENSITY_SCALE = 1.25;
-  var PHOTO_AMBIENT_INTENSITY_SCALE = 1.15;
+  var PHOTO_HEMI_INTENSITY_SCALE = 1.0;    // was 1.25 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
+  var PHOTO_AMBIENT_INTENSITY_SCALE = 1.0;  // was 1.15 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
   // §GROUND_ALBEDO — the multiplicative lever the two paragraphs above never had. Everything they
   // describe is ADDITIVE (emissive add; hemi/ambient fill), which is exactly why both flattened the
   // cast shadow; this one scales lit and shadowed ground by the same factor. The claim that the
@@ -2650,23 +2823,56 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!A._matCache || !A._envMap) return;
     Object.keys(A._matCache).forEach(function(k) {
       var m = A._matCache[k];
-      if (m && 'envMap' in m && m.envMap !== A._envMap) { m.envMap = A._envMap; m.needsUpdate = true; }
+      if (!m || !('envMap' in m)) return;
+      // §MIRROR_ROOM_PROBE: glossy/metal + mirror materials (flagged once by _reassertPhotoMatBoost
+      // below) reflect the local room-probe capture instead of the static sky, once it's built —
+      // this function already runs every accumulation tick, so it naturally upgrades them from the
+      // sky fallback to the real probe the moment _buildRoomProbe() finishes, no separate loop needed.
+      var target = (m.userData && m.userData._photoRoomProbeEligible && _roomProbeRT)
+        ? _roomProbeRT.texture : A._envMap;
+      if (m.envMap !== target) { m.envMap = target; m.needsUpdate = true; }
     });
   }
   function _reassertPhotoMatBoost() {
     if (!_photoMatBoostActive || !A._matCache) return;
+    var mirrorMats = _mirrorReflectMats();  // §MIRROR_TRUE_REFLECT — cached per building, cheap to call every tick
     Object.keys(A._matCache).forEach(function(k) {
       var m = A._matCache[k];
-      if (!m || (m.userData && m.userData._photoBoosted) || typeof m.envMapIntensity !== 'number') return;
+      if (!m) return;
+      var isMirror = !!mirrorMats[m.uuid];  // §MIRROR_TRUE_REFLECT — exclusive material, bypasses the exemption below
+      if ((m.userData && (m.userData._photoBoosted || (m.userData._photoEnvExempt && !isMirror))) ||
+          typeof m.envMapIntensity !== 'number') return;
+      // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): _photoEnvExempt (streaming.js's per-class
+      // §HOSPITAL_BLUE_TINT envInt override) skips this blanket boost entirely — that override was
+      // already hand-tuned to fight the sky's blue PMREM reflection on these specific classes;
+      // re-boosting on top of it undid the tuning specifically during Alt+S/Alt+G captures.
       var isMetal = typeof m.metalness === 'number' && m.metalness > PHOTO_METAL_THRESHOLD;
-      var isGlossy = isMetal || (typeof m.roughness === 'number' && m.roughness <= PHOTO_GLOSSY_ROUGHNESS_MAX);
+      var isGlossy = isMirror || isMetal || (typeof m.roughness === 'number' && m.roughness <= PHOTO_GLOSSY_ROUGHNESS_MAX);
       if (isGlossy) {
         m.userData._photoOrigEnvMapIntensity = m.envMapIntensity;
         m.envMapIntensity = m.envMapIntensity * PHOTO_ENVMAP_BOOST;
+        m.userData._photoRoomProbeEligible = true;  // §MIRROR_ROOM_PROBE — read every tick by _reassertPhotoEnvMap above
       }
-      if (isMetal) {
+      if (isMetal || isMirror) {
         m.userData._photoOrigRoughness = m.roughness;
-        m.roughness = Math.max(0.05, m.roughness * PHOTO_METAL_ROUGHNESS_SCALE);
+        // §MIRROR_TRUE_REFLECT: a real mirror is near-perfect specular, not tightened-metal —
+        // force near-zero roughness instead of the metal scale-down.
+        m.roughness = isMirror ? 0.03 : Math.max(0.05, m.roughness * PHOTO_METAL_ROUGHNESS_SCALE);
+      }
+      // §MIRROR_TRUE_REFLECT_METALNESS (found live 2026-08-16+1 — the roughness-only fix above
+      // shipped but user reported "still not reflection in mirror"): STD_MAT.IfcFlowTerminal's
+      // metal:0.30 was never touched by the fix above. MeshStandardMaterial's PBR split is driven
+      // by metalness, not roughness — at metalness 0.3 the BRDF still blends ~70% diffuse albedo
+      // into the output (diffuseColor = albedo*(1-metalness)), so even a perfectly sharp, boosted
+      // envMap reflection reads as a faint sheen on top of a mostly-flat grey surface, not a mirror
+      // image. Roughness alone controls how BLURRY a reflection is, not how STRONG it is relative
+      // to diffuse — the two are independent PBR parameters, and only one was fixed. Force
+      // near-1.0 metalness for mirrors specifically (glass/other glossy classes keep their real
+      // metalness — this is mirror-only, gated by the same `isMirror` exclusivity as the rest of
+      // this fix).
+      if (isMirror) {
+        m.userData._photoOrigMetalness = m.metalness;
+        m.metalness = 0.95;
       }
       m.userData._photoBoosted = true;
       m.needsUpdate = true;
@@ -2901,6 +3107,9 @@ async function setupEffects(A, renderer, scene, camera) {
     })();
   }
   var _photoNightWasOn = false, _photoSkyWasVisible = false;
+  var _photoDuskMoodApplied = false;  // §PHOTO_SUN_SEPARATION: snapshot of A._photoDuskMood at
+                                       // staging time, so teardown restores exactly what staging
+                                       // actually did even if the flag changes mid-session.
   var _photoStagingOn = false;  // §PHOTO_DOUBLE_APPLY_GUARD — staging applied once per photo cycle
   A._photoStagingOn = false;    // public mirror — with Stage-2 auto-arm disabled (§AUTO_STAGE2_DISABLED)
                                 // soft-park is signalled by kept-alive staging alone, and main.js's
@@ -2969,12 +3178,28 @@ async function setupEffects(A, renderer, scene, camera) {
   var GROUND_WETNESS_STAGE_DEFAULT = 0.5;
   var _groundWetnessUserSet = false;
   A._groundWetnessOverride = 0;
+  // §VAC V2 / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): this setter logged
+  // unconditionally, including when it re-set the value it already held. Alt+S staging is torn
+  // down and rebuilt on EVERY bake frame, so MEASURED on s5_hospital.log it emitted 2,028
+  // firings of ONE distinct line — `value=0.5 userSet=false` — a state-change log reporting no
+  // state change. Routed through the shared _vacLog below so it gets the SAME run-length reporting
+  // (and the same bounded heartbeat) as the other repeated per-frame tags: a run of 2,028 identical
+  // NO-OP re-sets that never ends must still say how long it is, or the compression has dropped
+  // the signal instead of compressing it.
+  // Declared here, next to its only user, rather than beside the other §VAC state further down:
+  // `var` hoists but its ASSIGNMENT does not, so keeping it above the setter removes any
+  // ordering hazard if this setter is ever called earlier than it is today (it runs from
+  // _applyPhotoStaging, i.e. at Alt+S, long after setupEffects returns). `_vacLog` itself is a
+  // hoisted function declaration in this same scope, so it is callable from here regardless.
+  var _vacGroundWetness = { last: null, n: 0 };
   A._setGroundWetness = function(v, _isUserAction) {
     _wireGroundPuddleShader();  // safe no-op if already wired (Alt+S may have wired it first)
     A._groundWetnessOverride = Math.max(0, Math.min(1, v));
     if (_isUserAction !== false) _groundWetnessUserSet = true;  // default true — only the internal
     // staging auto-default call below passes false, so it never overrides a user's own choice
-    console.log('§GROUND_WETNESS_OVERRIDE value=' + A._groundWetnessOverride + ' userSet=' + _groundWetnessUserSet);
+    _vacLog(_vacGroundWetness,
+      '§GROUND_WETNESS_OVERRIDE value=' + A._groundWetnessOverride + ' userSet=' + _groundWetnessUserSet,
+      'NO-OP re-sets of the value already held — Alt+S staging rebuilds every frame');
     if (A.markDirty) A.markDirty();
   };
   function _wireGroundPuddleShader() {
@@ -3107,6 +3332,71 @@ async function setupEffects(A, renderer, scene, camera) {
     });
     return _hdriReadyPromise;
   }
+  // §MIRROR_ROOM_PROBE (2026-08-16, user: "what does it take for mirrors to truly reflect... you
+  // may try the single room-representative probe first"): glossy/metal materials only ever
+  // reflected the static sky/HDRI env map (A._envMap) — no local reflection of the actual scene
+  // existed anywhere (grepped: no CubeCamera/Reflector/WebGLCubeRenderTarget before this). One
+  // CubeCamera capture at a representative interior point — same "35% up from the lowest point"
+  // heuristic _cinemaPathPlan's own pivot already uses to land inside the building rather than at
+  // its exact geometric bbox centre (often void/roof) — 6 renders, ONE-TIME per staging session
+  // (this is a frozen still, not real-time navigation), used as envMap for the isGlossy set
+  // (_reassertPhotoMatBoost) in place of the sky.
+  //
+  // A per-element "real mirror" boost (name-keyword vocabulary, e.g. Clinic's own
+  // IfcFlowTerminal "M_Mirror:Mirror 600mm x 900mm" — IFC class is inconsistent, not a distinct
+  // mirror class) was ATTEMPTED and DROPPED, not shipped: A._matCache (what this whole boost/
+  // envmap system reads) only holds materials for INSTANCED/MERGED-tracked elements. Clinic's 22
+  // mirror elements render via the BATCHED path instead (confirmed live — the user's own pasted
+  // console log shows `§BATCHED_PICK batchId=2`), which shares ONE vertex-coloured material per
+  // batch and never registers a `color|class|discipline` entry in _matCache at all — so a
+  // per-element mirror boost has NOTHING to attach to for THIS class of element, regardless of how
+  // the guid lookup is written. Fixing that needs a batched-mesh-aware boost path, a materially
+  // bigger change than "try the room probe first" — named here, not built. Generic glossy/metal
+  // materials (pipes, railings, ducts) are NOT affected by this gap in the common case: they're
+  // typically large-count/merged/instanced and DO show up in A._matCache normally (verified live
+  // on Terminal's real pipe classes — see §MIRROR_ROOM_PROBE_PIPE_CHECK below).
+  // §MIRROR_ROOM_PROBE_REUSE (2026-08-16, real bug found+fixed via a headless bisection — dispose+
+  // rebuild every Alt+S cycle leaked +1 texture/cycle, compounding: measured C1/C2/C3 exit deltas
+  // 25,1,1. Isolating a bare `new WebGLCubeRenderTarget().dispose()` loop OUTSIDE the real staging
+  // pipeline showed NO growth (stable), so the leak is specific to disposing the RT while it's
+  // real staged materials' active envMap — most likely a material still holding the (about to be
+  // disposed) texture reference across a stray render triggers three.js to silently re-upload a
+  // fresh GL texture no code then tracks/disposes. Disabling just the build call made the leak
+  // disappear entirely (confirms the RT lifecycle, not the material-boost logic, is the cause).
+  // Fix: never dispose+rebuild on a normal Alt+S cycle — build ONCE, keep it alive, just re-render
+  // its 6 faces on each staging press (same "created once, reused across sessions" discipline this
+  // file already uses for A._camLight). Only disposed on a real building switch.
+  var _roomProbeRT = null, _roomProbeCam = null, _roomProbeBuilding = null;
+  function _buildRoomProbe() {
+    var bbox = _buildingBBoxIfc();
+    if (!bbox || !A.ifc2three || !A.renderer || !A.scene) return;
+    if (_roomProbeRT && _roomProbeBuilding !== A.activeBuilding) _disposeRoomProbe();
+    var lo = A.ifc2three(bbox.xMin, bbox.yMin, bbox.zMin);
+    var hi = A.ifc2three(bbox.xMax, bbox.yMax, bbox.zMax);
+    var pos = {
+      x: (lo.x + hi.x) / 2,
+      y: Math.min(lo.y, hi.y) + Math.abs(hi.y - lo.y) * 0.35,
+      z: (lo.z + hi.z) / 2
+    };
+    var envelope = Math.max(Math.abs(hi.x - lo.x), Math.abs(hi.z - lo.z), 50);
+    var isNew = !_roomProbeRT;
+    if (isNew) {
+      _roomProbeRT = new THREE.WebGLCubeRenderTarget(128);
+      _roomProbeCam = new THREE.CubeCamera(0.5, envelope * 3, _roomProbeRT);
+      _roomProbeBuilding = A.activeBuilding;
+    }
+    _roomProbeCam.position.set(pos.x, pos.y, pos.z);
+    _roomProbeCam.update(A.renderer, A.scene);
+    console.log('§MIRROR_ROOM_PROBE ' + (isNew ? 'built' : 'reused') + ' pos=(' + pos.x.toFixed(1) +
+      ',' + pos.y.toFixed(1) + ',' + pos.z.toFixed(1) + ') envelope=' + envelope.toFixed(1) + ' size=128');
+  }
+  function _disposeRoomProbe() {
+    if (!_roomProbeRT) return;
+    _roomProbeRT.dispose();
+    _roomProbeRT = null;
+    _roomProbeCam = null;
+    _roomProbeBuilding = null;
+  }
   function _applyPhotoStaging() {
     // §GROUND_WETNESS_REFIRE_FIX (2026-07-17, live user repro: worked once, then "cannot
     // replicate" on another building, back on the original — still couldn't, "but bit slightly"):
@@ -3140,10 +3430,16 @@ async function setupEffects(A, renderer, scene, camera) {
       A.ground.visible = true;
       A._calcGroundY();
       // §PHOTO_GROUND_LIT (user ask, "It is almost black"): was 'earth' + a dark 0x6a5238 tint —
-      // too dark once the evening exposure/ambient cuts also apply on top of it. Switched to the
-      // existing 'paved' texture (same real asset Shadow mode already uses — concrete look, per
-      // user's own suggestion) with a much brighter warm tint. Fancier grass+paved-rectangle
-      // pattern is a separate later experiment, not needed just to fix "too dark."
+      // too dark once the evening exposure/ambient cuts also apply on top of it. Switched to
+      // 'paved' (same real asset Shadow mode already uses — concrete look, per user's own
+      // suggestion) with a much brighter warm tint.
+      // §GROUND_EARTH_DEFAULT (2026-08-16, user: "more realistic even surface feel" — 'paved'
+      // carries concrete_floor_01's rectangular slab-joint relief, which is what the §GROUND_DETAIL
+      // normal map (#1388) was amplifying through lighting; 'earth' has no such hard rectangular
+      // structure). Back to 'earth' for the movie/still bake default — the ORIGINAL "too dark"
+      // complaint this section's own §GROUND_ALBEDO gain already fixed (earth's measured mean
+      // 0.1599 vs paved's 0.155 GROUND_TEX_AVG_LUM below — near-identical, so the same gain still
+      // lands at the same real-dry-ground target albedo, no recalibration needed).
       // §GROUND_ALBEDO (2026-07-28, user: "the Alt+S evening ground is too dark… albedo, try it") —
       // Witness: W-GROUND-ALBEDO. Set BEFORE _applyGroundTexture, because that function calls
       // _setGroundColor itself (with the remembered solid colour) as soon as the texture lands.
@@ -3152,7 +3448,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // for the A/B the user asked for: APP._photoGroundAlbedoGain = 1.0 (default look) / 2.3 / 3.5,
       // then Alt+S again. See tools.js §GROUND_ALBEDO for why a gain and not more fill light.
       A._groundAlbedoGain = A._photoGroundAlbedoGain;
-      A._applyGroundTexture('paved');
+      A._applyGroundTexture('earth');
       if (A._setGroundColor) A._setGroundColor(0xd9c39a);  // bright warm sunlit-concrete tone
       console.log('§GROUND_ALBEDO gain=' + A._groundAlbedoGain.toFixed(2) + ' texAvgLum=' +
         GROUND_TEX_AVG_LUM.toFixed(3) + ' effAlbedo=' + (GROUND_TEX_AVG_LUM * A._groundAlbedoGain).toFixed(3) +
@@ -3191,24 +3487,42 @@ async function setupEffects(A, renderer, scene, camera) {
       _photoSunPosSaved = A.sun.position.clone();
       _photoSunTargetSaved = A.sun.target.position.clone();
     }
-    if (A._sky && A.updateSky) { A._sky.visible = true; A.updateSky(PHOTO_SUN_ELEVATION, PHOTO_SUN_AZIMUTH); }
+    // §PHOTO_SUN_SEPARATION (2026-08-15, user: "Sun should be a separation of concern" — the sun's
+    // position/colour/intensity is no longer FORCED by staging by default. Alt+S used to always
+    // hard-reset the sun to a fixed 6°-elevation dusk (PHOTO_SUN_ELEVATION/PHOTO_SUN_AZIMUTH,
+    // still used by the Alt+C movie sun-arc — untouched, see §SUN_ARC above) on every press,
+    // regardless of whatever real time-of-day/sun position was already active — the
+    // saved/restored _photoSunPosSaved/_photoSunTargetSaved below is proof a real prior position
+    // always existed, it was just being thrown away. NEW DEFAULT: leave A.sun exactly where it
+    // already is (plain daylight look). User asked to keep the OLD dusk-mood look reachable for
+    // A/B comparison, not deleted — set `APP._photoDuskMood = true` before pressing Alt+S to get
+    // the old forced-dusk sun + reddish sky drama + amber night-glow package back; leave it
+    // false/unset (the default) for plain daylight. Toggle, re-press Alt+S, compare.
+    var _duskMood = !!A._photoDuskMood;
+    // §PHOTO_SUN_SEPARATION_FIX (2026-08-16): a direct A.sun.position->sunPosition uniform sync
+    // was attempted here to fix a sky/shadow mismatch, but shipped WITHOUT live verification and
+    // caused a real regression (sky rendered fully black in production) — REVERTED. The mismatch
+    // this was trying to fix is still real and still open; the fix needs to be re-derived and
+    // actually tested live before shipping again, not guessed at under time pressure. Do not
+    // re-add a raw position->uniform copy without checking what Sky.js's sunPosition uniform
+    // actually expects (scene.js's own updateSky() builds it via
+    // setFromSphericalCoords(1,...), not by normalizing A.sun.position — those may not be
+    // equivalent depending on whether A.sun.position carries any offset beyond a pure direction).
+    if (A._sky) { A._sky.visible = true; }
+    if (_duskMood && A.updateSky) { A.updateSky(PHOTO_SUN_ELEVATION, PHOTO_SUN_AZIMUTH); }
     // §PHOTO_SKY_DRAMA (user ask: "more dramatic sky... reddish clouds in the distance"): Preetham
-    // (Sky.js) is a clear-sky atmospheric-scattering model — it has no cloud geometry/texture at
-    // all, so literal cloud SHAPES aren't something this shader can produce (a separate textured-
-    // layer feature, not attempted here). What IS real and cheap: push the same uniforms scene.js
-    // sets once at startup (turbidity/rayleigh/mie) further for the photoshoot only, richer/more
-    // saturated toward the reddish end — scoped here, not touched globally, so normal daytime
-    // navigation is unaffected.
-    if (A._sky) {
+    // (Sky.js) is a clear-sky atmospheric-scattering model — push turbidity/rayleigh/mie further
+    // for the photoshoot only. Dusk-mood only — see §PHOTO_SUN_SEPARATION above.
+    if (_duskMood && A._sky) {
       var _su = A._sky.material.uniforms;
       _photoSkyUniSaved = {
         turbidity: _su['turbidity'].value, rayleigh: _su['rayleigh'].value,
         mieCoefficient: _su['mieCoefficient'].value, mieDirectionalG: _su['mieDirectionalG'].value
       };
-      _su['turbidity'].value = 8;         // more haze/color depth (was 4)
-      _su['rayleigh'].value = 3.2;        // richer red/orange scatter (was 2)
-      _su['mieCoefficient'].value = 0.012; // denser sun-glow bloom in the sky itself (was 0.005)
-      _su['mieDirectionalG'].value = 0.9;  // tighter forward-scatter, punchier horizon glow (was 0.8)
+      _su['turbidity'].value = 8;
+      _su['rayleigh'].value = 3.2;
+      _su['mieCoefficient'].value = 0.012;
+      _su['mieDirectionalG'].value = 0.9;
     }
     // §PHOTO_SUN_REFLECTION fix 2: keep the lensflare's own brightness independent of the
     // photoshoot's exposure cut (see comment above PHOTO_SUN_ELEVATION).
@@ -3228,21 +3542,45 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoEnvBoostedMats = [];
     _photoMatBoostActive = true;
     _reassertPhotoMatBoost();
-    _enablePhotoShadows();  // called AFTER updateSky — see note in _enablePhotoShadows
+    _enablePhotoShadows();  // real/current sun position (unless _duskMood) — see §PHOTO_SUN_SEPARATION
+    // §PHOTO_SUN_SEPARATION_FIX (2026-08-16, user: beam/railing went dark/no-sheen after the
+    // separation shipped — "we switched something else off?"). Root cause: toggleNightMode()
+    // isn't only a colour toggle, it also loads ~200 supplementary point lights (fixture glow) —
+    // real illumination that specular-lit beam/railing (envInt:0, so they get ZERO reflection
+    // contribution by design — see the earlier §HOSPITAL_BLUE_TINT fix — and were leaning on these
+    // point lights for their visible sheen). Dropping the whole toggle call to kill the WARM TINT
+    // also silently killed that illumination. Fix: split the two concerns apart. The point-light
+    // toggle + intensity/exposure restore run UNCONDITIONALLY (real illumination, not mood) — only
+    // the COLOUR override (the actual warm-dusk tint) stays dusk-mood-only.
     _photoNightWasOn = !!A._nightMode;
+    _photoDuskMoodApplied = _duskMood;  // teardown reads this snapshot, not the live flag
+    // §STAGED_PL_CUT — set BEFORE toggleNightMode builds the ~200 fixture point lights, so they
+    // are born at the cut intensity (the §NIGHT_STILL_LIGHTS boost branch alone was proven to not
+    // fire on this path — witness 2026-08-16). Reset unconditionally in _removePhotoStaging.
+    A._nightPLScale = A._nightPLScaleStill || 1;
     if (!_photoNightWasOn && A.toggleNightMode) {
-      A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow
-      if (A._nightSaved) {  // undo the moonlight override, but land on a deliberate warm evening
-                             // tint (§PHOTO_WARM_SUN) instead of plain neutral-daytime restore
+      A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow — real light sources
+      if (A._nightSaved) {  // always undo the moonlight override (dark intensities) — never mood
         A.sun.intensity = A._nightSaved.sunI * PHOTO_SUN_INTENSITY_SCALE;
-        A.sun.color.setHex(PHOTO_SUN_COLOR);
-        // §PHOTO_HEMI_FILL: boosted above the daytime baseline (not just restored to it) — see
-        // comment above PHOTO_HEMI_INTENSITY_SCALE for why the ground needs this specifically.
         A.ambient.intensity = A._nightSaved.ambI * PHOTO_AMBIENT_INTENSITY_SCALE;
-        A.ambient.color.setHex(PHOTO_AMBIENT_COLOR);
         A.hemi.intensity = A._nightSaved.hemiI * PHOTO_HEMI_INTENSITY_SCALE;
-        A.hemi.color.setHex(PHOTO_HEMI_SKY_COLOR);
         A.renderer.toneMappingExposure = A._nightSaved.exposure * PHOTO_EXPOSURE_SCALE * PHOTO_EXPOSURE_LIFT;
+        // Colour is the actual mood — warm dusk tint only with the flag on; real pre-toggle
+        // colours (not PHOTO_*_COLOR) otherwise, so plain-daylight stays plain-daylight-coloured.
+        if (_duskMood) {
+          A.sun.color.setHex(PHOTO_SUN_COLOR);
+          A.ambient.color.setHex(PHOTO_AMBIENT_COLOR);
+          A.hemi.color.setHex(PHOTO_HEMI_SKY_COLOR);
+        } else {
+          A.sun.color.setHex(A._nightSaved.sunColor);
+          A.ambient.color.setHex(A._nightSaved.ambColor);
+          A.hemi.color.setHex(A._nightSaved.hemiSky);
+        }
+        var _fill = A.ambient.intensity + A.hemi.intensity;
+        console.log('§MOVIE_SHADOW_TM sun=' + A.sun.intensity.toFixed(3) +
+          ' ambient=' + A.ambient.intensity.toFixed(3) + ' hemi=' + A.hemi.intensity.toFixed(3) +
+          ' fill=' + _fill.toFixed(3) + ' sunFillRatio=' + (_fill ? (A.sun.intensity / _fill).toFixed(3) : 'inf') +
+          ' (TM native ratio 2.155 — equal means the bake matches TM shadow strength)');
       }
     }
     // §PHOTO_FOG_ORDER_FIX (2026-07-16, RESUME BRIEF ADDENDUM item 2 — "sky/ground darkness, one
@@ -3290,6 +3628,22 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§CAM_LIGHT on intensity=' + CAM_LIGHT_INTENSITY + ' distance=' + CAM_LIGHT_DISTANCE +
       ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
     _showPhotoProps(true);
+    // §MIRROR_ROOM_PROBE: built LAST, after ground/lights/props are all in their staged state, so
+    // the capture reflects the real staged look. The FIRST _reassertPhotoMatBoost() call above (at
+    // the top of this function) already ran before this exists — those materials fall back to the
+    // sky env map for one tick, then upgrade to this probe on the next accumulation frame via
+    // _reassertPhotoEnvMap (which runs every tick regardless of the once-only boost flag).
+    // §MEP_SMOOTH_NORMALS — curved MEP reads faceted because the shipped normals are hard
+    // per-face on every class (§SHADE_PROBE: splitNormal 96-100%). Class-gated + crease-limited,
+    // rewriting normal VALUES in place only, so nothing downstream that reads the vertex layout is
+    // disturbed. Runs ONCE per staging, not per frame — idempotent, so a re-stage costs a no-op
+    // pass rather than a second smoothing.
+    if (!A._mepSmoothDone && A.mepSmoothNormals) { A.mepSmoothNormals(); A._mepSmoothDone = true; }
+    // §GLOW_BUILDUP_EARLY_OUT — re-armed per staging: a different building or a re-generated
+    // timeline has different fixture placement times, and a stale number would skip frames that
+    // should light.
+    _glowFirstMs = null; _glowSkipLogged = false; A._glowQuadZeroLogged = false;
+    _buildRoomProbe();
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
   function _teardownPhotoStaging() {
@@ -3302,7 +3656,17 @@ async function setupEffects(A, renderer, scene, camera) {
     // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
     if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
     A._envMapHdriActive = false;  // §ALT_FRAME_LUMINANCE: scene.js's throttled regen is safe again
-    if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();  // restores its own saved state
+    // §PHOTO_SUN_SEPARATION: only undo the night-mode force-on if THIS staging cycle actually
+    // applied dusk mood (snapshot, not the live flag — the user may have flipped it mid-session).
+    // §PHOTO_SUN_SEPARATION_FIX: night mode is force-toggled on UNCONDITIONALLY now (point lights
+    // are real illumination, not mood) — teardown must undo it unconditionally too, or it sticks
+    // on after every Alt+S exit outside dusk mode.
+    if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();
+    // §STAGED_PL_CUT — unconditional reset (the boost-branch reset alone was proven unreachable
+    // on this path); if night mode stays on (user had it on pre-staging), rebuild at nav intensity.
+    A._nightPLScale = 1.0;
+    if (_photoNightWasOn && typeof A._nightUpdateLights === 'function' && A._nightLights && A._nightLights.length) A._nightUpdateLights();
+    _photoDuskMoodApplied = false;
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     if (A.sun && _photoSunPosSaved) {
       A.sun.position.copy(_photoSunPosSaved);
@@ -3326,7 +3690,19 @@ async function setupEffects(A, renderer, scene, camera) {
         m.roughness = m.userData._photoOrigRoughness;
         delete m.userData._photoOrigRoughness;
       }
+      // §MIRROR_TRUE_REFLECT_METALNESS: undo the forced near-1.0 metalness, same restore
+      // discipline as roughness/envMapIntensity above.
+      if (m.userData._photoOrigMetalness !== undefined) {
+        m.metalness = m.userData._photoOrigMetalness;
+        delete m.userData._photoOrigMetalness;
+      }
       delete m.userData._photoBoosted;
+      // §MIRROR_ROOM_PROBE: drop back to the sky env map — same "restore what you borrowed" rule
+      // as everything else here. The probe's RT itself is DELIBERATELY NOT disposed here (see
+      // §MIRROR_ROOM_PROBE_REUSE above) — it stays alive, reused on the next Alt+S press, only
+      // freed by _buildRoomProbe() itself on a real building switch.
+      delete m.userData._photoRoomProbeEligible;
+      if (A._envMap) m.envMap = A._envMap;
       m.needsUpdate = true;
     });
     _photoEnvBoostedMats = [];
@@ -3355,7 +3731,23 @@ async function setupEffects(A, renderer, scene, camera) {
       _su2['mieDirectionalG'].value = _photoSkyUniSaved.mieDirectionalG;
       _photoSkyUniSaved = null;
     }
-    _showPhotoProps(false);
+    // §ALTS_MEM_HOG (2026-08-16, measured via headless probe — prompts/PHOTOREAL_STILL_RENDER.md
+    // ▶RESUME item 3): was `_showPhotoProps(false)`, which only sets .visible=false on
+    // _photoUplights/_photoSkyline/_photoSkylineLights and does nothing at all for _photoSparkles
+    // (they stay exactly as the last accumulation frame's sun-glint test left them — up to a few
+    // visibly ON in normal daylight nav). Neither path disposes anything — the whole photo-prop
+    // tree (up to ~30 PointLights, 40 skyline-box meshes, 1 window-sparkle Points cloud, ~24 glint
+    // sprites) stays allocated forever after a REAL Alt+S exit, only freed later by a building
+    // switch (_showPhotoProps(true)'s own rebuild guard). Measured on HHS_Office_Federated,
+    // headless: renderer.info after startStillRefine()->stopStillRefine(true,false) never returned
+    // to baseline — textures +22, geometries +52, programs +36, scene.children +42 net, all
+    // surviving the "real exit" path (this function only runs when keepStaging is NOT set — a
+    // camera-move soft-park skips it entirely, so this is never the reuse-for-perf case).
+    // _disposePhotoProps() is the exact function _showPhotoProps(true) already calls to rebuild on
+    // a building switch — reusing it here on real exit correctly frees the GPU resources AND fixes
+    // the stray-visible-sparkle bug, at the cost of a rebuild on the next Alt+S press (cheap: a
+    // handful of dbQuery calls + <50 objects, not the streaming-heavy path).
+    _disposePhotoProps();
     console.log('§PHOTO_STAGING off');
   }
   // §STILL_REFINE_FREEZE (2026-07-15, user-observed): on a real GPU, 16 samples finish in
@@ -3410,17 +3802,60 @@ async function setupEffects(A, renderer, scene, camera) {
   // OutputPass still runs last, so AO composites in linear light (gammaCorrection=false).
   var STILL_AO_ENABLED = true;
   var STILL_AO_FRAMES = 24;       // n8ao accumulates 1 AO sample-set per still frame; 24 ≈ converged
+  var STILL_TAA_FRAMES = 16;      // TAA accumulateIndex target — the other half of the still fold
+
+  // ══ §MAXQ_FRAME_BUDGET (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R10) ═══════════════════
+  // THESE TWO NUMBERS ARE THE BAKE CLOCK. Every exported MaxQ frame pays a full still fold:
+  // STILL_TAA_FRAMES + STILL_AO_FRAMES = 16 + 24 = 40 composer renders. MEASURED on Hospital
+  // (3,447 frames, perFrameMs=1989): §STILL_REFINE ~1,200 ms = 62% and §PHOTO_AO ~450 ms = 23% —
+  // 85% of the frame, and 137,880 composer renders for one film. Nothing else in the pipeline is
+  // worth touching for bake speed; the session record already says so in as many words.
+  //
+  // A BAKE and a STILL are not the same job. An Alt+S still is ONE frame a human studies, so it
+  // keeps the full 40. A bake is thousands of frames that flick past at 15 fps, where TAA and AO
+  // convergence past a point is invisible and simply costs hours. So the budget is overridable, and
+  // ONLY the bake overrides it — A._stillBudget is set by cinema_maxq around the frame loop and
+  // cleared on every exit path, so Alt+S is bit-for-bit unchanged.
+  //
+  // Read ONCE per fold into a local: a budget that changed mid-loop would split a single frame
+  // across two settings and make the film inconsistent frame to frame.
+  function _stillBudget() {
+    var b = A._stillBudget;
+    return { taa: (b && b.taa > 0) ? Math.round(b.taa) : STILL_TAA_FRAMES,
+             ao:  (b && b.ao  > 0) ? Math.round(b.ao)  : STILL_AO_FRAMES };
+  }
   // §PHOTO_AO_TUNE (2026-07-16, real-GPU A/B at STILL quality — PHOTO_AO_TUNE_r{8_i6,5_i4,3_i4,
-  // 1p5_i3}_2026-07-16.png, identical frozen pose/beauty, only AO varied): radius=8/intensity=6
-  // KEPT. The review's earlier "broad mottle / reads busy" verdict was measured over LIVE
-  // navigation, where every frame resets the AO accumulation (markDirty→firstFrame) and shows raw
-  // single-frame noise — at still quality the accumulation fully converges (24+ frames, frozen
-  // camera) and the same radius reads as clean depth: courtyard corners, roof openings, skyline
-  // masses, base contact. Smaller radii (3/1.5) are near-invisible at whole-building establishing
-  // distance — consistent with §GI_POC_RADIUS_TEST's original sub-pixel finding. Perf at still:
-  // r8 ≈ 30ms/frame, r3 ≈ 6.5ms/frame (RTX 4060, 1280x800) — both trivial for a one-shot still.
-  var STILL_AO_RADIUS = 8;
-  var STILL_AO_INTENSITY = 6;
+  // 1p5_i3}_2026-07-16.png, identical frozen pose/beauty, only AO varied): radius=8/intensity=6 was
+  // kept THEN — the earlier "broad mottle / reads busy" verdict it was compared against was
+  // measured over LIVE navigation (raw, unconverged single-frame AO), and at still quality the same
+  // radius read as clean contact shadow instead. Smaller radii (3/1.5) were near-invisible at
+  // whole-building establishing distance in that same test.
+  // §PHOTO_AO_DARK (2026-08-13, user live verdict: "Alt-G too dark... affecting Alt-S and movie" —
+  // full trace in prompts/PHOTOREAL_STILL_RENDER.md §PHOTO_AO_TUNING): the 2026-07-16 test compared
+  // this radius/intensity against a WORSE (raw-noise) baseline, at ONE lighting condition, and
+  // never against the darkness the user is now flagging directly, nor against §SUN_ARC's dusk
+  // sweep (shipped 2026-08-11, after this constant was set) which compounds AO darkening on the
+  // dim half of every Alt+C film. A live user verdict on "look" supersedes an old A/B per this
+  // project's standing rule (the look is the user's call) — first pass: radius 8→4, intensity 6→2.
+  // §PHOTO_AO_SCALE (2026-08-13, same-day follow-up, user: "far off well lighted, up close dark"):
+  // the flat retune above didn't fix this — it's a distance-scale problem, not overall strength. A
+  // FIXED WORLD-SPACE radius (metres) spans the whole visible wall up close but is a barely-visible
+  // contact band far away; no single metre value is right at both distances. Switched to n8ao's
+  // `screenSpaceRadius` mode (their README: aoRadius becomes SCREEN PIXELS, recommended 16-64, and
+  // the effective world radius self-scales with camera distance so the AO reads a consistent size
+  // on screen) — same change applied to the standalone Alt+G preview (effects_gi_poc.js).
+  // `distanceFalloff` (never set before — was n8ao's own default of 1) set to their documented 0.2
+  // for this mode. Denoise raised toward n8ao's own library defaults (aoSamples 8/16, denoiseSamples
+  // 4/12→8, denoiseRadius 6→12 below) to cut residual noise too — free here, this is an offline
+  // accumulate, not a real-time cost. First-pass pixel radius, like every other value here — verify
+  // live on the next round trip, not with a synthetic re-A/B.
+  // §PHOTO_AO_EDGE (2026-08-13, same-day 3rd round: user, after §PHOTO_AO_SCALE cleared the
+  // darkness, "completely no edge corner shadow"): intensity had been sitting at 2 (down from the
+  // original 6) since the first retune and was never revisited when the radius mechanism changed —
+  // too weak to read at all once the broad-area darkening was gone. One controlled step up, not
+  // back to 6. STILL_AO_RADIUS left unchanged — single-variable change, easy to read next round.
+  var STILL_AO_RADIUS = 32;       // pixels (screenSpaceRadius mode), not metres
+  var STILL_AO_INTENSITY = 4;
   var _stillAOPromise = null, _stillAORAF = null, _stillAODepthDirty = true;
   function _buildStillAO() {
     return Promise.all([
@@ -3438,11 +3873,25 @@ async function setupEffects(A, renderer, scene, camera) {
                                                   // compositer the first frame a transparent material streams in
       n8.configuration.gammaCorrection = false;   // OutputPass tone-maps after this pass — stay linear
       n8.configuration.accumulate = true;         // camera is frozen during the AO phase — refine, don't flicker
+      n8.configuration.screenSpaceRadius = true;  // §PHOTO_AO_SCALE: radius scales with camera distance
       n8.configuration.aoRadius = STILL_AO_RADIUS;
+      n8.configuration.distanceFalloff = 0.2;     // n8ao's documented value for screenSpaceRadius mode
       n8.configuration.intensity = STILL_AO_INTENSITY;
       n8.configuration.aoSamples = 8;
-      n8.configuration.denoiseSamples = 4;
-      n8.configuration.denoiseRadius = 6;
+      // §SUN_SHADOW_DROWNED (2026-08-13): user, watching a Clinic Alt+C bake, "the sun's cast
+      // shadow loses its corner where it meets roof beams" at the sun-arc's high-elevation start —
+      // then, after ruling out shadow-map/indoor-outdoor causes: "the new alt-G noise adding to
+      // alt-S during daytime... drowns out the shadows" and confirmed via code read that Alt+G
+      // (effects_gi_poc.js) never got #1331's denoise bump — it is STILL denoiseSamples=4/
+      // denoiseRadius=6 there (n8ao's own "moving camera gets noise cancellation from motion for
+      // free" case), only Alt+S/Alt+C's static 24-frame converge got doubled to 8/12. Witnessed:
+      // reverting to Alt+G's 6 alone measured +9.9% contrast at a real Clinic exterior beam-foot
+      // shadow junction (123.75->135.97, prompts/PHOTOREAL_STILL_RENDER.md §SUN_SHADOW_DROWNED).
+      // User's own call: not a full revert (risks reintroducing the pre-#1331 dark/noisy-indoors
+      // complaint that #1331 shipped to fix) — "ever so slight" step up from Alt+G's 6/4, not a
+      // midpoint. 4->5, 6->7: visibly closer to Alt+G's baseline than to the current 8/12.
+      n8.configuration.denoiseSamples = 5;
+      n8.configuration.denoiseRadius = 7;
       n8.configuration.halfRes = false;           // still-frame quality
       n8.renderToScreen = false;
       var copyMat = new THREE.ShaderMaterial({
@@ -3452,11 +3901,143 @@ async function setupEffects(A, renderer, scene, camera) {
         depthTest: false, depthWrite: false, blending: THREE.NoBlending
       });
       var copyQuad = new passMod.FullScreenQuad(copyMat);
+
+      // §SUN_SHADOW_RESTORE (2026-08-14, prompts/PHOTOREAL_STILL_RENDER.md §SUN_SHADOW_DROWNED):
+      // N8AO's denoiseRadius=7 blur (untouched — user ruling "denoise is already perfect, don't
+      // disturb it") smears the composited image across the sun-cast shadow's boundary the same as
+      // it legitimately smooths ordinary AO contact-shadow noise elsewhere. The frozen pre-AO TAA
+      // beauty (readBuffer) still has that boundary crisp — it is never destroyed by this adapter
+      // (see the §PHOTO_AO comment trail above). Fix: reconstruct world position per-pixel from
+      // n8's own depth texture (already computed, camera frozen so it's stable for all
+      // STILL_AO_FRAMES) + camera inverse-projection/view, transform into A.sun.shadow.camera's
+      // clip space via A.sun.shadow.matrix (three.js's own light-space transform, computed once at
+      // staging — untouched), and sample A.sun.shadow.map.texture the same way three.js's own basic
+      // (non-PCF) getShadow() shader chunk does — mirrored from
+      // viewer/lib/three.module.min.js's `shadowmap_pars_fragment` ShaderChunk, not hand-derived:
+      // `shadowCoord.z += shadowBias; shadow = step(shadowCoord.z, texture2D(shadowMap,
+      // shadowCoord.xy).r)`. A screen-space neighbor tap on this raw, unblurred shadow term (not
+      // the AO term) finds where it changes sharply — the true sun-shadow BOUNDARY, not its
+      // interior and not an ordinary AO contact crease (those never touch A.sun.shadow.matrix's
+      // frustum test at all, so they read a uniform, edge-free shadow term and get zero mask). That
+      // mask blends the AO-composited color back toward the pre-AO sharp color, restoring edge
+      // sharpness. N8AOPass itself is redirected to render into a scratch target (aoScratchRT)
+      // instead of the real writeBuffer ONLY when this restore path is live, so the mask/blend
+      // shader can write directly into writeBuffer with no read/write feedback loop and no extra
+      // copy pass — one new full-screen shader draw total, only during the AO-converge frames.
+      var STILL_SHADOW_RESTORE_ENABLED = true;
+      var STILL_SHADOW_RESTORE_KERNEL_PX = 4;   // screen-space neighbor-tap radius, texels — wide
+                                                 // enough to counter denoiseRadius=7's blur footprint
+                                                 // at NORMAL sun incidence. §SUN_SHADOW_GRAZE_SCALE
+                                                 // below widens this per-pixel when the sun grazes
+                                                 // the surface (low N.L) — see kScale in the shader.
+      var STILL_SHADOW_RESTORE_STRENGTH = 1.0;  // 1.0 = fully restore sharp color at a detected edge
+      var STILL_SHADOW_RESTORE_KERNEL_MAX_SCALE = 4.0;  // cap on how far kScale can widen kernelPx —
+                                                 // bounds worst-case tap cost (8 taps * this factor)
+                                                 // and keeps the mask from smearing across unrelated
+                                                 // geometry at near-90 deg grazing incidence
+      var shadowRestoreMat = null, shadowRestoreQuad = null, aoScratchRT = null;
+      if (STILL_SHADOW_RESTORE_ENABLED) {
+        var _srFrag = [
+          'uniform sampler2D tAO;',
+          'uniform sampler2D tSharp;',
+          'uniform sampler2D tDepth;',
+          'uniform sampler2D tShadowMap;',
+          'uniform mat4 shadowMatrix;',
+          'uniform mat4 projectionMatrixInv;',
+          'uniform mat4 viewMatrixInv;',
+          'uniform vec2 resolution;',
+          'uniform float shadowBias;',
+          'uniform float strength;',
+          'uniform float kernelPx;',
+          'uniform float kernelMaxScale;',
+          'uniform vec3 sunDir;',   // world-space direction FROM the surface TOWARD the sun
+          'varying vec2 vUv;',
+          // Mirrors three.js shadowmap_pars_fragment's basic (non-PCF) getShadow(): world pos from
+          // depth, into light clip space via shadowMatrix, compare against the shadow map depth.
+          'float shadowAt(vec2 uv) {',
+          '  float d = texture2D(tDepth, uv).r;',
+          '  if (d >= 1.0) return 1.0;',                       // sky/background — never a shadow edge
+          '  vec4 ndc = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);',
+          '  vec4 viewPos = projectionMatrixInv * ndc; viewPos /= viewPos.w;',
+          '  vec4 worldPos = viewMatrixInv * viewPos;',
+          '  vec4 sc = shadowMatrix * worldPos; sc.xyz /= sc.w;',
+          '  if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;',
+          '  sc.z += shadowBias;',
+          '  return step(sc.z, texture2D(tShadowMap, sc.xy).r);',
+          '}',
+          'vec3 worldPosAt(vec2 uv) {',
+          '  float d = texture2D(tDepth, uv).r;',
+          '  vec4 ndc = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);',
+          '  vec4 viewPos = projectionMatrixInv * ndc; viewPos /= viewPos.w;',
+          '  return (viewMatrixInv * viewPos).xyz;',
+          '}',
+          'void main() {',
+          '  float sC = shadowAt(vUv);',
+          // §SUN_SHADOW_GRAZE_SCALE (2026-08-14): kernelPx=4 was tuned against a near-face-on wall
+          // boundary — a horizontal slab lit at low sun elevation has the SAME world-space shadow-map
+          // texel width, but the light hits it at near-grazing incidence (low N.L), which is where
+          // §PHOTO_SHADOW_BIAS already widens worldBias to ~2m to avoid acne (grazeElev-scaled, see
+          // _reassertPhotoShadowCoverage). The restore kernel had no equivalent scaling — it stayed a
+          // flat 4px everywhere, so it under-searches exactly where the boundary is widest. Reconstruct
+          // a screen-space normal via derivatives of the depth-reconstructed world position (no extra
+          // normal buffer needed — cheap, and correct per-PIXEL, unlike a single per-frame sun-elevation
+          // scalar: a wall and a slab can both be in frame at the same elevation with very different N.L).
+          '  vec3 wp0 = worldPosAt(vUv);',
+          '  vec3 nrm = normalize(cross(dFdx(wp0), dFdy(wp0)));',
+          '  float NdotL = abs(dot(nrm, normalize(sunDir)));',
+          '  float kScale = clamp(1.0 / max(NdotL, 1.0 / kernelMaxScale), 1.0, kernelMaxScale);',
+          '  vec2 o = (1.0 / resolution) * kernelPx * kScale;',
+          '  float edge = 0.0;',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2( o.x, 0.0))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(-o.x, 0.0))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(0.0,  o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(0.0, -o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2( o.x,  o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(-o.x,  o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2( o.x, -o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(-o.x, -o.y))));',
+          '  vec4 aoColor = texture2D(tAO, vUv);',
+          '  vec4 sharpColor = texture2D(tSharp, vUv);',
+          '  gl_FragColor = mix(aoColor, sharpColor, edge * strength);',
+          '}'
+        ].join('\n');
+        shadowRestoreMat = new THREE.ShaderMaterial({
+          uniforms: {
+            tAO: { value: null }, tSharp: { value: null }, tDepth: { value: null },
+            tShadowMap: { value: null },
+            shadowMatrix: { value: new THREE.Matrix4() },
+            projectionMatrixInv: { value: new THREE.Matrix4() },
+            viewMatrixInv: { value: new THREE.Matrix4() },
+            resolution: { value: new THREE.Vector2(rt.width, rt.height) },
+            shadowBias: { value: 0 },
+            strength: { value: STILL_SHADOW_RESTORE_STRENGTH },
+            kernelPx: { value: STILL_SHADOW_RESTORE_KERNEL_PX },
+            kernelMaxScale: { value: STILL_SHADOW_RESTORE_KERNEL_MAX_SCALE },
+            sunDir: { value: new THREE.Vector3(0, 1, 0) }
+          },
+          vertexShader: copyMod.CopyShader.vertexShader,  // same uv-passthrough as copyMat above
+          fragmentShader: _srFrag,
+          depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+          extensions: { derivatives: true }  // dFdx/dFdy for §SUN_SHADOW_GRAZE_SCALE's screen-space normal
+        });
+        shadowRestoreQuad = new passMod.FullScreenQuad(shadowRestoreMat);
+        aoScratchRT = new THREE.WebGLRenderTarget(rt.width, rt.height,
+          { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
+        console.log('§SUN_SHADOW_RESTORE_INIT_OK kernelPx=' + STILL_SHADOW_RESTORE_KERNEL_PX +
+          ' strength=' + STILL_SHADOW_RESTORE_STRENGTH + ' kernelMaxScale=' + STILL_SHADOW_RESTORE_KERNEL_MAX_SCALE +
+          ' (§SUN_SHADOW_GRAZE_SCALE — kernel now widens per-pixel at grazing sun incidence)');
+      }
+
       var adapter = {
         enabled: false,        // §PHOTO_AO_GATE: disabled = EffectComposer skips it entirely — the
                                // zero-cost-when-off discipline everything else in this file follows
         needsSwap: true, clear: false, renderToScreen: false,
-        setSize: function(w, h) { n8.setSize(w, h); _stillAODepthDirty = true; },
+        setSize: function(w, h) {
+          n8.setSize(w, h);
+          _stillAODepthDirty = true;
+          if (aoScratchRT) aoScratchRT.setSize(w, h);
+          if (shadowRestoreMat) shadowRestoreMat.uniforms.resolution.value.set(w, h);
+        },
         render: function(renderer2, writeBuffer, readBuffer) {
           if (_stillAODepthDirty) {
             // Depth prime: ONE real scene render into n8ao's beauty target — we need its DEPTH
@@ -3478,12 +4059,46 @@ async function setupEffects(A, renderer, scene, camera) {
           copyQuad.render(renderer2);
           renderer2.autoClear = oldAutoClear;
           n8.renderToScreen = false;
-          n8.render(renderer2, writeBuffer, readBuffer);
+          // §SUN_SHADOW_RESTORE: only reroute N8AO's output into the scratch target (and pay for
+          // the extra mask/blend pass) when a real sun shadow is actually available to restore —
+          // otherwise this is byte-identical to the pre-existing n8.render(..., writeBuffer, ...).
+          // A._sunShadowRestoreEnabled is a live, runtime-toggleable override (default true) — same
+          // shape as A._shadowOn etc — so a same-session witness A/B can flip it after AO has
+          // already converged (n8's own accumulation is untouched by this pass's output routing)
+          // without needing two separate page loads / two separate builds.
+          var canRestore = STILL_SHADOW_RESTORE_ENABLED && A._sunShadowRestoreEnabled !== false &&
+            shadowRestoreMat && A.sun && A.sun.castShadow && A.sun.shadow && A.sun.shadow.map;
+          if (canRestore) {
+            n8.render(renderer2, aoScratchRT, readBuffer);
+            var u = shadowRestoreMat.uniforms;
+            u.tAO.value = aoScratchRT.texture;
+            u.tSharp.value = readBuffer.texture;
+            u.tDepth.value = n8.beautyRenderTarget.depthTexture;
+            u.tShadowMap.value = A.sun.shadow.map.texture;
+            u.shadowMatrix.value.copy(A.sun.shadow.matrix);
+            u.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
+            u.viewMatrixInv.value.copy(camera.matrixWorld);
+            u.shadowBias.value = A.sun.shadow.bias;
+            // §SUN_SHADOW_GRAZE_SCALE: direction FROM the scene TOWARD the sun, world-space — the
+            // shader takes abs(dot(surfaceNormal, this)), so the sign convention doesn't matter,
+            // only the axis. Recomputed every frame since §SUN_ARC_STEP moves the sun during a bake.
+            var _sunTx = A.sun.target ? A.sun.target.position.x : 0;
+            var _sunTy = A.sun.target ? A.sun.target.position.y : 0;
+            var _sunTz = A.sun.target ? A.sun.target.position.z : 0;
+            u.sunDir.value.set(A.sun.position.x - _sunTx, A.sun.position.y - _sunTy,
+              A.sun.position.z - _sunTz).normalize();
+            renderer2.setRenderTarget(writeBuffer);
+            shadowRestoreQuad.render(renderer2);
+          } else {
+            n8.render(renderer2, writeBuffer, readBuffer);
+          }
         }
       };
       A._composer.insertPass(adapter, 1);  // directly after the TAA pass, before (disabled) SSAO/Outline + OutputPass
       A._stillAOPass = n8;                 // diagnostics/tests — closure state is otherwise invisible
       A._stillAOAdapter = adapter;
+      A._shadowRestoreMat = shadowRestoreMat;  // §SUN_SHADOW_RESTORE diagnostics/witness
+      if (A._sunShadowRestoreEnabled === undefined) A._sunShadowRestoreEnabled = true;
       // §PHOTO_AO_STREAM re-assert (same landmine as §GI_POC_STALE_FIX): anything that changes the
       // scene while the still is frozen-with-AO (streaming, xray, selection) goes through
       // A.markDirty — chain onto it (effects_gi_poc.js wraps it the same way; the wraps compose)
@@ -3530,8 +4145,10 @@ async function setupEffects(A, renderer, scene, camera) {
       ao.pass.firstFrame();
       ao.adapter.enabled = true;
       var sig = _camSig(), f = 0, renderMs = 0;
-      console.log('§PHOTO_AO start frames=' + STILL_AO_FRAMES + ' radius=' + STILL_AO_RADIUS +
-        ' intensity=' + STILL_AO_INTENSITY + ' (still-only fold — Alt+G untouched)');
+      var _aoFrames = _stillBudget().ao;    // §MAXQ_FRAME_BUDGET — read once, cannot split this fold
+      console.log('§PHOTO_AO start frames=' + _aoFrames + ' radius=' + STILL_AO_RADIUS +
+        ' intensity=' + STILL_AO_INTENSITY + ' denoiseRadius=' + ao.pass.configuration.denoiseRadius +
+        ' denoiseSamples=' + ao.pass.configuration.denoiseSamples + ' (still-only fold — Alt+G untouched)');
       (function stepAO() {
         _stillAORAF = null;
         if (!A._stillRefineActive || !ao.adapter.enabled) return;  // torn down mid-phase
@@ -3542,7 +4159,7 @@ async function setupEffects(A, renderer, scene, camera) {
         A._composer.render();
         renderMs += performance.now() - r0;
         f++;
-        if (f >= STILL_AO_FRAMES) {
+        if (f >= _aoFrames) {
           console.log('§PHOTO_AO done frames=' + f + ' totalMs=' + Math.round(performance.now() - t0) +
             ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' (frozen with AO — stays until interaction)');
           A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY: real completion — icon drops "processing"
@@ -3552,9 +4169,41 @@ async function setupEffects(A, renderer, scene, camera) {
       })();
     });
   }
+  // §VAC V2 / §R14.1 — run-length state for the per-frame still-fold tags. A MaxQ bake tears the
+  // staging down and rebuilds it on every frame, so each of these lines fired 1,700-2,000 times
+  // per bake with an identical verdict. The verdicts are all still emitted; a run is emitted once
+  // with its repeat count, which is the same information in ~three orders of magnitude less log.
+  var _vacGlowLens = { last: null, n: 0 };
+  var _vacNightLights = { last: null, n: 0 };
+  var _vacGlowSpriteStage = { last: null, n: 0 };
+  var _vacGlowSpriteOff = { last: null, n: 0 };
+  function _vacLog(st, line, note) {
+    if (line !== st.last) {
+      if (st.n > 0) console.log(st.last.split(' ')[0] + ' repeats=' + st.n + ' (identical, suppressed' + (st.note ? ' — ' + st.note : '') + ')');
+      console.log(line);
+      st.last = line; st.n = 0; st.note = note;
+    } else {
+      st.n++;
+      // Bounded heartbeat — a run that never ends (the bake exits mid-run) must still prove the
+      // code is running and say how long the run is. §VAC V2: compress, never drop.
+      if (st.n % 250 === 0) console.log(line.split(' ')[0] + ' still identical — repeats=' + st.n + (note ? ' (' + note + ')' : ''));
+    }
+  }
+  // §VAC V2 — flush any open run at a REAL still exit, so the last run is never lost to the end of
+  // the log. Called from _teardownStillRefine's !keepStaging branch (a bake-frame cancel passes
+  // keepStaging=true and must NOT flush — that is the middle of a run, not the end of one).
+  function _vacFlushStillTags() {
+    var _all = [_vacGlowLens, _vacNightLights, _vacGlowSpriteStage, _vacGlowSpriteOff, _vacGroundWetness];
+    for (var _vi = 0; _vi < _all.length; _vi++) {
+      var st = _all[_vi];
+      if (st.n > 0 && st.last) console.log(st.last.split(' ')[0] + ' repeats=' + st.n + ' (identical, suppressed — flushed at still exit)');
+      st.last = null; st.n = 0;
+    }
+  }
   function _teardownStillRefine(reason, keepStaging) {
     A._stillRefineActive = false;
     A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY safety net — any exit path clears "processing"
+    if (!keepStaging) _vacFlushStillTags();   // §VAC V2 — end of a real still, close any open run
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
     _stopStillAOPhase(reason);  // §PHOTO_AO: disable the still-only AO pass on ANY exit path
@@ -3564,8 +4213,23 @@ async function setupEffects(A, renderer, scene, camera) {
     // emissive left on would follow the user back into navigation.
     if (A._bloomPass) A._bloomPass.enabled = false;
     _emberOff();
-    // §GLOW_LENS_QUAD: the fitted lens quad is still-only — always tear it down here.
-    _glowLensOff();
+    // §GLOW_LENS_QUAD: still-only content — always tear down on a REAL exit (!keepStaging). A
+    // bake-frame cancel (keepStaging=true) skips the dispose+rebuild when something is already
+    // staged AND the TM-visible fixture count is unchanged since the last stage — unlike the round
+    // sprite (camera-dependent eye-offset) and §NIGHT_STILL_LIGHTS (camera-frustum-dependent), the
+    // quad's geometry (position/size/yaw) is built ONLY from fixture world data + the TM-visibility
+    // gate, never from A.camera — an unchanged visible set means an unchanged quad, byte-identical
+    // to what is already staged. §R10, CPE_4D_PERF_MEM_FINDINGS.md §7.
+    // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 1,740 of this tag's 1,770 firings were the
+    // identical `skip (count unchanged 1273)`. The guard is CORRECT and is not being changed; it
+    // just said so 1,740 times. Run-length reported now.
+    if (keepStaging && (_glowLensMeshRect || _glowLensMeshRound) &&
+        _glowVisibleFixtureCount(A._tmIsVisible) === _glowLensStagedCount) {
+      _vacLog(_vacGlowLens, '§GLOW_LENS_QUAD skip (count unchanged ' + _glowLensStagedCount + ')',
+        'the stage-keep guard held; no dispose+rebuild');
+    } else {
+      _glowLensOff();
+    }
     // §GLOW_SPRITE_NAV_OFF (2026-08-07): the round sprite no longer restages for nav — live
     // navigation runs on the real point lights only now (see tools.js toggleNightMode). Still
     // torn down unconditionally so it can never survive into navigation.
@@ -3577,6 +4241,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._nightMaxLights !== A._nightMaxLightsNav && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsNav;
       A._nightNearFadeFloor = 0.3;
+      A._nightPLScale = 1.0;   // §STAGED_PL_CUT — nav Night Mode back to full tuned intensity
       if (A._nightLights && A._nightLights.length) A._nightUpdateLights();
     }
     // §PHOTO_SSGI: same rule — a fold-engaged SSGI must not outlive the still (a pre-existing
@@ -3805,6 +4470,43 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._tmOverlayRegister) A._tmOverlayRegister();   // idempotent — ensures window.__tmOverlaySync exists even without a billboard nameplate
     var allPos = A._nightFixtureWorldPositions();
     if (!allPos || !allPos.length) { console.log('§PHOTO_GLOW_SPRITE no luminaires in this building — nothing to light'); return; }
+    // ══ §GLOW_BUILDUP_EARLY_OUT (2026-08-30) — MEASURED on the user's live Hospital bake ═════════
+    // Every frame logged "§PHOTO_GLOW_SPRITE_GATE 0/1274 fixtures placed yet — nothing to light",
+    // then "§GLOW_LENS_QUAD staged rect=0 round=0 … 0 draw call(s)". Across 3,447 frames that is
+    // 3,447 x 1,274 = ~4.4 MILLION _tmIsVisible() calls plus the staging that follows, to produce
+    // nothing at all — light fixtures are MEP Final, so they are unplaced for most of a buildup.
+    //
+    // The gate is EXACT, not a heuristic: tmGuidEndTs() gives each element's placement timestamp,
+    // so the earliest fixture placement is a single number. Before that cursor NO fixture can be
+    // visible, and the filter below cannot return anything. Computed once per staging, compared
+    // once per frame. If the map is unavailable the old path runs unchanged — no regression.
+    if (_glowFirstMs === null && typeof window.tmGuidEndTs === 'function') {
+      try {
+        var _ends = window.tmGuidEndTs(), _fm = Infinity, _gi;
+        if (_ends) {
+          for (_gi = 0; _gi < allPos.length; _gi++) {
+            var _g = allPos[_gi].__guid;
+            if (_g == null) { _fm = -Infinity; break; }   // synthetic fallback fixture: always lit
+            var _e = _ends[_g];
+            if (_e != null && _e < _fm) _fm = _e;
+          }
+        }
+        _glowFirstMs = isFinite(_fm) ? _fm : (_fm === -Infinity ? -Infinity : undefined);
+        console.log('§GLOW_BUILDUP_EARLY_OUT armed firstFixtureMs=' +
+          (_glowFirstMs === -Infinity ? 'always-lit(synthetic)' : _glowFirstMs) +
+          ' fixtures=' + allPos.length + ' — frames before this skip the whole gate');
+      } catch (e) { _glowFirstMs = undefined; }
+    }
+    if (_glowFirstMs != null && _glowFirstMs !== -Infinity && typeof window.tmGetState === 'function') {
+      var _tms = window.tmGetState();
+      if (_tms && _tms.active && _tms.cursor < _glowFirstMs) {
+        if (!_glowSkipLogged) { _glowSkipLogged = true;
+          console.log('§GLOW_BUILDUP_EARLY_OUT skipping — cursor is before the first fixture placement; ' +
+            'logged once, not once per frame'); }
+        _glowStagedCount = 0;
+        return;
+      }
+    }
     // §GLOW_BUILDUP_GATE (2026-08-07, user: MaxQ buildup bakes showed every fixture lit from
     // Day 1 — "all the lights are lighted and not following the buildup schedule"). A fixture with
     // no guid (the synthetic per-storey fallback — no real element to gate against) always glows;
@@ -3885,7 +4587,13 @@ async function setupEffects(A, renderer, scene, camera) {
     _glowPoints.renderOrder = 999;       // after opaque geometry, so additive lands on a finished frame
     _glowPoints.name = '__glowSprites';
     A.scene.add(_glowPoints);
-    console.log('§PHOTO_GLOW_SPRITE staged ' + pos.length + '/' + allPos.length + ' sprites (' + (pos.length - exits) +
+    // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 1,730 `staged` lines paired with 1,730
+    // `removed`, but only ELEVEN distinct count-runs across the whole film
+    // (57→9→19→21→24→26→35→36→46→55→57). ⚠ The WORK is not redundant and is NOT being changed:
+    // sprite positions carry a camera-dependent GLOW_EYE_OFFSET nudge (see the k = GLOW_EYE_OFFSET
+    // / d line above), which is exactly why §GLOW_LENS_QUAD earned a stage-keep guard and this did
+    // not. The defect is the log, not the rebuild — so the line is run-length reported, not gated.
+    _vacLog(_vacGlowSpriteStage, '§PHOTO_GLOW_SPRITE staged ' + pos.length + '/' + allPos.length + ' sprites (' + (pos.length - exits) +
       ' luminaires gain ' + GLOW_GAIN + ', ' + exits + ' exit signs gain ' + GLOW_EXIT_GAIN +
       ' x' + GLOW_EXIT_SIZE + ' size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose)' +
       ', 1 draw call, 0 scene materials touched' +
@@ -3900,7 +4608,8 @@ async function setupEffects(A, renderer, scene, camera) {
     A.scene.remove(_glowPoints);
     _glowPoints.geometry.dispose();
     _glowPoints.material.dispose();
-    console.log('§PHOTO_GLOW_SPRITE removed ' + n + ' sprites');
+    _vacLog(_vacGlowSpriteOff, '§PHOTO_GLOW_SPRITE removed ' + n + ' sprites',
+      'the per-frame teardown half of the staged/removed pair — see §VAC V2 at the staged line');
     _glowPoints = null;
   }
   A._glowSpriteCount = function() {
@@ -3917,14 +4626,21 @@ async function setupEffects(A, renderer, scene, camera) {
   // placed fixtures grows tick by tick — rebuild the (small, ≤~1200-point) cloud only when that
   // count actually changes, not on every tick. isVisible === null (TM inactive) always matches
   // "everything" and is a no-op restage the first time it's seen after a buildup ends.
+  // §R10 (CPE_4D_PERF_MEM_FINDINGS.md §7): shared with the lens quad's own bake-frame skip-gate
+  // below — same predicate, one owner, so the two mechanisms can never disagree on "how many
+  // fixtures are visible right now."
+  function _glowVisibleFixtureCount(isVisible) {
+    var allPos = A._nightFixtureWorldPositions ? A._nightFixtureWorldPositions() : [];
+    var n = 0;
+    for (var _gi = 0; _gi < allPos.length; _gi++) {
+      if (allPos[_gi].__guid == null || !isVisible || isVisible(allPos[_gi].__guid)) n++;
+    }
+    return n;
+  }
   if (typeof A._tmVisSubscribe === 'function') {
     A._tmVisSubscribe(function(isVisible) {
       if (!_glowPoints || !A._nightMode) return;
-      var allPos = A._nightFixtureWorldPositions ? A._nightFixtureWorldPositions() : [];
-      var n = 0;
-      for (var _gi = 0; _gi < allPos.length; _gi++) {
-        if (allPos[_gi].__guid == null || !isVisible || isVisible(allPos[_gi].__guid)) n++;
-      }
+      var n = _glowVisibleFixtureCount(isVisible);
       if (n === _glowStagedCount) return;
       _glowOff();
       _glowOn();
@@ -3948,9 +4664,41 @@ async function setupEffects(A, renderer, scene, camera) {
   // Simplification, stated not hidden: only rotation_z (yaw about vertical) is applied. Fixtures in
   // the five shipped buildings are ceiling/wall-mounted flat panels — rotation_x/y would matter for
   // a tilted spotlight, which none of the current luminaire vocabulary matches.
-  var _glowLensMesh = null;
+  // §GLOW_LENS_SOFT_EDGE (2026-08-13, user: "clumsy fitting" on the hard-edged quad, then "can
+  // glowTexture but nor overdo like before too bally" — i.e. soften it, but don't regress to the
+  // round/ball look the quad specifically replaced). A plain BLURRED RADIAL texture (like the
+  // round sprite's own _glowTexture()) would read as a circle again once composited over a
+  // rectangle, which is exactly the "bally" look to avoid. This is a feathered RECTANGLE instead:
+  // flat/opaque across the centre, fading to transparent only in a thin border margin — keeps the
+  // fitted rectangular silhouette (the whole point of §GLOW_LENS_QUAD) while losing the hard edge.
+  var _glowLensTex = null;
+  function _glowLensTexture() {
+    if (_glowLensTex) return _glowLensTex;
+    var S = 128, c = document.createElement('canvas');
+    c.width = c.height = S;
+    var g = c.getContext('2d');
+    var inset = S * 0.17;   // feather margin — centre ~66% of each axis stays fully opaque
+    g.filter = 'blur(' + Math.round(S * 0.09) + 'px)';
+    g.fillStyle = '#ffffff';
+    g.fillRect(inset, inset, S - inset * 2, S - inset * 2);
+    _glowLensTex = new THREE.CanvasTexture(c);
+    return _glowLensTex;
+  }
+  // §GLOW_LENS_SHAPE_FIT (2026-08-13, user: "can't it detect if it is gap from the light shape?
+  // And fit ie round bottom where appeared?"): bbox_x/bbox_y are already extracted, real,
+  // per-fixture data (used for sizing above) — their ASPECT RATIO is a real geometric signal, not
+  // a guess: an elongated bbox (troffer/strip) reads as rectangular, a near-square bbox is the
+  // shape a round downlight's AABB also produces (a true circle's bbox is a square). Below this
+  // threshold, use the round soft texture (reusing _glowTexture(), the round sprite's own — no new
+  // asset); at/above it, use the feathered-rectangle texture. Can't distinguish a genuinely square
+  // FIXTURE from a round one by bbox alone (both bound to a square) — stated limitation, not
+  // hidden; no better shape signal is extracted today, and this is still a real, data-driven split
+  // rather than a single one-size-fits-all shape.
+  var GLOW_LENS_ROUND_ASPECT = 1.25;
+  var _glowLensMeshRect = null, _glowLensMeshRound = null;
+  var _glowLensStagedCount = -1;   // §R10 — fixture count the CURRENT quads were built with
   function _glowLensOn() {
-    if (_glowLensMesh) return;
+    if (_glowLensMeshRect || _glowLensMeshRound) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
     var pos = A._nightFixtureWorldPositions();
     if (!pos || !pos.length) return;
@@ -3960,16 +4708,26 @@ async function setupEffects(A, renderer, scene, camera) {
     // startStillRefine) staged every fixture's quad from frame 1, ignoring the 4D schedule. Same
     // predicate, same guid-null passthrough for the synthetic per-storey/tier-3 fallback.
     pos = pos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
+    // §R10 — recorded BEFORE the zero-check, same placement _glowStagedCount uses above, so a
+    // teardown-time comparison sees "0 visible" as a real, stable count rather than "unset".
+    _glowLensStagedCount = pos.length;
     if (!pos.length) { console.log('§GLOW_LENS_QUAD_GATE 0 fixtures placed yet — nothing to light'); return; }
     var geo = new THREE.PlaneGeometry(1, 1);
-    var mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending,
+    var matRect = new THREE.MeshBasicMaterial({
+      color: 0xffffff, map: _glowLensTexture(), transparent: true, blending: THREE.AdditiveBlending,
       depthTest: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide
     });
-    var mesh = new THREE.InstancedMesh(geo, mat, pos.length);
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 999;
-    mesh.name = '__glowLensQuads';
+    var matRound = new THREE.MeshBasicMaterial({
+      color: 0xffffff, map: _glowTexture(), transparent: true, blending: THREE.AdditiveBlending,
+      depthTest: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide
+    });
+    // Worst-case sized (every fixture could land in either bucket) — .count trims to actual use
+    // below, same discipline the single-mesh version already used for pos.length vs quads.
+    var meshRect = new THREE.InstancedMesh(geo, matRect, pos.length);
+    var meshRound = new THREE.InstancedMesh(geo, matRound, pos.length);
+    meshRect.frustumCulled = meshRound.frustumCulled = false;
+    meshRect.renderOrder = meshRound.renderOrder = 999;
+    meshRect.name = '__glowLensQuadsRect'; meshRound.name = '__glowLensQuadsRound';
     var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), qFace = new THREE.Quaternion();
     var pVec = new THREE.Vector3(), sVec = new THREE.Vector3(), col = new THREE.Color();
     // Plane's default normal is +Z; rotate +90 deg about X so it faces -Y (down, toward the floor —
@@ -3981,7 +4739,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // DOWN clearance (same axis __drop already uses) clears the depth test against the fixture's
     // own geometry without moving X/Z off the real fixture at all, from any angle.
     var GLOW_LENS_CLEARANCE = 0.03;
-    var exits = 0, quads = 0, skippedTier2 = 0;
+    var exits = 0, rectN = 0, roundN = 0, skippedTier2 = 0;
     for (var i = 0; i < pos.length; i++) {
       var p = pos[i];
       if (p.__exit) { exits++; continue; }   // §GLOW_EXIT_SOFT stays on the round sprite — see above
@@ -4002,29 +4760,54 @@ async function setupEffects(A, renderer, scene, camera) {
       // fit: FitUpstairs.png). No yaw needed — q stays face-down only.
       q.copy(qFace);
       var w = p.__bw || GLOW_SPRITE_SIZE, h = p.__bd || GLOW_SPRITE_SIZE;
-      sVec.set(w, h, 1);
+      var aspect = Math.max(w, h) / Math.max(0.001, Math.min(w, h));
+      var isRound = aspect < GLOW_LENS_ROUND_ASPECT;
+      // Round texture is inscribed in a square plane — size it off the LARGER dimension so the
+      // lit circle doesn't undershoot the fixture's actual footprint.
+      if (isRound) { var d = Math.max(w, h); sVec.set(d, d, 1); } else { sVec.set(w, h, 1); }
       m4.compose(pVec, q, sVec);
-      mesh.setMatrixAt(quads, m4);
       col.setHex(p.__color === undefined ? 0xffe4b5 : p.__color);
-      mesh.setColorAt(quads, col.multiplyScalar(GLOW_GAIN));
-      quads++;
+      col.multiplyScalar(GLOW_GAIN);
+      if (isRound) {
+        meshRound.setMatrixAt(roundN, m4); meshRound.setColorAt(roundN, col); roundN++;
+      } else {
+        meshRect.setMatrixAt(rectN, m4); meshRect.setColorAt(rectN, col); rectN++;
+      }
     }
-    mesh.count = quads;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    A.scene.add(mesh);
-    _glowLensMesh = mesh;
-    console.log('§GLOW_LENS_QUAD staged ' + quads + ' lens quads (' + exits +
+    meshRect.count = rectN; meshRound.count = roundN;
+    meshRect.instanceMatrix.needsUpdate = true; meshRound.instanceMatrix.needsUpdate = true;
+    if (meshRect.instanceColor) meshRect.instanceColor.needsUpdate = true;
+    if (meshRound.instanceColor) meshRound.instanceColor.needsUpdate = true;
+    if (rectN) { A.scene.add(meshRect); _glowLensMeshRect = meshRect; }
+    if (roundN) { A.scene.add(meshRound); _glowLensMeshRound = meshRound; }
+    // §GLOW_BUILDUP_EARLY_OUT — this logged rect=0 round=0 on all 3,447 frames of the user's
+    // Hospital bake. Say it once: a repeated line carrying no new information hides the ones that do.
+    if (rectN === 0 && roundN === 0) {
+      if (!A._glowQuadZeroLogged) { A._glowQuadZeroLogged = true;
+        console.log('§GLOW_LENS_QUAD staged rect=0 round=0 — nothing placed yet; logged once, not per frame'); }
+    } else
+    console.log('§GLOW_LENS_QUAD staged rect=' + rectN + ' round=' + roundN + ' (' + exits +
       ' exit signs left on the round sprite, ' + skippedTier2 +
-      ' tier-2 overhead-picks skipped — PL only, no quad), 1 draw call, 0 scene materials touched');
+      ' tier-2 overhead-picks skipped — PL only, no quad), ' + ((rectN ? 1 : 0) + (roundN ? 1 : 0)) +
+      ' draw call(s), 0 scene materials touched');
   }
   function _glowLensOff() {
-    if (!_glowLensMesh) return;
-    A.scene.remove(_glowLensMesh);
-    _glowLensMesh.geometry.dispose();
-    _glowLensMesh.material.dispose();
+    if (!_glowLensMeshRect && !_glowLensMeshRound) return;
+    // Both meshes share ONE PlaneGeometry instance (built fresh each _glowLensOn() call) —
+    // dispose it once, off whichever mesh is present, not per-mesh (double-dispose is harmless in
+    // three.js but wasteful/misleading to read).
+    (_glowLensMeshRect || _glowLensMeshRound).geometry.dispose();
+    if (_glowLensMeshRect) {
+      A.scene.remove(_glowLensMeshRect);
+      _glowLensMeshRect.material.dispose();
+      _glowLensMeshRect = null;
+    }
+    if (_glowLensMeshRound) {
+      A.scene.remove(_glowLensMeshRound);
+      _glowLensMeshRound.material.dispose();
+      _glowLensMeshRound = null;
+    }
     console.log('§GLOW_LENS_QUAD removed');
-    _glowLensMesh = null;
   }
 
   A.startStillRefine = function() {
@@ -4085,9 +4868,16 @@ async function setupEffects(A, renderer, scene, camera) {
         A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsStill;
       A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
+      A._nightPLScale = A._nightPLScaleStill || 1;          // §STAGED_PL_CUT — staging-only intensity cut
       A._nightUpdateLights();
-      console.log('§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length +
-        ' lights, near-fade floor ' + A._nightNearFadeFloorStill + ' (was 0.3) for the still');
+      // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 2,026 firings, ONE distinct line
+      // (`raised to 200 lights, near-fade floor 1 …`). The re-raise itself is required every
+      // frame (the still budget is handed back to nav on every teardown, just below), so the
+      // WORK stays; only the identical line is run-length reported.
+      _vacLog(_vacNightLights, '§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length +
+        ' lights, near-fade floor ' + A._nightNearFadeFloorStill + ' (was 0.3), plScale ' +
+        A._nightPLScale + ' (§STAGED_PL_CUT) for the still',
+        'the still budget is re-raised every frame; the values did not change');
     }
     A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
     A._taaPass.accumulate = true;
@@ -4103,7 +4893,12 @@ async function setupEffects(A, renderer, scene, camera) {
     _stillRestartLogged = false;
     var _triCount = _setTriplanarActive(true);
     _applyPhotoStaging();
-    console.log('§STILL_REFINE start samples=16 triplanarMaterials=' + _triCount);
+    // §MAXQ_FRAME_BUDGET — read the fold's budget ONCE here; a change mid-fold would split one
+    // frame across two settings. A bake sets A._stillBudget; Alt+S leaves it null and gets 16/24.
+    var _taaFrames = _stillBudget().taa;
+    console.log('§STILL_REFINE start samples=' + _taaFrames + ' triplanarMaterials=' + _triCount +
+      (A._stillBudget ? ' §MAXQ_FRAME_BUDGET taa=' + _taaFrames + ' ao=' + _stillBudget().ao +
+       ' (bake budget — Alt+S stills are unaffected)' : ''));
     // §PHOTO_ENVMAP_STALE safety net: the fresh dusk env map is 2s-throttled (scene.js
     // A.updateSky), but a fast/cached accumulate can finish (and stop calling _reassertPhotoEnvMap
     // via step() below) before that 2s elapses — one extra guaranteed pass past the throttle
@@ -4155,7 +4950,7 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       A._composer.render();
       var idx = A._taaPass.accumulateIndex;
-      if (idx >= 16) { _finishStillRefine(idx); return; }
+      if (idx >= _taaFrames) { _finishStillRefine(idx); return; }   // §MAXQ_FRAME_BUDGET
       _stillRefineRAF = requestAnimationFrame(step);
     }
     _stillRefineRAF = requestAnimationFrame(step);
@@ -4461,6 +5256,21 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_WALK_MPS     = 2.3;   // interior pace — was 1.3
   var CINEMA_PULLBACK_MPS = 6.5;   // exterior recede: flying, not walking
   var CINEMA_DIVE_MPS     = 20;    // the approach is a fly-IN; dive distances run 20-150m
+  // §CPE_DISCIPLINE_REVEAL pull-out beat (restructure 2026-08-14, bim-compiler prompts/
+  // CINEMA_DISCIPLINE_REVEAL.md — see that file's dated section for the full spec). Author's own
+  // call, documented there, not user-dictated: 1.5s, matching this file's other beat granularities
+  // (the tail's own 2s/discipline slot). Distance is DERIVED from the existing CINEMA_PULLBACK_MPS
+  // constant (reused, not a new speed invented) — dist = CINEMA_REVEAL_PULLOUT_SEC * CINEMA_PULLBACK_MPS.
+  var CINEMA_REVEAL_PULLOUT_SEC = 1.5;
+  // §CPE_DISCIPLINE_REVEAL_FADE (2026-08-16, bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md's
+  // dated section). A.filterDiscs/A._applyDiscVisibility (panels.js) is a pure boolean visible
+  // toggle across plain/Instanced/BatchedMesh — no per-element opacity channel exists in this
+  // pipeline (Instanced/BatchedMesh share ONE material per batch, so animating opacity would fade
+  // the WHOLE batch, not just the disc entering/leaving). This is the closest honest approximation
+  // to a fade with that real constraint: how long the outgoing and incoming discipline stay visible
+  // TOGETHER at each tail-parade boundary before narrowing to just the incoming one. Not a literal
+  // dissolve — documented as such in A.cpeRevealVisualAt so it's never mistaken for one later.
+  var CPE_REVEAL_FADE_SEC = 0.4;
   // §CPE_NOISE_LAW — the user's ONE pacing dial ("have a speed range… don't overdo it"), and the
   // only knob the noise ratio is allowed to have. Declared here, at module scope, because the law
   // governs EVERY beat: the dive's cost table (built with the plan) and the walk's blended cost
@@ -4618,6 +5428,208 @@ async function setupEffects(A, renderer, scene, camera) {
   // along"). A list of drag OPERATIONS layered on the derived path — never a stored polyline. See
   // _cinemaHoseApply for the arc-length law and §CPE_BANDS rule 6 for why operations, not points.
   var _cpeHose = null;
+  // §CPE_DISCIPLINE_REVEAL (bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md, Mechanism C) — whether
+  // this bake inserts the retrace reveal round between the walk and the closing orbit. Same wrapper
+  // pattern as _cpeHose/_cpeBands above: set from ov.reveal in A.cinemaPathPlan, read inside
+  // _cinemaPathPlan's own closure, saved/restored around the call so it never leaks between plans.
+  var _cpeReveal = false;
+  // §CPE_CONE_ORIENT_ADJUST (bim-compiler prompts/CINEMA_PATH_EDITOR.md, 2026-08-27) — a small list of
+  // ANCHORED gaze corrections, independent of bands: each is {pos:{x,y,z}, dir:{x,y,z}, ramp, hold,
+  // decay} (world anchor, corrected unit direction, arc-length meters for the ease-in/hold/ease-out
+  // envelope). Not band-indexed like `lookAt` — the cone's position is scrub-driven and may sit
+  // anywhere along the walk, not necessarily at a band — so this rides its OWN small array on the
+  // override, same wrapper pattern as _cpeHose/_cpeBands/_cpeReveal above: set from ov.aimCorrections
+  // in A.cinemaPathPlan, read inside _cinemaPathPlan's own closure, saved/restored around the call.
+  var _cpeCorrections = null;
+  // §CPE_DISCIPLINE_REVEAL — real, measured element counts, same 3-representation enumeration
+  // A.filterDiscs already uses (panels.js §NAV_FIND_002) — never an invented discipline list.
+  // Outer-scope and A.-exposed (not nested inside _cinemaPathPlan) so BOTH the plan builder here AND
+  // cinema_path_editor.js's own _naturalDuration() (the client-side seconds estimate that drives the
+  // bake's frame count) read the exact same list — one implementation, not two kept in sync by hand.
+  A.cpeRevealDiscsPresent = function() {
+    var counts = {};
+    function bump(d) { if (d && d !== 'ARC' && d !== 'STR') counts[d] = (counts[d] || 0) + 1; }
+    if (typeof A.collectMeshes === 'function') {
+      A.collectMeshes(function(o) { return o.isMesh && o.userData && o.userData.disc; })
+        .forEach(function(o) { bump(o.userData.disc); });
+    }
+    var _bmId, _imId;
+    for (_bmId in (A._batchMeta || {})) A._batchMeta[_bmId].forEach(function(m) { bump(m.disc); });
+    for (_imId in (A._instanceMeta || {})) A._instanceMeta[_imId].forEach(function(m) { bump(m.disc); });
+    var discs = Object.keys(counts);
+    // §CPE_DISCIPLINE_REVEAL_ORDER (2026-08-16, bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md's
+    // dated section). Sort ascending by real average element bbox volume (element_transforms.bbox_x/
+    // y/z, guid-joined to elements_meta — the ONLY per-element size data this schema carries;
+    // elements_meta itself has no dimension column, confirmed by a read-only extraction check before
+    // this was written, not assumed). Finest-grained (smallest average element) disciplines reveal
+    // FIRST, while the viewer's attention is freshest. The literal 'MEP' discipline code is forced to
+    // the LAST position regardless of its measured size — user's own framing 2026-08-16: MEP reads as
+    // "most easily sighted" (large ducts/pipes/cable-trays are obvious even glimpsed briefly), so it
+    // doesn't need the early slot the way small/fine disciplines do. Degrades to the original
+    // unordered list if A.dbQuery is unavailable or the query fails — DEGRADE, DON'T DISABLE, same
+    // rule A.cpeRevealDiscQtyCost (below) already follows.
+    if (discs.length > 1 && typeof A.dbQuery === 'function') {
+      try {
+        var inList = discs.map(function(d) { return "'" + d.replace(/'/g, "''") + "'"; }).join(',');
+        var rows = A.dbQuery('SELECT m.discipline, AVG(t.bbox_x * t.bbox_y * t.bbox_z) FROM elements_meta m ' +
+          'JOIN element_transforms t ON m.guid = t.guid WHERE m.discipline IN (' + inList + ') ' +
+          'AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline');
+        var avgVol = {};
+        (rows || []).forEach(function(r) { avgVol[r[0]] = +r[1]; });
+        discs.sort(function(a, b) {
+          if (a === 'MEP' && b !== 'MEP') return 1;
+          if (b === 'MEP' && a !== 'MEP') return -1;
+          var va = avgVol[a], vb = avgVol[b];
+          if (va == null && vb == null) return 0;
+          if (va == null) return 1;   // no size data for this discipline -> push to end, never invent a rank
+          if (vb == null) return -1;
+          return va - vb;
+        });
+        console.log('§CPE_REVEAL_DISC_ORDER [' + discs.map(function(d) {
+          return d + '=' + (avgVol[d] != null ? avgVol[d].toFixed(3) : 'n/a'); }).join(',') + ']');
+      } catch (e) {
+        console.warn('§CPE_REVEAL_DISC_ORDER query failed, using unordered fallback: ' + e.message);
+      }
+    }
+    return discs;
+  };
+  // §CPE_DISCIPLINE_REVEAL_PULLOUT (restructure 2026-08-14, bim-compiler prompts/
+  // CINEMA_DISCIPLINE_REVEAL.md's dated section — supersedes the there-and-back Mechanism C shape).
+  // pure function of (plan, tNorm): which visual phase, if any, this instant falls in. Called
+  // identically from the bake loop (cinema_maxq.js) and the preview loop (cinema_path_editor.js's
+  // _previewFly) so the two can never diverge — same "one poseAt, no state leakage either direction"
+  // property this file already relies on elsewhere (§CPE_AIM_SIMPLIFY).
+  // Four zones inside [b.out, b.rise]:
+  //   pull-out  (b.out .. b.pullout)  — plain, no override (author's call, see spec file: a short
+  //                                     transition beat, not part of either "round").
+  //   round 2   (b.pullout .. b.reveal) — 'ghost': ARC/STR fully hidden, every non-ARC/STR discipline
+  //                                     shown together — UNCHANGED from the original ghost phase.
+  //                                     §CPE_DISCIPLINE_REVEAL_FLYBACK (2026-08-16): this span now
+  //                                     covers BOTH the fly-back sub-beat (camera retracing the path
+  //                                     back to the first stick) AND the forward lap after it — the
+  //                                     boundary here is unchanged (still b.pullout..b.reveal), only
+  //                                     poseAt's camera motion inside it gained a sub-beat, so no
+  //                                     edit was needed in THIS function for that change.
+  //   rise/tail (b.reveal .. b.rise, first rv.tailSec seconds) — 'tail-one'/'tail-all': the disc
+  //             parade, folded into the EXISTING rise beat's own time budget (see poseAt below —
+  //             the camera motion there is the unmodified _beat4Pose, never a new motion).
+  //   rise proper (remainder of b.reveal..b.rise) — null: ARC/STR solid again, normal room titles.
+  A.cpeRevealVisualAt = function(plan, tNorm) {
+    var b = plan && plan.beats, rv = plan && plan.reveal;
+    if (!b || !rv || !rv.discs || !rv.discs.length || !(b.reveal > b.out)) return null;
+    if (tNorm <= b.out) return null;
+    var tP = (b.pullout != null && b.pullout > b.out) ? b.pullout : b.out;
+    if (tNorm <= tP) return null;                              // pull-out: plain, no ghost
+    if (tNorm <= b.reveal) return { phase: 'ghost', discs: rv.discs.slice() };  // round 2
+    if (!(b.rise > b.reveal)) return null;
+    var riseSpanSec = (rv.riseSec || 0) + (rv.tailSec || 0);
+    if (!(riseSpanSec > 0)) return null;
+    var wSec = (tNorm - b.reveal) / (b.rise - b.reveal) * riseSpanSec;
+    if (wSec >= rv.tailSec) return null;                        // rise proper: ARC/STR solid again
+    var perDisc = 2, n = rv.discs.length;
+    var idx = Math.floor(wSec / perDisc);
+    if (idx >= n) return { phase: 'tail-all', discs: rv.discs.slice() };
+    // §CPE_DISCIPLINE_REVEAL_FADE (2026-08-16): `discs` (caption/key identity) always names the
+    // CURRENT slot's own discipline — the caption must never show the outgoing one. `visDiscs` (what
+    // A.cpeRevealApplyVisual actually shows) widens to include the PREVIOUS slot's discipline for the
+    // first CPE_REVEAL_FADE_SEC of a new slot (idx===0 has no previous slot to overlap with), so the
+    // hard swap softens into a brief overlap instead of an instant cut.
+    var slotFrac = wSec - idx * perDisc;
+    var visDiscs = (slotFrac < CPE_REVEAL_FADE_SEC && idx > 0)
+      ? [rv.discs[idx - 1], rv.discs[idx]] : [rv.discs[idx]];
+    return { phase: 'tail-one', discs: [rv.discs[idx]], visDiscs: visDiscs };
+  };
+  // §CPE_DISCIPLINE_REVEAL — a discipline code's human-readable label, reused (not invented) from
+  // A.PHASE_MAP (config.js), which already carries friendly names for the common trades
+  // ('3-Electrical', '3-Fire Protection', ...) keyed by the SAME discipline codes A.DISC_COLORS/
+  // cpeRevealDiscsPresent use. Strips the leading "N-" sort prefix. A discipline PHASE_MAP has no
+  // entry for (SAN/VENT/HEAT/VOID are real DISC_COLORS codes with none) degrades to the raw code,
+  // never a fabricated label.
+  A.cpeRevealDiscLabel = function(d) {
+    var p = A.PHASE_MAP && A.PHASE_MAP[d];
+    return (p && p.phase) ? p.phase.replace(/^\d+-/, '') : d;
+  };
+  // §CPE_DISCIPLINE_REVEAL — "good touch" nice-to-have (spec file, 2026-08-14 restructure): a
+  // discipline's live element COUNT, and a ROUGH cost estimate reusing A.MATERIAL_COSTS' EXISTING
+  // per-ifc_class rates as-is (no new rate invented). This is COUNT × rate per class, summed — NOT
+  // the unit-aware linear/area BOQ calculation boq_charts.html already does (bbox-derived length/
+  // area quantities via qto_cache) — that is real, more accurate, separate work, named as a
+  // follow-on in the spec file rather than reproduced here. Queried once per plan build (cheap:
+  // rarely more than a dozen disciplines) via the SAME A.dbQuery elements_meta pattern
+  // cpe_room_title.js's _storeyLadderForGroups already uses, cached on plan.reveal so the tail's
+  // per-frame caption draw never re-queries the DB.
+  A.cpeRevealDiscQtyCost = function(discs) {
+    var out = {};
+    if (!discs || !discs.length || typeof A.dbQuery !== 'function') return out;
+    discs.forEach(function(d) { out[d] = { count: 0, cost: 0 }; });
+    try {
+      var inList = discs.map(function(d) { return "'" + d.replace(/'/g, "''") + "'"; }).join(',');
+      var rows = A.dbQuery('SELECT discipline, ifc_class, COUNT(*) FROM elements_meta ' +
+        'WHERE discipline IN (' + inList + ') GROUP BY discipline, ifc_class');
+      (rows || []).forEach(function(r) {
+        var d = r[0], cls = r[1], n = +r[2];
+        if (!out[d]) return;
+        out[d].count += n;
+        var mc = A.MATERIAL_COSTS[cls];
+        if (mc) out[d].cost += n * mc.rate;   // rough: per-element rate, not the unit-aware qty BOQ uses
+      });
+    } catch (e) { console.warn('§CPE_REVEAL_DISC_QTY_COST query failed: ' + e.message); }
+    return out;
+  };
+  // §CPE_DISCIPLINE_REVEAL — pure function of (plan, tNorm): the caption that REPLACES the room
+  // title during the tail's disc-parade slots ('tail-one'/'tail-all'). Returns null everywhere else
+  // (round 1, pull-out, round 2, rise proper) so the caller falls through to the NORMAL room-title
+  // lookup — room titles are untouched outside the tail, per the spec's item 3. Called identically
+  // from the bake (cinema_maxq.js) and the preview tick (cpe_room_title.js's roomTitleLiveTick), same
+  // "one pure function, two callers" discipline as cpeRevealVisualAt/cpeRevealApplyVisual above.
+  A.cpeRevealCaptionAt = function(plan, tNorm) {
+    var vis = A.cpeRevealVisualAt ? A.cpeRevealVisualAt(plan, tNorm) : null;
+    if (!vis || (vis.phase !== 'tail-one' && vis.phase !== 'tail-all')) return null;
+    var rv = plan.reveal, qc = rv && rv.qtyCost;
+    var name;
+    if (vis.phase === 'tail-all') {
+      name = 'All Disciplines';
+    } else {
+      var d = vis.discs[0];
+      name = A.cpeRevealDiscLabel(d);
+      var q = qc && qc[d];
+      if (q && q.count) {
+        name += ' — ' + q.count + ' element' + (q.count === 1 ? '' : 's');
+        if (q.cost > 0) name += ', ~' + Math.round(q.cost).toLocaleString();
+      }
+    }
+    return { name: name, opacity: 1 };
+  };
+  // Applies the state above to the live scene via A.filterDiscs (panels.js §NAV_FIND_002) — reused
+  // as-is, not forked. Snapshots whatever discipline filter the user already had active (Role filter,
+  // Find isolate, ...) on first entering the round, and restores EXACTLY that on exit — never a blind
+  // "show everything" that would clobber an unrelated filter the user had running before the bake/
+  // preview started. Skips the (scene-traversing) _applyDiscVisibility call entirely when nothing
+  // actually changed since the last tick — cheap to call every frame.
+  A._cpeRevealSavedHidden = null;
+  A._cpeRevealVisualKey = null;
+  A.cpeRevealApplyVisual = function(plan, tNorm) {
+    if (typeof A.filterDiscs !== 'function' || !A.hiddenDiscs) return;
+    var st = plan ? A.cpeRevealVisualAt(plan, tNorm) : null;
+    // §CPE_DISCIPLINE_REVEAL_FADE: key on visDiscs (what's actually SHOWN), not discs (the caption
+    // identity) — within a single tail-one slot, discs[0] never changes but visDiscs does (drops the
+    // overlap partner after CPE_REVEAL_FADE_SEC), and that drop must still re-trigger filterDiscs.
+    var shown = (st && st.visDiscs) || (st && st.discs);
+    var key = st ? (st.phase + ':' + shown.join(',')) : '';
+    if (A._cpeRevealVisualKey === key) return;
+    if (!st) {
+      if (A._cpeRevealSavedHidden) {
+        A.hiddenDiscs.clear();
+        A._cpeRevealSavedHidden.forEach(function(d) { A.hiddenDiscs.add(d); });
+        if (A._applyDiscVisibility) A._applyDiscVisibility();
+        A._cpeRevealSavedHidden = null;
+      }
+    } else {
+      if (!A._cpeRevealSavedHidden) A._cpeRevealSavedHidden = new Set(A.hiddenDiscs);
+      A.filterDiscs(shown);
+    }
+    A._cpeRevealVisualKey = key;
+  };
   function _cpeBandEnds(b) {
     var h = b.len / 2;
     return [{ x: b.c.x - b.d.x * h, y: b.c.y - b.d.y * h, z: b.c.z - b.d.z * h },
@@ -4919,10 +5931,21 @@ async function setupEffects(A, renderer, scene, camera) {
   // that: §CPE_AIM_PIN (Part C) added real behaviour here (`_buildPinZones`/`_pinLookAtAt` inside
   // `_beat3Pose`) but this string was never bumped for it, breaking the file's own "bump on EVERY
   // behaviour change" rule for one release. Fixed now, not left for a future session to rediscover.
-  var EFFECTS_V = 'v19 (' +
-    '§CPE_AIM_PIN a pinned band\'s Voronoi zone of the walk overrides LOS/§CPE_AIM_DENSITY outright ' +
-      '(_buildPinZones/_pinLookAtAt inside _beat3Pose) — was live in v18\'s shipped code, this ' +
-      'string just never said so; ' +
+  var EFFECTS_V = 'v22 (' +
+    '§CPE_DISCIPLINE_REVEAL_FLYBACK new fast eased retrace sub-beat replaces the pull-out->round-2 ' +
+      'teleport cut; §CPE_DISCIPLINE_REVEAL_ORDER discs sorted ascending by real avg bbox volume, ' +
+      'MEP forced last; §CPE_DISCIPLINE_REVEAL_FADE tail-parade boundaries get a brief overlap ' +
+      'window instead of an instant swap; ' +
+    '§CPE_AIM_SIMPLIFY §CPE_AIM_DENSITY RETIRED (was: turn toward nearest mass when outside the ' +
+      'building with nothing substantial near — a third, independent trigger the user\'s own model ' +
+      'never asked for, and the likely source of reported "facing sky" swings); §CPE_AIM_DEPTH is ' +
+      'now the SOLE exception to path-follow, and its trigger changed from omnidirectional ' +
+      '_aimSoftDensity (fired on ordinary flanking-wall proximity, e.g. mid-corridor) to a single ' +
+      'forward raycast along the walk\'s own look-ahead direction (_aimForwardClear) — long hit stays ' +
+      'on path regardless of flanking walls, short hit (dead end / storey-crossing pocket) triggers ' +
+      'the existing far-facade search unchanged; ' +
+    '§CPE_AIM_PIN a pinned band\'s Voronoi zone of the walk overrides path-follow/depth outright ' +
+      '(_buildPinZones/_pinLookAtAt inside _beat3Pose); ' +
     '§CPE_PACE_SWING_SOFTEN CINEMA_PACE_SWING 1.6->1.45, direct user tuning request; ' +
     '§CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; ' +
     '§CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; ' +
@@ -5599,6 +6622,298 @@ async function setupEffects(A, renderer, scene, camera) {
       return null;
     }
     A._cpePinZonesDebug = function() { if (_pinZones === null) _buildPinZones(); return _pinZones; };   // witness hook, read-only
+
+    // ══ §CPE_CONE_ORIENT_ADJUST — anchored gaze corrections (2026-08-27) ═══════════════════════════
+    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_CONE_ORIENT_ADJUST. Studied `_pinLookAtAt`
+    // above before writing this: deliberately a DIFFERENT code path, not a reuse of it, because a
+    // correction's anchor is NOT band-indexed — the POV cone's position is scrub-driven and may sit
+    // anywhere along the walk, not necessarily at a band centre. Same NEAREST-POINT-ON-`flowWp`
+    // technique `_buildPinZones` uses for a band's centre, applied to each correction's own captured
+    // world anchor instead, so a correction is defined against the SAME real, hosed curve the walk is
+    // actually sampled from (never a second, unhosed notion of "where along the path this is").
+    //
+    // Unlike a pin (a look-AT POINT, recomputed fresh every frame relative to the moving camera), a
+    // correction stores a fixed captured DIRECTION — the cone's rotation at the moment the user let
+    // go — and is blended in/out by an ASYMMETRIC, ARC-LENGTH-anchored envelope (spec item 5, user's
+    // own design): a short ease-in ramp BEHIND the anchor, held at full strength FORWARD from the
+    // anchor, then eased back down over a further decay length. Ramp/hold/decay ride on EACH entry
+    // (spec item 4's own field list), copied from cinema_path_editor.js's authoring-time constants at
+    // commit time — the fallbacks below only cover a malformed/pre-this-feature record.
+    var _corrArc = null;
+    // §CPE_CORR_BRANCH: non-null ONLY while _resolveCorrBranch() reads a stroke's entry gaze. While it
+    // is set, _beat3Pose fills it with the UNCORRECTED look direction and returns immediately — which
+    // is both how the probe gets the exact vector _cpeCorrDirBlend will be handed, and how the
+    // re-entrant call is stopped from reaching _cpeCorrectionAt again.
+    var _corrRefProbe = null;
+    function _buildCpeCorrArc() {
+      _corrArc = [];
+      _corrSorted = null;   // §CPE_CORR_BRUSH_STROKE: the ordered view is derived from _corrArc, so a
+                            // re-plan must invalidate it or a stale stroke order would outlive its edit
+      if (!_cpeCorrections || !_cpeCorrections.length || !flowWp.length) return;
+      for (var ci = 0; ci < _cpeCorrections.length; ci++) {
+        var c = _cpeCorrections[ci];
+        if (!c || !c.pos || !c.dir) continue;
+        var best = 0, bd = Infinity;
+        for (var pi = 0; pi < flowWp.length; pi++) {
+          var dx = flowWp[pi].x - c.pos.x, dy = flowWp[pi].y - c.pos.y, dz = flowWp[pi].z - c.pos.z;
+          var d = dx * dx + dy * dy + dz * dz;
+          if (d < bd) { bd = d; best = pi; }
+        }
+        var sArc = segLen[best] / totalLen;
+        // §CPE_CORR_FRACTION — reach is a SHARE OF THE WALK (rampF/holdF/decayF on the record).
+        // LEGACY: records authored before 2026-09-01 carry metres (ramp/hold/decay) and are still
+        // honoured by converting against this plan's own totalLen — DEGRADE, DON'T DISABLE, so a
+        // saved plan keeps working without a migration. Defaults match the editor's constants.
+        var L = Math.max(1e-3, totalLen);
+        function _frac(fv, mv, dflt) {
+          if (fv != null && isFinite(fv)) return fv;
+          if (mv != null && isFinite(mv)) return mv / L;      // legacy metres
+          return dflt;
+        }
+        _corrArc.push({ s: sArc, dir: c.dir,
+          rampFrac: Math.min(0.45, _frac(c.rampF, c.ramp, 0.04)),
+          holdFrac: _frac(c.holdF, c.hold, 0.12),
+          decayFrac: _frac(c.decayF, c.decay, 0.18),
+          refD: 0 });                       // §CPE_CORR_BRANCH — resolved just below, once per stroke
+      }
+      _resolveCorrBranch();
+    }
+    // ══ §CPE_CORR_BRANCH (2026-09-01) — PORT of §CINEMA_GAZE_SENSE onto the correction blend.
+    // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_CORR_BRANCH — Witness: witness_cpe_corr_brush.js
+    // G-BR-6.
+    //
+    // MEASURED DEFECT (Hospital, 39.43 m walk, 900 arc samples, anchor s=0.4387, ramp 4%): the naive
+    // short-way yaw in _cpeCorrDirBlend below picks its 2*pi branch with round(raw / 2pi), and `raw`
+    // is yawB (the authored, FIXED correction) minus yawA (the underlying pin/depth/path-follow gaze,
+    // which MOVES every sample). round() is therefore a STEP FUNCTION of yawA: the sample raw crosses
+    // +-pi, dYaw moves by 2*pi, and the blended yaw moves by 2*pi*w in ONE sample. Two such crossings
+    // land inside the ramp on the reference plan — at w=0.1309 (predicted 47.11 deg, measured 42.16)
+    // and at w=0.3424 (predicted 123.28 deg, measured 110.44). That second one IS the 111 deg snap
+    // that held this branch at 6/7, against a walk whose own peak is 13.28 deg/sample. Prediction and
+    // measurement differ only by the cos(pitch) foreshortening of a yaw step read as a 3-D angle.
+    // The trigger is a correction authored NEAR-ANTIPODAL IN YAW to the gaze underneath it (|raw|
+    // within 2 deg of 180 for ~40 consecutive samples) — precisely the case _cpeCorrDirBlend's own
+    // comment declared out of scope ("never expected to be near-antipodal"). That assumption is false.
+    //
+    // THE FIX, identical in kind to §CINEMA_GAZE_SENSE's: resolve the branch ONCE per stroke, from the
+    // geometry at the moment that stroke's blend STARTS, and then take each per-sample `raw` as the
+    // representative NEAREST that reference. Constant branch => no step function => no snap. A plain
+    // great-circle slerp also removes it (11.982 deg/sample measured) but was REJECTED on the numbers:
+    // it swings the pitch 4.8 deg past what the uncorrected walk itself reaches in that span
+    // (-81.10 vs -76.32), where this port stays inside the base envelope (-71.19). See the spec.
+    //
+    // The reference is the UNCORRECTED gaze at e3 = s - rampFrac, i.e. the very vector
+    // _cpeCorrDirBlend is handed there — read through a one-shot re-entrant _beat3Pose probe that
+    // returns BEFORE the correction step (see _corrRefProbe in _beat3Pose). Plan-time and
+    // order-independent: a witness may sample e3 in any order and get the same curve.
+    function _resolveCorrBranch() {
+      if (!_corrArc.length) return;
+      var lines = [];
+      for (var i = 0; i < _corrArc.length; i++) {
+        var c = _corrArc[i];
+        var e3 = Math.max(0, Math.min(1, c.s - c.rampFrac));
+        var probe = { x: 0, y: 0, z: 0, hit: false };
+        _corrRefProbe = probe;
+        try { _beat3Pose(e3); } catch (e) { probe.hit = false; } finally { _corrRefProbe = null; }
+        if (!probe.hit) { c.refD = 0; lines.push(i + ':NO-PROBE'); continue; }   // degrades to the old short way
+        // §CPE_AIM_DEPTH_FREEZE (2026-09-01, prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_FREEZE):
+        // KEEP the probed entry VECTOR, not just its yaw — it is the frozen from-direction for the
+        // ramp+hold — and probe the window EXIT the same way for the decay's frozen target. The
+        // decay then lands bit-exactly on the live gaze at the window's end (the vector was probed
+        // AT that e3), so the freeze introduces no seam. MEASURED need (probe_aim_freeze.js,
+        // Hospital): the live from-direction re-aims 126-140 deg INSIDE one ramp (§CPE_AIM_DEPTH
+        // reacting to 0.1-0.4 m forward clearance), leaking a 13.114 deg/sample wobble through
+        // (1-w); frozen fixed-to-fixed the worst step is the crossfade's own 7.79.
+        c.entryDir = { x: probe.x, y: probe.y, z: probe.z };
+        var e3x = Math.max(0, Math.min(1, c.s + c.holdFrac + c.decayFrac));
+        var probeX = { x: 0, y: 0, z: 0, hit: false };
+        _corrRefProbe = probeX;
+        try { _beat3Pose(e3x); } catch (ex) { probeX.hit = false; } finally { _corrRefProbe = null; }
+        c.exitDir = probeX.hit ? { x: probeX.x, y: probeX.y, z: probeX.z } : null;
+        // Witness-only A/B (default OFF, same read-only-hook precedent as A._cpeCorrectionsDebug):
+        // refD=0 is exactly the pre-fix naive short way, so witness_cpe_corr_brush.js can measure the
+        // defect and the fix in ONE run instead of asserting a fix against a number from an older
+        // session. CLAUDE.md: "every test must name the issue it proves or disproves."
+        if (A._cpeCorrBranchOff) { c.refD = 0; lines.push(i + ':BRANCH-OFF(witness A/B)'); continue; }
+        var yawA = Math.atan2(probe.z, probe.x), yawB = Math.atan2(c.dir.z, c.dir.x);
+        var d = yawB - yawA;
+        c.refD = d - 2 * Math.PI * Math.round(d / (2 * Math.PI));
+        lines.push(i + ':s=' + c.s.toFixed(4) + ' entryE3=' + e3.toFixed(4) +
+          ' refDeltaDeg=' + (c.refD * 180 / Math.PI).toFixed(2) +
+          ' nearAntipodal=' + (Math.abs(Math.abs(c.refD) - Math.PI) < 0.35));
+      }
+      console.log('§CPE_CORR_BRANCH strokes=' + _corrArc.length +
+        ' (branch chosen ONCE per stroke; per-sample deltas taken as the representative NEAREST it) ' +
+        lines.join(' | '));
+      // §CPE_AIM_DEPTH_FREEZE — the runtime's own statement of what got frozen, per stroke. A
+      // stroke reporting entry=MISS (or exit=MISS) blends from the LIVE base in that phase, i.e.
+      // pre-freeze behaviour — that is the degrade path, and this line is how a log reader sees it.
+      var frz = [];
+      for (var fi = 0; fi < _corrArc.length; fi++) {
+        var fc = _corrArc[fi];
+        var span = (fc.entryDir && fc.exitDir)
+          ? (Math.acos(Math.max(-1, Math.min(1, fc.entryDir.x * fc.exitDir.x +
+              fc.entryDir.y * fc.exitDir.y + fc.entryDir.z * fc.exitDir.z))) * 180 / Math.PI).toFixed(2)
+          : 'n/a';
+        frz.push(fi + ':entry=' + (fc.entryDir ? 'ok' : 'MISS') + ' exit=' + (fc.exitDir ? 'ok' : 'MISS') +
+          ' entryVsExitDeg=' + span);
+      }
+      console.log('§CPE_AIM_DEPTH_FREEZE strokes=' + _corrArc.length +
+        ' (blend-from FROZEN at the window edges: entry gaze through ramp+hold, exit gaze through decay) ' +
+        frz.join(' | '));
+    }
+    // Read-only: the corrected DIRECTION and blend WEIGHT (0..1) in force at this e3, or null when no
+    // correction's window reaches this far. §CPE_CONE_ORIENT_ADJUST item 6 (multiple overlapping
+    // corrections — not user-decided): simplest reasonable MVP picked here, flagged for review — the
+    // NEAREST anchor (by |e3 - s|) wins outright where more than one window covers the same e3, no
+    // cross-correction blending.
+    // §CPE_CORR_BRUSH_STROKE (2026-08-30 — USER RULING, replaces the decaying envelope above).
+    // User: "once dragged to face an angle, its forward path should persist uniformly and gracefully
+    // overriding previous cam face values… It is like a new brush stroke over an old one. 'Staying'
+    // POV certainty is thus important for user to plan out an intended path."
+    //
+    // WHY THE OLD MODEL COULD NOT STAY, structurally rather than as a tuning miss: each correction
+    // was ramp(2m) -> hold(8m) -> decay(5m), so it governed ~15m and then FADED BACK to the
+    // path-follow gaze it had just been used to overrule. On the user's own 89.5m Hospital walk
+    // (§CPE_WALK_BUDGET totalLen=89.53m) that is ~17% of the route; the other 83% silently reverted.
+    // No hold/decay value fixes that — a decay term means "return to the old value" by definition,
+    // which is the opposite of a brush stroke.
+    //
+    // THE MODEL NOW: strokes, ordered along the path. The LAST anchor at or before e3 owns the gaze
+    // and holds it FORWARD INDEFINITELY — to the next stroke, or to the end of the walk. Arriving at
+    // a stroke crossfades from whatever was in force (the previous stroke's direction, or the
+    // path-follow gaze for the first one) over that stroke's own ramp, so an override is graceful
+    // rather than a snap. `hold` and `decay` are therefore no longer consulted; they are left on the
+    // records because saved plans carry them and a future model may want them again.
+    var _corrSorted = null;
+    // §CPE_CORR_BOUNDED (2026-09-01 — USER RULING, supersedes the unbounded stroke above).
+    // User: "you probably can see my concern is during such editing, how to gracefully not overwrite
+    // too far out. So, if u agree, we can return to before, just that it should smoothen out more
+    // gracefully as it was abit abruptive before."
+    //
+    // So: BOUNDED again — ramp in, hold, decay out, then the gaze is path-follow's again and the
+    // rest of the walk is untouched. That is what makes a correction an EDIT rather than a takeover,
+    // which is the whole point while authoring.
+    //
+    // WHAT ACTUALLY MADE THE OLD ONE ABRUPT — the mechanism, not the tuning. Both edges were already
+    // smoothstepped, and a smoothstep's peak slope is 1.5/L, so the old exit (1.5/5m = 0.30 per m)
+    // was GENTLER in weight than its own entry (1.5/2m = 0.75 per m). The abruptness is not in w at
+    // all: during `hold` the gaze is PINNED to a fixed world direction while the camera keeps
+    // walking, so the path-follow gaze underneath drifts away the whole time. The decay then has to
+    // give back every degree of that accumulated divergence over its own length. Longer hold => more
+    // to undo => a harsher exit, at any decay value. Decay therefore has to scale with hold, not sit
+    // at a constant, and DECAY_M is raised to match (see cinema_path_editor.js's constants).
+    //
+    // `hold` and `decay` are read off each record again — they were kept on the records through the
+    // unbounded era precisely so this could come back without a migration.
+    function _cpeCorrectionAt(e3) {
+      if (_corrArc === null) _buildCpeCorrArc();
+      if (!_corrArc.length) return null;
+      if (_corrSorted === null) {
+        _corrSorted = _corrArc.slice().sort(function (a, b) { return a.s - b.s; });
+      }
+      // Nearest anchor wins where two windows overlap — unchanged MVP rule from
+      // §CPE_CONE_ORIENT_ADJUST item 6, still flagged as not user-decided.
+      var best = null, bestD = Infinity, i, c, ramp, hold, decay, w, t;
+      for (i = 0; i < _corrSorted.length; i++) {
+        c = _corrSorted[i];
+        ramp = Math.max(1e-9, c.rampFrac);
+        hold = Math.max(0, c.holdFrac);
+        decay = Math.max(1e-9, c.decayFrac);
+        if (e3 < c.s - ramp || e3 > c.s + hold + decay) continue;   // outside this stroke's window
+        var d = Math.abs(e3 - c.s);
+        if (d < bestD) { bestD = d; best = c; }
+      }
+      if (!best) return null;                    // outside every window — path-follow, untouched
+      ramp = Math.max(1e-9, best.rampFrac);
+      hold = Math.max(0, best.holdFrac);
+      decay = Math.max(1e-9, best.decayFrac);
+      if (e3 < best.s) {                          // ease IN
+        t = (e3 - (best.s - ramp)) / ramp;
+        w = _cinemaSmoothstep(Math.min(1, Math.max(0, t)));
+      } else if (e3 <= best.s + hold) {           // HOLD at full authority
+        w = 1;
+      } else {                                    // ease OUT, back to path-follow
+        t = (e3 - (best.s + hold)) / decay;
+        w = 1 - _cinemaSmoothstep(Math.min(1, Math.max(0, t)));
+      }
+      // §CPE_AIM_DEPTH_FREEZE: the frozen from-direction for this phase — entry gaze through
+      // ramp+hold, exit gaze through the decay. The switch between the two happens at the hold
+      // boundary, where the from-weight is zero (w=1 → the blend returns the authored direction
+      // regardless), so it is continuous by construction. null → live base (edge probe failed, or
+      // the witness A/B switch A._cpeAimFreezeOff is on) — exactly the pre-freeze behaviour.
+      var from = null;
+      if (!A._cpeAimFreezeOff) {
+        from = (e3 <= best.s + hold) ? (best.entryDir || null) : (best.exitDir || null);
+      }
+      return { dir: best.dir, w: w, refD: best.refD || 0, from: from };   // §CPE_CORR_BRANCH: the stroke's own branch
+    }
+    // Generic yaw/pitch-lerp direction blend — same technique _dirBlend/_cinemaGazeBlend already use
+    // in this file (linear pitch), simplified to return just a unit direction (no pivot).
+    // ⚠ The original comment here claimed no antipodal bookkeeping was needed because "a corrected
+    // gaze and the underlying path-follow gaze are never expected to be near-antipodal". MEASURED
+    // FALSE, 2026-09-01 — that is exactly what happened, and it cost 110.44 deg in one sample. The
+    // branch is now supplied by the caller as `refD`, resolved once per stroke by _resolveCorrBranch
+    // above (§CPE_CORR_BRANCH). refD=0 reproduces the old plain short-way behaviour exactly, which is
+    // the correct degradation for a stroke whose entry gaze could not be probed.
+    function _cpeCorrDirBlend(ax, ay, az, bx, by, bz, w, refD) {
+      if (w <= 0) return { x: ax, y: ay, z: az };
+      if (w >= 1) return { x: bx, y: by, z: bz };
+      refD = (refD != null && isFinite(refD)) ? refD : 0;
+      var yawA = Math.atan2(az, ax), pitA = Math.atan2(ay, Math.hypot(ax, az));
+      var yawB = Math.atan2(bz, bx), pitB = Math.atan2(by, Math.hypot(bx, bz));
+      var raw = yawB - yawA;
+      // §CPE_CORR_BRANCH: the representative of `raw` NEAREST this stroke's fixed reference — NOT the
+      // short way, which is a step function of yawA and snaps by 2*pi*w the sample raw crosses +-pi.
+      var dYaw = raw - 2 * Math.PI * Math.round((raw - refD) / (2 * Math.PI));
+      var yaw = yawA + dYaw * w, pit = pitA + (pitB - pitA) * w, cp = Math.cos(pit);
+      return { x: Math.cos(yaw) * cp, y: Math.sin(pit), z: Math.sin(yaw) * cp };
+    }
+    A._cpeCorrectionsDebug = function() { if (_corrArc === null) _buildCpeCorrArc(); return _corrArc; };   // witness hook, read-only
+    // Witness hook, read-only: samples the REAL `_beat3Pose(e3)` at an arbitrary arc-fraction —
+    // exactly the product function §CPE_CONE_ORIENT_ADJUST's envelope blend runs inside (same
+    // precedent as `A._cpePinZonesDebug` above). Lets a witness sample the corrected region's gaze
+    // SHAPE directly in the arc-fraction space the envelope is actually defined in, without needing
+    // to invert tNorm -> e3 through _evenTurnRemap/_holdMap (private to this closure).
+    A._cpeBeat3PoseDebug = function(e3) { return _beat3Pose(e3); };
+    // §CPE_CORR_BOUNDED witness hook, read-only: the camera POSITION and its look-AT target at the
+    // same e3, so a witness can measure the real gaze ANGLE in degrees — a target-point delta alone
+    // cannot tell a small turn far away from a big turn nearby. Same precedent as the hook above.
+    // `arcLen` lets the witness convert arc-fraction into METRES, which is the unit the ramp/hold/
+    // decay constants are actually authored in.
+    // _beat3Pose returns _cinemaGazeBlend's shape: POSITION in x/y/z and the look-at TARGET in
+    // tx/ty/tz. Reading t.x/t.y/t.z as the target yields position === target — a zero-length gaze —
+    // which is exactly the trap this hook's first cut fell into.
+    A._cpeBeat3GazeDebug = function(e3) {
+      var t = _beat3Pose(e3);
+      // `turnOverlap`: §CINEMA_BEAT_OVERLAP's own constant, read-only — the walk's last fraction
+      // blends the gaze toward the orbit AFTER the correction step, so a witness judging the pure
+      // correction curve must know where that zone begins instead of hardcoding a copy of it
+      // (§CPE_AIM_DEPTH_FREEZE G-FRZ-1 measured 7.48 deg of "non-constancy" on Duplex that was
+      // really this hand-off, because that walk's decay tail crosses e3 = 1 - overlap).
+      return { pos: { x: t.x, y: t.y, z: t.z },
+               target: { x: t.tx, y: t.ty, z: t.tz }, arcLen: totalLen,
+               turnOverlap: CINEMA_TURN_OVERLAP };
+    };
+    // §CPE_AIM_DEPTH_FREEZE witness hook, read-only: metres of clearance along the COMPOSED gaze at
+    // e3 — the same ray a viewer would look along — using the product's own fan raycaster and mesh
+    // set (`_cinemaFanMeshes`, "the ONLY where-is-open-space source"). This is what lets a witness
+    // assert the nose-against-the-wall claim from product state instead of a witness-side mesh
+    // approximation. Returns CINEMA_FAN_FAR when nothing is hit, null when it cannot judge (no
+    // meshes / degenerate gaze) — a caller must treat null as INCONCLUSIVE, never as "clear".
+    A._cpeGazeClearDebug = function(e3) {
+      var t = _beat3Pose(e3);
+      var dx = t.tx - t.x, dy = t.ty - t.y, dz = t.tz - t.z, dL = Math.hypot(dx, dy, dz);
+      if (!(dL > 1e-9)) return null;
+      var meshes = _cinemaFanMeshes();
+      if (!meshes.length) return null;
+      if (!_cineFanRay) { _cineFanRay = new THREE.Raycaster(); _cineFanRay.firstHitOnly = true; }
+      _cineFanRay.set(new THREE.Vector3(t.x, t.y, t.z), new THREE.Vector3(dx / dL, dy / dL, dz / dL));
+      _cineFanRay.far = CINEMA_FAN_FAR;
+      var hits = null;
+      try { hits = _cineFanRay.intersectObjects(meshes, true); } catch (e) { return null; }
+      return (hits && hits.length) ? hits[0].distance : CINEMA_FAN_FAR;
+    };
     // ══ §CINEMA_GAZE_SENSE (2026-07-27) — decide the look-back's turn DIRECTION ONCE per plan.
     // _cinemaGazeBlend used to make this choice PER FRAME: if |dYaw| crossed CINEMA_TURN_ANTIPODAL_RAD
     // it switched from the short way to the +2π way. That test is a step function of the walk
@@ -5803,7 +7118,10 @@ async function setupEffects(A, renderer, scene, camera) {
       if (_densPts) return _densPts;
       _densPts = [];
       try {
-        var rows = A.dbQuery('SELECT center_x, center_y, center_z FROM element_transforms');
+        // guid appended as a 4th element (index 3) — every existing reader only ever indexes 0/1/2,
+        // so this is additive. §CPE_AIM_DEPTH_BUILDUP candidate 2 is the first reader of it, to cross-
+        // reference a point against §CPE_BUILDUP's own per-element completion time (tmGuidEndTs()).
+        var rows = A.dbQuery('SELECT center_x, center_y, center_z, guid FROM element_transforms');
         for (var i = 0; i < rows.length; i++) _densPts.push(rows[i]);
       } catch (e) {}
       return _densPts;
@@ -5829,50 +7147,71 @@ async function setupEffects(A, renderer, scene, camera) {
       return n;
     }
 
-    // ══ §CPE_AIM_DENSITY — outside the perimeter with nothing near, face the mass ═══════════════
-    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DENSITY. User directive 2026-07-28:
-    //   "when the rope passes the final building perimeter and no substantial building part nearby,
-    //    then camera turns perpendicular towards the densest nearest part of the building."
-    //
-    // WHY: the walk gaze is a LOOK-AHEAD along the path. §CPE_HOSE lets a stretch be flung far
-    // outside the building, and out there the look-ahead points at empty ground for seconds of film.
-    // This gives those stretches a subject. It only ever changes where the camera LOOKS — never
-    // where it is; the authored path is untouched (§CPE_BANDS rule 8, authored is authored).
-    //
-    // Both trigger terms are CONTINUOUS, and that is a design decision, not an accident: a boolean
-    // trigger would switch the gaze on in one frame, which is exactly the discontinuity
-    // §CPE_JERK_DEFINITION and §CPE_EVEN_TURN exist to kill. Ramping on the measured quantities
-    // themselves means the blend is smooth in position by construction, with no hysteresis state to
-    // get stuck in and nothing to tune.
+    // ══ §CPE_AIM_GRID — coarse occupancy grid, the shared data §CPE_AIM_DEPTH's subject search reads
+    // (§CPE_AIM_SIMPLIFY, 2026-08-13): originally built for §CPE_AIM_DENSITY (user directive
+    // 2026-07-28, "when the rope passes the final building perimeter and no substantial building part
+    // nearby, then camera turns perpendicular towards the densest nearest part of the building"), which
+    // has since been RETIRED (see its marker a few lines below, above _aimDepthWeight's own section).
+    // This grid itself stays — §CPE_AIM_DEPTH's subject search (`_aimDepthSubject`) is the sole
+    // remaining reader.
     var _aimCells = null;
     // Coarse occupancy grid over the SAME element centroids §CPE_NOISE_LAW already reads — reuse,
     // never a second proximity system (the same rule that made _densityAt reuse _densPoints).
-    function _aimGrid() {
-      if (_aimCells) return _aimCells;
-      _aimCells = [];
-      var pts = _densPoints();
-      if (!pts.length) return _aimCells;
-      // Cell size derived from the building, not picked: an eighth of the envelope gives ~8x8 cells
-      // across the footprint — coarse enough that a cell means "a part of the building" rather than
-      // "an element", fine enough to distinguish a wing from the whole.
+    // Cell size derived from the building, not picked: an eighth of the envelope gives ~8x8 cells
+    // across the footprint — coarse enough that a cell means "a part of the building" rather than
+    // "an element", fine enough to distinguish a wing from the whole.
+    //
+    // §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13): extracted from the old _aimGrid() body so it
+    // can be reused over a FILTERED point set (see _aimGridPlaced below), not just the whole-building
+    // one — one gridding routine, two callers, never two implementations to keep in sync.
+    function _aimGridFrom(pts) {
+      var cells = [];
+      if (!pts.length) return cells;
       var cs = Math.max(2, envelope / 8), map = {};
       for (var i = 0; i < pts.length; i++) {
         var kx = Math.floor(pts[i][0] / cs), ky = Math.floor(pts[i][1] / cs), kz = Math.floor(pts[i][2] / cs);
         var key = kx + ',' + ky + ',' + kz, c = map[key];
-        // zMin/zMax: purely additive (§CPE_AIM_DENSITY only ever reads n/x/y/z, unaffected). Lets
+        // zMin/zMax: purely additive to the base n/x/y/z fields. Lets
         // §CPE_AIM_DEPTH tell a wall-like cell (points spread over height) from a floor/ceiling-like
         // one (flat, near-zero height spread) without a second data pass — see zSpan below.
-        if (!c) { c = map[key] = { n: 0, x: 0, y: 0, z: 0, zMin: pts[i][2], zMax: pts[i][2] }; _aimCells.push(c); }
+        if (!c) { c = map[key] = { n: 0, x: 0, y: 0, z: 0, zMin: pts[i][2], zMax: pts[i][2] }; cells.push(c); }
         c.n++; c.x += pts[i][0]; c.y += pts[i][1]; c.z += pts[i][2];
         if (pts[i][2] < c.zMin) c.zMin = pts[i][2];
         if (pts[i][2] > c.zMax) c.zMax = pts[i][2];
       }
-      for (var j = 0; j < _aimCells.length; j++) {
-        var q = _aimCells[j]; q.x /= q.n; q.y /= q.n; q.z /= q.n; q.zSpan = q.zMax - q.zMin;
+      for (var j = 0; j < cells.length; j++) {
+        var q = cells[j]; q.x /= q.n; q.y /= q.n; q.z /= q.n; q.zSpan = q.zMax - q.zMin;
       }
-      console.log('§CPE_AIM_GRID cells=' + _aimCells.length + ' cellSize=' + cs.toFixed(1) +
-        'm elems=' + pts.length + ' (subject search space for §CPE_AIM_DENSITY)');
+      return cells;
+    }
+    function _aimGrid() {
+      if (_aimCells) return _aimCells;
+      var pts = _densPoints();
+      _aimCells = _aimGridFrom(pts);
+      console.log('§CPE_AIM_GRID cells=' + _aimCells.length + ' cellSize=' + Math.max(2, envelope / 8).toFixed(1) +
+        'm elems=' + pts.length + ' (subject search space for §CPE_AIM_DEPTH)');
       return _aimCells;
+    }
+    // §CPE_AIM_DEPTH_BUILDUP candidate 2 — the grid over ONLY elements placed by cursorMs, per
+    // tmGuidEndTs()'s per-guid completion times. No caching here (unlike _aimGrid's _aimCells): the
+    // cursor differs at every probe in §CPE_AIM_DEPTH_BUILDUP's own K=64 series, so each probe needs
+    // its own filtered grid — cheap (one pass over the point list) at that probe count.
+    var _bkGuidEnds = null, _bkGuidEndsTried = false;
+    function _aimGuidEnds() {
+      if (_bkGuidEndsTried) return _bkGuidEnds;
+      _bkGuidEndsTried = true;
+      _bkGuidEnds = (typeof window.tmGuidEndTs === 'function') ? window.tmGuidEndTs() : null;
+      return _bkGuidEnds;
+    }
+    function _aimPlacedPoints(cursorMs) {
+      var ends = _aimGuidEnds();
+      if (!ends) return null;   // degrade: no completion data — caller falls back to unrestricted
+      var pts = _densPoints(), out = [];
+      for (var i = 0; i < pts.length; i++) {
+        var g = pts[i][3], e = g ? ends[g] : undefined;
+        if (e !== undefined && e <= cursorMs) out.push(pts[i]);
+      }
+      return out;
     }
     // "the densest NEAREST part" — both words are in the directive, so the score carries both:
     // element count divided by distance in envelope units. A big far wing loses to a solid near one,
@@ -5888,234 +7227,61 @@ async function setupEffects(A, renderer, scene, camera) {
     // because every cell's weight varies smoothly with distance and no cell ever "wins".
     // The cubed distance term is what keeps it selective: without it the average drifts toward the
     // centroid of the whole site and stops being the NEAREST part.
-    function _aimSubject(pIfc) {
-      var cells = _aimGrid();
-      if (!cells.length) return null;
-      var scale = Math.max(1, envelope * 0.5);
-      var sx = 0, sy = 0, sz = 0, sw = 0, sn = 0;
-      for (var i = 0; i < cells.length; i++) {
-        var c = cells[i];
-        var d = Math.hypot(c.x - pIfc.ix, c.y - pIfc.iy, c.z - pIfc.iz) / scale;
-        var w = c.n / ((1 + d) * (1 + d) * (1 + d));
-        sx += c.x * w; sy += c.y * w; sz += c.z * w; sw += w; sn += c.n * w;
-      }
-      if (sw <= 1e-9) return null;
-      return { x: sx / sw, y: sy / sw, z: sz / sw, n: Math.round(sn / sw) };
-    }
-    // How far OUTSIDE the ARC footprint this point is, in metres (0 while inside). The perimeter is
-    // the building's own bbox — the same arcBbox the orbit radius and the tube thickness derive from.
-    function _aimOutsideM(pIfc) {
-      if (!arcBbox) return 0;
-      var ox = Math.max(arcBbox.xMin - pIfc.ix, 0, pIfc.ix - arcBbox.xMax);
-      var oy = Math.max(arcBbox.yMin - pIfc.iy, 0, pIfc.iy - arcBbox.yMax);
-      return Math.hypot(ox, oy);
-    }
-    // The blend weight, 0..1. Product of two smoothsteps so BOTH conditions must hold — outside the
-    // perimeter AND nothing substantial near — exactly as the directive states them.
-    var _AIM_NEAR_FRAC = 0.12;    // near-radius as a fraction of envelope (derived, not a metre value)
-    var _AIM_DENS_FLOOR = 12;     // "substantial": the soft element weight within the near radius
-                                  // below which the neighbourhood counts as empty. Reported in the
-                                  // witness so it can be argued with from a number, not from taste.
-    // Soft density, for the same reason _aimSubject averages rather than picks: _densityAt is a HARD
-    // count inside a radius, so it steps by whole elements as they cross the boundary, and against a
-    // floor of 12 each step is an ~8% jump in the blend weight — a visible stutter in the gaze on a
-    // path that is merely passing by. The kernel makes an element fade in as it approaches instead
-    // of appearing, which is the same continuity argument applied one level down.
-    function _aimSoftDensity(p, R) {
-      var pts = _densPoints();
-      if (!pts.length || typeof A.three2ifc !== 'function') return 0;
-      var q = A.three2ifc(p.x, p.y, p.z), R2 = R * R, acc = 0;
-      for (var i = 0; i < pts.length; i++) {
-        var dx = pts[i][0] - q.ix, dy = pts[i][1] - q.iy, dz = pts[i][2] - q.iz;
-        var u = (dx * dx + dy * dy + dz * dz) / R2;
-        if (u >= 1) continue;
-        var g = 1 - u;
-        acc += g * g;
-      }
-      return acc;
-    }
-    var _aimLast = { logged: 0 };
-    function _aimWeight(p) {
-      if (typeof A.three2ifc !== 'function') return 0;
-      var pIfc = A.three2ifc(p.x, p.y, p.z);
-      var outM = _aimOutsideM(pIfc);
-      if (outM <= 0) return 0;                       // inside the perimeter: never fires
-      var wOut = _cinemaSmoothstep(Math.min(1, outM / Math.max(1, envelope * 0.15)));
-      var R = Math.max(3, envelope * _AIM_NEAR_FRAC);
-      var dens = _aimSoftDensity(p, R);
-      var wEmpty = 1 - _cinemaSmoothstep(Math.min(1, dens / _AIM_DENS_FLOOR));
-      return { w: wOut * wEmpty, outM: outM, dens: dens, R: R, pIfc: pIfc };
-    }
-    // Aim the gaze at the subject with the ALONG-PATH component projected out — that is what
-    // "perpendicular" means concretely: the camera turns side-on to its own travel and faces the
-    // mass. If the subject is dead ahead or dead behind the projection degenerates, and the honest
-    // answer is to look straight at it rather than to invent a sideways stare.
-    // ══ Probe the walk once, smooth the series, interpolate per pose. ═══════════════════════════
-    // Same idiom §CPE_NOISE_LAW already uses (32 probes interpolated across the cost samples), and
-    // adopted here for the same reason plus a measured one. The probe found a 23.9°/frame gaze
-    // spike mid-walk (t≈0.43) against 15.8 without the rule — an 8-frame swing where the weight and
-    // the subject both moved fast at once. Both are FIELDS ALONG THE PATH, so the fix belongs where
-    // this file already puts it: sample the field, smooth it, read it back — bounding the RATE, not
-    // just the range, exactly as §CPE_PACE_LOS's own amendment argues ("graceful, not just bounded").
-    // The 5-tap binomial pass removes anything narrower than ~1/16 of the walk. It also makes the
-    // per-pose cost a lerp instead of a full density scan, which matters at bake rates.
-    var _aimSeries = null;
-    function _aimBuild() {
-      var K = 64, i, ws = [], hasS = [], sx = [], sy = [], sz = [];
-      for (i = 0; i <= K; i++) {
-        var p = _outPos(i / K);
-        var A0 = _aimWeight(p);
-        var wv = (A0 && A0.w) ? A0.w : 0;
-        var sub = (A0 && A0.w > 1e-4) ? _aimSubject(A0.pIfc) : null;
-        ws.push(wv);
-        hasS.push(sub ? 1 : 0);     // §CPE_STICK_HOLD: where a REAL subject exists (boost gate)
-        // Where the weight is zero the subject is irrelevant but must still be CONTINUOUS through
-        // the smoothing pass, so carry the last known one rather than a hole.
-        var prevN = sx.length - 1;
-        sx.push(sub ? sub.x : (prevN >= 0 ? sx[prevN] : 0));
-        sy.push(sub ? sub.y : (prevN >= 0 ? sy[prevN] : 0));
-        sz.push(sub ? sub.z : (prevN >= 0 ? sz[prevN] : 0));
-      }
-      function smooth(a) {
-        var o = [], k = [1, 4, 6, 4, 1], n = a.length;
-        for (var j = 0; j < n; j++) {
-          var acc = 0, wsum = 0;
-          for (var m = -2; m <= 2; m++) {
-            var idx = j + m;
-            if (idx < 0 || idx >= n) continue;
-            acc += a[idx] * k[m + 2]; wsum += k[m + 2];
-          }
-          o.push(acc / wsum);
-        }
-        return o;
-      }
-      // Two passes: one binomial pass still left a visible step at the trigger edge on Duplex.
-      // §CPE_AIM_LATCH — running max, same as the depth rule's series: the aim can strengthen but
-      // never weaken, so leaving the dense pocket no longer slides the gaze back to look-ahead.
-      _aimSeries = { K: K, has: hasS, w: _aimLatch(smooth(smooth(ws))),
-                     x: smooth(smooth(sx)), y: smooth(smooth(sy)), z: smooth(smooth(sz)) };
-      var wMax = 0, wN = 0;
-      for (i = 0; i <= K; i++) { if (_aimSeries.w[i] > wMax) wMax = _aimSeries.w[i]; if (_aimSeries.w[i] > 0.01) wN++; }
-      console.log('§CPE_AIM_SERIES probes=' + (K + 1) + ' smoothed=2x5tap active=' + wN + '/' + (K + 1) +
-        ' maxBlend=' + wMax.toFixed(2) + ' — the weight and the subject are FIELDS along the walk, ' +
-        'sampled and rate-limited here rather than evaluated raw per frame');
-    }
-    function _aimAt(e3) {
-      if (!_aimSeries) _aimBuild();
-      var S = _aimSeries, u = Math.max(0, Math.min(1, e3)) * S.K;
-      var j = Math.min(S.K - 1, Math.floor(u)), f = u - j;
-      return { w: S.w[j] * (1 - f) + S.w[j + 1] * f,
-               // §CPE_STICK_HOLD: nearest-probe presence, deliberately NOT interpolated — `has` is a
-               // yes/no fact about whether a subject was found, not a quantity to average.
-               has: (f < 0.5 ? S.has[j] : S.has[j + 1]),
-               x: S.x[j] * (1 - f) + S.x[j + 1] * f,
-               y: S.y[j] * (1 - f) + S.y[j + 1] * f,
-               z: S.z[j] * (1 - f) + S.z[j + 1] * f };
-    }
-    function _aimApply(p, T, lx, ly, lz, e3, boost) {
-      // Test-only control switch (same pattern as time_machine's window.__forceFull): the witness
-      // needs the SAME plan with the rule suppressed, so that the only difference between the two
-      // measurements is the rule itself. No production effect — nothing sets it in the app.
-      if (A.__cpeAimOff) return null;
-      if (typeof A.ifc2three !== 'function' || typeof A.three2ifc !== 'function') return null;
-      var A0 = _aimAt(e3 == null ? 0 : e3);
-      // §CPE_STICK_HOLD: the boost has to be considered HERE, not only at `var w` below — this early
-      // return fired first and silently discarded it (MEASURED: 0.02 deg of turn across a parked
-      // 18-sample stop). `has` gates it so a hold can only ever strengthen an aim that has a REAL
-      // subject at this point on the path; where the series never found one, the boost stays off
-      // rather than aiming the camera at a carried-forward or origin coordinate.
-      if (!A0 || !(Math.max(A0.w, (A0.has > 0.5 ? (boost || 0) : 0)) > 1e-3)) return null;
-      var subj = { x: A0.x, y: A0.y, z: A0.z, n: 0 };
-      var s3 = A.ifc2three(subj.x, subj.y, subj.z);
-      var vx = s3.x - p.x, vy = s3.y - p.y, vz = s3.z - p.z;
-      var vL = Math.hypot(vx, vy, vz) || 1;
-      vx /= vL; vy /= vL; vz /= vL;
-      var dot = vx * T.x + vy * T.y + vz * T.z;
-      // ⚠ THE PROJECTION MUST FADE, NOT SWITCH — measured, twice. A full projection
-      // `v - T(v·T)` is discontinuous in DIRECTION exactly where the subject crosses the travel
-      // axis: the residual shrinks to zero and re-emerges pointing the opposite way, so
-      // renormalising it flips the gaze ~180° in one frame. The first cut hid that behind a hard
-      // `pL < 0.2 → look straight at it` fallback, which is itself a switch. Witness A2 measured
-      // both: 78.5°/frame with the argmax subject, and 95.2°/frame after that was smoothed — the
-      // subject was never the cause, this was. (Recorded rather than silently fixed: "don't invent
-      // a root cause to match a feeling" cuts both ways — the first hypothesis was wrong and the
-      // number said so.)
-      //
-      // Scaling the projection by how far off-axis the subject is removes the flip by construction:
-      // k→0 when the subject lies along travel (look straight at it — there is no meaningful
-      // "perpendicular" there), k→1 when it is well off-axis (fully side-on, the directive's
-      // "perpendicular"). Nothing vanishing is ever renormalised.
-      var perpMag = Math.sqrt(Math.max(0, 1 - dot * dot));      // |v - T(v·T)| for unit v, T
-      var k = _cinemaSmoothstep(Math.min(1, perpMag / 0.35));
-      var px = vx - T.x * dot * k, py = vy - T.y * dot * k, pz = vz - T.z * dot * k;
-      var pL = Math.hypot(px, py, pz) || 1;
-      var degenerate = k < 0.05;
-      px /= pL; py /= pL; pz /= pL;
-      // ⚠ THE RULE MUST BE GONE BY THE SEAM — measured, and it was the biggest number in the file.
-      // The probe put the peak at t=0.8706 against `beats.out=0.8700`: the walk→orbit hand-off. The
-      // walk's own gaze at e3=1 is what Beat 4 was designed to pick up (§CINEMA_BEAT_OVERLAP); an
-      // aim rule still holding the gaze side-on at that instant hands the orbit a direction it never
-      // agreed to, and the seam snaps — 88.4°/frame, against 15.8 without the rule. Taper over the
-      // SAME window the orbit hand-off itself uses, so by the time Beat 4 takes over the gaze is
-      // exactly what it would have been with no rule at all. Not a new constant: CINEMA_TURN_OVERLAP
-      // is the existing hand-off window.
-      // §CPE_AIM_LATCH (2026-08-01) — THE OUTGOING TAPER IS GONE. It used to force this rule to zero
-      // across the final CINEMA_TURN_OVERLAP of the walk. User: "the turning should be thruout, till
-      // the end of clip as that overwrites the last part forceful turn which we why we introduced
-      // this in the first place" — i.e. the taper was disabling the rule exactly where the rule was
-      // needed, and the reasoning is theirs: "the last spin is all a 'straight circle'", so on the
-      // orbit perpendicular-to-travel IS radially inward and the aim law and Beat 4 AGREE.
-      //
-      // ⚠ The 88.4 deg/frame snap this taper was measured to fix is REAL and is NOT ignored — it is
-      // fixed at its actual cause instead. That snap came from Beat 4 starting its gaze blend at the
-      // hardcoded (odx,0,odz) on the claim that "(odx,odz) IS the direction Beat 3 ends on", which
-      // stops being true the moment this rule still governs at e3=1. Beat 4 now starts from
-      // _beat3EndDir — Beat 3's REAL final gaze, sampled from _beat3Pose(1) — so the hand-off is
-      // continuous by construction rather than by switching this rule off before it.
-      var w = Math.max(A0.w, (A0.has > 0.5 ? (boost || 0) : 0));
-      if (!(w > 1e-3)) return null;
-      var ax = lx + (px - lx) * w, ay = ly + (py - ly) * w, az = lz + (pz - lz) * w;
-      var aL = Math.hypot(ax, ay, az) || 1;
-      var nowA = (typeof performance !== 'undefined') ? performance.now() : 0;
-      if (nowA - _aimLast.logged > 500) {
-        _aimLast.logged = nowA;
-        console.log('§CPE_AIM_DENSITY e3=' + (e3 == null ? '?' : e3.toFixed(3)) +
-          ' floor=' + _AIM_DENS_FLOOR + ' subject=(' + subj.x.toFixed(1) + ',' +
-          subj.y.toFixed(1) + ',' + subj.z.toFixed(1) + ')' +
-          ' perpDeg=' + (Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(1) +
-          ' blend=' + w.toFixed(2) + ' seamTaper=none(§CPE_AIM_LATCH)' + (degenerate ? ' DEGENERATE (subject along travel — looking straight at it)' : ''));
-      }
-      return { x: ax / aL, y: ay / aL, z: az / aL };
-    }
+    // §CPE_AIM_DENSITY_RETIRED (2026-08-13, bim-compiler prompts/CINEMA_PATH_EDITOR.md
+    // §CPE_AIM_SIMPLIFY): this whole rule (_aimSubject/_aimOutsideM/_aimSoftDensity/_aimWeight/
+    // _aimBuild/_aimAt/_aimApply — "turn perpendicular toward the nearest mass whenever outside the
+    // building with nothing substantial near") is REMOVED, not disabled. User, after a live
+    // HHS_Office bake required snatching the stick twice to recover the path: "make formula rather
+    // simple: 1. Follow path of camera. 2. Look for depth... 2. is the only exception to 1." This
+    // rule was a THIRD, independent trigger the user's own model never asked for, and its omni-
+    // directional "nearest mass" pick is the most likely source of the reported "facing sky" swings
+    // (a roof/upper-floor cluster is often the nearest mass by pure distance). It also targeted the
+    // building-approach case only, which the user confirmed is redundant: "for outside building, the
+    // last after stop is already building facing" — Beat 4/5's turn-to-pivot + orbit already faces
+    // the building at the end, with no density term involved. §CPE_AIM_DEPTH below is now the ONLY
+    // exception to path-follow, and its own trigger was tightened in the same session (see its
+    // header) to stop firing on ordinary flanking-wall proximity, e.g. mid-corridor.
 
-    // ══ §CPE_AIM_DEPTH — surrounded by close surfaces, face the FURTHEST dense one ═══════════════
-    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH. User directive 2026-07-31:
-    //   "if it is flying into area with a floor, a left side wall and front wall, it turns to face
-    //    which is further" ... "must be logical as stated to also X depth distance where if it is
-    //    near a wall along a corridor it wont face dense fleeting but look to a more distance facade."
+    // ══ §CPE_AIM_DEPTH — the SOLE exception to path-follow (§CPE_AIM_SIMPLIFY, 2026-08-13) ══════
+    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH + §CPE_AIM_SIMPLIFY. Original
+    // directive, 2026-07-31: "if it is flying into area with a floor, a left side wall and front
+    // wall, it turns to face which is further" ... "if near a wall along a corridor it wont face
+    // dense fleeting but look to a more distance facade." Re-confirmed and simplified, 2026-08-13,
+    // after a live HHS_Office bake needed the stick snatched back twice to recover the path: "1.
+    // Follow path of camera. 2. Look for depth... 2. is the only exception to 1." §CPE_AIM_DENSITY,
+    // the rule that used to run alongside this one (turn toward the nearest mass whenever outside
+    // the building with nothing substantial near), is RETIRED — see the marker where it used to live,
+    // above _aimGrid. Nothing else stands between the walk's own look-ahead and the orbit hand-off.
     //
-    // WHY: §CPE_AIM_DENSITY (above) fires OUTSIDE the building with nothing near — this is its mirror
-    // case: INSIDE/close, surrounded by near surfaces (a corridor, a corner). The walk's own
-    // look-ahead can aim straight at a close wall a metre away — an ugly "nose against the wall"
-    // frame, and a jerk hazard in its own right: a near subject sweeps across the frame far faster
-    // than a distant one for the same camera translation (angular rate ~ v/d). Favouring the FAR
-    // facade over the near "fleeting" one is not merely aesthetic — it is the same angular-rate
-    // argument §CPE_EVEN_TURN already rests on, applied to WHICH subject is chosen rather than how
-    // fast the camera moves.
+    // WHY this rule alone: the walk's own look-ahead can aim straight at a close wall a metre away —
+    // an ugly "nose against the wall" frame, and a jerk hazard in its own right (a near subject
+    // sweeps across the frame far faster than a distant one for the same camera translation, angular
+    // rate ~ v/d). Favouring the FAR facade over the near "fleeting" one is the same angular-rate
+    // argument §CPE_EVEN_TURN already rests on, applied to WHICH subject is chosen.
     //
-    // Reuses §CPE_AIM_DENSITY's grid (_aimGrid/_densPoints) — one proximity system, not two — with an
-    // INVERTED distance term: that rule weights n/(1+d)^3 (favour NEAR); this weights n*d (favour
-    // FAR), because the two rules solve opposite problems off the same data. Weighted centroid, not
-    // argmax — same "the subject must move continuously with the camera" lesson §CPE_AIM_DENSITY's
-    // own comment records (measured: an argmax subject bought a 78.5°/frame whip).
+    // Reuses _aimGrid/_densPoints (built once per plan) for the SUBJECT search below, weight = n*d
+    // (favour FAR) — unchanged by this session. Weighted centroid, not argmax — "the subject must
+    // move continuously with the camera" (measured: an argmax subject bought a 78.5°/frame whip).
+    //
+    // §CPE_AIM_DEPTH_FWD_CLEAR (2026-08-13) — the TRIGGER changed, the search did not. It used to be
+    // _aimSoftDensity in a SPHERE around the camera: flanking corridor walls on both sides read as
+    // "surrounded" exactly like a real dead end, so an ordinary walk down a hall could fire this rule
+    // and turn the camera off the path mid-corridor — contradicting the user's own stated intent
+    // ("when user makes a path thru a corridor hall, it doesn't want the cam to be looking away other
+    // than the path"). The real signal is not "is there mass nearby", it is "does the path's OWN
+    // forward view stay open" — so the trigger is now a single raycast along the walk's own
+    // look-ahead direction (`_lookAhead`, the same point the default rule already aims at): a long
+    // hit means the corridor/hall keeps running, stay on path regardless of how close the flanking
+    // walls are; a short hit means the view ahead itself is about to end (a dead end, or a
+    // storey-crossing pocket with a mix of walls), and only then does the rule turn toward depth.
     var _AIM_DEPTH_CLOSE_FRAC = 0.05;   // "adjacent, would be fleeting" radius, a fraction of envelope
-                                        // — deliberately TIGHTER than §CPE_AIM_DENSITY's 0.12 "near":
-                                        // that radius means "nothing substantial", this one means
-                                        // "close enough to whip past", a smaller, stricter scale.
+                                        // — the SUBJECT SEARCH's own exclusion radius, unchanged.
     var _AIM_DEPTH_SEARCH_FRAC = 0.30;  // how far out still counts as "a nearby facade" — bounds the
                                         // search to the room/corridor scale, not a site-wide reach.
-    var _AIM_DEPTH_DENS_FLOOR = 10;     // "surrounded": soft density at CLOSE range above which the
-                                        // neighbourhood counts as boxed-in — mirrors _AIM_DENS_FLOOR.
+    var _AIM_DEPTH_FWD_CLEAR_FRAC = 0.06;  // how far ahead along the look-ahead direction still
+                                        // counts as "open" before the rule fires — deliberately
+                                        // smaller than SEARCH_FRAC (that bounds where to look FOR a
+                                        // subject once triggered; this bounds when to trigger at all).
     // §CPE_AIM_DEPTH_SCALE (2026-07-31, MEASURED live on Hospital, envelope=147m): a pure
     // envelope-fraction radius is corridor-scale on a small building (Duplex, envelope~15m → 0.75m)
     // but ~7.4m/44m (close/search) on a large one — big enough that "boxed in" was true almost
@@ -6126,29 +7292,74 @@ async function setupEffects(A, renderer, scene, camera) {
     // buildings (where it was already correct), it just can no longer balloon on large ones.
     var _AIM_DEPTH_CLOSE_MIN_M = 1.5, _AIM_DEPTH_CLOSE_MAX_M = 4.5;
     var _AIM_DEPTH_SEARCH_MIN_M = 4.0, _AIM_DEPTH_SEARCH_MAX_M = 18.0;
-    function _aimDepthWeight(p) {
+    var _AIM_DEPTH_FWD_CLEAR_MIN_M = 3.0, _AIM_DEPTH_FWD_CLEAR_MAX_M = 8.0;   // corridor/hall scale —
+                                        // same absolute-clamp reasoning as the close/search radii
+                                        // above: an envelope fraction alone over/undershoots on very
+                                        // small/large buildings (§CPE_AIM_DEPTH_SCALE, unchanged).
+    // Single ray along the walk's own look-ahead direction — same BVH raycaster/mesh set _cinemaFan
+    // already uses (§INTERIOR_PACING's own header: "the ONLY where-is-open-space source"), extended
+    // to a full 3D direction rather than horizontal-only _cinemaLookDist, because a walk can climb
+    // toward a ceiling (a storey crossing), not just turn a corner. `_cinemaFanMeshes()` only returns
+    // `.visible` meshes, so this is buildup-safe for free — unbuilt elements aren't in the scene to
+    // hit, the same reason _cinemaFan/_cinemaLookDist already work correctly during a bake.
+    function _aimForwardClear(p, e3) {
+      var ah = _lookAhead(p, e3);
+      var dx = ah.x - p.x, dy = ah.y - p.y, dz = ah.z - p.z, dL = Math.hypot(dx, dy, dz);
+      if (dL < 1e-6) return CINEMA_FAN_FAR;
+      var meshes = _cinemaFanMeshes();
+      if (!meshes.length) return CINEMA_FAN_FAR;
+      if (!_cineFanRay) { _cineFanRay = new THREE.Raycaster(); _cineFanRay.firstHitOnly = true; }
+      _cineFanRay.set(new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(dx / dL, dy / dL, dz / dL));
+      _cineFanRay.far = CINEMA_FAN_FAR;
+      var hits = null;
+      try { hits = _cineFanRay.intersectObjects(meshes, true); } catch (e) { return CINEMA_FAN_FAR; }
+      return (hits && hits.length) ? hits[0].distance : CINEMA_FAN_FAR;
+    }
+    // §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13) — buildup-aware instead of buildup-off. The
+    // old guard (kept below in spirit, not in code) skipped this rule entirely during buildup because
+    // the subject grid was the WHOLE finished building with no notion of what §CPE_BUILDUP had
+    // actually revealed by a given frame. Fix: derive the SAME cursor the real bake/preview would ask
+    // for at this probe's e3 (window.tmFollowTimeline / APP.buildupTAt / APP.buildupCursorAt — never
+    // a second, independently-derived clock), and restrict the candidate search to elements placed by
+    // it (tmGuidEndTs, above). Degrade, not disable: if Time Machine isn't armed yet (e.g. a scrub
+    // before the first real Play — §CPE_SCRUB_BUILDUP_SYNC's own documented gap) or the running
+    // time_machine.js is old enough to lack tmGuidEndTs, this returns null for that probe exactly as
+    // the old unconditional guard did — never faces unbuilt geometry by falling back to the whole
+    // building.
+    function _aimBuildupCursorAt(e3) {
+      if (typeof window.tmFollowTimeline !== 'function' || typeof window.APP === 'undefined' ||
+          typeof window.APP.buildupCursorAt !== 'function') return null;
+      var bk;
+      try { bk = window.tmFollowTimeline(); } catch (e) { bk = null; }
+      if (!bk) return null;
+      var bkT = (typeof window.APP.buildupTAt === 'function') ? window.APP.buildupTAt(e3, { beats: { rise: tR } }) : e3;
+      return window.APP.buildupCursorAt(bkT, bk);
+    }
+    function _aimDepthWeight(p, e3) {
       if (typeof A.three2ifc !== 'function') return 0;
-      // §CPE_AIM_DEPTH_BUILDUP_GUARD (2026-07-31, user-reported live: "turning when buildup has not
-      // shown any construction yet"): the subject grid (_aimGrid/_densPoints) is the WHOLE finished
-      // building, computed once at edit time — it has no notion of what §CPE_BUILDUP has actually
-      // revealed by a given frame (that cursor only exists inside cinema_maxq.js's bake loop, after
-      // this rule has already run). Rather than face unbuilt geometry, skip the rule entirely while
-      // buildup is on, until subject-selection is restructured to run per-frame with the real cursor
-      // (see prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP — not yet built). Falls back to the
-      // plain look-ahead, exactly as if this rule did not exist for that film.
-      if (A._cinemaPathEdit && A._cinemaPathEdit.buildup) return null;
+      var buildupOn = !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup);
+      var placedPts = null, cursorMs = null;
+      if (buildupOn) {
+        cursorMs = _aimBuildupCursorAt(e3 == null ? 0 : e3);
+        if (cursorMs == null) return null;               // degrade: no cursor available yet
+        placedPts = _aimPlacedPoints(cursorMs);
+        if (placedPts == null) return null;               // degrade: no per-guid completion data
+      }
       var pIfc = A.three2ifc(p.x, p.y, p.z);
       var Rclose = Math.max(_AIM_DEPTH_CLOSE_MIN_M, Math.min(_AIM_DEPTH_CLOSE_MAX_M, envelope * _AIM_DEPTH_CLOSE_FRAC));
-      var dens = _aimSoftDensity(p, Rclose);
-      var w = _cinemaSmoothstep(Math.min(1, dens / _AIM_DEPTH_DENS_FLOOR));
-      return { w: w, dens: dens, R: Rclose, pIfc: pIfc };
+      var clearM = Math.max(_AIM_DEPTH_FWD_CLEAR_MIN_M, Math.min(_AIM_DEPTH_FWD_CLEAR_MAX_M, envelope * _AIM_DEPTH_FWD_CLEAR_FRAC));
+      var fwdClear = _aimForwardClear(p, e3 == null ? 0 : e3);
+      var w = 1 - _cinemaSmoothstep(Math.min(1, fwdClear / clearM));
+      return { w: w, fwdClear: fwdClear, clearM: clearM, R: Rclose, pIfc: pIfc, cells: placedPts ? _aimGridFrom(placedPts) : null };
     }
     // Weighted centroid over cells BEYOND the close radius (excludes the very thing that triggered
     // this — the adjacent, fleeting wall) and within a bounded search bubble, weight = count * distance
     // — reward mass AND depth jointly, so a distant sparse cell and a near-ish empty direction both
     // lose to a real facade that is actually further away.
-    function _aimDepthSubject(pIfc, Rclose) {
-      var cells = _aimGrid();
+    // `cellsOverride` — §CPE_AIM_DEPTH_BUILDUP candidate 2: the placed-only grid from _aimDepthWeight
+    // above, when buildup is on. Omitted (every other caller), the original whole-building _aimGrid().
+    function _aimDepthSubject(pIfc, Rclose, cellsOverride) {
+      var cells = cellsOverride || _aimGrid();
       if (!cells.length) return null;
       var Rsearch = Math.max(Rclose * 2, Math.min(_AIM_DEPTH_SEARCH_MAX_M, Math.max(_AIM_DEPTH_SEARCH_MIN_M, envelope * _AIM_DEPTH_SEARCH_FRAC)));
       // §CPE_AIM_DEPTH_VERTICALITY (2026-07-31, MEASURED — the first cut's own witness caught this):
@@ -6199,9 +7410,9 @@ async function setupEffects(A, renderer, scene, camera) {
       var K = 64, i, ws = [], hasS = [], sx = [], sy = [], sz = [];
       for (i = 0; i <= K; i++) {
         var p = _outPos(i / K);
-        var A0 = _aimDepthWeight(p);
+        var A0 = _aimDepthWeight(p, i / K);
         var wv = (A0 && A0.w) ? A0.w : 0;
-        var sub = (A0 && A0.w > 1e-4) ? _aimDepthSubject(A0.pIfc, A0.R) : null;
+        var sub = (A0 && A0.w > 1e-4) ? _aimDepthSubject(A0.pIfc, A0.R, A0.cells) : null;
         if (A0 && A0.w > 1e-4 && !sub) wv = 0;   // no candidate facade in the bubble → don't trigger
         ws.push(wv);
         hasS.push(sub ? 1 : 0);     // §CPE_STICK_HOLD: where a REAL subject exists (boost gate)
@@ -6227,8 +7438,14 @@ async function setupEffects(A, renderer, scene, camera) {
                           x: smooth(smooth(sx)), y: smooth(smooth(sy)), z: smooth(smooth(sz)) };
       var wMax = 0, wN = 0;
       for (i = 0; i <= K; i++) { if (_aimDepthSeries.w[i] > wMax) wMax = _aimDepthSeries.w[i]; if (_aimDepthSeries.w[i] > 0.01) wN++; }
+      // §CPE_AIM_DEPTH_BUILDUP candidate 2: report whether buildup-aware restriction actually engaged
+      // this build, and on how many of the K probes — the number a live bake log should be read
+      // against, not just "buildup was checked".
+      var buildupOn = !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup);
+      var cursorOk = buildupOn ? (_aimBuildupCursorAt(0) != null) : null;
       console.log('§CPE_AIM_DEPTH_SERIES probes=' + (K + 1) + ' smoothed=2x5tap active=' + wN + '/' + (K + 1) +
-        ' maxBlend=' + wMax.toFixed(2) + ' — mirror of §CPE_AIM_SERIES, opposite trigger (boxed-in, not empty)');
+        ' maxBlend=' + wMax.toFixed(2) + ' — mirror of §CPE_AIM_SERIES, opposite trigger (boxed-in, not empty)' +
+        (buildupOn ? ' buildupAware=' + (cursorOk ? 'yes(restricted to placed elements)' : 'DEGRADED(no TM cursor yet, guard behaves as before)') : ''));
     }
     function _aimDepthAt(e3) {
       if (!_aimDepthSeries) _aimDepthBuild();
@@ -6242,6 +7459,20 @@ async function setupEffects(A, renderer, scene, camera) {
                y: S.y[j] * (1 - f) + S.y[j + 1] * f,
                z: S.z[j] * (1 - f) + S.z[j + 1] * f };
     }
+    // §CPE_AIM_DEPTH_BUILDUP candidate 2 — read-only test/debug probe, same precedent as
+    // cinema_path_editor.js's own `_probe*` hooks: exercises the REAL functions (never a
+    // re-implementation) so a witness can assert against the product path directly.
+    A._probeAimDepth = function(e3) {
+      e3 = e3 == null ? 0 : e3;
+      var p = _outPos(e3);
+      var A0 = _aimDepthWeight(p, e3);
+      if (!A0) return { fired: false, buildupOn: !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup) };
+      var sub = A0.w > 1e-4 ? _aimDepthSubject(A0.pIfc, A0.R, A0.cells) : null;
+      var placedN = A0.cells ? A0.cells.reduce(function(s, c) { return s + c.n; }, 0) : null;
+      return { fired: !!sub, w: A0.w, fwdClear: A0.fwdClear, clearM: A0.clearM, subject: sub,
+               restricted: !!A0.cells, placedElems: placedN, cellCount: A0.cells ? A0.cells.length : null,
+               buildupOn: !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup) };
+    };
     var _aimDepthLast = { logged: 0 };
     function _aimDepthApply(p, T, lx, ly, lz, e3, openU, boost) {
       // Same test-only switch as §CPE_AIM_DENSITY — no production effect, nothing sets it in the app.
@@ -6287,7 +7518,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (nowA - _aimDepthLast.logged > 500) {
         _aimDepthLast.logged = nowA;
         console.log('§CPE_AIM_DEPTH e3=' + (e3 == null ? '?' : e3.toFixed(3)) +
-          ' floor=' + _AIM_DEPTH_DENS_FLOOR + ' subject=(' + A0.x.toFixed(1) + ',' +
+          ' trigger=fwdClear subject=(' + A0.x.toFixed(1) + ',' +
           A0.y.toFixed(1) + ',' + A0.z.toFixed(1) + ')' +
           ' perpDeg=' + (Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(1) +
           ' blend=' + w.toFixed(2) + ' seamTaper=' + wSeam.toFixed(2) + ' openTaper=' + wOpen2.toFixed(2));
@@ -6507,6 +7738,41 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     var _settleHoldSec = (_cpeBands && _cpeBands.length && isFinite(+_cpeBands[0].hold)) ? Math.max(0, +_cpeBands[0].hold) : 0;
     var _walkTurnDegVal = _walkTurnDeg();
+    // ══ §CPE_DISCIPLINE_REVEAL_PULLOUT — the pull-out + repeated-lap restructure (2026-08-14) ═════
+    // Spec: bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md, dated section "pull-out restructure".
+    // Supersedes the there-and-back Mechanism C shape: NO backward retrace. Camera arrives at the
+    // last stick (tO, end of round 1), does a brief pull-out (tP), then flies the SAME path again
+    // forward (round 2, tV), then the disc-parade tail — folded into the EXISTING rise beat's own
+    // time budget, not a separate beat (see _natSec.rise below and poseAt). A.cpeRevealDiscsPresent
+    // (outer scope) is shared with cinema_path_editor.js's own duration estimate (_naturalDuration)
+    // — one discipline-count implementation, not two kept in sync by hand.
+    var _revealPulloutSec = 0, _revealFlybackSec = 0, _revealRoundSec = 0, _revealTailSec = 0, _revealDiscs = [], _revealQtyCost = {};
+    if (_cpeReveal) {
+      _revealDiscs = A.cpeRevealDiscsPresent();
+      if (_revealDiscs.length) {
+        // Pull-out: fixed 1.5s (CINEMA_REVEAL_PULLOUT_SEC, author's call — see the constant's own
+        // comment). §CPE_DISCIPLINE_REVEAL_FLYBACK (2026-08-16, bim-compiler prompts/
+        // CINEMA_DISCIPLINE_REVEAL.md's dated section): retraces the SAME walked path backward
+        // (f:1->0) at CINEMA_PULLBACK_MPS ("flying, not walking" — reused, not a new speed invented)
+        // to smooth the old teleport-cut back onto the first stick. Round 2: same pace as the
+        // outbound walk, ONE lap forward only — no there-and-back, no authored holds replayed
+        // (matches the original Mechanism C's own "not requested" note). Tail: ~2s/discipline + a
+        // final 2s all-together — KEPT (see spec file's dated section for why the all-together slot
+        // was kept rather than dropped: the user asked for it repeatedly elsewhere in this file's
+        // own history, e.g. the ORIGIN ask and the Mechanism B pacing quote).
+        _revealPulloutSec = CINEMA_REVEAL_PULLOUT_SEC;
+        _revealFlybackSec = totalLen / CINEMA_PULLBACK_MPS;
+        _revealRoundSec = totalLen / CINEMA_WALK_MPS;
+        _revealTailSec = 2 * _revealDiscs.length + 2;
+        _revealQtyCost = A.cpeRevealDiscQtyCost ? A.cpeRevealDiscQtyCost(_revealDiscs) : {};
+        console.log('§CPE_REVEAL_ROUND on pulloutSec=' + _revealPulloutSec.toFixed(1) + ' flybackSec=' +
+          _revealFlybackSec.toFixed(1) + ' round2Sec=' + _revealRoundSec.toFixed(1) + ' tailSec=' +
+          _revealTailSec.toFixed(1) + ' discs=[' + _revealDiscs.join(',') + '] totalSec=' +
+          (_revealPulloutSec + _revealFlybackSec + _revealRoundSec + _revealTailSec).toFixed(1));
+      } else {
+        console.log('§CPE_REVEAL_ROUND skipped — no non-ARC/STR discipline present in this building');
+      }
+    }
     var _natSec = {
       // §CPE_NOISE_LAW, second half — the same ratio that spaces the frames also BUYS the seconds
       // ("where sudden diff is adverse noise impact and introduce frames to smoothen", the user's
@@ -6533,10 +7799,18 @@ async function setupEffects(A, renderer, scene, camera) {
       // ("constant speed"): speed is constant EXCEPT at authored holds, which is the point of them.
       out:   (totalLen / CINEMA_WALK_MPS + _walkTurnDegVal / CINEMA_TURN_DPS) *
              (1 + (CINEMA_PACE_SWING - 1) * _walkBusy) + _holdTotal,
+      // §CPE_DISCIPLINE_REVEAL_PULLOUT: none of pullout/flyback/reveal(round2)/tail are ever part
+      // of the user-typed total-seconds override system (no field for any of them in the panel) —
+      // always these measured values, computed just above, 0 when off/empty.
+      pullout: _revealPulloutSec,
+      flyback: _revealFlybackSec,       // §CPE_DISCIPLINE_REVEAL_FLYBACK: retrace back to the first stick
+      reveal: _revealRoundSec,          // round 2's own seconds — the repeated forward lap only
+      tail:   _revealTailSec,           // folded into `rise` below, not its own beat boundary
       rise:  Math.max(0.5, _pullDist / CINEMA_PULLBACK_MPS),
       orbit: 360 / CINEMA_TURN_DPS
     };
-    var _natTotal = _natSec.dive + _natSec.spin + _natSec.out + _natSec.rise + _natSec.orbit;
+    var _natTotal = _natSec.dive + _natSec.spin + _natSec.out + _natSec.pullout + _natSec.flyback +
+                    _natSec.reveal + _natSec.tail + _natSec.rise + _natSec.orbit;
     // Whitebox proof for §CPE_WALK_BUDGET_NOISE_BLIND — every term the formula reads, printed
     // together so a witness can recompute `out` from this line alone and compare against
     // _natSec.out, rather than trusting the arithmetic happened as claimed.
@@ -6563,7 +7837,8 @@ async function setupEffects(A, renderer, scene, camera) {
     // uniformly" true by construction.
     var _useSec = _cpeSecOverride
       ? { dive: CINEMA_DIVE_SEC, spin: CINEMA_SPIN_SEC, out: CINEMA_OUT_SEC, rise: CINEMA_RISE_SEC,
-          orbit: _natSec.orbit }
+          orbit: _natSec.orbit, reveal: _natSec.reveal, pullout: _natSec.pullout,
+          flyback: _natSec.flyback, tail: _natSec.tail }
       : _natSec;
     // The pose Beat 2 ends on: level, on the spin's final bearing. Beat 3 must START here.
     var _handYaw = yaw0 + dYaw;
@@ -6578,13 +7853,45 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§CPE_SEAM_CONTINUOUS openDeg=' + _openDeg.toFixed(1) + ' openU=' + _openU.toFixed(4) +
       ' (~' + (_openU * _useSec.out).toFixed(2) + 's of the ' + _useSec.out.toFixed(1) +
       's walk) handoffYawDeg=' + (_handYaw * 180 / Math.PI).toFixed(1));
-    var _shapeTotal = _useSec.dive + _useSec.spin + _useSec.out + _useSec.rise + _useSec.orbit;
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT — the tail's seconds fold into the RISE beat's SHAPE budget
+    // (`_riseFolded`, used only for `_shapeTotal`/tR below) without ever mutating `_useSec.rise`
+    // itself. This is what makes the tail's slow-down "blend into" the EXISTING pull-back/rise
+    // motion (spec's own words) instead of inventing a second camera behaviour: poseAt's Beat 4
+    // branch runs the SAME unmodified _beat4Pose/_cinemaEaseFloored formula across the now-larger
+    // [tV,tR] span, so the SAME pull-back distance is covered over MORE time — average speed is
+    // measurably, continuously lower for exactly as long as captions are cycling (never frozen —
+    // "not pause"), then the beat naturally regains its normal pace for the true rise/orbit hand-off.
+    // ⚠ BUG FOUND WHILE TRACING THIS (not shipped): mutating `_useSec.rise` in place — the first cut
+    // of this fold — silently poisoned the round-trip the editor depends on. `plan.sec.rise` feeds
+    // cinema_path_editor.js's `s.baseSec.rise`, which `_buildOverride()` echoes straight back as the
+    // NEXT plan's `riseSec` override; on every REOPEN of an already-saved reveal=ON path (the plan
+    // handed to the editor already has _cpeReveal true, per `A._cinemaPathEdit`), that echoed value
+    // would already be folded, and folding it AGAIN here double-counts the tail — measurably growing
+    // the rise beat on every re-edit. `_riseFolded` keeps the fold entirely local to `_shapeTotal`/tR;
+    // `_useSec.rise` (and therefore `sec.rise`/`naturalSec.rise`) stays the TRUE unfolded pull-back
+    // budget always, safe to round-trip through the override channel any number of times.
+    var _riseFolded = _useSec.rise + (_useSec.tail || 0);
+    var _shapeTotal = _useSec.dive + _useSec.spin + _useSec.out + _useSec.pullout + _useSec.flyback +
+                       _useSec.reveal + _riseFolded + _useSec.orbit;
     var tD = _useSec.dive / _shapeTotal;
     var tS = tD + _useSec.spin / _shapeTotal;
     var tO = tS + _useSec.out / _shapeTotal;
-    var tR = tO + _useSec.rise / _shapeTotal;
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT: tP is the pull-out sub-beat's own end boundary.
+    // §CPE_DISCIPLINE_REVEAL_FLYBACK (2026-08-16): tF is the fly-back's own end boundary — the
+    // instant the camera is back on the first stick, replacing the old teleport cut that used to
+    // sit right at tP. tV is round 2's own end boundary (the SECOND arrival at the last stick — the
+    // real "STOP", per the spec). useSec.pullout/flyback/reveal are all 0 when off or when the
+    // building has no non-ARC/STR discipline, which makes tP===tF===tV===tO exactly — every poseAt
+    // branch below becomes zero-width and unreachable, and tR (below) folds in a 0 tail too, so an
+    // off/empty-building film is byte-identical to before this feature existed (Guardrail 2).
+    var tP = tO + _useSec.pullout / _shapeTotal;
+    var tF = tP + _useSec.flyback / _shapeTotal;
+    var tV = tF + _useSec.reveal / _shapeTotal;
+    var tR = tV + _riseFolded / _shapeTotal;   // folded (includes the tail) — see _riseFolded above
     console.log('§CINEMA_PACING natural=' + _natTotal.toFixed(1) + 's = dive ' + _natSec.dive.toFixed(1) +
       ' + spin ' + _natSec.spin.toFixed(1) + ' + walk ' + _natSec.out.toFixed(1) +
+      ' + pullout ' + _natSec.pullout.toFixed(1) + ' + flyback ' + _natSec.flyback.toFixed(1) +
+      ' + round2 ' + _natSec.reveal.toFixed(1) + ' + tail ' + _natSec.tail.toFixed(1) +
       ' + pullback ' + _natSec.rise.toFixed(1) + ' + orbit ' + _natSec.orbit.toFixed(1) +
       '  (walk ' + totalLen.toFixed(1) + 'm @' + CINEMA_WALK_MPS + 'm/s, dive ' + diveDist.toFixed(1) +
       'm @' + CINEMA_DIVE_MPS + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + CINEMA_PULLBACK_MPS +
@@ -6593,6 +7900,7 @@ async function setupEffects(A, renderer, scene, camera) {
       _spinBusyMult.toFixed(2) + ' busy)' +
       ' override=' + _cpeSecOverride + ' running=' + durationSec.toFixed(1) + 's');
     console.log('§CINEMA_BEATS dive=' + tD.toFixed(3) + ' spin=' + tS.toFixed(3) + ' out=' + tO.toFixed(3) +
+      ' pullout=' + tP.toFixed(3) + ' flyback=' + tF.toFixed(3) + ' round2=' + tV.toFixed(3) +
       ' rise=' + tR.toFixed(3) + ' turnOverlap=' + CINEMA_TURN_OVERLAP +
       ' (dur=' + durationSec.toFixed(1) + 's) route=' + outRoute +
       ' waypoints=' + outWp.length + ' pathLen=' + totalLen.toFixed(1) +
@@ -6809,12 +8117,39 @@ async function setupEffects(A, renderer, scene, camera) {
         return { x: p3f.x, y: p3f.y, z: p3f.z,
                  tx: p3f.x + g3.x * 20, ty: p3f.y + g3.y * 20, tz: p3f.z + g3.z * 20 };
       }
+      if (tNorm <= tP) {
+        // ── §CPE_DISCIPLINE_REVEAL_PULLOUT: the brief pull-out/dolly-back sub-beat, ONLY when
+        // _cpeReveal is on. tP===tO (zero-width, unreachable — the tNorm<=tO branch above already
+        // caught everything up to here) whenever reveal is off or the building has no non-ARC/STR
+        // discipline, so an off/empty-building film never enters this branch and is byte-identical
+        // to before this feature existed.
+        return _pullOutPose((tNorm - tO) / Math.max(1e-6, tP - tO));
+      }
+      if (tNorm <= tF) {
+        // ── §CPE_DISCIPLINE_REVEAL_FLYBACK (2026-08-16): fast eased retrace back onto the first
+        // stick, replacing the old teleport cut that used to sit right here. tF===tP (zero-width,
+        // unreachable) under the same off/empty conditions as tP above.
+        return _flyBackPose((tNorm - tP) / Math.max(1e-6, tF - tP));
+      }
+      if (tNorm <= tV) {
+        // ── §CPE_DISCIPLINE_REVEAL_PULLOUT: round 2 — the SAME path flown again, forward only, no
+        // retrace. Now starts CLEAN (the fly-back above already put the camera on the first stick),
+        // no cut. tV===tF (zero-width, unreachable) under the same off/empty conditions as tP above.
+        return _revealPose((tNorm - tF) / Math.max(1e-6, tV - tF));
+      }
       if (tNorm <= tR) {
         // ── Beat 4: turn around to face the building and rise onto the orbit band. Ends EXACTLY
         // on _orbitPose(0), which is what keeps the handoff continuous (the old Act III handoff
         // did not, and measured a ~10.8m single-frame step at t≈0.80). The look-at picks up from
         // CINEMA_TURN_OVERLAP_MAX (where Beat 3 left it) rather than restarting at 0 — see above.
-        var e4 = _cinemaEaseFloored((tNorm - tO) / Math.max(1e-6, tR - tO));
+        // Boundary is tV, not tO — tV===tO when the reveal round is off/empty, so this formula
+        // reduces to today's exactly when there's nothing inserted before it. §CPE_DISCIPLINE_
+        // REVEAL_PULLOUT (2026-08-14): this code is UNCHANGED from before the restructure — the
+        // disc-parade tail is folded into [tV,tR]'s own (now larger) time budget rather than a new
+        // beat, so the SAME e4/_beat4Pose formula covers the same pull-back distance over more
+        // seconds, which is the tail's entire "slows down" effect (see _useSec.rise's own comment
+        // above — no new camera motion invented for the tail).
+        var e4 = _cinemaEaseFloored((tNorm - tV) / Math.max(1e-6, tR - tV));
         var p4f = _beat4Pose(e4);
         // §CPE_GAZE_CONSTANT_RATE spans Beat 3 AND Beat 4 — see _gazeRateBuild. MEASURED: limiting
         // only the walk moved the whip rather than removing it (Terminal 4.1 -> 34.9 deg/frame at
@@ -6826,6 +8161,128 @@ async function setupEffects(A, renderer, scene, camera) {
                  tx: p4f.x + g4.x * 20, ty: p4f.y + g4.y * 20, tz: p4f.z + g4.z * 20 };
       }
       return _tailPose(tNorm);
+    }
+    // ══ §CPE_DISCIPLINE_REVEAL_PULLOUT — pull-out + repeated forward lap (2026-08-14) ══════════════
+    // Spec: bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md, dated "pull-out restructure" section.
+    // Supersedes the old Mechanism C there-and-back: no backward retrace exists any more. Position
+    // reuses _outPos(f) — the SAME curve Beat 3 walks. Deliberately does NOT reuse _beat3Pose's
+    // hold/pin/aim-depth machinery — kept isolated per this file's header rule ("touches
+    // _cinemaPathPlan as little as possible"), same reasoning the original build already established.
+    // Generic gaze-blend helper (same yaw/pitch-lerp technique _cinemaGazeBlend already uses,
+    // generalized to an explicit target direction instead of always the pivot — this round looks
+    // along the WALK, not at the building centre).
+    function _dirBlend(px, py, pz, axd, ayd, azd, bxd, byd, bzd, w) {
+      var yawA = Math.atan2(azd, axd), pitA = Math.atan2(ayd, Math.hypot(axd, azd));
+      var yawB = Math.atan2(bzd, bxd), pitB = Math.atan2(byd, Math.hypot(bxd, bzd));
+      var raw = yawB - yawA;
+      var dYaw = raw - 2 * Math.PI * Math.round(raw / (2 * Math.PI));
+      var yaw = yawA + dYaw * w, pit = pitA + (pitB - pitA) * w, cp = Math.cos(pit);
+      return { x: px, y: py, z: pz,
+               tx: px + Math.cos(yaw) * 20 * cp, ty: py + Math.sin(pit) * 20, tz: pz + Math.sin(yaw) * 20 * cp };
+    }
+    function _revealTravelDir(f, dir) {
+      var eps = 1 / 64;
+      var pA = _outPos(Math.max(0, f - eps)), pB = _outPos(Math.min(1, f + eps));
+      var vx = (pB.x - pA.x) * dir, vy = (pB.y - pA.y) * dir, vz = (pB.z - pA.z) * dir;
+      var vL = Math.hypot(vx, vy, vz);
+      if (vL < 1e-6) return { x: _beat3EndDir.x, y: _beat3EndDir.y, z: _beat3EndDir.z };
+      return { x: vx / vL, y: vy / vL, z: vz / vL };
+    }
+    // §CPE_GAZE_CONSTANT_RATE interaction (found while witnessing the original build, real MEASURED
+    // jump — not assumed): Beat 3/4's ACTUAL rendered gaze at a beat boundary is the RATE-LIMITED
+    // signal (_gazeRateAt(_spanFracOf(tNorm))), not the raw _beat3EndDir — the limiter can lag behind
+    // the raw signal on a fast turn. Anchoring seam blends to raw _beat3EndDir measured a 63deg
+    // instantaneous jump at the tO seam on Duplex (witness_cpe_reveal_round.js). Anchor to what is
+    // ACTUALLY on screen at that instant instead.
+    function _revealSeamDir(tNorm) {
+      var g = _gazeRateAt(_spanFracOf(tNorm));
+      return g || _beat3EndDir;
+    }
+    // First-guess tuning knob (flagged in the original spec, not re-measured for this restructure) —
+    // the fraction of round 2 spent blending across its END seam (travel-tangent -> Beat 4's actual
+    // e4=0 gaze) instead of pure travel-tangent gaze, so Beat 4's hand-off picks up with zero kink.
+    var CPE_REVEAL_SEAM_FRAC = 0.08;
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT: the pull-out sub-beat (tO..tP). Author's own call (documented
+    // in the spec file, not user-dictated): a straight dolly-back along the NEGATIVE of the "angle of
+    // attack" — with gaze held CONSTANT (still looking forward along that same direction, i.e. toward
+    // where round 2 will re-enter). No gaze blend: this is the simplest defensible pull-out (position
+    // retreats, look direction doesn't change). §CPE_DISCIPLINE_REVEAL_FLYBACK (2026-08-16,
+    // bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md's dated section) SUPERSEDES the note that
+    // used to be here about round 2 starting with "a clean CUT back to the first stick" — user
+    // feedback on a live bake found that cut read as an abrupt, jarring switch. The pull-out itself
+    // is UNCHANGED (still gaze-constant, still no blend) — see `_flyBackPose` below for the new
+    // sub-beat that now bridges from here to the first stick.
+    // ⚠ BUG FOUND BY THE WITNESS (not assumed correct on paper, same discipline the original build's
+    // own comments describe): the "angle of attack" direction is the RATE-LIMITED gaze Beat 3 ACTUALLY
+    // renders at tO (_revealSeamDir(tO)), not the raw _beat3EndDir — witness_cpe_reveal_pullout.js
+    // measured a 78.85deg gap between them on HHS_Office_Federated (the limiter had visibly lagged the
+    // raw signal on the walk's final turn). Anchoring to raw _beat3EndDir would have opened the
+    // pull-out on a direction that instantly snaps away from what was actually on screen the frame
+    // before — exactly the class of bug §CPE_GAZE_CONSTANT_RATE and _revealSeamDir already exist to
+    // prevent elsewhere in this same file. Fixed before this was ever shipped.
+    function _pullOutPose(w) {
+      w = Math.max(0, Math.min(1, w));
+      var pt = _outPos(1);                      // the last stick — where round 1 arrives
+      var dir = _revealSeamDir(tO);              // the "angle of attack" — the gaze ACTUALLY on screen at tO
+      var dist = CINEMA_REVEAL_PULLOUT_SEC * CINEMA_PULLBACK_MPS;   // derived, reuses the pull-back rate
+      var e = _cinemaEaseFloored(w);
+      var px = pt.x - dir.x * dist * e, py = pt.y - dir.y * dist * e, pz = pt.z - dir.z * dist * e;
+      return { x: px, y: py, z: pz, tx: px + dir.x * 20, ty: py + dir.y * 20, tz: pz + dir.z * 20 };
+    }
+    // §CPE_DISCIPLINE_REVEAL_FLYBACK (2026-08-16) — the sub-beat between the pull-out (tP) and round
+    // 2's forward lap (tF), replacing the old teleport cut. Retraces the SAME `_outPos(f)` curve the
+    // walk itself already validated as collision-free, backward (f: 1->0) — NOT a straight line
+    // between the pull-out's retreated point and the first stick, which would risk clipping through
+    // walls at any turn the corridor takes (exactly the class of bug `_revealSeamDir`/
+    // §CPE_GAZE_CONSTANT_RATE already exist to prevent elsewhere in this file). Paced at
+    // CINEMA_PULLBACK_MPS ("flying, not walking" — reused, not a new speed invented), so this is
+    // "fast" relative to round 2's own CINEMA_WALK_MPS retrace, not instant. Position blends from the
+    // pull-out's actual final (off-path) point onto the path's f=1 point over the first
+    // CPE_REVEAL_SEAM_FRAC width (same seam-blend idiom `_revealPose`'s own ending already uses),
+    // then retraces the path for the remainder. Gaze holds at the pull-out's own "angle of attack"
+    // (`_revealSeamDir(tO)` — matches pull-out's own constant-gaze choice, no reason to start turning
+    // the head before the camera is even back on the path) through the position blend, then blends
+    // into the forward travel tangent at f=0 over the FINAL CPE_REVEAL_SEAM_FRAC width, so round 2's
+    // own opening gaze picks up with zero kink — same contract _revealPose's own end seam keeps at
+    // the Beat 4 handoff.
+    function _flyBackPose(w) {
+      w = Math.max(0, Math.min(1, w));
+      var e = _cinemaEaseFloored(w);
+      var holdDir = _revealSeamDir(tO);           // same "angle of attack" the pull-out opened on
+      var pOut = _pullOutPose(1);                 // the pull-out's own final point — this beat's start
+      var onPath = _outPos(1 - e);                // retrace target at this instant
+      var pos;
+      if (w < CPE_REVEAL_SEAM_FRAC) {
+        var s = _cinemaSmoothstep(w / CPE_REVEAL_SEAM_FRAC);
+        pos = { x: pOut.x + (onPath.x - pOut.x) * s, y: pOut.y + (onPath.y - pOut.y) * s,
+                z: pOut.z + (onPath.z - pOut.z) * s };
+      } else {
+        pos = onPath;
+      }
+      if (w > 1 - CPE_REVEAL_SEAM_FRAC) {
+        var endDir = _revealTravelDir(0, 1);      // round 2's own opening gaze
+        return _dirBlend(pos.x, pos.y, pos.z, holdDir.x, holdDir.y, holdDir.z,
+          endDir.x, endDir.y, endDir.z,
+          _cinemaSmoothstep((w - (1 - CPE_REVEAL_SEAM_FRAC)) / CPE_REVEAL_SEAM_FRAC));
+      }
+      return { x: pos.x, y: pos.y, z: pos.z,
+               tx: pos.x + holdDir.x * 20, ty: pos.y + holdDir.y * 20, tz: pos.z + holdDir.z * 20 };
+    }
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT: round 2 (tF..tV) — the SAME path flown again, forward only
+    // (0->1), no there-and-back. Starts CLEAN now — the fly-back above already puts the camera on
+    // the first stick with the correct opening gaze, so no cut happens here any more. Only the END
+    // is seam-blended, into Beat 4's actual e4=0 gaze, matching every other beat seam in this file
+    // (§CPE_GAZE_CONSTANT_RATE).
+    function _revealPose(w) {
+      w = Math.max(0, Math.min(1, w));
+      var e = _cinemaEaseFloored(w);
+      var p = _outPos(e), dv = _revealTravelDir(e, 1);
+      if (w > 1 - CPE_REVEAL_SEAM_FRAC) {
+        var endDir = _revealSeamDir(tV);
+        return _dirBlend(p.x, p.y, p.z, dv.x, dv.y, dv.z, endDir.x, endDir.y, endDir.z,
+          _cinemaSmoothstep((w - (1 - CPE_REVEAL_SEAM_FRAC)) / CPE_REVEAL_SEAM_FRAC));
+      }
+      return { x: p.x, y: p.y, z: p.z, tx: p.x + dv.x * 20, ty: p.y + dv.y * 20, tz: p.z + dv.z * 20 };
     }
     function _beat4Pose(e4) {
         var turnW4 = CINEMA_TURN_OVERLAP_MAX + (1 - CINEMA_TURN_OVERLAP_MAX) * _cinemaSmoothstep(e4);
@@ -6937,50 +8394,67 @@ async function setupEffects(A, renderer, scene, camera) {
           var _ll = Math.hypot(_lx, _ly, _lz) || 1;
           _lx /= _ll; _ly /= _ll; _lz /= _ll;
         }
-        // §CPE_AIM_PIN: a pin at THIS e3's band wins outright — no LOS, no density, no depth. Spec
+        // §CPE_AIM_PIN: a pin at THIS e3's band wins outright — no path-follow, no depth. Spec
         // Part C open question 1's own recommendation, built as the default (flagged in the DONE
         // block as not explicitly user-confirmed, same treatment §CPE_VIEWFINDER's fps question
-        // got): "the pin always wins locally at its own band, with LOS/density resuming immediately
-        // after, no bleed into neighbours." Checked BEFORE §CPE_AIM_DENSITY/DEPTH below so a pinned
-        // zone never even calls them — the "no bleed" guarantee comes from `_pinLookAtAt` itself
-        // (a Voronoi partition by band, see its own comment), not from a blend weight here.
+        // got): "the pin always wins locally at its own band, resuming immediately after, no bleed
+        // into neighbours." Checked BEFORE §CPE_AIM_DEPTH below so a pinned zone never even calls
+        // it — the "no bleed" guarantee comes from `_pinLookAtAt` itself (a Voronoi partition by
+        // band, see its own comment), not from a blend weight here.
         var _pin = _pinLookAtAt(e3);
         if (_pin) {
           var _pdx = _pin.x - p3.x, _pdy = _pin.y - p3.y, _pdz = _pin.z - p3.z;
           var _pdL = Math.hypot(_pdx, _pdy, _pdz) || 1;
           _lx = _pdx / _pdL; _ly = _pdy / _pdL; _lz = _pdz / _pdL;
         } else {
-        // §CPE_AIM_DENSITY: applied AFTER the seam blend (so it can never reopen §CPE_SEAM_CONTINUOUS
-        // at e3=0, where its own weight is 0 anyway — the settle is inside the building) and BEFORE
-        // the orbit hand-off below, which must stay the last word on the gaze at the end of the walk.
-        // Travel direction is the path's own derivative, not the gaze: "perpendicular" is defined
-        // against where the camera is GOING, which is the only reading that survives the camera
-        // already having turned to look at something.
-        // ⚠ The travel direction is the local TREND, not the instantaneous tangent — measured, third
-        // and last cause of the A2 spike. A perpendicular aim is defined RELATIVE to T, so it
-        // inherits T's own rate of turn: at a corner in the (hosed, therefore possibly sharp) walk
-        // the tangent swings fast, and a gaze locked square to it swings just as fast. The probe
-        // showed this surviving both earlier fixes unchanged at ~24°/frame around t=0.437, where the
-        // camera was crawling at 0.09 m/frame — a lot of turn for very little travel, which is the
-        // signature of the tangent and not of the subject. A finite difference over ~3% of the walk
-        // reads "where the camera is generally heading" instead, which is what "perpendicular to
-        // travel" means to a viewer anyway.
+        // §CPE_AIM_DEPTH (§CPE_AIM_SIMPLIFY, 2026-08-13): the ONLY exception to path-follow —
+        // §CPE_AIM_DENSITY, which used to run here first, is retired (see its marker above _aimGrid).
+        // Applied AFTER the seam blend (so it can never reopen §CPE_SEAM_CONTINUOUS at e3=0, where
+        // its own weight is 0 anyway) and BEFORE the orbit hand-off below, which must stay the last
+        // word on the gaze at the end of the walk. Travel direction is the path's own derivative, not
+        // the gaze: "perpendicular" is defined against where the camera is GOING.
+        // ⚠ The travel direction is the local TREND, not the instantaneous tangent — measured cause
+        // of a prior gaze spike. A perpendicular aim is defined RELATIVE to T, so it inherits T's own
+        // rate of turn: at a corner in the (hosed, therefore possibly sharp) walk the tangent swings
+        // fast, and a gaze locked square to it swings just as fast. A finite difference over ~3% of
+        // the walk reads "where the camera is generally heading" instead, which is what "perpendicular
+        // to travel" means to a viewer anyway.
         var _eps = 1 / 32;
         var _pA = _outPos(Math.max(0, e3 - _eps)), _pB = _outPos(Math.min(1, e3 + _eps));
         var _tvx = _pB.x - _pA.x, _tvy = _pB.y - _pA.y, _tvz = _pB.z - _pA.z;
         var _tvL = Math.hypot(_tvx, _tvy, _tvz);
         if (_tvL > 1e-6) {
           var _travelDir = { x: _tvx / _tvL, y: _tvy / _tvL, z: _tvz / _tvL };
-          var _aim = _aimApply(p3, _travelDir, _lx, _ly, _lz, e3, _hBoost);
-          if (_aim) { _lx = _aim.x; _ly = _aim.y; _lz = _aim.z; }
-          // §CPE_AIM_DEPTH: the mirror rule, opposite trigger (surrounded/close, not outside/empty —
-          // see the block above). Applied on the (possibly already §CPE_AIM_DENSITY-blended) gaze so
-          // the two compose rather than race; their triggers are near-disjoint by construction (one
-          // needs low density nearby, the other needs high density AT CLOSE RANGE), so in practice at
-          // most one is ever non-zero at a given pose.
           var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3, _openU, _hBoost);
           if (_aimD) { _lx = _aimD.x; _ly = _aimD.y; _lz = _aimD.z; }
         }
+        }
+        // §CPE_CONE_ORIENT_ADJUST: a user-dragged correction is the LAST word on the gaze at its own
+        // arc-length window, applied AFTER the pin/depth/path-follow chain above — a judgment call,
+        // not user-confirmed: the cone shows whatever the CURRENT combined gaze is (pin included), so
+        // dragging it corrects whatever is currently there, even inside an already-pinned zone. Zero
+        // cost/no-op on every plan with no corrections authored (_cpeCorrectionAt returns null
+        // instantly once `_corrArc` is built empty).
+        // §CPE_CORR_BRANCH probe tap. `_corrRefProbe` is non-null ONLY inside _resolveCorrBranch, so
+        // this is dead weight (one null test) on every normal frame. It sits HERE, immediately before
+        // the correction, because the vector the probe must return is precisely the `a` argument
+        // _cpeCorrDirBlend receives — reading it any later would fold in the correction being resolved,
+        // and reading it via the returned pose would fold in the turnW3 hand-off blend below.
+        if (_corrRefProbe) {
+          _corrRefProbe.x = _lx; _corrRefProbe.y = _ly; _corrRefProbe.z = _lz; _corrRefProbe.hit = true;
+          return null;                        // never reaches a caller: only _resolveCorrBranch sets the probe
+        }
+        var _corr = _cpeCorrectionAt(e3);
+        if (_corr && _corr.w > 0) {
+          // §CPE_AIM_DEPTH_FREEZE (2026-09-01): blend from the FIXED gaze captured at the window's
+          // own edge instead of the live one — inside the window §CPE_AIM_DEPTH kept re-aiming the
+          // from-direction (measured 126-140 deg inside one ramp on Hospital) and that motion
+          // leaked through (1-w) as a 13.114 deg/sample wobble. With `from` the window is a
+          // fixed-to-fixed crossfade; from=null degrades to the live base (pre-freeze behaviour).
+          var _cfx = _lx, _cfy = _ly, _cfz = _lz;
+          if (_corr.from) { _cfx = _corr.from.x; _cfy = _corr.from.y; _cfz = _corr.from.z; }
+          var _cb = _cpeCorrDirBlend(_cfx, _cfy, _cfz, _corr.dir.x, _corr.dir.y, _corr.dir.z, _corr.w, _corr.refD);
+          _lx = _cb.x; _ly = _cb.y; _lz = _cb.z;
         }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
         // should not be robotic abrupt stop and turn, it can play while doing both"): start blending
@@ -7302,7 +8776,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // as its own comment claimed. Re-tapering would undo the user's "the turning should be thruout,
     // till the end of clip", so the swing is bounded at its cause instead.
     //
-    // The law: the composed gaze — look-ahead, seam blend, §CPE_AIM_DENSITY and §CPE_AIM_DEPTH, all
+    // The law: the composed gaze — look-ahead, seam blend, §CPE_AIM_DEPTH's exception, all
     // of it — is sampled in TIME and rate-limited to CINEMA_TURN_DPS, the rate the spin, the orbit
     // lap and the walk's own turn charge are ALREADY priced at. Not a new constant, and not a new
     // opinion about how fast a camera should turn: it is the number this film already uses
@@ -7335,7 +8809,13 @@ async function setupEffects(A, renderer, scene, camera) {
           e = _evenTurnRemap(_cinemaEaseFloored(_holdMap(w3b)));
           p = _beat3Pose(e, w3b);
         } else {
-          p = _beat4Pose(_cinemaEaseFloored((tt - tO) / Math.max(1e-6, tR - tO)));
+          // §CPE_DISCIPLINE_REVEAL: Beat 4's real boundary is tV (not tO) whenever the reveal round
+          // is inserted — MUST match poseAt's own Beat 4 formula below or this table's Beat 4 portion
+          // (the only portion _spanFracOf ever actually looks up above tO — see that function's own
+          // comment) samples the wrong e4 entirely. tt in (tO,tV] clamps to e4=0 (_cinemaEaseFloored
+          // clamps internally) — dead, never-queried table entries, not wrong ones, since _spanFracOf
+          // only ever produces indices in [tS,tO] or [tV,tR], never inside the gap itself.
+          p = _beat4Pose(_cinemaEaseFloored((tt - tV) / Math.max(1e-6, tR - tV)));
         }
         dx = p.tx - p.x; dy = p.ty - p.y; dz = p.tz - p.z;
         L = Math.hypot(dx, dy, dz) || 1;
@@ -7444,7 +8924,16 @@ async function setupEffects(A, renderer, scene, camera) {
     return { base: base, envelope: envelope, arcOnly: !!arcBboxRaw, fillDistance: fillDistance,
              pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax,
              pivot: pivot, pivotSrc: pivotSrc, settle: settle, exit: chosenExit,
-             beats: { dive: tD, spin: tS, out: tO, rise: tR },
+             beats: { dive: tD, spin: tS, out: tO, pullout: tP, flyback: tF, reveal: tV, rise: tR },
+             // §CPE_DISCIPLINE_REVEAL_PULLOUT — the pacing info A.cpeRevealVisualAt(plan, tNorm) and
+             // A.cpeRevealCaptionAt(plan, tNorm) need to compute which visual phase/caption a given
+             // tNorm falls in, exposed here rather than recomputed (or duplicated) outside this
+             // closure. `riseSec` is the UNFOLDED pull-back budget (matches beats.rise minus the
+             // folded tail) — cpeRevealVisualAt needs it separately to find the tail/rise-proper split
+             // inside the now-larger [tV,tR] span. `qtyCost` is the "good touch" nice-to-have (see
+             // A.cpeRevealDiscQtyCost's own comment) — {} when the DB query is unavailable/failed.
+             reveal: { discs: _revealDiscs, pulloutSec: _revealPulloutSec, roundSec: _revealRoundSec,
+                       tailSec: _revealTailSec, riseSec: _useSec.rise, qtyCost: _revealQtyCost },
              // §CINEMA_PATH_EDITOR: the editor's table renders `waypoints` (authored control points,
              // NOT the rounded flown polyline) and re-times off `pathLen`. `sec` echoes the beat
              // seconds actually in force for this plan so the editor never has to guess them back
@@ -7465,8 +8954,17 @@ async function setupEffects(A, renderer, scene, camera) {
                         hold: +(b.hold || 0), _stick: b._stick, _s: b._s,
                         lookAt: b.lookAt ? { x: b.lookAt.x, y: b.lookAt.y, z: b.lookAt.z } : null };
              }) : null,
+             // §CPE_CONE_ORIENT_ADJUST rides along for the same §CPE_REOPEN_NODE reason as `bands`
+             // above: the plan is what the editor RE-OPENS from, so a dropped field would silently
+             // discard every corrected gaze on the next OK.
+             aimCorrections: _cpeCorrections ? _cpeCorrections.map(function(c) {
+               return { pos: { x: c.pos.x, y: c.pos.y, z: c.pos.z }, dir: { x: c.dir.x, y: c.dir.y, z: c.dir.z },
+                        ramp: +(c.ramp != null ? c.ramp : 2), hold: +(c.hold != null ? c.hold : 5),
+                        decay: +(c.decay != null ? c.decay : 4) };
+             }) : null,
              flownPoints: flowWp.length, pathLen: totalLen, route: outRoute, authored: outRoute === 'authored',
-             sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, rise: _useSec.rise },
+             sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, pullout: _useSec.pullout,
+                    flyback: _useSec.flyback, reveal: _useSec.reveal, rise: _useSec.rise },
              naturalSec: _natSec, naturalTotal: _natTotal,
              eyeM: CINEMA_EYE_M, lookdownDeg: CINEMA_LOOKDOWN_DEG, durationSec: durationSec,
              indoor: true, poseAt: poseAt,
@@ -7624,7 +9122,8 @@ async function setupEffects(A, renderer, scene, camera) {
       saved.push(_cpeGet(g));
       if (ov[k] != null && isFinite(ov[k])) _cpeSet(g, ov[k]);
     }
-    var savedWp = _cpeWp, savedBands = _cpeBands, savedHose = _cpeHose;
+    var savedWp = _cpeWp, savedBands = _cpeBands, savedHose = _cpeHose, savedReveal = _cpeReveal,
+        savedCorr = _cpeCorrections;
     // §CPE_HOSE: ops ride the same override object the editor already stages and saves, so a hosed
     // path travels through Save / reload / bake by the existing seam — no second persistence path.
     _cpeHose = (ov.hose && ov.hose.length) ? ov.hose : null;
@@ -7632,11 +9131,16 @@ async function setupEffects(A, renderer, scene, camera) {
     // §CPE_BANDS takes precedence: bands EXPAND to waypoints inside the plan, so passing both would
     // be ambiguous. Bands win because they carry the rigidity constraint that loose points cannot.
     if (ov.bands && ov.bands.length >= 2) { _cpeBands = ov.bands; _cpeWp = null; }
+    _cpeReveal = !!ov.reveal;
+    // §CPE_CONE_ORIENT_ADJUST: same wrapper pattern as hose/reveal above — a plain array of plain
+    // correction objects, no rigidity/expansion concept like bands, so no precedence rule is needed.
+    _cpeCorrections = (ov.aimCorrections && ov.aimCorrections.length) ? ov.aimCorrections : null;
     try {
       return _cinemaPathPlan(durationSec);
     } finally {
       for (i = 0; i < _CPE_KEYS.length; i++) _cpeSet(_CPE_KEYS[i][1], saved[i]);
       _cpeWp = savedWp; _cpeBands = savedBands; _cpeHose = savedHose; _cpeSecOverride = savedSecOv;
+      _cpeReveal = savedReveal; _cpeCorrections = savedCorr;
     }
   };
   A.cinemaPathPlanDerived = _cinemaPathPlan;   // unwrapped, for G1's byte-identity comparison

@@ -175,7 +175,17 @@ async function setupScene(A) {
 
   // Lighting
   // §S276: Physically-correct intensities (legacy × π). Tuned with ACESFilmic @ exposure 0.45.
-  const ambient = new THREE.AmbientLight(0xffffff, 0.785);
+  // §WALL_SIDE_AND_LIGHT_FLOOR (2026-09-01, PHOTOREAL_STILL_RENDER.md): ambient 0.785->0.386 and
+  // hemi 1.257->0.617 — NOT hand-tuned. Derived: the old non-directional fill measured 1.756
+  // ambient-equivalent units on a vertical wall (in-page single-light probe renders, linear:
+  // hemi contributes 0.611/unit at horizontal N, envMap 0.203 at intensity 0.6) against a sun
+  // term of 2.820 (4.4 x 0.958 x the 0.669 max horizontal N·L of this sun vector), so an
+  // away-facing wall held 38% of a sun-facing one's light and could never read dark. Target
+  // contrast 0.25 wants k=0.475 on (ambient, hemi); the interior floor (p25 fill retention
+  // >= 0.55) binds first at k=0.491 — declared conflict, clamped at the floor: achieved
+  // contrast 0.255. One k scales both lights jointly to preserve the colour balance; sun and
+  // envMapIntensity untouched. Witness: witness_wall_side_light_floor.js (§WWSLF_DERIVE line).
+  const ambient = new THREE.AmbientLight(0xffffff, 0.386);
   scene.add(ambient);
   A.ambient = ambient;
 
@@ -185,7 +195,7 @@ async function setupScene(A) {
   scene.add(sun);
   A.sun = sun;
 
-  const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 1.257);
+  const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 0.617);
   scene.add(hemi);
   A.hemi = hemi;
 
@@ -196,6 +206,28 @@ async function setupScene(A) {
   _pmrem.compileCubemapShader();
   var _sky = null;
   var _sunVec = new THREE.Vector3();
+  // §VAC V3 — both arms of §ENVMAP_STOMP_GUARD are counted, so "100% skips" has a denominator.
+  // The sampled line prints every 100th call; the EXACT totals are always readable here, so the
+  // in-flight tail (< 100 calls since the last line) is compressed, never dropped. Same pattern as
+  // time_machine.js's window.__tmTrav — a diagnostic hook a probe or witness can read directly.
+  var _envSkips = 0, _envRegens = 0;
+  A._envmapStompStats = function() { return { skips: _envSkips, regens: _envRegens }; };
+  // §MEMLEAK_PMREM_DISPOSE (2026-08-14): _pmrem.fromScene() allocates a brand-new
+  // WebGLRenderTarget (backing texture + framebuffer) on every call — it is NOT reused/pooled
+  // internally by THREE.PMREMGenerator, and three.js never garbage-collects WebGL resources on
+  // its own. Every prior caller here did `A._envMap = envRT.texture` with no reference kept to
+  // `envRT` itself, so the old render target was silently orphaned on the GPU every time. Measured
+  // via renderer.info.memory.textures in a live headless run (8 calls to A.updateSky(), 2s throttle
+  // apart): texture count climbed 2->10, i.e. +1 leaked GPU texture per call, unbounded — see
+  // prompts/VIEWER_MEMORY_LEAK.md in bim-compiler for the full before/after numbers. Track the
+  // current render target here (not just its .texture) so every future regen can dispose the
+  // previous one first.
+  var _envRT = null;
+  function _setEnvMap(newRT) {
+    if (_envRT && _envRT !== newRT) _envRT.dispose();
+    _envRT = newRT;
+    A._envMap = newRT ? newRT.texture : null;
+  }
   try {
     var _skyMod = await import('./lib/Sky.js');
     if (!_skyMod.Sky) throw new Error('Sky class not exported');
@@ -223,7 +255,15 @@ async function setupScene(A) {
     var theta = THREE.MathUtils.degToRad(azimuth);
     _sunVec.setFromSphericalCoords(1, phi, theta);
     // §S276b: Update sky shader — never hide, Preetham darkens naturally below horizon.
-    if (_sky && _sky.visible) {
+    // §SKY_SUNPOS_INIT (2026-08-16): the uniform copy must NOT be gated on _sky.visible. The
+    // Sky shader ships with a default sunPosition of (0,0,0), and the init-time
+    // A.updateSky(45,180) call runs while the sky is still hidden — with the old
+    // `if (_sky && _sky.visible)` guard that skipped the copy, so any path that later flips
+    // _sky.visible=true WITHOUT calling updateSky (Alt+S non-dusk staging since #1379) rendered
+    // the Preetham shader with a zero sun vector: fully black sky, live-reproduced (sky band
+    // 192/192 black px, uniform read back [0,0,0]). Copying a uniform on a hidden object is
+    // free — keep it unconditionally in sync so "make visible" is always safe.
+    if (_sky) {
       _sky.material.uniforms['sunPosition'].value.copy(_sunVec);
     }
     // Update directional light to match sky sun
@@ -265,11 +305,25 @@ async function setupScene(A) {
           // silently swapping every material's reflection source frame-to-frame and reading as an
           // alternating bright/dark movie. Every OTHER updateSky() caller (plain nav, Time Machine)
           // is unaffected — this flag is only ever true during a staged photoshoot.
+          // §VAC V2+V3 / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): MEASURED on
+          // s5_hospital.log — 906 firings, 100% of them the identical `skipped procedural regen`,
+          // and the regen arm two lines up logged NOTHING. "100% skips" with no denominator cannot
+          // distinguish "the guard saved us 906 times" from "the regen arm was never reachable."
+          // Both arms are counted now, and the skip line is run-length reported: printed on the
+          // first skip of a run and then every 100th, always carrying the running skip/regen split
+          // so the ratio is readable without grepping the whole log. Nothing is dropped — the
+          // counters ARE the signal. (906 over a 2,680 s bake is the 2,000 ms A._envMapThrottle
+          // firing roughly every 3 s, not per frame; the volume was honest, the denominator was not.)
           if (!A._envMapHdriActive) {
-            var envRT = _pmrem.fromScene(_sky);
-            A._envMap = envRT.texture;
+            _envRegens++;
+            _setEnvMap(_pmrem.fromScene(_sky));
+            if (_envRegens === 1 || _envRegens % 100 === 0)
+              console.log('§ENVMAP_STOMP_GUARD regen ran (HDRI inactive) — regens=' + _envRegens + ' skips=' + _envSkips);
           } else {
-            console.log('§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active');
+            _envSkips++;
+            if (_envSkips === 1 || _envSkips % 100 === 0)
+              console.log('§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active; skips=' + _envSkips +
+                ' regens=' + _envRegens + ' (1-in-100 sample; every call is counted, only the line is sampled)');
           }
         } catch(e) {}
         A._envMapThrottle = false;
@@ -290,8 +344,7 @@ async function setupScene(A) {
   // Also generate initial env map synchronously
   try {
     if (_sky) {
-      var _initRT = _pmrem.fromScene(_sky);
-      A._envMap = _initRT.texture;
+      _setEnvMap(_pmrem.fromScene(_sky));
       // §S276b: Don't set scene.environment — it overrides ground material.
       // Building materials get envMap via streaming.js _getMaterial().
       console.log('§ENV_MAP Sky-based atmospheric env map ready (per-material, not scene.environment)');
@@ -311,8 +364,7 @@ async function setupScene(A) {
       envGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       envScene2.add(new THREE.Mesh(envGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
       envScene2.add(new THREE.AmbientLight(0xffffff, 1));
-      var envRT2 = _pmrem.fromScene(envScene2, 0.04);
-      A._envMap = envRT2.texture;
+      _setEnvMap(_pmrem.fromScene(envScene2, 0.04));
       envGeo.dispose();
       console.log('§ENV_MAP vertex-color gradient fallback applied');
     }
@@ -514,6 +566,7 @@ async function setupScene(A) {
         var db = req2.result;
         if (!db.objectStoreNames.contains(A.CACHE_STORE)) db.createObjectStore(A.CACHE_STORE);
         if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+        if (!db.objectStoreNames.contains('revalidation')) db.createObjectStore('revalidation');
       };
       req2.onsuccess = function() {
         console.log('[S203] §IDB_VERSION_FALLBACK_OK opened at stored version (unversioned)');
@@ -529,17 +582,20 @@ async function setupScene(A) {
   A.openCacheDB = function() {
     return new Promise((resolve, reject) => {
       try {
-        const req = indexedDB.open(A.CACHE_DB_NAME, 2);
+        const req = indexedDB.open(A.CACHE_DB_NAME, 3);
         req.onupgradeneeded = function(e) {
           var db = req.result;
           if (!db.objectStoreNames.contains(A.CACHE_STORE)) db.createObjectStore(A.CACHE_STORE);
           // v2: timestamps store for LRU eviction
           if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+          // v3 (CPE_4D_PERF_MEM_STUDY.md §R6a): etag/content-length per cached key, so cachedFetch
+          // can tell a stale cache entry from a fresh one instead of trusting it forever.
+          if (!db.objectStoreNames.contains('revalidation')) db.createObjectStore('revalidation');
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = function() {
           if (req.error && req.error.name === 'VersionError') {
-            console.warn('[S203] §IDB_VERSION_MISMATCH stored version > 2 — falling back to unversioned open');
+            console.warn('[S203] §IDB_VERSION_MISMATCH stored version > 3 — falling back to unversioned open');
             _openCacheDbUnversioned(resolve);
             return;
           }
@@ -586,11 +642,17 @@ async function setupScene(A) {
       var toRemove = forceN ? entries.slice(0, Math.min(forceN, entries.length))
                             : entries.slice(0, entries.length - A._MAX_CACHE_ENTRIES + 1);
       if (toRemove.length > 0) {
+        // §R6a: drop the revalidation comparator alongside the evicted blob, or it's an orphaned
+        // record forever (harmless to correctness — a stale-keyed comparator is just never read
+        // again — but still cleanup debt). Same store-existence guard as the write path.
+        var _hasRevalStore2 = cacheDb.objectStoreNames.contains('revalidation');
         await new Promise(function(done) {
-          var tx3 = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+          var stores2 = _hasRevalStore2 ? [A.CACHE_STORE, 'timestamps', 'revalidation'] : [A.CACHE_STORE, 'timestamps'];
+          var tx3 = cacheDb.transaction(stores2, 'readwrite');
           for (var j = 0; j < toRemove.length; j++) {
             tx3.objectStore(A.CACHE_STORE).delete(toRemove[j].key);
             tx3.objectStore('timestamps').delete(toRemove[j].key);
+            if (_hasRevalStore2) tx3.objectStore('revalidation').delete(toRemove[j].key);
           }
           tx3.oncomplete = done; tx3.onerror = done; tx3.onabort = done;
         });
@@ -856,7 +918,31 @@ async function setupScene(A) {
   // A._libHasNormals (streaming.js:868) honest after a merge.
   function _mergeTable(src, dst, table) {
     var sCols = _mergeCols(src, table), dCols = _mergeCols(dst, table);
-    if (!sCols || !dCols) return null;
+    if (!sCols) return null;
+    // §MERGE_CREATE 2026-08-30 — "fold only when the table exists on BOTH sides" silently threw away
+    // every incoming geometry BLOB whenever the two sides name that table differently: a server
+    // split geo.db carries `base_geometries`, a client-side IFC import carries
+    // `component_geometries` (import_db_builder.js:66). Neither name was ever on both sides, so
+    // _MERGE_GEO_TABLES folded NOTHING and the merged building saved with no geometry at all
+    // (W-MERGE-SAVE-ROUNDTRIP). The readers already accept either name (streaming.js:1162,1212), so
+    // materialising the source's own table in the destination is what makes the fold lossless.
+    // Only ever reached for the fixed _MERGE_META_TABLES/_MERGE_GEO_TABLES whitelist.
+    if (!dCols) {
+      var ddl = null;
+      try {
+        var dr = src.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='" +
+          table.replace(/'/g, "''") + "'");
+        if (dr && dr.length && dr[0].values.length) ddl = dr[0].values[0][0];
+      } catch (e) {}
+      if (!ddl) return null;
+      try { dst.run(ddl); } catch (e) {
+        console.warn('§MERGE_CREATE_FAIL table=' + table + ' ' + e.message); return null;
+      }
+      dCols = _mergeCols(dst, table);
+      if (!dCols) return null;
+      console.log('§MERGE_CREATE table=' + table + ' cols=' + dCols.length +
+        ' — destination had no such table, created from source schema');
+    }
     var cols = dCols.filter(function(c) { return sCols.indexOf(c) >= 0; });
     if (!cols.length) return null;
     var q = cols.map(function(c) { return '"' + c + '"'; }).join(',');
@@ -878,6 +964,51 @@ async function setupScene(A) {
       ' after=' + after + ' added=' + added + ' dup=' + dup + ' errs=' + errs +
       ' cols=' + cols.length + '/src' + sCols.length + '/dst' + dCols.length);
     return { src: srcRows, before: before, after: after, added: added, dup: dup, errs: errs };
+  }
+
+  // §MERGE_BLDCOL 2026-08-30 — LTU_AHouse_meta.db's elements_meta has NO `building` column
+  // (streaming.js:26-31, CPE_4D_PERF_MEM_FINDINGS §R6). Two consequences, both live bugs:
+  //   1. _mergeTable's destination-driven column intersection DROPS the incoming building name, so
+  //      a merged DB cannot say which rows are the new building.
+  //   2. the `GROUP BY m.building` centres query below throws (§HELPERS_QUERY_ERR), gets swallowed
+  //      by dbQuery, and leaves added=[] — the merged building is never registered, never streams.
+  // Add the column once, backfilling existing rows with the label the scene is ALREADY using for
+  // them (read off buildingCentres — extracted from live state, never invented), so both the live
+  // scene and every DB saved from it can name both buildings.
+  function _ensureBuildingCol(dst, src) {
+    var sCols = _mergeCols(src, 'elements_meta'), dCols = _mergeCols(dst, 'elements_meta');
+    if (!sCols || !dCols) return false;
+    if (dCols.indexOf('building') >= 0) return true;
+    if (sCols.indexOf('building') < 0) return false;   // neither side has it — nothing to preserve
+    var keys = Object.keys(A.buildingCentres || {});
+    var label = (keys.length === 1) ? keys[0]
+      : (A._singleBuildingName ? A._singleBuildingName() : 'building');
+    try {
+      dst.run('ALTER TABLE elements_meta ADD COLUMN building TEXT');
+      dst.run('UPDATE elements_meta SET building = ? WHERE building IS NULL', [label]);
+      var n = 0;
+      try { n = dst.exec("SELECT COUNT(*) FROM elements_meta WHERE building = ?", [label])[0].values[0][0]; } catch (e) {}
+      // streaming.js probes this ONCE and caches — a stale `false` would keep every m.building
+      // query on the single-building fallback for the rest of the session.
+      A._buildingCol = true;
+      console.log('§MERGE_BLDCOL added=building backfill="' + label + '" rows=' + n);
+      return true;
+    } catch (e) { console.warn('§MERGE_BLDCOL_FAIL ' + e.message); return false; }
+  }
+
+  // The centres re-query both merge paths run in their step 6. Mirrors streaming.js:2501's
+  // _hasBuildingCol guard, which the merge copies were written without.
+  function _mergeCentresRows() {
+    var ok = A._hasBuildingCol ? A._hasBuildingCol(A.db) : true;
+    if (ok) {
+      return A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+    }
+    var label = (A._singleBuildingName ? A._singleBuildingName() : 'building');
+    console.log('§MERGE_CENTRES_FALLBACK no building column — one building, one centre name="' + label + '"');
+    return A.dbQuery("SELECT '" + label.replace(/'/g, "''") + "', COUNT(*), " +
+      'AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+      'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid');
   }
 
   function _georefPin(db) {
@@ -934,6 +1065,7 @@ async function setupScene(A) {
 
     // ── §SM-7.1 step 3: fold the tables
     var stats = {};
+    _ensureBuildingCol(A.db, src);
     A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
     if (A.libDb) {
       A._MERGE_GEO_TABLES.forEach(function(t) {
@@ -941,6 +1073,10 @@ async function setupScene(A) {
         if (s) stats[t] = s;
         else if (A.libDb !== A.db) { var s2 = _mergeTable(src, A.db, t); if (s2) stats[t] = s2; }
       });
+    } else {
+      // A.libDb is null in several streaming modes (streaming.js:2302,2479). Without this branch the
+      // geometry fold was skipped outright — the split sibling below always had it, this one didn't.
+      A._MERGE_GEO_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
     }
     console.log('§MERGE_TABLES folded=' + JSON.stringify(Object.keys(stats)) +
       ' skipped=' + JSON.stringify(A._MERGE_META_TABLES.concat(A._MERGE_GEO_TABLES).filter(function(t){ return !stats[t]; })));
@@ -965,8 +1101,7 @@ async function setupScene(A) {
     for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
     var added = [];
     try {
-      var centres = A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
-        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+      var centres = _mergeCentresRows();
       for (var ci = 0; ci < centres.length; ci++) {
         var row = centres[ci];
         if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
@@ -995,6 +1130,120 @@ async function setupScene(A) {
     if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
 
     // ── §SM-7.1 step 7: stream the new names sequentially (drained at stream-complete)
+    A._mergePending = (A._mergePending || []).concat(added);
+    A._mergeStreamNext();
+    return true;
+  };
+
+  // Split-DB sibling of _mergeDbIntoScene — for a meta.db + geo.db pair opened as TWO separate
+  // blobs (a large/split-mode building has no single monolithic byte buffer to hand _mergeDbIntoScene).
+  // §BUG 2026-08-29: nothing called this before — split results were funnelled through the monolithic
+  // _openDbBytes/_mergeDbIntoScene path, which opens ONE SQL.Database and therefore only ever saw
+  // whichever single blob got passed in (see _openIfcFiles' old metaDb-only fallback). Same merge
+  // logic as _mergeDbIntoScene line-for-line, just META_TABLES read from srcMeta and GEO_TABLES from
+  // srcGeo instead of one shared src — _mergeTable/_georefPin are already source-agnostic, reused as-is.
+  A._mergeSplitDbIntoScene = async function(fileName, metaBytes, geoBytes) {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var SQL = A._SQL || A.citySQL || A._citySQL;
+    if (!SQL) { console.log('§MERGE_SPLIT_FAIL reason=no_sql_factory'); if (A.status) A.status.textContent = 'Merge failed — sql.js not ready'; return false; }
+    if (!A.db) { console.log('§MERGE_SPLIT_FAIL reason=no_live_db'); return false; }
+    var srcMeta, srcGeo;
+    try { srcMeta = new SQL.Database(new Uint8Array(metaBytes)); }
+    catch (e) { console.log('§MERGE_SPLIT_FAIL reason=open_meta ' + e.message); return false; }
+    try { srcGeo = new SQL.Database(new Uint8Array(geoBytes)); }
+    catch (e) { console.log('§MERGE_SPLIT_FAIL reason=open_geo ' + e.message); try { srcMeta.close(); } catch (e2) {} return false; }
+
+    var before = Object.keys(A.buildingCentres || {});
+    var srcBlds = [];
+    try {
+      var br = srcMeta.exec('SELECT DISTINCT building FROM elements_meta');
+      if (br && br.length) srcBlds = br[0].values.map(function(v) { return v[0]; });
+    } catch (e) {}
+    console.log('§MERGE_SPLIT_START file=' + fileName + ' metaBytes=' + metaBytes.byteLength +
+      ' geoBytes=' + geoBytes.byteLength + ' srcBuildings=' + JSON.stringify(srcBlds) +
+      ' sceneBuildings=' + JSON.stringify(before));
+
+    // Frame rebase — same rule as _mergeDbIntoScene step 2, pinned off the META source
+    // (project_metadata/georef_offset_* lives with the metadata, not the geometry).
+    var pin = _georefPin(A.db), inc = _georefPin(srcMeta);
+    if (pin && inc) {
+      var dx = inc[0] - pin[0], dy = inc[1] - pin[1], dz = inc[2] - pin[2];
+      if (dx || dy || dz) {
+        try {
+          srcMeta.run('UPDATE element_transforms SET center_x = center_x + ?, center_y = center_y + ?, center_z = center_z + ?', [dx, dy, dz]);
+          console.log('§MERGE_SPLIT_GEOREF mode=rebase pin=(' + pin.join(',') + ') inc=(' + inc.join(',') + ') delta=(' + dx + ',' + dy + ',' + dz + ')');
+        } catch (e) { console.log('§MERGE_SPLIT_GEOREF mode=rebase_fail ' + e.message); }
+      } else {
+        console.log('§MERGE_SPLIT_GEOREF mode=same pin=(' + pin.join(',') + ')');
+      }
+    } else {
+      console.log('§MERGE_SPLIT_GEOREF mode=none pin=' + (pin ? '(' + pin.join(',') + ')' : 'absent') +
+        ' inc=' + (inc ? '(' + inc.join(',') + ')' : 'absent') + ' — each DB keeps its own coordinates');
+    }
+
+    // Fold tables: META_TABLES from srcMeta, GEO_TABLES from srcGeo — same _mergeTable helper, two sources.
+    var stats = {};
+    _ensureBuildingCol(A.db, srcMeta);
+    A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(srcMeta, A.db, t); if (s) stats[t] = s; });
+    if (A.libDb) {
+      A._MERGE_GEO_TABLES.forEach(function(t) {
+        var s = _mergeTable(srcGeo, A.libDb, t);
+        if (s) stats[t] = s;
+        else if (A.libDb !== A.db) { var s2 = _mergeTable(srcGeo, A.db, t); if (s2) stats[t] = s2; }
+      });
+    } else {
+      A._MERGE_GEO_TABLES.forEach(function(t) { var s = _mergeTable(srcGeo, A.db, t); if (s) stats[t] = s; });
+    }
+    console.log('§MERGE_SPLIT_TABLES folded=' + JSON.stringify(Object.keys(stats)) +
+      ' skipped=' + JSON.stringify(A._MERGE_META_TABLES.concat(A._MERGE_GEO_TABLES).filter(function(t) { return !stats[t]; })));
+    if (!stats.elements_meta) {
+      console.error('§MERGE_SPLIT_FAIL reason=elements_meta_not_folded — schema read failed, nothing merged');
+      try { srcMeta.close(); } catch (e) {}
+      try { srcGeo.close(); } catch (e) {}
+      if (A.status) A.status.textContent = 'Merge failed — could not read ' + fileName;
+      return false;
+    }
+    if (!stats.elements_meta.added) {
+      console.log('§MERGE_SPLIT_WARN elements_meta added=0 — nothing new (all GUIDs already present)');
+    }
+    try { srcMeta.close(); } catch (e) {}
+    try { srcGeo.close(); } catch (e) {}
+
+    A.cityBuildingDbs = A.cityBuildingDbs || {};
+    srcBlds.forEach(function(n) { A.cityBuildingDbs[n] = { db: A.db, libDb: A.libDb }; });
+
+    var env = null;
+    for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
+    var added = [];
+    try {
+      var centres = _mergeCentresRows();
+      for (var ci = 0; ci < centres.length; ci++) {
+        var row = centres[ci];
+        if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
+        A.buildingCentres[row[0]] = { ix: row[2], iy: row[3], iz: row[4], count: row[1] };
+        if (env) A.buildingCentres[row[0]].envelope = env;
+        added.push(row[0]);
+      }
+    } catch (e) { console.log('§MERGE_SPLIT_CENTRES_FAIL ' + e.message); }
+    console.log('§MERGE_SPLIT_CENTRES before=' + before.length + ' after=' + Object.keys(A.buildingCentres).length +
+      ' added=' + JSON.stringify(added));
+
+    try {
+      var er = A.dbQuery('SELECT COUNT(*) FROM elements_meta');
+      A.totalElements = er.length ? er[0][0] : A.totalElements;
+      var dr = A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline');
+      A.discCounts = {};
+      for (var di = 0; di < dr.length; di++) A.discCounts[dr[di][0]] = dr[di][1];
+    } catch (e) {}
+    if (A.updateHUD) A.updateHUD();
+    if (A.populateBuildingList) A.populateBuildingList();
+    if (A._updateFogDensity) A._updateFogDensity();
+
+    var ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
+    console.log('§MERGE_SPLIT_DONE file=' + fileName + ' newBuildings=' + added.length +
+      ' totalElements=' + A.totalElements + ' ms=' + ms.toFixed(0));
+    if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
+
     A._mergePending = (A._mergePending || []).concat(added);
     A._mergeStreamNext();
     return true;
@@ -1042,6 +1291,40 @@ async function setupScene(A) {
     location.assign('viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(dbUrl) + '&ghost=1');
   };
 
+  // Split-DB sibling of _openDbBytes — for a meta.db + geo.db pair (from a local file-pair open, or
+  // a split-mode importMultiIFC result). Mirrors _openDbBytes' merge/replace branching exactly; the
+  // only difference is TWO source blobs, cached under the _meta.db/_geo.db naming convention
+  // streaming.js's §DB_SPLIT_DETECT already expects (same convention import.js's openImported already
+  // uses successfully for split records — this extends it to the file-picker/Open door and to
+  // _openIfcFiles' split branch below, neither of which had any split-aware path before).
+  A._openSplitDbBytes = async function(fileName, metaBytes, geoBytes) {
+    var open = Object.keys(A.buildingCentres || {});
+    if (A.db && open.length) {
+      var target = (A.activeBuilding && A.buildingCentres[A.activeBuilding]) ? A.activeBuilding : open[0];
+      var choice = await A._showMergeModal(fileName, target);
+      console.log('§MERGE_CHOICE file=' + fileName + ' target=' + target + ' action=' + choice.action);
+      if (choice.action === 'merge') { await A._mergeSplitDbIntoScene(fileName, metaBytes, geoBytes); return; }
+    } else {
+      console.log('§MERGE_SKIP reason=no_building_open — replace path');
+    }
+    var key = fileName.replace(/_meta\.db$/i, '').replace(/\.(db|sqlite)$/i, '');
+    var extractedUrl = 'import://' + key + '_extracted.db/v0';
+    var metaUrl = 'import://' + key + '_meta.db/v0';
+    var geoUrl = 'import://' + key + '_geo.db/v0';
+    var cacheDb = await A.openCacheDB();
+    if (!cacheDb) { if (A.status) A.status.textContent = 'Cache unavailable'; return; }
+    await new Promise(function(resolve) {
+      var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
+      var store = tx.objectStore(A.CACHE_STORE);
+      store.put(metaBytes, metaUrl);
+      store.put(geoBytes, geoUrl);
+      store.put(metaBytes, extractedUrl);   // meta as primary — fast load, same as import.js's openImported
+      tx.oncomplete = resolve; tx.onerror = resolve;
+    });
+    console.log('§OPEN_DB_SPLIT cached key=' + key + ' meta=' + metaBytes.byteLength + ' geo=' + geoBytes.byteLength + ' → navigate');
+    location.assign('viewer.html?db=' + encodeURIComponent(extractedUrl) + '&lib=' + encodeURIComponent(extractedUrl) + '&ghost=1');
+  };
+
   // §SM-7.1 step 5 — source IFC in the SAME door. No new import path: route to the existing
   // A.importMultiIFC (import.js:267), take the DB it produced, feed it into the same merge/replace
   // flow. §SM-5 named the ceiling and it is measured, not theoretical: a single ~1GB+ source file
@@ -1058,6 +1341,16 @@ async function setupScene(A) {
     console.log('§OPEN_IFC files=' + files.length + ' names=' + Array.prototype.map.call(files, function(f){ return f.name; }).join(','));
     var out = await A.importMultiIFC(files);
     if (!out || !out.record) { console.log('§OPEN_IFC_FAIL reason=no_record_returned'); return; }
+    // §BUG 2026-08-29: a split-mode result (large building, e.g. LTU_AHouse 8-file merge) carries
+    // metaDb+geoDb as SEPARATE blobs — this used to take metaDb alone (`extractedDb || metaDb`) and
+    // silently drop geoDb, opening a metadata-only DB with zero mesh geometry. Route split results
+    // through _openSplitDbBytes instead, which keeps both halves.
+    if (out.split && out.record.metaDb && out.record.geoDb) {
+      console.log('§OPEN_IFC_DB building=' + out.buildingName + ' meta=' + out.record.metaDb.byteLength +
+        ' geo=' + out.record.geoDb.byteLength + ' split=true');
+      await A._openSplitDbBytes(out.buildingName + '_meta.db', new Uint8Array(out.record.metaDb), new Uint8Array(out.record.geoDb));
+      return;
+    }
     var bytes = out.record.extractedDb || out.record.metaDb;
     if (!bytes) { console.log('§OPEN_IFC_FAIL reason=no_db_bytes split=' + !!out.record.metaDb); return; }
     console.log('§OPEN_IFC_DB building=' + out.buildingName + ' bytes=' + bytes.byteLength + ' split=' + !!out.split);
@@ -1074,6 +1367,19 @@ async function setupScene(A) {
         for (var pi = 0; pi < picks.length; pi++) fsaFiles.push(await picks[pi].getFile());
         console.log('§OPEN_PICK mode=fsa n=' + fsaFiles.length + ' name=' + fsaFiles[0].name + ' bytes=' + fsaFiles[0].size);
         if (/\.ifc$/i.test(fsaFiles[0].name)) { await A._openIfcFiles(fsaFiles); return; }
+        // §BUG 2026-08-29: selecting a meta.db + geo.db pair together used to silently drop everything
+        // past fsaFiles[0] — picker return order isn't guaranteed alphabetical-by-role, so "geo.db"
+        // (no elements_meta at all) could load ALONE while meta.db (the actual data) was discarded.
+        // Detect the pair by name first, before falling into the single-file path.
+        var metaFile = fsaFiles.filter(function(f) { return /_meta\.db$/i.test(f.name); })[0];
+        var geoFile = fsaFiles.filter(function(f) { return /_geo\.db$/i.test(f.name); })[0];
+        if (fsaFiles.length >= 2 && metaFile && geoFile) {
+          console.log('§OPEN_PICK_SPLIT meta=' + metaFile.name + ' geo=' + geoFile.name);
+          var metaBuf = new Uint8Array(await metaFile.arrayBuffer());
+          var geoBuf = new Uint8Array(await geoFile.arrayBuffer());
+          await A._openSplitDbBytes(metaFile.name, metaBuf, geoBuf);
+          return;
+        }
         var buf = await fsaFiles[0].arrayBuffer();
         await A._openDbBytes(fsaFiles[0].name, new Uint8Array(buf));
         return;
@@ -1086,10 +1392,74 @@ async function setupScene(A) {
       var file = input.files[0];
       console.log('§OPEN_PICK mode=input n=' + input.files.length + ' name=' + file.name + ' bytes=' + file.size);
       if (/\.ifc$/i.test(file.name)) { await A._openIfcFiles(input.files); }
-      else { var buf = await file.arrayBuffer(); await A._openDbBytes(file.name, new Uint8Array(buf)); }
+      else {
+        var files2 = Array.prototype.slice.call(input.files);
+        var metaFile2 = files2.filter(function(f) { return /_meta\.db$/i.test(f.name); })[0];
+        var geoFile2 = files2.filter(function(f) { return /_geo\.db$/i.test(f.name); })[0];
+        if (files2.length >= 2 && metaFile2 && geoFile2) {
+          console.log('§OPEN_PICK_SPLIT mode=input meta=' + metaFile2.name + ' geo=' + geoFile2.name);
+          var metaBuf2 = new Uint8Array(await metaFile2.arrayBuffer());
+          var geoBuf2 = new Uint8Array(await geoFile2.arrayBuffer());
+          await A._openSplitDbBytes(metaFile2.name, metaBuf2, geoBuf2);
+        } else {
+          var buf2 = await file.arrayBuffer(); await A._openDbBytes(file.name, new Uint8Array(buf2));
+        }
+      }
       if (input.parentNode) document.body.removeChild(input);
     });
     document.body.appendChild(input); input.click();
+  };
+
+  // §R6a (CPE_4D_PERF_MEM_STUDY.md): a cache HIT alone is not proof the cached blob is still
+  // current — cachedFetch used to trust it forever, so a re-uploaded building DB never reached a
+  // returning user. Compares a cheap HEAD's ETag/Content-Length against what was stored at cache
+  // write time. Fails OPEN on every uncertain path (no stored comparator, network error, timeout,
+  // missing headers) — "skip revalidation, trust the cache" is the same behaviour this file had
+  // before this function existed, never a regression, only ever a stale-cache correction.
+  A._revalidateCache = async function(url, key, cacheDb) {
+    var fname = url.split('/').pop();
+    var stored;
+    try {
+      stored = await new Promise(function(resolve) {
+        var tx = cacheDb.transaction('revalidation', 'readonly');
+        var req = tx.objectStore('revalidation').get(key);
+        req.onsuccess = function() { resolve(req.result); };
+        req.onerror = function() { resolve(null); };
+      });
+    } catch (e) { stored = null; }
+    if (!stored || (!stored.etag && !stored.contentLength)) {
+      console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=no-stored-comparator`);
+      return true;
+    }
+    var controller = new AbortController();
+    var timer = setTimeout(function() { controller.abort(); }, 4000);
+    var resp;
+    try {
+      resp = await fetch(url, { method: 'HEAD', signal: controller.signal });
+    } catch (e) {
+      clearTimeout(timer);
+      console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=${e.name === 'AbortError' ? 'timeout' : 'network-fail'}`);
+      return true;
+    }
+    clearTimeout(timer);
+    if (!resp.ok) {
+      console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=head-status-${resp.status}`);
+      return true;
+    }
+    var liveEtag = resp.headers.get('ETag');
+    var liveLen = resp.headers.get('Content-Length');
+    if (stored.etag && liveEtag) {
+      if (stored.etag === liveEtag) { console.log(`[S203] §CACHE_REVALIDATE_OK url=${fname} etag=match`); return true; }
+      console.log(`[S203] §CACHE_REVALIDATE_STALE url=${fname} old=${stored.etag} new=${liveEtag}`);
+      return false;
+    }
+    if (stored.contentLength && liveLen) {
+      if (String(stored.contentLength) === String(liveLen)) { console.log(`[S203] §CACHE_REVALIDATE_OK url=${fname} contentLength=match`); return true; }
+      console.log(`[S203] §CACHE_REVALIDATE_STALE url=${fname} old=${stored.contentLength} new=${liveLen}`);
+      return false;
+    }
+    console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=no-comparable-header`);
+    return true;
   };
 
   A.cachedFetch = async function(url) {
@@ -1110,16 +1480,21 @@ async function setupScene(A) {
           req.onerror = () => resolve(null);
         });
         if (cached) {
-          // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
-          // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
-          A._cacheHitLogged = A._cacheHitLogged || {};
-          if (!A._cacheHitLogged[key]) {
-            A._cacheHitLogged[key] = 1;
-            console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+          // §R6a: a cache hit is provisional until revalidated — a STALE verdict falls through to
+          // the normal fetch+write path below exactly as a cache miss would.
+          var _fresh = await A._revalidateCache(url, key, cacheDb);
+          if (_fresh) {
+            // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
+            // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
+            A._cacheHitLogged = A._cacheHitLogged || {};
+            if (!A._cacheHitLogged[key]) {
+              A._cacheHitLogged[key] = 1;
+              console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+            }
+            // Update LRU timestamp on hit
+            try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), key); } catch(e2) {}
+            return cached;
           }
-          // Update LRU timestamp on hit
-          try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), key); } catch(e2) {}
-          return cached;
         }
         // §CACHE_KEY_LEGACY (W-DB-CACHE-KEY): profiles that cached BEFORE this fix hold the blob under
         // the raw url. Adopt it in place rather than making every existing user pay one more 251MB
@@ -1209,36 +1584,75 @@ async function setupScene(A) {
       try {
         // §S260b: LRU evict before write to keep under max entries
         await A._evictOldest(cacheDb);
-        // One write attempt under `key`; resolves true on success, false if the tx aborted (quota).
+        // §R6a: store the comparator ALONGSIDE the blob, same transaction — a write and its own
+        // freshness marker must never disagree. Profiles stuck on the unversioned-fallback open
+        // (VersionError path, §IDB_VERSION_MISMATCH) never got the 'revalidation' store created —
+        // guard with objectStoreNames.contains, since listing a non-existent store in
+        // db.transaction([...]) throws synchronously and would break the whole write.
+        var _hasRevalStore = cacheDb.objectStoreNames.contains('revalidation');
+        // One write attempt under `key`. Resolves { ok, name, err } — the abort REASON, not just a
+        // boolean, because only ONE class of failure (a genuine quota shortfall) can be helped by
+        // throwing other entries away. See §CACHE_EVICT_ONLY_ON_QUOTA below.
         var _attemptWrite = function() {
           return new Promise(function(resolve) {
             var _writeOk = false;
-            const tx = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+            const stores = _hasRevalStore ? [A.CACHE_STORE, 'timestamps', 'revalidation'] : [A.CACHE_STORE, 'timestamps'];
+            const tx = cacheDb.transaction(stores, 'readwrite');
             tx.objectStore('timestamps').put(Date.now(), key);
+            if (_hasRevalStore) {
+              tx.objectStore('revalidation').put({ etag: resp.headers.get('ETag') || null, contentLength: resp.headers.get('Content-Length') || null }, key);
+            }
             const req = tx.objectStore(A.CACHE_STORE).put(buf, key);
             req.onsuccess = function() { _writeOk = true; console.log(`[S203] §CACHE_WRITE_OK url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB`); };
             req.onerror = function() {
-              // §S260b: Quota exceeded — let the tx abort so the caller evicts LRU and retries.
               console.warn(`[S203] §CACHE_WRITE_ERR url=${url.split('/').pop()} err=${req.error}`);
             };
             tx.oncomplete = function() {
               if (!_writeOk) console.warn('[S203] §CACHE_TX_COMPLETE_BUT_NO_WRITE — data NOT persisted');
-              resolve(_writeOk);
+              resolve({ ok: _writeOk });
             };
-            tx.onabort = function() { resolve(false); };
+            // Read tx.error. The old handler discarded it and every caller then ASSUMED "quota" —
+            // which is how a non-quota abort came to be reported as `quota too small` for months.
+            tx.onabort = function() {
+              var e = tx.error;
+              resolve({ ok: false, name: e ? e.name : '', err: e ? (e.name + ': ' + e.message) : '(tx.error was null)' });
+            };
           });
         };
-        // §CACHE_EVICT_LRU_RETRY (F3): on a quota abort, drop the OLDEST entries and try again —
-        // bounded. The old code .clear()'d the entire store, so one oversized write wiped every
-        // other cached building and turned the next open of ANY of them into a fresh download.
-        var _ok = await _attemptWrite();
-        for (var _try = 0; !_ok && _try < 4; _try++) {
-          var _dropped = await A._evictOldest(cacheDb, 4);
-          if (!_dropped) break;                       // nothing left to give up — stop, don't spin
-          console.log(`[S203] §CACHE_EVICT_LRU_RETRY attempt=${_try + 1} dropped=${_dropped}`);
-          _ok = await _attemptWrite();
+        // §CACHE_EVICT_ONLY_ON_QUOTA (bim-compiler 4D_GANTT_TM_REFACTOR.md §5b) — THE DATA-LOSS FIX.
+        // This ladder used to force-evict the 4 oldest entries after ANY abort and retry, up to 4
+        // times. MEASURED on Hospital: Hospital_geo.db is 239,702,016 bytes and Chrome caps a SINGLE
+        // IndexedDB value at 133,169,152 bytes (~127MiB), so its write aborts with
+        //   UnknownError: The serialized keys and/or value are too large (size=239702104, max=133169152)
+        // — a failure NO amount of eviction can fix. The ladder ran anyway and, with only 2 entries in
+        // the store, "drop the 4 oldest" dropped EVERYTHING — including buildings/Hospital_meta.db,
+        // the slot the Time Machine had just persisted a user's Gantt edit into. persistDb had
+        // correctly reported ok=true and logged §SCHED_PERSIST; the bytes were then deleted out from
+        // under it by this loop, and the next reload silently refetched the pristine network copy.
+        // So: evict ONLY for QuotaExceededError, the one failure eviction can actually relieve.
+        var _res = await _attemptWrite();
+        var _ok = _res.ok;
+        // §CACHE_EVICT_ONLY_ON_QUOTA_STRICT: require the POSITIVE match before evicting. A blank/
+        // missing name — tx.onabort firing with tx.error null, or tx.oncomplete firing with
+        // _writeOk still false (neither is provably a quota shortfall) — must default to "leave the
+        // cache intact", not fall through to eviction. The previous form
+        // (`_res.name && _res.name !== 'QuotaExceededError'`) only excluded ONE named non-quota case
+        // and let every UNNAMED failure reach the evict branch below — the same blind-evict-on-any-
+        // abort defect §CACHE_EVICT_ONLY_ON_QUOTA was written to retire, just narrowed to a smaller
+        // trigger set instead of closed.
+        if (!_ok && _res.name === 'QuotaExceededError') {
+          for (var _try = 0; !_ok && _try < 4; _try++) {
+            var _dropped = await A._evictOldest(cacheDb, 4);
+            if (!_dropped) break;                     // nothing left to give up — stop, don't spin
+            console.log(`[S203] §CACHE_EVICT_LRU_RETRY attempt=${_try + 1} dropped=${_dropped}`);
+            _res = await _attemptWrite();
+            _ok = _res.ok;
+          }
+          if (!_ok) console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL url=${url.split('/').pop()} err=${_res.err || 'unknown'} — still failing after LRU eviction`);
+        } else if (!_ok) {
+          console.warn(`[S203] §CACHE_WRITE_UNFIXABLE url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB` +
+            ` err=${_res.err || '(no error name — treated as unfixable, not evicted)'} — eviction cannot help this; cache left INTACT`);
         }
-        if (!_ok) console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL url=${url.split('/').pop()} — quota too small even after LRU eviction`);
       } catch(e) { console.log(`[S203] §CACHE_WRITE_ERR ${e.message}`); }
     }
 
@@ -1460,7 +1874,18 @@ async function setupScene(A) {
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geo.setIndex(new THREE.BufferAttribute(fArr, 1));
+      // §IDX16 (2026-08-30) — the per-element build site. The merged path got this first, and the
+      // witness caught that it was the WRONG one to fix alone: 300 of 448 Clinic geometries were
+      // still Uint32 while addressing fewer than 65,536 vertices, so the saving measured 0.0 MB.
+      // MEASURED on Terminal (§MEM_PROBE): index = 71.8 MB of a 469 MB geometry footprint against a
+      // 1,226 MB heap. Guard is exact — vertex count, from the buffer just built — so a geometry
+      // that genuinely needs 32-bit keeps it and an index can never be truncated.
+      var _vCount = positions.length / 3, _fIdx = fArr;
+      if (_vCount < 65536 && !(fArr instanceof Uint16Array)) {
+        _fIdx = new Uint16Array(fArr.length);
+        for (var _fi = 0; _fi < fArr.length; _fi++) _fIdx[_fi] = fArr[_fi];
+      }
+      geo.setIndex(new THREE.BufferAttribute(_fIdx, 1));
       if (nBlob && nBlob.byteLength >= 12) {
         // Precomputed normals — apply same Y↔Z swap as positions
         const nArr = new Float32Array(nBlob.buffer, nBlob.byteOffset, nBlob.byteLength / 4);
