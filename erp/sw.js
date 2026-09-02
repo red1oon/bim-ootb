@@ -10,7 +10,9 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v770';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v771';   // bump on each deploy; per-change detail is the git commit message.
+// v771 (#429 rebase onto origin/main@e9daafa0): OK feedback dialog after both System Monitor resets
+//   (erp/system_monitor.js) — merged forward past v770's independent bumps below, neither dropped.
 // v770 (T-0 item 4, prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md): commitCrud's UPDATE/DELETE path now
 //   consults ad_access.js's gateRecord (canView AccessLevel + org/client scope) before sealing, not just
 //   owner/CAS — idempiere.html's applySession wires window.APP.gateRecordFor; crud_core.js/crud_overlay.js
