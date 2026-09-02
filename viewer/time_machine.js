@@ -5130,7 +5130,13 @@
     //                     gating on it is #1120's measured-and-rejected "attempt 2" (24 false
     //                     positives). Printing it is what makes LIMIT 1 auditable instead of hidden.
     try {
-      var _rgCELL = (ScheduleGate.CELL || 4), _rgEPS = 0.05, _rgGAP = 0.5;
+      // §I.5b (bim-compiler prompts/4D_MODEL_INTEGRITY.md, §FUTURE item 7 Stage 5, queue item B-2)
+      // — EPS/GAP now read from the module they belong to, in the SAME defensive `||` shape CELL and
+      // BIG_ELEMENT_VOL already use two lines apart. schedule_gate.js:1298-1300 exports them with an
+      // explicit reason ("a second copy is a second thing to drift"); this statement obeyed it for
+      // CELL and hand-typed the other two. Nothing changes today — all three literals equal their
+      // source — but a one-line change to GAP now moves this site with the rest of them.
+      var _rgCELL = (ScheduleGate.CELL || 4), _rgEPS = (ScheduleGate.EPS || 0.05), _rgGAP = (ScheduleGate.GAP || 0.5);
       // §SPEC 2026-08-11 1b (4D_SCHEDULE_PERFECTION.md, Witness: witness_big_element_support_
       // coverage.js): widen the audited pool beyond IfcSlab — EVERY element above the measured p95
       // bbox volume (ScheduleGate.BIG_ELEMENT_VOL = 1.556 m³, extracted 2026-08-11) is also audited
