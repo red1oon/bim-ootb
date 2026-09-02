@@ -421,9 +421,36 @@
 
   // Collapse sub-storeys onto their Level so the phase list stays ~8 (user: "collapsing is better").
   // "Level 3 Ceiling" / "Level 3 TOS" -> "Level 3". Also the JSON phase key + the trade-gate group.
+  //
+  // §STOREY_SUFFIX_PARITY (2026-09-02, bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.5f, §FUTURE
+  // item 7 Stage 5, queue item B-2) — `T.O.S.` ADDED so this rule is a strict SUPERSET of the one
+  // that runs at IMPORT.
+  // TWO rules decide "strip the sub-storey suffix" and they are applied to the SAME name at
+  // different times: import_worker.js `normalizeStorey` (§STOREY_NORMALIZE, list
+  // REF_LEVEL_SUFFIXES = [' Ceiling',' TOS',' T.O.S.',' Top of Steel',' Soffit']) rewrites
+  // elements_meta.storey when the model is imported; this one collapses at schedule time and is
+  // ALSO what deriveStoreyMergeMap keys the merge map off (:399, over the RAW extracted
+  // spatial_structure.name, which normalizeStorey never touches — lib/room_walker.js writes that
+  // table separately). Where the two disagree, the merge map's key can never match the element's
+  // band key and the merge silently no-ops for that storey, with no log: §S18 reports only `names=`
+  // and `merged=` counts.
+  // `T.O.S.` was the single divergent token — rule 2 strips it, `TOS\b` here cannot match it (the
+  // `\b` after `S` fails against the trailing dot). It is now covered as its own alternative,
+  // ahead of the word-bounded group, so this rule strips everything the import rule strips PLUS
+  // `Slab` (which the import rule deliberately does not) — superset, never disagreement.
+  // POPULATION MEASURED, and it is EMPTY: `SELECT COUNT(*) ... LIKE '%T.O.S%'` returns 0 on
+  // elements_meta AND on spatial_structure for all SEVEN shipped buildings (Duplex, HHS, Hospital,
+  // Terminal, Clinic, LTU_AHouse, JKR — re-measured 2026-09-02, matching §I.5f's own 2026-08-27
+  // finding). So this is a latent divergence closed with a provable zero fleet change, reported as
+  // such and not inflated into a live defect. Witness: witness_storey_suffix_parity.js.
+  // ⛔ NOT FIXED HERE, deliberately: Terminal's `Ceiling Level NN` PREFIX form (673 live elements)
+  // is unmergeable by ANY of the three rules — rule 1 needs `\s+` BEFORE the token, rule 2 needs it
+  // at the END, panels.js `collapseLevel` needs a `Level` prefix. Stripping a leading `Ceiling `
+  // would RENAME live Terminal bands and move the schedule, which is a modelling decision, not a
+  // de-drift. See §I.5f.
   function collapsePhase(storey) {
     if (!storey) return '_UNKNOWN';
-    var s = String(storey).replace(/\s+(Ceiling|TOS|Top of Steel|Soffit|Slab)\b.*$/i, '').trim();
+    var s = String(storey).replace(/\s+(?:T\.O\.S\.?|(?:Ceiling|TOS|Top of Steel|Soffit|Slab)\b).*$/i, '').trim();
     return s || String(storey);
   }
 
