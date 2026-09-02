@@ -40,6 +40,9 @@
 //   B2  the re-key is REVERSIBLE: tmRestoreDerivedOrder puts every timestamp back exactly, so a
 //       bake cannot leave the user's timeline re-ordered.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
+// §W_PROGRESS (bim-compiler prompts/WITNESS_INTERFACE_FRAMEWORK.md) — same single-long-evaluate shape
+// as the rest of the cinema family; it printed nothing until the very end (AGENT_QUEUE.md A-16b).
+const Progress = require('./witness_kit/progress.js');
 
 const PORT = process.env.PORT || 8421;
 const BUILDINGS = (process.env.BLDS || 'Duplex,Hospital_3').split(',');
@@ -47,6 +50,9 @@ const FPS = 15, DUR = 24;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
+  const pr = Progress('CPE_HOSE');
+  pr.note(`port=${PORT} buildings=${BUILDINGS.join(',')} fps=${FPS} dur=${DUR}`);
+  pr.stage('launch-browser');
   const browser = await puppeteer.launch({
     headless: 'new', protocolTimeout: 900000,
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--no-sandbox', '--enable-unsafe-swiftshader'],
@@ -55,16 +61,23 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const summary = [];
 
   for (const BLD of BUILDINGS) {
+    pr.stage(`${BLD}/open-page`);
     const page = await browser.newPage();
     await page.setViewport({ width: 1200, height: 700 });
     const logs = [];
-    page.on('console', m => logs.push(m.text()));
+    // §W_PROGRESS rides this same hook; its own lines are kept out of `logs`.
+    const { isProgress } = pr.attach(page);
+    page.on('console', m => { const t = m.text(); if (!isProgress(t)) logs.push(t); });
     page.on('pageerror', e => logs.push('PAGEERROR ' + e.message));
+    pr.stage(`${BLD}/goto-viewer`);
     await page.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_extracted.db`,
       { waitUntil: 'domcontentloaded', timeout: 60000 });
+    pr.stage(`${BLD}/wait-APP-ready`);
     await page.waitForFunction(() => window.APP && window.APP.cinemaPathPlan && window.APP.cinemaHoseApply,
       { timeout: 180000 });
     await sleep(9000);
+    // THE LONG ONE — element_transforms streaming, previously silent.
+    pr.stage(`${BLD}/wait-element-transforms`);
     await page.waitForFunction(() => {
       try { const r = window.APP.dbQuery('SELECT COUNT(*) FROM element_transforms'); return r && r[0][0] > 0; }
       catch (e) { return false; }
@@ -74,13 +87,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const checks = [];
     const P = (n, ok, d) => { checks.push({ n, ok, d }); if (!ok) allPass = false; };
 
-    const res = await page.evaluate(async (dur, fps) => {
+    pr.stage(`${BLD}/measure(in-page)`);
+    const res = await page.evaluate(async (dur, fps, PP) => {
+      const W = (s) => { try { console.log(PP + s); } catch (e) { /* console gone */ } };
       const A = window.APP;
       if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) { try { await A.loadNavigate(); } catch (e) {} }
       if (typeof A.ensureRooms === 'function') { try { await A.ensureRooms({}); } catch (e) {} }
       A._cinemaPathEdit = null;
       const out = {};
 
+      W('H1/H2 falloff law');
       // ── H1/H2: the falloff law, on a synthetic OUT-AND-BACK polyline ────────────────────────
       // Out along +x for 100 m, then back along a line 0.5 m away. Point at s=0.25 (out leg) and
       // its near-twin on the return leg are 0.5 m apart in SPACE and 0.5 apart in ARC LENGTH.
@@ -121,6 +137,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       };
       out.h2 = { span10: spanOf(0.10), span30: spanOf(0.30), span02: spanOf(0.02) };
 
+      W('H3 ops reach the real plan');
       // ── H3: the ops reach the real plan ────────────────────────────────────────────────────
       const planBase = A.cinemaPathPlan(dur, null);
       const bands = A.cinemaSeedBands(planBase.waypoints, planBase.pathLen);
@@ -152,6 +169,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         return best;
       };
 
+      W('S1/S2/S3 stick spawn');
       // ── S1/S2/S3: §CPE_STICK — spawn a band at an arbitrary point on the walk ───────────────
       // S1 is the load-bearing claim and the one that can fail silently: a freshly dropped stick is
       // a NO-OP. If the seeder's tangent or centre is even slightly off the curve, the film JUMPS
@@ -215,6 +233,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
                   return (stick.d.x * tx + stick.d.y * ty + stick.d.z * tz) / tl;
                 })() };
 
+      W('R1/R2 reopen');
       // ── R1/R2: §CPE_REOPEN_DOUBLE — re-opening an authored path must not multiply the bands ──
       // The user's report: "it seems to dupe more bars upon alt-c cancel and resume". The mechanism
       // is reciprocal fan-out — cinemaSeedBands emits ONE band per waypoint, cinemaBandWaypoints
@@ -340,6 +359,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         probeGone: typeof A._probeAimDepth === 'undefined',
       };
 
+      W('B1/B2 mode D');
       // ── B1/B2: mode D ──────────────────────────────────────────────────────────────────────
       out.b = { skipped: null };
       if (typeof window.tmActivateForBake === 'function') {
@@ -367,7 +387,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         }
       } else out.b.skipped = 'time_machine.js not loaded';
       return out;
-    }, DUR, FPS);
+    }, DUR, FPS, Progress.pageLine(''));
+    pr.stage(`${BLD}/gates`);
 
     // ── H1: THE LAW ─────────────────────────────────────────────────────────────────────────
     P('H1 W-HOSE-ARC: grab point moved', res.h1.grabMoved > 11.9,
@@ -473,5 +494,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   for (const s of summary) console.log(`${s.pass ? '✅' : '❌'} ${s.BLD}`);
   console.log(allPass ? '✅ ALL PASS' : '❌ FAILURES ABOVE');
   await browser.close();
+  pr.end(`allPass=${allPass}`);
   process.exit(allPass ? 0 : 1);
 })();
