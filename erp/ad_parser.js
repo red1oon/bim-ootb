@@ -276,16 +276,29 @@
    * @returns {Array} sorted by SeqNo
    */
   function getFields(db, tabId) {
-    var fieldR = db.exec(
-      'SELECT f.AD_Field_ID, f.Name, f.Description, f.SeqNo, ' +
+    // §P2/§P1 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL P2.1 — W-PARITY-REFLIST / W-PARITY-FIELDSET):
+    // the EXTENDED shape also carries the field-level AD_Reference_ID override, AD_Reference_Value_ID (a List
+    // column's AD_Ref_List key), ReadOnlyLogic and MandatoryLogic — field over column, the same precedence this
+    // function already applies to DefaultValue. A seed without those columns falls back to the legacy shape
+    // (logged), so an older dictionary never breaks the renderer.
+    var BASE = 'SELECT f.AD_Field_ID, f.Name, f.Description, f.SeqNo, ' +
       '       f.IsDisplayed, f.DisplayLogic, f.IsMandatory, f.IsReadOnly, f.DefaultValue, ' +
       '       c.AD_Column_ID, c.ColumnName, c.AD_Reference_ID, c.FieldLength, ' +
       '       c.IsMandatory as ColMandatory, c.IsKey, c.IsIdentifier, c.IsUpdateable, ' +
-      '       c.DefaultValue as ColDefault ' +
-      'FROM AD_Field f ' +
+      '       c.DefaultValue as ColDefault ';
+    var EXT = ', f.AD_Reference_ID as FieldRef, COALESCE(f.AD_Reference_Value_ID, c.AD_Reference_Value_ID) as RefValue, ' +
+      '       COALESCE(NULLIF(f.ReadOnlyLogic, \'\'), c.ReadOnlyLogic) as ROLogic, ' +
+      '       COALESCE(NULLIF(f.MandatoryLogic, \'\'), c.MandatoryLogic) as MLogic ';
+    var TAIL = 'FROM AD_Field f ' +
       'JOIN AD_Column c ON f.AD_Column_ID = c.AD_Column_ID ' +
       'WHERE f.AD_Tab_ID = ? AND f.IsActive = \'Y\' ' +
-      'ORDER BY f.SeqNo', [tabId]);
+      'ORDER BY f.SeqNo';
+    var fieldR;
+    try { fieldR = db.exec(BASE + EXT + TAIL, [tabId]); }
+    catch (eShape) {
+      console.log('§AD_PARSER getFields legacy-shape tabId=' + tabId + ' (' + (eShape && eShape.message) + ')');
+      fieldR = db.exec(BASE + TAIL, [tabId]);
+    }
 
     if (!fieldR.length) return [];
 
@@ -301,11 +314,14 @@
     var fields = raw.map(function (o) {
       // a tip-synthesised CRUD_CREATE row has no AD_Column join → can't render; skip (boundary, not invented)
       if (o.AD_Column_ID == null) return null;
-      var refId = o.AD_Reference_ID;
+      var refId = (o.FieldRef != null && o.FieldRef !== '') ? o.FieldRef : o.AD_Reference_ID;   // §P2.1: AD_Field override wins (GridFieldVO precedence)
       return {
         id: o.AD_Field_ID, name: o.Name, description: o.Description, seqNo: o.SeqNo,
         isDisplayed: o.IsDisplayed === 'Y',
         displayLogic: o.DisplayLogic,
+        readOnlyLogic: o.ROLogic || null,                    // §P2.1 — now reaches foldCrudSpec → effectiveFlags
+        mandatoryLogic: o.MLogic || null,
+        referenceValueId: (o.RefValue != null && o.RefValue !== '') ? o.RefValue : null,   // §P2.1 — the List/Table reference value (AD_Ref_List key)
         isMandatory: (o.IsMandatory || o.ColMandatory) === 'Y',
         isReadOnly: o.IsReadOnly === 'Y',
         defaultValue: o.DefaultValue || o.ColDefault,
@@ -335,8 +351,16 @@
   function resolveReference(db, referenceId) {
     console.log('§AD_PARSER resolveRef id=' + referenceId);
 
-    var refR = db.exec(
-      'SELECT ValidationType FROM AD_Reference WHERE AD_Reference_ID = ?', [referenceId]);
+    // §P2.2 (ERP_IDEMPIERE_UX_PARITY.md §IMPL): a List's order is iDempiere's own rule — by Value when
+    // AD_Reference.IsOrderByValue='Y', else by Name (MLookupFactory.getLookup_List:301 → :332 "ORDER BY 2" /
+    // :334 "ORDER BY 3"). AD_Ref_List carries no SeqNo. A seed without IsOrderByValue → Name (legacy).
+    var refR, byValue = false;
+    try {
+      refR = db.exec('SELECT ValidationType, IsOrderByValue FROM AD_Reference WHERE AD_Reference_ID = ?', [referenceId]);
+      if (refR.length && refR[0].values.length) byValue = String(refR[0].values[0][1]) === 'Y';
+    } catch (eShape) {
+      refR = db.exec('SELECT ValidationType FROM AD_Reference WHERE AD_Reference_ID = ?', [referenceId]);
+    }
     if (!refR.length || !refR[0].values.length) {
       return { type: 'unknown', referenceId: referenceId };
     }
@@ -344,18 +368,18 @@
     var valType = refR[0].values[0][0];
 
     if (valType === 'L') {
-      // List — get options from AD_Ref_List
+      // List — get options from AD_Ref_List (active only), ordered per IsOrderByValue
       var listR = db.exec(
         'SELECT Value, Name, Description FROM AD_Ref_List ' +
-        'WHERE AD_Reference_ID = ? AND IsActive = \'Y\' ORDER BY Name', [referenceId]);
+        'WHERE AD_Reference_ID = ? AND IsActive = \'Y\' ORDER BY ' + (byValue ? 'Value' : 'Name'), [referenceId]);
       var options = [];
       if (listR.length) {
         options = listR[0].values.map(function (row) {
           return { value: row[0], name: row[1], description: row[2] };
         });
       }
-      console.log('§AD_PARSER resolveRef id=' + referenceId + ' type=List options=' + options.length);
-      return { type: 'list', options: options };
+      console.log('§AD_PARSER resolveRef id=' + referenceId + ' type=List options=' + options.length + ' orderBy=' + (byValue ? 'Value' : 'Name'));
+      return { type: 'list', options: options, orderBy: byValue ? 'Value' : 'Name' };
     }
 
     console.log('§AD_PARSER resolveRef id=' + referenceId + ' type=' + valType);

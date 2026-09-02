@@ -1,5 +1,6 @@
 // ⚠ DO NOT REMOVE — Scope guard
-// Scope: HEADLESS engine witness for S2B AD-FOLDED CRUD GENERALITY (W-AD-FOLDED-CRUD). Proves CORE.foldCrudSpec
+// Scope: HEADLESS engine witness for S2B AD-FOLDED CRUD GENERALITY (W-AD-FOLDED-CRUD) + §P2/§P1 parity engine arms
+//   (W-PARITY-REFLIST / W-PARITY-FIELDSET engine halves, bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL). Proves CORE.foldCrudSpec
 //   derives a crud_ops-shaped entry FROM THE DICTIONARY (the renderer's getFields field shape) — general, not a
 //   curated allow-list. ISSUE it proves: "are all tables editable per their own AD?" — today only the curated 5
 //   were; this shows the fold produces create/update/delete verbs + typed fields for any editable table, [] for a
@@ -45,7 +46,10 @@ const grp = upd.fields.find(f => f.col === 'c_bp_group_id');
 ok('amount → number', credit && credit.type === 'number', credit && credit.type);
 ok('tableDirect → fk with ref = column minus _id', grp && grp.type === 'fk' && grp.ref === 'c_bp_group', grp && (grp.type + '/' + grp.ref));
 ok('string → string + required carried from IsMandatory', upd.fields.find(f => f.col === 'value').type === 'string' && upd.fields.find(f => f.col === 'value').required === true);
-ok('Yes-No (AD_Reference_ID=20) folds to STRING, NOT fk (authoritative id, not the coarse map)', upd.fields.find(f => f.col === 'iscustomer').type === 'string', upd.fields.find(f => f.col === 'iscustomer').type);
+// §P2 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL P2.3, W-PARITY-REFLIST) — LEG-1 RETIRED 2026-09-02: a Yes-No
+//   is a Y/N control ('yesno'), a List is an AD_Ref_List select ('list'). This assertion used to PIN the leg ("folds to STRING").
+ok('Yes-No (AD_Reference_ID=20) folds to YESNO (a Y/N control) — not fk, and no longer string (LEG-1 retired)', upd.fields.find(f => f.col === 'iscustomer').type === 'yesno', upd.fields.find(f => f.col === 'iscustomer').type);
+ok('Yes-No literal AD default kept verbatim (IsCustomer=N)', upd.fields.find(f => f.col === 'iscustomer').default === 'N');
 
 // 3 — IsUpdateable='N' = display-only on EDIT, settable on NEW
 const cre = CORE.foldCrudSpec(BP_FIELDS, { key: 'c_bpartner', forVerb: 'create', ctx: CTX });
@@ -66,9 +70,47 @@ ok('AD_Tab.IsReadOnly=Y → read-only (no verbs)', roTab.verbs.length === 0, JSO
 
 // 6 — mapRefType coverage (the AD_Reference vocab → form type)
 const m = CORE.mapRefType;
-ok('mapRefType: integer/quantity→number, date/datetime→date, table/search→fk, list/yesno→string',
+ok('mapRefType: integer/quantity→number, date/datetime→date, table/search→fk, list→list, yesno→yesno (LEG-1 retired)',
   m('integer') === 'number' && m('quantity') === 'number' && m('date') === 'date' && m('datetime') === 'date' &&
-  m('table') === 'fk' && m('search') === 'fk' && m('list') === 'string' && m('yesno') === 'string');
+  m('table') === 'fk' && m('search') === 'fk' && m('list') === 'list' && m('yesno') === 'yesno');
+ok('mapRefDisplayType: 17→list, 20→yesno, 10→string, 19→fk', CORE.mapRefDisplayType(17) === 'list' && CORE.mapRefDisplayType(20) === 'yesno' && CORE.mapRefDisplayType(10) === 'string' && CORE.mapRefDisplayType(19) === 'fk');
+
+// 7 — §P2 (W-PARITY-REFLIST): a List column folds its AD_Ref_List set through the host resolver, ORDER PRESERVED.
+//   PriorityRule-shaped values ('7','5','3' in Name order) would be re-ordered by a plain object ('3','5','7' — JS
+//   integer-key ordering); optionList is the ordered form the editor renders, options the validator's map.
+const REF_154 = [{ value: '7', name: 'High' }, { value: '5', name: 'Medium' }, { value: '3', name: 'Low' }];
+const seen = [];
+const lst = CORE.foldCrudSpec([
+  { columnName: 'PriorityRule', name: 'Priority', isDisplayed: true, isMandatory: true, isUpdateable: true, referenceId: 17, referenceValueId: 154, defaultValue: '5',
+    readOnlyLogic: '@IsApproved@=Y', mandatoryLogic: '@IsDropShip@=Y', seqNo: 210 },
+  { columnName: 'Note', name: 'Note', isDisplayed: true, referenceId: 17, referenceValueId: 999 }   // resolver returns nothing → still a list, no options
+], { key: 'c_order', forVerb: 'create', refList: id => { seen.push(id); return id === 154 ? REF_154 : null; } });
+const pr = lst.fields.find(f => f.col === 'priorityrule'), note = lst.fields.find(f => f.col === 'note');
+ok('List (17) folds to type list with refListId = AD_Reference_Value_ID; resolver called with it', pr && pr.type === 'list' && pr.refListId === 154 && seen.indexOf(154) >= 0, JSON.stringify(seen));
+ok('optionList keeps the resolver ORDER (7,5,3), options is the membership map', pr && JSON.stringify(pr.optionList.map(o => o.value)) === '["7","5","3"]' && pr.options['5'] === 'Medium' && Object.keys(pr.options).length === 3, pr && JSON.stringify(pr.optionList));
+ok('listOptions(optionList) renders in that same order (a map would give 3,5,7)', JSON.stringify(CORE.listOptions(pr.optionList, '5').map(o => o.value)) === '["7","5","3"]' && CORE.listOptions(pr.optionList, '5').find(o => o.selected).value === '5' && JSON.stringify(Object.keys(pr.options)) === '["3","5","7"]');
+ok('ReadOnlyLogic / MandatoryLogic / SeqNo now ride the fold (P2.1 → effectiveFlags)', pr && pr.readonlylogic === '@IsApproved@=Y' && pr.mandatorylogic === '@IsDropShip@=Y' && pr.seq === 210);
+ok('a List whose resolver returns nothing is still a list (raw-value select), no options map', note && note.type === 'list' && !note.options && !note.optionList);
+ok('validateField: a value outside the AD_Ref_List set → list:not-an-option; a member → ok', CORE.validateField({}, pr, 'ZZ') === 'list:not-an-option' && CORE.validateField({}, pr, '3') === null);
+const yn = upd.fields.find(f => f.col === 'iscustomer');
+ok('validateField: a Yes-No may only be Y or N', CORE.validateField({}, yn, 'X') === 'yesno:not-Y/N' && CORE.validateField({}, yn, 'Y') === null && CORE.validateField({}, yn, 'N') === null);
+
+// 8 — §P1 (W-PARITY-FIELDSET): mergeCuratedWithFold — the AD fold is the FIELD SET, the curated entry keeps verbs/
+//   docAction and the PIN ORDER of its own columns; a pinned column keeps its curated type/required/readonly/default
+//   (§IMPL F3) but inherits the AD sibling's logic strings; everything else appends in AD (fold) order.
+const BP_WITH_LOGIC = BP_FIELDS.map(f => f.columnName === 'Name' ? Object.assign({}, f, { displayLogic: '@IsActive@=Y', seqNo: 40 }) : f);
+const fold = CORE.foldCrudSpec(BP_WITH_LOGIC, { key: 'c_bpartner', forVerb: 'update', ctx: CTX });
+const curated = { verbs: ['update'], docAction: { action: 'CO' }, ownerGated: true, fields: [
+  { col: 'so_creditlimit', label: 'Credit (curated)', type: 'string', required: true },   // AD says amount→number; curated wins on a pin
+  { col: 'name', label: 'Name', type: 'string', required: true },
+  { col: 'not_in_ad', label: 'Curated only', type: 'string' } ] };
+const mg = CORE.mergeCuratedWithFold(curated, fold);
+const mcols = mg.fields.map(f => f.col);
+ok('merged field SET = curated pins first (in curated order) + every AD field not pinned, in AD order', mg.merged === true && mg.pinned === 3 && mg.appended === fold.fields.length - 2 && mcols.slice(0, 3).join(',') === 'so_creditlimit,name,not_in_ad' && mcols.length === fold.fields.length + 1, mcols.join(','));
+ok('appended fields keep AD (fold) order', JSON.stringify(mcols.slice(3)) === JSON.stringify(fold.fields.map(f => f.col).filter(c => c !== 'so_creditlimit' && c !== 'name')));
+ok('a pinned column keeps its curated type/required (F3), and inherits the AD sibling\'s logic + seq', mg.fields[0].type === 'string' && mg.fields[0].required === true && mg.fields[1].displaylogic === '@IsActive@=Y' && mg.fields[1].seq === 40);
+ok('verbs/docAction/ownerGated come from the curated entry, not the fold', JSON.stringify(mg.verbs) === '["update"]' && mg.docAction.action === 'CO' && mg.ownerGated === true);
+ok('merge is a no-op without a fold, and returns the fold without a curated entry', CORE.mergeCuratedWithFold(curated, null) === curated && CORE.mergeCuratedWithFold(null, fold) === fold);
 
 const verdict = fail === 0;
 console.log('\n§W-AD-FOLDED-CRUD ' + (verdict ? '✅' : '🔴') + ' — foldCrudSpec derives editability FROM THE AD: every'
