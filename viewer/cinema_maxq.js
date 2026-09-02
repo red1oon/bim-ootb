@@ -1620,15 +1620,38 @@
               ' groupGuids=' + _fcIdx.group.size + ' ms=' + (performance.now() - _fcT0).toFixed(1));
           }
           var _fSeenGroups = new Set();
+          // §VAC / §R14.1 (CPE_4D_PERF_MEM_STUDY.md): _fUnmatched counts the third outcome this
+          // forEach always had and never reported — a frontier guid present in NEITHER index.
+          // Without it, "frontierGuids=10 batchObjsContainingFrontier=4" cannot distinguish six
+          // guids DEDUPED into already-seen batch objects from six guids the indexes never had
+          // (the streamed set is 63,182 guids; TM places 63,417 — a 235-guid gap that nothing on
+          // disk can currently attribute). This is a counter on an existing else-branch, not a
+          // new measurement.
+          var _fUnmatched = 0;
           _fGuids.forEach(function(g) {
             var _ml = _fcIdx.mesh.get(g);
             if (_ml) { for (var _mi = 0; _mi < _ml.length; _mi++) { _fMatched++; if (_ml[_mi].castShadow) _fTrue++; else _fFalse++; } return; }
             var _go = _fcIdx.group.get(g);
-            if (_go && !_fSeenGroups.has(_go)) { _fSeenGroups.add(_go); _fBatchObjs++; if (_go.castShadow) _fBatchTrue++; else _fBatchFalse++; }
+            if (_go) { if (!_fSeenGroups.has(_go)) { _fSeenGroups.add(_go); _fBatchObjs++; if (_go.castShadow) _fBatchTrue++; else _fBatchFalse++; } return; }
+            _fUnmatched++;
           });
+          // §VAC V1 — the singleMesh_* triplet is VACUOUS whenever the single-mesh index is empty,
+          // and on a device that took the fast batched path it always is. MEASURED, s5_hospital.log
+          // (2,027 frames): §SHADOW_FRONTIER_IDX meshGuids=0 groupGuids=63182, §BATCHED_FAIL count 0,
+          // §RENDERER_CAPS multi_draw=on — so all three streaming.js fallbacks that give a lone
+          // THREE.Mesh a userData.guid (BatchedMesh ctor throw / BatchedMesh unavailable / oversized
+          // spill) were never taken. The matcher is NOT broken: it is a Map.get against a Map of
+          // size 0. Printing three bare zeros made 286 firings look like a judged result; they were
+          // never a result. The batch half of the line IS judging (batchObjsContainingFrontier was
+          // non-zero on every one of those 286 firings) and is printed unchanged.
+          var _fSingle = (_fcIdx.mesh.size === 0)
+            ? 'singleMesh=VACUOUS (no individually-meshed elements in this scene — §SHADOW_FRONTIER_IDX meshGuids=0; all geometry is batched/instanced)'
+            : 'singleMesh_matched=' + _fMatched + ' castShadowTrue=' + _fTrue + ' castShadowFalse=' + _fFalse;
           console.log('§SHADOW_FRONTIER_AT_CAPTURE frame=' + i + ' frontierGuids=' + _fGuids.size +
-            ' singleMesh_matched=' + _fMatched + ' castShadowTrue=' + _fTrue + ' castShadowFalse=' + _fFalse +
-            ' batchObjsContainingFrontier=' + _fBatchObjs + ' batchCastShadowTrue=' + _fBatchTrue + ' batchCastShadowFalse=' + _fBatchFalse);
+            ' ' + _fSingle +
+            ' batchObjsContainingFrontier=' + _fBatchObjs + ' batchCastShadowTrue=' + _fBatchTrue + ' batchCastShadowFalse=' + _fBatchFalse +
+            ' unmatched=' + _fUnmatched +
+            ((_fcIdx.mesh.size === 0 && _fBatchObjs === 0) ? ' VERDICT=INCONCLUSIVE (nothing judged this frame)' : ''));
         }
         _restoreRandom();
         // A timeout can now only mean a genuinely slow frame, since hidden time no longer counts
