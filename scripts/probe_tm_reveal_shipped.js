@@ -16,6 +16,11 @@
 // So this probe mirrors THAT chain, slicing the live functions out of time_machine.js by brace
 // matching (same discipline as witness_tm_element_window_bind.js) — never re-typed.
 //
+// §CACHE_PLAYED_LAYER (2026-09-02, queue item A-9): that slicing + mirror now lives in
+// scripts/lib/tm_played_layer.js and is SHARED with scripts/cache_4d_run.js, which persists the
+// played layer into ~/.cache/bim4d. Two independent node replications of the played layer would be
+// the same defect class this section exists to remove, so there is exactly one.
+//
 // Per task it prints: the decile histogram of op.start inside the task's own window (the film's
 // reveal distribution), the CPM group's raw span vs its Tukey-fenced core span (how much of the
 // window the outlier-free mass is squashed into), and the outliers by name.
@@ -44,17 +49,9 @@ globalThis.LevelDeriver = require(path.join(V, 'lib', 'level_deriver.js'));
 globalThis.LocationAxis = require(path.join(V, 'location_axis.js'));
 const T = JSON.parse(fs.readFileSync(path.join(V, 'rates', '4D_template.json'), 'utf8'));
 const tmSrc = fs.readFileSync(path.join(V, 'time_machine.js'), 'utf8');
+// §CACHE_PLAYED_LAYER — the ONE owner of "the played layer, in node" (slicing + injectGantt mirror).
+const TMP = require(path.join(__dirname, 'lib', 'tm_played_layer.js'));
 
-function sliceFn(src, name) {
-  const idx = src.indexOf('function ' + name + '(');
-  if (idx < 0) throw new Error(name + ' not found in time_machine.js');
-  let d = 0, open = false;
-  for (let i = idx; i < src.length; i++) {
-    if (src[i] === '{') { d++; open = true; }
-    else if (src[i] === '}') { d--; if (open && d === 0) return src.slice(idx, i + 1); }
-  }
-  throw new Error('unbalanced braces for ' + name);
-}
 function executedRules() {
   const sb = { console: { log() {}, warn() {}, error() {} } };
   vm.createContext(sb);
@@ -75,41 +72,12 @@ function deciles(vals) {
   return h.map(c => +(100 * c / Math.max(1, vals.length)).toFixed(1));
 }
 
-function buildSandbox(R) {
-  const sb = {
-    window: { LABOR_RATES: R.LABOR_RATES, GanttModel: GM, ScheduleAuthor: SA },
-    ScheduleGate: SG, CpmSchedule: CP, GanttModel: GM, ScheduleAuthor: SA,
-    _midairAudit: SS.midairAudit,
-    console: console,
-    // _tiledPlay stays null here so `_tmRescaleToTaskWindow` yields the PRE-FIX affine map (the
-    // "SHIPPED-affine" label below = what played before §TM_REVEAL_TILED); the CANDIDATE map is the
-    // shipped tiling function itself when the revision has it.
-    _cap: null, _winGroups: {}, _tiledPlay: null, _rawScheduleRemember: null,
-  };
-  vm.createContext(sb);
-  const code = [
-    'var _CPM_DISPLAY = true;',
-    sliceFn(tmSrc, '_tukeyBound'),
-    sliceFn(tmSrc, '_displayTimelineRemember'),
-    sliceFn(tmSrc, '_displayTimeline'),
-    sliceFn(tmSrc, '_tmDisplayRemap'),
-    sliceFn(tmSrc, '_tmRescaleToTaskWindow'),
-    // §TM_REVEAL_TILED — optional so the probe still runs against a pre-fix revision (then the
-    // CANDIDATE is computed by calling the verb directly, which is what the shipped function does).
-    (tmSrc.indexOf('function _tmTilePlayWithinTasks(') >= 0 ? sliceFn(tmSrc, '_tmTilePlayWithinTasks') : 'var _tmTilePlayWithinTasks = null;'),
-    'this._tmDisplayRemap = _tmDisplayRemap; this._displayTimeline = _displayTimeline;',
-    'this._tmRescaleToTaskWindow = _tmRescaleToTaskWindow; this._tmTilePlayWithinTasks = _tmTilePlayWithinTasks;',
-    'this.__getRaw = function () { return _rawScheduleRemember; };',
-  ].join('\n');
-  vm.runInContext(code, sb);
-  return sb;
-}
-
 async function runBuilding(bld, SQL, R) {
   const dbf = resolveDbFile(bld);
   if (!fs.existsSync(dbf.path)) { console.log('§TM_REVEAL_SHIPPED_SKIP ' + bld + ' — no db'); return null; }
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbf.path)));
-  const sb = buildSandbox(R);
+  const sb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS,
+    LABOR_RATES: R.LABOR_RATES, console: console });
   const SHIFT = T.calendar.hours_per_shift;
   const base = { start: START, laborRates: R.LABOR_RATES, rates: R.RATES,
     nameOverrides: R.SEQUENCE_NAME_OVERRIDES, defaultRule: R.SEQUENCE_DEFAULT,
@@ -125,69 +93,26 @@ async function runBuilding(bld, SQL, R) {
     ' elements=' + elements.length + ' tasks=' + res.tasks.length + ' totalDays=' + res.totalDays +
     ' materializeMs=' + (Date.now() - t0));
 
-  // ── injectGantt mirror: _twItems -> _displayTimeline (REUSE branch replays the hook's CPM) ──
-  const raw = sb.__getRaw();
-  if (!raw || !raw.map) { console.log('§TM_REVEAL_SHIPPED_FAIL ' + bld + ' hook did not remember the raw schedule'); db.close(); delete globalThis.APP; return null; }
+  // ── injectGantt mirror — scripts/lib/tm_played_layer.js, the SHARED owner (§CACHE_PLAYED_LAYER).
+  // wantAffine:true gives BOTH columns off ONE run: `affine` = the pre-#1605 per-task affine (the A
+  // column and the red control), `play` = the shipped path with §TM_REVEAL_TILED applied. The CPM
+  // display pass runs once and is shared by both, which is the only way this A/B is honest.
   const baseMs = Date.parse(START);
-  const twItems = elements.map(el => {
-    const ts = raw.map[el.guid];
-    return { guid: el.guid, s: ts ? ts.start : baseMs, e: ts ? ts.end : baseMs + 60000,
-      bz: el.base_z, tz: el.top_z, x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
-      cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey, resource: el.resource };
-  });
-  const dt = sb._displayTimeline(twItems);
+  const mp = TMP.mirrorInjectGantt({ sb: sb, elements: elements, tasks: res.tasks, db: db,
+    startISO: START, applyTiling: true, wantAffine: true, log: console.log });
   delete globalThis.APP;
-  console.log('§TM_REVEAL_SHIPPED_DISPLAY ' + bld + ' cpm=' + (dt && dt.cpm) + ' midair=' + (dt && dt.midair) +
+  if (!mp.ok) { console.log('§TM_REVEAL_SHIPPED_FAIL ' + bld + ' ' + mp.reason); db.close(); return null; }
+  const disp = mp.disp, win = mp.win, guidTask = mp.guidTask, twItems = mp.twItems, winGroups = mp.winGroups;
+  const op = mp.affine, opFix = mp.play, tiled = mp.tiledMap;
+  console.log('§TM_REVEAL_SHIPPED_DISPLAY ' + bld + ' cpm=' + mp.stats.cpm + ' midair=' + mp.stats.midair +
     ' (cpm=reuse means injectGantt replayed the hook\'s CPM timeline, exactly as the browser cold-open does)');
-  const disp = {};
-  twItems.forEach(it => { disp[it.guid] = { start: it.s, end: it.e }; });
-  let schedEnd = baseMs;
-  for (const g in disp) if (disp[g].end > schedEnd) schedEnd = disp[g].end;
-
-  // ── _cap mirror: template task windows (the persisted `tasks` rows), guid -> earliest task ──
-  const win = {}, guidTask = {};
-  res.tasks.forEach(t => {
-    win[t.id] = { s: baseMs + t.sDays * DAY_MS, e: baseMs + t.eDays * DAY_MS, name: t.id, sDays: t.sDays, eDays: t.eDays,
-      phase: t.phase, storey: t.storey };
-    t.guids.forEach(g => { if (!guidTask[g] || win[t.id].s < win[guidTask[g]].s) guidTask[g] = t.id; });
-  });
-  sb._cap = { win: win, guidTask: guidTask };
-  // _winGroups — verbatim shape of time_machine.js injectGantt (~4872-4880)
-  const winGroups = {};
-  elements.forEach(el => {
-    const s = disp[el.guid] || { start: schedEnd, end: schedEnd + 60000 };
-    const tid = guidTask[el.guid];
-    if (tid == null || !win[tid]) return;
-    const g = winGroups[tid] || (winGroups[tid] = { min: Infinity, max: -Infinity });
-    if (s.start < g.min) g.min = s.start;
-    if (s.end > g.max) g.max = s.end;
-  });
-  sb._winGroups = winGroups;
-  const op = {};
-  let clamped = 0, uncovered = 0;
-  elements.forEach(el => {
-    const s = disp[el.guid] || { start: schedEnd, end: schedEnd + 60000 };
-    const b = sb._tmRescaleToTaskWindow(el.guid, s);
-    if (b.clamped) clamped++; else if (guidTask[el.guid] == null) uncovered++;
-    op[el.guid] = { s: b.start, e: b.end };
-  });
-  console.log('§TM_REVEAL_SHIPPED_BIND ' + bld + ' total=' + elements.length + ' clamped=' + clamped + ' uncovered=' + uncovered +
+  console.log('§TM_REVEAL_SHIPPED_BIND ' + bld + ' total=' + mp.stats.total + ' clamped=' + mp.stats.clamped +
+    ' uncovered=' + mp.stats.uncovered + ' tiled=' + mp.stats.tiled + ' display_authored=' + mp.stats.displayAuthored +
     ' (mirrors §TM_ELEMENT_WINDOW_BIND)');
-
-  // ── CANDIDATE (A/B): the tiling verb schedule_author already owns, applied in CPM order ──
-  // ScheduleAuthor.remapSolveToTasks(solve, tasks, startISO, layerOf=null): one band per task, members
-  // ordered by the solve's own start (here: the CPM display time the movie plays TODAY, so every
-  // ordering CPM established survives — monotone, ties on guid), each element's width = its own CPM
-  // duration, tiled edge-to-edge across the task's window. No number invented; no window moved.
+  console.log('§TM_REVEAL_SHIPPED_CANDIDATE ' + bld + ' source=' +
+    (mp.stats.tilingAvailable ? 'time_machine.js _tmTilePlayWithinTasks (shipped)'
+      : '⛔ NONE — this revision has no _tmTilePlayWithinTasks, so the CANDIDATE column equals the affine'));
   const capTasks = res.tasks.map(t => ({ id: t.id, sDays: t.sDays, eDays: t.eDays, guids: t.guids.filter(g => guidTask[g] === t.id) }));
-  // Prefer the SHIPPED function (sliced out of time_machine.js) so the CANDIDATE column measures the
-  // code that ships, not a re-derivation; a pre-fix revision falls back to calling the verb directly.
-  const tiled = (typeof sb._tmTilePlayWithinTasks === 'function')
-    ? sb._tmTilePlayWithinTasks(disp, { base: baseMs, win: win, guidTask: guidTask }, true)
-    : SA.remapSolveToTasks(disp, capTasks, START, null).schedule;
-  console.log('§TM_REVEAL_SHIPPED_CANDIDATE ' + bld + ' source=' + (typeof sb._tmTilePlayWithinTasks === 'function' ? 'time_machine.js _tmTilePlayWithinTasks (shipped)' : 'ScheduleAuthor.remapSolveToTasks (direct call, pre-fix revision)'));
-  const opFix = {};
-  elements.forEach(el => { const t = tiled[el.guid]; opFix[el.guid] = t ? { s: t.start, e: t.end } : op[el.guid]; });
   let pStart0 = Infinity, pEnd0 = -Infinity;
   elements.forEach(e => { if (op[e.guid].s < pStart0) pStart0 = op[e.guid].s; if (op[e.guid].e > pEnd0) pEnd0 = op[e.guid].e; });
 
