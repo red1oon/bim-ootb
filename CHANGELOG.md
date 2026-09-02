@@ -4,6 +4,13 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.58.1](https://github.com/red1oon/bim-ootb/compare/v1.58.0...v1.58.1) (2026-09-02)
+
+
+### 🐛 Fixes
+
+* **erp-fsm:** recover 3 DocumentEngine tail blocks the oracle's parse window hid (§P4-DEFECT) ([#1611](https://github.com/red1oon/bim-ootb/issues/1611)) ([9e4037c](https://github.com/red1oon/bim-ootb/commit/9e4037c87e39f1dd670407086dfff4f98ec91ce8))
+
 ## [1.58.0](https://github.com/red1oon/bim-ootb/compare/v1.57.1...v1.58.0) (2026-09-02)
 
 
