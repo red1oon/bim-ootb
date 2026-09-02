@@ -904,7 +904,12 @@
   //      Here: sparks exist ONLY during playback; stop decays to zero; scrub draws none.
   //      The only state that can persist is zero.
   var _gspTexture = null, _gspPool = [], _gspActive = 0;
-  var _gspRoll = 0;            // re-roll index — advances once per playback tick
+  var _gspRoll = 0;            // re-roll index — advances once per PLAYBACK tick (frozen at 0 in a
+                               // bake: see §VAC / §R14.1 at the §GROUP_SPARK_TICK log below)
+  var _gspTick = 0;            // §VAC — advances on EVERY _gspEmit, playing or not; the log's own
+                               // sample counter, replacing the dead `_gspRoll % 10` throttle
+  var _gspLastVerdict = null;  // §VAC V2 — last §GROUP_SPARK_TICK verdict, for run-length reporting
+  var _gspRepeats = 0;         // §VAC V2 — identical verdicts suppressed since _gspLastVerdict
   var _gspDecay = 1;           // 1 while playing; ramps to 0 on stop
   var _gspDecayTimer = null;
   var _gspCand = [];           // flat [x,y,z,...] collected during the traverse
@@ -1013,11 +1018,40 @@
     _gspActive = 0;
     // Unconditional tick log — MUST fire even on the early-return paths, otherwise a zero-spark
     // result is indistinguishable from "the code never ran" (that ambiguity is exactly what let
-    // #866 ship believing it was verified).
-    if (_gspRoll % 10 === 0) {
-      console.log('§GROUP_SPARK_TICK playing=' + !!isPlaying + ' cand=' + (_gspCand.length / 3) +
-                  ' (frontier=' + _gspFrontierN + ' recent=' + _gspRecentN + ')' +
-                  ' roll=' + _gspRoll + ' decay=' + _gspDecay.toFixed(2));
+    // #866 ship believing it was verified). That requirement is KEPT: the tick is still reported
+    // on every path, it is just no longer reported once per frame with an identical verdict.
+    //
+    // §VAC / §R14.1 — the throttle this line used to carry was DEAD in the bake path.
+    // It read `_gspRoll % 10 === 0`, intending a 1-in-10 sample. `_gspRoll++` happens in exactly
+    // one place — playTick() (search "§GROUP_SPARK: one re-roll per playback tick"), behind
+    // `if (!_playing) return;`. A MaxQ bake never calls playTick(); it drives renderAtTime()
+    // directly. So _gspRoll is frozen at 0, `0 % 10 === 0` is always true, and 1-in-10 silently
+    // became 1-in-1. MEASURED, s5_hospital.log: 2,027 firings over 2,027 frames, every one
+    // carrying `roll=0`. (The same dead expression also gates §PERF_TRAVERSE below — named in
+    // §R14.1, deliberately NOT changed here: that one is a real per-frame measurement other
+    // sections quote.) Fixed with a counter that advances on every emit, playing or not.
+    //
+    // §VAC V1+V2 — and the verdict itself was vacuous: 1,681 of those 2,027 firings read
+    // `playing=false cand=0 (frontier=0 recent=0)`, i.e. nothing to light and no playback to
+    // light it during. A run of identical verdicts is now printed ONCE with its repeat count;
+    // the count is the signal, so nothing is dropped.
+    _gspTick++;
+    var _gspVerdict = (!isPlaying || !_gspCand.length)
+      ? 'VACUOUS (' + (!isPlaying ? 'not playing' : 'cand=0 — no frontier/recent candidates this tick') +
+        ') playing=' + !!isPlaying + ' cand=' + (_gspCand.length / 3) +
+        ' (frontier=' + _gspFrontierN + ' recent=' + _gspRecentN + ')'
+      : 'playing=true cand=' + (_gspCand.length / 3) +
+        ' (frontier=' + _gspFrontierN + ' recent=' + _gspRecentN + ')' +
+        ' roll=' + _gspRoll + ' decay=' + _gspDecay.toFixed(2);
+    if (_gspVerdict !== _gspLastVerdict) {
+      if (_gspRepeats > 0) console.log('§GROUP_SPARK_TICK repeats=' + _gspRepeats + ' (identical verdict, suppressed)');
+      console.log('§GROUP_SPARK_TICK ' + _gspVerdict + ' tick=' + _gspTick);
+      _gspLastVerdict = _gspVerdict; _gspRepeats = 0;
+    } else {
+      _gspRepeats++;
+      // Never let a long identical run go completely silent — a bounded heartbeat proves the code
+      // is still running (the #866 ambiguity above), without one line per frame.
+      if (_gspTick % 500 === 0) console.log('§GROUP_SPARK_TICK still ' + _gspVerdict + ' — repeats=' + _gspRepeats + ' tick=' + _gspTick);
     }
     // Scrub / paused / not playing → NO sparks at all. Scrubbing is a state-diff read; flashing
     // VFX competes with it (user: "the appreciation is in the quick diff in states").
@@ -1659,10 +1693,28 @@
       }
     }
     // §SHADOW_FRONTIER — log every 60 ticks
+    // §VAC V1 / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): this line printed
+    // "casters=0 receivers=0" on all 33 firings of the 2,027-frame Hospital bake, and BOTH of its
+    // counters are structurally unreachable in that run — so the zeros were never a judgement.
+    //   (a) _shadowCasters/_shadowReceivers only increment behind `if (app._shadowOn)` (:1463 and
+    //       the promotion pass directly above); that run logged §TM_SHADOW_INHERIT shadowOn=false.
+    //   (b) both counters live in the SINGLE-MESH branch (see the §PERF_INCR Phase 2 comment near
+    //       :1342). On a device that took the fast batched path there are no individually-meshed
+    //       elements at all — §SHADOW_FRONTIER_IDX measured meshGuids=0 groupGuids=63182 on the
+    //       same building, and §BATCHED_FAIL never fired.
+    // The log line sits OUTSIDE the `if (app._shadowOn …)` block on purpose (a zero must still be
+    // reportable), so it has to name WHICH predicate is empty rather than print a bare 0.
     _shadowLogTick++;
     if (_shadowLogTick >= 60) {
       _shadowLogTick = 0;
-      console.log('§SHADOW_FRONTIER casters=' + _shadowCasters + ' receivers=' + _shadowReceivers);
+      if (!app._shadowOn) {
+        console.log('§SHADOW_FRONTIER VACUOUS — shadowOn=false, the casters/receivers counters are gated off; 0 means "not asked", not "none found"');
+      } else if (!_placedMeshes.length && !_frontierCentroids.length) {
+        console.log('§SHADOW_FRONTIER VACUOUS — shadowOn=true but the single-mesh branch placed 0 meshes and 0 frontier centroids (batched/instanced scene); these counters cannot see batched geometry');
+      } else {
+        console.log('§SHADOW_FRONTIER casters=' + _shadowCasters + ' receivers=' + _shadowReceivers +
+          ' (single-mesh branch only; placedMeshes=' + _placedMeshes.length + ' frontierCentroids=' + _frontierCentroids.length + ')');
+      }
     }
 
     // §S260c: Cinematic Director — storyboard-driven camera (Film Studio mode)
@@ -4138,6 +4190,20 @@
     return _4dTemplate;
   }
 
+  // §FUTURE-5A A7 (attempted 2026-09-02, queue item B-3, REVERTED same day) — rates.js's
+  // `var SHIFT_HOURS = 24` is hand-copied as a literal `24` fallback at 4 separate sites in this
+  // file ("the shape that produced §GANTT_SHIFT_HOURS_DESYNC — one copy missed", §FUTURE-5A's own
+  // words). Consolidating all 4 into one `_shiftHoursOrDefault()` helper was tried and REVERTED in
+  // the same session as B1's STRUCT_MAX_SEQ revert, same root cause: `witness_gantt_native_generate.js`
+  // slices `generateGanttSchedule` out of this file as raw source text and evals it in a sandbox
+  // that only also includes `_tmBusyRecording`/`_tmEditLocked` — a call to a shared helper declared
+  // elsewhere in this file is undefined in that sandbox (masked by a SECOND ReferenceError inside
+  // the catch, `_tmEditExceptionRecover is not defined`, since that's ALSO not in the slice — the
+  // real cause only surfaces by removing the outer catch and looking directly). Left as 4 literal
+  // `(window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24` copies, unchanged. Before retrying this
+  // consolidation, audit every `sliceFn`/`new Function` witness in `viewer/tests/` that slices ANY
+  // of the 4 enclosing functions (grep for the pattern first, not just for SHIFT_HOURS).
+
   // §TUKEY_BOUND (4D_GANTT_TM_REFACTOR.md stage 2, 2026-08-17) — hoisted out of _tmDisplayRemap
   // (was a nested closure there) so buildGanttTasks() can share the SAME envelope math instead of
   // re-deriving its own. This is the proven, already-shipped, already-measured rule (Hospital
@@ -4215,6 +4281,77 @@
     console.log('§ZONE_WINDOW_DAGWINS_CLIP clamped=' + _clamped +
       ' (Tukey-fenced group envelope, classification-free, for WINDOW AUTHORING ONLY — ops/movie keep true physics times)');
     return out;
+  }
+
+  // ══ §TM_REVEAL_TILED (2026-09-02, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §FUTURE item 2,
+  // §TM_REVEAL_SHIPPED) — WHERE inside its bar each element PLAYS. ════════════════════════════
+  // Witness: viewer/tests/witness_tm_reveal_within_bar.js (W-RWB). Probe: scripts/probe_tm_reveal_shipped.js.
+  //
+  // THE FINDING. materializeZones returns `displaySchedule` (= ScheduleAuthor.remapSolveToTasks:
+  // support-layer bands, duration-weighted tiling — §TPL_MOVIE_BINDS_BARS "every element now plays
+  // inside the bar that claims it") and this file never read it. The kernel_ops timestamps the
+  // scrubber and the film actually play were written by injectGantt's _tmRescaleToTaskWindow: a
+  // per-task AFFINE of the CPM group's raw [min,max] onto the template window. CpmSchedule's GLOBAL
+  // per-resource crew pools give a task's members a raw span of up to 434 d for a 35-day bar
+  // (Hospital TASK_MEP_Rough_in_Level_1), so the affine squashed the group's core into a sliver and
+  // left the rest of the bar empty. Measured on the shipped chain (sliced live functions, no
+  // browser): dead air (bar lit, NOTHING in progress) mean 44/63/63/71% of every bar on Duplex/HHS/
+  // Hospital/Terminal, worst 99.9%; Hospital TASK_MEP_Final_Level_5 n=564 days=3 reveal deciles
+  // [3.5,0,0,0,0,0,0,0,0,96.5]; 553 Hospital footings on 200 distinct instants inside the first
+  // half of an 11-day bar, days 6-11 empty. User, 2026-09-02: "the sub structure and floor slabs
+  // are appearing all one shot instead of nicer progressive animation."
+  //
+  // THE FIX. Call the verb the codebase already owns for this question (4D_MODEL_INTEGRITY.md §I
+  // "where inside its task?") instead of re-deriving a layout here: remapSolveToTasks with the CPM
+  // display times as the solve and NO layer map — one band per task, members in CPM start order
+  // (ties on guid), each element's width its own CPM-duration share, tiled edge-to-edge across the
+  // task's real window. Monotone, so every ordering CPM established survives — the exact property
+  // the affine was chosen for (measured: 0 order violations over 119k adjacent pairs, 4 buildings);
+  // no dead air by construction (measured 0.0% on all four); no number invented (widths are the
+  // durations the solve computed, windows are the template's). §S50's cell order stays the live
+  // precedence carrier — this changes SPACING, never order. Gated on schedules.display_authored=1
+  // (our own authored windows — the same flag §CAP_RESCALE_SKIP/§OG_SWEEP_SKIP key on); imported/
+  // captured/baselined schedules keep the affine byte-identically, as does any element this map
+  // misses. Task windows, dates, crews, cost and the film cursor are untouched.
+  //
+  // WHAT IT DOES NOT DO, ON PURPOSE: a superstructure level's slab SET stays compact — _installSecs
+  // prices every IfcSlab at a flat 823 s (0.8% of Hospital L3's labour) and the cell order lays a
+  // level out trade-by-trade — both rulings, neither this function's to change (spec §D).
+  function _tmTilePlayWithinTasks(disp, cap, displayAuthored) {
+    if (!cap || !cap.win || !cap.guidTask) {
+      console.log('§TM_REVEAL_TILED skip reason=no dated task windows (_cap null) — affine rescale kept');
+      return null;
+    }
+    if (!displayAuthored) {
+      console.log('§TM_REVEAL_TILED skip reason=schedule not display-authored (imported/captured/baselined windows) — affine rescale kept');
+      return null;
+    }
+    // Resolved through `window` only — the same seam every real UI call site in this file uses for
+    // ScheduleAuthor (buildTaskIndex, generateGanttSchedule); a witness sandbox supplies window.ScheduleAuthor.
+    var SA = (typeof window !== 'undefined' && window.ScheduleAuthor) || null;
+    if (!SA || typeof SA.remapSolveToTasks !== 'function') {
+      console.log('§TM_REVEAL_TILED skip reason=ScheduleAuthor.remapSolveToTasks unavailable — affine rescale kept');
+      return null;
+    }
+    var base = cap.base;
+    if (!isFinite(base)) { base = Infinity; for (var k0 in cap.win) if (cap.win[k0].s < base) base = cap.win[k0].s; }
+    var tasks = [], byTid = {}, skipped = 0;
+    for (var g in cap.guidTask) {
+      var tid = cap.guidTask[g], w = cap.win[tid];
+      if (!w || !disp[g]) { skipped++; continue; }
+      var t = byTid[tid];
+      if (!t) { t = byTid[tid] = { id: tid, sDays: (w.s - base) / 86400000, eDays: (w.e - base) / 86400000, guids: [] }; tasks.push(t); }
+      t.guids.push(g);
+    }
+    if (!tasks.length) {
+      console.log('§TM_REVEAL_TILED skip reason=no element resolves to a dated task — affine rescale kept');
+      return null;
+    }
+    var r = SA.remapSolveToTasks(disp, tasks, new Date(base).toISOString(), null);
+    console.log('§TM_REVEAL_TILED tasks=' + tasks.length + ' mapped=' + r.mapped + ' skipped=' + skipped +
+      ' degenerate=' + r.degenerateTasks +
+      ' — each element plays its own CPM-duration share of its bar, CPM order kept, no dead air (was: per-task affine, §TM_ELEMENT_WINDOW_RESCALE)');
+    return r.schedule;
   }
 
   // _twoTierRemap (retired §S20 Part B, 2026-08-17, 4D_GANTT_TM_REFACTOR.md) — the legacy
@@ -4501,8 +4638,12 @@
         return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio);
       }
       // Fallback (ScheduleAuthor not loaded) — old per-element behavior, no area weighting.
+      // §FUTURE-5A A1/B3 (applied 2026-09-02, queue item B-3): reads the SAME
+      // LR._productivity_basis_secs / LR._zero_minute_floor_secs (sequence_rules.json) the primary
+      // ScheduleAuthor._installSecs path above reads, literal-fallback identical to before this fix.
       var resource = rule.resource;
-      if (!resource || !LR[resource]) return 120;
+      var _floorSecs = LR._zero_minute_floor_secs || 120;
+      if (!resource || !LR[resource]) return _floorSecs;
       var labor = LR[resource], bestPk = null, bestLen = 0;
       for (var pk in labor.productivity) {
         if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
@@ -4510,7 +4651,7 @@
       // §TPL_ZERO_MINUTE (§S65) — keep this fallback in step with ScheduleAuthor._installSecs'
       // default_productivity, or the two copies disagree the moment ScheduleAuthor fails to load.
       var prod = bestPk ? labor.productivity[bestPk] : (labor.default_productivity || 0);
-      return prod > 0 ? Math.round(28800 / prod) : 120;
+      return prod > 0 ? Math.round((LR._productivity_basis_secs || 28800) / prod) : _floorSecs;
     }
 
     // Query elements with spatial Z
@@ -4737,11 +4878,13 @@
       else if (LR[_mcRes].max_crews) _maxCrews[_mcRes] = LR[_mcRes].max_crews;
     }
     // Per-trade labour content, straight from the installSecs the scheduler itself uses
-    // (28800s = the 8h crew-day getInstallSecs divides by).
+    // (28800s = the 8h crew-day getInstallSecs divides by). §FUTURE-5A A1 (applied 2026-09-02,
+    // queue item B-3): reads sequence_rules.json LR._productivity_basis_secs, same 28800 fallback.
     var _crewWorkDays = {};
+    var _hrCostBasisSecs = LR._productivity_basis_secs || 28800;
     elements.forEach(function (el) {
       var _r = el.resource || '_DEFAULT';
-      _crewWorkDays[_r] = (_crewWorkDays[_r] || 0) + (el.installSecs || 0) / 28800;
+      _crewWorkDays[_r] = (_crewWorkDays[_r] || 0) + (el.installSecs || 0) / _hrCostBasisSecs;
     });
     // §CREW_DEMAND — "the max resource needed", reported per trade so a user can see what to edit.
     // capacity = crews x projectDays crew-days; utilisation = demand / capacity. A trade over 100%
@@ -4785,6 +4928,11 @@
       _hrTotal += _cost; _hrPD += _pd;
       _hrLog.push(_hr + ' personDays=' + _pd.toFixed(1) + ' @' + _hrR.rate_per_day + '/d = ' + Math.round(_cost));
     }
+    // §HR_COST_EXPOSE (2026-08-30) — additive, read-only. §CPE_BIG_STATS wants the 5D headline for
+    // a client-facing card, and the only honest source is the number this block already computed.
+    // Re-deriving cost in the panel would be a second opinion about the schedule's own labour
+    // content, which this file's header forbids.
+    A()._hrCost = { total: Math.round(_hrTotal), personDays: +_hrPD.toFixed(1), trades: _hrLog.length };
     console.log('§HR_COST total=' + Math.round(_hrTotal) + ' personDays=' + _hrPD.toFixed(1) +
       ' across ' + _hrLog.length + ' trades — ' + _hrLog.join(' | ') +
       ' (crew count changes WHEN this lands, not the total)');
@@ -4883,7 +5031,23 @@
         if (s.end > g.max) g.max = s.end;
       });
     }
+    // §TM_REVEAL_TILED — same DB flag §CAP_RESCALE_SKIP / §OG_SWEEP_SKIP key on (display_authored=1:
+    // the windows are our own authored ones), read HERE because the tiling decides WHERE inside its
+    // bar each element is written, i.e. before the write loop, not in the overlay pass after it.
+    var _playDisplayAuthored = false;
+    try {
+      var _pdaR = db.exec('SELECT 1 FROM schedules WHERE display_authored=1 LIMIT 1');
+      _playDisplayAuthored = !!(_pdaR.length && _pdaR[0].values.length);
+    } catch (ePda) { /* legacy DB without the column — affine rescale stays */ }
+    var _tiledPlay = _tmTilePlayWithinTasks(_disp, _cap, _playDisplayAuthored);
     function _tmRescaleToTaskWindow(guid, s) {
+      // §TM_REVEAL_TILED — the tiled interval wins when one exists (see _tmTilePlayWithinTasks).
+      // Everything below is the affine fallback, byte-identical for every element and every
+      // schedule the tiling does not cover (imported/captured/baselined windows, unmapped guids).
+      if (_tiledPlay && _tiledPlay[guid]) {
+        var _tp = _tiledPlay[guid];
+        return { start: _tp.start, end: _tp.end, clamped: true, tiled: true };
+      }
       if (!_cap) return s;
       var taskId = _cap.guidTask[guid];
       var win = (taskId != null) ? _cap.win[taskId] : null;
@@ -4907,11 +5071,12 @@
     db.run('BEGIN');
     var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
     var _projEnd = baseMs;
-    var _windowClamped = 0, _windowUncovered = 0;
+    var _windowClamped = 0, _windowUncovered = 0, _windowTiled = 0;   // §TM_REVEAL_TILED: tiled ⊂ clamped
     elements.forEach(function(el) {
       var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park at the DISPLAY end (§TIER_SERIAL), was baseMs (day 0)
       var bound = _tmRescaleToTaskWindow(el.guid, s);
       if (bound.clamped) _windowClamped++; else if (!_cap || _cap.guidTask[el.guid] == null) _windowUncovered++;
+      if (bound.tiled) _windowTiled++;   // §TM_REVEAL_TILED
       s = bound;
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
@@ -4923,7 +5088,8 @@
     });
     _gStmt.free();
     console.log('§TM_ELEMENT_WINDOW_BIND total=' + elements.length + ' clamped=' + _windowClamped +
-      ' uncovered=' + _windowUncovered + ' (uncovered = no resolvable real task window, prior behavior kept)');
+      ' tiled=' + _windowTiled + ' uncovered=' + _windowUncovered +
+      ' (tiled = §TM_REVEAL_TILED laid it out inside its bar; clamped-not-tiled = affine fallback; uncovered = no resolvable real task window, prior behavior kept)');
     _s4Mark('insertLoop');
     db.run('COMMIT');
     resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
@@ -5327,11 +5493,14 @@
       try {
         var _SR = window.SEQUENCE_RULES || {}, _LR = window.LABOR_RATES || {}, _RT = window.RATES || {};
         var _shGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
-        var rres = SA.materializeZones(db, _SR, { start: '2026-01-01', laborRates: _LR, rates: _RT,
+        // §FUTURE-5A B2 (applied 2026-09-02, queue item B-3): sourced from 4D_template.json
+        // calendar.project_start (same literal, '2026-01-01', as before this fix).
+        var _tplStart = (_4dTemplate && _4dTemplate.calendar && _4dTemplate.calendar.project_start) || '2026-01-01';
+        var rres = SA.materializeZones(db, _SR, { start: _tplStart, laborRates: _LR, rates: _RT,
           scheduleGate: window.ScheduleGate, shiftHours: _shGantt, genVersion: _GANTT_CACHE_VERSION,
           displayRemap: _tmDisplayRemap, template: _4dTemplate });   // §ZONE_DISPLAY_AUTHORING + §TPL_WIRED
         if ((!rres || !rres.ok) && SA.materializeDefault) {
-          rres = SA.materializeDefault(db, _SR, { start: '2026-01-01', laborRates: _LR, blank: false,
+          rres = SA.materializeDefault(db, _SR, { start: _tplStart, laborRates: _LR, blank: false,
             genVersion: _GANTT_CACHE_VERSION });
         }
         console.log('§GANTT_SCHEDULE_STALE_REGEN_RESULT ok=' + !!(rres && rres.ok));
@@ -6332,6 +6501,15 @@
     var persistUrl = app._dbPersistUrl || app.DB_URL;
     SA.persistDb(app.db, persistUrl, {}).then(function (ok) {
       console.log('§GANTT_EDIT_PERSIST what=' + what + ' url=' + persistUrl + ' ok=' + ok);
+      // §GANTT_EDIT_PERSIST_FAIL (bim-compiler 4D_GANTT_TM_REFACTOR.md §5b) — a save that fails must
+      // be LOUD. Before this the ok=false branch did nothing but log at info level: the edit stayed
+      // on screen, looked saved, and was gone on the next reload. persistDb now reports false for a
+      // real abort (§SCHED_PERSIST_ERR carries the reason), so say so where the user is looking.
+      if (!ok) {
+        console.warn('§GANTT_EDIT_PERSIST_FAIL what=' + what + ' url=' + persistUrl +
+          ' — edit is in memory only and will NOT survive a reload');
+        try { _tmSay('⚠ Could not save this edit — it will be lost on reload. See console (§SCHED_PERSIST_ERR).', 7000); } catch (e) {}
+      }
     });
   }
 
@@ -7177,6 +7355,17 @@
         retimeTaskElements(app.db, byTask, res.moved, tasksBeforeLink);
         _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
       }
+      // §FUTURE-5A item 6 (applied 2026-09-02, queue item B-3): the ONLY §GANTT_EDIT_CLAMP call
+      // site in this file with NO on-screen feedback at all — commitGanttDrag/openGanttProps'
+      // Apply already show `blockedBy`/`clampedTo` (the inline tm-gantt-tip pattern _tmSay itself
+      // wraps), but this re-apply-after-link call to moveTaskCascade never checked res.clamped, so
+      // a new link that ALSO clamps the successor left the user with only the earlier "Linked: ..."
+      // message and no word that the date shown isn't where the link math alone would have put it.
+      // res.blockedBy is the engine's own extracted binding predecessor (schedule_author.js
+      // _bindingPred) — never invented here.
+      if (res && res.clamped) {
+        _tmSay('Linked, but ' + succBar.taskId + ' clamped to ' + res.start + ' — blocked by ' + res.blockedBy, 3400);
+      }
     }
     // §GANTT_CPM_ANNOTATE (§S68) — OUTSIDE the moved-check on purpose: a new EDGE changes the graph,
     // so it changes float and criticality even when the clamp left every date exactly where it was.
@@ -7980,7 +8169,12 @@
       var op2 = _ops[ci2];
       var opRes = (op2.parameters || {}).resource || '';
       var lr = LR[opRes];
-      var dailyRate = lr ? lr.rate_per_day * (lr.crew_size || 1) : 95;
+      // §FUTURE-5A B5 (applied 2026-09-02, queue item B-3): the bare "95" was an undocumented
+      // duplicate of sequence_rules.json LABOR_RATES.LABORER (rate_per_day 95, crew_size 1) — read
+      // that entry directly; the literal 95 now fires only if LABORER itself is absent from LR.
+      var _laborerLR = LR.LABORER;
+      var dailyRate = lr ? lr.rate_per_day * (lr.crew_size || 1)
+        : (_laborerLR ? _laborerLR.rate_per_day * (_laborerLR.crew_size || 1) : 95);
       var opStart = op2.start_ts || _projectStart;
       var realEnd = op2.end_ts || _projectEnd;
       var durMs = Math.max(1, realEnd - opStart);
@@ -8248,7 +8442,8 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 37;   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
+  var _GANTT_CACHE_VERSION = 38;   // §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
+  // was 37:   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —
@@ -8563,7 +8758,14 @@
       _finishActivate(app, silent);
       resolve(true);
     }).catch(async function(e) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt in the fallback
-      console.warn('§GANTT_CACHE_ERR ' + e.message);
+      // §GANTT_CACHE_ERR_STACK (2026-08-12) — this handler wraps the WHOLE async activate body
+      // (cache read, _materializeNativeSchedule, injectGantt, loadOps, cachePut), so a message
+      // alone cannot say which. Live user report: "Cannot read properties of undefined (reading
+      // '3iM76qwej9Tf9ttHcbQp2z')" — a GUID used as a key on an undefined object, recovered by the
+      // fallback below (TM still opened with 63,416 ops) but with no way to locate it. Log the
+      // stack and the phase so the next occurrence names its own line.
+      console.warn('§GANTT_CACHE_ERR ' + e.message + ' | phase=' + (_ops && _ops.length ? 'post-loadOps' : 'pre-loadOps') +
+        ' | stack=' + String(e && e.stack || '(none)').split('\n').slice(0, 4).join(' << '));
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
       if (!_ops.length) { await _load4DTemplate(); _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
@@ -8951,6 +9153,26 @@
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {
     return { active: _active, cursor: _cursor, projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
+  // §TM_OPS_SNAPSHOT (2026-08-30) — read-only, additive. §CPE_RESOURCE_PANEL needs, per calendar
+  // day, which trades are working; _ops already carries exactly that (start_ts/_end_ts/resource,
+  // written at :4918) and is module-private. Returns a compact copy so no caller can mutate the
+  // real timeline. Nothing here derives, re-orders or re-dates anything — that is this file's job
+  // and it has one already.
+  window.tmOpsSnapshot = function() {
+    var out = new Array(_ops.length);
+    for (var i = 0; i < _ops.length; i++) {
+      // The trade lives in `parameters`, not on the row: loadOps (:102) builds each op as
+      // {id,start_ts,op_type,end_ts,parameters,input_guids,output_guid}, and injectGantt writes
+      // `resource` INTO that params JSON (:4918). Reading o.resource returned undefined on every
+      // op — MEASURED: §CPE_RESOURCE_PANEL withResource=0 of 16,114 on Clinic. `_end_ts` was the
+      // same mistake: it is params._end_ts, already resolved into end_ts here.
+      var pm = _ops[i].parameters;
+      out[i] = { s: _ops[i].start_ts, e: _ops[i].end_ts,
+                 r: (pm && pm.resource) || null };
+    }
+    return out;
   };
 
   // ══ §MAXQ_TIME / §CPE_BUILDUP — drive the construction state from an external baker ═══════════

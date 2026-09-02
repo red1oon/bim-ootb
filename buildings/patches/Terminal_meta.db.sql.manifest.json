@@ -1,12 +1,12 @@
 {
   "schema": "oci-patch-provenance/1",
-  "generated_at": "2026-08-17T06:37:14.178Z",
+  "generated_at": "2026-08-27T08:42:35.218Z",
   "bucket": "bim-ootb",
   "engine": {
-    "worktree": "/tmp/wt-s21-terminal-data",
-    "sha": "ccc83a41ca14a01defbdee612e131408925868b7",
+    "worktree": "/tmp/wt-terminal-transform-repair",
+    "sha": "9cf98f4a680fd8b98791f17053121394d5b4b99e",
     "behind_origin_main": 0,
-    "ahead_origin_main": 2,
+    "ahead_origin_main": 1,
     "clean": true,
     "dirty_paths": []
   },
@@ -20,19 +20,30 @@
   },
   "artifact": {
     "file": "buildings/patches/Terminal_meta.db.sql",
-    "bytes": 4723739,
-    "md5": "a891aac0b67c158ac9e087f304e46cf9",
-    "md5_b64": "qJGqwLZ8FYrJ4IfzBORs+Q==",
+    "bytes": 4566799,
+    "md5": "83f91e5e30b7f8c137cdb43ab65b48ac",
+    "md5_b64": "g/keXjC3+ME3zbQ6tltIrA==",
     "object": "buildings/patches/Terminal_meta.db.sql",
     "content_type": "application/sql"
   },
   "target": {
     "exists": true,
-    "etag": "a6ce6a68-5464-45fd-8c20-e9dbf6fa5a53",
-    "size": "569945",
-    "last-modified": "Sun, 16 Aug 2026 16:59:05 GMT"
+    "etag": "a2399f72-5f2b-4843-9fcb-610302d276ff",
+    "size": "4723739",
+    "last-modified": "Thu, 27 Aug 2026 01:13:36 GMT"
   },
-  "verification": null,
+  "verification": {
+    "cmd": "/tmp/claude-1000/-home-red1-bim-compiler/cdc8a902-02cc-4423-8f75-bb12a654e000/scratchpad/verify_terminal_v2.sh",
+    "exit": 0,
+    "tail": [
+      "§S10V2_VERIFY remaining_deviating=0 (against independent fresh extraction, must be 0)"
+    ]
+  },
   "verdict": "PASS",
-  "failures": []
+  "failures": [],
+  "uploaded": {
+    "at": "2026-08-27T08:42:59.595Z",
+    "etag": "2991a7df-9cec-402d-b982-d78bdb824e07",
+    "verified": true
+  }
 }

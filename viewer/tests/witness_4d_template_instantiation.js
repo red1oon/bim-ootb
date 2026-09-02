@@ -24,6 +24,10 @@ const SQLJS_DIST = path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js', 'dist')
 const VIEWER_DIR = process.env.VIEWER_DIR || path.join(__dirname, '..');
 const ScheduleGate = require(path.join(VIEWER_DIR, 'schedule_gate.js'));
 global.ScheduleGate = ScheduleGate;
+// §I.5c / §I.5j(b) — without this, schedule_author.js's `global.SupportSweep` lookup misses and
+// §TPL_LAYER_ORDER logs §TPL_LAYER_ORDER_FAIL and returns null: the layer pass this witness exists
+// to judge never runs, and every invariant below was scoring a grid built in raw solve order.
+global.SupportSweep = require(path.join(VIEWER_DIR, 'support_sweep.js'));
 const ScheduleAuthor = require(path.join(VIEWER_DIR, 'schedule_author.js'));
 
 const KIT = path.join(__dirname, '..', '..', 'witness_kit');
@@ -45,6 +49,10 @@ function executedRules() {
 }
 const T = JSON.parse(fs.readFileSync(path.join(VIEWER_DIR, 'rates', '4D_template.json'), 'utf8'));
 const dayOf = iso => Math.round((Date.parse(iso) - Date.parse(START)) / 86400000);
+// The SHIPPED attribution line, read — never re-derived from the fact that we passed `template:`.
+// §I: "assume the canonical model ran because the code *can* pass template:" is the named `never`.
+const modelOf = logs => (logs.filter(l => l.indexOf('§TPL_MODEL') === 0).pop() || '')
+  .replace(/^§TPL_MODEL\s*/, '').slice(0, 80);
 
 (async () => {
   const SQL = await initSqlJs({ locateFile: f => path.join(SQLJS_DIST, f) });
@@ -57,10 +65,18 @@ const dayOf = iso => Math.round((Date.parse(iso) - Date.parse(START)) / 86400000
     const file = path.join(BLD_DIR, bld + '_extracted.db');
     if (!fs.existsSync(file)) { console.log('§4DTI_SKIP ' + bld); continue; }
     const db = new SQL.Database(new Uint8Array(fs.readFileSync(file)));
+    // §I.5j(b) — TEE, NEVER MUTE. This wrapper used to be `console.warn = () => {}`, which deleted
+    // the one line that says the DEAD model ran (§TPL_MODEL model=legacy-deriveZones was emitted on
+    // warn while the canonical branch used log), plus §TPL_ZERO_MINUTE and §CLASS_UNMATCHED on every
+    // run. So the witness written to catch a silent fallback to the dead model was structurally
+    // blind to it — PRIMAL LAW clause 3 and 4. Both streams are now collected AND forwarded; the
+    // shape is witness_gantt_edit_coherence.js:203-204's. Measured cost of forwarding: the pipeline
+    // emits 25 lines per building and every one of them is §-tagged, so there is no noise to hide.
     const _l = console.log, _w = console.warn;
     const logs = [];
-    console.log = (...a) => { const s = a.join(' '); if (s.indexOf('§TPL_') === 0 || s.indexOf('§AUTHOR_TPL') === 0) logs.push(s); };
-    console.warn = () => {};
+    const keep = s => (s.indexOf('§TPL_') === 0 || s.indexOf('§AUTHOR_TPL') === 0) && logs.push(s);
+    console.log = (...a) => { keep(a.join(' ')); return _l.apply(console, a); };
+    console.warn = (...a) => { keep(a.join(' ')); return _w.apply(console, a); };
     const res = ScheduleAuthor.materializeZones(db, R.SEQUENCE_RULES, {
       start: START, laborRates: R.LABOR_RATES, rates: R.RATES,
       nameOverrides: R.SEQUENCE_NAME_OVERRIDES, defaultRule: R.SEQUENCE_DEFAULT,
@@ -123,6 +139,7 @@ const dayOf = iso => Math.round((Date.parse(iso) - Date.parse(START)) / 86400000
       ' distinctLags=' + JSON.stringify(Array.from(new Set(seqRows.map(r => r[3])))));
     logs.filter(l => l.indexOf('§TPL_PHASE_ABSENT') === 0 || l.indexOf('§TPL_PHASE_COVERAGE') === 0)
       .forEach(l => console.log('   ' + l));
+    console.log('§4DTI_MODEL ' + bld + ' ' + (modelOf(logs) || 'ABSENT — which model produced this grid is UNKNOWN'));
     db.close();
   }
 
@@ -147,6 +164,17 @@ const dayOf = iso => Math.round((Date.parse(iso) - Date.parse(START)) / 86400000
     .invariant('every-element-lands-in-a-task', () => perBuilding.every(b => INV.everyElementLandsInATask(b.els.length, b.te)))
     // Absence is REPORTED, never silent — the §S67 HOP1/HOP3 defect.
     .invariant('absence-is-reported', () => perBuilding.every(b => b.logs.some(l => l.indexOf('§TPL_PHASE_COVERAGE') === 0)))
+    // §I.5j(b) — WHICH MODEL DID THIS WITNESS ACTUALLY JUDGE? Every invariant above is scored on a
+    // task grid; none of them asks which of the two models EMITTED that grid, and until the stream
+    // fix above the answer was unreadable here by construction. An absent line is judged FAIL, not
+    // pass: "no attribution" is INCONCLUSIVE, and PRIMAL LAW clause 4 forbids scoring INCONCLUSIVE
+    // as green. Same claim as witness_gantt_edit_coherence's G-COH-10, on the generation path.
+    .invariant('the-CANONICAL-template-model-ran', () => perBuilding.every(b => {
+      const m = modelOf(b.logs);
+      if (!m) { console.log('§4DTI_MODEL_FAIL ' + b.bld + ' INCONCLUSIVE — no §TPL_MODEL line was emitted'); return false; }
+      if (m.indexOf('model=template') !== 0) { console.log('§4DTI_MODEL_FAIL ' + b.bld + ' judged the DEAD model: ' + m); return false; }
+      return true;
+    }))
     .redControl(rs => rs.map((r, i) => i ? r : Object.assign({}, r, { endDay: r.startDay })))
     .run();
 })();

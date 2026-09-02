@@ -75,9 +75,14 @@
     console.warn('§TPL_ZERO_MINUTE cls=' + cls + ' resource=' + resource + ' reason=' + why +
       ' — 120s floor, this class draws a zero-width bar (first occurrence only)');
   }
+  // §FUTURE-5A A1/B3 (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md, applied 2026-09-02, queue item
+  // B-3): both numbers below now READ laborRates._productivity_basis_secs / ._zero_minute_floor_secs
+  // (sequence_rules.json), falling back to the SAME literals that shipped before this — a caller
+  // (older cached JSON, a minimal test object) that omits either key is byte-identical to pre-fix.
   function _installSecs(cls, rule, laborRates, realQty, lengthRatio) {
     var resource = rule && rule.resource;
-    if (!resource || !laborRates[resource]) { _reportFloor(cls, resource, 'no-resource'); return 120; }
+    var _floorSecs = (laborRates && laborRates._zero_minute_floor_secs) || 120;
+    if (!resource || !laborRates[resource]) { _reportFloor(cls, resource, 'no-resource'); return _floorSecs; }
     var labor = laborRates[resource], bestPk = null, bestLen = 0;
     for (var pk in labor.productivity) {
       if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
@@ -87,8 +92,8 @@
     // pointed at. default_productivity is the resource's own declared figure for that case; absent,
     // this is 0 and the floor still applies exactly as before (backward-compatible).
     var prod = bestPk ? labor.productivity[bestPk] : (labor.default_productivity || 0);
-    if (prod <= 0) { _reportFloor(cls, resource, bestPk ? 'productivity<=0' : 'no-productivity-key'); return 120; }
-    var secsPerUnit = 28800 / prod;
+    if (prod <= 0) { _reportFloor(cls, resource, bestPk ? 'productivity<=0' : 'no-productivity-key'); return _floorSecs; }
+    var secsPerUnit = ((laborRates && laborRates._productivity_basis_secs) || 28800) / prod;
     if (realQty != null) return Math.round(secsPerUnit * realQty);
     if (lengthRatio != null) return Math.round(secsPerUnit * lengthRatio);
     return Math.round(secsPerUnit);
@@ -516,16 +521,40 @@
   //   { id, phase, storey, level, sDays, eDays, days, guids, crewDays, bottleneck }
   // and an edge is { predId, succId, type, lagDays, kind } — kind 'within_level' | 'across_levels'.
   // EVERY edge's lag comes from the TEMPLATE, never from the dates it constrains.
-  function instantiateTemplate(elements, T, laborRates, shiftHours, bandRank, collapse) {
+  // §TPL_LEVEL_AXIS (2026-08-27) — `levelAxis` is the OPT-IN vertical-axis override. Omit it and
+  // this function behaves EXACTLY as before: the level key is collapse(e.storey) and the level order
+  // is `bandRank`. Supply { keyOf, rankOf } and the grid is keyed/ordered by that instead.
+  // WHY IT EXISTS: e.storey reaching this function has already been rewritten by
+  // _buildScheduleElements's assignStoreyByZ (line ~342), which replaces EVERY '_UNKNOWN' storey
+  // with the nearest real storey NAME by median centre-Z — so deriveBandRanks's own '_UNKNOWN'
+  // exclusion (schedule_gate.js:350) can never fire on this path: the bucket it guards is empty by
+  // the time it looks. LevelDeriver (viewer/lib/level_deriver.js) answers the same question from the
+  // FROZEN DB instead and is not exposed to that rewrite (see _deriverLevelAxis's header for the
+  // read-path proof). Default stays the old path until the swap is deliberately flipped.
+  function instantiateTemplate(elements, T, laborRates, shiftHours, bandRank, collapse, levelAxis) {
     laborRates = laborRates || {};
     var shiftSecs = (shiftHours > 0 ? shiftHours : (T.calendar && T.calendar.hours_per_shift) || 24) * 3600;
     var minDays = (T.duration_rule && T.duration_rule.min_days) || 1;
+    // §FUTURE-5A B4 (applied 2026-09-02, queue item B-3): the pricing-side crew-cap fallback for an
+    // unnamed/_DEFAULT resource, now sourced from sequence_rules.json LABOR_RATES._default_max_crews_author
+    // — same literal (1) as before this fix, see that key's own comment for why this is NOT unified
+    // with schedule_gate.js's separate MAX_CREWS_DEFAULT=3 (a real, undisturbed divergence).
+    var _defMaxCrews = (laborRates && laborRates._default_max_crews_author) || 1;
+    // §FUTURE-5A B6: instantiateTemplate's own crew-levelling search guard, now sourced from
+    // 4D_template.json capacity_rule._level_scan_max_days (same literal, 100000, as before).
+    var LEVEL_SCAN_MAX = (T.capacity_rule && T.capacity_rule._level_scan_max_days) || 100000;
     collapse = collapse || function (x) { return x; };
+    // Resolved ONCE. With levelAxis absent both of these are literally the expressions that were
+    // inline here before, so the flag-off path is unchanged by construction, not by inspection.
+    var keyOf = (levelAxis && levelAxis.keyOf) || function (el) { return collapse(el.storey); };
+    var rankOf = (levelAxis && levelAxis.rankOf) || function (k) {
+      return (bandRank && bandRank[k] != null) ? bandRank[k] : 1e9;
+    };
 
     // (phase, storey) -> { secs per trade, guids }
     var cell = {}, storeySeen = {};
     for (var i = 0; i < elements.length; i++) {
-      var e = elements[i], st = collapse(e.storey), ph = e.phase || '_UNPHASED';
+      var e = elements[i], st = keyOf(e), ph = e.phase || '_UNPHASED';
       storeySeen[st] = 1;
       var k = ph + '||' + st, c = cell[k] || (cell[k] = { secs: {}, guids: [] });
       var tr = (e.resource && e.resource !== '_DEFAULT') ? e.resource : '_DEFAULT';
@@ -535,8 +564,7 @@
     // levels bottom-up. bandRank is the SAME rank deriveBandRanks gives the movie, so "the level
     // below" means the same thing here as it does in the solver's own band gate.
     var levels = Object.keys(storeySeen).sort(function (a, b) {
-      var ra = bandRank && bandRank[a] != null ? bandRank[a] : 1e9;
-      var rb = bandRank && bandRank[b] != null ? bandRank[b] : 1e9;
+      var ra = rankOf(a), rb = rankOf(b);
       return ra - rb || (a < b ? -1 : a > b ? 1 : 0);
     });
 
@@ -546,7 +574,7 @@
       for (var t in c.secs) {
         if (t === '_DEFAULT') continue;
         any = 1;
-        var cap = (laborRates[t] && laborRates[t].max_crews) || 1;
+        var cap = (laborRates[t] && laborRates[t].max_crews) || _defMaxCrews;
         var td = c.secs[t] / (shiftSecs * cap);
         if (td > d) { d = td; bott = t + '(' + cap + ')'; }
       }
@@ -562,11 +590,15 @@
     var byId = {};
     T.phases.forEach(function (p) { byId[p.id] = p; });
 
-    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, _ladderBridged = 0;
+    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, _ladderBridged = 0,
+        phaseLatestTask = {};
     levels.forEach(function (lv, li) {
       var prevOnLevel = null;   // for the BRIDGED within-level chain (_empty_phase_rule)
       var cursor = 0;
       T.phases.forEach(function (p) {
+        // The within_level edge naming THIS phase as successor — computed once per phase, reused
+        // below both for the prevOnLevel chain and for the building-scope floor.
+        var wl = (T.dependencies.within_level || []).filter(function (ed) { return ed.succ === p.id; })[0];
         // _edge_scope_rule: a building-scope phase instantiates ONCE, on the lowest level. But its
         // ELEMENTS must all come with it — an element of a building-scope phase that happens to sit
         // on an upper storey belongs to that single task, it is not dropped. Silently losing it is
@@ -636,6 +668,37 @@
           return null;
         })();
         if (_bridge && _bridge.finish > start) { start = _bridge.finish; if (_bridge.hops > 0 || !prevOnLevel) _ladderBridged++; }
+        // ⚠ BOTH FLOORS APPLY, and they compose (merge of PR #1551 into PR #1571's main,
+        // 2026-09-02). Each only ever RAISES `start`, so the task's start is the MAX of the three:
+        // the within-level `cursor`, §TPL_LADDER_BRIDGE's nearest-instance-below, and
+        // §PHASE_WATERMARK_FLOOR's latest-anywhere watermark. They are NOT duplicates — they reach
+        // different sets: the BRIDGE walks BACKWARDS through arbitrarily many DROPPED predecessor
+        // phases but resolves against the nearest instance at or below this level; the WATERMARK
+        // looks only at the IMMEDIATE declared predecessor but takes its LATEST-finishing instance
+        // anywhere in the building. Neither subsumes the other, so dropping either would lower a
+        // floor that a measured defect put there.
+        // §PHASE_WATERMARK_FLOOR (2026-08-27) — a level can start its own within_level chain with
+        // NOTHING real behind it: its declared predecessor phase has no LOCAL instance on this
+        // level (either it's scope:"building" and filed once elsewhere, or the level's own
+        // population simply skips that phase). Gate on whether THIS phase's OWN declared
+        // predecessor has a local instance — NOT on whether `prevOnLevel` is null. Those are
+        // different sets: a level can have SOME earlier phase locally (so `prevOnLevel` bridges to
+        // it, per `_empty_phase_rule`) while still lacking THIS phase's true declared predecessor
+        // specifically — MEASURED: Terminal "Ceiling Level Kedai" has local Architecture Envelope
+        // but no local Architecture Closeup, so MEP Final chain-bridged off Envelope alone
+        // (landing day 6) while Closeup's own real watermark elsewhere in the building reaches
+        // day 88. No level/storey reasoning either way — the exact failure class §E already names
+        // (fragmented/duplicate storey names make "nearest level" pick something unrelated): the
+        // phase SEQUENCE is already fully declared (`within_level`'s pred/succ chain), so track the
+        // LATEST-finishing task seen so far for each phase NAME as the walk proceeds bottom-up, and
+        // float an orphaned root against its declared predecessor's watermark directly. Not
+        // Terminal-specific — reads only the template's own declared fields, on any building.
+        var localPred = (wl && byId[wl.pred]) ? taskAt[byId[wl.pred].name + '||' + lv] : null;
+        var wmTask = (wl && byId[wl.pred] && !localPred) ? phaseLatestTask[byId[wl.pred].name] : null;
+        if (wmTask) {
+          var needW = wmTask.eDays + (wl.lag_days || 0);
+          if (needW > start) start = needW;
+        }
         var t = {
           id: 'TASK_' + _slug(p.name) + '_' + _slug(lv),
           phase: p.name, storey: lv, level: li, phaseId: p.id,
@@ -643,13 +706,18 @@
           crewDays: pr.crewDays, bottleneck: pr.bottleneck, guids: c.guids
         };
         tasks.push(t); taskAt[k] = t;
+        if (!phaseLatestTask[p.name] || t.eDays > phaseLatestTask[p.name].eDays) phaseLatestTask[p.name] = t;
         if (t.eDays > totalDays) totalDays = t.eDays;
         cursor = t.eDays;
         // within_level edge, from the last phase that ACTUALLY instantiated on this level.
         if (prevOnLevel) {
-          var wl = (T.dependencies.within_level || []).filter(function (ed) { return ed.succ === p.id; })[0];
           edges.push({ predId: prevOnLevel.id, succId: t.id, type: (wl && wl.type) || 'FS',
                        lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
+        }
+        // §PHASE_WATERMARK_FLOOR edge — see comment above.
+        if (wmTask) {
+          edges.push({ predId: wmTask.id, succId: t.id, type: wl.type || 'FS',
+                       lagDays: wl.lag_days || 0, kind: 'phase_watermark' });
         }
         if (ladder[p.id] && li > 0) {
           for (var _d2 = li - 1; _d2 >= 0; _d2--) {          // §TPL_LADDER_BRIDGE — same walk as above
@@ -720,13 +788,13 @@
     function fits(t, at) {
       var need = taskTradeCrews(t);
       for (var tr in need) {
-        var cap = (laborRates[tr] && laborRates[tr].max_crews) || 1;
+        var cap = (laborRates[tr] && laborRates[tr].max_crews) || _defMaxCrews;
         for (var d = at; d < at + t.days; d++)
           if (((demand[tr] && demand[tr][d]) || 0) + need[tr] > cap + 1e-9) return false;
       }
       return true;
     }
-    var levelled = 0, levelledDays = 0, LEVEL_SCAN_MAX = 100000;
+    var levelled = 0, levelledDays = 0;   // LEVEL_SCAN_MAX now derived once at function top (§FUTURE-5A B6)
     topo.forEach(function (t) {
       var at = t.sDays, guard = 0;
       while (!fits(t, at) && guard++ < LEVEL_SCAN_MAX) at++;
@@ -786,7 +854,13 @@
   function materializeZones(db, rules, opts) {
     opts = opts || {};
     var schedId = opts.scheduleId || 'SCH_AUTHORED';
-    var start = opts.start || '2026-01-01';
+    // §FUTURE-5A B2 (applied 2026-09-02, queue item B-3): opts.start (a real caller value) wins as
+    // before; the SECOND choice now reads the declared 4D_template.json calendar.project_start
+    // instead of jumping straight to the bare literal, so a future caller that passes opts.template
+    // but omits opts.start picks up the JSON-declared epoch. Every CURRENT caller that passes
+    // opts.template also passes an explicit opts.start (verified 2026-09-02), so this branch is not
+    // yet live — added for when a caller drops the redundant explicit start, not a behaviour change.
+    var start = opts.start || (opts.template && opts.template.calendar && opts.template.calendar.project_start) || '2026-01-01';
     var SG = opts.scheduleGate || global.ScheduleGate;
     if (!SG || !SG.computeSchedule || !SG.deriveZones) {
       console.log('§AUTHOR_ZONES_FAIL reason=ScheduleGate_not_loaded');
@@ -796,6 +870,10 @@
     if (!elements.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_elements'); return { ok: false, reason: 'no_elements' }; }
 
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    // §FUTURE-5A B4 (applied 2026-09-02, queue item B-3): same relocation as instantiateTemplate's
+    // own _defMaxCrews (used below by the §ZONE_WINDOW_COVERS_WORK floor) — this function has its
+    // own laborRates local, so it needs its own copy of the derived default, not a shared closure var.
+    var _defMaxCrews = (laborRates && laborRates._default_max_crews_author) || 1;
     var maxCrews = {};
     for (var res in laborRates) if (laborRates[res].max_crews) maxCrews[res] = laborRates[res].max_crews;
     // §GANTT_SHIFT_HOURS_DESYNC (4D_SCHEDULE_PERFECTION.md) — this call used to omit shiftHours,
@@ -846,8 +924,36 @@
     // §TEMPLATE_INSTANTIATE — when a template is supplied, the TASK GRID comes from it and the
     // solve is no longer what defines the phases (see instantiateTemplate's header). The legacy
     // grouping path below is left byte-identical for every caller that passes no template.
-    if (opts.template) return _writeTemplateSchedule(db, elements, schedule, opts, SG,
-      storeyMergeMap, laborRates, schedId, start, _displayAuthored);
+    //
+    // §TPL_MODEL (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §L) — NAME WHICH OF THE
+    // TWO MODELS RAN, on BOTH branches. The 2026-08-27 user ruling makes the template path the
+    // CANONICAL model and deriveZones dead code, so this fork is no longer a graceful degrade: it
+    // is the difference between the model of record and a model nobody stands behind. It used to
+    // be SILENT, which is the exact defect class this lane keeps paying for — every downstream
+    // number was unattributable to a construct, and `witness_gantt_edit_coherence` passed 10/0
+    // while judging the legacy path (its materializeZones call passes no `template:`).
+    // PRIMAL LAW clause 4: a pass that cannot report that it took the dead branch is not a pass.
+    //
+    // ⚠ BOTH BRANCHES LOG ON console.log, AND THAT IS LOAD-BEARING (§I.5j(b), fixed 2026-08-27).
+    // The dead branch used to emit on console.warn while the canonical one used console.log. Every
+    // §-collecting witness in this repo filters the LOG stream, and
+    // witness_4d_template_instantiation.js additionally installed `console.warn = () => {}` — so
+    // the one line that says "the dead model ran" was emitted and then deleted before any collector
+    // saw it. MEASURED before the fix (viewer/tests/probe_tpl_model_stream.js, Duplex):
+    // canonical-branch-visible=YES, legacy-branch-visible=NO, on a run where the legacy branch
+    // provably executed. A §-tag was not enough: which STREAM a line used decided whether the
+    // witness could see it. Do not "restore" the warn stream for emphasis — emphasis that a witness
+    // cannot read is not observability, it is decoration (PRIMAL LAW clause 3).
+    if (opts.template) {
+      var _tv = (opts.template.meta && opts.template.meta.version) || '?';
+      console.log('§TPL_MODEL model=template v=' + _tv +
+        ' — CANONICAL: the task grid is DECLARED by 4D_template.json');
+      return _writeTemplateSchedule(db, elements, schedule, opts, SG,
+        storeyMergeMap, laborRates, schedId, start, _displayAuthored);
+    }
+    console.log('§TPL_MODEL model=legacy-deriveZones — ⛔ the CANONICAL template path did NOT ' +
+      'run (opts.template absent). Phases become an ENVELOPE over what the elements did, and an ' +
+      'envelope cannot constrain what drew it. Every number from this schedule is off-model.');
 
     var rolled = SG.deriveZones(elements, schedule, storeyMergeMap);
     if (!rolled.zones.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_zones'); return { ok: false, reason: 'no_zones' }; }
@@ -944,7 +1050,7 @@
       var _crewDays = 0, _wAnyTrade = 0;
       for (var _wt in _wTrades) {
         _wAnyTrade = 1;
-        var _wCap = (laborRates[_wt] && laborRates[_wt].max_crews) || 1;
+        var _wCap = (laborRates[_wt] && laborRates[_wt].max_crews) || _defMaxCrews;
         var _wd = (_wTrades[_wt] * 1000) / (_shiftMs * _wCap);
         if (_wd > _crewDays) _crewDays = _wd;
       }
@@ -1015,7 +1121,15 @@
   // This is the same seam §ZONE_DISPLAY_AUTHORING used, run the other way: that authored windows
   // FROM the display timeline; this authors the display timeline FROM the windows. Only one of the
   // two can be the source, and after §S68 it is the template.
-  function remapSolveToTasks(solve, tasks, startISO) {
+  // §TPL_LAYER_ORDER (2026-08-26) — inside a task, lay elements out in SUPPORT ORDER, not in the
+  // order the geometry solve happened to place them. Measured cause: at DAY 0 the Superstructure
+  // task spread its members by solve time, so a beam could be laid before the column carrying it —
+  // Duplex 4 unsupported at HR 3, Terminal 61. The task WINDOW is already priced by duration_rule;
+  // what was missing was order WITHIN it. layerOf[guid] is the topological layer of the bearing
+  // relation, computed once from the SHIPPED contact graph (never re-derived — 4D_BAR_MODEL.md
+  // §10.1 rule 1). Layer 0 is everything resting on ground or on nothing; layer n rests on layer
+  // n-1. Ties break on guid so the result is deterministic.
+  function remapSolveToTasks(solve, tasks, startISO, layerOf) {
     var base = Date.parse(startISO || '2026-01-01');
     var out = {}, degenerate = 0, mapped = 0;
     for (var i = 0; i < tasks.length; i++) {
@@ -1030,30 +1144,281 @@
       }
       if (!have) continue;
       var span = hi - lo;
-      if (span <= 0) {
-        // Degenerate: everything solved at one instant. Spread evenly, in a deterministic order,
-        // so the bar shows work progressing instead of one silent stack at its left edge.
-        degenerate++;
-        var ordered = t.guids.filter(function (x) { return solve[x]; }).slice().sort();
-        var step = (wE - wS) / Math.max(1, ordered.length);
-        for (var k = 0; k < ordered.length; k++) {
-          out[ordered[k]] = { start: Math.round(wS + k * step), end: Math.round(wS + (k + 1) * step) };
+      // ONE RULE for every task, degenerate or not (§TPL_LAYER_ORDER). The old code had two: an
+      // even spread when the solve collapsed to an instant, and an affine replay of solve times
+      // otherwise. The affine branch is what carried solve-order — and therefore support-order
+      // violations — into the window. Support order is the only order a task's contents have.
+      // Bucket the task's own members by support layer, then give each layer a CONTIGUOUS,
+      // NON-OVERLAPPING band of the window sized by its member count. Inside a band the solve's
+      // relative ORDER is preserved (each element keeps its rank by solve start) — the
+      // crew-leveling the solve did is real and is kept — but each element's WIDTH inside the band
+      // is its own duration weight, not a raw affine replay of solve magnitude (§FUTURE item 2:
+      // duration-weighted CONTIGUOUS tiling, see below — a straight affine replay left dead air at
+      // a band's tail whenever the layer's solve times were unevenly spread). What changes vs. no
+      // layering at all is that layer n+1 cannot begin before layer n's band ends, so a beam can
+      // never precede the column carrying it. Replacing the solve outright was tried and measured
+      // WORSE (Hospital 0 -> 2 unsupported at DAY 0 HR 3): the even spread discarded the
+      // crew-leveling. Clamp, do not replace.
+      var mine = t.guids.filter(function (x) { return solve[x]; });
+      if (span <= 0) degenerate++;
+      var byLayer = {}, layers = [];
+      for (var k = 0; k < mine.length; k++) {
+        var lk = (layerOf && layerOf[mine[k]] != null) ? layerOf[mine[k]] : 0;
+        if (!byLayer[lk]) { byLayer[lk] = []; layers.push(lk); }
+        byLayer[lk].push(mine[k]);
+      }
+      layers.sort(function (a, b) { return a - b; });
+      var cursor = wS, total = mine.length;
+      for (var li = 0; li < layers.length; li++) {
+        var grp = byLayer[layers[li]];
+        var bandW = (wE - wS) * (grp.length / Math.max(1, total));
+        var bS = cursor, bE = (li === layers.length - 1) ? wE : Math.min(wE, cursor + bandW);
+        if (bE <= bS) bE = bS + 1;
+        // §FUTURE item 2 — duration-weighted CONTIGUOUS tiling, not raw-magnitude affine. The old
+        // code affine-mapped the layer's own solve range [glo,ghi] onto [bS,bE], which preserves
+        // the solve's ABSOLUTE spacing — so a band whose members' solve times are unevenly spread
+        // (typical: crew-levelling bunches many short elements early, one long one late) left the
+        // LATTER part of the band with zero element starts: "intra-task dead air"
+        // (§TPL_PARALLEL_REVEAL, Hospital TASK_Architecture_Envelope_Level_5 measured zero starts
+        // on days 166-168/173 of its own [137,180] window). Real crew-levelling ORDER still decides
+        // who reveals before whom (sorted by the solve's own start); what changes is that each
+        // element's share of the band is its own duration WEIGHT, not its solve-time position — so
+        // the band is tiled edge-to-edge by construction and dead air inside a populated band is
+        // structurally impossible. One rule for every band, degenerate solve-span or not — same
+        // move §TPL_LAYER_ORDER already made one level up for tasks. No duration invented: the
+        // weight is each element's own (sq.end - sq.start), the exact installSecs/crew figure the
+        // solve already computed; a zero-length solve interval floors to 1ms (equal split).
+        // Tie-break on guid (matches witness_4d_movie_binds_bars' own deterministic order for equal
+        // solveStart) — elements genuinely tied in the solve have no real "before" relationship, so
+        // any deterministic order is equally valid; matching the witness's tie-break avoids a
+        // false-positive reorder verdict on ties that are not a real order violation.
+        var ordered = grp.slice().sort(function (x, y) { return solve[x].start - solve[y].start || (x < y ? -1 : 1); });
+        var durs = ordered.map(function (g) { return Math.max(1, solve[g].end - solve[g].start); });
+        var durTotal = durs.reduce(function (a, b) { return a + b; }, 0);
+        var cum = 0;
+        for (var q3 = 0; q3 < ordered.length; q3++) {
+          var gg = ordered[q3];
+          var ns2 = Math.round(bS + (cum / durTotal) * (bE - bS));
+          cum += durs[q3];
+          var ne2 = Math.round(bS + (cum / durTotal) * (bE - bS));
+          if (ne2 <= ns2) ne2 = ns2 + 1;            // never a zero-width element
+          if (ne2 > bE) ne2 = Math.round(bE);
+          out[gg] = { start: ns2, end: ne2 };
           mapped++;
         }
-        continue;
-      }
-      var scale = (wE - wS) / span;
-      for (var m = 0; m < t.guids.length; m++) {
-        g = t.guids[m]; st = solve[g]; if (!st) continue;
-        var ns = Math.round(wS + (st.start - lo) * scale);
-        var ne = Math.round(wS + (st.end - lo) * scale);
-        if (ne <= ns) ne = ns + 1;                 // never a zero-width element
-        if (ne > wE) ne = wE;
-        out[g] = { start: ns, end: ne };
-        mapped++;
+        cursor = bE;
       }
     }
     return { schedule: out, mapped: mapped, degenerateTasks: degenerate };
+  }
+
+  // ══ §TPL_LEVEL_AXIS — the LevelDeriver vertical axis for the task grid (2026-08-27) ═══════════
+  // Implementing bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.3 — Witness: §TPL_LEVEL_DISAGREE
+  //
+  // THE READ-PATH PROOF (verified 2026-08-27, the reason this swap REMOVES the defect instead of
+  // relocating it). assignStoreyByZ (line ~342) is a PURE LOCAL function: it returns a string that
+  // is stored only into the in-memory element literal's `storey:` field (line ~368). It issues no
+  // db.run and no UPDATE — `elements_meta.storey` on disk is never touched by it (the only writers
+  // of that column repo-wide are wizard_storeys.js, i.e. a deliberate user authoring act, and the
+  // importers). LevelDeriver.readLookups reads `SELECT guid, storey FROM elements_meta` STRAIGHT
+  // FROM THE FROZEN DB (level_deriver.js:67) and LevelDeriver.levelFor consumes only guid/base_z/
+  // top_z off the element object — it never reads el.storey. So the '_UNKNOWN' guard at
+  // level_deriver.js:178 sees the UNREWRITTEN value and actually fires, where the structurally
+  // identical guard in deriveBandRanks (schedule_gate.js:350) is dead code on this path.
+  //
+  // Returns { keyOf, rankOf, stats } for instantiateTemplate, or null (caller keeps the OLD path —
+  // never a silent half-swap).
+  function _deriverLevelAxis(db, elements, collapse, storeyMergeMap, label) {
+    var LD = (global && global.LevelDeriver) ||
+             (typeof globalThis !== 'undefined' && globalThis.LevelDeriver) ||
+             (typeof window !== 'undefined' && window.LevelDeriver) || null;
+    // NODE ONLY: the browser already loads lib/level_deriver.js via a <script> tag (viewer.html
+    // ~line 940) so LD is on window there. Under node a witness/probe that never required it would
+    // otherwise get a SILENT fallback to the old axis — which is exactly how the first flag-on run
+    // of the shipped witnesses came back byte-identical and looked like "no change" (2026-08-27).
+    // Resolving it here makes the module self-sufficient instead of trusting every caller to know.
+    if ((!LD || !LD.readLookups) && typeof require === 'function' && typeof __dirname !== 'undefined') {
+      try { LD = require(__dirname + '/lib/level_deriver.js'); } catch (e) {
+        console.log('§TPL_LEVEL_AXIS_REQUIRE_FAIL ' + ((e && e.message) || e));
+      }
+    }
+    if (!LD || !LD.readLookups) {
+      console.log('§TPL_LEVEL_AXIS_UNAVAILABLE label=' + label + ' — LevelDeriver not loaded; the task ' +
+        'grid STAYS on collapse(e.storey). Reported, not silently degraded (§S32.4 stop-and-report).');
+      return null;
+    }
+    var L = LD.readLookups(db);
+    var G = LD.buildGrid(L, elements);
+    G.medGap = LD.medianGap(G.grid);
+
+    // grid index -> a REAL declared storey name where that grid line carries one (so the Gantt keeps
+    // human floor names), else 'L<idx>' — location_axis.js's own convention for a derived level.
+    // Names are collapse()'d and merge-mapped exactly like the old axis, so a level the two axes
+    // AGREE on carries byte-identical text and the disagreement count below measures real
+    // disagreement, not a renaming.
+    var nameAt = {}, taken = {}, keyAt = {};
+    Object.keys(L.storeyNameCenterZ).forEach(function (nm) {
+      var z = L.storeyNameCenterZ[nm];
+      if (!isFinite(z) || !G.grid.length) return;
+      var i = LD.nearestIdx(G.grid, z);
+      if (Math.abs(G.grid[i] - z) > 1e-6) return;          // that name is not on this grid line
+      var c = collapse(nm);
+      if (storeyMergeMap && storeyMergeMap[c]) c = storeyMergeMap[c];
+      (nameAt[i] = nameAt[i] || []).push(c);
+    });
+    var collided = [];
+    Object.keys(nameAt).map(Number).sort(function (a, b) { return a - b; }).forEach(function (i) {
+      var cands = nameAt[i].slice().sort();
+      for (var q = 0; q < cands.length; q++) {
+        if (taken[cands[q]] == null) { keyAt[i] = cands[q]; taken[cands[q]] = i; break; }
+      }
+      // Every candidate name already belongs to a LOWER grid line — an ambiguous storey NAME sitting
+      // at two elevations (LevelDeriver reports these as ambiguousNames; measured 0 on this fleet).
+      // Keep the two levels DISTINCT rather than silently folding two floors into one task row.
+      if (keyAt[i] == null) { keyAt[i] = 'L' + i; collided.push(i + '<-' + cands.join('/')); }
+    });
+    function keyForIdx(idx) {
+      if (idx == null || idx < 0) return '_UNKNOWN';
+      return keyAt[idx] != null ? keyAt[idx] : 'L' + idx;
+    }
+
+    var idxOf = {}, keyByGuid = {}, tier = { T1: 0, T2: 0, T3: 0, T4: 0 }, overridden = 0;
+    var votes = {};
+    for (var i2 = 0; i2 < elements.length; i2++) {
+      var el = elements[i2];
+      var r = LD.levelFor(el, L.rawStorey[el.guid], L, G);
+      tier[r.tier] = (tier[r.tier] || 0) + 1;
+      if (r.overridden) overridden++;
+      var ix = (r.idx == null ? -1 : r.idx);
+      idxOf[el.guid] = ix;
+      // NAME VOTE (only used for grid lines that spatial_structure did not name — below). The vote
+      // is cast from the RAW DB storey, never e.storey, so a name assignStoreyByZ invented cannot
+      // win it. An element with no declared storey abstains; it has no name to contribute.
+      var rs0 = L.rawStorey[el.guid];
+      if (ix >= 0 && rs0 && rs0 !== '_UNKNOWN' && !/^unknown$/i.test(String(rs0))) {
+        var cn = collapse(rs0);
+        if (storeyMergeMap && storeyMergeMap[cn]) cn = storeyMergeMap[cn];
+        (votes[ix] = votes[ix] || {})[cn] = ((votes[ix] || {})[cn] || 0) + 1;
+      }
+    }
+    // §S34.1 measured: some buildings (Duplex, LTU_AHouse) carry storey NAMES on elements but no
+    // IfcBuildingStorey.Elevation at all, so buildGrid falls back to a uniform grid and the loop
+    // above named nothing. Rather than show the user "L0/L1/L2/L3" where the model plainly says
+    // "T/FDN / Level 1 / Level 2 / Roof", label each unnamed grid line with the MOST COMMON declared
+    // name among the elements that geometrically land on it. The level's IDENTITY stays geometric —
+    // this only supplies its LABEL, and the label is extracted from the data, never invented.
+    var voted = [];
+    Object.keys(votes).map(Number).sort(function (a, b) { return a - b; }).forEach(function (ix2) {
+      if (keyAt[ix2] != null) return;                       // spatial_structure already named it
+      var v = votes[ix2];
+      var best = Object.keys(v).sort(function (a, b) { return v[b] - v[a] || (a < b ? -1 : 1); })
+        .filter(function (nm) { return taken[nm] == null; })[0];
+      if (best == null) return;                             // every candidate belongs to a lower line
+      keyAt[ix2] = best; taken[best] = ix2;
+      voted.push(ix2 + '="' + best + '"(' + v[best] + '/' + Object.keys(v).reduce(function (s, k) { return s + v[k]; }, 0) + ')');
+    });
+    if (voted.length) console.log('§TPL_LEVEL_AXIS_NAMEVOTE label=' + label +
+      ' gridLines spatial_structure did not name, labelled by plurality of the RAW declared storey of ' +
+      'the elements on them: ' + voted.join(' '));
+    // re-key now that late names exist
+    for (var i4 = 0; i4 < elements.length; i4++) keyByGuid[elements[i4].guid] = keyForIdx(idxOf[elements[i4].guid]);
+    // rank = the grid index itself. The grid is the DECLARED floor lines in ascending order, so the
+    // index IS the floor order — no median-of-element-z election is needed to recover it (that
+    // election is what §BIMEYES measured as manufacturing band inversions).
+    var rank = {};
+    Object.keys(keyAt).forEach(function (i3) { rank[keyAt[i3]] = Number(i3); });
+
+    console.log('§TPL_LEVEL_AXIS label=' + label + ' source=LevelDeriver gridSource=' + G.source +
+      ' k=' + G.grid.length + ' levels=' + JSON.stringify(Object.keys(rank).sort(function (a, b) { return rank[a] - rank[b]; })) +
+      ' T1=' + tier.T1 + ' T2=' + tier.T2 + ' T3=' + tier.T3 + ' T4=' + tier.T4 +
+      ' geometryOverrides=' + overridden +
+      ' ambiguousNames=' + L.ambiguousNames.length +
+      ' nameCollisions=' + (collided.length ? JSON.stringify(collided) : '0'));
+    if (tier.T4) console.log('§TPL_LEVEL_AXIS_T4 label=' + label + ' n=' + tier.T4 +
+      ' elements have non-finite geometry and NO declared storey — they key to _UNKNOWN and sort LAST. ' +
+      'Counted, never defaulted onto a real floor (that defaulting is the defect this swap removes).');
+
+    return {
+      keyOf: function (el) { var k = keyByGuid[el.guid]; return k != null ? k : '_UNKNOWN'; },
+      rankOf: function (k) { return rank[k] != null ? rank[k] : 1e9; },
+      stats: { grid: G.grid, gridSource: G.source, tier: tier, overridden: overridden,
+               rank: rank, keyByGuid: keyByGuid, rawStorey: L.rawStorey }
+    };
+  }
+
+  // §TPL_LEVEL_DISAGREE — measure the two axes SIDE BY SIDE before trusting either (step 3 of the
+  // 2026-08-27 task; the §STATUS instrument rule: a swap that is not measured is a guess). Prints
+  // every element whose OLD key (collapse(assignStoreyByZ(...))) differs from the NEW one, bucketed,
+  // plus the share of those whose RAW db storey was absent/_UNKNOWN — i.e. the ones assignStoreyByZ
+  // FABRICATED a floor for. That last number is the direct tie to the measured fabrication rates.
+  function _logLevelDisagreement(elements, collapse, axis, label) {
+    if (!axis) return null;
+    var raw = axis.stats.rawStorey || {};
+    var n = elements.length, dis = 0, fabricated = 0, fabAndDisagree = 0;
+    var pairs = {}, samples = [];
+    for (var i = 0; i < n; i++) {
+      var e = elements[i];
+      var oldK = collapse(e.storey), newK = axis.keyOf(e);
+      var rs = raw[e.guid];
+      var wasFab = !rs || rs === '_UNKNOWN' || /^unknown$/i.test(String(rs));
+      if (wasFab) fabricated++;
+      if (oldK === newK) continue;
+      dis++;
+      if (wasFab) fabAndDisagree++;
+      var pk = oldK + ' -> ' + newK;
+      pairs[pk] = (pairs[pk] || 0) + 1;
+      if (samples.length < 12) samples.push({ guid: e.guid, cls: e.cls, rawStorey: rs == null ? null : rs,
+        old: oldK, 'new': newK, base_z: Number((e.base_z).toFixed(3)) });
+    }
+    // ⚠ THE RAW `disagree` COUNT OVERSTATES THE CHANGE AND MUST NOT BE THE HEADLINE. When a building
+    // has no IfcBuildingStorey.Elevation the derived grid lines get their labels from a plurality
+    // vote, so a level can come out correctly grouped but differently NAMED — and then every element
+    // on it counts as "disagreeing" purely because the text changed. Measured on Duplex before this
+    // split existed: 100.00% raw, of which only 9.56% was a real regrouping.
+    // STRUCTURAL disagreement is the honest number: map each OLD level to the NEW level that most of
+    // its elements went to, then count only the elements that did NOT follow their own level's
+    // plurality. That is invariant under relabeling and is what actually changes the task grid.
+    var domOf = {}, byOld = {};
+    for (var i5 = 0; i5 < n; i5++) {
+      var e5 = elements[i5], o5 = collapse(e5.storey), n5 = axis.keyOf(e5);
+      (byOld[o5] = byOld[o5] || {})[n5] = ((byOld[o5] || {})[n5] || 0) + 1;
+    }
+    Object.keys(byOld).forEach(function (o) {
+      var v = byOld[o];
+      domOf[o] = Object.keys(v).sort(function (a, b) { return v[b] - v[a] || (a < b ? -1 : 1); })[0];
+    });
+    var structural = 0, structFab = 0;
+    for (var i6 = 0; i6 < n; i6++) {
+      var e6 = elements[i6], o6 = collapse(e6.storey);
+      if (axis.keyOf(e6) === domOf[o6]) continue;
+      structural++;
+      var rs6 = raw[e6.guid];
+      if (!rs6 || rs6 === '_UNKNOWN' || /^unknown$/i.test(String(rs6))) structFab++;
+    }
+    var relabelOnly = dis - structural;
+
+    var pct = function (a) { return (100 * a / (n || 1)).toFixed(2) + '%'; };
+    var top = Object.keys(pairs).sort(function (a, b) { return pairs[b] - pairs[a]; }).slice(0, 12)
+      .reduce(function (o, k) { o[k] = pairs[k]; return o; }, {});
+    console.log('§TPL_LEVEL_DISAGREE label=' + label + ' n=' + n +
+      ' STRUCTURAL=' + structural + ' (' + pct(structural) + ' — elements that actually change level GROUP; this is the headline)' +
+      ' relabelOnly=' + relabelOnly + ' (' + pct(relabelOnly) + ' — same group, different level NAME)' +
+      ' rawKeyDiff=' + dis + ' (' + pct(dis) + ')' +
+      ' rawStoreyMissing=' + fabricated + ' (' + pct(fabricated) + ' — assignStoreyByZ INVENTED a floor name for these)' +
+      ' structuralAmongFabricated=' + structFab + '/' + fabricated +
+      ' structuralAmongDeclared=' + (structural - structFab) + '/' + (n - fabricated) +
+      ' distinctPairs=' + Object.keys(pairs).length);
+    console.log('§TPL_LEVEL_DISAGREE_MAP label=' + label + ' dominantOldToNew=' + JSON.stringify(domOf));
+    console.log('§TPL_LEVEL_DISAGREE_PAIRS label=' + label + ' ' + JSON.stringify(top));
+    samples.forEach(function (s) {
+      console.log('§TPL_LEVEL_DISAGREE_EG label=' + label + ' guid=' + s.guid + ' cls=' + s.cls +
+        ' rawDbStorey=' + JSON.stringify(s.rawStorey) + ' old="' + s.old + '" new="' + s['new'] + '" base_z=' + s.base_z);
+    });
+    if (structural === 0) console.log('§TPL_LEVEL_DISAGREE_VACUOUS label=' + label +
+      ' — no element changes level GROUP on this building (relabelOnly=' + relabelOnly + '). It cannot ' +
+      'tell the swap apart structurally; a 0 here is NOT evidence the swap is correct elsewhere (§S32.4 vacuity rule).');
+    return { n: n, disagree: dis, structural: structural, relabelOnly: relabelOnly,
+             fabricated: fabricated, fabAndDisagree: fabAndDisagree, structFab: structFab, pairs: pairs };
   }
 
   // _writeTemplateSchedule — the §TEMPLATE_INSTANTIATE write path. Same tables, same schedule_id,
@@ -1068,7 +1433,33 @@
       var c = SG.collapsePhase(st);
       return (storeyMergeMap && storeyMergeMap[c]) || c;
     }
-    var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse);
+    // §TPL_LEVEL_AXIS opt-in. `opts.levelSource === 'deriver'` swaps the task grid's vertical axis
+    // to LevelDeriver; anything else (including absent) keeps the proven collapse(e.storey)/bandRank
+    // path byte-for-byte. `opts.levelProbe` measures the two axes against each other WITHOUT
+    // swapping — so the disagreement rate can be read off a shipped-behaviour run.
+    // TPL_LEVEL_SOURCE / TPL_LEVEL_PROBE env overrides exist so the SHIPPED witnesses can be run
+    // flag-on without forking them (node harness only — `process` is absent in the browser, so the
+    // live viewer can only ever be switched by an explicit opts.levelSource).
+    var _env = (typeof process !== 'undefined' && process && process.env) ? process.env : {};
+    var _srcOpt = opts.levelSource || _env.TPL_LEVEL_SOURCE || null;
+    var _wantAxis = (_srcOpt === 'deriver');
+    var _wantProbe = _wantAxis || !!opts.levelProbe || _env.TPL_LEVEL_PROBE === '1';
+    var _axis = null;
+    if (_wantProbe) {
+      _axis = _deriverLevelAxis(db, elements, collapse, storeyMergeMap, opts.label || 'building');
+      _logLevelDisagreement(elements, collapse, _axis, opts.label || 'building');
+    }
+    if (_wantAxis && !_axis) {
+      // Asked for the new axis, could not build it. Do NOT quietly serve the old one under the new
+      // name — say so, then fall back to the proven path.
+      console.log('§TPL_LEVEL_SOURCE requested=deriver effective=storey — FELL BACK (axis unavailable)');
+    }
+    var _useAxis = _wantAxis ? _axis : null;
+    // Emitted only when something was actually asked for, so a default run's §-log stays byte-for-byte
+    // what it was before this change (the flag-off identity the witnesses check).
+    if (_wantProbe) console.log('§TPL_LEVEL_SOURCE requested=' + (_srcOpt || 'storey') +
+      ' effective=' + (_useAxis ? 'deriver' : 'storey') + ' probe=on');
+    var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse, _useAxis);
     if (!inst.tasks.length) { console.log('§AUTHOR_TPL_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
 
     // Absence is REPORTED, never silent — 4D_template.json's own instantiation rule, and the
@@ -1136,10 +1527,125 @@
       ' — every lag is the TEMPLATE\'s, none derived from the dates it constrains');
     // §TPL_MOVIE_BINDS_BARS — bind the movie to the bars we just authored, from the SAME task
     // objects, so the two can never be computed off different grids.
-    var _rm = remapSolveToTasks(schedule, inst.tasks, start);
+    // §TPL_LAYER_ORDER — topological layers of the SHIPPED contact graph's bearing relation.
+    // Kahn over "who rests on whom": an element is in layer 0 when nothing it rests on is still
+    // unplaced. Cycles (a data defect) fall out in one block and are laid out after everything
+    // acyclic, never looped on.
+    var _layerOf = (function () {
+      try {
+        // This module's IIFE parameter is named `global` and is `self||this` — in node that is
+        // NOT globalThis, so a bare `global.SupportSweep` MISSES a module that registered itself
+        // properly. Exactly the trap _writeBarSchedule's _reg() and _reclassGroundworkSlabs both
+        // already document; check all three. (I hit it: the layer block returned null silently and
+        // the whole pass was a no-op, with identical numbers hiding it.)
+        var SSw = (global && global.SupportSweep) ||
+                  (typeof globalThis !== 'undefined' && globalThis.SupportSweep) ||
+                  (typeof window !== 'undefined' && window.SupportSweep) || null;
+        if (!SSw || !SSw.contactGraph) { console.log('§TPL_LAYER_ORDER_FAIL SupportSweep not loaded — task interiors stay in solve order'); return null; }
+        var items = elements.map(function (e) {
+          return { guid: e.guid, cls: e.cls, seq: e.seq, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
+                   bz: e.base_z, tz: e.top_z };
+        });
+        var Gc = SSw.contactGraph(items);
+        if (!Gc.ok) return null;
+        var EPSl = SG.EPS, GAPl = SG.GAP;
+        var below = new Array(items.length);
+        for (var i2 = 0; i2 < items.length; i2++) {
+          var lst = Gc.contacts[i2], b2 = [];
+          if (lst) for (var q = 0; q < lst.length; q++) {
+            var S2 = items[lst[q]], T2 = items[i2];
+            // §I.5c FIX (bim-compiler 4D_MODEL_INTEGRITY.md) — this used to also require
+            // `S2.tz <= T2.bz + GAPl`, an upper bound that belongs only to auditFloating's WALL
+            // pool (§I.1 copy 3), applied here to EVERY contact. That discarded ~32% of Hospital's
+            // real bearing edges (supports whose top sits above the base they carry) from the
+            // layer pass's own graph, though it still claimed to run on "the SHIPPED contact
+            // graph's bearing relation". Now matches SupportSweep.contactGraph's own predicate
+            // (support_sweep.js `_ogSupportSweep`/`contactGraph`: no upper bound) exactly.
+            if (S2.bz < T2.bz - EPSl && S2.tz >= T2.bz - GAPl) b2.push(lst[q]);
+          }
+          below[i2] = b2;
+        }
+        // No artificial layer cap. A real cycle is caught by the no-progress break below; a
+        // fixed 64 silently dumped 1322 Hospital elements into one 'cyclic' bucket and cost
+        // 968 inversions that read as a cycle problem when it was my own constant.
+        var lay = new Int32Array(items.length).fill(-1), left = items.length, cur = 0;
+        while (left > 0) {
+          var progressed = false;
+          for (var i3 = 0; i3 < items.length; i3++) {
+            if (lay[i3] >= 0) continue;
+            var ready = true;
+            for (var r = 0; r < below[i3].length; r++) if (lay[below[i3][r]] < 0) { ready = false; break; }
+            if (ready) { lay[i3] = cur; left--; progressed = true; }
+          }
+          if (!progressed) break;                  // cycle: everything remaining shares one layer
+          cur++;
+        }
+        var map = {}, unresolved = 0;
+        for (var i4 = 0; i4 < items.length; i4++) {
+          map[items[i4].guid] = lay[i4] >= 0 ? lay[i4] : cur;
+          if (lay[i4] < 0) unresolved++;
+        }
+        console.log('§TPL_LAYER_ORDER layers=' + cur + ' cyclic=' + unresolved +
+          ' — elements are laid out inside their task in SUPPORT order, not solve order');
+        return map;
+      } catch (e) { console.log('§TPL_LAYER_ORDER_FAIL ' + e.message); return null; }
+    })();
+    var _rm = remapSolveToTasks(schedule, inst.tasks, start, _layerOf);
+    // §TPL_LAYER_SELFCHECK — A PASS MUST PROVE IT DID SOMETHING AND THAT IT WORKED.
+    // Written because the layer pass above shipped BROKEN and silent: it returned null on a
+    // shadowed `global`, changed nothing, and emitted numbers IDENTICAL to the previous run. A
+    // no-op is indistinguishable from a working pass unless the pass counts its own effect.
+    //   applied     = did the layer map exist at all. 0 => the pass did not run.
+    //   moved       = elements whose interval differs from the solve-order layout. 0 => no-op.
+    //   stillInverted = bearing pairs INSIDE one task where the supported element still starts
+    //                   before its support ends. This is the thing the pass exists to remove; it
+    //                   must be 0, and if it is not the pass is not doing its job.
+    try {
+      var _no = remapSolveToTasks(schedule, inst.tasks, start, null).schedule;
+      var _mv = 0;
+      for (var _g in _rm.schedule) if (!_no[_g] || _no[_g].start !== _rm.schedule[_g].start) _mv++;
+      var _taskOf = {};
+      inst.tasks.forEach(function (tk) { tk.guids.forEach(function (g) { _taskOf[g] = tk.id || tk.taskId || tk.name; }); });
+      var _inv = 0, _byG = {};
+      elements.forEach(function (e) { _byG[e.guid] = e; });
+      var _SSc = (global && global.SupportSweep) ||
+                 (typeof globalThis !== 'undefined' && globalThis.SupportSweep) || null;
+      if (_SSc && _SSc.contactGraph) {
+        var _it = elements.map(function (e) {
+          return { guid: e.guid, cls: e.cls, seq: e.seq, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
+                   bz: e.base_z, tz: e.top_z };
+        });
+        var _Gc = _SSc.contactGraph(_it);
+        if (_Gc.ok) for (var _i = 0; _i < _it.length; _i++) {
+          var _l2 = _Gc.contacts[_i]; if (!_l2) continue;
+          var _T = _it[_i], _ts = _rm.schedule[_T.guid]; if (!_ts) continue;
+          for (var _q = 0; _q < _l2.length; _q++) {
+            var _S = _it[_l2[_q]], _ss = _rm.schedule[_S.guid]; if (!_ss) continue;
+            if (_taskOf[_S.guid] !== _taskOf[_T.guid]) continue;          // same task only
+            // §I.5c FIX — same narrowing dropped as above, so the self-check judges the SAME
+            // population the pass now actually lays out, not a pre-filtered subset of it.
+            if (!(_S.bz < _T.bz - SG.EPS && _S.tz >= _T.bz - SG.GAP)) continue;
+            if (_ts.start < _ss.end - 1) _inv++;
+          }
+        }
+      }
+      console.log('§TPL_LAYER_SELFCHECK applied=' + (_layerOf ? 1 : 0) + ' moved=' + _mv + '/' + _rm.mapped +
+        ' stillInverted=' + _inv + ' ' +
+        (!_layerOf ? 'FAIL pass did not run'
+         : _mv === 0 ? 'FAIL pass ran but moved nothing — a no-op that looks like a success'
+         : _inv === 0 ? 'PASS' : 'FAIL support order still violated inside a task'));
+    } catch (e) { console.log('§TPL_LAYER_SELFCHECK_ERROR ' + e.message); }
+    // ⚠ WORDING CORRECTED 2026-09-02 (bim-compiler 4D_GANTT_TM_REFACTOR.md §TM_REVEAL_SHIPPED,
+    // queue item A-0). This line used to end "every element now PLAYS inside the bar that claims
+    // it". That was never true of THIS map: `displaySchedule` is returned below and
+    // viewer/time_machine.js has ZERO readers of it (the only reference repo-wide is the return
+    // statement a few lines down). What the film and the scrubber play is kernel_ops, written by
+    // injectGantt — since #1605 by §TM_REVEAL_TILED, which calls this same verb with its own
+    // arguments. The counts are unchanged; only the false half of the sentence is.
     console.log('§TPL_MOVIE_BINDS_BARS remapped=' + _rm.mapped + '/' + elements.length +
       ' degenerateTasksSpreadEvenly=' + _rm.degenerateTasks +
-      ' — every element now plays inside the bar that claims it');
+      ' — every element is REMAPPED inside the bar that claims it (this is `displaySchedule`;' +
+      ' time_machine.js does not read it — the played layer is kernel_ops, §TM_REVEAL_TILED)');
     return { ok: true, scheduleId: schedId, zoneCount: inst.tasks.length, edgeCount: inst.edges.length,
              totalDays: inst.totalDays, templateVersion: T.meta.version, reports: inst.reports,
              tasks: inst.tasks, displaySchedule: _rm.schedule };
@@ -1148,6 +1654,11 @@
   // materializeDefault(db, rules, opts) — originate the smart-default schedule on a blank model.
   // db: a sql.js Database with `elements_meta`. rules: SEQUENCE_RULES map. opts: {start, phaseDays,
   // scheduleId, defaultRule}. Idempotent — rebuilds the SCH_AUTHORED schedule from scratch.
+  // §FUTURE-5A B2/B7 (reviewed 2026-09-02, queue item B-3): this is the ALTERNATE/legacy authoring
+  // path, never the canonical template one (no caller anywhere in the codebase passes opts.template
+  // here — verified) — so, unlike materializeZones above, its opts.start/opts.phaseDays literal
+  // fallbacks are left untouched rather than threading a dead opts.template read. Their JSON homes
+  // (4D_template.json calendar.project_start / duration_rule) are documented but NOT wired here.
   function materializeDefault(db, rules, opts) {
     opts = opts || {};
     var start = opts.start || '2026-01-01';
@@ -1264,8 +1775,9 @@
       for (var resKey in p.resourceSecs) {
         var secs = p.resourceSecs[resKey];
         laborSecsTotal += secs;
-        var maxCrews = (laborRates[resKey] && laborRates[resKey].max_crews) || 1;
-        var tradeDays = secs / (28800 * maxCrews);
+        // §FUTURE-5A A1/B4 (applied 2026-09-02, queue item B-3) — same relocation as instantiateTemplate.
+        var maxCrews = (laborRates[resKey] && laborRates[resKey].max_crews) || (laborRates._default_max_crews_author || 1);
+        var tradeDays = secs / (((laborRates && laborRates._productivity_basis_secs) || 28800) * maxCrews);
         if (tradeDays > maxTradeDays) maxTradeDays = tradeDays;
       }
       p.widthDays = Math.max(1, Math.ceil(maxTradeDays));
@@ -1420,6 +1932,8 @@
   // act (the optional "suggest a start"). Lays the leaf phases out contiguously from opts.start so
   // a blank-materialized (undated) schedule becomes datable on demand. Orders by rowid = insert
   // order = the sequence order materializeDefault used (NULL dates can't be ORDER BY'd).
+  // §FUTURE-5A B2/B7 — same alternate-path note as materializeDefault above: no caller passes
+  // opts.template here, so its start/phaseDays literal fallbacks are left as-is (2026-09-02).
   function scheduleContiguous(db, scheduleId, opts) {
     scheduleId = scheduleId || 'SCH_AUTHORED';
     opts = opts || {};
@@ -1459,8 +1973,9 @@
       }
       var maxTradeDays = 0;
       for (var resKey2 in resourceSecs) {
-        var maxCrews = (laborRates[resKey2] && laborRates[resKey2].max_crews) || 1;
-        var d = resourceSecs[resKey2] / (28800 * maxCrews);
+        // §FUTURE-5A A1/B4 (applied 2026-09-02, queue item B-3) — same relocation as materializeDefault.
+        var maxCrews = (laborRates[resKey2] && laborRates[resKey2].max_crews) || (laborRates._default_max_crews_author || 1);
+        var d = resourceSecs[resKey2] / (((laborRates && laborRates._productivity_basis_secs) || 28800) * maxCrews);
         if (d > maxTradeDays) maxTradeDays = d;
       }
       widthDays[tid] = maxTradeDays > 0 ? Math.max(1, Math.ceil(maxTradeDays)) : phaseDays;
@@ -2426,13 +2941,33 @@
             if (!idb || !idb.objectStoreNames.contains('dbs')) {
               console.warn('§SCHED_PERSIST_ERR no cache store url=' + url); resolve(false); return;
             }
-            var tx = idb.transaction('dbs', 'readwrite');
+            // §SCHED_PERSIST_LRU_TOUCH (bim-compiler 4D_GANTT_TM_REFACTOR.md §5b): stamp 'timestamps'
+            // in the SAME transaction as the blob. Until this, persistDb wrote 'dbs' ONLY, so an
+            // edited slot kept whatever timestamp cachedFetch left on it at first download — making
+            // the ONE entry that holds unsaved user work the OLDEST entry in the store, i.e. the
+            // FIRST thing scene.js's LRU evictor throws away. Editing your schedule literally moved
+            // your data to the front of the deletion queue (MEASURED: after three persists the
+            // Hospital meta slot still had no timestamp of its own at all).
+            var _hasTs = idb.objectStoreNames.contains('timestamps');
+            var tx = idb.transaction(_hasTs ? ['dbs', 'timestamps'] : ['dbs'], 'readwrite');
             tx.objectStore('dbs').put(buf, key);
+            if (_hasTs) tx.objectStore('timestamps').put(Date.now(), key);
             tx.oncomplete = function () {
               console.log('§SCHED_PERSIST url=' + url + ' key=' + key + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB');
               resolve(true);
             };
             tx.onerror = function () { console.warn('§SCHED_PERSIST_ERR tx ' + (tx.error && tx.error.message)); resolve(false); };
+            // §SCHED_PERSIST_ABORT — a tx that ABORTS fires neither oncomplete nor (always) onerror.
+            // Without this handler the promise never settled: _tmPersistEdit's .then() never ran, so
+            // a failed save logged NOTHING and told the user NOTHING. Chrome aborts here for real
+            // reasons — a single IDB value over ~127MiB (a big building's meta.db can reach it) or a
+            // genuine QuotaExceededError — and each one silently discarded the user's edit.
+            tx.onabort = function () {
+              var e = tx.error;
+              console.warn('§SCHED_PERSIST_ERR abort key=' + key + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB' +
+                ' err=' + (e ? (e.name + ': ' + e.message) : '(tx.error was null)'));
+              resolve(false);
+            };
           }).catch(function (e) { console.warn('§SCHED_PERSIST_ERR open ' + (e && e.message)); resolve(false); });
         } catch (e) { console.warn('§SCHED_PERSIST_ERR', e); resolve(false); }
       }, delay);
@@ -2456,6 +2991,10 @@
     materializeZones: materializeZones,
     _buildScheduleElements: _buildScheduleElements,
     instantiateTemplate: instantiateTemplate,
+    // §TPL_LEVEL_AXIS — exported so the axis and its disagreement measurement are testable on their
+    // own, without having to drive a whole materializeZones write to see them.
+    _deriverLevelAxis: _deriverLevelAxis,
+    _logLevelDisagreement: _logLevelDisagreement,
     remapSolveToTasks: remapSolveToTasks,
     scheduleContiguous: scheduleContiguous,
     activeSchedule: activeSchedule,

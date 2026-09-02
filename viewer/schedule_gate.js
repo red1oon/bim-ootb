@@ -43,7 +43,27 @@
   // (Terminal/Hospital/Duplex/HHS/Clinic, extraction logged 2026-08-11; p99 was 11.808 m³ — same
   // class mix, less coverage). EXTRACTED, not invented — do not retune without re-measuring.
   var BIG_ELEMENT_VOL = 1.556;  // m³
-  var MAX_CREWS_DEFAULT = 3;  // §CREW-CAP: fallback crew count per resource when no lookup is given
+  // §CREW-CAP: fallback crew count per resource when no lookup is given. §FUTURE-5A B4 (reviewed
+  // 2026-09-02, queue item B-3): sequence_rules.json now carries the SAME missing-value case for the
+  // pricing side as LABOR_RATES._default_max_crews_author (=1) — a real, NOT-fixed-here divergence
+  // from this module's 3 (see that key's own comment). NOT wired to read it: this module receives no
+  // rules/rates object at all (elements already carry a resolved `resource` string, nothing more —
+  // see computeSchedule's own header), so threading one in for a single fallback constant was judged
+  // out of proportion for a refactor whose contract is byte-identical output. Kept in sync by hand.
+  var MAX_CREWS_DEFAULT = 3;
+  // §FUTURE-5A B1 (attempted 2026-09-02, queue item B-3, REVERTED same day) — the audit's own
+  // "highest-value finding": this file tests `seq <= 4` / `seq > 4` as the structure/non-structure
+  // boundary at 20 separate literal sites, one edit away from a silent mis-classification on any
+  // future re-band. A single named `STRUCT_MAX_SEQ` constant was tried and REVERTED in the same
+  // session: `viewer/bar_needs.js` (and, by the same mechanism, potentially other witnesses in this
+  // repo's large sliceFn/`new Function` text-extraction family — grep for that pattern before
+  // retrying) pulls `isPromotedSlab`/`edgeContained` OUT of this file as raw source text and evals
+  // them standalone, outside this module's scope; a named module-level constant referenced inside a
+  // sliced function is undefined in that eval, which crashed witness_bar_schedule.js/
+  // witness_bar_composite.js (ReferenceError: STRUCT_MAX_SEQ is not defined). Left as 20 literal
+  // `4`s, unchanged — real runtime derivation from the template (the audit's own stated ideal) is
+  // still open for whoever next picks this up, but needs an audit of every source-slicing consumer
+  // first, not just a grep for `seq <= 4`.
   // ══ §ARCH_START_TEMPO / M1 — THE 8-HOUR CREW DAY (2026-08-12) ═══════════════════════════════
   // `el.installSecs` is 28800/productivity — 28800 s IS one 8-hour crew-day (schedule_author.js
   // _installSecs line 71, and its own phase widths already divide by `28800 * maxCrews`). But
@@ -561,6 +581,11 @@
     function wallAt(p) { return toWall(p, baseMs); }
     var _prodMsTot = 0;   // §CREW_DAY audit: productive ms actually committed
     function place(el, start) {
+      // §FUTURE-5A B3 (reviewed 2026-09-02, queue item B-3): a SECOND, independent zero-minute floor
+      // — schedule_author.js's own copy is now sourced from sequence_rules.json
+      // LABOR_RATES._zero_minute_floor_secs (see _installSecs); this one stays a literal for the
+      // same reason MAX_CREWS_DEFAULT above do — this module never receives a
+      // rules/rates object, only already-resolved elements. Kept in sync by hand.
       var dur = Math.round((el.installSecs || 120) * scaleFactor * 1000);
       // 8 productive h per calendar day: the remainder rolls to the next day's window start, and a
       // multi-window `dur` consumes as many following windows as it needs.
@@ -1121,8 +1146,19 @@
   // occurrence counts on shipped buildings are known.
   function auditFloating(elements, sched, classFilter, collectGuids, collectUnchecked) {
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S;
+    // §STAIR_FLIGHT_GRID_VISIBILITY, AUDIT TWIN (2026-08-27, §I.5a). This grid used to re-type
+    // `e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)`, which is the scheduler's pool MINUS stair
+    // flights: IfcStairFlight carries sequence 6 (rates.js:259) so `seq<=4` is false, and the
+    // `else if` below only catches IfcWall* — so a flight landed in NEITHER grid and was invisible
+    // AS SUPPORT to this audit, while structIdxGrid (:787) and place() (:570) both admit it. That
+    // is a FALSE NEGATIVE: a target resting on a flight finds no bearing candidate, `se` stays 0,
+    // and :1204's `if (se > 0 && ...)` can never fire, so floating was UNDER-reported.
+    // The §S64 note at :1154 asserted "structGrid (p===0) ... already agrees with the gate". It did
+    // not — :787 and :1125 disagreed, 338 lines apart in one file. Now it does, because it no
+    // longer re-types the test at all: supportPool() (:1312) is the exported single definition and
+    // is verbatim the scheduler's inline pool. §I.4 — never a second copy.
     for (i = 0; i < elements.length; i++) { var e = elements[i];
-      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      if (supportPool(e)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
       else if (e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); } }
     // buildingModelsSubstructure — "Gap B exemption DECIDED" (4D_SCHEDULE_PERFECTION.md 2026-08-11):
     // annotate, don't suppress. true iff ≥1 element resolves to phase==='Substructure' — seq===1 is
@@ -1315,7 +1351,7 @@
            e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
   }
 
-  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

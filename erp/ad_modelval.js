@@ -105,10 +105,39 @@
         }
         return null;
       }],
+      ['MOrder.bpLocationDefault', function (ctx, info) {    // :1269-1270 ∘ setBPartner :752-774 — location 0 → the BP's own
+        // §P1 P1.5 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL — W-PARITY-FIELDSET / W-MORDER-SAVE).
+        // Java: `if (getC_BPartner_Location_ID() == 0) setBPartner(new MBPartner(...))` (:1269-1270) — it also runs
+        // right after :1239-1252 cleared a foreign location. setBPartner: BP SalesRep_ID if non-zero (:752-753);
+        // loop over the BP's locations — isShipTo → C_BPartner_Location_ID, isBillTo → Bill_Location_ID, each
+        // iteration overwriting (:756-763, so the LAST match wins); still 0 → the first location (:766-769);
+        // no location at all → BPartnerNoShipToAddressException (:772-774). ONLY this slice is ported here — the
+        // payment-term / price-list parts of setBPartner ride the existing :1282/:1315 hooks below.
+        var r = info.record, dd = d(info);
+        var locNow = (dd.c_bpartner_location_id !== undefined) ? dd.c_bpartner_location_id : r.c_bpartner_location_id;
+        if (Number(locNow) > 0 || !(Number(r.c_bpartner_id) > 0)) return null;
+        var bp = null;   // a slimmed bundle without c_bpartner.salesrep_id (bim-compiler's glassbowl_data.db fixture) → no BP sales rep: conservative, never invented
+        try { bp = db.prepare('SELECT salesrep_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(r.c_bpartner_id)); } catch (eGap) { bp = null; }
+        if (bp && Number(bp.salesrep_id) > 0 && !(Number(r.salesrep_id) > 0)) dd.salesrep_id = Number(bp.salesrep_id);
+        var locs = db.prepare("SELECT c_bpartner_location_id, isshipto, isbillto FROM c_bpartner_location WHERE c_bpartner_id=? AND isactive='Y' ORDER BY c_bpartner_location_id").all(Number(r.c_bpartner_id)) || [];
+        if (!locs.length) return 'BPartnerNoShipToAddress';
+        var ship = null, bill = null;
+        locs.forEach(function (l) {
+          if (String(l.isshipto) === 'Y') ship = Number(l.c_bpartner_location_id);
+          if (String(l.isbillto) === 'Y') bill = Number(l.c_bpartner_location_id);
+        });
+        dd.c_bpartner_location_id = ship != null ? ship : Number(locs[0].c_bpartner_location_id);
+        if (bill != null) dd.bill_location_id = bill;
+        else if (!(Number(r.bill_location_id) > 0)) dd.bill_location_id = Number(locs[0].c_bpartner_location_id);
+        return null;
+      }],
       ['MOrder.billDefaults', function (ctx, info) {         // :1272-1279  Bill_* default to the BP/location
-        var r = info.record;
-        if (!Number(r.bill_bpartner_id)) { d(info).bill_bpartner_id = Number(r.c_bpartner_id); d(info).bill_location_id = Number(r.c_bpartner_location_id); }
-        else if (!Number(r.bill_location_id)) d(info).bill_location_id = Number(r.c_bpartner_location_id);
+        var r = info.record, dd = d(info);
+        // §P1: read the EFFECTIVE location — Java's :1269 setBPartner already set it before :1272 reads it.
+        var loc = (dd.c_bpartner_location_id !== undefined && dd.c_bpartner_location_id !== null) ? dd.c_bpartner_location_id : r.c_bpartner_location_id;
+        var billLoc = (dd.bill_location_id !== undefined && dd.bill_location_id !== null) ? dd.bill_location_id : r.bill_location_id;
+        if (!Number(r.bill_bpartner_id)) { dd.bill_bpartner_id = Number(r.c_bpartner_id); dd.bill_location_id = Number(loc); }
+        else if (!Number(billLoc)) dd.bill_location_id = Number(loc);
         return null;
       }],
       ['MOrder.priceListDefault', function (ctx, info) {     // :1282-1290  IsSOPriceList=IsSOTrx ORDER BY IsDefault DESC
@@ -126,6 +155,14 @@
           var pl = db.prepare('SELECT c_currency_id FROM m_pricelist WHERE m_pricelist_id=?').get(Number(plId));
           if (pl && pl.c_currency_id) d(info).c_currency_id = pl.c_currency_id;
         }
+        return null;
+      }],
+      ['MOrder.salesRepFromCtx', function (ctx, info) {      // :1302-1307  SalesRep 0 → Env.SALESREP_ID (the login user); ctx fallback only
+        // §P1 P1.5 — the MOrder twin of MInvoice.salesRepFromCtx (:1183-1188) below; the host feeds ctx.salesrep_id
+        // from window.APP.actor (crud_overlay.js _docCtx). Never overrides a set value (Java defaults ONLY a zero column).
+        var r = info.record, dd = d(info);
+        var srNow = (dd.salesrep_id !== undefined && dd.salesrep_id !== null) ? dd.salesrep_id : r.salesrep_id;
+        if (!(Number(srNow) > 0) && ctx && Number(ctx.salesrep_id) > 0) dd.salesrep_id = Number(ctx.salesrep_id);
         return null;
       }],
       ['MOrder.docTypeTargetDefault', function (ctx, info) { // :1311-1312  default = the Standard SO doctype ('SO')

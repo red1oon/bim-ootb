@@ -182,6 +182,16 @@ var LABOR_RATES = {
     rate_per_day: 95, crew_size: 1, max_crews: 1, trade: 'General Laborer',
     productivity: {}
   },
+  // §FUTURE-5A (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md, applied 2026-09-02, queue item B-3).
+  // THIS is the object window.LABOR_RATES actually resolves to on every real viewer.html load
+  // (rates/sequence_rules.json's own header: "viewer.html never calls loadSequenceRules()... this
+  // file is their MIRROR plus the Settings-JSON-editor override surface") — so these three keys
+  // MUST be kept here, byte-identical to their sequence_rules.json mirror, or the JSON edit a
+  // Settings-JSON-editor user makes is invisible on the default (non-overridden) path. See
+  // sequence_rules.json LABOR_RATES for the full provenance comment on each.
+  _productivity_basis_secs: 28800,     // A1 — the 8h crew-day the productivity figures are quoted against
+  _zero_minute_floor_secs: 120,        // B3 — the §TPL_ZERO_MINUTE no-data floor
+  _default_max_crews_author: 1,        // B4 — pricing-side crew-cap fallback (schedule_gate.js keeps its own, different, 3)
 };
 
 // ============================================================================

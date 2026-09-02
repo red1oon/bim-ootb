@@ -186,8 +186,36 @@ function sliceNamed(src, name) {
   var db = new SQL.Database(fs.readFileSync(dbPath));
   var rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
   var SEQUENCE_RULES = rulesJson.SEQUENCE_RULES || rulesJson;
+
+  // §TPL_MODEL (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §L) — JUDGE THE CANONICAL
+  // MODEL. This call used to pass no `template:`, so schedule_author.js's fork fell through to the
+  // legacy deriveZones envelope and every claim below was measured on the model the 2026-08-27
+  // ruling calls DEAD CODE. The witness was 10/0 green over the wrong construct — the failure the
+  // user named as "WITNESS is moot if underlying design is poor", and PRIMAL LAW clause 2's
+  // §CRISIS case: an editor witness that never edited the canonical timeline.
+  var TPL_PATH = path.join(__dirname, '..', 'rates', '4D_template.json');
+  var TPL = fs.existsSync(TPL_PATH) ? JSON.parse(fs.readFileSync(TPL_PATH, 'utf8')) : null;
+
+  // Tee console.log so G-COH-10 can read the shipped §TPL_MODEL verdict rather than re-deriving
+  // which branch ran. PRIMAL LAW clause 3 — the line is still PRINTED, never suppressed.
+  var _seen = [];
+  var _log = console.log, _warn = console.warn;
+  console.log = function () { _seen.push(Array.prototype.join.call(arguments, ' ')); _log.apply(console, arguments); };
+  console.warn = function () { _seen.push(Array.prototype.join.call(arguments, ' ')); _warn.apply(console, arguments); };
+
   var mres = ScheduleAuthor.materializeZones(db, SEQUENCE_RULES,
-    { start: '2026-01-01', laborRates: {}, rates: {}, scheduleGate: ScheduleGate });
+    { start: '2026-01-01', laborRates: {}, rates: {}, scheduleGate: ScheduleGate, template: TPL });
+
+  console.log = _log; console.warn = _warn;
+  var _modelLine = _seen.filter(function (l) { return l.indexOf('§TPL_MODEL') === 0; }).pop() || '';
+  var _isCanonical = _modelLine.indexOf('model=template') >= 0;
+  // VACUOUS-aware: if the fork emitted nothing at all we cannot say which model ran, and that is
+  // an INCONCLUSIVE state, not a pass. It is reported as a FAIL because a witness that cannot see
+  // its own subject is exactly the §CRISIS this claim exists to prevent recurring.
+  check('G-COH-10 the-model-under-test-is-the-CANONICAL-template-path',
+    _isCanonical,
+    _modelLine ? _modelLine.slice(0, 120)
+               : 'INCONCLUSIVE — no §TPL_MODEL line was emitted; which model was judged is UNKNOWN');
   if (!mres.ok) {
     console.log('§W-COH SKIP G-COH-7..9 — materializeZones failed: ' + JSON.stringify(mres));
     console.log('§W-COH RESULT pass=' + pass + ' fail=' + fail);

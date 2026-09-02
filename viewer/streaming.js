@@ -21,6 +21,220 @@ function setupStreaming(A) {
 
   // drawBuildingBoxes() retired — replaced by per-element _drawBboxPlaceholders()
   A.drawBuildingBoxes = function() {};
+  var _idx16Saved = 0, _idx16Geoms = 0;
+
+  // ══ §MEP_SMOOTH_NORMALS (2026-08-30, user: "we know that may ducts, dome, are not fully rounded"
+  // … "it must not impact non curve intending surfaces") ═══════════════════════════════════════
+  // MEASURED FIRST (§SHADE_PROBE, Clinic, 448 real streamed geometries): every class ships hard
+  // per-face normals — weldRatio 0.107-0.29 and splitNormal 96-100% — so `flatShading: false` is
+  // silently overridden by the data, because with no shared vertices there is nothing to average.
+  // The decisive number is distinctNormals: IfcFlowFitting 114.3, IfcFlowTerminal 128.6,
+  // IfcFlowController 189.0 — richly tessellated shapes whose roundness is being thrown away by
+  // flat shading, recoverable with ZERO new triangles. IfcFlowSegment is 10.3 over 26 triangles: a
+  // genuine 10-sided prism, so its SHADING improves here but its silhouette cannot, and straight
+  // ducts will gain less than fittings do. Every box class reports distinctNormals = 7, which is
+  // what makes the gate below safe by construction rather than by tuning.
+  //
+  // TWO GATES, because a crease angle alone is not enough: an 8-sided duct's facets are 45 deg
+  // apart, so any threshold able to smooth it would also round a 45 deg roof ridge or chamfer.
+  //   1. CLASS — only curve-intending IFC classes are eligible, ever. A wall is never a candidate
+  //      regardless of its geometry, which is the user's constraint met by construction.
+  //   2. CREASE — inside those classes, a vertex keeps its own face normal when the smoothed result
+  //      would swing more than CREASE_DEG away, so duct flanges and end caps stay crisp.
+  //
+  // IN PLACE, BY DESIGN — NO WELD, NO RE-INDEX. Merged meshes carry many elements and `ranges`
+  // addresses them by idxStart/idxCount; picking, per-element hide, the BVH and §TRIPLANAR's own
+  // vTriWorldNormal all read that layout. Rewriting normal VALUES touches none of it. Welding would
+  // renumber vertices and break all four, which is the "no side effects" line the user drew.
+  var MEP_CURVE_CLASSES = {
+    IfcFlowSegment: 1, IfcFlowFitting: 1, IfcFlowTerminal: 1, IfcFlowController: 1,
+    IfcFlowMovingDevice: 1, IfcFlowStorageDevice: 1, IfcValve: 1,
+    IfcPipeSegment: 1, IfcPipeFitting: 1, IfcDuctSegment: 1, IfcDuctFitting: 1
+  };
+  var CREASE_DEG = 55;   // above an 8-sided prism's 45 deg facet step, below a 90 deg box corner
+  // §MEP_SMOOTH_MEASURED_GATE (2026-08-30, user: "The rounding shading is still not fully working.
+  // Many cylindrical type candidates can be smoothly curved."). A class list can only ever name the
+  // shapes someone thought of — MEASURED on the user's Hospital bake it reached just 96 geometries,
+  // and round columns, domes, tanks and curtain-wall mullions are all cylindrical yet none are
+  // IfcFlow*. The gate is now THE SHAPE ITSELF, using the separation §SHADE_PROBE already measured:
+  // curve-intending geometry carries 36-189 distinct facet directions (IfcFlowController 189.0,
+  // IfcFlowTerminal 128.6, IfcFlowFitting 114.3, IfcColumn 36.3) while EVERY box-like class measured
+  // exactly 7 (IfcWallStandardCase, IfcPlate, IfcMember, IfcDoor). 16 sits in the empty middle of
+  // that gap, so "must not impact non curve intending surfaces" holds by measurement, not by a name
+  // I had to guess. The class list stays as an OR: a 10-sided duct (IfcFlowSegment, 10.3) is
+  // genuinely curve-intending and would fail a pure-shape test.
+  var CURVE_MIN_DISTINCT = 16;
+  // §MEP_SMOOTH_PERF (2026-08-30) — MEASURED 18,718 ms on Hospital (14,075 spans, 25.2M vertices),
+  // which is 18.7 s added to every Alt+S and every bake stage. Unacceptable next to a bake the user
+  // already called slow. Two costs, both cut here rather than accepted:
+  //   1. gate sampling — 1500 samples per span existed to count distinct facet directions, but the
+  //      decision is only "is this nearer 7 or nearer 16+". 192 samples settle that; the early-out
+  //      at >64 distinct usually stops far sooner.
+  //   2. the position map — see _smoothKey below.
+  var DISTINCT_SAMPLE_CAP = 192;
+  function _distinctNormals(nor, idx, start, count) {
+    var seen = {}, n = 0, step = Math.max(1, Math.floor(count / DISTINCT_SAMPLE_CAP)), i, vi, k;
+    for (i = start; i < start + count; i += step) {
+      vi = idx ? idx.getX(i) : i;
+      k = Math.round(nor.getX(vi) * 8) + ',' + Math.round(nor.getY(vi) * 8) + ',' + Math.round(nor.getZ(vi) * 8);
+      if (!seen[k]) { seen[k] = 1; if (++n > 64) return n; }   // early out: well past the threshold
+    }
+    return n;
+  }
+  A.mepSmoothNormals = function() {
+    if (!A.scene) return null;
+    var t0 = performance.now(), cosCrease = Math.cos(CREASE_DEG * Math.PI / 180);
+    var geomsTouched = 0, rangesTouched = 0, vertsSmoothed = 0, vertsKeptHard = 0, skippedNoNormal = 0;
+    var seen = new Set();
+    A.scene.traverse(function(o) {
+      if (!(o.isMesh || o.isBatchedMesh || o.isInstancedMesh) || !o.geometry) return;
+      var g = o.geometry;
+      if (seen.has(g.uuid)) return;
+      seen.add(g.uuid);
+      var pos = g.attributes && g.attributes.position, nor = g.attributes && g.attributes.normal;
+      if (!pos || !nor) { skippedNoNormal++; return; }
+      var idx = g.index; if (!idx) return;
+      // Which index spans are eligible? A merged mesh mixes elements, so the gate is applied per
+      // RANGE (which records its own ifcClass), never per mesh — a duct sharing a merged bucket
+      // with a wall must not drag the wall in with it.
+      var spans = [];
+      // Ranges live in A._mergedMeta keyed by mesh.id (:1924), NOT on userData — checked, because
+      // reading the wrong place would leave every merged mesh with no eligible span and the gate
+      // would silently do nothing on exactly the buildings that need it.
+      var rngs = A._mergedMeta && A._mergedMeta[o.id];
+      if (rngs && rngs.length) {
+        // Judged per RANGE, never per mesh: a merged bucket mixes elements, and a mesh full of boxes
+        // would score a high distinct-normal count in aggregate while every individual box is 7.
+        for (var ri = 0; ri < rngs.length; ri++) {
+          var rg = rngs[ri];
+          if (MEP_CURVE_CLASSES[rg.ifcClass] ||
+              _distinctNormals(nor, idx, rg.idxStart, rg.idxCount) >= CURVE_MIN_DISTINCT) {
+            spans.push([rg.idxStart, rg.idxCount]);
+          }
+        }
+      } else if (o.isBatchedMesh) {
+        // §MEP_SMOOTH_BATCHED (2026-08-30 — the gap the user's Hospital bake exposed). Hospital
+        // reports §CONTRACT_CHECK batch=38169 instanced=25013 merged=0: NO merged meshes at all, so
+        // the ranges branch above never fires and §MEP_SMOOTH_NORMALS did not even log there. The
+        // fix is not to relax the single-element rule but to satisfy it: a BatchedMesh holds each
+        // element's geometry as its OWN entry, so `_geometryInfo[gid]` (vertexStart/vertexCount +
+        // index start/count) IS a single element's span inside the shared buffer. Judging one entry
+        // is judging one element, exactly the safety condition G-MEP-2 enforces.
+        // Private three.js field, so it is feature-detected: if the shape is not what r184/185
+        // provides, the mesh is skipped rather than guessed at.
+        var gi = o._geometryInfo;
+        if (gi && gi.length) {
+          for (var bi = 0; bi < gi.length; bi++) {
+            var e = gi[bi];
+            var iStart = (e.start != null) ? e.start : e.indexStart;
+            var iCount = (e.count != null) ? e.count : e.indexCount;
+            if (iStart == null || !(iCount > 0)) continue;
+            if (_distinctNormals(nor, idx, iStart, iCount) >= CURVE_MIN_DISTINCT) spans.push([iStart, iCount]);
+          }
+        } else if (!A._bmShapeWarned) {
+          A._bmShapeWarned = true;
+          console.warn('§MEP_SMOOTH_BATCHED INCONCLUSIVE — BatchedMesh exposes no _geometryInfo; ' +
+            'batched elements skipped rather than judged as one mesh');
+        }
+      } else if (o.isInstancedMesh) {
+        // An InstancedMesh's geometry IS one element's shape — that is what instancing means, one
+        // geometry repeated N times. So judging it whole IS judging a single element, and smoothing
+        // it correctly affects every instance of that same shape. A wall instanced 500 times still
+        // measures 7 distinct facet directions and fails the threshold, so the box case is safe.
+        var icls = (o.userData && (o.userData.ifc_class || o.userData.ifcClass)) || '';
+        if (MEP_CURVE_CLASSES[icls] || _distinctNormals(nor, idx, 0, idx.count) >= CURVE_MIN_DISTINCT) {
+          spans.push([0, idx.count]);
+        }
+      } else {
+        // §MEP_SMOOTH_GATE_SCOPE (2026-08-30 — caught by G-MEP-2, which failed with 5,233,835
+        // non-curve vertices changed; the previous revision of this branch judged ANY rangeless mesh
+        // whole). A BATCHED mesh holds hundreds of elements in one geometry: hundreds of boxes score
+        // a high distinct-normal count IN AGGREGATE while every individual box is 7, so the shape
+        // test caught the lot and smoothed real walls. That is exactly the regression the user's
+        // "must not impact non curve intending surfaces" forbids.
+        //
+        // The shape test is therefore only allowed where a single ELEMENT is being judged: a mesh
+        // carrying its own ifc_class is one element. A multi-element mesh with no ranges cannot be
+        // resolved into elements here, so it falls back to the CLASS gate alone — narrower, but
+        // never wrong. Coverage lost this way is a reason to expose ranges for batched meshes, not
+        // a reason to smooth a wall.
+        var cls = (o.userData && (o.userData.ifc_class || o.userData.ifcClass)) || '';
+        var singleElement = !!cls;
+        if (MEP_CURVE_CLASSES[cls] ||
+            (singleElement && _distinctNormals(nor, idx, 0, idx.count) >= CURVE_MIN_DISTINCT)) {
+          spans.push([0, idx.count]);
+        }
+      }
+      if (!spans.length) return;
+      var acc = new Map(), k, i, a, b, c;
+      // §MEP_SMOOTH_PERF — was a 3-part STRING key built per vertex: on Hospital that is ~75M string
+      // concatenations and the bulk of the 18.7 s. Now a single number. Positions are quantised to
+      // 0.1 mm exactly as before (1e4), then folded into one integer; the multipliers are the
+      // standard large primes used for spatial hashing, and the value is kept inside the safe
+      // integer range so it can key a Map without allocating.
+      // A hash CAN collide, unlike the string it replaces. The consequence is bounded and local:
+      // two genuinely separate vertices would average their normals, shading one vertex slightly
+      // wrong on one element — it cannot move geometry, cross the class gate, or affect a
+      // non-curve surface. G-MEP-2 still measures the real output either way.
+      function key(i2) {
+        var qx = Math.round(pos.getX(i2) * 1e4);
+        var qy = Math.round(pos.getY(i2) * 1e4);
+        var qz = Math.round(pos.getZ(i2) * 1e4);
+        return ((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) >>> 0;
+      }
+      // pass 1 — accumulate area-weighted face normals per shared POSITION
+      for (var s2 = 0; s2 < spans.length; s2++) {
+        for (i = spans[s2][0]; i + 2 < spans[s2][0] + spans[s2][1]; i += 3) {
+          a = idx.getX(i); b = idx.getX(i + 1); c = idx.getX(i + 2);
+          var ax = pos.getX(a), ay = pos.getY(a), az = pos.getZ(a);
+          var e1x = pos.getX(b) - ax, e1y = pos.getY(b) - ay, e1z = pos.getZ(b) - az;
+          var e2x = pos.getX(c) - ax, e2y = pos.getY(c) - ay, e2z = pos.getZ(c) - az;
+          var nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+          var tri = [a, b, c];
+          for (var t2 = 0; t2 < 3; t2++) {
+            k = key(tri[t2]);
+            var e = acc.get(k);
+            if (!e) { e = [0, 0, 0]; acc.set(k, e); }
+            e[0] += nx; e[1] += ny; e[2] += nz;   // unnormalised = area weighted, the standard rule
+          }
+        }
+      }
+      // pass 2 — write back, crease-limited
+      var wrote = 0;
+      for (var s3 = 0; s3 < spans.length; s3++) {
+        for (i = spans[s3][0]; i < spans[s3][0] + spans[s3][1]; i++) {
+          var vi = idx.getX(i);
+          var e2 = acc.get(key(vi)); if (!e2) continue;
+          var L = Math.sqrt(e2[0] * e2[0] + e2[1] * e2[1] + e2[2] * e2[2]);
+          if (!(L > 1e-12)) continue;
+          var sx = e2[0] / L, sy = e2[1] / L, sz = e2[2] / L;
+          var ox = nor.getX(vi), oy = nor.getY(vi), oz = nor.getZ(vi);
+          if (sx * ox + sy * oy + sz * oz < cosCrease) { vertsKeptHard++; continue; }  // hard edge
+          nor.setXYZ(vi, sx, sy, sz); wrote++;
+        }
+      }
+      if (wrote) {
+        vertsSmoothed += wrote; rangesTouched += spans.length; geomsTouched++;
+        nor.needsUpdate = true;
+        // §NORMAL_REPAIR_GPU_UPLOAD (same file, ~:1004) already learned that needsUpdate alone does
+        // not always reach the GPU for a cached geometry — drop the renderer's cached properties so
+        // buffers rebind, exactly as that fix does.
+        if (A.renderer && A.renderer.properties) A.renderer.properties.remove(g);
+      }
+    });
+    var out = { geomsTouched: geomsTouched, rangesTouched: rangesTouched, vertsSmoothed: vertsSmoothed,
+                vertsKeptHard: vertsKeptHard, ms: +(performance.now() - t0).toFixed(1) };
+    console.log('§MEP_SMOOTH_NORMALS geoms=' + geomsTouched + ' ranges=' + rangesTouched +
+      ' vertsSmoothed=' + vertsSmoothed + ' vertsKeptHard=' + vertsKeptHard +
+      ' creaseDeg=' + CREASE_DEG + ' minDistinctN=' + CURVE_MIN_DISTINCT + ' ms=' + out.ms +
+      (geomsTouched === 0 ? '  INCONCLUSIVE — no curve-class range was found; nothing was judged' : '') +
+      '');
+    // §IDX16 reports SEPARATELY (2026-08-30): it used to ride the line above, so on Hospital —
+    // where this pass did not fire at all — its saving was invisible rather than absent.
+    console.log('§IDX16 geoms=' + _idx16Geoms + ' saved=' + (_idx16Saved / 1048576).toFixed(1) + 'MB' +
+      (_idx16Geoms === 0 ? ' (merged path unused on this building — the per-element site in scene.js carries it)' : ''));
+    return out;
+  };   // §IDX16 tally, reported by A.mepSmoothNormals' log line
 
   // Implementing FLY_TOUR_DLOD_SCALE.md §17.17.4 — Witness: W-OCC3-LTU.
   // CPE_4D_PERF_MEM_FINDINGS.md §R6 measured the blocker: the 2026-08-10 re-extracted
@@ -58,6 +272,28 @@ function setupStreaming(A) {
     var u = A.DB_URL || 'building.db';
     var base = u.split('?')[0].split('/').pop() || 'building.db';
     return base.replace(/\.db$/i, '').replace(/_(meta|geo|extracted)$/i, '') || 'building';
+  };
+
+  // Implementing CINEMA_PATH_EDITOR.md §CPE_MATERIAL_KEY — Witness: W-CPE-MATERIAL-KEY.
+  // `elements_meta.material_name` is the element's own authored IFC material. It is NOT universal:
+  // some older/partial DBs have no such column at all (measured: every `*_library.db` and
+  // `*_geo.db`, plus deploy/buildings/LTUAHouse_extracted.db, which has no elements_meta table).
+  // Selecting a missing column throws and would kill streaming outright, so probe ONCE per DB and
+  // substitute a literal NULL when absent — identical shape to A._hasBuildingCol (§17.17.4).
+  A._matNameCol = undefined;
+  A._hasMatNameCol = function(db) {
+    if (A._matNameCol !== undefined) return A._matNameCol;
+    if (!db) return false;              // unknown yet — assume absent, i.e. today's behaviour
+    try {
+      var res = db.exec("PRAGMA table_info(elements_meta)");
+      var cols = (res && res.length) ? res[0].values.map(function(r) { return r[1]; }) : [];
+      A._matNameCol = cols.indexOf('material_name') !== -1;
+      console.log('§MATNAME_COL present=' + A._matNameCol);
+    } catch (e) {
+      console.log('§MATNAME_COL_PROBE_ERR ' + (e && e.message));
+      A._matNameCol = false;            // probe failed ⇒ do not change behaviour
+    }
+    return A._matNameCol;
   };
 
   A.startStreaming = function() {
@@ -104,12 +340,21 @@ function setupStreaming(A) {
             try { await A._rangeDb.exec("SELECT bbox_x FROM element_transforms LIMIT 1"); A._hasBbox = true; }
             catch(e) { A._hasBbox = false; }
           }
-          var bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : '';
+          // §CPE_MATERIAL_KEY: bbox slots are now ALWAYS emitted (NULL when the columns are absent)
+          // so material_name can live at a FIXED slot 16 — slots 0-15 keep the §BBOX_ROW_SHIFT
+          // 16-slot layout byte-for-byte, and `A._hasBbox ? r[13] : null` below still reads null.
+          var bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : ', NULL, NULL, NULL';
+          if (A._matNameCol === undefined) {
+            try { await A._rangeDb.exec("SELECT material_name FROM elements_meta LIMIT 1"); A._matNameCol = true; }
+            catch(e) { A._matNameCol = false; }
+            console.log('§MATNAME_COL present=' + A._matNameCol + ' path=range');
+          }
+          var matNameCol = A._matNameCol ? ', m.material_name' : ', NULL';
           var result = await A._rangeDb.exec(`
             SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                    t.center_x, t.center_y, t.center_z,
                    t.rotation_x, t.rotation_y, t.rotation_z,
-                   m.storey, m.ifc_class, m.element_name${bboxCols}
+                   m.storey, m.ifc_class, m.element_name${bboxCols}${matNameCol}
             FROM elements_meta m
             JOIN element_instances i ON m.guid = i.guid
             JOIN element_transforms t ON t.guid = m.guid
@@ -162,15 +407,18 @@ function setupStreaming(A) {
         try { A.db.exec("SELECT bbox_x FROM element_transforms LIMIT 1"); A._hasBbox = true; }
         catch(e) { A._hasBbox = false; }
       }
-      const bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : '';
+      // §CPE_MATERIAL_KEY: always 3 bbox slots (NULL when absent) so material_name is at a FIXED
+      // slot 16 — see the range-path comment above.
+      const bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : ', NULL, NULL, NULL';
       // §17.17.4 (W-OCC3-LTU): on a DB with no `building` column the predicate becomes 1=1 and the
       // bind list drops with it — every row IS this building by definition of the fallback.
       const _bldOk = A._hasBuildingCol(A.db);
+      const matNameCol = A._hasMatNameCol(A.db) ? ', m.material_name' : ', NULL';
       const rows = A.dbQuery(`
         SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                t.center_x, t.center_y, t.center_z,
                t.rotation_x, t.rotation_y, t.rotation_z,
-               m.storey, m.ifc_class, m.element_name${bboxCols}
+               m.storey, m.ifc_class, m.element_name${bboxCols}${matNameCol}
         FROM elements_meta m
         JOIN element_instances i ON m.guid = i.guid
         JOIN element_transforms t ON t.guid = m.guid
@@ -362,7 +610,106 @@ function setupStreaming(A) {
     return { code: code, r: ((hex >> 16) & 255) / 255, g: ((hex >> 8) & 255) / 255, b: (hex & 255) / 255 };
   }
 
-  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint) {
+  // ── §CPE_MATERIAL_KEY helpers (CINEMA_PATH_EDITOR.md, 2026-09-01) ────────────────────────────
+  // Implementing CINEMA_PATH_EDITOR.md §CPE_MATERIAL_KEY — Witness: W-CPE-MATERIAL-KEY.
+  // ONE owner for "is this surface transparent". §GLASS_NOT_METAL's rule (alpha<1 ⇒ never an opaque
+  // wear texture) is evaluated from this and nothing else.
+  A._alphaOf = function(rgbaStr) {
+    if (!rgbaStr || rgbaStr.indexOf(',') === -1) return 1.0;
+    var parts = rgbaStr.split(',').map(Number);
+    return (parts.length >= 4 && parts[3] < 1.0) ? parts[3] : 1.0;
+  };
+  // ONE owner for "which triplanar texture does this element get, and WHICH KEY decided".
+  // name FIRST, ifc_class as fallback, alpha guard ahead of both. Returns src ∈
+  // {name, class, alpha-none, none}. `INCONCLUSIVE` when the maps have not been published yet
+  // (no material has ever been built) — so a caller can never read a 0 as a real answer.
+  A._triResolve = function(alpha, ifcClass, matName) {
+    var byName = A._TRIPLANAR_BY_NAME, byClass = A._TRIPLANAR_MAT;
+    if (!byName || !byClass) return { mat: null, src: 'INCONCLUSIVE' };
+    if (alpha < 1.0) return { mat: null, src: 'alpha-none' };
+    var n = (matName && byName[matName]) ? byName[matName] : null;
+    if (n) return { mat: n, src: 'name' };
+    var c = (ifcClass && byClass[ifcClass]) ? byClass[ifcClass] : null;
+    if (c) return { mat: c, src: 'class' };
+    return { mat: null, src: 'none' };
+  };
+  // Shipped §-log rollup, fired once at stream-complete. PRIMAL LAW 3: the log is the primary
+  // evidence, so the numbers a witness asserts are emitted by the running app, not re-derived.
+  // Reports NO-OP (no element resolved by name — the change did nothing on this building) and
+  // VACUOUS (nothing was judged) explicitly, per PRIMAL LAW 4.
+  A._triSrcTally = function() {
+    var q = A.streamQueue || [];
+    if (!q.length) { console.log('§TRI_SRC_TALLY VACUOUS bld=' + (A.activeBuilding || '?') + ' rows=0 — nothing judged'); return null; }
+    if (!A._TRIPLANAR_BY_NAME) { console.log('§TRI_SRC_TALLY INCONCLUSIVE bld=' + (A.activeBuilding || '?') + ' — no material was ever built'); return null; }
+    var bySrc = { name: 0, class: 0, 'alpha-none': 0, none: 0 };
+    var namesHit = {}, named = 0, approxNamed = 0;
+    for (var i = 0; i < q.length; i++) {
+      var row = q[i];
+      var mn = row[16] || '';
+      if (mn) { named++; if (mn.charAt(0) === '≈') approxNamed++; }
+      var res = A._triResolve(A._alphaOf(row[2]), row[11] || '', mn);
+      bySrc[res.src] = (bySrc[res.src] || 0) + 1;
+      if (res.src === 'name') namesHit[mn] = (namesHit[mn] || 0) + 1;
+    }
+    var distinct = Object.keys(namesHit);
+    var textured = bySrc.name + bySrc['class'];
+    // §SUNGLASS_TRIPLANAR_TINT (measured by the concurrent palette lane, 2026-09-01): _recolorMesh's
+    // material.clone() DROPS the triplanar onBeforeCompile hook on 347/347 sampled originals, so an
+    // ACTIVE palette REPLACES the texture with a flat colour rather than tinting it. This tally is
+    // computed from the resolver, not from what is on screen, so a live palette cannot corrupt the
+    // numbers — but a reader comparing them against the screen must know the palette state, so it is
+    // stated here rather than left to be guessed. tick 0 = Off.
+    var _palTick = A._ambienceTick || 0;
+    var _palMeshes = (A._sunglassBackups && A._sunglassBackups.length) || 0;
+    console.log('§TRI_SRC_TALLY bld=' + (A.activeBuilding || '?') + ' rows=' + q.length +
+      ' palette_tick=' + _palTick + ' palette_recoloured=' + _palMeshes +
+      ' named=' + named + ' approx_named=' + approxNamed +
+      ' by_name=' + bySrc.name + ' by_class=' + bySrc['class'] +
+      ' alpha_none=' + bySrc['alpha-none'] + ' none=' + bySrc.none +
+      ' textured=' + textured + ' distinct_names_resolved=' + distinct.length +
+      (bySrc.name === 0 ? ' NO-OP — no element resolved by material_name on this building' : ''));
+    distinct.sort(function(x, y) { return namesHit[y] - namesHit[x]; });
+    for (var d = 0; d < distinct.length; d++)
+      console.log('§TRI_SRC_NAME name="' + distinct[d] + '" n=' + namesHit[distinct[d]] +
+        ' tex=' + A._TRIPLANAR_BY_NAME[distinct[d]].diffuse);
+    return { bySrc: bySrc, namesHit: namesHit, rows: q.length, named: named, approxNamed: approxNamed };
+  };
+
+  // §CPE_MATERIAL_KEY: `matName` = elements_meta.material_name for this bucket. Measured on
+  // Terminal/Hospital/Clinic: material_name is fully determined by (storey, discipline,
+  // material_rgba), so adding it to the batch key would add ZERO buckets (244→244, 160→160, 65→65)
+  // — every bucket therefore carries exactly ONE name and taking items[0]'s is exact, not an
+  // approximation (unlike `batchCls`, which really is items[0]'s of a possibly mixed-class bucket).
+  // §WALL_SIDE (2026-09-01, PHOTOREAL_STILL_RENDER.md §WALL_SIDE_AND_LIGHT_FLOOR): class-keyed
+  // material side, derived from the fleet winding census (§WALL_WINDING_MEASURE + this session's
+  // per-class re-census, census_{Terminal,Hospital}.log): a class is FrontSide iff its pooled
+  // (sheet + mixed-winding + inverted + open-negative) fraction is <= 2.0% of elements-with-
+  // geometry across both measured buildings, population >= 30 (T1). Sheet-heavy classes measured
+  // ABOVE T1 keep DoubleSide because a one-sided sheet is invisible from one side under FrontSide
+  // regardless of winding: IfcPipeFitting 20.4%, IfcDuctFitting 14.9%, IfcBuildingElementProxy
+  // 16.4% (and 18.9% of Hospital's drawn triangles), IfcWindow 32.7%, IfcDoor 2.1%,
+  // IfcFlowTerminal 5.1%, IfcFlowController/IfcController/IfcRampFlight/IfcRoof under population.
+  // Unlisted classes default DoubleSide (conservative). `side` is a pure function of
+  // (ifcClass, a<1.0) and ifcClass is already a cacheKey dimension below -> cannot fragment the
+  // material cache (asserted by witness_wall_side_light_floor.js M1).
+  // §WALL_SIDE_PICK_GATE: IfcLightFixture was in the census-derived list (0% winding defect,
+  // 2,086 elements) but is WITHDRAWN by the S3 pick witness: a ray whose origin sits inside a
+  // recessed fixture shell (M_Plain Recessed Lighting Fixture 600x600, Hospital ray
+  // out|IfcElectricAppliance|1cL9Mv$oTAD8jv7e2bmYul) first-hit the fixture's own interior back
+  // face under DoubleSide; FrontSide culls that self-hit and resolves to the diffuser beyond it.
+  // The gate is mechanical: any first-hit divergence drops the class (§WWSLF_PICK_DIVERGE line,
+  // wwslf_assert.log 2026-09-01). Winding did not fail here — pick behaviour did.
+  var FRONT_SIDE_CLASSES = {
+    IfcAirTerminal: 1, IfcAlarm: 1, IfcBeam: 1, IfcCableCarrierFitting: 1,
+    IfcCableCarrierSegment: 1, IfcColumn: 1, IfcCovering: 1, IfcDistributionControlElement: 1,
+    IfcDuctSegment: 1, IfcElectricAppliance: 1, IfcFireSuppressionTerminal: 1, IfcFooting: 1,
+    IfcFurniture: 1, IfcMember: 1, IfcPipeSegment: 1, IfcPlate: 1,
+    IfcRailing: 1, IfcSlab: 1, IfcStair: 1, IfcStairFlight: 1, IfcSwitchingDevice: 1,
+    IfcValve: 1, IfcWall: 1, IfcWallStandardCase: 1
+  };
+  A._frontSideClasses = FRONT_SIDE_CLASSES; // exposed for witness assertions, read-only
+
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName) {
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -497,6 +844,7 @@ function setupStreaming(A) {
     var _TRI_CONCRETE = {
       diffuse: 'textures/materials/concrete_color_1k.jpg',
       roughness: 'textures/materials/concrete_rough_1k.jpg',
+      normal: 'textures/materials/concrete_normal_1k.jpg',   // §TRIPLANAR_NORMAL
       tileMeters: 2.5,     // world units per texture repeat
       normFactorRGB: [2.0755, 2.0755, 2.0755],  // §TRINORM_LINEAR — inverse LINEAR mean (grayscale tex)
       contrastBoost: 1.6
@@ -504,6 +852,7 @@ function setupStreaming(A) {
     var _TRI_PLASTER = {
       diffuse: 'textures/materials/plaster_color_1k.jpg',
       roughness: 'textures/materials/plaster_rough_1k.jpg',
+      normal: 'textures/materials/plaster_normal_1k.jpg',   // §TRIPLANAR_NORMAL
       tileMeters: 2.0,
       normFactorRGB: [1.9428, 1.9262, 2.0172],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.5
@@ -511,6 +860,7 @@ function setupStreaming(A) {
     var _TRI_METAL = {
       diffuse: 'textures/materials/metal_color_1k.jpg',
       roughness: 'textures/materials/metal_rough_1k.jpg',
+      normal: 'textures/materials/metal_normal_1k.jpg',   // §TRIPLANAR_NORMAL
       tileMeters: 0.6,     // finer tile — railings/pipes/ducts are thin members
       normFactorRGB: [4.8763, 4.0250, 3.3988],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.9
@@ -559,15 +909,72 @@ function setupStreaming(A) {
       IfcValve: _TRI_METAL
     };
 
+    // §CPE_MATERIAL_KEY (CINEMA_PATH_EDITOR.md, 2026-09-01) — the element's OWN authored IFC
+    // material name, consulted BEFORE its ifc_class. Same defect family as §GLASS_NOT_METAL: the
+    // class alone was deciding a question the element itself already answers. Terminal carries
+    // material_name on 48,428/48,428 elements (41 distinct, 0 of them the synthetic `≈ ` colour
+    // labels Hospital/Clinic/HHS carry) — none of it was reaching this function.
+    //
+    // GROUNDING RULES, so this stays presentation-authoring and not invention:
+    //  1. Only the THREE texture sets that already exist in viewer/textures/materials/ are used.
+    //     No new asset is introduced; a name whose substance has no texture stays unmapped.
+    //  2. A key is a name that DENOTES A MATERIAL SUBSTANCE. Component names ("Seat Base", "Fin"),
+    //     colour words ("Red", "Grigio"), placeholders ("Default", "<Unnamed>") and Revit TYPE
+    //     names are not materials and are deliberately absent.
+    //  3. Absent ⇒ fall through to TRIPLANAR_MAT[ifcClass] ⇒ byte-identical to today.
+    //
+    // The trap this map is shaped around, measured on Terminal_meta.db:
+    // `Basic Wall:A_Wall_Ext_150mm_BrickPlaster_V1` covers 7,714 elements but only 327 (4.2%) are
+    // IfcWall — it is a wall-TYPE name leaked onto elements hosted in that wall (IfcPipeFitting
+    // 4,243, IfcDuctFitting 713, IfcDuctSegment 568, IfcLightFixture 486, IfcAirTerminal 286…).
+    // Keying it to plaster would strip metal off 5,892 MEP elements that §TRIPLANAR_MEP_GAPS
+    // deliberately textured. It is NOT a material name, so it is NOT here.
+    var TRIPLANAR_BY_NAME = {
+      // ── Metal ── (Terminal counts in comments; substance is in the name itself)
+      'Metal Deck': _TRI_METAL,                                   // 33,756
+      'Silver': _TRI_METAL,                                       //  4,263
+      'Copper': _TRI_METAL,                                       //  1,169
+      'Aluminum': _TRI_METAL,                                     //    256
+      'Steel, Paint Finish, Ivory, Glossy': _TRI_METAL,           //    157
+      'Rastelli Rubinetterie - Metal - Brass - Bronze': _TRI_METAL, //   41
+      'Metal - Steel, Polished': _TRI_METAL,                      //     24
+      'Door Handle - Aluminium': _TRI_METAL,                      //      9
+      'Metal - Generic - Black Finish': _TRI_METAL,               //      4
+      'Metal Panel': _TRI_METAL,                                  //      2
+      'Steel - Zurn Industries - Stainless - Type 304': _TRI_METAL, //     1
+      'Metal-WATTS-ASTM A-536 Ductile Iron-Blue': _TRI_METAL,     //      1
+      'Metal - IEC - Steel': _TRI_METAL,                          //      1
+      // ── Concrete ──
+      'Concrete - Cast-in-Place Concrete - 45 MPa': _TRI_CONCRETE, //   448
+      'Concrete, C12/15': _TRI_CONCRETE,                          //      1
+      // ── Plaster / board finishes (the JKR ceiling family) ──
+      'jkrAR_clg-f_(pv60)-3 600mm x 600mm PVC Laminated Gypsum Board': _TRI_PLASTER,      // 34
+      'jkrAR_clg-f_(cf60)-3 1220 x 1220 x 4.5mm Papan simen gentian': _TRI_PLASTER,       // 22
+      'jkrAR_clg-f_(pv60)-3 600mm x 1200mm PVC Laminated Gypsum Board(1)': _TRI_PLASTER,  // 15
+      'jkrAR_clg-f_(sk)-2 Skim Coat Plastering': _TRI_PLASTER                             // 11
+    };
+    // §CPE_MATERIAL_KEY: publish the SAME two objects (not copies) so the rollup below and any
+    // witness resolve through one implementation instead of re-deriving the rule. Ownership rule,
+    // CLAUDE.md §PRIMAL LAW 0: one owner per question.
+    A._TRIPLANAR_MAT = TRIPLANAR_MAT;
+    A._TRIPLANAR_BY_NAME = TRIPLANAR_BY_NAME;
+
     const key = rgbaStr || '_default';
-    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '');
+    // §CPE_MATERIAL_KEY: matName joins the cache key (two elements with the same rgba+class but
+    // different authored materials must not share one material object). It is appended LAST so the
+    // `rgba|class` prefix every existing reader uses (witness_glass_not_metal, effects.js) is
+    // untouched, and its `Ifc` is de-capitalised because time_machine.js:2485 decides night-glow by
+    // `_mk.indexOf('IfcWindow') >= 0` — a SUBSTRING scan of the whole composite key. An authored
+    // material literally containing an Ifc class name would otherwise silently join the bloom set.
+    // Case-only change: the key stays readable, and the real name lives in mat.userData._matName.
+    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (matName || '').replace(/Ifc/g, 'ifc');
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
       const parts = rgbaStr.split(',').map(Number);
       r = parts[0]; g = parts[1]; b = parts[2];
-      if (parts.length >= 4 && parts[3] < 1.0) a = parts[3];
     }
+    a = A._alphaOf(rgbaStr);   // §CPE_MATERIAL_KEY: one owner for "is this surface transparent"
     // §S265c: Trust IFC data. Only NULL (no color assigned) gets class fallback.
     // For grey buildings (Terminal/LTU), user applies Sunglasses slider on demand.
     var stdMat = (ifcClass && STD_MAT[ifcClass]) ? STD_MAT[ifcClass] : null;
@@ -606,13 +1013,44 @@ function setupStreaming(A) {
     // metals/glass stay glossy by ratio. Floor at 0.08 so nothing becomes a mirror artefact.
     var _rough = stdMat ? stdMat.rough : 0.55;
     opts.roughness = Math.max(0.08, _rough * 0.75);
-    opts.metalness = stdMat ? stdMat.metal : 0.08; // §refl: slight metal lift gives surfaces real specular response
-    opts.side = THREE.DoubleSide; // §S260d: IFC geometry has inconsistent normals — DoubleSide ensures pick works
+    // §GLASS_NOT_METAL (2026-08-30): STD_MAT is chosen by ifc_class ALONE, so an element carrying a
+    // real, transparent IFC material still got its class's OPAQUE PBR. Measured on live Clinic: the
+    // IDENTICAL IFC material `0.000,0.502,0.753,0.100` renders two different ways purely by class —
+    //   IfcWindow → metalness 0.00, envMapIntensity 0.6   (correct clear glass, 58 elements)
+    //   IfcPlate  → metalness 0.70, envMapIntensity 0.05  (STD_MAT "steel plate", 167 elements)
+    // — so 167 of Clinic's 225 glass panels rendered as metal: at metalness 0.7 the diffuse albedo is
+    // suppressed and envInt 0.05 leaves almost nothing to reflect, i.e. "loss of glass / no longer
+    // see thru" (§A), with no X-ray involved. §S265c's "trust IFC data" was only ever applied to
+    // COLOUR; alpha<1 is the IFC itself declaring the surface transparent, and in a metal/rough
+    // workflow a transparent surface is BY DEFINITION not a metal (metals are opaque). So when the
+    // element's own material says a<1, the opaque class default does not describe it — drop the
+    // metalness rather than let a steel-plate preset override real glazing.
+    opts.metalness = (a < 1.0) ? 0.0 : (stdMat ? stdMat.metal : 0.08); // §refl: slight metal lift gives surfaces real specular response
+    // §WALL_SIDE (2026-09-01): class-keyed side — see FRONT_SIDE_CLASSES above. This corrects
+    // §S260d's premise "IFC geometry has inconsistent normals — DoubleSide ensures pick works":
+    // MEASURED FALSE in §WALL_WINDING_MEASURE (PHOTOREAL_STILL_RENDER.md) — no geo DB ships a
+    // normals column, computeVertexNormals() derives the shading normal FROM the winding, and the
+    // winding is consistent (uniformly-inverted meshes fleet-wide: 2 of 111,610 = 0.003%).
+    // FrontSide on the measured-closed classes gives back-face-correct shading + backface-culling;
+    // DoubleSide stays for the sheet-heavy classes where a one-sided face must render both ways.
+    // Pick integrity across the flip is witness-gated (witness_wall_side_light_floor.js S3).
+    // Transparent path (a<1.0, above) already forced DoubleSide and is untouched.
+    if (a >= 1.0) {
+      opts.side = (ifcClass && FRONT_SIDE_CLASSES[ifcClass]) ? THREE.FrontSide : THREE.DoubleSide;
+    }
     // §refl: 0.3->0.6 — more realistic reflection emphasis (global default).
     // §HOSPITAL_BLUE_TINT: per-class override (STD_MAT[...].envInt) for the small set of classes
     // whose unusually high metalness otherwise lets the sky's real, strongly-blue PMREM reflection
     // dominate the hue over their own correctly-trusted real IFC albedo — see STD_MAT comments above.
-    if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = (stdMat && stdMat.envInt != null) ? stdMat.envInt : 0.6; }
+    // §GLASS_NOT_METAL: the envInt overrides exist ONLY to stop a high-metalness class letting the
+    // sky's real blue PMREM reflection dominate its albedo (§HOSPITAL_BLUE_TINT / §PIPE_DUCT_BLUE_TINT
+    // above). A transparent surface has metalness 0 here, so that reason does not apply to it — and
+    // 0.05 on glass kills the reflection that makes glazing read as glass at all. Use the global 0.6.
+    if (A._envMap) {
+      opts.envMap = A._envMap;
+      opts.envMapIntensity = (a < 1.0) ? 0.6
+        : ((stdMat && stdMat.envInt != null) ? stdMat.envInt : 0.6);
+    }
     const mat = new THREE.MeshStandardMaterial(opts);
     // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): effects.js's _reassertPhotoMatBoost() blindly
     // multiplies envMapIntensity x3 and tightens roughness x0.4 on every metal/glossy material
@@ -625,7 +1063,17 @@ function setupStreaming(A) {
     // §TRIPLANAR: classes with a real texture set skip the fake-grain perturbation below —
     // the real photo texture takes over that job, stacking both would double-bump the normal
     // with two uncorrelated patterns.
-    var triMat = (ifcClass && TRIPLANAR_MAT[ifcClass]) ? TRIPLANAR_MAT[ifcClass] : null;
+    // §GLASS_NOT_METAL: TRIPLANAR_MAT is also class-keyed, so IfcPlate glazing was being given
+    // _TRI_METAL (`metal_color_1k.jpg`) — a brushed-metal weathering texture painted onto glass
+    // (visible in the user's own log as `§TRIPLANAR_INIT class=IfcPlate tex=…/metal_color_1k.jpg`).
+    // A transparent surface never wants an opaque material's surface-wear texture.
+    // §CPE_MATERIAL_KEY: name FIRST, class as fallback. The alpha guard above is evaluated before
+    // both and is unchanged — a transparent surface never gets an opaque wear texture, whatever it
+    // is called. `_triSrc` is recorded so the witness can assert WHICH key decided, not just that
+    // some texture appeared.
+    var _triR = A._triResolve(a, ifcClass, matName);
+    var triMat = _triR.mat;
+    var _triSrc = _triR.src;
 
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
@@ -677,6 +1125,7 @@ function setupStreaming(A) {
       }
       var _diffuseTex = _triTex(triMat.diffuse, true);
       var _roughTex = _triTex(triMat.roughness, false);
+      var _normalTex = triMat.normal ? _triTex(triMat.normal, false) : null;
       var _triUvScale = 1.0 / triMat.tileMeters;
       var _triNorm = new THREE.Vector3(triMat.normFactorRGB[0], triMat.normFactorRGB[1], triMat.normFactorRGB[2]);
       var _triContrast = triMat.contrastBoost || 1.0;
@@ -684,6 +1133,8 @@ function setupStreaming(A) {
         shader.uniforms.uTriActive = { value: 0.0 };  // flipped by A.startStillRefine()/_teardownStillRefine()
         shader.uniforms.uTriDiffuse = { value: _diffuseTex };
         shader.uniforms.uTriRoughness = { value: _roughTex };
+        shader.uniforms.uTriNormalMap = { value: _normalTex };
+        shader.uniforms.uTriNormalScale = { value: _normalTex ? 1.0 : 0.0 };
         shader.uniforms.uTriScale = { value: _triUvScale };
         shader.uniforms.uTriNorm = { value: _triNorm };
         shader.uniforms.uTriContrast = { value: _triContrast };
@@ -730,11 +1181,44 @@ function setupStreaming(A) {
             'varying vec3 vTriWorldNormal;',
             'uniform sampler2D uTriDiffuse;',
             'uniform sampler2D uTriRoughness;',
+            'uniform sampler2D uTriNormalMap;',
+            'uniform float uTriNormalScale;',
             'uniform float uTriActive;',
             'uniform float uTriScale;',
             'uniform vec3 uTriNorm;',   // §TRIPLANAR_CAST_FIX — per-channel, was a scalar
             'uniform float uTriContrast;',
             'uniform float uPaintSeed;'
+          ].join('\n'))
+          .replace('#include <normal_fragment_maps>', [
+            '#include <normal_fragment_maps>',
+            // §TRIPLANAR_NORMAL (2026-08-30) — the missing third map. NOTICE.txt recorded the gap
+            // from day one: "Diffuse+roughness only (no normal/AO ... two-maps-only first pass)".
+            // Without it every fragment of a flat wall/floor/slab shares ONE surface normal, so the
+            // lighting term is CONSTANT across the whole surface: the texture tints the albedo and
+            // the light never varies. Measured on a real Alt+S Terminal frame: ceiling patch luma
+            // std 5.67, floor patch std 16.92 — flat, and no tuning can fix it because there is no
+            // relief for the light to catch. Same still-only uTriActive gate as the other two maps,
+            // so navigation still pays nothing.
+            // Whiteout/UDN blend: each axis sample is swizzled into world space and blended by the
+            // same triW weights the diffuse uses, then taken to VIEW space (three.js `normal` is
+            // view-space at this point).
+            'if (uTriActive > 0.5 && uTriNormalScale > 0.0) {',
+            '  vec3 nW = normalize(vTriWorldNormal);',
+            '  vec3 nTriW = pow(abs(nW), vec3(4.0));',
+            '  nTriW /= (nTriW.x + nTriW.y + nTriW.z + 1e-5);',
+            '  vec2 nUvX = vTriWorldPos.zy * uTriScale;',
+            '  vec2 nUvY = vTriWorldPos.xz * uTriScale;',
+            '  vec2 nUvZ = vTriWorldPos.xy * uTriScale;',
+            '  vec3 tX = texture2D(uTriNormalMap, nUvX).xyz * 2.0 - 1.0;',
+            '  vec3 tY = texture2D(uTriNormalMap, nUvY).xyz * 2.0 - 1.0;',
+            '  vec3 tZ = texture2D(uTriNormalMap, nUvZ).xyz * 2.0 - 1.0;',
+            '  tX = vec3(tX.xy + nW.zy, abs(tX.z) * nW.x);',
+            '  tY = vec3(tY.xy + nW.xz, abs(tY.z) * nW.y);',
+            '  tZ = vec3(tZ.xy + nW.xy, abs(tZ.z) * nW.z);',
+            '  vec3 triWorldN = normalize(tX.zyx * nTriW.x + tY.xzy * nTriW.y + tZ.xyz * nTriW.z);',
+            '  vec3 triViewN = normalize((viewMatrix * vec4(triWorldN, 0.0)).xyz);',
+            '  normal = normalize(mix(normal, triViewN, uTriNormalScale));',
+            '}'
           ].join('\n'))
           .replace('#include <roughnessmap_fragment>', [
             '#include <roughnessmap_fragment>',
@@ -792,12 +1276,24 @@ function setupStreaming(A) {
         if (sh) {
           sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
           sh.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
+          // §TRIPLANAR_NORMAL A/B switch, re-asserted here for the same reason uTriActive is
+          // (§TRIPLANAR_RECOMPILE_FIX): a silent program recompile resets uniforms to defaults.
+          // APP._triNormalOff = true reverts to the shipped two-map look with no reload.
+          if (sh.uniforms.uTriNormalMap && sh.uniforms.uTriNormalMap.value)
+            sh.uniforms.uTriNormalScale.value = A._triNormalOff ? 0.0 : 1.0;
         }
       };
       A._triplanarMaterials = A._triplanarMaterials || [];
       A._triplanarMaterials.push(mat);
-      console.log('§TRIPLANAR_INIT class=' + ifcClass + ' tex=' + triMat.diffuse);
+      console.log('§TRIPLANAR_INIT class=' + ifcClass + ' tex=' + triMat.diffuse +
+        ' src=' + _triSrc + ' name=' + (matName || ''));   // §CPE_MATERIAL_KEY
     }
+    // §CPE_MATERIAL_KEY: which key decided, recorded on the material itself so a witness can assert
+    // it without re-deriving. Plain strings only — see the §TRIPLANAR_CLONE_STALL note above about
+    // never putting the shader object in userData.
+    mat.userData._triSrc = _triSrc;
+    mat.userData._triTex = triMat ? triMat.diffuse : '';
+    mat.userData._matName = matName || '';
     // §ENTOURAGE: real RPC people/tree/logo get a presentation material, but ONLY during the Alt+S
     // still-refine pass — gated at RUNTIME by uEntActive (re-asserted every frame from
     // A._stillRefineActive via onBeforeRender, exactly like §TRIPLANAR_RECOMPILE_FIX self-heals),
@@ -846,7 +1342,11 @@ function setupStreaming(A) {
       console.log('§ENTOURAGE_INIT variant=' + matVariant + ' class=' + ifcClass);
     }
     mat.userData.origOpacity = a;
-    mat.userData.origSide = a < 1.0 ? THREE.DoubleSide : THREE.FrontSide;
+    // §WALL_SIDE: record the RESOLVED side (before any x-ray override below). The old line
+    // (`a < 1.0 ? DoubleSide : FrontSide`) claimed FrontSide for every opaque material while the
+    // material was actually created DoubleSide — a latent mismatch against the x-ray restore
+    // fallback chain (tools.js:337/359). mat.side here IS the class-keyed resolved value.
+    mat.userData.origSide = mat.side;
     if (A.xrayOn) { mat.transparent = true; mat.opacity = 0.3; mat.side = THREE.DoubleSide; }
     if (A.wireOn) { mat.wireframe = true; }
     if (A.sectionOn) { mat.clippingPlanes = [A.sectionPlane]; mat.clipShadows = true; }
@@ -1004,6 +1504,7 @@ function setupStreaming(A) {
           A._bboxCleared = false;
         }
         A.streaming = false;
+        if (A._triSrcTally) A._triSrcTally();   // §CPE_MATERIAL_KEY rollup — shipped §-log evidence
         // §RED_GREY_MYSTERY: DISABLED for now — the repair itself is verified correct (patches the
         // broken normal data, confirmed by direct readback) but does NOT change the rendered
         // black-pixel output at all, and costs ~12s per building load for zero visible benefit.
@@ -1258,6 +1759,7 @@ function setupStreaming(A) {
         storey: storey || '', ifcClass,
         matVariant: A._entourageVariant(ifcClass, elementName),
         mepHint: A._mepNameHint(elementName),
+        matName: row[16] || '',   // §CPE_MATERIAL_KEY — fixed slot 16, after the 16-slot bbox layout
         bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });
       A.streamedCount++;
     }
@@ -1487,7 +1989,7 @@ function setupStreaming(A) {
         }
       } else {
         // LOW_INSTANCE_BATCH_MAX+1 or more instances — InstancedMesh (both desktop and mobile)
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint);
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -1507,6 +2009,22 @@ function setupStreaming(A) {
         iMesh.userData.isInstanced = true;
         iMesh.userData.hash = hash;
         iMesh.userData.ifcClass = elements[0].ifcClass || '';
+        // §MEP_DISC_PALETTE coverage fix (2026-09-02) — MEASURED DEFECT: the §SUNGLASS discipline
+        // band (tools.js ticks 56-65) groups on `mesh.userData.disc`, but this path never set it,
+        // so EVERY InstancedMesh fell into A._groupBy's 'Unknown' bucket and took one flat colour.
+        // (Corroborated independently by PR #1594's own note: Clinic reported "7 discs" while its
+        // DB holds only 6 — the 7th was 'Unknown'.)
+        // ⚠ EXTRACTED, NOT ASSUMED: this branch buckets by GEOMETRY HASH ALONE (the storey|disc|rgba
+        // key above governs only the merge/batch branch), so instances here are NOT guaranteed to
+        // share a discipline. Set the key only when the set is genuinely uniform; otherwise leave it
+        // unset (prior behaviour, 'Unknown') and COUNT it, so a mixed-discipline instance set can
+        // never be silently painted as one discipline it does not all belong to.
+        var _dU = elements[0].disc || '';
+        for (var _dqi = 1; _dqi < elements.length; _dqi++) {
+          if ((elements[_dqi].disc || '') !== _dU) { _dU = null; break; }
+        }
+        if (_dU) { iMesh.userData.disc = _dU; A._instDiscUniform = (A._instDiscUniform || 0) + 1; }
+        else { A._instDiscMixed = (A._instDiscMixed || 0) + 1; }
         A._instanceMeta[iMesh.id] = meta;
         A.scene.add(iMesh);
         instancedCount += elements.length;
@@ -1540,7 +2058,7 @@ function setupStreaming(A) {
         }
 
         var batchCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null);
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '');
         var bm;
         try {
           bm = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -1619,7 +2137,7 @@ function setupStreaming(A) {
       for (const [key, items] of Object.entries(batchBuckets)) {
         for (const item of items) {
           const el = item.el;
-          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint);
+          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint, el.matName);
           const mesh = new THREE.Mesh(item.geo, mat);
           const pos = A.ifc2three(el.cx, el.cy, el.cz);
           mesh.position.set(pos.x, pos.y, pos.z);
@@ -1739,10 +2257,22 @@ function setupStreaming(A) {
         const mergedGeo = new THREE.BufferGeometry();
         mergedGeo.setAttribute('position', new THREE.BufferAttribute(mergedPos, 3));
         if (mergedNorm) mergedGeo.setAttribute('normal', new THREE.BufferAttribute(mergedNorm, 3));
-        mergedGeo.setIndex(new THREE.BufferAttribute(mergedIdx, 1));
+        // §IDX16 (2026-08-30) — a Uint32 index addressing fewer than 65,536 vertices spends twice
+        // the bytes it needs. MEASURED on Terminal (§MEM_PROBE): index = 71.8 MB of a 469 MB
+        // geometry footprint, against a 1,226 MB heap. The guard is exact (totalVerts, the count
+        // this very buffer was sized from), so a geometry that genuinely needs 32-bit keeps it —
+        // this can never truncate an index. Nothing downstream reads the index's TYPE: `ranges`
+        // stores idxStart/idxCount as plain numbers and three.js re-reads .count/.array either way.
+        var _mIdx = mergedIdx;
+        if (totalVerts < 65536) {
+          _mIdx = new Uint16Array(totalIdx);
+          for (var _q = 0; _q < totalIdx; _q++) _mIdx[_q] = mergedIdx[_q];
+          _idx16Saved += totalIdx * 2; _idx16Geoms++;
+        }
+        mergedGeo.setIndex(new THREE.BufferAttribute(_mIdx, 1));
 
         var mergedCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null);
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '');
         const mesh = new THREE.Mesh(mergedGeo, mat);
         mesh.userData.storey = storey === '_' ? '' : storey;
         mesh.userData.disc = disc === '_' ? '' : disc;
@@ -1778,6 +2308,12 @@ function setupStreaming(A) {
     A._batchFlushCount++;
     if (A._batchFlushCount <= 1 || A.streamIdx >= A.streamQueue.length - 1) {
       console.log(`[S260] §BATCHED_FLUSH instanced=${instancedCount} batched=${batchedCount} drawCalls=${drawCalls} (was ${instancedCount + batchedCount}) mobile=${A._isMobile}`);
+      // §MEP_DISC_PALETTE coverage — how many InstancedMeshes now carry a real discipline key, and
+      // how many genuinely could not (mixed-discipline geometry set). `mixed` is not a failure; it
+      // is the honest count of sets this fix must NOT paint. Both zero = VACUOUS (no instancing).
+      console.log(`§MEP_DISC_COVERAGE instancedMeshes uniformDisc=${A._instDiscUniform || 0} mixedDisc=${A._instDiscMixed || 0}` +
+        (!(A._instDiscUniform || A._instDiscMixed) ? ' — VACUOUS, no InstancedMesh built on this building'
+          : ` (${Math.round((A._instDiscUniform || 0) / ((A._instDiscUniform || 0) + (A._instDiscMixed || 0)) * 100)}% now keyed; these were ALL 'Unknown' before §MEP_DISC_PALETTE)`));
       if (batchedCount > 0) {
         console.log(`§BATCHED_DETAIL buckets=${Object.keys(batchBuckets).length} elements=${batchedCount} saved=${_prevDrawCalls - Object.keys(batchBuckets).length} drawCalls`);
       }
@@ -1827,6 +2363,12 @@ function setupStreaming(A) {
     // §BILLBOARD_ALWAYS: the model is fully streamed here, so any billboard element in the DB can
     // now be read and given its face. Idempotent and a no-op for buildings that have no billboard.
     if (A._billboardAutoBuild) A._billboardAutoBuild();
+    // §PHOTO_PREWARM (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R11): the model is fully
+    // streamed here, which is the EARLIEST point the curve-smoothing pass can legally run — it
+    // walks streamed geometry. MEASURED on the user's own Hospital session: that pass costs
+    // 8,923.6 ms and it was being paid on the first Alt+S press, not here. Same idempotent,
+    // no-op-if-absent contract as the billboard build above.
+    if (A._photoPrewarm) A._photoPrewarm();
   };
 
   // §S261: Bbox-only BatchedMesh flush — ONE flush, all elements start as bbox cubes.
@@ -1890,7 +2432,7 @@ function setupStreaming(A) {
       // Fallback: individual meshes for oversized/over-budget elements
       if (fallbackItems.length > 0) {
         var batchCls = fallbackItems[0].el.ifcClass || '';
-        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint);
+        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint, fallbackItems[0].el.matName);
         for (var fi = 0; fi < fallbackItems.length; fi++) {
           var el = fallbackItems[fi].el;
           var m = new THREE.Mesh(fallbackItems[fi].geo, mat);
@@ -1912,7 +2454,7 @@ function setupStreaming(A) {
 
       // Create BatchedMesh with reserved capacity
       var batchCls = slotReservations[0].item.el.ifcClass || '';
-      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint);
+      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint, slotReservations[0].item.el.matName);
       var bm;
       try {
         bm = new THREE.BatchedMesh(slotReservations.length, bucketVerts, bucketIdx, mat);
@@ -2059,6 +2601,7 @@ function setupStreaming(A) {
       var storey = row[10] || '', ifcClass = row[11] || '';
       var matVariant = A._entourageVariant(ifcClass, row[12]);
       var mepHint = A._mepNameHint(row[12]);
+      var matName = row[16] || '';   // §CPE_MATERIAL_KEY
       if (!hash || !A.meshCache[hash]) continue;
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
@@ -2067,7 +2610,7 @@ function setupStreaming(A) {
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
-        storey: storey, ifcClass: ifcClass, matVariant: matVariant, mepHint: mepHint });
+        storey: storey, ifcClass: ifcClass, matVariant: matVariant, mepHint: mepHint, matName: matName });
     }
 
     // Build consolidated BatchedMesh per bucket
@@ -2089,7 +2632,7 @@ function setupStreaming(A) {
       var parts = key.split('|');
       var rgbaKey = parts[2];
       var batchCls = items[0].ifcClass;
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint);
+      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint, items[0].matName);
       var newBM;
       try {
         newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -2724,6 +3267,10 @@ function setupStreaming(A) {
     A._instanceMeta = {};
     A._instanceGuids = {};
     A._matCache = {};
+    // §CPE_MATERIAL_KEY: the material_name column probe is per-DB, so a scene reset (which is where
+    // a DIFFERENT db gets opened) must re-probe rather than carry a stale answer — the exact
+    // stale-cache hazard §MERGE_BLDCOL calls out for A._buildingCol.
+    A._matNameCol = undefined;
     // §MERGED_GUID: merged identity dies with the meshes it addressed (index ranges are per-mesh).
     A._mergedMeta = {};
     A._mergedIndex = {};

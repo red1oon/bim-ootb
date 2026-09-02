@@ -319,9 +319,23 @@ function setupTools(A) {
           mat.opacity = 0.3;
           mat.side = THREE.DoubleSide;
         } else {
-          mat.transparent = mat._origTransparent !== undefined ? mat._origTransparent : false;
-          mat.opacity = mat._origOpacity !== undefined ? mat._origOpacity : 1;
-          mat.side = mat._origSide !== undefined ? mat._origSide : THREE.FrontSide;
+          // §XRAY_RESTORE_USERDATA_FIX: mat._origTransparent/_origOpacity/_origSide are only
+          // captured for materials that already existed in _matCache at the moment xray turned ON
+          // (the loop above). A material first created WHILE xray was already active
+          // (streaming.js:850 sets opacity=0.3 unconditionally at creation time, no _orig* ever
+          // recorded for it) restored here to the hardcoded default (opaque, FrontSide) instead of
+          // its real material — permanently flattening any such material transparent (e.g. glass)
+          // opaque for the rest of the session, since it then sits cached in A._matCache and is
+          // reused for every future element sharing the same cacheKey. streaming.js:848-849 already
+          // records the true per-material value in userData.origOpacity/origSide for EVERY material
+          // at creation time, xray-on-or-not — prefer that over the hardcoded default.
+          var _ud = mat.userData || {};
+          mat.transparent = mat._origTransparent !== undefined ? mat._origTransparent
+            : (_ud.origOpacity !== undefined ? _ud.origOpacity < 1.0 : false);
+          mat.opacity = mat._origOpacity !== undefined ? mat._origOpacity
+            : (_ud.origOpacity !== undefined ? _ud.origOpacity : 1);
+          mat.side = mat._origSide !== undefined ? mat._origSide
+            : (_ud.origSide !== undefined ? _ud.origSide : THREE.FrontSide);
         }
         mat.needsUpdate = true;
       }
@@ -336,9 +350,14 @@ function setupTools(A) {
           m._origSide = m.side;
           m.transparent = true; m.opacity = 0.3; m.side = THREE.DoubleSide;
         } else {
-          m.transparent = m._origTransparent !== undefined ? m._origTransparent : false;
-          m.opacity = m._origOpacity !== undefined ? m._origOpacity : 1;
-          m.side = m._origSide !== undefined ? m._origSide : THREE.FrontSide;
+          // Same §XRAY_RESTORE_USERDATA_FIX as above, applied to the scene.traverse fallback path.
+          var _mud = m.userData || {};
+          m.transparent = m._origTransparent !== undefined ? m._origTransparent
+            : (_mud.origOpacity !== undefined ? _mud.origOpacity < 1.0 : false);
+          m.opacity = m._origOpacity !== undefined ? m._origOpacity
+            : (_mud.origOpacity !== undefined ? _mud.origOpacity : 1);
+          m.side = m._origSide !== undefined ? m._origSide
+            : (_mud.origSide !== undefined ? _mud.origSide : THREE.FrontSide);
         }
         m.needsUpdate = true;
       });
@@ -612,6 +631,46 @@ function setupTools(A) {
     return g;
   };
 
+  // §SUNGLASS_GROUPING_RULES (2026-09-01, bim-compiler prompts/CINEMA_PATH_EDITOR.md
+  // §SESSION_2026-09-01C): ordinal groupings (storey) are coloured by ORDINAL POSITION on a
+  // monotonic ramp, never by the alphabetic/size rank the categorical bands use. The ordinal is
+  // EXTRACTED from geometry — world bbox-centre Y per mesh, median per group — not parsed from
+  // storey names (which sort "First Floor" before "TOF Footing" on Clinic).
+  A._paletteMeshY = function(mesh) {
+    if (mesh.__paletteY !== undefined) return mesh.__paletteY;
+    var box = null;
+    try {
+      if (mesh.isInstancedMesh || mesh.isBatchedMesh) {
+        if (!mesh.boundingBox) mesh.computeBoundingBox();   // unions all instances, local space
+        box = mesh.boundingBox;
+      } else if (mesh.geometry) {
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        box = mesh.geometry.boundingBox;
+      }
+    } catch (e) { box = null; }
+    if (!box || !isFinite(box.min.y) || !isFinite(box.max.y)) { mesh.__paletteY = null; return null; }
+    var c = box.getCenter(new THREE.Vector3());
+    mesh.updateWorldMatrix(true, false);
+    mesh.localToWorld(c);
+    mesh.__paletteY = c.y;
+    return mesh.__paletteY;
+  };
+
+  // Keys of `groups` sorted by real vertical position (median member centre-Y), ascending.
+  // Deterministic: name tiebreak; groups with no measurable geometry sort last.
+  A._storeyOrdinalKeys = function(groups) {
+    var keys = Object.keys(groups);
+    var elev = {};
+    keys.forEach(function(k) {
+      var ys = [];
+      groups[k].forEach(function(m) { var y = A._paletteMeshY(m); if (y !== null) ys.push(y); });
+      ys.sort(function(a, b) { return a - b; });
+      elev[k] = ys.length ? ys[Math.floor(ys.length / 2)] : Infinity;
+    });
+    keys.sort(function(a, b) { return (elev[a] - elev[b]) || (a < b ? -1 : 1); });
+    return { keys: keys, elev: elev };
+  };
+
   A.updateAmbience = function(val) {
     var tick = Math.round(Number(val));
     A._ambienceTick = tick;   // §-tap palette field reads this (one scalar = the whole palette state)
@@ -653,6 +712,75 @@ function setupTools(A) {
       });
     }
 
+    // ══ §MEP_DISC_PALETTE (2026-09-02) ══════════════════════════════════════════════════════════
+    // Spec: bim-compiler prompts/RESUME_2026-09-02_FILM_REVIEW.md §MEP_SYNTHETIC_PALETTE.
+    // User, 2026-09-02: "On Hospital or any building having zero usable material_name, can the
+    // synthetic colouring be more MEP standard? ... All i want is minimalist better coluring
+    // surface rules."
+    //
+    // ⚠ THIS MAPPING IS AN AUTHORED CHOICE, NOT AN INDUSTRY STANDARD. Saying otherwise would be
+    // invention (PRIME RULE). No MEP colour convention exists anywhere in the model data: Hospital's
+    // 6,664 `material_name` rows are 100% `≈`-prefixed synthetic approximations (`≈ Grey`), and
+    // there is no IfcSystem / `system` column on ANY shipped building DB (grepped, 2026-09-02).
+    // So the KEY is EXTRACTED — `elements_meta.discipline`, non-null on 100% of rows on all six
+    // shipped buildings — while the discipline→colour ASSIGNMENT is authored. It is not authored
+    // HERE, though: it reuses `A.DISC_COLORS` (config.js) VERBATIM, the same map the discipline HUD
+    // bars (panels.js), the bbox placeholders (streaming.js) and city/measure already paint with.
+    // The win is CONSISTENCY, not novelty — a discipline now gets the same colour in the film that
+    // the viewer's own legend gives it.
+    //
+    // MINIMALIST, and checkable rather than asserted: ONE hue per discipline. No cycling, no
+    // per-element hue, no per-class subdivision. A building's palette is therefore exactly as large
+    // as its discipline count (measured: Hospital 6, LTU_AHouse 8, Clinic 6, JKR 7, HHS 3, Duplex 5)
+    // — never a 40-hue soup. `sub` (0-9 across the band) keeps the in-band meaning it has in
+    // applyPalette: deepen saturation, darken lightness. It shifts no hue, so the hue COUNT is
+    // invariant across the whole band and the witness can assert it at any tick.
+    // A discipline outside A.DISC_COLORS (VALID_DISCS carries 29 codes, the colour map 12) falls
+    // back to the existing earthTone cycle rather than going uncoloured — counted in the log.
+    function applyDiscPalette(groups, keys, sub) {
+      var used = {}, mapped = 0, fell = 0, shown = [];
+      keys.forEach(function(k) {
+        var hex = (A.DISC_COLORS && A.DISC_COLORS[k] != null) ? A.DISC_COLORS[k] : null;
+        var color = new THREE.Color();
+        if (hex != null) { color.setHex(hex); mapped++; }
+        else { var p = earthTone[fell % earthTone.length]; color.setHSL(p[0], p[1], p[2]); fell++; }
+        var hsl = { h: 0, s: 0, l: 0 };
+        color.getHSL(hsl);
+        color.setHSL(hsl.h, Math.min(1, hsl.s + sub * 0.05), Math.max(0, hsl.l - sub * 0.03));
+        var hexStr = '#' + color.getHexString();
+        used[hexStr] = (used[hexStr] || 0) + 1;
+        shown.push(k + '=' + hexStr + (hex == null ? '(fallback)' : ''));
+        groups[k].forEach(function(m) { A._recolorMesh(m, color); });
+      });
+      var hues = Object.keys(used).length;
+      // Self-failure: a VACUOUS population and a hue COLLISION are different failures and must read
+      // differently. Neither may print as a quiet success.
+      console.log('[S200] §MEP_DISC_PALETTE discs=' + keys.length + ' distinctHues=' + hues +
+        ' fromLegend=' + mapped + ' fallback=' + fell + ' sub=' + sub +
+        (keys.length === 0 ? ' ⚠ VACUOUS — no discipline group to colour, nothing judged'
+          : hues === keys.length ? ' — one hue per discipline, no collision'
+          : ' ⚠ COLLISION ' + keys.length + ' discs share only ' + hues + ' hues') +
+        ' [' + shown.join(' ') + ']');
+    }
+
+    // §SUNGLASS_GROUPING_RULES: monotonic RAMP for ORDINAL groupings — the colour index is the
+    // ordinal position (lowest storey darkest), not the alphabetic rank + cycling palette that
+    // applyPalette keeps for categorical groupings. Hue h0→h1 and lightness 0.36→0.78 both
+    // strictly increase with elevation; `sub` keeps its in-band meaning as saturation depth.
+    function applyRamp(groups, ord, h0, h1, sub) {
+      var n = Math.max(ord.keys.length - 1, 1);
+      ord.keys.forEach(function(k, i) {
+        var t = ord.keys.length === 1 ? 0.5 : i / n;
+        var color = new THREE.Color().setHSL(h0 + (h1 - h0) * t,
+                                             Math.min(0.45 + sub * 0.02, 0.9),
+                                             0.36 + 0.42 * t);
+        groups[k].forEach(function(m) { A._recolorMesh(m, color); });
+      });
+      console.log('[S200] §SUNGLASS_ORDINAL ' + ord.keys.map(function(k) {
+        return k + '@' + (isFinite(ord.elev[k]) ? ord.elev[k].toFixed(2) : 'inf');
+      }).join(' < '));
+    }
+
     if (tick <= 10) {
       // ── 1-10: Warm pastels by IFC class, subtle contrast growing ──
       phase = 'Warm';
@@ -678,27 +806,30 @@ function setupTools(A) {
       strategy = keys.length + ' types';
 
     } else if (tick <= 45) {
-      // ── 31-45: Warm pastels by storey ──
+      // ── 31-45: Warm RAMP by storey ORDINAL (§SUNGLASS_GROUPING_RULES — was alphabetic cycle) ──
       phase = 'Storey warm';
       var g = A._groupBy(allMeshes, 'storey');
-      var keys = Object.keys(g).sort();
-      applyPalette(g, keys, warmPastel, tick - 31);
-      strategy = keys.length + ' storeys';
+      var ord = A._storeyOrdinalKeys(g);
+      applyRamp(g, ord, 0.02, 0.13, tick - 31);
+      strategy = ord.keys.length + ' storeys';
 
     } else if (tick <= 55) {
-      // ── 46-55: Cool pastels by storey ──
+      // ── 46-55: Cool RAMP by storey ORDINAL (§SUNGLASS_GROUPING_RULES) ──
       phase = 'Storey cool';
       var g = A._groupBy(allMeshes, 'storey');
-      var keys = Object.keys(g).sort();
-      applyPalette(g, keys, coolPastel, tick - 46);
-      strategy = keys.length + ' storeys';
+      var ord = A._storeyOrdinalKeys(g);
+      applyRamp(g, ord, 0.50, 0.66, tick - 46);
+      strategy = ord.keys.length + ' storeys';
 
     } else if (tick <= 65) {
-      // ── 56-65: Earth by discipline ──
+      // ── 56-65: discipline, painted with the viewer's OWN legend (§MEP_DISC_PALETTE) ──
+      // Was: applyPalette(g, keys, earthTone, tick - 56) — an alphabetic-rank cycle through a
+      // generic 10-entry earth ramp, so a discipline's colour depended on which OTHER disciplines
+      // happened to be in the building and never matched the HUD's own discipline bars.
       phase = 'Discipline';
       var g = A._groupBy(allMeshes, 'disc');
       var keys = Object.keys(g).sort();
-      applyPalette(g, keys, earthTone, tick - 56);
+      applyDiscPalette(g, keys, tick - 56);
       strategy = keys.length + ' discs';
 
     } else if (tick <= 80) {
@@ -1543,6 +1674,15 @@ function setupTools(A) {
   };
 
   A._nightUpdateLights = function() {
+    // §NIGHT_BAKE_POOL teardown — first update after a bake releases the frozen pool. Checked
+    // BEFORE the _nightMode gate so a night-off session still cleans up.
+    if (A._nightBakePool && !A._maxqActive) {
+      for (var _di = 0; _di < A._nightBakePool.length; _di++) {
+        A.scene.remove(A._nightBakePool[_di]); A._nightBakePool[_di].dispose();
+      }
+      console.log('§NIGHT_BAKE_POOL disposed n=' + A._nightBakePool.length + ' — bake over, nav path restored');
+      A._nightBakePool = null;
+    }
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
     var camPos = A.camera.position;
@@ -1609,6 +1749,49 @@ function setupTools(A) {
         }
       }
       needed = picked.map(function(p) { return { pos: p }; });
+    }
+    // ══ §NIGHT_BAKE_POOL (2026-09-01, found by the first headless CLI bake — bim-compiler
+    // prompts/CINEMA_PATH_EDITOR.md §CLI_SILENT_BAKE stage 4): during a MaxQ bake the in-frustum
+    // fixture census changes nearly every frame (the camera flies the path while the buildup keeps
+    // placing fixtures), and EVERY add/remove changes the scene's point-light COUNT — a shader
+    // DEFINE, so three.js recompiles every program in the scene. MEASURED (s4_300.log, Hospital
+    // 1854x963, RTX 4060 headless): count-stable frames fold in 0.8-1.3 s — even at the full 200
+    // lights — while every count-changed frame costs 13-53 s (21 §MAXQ_FRAME_TIMEOUTs, per-frame
+    // climbing to 26.4 s, a 9 h projection for a film whose budget is 2 h). §NIGHT_LIGHT_CHURN_FIX
+    // above already named this exact recompile cost but its delta reuse still lets the COUNT move.
+    // FIX, bake-only (gate A._maxqActive): the pool size is FROZEN at the still cap for the whole
+    // bake — created once, assigned per frame by slot (position/color/intensity are uniform
+    // updates, no recompile), unused slots dim to intensity 0 (contributes nothing — quality-
+    // identical). Interactive navigation and Alt+S keep the churn-fix path below, untouched.
+    if (A._maxqActive) {
+      if (!A._nightBakePool) {
+        var _poolN = Math.min(200, Math.max(1, allPos.length));
+        A._nightBakePool = [];
+        for (var _bi = 0; _bi < _poolN; _bi++) {
+          var _bl = new THREE.PointLight(0xffe4b5, 0, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+          A.scene.add(_bl);
+          A._nightBakePool.push(_bl);
+        }
+        console.log('§NIGHT_BAKE_POOL created n=' + _poolN +
+          ' — point-light COUNT frozen for the bake; unused slots ride at intensity 0');
+      }
+      var _pool = A._nightBakePool;
+      for (var _pi = 0; _pi < _pool.length; _pi++) {
+        var _f = needed[_pi];
+        if (_f) {
+          var _dist = camPos.distanceTo(_f.pos);
+          var _fade = Math.min(1.0, _dist / 15);
+          var _floor = A._nightNearFadeFloor;
+          _pool[_pi].position.copy(_f.pos);
+          _pool[_pi].color.set(_f.pos.__color || 0xffe4b5);
+          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._nightPLScale || 1);   // §STAGED_PL_CUT
+        } else {
+          _pool[_pi].intensity = 0;
+        }
+      }
+      A._nightLights = _pool.slice();
+      if (A.markDirty) A.markDirty();
+      return;
     }
     // §NIGHT_LIGHT_CHURN_FIX (2026-08-08): this used to dispose EVERY light and rebuild the whole
     // set from scratch on every call — called on every 5m of camera travel while night mode is on,

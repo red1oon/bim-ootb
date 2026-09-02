@@ -10,7 +10,14 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v770';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v774';   // bump on each deploy; per-change detail is the git commit message.
+// v772 (rebase of PR #203 onto origin/main) §INTEG-WIRE-B: disposable-host persistence in-app
+// (erp_replica_client.js + erp_persist_ui.js) — back the books up to a SIGNED snapshot the user
+// owns (signed by the edge key), restore on a FRESH device -> replay recomputes tip == signed
+// tip + books to the cent; a tampered/forged file is rejected (no private key). Substrate
+// prompts/ERP_SUBSTRATE_INTEGRATION.md Phase 2 slice B; witness erp/tests/poc_persist_wire.js.
+// v771 (#429 rebase onto origin/main@e9daafa0): OK feedback dialog after both System Monitor resets
+//   (erp/system_monitor.js) — merged forward past v770's independent bumps below, neither dropped.
 // v770 (T-0 item 4, prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md): commitCrud's UPDATE/DELETE path now
 //   consults ad_access.js's gateRecord (canView AccessLevel + org/client scope) before sealing, not just
 //   owner/CAS — idempiere.html's applySession wires window.APP.gateRecordFor; crud_core.js/crud_overlay.js
@@ -127,6 +134,8 @@ const PRECACHE_ASSETS = [
   'ninja_sample.xlsx',// runnable sample workbook (generated from ad_seed.db stored columns)
   'erp_period_close.js', // §INTEG-WIRE — period-close fold = signed checkpoint = balance b/f (window.ErpPeriodClose)
   'period_close_ui.js',  // §INTEG-WIRE — in-app close/bootstrap on the live sidecar op-log (window.PeriodClose)
+  'erp_replica_client.js', // §INTEG-WIRE-B — FROZEN read side: replay snapshot → recompute tip (window.ErpReplicaClient)
+  'erp_persist_ui.js',     // §INTEG-WIRE-B — disposable-host persistence gesture: signed backup/restore (window.ErpPersist)
   'migrate_compare.html', // evaluator-facing comparison paper (docs/MigrateComparisonPaper.md) — linked from erp.html+idempiere.html
   'migrate_compare.md',   // its single source; deep papers (ERP/HolyGrail/OpLog/Distributed/BIMERP .md) fetch on-demand, not precached
   'qrcode.min.js',
