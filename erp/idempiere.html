@@ -477,7 +477,11 @@
      and BD must exist at parse time — glassbowl.html load-order parity). -->
 <script src="ad_process.js?v=11"></script>
 <script src="ad_data.js?v=23"></script>
-<script src="idmp_session.js?v=24"></script>
+<!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
+     build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
+     decisions to window.AdAccess instead of computing them independently. -->
+<script src="ad_access.js?v=1"></script>
+<script src="idmp_session.js?v=25"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
 <script src="erp_descriptor.js?v=1"></script>
@@ -600,7 +604,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <!-- T7 (W-T7-INC): memoized tip-folds (fix 3) + signed shard boundary (fix 4/4b) — load BEFORE crud_overlay so it delegates. -->
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
-<script src="crud_overlay.js?v=20"></script>
+<!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
+<script src="crud_core.js?v=1"></script>
+<script src="crud_overlay.js?v=21"></script>
 <!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
      (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
      test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
@@ -663,7 +669,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function status(main) { if (main != null) $('idmp-status-main').textContent = main; }
 
-  // ── IndexedDB cache (shares 'ad_seed_v16' with erp.html) ──
+  // ── IndexedDB cache (shares 'ad_seed_v17' with erp.html) ──
   function idbGet(key) {
     return new Promise(function (resolve) {
       try {
@@ -758,8 +764,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // clobber a ?seed= gen db), and only when rows actually merged. INSERT OR IGNORE upstream keeps it idempotent.
       var persisted = false;
       if (mRow > 0 && (!seedParam || seedFile === 'ad_seed.db')) {
-        try { idbPut('ad_seed_v16', db.export().buffer); persisted = true;
-          console.log('§IDEMPIERE shard-persist key=ad_seed_v16 rows=' + mRow + ' resident=Y');
+        try { idbPut('ad_seed_v17', db.export().buffer); persisted = true;
+          console.log('§IDEMPIERE shard-persist key=ad_seed_v17 rows=' + mRow + ' resident=Y');
           // CONSISTENCY_FINISH.md §K-3 — a tenant becoming resident is the largest state change a user
           // can make; it earns a World-history dot like any doc moment. Guarded, best-effort, NOT a
           // signed op (install = infrastructure, deliberately outside the Z fold lane).
@@ -799,8 +805,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§GENESIS-RESIDENT-LIVE install name=' + name + ' client=' + newId + ' rows=' + rows + ' grants=' + grants + ' clients→' + clAfter);
     var persisted = false;
     if (rows > 0) {
-      try { idbPut('ad_seed_v16', db.export().buffer); persisted = true;
-        console.log('§GENESIS-RESIDENT-LIVE persist key=ad_seed_v16 client=' + newId + ' resident=Y');
+      try { idbPut('ad_seed_v17', db.export().buffer); persisted = true;
+        console.log('§GENESIS-RESIDENT-LIVE persist key=ad_seed_v17 client=' + newId + ' resident=Y');
         try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
           label: 'Installed tenant ' + name + ' (' + rows + ' rows, client ' + newId + ')' }); } catch (e2) {} }
       catch (e) { console.warn('§GENESIS-RESIDENT-LIVE persist failed ' + e.message); }
@@ -863,7 +869,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var seedFile = (seedParam && /^[\w.-]+\.db$/.test(seedParam)) ? seedParam : 'ad_seed.db';
     var src = seedParam ? 'gen:' + seedFile : 'network';
     if (!seedParam) {
-      var cached = await idbGet('ad_seed_v16');
+      var cached = await idbGet('ad_seed_v17');
       if (cached && cached.byteLength > 1000) {
         var sig = String.fromCharCode.apply(null, new Uint8Array(cached, 0, 6));
         if (sig === 'SQLite') { db = new SQL.Database(new Uint8Array(cached)); src = 'idb_cache'; }
@@ -872,7 +878,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!db) {
       var resp = await fetch(seedFile); var buf = await resp.arrayBuffer();
       db = new SQL.Database(new Uint8Array(buf));
-      if (!seedParam) idbPut('ad_seed_v16', buf);   // cache only the real seed, never a ?seed= override
+      if (!seedParam) idbPut('ad_seed_v17', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
     // BIM→Project round-trip §B (docs/BIMtoERP.md): overlay the viewer-folded Project Orders + VO amendments
@@ -1065,7 +1071,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     $('idmp-del-go').onclick = function () {
       var res = SES.deleteClient(db, c.id);
       if (!res.ok) { closeOv(); return; }
-      try { idbPut('ad_seed_v16', db.export().buffer); } catch (e) {}
+      try { idbPut('ad_seed_v17', db.export().buffer); } catch (e) {}
       console.log('§IDEMPIERE tenant-deleted client=' + c.id + ' rows=' + res.deleted + ' tables=' + res.tables + ' persisted=Y');
       try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
         label: 'Deleted tenant ' + c.name + ' (Client ' + c.id + ', ' + res.deleted + ' rows)' }); } catch (e) {}
@@ -1127,7 +1133,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.APP.actor   = _session.user.id;
     window.APP.clientId = _session.client.id;
     window.APP.orgId   = _session.org ? _session.org.id : 0;
-    console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId);
+    window.APP.roleId  = _session.role.id;
+    // T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md) — record-level access gate seam for
+    // crud_core.js's recordAccessGate (canView AccessLevel + org/client scope, W-ACCESS-HARDEN-proven
+    // headless). A closure over THIS session's db + role so crud_core.js never needs a raw db handle.
+    window.APP.gateRecordFor = function (tableAccessLevel, record) {
+      return SES.gateRecordFor(db, _session.role.id, tableAccessLevel, record);
+    };
+    console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId + ' role=' + window.APP.roleId);
     _buildUserNameMap();   // Task 2 — AD_User_ID → Name for the change-log (iDempiere shows names, not ids)
     // header context bar — live Client · Role · Org (replaces the old static string)
     var orgLabel = _session.org ? _session.org.name.replace(/\s*\(.*\)/, '') : '—';

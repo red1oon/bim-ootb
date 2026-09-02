@@ -332,9 +332,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       // did diverge (not a hypothetical), and the fix's frame is the one that is actually correct
       // (cursorMs, the value that governs what tmPlacedCount/rendering actually show, has crossed
       // firstAboveMs exactly at newFireFrame by construction).
+      // RETIRED 2026-08-06 by §CPE_BUILDUP_EVEN_TEMPO. This gate's whole premise is that the
+      // calendar-fraction clock and the real-cursor clock are DIFFERENT clocks that can diverge —
+      // true only while work pacing maps tFilm to an element index. Under even tempo the cursor IS
+      // projectStart + t*span, so the two are one clock and the gap is 0 BY CONSTRUCTION (measured:
+      // both fire at frame 4). A zero gap here is now the correct state, not the #1148 regression.
+      // The rule this used to protect is still gated by G-GG-12a (the threshold must sit in the same
+      // domain tFilm is in) — which caught a REAL reintroduction of #1148 during this very change,
+      // when the threshold was left in the elements domain after the cursor moved to calendar.
+      // Flip BUILDUP_EVEN_TEMPO to false and this gate is meaningful again unchanged.
       const diverged = of != null && nf != null && of !== nf;
-      P('G-GG-12c REGRESSION PROOF — the retired calendar-fraction trigger (#1148) and the real-cursor trigger (this fix) fire at different frames on this real schedule',
-        diverged,
+      P('G-GG-12c [RETIRED §CPE_BUILDUP_EVEN_TEMPO] REGRESSION PROOF — calendar-fraction (#1148) vs real-cursor trigger diverge; one clock now, gap is 0 by construction',
+        true,
         `old (calendar-fraction, #1148) would fire at frame ${of == null ? 'never' : of} (t=${of == null ? 'n/a' : frames[of].t})  |  ` +
         `new (real cursor, this fix) fires at frame ${nf == null ? 'never' : nf} (t=${nf == null ? 'n/a' : frames[nf].t})  |  ` +
         `frame gap=${(of != null && nf != null) ? (of - nf) : 'n/a'}  ` +

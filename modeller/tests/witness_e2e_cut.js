@@ -26,8 +26,14 @@ runE2E('W-E2E-CUT', async (t) => {
   // §F2-FRAMING: the guide caption says "the wall" — don't grab the biggest slab. cuttable (2026-07-30):
   // Duplex's front-ranked wallish candidates are now ROTATED inserts (openings-inherit-host-rotation data);
   // bCut honestly refuses those ("cut needs a box-shaped wall"), so the subject must be one the production
-  // gate (Bonsai._insertCutBox) accepts — otherwise this witness measures the refusal path, not the cut.
-  const sel = await t.pick({ prefer: 'wall', cuttable: true });
+  // gate (Bonsai.canCut — §THE CALL widened this past just _insertCutBox to also accept a real per-layer
+  // seed, CUT_GATE_CSG_SPEC.md) accepts — otherwise this witness measures the refusal path, not the cut.
+  // maxVol (2026-08-08, found building §LAYER-SOLID-SEED): now that canCut() accepts 57/57 Duplex wallish
+  // candidates instead of just 2 tiny footing boxes, pick()'s own largest-first sort landed on fid=112 (the
+  // SAME pathological single-biggest-wall the W-E2E-MOVE finding already named, e2e_harness.js §F2-FRAMING)
+  // — cap volume like that witness already does, same precedent, same reason (avoid the known
+  // largest-mesh/swiftshader-resource-limit case, not an app regression).
+  const sel = await t.pick({ prefer: 'wall', cuttable: true, maxVol: 6 });
   t.assert('C1 SELECT (real click selects element)', !!sel, 'fid=' + (sel && sel.fid));
   if (!sel) return;
   await t.frameElement(sel.fid, 0.42);            // §F2-FRAMING: real close-up BEFORE any pixsum baseline (camera then stays fixed)

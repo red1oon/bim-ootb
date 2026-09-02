@@ -129,11 +129,18 @@
   //   cpmFn(qtoData, start) → deterministic forward-pass tasks[]        [compile]
   // Priority: captured > CPM default. kernel_ops is a runtime OVERRIDE (resolve4D),
   // never a dependency → TM's drone regenerate can't break the Gantt.
+  // §GANTT_EDIT/BOQ4D: capturedFn may return EITHER a bare tasks[] (the original contract — a
+  // native IfcWorkSchedule, labelled 'captured') OR {source, tasks}. The second form exists because
+  // the authored zone schedule (schedule_author.js tasks/task_elements) is a real, different thing
+  // from a captured IFC programme, and mislabelling it 'captured' in §4D_SIDECAR/§4D_SCHEDULE_SOURCE
+  // would make the log lie about where the dates came from. Additive — old callers unaffected.
   function compute4D(building, capturedFn, cpmFn, qtoData, startDate) {
     var cap = null;
     try { cap = capturedFn ? capturedFn() : null; } catch (e) { cap = null; }
-    if (cap && cap.length) {
-      return { building: building, schema: '4d.v1', source: 'captured', tasks: cap };
+    var capTasks = (cap && !Array.isArray(cap) && cap.tasks) ? cap.tasks : cap;
+    var capSource = (cap && !Array.isArray(cap) && cap.source) ? cap.source : 'captured';
+    if (capTasks && capTasks.length) {
+      return { building: building, schema: '4d.v1', source: capSource, tasks: capTasks };
     }
     var tasks = cpmFn(qtoData, startDate || '2025-01-06');
     return { building: building, schema: '4d.v1', source: 'generated', tasks: tasks };

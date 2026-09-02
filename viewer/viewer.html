@@ -9,6 +9,7 @@
 <title>BIM OOTB v3 — DEV</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#4fc3f7">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -102,6 +103,24 @@
   .bim-panel .bim-slider-row input[type=range] {
     flex: 1; accent-color: #4fc3f7; cursor: pointer; min-width: 0;
   }
+  /* §SUNGLASS_BROWN_TRACK (2026-09-01, bim-compiler prompts/CINEMA_PATH_EDITOR.md
+     §SESSION_2026-09-01C): the palette scrub's LAST segment (ticks 98-100 → 97%..100% of the
+     0-100 range) is saddle-brown — the affordance that the tip does something special (material
+     injection). Custom track for THIS slider only; the other sliders keep the native accent. */
+  #sunglass-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 20px; }
+  #sunglass-slider::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, rgba(79,195,247,0.35) 0%, rgba(79,195,247,0.35) 97%, rgb(139,69,19) 97%, rgb(139,69,19) 100%);
+  }
+  #sunglass-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #4fc3f7; margin-top: -4px; border: none;
+  }
+  #sunglass-slider::-moz-range-track {
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, rgba(79,195,247,0.35) 0%, rgba(79,195,247,0.35) 97%, rgb(139,69,19) 97%, rgb(139,69,19) 100%);
+  }
+  #sunglass-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #4fc3f7; border: none; }
   .bim-panel .bim-slider-val {
     width: 36px; text-align: right; font-size: 11px; color: #4fc3f7;
     flex-shrink: 0; opacity: 0; transition: opacity 0.3s;
@@ -821,27 +840,31 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="db_resolve.js?v=2" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
-<script src="effects.js?v=10" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
+<script src="effects.js?v=29" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
 <script src="effects_gi_poc.js?v=3" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
 <script src="lib/mp4_mux.js?v=1" onerror="console.warn('§LOAD_FAIL mp4_mux.js — MaxQ falls back to webm')"></script>
-<script src="cinema_path_editor.js?v=10" onerror="console.warn('§LOAD_FAIL cinema_path_editor.js — Alt+C path editing disabled')"></script>
-<script src="cinema_maxq.js?v=3" onerror="console.warn('§LOAD_FAIL cinema_maxq.js — Alt+M MaxQ export disabled')"></script>
+<script src="cinema_path_editor.js?v=15" onerror="console.warn('§LOAD_FAIL cinema_path_editor.js — Alt+C path editing disabled')"></script>
+<script src="cpe_walk.js?v=6" onerror="console.warn('§LOAD_FAIL cpe_walk.js — CPE walk-mode disabled')"></script>
+<script src="cpe_xr.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_xr.js — VR entry disabled')"></script>
+<script src="cinema_maxq.js?v=9" onerror="console.warn('§LOAD_FAIL cinema_maxq.js — Alt+M MaxQ export disabled')"></script>
 <script src="input_registry.js?v=1" onerror="console.warn('§LOAD_FAIL input_registry.js')"></script>
 <script src="../common/pill_builder.js?v=1" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
 <script src="list_builder.js?v=1" onerror="console.warn('§LOAD_FAIL list_builder.js')"></script>
 <script src="settings_editor.js?v=1" onerror="console.warn('§LOAD_FAIL settings_editor.js')"></script>
 <script src="../common/history_tap.js?v=7" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
-<script src="scene.js?v=55" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=58" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=6" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
-<script src="streaming.js?v=59" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
+<script src="streaming.js?v=67" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=8" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
-<script src="panels.js?v=43" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
-<script src="tools.js?v=32" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
+<script src="panels.js?v=44" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="tools.js?v=45" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=30" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="hover_name.js?v=1" onerror="console.warn('§LOAD_FAIL hover_name.js — hover-name disabled')"></script>
 <script src="cpe_room_title.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_room_title.js — room titles disabled')"></script>
 <script src="cpe_day_counter.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_day_counter.js — day counter disabled')"></script>
+<script src="cpe_path_overview.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_path_overview.js — path overview disabled')"></script>
+<script src="cpe_resource_panel.js?v=2" onerror="console.warn('§LOAD_FAIL cpe_resource_panel.js — resource panel disabled')"></script>
 <script src="tour.js?v=17" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
 <script src="clash_report.js?v=1" onerror="console.warn('§LOAD_FAIL clash_report.js')"></script>
 <script src="clash_snag.js?v=1" onerror="console.warn('§LOAD_FAIL clash_snag.js')"></script>
@@ -858,7 +881,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="wh_route.js?v=2" onerror="console.warn('§LOAD_FAIL wh_route.js — pick walk disabled')"></script>
 <script src="wh_walk.js?v=8" onerror="console.warn('§LOAD_FAIL wh_walk.js — pick walk disabled')"></script>
 <!-- navigate.js lazy-loaded on demand by main.js A.loadNavigate() -->
-<script src="city.js?v=7"></script>
+<script src="city.js?v=8"></script>
 <script src="rates.js?v=7"></script>
 <!-- BIM→Project Order (TASK C): BigDecimal must precede proj_fold (it reads global.BigDecimal at load) -->
 <script src="../erp/bigdecimal.js"></script>
@@ -893,7 +916,9 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="elevation.js?v=1" onerror="console.warn('[Elevation] elevation.js skipped')"></script>
 <script src="grid_contours.js?v=5" onerror="console.warn('[GridContours] grid_contours.js skipped')"></script>
 <script src="grid_dim_chains.js?v=4" onerror="console.warn('[DimChains] grid_dim_chains.js skipped')"></script>
-<script src="kernel_ops.js?v=5" onerror="console.warn('[KernelOps] kernel_ops.js skipped')"></script>
+<!-- kernel_ops: loaded ONCE as ../erp/kernel_ops.js above (v13). The viewer-local copy (v8) used
+     to be re-loaded here and CLOBBERED v13 — silently breaking blue_fold.js/whatif.js, which call
+     v13-only discardBranch/acceptBranchUpTo. Do not re-add a second kernel_ops include. -->
 <script src="../common/whole_history.js?v=4" onerror="console.warn('[WholeHistory] common/whole_history.js skipped')"></script>
 <script src="../common/history_bar.js?v=6" onerror="console.warn('[HistoryBar] common/history_bar.js skipped')"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (the command-palette corner download triangle → AboutDIY.open; the Help pill keeps the shortcuts palette). Self-contained
@@ -927,11 +952,29 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=8" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
 <script src="schedule_gate.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
-<script src="time_machine.js?v=65" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
-<script src="dlod_nav.js?v=1" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
-<script src="schedule_author.js?v=10" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<!-- §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50): location axis before the engine that
+     gates on it. room_walker load here is idempotent with navigate_find's lazy loader (it checks
+     window.RoomWalker first). If any of the three fail, cpm_schedule logs §CELL_GATE unavailable
+     and runs the graph engine unchanged — loud degrade, never silent. -->
+<script src="lib/room_walker.js?v=3" onerror="console.warn('§LOAD_FAIL lib/room_walker.js — compiled rooms unavailable, schedule falls back to graph engine')"></script>
+<script src="lib/level_deriver.js?v=1" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
+<script src="location_axis.js?v=1" onerror="console.warn('§LOAD_FAIL location_axis.js — cell gate unavailable, schedule falls back to graph engine')"></script>
+<script src="cpm_schedule.js?v=2" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
+<!-- §S53 (F3, 4D_GANTT_TM_REFACTOR.md): the Gantt bar MODEL, extracted out of time_machine.js.
+     Must load BEFORE time_machine.js — its computeDays/buildGanttTasks wrappers call it. -->
+<script src="gantt_model.js?v=1" onerror="console.warn('§LOAD_FAIL gantt_model.js — Gantt bars and timeline bounds unavailable')"></script>
+<!-- §S58: support-order physics (sweep / judge parity / window rescale), extracted out of
+     time_machine.js. Must load BEFORE time_machine.js — its _ogSupportSweep/_cjpJudgeParity/
+     _contactGraph/_designatedSupport/_midairAudit/_capWindowRescale wrappers call it. -->
+<!-- §S62: median-Z storey banding index (pure builder), extracted out of time_machine.js.
+     Must load BEFORE time_machine.js — its _zoneIndexBuild wrapper calls it. -->
+<script src="zone_index.js?v=1" onerror="console.warn('§LOAD_FAIL zone_index.js — storey banding unavailable (zone inference falls back to declared storey)')"></script>
+<script src="support_sweep.js?v=1" onerror="console.warn('§LOAD_FAIL support_sweep.js — support-order physics unavailable (schedule repair, judge parity, lock-gate midair audit)')"></script>
+<script src="time_machine.js?v=77" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="dlod_nav.js?v=2" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
+<script src="schedule_author.js?v=14" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
-<script src="schedule_author_ui.js?v=8" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
+<script src="schedule_author_ui.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
 <script src="error_reporter.js?v=1" onerror="console.warn('§LOAD_FAIL error_reporter.js')"></script>
 <script src="sfx.js?v=1" onerror="console.warn('§LOAD_FAIL sfx.js — audio feedback disabled')"></script>
 <!-- HR_BIM_Asset spatial lenses (prompts/RESUME_HR_BIM_ASSET.md §RESUME NEXT#2). ADDITIVE peer module: the
@@ -1019,7 +1062,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=535')
+  navigator.serviceWorker.register('sw.js?v=538')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
   // §BUILD_VERSION_STAMP: log the ACTIVE (controlling) service worker's CACHE_VERSION at page
@@ -1033,6 +1076,56 @@ if('serviceWorker' in navigator){
   } else {
     console.log('§BUILD_VERSION (no active controller yet — reload once to confirm)');
   }
+  // §SWUPDATE_TOAST (2026-08-11, per prompts/GLASSBOWL_SWUPDATE.md's already-designed pattern,
+  // ported here rather than reinvented): a real user hit the gap this spec exists for -- SW
+  // CACHE_VERSION bumps in the background, but an already-open tab keeps running its already-
+  // imported JS modules until a fresh navigation. No listener existed to tell the user a new
+  // version had landed, so the fix was "clear site data" (which also wipes IndexedDB -- the
+  // cached building DB -- collateral damage the user rightly objected to). This is the missing
+  // half: sw.js already calls self.skipWaiting() unconditionally on install, so the new worker
+  // activates and claims control on its own -- listening for `controllerchange` is enough, no
+  // message-roundtrip needed. NEVER auto-reload silently (could interrupt a live MaxQ bake) --
+  // only a tap reloads, matching the spec's rule 4.
+  // §SWUPDATE_FIRST_CLAIM (2026-08-12, user: "why would a 'Update Ready - Tap Reset' message
+  // appear upon loading a building after SW reset"): `controllerchange` fires for TWO different
+  // events, and only one of them is an update. After a SW reset/unregister (or a first visit) the
+  // page loads with NO controller — `§BUILD_VERSION (no active controller yet)` in the user's log —
+  // then the freshly-registered worker installs (`§PRECACHE-TRIM install set=140`), skipWaiting()s,
+  // and clients.claim()s the page. controller goes null -> worker, `controllerchange` fires, and the
+  // toast claimed "Update ready" for what is really this page's FIRST controller. Nothing was
+  // updated and reloading changes nothing — pure noise, in the middle of a 229MB building load.
+  // The sibling ERP shells already carry exactly this guard and say why in their own comment
+  // ("NEVER on the first-install clients.claim() controllerchange"); the viewer port missed it.
+  // An update, by definition, REPLACES a controller that was already there.
+  var _swHadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if (window.__swReloaded) return;  // one-shot guard, never loop
+    if (!_swHadController) {
+      console.log('§SWUPDATE_TOAST skip reason=first-claim (page had no controller at load; ' +
+        'this is the initial install taking over, not a new version) — no toast');
+      return;
+    }
+    console.log('§SWUPDATE_TOAST controllerchange — new version active, showing toast (hadController=true)');
+    var t = document.createElement('div');
+    t.id = 'swUpdateToast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);' +
+      'background:#222;color:#fff;padding:10px 16px;border-radius:8px;font:13px sans-serif;' +
+      'z-index:99999;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.4);display:flex;' +
+      'align-items:center;gap:10px;';
+    var label = document.createElement('span');
+    label.textContent = 'Update ready — tap to refresh';
+    var close = document.createElement('span');
+    close.textContent = '✕';
+    close.style.cssText = 'opacity:.6;padding:0 2px;';
+    close.addEventListener('click', function(e){ e.stopPropagation(); t.remove(); });
+    t.appendChild(label); t.appendChild(close);
+    t.addEventListener('click', function(){
+      window.__swReloaded = true;
+      console.log('§SWUPDATE_TOAST tapped — reloading');
+      location.reload();
+    });
+    document.body.appendChild(t);
+  });
 }
 // §S283: Capture beforeinstallprompt early — scene.js reads window._installPrompt
 window._installPrompt = null;

@@ -303,7 +303,8 @@ async function open(browser, bld) {
         if (!window.ScheduleAuthor) return { err: 'ScheduleAuthor not loaded' };
         await window.tmActivateForBake();
         out.before = window.tmScheduleSource();
-        // The ALREADY-SHIPPED authoring call — the exact one schedule_editor_ui.js:503 makes.
+        // The ALREADY-SHIPPED authoring call — the exact one the (since-retired, §TM_P6_FOLD)
+        // Editor tab made; the engine verb lives in schedule_author.js and is unchanged.
         out.mat = window.ScheduleAuthor.materializeDefault(A.db, window.SEQUENCE_RULES,
           { start: '2026-01-01', phaseDays: 30 });
         out.rows = {

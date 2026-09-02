@@ -833,36 +833,68 @@
     var _legalCtx = { rasters: rasters, roomRectsByStorey: roomRectsByStorey,
                       corridorRectsByStorey: corridorRectsByStorey, doorRectsByStorey: doorRectsByStorey,
                       stairRectsByStorey: stairRectsByStorey };
-    var _degSoFar = {};
+    // §SPINE-BRIDGE-CLUSTER (2026-08-05, OCCUPANT_PATHFINDER.md — real LTU_AHouse field report):
+    // the old test skipped any room with SOME degree, on the assumption that any edge at all means
+    // "already reachable". False for a room-PAIR island: R1's only edge is its door to R2, and
+    // neither reaches circulation — the pair is a 2-node component with zero outward edges, but
+    // neither node is individually zero-degree so the old per-node check never even tried them
+    // (measured: LTU_AHouse VÅNING 4 stranded 8 of 12 rooms this way). Union-find the E1 (room-room
+    // door) edges into components and bridge by COMPONENT: a component needs an attempt only if
+    // NONE of its members already has a non-E1 edge (i.e. none reaches spine/circ/doorwp-to-spine).
+    // This subsumes the old zero-degree case (a size-1 component with no outward edge) — same
+    // legality test, same nearest-first/first-legal-wins rule, just ranking candidates across every
+    // member of the component instead of one room's own centre.
+    var _ufParent = {};
+    order.forEach(function (lg) { if (nodes[lg].kind === 'room') _ufParent[lg] = lg; });
+    function _ufFind(x) { while (_ufParent[x] !== x) { x = _ufParent[x]; } return x; }
+    function _ufUnion(a, b) { var ra = _ufFind(a), rb = _ufFind(b); if (ra !== rb) _ufParent[ra] = rb; }
+    var hasOutward = {};
     edges.forEach(function (e) {
-      _degSoFar[e.a] = (_degSoFar[e.a] || 0) + 1;
-      _degSoFar[e.b] = (_degSoFar[e.b] || 0) + 1;
+      if (e.kind === 'E1') {
+        if (_ufParent[e.a] !== undefined && _ufParent[e.b] !== undefined) _ufUnion(e.a, e.b);
+      } else {
+        hasOutward[e.a] = true; hasOutward[e.b] = true;
+      }
     });
+    var components = {};
     order.forEach(function (lg) {
-      var g = nodes[lg];
-      if (g.kind !== 'room' || _degSoFar[lg]) return;
-      var pts = spineByStorey[g.storey];
+      if (nodes[lg].kind !== 'room') return;
+      var root = _ufFind(lg);
+      (components[root] = components[root] || []).push(lg);
+    });
+    Object.keys(components).forEach(function (root) {
+      var members = components[root];
+      if (members.some(function (m) { return hasOutward[m]; })) return; // component already reaches circulation
+      var storey = nodes[members[0]].storey;
+      var pts = spineByStorey[storey];
       if (!pts || !pts.length) return;
       // rect distance ranks candidates (a long room's centre can be far from a corridor its EDGE
       // touches); the LEGALITY test uses centre->spine, which is the segment a router actually draws.
-      var ranked = pts.map(function (p) {
-        var d;
-        if (g.rects && g.rects.length) {
-          d = Infinity;
-          for (var ri = 0; ri < g.rects.length; ri++) {
-            var rc = g.rects[ri];
-            var ddx = Math.max(0, Math.max(rc.x0 - p.cx, p.cx - rc.x1));
-            var ddy = Math.max(0, Math.max(rc.y0 - p.cy, p.cy - rc.y1));
-            var dd = Math.hypot(ddx, ddy);
-            if (dd < d) d = dd;
+      // Ranked across EVERY member of the component, not just one room's centre — any member
+      // reaching the spine reconnects the whole component via its own internal E1 edges.
+      var ranked = [];
+      members.forEach(function (mlg) {
+        var mg = nodes[mlg];
+        pts.forEach(function (p) {
+          var d;
+          if (mg.rects && mg.rects.length) {
+            d = Infinity;
+            for (var ri = 0; ri < mg.rects.length; ri++) {
+              var rc = mg.rects[ri];
+              var ddx = Math.max(0, Math.max(rc.x0 - p.cx, p.cx - rc.x1));
+              var ddy = Math.max(0, Math.max(rc.y0 - p.cy, p.cy - rc.y1));
+              var dd = Math.hypot(ddx, ddy);
+              if (dd < d) d = dd;
+            }
+          } else {
+            d = Math.hypot(p.cx - mg.cx, p.cy - mg.cy);
           }
-        } else {
-          d = Math.hypot(p.cx - g.cx, p.cy - g.cy);
-        }
-        return { p: p, d: d };
-      }).sort(function (a, b) { return a.d - b.d; });
+          ranked.push({ g: mg, p: p, d: d });
+        });
+      });
+      ranked.sort(function (a, b) { return a.d - b.d; });
       for (var k = 0; k < ranked.length; k++) {
-        var sp = ranked[k].p;
+        var g = ranked[k].g, sp = ranked[k].p;
         // §BRIDGE-ROUTED-LEGAL (2026-07-25, review correction to §BRIDGE-WALL-LEGAL above):
         // _chordIllegalCount samples a STRAIGHT segment — that is a visibility test, not a
         // connectivity test. A person leaving a 9.7x34.1m atrium walks through the opening and
@@ -878,11 +910,11 @@
         // The edge WEIGHT is the routed length, never the straight distance — an edge that claims
         // a shorter walk than the only real way there is the same class of lie as an invented
         // passage. Nothing else changes: candidates are still tried nearest-first, the first
-        // ACCEPTED one wins, and a room with no route stays deg-0 on purpose (logged as REJECT).
+        // ACCEPTED one wins, and a component with no route stays disconnected ON PURPOSE (REJECT).
         // _buildPolyline re-derives the same A* interior points at render time, so the drawn route
         // follows the floor without this block having to store geometry on the edge.
-        var hop = _astarHop(_legalCtx, { storey: g.storey, cx: g.cx, cy: g.cy },
-                                       { storey: g.storey, cx: sp.cx, cy: sp.cy });
+        var hop = _astarHop(_legalCtx, { storey: storey, cx: g.cx, cy: g.cy },
+                                       { storey: storey, cx: sp.cx, cy: sp.cy });
         if (hop === null) continue; // A* searched the walkable evidence and found no on-floor route
         var w = Math.hypot(sp.cx - g.cx, sp.cy - g.cy), routedVia = 'straight';
         if (hop.length) {
@@ -891,10 +923,11 @@
           w = L + Math.hypot(sp.cx - px, sp.cy - py);
           routedVia = 'routed(' + hop.length + ' turns)';
         }
-        edges.push({ a: lg, b: sp.guid, doorGuid: null, doorName: 'Opening onto corridor',
-                     storey: g.storey, kind: 'E6', w: w, wpA: sp.guid });
+        edges.push({ a: g.guid, b: sp.guid, doorGuid: null, doorName: 'Opening onto corridor',
+                     storey: storey, kind: 'E6', w: w, wpA: sp.guid });
         roomBridges++;
-        log('§ROOM_SPINE_BRIDGE room="' + (g.name || lg) + '" storey=' + g.storey +
+        log('§ROOM_SPINE_BRIDGE' + (members.length > 1 ? '_CLUSTER' : '') + ' room="' + (g.name || g.guid) + '" storey=' + storey +
+            (members.length > 1 ? ' clusterSize=' + members.length + ' clusterMembers=' + members.join(',') : '') +
             ' spine=' + sp.guid + ' gap=' + ranked[k].d.toFixed(2) + 'm walk=' + w.toFixed(2) + 'm via=' + routedVia);
         return;
       }
@@ -903,11 +936,14 @@
       // (E1 door-touch, E2 lone-door, E6 spine-bridge with A*-verified walkable route) is not a
       // routing failure to keep retrying — it is a genuine dead end by the best evidence this graph
       // has. Marked, not deleted: the room still exists (real IFC data), it just cannot be a Find
-      // Panel From/To target. `g` is the exact node object exposed in `nodes:` below, so this flag
-      // reaches the Viewer without any extra lookup.
-      g.sealed = true;
-      log('§ROOM_SPINE_BRIDGE_REJECT room="' + (g.name || lg) + '" storey=' + g.storey +
-          ' candidates=' + ranked.length + ' nearest=' + ranked[0].d.toFixed(2) + 'm — no walkable route (straight or A*), marked sealed');
+      // Panel From/To target. Rejection is now per-COMPONENT (the E1 union-find bridge-by-component
+      // change above), so every member of a rejected component is sealed — a cluster of E1-linked
+      // rooms with no way out is a dead end as a WHOLE, not just its nearest-ranked member.
+      members.forEach(function (mlg) { nodes[mlg].sealed = true; });
+      log('§ROOM_SPINE_BRIDGE_REJECT' + (members.length > 1 ? '_CLUSTER' : '') + ' storey=' + storey +
+          (members.length > 1 ? ' clusterSize=' + members.length + ' clusterMembers=' + members.join(',')
+                               : ' room="' + (nodes[members[0]].name || members[0]) + '"') +
+          ' candidates=' + ranked.length + ' nearest=' + (ranked.length ? ranked[0].d.toFixed(2) : '?') + 'm — no walkable route (straight or A*), marked sealed');
     });
     if (roomBridges || bridgeRejected)
       log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges + ' rejected=' + bridgeRejected + ' sealed=' + bridgeRejected);
@@ -1443,6 +1479,12 @@
         if (mid && mid.length) {
           var laterAnchors = {};
           for (var k = i + 2; k < path.length; k++) laterAnchors[path[k]] = 1;
+          // §DETOUR-NO-BACKTRACK (2026-08-04): the forward-only check above misses a waypoint an
+          // EARLIER chord's own detour already spliced into `out` this same pass — that guid never
+          // appears in the original `path` array, only in `out`, so it slipped through. Widening the
+          // same veto-candidate set to also cover everything already placed reuses the existing
+          // chainLen-guarded "only replace if not longer" acceptance below unchanged — no new logic.
+          for (var eo = 0; eo < out.length; eo++) laterAnchors[out[eo]] = 1;
           var revisits = mid.filter(function (g) { return laterAnchors[g]; });
           if (revisits.length) {
             var veto = {};
@@ -1471,6 +1513,17 @@
             } else if (alt && alt.length) {
               _log('§PATH_LEGAL_DETOUR_REVISIT_KEPT storey=' + a.storey + ' the only revisit-free detour is ' +
                 'longer (' + chainLen(mid).toFixed(1) + 'm -> ' + chainLen(alt).toFixed(1) + 'm) — keeping the shorter line');
+            } else {
+              // §PATH_LEGAL_DETOUR_REVISIT_FORCED (2026-08-05, real gap caught in review): the two
+              // branches above only fire when a revisit-free ALTERNATIVE exists (chosen either
+              // because it's shorter, or kept-anyway because it's longer). When no such alternative
+              // exists at all (`alt` null/empty — the revisit is the ONLY legal route), neither branch
+              // fired and the revisit was kept with ZERO log line — indistinguishable in the log from
+              // a clean detour with no revisit at all. Detecting the revisit was already correct; this
+              // just makes the "kept because it's the only option" case as visible as the "kept
+              // because shorter" case above, per this project's no-silent-fallback Log Mandate.
+              _log('§PATH_LEGAL_DETOUR_REVISIT_FORCED storey=' + a.storey + ' no revisit-free detour exists ' +
+                'at all (' + revisits.length + ' unavoidable waypoint(s): ' + revisits.join(',') + ') — keeping the only route');
             }
           }
         }

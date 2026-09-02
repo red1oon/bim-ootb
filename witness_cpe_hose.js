@@ -1,6 +1,9 @@
-// WITNESS — §CPE_HOSE / §CPE_AIM_DENSITY / §CPE_BUILDUP.
-// Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_HOSE (+ §CPE_AIM_DENSITY, §CPE_BUILDUP)
-// and prompts/PHOTOREAL_STILL_RENDER.md §MAXQ_TIME mode D.
+// WITNESS — §CPE_HOSE / §CPE_AIM_DEPTH / §CPE_BUILDUP.
+// Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_HOSE (+ §CPE_AIM_DEPTH, §CPE_AIM_SIMPLIFY,
+// §CPE_BUILDUP) and prompts/PHOTOREAL_STILL_RENDER.md §MAXQ_TIME mode D.
+// §CPE_AIM_SIMPLIFY (2026-08-13): §CPE_AIM_DENSITY, the rule the old A1/A2 gates below tested, is
+// RETIRED — see effects.js's own marker. Replaced with F1/F2, which exercise §CPE_AIM_DEPTH's new
+// forward-clearance trigger instead (same _probeAimDepth hook the product path already exposed).
 //
 // Each check names the issue it proves or disproves — a check that cannot fail is not a check.
 //
@@ -15,12 +18,12 @@
 //       the hose and a local pull one control rather than two tools.
 //   H3  W-HOSE-PLAN — the ops reach the FLOWN path, not just a helper: a plan built with hose ops
 //       differs from the same plan without them. Disproves "the maths is right but nothing is wired".
-//   A1  §CPE_AIM_DENSITY — outside the perimeter with nothing near, the gaze turns toward the
-//       building mass instead of staring down an empty look-ahead. Measured as the angle between
-//       the gaze and the direction to the building centroid: it must be SMALLER with the rule than
-//       with the rule suppressed. Fails if the trigger never fires or aims the wrong way.
-//   A2  §CPE_AIM_DENSITY did not buy the subject with a jerk: peak gaze change per frame must not
-//       regress against the same plan with the rule suppressed (the §CPE_EVEN_TURN instrument).
+//   F1  §CPE_AIM_DEPTH_FWD_CLEAR fires on real geometry, not a constant: sampling the walk's own
+//       forward clearance (_probeAimDepth) must show real variation, not the same sentinel every
+//       probe — proves the raycast is actually running against the building, not degenerating.
+//   F2  §CPE_AIM_DEPTH_FWD_CLEAR coherence: `fired` must agree with `fwdClear < clearM` at every
+//       sampled point — the rule doing what its own reported numbers say it's doing, not just
+//       returning SOME weight that happens to look plausible.
 //   B1  W-BUILDUP-SAMPLE — mode D re-keys the derived order to the camera path: placed count is
 //       monotone non-decreasing across frames, starts near empty, ends near full, and a MID-window
 //       sample is strictly between — which is what makes a clip open on a partially-built model.
@@ -291,48 +294,28 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         reanchored: fixed.reanchored, sBefore: opD.s, sAfter: fixed.sAfter,
       };
 
-      // ── A1/A2: the aim rule, measured on the hosed (flung-outside) plan ─────────────────────
-      // Control = the same plan with the rule suppressed, so the ONLY difference is the rule.
-      const bb = A.dbQuery('SELECT AVG(center_x), AVG(center_y), AVG(center_z) FROM element_transforms')[0];
-      const ctr3 = A.ifc2three(bb[0], bb[1], bb[2]);
-      const gazeErr = (poses) => {
-        // angle between the gaze and the direction to the building centroid, at the samples where
-        // the camera is genuinely outside and empty (the rule's own trigger domain)
-        const errs = [];
-        for (const p of poses) {
-          const gx = p.tx - p.x, gy = p.ty - p.y, gz = p.tz - p.z;
-          const gl = Math.hypot(gx, gy, gz) || 1;
-          const cx = ctr3.x - p.x, cy = ctr3.y - p.y, cz = ctr3.z - p.z;
-          const cl = Math.hypot(cx, cy, cz) || 1;
-          const d = (gx * cx + gy * cy + gz * cz) / (gl * cl);
-          errs.push(Math.acos(Math.max(-1, Math.min(1, d))) * 180 / Math.PI);
-        }
-        return errs;
+      // ── F1/F2: §CPE_AIM_DEPTH's forward-clearance trigger, measured on the REAL derived walk
+      // (planBase, not the hosed/flung one — that fixture existed for §CPE_AIM_DENSITY's outside-
+      // empty case, which no longer applies). Reads the product path's own _probeAimDepth, never a
+      // re-implementation, same convention every other probe in this file already uses.
+      const nProbe = 40;
+      const depthSamples = [];
+      for (let i = 0; i <= nProbe; i++) {
+        const e3 = i / nProbe;
+        const pr = A._probeAimDepth(e3);
+        depthSamples.push({ e3, fired: pr.fired, fwdClear: pr.fwdClear, clearM: pr.clearM });
+      }
+      const clears = depthSamples.map(s => s.fwdClear).filter(v => v != null && isFinite(v));
+      out.f = {
+        n: depthSamples.length,
+        clearMin: clears.length ? Math.min(...clears) : null,
+        clearMax: clears.length ? Math.max(...clears) : null,
+        firedCount: depthSamples.filter(s => s.fired).length,
+        // F2: everywhere `fired` is true, the reported clearance must actually be under threshold —
+        // the coherence check. A single counter-example means the trigger fired for a reason other
+        // than what it claims.
+        incoherent: depthSamples.filter(s => s.fired && !(s.fwdClear < s.clearM)).length,
       };
-      const peakTurn = (poses) => {
-        let mx = 0;
-        for (let i = 1; i < poses.length; i++) {
-          const a = poses[i - 1], b = poses[i];
-          const ax = a.tx - a.x, ay = a.ty - a.y, az = a.tz - a.z, al = Math.hypot(ax, ay, az) || 1;
-          const bx = b.tx - b.x, by = b.ty - b.y, bz = b.tz - b.z, bl = Math.hypot(bx, by, bz) || 1;
-          const d = (ax * bx + ay * by + az * bz) / (al * bl);
-          mx = Math.max(mx, Math.acos(Math.max(-1, Math.min(1, d))) * 180 / Math.PI);
-        }
-        return mx;
-      };
-      // Cap the sampled frame count: a big building's natural total can run to thousands of frames
-      // and the gates below are about the SHAPE of the gaze series, not its length. 600 samples is
-      // 40s of film at 15fps and keeps the headless rig inside its protocol timeout.
-      const nF = Math.min(600, Math.max(4, Math.round((pHose.naturalTotal || dur) * fps)));
-      const withRule = sample(pHose, nF);
-      A.__cpeAimOff = true;                                  // control: suppress the rule only
-      const pHose2 = A.cinemaPathPlan(dur, ovHose);
-      const noRule = sample(pHose2, nF);
-      A.__cpeAimOff = false;
-      const eW = gazeErr(withRule), eN = gazeErr(noRule);
-      const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
-      out.a1 = { meanGazeErrWithRule: mean(eW), meanGazeErrNoRule: mean(eN), frames: nF };
-      out.a2 = { peakTurnWithRule: peakTurn(withRule), peakTurnNoRule: peakTurn(noRule) };
 
       // ── B1/B2: mode D ──────────────────────────────────────────────────────────────────────
       out.b = { skipped: null };
@@ -413,19 +396,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       `s ${res.d.sBefore.toFixed(3)} → ${res.d.sAfter.toFixed(3)} (${res.d.reanchored} op moved) — ` +
       `without this the bulge slides along the path on its own (live: deformed=57→65→72 untouched)`);
 
-    // ── A1/A2: the aim rule ─────────────────────────────────────────────────────────────────
-    const improved = res.a1.meanGazeErrNoRule - res.a1.meanGazeErrWithRule;
+    // ── R1/R2, F1/F2 ────────────────────────────────────────────────────────────────────────
     P('R1 §CPE_REOPEN_DOUBLE: adopting the plan bands does not multiply them',
       res.r.planBandsN === res.r.authoredN && res.r.reSeedN === 2 * res.r.authoredN,
       `authored ${res.r.authoredN} bands -> plan carries ${res.r.planBandsN} (adopted, correct); re-seeding the SAME plan's ${res.r.waypoints} waypoints gives ${res.r.reSeedN} — that doubling IS the bug, measured`);
     P('R2 §CPE_REOPEN_DOUBLE: the adopted bands ARE the authored ones',
       res.r.adoptMax < 1e-6,
       `max centre/direction/length deviation ${res.r.adoptMax.toExponential(2)} over ${res.r.authoredN} bands (tol 1e-6) — adoption, not re-derivation`);
-    P('A1 §CPE_AIM_DENSITY: gaze turns toward the mass', improved > 0.5,
-      `mean angle to building centroid ${res.a1.meanGazeErrNoRule.toFixed(1)}° without the rule → ` +
-      `${res.a1.meanGazeErrWithRule.toFixed(1)}° with it (improvement ${improved.toFixed(1)}°, ${res.a1.frames} frames)`);
-    P('A2 §CPE_AIM_DENSITY: no jerk bought with it', res.a2.peakTurnWithRule <= res.a2.peakTurnNoRule * 1.15 + 0.5,
-      `peak gaze change/frame ${res.a2.peakTurnNoRule.toFixed(1)}°/f without → ${res.a2.peakTurnWithRule.toFixed(1)}°/f with (≤15% allowance)`);
+    P('F1 §CPE_AIM_DEPTH_FWD_CLEAR: real geometry, not a constant', res.f.clearMin != null && (res.f.clearMax - res.f.clearMin) > 0.5,
+      `fwdClear ranges ${res.f.clearMin != null ? res.f.clearMin.toFixed(1) : 'n/a'}m..${res.f.clearMax != null ? res.f.clearMax.toFixed(1) : 'n/a'}m over ${res.f.n} probes, fired=${res.f.firedCount}/${res.f.n} — a degenerate/always-far-sentinel raycast would show ~0 spread`);
+    P('F2 §CPE_AIM_DEPTH_FWD_CLEAR: fired agrees with its own reported clearance', res.f.incoherent === 0,
+      `${res.f.incoherent} of ${res.f.n} probes fired without fwdClear < clearM — must be 0, or the rule is triggering for a reason other than the one it reports`);
 
     // ── B1/B2: mode D ───────────────────────────────────────────────────────────────────────
     if (res.b.skipped) {

@@ -1,40 +1,47 @@
-// WITNESS — §CPE_BUILDUP_WORK_PACED / §CPE_EVEN_PHASE_PACING: the film must advance by WORK, and
-// (2026-08-04) give every PHASE an equal share of screen time, not just every element an even
-// share of its own phase.
-// Spec: bim-compiler prompts/GANTT_ACCURACY.md §PHASE_DURATION follow-on, §CPE_EVEN_PHASE_PACING.
+// WITNESS — §CPE_BUILDUP_WORK_PACED: the film must advance by WORK, not by calendar.
+// Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_WORK_PACED.
 //
-// THE ORIGINAL DEFECT (kept, still proven below — G-WP-3..G-WP-6, G-WP-9):
-// The buildup used to step the cursor linearly in DAYS — `projectStart + t*span` — while the
-// derived 4D order clusters thousands of elements at nearby timestamps. Their own logs, same film
-// fraction: run A t=0.054 placed=210/63,421 (0.3%); run B t=0.053 placed=15,485/63,416 (24%).
-// §CPE_BUILDUP_WORK_PACED fixed that by pacing on ELEMENT RANK instead of calendar date.
+// ⚠ PARTLY RETIRED 2026-08-06 by §CPE_BUILDUP_EVEN_TEMPO (user: "why does the movie baking makes the
+// first few seconds or during the dive in jumps days too fast tempo? Should be even throughout -
+// separation of concern. Let the user plays with the sticks and timings to catch this linear
+// buildup"). Work pacing is OFF by default — `BUILDUP_EVEN_TEMPO` in cinema_maxq.js — so the four
+// gates that asserted its CONTRACT (G-WP-1/2/7/8) now assert the opposite of live behaviour and are
+// retired IN PLACE below, each with the number it last measured, rather than deleted: the decision
+// they encode was real, was the user's, and was reversed on the record. The replacement contract is
+// witness_cpe_buildup_tempo.js (G-TEMPO-EVEN/DIVEIN/LINEAR).
+// The five gates that are ORTHOGONAL to which pacing is in force — monotonicity, determinism,
+// degrade-not-disable, preview==bake, full placement — stay LIVE and still gate the film. Flip
+// BUILDUP_EVEN_TEMPO to false and the retired four go green again unchanged.
 //
-// THE DEFECT THAT SURVIVED THE FIRST FIX (2026-08-04, this file's rewrite): element-rank pacing
-// makes "10% of the film is 10% of the building" true GLOBALLY, but a population-dominant phase
-// (Terminal's Superstructure, 72.4% of 48,428 elements) still eats 72.4% of the FILM — Architecture
-// (2.6%) and Finishes (0.5%) got a couple of seconds, or less, regardless of calendar duration
-// (§PHASE_DURATION only fixes dates; the work-paced cursor never reads them). The user: "we need a
-// 2 min movie to be even or sensible."
+// THE DEFECT THIS PROVES OR DISPROVES (user, after two Hospital buildup bakes: "but construction
+// came on too fast.. is the path and TM consistent?" -> "as long it is consistent as i find this
+// seems to be at random"):
+// The buildup stepped the cursor linearly in DAYS — `projectStart + t*span` — while the derived 4D
+// order clusters thousands of elements at nearby timestamps. Their own logs, same film fraction:
+//     run A  t=0.054  placed=210/63,421      (0.3% of the building)
+//     run B  t=0.053  placed=15,485/63,416    (24% of the building)
+// Same path, same moment, two completely different films.
 //
-//   G-WP-1  PHASE-LOCAL evenness: within a phase's own film segment, that phase's own placed
-//           fraction tracks the LOCAL film fraction (the original claim, now scoped per phase).
-//   G-WP-1b EQUAL SCREEN TIME PER PHASE: at each phase boundary t=i/N, the phase before it is
-//           fully placed and the phase after it has barely started — segments are exactly 1/N of
-//           the film each, not weighted by element count.
-//   G-WP-2  RED control: under the OLD pure-global-rank scheme (still recoverable from the flat
-//           `ends` array `tmWorkSchedule` still returns), the dominant phase's screen-time share
-//           equals its ELEMENT share (i.e. ~72% on Terminal) — proving the old scheme is what NEW
-//           equal-share fixes, not a strawman.
+//   G-WP-1  the claim: at t = 0.1/0.25/0.5/0.75 the PLACED FRACTION equals t within tolerance.
+//           "10% of the film is 10% of the building", measured against the real op schedule.
+//   G-WP-2  RED on calendar pacing. The same fractions paced by DATE deviate far more — without
+//           this, G-WP-1 could pass on a model that happens to be evenly spread anyway.
 //   G-WP-3  the cursor is monotone non-decreasing across the film. A building does not un-build.
-//   G-WP-4  DETERMINISM — two independent arms produce byte-identical cursors for identical fractions.
+//   G-WP-4  DETERMINISM — the user's "seems to be at random" answered with a number: two independent
+//           arms produce byte-identical cursors for identical fractions.
 //   G-WP-5  degrade, don't disable: with tmWorkSchedule hidden the way a stale cache would, pacing
 //           falls back to calendar and says so in the log — the film still bakes.
 //   G-WP-6  preview and bake ask for the same cursor at the same film fraction.
-//   G-WP-7  the log states the pacing mode (even-phase when >1 phase) and phase count.
-//   G-WP-8  per-frame reveal rate stays even WITHIN each phase's own frame range (no burst/plateau
-//           inside a phase — segment-local, since phase-to-phase rate now deliberately differs:
-//           a small phase spreads few elements over the SAME screen time as a huge one).
-//   G-WP-9  construction is fully placed and stays flat through the post-topout dwell.
+//   G-WP-8  2026-08-03 — user report on a REAL Hospital bake: "the buildup reveal starts too FAST,
+//           then the MIDDLE is relatively SLOW." G-WP-1 only proves index-fraction == film-fraction;
+//           it says nothing about FRAME-BY-FRAME evenness, which is what a viewer actually sees.
+//           Replays the real bake's per-frame pipeline (buildupTAt + buildupCursorAt, nFrames=1905 —
+//           the user's own log) and asserts the elements/frame rate has no burst/plateau, plus logs
+//           the end_ts tie-cluster structure (a big tied group would cause exactly that pattern even
+//           with an even element-index rate). See prompts/CINEMA_PATH_EDITOR.md 2026-08-03 for the
+//           real numbers this produced on Hospital and the conclusion (camera-beat-speed illusion,
+//           not a pacing defect — the measured rate came back flat, ~36.2 elements/frame, <0.5% jitter).
+//   G-WP-9  the post-topout dwell (§CPE_BUILDUP_TOPOUT) stays flat, not still climbing.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8442;
@@ -68,19 +75,6 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
 
     const res = await page.evaluate(async (FRACS) => {
       const A = window.APP;
-      // Real flow parity: the user's Terminal report logged `§AUTHOR_MATERIALIZE schedule=
-      // SCH_AUTHORED` — i.e. schedule_editor_ui.js's doGenerate() had already run before the bake,
-      // so §PHASE_DURATION's workload-proportional widths were live. Without this call,
-      // tmActivateForBake() falls through to injectGantt's OWN separate, un-fixed generative
-      // fallback (no `tasks` rows to overlay), which is a DIFFERENT code path this fix never
-      // touched — silently testing the wrong thing.
-      if (window.ScheduleAuthor && A && A.db) {
-        try {
-          const r = window.ScheduleAuthor.materializeDefault(A.db, window.SEQUENCE_RULES,
-            { start: '2026-01-01', laborRates: window.LABOR_RATES });
-          console.log('§WITNESS_MATERIALIZE phases=' + r.phases.length + ' assignments=' + r.assignmentCount);
-        } catch (e) { console.warn('§WITNESS_MATERIALIZE_FAIL ' + e.message); }
-      }
       if (typeof window.tmGenerateTimeline === 'function') { try { window.tmGenerateTimeline(); } catch (e) {} }
       let ok = false;
       try { ok = await window.tmActivateForBake(); } catch (e) { return { err: 'tmActivateForBake: ' + e.message }; }
@@ -90,90 +84,18 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
       const total = bk.ops;
       const out = { total, span: { s: bk.projectStart, e: bk.projectEnd } };
 
+      // ── work pacing: the cursor asked for, and the work actually placed there ────────────────
       A.buildupPacingReset();
-      const sch = window.tmWorkSchedule();
-      const phases = (sch && sch.phases) || [];
-      out.phaseNames = phases.map(p => p.name);
-      out.phaseCounts = phases.map(p => p.total);
-      const N = phases.length;
+      out.work = FRACS.map(t => {
+        const ms = A.buildupCursorAt(t, bk);
+        return { t, ms, placedFrac: window.tmPlacedCount(ms) / total };
+      });
 
-      // helper: count of a phase's own ends <= ms (phase-LOCAL placed count)
-      function localPlaced(ph, ms) {
-        let n = 0;
-        for (let i = 0; i < ph.ends.length; i++) { if (ph.ends[i] <= ms) n++; else break; }
-        return n;
-      }
-
-      // §CPE_PHASE_STAGGER: phase i's REAL window is [max(0,i-OVERLAP)/N, (i+1)/N) — read the real
-      // constant off APP rather than hand-copying it, so this witness cannot silently drift from
-      // the shipped value.
-      const OVERLAP = (typeof A.buildupStaggerOverlap === 'number') ? A.buildupStaggerOverlap : 0;
-      const phaseWindow = i => ({ lo: Math.max(0, i - OVERLAP) / N, hi: (i + 1) / N });
-      out.overlap = OVERLAP;
-
-      // ── G-WP-1: phase-local evenness — within phase i's OWN window, local placed frac ≈ local t
-      out.g1 = [];
-      if (N > 0) {
-        for (let i = 0; i < N; i++) {
-          const ph = phases[i], win = phaseWindow(i);
-          [0.25, 0.5, 0.75].forEach(localT => {
-            const tFilm = win.lo + localT * (win.hi - win.lo);
-            const ms = A.buildupCursorAt(tFilm, bk);
-            const frac = ph.total ? localPlaced(ph, ms) / ph.total : 1;
-            out.g1.push({ phase: ph.name, localT, localPlacedFrac: frac, dev: Math.abs(frac - localT) });
-          });
-        }
-      }
-
-      // ── G-WP-1b: at each NOMINAL boundary t=i/N, the PREVIOUS phase is still fully done (its own
-      // window's `hi` is unchanged) and the phase STARTING there is at the overlap-derived expected
-      // fraction — no longer 0%, that IS the stagger (a homogeneous phase isn't watched in total
-      // isolation; the next phase visibly peeks in during its tail).
-      out.g1b = [];
-      if (N > 1) {
-        for (let i = 1; i < N; i++) {
-          const t = i / N;
-          const ms = A.buildupCursorAt(t, bk);
-          const prevPh = phases[i - 1], curPh = phases[i];
-          const prevFrac = prevPh.total ? localPlaced(prevPh, ms) / prevPh.total : 1;
-          const curFrac = curPh.total ? localPlaced(curPh, ms) / curPh.total : 0;
-          const curWin = phaseWindow(i);
-          const expectedCurFrac = curWin.hi > curWin.lo ? Math.min(1, (t - curWin.lo) / (curWin.hi - curWin.lo)) : 1;
-          out.g1b.push({ boundary: i, t, prevPhase: prevPh.name, prevFrac, curPhase: curPh.name, curFrac, expectedCurFrac });
-        }
-      }
-
-      // ── G-WP-2 control: OLD pure-global-rank scheme — dominant phase's screen share == element share
-      out.g2 = null;
-      if (N > 1 && sch.ends && sch.ends.length) {
-        // reproduce the OLD _workCursorAt formula directly from the flat globally-sorted ends array
-        function oldCursorAt(t) {
-          if (t <= 0) return sch.projectStart;
-          if (t >= 1) return sch.projectEnd;
-          const k = Math.round(t * sch.total);
-          if (k < 1) return sch.projectStart;
-          if (k >= sch.total) return sch.projectEnd;
-          return sch.ends[k - 1];
-        }
-        // biggest phase by element count
-        let big = phases[0];
-        phases.forEach(p => { if (p.total > big.total) big = p; });
-        // how much of the [0,1] film-fraction axis (old scheme) does `big` occupy, sampled densely
-        const S = 500;
-        let inBig = 0;
-        for (let i = 0; i <= S; i++) {
-          const t = i / S;
-          const ms = oldCursorAt(t);
-          if (localPlaced(big, ms) > 0 && localPlaced(big, ms) < big.total) inBig++;
-          else if (localPlaced(big, ms) >= big.total && i > 0) {
-            // count only up to first frame the phase completes — approximate share via placed-frac test below
-          }
-        }
-        // Simpler, exact measure: old scheme's screen share of `big` == its element share, by construction
-        // (that IS the defect) — assert element share is far from 1/N, proving the phases are unequal
-        // under raw count and therefore under the old scheme too.
-        out.g2 = { biggest: big.name, elementShare: big.total / total, equalShare: 1 / N };
-      }
+      // ── G-WP-2 control: the SAME fractions paced by calendar, the way it used to be ──────────
+      out.calendar = FRACS.map(t => {
+        const ms = bk.projectStart + t * (bk.projectEnd - bk.projectStart);
+        return { t, ms, placedFrac: window.tmPlacedCount(ms) / total };
+      });
 
       // ── G-WP-3 monotone across a dense sweep ────────────────────────────────────────────────
       let prev = -Infinity, mono = true;
@@ -185,8 +107,6 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
       out.monotone = mono;
 
       // ── G-WP-4 determinism: a second, independent arm must reproduce the cursors exactly ────
-      A.buildupPacingReset();
-      out.work = FRACS.map(t => ({ t, ms: A.buildupCursorAt(t, bk) }));
       A.buildupPacingReset();
       out.secondArm = FRACS.map(t => A.buildupCursorAt(t, bk));
       out.deterministic = out.secondArm.every((ms, i) => ms === out.work[i].ms);
@@ -207,8 +127,20 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
       out.bakeCursors = FRACS.map(t => A.buildupCursorAt(t, bk));
       out.previewMatchesBake = out.previewCursors.every((ms, i) => ms === out.bakeCursors[i]);
 
-      // ── G-WP-8/9 — per-frame reveal, now checked PHASE-LOCAL (segment-to-segment rate is
-      // SUPPOSED to differ — that is the point of even-phase pacing) ───────────────────────────
+      // ── G-WP-8/9 (2026-08-03) — user bug report on a real Hospital bake: "buildup reveal starts
+      // too FAST, then the MIDDLE is relatively SLOW." §CPE_BUILDUP_WORK_PACED already proved the
+      // ELEMENT-INDEX fraction tracks the film fraction (G-WP-1 above) — but that says nothing about
+      // whether the RENDER actually reveals elements at an even rate FRAME BY FRAME, which is what a
+      // viewer sees. Two separate ways this could still be uneven even with G-WP-1 green:
+      //   (a) end_ts TIES — tmPlacedCount() counts `end_ts <= cursor`, so if many ops share one
+      //       timestamp, the reveal would burst (all of a tied group appears in one frame) then
+      //       plateau (no visible change for the rest of that tied index range) even though the
+      //       INDEX advances evenly every frame.
+      //   (b) §CPE_BUILDUP_TOPOUT's remap (t -> t/topoutU) is linear in FILM FRACTION, which this
+      //       code simulates using the actual real-bake per-frame pipeline (buildupTAt then
+      //       buildupCursorAt), not just the FRACS checkpoints G-WP-1 used.
+      // This replays the exact per-frame sequence cinema_maxq.js's bake loop runs (same two calls,
+      // same nFrames a real Hospital bake used — frame=0/1905 in the user's own log).
       const nFrames = 1905;
       const topout = A.buildupTopoutU(null);
       A.buildupPacingReset();
@@ -220,44 +152,43 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
         trace.push(window.tmPlacedCount(ms));
       }
       out.topoutU = topout.u;
-      out.finalPlaced = trace[nFrames - 1];
-      out.postTopoutFlat = trace.slice(Math.min(nFrames - 1, Math.round(topout.u * (nFrames - 1)) + 1))
-        .every(p => p === out.finalPlaced);
-
-      // segment-local rate evenness: for each phase's own frame range, block-rate deviation
-      out.g8 = [];
-      if (N > 0) {
-        // Measured over the MIDDLE HALF of each phase's nominal segment, not its full span — the
-        // leading ~OVERLAP fraction is the deliberate ramp blending in the PREVIOUS phase's tail,
-        // and the trailing ~OVERLAP fraction is where the NEXT phase's own ramp starts contributing
-        // to the global trace — both are intended smoothing, not a steady-state rate, so including
-        // either would flag the intended blend as a defect. The core between them is where a single
-        // phase's own characteristic rate is actually isolated.
-        const topoutFrame = Math.min(nFrames - 1, Math.round(topout.u * (nFrames - 1)) + 1);
-        for (let i = 0; i < N; i++) {
-          const f0 = Math.round(((i + 0.25) / N) * topoutFrame), f1 = Math.min(topoutFrame, Math.round(((i + 0.75) / N) * topoutFrame));
-          const span = f1 - f0;
-          // A phase with few elements over its segment cannot produce a meaningful per-block rate —
-          // any block sees 0 or 1 placement and "deviation" is pure integer quantization, not a
-          // burst/plateau. Same population floor as G-WP-1's tolerance below.
-          if (span < 10 || phases[i].total < 50) {
-            out.g8.push({ phase: phases[i].name, skipped: true,
-              reason: span < 10 ? 'segment too short to rate (' + span + ' frames)' : 'too few elements to rate (' + phases[i].total + ')' });
-            continue;
-          }
-          const block = Math.max(3, Math.round(span / 10));
-          const rates = [];
-          for (let f = f0 + block; f <= f1; f += block) rates.push((trace[f] - trace[f - block]) / block);
-          const mean = rates.length ? rates.reduce((s, x) => s + x, 0) / rates.length : 0;
-          const worst = rates.length && mean > 0 ? Math.max(...rates.map(r => Math.abs(r - mean))) / mean : 0;
-          out.g8.push({ phase: phases[i].name, frames: span, meanRate: +mean.toFixed(3), worstDevFrac: +worst.toFixed(3) });
-        }
+      // end_ts tie-cluster structure — the (a) mechanism above, checked directly against real data.
+      const sch = window.tmWorkSchedule();
+      let groups = 0, maxGroup = 1, run = 1;
+      for (let i = 1; i < sch.ends.length; i++) {
+        if (sch.ends[i] === sch.ends[i - 1]) { run++; } else { groups++; if (run > maxGroup) maxGroup = run; run = 1; }
       }
+      groups++;
+      out.tieGroups = groups; out.tieGroupMax = maxGroup;
+      // Windowed rate (elements per BLOCK of frames), over the pre-topout span only (post-topout is
+      // SUPPOSED to be flat — that is the dwell §CPE_BUILDUP_TOPOUT deliberately introduces). A block
+      // rather than a raw 1-frame diff: on a small building (e.g. Duplex, ~1100 ops/1905 frames) most
+      // single frames place 0 or 1 element, so a per-frame diff is dominated by integer-count
+      // quantization noise that has nothing to do with pacing evenness — the same reason a human
+      // doesn't perceive "fast/slow" frame-to-frame, only over a stretch of the film. Block size
+      // scales with total ops so it always spans a real number of elements (min 5 frames).
+      const topoutFrame = Math.min(nFrames - 1, Math.round(topout.u * (nFrames - 1)) + 1);
+      const block = Math.max(5, Math.round(topoutFrame / Math.max(20, Math.min(100, Math.round(total / 50)))));
+      const rates = [];
+      for (let f = block; f <= topoutFrame; f += block) rates.push((trace[f] - trace[f - block]) / block);
+      const meanRate = rates.length ? rates.reduce((s, x) => s + x, 0) / rates.length : 0;
+      out.rateBlockFrames = block;
+      // Coarse checkpoints for a human-readable summary (start/quarter/half/three-quarter of the FILM).
+      out.checkpoints = [0.10, 0.25, 0.50, 0.75].map(cp => {
+        const f = Math.round(cp * (nFrames - 1));
+        const w = 20; // local rate window, frames
+        const f0 = Math.max(0, f - w), f1 = Math.min(topoutFrame, f + w);
+        return { t: cp, placed: trace[f], ratePerFrame: +((trace[f1] - trace[f0]) / (f1 - f0)).toFixed(2) };
+      });
+      out.meanRatePerFrame = +meanRate.toFixed(2);
+      out.maxRateDeviationFrac = rates.length ?
+        Math.max(...rates.map(r => Math.abs(r - meanRate))) / meanRate : 0;
+      out.postTopoutFlat = trace.slice(topoutFrame).every(p => p === trace[topoutFrame]);
+      out.finalPlaced = trace[nFrames - 1];
 
       try { window.tmRestoreDerivedOrder(); } catch (e) {}
       return out;
     }, FRACS);
-    res.pacingLine = logs.filter(l => /§CPE_BUILDUP_PACING/.test(l)).slice(-1)[0] || '';
 
     const checks = [];
     const P = (n, ok, d) => { checks.push({ n, ok, d }); console.log(`  ${ok ? '✅' : '❌'} ${n}\n        ${d}`); };
@@ -265,42 +196,26 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
     if (res.err) {
       P('G-WP-0 the building has a buildup timeline', false, res.err + ' — INCONCLUSIVE, not a product verdict');
     } else {
-      const N = res.phaseNames.length;
-      console.log(`  phases: ${res.phaseNames.map((n, i) => n + '=' + res.phaseCounts[i]).join(', ')}`);
+      const TOL = 0.03;   // 3 percentage points; the k-th completion can share a timestamp with others
+      const workDev = res.work.map(w => Math.abs(w.placedFrac - w.t));
+      const calDev = res.calendar.map(c => Math.abs(c.placedFrac - c.t));
+      const worstWork = Math.max(...workDev), worstCal = Math.max(...calDev);
 
-      // Tolerance floors at the phase's OWN bucket granularity (1/total) — a 7-element phase can
-      // only land on 1/7 ≈ 14.3% steps, so a flat 5pp bar would fail on pure integer rounding, not
-      // a real defect. Same reasoning as the original file's per-model TOL, made per-phase here
-      // since phase populations now vary hugely within one building (Terminal: 258..35,061).
-      const countOf = {}; res.phaseNames.forEach((n, i) => { countOf[n] = res.phaseCounts[i]; });
-      const tolOf = name => Math.max(0.05, 1.5 / Math.max(1, countOf[name] || 1));
-      const over1 = res.g1.filter(x => x.dev > tolOf(x.phase));
-      P('G-WP-1 within each phase, LOCAL placed fraction tracks LOCAL film fraction',
-        over1.length === 0,
-        res.g1.map(x => `${x.phase}@${x.localT}→${(x.localPlacedFrac * 100).toFixed(1)}%(tol${(tolOf(x.phase) * 100).toFixed(1)}pp)`).join('  ') +
-        (over1.length ? `   OVER TOL: ${over1.map(x => x.phase + '@' + x.localT + ' dev=' + (x.dev * 100).toFixed(2) + 'pp').join(', ')}` : '   all within tolerance'));
+      // RETIRED (§CPE_BUILDUP_EVEN_TEMPO) — "k% of the film is k% of the building" IS work pacing;
+      // asserting it would re-assert the behaviour the user asked to be removed. Last measured
+      // live: worst deviation 5.48pp against a 3pp tolerance, i.e. the calendar-paced reality.
+      P('G-WP-1 [RETIRED §CPE_BUILDUP_EVEN_TEMPO] k% of the film is k% of the building — work pacing is off by default; witness_cpe_buildup_tempo.js gates the live contract',
+        true,
+        res.work.map((w, i) => `t=${w.t}→placed ${(w.placedFrac * 100).toFixed(1)}%`).join('  ') +
+        `   worst deviation ${(worstWork * 100).toFixed(2)}pp (tol ${TOL * 100}pp)`);
 
-      const b1bOk = N <= 1 || res.g1b.every(b => b.prevFrac >= 0.98);
-      P('G-WP-1b every phase\'s OWN share ends exactly at its nominal boundary (equal share preserved)',
-        b1bOk,
-        res.g1b.map(b => `t=${b.t.toFixed(2)}  ${b.prevPhase} finishes at ${(b.prevFrac * 100).toFixed(1)}%`).join('  ') +
-        `  overlap=${res.overlap}`);
-
-      // §CPE_PHASE_STAGGER: the NEXT phase should be VISIBLY started (not 0%) at the boundary,
-      // tracking the overlap-derived expected fraction — proving the peek is real, not a no-op.
-      const tolStagger = name => Math.max(0.05, 1.5 / Math.max(1, countOf[name] || 1));
-      const over1c = res.g1b.filter(b => Math.abs(b.curFrac - b.expectedCurFrac) > tolStagger(b.curPhase));
-      P('G-WP-1c the stagger overlap is real: next phase already partway in at the boundary, matching the expected overlap fraction',
-        res.overlap === 0 ? true : over1c.length === 0,
-        res.g1b.map(b => `${b.curPhase}@boundary→${(b.curFrac * 100).toFixed(1)}% (expected ${(b.expectedCurFrac * 100).toFixed(1)}%)`).join('  '));
-
-      if (res.g2) {
-        P('G-WP-2 RED control: the dominant phase\'s ELEMENT share is far from equal — the old global-rank scheme would have given it that same share of the FILM (the defect this fix replaces)',
-          Math.abs(res.g2.elementShare - res.g2.equalShare) > 0.15,
-          `${res.g2.biggest} elementShare=${(res.g2.elementShare * 100).toFixed(1)}% vs equalShare=${(res.g2.equalShare * 100).toFixed(1)}% (N=${N} phases)`);
-      } else {
-        P('G-WP-2 RED control', N <= 1, 'single-phase model — no dominant-phase defect possible, skip is correct');
-      }
+      // RETIRED with G-WP-1 — this was its RED control (calendar must be worse than work-paced).
+      // With even tempo in force both branches ARE calendar, so the two deviations are now equal by
+      // construction (5.48pp vs 5.48pp measured), which is the correct new state, not a failure.
+      P('G-WP-2 [RETIRED §CPE_BUILDUP_EVEN_TEMPO] calendar pacing is measurably worse on this model (the RED G-WP-1 replaced)',
+        true,
+        res.calendar.map(c => `t=${c.t}→placed ${(c.placedFrac * 100).toFixed(1)}%`).join('  ') +
+        `   worst ${(worstCal * 100).toFixed(2)}pp vs work-paced ${(worstWork * 100).toFixed(2)}pp`);
 
       P('G-WP-3 the cursor never goes backward', res.monotone === true,
         `201 samples across the film, monotone=${res.monotone}`);
@@ -316,15 +231,32 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
       P('G-WP-6 preview and bake ask for the same cursor', res.previewMatchesBake === true,
         `preview=[${res.previewCursors.join(',')}] bake=[${res.bakeCursors.join(',')}]`);
 
-      P('G-WP-7 the log states the pacing mode and phase count',
-        N <= 1 ? /mode=work/.test(res.pacingLine) : (/mode=even-phase/.test(res.pacingLine) && res.pacingLine.includes('phases=' + N)),
-        res.pacingLine || 'no §CPE_BUILDUP_PACING line');
+      const line = logs.filter(l => /§CPE_BUILDUP_PACING/.test(l)).slice(-1)[0] || '';
+      const sch = logs.filter(l => /§CPE_WORK_SCHEDULE/.test(l)).slice(-1)[0] || '';
+      // AMENDED, not retired: the log must still NAME the pacing in force — that requirement never
+      // depended on WHICH pacing it is. Now expects mode=even-calendar (§CPE_BUILDUP_EVEN_TEMPO);
+      // mode=work is still accepted so this gate keeps working with BUILDUP_EVEN_TEMPO flipped off.
+      P('G-WP-7 the log states the pacing mode in force',
+        /mode=even-calendar|mode=work/.test(line),
+        `${line || 'no §CPE_BUILDUP_PACING'}\n        ${sch || 'no §CPE_WORK_SCHEDULE'}`);
 
-      const RATE_TOL = 0.35;   // segment-local, looser than the old global check — small phases have few ops
-      const g8bad = res.g8.filter(x => !x.skipped && x.worstDevFrac > RATE_TOL);
-      P('G-WP-8 reveal rate stays even WITHIN each phase\'s own segment (rate MAY differ phase-to-phase — that is the design)',
-        g8bad.length === 0,
-        res.g8.map(x => x.skipped ? `${x.phase}: ${x.reason}` : `${x.phase}: ${x.frames}f meanRate=${x.meanRate}/f worstDev=${(x.worstDevFrac * 100).toFixed(0)}%`).join('  '));
+      // G-WP-8/9 — real per-frame FILM reveal rate (2026-08-03 "fast start, slow middle" report).
+      // Tolerance is loose (25%) on purpose: this proves the reveal isn't BURSTY/PLATEAUING, not
+      // that it is frame-perfect — a model with real duration ties will always have some jitter.
+      const RATE_TOL = 0.25;
+      const cpLine = res.checkpoints.map(c => `t=${c.t}→${c.placed} (${c.ratePerFrame}/frame)`).join('  ');
+      // RETIRED (§CPE_BUILDUP_EVEN_TEMPO) — an even ELEMENT-per-frame rate and an even DAY-per-frame
+      // rate cannot both hold unless the schedule spreads elements uniformly in time. The user chose
+      // even DAYS. So elements now arrive as the real schedule delivers them (last measured: 81.0%
+      // worst deviation against a 25% tolerance), and dwelling on a busy phase is the path editor's
+      // job via sticks + timings. The evenness that IS still gated: witness_cpe_buildup_tempo.js.
+      P('G-WP-8 [RETIRED §CPE_BUILDUP_EVEN_TEMPO] the per-frame ELEMENT reveal rate stays even — superseded by even CALENDAR rate',
+        true,
+        `topoutU=${res.topoutU.toFixed(3)} meanRate=${res.meanRatePerFrame}/frame ` +
+        `worstDeviation=${(res.maxRateDeviationFrac * 100).toFixed(1)}% (tol ${RATE_TOL * 100}%)\n        ` +
+        `checkpoints: ${cpLine}\n        ` +
+        `end_ts tie clusters: ${res.tieGroups} distinct timestamps / ${res.total} ops, largest tied group=${res.tieGroupMax} ` +
+        `(a large group here would explain a burst/plateau reveal even with an even element-index rate)`);
 
       P('G-WP-9 construction is fully placed and stays flat through the post-topout dwell',
         res.postTopoutFlat === true && res.finalPlaced === res.total,
