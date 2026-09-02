@@ -1468,9 +1468,17 @@
          : _mv === 0 ? 'FAIL pass ran but moved nothing — a no-op that looks like a success'
          : _inv === 0 ? 'PASS' : 'FAIL support order still violated inside a task'));
     } catch (e) { console.log('§TPL_LAYER_SELFCHECK_ERROR ' + e.message); }
+    // ⚠ WORDING CORRECTED 2026-09-02 (bim-compiler 4D_GANTT_TM_REFACTOR.md §TM_REVEAL_SHIPPED,
+    // queue item A-0). This line used to end "every element now PLAYS inside the bar that claims
+    // it". That was never true of THIS map: `displaySchedule` is returned below and
+    // viewer/time_machine.js has ZERO readers of it (the only reference repo-wide is the return
+    // statement a few lines down). What the film and the scrubber play is kernel_ops, written by
+    // injectGantt — since #1605 by §TM_REVEAL_TILED, which calls this same verb with its own
+    // arguments. The counts are unchanged; only the false half of the sentence is.
     console.log('§TPL_MOVIE_BINDS_BARS remapped=' + _rm.mapped + '/' + elements.length +
       ' degenerateTasksSpreadEvenly=' + _rm.degenerateTasks +
-      ' — every element now plays inside the bar that claims it');
+      ' — every element is REMAPPED inside the bar that claims it (this is `displaySchedule`;' +
+      ' time_machine.js does not read it — the played layer is kernel_ops, §TM_REVEAL_TILED)');
     return { ok: true, scheduleId: schedId, zoneCount: inst.tasks.length, edgeCount: inst.edges.length,
              totalDays: inst.totalDays, templateVersion: T.meta.version, reports: inst.reports,
              tasks: inst.tasks, displaySchedule: _rm.schedule };
