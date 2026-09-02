@@ -31,8 +31,8 @@
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1127';   // bump on each deploy; per-change detail is the git commit message.
-// v1127 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
+const CACHE_VERSION = 'v1128';   // bump on each deploy; per-change detail is the git commit message.
+// v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
 // so it lit walls facing AWAY from the sun as hard as walls facing it: measured away/sun separation
@@ -41,6 +41,17 @@ const CACHE_VERSION = 'v1127';   // bump on each deploy; per-change detail is th
 // (42/42 and 70/70 asserted still on it). effects.js is in PRECACHE_ASSETS and viewer.html's query
 // is bumped effects.js?v=30->31 in the SAME PR (§CRISIS LESSON 4).
 // Witness: witness_sun_fill_ratio.js (§SFR_REDGREEN, RED CONTROL 0.0005/0.0000).
+// v1127 (2026-09-02) §MEP_COLOR_SURVIVES_PHOTOREAL: streaming.js gives an MEP element its trade
+// HUE when its own colour carries none, keeping the element's own V (and every roughness/metalness/
+// envMap/triplanar term) untouched — so MEP reads by system in an Alt+S still and the Alt+C movie
+// instead of the uniform grey metal the metal triplanar texture multiplied out of the shipped
+// achromatic off-white default. §MEP_DISC_TINT's `!rgbaStr` gate + its 3-class DISC_TINT_CLASSES
+// list are subsumed by ONE owner, A._mepDiscAlbedo. viewer.html streaming.js?v=67->68 bumped in
+// the SAME commit (§CRISIS LESSON 4 — a precached streaming.js is served past a CACHE_VERSION bump
+// without its own ?v= change). The disc->hue mapping is an AUTHORED choice reusing A.DISC_COLORS
+// verbatim, NOT a published MEP standard — no such convention exists in the model data.
+// Witness: witness_mep_color_photoreal.js (W-MEP-COLOR-PHOTOREAL) — 55/55, five buildings, red
+// control + tier-1 byte-identity on the user's own fire-red lever (1300/1300 elements).
 // v1126 (2026-09-02) §CPE_AIM_DEPTH_RETIRED: viewer/effects.js — §CPE_AIM_DEPTH, the last automatic
 // exception to path-follow, is REMOVED on user directive ("its best to leave alone its pointing
 // along its path ... to stay simple and predictable"). Gone with it: §CPE_AIM_GRID, §CPE_AIM_LATCH
