@@ -4260,8 +4260,9 @@
       console.log('§TM_REVEAL_TILED skip reason=schedule not display-authored (imported/captured/baselined windows) — affine rescale kept');
       return null;
     }
-    var SA = (typeof window !== 'undefined' && window.ScheduleAuthor) ||
-             (typeof ScheduleAuthor !== 'undefined' ? ScheduleAuthor : null);
+    // Resolved through `window` only — the same seam every real UI call site in this file uses for
+    // ScheduleAuthor (buildTaskIndex, generateGanttSchedule); a witness sandbox supplies window.ScheduleAuthor.
+    var SA = (typeof window !== 'undefined' && window.ScheduleAuthor) || null;
     if (!SA || typeof SA.remapSolveToTasks !== 'function') {
       console.log('§TM_REVEAL_TILED skip reason=ScheduleAuthor.remapSolveToTasks unavailable — affine rescale kept');
       return null;
