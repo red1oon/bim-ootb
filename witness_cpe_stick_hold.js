@@ -40,12 +40,18 @@
 //   G-SH-8  no regression: naturalTotal == sum(naturalSec.*), replan deterministic, and a path with
 //           every hold 0 is BYTE-IDENTICAL to the same path planned with no hold field at all.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
+// §W_PROGRESS (bim-compiler prompts/WITNESS_INTERFACE_FRAMEWORK.md) — Hospital is the FIRST building
+// in the default list here, so the silent stretch A-16b names is the first thing this witness does.
+const Progress = require('./witness_kit/progress.js');
 
 const PORT = process.env.PORT || 8450;
 const BUILDINGS = (process.env.BLDS || 'Hospital,Duplex').split(',');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
+  const pr = Progress('CPE_STICK_HOLD');
+  pr.note(`port=${PORT} buildings=${BUILDINGS.join(',')}`);
+  pr.stage('launch-browser');
   const browser = await puppeteer.launch({
     headless: 'new', protocolTimeout: 900000,
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--no-sandbox', '--enable-unsafe-swiftshader'],
@@ -55,23 +61,32 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   for (const BLD of BUILDINGS) {
     console.log(`\n${'='.repeat(78)}\n${BLD}\n${'='.repeat(78)}`);
+    pr.stage(`${BLD}/open-page`);
     const page = await browser.newPage();
     await page.setViewport({ width: 1200, height: 700 });
     const logs = [];
-    page.on('console', m => logs.push(m.text()));
+    // §W_PROGRESS rides this same hook; its own lines are kept out of `logs`.
+    const { isProgress } = pr.attach(page);
+    page.on('console', m => { const t = m.text(); if (!isProgress(t)) logs.push(t); });
     page.on('pageerror', e => logs.push('PAGEERROR ' + e.message));
+    pr.stage(`${BLD}/goto-viewer`);
     await page.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_extracted.db`,
       { waitUntil: 'domcontentloaded', timeout: 120000 });
+    pr.stage(`${BLD}/wait-APP-ready`);
     await page.waitForFunction(() => window.APP && window.APP.cinemaPathPlan && window.APP.dbQuery,
       { timeout: 300000 });
     await sleep(9000);
+    // THE LONG ONE — up to 5 min of element_transforms streaming, previously silent.
+    pr.stage(`${BLD}/wait-element-transforms`);
     await page.waitForFunction(() => {
       try { const r = window.APP.dbQuery('SELECT COUNT(*) FROM element_transforms'); return r && r[0][0] > 0; }
       catch (e) { return false; }
     }, { timeout: 300000, polling: 3000 });
 
     const DUR = 40, HOLD = 1.0;
-    const res = await page.evaluate(async (DUR, HOLD) => {
+    pr.stage(`${BLD}/measure(in-page)`);
+    const res = await page.evaluate(async (DUR, HOLD, PP) => {
+      const W = (s) => { try { console.log(PP + s); } catch (e) { /* console gone */ } };
       const A = window.APP;
       const out = { err: null };
       const norm = v => { const L = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x/L, y: v.y/L, z: v.z/L }; };
@@ -83,6 +98,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         // A real 3-band path near the building, derived from the plan's own waypoints — the same
         // shape the editor seeds, so the "last stick" is band index 1 (length-2).
+        W('derive-bands');
         const planD = A.cinemaPathPlan(DUR);
         const s0 = planD.waypoints[0];
         // ⚠ A DOG-LEG, not a straight line — and this is a MEASURED correction to this file, not a
@@ -101,6 +117,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             c: L.c, d: L.d, len: 10, hold: holds[i] || 0, _stick: i > 0 && i < 2,
           }));
         };
+        W('plan-nohold+hold arms');
         const planNoHold = A.cinemaPathPlan(DUR, { bands: mkBands([0, 0, 0]) });
         const planHold   = A.cinemaPathPlan(DUR, { bands: mkBands([0, HOLD, 0]) });
         out.noHold = { out: planNoHold.naturalSec.out, total: planNoHold.naturalTotal,
@@ -181,6 +198,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         }
         // ── G-SH-8: all-holds-zero must equal a plan built with no hold field at all.
         const bandsNoField = mkBands([0,0,0]).map(b2 => { const c = { ...b2 }; delete c.hold; return c; });
+        W('G-SH-8 no-field / zero-hold identity arms');
         const planNoField = A.cinemaPathPlan(DUR, { bands: bandsNoField });
         const planZero2   = A.cinemaPathPlan(DUR, { bands: mkBands([0,0,0]) });
         let poseDiff = 0;
@@ -201,7 +219,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           total: planHold.naturalTotal };
       } catch (e) { out.err = e.message + ' | ' + (e.stack || '').split('\n').slice(0,3).join(' / '); }
       return out;
-    }, DUR, HOLD);
+    }, DUR, HOLD, Progress.pageLine(''));
+    pr.stage(`${BLD}/gates`);
 
     const checks = [];
     const P = (n, ok, d) => { checks.push({ n, ok }); if (!ok) allPass = false;
@@ -382,6 +401,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   }
 
   await browser.close();
+  pr.end(`allPass=${allPass}`);
   console.log(`\n${'='.repeat(78)}\n§CPE_STICK_HOLD WITNESS: ${summary.join(' | ')} — ${allPass ? 'PASS' : 'FAIL'}\n${'='.repeat(78)}`);
   process.exit(allPass ? 0 : 1);
 })();

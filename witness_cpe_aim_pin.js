@@ -11,28 +11,41 @@
 //             Save/the bake already consume, no second table (guardrail 4).
 //   G-PIN-3   position untouched: the pinned band's CENTRE (`c`) is bit-identical before/after.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
+// §W_PROGRESS (bim-compiler prompts/WITNESS_INTERFACE_FRAMEWORK.md) — the editor open below waits up
+// to 5 min on `#cpe-ok` and the streaming wait is unbounded on a large building; both used to print
+// nothing at all, which is the ambiguity AGENT_QUEUE.md A-16b names.
+const Progress = require('./witness_kit/progress.js');
 
 const PORT = process.env.PORT || 8470;
 const BUILDINGS = (process.env.BLDS || 'Duplex').split(',');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pr = Progress('CPE_AIM_PIN');
 
 async function openEditor(browser, BLD) {
+  pr.stage(`${BLD}/open-page`);
   const page = await browser.newPage();
   await page.setViewport({ width: 1200, height: 700 });
   const logs = [];
-  page.on('console', m => logs.push(m.text()));
+  // §W_PROGRESS rides this same hook; its own lines are kept out of `logs`.
+  const { isProgress } = pr.attach(page);
+  page.on('console', m => { const t = m.text(); if (!isProgress(t)) logs.push(t); });
   page.on('pageerror', e => logs.push('PAGEERROR ' + e.message));
+  pr.stage(`${BLD}/goto-viewer`);
   await page.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_extracted.db`,
     { waitUntil: 'domcontentloaded', timeout: 60000 });
+  pr.stage(`${BLD}/wait-APP-ready`);
   await page.waitForFunction(
     () => window.APP && window.APP.cinemaPathEditor && window.APP.startMaxQualityOrbit && window.APP._composer,
     { timeout: 120000 });
   await sleep(9000);
+  pr.stage(`${BLD}/wait-element-transforms`);
   await page.waitForFunction(() => {
     try { const r = window.APP.dbQuery('SELECT COUNT(*) FROM element_transforms'); return r && r[0][0] > 0; }
     catch (e) { return false; }
   }, { timeout: 60000, polling: 2000 });
+  pr.stage(`${BLD}/open-editor`);
   await page.evaluate(() => { window.APP.startMaxQualityOrbit({ preview: false, fps: 1, editor: true }); });
+  // up to 5 minutes, previously silent
   await page.waitForSelector('#cpe-ok', { timeout: 300000 });
   await sleep(800);
   return { page, logs };
@@ -50,6 +63,7 @@ async function gates(browser, BLD) {
   const checks = [];
   const P = (n, ok, d) => checks.push({ n, ok, d });
   const { page, logs } = await openEditor(browser, BLD);
+  pr.stage(`${BLD}/gates`);
 
   const setup = await page.evaluate(() => {
     const cpe = window.APP.cinemaPathEditor;
@@ -171,6 +185,8 @@ async function gates(browser, BLD) {
 }
 
 (async () => {
+  pr.note(`port=${PORT} buildings=${BUILDINGS.join(',')}`);
+  pr.stage('launch-browser');
   const browser = await puppeteer.launch({
     headless: 'new',
     protocolTimeout: 900000,
@@ -185,6 +201,7 @@ async function gates(browser, BLD) {
     summary.push({ BLD, pass: checks.every(c => c.ok), n: checks.filter(c => c.ok).length, t: checks.length });
   }
   await browser.close();
+  pr.end(`allPass=${allPass}`);
   console.log(`\n${'='.repeat(78)}`);
   summary.forEach(s => console.log(`${s.pass ? 'PASS' : 'FAIL'}  ${s.BLD}  (${s.n}/${s.t})`));
   console.log(allPass ? '\nWITNESS PASS' : '\nWITNESS FAIL');

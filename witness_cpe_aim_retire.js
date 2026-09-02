@@ -48,6 +48,12 @@
 //   PORT=<port> BLD=<building> OUT=<file.json> [BASE=<other-arm.json>] node witness_cpe_aim_retire.js
 const fs = require('fs');
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
+// §W_PROGRESS (bim-compiler prompts/WITNESS_INTERFACE_FRAMEWORK.md). This file's whole measurement
+// used to happen inside ONE `await p.evaluate(...)` that printed nothing until it returned, so a
+// Hospital run held a 0-BYTE LOG for tens of minutes — and on 2026-09-02 that silence was read as
+// "never measured" for a run that had in fact completed (AGENT_QUEUE.md A-16, retracted). Stages
+// below are written UNBUFFERED, so a killed run still names where it got to.
+const Progress = require('./witness_kit/progress.js');
 
 const PORT = process.env.PORT || 8533;
 const BLD = process.env.BLD || 'Duplex';
@@ -75,6 +81,10 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
   const INC = [];
   const I = (label, why) => { INC.push({ label, why }); };
 
+  const pr = Progress(`CPE_AIM_RETIRE/${BLD}`);
+  pr.note(`port=${PORT} db=${DB} secs=${SECS} N=${N} NT=${NT} out=${OUT} base=${BASE || '(none)'} gpu=${process.env.GPU_REAL ? 'real' : 'swiftshader'}`);
+
+  pr.stage('launch-browser');
   const b = await puppeteer.launch({
     headless: 'new',
     args: process.env.GPU_REAL
@@ -93,22 +103,37 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
   // is kept so A-6 can assert the ABSENCE of the retired rule's own lines against a non-zero count
   // of lines actually scanned (an absence measured over an empty log is vacuous).
   const logs = [];
-  p.on('console', m => logs.push(m.text()));
+  // §W_PROGRESS rides this SAME hook — no second channel is opened. `isProgress` keeps the witness's
+  // own progress lines OUT of `logs`, because A-6 counts `logs.length` as the denominator of an
+  // absence test and padding it with this file's own output would inflate that evidence.
+  const { isProgress } = pr.attach(p);
+  p.on('console', m => { const t = m.text(); if (!isProgress(t)) logs.push(t); });
 
+  pr.stage('goto-viewer');
   await p.goto(`http://localhost:${PORT}/viewer/viewer.html?db=${DB}`,
     { waitUntil: 'domcontentloaded', timeout: 240000 });
+  pr.stage('wait-APP-ready');
   await p.waitForFunction(() => window.APP && window.APP.camera && typeof window.APP.cinemaPathPlan === 'function',
     { timeout: 300000 });
+  pr.stage('wait-stream-start');
   await p.waitForFunction(() => window.APP.streaming === true || (window.APP.streamQueue || []).length > 0,
     { timeout: 240000, polling: 250 }).catch(() => {});
+  // THE LONG ONE — Hospital streams 63,182 elements here and this single await has run for tens of
+  // minutes. The heartbeat is what makes that distinguishable from a dead process.
+  pr.stage('wait-stream-drain');
   await p.waitForFunction(() => !window.APP.streaming || (window.APP.streamIdx >= (window.APP.streamQueue || []).length),
     { timeout: 1200000, polling: 1000 }).catch(() => {});
+  pr.stage('wait-element-transforms');
   await p.waitForFunction(() => {
     try { const r = window.APP.dbQuery('SELECT COUNT(*) FROM element_transforms'); return r && r[0][0] > 0; }
     catch (e) { return false; }
   }, { timeout: 240000, polling: 2000 }).catch(() => {});
 
-  const res = await p.evaluate(async (N, NT, SECS) => {
+  pr.stage('measure(in-page)');
+  const res = await p.evaluate(async (N, NT, SECS, PP) => {
+    // Page-side progress: one console.log per sub-phase of the measurement, forwarded by the hook
+    // above while THIS await is still pending. Without it the longest stretch of the run is silent.
+    const W = (s) => { try { console.log(PP + s); } catch (e) { /* console gone */ } };
     const A = window.APP;
     const nrm = (g) => {
       const dx = g.target.x - g.pos.x, dy = g.target.y - g.pos.y, dz = g.target.z - g.pos.z;
@@ -144,6 +169,7 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
     //    lazy loader (_cpeLoadFromDb) and uses the building DB's own cinema_path table if it has
     //    one. Which source was used is REPORTED, never assumed — a derived fallback measured as if
     //    it were the user's stored path would be a different claim entirely.
+    W('build-stored-plan');
     const plan0 = await A.cinemaPathPlan(SECS);
     if (!plan0) return { fail: 'no plan built' };
     const staged = (A._getCinemaPathEdit && A._getCinemaPathEdit()) || null;
@@ -178,9 +204,11 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
     // override plan measures two different routes, not one route with and without a feature).
     const mkOv = (extra) => Object.assign(JSON.parse(JSON.stringify(ovBase)), extra || {});
 
+    W('build-base-plan bandSrc=' + bandSrc + ' bands=' + ((ovBase.bands || []).length));
     const planBase = await A.cinemaPathPlan(SECS, mkOv({ aimCorrections: [] }));
     if (!planBase) return { fail: 'no base plan built' };
     const base = sampleWalk();
+    W('sampled-base-walk n=' + base.length);
     // ── the look-ahead chord, reconstructed EXACTLY as _lookAhead computes it ──────────────────
     // effects.js:8000 `var _AH_FRAC = 0.15, _ahN = 240` and :8028
     // `_outPos(_ahAtArc(_ahArcAt(u) + _AH_FRAC * _ahL))`. BOTH constants matter: an earlier cut of
@@ -215,7 +243,9 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
       const L = Math.hypot(dx, dy, dz);
       chord.push(L > 0 ? { x: dx / L, y: dy / L, z: dz / L } : null);
     }
+    W('reconstructed-lookahead-chord');
     const film = sampleFilm(planBase);
+    W('sampled-film n=' + film.length);
     const zones = A._cpePinZonesDebug ? JSON.parse(JSON.stringify(A._cpePinZonesDebug())) : null;
     const beats = planBase.beats ? JSON.parse(JSON.stringify(planBase.beats)) : null;
     const nBands = (ovBase.bands || []).length;
@@ -223,6 +253,7 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
     // 2. A-3 — a pin on ONE band. Target offset from that band's own centre so the aim change is
     //    unambiguous; same construction witness_cpe_aim_pin.js already uses (this gate is about the
     //    AIM MATH, not the raycast UI).
+    W('A-3 pin arm');
     let pinRes = null;
     if (nBands >= 2) {
       const bi = Math.min(1, nBands - 1);
@@ -270,6 +301,7 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
     //    witness_cpe_corr_brush.js uses, which is what put the entry gaze near-antipodal on Hospital
     //    and exposed the §CPE_CORR_BRANCH 2*pi flip. Changing it would un-exercise that defect.
     const mid = base[Math.floor(N / 2)];
+    W('A-4 correction arm');
     let corrRes = null;
     if (mid && mid.g) {
       const yaw = Math.atan2(mid.g.z, mid.g.x) + Math.PI / 3;
@@ -289,6 +321,7 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
         let stepOff = null;
         A._cpeCorrBranchOff = true;
         try {
+          W('A-4b branch-OFF A/B arm');
           const planOff = await mkCorrPlan();
           if (planOff) {
             const off = sampleWalk();
@@ -328,12 +361,14 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
       base: base.map((s, i) => ({ e3: s.e3, g: s.g, pos: s.pos, chord: chord[i] })),
       film, pin: pinRes, corr: corrRes,
     };
-  }, N, NT, SECS);
+  }, N, NT, SECS, Progress.pageLine(''));
+  pr.stage('teardown+derive');
 
   await p.close(); await b.close();
 
   if (res && res.fail) {
     console.log(`§WITNESS_CPE_AIM_RETIRE INCONCLUSIVE — ${res.fail}; nothing was judged.`);
+    pr.end('bailed: ' + res.fail);
     process.exitCode = 1; return;
   }
 
@@ -611,5 +646,6 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
   console.log(`\n§WITNESS_CPE_AIM_RETIRE arm=${res.arm} building=${res.building} ` +
     `pass=${pass} fail=${fail} inconclusive=${INC.length} ran=${checks.length}`);
   if (!checks.length) console.log('§WITNESS_CPE_AIM_RETIRE INCONCLUSIVE — no gate was judged.');
+  pr.end(`pass=${pass} fail=${fail} inconclusive=${INC.length}`);
   process.exitCode = (fail > 0 || checks.length === 0) ? 1 : 0;
 })();

@@ -49,6 +49,9 @@
 // G-FRZ-1/2/4 are UNAFFECTED and still judge the freeze: it is kept deliberately, because the
 // from-direction can still move where a window overlaps a pinned zone or the _openU seam blend.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
+// §W_PROGRESS (bim-compiler prompts/WITNESS_INTERFACE_FRAMEWORK.md) — this file has the same
+// single-long-evaluate shape that left a 0-byte log for a whole Hospital run on 2026-09-02.
+const Progress = require('./witness_kit/progress.js');
 const PORT = process.env.PORT || 8533, BLD = process.env.BLD || 'Duplex';
 // Walk length is NOT a property of the building — it scales with the film duration the planner is
 // given. Measured on Hospital: 60 s -> 39.43 m. So the duration is a parameter of this measurement
@@ -58,6 +61,9 @@ const N = 900;   // arc samples
 process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.stack || e)); process.exit(1); });
 
 (async () => {
+  const pr = Progress(`CPE_CORR_BRUSH/${BLD}`);
+  pr.note(`port=${PORT} secs=${SECS_IN} N=${N}`);
+  pr.stage('launch-browser');
   const b = await puppeteer.launch({ headless: 'new',
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--no-sandbox', '--enable-unsafe-swiftshader'],
     protocolTimeout: 1800000 });
@@ -67,18 +73,29 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
   // the runtime's own statement of which branch it resolved per stroke; echo it into this witness's
   // log rather than re-deriving it here.
   const pageLog = [];
+  // §W_PROGRESS rides the SAME hook; progress lines are excluded from pageLog so this witness's own
+  // output never becomes evidence about the product's.
+  const { isProgress } = pr.attach(p);
   p.on('console', m => { const t = m.text();
+    if (isProgress(t)) return;
     if (/§CPE_CORR_BRANCH|§CINEMA_GAZE_SENSE|§CPE_WALK_BUDGET|§CPE_AIM_DEPTH_FREEZE/.test(t)) pageLog.push(t); });
+  pr.stage('goto-viewer');
   await p.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_extracted.db`,
     { waitUntil: 'domcontentloaded', timeout: 180000 });
+  pr.stage('wait-APP-ready');
   await p.waitForFunction(() => window.APP && window.APP.camera && typeof window.APP.cinemaPathPlan === 'function',
     { timeout: 240000 });
+  pr.stage('wait-stream-start');
   await p.waitForFunction(() => window.APP.streaming === true || (window.APP.streamQueue || []).length > 0,
     { timeout: 180000, polling: 250 }).catch(() => {});
+  // THE LONG ONE — up to 15 min on a large building, previously entirely silent.
+  pr.stage('wait-stream-drain');
   await p.waitForFunction(() => !window.APP.streaming || (window.APP.streamIdx >= (window.APP.streamQueue || []).length),
     { timeout: 900000, polling: 1000 }).catch(() => {});
 
-  const r = await p.evaluate(async (N, SECS_IN) => {
+  pr.stage('measure(in-page)');
+  const r = await p.evaluate(async (N, SECS_IN, PP) => {
+    const W = (s) => { try { console.log(PP + s); } catch (e) { /* console gone */ } };
     const A = window.APP;
     const sample = () => {
       const out = [];
@@ -95,6 +112,7 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
       }
       return out;
     };
+    W('baseline-plan');
     // 1. baseline plan, no corrections
     // signature is (durationSec, ov) — an earlier cut of this witness passed the ov as the FIRST
     // arg and the planner threw `durationSec.toFixed is not a function`. 60 s is the editor's own
@@ -115,6 +133,7 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
     const turnOverlap = (A._cpeBeat3GazeDebug(0) || {}).turnOverlap;
     const base = sample();
     const arcLen = base[0].arcLen;
+    W('correction-arm');
     // 2. one correction, anchored mid-walk, aimed 60 deg off the baseline gaze there
     const mid = base[Math.floor(N / 2)];
     const yaw = Math.atan2(mid.z, mid.x) + Math.PI / 3;          // +60 deg in yaw
@@ -177,6 +196,7 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
           clearOn: cOn, clearOff: cOff };
       } else deadEnd = { firingN: 0 };
     }
+    W('branch-OFF A/B arm');
     // 3. THE SAME correction with §CPE_CORR_BRANCH switched OFF — i.e. the naive short-way yaw this
     //    branch replaced. This is the A/B that makes G-BR-6 name its issue: without it the gate would
     //    only assert a number, with no evidence that the number was ever otherwise.
@@ -197,7 +217,8 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
         { pos: g.pos, dir: dir, rampF: 0.04, holdF: 0.12, decayF: 0.18 }] });
     }
     return { base, corr, frzOff, clearRows, deadEnd, ab, arcLen, rec, dir, turnOverlap, ok: true };
-  }, N, SECS_IN);
+  }, N, SECS_IN, Progress.pageLine(''));
+  pr.stage('derive+judge');
 
   console.log('='.repeat(90) + `\n§CPE_CORR_BOUNDED witness — ${BLD}, one correction, ${N} arc samples\n` + '='.repeat(90));
   if (r.fail) { console.log('  INCONCLUSIVE — ' + r.fail + '; nothing was judged.'); await b.close(); process.exit(1); }
@@ -534,5 +555,6 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
       : 'the branch fix DOES change this plan, so a failing gate here may be attributable to it — investigate.'));
   }
   await b.close();
+  pr.end(`pass=${pass}/${G.length}`);
   process.exit(pass === G.length ? 0 : 1);
 })();
