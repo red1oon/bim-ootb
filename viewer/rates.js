@@ -136,7 +136,11 @@ var LABOR_RATES = {
   },
   CONCRETE_GANG: {
     rate_per_day: 145, crew_size: 6, max_crews: 3, trade: 'Concrete Gang (Mixed)',
-    productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3}
+    // §TPL_ZERO_MINUTE guard (2026-08-27): foundation_wall_substructure below reassigns
+    // IfcWall/IfcWallStandardCase to CONCRETE_GANG, which carried neither — same silent 120s-floor
+    // loss §S65 defect 5 hit. Values COPIED VERBATIM from MASON, those classes' own canonical
+    // trade (IfcWall:12, IfcWallStandardCase:12) — extracted, not invented.
+    productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3,IfcWall:12,IfcWallStandardCase:12}
   },
   MASON: {
     rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Mason (Skilled) + Laborers',
@@ -168,7 +172,11 @@ var LABOR_RATES = {
     // §TPL_ZERO_MINUTE (§S65 defect 5): furniture_generic_bucket reassigns IfcBuildingElementProxy/
     // IfcBuildingElementPart to FINISHER, which carried neither — same silent duration loss as the
     // curtain-wall override above. Values COPIED from MASON, those classes' own canonical trade (15).
-    productivity: {IfcCovering:20,IfcFurniture:8,IfcFurnishingElement:8,IfcBuildingElementPart:15,IfcBuildingElementProxy:15}
+    // §TPL_ZERO_MINUTE guard (2026-08-27): finish_floor_finishes below reassigns a NAMED subset of
+    // IfcSlab to FINISHER, which carried no IfcSlab. Value COPIED VERBATIM from CONCRETE_GANG,
+    // IfcSlab's own canonical trade (35) — the same "copy the class's canonical trade" rule this
+    // table's existing entries were built by, not a new number typed in for a finish.
+    productivity: {IfcCovering:20,IfcFurniture:8,IfcFurnishingElement:8,IfcBuildingElementPart:15,IfcBuildingElementProxy:15,IfcSlab:35}
   },
   LABORER: {
     rate_per_day: 95, crew_size: 1, max_crews: 1, trade: 'General Laborer',
@@ -372,6 +380,73 @@ var SEQUENCE_NAME_OVERRIDES = [
     id: 'furniture_generic_bucket',
     classes: ['IfcBuildingElementProxy', 'IfcBuildingElementPart'],
     pattern: '\\b(chair|desk|table|sofa|couch|settee|cabinet|wardrobe|shelf|shelving|bookcase|credenza|armchair|furniture|dresser|nightstand|stool|bench)\\b',
+    flags: 'i',
+    phase: 'Finishes',
+    sequence: 11,
+    resource: 'FINISHER'
+  },
+  // §FOUNDATION_WALL_SUBSTRUCTURE (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §W_D0 C2
+  // — Witness: viewer/tests/witness_day0_integrity.js). A wall NAMED "Foundation" is substructure,
+  // but ifc_class alone cannot say so: IfcWall/IfcWallStandardCase resolve to Architecture Envelope
+  // seq 5, so Duplex's 2 'Basic Wall:Foundation - Concrete (417mm)' at base -1.25 were scheduled
+  // into DAY 0 as ENVELOPE work, five phases ahead of themselves, and showed up as C2 intruders.
+  // MEASURED across every shipped building before writing this pattern (the same discipline
+  // furniture_generic_bucket's header records): under the IfcWall class gate it matches exactly
+  // Duplex 7 ('Foundation - Concrete (417mm)' x4, '(435mm)' x3) and Hospital 28 ('Foundation -
+  // 300mm Concrete - Retaining' x18, '375mm w_step' x8, '200mm Retaining' x2), and NOTHING in
+  // HHS/Terminal. The class gate is load-bearing, not decoration: Terminal has 20 IfcBeam matching
+  // /foundation/ (foundation beams, already structural at seq 3) and Duplex/Hospital 25 IfcFooting
+  // already at seq 1 — all correctly untouched, per the standing rule "don't touch classes that are
+  // already unambiguous". Target COPIED from slab_on_grade_substructure / the pile override above,
+  // the two existing seq-1 name rules.
+  {
+    id: 'foundation_wall_substructure',
+    classes: ['IfcWall', 'IfcWallStandardCase'],
+    pattern: '\\bfoundation\\b',
+    flags: 'i',
+    phase: 'Substructure',
+    sequence: 1,
+    resource: 'CONCRETE_GANG'
+  },
+  // §FINISH_FLOOR_FINISHES (2026-08-27, same witness/claim). A slab NAMED "Finish Floor" is a floor
+  // FINISH, not structure — IfcSlab resolves to Superstructure seq 4, so Duplex's 6 'Floor:Finish
+  // Floor - Wood' / '- Ceramic Tile' were scheduled on DAY 0 alongside the foundations, and each
+  // sits at base z~0.00 on a slab that is itself still being poured. MEASURED fleet-wide: under the
+  // IfcSlab class gate this matches exactly Duplex 14 (Wood x8, Ceramic Tile x6) and NOTHING in
+  // HHS/Hospital/Terminal. Target COPIED from furniture_generic_bucket above (Finishes / 11 /
+  // FINISHER), the existing rule for content that is finish rather than fabric.
+  // NOTE the interaction, deliberate: 1 of the 14 is currently reclassified by §GROUNDWORK_SLAB to
+  // phase Substructure at seq 4. Name overrides run AHEAD of the class lookup and groundworkSlabs
+  // only mutates phase in place, so this rule wins for a slab that is a named finish — which is
+  // correct: a wood finish floor is not slab-on-grade groundworks.
+  // §STAIR_MEMBER_ARCHITECTURE (2026-08-27, same witness/claim as the two rules above). A stair
+  // component authored as IfcMember: the class rule sends IfcMember to Superstructure seq 3
+  // (STEEL_ERECTOR, structural framing), so Duplex's stair stringer — spanning base -0.095 to top
+  // 3.005, a full storey — was scheduled on DAY 0 as frame steel, three phases ahead of the
+  // IfcStairFlight it is part of, and hung there with nothing under it. Its own siblings in the
+  // SAME building already resolve correctly: IfcStairFlight x2 and IfcRailing x4 at Architecture
+  // Envelope seq 6. Target COPIED VERBATIM from IfcStairFlight's own class rule (line ~267),
+  // the family this element belongs to — extracted, not chosen.
+  // MEASURED fleet-wide before writing, under the IfcMember class gate: Duplex 4 (all 4 of its
+  // IfcMember are named 'Stair:...'), HHS 0 of 1450, Hospital 0 of 7127, Terminal 0 of 442 —
+  // 9,019 IfcMember across the rest of the fleet, zero false positives. Anchored ^stair\b so a
+  // 'Handrail for Stair' or a stair-adjacent brace is not swept in by a bare substring.
+  // NOTE the deliberate consequence: schedule_gate supportPool is seq<=4 u IfcSlab u
+  // IfcStairFlight u IfcWall*, so moving these from seq 3 to seq 6 REMOVES them from the support
+  // pool. That is correct — a stair stringer carries the stair, not the building.
+  {
+    id: 'stair_member_architecture',
+    classes: ['IfcMember'],
+    pattern: '^\\s*stair\\b',
+    flags: 'i',
+    phase: 'Architecture Envelope',
+    sequence: 6,
+    resource: 'CARPENTER'
+  },
+  {
+    id: 'finish_floor_finishes',
+    classes: ['IfcSlab'],
+    pattern: '\\bfinish(ed)?[ _-]?floor\\b',
     flags: 'i',
     phase: 'Finishes',
     sequence: 11,
