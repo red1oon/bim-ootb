@@ -75,9 +75,14 @@
     console.warn('§TPL_ZERO_MINUTE cls=' + cls + ' resource=' + resource + ' reason=' + why +
       ' — 120s floor, this class draws a zero-width bar (first occurrence only)');
   }
+  // §FUTURE-5A A1/B3 (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md, applied 2026-09-02, queue item
+  // B-3): both numbers below now READ laborRates._productivity_basis_secs / ._zero_minute_floor_secs
+  // (sequence_rules.json), falling back to the SAME literals that shipped before this — a caller
+  // (older cached JSON, a minimal test object) that omits either key is byte-identical to pre-fix.
   function _installSecs(cls, rule, laborRates, realQty, lengthRatio) {
     var resource = rule && rule.resource;
-    if (!resource || !laborRates[resource]) { _reportFloor(cls, resource, 'no-resource'); return 120; }
+    var _floorSecs = (laborRates && laborRates._zero_minute_floor_secs) || 120;
+    if (!resource || !laborRates[resource]) { _reportFloor(cls, resource, 'no-resource'); return _floorSecs; }
     var labor = laborRates[resource], bestPk = null, bestLen = 0;
     for (var pk in labor.productivity) {
       if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
@@ -87,8 +92,8 @@
     // pointed at. default_productivity is the resource's own declared figure for that case; absent,
     // this is 0 and the floor still applies exactly as before (backward-compatible).
     var prod = bestPk ? labor.productivity[bestPk] : (labor.default_productivity || 0);
-    if (prod <= 0) { _reportFloor(cls, resource, bestPk ? 'productivity<=0' : 'no-productivity-key'); return 120; }
-    var secsPerUnit = 28800 / prod;
+    if (prod <= 0) { _reportFloor(cls, resource, bestPk ? 'productivity<=0' : 'no-productivity-key'); return _floorSecs; }
+    var secsPerUnit = ((laborRates && laborRates._productivity_basis_secs) || 28800) / prod;
     if (realQty != null) return Math.round(secsPerUnit * realQty);
     if (lengthRatio != null) return Math.round(secsPerUnit * lengthRatio);
     return Math.round(secsPerUnit);
@@ -436,6 +441,14 @@
     laborRates = laborRates || {};
     var shiftSecs = (shiftHours > 0 ? shiftHours : (T.calendar && T.calendar.hours_per_shift) || 24) * 3600;
     var minDays = (T.duration_rule && T.duration_rule.min_days) || 1;
+    // §FUTURE-5A B4 (applied 2026-09-02, queue item B-3): the pricing-side crew-cap fallback for an
+    // unnamed/_DEFAULT resource, now sourced from sequence_rules.json LABOR_RATES._default_max_crews_author
+    // — same literal (1) as before this fix, see that key's own comment for why this is NOT unified
+    // with schedule_gate.js's separate MAX_CREWS_DEFAULT=3 (a real, undisturbed divergence).
+    var _defMaxCrews = (laborRates && laborRates._default_max_crews_author) || 1;
+    // §FUTURE-5A B6: instantiateTemplate's own crew-levelling search guard, now sourced from
+    // 4D_template.json capacity_rule._level_scan_max_days (same literal, 100000, as before).
+    var LEVEL_SCAN_MAX = (T.capacity_rule && T.capacity_rule._level_scan_max_days) || 100000;
     collapse = collapse || function (x) { return x; };
     // Resolved ONCE. With levelAxis absent both of these are literally the expressions that were
     // inline here before, so the flag-off path is unchanged by construction, not by inspection.
@@ -467,7 +480,7 @@
       for (var t in c.secs) {
         if (t === '_DEFAULT') continue;
         any = 1;
-        var cap = (laborRates[t] && laborRates[t].max_crews) || 1;
+        var cap = (laborRates[t] && laborRates[t].max_crews) || _defMaxCrews;
         var td = c.secs[t] / (shiftSecs * cap);
         if (td > d) { d = td; bott = t + '(' + cap + ')'; }
       }
@@ -631,13 +644,13 @@
     function fits(t, at) {
       var need = taskTradeCrews(t);
       for (var tr in need) {
-        var cap = (laborRates[tr] && laborRates[tr].max_crews) || 1;
+        var cap = (laborRates[tr] && laborRates[tr].max_crews) || _defMaxCrews;
         for (var d = at; d < at + t.days; d++)
           if (((demand[tr] && demand[tr][d]) || 0) + need[tr] > cap + 1e-9) return false;
       }
       return true;
     }
-    var levelled = 0, levelledDays = 0, LEVEL_SCAN_MAX = 100000;
+    var levelled = 0, levelledDays = 0;   // LEVEL_SCAN_MAX now derived once at function top (§FUTURE-5A B6)
     topo.forEach(function (t) {
       var at = t.sDays, guard = 0;
       while (!fits(t, at) && guard++ < LEVEL_SCAN_MAX) at++;
@@ -697,7 +710,13 @@
   function materializeZones(db, rules, opts) {
     opts = opts || {};
     var schedId = opts.scheduleId || 'SCH_AUTHORED';
-    var start = opts.start || '2026-01-01';
+    // §FUTURE-5A B2 (applied 2026-09-02, queue item B-3): opts.start (a real caller value) wins as
+    // before; the SECOND choice now reads the declared 4D_template.json calendar.project_start
+    // instead of jumping straight to the bare literal, so a future caller that passes opts.template
+    // but omits opts.start picks up the JSON-declared epoch. Every CURRENT caller that passes
+    // opts.template also passes an explicit opts.start (verified 2026-09-02), so this branch is not
+    // yet live — added for when a caller drops the redundant explicit start, not a behaviour change.
+    var start = opts.start || (opts.template && opts.template.calendar && opts.template.calendar.project_start) || '2026-01-01';
     var SG = opts.scheduleGate || global.ScheduleGate;
     if (!SG || !SG.computeSchedule || !SG.deriveZones) {
       console.log('§AUTHOR_ZONES_FAIL reason=ScheduleGate_not_loaded');
@@ -707,6 +726,10 @@
     if (!elements.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_elements'); return { ok: false, reason: 'no_elements' }; }
 
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    // §FUTURE-5A B4 (applied 2026-09-02, queue item B-3): same relocation as instantiateTemplate's
+    // own _defMaxCrews (used below by the §ZONE_WINDOW_COVERS_WORK floor) — this function has its
+    // own laborRates local, so it needs its own copy of the derived default, not a shared closure var.
+    var _defMaxCrews = (laborRates && laborRates._default_max_crews_author) || 1;
     var maxCrews = {};
     for (var res in laborRates) if (laborRates[res].max_crews) maxCrews[res] = laborRates[res].max_crews;
     // §GANTT_SHIFT_HOURS_DESYNC (4D_SCHEDULE_PERFECTION.md) — this call used to omit shiftHours,
@@ -883,7 +906,7 @@
       var _crewDays = 0, _wAnyTrade = 0;
       for (var _wt in _wTrades) {
         _wAnyTrade = 1;
-        var _wCap = (laborRates[_wt] && laborRates[_wt].max_crews) || 1;
+        var _wCap = (laborRates[_wt] && laborRates[_wt].max_crews) || _defMaxCrews;
         var _wd = (_wTrades[_wt] * 1000) / (_shiftMs * _wCap);
         if (_wd > _crewDays) _crewDays = _wd;
       }
@@ -1487,6 +1510,11 @@
   // materializeDefault(db, rules, opts) — originate the smart-default schedule on a blank model.
   // db: a sql.js Database with `elements_meta`. rules: SEQUENCE_RULES map. opts: {start, phaseDays,
   // scheduleId, defaultRule}. Idempotent — rebuilds the SCH_AUTHORED schedule from scratch.
+  // §FUTURE-5A B2/B7 (reviewed 2026-09-02, queue item B-3): this is the ALTERNATE/legacy authoring
+  // path, never the canonical template one (no caller anywhere in the codebase passes opts.template
+  // here — verified) — so, unlike materializeZones above, its opts.start/opts.phaseDays literal
+  // fallbacks are left untouched rather than threading a dead opts.template read. Their JSON homes
+  // (4D_template.json calendar.project_start / duration_rule) are documented but NOT wired here.
   function materializeDefault(db, rules, opts) {
     opts = opts || {};
     var start = opts.start || '2026-01-01';
@@ -1603,8 +1631,9 @@
       for (var resKey in p.resourceSecs) {
         var secs = p.resourceSecs[resKey];
         laborSecsTotal += secs;
-        var maxCrews = (laborRates[resKey] && laborRates[resKey].max_crews) || 1;
-        var tradeDays = secs / (28800 * maxCrews);
+        // §FUTURE-5A A1/B4 (applied 2026-09-02, queue item B-3) — same relocation as instantiateTemplate.
+        var maxCrews = (laborRates[resKey] && laborRates[resKey].max_crews) || (laborRates._default_max_crews_author || 1);
+        var tradeDays = secs / (((laborRates && laborRates._productivity_basis_secs) || 28800) * maxCrews);
         if (tradeDays > maxTradeDays) maxTradeDays = tradeDays;
       }
       p.widthDays = Math.max(1, Math.ceil(maxTradeDays));
@@ -1759,6 +1788,8 @@
   // act (the optional "suggest a start"). Lays the leaf phases out contiguously from opts.start so
   // a blank-materialized (undated) schedule becomes datable on demand. Orders by rowid = insert
   // order = the sequence order materializeDefault used (NULL dates can't be ORDER BY'd).
+  // §FUTURE-5A B2/B7 — same alternate-path note as materializeDefault above: no caller passes
+  // opts.template here, so its start/phaseDays literal fallbacks are left as-is (2026-09-02).
   function scheduleContiguous(db, scheduleId, opts) {
     scheduleId = scheduleId || 'SCH_AUTHORED';
     opts = opts || {};
@@ -1798,8 +1829,9 @@
       }
       var maxTradeDays = 0;
       for (var resKey2 in resourceSecs) {
-        var maxCrews = (laborRates[resKey2] && laborRates[resKey2].max_crews) || 1;
-        var d = resourceSecs[resKey2] / (28800 * maxCrews);
+        // §FUTURE-5A A1/B4 (applied 2026-09-02, queue item B-3) — same relocation as materializeDefault.
+        var maxCrews = (laborRates[resKey2] && laborRates[resKey2].max_crews) || (laborRates._default_max_crews_author || 1);
+        var d = resourceSecs[resKey2] / (((laborRates && laborRates._productivity_basis_secs) || 28800) * maxCrews);
         if (d > maxTradeDays) maxTradeDays = d;
       }
       widthDays[tid] = maxTradeDays > 0 ? Math.max(1, Math.ceil(maxTradeDays)) : phaseDays;

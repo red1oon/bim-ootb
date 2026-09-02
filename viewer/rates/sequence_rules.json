@@ -494,6 +494,12 @@
       "max_crews": 1,
       "trade": "General Laborer",
       "productivity": {}
-    }
+    },
+    "_productivity_basis_secs": 28800,
+    "_productivity_basis_secs_why": "bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §FUTURE-5A row A1 (2026-08-27 inventory, applied 2026-09-02, queue item B-3). 28800s = the 8h crew-day the productivity figures above are QUOTED AGAINST (secsPerUnit = this / productivity). This is NOT calendar.hours_per_shift (4D_template.json, =24, the crew's actual working day) — those are two different quantities that merely share the word 'hours'; collapsing them was the exact 3x conflation bug §FUTURE item 2 chased. Read by schedule_author.js _installSecs/materializeDefault/scheduleContiguous and time_machine.js getInstallSecs/§HR_COST, all with a literal 28800 fallback so a caller that omits this key (an older cached JSON, a minimal test object) is byte-identical to pre-2026-09-02 behaviour.",
+    "_zero_minute_floor_secs": 120,
+    "_zero_minute_floor_secs_why": "§FUTURE-5A row B3. The §TPL_ZERO_MINUTE floor schedule_author.js _installSecs returns when a class has no resource/productivity match. Same fallback-with-literal-120 pattern as _productivity_basis_secs. schedule_gate.js:564's OWN independent `el.installSecs || 120` safety net is NOT wired to this key — that module receives no rules/rates object at all (pure elements-in, times-out), and threading one in was judged out of proportion for this refactor; left as a documented literal there, kept in sync by hand.",
+    "_default_max_crews_author": 1,
+    "_default_max_crews_author_why": "§FUTURE-5A row B4 / separate finding #2 — schedule_author.js's five `(laborRates[t] && laborRates[t].max_crews) || 1` sites (pricing side). schedule_gate.js has its OWN, DIFFERENT default (`MAX_CREWS_DEFAULT = 3`, pacing/solve side) for the identical missing-value case — a real, NAMED, NOT-fixed-here divergence (both defaults are dormant today because all 10 named trades carry an explicit max_crews; only an unnamed/_DEFAULT resource would ever hit either). Deliberately NOT unified into one shared key: doing so would silently change one side's shipped output 3x for any building that ever exercises the fallback, which is a calibration decision, not a refactor. This key relocates ONLY the author-side literal; the gate-side `3` stays a documented JS constant in schedule_gate.js (a pure, rules-free module — see that file's own comment) — do not add a `_default_max_crews_gate` key here unless something is wired to read it, or it becomes exactly the 'config nobody loads' defect this same queue item's Part 2 fixes elsewhere."
   }
 }
