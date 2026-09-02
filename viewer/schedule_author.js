@@ -16,7 +16,25 @@
   // so authored phases are identical to what injectGantt would group elements into.
   function matchRule(cls, rules, dflt) {
     rules = rules || {};
-    dflt = dflt || { phase: 'Architecture', sequence: 6, resource: null };
+    // §I.5i (bim-compiler prompts/4D_MODEL_INTEGRITY.md, §FUTURE item 7 Stage 5, queue item B-2) —
+    // CONSULT THE CANONICAL OBJECT BEFORE THE LITERAL, as this file's six other fallbacks already do
+    // (`:311`, `:1667`, `:1943`, and schedule_diff.js / time_machine.js's pair). This one did not,
+    // and §I.5i names it "the exception worth watching": the literal is the PRE-§S65 object, and
+    // §S65 changed `resource: null` -> 'MASON' precisely BECAUSE null routes every unmatched class
+    // into _installSecs' no-resource branch and floors it at 120 s — the zero-width-bar defect.
+    // So any future caller that omitted the third argument silently re-acquired that floor.
+    // INERT TODAY, VERIFIED NOT ASSUMED: every call site of ScheduleAuthor.matchRule in this repo
+    // passes a third argument (schedule_author.js :436/:1725/:1967, schedule_diff.js:144,
+    // time_machine.js:3605 via _classifyRule, and 8 witnesses/probes) — the two bare `matchRule(cls)`
+    // hits in a grep are LOCAL functions of their own files (time_machine.js's `_classifyRule`
+    // wrapper, witness_4d_band_monotonic.js's own arrow), not this one. In node, where rates.js is
+    // loaded through a vm sandbox and its vars never reach `global`, this reads undefined and the
+    // literal still applies — behaviour there is byte-identical. The gain is in the browser, where
+    // `global` IS `window` and `window.SEQUENCE_DEFAULT` is always the current object.
+    // ⛔ The seven STALE LITERALS themselves are deliberately NOT rewritten — see the PR: correcting
+    // a value that any path actually reaches is a duration change, not a de-drift, and proving which
+    // paths reach it needs a full-suite canary. Reported, not shipped.
+    dflt = dflt || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
     if (!cls) return dflt;
     var bestKey = null, bestLen = 0;
     for (var key in rules) {
