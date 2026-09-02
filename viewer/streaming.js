@@ -2009,6 +2009,22 @@ function setupStreaming(A) {
         iMesh.userData.isInstanced = true;
         iMesh.userData.hash = hash;
         iMesh.userData.ifcClass = elements[0].ifcClass || '';
+        // §MEP_DISC_PALETTE coverage fix (2026-09-02) — MEASURED DEFECT: the §SUNGLASS discipline
+        // band (tools.js ticks 56-65) groups on `mesh.userData.disc`, but this path never set it,
+        // so EVERY InstancedMesh fell into A._groupBy's 'Unknown' bucket and took one flat colour.
+        // (Corroborated independently by PR #1594's own note: Clinic reported "7 discs" while its
+        // DB holds only 6 — the 7th was 'Unknown'.)
+        // ⚠ EXTRACTED, NOT ASSUMED: this branch buckets by GEOMETRY HASH ALONE (the storey|disc|rgba
+        // key above governs only the merge/batch branch), so instances here are NOT guaranteed to
+        // share a discipline. Set the key only when the set is genuinely uniform; otherwise leave it
+        // unset (prior behaviour, 'Unknown') and COUNT it, so a mixed-discipline instance set can
+        // never be silently painted as one discipline it does not all belong to.
+        var _dU = elements[0].disc || '';
+        for (var _dqi = 1; _dqi < elements.length; _dqi++) {
+          if ((elements[_dqi].disc || '') !== _dU) { _dU = null; break; }
+        }
+        if (_dU) { iMesh.userData.disc = _dU; A._instDiscUniform = (A._instDiscUniform || 0) + 1; }
+        else { A._instDiscMixed = (A._instDiscMixed || 0) + 1; }
         A._instanceMeta[iMesh.id] = meta;
         A.scene.add(iMesh);
         instancedCount += elements.length;
@@ -2292,6 +2308,12 @@ function setupStreaming(A) {
     A._batchFlushCount++;
     if (A._batchFlushCount <= 1 || A.streamIdx >= A.streamQueue.length - 1) {
       console.log(`[S260] §BATCHED_FLUSH instanced=${instancedCount} batched=${batchedCount} drawCalls=${drawCalls} (was ${instancedCount + batchedCount}) mobile=${A._isMobile}`);
+      // §MEP_DISC_PALETTE coverage — how many InstancedMeshes now carry a real discipline key, and
+      // how many genuinely could not (mixed-discipline geometry set). `mixed` is not a failure; it
+      // is the honest count of sets this fix must NOT paint. Both zero = VACUOUS (no instancing).
+      console.log(`§MEP_DISC_COVERAGE instancedMeshes uniformDisc=${A._instDiscUniform || 0} mixedDisc=${A._instDiscMixed || 0}` +
+        (!(A._instDiscUniform || A._instDiscMixed) ? ' — VACUOUS, no InstancedMesh built on this building'
+          : ` (${Math.round((A._instDiscUniform || 0) / ((A._instDiscUniform || 0) + (A._instDiscMixed || 0)) * 100)}% now keyed; these were ALL 'Unknown' before §MEP_DISC_PALETTE)`));
       if (batchedCount > 0) {
         console.log(`§BATCHED_DETAIL buckets=${Object.keys(batchBuckets).length} elements=${batchedCount} saved=${_prevDrawCalls - Object.keys(batchBuckets).length} drawCalls`);
       }
