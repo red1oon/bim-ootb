@@ -78,17 +78,20 @@
 <div id="bottom-nav"></div>
 
 <!-- §INSTANT Phase 1: globe renders from initbubble.json in <300ms -->
+<script src="vfs_detect.js?v=1"></script>
 <script src="ad_graph.js?v=26"></script>
 <!-- AD logic-expression evaluator (window.AdEvaluator) — ad_ui.js reads it to hide fields whose AD DisplayLogic is false for a record (§AD-DISPLAYLOGIC-LIVE). MUST precede ad_ui.js. -->
 <script src="ad_evaluator.js?v=24"></script>
-<script src="ad_ui.js?v=29"></script>
+<script src="ad_ui.js?v=30"></script>
 
 <!-- idempiereUI.md I1 — BIM pill bar, registry-driven from pills.json (the idempiere pill launches
      idempiere.html, renderer #1). icons.js = verbatim icon set; pill_builder.js used as-is. -->
 <script src="icons.js?v=26"></script>
 <script src="overlay_kit.js?v=1"></script>
-<script src="erp_picker.js?v=29"></script>
-<script src="pill_builder.js?v=27"></script>
+<!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (Help pill → AboutDIY.open). -->
+<script src="../common/about_diy.js?v=1"></script>
+<script src="erp_picker.js?v=30"></script>
+<script src="../common/pill_builder.js?v=1"></script>
 <script src="doc_cycle_validator.js?v=1"></script>
 <script src="erp_pills.js?v=34"></script>
 <script>
@@ -164,7 +167,7 @@ var _shellReady = false;
     });
   }
 
-  var V = '?v=25';
+  var V = '?v=26';
   // Modules NOT loaded in Phase 1 (ad_graph.js + ad_ui.js already loaded)
   var MODULES = [
     'kernel_ops.js' + V,
@@ -238,6 +241,10 @@ var _shellReady = false;
     _bench.sql_init = Math.round(performance.now() - _t0);
     console.log('§BENCH sql_init=' + _bench.sql_init + 'ms');
 
+    // §VFS — CONSTRAINT_MITIGATION item 3 wired live: OPFS-vs-IDB detection at boot (monitor + no silent
+    // downgrade). GH Pages → IDB (no COOP/COEP), named not a regression. Result on window.__VFS.
+    try { window.__VFS = (window.ERP && ERP.VFS) ? ERP.VFS.detect() : null; } catch (e) { console.log('§VFS detect error ' + e.message); }
+
     // ── Load database ───────────────────────────────────────────────
     var params = new URLSearchParams(window.location.search);
     var dbUrl = params.get('db');
@@ -270,7 +277,7 @@ var _shellReady = false;
 
     if (!hasAD) {
       _t0 = performance.now();
-      var cached = await idbGet('ad_seed_v15');
+      var cached = await idbGet('ad_seed_v17');
       var cacheValid = false;
       if (cached && cached.byteLength > 1000) {
         var header = new Uint8Array(cached, 0, 16);
@@ -311,7 +318,7 @@ var _shellReady = false;
           }
           db.close();
           db = new SQL.Database(new Uint8Array(seedBuf));
-          idbPut('ad_seed_v15', seedBuf);
+          idbPut('ad_seed_v17', seedBuf);
           _bench.db_fetch = Math.round(performance.now() - _t0);
           _bench.db_size = Math.round(seedBuf.byteLength / 1024);
           _bench.db_source = 'network';

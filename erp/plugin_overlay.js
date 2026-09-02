@@ -53,9 +53,20 @@
   var _reg = null, _glue = null, _hydrated = false;
 
   function _buildRegistry(glue) {
+    // db: bind the WRITABLE sql.js handle when the page gave us a raw one (glue.db has .run/.exec) — Ninja
+    // Create's bundle.activate → stageModels writes through it; engine bundles still read via the .query
+    // makeWritableDbHost attaches (NINJA_MODE_PILL §5). Pre-login (no raw db) → read-only adQ wrapper.
+    var hostDb;
+    if (glue.db && typeof glue.db.run === 'function' && typeof glue.db.exec === 'function') {
+      hostDb = (global.NinjaBundle && global.NinjaBundle.makeWritableDbHost)
+        ? global.NinjaBundle.makeWritableDbHost(glue.db)
+        : glue.db;
+    } else {
+      hostDb = { query: function (sql, p) { try { return glue.adQ ? glue.adQ(sql, p) : []; } catch (e) { return []; } } };
+    }
     var host = {
       engineVersion: ENGINE_VERSION,
-      db: { query: function (sql, p) { try { return glue.adQ ? glue.adQ(sql, p) : []; } catch (e) { return []; } } },
+      db: hostDb,
       ops: { append: function (type, params) {
         try { return (glue.KO && glue.db) ? glue.KO.commitOp(glue.db, type, params) : null; } catch (e) { return null; }
       } },
@@ -122,7 +133,34 @@
       '.pe-chip.ACTIVE{background:rgba(34,197,94,.16);color:#4ade80}' +
       '.pe-chip.STOPPED,.pe-chip.INSTALLED,.pe-chip.RESOLVED{background:rgba(148,163,184,.16);color:#94a3b8}' +
       '.pe-empty{color:#8b93a7;font-size:12.5px;padding:14px 0;text-align:center}' +
-      '.pe-x{cursor:pointer;color:#8b93a7;font-size:18px;line-height:1;margin-left:auto;background:none;border:none}';
+      '.pe-x{cursor:pointer;color:#8b93a7;font-size:18px;line-height:1;margin-left:auto;background:none;border:none}' +
+      // ── tabs (Install / Create) ──
+      '.pe-tabs{display:flex;gap:6px;padding:12px 18px 0}' +
+      '.pe-tab{cursor:pointer;background:none;border:1px solid rgba(255,255,255,.14);color:#8b93a7;border-radius:8px 8px 0 0;padding:7px 16px;font-size:12.5px;border-bottom:none}' +
+      '.pe-tab.on{background:#11131a;color:#cdd6e4;border-color:rgba(255,255,255,.2)}' +
+      // ── create face ──
+      '.pe-drop{border:1.5px dashed rgba(255,255,255,.22);border-radius:10px;padding:26px 14px;text-align:center;color:#8b93a7;font-size:13px;cursor:pointer;transition:.15s}' +
+      '.pe-drop.hot{border-color:#2563eb;background:rgba(37,99,235,.08);color:#cdd6e4}' +
+      '.pe-drop .pe-di{display:flex;align-items:center;justify-content:center;gap:8px}' +
+      '.pe-starter{display:inline-flex;align-items:center;gap:6px;margin-top:10px;color:#7aa2f7;font-size:12px;cursor:pointer;background:none;border:none}' +
+      '.pe-starter:hover{text-decoration:underline}' +
+      '.pe-prev{margin-top:14px}' +
+      '.pe-pt{padding:9px 0;border-top:1px solid rgba(255,255,255,.07)}' +
+      '.pe-pt .pe-pn{font-size:13px;color:#cdd6e4}' +
+      '.pe-pt .pe-pm{font-size:11px;color:#8b93a7;margin-left:6px}' +
+      '.pe-cols{margin-top:5px;display:flex;flex-wrap:wrap;gap:5px}' +
+      '.pe-col{font-size:10.5px;background:#11131a;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:2px 7px;color:#aab3c5}' +
+      '.pe-col b{color:#cdd6e4;font-weight:600}' +
+      '.pe-warn{margin-top:10px;font-size:11.5px;color:#fbbf24}' +
+      '.pe-emit{margin-top:14px;display:flex;justify-content:flex-end}' +
+      '.pe-ninja{font-size:12.5px;color:#cdd6e4;margin-bottom:11px}' +
+      // ── export (PackOut existing window) sub-section ──
+      '.pe-export{margin-top:16px;padding-top:13px;border-top:1px solid rgba(255,255,255,.07)}' +
+      '.pe-export .pe-ninja2{font-size:11.5px;color:#8b93a7;margin-bottom:8px}' +
+      '.pe-export .pe-exrow{display:flex;gap:7px}' +
+      '.pe-win{flex:1;background:#11131a;border:1px solid rgba(255,255,255,.14);color:#cdd6e4;border-radius:8px;padding:7px 9px;font-size:12px}' +
+      '.pe-byline{margin-top:14px;padding-top:11px;border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:#8b93a7;text-align:center}' +
+      '.pe-byline b{color:#aab3c5;font-weight:600}';
     doc.head.appendChild(s);
   }
 
@@ -176,6 +214,161 @@
       .catch(function (e) { console.warn('§PLUGIN-PILL install FAILED url=' + url + ': ' + e.message); _toast(doc, 'Install failed: ' + e.message); });
   }
 
+  // ── Create (PackOut) face ─ NINJA_MODE_PILL §2-5. Drop a sheet → preview derived models → Emit & Install.
+  //    Engine is frozen + witnessed (poc_ninja_create §NINJA-PILL). This is the DOM seam only.
+  var _tab = 'install';        // 'install' | 'create'
+  var _createModel = null;     // last previewed model (what Emit & Install stages)
+
+  function _switchTab(doc, tab) {
+    _tab = tab;
+    var ib = doc.getElementById('pe-install-body'), cb = doc.getElementById('pe-create-body');
+    if (ib) ib.style.display = (tab === 'install') ? '' : 'none';
+    if (cb) cb.style.display = (tab === 'create') ? '' : 'none';
+    var ti = doc.getElementById('pe-tab-install'), tc = doc.getElementById('pe-tab-create');
+    if (ti) ti.className = 'pe-tab' + (tab === 'install' ? ' on' : '');
+    if (tc) tc.className = 'pe-tab' + (tab === 'create' ? ' on' : '');
+    if (tab === 'create') _populateWindows(doc);   // refresh picker (tenant may have loaded since open)
+    console.log('§NINJA-PILL-DOM tab=' + (tab === 'create' ? 'Create' : 'Install'));
+  }
+
+  // Render the preview[] the controller derived (table, master↳, column chips name:refType). No re-derivation.
+  function _renderPreview(doc, prev, fileName) {
+    var box = doc.getElementById('pe-prev'); if (!box) return;
+    box.innerHTML = '';
+    if (!prev || prev.error) {
+      box.innerHTML = '<div class="pe-warn">' + ((prev && prev.error) || 'could not read sheet') + '</div>';
+      var b0 = doc.getElementById('pe-emit-btn'); if (b0) b0.disabled = true;
+      return;
+    }
+    _createModel = prev.model;
+    (prev.preview || []).forEach(function (p) {
+      var row = doc.createElement('div'); row.className = 'pe-pt';
+      var head = '<div><span class="pe-pn">' + p.table + '</span>' +
+        (p.master ? '<span class="pe-pm">↳ detail of ' + p.master + '</span>'
+                  : '<span class="pe-pm">' + (p.columns ? p.columns.length : 0) + ' cols</span>') + '</div>';
+      var chips = '<div class="pe-cols">' + (p.columns || []).map(function (c) {
+        return '<span class="pe-col"><b>' + c.name + '</b>:' + c.refType + '</span>';
+      }).join('') + '</div>';
+      row.innerHTML = head + chips;
+      box.appendChild(row);
+    });
+    if (prev.warnings && prev.warnings.length) {
+      var w = doc.createElement('div'); w.className = 'pe-warn';
+      w.textContent = '⚠ ' + prev.warnings.join(' · ');
+      box.appendChild(w);
+    }
+    var btn = doc.getElementById('pe-emit-btn'); if (btn) btn.disabled = !(prev.preview && prev.preview.length);
+    console.log('§NINJA-PILL-DOM drop=' + (fileName || 'sheet') + ' preview=' + ((prev.preview || []).length) +
+      ' warnings=' + ((prev.warnings || []).length));
+  }
+
+  function _onSheet(doc, file) {
+    if (!global.XLSX || !global.NinjaCreate) { _toast(doc, 'Ninja engine not loaded'); return; }
+    var fr = new FileReader();
+    fr.onload = function () {
+      try {
+        var wb = global.XLSX.read(new Uint8Array(fr.result), { type: 'array' });
+        _renderPreview(doc, global.NinjaCreate.previewSheet(wb, global.XLSX), file.name);
+      } catch (e) { _renderPreview(doc, { error: e.message }, file.name); }
+    };
+    fr.readAsArrayBuffer(file);
+  }
+
+  function _downloadStarter(doc) {
+    if (!global.XLSX || !global.NinjaStarter) { _toast(doc, 'Ninja engine not loaded'); return; }
+    try {
+      var blob = global.NinjaStarter.starterBlob(global.XLSX);
+      var a = doc.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ninja_starter.xlsx';
+      doc.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      console.log('§NINJA-PILL-DOM starter=ninja_starter.xlsx downloaded');
+    } catch (e) { _toast(doc, 'Starter download failed: ' + e.message); }
+  }
+
+  // Lazy-load SheetJS (xlsx.mini.min.js) the same way ninja_pill does — Export may run on a fresh open
+  // where the report pill hasn't pulled XLSX yet. Resolves to global.XLSX.
+  function _ensureXLSX(doc) {
+    if (global.XLSX) return Promise.resolve(global.XLSX);
+    return new Promise(function (res, rej) {
+      var s = doc.createElement('script'); s.src = 'xlsx.mini.min.js?v=1';
+      s.onload = function () { console.log('§NINJA-PILL-DOM xlsx=loaded'); res(global.XLSX); };
+      s.onerror = function () { rej(new Error('xlsx.mini.min.js failed to load')); };
+      doc.head.appendChild(s);
+    });
+  }
+
+  // Populate the window picker from the live writable AD db (read-only query). Active windows only.
+  function _populateWindows(doc) {
+    var sel = doc.getElementById('pe-win'); if (!sel) return;
+    var db = _glue && _glue.db;
+    if (!db || typeof db.exec !== 'function') { return; }   // no tenant loaded → leave placeholder
+    var rows;
+    try { rows = db.exec("SELECT AD_Window_ID, Name FROM AD_Window WHERE IsActive='Y' ORDER BY Name"); }
+    catch (e) { console.warn('§NINJA-PILL-DOM win-list FAILED: ' + e.message); return; }
+    var vals = (rows && rows[0] && rows[0].values) || [];
+    var html = '<option value="">&mdash; pick a window &mdash;</option>';
+    vals.forEach(function (r) {
+      html += '<option value="' + r[0] + '">' + String(r[1] || ('Window ' + r[0])).replace(/</g, '&lt;') + '</option>';
+    });
+    sel.innerHTML = html;
+    console.log('§NINJA-PILL-DOM win-list count=' + vals.length);
+  }
+
+  function _doExport(doc) {
+    if (!global.NinjaExport) { _toast(doc, 'Ninja engine not loaded'); return; }
+    var sel = doc.getElementById('pe-win');
+    var winId = sel && sel.value ? Number(sel.value) : 0;
+    if (!winId) { _toast(doc, 'Pick a window first'); return; }
+    if (!_glue || !_glue.db || typeof _glue.db.exec !== 'function') { _toast(doc, 'Load a tenant first (no AD db)'); return; }
+    var label = (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].text) || ('window ' + winId);
+    _ensureXLSX(doc).then(function (XLSX) {
+      var blob = global.NinjaExport.exportBlob(_glue.db, winId, XLSX);
+      if (!blob) { _toast(doc, 'Window not found / nothing to export'); console.warn('§NINJA-PILL-DOM export winId=' + winId + ' → null'); return; }
+      var fname = label.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || ('window_' + winId);
+      var a = doc.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname + '.xlsx';
+      doc.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      console.log('§NINJA-PILL-DOM export winId=' + winId + ' file=' + fname + '.xlsx');
+      _toast(doc, 'Exported ' + fname + '.xlsx');
+    }).catch(function (e) { console.warn('§NINJA-PILL-DOM export FAILED: ' + e.message); _toast(doc, 'Export failed: ' + e.message); });
+  }
+
+  function _doEmit(doc) {
+    if (!_createModel) { _toast(doc, 'Drop a model sheet first'); return; }
+    if (!global.NinjaCreate) { _toast(doc, 'Ninja engine not loaded'); return; }
+    if (!_glue || !_glue.db || typeof _glue.db.run !== 'function') { _toast(doc, 'Load a tenant first (no writable AD db)'); return; }
+    NinjaCreate.emitAndInstall(_reg, _createModel)
+      .then(function (res) {
+        return _persist().then(function () {
+          console.log('§NINJA-PILL-DOM emit id=' + res.id + ' tables=' + res.tables + ' install=' + res.state);
+          _toast(doc, res.id + ' → ' + res.state + ' (' + res.tables + ' tables)');
+          _render(doc);                 // the new bundle also shows in the Install list
+          _switchTab(doc, 'install');
+        });
+      })
+      .catch(function (e) { console.warn('§NINJA-PILL-DOM emit FAILED: ' + e.message); _toast(doc, 'Emit failed: ' + e.message); });
+  }
+
+  function _wireCreate(doc) {
+    var dz = doc.getElementById('pe-drop'); if (!dz) return;
+    dz.onclick = function () { var i = doc.getElementById('pe-file'); if (i) i.click(); };
+    var inp = doc.getElementById('pe-file');
+    if (inp) inp.onchange = function (e) { if (e.target.files && e.target.files[0]) _onSheet(doc, e.target.files[0]); };
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add('hot'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('hot'); });
+    });
+    dz.addEventListener('drop', function (e) {
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) _onSheet(doc, f);
+    });
+    var st = doc.getElementById('pe-starter'); if (st) st.onclick = function () { _downloadStarter(doc); };
+    var eb = doc.getElementById('pe-emit-btn'); if (eb) eb.onclick = function () { _doEmit(doc); };
+    var xb = doc.getElementById('pe-export-btn'); if (xb) xb.onclick = function () { _doExport(doc); };
+    _populateWindows(doc);
+  }
+
   // open({ doc, db, adQ, KO, engines }) — host injects the page glue; build/hydrate the registry once.
   function open(opts) {
     opts = opts || {};
@@ -199,12 +392,35 @@
       '<div id="pe-card">' +
         '<h3>' + ICO('plug') + ' Plugin Engine <span class="pe-sub">Fold-Engine bundles</span>' +
           '<button class="pe-x" id="pe-close">&times;</button></h3>' +
-        '<div class="pe-body">' +
+        '<div class="pe-tabs">' +
+          '<button class="pe-tab on" id="pe-tab-install">Install</button>' +
+          '<button class="pe-tab" id="pe-tab-create">Create</button>' +
+        '</div>' +
+        // Install (PackIn) face — paste a bundle URL.
+        '<div class="pe-body" id="pe-install-body">' +
           '<div class="pe-install">' +
             '<input id="pe-url" placeholder="https://raw.githubusercontent.com/&hellip;/my-plugin.mjs" />' +
             '<button class="pe-btn pe-go" id="pe-install">Install</button>' +
           '</div>' +
           '<div id="pe-list"></div>' +
+        '</div>' +
+        // Create (PackOut) face — drop a model sheet, preview, Emit & Install. Ninja mode (tribute to Red1 Ninja).
+        '<div class="pe-body" id="pe-create-body" style="display:none">' +
+          '<div class="pe-ninja">Ninja mode — your spreadsheet becomes a running module</div>' +
+          '<div class="pe-drop" id="pe-drop"><div class="pe-di">' + ICO('upload') + ' drop a .xlsx model sheet here</div></div>' +
+          '<input type="file" id="pe-file" accept=".xlsx,.xls" style="display:none" />' +
+          '<button class="pe-starter" id="pe-starter">' + ICO('download') + ' Download starter template</button>' +
+          '<div class="pe-prev" id="pe-prev"></div>' +
+          '<div class="pe-emit"><button class="pe-btn pe-go" id="pe-emit-btn" disabled>' + ICO('plug') + ' Emit &amp; Install</button></div>' +
+          // Export (the literal PackOut) — round-trip a live window back to a re-droppable sheet. NINJA_MODE_LANE §1.
+          '<div class="pe-export">' +
+            '<div class="pe-ninja2">Export an existing window &mdash; round-trip a live module back to a sheet</div>' +
+            '<div class="pe-exrow">' +
+              '<select class="pe-win" id="pe-win"><option value="">&mdash; pick a window &mdash;</option></select>' +
+              '<button class="pe-btn" id="pe-export-btn">' + ICO('download') + ' Export</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="pe-byline">A friendlier <b>Red1 Ninja</b>, in the browser — Excel defines the model; no JVM, no 2Pack.</div>' +
         '</div>' +
       '</div>';
     doc.body.appendChild(ov);
@@ -212,6 +428,10 @@
     doc.getElementById('pe-close').onclick = function () { _close(doc); };
     doc.getElementById('pe-install').onclick = function () { _doInstall(doc, doc.getElementById('pe-url').value); };
     doc.getElementById('pe-url').addEventListener('keydown', function (e) { if (e.key === 'Enter') _doInstall(doc, e.target.value); });
+    doc.getElementById('pe-tab-install').onclick = function () { _switchTab(doc, 'install'); };
+    doc.getElementById('pe-tab-create').onclick = function () { _switchTab(doc, 'create'); };
+    _wireCreate(doc);
+    _tab = 'install';
 
     // Hydrate persisted bundles, then render. (First open re-activates ACTIVE bundles into the engines.)
     _hydrate().then(function () { _render(doc); }).catch(function () { _render(doc); });

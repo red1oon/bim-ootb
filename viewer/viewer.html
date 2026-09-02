@@ -9,6 +9,7 @@
 <title>BIM OOTB v3 — DEV</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#4fc3f7">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -93,20 +94,63 @@
   }
   .bim-panel .bim-slider-row button:hover { background: rgba(255,255,255,0.1); }
   .bim-panel .bim-slider-row button.active { color: #4fc3f7; }
+  /* §CINEMA_ROW_BUSY (2026-07-18): distinct "processing..." pulse — steady active=done/showing,
+     pulsing busy=still working (16-sample TAA/AO fold, cutout texture decode) so a slow machine
+     doesn't read as "did nothing happen" during the few-seconds gap. */
+  .bim-panel .bim-slider-row button.busy { color: #4fc3f7; animation: bimBusyPulse 0.9s ease-in-out infinite; }
+  @keyframes bimBusyPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   .bim-panel .bim-slider-row button svg { width: 18px; height: 18px; pointer-events: none; }
   .bim-panel .bim-slider-row input[type=range] {
     flex: 1; accent-color: #4fc3f7; cursor: pointer; min-width: 0;
   }
+  /* §SUNGLASS_BROWN_TRACK (2026-09-01, bim-compiler prompts/CINEMA_PATH_EDITOR.md
+     §SESSION_2026-09-01C): the palette scrub's LAST segment (ticks 98-100 → 97%..100% of the
+     0-100 range) is saddle-brown — the affordance that the tip does something special (material
+     injection). Custom track for THIS slider only; the other sliders keep the native accent. */
+  #sunglass-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 20px; }
+  #sunglass-slider::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, rgba(79,195,247,0.35) 0%, rgba(79,195,247,0.35) 97%, rgb(139,69,19) 97%, rgb(139,69,19) 100%);
+  }
+  #sunglass-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #4fc3f7; margin-top: -4px; border: none;
+  }
+  #sunglass-slider::-moz-range-track {
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, rgba(79,195,247,0.35) 0%, rgba(79,195,247,0.35) 97%, rgb(139,69,19) 97%, rgb(139,69,19) 100%);
+  }
+  #sunglass-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #4fc3f7; border: none; }
   .bim-panel .bim-slider-val {
     width: 36px; text-align: right; font-size: 11px; color: #4fc3f7;
     flex-shrink: 0; opacity: 0; transition: opacity 0.3s;
   }
   .bim-panel .bim-slider-val.visible { opacity: 1; }
+  /* ── PILL_DRAWER_REORGANIZATION.md — drawer sub-action rows (Navigate/Inspect/Camera-View
+     panels + the Night/Shadow-Ground/Background/Audio rows appended to the Palette panel) ── */
+  .bim-drawer-row {
+    display: flex; align-items: center; gap: 8px; width: 100%; margin: 2px 0;
+    padding: 6px 8px; border: none; border-radius: 7px; background: transparent;
+    color: #e0e0e0; cursor: pointer; font-size: 12px; text-align: left;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .bim-drawer-row:hover { background: rgba(255,255,255,0.08); }
+  .bim-drawer-row.active { background: rgba(79,195,247,0.18); color: #4fc3f7; }
+  .bim-drawer-row .bim-drawer-row-icon { display: flex; flex-shrink: 0; pointer-events: none; }
+  .bim-drawer-row .bim-drawer-row-icon svg { width: 18px; height: 18px; }
+  .bim-drawer-row .bim-drawer-row-label { pointer-events: none; white-space: nowrap; }
+  .bim-drawer-swatch {
+    width: 24px; height: 24px; border-radius: 5px; flex-shrink: 0;
+    background-size: cover; background-position: center;
+    border: 1px solid rgba(255,255,255,0.25); pointer-events: none;
+  }
   @media (max-width: 600px) {
     .bim-panel { border-radius: 12px; }
     .bim-panel .bim-panel-close { font-size: 22px; padding: 8px 12px; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
     .bim-panel .bim-slider-row button { width: 44px; height: 44px; }
     .bim-panel .bim-slider-row button svg { width: 22px; height: 22px; }
+    .bim-drawer-row { padding: 10px 8px; font-size: 13px; }
+    .bim-drawer-row .bim-drawer-row-icon svg { width: 22px; height: 22px; }
   }
 
   /* §S280: HUD accordion CSS removed — storey/disc now in Find outliner */
@@ -295,28 +339,30 @@
   #mobile-bar button svg { width: 22px; height: 22px; pointer-events: none; }
   /* §S280: Scrollable pill — rises from bottom, 3 icons visible, drag to reveal */
   /* §S280: Full-height scrollable pill — right edge, glass, native scroll */
+  /* L-PATH rail (matches the Modeller addd8fe): a transparent full-screen layer; buttons are
+     position:fixed and JS-placed (pill_builder _layoutRail) — they stack UP the right edge from the ⋯,
+     then turn the corner and flow LEFT along the top. Roll out in sequence (per-index delay in JS). */
   #mobile-pill {
-    position: fixed; top: 16px; bottom: 72px; right: 16px; z-index: 499;
-    background: rgba(10,10,30,0.50); border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 24px; padding: 8px 6px;
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    overflow-y: auto; overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    position: fixed; inset: 0; z-index: 499; display: none; pointer-events: none;
+    background: none; border: none; padding: 0; backdrop-filter: none;
   }
   #mobile-pill::-webkit-scrollbar { display: none; }
-  /* Reveal-UP cue (consistent across all pill surfaces): the strip rises into view on open. */
   @keyframes pill-rise { from { transform: translateY(18px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  #mobile-pill.pill-revealing { animation: pill-rise 0.42s cubic-bezier(.2,.85,.25,1); }
   #mobile-pill button {
-    width: 36px; height: 36px; border: none; border-radius: 50%;
-    background: transparent; color: #fff; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    padding: 0; margin: 2px 0; transition: background 0.15s;
+    position: fixed; pointer-events: auto;
+    width: 40px; height: 40px; border: 1px solid rgba(255,255,255,0.12); border-radius: 50%;
+    background: rgba(22,24,32,0.86); color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; padding: 0; margin: 0;
+    /* NO per-button backdrop-filter: ~19 simultaneous blur layers hogged the GPU/compositor and
+       janked toggles (Fly especially) right when _sync() repainted them. Solid opaque bg instead. */
+    box-shadow: 0 2px 10px rgba(0,0,0,0.30);
+    opacity: 0; transform: scale(.35) translate(26px, 26px);     /* rolled-IN; JS sets per-index delay */
+    transition: opacity .24s ease, transform .30s cubic-bezier(.22,.9,.25,1.2), background .15s, border-color .15s;
   }
-  #mobile-pill button:hover { background: rgba(255,255,255,0.1); }
-  #mobile-pill button:active { background: rgba(255,255,255,0.15); }
-  #mobile-pill button.active { background: #4fc3f7; color: #000; }
+  #mobile-pill.pill-revealing button { opacity: 1; transform: none; }   /* rolled-OUT state */
+  #mobile-pill button:hover { background: rgba(46,52,68,0.60); }
+  #mobile-pill button:active { background: rgba(46,52,68,0.78); }
+  #mobile-pill button.active { background: #4fc3f7; color: #000; border-color: #4fc3f7; }
   #mobile-pill button svg { width: 20px; height: 20px; pointer-events: none; }
   /* §S280: [] min/max button */
   #minmax-btn {
@@ -331,7 +377,7 @@
   @media (max-width: 600px) {
     /* §S280: Mobile adjustments */
     #mobile-bar { bottom: 8px; right: 8px; }
-    #mobile-pill { top: 8px; bottom: 64px; right: 8px; padding: 6px 4px; }
+    /* L-PATH layer stays inset:0; just larger touch targets on mobile (layoutRail reads the size). */
     #mobile-pill button { width: 44px; height: 44px; }
     #mobile-pill button svg { width: 24px; height: 24px; }
     /* Overflow: bottom drawer instead of dropdown */
@@ -419,6 +465,18 @@
     .swipe-hidden, #hud.swipe-hidden, #search-box.swipe-hidden, #info-panel.swipe-hidden { display: none !important; }
   }
 </style>
+<style>
+/* BIM_EMBED_WINDOW_SESSION §B2 — chromeless when docked inside the iDempiere window (html.bim-embedded,
+   set by main.js when ?embedded=true). Hides the viewer's own app chrome so it reads as a native sub-panel;
+   the 3D canvas + model stay. Additive/guarded — ids that aren't present are simply no-ops. */
+html.bim-embedded #hud, html.bim-embedded #icon-pill, html.bim-embedded #overflow-scrim,
+html.bim-embedded #search-box, html.bim-embedded #info-panel, html.bim-embedded #site-cam-btn,
+html.bim-embedded #walk-mode-btn, html.bim-embedded #nlp-btn, html.bim-embedded #panel-toggle-btn,
+html.bim-embedded #minmax-btn, html.bim-embedded #mobile-bar, html.bim-embedded #mobile-pill,
+html.bim-embedded #status-bar-wrap, html.bim-embedded #doc-timeline, html.bim-embedded #bug-fab,
+html.bim-embedded #variance-btn { display: none !important; }
+html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
+</style>
 </head>
 <body>
 <div id="hud" style="display:none!important">
@@ -463,6 +521,9 @@
   <div><span class="label" data-trl="h_storey">Storey</span>: <span class="value" id="info-storey">—</span></div>
   <div><span class="label" data-trl="h_discipline">Discipline</span>: <span class="value" id="info-disc">—</span></div>
   <div><span class="label" data-trl="h_material">Material</span>: <span class="value" id="info-material">—</span></div>
+  <!-- §S2 (TM_4D5D_VARIANCE_LANE) — Zoom-Across cost fold: the twin's Planned→Committed pair for this IFC class
+       (line grain) + its phase + the whole project, READ from C_Project/C_ProjectLine/C_ProjectPhase. -->
+  <div id="info-cost" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.12)"></div>
   <div id="snag-btn-row" style="margin-top:6px;display:none"><button onclick="openSiteCamera()" style="background:#f44336;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer">📸 <span data-trl="ui_snag">Snag</span></button></div>
 </div>
 <!-- S265 Phase 4: storey-panel and disc-panel moved inside #hud as accordion sections -->
@@ -762,32 +823,53 @@
 </div>
 
 <!-- §S276: Import map for Three.js r184 WebGPU — includes WebGPURenderer + TSL + compat mode -->
+<!-- §GI_POC (2026-07-16, sandbox spike): repointed "three" -> three.module.min.js, the SAME build
+     scene.js actually loads for the real WebGLRenderer (window.THREE). This bare specifier was
+     previously unused anywhere in the app (grepped — zero `from 'three'` imports in viewer/*.js),
+     so this is safe: it now lets the vendored postprocessing-n8ao.bundle.js's internal `from
+     'three'` imports resolve to the SAME THREE instance as the rest of the app, avoiding a second
+     incompatible THREE.js copy. Revert to three.webgpu.min.js if TSL/WebGPU work resumes. -->
 <script type="importmap">
-{ "imports": { "three": "./lib/three.webgpu.min.js" } }
+{ "imports": {
+  "three": "./lib/three.module.min.js",
+  "three/examples/jsm/postprocessing/Pass.js": "./lib/Pass.js"
+} }
 </script>
 <script src="loader.js?v=12"></script>
 <script src="lib/httpvfs.js?v=1" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
-<script src="effects.js?v=1" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
+<script src="db_resolve.js?v=2" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
+<script src="effects.js?v=29" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
+<script src="effects_gi_poc.js?v=3" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
+<script src="lib/mp4_mux.js?v=1" onerror="console.warn('§LOAD_FAIL mp4_mux.js — MaxQ falls back to webm')"></script>
+<script src="cinema_path_editor.js?v=15" onerror="console.warn('§LOAD_FAIL cinema_path_editor.js — Alt+C path editing disabled')"></script>
+<script src="cpe_walk.js?v=6" onerror="console.warn('§LOAD_FAIL cpe_walk.js — CPE walk-mode disabled')"></script>
+<script src="cpe_xr.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_xr.js — VR entry disabled')"></script>
+<script src="cinema_maxq.js?v=9" onerror="console.warn('§LOAD_FAIL cinema_maxq.js — Alt+M MaxQ export disabled')"></script>
 <script src="input_registry.js?v=1" onerror="console.warn('§LOAD_FAIL input_registry.js')"></script>
-<script src="pill_builder.js?v=2" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
+<script src="../common/pill_builder.js?v=1" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
 <script src="list_builder.js?v=1" onerror="console.warn('§LOAD_FAIL list_builder.js')"></script>
 <script src="settings_editor.js?v=1" onerror="console.warn('§LOAD_FAIL settings_editor.js')"></script>
-<script src="../common/history_tap.js?v=5" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
-<script src="scene.js?v=51" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="../common/history_tap.js?v=7" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
+<script src="scene.js?v=58" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
-<script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
-<script src="streaming.js?v=53" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
-<script src="dlod.js?v=7" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
-<script src="panels.js?v=41" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
-<script src="tools.js?v=30" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
-<script src="picking.js?v=27" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
-<script src="tour.js?v=4" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
+<script src="helpers.js?v=6" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
+<script src="streaming.js?v=67" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
+<script src="dlod.js?v=8" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
+<script src="panels.js?v=44" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="tools.js?v=45" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
+<script src="picking.js?v=30" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
+<script src="hover_name.js?v=1" onerror="console.warn('§LOAD_FAIL hover_name.js — hover-name disabled')"></script>
+<script src="cpe_room_title.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_room_title.js — room titles disabled')"></script>
+<script src="cpe_day_counter.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_day_counter.js — day counter disabled')"></script>
+<script src="cpe_path_overview.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_path_overview.js — path overview disabled')"></script>
+<script src="cpe_resource_panel.js?v=2" onerror="console.warn('§LOAD_FAIL cpe_resource_panel.js — resource panel disabled')"></script>
+<script src="tour.js?v=17" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
 <script src="clash_report.js?v=1" onerror="console.warn('§LOAD_FAIL clash_report.js')"></script>
 <script src="clash_snag.js?v=1" onerror="console.warn('§LOAD_FAIL clash_snag.js')"></script>
 <script src="clash_matrix.js?v=1" onerror="console.warn('§LOAD_FAIL clash_matrix.js')"></script>
-<script src="measure.js?v=49" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
+<script src="measure.js?v=50" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
 <script src="sitecam.js?v=7" onerror="console.warn('§LOAD_FAIL sitecam.js')"></script>
 <script src="share.js?v=2" onerror="console.warn('§LOAD_FAIL share.js')"></script>
 <script src="issues.js?v=5" onerror="console.warn('§LOAD_FAIL issues.js')"></script>
@@ -797,20 +879,35 @@
      build/erp/wh_route.js, the pure §S-2 route verb) + wh_walk.js (the data-gated lens; lazy-loads
      ../erp/erp_engine.js + ../erp/ad_docfsm.js + ../erp/ad_seed.db only when opened). -->
 <script src="wh_route.js?v=2" onerror="console.warn('§LOAD_FAIL wh_route.js — pick walk disabled')"></script>
-<script src="wh_walk.js?v=5" onerror="console.warn('§LOAD_FAIL wh_walk.js — pick walk disabled')"></script>
+<script src="wh_walk.js?v=8" onerror="console.warn('§LOAD_FAIL wh_walk.js — pick walk disabled')"></script>
 <!-- navigate.js lazy-loaded on demand by main.js A.loadNavigate() -->
-<script src="city.js?v=7"></script>
+<script src="city.js?v=8"></script>
 <script src="rates.js?v=7"></script>
+<!-- BIM→Project Order (TASK C): BigDecimal must precede proj_fold (it reads global.BigDecimal at load) -->
+<script src="../erp/bigdecimal.js"></script>
+<script src="../erp/ad_docfsm.js"></script>
+<script src="../erp/kernel_ops.js"></script>
+<script src="blue_fold.js?v=1"></script>
+<script src="proj_fold.js?v=3"></script>
+<script src="vo_fold.js?v=2"></script>
+<script src="proj_control.js?v=1"></script>
+<script src="whatif.js?v=2"></script>
+<script src="whatif_panel.js?v=4"></script>
+<script src="vo_approve.js?v=1"></script>
+<script src="proj_period.js?v=1"></script>
+<script src="proj_claim.js?v=1"></script>
 <script src="locale_loader.js?v=7"></script>
 <script src="decoder.js?v=1"></script>
 <script src="nlp.js?v=5"></script>
 <script src="semantic_enrichment.js?v=1"></script>
 <script src="scene_to_db.js?v=1"></script>
 <script src="import_db_builder.js?v=2"></script>
-<script src="diff.js?v=3"></script>
+<script src="diff.js?v=4"></script>
 <script src="variation_order.js?v=2"></script>
-<script src="import.js?v=3"></script>
-<script src="routewalker.js?v=1" onerror="console.warn('§LOAD_FAIL routewalker.js — MEP generation disabled')"></script>
+<script src="import.js?v=4"></script>
+<script src="mep_coordination.js?v=1" onerror="console.warn('§LOAD_FAIL mep_coordination.js — MEP coordination disabled')"></script>
+<script src="real_placement_resolver.js?v=1" onerror="console.warn('§RPR LOAD_FAIL real_placement_resolver.js')"></script>
+<script src="routewalker.js?v=3" onerror="console.warn('§LOAD_FAIL routewalker.js — MEP generation disabled')"></script>
 <script src="grid_dims.js?v=6"></script>
 <script src="grid_config.js?v=2" onerror="console.warn('[GridConfig] grid_config.js skipped')"></script>
 <script src="grid_views.js?v=9" onerror="console.warn('[GridViews] grid_views.js skipped')"></script>
@@ -819,10 +916,15 @@
 <script src="elevation.js?v=1" onerror="console.warn('[Elevation] elevation.js skipped')"></script>
 <script src="grid_contours.js?v=5" onerror="console.warn('[GridContours] grid_contours.js skipped')"></script>
 <script src="grid_dim_chains.js?v=4" onerror="console.warn('[DimChains] grid_dim_chains.js skipped')"></script>
-<script src="kernel_ops.js?v=4" onerror="console.warn('[KernelOps] kernel_ops.js skipped')"></script>
+<!-- kernel_ops: loaded ONCE as ../erp/kernel_ops.js above (v13). The viewer-local copy (v8) used
+     to be re-loaded here and CLOBBERED v13 — silently breaking blue_fold.js/whatif.js, which call
+     v13-only discardBranch/acceptBranchUpTo. Do not re-add a second kernel_ops include. -->
 <script src="../common/whole_history.js?v=4" onerror="console.warn('[WholeHistory] common/whole_history.js skipped')"></script>
-<script src="../common/history_bar.js?v=5" onerror="console.warn('[HistoryBar] common/history_bar.js skipped')"></script>
-<script src="universal_history.js?v=20" onerror="console.warn('[UniversalHistory] universal_history.js skipped')"></script>
+<script src="../common/history_bar.js?v=6" onerror="console.warn('[HistoryBar] common/history_bar.js skipped')"></script>
+<!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (the command-palette corner download triangle → AboutDIY.open; the Help pill keeps the shortcuts palette). Self-contained
+     (embeds its own Lucide glyphs) — does NOT load erp/icons.js, which would clobber the viewer's own window.ICONS. -->
+<script src="../common/about_diy.js?v=1" onerror="console.warn('[AboutDIY] about_diy.js skipped')"></script>
+<script src="universal_history.js?v=24" onerror="console.warn('[UniversalHistory] universal_history.js skipped')"></script>
 <script src="bom_extract.js?v=1" onerror="console.warn('[BOMExtract] bom_extract.js skipped')"></script>
 <script src="verb_expand.js?v=1" onerror="console.warn('[VerbExpand] verb_expand.js skipped')"></script>
 <script src="bom_walker.js?v=1" onerror="console.warn('[BOMWalker] bom_walker.js skipped')"></script>
@@ -836,7 +938,8 @@
 <script src="bom_engine/bom_rules.js?v=1" onerror="console.warn('[BomRules] bom_rules.js skipped')"></script>
 <script src="grid_kinematics.js?v=1" onerror="console.warn('[GridKinematics] grid_kinematics.js skipped')"></script>
 <script src="grid_recompose.js?v=2" onerror="console.warn('[GridRecompose] grid_recompose.js skipped')"></script>
-<script src="doc_canvas.js?v=10" onerror="console.warn('[DocCanvas] doc_canvas.js skipped')"></script>
+<script src="materialize.js?v=1" onerror="console.warn('[Materialize] materialize.js skipped')"></script>
+<script src="doc_canvas.js?v=11" onerror="console.warn('[DocCanvas] doc_canvas.js skipped')"></script>
 <script src="cost_panel.js?v=4" onerror="console.warn('[CostPanel] cost_panel.js skipped')"></script>
 <script src="grid_drag.js?v=7" onerror="console.warn('[GridDrag] grid_drag.js skipped')"></script>
 <script src="grid_scissors.js?v=2" onerror="console.warn('[GridScissors] grid_scissors.js skipped')"></script>
@@ -849,10 +952,77 @@
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=8" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
 <script src="schedule_gate.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
-<script src="time_machine.js?v=53" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<!-- §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50): location axis before the engine that
+     gates on it. room_walker load here is idempotent with navigate_find's lazy loader (it checks
+     window.RoomWalker first). If any of the three fail, cpm_schedule logs §CELL_GATE unavailable
+     and runs the graph engine unchanged — loud degrade, never silent. -->
+<script src="lib/room_walker.js?v=3" onerror="console.warn('§LOAD_FAIL lib/room_walker.js — compiled rooms unavailable, schedule falls back to graph engine')"></script>
+<script src="lib/level_deriver.js?v=1" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
+<script src="location_axis.js?v=1" onerror="console.warn('§LOAD_FAIL location_axis.js — cell gate unavailable, schedule falls back to graph engine')"></script>
+<script src="cpm_schedule.js?v=2" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
+<!-- §S53 (F3, 4D_GANTT_TM_REFACTOR.md): the Gantt bar MODEL, extracted out of time_machine.js.
+     Must load BEFORE time_machine.js — its computeDays/buildGanttTasks wrappers call it. -->
+<script src="gantt_model.js?v=1" onerror="console.warn('§LOAD_FAIL gantt_model.js — Gantt bars and timeline bounds unavailable')"></script>
+<!-- §S58: support-order physics (sweep / judge parity / window rescale), extracted out of
+     time_machine.js. Must load BEFORE time_machine.js — its _ogSupportSweep/_cjpJudgeParity/
+     _contactGraph/_designatedSupport/_midairAudit/_capWindowRescale wrappers call it. -->
+<!-- §S62: median-Z storey banding index (pure builder), extracted out of time_machine.js.
+     Must load BEFORE time_machine.js — its _zoneIndexBuild wrapper calls it. -->
+<script src="zone_index.js?v=1" onerror="console.warn('§LOAD_FAIL zone_index.js — storey banding unavailable (zone inference falls back to declared storey)')"></script>
+<script src="support_sweep.js?v=1" onerror="console.warn('§LOAD_FAIL support_sweep.js — support-order physics unavailable (schedule repair, judge parity, lock-gate midair audit)')"></script>
+<script src="time_machine.js?v=77" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="dlod_nav.js?v=2" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
+<script src="schedule_author.js?v=14" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
+<script src="schedule_author_ui.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
 <script src="error_reporter.js?v=1" onerror="console.warn('§LOAD_FAIL error_reporter.js')"></script>
 <script src="sfx.js?v=1" onerror="console.warn('§LOAD_FAIL sfx.js — audio feedback disabled')"></script>
-<script src="main.js?v=41"></script>
+<!-- HR_BIM_Asset spatial lenses (prompts/RESUME_HR_BIM_ASSET.md §RESUME NEXT#2). ADDITIVE peer module: the
+     witnessed engine (hr_bim_asset/*) loads first → self.Hba* globals; hba_lens.js binds it to the scene via
+     a MeshPort over A.guidMap and data-gates the two pill icons. Inert (skipped) if any file is absent. -->
+<script src="../hr_bim_asset/watermark.js?v=1" onerror="console.warn('§LOAD_FAIL hr watermark.js')"></script>
+<script src="../hr_bim_asset/models.js?v=1" onerror="console.warn('§LOAD_FAIL hr models.js')"></script>
+<script src="../hr_bim_asset/binding.js?v=1" onerror="console.warn('§LOAD_FAIL hr binding.js')"></script>
+<script src="../hr_bim_asset/connectors.js?v=1" onerror="console.warn('§LOAD_FAIL hr connectors.js')"></script>
+<script src="../hr_bim_asset/rules.js?v=1" onerror="console.warn('§LOAD_FAIL hr rules.js')"></script>
+<!-- §STAGE3 live-smoke finding 2026-07-03: PR #628 made ad_payroll.js read self.HbaMockRates.MOCK_RATES at
+     eval time — without mock_rates.js loaded FIRST the whole ad_payroll IIFE throws and HbaAdPayroll never
+     exists (payslip/leave panes dead, payroll governance silently literal). Must precede ad_payroll.js. -->
+<script src="../hr_bim_asset/mock_rates.js?v=1" onerror="console.warn('§LOAD_FAIL hr mock_rates.js')"></script>
+<script src="../hr_bim_asset/ad_payroll.js?v=1" onerror="console.warn('§LOAD_FAIL hr ad_payroll.js')"></script>
+<script src="../hr_bim_asset/overlay.js?v=2" onerror="console.warn('§LOAD_FAIL hr overlay.js')"></script>
+<script src="../hr_bim_asset/lens.js?v=1" onerror="console.warn('§LOAD_FAIL hr lens.js')"></script>
+<script src="../hr_bim_asset/timeline.js?v=1" onerror="console.warn('§LOAD_FAIL hr timeline.js')"></script>
+<script src="../hr_bim_asset/attendance.js?v=1" onerror="console.warn('§LOAD_FAIL hr attendance.js')"></script>
+<script src="../hr_bim_asset/leave.js?v=1" onerror="console.warn('§LOAD_FAIL hr leave.js')"></script>
+<script src="../hr_bim_asset/access.js?v=1" onerror="console.warn('§LOAD_FAIL hr access.js')"></script>
+<script src="../hr_bim_asset/occupancy.js?v=1" onerror="console.warn('§LOAD_FAIL hr occupancy.js')"></script>
+<script src="../hr_bim_asset/request.js?v=1" onerror="console.warn('§LOAD_FAIL hr request.js')"></script>
+<script src="../hr_bim_asset/dashboard.js?v=1" onerror="console.warn('§LOAD_FAIL hr dashboard.js')"></script>
+<script src="../hr_bim_asset/avatars.js?v=1" onerror="console.warn('§LOAD_FAIL hr avatars.js')"></script>
+<script src="../hr_bim_asset/ad_tenancy.js?v=1" onerror="console.warn('§LOAD_FAIL hr ad_tenancy.js')"></script>
+<script src="../hr_bim_asset/ad_attendance.js?v=1" onerror="console.warn('§LOAD_FAIL hr ad_attendance.js')"></script>
+<script src="../hr_bim_asset/ad_bom.js?v=1" onerror="console.warn('§LOAD_FAIL hr ad_bom.js')"></script>
+<script src="../hr_bim_asset/iot.js?v=1" onerror="console.warn('§LOAD_FAIL hr iot.js')"></script>
+<script src="hba_lens.js?v=7" onerror="console.warn('§LOAD_FAIL hba_lens.js')"></script>
+<script src="hba_avatars.js?v=1" onerror="console.warn('§LOAD_FAIL hba_avatars.js')"></script>
+<script src="hba_draggable.js?v=1" onerror="console.warn('§LOAD_FAIL hba_draggable.js')"></script>
+<!-- Mobile card-stack host for the 6 HBA panes (RESUME_HBA_MOBILE_CARD_STACK.md). Loads BETWEEN draggable and
+     the panes so G.HbaPaneHost exists before any pane mounts. Desktop = provable no-op (append+drag as today). -->
+<script src="hba_mobile_stack.js?v=1" onerror="console.warn('§LOAD_FAIL hba_mobile_stack.js')"></script>
+<!-- Chart.js (local, already precached in sw.js) — the HBA Dashboard pane's per-storey / trend / ticket-aging
+     charts need window.Chart; without this the KPI tiles rendered but the canvases were blank. -->
+<script src="lib/chart.umd.min.js" onerror="console.warn('§LOAD_FAIL chart.umd.min.js')"></script>
+<script src="hba_dashboard.js?v=1" onerror="console.warn('§LOAD_FAIL hba_dashboard.js')"></script>
+<script src="hba_payslip.js?v=1" onerror="console.warn('§LOAD_FAIL hba_payslip.js')"></script>
+<script src="hba_leave.js?v=1" onerror="console.warn('§LOAD_FAIL hba_leave.js')"></script>
+<script src="hba_tenancy.js?v=1" onerror="console.warn('§LOAD_FAIL hba_tenancy.js')"></script>
+<script src="hba_bom.js?v=1" onerror="console.warn('§LOAD_FAIL hba_bom.js')"></script>
+<script src="hba_iot.js?v=3" onerror="console.warn('§LOAD_FAIL hba_iot.js')"></script>
+<!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): the viewer joins the shared cross-surface context
+     as surface 'viewer' — selection/timeline/identity over the one signed op-log. Opt-in (toggle / ?connect=1). -->
+<script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
+<script src="main.js?v=46"></script>
 <!-- Styled tooltip bubbles for [data-trl-title] buttons — appended to body, not clipped by overflow:hidden -->
 <style>#ootb-tip{display:none;position:fixed;z-index:9990;background:rgba(10,10,30,0.92);color:#4fc3f7;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(79,195,247,0.35);pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.4)}</style>
 <script>
@@ -892,9 +1062,70 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=527')
+  navigator.serviceWorker.register('sw.js?v=538')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
+  // §BUILD_VERSION_STAMP: log the ACTIVE (controlling) service worker's CACHE_VERSION at page
+  // onset — a one-line answer to "is this tab running the latest deploy" without hunting for a
+  // later feature-specific log line. No controller yet = this load isn't SW-controlled (first
+  // visit, or the SW just updated and hasn't taken over) — reload once to get a controller.
+  if(navigator.serviceWorker.controller){
+    var _bvCh=new MessageChannel();
+    _bvCh.port1.onmessage=function(ev){console.log('§BUILD_VERSION '+(ev.data&&ev.data.version||'?')+' (sw-controlled)')};
+    navigator.serviceWorker.controller.postMessage({type:'GET_PRECACHE'},[_bvCh.port2]);
+  } else {
+    console.log('§BUILD_VERSION (no active controller yet — reload once to confirm)');
+  }
+  // §SWUPDATE_TOAST (2026-08-11, per prompts/GLASSBOWL_SWUPDATE.md's already-designed pattern,
+  // ported here rather than reinvented): a real user hit the gap this spec exists for -- SW
+  // CACHE_VERSION bumps in the background, but an already-open tab keeps running its already-
+  // imported JS modules until a fresh navigation. No listener existed to tell the user a new
+  // version had landed, so the fix was "clear site data" (which also wipes IndexedDB -- the
+  // cached building DB -- collateral damage the user rightly objected to). This is the missing
+  // half: sw.js already calls self.skipWaiting() unconditionally on install, so the new worker
+  // activates and claims control on its own -- listening for `controllerchange` is enough, no
+  // message-roundtrip needed. NEVER auto-reload silently (could interrupt a live MaxQ bake) --
+  // only a tap reloads, matching the spec's rule 4.
+  // §SWUPDATE_FIRST_CLAIM (2026-08-12, user: "why would a 'Update Ready - Tap Reset' message
+  // appear upon loading a building after SW reset"): `controllerchange` fires for TWO different
+  // events, and only one of them is an update. After a SW reset/unregister (or a first visit) the
+  // page loads with NO controller — `§BUILD_VERSION (no active controller yet)` in the user's log —
+  // then the freshly-registered worker installs (`§PRECACHE-TRIM install set=140`), skipWaiting()s,
+  // and clients.claim()s the page. controller goes null -> worker, `controllerchange` fires, and the
+  // toast claimed "Update ready" for what is really this page's FIRST controller. Nothing was
+  // updated and reloading changes nothing — pure noise, in the middle of a 229MB building load.
+  // The sibling ERP shells already carry exactly this guard and say why in their own comment
+  // ("NEVER on the first-install clients.claim() controllerchange"); the viewer port missed it.
+  // An update, by definition, REPLACES a controller that was already there.
+  var _swHadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if (window.__swReloaded) return;  // one-shot guard, never loop
+    if (!_swHadController) {
+      console.log('§SWUPDATE_TOAST skip reason=first-claim (page had no controller at load; ' +
+        'this is the initial install taking over, not a new version) — no toast');
+      return;
+    }
+    console.log('§SWUPDATE_TOAST controllerchange — new version active, showing toast (hadController=true)');
+    var t = document.createElement('div');
+    t.id = 'swUpdateToast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);' +
+      'background:#222;color:#fff;padding:10px 16px;border-radius:8px;font:13px sans-serif;' +
+      'z-index:99999;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.4);display:flex;' +
+      'align-items:center;gap:10px;';
+    var label = document.createElement('span');
+    label.textContent = 'Update ready — tap to refresh';
+    var close = document.createElement('span');
+    close.textContent = '✕';
+    close.style.cssText = 'opacity:.6;padding:0 2px;';
+    close.addEventListener('click', function(e){ e.stopPropagation(); t.remove(); });
+    t.appendChild(label); t.appendChild(close);
+    t.addEventListener('click', function(){
+      window.__swReloaded = true;
+      console.log('§SWUPDATE_TOAST tapped — reloading');
+      location.reload();
+    });
+    document.body.appendChild(t);
+  });
 }
 // §S283: Capture beforeinstallprompt early — scene.js reads window._installPrompt
 window._installPrompt = null;

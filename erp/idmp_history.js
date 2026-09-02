@@ -28,6 +28,10 @@
   var _restoreFn = null, _warnedNoRestore = false;
   var _userHidden = false;   // the Z chip toggles the bar shut/open even when there IS history
   var _bar = null, _back = null, _fwd = null, _content = null;
+  // Item 1 (PRIVATE DRAFT RESTORE, W-DRAFT-RESTORE-LIVE) — the unsaved-edit marker: an AMBER pip distinct from the
+  // committed nav dots (white/gold). It is NOT a committed dot (no op-log moment) — purely "you-were-here, unsaved".
+  // Tapping it = opt-in restore (the host's onRestore fills the open form). Set by crud_overlay on a dirty leave.
+  var _draftPip = null;      // { table, id, cols, onRestore } | null
 
   function _sig(m) { return m.kind + '|' + m.windowId + '|' + m.tabIdx + '|' + (m.recordId == null ? '' : m.recordId); }
 
@@ -52,6 +56,23 @@
       }
     } catch (err) {}
     console.log('§IDMP-HIST push=' + e.kind + ':' + e.label + ' depth=' + _hist.length + ' idx=' + _idx);
+    render();
+  }
+
+  // pushCrumb(tag,label,view) — the §-STREAM SUBSCRIBER (HISTORY_TAP_TO_IDEMPIERE §SESSION; the ERP twin of the
+  // viewer's #340 drain). A read-only CRUMB: a §-act the user did (kanban/search/graph/rule) that is NOT a
+  // window/tab/record nav — it has no re-open key, so it ANNOTATES the timeline and (if a look was stamped)
+  // re-applies it on click. windowId stays null → _histRestore skips re-open and applies `view` only. Distinct
+  // from the gold nav dots (kind='crumb', dimmer). Coalesce a repeat of the same tag at the tip.
+  function pushCrumb(tag, label, view) {
+    if (!tag) return;
+    var sig = 'crumb|' + tag;
+    if (_idx >= 0 && _hist[_idx] && _hist[_idx].sig === sig) return;     // §curation: same act repeated = no new dot
+    if (_idx < _hist.length - 1) _hist.length = _idx + 1;                // truncate forward branch
+    var e = { seq: _seq++, sig: sig, kind: 'crumb', tag: tag, label: label || tag,
+              windowId: null, tabIdx: null, table: null, recordId: null, view: (view == null ? null : view) };
+    _hist.push(e); _idx = _hist.length - 1;
+    console.log('§IDMP-HIST crumb tag=' + tag + ' label="' + e.label + '" depth=' + _hist.length + ' (from §-stream, no per-feature wiring)');
     render();
   }
 
@@ -119,9 +140,10 @@
 
   function render() {
     _ensureBar();
-    var has = _hist.length > 0 && !_userHidden;
+    // Item 1 — a buffered draft forces the bar visible even with no nav history, so the unsaved-edit pip is reachable.
+    var has = (_hist.length > 0 || _draftPip) && !_userHidden;
     document.body.classList.toggle('idmp-has-scrub', has);    // mobile: lifts the bottom pill dock above the strip
-    if (!has) { _bar.classList.remove('show'); return; }
+    if (!has) { _bar.classList.remove('show'); if (_content) _content.innerHTML = ''; return; }   // clear stale dots/pip when hidden
     _bar.classList.add('show');
     _bar.classList.toggle('bloom', _bloom);
 
@@ -129,20 +151,46 @@
     // step older/newer; double-tap blooms chips. [[feedback_pill_icon_consistency]]
     var h = '<div class="scrubline" id="idmp-scrubline">';
     _hist.forEach(function (e, i) {
-      h += '<div class="scrubdot' + (i === _idx ? ' on' : '') + '" data-i="' + i + '" data-kind="' + e.kind +
+      h += '<div class="scrubdot' + (i === _idx ? ' on' : '') + (e.kind === 'crumb' ? ' crumb' : '') +
+        '" data-i="' + i + '" data-kind="' + e.kind +
         '" title="' + (i + 1) + '. ' + _esc(e.label) + '">' + (_bloom ? _esc(e.label) : '') + '</div>';
     });
+    // Item 1 — the AMBER unsaved-edit pip (rightmost, after the committed dots). Tap = opt-in restore.
+    if (_draftPip) {
+      var tip = 'Unsaved edit · ' + _esc((_draftPip.cols || []).join(', ')) + ' — tap to restore your draft';
+      h += '<div class="scrubdraft" title="' + tip + '">' + (_bloom ? 'unsaved draft' : '') + '</div>';
+    }
     h += '</div>';
     _content.innerHTML = h;
 
     var cs = canStep();
     if (_back) _back.style.opacity = cs.back ? '1' : '0.3';
     if (_fwd) _fwd.style.opacity = cs.front ? '1' : '0.3';
-    console.log('§IDMP-HIST render dots=' + _hist.length + ' idx=' + _idx);
+    console.log('§IDMP-HIST render dots=' + _hist.length + ' idx=' + _idx + ' draftPip=' + (_draftPip ? 'Y' : 'N'));
 
     Array.prototype.forEach.call(_content.querySelectorAll('.scrubdot'), function (d) {
       d.addEventListener('click', function (ev) { ev.stopPropagation(); _go(+d.getAttribute('data-i')); });
     });
+    var dp = _content.querySelector('.scrubdraft');
+    if (dp) dp.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      console.log('§IDMP-HIST draft-pip tap → restore (opt-in)');
+      if (_draftPip && typeof _draftPip.onRestore === 'function') { try { _draftPip.onRestore(); } catch (er) { console.warn('§IDMP-HIST draft restore-fail ' + er.message); } }
+    });
+  }
+
+  // Item 1 API (W-DRAFT-RESTORE-LIVE) — crud_overlay sets/clears the amber unsaved-edit pip on a dirty leave / save.
+  function setDraftPip(info, onRestore) {
+    _draftPip = { table: (info && info.table) || null, id: (info && info.id != null) ? info.id : null,
+                  cols: (info && info.cols) || [], onRestore: onRestore || null };
+    console.log('§IDMP-HIST setDraftPip key=' + _draftPip.table + ':' + _draftPip.id + ' cols=' + _draftPip.cols.join(','));
+    render();
+  }
+  function clearDraftPip(table, id) {
+    if (!_draftPip) return;     // only one pip is tracked at a time; clearing the shown unsaved-edit marker.
+    _draftPip = null;
+    console.log('§IDMP-HIST clearDraftPip key=' + table + ':' + id);
+    render();
   }
 
   function _esc(s) { return String(s == null ? '' : s).replace(/[<>&"]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]; }); }
@@ -172,6 +220,19 @@
         'cursor:pointer;transition:background .15s,transform .15s;}' +
       '#idmp-scrub .scrubdot:hover{background:#6c9fff;transform:scale(1.25);}' +
       '#idmp-scrub .scrubdot.on{background:#ffd479;box-shadow:0 0 6px rgba(255,212,121,0.7);}' +
+      // crumb = a §-stream breadcrumb (what you did), dimmer + hollow vs the solid gold/white nav dots.
+      '#idmp-scrub .scrubdot.crumb{background:transparent;border:1.5px solid rgba(154,164,184,0.55);width:7px;height:7px;}' +
+      '#idmp-scrub .scrubdot.crumb:hover{border-color:#6c9fff;background:rgba(108,159,255,0.15);}' +
+      '#idmp-scrub .scrubdot.crumb.on{background:#ffd479;border-color:#ffd479;}' +
+      // Item 1 — AMBER unsaved-edit pip: a hollow amber ring (NOT a filled committed dot) + a soft pulse, so the
+      // "you-were-here, unsaved" mark reads as distinct from the white/gold committed dots. Tappable = opt-in restore.
+      '#idmp-scrub .scrubdraft{flex:0 0 auto;width:10px;height:10px;border-radius:50%;background:transparent;' +
+        'border:2px solid #f5a623;box-shadow:0 0 6px rgba(245,166,35,0.6);cursor:pointer;margin-left:6px;' +
+        'animation:idmp-draftpulse 1.6s ease-in-out infinite;transition:transform .15s;}' +
+      '#idmp-scrub .scrubdraft:hover{transform:scale(1.3);background:rgba(245,166,35,0.25);}' +
+      '@keyframes idmp-draftpulse{0%,100%{opacity:.5;}50%{opacity:1;}}' +
+      '#idmp-scrub.bloom .scrubdraft{width:auto;height:auto;border-radius:10px;padding:3px 9px;font-size:11px;' +
+        'color:#f5a623;border-color:#f5a623;white-space:nowrap;line-height:1.2;}' +
       // bloom: dots become labelled chips (the real record field — NON-INVENT).
       '#idmp-scrub.bloom .scrubdot{width:auto;height:auto;border-radius:10px;padding:3px 9px;font-size:11px;' +
         'color:#cdd6e4;white-space:nowrap;line-height:1.2;}' +
@@ -185,6 +246,41 @@
     document.head.appendChild(s);
   }
 
-  window.IdmpHistory = { push: push, registerRestore: registerRestore, undo: undo, redo: redo,
-    render: render, clear: clear, list: list, toggleBar: toggleBar, canStep: canStep };
+  window.IdmpHistory = { push: push, pushCrumb: pushCrumb, registerRestore: registerRestore, undo: undo, redo: redo,
+    render: render, clear: clear, list: list, toggleBar: toggleBar, canStep: canStep,
+    setDraftPip: setDraftPip, clearDraftPip: clearDraftPip };   // Item 1 (W-DRAFT-RESTORE-LIVE): amber unsaved-edit pip
+
+  // Defect B fix: seed _hist from the persisted WholeHistory log (page=idempiere entries only).
+  // READ-ONLY: does NOT call WholeHistory.record() back — no echo, no double-write.
+  // Called deferred so the host page has time to assign window.WholeHistory before we read it.
+  function _seed() {
+    try {
+      if (typeof WholeHistory === 'undefined' || !WholeHistory.entries) {
+        console.log('§IDMP-HIST seed skip WholeHistory absent');
+        return;
+      }
+      var rows = WholeHistory.entries().filter(function (e) { return e.page === 'idempiere'; });
+      if (!rows.length) { console.log('§IDMP-HIST seed restored=0 (log empty)'); return; }
+      rows.forEach(function (e) {
+        var ref = e.ref || {};
+        var m = { kind: e.kind || 'nav', label: e.label || e.kind || 'nav',
+                  windowId: ref.window != null ? ref.window : null,
+                  tabIdx: ref.tab != null ? ref.tab : null,
+                  table: ref.table || null, recordId: ref.recordId != null ? ref.recordId : null,
+                  view: ref.view || null };
+        if (m.windowId == null) return;   // crumb/unknown — skip (push() would drop it anyway)
+        var sig = _sig(m);
+        // coalesce: skip if tip is the same moment (WholeHistory may already dedup, but be safe)
+        if (_hist.length > 0 && _hist[_hist.length - 1].sig === sig) return;
+        _hist.push({ seq: _seq++, sig: sig, kind: m.kind, label: m.label,
+                     windowId: m.windowId, tabIdx: m.tabIdx, table: m.table,
+                     recordId: m.recordId, view: m.view });
+      });
+      _idx = _hist.length - 1;
+      console.log('§IDMP-HIST seed page=idempiere restored=' + _hist.length + ' idx=' + _idx);
+      if (typeof document !== 'undefined' && document.body) render();
+    } catch (e) { console.warn('§IDMP-HIST seed-err', e); }
+  }
+  // Defer seed so whole_history.js has fully executed and WholeHistory is on window.
+  if (typeof setTimeout !== 'undefined') setTimeout(_seed, 0);
 })();

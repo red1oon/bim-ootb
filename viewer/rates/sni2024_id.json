@@ -517,87 +517,87 @@
     },
     "IfcDuct": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "HVAC_TECH"
     },
     "IfcDuctSegment": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "HVAC_TECH"
     },
     "IfcDuctFitting": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "HVAC_TECH"
     },
     "IfcPipe": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "PLUMBER"
     },
     "IfcPipeSegment": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "PLUMBER"
     },
     "IfcPipeFitting": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "PLUMBER"
     },
     "IfcCableCarrier": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "ELECTRICIAN"
     },
     "IfcCableCarrierSegment": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "ELECTRICIAN"
     },
     "IfcFlowSegment": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "PLUMBER"
     },
     "IfcFlowFitting": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "PLUMBER"
     },
     "IfcFlowController": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "ELECTRICIAN"
     },
     "IfcFlowMovingDevice": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "HVAC_TECH"
     },
     "IfcFlowStorageDevice": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "PLUMBER"
     },
     "IfcFlowTreatmentDevice": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "PLUMBER"
     },
     "IfcEnergyConversionDevice": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "HVAC_TECH"
     },
     "IfcDistributionElement": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "PLUMBER"
     },
     "IfcValve": {
       "phase": "MEP Rough-in",
-      "sequence": 5,
+      "sequence": 7,
       "resource": "PLUMBER"
     },
     "IfcFireSuppressionTerminal": {
@@ -622,57 +622,57 @@
     },
     "IfcWall": {
       "phase": "Architecture",
-      "sequence": 6,
+      "sequence": 5,
       "resource": "MASON"
     },
     "IfcWallStandardCase": {
       "phase": "Architecture",
-      "sequence": 6,
+      "sequence": 5,
       "resource": "MASON"
     },
     "IfcOpeningElement": {
       "phase": "Architecture",
-      "sequence": 6,
+      "sequence": 5,
       "resource": "MASON"
     },
     "IfcBuildingElementPart": {
       "phase": "Architecture",
-      "sequence": 6,
+      "sequence": 5,
       "resource": "MASON"
     },
     "IfcDoor": {
       "phase": "Architecture",
-      "sequence": 7,
+      "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcWindow": {
       "phase": "Architecture",
-      "sequence": 7,
+      "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcStair": {
       "phase": "Architecture",
-      "sequence": 7,
+      "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcStairFlight": {
       "phase": "Architecture",
-      "sequence": 7,
+      "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcRailing": {
       "phase": "Architecture",
-      "sequence": 7,
+      "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcRamp": {
       "phase": "Architecture",
-      "sequence": 7,
+      "sequence": 6,
       "resource": "CONCRETE_GANG"
     },
     "IfcRampFlight": {
       "phase": "Architecture",
-      "sequence": 7,
+      "sequence": 6,
       "resource": "CONCRETE_GANG"
     },
     "IfcRoof": {
@@ -682,12 +682,12 @@
     },
     "IfcBuildingElementProxy": {
       "phase": "Architecture",
-      "sequence": 6,
+      "sequence": 5,
       "resource": null
     },
     "IfcCurtainWall": {
       "phase": "Architecture",
-      "sequence": 7,
+      "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcLightFixture": {

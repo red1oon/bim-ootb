@@ -569,15 +569,32 @@ self.onmessage = async function(e) {
             indices: idxBuf,
             normals: normals.buffer,
           });
-          // If no IFC bbox was extracted, compute from vertices
+          // If no IFC bbox was extracted, compute from vertices.
+          // Implementing IFC_LARGE_PRIVATE_STRESS_TEST.md §NEXT_SESSION item 2 — Witness: W-BBOX-BIGMESH
+          // §BBOX_SCALAR: was three vxs/vys/vzs arrays + Math.max.apply(null, arr). `apply` spreads the
+          // whole array onto the call stack AS ARGUMENTS; measured limit 125,570 args (poc_apply_overflow.js),
+          // and KUL070 meshes reach 248,782 verts — those threw "Maximum call stack size exceeded" and the
+          // element was §GEOM_SKIPped. This is NOT a rare fallback: nothing in this pipeline reads
+          // IfcBoundingBox (grep IFCBOUNDINGBOX = 0 in the KUL files; extractIFCtoDB.py and Bonsai's
+          // federation_preprocessor both derive AABBs from the geometry pass), so this is the STANDARD
+          // path for every import. Single scalar pass: no intermediate arrays, no stack growth, O(n).
           if (!el._bboxX) {
-            var vxs = [], vys = [], vzs = [];
+            var _mnx = Infinity, _mny = Infinity, _mnz = Infinity;
+            var _mxx = -Infinity, _mxy = -Infinity, _mxz = -Infinity;
             for (var vi2 = 0; vi2 < vertCount; vi2++) {
-              vxs.push(positions[vi2*3]); vys.push(positions[vi2*3+1]); vzs.push(positions[vi2*3+2]);
+              var _px = positions[vi2*3], _py = positions[vi2*3+1], _pz = positions[vi2*3+2];
+              if (_px < _mnx) _mnx = _px; if (_px > _mxx) _mxx = _px;
+              if (_py < _mny) _mny = _py; if (_py > _mxy) _mxy = _py;
+              if (_pz < _mnz) _mnz = _pz; if (_pz > _mxz) _mxz = _pz;
             }
-            el._bboxX = Math.max.apply(null, vxs) - Math.min.apply(null, vxs);
-            el._bboxY = Math.max.apply(null, vys) - Math.min.apply(null, vys);
-            el._bboxZ = Math.max.apply(null, vzs) - Math.min.apply(null, vzs);
+            el._bboxX = _mxx - _mnx;
+            el._bboxY = _mxy - _mny;
+            el._bboxZ = _mxz - _mnz;
+            if (vertCount > 125570) {
+              console.log('§BBOX_BIGMESH guid=' + el.guid + ' verts=' + vertCount +
+                ' bbox=' + el._bboxX.toFixed(2) + 'x' + el._bboxY.toFixed(2) + 'x' + el._bboxZ.toFixed(2) +
+                ' (over the 125,570 apply-limit that used to §GEOM_SKIP this element)');
+            }
           }
           transforms.push({ guid: el.guid, cx: cx, cy: cy, cz: cz, rx: 0, ry: 0, rz: 0,
             bx: el._bboxX, by: el._bboxY, bz: el._bboxZ });
@@ -646,29 +663,147 @@ self.onmessage = async function(e) {
 
     const storeys = [...new Set(renderableElements.map(e => e.storey))].sort();
 
-    // Post-hoc unit heuristic: if bounding box > 500m in any axis, assume mm → divide by 1000
+    // §UNITS v2 (2026-07-12, JKR georeferenced Revit series — see prompts/
+    // RESUME_ARCH_DISC_FILTER_STUCK_HIDDEN.md + RESUME_FLATTRANSFORMATION_POSITION_BUG.md):
+    // Discriminate units by model SPAN, never by absolute coordinate magnitude. The old
+    // `maxCoord > 500 ⇒ mm` test crushed georeferenced METER models (site at ~271km map
+    // easting, span 60m) x1/1000 — and it scaled centers+verts but NOT bbox_x/y/z, leaving
+    // every mm-import's bboxes 1000x too big (which is also what made the later bbox-ratio
+    // self-heal misfire into "geometry hell"). Rules:
+    //   span > 1500 in any axis (incl. element bbox extents) ⇒ mm model ⇒ scale centers,
+    //     verts AND bboxes by 0.001, together, once. (No real building spans 1.5km; a mm
+    //     building spans ≥ ~1500 even for a 1.5m shed.)
+    //   after unit normalisation, any axis whose coordinates sit > 10km from origin ⇒
+    //     georeferenced ⇒ REBASE that axis to a local origin (whole-metre offset, recorded
+    //     in project_metadata as georef_offset_*) — position is an offset problem, not a
+    //     unit problem, and float32 render/positions paths lose precision at map magnitude.
     var autoScale = 1.0;
+    var georefOffset = [0, 0, 0];
     if (transforms.length > 0) {
-      var maxCoord = 0;
+      var _minC = [Infinity, Infinity, Infinity], _maxC = [-Infinity, -Infinity, -Infinity], _maxBbox = 0;
       for (var ti = 0; ti < transforms.length; ti++) {
-        maxCoord = Math.max(maxCoord, Math.abs(transforms[ti].cx), Math.abs(transforms[ti].cy), Math.abs(transforms[ti].cz));
+        var _t = transforms[ti], _cs = [_t.cx, _t.cy, _t.cz];
+        for (var _ax = 0; _ax < 3; _ax++) {
+          if (_cs[_ax] < _minC[_ax]) _minC[_ax] = _cs[_ax];
+          if (_cs[_ax] > _maxC[_ax]) _maxC[_ax] = _cs[_ax];
+        }
+        _maxBbox = Math.max(_maxBbox, _t.bx || 0, _t.by || 0, _t.bz || 0);
       }
-      if (maxCoord > 500) {
+      var _span = Math.max(_maxC[0] - _minC[0], _maxC[1] - _minC[1], _maxC[2] - _minC[2], _maxBbox);
+      if (_span > 1500) {
         autoScale = 0.001;
         for (var ti = 0; ti < transforms.length; ti++) {
-          transforms[ti].cx *= 0.001;
-          transforms[ti].cy *= 0.001;
-          transforms[ti].cz *= 0.001;
+          transforms[ti].cx *= 0.001; transforms[ti].cy *= 0.001; transforms[ti].cz *= 0.001;
+          transforms[ti].bx *= 0.001; transforms[ti].by *= 0.001; transforms[ti].bz *= 0.001;
         }
-        // Also scale library vertices
         for (var gi = 0; gi < geometries.length; gi++) {
           var vBuf = new Float32Array(geometries[gi].vertices);
           for (var vi = 0; vi < vBuf.length; vi++) vBuf[vi] *= 0.001;
           geometries[gi].vertices = vBuf.buffer;
         }
+        for (var _ax = 0; _ax < 3; _ax++) { _minC[_ax] *= 0.001; _maxC[_ax] *= 0.001; }
       }
+      var _computed = [0, 0, 0];
+      for (var _ax = 0; _ax < 3; _ax++) {
+        var _mid = (_minC[_ax] + _maxC[_ax]) / 2;
+        if (Math.abs(_mid) > 10000) _computed[_ax] = Math.round(_mid);
+      }
+      var _forced = e.data.forceGeorefOffset;
+      if (_forced && (_forced[0] || _forced[1] || _forced[2])) {
+        // Federation frame pinned by an earlier file in this drop — use it verbatim so all
+        // files share ONE local origin, UNLESS this file's own data disagrees by >1km, which
+        // is a source-file defect (e.g. a zeroed IfcSite while siblings carry the real map
+        // base). In that case do NOT force the alien offset onto data that was never in that
+        // frame to begin with — verified live 2026-07-12: force-applying it moved the
+        // defective file from ~300m off (its own near-zero local frame) to ~271km off (the
+        // full federation offset applied to coordinates that never had it), which is worse,
+        // not "as-authored". Fall back to this file's own honest (usually zero) offset and
+        // flag it loudly instead.
+        var _dev = Math.max(Math.abs(_computed[0] - _forced[0]),
+                            Math.abs(_computed[1] - _forced[1]),
+                            Math.abs(_computed[2] - _forced[2]));
+        if (_dev > 1000) {
+          georefOffset = _computed;
+          console.log('[S220] §GEOREF_MISMATCH ' + filename + ' computed=(' + _computed.join(',') +
+            ') vs federation frame=(' + _forced.join(',') + ') — this file sits >1km from its siblings' +
+            ' (zeroed IfcSite / different base point?). Kept at its OWN frame (not force-shifted into the' +
+            ' federation frame — that would move it further, not closer); repair the source or use the offline extractor.');
+        } else {
+          georefOffset = [_forced[0], _forced[1], _forced[2]];
+        }
+      } else {
+        georefOffset = _computed;
+      }
+      if (georefOffset[0] || georefOffset[1] || georefOffset[2]) {
+        for (var ti = 0; ti < transforms.length; ti++) {
+          transforms[ti].cx -= georefOffset[0];
+          transforms[ti].cy -= georefOffset[1];
+          transforms[ti].cz -= georefOffset[2];
+        }
+        console.log('[S220] §GEOREF_REBASE offset=(' + georefOffset.join(',') + ') — georeferenced site rebased to local origin (offset kept in project_metadata)');
+      }
+      console.log('[S220] §UNITS_V2 span=' + _span.toFixed(1) + ' autoScale=' + autoScale +
+        (autoScale !== 1.0 ? ' (mm→m, centers+verts+bboxes together)' : ' (already metres)'));
+    } else {
+      console.log('[S220] §UNITS_V2 span=n/a autoScale=1 (no transforms)');
     }
-    console.log('[S220] §UNITS autoScale=' + autoScale + (autoScale !== 1.0 ? ' (mm→m heuristic)' : ' (already metres)'));
+
+    // §SITE_IDENTITY (2026-07-12): read this file's own IfcSite GlobalId + raw placement, scaled
+    // to metres. A federated drop's files each re-serialize the SAME real-world IfcSite (identical
+    // GlobalId) — if one file's copy of that entity disagrees with its siblings' (e.g. a zeroed
+    // placement where siblings carry the real map base, JKR's CW file), that's a source-file
+    // authoring defect, not a guess: the orchestrator can detect it by GUID match across files in
+    // the same drop and correct it using the sibling files' own (already-extracted, real) value —
+    // general to any file/discipline, not specific to any one project.
+    //
+    // NOTE: raw ifcApi.GetLine() entity values (IfcCartesianPoint.Coordinates) are the DECLARED
+    // unit as literally written in the STEP file — NOT auto-normalised the way GetFlatMesh()'s
+    // flatTransformation is. So `autoScale` (derived from already-normalised element transforms)
+    // is the WRONG factor here — verified live: using it left siteLocation ~1000x too large,
+    // producing a >270,000,000m "correction". Read the file's own declared LENGTHUNIT directly.
+    var _lengthUnitScale = 1;
+    try {
+      var _siUnits = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSIUNIT);
+      for (var _ui = 0; _ui < _siUnits.size(); _ui++) {
+        var _u = ifcApi.GetLine(modelID, _siUnits.get(_ui));
+        if (_u.UnitType && _u.UnitType.value === 'LENGTHUNIT') {
+          var _prefix = _u.Prefix && _u.Prefix.value;
+          var _prefixScale = { EXA:1e18, PETA:1e15, TERA:1e12, GIGA:1e9, MEGA:1e6, KILO:1e3, HECTO:1e2, DECA:10,
+            DECI:0.1, CENTI:0.01, MILLI:0.001, MICRO:1e-6, NANO:1e-9, PICO:1e-12, FEMTO:1e-15, ATTO:1e-18 };
+          _lengthUnitScale = _prefix && _prefixScale[_prefix] ? _prefixScale[_prefix] : 1;
+          break;
+        }
+      }
+    } catch (unitErr) { /* default to 1 (metres) */ }
+
+    var siteGuid = null, siteLocation = null;
+    try {
+      var siteIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSITE);
+      if (siteIds.size() > 0) {
+        var _site = ifcApi.GetLine(modelID, siteIds.get(0));
+        siteGuid = _site.GlobalId && _site.GlobalId.value;
+        if (_site.ObjectPlacement && _site.ObjectPlacement.value != null) {
+          var _lp = ifcApi.GetLine(modelID, _site.ObjectPlacement.value);
+          if (_lp && _lp.RelativePlacement && _lp.RelativePlacement.value != null) {
+            var _rp = ifcApi.GetLine(modelID, _lp.RelativePlacement.value);
+            if (_rp && _rp.Location && _rp.Location.value != null) {
+              var _loc = ifcApi.GetLine(modelID, _rp.Location.value);
+              if (_loc && _loc.Coordinates && _loc.Coordinates.length >= 3) {
+                siteLocation = [
+                  (_loc.Coordinates[0]._representationValue || 0) * _lengthUnitScale,
+                  (_loc.Coordinates[1]._representationValue || 0) * _lengthUnitScale,
+                  (_loc.Coordinates[2]._representationValue || 0) * _lengthUnitScale,
+                ];
+              }
+            }
+          }
+        }
+        console.log('[S220] §SITE_IDENTITY guid=' + siteGuid + ' lengthUnitScale=' + _lengthUnitScale +
+          ' location=(' + (siteLocation ? siteLocation.join(',') : 'n/a') + ')');
+      }
+    } catch (siteErr) {
+      console.log('[S220] §SITE_IDENTITY_ERROR ' + siteErr.message);
+    }
     console.log('[S220] §GEOM_DONE elements=' + elements.length + ' withGeometry=' + geometries.length + ' skipped=' + (elements.length - geometries.length) + ' withMaterial=' + matCount);
     post('progress', 95, 'Packaging results...');
 
@@ -867,6 +1002,11 @@ self.onmessage = async function(e) {
         disciplines: discCounts,
         flowTermSplit: flowTermSplit, // §FLOWTERM-NOTE: how the abstract IfcFlowTerminal was split by name
         storeys: storeys,
+        unitScale: autoScale,        // §UNITS_V2 — 0.001 when a mm-unit model was normalised to metres
+        georefOffset: georefOffset,  // §GEOREF_REBASE — whole-metre site offset subtracted from centers
+        appliedGeorefOffset: georefOffset, // alias, explicit name for §SITE_IDENTITY correction math
+        siteGuid: siteGuid,          // §SITE_IDENTITY — this file's own IfcSite GlobalId, if any
+        siteLocation: siteLocation,  // §SITE_IDENTITY — that site's raw placement, scaled to metres
       },
       elements: renderableElements,
       geometries: geometries,

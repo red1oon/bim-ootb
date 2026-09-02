@@ -88,10 +88,30 @@
     global.ERP = {
       dispatch: seam.dispatch, ctx: ctx, read: seam.read, verify: seam.verify,
       opDb: projDb,
-      seal: function () { return global.KernelOps.sealChain(projDb); },                 // sign every unsigned op
-      chainVerify: function () { return global.KernelOps.verifyChain(projDb); }          // {ok,len,tip} incl. sig
+      // T7 (W-T7-INC): the HOT paths (POS SEND, kitchen, replenish — every sale) seal + verify
+      // INCREMENTALLY — O(new ops), not O(whole history) with per-op ECDSA. First verify of a session
+      // is still FULL (cold cache in verifyChainIncremental); boot/import paths keep full verifyChain.
+      seal: function () { return global.KernelOps.sealFrom(projDb); },                    // sign the NEW ops
+      chainVerify: function () { return (global.KernelOps.verifyChainIncremental || global.KernelOps.verifyChain)(projDb); }
     };
     log('§SEAM-LIVE window.ERP published: dispatch,verify,seal,chainVerify · actor=' + ctx.actor + ' grants=' + grants.length + ' pubKey=' + (ctx.pubKey ? 'Y' : 'none'));
+    // T1 (W-T1-ATTRIB, FABLE5_WRAPUP §3): PIN → employee attribution as AUDIT METADATA. cfg.attribDirectory
+    // is the ORG-supplied {sha256(pin) → {emp,name}} map (ErpAttrib.makeDirectory). Identity rides ctx.attrib
+    // → rich op parameters (content-signed by the DEVICE key — no per-PIN keys, no new trust root). No
+    // directory / unknown PIN → REFUSED, never guessed (non-invent). Default-off: nothing changes till used.
+    ctx.attrib = null;
+    global.ERP.identify = function (pin) {
+      var A = global.ErpAttrib;
+      if (!A) { log('§T1_ATTRIB REFUSED — erp_attrib.js not loaded'); return Promise.resolve({ ok: false, why: 'erp_attrib.js not loaded' }); }
+      if (!cfg.attribDirectory) { log('§T1_ATTRIB REFUSED — no attribDirectory supplied'); return Promise.resolve({ ok: false, why: 'no attribDirectory' }); }
+      return A.identify(pin, cfg.attribDirectory).then(function (id) {
+        if (!id) { log('§T1_ATTRIB REFUSED — unknown PIN (identity never guessed)'); return { ok: false, why: 'unknown PIN' }; }
+        ctx.attrib = A.attrib(id, ctx.actor);
+        log('§T1_ATTRIB identified emp=' + id.emp + ' dev=' + ctx.actor + ' (metadata only — device key still signs)');
+        return { ok: true, emp: id.emp, name: id.name };
+      });
+    };
+    global.ERP.identifyClear = function () { ctx.attrib = null; log('§T1_ATTRIB cleared'); };
     return { projDb: projDb, ctx: ctx };
   }
 
@@ -109,5 +129,45 @@
     catch (e) { log('§KANBAN-PERSIST err ' + e.message); return Promise.resolve(false); }
   }
 
-  global.KanbanHost = { publish: publish, tip: tip, persist: persist, _rows: _rows };
+  // ── T7 host wiring (prompts/T7_HOST_WIRING_SPEC.md §Build 2 — Witness: W-T7-HOST) ─────────────────
+  // The shard opt-in for the POS/kanban op log. DEFAULT OFF stays true: nothing below runs unless a
+  // page calls it. Shard blobs ride the SAME IDB store the hot blob lives in (bim_ootb_cache/dbs,
+  // keys '<projKey>::shard:<seq>').
+  var SHARD_THRESHOLD = 5000;   // the tested value — erp_shard.maybeShard default + W-T7-INC's ~4.9k log
+  function shardStore() {
+    return { get: function (k) { return idbGetBlob(IDB, STORE, k); },
+             put: function (k, v) { return idbPutBlob(IDB, STORE, k, v); } };
+  }
+  // maybeShard — call after commits (debounced by the caller): past the threshold, close the shard and
+  // PERSIST the shrunk hot blob — that persisted [snapshot + open shard] IS the instant first paint
+  // (boot/restore loads it unchanged). Below threshold: byte-identical no-op (§T7-OFF).
+  function maybeShard(projDb, projKey, opts) {
+    opts = opts || {};
+    var Sh = global.ErpShard;
+    if (!Sh) return Promise.resolve({ sharded: false, reason: 'erp_shard.js not loaded' });
+    var store = opts.store || shardStore();
+    return Sh.maybeShard(projDb, { store: store, key: projKey,
+                                   threshold: opts.threshold != null ? opts.threshold : SHARD_THRESHOLD })
+      .then(function (r) {
+        if (r && r.sharded) {
+          log('§POS-SHARD sharded key=' + projKey + ' seq=' + r.seq + ' archived=' + r.archived + ' hotOps=' + r.hotLen);
+          if (opts.persist === false) return r;               // node witness: no IDB, store injected
+          return persist(projDb, projKey).then(function () { return r; });
+        }
+        if (r && r.reason !== 'below-threshold') log('§POS-SHARD skipped key=' + projKey + ' reason=' + r.reason);
+        return r;
+      });
+  }
+  // archivedOps — the lazy history seam for full-log folds (kitchen queue, replenish pending): the
+  // archived prefix, verified backward to GENESIS, cached per shard generation. {ok:false} on
+  // tamper/missing — callers fold hot-only and SAY so (honest degradation, never fabricated history).
+  function archivedOps(projDb, projKey, opts) {
+    opts = opts || {};
+    var Sh = global.ErpShard;
+    if (!Sh || !Sh.loadArchivedOps) return Promise.resolve({ ok: true, ops: [], shards: 0, note: 'erp_shard.js not loaded' });
+    return Sh.loadArchivedOps(projDb, opts.store || shardStore(), projKey);
+  }
+
+  global.KanbanHost = { publish: publish, tip: tip, persist: persist, _rows: _rows,
+                        maybeShard: maybeShard, archivedOps: archivedOps, shardStore: shardStore };
 })(typeof window !== 'undefined' ? window : this);

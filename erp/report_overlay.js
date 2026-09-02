@@ -27,7 +27,64 @@
                  date: 'dateinvoiced', total: 'grandtotal' },
     m_inout:   { key: 'm_inout',   pk: 'm_inout_id',   lineTable: 'm_inoutline',   fk: 'm_inout_id',
                  fkProduct: 'm_product_id', amount: null,        qty: 'movementqty', price: null,
-                 date: 'movementdate', total: null }
+                 date: 'movementdate', total: null },
+    // Rpt M_InOutConfirm (AD_Process 292, "Shipment Confirmation") — the LINE-SORT + PRODUCT-JOIN variant
+    // (AD_PROCESS_FOLD_LANE §P2-tail-leg6). The confirm-line table m_inoutlineconfirm has (a) NO `line` column →
+    // `lineSort` names the ORDER BY column instead (m_inoutlineconfirm_id), and (b) NO m_product_id → `lineProductVia`
+    // tells the db-aware caller to resolve each line's product through the parent shipment line (m_inoutline_id →
+    // m_inoutline.m_product_id) and set it on the row before folding. foldReceipt itself is UNCHANGED. NON-FINANCIAL:
+    // qty=ConfirmedQty (amount/price/total null); no c_bpartner_id on the header → partner null; no business date → null.
+    m_inoutconfirm:{key:'m_inoutconfirm',pk:'m_inoutconfirm_id',lineTable:'m_inoutlineconfirm',fk:'m_inoutconfirm_id',
+                 fkProduct: 'm_product_id', amount: null,        qty: 'confirmedqty', price: null,
+                 date: null, total: null, lineSort: 'm_inoutlineconfirm_id',
+                 lineProductVia: { fk: 'm_inoutline_id', table: 'm_inoutline', pk: 'm_inoutline_id', product: 'm_product_id' } },
+    // Rpt M_Movement (AD_Process 290, "Inventory Move Print") — the warehouse sibling of m_inout (AD_PROCESS_FOLD_LANE
+    // §P2-tail-leg2). A material movement is NON-FINANCIAL (amount/price/total null) — header M_Movement + lines
+    // M_MovementLine, the carried value is qty=MovementQty. SAME foldReceipt, NO new fold code. A movement has no
+    // c_bpartner_id (internal locator→locator) → partner folds honestly null. The browser lc() helper aliases the
+    // bundle's CamelCase (DocumentNo/MovementQty/MovementDate) to these lowercase keys.
+    m_movement:{ key: 'm_movement',pk: 'm_movement_id',lineTable: 'm_movementline',fk: 'm_movement_id',
+                 fkProduct: 'm_product_id', amount: null,        qty: 'movementqty', price: null,
+                 date: 'movementdate', total: null },
+    // Rpt M_Inventory (AD_Process 291, "Physical Inventory Print") — the third inventory-document print
+    // (AD_PROCESS_FOLD_LANE §P2-tail-leg3, after m_inout + m_movement). NON-FINANCIAL: a physical count carries
+    // qty=QtyCount (the counted quantity), not money — amount/price/total null. Header M_Inventory + lines
+    // M_InventoryLine; no c_bpartner_id column → partner folds honestly null. SAME foldReceipt, NO new fold code.
+    // The browser lc() helper aliases the bundle's CamelCase (DocumentNo/QtyCount/MovementDate) to these keys.
+    m_inventory:{key: 'm_inventory',pk:'m_inventory_id',lineTable:'m_inventoryline',fk:'m_inventory_id',
+                 fkProduct: 'm_product_id', amount: null,        qty: 'qtycount',    price: null,
+                 date: 'movementdate', total: null },
+    // Rpt PP_Order (AD_Process 53028, "Manufacturing Order") — a 4th non-sales document family (manufacturing,
+    // AD_PROCESS_FOLD_LANE §P2-tail-leg4). NON-FINANCIAL: a manufacturing order's BOM lines carry qty=QtyRequiered
+    // (the required component quantity), not money — amount/price/total null. Header PP_Order + lines
+    // PP_Order_BOMLine (line + m_product_id present → no fold-shape change). A production order is internal → no
+    // c_bpartner_id → partner null. date=DatePromised (the populated scheduling date; DateStart is null in seed).
+    // SAME foldReceipt, NO new fold code. The browser lc() helper aliases the CamelCase (DocumentNo/QtyRequiered).
+    pp_order:  { key: 'pp_order',  pk: 'pp_order_id',  lineTable: 'pp_order_bomline',fk: 'pp_order_id',
+                 fkProduct: 'm_product_id', amount: null,        qty: 'qtyrequiered',price: null,
+                 date: 'datepromised', total: null },
+    // Rpt C_Project (AD_Process 217, "Project Print") — a KIND-1 report folded by the SAME foldReceipt as the
+    // order/invoice prints (no new fold code, AD_PROCESS_FOLD_LANE §P2-leg3). A project IS a document: header
+    // C_Project + lines C_ProjectLine; the planned amounts are its money (subtotal = Σ PlannedAmt, total = the
+    // header PlannedAmt). C_Project has no DocumentNo → docnoCol names its identifier column (Value). The browser
+    // lc() helper aliases the bundle's CamelCase (PlannedAmt/Value) to these lowercase keys.
+    c_project: { key: 'c_project', pk: 'c_project_id', lineTable: 'c_projectline', fk: 'c_project_id',
+                 fkProduct: 'm_product_id', amount: 'plannedamt', qty: 'plannedqty', price: 'plannedprice',
+                 date: 'datecontract', total: 'plannedamt', docnoCol: 'value' },
+    // Rpt C_Payment (AD_Process 313, "Payment Print") — a HEADER-ONLY financial document (AD_PROCESS_FOLD_LANE
+    // §P2-tail-leg5). A payment has NO line table; its amount is PayAmt on the header → folded by foldVoucher, NOT
+    // foldReceipt. `amounts` names the real money columns; `total`=payamt is the document amount. The voucher's
+    // amounts obey iDempiere's allocation invariant: PayAmt + Discount + Write-off − Over/Under = the settled
+    // invoice's GrandTotal (re-derived in W-PROC-PAYMENT). The browser lc() helper aliases the CamelCase columns.
+    c_payment: { key: 'c_payment', pk: 'c_payment_id', docnoCol: 'documentno', date: 'datetrx',
+                 total: 'payamt', headerOnly: true,
+                 amounts: [ { col: 'payamt',      label: 'Payment Amount' },
+                            { col: 'discountamt',  label: 'Discount' },
+                            { col: 'writeoffamt',  label: 'Write-off' },
+                            { col: 'overunderamt', label: 'Over/Under Payment' },
+                            { col: 'taxamt',       label: 'Tax' } ],
+                 flags:   [ { col: 'isreceipt',    label: 'Receipt' },
+                            { col: 'tendertype',   label: 'Tender' } ] }
   };
 
   function num(v) { return (v == null || v === '') ? null : Number(v); }
@@ -73,12 +130,40 @@
     var taxB = (subtotalB != null && totalB != null) ? totalB.subtract(subtotalB) : null;
     var subtotal = money2(subtotalB), total = (totalB != null ? money2(totalB) : null), tax = money2(taxB);
     return {
-      key: map.key, id: header[map.pk], docno: header.documentno,
+      key: map.key, id: header[map.pk], docno: header[map.docnoCol || 'documentno'],
       date: (map.date && header[map.date] != null) ? String(header[map.date]).slice(0, 10) : null,
       partner: (names.partner != null ? names.partner
                  : (header.c_bpartner_id != null ? '#' + header.c_bpartner_id : null)),
       lines: outLines, subtotal: subtotal, tax: tax, total: total,
       financial: fin, foldsFrom: 'bundle'
+    };
+  }
+
+  // foldVoucher — fold a HEADER-ONLY financial document (one with NO line table) into a voucher: a payment, where
+  // the document amount lives on the header (PayAmt) and there are genuinely no line rows (AD_PROCESS_FOLD_LANE
+  // §P2-tail-leg5). foldReceipt's subtotal=Σline model is WRONG here (an unapplied payment with 0 lines would
+  // yield tax=PayAmt) — so this is a distinct fold, NOT a foldReceipt call. PURE: header in, voucher out. Every
+  // amount is BigDecimal-exact off a REAL header column named in map.amounts (never a synthesized/fabricated line).
+  // `amounts` carries the named money columns (PayAmt/Discount/Write-off/…); `flags` carries non-money descriptors
+  // (IsReceipt/TenderType). total = the document amount (map.total, e.g. payamt). No `lines` key — the host's
+  // line-table branch is skipped; the headerOnly branch renders the amount breakdown.
+  function foldVoucher(map, header, names) {
+    if (!map || !header) return null;
+    names = names || {};
+    var amounts = (map.amounts || []).map(function (a) {
+      return { col: a.col, label: a.label, value: money2(bd(header[a.col])) };   // EXACT BigDecimal off the raw column
+    });
+    var flags = (map.flags || []).map(function (f) {
+      return { label: f.label, value: (header[f.col] != null && header[f.col] !== '') ? String(header[f.col]) : null };
+    });
+    return {
+      key: map.key, id: header[map.pk], docno: header[map.docnoCol || 'documentno'],
+      date: (map.date && header[map.date] != null) ? String(header[map.date]).slice(0, 10) : null,
+      partner: (names.partner != null ? names.partner
+                 : (header.c_bpartner_id != null ? '#' + header.c_bpartner_id : null)),
+      amounts: amounts, flags: flags,
+      total: (map.total ? money2(bd(header[map.total])) : null),
+      financial: true, headerOnly: true, foldsFrom: 'bundle'
     };
   }
 
@@ -472,7 +557,7 @@
              coverage: coverage, scopeFacts: countFacts(windows), totalFacts: totalFacts };
   }
 
-  var CORE = { REPORT_MAP: REPORT_MAP, foldReceipt: foldReceipt, foldTrialBalance: foldTrialBalance, foldPnL: foldPnL,
+  var CORE = { REPORT_MAP: REPORT_MAP, foldReceipt: foldReceipt, foldVoucher: foldVoucher, foldTrialBalance: foldTrialBalance, foldPnL: foldPnL,
                foldStatement: foldStatement, foldPrint: foldPrint, resolveScope: resolveScope,
                amtExpr: amtExpr, signedBalance: signedBalance, round2: round2 };
   if (typeof module !== 'undefined' && module.exports) { module.exports = CORE; return; }
@@ -483,10 +568,6 @@
   // ════════════════════════════════════════════════════════════════════════
   injectCss();
   var panel = document.createElement('div'); panel.id = 'reportPanel'; document.body.appendChild(panel);
-  // iDempiere-style MENU launcher pill (mirrors help_overlay's own-pill precedent) — reach reports the AD_Menu way.
-  var menuPill = document.createElement('div'); menuPill.id = 'reportMenuPill'; menuPill.innerHTML = '<span class=rpglyph>▤</span> Reports';
-  document.body.appendChild(menuPill);
-  menuPill.addEventListener('click', function () { openMenu(); });
 
   // ── bundle helpers (truth-bound: read real rows, never invent) ──────────────
   function hasCol(db, t, c) {
@@ -496,6 +577,15 @@
   function rowsOf(res) {
     if (!res || !res.length) return [];
     return res[0].values.map(function (v) { var o = {}; res[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; });
+  }
+  // lowercase-alias every column key (NON-INVENT, ADDITIVE) — the browser bundle stores DOCUMENT tables in
+  // canonical CamelCase (DocumentNo/GrandTotal/LineNetAmt), but REPORT_MAP keys + foldReceipt read lowercase
+  // (the verb is proven headless on all-lowercase ad_full.db). Without this the in-browser receipt read 0.00 /
+  // docno=undefined. Mirrors doc_poster.lc — all-lowercase rows alias to themselves → the headless verb unchanged.
+  function lc(row) {
+    if (!row || typeof row !== 'object') return row;
+    Object.keys(row).forEach(function (k) { var lk = k.toLowerCase(); if (lk !== k && !(lk in row)) row[lk] = row[k]; });
+    return row;
   }
   // litId — prefer the row in the currently-traced O2C chain (the lit instance), else the first row
   // (mirrors crud_overlay.getRecord so Report and the ring agree on which document is focused).
@@ -509,28 +599,43 @@
     catch (e) { return null; }
   }
 
+  // _renderReceipt — fold + render ONE document's receipt for an explicit record id (shared by show + printRecord).
+  function _renderReceipt(db, key, map, id) {
+    if (id == null) { renderUnsupported(db, key); return; }
+    var header = lc(rowsOf(db.exec('SELECT * FROM ' + map.key + ' WHERE ' + map.pk + '=' + id + ' LIMIT 1'))[0]) || null;
+    if (!header) { renderUnsupported(db, key); return; }
+    var lines = [];
+    try { lines = rowsOf(db.exec('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + id + ' ORDER BY ' + (map.lineSort || 'line'))).map(lc); } catch (e) {}
+    // lineProductVia (§P2-tail-leg6): the carried product lives on a PARENT line table, not this line row —
+    // resolve it per line through the join and set it on the row, so foldReceipt reads r[fkProduct] unchanged.
+    if (map.lineProductVia) { var via = map.lineProductVia;
+      lines.forEach(function (r) { var lid = r[via.fk]; if (lid != null) r[map.fkProduct] = nameOf(db, via.table, via.pk, lid, via.product); }); }
+    var names = { partner: nameOf(db, 'c_bpartner', 'c_bpartner_id', header.c_bpartner_id, 'name'), products: {} };
+    lines.forEach(function (r) { var pid = r[map.fkProduct]; if (pid != null && names.products[pid] === undefined) names.products[pid] = nameOf(db, 'm_product', 'm_product_id', pid, 'name'); });
+    var rec = CORE.foldReceipt(map, header, lines, names);
+    render(db, rec);
+    console.log('§REPORT-RECEIPT doc=' + fname(key) + '#' + rec.id + ' lines=' + rec.lines.length +
+      ' subtotal=' + fmtN(rec.subtotal) + ' tax=' + fmtN(rec.tax) + ' total=' + fmtN(rec.total) +
+      ' folds-from=' + rec.foldsFrom + ' handAuthored=0');
+  }
   // show — fold + render the receipt for `key` (resolving the lit document id from the bundle).
   function show(key) {
     var map = CORE.REPORT_MAP[key];
     if (!map) { renderUnsupported(key); console.log('§REPORT verb key=' + key + ' supported=N (no header/line map)'); return; }
     if (typeof withBundle !== 'function') { console.warn('§REPORT no bundle'); return; }
-    withBundle(function (db) {
-      try {
-        var id = litId(db, map);
-        if (id == null) { renderUnsupported(db, key); return; }
-        var header = rowsOf(db.exec('SELECT * FROM ' + map.key + ' WHERE ' + map.pk + '=' + id + ' LIMIT 1'))[0] || null;
-        if (!header) { renderUnsupported(db, key); return; }
-        var lines = [];
-        try { lines = rowsOf(db.exec('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + id + ' ORDER BY line')); } catch (e) {}
-        var names = { partner: nameOf(db, 'c_bpartner', 'c_bpartner_id', header.c_bpartner_id, 'name'), products: {} };
-        lines.forEach(function (r) { var pid = r[map.fkProduct]; if (pid != null && names.products[pid] === undefined) names.products[pid] = nameOf(db, 'm_product', 'm_product_id', pid, 'name'); });
-        var rec = CORE.foldReceipt(map, header, lines, names);
-        render(db, rec);
-        console.log('§REPORT-RECEIPT doc=' + fname(key) + '#' + rec.id + ' lines=' + rec.lines.length +
-          ' subtotal=' + fmtN(rec.subtotal) + ' tax=' + fmtN(rec.tax) + ' total=' + fmtN(rec.total) +
-          ' folds-from=' + rec.foldsFrom + ' handAuthored=0');
-      } catch (er) { console.warn('§REPORT fold error', er && er.message); }
-    });
+    withBundle(function (db) { try { _renderReceipt(db, key, map, litId(db, map)); } catch (er) { console.warn('§REPORT fold error', er && er.message); } });
+  }
+  // printRecord — iDempiere's toolbar Print (btnPrint, Alt+P): the receipt for THIS open document (the actually-
+  // selected record), NOT the lit demo doc show() defaults to. Same PURE foldReceipt verb, just the real id.
+  // Returns true when the document kind is printable (a header/line map exists) so the caller can grey the
+  // toolbar Print otherwise (iDempiere enablePrint parity). NO new fold code.
+  function printRecord(key, recordId) {
+    var map = CORE.REPORT_MAP[key];
+    if (!map) { console.log('§REPORT-PRINT key=' + key + ' supported=N (no header/line map)'); return false; }
+    if (typeof withBundle !== 'function') { console.warn('§REPORT no bundle'); return false; }
+    withBundle(function (db) { try { _renderReceipt(db, key, map, recordId != null ? recordId : litId(db, map)); } catch (er) { console.warn('§REPORT fold error', er && er.message); } });
+    console.log('§REPORT-PRINT key=' + key + ' rec=' + recordId + ' supported=Y');
+    return true;
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -944,11 +1049,8 @@
       '#reportPanel .rptab:hover{border-color:#6a4a62;color:#fbeaf7}' +
       '#reportPanel .rptab.on{background:#3a2440;border-color:#9fdfe8;color:#bff0dd}' +
       '#reportPanel .rpcalc td{font-weight:600;color:#fbeaf7;border-top:1px solid #2a1f29}' +
-      '#reportMenuPill{position:fixed;z-index:70;left:14px;top:10px;display:flex;align-items:center;gap:6px;' +
-        'background:#120d16;border:1px solid #4a2f44;border-radius:16px;padding:5px 12px;font:13px system-ui;' +
-        'color:#ecdcea;cursor:pointer;user-select:none;box-shadow:0 2px 10px rgba(0,0,0,.4)}' +
-      '#reportMenuPill:hover{border-color:#9fdfe8;color:#fbeaf7}' +
-      '#reportMenuPill .rpglyph{color:#9fdfe8}' +
+      // #reportMenuPill removed — Reports now surfaces as a registry pill (pills_idmp.json + IdmpPillActions.reports → window.__report.menu)
+
       '#reportPanel .rpcrumb{font-size:11px;color:#8a6f86;margin:0 0 9px;padding-bottom:8px;border-bottom:1px solid #2a1f29}' +
       '#reportPanel .rpmenu{display:flex;flex-direction:column;gap:2px}' +
       '#reportPanel .rpmi{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:7px;font-size:12.5px}' +
@@ -960,7 +1062,7 @@
     document.head.appendChild(css);
   }
 
-  global.__report = { show: show, statement: statement, menu: openMenu, print: printDoc, trialBalance: trialBalance,
+  global.__report = { show: show, statement: statement, menu: openMenu, print: printDoc, printRecord: printRecord, trialBalance: trialBalance,
                       core: CORE, panel: function () { return panel; }, close: close };
   console.log('§REPORT layer mounted (read face — ▤ Report)');
 })(typeof window !== 'undefined' ? window : this);

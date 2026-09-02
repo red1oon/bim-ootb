@@ -13,6 +13,11 @@
  * The browser never tries to BE Excel — no grid render, no chart engine; formatting/subtotals/
  * graphs stay the user's own workbook (Excel recalcs its preserved formulas on open).
  *
+ * DESIGN NOTE (FUNDAMENTAL LAW, Leg 6 2026-06-19): Ninja/Red1 stay in the `⋯` pill rail (NOT iDempiere-native
+ *   chrome — they are our own authoring face). FORWARD INTENT: tune the lens to act on the CURRENT ACTIVE WINDOW
+ *   (the open ADWindow's table/record), not a separately-chosen target — so a user reaches for Ninja and it is
+ *   already pointed at what they are looking at (zero-friction, matches the active-window mental model).
+ *
  * Implementing internal/NinjaExcelAdaptation.md §6.2 (browser pill) — Witness: W-NINJA-PILL
  * (scripts/poc_ninja_pill.js). Engine = ninja_excel.js (same module the headless W-NINJA witnesses
  * prove); SheetJS (xlsx.mini.min.js, vendored) is LAZY-loaded on first open (lazy-init pattern).
@@ -154,9 +159,15 @@
     setTimeout(function () { if (t.parentNode) t.remove(); }, 4200);
   }
 
+  // Implementing prompts/CODEBASE_QUALITY_AUDIT_2026-07-02.md §5 (bim-compiler) — Witness: W-XSS-FILENAME.
+  // Filenames come from the user's <input type=file>; same _escHtml as erp/ad_ui.js.
+  function _escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   function _onFile(f) {
     var out = document.getElementById('np-out');
-    out.innerHTML = '<span style="opacity:0.7;">reading ' + f.name + '…</span>';
+    out.innerHTML = '<span style="opacity:0.7;">reading ' + _escHtml(f.name) + '…</span>';
     ensureXlsx().then(function (XLSX) {
       return f.arrayBuffer().then(function (buf) { handleWorkbook(XLSX.read(buf, { type: 'array' }), f.name); });
     }).catch(function (e) { out.innerHTML = '<span style="color:#ff9b9b;">' + String(e.message || e) + '</span>'; });
@@ -318,12 +329,13 @@
     var a = el('a', { href: url, download: fname });
     a.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:7px 14px;border-radius:8px;' +
       'background:#2d3550;color:#cdd6e4;text-decoration:none;font-size:13px;border:1px solid rgba(255,255,255,0.12);';
-    a.innerHTML = ico('save', 14) + ' download ' + fname;
+    a.innerHTML = ico('save', 14) + ' download ' + _escHtml(fname);
     out.appendChild(a);
     console.log('§NINJA-PILL download=' + fname);
   }
 
   global.NinjaPill = { open: open, close: close, handleBuffer: handleBuffer,
-                       ruleCompile: ruleCompile, ruleApply: ruleApply, fetchSample: fetchSample };
+                       ruleCompile: ruleCompile, ruleApply: ruleApply, fetchSample: fetchSample,
+                       _escHtml: _escHtml };
   console.log('§NINJA-PILL loaded');
 })(typeof self !== 'undefined' ? self : this);

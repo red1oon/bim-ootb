@@ -99,7 +99,13 @@
     var result = previewDocAction(recordRef, ctx, dbs, opts);
     var vm = AP.buildPostedVM(result);
     var render = opts.accordion ? AP.mountAccordion : AP.mount;
-    return { result: result, vm: vm, node: render(vm, opts) };
+    // mount() returns a DOM node; mountAccordion() returns a CONTROLLER {node,header,body,…}. The live host
+    // (idempiere.openPreviewFor) appendChild's `.node` directly, so ALWAYS hand back a real DOM node — unwrap
+    // the controller. Without this, the accordion path passed the controller object to appendChild → the
+    // preview drawer threw on render and never showed (J6 surfacing bug). Keep the controller available too.
+    var rendered = render(vm, opts);
+    var node = (rendered && rendered.nodeType) ? rendered : (rendered && rendered.node) || rendered;
+    return { result: result, vm: vm, node: node, controller: (rendered && rendered.node) ? rendered : null };
   }
 
   var _api = { previewDocAction: previewDocAction, openPreview: openPreview, facade: facade };

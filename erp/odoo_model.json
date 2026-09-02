@@ -1,0 +1,1193 @@
+{
+  "meta": {
+    "source": "odoodemo (Odoo 17.0-20260528) via odoo_agent/extract_model.js",
+    "host": "localhost:8069",
+    "db": "odoodemo",
+    "note": "curated slice — selection, not a server; types/labels/values pulled live"
+  },
+  "tenant": {
+    "id": 2,
+    "name": "My Company (Chicago)"
+  },
+  "user": {
+    "id": 2,
+    "name": "Mitchell Admin",
+    "clientId": 2
+  },
+  "role": {
+    "id": 9001,
+    "name": "Odoo Admin",
+    "clientId": 2
+  },
+  "org": {
+    "id": 0,
+    "name": "* (All accessible)"
+  },
+  "winSet": [
+    1001,
+    1002,
+    1003,
+    1004
+  ],
+  "menu": [
+    {
+      "id": 228,
+      "name": "Sales",
+      "action": "X",
+      "children": [
+        {
+          "id": 229,
+          "name": "Orders",
+          "action": "X",
+          "children": [
+            {
+              "id": 233,
+              "name": "Customers",
+              "action": "W",
+              "children": [],
+              "windowId": 1001
+            }
+          ]
+        },
+        {
+          "id": 237,
+          "name": "Products",
+          "action": "X",
+          "children": [
+            {
+              "id": 238,
+              "name": "Products",
+              "action": "W",
+              "children": [],
+              "windowId": 1002
+            }
+          ]
+        },
+        {
+          "id": 234,
+          "name": "To Invoice",
+          "action": "X",
+          "children": [
+            {
+              "id": 235,
+              "name": "Orders to Invoice",
+              "action": "W",
+              "children": [],
+              "windowId": 1003
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 118,
+      "name": "Invoicing",
+      "action": "X",
+      "children": [
+        {
+          "id": 120,
+          "name": "Customers",
+          "action": "X",
+          "children": [
+            {
+              "id": 121,
+              "name": "Invoices",
+              "action": "W",
+              "children": [],
+              "windowId": 1004
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "windows": {
+    "1001": {
+      "id": 1001,
+      "name": "Customers",
+      "model": "res.partner",
+      "table": "res_partner",
+      "tabs": [
+        {
+          "name": "Customers",
+          "tableName": "res_partner",
+          "tabLevel": 0,
+          "isSingleRow": false,
+          "whereClause": null,
+          "orderByClause": "name",
+          "fk": null,
+          "fields": [
+            {
+              "columnName": "id",
+              "name": "ID",
+              "referenceType": "id",
+              "isKey": true,
+              "isIdentifier": false,
+              "isDisplayed": false,
+              "isMandatory": false,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null
+            },
+            {
+              "columnName": "name",
+              "name": "Name",
+              "referenceType": "string",
+              "isKey": false,
+              "isIdentifier": true,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "char",
+              "relation": null
+            },
+            {
+              "columnName": "email",
+              "name": "Email",
+              "referenceType": "string",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "char",
+              "relation": null
+            },
+            {
+              "columnName": "phone",
+              "name": "Phone",
+              "referenceType": "string",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "char",
+              "relation": null
+            },
+            {
+              "columnName": "city",
+              "name": "City",
+              "referenceType": "string",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "char",
+              "relation": null
+            },
+            {
+              "columnName": "country_id",
+              "name": "Country",
+              "referenceType": "tableDirect",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "many2one",
+              "relation": "res.country"
+            },
+            {
+              "columnName": "customer_rank",
+              "name": "Customer Rank",
+              "referenceType": "integer",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "integer",
+              "relation": null
+            }
+          ]
+        }
+      ]
+    },
+    "1002": {
+      "id": 1002,
+      "name": "Products",
+      "model": "product.template",
+      "table": "product_template",
+      "tabs": [
+        {
+          "name": "Products",
+          "tableName": "product_template",
+          "tabLevel": 0,
+          "isSingleRow": false,
+          "whereClause": null,
+          "orderByClause": "name",
+          "fk": null,
+          "fields": [
+            {
+              "columnName": "id",
+              "name": "ID",
+              "referenceType": "id",
+              "isKey": true,
+              "isIdentifier": false,
+              "isDisplayed": false,
+              "isMandatory": false,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null
+            },
+            {
+              "columnName": "name",
+              "name": "Name",
+              "referenceType": "string",
+              "isKey": false,
+              "isIdentifier": true,
+              "isDisplayed": true,
+              "isMandatory": true,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "char",
+              "relation": null
+            },
+            {
+              "columnName": "default_code",
+              "name": "Internal Reference",
+              "referenceType": "string",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "char",
+              "relation": null
+            },
+            {
+              "columnName": "list_price",
+              "name": "Sales Price",
+              "referenceType": "number",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "float",
+              "relation": null
+            },
+            {
+              "columnName": "type",
+              "name": "Type",
+              "referenceType": "list",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "selection",
+              "relation": null
+            },
+            {
+              "columnName": "categ_id",
+              "name": "Product Category",
+              "referenceType": "tableDirect",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": true,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "many2one",
+              "relation": "product.category"
+            }
+          ]
+        }
+      ]
+    },
+    "1003": {
+      "id": 1003,
+      "name": "Sales Orders",
+      "model": "sale.order",
+      "table": "sale_order",
+      "tabs": [
+        {
+          "name": "Sales Orders",
+          "tableName": "sale_order",
+          "tabLevel": 0,
+          "isSingleRow": false,
+          "whereClause": null,
+          "orderByClause": "name",
+          "fk": null,
+          "fields": [
+            {
+              "columnName": "id",
+              "name": "ID",
+              "referenceType": "id",
+              "isKey": true,
+              "isIdentifier": false,
+              "isDisplayed": false,
+              "isMandatory": false,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null
+            },
+            {
+              "columnName": "name",
+              "name": "Order Reference",
+              "referenceType": "string",
+              "isKey": false,
+              "isIdentifier": true,
+              "isDisplayed": true,
+              "isMandatory": true,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "char",
+              "relation": null
+            },
+            {
+              "columnName": "partner_id",
+              "name": "Customer",
+              "referenceType": "tableDirect",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": true,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "many2one",
+              "relation": "res.partner"
+            },
+            {
+              "columnName": "date_order",
+              "name": "Order Date",
+              "referenceType": "datetime",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": true,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "datetime",
+              "relation": null
+            },
+            {
+              "columnName": "state",
+              "name": "Status",
+              "referenceType": "list",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "selection",
+              "relation": null
+            },
+            {
+              "columnName": "amount_untaxed",
+              "name": "Untaxed Amount",
+              "referenceType": "amount",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "monetary",
+              "relation": null
+            },
+            {
+              "columnName": "amount_total",
+              "name": "Total",
+              "referenceType": "amount",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "monetary",
+              "relation": null
+            }
+          ]
+        }
+      ]
+    },
+    "1004": {
+      "id": 1004,
+      "name": "Invoices",
+      "model": "account.move",
+      "table": "account_move",
+      "tabs": [
+        {
+          "name": "Invoices",
+          "tableName": "account_move",
+          "tabLevel": 0,
+          "isSingleRow": false,
+          "whereClause": null,
+          "orderByClause": "name",
+          "fk": null,
+          "fields": [
+            {
+              "columnName": "id",
+              "name": "ID",
+              "referenceType": "id",
+              "isKey": true,
+              "isIdentifier": false,
+              "isDisplayed": false,
+              "isMandatory": false,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null
+            },
+            {
+              "columnName": "name",
+              "name": "Number",
+              "referenceType": "string",
+              "isKey": false,
+              "isIdentifier": true,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "char",
+              "relation": null
+            },
+            {
+              "columnName": "partner_id",
+              "name": "Partner",
+              "referenceType": "tableDirect",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "many2one",
+              "relation": "res.partner"
+            },
+            {
+              "columnName": "invoice_date",
+              "name": "Invoice/Bill Date",
+              "referenceType": "date",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": false,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "date",
+              "relation": null
+            },
+            {
+              "columnName": "state",
+              "name": "Status",
+              "referenceType": "list",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": true,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "selection",
+              "relation": null
+            },
+            {
+              "columnName": "payment_state",
+              "name": "Payment Status",
+              "referenceType": "list",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "selection",
+              "relation": null
+            },
+            {
+              "columnName": "amount_total",
+              "name": "Total",
+              "referenceType": "amount",
+              "isKey": false,
+              "isIdentifier": false,
+              "isDisplayed": true,
+              "isMandatory": false,
+              "isReadOnly": true,
+              "defaultValue": null,
+              "displayLogic": null,
+              "fieldLength": null,
+              "odooType": "monetary",
+              "relation": null
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "records": {
+    "res_partner": [
+      {
+        "id": 10,
+        "name": "Acme Corporation",
+        "email": "acme_corp@yourcompany.example.com",
+        "phone": "(603)-996-3829",
+        "city": "Pleasant Hill",
+        "country_id": "United States",
+        "customer_rank": 8
+      },
+      {
+        "id": 14,
+        "name": "Azure Interior",
+        "email": "azure.Interior24@example.com",
+        "phone": "(870)-931-0505",
+        "city": "Fremont",
+        "country_id": "United States",
+        "customer_rank": 3
+      },
+      {
+        "id": 11,
+        "name": "Gemini Furniture",
+        "email": "gemini_furniture@fake.geminifurniture.com",
+        "phone": "(941)-284-4875",
+        "city": "Fairfield",
+        "country_id": "United States",
+        "customer_rank": 6
+      },
+      {
+        "id": 31,
+        "name": "Oscar Morgan",
+        "email": "oscar.morgan11@example.com",
+        "phone": "(561)-239-1744",
+        "city": "Fairfield",
+        "country_id": "United States",
+        "customer_rank": 1
+      }
+    ],
+    "product_template": [
+      {
+        "id": 23,
+        "name": "Acoustic Bloc Screens",
+        "default_code": "FURN_6666",
+        "list_price": 295,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 15,
+        "name": "Cabinet with Doors",
+        "default_code": "E-COM11",
+        "list_price": 140,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 28,
+        "name": "Cable Management Box",
+        "default_code": "FURN_5555",
+        "list_price": 100,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 30,
+        "name": "Chair floor protection",
+        "default_code": "",
+        "list_price": 12,
+        "type": "Consumable",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 16,
+        "name": "Conference Chair",
+        "default_code": "",
+        "list_price": 33,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 18,
+        "name": "Corner Desk Left Sit",
+        "default_code": "FURN_1118",
+        "list_price": 85,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 10,
+        "name": "Corner Desk Right Sit",
+        "default_code": "E-COM06",
+        "list_price": 147,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 9,
+        "name": "Customizable Desk",
+        "default_code": "",
+        "list_price": 750,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 29,
+        "name": "Deposit",
+        "default_code": "",
+        "list_price": 150,
+        "type": "Service",
+        "categ_id": "All / Saleable / Services"
+      },
+      {
+        "id": 8,
+        "name": "Desk Combination",
+        "default_code": "FURN_7800",
+        "list_price": 450,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 21,
+        "name": "Desk Stand with Screen",
+        "default_code": "FURN_7888",
+        "list_price": 2100,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 24,
+        "name": "Drawer",
+        "default_code": "FURN_8855",
+        "list_price": 110.5,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 19,
+        "name": "Drawer Black",
+        "default_code": "FURN_8900",
+        "list_price": 25,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 20,
+        "name": "Flipover",
+        "default_code": "FURN_9001",
+        "list_price": 1950,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 25,
+        "name": "Four Person Desk",
+        "default_code": "FURN_8220",
+        "list_price": 2350,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 2,
+        "name": "Hotel Accommodation",
+        "default_code": "",
+        "list_price": 400,
+        "type": "Service",
+        "categ_id": "All / Expenses"
+      },
+      {
+        "id": 22,
+        "name": "Individual Workplace",
+        "default_code": "FURN_0789",
+        "list_price": 885,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 11,
+        "name": "Large Cabinet",
+        "default_code": "E-COM07",
+        "list_price": 320,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 13,
+        "name": "Large Desk",
+        "default_code": "E-COM09",
+        "list_price": 1799,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 26,
+        "name": "Large Meeting Table",
+        "default_code": "FURN_6741",
+        "list_price": 4000,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 5,
+        "name": "Office Chair",
+        "default_code": "FURN_7777",
+        "list_price": 70,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 17,
+        "name": "Office Chair Black",
+        "default_code": "FURN_0269",
+        "list_price": 120.5,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 7,
+        "name": "Office Design Software",
+        "default_code": "FURN_9999",
+        "list_price": 280,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Software"
+      },
+      {
+        "id": 6,
+        "name": "Office Lamp",
+        "default_code": "FURN_8888",
+        "list_price": 40,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 14,
+        "name": "Pedal Bin",
+        "default_code": "E-COM10",
+        "list_price": 47,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 1,
+        "name": "Restaurant Expenses",
+        "default_code": "",
+        "list_price": 14,
+        "type": "Service",
+        "categ_id": "All / Expenses"
+      },
+      {
+        "id": 12,
+        "name": "Storage Box",
+        "default_code": "E-COM08",
+        "list_price": 15.8,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 27,
+        "name": "Three-Seat Sofa",
+        "default_code": "FURN_8999",
+        "list_price": 1500,
+        "type": "Storable Product",
+        "categ_id": "All / Saleable / Office Furniture"
+      },
+      {
+        "id": 4,
+        "name": "Virtual Home Staging",
+        "default_code": "",
+        "list_price": 38.25,
+        "type": "Service",
+        "categ_id": "All / Saleable / Services"
+      },
+      {
+        "id": 3,
+        "name": "Virtual Interior Design",
+        "default_code": "",
+        "list_price": 30.75,
+        "type": "Service",
+        "categ_id": "All / Saleable / Services"
+      }
+    ],
+    "sale_order": [
+      {
+        "id": 1,
+        "name": "S00001",
+        "partner_id": "Acme Corporation",
+        "date_order": "2026-05-02 00:49:00",
+        "state": "Quotation",
+        "amount_untaxed": 1740,
+        "amount_total": 2001
+      },
+      {
+        "id": 2,
+        "name": "S00002",
+        "partner_id": "Ready Mat",
+        "date_order": "2026-05-02 00:49:00",
+        "state": "Quotation",
+        "amount_untaxed": 2947.5,
+        "amount_total": 3389.63
+      },
+      {
+        "id": 3,
+        "name": "S00003",
+        "partner_id": "Ready Mat",
+        "date_order": "2026-06-02 00:49:22",
+        "state": "Quotation",
+        "amount_untaxed": 377.5,
+        "amount_total": 434.13
+      },
+      {
+        "id": 4,
+        "name": "S00004",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 2240,
+        "amount_total": 2576
+      },
+      {
+        "id": 5,
+        "name": "S00005",
+        "partner_id": "Acme Corporation",
+        "date_order": "2026-05-02 00:49:00",
+        "state": "Quotation",
+        "amount_untaxed": 405,
+        "amount_total": 465.75
+      },
+      {
+        "id": 6,
+        "name": "S00006",
+        "partner_id": "Lumber Inc",
+        "date_order": "2026-06-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 750,
+        "amount_total": 862.5
+      },
+      {
+        "id": 7,
+        "name": "S00007",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 1706,
+        "amount_total": 1961.9
+      },
+      {
+        "id": 8,
+        "name": "S00008",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 462,
+        "amount_total": 531.3
+      },
+      {
+        "id": 9,
+        "name": "S00009",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-05-26 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 654,
+        "amount_total": 752.11
+      },
+      {
+        "id": 10,
+        "name": "S00010",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 751,
+        "amount_total": 863.65
+      },
+      {
+        "id": 11,
+        "name": "S00011",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-05-12 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 1096.5,
+        "amount_total": 1260.98
+      },
+      {
+        "id": 12,
+        "name": "S00012",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 556,
+        "amount_total": 639.4
+      },
+      {
+        "id": 13,
+        "name": "S00013",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 415.5,
+        "amount_total": 477.83
+      },
+      {
+        "id": 14,
+        "name": "S00014",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 1582,
+        "amount_total": 1819.3
+      },
+      {
+        "id": 15,
+        "name": "S00015",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-05-19 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 1541.5,
+        "amount_total": 1772.73
+      },
+      {
+        "id": 16,
+        "name": "S00016",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 1186.5,
+        "amount_total": 1364.48
+      },
+      {
+        "id": 17,
+        "name": "S00017",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-05-05 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 951,
+        "amount_total": 1093.65
+      },
+      {
+        "id": 18,
+        "name": "S00018",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-04-28 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 831,
+        "amount_total": 955.65
+      },
+      {
+        "id": 19,
+        "name": "S00019",
+        "partner_id": "YourCompany, Joel Willis",
+        "date_order": "2026-05-02 00:49:00",
+        "state": "Quotation Sent",
+        "amount_untaxed": 1740,
+        "amount_total": 2001
+      },
+      {
+        "id": 20,
+        "name": "S00020",
+        "partner_id": "YourCompany, Joel Willis",
+        "date_order": "2026-05-02 00:49:23",
+        "state": "Sales Order",
+        "amount_untaxed": 2947.5,
+        "amount_total": 3389.63
+      },
+      {
+        "id": 21,
+        "name": "S00021",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:25",
+        "state": "Sales Order",
+        "amount_untaxed": 2175,
+        "amount_total": 2501.25
+      },
+      {
+        "id": 22,
+        "name": "S00022",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:25",
+        "state": "Sales Order",
+        "amount_untaxed": 1475,
+        "amount_total": 1696.25
+      },
+      {
+        "id": 23,
+        "name": "S00023",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:25",
+        "state": "Sales Order",
+        "amount_untaxed": 4350,
+        "amount_total": 5002.5
+      },
+      {
+        "id": 24,
+        "name": "S00024",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 00:49:25",
+        "state": "Sales Order",
+        "amount_untaxed": 1990,
+        "amount_total": 2288.5
+      },
+      {
+        "id": 25,
+        "name": "S00025",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 23:15:54",
+        "state": "Sales Order",
+        "amount_untaxed": 4350,
+        "amount_total": 5002.5
+      },
+      {
+        "id": 26,
+        "name": "S00026",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 23:16:33",
+        "state": "Sales Order",
+        "amount_untaxed": 4350,
+        "amount_total": 5002.5
+      },
+      {
+        "id": 27,
+        "name": "S00027",
+        "partner_id": "Gemini Furniture",
+        "date_order": "2026-06-02 23:16:56",
+        "state": "Sales Order",
+        "amount_untaxed": 4350,
+        "amount_total": 5002.5
+      }
+    ],
+    "account_move": [
+      {
+        "id": 4,
+        "name": "INV/2026/00001",
+        "partner_id": "Acme Corporation",
+        "invoice_date": "2026-05-18",
+        "state": "Posted",
+        "payment_state": "Not Paid",
+        "amount_total": 36512.5
+      },
+      {
+        "id": 1,
+        "name": "INV/2026/00002",
+        "partner_id": "Azure Interior",
+        "invoice_date": "2026-06-01",
+        "state": "Posted",
+        "payment_state": "Not Paid",
+        "amount_total": 36512.5
+      },
+      {
+        "id": 2,
+        "name": "INV/2026/00003",
+        "partner_id": "Acme Corporation",
+        "invoice_date": "2026-05-31",
+        "state": "Posted",
+        "payment_state": "Not Paid",
+        "amount_total": 48012.5
+      },
+      {
+        "id": 3,
+        "name": "INV/2026/00004",
+        "partner_id": "Acme Corporation",
+        "invoice_date": "2026-05-30",
+        "state": "Posted",
+        "payment_state": "Not Paid",
+        "amount_total": 22137.5
+      },
+      {
+        "id": 25,
+        "name": "INV/2026/00005",
+        "partner_id": "Gemini Furniture, Oscar Morgan",
+        "invoice_date": "2026-06-03",
+        "state": "Posted",
+        "payment_state": "Paid",
+        "amount_total": 5002.5
+      },
+      {
+        "id": 31,
+        "name": "INV/2026/00006",
+        "partner_id": "Gemini Furniture",
+        "invoice_date": "2026-06-03",
+        "state": "Posted",
+        "payment_state": "Partially Paid",
+        "amount_total": 5002.5
+      },
+      {
+        "id": 33,
+        "name": "INV/2026/00007",
+        "partner_id": "Gemini Furniture",
+        "invoice_date": "2026-06-03",
+        "state": "Posted",
+        "payment_state": "Partially Paid",
+        "amount_total": 5002.5
+      }
+    ]
+  },
+  "modelMeta": {
+    "res.partner": {
+      "irModelName": "Contact",
+      "table": "res_partner",
+      "records": 4
+    },
+    "product.template": {
+      "irModelName": "Product",
+      "table": "product_template",
+      "records": 30
+    },
+    "sale.order": {
+      "irModelName": "Sales Order",
+      "table": "sale_order",
+      "records": 27
+    },
+    "account.move": {
+      "irModelName": "Journal Entry",
+      "table": "account_move",
+      "records": 7
+    }
+  }
+}

@@ -84,6 +84,9 @@
     global.KernelOps.ensureTable(_opDb);
     try { await global.ErpSigner.installSigner(global.KernelOps, { dbName: 'bim_erp_signer' }); _signed = true; }
     catch (e) { console.log('§RULE-SIGN skip ' + e.message); _signed = false; }
+    // publish the live op-log handle so the System Monitor's db_size_gauge can PRAGMA a REAL db (non-invent):
+    // don't clobber a seam that's already live; only fills the gap when this standalone chain is the op-log.
+    try { if (global.ERP) global.ERP.opDb = global.ERP.opDb || _opDb; } catch (e) {}
     return _opDb;
   }
   // commit ONE SET_RULE op (the edit), then seal (sign) + verify the whole chain.

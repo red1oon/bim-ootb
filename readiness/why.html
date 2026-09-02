@@ -1,0 +1,715 @@
+<meta charset="utf-8">
+<title>Why OpenBIM Readiness</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ink:#131e1b; --ink-2:#3a4a45; --muted:#6b7d78; --faint:#9aaba6;
+  --paper:#f5f7f5; --surface:#ffffff; --surface-2:#eaefed; --surface-3:#dbe3e0;
+  --rule:#d3dcd9; --rule-soft:#e4e9e7;
+  --accent:#00897b; --accent-ink:#00695f; --accent-wash:#e0efec;
+  --warn:#a06a00; --warn-wash:#f7efdd;
+  --focus:#00897b;
+  --shadow:0 1px 2px rgba(19,30,27,.05),0 10px 30px -18px rgba(19,30,27,.22);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+    --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+    --rule:#2d3e39; --rule-soft:#22302c;
+    --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+    --warn:#b1811f; --warn-wash:#2f2612;
+    --focus:#4fc9b0;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+  --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+  --rule:#2d3e39; --rule-soft:#22302c;
+  --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+  --warn:#b1811f; --warn-wash:#2f2612;
+  --focus:#4fc9b0;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,serif;font-size:17.5px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.ui{font-family:"Instrument Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.022em}
+p{margin:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+a{color:var(--accent-ink);text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
+
+.wrap{max-width:800px;margin:0 auto;padding:0 22px 90px}
+
+/* ---- topbar ---- */
+.topbar{display:flex;align-items:center;gap:13px;padding:18px 0;border-bottom:1px solid var(--rule)}
+.brandmark{
+  width:28px;height:28px;border-radius:6px;background:var(--accent);flex:none;
+  display:grid;place-items:center;color:var(--paper);font-weight:700;font-size:12px;
+  font-family:"IBM Plex Mono",monospace
+}
+.brandtext{font-family:"Instrument Sans",sans-serif;font-size:13.5px;font-weight:600;line-height:1.3}
+.brandtext small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
+.topspacer{flex:1}
+.ghostbtn{
+  background:transparent;border:1px solid var(--rule);border-radius:6px;padding:6px 12px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;cursor:pointer;color:var(--ink-2);
+  text-decoration:none;display:inline-block
+}
+.ghostbtn:hover{background:var(--surface-2);border-color:var(--accent);color:var(--accent-ink)}
+
+/* ---- hero ---- */
+.hero{padding:56px 0 40px;border-bottom:2px solid var(--ink)}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;margin-bottom:16px
+}
+h1{font-family:"Instrument Sans",sans-serif;font-size:clamp(31px,5.2vw,46px);line-height:1.08;font-weight:700}
+.standfirst{font-size:19px;color:var(--ink-2);margin-top:18px;max-width:58ch;line-height:1.55}
+
+/* ---- sections ---- */
+section{margin:64px 0 0;scroll-margin-top:20px}
+.shead{display:flex;gap:14px;align-items:baseline;margin-bottom:10px}
+.snum{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink);
+  flex:none;padding-top:5px;letter-spacing:.05em
+}
+h2{font-family:"Instrument Sans",sans-serif;font-size:26px;font-weight:600;line-height:1.2}
+h3{font-family:"Instrument Sans",sans-serif;font-size:16.5px;font-weight:600;margin:30px 0 8px}
+section p{margin:15px 0;max-width:64ch}
+.lede{font-size:18.5px;color:var(--ink-2)}
+strong{font-weight:600;color:var(--ink)}
+
+/* ---- nav chips ---- */
+.jump{display:flex;gap:8px;flex-wrap:wrap;margin:26px 0 0}
+.jump a{
+  font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:20px;padding:7px 14px;color:var(--ink-2);background:var(--surface)
+}
+.jump a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+
+/* ---- figure ---- */
+figure{
+  margin:26px 0;background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:22px 24px;box-shadow:var(--shadow)
+}
+figure h4{
+  font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;margin:0 0 4px
+}
+figure .fsub{font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--muted);margin-bottom:18px}
+figcaption{
+  margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"Instrument Sans",sans-serif;font-size:12.5px;color:var(--muted);line-height:1.5
+}
+figcaption b{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;display:block;margin-bottom:4px
+}
+
+/* ---- stacked bar ---- */
+.stack{display:flex;height:38px;border-radius:6px;overflow:hidden;gap:2px;background:var(--surface)}
+.seg{display:grid;place-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;min-width:0}
+.seg.a{background:var(--accent);color:var(--paper)}
+.seg.n{background:var(--surface-3);color:var(--ink-2)}
+.seg.w{background:var(--warn);color:var(--paper)}
+.stacklab{
+  display:flex;justify-content:space-between;margin-top:9px;gap:14px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--ink-2)
+}
+.stacklab span{display:flex;gap:7px;align-items:center}
+.sw{width:12px;height:11px;border-radius:3px;flex:none}
+.sw.a{background:var(--accent)} .sw.n{background:var(--surface-3)} .sw.w{background:var(--warn)}
+
+/* ---- hbars ---- */
+.hb{display:grid;grid-template-columns:150px 1fr 74px;gap:12px;align-items:center;padding:6px 0}
+.hb .n{font-family:"Instrument Sans",sans-serif;font-size:13.5px;text-align:right;color:var(--ink-2);line-height:1.25}
+.hb .t{height:17px;background:var(--surface-3);border-radius:4px;position:relative;overflow:hidden}
+.hb .f{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:4px}
+.hb .v{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+
+/* ---- hero stat ---- */
+.bignum{
+  display:flex;gap:26px;align-items:baseline;flex-wrap:wrap;
+  padding:6px 0 2px
+}
+.bignum .n{
+  font-family:"Instrument Sans",sans-serif;font-size:clamp(46px,9vw,74px);font-weight:700;
+  line-height:.95;letter-spacing:-.04em;color:var(--warn);font-variant-numeric:tabular-nums
+}
+.bignum .n.ok{color:var(--accent)}
+.bignum .t{font-size:16px;color:var(--ink-2);max-width:34ch;font-family:"Instrument Sans",sans-serif;line-height:1.4}
+
+/* ---- matrix ---- */
+.mx{width:100%;border-collapse:collapse;font-family:"Instrument Sans",sans-serif;font-size:13.5px}
+.mx th{
+  text-align:left;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  padding:9px 10px;border-bottom:1px solid var(--rule);font-weight:600
+}
+.mx th.c,.mx td.c{text-align:center;width:88px}
+.mx td{padding:10px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2)}
+.mx tr:last-child td{border-bottom:none}
+.yes{color:var(--accent);font-weight:700}
+.no{color:var(--warn);font-weight:700}
+.mxscroll{overflow-x:auto}
+/* numbered point list, same treatment as the assessment's recommendations */
+.fixes{list-style:none;padding:0;margin:16px 0;counter-reset:f}
+.fixes li{
+  counter-increment:f;display:grid;grid-template-columns:27px 1fr;gap:13px;
+  padding:13px 0;border-bottom:1px solid var(--rule-soft);align-items:start
+}
+.fixes li:last-child{border-bottom:none}
+.fixes li::before{
+  content:counter(f);font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
+  color:var(--accent-ink);background:var(--accent-wash);border-radius:5px;
+  width:27px;height:24px;display:flex;align-items:center;justify-content:center
+}
+.fixes h4{margin:0 0 5px;font-size:15.5px}
+.fixes p{margin:0;font-size:14.5px;color:var(--ink-2);line-height:1.55}
+
+/* ---- bands ---- */
+.bands{display:flex;gap:2px;border-radius:6px;overflow:hidden;margin-top:4px}
+.band{padding:11px 12px;flex:1;font-family:"Instrument Sans",sans-serif;font-size:12.5px;text-align:center;line-height:1.35}
+.band b{display:block;font-family:"IBM Plex Mono",monospace;font-size:14px;margin-bottom:3px}
+.band.g{background:var(--accent-wash);color:var(--accent-ink)}
+.band.m{background:var(--surface-3);color:var(--ink-2)}
+.band.b{background:var(--warn-wash);color:var(--warn)}
+
+/* ---- pull quote ---- */
+blockquote.ps{
+  margin:30px 0;padding:24px 26px;background:var(--surface);
+  border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:8px;
+  box-shadow:var(--shadow)
+}
+blockquote.ps p{margin:0 0 13px;font-size:17px;line-height:1.6;max-width:none}
+blockquote.ps p:last-of-type{margin-bottom:0}
+blockquote.ps .k{font-weight:600;color:var(--ink)}
+blockquote.ps cite{
+  display:block;margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);font-style:normal
+}
+
+/* ---- callout ---- */
+.call{
+  background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);
+  border-radius:8px;padding:19px 22px;margin:26px 0
+}
+.call.warn{border-left-color:var(--warn)}
+.call .lab{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--accent-ink);font-weight:600;display:block;margin-bottom:8px
+}
+.call.warn .lab{color:var(--warn)}
+.call p{margin:0 0 11px;max-width:none}
+.call p:last-child{margin-bottom:0}
+
+/* ---- ladder ---- */
+.ladder{display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin:22px 0}
+.rung{background:var(--surface);padding:12px 16px;display:grid;grid-template-columns:38px 1fr;gap:14px;align-items:baseline}
+.rung .l{font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;color:var(--accent-ink)}
+.rung b{font-family:"Instrument Sans",sans-serif;font-size:14.5px}
+.rung p{margin:2px 0 0;font-size:14.5px;color:var(--muted);max-width:none}
+
+/* ---- cta ---- */
+.cta{
+  margin:60px 0 0;padding:30px 26px;background:var(--accent-wash);
+  border:1px solid var(--accent);border-radius:12px;text-align:center
+}
+.cta h3{margin:0 0 8px;font-size:20px}
+.cta p{margin:0 auto 20px;max-width:46ch;color:var(--ink-2);font-size:15.5px}
+.btn{
+  background:var(--accent);color:var(--paper);border:1px solid var(--accent);border-radius:8px;
+  padding:12px 24px;font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;
+  cursor:pointer;text-decoration:none;display:inline-block
+}
+.btn:hover{filter:brightness(1.08)}
+
+footer{
+  margin:64px 0 0;padding-top:20px;border-top:1px solid var(--rule);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
+}
+
+@media (max-width:600px){
+  .hb{grid-template-columns:96px 1fr 62px;gap:9px}
+  .hb .n{font-size:12.5px}
+  .bands{flex-direction:column}
+  figure{padding:18px 16px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.nav{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+.nav a{font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
+.nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
+
+/* ---- footnotes ---- */
+sup.fn{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;line-height:0;vertical-align:super}
+sup.fn a{color:var(--accent-ink);text-decoration:none;padding:0 1px}
+sup.fn a:hover{text-decoration:underline}
+ol.refs{margin:22px 0 0;padding:0;list-style:none;counter-reset:r}
+ol.refs li{counter-increment:r;position:relative;padding:10px 0 10px 34px;
+  border-bottom:1px solid var(--rule-soft);font-size:14.5px;color:var(--ink-2);line-height:1.55}
+ol.refs li:last-child{border-bottom:none}
+ol.refs li::before{content:counter(r) ".";position:absolute;left:0;top:10px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink)}
+ol.refs .loc{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted)}
+ol.refs a.back{font-family:"IBM Plex Mono",monospace;font-size:11px;text-decoration:none;color:var(--muted)}
+ol.refs a.back:hover{color:var(--accent-ink)}
+:target{background:var(--accent-wash)}
+@media print{ol.refs li{page-break-inside:avoid}}
+</style>
+
+<div class="wrap">
+
+<div class="topbar">
+  <div class="brandmark">OB</div>
+  <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Read more</small></div>
+  <div class="nav"><a href="./" data-i18n-block="common:nav.overview">Overview</a><a href="assess.html" data-i18n-block="common:nav.assessment">Assessment</a><a href="proposal.html" data-i18n-block="common:nav.proposal">Proposal</a><a href="why.html" class="on" data-i18n-block="common:nav.background">Background</a><a href="faq.html" data-i18n-block="common:nav.basics">Basics</a><a href="sources.html" data-i18n-block="common:nav.sources">Sources</a><a href="disclaimer.html" data-i18n-block="common:nav.notice">Notice</a></div>
+</div>
+
+<div class="hero" data-i18n-block="hero">
+  <p class="eyebrow">Why this exists</p>
+  <h1>Background to the readiness assessment</h1>
+  <p class="standfirst">What the industry certifies, where delivered models stand today, and
+  what closing the gap involves.</p>
+  <nav class="jump">
+    <a href="#industry">01 &nbsp;The industry</a>
+    <a href="#gap">02 &nbsp;The gap</a>
+    <a href="#roadmap">03 &nbsp;The roadmap</a>
+    <a href="#differs">04 &nbsp;How this differs</a>
+    <a href="#offline">Offline copy</a>
+    <a href="proposal.html">The proposal</a>
+    <a href="faq.html">Plain answers</a>
+    <a href="disclaimer.html">Disclaimer Notice</a>
+  </nav>
+</div>
+
+<section id="industry">
+  <div class="shead"><span class="snum">01</span><h2 data-i18n-block="industry_head">What the industry certifies</h2></div>
+  <p class="lede" data-i18n-block="industry_lede">Established first, because it is commonly misunderstood.</p>
+
+  <blockquote class="ps" data-i18n-block="industry_quote">
+    <p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary
+    BIM workflows towards more interoperable OpenBIM practices. This transition requires not only
+    appropriate technologies, but also organisational readiness in areas such as governance, business
+    processes, workforce capabilities, data management, and compliance with open standards.</p>
+    <p class="k">However, there is currently no simple and practical way for organisations to
+    objectively assess their readiness for OpenBIM implementation or to identify the capability gaps
+    that should be addressed before embarking on this transition.</p>
+    <cite>The problem statement &mdash; research proposal, 10 Aug 2026</cite>
+  </blockquote>
+
+  <p data-i18n-block="industry_p1">That is what this toolkit is for, and the rest of this page is the evidence behind it.</p>
+
+  <p data-i18n-block="industry_p2">BIM moved the industry from drawing to modelling, and the model became the record: geometry
+  carrying data, coordinated across disciplines, outliving the project into operations. That part is
+  settled. What is not settled is who owns the file format that record lives in.</p>
+
+  <p data-i18n-block="industry_p3">A small number of vendors own practical BIM today. That bought real maturity, and it charged for
+  it in ways that only surface later — formats one application fully understands and others
+  approximate, licences that scale with headcount, and model data whose readability depends on
+  keeping a subscription alive. The consideration is most acute for the asset owner: a building
+  outlives the software that modelled it by decades.</p>
+
+  <p data-i18n-block="industry_p4">It is therefore worth examining what Autodesk certifies about its own software.</p>
+
+  <figure>
+    <h4 data-i18n-block="industry_fig_h4">What Autodesk holds certification for</h4>
+    <p class="fsub" data-i18n-block="industry_fig_fsub">buildingSMART certifications vs. local-authority compliance, any jurisdiction</p>
+    <div class="mxscroll">
+      <table class="mx">
+        <thead><tr><th>Certification</th><th class="c">Export</th><th class="c">Import</th></tr></thead>
+        <tbody>
+          <tr><td>IFC4 Architectural Reference Exchange</td><td class="c yes">✓</td><td class="c">&mdash;</td></tr>
+          <tr><td>IFC4 Structural Reference Exchange</td><td class="c yes">✓</td><td class="c">&mdash;</td></tr>
+          <tr><td>IFC2x3 Coordination View 2.0 &mdash; Architecture</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+          <tr><td>IFC2x3 Coordination View 2.0 &mdash; Structure</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+          <tr><td>IFC2x3 Coordination View 2.0 &mdash; MEP</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+          <tr><td><strong>Local-authority building compliance</strong> &mdash; any country</td>
+              <td class="c no">✗</td><td class="c no">✗</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption data-i18n-block="industry_figcap"><b>Source</b>buildingSMART certification register, as researched 2026-07-31.
+    What buildingSMART verifies is that an application &ldquo;can reliably import and export files in
+    accordance with the relevant IFC standard versions&rdquo; &mdash; a losslessness claim, not a
+    regulatory one.</figcaption>
+  </figure>
+
+  <div class="call" data-i18n-block="industry_call1">
+    <span class="lab">What follows from that</span>
+    <p>The certifications cover interoperability &mdash; that files are imported and exported in
+    accordance with the relevant IFC standard. They do not cover whether a building is lawful, which
+    remains with the practice.</p>
+    <p>This is the correct division of responsibility rather than a gap in the product: local-authority
+    compliance sits with the Appointing Party and the Lead Appointed Party. Software is never a legal
+    party to it. No vendor holds certification for local-authority compliance in any jurisdiction; the
+    category does not exist.</p>
+  </div>
+
+  <h3 data-i18n-block="industry_h3">The mandates are already in force</h3>
+  <p data-i18n-block="industry_p5">Since <strong>1 July 2025</strong>, BIM has been mandatory for Malaysian <strong>government</strong>
+  development projects valued at RM 10 million and above, under Ministry of Finance circular
+  PK 1.15.<sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> Private-sector adoption is encouraged rather than required. CIDB publishes
+  BIM guidance for project delivery separately from that circular.<sup class="fn"><a href="#ref2" id="fnref2">2</a></sup></p>
+
+  <p data-i18n-block="industry_p6">Other jurisdictions are on their own timetables. The United Kingdom required collaborative BIM
+  Level 2 on centrally-funded public projects from April 2016.<sup class="fn"><a href="#ref3" id="fnref3">3</a></sup> Singapore phases
+  mandatory BIM e-submission by project size.<sup class="fn"><a href="#ref4" id="fnref4">4</a></sup> The European Union&rsquo;s public
+  procurement directive is permissive rather than mandatory &mdash; it allows member states to require
+  BIM tools for public works, but does not itself require them.<sup class="fn"><a href="#ref5" id="fnref5">5</a></sup></p>
+
+  <p data-i18n-block="industry_p7">This produces the situation the toolkit addresses: a specific deliverable is required, the
+  software does not promise to produce it, and no established method measures the distance between
+  the two.</p>
+</section>
+
+<section id="gap">
+  <div class="shead"><span class="snum">02</span><h2 data-i18n-block="gap_head">Where delivered models stand</h2></div>
+  <p class="lede" data-i18n-block="gap_lede">Figures measured from delivered models, with the building named in each case.</p>
+
+  <h3 data-i18n-block="gap_h1">A truncated model can be almost entirely absent and still open without error</h3>
+  <p data-i18n-block="gap_p1">Past a 4 GB boundary during export, geometry generation stops. There is no crash and no error
+  message; the file opens and renders.</p>
+
+  <figure>
+    <h4 data-i18n-block="gap_fig1_h4">One measured truncated export</h4>
+    <p class="fsub" data-i18n-block="gap_fig1_fsub">Elements delivered vs. elements silently absent</p>
+    <div class="stack" aria-label="6 percent delivered, 94 percent absent">
+      <div class="seg a" style="flex:6">6%</div>
+      <div class="seg w" style="flex:94">94% absent</div>
+    </div>
+    <div class="stacklab">
+      <span><i class="sw a"></i>3,955 elements delivered</span>
+      <span><i class="sw w"></i>no error shown</span>
+    </div>
+    <figcaption data-i18n-block="gap_fig1cap"><b>Source</b>Measured export failure documented in the project&rsquo;s own IFC export
+    guide. Export stopped at element #3,956 of the model and reported success.
+    A model that is almost entirely absent can therefore pass review.</figcaption>
+  </figure>
+
+  <h3 data-i18n-block="gap_h2">Geometry accounts for most of the file; the semantic data does not</h3>
+  <p data-i18n-block="gap_p2">When a model is extracted into a database, the distribution of storage between geometry and
+  semantics becomes measurable.</p>
+
+  <figure>
+    <h4 data-i18n-block="gap_fig2_h4">Where the bytes go in an extracted model</h4>
+    <p class="fsub" data-i18n-block="gap_fig2_fsub">Hospital building, 63,917 elements, ~263 MB database</p>
+    <div class="stack" aria-label="91 percent geometry, 9 percent semantics">
+      <div class="seg a" style="flex:91">91% geometry</div>
+      <div class="seg n" style="flex:9">9%</div>
+    </div>
+    <div class="stacklab">
+      <span><i class="sw a"></i>Component geometry &mdash; 239.1 MB</span>
+      <span><i class="sw n"></i>All semantics, transforms, indexes &mdash; 23.7 MB</span>
+    </div>
+    <figcaption data-i18n-block="gap_fig2cap"><b>Source</b>Measured with <span class="mono">dbstat</span> on the Hospital extraction.
+    Relationship data &mdash; the part that makes a model queryable rather than merely viewable &mdash;
+    is roughly 0.2% of the file.</figcaption>
+  </figure>
+
+  <h3 data-i18n-block="gap_h3">Coverage of classification data</h3>
+
+  <figure>
+    <h4 data-i18n-block="gap_fig3_h4">Classification coverage in one delivered model</h4>
+    <p class="fsub" data-i18n-block="gap_fig3_fsub">Hospital building &mdash; elements carrying a classification code</p>
+    <div class="bignum">
+      <span class="n">7.11%</span>
+      <span class="t">of 63,917 elements carry a classification code. Every code present is
+      well-formed &mdash; zero invalid codes.</span>
+    </div>
+    <figcaption data-i18n-block="gap_fig3cap"><b>Source</b>Measured on re-extraction of the Hospital model, 2026-07-31.
+    <strong>This is one building&rsquo;s number and must not be read as an industry figure.</strong>
+    It indicates a pattern worth checking on an individual model, which is what the assessment does.
+    It also shows why validity and coverage are reported separately: judged on validity alone this
+    model passes; judged on coverage it is close to empty. Both are reported together, and no single
+    headline score is produced.</figcaption>
+  </figure>
+
+  <h3 data-i18n-block="gap_h4">File bulk has a delivery threshold</h3>
+  <figure>
+    <h4 data-i18n-block="gap_fig4_h4">Entities per element &mdash; delivery thresholds</h4>
+    <p class="fsub" data-i18n-block="gap_fig4_fsub">A measure of whether other tools can open the delivered file</p>
+    <div class="bands">
+      <div class="band g"><b>&lt; 50</b>Target &mdash; exports cleanly, opens everywhere</div>
+      <div class="band m"><b>50 &ndash; 200</b>Acceptable &mdash; large but workable</div>
+      <div class="band b"><b>&gt; 200</b>Many tools cannot open it at all</div>
+    </div>
+    <figcaption data-i18n-block="gap_fig4cap"><b>Source</b>Thresholds published in the project&rsquo;s IFC export guide, derived from
+    measured import behaviour. Driven mostly by exporting tessellated geometry where solids were
+    available, and by exporting property sets nobody contracted for.</figcaption>
+  </figure>
+</section>
+
+<section id="roadmap">
+  <div class="shead"><span class="snum">03</span><h2 data-i18n-block="roadmap_head">What closing the gap involves</h2></div>
+  <p class="lede" data-i18n-block="roadmap_lede">Readiness is assessed across five dimensions, which vary independently.</p>
+
+  <p data-i18n-block="roadmap_p1">The assessment scores each of governance, people and skills, technology, data and standards, and
+  organisational processes on one shared capability ladder. The levels are the six capability levels
+  defined by <strong>ISO/IEC 33020</strong>, the international standard for process capability
+  measurement, which states it is applicable to any domain.<sup class="fn"><a href="#ref6" id="fnref6">6</a></sup></p>
+  <p data-i18n-block="roadmap_p2">They measure <strong>institutionalisation</strong> rather than individual initiative. A firm
+  where one engineer exports IFC by hand sits at Performed: the practice occurs, but it is not
+  planned, managed or maintained.</p>
+
+  <div class="ladder" data-i18n-block="roadmap_ladder">
+    <div class="rung"><span class="l">L0</span><div><b>Incomplete</b><p>Not present, or it fails to achieve its purpose.</p></div></div>
+    <div class="rung"><span class="l">L1</span><div><b>Performed</b><p>It happens and achieves its purpose, but unmanaged — through individual initiative.</p></div></div>
+    <div class="rung"><span class="l">L2</span><div><b>Managed</b><p>Planned, controlled and maintained; the work products are kept.</p></div></div>
+    <div class="rung"><span class="l">L3</span><div><b>Established</b><p>A defined standard process, applied across projects rather than per person.</p></div></div>
+    <div class="rung"><span class="l">L4</span><div><b>Predictable</b><p>Measured quantitatively, so performance can be predicted rather than hoped for.</p></div></div>
+    <div class="rung"><span class="l">L5</span><div><b>Innovating</b><p>Those measurements drive continuous change to how the work is done.</p></div></div>
+  </div>
+
+  <h3 data-i18n-block="roadmap_h1">Jurisdiction rules are carried as data, not code</h3>
+  <p data-i18n-block="roadmap_p3">Requirements differ by jurisdiction, so they are carried in versioned rule packs rather than
+  embedded in the instrument. Coverage is partial; the current state is shown below.</p>
+
+  <figure>
+    <h4 data-i18n-block="roadmap_fig1_h4">Jurisdiction rule coverage</h4>
+    <p class="fsub" data-i18n-block="roadmap_fig1_fsub">Validation rules implemented against the stated target</p>
+    <div class="hb"><span class="n">Malaysia · UBBL</span><span class="t"><span class="f" style="width:15%"></span></span><span class="v">30</span></div>
+    <div class="hb"><span class="n">SG · UK · AU · US · EU · HK</span><span class="t"><span class="f" style="width:0%"></span></span><span class="v">0</span></div>
+    <div class="hb"><span class="n">Stated target</span><span class="t"><span class="f" style="width:100%;background:var(--surface-3)"></span></span><span class="v">200+</span></div>
+    <figcaption data-i18n-block="roadmap_fig1cap"><b>Source</b>Project rule inventory. 30 UBBL rules implemented against a stated target
+    of 200+ across six jurisdictions. The remaining rules are outstanding work.</figcaption>
+  </figure>
+
+  <h3 data-i18n-block="roadmap_h2">The industry picture starts empty</h3>
+  <figure>
+    <h4 data-i18n-block="roadmap_fig2_h4">Assessments completed</h4>
+    <p class="fsub" data-i18n-block="roadmap_fig2_fsub">The benchmark this toolkit builds</p>
+    <div class="bignum">
+      <span class="n ok">0</span>
+      <span class="t">No assessments have been submitted yet. As responses accumulate, this figure
+      becomes an industry picture built from practitioner reports.</span>
+    </div>
+    <figcaption data-i18n-block="roadmap_fig2cap"><b>Source</b>Live count of submitted assessments. No estimate, projection or illustrative figure is
+    shown in its place.</figcaption>
+  </figure>
+</section>
+
+<section id="differs">
+  <div class="shead"><span class="snum">04</span><h2 data-i18n-block="differs_head">How this differs from other assessments</h2></div>
+  <p class="lede" data-i18n-block="differs_lede">BIM maturity assessment is a crowded field, and this instrument should not be
+  presented as entering an empty one. What follows is where it sits, and what it does not claim.</p>
+
+  <h3 data-i18n-block="differs_h1">The field is well populated</h3>
+  <p data-i18n-block="differs_p1">A 2020 evaluation by the Centre for Digital Built Britain with the UK BIM Alliance inventoried
+  <strong>fifteen tools and six methods</strong> for assessing BIM maturity.<sup class="fn"><a href="#ref7" id="fnref7">7</a></sup>
+  At organisation level these include the BIM Excellence Online Platform, the NBIMS Capability Maturity
+  Model, Penn State&rsquo;s Organizational BIM Assessment, the Scottish Futures Trust&rsquo;s BIM
+  Compass, CPIx, and Succar&rsquo;s BIM Maturity Matrix; at project level, Stanford&rsquo;s VDC
+  Scorecard and ARUP&rsquo;s BIM Maturity Measure, among others.</p>
+
+  <p data-i18n-block="differs_p2">That report found <strong>45% of the organisations it surveyed who assess maturity had built their
+  own internal tool</strong> rather than use a published one. It attributed this to specific failings
+  it observed in the existing tools, quoted here in its own words: <em>&ldquo;rigid tools &mdash;
+  one-size-fits-all; inaccurate and low granularity assessment; binary (yes/no) assessment focused on
+  readiness and capabilities for compliance purposes; overlooking collaborative behaviour;
+  inappropriate baselines and timing used in assessment.&rdquo;</em> The same report recorded
+  <strong>interoperability and IFC support at 96%</strong> among the highest-rated areas of industry
+  importance.</p>
+
+  <h3 data-i18n-block="differs_h2">What is not new here</h3>
+  <p data-i18n-block="differs_p3">Assessing BIM capability against the ISO/IEC 33000 family of process-assessment standards
+  <strong>is not a new idea, and this project does not claim it as one</strong>. BIM-CAREM, a reference
+  model grounded on that same standard family, was developed at the Middle East Technical University
+  and published in 2018.<sup class="fn"><a href="#ref8" id="fnref8">8</a></sup> Its own review compares
+  eight earlier models and concludes that <em>&ldquo;there is no commonly accepted and broadly used
+  model in the literature&rdquo;</em>. Anyone assessing this instrument should read that work first.</p>
+
+  <h3 data-i18n-block="differs_h3">Four things this one does differently</h3>
+  <ol class="fixes" data-i18n-block="differs_fixes">
+    <li><div><h4>OpenBIM is the subject, not a subdomain</h4>
+      <p>Existing instruments treat interoperability as one topic among many &mdash; BIM-CAREM records
+      it as <em>&ldquo;whether interoperable formats are used&rdquo;</em>, a question about presence.
+      Here, all twenty criteria are about open-standard working, and the assessment reports nothing
+      else.</p></div></li>
+    <li><div><h4>Your answers are checked against your model</h4>
+      <p>Every instrument named above is self-assessment. This one optionally reads an IFC file you
+      supply &mdash; inside your browser, never uploaded &mdash; and reports where the measurement
+      disagrees with what you said. A claim and its evidence are reported as two different things.</p></div></li>
+    <li><div><h4>No single headline score, ever</h4>
+      <p>This follows from a measurement rather than a preference. On one hospital model of 63,917
+      elements, <strong>7.11%</strong> of elements carried a classification code and, of the codes
+      present, <strong>none were invalid</strong>. The same model therefore scores 100% on validity and
+      7.11% on coverage. A one-word verdict is not merely coarse but arbitrary: it depends entirely on
+      which of two independent axes it happens to measure.</p></div></li>
+    <li><div><h4>Every claim states how far its source was read</h4>
+      <p>Each criterion names the standard it is drawn from, the clause, and a tier recording whether
+      the publisher&rsquo;s own text was read, only a catalogue record, or only a secondary account.
+      <strong>Sixteen of the twenty criteria are anchored to a published standard. Four are not</strong>,
+      and say so. <a href="sources.html#anchors">See the anchors and their tiers &rarr;</a></p></div></li>
+  </ol>
+
+  <p data-i18n-block="differs_p4">Two further differences are practical rather than methodological: the assessment is free, runs
+  entirely in a browser with no account and no server, and takes about fifteen minutes &mdash; matching
+  the fastest instrument in the 2020 survey; and the conversational step runs in whatever AI service
+  you already use, so no key, no subscription and no data of yours reaches a model operated by this
+  project.</p>
+
+  <div class="call warn" data-i18n-block="differs_callwarn">
+    <span class="lab">What this comparison does not establish</span>
+    <p>The survey quoted above is dated <strong>February 2020</strong> and the field has moved since.
+    A tool published in 2026 by the author of BIM-CAREM was located but could not be obtained, and no
+    claim is made about its contents.</p>
+    <p>No OpenBIM-specific instrument was found in the parts of that survey read, but it runs to
+    several hundred pages and was read selectively. <strong>That is a gap not found, not a gap
+    demonstrated</strong>, and it is recorded that way in the source register rather than presented as
+    a claim to originality.</p>
+  </div>
+</section>
+
+<section id="disclaimer">
+  <div class="shead"><span class="snum">&mdash;</span><h2 data-i18n-block="wdisclaimer_head">What this does not do</h2></div>
+
+  <div class="call warn" data-i18n-block="wdisclaimer_call">
+    <span class="lab">Disclaimer</span>
+    <p><strong>This is only a technical readiness assessment.</strong> It measures organisational
+    readiness for open-standard working and the data quality of a model you supply. That is its entire
+    scope. It says nothing about the lawfulness, safety, buildability or professional adequacy of
+    anything you produce.</p>
+    <p><strong>It qualifies nothing and no one.</strong> It confers no certification,
+    accreditation, licence, approval or professional status. It is not evidence of compliance with any
+    regulation, standard, code or contract, and must not be presented as such &mdash; to a client, an
+    authority, an insurer, or in a tender.</p>
+    <p><strong>Nothing here is audited or verified.</strong> The inputs are self-reported by the
+    respondent and computed from a file the respondent supplied. No third party has witnessed,
+    checked or attested to any of it.</p>
+    <p><strong>Where regulation or an appointment requires a formal process, you must satisfy it
+    separately.</strong> If your work requires insurance, professional indemnity, a licence,
+    certification, or a formal qualification &mdash; under your regulations, your contract, or a
+    client&rsquo;s requirements &mdash; that&rsquo;s yours to sort out directly with whoever requires
+    it. This report substitutes for none of it, in whole or in part.</p>
+    <p><strong>Measurement works. Certification does not.</strong> This toolkit can tell you how far a
+    model and an organisation are from carrying compliant, open, well-structured information, with
+    numbers you can reproduce. It cannot certify a model or a firm as compliant with any standard,
+    code or authority requirement &mdash; and it will refuse to pretend otherwise.</p>
+    <p><strong>No regulatory verdict is issued.</strong> Local-authority compliance rests with the
+    Appointing Party and the Lead Appointed Party. No software is a legal party to it, and no BIM
+    vendor holds such certification in any jurisdiction.</p>
+    <p><strong>Coverage is not validity.</strong> A high score on well-formedness says the data present
+    is correctly shaped. It says nothing about whether the right data is present. Both numbers are
+    always reported together, and no single headline score is produced.</p>
+    <p><strong>Self-reported answers are self-reported.</strong> Where measurements from your model
+    contradict them, the measurement is used for scoring and the disagreement is shown to you.</p>
+    <p><strong>Figures on this page are measured from named individual models or cited public sources,
+    and are labelled as such.</strong> Single-building measurements are not industry statistics and
+    must not be quoted as such. Nothing here is estimated, projected or illustrative.</p>
+    <p><strong>Nothing here is insurance, indemnity or legal advice.</strong> Whether delivering on
+    open standards affects your professional indemnity cover is a question for your insurer and your
+    counsel, and this toolkit neither answers it nor is qualified to. Two facts are worth carrying into
+    that conversation: warranty disclaimers are near-universal in software licensing, proprietary
+    licences included; and professional indemnity insures the professional, not the tool. What an
+    open-standard toolchain can evidence is <em>technical</em> conformance &mdash; schema validity,
+    exchange fidelity, information completeness &mdash; and that is the only claim made here.</p>
+    <p><a href="disclaimer.html"><strong>Read the full Disclaimer Notice &rarr;</strong></a> &mdash; the
+    canonical version, which applies to the toolkit and every report it produces.</p>
+    <p><strong>Research instrument, in development.</strong> This is a work in progress supporting
+    academic research. Its criteria, thresholds and weightings are subject to expert validation and
+    will change.</p>
+  </div>
+</section>
+
+<section id="offline">
+  <div class="shead"><span class="snum">&mdash;</span><h2 data-i18n-block="offline_head">Run it on your own machine</h2></div>
+  <p class="lede" data-i18n-block="offline_lede">Where IT policy does not permit a model to be opened in a browser tab, the
+  assessment can be run entirely offline.</p>
+
+  <p data-i18n-block="offline_p1">The assessment is a set of static files with no server, no database and no accounts. It can be
+  downloaded and opened from local disk &mdash; the same assessment and the same scoring, with no
+  network involved at any point.</p>
+
+  <p data-i18n-block="offline_p2">This applies where models are commercially sensitive, where the firm works air-gapped, where
+  there is no connection on site, or where the organisation wishes to verify directly that nothing is
+  transmitted. The archive is unzipped and opened directly, and the source is readable.</p>
+
+  <div class="call" data-i18n-block="offline_call">
+    <span class="lab">What&rsquo;s in the download</span>
+    <p>A single archive containing the assessment, this page, the rule packs, and a short README.
+    Everything runs from <span class="mono">file://</span> &mdash; no install, no build step, no
+    dependencies to fetch.</p>
+    <p class="mono" style="font-size:13px;color:var(--muted)">openbim-readiness-toolkit-v0.1.zip</p>
+  </div>
+</section>
+
+<section id="references">
+  <div class="shead"><span class="snum">&mdash;</span><h2>References</h2></div>
+  <p class="lede">Regulatory and standards claims on this page, cited to the instrument.</p>
+  <ol class="refs">
+    <li id="ref1">Malaysia, Ministry of Finance, <em>Pekeliling Perbendaharaan PK 1.15 — Pelaksanaan Building
+      Information Modelling (BIM).</em> Effective <span class="loc">1 July 2025</span>; BIM mandatory for Government
+      development projects valued at RM 10 million and above. The circular is a Treasury instrument governing
+      government procurement: private-sector adoption is encouraged, not mandated.
+      <a class="back" href="#fnref1">↩</a></li>
+    <li id="ref2">CIDB Malaysia, <em>BIM Guides</em> (series). Published separately from PK 1.15. Reporting that ties
+      specific handover requirements — LOD 500, PeDATA and SKATA asset data — directly to the PK 1.15 mandate is
+      secondary commentary; those requirements have not been verified here against a primary CIDB or JKR document, and
+      are therefore not asserted on this page. <a class="back" href="#fnref2">↩</a></li>
+    <li id="ref3">United Kingdom, <em>Government Construction Strategy.</em> Required collaborative 3D BIM
+      (“BIM Level 2”) on centrally-funded public projects from <span class="loc">April 2016</span>.
+      <a class="back" href="#fnref3">↩</a></li>
+    <li id="ref4">Singapore, Building and Construction Authority (BCA), <em>BIM e-submission.</em> Mandatory BIM
+      e-submission introduced in phases by project size. <a class="back" href="#fnref4">↩</a></li>
+    <li id="ref5">European Union, <em>Directive 2014/24/EU on public procurement</em>, <span class="loc">Article
+      22(4)</span>: “For public works contracts and design contests, Member States <em>may require</em> the use of
+      specific electronic tools, such as of building information electronic modelling tools or similar.” The provision
+      is permissive; where such tools are required, contracting authorities “shall offer alternative means of access
+      until such time as those tools become generally available”. The directive is frequently miscited as an EU-wide
+      BIM mandate; it is not one. <a class="back" href="#fnref5">↩</a></li>
+    <li id="ref6">ISO/IEC 33020:2019, <em>Information technology — Process assessment — Process measurement framework
+      for assessment of process capability.</em> <span class="loc">§5.2.2–§5.2.7</span> define capability levels 0–5 as
+      Incomplete, Performed, Managed, Established, Predictable and Innovating — level 5 is <em>Innovating</em>, not the
+      older SPICE/CMMI “Optimizing”. <a class="back" href="#fnref6">↩</a></li>
+    <li id="ref7">Kassem, M., Li, J., Kumar, B., Malleson, A., Gibbs, D.J., Kelly, G. and Watson, R. (2020),
+      <em>Building Information Modelling: Evaluating Tools for Maturity and Benefits Measurement.</em> Centre for
+      Digital Built Britain in partnership with the UK BIM Alliance, <span class="loc">February 2020</span>.
+      Inventory of 15 tools and 6 methods; the quoted gap analysis, the 45% figure and the 96% interoperability
+      rating are that report’s own findings. Read selectively — executive summary, tool inventory, gap analysis
+      and interoperability findings. <a class="back" href="#fnref7">↩</a></li>
+    <li id="ref8">Yılmaz, G. (2017), <em>BIM-CAREM: A Reference Model for Building Information Modelling Capability
+      Assessment</em>, PhD thesis, Middle East Technical University; published as Yılmaz, G., Akçamete, A. and
+      Demirörs, O. (2018), ‘A reference model for BIM capability assessments’, <em>Automation in Construction</em>,
+      <span class="loc">doi:10.1016/j.autcon.2018.10.022</span>. The thesis was read in full; the journal papers
+      were not obtained. <a class="back" href="#fnref8">↩</a></li>
+  </ol>
+  <p class="small" style="margin-top:18px;color:var(--muted);font-size:13.5px">Standards texts were read from the
+  publishers’ official preview documents; clause numbers and quoted wording are taken from those texts. Sources
+  verified 22 August 2026. Figures elsewhere on this page carry their own source line in the chart.</p>
+</section>
+
+<div class="cta" data-i18n-block="cta">
+  <h3>The assessment</h3>
+  <p>Twenty questions and one IFC file, read inside your browser. About fifteen minutes.</p>
+  <a class="btn" href="./">Start the assessment</a>
+</div>
+
+<footer data-i18n-block="footer">
+  OpenBIM Readiness Assessment Toolkit &middot; v0.1 draft &middot; 2026-08-21<br>
+  Research instrument &mdash; criteria and thresholds subject to expert validation.<br>
+  Every figure on this page is measured from a named model or cited from a public source.
+</footer>
+
+</div>
+
+<script>
+document.getElementById('themebtn') && document.getElementById('themebtn').addEventListener('click', function () {
+  var r = document.documentElement;
+  var dark = r.getAttribute('data-theme') === 'dark' ||
+    (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
+  r.setAttribute('data-theme', dark ? 'light' : 'dark');
+});
+</script>
+<script src="i18n_shell.js" data-page="why"></script>

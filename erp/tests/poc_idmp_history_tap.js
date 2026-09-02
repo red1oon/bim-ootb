@@ -20,7 +20,7 @@ const MIME = { '.html':'text/html', '.js':'text/javascript', '.json':'applicatio
   '.db':'application/octet-stream', '.png':'image/png', '.css':'text/css', '.wasm':'application/wasm' };
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
-  if (p === '/') p = '/erp/idempiere.html';
+  if (p === '/') p = '/erp/idempiere.html?client=garden';
   fs.readFile(path.join(ROOT, p), (e, buf) => {
     if (e) { res.writeHead(404); res.end('404 ' + p); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' });
@@ -37,7 +37,7 @@ const server = http.createServer((req, res) => {
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
 
-  await page.goto(`http://localhost:${port}/erp/idempiere.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/erp/idempiere.html?client=garden`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2200);
 
   // login (first enabled user → Log In)

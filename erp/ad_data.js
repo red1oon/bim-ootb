@@ -320,44 +320,116 @@
 
   var _fkCache = {};  // { 'C_BPartner:117': 'Seed Farm', ... }
 
+  // Identifier candidates for a TableDir / fallback lookup. ISO_Code/CurSymbol added so c_currency
+  // (no Name column) resolves to "USD"/"$" instead of leaking the raw id. EXTRACT, never invent.
+  var _IDENT_COLS = ['Name', 'Value', 'DocumentNo', 'ISO_Code', 'CurSymbol', 'Description'];
+
+  // _colRefMeta — REFRESOLVE_SPEC.md W-REFRESOLVE: read this column's reference type + value-id from
+  // AD metadata so we pick the right resolution path. A column name can appear in many tables; prefer a
+  // lookup row (List 17 / Table 18 / Search 30 / TableDir 19) that carries a usable value-id.
+  var _refMetaCache = {};
+  function _colRefMeta(db, columnName) {
+    if (_refMetaCache[columnName] !== undefined) return _refMetaCache[columnName];
+    var meta = null;
+    try {
+      // Case-insensitive: manifest field columnNames may differ in case from ad_column.columnname (CamelCase).
+      var r = db.exec('SELECT AD_Reference_ID, AD_Reference_Value_ID FROM ad_column WHERE columnname = ' +
+                      "'" + String(columnName).replace(/'/g, "''") + "' COLLATE NOCASE");
+      if (r.length && r[0].values.length) {
+        var rows = r[0].values.map(function (v) { return { refId: Number(v[0]), valId: v[1] == null ? null : Number(v[1]) }; });
+        var pref = [18, 30, 17, 19];           // table, search, list, tabledir — in resolution priority
+        for (var p = 0; p < pref.length && !meta; p++) {
+          for (var i = 0; i < rows.length; i++) {
+            if (rows[i].refId === pref[p] && (pref[p] === 19 || rows[i].valId)) { meta = rows[i]; break; }
+          }
+        }
+        if (!meta) meta = rows[0];
+      }
+    } catch (e) { /* ad_column absent — fall through to convention */ }
+    _refMetaCache[columnName] = meta;
+    return meta;
+  }
+
+  // _listLabel — List reference: ad_ref_list.name for (ad_reference_id=valId, value=<code>).
+  function _listLabel(db, valId, value) {
+    try {
+      var r = db.exec('SELECT name FROM ad_ref_list WHERE ad_reference_id = ' + Number(valId) +
+                      " AND value = '" + String(value).replace(/'/g, "''") + "'");
+      if (r.length && r[0].values.length && r[0].values[0][0]) return String(r[0].values[0][0]);
+    } catch (e) { /* no ad_ref_list */ }
+    return null;
+  }
+
+  // _refTable — Table/Search reference: chain ad_ref_table → (table, key col, display col).
+  function _refTable(db, valId) {
+    try {
+      var r = db.exec(
+        'SELECT t.tablename, kc.columnname, dc.columnname FROM ad_ref_table rt ' +
+        'JOIN ad_table t ON t.ad_table_id = rt.ad_table_id ' +
+        'LEFT JOIN ad_column kc ON kc.ad_column_id = rt.ad_key ' +
+        'LEFT JOIN ad_column dc ON dc.ad_column_id = rt.ad_display ' +
+        'WHERE rt.ad_reference_id = ' + Number(valId));
+      if (r.length && r[0].values.length) {
+        var v = r[0].values[0];
+        return { table: String(v[0]), keyCol: v[1] ? String(v[1]) : null, dispCol: v[2] ? String(v[2]) : null };
+      }
+    } catch (e) { /* no ad_ref_table in seed */ }
+    return null;
+  }
+
+  // _lookupFromTable — SELECT <display|identifier> FROM <table> WHERE <key> = id. When the display column
+  // IS the key (iDempiere encodes "use identifier" that way), fall back to the identifier candidates.
+  function _lookupFromTable(db, table, keyCol, dispCol, intVal) {
+    var cols = [];
+    if (dispCol && keyCol && dispCol.toLowerCase() !== keyCol.toLowerCase() && !/_id$/i.test(dispCol)) cols.push(dispCol);
+    cols = cols.concat(_IDENT_COLS);
+    for (var i = 0; i < cols.length; i++) {
+      try {
+        var r = db.exec('SELECT ' + cols[i] + ' FROM [' + table + '] WHERE ' + keyCol + ' = ' + intVal + ' LIMIT 1');
+        if (r.length && r[0].values.length && r[0].values[0][0]) return String(r[0].values[0][0]);
+      } catch (e) { /* column doesn't exist, try next */ }
+    }
+    return null;
+  }
+
   /**
-   * Resolve an FK integer to its display name.
-   * Convention: columnName 'C_BPartner_ID' → table 'C_BPartner', key 'C_BPartner_ID'.
-   * Looks for Name or identifier column in the target table.
+   * Resolve a reference value → its human label, sourced ONLY from AD metadata (EXTRACT, never invent).
+   * REFRESOLVE_SPEC.md W-REFRESOLVE — handles List (17), Table (18) / Search (30), TableDir (19).
+   * Returns null when nothing resolves (caller falls back to String(value) — honest, never fabricated).
    * @param {Object} db
-   * @param {string} columnName  e.g. 'C_BPartner_ID'
-   * @param {*}      value       the FK integer
-   * @returns {string|null} resolved display name or null
+   * @param {string} columnName  e.g. 'Bill_BPartner_ID', 'PaymentRule'
+   * @param {*}      value       the FK integer or List code
+   * @returns {string|null}
    */
   function resolveFK(db, columnName, value) {
     if (value === null || value === undefined || value === '') return null;
-    var intVal = Number(value);
-    if (isNaN(intVal) || intVal <= 0) return null;
-
-    // Derive table name: strip trailing _ID
-    if (columnName.indexOf('_ID') < 0) return null;
-    var tableName = columnName.replace(/_ID$/, '');
-
-    var cacheKey = tableName + ':' + intVal;
+    var cacheKey = columnName + ':' + value;
     if (_fkCache[cacheKey] !== undefined) return _fkCache[cacheKey];
 
-    // Try Name column first, then Value, then first text column
-    var candidates = ['Name', 'Value', 'DocumentNo'];
-    for (var i = 0; i < candidates.length; i++) {
-      try {
-        var r = db.exec('SELECT ' + candidates[i] + ' FROM [' + tableName +
-                        '] WHERE ' + columnName + ' = ' + intVal + ' LIMIT 1');
-        if (r.length && r[0].values.length && r[0].values[0][0]) {
-          var name = String(r[0].values[0][0]);
-          _fkCache[cacheKey] = name;
-          console.log('§AD_DATA resolveFK col=' + columnName + ' id=' + intVal + ' name=' + name);
-          return name;
-        }
-      } catch (e) { /* column doesn't exist, try next */ }
+    var meta = _colRefMeta(db, columnName);
+    var label = null;
+
+    // (1) LIST — value is a code (string), resolve via ad_ref_list.
+    if (meta && meta.refId === 17 && meta.valId) {
+      label = _listLabel(db, meta.valId, value);
     }
 
-    _fkCache[cacheKey] = null;
-    return null;
+    // (2) TABLE / SEARCH — chain through ad_ref_table.
+    var intVal = Number(value);
+    var isInt = !isNaN(intVal) && intVal > 0;
+    if (!label && meta && (meta.refId === 18 || meta.refId === 30) && meta.valId && isInt) {
+      var rt = _refTable(db, meta.valId);
+      if (rt) label = _lookupFromTable(db, rt.table, rt.keyCol || columnName, rt.dispCol, intVal);
+    }
+
+    // (3) TABLEDIR / fallback — table = columnName − '_ID', identifier candidates.
+    if (!label && isInt && /_ID$/i.test(columnName)) {
+      label = _lookupFromTable(db, columnName.replace(/_ID$/i, ''), columnName, null, intVal);
+    }
+
+    if (label) console.log('§AD_DATA resolveFK col=' + columnName + ' val=' + value + ' label=' + label);
+    _fkCache[cacheKey] = label;
+    return label;
   }
 
   /**
@@ -365,6 +437,7 @@
    */
   function clearFKCache() {
     _fkCache = {};
+    _refMetaCache = {};
   }
 
   /**

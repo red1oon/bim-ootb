@@ -1,0 +1,54 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-08-16T16:58:29.187Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-fleet-pair-audit",
+    "sha": "d5c0eb72dcab93f6446c6a8cf27d2f885840cf29",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 1,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/LTU_AHouse_meta.db",
+    "etag": "a56b54e7-0e96-4f29-9725-2dd721665342",
+    "content-md5": "ehexrutkbRiI78ZeLvRR0w==",
+    "size": "22139293",
+    "last-modified": "Mon, 10 Aug 2026 08:16:56 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "buildings/patches/LTU_AHouse_meta.db.sql",
+    "bytes": 2584,
+    "md5": "80f976c4fde463e156f4294e6ccd7781",
+    "md5_b64": "gPl2xP3kY+FW9ClObM13gQ==",
+    "object": "buildings/patches/LTU_AHouse_meta.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "1dd06cf3-013d-47c5-bf07-59372aa888b1",
+    "size": "2273",
+    "last-modified": "Sun, 16 Aug 2026 16:38:26 GMT"
+  },
+  "verification": {
+    "cmd": "node scripts/verify_ltu_meta_transform_repair.js",
+    "exit": 0,
+    "tail": [
+      "§S11_VERIFY twice levels=Ref.|TAKPLAN|VÅN 1|VÅNING 1 expect=Ref.|TAKPLAN|VÅN 1|VÅNING 1 PASS",
+      "§S11_VERIFY twice rtreeDisagreeing=0 expect=0 PASS",
+      "§S11_VERIFY twice zExactZero=0 expect=0 PASS",
+      "§S11_VERIFY twice spot 01ICnTtq x=12.149999 z=11.697499 expect=(12.149999,11.697499) PASS",
+      "§S11_VERIFY twice spot 06UP8jVn x=18.549999 z=7.485000 expect=(18.549999,7.485) PASS",
+      "§S11_VERIFY_SUMMARY fail=0 PASS"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-08-16T16:58:35.036Z",
+    "etag": "ede06892-26b7-41b2-a05b-2eeea5106e3d",
+    "verified": true
+  }
+}

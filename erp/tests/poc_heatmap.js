@@ -30,7 +30,7 @@ async function openWindowKanban(browser, port, win) {
   const page = await browser.newPage();
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
-  await page.goto(`http://localhost:${port}/idempiere.html?window=${win}`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden&window=${win}`, { waitUntil: 'networkidle' });
   await page.waitForSelector('#idmp-login-users .idmp-login-user:not(.disabled)', { timeout: 15000 });
   await page.click('#idmp-login-users .idmp-login-user:not(.disabled)');
   await page.waitForSelector('#idmp-login-ok'); await page.click('#idmp-login-ok');

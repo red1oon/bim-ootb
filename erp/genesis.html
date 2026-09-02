@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<!-- BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+     genesis.html — Initial Tenant Setup (SYSTEM_ADMIN_LANE.md §5 Layer 1, SA-WIZARD leg). The iDempiere
+     "Initial Client Setup" experience on our engine: ~3 inputs (default CoA) births a tenant LIVE in the
+     browser as a signed op-log, folds it into a sql.js tenant, and proves it posts a sales invoice to the
+     cent == the idempiere_test oracle (DR 12110 / CR 41000 / CR 21610). Whitebox §-log = W-GENESIS-WIZARD-LIVE.
+     Self-contained NEW page (no edits to the shared picker/idempiere.html) — the surface the picker later embeds. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Initial Tenant Setup — BIM OOTB ERP</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#0d1117;color:#e6edf3;margin:0;padding:24px;line-height:1.5}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}.sub{color:#8b949e;font-size:13px;margin:0 0 20px}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:18px 20px;margin-bottom:16px}
+  label{display:block;font-size:12px;color:#8b949e;margin:10px 0 4px}
+  input,select{width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:9px 11px;font-size:14px}
+  input:read-only{opacity:.6}
+  button{margin-top:16px;background:#238636;color:#fff;border:0;border-radius:8px;padding:11px 18px;font-size:14px;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .grp{font-size:12px;color:#8b949e;padding:3px 0;border-bottom:1px solid #21262d}
+  .grp b{color:#e6edf3}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #21262d}th{color:#8b949e;font-weight:600}
+  td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .ok{color:#3fb950}.bad{color:#f85149}.mono{font-family:ui-monospace,monospace;font-size:12px}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px}
+  .badge.ok{background:#12361f;color:#3fb950;border:1px solid #1f6f37}
+  .badge.bad{background:#3d1417;color:#f85149;border:1px solid #6f2329}
+  .dim{color:#8b949e;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Initial Tenant Setup</h1>
+  <p class="sub">iDempiere's Initial Client Setup, on our engine — ~3 inputs + the default chart of accounts births a
+     complete, postable tenant as a <b>signed op-log</b> (git-for-a-tenant). No migration import.</p>
+
+  <div class="card">
+    <label for="f-name">Tenant (Client) name</label>
+    <input id="f-name" value="AcmeCo" autocomplete="off">
+    <label for="f-ccy">Currency</label>
+    <select id="f-ccy"><option value="100" data-prec="2">USD — US Dollar</option></select>
+    <label for="f-admin">Administrator user</label>
+    <input id="f-admin" value="jdoe" autocomplete="off">
+    <div class="dim" style="margin-top:12px">Chart of accounts: <b>iDempiere default (311 accounts)</b> — folded automatically.</div>
+    <button id="go">⚡ Birth tenant</button>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<!-- engine (UMD globals; same modules the headless witness W-GENESIS-MINIMAL proved) -->
+<script src="lib/sql-wasm-fts5.js"></script>
+<script src="overlay_kit.js"></script>
+<script src="erp_snapshot_sign.js"></script>
+<script src="genesis_seed.js?v=1"></script>
+<script src="genesis.js?v=2"></script>
+<script src="post_resolver.js?v=1"></script>
+<script src="doc_poster.js?v=1"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var _installBundle = null;   // the last birth's install bundle (G1..G7), set on a successful birth
+
+  // ── idb handoff (shares 'erp_cache'/'blobs' with idempiere.html) — write the install bundle, then redirect ──
+  function idbPut(key, val) {
+    return new Promise(function (resolve) {
+      try {
+        var req = indexedDB.open('erp_cache', 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore('blobs'); };
+        req.onsuccess = function () {
+          var tx = req.result.transaction('blobs', 'readwrite');
+          tx.objectStore('blobs').put(val, key);
+          tx.oncomplete = function () { resolve(true); };
+          tx.onerror = function () { resolve(false); };
+        };
+        req.onerror = function () { resolve(false); };
+      } catch (e) { resolve(false); }
+    });
+  }
+  // B3 — hand the born tenant to idempiere.html as a RESIDENT install: stash the bundle, redirect; the host's boot
+  // allocates the free client band, re-bands + merges it into the live ad_seed, then the login switcher lists it.
+  function installResident(btn) {
+    if (!_installBundle) return;
+    btn.disabled = true; btn.textContent = 'Installing…';
+    console.log('§W-GENESIS-RESIDENT-LIVE handoff client=' + _installBundle.input.clientName + ' groups=' + _installBundle.groups.length);
+    idbPut('genesis_pending', _installBundle).then(function () {
+      location.href = 'idempiere.html?installGenesis=1';
+    });
+  }
+  window._genesisInstallResident = installResident;   // the render() button calls this
+
+  // ── better-sqlite3-shaped shim over a sql.js handle: get/all/run, named (@key) + positional (?). ──
+  // (idempiere.html's _b3 is read-only; foldGenesis needs run() for INSERTs, so this is the full shim.)
+  function b3(dbh) {
+    function lc(o) { if (!o) return o; var r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; }
+    function bind(st, sql, args) {
+      if (!args.length) return;
+      var p = args[0];
+      if (p != null && typeof p === 'object' && !Array.isArray(p)) {       // named: map bare keys → sql prefix
+        var b = {};
+        Object.keys(p).forEach(function (k) {
+          var m = sql.match(new RegExp('[@:$]' + k + '\\b'));
+          b[(m ? m[0][0] : '@') + k] = p[k];
+        });
+        st.bind(b);
+      } else { st.bind(args.slice()); }                                    // positional
+    }
+    function exec(sql, args, all) {
+      var st = dbh.prepare(sql), out = all ? [] : undefined;
+      try {
+        bind(st, sql, args);
+        if (all) { while (st.step()) out.push(lc(st.getAsObject())); }
+        else if (st.step()) out = lc(st.getAsObject());
+      } finally { st.free(); }
+      return out;
+    }
+    return { prepare: function (sql) { return {
+      get: function () { return exec(sql, [].slice.call(arguments), false); },
+      all: function () { return exec(sql, [].slice.call(arguments), true); },
+      run: function () { var st = dbh.prepare(sql); try { bind(st, sql, [].slice.call(arguments)); st.step(); } finally { st.free(); } return {}; }
+    }; } };
+  }
+
+  function money(n) { return Number(n).toFixed(2); }
+
+  $('go').onclick = function () {
+    var btn = this; btn.disabled = true; btn.textContent = 'Birthing…';
+    var ccySel = $('f-ccy').options[$('f-ccy').selectedIndex];
+    var input = { clientName: $('f-name').value.trim() || 'NewCo', currencyId: Number(ccySel.value),
+      currencyPrecision: Number(ccySel.getAttribute('data-prec')), adminUser: $('f-admin').value.trim() || 'admin', dateAcct: '2024-01-15' };
+
+    var born = window.Genesis.birthTenant(input);
+    console.log('§W-GENESIS-WIZARD-LIVE born client=' + input.clientName + ' groups=' + born.groups.length + ' head=' + born.tip.slice(0, 12));
+
+    window.OverlayKit.ensureSql().then(function (SQL) {
+      var raw = new SQL.Database(), db = b3(raw);
+      var nOps = window.Genesis.foldGenesis(born.groups, db);
+      var chart = db.prepare('SELECT COUNT(*) n FROM c_elementvalue').get().n;
+      console.log('§W-GENESIS-WIZARD-LIVE folded ops=' + nOps + ' chart=' + chart + ' acctschema=' + born.refs.acctSchemaId);
+
+      // CREATE one sales invoice on the born tenant's OWN default BP/product/tax ($100 net + $9 tax)
+      db.prepare('CREATE TABLE c_invoice (c_invoice_id,c_bpartner_id,grandtotal,issotrx,ispaid,dateinvoiced,docstatus)').run();
+      db.prepare('CREATE TABLE c_invoiceline (c_invoice_id,m_product_id,linenetamt)').run();
+      db.prepare('CREATE TABLE c_invoicetax (c_invoice_id,c_tax_id,taxamt)').run();
+      var invId = 9000001;
+      db.prepare('INSERT INTO c_invoice VALUES (@a,@b,@c,@d,@e,@f,@g)').run({ a: invId, b: born.refs.bpartnerId, c: 109.00, d: 'Y', e: 'N', f: '2024-01-15', g: 'CO' });
+      db.prepare('INSERT INTO c_invoiceline VALUES (@a,@b,@c)').run({ a: invId, b: born.refs.productId, c: 100.00 });
+      db.prepare('INSERT INTO c_invoicetax VALUES (@a,@b,@c)').run({ a: invId, b: born.refs.taxId, c: 9.00 });
+
+      // INSTALL BUNDLE — G1..G6 + a G7 carrying THIS sample invoice (named columns so mergeGenesisInto can
+      // column-intersect into the resident schema). The same op-log, just one group longer; reband bands its
+      // *_id (invId > base) automatically. Stashed for the "Install as resident tenant" button (B3 handoff).
+      _installBundle = { input: born.input, tip: born.tip, refs: born.refs, groups: born.groups.concat([{
+        seq: born.groups.length + 1, label: 'G7 sample invoice', ops: [
+          { op: 'CREATE', table: 'c_invoice', row: { c_invoice_id: invId, c_bpartner_id: born.refs.bpartnerId, ad_client_id: born.refs.clientId, grandtotal: 109.00, issotrx: 'Y', ispaid: 'N', dateinvoiced: '2024-01-15', docstatus: 'CO' } },
+          { op: 'CREATE', table: 'c_invoiceline', row: { c_invoice_id: invId, m_product_id: born.refs.productId, ad_client_id: born.refs.clientId, linenetamt: 100.00 } },
+          { op: 'CREATE', table: 'c_invoicetax', row: { c_invoice_id: invId, c_tax_id: born.refs.taxId, ad_client_id: born.refs.clientId, taxamt: 9.00 } }
+        ] }]) };
+
+      // POST via the shipped doc_poster + post_resolver (same verbs the live Posting-Preview uses)
+      var gl = window.DocPoster.derivePostings(db, { table: 'C_Invoice', id: invId }, born.refs.acctSchemaId, window.PostResolver);
+      var byVal = {}; gl.lines.forEach(function (l) { byVal[l.value] = l; });
+      var rcv = byVal['12110'], rev = byVal['41000'], tax = byVal['21610'];
+      var cent = rcv && rcv.amtacctdr === 109 && rev && rev.amtacctcr === 100 && tax && tax.amtacctcr === 9;
+      var ok = gl.balanced && gl.absent.length === 0 && cent;
+      console.log('§W-GENESIS-WIZARD-LIVE post basis=' + gl.basis + ' balanced=' + gl.balanced + ' absent=' + JSON.stringify(gl.absent)
+        + ' DR12110=' + (rcv && rcv.amtacctdr) + ' CR41000=' + (rev && rev.amtacctcr) + ' CR21610=' + (tax && tax.amtacctcr) + ' toTheCent=' + cent);
+
+      window.Genesis.signHead(born.groups).then(function (sig) {
+        return sig.verify(sig.tip, sig.sig).then(function (v) { return { sig: sig, verified: v }; });
+      }).then(function (s) {
+        console.log('§W-GENESIS-WIZARD-LIVE signed head=' + s.sig.tip.slice(0, 12) + ' verified=' + s.verified);
+        render(born, gl, ok, s, chart);
+        console.log('§W-GENESIS-WIZARD-LIVE RESULT=' + (ok && s.verified ? 'PASS' : 'FAIL'));
+        btn.disabled = false; btn.textContent = '⚡ Birth another';
+      });
+    }).catch(function (e) {
+      $('out').innerHTML = '<div class="card bad">Genesis failed: ' + (e && e.message || e) + '</div>';
+      console.log('§W-GENESIS-WIZARD-LIVE RESULT=FAIL err=' + (e && e.message || e));
+      btn.disabled = false; btn.textContent = '⚡ Birth tenant';
+    });
+  };
+
+  function render(born, gl, ok, s, chart) {
+    var groups = born.groups.map(function (g) { return '<div class="grp"><b>' + g.label + '</b> — ' + g.ops.length + ' ops</div>'; }).join('');
+    var rows = gl.lines.slice().sort(function (a, b) { return a.value < b.value ? -1 : 1; }).map(function (l) {
+      return '<tr><td class="mono">' + l.value + '</td><td>' + (l.name || '') + '</td><td class="n">' + (l.amtacctdr ? money(l.amtacctdr) : '') + '</td><td class="n">' + (l.amtacctcr ? money(l.amtacctcr) : '') + '</td></tr>';
+    }).join('');
+    $('out').innerHTML =
+      '<div class="card"><b>' + born.input.clientName + '</b> born — ' + born.groups.length + ' signed op-groups, '
+        + chart + '-account default chart. <span class="dim">op-log head <span class="mono">' + born.tip.slice(0, 16) + '…</span></span>'
+        + '<div style="margin-top:10px">' + groups + '</div></div>'
+      + '<div class="card"><div style="margin-bottom:6px">Test sales invoice — posted via the shipped <span class="mono">doc_poster + post_resolver</span> '
+        + (ok ? '<span class="badge ok">== oracle, to the cent</span>' : '<span class="badge bad">MISMATCH</span>') + '</div>'
+        + '<table><thead><tr><th>Account</th><th>Name</th><th class="n">Debit</th><th class="n">Credit</th></tr></thead><tbody>' + rows + '</tbody></table>'
+        + '<div class="dim" style="margin-top:8px">' + (gl.balanced ? '<span class="ok">balanced</span>' : '<span class="bad">unbalanced</span>')
+        + ' · ΣDr ' + money(gl.sumDr / 100) + ' / ΣCr ' + money(gl.sumCr / 100) + '</div></div>'
+      + '<div class="card dim">Signed genesis bundle: head <span class="mono">' + s.sig.tip.slice(0, 16) + '…</span> · ECDSA P-256 '
+        + (s.verified ? '<span class="ok">✓ verified</span>' : '<span class="bad">✗ unverified</span>')
+        + '<br>This birth is replayable, branchable and reversible — the tenant\'s entire genesis is an auditable op-log.</div>'
+      // B3 — make the born tenant REAL: install it as a resident client you can log in to and work.
+      + (ok ? '<div class="card"><div style="margin-bottom:6px"><b>Make it real</b> — install <b>' + born.input.clientName
+          + '</b> as a resident tenant: re-banded into a free client slot, merged into the live dictionary, then you '
+          + 'log in to it and work (its windows, its data, sharing the System AD).</div>'
+          + '<button id="install-resident" onclick="_genesisInstallResident(this)">⬇ Install as resident tenant</button></div>' : '');
+  }
+})();
+</script>
+</body>
+</html>

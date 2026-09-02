@@ -19,6 +19,34 @@
   }
   function num(v) { return v == null ? null : Number(v); }
 
+  // ── W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1) ────────────────────────────────────────────
+  // better-sqlite3-shaped adapter over the live sql.js db, same shim shape idempiere.html's own
+  // _b3w() and erp/doc_cycle_validator.js's mkAdapter() already use elsewhere in this codebase —
+  // AdAccess.buildRole() is written once, node-shaped (db.prepare(sql).get/.all), and this is the
+  // browser-side loader that feeds it real rows instead of porting/duplicating its logic.
+  function toB3(db) {
+    function lc(o) { if (!o) return o; var r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; }
+    return { prepare: function (sql) { return {
+      get: function (p) {
+        var st = db.prepare(sql); try { if (p !== undefined) st.bind([p]); return st.step() ? lc(st.getAsObject()) : undefined; } finally { st.free(); }
+      },
+      all: function (p) {
+        var st = db.prepare(sql), out = []; try { if (p !== undefined) st.bind([p]); while (st.step()) out.push(lc(st.getAsObject())); return out; } finally { st.free(); }
+      }
+    }; } };
+  }
+  // roleContextFor(db, roleId) → a real AdAccess.RoleContext (IsReadWrite/canView/org-client scope),
+  // or null with a §-logged reason if AdAccess isn't loaded or the role row is missing — NEVER a
+  // silent fallback to a weaker gate (that is exactly the bug this fix closes).
+  function roleContextFor(db, roleId) {
+    if (!(typeof window !== 'undefined' && window.AdAccess)) {
+      console.log('§IDMP-SESSION §ACCESS_GATE_MISSING AdAccess not loaded — access decisions cannot be computed');
+      return null;
+    }
+    try { return window.AdAccess.buildRole(toB3(db), roleId); }
+    catch (e) { console.log('§IDMP-SESSION §ACCESS_GATE_ERR role=' + roleId + ' ' + e.message); return null; }
+  }
+
   // ── Step 1: the login user list (all 8 AD_User rows; hasRoles flags seed reality) ──
   // Only users with an AD_User_Roles row can proceed (faithful to iDempiere). Role-less
   // users are returned too so the UI can NAME them disabled, not silently drop them.
@@ -51,6 +79,58 @@
     var out = cs.map(function (c) { return { id: num(c.id), name: (c.name || '').trim(), users: num(c.users) }; });
     console.log('§IDMP-SESSION listClients tenants=' + out.length + ' [' + out.map(function (c) { return c.name + '(' + c.id + '):' + c.users; }).join(',') + '] source=ad_client/ad_role/ad_user_roles');
     return out;
+  }
+
+  // ── tenant teardown (NEW_CLIENT_MGMT.md — the reverse of installShard) ──────────────────────────
+  // A tenant's rows are tagged AD_Client_ID across every table that carries that column (exactly the
+  // surface installShard merges INTO). These three introspect that surface so count + delete stay
+  // symmetric to install and need no hardcoded table list. NON-INVENT: we read what's there, delete by id.
+  var FRAME_TABLES = { ad_client: 1, ad_org: 1, ad_role: 1, ad_user: 1, ad_user_roles: 1,
+    ad_role_orgaccess: 1, ad_window_access: 1, ad_process_access: 1, ad_form_access: 1 };
+  function clientTables(db) {
+    var ts = rows(db, "SELECT name FROM sqlite_master WHERE type='table'");
+    var out = [];
+    ts.forEach(function (t) {
+      var n = t.name; if (!n) return;
+      try {
+        var pi = db.exec('PRAGMA table_info("' + n + '")'); if (!pi.length) return;
+        if (pi[0].values.some(function (c) { return String(c[1]).toLowerCase() === 'ad_client_id'; })) out.push(n);
+      } catch (e) {}
+    });
+    return out;
+  }
+  // business-record count for a tenant (excludes the login FRAME — what the user thinks of as "their data").
+  // Returns { total, byTable:[{table,n}] } so the delete-warning can say "N records · Open to see".
+  function countClientRecords(db, clientId) {
+    var id = Number(clientId), total = 0, byTable = [];
+    clientTables(db).forEach(function (t) {
+      if (FRAME_TABLES[t.toLowerCase()]) return;
+      try {
+        var r = db.exec('SELECT COUNT(*) FROM "' + t + '" WHERE AD_Client_ID=' + id);
+        var n = r.length ? Number(r[0].values[0][0]) : 0;
+        if (n > 0) { total += n; byTable.push({ table: t, n: n }); }
+      } catch (e) {}
+    });
+    byTable.sort(function (a, b) { return b.n - a.n; });
+    console.log('§IDMP-SESSION countClientRecords client=' + id + ' records=' + total + ' tables=' + byTable.length
+      + ' top=[' + byTable.slice(0, 4).map(function (x) { return x.table + ':' + x.n; }).join(',') + ']');
+    return { total: total, byTable: byTable };
+  }
+  // remove a tenant entirely: DELETE its rows from EVERY AD_Client_ID-bearing table (frame included, so it
+  // leaves the switcher). System(0) + GardenWorld(11) are PROTECTED — framework/seed, never deletable.
+  function deleteClient(db, clientId) {
+    var id = Number(clientId);
+    if (id === 0 || id === 11) { console.log('§IDMP-SESSION deleteClient REFUSED client=' + id + ' (protected framework/seed)'); return { ok: false, protected: true, deleted: 0, tables: 0 }; }
+    var deleted = 0, tCount = 0;
+    clientTables(db).forEach(function (t) {
+      try {
+        var b = db.exec('SELECT COUNT(*) FROM "' + t + '" WHERE AD_Client_ID=' + id);
+        var n = b.length ? Number(b[0].values[0][0]) : 0;
+        if (n > 0) { db.run('DELETE FROM "' + t + '" WHERE AD_Client_ID=' + id); deleted += n; tCount++; }
+      } catch (e) {}
+    });
+    console.log('§IDMP-SESSION deleteClient client=' + id + ' deleted=' + deleted + ' tables=' + tCount);
+    return { ok: true, deleted: deleted, tables: tCount };
   }
 
   // ── users who can log into a given tenant (have an active role IN that client). Filters Step 1. ──
@@ -104,34 +184,62 @@
   }
 
   // ── role-scope: the set of AD_Window_IDs the role may open (AD_Window_Access) ──
+  // W-ACCESS-HARDEN: delegates to AdAccess.RoleContext.gateWindow (MRole.getWindowAccess-faithful:
+  // IsReadWrite carried, no-row = not visible) instead of a presence-only local query. Return shape
+  // is UNCHANGED for callers (a map keyed by id, truthy = visible — scopeMenu/idempiere.html only
+  // ever test truthiness) — the value is now {rw:bool} instead of a bare 1, still truthy either way.
   function accessibleWindows(db, roleId) {
-    var ws = rows(db,
-      'SELECT DISTINCT AD_Window_ID AS id FROM AD_Window_Access ' +
-      'WHERE AD_Role_ID = ? AND IsActive = \'Y\'', [roleId]);
-    var set = {};
-    ws.forEach(function (w) { if (w.id != null) set[Number(w.id)] = 1; });
-    console.log('§IDMP-SESSION accessibleWindows role=' + roleId + ' windows=' + Object.keys(set).length + ' source=ad_window_access');
+    var ctx = roleContextFor(db, roleId), set = {};
+    if (ctx) {
+      ctx.win.forEach(function (rw, id) { set[id] = { rw: !!rw }; });
+      console.log('§IDMP-SESSION accessibleWindows role=' + roleId + ' windows=' + Object.keys(set).length +
+        ' rw=' + Object.keys(set).filter(function (k) { return set[k].rw; }).length + ' source=AdAccess/ad_window_access');
+      return set;
+    }
+    // Fallback ONLY when AdAccess failed to load/build — presence-only, matches pre-fix behaviour,
+    // logged loudly above so this is never a silent downgrade.
+    var ws = rows(db, 'SELECT DISTINCT AD_Window_ID AS id FROM AD_Window_Access WHERE AD_Role_ID = ? AND IsActive = \'Y\'', [roleId]);
+    ws.forEach(function (w) { if (w.id != null) set[Number(w.id)] = { rw: false }; });
+    console.log('§IDMP-SESSION accessibleWindows role=' + roleId + ' windows=' + Object.keys(set).length + ' source=FALLBACK(no-AdAccess)');
     return set;
   }
 
   // ── role-scope: the AD_Process_IDs / AD_Form_IDs the role may run (§3b.1 P/R/F residual) ──
+  // Same W-ACCESS-HARDEN delegation as accessibleWindows.
   function accessibleProcesses(db, roleId) {
-    var ps = rows(db,
-      'SELECT DISTINCT AD_Process_ID AS id FROM AD_Process_Access ' +
-      'WHERE AD_Role_ID = ? AND IsActive = \'Y\'', [roleId]);
-    var set = {};
-    ps.forEach(function (p) { if (p.id != null) set[Number(p.id)] = 1; });
-    console.log('§IDMP-SESSION accessibleProcesses role=' + roleId + ' processes=' + Object.keys(set).length + ' source=ad_process_access');
+    var ctx = roleContextFor(db, roleId), set = {};
+    if (ctx) {
+      ctx.proc.forEach(function (rw, id) { set[id] = { rw: !!rw }; });
+      console.log('§IDMP-SESSION accessibleProcesses role=' + roleId + ' processes=' + Object.keys(set).length + ' source=AdAccess/ad_process_access');
+      return set;
+    }
+    var ps = rows(db, 'SELECT DISTINCT AD_Process_ID AS id FROM AD_Process_Access WHERE AD_Role_ID = ? AND IsActive = \'Y\'', [roleId]);
+    ps.forEach(function (p) { if (p.id != null) set[Number(p.id)] = { rw: false }; });
+    console.log('§IDMP-SESSION accessibleProcesses role=' + roleId + ' processes=' + Object.keys(set).length + ' source=FALLBACK(no-AdAccess)');
     return set;
   }
   function accessibleForms(db, roleId) {
-    var fs = rows(db,
-      'SELECT DISTINCT AD_Form_ID AS id FROM AD_Form_Access ' +
-      'WHERE AD_Role_ID = ? AND IsActive = \'Y\'', [roleId]);
-    var set = {};
-    fs.forEach(function (f) { if (f.id != null) set[Number(f.id)] = 1; });
-    console.log('§IDMP-SESSION accessibleForms role=' + roleId + ' forms=' + Object.keys(set).length + ' source=ad_form_access');
+    var ctx = roleContextFor(db, roleId), set = {};
+    if (ctx) {
+      ctx.form.forEach(function (rw, id) { set[id] = { rw: !!rw }; });
+      console.log('§IDMP-SESSION accessibleForms role=' + roleId + ' forms=' + Object.keys(set).length + ' source=AdAccess/ad_form_access');
+      return set;
+    }
+    var fs = rows(db, 'SELECT DISTINCT AD_Form_ID AS id FROM AD_Form_Access WHERE AD_Role_ID = ? AND IsActive = \'Y\'', [roleId]);
+    fs.forEach(function (f) { if (f.id != null) set[Number(f.id)] = { rw: false }; });
+    console.log('§IDMP-SESSION accessibleForms role=' + roleId + ' forms=' + Object.keys(set).length + ' source=FALLBACK(no-AdAccess)');
     return set;
+  }
+
+  // ── record-level gate (MRole.canView + org/client scope) — exposed for callers that read/write
+  // an actual record, not just a menu entry. NOT wired into every CRUD call site in this pass (that
+  // is a whole-app integration, out of scope for the 4 Role/Window/Process/Form access rows this
+  // fix closes) — named here so it exists as real, callable, witnessed infrastructure rather than
+  // a promise. tableAccessLevel = ad_table.accesslevel string ('1'..'7'); record = {AD_Org_ID,AD_Client_ID}.
+  function gateRecordFor(db, roleId, tableAccessLevel, record) {
+    var ctx = roleContextFor(db, roleId);
+    if (!ctx) return { allowed: false, reason: 'access-gate-unavailable' };
+    return ctx.gateRecord(tableAccessLevel, record);
   }
 
   // ── prune the AD_Menu tree to the role's accessible windows/processes/forms ──
@@ -195,6 +303,14 @@
     var winSet = accessibleWindows(db, role.id);
     var procSet = accessibleProcesses(db, role.id);            // §AD-MENU-PRF-LIVE
     var formSet = accessibleForms(db, role.id);
+    // ROLE GATE for accounting (iDempiere MRole.isShowAcct): a role WITHOUT IsShowAcct sees NO accounting —
+    // no Posted column/button, no acct tabs. Read it onto the role so the host can gate the Posted affordance.
+    // Defensive: some col-intersect tenant shards may lack the column → default N (hide), never throw.
+    try {
+      var acctR = rows(db, 'SELECT IsShowAcct AS v FROM AD_Role WHERE AD_Role_ID = ?', [role.id]);
+      role.isShowAcct = acctR.length ? (String(acctR[0].v).toUpperCase() === 'Y') : false;
+    } catch (e) { role.isShowAcct = false; }
+    console.log('§IDMP-SESSION acctGate role=' + role.id + ' isShowAcct=' + role.isShowAcct + ' source=ad_role.isshowacct');
     return {
       user: user, role: role, client: client, org: org,
       roles: roles, orgs: orgs, winSet: winSet, procSet: procSet, formSet: formSet
@@ -204,6 +320,9 @@
   var IdmpSession = {
     listUsers: listUsers,
     listClients: listClients,
+    clientTables: clientTables,
+    countClientRecords: countClientRecords,
+    deleteClient: deleteClient,
     usersForClient: usersForClient,
     rolesForUser: rolesForUser,
     clientFor: clientFor,
@@ -212,11 +331,13 @@
     accessibleProcesses: accessibleProcesses,
     accessibleForms: accessibleForms,
     scopeMenu: scopeMenu,
-    buildContext: buildContext
+    buildContext: buildContext,
+    roleContextFor: roleContextFor,   // W-ACCESS-HARDEN: the real AdAccess.RoleContext, for callers that need canView/orgs/clients directly
+    gateRecordFor: gateRecordFor      // W-ACCESS-HARDEN: record-level MRole.canView + org/client scope
   };
 
   if (typeof window !== 'undefined') window.IdmpSession = IdmpSession;
   if (typeof module !== 'undefined' && module.exports) module.exports = IdmpSession;
 
-  console.log('§IDMP-SESSION_LOADED v1');
+  console.log('§IDMP-SESSION_LOADED v3');
 })();

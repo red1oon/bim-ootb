@@ -263,8 +263,70 @@
     T.field('palette',
       function () { var A = _A(); return A ? (A._ambienceTick || 0) : 0; },
       function (tick) { var A = _A(); if (A && A.updateAmbience) A.updateAmbience(tick); });
+    // §CLASH — the inspected clash PAIR (which two elements + the panel). The clash dot used to restore only
+    // camera+ambient (zoom-to) — NOT the highlighted pair or the Clash list panel (user: "Clash shows the zoom
+    // to but without the clash pair and Clash panel"). read() = the pair currently inspected (by GUID, gated on
+    // the panel being active so a stale idx never re-fires); write(pair) re-inspects it: re-open the list panel
+    // from the PERSISTED _currentClashes (read-only re-render, NO re-detection) if it was dismissed, then
+    // _flyToClash → red/blue overlap meshes + outline + fly. _flyToClash's own recordEvent self-suppresses here
+    // because applyView holds isApplying()=true. write(null) = a non-clash moment → clear the viz (keep matrix).
+    T.field('clash',
+      function () {
+        var A = _A();
+        if (!A || !A._clashRevealActive || A._currentClashViewIdx == null || !A._currentClashes) return null;
+        var c = A._currentClashes[A._currentClashViewIdx];
+        return (c && c[0] && c[1]) ? { a: c[0], b: c[1] } : null;
+      },
+      function (pair) {
+        var A = _A();
+        if (!A) return;
+        if (!pair || !pair.a) {                                   // moment had no clash → clear any current viz
+          if (A._clashRevealActive && A._dismissClashes) A._dismissClashes(true);   // keepMatrix
+          return;
+        }
+        if (!A._currentClashes || !A._flyToClash) return;         // no clash list this session → can't reconstruct (cold)
+        var idx = -1, cc = A._currentClashes;
+        for (var i = 0; i < cc.length; i++) {
+          var c = cc[i];
+          if (c && ((c[0] === pair.a && c[1] === pair.b) || (c[0] === pair.b && c[1] === pair.a))) { idx = i; break; }
+        }
+        if (idx < 0) return;                                      // pair not in the current list (rules changed) → skip
+        if (!A._clashRevealActive && A._revealClashes && A._currentClashRules) {
+          A._revealClashes(A._currentClashes, A._currentClashRules);   // re-show the panel (no re-detection)
+        }
+        A._flyToClash(idx);                                       // pair highlight + fly + row (recordEvent suppressed)
+      });
     if (T.sniff) T.sniff(true);   // recording goes TOTAL: read every §act from the stream, deny-filtered
-    console.log('§HIST_TAP_WIRED fields(ghost,xray,cam,section,palette) + sniffer ON — one symmetric line each');
+    if (T.onFeed) T.onFeed(_drainTap);   // ── THE SUBSCRIPTION: the bar now LISTENS to the §-stream ──
+    console.log('§HIST_TAP_WIRED fields(ghost,xray,cam,section,palette,clash) + sniffer ON + bar SUBSCRIBES tap — one symmetric line each');
+  }
+
+  // ── BAR SUBSCRIBES TO THE TAP (HISTORY_KNOB_SIGNAL_TAP §GAP-BAR-NEVER-CONSUMED-THE-TAP, §THE WORK 1&5) ──
+  // The §-stream already carries every act (the S() sink + the sniffer). The bar used to draw dots ONLY from
+  // explicit pushes → X/C (§KBD_ROUTE), clash, and every FUTURE feature silently never dotted. Now the bar
+  // SUBSCRIBES: each § act drains the knob-filtered crumbs into read-only dots — for tags NOT already minted
+  // by an explicit push (the skip set). Zero per-feature wiring; coverage falls out the moment a feature logs §.
+  // Tags the adapter ALREADY pushes explicitly (op / pick / nav / detail) — skip so the drain never doubles them.
+  var _EXPLICIT_TAGS = { KERNEL_OP: 1, BUILDING_OPEN: 1, GRID_MOVE: 1, ELEMENT_PLACE: 1, ELEMENT_PICK: 1,
+                         PICK: 1, FOCUS: 1, PHASE_LENS: 1, FILTER: 1, ROOM: 1,
+                         CLASH_INSPECT: 1, SECTION_CUT: 1, MEASURE: 1 };
+  var _tapHW = -1;        // high-water: the last consumed crumb index (e.t), so we never re-mint
+  var _draining = false;  // re-entry guard (the drain's own §HIST_TAP_DOT/§HIST_PUSH are DENYed in the tap too)
+  function _drainTap() {
+    if (_draining || !window.HistoryTap || !HistoryTap.historySince) return;
+    if (HistoryTap.isApplying && HistoryTap.isApplying()) return;   // scrubbing the past ≠ a new act
+    if (_isReHome() || !HB.isEnabled()) return;                     // read-only re-home / knob Off → no dots
+    _draining = true;
+    try {
+      var fresh = HistoryTap.historySince(_tapHW, _EXPLICIT_TAGS);
+      for (var i = 0; i < fresh.length; i++) {
+        var e = fresh[i];
+        if (e.t > _tapHW) _tapHW = e.t;
+        HB.push({ bucket: 'event', kind: 'event', type: e.tag, label: e.label || e.tag, readonly: true,
+                  fromTap: true, viewState: e.view || _tapView(), sigKey: 'tap:' + e.tag + ':' + e.t });
+        console.log('§HIST_TAP_DOT tag=' + e.tag + ' label="' + (e.label || '') + '" t=' + e.t + ' (from §-stream, no per-feature wiring)');
+      }
+    } finally { _draining = false; }
   }
 
   // MODEL op apply: flips the signed kernel_ops `undone` flag (never deletion) + dispatches replay.
@@ -325,10 +387,14 @@
     mountHostId: 'status-bar-wrap',         // §3: dock under the status row
     profiles: PROFILES,
     depthKey: 'bim.universalHist.depth',
-    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile, which
-    // used to default 'off' → no dots collected). 'max' = every meaningful act becomes one dot (scene
-    // change / pick / section / grid), matching "every change is a dot".
-    defaultDepth: function () { return 'max'; },
+    ignorePersistedDepth: true,             // knob scrapped → a stale 'low' from the knob era must not
+                                            // pin the bar (no UI to raise it). Always boot at defaultDepth.
+    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile). 'high'
+    // records what the user actually DOES: navigation views (axis/group/item — Find storey/floor selects)
+    // + edits/saves + detail events (measure / clash-inspect / section-cut). It deliberately stops short of
+    // 'max', which adds a dot for EVERY raw element-pick (that's the spam). User direction 2026-06-16: a
+    // mid-only trail dropped Find/storey navigation (profile=mid type=group HIST_DROP) → looked unchanged.
+    defaultDepth: function () { return 'high'; },
     restore: _restore,
     restoreView: _restoreView,              // READ-ONLY scrubber path (knob nav + dot clicks)
     afterApply: _chainCheck,
@@ -403,8 +469,12 @@
     // end-to-end (was the missing half — restore was untraceable). db=null here ⇒ a bare-url landing.
     try {
       var _sp = new URLSearchParams(location.search);
-      console.log('§WHOLE-LANDED page=viewer db=' + (_openDbUrl() || 'null') + ' ghost=' + (_sp.get('ghost') || '0') +
-        ' sess=' + (_sp.get('sess') || 'none') + ' reHome=' + _isReHome());
+      // origin= (2026-07-17): db= alone doesn't say whether the PAGE itself is localhost, a
+      // worktree dev server, or production GH Pages (a local session can legitimately point db=
+      // at production OCI data) — a bug report pasting only db= cost real back-and-forth
+      // confirming which deployment was even being tested.
+      console.log('§WHOLE-LANDED page=viewer origin=' + location.origin + ' db=' + (_openDbUrl() || 'null') +
+        ' ghost=' + (_sp.get('ghost') || '0') + ' sess=' + (_sp.get('sess') || 'none') + ' reHome=' + _isReHome());
     } catch (e) {}
     window.WholeHistory.consumeRestore('viewer', function (ref) {
       try { var A = _A(); if (ref && ref.building && A && A.cityLoadBuilding) A.cityLoadBuilding(ref.building); } catch (e) {}

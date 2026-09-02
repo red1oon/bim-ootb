@@ -1,0 +1,41 @@
+name: curate-release
+# Attaches the offline bundle (scripts/build_offline_bundle.sh) to whatever release-please just
+# published. Does not touch release-please's own cadence or changelog — additive only.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach the offline bundle to (defaults to the latest release)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  offline-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || '' }}
+
+      - name: Resolve tag
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$TAG" ]; then TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName'); fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build + attach offline bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          chmod +x scripts/build_offline_bundle.sh
+          ./scripts/build_offline_bundle.sh "$RUNNER_TEMP/bim-ootb-offline-${{ steps.rel.outputs.tag }}.zip"
+          gh release upload "${{ steps.rel.outputs.tag }}" \
+            "$RUNNER_TEMP/bim-ootb-offline-${{ steps.rel.outputs.tag }}.zip" --clobber

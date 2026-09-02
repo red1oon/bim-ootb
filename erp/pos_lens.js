@@ -36,18 +36,18 @@
       '#pos-grid  { display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;flex:1;align-content:start;width:100%; }',
 
       /* U-1: album card style */
-      '.pos-card { display:flex;flex-direction:column;border:1px solid #2a6;border-radius:10px;',
-      '            background:#0b1f17;color:#cfe;cursor:pointer;overflow:hidden;',
+      '.pos-card { display:flex;flex-direction:column;border:1px solid #33334a;border-radius:10px;',
+      '            background:#16161d;color:#e8e8ed;cursor:pointer;overflow:hidden;',
       '            transition:background .15s,transform .1s;user-select:none; }',
-      '.pos-card:hover { background:#133a22; }',
+      '.pos-card:hover { background:rgba(108,159,255,0.16); }',
       '.pos-card:active { transform:scale(0.96); }',
-      '.pos-card-img { width:100%;height:100px;object-fit:cover;background:#071409;',
-      '               display:flex;align-items:center;justify-content:center;color:#3a7;flex-shrink:0; }',
+      '.pos-card-img { width:100%;height:100px;object-fit:cover;background:#121218;',
+      '               display:flex;align-items:center;justify-content:center;color:#55556a;flex-shrink:0; }',
       '.pos-card-img img { width:100%;height:100px;object-fit:cover;display:block; }',
       '.pos-card-img svg { opacity:.45; }',
       '.pos-card-name { font-size:11px;padding:5px 6px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }',
-      '.pos-card-price { font-size:15px;font-weight:bold;color:#8fd;padding:0 6px 7px;letter-spacing:.3px; }',
-      '.pos-card.flash { background:#1d4a2e !important;transform:scale(0.94); }',
+      '.pos-card-price { font-size:15px;font-weight:bold;color:#cdd6e4;padding:0 6px 7px;letter-spacing:.3px; }',
+      '.pos-card.flash { background:rgba(95,208,138,0.24) !important;transform:scale(0.94); }',
 
       /* §P-6 mobile layout — scoped @media ≤640px (desktop two-col row UNCHANGED — falsifier) */
       '@media (max-width:640px) {',
@@ -61,140 +61,152 @@
       /* §P-7 pill icon bar */
       '#pos-pill-bar  { display:flex;gap:6px;margin-bottom:8px;align-items:center; }',
       '.pos-pill-btn  { display:flex;align-items:center;gap:4px;padding:5px 10px;',
-      '                 border:1px solid #2a6;border-radius:20px;background:#0b1f17;',
-      '                 color:#cfe;cursor:pointer;font-size:12px;transition:background .15s; }',
-      '.pos-pill-btn:hover { background:#133a22; }',
-      '.pos-pill-btn.active { background:#1d4a2e;border-color:#4dcc88; }',
+      '                 border:1px solid #33334a;border-radius:20px;background:#16161d;',
+      '                 color:#e8e8ed;cursor:pointer;font-size:12px;transition:background .15s; }',
+      '.pos-pill-btn:hover { background:rgba(108,159,255,0.16); }',
+      '.pos-pill-btn.active { background:rgba(95,208,138,0.24);border-color:#5fd08a; }',
       '.pos-pill-btn svg { flex-shrink:0; }',
 
       /* §P-8 scan overlay */
       '#pos-scan-overlay { display:none;position:fixed;inset:0;background:#000d;z-index:9500;',
       '                    flex-direction:column;align-items:center;justify-content:flex-start;padding-top:8vh; }',
       '#pos-scan-overlay.active { display:flex; }',
-      '#pos-scan-video  { width:min(340px,92vw);border:2px solid #2a6;border-radius:8px;background:#000; }',
-      '#pos-scan-input  { margin-top:12px;padding:8px 14px;border-radius:6px;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;font-size:16px;width:min(340px,92vw);text-align:center; }',
-      '#pos-scan-hint   { color:#8fd;font-size:13px;margin-top:6px; }',
-      '#pos-scan-total  { color:#4dcc88;font-size:26px;font-weight:bold;margin-top:10px;transition:opacity .25s; }',
+      '#pos-scan-video  { width:min(340px,92vw);border:2px solid #33334a;border-radius:8px;background:#000; }',
+      '#pos-scan-input  { margin-top:12px;padding:8px 14px;border-radius:6px;border:1px solid #33334a;',
+      '                   background:#16161d;color:#e8e8ed;font-size:16px;width:min(340px,92vw);text-align:center; }',
+      '#pos-scan-hint   { color:#cdd6e4;font-size:13px;margin-top:6px; }',
+      '#pos-scan-total  { color:#5fd08a;font-size:26px;font-weight:bold;margin-top:10px;transition:opacity .25s; }',
       '#pos-scan-total.flash { opacity:.1; }',
-      '#pos-scan-msg    { color:#fa8;font-size:13px;margin-top:4px;min-height:18px; }',
-      '#pos-scan-close  { margin-top:16px;padding:8px 24px;border-radius:6px;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;cursor:pointer;font-size:14px; }',
+      '#pos-scan-msg    { color:#ff6b6b;font-size:13px;margin-top:4px;min-height:18px; }',
+      '#pos-scan-close  { margin-top:16px;padding:8px 24px;border-radius:6px;border:1px solid #33334a;',
+      '                   background:#16161d;color:#e8e8ed;cursor:pointer;font-size:14px; }',
 
-      /* §D: compact payment panel — rim-top + main-row + rim-bottom */
+      /* §R2-1/§R2-2 top bar: [🛒 cart-toggle]  RUNNING TOTAL  …  [scan QR] */
+      '#pos-top-bar     { display:flex;align-items:center;gap:8px;margin-bottom:8px;',
+      '                   padding:6px 12px;border:1px solid #33334a;border-radius:24px;background:#16161d; }',
+      '.pos-top-btn     { width:36px;height:36px;border-radius:50%;border:1px solid #33334a;background:#1a1a24;',
+      '                   color:#e8e8ed;cursor:pointer;display:flex;align-items:center;justify-content:center;',
+      '                   padding:0;flex-shrink:0;transition:background .15s; }',
+      '.pos-top-btn:hover { background:rgba(95,208,138,0.24); }',
+      '#pos-top-total   { flex:1;text-align:center;font-size:24px;font-weight:bold;color:#5fd08a;letter-spacing:.5px; }',
+
+      /* §R2-3/§R2-4 the pay panel — RIMS RETIRED, draggable via the grab header */
       '#pos-float-panel { position:fixed;bottom:70px;right:20px;z-index:9500;',
-      '                   width:min(360px,calc(100vw - 20px));',
-      '                   background:#0d1f14;border:1px solid #2a6;border-radius:12px;',
+      '                   width:min(340px,calc(100vw - 20px));',
+      '                   background:#1a1a24;border:1px solid #33334a;border-radius:12px;',
       '                   display:none;flex-direction:column;box-shadow:0 8px 32px #000a; }',
       '#pos-float-panel.open { display:flex; }',
-      '.pos-rim         { height:8px;cursor:pointer;width:100%;flex-shrink:0;transition:opacity .15s; }',
-      '.pos-rim:hover   { opacity:.8; }',
-      '.pos-rim-top     { background:#e65c00;border-radius:12px 12px 0 0; }',
-      '.pos-rim-bottom  { background:#2e7d32;border-radius:0 0 12px 12px; }',
-      '.pos-items-body  { padding:4px 10px 6px;overflow-y:auto;max-height:30vh; }',
-      '.pos-main-row    { display:flex;align-items:center;justify-content:space-between;padding:8px 10px; }',
-      '.pos-flanker     { width:40px;height:40px;border-radius:10px;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;cursor:pointer;',
-      '                   display:flex;align-items:center;justify-content:center;padding:0; }',
-      '.pos-flanker:hover { background:#1a5040; }',
-      '.pos-flanker.active { background:#1d4a2e;border-color:#4dcc88; }',
-      '#pos-float-cart  { margin-bottom:4px; }',
+      '.pos-drag-hdr    { display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:grab;',
+      '                   color:#cdd6e4;font-size:13px;font-weight:bold;user-select:none;touch-action:none;',
+      '                   border-bottom:1px solid rgba(255,255,255,0.08);border-radius:12px 12px 0 0;background:#121218; }',
+      '.pos-drag-grip   { color:#55556a;font-size:14px;letter-spacing:-2px; }',
+      '.pos-section-hdr { padding:6px 12px 2px;color:#9aa4b8;font-size:11px;font-weight:bold; }',
+      '.pos-items-body  { padding:0 12px 4px;overflow-y:auto;max-height:24vh; }',
+      '#pos-float-cart  { margin-bottom:2px; }',
       '.pos-float-cart-line { display:flex;justify-content:space-between;',
-      '                       color:#cfe;font-size:12px;padding:3px 0;border-bottom:1px solid #112; }',
-      '#pos-float-total { font-size:32px;font-weight:bold;color:#4dcc88;',
-      '                   text-align:center;margin:0;letter-spacing:1px; }',
-      '#pos-float-tender { width:40px;height:40px;border-radius:10px;border:1px solid #2a6;',
-      '                    background:#134;color:#cfe;cursor:pointer;',
-      '                    display:flex;align-items:center;justify-content:center;padding:0; }',
-      '#pos-float-tender:hover { background:#1a5040; }',
-      '#pos-float-bp    { width:100%;margin:4px 10px 4px;box-sizing:border-box;width:calc(100% - 20px);padding:5px;background:#071409;',
-      '                   border:1px solid #2a6;border-radius:6px;color:#cfe;font-size:12px; }',
-      '#pos-float-receipt { margin:2px 10px 4px;font-size:11px;color:#9cb;min-height:14px; }',
-      '.pos-repl-body   { padding:4px 10px 6px;overflow-y:auto;max-height:24vh; }',
+      '                       color:#e8e8ed;font-size:12px;padding:3px 0;border-bottom:1px solid #22222e; }',
+      '.pos-pay-row     { display:flex;justify-content:flex-end;padding:6px 12px; }',
+      '#pos-float-tender { width:52px;height:44px;border-radius:10px;border:1px solid #5fd08a;',
+      '                    background:rgba(95,208,138,0.12);color:#5fd08a;cursor:pointer;',
+      '                    display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s; }',
+      '#pos-float-tender:hover { background:rgba(95,208,138,0.24); }',
+      '#pos-float-bp    { box-sizing:border-box;margin:2px 12px;width:calc(100% - 24px);padding:5px;background:#121218;',
+      '                   border:1px solid #33334a;border-radius:6px;color:#e8e8ed;font-size:12px; }',
+      '#pos-float-receipt { margin:2px 12px 4px;font-size:11px;color:#9aa4b8;min-height:14px; }',
+      '.pos-repl-body   { padding:0 12px 8px;overflow-y:auto;max-height:22vh; }',
+      /* §T1.6 HMI — replenish rows are stylesheet classes now (were 11px inline cssText) */
+      '.pos-replenish-row { display:block;width:100%;text-align:left;margin:3px 0;padding:6px 8px;',
+      '                     border-radius:6px;border:1px solid #33334a;background:#16161d;',
+      '                     color:#e8e8ed;cursor:pointer;font-size:12px;line-height:1.35;transition:background .15s; }',
+      '.pos-replenish-row:hover { background:rgba(108,159,255,0.16); }',
+      '.pos-replenish-row.no-vendor { border-color:#555;background:#121218;color:#9aa4b8;cursor:default; }',
+      '.pos-replenish-row.no-vendor:hover { background:#121218; }',
+      /* §T1-SPEC staged Generate Replenishment — propose→stage→review/edit→confirm */
+      '#pos-repl-generate { display:inline-flex;align-items:center;gap:6px;margin:4px 0 2px;padding:7px 14px;',
+      '                     border-radius:8px;border:1px solid #33334a;background:#16161d;color:#6c9fff;',
+      '                     cursor:pointer;font-size:12px;transition:background .15s; }',
+      '#pos-repl-generate:hover { background:rgba(108,159,255,0.16); }',
+      '.pos-repl-stage-row { display:flex;align-items:center;gap:6px;margin:3px 0;padding:6px 8px;',
+      '                      border-radius:6px;border:1px solid #33334a;background:#16161d;',
+      '                      color:#e8e8ed;font-size:12px;line-height:1.35; }',
+      '.pos-repl-stage-row.no-vendor { border-color:#555;background:#121218;color:#9aa4b8; }',
+      '.pos-repl-stage-row.excluded { opacity:.45; }',
+      '.pos-repl-name  { flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }',
+      '.pos-repl-route { font-size:10px;color:#9aa4b8;border:1px solid #33334a;border-radius:4px;',
+      '                  padding:1px 5px;white-space:nowrap; }',
+      '.pos-repl-route.move { color:#6c9fff;border-color:#6c9fff; }',
+      '.pos-repl-qty   { width:56px;box-sizing:border-box;padding:4px 6px;border-radius:6px;',
+      '                  border:1px solid #33334a;background:#121218;color:#e8e8ed;font-size:12px;text-align:right; }',
+      '#pos-repl-commit { display:none;width:100%;margin:6px 0 2px;padding:9px;border-radius:8px;',
+      '                   border:1px solid #33334a;background:rgba(108,159,255,0.24);color:#e8e8ed;',
+      '                   cursor:pointer;font-size:13px; }',
+      '#pos-repl-commit:disabled { opacity:.4;cursor:default; }',
+      '#pos-repl-empty { color:#9aa4b8;font-size:11px;margin:4px 0; }',
       /* §D-3 ⋯ dock */
       '#pos-dock        { position:fixed;bottom:20px;right:20px;z-index:9550;',
       '                   display:flex;flex-direction:column;align-items:flex-end;gap:5px; }',
-      '#pos-dock-trigger{ width:36px;height:36px;border-radius:50%;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;cursor:pointer;font-size:18px;',
+      '#pos-dock-trigger{ width:36px;height:36px;border-radius:50%;border:1px solid #33334a;',
+      '                   background:#16161d;color:#e8e8ed;cursor:pointer;font-size:18px;',
       '                   display:flex;align-items:center;justify-content:center; }',
       '#pos-dock-items  { display:none;flex-direction:column;align-items:flex-end;gap:5px; }',
       '#pos-dock-items.open { display:flex; }',
-      '.pos-dock-item   { width:36px;height:36px;border-radius:50%;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;cursor:pointer;',
+      '.pos-dock-item   { width:36px;height:36px;border-radius:50%;border:1px solid #33334a;',
+      '                   background:#16161d;color:#e8e8ed;cursor:pointer;',
       '                   display:flex;align-items:center;justify-content:center;padding:0; }',
-      '.pos-dock-item:hover { background:#133a22; }',
-      /* §D-2 receipt-preview modal */
-      '#pos-pay-modal   { display:none;position:fixed;inset:0;background:#0009;z-index:9700;',
-      '                   align-items:center;justify-content:center; }',
-      '#pos-pay-modal.active { display:flex; }',
-      '.pos-pay-card    { background:#0d1f14;border:1px solid #2a6;border-radius:12px;padding:18px 20px;',
-      '                   max-width:min(360px,96vw);width:100%; }',
-      '.pos-pay-card-title{ color:#8fd;font-size:13px;font-weight:bold;margin-bottom:10px;',
-      '                   border-bottom:1px solid #2a6;padding-bottom:6px; }',
-      '.pos-pay-preview-total{ font-size:26px;font-weight:bold;color:#4dcc88;text-align:center;margin:10px 0 6px; }',
-      '.pos-pay-divider { border:0;border-top:1px solid #1a3d24;margin:8px 0; }',
-      '.pos-pay-action-row{ display:flex;gap:8px;justify-content:center;margin-top:10px; }',
-      '.pos-pay-action-btn{ padding:8px 16px;border-radius:8px;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;cursor:pointer;font-size:13px;',
-      '                   display:flex;align-items:center;gap:5px; }',
-      '.pos-pay-action-btn:hover { background:#1a5040; }',
-      '.pos-pay-action-btn#pos-pay-ok { border-color:#4dcc88;color:#4dcc88; }',
-      '#pos-pay-qr-area { display:none;text-align:center;margin-top:10px;padding-top:10px;',
-      '                   border-top:1px solid #2a6; }',
-      '#pos-pay-qr-area canvas,#pos-pay-qr-area svg,#pos-pay-qr-area img{ display:block;margin:0 auto; }',
-      '#pos-pay-qr-caption{ color:#fa0;font-size:11px;margin-top:4px; }',
+      '.pos-dock-item:hover { background:rgba(108,159,255,0.16); }',
+      /* §R2-3 the receipt-preview modal is retired (single Pay icon completes directly) */
 
       /* U-3: import overlay */
       '#pos-import-overlay { display:none;position:fixed;inset:0;background:#000d;z-index:9600;',
       '                      flex-direction:column;align-items:center;justify-content:flex-start;',
       '                      padding-top:6vh;overflow-y:auto; }',
       '#pos-import-overlay.active { display:flex; }',
-      '#pos-import-card { background:#0d1f14;border:1px solid #2a6;border-radius:12px;padding:20px 24px;',
+      '#pos-import-card { background:#1a1a24;border:1px solid #33334a;border-radius:12px;padding:20px 24px;',
       '                   max-width:min(400px,96vw);width:100%;box-sizing:border-box; }',
-      '#pos-import-title { color:#8fd;font-size:14px;font-weight:bold;margin-bottom:14px;',
-      '                    border-bottom:1px solid #2a6;padding-bottom:8px; }',
+      '#pos-import-title { color:#cdd6e4;font-size:14px;font-weight:bold;margin-bottom:14px;',
+      '                    border-bottom:1px solid #33334a;padding-bottom:8px; }',
       '#pos-import-steps { display:flex;gap:4px;margin-bottom:14px; }',
       '.pos-import-step  { flex:1;padding:4px 2px;text-align:center;font-size:11px;',
-      '                    border-radius:4px;color:#6a9;border:1px solid #1a3d24; }',
-      '.pos-import-step.active { color:#4dcc88;border-color:#2a6;background:#071409; }',
-      '.pos-import-step.done { color:#3a7;background:#071409; }',
+      '                    border-radius:4px;color:#9aa4b8;border:1px solid rgba(255,255,255,0.08); }',
+      '.pos-import-step.active { color:#5fd08a;border-color:#33334a;background:#121218; }',
+      '.pos-import-step.done { color:#55556a;background:#121218; }',
       '#pos-import-body  { min-height:80px; }',
-      '#pos-import-video { width:min(300px,86vw);border:2px solid #2a6;border-radius:8px;background:#000;display:block; }',
+      '#pos-import-video { width:min(300px,86vw);border:2px solid #33334a;border-radius:8px;background:#000;display:block; }',
       '#pos-import-canvas { display:none; }',
       '.pos-import-btn   { display:inline-flex;align-items:center;gap:6px;padding:9px 20px;',
-      '                    border-radius:8px;border:1px solid #2a6;background:#0b1f17;',
-      '                    color:#cfe;cursor:pointer;font-size:13px;margin-top:8px; }',
+      '                    border-radius:8px;border:1px solid #33334a;background:#16161d;',
+      '                    color:#e8e8ed;cursor:pointer;font-size:13px;margin-top:8px; }',
       '.pos-import-btn:disabled { opacity:.4;cursor:default; }',
       '.pos-import-input { width:100%;box-sizing:border-box;padding:8px 12px;margin-top:8px;',
-      '                    border-radius:6px;border:1px solid #2a6;',
-      '                    background:#071409;color:#cfe;font-size:15px; }',
-      '#pos-import-hint  { color:#8fd;font-size:12px;margin-top:8px; }',
+      '                    border-radius:6px;border:1px solid #33334a;',
+      '                    background:#121218;color:#e8e8ed;font-size:15px; }',
+      '#pos-import-hint  { color:#cdd6e4;font-size:12px;margin-top:8px; }',
       '#pos-import-thumb { max-width:120px;max-height:120px;border-radius:6px;',
       '                    display:none;margin-top:8px;object-fit:cover; }',
-      '#pos-import-err   { color:#fa8;font-size:12px;margin-top:6px;min-height:16px; }',
+      '#pos-import-err   { color:#ff6b6b;font-size:12px;margin-top:6px;min-height:16px; }',
       '#pos-import-close { margin-top:12px;display:block;width:100%;padding:9px;border-radius:8px;',
-      '                    border:1px solid #556;background:#0b1209;color:#9cb;cursor:pointer;font-size:13px; }',
+      '                    border:1px solid #556;background:#16161d;color:#9aa4b8;cursor:pointer;font-size:13px; }',
 
       /* §P-11 receipt overlay */
       '#pos-receipt-overlay { display:none;position:fixed;inset:0;background:#0009;z-index:9600;',
       '                       align-items:center;justify-content:center; }',
       '#pos-receipt-overlay.active { display:flex; }',
-      '#pos-receipt-card { background:#0d1f14;border:1px solid #2a6;border-radius:12px;padding:20px 24px;',
+      '#pos-receipt-card { background:#1a1a24;border:1px solid #33334a;border-radius:12px;padding:20px 24px;',
       '                    max-width:min(400px,96vw);width:100%;max-height:90vh;overflow-y:auto; }',
-      '.pos-rcpt-header  { color:#8fd;font-size:13px;margin-bottom:10px;border-bottom:1px solid #2a6;padding-bottom:6px; }',
-      '.pos-rcpt-line    { display:flex;justify-content:space-between;color:#cfe;font-size:13px;padding:4px 0;border-bottom:1px solid #132; }',
+      '.pos-rcpt-header  { color:#cdd6e4;font-size:13px;margin-bottom:10px;border-bottom:1px solid #33334a;padding-bottom:6px; }',
+      '.pos-rcpt-line    { display:flex;justify-content:space-between;color:#e8e8ed;font-size:13px;padding:4px 0;border-bottom:1px solid #22222e; }',
       '.pos-rcpt-line.last { transition:opacity .4s; }',
-      '#pos-rcpt-total   { font-size:30px;font-weight:bold;color:#4dcc88;text-align:center;margin:14px 0 6px; }',
+      '#pos-rcpt-total   { font-size:30px;font-weight:bold;color:#5fd08a;text-align:center;margin:14px 0 6px; }',
       '#pos-rcpt-qr      { text-align:center;margin:10px 0; }',
       '#pos-rcpt-qr canvas,#pos-rcpt-qr svg,#pos-rcpt-qr img { display:block;margin:0 auto; }',
       /* U-4: DEMO payment QR styles */
-      '#pos-pay-qr       { text-align:center;margin:14px 0 6px;padding-top:12px;border-top:1px solid #2a6; }',
+      '#pos-pay-qr       { text-align:center;margin:14px 0 6px;padding-top:12px;border-top:1px solid #33334a; }',
       '#pos-pay-qr-label { font-weight:bold;color:#fa0;font-size:13px;margin-bottom:6px; }',
       '#pos-pay-qr-wrap  { margin:6px 0; }',
       '#pos-pay-qr-wrap canvas,#pos-pay-qr-wrap svg,#pos-pay-qr-wrap img { display:block;margin:0 auto; }',
-      '#pos-pay-qr-caption { color:#8fd;font-size:11px;margin-top:4px; }',
+      '#pos-pay-qr-caption { color:#cdd6e4;font-size:11px;margin-top:4px; }',
       '#pos-receipt-close{ display:block;width:100%;margin-top:14px;padding:10px;border-radius:8px;',
-      '                    border:1px solid #2a6;background:#134;color:#cfe;cursor:pointer;font-size:14px; }'
+      '                    border:1px solid #33334a;background:rgba(108,159,255,0.24);color:#e8e8ed;cursor:pointer;font-size:14px; }'
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -207,6 +219,16 @@
       ' stroke-linecap="round" stroke-linejoin="round">' + ic.svg + '</svg>';
   }
 
+  // §R2-AUDIO — affirmative POS earcons (ring item / pay / sale complete). SAME guarded pattern as
+  // wh_walk.js _sfx (PRE-PINNED FACT #2): the id resolves from sfx.json ui_sounds via window.__sfx —
+  // an absent engine (sfx.js not loaded) or absent row plays NOTHING (no crash, no hardcoded synth).
+  function _sfx(event) {
+    var sfx = window.__sfx;
+    var ok = !!(sfx && typeof sfx.play === 'function' && event);
+    if (ok) { try { sfx.play(event); } catch (e) { ok = false; } }
+    console.log('§POS-AUDIO event=' + event + ' sfx=' + (ok ? 'played' : 'absent'));
+  }
+
   function q1(b3, sql) {
     var a = []; for (var i = 2; i < arguments.length; i++) a.push(arguments[i]);
     var st = b3.prepare(sql); return st.get.apply(st, a);
@@ -216,19 +238,40 @@
     var st = b3.prepare(sql); return st.all.apply(st, a);
   }
 
-  // count prior CREATE_DOCUMENT ops → deterministic doc ids (no Date.now/Math.random)
+  // count prior CREATE_DOCUMENT ops → deterministic doc ids (no Date.now/Math.random).
+  // T7-HOST (prompts/T7_HOST_WIRING_SPEC.md §Build 3a — Witness: §T7-COUNT): once the log shards, the
+  // hot COUNT collapses — the latest SHARD_SNAPSHOT's cumulative opCounts carries the archived count so
+  // PKs stay collision-free WITHOUT an async archive fetch (this runs SYNC on the Pay path).
+  // _archivedOpCount — the pre-shard count of an op_type from the latest SHARD_SNAPSHOT's cumulative
+  // opCounts (0 when the log has never sharded). Sync + O(1): safe on the Pay path.
+  function _archivedOpCount(opDb, opType) {
+    try {
+      var s = opDb.exec("SELECT parameters FROM kernel_ops WHERE op_type='SHARD_SNAPSHOT' ORDER BY id DESC LIMIT 1");
+      if (s.length && s[0].values.length) {
+        var pl = JSON.parse(s[0].values[0][0]).payload;
+        if (pl && pl.opCounts && pl.opCounts[opType]) return Number(pl.opCounts[opType]);
+      }
+    } catch (e) {}
+    return 0;
+  }
   function nextIds(opDb) {
     var n = 0;
     try { var r = opDb.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type='CREATE_DOCUMENT'"); n = (r[0] && Number(r[0].values[0][0])) || 0; } catch (e) {}
+    n += _archivedOpCount(opDb, 'CREATE_DOCUMENT');
     var base = 910000 + n * 10;
     return { orderId: base + 1, inoutId: base + 2, invoiceId: base + 3 };
   }
 
-  function logMovements(opDb) {
+  // archivedRows — lazily-fetched pre-shard ops (T7_HOST_WIRING_SPEC §Build 3b): full-history folds
+  // below prepend these so a shard boundary never thins stock/pending arithmetic. [] until a host
+  // injects cfg.archivedOps AND the log has actually sharded.
+  function logMovements(opDb, archivedRows) {
     var ev = [], hdr = null;
     try {
       var r = opDb.exec('SELECT op_type, parameters FROM kernel_ops ORDER BY id');
-      (r[0] ? r[0].values : []).forEach(function (row) {
+      var live = (r[0] ? r[0].values : []);
+      var all = (archivedRows || []).map(function (o) { return [o.op_type, o.parameters]; }).concat(live);
+      all.forEach(function (row) {
         var p; try { p = JSON.parse(row[1]); } catch (e) { return; }
         p = p && p.params ? p.params : p;
         if (!p) return;
@@ -242,19 +285,57 @@
     return ev;
   }
 
-  function suggestAll(b3, opDb) {
+  // §T1-SPEC lens.4 — pending inbound: qty already committed to arrive but not yet received/moved,
+  // folded from the SIGNED op log (gid links a group's CREATE_DOCUMENT to its CREATE_LINEs, kernel_ops §I-K):
+  // open replenish-PO C_OrderLine.qtyordered for the warehouse + open M_MovementLine.movementqty whose
+  // m_locatorto_id is in the warehouse. Commit → re-generate proposes ZERO for the committed products —
+  // the real ReplenishReport's open-order subtraction, no double order. Returns { pid: centiQty }.
+  function pendingInbound(opDb, b3, wh, archivedRows) {
+    var out = {};
+    try {
+      var locWh = {};
+      qa(b3, 'SELECT m_locator_id AS i FROM m_locator WHERE m_warehouse_id=?', wh).forEach(function (l) { locWh[l.i] = 1; });
+      var r = opDb.exec('SELECT gid, op_type, parameters FROM kernel_ops ORDER BY id');
+      var live = (r[0] ? r[0].values : []);
+      // T7-HOST: archived (pre-shard) rows fold FIRST — an open PO older than the shard boundary must
+      // still count as on-order (the no-double-order guard, §T1-SPEC lens.4).
+      var rows = (archivedRows || []).map(function (o) { return [o.gid, o.op_type, o.parameters]; }).concat(live).map(function (v) {
+        var p; try { p = JSON.parse(v[2]); } catch (e) { return null; }
+        p = p && p.params ? p.params : p;
+        return p ? { gid: v[0], p: p } : null;
+      }).filter(function (x) { return !!x; });
+      var poGids = {};
+      rows.forEach(function (x) {
+        if (x.p.op_type === 'CREATE_DOCUMENT' && x.p.table === 'C_Order' && x.p.issotrx === 'N' &&
+            Number(x.p.m_warehouse_id) === Number(wh)) poGids[x.gid] = 1;
+      });
+      rows.forEach(function (x) {
+        if (x.p.op_type === 'CREATE_LINE' && x.p.table === 'C_OrderLine' && poGids[x.gid])
+          out[x.p.m_product_id] = (out[x.p.m_product_id] || 0) + Math.round(Number(x.p.qtyordered || 0) * 100);
+        if (x.p.op_type === 'CREATE_LINE' && x.p.table === 'M_MovementLine' && locWh[x.p.m_locatorto_id])
+          out[x.p.m_product_id] = (out[x.p.m_product_id] || 0) + Math.round(Number(x.p.movementqty || 0) * 100);
+      });
+    } catch (e) {}
+    return out;
+  }
+
+  function suggestAll(b3, opDb, archivedRows) {
     var whs = qa(b3, "SELECT DISTINCT m_warehouse_id AS w FROM m_replenish WHERE replenishtype<>'0'");
-    var pend = logMovements(opDb), out = [];
+    var pend = logMovements(opDb, archivedRows), out = [];
     whs.forEach(function (r) {
       var locs = {};
       qa(b3, 'SELECT m_locator_id AS i FROM m_locator WHERE m_warehouse_id=?', r.w).forEach(function (l) { locs[l.i] = 1; });
       var txns = qa(b3, 'SELECT m_product_id, m_locator_id, movementtype, movementqty FROM m_transaction').filter(function (t) { return locs[t.m_locator_id]; });
+      var inbound = pendingInbound(opDb, b3, r.w, archivedRows);
       var rctx = {
-        replenishRows: qa(b3, "SELECT m_product_id, m_warehouse_id, level_min, level_max, replenishtype FROM m_replenish WHERE m_warehouse_id=? AND replenishtype<>'0'", r.w),
+        // §T1-SPEC core.1: qtybatchsize + m_warehousesource_id now ride the policy row (real m_replenish columns)
+        replenishRows: qa(b3, "SELECT m_product_id, m_warehouse_id, level_min, level_max, replenishtype, qtybatchsize, m_warehousesource_id FROM m_replenish WHERE m_warehouse_id=? AND replenishtype<>'0'", r.w),
         txns: txns,
         reservation: function (pid, so) {
           var x = q1(b3, 'SELECT COALESCE(SUM(qty),0) AS q FROM m_storagereservation WHERE m_product_id=? AND m_warehouse_id=? AND issotrx=?', pid, r.w, so);
-          return Math.round(Number((x && x.q) || 0) * 100);
+          var v = Math.round(Number((x && x.q) || 0) * 100);
+          if (so === 'N') v += (inbound[pid] || 0);              // §T1-SPEC lens.4 pending inbound counts as on-order
+          return v;
         }
       };
       out = out.concat(POS.replenishSuggest(rctx, pend.filter(function (e) { return e.m_warehouse_id === r.w; })));
@@ -327,6 +408,13 @@
     var b3 = cfg.b3, el = cfg.el;
     var pos = q1(b3, 'SELECT * FROM c_pos LIMIT 1');
     if (!pos) { cfg.status('No POS station (c_pos) in this tenant'); return; }
+    // §BUGFIX 2026-07-13 (user report: "shop cart pill does not close when we exited") — the overlay's
+    // native ✕ only tore down #posted-overlay, not the body-level cart float/dock (see the onClose hook
+    // below for the real fix); a stray pair could survive a prior visit. Guard re-open: never stack a
+    // second float/dock on top of a leftover one.
+    ['pos-float-panel', 'pos-dock'].forEach(function (id) {
+      var stale = document.getElementById(id); if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+    });
     var plv = q1(b3, 'SELECT m_pricelist_version_id AS v FROM m_pricelist_version WHERE m_pricelist_id=?', pos.m_pricelist_id);
     var tiles = qa(b3,
       'SELECT k.c_poskey_id, k.m_product_id, p.name, pp.pricestd FROM c_poskey k ' +
@@ -355,20 +443,42 @@
 
     var cart = [];
 
+    // T7 host opt-in (prompts/T7_HOST_WIRING_SPEC.md §Build 3c — Witness: W-T7-HOST): after a commit
+    // lands, nudge the host's shard check on a debounce (the kernel_ops._persistToIdb 2s idiom).
+    // DEFAULT OFF — a host that doesn't inject cfg.maybeShard behaves byte-identically to before.
+    var _shardTimer = null;
+    function maybeShardSoon() {
+      if (!cfg.maybeShard) return;
+      clearTimeout(_shardTimer);
+      _shardTimer = setTimeout(function () {
+        Promise.resolve(cfg.maybeShard()).then(function (r) {
+          if (r && r.sharded) console.log('§POS-SHARD closed seq=' + r.seq + ' archived=' + r.archived + ' hotOps=' + r.hotLen);
+        }).catch(function (e) { console.log('§POS-SHARD check failed: ' + ((e && e.message) || e)); });
+      }, 2000);
+    }
+
     // U-3: track products registered THIS session (for §POS-FIRSTSELL witness)
     var _sessionProductIds = {};  // { [productId]: true }
 
     // ── §P-6 ids on the root elements ──────────────────────────────────────────────────────────
     var wrap = el('div'); wrap.id = 'pos-wrap';
 
-    // ── §D: cart pill (standalone toggle, kept for witness compatibility) ─────────────────────────
-    var payBtn = el('button'); payBtn.className = 'pos-pill-btn'; payBtn.id = 'pos-pill-payment'; payBtn.title = 'Cart / Payment';
-    payBtn.innerHTML = _svgIcon('shoppingCart', 16);
+    // ── §R2-1/§R2-2 (FOLLOW-UP ROUND 2): the top bar shows the RUNNING TOTAL live, not a blank bar.
+    //   [🛒 cart-toggle]  RUNNING TOTAL  …  [scan QR].  Cart icon stays (toggles the pay panel);
+    //   the blank space becomes the live total; the barcode-scan add-item action sits on the RIGHT.
+    var topBar = el('div'); topBar.id = 'pos-top-bar';
+    var payBtn = el('button'); payBtn.className = 'pos-top-btn'; payBtn.id = 'pos-pill-payment'; payBtn.title = 'Cart / Payment — open the pay panel';
+    payBtn.innerHTML = _svgIcon('shoppingCart', 18);
     payBtn.addEventListener('pointerup', function () {
       floatPanel.classList.toggle('open');
       console.log('§POS-FLOAT toggle=' + (floatPanel.classList.contains('open') ? 'open' : 'close'));
     });
-    wrap.appendChild(payBtn);
+    var topTotal = el('div'); topTotal.id = 'pos-top-total'; topTotal.textContent = '0.00';
+    // §R2-2 scan-item (QR) — promoted to the RIGHT of the top bar (the existing scan action).
+    var scanBtn = el('button'); scanBtn.className = 'pos-top-btn'; scanBtn.id = 'pos-pill-scan'; scanBtn.title = 'Scan barcode to add item';
+    scanBtn.innerHTML = _svgIcon('scan', 18);
+    topBar.appendChild(payBtn); topBar.appendChild(topTotal); topBar.appendChild(scanBtn);
+    wrap.appendChild(topBar);
 
     // §P-7 witness (pill count now = 1 standalone, dock items excluded)
     console.log('§POS-PILLS n=1 icons-only=Y');
@@ -384,6 +494,7 @@
       if (same) { var re = POS.ringLine(ctx, pid, same.qty + 1); same.qty = re.qty; same.linenetamt = re.linenetamt; }
       else { line.name = name || ('Product ' + pid); cart.push(line); }
       console.log('§POS-LIVE ring product=' + pid + ' price=' + line.priceactual + ' (sealed master)');
+      _sfx('pos_ring');                                          // §R2-AUDIO ring-item earcon
       renderCart();
       return true;
     }
@@ -448,118 +559,130 @@
     });
     console.log('§POS-ALBUM cards=' + tiles.length + ' imgs=' + _nImgs + ' thumbs=' + _nThumbs + ' placeholders=' + _nPH);
 
-    // ── §D: compact payment panel — rim-top · items · main-row · bp · receipt · repl · rim-bottom ─
+    // ── §R2-3: the pay panel — RIMS RETIRED. A draggable (§R2-4) panel: grab-header · ordered items ·
+    //   partner · ONE single Pay icon on the right (§R2-3) · receipt · replenishment. No orange/green
+    //   rim-edges; the running total + scan live on the top bar now (§R2-1/§R2-2).
     var floatPanel = document.createElement('div'); floatPanel.id = 'pos-float-panel';
 
-    // §D-1 orange top rim = ordered-items tap-target
-    var rimTop = document.createElement('div'); rimTop.className = 'pos-rim pos-rim-top';
-    rimTop.title = 'Ordered items (0)';
-    var cartBox    = document.createElement('div'); cartBox.id = 'pos-float-cart';
-    var itemsBody  = document.createElement('div'); itemsBody.className = 'pos-items-body'; itemsBody.style.display = 'none';
-    var _itemsOpen = false;
+    // §R2-4 grab header — the drag handle (drag idiom ported below); also carries the panel title.
+    var dragHdr = document.createElement('div'); dragHdr.className = 'pos-drag-hdr'; dragHdr.id = 'pos-drag-hdr';
+    dragHdr.innerHTML = '<span class="pos-drag-grip">⠿</span><span>Pay</span>';
+
+    // ordered items list (always visible — no rim toggle)
+    var itemsHdr = document.createElement('div'); itemsHdr.className = 'pos-section-hdr'; itemsHdr.id = 'pos-items-hdr';
+    var cartBox  = document.createElement('div'); cartBox.id = 'pos-float-cart';
+    var itemsBody = document.createElement('div'); itemsBody.className = 'pos-items-body';
     itemsBody.appendChild(cartBox);
-    rimTop.addEventListener('pointerup', function () {
-      _itemsOpen = !_itemsOpen;
-      itemsBody.style.display = _itemsOpen ? '' : 'none';
-      console.log('§POS-DRAWER-ITEMS open=' + _itemsOpen + ' count=' + cart.length);
-    });
 
-    // §D-2 main row: [scan flanker] [total] [$ tender → modal]
-    var mainRow  = document.createElement('div'); mainRow.className = 'pos-main-row';
-    var scanBtn  = document.createElement('button'); scanBtn.className = 'pos-flanker'; scanBtn.id = 'pos-pill-scan'; scanBtn.title = 'Scan barcode to add item';
-    scanBtn.innerHTML = _svgIcon('scan', 20);
-    var totalEl  = document.createElement('div'); totalEl.id = 'pos-float-total'; totalEl.textContent = '0.00';
-    var btn      = document.createElement('button'); btn.id = 'pos-float-tender'; btn.className = 'pos-flanker';
-    btn.innerHTML = _svgIcon('banknote', 20); btn.title = 'Pay · preview receipt';
-    mainRow.appendChild(scanBtn); mainRow.appendChild(totalEl); mainRow.appendChild(btn);
-
-    // §D-2 partner selector (always visible below main row; witness selectOption('#pos-float-bp'))
+    // §D-2 partner selector (witness selectOption('#pos-float-bp')); §R2-5: default a walk-in so Pay works
     var bpSel  = document.createElement('select'); bpSel.id = 'pos-float-bp';
     var bpOpt0 = document.createElement('option'); bpOpt0.value = ''; bpOpt0.textContent = 'walk-in partner…'; bpSel.appendChild(bpOpt0);
     qa(b3, "SELECT c_bpartner_id, name FROM c_bpartner WHERE isactive='Y' ORDER BY name").forEach(function (b) {
       var o = document.createElement('option'); o.value = b.c_bpartner_id; o.textContent = b.name; bpSel.appendChild(o);
     });
-    if (pos.c_bpartnercashtrx_id) bpSel.value = String(pos.c_bpartnercashtrx_id);
+    // §R2-5 default the partner: the POS cash partner if the station names one, else the FIRST active
+    // partner (deterministic, name-ordered — extracted, not invented) so the single Pay icon completes
+    // out of the box. The empty-partner gate silently blocked the old banknote → "Pay stopped working".
+    var _bpSrc = 'none';
+    if (pos.c_bpartnercashtrx_id) { bpSel.value = String(pos.c_bpartnercashtrx_id); if (bpSel.value) _bpSrc = 'cashtrx'; }
+    // §R2-5 default the walk-in partner = 'Standard' (user 2026-06-14); fall back to first active.
+    if (!bpSel.value) {
+      for (var _bi = 0; _bi < bpSel.options.length; _bi++) {
+        if (bpSel.options[_bi].textContent === 'Standard') { bpSel.selectedIndex = _bi; _bpSrc = 'standard'; break; }
+      }
+      if (!bpSel.value && bpSel.options.length > 1) { bpSel.selectedIndex = 1; _bpSrc = 'first-active'; }
+    }
+    console.log('§POS-PARTNER-DEFAULT bp=' + (bpSel.value || 'none') + ' name=' + (bpSel.options[bpSel.selectedIndex] ? bpSel.options[bpSel.selectedIndex].textContent : '?') + ' src=' + _bpSrc);
+
+    // §R2-3 single Pay icon on the right (the ONLY pay control) — fires Complete directly (§R2-5).
+    var payRow = document.createElement('div'); payRow.className = 'pos-pay-row';
+    var btn     = document.createElement('button'); btn.id = 'pos-float-tender'; btn.className = 'pos-pay-icon';
+    btn.innerHTML = _svgIcon('banknote', 22); btn.title = 'Pay — complete the sale';
+    payRow.appendChild(btn);
 
     var receipt  = document.createElement('div'); receipt.id = 'pos-float-receipt';
 
-    // §D-1 green bottom rim = replenishment tap-target
-    var replBox    = document.createElement('div'); replBox.id = 'pos-float-replenish';
-    var replBody   = document.createElement('div'); replBody.className = 'pos-repl-body'; replBody.style.display = 'none';
-    var _replOpen  = false;
-    var rimBottom  = document.createElement('div'); rimBottom.className = 'pos-rim pos-rim-bottom';
-    rimBottom.title = 'Replenishment (0)';
-    replBody.appendChild(replBox);
-    rimBottom.addEventListener('pointerup', function () {
-      _replOpen = !_replOpen;
-      replBody.style.display = _replOpen ? '' : 'none';
-      var replCount = replBox.querySelectorAll('.pos-replenish-row').length;
-      console.log('§POS-DRAWER-REPL open=' + _replOpen + ' count=' + replCount);
-    });
+    // §T1-SPEC lens.1 replenishment section — explicit trigger, staged review, one confirm (no auto-fire)
+    var replHdr  = document.createElement('div'); replHdr.className = 'pos-section-hdr'; replHdr.id = 'pos-repl-hdr';
+    replHdr.textContent = 'Replenishment';
+    var replGen  = document.createElement('button'); replGen.id = 'pos-repl-generate';
+    replGen.innerHTML = _svgIcon('clipboard', 14) + ' Generate Replenishment';
+    var replBox  = document.createElement('div'); replBox.id = 'pos-float-replenish';
+    var replCommit = document.createElement('button'); replCommit.id = 'pos-repl-commit';
+    var replBody = document.createElement('div'); replBody.className = 'pos-repl-body';
+    replBody.appendChild(replGen); replBody.appendChild(replBox); replBody.appendChild(replCommit);
 
-    floatPanel.appendChild(rimTop); floatPanel.appendChild(itemsBody);
-    floatPanel.appendChild(mainRow); floatPanel.appendChild(bpSel);
-    floatPanel.appendChild(receipt); floatPanel.appendChild(replBody);
-    floatPanel.appendChild(rimBottom);
+    floatPanel.appendChild(dragHdr);
+    floatPanel.appendChild(itemsHdr); floatPanel.appendChild(itemsBody);
+    floatPanel.appendChild(bpSel); floatPanel.appendChild(payRow);
+    floatPanel.appendChild(receipt);
+    floatPanel.appendChild(replHdr); floatPanel.appendChild(replBody);
     document.body.appendChild(floatPanel);
 
-    // §D-2 receipt-preview modal — pre-commit: shows lines + total + [QR][OK][Cancel]
-    var payModal  = document.createElement('div'); payModal.id = 'pos-pay-modal';
-    var payCard   = document.createElement('div'); payCard.className = 'pos-pay-card';
-    var payTitle  = document.createElement('div'); payTitle.className = 'pos-pay-card-title'; payTitle.textContent = 'Receipt preview';
-    var payLines  = document.createElement('div'); payLines.className = 'pos-float-cart'; payLines.id = 'pos-pay-lines';
-    var payTotEl  = document.createElement('div'); payTotEl.className = 'pos-pay-preview-total';
-    var payDivider = document.createElement('hr'); payDivider.className = 'pos-pay-divider';
-    var payActions = document.createElement('div'); payActions.className = 'pos-pay-action-row';
-    var posPayQrBtn  = document.createElement('button'); posPayQrBtn.className = 'pos-pay-action-btn'; posPayQrBtn.id = 'pos-pay-qr-btn';
-    posPayQrBtn.innerHTML = _svgIcon('qrCode', 16) || 'QR'; posPayQrBtn.title = 'Show payment QR (DEMO)';
-    var posPayOkBtn  = document.createElement('button'); posPayOkBtn.className = 'pos-pay-action-btn'; posPayOkBtn.id = 'pos-pay-ok';
-    posPayOkBtn.innerHTML = _svgIcon('check', 16) + ' OK'; posPayOkBtn.title = 'Manual pay → Complete';
-    var posPayCancel = document.createElement('button'); posPayCancel.className = 'pos-pay-action-btn'; posPayCancel.id = 'pos-pay-cancel';
-    posPayCancel.innerHTML = _svgIcon('xmark', 16) + ' Cancel'; posPayCancel.title = 'Back to cart';
-    var posPayQrArea = document.createElement('div'); posPayQrArea.id = 'pos-pay-qr-area';
-    var posPayQrCaption = document.createElement('div'); posPayQrCaption.id = 'pos-pay-qr-caption'; posPayQrCaption.textContent = 'DEMO ONLY — scan to pay';
-    posPayQrArea.appendChild(posPayQrCaption);
-    payActions.appendChild(posPayQrBtn); payActions.appendChild(posPayOkBtn); payActions.appendChild(posPayCancel);
-    payCard.appendChild(payTitle); payCard.appendChild(payLines); payCard.appendChild(payTotEl);
-    payCard.appendChild(payDivider); payCard.appendChild(payActions); payCard.appendChild(posPayQrArea);
-    payModal.appendChild(payCard);
-    document.body.appendChild(payModal);
+    // §R2-4 draggable — ported from the established viewer _makeDraggable idiom (measure.js): grab the
+    // header strip, pointer-capture, translate the panel. Not invented; the same pointer-drag pattern.
+    (function _makePanelDraggable(panel, handle) {
+      var sx, sy, ox, oy, dragging = false, pid = null;
+      handle.style.cursor = 'grab';
+      handle.addEventListener('pointerdown', function (e) {
+        var r = panel.getBoundingClientRect();
+        ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY; dragging = true; pid = e.pointerId;
+        panel.style.right = 'auto'; panel.style.bottom = 'auto';
+        panel.style.left = ox + 'px'; panel.style.top = oy + 'px';
+        try { handle.setPointerCapture(pid); } catch (er) {}
+        handle.style.cursor = 'grabbing'; e.preventDefault();
+      });
+      handle.addEventListener('pointermove', function (e) {
+        if (!dragging) return;
+        var nx = ox + (e.clientX - sx), ny = oy + (e.clientY - sy);
+        nx = Math.max(0, Math.min(nx, window.innerWidth - 40));
+        ny = Math.max(0, Math.min(ny, window.innerHeight - 40));
+        panel.style.left = nx + 'px'; panel.style.top = ny + 'px';
+      });
+      function _end() { if (!dragging) return; dragging = false; handle.style.cursor = 'grab'; try { handle.releasePointerCapture(pid); } catch (er) {} console.log('§POS-FLOAT-DRAG moved=Y'); }
+      handle.addEventListener('pointerup', _end);
+      handle.addEventListener('pointercancel', _end);
+    })(floatPanel, dragHdr);
 
-    posPayCancel.addEventListener('click', function () { payModal.classList.remove('active'); });
-    posPayQrBtn.addEventListener('click', function () {
-      posPayQrArea.style.display = posPayQrArea.style.display === 'block' ? 'none' : 'block';
-      if (posPayQrArea.style.display === 'block' && !posPayQrArea.querySelector('canvas,svg,img')) {
-        var demoUrl = window.location.origin + '?pos-pay=DEMO-ONLY';
-        if (window.qrcode) {
-          try { var qr = window.qrcode(4, 'M'); qr.addData(demoUrl); qr.make(); posPayQrArea.insertAdjacentHTML('afterbegin', qr.createSvgTag(3, 2)); }
-          catch (e) { posPayQrArea.insertAdjacentText('afterbegin', demoUrl); }
-        } else { posPayQrArea.insertAdjacentText('afterbegin', 'DEMO: ' + demoUrl); }
-      }
-    });
+    // §R2-3/§R2-5: the receipt-preview modal is RETIRED — the single Pay icon (#pos-float-tender)
+    // completes the sale directly (buildSaleGroup → commitGroup → receipt). The DEMO payment QR still
+    // lives on the final receipt overlay (§P-11). The commit ENGINE path is byte-identical (§POS-CENT).
 
     // §P-12 deliver-later door (WH_POS_PICK_LANE W-1) — DICTIONARY-GATED
     var dtSO = q1(b3, "SELECT * FROM c_doctype WHERE docsubtypeso='SO' AND isactive='Y' ORDER BY c_doctype_id LIMIT 1");
     var dlBtn = null;
     if (dtSO) {
       dlBtn = document.createElement('button'); dlBtn.id = 'pos-float-deliverlater';
-      dlBtn.className = 'pos-dock-item'; dlBtn.title = 'Deliver later · pick at warehouse';
-      dlBtn.innerHTML = _svgIcon('package', 18);
+      dlBtn.className = 'pos-dock-item'; dlBtn.title = 'Deliver later · pick at the warehouse walk';
+      // §R2-6 3rd dock icon = the WH WALK route glyph (NOT an invented icon) — it leads to the walk (new tab).
+      dlBtn.innerHTML = _svgIcon('route', 18);
     }
     console.log('§POS-DELIVERLATER door=' + (dtSO ? 'on' : 'off') +
       (dtSO ? ' doctype=' + dtSO.c_doctype_id + ' ship=' + dtSO.c_doctypeshipment_id : '') +
       ' (dictionary-gated docsubtypeso=SO)');
 
+    // §BUGFIX 2026-07-13 (user report: "shop cart pill does not close when we exited") — root cause:
+    // the overlay's native ✕ only tore down #posted-overlay; the cart float panel + ⋯ dock live at
+    // document.body level (outside the overlay) and were left floating over iDempiere.html. Fix: pass
+    // this as the overlay's onClose (below, cfg.overlay(...)) so EVERY close path (✕ tap, back-gesture)
+    // disposes them too — one teardown, reused by the dock Home button as well (it now just clicks the
+    // overlay's own ✕ so the whole app has exactly one "POS is closed" moment).
+    function _disposePosChrome() {
+      [floatPanel, dock].forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+      console.log('§POS-HOME closed dispose=float+dock');
+    }
     // §D-3 ⋯ dock — home · import · receipt · deliver-later (data-gated) — reveal-up
     var homeBtn   = document.createElement('button'); homeBtn.className = 'pos-dock-item'; homeBtn.title = 'Close POS';
     homeBtn.innerHTML = _svgIcon('home', 18);
     homeBtn.addEventListener('pointerup', function () {
-      var ov = document.getElementById('posted-overlay'); if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
-      console.log('§POS-HOME closed');
+      // trigger the SAME close the overlay's own ✕ uses, so onClose (→ _disposePosChrome) always fires.
+      var x = document.querySelector('#posted-overlay .posted-ov-x');
+      if (x) x.click(); else _disposePosChrome();   // fallback if the overlay DOM ever changes shape
     });
     var importBtn = document.createElement('button'); importBtn.className = 'pos-dock-item'; importBtn.id = 'pos-pill-import';
     importBtn.title = 'Register a new product (snap · scan · price)';
-    importBtn.innerHTML = _svgIcon('upload', 18) || '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+    // §R2-6 2nd dock icon = register-a-NEW-product → a clear (+) plus glyph (was the ambiguous upload tray).
+    importBtn.innerHTML = _svgIcon('plus', 18) || '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
     var rcptBtn   = document.createElement('button'); rcptBtn.className = 'pos-dock-item'; rcptBtn.id = 'pos-pill-receipt'; rcptBtn.title = 'View last receipt';
     rcptBtn.innerHTML = _svgIcon('doc', 18); rcptBtn.style.display = 'none';
     rcptBtn.addEventListener('click', function () { if (_lastRcptArgs) _showReceipt.apply(null, _lastRcptArgs); });
@@ -572,12 +695,14 @@
     dock.appendChild(dockItems); dock.appendChild(dockTrigger);
     document.body.appendChild(dock);
 
+    // PILL CLOSE DECREE (user decree 2026-07-02, witness_pill_canonical W2 — DECIDED for POS in
+    // FABLE5_FOLLOWUP_2026-07-04 §Item 3, Witness: W-POS-PILLBAR §PB-DECREE): the ⋯ dock is a pill
+    // RAIL in miniature, so the universal "no outside-tap close" decree governs it even though it is
+    // not PillBuilder-hosted — ONLY the deliberate ⋯ tap toggles it. Lens overlays with their own
+    // ✕/Done affordances (scan, import, receipt, float panel) are PANELS, not rails — decree-exempt.
     dockTrigger.addEventListener('click', function () {
       var open = dockItems.classList.toggle('open');
-      if (!open) return;
-      document.addEventListener('pointerdown', function _close(ev) {
-        if (!dock.contains(ev.target)) { dockItems.classList.remove('open'); document.removeEventListener('pointerdown', _close); }
-      });
+      console.log('§POS-DOCK toggle=' + (open ? 'open' : 'close') + ' (decree: only the ⋯ tap toggles)');
     });
 
     // swipe-down to dismiss (touch)
@@ -606,58 +731,161 @@
         row.appendChild(lbl); row.appendChild(amt); cartBox.appendChild(row);
       });
       var tot = cart.length ? POS.cartTotal(cart) : '0.00';
-      totalEl.textContent = tot;
+      // §R2-1 the running total lives on the TOP BAR now (live as items ring)
+      topTotal.textContent = tot;
       // keep scan overlay total live
       var st = document.getElementById('pos-scan-total'); if (st) st.textContent = tot;
-      // §D-1 update orange rim title with live count
-      rimTop.title = 'Ordered items (' + cart.length + ')';
+      // §R2-3 ordered-items section header carries the live count (no rim)
+      itemsHdr.textContent = 'Ordered items (' + cart.length + ')';
     }
 
     function vendorOf(pid) {
       return q1(b3, "SELECT c_bpartner_id, pricepo FROM m_product_po WHERE m_product_id=? AND iscurrentvendor='Y' ORDER BY m_product_id LIMIT 1", pid) || null;
     }
 
-    function renderReplenish() {
-      replBox.textContent = '';
-      var sugg = suggestAll(b3, cfg.opDb);
-      var hdr = el('div', null, '⟳ Replenishment (' + sugg.length + ' suggestion(s))');
-      hdr.style.cssText = 'font-weight:bold;color:#8fd;margin-bottom:4px';
-      replBox.appendChild(hdr);
+    // ── §T1-SPEC lens.1-.3 staged Generate Replenishment — Witness: W-REPLEN-STAGE + W-REPLEN-LIVE ──
+    // The pre-§T1 drawer (auto-fire on open + after every sale, one tap = one committed PO, no review)
+    // is retired: propose → stage → review/edit → confirm — the real ReplenishReport shape.
+    var staged = [];               // transient client-side staging; real ops ONLY on Confirm
+    var replCommitting = false;    // in-flight guard — no double-commit
+
+    function refreshCommitBtn() {
+      var picked = staged.filter(function (r) { return r.include && r.qty > 0 && (r.move || r.vendor); });
+      replCommit.style.display = staged.length ? 'block' : 'none';
+      replCommit.disabled = replCommitting || !picked.length;
+      replCommit.textContent = 'Confirm ' + picked.length + ' line' + (picked.length === 1 ? '' : 's');
+      return picked;
+    }
+
+    function clearStage() {
+      staged = []; replBox.textContent = ''; refreshCommitBtn();
+      replHdr.textContent = 'Replenishment';
+    }
+
+    // T7-HOST (T7_HOST_WIRING_SPEC §Build 3b): the replenish fold walks the FULL history — lazily
+    // fetch pre-shard ops first (panel-open path — async is fine HERE, never on the Pay path). A
+    // refused archive (tamper/missing) folds hot-only and SAYS so — honest, never silently thin.
+    function generateReplenish() {
+      return Promise.resolve(cfg.archivedOps ? cfg.archivedOps() : { ok: true, ops: [] }).then(function (arch) {
+        if (arch && arch.ok === false) {
+          console.log('§POS-REPLENISH archive REFUSED why=' + arch.why + ' seq=' + arch.seq + ' — folding hot log ONLY');
+          cfg.status('History archive unreadable (' + arch.why + ') — replenishment from the hot log only');
+        }
+        return _generateReplenishNow((arch && arch.ok && arch.ops) || []);
+      });
+    }
+    function _generateReplenishNow(archivedRows) {
+      staged = []; replBox.textContent = '';
+      var sugg = suggestAll(b3, cfg.opDb, archivedRows);
       sugg.forEach(function (s) {
         var nm = q1(b3, 'SELECT name FROM m_product WHERE m_product_id=?', s.m_product_id);
-        var vendor = vendorOf(s.m_product_id);
-        var row = el('button', 'pos-replenish-row',
-          '· ' + (nm ? nm.name : s.m_product_id) + ' → order ' + s.qtytoorder +
-          ' (wh ' + s.m_warehouse_id + ')' + (vendor ? ' ← ' + vendor.c_bpartner_id : ' [no vendor]'));
-        row.style.cssText = 'display:block;width:100%;text-align:left;margin:2px 0;padding:4px 6px;border-radius:4px;' +
-          'border:1px solid ' + (vendor ? '#2a6' : '#553') + ';background:' + (vendor ? '#0b1f17' : '#1a1209') +
-          ';color:' + (vendor ? '#cfe' : '#987') + ';cursor:' + (vendor ? 'pointer' : 'default') + ';font-size:11px';
-        if (vendor) {
-          row.addEventListener('click', function () {
-            var enriched = [Object.assign({}, s, { c_bpartner_id: vendor.c_bpartner_id, pricepo: vendor.pricepo })];
-            var poOps = POS.buildReplenishPO(s.m_warehouse_id, enriched);
-            cfg.KO.commitGroup(cfg.opDb, poOps.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
-              .then(function (res) {
-                return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
-                  return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
-                }).then(function (cv) {
-                  console.log('§POS-REPLENISH-PO product=' + s.m_product_id + ' qty=' + s.qtytoorder +
-                    ' vendor=' + vendor.c_bpartner_id + ' pricepo=' + vendor.pricepo +
-                    ' newVerbs=[] gid=' + res.gid + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N'));
-                  cfg.status('PO created · product ' + s.m_product_id + ' qty ' + s.qtytoorder + ' vendor ' + vendor.c_bpartner_id);
-                  renderReplenish();
-                });
-              })
-              .catch(function (e) { cfg.status('PO commit failed: ' + e); console.log('§POS-REPLENISH-PO FAIL ' + e); });
-          });
-        }
+        var vendor = s.m_warehousesource_id ? null : vendorOf(s.m_product_id);
+        var move = !!s.m_warehousesource_id;
+        var entry = { s: s, include: move || !!vendor, qty: s.qtytoorder, vendor: vendor, move: move };
+        staged.push(entry);
+
+        var row = document.createElement('div'); row.className = 'pos-repl-stage-row';
+        var chk = document.createElement('input'); chk.type = 'checkbox'; chk.className = 'pos-repl-include';
+        chk.checked = entry.include; chk.disabled = !move && !vendor;
+        var name = el('span', 'pos-repl-name', (nm ? nm.name : s.m_product_id) + ' · wh ' + s.m_warehouse_id +
+          (s.qtybatchsize ? ' · batch ' + s.qtybatchsize : ''));
+        name.title = 'product ' + s.m_product_id;
+        var route = el('span', 'pos-repl-route',
+          move ? 'Move ← wh ' + s.m_warehousesource_id
+               : (vendor ? 'PO → ' + vendor.c_bpartner_id : 'no vendor'));
+        if (move) route.classList.add('move');
+        var qty = document.createElement('input'); qty.type = 'number'; qty.className = 'pos-repl-qty';
+        qty.min = '0'; qty.step = s.qtybatchsize ? String(s.qtybatchsize) : '1';
+        qty.value = String(s.qtytoorder); qty.disabled = !move && !vendor;
+        row.appendChild(chk); row.appendChild(name); row.appendChild(route); row.appendChild(qty);
+        if (!move && !vendor) { row.classList.add('no-vendor'); entry.include = false; chk.checked = false; }
+
+        chk.addEventListener('change', function () {
+          entry.include = chk.checked; row.classList.toggle('excluded', !chk.checked);
+          console.log('§POS-REPLENISH-EDIT product=' + s.m_product_id + ' include=' + chk.checked + ' qty=' + entry.qty);
+          refreshCommitBtn();
+        });
+        qty.addEventListener('input', function () {
+          entry.qty = Math.max(0, Number(qty.value) || 0);
+          console.log('§POS-REPLENISH-EDIT product=' + s.m_product_id + ' include=' + entry.include + ' qty=' + entry.qty);
+          refreshCommitBtn();
+        });
         replBox.appendChild(row);
       });
-      // §D-1 update green rim title with live count
-      rimBottom.title = 'Replenishment (' + sugg.length + ')';
-      console.log('§POS-LIVE-REPLENISH suggestions=' + sugg.length + ' (suggest-by-default; PO via buildDoc on tap)');
+      if (!sugg.length) {
+        var empty = el('div', '', 'Nothing to replenish — levels are above min / already on order.');
+        empty.id = 'pos-repl-empty'; replBox.appendChild(empty);
+      }
+      var nMove = staged.filter(function (r) { return r.move; }).length;
+      var nBatch = staged.filter(function (r) { return !!r.s.qtybatchsize; }).length;
+      replHdr.textContent = 'Replenishment (' + sugg.length + ' staged)';
+      refreshCommitBtn();
+      console.log('§POS-REPLENISH-GEN suggestions=' + sugg.length + ' po=' + (sugg.length - nMove) +
+        ' moves=' + nMove + ' batchRounded=' + nBatch + ' (staged for review — nothing committed)');
       return sugg;
     }
+
+    // pick a warehouse's locator the way the seed itself routes (IsDefault first — extracted, not invented)
+    function locatorOf(wh) {
+      var l = q1(b3, "SELECT m_locator_id AS i FROM m_locator WHERE m_warehouse_id=? ORDER BY CASE WHEN isdefault='Y' THEN 0 ELSE 1 END, m_locator_id LIMIT 1", Number(wh));
+      return l ? l.i : null;
+    }
+
+    function commitStaged() {
+      if (replCommitting) return;
+      var picked = refreshCommitBtn();
+      if (!picked.length) { cfg.status('Nothing staged to commit'); return; }
+      // §T1-SPEC lens.3 route + build: PO per (warehouse, vendor) + Move per source warehouse — ONE signed group
+      var enriched = picked.map(function (r) {
+        return Object.assign({}, r.s, { qtytoorder: r.qty, c_bpartner_id: r.vendor ? r.vendor.c_bpartner_id : null });
+      });
+      var routed = POS.routeReplenishment(enriched);
+      var ops = [], nPo = 0, nMv = 0;
+      var poGroups = {};
+      routed.po.forEach(function (s) {
+        var k = s.m_warehouse_id + ':' + s.c_bpartner_id;
+        (poGroups[k] = poGroups[k] || []).push(s);
+      });
+      Object.keys(poGroups).sort().forEach(function (k) {
+        var lines = poGroups[k];
+        ops = ops.concat(POS.buildReplenishPO(lines[0].m_warehouse_id, lines, lines[0].c_bpartner_id)); nPo++;
+      });
+      Object.keys(routed.moves).sort().forEach(function (src) {
+        var lines = routed.moves[src];
+        ops = ops.concat(POS.buildReplenishMove({
+          m_warehousesource_id: Number(src),
+          locatorFrom: locatorOf(src), locatorTo: locatorOf(lines[0].m_warehouse_id)
+        }, lines)); nMv++;
+      });
+      replCommitting = true; refreshCommitBtn();
+      cfg.KO.commitGroup(cfg.opDb, ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
+        .then(function (res) {
+          // T6: commitGroup RESOLVES {committed:false} on torn-group/rate-reject/id-collision — it does
+          // NOT reject. Guard it or a lost group reports as success (silent loss, even in the §-log).
+          if (!res || !res.committed) {
+            replCommitting = false; refreshCommitBtn();
+            console.log('§POS-REPLENISH-COMMIT committed=N reason=' + ((res && res.reason) || 'unknown') + ' — NOTHING committed');
+            cfg.status('Replenishment NOT committed: ' + ((res && res.reason) || 'group rejected'));
+            return;
+          }
+          return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
+            return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
+          }).then(function (cv) {
+            console.log('§POS-REPLENISH-COMMIT pos=' + nPo + ' moves=' + nMv + ' lines=' + picked.length +
+              ' ops=' + ops.length + ' newVerbs=[] gid=' + res.gid + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N'));
+            cfg.status('Replenishment committed · ' + nPo + ' PO / ' + nMv + ' move · ' + picked.length + ' lines');
+            replCommitting = false; clearStage();
+            maybeShardSoon();          // T7-HOST: debounced shard check after the replenish group
+          });
+        })
+        .catch(function (e) {
+          replCommitting = false; refreshCommitBtn();
+          cfg.status('Replenishment commit failed: ' + e); console.log('§POS-REPLENISH-COMMIT FAIL ' + e);
+        });
+    }
+
+    replGen.addEventListener('click', generateReplenish);
+    replCommit.addEventListener('click', commitStaged);
 
     // ── §P-11 receipt overlay ──────────────────────────────────────────────────────────────────
     var _rcptOv = null;
@@ -690,7 +918,7 @@
           var qr = window.qrcode(10, 'M'); qr.addData(rcptUrl); qr.make(); ov.qrEl.innerHTML = qr.createSvgTag(3, 2);
         } catch (e) { ov.qrEl.textContent = rcptUrl; }
       } else {
-        var a = document.createElement('a'); a.href = rcptUrl; a.style.cssText = 'color:#4dcc88;font-size:11px;word-break:break-all'; a.textContent = rcptUrl;
+        var a = document.createElement('a'); a.href = rcptUrl; a.style.cssText = 'color:#5fd08a;font-size:11px;word-break:break-all'; a.textContent = rcptUrl;
         ov.qrEl.appendChild(a);
       }
       console.log('§POS-RECEIPT orderId=' + orderId + ' grandTotal=' + grandTotal + ' chainOk=' + chainOk + ' linesN=' + saleCart.length);
@@ -910,7 +1138,8 @@
 
       function priorCreateCount() {
         var r = cfg.opDb.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type='CRUD_CREATE'");
-        return (r[0] && Number(r[0].values[0][0])) || 0;
+        // T7-HOST (§T7-COUNT): + the pre-shard count — the register PK band must not restart post-shard.
+        return ((r[0] && Number(r[0].values[0][0])) || 0) + _archivedOpCount(cfg.opDb, 'CRUD_CREATE');
       }
 
       return {
@@ -1037,7 +1266,7 @@
         barcodeInput.placeholder = 'Barcode / UPC — scan or type + Enter';
         ie.body.appendChild(barcodeInput);
 
-        var scanHint = _buildDyn('div', ''); scanHint.style.cssText = 'color:#8fd;font-size:11px;margin-top:6px;';
+        var scanHint = _buildDyn('div', ''); scanHint.style.cssText = 'color:#cdd6e4;font-size:11px;margin-top:6px;';
         var hasBD = typeof BarcodeDetector !== 'undefined';
         if (hasBD) {
           scanHint.textContent = 'BarcodeDetector active — point camera at barcode OR type above.';
@@ -1127,6 +1356,12 @@
 
         cfg.KO.commitGroup(cfg.opDb, r.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
           .then(function (res) {
+            // T6: guard {committed:false} — a rejected group must not report as a completed sale.
+            if (!res || !res.committed) {
+              console.log('§POS-SALE committed=N reason=' + ((res && res.reason) || 'unknown') + ' — sale NOT recorded');
+              cfg.status('Sale NOT completed: ' + ((res && res.reason) || 'group rejected'));
+              return;
+            }
             // store full-res blob in ImgStore if available
             if (_state.imageThumb && _state.imageKey && window.ImgStore && typeof window.ImgStore.put === 'function') {
               try {
@@ -1146,6 +1381,7 @@
             console.log('§POS-IMPORT registered productId=' + r.productId + ' barcode=' + _state.barcode +
               ' price=' + priceStr + ' hasPhoto=' + (!!_state.imageThumb) +
               ' gid=' + res.gid + ' ops=' + res.ids.length);
+            maybeShardSoon();          // T7-HOST: debounced shard check after the register group
             _closeImport();
           })
           .catch(function (e) {
@@ -1196,33 +1432,25 @@
     });
 
     // ── §D-2 tender flanker → opens receipt-preview modal ─────────────────────────────────────────
+    // ── §R2-3/§R2-5 single Pay icon = Complete the sale DIRECTLY (buildSaleGroup → commitGroup →
+    //   receipt). No preview modal. The partner is defaulted (§R2-5) so it works out of the box; the
+    //   empty-partner gate that silently blocked the old banknote ("Pay stopped working") is fixed. ──
     btn.addEventListener('click', function () {
-      if (!cart.length) { cfg.status('Cart is empty'); return; }
-      if (!bpSel.value) { cfg.status('Pick the walk-in partner first'); return; }
-      // populate preview lines
-      payLines.textContent = '';
-      cart.forEach(function (c) {
-        var row = document.createElement('div'); row.className = 'pos-float-cart-line';
-        var nm = document.createElement('span'); nm.textContent = c.qty + ' × ' + c.name;
-        var amt = document.createElement('span'); amt.textContent = c.linenetamt;
-        row.appendChild(nm); row.appendChild(amt); payLines.appendChild(row);
-      });
-      payTotEl.textContent = POS.cartTotal(cart);
-      posPayQrArea.style.display = 'none';
-      payModal.classList.add('active');
-    });
-
-    // ── Complete handler (wired to #pos-pay-ok inside preview modal) ──────────────────────────────
-    posPayOkBtn.addEventListener('click', function () {
-      payModal.classList.remove('active');
-      if (!cart.length) { cfg.status('Cart is empty'); return; }
-      if (!bpSel.value) { cfg.status('Pick the walk-in partner first (seed has no BPartnerCashTrx on c_pos)'); return; }
+      _sfx('pos_pay');                                           // §R2-AUDIO pay earcon (guarded, no-op if SFX off/absent)
+      if (!cart.length) { cfg.status('Cart is empty'); console.log('§POS-PAY refused reason=empty-cart'); return; }
+      if (!bpSel.value) { cfg.status('Pick the walk-in partner first (seed has no BPartnerCashTrx on c_pos)'); console.log('§POS-PAY refused reason=no-partner'); return; }
       var saleCart = cart.map(function (c) { return Object.assign({}, c); }); // snapshot for receipt
       var ids = nextIds(cfg.opDb);
       var g = POS.buildSaleGroup(ctx, cart, { orderId: ids.orderId, inoutId: ids.inoutId, invoiceId: ids.invoiceId, c_bpartner_id: Number(bpSel.value) });
       if (!g.ok) { cfg.status('refused: ' + g.reason); console.log('§POS-LIVE complete REFUSED reason=' + g.reason); return; }
       cfg.KO.commitGroup(cfg.opDb, g.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
         .then(function (res) {
+          // T6: commitGroup RESOLVES {committed:false} (torn/rate/id-collision) — guard or a lost sale reports success.
+          if (!res || !res.committed) {
+            console.log('§POS-SALE committed=N reason=' + ((res && res.reason) || 'unknown') + ' — sale NOT recorded');
+            cfg.status('Sale NOT completed: ' + ((res && res.reason) || 'group rejected'));
+            return;
+          }
           return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
             return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
           }).then(function (cv) {
@@ -1239,12 +1467,14 @@
             var consume = g.ops.filter(function (o) { return o.op_type === 'CONSUME'; });
             if (consume.length) console.log('§POS-BACKFLUSH parent=' + g.soLines[0].m_product_id + ' components=' + consume.length + ' consumed=Y sameGroup=Y');
             console.log('§POS-MOBILE cols=3 panel=float total=large');
+            _sfx('pos_complete');                               // §R2-AUDIO sale-complete earcon
             // §P-11 show receipt + enable receipt pill
             _lastRcptArgs = [saleCart, ids.orderId, grandTotal, res.gid, chainOk];
             _showReceipt(saleCart, ids.orderId, grandTotal, res.gid, chainOk);
             rcptBtn.style.display = '';
             receipt.textContent = '✓ ' + grandTotal + ' tendered · order ' + ids.orderId + ' · group ' + String(res.gid).slice(0, 8) + '… · signed=' + chainOk;
-            cart = []; renderCart(); renderReplenish();
+            cart = []; renderCart();   // §T1-SPEC lens.1: replenishment no longer auto-fires after a sale
+            maybeShardSoon();          // T7-HOST: the ~5k-op cliff check rides every sale (debounced)
           });
         })
         .catch(function (e) { cfg.status('commit failed: ' + e); console.log('§POS-LIVE commit FAIL ' + e); });
@@ -1268,6 +1498,12 @@
       if (!g.ok) { cfg.status('refused: ' + g.reason); console.log('§POS-DELIVERLATER REFUSED reason=' + g.reason); return; }
       cfg.KO.commitGroup(cfg.opDb, g.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
         .then(function (res) {
+          // T6: commitGroup RESOLVES {committed:false} (torn/rate/id-collision) — guard or a lost sale reports success.
+          if (!res || !res.committed) {
+            console.log('§POS-SALE committed=N reason=' + ((res && res.reason) || 'unknown') + ' — sale NOT recorded');
+            cfg.status('Sale NOT completed: ' + ((res && res.reason) || 'group rejected'));
+            return;
+          }
           return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
             return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
           }).then(function (cv) {
@@ -1311,6 +1547,7 @@
               var whUrl = (window.location.href.split('/erp/')[0] || '..') + '/viewer/viewer.html?db=../buildings/warehouse_gardenworld.db';
               window.open(whUrl, '_blank');
               console.log('§POS-DELIVERLATER walk-tab=opened url=' + whUrl);
+              maybeShardSoon();        // T7-HOST: debounced shard check after the deliver-later group
             });
           });
         })
@@ -1319,16 +1556,22 @@
 
     // station info inside the items body (visible when items drawer is open)
     var stationInfo = document.createElement('div');
-    stationInfo.style.cssText = 'color:#6a9;font-size:11px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #1a3d24';
+    stationInfo.style.cssText = 'color:#9aa4b8;font-size:11px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,0.08)';
     stationInfo.textContent = pos.name + ' · wh ' + pos.m_warehouse_id + ' · pricelist v' + plv.v;
     itemsBody.insertBefore(stationInfo, cartBox);
 
     renderCart();
-    cfg.overlay('POS — ' + pos.name, wrap);
+    cfg.overlay('POS — ' + pos.name, wrap, _disposePosChrome);
     console.log('§POS-LIVE open station=' + pos.c_pos_id + ' tiles=' + tiles.length + ' priced=' + tiles.length + ' handAuthored=0');
-    renderReplenish();
+    // §T1-SPEC lens.1: no auto-fire on open — replenishment is generated on the explicit button
+    console.log('§POS-REPLENISH-IDLE trigger=#pos-repl-generate (staged review; nothing proposed until asked)');
   }
 
   root.PosLens = { open: open };
+  // node-witness seam (W-T7-HOST — prompts/T7_HOST_WIRING_SPEC.md): the shard-aware pure folds only;
+  // open() stays DOM-bound and untestable headless by design.
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { open: open, _t7: { nextIds: nextIds, logMovements: logMovements, pendingInbound: pendingInbound } };
+  }
   console.log('§POS-LENS loaded (dumb terminal — record, pay, send; the fold does the rest)');
 })(typeof window !== 'undefined' ? window : this);

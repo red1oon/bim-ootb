@@ -1,0 +1,89 @@
+{
+ "recorded": "2026-07-30",
+ "commit": "pre-fix origin/main",
+ "cap": {
+  "sceneMeshTotal": 3225,
+  "visibleMeshCount": 3225,
+  "anchorMeshCount": 0,
+  "anchorsAllInvisible": true,
+  "bomLeaves": 3342,
+  "rays": [
+   {
+    "guid": "1A9aTEU4z9SwaqEUwI8Lx4",
+    "dir": "down",
+    "hits": [
+     1238,
+     1238,
+     2974
+    ]
+   },
+   {
+    "guid": "1A9aTEU4z9SwaqEUwI8Lx4",
+    "dir": "+x",
+    "hits": [
+     3023,
+     3023,
+     1522
+    ],
+    "rawAnchorHits": 0
+   },
+   {
+    "guid": "13hN5zL1L2fftXqB_Ac_WZ",
+    "dir": "down",
+    "hits": [
+     2877,
+     2877,
+     1927
+    ]
+   },
+   {
+    "guid": "13hN5zL1L2fftXqB_Ac_WZ",
+    "dir": "+x",
+    "hits": [
+     375,
+     375,
+     2706
+    ],
+    "rawAnchorHits": 0
+   },
+   {
+    "guid": "0FdLbmS_r6Ch8VPitxry03",
+    "dir": "down",
+    "hits": [
+     44,
+     44,
+     1203
+    ]
+   },
+   {
+    "guid": "0FdLbmS_r6Ch8VPitxry03",
+    "dir": "+x",
+    "hits": [
+     47,
+     47,
+     1367
+    ],
+    "rawAnchorHits": 0
+   }
+  ],
+  "gm": {
+   "checked": 3225,
+   "flagged": 165,
+   "noBand": 0
+  },
+  "saveBaselineElements": 3225,
+  "xedge": {
+   "abuts": 9817,
+   "anchored": 18635,
+   "spans": 8983,
+   "fills": 79,
+   "aggregates": 0,
+   "datums": 801
+  },
+  "reach": 9,
+  "fillsBothEnds": 74,
+  "anchorFids": []
+ },
+ "paintTotal": "3418",
+ "arcElements": "3225"
+}

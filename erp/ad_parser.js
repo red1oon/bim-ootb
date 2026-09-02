@@ -37,6 +37,25 @@
   var _winById = {};        // windowId(Number) -> getWindow-shaped object
   var _fieldsByTable = {};  // tableName -> getFields-shaped fields[]
 
+  // ── Reflexive self-edit tip-source (FRONTEND_LANE_MASTER §PENDING WITNESS, W-AD-SELFEDIT-LIVE) ──
+  // The AD reads below normally read RAW from the loaded ad_seed db. A LIVE dictionary edit (✎ Edit-mode
+  // on AD_Field/AD_Window/AD_Tab) lands as a signed CRUD_UPDATE in the crud overlay's SEPARATE sidecar
+  // db, so a refold would not see it. The host (idempiere.html) injects a tip-source that overlays those
+  // signed edits via the SAME CrudOverlay.listTip verb the engine witness (W-AD-SELFEDIT) used — so the
+  // form/menu rebuilds = re-read-the-dictionary, NOT recompile. Default null → reads stay pure (engine
+  // witnesses + pre-login unaffected). NON-INVENT: the tip only carries what a signed op actually wrote.
+  var _tipSource = null;
+  function setTipSource(fn) { _tipSource = (typeof fn === 'function') ? fn : null; }
+  // _applyTip(table, pkCol, rawRows) → rows with the sidecar's latest-wins edits overlaid (or rawRows on
+  // any miss/throw — the dictionary read must never break because the overlay is absent/erroring).
+  function _applyTip(table, pkCol, rawRows) {
+    if (!_tipSource || !rawRows || !rawRows.length) return rawRows;
+    try {
+      var out = _tipSource(table, pkCol, rawRows);
+      return (out && out.length) ? out : rawRows;
+    } catch (e) { console.log('§AD_PARSER tip-miss table=' + table + ' err=' + e.message); return rawRows; }
+  }
+
   function _mapField(mf) {
     var ref = Number(mf.ref) || 10;
     return {
@@ -197,10 +216,12 @@
       return null;
     }
 
-    var row = winR[0].values[0];
+    var wc = winR[0].columns, wraw = {};
+    for (var wi = 0; wi < wc.length; wi++) wraw[wc[wi]] = winR[0].values[0][wi];
+    wraw = _applyTip('AD_Window', 'AD_Window_ID', [wraw])[0] || wraw;   // overlay a signed AD_Window edit
     var win = {
-      id: row[0], name: row[1], description: row[2],
-      help: row[3], windowType: row[4],
+      id: wraw.AD_Window_ID, name: wraw.Name, description: wraw.Description,
+      help: wraw.Help, windowType: wraw.WindowType,
       tabs: getTabs(db, windowId)
     };
 
@@ -259,7 +280,7 @@
       'SELECT f.AD_Field_ID, f.Name, f.Description, f.SeqNo, ' +
       '       f.IsDisplayed, f.DisplayLogic, f.IsMandatory, f.IsReadOnly, f.DefaultValue, ' +
       '       c.AD_Column_ID, c.ColumnName, c.AD_Reference_ID, c.FieldLength, ' +
-      '       c.IsMandatory as ColMandatory, c.IsKey, c.IsIdentifier, ' +
+      '       c.IsMandatory as ColMandatory, c.IsKey, c.IsIdentifier, c.IsUpdateable, ' +
       '       c.DefaultValue as ColDefault ' +
       'FROM AD_Field f ' +
       'JOIN AD_Column c ON f.AD_Column_ID = c.AD_Column_ID ' +
@@ -268,23 +289,35 @@
 
     if (!fieldR.length) return [];
 
-    var fields = fieldR[0].values.map(function (row) {
-      var refId = row[11];
+    // Raw rows keyed by AD_Field column name, so a signed CRUD_UPDATE on AD_Field (IsDisplayed/Name/SeqNo/…)
+    // overlays by AD_Field_ID via the tip-source (W-AD-SELFEDIT-LIVE). Column-side metadata (ColumnName,
+    // AD_Reference_ID, …) is read once here; an edit never changes it, so it rides through unchanged.
+    var cols = fieldR[0].columns;
+    var raw = fieldR[0].values.map(function (row) {
+      var o = {}; for (var i = 0; i < cols.length; i++) o[cols[i]] = row[i]; return o;
+    });
+    raw = _applyTip('AD_Field', 'AD_Field_ID', raw);
+
+    var fields = raw.map(function (o) {
+      // a tip-synthesised CRUD_CREATE row has no AD_Column join → can't render; skip (boundary, not invented)
+      if (o.AD_Column_ID == null) return null;
+      var refId = o.AD_Reference_ID;
       return {
-        id: row[0], name: row[1], description: row[2], seqNo: row[3],
-        isDisplayed: row[4] === 'Y',
-        displayLogic: row[5],
-        isMandatory: (row[6] || row[13]) === 'Y',
-        isReadOnly: row[7] === 'Y',
-        defaultValue: row[8] || row[16],
-        columnId: row[9], columnName: row[10],
+        id: o.AD_Field_ID, name: o.Name, description: o.Description, seqNo: o.SeqNo,
+        isDisplayed: o.IsDisplayed === 'Y',
+        displayLogic: o.DisplayLogic,
+        isMandatory: (o.IsMandatory || o.ColMandatory) === 'Y',
+        isReadOnly: o.IsReadOnly === 'Y',
+        defaultValue: o.DefaultValue || o.ColDefault,
+        columnId: o.AD_Column_ID, columnName: o.ColumnName,
         referenceId: refId,
         referenceType: REF_TYPES[refId] || 'string',
-        fieldLength: row[12],
-        isKey: row[14] === 'Y',
-        isIdentifier: row[15] === 'Y'
+        fieldLength: o.FieldLength,
+        isKey: o.IsKey === 'Y',
+        isIdentifier: o.IsIdentifier === 'Y',
+        isUpdateable: o.IsUpdateable !== 'N'                 // S2B: AD_Column.IsUpdateable (null/Y → updateable; 'N' → display-only on Edit)
       };
-    });
+    }).filter(Boolean);
 
     // Log only at tab level to avoid noise (fields can be 40+ per tab)
     console.log('§AD_PARSER getFields tabId=' + tabId + ' count=' + fields.length);
@@ -410,6 +443,7 @@
     getWindow:            getWindow,
     getTabs:              getTabs,
     getFields:            getFields,
+    setTipSource:         setTipSource,
     resolveReference:     resolveReference,
     getTableName:         getTableName,
     getWindowFromMenu:    getWindowFromMenu,

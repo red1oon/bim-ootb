@@ -37,6 +37,11 @@
     { "id": "toggle",   "voice": "harp",   "freq": 330, "ms": 500, "label": "Audio on confirm" },
     { "id": "wh_confirm", "voice": "bell",  "freq": 784, "ms": 160, "label": "WH walk — bin confirmed (G5)" },
     { "id": "wh_qty",     "voice": "harp",  "freq": 523, "ms": 280, "label": "WH walk — qty picked (C5 arpeggio)" },
-    { "id": "wh_skip",    "voice": "bell",  "freq": 440, "ms": 200, "label": "WH walk — step skipped (A4)" }
+    { "id": "wh_skip",    "voice": "bell",  "freq": 440, "ms": 200, "label": "WH walk — step skipped (A4)" },
+    { "id": "pos_ring",     "voice": "pluck", "freq": 1047, "ms": 80,  "label": "POS — item rung into cart (C6 tick)" },
+    { "id": "pos_pay",      "voice": "bell",  "freq": 784,  "ms": 180, "label": "POS — Pay tapped (G5)" },
+    { "id": "pos_complete", "voice": "harp",  "freq": 1047, "ms": 320, "label": "POS — sale complete (C6 chime)" },
+    { "id": "erp_pushed",   "voice": "harp",  "freq": 880,  "ms": 360, "label": "Find › ERP — Project Order folded + deep-link ready (happy A5 chime)" },
+    { "id": "erp_reject",   "voice": "creak", "freq": 150,  "ms": 340, "label": "Find › ERP — push rejected / no priced elements (low creak)" }
   ]
 }

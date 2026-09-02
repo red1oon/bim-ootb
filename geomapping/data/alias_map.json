@@ -1,0 +1,467 @@
+{
+ "buildings": {
+  "CL": 13799,
+  "DX": 1003,
+  "HHS": 6730,
+  "HO": 51021,
+  "SC": 3335,
+  "SH": 34,
+  "Terminal": 48427
+ },
+ "map": {
+  "IfcAirTerminalBoxType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcFlowController": 115
+   },
+   "n": 115,
+   "winner": "IfcFlowController"
+  },
+  "IfcAirTerminalType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcAirTerminal": 289,
+    "IfcFlowTerminal": 749
+   },
+   "n": 1038,
+   "winner": "IfcFlowTerminal"
+  },
+  "IfcAlarmType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcAlarm": 80,
+    "IfcDistributionControlElement": 861
+   },
+   "n": 941,
+   "winner": "IfcDistributionControlElement"
+  },
+  "IfcBeamType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcBeam": 606
+   },
+   "n": 606,
+   "winner": "IfcBeam"
+  },
+  "IfcBuildingElementProxyType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcBuildingElementProxy": 4951
+   },
+   "n": 4951,
+   "winner": "IfcBuildingElementProxy"
+  },
+  "IfcCableCarrierFittingType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcCableCarrierFitting": 66
+   },
+   "n": 66,
+   "winner": "IfcCableCarrierFitting"
+  },
+  "IfcCableCarrierSegmentType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcCableCarrierSegment": 84
+   },
+   "n": 84,
+   "winner": "IfcCableCarrierSegment"
+  },
+  "IfcCableSegmentType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcFlowSegment": 18
+   },
+   "n": 18,
+   "winner": "IfcFlowSegment"
+  },
+  "IfcChillerType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcEnergyConversionDevice": 2
+   },
+   "n": 2,
+   "winner": "IfcEnergyConversionDevice"
+  },
+  "IfcColumnType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcColumn": 1237
+   },
+   "n": 1237,
+   "winner": "IfcColumn"
+  },
+  "IfcControllerType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcController": 6
+   },
+   "n": 6,
+   "winner": "IfcController"
+  },
+  "IfcCoveringType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcCovering": 1387
+   },
+   "n": 1387,
+   "winner": "IfcCovering"
+  },
+  "IfcCurtainWallType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcCurtainWall": 213
+   },
+   "n": 213,
+   "winner": "IfcCurtainWall"
+  },
+  "IfcDistributionElementType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcBuildingElementProxy": 11,
+    "IfcDistributionElement": 13,
+    "IfcFlowController": 21,
+    "IfcFlowTerminal": 256
+   },
+   "n": 301,
+   "winner": "IfcFlowTerminal"
+  },
+  "IfcDoorStyle": {
+   "ambiguous": false,
+   "classes": {
+    "IfcDoor": 490
+   },
+   "n": 490,
+   "winner": "IfcDoor"
+  },
+  "IfcDoorType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcDoor": 694
+   },
+   "n": 694,
+   "winner": "IfcDoor"
+  },
+  "IfcDuctFittingType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcDuctFitting": 5453,
+    "IfcFlowFitting": 2487
+   },
+   "n": 7940,
+   "winner": "IfcDuctFitting"
+  },
+  "IfcDuctSegmentType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcDuctSegment": 5384,
+    "IfcFlowSegment": 2345
+   },
+   "n": 7729,
+   "winner": "IfcDuctSegment"
+  },
+  "IfcElectricApplianceType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcElectricAppliance": 157,
+    "IfcFlowTerminal": 15
+   },
+   "n": 172,
+   "winner": "IfcElectricAppliance"
+  },
+  "IfcFanType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcFlowMovingDevice": 12
+   },
+   "n": 12,
+   "winner": "IfcFlowMovingDevice"
+  },
+  "IfcFireSuppressionTerminalType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcFireSuppressionTerminal": 2263,
+    "IfcFlowTerminal": 6
+   },
+   "n": 2269,
+   "winner": "IfcFireSuppressionTerminal"
+  },
+  "IfcFurnitureType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcFurnishingElement": 179,
+    "IfcFurniture": 391
+   },
+   "n": 570,
+   "winner": "IfcFurniture"
+  },
+  "IfcLightFixtureType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcFlowTerminal": 1558,
+    "IfcLightFixture": 2086
+   },
+   "n": 3644,
+   "winner": "IfcLightFixture"
+  },
+  "IfcMemberType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcMember": 2428
+   },
+   "n": 2428,
+   "winner": "IfcMember"
+  },
+  "IfcOutletType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcFlowTerminal": 1008
+   },
+   "n": 1008,
+   "winner": "IfcFlowTerminal"
+  },
+  "IfcPipeFittingType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcFlowFitting": 4160,
+    "IfcPipeFitting": 17864
+   },
+   "n": 22024,
+   "winner": "IfcPipeFitting"
+  },
+  "IfcPipeSegmentType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcFlowSegment": 3849,
+    "IfcPipeSegment": 18273
+   },
+   "n": 22122,
+   "winner": "IfcPipeSegment"
+  },
+  "IfcPlateType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcPlate": 36342
+   },
+   "n": 36342,
+   "winner": "IfcPlate"
+  },
+  "IfcProtectiveDeviceType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcFlowController": 6
+   },
+   "n": 6,
+   "winner": "IfcFlowController"
+  },
+  "IfcPumpType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcFlowMovingDevice": 1
+   },
+   "n": 1,
+   "winner": "IfcFlowMovingDevice"
+  },
+  "IfcRailingType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcRailing": 124
+   },
+   "n": 124,
+   "winner": "IfcRailing"
+  },
+  "IfcRoofType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcRoof": 2
+   },
+   "n": 2,
+   "winner": "IfcRoof"
+  },
+  "IfcSanitaryTerminalType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcFlowTerminal": 236
+   },
+   "n": 236,
+   "winner": "IfcFlowTerminal"
+  },
+  "IfcSlabType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcSlab": 1005
+   },
+   "n": 1005,
+   "winner": "IfcSlab"
+  },
+  "IfcStairFlightType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcStairFlight": 32
+   },
+   "n": 32,
+   "winner": "IfcStairFlight"
+  },
+  "IfcStairType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcStair": 4
+   },
+   "n": 4,
+   "winner": "IfcStair"
+  },
+  "IfcSwitchingDeviceType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcSwitchingDevice": 113
+   },
+   "n": 113,
+   "winner": "IfcSwitchingDevice"
+  },
+  "IfcTankType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcFlowStorageDevice": 1
+   },
+   "n": 1,
+   "winner": "IfcFlowStorageDevice"
+  },
+  "IfcTransformerType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcEnergyConversionDevice": 2
+   },
+   "n": 2,
+   "winner": "IfcEnergyConversionDevice"
+  },
+  "IfcUnitaryEquipmentType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcEnergyConversionDevice": 2
+   },
+   "n": 2,
+   "winner": "IfcEnergyConversionDevice"
+  },
+  "IfcValveType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcFlowController": 262,
+    "IfcValve": 581
+   },
+   "n": 843,
+   "winner": "IfcValve"
+  },
+  "IfcWallType": {
+   "ambiguous": true,
+   "classes": {
+    "IfcWall": 1149,
+    "IfcWallStandardCase": 1708
+   },
+   "n": 2857,
+   "winner": "IfcWallStandardCase"
+  },
+  "IfcWindowStyle": {
+   "ambiguous": false,
+   "classes": {
+    "IfcWindow": 341
+   },
+   "n": 341,
+   "winner": "IfcWindow"
+  },
+  "IfcWindowType": {
+   "ambiguous": false,
+   "classes": {
+    "IfcWindow": 371
+   },
+   "n": 371,
+   "winner": "IfcWindow"
+  }
+ },
+ "measured": {
+  "CL": {
+   "lobo": {
+    "in_set": 13664,
+    "n": 13664,
+    "winner": 2822
+   },
+   "resub": {
+    "in_set": 13799,
+    "n": 13799,
+    "winner": 2957
+   }
+  },
+  "DX": {
+   "lobo": {
+    "in_set": 979,
+    "n": 979,
+    "winner": 101
+   },
+   "resub": {
+    "in_set": 1003,
+    "n": 1003,
+    "winner": 125
+   }
+  },
+  "HHS": {
+   "lobo": {
+    "in_set": 6709,
+    "n": 6726,
+    "winner": 3631
+   },
+   "resub": {
+    "in_set": 6730,
+    "n": 6730,
+    "winner": 3635
+   }
+  },
+  "HO": {
+   "lobo": {
+    "in_set": 49897,
+    "n": 50758,
+    "winner": 22837
+   },
+   "resub": {
+    "in_set": 51021,
+    "n": 51021,
+    "winner": 50863
+   }
+  },
+  "SC": {
+   "lobo": {
+    "in_set": 3322,
+    "n": 3335,
+    "winner": 2610
+   },
+   "resub": {
+    "in_set": 3335,
+    "n": 3335,
+    "winner": 2610
+   }
+  },
+  "SH": {
+   "lobo": {
+    "in_set": 34,
+    "n": 34,
+    "winner": 31
+   },
+   "resub": {
+    "in_set": 34,
+    "n": 34,
+    "winner": 31
+   }
+  },
+  "Terminal": {
+   "lobo": {
+    "in_set": 47741,
+    "n": 48387,
+    "winner": 46594
+   },
+   "resub": {
+    "in_set": 48427,
+    "n": 48427,
+    "winner": 47704
+   }
+  }
+ },
+ "method": "type_class->ifc_class observed distribution; winner=max count (ties alphabetical); ambiguous entries carry the full candidate set \u2014 consumers must not present the winner as certain when ambiguous=true"
+}

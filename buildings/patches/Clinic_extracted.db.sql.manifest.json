@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-08-10T03:38:18.808Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-clinic-oci",
+    "sha": "78353a281673fb25bb9f72bf05f15e0c454d01b3",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 0,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Clinic_extracted.db",
+    "etag": "54c446ec-9b0d-4078-8d4e-8e0cfb3ac285",
+    "content-md5": "TGAGDJ7pOiOCSSWIikfjGg==",
+    "size": "128221184",
+    "last-modified": "Fri, 05 Jun 2026 01:52:29 GMT",
+    "content-encoding": null
+  },
+  "artifact": {
+    "file": "buildings/patches/Clinic_extracted.db.sql",
+    "bytes": 91238,
+    "md5": "c1fcc19a75517ebf00be5b043ffbf966",
+    "md5_b64": "wfzBmnVRfr8AvlsEP/v5Zg==",
+    "object": "buildings/patches/Clinic_extracted.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": false
+  },
+  "verification": {
+    "cmd": "node tests/witness_nogeo_compose.js --db \"$GATE_DB\"",
+    "exit": 0,
+    "tail": [
+      "§WASM bundled=viewer/lib/sql-wasm.wasm md5=618e54b08615e92780b0a3a418da43d4 (the shipped build, not npm sql.js)",
+      "[S203] §NOGEO_COMPOSE composed=43 ms=378 (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)",
+      "§NOGEO_WITNESS PASS served.db ghosts 43→0 composed=43 unresolved=0 served_file_untouched=true transform_source=[[\"<real>\",16071],[\"composed_aggregate\",43]]",
+      "§NOGEO_WITNESS_TOTAL pass=1 fail=0"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-08-10T03:38:22.888Z",
+    "etag": "603f5e78-dcca-4098-841c-7d0a9ac6df42",
+    "verified": true
+  }
+}
