@@ -178,11 +178,21 @@ function build(bld, force) {
         // compare "storeys the model declares" against "bands the schedule invents" without a
         // tolerance constant anywhere. Absent on some shipped DBs (Duplex/Hospital have no
         // spatial_structure table at all) — absent must be REPORTED as absent, never guessed.
+        //
+        // ⚠ §STOREY_PROVENANCE (2026-09-02, queue B-1 / bim-compiler 4D_MODEL_INTEGRITY.md §J.6.2
+        // W3). `object_type` is persisted with the row because these are NOT always what a reader
+        // assumes. MEASURED on the shipped fleet: 6 of 6 Terminal and 3 of 3 HHS IfcBuildingStorey
+        // rows carry object_type='COMPILED' with STC_* guids — they are compile_rooms.py output,
+        // not an IFC declaration. A claim that compares "bands the schedule uses" against these and
+        // calls the difference "levels the schedule invented" is comparing against a derived
+        // artifact. It cannot say so unless the provenance travels with the row, so it does.
         try {
-          const q = db.exec("SELECT name,center_z,size_z FROM spatial_structure WHERE type='IfcBuildingStorey'");
+          const q = db.exec("SELECT name,center_z,size_z,object_type FROM spatial_structure WHERE type='IfcBuildingStorey'");
           if (q.length) {
-            const c = q[0].columns, ni = c.indexOf('name'), zi = c.indexOf('center_z'), si = c.indexOf('size_z');
-            storeys = q[0].values.map(v => ({ name: v[ni], center_z: v[zi], size_z: v[si] }));
+            const c = q[0].columns, ni = c.indexOf('name'), zi = c.indexOf('center_z'),
+              si = c.indexOf('size_z'), oi = c.indexOf('object_type');
+            storeys = q[0].values.map(v => ({ name: v[ni], center_z: v[zi], size_z: v[si],
+              object_type: oi >= 0 ? v[oi] : null }));
           }
         } catch (e) { storeys = null; }   // no table / no columns — reported, not invented
         db.close();
