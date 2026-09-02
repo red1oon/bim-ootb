@@ -213,7 +213,53 @@ console.log('§W_D0A_INPUT buildings=' + have.length + '/' + BUILDINGS.length +
   let pop = 0, bad = 0; const why = [];
   if (t) {
     const win = t.t0 + 3 * DAY_MS;
-    const earlyMep = t.els.filter(e => /^MEP/.test(e.phase || '') && t.sched[e.guid] && t.sched[e.guid].s <= win);
+    const mepAll = t.els.filter(e => /^MEP/.test(e.phase || '') && t.sched[e.guid]);
+    const earlyMep = mepAll.filter(e => t.sched[e.guid].s <= win);
+    // ── §W_D0A_A4_VACUOUS (2026-09-02, AGENT_QUEUE.md A-14) ──────────────────────────────────────
+    // A4 attributes a population — Terminal's MEP inside the first 3 days — to a phantom storey. If
+    // that population is EMPTY the claim was NOT JUDGED, and the old code said FAIL over it: `pop++`
+    // ran unconditionally and `names.length !== 1` was satisfied by names.length === 0. A verdict
+    // over nothing is the vacuous case CLAUDE.md's witness contract (clause 4) requires to print
+    // INCONCLUSIVE — it is a THIRD state, not a success and not a failure. `claim()` already maps
+    // pop === 0 to INCONCLUSIVE, so the fix is to judge nothing when there is nothing to judge.
+    //
+    // ⚠ AND THE EMPTINESS IS ITSELF REPORTED WITH ITS EVIDENCE, so this cannot become a silent skip:
+    // a filter that stopped matching (a phase rename, a layer swap) would ALSO produce an empty set,
+    // and that is a defect, not a vacuum. The two are separated below by counting the MEP population
+    // WITHOUT the window and printing when the earliest of them actually starts.
+    const firstMepD = mepAll.length
+      ? Math.min.apply(null, mepAll.map(e => (t.sched[e.guid].s - t.t0) / DAY_MS)) : null;
+    // ── A4 VACUITY CONTROL (W_D0A_RED=1) ─────────────────────────────────────────────────────────
+    // A verdict of INCONCLUSIVE has to be provably CAUSED BY EMPTINESS and nothing else, or the fix
+    // above is just a way of never failing. The control widens the window to reach the earliest MEP
+    // element — a value MEASURED from this same schedule, never a chosen constant — so the
+    // population becomes non-empty and A4 must go back to judging (PASS or FAIL, either is fine;
+    // INCONCLUSIVE here would mean the emptiness test is masking a different defect).
+    if (RED && mepAll.length && !earlyMep.length) {
+      const wide = t.t0 + (firstMepD + 0.01) * DAY_MS;
+      const re = mepAll.filter(e => t.sched[e.guid].s <= wide);
+      earlyMep.push.apply(earlyMep, re);
+      console.log('§W_D0A_A4_VACUITY_CONTROL window widened 3.00d -> ' + (firstMepD + 0.01).toFixed(2) +
+        'd (the measured earliest MEP start), population 0 -> ' + earlyMep.length +
+        ' — A4 must now report a VERDICT, not INCONCLUSIVE.');
+    }
+    if (!mepAll.length) {
+      // NOT the vacuous case: Terminal has no scheduled MEP at all under this filter. That is a
+      // scope/filter failure and must not be dressed up as "nothing to judge".
+      bad++; pop++;
+      why.push('Terminal has ZERO scheduled elements with phase ^MEP on the ' + t.layer + ' layer — ' +
+        'the population this claim is defined over does not exist, which is a FILTER/SCOPE defect ' +
+        '(a phase rename or a layer swap), not an empty window. §J.6 must be re-derived.');
+    } else if (!earlyMep.length) {
+      // The vacuous case, stated with the number that makes it checkable. pop stays 0 -> INCONCLUSIVE.
+      why.push('VACUOUS — no element to judge: Terminal has ' + mepAll.length + ' scheduled ^MEP ' +
+        'elements but NONE starts inside the 3-day window (earliest MEP start = t0+' +
+        firstMepD.toFixed(2) + 'd, window = t0+3.00d). The phantom-storey ATTRIBUTION is therefore ' +
+        'neither confirmed nor refuted here — it is unjudged. This is the expected shape after ' +
+        'PR #1551 (§STOREY_DATUM, squash 59736505) moved Terminal\'s opening off day 0: the cause ' +
+        'stopped being reachable, which is NOT the same as the cause being wrong. Do not read this ' +
+        'as a pass, and do not "fix" it by widening the window — re-derive §J.6 row 5 or retire it.');
+    } else {
     const storeys = {}; earlyMep.forEach(e => storeys[SG.collapsePhase(e.storey)] = 1);
     const names = Object.keys(storeys);
     pop++;
@@ -231,6 +277,11 @@ console.log('§W_D0A_INPUT buildings=' + have.length + '/' + BUILDINGS.length +
         bandMin.toFixed(3) + 'm vs model p01=' + p01.toFixed(2) + 'm p50=' + zs[Math.floor(zs.length / 2)].toFixed(2) + 'm');
       const subTask = (t.r.tasks || []).filter(x => x.phase === 'Substructure' && x.storey === band)[0];
       if (subTask) why.push('building-scope Substructure instantiated HERE: ' + subTask.id + ' guids=' + subTask.guids.length + ' days ' + subTask.sDays + '-' + subTask.eDays);
+    }
+    // corroboration printed on EVERY judged run, so a later shrink of the population is visible
+    // before it becomes a vacuum: how many of Terminal's MEP the window actually caught.
+    why.push('window caught ' + earlyMep.length + '/' + mepAll.length + ' scheduled ^MEP elements; ' +
+      'earliest MEP start = t0+' + firstMepD.toFixed(2) + 'd');
     }
   }
   claim('A4_TERMINAL_PHANTOM_LVL ', 'Terminal', pop, bad, why.join(' | '), t ? t.layer : 'n/a');
