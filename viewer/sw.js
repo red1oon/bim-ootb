@@ -31,8 +31,8 @@
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1126';   // bump on each deploy; per-change detail is the git commit message.
-// v1126 (2026-09-02) §MEP_COLOR_SURVIVES_PHOTOREAL: streaming.js gives an MEP element its trade
+const CACHE_VERSION = 'v1127';   // bump on each deploy; per-change detail is the git commit message.
+// v1127 (2026-09-02) §MEP_COLOR_SURVIVES_PHOTOREAL: streaming.js gives an MEP element its trade
 // HUE when its own colour carries none, keeping the element's own V (and every roughness/metalness/
 // envMap/triplanar term) untouched — so MEP reads by system in an Alt+S still and the Alt+C movie
 // instead of the uniform grey metal the metal triplanar texture multiplied out of the shipped
@@ -41,8 +41,18 @@ const CACHE_VERSION = 'v1126';   // bump on each deploy; per-change detail is th
 // the SAME commit (§CRISIS LESSON 4 — a precached streaming.js is served past a CACHE_VERSION bump
 // without its own ?v= change). The disc->hue mapping is an AUTHORED choice reusing A.DISC_COLORS
 // verbatim, NOT a published MEP standard — no such convention exists in the model data.
-// Witness: witness_mep_color_photoreal.js (W-MEP-COLOR-PHOTOREAL) — 54/54, five buildings, red
+// Witness: witness_mep_color_photoreal.js (W-MEP-COLOR-PHOTOREAL) — 55/55, five buildings, red
 // control + tier-1 byte-identity on the user's own fire-red lever (1300/1300 elements).
+// v1126 (2026-09-02) §CPE_AIM_DEPTH_RETIRED: viewer/effects.js — §CPE_AIM_DEPTH, the last automatic
+// exception to path-follow, is REMOVED on user directive ("its best to leave alone its pointing
+// along its path ... to stay simple and predictable"). Gone with it: §CPE_AIM_GRID, §CPE_AIM_LATCH
+// (the weight running-max; the Beat3→4 hand-off line is RENAMED §CPE_BEAT3_END_DIR, not removed),
+// §CPE_AIM_DEPTH_SERIES/_SCALE/_VERTICALITY/_OPEN_TAPER/_FWD_CLEAR/_BUILDUP, and §CPE_STICK_HOLD's
+// aim half (_holdBoostAt fed only _aimDepthApply — a held beat is now a pure rate dip). KEPT:
+// §CPE_AIM_PIN, the correction window, §CPE_AIM_DEPTH_FREEZE (#1598), §CPE_CORR_BRANCH (#1597).
+// effects.js is in PRECACHE_ASSETS and viewer.html's query is bumped effects.js?v=29->30 in the
+// SAME PR — without both an installed SW keeps serving the pre-change file (§CRISIS LESSON 4).
+// Witness: witness_cpe_aim_retire.js (7/7 depth-OFF, red control fails on the depth-ON arm).
 // v1125 (rebase of PR #1318 onto origin/main) §GANTT_CACHE_ERR_STACK: time_machine.js's
 // injectGantt cache-activate catch block now logs the stack + which phase failed (pre/post
 // loadOps) instead of the bare error message, which could not locate a live user's GUID-key
