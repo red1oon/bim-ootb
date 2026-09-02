@@ -33,6 +33,24 @@ var BD = (typeof window !== 'undefined' && window.BigDecimal) ? window.BigDecima
 
 function projQ(db, sql, params) { return K.query(db, sql, params || []); }
 
+// §S7 (teams/ROADMAP.md Phase D, GAP-PARTITION-KEY / W-SCOPE): an OPTIONAL team scope =
+// {role,org,project,location,space}. ABSENT → this whole branch is skipped → EXACT current behaviour.
+// PRESENT → an ADDITIONAL post-fetch row partition on whatever scope keys map to a column actually in
+// the rows. NON-INVENT: a key with no matching column NEVER drops a row (you cannot filter on data you
+// don't have) — `role` has no data column, so it is inert on read (it gates dispatch/presence elsewhere).
+var SCOPE_COLS = { org: /^ad_org_id$/i, project: /^(c_project_id|ad_project_id)$/i,
+                   location: /^(c_location_id|m_locator_id)$/i, space: /^(m_warehouse_id|ad_orgtrx_id)$/i };
+function _applyScope(rows, scope) {
+  if (!scope || !rows.length) return rows;
+  Object.keys(scope).forEach(function (key) {
+    var re = SCOPE_COLS[key]; if (!re || scope[key] == null) return;
+    var col = Object.keys(rows[0]).filter(function (k) { return re.test(k); })[0];
+    if (!col) return;                       // no such column → no-op (NON-INVENT, never widen/narrow blind)
+    rows = rows.filter(function (r) { return String(r[col]) === String(scope[key]); });
+  });
+  return rows;
+}
+
 function makeSeam(cfg) {
   var projDb = cfg.projDb, adQ = cfg.adQ, factQ = cfg.factQ || null;
   var manifestPath = cfg.manifestPath, wfmc = cfg.wfmc, newDb = cfg.newDb;
@@ -61,6 +79,9 @@ function makeSeam(cfg) {
     if (rows.length === 0 && query.coldStub) {
       return [{ __stub: true, table: query.table, reason: 'cold-fetching' }];   // never a guessed value (I5)
     }
+    // §S7 (W-SCOPE): optional team-scope partition — applied AFTER the cold-stub decision so stub semantics
+    // are untouched. ctx.scope absent → rows unchanged (identical to today); present → narrowed (above).
+    if (ctx.scope) rows = _applyScope(rows, ctx.scope);
     return rows;
   }
 
@@ -77,6 +98,14 @@ function makeSeam(cfg) {
   function dispatch(intent, ctx) {
     ctx = ctx || {};
     var table = intent.table, action = intent.action;
+    // §S7 (W-SCOPE): optional scope gate — DEFAULT-OFF. Fires ONLY when the caller supplies BOTH a
+    // scope.org AND an intent that declares its org → an out-of-scope write is refused. Absent scope (or
+    // an intent without a declared org) → NO check → exact current behaviour (identical result).
+    if (ctx.scope && ctx.scope.org != null) {
+      var io = intent.ad_org_id != null ? intent.ad_org_id : (intent.org != null ? intent.org : null);
+      if (io != null && String(io) !== String(ctx.scope.org))
+        return { rejected: true, why: 'scope-mismatch', detail: 'org=' + io + ' scope.org=' + ctx.scope.org };
+    }
     // (a) role capability gate (mirror poc_wire.mayRun): ctx.role.actions = ["table:action", …]
     if (ctx.role && ctx.role.actions) {
       var key = table + ':' + action;
@@ -109,7 +138,8 @@ function makeSeam(cfg) {
     }
     // (c) apply through the kernel (state-machine legal → handler → kernel-owned write).
     var cellCtx = { wfmc: wfmc, guards: [], query: function (s, p) { return projQ(projDb, s, p); },
-                    actor: ctx.actor || 'local', baseTs: intent.baseTs || 5000 };
+                    actor: ctx.actor || 'local', baseTs: intent.baseTs || 5000,
+                    attrib: ctx.attrib || null };   // T1: employee PIN attribution → rich op (audit metadata)
     var doc = {}; Object.keys(intent).forEach(function (k) { doc[k] = intent[k]; });
     var r = K.dispatch(projDb, cellCtx, doc);
     if (!r.ok) return { rejected: true, why: r.stage + ':' + r.reason };

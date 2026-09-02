@@ -113,7 +113,11 @@ window.HistoryBar = (function () {
       _depth = _migrateDepth(_storedDepth) || _migrateDepth(_cfg.defaultDepth()) || 'high';
     }
     catch (e) { _depth = _migrateDepth(_cfg.defaultDepth()) || 'high'; }
-    if (!_configured) { _wireKeyboard(); _wireCrossTab(); _configured = true; }
+    // skipKeyboard: an app that already owns Ctrl+Z/Ctrl+Y itself (with its own undo/redo UI wrap-up —
+    // audio cue, status text, selection sync) opts out of this module's OWN document-level keyboard
+    // wiring, so one keypress doesn't fire the underlying undo/redo twice. Default false — every other
+    // app keeps wiring keyboard here exactly as before.
+    if (!_configured) { if (!_cfg.skipKeyboard) _wireKeyboard(); _wireCrossTab(); _configured = true; }
     _syncTapKnob();                     // ONE KNOB: push the loaded depth onto the §-tap at startup
     if (_cfg.treeKey) _persistLoad();   // restore persisted universes for this building (item 4)
     console.log('§HIST_CONFIGURE source=' + _cfg.source + ' depth=' + _depth + ' host=' + (_cfg.mountHostId || 'body') + ' treeKey=' + (_cfg.treeKey || '-'));
@@ -178,9 +182,19 @@ window.HistoryBar = (function () {
         return;
       }
     }
+    var kids = _kidsOf(_cursorNode);
+    // HISTORY_TIMELINE_UNDO_DOTS: fork-don't-wipe is for genuine model divergence (a real op,
+    // readonly:false) — undo-then-edit legitimately opens a new universe. A read-only crumb
+    // (view/pick/tap-drained NAVIGATE/XRAY/FOCUS/PICK) never mutates the model, so after an undo
+    // (cursor sits on a node that already has a kid) it must NOT fork a new sibling dot — that's
+    // what made the timeline look like it "spawns more dots on undo" for routine looking-around.
+    // Drop it instead; it only ever existed to paint a dot, and forking one for it is the bug.
+    if (entry.readonly && kids.length > 0) {
+      console.log('§HIST_DROP source=' + entry.bucket + ' type=' + entry.type + ' reason=readonly-post-undo label="' + (entry.label || '') + '"');
+      return;
+    }
     entry.seq = ++_seq;
     entry.kids = []; entry.active = 0; entry.parent = _cursorNode;
-    var kids = _kidsOf(_cursorNode);
     var forked = kids.length > 0;          // already had a child → this push FORKS a sibling universe
     var keptSibling = forked ? _tipOf(kids[_activeOf(_cursorNode)]) : null;
     kids.push(entry);

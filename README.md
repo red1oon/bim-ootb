@@ -1,14 +1,37 @@
-# BIM / ERP OOTB
+# BIM OOTB
+### Two databases. One browser. Zero install. No permission required.
 
 [![CI](https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml/badge.svg)](https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Status: Alpha](https://img.shields.io/badge/Status-Alpha-red.svg)]()
 
-**Frictionless. Two DBs. One browser. Zero install.**
+> **⚠ Alpha software.** Expect sharp edges, breaking changes, and missing features. Not for production use.
 
-Two engines in one browser tab, sharing one signed operation log. Drop an IFC file and get a full BIM environment in 60 seconds — *view* it in the read-only viewer or *author* B-rep geometry in the DAGeVu modeller, where the op-log itself is the feature tree. Beside it, **Kernel-ERP** — an ERP kernel folded from the iDempiere lineage — runs over its own SQLite database, and the *same* signed op-log that drives the model folds a building into a procurement order. No server, no signup, no plugins.
+A building is a manufactured product with coordinates. Drop an IFC file into a browser tab and watch it become what it always should have been — a thing you can query, cost, schedule, and *own*. No installer. No seat license. No server to rent. No salesman to call.
 
-**Live:** [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) · **Modeller:** [DAGeVu authoring](https://red1oon.github.io/bim-ootb/viewer/modeller.html) · **Film:** [BIM and ERP, one engine](https://youtu.be/hnLYNcRihzs)
+Beside it runs a full ERP kernel, folded from the Compiere → ADempiere → iDempiere lineage, that reproduces a real ERP's books **to the cent** — serverless, offline, in the same tab. The building becomes a procurement order. The order becomes accounts. All of it from one signed log you can replay and verify yourself.
 
-Two technical papers, one per engine: **BIM →** [Feature Paper](https://red1oon.github.io/BIMCompiler/FeatureComparison/) · **ERP →** [Migrate & Compare](https://red1oon.github.io/BIMCompiler/MigrateComparisonPaper/).
+**Why this exists, plainly.** The big tools are cathedrals — and cathedrals are worth building. They house real work, they employ brilliant engineers, they carry decades of hard-won domain knowledge. This stands on all of that, gratefully. What it adds is a **bazaar beside the cathedral** — open, composable, running in a browser tab — because the best ideas in this industry deserve to reach the widest possible hands. The ambition is to become the first truly unified BIM-ERP platform: not by displacing what came before, but by taking the next step nobody has taken yet.
+
+**Who's doing this.** I'm Redhuan D. Oon — *red1*. I helped found the ADempiere ERP project in 2006, arriving with a Java ERP and PostgreSQL background — now facing an entirely new but exciting learning curve. One person, a machine, various AI led by Claude Code as pair programmer that overworks and overdrank, and a genuine curiosity about how far the discipline can actually stretch — watching a building become a procurement order, watching geometry fold into accounts, watching it all fit inside a single browser tab.
+
+**How it's built — the only three rules.**
+- **Extract or compile, never invent.** Every number traces to a real source.
+- **Talk is cheap.** Every claim here has a witness you can run; corrupt the rule and the number goes wrong. If it doesn't reproduce, it isn't true.
+- **In the open, or not at all.** MIT-licensed, because a tool you can't fork is a tool that owns you.
+
+It won't replace Autodesk or SAP this year. It already does things they were never shaped to do — and it gets closer every week, mostly because it's a genuine blast to build.
+
+**This README is the doorway, not the house.** The works — the proofs, the changes, the arguments — are in the docs and the commit log below. Scour them, break the thing, send a fix.
+
+- ▶️ [Open the live app](https://red1oon.github.io/bim-ootb/) · [Watch the film](https://youtu.be/hnLYNcRihzs)
+- 🧭 [What's landed vs the frontier](https://red1oon.github.io/BIMCompiler/StrategicIndustryPositioning/)
+- 📜 [How it got here — Federation → Compiler → Browser](https://red1oon.github.io/BIMCompiler/PROJECT_CHRONOLOGY/)
+- 🌱 [Push it further (start here)](https://red1oon.github.io/BIMCompiler/CONTRIBUTING/)
+
+*Build it like you mean it. Give it away like it's nothing.*
+
+— Redhuan D. Oon · MIT Licensed · 2025–2026
 
 ---
 
@@ -21,8 +44,8 @@ A browser-native IFC viewer — no server, no cloud subscription, no install. Op
 - **4D Time Machine** — construction sequence playback from BOM data
 - **5D Cost Estimation** — 17 country rate templates, Excel export
 - **BOM Engine** — Bill of Materials extraction and verb expansion, fully in JavaScript
-- **Grid System** — drag grids, scissors cuts, kinematics, door arcs, dimension chains
-- **City Mode** — 786 buildings loaded simultaneously
+- **Rosetta Stone benchmarks** — every geometry claim verified to 0.000 mm against the original IFC extraction; position, rotation and facing each have a named witness script that must pass before a commit lands
+- **System Monitor** — live health dashboard under the System login: service-worker version, release row linked to the auto-cut GitHub release, op-log gauge, field vitals that animate on open
 - **PWA** — works offline after first visit
 - **18 Languages** — auto-detected from browser locale
 
@@ -32,11 +55,12 @@ A browser-native IFC viewer — no server, no cloud subscription, no install. Op
 - **Typed natural-language query** — type a question in the viewer bar → SQL → answer + 3D highlight; 92/92 across 7 buildings (EN/Malay/Swedish), zero drift
 - **Find / Revit+ Lens** — uniform depth model (ghost / group-solid / shine-through item), room·material·phase·storey lenses, x-ray (Alt+X), tight-FOV group-zoom drill
 - **Alt+X envelope ghost** — disc-coloured instanced bbox wireframes (free, no hang) — see the model's skeleton through its skin
-- **City Mode (S285)** — camera ray-blast streaming with ARC-first gate and wave eviction; whole-city facade kept resident as you fly
 - **Precision camera** — Auto-Pivot live re-centre orbit (room-centroid / selected element), keyboard cluster
 - **Synthesized SFX** — zero-asset cinematic audio overlay (Time-Machine score, nav cues, surface-aware ray-blast)
-- **DAGeVu authoring modeller** (`viewer/modeller.html`) — a browser BIM *authoring* surface beside the viewer: an occt-wasm B-rep kernel as a pure `ops → mesh` function, where the signed op-log **is** the feature tree and geometry is a deterministic fold. Insert library components at LOD from a BOM-hierarchy catalog (real meshes), drop a whole house / floor / room as a recursive BOM-assembly, sketch with a planegcs constraint solver, sweep / fillet / chamfer — all replayable and reversible. Early but spine-proven; renamed from "Bonsai" to avoid a brand clash
+- **DAGeVu authoring modeller** (`modeller/modeller.html`) — a browser BIM *authoring* surface beside the viewer: an occt-wasm B-rep kernel as a pure `ops → mesh` function, where the signed op-log **is** the feature tree and geometry is a deterministic fold. Insert library components at LOD from a BOM-hierarchy catalog (real meshes), drop a whole house / floor / room as a recursive BOM-assembly, sketch with a planegcs constraint solver, sweep / fillet / chamfer — all replayable and reversible. Real buildings with rooms, storeys and typed cross-edges load as resident assemblies; the 3D construction grid is the active authoring frontier. Renamed from "Bonsai" to avoid a brand clash
 - **Connect Scene** — shared cross-surface context over the one op-log: selection, timeline and identity cross between the DAGeVu modeller, the viewer and the ERP while the surfaces stay separate (one log → two folds that co-vanish on undo)
+- **4D/5D Schedule Editing + P6/MSP interop** (Time Machine panel) — a full authoring arc inside the viewer's own Time Machine: the Gantt drawer edits directly (drag to move, edge-pull to resize, drag-to-link, marquee group move, typed dates), CPM float/criticality is auto-recomputed after every edit, and the panel's ⇄ P6/MSP section imports Primavera P6 (.xer/PMXML) or MS Project (MSPDI) programmes onto the model, exports MSPDI/PMXML/XER, and grades an imported schedule against the building's own quantity + labor-rate estimate (Diff vs Model)
+- **BIM OOTB Film-Maker** (Alt+C) — a full cinematic film computed from the model's own room graph in under a second (dive → main hall → walk out a real door → exterior orbit), no camera path authored by hand; a drag-to-edit dialog lets you pivot or slide any leg before recording. I found no other BIM tool offering this. [Watch the film](https://youtu.be/sUTscAgnQMc)
 
 → **Read the paper:** [BIM OOTB Feature Paper](https://red1oon.github.io/BIMCompiler/FeatureComparison/)
 
@@ -50,10 +74,10 @@ The ERP side has its own long sprint, in order:
 - **iDempiere client** — `erp/idempiere.html`: the same AD framework rendered as an iDempiere-flavoured client, with a real Odoo Client 12 tenant folded in as a second renderer
 - **Lens family** — over the one op-log: durable, drag-to-`SET_STATUS` **Kanban** (Odoo-marvel cards), chat-as-inbox **feed-fold**, **Data Globe** graph, Accts-Posted ledger lens — one-tap Graph ⇆ Kanban
 - **⚖ Rule pill** — *lifecycle-as-data*: "when may this Order Complete" is itself a signed, reversible op that re-folds live; client-scoped to the logged-in tenant, honest-disabled
-- **One signed op-log (I-4)** — the live write path is genuinely signed; gated signed **Complete** governs the CO lifecycle; GL debits == credits self-verify on every hop
+- **One signed op-log** — the live write path is genuinely signed; gated signed **Complete** governs the CO lifecycle; GL debits == credits self-verify on every hop
 - **Glassbowl** — `erp/glassbowl.html`: the engine rendered *from its own data* — the kernel inspecting itself
 - **Migrate / Install** — pick-your-ERP dialog + the **Odoo Migrate Agent** (`erp/odoo_agent/`, self-contained `.zip`): a native *delegate-to-install* agent — the browser never touches your Odoo; you run it locally, it folds your order→delivery→invoice chain to `odoo_chain.json`, and Install persists the merged tenant so it survives reload
-- **iDempiere fidelity (the fundamental law)** — `erp/idempiere.html` is now made *indistinguishable* from real iDempiere: classic ADWindow chrome (one toolbar — New/Copy/Save/Save&New/Delete/Process; folder tabs), in-place CRUD with no modal, a Zoom-Across where-used drill, a dirty-exit gate. Anything **not** native to iDempiere lives on a `⋯` pill rail. The oracle of record is a real iDempiere (`idempiere_test`) diffed to the cent
+- **iDempiere fidelity** — `erp/idempiere.html` is made indistinguishable from real iDempiere: classic ADWindow chrome, one toolbar, folder tabs, in-place CRUD, Zoom-Across where-used drill, dirty-exit gate. Non-native extensions live on a `⋯` pill rail. Diffed to the cent against a real `idempiere_test` instance
 - **AD_Process as a fold** — iDempiere's stored processes are re-expressed as deterministic op-log derivations (no new verbs, gated to the ported document family, consequences *extracted* not invented): project → Sales Order (164), Sales Order → shipment (118) and → invoice (119), plus report folds (M_InOut, M_Movement, M_Inventory, C_Project, PP_Order, C_Payment)
 - **Genesis / System Admin** — an Initial Tenant Setup wizard *births* a tenant as a signed op-log and posts it to the cent in-browser; a born tenant becomes a login-able resident client. A System login reaches a System Monitor and a Plugins & Releases surface
 
@@ -72,7 +96,7 @@ A proven kernel and architecture, not a finished ERP. The constituent techniques
 
 **BIM — authoring.** The DAGeVu modeller (above) now brings B-rep authoring to the browser over the op-log; next:
 
-1. **2D Grid Editor modelling** — author and edit the model from the 2D grid, not just the 3D kernel.
+1. **Modeller 3D Grid** — the DAGeVu modeller now drives authoring through a live 3D grid (stretch ≠ scale, wall-opening containment, conformity indicators); the old 2D canvas overlay has given way to this as the active frontier.
 
 **Common — across both engines.** *Connect Scene* now shares selection, timeline and identity across the modeller, the viewer and the ERP over the one op-log; next:
 
@@ -119,9 +143,9 @@ erp/                  — Kernel-ERP engine
   docs/               — ERP feature specs
 ```
 
-## 25 Pre-loaded Buildings
+## 32 Pre-loaded Buildings
 
-The gallery includes 25 IFC buildings from public datasets (8 landmark + 17 city) — from a simple house (487 elements) to a hospital (40,086 elements). Building databases are served from OCI Object Storage; the viewer code is served from GitHub Pages.
+The gallery includes 32 IFC buildings from public datasets — from a simple house (487 elements) to a hospital (40,086 elements). Building databases are served from OCI Object Storage; the viewer code is served from GitHub Pages.
 
 ## Deploy
 
@@ -165,7 +189,7 @@ cd tests && npm install && npx playwright test
 
 This project is the browser frontend of [BIMCompiler](https://github.com/red1oon/BIMCompiler) — a BOM-based building compilation engine that began in **October 2025** (concept), became a **Java/Python compiler in January 2026** (21 buildings, 9 verification gates, 1000+ commits), and pivoted to browser-first at **S200 in April 2026** when the viewer outgrew the backend. That parent browser sprint (S200–S271, April 20 — May 23) produced 552 commits and 92 JS modules in 33 days.
 
-Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **707 commits across 393 PRs through June 2026 (PR #418)**, now **140+ vanilla JS modules** (≈100 BIM + 40 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) and grew an **authoring counterpart — the DAGeVu B-rep modeller** — while the **ERP engine emerged beside it** as **Kernel-ERP**: the iDempiere Application Dictionary folded into the same browser in JavaScript rather than the original Java, made indistinguishable from real iDempiere — with stored processes themselves re-expressed as op-log folds — then extended to fold a live Odoo tenant through the same signed op-log.
+Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **1,274 commits across 966 merged PRs through July 2026**, now **208 vanilla JS modules** (119 BIM + 89 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) and grew an **authoring counterpart — the DAGeVu B-rep modeller** — while the **ERP engine emerged beside it** as **Kernel-ERP**: the iDempiere Application Dictionary folded into the same browser in JavaScript rather than the original Java, made indistinguishable from real iDempiere — with stored processes themselves re-expressed as op-log folds — then extended to fold a live Odoo tenant through the same signed op-log.
 
 The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and building database that power the viewer were built over the preceding 6 months in the parent project.
 
@@ -175,7 +199,7 @@ The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and buildi
 |---|---|
 | **Live viewer** | [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) |
 | **Morpheus front door** | [red1oon.github.io/bim-ootb/index2.html](https://red1oon.github.io/bim-ootb/index2.html) |
-| **DAGeVu authoring modeller** | [red1oon.github.io/bim-ootb/viewer/modeller.html](https://red1oon.github.io/bim-ootb/viewer/modeller.html) |
+| **DAGeVu authoring modeller** | [red1oon.github.io/bim-ootb/modeller/modeller.html](https://red1oon.github.io/bim-ootb/modeller/modeller.html) |
 | **Film — BIM and ERP, one engine** | [youtu.be/hnLYNcRihzs](https://youtu.be/hnLYNcRihzs) |
 | **BIM feature paper** | [red1oon.github.io/BIMCompiler/FeatureComparison](https://red1oon.github.io/BIMCompiler/FeatureComparison/) |
 | **ERP migrate & compare paper** | [red1oon.github.io/BIMCompiler/MigrateComparisonPaper](https://red1oon.github.io/BIMCompiler/MigrateComparisonPaper/) |
@@ -184,6 +208,10 @@ The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and buildi
 | **Documentation** | [red1oon.github.io/BIMCompiler](https://red1oon.github.io/BIMCompiler/) |
 | **Parent project** | [github.com/red1oon/BIMCompiler](https://github.com/red1oon/BIMCompiler) |
 | **OCI backup** | [ootb-dev bucket](https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/index.html) |
+
+## Contributors
+
+- **Redhuan D. Oon** (*red1*) — architecture, compiler, viewer, ERP engine, everything
 
 ## License
 

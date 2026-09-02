@@ -26,7 +26,7 @@ const state = (pg) => pg.evaluate(() => {
   var tbVisible = tb ? getComputedStyle(tb).display !== 'none' : null;
   var red = document.getElementById('pill-redpill');
   var redActive = red ? red.classList.contains('active') : null;
-  var lensVisible = ['pill-posted','pill-graph','pill-kanban','pill-rule'].filter(id => {
+  var lensVisible = ['pill-reports','pill-graph','pill-kanban','pill-rule'].filter(id => {
     var b = document.getElementById(id); return b && getComputedStyle(b).display !== 'none';
   });
   return { clean, tbVisible, redPresent: !!red, redActive, lensVisibleCount: lensVisible.length };

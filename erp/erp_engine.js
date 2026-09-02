@@ -273,10 +273,28 @@ function completeInvoice(invoice, lines, policy) {
   return ops;
 }
 
+// completeReceipt — the M_InOut doc-action's PO-side delta, the sibling completeInvoice() emits on the
+// invoice side. Implementing ERP_P2P_INVOICE_MATCH.md §Fix 3 — Witness: W-FOLD-MATCHPO. Real Java
+// (MInOut.completeIt(), line 2079-2096): for each receipt line linked to a PO line
+// (`!IsSOTrx && C_OrderLine_ID<>0`), create ONE M_MatchPO junction (PO-line ⋈ receipt-line @
+// MovementQty). Same shape as completeInvoice's M_MatchInv emission — a single junction record rides the
+// existing CREATE_LINE kernel op, no buildDoc. The invoice-created-before-shipment edge case (real Java
+// also emits M_MatchPO from MInvoice.completeIt() ~line 2134) is NAMED-DEFERRED — this lane's witness path
+// is receipt-first (PO → Receipt → Invoice), the mainline order real users follow.
+function completeReceipt(receipt, lines, policy) {
+  var ops = [{ op_type: 'SET_STATUS', table: 'M_InOut', id: receipt.m_inout_id, doc_status: 'CO' }];
+  if (receipt.issotrx === 'N') {
+    (lines || []).forEach(function (l) {
+      if (l.c_orderline_id) ops.push({ op_type: 'CREATE_LINE', table: 'M_MatchPO', c_orderline_id: l.c_orderline_id, m_inoutline_id: l.m_inoutline_id, m_product_id: l.m_product_id, qty: l.movementqty });
+    });
+  }
+  return ops;
+}
+
 return {
   resolveCtx: resolveCtx, dialectShim: dialectShim, evalGuard: evalGuard,
   match: match, buildDoc: buildDoc, DOC_SPECS: DOC_SPECS, explodeBOM: explodeBOM,
   movementSign: movementSign, qtyOnHand: qtyOnHand, reversePosting: reversePosting,
-  VERBS: VERBS, completeOrder: completeOrder, completeInvoice: completeInvoice
+  VERBS: VERBS, completeOrder: completeOrder, completeInvoice: completeInvoice, completeReceipt: completeReceipt
 };
 });

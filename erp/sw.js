@@ -10,7 +10,19 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v732';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v771';   // bump on each deploy; per-change detail is the git commit message.
+// v771 (#429 rebase onto origin/main@e9daafa0): OK feedback dialog after both System Monitor resets
+//   (erp/system_monitor.js) — merged forward past v770's independent bumps below, neither dropped.
+// v770 (T-0 item 4, prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md): commitCrud's UPDATE/DELETE path now
+//   consults ad_access.js's gateRecord (canView AccessLevel + org/client scope) before sealing, not just
+//   owner/CAS — idempiere.html's applySession wires window.APP.gateRecordFor; crud_core.js/crud_overlay.js
+//   gain recordAccessGate/_gateRecordAccess. New witness: scripts/poc_record_gate_live.js (bim-compiler).
+// v769 (2026-08-23) merge of two independent v768 bumps — both applied, neither dropped:
+// v768a: ad_seed.db gains AD_Form (49) + ad_val_rule (332) — see erp/tests/bake_forms_valrules_seed.js.
+//   ad_seed_v16 -> ad_seed_v17 IDB cache key bump forces re-fetch of the seed for returning users.
+// v768b (ERP_PROJECT_REVIEW.md §2.1 W-ACCESS-GATE-LIVE): ad_access.js shipped as a twin of
+//   build/erp/ad_access.js; idmp_session.js now delegates window/process/form access decisions to
+//   it (IsReadWrite/canView/org-client gateRecord) instead of a weaker independent implementation.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -38,15 +50,19 @@ const PRECACHE_ASSETS = [
   'ad_process.js',    // B-5/C-5 — process dispatch spine (window.AdProcess), W-PROC / W-AD-PROC-LIVE
   'ad_table_map.js',
   'vfs_detect.js',    // CONSTRAINT_MITIGATION item 3 — OPFS/IDB detection at boot (§VFS monitor)
+  'error_beacon.js',  // SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed)
+  'field_health.js',  // SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth)
+  'op_upcaster.js',   // D2 — schema_version stamp + read-time upcaster registry (default write seam)
   'ad_ui.js',
-  'erp_panel.js',
   'erp_persist.js',
   'erp_pills.js',
   'erp_replay.js',
   'erp_search.js',
   'erp_signer.js',
+  'erp_attrib.js',     // T1 (W-T1-ATTRIB): PIN → audit-metadata attribution (device key stays the signer)
+  'tip_fold.js',       // T7 (W-T7-INC) fix 3: memoized tip-folds (moveDeltaFor precedent, ERP-side)
+  'erp_shard.js',      // T7 (W-T7-INC) fix 4/4b: signed shard boundary + lazy verified history
   '../common/about_diy.js',  // ABOUT_BOX_CONSOLIDATE.md — shared About/DIY modal (replaces migrate_showme.js here)
-  'migrate_agent.js',
   'overlay_kit.js',    // CONSISTENCY_FINISH.md §K-1 — shared import-overlay toolbox (window.OverlayKit)
   'erp_picker.js',     // MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (window.ErpPicker)
   'genesis.html',      // SYSTEM_ADMIN_LANE §5 L1 — Initial Tenant Setup wizard (W-GENESIS-WIZARD-LIVE)
@@ -56,7 +72,9 @@ const PRECACHE_ASSETS = [
   'system_monitor.js', // SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor (serverless reframe, window.SystemMonitor)
   'plugin_release.js', // SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update (window.PluginRelease)
   'erp_snapshot_sign.js', // ECDSA P-256 signer (UMD, window.ErpSnapshotSign) — signs the genesis bundle head
+  'erp_key_epochs.js', // T1 (W-ROSTER-VERIFY): HQ-signed device roster + ROTATE/REVOKE key epochs on verify/import
   '14-sap-chain.json', // SAP /DMO/ Flight PoC oracle (fetch-fold-install demo data; user can replace via file-drop)
+  'ad_access.js',       // W-ACCESS-GATE-LIVE — MRole-faithful gate engine, twin of build/erp/ad_access.js
   'idmp_session.js',
   'erp_descriptor.js',  // DESCRIPTOR SEAM (IDEMPIERE_2.md pivot, renderer #2) — one chrome, N dictionaries; AD = first descriptor
   'odoo_descriptor.js', // RENDERER #2 — the Odoo descriptor (?erp=odoo); reads the two pulled artifacts below
@@ -80,10 +98,8 @@ const PRECACHE_ASSETS = [
   'plugins/widget_callout.mjs',     // example bundle — M_Product.Name → upper (C-1)
   'plugins/production_validator.mjs',// example bundle — M_Production BEFORE_SAVE qty<0 reject (C-2)
   'plugins/wip_token.mjs',          // example bundle — {Production.WIP} token from seed (C-3)
-  'menu_seed.js',
-  'role_band.js',
   'icons.js',
-  'pill_builder.js',   // duplicated from viewer/ (BIM keeps its own) — see ERP_FOLDER_HOME.md
+  '../common/pill_builder.js',   // THE one canonical builder (PILLS_CONSOLIDATION_REVIEW_2026-07-03 — fork retired)
   'kernel_ops.js',     // shared infra — dedupe to common/ later (ERP_FOLDER_HOME.md)
   'erp_kernel.js',     // engine (window.ERPKernel) — kanban_lens.html publishes window.ERP via the seam
   'erp_seam.js',       // engine seam (window.ERPSeam.makeSeam) — ENGINE_CONTRACT §1 write path
@@ -93,12 +109,18 @@ const PRECACHE_ASSETS = [
   'bim_orders_overlay.js', // BIM→Project §B round-trip: overlay viewer-folded Project Orders + VO amendments from OPFS at boot
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
   'erp_engine.js',     // POS_ADDON_SPEC — engine verbs (UMD of bim-compiler scripts/erp_engine.js, window.ERPEngine)
+  'crud_core.js',      // §S60 physical split — the PURE CORE (window.CrudCore); MUST precede crud_overlay.js in page load order
   'crud_overlay.js',   // SO_FULL_CRUD_GAP.md T1-T4 — CRUD ring-of-fire + DocAction overlay (window.__crud); glassbowl + idempiere both mount it
+  'erp_relay_client.js', // ERP_MULTIUSER_CONCURRENCY_POC.md — relay transport client (idempiere.html loads it; precache so cross-device sync works offline-installed)
+  'erp_sync_fsm.js',   // ERP_MULTIUSER_CONCURRENCY_POC.md — engine-proven rebase loop (W-N-CONVERGE); idempiere.html loads it
+  'erp_sync_relay.js', // ERP_MULTIUSER_CONCURRENCY_POC.md — wires relay+rebase into crud_overlay.js sidecar (window.__crud.syncNow); idempiere.html loads it
   'blue_future.js',    // FRONTEND_LANE_MASTER §OUTSTANDING item 0 — Blue Future UNOFFICIAL speculative-branch skin (W-BLUE-FUTURE-LIVE)
   'crud_ops.json',     // SO_FULL_CRUD_GAP.md — keyed CRUD verb/field/docAction store the overlay fetches on enable (incl. T1 docPolicy fan-out table)
   'pos_core.js',       // POS_ADDON_SPEC §P-1..§P-4 — POS fold glue (window.POSCore), == bim-compiler build/erp source
   'img_store.js',      // POS_KILLER_DEMO E-3 — device-local images folder (IDB, window.ImgStore), == bim-compiler build/erp source
   'pos_lens.js',       // POS_ADDON_SPEC — dumb-terminal POS lens (window.PosLens): record/pay/SEND, zero client state
+  'kitchen_core.js',   // §T2-SPEC Kitchen Display fold (window.KitchenCore, W-KDS-QUEUE), == bim-compiler build/erp source
+  'kitchen_lens.js',   // §T2-SPEC Kitchen Display lens (window.KitchenLens): fold-rendered tickets, Serve = one signed group
   'sfx.json',          // §R2-AUDIO — ERP-surface SFX config (subtle POS earcons; sfx.js itself rides the viewer scope)
   'ninja_excel.js',   // NINJA EXCEL — Excel-as-report-binder engine (read/gate/run/verify; == bim-compiler build/erp)
   'ninja_rule.js',    // NINJA EXCEL — RULE tier: business phrase → SQL candidates from the AD dictionary (§7)
@@ -113,7 +135,10 @@ const PRECACHE_ASSETS = [
   'manifest.json',
   'pills.json',
   'idmp_pills.js',     // §A — iDempiere bar registration layer (binds pills_idmp.json fn BY ID to IdmpPillActions)
+  'teams_embed.js',    // §TEAMS-EMBED — gated Teams overlay pill (off by default = inert; lazy-loads teams/ when ON)
   'pills_idmp.json',   // §A — sibling manifest for the iDempiere renderer surface (GATE-1: separate from pills.json)
+  'zoom_across.js',    // abstract cross-surface Zoom Across registry (record → related surface; window.ZoomAcross)
+  'redpill.png',       // RED PILL img — the contextual "Zoom Across" pill (showWhen:zoom-across)
   'idmp_history.js',   // §B — cross-tab history scrubber (Glassbowl #scrub pattern, read-only restore)
   'glassbowl_pills.js',   // §GB-PILLS — Glassbowl+Gravity ⋯ registry binding (binds pills_glassbowl/gravity.json BY ID)
   'pills_glassbowl.json', // §GB-PILLS — Glassbowl manifest (home/trace/untangle/reset/mute/panel/edit/qr/showme/about)

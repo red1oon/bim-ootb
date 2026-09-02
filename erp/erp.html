@@ -91,7 +91,7 @@
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (Help pill → AboutDIY.open). -->
 <script src="../common/about_diy.js?v=1"></script>
 <script src="erp_picker.js?v=30"></script>
-<script src="pill_builder.js?v=27"></script>
+<script src="../common/pill_builder.js?v=1"></script>
 <script src="doc_cycle_validator.js?v=1"></script>
 <script src="erp_pills.js?v=34"></script>
 <script>
@@ -277,7 +277,7 @@ var _shellReady = false;
 
     if (!hasAD) {
       _t0 = performance.now();
-      var cached = await idbGet('ad_seed_v16');
+      var cached = await idbGet('ad_seed_v17');
       var cacheValid = false;
       if (cached && cached.byteLength > 1000) {
         var header = new Uint8Array(cached, 0, 16);
@@ -318,7 +318,7 @@ var _shellReady = false;
           }
           db.close();
           db = new SQL.Database(new Uint8Array(seedBuf));
-          idbPut('ad_seed_v16', seedBuf);
+          idbPut('ad_seed_v17', seedBuf);
           _bench.db_fetch = Math.round(performance.now() - _t0);
           _bench.db_size = Math.round(seedBuf.byteLength / 1024);
           _bench.db_source = 'network';

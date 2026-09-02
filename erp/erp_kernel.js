@@ -165,6 +165,23 @@ function applyOne(db, op, state) {
     });
     return { output_guid: guid, input_guids: [src], before: null, after: guid };
   }
+  if (op.op_type === 'SHARD_SNAPSHOT') {
+    // T7 fix 4 (W-T7-INC, prompts/T7_INCREMENTAL_SHARD_SPEC.md): seed the projection from the
+    // RECORDED projState — an INPUT captured at snapshot time (erp_shard.js), never recomputed —
+    // so replay([snapshot, post-ops]) rebuilds the projection WITHOUT replaying from genesis.
+    // Witness §T7-SNAP: projectionHash(fold-from-snapshot) == projectionHash(fold-from-genesis).
+    var ps = op.projState || {};
+    PROJECTION_TABLES.forEach(function (t) {
+      (ps[t] || []).forEach(function (row) {
+        var cols = Object.keys(row);
+        if (!cols.length) return;
+        db.run('INSERT OR REPLACE INTO ' + t + ' (' + cols.join(',') + ') VALUES (' +
+               cols.map(function () { return '?'; }).join(',') + ')',
+               cols.map(function (c) { return row[c]; }));
+      });
+    });
+    return { output_guid: guid || ('SNAPSHOT:' + (op.shardSeq != null ? op.shardSeq : 0)), input_guids: [], before: null, after: null };
+  }
   throw new Error('unknown op_type ' + op.op_type);
 }
 
@@ -190,6 +207,10 @@ function apply(db, ops, ctx) {
     var res = applyOne(db, op, state);
     // RICH op (§0.6 keystone): payload (now carrying the recorded uuid) + actor + before/after + lineage GUIDs.
     var rich = { payload: op, actor: actor, before: res.before, after: res.after, lineage: { input_guids: res.input_guids, output_guid: res.output_guid } };
+    // T1 (W-T1-ATTRIB, FABLE5_WRAPUP §3): employee attribution rides the CONTENT-SIGNED parameters as
+    // audit metadata — user_tag stays the device actor (owner-gate grain unchanged), the sig stays the
+    // device key. Conditional: absent ctx.attrib → byte-identical rich op (back-compat, default-off).
+    if (ctx.attrib) rich.attrib = ctx.attrib;
     db.run('INSERT INTO kernel_ops (op_uuid, timestamp, op_type, parameters, input_guids, output_guid, user_tag) VALUES (?,?,?,?,?,?,?)',
       [op.op_uuid, ts + gseq, op.op_type, JSON.stringify(rich), JSON.stringify(res.input_guids), res.output_guid, actor]);
     committed++; ids.push(res.output_guid);

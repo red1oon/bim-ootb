@@ -1,0 +1,120 @@
+{
+  "_note": "DEMO binding map. activity_code -> {discipline, ifcClasses}. The importer leaves task_elements EMPTY (XER/PMXML carry no model guids); the demo/witness resolves these predicates against the REAL building DB and binds via ScheduleAuthor.assignElement. Real elements, synthetic plan.",
+  "building": "Hospital",
+  "activities": [
+    {
+      "code": "A1010",
+      "name": "Footings & Foundations",
+      "discipline": "STR",
+      "ifcClasses": [
+        "IfcFooting"
+      ]
+    },
+    {
+      "code": "A2010",
+      "name": "Columns",
+      "discipline": "STR",
+      "ifcClasses": [
+        "IfcColumn"
+      ]
+    },
+    {
+      "code": "A2020",
+      "name": "Beams",
+      "discipline": "STR",
+      "ifcClasses": [
+        "IfcBeam"
+      ]
+    },
+    {
+      "code": "A2030",
+      "name": "Structural Framing",
+      "discipline": "STR",
+      "ifcClasses": [
+        "IfcMember"
+      ]
+    },
+    {
+      "code": "A3010",
+      "name": "External & Internal Walls",
+      "discipline": "ARC",
+      "ifcClasses": [
+        "IfcWall",
+        "IfcWallStandardCase"
+      ]
+    },
+    {
+      "code": "A3020",
+      "name": "Curtain Walling",
+      "discipline": "ARC",
+      "ifcClasses": [
+        "IfcCurtainWall"
+      ]
+    },
+    {
+      "code": "A3030",
+      "name": "Doors & Windows",
+      "discipline": "ARC",
+      "ifcClasses": [
+        "IfcDoor",
+        "IfcWindow"
+      ]
+    },
+    {
+      "code": "A4010",
+      "name": "Plumbing Pipework",
+      "discipline": "PLB",
+      "ifcClasses": [
+        "IfcPipeSegment"
+      ]
+    },
+    {
+      "code": "A4020",
+      "name": "HVAC Ductwork",
+      "discipline": "MEP",
+      "ifcClasses": [
+        "IfcDuctSegment"
+      ]
+    },
+    {
+      "code": "A4030",
+      "name": "Fire Protection",
+      "discipline": "FP",
+      "ifcClasses": [
+        "IfcFireSuppressionTerminal"
+      ]
+    },
+    {
+      "code": "A4040",
+      "name": "Electrical & Lighting",
+      "discipline": "ELEC",
+      "ifcClasses": [
+        "IfcLightFixture"
+      ]
+    },
+    {
+      "code": "A5010",
+      "name": "Internal Finishes",
+      "discipline": "ARC",
+      "ifcClasses": [
+        "IfcCovering"
+      ]
+    },
+    {
+      "code": "A5020",
+      "name": "Medical Equipment & Furniture",
+      "discipline": "ARC",
+      "ifcClasses": [
+        "IfcFurniture"
+      ]
+    },
+    {
+      "code": "A6010",
+      "name": "MEP Commissioning",
+      "discipline": "MEP",
+      "ifcClasses": [
+        "IfcValve"
+      ]
+    }
+  ]
+}

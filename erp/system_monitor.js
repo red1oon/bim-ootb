@@ -12,17 +12,67 @@
 
   function mb(n) { return (n == null) ? null : (n / 1048576).toFixed(1) + ' MB'; }
 
-  // sw CACHE_VERSION = our RELEASE tag — asked over the live SW (GET_PRECACHE → {version}); null if no controller.
+  var REPO = 'red1oon/bim-ootb';   // provenance home for the Release link (…/releases/tag/vNNN)
+
+  // sw CACHE_VERSION = our RELEASE tag — asked over the live SW (GET_PRECACHE → {version}).
+  // ROBUST to the post-update window: right after a SW update the new worker is installed-but-not-controlling,
+  // so navigator.serviceWorker.controller is null and the page would read "(uncontrolled)". We instead message
+  // the registration's active||waiting||installing worker (via serviceWorker.ready) — whichever exists — and
+  // report whether the page is actually controlled (so the §-log can show controlled=N honestly).
   function swVersion() {
     return new Promise(function (res) {
       try {
-        if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return res(null);
-        var ch = new MessageChannel();
-        ch.port1.onmessage = function (e) { res(e.data && e.data.version || null); };
-        navigator.serviceWorker.controller.postMessage({ type: 'GET_PRECACHE' }, [ch.port2]);
-        setTimeout(function () { res(null); }, 800);
+        if (!navigator.serviceWorker) return res(null);
+        var controlled = !!navigator.serviceWorker.controller;
+        var ask = function (worker) {
+          if (!worker) return res(null);
+          var ch = new MessageChannel(), done = false;
+          ch.port1.onmessage = function (e) { if (done) return; done = true; res({ version: (e.data && e.data.version) || null, controlled: controlled }); };
+          worker.postMessage({ type: 'GET_PRECACHE' }, [ch.port2]);
+          setTimeout(function () { if (!done) { done = true; res(null); } }, 800);
+        };
+        // prefer the controller (steady state); else fall through to the registration's active/waiting/installing.
+        if (navigator.serviceWorker.controller) return ask(navigator.serviceWorker.controller);
+        if (!navigator.serviceWorker.ready) return res(null);
+        navigator.serviceWorker.ready.then(function (reg) {
+          ask(reg && (reg.active || reg.waiting || reg.installing));
+        }, function () { res(null); });
+        setTimeout(function () { res(null); }, 1200);   // belt: ready never resolves
       } catch (e) { res(null); }
     });
+  }
+
+  // version.json — stamped into the deployed artifact at gh-pages build (deploy-pages.yml) from the sw
+  // CACHE_VERSION + merge commit. The DETERMINISTIC source of truth for the Release row: no SW-timing race,
+  // always the version that actually shipped. Fetched no-store so it's never the stale precached copy.
+  function versionJson() {
+    return new Promise(function (res) {
+      try {
+        if (typeof fetch !== 'function') return res(null);
+        fetch('version.json', { cache: 'no-store' }).then(function (r) {
+          return r && r.ok ? r.json() : null;
+        }).then(function (j) { res(j && j.version ? j : null); }, function () { res(null); });
+      } catch (e) { res(null); }
+    });
+  }
+
+  // PURE: pick what the Release row shows. TWO ids (decoupled 2026-06-25):
+  //   version = the SEMVER release (vX.Y.Z, cut by release-please — the curated "what's new" the row LINKS to).
+  //   build   = the precise deployed bits on THIS device (the sw CACHE_VERSION vNNN — cache-bust id).
+  // version.json carries both; SW (GET_PRECACHE) only knows the build, so it's the build-only fallback.
+  // Never invents — null ⇒ caller shows the honest "(uncontrolled)" placeholder. Exported for the node witness.
+  function resolveRelease(sw, vj) {
+    var version = (vj && vj.version) || (sw && sw.version) || null;   // semver if version.json present, else build
+    var build = (vj && vj.build) || (sw && sw.version) || null;
+    var source = (vj && vj.version) ? 'version.json' : ((sw && sw.version) ? 'sw' : 'none');
+    return { version: version, build: build, source: source, controlled: !!(sw && sw.controlled),
+      sha: (vj && vj.sha) || null, pr: (vj && vj.pr) || null };
+  }
+  // PURE: the GH release page for a SEMVER tag (vX.Y or vX.Y.Z) — null for a bare build id (vNNN) or anything
+  // else, so the row never links to a tag that doesn't exist (the build id has no release of its own).
+  function releaseHref(version) {
+    return (typeof version === 'string' && /^v\d+\.\d+(\.\d+)?$/.test(version))
+      ? 'https://github.com/' + REPO + '/releases/tag/' + version : null;
   }
   function storageEstimate() {
     try { if (navigator.storage && navigator.storage.estimate) return navigator.storage.estimate(); } catch (e) {}
@@ -38,19 +88,47 @@
   }
 
   // ── data gather (all real / honest) ─────────────────────────────────────────────────────────────────────────
+  // SYSTEM_MONITOR_WIDGETS §H — fold the 4 paradigm field-health widgets from REAL live signals (NON-INVENT).
+  //   field_errors ← window.__ERR_BEACON__ (error_beacon.js)  ·  durability ← offline queue (na if absent)
+  //   db_size_gauge ← window.ERP.opDb (the live signed op-log)  ·  environment ← window.ERP.VFS.detect()
+  function persistedP() {
+    try { if (navigator.storage && navigator.storage.persisted) return navigator.storage.persisted(); } catch (e) {}
+    return Promise.resolve(null);
+  }
+  function foldFieldHealth(est, persisted) {
+    var FH = global.ERP && global.ERP.FieldHealth;
+    if (!FH || typeof FH.fold !== 'function') return null;
+    var vfs = null; try { vfs = global.ERP.VFS && global.ERP.VFS.detect(); } catch (e) {}
+    var r = FH.fold({
+      beacon: global.__ERR_BEACON__,
+      queue: global.ERP && global.ERP.offlineQueue,            // present only if the app instantiated one
+      db: global.ERP && global.ERP.opDb,                       // the live signed op-log db
+      vfs: vfs,
+      storageEstimate: est ? { usage: est.usage, quota: est.quota } : null,
+      persisted: persisted
+    });
+    return r;
+  }
+
   function gather() {
-    return Promise.all([swVersion(), storageEstimate()]).then(function (r) {
-      var ver = r[0], est = r[1], h = heap(), tenants = residentTenants();
+    return Promise.all([swVersion(), storageEstimate(), persistedP(), versionJson()]).then(function (r) {
+      var sw = r[0], est = r[1], persisted = r[2], vj = r[3], h = heap(), tenants = residentTenants();
+      var rel = resolveRelease(sw, vj), href = releaseHref(rel.version);
+      console.log('§SYSMON-RELEASE version=' + (rel.version || '(uncontrolled)') + ' build=' + (rel.build || '?') + ' source=' + rel.source + ' controlled=' + (rel.controlled ? 'Y' : 'N'));
+      if (href) console.log('§SYSMON-RELEASE-LINK href=' + href + ' kind=release');
       var d = {
-        release: ver || '(uncontrolled)',
+        release: rel.version || '(uncontrolled)',
+        releaseBuild: (rel.build && rel.build !== rel.version) ? rel.build : null,
+        releaseHref: href,
         os: (navigator.platform || '—') + ' · ' + (navigator.hardwareConcurrency || '?') + ' cores',
         ua: (navigator.userAgent || '').replace(/^Mozilla\/\S+\s*/, '').slice(0, 60),
         heap: h ? (mb(h.used) + ' used / ' + mb(h.total) + ' heap · limit ' + mb(h.limit)) : 'n/a (this browser does not expose JS heap)',
         storage: est ? (mb(est.usage) + ' used of ' + mb(est.quota) + ' available') : 'n/a',
         tenants: tenants ? tenants.length : null,
-        tenantNames: tenants ? tenants.map(function (c) { return c.name; }).join(', ') : null
+        tenantNames: tenants ? tenants.map(function (c) { return c.name; }).join(', ') : null,
+        fieldHealth: foldFieldHealth(est, persisted)
       };
-      console.log('§SYSTEM-MONITOR gather release=' + d.release + ' heap=' + (h ? 'real' : 'n/a') + ' storage=' + (est ? 'real' : 'n/a') + ' tenants=' + d.tenants);
+      console.log('§SYSTEM-MONITOR gather release=' + d.release + ' heap=' + (h ? 'real' : 'n/a') + ' storage=' + (est ? 'real' : 'n/a') + ' tenants=' + d.tenants + ' fieldHealth=' + (d.fieldHealth ? d.fieldHealth.overall : 'n/a'));
       return d;
     });
   }
@@ -62,6 +140,17 @@
       + (reframe ? ' <a class="sm-rf" href="' + COMPARE + '">Read further&nbsp;&rsaquo;</a>' : '') + '</td></tr>';
   }
 
+  // field-health rows — one per widget, with a status dot (paradigm vitals; the G2 observability remedy)
+  var FH_DOT = { ok: '#2e9e4f', warn: '#d98a00', alert: '#d23b3b', na: '#9aa4b1' };
+  function fhRows(fh) {
+    if (!fh || !fh.widgets) return '';
+    var rows = fh.widgets.map(function (w) {
+      var dot = '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + FH_DOT[w.status] + ';margin-right:7px;vertical-align:middle"></span>';
+      return '<tr><th>' + dot + esc(w.label) + '</th><td><b style="color:' + FH_DOT[w.status] + '">' + esc(String(w.value)) + '</b> <span class="sm-dim">' + esc(w.detail) + '</span></td></tr>';
+    }).join('');
+    return '<tr class="sm-grp"><td colspan="2">Field health · paradigm vitals</td></tr>' + rows;
+  }
+
   function panelHTML(d) {
     var t =
       '<div class="sm-modal" role="dialog" aria-label="System Monitor">' +
@@ -70,9 +159,14 @@
         '<button class="sm-x" data-sm-close title="Close">&times;</button></div>' +
       '<div class="sm-body"><table class="sm-tbl">' +
         '<tr class="sm-grp"><td colspan="2">System</td></tr>' +
-        row('Release', '<b>' + esc(d.release) + '</b> &middot; dictionary folded from the iDempiere oracle') +
+        row('Release', '<b>' + (d.releaseHref
+            ? '<a class="sm-rf" href="' + esc(d.releaseHref) + '" target="_blank" rel="noopener">' + esc(d.release) + '</a>'
+            : esc(d.release)) + '</b>'
+          + (d.releaseBuild ? ' <span class="sm-dim">&middot; build ' + esc(d.releaseBuild) + '</span>' : '')
+          + (d.releaseHref ? ' &mdash; <span class="sm-dim">release notes &rsaquo;</span>' : ' &middot; <span class="sm-dim">this device&rsquo;s deployed build</span>')) +
         row('Environment', esc(d.os)) +
         row('Client', esc(d.ua)) +
+        fhRows(d.fieldHealth) +
         '<tr class="sm-grp"><td colspan="2">Memory</td></tr>' +
         row('Heap usage', esc(d.heap)) +
         '<tr class="sm-grp"><td colspan="2">Cache</td></tr>' +
@@ -240,6 +334,7 @@
     });
   }
 
-  global.SystemMonitor = { open: open, close: close, _gather: gather, _resetSeedClients: resetSeedClients, _rebuildSeed: _rebuildSeed };
+  global.SystemMonitor = { open: open, close: close, _gather: gather, _resetSeedClients: resetSeedClients, _rebuildSeed: _rebuildSeed,
+    resolveRelease: resolveRelease, releaseHref: releaseHref };
   if (typeof module !== 'undefined' && module.exports) module.exports = global.SystemMonitor;
 })(typeof window !== 'undefined' ? window : this);

@@ -1,0 +1,35 @@
+# ── NO GIT-LFS IN THIS REPO — TRACKING REMOVED 2026-09-01 ─────────────────────────────────────
+# `modeller/mesh.db` was the only LFS-tracked file left in HEAD, and it has had NO runtime consumer
+# since §GEO-SERVED (2026-07-30, str_walker_outliner.js:37-49). That fix already replaced the one
+# shared 120MB mesh.db with each resident's own small `<Name>_geo.db` fetched from OCI GEO_BASE,
+# precisely because "GitHub Pages does not resolve LFS — the live page was being handed a 134-byte
+# text pointer with HTTP 200, so the geometry index came back empty." Re-verified 2026-09-01:
+#   red1oon.github.io/bim-ootb/modeller/mesh.db  -> HTTP 200, 134 bytes (still the pointer)
+#   .../b/bim-ootb/o/modeller/mesh.db            -> HTTP 404 (never uploaded — nothing wants it)
+#   .../b/bim-ootb/o/modeller/Terminal_geo.db    -> HTTP 200, 52.5 MB (the real, live path)
+# So untracking it removes dead weight, not a working feature. The file stays on local disk for
+# `scripts/gen_buildings_manifest.js`, the only thing that still reads it.
+#
+# WHY IT MATTERS: measured 2026-09-01, this account holds ~9.3 GB of LFS objects against a 1 GB
+# free quota that is shared PER ACCOUNT with bim-compiler (8.53 GB there, 0.78 GB here).
+# See bim-compiler prompts/LFS_QUOTA_AUDIT.md for the full measurement and the reasoning.
+# ⚠ This does NOT reclaim the 0.78 GB — GitHub bills every object ever pushed and has no
+# self-serve purge (only delete-and-recreate the repo, or a Support ticket). It stops the growth:
+# a new mesh.db version would otherwise have added another 120 MB, permanently.
+#
+# DO NOT re-add any `filter=lfs` rule. Per CLAUDE.md's DB POLICY, extracted/derived mesh and geo
+# DBs are distributed as full binaries via object storage (deploy/OCI_UPLOAD.md §RULES) and DB
+# content changes ship as SQL patches plus a self-heal loader — never through git or LFS.
+
+# ── LFS EGRESS GUARD (2026-08-19) — kept, now belt-and-braces ─────────────────────────────────
+# Written when these paths WERE LFS-tracked: GitHub bills LFS bandwidth when a source archive
+# carrying real LFS content is downloaded, and this repo cuts a release DAILY
+# (auto-publish-release.yml, cron 0 1 * * *), each tag permanently downloadable.
+# VERIFIED WORKING 2026-09-01, without spending bandwidth to prove it — GitHub's v1.57.0 tarball is
+# 95,036,194 B and a local `git archive` of the same tag is 95,040,305 B with ZERO mesh.db/_geo.db
+# entries, i.e. the archive carries no LFS content. (That 95 MB is ordinary non-LFS binaries
+# committed directly to this repo — a separate, still-open concern.)
+# Kept after the LFS removal above so these paths can never leak into an archive if one is ever
+# re-committed as a regular blob.
+modeller/mesh.db export-ignore
+modeller/*_geo.db export-ignore

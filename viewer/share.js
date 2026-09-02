@@ -323,6 +323,133 @@ function setupShare(A) {
     }
   };
 
+  // ── TM Office Snapshot — Implementing bim-compiler prompts/TM_OFFICE_SNAPSHOT_LANE.md §3 (SETTLED)
+  // Witness: viewer/tests/witness_tm_office_snapshot.js
+  // Plain PNG + deep-link, no OOXML/OLE (§3). Two explicit actions (Copy Image / Copy Link), not one
+  // combined clipboard write: Word/Excel consume ONE representation per paste (the richest wins), so a
+  // fused image+text write cannot deliver both — and the §3 Office workflow (paste picture, then
+  // Insert→Link onto it) needs the link on the clipboard SEPARATELY at a later moment anyway.
+  // Caption-bar compositing copies sitecam.js A._compositePhoto's fillRect/fillText pattern.
+
+  // Pure — returns the share-sheet section HTML, or '' when the Time Machine is not active
+  // (no snapshot option when there is nothing to snapshot). Sliced + executed by the witness.
+  function tmSnapshotSectionHtml(tmActive) {
+    if (!tmActive) return '';
+    return '<hr class="share-divider">' +
+      '<p class="share-section-label">Office snapshot — Time Machine</p>' +
+      '<div class="share-section">' +
+        '<button class="share-btn" data-share-tm-snapshot>' +
+          '<span class="share-icon" style="background:rgba(255,193,7,0.15);color:#ffc107">4D</span>' +
+          '<span class="share-label">Copy Image<span class="share-sublabel">PNG with day/phase caption — paste into Word/Excel</span></span>' +
+        '</button>' +
+        '<button class="share-btn" data-share-tm-link>' +
+          '<span class="share-icon" style="background:rgba(255,193,7,0.15);color:#ffc107">&#128279;</span>' +
+          '<span class="share-label">Copy Link<span class="share-sublabel">Deep-link to this exact 4D state (Insert→Link onto the picture)</span></span>' +
+        '</button>' +
+      '</div>';
+  }
+
+  function tmSnapshotActive() {
+    return (typeof window.tmGetState === 'function') && !!window.tmGetState().active;
+  }
+
+  // Caption fields = the TM panel's own live-updated text at the moment of capture (spec §5 styling
+  // call: made and shown, not asked). Never re-derive date/phase — these elements are already accurate.
+  A._tmSnapshotCaption = function() {
+    function txt(id) { var el = document.getElementById(id); return el ? (el.textContent || '').trim() : ''; }
+    return {
+      counter: txt('tm-big-counter'),   // e.g. "DAY 64 | HR 0"
+      label: txt('tm-label'),           // short phase/task label
+      status: txt('tm-status'),         // live status line
+      building: A.activeBuilding || ''
+    };
+  };
+
+  // Render a fresh frame (WebGL buffer is not preserved — sitecam.js:90 / quickShare pattern),
+  // copy it to an offscreen 2D canvas, bake the caption bar along the bottom edge.
+  A._tmComposeSnapshot = function() {
+    if (A.renderer && A.scene && A.camera) A.renderer.render(A.scene, A.camera);
+    var src = A.canvas;
+    var c = document.createElement('canvas');
+    c.width = src.width;
+    c.height = src.height;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(src, 0, 0, c.width, c.height);
+
+    var cap = A._tmSnapshotCaption();
+    var s = Math.max(1, c.width / 1280);            // scale text with capture resolution
+    var barH = Math.round(48 * s);
+    var pad = Math.round(10 * s);
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(0, c.height - barH, c.width, barH);
+
+    // Line 1: big counter (cyan, bold) + building name (white)
+    ctx.font = 'bold ' + Math.round(15 * s) + 'px "Segoe UI", sans-serif';
+    ctx.fillStyle = '#4fc3f7';
+    var counterText = cap.counter || 'TIME MACHINE';
+    var y1 = c.height - barH + Math.round(19 * s);
+    ctx.fillText(counterText, pad, y1);
+    if (cap.building) {
+      ctx.fillStyle = '#fff';
+      ctx.fillText(cap.building, pad + ctx.measureText(counterText + '   ').width, y1);
+    }
+
+    // Line 2: phase/task label (left) + status (right, if both present)
+    ctx.font = Math.round(12 * s) + 'px "Segoe UI", sans-serif';
+    var y2 = c.height - barH + Math.round(38 * s);
+    var hasLabel = cap.label && cap.label !== '—';
+    ctx.fillStyle = '#ccc';
+    ctx.fillText(hasLabel ? cap.label : (cap.status || ''), pad, y2);
+    if (hasLabel && cap.status) {
+      ctx.fillStyle = '#999';
+      ctx.fillText(cap.status, c.width - ctx.measureText(cap.status).width - pad, y2);
+    }
+
+    console.log('§TM_SNAPSHOT_COMPOSE w=' + c.width + ' h=' + c.height + ' barH=' + barH +
+      ' counter="' + cap.counter + '" label="' + cap.label + '"');
+    return c;
+  };
+
+  // Primary action: composed PNG onto the clipboard as an image. Fallback (no ClipboardItem, e.g.
+  // older Firefox): save the PNG locally — Word/Excel Insert→Picture accepts the file identically.
+  A.tmCopySnapshotImage = async function(statusEl) {
+    var c = A._tmComposeSnapshot();
+    var blob = await new Promise(function(r) { c.toBlob(r, 'image/png'); });
+    if (!blob) {
+      if (statusEl) statusEl.textContent = 'Capture failed';
+      console.log('§TM_SNAPSHOT_COPY kind=image method=none err=null_blob');
+      return false;
+    }
+    try {
+      if (!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem)) {
+        throw new Error('ClipboardItem unsupported');
+      }
+      await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
+      if (statusEl) statusEl.textContent = 'Image copied — paste into Word/Excel';
+      console.log('§TM_SNAPSHOT_COPY kind=image method=clipboard bytes=' + blob.size +
+        ' w=' + c.width + ' h=' + c.height);
+      return true;
+    } catch (e) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'TM_' + (A.activeBuilding || 'snapshot').replace(/[^\w.-]+/g, '_') + '.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
+      if (statusEl) statusEl.textContent = 'Clipboard unavailable — PNG saved; Insert→Picture in Word/Excel';
+      console.log('§TM_SNAPSHOT_COPY kind=image method=download reason=' + e.message + ' bytes=' + blob.size);
+      return true;
+    }
+  };
+
+  // Secondary action: the deep-link, via the existing data-share-link pattern (buildShareUrl already
+  // carries tm=<cursor> while the Time Machine is active — share.js A.buildShareUrl, §2 of the spec).
+  A.tmCopySnapshotLink = function(statusEl) {
+    var url = A.buildShareUrl();
+    console.log('§TM_SNAPSHOT_COPY kind=link url_len=' + url.length + ' has_tm=' + (url.indexOf('tm=') >= 0));
+    A.shareUrl(url, (A.activeBuilding || 'BIM Model') + ' — 4D snapshot');
+    if (statusEl) statusEl.textContent = 'Link copied — Insert→Link onto the pasted picture';
+  };
+
   // ── URL shortener — TinyURL, no API key needed ──
   // Try to shorten; fall back to long URL if offline or error.
   function shortenUrl(longUrl, callback) {
@@ -437,6 +564,26 @@ function setupShare(A) {
         }, 2000);
       });
     };
+    // TM Office Snapshot (spec §3): quickShare's desktop card is where the Word/Excel user lands —
+    // offer Copy Image ahead of Copy Link while the Time Machine is active. Additive only.
+    if (tmSnapshotActive()) {
+      var tmImgBtn = document.createElement('button');
+      tmImgBtn.style.cssText = 'flex:1;padding:12px;border:none;border-radius:8px;' +
+        'background:#ffc107;color:#000;font-size:14px;font-weight:600;cursor:pointer';
+      tmImgBtn.textContent = 'Copy Image';
+      tmImgBtn.onclick = function() {
+        A.tmCopySnapshotImage(null).then(function(ok) {
+          if (!ok) { tmImgBtn.textContent = 'Failed'; return; }
+          tmImgBtn.textContent = 'Copied!';
+          tmImgBtn.style.background = '#4caf50';
+          setTimeout(function() {
+            tmImgBtn.textContent = 'Copy Image';
+            tmImgBtn.style.background = '#ffc107';
+          }, 2000);
+        });
+      };
+      btnRow.appendChild(tmImgBtn);
+    }
     btnRow.appendChild(shareBtn);
 
     // Cancel button
@@ -627,6 +774,9 @@ function setupShare(A) {
         '</button>' +
       '</div>' +
 
+      // TM Office Snapshot section — only rendered while the Time Machine is active (spec §3)
+      tmSnapshotSectionHtml(tmSnapshotActive()) +
+
       '<div class="share-status" data-share-status></div>';
 
     overlay.appendChild(sheet);
@@ -664,6 +814,12 @@ function setupShare(A) {
       A.shareUrl(url, displayName + ' — BIM OOTB');
       statusEl.textContent = 'Shared!';
     };
+
+    // TM Office Snapshot — rows exist only while TM is active, so guard the bindings
+    var tmSnapBtn = sheet.querySelector('[data-share-tm-snapshot]');
+    if (tmSnapBtn) tmSnapBtn.onclick = function() { A.tmCopySnapshotImage(statusEl); };
+    var tmLinkBtn = sheet.querySelector('[data-share-tm-link]');
+    if (tmLinkBtn) tmLinkBtn.onclick = function() { A.tmCopySnapshotLink(statusEl); };
   };
 
   console.log('§SHARE_LOADED share.js v2 (S265 Phase 3 — navigator.share + buildShareUrl)');

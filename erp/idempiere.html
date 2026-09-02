@@ -228,6 +228,14 @@
   .idmp-grid td.idmp-cell-edit .ic-cell { display:flex; flex-direction:column; gap:1px; }
   .idmp-grid td.idmp-cell-edit .cfi { width:100%; box-sizing:border-box; font:inherit; padding:2px 5px; border:1px solid var(--idmp-accent,#2f6db0); border-radius:3px; background:#fff; }
   .idmp-grid td.idmp-cell-edit .cfe { color:#c0392b; font-size:11px; line-height:1.2; }
+  /* Leg 3 — Posted button (grid cell / form field / mobile card): iDempiere's AD Posted button affordance. */
+  .idmp-posted-btn { display:inline-flex; align-items:center; gap:5px; padding:2px 9px; font:inherit; font-size:11.5px;
+    line-height:1.5; border:1px solid var(--idmp-border,#c3ccd6); border-radius:11px; background:#f4f6f9; color:#5c6b7a;
+    cursor:pointer; white-space:nowrap; }
+  .idmp-posted-btn:hover { background:#e8edf3; }
+  .idmp-posted-btn.is-posted { background:#e9f7ee; border-color:#9bd6b1; color:#176b33; }
+  .idmp-grid td.idmp-posted-cell { text-align:center; cursor:default; }
+  .idmp-posted-fld .val { border:none; background:transparent; padding-left:0; }
   #idmp-batchbar { display:none; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 10px; margin-bottom:6px;
     background:#eef4ff; border:1px solid var(--idmp-border); border-radius:7px; font-size:12.5px; position:sticky; top:0; z-index:3; }
   #idmp-batchbar .idmp-batch-lead { display:inline-flex; align-items:center; gap:5px; font-weight:600; color:#23477a; }
@@ -363,6 +371,9 @@
     /* MOBILE_CARDS.md §4 — leave room for the bottom-docked pill bar so the last card isn't covered. */
     #idmp-content { padding-bottom:66px; }
   }
+  /* §CONNECT-ERP — live scrub reaction: pulse the matching C_ProjectLine row when the BIM viewer broadcasts */
+  .idmp-connect-lit td { animation: idmpConnectPulse 1.8s ease-out forwards; }
+  @keyframes idmpConnectPulse { 0%{background:#b9f6ca} 100%{background:transparent} }
 </style>
 </head>
 <body>
@@ -372,7 +383,7 @@
 <!-- Login / Role·Client·Org selection (docs §3b) — folded from AD_User/AD_Role/AD_Org; SELECTION, not auth -->
 <div id="idmp-login" style="display:none">
   <div class="idmp-login-card">
-    <div class="idmp-login-mark"><img src="doublebubble.jpg?v=2" alt="" width="52" height="52"></div>
+    <div class="idmp-login-mark"><img src="logo_glass.png?v=2" alt="" width="52" height="52"></div>
     <div class="idmp-login-title">Kernel-ERP — Sign In</div>
     <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
     <!-- §P1 (FRONT_DOOR_PILL_FINISH): the 'How this compares' link is RETIRED here — the experience is now
@@ -423,7 +434,7 @@
 
 <div id="idmp-header">
   <button id="idmp-burger" class="hbtns" title="Menu">&#9776;</button>
-  <span id="idmp-logo"><img src="doublebubble.jpg?v=2" alt="" width="36" height="36"></span>
+  <span id="idmp-logo"><img src="logo_glass.png?v=2" alt="" width="36" height="36"></span>
   <span id="idmp-title">Kernel-ERP</span>
   <input id="idmp-search" type="search" placeholder="Search menu&hellip;" autocomplete="off">
   <span class="spacer"></span>
@@ -432,7 +443,7 @@
     <!-- FUNDAMENTAL LAW (2026-06-18): the iDempiere surface is indistinguishable from real iDempiere — zero
          learning curve. The header keeps ONLY iDempiere-native bits (menu · logo · search · role/client ctx ·
          role-switch/logout). Non-iDempiere controls (Share, Home/engine-view, etc.) live in the pill rail. -->
-    <button id="idmp-switch-btn" title="Switch role / Log out">&#8644;</button>
+    <button id="idmp-switch-btn" title="Log out">&#8676;</button>
   </span>
 </div>
 
@@ -453,6 +464,7 @@
   </main>
 </div>
 
+<script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
 <script src="ad_parser.js?v=24"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
@@ -465,7 +477,11 @@
      and BD must exist at parse time — glassbowl.html load-order parity). -->
 <script src="ad_process.js?v=11"></script>
 <script src="ad_data.js?v=23"></script>
-<script src="idmp_session.js?v=24"></script>
+<!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
+     build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
+     decisions to window.AdAccess instead of computing them independently. -->
+<script src="ad_access.js?v=1"></script>
+<script src="idmp_session.js?v=25"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
 <script src="erp_descriptor.js?v=1"></script>
@@ -485,12 +501,13 @@
 <script src="genesis_seed.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
 <script src="genesis.js?v=2"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
-<script src="system_monitor.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) -->
+<script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
+<script src="system_monitor.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
 <script src="plugin_release.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
-<script src="icons.js?v=10"></script>
+<script src="icons.js?v=12"></script>
 <script src="overlay_kit.js?v=1"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase A/D — the Fold-Engine plugin host (W-PLUGIN) + its pill overlay. ad_callout.js
      gives callout-contributing bundles a live target (it joins ad_modelval/ad_process/post_resolver already loaded). -->
@@ -512,15 +529,24 @@
 <!-- MIGRATE_ERP_PICKER.md §SPEC — still loaded: the login front-door tenant picker (ErpPicker.manifest). -->
 <script src="erp_picker.js?v=6"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
-<script src="kernel_ops.js?v=2"></script>
+<script src="kernel_ops.js?v=3"></script>
+<script src="op_upcaster.js?v=1"></script><!-- D2 (prompts/D2_REMEDY_VERSIONING.md): schema_version stamp + read-time upcaster registry -->
+<script>/* D2: make schema_version stamping the default write seam. install() self-guards (logs SKIPPED if the
+   kernel lacks setVersionStamper), so this is safe; stamping is forward-only + inert to every reducer
+   (witnessed W-D2-* PASS). */
+  try { if (window.ERP && window.ERP.OpUpcaster) window.ERP.OpUpcaster.install(window.KernelOps); }
+  catch (e) { console.warn('§OP_UPCASTER install failed', e); }
+</script>
 <script src="erp_signer.js?v=1"></script>
+<!-- T1 (W-T1-ATTRIB): PIN → employee attribution as audit metadata; device key stays the only signer. -->
+<script src="erp_attrib.js?v=1"></script>
 <script src="erp_kernel.js?v=1"></script>
 <script src="erp_seam.js?v=1"></script>
-<script src="kanban_lens.js?v=3"></script>
+<script src="kanban_lens.js?v=4"></script>
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
-<script src="bim_orders_overlay.js?v=1"></script>
+<script src="bim_orders_overlay.js?v=2"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
 <script src="report_overlay.js?v=9"></script>
 <script src="rule_fold.js?v=2"></script>
@@ -536,7 +562,12 @@
      ring/pay/complete earcons pos_lens.js fires via window.__sfx.play, no per-button tick spam). Guarded:
      pos_lens._sfx no-ops if absent. -->
 <script src="../viewer/sfx.js?v=1" onerror="console.warn('§POS-AUDIO sfx.js absent — POS earcons silent (guarded)')"></script>
-<script src="pos_lens.js?v=9"></script>
+<script src="pos_lens.js?v=10"></script>
+<!-- Kitchen Display (RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS §T2-SPEC) — queue = FOLD over the op log
+     (KitchenCore, == bim-compiler build/erp source of truth, W-KDS-QUEUE headless) + the dumb-terminal
+     lens (KitchenLens). Serve rides pos_core's completeShipmentOps — load AFTER pos_core. -->
+<script src="kitchen_core.js?v=1"></script>
+<script src="kitchen_lens.js?v=1"></script>
 <!-- §P-11 receipt QR (order ref URL, not payable EMVCo — POS_ADDON_SPEC §P-11 rails-honesty note) -->
 <script src="qrcode.min.js"></script>
 <!-- NINJA EXCEL (bim-compiler internal/NinjaExcelAdaptation.md §6.2, W-NINJA-PILL) — Excel-as-report-binder
@@ -551,8 +582,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <!-- §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar from the SAME registry as erp.html/BIM (retire the
      hand-rolled #idmp-pillrail). icons.js already loaded above (overlay-kit block) + pill_builder.js (the
      renderer) + idmp_pills.js (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json. §PILL-REGISTRY. -->
-<script src="pill_builder.js?v=4"></script>
-<script src="idmp_pills.js?v=14"></script>
+<script src="../common/pill_builder.js?v=1"></script>
+<script src="../viewer/connect_scene.js?v=1"></script><!-- §CONNECT-ERP: shared Connect bus (BroadcastChannel+postMessage); ERP registers as 'erp' on first Zoom-Across launch -->
+<script src="zoom_across.js?v=1"></script>
+<script src="idmp_pills.js?v=15"></script>
+<!-- §TEAMS-EMBED — the GATED Teams overlay pill (teams/ROADMAP.md §S9 follow-up). ONE inert guarded script:
+     OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
+     (localStorage.teamsEmbed='1' | ?teams=1) → it lazy-loads the proven teams/ modules + mounts a distinct
+     Teams pill into #idmp-pill. Additive, reversible. Witness: erp/tests/wire_teams_embed.js (W-EMBED-WIRE). -->
+<script src="teams_embed.js?v=1" onerror="console.warn('§TEAMS-EMBED teams_embed.js absent — chrome runs without the Teams pill')"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=6" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
@@ -563,7 +601,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=19"></script>
+<!-- T7 (W-T7-INC): memoized tip-folds (fix 3) + signed shard boundary (fix 4/4b) — load BEFORE crud_overlay so it delegates. -->
+<script src="tip_fold.js?v=1"></script>
+<script src="erp_shard.js?v=1"></script>
+<!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
+<script src="crud_core.js?v=1"></script>
+<script src="crud_overlay.js?v=21"></script>
+<!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
+     (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
+     test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
+     page is opened with ?relay=<url> — no relay param, zero behavior change from today. Must load AFTER
+     crud_overlay.js (erp_sync_relay.js reaches window.__crud.syncNow at DOMContentLoaded). -->
+<script src="erp_relay_client.js?v=1"></script>
+<script src="erp_sync_fsm.js?v=1"></script>
+<script src="erp_sync_relay.js?v=1"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -604,13 +655,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _viewMode = 'grid';    // 'grid' | 'form'
   var _gridSel = Object.create(null);  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select: set of record PK strings (reset on _records reload)
   var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
+  var _lastFoldCreated = []; // Fix: ERP_BUSINESS_CYCLE_E2E.md Stage-1 SO parent-binding — Witness: W-SO-CHILD-BIND
+                              // most recent _overlayListTip() fold's `created` synthetic-pk list (ascending
+                              // opId order — see CORE.listTip in crud_overlay.js). CRUD_CREATE ops never carry
+                              // a real pk on their op record (buildOp() only sets base.id for update/delete/
+                              // process) so overlay:committed's `id` is always null for a create — the ONLY
+                              // place the new row's synthetic pk (-opId) becomes known is this fold's `created`
+                              // array. The CRUD_CREATE handler reads the LAST entry (the just-committed row)
+                              // to thread the correct pk into _selByLevel instead of leaving it stale.
   var _winByName = {};       // AD window name (lowercased) -> windowId — built as the menu renders; drives IdmpHost.focus
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function status(main) { if (main != null) $('idmp-status-main').textContent = main; }
 
-  // ── IndexedDB cache (shares 'ad_seed_v16' with erp.html) ──
+  // ── IndexedDB cache (shares 'ad_seed_v17' with erp.html) ──
   function idbGet(key) {
     return new Promise(function (resolve) {
       try {
@@ -705,8 +764,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // clobber a ?seed= gen db), and only when rows actually merged. INSERT OR IGNORE upstream keeps it idempotent.
       var persisted = false;
       if (mRow > 0 && (!seedParam || seedFile === 'ad_seed.db')) {
-        try { idbPut('ad_seed_v16', db.export().buffer); persisted = true;
-          console.log('§IDEMPIERE shard-persist key=ad_seed_v16 rows=' + mRow + ' resident=Y');
+        try { idbPut('ad_seed_v17', db.export().buffer); persisted = true;
+          console.log('§IDEMPIERE shard-persist key=ad_seed_v17 rows=' + mRow + ' resident=Y');
           // CONSISTENCY_FINISH.md §K-3 — a tenant becoming resident is the largest state change a user
           // can make; it earns a World-history dot like any doc moment. Guarded, best-effort, NOT a
           // signed op (install = infrastructure, deliberately outside the Z fold lane).
@@ -746,8 +805,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§GENESIS-RESIDENT-LIVE install name=' + name + ' client=' + newId + ' rows=' + rows + ' grants=' + grants + ' clients→' + clAfter);
     var persisted = false;
     if (rows > 0) {
-      try { idbPut('ad_seed_v16', db.export().buffer); persisted = true;
-        console.log('§GENESIS-RESIDENT-LIVE persist key=ad_seed_v16 client=' + newId + ' resident=Y');
+      try { idbPut('ad_seed_v17', db.export().buffer); persisted = true;
+        console.log('§GENESIS-RESIDENT-LIVE persist key=ad_seed_v17 client=' + newId + ' resident=Y');
         try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
           label: 'Installed tenant ' + name + ' (' + rows + ' rows, client ' + newId + ')' }); } catch (e2) {} }
       catch (e) { console.warn('§GENESIS-RESIDENT-LIVE persist failed ' + e.message); }
@@ -785,6 +844,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     catch (e) { SQL = await initSqlJs({ locateFile: function () { return 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.wasm'; } }); }
     window.SQL = SQL;   // exposed for the Kanban host (KanbanHost.publish needs a SQL.Database factory)
 
+    // Implementing prompts/ERP_MULTIUSER_CONCURRENCY_POC.md §DocAction Cross-Device Attribution S7 —
+    // Witness: W-REBASE-ATTRIB. Same best-effort, non-blocking idiom erp.html:224-226 already uses (A2)
+    // — install the real per-device edge signer, then opt every NEW op into v2 content-addressed signing
+    // (kernel_ops.js setContentSigning; "production posture since T2/#630" per witness_t7_incremental.js)
+    // so a sig attests the id-independent content hash, not the position-dependent chain hash — the ONLY
+    // shape of sig that can survive erp_sync_fsm.js's rebase() (reorder + re-id). Previously idempiere.html
+    // loaded erp_signer.js but never called installSigner() — every op's sig was silently NULL forever.
+    if (window.ErpSigner && window.KernelOps) {
+      ErpSigner.installSigner(window.KernelOps).then(function () {
+        KernelOps.setContentSigning(true);
+      }).catch(function (e) { console.warn('§SIGN install error', e); });
+    }
+
     // §VFS — CONSTRAINT_MITIGATION item 3 wired live: detect OPFS-vs-IndexedDB at boot (FoldEngineConstraints
     // §6 vfs_backend monitor). On GH Pages this is IDB (no COOP/COEP) — NAMED, not a silent downgrade.
     // Result stashed for future consumers; sql.js here is in-memory, so this is the monitor + no-silent-downgrade
@@ -797,7 +869,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var seedFile = (seedParam && /^[\w.-]+\.db$/.test(seedParam)) ? seedParam : 'ad_seed.db';
     var src = seedParam ? 'gen:' + seedFile : 'network';
     if (!seedParam) {
-      var cached = await idbGet('ad_seed_v16');
+      var cached = await idbGet('ad_seed_v17');
       if (cached && cached.byteLength > 1000) {
         var sig = String.fromCharCode.apply(null, new Uint8Array(cached, 0, 6));
         if (sig === 'SQLite') { db = new SQL.Database(new Uint8Array(cached)); src = 'idb_cache'; }
@@ -806,7 +878,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!db) {
       var resp = await fetch(seedFile); var buf = await resp.arrayBuffer();
       db = new SQL.Database(new Uint8Array(buf));
-      if (!seedParam) idbPut('ad_seed_v16', buf);   // cache only the real seed, never a ?seed= override
+      if (!seedParam) idbPut('ad_seed_v17', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
     // BIM→Project round-trip §B (docs/BIMtoERP.md): overlay the viewer-folded Project Orders + VO amendments
@@ -999,7 +1071,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     $('idmp-del-go').onclick = function () {
       var res = SES.deleteClient(db, c.id);
       if (!res.ok) { closeOv(); return; }
-      try { idbPut('ad_seed_v16', db.export().buffer); } catch (e) {}
+      try { idbPut('ad_seed_v17', db.export().buffer); } catch (e) {}
       console.log('§IDEMPIERE tenant-deleted client=' + c.id + ' rows=' + res.deleted + ' tables=' + res.tables + ' persisted=Y');
       try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
         label: 'Deleted tenant ' + c.name + ' (Client ' + c.id + ', ' + res.deleted + ' rows)' }); } catch (e) {}
@@ -1061,7 +1133,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.APP.actor   = _session.user.id;
     window.APP.clientId = _session.client.id;
     window.APP.orgId   = _session.org ? _session.org.id : 0;
-    console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId);
+    window.APP.roleId  = _session.role.id;
+    // T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md) — record-level access gate seam for
+    // crud_core.js's recordAccessGate (canView AccessLevel + org/client scope, W-ACCESS-HARDEN-proven
+    // headless). A closure over THIS session's db + role so crud_core.js never needs a raw db handle.
+    window.APP.gateRecordFor = function (tableAccessLevel, record) {
+      return SES.gateRecordFor(db, _session.role.id, tableAccessLevel, record);
+    };
+    console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId + ' role=' + window.APP.roleId);
     _buildUserNameMap();   // Task 2 — AD_User_ID → Name for the change-log (iDempiere shows names, not ids)
     // header context bar — live Client · Role · Org (replaces the old static string)
     var orgLabel = _session.org ? _session.org.name.replace(/\s*\(.*\)/, '') : '—';
@@ -1281,7 +1360,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var gear = (window.ICONS && window.ICONS.settings)
         ? ('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.settings.svg + '</svg> ')
         : '⚙ ';
-      btn(gear + 'Process', 'Process (Alt+P) — run the document/table process', hasProc, function () { _showProcessChooser(); });
+      // Accelerator = Alt+O (oracle: ADWindowToolbar altKeyMap.put(VK_O, btnProcess); Alt+P is btnPrint's, not Process's).
+      btn(gear + 'Process', 'Process (Alt+O) — run the document/table process', hasProc, function () { _showProcessChooser(); });
+      // Print — iDempiere's btnPrint (Print24.png, Alt+P): print THIS document = fold its receipt from raw
+      //   header+lines (window.__report.printRecord, PURE). Enabled only on a saved record of a PRINTABLE document
+      //   kind (a header/line table in REPORT_MAP — orders/invoices/shipments/payments/…); iDempiere greys it the
+      //   same way (enablePrint). DISTINCT from the ⋯ Reports pill (= Performance-Analysis financial statements menu).
+      var rmap = (window.__report && window.__report.core) ? window.__report.core.REPORT_MAP : null;
+      var canPrint = !!(hasRec && tn && rmap && rmap[tn]);
+      btn(ic('printer', '🖨') + 'Print', 'Print this document (Alt+P)', canPrint, function () {
+        var ok = window.__report.printRecord(tn, recVal(rec, _keyCol(tab)));
+        console.log('§TOOLBAR print table=' + tn + ' rec=' + recVal(rec, _keyCol(tab)) + ' printable=' + ok);
+      });
       // Zoom Across — iDempiere's btnZoomAcross (magnifier, verified vs theme ZoomAcross24.png). WHERE-USED:
       //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
       //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
@@ -1642,6 +1732,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function renderActiveTab() {
     _newMode = null;   // P3 — any tab switch / grid reload exits new-record mode (untouched New auto-discards, nothing committed)
+    _drillSaved = null; _drillActive = false;   // a real reload supersedes any dashboard drill-narrowing
     var tab = _curTab(); if (!tab) return;
     if (!tab.tableName) { _records = []; _recIdx = 0; $('idmp-content').innerHTML = '<div id="idmp-placeholder">Tab has no table.</div>'; return; }
     // Honest: ad_seed.db carries AD metadata for ALL windows but DATA for a curated subset only.
@@ -1727,6 +1818,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function renderBody() {
     var tab = _curTab(); if (!tab) return;
     var host = $('idmp-content'); host.innerHTML = '';
+    if (_drillActive && _drillSaved) host.appendChild(_drillBanner());   // DASH_DRILL — "show all" to restore the full set
     if (_viewMode === 'grid') {
       host.appendChild(buildGrid(tab));
       // MOBILE_CARDS.md §5 — whitebox witness: cards rendered, table hidden ≤760, table shown on desktop.
@@ -1816,6 +1908,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var leadStatus = hasStatus && !statusInCols;
     if (leadStatus) htr.appendChild(el('th', null, 'Status'));
     cols.forEach(function (f) { htr.appendChild(el('th', null, f.name)); });
+    // Leg 3 — Posted COLUMN (accounting-role-gated, posting docs only). Trailing, mirroring iDempiere's AD
+    // Posted Button field; skipped if Posted is already one of the sampled display columns (no duplicate).
+    var postedInCols = cols.some(function (f) { return /^posted$/i.test(f.columnName); });
+    var showPosted = _showPostedAffordance() && !postedInCols;
+    if (showPosted) htr.appendChild(el('th', null, 'Posted'));
     thead.appendChild(htr); table.appendChild(thead);
     var tb = el('tbody');
     if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = (cols.length || 1) + 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
@@ -1842,6 +1939,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
       });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
+      if (showPosted) { var tdP = el('td', 'idmp-posted-cell'); tdP.setAttribute('data-ad-col', 'Posted'); tdP.appendChild(_postedButton(rec, i)); tr.appendChild(tdP); }
       tr.addEventListener('click', function () { _dirtyGuard(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
       tb.appendChild(tr);
     });
@@ -1882,6 +1980,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       lbl.appendChild(el('span', 'idmp-card-title', title));
       hd.appendChild(lbl);
       var _cds = _recStatus(rec); if (_cds) hd.appendChild(_statusChip(_cds));   // punch-list #2 — status-at-a-glance on mobile cards
+      if (_showPostedAffordance()) hd.appendChild(_postedButton(rec, i));        // Leg 3 — Posted affordance on mobile cards (acct role + posting doc)
       hd.appendChild(el('span', 'idmp-card-open', 'Open ›'));
       acc.appendChild(hd);
       var bd = el('div', 'bd');
@@ -1988,6 +2087,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         created = created.filter(function (p) { return kept[String(p)]; });
       }
       var nStatus = _applyDocTip(tab, rows, sdb, br);          // a created-then-processed row reads its signed CO
+      _lastFoldCreated = created;   // W-SO-CHILD-BIND — ascending-opId synthetic pks; last entry = most recent create
       if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
         _records = rows; _recIdx = Math.min(_recIdx, Math.max(0, rows.length - 1));
         console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
@@ -2170,6 +2270,34 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
   }
   // ctx — REAL row accessors for the registered handlers (EXTRACT: every value is a seed row; absent table → honest 0).
+  // §GENSHIP-LIVE / §GENINV-LIVE (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "Stage 2, one layer deeper") —
+  // _procCtx's fetchOrder/fetchOrderLines used to read ONLY window.__idmpDb (the raw seed bundle), so a
+  // synthetic (CRUD_CREATE-only) order's post-DocAction status and lines were invisible to the process
+  // HANDLERS even though renderOrderPicker (same file, below) already offers such orders as candidates —
+  // same "wrong source" bug the picker fix (§Fix 2026-07-21 above) closed for the SELECTOR, not yet for the
+  // RUN path. Folds via the SAME window.__crud.core.listTip/readTip primitives renderOrderPicker already
+  // uses (non-invent, reused verbatim). Sync, not withSidecar-async: by the time Run is clicked, the
+  // picker's own withSidecar call already hydrated window.__crud.kernelDb() once (paint() only runs after
+  // that resolves), so a synchronous read here is safe — falls through to the base-only row/rows on any
+  // infra gap (never worse than before).
+  function _foldOrderRow(id) {
+    var base = _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+    var c = window.__crud;
+    if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function' || typeof c.core.readTip !== 'function') return base;
+    var sdb = c.kernelDb(); if (!sdb) return base;
+    var folded; try { folded = c.core.listTip(sdb, 'c_order', 'c_order_id', base ? [base] : [], null); } catch (e) { folded = null; }
+    var row = ((folded && folded.rows) || []).filter(function (r) { return Number(r.c_order_id) === Number(id); })[0] || base;
+    if (row) { try { var tip = c.core.readTip(sdb, 'c_order', row.c_order_id, null); if (tip != null) row.docstatus = tip; } catch (e) {} }
+    return row;
+  }
+  function _foldOrderLines(id) {
+    var base = _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+    var c = window.__crud;
+    if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function') return base;
+    var sdb = c.kernelDb(); if (!sdb) return base;
+    var folded; try { folded = c.core.listTip(sdb, 'c_orderline', 'c_orderline_id', base, null); } catch (e) { folded = null; }
+    return ((folded && folded.rows) || base).filter(function (r) { return Number(r.c_order_id) === Number(id); });
+  }
   function _procCtx() {
     var RM = (window.__report && window.__report.core) ? window.__report.core.REPORT_MAP : {};
     function header(key, info) {
@@ -2242,11 +2370,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // order (the seed's state) → the handler honestly yields 0 lines, never a fabricated shipment.
       fetchOrder: function (info) {
         var id = info && info.Record_ID; if (id == null) return null;
-        return _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+        return _foldOrderRow(id);
       },
       fetchOrderLines: function (info) {
         var id = info && info.Record_ID; if (id == null) return [];
-        return _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+        return _foldOrderLines(id);
       },
       onHandOf: function (pid, wh) {
         var r = _sqlRows('SELECT COALESCE(SUM(s.qtyonhand),0) oh FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.m_product_id=' + Number(pid) + ' AND l.m_warehouse_id=' + Number(wh));
@@ -2303,15 +2431,24 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var isInv = proc.classname === 'org.compiere.process.InvoiceGenerate';
     var verb = isInv ? 'Generate Invoice' : 'Generate Shipment';
     var tag = isInv ? '§GENINV-LIVE' : '§GENSHIP-LIVE';
+    var wantStatus = isInv ? ['CO', 'CL'] : ['CO'];
     var pane = el('div', 'idmp-procpane idmp-procform');
     pane.appendChild(el('h3', null, proc.name));
     pane.appendChild(el('div', 'sub', 'Process · AD_Process ' + proc.AD_Process_ID + ' · pick a completed Sales Order to ' + (isInv ? 'generate an invoice from' : 'generate a shipment from')));
-    var statusClause = isInv ? "docstatus IN ('CO','CL')" : "docstatus='CO'";
-    var rows = _sqlRows("SELECT c_order_id, documentno, deliveryrule, invoicerule, m_warehouse_id, ad_org_id FROM c_order WHERE " + statusClause + " AND issotrx='Y' ORDER BY c_order_id");
+    // Implementing prompts/ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21 (Stage 2/3) — Witness: W-GENPICKER-OVERLAY.
+    // ISSUE: this SELECT read ONLY window.__idmpDb (the raw seed bundle) — a freshly-created-then-Completed
+    // order (a signed CRUD_CREATE + SET_STATUS pair in the op-log sidecar, per §Fix 2026-07-21 Stage 1) was
+    // never a candidate, no matter how legitimately DR->CO it went, because it was never a real base row. Same
+    // class of bug this whole lane keeps finding (engine/UI reading the wrong source). FIX: pull ALL IsSOTrx='Y'
+    // base rows (no status filter yet — a synthetic row's status only exists post-fold), fold CRUD_CREATE/UPDATE
+    // via CORE.listTip (the SAME primitive idempiere.html's own _overlayListTip already uses for grids), overlay
+    // each row's latest signed SET_STATUS via CORE.readTip (the SAME primitive _overlayDocTip uses for the status
+    // chip), THEN apply the status filter — so a freshly-created order that reached DocStatus=CO through the
+    // real DocAction bar is offered exactly like a seed order would be. No sidecar/engine → fall through to the
+    // OLD base-only behavior (never worse than before, never silently empty on an infra gap).
+    var baseRows = _sqlRows("SELECT c_order_id, documentno, docstatus, deliveryrule, invoicerule, m_warehouse_id, ad_org_id FROM c_order WHERE issotrx='Y' ORDER BY c_order_id");
     var fld = el('div', 'fld'); fld.appendChild(el('label', null, 'Sales Order'));
     var sel = document.createElement('select'); sel.setAttribute(isInv ? 'data-geninv-order' : 'data-genship-order', '1');
-    if (!rows.length) { var o0 = el('option', null, '— no completed Sales Orders in this tenant —'); o0.value = ''; sel.appendChild(o0); }
-    rows.forEach(function (r) { var o = el('option', null, (r.documentno || ('Order ' + r.c_order_id)) + '  (rule ' + (isInv ? r.invoicerule : r.deliveryrule) + ')'); o.value = String(r.c_order_id); o.setAttribute('data-wh', String(r.m_warehouse_id)); o.setAttribute('data-org', String(r.ad_org_id)); sel.appendChild(o); });
     fld.appendChild(sel); pane.appendChild(fld);
     var actions = el('div', 'actions');
     var run = el('button', 'run', verb); run.setAttribute('data-proc-run', '1');
@@ -2331,6 +2468,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
+    function paint(rows) {
+      sel.innerHTML = '';
+      if (!rows.length) { var o0 = el('option', null, '— no completed Sales Orders in this tenant —'); o0.value = ''; sel.appendChild(o0); }
+      rows.forEach(function (r) { var o = el('option', null, (r.documentno || ('Order ' + r.c_order_id)) + '  (rule ' + (isInv ? r.invoicerule : r.deliveryrule) + ')'); o.value = String(r.c_order_id); o.setAttribute('data-wh', String(r.m_warehouse_id)); o.setAttribute('data-org', String(r.ad_org_id)); sel.appendChild(o); });
+      console.log(tag + '-CANDIDATES count=' + rows.length + ' ids=[' + rows.map(function (r) { return r.c_order_id; }).join(',') + ']');
+    }
+    var c = window.__crud;
+    if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function' || typeof c.core.readTip !== 'function') {
+      paint(baseRows.filter(function (r) { return wantStatus.indexOf(String(r.docstatus).toUpperCase()) >= 0; }));
+      return;
+    }
+    var o0 = el('option', null, 'Loading…'); o0.value = ''; sel.appendChild(o0);
+    c.withSidecar(function (sdb) {
+      var rows = baseRows;
+      if (sdb) {
+        var folded = null;
+        try { folded = c.core.listTip(sdb, 'c_order', 'c_order_id', baseRows, null); } catch (e) { folded = null; }
+        rows = (folded && folded.rows) || baseRows;
+        rows.forEach(function (r) {
+          try { var tip = c.core.readTip(sdb, 'c_order', r.c_order_id, null); if (tip != null) r.docstatus = tip; } catch (e) {}
+        });
+      }
+      paint(rows.filter(function (r) { return wantStatus.indexOf(String(r.docstatus).toUpperCase()) >= 0; }));
+    });
   }
   function renderProjectPicker(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
@@ -2506,7 +2667,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var res = window.AdProcess.dispatch(b, info, _procCtx());
     console.log('§AD-PROC-LIVE proc=' + res.ad_process_id + ' name="' + res.name + '" classname=' + (res.classname || '(blank)') +
       ' dispatched=' + (res.dispatched ? 'Y' : 'N') +
-      (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason) : ' reason=' + res.reason));
+      (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason + ' message=' + JSON.stringify(res.message)) : ' reason=' + res.reason));
     renderProcResult(proc, res);
   }
   function renderProcResult(proc, res) {
@@ -2577,6 +2738,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         : isInv
         ? r.lineCount + ' invoice line' + (r.lineCount === 1 ? '' : 's') + ' folded (QtyInvoiced = QtyOrdered − QtyInvoiced)'
         : r.lineCount + ' order line' + (r.lineCount === 1 ? '' : 's') + ' folded (Qty = PlannedQty − InvoicedQty; Price = PlannedPrice)'));
+      // §GENPROCESS-CONFIRM (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22, "missing commit wiring") — real
+      // iDempiere's own Generate-Shipments/Invoices UX is preview-then-confirm (this table IS the preview);
+      // the missing half was the commit itself. r.ops here is the SAME CREATE_DOCUMENT+N×CREATE_LINE group
+      // erp_engine.js's buildDoc already produces (its own header: "Verbs return ops[]; the kernel applies
+      // + commitOps them") — pos_lens.js's buildSaleGroup/buildRegisterGroup already commit the identical
+      // shape via KO.commitGroup; window.__crud.applyOpGroup (crud_overlay.js) wraps that same primitive.
+      var cfWrap = el('div', 'actions'); cfWrap.style.cssText = 'margin-top:10px';
+      var cfBtn = el('button', 'run', 'Confirm & Post'); cfBtn.setAttribute('data-genprocess-confirm', '1');
+      var cfMsg = el('div', 'msg'); cfMsg.style.cssText = 'margin-top:6px';
+      cfBtn.addEventListener('click', function () {
+        cfBtn.disabled = true; cfBtn.textContent = 'Posting…';
+        window.__crud.applyOpGroup(r.ops, function (out) {
+          if (!out || !out.committed) {
+            cfBtn.disabled = false; cfBtn.textContent = 'Confirm & Post';
+            cfMsg.textContent = 'Not posted: ' + ((out && out.reason) || 'unknown');
+            console.log('§GENPROCESS-CONFIRM table=' + h.table + ' committed=N reason=' + ((out && out.reason) || 'unknown'));
+            return;
+          }
+          cfBtn.textContent = 'Posted ✓'; cfBtn.style.opacity = '0.6';
+          cfMsg.textContent = (isShip ? 'Shipment' : isInv ? 'Invoice' : 'Order') + ' posted — group ' + String(out.gid).slice(0, 8) + '… · ' + out.ids.length + ' ops · signed=' + (out.verifyOk ? 'Y' : 'N');
+          console.log('§GENPROCESS-CONFIRM table=' + h.table + ' committed=Y gid=' + out.gid + ' ops=' + out.ids.length + ' verifyOk=' + out.verifyOk);
+        });
+      });
+      cfWrap.appendChild(cfBtn); pane.appendChild(cfWrap); pane.appendChild(cfMsg);
     }
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
@@ -2632,6 +2817,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       });
     });
   }
+  // Leg 3 — the Posted BUTTON on the form (iDempiere WButtonEditor parity): a labelled field whose button is
+  // the posting-status affordance. Gated to acct roles on posting docs, only for a real saved record.
+  function _appendPostedField(formEl, tab, rec) {
+    if (!rec || !_showPostedAffordance()) return;
+    var fld = el('div', 'idmp-fld idmp-posted-fld');
+    fld.setAttribute('data-ad-table', tab.tableName); fld.setAttribute('data-ad-column', 'Posted');
+    fld.appendChild(el('label', null, 'Posted'));
+    var wrap = el('div', 'val'); wrap.appendChild(_postedButton(rec, _recIdx)); fld.appendChild(wrap);
+    formEl.appendChild(fld);
+  }
   function buildForm(tab) {
     var rec = _records[_recIdx];
     var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
@@ -2643,6 +2838,45 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var copyFrom = _newMode.copyFrom;
       _withFoldedEntry(tn, 'create', function () {
         var opts = _inlineOptsFor(tn, nf);
+        // §DOCTYPE-PER-WINDOW (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "IsSOTrx/DocType gap") — the AD_Tab's
+        // own WhereClause is the REAL per-window signal iDempiere already uses to split Sales vs Purchase Order
+        // windows (e.g. "C_Order.IsSOTrx='Y'" vs "...='N'", confirmed live: window 143 vs 181), already loaded
+        // into tab.whereClause for grid filtering but never consulted at CREATE time — beforeSave's
+        // docTypeTargetDefault always fell back to the client's Standard SALES doctype regardless of which
+        // window authored the record. Stash it as a create-scoped hint on window.APP (the SAME session-context
+        // channel _docCtx() already reads orgId/clientId from), read+applied only for this one create, cleared
+        // right after so it never leaks into an unrelated later save.
+        window.APP = window.APP || {};
+        var _wc = tab.whereClause && /\bIsSOTrx\s*=\s*'([YN])'/i.exec(tab.whereClause);
+        window.APP._createIsSOTrx = _wc ? _wc[1].toUpperCase() : null;
+        // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 2 — Witness: W-RECEIPT-MOVEMENTTYPE. The M_InOut
+        // real AD_Tab family splits Shipment (257, "MovementType IN ('C-')") vs Material Receipt (296,
+        // "MovementType IN ('V+')") vs the return tabs (52371/53276) by MovementType, NOT IsSOTrx (verified
+        // live against ad_seed.db — M_InOut carries no IsSOTrx-pattern WhereClause anywhere) — the SAME
+        // per-window signal as the IsSOTrx case above, different column. Same stash-scoped-to-this-create
+        // pattern as _createIsSOTrx.
+        var _wcMt = tab.whereClause && /\bMovementType\s+IN\s*\(\s*'([A-Z][+-])'/i.exec(tab.whereClause);
+        window.APP._createMovementType = _wcMt ? _wcMt[1].toUpperCase() : null;
+        // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22, "order-LINE stale parent FK") —
+        // a child tab's (tabLevel>0) New form has a locked/readonly parent-link column (e.g.
+        // C_OrderLine.C_Order_ID) but nothing ever seeded its value with the actual parent record's pk:
+        // defaultsFor() only resolves AD_Column.DefaultValue (empty here, by real iDempiere convention —
+        // the parent link is set programmatically, never via a column default), so the field rendered
+        // empty, then populateRefs()'s FK dropdown (never matching that empty value against any real row)
+        // silently fell through to whichever row sorts first — an ARBITRARY, WRONG parent order. Reuses the
+        // SAME naming-convention parent-column resolution renderActiveTab() already uses for GRID filtering
+        // (pKey = the parent tab's own key column name, matched by identity against the child table — real
+        // iDempiere's GridTab.getLinkColumnName() convention) to seed the value BEFORE the form renders.
+        var seedVals = null, _lvl = tab.tabLevel || 0;
+        if (_lvl > 0) {
+          var _w = _curWin(), _pIdx = -1;
+          for (var _pi = _activeTabIdx - 1; _pi >= 0; _pi--) { if ((_w.tabs[_pi].tabLevel || 0) === _lvl - 1) { _pIdx = _pi; break; } }
+          if (_pIdx >= 0) {
+            var _pTab = _w.tabs[_pIdx], _pKey = _keyCol(_pTab), _pPk = _selByLevel[_lvl - 1];
+            if (_pPk != null && _pKey && _colExists(tab.tableName, _pKey)) { seedVals = {}; seedVals[_pKey.toLowerCase()] = _pPk; }
+          }
+        }
+        if (seedVals) opts.seedVals = seedVals;
         if (copyFrom != null) window.__crud.copyInline(tn, copyFrom, nmount, opts);
         else window.__crud.createInline(tn, nmount, opts);
       });
@@ -2659,6 +2893,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var fsmBar = buildDocActionBar(tab, rec); if (fsmBar) ef.appendChild(fsmBar);   // Process bar stays SEPARATE (T2)
       var mountEl = el('div', null); mountEl.id = 'idmp-inline-mount'; ef.appendChild(mountEl);
       _withFoldedEntry(tn, 'update', function () { window.__crud.editInline(tn, pk, mountEl, _inlineOptsFor(tn, ef)); });
+      _appendPostedField(ef, tab, rec);
       return ef;
     }
     var form = el('div', 'idmp-form'); form.id = 'idmp-form';
@@ -2666,6 +2901,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var fsmBar2 = buildDocActionBar(tab, rec);                            // §AD-DOCFSM-LIVE (B-2)
     if (fsmBar2) form.appendChild(fsmBar2);
     _appendReadonlyFields(form, tab, rec);
+    _appendPostedField(form, tab, rec);
     return form;
   }
   // _appendReadonlyFields — the classic read-only field render (the fallback when a table has no crud spec).
@@ -2900,6 +3136,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ct && ct.tableName && _adMatch(ct.tableName, t)) {
         console.log('§CRUD-COMMIT-LIVE refold table=' + t + ' op=' + d.op_type + ' view=' + _viewMode);
         try { _overlayListTip(ct, _records); } catch (er) {}
+        // Fix: ERP_BUSINESS_CYCLE_E2E.md Stage-1 SO parent-binding — Witness: W-SO-CHILD-BIND
+        // A CRUD_CREATE folds the new row into _records but previously left _recIdx/_selByLevel pointing at
+        // whatever record was current at window open — so a child tab drilled after New+Save filtered by the
+        // STALE parent pk (master-detail reads _selByLevel[level-1], see renderActiveTab ~line 1723), not the
+        // record just created. NOTE (verified against the real code, differs from the original bug report):
+        // d.id is NOT usable here — buildOp() in crud_overlay.js only sets base.id for update/delete/process,
+        // never for create, so overlay:committed's `id` field is always null on a CRUD_CREATE. The new row's
+        // real synthetic pk (-opId) only becomes known inside _overlayListTip's listTip() fold — captured just
+        // above into _lastFoldCreated (ascending opId order; last entry = the row this very commit just made).
+        if (d.op_type === 'CRUD_CREATE') {
+          try {
+            var newPk = _lastFoldCreated.length ? _lastFoldCreated[_lastFoldCreated.length - 1] : null;
+            var newKeyCol = _keyCol(ct), foundIdx = -1;
+            if (newPk != null) {
+              for (var ri = 0; ri < _records.length; ri++) {
+                if (String(recVal(_records[ri], newKeyCol)) === String(newPk)) { foundIdx = ri; break; }
+              }
+            }
+            if (foundIdx >= 0) { _recIdx = foundIdx; _setSel(ct); }
+            console.log('§CRUD-CREATE-SEL table=' + t + ' id=' + newPk + ' recIdx=' + foundIdx + ' selLevel=' + (ct.tabLevel || 0) + ' sel=' + _selByLevel[ct.tabLevel || 0]);
+          } catch (er4) { console.log('§CRUD-CREATE-SEL-ERROR table=' + t + ' id=' + d.id + ' err=' + er4); }
+        }
         // P2/P3 — repaint the CURRENT view post-commit: form view re-mounts the inline editor from the now-committed
         //   tip (baseline resets, dirty clears); grid view repaints so a created row APPEARS / a deleted row vanishes.
         if (_viewMode === 'form') { try { refreshForm(); } catch (er2) {} } else { try { renderBody(); } catch (er3) {} }
@@ -2953,6 +3211,45 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { ok = _adQ("SELECT 1 AS x FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE UPPER(t.tablename)=UPPER(?) AND c.columnname='Posted' LIMIT 1", [tn]).length > 0; }
     catch (e) { ok = false; }
     _postingDocCache[tn] = ok; return ok;
+  }
+  // ── Leg 3 (RESUME_IDMP_FIDELITY §POSTED COLUMN) — surface iDempiere's AD `Posted` Button field as the
+  //    native Posted COLUMN/button, ROLE-GATED to accounting roles. NON-INVENT: the gate reuses the existing
+  //    §AD-GATE posting-doc answer (table carries the AD Posted col) AND the role's MRole.isShowAcct; the status
+  //    label folds from the _Posted Status ref-list (AD_Reference 234); the click reuses the EXISTING accounting
+  //    seams (openPostedFor for actual GL facts when posted, openPreviewFor for the dry-run otherwise). No new verb.
+  function _acctRole() { return !!(_session && _session.role && _session.role.isShowAcct); }   // MRole.isShowAcct
+  function _showPostedAffordance() { return _curPostingDoc && _acctRole(); }
+  // The Posted status label from the AD `_Posted Status` ref-list (AD_Reference 234) for the row's Posted code.
+  // A null/empty code = the doc has never been posted → iDempiere's "Not Posted".
+  var _postedLabelCache = {};
+  function _postedLabel(code) {
+    var c = (code == null) ? '' : String(code);
+    if (c === '' || c.toUpperCase() === 'N') return 'Not Posted';
+    if (_postedLabelCache[c] !== undefined) return _postedLabelCache[c];
+    var lbl = c;
+    try { var r = _adQ("SELECT name AS n FROM ad_ref_list WHERE ad_reference_id=234 AND value=? LIMIT 1", [c]); if (r.length) lbl = r[0].n; } catch (e) {}
+    _postedLabelCache[c] = lbl; return lbl;
+  }
+  function _isPostedRec(rec) { return String(recVal(rec, 'Posted')).toUpperCase() === 'Y'; }
+  // Click the Posted affordance for the given record: posted → actual GL facts (openPostedFor), else the
+  // dry-run "what Complete would post" (openPreviewFor). Both seams already exist; this UNIFIES them behind
+  // iDempiere's single Posted affordance. Sets _recIdx so the per-record seams act on the clicked row.
+  function _openPostedAffordance(i) {
+    if (typeof i === 'number') _recIdx = i;
+    var rec = _records[_recIdx]; var posted = rec && _isPostedRec(rec);
+    console.log('§POSTED-COLUMN open rec=' + (rec ? recVal(rec, _keyCol(_curTab())) : 'none') + ' posted=' + posted + ' → ' + (posted ? 'GL-facts' : 'preview'));
+    if (posted) openPostedFor(); else openPreviewFor();
+  }
+  // The Posted button element (grid cell / form field / card) — label = status from the ref-list, glyph =
+  // bookOpen (ledger, the closest Lucide line glyph to iDempiere's InfoAccount). Reflects posted/draft state.
+  function _postedButton(rec, i) {
+    var posted = _isPostedRec(rec);
+    var b = el('button', 'idmp-posted-btn' + (posted ? ' is-posted' : ''));
+    var ic = (window.OverlayKit && OverlayKit.ico) ? OverlayKit.ico('bookOpen', 13) : '';
+    b.innerHTML = ic + '<span>' + _postedLabel(recVal(rec, 'Posted')) + '</span>';
+    b.title = posted ? 'Posted — view the accounting (GL facts)' : 'Not posted — preview what Complete would post';
+    b.addEventListener('click', function (e) { e.stopPropagation(); _openPostedAffordance(i); });
+    return b;
   }
   function openPostedFor() {
     if (!_session) { status('Log in first to see Accts Posted'); return; }
@@ -3021,19 +3318,82 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
 
   // ── Pill rail (mobile-style, right edge) — Posted · Graph · Kanban · Install · Migrate (Odoo effects). ──
-  function _overlay(title, node) {
+  // onClose (optional, §BUGFIX 2026-07-13): callers that mount extra body-level chrome alongside `node`
+  // (POS lens's cart float panel + ⋯ dock — see pos_lens.js) pass a teardown so it fires on EVERY close
+  // path (✕ tap, back-gesture), not just their own explicit exit button. Unused callers are unaffected.
+  function _overlay(title, node, onClose) {
     _injectPostedCSS(); _injectPillCSS();
     var prev = $('posted-overlay'); if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
     var ov = el('div'); ov.id = 'posted-overlay';
     var hd = el('div', 'posted-ov-hd', title);
     var x = el('span', 'posted-ov-x', '✕');
     var unbind = window.AcctsPosted.bindBack(close);
-    function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); if (unbind) unbind(); }
+    function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); if (unbind) unbind(); if (typeof onClose === 'function') { try { onClose(); } catch (e) {} } }
     x.addEventListener('click', close); hd.appendChild(x);
     ov.appendChild(hd); ov.appendChild(node); document.body.appendChild(ov);
   }
+  // ── DASHBOARD DRILL (DASH_DRILL) — tap a donut slice → fetch THOSE records back in their own window grid
+  //   (1 record → straight to its form; N → the grid narrowed to them, with a "show all" banner). Client-side
+  //   narrowing of the ALREADY-loaded _records (preserves op-log/OPFS overlays — never re-queries), iDempiere's
+  //   Zoom feel; any tab/window reload clears it. NON-INVENT: the slice's real record rows. ──
+  var _drillSaved = null, _drillActive = false;
+  function _closeDashOverlay() { var ov = $('posted-overlay'); if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }
+  function _drillToRecords(rows) {
+    var tab = _curTab(); if (!tab || !rows || !rows.length) return;
+    if (!_drillSaved) _drillSaved = _records;     // remember the full set (first drill only)
+    _closeDashOverlay();
+    _records = rows.slice(); _recIdx = 0; _drillActive = true;
+    _viewMode = rows.length === 1 ? 'form' : 'grid';
+    renderBody(); renderToolbar();
+    console.log('§DASH-DRILL table=' + tab.tableName + ' recs=' + rows.length + ' mode=' + _viewMode + ' of=' + (_drillSaved ? _drillSaved.length : '?'));
+  }
+  // drill by record PKs against the open window's loaded set (used by the pivot iframe's message) — same table only.
+  function _drillByKeys(ids) {
+    var tab = _curTab(); if (!tab || !ids || !ids.length) return false;
+    var kc = _keyCol(tab), set = {}; ids.forEach(function (i) { set[String(i)] = 1; });
+    var rows = (_drillSaved || _records).filter(function (r) { return set[String(recVal(r, kc))]; });
+    if (!rows.length) {   // pivot folds the whole tenant table; the window adds its own where (IsSOTrx/org) — fetch by PK
+      try { rows = ADD.readRecords(db, tab.tableName, kc + ' IN (' + ids.map(function (i) { return _lit(i); }).join(',') + ')', null) || []; } catch (e) {}
+    }
+    if (!rows.length) { console.log('§DASH-DRILL-KEYS miss ids=' + ids.length); return false; }
+    _drillToRecords(rows); return true;
+  }
+  // long-press → drill (deliberate intent; a plain tap/hover only previews). The ONE gesture shared by every
+  //   dashboard lens. Cancels on movement (so a kanban card-drag still works) or early release. ~480ms, mouse+touch.
+  function _lpDrill(el, getRows) {
+    var timer = null, sx = 0, sy = 0;
+    function clear() { if (timer) { clearTimeout(timer); timer = null; } }
+    function start(x, y) { sx = x; sy = y; clear(); timer = setTimeout(function () { timer = null; var rows = getRows(); if (rows && rows.length) _drillToRecords(rows); }, 480); }
+    function moved(x, y) { if (timer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) clear(); }
+    el.addEventListener('mousedown', function (e) { start(e.clientX, e.clientY); });
+    el.addEventListener('mousemove', function (e) { moved(e.clientX, e.clientY); });
+    el.addEventListener('mouseup', clear); el.addEventListener('mouseleave', clear); el.addEventListener('dragstart', clear);
+    el.addEventListener('touchstart', function (e) { var t = e.touches && e.touches[0]; if (t) start(t.clientX, t.clientY); }, { passive: true });
+    el.addEventListener('touchmove', function (e) { var t = e.touches && e.touches[0]; if (t) moved(t.clientX, t.clientY); }, { passive: true });
+    el.addEventListener('touchend', clear); el.addEventListener('touchcancel', clear);
+  }
+  function _restoreFromDrill() {
+    if (!_drillSaved) return;
+    _records = _drillSaved; _drillSaved = null; _drillActive = false; _recIdx = 0; _viewMode = 'grid';
+    renderBody(); renderToolbar();
+    console.log('§DASH-DRILL-RESTORE recs=' + _records.length);
+  }
+  function _drillBanner() {
+    // minimal restore control only — the drilled records are self-evident (no explanatory note).
+    var bar = el('div'); bar.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:8px';
+    var back = el('button', null, '✕ Show all'); back.style.cssText = 'background:transparent;color:#1f6feb;border:1px solid #c3d7ff;border-radius:6px;padding:4px 11px;font-size:12px;font-weight:600;cursor:pointer';
+    back.addEventListener('click', function () { _restoreFromDrill(); });
+    bar.appendChild(back); return bar;
+  }
   // distinct-value count of a column across the open window's records (heat-map cardinality scoring).
-  function _distinctCount(col) { var s = {}; _records.forEach(function (r) { s[String(recVal(r, col))] = 1; }); return Object.keys(s).length; }
+  // ── dashboard compute cache — _distinctCount/_groupRecsBy/_groupRecs are recomputed many times per open
+  //   (each a full _records scan, the folds also re-run fmt per row). Memoize per CURRENT _records array;
+  //   auto-invalidates when _records is reassigned (window/record load) or its length changes — no call-site
+  //   bookkeeping, and a stale fold can never outlive the data it folded. Pure reads, behaviour-identical. ──
+  var _dcCache = {}, _grpCache = {}, _grCache = null, _cacheArr = null, _cacheLen = -1;
+  var _dcCalls = 0, _dcComputes = 0, _grpCalls = 0, _grpComputes = 0;   // whitebox: calls ≫ computes ⇒ dedup working
+  function _dashCacheGate() { if (_cacheArr !== _records || _cacheLen !== _records.length) { _cacheArr = _records; _cacheLen = _records.length; _dcCache = {}; _grpCache = {}; _grCache = null; } }
+  function _distinctCount(col) { _dashCacheGate(); _dcCalls++; if (col in _dcCache) return _dcCache[col]; _dcComputes++; var s = {}; _records.forEach(function (r) { s[String(recVal(r, col))] = 1; }); return (_dcCache[col] = Object.keys(s).length); }
   // Pick the best CATEGORICAL/lookup column for a heat map when there is no docstatus lifecycle: prefer
   // declared FK/list references (tableDirect/table/search/list/yesno) or *_ID columns, with cardinality in a
   // useful band (≥2, < rows — never constant, never unique-per-row). Falls back to any usable column.
@@ -3051,13 +3411,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return best;
   }
   function _groupRecs() {
+    _dashCacheGate(); if (_grCache) return _grCache;
     var tab = _curTab(); if (!tab || !_records.length) return null;
     var flds = _displayFields(tab) || [], pick = null, hasStatus = false;
     for (var i = 0; i < flds.length; i++) { var cn = (flds[i].columnName || '').toLowerCase(); if (cn.indexOf('docstatus') >= 0 || cn.indexOf('status') >= 0) { pick = flds[i]; hasStatus = true; break; } }
     if (!pick) pick = _bestPivot(tab) || flds[0];   // no lifecycle → a sensible lookup, NOT a blind flds[0]
     if (!pick) return null;
     var g = {}; _records.forEach(function (r) { var v = String(fmt(pick, recVal(r, pick.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); });
-    return { col: pick, label: pick.name, groups: g, tab: tab, hasStatus: hasStatus };
+    return (_grCache = { col: pick, label: pick.name, groups: g, tab: tab, hasStatus: hasStatus });
   }
   // Heat map = the no-pivot fallback for the Kanban (a board with no wfmc states has no drop-zones, so an
   // empty board is useless): tiles per distinct lookup value, intensity ∝ count. Counts are REAL row folds.
@@ -3081,25 +3442,70 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     b.style.cssText = 'background:#1f6feb;color:#fff;border:none;border-radius:7px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer';
     b.addEventListener('click', fn); bar.appendChild(b); return bar;
   }
-  function openGraphFor() {
+  // DASHBOARD UNIFY — the lenses (Graph/Cards/Pivot/List) are tabs of ONE surface. Each lens fn takes an
+  //   optional `mount` Element: when set it renders INTO the Dashboard tab body; when absent it opens its own
+  //   overlay (back-compat). _lensOut is the single fork. (Guarded `instanceof HTMLElement` so a click Event
+  //   passed as the handler arg is never mistaken for a mount.)
+  function _asMount(m) { return (typeof HTMLElement !== 'undefined' && m instanceof HTMLElement) ? m : null; }
+  function _lensOut(mount, title, content) {
+    if (mount) { mount.innerHTML = ''; mount.appendChild(content); }
+    else _overlay(title, content);
+  }
+  // amount column for a table's records (Σ per group on hover) — AD naming convention, NON-INVENT.
+  function _amountColOf(cols) {
+    function has(c) { return cols.some(function (k) { return k.toLowerCase() === String(c).toLowerCase(); }); }
+    if (has('GrandTotal')) return cols.filter(function (k) { return k.toLowerCase() === 'grandtotal'; })[0];
+    for (var i = 0; i < cols.length; i++) { if (/(Amt|Amount|Total)$/i.test(cols[i]) && !/line/i.test(cols[i])) return cols[i]; }
+    return null;
+  }
+  function _amtSum(rows, amtCol) { var s = 0; if (amtCol) rows.forEach(function (r) { var v = Number(recVal(r, amtCol)); if (isFinite(v)) s += v; }); return s; }
+  // ── shared bar renderer (Graph lens + Ask-panel "By X" regroups use the SAME bars) ──────────────────
+  //   groups: { key -> rows[] } (real record folds). statusCol set ⇒ semantic status palette; else per-key hue.
+  //   Bars FOLD OUT (width 0→target, staggered) after paint so first sight is instant. Rich hover = count · %
+  //   · Σamount. All NON-INVENT — folded from the real records. Returns the facts the Ask panel phrases.
+  function _renderBars(container, opts) {
+    var groups = opts.groups, KL = window.KanbanLens, amtCol = opts.amtCol;
+    var allKeys = Object.keys(groups);
+    var totalN = 0; allKeys.forEach(function (k) { totalN += groups[k].length; });   // % is over ALL groups (honest)
+    var keys = allKeys.slice();
+    if (opts.order === 'key') keys.sort(); else keys.sort(function (a, b) { return groups[b].length - groups[a].length; });
+    var hiddenN = 0;
+    if (opts.limit && keys.length > opts.limit) { hiddenN = keys.length - opts.limit; keys = keys.slice(0, opts.limit); }
+    var max = 1; keys.forEach(function (k) { max = Math.max(max, groups[k].length); });
+    var wrap = el('div', 'chart-wrap');
+    if (opts.title) wrap.appendChild(el('div', 'chart-title', opts.title));
+    var bars = [], totalAmt = 0, topAmtKey = null, topAmtVal = -1;
+    keys.forEach(function (k) {
+      var rows = groups[k], n = rows.length, row = el('div', 'chart-row');
+      row.appendChild(el('span', 'chart-lbl', k));
+      var bw = el('div', 'chart-barw'), b = el('div', 'chart-bar', String(n));
+      if (KL) { var c = opts.statusCol ? KL.statusColor(String(recVal(rows[0], opts.statusCol))) : KL.tableColor(k); b.style.background = c; }
+      var pct = totalN ? Math.round(n / totalN * 100) : 0, tip = k + ' · ' + n + ' (' + pct + '%)';
+      var sum = _amtSum(rows, amtCol);
+      if (amtCol && KL) { tip += ' · Σ ' + KL.fmtMoney(sum); totalAmt += sum; if (sum > topAmtVal) { topAmtVal = sum; topAmtKey = k; } }
+      b.title = tip;
+      b.style.width = '0%'; bars.push({ el: b, target: Math.round(n / max * 100) + '%' });
+      bw.appendChild(b); row.appendChild(bw); wrap.appendChild(row);
+    });
+    if (hiddenN) wrap.appendChild(el('div', 'chart-more', '+ ' + hiddenN + ' more'));
+    container.appendChild(wrap);
+    requestAnimationFrame(function () { bars.forEach(function (bb, i) {
+      bb.el.style.transition = 'width .55s cubic-bezier(.22,1,.36,1)'; bb.el.style.transitionDelay = (i * 45) + 'ms'; bb.el.style.width = bb.target; }); });
+    return { keys: keys, groups: groups, totalN: totalN, topKey: keys[0], topN: keys.length ? groups[keys[0]].length : 0,
+             amtCol: amtCol, totalAmt: totalAmt, topAmtKey: topAmtKey, topAmtVal: topAmtVal };
+  }
+  function openGraphFor(mount) {
+    mount = _asMount(mount);
     if (!_session) { status('Log in first'); return; }
     var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
-    var keys = Object.keys(gr.groups), max = 1; keys.forEach(function (k) { max = Math.max(max, gr.groups[k].length); });
+    var amtCol = _amountColOf(_records.length ? Object.keys(_records[0]) : []);
     var wrap = el('div', 'chart-wrap');
-    wrap.appendChild(_viewSwitch('🗂 View as Kanban', openKanbanFor));   // 🗂 launch the board from the graph
-    wrap.appendChild(el('div', 'chart-title', 'By ' + gr.label + ' — ' + gr.tab.name + ' (' + _records.length + ' rows)'));
-    // colourful, status-at-a-glance bars (consistent L&F with the Kanban) — KANBAN_MARVEL_SPEC. When the
-    // pivot IS the lifecycle status, colour each bar by the SHARED semantic status palette (green=done etc.,
-    // keyed by the RAW code via recVal); otherwise a deterministic per-key hue. NON-INVENT, no Math.random.
-    var KL = window.KanbanLens, _colored = 0;
-    keys.forEach(function (k) { var rows = gr.groups[k], n = rows.length, row = el('div', 'chart-row');
-      row.appendChild(el('span', 'chart-lbl', k)); var bw = el('div', 'chart-barw'), b = el('div', 'chart-bar', String(n));
-      if (KL) { var c = gr.hasStatus ? KL.statusColor(String(recVal(rows[0], gr.col.columnName))) : KL.tableColor(k);
-        b.style.background = c; _colored++; }
-      b.style.width = Math.round(n / max * 100) + '%'; bw.appendChild(b); row.appendChild(bw); wrap.appendChild(row); });
-    _overlay('Graph', wrap);
-    console.log('§GRAPH-PILL by=' + gr.col.columnName + ' groups=' + keys.length + ' colored=' + _colored +
-      ' scheme=' + (gr.hasStatus ? 'status-semantic' : 'per-key-hue') + ' table=' + gr.tab.tableName);
+    if (!mount) wrap.appendChild(_viewSwitch('🗂 View as Kanban', openKanbanFor));   // standalone keeps the toggle
+    var facts = _renderBars(wrap, { title: 'By ' + gr.label + ' — ' + gr.tab.name + ' (' + _records.length + ' rows)',
+      groups: gr.groups, statusCol: gr.hasStatus ? gr.col.columnName : null, amtCol: amtCol });
+    _lensOut(mount, 'Graph', wrap);
+    console.log('§GRAPH-PILL by=' + gr.col.columnName + ' groups=' + facts.keys.length +
+      ' scheme=' + (gr.hasStatus ? 'status-semantic' : 'per-key-hue') + ' amountCol=' + (amtCol || 'none') + ' table=' + gr.tab.tableName);
   }
   // Kanban write-path host state (gap c) — lazy: publish window.ERP once, then mount the REAL draggable board.
   var _kanbanWfmc = null, _kanbanProj = null, _KPROJ = 'idmp_kanban_proj';
@@ -3117,25 +3523,779 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!pub) return false;
     _kanbanProj = pub.projDb; return true;
   }
-  async function openKanbanFor() {
+  // RESUME_360_KANBAN_PIVOT item 3 — surface the cross-tab Pivot LENS from the ⋯ rail (sibling to kanban/graph).
+  //   pivot_lens.html is a self-contained lens (loads sql.js + ?db=); host it as an IN-PAGE overlay iframe so the
+  //   iDempiere surface stays put (FUNDAMENTAL LAW: lenses live on the ⋯ rail, never the native chrome). Points
+  //   at the live tenant seed (ad_seed.db, same dir as pivot_lens.html). General table×row×col×measure, read-only.
+  // DASH_DRILL (pivot) — the pivot is an iframe; a long-pressed cell posts its real PKs back, and the host drills
+  //   them in the window IF the pivot is on the same table (else honestly skips — a different table is a different
+  //   window). Wired once. NON-INVENT: the cell's own record ids.
+  var _pivotDrillWired = false;
+  function _wirePivotDrill() {
+    if (_pivotDrillWired) return; _pivotDrillWired = true;
+    window.addEventListener('message', function (e) {
+      var d = e && e.data; if (!d || !d.pivotDrill) return;
+      var tab = _curTab(); if (!tab) return;
+      if (String(d.pivotDrill.table || '').toLowerCase() !== String(tab.tableName || '').toLowerCase()) {
+        console.log('§PIVOT-DRILL-HOST skip table=' + d.pivotDrill.table + ' (window=' + tab.tableName + ')'); return;
+      }
+      var ok = _drillByKeys(d.pivotDrill.ids || []);
+      console.log('§PIVOT-DRILL-HOST table=' + d.pivotDrill.table + ' ids=' + (d.pivotDrill.ids || []).length + ' drilled=' + ok);
+    });
+  }
+  function openPivotFor(mount) {
+    mount = _asMount(mount);
+    if (!_session) { status('Log in first'); return; }
+    _wirePivotDrill();
+    var tn = (_curTab() && _curTab().tableName) ? String(_curTab().tableName).toLowerCase() : '';   // default the pivot to THIS window's table
+    var cid = (_session && _session.client) ? _session.client.id : '';   // scope the pivot to THIS tenant (matches the window; drill PKs land)
+    var fr = el('iframe');
+    fr.src = 'pivot_lens.html?db=ad_seed.db' + (tn ? '&table=' + encodeURIComponent(tn) : '') + (cid !== '' ? '&client=' + encodeURIComponent(cid) : '');
+    fr.style.cssText = 'width:100%;height:' + (mount ? '70vh' : '82vh') + ';border:0;border-radius:10px;background:#0f1420';
+    fr.setAttribute('title', 'Pivot lens');
+    _lensOut(mount, 'Pivot — table × row × column × measure', fr);
+    console.log('§PIVOT-PILL opened src=' + fr.src + ' mounted=' + (!!mount));
+  }
+  // ── DASHBOARD support: breakdown dimensions, title/list lenses, the streamed Ask panel ──────────────
+  function _titleColOf(cols) {
+    var want = ['DocumentNo', 'Name', 'Value'];
+    for (var w = 0; w < want.length; w++) for (var i = 0; i < cols.length; i++) if (cols[i].toLowerCase() === want[w].toLowerCase()) return cols[i];
+    return null;
+  }
+  // date field for the time-axis lenses (Timeline / trend): a business Date* (display field preferred, for its
+  //   label) first, else fall back to the audit Updated/Created columns — every AD table carries them, so a
+  //   date-less model (e.g. C_BPartner) still scrubs. NON-INVENT: a real record column; returns {columnName,name}.
+  function _dateFieldOf(tab) {
+    var disp = (_displayFields(tab) || []).filter(function (f) { return /^date/i.test(f.columnName); })[0];
+    if (disp) return { columnName: disp.columnName, name: disp.name };
+    var cols = _records.length ? Object.keys(_records[0]) : [];
+    var biz = cols.filter(function (c) { return /^date/i.test(c); })[0];
+    if (biz) return { columnName: biz, name: biz };
+    var lc = cols.map(function (c) { return c.toLowerCase(); });
+    var iu = lc.indexOf('updated'); if (iu >= 0) return { columnName: cols[iu], name: 'Updated' };
+    var ic = lc.indexOf('created'); if (ic >= 0) return { columnName: cols[ic], name: 'Created' };
+    return null;
+  }
+  // breakdown dimensions = display fields with usable cardinality (≥2, < rows) — the auto-generated questions.
+  function _dimFields(tab) {
+    return (_displayFields(tab) || []).filter(function (f) { var c = _distinctCount(f.columnName); return c >= 2 && c < Math.max(_records.length, 2); });
+  }
+  function _groupRecsBy(field) {
+    _dashCacheGate(); _grpCalls++; var k = field.columnName; if (k in _grpCache) return _grpCache[k];
+    _grpComputes++; var g = {}; _records.forEach(function (r) { var v = String(fmt(field, recVal(r, field.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); });
+    return (_grpCache[k] = g);
+  }
+  // List lens — the records as a compact table (the iDempiere grid, distilled).
+  function openListInto(mount) {
+    mount = _asMount(mount);
+    var tab = _curTab(); if (!tab) { status('Open a window first'); return; }
+    var flds = (_displayFields(tab) || []).slice(0, 7);
+    var box = el('div'); box.style.cssText = 'overflow:auto;max-height:72vh';
+    var t = el('table', 'dash-list'), hr = el('tr');
+    flds.forEach(function (f) { hr.appendChild(el('th', null, f.name)); }); t.appendChild(hr);
+    _records.slice(0, 200).forEach(function (r) { var tr = el('tr'); tr.style.cursor = 'pointer';
+      flds.forEach(function (f) { var v = fmt(f, recVal(r, f.columnName)); tr.appendChild(el('td', null, v == null ? '' : String(v))); }); t.appendChild(tr);
+      _lpDrill(tr, function () { return [r]; }); });   // DASH_DRILL — long-press a row → that record
+    box.appendChild(t); _lensOut(mount, 'List', box);
+    console.log('§DASH-LIST rows=' + Math.min(_records.length, 200) + ' cols=' + flds.length);
+  }
+  // Timeline lens — PREPLANNED panel for the doc-evolution scrubber (op-log journey: worldhist + per-doc dates).
+  //   First cut declares the real date span + what scrubbing will do; the scrub→graph-rewind + doc-swap wiring
+  //   lands next. Honest stub — names the data source, invents nothing.
+  function openTimelineInto(mount) {
+    mount = _asMount(mount);
+    var tab = _curTab();
+    var cols = _records.length ? Object.keys(_records[0]) : [];
+    var KL = window.KanbanLens, titleCol = _titleColOf(cols), amtCol = _amountColOf(cols), kc = _keyCol(tab);
+    var stCol = cols.filter(function (c) { return /docstatus/i.test(c); })[0] || cols.filter(function (c) { return /status/i.test(c); })[0];
+    var box = el('div', 'dash-timeline');
+    var dateF = _dateFieldOf(tab);   // business Date* preferred, else audit Updated/Created (date-less models still scrub)
+    box.appendChild(el('div', 'dash-tl-h', 'Timeline — ' + (tab ? tab.name : '') + (dateF ? ' by ' + dateF.name : '')));
+    if (!dateF) { box.appendChild(el('div', 'dash-tl-sub', 'No date column on this window — nothing to scrub.')); _lensOut(mount, 'Timeline', box); console.log('§DASH-TIMELINE dateField=none'); return; }
+    // real dated docs, grouped by DAY (same-day docs stack vertically — Kanban cards, but on a time axis)
+    var items = _records.map(function (r) { var d = String(recVal(r, dateF.columnName) || '').slice(0, 10); return d ? { d: d, r: r } : null; }).filter(Boolean);
+    if (!items.length) { box.appendChild(el('div', 'dash-tl-sub', 'No dated records.')); _lensOut(mount, 'Timeline', box); console.log('§DASH-TIMELINE dated=0'); return; }
+    var byDay = {}; items.forEach(function (it) { (byDay[it.d] = byDay[it.d] || []).push(it.r); });
+    var days = Object.keys(byDay).sort();
+    box.appendChild(el('div', 'dash-tl-sub', items.length + ' ' + tab.name + ' · ' + days.length + ' days · ' + days[0] + ' (oldest, left) → ' + days[days.length - 1] + ' (newest, right)'));
+    // FILMSTRIP — a column per day (chronological L→R, oldest left), each stacking its docs as thumbnail cards.
+    //   A FIXED centre playhead; the strip SLIDES so the scrubbed day sits under it (scrub left = back in time).
+    var viewport = el('div', 'tl-viewport'), track = el('div', 'tl-track'), head = el('div', 'tl-playhead');
+    var futCols = [];   // FORECAST: projected day-columns appended past a 'now' divider when _dashForecast is on
+    days.forEach(function (day) {
+      var colE = el('div', 'tl-col'); colE.dataset.day = day;
+      byDay[day].slice(0, 8).forEach(function (r) {
+        var card = el('div', 'tl-card');
+        var av = el('div', 'tl-av', KL ? KL.monogram(tab.tableName) : '··'); if (KL) av.style.background = KL.tableColor(tab.tableName);
+        var mid = el('div', 'tl-mid');
+        mid.appendChild(el('div', 'tl-t', titleCol ? String(recVal(r, titleCol)) : '#' + recVal(r, kc)));
+        if (amtCol) { var a = recVal(r, amtCol); if (a != null && a !== '') mid.appendChild(el('div', 'tl-a', KL ? KL.fmtMoney(a) : String(a))); }
+        card.appendChild(av); card.appendChild(mid);
+        if (KL && stCol) { var st = String(recVal(r, stCol) || ''); if (st) card.style.borderLeft = '3px solid ' + KL.statusColor(st); }
+        card.style.cursor = 'pointer';
+        (function (rec) { _lpDrill(card, function () { return [rec]; }); })(r);   // DASH_DRILL — long-press a card → that record
+        colE.appendChild(card);
+      });
+      if (byDay[day].length > 8) colE.appendChild(el('div', 'tl-more', '+' + (byDay[day].length - 8)));
+      colE.appendChild(el('div', 'tl-day', day));
+      track.appendChild(colE);
+    });
+    // FORECAST columns — a 'now' divider then N projected day-columns (dashed-blue), spaced by the median day-gap.
+    //   Flat run-rate: future docs/day = mean of the last K active days, future Σ = mean of their amounts. Each
+    //   card is a LABELLED projection ('~ forecast'), never a real record (NON-INVENT — extrapolated from folds).
+    if (_dashForecast && days.length >= 2) {
+      var dEpoch = days.map(function (d) { return Date.parse(d); });
+      var gaps = []; for (var gi = 1; gi < dEpoch.length; gi++) gaps.push(dEpoch[gi] - dEpoch[gi - 1]);
+      gaps.sort(function (a, b) { return a - b; }); var medGap = gaps[Math.floor(gaps.length / 2)] || 86400000;
+      var K = Math.min(3, days.length), recent = days.slice(-K);
+      var avgCnt = Math.max(1, Math.round(recent.reduce(function (a, d) { return a + byDay[d].length; }, 0) / K));
+      var avgAmt = amtCol ? Math.round(recent.reduce(function (a, d) { return a + _amtSum(byDay[d], amtCol); }, 0) / K) : 0;
+      var lastE = dEpoch[dEpoch.length - 1], NF = 3, perCard = Math.min(avgCnt, 3);
+      var nowDiv = el('div', 'tl-today'); nowDiv.appendChild(el('span', null, 'NOW')); track.appendChild(nowDiv);
+      for (var fi = 1; fi <= NF; fi++) {
+        var fd = new Date(lastE + medGap * fi).toISOString().slice(0, 10);
+        var fcol = el('div', 'tl-col future'); fcol.dataset.day = fd; fcol.dataset.future = '1';
+        for (var ci = 0; ci < perCard; ci++) {
+          var fcard = el('div', 'tl-card'); fcard.appendChild(el('div', 'tl-av', '~'));
+          var fmid = el('div', 'tl-mid'); fmid.appendChild(el('div', 'tl-t', '~ forecast'));
+          if (amtCol && KL) fmid.appendChild(el('div', 'tl-a', '≈' + KL.fmtMoney(Math.round(avgAmt / perCard))));
+          fcard.appendChild(fmid); fcol.appendChild(fcard);
+        }
+        fcol.appendChild(el('div', 'tl-day', '~ ' + fd.slice(5)));
+        track.appendChild(fcol); futCols.push({ day: fd, n: avgCnt, amt: avgAmt });
+      }
+      console.log('§DASH-TL-FORECAST cols=' + futCols.length + ' avgCnt=' + avgCnt + ' avgAmt=' + avgAmt + ' medGapDays=' + Math.round(medGap / 86400000));
+    }
+    var navDays = days.concat(futCols.map(function (f) { return f.day; }));   // real + projected, for slider/scrub
+    viewport.appendChild(track); viewport.appendChild(head); box.appendChild(viewport);
+    var slider = el('input'); slider.type = 'range'; slider.min = '0'; slider.max = String(navDays.length - 1); slider.value = String(days.length - 1); slider.step = '1'; slider.className = 'tl-slider';
+    box.appendChild(slider);
+    var rest = el('div', 'tl-restlabel'); box.appendChild(rest);
+    var colEls = [].slice.call(track.querySelectorAll('.tl-col'));   // real + future cols (the 'now' divider is .tl-today, excluded)
+    function restOn(idx) {
+      idx = Math.max(0, Math.min(navDays.length - 1, idx)); var day = navDays[idx], colE = colEls[idx];
+      colEls.forEach(function (c, i) { c.classList.toggle('rest', i === idx); });
+      // slide the strip so the active column's centre sits under the fixed centre playhead
+      var vw = viewport.clientWidth || 600, cx = colE.offsetLeft + colE.offsetWidth / 2;
+      track.style.transform = 'translateX(' + (vw / 2 - cx) + 'px)';
+      var fut = colE && colE.dataset.future === '1';
+      if (fut) { var f = futCols[idx - days.length];
+        rest.textContent = '~ ' + day + ' — forecast ≈' + f.n + ' ' + tab.name + (amtCol && KL ? ' · ≈' + KL.fmtMoney(f.amt) : '') + '  (projection)';
+      } else { var n = byDay[day].length; rest.textContent = day + ' — ' + n + ' ' + tab.name + (n > 1 ? ' (stacked)' : ''); }
+      console.log('§DASH-TL-SCRUB idx=' + idx + ' day=' + day + (fut ? ' FORECAST' : ' docs=' + byDay[day].length) + ' shiftPx=' + Math.round(vw / 2 - cx));
+    }
+    slider.addEventListener('input', function () { restOn(parseInt(slider.value, 10)); });
+    _lensOut(mount, 'Timeline', box);
+    requestAnimationFrame(function () { restOn(days.length - 1); });   // start at the last REAL day ('now'), forecast to its right
+    console.log('§DASH-TIMELINE records=' + items.length + ' days=' + days.length + ' forecastCols=' + futCols.length + ' span=' + days[0] + '..' + days[days.length - 1] + ' dateField=' + dateF.columnName + ' statusCol=' + (stCol || 'none'));
+  }
+  // The "Ask" panel — instant templated SUMMARY of what's shown + auto-generated "see more" question chips.
+  //   Every chip is a real fold of the open window's records (NON-INVENT); tapping one regraphs above + answers
+  //   in a sentence + offers the next questions. Generative-free: the prose is templated over EXTRACTED facts.
+  function _buildAskPanel(abox, grid, tab, amtCol) {
+    abox.innerHTML = '';
+    var KLf = window.KanbanLens, M = function (v) { return KLf ? KLf.fmtMoney(v) : String(v); };
+    var gr = _groupRecs();
+    // collapsible header — a chevron toggles the body (default collapsed on phones to keep first sight clean)
+    var hd = el('button', 'ask-head'); var chev = el('span', 'ask-chev', '▾');
+    hd.appendChild(el('span', null, 'Explore — tap a cut to chart it')); hd.appendChild(chev);
+    var bodyA = el('div', 'ask-body');
+    abox.appendChild(hd); abox.appendChild(bodyA);
+    var line = el('div', 'ask-summary'); bodyA.appendChild(line);
+    var chips = el('div', 'ask-chips'); bodyA.appendChild(chips);
+    var answer = el('div', 'ask-answer'); bodyA.appendChild(answer);
+    var collapsed = (typeof window !== 'undefined' && window.innerWidth <= 640);
+    function applyCollapse() { abox.classList.toggle('collapsed', collapsed); chev.textContent = collapsed ? '▸' : '▾'; }
+    hd.addEventListener('click', function () { collapsed = !collapsed; applyCollapse(); console.log('§ASK-COLLAPSE ' + collapsed); });
+    applyCollapse();
+    var facts = _renderBars(el('div'), { groups: gr.groups, amtCol: amtCol });   // facts only (throwaway container)
+    var s = _records.length + ' ' + tab.name + ' · by ' + gr.label + ': ' +
+      facts.keys.slice(0, 3).map(function (k) { return k + ' (' + gr.groups[k].length + ')'; }).join(', ');
+    if (amtCol && facts.totalAmt) s += ' · Σ ' + M(facts.totalAmt) + ' · largest ' + facts.topAmtKey + ' ' + M(facts.topAmtVal);
+    line.textContent = s;
+    var cols = _records.length ? Object.keys(_records[0]) : [], titleCol = _titleColOf(cols);
+    var dims = _dimFields(tab);
+    // a "By X" chip TOGGLES a donut for X into the LEFT grid (fills the empty spot); 2nd tap removes it.
+    //   Chips whose chart is ALREADY on the grid (the auto-picked overview donuts) start HIGHLIGHTED (.on) +
+    //   tooltip — so the user sees that these chips drive those donuts (tap to remove, tap any other to add).
+    var _titleOn = 'Shown on the left — tap to remove', _titleOff = 'Tap to chart this on the left';
+    dims.forEach(function (f) {
+      var shown = !!grid.querySelector('[data-dim="' + f.columnName + '"]');
+      var chip = el('button', 'ask-chip' + (shown ? ' on' : ''), 'By ' + f.name);
+      chip.title = shown ? _titleOn : _titleOff;
+      chip.addEventListener('click', function () {
+        var added = _addDonutCard(grid, f.columnName, 'By ' + f.name, _groupRecsBy(f), /status/i.test(f.columnName) ? f.columnName : null, amtCol);
+        chip.classList.toggle('on', added); chip.title = added ? _titleOn : _titleOff;
+        console.log('§ASK chip=by-' + f.columnName + ' added=' + added);
+      });
+      chips.appendChild(chip);
+    });
+    console.log('§ASK-CHIPS-SYNC shownOnLoad=' + chips.querySelectorAll('.on').length + ' totalChips=' + dims.length);
+    if (amtCol) {
+      var topChip = el('button', 'ask-chip', 'Top 3 by ' + amtCol);
+      topChip.addEventListener('click', function () {
+        var sorted = _records.slice().sort(function (a, b) { return _amtSum([b], amtCol) - _amtSum([a], amtCol); }).slice(0, 3);
+        answer.innerHTML = '';
+        sorted.forEach(function (r) { var nm = titleCol ? String(recVal(r, titleCol)) : '#' + recVal(r, _keyCol(tab));
+          answer.appendChild(el('div', 'ask-row', '· ' + nm + ' — ' + M(_amtSum([r], amtCol)))); });
+        console.log('§ASK chip=top3');
+      });
+      chips.appendChild(topChip);
+      // TOP / BOTTOM N (W-DASH-TOPN) — drill the LIST to the 5 biggest / smallest records by amount. Same fold
+      //   the donuts use (sort _records by amtCol), then hand the PKs to the shared list drill (_drillByKeys →
+      //   _drillToRecords closes the dash + narrows the grid, with "✕ Show all" to restore). No new surface.
+      function _rankDrill(dir) {
+        var kc = _keyCol(tab), N = 5;
+        var sorted = _records.slice().sort(function (a, b) { return _amtSum([b], amtCol) - _amtSum([a], amtCol); });
+        var pick = (dir === 'bottom') ? sorted.slice(-N).reverse() : sorted.slice(0, N);
+        var ids = pick.map(function (r) { return recVal(r, kc); });
+        console.log('§DASH-TOPN dir=' + dir + ' n=' + pick.length + ' by=' + amtCol +
+          ' ids=[' + ids.join(',') + '] amts=[' + pick.map(function (r) { return Math.round(_amtSum([r], amtCol)); }).join(',') + ']');
+        _drillByKeys(ids);
+      }
+      var topN = el('button', 'ask-chip', 'Top 5 by ' + amtCol);
+      topN.title = 'Drill the list to the 5 biggest by ' + amtCol;
+      topN.addEventListener('click', function () { _rankDrill('top'); });
+      chips.appendChild(topN);
+      var botN = el('button', 'ask-chip', 'Bottom 5 by ' + amtCol);
+      botN.title = 'Drill the list to the 5 smallest by ' + amtCol;
+      botN.addEventListener('click', function () { _rankDrill('bottom'); });
+      chips.appendChild(botN);
+      var fkDim = dims.filter(function (f) { return /partner|customer|salesrep|vendor/i.test(f.columnName) || /_id$/i.test(f.columnName); })[0];
+      if (fkDim) {
+        var cChip = el('button', 'ask-chip', 'Anything unusual?');
+        cChip.addEventListener('click', function () {
+          var groups = _groupRecsBy(fkDim), total = 0, top = null, topV = -1;
+          Object.keys(groups).forEach(function (k) { var sum = _amtSum(groups[k], amtCol); total += sum; if (sum > topV) { topV = sum; top = k; } });
+          var pct = total ? Math.round(topV / total * 100) : 0;
+          answer.textContent = 'By ' + fkDim.name + ': ' + top + ' is ' + pct + '% of value (' + M(topV) + ' of ' + M(total) + ')' + (pct >= 40 ? ' — high concentration.' : ' — fairly even.');
+          console.log('§ASK chip=concentration dim=' + fkDim.columnName + ' top=' + pct + '%');
+        });
+        chips.appendChild(cChip);
+      }
+    }
+    console.log('§ASK-PANEL summaryLen=' + s.length + ' chips=' + chips.children.length + ' dims=' + dims.length + ' collapsed=' + collapsed);
+    // whitebox perf: full Graph build done — distinctCount/groupBy were called far more than computed (memoized).
+    console.log('§DASH-CACHE distinctCount calls=' + _dcCalls + ' computes=' + _dcComputes + ' · groupBy calls=' + _grpCalls + ' computes=' + _grpComputes + ' (saved ' + ((_dcCalls - _dcComputes) + (_grpCalls - _grpComputes)) + ' full scans)');
+  }
+  // month-bucket a date column → { 'YYYY-MM': rows[] }, chronological (the trend chart).
+  function _groupByMonth(field) {
+    var g = {}; _records.forEach(function (r) { var d = String(recVal(r, field.columnName) || '').slice(0, 7); if (d) (g[d] = g[d] || []).push(r); }); return g;
+  }
+  // ── FORECAST — the Dashboard "future tense" (W-DASH-FORECAST). §SPEC: the ONLY honest projection is on a
+  //   TIME axis — a cumulative-by-month S-curve + a run-rate tail, and the Timeline filmstrip extended past a
+  //   'now' divider. PURE arithmetic on the SAME real folds the donuts use: every solid point is a record fold,
+  //   every dashed point is a labelled EXTRAPOLATION of them (NON-INVENT — no synthetic rows, no LLM). Donut/
+  //   kanban/pivot have NO time axis, so they get no forecast (that is the design, not a gap). The interactive
+  //   what-if BRANCH across all tabs (viewer/whatif.js blue engine + project-scoped EVM planned/actual/forecast)
+  //   is the documented NEXT step: it needs a COMMITTED baseline, which a generic window has no source for, so
+  //   it is deliberately NOT faked here. One toggle (`_dashForecast`) drives the time-axis lenses; default OFF
+  //   ⇒ the resting panel is byte-for-byte today's.
+  var _dashForecast = false, _curDashTab = 'graph', _dashWeb = false;
+  // run-rate forecast: project n future periods by the MEAN of the last k period-over-period deltas. Pure +
+  //   unit-testable; emits §RUNRATE so the witness reads the arithmetic without a browser.
+  function _runRateForecast(vals, n, k) {
+    n = n || 3; var m = vals.length; if (m < 2) return [];
+    k = Math.min(k || 3, m - 1);
+    var d = 0; for (var i = m - k; i < m; i++) d += (vals[i] - vals[i - 1]); d = d / k;   // mean recent delta
+    var out = [], last = vals[m - 1];
+    for (var j = 0; j < n; j++) { last += d; out.push(last); }
+    console.log('§RUNRATE in=' + m + ' k=' + k + ' delta=' + Math.round(d) + ' n=' + n + ' last=' + Math.round(vals[m - 1]) + ' proj=' + out.map(function (x) { return Math.round(x); }).join(','));
+    return out;
+  }
+  // cumulative amount (or count) by month — the S-curve's solid spine. {months, cum, per, byMonth}.
+  function _cumByMonth(field, amtCol) {
+    var g = _groupByMonth(field), months = Object.keys(g).sort();
+    var per = months.map(function (mn) { return amtCol ? _amtSum(g[mn], amtCol) : g[mn].length; });
+    var cum = [], run = 0; per.forEach(function (v) { run += v; cum.push(run); });
+    return { months: months, cum: cum, per: per, byMonth: g };
+  }
+  // S-CURVE (cumulative trend) — the time-axis chart the ERP-side dashboard never had (the model side has it in
+  //   viewer/time_machine.js; this is the same SHAPE folded off the open window). Solid = cumulative actual (real
+  //   fold); a 'now' divider at the last real month; dashed-blue tail = run-rate forecast ONLY when _dashForecast.
+  //   Long-press a node → that month's records (DASH_DRILL). SVG, palette-consistent. opts:{field, amtCol}.
+  function _renderSCurve(container, opts) {
+    var field = opts.field, amtCol = opts.amtCol, KL = window.KanbanLens, NS = 'http://www.w3.org/2000/svg';
+    var c = _cumByMonth(field, amtCol); if (c.months.length < 2) { console.log('§DASH-SCURVE skip months=' + c.months.length); return null; }
+    var fc = _dashForecast ? _runRateForecast(c.cum, 3, 3).map(function (v) { return Math.max(c.cum[c.cum.length - 1], v); }) : [];
+    var allV = c.cum.concat(fc), W = 320, H = 150, pad = 24, n = allV.length, maxV = Math.max.apply(null, allV) || 1;
+    function X(i) { return pad + (W - 2 * pad) * (n > 1 ? i / (n - 1) : 0); }
+    function Y(v) { return H - pad - (H - 2 * pad) * (v / maxV); }
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'scurve-svg');
+    function line(x1, y1, x2, y2, st, da) { var l = document.createElementNS(NS, 'line'); l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); l.setAttribute('stroke', st); if (da) l.setAttribute('stroke-dasharray', da); svg.appendChild(l); }
+    function poly(pts, color, da, w) { var p = document.createElementNS(NS, 'path'); p.setAttribute('d', pts.map(function (pt, i) { return (i ? 'L' : 'M') + pt[0].toFixed(1) + ' ' + pt[1].toFixed(1); }).join(' ')); p.setAttribute('fill', 'none'); p.setAttribute('stroke', color); p.setAttribute('stroke-width', w || 2); if (da) p.setAttribute('stroke-dasharray', da); svg.appendChild(p); return p; }
+    line(pad, H - pad, W - pad, H - pad, 'rgba(255,255,255,.12)'); line(pad, pad, pad, H - pad, 'rgba(255,255,255,.12)');
+    var col = KL ? KL.tableColor(field.columnName) : '#5b8def';
+    poly(c.cum.map(function (v, i) { return [X(i), Y(v)]; }), col, null, 2.4);   // solid actual
+    var tx = X(c.cum.length - 1); line(tx, pad, tx, H - pad, 'rgba(108,159,255,.4)', '4 4');   // 'now' divider
+    var tl = document.createElementNS(NS, 'text'); tl.setAttribute('x', tx); tl.setAttribute('y', pad - 7); tl.setAttribute('text-anchor', 'middle'); tl.setAttribute('class', 'scurve-now'); tl.textContent = 'now'; svg.appendChild(tl);
+    if (fc.length) {   // dashed-blue forecast tail, anchored at the last real point
+      poly([[tx, Y(c.cum[c.cum.length - 1])]].concat(fc.map(function (v, i) { return [X(c.cum.length + i), Y(v)]; })), '#6c9fff', '6 4', 2.4);
+      var fl = document.createElementNS(NS, 'text'); fl.setAttribute('x', W - pad); fl.setAttribute('y', Y(fc[fc.length - 1]) - 6); fl.setAttribute('text-anchor', 'end'); fl.setAttribute('class', 'scurve-flab'); fl.textContent = 'forecast'; svg.appendChild(fl);
+    }
+    c.cum.forEach(function (v, i) {   // node dots on real months → long-press drills that month
+      var dot = document.createElementNS(NS, 'circle'); dot.setAttribute('cx', X(i)); dot.setAttribute('cy', Y(v)); dot.setAttribute('r', 3.2); dot.setAttribute('fill', col); dot.style.cursor = 'pointer';
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = c.months[i] + ' · cum ' + (amtCol && KL ? KL.fmtMoney(v) : v); dot.appendChild(ti);
+      if (typeof _lpDrill === 'function') { (function (mn) { _lpDrill(dot, function () { return c.byMonth[mn] || []; }); })(c.months[i]); }
+      svg.appendChild(dot);
+    });
+    container.appendChild(svg);
+    console.log('§DASH-SCURVE months=' + c.months.length + ' cumLast=' + Math.round(c.cum[c.cum.length - 1]) + ' forecast=' + fc.length + ' measure=' + (amtCol || 'count'));
+    return svg;
+  }
+  // ── EVM VARIANCE S-CURVE (W-DASH-VARIANCE) — the "future tense" with a REAL committed baseline. §SPEC: on a
+  //   Project window, a project's C_ProjectPhase rows carry a baked PlannedAmt (the contract) AND a CommittedAmt
+  //   (the projected outturn) — both REAL, extracted, never invented (e.g. BIM: Hospital 990000 = 64.7M planned →
+  //   87.4M committed, +35%). So the S-curve here is the variance cockpit: cumulative PLANNED (grey baseline,
+  //   always) vs cumulative COMMITTED/forecast outturn (blue, revealed by the Forecast toggle) + the Δ. This is
+  //   the same picture the 4D Time Machine folds (viewer/time_machine.js _computeEVM) — one truth, two surfaces.
+  //   The interactive schedule what-if (date slips on a blue branch) lives in viewer/whatif.js on the Gantt; it is
+  //   NOT folded here — a generic dashboard has no schedule-slip surface, and faking one would invent.
+  function _isProjectWindow() { var t = _curTab(); return !!t && String(t.tableName || '').toLowerCase() === 'c_project'; }
+  // pick the project in the open window that HAS phases (mirrors whatif_panel _pickProject); NON-INVENT.
+  function _pickPhasedProject() {
+    if (!db) return null;
+    // prefer a project actually in the open records, else any project with phases.
+    var ids = _records.map(function (r) { return recVal(r, 'C_Project_ID'); }).filter(function (v) { return v != null; });
+    try {
+      for (var i = 0; i < ids.length; i++) {
+        var r0 = db.exec('SELECT 1 FROM C_ProjectPhase WHERE C_Project_ID=' + Number(ids[i]) + ' LIMIT 1');
+        if (r0.length && r0[0].values.length) { var nm = db.exec('SELECT Name FROM C_Project WHERE C_Project_ID=' + Number(ids[i])); return { id: ids[i], name: nm.length && nm[0].values.length ? nm[0].values[0][0] : ('#' + ids[i]) }; }
+      }
+      var r = db.exec("SELECT p.C_Project_ID,p.Name FROM C_Project p WHERE EXISTS(SELECT 1 FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID) ORDER BY p.C_Project_ID DESC LIMIT 1");
+      if (r.length && r[0].values.length) return { id: r[0].values[0][0], name: r[0].values[0][1] };
+    } catch (e) { console.log('§DASH-VARIANCE-PICK err=' + e.message); }
+    return null;
+  }
+  // fold a project's phases into cumulative planned + committed by phase EndDate. Real rows, ordered; NON-INVENT.
+  function _projectEVM(projectId) {
+    var r; try { r = db.exec("SELECT SeqNo,Name,PlannedAmt,CommittedAmt,EndDate FROM C_ProjectPhase WHERE C_Project_ID=" + Number(projectId) + " AND Name<>'Unsequenced' ORDER BY SeqNo"); }
+    catch (e) { return null; }
+    if (!r.length || !r[0].values.length) return null;
+    var rows = r[0].values, labels = [], planned = [], committed = [], cp = 0, cc = 0, phaseRows = [];
+    rows.forEach(function (v) { cp += Number(v[2] || 0); cc += Number(v[3] || 0); labels.push(String(v[4] || '').slice(0, 7)); planned.push(cp); committed.push(cc); phaseRows.push({ name: v[1], planned: Number(v[2] || 0), committed: Number(v[3] || 0) }); });
+    return { labels: labels, planned: planned, committed: committed, bac: cp, eac: cc, phases: phaseRows };
+  }
+  // draw the variance S-curve: planned baseline (grey, always) + committed outturn (blue, when _dashForecast) + Δ.
+  function _renderVarianceSCurve(container, evm) {
+    var KL = window.KanbanLens, NS = 'http://www.w3.org/2000/svg', M = function (v) { return KL ? KL.fmtMoney(v) : String(Math.round(v)); };
+    var W = 320, H = 150, pad = 24, n = evm.planned.length, maxV = Math.max(evm.bac, evm.eac) || 1;
+    function X(i) { return pad + (W - 2 * pad) * (n > 1 ? i / (n - 1) : 0); }
+    function Y(v) { return H - pad - (H - 2 * pad) * (v / maxV); }
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'scurve-svg');
+    function line(x1, y1, x2, y2, st, da) { var l = document.createElementNS(NS, 'line'); l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); l.setAttribute('stroke', st); if (da) l.setAttribute('stroke-dasharray', da); svg.appendChild(l); }
+    function poly(arr, color, da, w) { var p = document.createElementNS(NS, 'path'); p.setAttribute('d', arr.map(function (v, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1); }).join(' ')); p.setAttribute('fill', 'none'); p.setAttribute('stroke', color); p.setAttribute('stroke-width', w || 2); if (da) p.setAttribute('stroke-dasharray', da); svg.appendChild(p); return p; }
+    line(pad, H - pad, W - pad, H - pad, 'rgba(255,255,255,.12)'); line(pad, pad, pad, H - pad, 'rgba(255,255,255,.12)');
+    poly(evm.planned, '#9aa6b8', null, 2.2);   // PLANNED baseline (the contract) — always
+    var pl = document.createElementNS(NS, 'text'); pl.setAttribute('x', X(n - 1)); pl.setAttribute('y', Y(evm.bac) + 12); pl.setAttribute('text-anchor', 'end'); pl.setAttribute('class', 'scurve-now'); pl.textContent = 'planned ' + M(evm.bac); svg.appendChild(pl);
+    var delta = evm.eac - evm.bac, pctv = evm.bac ? Math.round(delta / evm.bac * 100) : 0;
+    if (_dashForecast) {   // COMMITTED / forecast outturn — the future tense
+      poly(evm.committed, '#6c9fff', '6 4', 2.4);
+      var cl = document.createElementNS(NS, 'text'); cl.setAttribute('x', X(n - 1)); cl.setAttribute('y', Y(evm.eac) - 6); cl.setAttribute('text-anchor', 'end'); cl.setAttribute('class', 'scurve-flab'); cl.textContent = 'forecast ' + M(evm.eac); svg.appendChild(cl);
+      var dv = document.createElementNS(NS, 'text'); dv.setAttribute('x', pad + 2); dv.setAttribute('y', pad + 4); dv.setAttribute('class', 'scurve-delta'); dv.setAttribute('fill', delta > 0 ? '#e08a6a' : '#5bbf8a'); dv.textContent = 'Δ ' + (delta > 0 ? '+' : '') + M(delta) + ' (' + (pctv > 0 ? '+' : '') + pctv + '%)'; svg.appendChild(dv);
+    } else {
+      var hint = document.createElementNS(NS, 'text'); hint.setAttribute('x', X(n - 1)); hint.setAttribute('y', Y(evm.bac) - 6); hint.setAttribute('text-anchor', 'end'); hint.setAttribute('class', 'scurve-now'); hint.textContent = 'Forecast →'; svg.appendChild(hint);
+    }
+    container.appendChild(svg);
+    console.log('§DASH-VARIANCE phases=' + n + ' planned=' + Math.round(evm.bac) + ' committed=' + Math.round(evm.eac) + ' delta=' + Math.round(delta) + ' pct=' + pctv + ' forecast=' + (_dashForecast ? 1 : 0));
+    return svg;
+  }
+  // ── EXPORT (DASHBOARD_EXPORT — "the killer feature we miss") — pure EXTRACT of the real folds, NON-INVENT:
+  //   CSV = the fold rows (key, count/amount, %); SVG = the donut node serialized; PNG = that SVG rastered to a
+  //   canvas. Per-chart affordance + a window-level "Export" (all records). Every byte traces to a real record. ──
+  function _csvEsc(v) { v = (v == null ? '' : String(v)); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function _rowsToCsv(header, rows) { return [header.map(_csvEsc).join(',')].concat(rows.map(function (r) { return r.map(_csvEsc).join(','); })).join('\r\n'); }
+  function _exportName(s) { return 'dashboard-' + String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48); }
+  // fold a {key:rows[]} group into export rows [key, value, pct] — the SAME numbers the donut paints.
+  function _foldExportRows(groups, amtCol) {
+    var keys = Object.keys(groups), total = 0;
+    var vals = keys.map(function (k) { var v = amtCol ? _amtSum(groups[k], amtCol) : groups[k].length; total += v; return v; });
+    return { header: ['Key', amtCol ? 'Amount' : 'Count', 'Pct'], total: total,
+      rows: keys.map(function (k, i) { return [k, vals[i], (total ? Math.round(vals[i] / total * 1000) / 10 : 0) + '%']; }) };
+  }
+  function _download(blob, fname) { var a = el('a'), u = URL.createObjectURL(blob); a.href = u; a.download = fname; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(u); }, 1000); }
+  function _exportCsv(name, header, rows, total) { _download(new Blob([_rowsToCsv(header, rows)], { type: 'text/csv;charset=utf-8' }), name + '.csv'); console.log('§DASH-EXPORT kind=csv name=' + name + ' rows=' + rows.length + (total == null ? '' : ' total=' + total)); }
+  function _exportSvg(name, svg) { if (!svg) return; var s = new XMLSerializer().serializeToString(svg); _download(new Blob([s], { type: 'image/svg+xml' }), name + '.svg'); console.log('§DASH-EXPORT kind=svg name=' + name + ' bytes=' + s.length); }
+  function _exportPng(name, svg) {
+    if (!svg) return; var s = new XMLSerializer().serializeToString(svg), img = new Image();
+    img.onload = function () { var c = el('canvas'); c.width = 256; c.height = 256; var x = c.getContext('2d');
+      x.fillStyle = '#0f1420'; x.fillRect(0, 0, 256, 256); x.drawImage(img, 0, 0, 256, 256);
+      c.toBlob(function (b) { if (b) { _download(b, name + '.png'); console.log('§DASH-EXPORT kind=png name=' + name + ' bytes=' + b.size); } }); };
+    img.onerror = function () { console.log('§DASH-EXPORT kind=png name=' + name + ' err=raster'); };
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(s)));
+  }
+  function _exportBtn(title) { var b = el('button', 'dash-export'); b.title = 'Export ' + title; b.innerHTML = (window.OverlayKit && OverlayKit.ico) ? OverlayKit.ico('download', 14) : '⤓'; return b; }
+  // a small CSV/SVG/PNG chooser anchored under the export button (SVG/PNG only when a chart node is given).
+  function _exportMenu(btn, opts) {
+    var old = document.querySelector('.dash-exmenu'); if (old) old.remove();
+    var m = el('div', 'dash-exmenu');
+    function item(label, fn) { var b = el('button', 'dash-exmi', label); b.addEventListener('click', function (e) { e.stopPropagation(); fn(); m.remove(); }); m.appendChild(b); }
+    if (opts.csv) item('CSV', opts.csv);
+    if (opts.svg) { item('SVG', function () { _exportSvg(opts.name, opts.svg()); }); item('PNG', function () { _exportPng(opts.name, opts.svg()); }); }
+    document.body.appendChild(m);
+    var r = btn.getBoundingClientRect(); m.style.left = Math.max(6, Math.min(r.left, window.innerWidth - 110)) + 'px'; m.style.top = (r.bottom + 4) + 'px';
+    setTimeout(function () { document.addEventListener('click', function h() { if (m.parentNode) m.remove(); document.removeEventListener('click', h); }); }, 0);
+  }
+  // window-level export — all open records as CSV (the iDempiere grid, distilled). Pure extract of _records.
+  function _exportRecordsCsv(tab) {
+    var flds = (_displayFields(tab) || []);
+    var rows = _records.map(function (r) { return flds.map(function (f) { var v = fmt(f, recVal(r, f.columnName)); return v == null ? '' : String(v); }); });
+    _exportCsv(_exportName((tab ? tab.name : 'records') + '-data'), flds.map(function (f) { return f.name; }), rows, _records.length);
+  }
+  // DONUT (Odoo pie) — share-of-total, SELF-CONTAINED so it snuggles in a tight grid (no side legend):
+  //   the % sits ON each arc, the centre shows the total (and the hovered/touched slice's name+value),
+  //   a LONG-PRESS flips the donut to a pure-text table. SVG arcs sweep in. Caps to 6 slices + "others".
+  //   Colours = SHARED palette (status semantic / per-key hue). All real folds, NON-INVENT.
+  function _renderDonut(container, opts) {
+    var groups = opts.groups, KL = window.KanbanLens, amtCol = opts.amtCol, NS = 'http://www.w3.org/2000/svg';
+    function val(k) { return amtCol ? _amtSum(groups[k], amtCol) : groups[k].length; }
+    function fmtV(v) { return amtCol && KL ? KL.fmtMoney(v) : String(v); }
+    var keys = Object.keys(groups).sort(function (a, b) { return val(b) - val(a); });
+    var CAP = 6, others = null; if (keys.length > CAP) { others = keys.slice(CAP); keys = keys.slice(0, CAP); }
+    var total = 0; Object.keys(groups).forEach(function (k) { total += val(k); });
+    function colorFor(k, i) { if (!KL) return 'hsl(' + (i * 53 % 360) + ',45%,52%)'; return opts.statusCol ? KL.statusColor(String(recVal(groups[k][0], opts.statusCol))) : KL.tableColor(k); }
+    var r = 50, cx = 64, cy = 64, sw = 22, circ = 2 * Math.PI * r;
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 128 128'); svg.setAttribute('class', 'donut-svg');
+    var bg = document.createElementNS(NS, 'circle'); bg.setAttribute('cx', cx); bg.setAttribute('cy', cy); bg.setAttribute('r', r); bg.setAttribute('fill', 'none'); bg.setAttribute('stroke', 'rgba(255,255,255,.05)'); bg.setAttribute('stroke-width', sw); svg.appendChild(bg);
+    var ctr = document.createElementNS(NS, 'text'); ctr.setAttribute('x', cx); ctr.setAttribute('y', cy - 3); ctr.setAttribute('text-anchor', 'middle'); ctr.setAttribute('dominant-baseline', 'central'); ctr.setAttribute('class', 'donut-center'); ctr.textContent = fmtV(total);
+    var sub = document.createElementNS(NS, 'text'); sub.setAttribute('x', cx); sub.setAttribute('y', cy + 12); sub.setAttribute('text-anchor', 'middle'); sub.setAttribute('class', 'donut-sub'); sub.textContent = 'total';
+    function setCentre(big, small) { ctr.textContent = big; sub.textContent = small; }
+    var cum = 0, slices = [], rows = [];
+    function arc(k, color, label) {
+      var v = val(k); var len = total ? v / total * circ : 0, pct = total ? Math.round(v / total * 100) : 0;
+      var c = document.createElementNS(NS, 'circle'); c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+      c.setAttribute('fill', 'none'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', sw); c.setAttribute('stroke-dasharray', '0 ' + circ);
+      c.style.transform = 'rotate(' + (cum / circ * 360 - 90) + 'deg)'; c.style.transformBox = 'fill-box'; c.style.transformOrigin = 'center'; c.style.transition = 'stroke-dasharray .6s cubic-bezier(.22,1,.36,1)'; c.style.cursor = 'pointer';
+      var sliceRows = groups[k];   // capture now — the '(others)' bucket is deleted right after this arc is built
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = label + ' · ' + fmtV(v) + ' (' + pct + '%)'; c.appendChild(ti);
+      c.addEventListener('mouseenter', function () { setCentre(pct + '%', label); });
+      c.addEventListener('mouseleave', function () { setCentre(fmtV(total), 'total'); });
+      c.addEventListener('touchstart', function () { setCentre(pct + '%', label); }, { passive: true });
+      // DASH_DRILL — LONG-PRESS the slice → its records in the window (deliberate intent; plain hover only previews)
+      if (typeof _lpDrill === 'function') _lpDrill(c, function () { return sliceRows; });
+      svg.appendChild(c);
+      if (pct >= 8) {   // % ON the arc (mid-angle); slim slices stay clean, revealed on hover instead
+        var mid = (cum + len / 2) / circ, ang = (mid * 360 - 90) * Math.PI / 180;
+        var t = document.createElementNS(NS, 'text'); t.setAttribute('x', cx + r * Math.cos(ang)); t.setAttribute('y', cy + r * Math.sin(ang));
+        t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'central'); t.setAttribute('class', 'donut-arc-l'); t.textContent = pct + '%'; svg.appendChild(t);
+      }
+      slices.push({ el: c, len: len, circ: circ }); cum += len; rows.push({ label: label, v: v, pct: pct, color: color });
+    }
+    keys.forEach(function (k, i) { arc(k, colorFor(k, i), k); });
+    if (others) { groups['(others)'] = []; others.forEach(function (k) { groups['(others)'] = groups['(others)'].concat(groups[k]); });
+      arc('(others)', '#5a6472', '(+' + others.length + ')'); delete groups['(others)']; }
+    svg.appendChild(ctr); svg.appendChild(sub);
+    var wrap = el('div', 'donut-wrap'); wrap.appendChild(svg);
+    // long-press → pure-text table (hidden until flipped)
+    var textm = el('div', 'donut-text');
+    rows.forEach(function (ro) { var li = el('div', 'donut-tli'); var s = el('span', 'donut-sw'); s.style.background = ro.color; li.appendChild(s); li.appendChild(el('span', 'donut-k', ro.label)); li.appendChild(el('span', 'donut-v', ro.pct + '% · ' + fmtV(ro.v))); textm.appendChild(li); });
+    wrap.appendChild(textm);
+    // DOUBLE-TAP/double-click flips the donut to its text table (long-press is now reserved for DASH_DRILL).
+    wrap.addEventListener('dblclick', function () { wrap.classList.toggle('textmode'); console.log('§DONUT-TEXTMODE on=' + wrap.classList.contains('textmode')); });
+    container.appendChild(wrap);
+    requestAnimationFrame(function () { slices.forEach(function (s) { s.el.setAttribute('stroke-dasharray', s.len + ' ' + (s.circ - s.len)); }); });
+    return { total: total, slices: keys.length + (others ? 1 : 0) };
+  }
+  // OVERVIEW — lay out SEVERAL charts flowing down (a real dashboard, not one). Auto-pick from the model's own
+  //   dimensions: lifecycle status, the highest-signal categorical fields (top-N capped), and a date trend.
+  //   Every chart is a real fold of the open-window records. NON-INVENT, zero per-model code.
+  // STACKED BAR (W-DASH-STACK) — one cut split by another: the open window's records bucketed by MONTH, each bar
+  //   segmented by DocStatus (KanbanLens.statusColor). Reuses the _groupByMonth fold + the per-status counts; every
+  //   segment is a real record count (NON-INVENT). Drawn as an SVG so it sits beside the S-curve on the Graph tab.
+  //   Long-press a bar → that month's records (DASH_DRILL). opts:{dateF, statusF}.
+  function _renderStackedBar(container, opts) {
+    var dateF = opts.dateF, statusF = opts.statusF, KL = window.KanbanLens, NS = 'http://www.w3.org/2000/svg';
+    var byMonth = _groupByMonth(dateF), months = Object.keys(byMonth).sort();
+    if (!months.length) { console.log('§DASH-STACK skip months=0'); return null; }
+    var lab = function (r) { return String(fmt(statusF, recVal(r, statusF.columnName)) || '(blank)'); };
+    // status order = global frequency (stable legend); rawOf maps a label → a raw code for statusColor.
+    var stTot = {}, rawOf = {};
+    _records.forEach(function (r) { var l = lab(r); stTot[l] = (stTot[l] || 0) + 1; if (!(l in rawOf)) rawOf[l] = String(recVal(r, statusF.columnName)); });
+    var statuses = Object.keys(stTot).sort(function (a, b) { return stTot[b] - stTot[a]; });
+    var maxN = 1; months.forEach(function (mn) { maxN = Math.max(maxN, byMonth[mn].length); });
+    var W = 320, H = 160, padL = 6, padB = 22, padT = 10, n = months.length, slot = (W - padL) / n;
+    var bw = slot * 0.66, y0 = H - padB;
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'stack-svg');
+    var col = function (s) { return KL ? KL.statusColor(rawOf[s]) : '#6c9fff'; };
+    var segLog = [];
+    months.forEach(function (mn, i) {
+      var rows = byMonth[mn], x = padL + i * slot + (slot - bw) / 2, byS = {};
+      rows.forEach(function (r) { var l = lab(r); byS[l] = (byS[l] || 0) + 1; });
+      var stacked = 0;
+      statuses.forEach(function (s) {
+        var c = byS[s] || 0; if (!c) return;
+        var h = (H - padB - padT) * (c / maxN), yTop = y0 - stacked - h;
+        var rect = document.createElementNS(NS, 'rect');
+        rect.setAttribute('x', x.toFixed(1)); rect.setAttribute('y', yTop.toFixed(1));
+        rect.setAttribute('width', bw.toFixed(1)); rect.setAttribute('height', Math.max(0, h).toFixed(1));
+        rect.setAttribute('fill', col(s)); rect.style.cursor = 'pointer';
+        var ti = document.createElementNS(NS, 'title'); ti.textContent = mn + ' · ' + s + ': ' + c; rect.appendChild(ti);
+        if (typeof _lpDrill === 'function') (function (m) { _lpDrill(rect, function () { return byMonth[m] || []; }); })(mn);   // DASH_DRILL
+        svg.appendChild(rect); stacked += h;
+      });
+      var tx = document.createElementNS(NS, 'text'); tx.setAttribute('x', (x + bw / 2).toFixed(1)); tx.setAttribute('y', H - padB + 12);
+      tx.setAttribute('text-anchor', 'middle'); tx.setAttribute('class', 'stack-lbl'); tx.textContent = mn.slice(2); svg.appendChild(tx);   // 'YY-MM'
+      segLog.push(mn + ':' + statuses.map(function (s) { return byS[s] || 0; }).join('/'));
+    });
+    container.appendChild(svg);
+    var leg = el('div', 'stack-legend');
+    statuses.forEach(function (s) { var it = el('span', 'stack-leg'); var sw = el('span', 'stack-sw'); sw.style.background = col(s); it.appendChild(sw); it.appendChild(document.createTextNode(s)); leg.appendChild(it); });
+    container.appendChild(leg);
+    console.log('§DASH-STACK months=' + n + ' statuses=' + statuses.length + ' max=' + maxN + ' segs=[' + segLog.join(' ') + ']');
+    return svg;
+  }
+  // UP/DOWN vs last month (W-DASH-KPI) — % change of the headline measure (amount if the table has one, else
+  //   record count) from the prior FULL month to the last. Reuses _cumByMonth's per-month fold; green up / red
+  //   down (status palette). Honest null when there are <2 months of data. NON-INVENT: last full month vs the
+  //   one before, both real folds.
+  function _periodDelta(tab, amtCol) {
+    var dateF = _dateFieldOf(tab); if (!dateF) { console.log('§DASH-TREND skip no-date'); return null; }
+    var c = _cumByMonth(dateF, amtCol);   // c.per = per-month amount (amtCol) or count (no amtCol)
+    if (c.per.length < 2) { console.log('§DASH-TREND skip months=' + c.per.length); return null; }
+    var thisMo = c.per[c.per.length - 1], lastMo = c.per[c.per.length - 2];
+    var up = thisMo >= lastMo;
+    var pct = lastMo ? Math.round((thisMo - lastMo) / Math.abs(lastMo) * 100) : (thisMo ? 100 : 0);
+    var span = el('span', 'kpi-delta ' + (up ? 'up' : 'down'), (up ? '▲ ' : '▼ ') + Math.abs(pct) + '%');
+    span.title = (amtCol ? 'amount' : 'count') + ' ' + c.months[c.months.length - 2] + ' → ' + c.months[c.months.length - 1];
+    console.log('§DASH-TREND measure=' + (amtCol ? amtCol : 'count') + ' lastMo=' + Math.round(lastMo) + ' thisMo=' + Math.round(thisMo) + ' pct=' + pct);
+    return span;
+  }
+  // KPI STRIP (W-DASH-KPI) — a row of headline folds across the top of the Graph tab: count · total · average ·
+  //   biggest · smallest of the OPEN window's records, plus an up/down vs last month on the headline measure.
+  //   PURE folds (length + Σ + Math.min/max over _records; money via KanbanLens.fmtMoney). Honest "—" for the
+  //   four amount cells when the table has no amount column (count is always real, and carries the delta then).
+  //   NON-INVENT — every number traces to a real record fold.
+  function _buildKpiStrip(tab, amtCol) {
+    var KL = window.KanbanLens, M = function (v) { return KL ? KL.fmtMoney(v) : String(Math.round(v)); };
+    var n = _records.length, strip = el('div', 'dash-kpi');
+    function cell(label, value, extra) {
+      var c = el('div', 'kpi-cell'), v = el('div', 'kpi-v', value);
+      if (extra) v.appendChild(extra);
+      c.appendChild(v); c.appendChild(el('div', 'kpi-l', label)); return c;
+    }
+    if (amtCol) {
+      var amts = _records.map(function (r) { var x = Number(recVal(r, amtCol)); return isFinite(x) ? x : 0; });
+      var total = amts.reduce(function (a, b) { return a + b; }, 0), avg = n ? total / n : 0;
+      var mx = n ? Math.max.apply(null, amts) : 0, mn = n ? Math.min.apply(null, amts) : 0;
+      strip.appendChild(cell('Records', String(n), null));
+      strip.appendChild(cell('Total', M(total), _periodDelta(tab, amtCol)));
+      strip.appendChild(cell('Average', M(avg), null));
+      strip.appendChild(cell('Biggest', M(mx), null));
+      strip.appendChild(cell('Smallest', M(mn), null));
+      console.log('§DASH-KPI rows=' + n + ' total=' + Math.round(total) + ' avg=' + Math.round(avg) + ' max=' + Math.round(mx) + ' min=' + Math.round(mn) + ' amtCol=' + amtCol);
+    } else {
+      strip.appendChild(cell('Records', String(n), _periodDelta(tab, null)));
+      strip.appendChild(cell('Total', '—', null));
+      strip.appendChild(cell('Average', '—', null));
+      strip.appendChild(cell('Biggest', '—', null));
+      strip.appendChild(cell('Smallest', '—', null));
+      console.log('§DASH-KPI rows=' + n + ' amtCol=none (count-only)');
+    }
+    return strip;
+  }
+  function _buildOverview(gbox, tab, amtCol) {
+    gbox.appendChild(_buildKpiStrip(tab, amtCol));   // KPI strip — headline folds across the top of the Graph tab
+    var gr = _groupRecs();
+    var dims = _dimFields(tab);
+    var statusF = dims.filter(function (f) { return /docstatus|status/i.test(f.columnName); })[0] || (gr.hasStatus ? gr.col : null);
+    var dateF = _dateFieldOf(tab);   // business Date* preferred, else audit Updated/Created — so date-less models still get a trend
+    // categorical = dims minus status/date, ranked by useful cardinality (sweet spot 3..12), FK/customer first
+    var cat = dims.filter(function (f) { return f !== statusF && !/^date/i.test(f.columnName); })
+      .map(function (f) { var c = _distinctCount(f.columnName); var fk = /partner|customer|salesrep|vendor|product|project|org/i.test(f.columnName) ? 0 : 1;
+        var band = (c >= 3 && c <= 12) ? 0 : 1; return { f: f, score: band * 10 + fk * 5 + Math.abs(c - 6) }; })
+      .sort(function (a, b) { return a.score - b.score; }).map(function (x) { return x.f; });
+    // diversify — collapse near-duplicate dimensions (Bill/Ship/Invoice partner all = one "partner" family) so
+    //   the charts don't repeat the same cut. family = column minus role-prefix/_ID; partner variants → 'bpartner'.
+    function _family(cn) { var s = String(cn).toLowerCase().replace(/_id$/, '').replace(/^(bill|ship|drop|pay|c|m|ad)_/, ''); return /bpartner/.test(s) && !/location/.test(s) ? 'bpartner' : s; }
+    var picked = [], seenFam = {};
+    cat.forEach(function (f) { var fam = _family(f.columnName); if (seenFam[fam] || picked.length >= 3) return; seenFam[fam] = 1; picked.push(f); });
+    var charts = [];
+    if (statusF) { charts.push({ key: statusF.columnName, label: statusF.name, groups: _groupRecsBy(statusF), statusCol: statusF.columnName }); }
+    picked.forEach(function (f) { charts.push({ key: f.columnName, label: f.name, groups: _groupRecsBy(f) }); });
+    if (dateF) { charts.push({ key: dateF.columnName, label: dateF.name + ' (by month)', groups: _groupByMonth(dateF) }); }
+    // grid of DONUT cards — all donuts, consistent + snuggled. Each is a real fold; top-6 + "others".
+    var grid = el('div', 'dash-grid'); gbox.appendChild(grid);
+    // S-curve trend card FIRST (the time axis). On a PROJECT window with a baked Planned/Committed baseline, this
+    //   is the EVM VARIANCE curve (planned vs committed outturn + Δ); otherwise the generic cumulative trend.
+    //   Honest skip when neither applies. Spans 2 columns so the line reads.
+    var evmProj = _isProjectWindow() ? _pickPhasedProject() : null, evm = evmProj ? _projectEVM(evmProj.id) : null;
+    if (evm) {
+      var vc = el('div', 'dash-card dash-scurve'); vc.setAttribute('data-dim', '__variance');
+      vc.appendChild(el('div', 'dash-chart-h', 'Planned vs committed — ' + evmProj.name + (_dashForecast ? ' (variance)' : '')));
+      if (_renderVarianceSCurve(vc, evm)) grid.appendChild(vc);
+    } else if (dateF) {
+      var sc = el('div', 'dash-card dash-scurve'); sc.setAttribute('data-dim', '__scurve');
+      sc.appendChild(el('div', 'dash-chart-h', 'Cumulative ' + (amtCol ? amtCol : 'count') + ' — ' + dateF.name + (_dashForecast ? ' + forecast' : '')));
+      if (_renderSCurve(sc, { field: dateF, amtCol: amtCol })) grid.appendChild(sc);
+    }
+    // STACKED BAR — the per-month status MIX (the S-curve shows the running total; this shows how each month split
+    //   by status). Only when the window has BOTH a date and a status axis; honest skip otherwise.
+    if (dateF && statusF) {
+      var stc = el('div', 'dash-card dash-scurve'); stc.setAttribute('data-dim', '__stack');
+      stc.appendChild(el('div', 'dash-chart-h', statusF.name + ' by month — ' + dateF.name));
+      if (_renderStackedBar(stc, { dateF: dateF, statusF: statusF })) grid.appendChild(stc);
+    }
+    charts.forEach(function (c) { _addDonutCard(grid, c.key, (c.label.indexOf('(') < 0 ? 'By ' : '') + c.label, c.groups, c.statusCol || null, amtCol); });
+    var hint = el('div', 'dash-hint', 'Long-press a slice to open its records'); grid.appendChild(hint);   // gesture tip in the blank grid slot
+    // WEB toggle — collapse the pies on the board into ONE spider of their concentrations (and back). Built from
+    //   the LIVE cards, so it reflects exactly the pies the user chose to show. ≥3 pies needed for a web shape.
+    var webBox = el('div', 'dash-web'); webBox.style.display = 'none'; gbox.appendChild(webBox);
+    var webBtn = el('button', 'dash-webtoggle');
+    function _setWebBtn() { webBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" style="vertical-align:-2px"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg> ' + (_dashWeb ? 'Pies' : 'Web'); }
+    function _paintWeb() {
+      webBox.innerHTML = ''; var specs = _webSpecsFromGrid(grid);
+      if (specs.length < 3) { webBox.appendChild(el('div', 'dash-hint', 'Add at least 3 pies (tap Explore chips) to see the web.')); console.log('§DASH-WEB skip spokes=' + specs.length); return; }
+      webBox.appendChild(el('div', 'dash-chart-h', 'Concentration web — ' + specs.length + ' cuts (spiky = lopsided, round = even)'));
+      _renderSpiderWeb(webBox, specs);
+    }
+    function _applyWeb() { _setWebBtn(); if (_dashWeb) { _paintWeb(); grid.style.display = 'none'; webBox.style.display = ''; } else { grid.style.display = ''; webBox.style.display = 'none'; } }
+    webBtn.addEventListener('click', function () { _dashWeb = !_dashWeb; _applyWeb(); console.log('§DASH-WEB-TOGGLE on=' + _dashWeb); });
+    gbox.insertBefore(webBtn, grid); _applyWeb();
+    console.log('§DASH-OVERVIEW donuts=' + charts.length + ' status=' + (statusF ? statusF.columnName : 'none') + ' cats=' + picked.map(function (f) { return f.columnName; }).join(',') + ' date=' + (dateF ? dateF.columnName : 'none'));
+    return grid;
+  }
+  // add (or toggle off) a donut card in the grid — used by the overview AND by an Ask "By X" chip (fills the
+  //   empty spot on the LEFT). Keyed by dimension so a 2nd tap removes it. Returns true if added.
+  function _addDonutCard(grid, key, title, groups, statusCol, amtCol) {
+    var existing = grid.querySelector('[data-dim="' + key + '"]');
+    if (existing) { grid.removeChild(existing); return false; }
+    var card = el('div', 'dash-card'); card.setAttribute('data-dim', key);
+    var h = el('div', 'dash-chart-h', title);
+    var ex = _exportBtn(title);
+    ex.addEventListener('click', function (e) { e.stopPropagation();
+      var f = _foldExportRows(groups, amtCol), nm = _exportName(title);
+      _exportMenu(ex, { name: nm, csv: function () { _exportCsv(nm, f.header, f.rows, f.total); },
+        svg: function () { return card.querySelector('svg.donut-svg'); } });
+    });
+    h.appendChild(ex); card.appendChild(h);
+    _renderDonut(card, { groups: groups, statusCol: statusCol, amtCol: amtCol });
+    // stamp the pie's CONCENTRATION (biggest slice's share) on the card — the spider web reads these straight off
+    //   the live cards, so the web is built from exactly the pies the user has on the board. Same fold the donut
+    //   draws (amount-share if money, else count-share). NON-INVENT.
+    var _gk = Object.keys(groups), _tot = 0, _topN = -1, _topName = '';
+    _gk.forEach(function (k) { var vv = amtCol ? _amtSum(groups[k], amtCol) : groups[k].length; _tot += vv; if (vv > _topN) { _topN = vv; _topName = k; } });
+    card.setAttribute('data-conc', _tot ? Math.round(_topN / _tot * 100) : 0);
+    card.setAttribute('data-top', _topName);
+    card.setAttribute('data-label', String(title).replace(/^By\s+/, ''));
+    var hint = grid.querySelector('.dash-hint'); if (hint) grid.insertBefore(card, hint); else grid.appendChild(card);
+    return true;
+  }
+  // SPIDER WEB (W-DASH-WEB) — collapse the donut grid into ONE radar. §SPEC: each pie the user has on the board
+  //   becomes a SPOKE; the spoke's reach = that pie's CONCENTRATION (its biggest slice's % — read off data-conc).
+  //   So a spiky web = a cut dominated by one value (a risk or a gap); a round web = evenly spread. It's a
+  //   SCREENING glance — "which cut deserves a look" — then tap back to the pies to drill. The totals are the
+  //   SAME on every pie (same records), so concentration — not count — is what makes the spokes differ. NON-INVENT.
+  function _renderSpiderWeb(container, specs) {
+    var NS = 'http://www.w3.org/2000/svg', n = specs.length, W = 300, H = 240, cx = W / 2, cy = H / 2 + 6, maxR = 86;
+    function pt(i, rad) { var a = (-90 + i * 360 / n) * Math.PI / 180; return [cx + rad * Math.cos(a), cy + rad * Math.sin(a)]; }
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'web-svg');
+    function poly(pts, fill, stroke, sw) { var p = document.createElementNS(NS, 'polygon'); p.setAttribute('points', pts.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ')); p.setAttribute('fill', fill); p.setAttribute('stroke', stroke); if (sw) p.setAttribute('stroke-width', sw); svg.appendChild(p); return p; }
+    [25, 50, 75, 100].forEach(function (lvl) { poly(specs.map(function (_, i) { return pt(i, maxR * lvl / 100); }), 'none', 'rgba(255,255,255,.10)', 1); });   // grid rings
+    specs.forEach(function (_, i) { var e = pt(i, maxR), l = document.createElementNS(NS, 'line'); l.setAttribute('x1', cx); l.setAttribute('y1', cy); l.setAttribute('x2', e[0]); l.setAttribute('y2', e[1]); l.setAttribute('stroke', 'rgba(255,255,255,.10)'); svg.appendChild(l); });   // spokes
+    poly(specs.map(function (s, i) { return pt(i, maxR * Math.max(0, Math.min(100, s.conc)) / 100); }), 'rgba(108,159,255,.22)', '#6c9fff', 2);   // the shape
+    specs.forEach(function (s, i) {   // vertex dots + labels
+      var v = pt(i, maxR * Math.max(0, Math.min(100, s.conc)) / 100), d = document.createElementNS(NS, 'circle'); d.setAttribute('cx', v[0]); d.setAttribute('cy', v[1]); d.setAttribute('r', 3); d.setAttribute('fill', '#6c9fff');
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = s.label + ' — biggest: ' + s.top + ' (' + s.conc + '%)'; d.appendChild(ti); svg.appendChild(d);
+      var lp = pt(i, maxR + 16), tx = document.createElementNS(NS, 'text'); tx.setAttribute('x', lp[0]); tx.setAttribute('y', lp[1]); tx.setAttribute('text-anchor', lp[0] < cx - 4 ? 'end' : lp[0] > cx + 4 ? 'start' : 'middle'); tx.setAttribute('dominant-baseline', 'middle'); tx.setAttribute('class', 'web-lbl');
+      tx.textContent = (s.label.length > 12 ? s.label.slice(0, 11) + '…' : s.label) + ' ' + s.conc + '%'; svg.appendChild(tx);
+    });
+    container.appendChild(svg);
+    console.log('§DASH-WEB spokes=' + n + ' conc=[' + specs.map(function (s) { return s.conc; }).join(',') + ']');
+    return svg;
+  }
+  // read the spider spokes off the live donut cards (excluding the S-curve/variance card) — the user's chosen pies.
+  function _webSpecsFromGrid(grid) {
+    return [].slice.call(grid.querySelectorAll('.dash-card[data-conc]')).map(function (c) {
+      return { label: c.getAttribute('data-label') || c.getAttribute('data-dim'), conc: Number(c.getAttribute('data-conc')) || 0, top: c.getAttribute('data-top') || '' };
+    });
+  }
+  // DASHBOARD — ONE surface, N lenses (Odoo multi-view). Tabs flip the SAME open-window records; the Graph tab
+  //   paints instantly then streams the Ask panel in (never blocks first sight). FUNDAMENTAL LAW: a ⋯-rail lens.
+  function openDashboard() {
+    if (!_session) { status('Log in first'); return; }
+    _cacheArr = null;   // force a fresh compute-cache for this open (covers in-place record edits since last open)
+    _dcCalls = _dcComputes = _grpCalls = _grpComputes = 0;
+    var tab = _curTab(); var gr = _groupRecs();
+    if (!gr) { status('Open a window with records first'); return; }
+    var amtCol = _amountColOf(_records.length ? Object.keys(_records[0]) : []);
+    var wrap = el('div', 'dash-wrap'), tabsEl = el('div', 'dash-tabs'), body = el('div', 'dash-body');
+    var TABS = [['graph', 'Graph'], ['cards', 'Cards'], ['pivot', 'Pivot'], ['list', 'List'], ['timeline', 'Timeline']];
+    var btns = {};
+    function setActive(id) { Object.keys(btns).forEach(function (k) { btns[k].className = 'dash-tab' + (k === id ? ' active' : ''); }); }
+    function show(id) {
+      setActive(id); _curDashTab = id; body.innerHTML = '';
+      if (id === 'graph') {
+        // landscape two-column: overview charts LEFT, the Ask panel (chips + their sub-charts) RIGHT in the
+        //   empty space. On mobile (CSS) it stacks. The right column fills the desktop width that was idle.
+        var split = el('div', 'dash-split');
+        var gbox = el('div', 'dash-gbox dash-main'), abox = el('div', 'dash-abox dash-side');
+        split.appendChild(gbox); split.appendChild(abox); body.appendChild(split);
+        var grid = _buildOverview(gbox, tab, amtCol);   // donut grid — paints instantly
+        abox.appendChild(el('div', 'ask-loading', 'Analyzing…'));   // Ask panel streamed in after the donuts paint
+        var idle = window.requestIdleCallback || function (f) { return setTimeout(f, 120); };
+        idle(function () { _buildAskPanel(abox, grid, tab, amtCol); });
+      } else if (id === 'cards') openKanbanFor(body);
+      else if (id === 'pivot') openPivotFor(body);
+      else if (id === 'list') openListInto(body);
+      else if (id === 'timeline') openTimelineInto(body);
+      console.log('§DASHBOARD tab=' + id);
+    }
+    TABS.forEach(function (t2) { var b = el('button', 'dash-tab', t2[1]); b.addEventListener('click', function () { show(t2[0]); }); btns[t2[0]] = b; tabsEl.appendChild(b); });
+    var exAll = el('button', 'dash-tab dash-export-all'); exAll.title = 'Export this window’s records as CSV';
+    exAll.innerHTML = ((window.OverlayKit && OverlayKit.ico) ? OverlayKit.ico('download', 14) : '⤓') + ' Export';
+    exAll.addEventListener('click', function () { _exportRecordsCsv(tab); }); tabsEl.appendChild(exAll);
+    // FORECAST toggle — projects a run-rate future onto the TIME-axis lenses (Graph S-curve + Timeline). Default
+    //   OFF ⇒ resting view unchanged. Verbatim Lucide 'trending-up' glyph (not in icons.js registry — kept inline
+    //   like the rotate hint to avoid the panels.js parity test). Honoured only by the time-axis tabs; the donut/
+    //   kanban/pivot tabs have no time axis, so flipping it leaves them as-is (by design, not a gap).
+    var fcBtn = el('button', 'dash-tab dash-forecast' + (_dashForecast ? ' active' : ''));
+    fcBtn.title = 'Forecast — project a run-rate future onto the Timeline + S-curve (every dashed point a labelled extrapolation of the real folds)';
+    function _fcLabel() { return '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg> Forecast'; }
+    fcBtn.innerHTML = _fcLabel();
+    fcBtn.addEventListener('click', function () {
+      _dashForecast = !_dashForecast; fcBtn.className = 'dash-tab dash-forecast' + (_dashForecast ? ' active' : '');
+      _cacheArr = null; show(_curDashTab);   // re-render the active tab; time-axis tabs pick up the projection
+      console.log('§DASH-FORECAST on=' + _dashForecast + ' tab=' + _curDashTab);
+    });
+    tabsEl.appendChild(fcBtn);
+    var rot = el('div', 'dash-rotate');   // shown only on portrait phones (CSS) — charts/timeline read wider in landscape
+    rot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg><span>Rotate to landscape for the full view</span>';
+    wrap.appendChild(rot); wrap.appendChild(tabsEl); wrap.appendChild(body);
+    _overlay('Dashboard — ' + tab.name, wrap);
+    show('graph');
+    console.log('§DASHBOARD-OPEN table=' + tab.tableName + ' tabs=' + TABS.length + ' amountCol=' + (amtCol || 'none'));
+  }
+  async function openKanbanFor(mount) {
+    mount = _asMount(mount);
     if (!_session) { status('Log in first'); return; }
     var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
     if (!gr.hasStatus) {                          // no wfmc lifecycle → heat map (a drop-zone board would be empty)
-      var hc = el('div'); hc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+      var hc = el('div'); if (!mount) hc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
       var hroot = el('div'); hroot.style.cssText = 'overflow:auto;max-height:72vh'; hc.appendChild(hroot);
       _renderHeatMap(gr, hroot);
-      _overlay('Heat map — ' + gr.tab.name, hc);
+      _lensOut(mount, 'Heat map — ' + gr.tab.name, hc);
       console.log('§KANBAN-PILL heatmap by=' + gr.col.columnName + ' table=' + gr.tab.tableName);
       return;
     }
     var ok = await _ensureKanbanERP();
     var tab = gr.tab, T = tab.tableName, kc = _keyCol(tab), statusCol = gr.col.columnName;
     if (!ok || !window.KanbanLens) {   // engine/lens absent → honest fall back to the read-only board
-      var rbc = el('div'); rbc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+      var rbc = el('div'); if (!mount) rbc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
       var rb = el('div', 'kb-board'); rbc.appendChild(rb);
+      // richer card here too (no bare PK) — pick identity/amount by AD naming convention, NON-INVENT, no per-table code.
+      var fcols = _records.length ? Object.keys(_records[0]) : [];
+      function _fhas(c) { return fcols.some(function (k) { return k.toLowerCase() === String(c).toLowerCase(); }); }
+      function _fpick(cands, re) { for (var i = 0; i < cands.length; i++) { if (_fhas(cands[i])) return cands[i]; }
+        if (re) { for (var j = 0; j < fcols.length; j++) { if (re.test(fcols[j])) return fcols[j]; } } return null; }
+      var fTitle = _fpick(['DocumentNo', 'Name', 'Value'], null) || kc, fAmt = _fpick(['GrandTotal'], /(Amt|Amount|Total)$/i);
+      var _KL = window.KanbanLens;
       Object.keys(gr.groups).forEach(function (k) { var c = el('div', 'kb-col'); c.appendChild(el('div', 'kb-colhd', k + ' · ' + gr.groups[k].length));
-        gr.groups[k].slice(0, 25).forEach(function (r) { c.appendChild(el('div', 'kb-card', String(recVal(r, kc)))); }); rb.appendChild(c); });
-      _overlay('Kanban — ' + tab.name + ' (read-only)', rbc); console.log('§KANBAN-PILL readonly cols=' + Object.keys(gr.groups).length + ' table=' + T); return;
+        gr.groups[k].slice(0, 25).forEach(function (r) { var cd = el('div', 'kb-card');
+          cd.appendChild(el('div', 'kb-card-t', String(recVal(r, fTitle))));
+          if (fAmt) { var a = recVal(r, fAmt); if (a != null && a !== '') cd.appendChild(el('div', 'kb-card-a', _KL ? _KL.fmtMoney(a) : String(a))); }
+          c.appendChild(cd); }); rb.appendChild(c); });
+      _lensOut(mount, 'Kanban — ' + tab.name + ' (read-only)', rbc);
+      console.log('§KANBAN-PILL readonly cols=' + Object.keys(gr.groups).length + ' table=' + T + ' titleCol=' + fTitle + ' amountCol=' + (fAmt || 'none')); return;
     }
     // fold the OPEN window's records PER-ROW by RAW docstatus (codes, not labels), overlaying the op-log tip.
     // S6 LENS-SWAP (GRAND_LANE): read the tip from the SHARED kernel sidecar (__crud) — the SAME store the
@@ -3169,7 +4329,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
     var titleCol = _pickCol(['DocumentNo', 'Name', 'Value', kc], null) || kc;
     var amountCol = _pickCol(['GrandTotal'], /(Amt|Amount|Total)$/i);
-    var dateCol = _pickCol([], /^Date/i);
+    var dateCol = _pickCol([], /^Date/i) || _pickCol(['Updated', 'Created'], null);   // audit fallback for date-less models (C_BPartner)
     var kmeta = {};
     _records.forEach(function (r) {
       var key = T + '#' + recVal(r, kc);
@@ -3185,43 +4345,84 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       console.log("§KANBAN-CARD key=" + _sc.key + " avatar=" + window.KanbanLens.monogram(T) +
         " title='" + _m.title + "' amount='" + (_m.amount == null ? '' : _m.amount) + "' date='" + (_m.date == null ? '' : _m.date) +
         "' color=" + window.KanbanLens.statusColor(_sc.status)); }
+    // §KANBAN-GROUPBY: extract dispatch+onResult so the group-by re-mount shares the same write path
+    var _kbDispatch = function (intent) {
+      var rec = _records.filter(function (r) { return String(recVal(r, kc)) === String(intent.id); })[0];
+      if (!rec) { console.log('§KANBAN-WRITE no-rec id=' + intent.id); return { ok: false, reason: 'no-rec' }; }
+      var fc = _fsmCtx(tab, rec);
+      if (!fc) { console.log('§KANBAN-WRITE no-fsm table=' + T + ' id=' + intent.id); return { ok: false, reason: 'no-fsm' }; }
+      var res = fc.dispatch(intent.action);   // AdDocFsm legality + __crud.process on the SHARED signed lane
+      if (res && res.ok) console.log('§KANBAN-WRITE ok ' + T + '#' + intent.id + ' action=' + intent.action +
+        ' from=' + res.from + ' to=' + res.to + ' via=__crud.process store=shared(__crud)');
+      else console.log('§KANBAN-WRITE rejected ' + T + '#' + intent.id + ' action=' + intent.action + ' why=' + (res && res.reason));
+      return { ok: !!(res && res.ok), to: res && res.to, reason: res && res.reason };
+    };
+    var _kbOnResult = function (res, dr) {
+      if (dr && dr.ok && window.__crud && typeof window.__crud.withSidecar === 'function') {
+        setTimeout(function () { window.__crud.withSidecar(function () {
+          try { console.log('§KANBAN-WRITE settled ' + res.table + '#' + res.id +
+            ' shared-tip=' + (window.__crud.readTip(String(res.table).toLowerCase(), res.id) || '?') + ' (kernel sidecar = the one store)'); } catch (e) {}
+        }); }, 350);
+      }
+    };
+    var _kbMountBoard = function (r, bd) {
+      // S6 LENS-SWAP: a kanban drag reuses the SHARED _fsmCtx dispatch (same signed lane as the grid DocAction bar)
+      window.__idmpKanban = window.KanbanLens.mount({ root: r, board: bd, wfmc: _kanbanWfmc, meta: kmeta, dispatch: _kbDispatch, ctx: {}, onResult: _kbOnResult });
+      // DASH_DRILL — long-press a card → its record (the move-guard leaves the status-change DRAG intact)
+      [].slice.call(r.querySelectorAll('.kanban-card')).forEach(function (cardEl) {
+        var key = cardEl.dataset && cardEl.dataset.key; if (!key) return;
+        var id = key.split('#').slice(1).join('#');
+        var rec = _records.filter(function (x) { return String(recVal(x, kc)) === id; })[0];
+        if (rec) _lpDrill(cardEl, function () { return [rec]; });
+      });
+    };
     var container = el('div');
-    container.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));   // switch back to the chart lens
+    if (!mount) container.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+    // §KANBAN-GROUPBY selector — lists all AD fields with usable cardinality (≥2, < rows), driven by field
+    // metadata (no per-model code). DocStatus is first and marked ✦ (draggable); any other field → heat-map.
+    var _kbFields = (_displayFields(tab) || []).filter(function (f) {
+      var c = _distinctCount(f.columnName); return c >= 2 && c < Math.max(_records.length, 2);
+    }).sort(function (a, b) { return /docstatus/i.test(a.columnName) ? -1 : /docstatus/i.test(b.columnName) ? 1 : 0; });
     var root = el('div'); root.style.cssText = 'overflow:auto;max-height:72vh';
-    container.appendChild(root);
-    _overlay('Kanban — ' + tab.name, container);
-    window.__idmpKanban = window.KanbanLens.mount({ root: root, board: board, wfmc: _kanbanWfmc, meta: kmeta,
-      // S6 LENS-SWAP — a kanban drag is the SAME signed verb as the grid/form DocAction: reuse the SHARED
-      //   _fsmCtx(tab,rec).dispatch(action) seam (AdDocFsm decides legality + transition → __crud.process →
-      //   commitProcess → completeFanout → signed commitGroup → persist to the SHARED kernel sidecar). The
-      //   ring NEVER opens; the kanban no longer forks its own op-log (_kanbanProj) — Kanban-drag ⇆ grid-bar ⇆
-      //   gear-batch are now ONE owned model, one store, one write path (doctrine §0: never fork a verb).
-      //   The lens's wfmc drop-zones stay the fast visual mirror; AdDocFsm is the WRITE authority (it may
-      //   reject a wfmc-legal drag for period/processing — then the card honestly snaps back).
-      dispatch: function (intent) {
-        var rec = _records.filter(function (r) { return String(recVal(r, kc)) === String(intent.id); })[0];
-        if (!rec) { console.log('§KANBAN-WRITE no-rec id=' + intent.id); return { ok: false, reason: 'no-rec' }; }
-        var fc = _fsmCtx(tab, rec);
-        if (!fc) { console.log('§KANBAN-WRITE no-fsm table=' + T + ' id=' + intent.id); return { ok: false, reason: 'no-fsm' }; }
-        var res = fc.dispatch(intent.action);   // AdDocFsm legality + __crud.process on the SHARED signed lane
-        if (res && res.ok) console.log('§KANBAN-WRITE ok ' + T + '#' + intent.id + ' action=' + intent.action +
-          ' from=' + res.from + ' to=' + res.to + ' via=__crud.process store=shared(__crud)');
-        else console.log('§KANBAN-WRITE rejected ' + T + '#' + intent.id + ' action=' + intent.action + ' why=' + (res && res.reason));
-        return { ok: !!(res && res.ok), to: res && res.to, reason: res && res.reason };
-      }, ctx: {},
-      onResult: function (res, dr) {
-        // the signed write + chain verify + persist all happen INSIDE __crud.process (commitProcess →
-        //   commitGroup → verifyChain → _sidePersist → IDB) and the engine logs the authoritative
-        //   "§CRUD process committed … verifyChain=ok". Here we only confirm the SHARED sidecar tip settled
-        //   to the new status once the async commit lands (the kernel sidecar — not _kanbanProj — is the truth).
-        if (dr && dr.ok && window.__crud && typeof window.__crud.withSidecar === 'function') {
-          setTimeout(function () { window.__crud.withSidecar(function () {
-            try { console.log('§KANBAN-WRITE settled ' + res.table + '#' + res.id +
-              ' shared-tip=' + (window.__crud.readTip(String(res.table).toLowerCase(), res.id) || '?') + ' (kernel sidecar = the one store)'); } catch (e) {}
-          }); }, 350);
+    if (_kbFields.length > 1) {
+      var gbRow = el('div'); gbRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:#555;';
+      gbRow.appendChild(el('span', null, 'Group by'));
+      var gbSel = el('select'); gbSel.style.cssText = 'border:1px solid #ddd;border-radius:5px;padding:3px 8px;font-size:13px;cursor:pointer;';
+      _kbFields.forEach(function (f) {
+        var opt = el('option', null, f.name + (/docstatus/i.test(f.columnName) ? ' ✦' : ''));
+        opt.value = f.columnName; if (f.columnName === gr.col.columnName) opt.selected = true;
+        gbSel.appendChild(opt);
+      });
+      gbRow.appendChild(gbSel); container.appendChild(gbRow);
+      gbSel.addEventListener('change', function () {
+        var newF = _kbFields.filter(function (f) { return f.columnName === gbSel.value; })[0]; if (!newF) return;
+        root.innerHTML = '';
+        var isDs = /docstatus/i.test(newF.columnName), gbS = {};
+        // DocStatus board needs RAW status codes (+ op-log tip) to map onto the wfmc columns — the formatted
+        //   LABEL ("Completed") matches no column code (CO) → an empty board. Heat-map fields keep the label.
+        if (isDs) {
+          _records.forEach(function (r) {
+            var id = recVal(r, kc), s = String(recVal(r, newF.columnName) || '');
+            var t = _readTip ? _readTip(_Tlc, id) : null; if (t != null && t !== '' && String(t) !== s) s = String(t);
+            (gbS[s] = gbS[s] || []).push(id);
+          });
+          var gbFolds = Object.keys(gbS).map(function (s) { return { table: T, doc_status: s, count: gbS[s].length, ids: gbS[s].slice(0, 30) }; });
+          _kbMountBoard(root, window.KanbanLens.buildBoard(gbFolds, _kanbanWfmc, { showEmptyStates: true }));
+        } else {
+          _records.forEach(function (r) { var v = String(fmt(newF, recVal(r, newF.columnName)) || '(blank)'); (gbS[v] = gbS[v] || []).push(recVal(r, kc)); });
+          var gbks = Object.keys(gbS).map(function (k) { return { k: k, n: gbS[k].length }; }).sort(function (a, b) { return b.n - a.n; });
+          var gbmax = 1; gbks.forEach(function (e) { gbmax = Math.max(gbmax, e.n); });
+          var gbgrid = el('div', 'hm-grid');
+          gbks.forEach(function (e) { var t = e.n / gbmax, cell = el('div', 'hm-cell'); cell.style.background = 'rgba(108,159,255,' + (0.14 + 0.78 * t).toFixed(3) + ')'; cell.appendChild(el('div', 'hm-k', e.k)); cell.appendChild(el('div', 'hm-n', String(e.n))); cell.title = e.k + ' · ' + e.n + ' records'; gbgrid.appendChild(cell); });
+          root.appendChild(gbgrid);
         }
-      } });
-    console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T);
+        console.log('§KANBAN-GROUPBY field=' + newF.columnName + ' groups=' + Object.keys(gbS).length + ' draggable=' + isDs);
+      });
+    }
+    container.appendChild(root);
+    _lensOut(mount, 'Kanban — ' + tab.name, container);
+    _kbMountBoard(root, board);
+    console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T + ' groupby=' + gr.col.columnName + ' axis-choices=' + _kbFields.length);
   }
   // 🛒 POS — the point-of-sale lens (POS_ADDON_SPEC §P-1): tiles from c_poskey, sealed master prices,
   // Complete = ONE signed group through the SAME published op log the Kanban write path rides.
@@ -3235,7 +4436,26 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       seal: window.ERP.seal, chainVerify: window.ERP.chainVerify, overlay: _overlay, el: el, status: status,
       // §S-2b seam (WH_POS_PICK_LANE W-1): persist the op log to IDB (bim_ootb_cache/dbs/idmp_kanban_proj)
       // so the warehouse-walk page can fold a deliver-later sale; same store the Kanban write path persists.
-      persist: function () { return window.KanbanHost.persist(window.ERP.opDb, _KPROJ); } });
+      persist: function () { return window.KanbanHost.persist(window.ERP.opDb, _KPROJ); },
+      // T7 host opt-in (prompts/T7_HOST_WIRING_SPEC.md §Build 5): past ~5k ops the log shards (signed
+      // snapshot boundary, archive-confirmed) and the shrunk hot blob persists = instant first paint;
+      // full-history folds lazily pull the verified archive back on demand.
+      maybeShard: function () { return window.KanbanHost.maybeShard(window.ERP.opDb, _KPROJ); },
+      archivedOps: function () { return window.KanbanHost.archivedOps(window.ERP.opDb, _KPROJ); } });
+  }
+  // 🍳 Kitchen Display (§T2-SPEC) — the "ordered, not yet delivered" queue: KitchenCore folds the SAME
+  // published op log the POS writes (deliver-later shipments born DR) ∪ the §S-2 seed selector; Serve =
+  // ONE signed group riding completeShipmentOps. Same write-path bootstrap as openPosFor.
+  async function openKitchenFor() {
+    console.log('§KDS-PILL action=open');
+    if (!_session) { status('Log in first'); return; }
+    if (!window.KitchenLens || !window.KitchenCore || !window.POSCore) { status('Kitchen lens not loaded.'); return; }
+    var ok = await _ensureKanbanERP();
+    if (!ok || !window.ERP) { status('Kitchen: write path unavailable (window.ERP not published)'); console.log('§KDS-PILL write-path=absent'); return; }
+    KitchenLens.open({ b3: _b3(window.__idmpDb), opDb: window.ERP.opDb, KO: window.KernelOps,
+      seal: window.ERP.seal, chainVerify: window.ERP.chainVerify, overlay: _overlay, el: el, status: status,
+      // T7 (T7_HOST_WIRING_SPEC §Build 4): pre-shard deliver-later tickets stay in the queue — lazy archive.
+      archivedOps: function () { return window.KanbanHost.archivedOps(window.ERP.opDb, _KPROJ); } });
   }
   // ⚖ Rule — THE ONE GESTURE: edit one rule → K records re-fold live, signed + reversible (RuleFold).
   function openRuleFor() {
@@ -3313,12 +4533,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     else { try { navigator.clipboard.writeText(url); status('Link copied'); } catch (e) {} }
     console.log('§IDMP-SHARE url=' + url);
   }
+  // Leg 3 (RESUME_IDMP_FIDELITY) — the accounting affordance is NO LONGER a pill: openPostedFor/openPreviewFor
+  // are now carried by the native Posted COLUMN/button (_postedButton → _openPostedAffordance), role-gated to
+  // accounting roles. They are pulled from IdmpPillActions (the ⋯ rail keeps only non-iDempiere extras — LAW) and
+  // published on this small host seam so the column/button (and witnesses) can reach the two GL views directly.
+  window.IdmpPosting = { posted: openPostedFor, preview: openPreviewFor, affordance: _openPostedAffordance };
   function mountPillRegistry() {
     window.IdmpPillActions = {
-      posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
-      rule: openRuleFor, pos: openPosFor,
-      share: _shareCurrent, home: function () { location.href = 'erp.html'; },
+      dashboard: openDashboard,   // unified multi-view (Graph/Cards/Pivot/List/Timeline) — replaces the 3 separate lens pills
+      graph: openGraphFor, kanban: openKanbanFor, pivot: openPivotFor,   // kept: openDashboard fans into them
+      rule: openRuleFor, pos: openPosFor, kitchen: openKitchenFor,
+      share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },   // "Exit" → the Matrix landing (app-shell front door), RESUME_IDMP_FIDELITY leg 2
       erpdoc: openReadCompare,
+      // RED PILL — abstract ZOOM ACROSS (zoom_across.js): collect the cross-surface destinations available for
+      //   the focused record; one ⇒ launch it, several ⇒ a tiny chooser (mirrors native Zoom-Across listing).
+      //   Destinations are registered at boot (the BIM Viewer below; Modeller etc. later = one register() call).
+      zoomacross: function () {
+        var ctx = _zoomCtx();
+        var ts = window.ZoomAcross ? window.ZoomAcross.targets(ctx) : [];
+        if (!ts.length) { status('Nothing to zoom across to from this record'); console.log('§ZOOM-ACROSS no-target'); return; }
+        if (ts.length === 1) { ts[0].launch(ctx); return; }
+        _zoomAcrossChooser(ts, ctx);
+      },
       // ABOUT_BOX_CONSOLIDATE.md — ShowMe/Help now opens the ONE shared About/DIY modal (was toggleShowMe).
       // Install/Migrate pills retired: the DIY tab carries "bring your data in" (download agent → run → load).
       showme: function () { if (window.AboutDIY) window.AboutDIY.open(); else toggleShowMe(); },
@@ -3395,6 +4631,187 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // GRID_BATCH_FORM_PILL_SPEC item 5 — showWhen:"form-view": the relocated record toolbar pills surface ONLY
     //   with a record open in FORM view (so they don't clutter the grid / front door). renderBody re-evaluates.
     window.IdmpPillFormGate = function () { return !!(_session && _curTab() && _viewMode === 'form'); };
+    // ZOOM ACROSS (zoom_across.js) — the focus context the destinations test/launch against, + a tiny chooser.
+    function _zoomCtx() { return { tab: _curTab(), rec: _records[_recIdx], db: window.__idmpDb }; }
+    function _zoomAcrossChooser(ts, ctx) {
+      var ov = el('div', 'idmp-zoom-chooser');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:1500;display:flex;align-items:center;justify-content:center;background:rgba(8,12,20,.45)';
+      var card = el('div'); card.style.cssText = 'background:#fff;color:#1b2430;border-radius:10px;padding:14px 16px;min-width:220px;box-shadow:0 18px 50px rgba(0,0,0,.45);font:14px system-ui,sans-serif';
+      card.appendChild(el('div', null, 'Zoom across to…')).style.cssText = 'font-weight:600;margin-bottom:8px';
+      ts.forEach(function (t) {
+        var b = el('button', null, t.label); b.style.cssText = 'display:block;width:100%;text-align:left;padding:8px 10px;margin:3px 0;border:1px solid #c9d3df;border-radius:7px;background:#f5f8fc;cursor:pointer;font:13px system-ui';
+        b.addEventListener('click', function () { ov.remove(); t.launch(ctx); });
+        card.appendChild(b);
+      });
+      ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+      ov.appendChild(card); document.body.appendChild(ov);
+    }
+    // §AD-GATE — showWhen:"zoom-across": the RED "Zoom Across" pill surfaces when ANY cross-surface destination is
+    //   available for the focused record (window.ZoomAcross.targets). Keeps the iDempiere surface pure otherwise.
+    window.IdmpPillZoomGate = function () {
+      try { return !!(_session && window.ZoomAcross && window.ZoomAcross.targets(_zoomCtx()).length); }
+      catch (e) { return false; }
+    };
+    // First destination: the BIM Viewer. available = C_Project in the BIM band (PK>=990000, Value == building
+    //   name); launch = cold-open the building scene (../viewer idiom, mirrors the warehouse pill). Idempotent.
+    // v2 (ZOOM_ACROSS_SCOPE_SESSION §SPEC) — carry the in-FOCUS scope so the Viewer's Find lands on the right
+    //   items, not just the whole building. _zoomScope folds the focus ctx → {bld, find}; `find` is a REAL IFC
+    //   class (c_projectline → m_product.value, the proj_fold key), null = whole-building floor. _lastBimScope =
+    //   the nearest/latest remembered scope (the "no discerning record / blank page" fallback). NON-INVENT.
+    var _lastBimScope = null;
+    function _zoomScope(ctx) {
+      if (!ctx || !ctx.tab || !ctx.rec) return null;
+      var tn = String(ctx.tab.tableName || '').toLowerCase();
+      if (tn === 'c_project') {
+        var pk = recVal(ctx.rec, 'C_Project_ID');
+        if (pk == null || Number(pk) < 990000) return null;
+        var v = recVal(ctx.rec, 'Value');
+        return v ? { bld: String(v), find: null } : null;            // project header → whole building
+      }
+      if (tn === 'c_projectline') {                                  // a focused line → its IFC class
+        var projId = recVal(ctx.rec, 'C_Project_ID');
+        if (projId == null || Number(projId) < 990000) return null;
+        var pr = _sqlRows('SELECT value FROM c_project WHERE c_project_id=' + Number(projId))[0];
+        if (!pr || !pr.value) return null;
+        var find = null, pid = recVal(ctx.rec, 'M_Product_ID');
+        if (pid != null) { var p = _sqlRows('SELECT value FROM m_product WHERE m_product_id=' + Number(pid))[0]; find = p && p.value ? String(p.value) : null; }
+        return { bld: String(pr.value), find: find };
+      }
+      if (tn === 'pp_order') {                                       // PP_ORDER_ZOOM_TM_SPEC §A — a manufacturing
+        var ppId = recVal(ctx.rec, 'PP_Order_ID');                  //   order → its project's building, in TM mode
+        var pProj = recVal(ctx.rec, 'C_Project_ID');                //   landed at this order's construction moment
+        if (pProj == null || Number(pProj) < 990000) return null;   // only BIM-band project orders carry a scene
+        var ppr = _sqlRows('SELECT value FROM c_project WHERE c_project_id=' + Number(pProj))[0];
+        if (!ppr || !ppr.value) return null;
+        return { bld: String(ppr.value), find: null, tm: { order: Number(ppId) } };   // .tm ⇒ TimeMachine target
+      }
+      // §2026-07-04c (RESUME_HR_BIM_ASSET.md — close the Zoom Across loop for HBA entities) — the SAME
+      // {bld,find} shape as the branches above, same registered 'viewer' destination/launch, no new mechanism.
+      if (tn === 'm_warehouse') {                                  // a Building record itself — bld only, a
+        var wv = recVal(ctx.rec, 'Value');                        //   Warehouse record isn't finer than that.
+        return wv ? { bld: String(wv), find: null } : null;
+      }
+      if (tn === 'c_subscription') {                                // a Tenancy/Strata charge → its leased unit.
+        var prodId = recVal(ctx.rec, 'M_Product_ID');               // C_Subscription carries no guid column
+        if (prodId == null) return null;                           // (column-pure, per ad_tenancy.toSubscriptionRow)
+        var pr2 = _sqlRows('SELECT p.value AS guid, w.value AS bld FROM m_product p'  // — re-derive it via the
+          + ' JOIN m_locator l ON p.m_locator_id=l.m_locator_id'                     //   SAME Product→Locator→
+          + ' JOIN m_warehouse w ON l.m_warehouse_id=w.m_warehouse_id WHERE p.m_product_id=' + Number(prodId))[0]; // Warehouse join c_projectline already does.
+        if (!pr2 || !pr2.bld) return null;
+        return { bld: String(pr2.bld), find: pr2.guid ? String(pr2.guid) : null };
+      }
+      if (tn === 's_resource' || tn === 's_resourceunavailable') {   // both tables carry the SAME S_Resource_ID
+        var resId = recVal(ctx.rec, 'S_Resource_ID');               // column (own PK on s_resource, FK on the
+        if (resId == null) return null;                            // unavailability child) — one query serves both.
+        var rr = _sqlRows('SELECT r.value AS val, r.ad_user_id AS uid, w.value AS bld FROM s_resource r'
+          + ' JOIN m_warehouse w ON r.m_warehouse_id=w.m_warehouse_id WHERE r.s_resource_id=' + Number(resId))[0];
+        if (!rr || !rr.bld) return null;
+        // S_Resource.Value holds EITHER a room guid (occupancy.toResourceRow, ad_user_id NULL) OR an employee
+        // code like "EMP001" (ad_attendance.toPersonResourceRow, ad_user_id NOT NULL) — same column, two
+        // meanings. Both are REAL sourced facts off this record; pass either through as `find` and let the
+        // Viewer decide what it means (a rendered guid flies directly; a bare code resolves via that
+        // employee's open attendance session — see viewer/config.js FIND_GUID + hba_lens.js boot consumption).
+        return { bld: String(rr.bld), find: rr.val ? String(rr.val) : null };
+      }
+      if (tn === 'ad_user') {                                       // HONEST GAP: no zone column anywhere on
+        var auId = recVal(ctx.rec, 'AD_User_ID');                  // AD_User — this person's CURRENT room is a
+        if (auId == null) return null;                             // BIM-side view-trace fact (ad_attendance.js
+        var ur = _sqlRows('SELECT w.value AS bld FROM s_resource r'  // compileAttendance's spatial array), never
+          + ' JOIN m_warehouse w ON r.m_warehouse_id=w.m_warehouse_id WHERE r.ad_user_id=' + Number(auId))[0]; // a column here.
+        if (!ur || !ur.bld) return null;
+        return { bld: String(ur.bld), find: null };                 // never fabricate a zone lookup that doesn't exist
+      }
+      return null;
+    }
+    if (window.ZoomAcross) window.ZoomAcross.register({
+      id: 'viewer', label: 'BIM Viewer',
+      // available when the focus resolves a BIM scope OR one was remembered (nearest/latest); pure otherwise.
+      available: function (ctx) { return !!(_zoomScope(ctx) || _lastBimScope); },
+      launch: function (ctx) {
+        _connectEnable();                                            // OPT-IN: wire Connect on first Zoom-Across launch
+        var sc = _zoomScope(ctx);
+        if (sc) _lastBimScope = sc;                                  // a real record refreshes the memory
+        else sc = _lastBimScope;                                     // blank/no-record → nearest/latest
+        if (!sc || !sc.bld) { status('No BIM model linked to this record'); console.log('§ZOOM-ACROSS no-scope'); return; }
+        var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
+        var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db&bld=' + encodeURIComponent(sc.bld) + '&home=' + homeUrl;
+        if (sc.find) url += '&find=' + encodeURIComponent(sc.find);  // carry the finer scope to the Find panel
+        window.open(url, '_blank');
+        console.log('§ZOOM-ACROSS launch id=viewer bld=' + sc.bld + ' find=' + (sc.find || '-') + ' url=' + url);
+      }
+    });
+    // PP_ORDER_ZOOM_TM_SPEC §A — the manufacturing/project order destination: BIM Viewer in TimeMachine mode,
+    //   deep-linked to THIS order (?tm=1&pporder=<id>) so the 4D scrubber + shopfloor S-curve land at its moment.
+    //   available ONLY when the focus resolves a `.tm` scope (a PP_Order) — never for plain C_Project lines.
+    if (window.ZoomAcross) window.ZoomAcross.register({
+      id: 'timemachine', label: 'BIM TimeMachine',
+      available: function (ctx) { var s = _zoomScope(ctx); return !!(s && s.tm && s.bld); },
+      launch: function (ctx) {
+        _connectEnable();                                            // OPT-IN: wire Connect on first Zoom-Across launch
+        var sc = _zoomScope(ctx);
+        if (!sc || !sc.tm || !sc.bld) { status('No BIM model linked to this order'); console.log('§ZOOM-ACROSS no-scope id=timemachine'); return; }
+        var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
+        var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db&bld=' +
+          encodeURIComponent(sc.bld) + '&home=' + homeUrl + '&tm=1&pporder=' + encodeURIComponent(sc.tm.order);
+        window.open(url, '_blank');
+        console.log('§ZOOM-ACROSS launch id=timemachine bld=' + sc.bld + ' pporder=' + sc.tm.order + ' url=' + url);
+      }
+    });
+    // §CONNECT-ERP-SCRUB-START — ERP-side Connect reaction: subscribe selection+timeline from the BIM viewer.
+    // Enabled OPT-IN on first Zoom-Across launch (never always-on). Echo-guarded by Connect instance token.
+    function _connectLightIfc(ifcClass) {
+      if (!ifcClass || !window.__idmpDb) return;
+      try {
+        var rows = _sqlRows(
+          'SELECT l.c_projectline_id FROM c_projectline l' +
+          ' JOIN m_product p ON l.m_product_id=p.m_product_id' +
+          ' WHERE LOWER(p.value)=\'' + ifcClass.toLowerCase().replace(/'/g, "''") + '\' LIMIT 1'
+        );
+        if (!rows.length) {
+          console.log('§CONNECT_ERP light MISS ifcClass=' + ifcClass);
+          status('↔ ' + ifcClass + ' (no project line)');
+          return;
+        }
+        var pk = Number(rows[0].c_projectline_id);
+        var trs = document.querySelectorAll('[data-ad-table="c_projectline"][data-ad-record="' + pk + '"]');
+        if (!trs.length) {
+          status('↔ ' + ifcClass + ' — open C_ProjectLine to see');
+          console.log('§CONNECT_ERP light match pk=' + pk + ' not-in-DOM');
+          return;
+        }
+        trs.forEach(function (r) {
+          r.classList.remove('idmp-connect-lit');
+          void r.offsetWidth;           // reflow to restart animation
+          r.classList.add('idmp-connect-lit');
+        });
+        status('↔ Live: ' + ifcClass);
+        console.log('§CONNECT_ERP light MATCH ifcClass=' + ifcClass + ' pk=' + pk + ' rows=' + trs.length);
+      } catch (e) { console.warn('§CONNECT_ERP light err', e); }
+    }
+    function _connectSubscribe() {
+      if (!window.Connect) return;
+      Connect.subscribe('selection', function (p) {
+        if (!p) return;
+        console.log('§CONNECT_ERP selection ifcClass=' + p.ifcClass + ' guid=' + String(p.guid || '').slice(0, 10) + ' surface=' + p.surface);
+        if (p.ifcClass) _connectLightIfc(p.ifcClass);
+      });
+      Connect.subscribe('timeline', function (p) {
+        if (!p) return;
+        console.log('§CONNECT_ERP timeline cursor=' + Math.round(p.cursor || 0) + ' phase=' + p.phase + ' frac=' + (+(p.frac || 0)).toFixed(2));
+        if (p.phase) status('⏱ TM ' + p.phase + (p.frac != null ? ' (' + Math.round(p.frac * 100) + '%)' : ''));
+      });
+      console.log('§CONNECT_ERP subscribed selection+timeline');
+    }
+    var _connectWired = false;
+    function _connectEnable() {
+      if (_connectWired || !window.Connect) return;
+      _connectWired = true;
+      Connect.register('erp').enable();
+      _connectSubscribe();
+      console.log('§CONNECT_ERP enabled inst=' + Connect._token);
+    }
+    // §CONNECT-ERP-SCRUB-END
+
     // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): true only when the tenant carries a c_pos row.
     window.IdmpPillPosGate = function () {
       try { var r = _b3(window.__idmpDb).prepare('SELECT c_pos_id FROM c_pos LIMIT 1').get(); return !!(r && r.c_pos_id); }
@@ -3402,6 +4819,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
     if (window.IdmpPills && window.IdmpPills.mount) window.IdmpPills.mount();
     else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
+    // §TEAMS-EMBED — mount the Teams pill into the just-built #idmp-pill bar. Flag-guarded: OFF (default)
+    // → init() is a no-op (pixel-identical). The host may later set window.TeamsEmbedOps() to fold the live
+    // signed op-log into the pane; absent → an honest empty pane (NON-INVENT). Reversible, additive.
+    if (window.TeamsEmbed && window.TeamsEmbed.init) window.TeamsEmbed.init({ header: document.getElementById('idmp-pill') });
   }
   function _syncPillStage() {
     if (window.IdmpPills && window.IdmpPills.setStage) window.IdmpPills.setStage();
@@ -3420,8 +4841,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var tab = _curTab(), tname = tab ? tab.name : '';
     if (kind === 'tab' || !tab) return wname + ' › ' + tname;
     var rec = _records[_recIdx]; if (!rec) return wname + ' › ' + tname;
-    // NON-INVENT: the human label is a REAL record field (DocumentNo/Value/Name/…), else the key #id.
-    var human = recVal(rec, 'DocumentNo') || recVal(rec, 'Value') || recVal(rec, 'Name') || recVal(rec, 'Description');
+    // NON-INVENT: the human label is a REAL record field — Name BEFORE Value (a raw code), matching _titleColOf.
+    var human = recVal(rec, 'DocumentNo') || recVal(rec, 'Name') || recVal(rec, 'Value') || recVal(rec, 'Description');
     var rid = recVal(rec, _keyCol(tab));
     return tname + ' ' + (human != null && human !== '' ? human : ('#' + rid));
   }
@@ -3513,7 +4934,62 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var s = document.createElement('style');
     s.textContent =
       '.chart-wrap{max-width:640px}.chart-title{font-weight:700;margin-bottom:12px}.chart-row{display:flex;align-items:center;gap:10px;margin:6px 0}.chart-lbl{width:120px;font-size:12px;color:#9fb0c8;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chart-barw{flex:1;background:rgba(255,255,255,.05);border-radius:6px}.chart-bar{background:linear-gradient(90deg,#1c5fa8,#6c9fff);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;min-width:24px;text-align:right;box-sizing:border-box}' +
-      '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}' +
+      '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}.kb-card-t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kb-card-a{font-size:11px;color:#9aa6b8;margin-top:2px}' +
+      // DASHBOARD (unified multi-view) + Ask panel + Timeline
+      '.dash-wrap{display:flex;flex-direction:column;gap:0}.dash-tabs{display:flex;gap:4px;border-bottom:1px solid rgba(255,255,255,.10);margin-bottom:12px}' +
+      '.dash-tab{background:transparent;border:none;color:#9aa6b8;font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}' +
+      '.dash-tab:hover{color:#e8e8ed}.dash-tab.active{color:#6c9fff;border-bottom-color:#6c9fff}.dash-body{min-height:40vh;max-height:74vh;overflow:auto}' +
+      // landscape two-column: charts LEFT, Ask panel (chips + sub-charts) RIGHT in the idle desktop width
+      '.dash-split{display:flex;gap:18px;align-items:flex-start}.dash-main{flex:1 1 auto;min-width:0}.dash-side{flex:0 0 340px;max-width:340px;border-left:1px solid rgba(255,255,255,.10);padding-left:16px;animation:askfade .5s ease;position:sticky;top:0}' +
+      '.dash-gbox{margin-bottom:14px}' +
+      '.dash-kpi{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}.kpi-cell{flex:1 1 0;min-width:96px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px 12px}' +
+      '.kpi-v{font-size:18px;font-weight:700;color:#e6edf7;display:flex;align-items:baseline;gap:6px;line-height:1.1}.kpi-l{font-size:11px;font-weight:600;color:#8aa0c0;margin-top:4px;text-transform:uppercase;letter-spacing:.04em}' +
+      '.kpi-delta{font-size:12px;font-weight:700}.kpi-delta.up{color:#3fb950}.kpi-delta.down{color:#f85149}' +
+      '@keyframes askfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}' +
+      '.ask-head{display:flex;justify-content:space-between;align-items:center;width:100%;background:transparent;border:none;color:#6c9fff;font-size:12px;font-weight:700;cursor:pointer;padding:0 0 8px}.ask-chev{font-size:10px}' +
+      '.dash-side.collapsed .ask-body{display:none}.ask-summary{font-size:13px;color:#cfd6e2;line-height:1.5;margin-bottom:10px}' +
+      '.ask-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:8px}.ask-chip{background:rgba(108,159,255,.12);border:1px solid rgba(108,159,255,.30);color:#cfe0ff;font-size:12px;padding:5px 11px;border-radius:14px;cursor:pointer}' +
+      '.ask-chip:hover{background:rgba(108,159,255,.24)}.ask-chip.on{background:#1f6feb;border-color:#1f6feb;color:#fff}.ask-answer{font-size:13px;color:#cfd6e2;line-height:1.5;margin-top:4px}.ask-row{padding:1px 0}.ask-loading{font-size:12px;color:#6a7384;font-style:italic}' +
+      '.dash-list{border-collapse:collapse;width:100%;font-size:12px}.dash-list th{text-align:left;color:#6c9fff;font-weight:700;padding:5px 9px;border-bottom:1px solid rgba(255,255,255,.10);white-space:nowrap}' +
+      '.dash-list td{padding:4px 9px;border-bottom:1px solid rgba(255,255,255,.05);color:#cfd6e2;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}' +
+      '.dash-timeline{padding:8px 2px}.dash-tl-h{font-size:14px;font-weight:700;color:#e8e8ed}.dash-tl-sub{font-size:12px;color:#9aa6b8;margin-top:4px}.dash-tl-note{font-size:12px;color:#6a7384;margin:12px 0;line-height:1.5}' +
+      '.dash-tl-rail{position:relative;height:6px;border-radius:3px;background:rgba(255,255,255,.08);margin:14px 0 6px}.dash-tl-fill{height:100%;width:38%;background:linear-gradient(90deg,#6c9fff,#27c08a);border-radius:3px}' +
+      // multi-chart overview — a responsive grid of chart cards (donut or bars); the trend card spans full width
+      '.dash-chart{margin:0 0 18px}.dash-chart-h{font-size:12px;font-weight:700;color:#8aa0c0;margin-bottom:7px;text-transform:uppercase;letter-spacing:.04em}.chart-more{font-size:11px;color:#6a7384;padding:3px 0 0 6px}' +
+      '.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px}.dash-card{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;animation:askfade .4s ease}' +
+      '.dash-card .dash-chart-h{align-self:stretch;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:6px}.donut-wrap{display:flex;justify-content:center;width:100%;cursor:pointer;-webkit-user-select:none;user-select:none}.donut-svg{width:148px;height:148px}' +
+      '.dash-export{background:transparent;border:none;color:#6a7384;cursor:pointer;padding:1px 3px;border-radius:5px;display:inline-flex;align-items:center;flex:0 0 auto}.dash-export:hover{color:#6c9fff;background:rgba(108,159,255,.12)}.dash-export svg{width:14px;height:14px}' +
+      '.dash-export-all{margin-left:auto;color:#9aa6b8;display:inline-flex;align-items:center;gap:5px}.dash-export-all svg{width:14px;height:14px}.dash-export-all:hover{color:#6c9fff}' +
+      '.dash-hint{display:flex;align-items:center;justify-content:center;text-align:center;min-height:60px;padding:12px;border:1px dashed rgba(255,255,255,.12);border-radius:12px;color:#6a7384;font-size:12px;line-height:1.4}' +
+      '.dash-exmenu{position:fixed;z-index:200;background:#1b2230;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:4px;display:flex;flex-direction:column;gap:2px;box-shadow:0 8px 24px rgba(0,0,0,.5)}.dash-exmi{background:transparent;border:none;color:#e8e8ed;font-size:12px;font-weight:600;text-align:left;padding:6px 16px;border-radius:5px;cursor:pointer}.dash-exmi:hover{background:rgba(108,159,255,.18);color:#6c9fff}' +
+      '.donut-center{fill:#e8e8ed;font-size:16px;font-weight:700}.donut-sub{fill:#8aa0c0;font-size:7.5px;text-transform:uppercase;letter-spacing:.05em}.donut-arc-l{fill:#fff;font-size:9px;font-weight:800;paint-order:stroke;stroke:rgba(0,0,0,.5);stroke-width:2.4px;pointer-events:none}' +
+      '.donut-text{display:none;flex-direction:column;gap:5px;width:100%;padding:4px 2px}.donut-wrap.textmode .donut-svg{display:none}.donut-wrap.textmode .donut-text{display:flex}.donut-tli{display:flex;align-items:center;gap:7px;font-size:12px;color:#cfd6e2}.donut-sw{width:10px;height:10px;border-radius:3px;flex:0 0 auto}.donut-tli .donut-k{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.donut-tli .donut-v{color:#9aa6b8;font-variant-numeric:tabular-nums}' +
+      // timeline — a sliding FILMSTRIP under a fixed centre playhead (scrub = the strip moves, day centres)
+      '.tl-viewport{position:relative;overflow:hidden;height:150px;margin:10px 0 4px;border-radius:9px;background:rgba(255,255,255,.02)}' +
+      '.tl-track{position:absolute;left:0;top:8px;display:flex;gap:14px;align-items:flex-end;height:134px;transition:transform .28s cubic-bezier(.22,1,.36,1);will-change:transform}' +
+      '.tl-playhead{position:absolute;left:50%;top:0;width:2px;height:100%;background:rgba(108,159,255,.55);box-shadow:0 0 8px rgba(108,159,255,.8);pointer-events:none}' +
+      '.tl-col{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:9px;transition:background .2s,opacity .2s;opacity:.55}.tl-col.rest{background:rgba(108,159,255,.14);outline:1px solid rgba(108,159,255,.4);opacity:1}' +
+      '.tl-card{display:flex;gap:7px;align-items:center;background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:6px 8px;min-width:140px}' +
+      '.tl-av{flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;background:#46506a}.tl-mid{min-width:0}.tl-t{font-size:12px;font-weight:600;color:#e8e8ed;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}.tl-a{font-size:11px;color:#9aa6b8}' +
+      '.tl-more{font-size:10px;color:#6a7384;text-align:center}.tl-day{font-size:10px;color:#8aa0c0;text-align:center;margin-top:2px;white-space:nowrap}' +
+      '.tl-slider{width:100%;accent-color:#6c9fff;cursor:pointer}.tl-restlabel{font-size:12px;color:#cfe0ff;font-weight:600;margin-top:6px;text-align:center}' +
+      // FORECAST — the future tense: a dashed 'now' divider, dashed-blue projected columns, the S-curve trend card.
+      '.tl-today{flex:0 0 auto;align-self:stretch;width:0;margin:0 6px;border-left:2px dashed rgba(108,159,255,.5);position:relative}.tl-today span{position:absolute;top:2px;left:-20px;font-size:9px;letter-spacing:.5px;color:#7f93b8;background:#11151f;padding:0 4px;border-radius:3px}' +
+      '.tl-col.future .tl-card{border:1px dashed rgba(108,159,255,.7);background:rgba(108,159,255,.07);color:#bcd2ff}.tl-col.future .tl-av{background:#3a5fa8;color:#cfe0ff}.tl-col.future .tl-t{color:#bcd2ff}.tl-col.future .tl-a{color:#9bbcff}.tl-col.future .tl-day{color:#9bbcff;font-weight:600}' +
+      '.dash-scurve{grid-column:span 2}.dash-scurve .scurve-svg{width:100%;height:150px}.scurve-now{fill:#7f93b8;font-size:9px}.scurve-flab{fill:#9bbcff;font-size:9px;font-weight:600}.scurve-delta{font-size:10px;font-weight:700}' +
+      '.dash-forecast.active{color:#9bbcff;border-bottom-color:#9bbcff}@media(max-width:640px){.dash-scurve{grid-column:span 1}}' +
+      '.stack-svg{width:100%;height:160px}.stack-lbl{fill:#7f93b8;font-size:8px}.stack-legend{display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:center;margin-top:6px}.stack-leg{font-size:10px;color:#8aa0c0;display:inline-flex;align-items:center}.stack-sw{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:4px}' +
+      // WEB — the spider toggle + one-radar view (pies collapse into spokes by concentration).
+      '.dash-webtoggle{align-self:flex-start;margin-bottom:10px;background:rgba(108,159,255,.10);border:1px solid rgba(108,159,255,.3);color:#9bbcff;font-size:12px;font-weight:600;padding:5px 11px;border-radius:8px;cursor:pointer}.dash-webtoggle:hover{background:rgba(108,159,255,.18)}' +
+      '.dash-web{display:flex;flex-direction:column;align-items:center;gap:8px;padding:6px 0}.dash-web .web-svg{width:100%;max-width:460px;height:auto}.web-lbl{fill:#aeb9cc;font-size:10px;font-weight:600}' +
+      // mobile — snug: scrollable tabs, full-width charts, tighter chips/cards
+      '@media(max-width:640px){.dash-tabs{overflow-x:auto;white-space:nowrap}.dash-tab{padding:8px 11px;font-size:12px}.dash-body{max-height:78vh}' +
+      '.dash-split{flex-direction:column;gap:0}.dash-side{flex:1 1 auto;max-width:none;border-left:none;border-top:1px dashed rgba(255,255,255,.12);padding-left:0;padding-top:12px;margin-top:12px;position:static}' +
+      '.ask-chip{font-size:11px;padding:5px 9px}.ask-summary,.ask-answer{font-size:12px}.chart-lbl{max-width:90px}.tl-card{min-width:118px}.tl-t{max-width:90px}.dash-list td,.dash-list th{padding:4px 6px}}' +
+      // rotate-to-landscape hint — only on portrait phones (charts/timeline read wider in landscape)
+      '.dash-rotate{display:none;align-items:center;gap:8px;background:rgba(108,159,255,.12);border:1px solid rgba(108,159,255,.30);color:#cfe0ff;font-size:12px;padding:7px 11px;border-radius:8px;margin-bottom:10px}' +
+      '.dash-rotate svg{width:15px;height:15px;flex:0 0 auto;animation:dashspin 2.4s linear infinite}@keyframes dashspin{to{transform:rotate(360deg)}}' +
+      '@media(max-width:640px) and (orientation:portrait){.dash-rotate{display:flex}}' +
       '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}';
     document.head.appendChild(s);
   }
@@ -3539,13 +5015,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       window.WholeHistory.consumeRestore('idempiere', function (ref) { if (ref) _histRestore({ kind: ref.recordId != null ? 'record' : 'window', windowId: ref.window, tabIdx: ref.tab, table: ref.table, recordId: ref.recordId, view: ref.view, label: '' }); });
     }
     _wireErpTap();   // §HISTORY_TAP — depth axis: field()s make a moment restore the LOOK + sniffer = free total recording
-    // common-HMI keyboard: arrow keys navigate records. Ignored while typing in a field. (Red-pill ',' shortcut
-    //   retired with the clean mode — the classic iDempiere toolbar is always present now.)
+    // common-HMI keyboard: arrow keys navigate records. Ignored while typing in a field. The ',' shortcut is
+    //   REVIVED (was the retired red-pill key) → Zoom Across, but only when a cross-surface target is available.
     document.addEventListener('keydown', function (e) {
       var t = e.target, tag = t && t.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
       if ($('idmp-login') && $('idmp-login').style.display !== 'none') return;   // not while the login overlay is up
       if (!_session || !_records.length) return;
+      // ',' → Zoom Across (red-pill shortcut), gated to a focused record with an available destination.
+      if (e.key === ',') { if (window.IdmpPillZoomGate && window.IdmpPillZoomGate() && window.IdmpPillActions && window.IdmpPillActions.zoomacross) { e.preventDefault(); window.IdmpPillActions.zoomacross(); } return; }
       var n = _records.length, moved = true;
       if (e.key === 'ArrowRight') { if (_recIdx < n - 1) _recIdx++; }
       else if (e.key === 'ArrowLeft') { if (_recIdx > 0) _recIdx--; }
@@ -3581,7 +5059,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       fillVer();   // SW may not control yet on a first cold load → retry when it takes control / is ready
       try { if (navigator.serviceWorker) { navigator.serviceWorker.addEventListener('controllerchange', fillVer); navigator.serviceWorker.ready.then(fillVer); } } catch (e) {}
     })();
-    $('idmp-switch-btn').addEventListener('click', function () { showLogin('role'); });
+    // Header LOGOUT button (RESUME_IDMP_FIDELITY leg 2): iDempiere's UserPanel exposes a single "Logout" (→ login
+    // page); ours mirrors it — the door-arrow log-out glyph (icons.js logOut) + click → showLogin('user') (back to
+    // the login overlay / pick user). Role-switch is NOT lost: it is the "Back" step inside that overlay. (Exit-to-
+    // landing is the ⋯ "Exit" pill, an app-shell action that stays off the iDempiere-native header per the LAW.)
+    (function () { var lsb = $('idmp-switch-btn'); if (!lsb) return;
+      if (window.ICONS && window.ICONS.logOut) lsb.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.logOut.svg + '</svg>';
+      lsb.title = 'Log out';
+      lsb.addEventListener('click', function () { showLogin('user'); });
+    })();
     $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });
     boot().catch(function (e) { console.error('§IDEMPIERE boot error: ' + e.message); $('idmp-load-msg').textContent = 'Boot error: ' + e.message; });
   });

@@ -1,0 +1,51 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>HBA browser smoke</title>
+<style>body{font-family:system-ui,sans-serif;margin:0;background:#eef1f4}#smoke{background:#111;color:#9f9;padding:10px;font:12px monospace;white-space:pre-wrap;margin:0}</style></head>
+<body>
+<!-- real bundled Chart.js + the witnessed engines + the REAL viewer dashboard-pane adapter -->
+<script src="../../viewer/lib/chart.umd.min.js"></script>
+<script src="../watermark.js"></script>
+<script src="../binding.js"></script>
+<script src="../connectors.js"></script>
+<script src="../occupancy.js"></script>
+<script src="../request.js"></script>
+<script src="../dashboard.js"></script>
+<script src="../../viewer/hba_dashboard.js"></script>
+<script>
+(function () {
+  var errs = []; window.onerror = function (m, s, l) { errs.push(m + ' @' + l); };
+  var R = {};
+  try {
+    var rooms = []; for (var i = 1; i <= 14; i++) rooms.push({ guid: 'RM_' + i, storey: 'Level ' + (1 + (i % 3)) });
+    var Oc = window.HbaOccupancy, Rq = window.HbaRequest, D = window.HbaDashboard, Pane = window.HBADashPane;
+    R.enginesLoaded = !!(Oc && Rq && D && Pane && window.Chart);
+    var storeyOf = {}; rooms.forEach(function (r) { storeyOf[r.guid] = r.storey; });
+    var occ = Oc.demoSeed(rooms).log;
+    var reqLog = [Rq.open({ request_no: 'REQ-1', type: 'maintenance', resource: rooms[5].guid, summary: 'x', ts: '2026-05-01T00:00:00Z' }).op,
+                  Rq.open({ request_no: 'REQ-2', type: 'complaint', resource: rooms[0].guid, summary: 'y', ts: '2026-04-25T00:00:00Z' }).op];
+    var A = { status: { textContent: '' }, _hbaRooms: rooms, _hbaStoreyOf: storeyOf, _hbaOccupancyLog: occ, _hbaRequestLog: reqLog };
+    R.occLen = occ.length;
+    R.g0 = rooms[0].guid; R.g0ops = occ.filter(function (o) { return o.target === rooms[0].guid; }).length;
+    var a0 = occ.filter(function (o) { return o.verb === 'ASSIGN'; })[0];
+    R.assign0 = a0 ? { t: a0.target, from: a0.params.from, to: a0.params.to } : null;
+    R.op0full = JSON.stringify(occ[0]); R.availG0Mar = Oc.availability(occ, rooms[0].guid, "2026-03").state;
+    R.detect = Pane.detect(A);
+    R.offNoDom = !document.getElementById('hba-dash-pane');               // before toggle: nothing mounted
+    R.mounted = Pane.toggle(A) === true;                                  // ON
+    var pane = document.getElementById('hba-dash-pane');
+    R.paneInDom = !!pane;
+    var cvs = pane ? pane.querySelectorAll('canvas') : [];
+    R.canvases = cvs.length;
+    R.canvasSized = cvs.length === 3 && Array.prototype.every.call(cvs, function (c) { return c.width > 0 && c.height > 0; });
+    R.canvasWH = Array.prototype.map.call(cvs, function (c) { return c.width + 'x' + c.height; }).join(',');
+    R.paneText = pane ? (pane.innerText || pane.textContent || '').replace(/\s+/g, ' ').slice(0, 90) : '';
+    Pane.toggle(A);                                                       // OFF
+    R.removedAfterOff = !document.getElementById('hba-dash-pane');        // zero residue
+    R.remounted = Pane.toggle(A) && !!document.getElementById('hba-dash-pane');  // re-mount for the screenshot
+  } catch (e) { errs.push('THROW: ' + e.message); }
+  R.errors = errs;
+  R.ok = R.enginesLoaded && R.detect && R.offNoDom && R.mounted && R.canvasSized && R.removedAfterOff && R.remounted && errs.length === 0;
+  var d = document.createElement('pre'); d.id = 'smoke'; d.textContent = '§SMOKE ' + JSON.stringify(R, null, 0);
+  document.body.insertBefore(d, document.body.firstChild);
+})();
+</script>
+</body></html>

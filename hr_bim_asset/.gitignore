@@ -1,0 +1,3 @@
+# built seed (seed-from-SQL; never commit the blob) + run logs
+*.db
+*.log

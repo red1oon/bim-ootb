@@ -13,8 +13,10 @@
 //
 // Why overlay-the-delta (not load-the-whole-file): the base stays the live ad_seed.db (never stale),
 // and only the BIM rows (PK >= 990000, the band proj_fold/vo_fold allocate in) are layered on top.
-// INSERT OR IGNORE on the PK → idempotent (re-boot / re-push adds nothing already present). The idb
-// seed cache is written from the RAW seed bytes BEFORE this overlay, so the cache is never polluted.
+// The OPFS push is AUTHORITATIVE: overlayTable CLEARS the dst BIM band, then INSERTs (was INSERT OR IGNORE).
+// The idb seed cache is written from RAW seed bytes BEFORE this overlay — but a LATER action (demo-tenant
+// install / seed reset / genesis / tenant delete) can persist the already-overlaid db back into the cache,
+// freezing a stale band; clearing-then-inserting makes a fresh push immune to that (round-trip regression fix).
 //
 // Dual export: node (require → tests/poc_bim_overlay.js) + browser (window.BimOrdersOverlay).
 (function (global) {
@@ -35,7 +37,12 @@
     return cols.length ? cols[0] : null;
   }
 
-  // copy BIM rows (PK >= BIM_BASE) of one table from srcDb into dstDb; INSERT OR IGNORE → idempotent.
+  // Copy BIM rows (PK >= BIM_BASE) of one table from srcDb (OPFS) into dstDb. The OPFS push is AUTHORITATIVE:
+  // when OPFS has band rows for this table we CLEAR the dst band first, then INSERT — so a fresh push is NEVER
+  // masked by a stale BIM band frozen into the idb seed cache. (ad_seed_v16 can be persisted POST-overlay by a
+  // demo-tenant install / seed reset / genesis / tenant delete → it captures the overlaid band; the old
+  // INSERT OR IGNORE then silently skipped the new push on the PK collision = the round-trip regression.)
+  // W-BIM-OVERLAY-AUTHORITATIVE. The push/OPFS-write path is untouched (revert-safe).
   function overlayTable(srcDb, dstDb, table) {
     var dcols = _cols(dstDb, table); if (!dcols.length) return 0;
     var pk = _pk(dcols, table); if (!pk) return 0;
@@ -44,8 +51,15 @@
     catch (e) { return 0; }
     if (!res.length || !res[0].values.length) return 0;
     var c = res[0].columns, vals = res[0].values, n = 0;
-    var sql = 'INSERT OR IGNORE INTO "' + table + '" ("' + c.join('","') + '") VALUES (' + c.map(function () { return '?'; }).join(',') + ')';
-    for (var i = 0; i < vals.length; i++) { try { dstDb.run(sql, vals[i]); n++; } catch (e) {} }
+    // PER-PK authoritative replace: drop ONLY the dst rows whose PK the OPFS push actually provides, then insert.
+    // NOT a band-wide wipe — the seed itself carries band rows (e.g. the Hospital twin C_Project 990000) that are
+    // NOT in OPFS and must survive. So OPFS overwrites its own pushed rows; seed-baked band rows are untouched.
+    var pkIdx = -1; for (var k = 0; k < c.length; k++) if (c[k].toLowerCase() === pk.toLowerCase()) { pkIdx = k; break; }
+    var del = 'DELETE FROM "' + table + '" WHERE "' + pk + '" = ?';
+    var sql = 'INSERT INTO "' + table + '" ("' + c.join('","') + '") VALUES (' + c.map(function () { return '?'; }).join(',') + ')';
+    for (var i = 0; i < vals.length; i++) {
+      try { if (pkIdx >= 0) dstDb.run(del, [vals[i][pkIdx]]); dstDb.run(sql, vals[i]); n++; } catch (e) {}
+    }
     return n;
   }
 

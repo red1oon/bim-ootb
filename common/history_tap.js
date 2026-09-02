@@ -31,7 +31,7 @@
     SFX_NAV: 1, SFX_SUSPEND: 1, SFX_RESUME: 1, SFX_INIT: 1, SFX_CONFIG: 1, FILTER_GUIDS: 1, GRID_SCISSORS: 1,
     KBD_SEQ_ENGINE: 1, KBD_SEQ_FIRE: 1, KBD_SEQ: 1, BBOX: 1, BBOX_PLACEHOLDERS: 1, BBOX_CLEARED: 1,
     EVT: 1, RESTORE: 1, HIST_PUSH: 1, HIST_UNDO: 1, HIST_REDO: 1, KRN_CHAIN: 1, KRN_PERSIST: 1,
-    HIST_TAP_DOT: 1, HIST_DEPTH: 1,                                 // the bar's tap-drain echo (anti-recursion)
+    HIST_TAP_DOT: 1, HIST_DEPTH: 1, HIST_VIEWNAV: 1,                // the bar's tap-drain echo (anti-recursion)
     // ERP boot/infra + cross-page-log echo (HISTORY_TAP_TO_IDEMPIERE §SESSION — from the REAL idempiere
     // firehose; all infra on the viewer too): VFS=storage-backend probe · AD_PARSER=tip-miss parse churn ·
     // IDEMPIERE=shard load · WHOLE=whole_history's own §WHOLE-REC/NAV/LANDED echo (also recursion-guard).
@@ -103,6 +103,7 @@
   // "total recording" means total ACTIONS, not total console output. (Explicit S() acts bypass this.)
   var LIFECYCLE = /_(LOADED|READY|INIT|DONE|WIRED?|MODULE|VERSION|REGISTER|CHECK|AUDIT|PROBE|FETCHED|FLUSH|STREAM|DETAIL|MISS_READ|WRITE_OK|QUERY|RESULT|DETECT|RECOLOR|EARLY|FROM_POSITIONS)$|^(UPGRADE|CACHE|BVH|BOOTSTRAP|SPLIT|GEO|DB|DS|SW|PWA|FOG|ENV|SKY|TONE|GROUND|BATCHED|BLOB|INSTANCED|PROGRESSIVE|NORMALS|CENTRES|HASH|DIFF|HELPERS|PANELS|LISTNAV|QUOTA|OFFSET|MAIN|COLOR_MGMT|LENSFLARE|EFFECTS|SITECAM|NLP|MEASURE|SHARE|RECORD|ERROR_REPORTER|GHOSTGLASS|UI_PILL|PILL|MOBILE)/;
   function feedCrumb(tag, label) {
+    if (_applyingView) return;              // restore-driven setter logs (e.g. §XRAY from write()) are NOT a new act
     if (DENY_TAG[tag] || LIFECYCLE.test(tag) || NOISE_LABEL.test(label)) return;  // firehose + lifecycle + intra-tag noise
     var n = all.length;                                             // dedupe vs the last few (explicit S() + its console.log overlap)
     for (var i = n - 1; i >= 0 && i >= n - 3; i--) if (all[i].tag === tag && all[i].label === label) return;

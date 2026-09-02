@@ -10,7 +10,7 @@
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path');
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', '..');   // repo root — pages moved to /erp/ URLs so ../common/pill_builder.js resolves (PILLS_CONSOLIDATION_REVIEW_2026-07-03)
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.json':'application/json',
   '.db':'application/octet-stream', '.png':'image/png', '.css':'text/css', '.wasm':'application/wasm' };
 const server = http.createServer((req, res) => {
@@ -32,7 +32,7 @@ const server = http.createServer((req, res) => {
   let page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const errs = [];
   page.on('pageerror', e => errs.push(e.message));
-  await page.goto(`http://localhost:${port}/erp.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/erp/erp.html`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(3000);                                   // DB + pills settle
   const titles = await page.evaluate(() => {
     function t(id){ var b=document.getElementById('pill-'+id); return b?b.getAttribute('title'):'(missing)'; }
@@ -44,7 +44,7 @@ const server = http.createServer((req, res) => {
 
   // ── glassbowl.html — tiled watermark ──
   page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(`http://localhost:${port}/glassbowl.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/erp/glassbowl.html`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2000);
   const wm = await page.evaluate(() => {
     var w = document.getElementById('conceptWM'); if (!w) return null;

@@ -11,702 +11,33 @@
 (function (global) {
   'use strict';
 
-  // ── Task 1 / Task 4 helpers — table column cache (uses global.__idmpDb, the main app db) ──
-  var _tableColsCache = {};
-  function _getTableCols(table) {
-    var k = String(table || '').toLowerCase();
-    if (_tableColsCache[k]) return _tableColsCache[k];
-    try {
-      // `global` is the IIFE parameter (= window in browser, module.exports in node); use globalThis
-      // to reach the actual global object in both environments without being shadowed.
-      var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
-      if (!mdb) return {};
-      var r = mdb.exec('PRAGMA table_info("' + k + '")'); if (!r.length) { _tableColsCache[k] = {}; return {}; }
-      var ni = r[0].columns.indexOf('name'), cols = {};
-      r[0].values.forEach(function (v) { cols[String(v[ni]).toLowerCase()] = 1; });
-      _tableColsCache[k] = cols; return cols;
-    } catch (e) { return {}; }
-  }
-
-  // _fmtKernelTs — render the kernel's epoch timestamp (a recorded input, Date.now() at commit) into
-  // iDempiere's audit-column convention `yyyy-MM-dd HH:mm:ss` (UTC, locale-independent → deterministic).
-  // The seed's migrated rows store Created/Updated in exactly this shape (e.g. "2003-01-22 17:55:36"), so a
-  // user-created row must match it — not show a raw integer. PURE: derived from the stored input, replay-stable;
-  // NOT part of any op hash (this is a display projection at materialise time). Tolerant of ms (13-digit, the
-  // kernel default) and accidental seconds (10-digit) inputs. Non-numeric/absent → passed through unchanged.
-  function _fmtKernelTs(ts) {
-    if (ts == null) return ts;
-    var n = Number(ts); if (!isFinite(n)) return ts;
-    if (n > 0 && n < 1e12) n = n * 1000;                 // looks like epoch-seconds → ms
-    var d = new Date(n); if (isNaN(d.getTime())) return ts;
-    function p(x) { return (x < 10 ? '0' : '') + x; }
-    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +
-           ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds());
-  }
-
   // ════════════════════════════════════════════════════════════════════════
-  // PURE CORE — no DOM. Exported for the headless §-witness harness (node).
+  // PURE CORE — physically split out to crud_core.js (bim-compiler
+  // prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md §S60 item 1; precedent: viewer/gantt_model.js PR #1446).
+  // Node: require it here and re-export, so require('../crud_overlay.js') keeps returning the SAME
+  // CORE object for every existing caller. Browser: crud_core.js MUST be <script>-loaded before this
+  // file (glassbowl.html + idempiere.html both do; erp/sw.js precaches it).
   // ════════════════════════════════════════════════════════════════════════
-  function isMeta(k) { return k === '__meta'; }
-
-  // entriesOf — drift view: every keyed entry minus __meta, ordinal-sorted, key stamped on.
-  function entriesOf(store) {
-    return Object.keys(store).filter(function (k) { return !isMeta(k); })
-      .map(function (k) { var e = store[k]; var o = {}; for (var p in e) o[p] = e[p]; o.key = k; return o; })
-      .sort(function (a, b) { return (a.ordinal || 0) - (b.ordinal || 0); });
-  }
-  function verbEnabled(entry, verb) { return (entry.verbs || []).indexOf(verb) >= 0; }
-
-  // defaultsFor — the New-form seed from each field's DefaultValue (AD_Column.DefaultValue).
-  // expr vocab: 'today' -> ISO date (an INPUT, passed in — never Date.now here, replay-safe), 'auto' -> ''.
-  function defaultsFor(entry, today) {
-    var v = {};
-    (entry.fields || []).forEach(function (f) {
-      var d = f.hasOwnProperty('default') ? f.default : '';
-      if (d === 'today') d = today || '';
-      else if (d === 'auto') d = '';
-      v[f.col] = (d == null ? '' : d);
-    });
-    return v;
-  }
-
-  // ── W-LOGIC-EVAL wiring (Implementing ERP_COVERAGE_MATRIX.md §DisplayLogic/§ReadOnlyLogic/§MandatoryLogic).
-  // effectiveFlags — a field's LIVE {visible,readonly,required} from its AD logic strings, evaluated against
-  // (record, context) by ad_evaluator.js (window.AdEvaluator / node global). When a field carries no logic
-  // string for a given attr, fall back EXACTLY to the flat boolean (f.readonly / f.required; visible=true).
-  // AD logic keys (lowercase, as in ad_full.db): displaylogic / readonlylogic / mandatorylogic.
-  function adEval() { return (typeof window !== 'undefined' && window.AdEvaluator) ? window.AdEvaluator
-                           : (typeof AdEvaluator !== 'undefined' ? AdEvaluator : null); }
-  function effectiveFlags(f, record, context) {
-    var E = adEval();
-    var dl = f.displaylogic, rl = f.readonlylogic, ml = f.mandatorylogic;
-    var visible = true, readonly = !!f.readonly, required = !!f.required, logicHit = [];
-    if (E) {
-      try {
-        if (dl != null && String(dl).trim() !== '') { visible  = E.evaluate(dl, record || {}, context || {}); logicHit.push('display'); }
-        if (rl != null && String(rl).trim() !== '') { readonly = E.evaluate(rl, record || {}, context || {}); logicHit.push('readonly'); }
-        if (ml != null && String(ml).trim() !== '') { required = E.evaluate(ml, record || {}, context || {}); logicHit.push('mandatory'); }
-      } catch (e) { /* parse error → keep flat fallback for that attr (non-invent: never guess a verdict) */ }
-    }
-    if (logicHit.length && typeof console !== 'undefined') {
-      logicHit.forEach(function (a) {
-        var expr = a === 'display' ? dl : a === 'readonly' ? rl : ml;
-        var res = a === 'display' ? visible : a === 'readonly' ? readonly : required;
-        console.log('§LOGIC_EVAL attr=' + a + ' col=' + (f.col || '?') + ' expr="' + expr + '" ctx=' + JSON.stringify(context || {}) + ' result=' + res);
-      });
-    }
-    return { visible: visible, readonly: readonly, required: required };
-  }
-
-  // validateField — the per-field check (AD: IsUpdateable, IsMandatory, AD_Reference, AD_Val_Rule).
-  // Returns a reason string on FAIL, else null. `orig` (current value) lets readonly detect a change.
-  // record/context (optional, last) drive the AD logic-expression evaluator; absent → flat-bool behaviour (back-compat).
-  function validateField(store, f, val, orig, record, context) {
-    var eff = effectiveFlags(f, record, context);
-    if (!eff.visible) return null;                        // hidden by DisplayLogic → not validated (GridField parity)
-    // iDempiere validates only what the SAVE changes — an UNCHANGED field's value is already persisted (valid by
-    //   definition) and won't be written, so it is not re-checked (this also spares an untouched fk/code field that
-    //   the spec types imperfectly, e.g. AD_Language='en_US'). orig===undefined (create) → every field is checked.
-    if (orig !== undefined && String(val == null ? '' : val) === String(orig == null ? '' : orig)) return null;
-    if (eff.readonly) {
-      if (orig !== undefined && orig !== null && String(val) !== String(orig)) return 'readonly';
-      return null;
-    }
-    var empty = (val == null || String(val).trim() === '');
-    if (eff.required && empty) return 'required';
-    if (empty) return null;                              // optional + empty = fine
-    var V = f.validation || {};
-    switch (f.type) {
-      case 'number':
-        if (!isFinite(Number(val))) return 'type:number';
-        if (V.min != null && Number(val) < V.min) return 'min:' + V.min;
-        if (V.max != null && Number(val) > V.max) return 'max:' + V.max;
-        break;
-      case 'date':
-        if (!/^\d{4}-\d{2}-\d{2}/.test(String(val))) return 'type:date';
-        break;
-      case 'list':
-        var opts = (f.ref && store.__meta && store.__meta[f.ref]) ? store.__meta[f.ref] : null;
-        if (opts && !opts.hasOwnProperty(String(val))) return 'list:not-an-option';
-        break;
-      case 'fk':
-        if (!isFinite(Number(val))) return 'type:fk';
-        break;
-      case 'string':
-        if (V.regex && !new RegExp(V.regex).test(String(val))) return 'regex:' + (V.valRule || V.regex);
-        break;
-    }
-    return null;
-  }
-
-  // validate — run every field; collect {col, why}. The "checks before saving" layer, BEFORE apply().
-  function validate(store, entry, values, originals, context) {
-    var errors = [];
-    // record = the row under edit (values merged over originals) — what the AD logic evaluates against.
-    var record = {}; var k; if (originals) for (k in originals) record[k] = originals[k]; if (values) for (k in values) record[k] = values[k];
-    (entry.fields || []).forEach(function (f) {
-      var why = validateField(store, f, values[f.col], originals ? originals[f.col] : undefined, record, context || {});
-      if (why) errors.push({ col: f.col, why: why });
-    });
-    return { ok: errors.length === 0, errors: errors };
-  }
-
-  // coerce a raw form value to its stored shape (number -> Number) for the op payload.
-  function coerce(type, val) {
-    if (val == null || val === '') return null;
-    if (type === 'number' || type === 'fk') return Number(val);
-    return String(val);
-  }
-  function cleanVals(entry, values) {
-    var out = {};
-    (entry.fields || []).forEach(function (f) { var c = coerce(f.type, values[f.col]); if (c != null) out[f.col] = c; });
-    return out;
-  }
-
-  // ── Item 2 (FRONTEND_LANE_MASTER §OUTSTANDING) — WIRE FULL DOCACTION SET PER AD. legalDocActions: the
-  // CORE↔FSM seam the Process ▶ ring consults so it surfaces the legal action set for the record's CURRENT
-  // status (from AD/FSM, `AdDocFsm.legalActions`), NOT the hardcoded `{action:"CO"}` in crud_ops.json. The FSM
-  // is injected (window.AdDocFsm in-browser, required headless) so CORE stays decoupled + witnessable.
-  // Returns {doctype, docBaseType, actions:[…]} or null when the FSM/db is absent. Witness: W-DOCACTION-FULL.
-  function legalDocActions(fsm, fsmDb, doctypeId, fromStatus) {
-    if (!fsm || !fsmDb || typeof fsm.legalActions !== 'function') return null;
-    try { var la = fsm.legalActions(fsmDb, doctypeId, fromStatus); return (la && la.actions && la.actions.length) ? la : null; }
-    catch (e) { return null; }
-  }
-
-  // docActionOutcome — derive the DocAction result DETERMINISTICALLY (E2 dry-run; E3 = real completeIt()).
-  // No Date.now/Math.random — replay-safe, non-invent.
-  // Item 2: when a CHOSEN action + the FSM are supplied (opts.{chosen,fsm,fsmDb,doctypeId}), the outcome is
-  // routed through `AdDocFsm.dispatch` so the FULL set works — VO/CL/RC/RA/RE/PO, not just CO. The completeIt
-  // (CO) precondition still gates on docAction.requires (an incomplete doc → IP, never a fake CO). RC/RA route
-  // to a REVERSAL (status → RE: a reversing document, never a silent un-complete back to DR/IP on a posted doc).
-  // An action illegal from the current status is reported (outcome 'illegal') with the legal set, never applied.
-  // DEFAULT (no FSM/chosen) = the legacy hardcoded-CO requires-gate, UNCHANGED — the bridge is opt-in.
-  function docActionOutcome(entry, values, opts) {
-    var da = entry.docAction; if (!da) return null;
-    opts = opts || {};
-    var fromStatus = opts.from || da.from || 'DR';
-    if (opts.chosen && opts.fsm && opts.fsmDb && opts.doctypeId != null && typeof opts.fsm.dispatch === 'function') {
-      var disp;
-      try { disp = opts.fsm.dispatch(opts.fsmDb, opts.doctypeId, fromStatus, opts.chosen); } catch (e) { disp = { ok: false, reason: 'fsm-error' }; }
-      if (!disp.ok) return { action: opts.chosen, from: fromStatus, to: fromStatus, outcome: 'illegal', unmet: [], legalActions: disp.legalActions || [], reason: disp.reason };
-      if (opts.chosen === 'CO') {                              // completeIt still honours the field preconditions
-        var unmetC = (da.requires || []).filter(function (c) { var v = values ? values[c] : undefined; return v == null || String(v).trim() === ''; });
-        if (unmetC.length) return { action: 'CO', from: fromStatus, to: 'IP', outcome: 'in-progress', unmet: unmetC, legalActions: disp.legalActions };
-      }
-      var isReversal = opts.chosen === 'RC' || opts.chosen === 'RA';   // reverse-correct / reverse-accrual → posts a reversal
-      return { action: opts.chosen, from: fromStatus, to: disp.to, outcome: isReversal ? 'reversal' : 'success', unmet: [], reversal: isReversal, legalActions: disp.legalActions };
-    }
-    var reqs = da.requires || [];
-    var unmet = reqs.filter(function (c) { var v = values ? values[c] : undefined; return v == null || String(v).trim() === ''; });
-    var ok = unmet.length === 0;
-    return { action: da.action || 'CO', from: fromStatus, to: ok ? (da.to || 'CO') : 'IP', outcome: ok ? 'success' : 'in-progress', unmet: unmet };
-  }
-
-  // buildOp — the op the kernel WOULD apply (E2 dry / E3 live). One op per CRUD action.
-  // delete = a reversible tombstone op, never a destructive erase (CRUD_OVERLAY.md req 4).
-  function buildOp(verb, entry, values, originals, ctx) {
-    ctx = ctx || {};
-    var base = { key: entry.key, table: entry.key, verb: verb, ownerGated: !!entry.ownerGated, op_uuid: ctx.opUuid || null };
-    if (verb === 'create') {
-      base.op_type = 'CRUD_CREATE'; base.fields = cleanVals(entry, values); base.cas = entry.cas || null;
-      // Task 1 — iDempiere setStandardDefaults parity: carry actor+tenant onto the op; listTip materialises them
-      var _cActor = ctx.actor != null ? ctx.actor : sessionActor();
-      var _cCid   = ctx.clientId != null ? ctx.clientId : sessionClientId();
-      var _cOid   = ctx.orgId != null ? ctx.orgId : sessionOrgId();
-      if (_cActor != null || _cCid != null) {
-        base.stdDefaults = { actor: _cActor, clientId: _cCid, orgId: _cOid != null ? _cOid : 0 };
-      }
-      return base;
-    }
-    if (verb === 'update') {
-      var changes = {};
-      (entry.fields || []).forEach(function (f) {
-        if (f.readonly) return;
-        var nv = values[f.col], ov = originals ? originals[f.col] : undefined;
-        if (String(nv == null ? '' : nv) !== String(ov == null ? '' : ov)) changes[f.col] = { old: ov == null ? null : ov, new: coerce(f.type, nv) };
-      });
-      base.op_type = 'CRUD_UPDATE'; base.id = ctx.id == null ? null : ctx.id; base.changes = changes;
-      // Task 1 — carry actor for UpdatedBy materialise in listTip
-      var _uActor = ctx.actor != null ? ctx.actor : sessionActor();
-      if (_uActor != null) { base.actor = _uActor; }
-      return base;
-    }
-    if (verb === 'delete') {
-      base.op_type = 'CRUD_DELETE'; base.id = ctx.id == null ? null : ctx.id; base.tombstone = true; base.reversible = true;
-      return base;
-    }
-    if (verb === 'process') {                              // DocAction — runs the doc state machine, not a row write
-      // Item 2: pass a chosen action + FSM (ctx.{chosen,fsm,fsmDb,doctypeId}) → the full set; default = CO.
-      var r = docActionOutcome(entry, values, { chosen: ctx.chosen, fsm: ctx.fsm, fsmDb: ctx.fsmDb, doctypeId: ctx.doctypeId, from: ctx.from })
-              || { action: 'CO', from: 'DR', to: 'IP', outcome: 'in-progress', unmet: [] };
-      base.op_type = 'DOC_ACTION'; base.id = ctx.id == null ? null : ctx.id;
-      base.action = r.action; base.from = ctx.from || r.from; base.to = r.to; base.outcome = r.outcome; base.unmet = r.unmet;
-      if (r.reversal) base.reversal = true;                 // RC/RA — post a reversal, never a silent un-complete
-      base.oracle = (entry.docAction && entry.docAction.oracle) || null;
-      return base;
-    }
-    throw new Error('buildOp: unknown verb ' + verb);
-  }
-
-  // ── GP3 signed-write seam (READSHOWME §… / GUIDE_SHOWME_PROCESS GP3 — DECIDED: sidecar log, read-the-tip).
-  // kernelParamsFor — map an overlay DOC_ACTION op to the production kernel's SET_STATUS params. The
-  // COMMITTED op is the REAL write (commitOp→sealChain→verifyChain); read-the-tip later returns `to`.
-  function kernelParamsFor(op) {
-    if (!op || op.op_type !== 'DOC_ACTION') return null;
-    return { table: op.table, id: op.id, action: op.action, from: op.from, to: op.to, oracle: op.oracle || null };
-  }
-
-  // ── §I-K Phase 3 (UI/docValidate tier) — Implementing ENGINE_FULL_ERP_ISSUES.md §I-K — Witness: W-OPGROUP-UI
-  // buildDocActionGroup — PURE (no DOM): turn ONE overlay DOC_ACTION op into the group of kernel ops the
-  // live write path commits ATOMICALLY via KernelOps.commitGroup. Returns the commitGroup op-shape array
-  // ({op_type, op_uuid, params}) so commitGroup folds them all-or-none, sealed ONCE from the tip (I-D win).
-  //
-  // Implementing SO_FULL_CRUD_GAP.md T1 (GAP 1) — Witness: W-SO-COMPLETE-UI.
-  // `fanout` (optional) = { ops: <ENGINE consequence ops>, glGate?: <reason> } — the completeIt fan-out the
-  // PROVEN engine extracts (ERPEngine.completeOrder, W-FOLD-COMPLETE oracle-equivalent: CREATE_DOCUMENT
-  // M_InOut + CREATE_LINE per order line + CREATE_DOCUMENT C_Invoice + CREATE_LINE per line). NON-INVENT:
-  // each engine op rides as the kernel op's params VERBATIM (the pos_lens.js group pattern) — this function
-  // only ASSEMBLES; it never re-derives quantities/amounts/accounts. The engine's own SET_STATUS is dropped
-  // (the FSM transition rides OUR statusOp exactly once); SET_STATUS goes LAST — consequences first, the
-  // status seals the gesture. No fanout (absent engine / non-CO action / gated) → the honest [SET_STATUS].
-  function buildDocActionGroup(op, fanout) {
-    if (!op || op.op_type !== 'DOC_ACTION') return null;
-    var statusOp = { op_type: 'SET_STATUS', op_uuid: op.op_uuid || null, params: kernelParamsFor(op) };
-    var groupOps = [];
-    if (fanout && fanout.ops && fanout.ops.length) {
-      fanout.ops.forEach(function (eo) {
-        if (!eo || eo.op_type === 'SET_STATUS') return;            // status rides OUR statusOp, exactly once
-        groupOps.push({ op_type: eo.op_type, op_uuid: null, params: eo });   // engine op VERBATIM (non-invent)
-      });
-    }
-    groupOps.push(statusOp);
-    return groupOps;
-  }
-
-  // docPolicyFor — PURE. Implementing SO_FULL_CRUD_GAP.md T1 — Witness: W-SO-COMPLETE-UI.
-  // The completeIt fan-out flags are DATA (iDempiere C_DocType decision table), EXTRACTED into
-  // crud_ops.json __meta.docPolicy (← erp_rules.db DOCPOLICY:<id> ← the real c_doctype capture).
-  // Unknown doctype → null (the caller GATES the fan-out — never a defaulted 'Y', non-invent).
-  function docPolicyFor(store, doctypeId) {
-    var m = store && store.__meta && store.__meta.docPolicy;
-    return (m && doctypeId != null && m[String(doctypeId)]) || null;
-  }
-
-  // _branchClause — BLUE FUTURE (W-BLUE-FUTURE-LIVE / FRONTEND_LANE_MASTER §OUTSTANDING item 0 leg 4):
-  // the read-the-tip sites below (tipDocs/listTip/readTip/tipValues) run their OWN raw SELECT against
-  // kernel_ops rather than going through KernelOps.replayOps, so they do NOT inherit replayOps' official
-  // default (branch_id IS NULL). Without this clause a speculative blue op would LEAK into the official
-  // chrome (list rows, docstatus, field tip) — the safety bug leg 4 closes. Semantics mirror replayOps:
-  //   branch == null/undefined → OFFICIAL only (branch_id IS NULL). Every pre-blue op has branch_id NULL,
-  //                              so this is byte-identical to the prior behaviour — no existing caller moves.
-  //   branch == '<id>'         → OFFICIAL + that branch (the blue VIEW sees official rows + its own blue).
-  // Inline (these are db.exec string queries, no bound params); branch ids are controlled ('blue-…') but
-  // we single-quote-escape anyway. NON-INVENT: the tag is the same branch_id the engine commits/folds.
-  function _sqlStr(s) { return "'" + String(s).replace(/'/g, "''") + "'"; }
-  function _branchClause(branch) {
-    return (branch == null) ? ' AND branch_id IS NULL'
-                            : ' AND (branch_id IS NULL OR branch_id = ' + _sqlStr(branch) + ')';
-  }
-  // _readBranch — the live seam: when the Blue Future controller has entered blue mode it returns the active
-  // branch id, so the chrome's INTERNAL read-the-tip callers (docstatus/CAS/getRecord overlay) automatically
-  // fold the blue VIEW without every idempiere.html call site threading a branch. OFFICIAL chrome (no blue
-  // mode) → null → official-only. Best-effort: the controller may not be loaded (older bundle / witness).
-  function _readBranch() {
-    try { return (typeof window !== 'undefined' && window.BlueFuture && typeof window.BlueFuture.readBranch === 'function')
-      ? window.BlueFuture.readBranch() : null; } catch (e) { return null; }
-  }
-  // _commitMeta — the WRITE seam (leg 1 tail + leg 5): every signed commit (ordinary CRUD edit AND the full
-  // CompleteIt DocAction fan-out) routes its groupMeta through here, so in blue mode it carries {branch_id}
-  // and lands SPECULATIVE (invisible to official reads above). Official mode → {} → unchanged. The tag is
-  // ∉ _canonical (kernel_ops.js), so ACCEPT later clears it without rehashing — the chain stays valid.
-  function _commitMeta() {
-    try { return (typeof window !== 'undefined' && window.BlueFuture && typeof window.BlueFuture.groupMeta === 'function')
-      ? (window.BlueFuture.groupMeta() || {}) : {}; } catch (e) { return {}; }
-  }
-
-  // tipDocs — read-the-tip CREATED documents for a table from the signed op-log: every non-undone
-  // CREATE_DOCUMENT op whose params.table matches (case-insensitive — the engine emits 'M_InOut',
-  // overlay keys are 'm_inout'). The CREATE-side sibling of readTip (docstatus) / tipValues (fields).
-  // BLUE FUTURE: `branch` (optional) opens the blue VIEW — leg 3 Zoom drills into blue children with it.
-  function tipDocs(db, table, branch) {
-    var out = [], want = String(table || '').toLowerCase();
-    try {
-      var r = db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='CREATE_DOCUMENT' AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
-      if (!r.length) return out;
-      r[0].values.forEach(function (row) {
-        try {
-          var p = JSON.parse(row[1]);
-          if (p && String(p.table || '').toLowerCase() === want) out.push({ opId: row[0], doc: p });
-        } catch (e) {}
-      });
-    } catch (e) {}
-    return out;
-  }
-
-  // listTip — read-the-tip at the LIST level (SO_FULL_CRUD_GAP.md T2 / GAP 2 — Witness: W-CRUD-LIST).
-  // PURE: the IMMUTABLE bundle rows for a table come in (baseRows, already read from glassbowl_data.db);
-  // replay the signed op-log filtered to that table — CRUD_CREATE rows are UNIONed (surfacing newly raised
-  // documents), CRUD_DELETE tombstones HIDE matching ids — latest-wins, in commit (id) order. The
-  // CREATE/UPDATE/DELETE sibling of tipValues (field-level) lifted to the row set. glassbowl_data.db stays
-  // the IMMUTABLE baseline — baseRows is NEVER mutated; created/hidden live only in the returned overlay.
-  // Created rows get a SYNTHETIC negative pk (kernel op id, negated) so they are stable + collision-free
-  // against real pks and survive a sidecar rehydrate (the op id is durable). A later CRUD_UPDATE/CRUD_DELETE
-  // on a created row (keyed by that synthetic pk) folds latest-wins like any other. JS-side filter (no
-  // json_extract dependency). Returns { rows, created:[pk…], hidden:[pk…] }.
-  // BLUE FUTURE: `branch` (optional) — official-only by default; pass the active branch for the blue VIEW.
-  function listTip(db, table, pkCol, baseRows, branch) {
-    var rows = (baseRows || []).map(function (r) { var o = {}; for (var p in r) o[p] = r[p]; return o; });   // shallow copy — never mutate the baseline
-    var byId = {}; rows.forEach(function (r) { byId[String(r[pkCol])] = r; });
-    var created = [], hidden = [], updated = [], want = String(table || '').toLowerCase();
-    if (!db) return { rows: rows, created: created, hidden: hidden, updated: updated };
-    try {
-      var r = db.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
-      if (!r.length || !r[0].values.length) return { rows: rows, created: created, hidden: hidden, updated: updated };
-      r[0].values.forEach(function (row) {
-        var opId = row[0], type = row[1], opTs = row[3], p;
-        try { p = JSON.parse(row[2]); } catch (e) { return; }
-        if (!p || String(p.table || '').toLowerCase() !== want) return;
-        if (type === 'CRUD_CREATE') {
-          var synth = -opId;                                  // synthetic, collision-free, durable pk for the new row
-          var nr = {}; var f = p.fields || {}; for (var c in f) if (f.hasOwnProperty(c)) nr[c] = f[c];
-          // Task 1 — iDempiere setStandardDefaults parity: fill audit+tenant cols from the recorded stdDefaults
-          if (p.stdDefaults) {
-            var sd = p.stdDefaults, tcols = _getTableCols(want), fkeys = {};
-            for (var _fk in f) if (Object.prototype.hasOwnProperty.call(f, _fk)) fkeys[String(_fk).toLowerCase()] = 1;
-            if (sd.actor != null) {
-              if (tcols['createdby']  && !fkeys['createdby'])  nr['CreatedBy']  = sd.actor;
-              if (tcols['updatedby']  && !fkeys['updatedby'])  nr['UpdatedBy']  = sd.actor;
-            }
-            if (opTs != null) {
-              // iDempiere convention: Created/Updated are `yyyy-MM-dd HH:mm:ss` strings (match the seed rows)
-              if (tcols['created'] && !fkeys['created']) nr['Created'] = _fmtKernelTs(opTs);
-              if (tcols['updated'] && !fkeys['updated']) nr['Updated'] = _fmtKernelTs(opTs);
-            }
-            if (sd.clientId != null && tcols['ad_client_id'] && !fkeys['ad_client_id']) nr['AD_Client_ID'] = sd.clientId;
-            if (sd.orgId    != null && tcols['ad_org_id']    && !fkeys['ad_org_id'])    nr['AD_Org_ID']    = sd.orgId;
-            if (tcols['isactive']   && !fkeys['isactive'])   nr['IsActive']   = 'Y';
-            if (tcols['processed']  && !fkeys['processed'])  nr['Processed']  = 'N';
-            if (tcols['processing'] && !fkeys['processing']) nr['Processing'] = 'N';
-            if (tcols['posted']     && !fkeys['posted'])     nr['Posted']     = 'N';
-            console.log('§STD-DEFAULTS create table=' + want + ' client=' + sd.clientId + ' org=' + sd.orgId + ' by=' + sd.actor + ' active=Y');
-          }
-          nr[pkCol] = synth; byId[String(synth)] = nr; rows.push(nr);
-          if (created.indexOf(synth) < 0) created.push(synth);
-        } else if (type === 'CRUD_UPDATE') {
-          var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
-          if (ex) {
-            if (updated.indexOf(p.id) < 0) updated.push(p.id);   // S2/J4 — report the touched row so the host overlay repaints on a pure edit
-            // apply each change onto the EXISTING key case (the op keys lowercase via f.col, but a SELECT* bundle row
-            //   carries original-case cols e.g. "Value"/"Name"; recVal returns the exact-case match first, so a
-            //   lowercase parallel key would be invisible on the grid — P4 row-wise edit reflect). Match c-i, else add.
-            var ch = p.changes || {};
-            for (var cc in ch) if (ch.hasOwnProperty(cc)) {
-              var nv = (ch[cc] && ch[cc].hasOwnProperty('new')) ? ch[cc].new : ch[cc];
-              var tgt = Object.prototype.hasOwnProperty.call(ex, cc) ? cc : null;
-              if (tgt == null) { for (var ek in ex) if (ex.hasOwnProperty(ek) && String(ek).toLowerCase() === String(cc).toLowerCase()) { tgt = ek; break; } }
-              ex[tgt == null ? cc : tgt] = nv;
-            }
-            // Task 1 — stamp Updated/UpdatedBy for CRUD_UPDATE (iDempiere PO.save parity)
-            var ucols = _getTableCols(want);
-            if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex['Updated'] = _fmtKernelTs(opTs);
-            if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['UpdatedBy'] = p.actor;
-          }
-        } else if (type === 'CRUD_DELETE') {
-          if (p.id != null && hidden.indexOf(p.id) < 0) hidden.push(p.id);
-        }
-      });
-    } catch (e) {}
-    // apply tombstones last (a delete after a create on the same id still hides it).
-    var hideSet = {}; hidden.forEach(function (h) { hideSet[String(h)] = 1; });
-    rows = rows.filter(function (r) { return !hideSet[String(r[pkCol])]; });
-    created = created.filter(function (c) { return !hideSet[String(c)]; });
-    updated = updated.filter(function (u) { return !hideSet[String(u)]; });
-    return { rows: rows, created: created, hidden: hidden, updated: updated };
-  }
-
-  // gateOp — the owner-gate + CAS pre-seal check (SO_FULL_CRUD_GAP.md T4 / GAP 4 — Witness: W-CRUD-GATE).
-  // INVESTIGATED: kernel_ops.js commitGroup does NOT enforce owner/CAS (it gates only empty-group /
-  // rate-as-input / expectedHash torn-group / tx-integrity), so an unauthorized edit would commit silently.
-  // This lifts the EXISTING owner-gate / CAS policy from erp_replay.js (G-SINGLE-WRITER owner-gate +
-  // set-if-unset CAS — W-OWNER, ERP.md §9-C/D/E) into a PURE pre-check the live commit funnel runs BEFORE
-  // sealing. NON-INVENT: SAME rule, not a new policy — owner-gate = the editing actor MUST equal the
-  // recorded owner; CAS = the op's expected baseline MUST match the record's current value. Identity is a
-  // recorded INPUT (§0.21) — the gate READS owner/actor/cas, never recomputes them.
-  //   ctx = { actor, owner, casCol?, casExpected?, casCurrent? }.
-  // Only applies to an ownerGated op (op.ownerGated truthy); a non-gated op always passes (back-compat).
-  // Missing actor/owner inputs → cannot prove ownership → REJECT reason=owner (fail-closed, never default-allow).
-  // Returns { ok, reason? } where reason ∈ {owner, cas}.
-  function gateOp(op, ctx) {
-    if (!op || !op.ownerGated) return { ok: true };
-    ctx = ctx || {};
-    if (ctx.owner == null || ctx.actor == null || String(ctx.actor) !== String(ctx.owner))
-      return { ok: false, reason: 'owner' };
-    // CAS set-if-unset / set-if-match: when a cas column is declared and an expected baseline is supplied,
-    // it must equal the record's current value (a stale read loses) — the erp_replay CLAIM CAS, generalized.
-    if (op.cas != null || ctx.casCol != null) {
-      if (ctx.casExpected !== undefined && ctx.casCurrent !== undefined && String(ctx.casExpected) !== String(ctx.casCurrent))
-        return { ok: false, reason: 'cas' };
-    }
-    return { ok: true };
-  }
-
-  // ── group-aware Z fold (SO_FULL_CRUD_GAP.md T1 Part B) — Witness: W-SO-COMPLETE-UI ──────────────
-  // A Complete now commits a GROUP (ship + invoice + status sharing one gid), so the history fold must
-  // reverse/replay the WHOLE gesture — not one op. These are the REAL fold verbs (db + kernel in, no DOM);
-  // the DOM foldBackDocOp/foldForwardDocOp delegate here, so deployed glassbowl.html's foldDocOps →
-  // crudFoldBack(key,from,to) plumbing is REUSED UNCHANGED (no second history lane).
-  function _foldLabel(opType, params) {
-    if (opType === 'SET_STATUS') return 'status';
-    if (opType === 'POST') return 'gl';
-    var t = String((params && params.table) || '').toLowerCase();
-    if (t.indexOf('m_inout') === 0) return 'ship';
-    if (t.indexOf('c_invoice') === 0) return 'invoice';
-    return t || String(opType || '').toLowerCase();
-  }
-  function _foldLabels(ops) {
-    var seen = {}; ops.forEach(function (o) { seen[_foldLabel(o.op_type, o.parameters)] = 1; });
-    var canon = ['ship', 'invoice', 'gl', 'status'];
-    return canon.filter(function (l) { return seen[l]; })
-      .concat(Object.keys(seen).filter(function (l) { return canon.indexOf(l) < 0; }));
-  }
-  // foldBackGroup — undo the TIP gesture WHOLE: if the most-recent non-undone op carries a gid, undo
-  // EVERY non-undone op of that gid via the kernel verb (undoOp takes newest-first → REVERSE commit
-  // order: status, then invoice, then ship); a gid-less op folds alone (back-compat). Group ops are
-  // contiguous at the tip (one transaction), so the kernel verb never strays outside the gid — asserted.
-  function foldBackGroup(db, K) {
-    var out = { gid: null, undone: [], labels: [] };
-    try {
-      var r = db.exec('SELECT id, gid FROM kernel_ops WHERE undone=0 ORDER BY id DESC LIMIT 1');
-      if (!r.length || !r[0].values.length) return out;
-      out.gid = r[0].values[0][1] || null;
-      var n = 1;
-      if (out.gid) {
-        var c = db.exec('SELECT COUNT(*) FROM kernel_ops WHERE undone=0 AND gid=' + JSON.stringify(out.gid));
-        n = (c.length && c[0].values.length) ? Number(c[0].values[0][0]) : 1;
-      }
-      for (var i = 0; i < n; i++) { var u = K.undoOp(db); if (!u) break; out.undone.push(u); }
-    } catch (e) {}
-    out.labels = _foldLabels(out.undone);
-    return out;
-  }
-  // foldForwardGroup — redo the EARLIEST undone gesture WHOLE (redoOp takes oldest-first → commit order).
-  function foldForwardGroup(db, K) {
-    var out = { gid: null, redone: [], labels: [] };
-    try {
-      var r = db.exec('SELECT id, gid FROM kernel_ops WHERE undone=1 ORDER BY id ASC LIMIT 1');
-      if (!r.length || !r[0].values.length) return out;
-      out.gid = r[0].values[0][1] || null;
-      var n = 1;
-      if (out.gid) {
-        var c = db.exec('SELECT COUNT(*) FROM kernel_ops WHERE undone=1 AND gid=' + JSON.stringify(out.gid));
-        n = (c.length && c[0].values.length) ? Number(c[0].values[0][0]) : 1;
-      }
-      for (var i = 0; i < n; i++) { var u = K.redoOp(db); if (!u) break; out.redone.push(u); }
-    } catch (e) {}
-    out.labels = _foldLabels(out.redone);
-    return out;
-  }
-
-  // readTip — read-the-tip docstatus for (table,id) from the signed op-log: the latest NON-undone
-  // SET_STATUS op's `to`, or null if none (caller treats null as the descriptor default, e.g. DR).
-  // glassbowl_data.db stays the IMMUTABLE baseline; this sidecar log is the only mutable truth. Filters
-  // in JS (no json_extract dependency) so it runs on any sql.js build.
-  // BLUE FUTURE: `branch` (optional) — official docstatus by default; the blue VIEW folds blue SET_STATUS too.
-  function readTip(db, table, id, branch) {
-    try {
-      var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='SET_STATUS' AND undone=0" + _branchClause(branch) + " ORDER BY id DESC");
-      if (!r.length || !r[0].values.length) return null;
-      var rows = r[0].values;
-      for (var i = 0; i < rows.length; i++) {
-        var p = JSON.parse(rows[i][0]);
-        if (p && p.table === table && String(p.id) === String(id)) return p.to || null;
-      }
-      return null;
-    } catch (e) { return null; }
-  }
-
-  // normDateValue — seed an <input type=date>. HTML5 type=date accepts ONLY a strict yyyy-MM-dd value;
-  // a stored TIMESTAMP ("2002-02-22 00:00:00" / "...21:09:00") is REJECTED → the widget renders BLANK →
-  // the required check then sees an empty field and REJECTs (the user-reported bug). Slice the date
-  // prefix so the widget seeds correctly. The AD model types every doc date column as `date` (date-only —
-  // verified against crud_ops.json: c_order/m_inout/c_invoice/c_payment/c_allocationline all type=date),
-  // so date-only is correct; the time component in the bundle is an incidental SQLite-TIMESTAMP artifact,
-  // not a modeled time-of-day. PURE (no Date.now) — replay-safe. Non-date types pass through unchanged.
-  function normDateValue(type, val) {
-    if (type !== 'date') return val == null ? '' : val;
-    var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(val == null ? '' : val));
-    return m ? m[1] : '';
-  }
-
-  // tipValues — read-the-tip FIELD VALUES for (table,id) from the signed op-log: replay every non-undone
-  // CRUD_UPDATE op for that row in commit (id) order and return the merged {col: latest .new} overlay.
-  // The DOC_ACTION peer is readTip (docstatus); this is its field-value sibling. glassbowl_data.db stays
-  // the IMMUTABLE baseline — getRecord layers this overlay on the bundle row so the reopened form, the Z
-  // fold-back, and every reader agree on the tip value. JS-side filter (no json_extract dependency).
-  // BLUE FUTURE: `branch` (optional) — official field tip by default; the blue VIEW folds blue CRUD_UPDATE too.
-  function tipValues(db, table, id, branch) {
-    var out = {};
-    try {
-      var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='CRUD_UPDATE' AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
-      if (!r.length || !r[0].values.length) return out;
-      var rows = r[0].values;
-      for (var i = 0; i < rows.length; i++) {
-        var p = JSON.parse(rows[i][0]);
-        if (!p || p.table !== table || String(p.id) !== String(id)) continue;
-        var ch = p.changes || {};
-        for (var c in ch) { if (ch.hasOwnProperty(c)) out[c] = (ch[c] && ch[c].hasOwnProperty('new')) ? ch[c].new : ch[c]; }
-      }
-    } catch (e) {}
-    return out;
-  }
-
-  // listOptions — PURE. Implementing CRUD_EDIT_PERSIST.md residual (docstatus-select) — Witness: W-CRUD-DOCSTATUS.
-  // Build the <option> list for a `list` field so the record's CURRENT value renders SELECTED. Pre-fix,
-  // populateRefs read `data-cur` (which fieldInput never set) and never marked any option selected → the
-  // select always landed on the FIRST __meta key (DR); gatherVals then read DR off a CO order and the save
-  // diff emitted a docstatus flip the user never touched (the silent-corruption bug, UI_UNPARK_RESUME B-3).
-  // A current value missing from the ref map is PREPENDED (kept), never silently swapped for the first option.
-  function listOptions(optsMap, cur) {
-    var keys = Object.keys(optsMap || {}), c = cur == null ? '' : String(cur);
-    if (c !== '' && keys.indexOf(c) < 0) keys.unshift(c);
-    return keys.map(function (k) {
-      return { value: k, label: k + (optsMap && optsMap[k] ? ' · ' + optsMap[k] : ''), selected: c !== '' && k === c };
-    });
-  }
-
-  // splitStatusChange — PURE. Implementing CRUD_EDIT_PERSIST.md residual (docstatus-select) — Witness: W-CRUD-DOCSTATUS.
-  // docstatus is FSM state, not a field: an EXPLICIT status edit in the form must take the DOC_ACTION lane
-  // (→ SET_STATUS, the op readTip folds), NEVER ride a CRUD_UPDATE column write — otherwise readTip (the
-  // status truth doProcess derives `from` off) and tipValues (field truth) SPLIT-BRAIN on the same row:
-  // the live-data corruption class. When the explicit target equals the descriptor's docAction.to, the
-  // SAME requires-gating as the Process ▶ applies (docActionOutcome may demote to IP) — no bypass lane.
-  // Returns {fieldOp, statusOp}: fieldOp = the CRUD_UPDATE minus docstatus (null if nothing else changed);
-  // statusOp = a DOC_ACTION op for the explicit transition (null if docstatus untouched).
-  function splitStatusChange(entry, op, values) {
-    if (!op || op.op_type !== 'CRUD_UPDATE' || !op.changes || !Object.prototype.hasOwnProperty.call(op.changes, 'docstatus'))
-      return { fieldOp: op, statusOp: null };
-    var ch = op.changes.docstatus, rest = {}, n = 0, c;
-    for (c in op.changes) if (c !== 'docstatus') { rest[c] = op.changes[c]; n++; }
-    var fieldOp = null;
-    if (n) { fieldOp = {}; for (c in op) fieldOp[c] = op[c]; fieldOp.changes = rest; }
-    var to = ch['new'] == null ? null : String(ch['new']);
-    var statusOp = { key: op.key, table: op.table, verb: 'process', op_type: 'DOC_ACTION', id: op.id,
-      action: to,                                          // iDempiere DocAction codes mirror the target status (CO/CL/VO/RE)
-      from: ch.old == null ? null : String(ch.old), to: to, outcome: 'success', unmet: [],
-      ownerGated: !!op.ownerGated, op_uuid: op.op_uuid || null,
-      oracle: (entry && entry.docAction && entry.docAction.oracle) || null };
-    var da = entry && entry.docAction;
-    if (da && to === String(da.to || 'CO')) {              // completing via the form → the SAME gate as Process ▶
-      var r = docActionOutcome(entry, values || {});
-      statusOp.action = r.action; statusOp.to = r.to; statusOp.outcome = r.outcome; statusOp.unmet = r.unmet;
-    }
-    return { fieldOp: fieldOp, statusOp: statusOp };
-  }
-
-  // §A1-DOC (HISTORY_SESSION_EVENTS.md) — Witness: W-DOC-DOTS. The Z-dot label for a COMMITTED op.
-  // PURE: op in, label out — one label per commit gesture (Save/New/Delete/DocAction), never a keystroke.
-  function docLabel(op, name) {
-    var n = name || op.key;
-    if (op.op_type === 'CRUD_CREATE') return 'New ' + n;
-    if (op.op_type === 'CRUD_UPDATE') return 'Save ' + n;
-    if (op.op_type === 'CRUD_DELETE') return 'Delete ' + n;
-    if (op.op_type === 'DOC_ACTION') return op.action + ' ' + n + ' → ' + op.to;
-    return null;
-  }
-
-  // ── S2B (AD-FOLDED CRUD GENERALITY) — derive a crud_ops-shaped entry FROM THE DICTIONARY so EVERY window is
-  // editable per its OWN AD, not a curated 5-table allow-list (Janke/Compiere vision). PURE + headless-testable.
-  // Input `adFields` = the renderer's already-folded field shape (ADParser.getFields): {columnName, name,
-  // isMandatory, isReadOnly, isUpdateable, isKey, isDisplayed, referenceType, defaultValue, displayLogic}. We do
-  // NOT re-derive types/refs — we MAP what the renderer already folded. opts: {key, title, isView, isReadOnly,
-  // forVerb}. The signed write path (commitCrud→listTip overlay→reload-survival) is UNCHANGED; only the SPEC
-  // SOURCE moves from the hand-list to the AD.
-  // mapRefDisplayType — the AUTHORITATIVE map: iDempiere DisplayType id → the overlay form type vocab. Folded from
-  //   the raw AD_Reference_ID (ADParser exposes `referenceId`) so it is correct even where the renderer's coarse
-  //   REF_TYPES string is imperfect (e.g. 20=Yes-No, 18=Table). Returns null for an unknown id (→ string fallback).
-  //   number: 11 Integer · 12 Amount · 22 Number · 29 Quantity. date: 15 Date · 16 DateTime · 24 Time. fk: 18 Table ·
-  //   19 TableDir · 30 Search. id: 13 ID (hidden PK) · 28 Button (dropped by the caller). else (10 String · 14 Text ·
-  //   17 List · 20 Yes-No · …) → string (LEG-1: list/yesno render as an editable text of the raw value; AD_Ref_List
-  //   option-fold is a named follow-on).
-  function mapRefDisplayType(rid) {
-    switch (Number(rid)) {
-      case 11: case 12: case 22: case 29: return 'number';
-      case 15: case 16: case 24: return 'date';
-      case 18: case 19: case 30: return 'fk';
-      case 13: return 'id'; case 28: return 'button';
-      // string-rendered ids — MUST be enumerated so a known id never falls through to the coarse referenceType
-      // fallback (where 20=Yes-No is mislabelled 'table'→fk): 10 String · 14 Text · 17 List · 20 Yes-No · 21 Location
-      // · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment · 34 Memo · 35 PAttribute · 38 PrinterName.
-      case 10: case 14: case 17: case 20: case 21: case 23: case 25: case 31: case 32: case 33: case 34: case 35: case 38: return 'string';
-      default: return null;   // truly unknown id → caller falls back to the referenceType string
-    }
-  }
-  // mapRefType — fallback by the renderer's coarse referenceType STRING (older callers / when no referenceId).
-  function mapRefType(rt) {
-    switch (rt) {
-      case 'integer': case 'amount': case 'number': case 'quantity': return 'number';
-      case 'date': case 'datetime': return 'date';
-      case 'tableDirect': case 'table': case 'search': return 'fk';
-      case 'id': return 'id'; case 'button': return 'button';
-      default: return 'string';   // string · text · char · list · yesno · unknown
-    }
-  }
-  function foldCrudSpec(adFields, opts) {
-    opts = opts || {};
-    var roTable = !!opts.isView || !!opts.isReadOnly;     // AD_Table.IsView or AD_Tab.IsReadOnly → the whole row is read-only
-    var forVerb = opts.forVerb || 'update';
-    var fields = (adFields || []).map(function (f) {
-      // type from the AUTHORITATIVE AD_Reference_ID; fall back to the coarse referenceType string.
-      var type = (f && f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f && f.referenceType);
-      return f && f.isDisplayed && !f.isKey && type !== 'button' && type !== 'id' ? { f: f, type: type } : null;
-    }).filter(Boolean).map(function (ft) {
-      var f = ft.f, type = ft.type;
-      // IsUpdateable='N' is SETTABLE on New (iDempiere fills it once) but display-only on Edit; isReadOnly + a
-      // read-only table/tab are always read-only.
-      var readonly = !!f.isReadOnly || roTable || (forVerb === 'update' && f.isUpdateable === false);
-      var spec = { col: String(f.columnName).toLowerCase(), label: f.name || f.columnName, type: type,
-                   required: !!f.isMandatory, readonly: readonly };
-      // DEFAULTS: resolve the well-known AD context variables iDempiere's Env fills on New (@#AD_Client_ID@,
-      // @#AD_Org_ID@, @#Date@) from opts.ctx — so a mandatory system column (AD_Client_ID/AD_Org_ID) doesn't block a
-      // folded create; keep PLAIN literals (0/N/Y/DR…); drop any OTHER unevaluated expression (@SQL=…, functions) —
-      // we don't run the full AD default-expression language here (named follow-on), and never seed an un-evaluated
-      // token (it would fail the field validator). Edit pre-fills the real row regardless.
-      var d = f.defaultValue, ctx = opts.ctx || {};
-      if (d != null && String(d) !== '') {
-        var ds = String(d);
-        if (ds === '@#AD_Client_ID@' && ctx.clientId != null) spec.default = ctx.clientId;
-        else if (ds === '@#AD_Org_ID@' && ctx.orgId != null) spec.default = ctx.orgId;
-        else if (ds === '@#Date@' && ctx.today) spec.default = ctx.today;
-        else if (!/[@()]/.test(ds)) spec.default = d;
-      }
-      if (type === 'fk') spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
-      if (f.displayLogic != null && String(f.displayLogic).trim() !== '') spec.displaylogic = f.displayLogic;
-      return spec;
-    });
-    return { key: opts.key, title: opts.title || opts.key, folded: true, isView: !!opts.isView,
-             verbs: roTable ? [] : ['create', 'update', 'delete'], fields: fields };
-  }
-
-  var CORE = {
-    entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
-    foldCrudSpec: foldCrudSpec, mapRefType: mapRefType,                          // S2B: AD-folded CRUD spec (general, not curated)
-    validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
-    docActionOutcome: docActionOutcome, legalDocActions: legalDocActions, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
-    normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel,
-    listOptions: listOptions, splitStatusChange: splitStatusChange,
-    docPolicyFor: docPolicyFor, tipDocs: tipDocs,                              // T1: fan-out policy + created-doc tip
-    foldBackGroup: foldBackGroup, foldForwardGroup: foldForwardGroup,          // T1 Part B: group-aware Z fold
-    listTip: listTip, gateOp: gateOp,                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
-    changeLog: changeLog, recordInfo: recordInfo, fmtKernelTs: _fmtKernelTs,     // Task 2: per-record AD-filtered change trail + iDempiere ts format · Item 3a (W-RECINFO): always-on record-level last-touch
-    fieldLineage: fieldLineage,                                                  // Item 3b (W-FIELD-LINEAGE): always-on per-field value history (kills AD_ChangeLog)
-    draftPut: draftPut, draftGet: draftGet, draftClear: draftClear, draftList: draftList,
-    draftDirty: draftDirty, draftChangedCols: draftChangedCols, draftDrift: draftDrift   // Item 1 (W-DRAFT-RESTORE): private draft buffer — unsaved typing, never an official dot
-  };
+  var CORE = (typeof module !== 'undefined' && module.exports) ? require('./crud_core.js')
+                                                               : global.CrudCore;
 
   // node (headless witness): export the core and stop — no DOM to attach.
   if (typeof module !== 'undefined' && module.exports) { module.exports = CORE; return; }
   if (typeof document === 'undefined') return;
+
+  if (!CORE) { console.error('§CRUD crud_core.js not loaded before crud_overlay.js — overlay cannot mount'); return; }
+
+  // ── §S60 aliases — the DOM half below predates the physical split and calls these bare; bind them
+  // from CORE so every call site stays verbatim. (CORE.<name> call sites need nothing — same object.)
+  var _getTableCols = CORE._getTableCols, isMeta = CORE.isMeta,
+      _readBranch = CORE._readBranch, _commitMeta = CORE._commitMeta, sessionActor = CORE.sessionActor,
+      verbEnabled = CORE.verbEnabled, defaultsFor = CORE.defaultsFor, validate = CORE.validate,
+      buildOp = CORE.buildOp, buildDocActionGroup = CORE.buildDocActionGroup,
+      listTip = CORE.listTip, readTip = CORE.readTip, tipValues = CORE.tipValues,
+      normDateValue = CORE.normDateValue, splitStatusChange = CORE.splitStatusChange,
+      changeLog = CORE.changeLog, recordInfo = CORE.recordInfo, fieldLineage = CORE.fieldLineage,
+      draftPut = CORE.draftPut, draftGet = CORE.draftGet, draftClear = CORE.draftClear,
+      draftDrift = CORE.draftDrift;
 
   // ════════════════════════════════════════════════════════════════════════
   // DOM OVERLAY — Edit-mode toggle + animated semicircle ring + form (browser).
@@ -1189,6 +520,26 @@
         console.log('§CRUD-LIST col=' + f.col + ' cur="' + cur + '" options=' + lo.length + ' selected="' + (sel || '(first)') + '"');
       } else if (f.type === 'fk' && typeof withBundle === 'function') {
         var keep = el.value;
+        // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22) — a readonly fk (a child tab's
+        // locked parent-link column, e.g. C_OrderLine.C_Order_ID, or any other read-only fk) must KEEP its
+        // seeded/current value verbatim. The full LIST query below is scoped to the raw base table and can
+        // NEVER include a synthetic/overlay-only row (a freshly created parent, negative pk) — repopulating
+        // from it silently replaced a correct-but-unmatched value with whichever row sorted first (the
+        // actual root cause of the order-line-gets-a-stale-parent bug). Look up just THIS row's friendly
+        // label instead of the full list; if the pk isn't a real base row (synthetic), fall back to showing
+        // the raw value — correct, just not pretty, same degrade-gracefully convention used elsewhere.
+        if (f.readonly) {
+          if (keep === '' || keep == null) return;
+          withBundle(function (db) {
+            try {
+              var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+              var res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' WHERE ' + pk + '=' + Number(keep));
+              var label = (res.length && res[0].values.length) ? (res[0].values[0][1] + ' (' + res[0].values[0][0] + ')') : keep;
+              el.innerHTML = '<option value="' + esc(keep) + '" selected>' + esc(label) + '</option>';
+            } catch (er) {}
+          });
+          return;
+        }
         withBundle(function (db) {
           try {
             var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
@@ -1402,6 +753,11 @@
       if (!e || !CORE.verbEnabled(e, 'create')) { console.log('§INPLACE-NEW table=' + key + ' skipped (create not permitted)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
       var vals = CORE.defaultsFor(e, today());
       _seedDocNoPreview(e, vals);
+      // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22) — opts.seedVals lets the host
+      // (idempiere.html, for a child tab's locked parent-link column) inject a value defaultsFor() has no
+      // way to know — AD_Column.DefaultValue is empty for a parent-link FK by convention (it's set
+      // programmatically, never via a column default). Optional; every other caller is unaffected.
+      if (opts.seedVals) { var _sk = Object.keys(opts.seedVals); for (var _si = 0; _si < _sk.length; _si++) vals[_sk[_si]] = opts.seedVals[_sk[_si]]; }
       renderInline('create', e, vals, null, null, host, opts);
     });
   }
@@ -1535,6 +891,17 @@
       if ((!wh || wh.m_warehouse_id == null) && org) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_org_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(org);
       if ((!wh || wh.m_warehouse_id == null) && cli) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_client_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(cli);
       if (wh && wh.m_warehouse_id != null) ctx.m_warehouse_id = Number(wh.m_warehouse_id);
+      // §DOCTYPE-PER-WINDOW (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21) — window.APP._createIsSOTrx is set
+      // by idempiere.html's buildForm() right before a CREATE, from the active AD_Tab's own WhereClause
+      // (the real per-window Sales/Purchase signal). MOrder.docTypeTargetDefault reads ctx.issotrx to pick
+      // the right-side default doctype instead of always the client's Standard Sales doctype. Only ever read
+      // for the derivation-if-unset case (existing docTypeTarget on an UPDATE is left alone regardless).
+      if (app._createIsSOTrx === 'Y' || app._createIsSOTrx === 'N') ctx.issotrx = app._createIsSOTrx;
+      // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 2 — the M_InOut sibling of the IsSOTrx thread above:
+      // window.APP._createMovementType is set by idempiere.html's buildForm() from the active AD_Tab's own
+      // WhereClause (M_InOut's real per-window signal is MovementType, e.g. Material Receipt tab 296's
+      // "MovementType IN ('V+')" — verified against ad_seed.db, not assumed).
+      if (/^[A-Z][+-]$/.test(app._createMovementType || '')) ctx.movementtype = app._createMovementType;
     } catch (e) {}
     return ctx;
   }
@@ -1610,35 +977,195 @@
   // The signed kernel is the production W-CHAIN one (kernel_ops.js → window.KernelOps), loaded as a peer
   // <script>. If it (or sql.js) is absent we fall back to the E2 dry-run — never a silent failure.
   // ════════════════════════════════════════════════════════════════════════
-  var SIDE = null, SIDE_PENDING = false, SIDE_CBS = [];
+  var SIDE = null, SIDE_PENDING = false, SIDE_CBS = [], _SQL = null, _IDB = null, _warnedNoLock = false;
   var SIDE_DBNAME = 'glassbowl_kernel_ops', SIDE_STORE = 'log', SIDE_KEY = 'kernel_ops.db';
+  // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F1/F3 — Witness: W-OPLOG-APPEND / W-COMMIT-LOCK.
+  // OPS_STORE — the NEW per-op append-only object store (F1), a sibling of the legacy `log` store in the
+  // SAME IndexedDB database (bumping SIDE_DBVERSION adds it without touching the legacy store/key — F10
+  // keeps the old blob untouched). SIDE_LOCK_NAME — the cross-tab commit mutex (F3).
+  var OPS_STORE = 'ops', SIDE_DBVERSION = 2, MIGRATE_MARKER_KEY = 'migrated-from-blob';
+  var SIDE_LOCK_NAME = 'erp-sidecar-commit';
   function kernel() { return (typeof global.KernelOps !== 'undefined') ? global.KernelOps : null; }
   function _flushSideCbs(arg) { var cbs = SIDE_CBS; SIDE_CBS = []; SIDE_PENDING = false; cbs.forEach(function (f) { try { f(arg); } catch (e) {} }); }
 
-  // _sideIdb — open the DEDICATED sidecar object store (NEVER glassbowl_data.db's cache key).
+  // _sideIdb — open the DEDICATED sidecar database (NEVER glassbowl_data.db's cache key). v1→v2 (F1):
+  // adds the new `ops` append-only store alongside the legacy `log` store — existing `log`/kernel_ops.db
+  // data is untouched by the upgrade (F10: the old blob is read by migration, never deleted here).
   function _sideIdb(cb) {
     try {
-      var req = global.indexedDB.open(SIDE_DBNAME, 1);
-      req.onupgradeneeded = function () { req.result.createObjectStore(SIDE_STORE); };
+      var req = global.indexedDB.open(SIDE_DBNAME, SIDE_DBVERSION);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(SIDE_STORE)) db.createObjectStore(SIDE_STORE);
+        if (!db.objectStoreNames.contains(OPS_STORE)) db.createObjectStore(OPS_STORE, { autoIncrement: true });
+      };
       req.onsuccess = function () { cb(req.result); };
       req.onerror = function () { cb(null); };
     } catch (e) { cb(null); }
   }
-  function _sidePersist() {
-    if (!SIDE) return;
+  // _sidePersist — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F1 — Witness: W-OPLOG-APPEND.
+  // Appends the given kernel_ops row ids from `db` as INDIVIDUAL new records in the `ops` IndexedDB store
+  // (add(), never put()) — replaces the old whole-DB export()+put() single-blob overwrite entirely. Two
+  // tabs' concurrent commits now physically add() DIFFERENT, non-colliding records; neither can overwrite
+  // the other's bytes (this alone makes S3's disjoint-field total-op-loss structurally impossible).
+  // Returns a Promise so callers can await the append BEFORE releasing the cross-tab lock (F3) — a second
+  // tab's refresh must never observe "committed but not yet appended".
+  function _sidePersist(K, db, ids) {
+    if (!db || !_IDB || !K || !ids || !ids.length) return Promise.resolve();
     try {
-      var buf = SIDE.export().buffer;   // the sidecar is TINY (the log only) — whole-export is cheap + 1GB-safe
-      _sideIdb(function (db) {
-        if (!db) return;
-        try {
-          db.transaction(SIDE_STORE, 'readwrite').objectStore(SIDE_STORE).put(buf, SIDE_KEY);
-          console.log('§CRUD sidecar persisted size=' + (buf.byteLength / 1024).toFixed(1) + 'KB key=' + SIDE_KEY);
-        } catch (e) {}
+      var rows = K.rowsByIds(db, ids);
+      return K.appendOpsRecords(_IDB, OPS_STORE, rows).then(function (keys) {
+        rows.forEach(function (r, i) { console.log('§OPLOG-APPEND key=' + keys[i] + ' id=' + r.id + ' op_uuid=' + (r.op_uuid || 'null')); });
+        return _relayPush(rows);
+      }).catch(function (e) { console.warn('§OPLOG-APPEND error', e && e.message); });
+    } catch (e) { console.warn('§OPLOG-APPEND error', e && e.message); return Promise.resolve(); }
+  }
+  // _relayPush — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring item 1 — Witness: W-N-CONVERGE.
+  // Best-effort, fire-and-forget: register the just-appended row(s) with the relay (erp_sync_relay.js's
+  // pushRows, dedup by op_uuid at the relay — W-RELAY). No-op (Promise.resolve) if erp_sync_relay.js isn't
+  // loaded or no ?relay= was given — the whole append-only fix behaves exactly as before with no relay.
+  // NEVER throws into the commit path: a relay-down/unreachable failure is logged, not fatal to the save.
+  function _relayPush(rows) {
+    var S = (typeof global.ErpSyncRelay !== 'undefined') ? global.ErpSyncRelay : null;
+    if (!S || !S.isEnabled || !S.isEnabled()) return Promise.resolve();
+    return S.pushRows(rows).catch(function (e) { console.warn('§SYNC_RELAY push error', e && e.message); });
+  }
+  // syncNow — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring item 2 — Witness: W-N-CONVERGE.
+  // The manual Sync trigger's ACTUAL orchestration (crud_overlay.js is the caller, per the spec's
+  // separation of concern — erp_sync_relay.js is transport-only). Reuses, verbatim, the SAME cross-tab
+  // commit lock (_withFreshSide) + fresh-hydrate a commit already uses, so a sync can never interleave
+  // with a same-tab-group commit mid-flight; and reuses, verbatim, window.ErpSyncFSM.rebase() — the
+  // PROVEN rewind→apply-canonical→replay-pending→re-seal loop (scripts/test_kernel_relay.js W-RELAY,
+  // scripts/test_kernel_rebase.js W-REBASE) — no new merge/seal logic is written here. After rebase
+  // rewrites+reseals the in-memory SIDE table, the merged canonical state is snapshotted
+  // (K.allRowsPlain, the SAME primitive F10's legacy-blob migration already uses) and appended as NEW
+  // records into the append-only `ops` IDB store (K.appendOpsRecords, add()-only — never a put()/blob
+  // overwrite) so a reload or a sibling tab's next hydrate replays to the SAME merged tip too.
+  function syncNow(cb) {
+    var K = kernel();
+    var S = (typeof global.ErpSyncRelay !== 'undefined') ? global.ErpSyncRelay : null;
+    var FSM = (typeof global.ErpSyncFSM !== 'undefined') ? global.ErpSyncFSM : null;
+    var RC = (typeof global.ErpRelayClient !== 'undefined') ? global.ErpRelayClient : null;
+    var relayUrl = S && S.relayUrl();
+    if (!relayUrl || !K || !FSM || !RC) {
+      console.log('§SYNC_RELAY syncNow SKIP relay=' + !!relayUrl + ' kernel=' + !!K + ' fsm=' + !!FSM + ' client=' + !!RC);
+      if (cb) cb({ ok: false, reason: 'relay not configured/loaded' });
+      return;
+    }
+    withSidecar(function (db) {
+      if (!db) { console.log('§SYNC_RELAY syncNow SKIP sidecar-absent'); if (cb) cb({ ok: false, reason: 'sidecar absent' }); return; }
+      _withFreshSide(K, function (freshDb, done) {
+        var relayClient = RC.createRelayClient(relayUrl);
+        Promise.resolve(FSM.rebase(freshDb, K, relayClient)).then(function (r) {
+          var allRows = K.allRowsPlain(freshDb);
+          return K.appendOpsRecords(_IDB, OPS_STORE, allRows).then(function () {
+            return Promise.resolve(K.verifyChain(freshDb)).then(function (v) {
+              console.log('§SYNC_RELAY syncNow applied=' + r.applied + ' tip=' + (v && v.tip) + ' len=' + (v && v.len) + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              done();
+              if (cb) cb({ ok: true, applied: r.applied, tip: v && v.tip, len: v && v.len, verify: v });
+            });
+          });
+        }).catch(function (e) {
+          console.warn('§SYNC_RELAY syncNow error', e && e.message);
+          done();
+          if (cb) cb({ ok: false, error: e && e.message });
+        });
       });
-    } catch (e) {}
+    });
+  }
+  global.crudSyncNow = syncNow;   // witness/host seam — a real button click (or a host affordance) calls this
+  // _hydrateSide — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F2/F10 — Witness: W-OPLOG-APPEND / W-OPLOG-MIGRATE.
+  // Builds a FRESH sql.js Database from the append-only `ops` IndexedDB store: read every record in key
+  // order (cheap IDB cursor scan), replay each row back into a fresh kernel_ops table in that SAME order
+  // (F2 — the rows already carry their sealed prev_hash/op_hash/sig; replay restores them verbatim, it
+  // does not re-seal). On the FIRST hydrate of a pre-fix sidecar — no migration marker yet, AND the legacy
+  // whole-blob still holds data under the old `log`/kernel_ops.db key — the legacy blob's rows are
+  // exploded into individual `ops` records ONCE first (F10), so a pre-fix user's history carries forward
+  // rather than starting empty. The legacy blob key is NEVER put()/deleted by this — read-only, always
+  // (§Migration: "the old blob is never deleted by this migration"). Idempotent + best-effort: any
+  // failure along the migration path falls back straight to the (possibly-still-empty) read-all hydrate —
+  // it never blocks opening the sidecar.
+  function _hydrateSide(idbDb, SQL, K, cb) {
+    function readAllAndBuild() {
+      K.readAllOpsRecords(idbDb, OPS_STORE).then(function (rows) {
+        var db = new SQL.Database();
+        K.ensureTable(db);
+        K.replayRowsInto(db, rows);
+        Promise.resolve(K.verifyChain(db)).then(function (v) {
+          console.log('§OPLOG-HYDRATE ops=' + rows.length + ' tip=' + (v && v.tip ? v.tip : 'GENESIS') +
+                      ' source=readAll' + (v && v.ok === false ? ' verifyChain=FAIL(' + v.why + ')' : ''));
+          cb(db);
+        }).catch(function () { cb(db); });
+      }).catch(function (e) {
+        console.warn('§OPLOG-HYDRATE readAll error', e && e.message);
+        var db = new SQL.Database(); K.ensureTable(db); cb(db);
+      });
+    }
+    var mtx;
+    try { mtx = idbDb.transaction(SIDE_STORE, 'readonly'); } catch (e) { readAllAndBuild(); return; }
+    var mreq = mtx.objectStore(SIDE_STORE).get(MIGRATE_MARKER_KEY);
+    mreq.onsuccess = function () {
+      if (mreq.result) { readAllAndBuild(); return; }   // already migrated → straight to read-all (F2)
+      var greq;
+      try { greq = idbDb.transaction(SIDE_STORE, 'readonly').objectStore(SIDE_STORE).get(SIDE_KEY); }
+      catch (e) { readAllAndBuild(); return; }
+      greq.onsuccess = function () {
+        var legacyBuf = greq.result;
+        if (!legacyBuf) {   // brand-new user, no legacy blob at all — mark migrated (nothing to migrate)
+          try { idbDb.transaction(SIDE_STORE, 'readwrite').objectStore(SIDE_STORE).put(true, MIGRATE_MARKER_KEY); } catch (e) {}
+          readAllAndBuild(); return;
+        }
+        var legacyDb;
+        try { legacyDb = new SQL.Database(new Uint8Array(legacyBuf)); }
+        catch (e) { console.warn('§OPLOG-MIGRATE legacy blob unreadable, skipping (blob preserved, never deleted)', e && e.message); readAllAndBuild(); return; }
+        var legacyRows = K.allRowsPlain(legacyDb);
+        K.appendOpsRecords(idbDb, OPS_STORE, legacyRows).then(function (keys) {
+          try { idbDb.transaction(SIDE_STORE, 'readwrite').objectStore(SIDE_STORE).put(true, MIGRATE_MARKER_KEY); } catch (e) {}
+          var n = keys ? keys.length : 0;   // appendOpsRecords resolves with the assigned autoKeys array, not a count
+          Promise.resolve(K.verifyChain(legacyDb)).then(function (v) {
+            console.log('§OPLOG-MIGRATE legacyOps=' + legacyRows.length + ' migratedOps=' + n + ' chainValid=' + !!(v && v.ok));
+            console.log('§OPLOG-BLOB-PRESERVED unchanged=true');   // F10: old key was only READ, never put()/deleted
+            readAllAndBuild();
+          }).catch(function () {
+            console.log('§OPLOG-MIGRATE legacyOps=' + legacyRows.length + ' migratedOps=' + n + ' chainValid=false');
+            readAllAndBuild();
+          });
+        }).catch(function (e) {
+          console.warn('§OPLOG-MIGRATE append error', e && e.message, '(legacy blob preserved, will retry next open)');
+          readAllAndBuild();   // fail-open — never blocks opening
+        });
+      };
+      greq.onerror = function () { readAllAndBuild(); };
+    };
+    mreq.onerror = function () { readAllAndBuild(); };
+  }
+  // _withFreshSide — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F3/F4 — Witness: W-COMMIT-LOCK.
+  // Re-hydrates SIDE from the ops store's CURRENT contents (a full read-all + replay via _hydrateSide —
+  // correctness over micro-perf for this CORE pass; §Cross-tab coordination: "either is correct, the
+  // former is cheaper") and hands the FRESH db to `task`, while holding the navigator.locks cross-tab
+  // mutex — so a second tab's commit can only begin gating/sealing AFTER the first tab's just-appended
+  // rows are visible to it. This is what closes the S4 gap that per-op storage (F1) alone does not: two
+  // tabs can no longer both seal against the SAME stale tip. `task(freshDb, done)` MUST call done() when
+  // the whole critical section (gate→seal→append) has finished, so the lock isn't released early.
+  // No navigator.locks support (older browser) → falls back to running unlocked (best-effort, same
+  // residual cross-tab risk as pre-fix; logged ONCE so the degradation is visible, never silent).
+  function _withFreshSide(K, task) {
+    function run(done) {
+      if (!_IDB || !_SQL) { task(SIDE, done); return; }
+      _hydrateSide(_IDB, _SQL, K, function (freshDb) { SIDE = freshDb; task(SIDE, done); });
+    }
+    if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
+      return navigator.locks.request(SIDE_LOCK_NAME, function () {
+        return new Promise(function (resolve) { run(resolve); });
+      });
+    }
+    if (!_warnedNoLock) { _warnedNoLock = true; console.warn('§COMMIT-LOCK unavailable (no navigator.locks) — cross-tab serialization NOT active this session'); }
+    return new Promise(function (resolve) { run(resolve); });
   }
   // withSidecar — lazily build/hydrate the sidecar log DB (a separate sql.js Database), ensure the kernel
   // table, then run cb(SIDE). cb(null) if sql.js/kernel unavailable (caller falls back to dry-run).
+  // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F2/F10 — Witness: W-OPLOG-APPEND / W-OPLOG-MIGRATE: hydration
+  // is now read-all-and-replay from the `ops` store (via _hydrateSide), not a single fixed blob key.
   function withSidecar(cb) {
     if (SIDE) { cb(SIDE); return; }
     SIDE_CBS.push(cb);
@@ -1647,19 +1174,13 @@
     if (typeof global.initSqlJs !== 'function' || !K) { _flushSideCbs(null); return; }
     SIDE_PENDING = true;
     global.initSqlJs({ locateFile: function (f) { return 'sqljs/' + f; } }).then(function (SQL) {
-      _sideIdb(function (db) {
-        function build(buf) {
-          try { SIDE = buf ? new SQL.Database(new Uint8Array(buf)) : new SQL.Database(); }
-          catch (e) { SIDE = new SQL.Database(); }
-          K.ensureTable(SIDE);
-          _flushSideCbs(SIDE);
+      _sideIdb(function (idbDb) {
+        if (!idbDb) {
+          try { SIDE = new SQL.Database(); K.ensureTable(SIDE); } catch (e) { SIDE = null; }
+          _flushSideCbs(SIDE); return;
         }
-        if (!db) { build(null); return; }
-        try {
-          var g = db.transaction(SIDE_STORE, 'readonly').objectStore(SIDE_STORE).get(SIDE_KEY);
-          g.onsuccess = function () { build(g.result || null); };
-          g.onerror = function () { build(null); };
-        } catch (e) { build(null); }
+        _SQL = SQL; _IDB = idbDb;   // remembered for the cross-tab refresh (F3) and future persists
+        _hydrateSide(idbDb, SQL, K, function (db) { SIDE = db; _flushSideCbs(SIDE); });
       });
     }).catch(function () { _flushSideCbs(null); });
   }
@@ -1681,9 +1202,21 @@
   // pattern): the bundle carries no c_ordertax (a fresh order's invoice tax legs are non-derivable) and
   // post_resolver is not mounted — the omission is LOGGED, never faked. Ship/Invoice creation still works.
   // cb(fanout|null): null → the honest status-only group (engine absent / non-CO / no policy / re-complete).
+  // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 3/5 — Witness: W-FOLD-MATCHPO/W-FOLD-MATCHINV. Generalized
+  // from c_order-only to also dispatch m_inout (Receipt CO → M_MatchPO, completeReceipt) and c_invoice
+  // (Invoice CO → M_MatchInv, completeInvoice — already written in erp_engine.js, just never reached this
+  // dispatcher before). Same CO/success/re-complete gate, same withBundle/SELECT*/lower-case convention —
+  // only the per-table body differs (each table's own completeFanout<X> below).
   function completeFanout(op, cb) {
-    if (!(op.key === 'c_order' && op.action === 'CO' && op.to === 'CO' && op.outcome === 'success')) { cb(null); return; }
-    if (op.from === 'CO') { console.log('§SO-COMPLETE fan-out skipped: already CO (no duplicate consequence docs)'); cb(null); return; }
+    if (!(op.action === 'CO' && op.to === 'CO' && op.outcome === 'success')) { cb(null); return; }
+    if (op.from === 'CO') { console.log('§' + fname(op.key) + '-COMPLETE fan-out skipped: already CO (no duplicate consequence docs)'); cb(null); return; }
+    if (op.key === 'c_order')  { completeFanoutOrder(op, cb);   return; }
+    if (op.key === 'm_inout')  { completeFanoutReceipt(op, cb); return; }
+    if (op.key === 'c_invoice') { completeFanoutInvoice(op, cb); return; }
+    cb(null);
+  }
+
+  function completeFanoutOrder(op, cb) {
     var E = (typeof global.ERPEngine !== 'undefined') ? global.ERPEngine : null;
     if (!E || typeof E.completeOrder !== 'function' || typeof withBundle !== 'function' || op.id == null) {
       console.log('§SO-COMPLETE fan-out gated: ' + (E ? 'bundle/id absent' : 'ERPEngine not mounted') + ' → status-only group (honest)');
@@ -1711,6 +1244,82 @@
     });
   }
 
+  // _rawRows — SELECT * against the raw bundle, lower-cased columns, plain array of objects. Shared by the
+  // two fold-based fanouts below (Implementing ERP_P2P_INVOICE_MATCH.md §Fix 3/5).
+  function _rawRows(db, sql) {
+    var r = db.exec(sql);
+    if (!r.length) return [];
+    return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[String(c).toLowerCase()] = v[i]; }); return o; });
+  }
+
+  // completeFanoutReceipt — M_InOut Complete → M_MatchPO (Implementing ERP_P2P_INVOICE_MATCH.md §Fix 3).
+  // Unlike completeFanoutOrder's raw-bundle SELECT (which only ever finds a SEED row — a manually-created
+  // Receipt lives ONLY as CRUD_CREATE ops in the sidecar's kernel_ops, per §Fix 2026-07-21's own listTip/
+  // readTip discovery for renderOrderPicker), this reads via CORE.listTip fold — baseRows (raw, usually
+  // empty for a fresh tenant) overlaid with every CRUD_CREATE for m_inout/m_inoutline. No DOCPOLICY gate —
+  // real Java (MInOut.completeIt()) gates purely on IsSOTrx, which completeReceipt() itself checks.
+  function completeFanoutReceipt(op, cb) {
+    var E = (typeof global.ERPEngine !== 'undefined') ? global.ERPEngine : null;
+    if (!E || typeof E.completeReceipt !== 'function' || typeof withBundle !== 'function' || typeof withSidecar !== 'function' || op.id == null) {
+      console.log('§RECEIPT-COMPLETE fan-out gated: ' + (E ? 'bundle/sidecar/id absent' : 'ERPEngine not mounted') + ' → status-only group (honest)');
+      cb(null); return;
+    }
+    withBundle(function (db) {
+      var baseHdr = _rawRows(db, 'SELECT * FROM m_inout');
+      var baseLines = _rawRows(db, 'SELECT * FROM m_inoutline');
+      withSidecar(function (sdb) {
+        var fanout = null;
+        try {
+          var hdrRows = baseHdr, lineRows = baseLines;
+          if (sdb) {
+            try { var f1 = CORE.listTip(sdb, 'm_inout', 'm_inout_id', baseHdr, null); hdrRows = (f1 && f1.rows) || baseHdr; } catch (e1) {}
+            try { var f2 = CORE.listTip(sdb, 'm_inoutline', 'm_inoutline_id', baseLines, null); lineRows = (f2 && f2.rows) || baseLines; } catch (e2) {}
+          }
+          var receipt = hdrRows.filter(function (r) { return String(r.m_inout_id) === String(op.id); })[0];
+          if (!receipt) { console.log('§RECEIPT-COMPLETE fan-out gated: receipt ' + op.id + ' not found (bundle+sidecar) → status-only'); cb(null); return; }
+          var lines = lineRows.filter(function (r) { return String(r.m_inout_id) === String(op.id); });
+          var ops = E.completeReceipt(receipt, lines, null).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
+          console.log('§RECEIPT-FANOUT receipt=' + op.id + ' issotrx=' + receipt.issotrx + ' lines=' + lines.length + ' matchPoOps=' + ops.length);
+          fanout = ops.length ? { ops: ops, glGate: 'none' } : null;
+        } catch (er) { console.log('§RECEIPT-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
+        cb(fanout);
+      });
+    });
+  }
+
+  // completeFanoutInvoice — C_Invoice Complete → M_MatchInv (Implementing ERP_P2P_INVOICE_MATCH.md §Fix 5).
+  // erp_engine.js's completeInvoice() was written earlier (O2C lane) but never reached the live UI's
+  // dispatcher until this fix — same listTip-fold convention as completeFanoutReceipt above (a manually-
+  // created vendor invoice is equally sidecar-only, never in the raw bundle).
+  function completeFanoutInvoice(op, cb) {
+    var E = (typeof global.ERPEngine !== 'undefined') ? global.ERPEngine : null;
+    if (!E || typeof E.completeInvoice !== 'function' || typeof withBundle !== 'function' || typeof withSidecar !== 'function' || op.id == null) {
+      console.log('§INVOICE-COMPLETE fan-out gated: ' + (E ? 'bundle/sidecar/id absent' : 'ERPEngine not mounted') + ' → status-only group (honest)');
+      cb(null); return;
+    }
+    withBundle(function (db) {
+      var baseHdr = _rawRows(db, 'SELECT * FROM c_invoice');
+      var baseLines = _rawRows(db, 'SELECT * FROM c_invoiceline');
+      withSidecar(function (sdb) {
+        var fanout = null;
+        try {
+          var hdrRows = baseHdr, lineRows = baseLines;
+          if (sdb) {
+            try { var f1 = CORE.listTip(sdb, 'c_invoice', 'c_invoice_id', baseHdr, null); hdrRows = (f1 && f1.rows) || baseHdr; } catch (e1) {}
+            try { var f2 = CORE.listTip(sdb, 'c_invoiceline', 'c_invoiceline_id', baseLines, null); lineRows = (f2 && f2.rows) || baseLines; } catch (e2) {}
+          }
+          var invoice = hdrRows.filter(function (r) { return String(r.c_invoice_id) === String(op.id); })[0];
+          if (!invoice) { console.log('§INVOICE-COMPLETE fan-out gated: invoice ' + op.id + ' not found (bundle+sidecar) → status-only'); cb(null); return; }
+          var lines = lineRows.filter(function (r) { return String(r.c_invoice_id) === String(op.id); });
+          var ops = E.completeInvoice(invoice, lines, null).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
+          console.log('§INVOICE-FANOUT invoice=' + op.id + ' issotrx=' + invoice.issotrx + ' lines=' + lines.length + ' matchInvOps=' + ops.length);
+          fanout = ops.length ? { ops: ops, glGate: 'none' } : null;
+        } catch (er) { console.log('§INVOICE-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
+        cb(fanout);
+      });
+    });
+  }
+
   // _serializeCommit — run a signed commit EXCLUSIVELY. commitGroup is async (it awaits crypto.subtle.digest to
   // seal the hash chain), so two commits launched on the same sidecar db interleave at the await points and TEAR
   // the chain — the grid gear-batch fans N completes synchronously, the exact trigger (a later row's write was
@@ -1733,40 +1342,46 @@
     var K = kernel();
     withSidecar(function (db) {
       if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD process key=' + op.key + ' kernel/sql.js/commitGroup absent → DRY fallback'); dryProcess(op); return; }
+      // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F3/F4 — Witness: W-COMMIT-LOCK (see commitCrud /
+      // _withFreshSide's own header for the full rationale — same cross-tab mutex, same DocAction path).
+      _withFreshSide(K, function (freshDb, done) {
       // T4 (GAP 4): a DocAction (Complete/Close/Void) is an ownerGated mutation of an owned document —
       // gate owner+CAS BEFORE the seal; a non-owner / stale-CAS process is REJECTED (toast, no dot, no
       // fan-out), never silently sealed. Non-gated doctypes pass through unchanged.
-      _gateForOwnedWrite(op.ownerGated ? op : { ownerGated: false }, db, function (gate) {
-        if (!gate.ok) { _gateReject(op, gate); return; }
+      _gateForOwnedWrite(op.ownerGated ? op : { ownerGated: false }, freshDb, function (gate) {
+        if (!gate.ok) { _gateReject(op, gate); done(); return; }
       completeFanout(op, function (fanout) {
-      _serializeCommit(function () {                            // EXCLUSIVE: no interleaved async seal (batch-safe)
+      _serializeCommit(function () {                            // EXCLUSIVE: no interleaved async seal (batch-safe, same-tab)
         var groupOps = CORE.buildDocActionGroup(op, fanout);   // PURE assembly: engine consequences + SET_STATUS last
-        return Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
+        return Promise.resolve(K.commitGroup(freshDb, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); dryProcess(op); return; }
-          return Promise.resolve(K.verifyChain(db)).then(function (v) {
-            _sidePersist();
-            var lastId = res.ids[res.ids.length - 1];
-            var row = db.exec('SELECT op_uuid FROM kernel_ops WHERE id=' + lastId);
-            var uuid = (row.length && row[0].values.length) ? row[0].values[0][0] : null;
-            // T1 Part B: stamp the group onto the op BEFORE docDot — recordDocMoment stores the op
-            // verbatim (v.docOp), so the ONE history dot carries the whole consequence group.
-            op.gid = res.gid; op.groupN = res.ids.length;
-            if (fanout && fanout.ops) {
-              var nShip = 0, nInv = 0;
-              fanout.ops.forEach(function (o) { if (o.op_type === 'CREATE_DOCUMENT') { if (o.table === 'M_InOut') nShip++; else if (o.table === 'C_Invoice') nInv++; } });
-              console.log('§SO-COMPLETE order=' + op.id + ' ship=' + nShip + ' invoice=' + nInv + ' gl=gated sealed=Y gid=' + res.gid);
-            }
-            console.log('§CRUD process committed key=' + op.key + ' viaGroup=Y gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' op_uuid=' + (uuid || 'null') + ' to=' + op.to + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
-            setDocStatus(op.key, op.to, op.outcome, op.unmet);
-            docDot(CORE.docLabel(op, fname(op.key)), op);
-            toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress)' : ' (Completed)') + ' — signed' + (v && v.ok ? '' : ' (verify FAIL!)'));
-            // S1/J5 — announce the committed DOCUMENT action so a host (iDempiere chrome) re-reads the now-signed
-            // DocStatus through its readTip overlay: the persisted CO shows + survives reload (op-log is the truth).
-            try { global.dispatchEvent(new CustomEvent('overlay:committed',
-              { detail: { table: op.table, op_type: 'DOC_ACTION', id: op.id == null ? null : op.id, to: op.to, action: op.action } })); } catch (ev) {}
+          // T7 fix 2 (W-T7-INC): hot-path verify is tip-cached incremental (first call of a session is full).
+          return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(freshDb)).then(function (v) {
+            return _sidePersist(K, freshDb, res.ids).then(function () {
+              var lastId = res.ids[res.ids.length - 1];
+              var row = freshDb.exec('SELECT op_uuid FROM kernel_ops WHERE id=' + lastId);
+              var uuid = (row.length && row[0].values.length) ? row[0].values[0][0] : null;
+              // T1 Part B: stamp the group onto the op BEFORE docDot — recordDocMoment stores the op
+              // verbatim (v.docOp), so the ONE history dot carries the whole consequence group.
+              op.gid = res.gid; op.groupN = res.ids.length;
+              if (fanout && fanout.ops) {
+                var nShip = 0, nInv = 0;
+                fanout.ops.forEach(function (o) { if (o.op_type === 'CREATE_DOCUMENT') { if (o.table === 'M_InOut') nShip++; else if (o.table === 'C_Invoice') nInv++; } });
+                console.log('§SO-COMPLETE order=' + op.id + ' ship=' + nShip + ' invoice=' + nInv + ' gl=gated sealed=Y gid=' + res.gid);
+              }
+              console.log('§CRUD process committed key=' + op.key + ' viaGroup=Y gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' op_uuid=' + (uuid || 'null') + ' to=' + op.to + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              setDocStatus(op.key, op.to, op.outcome, op.unmet);
+              docDot(CORE.docLabel(op, fname(op.key)), op);
+              toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress)' : ' (Completed)') + ' — signed' + (v && v.ok ? '' : ' (verify FAIL!)'));
+              // S1/J5 — announce the committed DOCUMENT action so a host (iDempiere chrome) re-reads the now-signed
+              // DocStatus through its readTip overlay: the persisted CO shows + survives reload (op-log is the truth).
+              try { global.dispatchEvent(new CustomEvent('overlay:committed',
+                { detail: { table: op.table, op_type: 'DOC_ACTION', id: op.id == null ? null : op.id, to: op.to, action: op.action } })); } catch (ev) {}
+            });
           });
         }).catch(function (er) { console.warn('§CRUD process commitGroup/verify error', er && er.message); dryProcess(op); });
-      }).catch(function (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); });
+      }).catch(function (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); }).then(function () { done(); }, function () { done(); });
+      });
       });
       });
     });
@@ -1789,7 +1404,12 @@
     withSidecar(function (db) {
       if (db && K && typeof K.undoOp === 'function') {
         var g = CORE.foldBackGroup(db, K);
-        _sidePersist();
+        // F1 note: undo mutates existing row(s) (`undone` flag), it does not insert new ones — so the
+        // append here re-appends a FRESH snapshot of each touched row id; replay's INSERT-OR-REPLACE
+        // (kernel_ops.js replayRowsInto) makes the LATEST snapshot per id win on next hydration. This
+        // path is outside F3's cross-tab lock scope (undo/redo isn't part of this CORE fix's commit
+        // path) — same-tab correctness only, a known, named gap for a later session, not half-built.
+        _sidePersist(K, db, g.undone.map(function (u) { return u.id; }));
         if (g.gid && g.undone.length > 1)
           console.log('§FOLD-BACK key=' + key + ' group=' + g.gid + ' reversed=' + g.labels.join(',') + ' ops=' + g.undone.length + ' status=' + (toStatus || '?') + '→' + fromStatus);
         else
@@ -1807,7 +1427,7 @@
     withSidecar(function (db) {
       if (db && K && typeof K.redoOp === 'function') {
         var g = CORE.foldForwardGroup(db, K);
-        _sidePersist();
+        _sidePersist(K, db, g.redone.map(function (u) { return u.id; }));   // see foldBackDocOp note above
         if (g.gid && g.redone.length > 1)
           console.log('§FOLD-FORWARD key=' + key + ' group=' + g.gid + ' reapplied=' + g.labels.join(',') + ' ops=' + g.redone.length + ' status=→' + toStatus);
         else
@@ -1831,240 +1451,6 @@
     toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — dry-run (kernel absent)');
   }
 
-  // ── T4 (GAP 4) owner-gate / CAS enforcement on the LIVE write — Witness: W-CRUD-GATE ─────────────
-  // sessionActor — the current writer's identity (a recorded INPUT, §0.21). The page may set it
-  // (window.APP.actor / window.__actor); absent → null, and the gate falls back to allow-self (the
-  // single-session demo: you own what you created). NEVER invented — only read.
-  function sessionActor() {
-    try { if (global.APP && global.APP.actor != null) return global.APP.actor; } catch (e) {}
-    try { if (global.__actor != null) return global.__actor; } catch (e2) {}
-    try { if (typeof globalThis !== 'undefined' && globalThis.APP && globalThis.APP.actor != null) return globalThis.APP.actor; } catch (e3) {}
-    try { if (typeof globalThis !== 'undefined' && globalThis.__actor != null) return globalThis.__actor; } catch (e4) {}
-    return null;
-  }
-  // Task 0 companions — read the logged-in tenant and org from window.APP (set by applySession in idempiere.html).
-  function sessionClientId() { try { if (global.APP && global.APP.clientId != null) return global.APP.clientId; } catch (e) {} try { if (typeof globalThis !== 'undefined' && globalThis.APP && globalThis.APP.clientId != null) return globalThis.APP.clientId; } catch (e2) {} return null; }
-  function sessionOrgId()    { try { if (global.APP && global.APP.orgId    != null) return global.APP.orgId;    } catch (e) {} try { if (typeof globalThis !== 'undefined' && globalThis.APP && globalThis.APP.orgId    != null) return globalThis.APP.orgId;    } catch (e2) {} return 0; }
-
-  // ── Task 2 — changeLog: op-log CRUD trail for one record, AD-config-filtered (iDempiere AD_ChangeLog parity)
-  // Returns [{opId,ts,actor,column,old,new}] for logged columns only; null if table not in IsChangeLog=Y.
-  // NON-INVENT: the IsAllowLogging/IsChangeLog filter is READ from the main db (global.__idmpDb); we follow AD.
-  function changeLog(sideDb, table, recordId) {
-    var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
-    if (!mdb || !sideDb) return null;
-    try {
-      var tbl = String(table || '');
-      // IsChangeLog check
-      var tc = mdb.exec("SELECT IsChangeLog FROM AD_Table WHERE UPPER(TableName)=UPPER(?) LIMIT 1", [tbl]);
-      if (!tc.length || !tc[0].values.length || String(tc[0].values[0][0]).toUpperCase() !== 'Y') return null;
-      // loggable columns (IsAllowLogging=Y) for this table
-      var lc = mdb.exec("SELECT c.ColumnName FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE UPPER(t.TableName)=UPPER(?) AND c.IsAllowLogging='Y'", [tbl]);
-      var loggable = {};
-      if (lc.length && lc[0].values.length) lc[0].values.forEach(function (v) { loggable[String(v[0]).toLowerCase()] = 1; });
-      // walk op-log
-      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0 ORDER BY id ASC");
-      if (!r.length) return [];
-      var want = tbl.toLowerCase(), rid = recordId != null ? String(recordId) : null, entries = [];
-      r[0].values.forEach(function (row) {
-        var opId = row[0], opType = row[1], ts = row[3], p;
-        try { p = JSON.parse(row[2]); } catch (e) { return; }
-        if (!p || String(p.table || '').toLowerCase() !== want) return;
-        if (opType === 'CRUD_CREATE') {
-          if (rid !== null && String(-opId) !== rid) return;
-          var f = p.fields || {};
-          Object.keys(f).forEach(function (col) {
-            if (!loggable[col.toLowerCase()]) return;
-            entries.push({ opId: opId, ts: ts, actor: p.stdDefaults && p.stdDefaults.actor, column: col, old: null, 'new': f[col] });
-          });
-        } else if (opType === 'CRUD_UPDATE') {
-          if (rid !== null && String(p.id) !== rid) return;
-          var ch = p.changes || {};
-          Object.keys(ch).forEach(function (col) {
-            if (!loggable[col.toLowerCase()]) return;
-            var pair = ch[col]; entries.push({ opId: opId, ts: ts, actor: p.actor, column: col, old: pair && pair.old, 'new': pair && pair['new'] });
-          });
-        }
-      });
-      console.log('§CHANGELOG table=' + tbl + ' rec=' + rid + ' entries=' + entries.length + ' filtered(IsAllowLogging)=Y');
-      return entries;
-    } catch (e) { return null; }
-  }
-
-  // ── Item 3a (FRONTEND_LANE_MASTER §OUTSTANDING) — recordInfo: record-level last-touch (the iDempiere "(i)"
-  // popup), reconstructed from the immutable op-log. UNLIKE changeLog this is ALWAYS-ON (no AD IsChangeLog gate)
-  // and UNLIKE fieldLineage it is record-grain: {created:{actor,ts,opId}, updated:{actor,ts,opId}, count}. The
-  // log already carries actor+ts+sig per op, so Created/CreatedBy/Updated/UpdatedBy (materialized into the tip
-  // via listTip) are READ here straight from the source rather than re-derived — they MATCH by construction.
-  // NON-INVENT: every value is a real op row; ts from the op-log (no Date.now). Read-only. Witness: W-RECINFO.
-  function recordInfo(sideDb, table, recordId, branch) {
-    if (!sideDb || !table) return null;
-    try {
-      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
-      if (!r.length) return null;
-      var want = String(table).toLowerCase(), rid = recordId != null ? String(recordId) : null;
-      var created = null, updated = null, count = 0;
-      r[0].values.forEach(function (row) {
-        var opId = row[0], opType = row[1], ts = row[3], p;
-        try { p = JSON.parse(row[2]); } catch (e) { return; }
-        if (!p || String(p.table || '').toLowerCase() !== want) return;
-        if (opType === 'CRUD_CREATE') {
-          if (rid !== null) {
-            var f = p.fields || {}, pkCol = _ciKey(f, want + '_id');
-            if (!(String(-opId) === rid || (pkCol != null && String(f[pkCol]) === rid))) return;
-          }
-          var cActor = (p.stdDefaults && p.stdDefaults.actor) || null;
-          created = { actor: cActor, ts: ts, opId: opId };
-          updated = updated || { actor: cActor, ts: ts, opId: opId };
-          count++;
-        } else if (opType === 'CRUD_UPDATE') {
-          if (rid !== null && String(p.id) !== rid) return;
-          updated = { actor: p.actor || null, ts: ts, opId: opId };   // last writer wins (ASC order → final = latest)
-          count++;
-        }
-      });
-      if (!count) return null;
-      console.log('§RECINFO table=' + want + ' rec=' + rid + ' createdBy=' + (created && created.actor) + ' updatedBy=' + (updated && updated.actor) + ' ops=' + count + ' (always-on, from op-log)');
-      return { created: created, updated: updated, count: count };
-    } catch (e) { return null; }
-  }
-
-  // ── Item 3b (FRONTEND_LANE_MASTER §OUTSTANDING) — fieldLineage: the FULL value history of ONE column,
-  // reconstructed as a filtered fold of the op-log. Witness: W-FIELD-LINEAGE. This is the always-on,
-  // zero-setup replacement for iDempiere's AD_ChangeLog: NOT gated by IsAllowLogging/IsChangeLog (the log IS
-  // the history, so every field is traceable for free). Returns newest-first [{opId,ts,actor,value,prev,action}]
-  // for (table, recordId, column) — value = the value SET by that op; prev = the value before it. action ∈
-  // {'CREATE','UPDATE'}. NON-INVENT: every entry is a real op row; column match is case-insensitive (AD cols
-  // vary in case across CREATE.fields vs UPDATE.changes). Read-only; callers cap to last N for hot fields.
-  // BLUE FUTURE: `branch` (optional) — official lineage by default; the blue VIEW shows blue edits too.
-  function fieldLineage(sideDb, table, recordId, column, branch) {
-    if (!sideDb || !table || !column) return [];
-    try {
-      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
-      if (!r.length) return [];
-      var want = String(table).toLowerCase(), rid = recordId != null ? String(recordId) : null;
-      var wantCol = String(column).toLowerCase(), out = [];
-      r[0].values.forEach(function (row) {
-        var opId = row[0], opType = row[1], ts = row[3], p;
-        try { p = JSON.parse(row[2]); } catch (e) { return; }
-        if (!p || String(p.table || '').toLowerCase() !== want) return;
-        if (opType === 'CRUD_CREATE') {
-          var f = p.fields || {};
-          if (rid !== null) {
-            // a created row is keyed by EITHER its real embedded pk (<table>_id in fields) OR, for an
-            // overlay row with no real pk yet, the synthetic -opId. Match on either so CREATE joins its UPDATEs.
-            var pkCol = _ciKey(f, want + '_id');
-            var pkMatch = String(-opId) === rid || (pkCol != null && String(f[pkCol]) === rid);
-            if (!pkMatch) return;
-          }
-          var ck = _ciKey(f, wantCol); if (ck == null) return;
-          out.push({ opId: opId, ts: ts, actor: (p.stdDefaults && p.stdDefaults.actor) || null,
-                     value: f[ck], prev: null, action: 'CREATE' });
-        } else if (opType === 'CRUD_UPDATE') {
-          if (rid !== null && String(p.id) !== rid) return;
-          var ch = p.changes || {};
-          var uk = _ciKey(ch, wantCol); if (uk == null) return;
-          var pair = ch[uk];
-          out.push({ opId: opId, ts: ts, actor: p.actor || null,
-                     value: pair && pair['new'], prev: pair && pair.old, action: 'UPDATE' });
-        }
-      });
-      out.reverse();   // newest-first for the hover blurb
-      console.log('§FIELD-LINEAGE table=' + want + ' rec=' + rid + ' col=' + wantCol + ' entries=' + out.length + ' (always-on, no AD_ChangeLog)');
-      return out;
-    } catch (e) { return []; }
-  }
-  // ── Item 1 (FRONTEND_LANE_MASTER §OUTSTANDING) — PRIVATE DRAFT RESTORE-POINT. The engine half of the
-  // "no official dot while typing" model. An unsaved edit is PRIVATE + local: it MUST NOT be committed to the
-  // op-log (other docs read the committed tip via readTip/tipValues — never a half-typed buffer), so leaving
-  // the form NEVER seals an official dot. Instead the typed values are refreshed into a per-(table,id) buffer
-  // (in storage: localStorage in-browser, a Map-mock headless) carrying a dirty-pip. On RETURN the default is
-  // the saved official tip; the buffer is an OPT-IN restore only. A validated Save folds draft→official dot and
-  // clears the buffer; discard drops it. Two distinct marks: official committed dots vs the private "you-were-
-  // here, unsaved" pip — never merged. Storage is injected so the whole contract is witnessable headless.
-  // Witness: W-DRAFT-RESTORE.
-  // NB: a hoisted function (not a `var`) so the prefix survives the headless early-return at the CORE export —
-  // a `var DRAFT_PREFIX = …` would assign AFTER that return and read back `undefined` in node.
-  function _draftPrefix() { return 'erpdraft:'; }
-  function _draftKey(table, id) { return _draftPrefix() + String(table || '').toLowerCase() + ':' + (id == null ? 'new' : id); }
-
-  // draftChangedCols — the unsaved-edit delta: typed cols whose value differs from the baseline (the official
-  // tip for an edit, the create-defaults for a new row). String-compared (the form yields strings), case-
-  // insensitive on the col name. PURE; the basis of both "is it dirty" and the pip's changed-col list.
-  function draftChangedCols(vals, baseline) {
-    var b = baseline || {}, out = [];
-    Object.keys(vals || {}).forEach(function (c) {
-      var nv = vals[c] == null ? '' : String(vals[c]);
-      var bk = _ciKey(b, c.toLowerCase());
-      var ov = bk == null ? '' : (b[bk] == null ? '' : String(b[bk]));
-      if (nv !== ov) out.push(c);
-    });
-    return out;
-  }
-  function draftDirty(vals, baseline) { return draftChangedCols(vals, baseline).length > 0; }
-
-  // draftPut — refresh the private buffer for (table,id) IFF the form is dirty; if it is CLEAN, clear any stale
-  // buffer (leaving a clean form must not strand an old pip). Stores the typed vals + the tipSnapshot the draft
-  // was edited over (→ drift detection) + ts/actor. Returns the stored record, or null when nothing was buffered.
-  // NON-INVENT: writes ONLY to the injected storage — never to the op-log (no official dot). ts is caller-supplied
-  // (no Date.now in the op path).
-  function draftPut(storage, table, id, vals, opts) {
-    if (!storage) return null;
-    opts = opts || {};
-    var cols = draftChangedCols(vals, opts.baseline);
-    var key = _draftKey(table, id);
-    if (!cols.length) { try { storage.removeItem(key); } catch (e) {} return null; }
-    var rec = { table: String(table || '').toLowerCase(), id: id == null ? null : id, vals: vals, cols: cols,
-                tipSnapshot: opts.tipSnapshot || opts.baseline || null, ts: opts.ts || 0, actor: opts.actor || null };
-    try { storage.setItem(key, JSON.stringify(rec)); } catch (e) { return null; }
-    console.log('§DRAFT-PUT key=' + key + ' cols=' + cols.join(',') + ' (private buffer, NO official dot)');
-    return rec;
-  }
-  function draftGet(storage, table, id) {
-    if (!storage) return null;
-    try { var s = storage.getItem(_draftKey(table, id)); return s ? JSON.parse(s) : null; } catch (e) { return null; }
-  }
-  function draftClear(storage, table, id) {
-    if (!storage) return false;
-    var key = _draftKey(table, id);
-    try { storage.removeItem(key); console.log('§DRAFT-CLEAR key=' + key); return true; } catch (e) { return false; }
-  }
-  // draftList — every buffered draft (for the dirty-pip rail). PURE scan of the storage keys under our prefix.
-  function draftList(storage) {
-    if (!storage) return [];
-    var out = [];
-    try {
-      var n = storage.length || 0;
-      for (var i = 0; i < n; i++) {
-        var k = storage.key(i);
-        if (k && k.indexOf(_draftPrefix()) === 0) {
-          try { var r = JSON.parse(storage.getItem(k)); out.push({ table: r.table, id: r.id, ts: r.ts, cols: r.cols || [] }); } catch (e) {}
-        }
-      }
-    } catch (e) {}
-    return out;
-  }
-  // draftDrift — "record changed underneath": did the official tip move since the draft snapshot was taken?
-  // Compares the stored tipSnapshot against the CURRENT tip on the cols the draft touched. Returns
-  // {drifted, cols} so the restore UI can WARN (the item-1 DECISION OWED) instead of silently clobbering.
-  function draftDrift(draft, currentTip) {
-    if (!draft || !draft.tipSnapshot || !currentTip) return { drifted: false, cols: [] };
-    var snap = draft.tipSnapshot, cols = [];
-    (draft.cols || []).forEach(function (c) {
-      var sk = _ciKey(snap, c.toLowerCase()), tk = _ciKey(currentTip, c.toLowerCase());
-      var sv = sk == null ? '' : String(snap[sk] == null ? '' : snap[sk]);
-      var tv = tk == null ? '' : String(currentTip[tk] == null ? '' : currentTip[tk]);
-      if (sv !== tv) cols.push(c);
-    });
-    return { drifted: cols.length > 0, cols: cols };
-  }
-
-  // case-insensitive key lookup in an object (CREATE.fields / UPDATE.changes use varied AD column casing).
-  function _ciKey(obj, lowerCol) {
-    if (!obj) return null;
-    var keys = Object.keys(obj);
-    for (var i = 0; i < keys.length; i++) { if (keys[i].toLowerCase() === lowerCol) return keys[i]; }
-    return null;
-  }
 
   // ── Task 4 — allocDocNo: assign DocumentNo from AD_Sequence on CRUD_CREATE for document tables.
   // Approach (a-simplified): number embedded in the op fields (replay-stable); sequence CurrentNext
@@ -2146,9 +1532,13 @@
   // _gateReject — surface a REJECT in the UI: a toast + NO history dot (the write never happened), and the
   // §-log line the witness asserts. Replaces the old silent dry fallback for an ownerGated denial.
   function _gateReject(op, gate) {
-    console.log('§CRUD-GATE key=' + op.key + ' ownerGated=Y verdict=REJECT reason=' + gate.reason);
-    toast((op.verb ? op.verb.toUpperCase() + ' ' : '') + fname(op.key) + ' — REJECTED (' +
-          (gate.reason === 'owner' ? 'not the owner' : 'stale write — record changed') + ')');
+    console.log('§CRUD-GATE key=' + op.key + ' ownerGated=' + (op.ownerGated ? 'Y' : 'N') + ' verdict=REJECT reason=' + gate.reason);
+    var msg = gate.reason === 'owner' ? 'not the owner'
+      : gate.reason === 'wrong-accesslevel' ? "access denied — outside your role's access level"
+      : gate.reason === 'wrong-org' ? "access denied — outside your role's org scope"
+      : gate.reason === 'wrong-client' ? "access denied — outside your role's client scope"
+      : 'stale write — record changed';
+    toast((op.verb ? op.verb.toUpperCase() + ' ' : '') + fname(op.key) + ' — REJECTED (' + msg + ')');
   }
   // _gateForOwnedWrite — run the pre-seal owner/CAS check for an ownerGated mutating op; resolves the ctx
   // from the record (getRecord layers read-the-tip), then cb(gate). Non-gated ops short-circuit to PASS.
@@ -2160,6 +1550,23 @@
       if (gate.ok) console.log('§CRUD-GATE key=' + op.key + ' ownerGated=Y verdict=PASS actor=' + ctx.actor + ' owner=' + ctx.owner + (ctx.casCol ? ' cas=' + ctx.casCol : ''));
       cb(gate);
     });
+  }
+  // _gateRecordAccess — T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md): record-level canView +
+  // org/client scope, via CORE.recordAccessGate (host-injected window.APP.gateRecordFor, absent → PASS).
+  // UPDATE/DELETE only — CREATE has no prior record to check org/client against; the new row is stamped
+  // with the ACTOR's own scope via stdDefaults (buildOp Task 1), inherently self-consistent. CREATE-time
+  // accesslevel gating is a named residual, not this pass.
+  function _gateRecordAccess(op, cb) {
+    if (op.op_type !== 'CRUD_UPDATE' && op.op_type !== 'CRUD_DELETE') { cb({ ok: true }); return; }
+    // explicit op.id (not the no-arg curChain-guessing form _gateForOwnedWrite uses) — a write triggered
+    // by a host call (hostUpdate/hostDelete) rather than a UI click never updates curChain, so the no-arg
+    // form would gate whatever record curChain last pointed at, not the one actually being written
+    // (found live while building this witness — poc_record_gate_live.js).
+    getRecord(op.key, function (rec) {
+      var g = CORE.recordAccessGate(op.table, rec || {});
+      if (g.allowed) { cb({ ok: true }); return; }
+      cb({ ok: false, reason: g.reason });
+    }, op.id != null ? op.id : undefined);
   }
 
   // commitCrud — the REAL signed write for a CRUD field verb (CREATE/UPDATE/DELETE), the field-value peer
@@ -2178,17 +1585,29 @@
         var dn = _allocDocNo(op.table, op.fields);
         if (dn != null) { op.fields = op.fields || {}; op.fields.DocumentNo = dn; }
       }
-      // T4 (GAP 4): an ownerGated mutation of an EXISTING owned row (UPDATE/DELETE) is gated owner+CAS
-      // BEFORE the seal — a non-owner / stale-CAS write is REJECTED (toast, NO dot), never silently sealed.
-      // CREATE has no prior owner to gate (the creator becomes the owner) → passes through.
-      var gatedVerb = op.ownerGated && (op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE');
-      _gateForOwnedWrite(gatedVerb ? op : { ownerGated: false }, db, function (gate) {
-        if (!gate.ok) { _gateReject(op, gate); return; }   // REJECT — no dry fallback, no dot
-        _commitCrudSealed(op, K, db);
+      // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F3/F4 — Witness: W-COMMIT-LOCK. The whole
+      // refresh-tip→gate→seal→append critical section now runs under the cross-tab commit lock, against
+      // a FRESHLY re-hydrated SIDE (never the possibly-stale in-memory carryover) — this is what makes
+      // the owner/CAS gate compare against the truly-current tip and stops two tabs sealing onto the
+      // same stale prev_hash (the S3/S4 fork/loss shape _withFreshSide's header explains in full).
+      _withFreshSide(K, function (freshDb, done) {
+        // T4 (GAP 4): an ownerGated mutation of an EXISTING owned row (UPDATE/DELETE) is gated owner+CAS
+        // BEFORE the seal — a non-owner / stale-CAS write is REJECTED (toast, NO dot), never silently sealed.
+        // CREATE has no prior owner to gate (the creator becomes the owner) → passes through.
+        var gatedVerb = op.ownerGated && (op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE');
+        // Record-access gate runs FIRST (role's org/client scope for the record at all) — a role outside
+        // scope is rejected before the owner/CAS check even asks whose write it is.
+        _gateRecordAccess(op, function (recGate) {
+          if (!recGate.ok) { _gateReject(op, recGate); done(); return; }
+          _gateForOwnedWrite(gatedVerb ? op : { ownerGated: false }, freshDb, function (gate) {
+            if (!gate.ok) { _gateReject(op, gate); done(); return; }   // REJECT — no dry fallback, no dot
+            _commitCrudSealed(op, K, freshDb, done);
+          });
+        });
       });
     });
   }
-  function _commitCrudSealed(op, K, db) {
+  function _commitCrudSealed(op, K, db, done) {
     {
       try {
         var params = { table: op.table, id: op.id == null ? null : op.id };
@@ -2197,20 +1616,23 @@
         else if (op.op_type === 'CRUD_DELETE') { params.tombstone = true; params.reversible = true; }
         var groupOps = [{ op_type: op.op_type, op_uuid: op.op_uuid || null, params: params }];
         Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
-          if (!res || res.committed !== true) { console.warn('§CRUD ' + op.op_type + ' commitGroup not-committed reason=' + (res && res.reason || '?')); dryCrud(op); return; }
-          return Promise.resolve(K.verifyChain(db)).then(function (v) {
-            _sidePersist();
-            var cols = op.changes ? Object.keys(op.changes).join(',') : (op.fields ? Object.keys(op.fields).join(',') : '-');
-            console.log('§CRUD-PERSIST key=' + op.key + ' id=' + (op.id == null ? 'null' : op.id) + ' op=' + op.op_type + ' cols=' + cols + ' source=sidecar gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
-            docDot(CORE.docLabel(op, fname(op.key)), op);
-            toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — saved (signed)' + (v && v.ok ? '' : ' (verify FAIL!)'));
-            // W-AD-SELFEDIT-LIVE — announce the committed write so a host can refold on a dictionary edit
-            // (AD_Field/AD_Window/AD_Tab → form/menu rebuilds = re-read the dictionary, not recompile).
-            try { global.dispatchEvent(new CustomEvent('overlay:committed',
-              { detail: { table: op.table, op_type: op.op_type, id: op.id == null ? null : op.id } })); } catch (ev) {}
+          if (!res || res.committed !== true) { console.warn('§CRUD ' + op.op_type + ' commitGroup not-committed reason=' + (res && res.reason || '?')); dryCrud(op); done(); return; }
+          // T7 fix 2 (W-T7-INC): hot-path verify is tip-cached incremental (first call of a session is full).
+          return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(db)).then(function (v) {
+            return _sidePersist(K, db, res.ids).then(function () {
+              var cols = op.changes ? Object.keys(op.changes).join(',') : (op.fields ? Object.keys(op.fields).join(',') : '-');
+              console.log('§CRUD-PERSIST key=' + op.key + ' id=' + (op.id == null ? 'null' : op.id) + ' op=' + op.op_type + ' cols=' + cols + ' source=sidecar gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              docDot(CORE.docLabel(op, fname(op.key)), op);
+              toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — saved (signed)' + (v && v.ok ? '' : ' (verify FAIL!)'));
+              // W-AD-SELFEDIT-LIVE — announce the committed write so a host can refold on a dictionary edit
+              // (AD_Field/AD_Window/AD_Tab → form/menu rebuilds = re-read the dictionary, not recompile).
+              try { global.dispatchEvent(new CustomEvent('overlay:committed',
+                { detail: { table: op.table, op_type: op.op_type, id: op.id == null ? null : op.id } })); } catch (ev) {}
+              done();
+            });
           });
-        }).catch(function (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); });
-      } catch (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); }
+        }).catch(function (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); done(); });
+      } catch (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); done(); }
     }
   }
 
@@ -2219,6 +1641,43 @@
     if (op.op_type === 'DOC_ACTION') { commitProcess(op); return; }                                    // GP3: signed status write
     if (op.op_type === 'CRUD_CREATE' || op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE') { commitCrud(op); return; }  // GP3: signed field write
     toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — unknown op');
+  }
+
+  // applyOpGroup — commit a MULTI-op result (e.g. a Generate-Shipments/-Invoices/-Order-from-Project
+  // KIND-2 CREATE_DOCUMENT + N×CREATE_LINE group, erp_engine.js's buildDoc/genShipmentLines/genInvoiceLines)
+  // as ONE atomic signed op-group. Implementing ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22 "missing commit
+  // wiring" — erp_engine.js's own header already documented the intent ("Verbs return ops[]; the kernel
+  // applies + commitOps them") but no caller ever existed for the Generate-process UI path; a working
+  // caller for the SAME shape already exists in pos_lens.js (buildSaleGroup/buildRegisterGroup →
+  // KO.commitGroup(opDb, ops.map(o=>({op_type:o.op_type,params:o})), {})) — this reuses that exact
+  // primitive+shape, wrapped in the SAME cross-tab-safe _withFreshSide hydration commitCrud already uses
+  // (none of these ops are owner-gated — every op is a fresh CREATE, matching commitCrud's own "CREATE has
+  // no prior owner to gate" note). K.commitGroup's own atomicity guarantee means every op in the group
+  // commits together or none do. cb(result) — result = {committed, gid?, ids?, sealed?, verifyOk?, reason?}.
+  function applyOpGroup(ops, cb) {
+    cb = cb || function () {};
+    if (!ops || !ops.length) { cb({ committed: false, reason: 'empty-group' }); return; }
+    var K = kernel();
+    withSidecar(function (db) {
+      if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD-GROUP kernel/sql.js absent — cannot commit'); cb({ committed: false, reason: 'kernel/sql.js absent' }); return; }
+      _withFreshSide(K, function (freshDb, done) {
+        var groupOps = ops.map(function (o) { return { op_type: o.op_type, params: o }; });
+        Promise.resolve(K.commitGroup(freshDb, groupOps, _commitMeta())).then(function (res) {
+          if (!res || res.committed !== true) {
+            console.warn('§CRUD-GROUP commitGroup not-committed reason=' + (res && res.reason || '?'));
+            cb({ committed: false, reason: (res && res.reason) || 'not-committed' }); done(); return;
+          }
+          return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(freshDb)).then(function (v) {
+            return _sidePersist(K, freshDb, res.ids).then(function () {
+              console.log('§CRUD-GROUP-PERSIST ops=' + res.ids.length + ' source=sidecar gid=' + res.gid + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              try { global.dispatchEvent(new CustomEvent('overlay:committed', { detail: { table: null, op_type: 'CREATE_GROUP', id: null, gid: res.gid } })); } catch (ev) {}
+              cb({ committed: true, gid: res.gid, ids: res.ids, sealed: res.sealed, verifyOk: !!(v && v.ok) });
+              done();
+            });
+          });
+        }).catch(function (er) { console.warn('§CRUD-GROUP commit error', er && er.message); cb({ committed: false, reason: 'error: ' + (er && er.message) }); done(); });
+      });
+    });
   }
 
   // ── page-data helpers (truth-bound Edit pre-fill from the real bundle row) ──
@@ -2463,6 +1922,7 @@
 
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
+                    applyOpGroup: applyOpGroup,   // §ORDERLINE-PARENT-FK follow-on (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22): commit a multi-op KIND-2 Generate-process result (CREATE_DOCUMENT + N×CREATE_LINE) as one atomic signed group
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
                     create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
                     update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
@@ -2481,6 +1941,7 @@
                     recordInfo: function (table, id) { return SIDE ? CORE.recordInfo(SIDE, table, id, _readBranch()) : null; },  // Item 3a (W-RECINFO): record-level who/when from the op-log
                     fmtTs: CORE.fmtKernelTs,
                     editModeOn: function () { return on; },
-                    toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); } };
+                    toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); },
+                    syncNow: syncNow };   // §Relay Wiring (W-N-CONVERGE): manual push+pull+rebase against a configured relay
   console.log('§CRUD layer mounted (Edit-mode ready)');
 })(typeof window !== 'undefined' ? window : this);

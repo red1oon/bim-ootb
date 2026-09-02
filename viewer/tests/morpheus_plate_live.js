@@ -9,7 +9,7 @@ const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modu
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.mjs':'text/javascript', '.wasm':'application/wasm',
   '.json':'application/json', '.css':'text/css', '.db':'application/octet-stream', '.jpg':'image/jpeg', '.png':'image/png' };
 const server = http.createServer((q, r) => {
-  let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/index2.html';
+  let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/index.html';
   fs.readFile(path.join(ROOT, p), (e, b) => {
     if (e) { r.writeHead(404); r.end('404 ' + p); return; }
     r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream', 'Access-Control-Allow-Origin':'*' }); r.end(b);
@@ -27,7 +27,7 @@ function ck(name, ok) { console.log((ok ? '  PASS ' : '  FAIL ') + name); ok ? p
   // intercept window.open so a building card click is observable without a popup
   await pg.evaluateOnNewDocument(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return { focus(){} }; }; });
 
-  await pg.goto(`http://localhost:${port}/index2.html`, { waitUntil: 'load', timeout: 60000 });
+  await pg.goto(`http://localhost:${port}/index.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForSelector('#morpheus.active', { timeout: 15000 }).catch(() => {});
   ck('cold boot → Morpheus gate', await pg.$('#morpheus.active') != null);
 
