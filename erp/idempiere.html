@@ -512,6 +512,11 @@
 <!-- PLUGIN_SYSTEM_LANE.md §Phase A/D — the Fold-Engine plugin host (W-PLUGIN) + its pill overlay. ad_callout.js
      gives callout-contributing bundles a live target (it joins ad_modelval/ad_process/post_resolver already loaded). -->
 <script src="ad_callout.js?v=1"></script>
+<!-- ERP_IDEMPIERE_UX_PARITY.md §P3 (W-PARITY-VALRULE) — the AD_Val_Rule interpreter (W-VALRULE, already
+     witnessed headless) reaching the LIVE FK pickers: crud_overlay.populateRefs appends the rule's where-clause
+     to the lookup query, exactly as MLookupFactory:122-125 does. 61 displayed fields on the five document
+     header tabs carry an AD_Val_Rule_ID. -->
+<script src="ad_valrule.js?v=1"></script>
 <script src="plugin_registry.js?v=1"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create

@@ -153,6 +153,12 @@
         break;
       case 'fk':
         if (!isFinite(Number(val))) return 'type:fk';
+        // §P3 (ERP_IDEMPIERE_UX_PARITY.md §P3-SPEC P3.6 — W-PARITY-VALRULE): the save-side half of the
+        // AD_Val_Rule. f.admitted is the id-set the interpreter's own where-clause returned when the picker
+        // was built (crud_overlay.populateRefs), so the OFFERED set and the ACCEPTED set are the same set by
+        // construction and cannot drift apart. Absent map (no rule on this column, or the arm degraded and
+        // said so in the log) → unchanged behaviour, never a blanket reject.
+        if (f.admitted && !Object.prototype.hasOwnProperty.call(f.admitted, String(val))) return 'valrule:not-admitted';
         break;
       case 'string':
         if (V.regex && !new RegExp(V.regex).test(String(val))) return 'regex:' + (V.valRule || V.regex);
@@ -742,6 +748,11 @@
         else if (!/[@()]/.test(ds)) spec.default = d;
       }
       if (type === 'fk') spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
+      // §P3 (ERP_IDEMPIERE_UX_PARITY.md §P3-SPEC P3.3 — Witness: W-PARITY-VALRULE): carry the lookup's
+      // AD_Val_Rule id so the picker can filter to the rows the rule admits (MLookupFactory.java:122-125 —
+      // the rule's Code IS the lookup's ValidationCode). The fold stays PURE: no db, no engine call here;
+      // crud_overlay.populateRefs runs the interpreter (ad_valrule.js) when it has a real db handle.
+      if (f.valRuleId != null && String(f.valRuleId) !== '') spec.valruleid = f.valRuleId;
       // §P2 (W-PARITY-REFLIST): a List column's option set is its AD_Reference_Value_ID's AD_Ref_List rows. The
       // fold stays PURE — the host supplies opts.refList(id) → [{value,name}] (ADParser.resolveReference, active
       // rows, ordered per AD_Reference.IsOrderByValue). optionList keeps that order for rendering; options is the
@@ -787,7 +798,13 @@
       var o = {}; for (k in cf) if (Object.prototype.hasOwnProperty.call(cf, k)) o[k] = cf[k];
       var ad = byCol[String(cf.col).toLowerCase()];
       if (ad) {
-        ['displaylogic', 'readonlylogic', 'mandatorylogic'].forEach(function (lk) {
+        // §P3 (ERP_IDEMPIERE_UX_PARITY.md §P3-SPEC P3.3): `valruleid` joins the three AD logic strings as a
+        // LAYERED key. It is additive — no curated field has ever carried one — and it does not touch the
+        // attributes §IMPL F3 pinned deliberately (type/required/readonly/default/validation/ref). Without
+        // this, a lookup that is BOTH curated and val-ruled kept the unfiltered picker: measured 2026-09-02,
+        // c_order.C_BPartner_ID (curated, rule 230) offered all 113 partners instead of the 42 iDempiere
+        // admits, while the same rule bit correctly on every non-curated column.
+        ['displaylogic', 'readonlylogic', 'mandatorylogic', 'valruleid'].forEach(function (lk) {
           if ((o[lk] == null || String(o[lk]).trim() === '') && ad[lk] != null && String(ad[lk]).trim() !== '') o[lk] = ad[lk];
         });
         if (o.seq == null && ad.seq != null) o.seq = ad.seq;

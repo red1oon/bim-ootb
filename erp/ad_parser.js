@@ -288,7 +288,13 @@
       '       c.DefaultValue as ColDefault ';
     var EXT = ', f.AD_Reference_ID as FieldRef, COALESCE(f.AD_Reference_Value_ID, c.AD_Reference_Value_ID) as RefValue, ' +
       '       COALESCE(NULLIF(f.ReadOnlyLogic, \'\'), c.ReadOnlyLogic) as ROLogic, ' +
-      '       COALESCE(NULLIF(f.MandatoryLogic, \'\'), c.MandatoryLogic) as MLogic ';
+      '       COALESCE(NULLIF(f.MandatoryLogic, \'\'), c.MandatoryLogic) as MLogic, ' +
+      // §P3 (ERP_IDEMPIERE_UX_PARITY.md §P3-EXTRACT E4 — W-PARITY-VALRULE): the lookup's AD_Val_Rule. The
+      // AD_Field_v view is explicit that the FIELD wins over the COLUMN — "COALESCE(f.ad_val_rule_id,
+      // c.ad_val_rule_id) AS AD_Val_Rule_ID", with validationcode joined on that same COALESCE
+      // (migration/iD10/postgresql/202209141520_IDEMPIERE-5396.sql:7,14). Same precedence this function
+      // already applies to DefaultValue / AD_Reference_ID / AD_Reference_Value_ID, not a new convention.
+      '       COALESCE(NULLIF(f.AD_Val_Rule_ID, \'\'), c.AD_Val_Rule_ID) as ValRule ';
     var TAIL = 'FROM AD_Field f ' +
       'JOIN AD_Column c ON f.AD_Column_ID = c.AD_Column_ID ' +
       'WHERE f.AD_Tab_ID = ? AND f.IsActive = \'Y\' ' +
@@ -322,6 +328,7 @@
         readOnlyLogic: o.ROLogic || null,                    // §P2.1 — now reaches foldCrudSpec → effectiveFlags
         mandatoryLogic: o.MLogic || null,
         referenceValueId: (o.RefValue != null && o.RefValue !== '') ? o.RefValue : null,   // §P2.1 — the List/Table reference value (AD_Ref_List key)
+        valRuleId: (o.ValRule != null && o.ValRule !== '') ? o.ValRule : null,             // §P3 — the lookup's AD_Val_Rule (field over column, AD_Field_v)
         isMandatory: (o.IsMandatory || o.ColMandatory) === 'Y',
         isReadOnly: o.IsReadOnly === 'Y',
         defaultValue: o.DefaultValue || o.ColDefault,
