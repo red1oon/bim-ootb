@@ -904,7 +904,12 @@
   //      Here: sparks exist ONLY during playback; stop decays to zero; scrub draws none.
   //      The only state that can persist is zero.
   var _gspTexture = null, _gspPool = [], _gspActive = 0;
-  var _gspRoll = 0;            // re-roll index — advances once per playback tick
+  var _gspRoll = 0;            // re-roll index — advances once per PLAYBACK tick (frozen at 0 in a
+                               // bake: see §VAC / §R14.1 at the §GROUP_SPARK_TICK log below)
+  var _gspTick = 0;            // §VAC — advances on EVERY _gspEmit, playing or not; the log's own
+                               // sample counter, replacing the dead `_gspRoll % 10` throttle
+  var _gspLastVerdict = null;  // §VAC V2 — last §GROUP_SPARK_TICK verdict, for run-length reporting
+  var _gspRepeats = 0;         // §VAC V2 — identical verdicts suppressed since _gspLastVerdict
   var _gspDecay = 1;           // 1 while playing; ramps to 0 on stop
   var _gspDecayTimer = null;
   var _gspCand = [];           // flat [x,y,z,...] collected during the traverse
@@ -1013,11 +1018,40 @@
     _gspActive = 0;
     // Unconditional tick log — MUST fire even on the early-return paths, otherwise a zero-spark
     // result is indistinguishable from "the code never ran" (that ambiguity is exactly what let
-    // #866 ship believing it was verified).
-    if (_gspRoll % 10 === 0) {
-      console.log('§GROUP_SPARK_TICK playing=' + !!isPlaying + ' cand=' + (_gspCand.length / 3) +
-                  ' (frontier=' + _gspFrontierN + ' recent=' + _gspRecentN + ')' +
-                  ' roll=' + _gspRoll + ' decay=' + _gspDecay.toFixed(2));
+    // #866 ship believing it was verified). That requirement is KEPT: the tick is still reported
+    // on every path, it is just no longer reported once per frame with an identical verdict.
+    //
+    // §VAC / §R14.1 — the throttle this line used to carry was DEAD in the bake path.
+    // It read `_gspRoll % 10 === 0`, intending a 1-in-10 sample. `_gspRoll++` happens in exactly
+    // one place — playTick() (search "§GROUP_SPARK: one re-roll per playback tick"), behind
+    // `if (!_playing) return;`. A MaxQ bake never calls playTick(); it drives renderAtTime()
+    // directly. So _gspRoll is frozen at 0, `0 % 10 === 0` is always true, and 1-in-10 silently
+    // became 1-in-1. MEASURED, s5_hospital.log: 2,027 firings over 2,027 frames, every one
+    // carrying `roll=0`. (The same dead expression also gates §PERF_TRAVERSE below — named in
+    // §R14.1, deliberately NOT changed here: that one is a real per-frame measurement other
+    // sections quote.) Fixed with a counter that advances on every emit, playing or not.
+    //
+    // §VAC V1+V2 — and the verdict itself was vacuous: 1,681 of those 2,027 firings read
+    // `playing=false cand=0 (frontier=0 recent=0)`, i.e. nothing to light and no playback to
+    // light it during. A run of identical verdicts is now printed ONCE with its repeat count;
+    // the count is the signal, so nothing is dropped.
+    _gspTick++;
+    var _gspVerdict = (!isPlaying || !_gspCand.length)
+      ? 'VACUOUS (' + (!isPlaying ? 'not playing' : 'cand=0 — no frontier/recent candidates this tick') +
+        ') playing=' + !!isPlaying + ' cand=' + (_gspCand.length / 3) +
+        ' (frontier=' + _gspFrontierN + ' recent=' + _gspRecentN + ')'
+      : 'playing=true cand=' + (_gspCand.length / 3) +
+        ' (frontier=' + _gspFrontierN + ' recent=' + _gspRecentN + ')' +
+        ' roll=' + _gspRoll + ' decay=' + _gspDecay.toFixed(2);
+    if (_gspVerdict !== _gspLastVerdict) {
+      if (_gspRepeats > 0) console.log('§GROUP_SPARK_TICK repeats=' + _gspRepeats + ' (identical verdict, suppressed)');
+      console.log('§GROUP_SPARK_TICK ' + _gspVerdict + ' tick=' + _gspTick);
+      _gspLastVerdict = _gspVerdict; _gspRepeats = 0;
+    } else {
+      _gspRepeats++;
+      // Never let a long identical run go completely silent — a bounded heartbeat proves the code
+      // is still running (the #866 ambiguity above), without one line per frame.
+      if (_gspTick % 500 === 0) console.log('§GROUP_SPARK_TICK still ' + _gspVerdict + ' — repeats=' + _gspRepeats + ' tick=' + _gspTick);
     }
     // Scrub / paused / not playing → NO sparks at all. Scrubbing is a state-diff read; flashing
     // VFX competes with it (user: "the appreciation is in the quick diff in states").
@@ -1659,10 +1693,28 @@
       }
     }
     // §SHADOW_FRONTIER — log every 60 ticks
+    // §VAC V1 / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): this line printed
+    // "casters=0 receivers=0" on all 33 firings of the 2,027-frame Hospital bake, and BOTH of its
+    // counters are structurally unreachable in that run — so the zeros were never a judgement.
+    //   (a) _shadowCasters/_shadowReceivers only increment behind `if (app._shadowOn)` (:1463 and
+    //       the promotion pass directly above); that run logged §TM_SHADOW_INHERIT shadowOn=false.
+    //   (b) both counters live in the SINGLE-MESH branch (see the §PERF_INCR Phase 2 comment near
+    //       :1342). On a device that took the fast batched path there are no individually-meshed
+    //       elements at all — §SHADOW_FRONTIER_IDX measured meshGuids=0 groupGuids=63182 on the
+    //       same building, and §BATCHED_FAIL never fired.
+    // The log line sits OUTSIDE the `if (app._shadowOn …)` block on purpose (a zero must still be
+    // reportable), so it has to name WHICH predicate is empty rather than print a bare 0.
     _shadowLogTick++;
     if (_shadowLogTick >= 60) {
       _shadowLogTick = 0;
-      console.log('§SHADOW_FRONTIER casters=' + _shadowCasters + ' receivers=' + _shadowReceivers);
+      if (!app._shadowOn) {
+        console.log('§SHADOW_FRONTIER VACUOUS — shadowOn=false, the casters/receivers counters are gated off; 0 means "not asked", not "none found"');
+      } else if (!_placedMeshes.length && !_frontierCentroids.length) {
+        console.log('§SHADOW_FRONTIER VACUOUS — shadowOn=true but the single-mesh branch placed 0 meshes and 0 frontier centroids (batched/instanced scene); these counters cannot see batched geometry');
+      } else {
+        console.log('§SHADOW_FRONTIER casters=' + _shadowCasters + ' receivers=' + _shadowReceivers +
+          ' (single-mesh branch only; placedMeshes=' + _placedMeshes.length + ' frontierCentroids=' + _frontierCentroids.length + ')');
+      }
     }
 
     // §S260c: Cinematic Director — storyboard-driven camera (Film Studio mode)
