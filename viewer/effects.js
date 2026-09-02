@@ -3178,12 +3178,28 @@ async function setupEffects(A, renderer, scene, camera) {
   var GROUND_WETNESS_STAGE_DEFAULT = 0.5;
   var _groundWetnessUserSet = false;
   A._groundWetnessOverride = 0;
+  // §VAC V2 / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): this setter logged
+  // unconditionally, including when it re-set the value it already held. Alt+S staging is torn
+  // down and rebuilt on EVERY bake frame, so MEASURED on s5_hospital.log it emitted 2,028
+  // firings of ONE distinct line — `value=0.5 userSet=false` — a state-change log reporting no
+  // state change. Routed through the shared _vacLog below so it gets the SAME run-length reporting
+  // (and the same bounded heartbeat) as the other repeated per-frame tags: a run of 2,028 identical
+  // NO-OP re-sets that never ends must still say how long it is, or the compression has dropped
+  // the signal instead of compressing it.
+  // Declared here, next to its only user, rather than beside the other §VAC state further down:
+  // `var` hoists but its ASSIGNMENT does not, so keeping it above the setter removes any
+  // ordering hazard if this setter is ever called earlier than it is today (it runs from
+  // _applyPhotoStaging, i.e. at Alt+S, long after setupEffects returns). `_vacLog` itself is a
+  // hoisted function declaration in this same scope, so it is callable from here regardless.
+  var _vacGroundWetness = { last: null, n: 0 };
   A._setGroundWetness = function(v, _isUserAction) {
     _wireGroundPuddleShader();  // safe no-op if already wired (Alt+S may have wired it first)
     A._groundWetnessOverride = Math.max(0, Math.min(1, v));
     if (_isUserAction !== false) _groundWetnessUserSet = true;  // default true — only the internal
     // staging auto-default call below passes false, so it never overrides a user's own choice
-    console.log('§GROUND_WETNESS_OVERRIDE value=' + A._groundWetnessOverride + ' userSet=' + _groundWetnessUserSet);
+    _vacLog(_vacGroundWetness,
+      '§GROUND_WETNESS_OVERRIDE value=' + A._groundWetnessOverride + ' userSet=' + _groundWetnessUserSet,
+      'NO-OP re-sets of the value already held — Alt+S staging rebuilds every frame');
     if (A.markDirty) A.markDirty();
   };
   function _wireGroundPuddleShader() {
@@ -4153,9 +4169,41 @@ async function setupEffects(A, renderer, scene, camera) {
       })();
     });
   }
+  // §VAC V2 / §R14.1 — run-length state for the per-frame still-fold tags. A MaxQ bake tears the
+  // staging down and rebuilds it on every frame, so each of these lines fired 1,700-2,000 times
+  // per bake with an identical verdict. The verdicts are all still emitted; a run is emitted once
+  // with its repeat count, which is the same information in ~three orders of magnitude less log.
+  var _vacGlowLens = { last: null, n: 0 };
+  var _vacNightLights = { last: null, n: 0 };
+  var _vacGlowSpriteStage = { last: null, n: 0 };
+  var _vacGlowSpriteOff = { last: null, n: 0 };
+  function _vacLog(st, line, note) {
+    if (line !== st.last) {
+      if (st.n > 0) console.log(st.last.split(' ')[0] + ' repeats=' + st.n + ' (identical, suppressed' + (st.note ? ' — ' + st.note : '') + ')');
+      console.log(line);
+      st.last = line; st.n = 0; st.note = note;
+    } else {
+      st.n++;
+      // Bounded heartbeat — a run that never ends (the bake exits mid-run) must still prove the
+      // code is running and say how long the run is. §VAC V2: compress, never drop.
+      if (st.n % 250 === 0) console.log(line.split(' ')[0] + ' still identical — repeats=' + st.n + (note ? ' (' + note + ')' : ''));
+    }
+  }
+  // §VAC V2 — flush any open run at a REAL still exit, so the last run is never lost to the end of
+  // the log. Called from _teardownStillRefine's !keepStaging branch (a bake-frame cancel passes
+  // keepStaging=true and must NOT flush — that is the middle of a run, not the end of one).
+  function _vacFlushStillTags() {
+    var _all = [_vacGlowLens, _vacNightLights, _vacGlowSpriteStage, _vacGlowSpriteOff, _vacGroundWetness];
+    for (var _vi = 0; _vi < _all.length; _vi++) {
+      var st = _all[_vi];
+      if (st.n > 0 && st.last) console.log(st.last.split(' ')[0] + ' repeats=' + st.n + ' (identical, suppressed — flushed at still exit)');
+      st.last = null; st.n = 0;
+    }
+  }
   function _teardownStillRefine(reason, keepStaging) {
     A._stillRefineActive = false;
     A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY safety net — any exit path clears "processing"
+    if (!keepStaging) _vacFlushStillTags();   // §VAC V2 — end of a real still, close any open run
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
     _stopStillAOPhase(reason);  // §PHOTO_AO: disable the still-only AO pass on ANY exit path
@@ -4172,9 +4220,13 @@ async function setupEffects(A, renderer, scene, camera) {
     // quad's geometry (position/size/yaw) is built ONLY from fixture world data + the TM-visibility
     // gate, never from A.camera — an unchanged visible set means an unchanged quad, byte-identical
     // to what is already staged. §R10, CPE_4D_PERF_MEM_FINDINGS.md §7.
+    // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 1,740 of this tag's 1,770 firings were the
+    // identical `skip (count unchanged 1273)`. The guard is CORRECT and is not being changed; it
+    // just said so 1,740 times. Run-length reported now.
     if (keepStaging && (_glowLensMeshRect || _glowLensMeshRound) &&
         _glowVisibleFixtureCount(A._tmIsVisible) === _glowLensStagedCount) {
-      console.log('§GLOW_LENS_QUAD skip (count unchanged ' + _glowLensStagedCount + ')');
+      _vacLog(_vacGlowLens, '§GLOW_LENS_QUAD skip (count unchanged ' + _glowLensStagedCount + ')',
+        'the stage-keep guard held; no dispose+rebuild');
     } else {
       _glowLensOff();
     }
@@ -4535,7 +4587,13 @@ async function setupEffects(A, renderer, scene, camera) {
     _glowPoints.renderOrder = 999;       // after opaque geometry, so additive lands on a finished frame
     _glowPoints.name = '__glowSprites';
     A.scene.add(_glowPoints);
-    console.log('§PHOTO_GLOW_SPRITE staged ' + pos.length + '/' + allPos.length + ' sprites (' + (pos.length - exits) +
+    // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 1,730 `staged` lines paired with 1,730
+    // `removed`, but only ELEVEN distinct count-runs across the whole film
+    // (57→9→19→21→24→26→35→36→46→55→57). ⚠ The WORK is not redundant and is NOT being changed:
+    // sprite positions carry a camera-dependent GLOW_EYE_OFFSET nudge (see the k = GLOW_EYE_OFFSET
+    // / d line above), which is exactly why §GLOW_LENS_QUAD earned a stage-keep guard and this did
+    // not. The defect is the log, not the rebuild — so the line is run-length reported, not gated.
+    _vacLog(_vacGlowSpriteStage, '§PHOTO_GLOW_SPRITE staged ' + pos.length + '/' + allPos.length + ' sprites (' + (pos.length - exits) +
       ' luminaires gain ' + GLOW_GAIN + ', ' + exits + ' exit signs gain ' + GLOW_EXIT_GAIN +
       ' x' + GLOW_EXIT_SIZE + ' size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose)' +
       ', 1 draw call, 0 scene materials touched' +
@@ -4550,7 +4608,8 @@ async function setupEffects(A, renderer, scene, camera) {
     A.scene.remove(_glowPoints);
     _glowPoints.geometry.dispose();
     _glowPoints.material.dispose();
-    console.log('§PHOTO_GLOW_SPRITE removed ' + n + ' sprites');
+    _vacLog(_vacGlowSpriteOff, '§PHOTO_GLOW_SPRITE removed ' + n + ' sprites',
+      'the per-frame teardown half of the staged/removed pair — see §VAC V2 at the staged line');
     _glowPoints = null;
   }
   A._glowSpriteCount = function() {
@@ -4811,9 +4870,14 @@ async function setupEffects(A, renderer, scene, camera) {
       A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
       A._nightPLScale = A._nightPLScaleStill || 1;          // §STAGED_PL_CUT — staging-only intensity cut
       A._nightUpdateLights();
-      console.log('§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length +
+      // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 2,026 firings, ONE distinct line
+      // (`raised to 200 lights, near-fade floor 1 …`). The re-raise itself is required every
+      // frame (the still budget is handed back to nav on every teardown, just below), so the
+      // WORK stays; only the identical line is run-length reported.
+      _vacLog(_vacNightLights, '§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length +
         ' lights, near-fade floor ' + A._nightNearFadeFloorStill + ' (was 0.3), plScale ' +
-        A._nightPLScale + ' (§STAGED_PL_CUT) for the still');
+        A._nightPLScale + ' (§STAGED_PL_CUT) for the still',
+        'the still budget is re-raised every frame; the values did not change');
     }
     A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
     A._taaPass.accumulate = true;

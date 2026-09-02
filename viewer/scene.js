@@ -206,6 +206,12 @@ async function setupScene(A) {
   _pmrem.compileCubemapShader();
   var _sky = null;
   var _sunVec = new THREE.Vector3();
+  // §VAC V3 — both arms of §ENVMAP_STOMP_GUARD are counted, so "100% skips" has a denominator.
+  // The sampled line prints every 100th call; the EXACT totals are always readable here, so the
+  // in-flight tail (< 100 calls since the last line) is compressed, never dropped. Same pattern as
+  // time_machine.js's window.__tmTrav — a diagnostic hook a probe or witness can read directly.
+  var _envSkips = 0, _envRegens = 0;
+  A._envmapStompStats = function() { return { skips: _envSkips, regens: _envRegens }; };
   // §MEMLEAK_PMREM_DISPOSE (2026-08-14): _pmrem.fromScene() allocates a brand-new
   // WebGLRenderTarget (backing texture + framebuffer) on every call — it is NOT reused/pooled
   // internally by THREE.PMREMGenerator, and three.js never garbage-collects WebGL resources on
@@ -299,10 +305,25 @@ async function setupScene(A) {
           // silently swapping every material's reflection source frame-to-frame and reading as an
           // alternating bright/dark movie. Every OTHER updateSky() caller (plain nav, Time Machine)
           // is unaffected — this flag is only ever true during a staged photoshoot.
+          // §VAC V2+V3 / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): MEASURED on
+          // s5_hospital.log — 906 firings, 100% of them the identical `skipped procedural regen`,
+          // and the regen arm two lines up logged NOTHING. "100% skips" with no denominator cannot
+          // distinguish "the guard saved us 906 times" from "the regen arm was never reachable."
+          // Both arms are counted now, and the skip line is run-length reported: printed on the
+          // first skip of a run and then every 100th, always carrying the running skip/regen split
+          // so the ratio is readable without grepping the whole log. Nothing is dropped — the
+          // counters ARE the signal. (906 over a 2,680 s bake is the 2,000 ms A._envMapThrottle
+          // firing roughly every 3 s, not per frame; the volume was honest, the denominator was not.)
           if (!A._envMapHdriActive) {
+            _envRegens++;
             _setEnvMap(_pmrem.fromScene(_sky));
+            if (_envRegens === 1 || _envRegens % 100 === 0)
+              console.log('§ENVMAP_STOMP_GUARD regen ran (HDRI inactive) — regens=' + _envRegens + ' skips=' + _envSkips);
           } else {
-            console.log('§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active');
+            _envSkips++;
+            if (_envSkips === 1 || _envSkips % 100 === 0)
+              console.log('§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active; skips=' + _envSkips +
+                ' regens=' + _envRegens + ' (1-in-100 sample; every call is counted, only the line is sampled)');
           }
         } catch(e) {}
         A._envMapThrottle = false;
