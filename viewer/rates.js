@@ -161,7 +161,14 @@ var LABOR_RATES = {
     // fixed those elements' PHASE and silently destroyed their DURATION (Hospital 2211 IfcPlate +
     // 7122 IfcMember, HHS 438 IfcPlate, all 120s). Values COPIED verbatim from STEEL_ERECTOR, the
     // class's own canonical trade above (IfcPlate:12, IfcMember:10) — extracted, not invented.
-    productivity: {IfcDoor:6,IfcWindow:6,IfcStair:2,IfcStairFlight:3,IfcRailing:15,IfcCurtainWall:8,IfcPlate:12,IfcMember:10}
+    // §TPL_ZERO_MINUTE guard (2026-09-02, AGENT_QUEUE.md A-15): stair_member_architecture below was
+    // widened to IfcSlab, and CARPENTER carried no IfcSlab — MEASURED on HHS, the four stair treads
+    // immediately started reporting `§TPL_ZERO_MINUTE cls=IfcSlab resource=CARPENTER
+    // reason=no-productivity-key — 120s floor, this class draws a zero-width bar`. Value COPIED
+    // VERBATIM from CONCRETE_GANG, IfcSlab's own canonical trade (35) — exactly what FINISHER below
+    // did for the same reason when finish_floor_finishes reassigned a named IfcSlab subset. This is
+    // the table's own documented rule ("copy the class's canonical trade"), not a number typed in.
+    productivity: {IfcDoor:6,IfcWindow:6,IfcStair:2,IfcStairFlight:3,IfcRailing:15,IfcCurtainWall:8,IfcPlate:12,IfcMember:10,IfcSlab:35}
   },
   ROOFER: {
     rate_per_day: 175, crew_size: 3, max_crews: 1, trade: 'Roofer (Skilled)',
@@ -434,9 +441,31 @@ var SEQUENCE_NAME_OVERRIDES = [
   // NOTE the deliberate consequence: schedule_gate supportPool is seq<=4 u IfcSlab u
   // IfcStairFlight u IfcWall*, so moving these from seq 3 to seq 6 REMOVES them from the support
   // pool. That is correct — a stair stringer carries the stair, not the building.
+  //
+  // ── WIDENED TO IfcSlab, 2026-09-02 (bim-compiler prompts/AGENT_QUEUE.md A-15, spec
+  //    4D_MODEL_INTEGRITY.md §J.6.4 item 2) ─────────────────────────────────────────────────────
+  // The SAME defect, a different export class: a stair TREAD authored as IfcSlab resolves through
+  // the IfcSlab class rule to Superstructure seq 4 and is scheduled on day 0, ahead of the
+  // IfcStairFlight it is part of — and hangs on it. §W_D0 C3 HHS_Office_Federated, on the played
+  // layer: `hanging{IfcSlab:3} waitingOn{IfcSlab<-IfcStairFlight|seq6|Architecture Envelope:3}`.
+  // MEASURED under this rule's own `^\s*stair\b` pattern, over the persisted cache of all four
+  // buildings (119,568 elements, origin/main @ 85fd0732): IfcSlab whose name starts "Stair" =
+  //   HHS 4 of 83  (all four "Stair:Massiv - Stufen Naturstein:*", all at seq 4)
+  //   Duplex 0/21 · Hospital 0/35 · Terminal 0/705.
+  // Four elements fleet-wide, zero false positives — the same anchored pattern that already keeps
+  // a "Handrail for Stair" out. Target unchanged: it is IfcStairFlight's own class rule, which is
+  // exactly the family a tread belongs to.
+  //
+  // ⚠ CORRECTION TO THE NOTE ABOVE, and to §J.6.4's own wording, MEASURED not assumed. Widening
+  // this rule to IfcSlab does NOT take those elements out of the support pool: supportPool
+  // (schedule_gate.js:1348) is `e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4) ||
+  // e.cls === 'IfcStairFlight'` — the SECOND clause catches an IfcSlab at any sequence, so all four
+  // stay in the pool across the move (verified before/after on the cache: 4 in, 4 in). The
+  // "moves IfcSlab out of supportPool" premise that held this change back was wrong; the removal
+  // consequence is real for IfcMember (seq 3 -> 6 crosses the `<= 4` clause) and only for IfcMember.
   {
     id: 'stair_member_architecture',
-    classes: ['IfcMember'],
+    classes: ['IfcMember', 'IfcSlab'],
     pattern: '^\\s*stair\\b',
     flags: 'i',
     phase: 'Architecture Envelope',
