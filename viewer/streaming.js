@@ -229,6 +229,11 @@ function setupStreaming(A) {
       ' creaseDeg=' + CREASE_DEG + ' minDistinctN=' + CURVE_MIN_DISTINCT + ' ms=' + out.ms +
       (geomsTouched === 0 ? '  INCONCLUSIVE — no curve-class range was found; nothing was judged' : '') +
       '');
+    // §DUCT_SILHOUETTE reports alongside, because the two passes are the two halves of one answer
+    // and reading them apart is what made "roundness works on lamps but not on ducts" hard to
+    // diagnose: this line says how many vertices got a smoother NORMAL, the next says how many
+    // elements got a rounder OUTLINE. A pass that changed nothing prints NO-OP, not silence.
+    if (window.SilhouetteRefine) { try { window.SilhouetteRefine.report(); } catch (e) {} }
     // §IDX16 reports SEPARATELY (2026-08-30): it used to ride the line above, so on Hospital —
     // where this pass did not fire at all — its saving was invisible rather than absent.
     console.log('§IDX16 geoms=' + _idx16Geoms + ' saved=' + (_idx16Saved / 1048576).toFixed(1) + 'MB' +

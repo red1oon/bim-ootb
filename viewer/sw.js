@@ -31,7 +31,7 @@
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1128';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1129';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -41,6 +41,16 @@ const CACHE_VERSION = 'v1128';   // bump on each deploy; per-change detail is th
 // (42/42 and 70/70 asserted still on it). effects.js is in PRECACHE_ASSETS and viewer.html's query
 // is bumped effects.js?v=30->31 in the SAME PR (§CRISIS LESSON 4).
 // Witness: witness_sun_fill_ratio.js (§SFR_REDGREEN, RED CONTROL 0.0005/0.0000).
+// v1129 (2026-09-02) §DUCT_SILHOUETTE: new viewer/silhouette_refine.js, hooked at the single
+// geometry choke point A.blobToGeometry (scene.js). §MEP_SMOOTH_NORMALS fixes SHADING at a 55
+// deg crease and provably cannot fix an OUTLINE, so a big duct stayed a visible N-gon while a
+// lamp did not — MEASURED, the two differ 50x in projected chord deviation, not in detection.
+// One level of uniform Phong subdivision on the elements whose own facet step still covers a
+// 1080p pixel at 5 m. Hard edges keep the plain midpoint, so flat surfaces are untouched.
+// viewer.html scene.js?v=58->59 and streaming.js?v=68->69 bumped in the SAME commit.
+// PRECACHE entry added in this same commit — a new module that is not precached is invisible
+// offline, and a precached scene.js served past a version bump would call a function that is
+// not there (the §CRISIS LESSON 4 failure mode noted under v1127).
 // v1127 (2026-09-02) §MEP_COLOR_SURVIVES_PHOTOREAL: streaming.js gives an MEP element its trade
 // HUE when its own colour carries none, keeping the element's own V (and every roughness/metalness/
 // envMap/triplanar term) untouched — so MEP reads by system in an Alt+S still and the Alt+C movie
@@ -443,6 +453,7 @@ const PRECACHE_ASSETS = [
   'config.js',
   'db_resolve.js',
   'helpers.js',
+  'silhouette_refine.js',
   'loader.js',
   'effects.js',
   'cinema_maxq.js',
