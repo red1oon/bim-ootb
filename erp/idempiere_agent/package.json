@@ -1,0 +1,15 @@
+{
+  "name": "idempiere-migrate-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Install-side iDempiere (Postgres) → BIM-OOTB ERP migration agent. Runs natively on the machine that has the iDempiere Docker Postgres; emits ad_masters.db for the browser to load. The browser never connects to Postgres (delegate-to-install).",
+  "license": "MIT",
+  "author": "Redhuan D. Oon <red1org@gmail.com>",
+  "main": "migrate_agent.js",
+  "scripts": {
+    "start": "node migrate_agent.js --masters"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  }
+}

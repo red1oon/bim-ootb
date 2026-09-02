@@ -61,6 +61,11 @@
    * @param {string} [outputGuid] created/modified entity ID
    * @returns {number} op id
    */
+  // MOBILE_PERF.md §OPEN LEVERS 2 fix (a): conservative deny-list — ONLY ops proven
+  // non-mutating skip the full-DB persist. Every edit op (GRID_*, DISC_SWITCH, ENACT_MOVE,
+  // SECTION_CUT, VIEW_FILTER, history replays) persists exactly as before.
+  var READONLY_OPS = { ELEMENT_PICK: 1, BUILDING_OPEN: 1 };
+
   function commitOp(db, opType, params, inputGuids, outputGuid, opUuid, ts) {
     ensureTable(db);
     // G-IDENTITY (§0.21 D1/D4): identity is an edge-minted INPUT, recorded — never recomputed on
@@ -87,8 +92,18 @@
     var opId = r[0].values[0][0];
     console.log('§KERNEL_OP committed id=' + opId + ' uuid=' + (uuid ? uuid.slice(0, 8) : 'null') +
                 ' type=' + opType + ' params=' + JSON.stringify(params));
-    // S243 §3.7: persist modified DB back to IndexedDB so refresh survives
-    _persistToIdb(db);
+    // S243 §3.7: persist modified DB back to IndexedDB so refresh survives.
+    // Implementing MOBILE_PERF.md §OPEN LEVERS 2 fix (a) — Witness: §KRN_PERSIST_DEFER.
+    // Observational ops (a pick highlights, an open is a marker — neither mutates the model)
+    // don't justify db.export()ing the WHOLE building DB synchronously on the main thread
+    // (42MB on LTU_AHouse = a visible stall 2s after every click). Their rows still reach IDB
+    // inside the next mutating op's export. Gate HERE, not in _persistToIdb — its clearTimeout
+    // would let a read-only op reset a pending mutating persist's debounce.
+    if (READONLY_OPS[opType]) {
+      console.log('§KRN_PERSIST_DEFER type=' + opType + ' (observational — rides the next mutating persist)');
+    } else {
+      _persistToIdb(db);
+    }
     return opId;
   }
 
@@ -98,13 +113,31 @@
   // so the 0ms UI is untouched. See docs/DistributedERP.md §0 (the two-domain split).
   var _persistTimer = null;
   function _persistToIdb(db) {
+    // §KRN_PERSIST_GUARD: the IDB write is keyed by APP.DB_URL, so ONLY the building db
+    // (APP.db) may be persisted under it. A lens committing on its own in-memory op db
+    // (wh_walk W.opDb) used to clobber the cached building with a 16KB op-only db →
+    // refresh served it → building never loaded (P0 2026-06-12). Guard BEFORE the timer
+    // so a foreign-db commit can't cancel a pending legit persist either.
+    if (window.APP && APP.db && db !== APP.db) {
+      console.log('§KRN_PERSIST_SKIP foreign db (not APP.db) — building cache preserved');
+      return;
+    }
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
       sealChain(db).then(function() {
         try {
-          var dbUrl = window.APP && APP.DB_URL;
+          // §TM_SPLITMODE_PERSIST_KEY (§S78): a split-mode building's APP.db is loaded from
+          // metaUrl, not APP.DB_URL (streaming.js) — APP._dbPersistUrl is set at the exact point
+          // APP.db is assigned, in both the split and whole-db branches, so it always names the
+          // url APP.db's bytes actually came from. Same field ScheduleAuthor.persistDb now uses.
+          var dbUrl = window.APP && (APP._dbPersistUrl || APP.DB_URL);
           if (!dbUrl) return;
           if (window.APP && APP._cacheDisabled) return;   // incognito / low quota → no IDB
+          // §SCHED_PERSIST_KEY (§S70): cachedFetch reads under DbResolve.cacheKey(url), not the raw
+          // url — writing the raw url put "survive refresh" in a slot nothing reads on any profile
+          // that had loaded the building normally. Same derivation as ScheduleAuthor.persistDb.
+          var dbKey = (window.DbResolve && window.DbResolve.cacheKey)
+            ? window.DbResolve.cacheKey(dbUrl, window.APP && APP.PROD_BASE) : dbUrl;
           var buf = db.export().buffer;
           // §KRN_PERSIST_FIX: open the cache DB through the app's SINGLE opener (scene.js
           // openCacheDB → version 2, ensures the 'dbs' store). The old hardcoded
@@ -122,8 +155,8 @@
             if (!idb) { console.warn('§KRN_PERSIST_ERR no cacheDB'); return; }
             if (!idb.objectStoreNames.contains('dbs')) { console.warn('§KRN_PERSIST_ERR no dbs store'); return; }
             var tx = idb.transaction('dbs', 'readwrite');
-            tx.objectStore('dbs').put(buf, dbUrl);
-            tx.oncomplete = function() { console.log('§KRN_PERSIST url=' + dbUrl + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB'); };
+            tx.objectStore('dbs').put(buf, dbKey);
+            tx.oncomplete = function() { console.log('§KRN_PERSIST url=' + dbUrl + ' key=' + dbKey + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB'); };
             tx.onerror = function() { console.warn('§KRN_PERSIST_ERR tx ' + (tx.error && tx.error.message)); };
           }).catch(function(e) { console.warn('§KRN_PERSIST_ERR open ' + (e && e.message)); });
         } catch(e) { console.warn('§KRN_PERSIST_ERR', e); }

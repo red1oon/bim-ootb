@@ -37,7 +37,7 @@ const pillIds = (page) => page.$$eval('#idmp-pill button[id^="pill-"]', bs => bs
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
 
-  await page.goto(`http://localhost:${port}/idempiere.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2500);
 
   // ── Stage 1: pre-client (login overlay open) ──
@@ -66,7 +66,7 @@ const pillIds = (page) => page.$$eval('#idmp-pill button[id^="pill-"]', bs => bs
     ' pillIds=[' + inIds.join(',') + '] install=' + inIds.includes('install') + ' migrate=' + inIds.includes('migrate'));
   console.log('§C-IN-LOG ' + inLifecycle);
 
-  const KEEP = ['posted','graph','kanban','rule'];
+  const KEEP = ['reports','graph','kanban','rule'];   // representative ungated lens pills (posted+preview retired → Posted column/button, W-POSTED-COLUMN)
   const keptBoth = KEEP.every(id => preIds.includes(id) && inIds.includes(id));
   const preOk = preIds.includes('install') && preIds.includes('migrate');
   const inOk = !inIds.includes('install') && !inIds.includes('migrate');

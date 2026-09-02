@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<!-- ⚠ DO NOT REMOVE — headless harness for the MODEL cherry-pick witness (poc_cherry_pick.js).
+     Loads the REAL modules (kernel_ops · history_tap · history_bar · universal_history) with a minimal
+     window.A holding a real sql.js db + GridDrag stub, so combineFromId→_cherryPick→KernelOps.commitOp
+     runs EXACTLY as in the viewer. The 3D geometry side (applyReplayedMove) is stubbed — it is a separate,
+     already-tested concern (T_2029); the UNWITNESSED claim is the signed-op graft across branches. -->
+<html><head><meta charset="utf-8"><title>cherry-pick harness</title></head>
+<body>
+<div id="status-bar-wrap"></div>
+<script src="../lib/sql-wasm.js"></script>
+<script src="../kernel_ops.js"></script>
+<script src="../../common/history_tap.js"></script>
+<script src="../../common/history_bar.js"></script>
+<script>
+  // GridDrag stub — the geometry move is not the claim; record that the replay reached it.
+  window.GridDrag = { applyReplayedMove: function (axis, label, pos, cascade, dir) {
+    console.log('§HARNESS GridDrag.applyReplayedMove axis=' + axis + ' label=' + label + ' pos=' + pos + ' dir=' + dir); } };
+  // Minimal viewer-app stub: only what _restore/_applyOp/_cherryPick read.
+  window.A = { db: null, markDirty: function () {}, focusElement: function () {}, clearFocusElement: function () {} };
+  window._isMobile = false;
+  window.__ready = (async function () {
+    var SQL = await initSqlJs({ locateFile: function (f) { return '../lib/' + f; } });
+    window.A.db = new SQL.Database();
+    console.log('§HARNESS db-created');
+    return true;
+  })();
+</script>
+<!-- universal_history wraps KernelOps.commitOp at load (KernelOps already present) + reads window.A lazily. -->
+<script src="../universal_history.js"></script>
+</body></html>

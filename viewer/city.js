@@ -160,7 +160,8 @@ function setupCity(A) {
         if (isOrphan) orphans++;
         evictIds.add(String(o.id));
         if (A._instanceMeta) delete A._instanceMeta[o.id];
-        if (A._batchMeta) delete A._batchMeta[o.id];                  // else stale → §CONTRACT_FAIL phantom orphans + leak
+        if (A._batchMeta) delete A._batchMeta[o.id];
+        A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: eviction invalidates TM's event index                  // else stale → §CONTRACT_FAIL phantom orphans + leak
         if (o.isBatchedMesh) { if (o.dispose) o.dispose(); }         // frees owned buffers + its BVH
         else if (o.isInstancedMesh) { if (o.dispose) o.dispose(); }   // frees instanceMatrix; geometry SHARED — keep
         else if (o.geometry) { o.geometry.dispose(); }               // fallback/merged Mesh owns geometry
@@ -314,6 +315,11 @@ function setupCity(A) {
     A.citySQL = SQL;
     A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_fetching_city||'Fetching city index ({url})...').replace('{url}', A.CITY_URL);
     const buf = await A.cachedFetch(A.CITY_URL);
+    // §SQLJS_CLOSE (housekeeping/sqljs-close-leaks): free a prior instance before reassigning —
+    // defensive-only today: initCity is reached once per page life (streaming.js A.init, called once
+    // from main.js:942, or A.loadCityManual which early-returns `if (A.cityDb)`). Nothing else
+    // aliases A.cityDb (A.cityBuildingDbs holds per-archetype building DBs, not the index).
+    if (A.cityDb && typeof A.cityDb.close === 'function') { try { A.cityDb.close(); } catch (e) {} }
     A.cityDb = new SQL.Database(new Uint8Array(buf));
     console.log(`[S203] §CITY_INDEX size=${(buf.byteLength/1024).toFixed(0)}KB`);
 
@@ -654,7 +660,14 @@ function setupCity(A) {
       // inline → (2) libDb = db (mirrors streaming.js A.libDb = A.db). Else → (3) fetch library.
       let _split = false;
       if (metaUrl !== extUrl) {
-        try { const h = await fetch(metaUrl, { method: 'HEAD' }); _split = h.ok; } catch (e) { _split = false; }
+        // §OFFLINE-GATEWAY-LEAK: check IndexedDB before the network — an archetype already
+        // downloaded must resolve split-mode from cache, not re-probe the network every load.
+        const _metaCached = await A._checkCache(metaUrl);
+        if (_metaCached) {
+          _split = true;
+        } else {
+          try { const h = await fetch(metaUrl, { method: 'HEAD' }); _split = h.ok; } catch (e) { _split = false; }
+        }
       }
       let _mode, _mainDb, _auxDb, _mainMB = 0, _auxMB = 0;
       try {

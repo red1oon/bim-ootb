@@ -13,8 +13,110 @@ async function initViewer() {
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
-    setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
+    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupCpePathOverview, setupCpeResourcePanel, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
+  // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
+  // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
+  if (APP.EMBEDDED) {
+    try { document.documentElement.classList.add('bim-embedded'); } catch (e) {}
+    try {
+      if (window.parent && window.parent !== window)
+        window.parent.postMessage({ type: 'bim:ready', bld: (new URLSearchParams(location.search)).get('bld') || null }, '*');
+    } catch (e) {}
+    console.log('§BIM-EMBEDDED chromeless mode on; ready posted to host');
+  }
+  // BIM_EMBED_WINDOW_SESSION §B3 — bidirectional cross-highlight contract (host-agnostic postMessage).
+  //   ERP(parent) → viewer(iframe): {type:'bim:highlight', ifcClass|guid} | {type:'bim:clearHighlight'}.
+  //   viewer → ERP: {type:'bim:highlighted', ifcClass, guid, count} (ACK) and {type:'bim:focusRecord', guid,
+  //   ifcClass} on a pick (emitted from picking.js in A.EMBEDDED). NON-INVENT: every class/guid is read from
+  //   elements_meta — no fabricated line↔element map. Render reuses A.focusElement (the SAME yellow-silhouette
+  //   renderer the Find drill / pick / history-restore use); match-count is the GPU-independent witness assertion.
+  function _bimPostParent(msg) {
+    try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch (e) {}
+  }
+  APP._bimPostFocus = function (guid, ifcClass) {
+    if (!guid) return;
+    _bimPostParent({ type: 'bim:focusRecord', guid: guid, ifcClass: ifcClass || null });
+    // CONNECT_SCENE_SPEC.md P1 — generalise the bim:* pick-emit onto the shared 'selection' channel so the
+    // Modeller (and any connected surface) lands on the SAME signed entity, not just the ERP host. Anchored on
+    // signed identity: guid + ifcClass (ERP product Value == ifc_class; component ifc_class). NON-INVENT: both
+    // read from elements_meta — no fabricated map. _connectApplying guards the remote→local→remote echo loop.
+    if (window.Connect && window.Connect.on && !APP._connectApplying)
+      window.Connect.publish('selection', { guid: guid, ifcClass: ifcClass || null, surface: 'viewer' });
+    console.log('§BIM-FOCUSREC guid=' + String(guid).slice(0, 12) + ' class=' + (ifcClass || '?'));
+  };
+  APP._bimGuidsForClass = function (ifcClass) {
+    if (!APP.db || !ifcClass) return [];
+    try {
+      var rows = APP.dbQuery('SELECT guid FROM elements_meta WHERE ifc_class = ?', [ifcClass]) || [];
+      return rows.map(function (r) { return r[0]; }).filter(Boolean);
+    } catch (e) { console.log('§BIM-HL-ERR ' + e.message); return []; }
+  };
+  APP._bimHighlight = function (o) {
+    o = o || {};
+    var guids = [], cls = o.ifcClass || null;
+    if (o.guid) {
+      guids = [o.guid];
+      if (!cls && APP.db) { try { var r = APP.dbQuery('SELECT ifc_class FROM elements_meta WHERE guid = ?', [o.guid]); if (r && r.length) cls = r[0][0]; } catch (e) {} }
+    } else if (cls) {
+      guids = APP._bimGuidsForClass(cls);
+    }
+    var n = guids.length;
+    console.log('§BIM-HL ' + (o.guid ? ('guid=' + String(o.guid).slice(0, 12)) : ('class=' + cls)) + ' match=' + n);
+    if (n) {
+      var apply = function () { if (APP.focusElement) APP.focusElement(guids, { item: !!o.guid, frame: o.frame !== false }); };
+      if (APP.focusElement) apply();
+      else if (APP.loadNavigate) APP.loadNavigate().then(apply).catch(function () {});
+    }
+    _bimPostParent({ type: 'bim:highlighted', ifcClass: cls, guid: o.guid || null, count: n });
+    return n;
+  };
+  window.addEventListener('message', function (e) {
+    var d = e.data; if (!d || typeof d !== 'object') return;
+    if (d.type === 'bim:highlight') APP._bimHighlight(d);
+    else if (d.type === 'bim:clearHighlight') { if (APP.clearFocusElement) APP.clearFocusElement(); console.log('§BIM-HL clear'); }
+  });
+  // CONNECT_SCENE_SPEC.md P1 — the viewer joins the shared scene as surface 'viewer'. An incoming 'selection'
+  // (from the Modeller or ERP) highlights the SAME signed entity here via the existing focusElement path; the
+  // _connectApplying flag stops that highlight from re-publishing (echo guard). Opt-in: auto-enable on ?connect=1.
+  if (window.Connect) {
+    window.Connect.register('viewer');
+    window.Connect.subscribe('selection', function (sel) {
+      if (!sel) return;
+      console.log('§CONNECT-SEL-IN viewer guid=' + String(sel.guid || '').slice(0, 12) + ' class=' + (sel.ifcClass || '?') + ' from=' + (sel.surface || '?'));
+      APP._connectApplying = true;
+      try { APP._bimHighlight({ guid: sel.guid || null, ifcClass: sel.ifcClass || null }); }
+      finally { APP._connectApplying = false; }
+    });
+    try { if ((new URLSearchParams(location.search)).get('connect') === '1') window.Connect.enable(); } catch (e) {}
+  }
+  // §ZOOM-SCOPE auto-apply (ZOOM_ACROSS_SCOPE_SESSION §SPEC) — the ERP "Zoom Across" pill cold-opens the viewer
+  // with ?find=<scope> (a single IFC class or a comma-separated guid set). On boot we wait for the model db, then
+  // lazy-load Navigate and run the INCUMBENT Find on that scope (applyFindScope opens the Find panel + selects +
+  // highlights via focusElement — the warm correlation, reusing Find, no parallel highlighter). Query survives
+  // (the hash is rewritten with live camera coords). Best-effort: a missing scope/model just leaves a clean open.
+  (function () {
+    try {
+      var _zm = /[?&]find=([^&]+)/.exec(location.search);
+      if (!_zm) return;
+      var scope = decodeURIComponent(_zm[1].replace(/\+/g, ' '));
+      var tries = 0, poll = setInterval(function () {
+        tries++;
+        if (!APP.db) { if (tries > 300) clearInterval(poll); return; } // wait for the model db (runSearch needs it)
+        clearInterval(poll);
+        var go = function () {
+          if (typeof APP.applyFindScope === 'function') { try { APP.applyFindScope(scope); } catch (e) { console.log('§ZOOM-SCOPE err=' + (e && e.message)); } }
+          else { console.log('§ZOOM-SCOPE skip=no-applyFindScope'); }
+        };
+        // give geometry a beat to stream (so focusElement can light), then load Navigate + apply.
+        setTimeout(function () {
+          if (typeof APP.applyFindScope === 'function') return go();
+          if (APP.loadNavigate) APP.loadNavigate().then(go).catch(function (e) { console.log('§ZOOM-SCOPE err=' + (e && e.message)); });
+          else go();
+        }, 600);
+      }, 300);
+    } catch (e) { /* never block boot */ }
+  })();
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);
@@ -32,8 +134,52 @@ async function initViewer() {
         return;
       }
       // Load sub-modules in dependency order, then the bootstrap
+      // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §2 Task 1 — room_habitability.js first: navigate_find.js's
+      // _allRoomVolumes() calls window.RoomHabitability.spaceHabitable() when the Room Lens opens.
+      // Lazy-loaded here (not a static viewer.html <script>) since it's only ever needed alongside
+      // navigate_find.js itself — no reason to spend the bytes on every boot.
       var modules = [
-        'navigate_find.js?v=37',
+        // v2 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): classifyUtilityRooms/utilityContentClass
+        // gain an additive opts.ignoreDoorExemption (default false = identical display behavior); the
+        // routing caller (room_graph.js) passes true. A stale v1 cache would ignore the new arg.
+        '../common/room_habitability.js?v=2',
+        // PATH_LEGAL_SEGMENTS.md §G3-REVISED — pack/unpack + lookup for the offline-precomputed
+        // per-storey walkable raster; must load BEFORE room_graph.js (buildGraph() references
+        // window.StoreyRaster when it reads storey_walkable_raster).
+        '../common/storey_raster.js?v=1',
+        // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §7 — room-to-room adjacency graph + pathfinding,
+        // consumed by navigate_find.js's Room axis "Path" sub-mode. Same lazy-load rationale as
+        // room_habitability.js above (only needed alongside navigate_find.js itself).
+        // v3 (PATH_LEGAL_SEGMENTS.md, 2026-07-13): same-storey chord legality + visibility-graph
+        // detour — a returning browser's cached v2 never draws the courtyard-void fix without this bump.
+        // v4 (2026-07-15, §ISLAND_BRIDGE): ambiguous-residual-candidate rescue (E9) + circ-per-chain
+        // bridge (E6) — a returning browser's cached v3 would keep reporting the pre-fix island counts.
+        // v5 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): expose chordIllegalCount witness helper.
+        // v6 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): §UTILITY-ROUTING-PENALTY — buildGraph()
+        // tags utility rooms via RoomHabitability.classifyUtilityRooms; _buildAdjacency() penalises
+        // (x8, never removes) any edge touching one so room→room routing prefers corridors.
+        // v7 (same doc §10, 2026-07-22): pass ignoreDoorExemption:true so real door-carrying service
+        // rooms are tagged too (the door-exempt display default missed them); exclude CORRIDOR_ROOM nodes.
+        '../common/room_graph.js?v=12',
+        // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
+        // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
+        // in the browser, despite passing every Node-based witness, because this line never
+        // existed): room_graph.js's buildGraph() reads window.HallwayBackbone (used for E5/E6/E7/E8
+        // spine wiring, corridor-room backprop, and classifyCorridorRooms' Type-tree label) but the
+        // script that DEFINES it was never added to this load list. Must load AFTER room_graph.js
+        // (room_graph.js's HallwayBackbone read happens inside buildGraph(), called later — fine)
+        // but hallway_backbone.js itself reads window.RoomGraph at its OWN top-level IIFE execution
+        // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
+        '../common/hallway_backbone.js?v=1',
+        // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
+        // §S59 candidate 2 (SCRIPT_LENGTH_REFACTOR_SEAMS.md, 2026-08-23): the Find panel's 5D-cost/
+        // ERP-push block, extracted from navigate_find.js. Must load BEFORE navigate_find.js — its
+        // init() calls FindErpPush.create() at closure-build time (honest §ERP_PUSH_MODULE_ABSENT
+        // no-op if missing, but then every › ERP surface is inert).
+        'find_erp_push.js?v=1',
+        // v58 (§S59, 2026-08-23): ERP-push block extracted to find_erp_push.js above — a stale v57
+        // would still carry its own copy AND the new wiring would never run.
+        'navigate_find.js?v=58',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -159,12 +305,9 @@ async function initViewer() {
     if (typeof APP.toggleGridOverlay === 'function') {
       APP.toggleGridOverlay();
     } else {
-      console.warn('§2D_OPEN grid_overlay.js not loaded — falling back to 2d.html');
-      const p = new URLSearchParams(location.search);
-      const db = p.get('db') || '';
-      const lib = p.get('lib') || '';
-      const bld = APP.activeBuilding || '';
-      window.open('2d.html?db=' + encodeURIComponent(db) + '&lib=' + encodeURIComponent(lib) + '&bld=' + encodeURIComponent(bld), '_blank');
+      // 2d.html retired 2026-07-12 (Modeller 3D grid / grid_overlay.js is the only 2D path)
+      console.error('§2D_OPEN grid_overlay.js not loaded — 2D unavailable');
+      APP.status.textContent = '2D grid unavailable — reload the app';
     }
   };
 
@@ -180,6 +323,30 @@ async function initViewer() {
       if (msg.type === '4D_PING') {
         _bim4d.postMessage({ type: '4D_PONG', from: 'viewer', ts: Date.now() });
         console.log('§4D_RECV type=4D_PING → sent PONG');
+        return;
+      }
+
+      // §SE-4 / §SE-D: a Schedule Editor tab broadcast a signed schedule op → REPLAY it on this
+      // viewer's db via the same ScheduleAuthor verb ("both are folds of one log"), then re-fold the
+      // open Time Machine via the shipped toggle (same path the authoring wizard's Apply-to-4D uses).
+      // Safe-additive: an op whose task isn't in this db is a graceful no-op, never throws.
+      if (msg.type === '4D_SCHED_EDIT') {
+        try {
+          if (window.ScheduleSync && APP.db) {
+            var _r = window.ScheduleSync.applyOp(APP.db, msg);
+            var _ok = !!(_r && _r.ok !== false);
+            console.log('§4D_RECV 4D_SCHED_EDIT op=' + msg.op + ' applied=' + _ok);
+            // Re-fold the TM off the LIVE (now-edited) tasks. tmRefoldSchedule invalidates the stale gantt
+            // cache + kernel_ops places so activate() re-reads the edit — the old toggle-off→setTimeout(on,60)
+            // both raced the async activate AND replayed the stale cached schedule. Fallback kept for older viewers.
+            if (_ok && APP._tmOn && typeof window.tmRefoldSchedule === 'function') {
+              window.tmRefoldSchedule();
+            } else if (_ok && APP._tmOn && typeof window.toggleTimeMachine === 'function') {
+              window.toggleTimeMachine();
+              setTimeout(function() { window.toggleTimeMachine(); }, 60);
+            }
+          }
+        } catch (e) { console.warn('§4D_SCHED_EDIT replay', e); }
         return;
       }
       // Resource messages — no highlight reset needed
@@ -501,6 +668,31 @@ async function initViewer() {
   // Render loop — on-demand: only render when camera moves or streaming is active
   let _needsRender = true;
   let _idleLogged = false; // §S286: whitebox — true once the desktop loop has parked idle
+
+  // §FPS_MODE: frame_ms sampler tagged by nav-DLOD/xray-cycle/fly/orbit state — landed to settle
+  // whether nav-DLOD ('o') actually helps frame time while flying vs dragging vs bbox-cycle mode
+  // (bbox mode gates nav-DLOD off via activeGuidFilter, see dlod_nav.js _gateBlockReason). Only
+  // accumulates on frames that actually did work (post-_awake) — idle-parked gaps aren't real cost.
+  var _fpsSum = 0, _fpsN = 0, _fpsMax = 0, _fpsLastT = 0, _fpsLastLogT = 0;
+  function _fpsSample(now) {
+    if (_fpsLastT) {
+      var dt = now - _fpsLastT;
+      _fpsSum += dt; _fpsN++;
+      if (dt > _fpsMax) _fpsMax = dt;
+    }
+    _fpsLastT = now;
+    if (_fpsN && (now - _fpsLastLogT) >= 2000) {
+      var mean = +(_fpsSum / _fpsN).toFixed(1);
+      var disp = APP.xrayOn ? 'xray' : ((typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()) ? 'bbox' : 'solid');
+      // dlod= reads _dlodNavEngaged (actually classifying/boxing), not the pill-pressed _dlodNavOn —
+      // a gate-blocked press (streaming/find-isolation/etc, see dlod_nav.js _gateBlockReason) does
+      // nothing at all, and tagging those frames "on" would silently poison this exact comparison.
+      console.log('§FPS_MODE mean=' + mean + ' max=' + _fpsMax.toFixed(1) + ' n=' + _fpsN +
+        ' dlod=' + (window._dlodNavEngaged ? 'on' : 'off') + ' disp=' + disp +
+        ' fly=' + (APP.flyActive ? 1 : 0) + ' orbit=' + (_orbiting ? 1 : 0));
+      _fpsSum = 0; _fpsN = 0; _fpsMax = 0; _fpsLastLogT = now;
+    }
+  }
   // §IDLE-PARK: these are the wake points. markDirty/controls-change now also REVIVE the
   // rAF chain (the loop self-parks when idle — see animate()). _startLoop is hoisted + guarded
   // (no-op if already running), so calling it on every change is cheap.
@@ -512,8 +704,28 @@ async function initViewer() {
   var _orbitDPR = window._isMobile ? 0.75 : Math.min(_fullDPR, 1);  // §S274: mobile=0.75x during drag
   var _orbiting = false;
   APP.controls.addEventListener('start', function() {
+    // §STILL_REFINE: a real drag/touch beginning is the "touching canvas" signal the still-refine
+    // spec asked for — cancel here, NOT from the generic _startLoop choke point (that also fires
+    // from keydown/markDirty on things unrelated to touching the canvas, e.g. the history bar's
+    // own event-sniffer refreshing itself right after logging the Alt+S keypress that started the
+    // refine — confirmed live, 2026-07-15: start->cancelled within the same event, nothing the
+    // user actually touched in between).
+    // §STAGE1 (sandbox spike): OrbitControls 'start' is unambiguously pure camera movement, never
+    // a selection — soft-cancel only (keeps staging), not the full teardown.
+    // §STAGE2_MIDDRAG_FIX (review finding 6): also fire during soft-park (_photoAutoStageOn) so
+    // every new drag re-arms/reset the Stage-2 idle timer — gating on _stillRefineActive alone
+    // made the re-arm branch dead code and let Stage 2 fire mid-gesture (the ghosting report).
+    if ((APP._stillRefineActive || APP._photoAutoStageOn) && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
-    if (!_orbiting && APP.streamedCount > 5000) {
+    // §CPE_VF_DPR_GUARD (2026-08-05): skip the perf-DPR drop while the cinema path editor's POV
+    // inset (B) is open. B's own scissor render (cinema_path_editor.js _vfRender) reads
+    // renderer.getPixelRatio() fresh every frame, so a mid-drag pr flip between _fullDPR and
+    // _orbitDPR — invisible on the main view (browser upscales the whole canvas uniformly) —
+    // shows up as B's small inset box visibly resizing/rescaling frame to frame (§CPE_VF_RENDER_TRACE
+    // logged x/y/w/h changing while panelR stayed fixed). This LOD trick exists purely for main-canvas
+    // orbit smoothness on large buildings; B is a tiny sub-render, not worth degrading, and coupling
+    // it to a main-canvas-only heuristic is exactly the entanglement the user flagged — separate them.
+    if (!_orbiting && APP.streamedCount > 5000 && !APP._cpeViewfinderRender) {
       _orbiting = true;
       APP.renderer.setPixelRatio(_orbitDPR);
     }
@@ -533,12 +745,20 @@ async function initViewer() {
   // §S287b: SINGLE-OWNER render loop. Every (re)start routes through here; the _rafId guard
   // guarantees exactly ONE rAF chain — fixes the S287 focus/pageshow + async-init double-loop
   // (which ran render twice per frame). Witness: §RENDER_LOOP start total= must stay 1.
+  var _idleCycles = 0;   // §LOG_SPAM_THROTTLE — the idle gate's cycle count, logged instead of each cycle
   function _startLoop() {
     if (_rafId) return;                       // already running — never double
     _loopStarts++;
     _needsRender = true;
     _rafId = requestAnimationFrame(animate);
-    console.log('§RENDER_LOOP start total=' + _loopStarts);
+    // §LOG_SPAM_THROTTLE (user, 2026-07-27: "solve the spam too"). This trio — RENDER_LOOP start,
+    // IDLE_GATE park, IDLE_GATE wake — fires once per idle cycle, and the idle gate cycles on every
+    // pointer twitch: their Hospital console ran to `total=189` with hundreds of interleaved
+    // park/wake pairs, burying every §-line that carries information. The COUNT is the signal here,
+    // not each occurrence, so log the first few in full and then only every 25th, carrying the
+    // running total (which is what the §RENDER_LOOP witness asserts on anyway).
+    if (_loopStarts <= 3 || _loopStarts % 25 === 0)
+      console.log('§RENDER_LOOP start total=' + _loopStarts + (_loopStarts > 3 ? ' (throttled: every 25th)' : ''));
   }
   function _ensureLoop() { _tabVisible = true; _startLoop(); }
   document.addEventListener('visibilitychange', function() {
@@ -554,8 +774,67 @@ async function initViewer() {
   // §IDLE-PARK: belt-and-suspenders — ANY user input revives a parked loop, regardless of
   // which feature it triggers (fly/walk/streaming started by a click after idle). _startLoop
   // is guarded, and these fire only on real interaction, so a truly idle scene stays parked.
-  window.addEventListener('pointerdown', _startLoop);
-  window.addEventListener('wheel', _startLoop, { passive: true });
+  // §STILL_REFINE: cancel on the actual touch/scroll signal — deliberately NOT on keydown (that
+  // fires for every key including Alt+S itself, and for incidental logging-triggered wakes).
+  // §STAGE2_MIDDRAG_FIX (review finding 6): both cancel paths must also fire during soft-park
+  // (photo staging kept alive, Stage-2 idle timer armed, _stillRefineActive=false) — gating on
+  // _stillRefineActive alone made every soft-park interaction a no-op, so the idle timer counted
+  // from the FIRST move only and Stage 2 re-fired mid-gesture (the "ghosting has returned" report).
+  // §AUTO_STAGE2_DISABLED (2026-07-16, user directive): with the Stage-2 idle auto-refire off,
+  // soft-park is signalled by the kept-alive staging alone (APP._photoStagingOn, mirrored by
+  // effects.js) — _photoAutoStageOn is permanently false now, and without the staging term a
+  // tap/UI-click during kept-staging would never reach the full teardown (dusk mood stuck on).
+  function _photoCycleEngaged() { return !!(APP._stillRefineActive || APP._photoAutoStageOn || APP._photoStagingOn); }
+  function _cancelStillRefine() { if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
+  // §STAGE1 (sandbox spike, feat/ssgi-composer-poc — NOT shipped): a pointerdown ON THE 3D CANVAS
+  // is camera-orbit-drag-start territory (soft-cancel, keep staging) — a pointerdown ANYWHERE ELSE
+  // (Find panel, toolbar, any UI chrome) is a real selection/action (full teardown, matches "when i
+  // select an item it breaks to old nature" exactly, unchanged from today's behavior for UI clicks).
+  function _cancelStillRefineSoft() { if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  // §PANEL_REGISTRY_SOFT_CANCEL (2026-07-17, user: "during flight we cannot disturb the panel as
+  // closing it stops the Alt-S and it be recording onwards non S... Pill registry is an abstract
+  // handling"): this was a blind binary check — canvas = soft, EVERYTHING else = full teardown —
+  // which never consulted window._panels (scene.js's own registry, populated via InputReg.register
+  // from every pill-built panel, Sunglass/Cinema included). Touching any registered UI panel (tune
+  // HUD, Sunglass, future panels) doesn't need to fully exit photo mode/cinema recording any more
+  // than a camera-drag does — soft-cancel (keep staging, only restart the TAA polish) is the right
+  // default for panel interaction in general. Find-panel's own "selecting a result exits photo
+  // mode" behavior is untouched — that comes from focusElement's own separate teardown path when a
+  // real result is clicked, not from this generic listener, so this stays general/abstract instead
+  // of a one-off allowlist of panel ids.
+  function _insideRegisteredPanel(target) {
+    var panels = window._panels || [];
+    for (var i = 0; i < panels.length; i++) {
+      if (panels[i].el && panels[i].el.contains(target)) return true;
+    }
+    return false;
+  }
+  var _photoCanvasDown = null;
+  window.addEventListener('pointerdown', function(e) {
+    if (APP.renderer && e.target === APP.renderer.domElement) {
+      _photoCanvasDown = { x: e.clientX, y: e.clientY };
+      _cancelStillRefineSoft();
+    } else if (_insideRegisteredPanel(e.target)) {
+      _photoCanvasDown = null;
+      _cancelStillRefineSoft();
+    } else {
+      _photoCanvasDown = null;
+      _cancelStillRefine();
+    }
+    _startLoop();
+  });
+  // §STAGE1_TAP_SELECT (review finding 1): canvas click-to-select IS a live core feature —
+  // picking.js selects on pointerup when the pointer moved ≤5px (tap), so pointerdown on the
+  // canvas is ambiguous between drag-start and tap-select. Classify at pointerup with picking.js's
+  // own tap-vs-drag test and escalate a tap to the FULL teardown ("when i select an item it
+  // breaks to old nature"); a real drag stays soft (staging kept), unchanged.
+  window.addEventListener('pointerup', function(e) {
+    if (!_photoCanvasDown) return;
+    var dx = e.clientX - _photoCanvasDown.x, dy = e.clientY - _photoCanvasDown.y;
+    _photoCanvasDown = null;
+    if (Math.sqrt(dx * dx + dy * dy) <= 5) _cancelStillRefine();
+  });
+  window.addEventListener('wheel', function() { _cancelStillRefineSoft(); _startLoop(); }, { passive: true });
   window.addEventListener('keydown', _startLoop);
   // §S276: WebGPURenderer compiles shader pipelines per material. On 122K scenes with 100+
   // materials, synchronous compilation during render() times out the main thread.
@@ -591,10 +870,24 @@ async function initViewer() {
                  APP.flyActive || _orbiting || _pipelinesCompiling;
     if (!_awake) {
       _rafId = null;
-      if (!_idleLogged) { console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames)'); _idleLogged = true; }
+      if (!_idleLogged) {
+        _idleCycles = (_idleCycles || 0) + 1;
+        // §VAC / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): this tag is the ONE of
+        // the nine audited that was already compliant — its mechanism is unchanged here. What was
+        // wrong is that the line INVITED a misread, and got one: §R13.9 recorded "165 park + 165
+        // wake pairs" from s5_hospital.log as if that were the event count. It is the SAMPLE
+        // count — `cycles=4050` on the last line is the real number of park/wake cycles during
+        // that bake, ~2 per exported frame. Saying the sample rate and the running total on the
+        // line itself is the whole fix; `(throttled: every 25th)` did not make that readable.
+        if (_idleCycles <= 3 || _idleCycles % 25 === 0)
+          console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) parks=' + _idleCycles +
+            (_idleCycles > 3 ? ' (1-in-25 sample; every park is counted in parks=, only the line is sampled)' : ''));
+        _idleLogged = true;
+      }
       return;
     }
     _rafId = requestAnimationFrame(animate);
+    _fpsSample(performance.now()); // §FPS_MODE — elapsed since previous awake-frame start = full per-frame cost
     if (!APP.walkModeActive) {
       APP.controls.update();
       if (APP.walkMode) { APP.walkTick(); } else { APP.flyTick(); }
@@ -623,8 +916,14 @@ async function initViewer() {
       }
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
         // §S277c: EffectComposer replaces direct render when enabled (SSAO/Outline active)
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
+        else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
+        // §CPE_VIEWFINDER: an OPT-IN second-camera scissor sub-render, installed only while the
+        // cinema path editor's B panel is toggled on (cinema_path_editor.js). undefined/absent the
+        // rest of the time, so this is a single property check when off — never touched by the
+        // MaxQ bake, which does not run through this loop and never sets the hook.
+        if (APP._cpeViewfinderRender) APP._cpeViewfinderRender();
         _needsRender = false;
       }
     } else {
@@ -635,10 +934,17 @@ async function initViewer() {
       // timer → renderAtTime() (markDirty + direct render), so the loop is redundant even
       // for TM. Every other camera path already calls markDirty.
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
+        else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
+        // §CPE_VIEWFINDER — see the mobile branch above for the full comment.
+        if (APP._cpeViewfinderRender) APP._cpeViewfinderRender();
         _needsRender = false;
-        if (_idleLogged) { console.log('§IDLE_GATE wake'); _idleLogged = false; }
+        if (_idleLogged) {
+          // §VAC — same 1-in-25 sample as the park line above; parks= is the true event count.
+          if ((_idleCycles || 0) <= 3 || (_idleCycles || 0) % 25 === 0) console.log('§IDLE_GATE wake parks=' + (_idleCycles || 0) + ' (1-in-25 sample)');
+          _idleLogged = false;
+        }
       } else if (!_idleLogged) {
         console.log('§IDLE_GATE park — desktop loop idle, 0 GPU frames (static scene)');
         _idleLogged = true;
@@ -842,9 +1148,75 @@ async function initViewer() {
         }
       }, 1500);
     }
+
+    // §SCENE_STATE_RESTORE (prompts/Viewer/SAVE_DB_SCENE_STATE.md §1-4) — restore the SAVED DEFAULT
+    // view for a plain DB open, no share link. Runs on every load (unlike the S265 block above, which
+    // only fires when a hash is present); a hash field wins over the DB's saved default per-field —
+    // an explicit shared link is a more deliberate ask than the reopener's own last-saved view.
+    if (APP.db) {
+      var hasSceneState = APP.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='scene_state'");
+      if (hasSceneState && hasSceneState.length) {
+        var ssChecks = 0;
+        var ssTimer = setInterval(function() {
+          ssChecks++;
+          if (APP.streamedCount > 10 || ssChecks > 20) {
+            clearInterval(ssTimer);
+            try {
+              var ssRows = APP.dbQuery("SELECT cam_ifc_x,cam_ifc_y,cam_ifc_z,tgt_ifc_x,tgt_ifc_y,tgt_ifc_z," +
+                "xray_on,dlod_on,walk_mode,focused_panel,find_guids,tm_on FROM scene_state LIMIT 1");
+              if (!ssRows || !ssRows.length) { console.log('§SCENE_STATE_RESTORE none (0 rows)'); return; }
+              var sr = ssRows[0], ssApplied = [];
+              if (!hashParams.cam && sr[0] != null && APP.ifc2three) {
+                var scp = APP.ifc2three(sr[0], sr[1], sr[2]), sct = APP.ifc2three(sr[3], sr[4], sr[5]);
+                APP.camera.position.set(scp.x, scp.y, scp.z);
+                APP.controls.target.set(sct.x, sct.y, sct.z);
+                APP.controls.update();
+                ssApplied.push('camera');
+              }
+              if (!hashParams.xray && sr[6] && typeof APP.toggleXray === 'function' && !APP.xrayOn) {
+                APP.toggleXray(); ssApplied.push('xray');
+              }
+              if (sr[7] && typeof APP.dlodEnable === 'function' && !APP._dlodEnabled) {
+                APP.dlodEnable(); ssApplied.push('dlod');
+              }
+              if (sr[8] && typeof APP.startDriveThru === 'function' && !APP.walkModeActive) {
+                APP.startDriveThru(); ssApplied.push('walk');
+              }
+              if (sr[9] && typeof APP.runPanelAction === 'function') {
+                if (APP.runPanelAction(sr[9])) ssApplied.push('panel=' + sr[9]);
+              }
+              if (!hashParams.pick && sr[10] && typeof APP.filterByGuids === 'function') {
+                var ssGuids = String(sr[10]).split(',').filter(Boolean);
+                if (ssGuids.length) { APP.filterByGuids(new Set(ssGuids)); ssApplied.push('find=' + ssGuids.length); }
+              }
+              if (!hashParams.tm && sr[11] && typeof window.toggleTimeMachine === 'function') {
+                window.toggleTimeMachine(); ssApplied.push('tm');
+              }
+              console.log('§SCENE_STATE_RESTORE ' + (ssApplied.length ? ssApplied.join(' ') : 'none'));
+            } catch (e) { console.warn('§SCENE_STATE_RESTORE_FAIL ' + e.message); }
+          }
+        }, 1500);
+      } else {
+        console.log('§SCENE_STATE_RESTORE none (no scene_state table)');
+      }
+    }
   }).catch(e => {
     APP.status.textContent = `Error: ${e.message}`;
     console.error(`[S192] §INIT_ERROR`, e);
+    // §PWA_RESUME recovery (2026-06-12): a RESUMED db (no explicit ?db=) that no longer fetches —
+    // e.g. an OCI-era pwa_last_db after the building dbs moved into the repo (GH Pages) — must not
+    // brick the viewer. Clear the stale resume key and reload ONCE onto the default db.
+    try {
+      var _qs = new URLSearchParams(location.search);
+      if (!_qs.get('db') && localStorage.getItem('pwa_last_db') && !sessionStorage.getItem('pwa_resume_retry')) {
+        console.log('§PWA_RESUME_CLEAR stale db=' + localStorage.getItem('pwa_last_db') + ' — back to the landing');
+        localStorage.removeItem('pwa_last_db');
+        sessionStorage.setItem('pwa_resume_retry', '1');
+        // the landing (bubbles) is the only door that knows where every building db lives —
+        // the viewer's bare default is not guaranteed on GH Pages (buildings ride OCI/_prodBase)
+        location.replace('../index.html');
+      }
+    } catch (e2) {}
   });
 
   // S243: Offline/online status notification

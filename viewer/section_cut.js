@@ -803,6 +803,15 @@ api.saveCut = function(APP, axis, constant) {
     api._saveCutsToStorage(bldKey);
     console.log('§GRID_CUT_SAVE name=' + name + ' axis=' + axis + ' constant=' + constant.toFixed(3));
     if (window.KernelOps && window.APP && APP.db) KernelOps.commitOp(APP.db, 'SECTION_CUT', {name:name,axis:axis,constant:constant});
+    // HISTORY_SESSION_EVENTS.md A1 — a section cut is a detail action → one read-only Z dot (look-restore
+    // on scrub via the §-tap, which already captures section state). The SECTION_CUT commitOp stays in no
+    // significance profile (dropped) — this event channel is what surfaces it in Z.
+    try {
+      if (window.UniversalHistory && UniversalHistory.recordEvent) {
+        UniversalHistory.recordEvent('SECTION_CUT', 'Section ' + axis + ' @ ' + constant.toFixed(2) + 'm',
+          { axis: axis, constant: constant, name: name });
+      }
+    } catch (e) {}
     return name;
 };
 

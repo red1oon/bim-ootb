@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT
+     ⚠ DO NOT REMOVE — HR_BIM_ASSET OCCUPANCY DASHBOARD (demo pane). Renders dashboard.build() (occupancy.pivot
+     + request.aging) with the ALREADY-BUNDLED Chart.js (viewer/lib/chart.umd.min.js) — the "free" pivot display.
+     Self-contained: loads the witnessed engines as <script> globals, seeds from the REAL HHS room fixture, and
+     paints 3 charts + KPIs. CONTOH/SAMPLE watermark is load-bearing. No viewer-core dependency. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HR_BIM_Asset · Room Occupancy / Availability (DEMO)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f4f5f7; color: #222; }
+  header { background: #102a43; color: #fff; padding: 14px 20px; }
+  header h1 { margin: 0; font-size: 18px; }
+  .wm { background: repeating-linear-gradient(45deg,#fff3,#fff3 12px,#fff1 12px,#fff1 24px); color: #ffd54f;
+        font-weight: 700; letter-spacing: 2px; padding: 6px 20px; font-size: 13px; }
+  .kpis { display: flex; gap: 12px; padding: 16px 20px; flex-wrap: wrap; }
+  .kpi { background: #fff; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px #0002; min-width: 140px; }
+  .kpi .n { font-size: 26px; font-weight: 700; color: #102a43; }
+  .kpi .l { font-size: 12px; color: #627d98; text-transform: uppercase; letter-spacing: .5px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 20px 24px; }
+  .card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px #0002; }
+  .card.full { grid-column: 1 / -1; }
+  #err { color: #c62828; padding: 12px 20px; white-space: pre-wrap; }
+  footer { padding: 10px 20px 24px; color: #829ab1; font-size: 12px; }
+</style>
+</head>
+<body>
+<header><h1>HR_BIM_Asset — Room Occupancy / Availability</h1></header>
+<div class="wm" id="wm">SAMPLE — NOT OFFICIAL · CONTOH — TIDAK RASMI</div>
+<div id="err"></div>
+<div class="kpis" id="kpis"></div>
+<div class="grid">
+  <div class="card"><canvas id="byStorey"></canvas></div>
+  <div class="card"><canvas id="aging"></canvas></div>
+  <div class="card full"><canvas id="trend"></canvas></div>
+</div>
+<footer>Data: HHS_Office_Federated — 14 real IfcSpace rooms (fixtures/hhs_rooms.json). Demonstrator, not official.</footer>
+
+<!-- bundled Chart.js (free) -->
+<script src="../../viewer/lib/chart.umd.min.js"></script>
+<!-- witnessed engines (browser <script> → self.Hba* globals); dependency order -->
+<script src="../watermark.js"></script>
+<script src="../binding.js"></script>
+<script src="../connectors.js"></script>
+<script src="../occupancy.js"></script>
+<script src="../request.js"></script>
+<script src="../dashboard.js"></script>
+<script>
+(function () {
+  'use strict';
+  var errEl = document.getElementById('err');
+  function fail(m) { errEl.textContent = '§DASH load error: ' + m; }
+  if (!window.Chart) return fail('Chart.js not loaded (viewer/lib/chart.umd.min.js)');
+  var Oc = window.HbaOccupancy, Rq = window.HbaRequest, D = window.HbaDashboard;
+  if (!Oc || !Rq || !D) return fail('HBA engines not loaded');
+
+  var PERIODS = []; for (var m = 1; m <= 12; m++) PERIODS.push('2026-' + ('0' + m).slice(-2));
+
+  function render(rooms) {
+    var storeyOf = {}; rooms.forEach(function (r) { storeyOf[r.guid] = r.storey; });
+    var G = rooms.map(function (r) { return r.guid; });
+    var occ = Oc.demoSeed(rooms).log;                                  // signed occupancy ledger over real rooms
+    var reqLog = [
+      Rq.open({ request_no: 'REQ-001', type: 'maintenance', resource: G[5] || G[0], summary: 'AHU noisy', priority: 'high', ts: '2026-05-01T00:00:00Z' }).op,
+      Rq.open({ request_no: 'REQ-002', type: 'complaint', resource: G[0], summary: 'temperature', ts: '2026-05-07T00:00:00Z' }).op,
+      Rq.open({ request_no: 'REQ-003', type: 'maintenance', resource: G[1] || G[0], summary: 'light out', ts: '2026-04-25T00:00:00Z' }).op
+    ].filter(Boolean);
+    var dash = D.build(occ, reqLog, PERIODS, { allResources: G, storeyOf: function (r) { return storeyOf[r]; }, asOf: '2026-05-10T00:00:00Z', locale: 'en' });
+    document.getElementById('wm').textContent = dash._watermark + ' · CONTOH — TIDAK RASMI';
+
+    var kpis = [['Rooms', dash.kpi.rooms], ['Avg utilization', Math.round(dash.kpi.avgUtilization * 100) + '%'], ['Open tickets', dash.kpi.openTickets]];
+    document.getElementById('kpis').innerHTML = kpis.map(function (k) { return '<div class="kpi"><div class="n">' + k[1] + '</div><div class="l">' + k[0] + '</div></div>'; }).join('');
+
+    new Chart(document.getElementById('byStorey'), dash.charts.byStorey);
+    new Chart(document.getElementById('aging'), dash.charts.aging);
+    new Chart(document.getElementById('trend'), dash.charts.trend);
+    console.log('§DASH rendered rooms=' + G.length + ' util=' + dash.kpi.avgUtilization + ' openTickets=' + dash.kpi.openTickets);
+  }
+
+  // real fixture when served over http; tiny inline fallback so the pane still renders offline (file://).
+  fetch('../fixtures/hhs_rooms.json').then(function (r) { return r.json(); }).then(function (j) { render(j.rooms); })
+    .catch(function () {
+      console.warn('§DASH fixture fetch failed — inline fallback rooms');
+      render([{ guid: 'RM_Level_1_1', storey: 'Level 1' }, { guid: 'RM_Level_1_2', storey: 'Level 1' }, { guid: 'RM_Level_1_3', storey: 'Level 1' },
+        { guid: 'RM_Level_1_4', storey: 'Level 1' }, { guid: 'RM_Level_1_5', storey: 'Level 1' }, { guid: 'RM_Level_2_1', storey: 'Level 2' },
+        { guid: 'RM_Level_2_2', storey: 'Level 2' }, { guid: 'RM_Level_3_1', storey: 'Level 3' }]);
+    });
+})();
+</script>
+</body>
+</html>

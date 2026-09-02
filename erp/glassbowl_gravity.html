@@ -92,6 +92,8 @@
 </style>
 </head>
 <body>
+<!-- CONCEPT-UI watermark: very weak, non-interactive, behind the chrome — honest "concept surface" stamp (PILLS_TO_GLASSBOWL_CONSOLIDATE.md, user 2026-06-10). -->
+<div id="conceptWM" aria-hidden="true" style="position:fixed;inset:0;pointer-events:none;z-index:6;background-image:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22300%22%20height%3D%22160%22%3E%3Ctext%20x%3D%226%22%20y%3D%22100%22%20transform%3D%22rotate(-28%20150%2080)%22%20font-family%3D%22system-ui%2C-apple-system%2Csans-serif%22%20font-size%3D%2230%22%20font-weight%3D%22800%22%20letter-spacing%3D%222%22%20fill%3D%22%23cfe8ee%22%20fill-opacity%3D%220.07%22%3ECONCEPT%20UI%3C%2Ftext%3E%3C%2Fsvg%3E');background-repeat:repeat;"></div>
 <script>/* offline SW — register on load, but warm the cache LATER (on idle) so there's no load lag */
 /* SYNC-POINT: keep SW-update toast identical to glassbowl.html (generator VIEWER_JS, line ~520).
    Same behaviour: updatefound -> installed+controller -> #swToast (hidden at rest) -> tap posts
@@ -105,14 +107,15 @@ if('serviceWorker' in navigator){addEventListener('load',function(){navigator.se
   var msg=document.createElement('span');msg.id='swToastMsg';msg.textContent='Glassbowl updated — tap to refresh';
   var x=document.createElement('span');x.id='swToastX';x.textContent='✕';x.title='dismiss';x.style.cssText='color:#8aa;cursor:pointer;padding:0 2px;font-size:14px';
   toast.appendChild(msg);toast.appendChild(x);(document.body||document.documentElement).appendChild(toast);
-  window.__swReloaded=false;
-  window.__swApply=function(){if(reg.waiting)reg.waiting.postMessage({type:'skipWaiting'});window.__swPostCount=(window.__swPostCount||0)+1;};
+  window.__swApplied=false;
+  window.__swApply=function(){window.__swApplied=true;if(reg.waiting)reg.waiting.postMessage({type:'skipWaiting'});window.__swPostCount=(window.__swPostCount||0)+1;};
   window.__swShowToast=function(){toast.style.display='flex';if(typeof beep==='function'){try{beep();}catch(e){}}};
   toast.addEventListener('click',function(ev){if(ev.target===x)return;window.__swApply();});
   x.addEventListener('click',function(ev){ev.stopPropagation();toast.style.display='none';});
   reg.addEventListener('updatefound',function(){var nw=reg.installing;if(!nw)return;nw.addEventListener('statechange',function(){if(nw.state==='installed'&&navigator.serviceWorker.controller){window.__swShowToast();}});});
-  navigator.serviceWorker.addEventListener('controllerchange',function(){if(window.__swReloaded)return;window.__swReloaded=true;location.reload();});
-  console.log('§SWUPDATE wired=Y toast=1 reload-guard=Y');
+  /* reload ONLY after the user taps the toast (__swApplied) — NEVER on the first-install clients.claim() controllerchange (that auto-reload was the mobile double-load); sessionStorage one-shot prevents any loop */
+  navigator.serviceWorker.addEventListener('controllerchange',function(){if(!window.__swApplied)return;if(sessionStorage.getItem('__swReloaded'))return;sessionStorage.setItem('__swReloaded','1');location.reload();});
+  console.log('§SWUPDATE wired=Y toast=1 reload-guard=tap');
 }).catch(function(){});});}</script>
 <svg id="bowl"></svg>
 
@@ -142,16 +145,16 @@ if('serviceWorker' in navigator){addEventListener('load',function(){navigator.se
 <div id="card"></div>
 
 <!-- view-log scrubber (Red Pill TM pattern): ↶ · timeline of views · ↷ -->
+<!-- §GRV-PILLS: the ↶/↷ buttons moved into the shared ⋯ pill registry (undo/redo); the #scrub view-log timeline stays as the in-canvas scrubber. -->
 <div id="vbar">
-  <button id="undoBtn" title="back to the last view — Ctrl+Z">↶</button>
   <div id="scrub" title="scrub the view-log — the kernel-log magic, on views"><div id="scrubline"></div><div id="scrubticks"></div></div>
-  <button id="redoBtn" title="forward — Ctrl+Shift+Z">↷</button>
 </div>
 
 <div id="foot">Every number is a live <b>GROUP BY</b> over 8 real GardenWorld orders ·
   <span id="prov">extracted from glassbowl_data.db · 0 invented</span></div>
 <div id="hint">drag the <b>gravity ball</b> ↑ down to the AD dictionary · up into a record's lines &nbsp;·&nbsp; tap a bubble</div>
 
+<script src="../common/whole_history.js?v=4" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local scrub only')"></script>
 <script>
 "use strict";
 
@@ -434,7 +437,7 @@ let W=0,H=0,cx=0,cy=0,Rmax=0,frameHX=0,frameHY=0;
 function resize(){
   W=innerWidth; H=innerHeight;
   const mobile=W<600;
-  const padL=14, padR=92 /* reserve the depth-dial column */, padT=mobile?104:64, padB=30;
+  const padL=14, padR=92 /* reserve the right drop-zone labels */, padT=mobile?104:64, padB=mobile?96:84;  /* padB lifted (was 30): clear the bottom so the World overlay / #scrub timeline don't obscure the lowest bubbles */
   const uW=Math.max(140,W-padL-padR), uH=Math.max(180,H-padT-padB);
   cx=padL+uW/2; cy=padT+uH/2; frameHX=uW/2; frameHY=uH/2;
   Rmax=Math.min(uW,uH)/2;
@@ -734,6 +737,8 @@ function captureView(){ return {lens:state.lens, measure:state.measure, depth:Ma
 function recordView(){ if(restoring) return; const v=captureView();
   if(viewIdx>=0 && JSON.stringify(viewHist[viewIdx])===JSON.stringify(v)) return;
   viewHist=viewHist.slice(0,viewIdx+1); viewHist.push(v); viewIdx=viewHist.length-1; syncUndo();
+  /* W1 (HISTORY_WHOLE_TIMELINE.md): ALSO mirror into the ONE cross-page log — additive, best-effort. */
+  try{ if(typeof WholeHistory!=='undefined'&&WholeHistory.record) WholeHistory.record({page:'gravity',label:viewLabel(v),kind:'view',ref:v}); }catch(e){}
   console.log('§VIEWLOG idx=%d depth=%d total=%d', viewIdx, viewHist.length-1, viewHist.length); }
 function applyView(v){ restoring=true;
   state.lens=v.lens; state.measure=v.measure; state.depth=v.depth; state.focusGroup=v.focusGroup;
@@ -760,6 +765,7 @@ function renderScrub(){ const t=document.getElementById('scrubticks'); if(!t) re
 function undoView(){ if(viewIdx>0){ viewIdx--; applyView(viewHist[viewIdx]); flashHint('↶ stepped back through the view-log (the kernel-log magic, read-only)'); } }
 function redoView(){ if(viewIdx<viewHist.length-1){ viewIdx++; applyView(viewHist[viewIdx]); } }
 if(undoBtn) undoBtn.onclick=undoView; if(redoBtn) redoBtn.onclick=redoView;
+window.undoView=undoView; window.redoView=redoView;  /* §GRV-PILLS — expose for the ⋯ undo/redo pills (loose ↶/↷ retired) */
 addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){ e.preventDefault(); e.shiftKey?redoView():undoView(); } });
 
 /* W-DOCKLENS: track the pointer over the bowl (desktop hover AND mobile touch-drag) so tick()'s
@@ -782,7 +788,36 @@ bowl.addEventListener('pointercancel',()=>{ lensCursor=null; window.__lensCursor
 
 positionBall(); relayout(); tick();
 recordView();  // log the opening view as the first entry
+/* Bomb (W long-press → clear) must reset the IN-MEMORY view-log too, not just localStorage — else the
+   page Z (#vbar) keeps showing old views and recordView() re-mirrors the current view to the world log
+   (the "bomb did nothing" report). glassbowl_pills.js calls this before WholeHistory.clear(). */
+window.GlassbowlHistoryReset=function(){ viewHist=[]; viewIdx=-1; if(typeof syncUndo==='function')syncUndo(); else if(typeof renderScrub==='function')renderScrub(); console.log('§GRV-HIST-RESET viewHist=0'); };
 setTimeout(()=>hint.style.opacity=0,5000);
+/* W2 (HISTORY_WHOLE_TIMELINE.md): cross-page launcher + read-only restore via the existing applyView. */
+try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../',launcher:false});WholeHistory.registerLocalRestore(function(v){applyView(v);});WholeHistory.consumeRestore('gravity',function(v){applyView(v);});}}catch(e){}  /* launcher:false — World History is launched from the W pill now, not the bottom-left clock */
 </script>
+<!-- §GRV-PILLS — shared ⋯ pill registry (same renderer as glassbowl/idempiere): home · undo · redo · edit · showme. -->
+<script src="icons.js?v=3"></script>
+<script src="../common/pill_builder.js?v=1"></script>
+<script src="glassbowl_pills.js?v=5"></script>
+<script>(function(){
+  function _hintOn(){var h=document.getElementById('hint');return !!(h&&getComputedStyle(h).display!=='none'&&parseFloat(getComputedStyle(h).opacity)>0.05);}
+  function _toggleHint(){var h=document.getElementById('hint');if(!h)return;var on=_hintOn();h.style.display='';h.style.opacity=on?'0':'1';}
+  function mount(){
+    if(!window.GlassbowlPills){return;}
+    window.GlassbowlPillActions={
+      home:  function(){console.log('§GRV-HOME → erp.html');location.href='erp.html';},
+      // HISTORY_KNOB_DIAL.md §FOLLOWUP — W pill: tap = cross-page overlay; long-press drawer (Z + bomb) is wired
+      // in glassbowl_pills.js. pagehistory (Z chip) toggles THIS page's #vbar view-log timeline.
+      worldhist: function(){ if(window.WholeHistory&&WholeHistory.toggleOpen) WholeHistory.toggleOpen(); else console.log('§GRV-WHIST WholeHistory absent'); },
+      pagehistory: function(){ var v=document.getElementById('vbar'); if(v){ var hidden=getComputedStyle(v).display==='none'; v.style.display=hidden?'':'none'; console.log('§GRV-PAGEHIST vbar='+(hidden?'shown':'hidden')); } },
+      edit:  function(){ /* honest disabled stub — gravity editing is T3 */ console.log('§GRV-EDIT stub T3'); var t=document.createElement('div');t.textContent='Editing — coming later (T3)';t.style.cssText='position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999;padding:10px 22px;border-radius:8px;font:13px system-ui;background:rgba(16,22,30,.95);color:#cfe8ee;border:1px solid rgba(86,214,224,.3);pointer-events:none;transition:opacity .5s';document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';},2200);setTimeout(function(){if(t.parentNode)t.remove();},2700); },
+      showme:function(){_toggleHint();}
+    };
+    window.GlassbowlPillActive={ showme:function(){return _hintOn();} };
+    window.GlassbowlPills.mount({manifest:'pills_gravity.json?v=2',storageKey:'gravity_pill_config',tag:'§GRV-PILLS'});
+  }
+  if(document.readyState!=='loading')mount();else window.addEventListener('load',mount);
+})();</script>
 </body>
 </html>

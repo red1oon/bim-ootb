@@ -1,0 +1,388 @@
+<meta charset="utf-8">
+<title>The Research Proposal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ink:#131e1b; --ink-2:#3a4a45; --muted:#6b7d78; --faint:#9aaba6;
+  --paper:#f5f7f5; --surface:#ffffff; --surface-2:#eaefed; --surface-3:#dbe3e0;
+  --rule:#d3dcd9; --rule-soft:#e4e9e7;
+  --accent:#00897b; --accent-ink:#00695f; --accent-wash:#e0efec;
+  --warn:#a06a00; --warn-wash:#f7efdd;
+  --focus:#00897b;
+  --shadow:0 1px 2px rgba(19,30,27,.05),0 10px 30px -18px rgba(19,30,27,.22);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+    --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+    --rule:#2d3e39; --rule-soft:#22302c;
+    --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+    --warn:#b1811f; --warn-wash:#2f2612;
+    --focus:#4fc9b0;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+  --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+  --rule:#2d3e39; --rule-soft:#22302c;
+  --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+  --warn:#b1811f; --warn-wash:#2f2612;
+  --focus:#4fc9b0;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,serif;font-size:17.5px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.ui{font-family:"Instrument Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.022em}
+p{margin:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+a{color:var(--accent-ink);text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
+
+.wrap{max-width:800px;margin:0 auto;padding:0 22px 90px}
+
+/* ---- topbar ---- */
+.topbar{display:flex;align-items:center;gap:13px;padding:18px 0;border-bottom:1px solid var(--rule)}
+.brandmark{
+  width:28px;height:28px;border-radius:6px;background:var(--accent);flex:none;
+  display:grid;place-items:center;color:var(--paper);font-weight:700;font-size:12px;
+  font-family:"IBM Plex Mono",monospace
+}
+.brandtext{font-family:"Instrument Sans",sans-serif;font-size:13.5px;font-weight:600;line-height:1.3}
+.brandtext small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
+.topspacer{flex:1}
+.ghostbtn{
+  background:transparent;border:1px solid var(--rule);border-radius:6px;padding:6px 12px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;cursor:pointer;color:var(--ink-2);
+  text-decoration:none;display:inline-block
+}
+.ghostbtn:hover{background:var(--surface-2);border-color:var(--accent);color:var(--accent-ink)}
+
+/* ---- hero ---- */
+.hero{padding:56px 0 40px;border-bottom:2px solid var(--ink)}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;margin-bottom:16px
+}
+h1{font-family:"Instrument Sans",sans-serif;font-size:clamp(31px,5.2vw,46px);line-height:1.08;font-weight:700}
+.standfirst{font-size:19px;color:var(--ink-2);margin-top:18px;max-width:58ch;line-height:1.55}
+
+/* ---- sections ---- */
+section{margin:64px 0 0;scroll-margin-top:20px}
+.shead{display:flex;gap:14px;align-items:baseline;margin-bottom:10px}
+.snum{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink);
+  flex:none;padding-top:5px;letter-spacing:.05em
+}
+h2{font-family:"Instrument Sans",sans-serif;font-size:26px;font-weight:600;line-height:1.2}
+h3{font-family:"Instrument Sans",sans-serif;font-size:16.5px;font-weight:600;margin:30px 0 8px}
+section p{margin:15px 0;max-width:64ch}
+.lede{font-size:18.5px;color:var(--ink-2)}
+strong{font-weight:600;color:var(--ink)}
+
+/* ---- nav chips ---- */
+.jump{display:flex;gap:8px;flex-wrap:wrap;margin:26px 0 0}
+.jump a{
+  font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:20px;padding:7px 14px;color:var(--ink-2);background:var(--surface)
+}
+.jump a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+
+/* ---- figure ---- */
+figure{
+  margin:26px 0;background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:22px 24px;box-shadow:var(--shadow)
+}
+figure h4{
+  font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;margin:0 0 4px
+}
+figure .fsub{font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--muted);margin-bottom:18px}
+figcaption{
+  margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"Instrument Sans",sans-serif;font-size:12.5px;color:var(--muted);line-height:1.5
+}
+figcaption b{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;display:block;margin-bottom:4px
+}
+
+/* ---- stacked bar ---- */
+.stack{display:flex;height:38px;border-radius:6px;overflow:hidden;gap:2px;background:var(--surface)}
+.seg{display:grid;place-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;min-width:0}
+.seg.a{background:var(--accent);color:var(--paper)}
+.seg.n{background:var(--surface-3);color:var(--ink-2)}
+.seg.w{background:var(--warn);color:var(--paper)}
+.stacklab{
+  display:flex;justify-content:space-between;margin-top:9px;gap:14px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--ink-2)
+}
+.stacklab span{display:flex;gap:7px;align-items:center}
+.sw{width:12px;height:11px;border-radius:3px;flex:none}
+.sw.a{background:var(--accent)} .sw.n{background:var(--surface-3)} .sw.w{background:var(--warn)}
+
+/* ---- hbars ---- */
+.hb{display:grid;grid-template-columns:150px 1fr 74px;gap:12px;align-items:center;padding:6px 0}
+.hb .n{font-family:"Instrument Sans",sans-serif;font-size:13.5px;text-align:right;color:var(--ink-2);line-height:1.25}
+.hb .t{height:17px;background:var(--surface-3);border-radius:4px;position:relative;overflow:hidden}
+.hb .f{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:4px}
+.hb .v{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+
+/* ---- hero stat ---- */
+.bignum{
+  display:flex;gap:26px;align-items:baseline;flex-wrap:wrap;
+  padding:6px 0 2px
+}
+.bignum .n{
+  font-family:"Instrument Sans",sans-serif;font-size:clamp(46px,9vw,74px);font-weight:700;
+  line-height:.95;letter-spacing:-.04em;color:var(--warn);font-variant-numeric:tabular-nums
+}
+.bignum .n.ok{color:var(--accent)}
+.bignum .t{font-size:16px;color:var(--ink-2);max-width:34ch;font-family:"Instrument Sans",sans-serif;line-height:1.4}
+
+/* ---- matrix ---- */
+.mx{width:100%;border-collapse:collapse;font-family:"Instrument Sans",sans-serif;font-size:13.5px}
+.mx th{
+  text-align:left;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  padding:9px 10px;border-bottom:1px solid var(--rule);font-weight:600
+}
+.mx th.c,.mx td.c{text-align:center;width:88px}
+.mx td{padding:10px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2)}
+.mx tr:last-child td{border-bottom:none}
+.yes{color:var(--accent);font-weight:700}
+.no{color:var(--warn);font-weight:700}
+.mxscroll{overflow-x:auto}
+
+/* ---- bands ---- */
+.bands{display:flex;gap:2px;border-radius:6px;overflow:hidden;margin-top:4px}
+.band{padding:11px 12px;flex:1;font-family:"Instrument Sans",sans-serif;font-size:12.5px;text-align:center;line-height:1.35}
+.band b{display:block;font-family:"IBM Plex Mono",monospace;font-size:14px;margin-bottom:3px}
+.band.g{background:var(--accent-wash);color:var(--accent-ink)}
+.band.m{background:var(--surface-3);color:var(--ink-2)}
+.band.b{background:var(--warn-wash);color:var(--warn)}
+
+/* ---- pull quote ---- */
+blockquote.ps{
+  margin:30px 0;padding:24px 26px;background:var(--surface);
+  border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:8px;
+  box-shadow:var(--shadow)
+}
+blockquote.ps p{margin:0 0 13px;font-size:17px;line-height:1.6;max-width:none}
+blockquote.ps p:last-of-type{margin-bottom:0}
+blockquote.ps .k{font-weight:600;color:var(--ink)}
+blockquote.ps cite{
+  display:block;margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);font-style:normal
+}
+
+/* ---- callout ---- */
+.call{
+  background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);
+  border-radius:8px;padding:19px 22px;margin:26px 0
+}
+.call.warn{border-left-color:var(--warn)}
+.call .lab{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--accent-ink);font-weight:600;display:block;margin-bottom:8px
+}
+.call.warn .lab{color:var(--warn)}
+.call p{margin:0 0 11px;max-width:none}
+.call p:last-child{margin-bottom:0}
+
+/* ---- ladder ---- */
+.ladder{display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin:22px 0}
+.rung{background:var(--surface);padding:12px 16px;display:grid;grid-template-columns:38px 1fr;gap:14px;align-items:baseline}
+.rung .l{font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;color:var(--accent-ink)}
+.rung b{font-family:"Instrument Sans",sans-serif;font-size:14.5px}
+.rung p{margin:2px 0 0;font-size:14.5px;color:var(--muted);max-width:none}
+
+/* ---- cta ---- */
+.cta{
+  margin:60px 0 0;padding:30px 26px;background:var(--accent-wash);
+  border:1px solid var(--accent);border-radius:12px;text-align:center
+}
+.cta h3{margin:0 0 8px;font-size:20px}
+.cta p{margin:0 auto 20px;max-width:46ch;color:var(--ink-2);font-size:15.5px}
+.btn{
+  background:var(--accent);color:var(--paper);border:1px solid var(--accent);border-radius:8px;
+  padding:12px 24px;font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;
+  cursor:pointer;text-decoration:none;display:inline-block
+}
+.btn:hover{filter:brightness(1.08)}
+
+footer{
+  margin:64px 0 0;padding-top:20px;border-top:1px solid var(--rule);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
+}
+
+@media (max-width:600px){
+  .hb{grid-template-columns:96px 1fr 62px;gap:9px}
+  .hb .n{font-size:12.5px}
+  .bands{flex-direction:column}
+  figure{padding:18px 16px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.proposal p{font-size:17px;line-height:1.72;margin:0 0 18px;max-width:68ch}
+.proposal p:last-child{margin-bottom:0}
+.corr{border-bottom:1px dotted var(--warn);cursor:help}
+.dtable{width:100%;border-collapse:collapse;font-family:"Instrument Sans",sans-serif;font-size:14.5px;margin:20px 0}
+.dtable th{text-align:left;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--rule);font-weight:600}
+.dtable td{padding:11px 12px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2);vertical-align:top}
+.dtable tr:last-child td{border-bottom:none}
+.dtable td.n{font-family:"IBM Plex Mono",monospace;color:var(--muted);white-space:nowrap}
+.dscroll{overflow-x:auto;border:1px solid var(--rule);border-radius:9px;background:var(--surface);margin:20px 0}
+.dscroll .dtable{margin:0}
+
+.nav{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+.nav a{font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
+.nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
+
+/* ---- footnotes ---- */
+sup.fn{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;line-height:0;vertical-align:super}
+sup.fn a{color:var(--accent-ink);text-decoration:none;padding:0 1px}
+sup.fn a:hover{text-decoration:underline}
+ol.refs{margin:22px 0 0;padding:0;list-style:none;counter-reset:r}
+ol.refs li{counter-increment:r;position:relative;padding:10px 0 10px 34px;
+  border-bottom:1px solid var(--rule-soft);font-size:14.5px;color:var(--ink-2);line-height:1.55}
+ol.refs li:last-child{border-bottom:none}
+ol.refs li::before{content:counter(r) ".";position:absolute;left:0;top:10px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink)}
+ol.refs .loc{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted)}
+ol.refs a.back{font-family:"IBM Plex Mono",monospace;font-size:11px;text-decoration:none;color:var(--muted)}
+ol.refs a.back:hover{color:var(--accent-ink)}
+:target{background:var(--accent-wash)}
+@media print{ol.refs li{page-break-inside:avoid}}
+</style>
+<div class="wrap">
+
+<div class="topbar">
+  <div class="brandmark">OB</div>
+  <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>The research proposal</small></div>
+  <div class="nav"><a href="./" data-i18n-block="common:nav.overview">Overview</a><a href="assess.html" data-i18n-block="common:nav.assessment">Assessment</a><a href="proposal.html" class="on" data-i18n-block="common:nav.proposal">Proposal</a><a href="why.html" data-i18n-block="common:nav.background">Background</a><a href="faq.html" data-i18n-block="common:nav.basics">Basics</a><a href="sources.html" data-i18n-block="common:nav.sources">Sources</a><a href="disclaimer.html" data-i18n-block="common:nav.notice">Notice</a></div>
+</div>
+
+<div class="hero" data-i18n-block="hero">
+  <p class="eyebrow">Research funding request &middot; 10 August 2026</p>
+  <h1>Development of an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management</h1>
+  <p class="standfirst">The funded proposal, reproduced in full. This toolkit is the artifact it
+  describes, and this page is the authoritative statement of its scope.</p>
+</div>
+
+<section>
+  <div class="shead"><span class="snum">&mdash;</span><h2 data-i18n-block="projinfo_head">Project information</h2></div>
+  <div class="dscroll"><table class="dtable"><tbody data-i18n-block="projinfo">
+    <tr><td class="n">Name</td><td>Mohd Faizal Bin Yusof</td></tr>
+    <tr><td class="n">Date</td><td>10 August 2026</td></tr>
+    <tr><td class="n">Project title</td><td>Development of an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management</td></tr>
+  </tbody></table></div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">01</span><h2 data-i18n-block="synopsis_head">Synopsis</h2></div>
+  <div class="proposal" data-i18n-block="synopsis">
+<p>Digital transformation is reshaping how infrastructure assets are planned, delivered, operated, and maintained. In the UAE, Building Information Modelling (BIM)<sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> has become an increasingly important enabler of this transformation, supporting more integrated and data-driven approaches to infrastructure development and lifecycle management. OpenBIM strengthens this capability by adopting vendor-neutral open standards, principally the Industry Foundation Classes (IFC), enabling infrastructure information to be exchanged, integrated, and managed across diverse software platforms without dependence on proprietary systems. The benefits are well recognised, including improved interoperability, reduced software lock-in, and more effective collaboration among stakeholders throughout the asset lifecycle.</p><p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary BIM workflows towards more interoperable OpenBIM practices. This is also applicable in various <span class="corr" title="Corrected from &quot;third word countries&quot; in the source document.">third world countries</span>. This transition requires not only appropriate technologies, but also organisational readiness in areas such as governance, business processes, workforce capabilities, data management, and compliance with open standards. However, there is currently no simple and practical way for organisations to objectively assess their readiness for OpenBIM implementation or to identify the capability gaps that should be addressed before embarking on this transition.</p><p>This project addresses that gap by developing an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management, a structured but easy-to-use way for an organisation to gauge how ready it is to adopt OpenBIM and to see the specific issues standing in its way. Readiness is assessed across the dimensions most associated with successful adoption: governance, people and skills, technology, data and standards, and organisational processes. The result shows an organisation where its capability gaps and implementation risks lie, and which areas to address first before committing to OpenBIM.</p><p>It helps to be precise about how the toolkit works and where its information comes from, because three roles are easily confused. First, a large language model (LLM) acts as the interviewer: instead of filling in a static questionnaire, a practitioner has a guided conversation with the LLM, which asks about the organisation's current practices, constraints, and concerns. Second, the practitioner is the source of evidence: the picture of industry readiness is built entirely from what real people in real organisations report, the LLM does not, and cannot, observe the industry on its own. Third, the toolkit measures those answers against a reference benchmark of OpenBIM good practice (described below), then scores readiness and produces tailored, vendor-neutral recommendations for capability development, standards adoption, and implementation planning.</p><p>That benchmark is provided by an existing open-source, browser-based OpenBIM platform that extracts and compiles IFC models, renders them directly in a standard web browser with no server-side dependency, and extends into asset, operations, and lifecycle management. The platform is not the subject of the study; it serves as a concrete, working example of what an open-standard BIM environment can deliver, giving the toolkit's recommendations a demonstrable reference point rather than an abstract ideal. Alongside it, a knowledge base of OpenBIM standards, readiness criteria, and implementation guidance supports the LLM's reasoning, and automated reporting turns each assessment into a readiness profile, gap analysis, and set of recommendations.</p>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">02</span><h2 data-i18n-block="design_head">Research design</h2></div>
+  <div class="proposal" data-i18n-block="design"><p>The study's evidence comes from practitioners, not from the LLM's own knowledge. Participants are professionals engaged in Digital Infrastructure Management who complete an assessment through the conversational tool; their responses are the primary data on industry preparedness and on the barriers to BIM adoption. The open-source OpenBIM platform is used throughout as the reference benchmark against which readiness is judged. The toolkit itself is then validated by a panel of subject-matter experts and through pilot use, who judge whether its assessments are accurate and its recommendations useful. Data is gathered through these expert reviews, pilot sessions, and usability evaluations, and analysed to test the toolkit's reliability, practicality, and effectiveness.</p></div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">03</span><h2 data-i18n-block="method_head">Research methodology</h2></div>
+  <div class="proposal" data-i18n-block="method"><p>The work follows a Design Science Research (DSR) approach: build a working artifact, then evaluate it with real users. The requirements phase reviews OpenBIM standards, existing BIM maturity and readiness models, and Digital Infrastructure Management practice to fix the readiness dimensions, the assessment criteria, and the issues that affect preparedness. The development phase produces the toolkit, assessment framework, conversational LLM engine, scoring model, recommendation engine, and reporting module. The evaluation phase tests it through the expert validation and pilot implementation described above. The project concludes with a publication reporting the readiness dimensions, the toolkit's design, the assessment method, and the validation result.</p></div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">04</span><h2 data-i18n-block="outsource_head">Outsource requirements</h2></div>
+  <div class="proposal" data-i18n-block="outsource"><p>The project builds on existing open-source technologies and large language model platforms. Development support will be outsourced to implement the conversational interface, the assessment and recommendation engines, the reporting module, and the pilot deployment environment, together with knowledge base integration and usability testing. The outsourced scope is limited to technical development and deployment; the research design, data analysis, and reporting remain with the researcher.</p></div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">05</span><h2 data-i18n-block="deliv_head">Deliverables</h2></div>
+  <div class="dscroll"><table class="dtable">
+    <thead><tr><th>#</th><th>Type</th><th>Title / topic</th><th>Target publication</th><th>Quartile</th></tr></thead>
+    <tbody data-i18n-block="deliv"><tr><td class="n">1</td><td>Research paper</td>
+      <td>Development and Validation of an OpenBIM Readiness Assessment Framework for Digital Infrastructure Management</td>
+      <td>Automation in Construction (Elsevier)</td><td class="n">Q1</td></tr></tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">06</span><h2 data-i18n-block="plan_head">Project plan</h2></div>
+  <div class="dscroll"><table class="dtable">
+    <thead><tr><th>Phase</th><th>Milestones / activities</th><th>Target date</th></tr></thead>
+    <tbody data-i18n-block="plan">
+      <tr><td>Problem analysis</td><td>Finalise research requirements and identify OpenBIM readiness dimensions and assessment criteria for Digital Infrastructure Management.</td><td class="n">10 Aug 2026</td></tr>
+      <tr><td>Artifact development</td><td>Design and develop the OpenBIM Readiness Assessment Toolkit, including the assessment framework, scoring model, and recommendation mechanism. Develop the toolkit, comprising the assessment framework, conversational LLM assessment engine, scoring model, recommendation engine, and reporting module.</td><td class="n">7 Sep 2026</td></tr>
+      <tr><td>Technology assessment</td><td>Conduct expert validation and pilot testing with practitioners; evaluate and refine the toolkit based on feedback.</td><td class="n">1 Oct 2026</td></tr>
+      <tr><td>Publication</td><td>Analyse findings and prepare research article for publication.</td><td class="n">10 Oct 2026</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<div class="cta" data-i18n-block="cta">
+  <h3>This is the artifact that proposal describes</h3>
+  <p>The assessment implements the framework set out above. The Disclaimer Notice states what it can
+  and cannot be used for.</p>
+  <a class="btn" href="./">Go to the assessment</a>
+</div>
+
+<section id="references">
+  <div class="shead"><span class="snum">&mdash;</span><h2>Editorial references</h2></div>
+  <p class="lede">Notes added by the publisher of this page. They annotate the synopsis; they do not
+  alter it.</p>
+  <ol class="refs">
+    <li id="ref1">The regulatory position in the UAE is specific to the emirate. BIM is mandatory in
+      <strong>Dubai</strong> under Dubai Municipality circulars. There is <strong>no federal UAE BIM
+      mandate</strong>, and the other emirates have not mandated BIM, though major projects have adopted it
+      voluntarily. The current instruments are <span class="loc">Circular 9-1-1</span> (2021), which sets two
+      scopes in force together — architectural and mechanical work on buildings over 20 floors, facilities
+      over 200,000&nbsp;sq&nbsp;ft, specialist facilities such as hospitals and universities, all government
+      projects, and projects submitted by a foreign office subsidiary; and structural work on buildings over
+      40 floors and facilities over 300,000&nbsp;sq&nbsp;ft — and <span class="loc">Circular 9-1-2</span>
+      (13 October 2023), which requires architectural and structural designs to be submitted in what the
+      circular calls <strong>Open BIM</strong> form, to the Dubai BIM Standard, with new building permit
+      applications, as a first phase from <strong>1 January 2024</strong>, for buildings over 20 floors
+      architectural or 40 floors structural, over 20,000&nbsp;m&sup2; architectural or 30,000&nbsp;m&sup2;
+      structural, specialist buildings such as hospitals and universities, and government projects other than
+      utility services. These succeed <span class="loc">Circular 196</span> (2013) and
+      <span class="loc">Circular 207</span> (2015). Source: the circulars themselves, obtained from Dubai
+      Municipality and read 23 August 2026. Recorded in the project source register as a Tier&nbsp;1
+      verification. <a class="back" href="#fnref1">&#8617;</a></li>
+  </ol>
+</section>
+
+<footer data-i18n-block="footer">
+  Reproduced from the research funding request dated 10 August 2026.<br>
+  Text is verbatim, with one obvious typographical correction and one editorial reference marked in
+  the Synopsis. Budget,
+  reviewer assessment and endorsement sections are the funding institution's internal process and
+  are not reproduced here.<br>
+  <a href="disclaimer.html">Disclaimer Notice</a> &middot; <a href="why.html">Background reading</a> &middot; <a href="faq.html">Plain answers</a>
+</footer>
+
+</div>
+
+<script>
+document.getElementById('themebtn') && document.getElementById('themebtn').addEventListener('click', function () {
+  var r = document.documentElement;
+  var dark = r.getAttribute('data-theme') === 'dark' ||
+    (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
+  r.setAttribute('data-theme', dark ? 'light' : 'dark');
+});
+</script>
+<script src="i18n_shell.js" data-page="proposal"></script>

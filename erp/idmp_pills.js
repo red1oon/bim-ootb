@@ -43,6 +43,70 @@
     return ic.svg;
   }
 
+  // HISTORY_KNOB_DIAL.md — the W pill's long-press drawer: two stacked chips above the pill.
+  //   Z (docHist) = open THIS page's dot-timeline bar (IdmpHistory) · bomb = clear history (warns first).
+  function _histIconSvg(name, color) {
+    var ic = (window.ICONS || {})[name];
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (ic ? ic.svg : '') + '</svg>';
+  }
+  function _clearIdmpHistory() {
+    // The page timeline lives in localStorage / the in-memory bar, NOT the SW cache — "clear cache" never
+    // wiped it. The bomb is the one switch that does.
+    if (window.confirm('Clear history for this page AND the world timeline?\nThis wipes the session timeline and cannot be undone.')) {
+      try { Object.keys(localStorage).filter(function (k) { return k.indexOf('idmp.hist') === 0 || k.indexOf('bim.hist') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+      if (window.IdmpHistory && window.IdmpHistory.clear) window.IdmpHistory.clear();
+      // §IDMP-HIST world: the cross-page WorldHistory log is its OWN store (bim.docHistory) — the bim.hist
+      // prefix above does NOT match it. Clear it explicitly + refresh the open overlay so it shows empty.
+      var world = 'n/a';
+      if (window.WholeHistory && WholeHistory.clear) {
+        try { WholeHistory.clear(); world = 'cleared'; } catch (e) { world = 'err'; }
+        try { var p = document.getElementById('whole-hist-panel'); if (p && p.classList.contains('show') && WholeHistory.open) WholeHistory.open(); } catch (e) {}
+      }
+      console.log('§IDMP-HIST clear via=bomb confirmed world=' + world);
+    } else { console.log('§IDMP-HIST clear via=bomb cancelled'); }
+  }
+  function _worldDrawer(srcBtn) {
+    var open = document.getElementById('idmp-whist-drawer');
+    if (open) { open.remove(); return; }
+    if (!srcBtn) return;
+    var r = srcBtn.getBoundingClientRect();
+    var d = document.createElement('div'); d.id = 'idmp-whist-drawer';
+    // PERPENDICULAR auto-layout — draw the drawer ACROSS the pill strip, never ALONG it (a parallel drawer
+    // covers the neighbouring pills; that was the regression). Measure the strip container: a VERTICAL strip
+    // (viewer/idmp right edge) → a ROW to the LEFT of W; a HORIZONTAL strip (glassbowl/gravity bottom bar) →
+    // a COLUMN ABOVE W. Self-correcting if a bar's orientation ever flips again — no per-surface hardcoding.
+    // Chip append order (bomb, then Z): row → bomb left/far, Z right/adjacent · column → bomb top/far, Z bottom/adjacent.
+    var _host = srcBtn.parentElement, _hr = _host ? _host.getBoundingClientRect() : r;
+    var _vertical = _hr.height >= _hr.width;
+    var _base = 'position:fixed;z-index:10000;display:flex;align-items:center;gap:6px;';
+    if (_vertical) {
+      d.style.cssText = _base + 'flex-direction:row;top:' + r.top + 'px;right:' +
+        Math.max(8, Math.round(window.innerWidth - r.left + 6)) + 'px;';
+    } else {
+      d.style.cssText = _base + 'flex-direction:column;bottom:' + (window.innerHeight - r.top + 6) +
+        'px;left:' + Math.max(8, r.left) + 'px;';
+    }
+    console.log('§IDMP-PILL drawer-orient=' + (_vertical ? 'row(vertical-strip)' : 'col(horizontal-strip)'));
+    function chip(name, title, color, onTap) {
+      var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
+      b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
+        'border-radius:8px;background:rgba(20,20,40,0.85);color:' + color + ';cursor:pointer;' +
+        'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.4);';
+      b.addEventListener('pointerup', function (e) { e.stopPropagation(); onTap(); var dd = document.getElementById('idmp-whist-drawer'); if (dd) dd.remove(); });
+      return b;
+    }
+    d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearIdmpHistory));
+    d.appendChild(chip('docHist', 'Page history (Z) — this page\'s dot timeline', '#6c9fff',
+      function () { if (window.IdmpHistory && window.IdmpHistory.toggleBar) window.IdmpHistory.toggleBar(); else if (window.IdmpHistory) window.IdmpHistory.render(); }));
+    document.body.appendChild(d);
+    setTimeout(function () {
+      var off = function (ev) { var dd = document.getElementById('idmp-whist-drawer'); if (dd && !dd.contains(ev.target)) { dd.remove(); document.removeEventListener('pointerdown', off, true); } };
+      document.addEventListener('pointerdown', off, true);
+    }, 0);
+    console.log('§IDMP-PILL drawer=worldhist items=Z,bomb');
+  }
+
   // §C lifecycle gate — pills tagged stage:"pre-client" (Install/Migrate) are SHOWN only before a client is
   // entered (login/tenant-picker), HIDDEN once a client is committed (GATE-2). PillBuilder._build skips
   // act.pill===false, so we toggle that flag + rebuild — no second rail, no DOM teardown.
@@ -55,6 +119,23 @@
     // `hidden` set (off-rail-but-in-overflow) rather than pill=false (gone), preserving the user's own choices.
     var lifecycleIds = _actions.filter(function (a) { return a._stage === 'pre-client'; }).map(function (a) { return a.id; });
     _actions.forEach(function (a) { if (a._stage === 'pre-client') a.pill = undefined; });  // always a real pill
+    // §AD-GATE — pills tagged showWhen:"posting-doc" mirror iDempiere's AD `Posted` Button field: they may
+    // surface ONLY when a posting document (a table carrying that field) is open. The host answers via
+    // window.IdmpPillDocGate(); absent/false → the pill is fully off the bar (pill=false), not just overflow.
+    var _docOk = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk ? undefined : false; });
+    // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): the POS pill surfaces only when the tenant
+    // carries a c_pos row (data-gated like Posting-Preview). Host answers via window.IdmpPillPosGate().
+    var _posOk = (typeof window.IdmpPillPosGate === 'function') ? !!window.IdmpPillPosGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'pos-station') a.pill = _posOk ? undefined : false; });
+    // GRID_BATCH_FORM_PILL_SPEC item 5 — showWhen:"form-view": the relocated record toolbar pills (New/Save/
+    // Process) surface ONLY with a record open in FORM view. Host answers via window.IdmpPillFormGate().
+    var _formOk = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'form-view') a.pill = _formOk ? undefined : false; });
+    // §AD-GATE — showWhen:"zoom-across": the RED "Zoom Across" pill surfaces when ANY cross-surface destination
+    // is available for the focused record (window.ZoomAcross). Host answers via window.IdmpPillZoomGate().
+    var _zoomOk = (typeof window.IdmpPillZoomGate === 'function') ? !!window.IdmpPillZoomGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'zoom-across') a.pill = _zoomOk ? undefined : false; });
     var cfg = _PB.getConfig();
     var hidden = (cfg.hidden || []).filter(function (id) { return lifecycleIds.indexOf(id) < 0; }); // drop managed ids
     if (stage !== 'pre-client') hidden = hidden.concat(lifecycleIds);                                // in-client → overflow
@@ -62,6 +143,30 @@
     var lc = (stage === 'pre-client') ? 'rail' : 'overflow';
     var shown = _actions.filter(function (a) { return a.pill !== false && hidden.indexOf(a.id) < 0; }).map(function (a) { return a.id; });
     console.log('§IDMP-LIFECYCLE stage=' + stage + ' install=' + lc + ' migrate=' + lc + ' shown=[' + shown.join(',') + ']');
+    _evalReveal();   // §P2 — a stage change can tuck pills into the ⋯ (in-client demotes Install/Migrate); re-cue.
+  }
+
+  // §P2/§P4-3 self-reveal cue (FRONT_DOOR_PILL_FINISH). WHENEVER pills are tucked behind the ⋯ (the bar is
+  // collapsed OR the hidden-set is non-empty), cue the user that "there's more here". §P4-3 (user wrap
+  // 2026-06-09): the cue is now a TRUE PEEK — the actual hidden PILLS briefly SLIDE OUT and back, not just a
+  // ⋯ bob (with collapse-by-default ALL pills sit behind the ⋯, so a bob alone never showed the icons). We
+  // momentarily show the real strip (#idmp-pill display:block + a slide keyframe) WITHOUT flipping PillBuilder's
+  // open state (_pillOpen stays false), then restore display:none on animationend — so it re-collapses cleanly
+  // and the user's own ⋯ tap still opens from the closed state. The ⋯ keeps a companion glow. No second
+  // animation system: a CSS keyframe class added/removed around the condition.
+  // Boot/stage CUE (user wrap 2026-06-09): the reveal itself is now CLICK-DRIVEN and STAYS open (PillBuilder
+  // _toggle rises the strip up on every ⋯ tap — see `.pill-revealing`). The old auto STRIP-PEEK that slid the
+  // pills out and RE-COLLAPSED is REMOVED (user: "and not collapse"). All this does now is a gentle ⋯ bob while
+  // the bar is collapsed, so the user notices there's more behind the ⋯ — it never moves/recollapses the strip.
+  function _evalReveal() {
+    if (!_PB) return;
+    var trigger = document.getElementById('idmp-pill-trigger');
+    if (!trigger) return;
+    trigger.classList.remove('idmp-pill-attract');
+    if (_PB.isOpen()) return;                               // rail already revealed → no need to cue
+    void trigger.offsetWidth;                               // reflow so the bob REPLAYS on each eval
+    trigger.classList.add('idmp-pill-attract');             // a brief glow/bob on the ⋯ — "tap to reveal"
+    console.log('§PILL-CUE attract=⋯ collapsed=true hidden=' + (_PB.getConfig().hidden || []).length);
   }
   // setStage(s) — host calls on login (in-client) / tenant-picker open (pre-client). No arg → re-read IdmpPillStage().
   function setStage(stage) {
@@ -71,25 +176,45 @@
     _applyStage(stage);
   }
 
+  // setDocContext() — host calls on every tab/record open so showWhen:"posting-doc" pills re-evaluate against
+  // window.IdmpPillDocGate() (AD: is a posting document open?). Recomputes the bar at the current stage.
+  function setDocContext() { if (_PB && _actions) _applyStage(_curStage || 'pre-client'); }
+
   function mount() {
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=25').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=37').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
       var actions = pills.map(function (p) {
         var act = { id: p.id, name: p.name, key: p.key || '' };
         if (p.img) act.img = p.img; else act.icon = _resolveIcon(p) || '';
+        if (p.title) act.title = p.title;                    // friendly hover label (e.g. "Link to BIM Viewer")
         if (p.stage) act._stage = p.stage;                   // §C lifecycle tag (carried from the manifest)
+        if (p.showWhen) act._showWhen = p.showWhen;           // §AD-GATE condition (e.g. "posting-doc") carried from the manifest
         // fn binds BY ID to the host's real handler; honest toast if a handler is missing (NON-INVENT).
         act.fn = ACT[p.id] || (function (name) { return function () { _toast(name + ' — handler not wired'); }; })(p.name);
         var ACTIVE = window.IdmpPillActive || {};            // §D — lit-state binding by id (e.g. redpill = clean mode on)
         if (ACTIVE[p.id]) act.isActive = ACTIVE[p.id];
+        // HISTORY_KNOB_DIAL.md — the W pill long-presses into a drawer (Z page-timeline + bomb clear).
+        if (p.id === 'worldhist') act.hold = function (btn) { _worldDrawer(btn); };
         return act;
       });
       _actions = actions;
+      // §AD-GATE — apply the posting-doc condition at BUILD (not just on later sync): with no document open
+      // the host's IdmpPillDocGate() is false → showWhen:"posting-doc" pills (Posting-Preview) start OFF the bar.
+      var _docOk0 = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk0 ? undefined : false; });
+      // §AD-GATE — pos-station at BUILD too (POS pill off the bar until a c_pos tenant is open)
+      var _posOk0 = (typeof window.IdmpPillPosGate === 'function') ? !!window.IdmpPillPosGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'pos-station') a.pill = _posOk0 ? undefined : false; });
+      // form-view at BUILD too (the New/Save/Process pills start OFF the bar until a record is open in form view)
+      var _formOk0 = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'form-view') a.pill = _formOk0 ? undefined : false; });
+      var _zoomOk0 = (typeof window.IdmpPillZoomGate === 'function') ? !!window.IdmpPillZoomGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'zoom-across') a.pill = _zoomOk0 ? undefined : false; });
 
       _injectStyle();
       var wrap = document.createElement('div');
@@ -110,17 +235,30 @@
       var PB = window.PillBuilder({
         pill: pill, trigger: trigger, APP: {}, actions: actions,
         order: actions.map(function (a) { return a.id; }),
-        storageKey: 'idmp_pill_config',
-        persistent: true   // primary nav dock — stays visible like the old rail; ⋯ still collapses on demand
+        storageKey: 'idmp_pill_config'
+        // NON-persistent (user wrap 2026-06-09: "click outside closes — intuitive + standard"): a ⋯ tap toggles;
+        // tapping a pill INSIDE keeps it open; tapping OUTSIDE (canvas/record) collapses it — consistent with the
+        // BIM viewer. Still stays open until you act away from it (no auto-recollapse after the reveal).
       });
+      // ⋯ tap → toggle. Opening RISES the strip up (PillBuilder _toggle `.pill-revealing`); re-tapping (or a tap
+      // outside the strip) collapses it back down to the bottom-right ⋯. No bob after a deliberate tap.
       trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); });
+      // Re-arm the ⋯ bob: drop the attract class when it ends so it can REPLAY on the next eval.
+      trigger.addEventListener('animationend', function () { trigger.classList.remove('idmp-pill-attract'); });
       _PB = PB;
       window.IdmpPills.builder = PB;
-      PB.toggle();                                            // open + sync internal state (persistent bar, no off-by-one tap)
 
-      // §C — apply the initial session stage (pre-client at boot: Install/Migrate visible at the front door).
+      // §P3 (FRONT_DOOR_PILL_FINISH, user decision 2026-06-09): COLLAPSED BY DEFAULT on BOTH desktop and mobile —
+      // the clean resting state is just the ⋯; pills reveal ONLY when the user taps it. Keep the UI clean, leave
+      // the reveal to user intuition (the peek cue invites the tap). PB.close() (not toggle) sets display:none AND
+      // _pillOpen=false together, so the FIRST ⋯ tap opens cleanly (no off-by-one). Also kills the mobile
+      // expanded-strip-over-content overlap: the strip only appears on demand.
+      PB.close();
+
+      // §C — apply the initial session stage (pre-client at boot: Install/Migrate belong on the rail behind the ⋯).
       _curStage = null; setStage();
-      PB.sync();   // §D — restore lit states (e.g. red pill) after setStage's rebuild (build() doesn't sync)
+      PB.sync();   // §D — restore lit states (e.g. red pill) so they're correct the moment the user opens the rail
+      _evalReveal();   // §P2 — collapsed at boot ⇒ the cue peeks the ⋯ once, inviting the first tap (both platforms)
 
       var mounted = pill.querySelectorAll('button[id^="pill-"]').length;
       var hidden = (PB.getConfig().hidden || []).length;
@@ -137,10 +275,13 @@
     var s = document.createElement('style');
     s.id = 'idmp-pill-style';
     s.textContent =
-      // Desktop: right-edge vertical strip (matches erp.html's #erp-pillbar idiom).
-      '#idmp-pillbar{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:1200;' +
+      // BOTTOM-RIGHT dock (user wrap 2026-06-09 — consistent with the BIM viewer's #mobile-bar/#mobile-pill):
+      // the ⋯ rests at the bottom-right corner and STAYS there; the strip (DOM-ordered ABOVE the trigger in a
+      // bottom-anchored column) RISES UP from behind it on tap. `bottom` is pinned so collapsing never moves the
+      // ⋯ to mid-screen — it remains where it is. Was right-edge VERTICALLY-CENTRED (top:50%/translateY(-50%)).
+      '#idmp-pillbar{position:fixed;right:10px;bottom:16px;top:auto;transform:none;z-index:1200;' +
         'display:flex;flex-direction:column;align-items:center;gap:8px;}' +
-      '#idmp-pill{display:flex;flex-direction:column;gap:6px;max-height:62vh;overflow-y:auto;' +
+      '#idmp-pill{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 120px);overflow-y:auto;' +
         'padding:6px;border-radius:16px;background:rgba(20,22,32,0.82);' +
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
       '#idmp-pill::-webkit-scrollbar{width:0;}' +
@@ -153,24 +294,28 @@
         'background:rgba(20,22,32,0.82);color:#9aa4b8;font-size:18px;line-height:1;display:flex;' +
         'align-items:center;justify-content:center;' +
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
-      // Mobile (≤760px): dock as a BOTTOM row (the dock the user liked — kept, sourced from the registry now).
-      // NOTE: PillBuilder toggles the pill via inline display:block, which defeats flex-direction:row — so the
-      // row is laid out with inline-flex buttons + nowrap (horizontal, scrollable) instead of a flex row.
+      // Reveal-UP: on each open the strip rises into view from behind the bottom ⋯ (translateY 18px → 0) then
+      // STAYS open (PillBuilder _toggle adds `.pill-revealing`; persistent dock — only a ⋯ re-tap collapses it).
+      '@keyframes pill-rise{from{transform:translateY(18px);opacity:0;}to{transform:translateY(0);opacity:1;}}' +
+      '#idmp-pill.pill-revealing{animation:pill-rise 0.42s cubic-bezier(.2,.85,.25,1);}' +
+      // Boot/stage CUE: a gentle upward bob on the ⋯ while collapsed — "there's more here, tap me". Two bobs
+      // then settle (subtle, common HMI — [[feedback_pill_icon_consistency]]); never recollapses the strip.
+      '@keyframes idmp-pill-peek{' +
+        '0%,100%{transform:translateY(0);box-shadow:none;}' +
+        '25%{transform:translateY(-9px);box-shadow:0 0 0 3px rgba(108,159,255,0.35);}' +
+        '55%{transform:translateY(0);}' +
+        '78%{transform:translateY(-4px);}' +
+      '}' +
+      '#idmp-pill-trigger.idmp-pill-attract{animation:idmp-pill-peek 0.85s ease-in-out 2;color:#6c9fff;}' +
+      // Mobile mirrors desktop — same BOTTOM-RIGHT dock, just a touch tighter + safe-area inset (home indicator).
       '@media (max-width:760px){' +
-        // Pin the dock content to the RIGHT edge (row-reverse main-start) and force the ⋯ trigger to be the
-        // right-most item (order:-1) so it holds ONE constant position whether the pills row is shown or
-        // collapsed — a tapped control must never jump out from under the finger. Was justify-content:center,
-        // which re-centred the lone trigger on collapse (x≈15→179). Mobile-scoped; desktop column dock untouched.
-        '#idmp-pillbar{right:0;left:0;bottom:0;top:auto;transform:none;flex-direction:row-reverse;' +
-          'align-items:center;justify-content:flex-start;gap:6px;padding:6px 8px;background:rgba(20,22,32,0.92);' +
-          'border-top:1px solid rgba(255,255,255,0.08);}' +
-        '#idmp-pill-trigger{order:-1;}' +
-        '#idmp-pill{max-height:none;background:transparent;border:none;backdrop-filter:none;' +
-          '-webkit-backdrop-filter:none;padding:0;white-space:nowrap;overflow-x:auto;overflow-y:hidden;}' +
-        '#idmp-pill button{display:inline-flex;margin:0 3px;}' +
+        '#idmp-pillbar{right:calc(10px + env(safe-area-inset-right,0px));' +
+          'bottom:calc(12px + env(safe-area-inset-bottom,0px));top:auto;transform:none;' +
+          'flex-direction:column;align-items:center;gap:8px;}' +
+        '#idmp-pill{max-height:calc(100vh - 110px);overflow-y:auto;overflow-x:hidden;}' +
       '}';
     document.head.appendChild(s);
   }
 
-  window.IdmpPills = { mount: mount, setStage: setStage, builder: null };
+  window.IdmpPills = { mount: mount, setStage: setStage, setDocContext: setDocContext, _evalReveal: _evalReveal, builder: null };
 })();

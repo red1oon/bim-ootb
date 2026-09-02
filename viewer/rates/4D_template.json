@@ -1,0 +1,138 @@
+{
+  "meta": {
+    "id": "4d_template",
+    "name": "Core 4D Programme Template",
+    "version": "1.2.0",
+    "what": "THE core Gantt programme every building instance copies from: a checked-in, reviewable, witnessed programme SKELETON — phases, per-level activities, the dependency logic between them, and the two physical rules (work content, crew capacity) that bound any schedule derived from it. Authored once here instead of emerging at runtime from a geometry solve and being discarded on reload.",
+    "not_this_file": "sequence_rules.json is a CLASSIFICATION table (ifc_class -> phase/sequence/trade + labour productivity). It answers 'which phase does this element belong to'. It cannot answer 'what is the programme'. The two files are used together: this one is the shape, that one is the lookup.",
+    "what_this_file_authors": "EXACTLY three things: calendar, duration_rule, capacity_rule + dependencies. Everything else in this file (the phase set, each phase's sequence, each phase's trades) is EXTRACTED from sequence_rules.json and gated against drift. v1.0.0's header claimed this file was 'the only place a fact is authored' — that overclaimed, and its own provenance line contradicted it. Stated as the three, it is exact.",
+    "instantiation": "A building instance copies this file, replicates every activity marked replicate_per_level once per real storey (bottom-up), REPORTS (never silently drops) any activity whose element population is empty for that building, and resolves durations by duration_rule subject to capacity_rule. Nothing here is per-building; nothing per-building belongs here.",
+    "provenance": "phases[].id/name/sequence and phases[].trades are EXTRACTED from viewer/rates/sequence_rules.json's own SEQUENCE_RULES (min sequence per phase, the union of resources that phase's classes name) — not typed by hand, and they must not drift from it. witness_4d_template.js gates that.",
+    "editable": "Registered like every other project JSON: id = 4d_template, file = rates/4D_template.json, storageKey = json_4d_template."
+  },
+
+  "calendar": {
+    "_what": "The working calendar the programme is authored against. Named here because it was previously implicit: rates.js SHIFT_HOURS alone carried it, and nothing stated the week.",
+    "hours_per_shift": 24,
+    "days_per_week": 7,
+    "_hours_per_shift_why": "24 is the STANDING USER RULING recorded at rates.js SHIFT_HOURS (2026-08-13): 'our default, import and JSON setting can import as we align to standard model'. Carried forward verbatim, NOT changed here — this file only makes it visible and editable. A standard-model import sets 8.",
+    "_days_per_week_why": "7 matches what the engine actually does today (schedule_gate.js applies no week calendar; §CREW_DAY logs '24/7 calendar unchanged'). Stated so a 5-day working week becomes an edit rather than a rewrite.",
+    "holidays": []
+  },
+
+  "duration_rule": {
+    "_what": "How an activity's duration is derived. THIS IS THE ANCHOR the chain was missing: before this, a task's length came from however long the geometry placement solve happened to span. The solve ORDERS elements; it does not PRICE the work.",
+    "basis": "work_content",
+    "divisor_scope": "per_trade",
+    "formula": "days = ceil( MAX over trades t of ( sum(installSecs of this activity's elements worked by t) / (hours_per_shift * 3600 * max_crews[t]) ) )",
+    "min_days": 1,
+    "_installSecs_source": "ScheduleAuthor._installSecs, from sequence_rules.json LABOR_RATES productivity. Same function the engine uses — never a second copy.",
+    "_max_crews_source": "sequence_rules.json LABOR_RATES[trade].max_crews. Present on all 10 trades.",
+    "_why_max_and_not_sum": "v1.0.0 wrote 'crews = sum of max_crews over the trades the activity's own elements actually use' and divided the activity's TOTAL seconds by it. That treats trades as FUNGIBLE — an electrician's seconds worked off by a plumber's crew. Work content is per trade: an activity is as long as its slowest trade, never the pooled average. MEASURED on HHS_Office_Federated (6839 elements, 24h shift, 2026-08-25): whole-programme sum-of-crews = 40.1 days, correct per-trade = 69.8 days — the sum form understates by 1.74x overall, and up to 3.00x on a single phase (MEP Rough-in / MEP Final: 3 trades, Sum(max_crews)=6, but no one trade has more than 2 crews). The file exists to end a duration contradiction; the sum form would have replaced it with a new one.",
+    "_same_bug_shipped_elsewhere": "schedule_author.js materializeZones' §ZONE_WINDOW_COVERS_WORK floor computes _wCrews as the SAME sum. Any fix here is not complete until that site divides per trade too.",
+    "_not_this": "NOT the elapsed span of the placement solve."
+  },
+
+  "capacity_rule": {
+    "_what": "The hard physical bound on ANY schedule derived from this template. Distinct from duration_rule: duration_rule prices one activity, capacity_rule constrains the whole programme at every instant.",
+    "rule": "at no instant may more than max_crews[t] elements of trade t be in progress, for every trade t",
+    "applies_to": "the FINAL emitted times, not only the times at first placement",
+    "_why_final_and_not_first": "MEASURED on HHS_Office_Federated (2026-08-25, A/B with the repair loop disabled): schedule_gate.js enforces the cap correctly inside claimCrew at placement — every trade sits exactly at or under its cap. The §DEQ_REPAIR sweep then moves elements forward to satisfy geometry gates by writing o.start/o.end DIRECTLY, without re-claiming a crew slot. Result: CARPENTER peaks at 8 simultaneous crews against max_crews=2, a 4.0x breach, while all 7 other trades stay legal. Disabling the repair loop returns CARPENTER to 2. The span is 46.9 days either way — the breach does not shorten the programme, it just makes it unbuildable.",
+    "_witness": "witness_4d_capacity_honoured.js — sweeps the emitted start/end times per trade and asserts peak concurrency <= max_crews."
+  },
+
+  "phases": [
+    {
+      "id": "substructure", "name": "Substructure", "sequence": 1,
+      "trades": ["CONCRETE_GANG"],
+      "replicate_per_level": false,
+      "scope": "building",
+      "_scope": "Ground-bearing work below the frame. Single occurrence per building — it does not repeat per storey.",
+      "_empty_ok": true,
+      "_empty_ok_why": "A federated or partial model legitimately ships no foundations. HHS_Office_Federated is one: MEASURED 2026-08-25, 0 of its 6839 elements classify Substructure, so the generated programme has no Substructure row at all. Absent must be REPORTED as absent, never silently skipped."
+    },
+    {
+      "id": "superstructure", "name": "Superstructure", "sequence": 2,
+      "trades": ["CONCRETE_GANG", "STEEL_ERECTOR"],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "Frame and floor plates for one level."
+    },
+    {
+      "id": "architecture_envelope", "name": "Architecture Envelope", "sequence": 5,
+      "trades": ["CARPENTER", "CONCRETE_GANG", "MASON", "ROOFER"],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "The weather-tight skin for one level: walls, curtain walling, roof, windows, and the circulation structure (stairs/ramps) that is built with the frame.",
+      "_why_split": "v1.2.0 had ONE 'Architecture' phase scoped 'Envelope AND internal fabric'. Those two halves sit on OPPOSITE SIDES of MEP Rough-in — you make a level weather-tight BEFORE first fix, and you hang doors AFTER it — so no single ordering of that phase could be correct: whichever way it was placed, half of it was wrong. A phase that straddles another phase is not atomic, which is the BOM rule this file otherwise keeps (each level self-contained). Split 2026-08-26. NOTE the repo carried BOTH readings at once: templates/4D_phases.json (April) has IfcWall predecessors [IfcDuct, IfcPipe] — services first, walls close them in — while this file had envelope-before-services. The contradiction is what the split resolves."
+    },
+    {
+      "id": "mep_rough_in", "name": "MEP Rough-in", "sequence": 7,
+      "trades": ["ELECTRICIAN", "HVAC_TECH", "PLUMBER"],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "First-fix services for one level, after that level is weather-tight."
+    },
+    {
+      "id": "architecture_closeup", "name": "Architecture Closeup", "sequence": 8,
+      "trades": ["CARPENTER"],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "Internal fabric closed up AFTER first fix: doors, and anything hung on or into a wall once the services inside it are in.",
+      "_band": "Sequence 8 was FREE — IfcRoof vacated it in PR #1527 (§S65 #7 moved roof 8 -> 6). So the split needs no renumbering of any other phase: bands stay contiguous and non-overlapping at Substructure 1, Superstructure 2-4, Architecture Envelope 5-6, MEP Rough-in 7, Architecture Closeup 8, MEP Final 9, Finishes 10-11.",
+      "_empty_ok": true,
+      "_empty_ok_why": "A model with no doors legitimately has no closeup work. Absent must be REPORTED as absent, never silently skipped.",
+      "_open": "ONLY IfcDoor moves here. IfcWall/IfcWallStandardCase stay in the envelope and that is the KNOWN AMBIGUITY: ifc_class cannot tell an external skin wall from an internal partition, and moving all walls on a class name is the same mistake as a load-bearing class whitelist (4D_BAR_MODEL.md §18 — a structural-class regex re-admitted 438 curtain-wall glazing panels as load-bearing). An internal partition genuinely belongs in closeup; the signal to separate it must be MEASURED (perimeter/adjacency), not read off the class. Reported, not guessed."
+    },
+    {
+      "id": "mep_final", "name": "MEP Final", "sequence": 9,
+      "trades": ["ELECTRICIAN", "HVAC_TECH", "PLUMBER"],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "Second-fix services and terminals for one level."
+    },
+    {
+      "id": "finishes", "name": "Finishes", "sequence": 10,
+      "trades": ["FINISHER"],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "Coverings, furniture and final finishes for one level."
+    }
+  ],
+
+  "phase_bands": {
+    "_what": "A phase owns a CONTIGUOUS, NON-OVERLAPPING band of sequence_rules.json sequence numbers. Declared as a rule, not as a list, because the numbers themselves live in the lookup.",
+    "rule": "max(sequence of every class in phase[i]) < min(sequence of every class in phase[i+1])",
+    "_why": "v1.0.0 gated only that each phase's MINIMUM sequence increases. That cannot see a band INTERLEAVE — the exact defect §S65 #7 found and PR #1527 fixed (IfcRoof sat at sequence 8, inside Architecture, therefore after ALL of MEP Rough-in at 7). Under a min-only gate Architecture's min stays 5, the mins still increase, and the witness stays green while a roof is built after the ductwork it is supposed to cover. Bands MEASURED clean 2026-08-25: Substructure 1-1, Superstructure 2-4, Architecture 5-6, MEP Rough-in 7-7, MEP Final 9-9, Finishes 10-11."
+  },
+
+  "dependencies": {
+    "_what": "Construction LOGIC, authored here, independent of any date. Today's task_sequences rows are computed FROM the dates they are meant to validate (schedule_author.js: 'succ.start = pred.finish + lag EXACTLY'), so every edge is tight by construction, float is zero everywhere, and CPM reports every task critical. MEASURED on HHS_Office_Federated 2026-08-25: 25 of 25 derived zone edges have a lag exactly equal to the observed gap between the two zones' own dates — 100% restatement, 0% logic. An edge that comes from the answer cannot contradict the answer. These do.",
+    "_edge_scope_rule": "An edge whose predecessor is a building-scope phase and whose successor is a level-scope phase attaches to the LOWEST level only; every level above takes its predecessor from the across_levels chain instead. An edge between two level-scope phases instantiates once per level. Without this rule an instantiator has to guess which level a single Substructure activity precedes.",
+    "_empty_phase_rule": "When a phase is dropped for empty population, its within-level edge is BRIDGED (pred of the dropped phase -> succ of the dropped phase), never left dangling, and the drop is REPORTED. Verified need: HHS_Office_Federated drops Substructure, which is the head of the chain — an unbridged drop leaves Superstructure with no predecessor.",
+    "within_level": [
+      { "pred": "substructure",   "succ": "superstructure", "type": "FS", "lag_days": 0, "_why": "Frame bears on the foundations." },
+      { "pred": "superstructure", "succ": "architecture_envelope", "type": "FS", "lag_days": 0, "_why": "The envelope needs the frame and slab of its own level." },
+      { "pred": "architecture_envelope", "succ": "mep_rough_in", "type": "FS", "lag_days": 0, "_why": "First fix follows weather-tight. Same precedence the 2026-08-25 IfcRoof 8->6 ruling encoded at class level; stated here as programme logic rather than a sequence number." },
+      { "pred": "mep_rough_in",   "succ": "architecture_closeup", "type": "FS", "lag_days": 0, "_why": "Close up only once the services inside the fabric are in. This edge is the whole reason for the split — under one 'Architecture' phase it could not be expressed at all." },
+      { "pred": "architecture_closeup", "succ": "mep_final", "type": "FS", "lag_days": 0, "_why": "Second fix follows close-up." },
+      { "pred": "mep_final",      "succ": "finishes",       "type": "FS", "lag_days": 0, "_why": "Finishes close up completed services." }
+    ],
+    "_ladder_rule": "EVERY level-scope phase chains to ITSELF on the level below (FS+0, level_offset 1). This is the project's own §4D_BAND_MONOTONIC ruling — 'a trade may not run ahead of ITSELF on the floor below' — declared here as programme logic instead of living only inside the solver's gates. v1.1.0 declared the ladder for superstructure ALONE, and MEASURED on HHS_Office_Federated (2026-08-25, probe_4d_motion.js) that is NOT crew-legal: with levels otherwise free to run in parallel, MEP Rough-in on Levels 1/2/3 overlaps and PLUMBER peaks at 3.67 crews against a cap of 2 (1.84x), HVAC_TECH at 3.48 (1.74x). With the full ladder: ZERO breaches on every trade, and the programme costs 49 days against 41 — the 8 days that buy physical legality. Different trades still overlap ACROSS floors, which is what a trade train is; only a trade overtaking itself is forbidden.",
+    "across_levels": [
+      { "pred": "superstructure", "succ": "superstructure", "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "A level's frame cannot start before the level below it is framed. The one constraint that is structural as well as logistical." },
+      { "pred": "architecture_envelope", "succ": "architecture_envelope", "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC: the envelope trades may not run ahead of themselves. The user's own report that produced that ruling was 'upper floors gets walled first'." },
+      { "pred": "architecture_closeup", "succ": "architecture_closeup", "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC, same CARPENTER pool as the envelope's doors were in before the split." },
+      { "pred": "mep_rough_in",   "succ": "mep_rough_in",   "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC, and the measured binding case: without it PLUMBER runs 1.84x over cap across three simultaneous levels." },
+      { "pred": "mep_final",      "succ": "mep_final",      "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC. Same trades as rough-in, same crew pool, same failure mode." },
+      { "pred": "finishes",       "succ": "finishes",       "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC. One FINISHER pool for the building." }
+    ],
+    "_overlap": "USER RULING 2026-08-25: 'wont it be safer to avoid the hell — we make phases packed but sequential? User can then just drag them overlap if they want. As long it is editable.' Adopted. Every lag is 0 and every type is FS: phases are PACKED (no dead air, min_days 1) and STRICTLY SEQUENTIAL within a level, with the ladder above across levels. An overlap is then a deliberate EDIT a human drags in on the TM Gantt, never something a solver produced and nobody authorised.\n\nThis is not the expensive choice, which is why it is the safe one. MEASURED on HHS_Office_Federated (2026-08-25): the packed-sequential programme is 49 days against the current overlapping engine's 46.9 — +4%, two days, and it is crew-legal on every trade where the engine needed a repair pass to become so. The old fear that serialising costs a much longer film is not supported by the numbers on this building."
+  }
+}

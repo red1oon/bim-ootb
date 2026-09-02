@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<!--
+  pivot_lens.html — LENS-FAMILY: the PIVOT CHROME page (§NEXT #4, 360-kanban-pivot session).
+  Read-only cross-tab (rows × cols × measure) over glassbowl_data.db — convention-first clone of
+  kanban_lens.html chrome. No write path; cell click = §PIVOT-DRILL log + record-list tooltip.
+  Zoom-Across drill is handled by the EMBEDDED pivot (idempiere.html) via the existing FK gesture.
+  Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+  SPDX-License-Identifier: MIT
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP OOTB — Pivot Lens</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #121218; color: #e8e8ed; font-family: 'Inter', system-ui, sans-serif; font-size: 14px; }
+  header { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .sub { font-size: 11px; color: #888; margin-top: 2px; }
+  #gate { padding: 16px; color: #888; font-size: 13px; }
+  /* ctrl bar — same row layout as kanban sparse-note */
+  #ctrl-bar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:10px 14px;
+    border-bottom:1px solid rgba(255,255,255,0.06); font-size:13px; }
+  #ctrl-bar label { color:#999; }
+  #ctrl-bar select { background:#1e1e28; color:#e8e8ed; border:1px solid rgba(255,255,255,0.12);
+    border-radius:5px; padding:4px 8px; font-size:13px; cursor:pointer; }
+  #pv-export { margin-left:auto; background:#1e1e28; color:#9aa6b8; border:1px solid rgba(255,255,255,0.12);
+    border-radius:5px; padding:4px 10px; font-size:13px; font-weight:600; cursor:pointer; }
+  #pv-export:hover { color:#6c9fff; border-color:#6c9fff; }
+  #pivot-root { padding:12px; overflow:auto; }
+  /* pivot table */
+  .pv-wrap { overflow:auto; }
+  .pv-table { border-collapse:collapse; min-width:320px; }
+  .pv-table th { background:#1a1a26; color:#aaa; font-size:12px; font-weight:600;
+    padding:6px 10px; border:1px solid rgba(255,255,255,0.07); white-space:nowrap; }
+  .pv-table td { padding:6px 10px; border:1px solid rgba(255,255,255,0.07);
+    text-align:right; font-size:13px; color:#c8c8d8; white-space:nowrap; cursor:pointer; }
+  .pv-table td:first-child { text-align:left; color:#e8e8ed; font-weight:500; }
+  .pv-table td:hover { background:rgba(108,159,255,0.13); }
+  .pv-table td.pv-heat:hover { background:rgba(108,159,255,0.58) !important; }
+  .pv-table tr.total-row td { border-top:2px solid rgba(255,255,255,0.14); color:#7bb3ff; font-weight:600; }
+  .pv-table td.pv-zero { color:rgba(255,255,255,0.18); }
+  /* drill pop */
+  #pv-drill { position:fixed; bottom:12px; left:50%; transform:translateX(-50%);
+    background:#23233a; border:1px solid rgba(108,159,255,0.35); border-radius:8px;
+    padding:10px 16px; font-size:12px; color:#b8b8d8; max-width:520px; display:none;
+    box-shadow:0 4px 18px rgba(0,0,0,0.5); z-index:100; }
+  #pv-drill .pv-d-close { float:right; cursor:pointer; color:#888; margin-left:10px; }
+  .pv-note { color:#666; font-size:12px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pivot Lens</h1>
+  <div class="sub">Cross-tab over glassbowl_data.db · read-only · cell = record list · Zoom-Across via ERP window</div>
+</header>
+<div id="ctrl-bar">
+  <label>Table</label><select id="pv-tbl"></select>
+  <label>Rows</label><select id="pv-row"></select>
+  <label>Cols</label><select id="pv-col"></select>
+  <label>Measure</label>
+  <select id="pv-msr">
+    <option value="count">Count</option>
+    <option value="grandtotal">GrandTotal</option>
+    <option value="qty">Qty</option>
+  </select>
+  <button id="pv-export" title="Export cross-tab as CSV">⤓ Export</button>
+</div>
+<div id="gate">Loading pivot lens&hellip;</div>
+<div id="pivot-root"></div>
+<div id="pv-drill"><span class="pv-d-close" id="pv-d-x">✕</span><span id="pv-d-body"></span></div>
+
+<script src="kernel_ops.js?v=1"></script>
+<script src="erp_signer.js?v=1"></script>
+<script src="erp_kernel.js?v=1"></script>
+<script>
+(function () {
+  'use strict';
+  function log(m) { console.log('§PIVOT_HTML ' + m); }
+
+  function loadScript(url, cdn) {
+    return new Promise(function (resolve) {
+      var s = document.createElement('script');
+      s.src = url; s.onload = resolve;
+      s.onerror = function () {
+        if (cdn) { var s2 = document.createElement('script'); s2.src = cdn; s2.onload = resolve; s2.onerror = function(){resolve();}; document.head.appendChild(s2); }
+        else resolve();
+      };
+      document.head.appendChild(s);
+    });
+  }
+
+  // Table map — same as kanban (data, not code; docstatus-capable tables)
+  var TMAP = { c_invoice: 'C_Invoice', c_order: 'C_Order', c_payment: 'C_Payment', pp_order: 'PP_Order' };
+  // Per-table PK name (convention: tableName_id)
+  function pk(tb) { return tb + '_id'; }
+
+  // Categorical columns to offer as pivot axes for each table (queried from the loaded DB dynamically)
+  function catCols(db, tb) {
+    // Get columns for the table, exclude pure-numeric (amounts/IDs that are too high-cardinality) + the PK.
+    // Prefer columns with 2–20 distinct values (useful pivot axis) — same cardinality logic as _kbFields.
+    var rows;
+    try {
+      var r = db.exec('SELECT * FROM ' + tb + ' LIMIT 1');
+      if (!r.length) return [];
+      rows = r[0].columns;
+    } catch (e) { return []; }
+    var n;
+    try { n = db.exec('SELECT COUNT(*) n FROM ' + tb); n = n.length ? n[0].values[0][0] : 0; } catch (e) { n = 0; }
+    var good = [];
+    rows.forEach(function (col) {
+      if (col.toLowerCase() === pk(tb)) return;      // skip PK
+      try {
+        var dc = db.exec('SELECT COUNT(DISTINCT ' + col + ') n FROM ' + tb);
+        var c = dc.length ? dc[0].values[0][0] : 0;
+        if (c >= 2 && c <= 40 && c < n) good.push({ col: col, card: c });
+      } catch (e) {}
+    });
+    good.sort(function (a, b) { return a.card - b.card; });
+    return good.map(function (g) { return g.col; });
+  }
+
+  function _rows(res) {
+    if (!res.length) return [];
+    return res[0].values.map(function (v) { var o = {}; res[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; });
+  }
+
+  // ── FK → display resolution (iDempiere shows the referenced record's IDENTIFIER, not the raw PK) ──────
+  //   A column ending in _ID is a foreign key; resolve the referenced table by convention (role-prefixes
+  //   folded: Bill_/Ship_ BPartner → C_BPartner, SalesRep/CreatedBy → AD_User, …) and read its identifier
+  //   column (Name/DocumentNo/Value/…). NON-INVENT: a real lookup over the loaded db; unresolved → raw id.
+  function refTableFor(col) {
+    var c = String(col).toLowerCase().replace(/_id$/, '');
+    if (/bpartner$/.test(c)) return 'c_bpartner';
+    if (c === 'salesrep' || c === 'createdby' || c === 'updatedby' || c === 'ad_user') return 'ad_user';
+    if (c === 'c_doctypetarget') return 'c_doctype';
+    return c;   // by convention the base IS the table name
+  }
+  function identifierCol(db, tb) {
+    var cols; try { var r = db.exec('SELECT * FROM ' + tb + ' LIMIT 1'); if (!r.length) return null; cols = r[0].columns.map(function (x) { return x.toLowerCase(); }); } catch (e) { return null; }
+    var pri = ['name', 'documentno', 'value', 'iso_code', 'description', 'title'];
+    for (var i = 0; i < pri.length; i++) if (cols.indexOf(pri[i]) >= 0) return pri[i];
+    return null;
+  }
+  function tableExists(db, tb) { try { return !!db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND lower(name)=lower('" + tb + "') LIMIT 1").length; } catch (e) { return false; } }
+  function lookupMap(db, col) {
+    if (!/_id$/i.test(col)) return null;
+    var tb = refTableFor(col); if (!tableExists(db, tb)) return null;
+    var idc = identifierCol(db, tb); if (!idc) return null;
+    var map = {}, pkc = tb + '_id';
+    try { var r = db.exec('SELECT ' + pkc + ', ' + idc + ' FROM ' + tb); if (r.length) r[0].values.forEach(function (row) { if (row[1] != null) map[String(row[0])] = String(row[1]); }); }
+    catch (e) { return null; }
+    log('lookup ' + col + ' → ' + tb + '.' + idc + ' (' + Object.keys(map).length + ' values)');
+    return { map: map, refTable: tb, idCol: idc };
+  }
+  function display(lk, raw) { if (raw == null) return '(blank)'; var s = String(raw); return (lk && lk.map[s] != null) ? lk.map[s] : s; }
+  // AD dictionary names — read once from AD_Table (loads in ad_seed.db). PP_Order → "Manufacturing Order".
+  //   NON-INVENT: a real lookup over the loaded db; a data-only db without AD_Table → null → raw fallback.
+  var _DB = null, _adTbl = null, _CLIENT = null;
+  function adTableName(db, tn) {
+    if (_adTbl === null) { _adTbl = {};
+      try { var r = db.exec("SELECT UPPER(TableName), Name FROM AD_Table WHERE Name IS NOT NULL");
+        if (r.length) r[0].values.forEach(function (row) { _adTbl[row[0]] = row[1]; }); } catch (e) {} }
+    return _adTbl[String(tn).toUpperCase()] || null;
+  }
+  // friendly axis label — an FK column reads as its referenced table's dictionary name (C_BPartner_ID →
+  //   "Business Partner"); otherwise drop the _ID suffix + title-case. Best-effort, NON-INVENT.
+  function pretty(col) {
+    if (_DB && /_id$/i.test(col)) { var an = adTableName(_DB, refTableFor(col)); if (an) return an; }
+    return String(col).replace(/_id$/i, '').replace(/_/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); }).trim() || col;
+  }
+
+  // scope to the host tenant when embedded (so the cross-tab matches the window AND a drilled cell's PKs are
+  //   in the window's record set). Standalone (no client param) → whole table, unchanged.
+  function clientClause(db, tb) {
+    if (_CLIENT == null || _CLIENT === '') return '';
+    try { var r = db.exec('SELECT * FROM ' + tb + ' LIMIT 1'); if (r.length && r[0].columns.some(function (c) { return c.toLowerCase() === 'ad_client_id'; })) return ' WHERE AD_Client_ID IN (0,' + Number(_CLIENT) + ')'; } catch (e) {}
+    return '';
+  }
+  // Build the cross-tab: rowField × colField → measure
+  function buildPivot(db, tb, rowF, colF, msr) {
+    var rowLk = lookupMap(db, rowF), colLk = lookupMap(db, colF);
+    var KP = pk(tb);
+    // read all rows with the 3 columns we need + PK
+    var cols = [KP, rowF, colF];
+    var amtCol = null;
+    if (msr === 'grandtotal') { amtCol = 'grandtotal'; cols.push('grandtotal'); }
+    else if (msr === 'qty') { amtCol = 'qtyordered'; cols.push('qtyordered'); }
+    var rows;
+    try {
+      rows = _rows(db.exec('SELECT ' + cols.join(',') + ' FROM ' + tb + clientClause(db, tb)));
+    } catch (e) { log('pivot query err ' + e.message); return null; }
+    // sql.js returns columns in their DECLARED case (C_Order_ID), not the lowercase pk() — resolve so ids aren't undefined
+    if (rows.length && rows[0][KP] === undefined) { var k2 = Object.keys(rows[0]).filter(function (k) { return k.toLowerCase() === KP.toLowerCase(); })[0]; if (k2) KP = k2; }
+
+    // fold into rowVal → colVal → { count, sum, ids[] }
+    var rowKeys = {}, colKeys = {};
+    var cells = {};   // 'rowV|colV' → { count, sum, ids }
+    rows.forEach(function (r) {
+      var rv = display(rowLk, r[rowF]);   // FK → identifier (iDempiere-style), else raw value
+      var cv = display(colLk, r[colF]);
+      rowKeys[rv] = 1; colKeys[cv] = 1;
+      var k = rv + '|' + cv;
+      var cell = cells[k] = cells[k] || { count: 0, sum: 0, ids: [] };
+      cell.count++;
+      if (amtCol && r[amtCol] != null) cell.sum += Number(r[amtCol]) || 0;
+      if (cell.ids.length < 20) cell.ids.push(r[KP]);
+    });
+    return { rows: Object.keys(rowKeys).sort(), cols: Object.keys(colKeys).sort(), cells: cells, msr: msr, amtCol: amtCol, table: tb, rowF: rowF, colF: colF };
+  }
+
+  // Render the cross-tab HTML table
+  function renderPivot(pv, root) {
+    root.innerHTML = '';
+    if (!pv) { root.textContent = 'No data'; return; }
+    var fmt = pv.amtCol ? function (c) { return c.sum ? c.sum.toLocaleString(undefined, { maximumFractionDigits: 0 }) : ''; }
+                        : function (c) { return c.count ? String(c.count) : ''; };
+    var wrap = document.createElement('div'); wrap.className = 'pv-wrap';
+    var t = document.createElement('table'); t.className = 'pv-table';
+    // header row
+    var htr = document.createElement('tr');
+    var th0 = document.createElement('th'); th0.textContent = pretty(pv.rowF) + ' \\ ' + pretty(pv.colF); htr.appendChild(th0);
+    pv.cols.forEach(function (cv) { var th = document.createElement('th'); th.textContent = cv; htr.appendChild(th); });
+    var thT = document.createElement('th'); thT.textContent = 'Total'; htr.appendChild(thT);
+    t.appendChild(htr);
+    // data rows
+    var colTotals = {}; pv.cols.forEach(function (cv) { colTotals[cv] = { count: 0, sum: 0 }; });
+    var grandTotal = { count: 0, sum: 0 };
+    // HEATMAP — color each data cell by its share of the biggest cell (darker = higher). Real values only,
+    //   NON-INVENT: the same count/sum the cell already shows. Totals + labels stay plain so they don't dominate.
+    var heatMax = 0;
+    pv.rows.forEach(function (rv) { pv.cols.forEach(function (cv) { var c = pv.cells[rv + '|' + cv]; if (c) { var hv = pv.amtCol ? c.sum : c.count; if (hv > heatMax) heatMax = hv; } }); });
+    pv.rows.forEach(function (rv) {
+      var tr = document.createElement('tr');
+      var tdR = document.createElement('td'); tdR.textContent = rv; tr.appendChild(tdR);
+      var rowTotal = { count: 0, sum: 0 };
+      pv.cols.forEach(function (cv) {
+        var k = rv + '|' + cv;
+        var cell = pv.cells[k] || { count: 0, sum: 0, ids: [] };
+        var td = document.createElement('td');
+        var v = pv.amtCol ? cell.sum : cell.count;
+        td.textContent = fmt(cell);
+        if (!v) td.classList.add('pv-zero');
+        else if (heatMax > 0) { td.classList.add('pv-heat'); td.style.background = 'rgba(108,159,255,' + (0.07 + 0.45 * (v / heatMax)).toFixed(3) + ')'; }   // heat tint by share
+        // cell drill — tap = §PIVOT-DRILL id panel; LONG-PRESS = ask the host to open these records in the window
+        if (cell.count) td.style.cursor = 'pointer';
+        (function (cRv, cCv, cCell) {
+          td.addEventListener('click', function () {
+            if (!cCell.count) return;
+            var msg = pv.table + ' where ' + pv.rowF + '="' + cRv + '" AND ' + pv.colF + '="' + cCv + '" — ' + cCell.count + ' records: ' + cCell.ids.slice(0, 10).join(', ') + (cCell.ids.length > 10 ? '…' : '');
+            document.getElementById('pv-d-body').textContent = msg;
+            document.getElementById('pv-drill').style.display = 'block';
+            console.log('§PIVOT-DRILL ' + msg);
+          });
+          var tm = null; function clr() { if (tm) { clearTimeout(tm); tm = null; } }
+          function arm() { clr(); if (!cCell.count) return; tm = setTimeout(function () { tm = null; parent.postMessage({ pivotDrill: { table: pv.table, ids: cCell.ids } }, '*'); console.log('§PIVOT-DRILL-LP table=' + pv.table + ' ids=' + cCell.ids.length); }, 480); }
+          td.addEventListener('mousedown', arm); ['mouseup', 'mouseleave', 'dragstart'].forEach(function (ev) { td.addEventListener(ev, clr); });
+          td.addEventListener('touchstart', arm, { passive: true }); ['touchend', 'touchcancel', 'touchmove'].forEach(function (ev) { td.addEventListener(ev, clr); });
+        })(rv, cv, cell);
+        tr.appendChild(td);
+        rowTotal.count += cell.count; rowTotal.sum += cell.sum;
+        colTotals[cv].count += cell.count; colTotals[cv].sum += cell.sum;
+        grandTotal.count += cell.count; grandTotal.sum += cell.sum;
+      });
+      var tdRT = document.createElement('td');
+      tdRT.textContent = fmt(rowTotal);
+      tr.appendChild(tdRT);
+      t.appendChild(tr);
+    });
+    // totals row
+    var ttr = document.createElement('tr'); ttr.className = 'total-row';
+    var ttdR = document.createElement('td'); ttdR.textContent = 'Total'; ttr.appendChild(ttdR);
+    pv.cols.forEach(function (cv) {
+      var ttd = document.createElement('td'); ttd.textContent = fmt(colTotals[cv]); ttr.appendChild(ttd);
+    });
+    var ttdT = document.createElement('td'); ttdT.textContent = fmt(grandTotal); ttr.appendChild(ttdT);
+    t.appendChild(ttr);
+    wrap.appendChild(t);
+    var note = document.createElement('div'); note.className = 'pv-note';
+    note.textContent = pv.rows.length + ' row values · ' + pv.cols.length + ' column values · darker = higher · click a cell to see its record IDs';
+    root.appendChild(wrap); root.appendChild(note);
+    log('renderPivot table=' + pv.table + ' rows=' + pv.rows.length + ' cols=' + pv.cols.length + ' measure=' + pv.msr + ' grandCount=' + grandTotal.count + ' heatMax=' + heatMax);
+  }
+
+  function populateSelects(db, tb) {
+    var cats = catCols(db, tb);
+    ['pv-row', 'pv-col'].forEach(function (id, i) {
+      var sel = document.getElementById(id); sel.innerHTML = '';
+      cats.forEach(function (c, j) {
+        var opt = document.createElement('option'); opt.value = c; opt.textContent = pretty(c);
+        if (j === i) opt.selected = true;   // default: row=first, col=second
+        sel.appendChild(opt);
+      });
+    });
+  }
+
+  var _lastPv = null;
+  function refresh(db) {
+    var tb  = document.getElementById('pv-tbl').value;
+    var rF  = document.getElementById('pv-row').value;
+    var cF  = document.getElementById('pv-col').value;
+    var msr = document.getElementById('pv-msr').value;
+    if (!tb || !rF || !cF) return;
+    var pv = buildPivot(db, tb, rF, cF, msr); _lastPv = pv;
+    renderPivot(pv, document.getElementById('pivot-root'));
+  }
+
+  // EXPORT — the cross-tab to CSV, EXACTLY the rendered numbers (NON-INVENT). Cells = Σamount (measure) or count.
+  function _csvEsc(v) { v = (v == null ? '' : String(v)); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function exportPivotCsv(pv) {
+    if (!pv) { log('export: no pivot'); return; }
+    var cell = function (c) { return pv.amtCol ? (c && c.sum ? c.sum : 0) : (c && c.count ? c.count : 0); };
+    var lines = [], grand = 0, colT = {}; pv.cols.forEach(function (cv) { colT[cv] = 0; });
+    lines.push([pretty(pv.rowF) + ' \\ ' + pretty(pv.colF)].concat(pv.cols, ['Total']).map(_csvEsc).join(','));
+    pv.rows.forEach(function (rv) {
+      var rowT = 0, row = [rv];
+      pv.cols.forEach(function (cv) { var v = cell(pv.cells[rv + '|' + cv]); row.push(v); rowT += v; colT[cv] += v; grand += v; });
+      row.push(rowT); lines.push(row.map(_csvEsc).join(','));
+    });
+    lines.push(['Total'].concat(pv.cols.map(function (cv) { return colT[cv]; }), [grand]).map(_csvEsc).join(','));
+    var csv = lines.join('\r\n'), blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a'), u = URL.createObjectURL(blob);
+    a.href = u; a.download = 'pivot-' + pv.table + '-' + pv.rowF + '-x-' + pv.colF + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(u); }, 1000);
+    console.log('§PIVOT-EXPORT table=' + pv.table + ' rows=' + pv.rows.length + ' cols=' + pv.cols.length + ' grand=' + grand + ' bytes=' + csv.length);
+  }
+
+  async function boot() {
+    await loadScript('lib/sql-wasm-fts5.js', 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.js');
+    var SQL;
+    try { SQL = await initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } }); }
+    catch (e) { SQL = await initSqlJs({ locateFile: function () { return 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.wasm'; } }); }
+
+    var params = new URLSearchParams(location.search);
+    var dbUrl = params.get('db') || 'glassbowl_data.db';
+    var db;
+    try {
+      var buf = await (await fetch(dbUrl)).arrayBuffer();
+      db = new SQL.Database(new Uint8Array(buf)); _DB = db;
+      log('db loaded ' + dbUrl + ' size=' + Math.round(buf.byteLength / 1024) + 'KB');
+    } catch (e) { document.getElementById('gate').textContent = 'DB load failed: ' + e.message; return; }
+
+    // populate table selector
+    var tblSel = document.getElementById('pv-tbl');
+    Object.entries(TMAP).forEach(function (kv) {
+      var opt = document.createElement('option'); opt.value = kv[0]; opt.textContent = adTableName(db, kv[0]) || kv[1];
+      tblSel.appendChild(opt);
+    });
+    log('table labels: ' + Object.keys(TMAP).map(function (k) { return k + '→' + (adTableName(db, k) || TMAP[k]); }).join(', '));
+
+    // default to the host window's table when given (so the dashboard pivot reflects the open window + drill maps)
+    var want = (params.get('table') || '').toLowerCase();
+    if (want && TMAP[want]) { tblSel.value = want; log('default table from host=' + want); }
+    var cp = params.get('client'); if (cp != null && cp !== '') { _CLIENT = cp; log('tenant scope client=' + cp); }
+
+    // populate axes for the selected table
+    populateSelects(db, tblSel.value);
+
+    // wire controls
+    tblSel.addEventListener('change', function () { populateSelects(db, tblSel.value); refresh(db); });
+    ['pv-row', 'pv-col', 'pv-msr'].forEach(function (id) {
+      document.getElementById(id).addEventListener('change', function () { refresh(db); });
+    });
+
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('pv-d-x').addEventListener('click', function () { document.getElementById('pv-drill').style.display = 'none'; });
+    document.getElementById('pv-export').addEventListener('click', function () { exportPivotCsv(_lastPv); });
+
+    refresh(db);
+    log('boot complete tables=' + Object.keys(TMAP).length);
+  }
+
+  boot().catch(function (e) { document.getElementById('gate').textContent = 'Boot error: ' + e.message; console.error(e); });
+})();
+</script>
+</body>
+</html>

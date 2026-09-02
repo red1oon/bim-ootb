@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- ⚠ DO NOT REMOVE — TEAMS PHASE-F SHOWCASE (teams/ROADMAP.md Phase F). A STANDALONE clickable page (à la
+     erp_teams_pill.html / gh_demo.html) demoing the six Phase-F optics, each a PURE deterministic fold of a
+     signed op-log over seeded NON-INVENT data: World-at-T · maker-checker co-sign · broadcast · replay ·
+     nudges · cross-product presence. No writes, no network, no engine/erp coupling (connector STUB seam).
+     Witnessed by poc_teams_s10.js / poc_teams_s12.js / poc_teams_presence.js. Read-only demo data. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BIM·OOTB Teams — Phase-F optics showcase</title>
+<style>
+  :root { --ink:#1d2330; --dim:#7b869c; --line:#e6e9f2; --bg:#f5f7fb; --accent:#3a6df0; --green:#1f9d57; --orange:#e08a1e; --red:#d23b4e; }
+  * { box-sizing:border-box; } body { margin:0; font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  header { padding:16px 20px; background:#fff; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; } header p { margin:4px 0 0; color:var(--dim); font-size:13px; }
+  main { padding:18px; max-width:1080px; margin:0 auto; display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); margin:0; padding:11px 14px; border-bottom:1px solid var(--line); }
+  .card h2 b { color:var(--accent); } .body { padding:13px 14px; font-size:13px; }
+  .row { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px dashed var(--line); } .row:last-child { border:0; }
+  .k { color:var(--dim); width:96px; flex:none; } .v { font-weight:600; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+  .pill.green { background:#e7f6ee; color:var(--green); } .pill.orange { background:#fcf1e0; color:var(--orange); } .pill.red { background:#fbe7ea; color:var(--red); }
+  .pill.grey { background:#eef1f7; color:var(--dim); }
+  button { font:inherit; font-size:12px; border:1px solid var(--line); background:#fff; border-radius:7px; padding:4px 10px; cursor:pointer; color:var(--ink); }
+  button:hover { border-color:var(--accent); color:var(--accent); } button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  input[type=range] { width:100%; }
+  .dot { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; font-size:9px; font-weight:700; color:#fff; }
+  .dot.faded { opacity:.4; } .muted { color:var(--dim); } .mono { font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+  .note { color:var(--dim); font-size:12px; margin-top:8px; } .ok { color:var(--green); font-weight:700; }
+  .cluster { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BIM·OOTB Teams — Phase-F optics</h1>
+  <p>Six differentiators, each a pure deterministic fold of one signed op-log (World = fold(History)). Seeded, read-only, non-invent.</p>
+</header>
+<main>
+  <div class="card"><h2><b>World-at-T</b> · re-fold a record as of any instant</h2><div class="body" id="c-wat"></div></div>
+  <div class="card"><h2><b>Maker-checker</b> · four-eyes co-sign + legal signoff</h2><div class="body" id="c-cos"></div></div>
+  <div class="card"><h2><b>Broadcast</b> · system-wide sticky on a universal anchor</h2><div class="body" id="c-bc"></div></div>
+  <div class="card"><h2><b>Replay</b> · onboarding — step a real completed flow</h2><div class="body" id="c-rep"></div></div>
+  <div class="card"><h2><b>Nudges</b> · one measured, dismissible nudge per item</h2><div class="body" id="c-nud"></div></div>
+  <div class="card"><h2><b>Presence</b> · unified BIM↔ERP — the moat</h2><div class="body" id="c-pre"></div></div>
+</main>
+
+<script src="../connectors.js"></script>
+<script src="../engine.js"></script>
+<script src="../overlay/dot_layer.js"></script>
+<script src="../overlay/postit.js"></script>
+<script src="../overlay/share_bundle.js"></script>
+<script src="../overlay/world_at_t.js"></script>
+<script src="../erp/cosign.js"></script>
+<script src="../overlay/broadcast.js"></script>
+<script src="../overlay/replay.js"></script>
+<script src="../erp/nudges.js"></script>
+<script src="../overlay/presence.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = window.TeamsConnectors, WT = window.TeamsWorldAtT, CO = window.TeamsCoSign,
+      BC = window.TeamsBroadcast, RE = window.TeamsReplay, NU = window.TeamsNudges,
+      PR = window.TeamsPresence, D = window.TeamsDotLayer;
+  var T = 1719700000000, S = 1000;
+  function el(id) { return document.getElementById(id); }
+  function erp(id, ts, a, verb, doc, p) { return { id: id, ts: ts, author: a, role: null, branch: null, cls: 'erp', verb: verb, target: doc, params: p || {} }; }
+  function signChain(ops) { var prev = 'GENESIS'; ops.forEach(function (o) { C.sign(o, prev); prev = o.op_hash; }); return ops; }
+  function rows(pairs) { return pairs.map(function (p) { return '<div class="row"><span class="k">' + p[0] + '</span><span class="v">' + p[1] + '</span></div>'; }).join(''); }
+
+  // ── 1) World-at-T ──────────────────────────────────────────────────────────
+  (function () {
+    var log = signChain([
+      erp('w1', T + 10, 'alice', 'SET_STATUS', 'INV-9', { to: 'Drafted', fields: { Amount: 1000 } }),
+      erp('w2', T + 30, 'bob',   'EDIT',       'INV-9', { fields: { Amount: 1200 } }),
+      erp('w3', T + 50, 'cara',  'POST',       'INV-9', { to: 'Posted', fields: { Amount: 1250 } })
+    ]);
+    var box = el('c-wat');
+    box.innerHTML = '<div class="muted">Drag the time handle — the invoice re-folds <b>as of T</b> (exact, not a UI scrub).</div>' +
+      '<input id="wat-r" type="range" min="0" max="60" value="60" step="1"><div id="wat-out"></div>' +
+      '<div class="note">chain verifies through the prefix: <span id="wat-v" class="ok"></span></div>';
+    function draw() {
+      var t = +el('wat-r').value, cut = { ts: T + t };
+      var r = WT.recordAt(log, cut, { id: 'INV-9' });
+      var v = WT.verifyAt(log, cut).ok;
+      el('wat-out').innerHTML = rows([
+        ['as of T', 'T+' + t + 's'],
+        ['Amount', r.fields.Amount ? ('$' + r.fields.Amount.value + ' <span class="muted">(' + r.fields.Amount.who + ')</span>') : '<span class="muted">—</span>'],
+        ['status', r.status ? r.status.value : '<span class="muted">—</span>']
+      ]);
+      el('wat-v').textContent = v ? '✓ ok' : '✗';
+    }
+    el('wat-r').addEventListener('input', draw); draw();
+  })();
+
+  // ── 2) Maker-checker co-sign ────────────────────────────────────────────────
+  (function () {
+    var elig = function (a, r) { return r === 'Mgr' || r === 'Approver'; };
+    var ok = []; ok = CO.submit(ok, { id: 's1', ts: T + 10, author: 'alice', role: 'AP', doc: 'PO-1', amount: 8000, group: 'g1', legal: 'within DOA §3' }).log;
+    ok = CO.approve(ok, { id: 'a1', ts: T + 20, author: 'bob', role: 'Mgr', doc: 'PO-1', group: 'g1', legal: 'approved — Mgr Bob' }).log;
+    var stOk = CO.coSignState(ok, 'PO-1', { eligible: elig });
+    var self = []; self = CO.submit(self, { id: 's2', ts: T + 5, author: 'alice', role: 'AP', doc: 'PO-2', amount: 9000, group: 'g2' }).log;
+    self = CO.approve(self, { id: 'a2', ts: T + 9, author: 'alice', role: 'AP', doc: 'PO-2', group: 'g2' }).log;
+    var stSelf = CO.coSignState(self, 'PO-2', { eligible: elig });
+    el('c-cos').innerHTML =
+      '<div class="row"><span class="k">PO-1 $8000</span><span class="v"><span class="pill green">' + stOk.status + '</span></span></div>' +
+      '<div class="row"><span class="k">signers</span><span class="v">' + stOk.maker + ' → ' + stOk.checker + '</span></div>' +
+      '<div class="row"><span class="k">legal memo</span><span class="v mono">' + stOk.legal + '</span></div>' +
+      '<div class="row"><span class="k">PO-2 self</span><span class="v"><span class="pill orange">' + stSelf.status + '</span></span></div>' +
+      '<div class="note">' + stSelf.reason + ' — four-eyes enforced by the op signatures (non-repudiation).</div>';
+  })();
+
+  // ── 3) Broadcast ────────────────────────────────────────────────────────────
+  (function () {
+    var elig = function (a, r) { return r === 'SysAdmin'; };
+    var log = []; log = BC.emit(log, { id: 'b1', ts: T + 10, author: 'admin', role: 'SysAdmin', target: { scope: 'all' }, msg: 'Period close Friday', eligible: elig }).log;
+    log = BC.emit(log, { id: 'b2', ts: T + 20, author: 'admin', role: 'SysAdmin', target: { scope: 'role', value: 'AP' }, msg: 'AP recon today', eligible: elig }).log;
+    var acked = false;
+    function draw() {
+      var l = log;
+      if (acked) l = BC.ack(l, { id: 'k1', ts: T + 40, author: 'bob', role: 'AP', bid: 'b1', ref: 'all' }).log;
+      var folded = BC.foldBroadcasts(l);
+      var forBob = BC.broadcastsFor(folded, { user: 'bob', role: 'AP', level: 1 });
+      el('c-bc').innerHTML = '<div class="muted">What <b>bob (AP)</b> receives — admin announcements, eligible-gated:</div>' +
+        forBob.map(function (b) { return '<div class="row"><span class="v">' + b.msg + '</span><span class="pill ' + (b.acked ? 'green' : 'grey') + '">' + (b.acked ? 'ack' : 'new') + '</span></div>'; }).join('') +
+        '<div class="note">ineligible authors can\'t emit (refused). <button id="bc-ack">' + (acked ? 'unack' : 'bob acknowledges') + '</button></div>';
+      el('bc-ack').addEventListener('click', function () { acked = !acked; draw(); });
+    }
+    draw();
+  })();
+
+  // ── 4) Replay ───────────────────────────────────────────────────────────────
+  (function () {
+    var log = [
+      erp('r1', T + 0 * S, 'alice', 'CREATE',  'O1', { to: 'Drafted', fields: { Amount: 1000 } }),
+      erp('r2', T + 1 * S, 'alice', 'SUBMIT',  'O1', { to: 'Submitted' }),
+      erp('r3', T + 2 * S, 'bob',   'APPROVE', 'O1', { to: 'Approved' }),
+      erp('r4', T + 3 * S, 'bob',   'EDIT',    'O1', { fields: { Amount: 1200 } }),
+      erp('r5', T + 4 * S, 'cara',  'POST',    'O1', { to: 'Posted' })
+    ];
+    var sess = RE.makeReplay(log, { anchorKey: 'O1', classes: ['erp'] });
+    var cur = 1;
+    function draw() {
+      var step = sess.steps[cur - 1], st = RE.stepState(sess, cur, { id: 'O1' });
+      el('c-rep').innerHTML = '<div class="mono">' + step.narration + '</div>' +
+        rows([['Amount @ step', st.fields.Amount ? ('$' + st.fields.Amount.value) : '—'], ['status', st.status ? st.status.value : '—']]) +
+        '<div class="note">deterministic replay over the real history (the training script). ' +
+        '<button id="rp-b">‹ prev</button> <button id="rp-f">next ›</button> <span class="muted">' + cur + '/' + sess.n + '</span></div>';
+      el('rp-b').addEventListener('click', function () { cur = RE.step(sess, cur, -1) || 1; draw(); });
+      el('rp-f').addEventListener('click', function () { cur = RE.step(sess, cur, +1); draw(); });
+    }
+    draw();
+  })();
+
+  // ── 5) Nudges ───────────────────────────────────────────────────────────────
+  (function () {
+    function flow(doc, poster) { return [
+      erp('c_' + doc, T + 0 * S, 'alice', 'CREATE',  doc, { to: 'Drafted' }), erp('s_' + doc, T + 1 * S, 'alice', 'SUBMIT', doc, { to: 'Submitted' }),
+      erp('a_' + doc, T + 3 * S, 'bob',   'APPROVE', doc, { to: 'Approved' }), erp('p_' + doc, T + 4 * S, poster, 'POST', doc, { to: 'Posted' })]; }
+    var base = flow('D1', 'cara').concat(flow('D2', 'cara'), flow('D3', 'dan'), flow('D4', 'dan'), [
+      erp('s_D5', T + 1 * S, 'alice', 'SUBMIT', 'D5', { to: 'Submitted' }),
+      erp('s_D6', T + 1 * S, 'alice', 'SUBMIT', 'D6', { to: 'Submitted' }), erp('p_D6', T + 5 * S, 'dan', 'POST', 'D6', { to: 'Posted' })]);
+    var dismissed = null;
+    function draw() {
+      var log = base; if (dismissed) log = NU.dismiss(log, { id: 'dm', ts: T + 21 * S, author: 'mgr', item: dismissed }).log;
+      var res = NU.nudges(log, { now: T + 20 * S, terminal: ['Posted'], minSamples: 4 });
+      el('c-nud').innerHTML = '<div class="muted">measured baselines from the same log — variance, not a whitelist:</div>' +
+        (res.nudges.length ? res.nudges.map(function (n) {
+          return '<div class="row"><span class="pill orange">' + n.kind + '</span><span class="v">' + n.item + '</span>' +
+            '<button data-i="' + n.item + '" class="nud-x">dismiss</button></div>' +
+            '<div class="note">' + n.text + '</div>';
+        }).join('') : '<div class="note ok">no nudges</div>');
+      Array.prototype.forEach.call(document.querySelectorAll('.nud-x'), function (b) { b.addEventListener('click', function () { dismissed = b.getAttribute('data-i'); draw(); }); });
+    }
+    draw();
+  })();
+
+  // ── 6) Presence (the moat) ──────────────────────────────────────────────────
+  (function () {
+    var beats = [
+      PR.makePresence({ user: 'alice', product: 'erp', location: { role: 'AP', org: 'HQ', doc: 'INV-9' }, ts: T + 50 }),
+      PR.makePresence({ user: 'alice', product: 'bim', location: { discipline: 'STR', level: 3, space: 'Grid-B' }, ts: T + 100 }),
+      PR.makePresence({ user: 'bob',   product: 'erp', location: { role: 'Approver', org: 'HQ', doc: 'PO-1' }, ts: T + 80 }),
+      PR.makePresence({ user: 'carol', product: 'bim', location: { discipline: 'ARC', level: 1 }, ts: T + 60 })
+    ];
+    var folded = PR.foldPresence(beats, { now: T + 150, activeMs: 60 });
+    var dots = PR.presenceDots(folded);
+    var bobSees = PR.crossProduct(folded, { user: 'bob', product: 'erp' });
+    el('c-pre').innerHTML =
+      '<div class="muted">one identity, one colour (=signer) across both products:</div>' +
+      '<div class="cluster" style="margin:8px 0">' + dots.map(function (d) {
+        return '<span class="dot' + (d.faded ? ' faded' : '') + '" style="background:' + d.color + '" title="' + d.blurb + '">' + d.initials + '</span>';
+      }).join('') + '</div>' +
+      '<div class="note">bob (in <b>ERP</b>) reads the whole suite — the cross-product moat:</div>' +
+      bobSees.map(function (p) {
+        return '<div class="row"><span class="dot" style="background:' + p.color + ';width:18px;height:18px">' + p.initials + '</span>' +
+          '<span class="v">' + p.user + '</span><span class="pill ' + (p.crossProduct ? 'grey' : 'green') + '">' + p.product.toUpperCase() + '</span>' +
+          '<span class="muted">' + p.locText + '</span></div>';
+      }).join('');
+  })();
+
+  window.__showcaseReady = true;
+})();
+</script>
+</body>
+</html>

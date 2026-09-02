@@ -40,6 +40,13 @@
   var _lastEntityTable = null; // remember which TABLE we dived into (for back animation)
   var _onLongPressEmpty = null; // callback for long-press on empty space (mobile search)
 
+  // §IDLE-GATE — CPU/battery: redraw at 60fps only while there is real motion;
+  // throttle to ~18fps when idle (keeps the node pulse "alive" but sheds ~70% of
+  // idle redraws), and skip work entirely when the tab is hidden. No loop-stop = no freeze.
+  var _lastActivity = 0;   // performance.now() of last user interaction
+  var _lastDrawAt = 0;     // performance.now() of last actual canvas draw
+  var _drawCount = 0;      // §IDLE-GATE witness — # of actual canvas draws
+
   // Fly-to-front animation
   var _flyTarget = null;   // node being pulled to front
   var _flyRotYStart = 0, _flyRotXStart = 0;
@@ -321,10 +328,23 @@
     _activeExpandedNode = null;  // §1 — clear dim on view rebuild
     var cfg = ENTITY_CFG[tableName] || SYS_CFG[tableName] || { icon: 'table', colour: '#888', label: tableName };
 
+    // §PRICE-LABEL — composite-key tables with no Name read as "Record N". Join to humanise the bubble.
+    // M_ProductPrice → "Product · <PriceList Year>" (M_PriceList_Version.Name already encodes list+year).
+    var ENTITY_QUERY = {
+      'M_ProductPrice':
+        "SELECT pp.M_Product_ID, pp.M_PriceList_Version_ID, pp.PriceStd, pp.IsActive, " +
+        "(p.Name || ' · ' || plv.Name) AS Name " +
+        "FROM M_ProductPrice pp " +
+        "LEFT JOIN M_Product p ON pp.M_Product_ID = p.M_Product_ID " +
+        "LEFT JOIN M_PriceList_Version plv ON pp.M_PriceList_Version_ID = plv.M_PriceList_Version_ID"
+    };
     var records;
     try {
       // §BUG2 — no arbitrary LIMIT; cap at _maxBubbles for memory safety
-      var r = _db.exec('SELECT * FROM [' + tableName + '] LIMIT ' + _maxBubbles);
+      var _entitySql = ENTITY_QUERY[tableName]
+        ? (ENTITY_QUERY[tableName] + ' LIMIT ' + _maxBubbles)
+        : ('SELECT * FROM [' + tableName + '] LIMIT ' + _maxBubbles);
+      var r = _db.exec(_entitySql);
       if (!r.length) return;
       var cols = r[0].columns;
       records = r[0].values.map(function (row) {
@@ -369,7 +389,7 @@
       var eSz = _radius * rFactor * Math.sin(phi) * Math.sin(theta);
       _nodes.push({
         id: keyCol + ':' + rec[keyCol],
-        label: String(name).substring(0, 16),
+        label: String(name).substring(0, 24),  // §PRICE-LABEL — was 16; fit composite labels (e.g. "Rose Bush · Export 2003")
         count: null,
         icon: cfg.icon,
         colour: cls.colour,
@@ -410,8 +430,10 @@
     }
 
     console.log('§BUILD_ENTITY table=' + tableName + ' records=' + _nodes.length +
+                ' nameCol=' + nameCol +
                 ' ids=[' + _nodes.slice(0,5).map(function(n){return n.recordId;}).join(',') +
                 (_nodes.length > 5 ? '...' : '') + ']' +
+                ' labels=[' + _nodes.slice(0,5).map(function(n){return n.label;}).join(' | ') + ']' +
                 ' types=' + _nodes.map(function(n){return n.type;}).filter(function(v,i,a){return a.indexOf(v)===i;}).join('/'));
   }
 
@@ -1085,7 +1107,20 @@
   // ── Animation loop ─────────────────────────────────────────────────
 
   function _animate() {
-    if (!_ctx) return;
+    if (!_ctx) return;   // teardown: stop the loop (no reschedule)
+    _animId = requestAnimationFrame(_animate);
+
+    // §IDLE-GATE — tab hidden: keep the loop alive but do zero canvas work.
+    if (typeof document !== 'undefined' && document.hidden) return;
+    var _now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var _active = _flyTarget || _dragging
+      || Math.abs(_momentumY) > 1e-4 || Math.abs(_momentumX) > 1e-4
+      || _focusPulseT > 0
+      || (_now - _lastActivity) < 1200;
+    // Idle → throttle to ~18fps (55ms). Active → full 60fps.
+    if (!_active && (_now - _lastDrawAt) < 55) return;
+    _lastDrawAt = _now;
+    _drawCount++;   // §IDLE-GATE witness
 
     // Fly-to-front animation (overrides all other motion)
     if (_flyTarget) {
@@ -1204,9 +1239,6 @@
     for (var ni = 0; ni < sortedIdx.length; ni++) {
       _drawNode(_nodes[sortedIdx[ni]]);
     }
-
-
-    _animId = requestAnimationFrame(_animate);
   }
 
   // §2b — Track which node is actively expanded (for dimming siblings)
@@ -1374,6 +1406,7 @@
 
   function _onPointerDown(e) {
     e.preventDefault();
+    _lastActivity = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // §IDLE-GATE
     var rect = _canvas.getBoundingClientRect();
     _dragStartX = e.clientX;
     _dragStartY = e.clientY;
@@ -1585,6 +1618,7 @@
 
   function _onWheel(e) {
     e.preventDefault();
+    _lastActivity = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // §IDLE-GATE
     var delta = e.deltaY > 0 ? -8 : 8;
     _radius = Math.max(40, Math.min(Math.max(_W, _H) * 1.2, _radius + delta));
     _rebuildSpherePositions();
@@ -1596,6 +1630,7 @@
   var _pinchStartRadius = 0;
 
   function _onTouchStart(e) {
+    _lastActivity = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // §IDLE-GATE
     if (e.touches.length === 2) {
       e.preventDefault();
       var dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1606,6 +1641,7 @@
   }
 
   function _onTouchMove(e) {
+    _lastActivity = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // §IDLE-GATE
     if (e.touches.length === 2 && _pinchStartDist > 0) {
       e.preventDefault();
       var dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1704,6 +1740,34 @@
         console.log('§BENCH fts5_build=' + Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - _tFts) + 'ms (deferred)');
       }, 100);
     }
+  }
+
+  /**
+   * §INSTANT — in-place canvas resize. Rescales the existing globe to the new
+   * canvas size WITHOUT destroy()+re-init, so the entry animation (or current
+   * drill view) continues uninterrupted instead of bursting a second time.
+   * The canvas element is reused by the caller (only width/height change), so
+   * _ctx, listeners and the _animate loop stay valid — we only update geometry.
+   */
+  function resize(w, h) {
+    if (!_canvas) return;
+    var oldRadius = _radius || 1;
+    _W = w; _H = h;
+    _cx = _W / 2;
+    _cy = _H / 2;
+    _radius = Math.min(_W, _H) * 0.38;
+    var ratio = _radius / oldRadius;
+    // Rescale home/target/start/current positions by the radius ratio — keeps any
+    // in-flight animation proportional (nodes animating out from origin keep going).
+    for (var i = 0; i < _nodes.length; i++) {
+      var n = _nodes[i];
+      if (n.sx !== undefined) { n.sx *= ratio; n.sy *= ratio; n.sz *= ratio; }
+      if (n.homeSx !== undefined) { n.homeSx *= ratio; n.homeSy *= ratio; n.homeSz *= ratio; }
+      if (n._targetSx !== undefined) { n._targetSx *= ratio; n._targetSy *= ratio; n._targetSz *= ratio; }
+      if (n._startSx !== undefined) { n._startSx *= ratio; n._startSy *= ratio; n._startSz *= ratio; }
+    }
+    console.log('§AD_GRAPH resize w=' + _W + ' h=' + _H + ' radius=' + Math.round(_radius) +
+                ' nodes=' + _nodes.length + ' (in-place, no re-init)');
   }
 
   function destroy() {
@@ -1819,6 +1883,7 @@
     init: init,
     initFromBubbles: initFromBubbles,
     graphHydrate: graphHydrate,
+    resize: resize,
     destroy: destroy,
     showEntity: showEntity,
     focusNode: focusNode,
@@ -1827,9 +1892,11 @@
     collapseAll: _collapseAll,
     zoom: function (delta) { _radius = Math.max(40, _radius + delta); _rebuildSpherePositions(); },
     getRadius: function () { return _radius; },
+    _debugNodes: function () { return _nodes.map(function (n) { return { id: n.id, label: n.label, x: n.screenX, y: n.screenY, z: n.screenZ, recordId: n.recordId, tableName: n.tableName }; }); },
     getFlyDelta: function () { return Math.abs(_flyRotYEnd - _flyRotYStart); },
     getScreenScale: function (idx) { return _nodes[idx] ? _nodes[idx].screenScale : 0; },
     getNodeCount: function () { return _nodes.length; },
+    getDrawCount: function () { return _drawCount; },   // §IDLE-GATE witness
     getCurrentView: function () { return _currentView; },
     getBubbleWeight: _getBubbleWeight,
     // §DEBUG — whitebox accessors for testing collapse/dim/gateway state

@@ -21,6 +21,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need tags so we can resolve the latest semver release for the Release row
+      # Stamp the provenance the System Monitor Release row reads (prompts/RESUME_SYSMON_RELEASE_LINK.md §FIX A.2).
+      # version = the latest SEMVER release (vX.Y.Z, cut by release-please — the curated "what's new" the row links).
+      # build   = this deploy's sw CACHE_VERSION (vNNN — the precise bits on THIS device, cache-bust id).
+      # Generated into the artifact only (never committed); NOT precached, so it's always the freshly-deployed value.
+      - name: Stamp erp/version.json (Release-row provenance)
+        run: |
+          BUILD=$(grep -oE "CACHE_VERSION = '[^']+'" erp/sw.js | head -1 | sed "s/.*'\([^']*\)'.*/\1/")
+          REL=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          VERSION="${REL:-$BUILD}"                                   # fall back to the build if no semver release yet
+          SHA=$(git rev-parse --short HEAD)
+          PR=$(git log -1 --pretty=%s | grep -oE '\(#[0-9]+\)' | tr -d '(#)' || true)
+          DATE=$(date -u +%Y-%m-%d)
+          printf '{"version":"%s","build":"%s","sha":"%s","pr":%s,"date":"%s"}\n' "$VERSION" "$BUILD" "$SHA" "${PR:-null}" "$DATE" > erp/version.json
+          echo "§SYSMON-RELEASE stamped erp/version.json: $(cat erp/version.json)"
+      # Minify OUR OWN JS in the ephemeral checkout only (prompts/UI_PAYLOAD_PERF.md Win #1).
+      # The repo source in git is NEVER changed — readable-source ethos preserved; only the
+      # uploaded Pages artifact is minified. Whitespace+syntax only (no identifier mangling),
+      # so cross-file window.* globals stay intact. Measured: gz ~1167KB → ~737KB (−36.9%).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Minify own JS into the Pages artifact
+        run: |
+          npm i --no-save esbuild@0.23.0
+          node scripts/minify_pages.js .
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

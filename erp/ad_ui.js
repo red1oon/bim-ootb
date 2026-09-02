@@ -27,51 +27,10 @@
   var _currentClient = 'gardenworld';  // 'system' | 'gardenworld'
   var GW_WINDOW_SET = null; // built on init from tables that actually have rows
 
-  // ── §2. Bottom navigation bar ──────────────────────────────────────
-
-  function _renderBottomNav() {
-    if (!_navEl) return;
-    var items = [
-      { icon: '\uD83C\uDFE0', label: 'Home',   action: 'home' },
-      { icon: '\uD83D\uDCCB', label: 'List',   action: 'list' },
-      { icon: '\u2795',       label: 'New',    action: 'new' },
-      { icon: '\uD83D\uDCCA', label: 'Charts', action: 'charts' },
-      { icon: '\u2699\uFE0F', label: 'More',   action: 'more' }
-    ];
-    _navEl.innerHTML = '';
-    _navEl.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:10;' +
-      'background:rgba(18,18,24,0.92);backdrop-filter:blur(12px);' +
-      '-webkit-backdrop-filter:blur(12px);border-top:1px solid rgba(255,255,255,0.06);' +
-      'display:flex;min-height:52px;';
-
-    for (var i = 0; i < items.length; i++) {
-      var btn = document.createElement('button');
-      btn.dataset.nav = items[i].action;
-      btn.innerHTML = '<div style="font-size:18px">' + items[i].icon + '</div>' +
-        '<div style="font-size:10px;margin-top:2px">' + items[i].label + '</div>';
-      var navActive = items[i].action === _currentScreen;
-      var navColour = navActive ? '#6c9fff' : '#555';
-      btn.style.cssText = 'flex:1;background:none;border:none;color:' + navColour +
-        ';padding:6px 0;cursor:pointer;min-height:52px;display:flex;' +
-        'flex-direction:column;align-items:center;justify-content:center;' +
-        'transition:color 0.15s;font-weight:' + (navActive ? '600' : '400') + ';';
-      btn.addEventListener('pointerup', _navHandler(items[i].action));
-      _navEl.appendChild(btn);
-    }
-    console.log('§AD_UI bottomNav rendered');
-  }
-
-  function _navHandler(action) {
-    return function (e) {
-      e.preventDefault();
-      console.log('§AD_UI nav action=' + action);
-      if (action === 'home') showMenu();
-      else if (action === 'list') _showRecordList();
-      else if (action === 'new') _createNewRecord();
-      else if (action === 'charts') _showCharts();
-      else if (action === 'more') _showMore();
-    };
-  }
+  // ── §2. Bottom navigation bar — RETIRED (user wrap 2026-06-10) ──────
+  // The emoji bottom-button bar (Home/List/New/Charts/More) belonged to the in-app record UI that the
+  // §IDEMPIERE-ROUTE launcher model replaced. It was the "old deprecated format" that reappeared on some
+  // back-from-idempiere paths. _renderBottomNav + _navHandler are DELETED; erp.html is bubbles + pill ONLY.
 
   // ── §3. Menu screen (Home) ─────────────────────────────────────────
 
@@ -87,68 +46,18 @@
     _breadcrumbEl.innerHTML = '<span style="font-size:16px;font-weight:bold;color:#eee">' +
       '\u2630 ERP OOTB</span>';
 
-    // §INSTANT — if DB not ready, render globe only (no switcher, no nav)
-    if (!_dbReady) {
-      if (typeof ADGraph !== 'undefined' && typeof INIT_BUBBLES !== 'undefined') {
-        _renderHomeGraph();  // will use initFromBubbles path
-        console.log('§AD_UI showMenu INSTANT bubbles');
-      } else {
-        _contentEl.innerHTML = '<div style="text-align:center;color:#666;padding:40px">' +
-          'Loading ERP\u2026</div>';
-        console.log('§AD_UI showMenu INSTANT waiting');
-      }
-      return;
+    // §IDEMPIERE-ROUTE (user wrap 2026-06-10) — erp.html is the bubble LAUNCHER, ALWAYS. Render only the
+    // curated globe skeleton; the old DB-ready home chrome (bottom-button nav + recent list + menu tree)
+    // is RETIRED — drilling now launches idempiere.html. Guarantees "clean bubbles only, no bottom buttons"
+    // on every entry (incl. back-from-idempiere), regardless of _dbReady.
+    if (typeof ADGraph !== 'undefined' && typeof INIT_BUBBLES !== 'undefined') {
+      _renderHomeGraph();  // initFromBubbles path; graphHydrate already enabled drill once DB ready
+      console.log('§AD_UI showMenu bubbles dbReady=' + _dbReady);
+    } else {
+      _contentEl.innerHTML = '<div style="text-align:center;color:#666;padding:40px">' +
+        'Loading ERP\u2026</div>';
+      console.log('§AD_UI showMenu waiting');
     }
-
-    // ── Full mode below (DB ready) ────────────────────────────────────
-    _renderBottomNav();
-
-    // Client switcher REMOVED (§OUTSTANDING two-top-buttons) — the System/GardenWorld
-    // toggle was redundant: client still switches via swipe (_switchClient, line ~2443)
-    // + _showClientToast, and deep-links via _setClient. _currentClient defaults to 'gardenworld'.
-    console.log('§AD_UI switcher-removed redundant=System/GardenWorld client=' + _currentClient);
-
-    // ── Full mode (DB ready) ──────────────────────────────────────────
-
-    // Data constellation — interactive graph replaces KPI cards
-    _renderHomeGraph();
-
-    // Recent windows
-    _loadRecent();
-    if (_recentWindows.length) {
-      var recentEl2 = document.createElement('div');
-      recentEl2.style.cssText = 'margin-bottom:12px;font-size:13px;color:#888;';
-      recentEl2.textContent = 'Recent: ';
-      for (var r2 = 0; r2 < _recentWindows.length && r2 < 5; r2++) {
-        var rw2 = _recentWindows[r2];
-        var rLink2 = document.createElement('a');
-        rLink2.href = '#';
-        rLink2.textContent = rw2.name;
-        rLink2.style.cssText = 'color:#4fc3f7;text-decoration:none;margin-right:8px;';
-        rLink2.dataset.windowId = rw2.id;
-        rLink2.addEventListener('pointerup', function (ev) {
-          ev.preventDefault();
-          openWindow(Number(this.dataset.windowId));
-        });
-        recentEl2.appendChild(rLink2);
-      }
-      _contentEl.appendChild(recentEl2);
-    }
-
-    // Build set of windows that have browsable data
-    if (!GW_WINDOW_SET) _buildWindowSets();
-
-    // Menu tree — filtered by client
-    var tree = ADParser.getMenuTree(_db);
-    var treeEl2 = document.createElement('div');
-    var windowSet = (_currentClient === 'system') ? _systemWindowSet : GW_WINDOW_SET;
-    _renderMenuNodes(treeEl2, tree, windowSet);
-    _contentEl.appendChild(treeEl2);
-
-    // (Search is now a floating overlay — see _toggleSearchOverlay / Alt+S)
-
-    console.log('§AD_UI showMenu roots=' + tree.length + ' client=' + _currentClient +
-                ' recent=' + _recentWindows.length);
   }
 
   // ── KPI cards ──────────────────────────────────────────────────────
@@ -213,20 +122,20 @@
   var _graphCanvas = null;
   var _graphContainer = null;  // the div that goes fullscreen
 
-  function _graphDrillCallback(tableName, windowId, record, filterMode) {
-    console.log('§AD_UI drill table=' + tableName + ' windowId=' + windowId +
-                ' filterMode=' + (filterMode || 'none') + ' hasRecord=' + !!record);
+  // §IDEMPIERE-ROUTE — resolve a table's PK value from a raw record row (case-insensitive col match).
+  function _recPk(record, tableName) {
+    if (!record) return null;
+    var want = (tableName + '_ID').toLowerCase();
+    for (var k in record) { if (k.toLowerCase() === want) return record[k]; }
+    return null;
+  }
 
-    // §S259b — Open accordion panel instead of full window navigation
-    // Long-press / double-tap sends record=null + filterMode='table' → route to _openTableView
-    if (record || filterMode === 'table') {
-      _openAccordionPanel(tableName, windowId, record, filterMode);
-      return;
-    }
-
-    // Fallback: no record → open window listing
+  // §IDEMPIERE-ROUTE — the in-app accordion/grid record view is RETIRED. Drilling a record or
+  // requesting the table view now opens the REAL iDempiere (idempiere.html) → login → client/role-scoped
+  // records (wrong client → blank, the familiar iDempiere behavior). Deep-links ?window=&record= survive login.
+  function _openInIdempiere(windowId, tableName, recordId) {
     var wid = windowId;
-    if (!wid) {
+    if (!wid && tableName) {
       try {
         var wr = _db.exec(
           'SELECT w.AD_Window_ID FROM AD_Window w ' +
@@ -236,9 +145,17 @@
         if (wr.length && wr[0].values.length) wid = Number(wr[0].values[0][0]);
       } catch (e) { /* no window */ }
     }
-    if (wid) {
-      openWindow(wid);
-    }
+    if (!wid) { _showToast('No iDempiere window for ' + (tableName || '?')); return; }
+    var url = 'idempiere.html?window=' + wid + (recordId != null && recordId !== '' ? '&record=' + encodeURIComponent(recordId) : '');
+    console.log('§AD_UI open-in-idempiere table=' + tableName + ' url=' + url);
+    window.location.href = url;
+  }
+
+  function _graphDrillCallback(tableName, windowId, record, filterMode) {
+    console.log('§AD_UI drill table=' + tableName + ' windowId=' + windowId +
+                ' filterMode=' + (filterMode || 'none') + ' hasRecord=' + !!record);
+    // Open the record (or the window's table view) in the real iDempiere — see §IDEMPIERE-ROUTE.
+    _openInIdempiere(windowId, tableName, record ? _recPk(record, tableName) : null);
   }
 
   // ── §S259b Accordion Grid Record Panel ────────────────────────────────
@@ -263,6 +180,20 @@
 
     // Apply filter: Properties → only non-null columns, sorted by picked column
     var displayFields = fields;
+    // §AD-DISPLAYLOGIC-LIVE — hide fields whose AD DisplayLogic is FALSE for THIS record (real iDempiere show/hide,
+    // not hand-coded): @Col@ refs resolve against the record via window.AdEvaluator. Parse error/uncertain → SHOW.
+    var _AdEv = (typeof window !== 'undefined' && window.AdEvaluator) ? window.AdEvaluator : null;
+    if (_AdEv) {
+      var _before = displayFields.length, _hidden = [];
+      displayFields = displayFields.filter(function (f) {
+        if (!f.displaylogic || String(f.displaylogic).trim() === '') return true;
+        var keep; try { keep = _AdEv.evaluate(f.displaylogic, record || {}, record || {}) !== false; } catch (e) { keep = true; }
+        if (!keep) _hidden.push(f.columnName + '[' + f.displaylogic + ']');
+        return keep;
+      });
+      if (_hidden.length)
+        console.log('§AD-DISPLAYLOGIC-LIVE table=' + tableName + ' shown=' + displayFields.length + ' hidden=' + _hidden.length + ' hiddenCols=' + _hidden.join(',') + ' (AD DisplayLogic false for this record)');
+    }
     if (filterMode && filterMode !== 'data') {
       displayFields = fields.filter(function(f) {
         var val = _caseGet(record, f.columnName);
@@ -1330,8 +1261,9 @@
   function _resolveDisplay(rec, colName) {
     var val = _caseGet(rec, colName);
     if (val === null || val === undefined || val === '') return null;
-    // If column ends with _ID, try FK resolution
-    if (colName.indexOf('_ID') >= 0 && typeof ADData !== 'undefined' && ADData.resolveFK) {
+    // REFRESOLVE_SPEC.md W-REFRESOLVE: attempt reference resolution for EVERY column (not just _ID) —
+    // List refs (PaymentRule/DeliveryVia) carry no _ID; resolveFK returns null when nothing resolves.
+    if (typeof ADData !== 'undefined' && ADData.resolveFK) {
       var resolved = ADData.resolveFK(_db, colName, val);
       if (resolved) return resolved;
     }
@@ -1358,7 +1290,7 @@
       var r = _db.exec(
         "SELECT DISTINCT f.Name, c.ColumnName, f.SeqNo, " +
         "c.AD_Reference_ID, c.IsKey, c.IsMandatory AS ColMandatory, " +
-        "f.IsMandatory, f.IsReadOnly, f.DefaultValue, c.DefaultValue AS ColDefault " +
+        "f.IsMandatory, f.IsReadOnly, f.DefaultValue, c.DefaultValue AS ColDefault, f.DisplayLogic " +
         "FROM AD_Field f " +
         "JOIN AD_Column c ON f.AD_Column_ID = c.AD_Column_ID " +
         "JOIN AD_Tab t ON f.AD_Tab_ID = t.AD_Tab_ID " +
@@ -1369,7 +1301,7 @@
         r = _db.exec(
           "SELECT DISTINCT f.Name, c.ColumnName, f.SeqNo, " +
           "c.AD_Reference_ID, c.IsKey, c.IsMandatory AS ColMandatory, " +
-          "f.IsMandatory, f.IsReadOnly, f.DefaultValue, c.DefaultValue AS ColDefault " +
+          "f.IsMandatory, f.IsReadOnly, f.DefaultValue, c.DefaultValue AS ColDefault, f.DisplayLogic " +
           "FROM AD_Field f " +
           "JOIN AD_Column c ON f.AD_Column_ID = c.AD_Column_ID " +
           "JOIN AD_Tab t ON f.AD_Tab_ID = t.AD_Tab_ID " +
@@ -1398,7 +1330,8 @@
             isKey: row[4] === 'Y',
             isMandatory: (row[5] === 'Y' || row[6] === 'Y'),
             isReadOnly: row[7] === 'Y',
-            defaultValue: row[8] || row[9] || null
+            defaultValue: row[8] || row[9] || null,
+            displaylogic: row[10] || null            // §AD-DISPLAYLOGIC-LIVE — DisplayLogic for AdEvaluator (show/hide)
           });
         }
       }
@@ -1493,11 +1426,9 @@
   }
 
   function _graphLongPressCallback(node) {
-    if (node.windowId) {
-      openWindow(node.windowId);
-    } else if (node.record) {
-      _showToast(node.label);
-    }
+    // §IDEMPIERE-ROUTE — long-press a bubble → open it in the real iDempiere (login → records).
+    // Table bubble → window only; record bubble → that record (node.recordId).
+    _openInIdempiere(node.windowId, node.tableName, (node.recordId != null ? node.recordId : null));
   }
 
   function _renderHomeGraph() {
@@ -1574,13 +1505,23 @@
         fsBtn.style.height = '28px';
         fsBtn.style.fontSize = '16px';
       }
-      ADGraph.destroy();
-      if (!_dbReady && typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
-        ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
-          _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+      // §INSTANT — resize the EXISTING globe in place (no destroy()+re-init). The
+      // canvas element is reused (only width/height changed above), so the animation
+      // loop, listeners and drill state survive — this kills the second "bubble burst"
+      // the 100ms auto-maximize used to cause by tearing the graph down and rebuilding.
+      if (ADGraph.resize) {
+        ADGraph.resize(canvas.width, canvas.height);
       } else {
-        ADGraph.init(canvas, _db, _currentClient,
-          _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+        // Legacy fallback: full rebuild (keeps the curated skeleton authoritative).
+        ADGraph.destroy();
+        if (typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
+          ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
+            _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+          if (_dbReady && _db && ADGraph.graphHydrate) ADGraph.graphHydrate(_db);
+        } else {
+          ADGraph.init(canvas, _db, _currentClient,
+            _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+        }
       }
       console.log('§AD_UI graphFullscreen=' + fullscreen +
         ' w=' + canvas.width + ' h=' + canvas.height);
@@ -1623,20 +1564,28 @@
 
     _contentEl.appendChild(container);
 
-    // Init graph — use initFromBubbles if DB not ready
-    if (!_dbReady && typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
+    // §INSTANT — always render the curated skeleton (initFromBubbles); graphHydrate(db)
+    // enables drill on it, so we never rebuild from _buildHomeNodes (no destroy/reset flash).
+    if (typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
       ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
         _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+      // initFromBubbles resets the graph's _db to null; re-attach so tap-drill still queries records.
+      if (_dbReady && _db && ADGraph.graphHydrate) ADGraph.graphHydrate(_db);
     } else {
       ADGraph.init(canvas, _db, _currentClient,
         _graphDrillCallback, _graphLongPressCallback);
     }
 
-    // Auto-maximize globe — first load or if was maximized before client switch
+    // Auto-maximize globe — first load or if was maximized before client switch.
+    // §INIT-REBURST fix: maximize SYNCHRONOUSLY (same tick as initFromBubbles, before the first rAF paint)
+    // so the globe's first visible frame is already at final size. The old setTimeout(…,100) painted the
+    // canvas at its small height (360) then grew it to viewport (600) ~100ms later — a visible size/position
+    // JUMP on every load + refresh (witness tests/poc_init_reburst.js: resizedAfterPaint Y→N). resize-in-place
+    // (ADGraph.resize) means no destroy/reinit, so this does NOT reintroduce the old bubble-burst.
     if (!_graphAutoMaxed || _graphIsMaxed) {
       _graphAutoMaxed = true;
       _graphIsMaxed = true;
-      setTimeout(function () { _resizeGraph(true); }, 100);
+      _resizeGraph(true);
     }
 
     console.log('§AD_UI graphView rendered client=' + _currentClient);
@@ -1910,38 +1859,14 @@
     setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 1500);
   }
 
+  // §IDEMPIERE-ROUTE (user wrap 2026-06-10) — the in-app window/grid view + its bottom-button bar are
+  // RETIRED. erp.html is the bubble LAUNCHER; opening a window now launches the REAL iDempiere renderer
+  // (idempiere.html → login → client/role-scoped records). Every caller (FTS hit, recent, deep-link)
+  // funnels through here so the deprecated grid/_renderBottomNav can never repaint.
   function openWindow(windowId) {
     if (!_dbReady) { _showHydrating(); return; }
-    // Destroy graph animation when leaving home
-    if (typeof ADGraph !== 'undefined' && _currentScreen === 'home') {
-      ADGraph.destroy();
-    }
-    console.log('§AD_UI openWindow id=' + windowId);
-    var win = ADParser.getWindow(_db, windowId);
-    if (!win) {
-      console.log('§AD_UI openWindow NOT FOUND id=' + windowId);
-      return;
-    }
-
-    _currentWindow = win;
-    _currentTabIdx = 0;
-    _currentScreen = 'window';
-    _parentRecord = null;
-
-    // Save to recent
-    _addRecent(win.id, win.name);
-    _renderBottomNav();
-
-    // Load records for header tab
-    _loadTabRecords();
-    _renderWindow();
-
-    // §HELP auto-show on window open (desktop only, >768px)
-    if (typeof window !== 'undefined' && window.innerWidth > 768 && !_helpVisible) {
-      _toggleHelp();
-    }
-
-    console.log('§AD_UI openWindow name=' + win.name + ' tabs=' + win.tabs.length);
+    console.log('§AD_UI openWindow id=' + windowId + ' → idempiere');
+    _openInIdempiere(Number(windowId), null, null);
   }
 
   function _loadTabRecords() {
@@ -2203,8 +2128,20 @@
       // Hidden fields: isKey, not displayed
       if (f.isKey || !f.isDisplayed) continue;
 
-      // DisplayLogic evaluation
-      if (f.displayLogic && !ADParser.evaluateDisplayLogic(f.displayLogic, rec)) continue;
+      // DisplayLogic evaluation — proven engine first (ad_evaluator.js, W-LOGIC-EVAL 3044/3044;
+      // ERP_COVERAGE_MATRIX.md §AD_Field·DisplayLogic), legacy ADParser only if AdEvaluator absent
+      if (f.displayLogic) {
+        var _show;
+        if (typeof window !== 'undefined' && window.AdEvaluator) {
+          try { _show = window.AdEvaluator.evaluate(f.displayLogic, rec || {}, rec || {}) !== false; }
+          catch (e) { _show = true; }
+          if (!_show) console.log('§AD-DISPLAYLOGIC-LIVE card table=' + (tab.tableName || tab.name) +
+            ' hiddenCol=' + f.columnName + ' logic=' + f.displayLogic);
+        } else {
+          _show = ADParser.evaluateDisplayLogic(f.displayLogic, rec);
+        }
+        if (!_show) continue;
+      }
 
       var val = rec[f.columnName];
       var isEmpty = (val === null || val === undefined || val === '');
@@ -3309,10 +3246,17 @@
       ADGraph.graphHydrate(db);
     }
 
-    // Build FTS5 search index
-    if (typeof ERPSearch !== 'undefined') {
-      var idx = ERPSearch.buildIndex(db);
-      console.log('§AD_UI fts5 indexed rows=' + idx.rows + ' ms=' + idx.ms);
+    // Build FTS5 search index — DEFERRED + chunked so it never freezes the globe.
+    // §INSTANT — search isn't needed for the opening burst; index hydrates behind it,
+    // one table per macrotask. (Was a single ~1s synchronous block; see W-INSTANT-FTS.)
+    if (typeof ERPSearch !== 'undefined' && ERPSearch.buildIndexChunked) {
+      var _kick = function () {
+        ERPSearch.buildIndexChunked(db, function (idx) {
+          console.log('§AD_UI fts5 indexed rows=' + idx.rows + ' ms=' + idx.ms + ' (deferred)');
+        });
+      };
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(_kick, { timeout: 1500 });
+      else setTimeout(_kick, 0);
     }
 
     // Build window sets silently — don't rebuild the globe (no flash)
@@ -3405,7 +3349,8 @@
     _test: {
       drillCallback: _graphDrillCallback,
       closeTableOverlay: _closeTableOverlay,
-      getTableOverlay: function () { return _tableOverlay; }
+      getTableOverlay: function () { return _tableOverlay; },
+      openAccordion: _openAccordionPanel   // §AD-DISPLAYLOGIC-LIVE test seam: build a record's accordion directly
     }
   };
 

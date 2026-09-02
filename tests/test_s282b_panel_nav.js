@@ -1241,12 +1241,12 @@ console.log('\n§S282b_TEST _isMobile registry — single source, no re-detectio
   var mainSets = (mainSrc.match(/window\._isMobile\s*=/g) || []);
   check('21.8 main.js does NOT set window._isMobile', mainSets.length === 0);
 
-  var pbSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'pill_builder.js'), 'utf8');
+  var pbSrc = fs.readFileSync(path.join(__dirname, '..', 'common', 'pill_builder.js'), 'utf8');   // canonical location since PILLS_CONSOLIDATION_REVIEW_2026-07-03
   check('21.9 pill_builder.js reads window._isMobile', pbSrc.indexOf('window._isMobile') >= 0);
 
   var viewerHtml = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'viewer.html'), 'utf8');
   var configPos = viewerHtml.indexOf('src="config.js');
-  var pillPos = viewerHtml.indexOf('src="pill_builder.js');
+  var pillPos = viewerHtml.indexOf('src="../common/pill_builder.js');
   var panelsPos = viewerHtml.indexOf('src="panels.js');
   var mainPos = viewerHtml.indexOf('src="main.js');
   check('21.10 load order: config.js before pill_builder.js', configPos > 0 && configPos < pillPos);

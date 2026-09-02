@@ -1,0 +1,54 @@
+Advance-Realism staffage — human-figure billboard cutouts, starter set (6 poses).
+Sourced from Skalgubbar (https://skalgubbar.se), created/curated by Teodor Javanaud Emdén.
+Vendored 2026-07-17. See PHOTOREAL_STILL_RENDER.md §SPEC (2026-07-17) Part A.
+
+LICENSE — NOT CC0, read before reusing elsewhere in this codebase:
+  "Skalgubbar is free to use for anyone who wants to bring their visualizations of
+  unbuilt architecture to life. For students as well as for commercial use. Your
+  architecture project should be in focus. Skalgubbar is not to be used as free
+  standing pictures or for product advertisements. [...] If you intend to use
+  Skalgubbar for anything else than populating visualizations of architecture
+  projects, please do not, since this is not part of the free license."
+  Full text: https://skalgubbar.se/read-me/
+  Attribution is only required for academic/published work citing sources (credit
+  "Skalgubbar", link www.skalgubbar.se) — not required for in-app rendering use,
+  but this NOTICE documents provenance regardless, same discipline as the Layer 3
+  ambientCG NOTICE.txt (viewer/textures/materials/NOTICE.txt).
+  BINDING CONDITION: this asset set may ONLY be used to populate architecture
+  visualizations (exactly this feature's use case) — never as standalone imagery,
+  marketing/product photography, or any other purpose. Do not copy these files to
+  a different feature without re-checking this condition still holds.
+
+FILES (all confirmed genuine RGBA cutouts — real transparency verified via alpha
+histogram before vendoring, not assumed from filename):
+  person_sitting_formal_male.png     <- Skalgubbar #321 "J sitting... at a wedding"
+                                         (folding chair, formal suit, side profile)
+  person_sitting_casual_female.png   <- Skalgubbar #304 "A in a fancy polished chair"
+                                         (modern lounge chair, 3/4 view)
+  person_standing_casual_male.png    <- Skalgubbar #40  "H is going to work"
+                                         (neutral casual, front-facing)
+  person_standing_gesture_female.png <- Skalgubbar #292 "J... pointing at something"
+                                         (rear view, mid-gesture)
+  person_walking_shopping_female.png <- Skalgubbar #369 "C shopping in Göteborg"
+                                         (rear view, walking, carrying bags)
+  person_walking_gym_female.png      <- Skalgubbar #298 "C on her way to yoga class"
+                                         (rear view, walking; NOTE: carries a bag
+                                         with a visible real "adidas" wordmark —
+                                         genuine to the source photo, not fabricated
+                                         by us; crop/blur before use if a real-brand
+                                         logo appearing in a rendered still is a
+                                         concern for the target use case)
+
+Source URL pattern for these specific files:
+  https://skalgubbar.se/wp-content/uploads/<year>/<month>/skalgubbar_<postId>_<slug>.png
+Each file's originating post is linkable at https://skalgubbar.se/<year>/<month>/<day>/<postId>-<slug>/
+
+Selection discipline: pulled from Skalgubbar's own "sitting"/"standing"/"walking" tag
+archives, downloaded, then verified as real alpha-channel cutouts (PIL histogram check
+— not just trusting the filename) before inclusion; visually spot-checked every file
+in this set before committing. Deliberately excluded from this pass: group/multi-person
+shots, kids/pets, and heavy seasonal outerwear — kept to single-figure, season-neutral
+poses so the starter set reads as generic building-occupant staffage rather than a
+specific candid scene. Not yet wired into any rendering code — sourcing only, per
+PHOTOREAL_STILL_RENDER.md §SPEC Part A open questions (placement/regeneration logic
+still to be designed).

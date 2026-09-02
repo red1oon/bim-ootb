@@ -1,0 +1,4317 @@
+{
+ "_source": "s5_hospital.log — Hospital HospitalAjaibPath MaxQ bake, commit e1369b7a sw=v1120 gpu=real(ANGLE RTX 4060 Laptop), 2027 frames, wall 2680s, aborted=no fileOk=true, 2026-09-01. 41,705 lines. Run-length encoded per tag, ORDER PRESERVED; expand to reconstruct the exact original series.",
+ "series": {
+  "GROUP_SPARK_TICK": {
+   "total": 2027,
+   "runs": 404,
+   "rle": [
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     4
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=13) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=10 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=11) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=30 recent=14) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=30 recent=22) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=30 recent=12) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=21 recent=13) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     8
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     6
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     6
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=22) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=14) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=19) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=25) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=26) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=36) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=35) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=26) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=16) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=26) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=45) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=26) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=6) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=14) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     4
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     3
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=18) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=5) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=15) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=7) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     3
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=3) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=4) roll=0 decay=1.00",
+     3
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=3) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=4) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=11 recent=110) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=106) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=33) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=41) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=10) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=106) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=156) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=116) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=252) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=138) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=78) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=55) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=7) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=5) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=20) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=14) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=23) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=4) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=5) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=5) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=19) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=11) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=6) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=57) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=86) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=93) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=43) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=7 recent=94) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=39) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=23) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=13) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=6) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=6 recent=22) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=21) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=17) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=14) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=5) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=3) roll=0 decay=1.00",
+     3
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=18) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=12) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=6 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=7) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=23) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=10) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=20) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=66) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=13) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=25) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     15
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     4
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=13) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     5
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     3
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=179) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=108) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=149) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=124) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=108) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=54) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=44) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=63) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=49) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     8
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=48) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     9
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=60) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=24) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=74) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=78) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=17) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=11) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     19
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=9) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=7) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     6
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=5) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     14
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=28) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=33) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=11) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=24) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=17) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=16) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     6
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     3
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=64) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=27) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=68) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=31) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     3
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     17
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=71) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=123) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=121) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=35) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=65) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=5 recent=52) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=6 recent=46) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=6 recent=77) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=6 recent=57) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=6 recent=52) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=6 recent=153) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=103) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=6 recent=95) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=6 recent=140) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=82) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=32) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=12) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=26) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=17) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=15) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=23) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=25) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=35) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=25) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=35) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=51) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=43) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=65) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=21) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=29) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=32) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=21) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     23
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=26) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=21) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=13) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=12) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     8
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=5) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     6
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=27) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=41) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=47) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=33) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=68) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=21) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=7) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     29
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=11) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=13) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=6) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     16
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=4) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=110) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=5) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     4
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     3
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=10) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     9
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     19
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=26) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=51) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=96) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=12) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=5) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     35
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=14) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=41) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=110) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=40) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=29) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=22) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=24) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=53) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=46) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=3 recent=22) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=17) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=42) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=50) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=36) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=34) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=81) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=13) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=22) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=10) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=16) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=50) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=28) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=26) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=7) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=14) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=42) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=26) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=67) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=40) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=11) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=32) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=18) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=22) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=18) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=23) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=97) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=84) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=105) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=7) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     7
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=24) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=25) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=29) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=13) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=27) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     29
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=12) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=29) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     6
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=86) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     23
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     6
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     35
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     6
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     31
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     3
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=23) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=11) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     5
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=49) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=28) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=37) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=44) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=38) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=19) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=14) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     13
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=131) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=71) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=117) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=88) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=92) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=4 recent=123) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=69) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=15) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=51) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=8) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=25) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=36) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=62) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=115) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=16) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=2) roll=0 decay=1.00",
+     2
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=4) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     4
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=67) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     21
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=2) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=268) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=3) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=2 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     6
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=57) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=1 recent=0) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=1) roll=0 decay=1.00",
+     1
+    ],
+    [
+     "§GROUP_SPARK_TICK playing=false cand=0 (frontier=0 recent=0) roll=0 decay=1.00",
+     1158
+    ]
+   ]
+  },
+  "GROUND_WETNESS_OVERRIDE": {
+   "total": 2028,
+   "runs": 1,
+   "rle": [
+    [
+     "§GROUND_WETNESS_OVERRIDE value=0.5 userSet=false",
+     2028
+    ]
+   ]
+  },
+  "NIGHT_STILL_LIGHTS": {
+   "total": 2026,
+   "runs": 1,
+   "rle": [
+    [
+     "§NIGHT_STILL_LIGHTS raised to 200 lights, near-fade floor 1 (was 0.3), plScale 0.5 (§STAGED_PL_CUT) for the still",
+     2026
+    ]
+   ]
+  },
+  "PHOTO_GLOW_SPRITE_staged": {
+   "total": 1751,
+   "runs": 11,
+   "rle": [
+    [
+     "§PHOTO_GLOW_SPRITE staged 57/1273 sprites (0 luminaires gain 3, 57 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     1
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 9/1273 sprites (0 luminaires gain 3, 9 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     198
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 19/1273 sprites (0 luminaires gain 3, 19 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     5
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 21/1273 sprites (0 luminaires gain 3, 21 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     5
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 24/1273 sprites (0 luminaires gain 3, 24 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     4
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 26/1273 sprites (0 luminaires gain 3, 26 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     173
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 35/1273 sprites (0 luminaires gain 3, 35 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     1
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 36/1273 sprites (0 luminaires gain 3, 36 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     7
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 46/1273 sprites (0 luminaires gain 3, 46 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     6
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 55/1273 sprites (0 luminaires gain 3, 55 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     187
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE staged 57/1273 sprites (0 luminaires gain 3, 57 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)",
+     1164
+    ]
+   ]
+  },
+  "PHOTO_GLOW_SPRITE_removed": {
+   "total": 1751,
+   "runs": 11,
+   "rle": [
+    [
+     "§PHOTO_GLOW_SPRITE removed 57 sprites",
+     1
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 9 sprites",
+     198
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 19 sprites",
+     5
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 21 sprites",
+     5
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 24 sprites",
+     4
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 26 sprites",
+     173
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 35 sprites",
+     1
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 36 sprites",
+     7
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 46 sprites",
+     6
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 55 sprites",
+     187
+    ],
+    [
+     "§PHOTO_GLOW_SPRITE removed 57 sprites",
+     1164
+    ]
+   ]
+  },
+  "GLOW_LENS_QUAD_skip": {
+   "total": 1740,
+   "runs": 13,
+   "rle": [
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 8)",
+     3
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 303)",
+     195
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 307)",
+     1
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 635)",
+     4
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 637)",
+     4
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 640)",
+     3
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 642)",
+     172
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 825)",
+     7
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 835)",
+     5
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 844)",
+     146
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 1024)",
+     32
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 1037)",
+     6
+    ],
+    [
+     "§GLOW_LENS_QUAD skip (count unchanged 1273)",
+     1162
+    ]
+   ]
+  },
+  "ENVMAP_STOMP_GUARD": {
+   "total": 906,
+   "runs": 1,
+   "rle": [
+    [
+     "§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active",
+     906
+    ]
+   ]
+  },
+  "IDLE_GATE": {
+   "total": 330,
+   "runs": 330,
+   "rle": [
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=25 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=25",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=50 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=50",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=75 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=75",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=100 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=100",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=125 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=125",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=150 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=150",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=175 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=175",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=200 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=200",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=225 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=225",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=250 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=250",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=275 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=275",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=300 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=300",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=325 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=325",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=350 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=350",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=375 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=375",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=400 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=400",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=425 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=425",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=450 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=450",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=475 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=475",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=500 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=500",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=525 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=525",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=550 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=550",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=575 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=575",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=600 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=600",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=625 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=625",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=650 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=650",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=675 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=675",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=700 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=700",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=725 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=725",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=750 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=750",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=775 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=775",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=800 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=800",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=825 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=825",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=850 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=850",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=875 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=875",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=900 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=900",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=925 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=925",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=950 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=950",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=975 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=975",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1000 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1000",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1025 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1025",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1050 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1050",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1075 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1075",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1100 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1100",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1125 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1125",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1150 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1150",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1175 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1175",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1200 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1200",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1225 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1225",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1250 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1250",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1275 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1275",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1300 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1300",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1325 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1325",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1350 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1350",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1375 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1375",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1400 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1400",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1425 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1425",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1450 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1450",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1475 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1475",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1500 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1500",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1525 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1525",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1550 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1550",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1575 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1575",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1600 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1600",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1625 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1625",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1650 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1650",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1675 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1675",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1700 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1700",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1725 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1725",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1750 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1750",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1775 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1775",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1800 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1800",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1825 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1825",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1850 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1850",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1875 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1875",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1900 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1900",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1925 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1925",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1950 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1950",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=1975 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=1975",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2000 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2000",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2025 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2025",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2050 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2050",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2075 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2075",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2100 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2100",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2125 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2125",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2150 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2150",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2175 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2175",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2200 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2200",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2225 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2225",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2250 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2250",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2275 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2275",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2300 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2300",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2325 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2325",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2350 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2350",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2375 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2375",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2400 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2400",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2425 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2425",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2450 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2450",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2475 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2475",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2500 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2500",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2525 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2525",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2550 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2550",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2575 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2575",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2600 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2600",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2625 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2625",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2650 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2650",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2675 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2675",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2700 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2700",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2725 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2725",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2750 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2750",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2775 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2775",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2800 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2800",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2825 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2825",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2850 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2850",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2875 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2875",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2900 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2900",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2925 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2925",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2950 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2950",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=2975 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=2975",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3000 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3000",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3025 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3025",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3050 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3050",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3075 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3075",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3100 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3100",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3125 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3125",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3150 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3150",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3175 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3175",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3200 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3200",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3225 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3225",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3250 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3250",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3275 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3275",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3300 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3300",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3325 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3325",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3350 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3350",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3375 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3375",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3400 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3400",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3425 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3425",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3450 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3450",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3475 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3475",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3500 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3500",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3525 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3525",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3550 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3550",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3575 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3575",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3600 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3600",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3625 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3625",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3650 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3650",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3675 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3675",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3700 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3700",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3725 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3725",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3750 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3750",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3775 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3775",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3800 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3800",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3825 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3825",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3850 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3850",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3875 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3875",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3900 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3900",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3925 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3925",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3950 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3950",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=3975 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=3975",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=4000 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=4000",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=4025 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=4025",
+     1
+    ],
+    [
+     "§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=4050 (throttled: every 25th)",
+     1
+    ],
+    [
+     "§IDLE_GATE wake cycles=4050",
+     1
+    ]
+   ]
+  },
+  "SHADOW_FRONTIER": {
+   "total": 33,
+   "runs": 1,
+   "rle": [
+    [
+     "§SHADOW_FRONTIER casters=0 receivers=0",
+     33
+    ]
+   ]
+  },
+  "SHADOW_FRONTIER_AT_CAPTURE": {
+   "total": 286,
+   "runs": 286,
+   "rle": [
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=4 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=5 frontierGuids=10 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=6 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=7 frontierGuids=30 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=7 batchCastShadowTrue=7 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=8 frontierGuids=30 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=9 frontierGuids=30 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=7 batchCastShadowTrue=7 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=10 frontierGuids=21 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=19 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=34 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=35 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=36 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=37 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=38 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=39 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=40 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=41 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=42 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=43 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=44 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=45 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=46 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=6 batchCastShadowTrue=6 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=47 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=48 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=53 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=58 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=59 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=60 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=61 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=62 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=67 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=68 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=69 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=70 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=71 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=72 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=73 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=74 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=75 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=76 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=77 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=78 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=79 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=80 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=81 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=82 frontierGuids=11 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=9 batchCastShadowTrue=9 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=83 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=6 batchCastShadowTrue=6 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=84 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=85 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=86 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=87 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=88 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=89 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=7 batchCastShadowTrue=7 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=90 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=91 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=92 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=93 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=94 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=95 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=96 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=97 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=98 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=99 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=100 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=101 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=102 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=103 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=104 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=105 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=106 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=107 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=108 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=109 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=111 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=112 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=113 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=114 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=115 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=116 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=6 batchCastShadowTrue=6 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=117 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=118 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=119 frontierGuids=7 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=7 batchCastShadowTrue=7 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=120 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=121 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=122 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=123 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=124 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=125 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=126 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=127 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=128 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=129 frontierGuids=6 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=130 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=131 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=132 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=133 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=134 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=135 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=136 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=137 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=138 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=139 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=140 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=141 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=142 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=145 frontierGuids=6 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=146 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=147 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=148 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=149 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=150 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=151 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=152 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=179 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=191 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=195 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=196 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=197 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=198 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=199 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=200 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=202 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=204 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=213 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=223 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=224 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=225 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=226 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=228 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=253 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=254 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=255 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=278 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=279 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=280 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=281 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=282 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=283 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=284 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=297 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=300 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=301 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=302 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=303 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=327 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=328 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=329 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=330 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=331 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=332 frontierGuids=5 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=5 batchCastShadowTrue=5 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=333 frontierGuids=6 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=334 frontierGuids=6 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=335 frontierGuids=6 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=6 batchCastShadowTrue=6 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=336 frontierGuids=6 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=337 frontierGuids=6 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=339 frontierGuids=6 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=340 frontierGuids=6 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=341 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=342 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=343 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=344 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=345 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=346 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=347 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=348 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=349 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=350 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=351 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=352 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=353 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=354 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=355 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=361 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=362 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=363 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=364 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=389 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=390 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=394 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=410 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=411 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=412 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=413 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=414 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=415 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=416 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=446 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=455 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=473 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=474 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=475 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=476 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=477 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=478 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=479 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=489 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=499 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=503 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=523 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=524 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=525 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=527 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=528 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=529 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=530 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=531 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=570 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=571 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=572 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=573 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=574 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=575 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=576 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=577 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=578 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=579 frontierGuids=3 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=580 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=581 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=582 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=583 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=584 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=585 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=586 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=587 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=588 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=589 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=590 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=591 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=592 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=593 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=594 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=595 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=596 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=597 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=598 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=599 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=600 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=601 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=602 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=603 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=604 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=605 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=606 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=607 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=608 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=611 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=620 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=621 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=622 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=623 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=624 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=654 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=662 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=782 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=783 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=784 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=785 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=786 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=802 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=803 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=804 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=805 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=806 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=4 batchCastShadowTrue=4 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=807 frontierGuids=4 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=3 batchCastShadowTrue=3 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=808 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=809 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=810 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=811 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=812 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=813 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=814 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=815 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=818 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=819 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=820 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=821 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=822 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=823 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=824 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=825 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=853 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=855 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=856 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=857 frontierGuids=2 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=2 batchCastShadowTrue=2 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=865 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=866 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ],
+    [
+     "§SHADOW_FRONTIER_AT_CAPTURE frame=867 frontierGuids=1 singleMesh_matched=0 castShadowTrue=0 castShadowFalse=0 batchObjsContainingFrontier=1 batchCastShadowTrue=1 batchCastShadowFalse=0",
+     1
+    ]
+   ]
+  }
+ },
+ "facts": {
+  "shadow_frontier_idx_line": "§SHADOW_FRONTIER_IDX built gen=2814 meshGuids=0 groupGuids=63182 ms=8.6",
+  "shadow_frontier_idx_meshGuids": 0,
+  "shadow_frontier_idx_groupGuids": 63182,
+  "shadow_frontier_idx_firings": 1,
+  "batched_fail_count": 0,
+  "renderer_caps_line": "§RENDERER_CAPS multi_draw=on (fast batched path) gpu=ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL ES 3.2)",
+  "at_capture_firings": 286,
+  "at_capture_singleMesh_matched_zero": 286,
+  "at_capture_batchObjs_nonzero": 286,
+  "tm_shadow_inherit_line": "§TM_SHADOW_INHERIT shadowOn=false groundVisible=false",
+  "perf_traverse_firings": 2027,
+  "group_spark_roll_zero": 2027,
+  "idle_gate_max_cycles": 4050,
+  "frames": 35
+ }
+}

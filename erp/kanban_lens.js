@@ -54,6 +54,20 @@
     var alnum = base.replace(/[^A-Za-z0-9]/g, '');
     return (alnum.slice(0, 2) || '··').toUpperCase();
   }
+  // ── card-meta presentation (NON-INVENT: present the real value, never alter it) ───────────────────
+  // money: thousands-grouped, ≤2dp, deterministic en-US — 0dp when the amount is whole (rupiah seeds),
+  //   2dp when it carries cents (GardenWorld dollars). No currency symbol is invented. Non-numeric → as-is.
+  function fmtMoney(v) {
+    if (v == null || v === '') return '';
+    var n = Number(v); if (!isFinite(n)) return String(v);
+    var frac = (n % 1 !== 0) ? 2 : 0;
+    return n.toLocaleString('en-US', { minimumFractionDigits: frac, maximumFractionDigits: 2 });
+  }
+  // date: trim the SQL time suffix (' 00:00:00' / 'T…') down to the YYYY-MM-DD a card wants. Non-date → as-is.
+  function fmtDate(v) {
+    if (v == null || v === '') return '';
+    var m = String(v).match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : String(v);
+  }
 
   // ── (a) PURE view-model builder ──────────────────────────────────────────────
   // folds: [{ table, doc_status, count, ids? }]  — the status-grouped fold of REAL docs.
@@ -259,8 +273,8 @@
         top.appendChild(ttl); top.appendChild(chip); col.appendChild(top);
         // meta line — amount + date, ONLY when the real column existed (NON-INVENT)
         var bits = [];
-        if (m.amount != null && m.amount !== '') bits.push(String(m.amount));
-        if (m.date != null && m.date !== '') bits.push(String(m.date));
+        if (m.amount != null && m.amount !== '') bits.push(fmtMoney(m.amount));
+        if (m.date != null && m.date !== '') bits.push(fmtDate(m.date));
         if (bits.length) { var sub = document.createElement('div');
           sub.style.cssText = 'font-size:11px;color:#9aa6b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
           sub.textContent = bits.join('  ·  '); col.appendChild(sub); }
@@ -331,7 +345,8 @@
     dragIntent: dragIntent,
     mount: mount,
     // shared status colour language — Graph + Kanban use ONE palette for consistent L&F (KANBAN_MARVEL_SPEC)
-    statusColor: statusColor, statusColors: STATUS_COLORS, tableColor: tableColor, monogram: monogram
+    statusColor: statusColor, statusColors: STATUS_COLORS, tableColor: tableColor, monogram: monogram,
+    fmtMoney: fmtMoney, fmtDate: fmtDate
   };
   if (typeof window !== 'undefined') window.KanbanLens = KanbanLens;
   if (typeof module !== 'undefined' && module.exports) module.exports = KanbanLens;

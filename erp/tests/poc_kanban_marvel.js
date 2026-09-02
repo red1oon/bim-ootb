@@ -28,7 +28,9 @@ const server = http.createServer((req, res) => {
 
 // registry chrome (PR #170): open a pill #pill-<id> via pointerup, opening the #idmp-pill dock if collapsed.
 async function clickPill(page, id) {
-  await page.waitForSelector('#pill-' + id, { timeout: 15000 });
+  // Pills are present in the DOM but the strip is COLLAPSED by default (display:none since v609) — wait for the
+  // element to be ATTACHED, not visible; the dock is opened just below before the pill pointerup is dispatched.
+  await page.waitForSelector('#pill-' + id, { state: 'attached', timeout: 15000 });
   await page.evaluate(() => { var d = document.getElementById('idmp-pill'), t = document.getElementById('idmp-pill-trigger');
     if (d && t && getComputedStyle(d).display === 'none') t.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
   await page.waitForTimeout(150);
@@ -44,7 +46,7 @@ async function clickPill(page, id) {
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
 
-  await page.goto(`http://localhost:${port}/idempiere.html?window=167`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden&window=167`, { waitUntil: 'networkidle' });
   await page.waitForSelector('#idmp-login-users .idmp-login-user:not(.disabled)', { timeout: 15000 });
   await page.click('#idmp-login-users .idmp-login-user:not(.disabled)');
   await page.waitForSelector('#idmp-login-ok', { timeout: 5000 });

@@ -14,13 +14,13 @@
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path');
 
-const ROOT = path.join(__dirname, '..');                       // bim-ootb/erp
+const ROOT = path.join(__dirname, '..', '..');                 // bim-ootb (serve /erp/ AND /viewer/ same-origin, as GH Pages does — idempiere.html loads ../viewer/sfx.js for the audio pill)
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.json':'application/json',
   '.db':'application/octet-stream', '.png':'image/png', '.css':'text/css', '.wasm':'application/wasm' };
 
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
-  if (p === '/') p = '/idempiere.html';
+  if (p === '/') p = '/erp/idempiere.html';
   fs.readFile(path.join(ROOT, p), (e, buf) => {
     if (e) { res.writeHead(404); res.end('404 ' + p); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' });
@@ -42,7 +42,7 @@ function pillIds(page) {
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
 
-  await page.goto(`http://localhost:${port}/idempiere.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/erp/idempiere.html`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2500);                              // let DB + pills settle
 
   const idmpPillsLog = logs.find(l => l.startsWith('§IDMP-PILLS')) || '(no §IDMP-PILLS log)';
@@ -68,6 +68,18 @@ function pillIds(page) {
   }
   console.log('§A-WITNESS-4 overflow-collapse afterToggle1=' + collapsed + ' afterToggle2=' + expanded);
 
+  // §AUDIO-PILL (UI_UX_LANE §FOLLOW-UP ROUND 2 item 3): the SAME speaker pill as the BIM viewer — it
+  // renders, and tapping it toggles the shared sfx engine (window.__sfx.isOn flips) + lights the pill.
+  const audioPresent = ids.includes('audio');
+  const sfxBefore = await page.evaluate(() => !!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn()));
+  await page.evaluate(() => { var b = document.getElementById('pill-audio'); if (b) b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });   // PillBuilder binds pointerup, not click
+  await page.waitForTimeout(250);
+  const sfxAfter = await page.evaluate(() => !!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn()));
+  const litAfter = await page.evaluate(() => { var b = document.getElementById('pill-audio'); return !!(b && b.classList.contains('active')); });
+  const toggled = logs.some(l => /§SFX_TOGGLE on=/.test(l)) && (sfxAfter !== sfxBefore) && (litAfter === sfxAfter);
+  console.log('§AUDIO-PILL present=' + audioPresent + ' isOn ' + sfxBefore + '→' + sfxAfter + ' lit=' + litAfter + ' toggled=' + toggled);
+  const audioOk = audioPresent && toggled;
+
   await page.screenshot({ path: path.join(__dirname, 'idmp_pills_desktop_1280.png') });
 
   // Responsive: dock at the bottom on a phone viewport.
@@ -81,12 +93,22 @@ function pillIds(page) {
   console.log('§A-WITNESS-5 mobileBottomDock=' + dock.docked + ' bottom=' + dock.bottom + ' vh=' + dock.vh);
   await page.screenshot({ path: path.join(__dirname, 'idmp_pills_mobile_390.png') });
 
-  const EXPECT = ['redpill','posted','graph','kanban','rule','install','migrate'];   // §D added the red pill (order 0)
+  // §AD-GATE show-direction (Leg 3, RESUME_IDMP_FIDELITY): the per-record accounting (Accts-Posted / Posting-
+  // Preview) was RETIRED from the pill rail — it now surfaces as iDempiere's NATIVE Posted COLUMN/button, role-
+  // gated to accounting roles (MRole.isShowAcct). See tests/poc_posted_column_live.js (W-POSTED-COLUMN). The
+  // remaining showWhen gates ('pos'=pos-station, 'zoomacross'=zoom-across) keep the §AD-GATE mechanism exercised.
+
+  // The mounted set at the login / pre-client state (pillIds order = manifest `order`).
+  // §AD-GATED OFF here by design: 'pos' (showWhen:pos-station) + 'zoomacross' (showWhen:zoom-across).
+  // RECONCILED 2026-06-20 (Leg 3) to the LIVE registry — 'posted'+'preview' RETIRED (accounting → native Posted
+  // column/button, W-POSTED-COLUMN). Earlier reconciliations: 'redpill' RETIRED (PR #366 classic-chrome),
+  // 'install'/'migrate' RETIRED (front-door consolidation), 'editmode' RETIRED (ring Glass-only, W-RING-LEAK).
+  const EXPECT = ['reports','graph','kanban','rule','warehouse','ninja','erpdoc','showme','plugin','audio','share','home','worldhist'];
   const idsOk = EXPECT.every(id => ids.includes(id)) && ids.length === EXPECT.length;
-  const pass = idsOk && bar && !handRoll && iconMiss === 'none' && errs.length === 0 &&
+  const pass = idsOk && audioOk && bar && !handRoll && iconMiss === 'none' && errs.length === 0 &&
     /source=registry/.test(idmpPillsLog) && /handAuthored=0/.test(idmpPillsLog);
   console.log('§A-RESULT ' + (pass ? 'PASS' : 'FAIL') +
-    ' idsOk=' + idsOk + ' barPresent=' + !!bar + ' handRollGone=' + !handRoll +
+    ' idsOk=' + idsOk + ' audioOk=' + audioOk + ' barPresent=' + !!bar + ' handRollGone=' + !handRoll +
     ' iconClean=' + (iconMiss === 'none') + ' noErr=' + (errs.length === 0));
 
   await browser.close();

@@ -14,19 +14,27 @@
 
   function _A() { return window.A || window.APP; }
 
-  // (c) Viewer significance profiles (§6 depth) — BLUE all / GREEN doc.
+  // (c) Viewer significance profiles — now the KNOB's 5-stop BREADTH ladder (§LOCKED-KNOB).
+  // Monotone low ⊂ mid ⊂ high ⊂ max, each stop adding ONE category:
+  //   low  = milestones only · mid = + reversible edits & saves (the clean trail) ·
+  //   high = + navigation views (DEFAULT) · max = + every selection/pick.
   var UNDOABLE_OPS = { 'GRID_MOVE': true, 'ELEMENT_PLACE': true };
+  var _EDITS = { 'BUILDING_OPEN': true, 'GRID_MOVE': true, 'ELEMENT_PLACE': true,
+                 'DESIGN_SAVE': true, 'DESIGN_OPEN': true, 'CAPTURE_4D': true, 'CLASH_SNAG': true };
+  var _NAV = { 'axis': true, 'group': true, 'item': true };
+  // HISTORY_SESSION_EVENTS.md A1 — read-only DETAIL EVENTS in Z: the detail actions a user does inside a
+  // building (inspect a clash, cut a section, take a measurement) that were invisible to history — clash/
+  // measure never called the recorder, SECTION_CUT committed but was in no profile. They record as read-only
+  // 'event' moments (look-restore on scrub, NEVER a kernel mutation), gated by a new `event` bucket that is
+  // ON from `mid` up (so the default `max` shows them; `low`/`off` keep them out).
+  var _EVENTS = { 'CLASH_INSPECT': true, 'SECTION_CUT': true, 'MEASURE': true };
   var PROFILES = {
-    all: {
-      op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'ELEMENT_PICK': true, 'BUILDING_OPEN': true },
-      view: { 'axis': true, 'group': true, 'item': true }
-    },
-    doc: {
-      op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'BUILDING_OPEN': true,
-              'DESIGN_SAVE': true, 'DESIGN_OPEN': true, 'CAPTURE_4D': true, 'CLASH_SNAG': true },
-      view: {}
-    }
+    low:  { op: { 'BUILDING_OPEN': true }, view: {}, event: {} },
+    mid:  { op: _EDITS, view: {}, event: _EVENTS },
+    high: { op: _EDITS, view: _NAV, event: _EVENTS },
+    max:  { op: Object.assign({ 'ELEMENT_PICK': true }, _EDITS), view: _NAV, event: _EVENTS }
   };
+  PROFILES.all = PROFILES.high; PROFILES.doc = PROFILES.mid;   // legacy aliases (exported SIGNIFICANCE + _isDoc fallback)
 
   var _viewRestore = null; // navigate_find's view-restore callback
 
@@ -45,6 +53,8 @@
 
   // (a) Record a kernel op as it commits → build an entry and push it through the shared gate.
   function _recordOp(opId, opType, params, guids) {
+    if (_isReHome()) return;   // A2: re-homed past session is READ-ONLY — never append to it
+    _ensureAuthoritativeTreeKey();   // W-SESSION-RECALL: key the tree by A.DB_URL before the first record
     var label = _opLabel(opType, params);
     if (opType === 'ELEMENT_PICK') {
       // Read-only SELECTION moment: a 'pick' entry that restores via A.focusElement (no flag-flip).
@@ -52,22 +62,70 @@
       if (!Array.isArray(g)) g = [g];
       g = g.filter(Boolean);
       HB.push({ bucket: 'op', kind: 'pick', type: opType, label: label, readonly: true,
-        opId: opId, guids: g, params: params || {}, sigKey: 'pick:' + (g.join(',') || label) });
+        opId: opId, guids: g, params: params || {}, viewState: _tapView(), sigKey: 'pick:' + (g.join(',') || label) });
       return;
+    }
+    // De-dup pile-up (HISTORY_KNOB_DIAL.md): the tree persists per building and a fresh BUILDING_OPEN is
+    // appended every reload. Skip recording one when the current tip is ALREADY a BUILDING_OPEN of the
+    // same building (sigKey carries the name) — kills the "Opened…Opened…Opened" stack.
+    var bname = (opType === 'BUILDING_OPEN' && params && params.name) ? params.name : '';
+    var sigKey = 'op:' + opType + ':' + (opType === 'BUILDING_OPEN' ? bname : ((params && (params.axis + '/' + params.label)) || ''));
+    if (opType === 'BUILDING_OPEN' && HB.tipInfo) {
+      var tip = HB.tipInfo();
+      if (tip && tip.type === 'BUILDING_OPEN' && tip.sigKey === sigKey) {
+        console.log('§HIST_DEDUP BUILDING_OPEN "' + bname + '" already at tip — skipped');
+        return;
+      }
     }
     HB.push({ bucket: 'op', kind: 'op', type: opType, label: label, readonly: false,
       opId: opId, replay: params || {}, params: params || {},
-      sigKey: 'op:' + opType + ':' + ((params && (params.axis + '/' + params.label)) || '') });
+      // HISTORY_KNOB_DIAL.md fix: stamp EVERY moment (incl. ops) with the ambient view so the READ-ONLY
+      // scrubber restores the scene when you step ONTO an op moment (was only on pick/view → ops did nothing).
+      viewState: _tapView(),
+      // W1: a re-open key for the cross-page log (only BUILDING_OPEN is mirrored; reopen = the building).
+      // Carry the ?db= URL this viewer was opened with so a foreign World card can DETERMINISTICALLY reopen
+      // the building (viewer/viewer.html?db=<url>&ghost=1, the landing's openViewer format) — not just the
+      // best-effort city-only A.cityLoadBuilding(name).
+      ref: (opType === 'BUILDING_OPEN' && params && params.name) ? { building: params.name, db: _openDbUrl(), session: _sessionId() } : null,
+      sigKey: sigKey });
   }
 
   // VIEW-nav push — navigate_find calls this with its semantic view entry.
   function pushView(v) {
-    if (!HB.isEnabled()) return;
+    if (!HB.isEnabled() || _isReHome()) return;   // A2: read-only re-home never records
+    _ensureAuthoritativeTreeKey();
     var label = v.label || v.axis || 'view';
     HB.push({ bucket: 'view', kind: 'view', type: v.kind, label: label, readonly: true,
-      view: v, sigKey: 'view:' + (v.kind + ':' + (v.label || v.axis)) });
+      view: v, viewState: _tapView(), sigKey: 'view:' + (v.kind + ':' + (v.label || v.axis)) });
   }
   function registerViewRestore(fn) { _viewRestore = fn; }
+
+  // HISTORY_SESSION_EVENTS.md A1 — record a read-only DETAIL EVENT into Z (clash-inspect / section / measure).
+  // It is a 'event'-bucket moment: stamped with the ambient look (_tapView) so scrubbing onto it RE-APPLIES
+  // the look only — it NEVER calls KernelOps.undo/redo (not a model op). Gated by the `event` profile bucket.
+  function recordEvent(type, label, ref) {
+    if (!HB.isEnabled() || _isReHome()) return;   // A2: read-only re-home never records
+    // A scrub-restore drives the REAL setters (HistoryTap.applyView → section.write → A.toggleSection):
+    // recording there would mint fake dots while merely browsing the past. isApplying() gates it.
+    if (window.HistoryTap && HistoryTap.isApplying && HistoryTap.isApplying()) return;
+    _ensureAuthoritativeTreeKey();
+    HB.push({ bucket: 'event', kind: 'event', type: type, label: label || type, readonly: true,
+      viewState: _tapView(), ref: (ref != null ? ref : null), sigKey: 'event:' + type + ':' + (label || '') });
+  }
+
+  // W-SESSION-RECALL (user 2026-06-13 "recall all the dots that were in that session … fresh back zero").
+  // Re-key the live tree to the AUTHORITATIVE db (A.DB_URL via _openDbUrl) right before the FIRST recorded
+  // moment, so the record-time key == the W card's ref.db (= _openDbUrl) → re-home RECALLS the session's
+  // dots. Was: _treeKey keyed off the raw ?db= PARAM, so a bare/PWA open (no ?db=) saved under 'default'
+  // while the card re-homed under the real url → empty Z. At HB.configure A.DB_URL is not set yet, so the
+  // configure-time key falls back to ?db= (unchanged for ?db= opens); this re-key fires once the building
+  // is loaded (A.DB_URL live) and is a NO-OP when the key is unchanged (setTreeKey early-returns). Never
+  // runs on re-home (every caller gates on _isReHome first), so the read-only "no new dot" rule is intact.
+  var _rekeyed = false;
+  function _ensureAuthoritativeTreeKey() {
+    if (_rekeyed) return; _rekeyed = true;
+    try { if (HB.setTreeKey) HB.setTreeKey(_treeKey()); } catch (e) {}
+  }
 
   // (b) Restore one entry's state — the ONLY thing only the viewer can do.
   //   null → clear focus · op → kernel flag-flip + replay · pick → shape-mesh focus · view → Find replay.
@@ -83,10 +141,192 @@
       if (A && A.focusElement) A.focusElement(entry.guids, { item: true });
       else if (A && A.loadNavigate) A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(entry.guids, { item: true }); });
       else console.warn('§HIST_RESTORE_NOFN A.focusElement missing');
+      _tapApply(entry.viewState, entry.label);   // re-apply the x-ray/bbox/camera this pick was taken under
       return;
     }
-    // view
-    if (_viewRestore) _viewRestore(entry.view);
+    // view (Find/nav) OR combine (no Find view, just a stamped look) — only replay a Find view if present.
+    if (_viewRestore && entry.view) _viewRestore(entry.view);
+    _tapApply(entry.viewState, entry.label);
+  }
+
+  // READ-ONLY restore for the KNOB-DIAL scrubber (HISTORY_KNOB_DIAL.md): re-apply the moment's stamped
+  // LOOK ONLY — camera/lens/section via the §-tap, pick focus for selections, Find replay for nav views.
+  // Crucially it NEVER calls _applyOp (no KernelOps.undo/redo) — so stepping a GRID_MOVE moment restores
+  // the view it was taken under without flipping the signed op. This is the fix for "scrubber looks corrupted".
+  function _restoreView(entry) {
+    var A = _A();
+    if (!entry) { if (A && A.clearFocusElement) A.clearFocusElement(); else if (_viewRestore) _viewRestore(null); return; }
+    if (entry.kind === 'pick' && entry.guids) {
+      if (A && A.focusElement) A.focusElement(entry.guids, { item: true });
+      else if (A && A.loadNavigate) A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(entry.guids, { item: true }); });
+    } else if (_viewRestore && entry.view) {
+      _viewRestore(entry.view);
+    }
+    _tapApply(entry.viewState, entry.label);   // the x-ray/section/camera/palette this moment lived under
+  }
+
+  // (PR #6) Cross-branch COMBINE — bring a sibling universe's DISTINCTIVE view-fields into the current
+  // look. Delta = the fields the donor branch changed vs the fork point (so the current branch's own
+  // fields are kept); union via the proven combineViews, then apply. Result is a new tip on the current
+  // branch — A and B stay intact as universes. (color⊕section, the user's exact demo.)
+  function _combine(current, donor, ancestor) {
+    if (!window.HistoryTap) return null;
+    var Dv = donor && donor.viewState; if (!Dv) return null;
+    var Fv = (ancestor && ancestor.viewState) || {};
+    var delta = {};
+    for (var k in Dv) { if (JSON.stringify(Dv[k]) !== JSON.stringify(Fv[k])) delta[k] = Dv[k]; }   // donor's contribution only
+    var base = (current && current.viewState) || HistoryTap.currentView();
+    var combined = HistoryTap.combineViews(base, delta);
+    HistoryTap.applyView(combined, '⊕ ' + (donor.label || 'universe'));
+    console.log('§HIST_COMBINE_DELTA donor="' + (donor.label || '') + '" delta=' + Object.keys(delta).join(',') + ' → combined=' + Object.keys(combined).join(','));
+    return { viewState: combined, label: '⊕ ' + (donor.label || 'universe') };
+  }
+  // MODEL cherry-pick — replay the donor's signed op onto the current state (disjoint = clean; no 3-way).
+  function _cherryPick(donor) {
+    var A = _A();
+    if (!A || !A.db || !window.KernelOps || !donor || !UNDOABLE_OPS[donor.type]) return false;
+    try { KernelOps.commitOp(A.db, donor.type, donor.replay || donor.params || {}, (donor.params && donor.params.guids) || []); return true; }
+    catch (e) { console.warn('§HIST_CHERRY_ERR', e); return false; }
+  }
+
+  // ── §-tap bridge: stamp each entry with the ambient look, re-apply it on restore ──────
+  // The depth axis (HISTORY_KNOB_SIGNAL_TAP §LOCKED #3). Loose-coupled: the tap module owns the
+  // vector; the viewer only registers HOW to read/apply its own toggles + camera.
+  function _tapView() { try { return window.HistoryTap ? HistoryTap.currentView() : null; } catch (e) { return null; } }
+  // _openDbUrl — the building's cross-page re-open key baked into a World card's deep-link.
+  // FIX (CRUD_EDIT_PERSIST.md Item 3, cause (a)): prefer the AUTHORITATIVE db the viewer actually loaded
+  // (A.DB_URL), not just the ?db= query param. A building reached by ANY path without ?db= in the URL
+  // (default open / in-app pick) left this null → ref.db null → _deepUrl fell back to a BARE url → the
+  // World card "sometimes" failed to transport. A.DB_URL is set whenever a building loads (streaming.js).
+  // import:// dbs live in THIS tab's IndexedDB and are NOT re-openable via ?db= on a fresh page → keep them
+  // null so the card falls back to the bare-url + RESTORE_KEY handoff (same-session only), never a dead link.
+  function _openDbUrl() {
+    try {
+      var q = null; try { q = new URLSearchParams(location.search).get('db') || null; } catch (e0) {}
+      var A = _A();
+      var u = (A && A.DB_URL) ? A.DB_URL : q;
+      if (u && /^import:\/\//.test(String(u))) return (q && !/^import:\/\//.test(String(q))) ? q : null;
+      return u || null;
+    } catch (e) { return null; }
+  }
+  // HISTORY_SESSION_EVENTS.md A2 [VIEWER] — the SESSION boundary. A session = one open, tied to the browser
+  // TAB via sessionStorage: a reload CONTINUES it (same id → same Z tree, no loss); a new tab / new visit =
+  // a NEW session (fresh Z, new W card). `?sess=<id>` = a read-only RE-HOME of a past session picked from W
+  // (loads that session's persisted Z tree from localStorage to scrub; recording is gated off so browsing the
+  // past never mutates it — viewer is the LIGHT lane, no forking, per the partition).
+  var _SESSION = null, _REHOME = false;
+  function _sessionId() {
+    if (_SESSION) return _SESSION;
+    try {
+      var sp = new URLSearchParams(location.search), db = sp.get('db') || 'default';
+      var forced = sp.get('sess');
+      if (forced) { _REHOME = true; _SESSION = forced; return _SESSION; }
+      var key = 'bim.sess.' + db.replace(/[^A-Za-z0-9_.-]/g, '_');
+      var sid = null; try { sid = sessionStorage.getItem(key); } catch (e) {}
+      if (!sid) { sid = 's' + Date.now(); try { sessionStorage.setItem(key, sid); } catch (e) {} }
+      _SESSION = sid; return _SESSION;
+    } catch (e) { _SESSION = 'live'; return _SESSION; }
+  }
+  function _isReHome() { _sessionId(); return _REHOME; }   // resolve _REHOME via the cached compute
+  function _tapApply(v, label) { try { if (v && window.HistoryTap) HistoryTap.applyView(v, label); } catch (e) {} }
+  function _wireTap() {
+    if (!window.HistoryTap || !window.HistoryTap.field) return;
+    var T = window.HistoryTap;
+    // ── ONE symmetric line per restorable act: field(name, read, write). ───────────────
+    // read() = capture the slice · write(v) = reproduce it. Adding a new act = add a line.
+    T.field('ghost',
+      function () { return (typeof window.ghostXrayOn === 'function') ? window.ghostXrayOn() : false; },
+      function (want) { if (typeof window.ghostXrayOn === 'function' && typeof window.toggleGhostXray === 'function' && window.ghostXrayOn() !== !!want) window.toggleGhostXray(); });
+    T.field('xray',
+      function () { return !!(_A() && _A().xrayOn); },
+      function (want) { var A = _A(); if (A && !!A.xrayOn !== !!want && A.toggleXray) A.toggleXray(); });
+    T.field('cam',
+      function () { var A = _A(); if (!(A && A.camera && A.controls)) return null; var p = A.camera.position, t = A.controls.target; return { p: [p.x, p.y, p.z], t: [t.x, t.y, t.z] }; },
+      function (c) { var A = _A(); if (A && A.camera && A.controls && c && c.p) { A.camera.position.set(c.p[0], c.p[1], c.p[2]); if (c.t) A.controls.target.set(c.t[0], c.t[1], c.t[2]); A.controls.update(); if (A.markDirty) A.markDirty(); } });
+    // §SECTION — full cut state is {on, axis, cut} where cut = sectionPlane.constant (the slider position).
+    // write() drives the REAL setters: toggle on/off, set axis, then land the exact cut.  (demo's branch B)
+    T.field('section',
+      function () { var A = _A(); if (!A) return null; return { on: !!A.sectionOn, axis: A.sectionAxis, cut: (A.sectionPlane ? A.sectionPlane.constant : 0) }; },
+      function (s) {
+        var A = _A(); if (!(A && s)) return;
+        if (!s.on) { if (A.sectionOn && A.toggleSection) A.toggleSection(); return; }   // target = off → clear
+        if (!A.sectionOn && A.toggleSection) A.toggleSection();                          // target = on → enable
+        if (A.sectionAxis !== s.axis && A.setSectionAxis) A.setSectionAxis(s.axis);      // axis (re-applies range)
+        else if (A.applySectionAxis) A.applySectionAxis();
+        if (typeof s.cut === 'number' && A.updateSectionPlane) {
+          A.updateSectionPlane(s.cut);                                                   // the EXACT cut position
+          var sl = document.getElementById('section-slider'); if (sl) sl.value = s.cut;  // sync the slider thumb
+        }
+        if (A.markDirty) A.markDirty();
+      });
+    // §PALETTE — the whole palette/ambience is one scalar tick.  (the demo's branch A)
+    T.field('palette',
+      function () { var A = _A(); return A ? (A._ambienceTick || 0) : 0; },
+      function (tick) { var A = _A(); if (A && A.updateAmbience) A.updateAmbience(tick); });
+    // §CLASH — the inspected clash PAIR (which two elements + the panel). The clash dot used to restore only
+    // camera+ambient (zoom-to) — NOT the highlighted pair or the Clash list panel (user: "Clash shows the zoom
+    // to but without the clash pair and Clash panel"). read() = the pair currently inspected (by GUID, gated on
+    // the panel being active so a stale idx never re-fires); write(pair) re-inspects it: re-open the list panel
+    // from the PERSISTED _currentClashes (read-only re-render, NO re-detection) if it was dismissed, then
+    // _flyToClash → red/blue overlap meshes + outline + fly. _flyToClash's own recordEvent self-suppresses here
+    // because applyView holds isApplying()=true. write(null) = a non-clash moment → clear the viz (keep matrix).
+    T.field('clash',
+      function () {
+        var A = _A();
+        if (!A || !A._clashRevealActive || A._currentClashViewIdx == null || !A._currentClashes) return null;
+        var c = A._currentClashes[A._currentClashViewIdx];
+        return (c && c[0] && c[1]) ? { a: c[0], b: c[1] } : null;
+      },
+      function (pair) {
+        var A = _A();
+        if (!A) return;
+        if (!pair || !pair.a) {                                   // moment had no clash → clear any current viz
+          if (A._clashRevealActive && A._dismissClashes) A._dismissClashes(true);   // keepMatrix
+          return;
+        }
+        if (!A._currentClashes || !A._flyToClash) return;         // no clash list this session → can't reconstruct (cold)
+        var idx = -1, cc = A._currentClashes;
+        for (var i = 0; i < cc.length; i++) {
+          var c = cc[i];
+          if (c && ((c[0] === pair.a && c[1] === pair.b) || (c[0] === pair.b && c[1] === pair.a))) { idx = i; break; }
+        }
+        if (idx < 0) return;                                      // pair not in the current list (rules changed) → skip
+        if (!A._clashRevealActive && A._revealClashes && A._currentClashRules) {
+          A._revealClashes(A._currentClashes, A._currentClashRules);   // re-show the panel (no re-detection)
+        }
+        A._flyToClash(idx);                                       // pair highlight + fly + row (recordEvent suppressed)
+      });
+    if (T.sniff) T.sniff(true);   // recording goes TOTAL: read every §act from the stream, deny-filtered
+    if (T.onFeed) T.onFeed(_drainTap);   // ── THE SUBSCRIPTION: the bar now LISTENS to the §-stream ──
+    console.log('§HIST_TAP_WIRED fields(ghost,xray,cam,section,palette,clash) + sniffer ON + bar SUBSCRIBES tap — one symmetric line each');
+  }
+
+  // ── BAR SUBSCRIBES TO THE TAP (HISTORY_KNOB_SIGNAL_TAP §GAP-BAR-NEVER-CONSUMED-THE-TAP, §THE WORK 1&5) ──
+  // The §-stream already carries every act (the S() sink + the sniffer). The bar used to draw dots ONLY from
+  // explicit pushes → X/C (§KBD_ROUTE), clash, and every FUTURE feature silently never dotted. Now the bar
+  // SUBSCRIBES: each § act drains the knob-filtered crumbs into read-only dots — for tags NOT already minted
+  // by an explicit push (the skip set). Zero per-feature wiring; coverage falls out the moment a feature logs §.
+  // Tags the adapter ALREADY pushes explicitly (op / pick / nav / detail) — skip so the drain never doubles them.
+  var _EXPLICIT_TAGS = { KERNEL_OP: 1, BUILDING_OPEN: 1, GRID_MOVE: 1, ELEMENT_PLACE: 1, ELEMENT_PICK: 1,
+                         PICK: 1, FOCUS: 1, PHASE_LENS: 1, FILTER: 1, ROOM: 1,
+                         CLASH_INSPECT: 1, SECTION_CUT: 1, MEASURE: 1 };
+  var _tapHW = -1;        // high-water: the last consumed crumb index (e.t), so we never re-mint
+  var _draining = false;  // re-entry guard (the drain's own §HIST_TAP_DOT/§HIST_PUSH are DENYed in the tap too)
+  function _drainTap() {
+    if (_draining || !window.HistoryTap || !HistoryTap.historySince) return;
+    if (HistoryTap.isApplying && HistoryTap.isApplying()) return;   // scrubbing the past ≠ a new act
+    if (_isReHome() || !HB.isEnabled()) return;                     // read-only re-home / knob Off → no dots
+    _draining = true;
+    try {
+      var fresh = HistoryTap.historySince(_tapHW, _EXPLICIT_TAGS);
+      for (var i = 0; i < fresh.length; i++) {
+        var e = fresh[i];
+        if (e.t > _tapHW) _tapHW = e.t;
+        HB.push({ bucket: 'event', kind: 'event', type: e.tag, label: e.label || e.tag, readonly: true,
+                  fromTap: true, viewState: e.view || _tapView(), sigKey: 'tap:' + e.tag + ':' + e.t });
+        console.log('§HIST_TAP_DOT tag=' + e.tag + ' label="' + (e.label || '') + '" t=' + e.t + ' (from §-stream, no per-feature wiring)');
+      }
+    } finally { _draining = false; }
   }
 
   // MODEL op apply: flips the signed kernel_ops `undone` flag (never deletion) + dispatches replay.
@@ -120,26 +360,57 @@
 
   // §2 chip icon by WHAT: single element → discipline icon · building-open → home · group/scope → magnifier.
   var _DISC_ICON = { STR: 'discSTR', ARC: 'discARC', MEP: 'discMEP', FP: 'discFP', ELEC: 'discELEC', ACMV: 'discACMV', PLMB: 'discPLMB' };
+  // A1 detail events get their action's own icon so the dot reads at a glance.
+  var _EVENT_ICON = { 'CLASH_INSPECT': 'triangle', 'SECTION_CUT': 'scissors', 'MEASURE': 'ruler' };
   function _stepIcon(e) {
     if (e.kind === 'pick') return _DISC_ICON[String((e.params && e.params.disc) || '').toUpperCase()] || null;
+    if (e.kind === 'event') return _EVENT_ICON[e.type] || 'search';
     if (e.type === 'BUILDING_OPEN') return 'home';
     return 'search';
   }
 
+  // Per-building persisted-tree key (item 4): universes survive reload, scoped to THIS building's db.
+  function _treeKey() {
+    // Key by the AUTHORITATIVE db the viewer loaded (A.DB_URL via _openDbUrl) — the SAME value the W card's
+    // ref.db carries — NOT the raw ?db= param (which is 'default' on a bare/PWA open → empty recall). At
+    // configure time A.DB_URL isn't set yet so _openDbUrl falls back to ?db= (key unchanged for ?db= opens);
+    // _ensureAuthoritativeTreeKey re-keys once A.DB_URL is live, before the first recorded moment.
+    try { var db = _openDbUrl() || 'default';
+      // A2: scope the tree to (building, SESSION) so each session has its OWN Z; `?sess=` loads a past one.
+      return 'bim.hist.tree.' + db.replace(/[^A-Za-z0-9_.-]/g, '_') + '.' + _sessionId(); } catch (e) { return 'bim.hist.tree.default'; }
+  }
+
   // ── Wire the viewer onto the shared bar ───────────────────────────────
   HB.configure({
+    treeKey: _treeKey(),                    // §4 persist the branch tree per building
     source: 'viewer',
     mountHostId: 'status-bar-wrap',         // §3: dock under the status row
     profiles: PROFILES,
     depthKey: 'bim.universalHist.depth',
-    defaultDepth: function () { return window._isMobile ? 'off' : 'all'; }, // mobile opt-in, desktop on
+    ignorePersistedDepth: true,             // knob scrapped → a stale 'low' from the knob era must not
+                                            // pin the bar (no UI to raise it). Always boot at defaultDepth.
+    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile). 'high'
+    // records what the user actually DOES: navigation views (axis/group/item — Find storey/floor selects)
+    // + edits/saves + detail events (measure / clash-inspect / section-cut). It deliberately stops short of
+    // 'max', which adds a dot for EVERY raw element-pick (that's the spam). User direction 2026-06-16: a
+    // mid-only trail dropped Find/storey navigation (profile=mid type=group HIST_DROP) → looked unchanged.
+    defaultDepth: function () { return 'high'; },
     restore: _restore,
+    restoreView: _restoreView,              // READ-ONLY scrubber path (knob nav + dot clicks)
     afterApply: _chainCheck,
     iconFn: _stepIcon,
     sharedKey: 'bim.docHistory',            // §8 app-wide log (landing reads it)
     channel: 'bim_history',
-    docTypes: { 'BUILDING_OPEN': true }     // mirror only milestones to the shared log
+    docTypes: { 'BUILDING_OPEN': true },    // mirror only milestones to the shared log
+    combine: _combine,                      // §6 cross-branch VIEW combine (color⊕section)
+    cherryPick: _cherryPick                 // §6 model op replay (disjoint graft)
   });
+  // Implementing HISTORY_SESSION_EVENTS.md §RESUME — load diagnostic: which session Z loaded, read-only or
+  // live, under which tree key, with how many dots. One line pinpoints "new session shows no dots" reports.
+  try {
+    console.log('§HIST_SESSION id=' + _sessionId() + ' reHome=' + _isReHome() +
+      ' treeKey=' + _treeKey() + ' dots=' + HB.list().length);
+  } catch (e) {}
 
   // commitOp wrapper — record EVERY model op as it lands.
   (function wrapCommit() {
@@ -158,15 +429,56 @@
   })();
 
   // Public API — UNCHANGED surface (navigate_find.js + scene.js + panels.js depend on it).
+  // The bomb (W long-press) clears the timeline; without a re-seed, open()/Z then shows an EMPTY bar with
+  // no "current" moment → "Z doesn't work after bomb". Re-seed ONE BUILDING_OPEN of the active building so
+  // the bar has a live starting point (push() already handles the empty tree; subsequent acts append).
+  function clearAndReseed() {
+    HB.clear();
+    try {
+      var A = _A();
+      var name = (A && A.activeBuilding) || '';
+      if (name) _recordOp('reseed', 'BUILDING_OPEN', { name: name }, []);
+    } catch (e) {}
+    console.log('§HIST_RESEED after=clear');
+  }
+
   window.UniversalHistory = {
     pushView: pushView,
+    recordEvent: recordEvent,   // A1: read-only DETAIL EVENTS (clash-inspect / section / measure) → Z
     registerViewRestore: registerViewRestore,
     undo: HB.undo, redo: HB.redo, jumpTo: HB.jumpTo,
     setEnabled: HB.setEnabled, isEnabled: HB.isEnabled,
     setDepth: HB.setDepth, cycleDepth: HB.cycleDepth, getDepth: HB.getDepth,
-    clear: HB.clear, open: HB.open, toggleOpen: HB.toggleOpen, list: HB.list,
+    clear: clearAndReseed, open: HB.open, toggleOpen: HB.toggleOpen, list: HB.list,
     significant: function (ev) { return HB.significant(ev.source, ev.type, ev.label); },
-    PROFILES: PROFILES, SIGNIFICANCE: PROFILES.all, UNDOABLE_OPS: UNDOABLE_OPS
+    // branch TREE (PR #5) + combine (PR #6) — fork-don't-wipe universes, switch=restore, bring-into-current.
+    switchToId: HB.switchToId, tips: HB.tips, dumpTree: HB.dumpTree, setTreeKey: HB.setTreeKey, combineFromId: HB.combineFromId,
+    PROFILES: PROFILES, SIGNIFICANCE: PROFILES.all, UNDOABLE_OPS: UNDOABLE_OPS,
+    openDbUrl: _openDbUrl   // Item 3: the World-card re-open key (A.DB_URL-authoritative) — exposed for the witness/debug
   };
+  _wireTap();   // §-tap depth axis: provider + appliers + seed (no-op if history_tap.js absent)
+
+  // W2 (HISTORY_WHOLE_TIMELINE.md): mount the cross-page launcher + consume any pending cross-page
+  // restore. ADDITIVE — this never touches the viewer's own bottom bar. Building reopen is best-effort
+  // (uses the existing A.cityLoadBuilding; if absent, the deep-link still re-opens the viewer).
+  if (window.WholeHistory) {
+    window.WholeHistory.mount({ page: 'viewer', rootPrefix: '../', launcher: false });   // launched from the W pill
+    // §WHOLE-LANDED (CRUD_EDIT_PERSIST.md Item 3) — the TARGET end of the transport trace: pairs with
+    // §WHOLE-NAV (whole_history.js, the click). A World building-card deep-link lands the viewer with
+    // ?db=<url>&ghost=1[&sess=]; this one line shows the db we landed on, so a card click is traceable
+    // end-to-end (was the missing half — restore was untraceable). db=null here ⇒ a bare-url landing.
+    try {
+      var _sp = new URLSearchParams(location.search);
+      // origin= (2026-07-17): db= alone doesn't say whether the PAGE itself is localhost, a
+      // worktree dev server, or production GH Pages (a local session can legitimately point db=
+      // at production OCI data) — a bug report pasting only db= cost real back-and-forth
+      // confirming which deployment was even being tested.
+      console.log('§WHOLE-LANDED page=viewer origin=' + location.origin + ' db=' + (_openDbUrl() || 'null') +
+        ' ghost=' + (_sp.get('ghost') || '0') + ' sess=' + (_sp.get('sess') || 'none') + ' reHome=' + _isReHome());
+    } catch (e) {}
+    window.WholeHistory.consumeRestore('viewer', function (ref) {
+      try { var A = _A(); if (ref && ref.building && A && A.cityLoadBuilding) A.cityLoadBuilding(ref.building); } catch (e) {}
+    });
+  }
   console.log('§UNIVERSAL_HISTORY_LOADED v3 (viewer adapter on shared HistoryBar)');
 })();

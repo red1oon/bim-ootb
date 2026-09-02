@@ -1,0 +1,48 @@
+{
+ "_readme": "Locked regression baselines for viewer/tests/witness_midair_zero.js. DATA ONLY — the WHY for every number stays in the witness's own comment blocks, which cite the prompts/4D_GANTT_TM_REFACTOR.md section that measured it. Split out of the witness source 2026-08-21 so a re-lock is a data edit with a readable diff, and so adding an eighth building never edits test code. Re-lock discipline is unchanged: first run with placeholder -1s, read the real numbers off the FAIL lines, re-run to PASS. Never hand-write a number you have not seen a run produce.",
+ "_relocked": "2026-08-21 — §S50 cell-grain schedule (bim-ootb #1442), carried unchanged through §S51 (#1444). float_after_cpm ONLY re-locked 2026-08-22 (§S64): HHS 889->884, LTU_AHouse 5023->4998, JKR 1222->1212 — auditFloating shed false positives when its tPool was made to mirror hangGate's elPool and its wall pool given wallCarries' carry-at-top bound. NO schedule time changed (both fixes are inside auditFloating, which no gate reads); midair and orphans are byte-identical on all 7, which is the proof this was the audit and not the engine.",
+ "float_after_cpm": {
+  "_what": "W-MZ-8 — ScheduleGate.auditFloating AFTER _displayTimeline. The measured TRADE: a dependent may start before its support FINISHES. Deliberate and named, never silent.",
+  "Terminal": 554,
+  "Hospital": 935,
+  "Duplex": 44,
+  "HHS_Office_Federated": 884,
+  "Clinic": 324,
+  "LTU_AHouse": 4998,
+  "JKR": 1212
+ },
+ "midair": {
+  "_what": "W-MZ-2 — this witness's own census(): elements appearing before the first thing they touch. Non-zero ONLY on the CELL-path buildings (the §S26.11 leg-4 exception surface); GRAPH-path buildings stay at 0. W-MZ-7 is the proof this judge can go red.",
+  "Terminal": 684,
+  "Hospital": 218,
+  "Duplex": 0,
+  "HHS_Office_Federated": 0,
+  "Clinic": 422,
+  "LTU_AHouse": 0,
+  "JKR": 0
+ },
+ "zda_display_float": {
+  "_what": "W-ZDA-4a — the floating census under DISPLAY-AUTHORED windows vs the raw-authored baseline, from witness_zone_display_authoring.js. The display path IS measurably worse and always has been; this locks the exact pair so a CHANGE reddens, replacing an inequality assert that shipped permanently red. base = raw-authored windows + shipped rescale/sweep/parity; display = display-authored windows, rescale + parity, no sweep. Deliberately NOT a % threshold — that judge transfer was tried and retracted.",
+  "_measured": "2026-08-22 on origin/main 6ec0dcc (§S63); HHS_Office_Federated RE-LOCKED 2026-08-25 (§S65) — see _relocked_2026_08_25 below",
+  "Duplex_extracted": {
+   "base": 25,
+   "display": 46
+  },
+  "HHS_Office_Federated_extracted": {
+   "base": 967,
+   "display": 1849
+  },
+  "_relocked_2026_08_25": "HHS_Office_Federated 894->1839 becomes 977->1727. CAUSE ISOLATED BY A/B, not assumed. PR #1527 (§S65 STAGE 2) changed two things that feed the solve: element DURATIONS (1217 elements were on _installSecs' silent 120s floor, now on real productivity math) and two SEQUENCE moves (IfcRoof 8->6, glazed_curtainwall_facade 7->6, the user's weather-tight-before-rough-in ruling). Ran the template with the duration fixes but the sequences reverted: 891->1815. So the durations cost NOTHING in raw floating (894->891, three better) and improved the display side by 24; the entire +88 raw regression is the SEQUENCE moves, and they leave the display timeline byte-unchanged at 1815 — the movie is unaffected, only the raw generative audit moves. Accepted as the measured price of a deliberate ruling. PR #1529 (§ZONE_WINDOW_COVERS_WORK) then took the display side 1815->1727 by flooring each zone's window at its own members' crew-days. Net vs the old lock: raw +83, display -112.",
+  "_relocked_2026_08_26": "Duplex 22->37 becomes 25->46; HHS_Office_Federated 977->1727 becomes 967->1849. CAUSE: the Architecture phase was SPLIT into Architecture Envelope (seq 5-6) and Architecture Closeup (seq 8), with IfcDoor moving to closeup — bim-compiler prompts/4D_BAR_MODEL.md §19. One 'Architecture' phase was scoped 'Envelope AND internal fabric', and those halves sit on OPPOSITE SIDES of MEP Rough-in (weather-tight before first fix, doors hung after it), so no ordering of that phase could be correct — a phase that straddles another phase is not atomic. WHAT MOVED AND WHY IT IS ACCEPTED: this witness measures the LEGACY deriveZones path, which groups elements into zones AFTER the solve; moving doors into their own phase changes those groupings, so both halves of the pair shift. The DISPLAY half is worse (37->46, 1727->1849) and the WINDOW FIDELITY half is much better — outWindow Duplex 16->0 and HHS 1146->8, i.e. elements riding outside their own bar essentially disappear. Accepted as the measured price of a deliberate ruling, exactly as the 2026-08-25 re-lock accepted the IfcRoof 8->6 sequence move. READ THIS BEFORE TREATING EITHER NUMBER AS A QUALITY SIGNAL: §14.3 established that 783 of HHS's floating on this path is MANUFACTURED by _tmRescaleToTaskWindow, a per-task affine rescale applied after the judge runs — so this pair measures a path that is itself the defect, and it is locked to catch CHANGE, never to certify quality. The path is scheduled for retirement (§14.6 / §20 item 6); when it goes, this lock goes with it."
+ },
+ "orphans": {
+  "_what": "W-MZ-4 — elements touching nothing in the model. Purely geometric (never reads .s/.e), so independent of which display-authoring path produced the times. An extraction limit, reported never gated.",
+  "Terminal": 25,
+  "Hospital": 35,
+  "Duplex": 1,
+  "HHS_Office_Federated": 36,
+  "Clinic": 27,
+  "LTU_AHouse": 865,
+  "JKR": 1
+ }
+}

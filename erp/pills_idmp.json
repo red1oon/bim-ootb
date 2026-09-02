@@ -4,12 +4,129 @@
   "registry": "pill_builder.js (used as-is — same renderer as erp.html, NO second framework)",
   "note": "SIBLING manifest for the iDempiere renderer surface (idempiere.html) — DECIDED separate from erp.html's pills.json (GATE-1, ERP_BOTTOM_BAR_AND_LIFECYCLE.md §RESUME): the action sets differ. fn bound BY ID in idmp_pills.js to the REAL existing idempiere.html handlers (window.IdmpPillActions — functions are not JSON). icon = a glyph in icons.js (verbatim from viewer/panels.js); nothing inlined, nothing hand-drawn. Retires the hand-rolled #idmp-pillrail (§PILL-REGISTRY principle: no controls outside the pill).",
   "pills": [
-    { "id": "redpill", "name": "Just the pill / classic L&F", "key": ",", "img": "redpill.png", "order": 0, "note": "§D ERP_BOTTOM_BAR_AND_LIFECYCLE — master toggle. OUR design (default) = just the pill: classic iDempiere chrome (toolbar icons) hidden, the pill IS the UI. Press red pill (or ',' — same shortcut as BIM Doc Mode) → reveal the familiar iDempiere L&F; in classic mode our lens pills step aside (only the red pill remains). Persisted in localStorage. NEVER stage-gated." },
-    { "id": "posted",  "name": "Accts Posted", "key": "", "icon": "clipboard", "order": 1, "note": "per-record accounting fold (openPostedFor) — journal-lines clipboard glyph." },
-    { "id": "graph",   "name": "Graph",        "key": "", "icon": "barChart",  "order": 2, "note": "by-status bar chart of the open window (openGraphFor) — barChart glyph." },
-    { "id": "kanban",  "name": "Kanban",       "key": "", "icon": "layout",    "order": 3, "note": "draggable wfmc board / heat-map fallback (openKanbanFor) — board-columns layout glyph." },
-    { "id": "rule",    "name": "Rule",         "key": "", "icon": "checkList", "order": 4, "note": "lifecycle-as-data governance gate (openRuleFor) — compliance checkList glyph." },
-    { "id": "install", "name": "Install",      "key": "", "icon": "save",     "order": 5, "stage": "pre-client", "note": "§C: bring a tenant ONTO this device (openInstallFor / ErpPicker install). save-to-disk glyph. stage=pre-client — hidden once a client is entered (GATE-2)." },
-    { "id": "migrate", "name": "Migrate",      "key": "", "icon": "pipe",     "order": 6, "stage": "pre-client", "note": "§C: pipe data IN from another ERP (openMigrateFor / ErpPicker migrate). conduit pipe glyph. stage=pre-client — hidden once a client is entered (GATE-2)." }
+    {
+      "id": "reports",
+      "name": "Reports",
+      "key": "",
+      "icon": "doc",
+      "order": 1.2,
+      "note": "Financial statements + receipt report menu (window.__report.menu → report_overlay.js openMenu). Replaces the former #reportMenuPill fixed float (PR #295 legacy) — reports are now a registry pill, no controls outside the pill bar."
+    },
+    {
+      "id": "zoomacross",
+      "name": "Zoom Across",
+      "title": "Zoom Across",
+      "key": ",",
+      "img": "redpill.png",
+      "showWhen": "zoom-across",
+      "order": 2.6,
+      "note": "RED PILL — abstract cross-surface ZOOM ACROSS (record → related SURFACE; generalises iDempiere's native record→window zoom). Surfaces register destinations via window.ZoomAcross.register({id,label,available,launch}); first = BIM Viewer (C_Project BIM band PK>=990000 → open the building scene, ../viewer/viewer.html?db=../buildings/<Value>_extracted.db&bld=<Value>). §AD-GATE showWhen:zoom-across — surfaces when ANY destination is available (IdmpPillZoomGate); off otherwise so the iDempiere chrome stays pure. Keyboard ',' (revived from the retired red-pill shortcut). Modeller etc. later = one more register() call, no pill change. img=redpill.png; hover 'Zoom Across'."
+    },
+    {
+      "id": "dashboard",
+      "name": "Dashboard",
+      "key": "",
+      "icon": "barChart",
+      "order": 3,
+      "note": "DASHBOARD — ONE multi-view surface over the open window (Odoo multi-view pattern): tabs Graph / Cards / Pivot / List / Timeline flip the SAME records. The Graph tab paints instantly (animated fold-out bars, rich hover = count·%·Σamount) then STREAMS in the 'Ask' panel — a templated summary of what's shown + auto-generated question chips (By <dimension> / Top-N / concentration) that regraph the real data, all NON-INVENT (extracted facts, no LLM). Retires the separate graph/kanban/pivot rail pills (their handlers remain; openDashboard fans into them). barChart glyph (the familiar graph icon). FUNDAMENTAL LAW: a ⋯-rail lens, never native chrome."
+    },
+    {
+      "id": "rule",
+      "name": "Rule",
+      "key": "",
+      "icon": "scale",
+      "order": 4,
+      "note": "lifecycle-as-data governance gate (openRuleFor) — Lucide scale glyph (rules/governance) — de-collided from checkList, which stays UBBL Compliance (PILLS_CONSOLIDATION_REVIEW_2026-07-03 §ICON MAP)."
+    },
+    {
+      "id": "pos",
+      "name": "POS",
+      "key": "",
+      "icon": "shoppingCart",
+      "showWhen": "pos-station",
+      "order": 4.5,
+      "note": "POS_ADDON_SPEC §P-1 — the point-of-sale lens (openPosFor → PosLens.open): c_poskey tile grid, sealed master prices, Complete = ONE signed group (order+ship+invoice+backflush, WR from the dictionary), replenishment fold after. shopping-cart glyph (Lucide verbatim). §AD-GATE showWhen:pos-station — surfaces only when the tenant carries a c_pos row (window.IdmpPillPosGate, mirrors the Posting-Preview data-gate)."
+    },
+    {
+      "id": "kitchen",
+      "name": "Kitchen",
+      "key": "",
+      "icon": "clipboard",
+      "showWhen": "pos-station",
+      "order": 4.6,
+      "note": "RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS §T2-SPEC — Kitchen Display (openKitchenFor → KitchenLens.open): the 'ordered, not yet delivered' queue = KitchenCore fold over the op log (deliver-later shipments born DR) ∪ the §S-2 seed selector; Serve = ONE signed group riding pos_core completeShipmentOps (confirm-gate + FSM intact). W-KDS-QUEUE headless witness. Same §AD-GATE showWhen:pos-station as the POS pill (a kitchen without a station is meaningless)."
+    },
+    {
+      "id": "warehouse",
+      "name": "Warehouse Walk",
+      "key": "",
+      "icon": "route",
+      "order": 4.7,
+      "note": "Opens the warehouse walk viewer (§S-1 compiled GardenWorld db, short GH Pages URL). Static demo door — no data gate (the walk pill inside the viewer already gates on locator bins). share = navigator.share the viewer URL."
+    },
+    {
+      "id": "ninja",
+      "name": "Excel Report",
+      "key": "",
+      "icon": "grid",
+      "order": 4.8,
+      "note": "NinjaExcelAdaptation.md §6.2 — Excel-as-report-binder lens (window.NinjaPill): drop a filled sample (BACKUP) → MAKE scaffolds Input+Process; drop the authored workbook → RUN folds each Process row over the loaded tenant db (sql.js), writes values to the addressed cells, verify-by-example vs the sample (integer cents), download filled. The browser never renders the report — formatting/subtotals/charts stay the user's own Excel. grid glyph (spreadsheet). Engine == bim-compiler build/erp (W-NINJA/MAKE/RULE headless + W-NINJA-PILL live)."
+    },
+    {
+      "id": "erpdoc",
+      "name": "Read / Compare",
+      "key": "",
+      "icon": "lightbulb",
+      "order": 7,
+      "note": "Migrate & Compare evaluator paper (migrate_compare.html) — same lightbulb pill as erp.html's erpdoc. Houses the 'How this compares' experience in a pill (was a free-floating login-card link). Bound to openReadCompare in idmp_pills.js → window.IdmpPillActions. NEVER stage-gated (always reachable)."
+    },
+    {
+      "id": "showme",
+      "name": "ShowMe Help",
+      "key": "",
+      "icon": "circleHelp",
+      "order": 8,
+      "note": "§P3-REOPENED (FRONT_DOOR_PILL_FINISH): guided ShowMe/NeedHelp tour, now a CLEAN Lucide circleHelp PILL (was a header '?' text glyph + a floating 'NeedHelp?' checkbox outside the pill). TOGGLE — IdmpPillActions.showme flips the shared help_overlay.js #needHelpCk (no fork), lit via IdmpPillActive.showme = ck.checked. NOT stage-gated (help is always useful). The floating #needHelpWrap is CSS-hidden on this surface; the pill is the sole control."
+    },
+    {
+      "id": "plugin",
+      "name": "Plugin Engine",
+      "key": "",
+      "icon": "plug",
+      "order": 8.5,
+      "note": "PLUGIN_SYSTEM_LANE.md §Phase D — the Fold-Engine plugin host (W-PLUGIN). TAP opens PluginEngine.open: paste a raw ES-module bundle URL → one click → ACTIVE (collapses iDempiere's drop-JAR-restart + 2Pack-import into one in-surface action). A bundle contributes into the live engine registries (AdModelVal/AdCallout/AdProcess/PostResolver) via plugin_registry.js; state persists in IndexedDB. plug glyph (Lucide verbatim). NEVER stage-gated (engine plugins are a global concern). §-witness §PLUGIN-PILL."
+    },
+    {
+      "id": "audio",
+      "name": "Sound FX",
+      "key": "v",
+      "icon": "volume2",
+      "order": 8.7,
+      "note": "The SAME Sound-FX speaker pill as the BIM viewer (panels.js id=audio, key v) — idempiere.html loads ../viewer/sfx.js so window.toggleSfx + window.__sfx are present. TAP toggles the ERP/POS earcons (POS ring/pay/complete, §R2-AUDIO); lit when on (IdmpPillActive.audio → __sfx.isOn()), live-synced via builder.sync(). The choice PERSISTS (localStorage sfx_on overrides erp/sfx.json master.enabled), so a mute sticks across reloads — surfaces the control instead of an invisible default. volume2 glyph (Lucide verbatim, already in icons.js). [[feedback_pill_icon_consistency]]."
+    },
+    {
+      "id": "worldhist",
+      "name": "World History",
+      "key": "w",
+      "icon": "worldHist",
+      "order": 9,
+      "note": "HISTORY_KNOB_DIAL.md — the cross-page History overlay (which building/doc/page). TAP = open the across-pages overlay (WholeHistory.toggleOpen); LONG-PRESS = a drawer with Z (this page's dot-timeline bar = IdmpHistory) + bomb (clear history, warns first; no shortcut). Replaces the standalone bottom-left clock launcher (WholeHistory mounts {launcher:false}). Two-overlapping-circles glyph. NEVER stage-gated (history is useful anywhere)."
+    },
+    {
+      "id": "share",
+      "name": "Share this page",
+      "key": "",
+      "icon": "share",
+      "order": 8.7,
+      "note": "Deep-link to the open window/record (native share / clipboard). FUNDAMENTAL LAW — relocated off the iDempiere header to the pill rail (not iDempiere chrome)."
+    },
+    {
+      "id": "home",
+      "name": "Exit",
+      "key": "",
+      "icon": "home",
+      "order": 8.8,
+      "note": "Exit the ERP → the landing page (app-shell front door, ../index.html). 'Exit' is an app-shell action (iDempiere has no landing), so it stays in the ⋯ rail per the FUNDAMENTAL LAW — the header keeps only the iDempiere-native Logout. RESUME_IDMP_FIDELITY leg 2."
+    }
   ]
 }
