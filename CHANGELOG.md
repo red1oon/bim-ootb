@@ -4,6 +4,33 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.58.0](https://github.com/red1oon/bim-ootb/compare/v1.57.1...v1.58.0) (2026-09-02)
+
+
+### ✨ Features
+
+* **cinema:** §CLI_SILENT_BAKE — dev-only CLI silent bake taking a stored path + §NIGHT_BAKE_POOL bake perf fix ([#1602](https://github.com/red1oon/bim-ootb/issues/1602)) ([d37eb10](https://github.com/red1oon/bim-ootb/commit/d37eb109a3b571b24bb2568b3d1fdbee723361ee))
+* **erp:** disposable-host persistence in-app — signed backup/restore (sw v605) (§INTEG-WIRE-B) ([#203](https://github.com/red1oon/bim-ootb/issues/203)) ([071bdc7](https://github.com/red1oon/bim-ootb/commit/071bdc7f2e86b4fb761a34baed612e1ca28c845f))
+* **erp:** OK feedback dialog after both System Monitor resets ([#429](https://github.com/red1oon/bim-ootb/issues/429)) ([2cbe9ac](https://github.com/red1oon/bim-ootb/commit/2cbe9acb4ead4632551bd4c888068fa1fcb5d9a4))
+* **palette:** §MEP_DISC_PALETTE — the discipline band paints the viewer's OWN legend, and InstancedMeshes stop being 'Unknown' ([#1604](https://github.com/red1oon/bim-ootb/issues/1604)) ([318b4dd](https://github.com/red1oon/bim-ootb/commit/318b4dd3c9295cbf2f65b65ba6ff43c9a3e2891c))
+* **room_graph:** sub-human door height filter + sealed-room marking, exclude from Find Panel ([#1157](https://github.com/red1oon/bim-ootb/issues/1157)) ([34219f8](https://github.com/red1oon/bim-ootb/commit/34219f8cdc7ae169d36e03c097cf18e0b0b2fde5))
+* **viewer:** §WALL_SIDE_AND_LIGHT_FLOOR — class-keyed material.side + derived light floor ([#1601](https://github.com/red1oon/bim-ootb/issues/1601)) ([d16646d](https://github.com/red1oon/bim-ootb/commit/d16646db8375952b1dc340c3c59dde3145e97de8))
+
+
+### 🐛 Fixes
+
+* **4d:** §CACHE_PLAYED_LAYER — the cache carries BOTH schedule layers and every judge names the one it judges ([#1607](https://github.com/red1oon/bim-ootb/issues/1607)) ([614ab66](https://github.com/red1oon/bim-ootb/commit/614ab66e016286cce4cd422714359c3fdf68c1d3))
+* **4d:** §GANTT_CACHE_ERR_STACK — log the stack, the message alone cannot locate it ([#1318](https://github.com/red1oon/bim-ootb/issues/1318)) ([a490d7b](https://github.com/red1oon/bim-ootb/commit/a490d7b2b61fa57e60512d82a9bb0da733196771))
+* **4d:** §TM_REVEAL_TILED — the movie plays each element's own duration share of its bar, not a per-task affine ([#1605](https://github.com/red1oon/bim-ootb/issues/1605)) ([c8a6df6](https://github.com/red1oon/bim-ootb/commit/c8a6df61d1f1ab8c3ae53a12ffab5c947c6f8925))
+* **cpe:** §CPE_PIE_FLYOUT_DROP — the fly-out drops the pie; the revolving highlights take its column ([#1599](https://github.com/red1oon/bim-ootb/issues/1599)) ([4fb753c](https://github.com/red1oon/bim-ootb/commit/4fb753c61787ec24d19275573f470f9f90a91503))
+* **security:** harden before() in witness_room_graph_utility_penalty.js against shell injection ([#1606](https://github.com/red1oon/bim-ootb/issues/1606)) ([e9daafa](https://github.com/red1oon/bim-ootb/commit/e9daafa0d7c94c33954a0ded122c1c8b55f64e48))
+* **witness:** §VAC — the nine per-frame tags of §R13.9 can now report their own failure ([#1608](https://github.com/red1oon/bim-ootb/issues/1608)) ([bf600d4](https://github.com/red1oon/bim-ootb/commit/bf600d4a107e80ea3ed7d2bd6b8fe32eaa404959))
+
+
+### 📝 Documentation
+
+* **cpe:** §PIE_HOLD_PREDICATE — the pie-hold "never fires on Hospital" claim was measuring tasks, not staffed ops ([#1603](https://github.com/red1oon/bim-ootb/issues/1603)) ([e15da67](https://github.com/red1oon/bim-ootb/commit/e15da67c553ec5a08a6a0c8e16881a7d92ef5fd6))
+
 ## [1.57.1](https://github.com/red1oon/bim-ootb/compare/v1.57.0...v1.57.1) (2026-09-01)
 
 
