@@ -63,11 +63,28 @@ function typeOf(e, K) {
   return geoType(e, K);                       // "if we cannot ID well, use bounding box dimensions"
 }
 
+// ⚠ WHICH LAYER (§CACHE_PLAYED_LAYER, #1607 / queue item A-9 — ported here on the #1551 merge,
+// 2026-09-02). This file was written BEFORE the cache carried two schedule layers and read the bare
+// `.sched` key, which is `displaySchedule` — a map viewer/time_machine.js has ZERO readers of. A
+// sweep over the layer nobody plays would plateau on a signal the film never shows. It now selects
+// through CACHE.layerOf() like every other cache reader and PRINTS the layer it swept, so the
+// result can never be quoted without its input being named; `LAYER=display` re-points it at the old
+// map deliberately, and it still says so. §W_CLA C4_READERS_NAME_IT is the claim that enforces this.
 function load(b) {
   const r = CACHE.read(b);
   if (!r) return null;
-  const t0 = Math.min.apply(null, Object.keys(r.sched).map(g => r.sched[g].s));
-  return { els: r.els, sched: r.sched, t0 };
+  const L = CACHE.layerOf(r);
+  console.log('§KNOB_SWEEP_LAYER ' + b.padEnd(22) + 'layer=' + L.id + ' key=' + L.key + ' — ' + L.desc +
+    (L.missing ? '  ⛔ ABSENT from this cache' : ''));
+  if (L.missing) {
+    console.log('§KNOB_SWEEP_LAYER_MISSING ' + b + ' layer=' + L.id +
+      ' — this cache predates §CACHE_PLAYED_LAYER. Rebuild: node scripts/cache_4d_run.js --force ' + b +
+      '. NOT falling back to the other layer: that substitution is the defect A-9 removed.');
+    return null;
+  }
+  const sched = L.map;
+  const t0 = Math.min.apply(null, Object.keys(sched).map(g => sched[g].s));
+  return { els: r.els, sched: sched, t0 };
 }
 
 // ── SIGNAL 1: does the bbox rule reproduce the unambiguous classes? ─────────────────────────────
