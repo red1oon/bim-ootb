@@ -2635,20 +2635,30 @@ async function setupScene(A) {
     }
     var ov = _createProgressOverlay();
     ov.setText('Fetching asset list from service worker...');
-
-    // Ask sw.js for the full precache list via MessageChannel
-    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
-      ov.setText('Service worker not ready. Reload and try again.');
+    if (!navigator.serviceWorker) {
+      ov.setText('Service worker not supported in this browser.');
+      console.log('§OFFLINE_DL no_sw_api');
       return;
     }
-    var ch = new MessageChannel();
-    ch.port1.onmessage = function(ev) {
-      var assets = (ev.data.assets || []).concat(ev.data.libs || []);
-      var version = ev.data.version || 'v515';
-      window._pwaVersion = version; // stash for cache name
-      _cacheAllAssets(assets, ov);
-    };
-    navigator.serviceWorker.controller.postMessage({ type: 'GET_PRECACHE' }, [ch.port2]);
+    // Use serviceWorker.ready to get the active worker even when controller is null
+    // (controller=null on first visit before clients.claim fires, but reg.active is the running SW)
+    navigator.serviceWorker.ready.then(function(reg) {
+      var ctrl = navigator.serviceWorker.controller || reg.active;
+      if (!ctrl) {
+        ov.setText('Service worker not ready. Reload and try again.');
+        console.log('§OFFLINE_DL no_controller');
+        return;
+      }
+      console.log('§OFFLINE_DL ctrl_via=' + (navigator.serviceWorker.controller ? 'controller' : 'active'));
+      var ch = new MessageChannel();
+      ch.port1.onmessage = function(ev) {
+        var assets = (ev.data.assets || []).concat(ev.data.libs || []);
+        var version = ev.data.version || 'v515';
+        window._pwaVersion = version; // stash for cache name
+        _cacheAllAssets(assets, ov);
+      };
+      ctrl.postMessage({ type: 'GET_PRECACHE' }, [ch.port2]);
+    });
   }
 
   // §S283 1.4: Force-cache every asset with progress

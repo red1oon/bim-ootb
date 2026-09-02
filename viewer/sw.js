@@ -31,7 +31,11 @@
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1122';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1123';   // bump on each deploy; per-change detail is the git commit message.
+// v1123 (rebase of PR #255 onto origin/main) §OFFLINE-SURFACE: GET_OFFLINE_STATUS message
+// handler reports which DEFERRED_LIBS are actually cached (honest offline status for the new
+// Settings panel row); _startOfflineDownload's controller-null race on first visit fixed via
+// serviceWorker.ready + reg.active fallback (scene.js). Witness: viewer/tests/poc_offline_surface.js.
 // MERGE NOTE (2026-09-01, third of the day, same standing rule: KEEP BOTH notes, take the HIGHER
 // version, each separate change gets its OWN bump):
 // v1119 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
@@ -720,5 +724,21 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'GET_PRECACHE') {
     // Return the full precache list so the install flow can force-cache all assets
     event.ports[0].postMessage({ assets: PRECACHE_ASSETS, libs: LOCAL_LIBS, version: CACHE_VERSION });
+  }
+  if (event.data && event.data.type === 'GET_OFFLINE_STATUS') {
+    // Report which DEFERRED_LIBS are actually in the cache (honest offline status)
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.all(DEFERRED_LIBS.map(url =>
+        cache.match(url).then(r => ({ url, cached: !!r }))
+      ))
+    ).then(results => {
+      const status = {};
+      results.forEach(r => { status[r.url] = r.cached; });
+      event.ports[0].postMessage({
+        deferred: status,
+        allDeferred: results.every(r => r.cached),
+        version: CACHE_VERSION,
+      });
+    });
   }
 });
