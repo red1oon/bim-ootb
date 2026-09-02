@@ -7332,6 +7332,17 @@
         retimeTaskElements(app.db, byTask, res.moved, tasksBeforeLink);
         _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
       }
+      // §FUTURE-5A item 6 (applied 2026-09-02, queue item B-3): the ONLY §GANTT_EDIT_CLAMP call
+      // site in this file with NO on-screen feedback at all — commitGanttDrag/openGanttProps'
+      // Apply already show `blockedBy`/`clampedTo` (the inline tm-gantt-tip pattern _tmSay itself
+      // wraps), but this re-apply-after-link call to moveTaskCascade never checked res.clamped, so
+      // a new link that ALSO clamps the successor left the user with only the earlier "Linked: ..."
+      // message and no word that the date shown isn't where the link math alone would have put it.
+      // res.blockedBy is the engine's own extracted binding predecessor (schedule_author.js
+      // _bindingPred) — never invented here.
+      if (res && res.clamped) {
+        _tmSay('Linked, but ' + succBar.taskId + ' clamped to ' + res.start + ' — blocked by ' + res.blockedBy, 3400);
+      }
     }
     // §GANTT_CPM_ANNOTATE (§S68) — OUTSIDE the moved-check on purpose: a new EDGE changes the graph,
     // so it changes float and criticality even when the clamp left every date exactly where it was.
