@@ -1844,6 +1844,27 @@
 
     db.run('COMMIT');   // §SE-5a — single commit for the whole rebuild
 
+    // §TPL_MODEL — THE THIRD PRODUCER, named (2026-09-02, bim-compiler
+    // prompts/4D_MODEL_INTEGRITY.md §I.5g, §FUTURE item 7 Stage 5, queue item B-2). Until now only
+    // materializeZones' two branches emitted this line (`model=template`, `model=legacy-deriveZones`),
+    // so the ownership row read as a two-way fork while THREE generators write the same SCH_AUTHORED
+    // schedule id. This one is LIVE UI — schedule_author_ui.js generateDraft() calls it at :276 (the
+    // "Start blank" checkbox) and again at :293 as the fallback when materializeZones returns !ok —
+    // and it emitted no attribution at all. A reader of `§TPL_MODEL` could therefore see the line
+    // ABSENT and had no way to tell "the third producer ran" from "no producer ran": a schedule that
+    // came from neither model was a state the log could not express. PRIMAL LAW clause 4 — a pass
+    // that cannot report which construct produced it is not reporting.
+    // `witness_gantt_edit_coherence.js:210-218` already reports INCONCLUSIVE when no §TPL_MODEL line
+    // was emitted; with this line that third state becomes attributable instead of unknown.
+    // NOT canonical, and the wording says so: the task grid here is phases from SEQUENCE_RULES with
+    // widths from labor workload, not the DECLARED grid in rates/4D_template.json. Same console.log
+    // stream as the other two on purpose (§I.5j(b): a line on console.warn is invisible to every
+    // §-collecting witness in this repo).
+    console.log('§TPL_MODEL model=default-materialize mode=' + (blank ? 'blank' : 'dated') +
+      ' — ⛔ the CANONICAL template path did NOT run: this is materializeDefault, the smart-default ' +
+      'producer (phases from SEQUENCE_RULES, widths from labor workload). The task grid is DERIVED, ' +
+      'not DECLARED by 4D_template.json.');
+
     console.log('§AUTHOR_MATERIALIZE schedule=' + schedId + ' mode=' + (blank ? 'blank' : 'dated') +
       ' phases=' + outPhases.length + ' leafTasks=' + outPhases.length +
       ' assignments=' + assignN + ' elements=' + elems.length + ' totalDays=' + totalDays);
