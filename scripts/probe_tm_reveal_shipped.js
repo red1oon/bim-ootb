@@ -51,20 +51,16 @@ const T = JSON.parse(fs.readFileSync(path.join(V, 'rates', '4D_template.json'), 
 const tmSrc = fs.readFileSync(path.join(V, 'time_machine.js'), 'utf8');
 // §CACHE_PLAYED_LAYER — the ONE owner of "the played layer, in node" (slicing + injectGantt mirror).
 const TMP = require(path.join(__dirname, 'lib', 'tm_played_layer.js'));
+// §CACHE_DB_KIND — the ONE owner of "which db does the viewer load" (meta when the split pair exists
+// and the meta file is a readable SQLite file, else extracted — with the reason). A 0-byte
+// buildings/Duplex_meta.db used to crash this probe because the local rule was `existsSync(meta)`.
+const CACHE = require(path.join(__dirname, 'cache_4d_run.js'));
 
 function executedRules() {
   const sb = { console: { log() {}, warn() {}, error() {} } };
   vm.createContext(sb);
   vm.runInContext(fs.readFileSync(path.join(V, 'rates.js'), 'utf8'), sb);
   return sb;
-}
-// §S39/§S37-A2 rule (witness_midair_zero.js): prefer <bld>_meta.db, fall back to _extracted.db.
-function resolveDbFile(bld) {
-  const meta = path.join(BLD_DIR, bld + '_meta.db');
-  const ext = path.join(BLD_DIR, bld + '_extracted.db');
-  if (process.env.DB_KIND === 'extracted' && fs.existsSync(ext)) return { path: ext, kind: 'extracted' };
-  if (fs.existsSync(meta)) return { path: meta, kind: 'meta' };
-  return { path: ext, kind: 'extracted' };
 }
 function deciles(vals) {
   const h = new Array(10).fill(0);
@@ -73,8 +69,9 @@ function deciles(vals) {
 }
 
 async function runBuilding(bld, SQL, R) {
-  const dbf = resolveDbFile(bld);
-  if (!fs.existsSync(dbf.path)) { console.log('§TM_REVEAL_SHIPPED_SKIP ' + bld + ' — no db'); return null; }
+  const dbf = CACHE.resolveDbFile(bld, null, BLD_DIR);
+  if (!dbf.path) { console.log('§TM_REVEAL_SHIPPED_SKIP ' + bld + ' — ' + dbf.reason); return null; }
+  console.log('§TM_REVEAL_SHIPPED_RESOLVE ' + bld + ' kind=' + dbf.kind + ' file=' + path.basename(dbf.path) + ' reason=' + dbf.reason);
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbf.path)));
   const sb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS,
     LABOR_RATES: R.LABOR_RATES, console: console });
