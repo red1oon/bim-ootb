@@ -8743,14 +8743,24 @@ async function setupEffects(A, renderer, scene, camera) {
       // by an older build simply does not have the column and SELECTing it would throw — taking the
       // WHOLE path down over an optional field. Probe the table's own columns first and only ask for
       // what is there. Missing column == every hold 0, which is the documented default anyway.
-      var _hasHold = false;
+      // §CPE_FLAGS_PORTABLE (2026-09-04): buildup/room_title/reveal/day_counter were appended after
+      // hold_sec, so the same one-probe-per-optional-column rule applies — a .db written by any
+      // earlier build simply has neither, and asking for them would take the WHOLE path down over
+      // fields whose absence has a documented default (every flag off, dayCounter unset).
+      var _hasHold = false, _hasFlags = false;
       try {
         var ti = A.dbQuery("PRAGMA table_info(cinema_path)");
-        for (var _ti = 0; _ti < (ti || []).length; _ti++) if (ti[_ti][1] === 'hold_sec') _hasHold = true;
+        for (var _ti = 0; _ti < (ti || []).length; _ti++) {
+          if (ti[_ti][1] === 'hold_sec') _hasHold = true;
+          if (ti[_ti][1] === 'buildup') _hasFlags = true;
+        }
       } catch (eTi) {}
       var rows = A.dbQuery("SELECT seq,ifc_x,ifc_y,ifc_z,dir_x,dir_y,dir_z,len," +
         "total_sec,dive_sec,spin_sec,out_sec,rise_sec," +
-        (_hasHold ? "hold_sec" : "0 AS hold_sec") + " FROM cinema_path ORDER BY seq");
+        (_hasHold ? "hold_sec" : "0 AS hold_sec") + "," +
+        (_hasFlags ? "buildup,room_title,reveal,day_counter"
+                   : "0 AS buildup,0 AS room_title,0 AS reveal,NULL AS day_counter") +
+        " FROM cinema_path ORDER BY seq");
       if (!rows || rows.length < 2) { console.log('§CINEMA_PATH_RESTORE none (0 rows) — derived path'); return; }
       // §CPE_BANDS: rebuilt as bands, so the rigid-straight invariant is restored with the data
       // rather than re-imposed by convention.
@@ -8763,8 +8773,23 @@ async function setupEffects(A, renderer, scene, camera) {
       });
       A._cinemaPathEdit = { bands: bands, diveSec: rows[0][9], spinSec: rows[0][10],
                             outSec: rows[0][11], riseSec: rows[0][12], _total: rows[0][8] };
+      // §CPE_FLAGS_PORTABLE — constant across rows by construction (written from one override), so
+      // row 0 is the value, exactly as the beat seconds above are read. Only SET when the columns
+      // are actually there: an older .db must keep the pre-existing behaviour of leaving these
+      // undefined, so whatever default the consumer already applies still applies.
+      if (_hasFlags) {
+        A._cinemaPathEdit.buildup = !!rows[0][14];
+        A._cinemaPathEdit.roomTitle = !!rows[0][15];
+        A._cinemaPathEdit.reveal = !!rows[0][16];
+        if (rows[0][17] != null && rows[0][17] !== '') A._cinemaPathEdit.dayCounter = String(rows[0][17]);
+      }
       console.log('§CINEMA_PATH_RESTORE bands=' + bands.length + ' total=' + rows[0][8].toFixed(1) +
         's holdCol=' + _hasHold + ' holds=' + bands.filter(function(b) { return b.hold > 0.01; }).length +
+        ' flagCol=' + _hasFlags +
+        (_hasFlags ? ' buildup=' + (rows[0][14] ? 1 : 0) + ' roomTitle=' + (rows[0][15] ? 1 : 0) +
+                     ' reveal=' + (rows[0][16] ? 1 : 0) + ' dayCounter=' + (rows[0][17] || 'unset')
+                   : ' — §CPE_FLAGS_PORTABLE: this .db predates the flag columns, so every film flag' +
+                     ' stays at its consumer default (all off); the path itself is unaffected') +
         ' — authored path in force');
     } catch (e) { console.warn('§CINEMA_PATH_RESTORE_FAIL ' + e.message); }
   }
