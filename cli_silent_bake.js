@@ -118,9 +118,21 @@ const server = http.createServer((req, res) => {
     sw: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
     real: ['--use-angle=gl-egl', '--ignore-gpu-blocklist'],
     intel: ['--use-angle=gl-egl', '--ignore-gpu-blocklist'],
-    headful: ['--disable-backgrounding-occluded-windows']   // §MAXQ_HIDDEN_PAUSE parks hidden tabs
+    // §HEADFUL_GPU_SELECT (2026-09-04) — headful used to pass NO gpu args and NO env, so a windowed
+    // run fell through to whatever ANGLE picked by default. MEASURED: it picked the integrated chip
+    // ("ANGLE (Intel, Mesa Intel(R) UHD Graphics (ADL-S GT0.5))") while the headless '--gpu real'
+    // run of the SAME film on the SAME machine got "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX
+    // 4060 Laptop GPU)". That made the headful-vs-headless A/B measure TWO variables at once — the
+    // window AND the GPU — which is no measurement at all; the run produced 0 frames in 20 minutes
+    // and the stall watchdog aborted it. Headful now takes the SAME selector as `real`, so the
+    // window is the only thing that differs and the comparison means something.
+    headful: ['--use-angle=gl-egl', '--ignore-gpu-blocklist',
+              '--disable-backgrounding-occluded-windows']   // §MAXQ_HIDDEN_PAUSE parks hidden tabs
   }[GPU] || [];
-  const gpuEnv = GPU === 'real'
+  // The EGL VENDOR pin is the lever, not the ANGLE backend flag: with both 10_nvidia.json and
+  // 50_mesa.json present, '--use-angle=gl-egl' alone resolves to Mesa/Intel. Naming the vendor file
+  // is what reaches the discrete card. Same value for headful as for real — one selector, not two.
+  const gpuEnv = (GPU === 'real' || GPU === 'headful')
     ? { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' } : {};
   const extra = (arg('chrome-args', '') || '').split(/\s+/).filter(Boolean);
   const browser = await puppeteer.launch({
