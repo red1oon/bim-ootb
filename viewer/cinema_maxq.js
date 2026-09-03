@@ -1559,6 +1559,19 @@
         // loop makes (cinema_path_editor.js's _previewFly) so bake and preview cannot diverge. No-op
         // (returns immediately, does nothing) when reveal is off or tNorm is outside the round.
         if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tn);
+        // §CPE_TAIL_LIGHTS_ALL_ONLY (2026-09-04, user: "during last part each DISCipline reveal, the
+        // lights are all turned ON that obscures the delicate items scene. Should turn on only during
+        // ALL DISCs"). Set BEFORE _applyPhotoStaging runs for this frame — staging is what turns the
+        // night lights on and rebuilds the glow, so the flag has to be in place when it does, not
+        // after. The answer comes from effects.js's own pure phase function, never re-derived here:
+        // the bake, the editor preview and the witness all read the same one.
+        A._cpeRevealLightsOff = A.cpeRevealLightsOffAt ? A.cpeRevealLightsOffAt(plan, _tn) : false;
+        if (A._cpeRevealLightsOff !== A._cpeRevealLightsOffLast) {
+          A._cpeRevealLightsOffLast = A._cpeRevealLightsOff;
+          console.log('§CPE_TAIL_LIGHTS_ALL_ONLY frame=' + i + '/' + nFrames + ' lights=' +
+            (A._cpeRevealLightsOff ? 'OFF (one-discipline slot — the trade reads on its own)'
+                                   : 'ON (not a one-discipline slot)'));
+        }
         A.startStillRefine();
         // §SUN_ARC_STOMP_FIX (found live, 2026-08-11 — user report "not high noon" on a real
         // HHS_Office_Federated bake): startStillRefine() calls _applyPhotoStaging() synchronously,
