@@ -62,7 +62,12 @@
 // of being washed out by lamps that filterDiscs has hidden anyway. The all-together slot keeps its
 // lights. Illumination is scaled to 0 rather than torn down, because §NIGHT_BAKE_POOL froze the
 // point-light COUNT for the whole bake on purpose. effects.js?v=34->35, cinema_maxq.js?v=10->11.
-const CACHE_VERSION = 'v1138';   // bump on each deploy; per-change detail is the git commit message.
+// v1139 (2026-09-04) §SFR_UNIFORM_NOT_DEFINE: §SUN_FILL_RATIO's policy is unchanged, but it is no
+// longer expressed by swapping m.envMap — every material keeps ONE map and the matte set is held at
+// envMapIntensity 0 instead. The swap parked a second texture reference on every matte material for
+// the whole of staging, and updateSky() disposes the target it pointed at. Same picture, no live
+// reference to freed GPU memory. effects.js bumped in viewer.html.
+const CACHE_VERSION = 'v1139';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

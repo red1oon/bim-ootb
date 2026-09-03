@@ -2831,6 +2831,10 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   A._isPhotoGlossyMat = _isPhotoGlossyMat;  // witness reads the SAME predicate, never a copy of it
   A._photoMatteSkyEnv = true;               // §SUN_FILL_RATIO is present in this build
+  // §SFR_UNIFORM_NOT_DEFINE — the matte set's staged env contribution. 0 reproduces the map-swap's
+  // picture exactly; it is the U-11 dial, not a tuning knob to move casually.
+  var SFR_MATTE_ENV_I = 0;
+  var _sfrTouched = {};     // materials whose envMapIntensity this pass moved, restored at teardown
   function _reassertPhotoEnvMap() {
     if (!A._matCache || !A._envMap) return;
     Object.keys(A._matCache).forEach(function(k) {
@@ -2854,10 +2858,42 @@ async function setupEffects(A, renderer, scene, camera) {
       // erased §WALL_SIDE_AND_LIGHT_FLOOR's (PR #1601) shipped contrast in the photoreal path.
       // The HDRI stays exactly where it was introduced to work: reflections on glass and metal.
       // Witness: viewer/tests/witness_sun_fill_ratio.js (§SFR_* lines).
+      // ══ §SFR_UNIFORM_NOT_DEFINE (2026-09-04, user: "have a proper handling code that nails what
+      // u doing and not create the impact") ═══════════════════════════════════════════════════════
+      // §SUN_FILL_RATIO expressed "matte surfaces must not take the staged HDRI" by SWAPPING THE MAP,
+      // which parks a SECOND texture reference (`_photoEnvMapSaved`) on every matte material for the
+      // whole of staging. `A.updateSky()` DISPOSES the previous render target on each regen
+      // (scene.js:227 §MEMLEAK_PMREM_DISPOSE), so that parked reference can outlive its GPU
+      // resource — per material, intermittently, which is the shape of the user's report: some
+      // panels of a curtain wall gone and their neighbours fine, at full build, in a bake that was
+      // clean two days earlier.
+      // ⚠ HONESTY NOTE, because the first draft of this comment claimed otherwise and the witness
+      // disproved it: this is NOT about recompile churn. `envMap` is a DEFINE and a swap does cost a
+      // recompile, but MEASURED in witness_sfr_uniform_not_define.js the two-target version actually
+      // recompiles FEWER times under a regenerating sky (10 vs 16 over 3 regens), because the matte
+      // set is pinned to a stable reference. The defect being closed here is the STALE REFERENCE,
+      // not the recompile count. Claim what the instrument says, not what the theory wanted.
+      //
+      // THE POLICY IS UNCHANGED. What changes is the LEVER: `envMapIntensity` is a UNIFORM, so the
+      // same "no staged fill on matte" result costs zero recompiles and creates no second reference
+      // that can outlive its texture. This is the codebase's own precedent, not a new idea —
+      // §NIGHT_BAKE_POOL froze the point-light COUNT and dims unused slots to intensity 0 for the
+      // identical reason ("an intensity is a uniform"), and §CPE_TAIL_LIGHTS_ALL_ONLY follows it too.
+      //
+      // NOT INVENTED: the matte factor is 0, which is byte-equivalent to what the map swap produced —
+      // this fix changes the MECHANISM, not the picture. The interior cost §SUN_FILL_RATIO declared
+      // (Hospital retention 0.411 against a 0.70 floor) is UNTOUCHED and remains the open U-11
+      // decision; raising this factor is that decision's one dial, and it is the user's to set.
       var target = (m.userData && m.userData._photoRoomProbeEligible && _roomProbeRT)
-        ? _roomProbeRT.texture
-        : (_isPhotoGlossyMat(m) ? A._envMap : (_photoEnvMapSaved || A._envMap));
+        ? _roomProbeRT.texture : A._envMap;
       if (m.envMap !== target) { m.envMap = target; m.needsUpdate = true; }
+      if (A._photoMatteSkyEnv !== false) {
+        var _wantI = _isPhotoGlossyMat(m) ? (m.userData._sfrBaseEnvI != null ? m.userData._sfrBaseEnvI : m.envMapIntensity)
+                                          : SFR_MATTE_ENV_I;
+        if (m.userData._sfrBaseEnvI == null) m.userData._sfrBaseEnvI = m.envMapIntensity;
+        if (m.envMapIntensity !== _wantI) m.envMapIntensity = _wantI;   // uniform — NO needsUpdate
+        _sfrTouched[m.uuid] = m;
+      }
     });
   }
   function _reassertPhotoMatBoost() {
@@ -3682,6 +3718,22 @@ async function setupEffects(A, renderer, scene, camera) {
     // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
     // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
     if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
+    // §SFR_UNIFORM_NOT_DEFINE — hand every material its own pre-staging envMapIntensity back. Keyed
+    // per material (userData._sfrBaseEnvI, captured the first time this pass touched it) rather than
+    // one global default, because materials do not all start from the same value. No needsUpdate
+    // here either: restoring a uniform is as free as setting it was.
+    var _sfrRestored = 0;
+    Object.keys(_sfrTouched).forEach(function(k) {
+      var mm = _sfrTouched[k];
+      if (mm && mm.userData && mm.userData._sfrBaseEnvI != null) {
+        mm.envMapIntensity = mm.userData._sfrBaseEnvI;
+        delete mm.userData._sfrBaseEnvI;
+        _sfrRestored++;
+      }
+    });
+    _sfrTouched = {};
+    if (_sfrRestored) console.log('§SFR_UNIFORM_NOT_DEFINE teardown envMapIntensity restored on ' +
+      _sfrRestored + ' material(s) — the map itself never moved, so nothing holds a disposed target');
     A._envMapHdriActive = false;  // §ALT_FRAME_LUMINANCE: scene.js's throttled regen is safe again
     // §PHOTO_SUN_SEPARATION: only undo the night-mode force-on if THIS staging cycle actually
     // applied dusk mood (snapshot, not the live flag — the user may have flipped it mid-session).
