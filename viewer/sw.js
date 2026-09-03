@@ -48,7 +48,11 @@
 // stored, so a path saved with Ctrl+S no longer travels with every feature silently OFF. Columns are
 // APPENDED and the reader PRAGMA-probes them, so old and new .db files open in both directions.
 // scene.js?v=59->60, effects.js?v=32->33.
-const CACHE_VERSION = 'v1135';   // bump on each deploy; per-change detail is the git commit message.
+// v1136 (2026-09-04) §CPE_ROSTER_NOT_A_HIGHLIGHT: the Reveal round's revolving rotation is the
+// stat cards ONLY. The held build-up crew roster is no longer one of the slots — it holds,
+// un-rotated, through round 1 where it means something. A build-up slide is not a finished-building
+// highlight (user ruling). cinema_maxq.js?v= bumped in viewer.html.
+const CACHE_VERSION = 'v1136';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

@@ -1707,7 +1707,32 @@
         if (!_inReveal) {
           if (_holdInfo) _resInfo = { info: _holdInfo, pos: _ovPos };   // round 1: hold, never rotate
         } else if (A.tailPanelAt) {
-          var _si = A.tailPanelAt(_bigCards, i / fps, _holdInfo);
+          // ══ §CPE_ROSTER_NOT_A_HIGHLIGHT (2026-09-04, user) ═══════════════════════════════════
+          // USER: "the last card during buildUP gives way to rotating slides highlights. But the
+          // last buildUp went along as part of the highlights. That slide of last buildup, drop
+          // that only. Let highlights be just highlights which are fine."
+          // §CPE_STATS_TAIL made the held crew roster ONE OF the revolving slots so that "nothing
+          // the panel used to say is lost to the cards". That reasoning was about round 1's
+          // content not vanishing — but the roster IS round 1: it is the build-up's last live
+          // composition, frozen. Carrying it into the Reveal rotation puts a build-up slide in
+          // among the finished-building highlights, which is the one thing the Reveal round exists
+          // to stop doing. The crew is not lost: it holds, un-rotated, for the whole of round 1
+          // (the `if (!_inReveal)` branch above), which is where it means something.
+          // `_holdInfo` is still COMPUTED above because round 1 needs it — only the Reveal round's
+          // rotation stops receiving it. Passing null makes tailPanelAt's own `hasRoster` false, so
+          // the rotation is the cards and nothing else; no new constant, no second boundary.
+          // ⚠ DEGRADE NOTE: with no cards built (§CPE_BIG_STATS INCONCLUSIVE — no source), the tail
+          // rotation is now EMPTY and the panel is omitted, where before the roster alone would
+          // have kept it on screen. That is the user's ruling ("just highlights"), and the §-line
+          // below names it rather than leaving a blank corner unexplained.
+          var _si = A.tailPanelAt(_bigCards, i / fps, null);
+          if (!A._statTailRosterLogged) {
+            A._statTailRosterLogged = true;
+            console.log('§CPE_ROSTER_NOT_A_HIGHLIGHT reveal rotation slots=' +
+              (_bigCards ? _bigCards.length : 0) + ' (cards only; the held build-up roster is NOT' +
+              ' one of them — it holds through round 1 instead)' +
+              (_bigCards && _bigCards.length ? '' : ' — NO CARDS: the tail panel is omitted entirely'));
+          }
           if (_si) {
             // §CPE_PIE_FLYOUT_DROP (2026-09-01, user: "during last fly out, the last pie is not
             // needed. Remove to give max space to the revolving highlights."): in the Reveal round
@@ -1715,8 +1740,9 @@
             // full panel width. The boundary is THIS branch's own _inReveal (topoutU / ops-frozen
             // degrade), no new constant, so the drop can never diverge from the rotation. Round 1
             // is untouched: §CPE_PIE_HOLD still owns every frame before the boundary. The crew is
-            // NOT lost — tailPanelAt above still receives _holdInfo, so the roster stays one of
-            // the revolving slots (§CPE_STATS_TAIL), now full-width like the cards.
+            // NOT lost — it holds, un-rotated, for the whole of round 1. (Until 2026-09-04 the
+            // roster also rode along as a revolving slot here; §CPE_ROSTER_NOT_A_HIGHLIGHT above
+            // removed it — a build-up slide is not a finished-building highlight.)
             _statInfo = { shown: _si, pos: _ovPos, held: null };
             A._statTailFrames = (A._statTailFrames || 0) + 1;
             if (!A._statTailLogged) {
