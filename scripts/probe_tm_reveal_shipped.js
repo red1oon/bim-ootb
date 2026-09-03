@@ -104,7 +104,11 @@ async function runBuilding(bld, SQL, R) {
   if (!mp.ok) { console.log('§TM_REVEAL_SHIPPED_FAIL ' + bld + ' ' + mp.reason); db.close(); return null; }
   const disp = mp.disp, win = mp.win, guidTask = mp.guidTask, twItems = mp.twItems, winGroups = mp.winGroups;
   const op = mp.affine, opFix = mp.play, tiled = mp.tiledMap;
-  console.log('§TM_REVEAL_SHIPPED_DISPLAY ' + bld + ' cpm=' + mp.stats.cpm + ' midair=' + mp.stats.midair +
+  // §TM_PLAYED_LAYER_MIDAIR: this number is the CPM-DISPLAY judge's (§CPM_DISPLAY), named as such. The
+  // played-layer verdict is §TM_REVEAL_JUDGE map=CANDIDATE-tiled below (and now §TM_PLAYED_LAYER's own
+  // midairPlayed=, from the same owner).
+  console.log('§TM_REVEAL_SHIPPED_DISPLAY ' + bld + ' cpm=' + mp.stats.cpm + ' midairCpmDisplay=' + mp.stats.midairCpmDisplay +
+    ' midairPlayed=' + mp.stats.midairPlayedStatus +
     ' (cpm=reuse means injectGantt replayed the hook\'s CPM timeline, exactly as the browser cold-open does)');
   console.log('§TM_REVEAL_SHIPPED_BIND ' + bld + ' total=' + mp.stats.total + ' clamped=' + mp.stats.clamped +
     ' uncovered=' + mp.stats.uncovered + ' tiled=' + mp.stats.tiled + ' display_authored=' + mp.stats.displayAuthored +
