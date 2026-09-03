@@ -31,7 +31,7 @@
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1131';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1132';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

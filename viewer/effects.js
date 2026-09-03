@@ -5552,12 +5552,18 @@ async function setupEffects(A, renderer, scene, camera) {
   // Four zones inside [b.out, b.rise]:
   //   pull-out  (b.out .. b.pullout)  — plain, no override (author's call, see spec file: a short
   //                                     transition beat, not part of either "round").
-  //   round 2   (b.pullout .. b.reveal) — 'ghost': ARC/STR fully hidden, every non-ARC/STR discipline
-  //                                     shown together — UNCHANGED from the original ghost phase.
-  //                                     §CPE_DISCIPLINE_REVEAL_FLYBACK (2026-08-16): this span now
-  //                                     covers BOTH the fly-back sub-beat (camera retracing the path
-  //                                     back to the first stick) AND the forward lap after it — the
-  //                                     boundary here is unchanged (still b.pullout..b.reveal), only
+  //   fly-back  (b.pullout .. b.flyback) — plain, ARC/STR STILL SOLID. §CPE_REVEAL_ARCH_HOLD
+  //                                     (2026-09-03, user): the retrace happens with the building
+  //                                     COMPLETE and LIT, and that is the point of it — it reads
+  //                                     against the gloomy first pass, when lighting was not yet
+  //                                     installed. The ghost used to start here; it no longer does.
+  //   round 2   (b.flyback .. b.reveal) — 'ghost': ARC/STR fully hidden, every non-ARC/STR discipline
+  //                                     shown together — the original ghost phase, now beginning at
+  //                                     the FIRST STICK where round 2 actually commences.
+  //                                     §CPE_DISCIPLINE_REVEAL_FLYBACK (2026-08-16) added the
+  //                                     fly-back sub-beat inside the old span; §CPE_REVEAL_ARCH_HOLD
+  //                                     (2026-09-03) split it back out, so the ghost boundary moved
+  //                                     from b.pullout to b.flyback, and
   //                                     poseAt's camera motion inside it gained a sub-beat, so no
   //                                     edit was needed in THIS function for that change.
   //   rise/tail (b.reveal .. b.rise, first rv.tailSec seconds) — 'tail-one'/'tail-all': the disc
@@ -5569,7 +5575,16 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!b || !rv || !rv.discs || !rv.discs.length || !(b.reveal > b.out)) return null;
     if (tNorm <= b.out) return null;
     var tP = (b.pullout != null && b.pullout > b.out) ? b.pullout : b.out;
-    if (tNorm <= tP) return null;                              // pull-out: plain, no ghost
+    // §CPE_REVEAL_ARCH_HOLD (2026-09-03, user): the ghost must NOT start when the fly-back starts.
+    // On the way back everything is built AND lit, and that fully-lit read is the payoff against the
+    // gloomy first pass (where lighting legitimately was not installed yet). Stripping ARC/STR at
+    // b.pullout threw that away. Ghost now begins at b.flyback — the instant the camera is back on
+    // the FIRST STICK, where round 2 properly commences. HUD highlights are unaffected: they are
+    // driven from cinema_maxq's own reveal-round boundary, not from this function.
+    // DEGRADE, DON'T DISABLE: a plan without b.flyback falls back to tP, i.e. byte-identical to the
+    // previous behaviour — same rule cpeRevealDiscQtyCost above already follows.
+    var tF = (b.flyback != null && b.flyback > tP) ? b.flyback : tP;
+    if (tNorm <= tF) return null;                              // pull-out + fly-back: ARC/STR SOLID
     if (tNorm <= b.reveal) return { phase: 'ghost', discs: rv.discs.slice() };  // round 2
     if (!(b.rise > b.reveal)) return null;
     var riseSpanSec = (rv.riseSec || 0) + (rv.tailSec || 0);
@@ -5981,7 +5996,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // that: §CPE_AIM_PIN (Part C) added real behaviour here (`_buildPinZones`/`_pinLookAtAt` inside
   // `_beat3Pose`) but this string was never bumped for it, breaking the file's own "bump on EVERY
   // behaviour change" rule for one release. Fixed now, not left for a future session to rediscover.
-  var EFFECTS_V = 'v24 (' +
+  var EFFECTS_V = 'v25 (' +
     '§CPE_DISCIPLINE_REVEAL_FLYBACK new fast eased retrace sub-beat replaces the pull-out->round-2 ' +
       'teleport cut; §CPE_DISCIPLINE_REVEAL_ORDER discs sorted ascending by real avg bbox volume, ' +
       'MEP forced last; §CPE_DISCIPLINE_REVEAL_FADE tail-parade boundaries get a brief overlap ' +
