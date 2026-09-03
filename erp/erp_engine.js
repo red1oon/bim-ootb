@@ -281,6 +281,66 @@ function completeInvoice(invoice, lines, policy) {
 // existing CREATE_LINE kernel op, no buildDoc. The invoice-created-before-shipment edge case (real Java
 // also emits M_MatchPO from MInvoice.completeIt() ~line 2134) is NAMED-DEFERRED — this lane's witness path
 // is receipt-first (PO → Receipt → Invoice), the mainline order real users follow.
+// ── GENERATE: stockMoves — the M_InOut Complete STOCK EFFECT ─────────────────────────────────────
+// Implementing prompts/ERP_STOCK_EFFECT.md §E4.3 — Witness: W-STOCK-MOVE. Closes AGENT_QUEUE E-4
+// ("a real signed shipment still cannot move stock" — m_storageonhand had ZERO shipped .js writers).
+// Java home (EXTRACT, do NOT invent):
+//   MInOut.getMovementType (MInOut.java:1275-1287) — the whole table, no defaulting:
+//     DocBaseType 'MMS' (MaterialDelivery) -> SOTrx ? 'C-' : 'V-'
+//     DocBaseType 'MMR' (MaterialReceipt)  -> SOTrx ? 'C+' : 'V+'      any other DocBaseType -> null
+//   MInOut.completeIt:1688-1691 — Qty = sLine.MovementQty; if MovementType.charAt(1)=='-' Qty = Qty.negate()
+//     (the polarity IS the trailing char — which is exactly what movementSign already extracts).
+//   MInOut.completeIt:1939-1944 — new MTransaction(ctx, sLine.AD_Org_ID, MovementType, sLine.M_Locator_ID,
+//     sLine.M_Product_ID, sLine.M_AttributeSetInstance_ID, Qty, MovementDate) + setM_InOutLine_ID.
+// WHY THE TRANSACTION AND NOT A STORAGE UPSERT: M_StorageOnHand.add() is an upsert of a delta, and the op
+// log is append-only (a `listTip` fold reads row-TIPS by key, so a delta row does not fit CREATE_LINE, and
+// inventing a STORAGE_DELTA op type to make it fit would be inventing). M_Transaction IS append-only, and
+// on-hand is the fold of it — the model qtyOnHand's own comment above already states: iDempiere keeps the
+// qty nowhere as a master field; MStorageOnHand.qtyonhand is a cache maintained in lockstep with this sum.
+// PURE: no DB, no clock — the host passes the doc, its lines, and the doctype's DocBaseType.
+
+// movementTypeOf — MInOut.getMovementType verbatim. Returns null for any other DocBaseType (the caller
+// must then emit NOTHING; a guessed polarity would be a silently wrong inventory sign).
+function movementTypeOf(docBaseType, issotrx) {
+  var so = (issotrx === true || issotrx === 'Y');
+  if (docBaseType === 'MMS') return so ? 'C-' : 'V-';
+  if (docBaseType === 'MMR') return so ? 'C+' : 'V+';
+  return null;
+}
+
+// stockMoves(doc, lines, opts) -> { ops, movementtype, skipped, deferred, reason? }
+//   doc   : the M_InOut header (needs issotrx + movementdate; ad_org_id used as the line fallback)
+//   lines : its M_InOutLine rows (movementqty carried VERBATIM — the sign comes from the type, never
+//           from trusting a pre-signed column)
+//   opts.docBaseType : the C_DocType's DocBaseType (the host reads it; this verb never queries)
+// A line with no product or no locator is SKIPPED AND COUNTED — not silently dropped.
+function stockMoves(doc, lines, opts) {
+  opts = opts || {};
+  var deferred = ['costing(M_CostDetail)', 'reservation(MStorageReservation MInOut.completeIt:1919-1935)',
+                  'asi-material-policy(dateMPolicy allocation loop MInOut.completeIt:1771-1830)'];
+  var mt = movementTypeOf(opts.docBaseType, doc && doc.issotrx);
+  if (!mt) {
+    return { ops: [], movementtype: null, skipped: (lines || []).length, deferred: deferred,
+             reason: 'DocBaseType ' + JSON.stringify(opts.docBaseType || null) + ' is neither MMS nor MMR — no movement type, so NO ops (a guessed polarity would be a wrong inventory sign)' };
+  }
+  var sign = movementSign(mt), ops = [], skipped = 0;
+  (lines || []).forEach(function (l) {
+    if (l == null || l.m_product_id == null || l.m_locator_id == null) { skipped++; return; }
+    var q = l.movementqty != null ? l.movementqty : l.qtyentered;
+    if (q == null) { skipped++; return; }
+    ops.push({ op_type: 'CREATE_LINE', table: 'M_Transaction',
+               movementtype: mt,
+               m_locator_id: l.m_locator_id,
+               m_product_id: l.m_product_id,
+               m_attributesetinstance_id: l.m_attributesetinstance_id != null ? l.m_attributesetinstance_id : null,
+               movementqty: sign * Math.abs(Number(q)),
+               movementdate: doc.movementdate != null ? doc.movementdate : null,
+               m_inoutline_id: l.m_inoutline_id,
+               ad_org_id: l.ad_org_id != null ? l.ad_org_id : (doc.ad_org_id != null ? doc.ad_org_id : null) });
+  });
+  return { ops: ops, movementtype: mt, skipped: skipped, deferred: deferred };
+}
+
 function completeReceipt(receipt, lines, policy) {
   var ops = [{ op_type: 'SET_STATUS', table: 'M_InOut', id: receipt.m_inout_id, doc_status: 'CO' }];
   if (receipt.issotrx === 'N') {
@@ -288,6 +348,12 @@ function completeReceipt(receipt, lines, policy) {
       if (l.c_orderline_id) ops.push({ op_type: 'CREATE_LINE', table: 'M_MatchPO', c_orderline_id: l.c_orderline_id, m_inoutline_id: l.m_inoutline_id, m_product_id: l.m_product_id, qty: l.movementqty });
     });
   }
+  // §E4 (prompts/ERP_STOCK_EFFECT.md) — the STOCK EFFECT rides the same Complete fan-out, for BOTH
+  // directions: a receipt adds and a shipment subtracts. Gated on the host supplying the doctype's
+  // DocBaseType — without it stockMoves returns zero ops and a named reason rather than a guessed sign,
+  // so an older caller that does not pass policy.docBaseType is byte-identical to before.
+  var sm = stockMoves(receipt, lines, { docBaseType: policy && policy.docBaseType });
+  sm.ops.forEach(function (o) { ops.push(o); });
   return ops;
 }
 
@@ -295,6 +361,7 @@ return {
   resolveCtx: resolveCtx, dialectShim: dialectShim, evalGuard: evalGuard,
   match: match, buildDoc: buildDoc, DOC_SPECS: DOC_SPECS, explodeBOM: explodeBOM,
   movementSign: movementSign, qtyOnHand: qtyOnHand, reversePosting: reversePosting,
-  VERBS: VERBS, completeOrder: completeOrder, completeInvoice: completeInvoice, completeReceipt: completeReceipt
+  VERBS: VERBS, completeOrder: completeOrder, completeInvoice: completeInvoice, completeReceipt: completeReceipt,
+  movementTypeOf: movementTypeOf, stockMoves: stockMoves
 };
 });

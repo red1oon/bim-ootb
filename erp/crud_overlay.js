@@ -1576,8 +1576,22 @@
           var receipt = hdrRows.filter(function (r) { return String(r.m_inout_id) === String(op.id); })[0];
           if (!receipt) { console.log('§RECEIPT-COMPLETE fan-out gated: receipt ' + op.id + ' not found (bundle+sidecar) → status-only'); cb(null); return; }
           var lines = lineRows.filter(function (r) { return String(r.m_inout_id) === String(op.id); });
-          var ops = E.completeReceipt(receipt, lines, null).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
-          console.log('§RECEIPT-FANOUT receipt=' + op.id + ' issotrx=' + receipt.issotrx + ' lines=' + lines.length + ' matchPoOps=' + ops.length);
+          // §E4 (prompts/ERP_STOCK_EFFECT.md) — the STOCK EFFECT needs the doctype's DocBaseType, which is
+          // MInOut.getMovementType's only input besides IsSOTrx. Read from the bundle's own c_doctype; when
+          // it cannot be read, stockMoves emits ZERO ops and says why — never a guessed inventory sign.
+          var dbt = null;
+          try {
+            var dtr = _rawRows(db, 'SELECT docbasetype FROM c_doctype WHERE c_doctype_id=' + Number(receipt.c_doctype_id));
+            dbt = dtr.length ? dtr[0].docbasetype : null;
+          } catch (edt) { dbt = null; }
+          var all = E.completeReceipt(receipt, lines, { docBaseType: dbt });
+          var ops = all.filter(function (o) { return o.op_type !== 'SET_STATUS'; });
+          var trx = ops.filter(function (o) { return o.table === 'M_Transaction'; });
+          console.log('§RECEIPT-FANOUT receipt=' + op.id + ' issotrx=' + receipt.issotrx + ' lines=' + lines.length +
+                      ' matchPoOps=' + ops.filter(function (o) { return o.table === 'M_MatchPO'; }).length +
+                      ' docBaseType=' + JSON.stringify(dbt) + ' stockOps=' + trx.length +
+                      ' movementtype=' + (trx.length ? trx[0].movementtype : 'none') +
+                      ' netQty=' + trx.reduce(function (a, o) { return a + Number(o.movementqty || 0); }, 0));
           fanout = ops.length ? { ops: ops, glGate: 'none' } : null;
         } catch (er) { console.log('§RECEIPT-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
         cb(fanout);

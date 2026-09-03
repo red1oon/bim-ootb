@@ -2325,6 +2325,38 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // picker's own withSidecar call already hydrated window.__crud.kernelDb() once (paint() only runs after
   // that resolves), so a synchronous read here is safe — falls through to the base-only row/rows on any
   // infra gap (never worse than before).
+  // §E4 (prompts/ERP_STOCK_EFFECT.md §E4.3) — Witness: W-STOCK-MOVE. The on-hand READ half.
+  // m_storageonhand in the bundle is the seed's BASELINE; every movement this app has committed since lives
+  // as an append-only M_Transaction CREATE_LINE op in the sidecar log. iDempiere keeps qty nowhere as a
+  // master field (erp_engine.qtyOnHand's own note) — on-hand IS baseline + Σ signed transactions. Without
+  // this term a completed shipment moved stock in the LOG and nowhere the app could see, which is E-4's
+  // "a real signed shipment still cannot move stock" in its other half.
+  // Sign convention: movementqty is stored ALREADY SIGNED by erp_engine.stockMoves (movementSign × |qty|),
+  // so this only sums — it never re-derives a polarity the engine already decided.
+  // Official rows only: branch_id IS NULL (BLUE FUTURE ops must not leak) and not undone. Any infra gap →
+  // 0, i.e. exactly the pre-§E4 answer, never worse.
+  function _sidecarStockDelta(pid, wh) {
+    var c = window.__crud;
+    if (!c || typeof c.kernelDb !== 'function') return 0;
+    var sdb = null; try { sdb = c.kernelDb(); } catch (e) { sdb = null; }
+    if (!sdb) return 0;
+    var locs = {};
+    _sqlRows('SELECT m_locator_id FROM m_locator WHERE m_warehouse_id=' + Number(wh)).forEach(function (l) { locs[String(l.m_locator_id)] = 1; });
+    var sum = 0, seen = 0;
+    try {
+      var res = sdb.exec("SELECT parameters FROM kernel_ops WHERE op_type='CREATE_LINE' AND branch_id IS NULL" +
+                         " AND (undone IS NULL OR undone=0) AND parameters LIKE '%\"table\":\"M_Transaction\"%' ORDER BY id");
+      ((res[0] && res[0].values) || []).forEach(function (row) {
+        var p; try { p = JSON.parse(row[0]); } catch (e) { return; }
+        if (!p || p.table !== 'M_Transaction') return;
+        if (Number(p.m_product_id) !== Number(pid)) return;
+        if (!locs[String(p.m_locator_id)]) return;
+        sum += Number(p.movementqty || 0); seen++;
+      });
+    } catch (e) { return 0; }
+    if (seen) console.log('§STOCK-ONHAND product=' + pid + ' warehouse=' + wh + ' sidecarTxns=' + seen + ' delta=' + sum);
+    return sum;
+  }
   function _foldOrderRow(id) {
     var base = _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
     var c = window.__crud;
@@ -2423,7 +2455,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       },
       onHandOf: function (pid, wh) {
         var r = _sqlRows('SELECT COALESCE(SUM(s.qtyonhand),0) oh FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.m_product_id=' + Number(pid) + ' AND l.m_warehouse_id=' + Number(wh));
-        return r.length ? Number(r[0].oh) : 0;
+        var base = r.length ? Number(r[0].oh) : 0;
+        return base + _sidecarStockDelta(pid, wh);
       }
     };
   }
