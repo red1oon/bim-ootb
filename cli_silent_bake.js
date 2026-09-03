@@ -16,6 +16,10 @@
 //     [--width W --height H] [--port P] [--log FILE] [--profile DIR]
 //     [--stall-min N] [--max-frame-ms N]              health watchdog (abort early, not at the end)
 //     [--timeout-min N]                               hard wall-clock cap
+//     [--progress-every-sec N] [--abort-land-min N]   progress cadence (30) / abort landing cap (10)
+//
+//   PROGRESS + ETA print as §CLI_BAKE_PROGRESS while the bake runs. Ctrl-C (SIGINT) aborts CLEANLY:
+//   the frames baked so far are stitched and delivered to --out. Press it twice to give up on that.
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http');
 const { execFileSync } = require('child_process');
@@ -66,6 +70,16 @@ if (_fReveal !== undefined) FLAGS.reveal = _fReveal;
 // `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');
 
+// §CLI_BAKE_PROGRESS / §CLI_BAKE_LAND_ON_ABORT — how often the progress line prints, and how long an
+// abort is allowed to spend landing the partial film before the runner gives up on it.
+const PROGRESS_EVERY_MS = +arg('progress-every-sec', 30) * 1000;
+const ABORT_LAND_MIN = +arg('abort-land-min', 10);
+const RATE_WINDOW = 10;   // §CLI_BAKE_PROGRESS — trailing samples the ETA rate is measured over
+function fmtDur(ms) {
+  const t = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  return (h ? h + 'h' : '') + (h || m ? m + 'm' : '') + sec + 's';
+}
 const logStream = fs.createWriteStream(LOG, { flags: 'w' });
 function log(line) { const s = new Date().toISOString().slice(11, 19) + ' ' + line; logStream.write(s + '\n'); console.log(s); }
 function logRaw(line) { logStream.write(line + '\n'); }   // full console firehose → file only
@@ -121,8 +135,27 @@ const server = http.createServer((req, res) => {
   await page.setViewport({ width: W, height: H });
 
   // console firehose → log file; §-lines also drive the health watchdog + summary
-  const S = { frames: 0, lastProgress: Date.now(), perFrame: [], fatal: null, done: false,
-              claims: {}, heap: [] };
+  const S = { frames: 0, total: 0, elapsedMs: 0, lastProgress: Date.now(), perFrame: [], fatal: null,
+              done: false, claims: {}, heap: [], abortRequested: null, lastProgressLog: 0, rateHist: [] };
+  // ══ §CLI_BAKE_LAND_ON_ABORT — Ctrl-C is the abort switch, and it LANDS the film ════════════════
+  // USER, 2026-09-04: "an abort switch where the frames to date are landed." A plain Ctrl-C killed
+  // node outright, taking the browser and every baked frame with it — even though cinema_maxq's
+  // cancel path stitches whatever it has. The handler turns the signal into the SAME cancel the
+  // stall/timeout watchdogs already use, so there is ONE abort path, not a second one to keep in
+  // step. A second Ctrl-C is honoured immediately: an operator who has changed their mind about
+  // waiting for a 2,000-frame encode must never be trapped by the graceful path.
+  let sigCount = 0;
+  ['SIGINT', 'SIGTERM'].forEach(sig => process.on(sig, () => {
+    sigCount++;
+    if (sigCount === 1) {
+      S.abortRequested = `user (${sig}) — landing the ${S.frames} frames baked so far`;
+      log(`§CLI_BAKE_SIGINT ${sig} received at frame ${S.frames}/${S.total || '?'}` +
+          ' — cancelling the bake and stitching what exists. Press again to give up on the partial film.');
+    } else {
+      log(`§CLI_BAKE_SIGINT ${sig} again — abandoning the partial film, exiting now`);
+      process.exit(130);
+    }
+  }));
   const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL)\b/;
   page.on('console', m => {
     const t = m.text();
@@ -131,7 +164,15 @@ const server = http.createServer((req, res) => {
     if (mm) { (S.claims[mm[1]] = S.claims[mm[1]] || []).push(t); }
     if (/§MAXQ_FRAME i=|§CPE_BUILDUP frame=|§MAXQ_STREAM|warming up|§MAXQ_MP4 |§MAXQ_STITCH|§MAXQ_IDB_READY/.test(t)) S.lastProgress = Date.now();
     const fm = t.match(/§MAXQ_FRAME i=(\d+)\/(\d+) elapsedMs=(\d+) perFrameMs=(\d+)/);
-    if (fm) { S.frames = +fm[1]; S.perFrame.push(+fm[4]);
+    if (fm) { S.frames = +fm[1]; S.total = +fm[2]; S.elapsedMs = +fm[3]; S.perFrame.push(+fm[4]);
+      // §CLI_BAKE_PROGRESS — a short trailing window of (frame, elapsed) so the ETA is priced at the
+      // rate the bake is running NOW, not its cumulative average. MEASURED on the 2,937-frame
+      // Hospital bake of 2026-09-04 (true total 45.9 min): the cumulative average predicted 38.3 min
+      // at 28% because early frames are light and the buildup gets heavier as the model fills in;
+      // the trailing window over the same sample predicts 42.6 min. The first ~25% is optimistic
+      // either way and the progress line says so rather than implying a precision it does not have.
+      S.rateHist.push([+fm[1], +fm[3]]);
+      if (S.rateHist.length > RATE_WINDOW) S.rateHist.shift();
       if (MAX_FRAME_MS && +fm[4] > MAX_FRAME_MS) S.fatal = `perFrameMs ${fm[4]} > --max-frame-ms ${MAX_FRAME_MS}: ${t}`; }
     if (/§MAXQ_FAIL|§MAXQ_GL_LOST|§MAXQ_IDB_LOST|§CPE_BUILDUP_SKIP/.test(t)) log('⚠ ' + t);
     if (/§MAXQ_FAIL/.test(t)) S.fatal = t;
@@ -267,14 +308,59 @@ const server = http.createServer((req, res) => {
     result = await page.evaluate(() => window.__bakeResult).catch(() => null);
     if (result) break;
     const mins = (Date.now() - t0) / 60000;
+    // ══ §CLI_BAKE_PROGRESS (2026-09-04, user: "will the CLI show frame in progress and ETA?") ═════
+    // The runner already parsed §MAXQ_FRAME for its stall watchdog and threw the numbers away. A bake
+    // is tens of minutes with nothing on screen; "is it moving, and how long more" should not require
+    // tailing the log and doing the arithmetic by hand. Rate comes from the VIEWER's own elapsedMs /
+    // frame index, not from wall clock here, so load, streaming and the Time Machine prime are not
+    // charged to the per-frame rate — the ETA is about the frames that are left, which is the
+    // question being asked. Throttled to PROGRESS_EVERY_MS so a 40-minute bake logs ~80 lines, not
+    // thousands; §MAXQ_FRAME itself already fires roughly every 8 frames in the raw log.
+    if (S.frames > 0 && S.total > 0 && Date.now() - S.lastProgressLog >= PROGRESS_EVERY_MS) {
+      S.lastProgressLog = Date.now();
+      const h = S.rateHist;
+      const win = (h.length >= 2 && h[h.length - 1][0] > h[0][0])
+        ? (h[h.length - 1][1] - h[0][1]) / (h[h.length - 1][0] - h[0][0])
+        : null;
+      const rate = win != null ? win : S.elapsedMs / Math.max(1, S.frames);
+      const left = Math.max(0, S.total - S.frames);
+      const pct = 100 * S.frames / S.total;
+      log(`§CLI_BAKE_PROGRESS frame=${S.frames}/${S.total} ${pct.toFixed(1)}%` +
+          ` rate=${(rate / 1000).toFixed(3)}s/frame (${win != null ? 'trailing ' + h.length : 'cumulative'})` +
+          ` elapsed=${fmtDur(S.elapsedMs)} eta=${fmtDur(left * rate)} (${left} frames left)` +
+          (pct < 25 ? ' — early estimate runs LOW; frames get heavier as the model fills in' : ''));
+    }
+    if (S.abortRequested) { aborted = S.abortRequested; break; }
     if (S.fatal) { aborted = 'fatal: ' + S.fatal; break; }
     if ((Date.now() - S.lastProgress) / 60000 > STALL_MIN) { aborted = `stall: no progress line for ${STALL_MIN} min (last frame=${S.frames})`; break; }
     if (mins > TIMEOUT_MIN) { aborted = `timeout: ${TIMEOUT_MIN} min wall-clock cap`; break; }
   }
   clearInterval(heapIv);
   if (aborted) {
+    // ══ §CLI_BAKE_LAND_ON_ABORT (2026-09-04, user: "an abort switch where the frames to date are
+    // landed") — cinema_maxq's own cancel path ALREADY stitches what it has whenever at least one
+    // second of footage exists (`framesDone >= (_cancel ? fps : 1)`), so the film is not thrown away
+    // by cancelling. What was missing here is the WAIT: this used to sleep a flat 10 s, which is
+    // nowhere near enough to encode two thousand frames, so the process tore down mid-stitch and the
+    // partial film was lost anyway — the exact thing the viewer had gone to the trouble of saving.
+    // Now it waits for the bake's own promise to settle (delivery included), bounded, and says which
+    // it got. The bound is generous because an abort at frame 2,000 has a real encode ahead of it.
     log(`§CLI_BAKE_ABORT ${aborted}`);
-    try { await page.evaluate(() => window.APP.cancelMaxQualityOrbit()); await new Promise(r => setTimeout(r, 10000)); } catch (e) {}
+    try {
+      await page.evaluate(() => window.APP.cancelMaxQualityOrbit());
+      const landT0 = Date.now();
+      let landed = null;
+      while ((Date.now() - landT0) / 60000 < ABORT_LAND_MIN) {
+        await new Promise(r => setTimeout(r, 2000));
+        landed = await page.evaluate(() => window.__bakeResult).catch(() => null);
+        if (landed) break;
+      }
+      const bytes = await page.evaluate(() => window.__maxqDeliveredBytes || 0).catch(() => 0);
+      log(`§CLI_BAKE_LANDED framesAtAbort=${S.frames} settled=${landed ? 'yes' : 'NO (still encoding when the ' +
+          ABORT_LAND_MIN + '-min landing cap ran out)'} deliveredBytes=${bytes}` +
+          (bytes ? ' — the frames baked so far ARE in the output file' :
+                   ' — nothing delivered; too few frames, or the encode did not finish'));
+    } catch (e) { log('§CLI_BAKE_LAND_FAIL ' + e.message); }
   } else {
     log(`§CLI_BAKE_RESULT ${JSON.stringify(result)}`);
   }
