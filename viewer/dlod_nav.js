@@ -313,11 +313,26 @@
     // was already saturated at MAX_BOOST and the measurement still said "below LOW", i.e. steps
     // that bought nothing and only had to be unwound later. All three are pure bookkeeping.
     passSeq: 0, budgetTicks: 0, budgetStaleTicks: 0, budgetWindupTicks: 0, budgetUpBlocked: false,
-    // §R15 rules 1 and 2, each independently live-flippable (console/witness only, both
-    // default TRUE = the fixed controller). Setting BOTH false restores the pre-§R15
-    // integrator byte-for-byte, which is how witness/w_budget_converge.js gets its
-    // before/after and its red control out of a SINGLE page load.
-    budgetFreshGate: true, budgetAntiWindup: true };
+    // §R15 rules 1 and 2, each independently live-flippable. Setting BOTH false is the pre-§R15
+    // integrator byte-for-byte, which is how witness/w_budget_converge.js gets its before/after
+    // and its red control out of a SINGLE page load.
+    // ⚠ DEFAULT FALSE (2026-09-03) — DELIBERATELY, and this is the honest reading of the evidence,
+    // not caution for its own sake. The two rules were landed default-TRUE in #1635 and #1635
+    // auto-merged before the second witness run came back. W-BUDGET-CONVERGE reports verdict=FAIL
+    // on BOTH runs and the gate was never relaxed (CPE_4D_PERF_MEM_STUDY.md §R15.5):
+    //   - the MECHANISM result reproduces exactly — boostSpan 60->4, boost changes 174->12,
+    //     windupTicks ->0, dive-back-in phase 56.9->24.4 ms (-57.1%) / -59.3% on the second run.
+    //   - the FRAME-TIME result does NOT — whole-cycle dt_mean was -0.5% on run 2 and +1.1% on
+    //     run 3. The sign flips, so run-to-run variance is the same size as the effect and there
+    //     is no measured mean win to claim in either direction. Run 3 regressed THREE phases by
+    //     15-45%, one of them 52.4->60.6 ms. Every regressed phase draws FEWER calls under the
+    //     fix, so the added ms is demote-side _startFade work, not rendering (queue item A-27).
+    // A behaviour change whose own witness says FAIL must not be the shipped default. Everything
+    // else from #1635 stays live and is pure gain: the §R15 counters (passSeq/budgetTicks/
+    // budgetStaleTicks/budgetWindupTicks), the richer §DLOD_NAV_BUDGET line, and the
+    // §ROOM_OCCL_INDEX_ERR noise fix. Flip these to true to re-arm the fix; land it as the default
+    // when A-27 removes the transition cost and the witness turns green on its OWN gate.
+    budgetFreshGate: false, budgetAntiWindup: false };
   window.__dlodNav = _stats;
 
   // §20 — effective boost this pass: forceBoost (witness pin) wins outright; otherwise the
