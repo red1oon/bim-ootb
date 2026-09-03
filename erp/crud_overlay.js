@@ -744,12 +744,14 @@
               // than hiding rows iDempiere does show. Named, never silent.
             }
             if (!vr && refWhere) where = ' WHERE (' + refWhere + ')';
+            // §FKFOLD — query the TIP-FOLDED row set, so a row the user just created is offerable.
+            var src = _fkFoldSource(db, t, pk);
             var res = [];
             if (!noRows) {
-              try { res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + where + ' ORDER BY ' + pk + ' LIMIT 200'); }
+              try { res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + src + where + ' ORDER BY ' + pk + ' LIMIT 200'); }
               catch (ew) {                                    // a clause naming a column this narrower seed lacks
                 if (vr) vr.verdict = 'where-failed:' + String((ew && ew.message) || ew).slice(0, 60);
-                where = ''; res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' ORDER BY ' + pk + ' LIMIT 200');
+                where = ''; res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + src + ' ORDER BY ' + pk + ' LIMIT 200');
               }
             }
             // f.admitted — the UNLIMITED admitted id-set, so validateField (P3.6) still rejects an excluded row
@@ -757,7 +759,9 @@
             // ACCEPTED set are one set by construction and cannot drift apart.
             if (vr && vr.verdict === 'applied') {
               try {
-                var ar = db.exec('SELECT ' + pk + ' FROM ' + t + ' WHERE (' + andRef(vr.sql) + ')'), am = {};
+                // the ADMITTED set must come from the SAME source as the OFFERED set, or §P3.6's
+                // "one set by construction" invariant breaks the moment a folded row is offered.
+                var ar = db.exec('SELECT ' + pk + ' FROM ' + src + ' WHERE (' + andRef(vr.sql) + ')'), am = {};
                 if (ar.length) ar[0].values.forEach(function (r) { am[String(r[0])] = 1; });
                 admitted = am;
               } catch (ea) {}
@@ -786,6 +790,95 @@
         });
       }
     });
+  }
+  // ── §FKFOLD (prompts/ERP_FK_PICKER_SIDECAR.md) — Witness: W-FK-PICKER-SIDECAR ────────────────────────
+  // _fkFoldSource(db, t, pk) — the table name the FK picker should QUERY.
+  // The picker's candidate SELECT runs against the raw bundle, so a row the user just created (sidecar-only,
+  // negative pk) can never be offered. This file already documents that for the READ-ONLY parent-FK case
+  // (§ORDERLINE-PARENT-FK above: "the full LIST query below is scoped to the raw base table and can NEVER
+  // include a synthetic/overlay-only row"); the EDITABLE case was still raw-only, and an AD_Val_Rule makes
+  // it fatal rather than merely incomplete. MEASURED on the P2P lane's own witness:
+  //   §VALRULE col=c_orderline_id vr=203 rule="C_OrderLine of Order" table=c_orderline
+  //            before=117 after=0 offered=0 verdict=applied ctx={"C_Order_ID":-1}
+  // — the rule correctly filters to the order the user is receiving against, that order is the one they
+  // just created, and the bundle has no such row, so the picker is EMPTY and the receipt line cannot be
+  // linked at all. Create a PO → receive against it → the PO-line picker offers nothing.
+  //
+  // Fix: when (and only when) the sidecar carries CRUD ops for this table, materialise CORE.listTip's
+  // FOLDED rows into a TEMP table and point the SAME query — same val-rule SQL, same refWhere, same LIMIT —
+  // at that instead. One code path, one predicate; creates/updates/tombstones all honoured because listTip
+  // already folds them. No sidecar ops for the table ⇒ returns `t` unchanged and costs one indexed query,
+  // so the overwhelmingly common case is byte-identical to before.
+  var FKFOLD_TMP = '__fk_fold';
+  function _sidecarTouches(sdb, t) {
+    if (!sdb) return false;
+    try {
+      var r = sdb.exec("SELECT 1 FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0" +
+                       " AND lower(parameters) LIKE '%\"table\":\"" + String(t).toLowerCase() + "\"%' LIMIT 1");
+      return !!(r.length && r[0].values.length);
+    } catch (e) { return false; }
+  }
+  function _fkFoldSource(db, t, pk) {
+    var sdb = SIDE;                                   // sync handle; null before hydration → degrade to raw
+    if (!sdb || !CORE || typeof CORE.listTip !== 'function') return t;
+    if (!_sidecarTouches(sdb, t)) return t;           // nothing overlay-side for this table → nothing to fold
+    try {
+      var baseRes = db.exec('SELECT * FROM ' + t);
+      if (!baseRes.length) return t;
+      var cols = baseRes[0].columns, base = baseRes[0].values.map(function (v) {
+        var o = {}; cols.forEach(function (c, i) { o[c] = v[i]; }); return o;
+      });
+      var folded = CORE.listTip(sdb, t, pk, base, null);
+      var rows = (folded && folded.rows) || base;
+      // Rebuild the temp table from the REAL schema, never `AS SELECT … WHERE 0`: that form gives every
+      // column NO declared type, i.e. BLOB affinity, and a val rule comparing an INTEGER key against a
+      // substituted string ('-1') then stops matching rows the base table would have matched. Measured:
+      // with `AS SELECT` the fold contained the row (folded=118 created=1) and the rule STILL returned
+      // after=0 offered=0. PRAGMA table_info gives back the declared types, so affinity is preserved.
+      var ti = db.exec('PRAGMA table_info(' + t + ')');
+      if (!ti.length || !ti[0].values.length) return t;
+      var decl = ti[0].values.map(function (r) { return r[1] + ' ' + (r[2] || ''); }).join(',');
+      db.run('DROP TABLE IF EXISTS ' + FKFOLD_TMP);
+      db.run('CREATE TEMP TABLE ' + FKFOLD_TMP + ' (' + decl + ')');
+      var ph = cols.map(function () { return '?'; }).join(',');
+      var ins = 'INSERT INTO ' + FKFOLD_TMP + ' (' + cols.join(',') + ') VALUES (' + ph + ')';
+      // CASE-INSENSITIVE COLUMN BIND. `cols` are the BUNDLE's column names, which carry the AD's own
+      // CamelCase (C_OrderLine_ID); a listTip-created row's keys are the op's lowercase field names
+      // (c_orderline_id). A direct r[c] lookup therefore binds NULL for EVERY column of a folded row —
+      // measured: the folded row landed as [null,"null",null,"null"] while the JS row read
+      // c_orderline_id=-2 c_order_id=-1, so the row was present and yet matched no predicate.
+      // Base rows were unaffected (they are built from these same `cols`), which is exactly why the
+      // count looked right — inserted=118, tableCount=118 — while the fold did nothing.
+      var st = db.prepare(ins), okN = 0, badN = 0, firstErr = null;
+      rows.forEach(function (r) {
+        var lower = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) lower[String(k).toLowerCase()] = r[k];
+        try {
+          st.run(cols.map(function (c) {
+            var v = (r[c] !== undefined) ? r[c] : lower[String(c).toLowerCase()];
+            return (v === undefined || v === null) ? null : v;
+          }));
+          okN++;
+        } catch (ei) { badN++; if (!firstErr) firstErr = (ei && ei.message) || String(ei); }
+      });
+      st.free();
+      if (badN) console.log('§FKFOLD-INS table=' + t + ' inserted=' + okN + ' FAILED=' + badN + ' firstErr=' + firstErr);
+      // ALIAS IT BACK TO `t`. An AD_Val_Rule's Code is real iDempiere SQL and is routinely
+      // TABLE-QUALIFIED (vr 203 is literally `C_OrderLine.C_Order_ID=@C_Order_ID@`), so a bare temp-table
+      // name makes the qualifier unresolvable and the whole rule degrades to unfiltered. Measured, by the
+      // app's own log, on the first run of this fix:
+      //   §VALRULE … offered=118 verdict=where-failed:no such column: C_OrderLine.C_Order_ID
+      // — i.e. it silently OFFERED all 117 unrelated lines. Aliasing keeps every qualifier resolving
+      // (SQLite identifiers are case-insensitive, so `C_OrderLine.` binds to the alias).
+      var srcExpr = FKFOLD_TMP + ' AS ' + t;
+      console.log('§FKFOLD table=' + t + ' base=' + base.length + ' folded=' + rows.length +
+                  ' created=' + ((folded && folded.created) || []).length +
+                  ' hidden=' + ((folded && folded.hidden) || []).length + ' source=' + srcExpr);
+      return srcExpr;
+    } catch (e) {
+      console.log('§FKFOLD table=' + t + ' FAILED ' + ((e && e.message) || e) + ' → raw bundle (never worse than before)');
+      try { db.run('DROP TABLE IF EXISTS ' + FKFOLD_TMP); } catch (e2) {}
+      return t;
+    }
   }
   function recHasCol(db, t, c) { try { var pr = db.exec('PRAGMA table_info(' + t + ')'); return pr.length && pr[0].values.some(function (v) { return String(v[1]).toLowerCase() === c; }); } catch (e) { return false; } }
 
