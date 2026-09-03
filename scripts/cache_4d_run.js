@@ -43,9 +43,29 @@
 // hours to two measurements that silently disagreed because they ran against different viewer
 // checkouts (4D_MODEL_INTEGRITY.md §H.4).
 //
+// ══ §CACHE_DB_KIND (2026-09-04, bim-compiler prompts/4D_MODEL_INTEGRITY.md §M.0 item 2 / §M.5 item 3)
+//    JUDGE THE DB THE VIEWER LOADS ═══════════════════════════════════════════════════════════════
+// This file resolved `<bld>_extracted.db` by construction. The viewer loads the SPLIT PAIR
+// (`_meta.db` + `_geo.db`) whenever BOTH halves exist — viewer/streaming.js §DB_SPLIT_DETECT /
+// §SPLIT_PAIR_REQUIRED — so for Hospital the persisted run was the 20-label INFERRED grid (its
+// _extracted.db has no spatial_structure), NOT the post-#1641 7-band / 36-task / 334 d grid the
+// viewer plays. That is project_split_db_live_vs_probe_landmine inside clause 5's own instrument:
+// a whole class of "probe-green" claims judged a model nobody plays.
+//   resolveDbFile(bld) mirrors the viewer's rule: META when the pair exists AND the meta file is a
+//   readable SQLite file (buildings/Duplex_meta.db is a 0-byte trap that crashed the probe, §M.0
+//   item 3); otherwise EXTRACTED — and it SAYS WHY (`reason`, `skipped`). DB_KIND=meta|extracted
+//   forces one side, so the extracted run stays reachable for comparison. The cache dir carries
+//   the kind (`<codeKey>_<dbKey>_<kind>`), run.json carries dbFile + dbKind, and §CACHE_DB /
+//   §CACHE_BUILT print them — a stale comparison between the two is impossible to make silently.
+//   scripts/probe_tm_reveal_shipped.js calls THIS resolver (one owner, no second copy).
+//   The mirror (scripts/lib/tm_played_layer.js) is part of the code key too: it produces the
+//   played layer, so a change to it changes what is persisted.
+// Witness: viewer/tests/witness_cache_db_kind.js (W-CDK).
+//
 // Usage:  node scripts/cache_4d_run.js Terminal Hospital        (build if missing)
 //         node scripts/cache_4d_run.js --force Terminal         (rebuild)
 //         node scripts/cache_4d_run.js --list                   (what is cached)
+//         DB_KIND=extracted node scripts/cache_4d_run.js Hospital   (force the whole-db run)
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm'), os = require('os'), crypto = require('crypto');
 const HOME = os.homedir();
@@ -83,35 +103,99 @@ function layerOf(run, id) {
   return { id: want, key: L.key, map: map, desc: L.desc, missing: false };
 }
 
+// §CACHE_DB_KIND: the played-layer mirror is an input — it produces the `play` map this file persists.
+const MIRROR_INPUTS = ['lib/tm_played_layer.js'];
 function codeKey() {
   const h = crypto.createHash('sha1');
   for (const f of INPUTS) h.update(f).update(fs.readFileSync(path.join(V, f)));
+  for (const f of MIRROR_INPUTS) h.update('scripts/' + f).update(fs.readFileSync(path.join(__dirname, f)));
   return h.digest('hex').slice(0, 12);
 }
 function dbKey(file) {
   const st = fs.statSync(file);
   return crypto.createHash('sha1').update(st.size + ':' + st.mtimeMs).digest('hex').slice(0, 12);
 }
-function dirFor(bld) { return path.join(ROOT, bld, codeKey() + '_' + dbKey(path.join(BLD, bld + '_extracted.db'))); }
+
+// sqliteProblem(file) — null when the file is a readable SQLite database, else WHY it is not. A
+// 0-byte file, an LFS pointer, a directory and a missing file are four different facts; the resolver
+// reports the one it saw rather than "exists".
+function sqliteProblem(f) {
+  let st;
+  try { st = fs.statSync(f); } catch (e) { return 'missing'; }
+  if (!st.isFile()) return 'not a file';
+  if (st.size === 0) return '0 bytes';
+  try {
+    const fd = fs.openSync(f, 'r'); const b = Buffer.alloc(16);
+    const n = fs.readSync(fd, b, 0, 16, 0); fs.closeSync(fd);
+    const hdr = b.toString('latin1', 0, 15);
+    if (n < 16 || hdr !== 'SQLite format 3')
+      return 'not a SQLite file (header "' + hdr.replace(/[^\x20-\x7e]/g, '?') + '")';
+  } catch (e) { return 'unreadable (' + (e.code || e.message) + ')'; }
+  return null;
+}
+
+// resolveDbFile(bld, want, bldDir) — WHICH DB THE VIEWER LOADS, with the reason. `want` is
+// 'auto' (default; env DB_KIND overrides) | 'meta' | 'extracted'. Returns
+//   { path, kind: 'meta'|'extracted', reason, skipped: [..] }   or   { path: null, kind: null, reason }.
+const DB_KINDS = ['auto', 'meta', 'extracted'];
+function resolveDbFile(bld, want, bldDir) {
+  const dir = bldDir || BLD;
+  want = want || process.env.DB_KIND || 'auto';
+  if (DB_KINDS.indexOf(want) < 0) throw new Error('§CACHE_DB_KIND_UNKNOWN "' + want + '" — known: ' + DB_KINDS.join(' | '));
+  const meta = path.join(dir, bld + '_meta.db'), geo = path.join(dir, bld + '_geo.db'), ext = path.join(dir, bld + '_extracted.db');
+  const mp = sqliteProblem(meta), gp = sqliteProblem(geo), ep = sqliteProblem(ext);
+  const skipped = [];
+  if (want === 'extracted') {
+    return ep ? { path: null, kind: null, reason: 'DB_KIND=extracted but ' + path.basename(ext) + ' ' + ep, skipped }
+              : { path: ext, kind: 'extracted', reason: 'DB_KIND=extracted (forced)', skipped };
+  }
+  if (want === 'meta') {
+    return mp ? { path: null, kind: null, reason: 'DB_KIND=meta but ' + path.basename(meta) + ' ' + mp, skipped }
+              : { path: meta, kind: 'meta', reason: 'DB_KIND=meta (forced' +
+                  (gp ? '; ' + path.basename(geo) + ' ' + gp + ' — the viewer would NOT take split mode here' : '') + ')', skipped };
+  }
+  // auto — the viewer's rule: split mode iff BOTH halves are there (§SPLIT_PAIR_REQUIRED).
+  if (!mp && !gp) {
+    return { path: meta, kind: 'meta', skipped,
+      reason: 'split pair present (' + path.basename(meta) + ' + ' + path.basename(geo) + ') — what streaming.js §DB_SPLIT_DETECT loads' };
+  }
+  if (!mp && gp) skipped.push(path.basename(meta) + ' usable but ' + path.basename(geo) + ' ' + gp + ' (§SPLIT_PAIR_REQUIRED: both halves or neither)');
+  if (mp && mp !== 'missing') skipped.push(path.basename(meta) + ' ' + mp + ' — skipped, not loaded');
+  if (ep) return { path: null, kind: null, skipped,
+    reason: 'no usable db: ' + path.basename(ext) + ' ' + ep + (skipped.length ? '; ' + skipped.join('; ') : '') };
+  return { path: ext, kind: 'extracted', skipped,
+    reason: (skipped.length ? skipped.join('; ') + ' -> ' : 'no split pair -> ') + path.basename(ext) };
+}
+
+// dirFor(bld, want) — the cache dir for the db the viewer loads (or the forced kind). Null when no
+// usable db exists. The KIND is in the name so two runs of one building cannot be confused.
+function dirFor(bld, want) {
+  const r = resolveDbFile(bld, want);
+  if (!r.path) return null;
+  return path.join(ROOT, bld, codeKey() + '_' + dbKey(r.path) + '_' + r.kind);
+}
 
 // read(bld) — what every downstream probe should call. Returns {els, play, sched, tasks, log, dir}
 // or null. SELECT A LAYER WITH layerOf(run) — never reach for `.sched` directly; that key is the
 // unplayed map and reading it unnamed is the defect §CACHE_PLAYED_LAYER removed.
-function read(bld) {
-  const d = dirFor(bld);
-  if (!fs.existsSync(path.join(d, 'run.json'))) return null;
+function read(bld, want) {
+  const d = dirFor(bld, want);
+  if (!d || !fs.existsSync(path.join(d, 'run.json'))) return null;
   const j = JSON.parse(fs.readFileSync(path.join(d, 'run.json'), 'utf8'));
   return { els: j.els, play: j.play || null, sched: j.sched, display: j.sched,
     playStats: j.playStats || null, storeys: j.storeys || null, tasks: j.tasks || null,
-    dbFile: j.dbFile || null, builtAt: j.builtAt || null,
+    dbFile: j.dbFile || null, dbKind: j.dbKind || null, builtAt: j.builtAt || null,
     log: fs.readFileSync(path.join(d, 'witness.log'), 'utf8'), dir: d };
 }
 
-function build(bld, force) {
-  const d = dirFor(bld);
-  if (!force && fs.existsSync(path.join(d, 'run.json'))) { console.log('§CACHE_HIT ' + bld + ' ' + d); return read(bld); }
-  const file = path.join(BLD, bld + '_extracted.db');
-  if (!fs.existsSync(file)) { console.log('§CACHE_SKIP ' + bld + ' — no db'); return null; }
+function build(bld, force, want) {
+  // §CACHE_DB_KIND — resolve the db the viewer loads, and say which one and why, BEFORE anything runs.
+  const dbf = resolveDbFile(bld, want);
+  if (!dbf.path) { console.log('§CACHE_SKIP ' + bld + ' — ' + dbf.reason); return null; }
+  console.log('§CACHE_DB ' + bld + ' kind=' + dbf.kind + ' file=' + path.basename(dbf.path) + ' reason=' + dbf.reason);
+  const d = dirFor(bld, want);
+  if (!force && fs.existsSync(path.join(d, 'run.json'))) { console.log('§CACHE_HIT ' + bld + ' kind=' + dbf.kind + ' ' + d); return read(bld, want); }
+  const file = dbf.path;
 
   // Modules are loaded FRESH per build so one process building several buildings cannot carry
   // module-level state from one into the next.
@@ -224,9 +308,10 @@ function build(bld, force) {
       fs.mkdirSync(d, { recursive: true });
       fs.writeFileSync(path.join(d, 'witness.log'), lines.join('\n') + '\n');
       fs.writeFileSync(path.join(d, 'run.json'), JSON.stringify({ bld: bld, builtAt: new Date().toISOString(),
-        codeKey: codeKey(), dbFile: path.basename(file), els: els,
+        codeKey: codeKey(), dbFile: path.basename(file), dbKind: dbf.kind, dbReason: dbf.reason, els: els,
         sched: flat, play: play, playStats: playStats, storeys: storeys, tasks: tasks }));
-      console.log('§CACHE_BUILT ' + bld + ' n=' + els.length + ' scheduled=' + Object.keys(flat).length +
+      console.log('§CACHE_BUILT ' + bld + ' dbFile=' + path.basename(file) + ' kind=' + dbf.kind +
+        ' n=' + els.length + ' scheduled=' + Object.keys(flat).length +
         ' logLines=' + lines.length + ' declaredStoreys=' + (storeys ? storeys.length : 'ABSENT') + ' -> ' + d);
       // §CACHE_LAYERS — the cache says, in its own log, which maps it carries and which one plays.
       console.log('§CACHE_LAYERS ' + bld +
@@ -237,12 +322,13 @@ function build(bld, force) {
           ' display_authored=' + playStats.displayAuthored : '') +
         ' — "played" is what the film/scrubber reveal (kernel_ops); "display" is remapSolveToTasks, ' +
         'which viewer/time_machine.js does not read. Select with CACHE.layerOf(run).');
-      return read(bld);
+      return read(bld, want);
     });
 }
 
 module.exports = { read: read, build: build, dirFor: dirFor, codeKey: codeKey,
-  layerOf: layerOf, LAYERS: LAYERS };
+  layerOf: layerOf, LAYERS: LAYERS,
+  resolveDbFile: resolveDbFile, sqliteProblem: sqliteProblem, DB_KINDS: DB_KINDS };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -253,7 +339,8 @@ if (require.main === module) {
       const rj = path.join(ROOT, b, k, 'run.json');
       if (!fs.existsSync(rj)) continue;
       const st = fs.statSync(rj);
-      console.log('§CACHE_LIST ' + b.padEnd(24) + ' ' + k + '  ' + (st.size / 1048576).toFixed(1) + 'MB  ' +
+      const kind = (k.match(/_(meta|extracted)$/) || [])[1] || 'extracted(legacy, unnamed)';
+      console.log('§CACHE_LIST ' + b.padEnd(24) + ' ' + k.padEnd(36) + ' kind=' + kind.padEnd(26) + (st.size / 1048576).toFixed(1) + 'MB  ' +
         st.mtime.toISOString() + (k.startsWith(codeKey()) ? '  <- CURRENT code' : '  (stale code)'));
     }
     process.exit(0);
