@@ -8,7 +8,11 @@
 const path = require('path');
 const { chromium } = require(path.join('/home/red1/bim-ootb/tests/node_modules', 'playwright-core'));
 
-const URL = 'http://localhost:8406/viewer/viewer.html?db=/buildings/LTU_AHouse_extracted.db';
+// §R15 (2026-09-03): port made overridable so a concurrent worktree can point the SAME proven
+// primitives at its own static server without a third copy of this file. Default unchanged (8406),
+// so every existing W-BUDGET-* witness behaves exactly as before.
+const URL = process.env.WITNESS_URL ||
+  'http://localhost:8406/viewer/viewer.html?db=/buildings/LTU_AHouse_extracted.db';
 
 async function launch(logSink) {
   const browser = await chromium.launch({
