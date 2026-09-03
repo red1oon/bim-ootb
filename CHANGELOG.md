@@ -4,6 +4,39 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.59.0](https://github.com/red1oon/bim-ootb/compare/v1.58.1...v1.59.0) (2026-09-03)
+
+
+### ✨ Features
+
+* **erp:** iDempiere parity — AD field set for the five document tables (§P1) + AD_Ref_List/Yes-No editors (§P2) ([#1613](https://github.com/red1oon/bim-ootb/issues/1613)) ([1dffb39](https://github.com/red1oon/bim-ootb/commit/1dffb397fea9d839aee8ba712735188aee037722))
+* **erp:** iDempiere parity — AD_Val_Rule reaches the live FK pickers (§P3) ([#1626](https://github.com/red1oon/bim-ootb/issues/1626)) ([bc470d7](https://github.com/red1oon/bim-ootb/commit/bc470d71ad5528e05c5d5cb5d1b79a4f7c7cceb5))
+* **erp:** iDempiere parity — whole-row mandatory check, AD_Ref_Table targets, GL_Category, DocNo both branches (§P7-§P10) ([#1636](https://github.com/red1oon/bim-ootb/issues/1636)) ([7168054](https://github.com/red1oon/bim-ootb/commit/7168054e6beb53458f98f7c39a1d0316397c2d23))
+* **photoreal:** §MEP_COLOR_SURVIVES_PHOTOREAL — MEP reads by trade in Alt+S/Alt+C instead of uniform grey metal ([#1621](https://github.com/red1oon/bim-ootb/issues/1621)) ([8d8320e](https://github.com/red1oon/bim-ootb/commit/8d8320eecd62a3200d58fdc37c9226192a7fa60e))
+* **viewer:** §DUCT_SILHOUETTE — a large duct's OUTLINE, not just its shading ([#1631](https://github.com/red1oon/bim-ootb/issues/1631)) ([da0521c](https://github.com/red1oon/bim-ootb/commit/da0521c482a9f99155bae53adaf9fbb3dfbcf265))
+
+
+### 🐛 Fixes
+
+* **4d:** §FUTURE-5A — relocate 7 of 11 hardcoded 5D policy constants into JSON ([#1616](https://github.com/red1oon/bim-ootb/issues/1616)) ([4e9487c](https://github.com/red1oon/bim-ootb/commit/4e9487c58992cfed12deb400cd68651b80fdd88c))
+* **4d:** §GANTT_EDIT_CLAMP toast on the link-creation re-apply path ([#1618](https://github.com/red1oon/bim-ootb/issues/1618)) ([92528e6](https://github.com/red1oon/bim-ootb/commit/92528e68b53c9490cd86a3a09a927bec4b2afe0b))
+* **4d:** §RETYPED_CONSTANTS — consolidate the two safe copies, REGISTER the rest (§I.5b, §I.5i) ([#1630](https://github.com/red1oon/bim-ootb/issues/1630)) ([8b14b4e](https://github.com/red1oon/bim-ootb/commit/8b14b4ea36dfa1c83c946b9b4d8732f679121d8d))
+* **4d:** §STAIR_SLAB_WIDEN — a stair tread exported as IfcSlab stops landing on day 0 ([#1625](https://github.com/red1oon/bim-ootb/issues/1625)) ([138af11](https://github.com/red1oon/bim-ootb/commit/138af115ea468ddbdaffc4a6e3888564203e2225))
+* **4d:** §STOREY_DATUM + §TPL_LADDER_BRIDGE — DAY-0 integrity to zero on all four buildings ([#1551](https://github.com/red1oon/bim-ootb/issues/1551)) ([5973650](https://github.com/red1oon/bim-ootb/commit/59736505aecba06c4dc56cef481e670292c69847))
+* **4d:** §STOREY_SUFFIX_PARITY — collapsePhase becomes a superset of the import-time rule (§I.5f) ([#1629](https://github.com/red1oon/bim-ootb/issues/1629)) ([b43c6e5](https://github.com/red1oon/bim-ootb/commit/b43c6e5c6dd900a8c6815c0330e06e765dbd527a))
+* **4d:** §TPL_MODEL — the THIRD task-grid producer names itself (§I.5g) ([#1628](https://github.com/red1oon/bim-ootb/issues/1628)) ([58873b6](https://github.com/red1oon/bim-ootb/commit/58873b6a3e32f67d601358e3b89488dd6456ce24))
+* **4d:** §W_D0_ATTRIBUTION — all 8 played-layer DAY-0 FAILs attributed, 3 of them this witness's own defects ([#1615](https://github.com/red1oon/bim-ootb/issues/1615)) ([f6c158e](https://github.com/red1oon/bim-ootb/commit/f6c158edfc0c668b626338f5c934e1018a83bd8d))
+* **4d:** delete viewer/rates/4D_policy.json — the config nobody loads ([#1617](https://github.com/red1oon/bim-ootb/issues/1617)) ([8fdec24](https://github.com/red1oon/bim-ootb/commit/8fdec24f216a557e238f3421b9f394a23944b56b))
+* **cinema:** §CPE_AIM_DEPTH_RETIRED — path-follow is the only automatic gaze rule ([#1619](https://github.com/red1oon/bim-ootb/issues/1619)) ([dfe5a58](https://github.com/red1oon/bim-ootb/commit/dfe5a58e9fdb89394653b410790488eb1300a575))
+* **cinema:** §CPE_REVEAL_ARCH_HOLD — hold ARC/STR until the camera is back on the first stick ([#1633](https://github.com/red1oon/bim-ootb/issues/1633)) ([1173314](https://github.com/red1oon/bim-ootb/commit/11733141cbbdddf5ed4db818f3f75295ee1f570b))
+* **erp:** two forward-ports the twin audit surfaced — ninja_model [@callout](https://github.com/callout) grammar + crud_core audit-column casing ([#1632](https://github.com/red1oon/bim-ootb/issues/1632)) ([8b50598](https://github.com/red1oon/bim-ootb/commit/8b50598d2040c1ae0dc938f0ce49b1fc55f468b4))
+* **photoreal:** §SUN_FILL_RATIO — the staged HDRI was lighting every matte wall, erasing the sun/shade read ([#1622](https://github.com/red1oon/bim-ootb/issues/1622)) ([85fd073](https://github.com/red1oon/bim-ootb/commit/85fd07326d581863687b45e1b0b1e0ce1a68f615))
+* **viewer:** §R15 — disarm the two controller rules by default; their own witness says FAIL ([#1637](https://github.com/red1oon/bim-ootb/issues/1637)) ([10c0b2c](https://github.com/red1oon/bim-ootb/commit/10c0b2ca8d3bdb2577dafc14b12318888f12a5bc))
+* **viewer:** §R15 — the DLOD mesh-budget controller integrates on stale, saturated feedback ([#1635](https://github.com/red1oon/bim-ootb/issues/1635)) ([4362b0f](https://github.com/red1oon/bim-ootb/commit/4362b0f9e70fe6ec883b86cf6f3729a288518486))
+* **witness:** §SFR_GROUP_RESTORE — the sun/fill witness was zeroing the fixture pool it measures ([#1634](https://github.com/red1oon/bim-ootb/issues/1634)) ([a1c8d03](https://github.com/red1oon/bim-ootb/commit/a1c8d0300476b42b8f136e44ad0ecff1f52ffd57))
+* **witness:** §W_D0A A4 — INCONCLUSIVE over an empty population, not FAIL ([#1624](https://github.com/red1oon/bim-ootb/issues/1624)) ([6850324](https://github.com/red1oon/bim-ootb/commit/68503243ee22eb3dcc254965bc3fb509ba1740d2))
+* **witness:** §W_PROGRESS — a killed cinema/aim run now names the last stage it finished ([#1623](https://github.com/red1oon/bim-ootb/issues/1623)) ([31fe1ca](https://github.com/red1oon/bim-ootb/commit/31fe1ca9fb02069061d12e4d9000abd58b2e39ea))
+
 ## [1.58.1](https://github.com/red1oon/bim-ootb/compare/v1.58.0...v1.58.1) (2026-09-02)
 
 
