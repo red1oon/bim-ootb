@@ -57,7 +57,12 @@
 // which read as sideways on every corner. The two end turns are sized by the real angle at
 // CINEMA_TURN_DPS, not a fixed seam, because the reveal sub-beats are outside the gaze rate limiter.
 // effects.js?v=33->34.
-const CACHE_VERSION = 'v1137';   // bump on each deploy; per-change detail is the git commit message.
+// v1138 (2026-09-04) §CPE_TAIL_LIGHTS_ALL_ONLY: during the disc parade's ONE-DISCIPLINE slots the
+// staged luminaires and their glow are OFF — the trade's delicate geometry reads on its own instead
+// of being washed out by lamps that filterDiscs has hidden anyway. The all-together slot keeps its
+// lights. Illumination is scaled to 0 rather than torn down, because §NIGHT_BAKE_POOL froze the
+// point-light COUNT for the whole bake on purpose. effects.js?v=34->35, cinema_maxq.js?v=10->11.
+const CACHE_VERSION = 'v1138';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
