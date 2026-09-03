@@ -2155,6 +2155,18 @@
                     formEntry: function () { return _formCtx ? _formCtx.e : null; },              // §P1 (W-PARITY-FIELDSET): the open form's (merged) entry — field set + pins, read-only
                     registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
+                    // §P10 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P4-OPEN item 5 — W-DOCNO-BRANCH):
+                    //   READ-ONLY witness seam over the two IsDocNoControlled branches. The only DocNo witness
+                    //   asserted the TABLE-level path against a MOCKED __idmpDb whose oracle was written beside
+                    //   the assertion, so the doctype-controlled branch (34 seeded doctypes ='Y', all 34 with a
+                    //   resolving ACTIVE ad_sequence) was never judged at all. These expose the SHIPPED functions
+                    //   — no reimplementation — so a witness can drive BOTH branches against the real seed.
+                    //   Neither consumes a sequence: _previewDocNo is the non-consuming preview iDempiere shows
+                    //   on a New form; _allocDocNo (the consuming one) is deliberately NOT exposed.
+                    docNoSeam: { docTypeSeqId: function (fields) {
+                                   var m = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
+                                   return m ? _docTypeSeqId(m, fields) : null; },
+                                 previewDocNo: _previewDocNo },
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
