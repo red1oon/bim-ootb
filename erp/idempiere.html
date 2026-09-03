@@ -2357,6 +2357,27 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (seen) console.log('§STOCK-ONHAND product=' + pid + ' warehouse=' + wh + ' sidecarTxns=' + seen + ' delta=' + sum);
     return sum;
   }
+  // §CREATEFROM-LIVE helpers — the same sync sidecar fold _foldOrderRow uses, generalised to any table.
+  // Sync (not withSidecar-async) for the same reason _foldOrderRow is: by the time a process Run is
+  // clicked, the pane's own withSidecar call has already hydrated kernelDb() once. Any infra gap falls
+  // through to the base row(s) — never worse than a raw read, never silently empty.
+  function _foldRowsSync(table, pk, base) {
+    var c = window.__crud;
+    if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function') return base;
+    var sdb = c.kernelDb(); if (!sdb) return base;
+    var folded; try { folded = c.core.listTip(sdb, table, pk, base, null); } catch (e) { folded = null; }
+    return (folded && folded.rows) || base;
+  }
+  function _foldOneRow(table, pk, id, withStatus) {
+    var base = _sqlRows('SELECT * FROM ' + table + ' WHERE ' + pk + '=' + Number(id));
+    var all = _foldRowsSync(table, pk, _sqlRows('SELECT * FROM ' + table));
+    var row = all.filter(function (r) { return String(r[pk]) === String(id); })[0] || base[0] || null;
+    if (row && withStatus) {
+      var c = window.__crud;
+      try { var sdb = c.kernelDb(); var tip = c.core.readTip(sdb, table, row[pk], null); if (tip != null) row.docstatus = tip; } catch (e) {}
+    }
+    return row;
+  }
   function _foldOrderRow(id) {
     var base = _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
     var c = window.__crud;
@@ -2442,6 +2463,39 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var id = info && info.Record_ID; if (id == null) return [];
         return _sqlRows('SELECT * FROM c_projectline WHERE c_project_id=' + Number(id) + ' ORDER BY line, c_projectline_id');
       },
+      // §CREATEFROM-LIVE — CreateFromInvoice accessors (prompts/ERP_P2P_INVOICE_MATCH.md §CF.2).
+      // info.Record_ID = the chosen C_Invoice. Every one of these folds the sidecar, because the invoice
+      // and the receipt lines a user is matching were almost certainly created in THIS session.
+      fetchInvoice: function (info) {
+        var id = info && info.Record_ID; if (id == null) return null;
+        return _foldOneRow('c_invoice', 'c_invoice_id', id, true);
+      },
+      // the SELECTED receipt lines, in the selection's own order — createLines() iterates the selection,
+      // not the table. A selected id that does not resolve is DROPPED and counted in the §-line, never
+      // silently turned into a line with missing fields.
+      fetchReceiptLines: function (info) {
+        var sel = (info && info.params && info.params.selection) || [];
+        if (!sel.length) return [];
+        var base = _sqlRows('SELECT * FROM m_inoutline');
+        var rows = _foldRowsSync('m_inoutline', 'm_inoutline_id', base);
+        var byId = {}; rows.forEach(function (r) { byId[String(r.m_inoutline_id)] = r; });
+        var out = [], missed = 0;
+        sel.forEach(function (x) {
+          var r = byId[String(x.m_inoutline_id)];
+          if (!r) { missed++; return; }
+          out.push(r);
+        });
+        console.log('§CREATEFROM-LIVE fetchReceiptLines selected=' + sel.length + ' resolved=' + out.length + ' unresolved=' + missed);
+        return out;
+      },
+      fetchOrderLine: function (id) {
+        if (id == null) return null;
+        return _foldOneRow('c_orderline', 'c_orderline_id', id, false);
+      },
+      fetchProduct: function (id) {
+        if (id == null) return null;
+        return _sqlRows('SELECT * FROM m_product WHERE m_product_id=' + Number(id))[0] || null;
+      },
       // §GENSHIP-LIVE — InOutGenerate accessors. info.Record_ID = the chosen C_Order. onHandOf sums the REAL
       // m_storageonhand for the product across the warehouse's locators (the Availability cap). A fully-delivered
       // order (the seed's state) → the handler honestly yields 0 lines, never a fabricated shipment.
@@ -2499,6 +2553,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // §GENINV-LIVE — InvoiceGenerate is record-scoped here (invoice ONE order). Same CO Sales Order picker as
     // Generate Shipments; the order supplies the mandatory AD_Org_ID para (DocAction defaults to Complete).
     if (proc.classname === 'org.compiere.process.InvoiceGenerate') { renderOrderPicker(proc); return; }
+    // §CREATEFROM-LIVE — CreateFromInvoice (AD_Process 200143) is the P2P line-maker: it ADDS lines to an
+    // EXISTING drafted vendor invoice, setting the M_InOutLine_ID that AD_Field locks IsReadOnly='Y' on tab
+    // 291 — faithfully, because in real iDempiere only this process ever sets it. Its Java refuses unless
+    // getAD_InfoWindow_ID()>0: the Info Window IS the selection. This pane is that selection.
+    // Implementing prompts/ERP_P2P_INVOICE_MATCH.md §Fix 2026-09-04b (§CF.2) — Witness: the lane's own
+    // witness_p2p_invoice_match.js Stage 3/4 (§CF.3).
+    if (proc.classname === 'org.compiere.process.CreateFromInvoice') { renderCreateFromPicker(proc); return; }
     if (proc.paras.length) renderProcParamForm(proc);
     else runProcess(proc, {});
   }
@@ -2569,6 +2630,137 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         });
       }
       paint(rows.filter(function (r) { return wantStatus.indexOf(String(r.docstatus).toUpperCase()) >= 0; }));
+    });
+  }
+  // §CREATEFROM-LIVE — the CreateFromInvoice selection pane (prompts/ERP_P2P_INVOICE_MATCH.md §CF.2).
+  // Two folded lists, both through CORE.listTip/readTip exactly as renderOrderPicker folds orders — an
+  // invoice or a receipt created in THIS session must be offered, or this pane would re-open the very gap
+  // prompts/ERP_FK_PICKER_SIDECAR.md just closed.
+  //   1. a DRAFTED vendor invoice (issotrx='N', DocStatus DR/IP)
+  //   2. its vendor's COMPLETED receipt lines, each with a Qty defaulted to the line's own qtyentered —
+  //      which is precisely the Info Window Qty column CreateFromInvoice.createLines() reads.
+  // Run dispatches { C_Invoice_ID, selection:[{m_inoutline_id, qty}] }, the shape the handler already
+  // accepts (§Fix5.3) — no handler change.
+  function renderCreateFromPicker(proc) {
+    var pane = el('div', 'idmp-procpane idmp-procform');
+    pane.appendChild(el('h3', null, proc.name));
+    pane.appendChild(el('div', 'sub', 'Process · AD_Process ' + proc.AD_Process_ID +
+      ' · pick a drafted Vendor Invoice, then the received lines to invoice'));
+    var invFld = el('div', 'fld'); invFld.appendChild(el('label', null, 'Vendor Invoice'));
+    var invSel = document.createElement('select'); invSel.setAttribute('data-createfrom-invoice', '1');
+    invFld.appendChild(invSel); pane.appendChild(invFld);
+    var linesWrap = el('div', 'fld'); linesWrap.appendChild(el('label', null, 'Received lines'));
+    var linesBox = el('div', null); linesBox.setAttribute('data-createfrom-lines', '1');
+    linesBox.style.cssText = 'max-height:260px;overflow:auto;border:1px solid var(--idmp-border);border-radius:6px;padding:6px';
+    linesWrap.appendChild(linesBox); pane.appendChild(linesWrap);
+    var actions = el('div', 'actions');
+    var run = el('button', 'run', 'Create Lines'); run.setAttribute('data-proc-run', '1');
+    var cancel = el('button', null, 'Cancel');
+    actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
+    cancel.addEventListener('click', function () {
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+    });
+    _showProcPane(pane);
+
+    var invRows = [], lineRows = [];
+    function foldRows(table, pk, base, withStatus, cb) {
+      var c = window.__crud;
+      if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { cb(base); return; }
+      c.withSidecar(function (sdb) {
+        var rows = base;
+        if (sdb) {
+          var folded = null;
+          try { folded = c.core.listTip(sdb, table, pk, base, null); } catch (e) { folded = null; }
+          rows = (folded && folded.rows) || base;
+          if (withStatus && typeof c.core.readTip === 'function') {
+            rows.forEach(function (r) { try { var t = c.core.readTip(sdb, table, r[pk], null); if (t != null) r.docstatus = t; } catch (e) {} });
+          }
+        }
+        cb(rows);
+      });
+    }
+    function paintInvoices(rows) {
+      invRows = rows;
+      invSel.innerHTML = '';
+      if (!rows.length) { var o0 = el('option', null, '— no drafted Vendor Invoices in this tenant —'); o0.value = ''; invSel.appendChild(o0); }
+      rows.forEach(function (r) {
+        var o = el('option', null, (r.documentno || ('Invoice ' + r.c_invoice_id)) + '  (BPartner ' + r.c_bpartner_id + ')');
+        o.value = String(r.c_invoice_id); invSel.appendChild(o);
+      });
+      console.log('§CREATEFROM-LIVE invoices offered=' + rows.length + ' ids=[' + rows.map(function (r) { return r.c_invoice_id; }).join(',') + ']');
+      paintLinesFor(invSel.value);
+    }
+    function paintLinesFor(invId) {
+      linesBox.innerHTML = '';
+      var inv = invRows.filter(function (r) { return String(r.c_invoice_id) === String(invId); })[0];
+      if (!inv) { linesBox.appendChild(el('div', 'sub', 'Pick an invoice first.')); return; }
+      var cand = lineRows.filter(function (l) { return String(l._bpartner) === String(inv.c_bpartner_id); });
+      if (!cand.length) {
+        linesBox.appendChild(el('div', 'sub', 'No completed receipt lines for this vendor.'));
+        console.log('§CREATEFROM-LIVE candidates invoice=' + invId + ' bpartner=' + inv.c_bpartner_id + ' lines=0');
+        return;
+      }
+      cand.forEach(function (l) {
+        var row = el('label', null); row.style.cssText = 'display:flex;gap:8px;align-items:center;padding:3px 0';
+        // UNCHECKED by default: the candidate list is every completed received line for this vendor, and
+        // silently pre-ticking all of them would invoice the whole vendor history on one click.
+        var cb = document.createElement('input'); cb.type = 'checkbox';
+        cb.setAttribute('data-cf-line', String(l.m_inoutline_id));
+        var qty = document.createElement('input'); qty.type = 'number'; qty.step = 'any';
+        qty.value = String(l.qtyentered != null ? l.qtyentered : l.movementqty);
+        qty.setAttribute('data-cf-qty', String(l.m_inoutline_id));
+        qty.style.cssText = 'width:80px';
+        row.appendChild(cb);
+        row.appendChild(el('span', null, 'Receipt ' + l.m_inout_id + ' line ' + l.line + ' · product ' + l.m_product_id));
+        row.appendChild(qty);
+        linesBox.appendChild(row);
+      });
+      console.log('§CREATEFROM-LIVE candidates invoice=' + invId + ' bpartner=' + inv.c_bpartner_id +
+                  ' lines=' + cand.length + ' ids=[' + cand.map(function (l) { return l.m_inoutline_id; }).join(',') + ']');
+    }
+    invSel.addEventListener('change', function () { paintLinesFor(invSel.value); });
+    run.addEventListener('click', function () {
+      var invId = invSel.value ? Number(invSel.value) : null;
+      if (invId == null || invSel.value === '') { status('Pick a Vendor Invoice first'); return; }
+      var selection = [];
+      Array.prototype.forEach.call(linesBox.querySelectorAll('input[data-cf-line]'), function (cb) {
+        if (!cb.checked) return;
+        var id = cb.getAttribute('data-cf-line');
+        var q = linesBox.querySelector('input[data-cf-qty="' + id + '"]');
+        selection.push({ m_inoutline_id: Number(id), qty: q && q.value !== '' ? Number(q.value) : null });
+      });
+      if (!selection.length) { status('Tick at least one received line'); return; }
+      console.log('§CREATEFROM-LIVE run proc=' + proc.AD_Process_ID + ' Record_ID(C_Invoice_ID)=' + invId +
+                  ' selection=' + JSON.stringify(selection));
+      runProcess(proc, { C_Invoice_ID: invId, selection: selection }, invId);
+    });
+
+    // base rows, then the two folds. Receipt lines carry their header's bpartner + docstatus so the
+    // candidate filter is one pass and the §-line can state exactly what it offered.
+    var invBase = _sqlRows("SELECT c_invoice_id, documentno, docstatus, processed, c_bpartner_id FROM c_invoice WHERE issotrx='N' ORDER BY c_invoice_id");
+    var hdrBase = _sqlRows("SELECT m_inout_id, docstatus, c_bpartner_id, issotrx FROM m_inout WHERE issotrx='N' ORDER BY m_inout_id");
+    var lineBase = _sqlRows('SELECT m_inoutline_id, m_inout_id, line, m_product_id, qtyentered, movementqty FROM m_inoutline ORDER BY m_inoutline_id');
+    invSel.appendChild(el('option', null, 'Loading…'));
+    foldRows('m_inout', 'm_inout_id', hdrBase, true, function (hdrs) {
+      var hdrById = {};
+      hdrs.forEach(function (h) { if (String(h.issotrx) === 'N') hdrById[String(h.m_inout_id)] = h; });
+      foldRows('m_inoutline', 'm_inoutline_id', lineBase, false, function (lns) {
+        lineRows = lns.filter(function (l) {
+          var h = hdrById[String(l.m_inout_id)];
+          if (!h) return false;
+          var st = String(h.docstatus || '').toUpperCase();
+          if (st !== 'CO' && st !== 'CL') return false;
+          l._bpartner = h.c_bpartner_id;
+          return true;
+        });
+        foldRows('c_invoice', 'c_invoice_id', invBase, true, function (invs) {
+          paintInvoices(invs.filter(function (r) {
+            if (String(r.processed || 'N').toUpperCase() === 'Y') return false;
+            var st = String(r.docstatus || '').toUpperCase();
+            return st === 'DR' || st === 'IP';
+          }));
+        });
+      });
     });
   }
   function renderProjectPicker(proc) {
@@ -2840,6 +3032,79 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         });
       });
       cfWrap.appendChild(cfBtn); pane.appendChild(cfWrap); pane.appendChild(cfMsg);
+    }
+    // §CREATEFROM-LIVE — a result that ADDS lines to an existing document: ops but no r.header (this
+    // process does not build a document, so the KIND-2 branch above never fires for it). Same
+    // preview-then-confirm UX and the SAME §GENPROCESS-CONFIRM commit primitive.
+    if (!absent && r && r.ops && r.ops.length && !r.header &&
+        r.ops.every(function (o) { return o.op_type === 'CREATE_LINE' && o.table === 'C_InvoiceLine'; })) {
+      var cfInv = r.ops[0].c_invoice_id;
+      pane.appendChild(el('div', 'msg', r.lineCount + ' invoice line' + (r.lineCount === 1 ? '' : 's') +
+        ' from received lines → C_Invoice ' + cfInv +
+        ' · each carries M_InOutLine_ID, the column only this process may set'));
+      var ct = document.createElement('table'), ctr = el('tr');
+      ['#', 'Product', 'Receipt line', 'Order line', 'Qty', 'Price'].forEach(function (hd, i) { ctr.appendChild(el('th', i >= 4 ? 'r' : null, hd)); });
+      ct.appendChild(ctr);
+      r.ops.forEach(function (op) {
+        ctr = el('tr');
+        [op.line, op.m_product_id, op.m_inoutline_id, op.c_orderline_id == null ? '—' : op.c_orderline_id,
+         op.qtyinvoiced, op.priceactual == null ? '(deferred)' : op.priceactual]
+          .forEach(function (cv, i) { ctr.appendChild(el('td', i >= 4 ? 'r' : null, cv == null ? '' : String(cv))); });
+        ct.appendChild(ctr);
+      });
+      pane.appendChild(ct);
+      if (r.deferred && r.deferred.length)
+        pane.appendChild(el('div', 'gap', 'Named-deferred, not silently skipped: ' + r.deferred.join(' · ')));
+      var cfw = el('div', 'actions'); cfw.style.cssText = 'margin-top:10px';
+      var cfb = el('button', 'run', 'Confirm & Post'); cfb.setAttribute('data-genprocess-confirm', '1');
+      var cfm = el('div', 'msg'); cfm.style.cssText = 'margin-top:6px';
+      // §CREATEFROM-COMMIT — the engine proposes in ENGINE vocabulary (CREATE_LINE), but a committed
+      // invoice line is a RECORD the CRUD layer owns: the grid reads it, the user can edit it, and
+      // crud_overlay.completeFanoutInvoice folds it through CORE.listTip to decide the M_MatchInv fan-out.
+      // listTip only folds CRUD_CREATE/CRUD_UPDATE/CRUD_DELETE, so a raw CREATE_LINE commits to the log and
+      // is then INVISIBLE to every reader. MEASURED before this translation: the group committed
+      // (§GENPROCESS-CONFIRM committed=Y ops=11 verifyOk=true) and the very next Complete still read
+      // §INVOICE-FANOUT invoice=-9 lines=0 matchInvOps=0.
+      // So translate at the commit seam into exactly the shape crud_core.buildOp('create') produces —
+      // same op_type, same fields, same stdDefaults source (window.APP.*, which is what sessionActor()
+      // reads). Nothing is invented: every field value is the engine op's own.
+      function _asCrudCreates(ops) {
+        return ops.map(function (o) {
+          var fields = {};
+          Object.keys(o).forEach(function (k) {
+            if (k === 'op_type' || k === 'table' || k === '_sv' || k === '_sigv') return;
+            if (o[k] === undefined) return;
+            fields[String(k).toLowerCase()] = o[k];
+          });
+          var std = null;
+          try {
+            if (window.APP && (window.APP.actor != null || window.APP.clientId != null))
+              std = { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 };
+          } catch (e) { std = null; }
+          var op = { key: String(o.table).toLowerCase(), table: String(o.table).toLowerCase(), verb: 'create',
+                     op_type: 'CRUD_CREATE', fields: fields, cas: null, op_uuid: null };
+          if (std) op.stdDefaults = std;
+          return op;
+        });
+      }
+      cfb.addEventListener('click', function () {
+        cfb.disabled = true; cfb.textContent = 'Posting…';
+        var crudOps = _asCrudCreates(r.ops);
+        console.log('§CREATEFROM-COMMIT translating ' + r.ops.length + ' CREATE_LINE → CRUD_CREATE for ' +
+                    crudOps[0].table + ' (listTip folds CRUD only; a raw CREATE_LINE would be unreadable)');
+        window.__crud.applyOpGroup(crudOps, function (out) {
+          if (!out || !out.committed) {
+            cfb.disabled = false; cfb.textContent = 'Confirm & Post';
+            cfm.textContent = 'Not posted: ' + ((out && out.reason) || 'unknown');
+            console.log('§GENPROCESS-CONFIRM table=C_InvoiceLine committed=N reason=' + ((out && out.reason) || 'unknown'));
+            return;
+          }
+          cfb.textContent = 'Posted ✓'; cfb.style.opacity = '0.6';
+          cfm.textContent = 'Invoice lines posted — group ' + String(out.gid).slice(0, 8) + '… · ' + out.ids.length + ' ops · signed=' + (out.verifyOk ? 'Y' : 'N');
+          console.log('§GENPROCESS-CONFIRM table=C_InvoiceLine committed=Y gid=' + out.gid + ' ops=' + out.ids.length + ' verifyOk=' + out.verifyOk);
+        });
+      });
+      cfw.appendChild(cfb); pane.appendChild(cfw); pane.appendChild(cfm);
     }
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
