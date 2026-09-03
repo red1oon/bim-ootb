@@ -4516,6 +4516,18 @@ async function setupEffects(A, renderer, scene, camera) {
 
   function _glowOn(filterFn) {
     if (!A._glowSpriteEnabled || _glowPoints) return;
+    // §CPE_TAIL_LIGHTS_ALL_ONLY — the lamps' own glow is part of "the lights are all turned ON", so
+    // it goes with the illumination rather than being left burning over a dark room. Checked here,
+    // after the already-staged guard above, so a slot that turns the lights off tears the existing
+    // sprites down through the normal _glowOff path (the caller below) instead of leaving them lit.
+    if (A._cpeRevealLightsOff) {
+      if (!A._cpeTailGlowLogged) {
+        A._cpeTailGlowLogged = true;
+        console.log('§CPE_TAIL_LIGHTS_ALL_ONLY glow suppressed for the one-discipline slots' +
+          ' — the lamps come back for the all-together slot');
+      }
+      return;
+    }
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
     if (A._tmOverlayRegister) A._tmOverlayRegister();   // idempotent — ensures window.__tmOverlaySync exists even without a billboard nameplate
     var allPos = A._nightFixtureWorldPositions();
@@ -4919,6 +4931,12 @@ async function setupEffects(A, renderer, scene, camera) {
       A._nightMaxLights = A._nightMaxLightsStill;
       A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
       A._nightPLScale = A._nightPLScaleStill || 1;          // §STAGED_PL_CUT — staging-only intensity cut
+      // §CPE_TAIL_LIGHTS_ALL_ONLY — a 'tail-one' slot is lit by the room, not by the lamps. Scale 0
+      // rather than a pool teardown on purpose: §NIGHT_BAKE_POOL froze the point-light COUNT for the
+      // whole bake precisely because changing it recompiles every shader in the scene (13-53 s per
+      // frame, measured), and an intensity is a uniform. Same reason the pool's own unused slots
+      // ride at 0 instead of being removed.
+      if (A._cpeRevealLightsOff) A._nightPLScale = 0;
       A._nightUpdateLights();
       // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 2,026 firings, ONE distinct line
       // (`raised to 200 lights, near-fade floor 1 …`). The re-raise itself is required every
@@ -5673,6 +5691,22 @@ async function setupEffects(A, renderer, scene, camera) {
   // actually changed since the last tick — cheap to call every frame.
   A._cpeRevealSavedHidden = null;
   A._cpeRevealVisualKey = null;
+  // ══ §CPE_TAIL_LIGHTS_ALL_ONLY (2026-09-04, user) ═══════════════════════════════════════════════
+  // USER, on a real bake: "during last part each DISCipline reveal, the lights are all turned ON that
+  // obscures the delicate items scene. Should turn on only during ALL DISCs."
+  // The disc parade shows ONE discipline at a time ('tail-one'), and the whole point of those slots
+  // is to read a single trade's delicate geometry on its own. The staged luminaires were lit through
+  // all of it — and the fixtures doing the lighting are themselves hidden by filterDiscs on every
+  // slot that is not their own, so the room was being washed out by lamps that were not even on
+  // screen. The final all-together slot ('tail-all') is where a lit building is the point.
+  // ONE pure function, so the bake, the preview and the witness cannot hold different opinions about
+  // which slots are lit — same "one pure function, two callers" discipline cpeRevealVisualAt keeps.
+  // Everything OUTSIDE the tail (round 1, pull-out, fly-back, round 2, rise proper) is unchanged:
+  // null phase means "not the parade", and the lights stay exactly as they were.
+  A.cpeRevealLightsOffAt = function(plan, tNorm) {
+    var st = (plan && A.cpeRevealVisualAt) ? A.cpeRevealVisualAt(plan, tNorm) : null;
+    return !!(st && st.phase === 'tail-one');
+  };
   A.cpeRevealApplyVisual = function(plan, tNorm) {
     if (typeof A.filterDiscs !== 'function' || !A.hiddenDiscs) return;
     var st = plan ? A.cpeRevealVisualAt(plan, tNorm) : null;
