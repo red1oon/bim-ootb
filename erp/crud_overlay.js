@@ -571,6 +571,15 @@
     for (k in vals) if (vals[k] != null && String(vals[k]) !== '') low[String(k).toLowerCase()] = vals[k];
     var app = global.APP || {};
     var fill = function (n, v) { if (v != null && String(v) !== '' && (low[n] == null || String(low[n]) === '')) low[n] = v; };
+    // §P7 P7.8 — the PARENT tab's row is part of the same WINDOW context. iDempiere resolves a val rule with
+    // Env.parseContext(ctx, WindowNo, TabNo, …), and Env.getContext falls back from "WindowNo|TabNo|Column" to
+    // "WindowNo|Column" (the window-wide value the parent tab pushed via GridTab.setCurrentRow → updateContext),
+    // so a DETAIL tab's rule sees its header's columns. Measured: without this, C_OrderLine's
+    // C_BPartner_Location_ID (AD_Val_Rule 167 `…C_BPartner_ID=@C_BPartner_ID@…`) can never resolve — the line's
+    // own C_BPartner_ID is IsReadOnly='Y' with an `@SQL=` default we do not run — so the picker offered 0 rows
+    // and the AD-mandatory column was unfillable. Row first, window second: the record under edit always wins.
+    var win = app._winCtx;
+    if (win) for (k in win) fill(String(k).toLowerCase(), win[k]);
     fill('ad_client_id', app.clientId); fill('ad_org_id', app.orgId);
     fill('ad_user_id', app.actor); fill('salesrep_id', app.actor); fill('date', today());
     // the per-window Sales/Purchase signal idempiere.html already extracts from the active AD_Tab's own
@@ -582,6 +591,27 @@
       if (v != null && String(v) !== '') ctx[tok] = v;
     });
     return ctx;
+  }
+  // §P8 P8.5 — _valRuleListFilter: apply a column's AD_Val_Rule to its AD_Ref_List option set. iDempiere runs
+  //   the SAME ValidationCode against the AD_Ref_List query (MLookupFactory.getLookup_List), so the clause is
+  //   evaluated by the SAME shipped engine over ad_ref_list scoped to this reference — not a second evaluator,
+  //   and not a hand-rolled string match. Returns { verdict, admitted:{value:1} } or a named degrade.
+  function _valRuleListFilter(db, f) {
+    var VR = global.AdValRule;
+    if (!VR || f.valruleid == null || f.refListId == null) return { verdict: 'no-engine', admitted: null };
+    var b3 = _mvB3(db), row = null;
+    try { row = b3.prepare('SELECT ad_val_rule_id,name,type,code FROM ad_val_rule WHERE ad_val_rule_id=?').get(Number(f.valruleid)); } catch (e0) {}
+    if (!row || row.code == null) return { verdict: 'no-rule-row', admitted: null };
+    var res;
+    try { res = VR.evalValRule(b3, Number(f.valruleid), { ctx: _valRuleCtx(row.code, f._entry || { fields: [] }, null), table: 'ad_ref_list' }); }
+    catch (e1) { return { verdict: 'engine-error:' + String((e1 && e1.message) || e1).slice(0, 50), admitted: null }; }
+    if (!res || !res.ok) return { verdict: (res && res.deferred) || 'deferred', admitted: null };
+    try {
+      var q = b3.prepare('SELECT value FROM ad_ref_list WHERE ad_reference_id=? AND UPPER(isactive)=\'Y\' AND (' + res.sql + ')')
+                .all(Number(f.refListId));
+      var am = {}; (q || []).forEach(function (r) { am[String(r.value)] = 1; });
+      return { verdict: 'applied', admitted: am, sql: res.sql };
+    } catch (e2) { return { verdict: 'where-failed:' + String((e2 && e2.message) || e2).slice(0, 50), admitted: null }; }
   }
   // _valRuleFilter — run the SHIPPED interpreter through the SAME better-sqlite3 shim the beforeSave hooks
   // use (_mvB3), so the witnessed engine executes verbatim in the browser and there is no second evaluator.
@@ -615,6 +645,33 @@
         // mandatory OR has no value yet (MLookup adds "" for non-mandatory; an empty mandatory field must read
         // '' so the validator reports `required` instead of silently persisting the first option).
         var opts = f.optionList || (STORE && STORE.__meta && STORE.__meta[f.ref]) || {}; var cur = el.getAttribute('data-cur') || '';
+        // §P8 P8.5 (ERP_IDEMPIERE_UX_PARITY.md §P8-SPEC — W-PARITY-REFTABLE): a LIST can carry an AD_Val_Rule
+        // too, and iDempiere appends it to the AD_Ref_List query exactly as it does for a table lookup
+        // (MLookupFactory.getLookup_List: the rule's Code IS the lookup's ValidationCode). Measured: `trxtype`
+        // on tab 330 (ref 17, AD_Val_Rule 200012 `AD_Ref_List.Value NOT IN ('A','F')`) is the one val-ruled
+        // list on the five document tabs, and it BITES 6 options → 4. Filtered through the SAME shipped engine
+        // (ad_valrule.js over the AD_Ref_List rows) — no second evaluator. A clause the engine cannot apply
+        // DEGRADES to the unfiltered set and says so, never silently narrows.
+        var listVr = null;
+        if (f.valruleid != null && Array.isArray(f.optionList) && f.optionList.length && typeof withBundle === 'function') {
+          withBundle(function (ldb) {
+            if (!ldb) return;
+            listVr = _valRuleListFilter(ldb, f);
+            if (listVr && listVr.verdict === 'applied') {
+              var keepSet = listVr.admitted;
+              var kept = f.optionList.filter(function (o) { return Object.prototype.hasOwnProperty.call(keepSet, String(o.value)); });
+              if (kept.length) {
+                opts = {}; kept.forEach(function (o) { opts[o.value] = o.name; });
+                // P8.6 — validateField reads the SAME map the picker was built from, so the OFFERED set and
+                // the ACCEPTED set are one set by construction (the §P3.6 invariant, extended to lists).
+                f.options = opts;
+              }
+            }
+          });
+          console.log('§REFLIST-VALRULE col=' + f.col + ' vr=' + f.valruleid +
+                      ' before=' + f.optionList.length + ' after=' + Object.keys(opts).length +
+                      ' verdict=' + (listVr ? listVr.verdict : 'no-engine'));
+        }
         var lo = CORE.listOptions(opts, cur);
         var blank = (!f.required || cur === '') ? '<option value=""' + (cur === '' ? ' selected' : '') + '></option>' : '';
         el.innerHTML = blank + lo.map(function (o) { return '<option value="' + esc(o.value) + '"' + (o.selected ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('');
@@ -635,7 +692,7 @@
           if (keep === '' || keep == null) return;
           withBundle(function (db) {
             try {
-              var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+              var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
               var res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' WHERE ' + pk + '=' + Number(keep));
               var label = (res.length && res[0].values.length) ? (res[0].values[0][1] + ' (' + res[0].values[0][0] + ')') : keep;
               el.innerHTML = '<option value="' + esc(keep) + '" selected>' + esc(label) + '</option>';
@@ -645,14 +702,40 @@
         }
         withBundle(function (db) {
           try {
-            var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+            // §P8 P8.4 (W-PARITY-REFTABLE): the pk is the AD_Ref_Table AD_Key when there is one
+            // (MLookupFactory.getLookup_Table), else the TableDIR convention.
+            var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
             // ── §P3 (§P3-SPEC P3.4 — W-PARITY-VALRULE): narrow the candidate set to exactly the rows this
             // column's AD_Val_Rule admits. MLookupFactory.java:122-125 — the rule's Code IS the lookup's
             // ValidationCode, appended to the lookup query; that is all this does.
             var vr = _valRuleFilter(db, f, e, rec), where = '', noRows = false, before = null, admitted = null;
+            // §P8 P8.4 — AD_Ref_Table.WhereClause is a SECOND narrowing iDempiere appends to the lookup query,
+            // independent of AD_Val_Rule (ref 190 → AD_User restricted to IsSalesRep='Y' partners; ref 138 →
+            // non-summary active partners; ref 130 → AD_Org <> 0). Substituted through the SAME engine as the
+            // val rule (AdValRule.substitute — ONE owner, no second substituter); an unresolved @token@ empties
+            // the clause exactly as Env.java:1641-1645 + MLookup.java:1128-1140 say, and we then decline to
+            // apply it rather than invent a narrowing.
+            var refWhere = null, refWhereState = 'none';
+            if (f.refwhere) {
+              refWhereState = 'unresolved';
+              try {
+                var VRe = global.AdValRule;
+                if (VRe && typeof VRe.substitute === 'function') {
+                  var sub = VRe.substitute(String(f.refwhere), _valRuleCtx(String(f.refwhere), e, rec));
+                  var subSql = (sub && sub.sql != null) ? sub.sql : (typeof sub === 'string' ? sub : null);
+                  var unresolved = sub && sub.unresolved && sub.unresolved.length;
+                  if (subSql && String(subSql).trim() !== '' && !unresolved) { refWhere = subSql; refWhereState = 'applied'; }
+                } else if (String(f.refwhere).indexOf('@') < 0) { refWhere = String(f.refwhere); refWhereState = 'applied'; }
+              } catch (eRw) { refWhereState = 'error'; }
+              if (!refWhere && String(f.refwhere).indexOf('@') < 0) { refWhere = String(f.refwhere); refWhereState = 'applied'; }
+            }
+            var andRef = function (clause) {
+              if (!refWhere) return clause;
+              return clause ? '(' + clause + ') AND (' + refWhere + ')' : refWhere;
+            };
             if (vr) {
               try { var bq = db.exec('SELECT COUNT(*) FROM ' + t); before = bq.length ? bq[0].values[0][0] : null; } catch (eb) {}
-              if (vr.verdict === 'applied') where = ' WHERE (' + vr.sql + ')';
+              if (vr.verdict === 'applied') where = ' WHERE (' + andRef(vr.sql) + ')';
               // E3 — an unresolved @token@ CLEARS the lookup (MLookup.java:1128-1140, "Loader NOT Validated").
               // iDempiere shows NO rows here; it does not silently show all of them. Matching that IS the item.
               else if (vr.verdict === 'unresolved-tokens') noRows = true;
@@ -660,6 +743,7 @@
               // limit, not iDempiere's verdict — degrade to the UNFILTERED picker and say so in the log, rather
               // than hiding rows iDempiere does show. Named, never silent.
             }
+            if (!vr && refWhere) where = ' WHERE (' + refWhere + ')';
             var res = [];
             if (!noRows) {
               try { res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + where + ' ORDER BY ' + pk + ' LIMIT 200'); }
@@ -673,7 +757,7 @@
             // ACCEPTED set are one set by construction and cannot drift apart.
             if (vr && vr.verdict === 'applied') {
               try {
-                var ar = db.exec('SELECT ' + pk + ' FROM ' + t + ' WHERE (' + vr.sql + ')'), am = {};
+                var ar = db.exec('SELECT ' + pk + ' FROM ' + t + ' WHERE (' + andRef(vr.sql) + ')'), am = {};
                 if (ar.length) ar[0].values.forEach(function (r) { am[String(r[0])] = 1; });
                 admitted = am;
               } catch (ea) {}
@@ -689,6 +773,8 @@
             var hasKeep = !kEmpty && rows.some(function (r) { return String(r[0]) === String(keep); });
             var blankSel = (kEmpty || !hasKeep);
             var blankFk = (!f.required || blankSel) ? '<option value=""' + (blankSel ? ' selected' : '') + '></option>' : '';
+            if (f.refsource) console.log('§REFTABLE col=' + f.col + ' src=' + f.refsource + ' table=' + t + ' key=' + pk +
+              ' refWhere=' + refWhereState + ' rows=' + (res.length ? res[0].values.length : 0));
             if (vr) console.log('§VALRULE col=' + f.col + ' vr=' + vr.id + ' rule="' + (vr.name || '') + '" table=' + t +
               ' before=' + before + ' after=' + (admitted ? Object.keys(admitted).length : (noRows ? 0 : before)) +
               ' offered=' + rows.length + ' verdict=' + vr.verdict +
@@ -752,6 +838,20 @@
       // read as a forbidden edit and REJECTED every Sales Order create (found by the O2C regression run).
       var origV = orig;
       if (orig && appliedCols.length) { origV = {}; var ok0; for (ok0 in orig) origV[ok0] = orig[ok0]; appliedCols.forEach(function (c) { origV[c] = vals[c]; }); }
+      // §P7 P7.4 — the SAME rule on a CREATE, where `orig` is now null (the whole new row is checked). A
+      // hook-derived value is written by the MODEL layer (MOrder.setBPartner → set_Value), never through the
+      // grid — iDempiere's lookup validation (GridField.validateValueNoDirect:1141-1229) runs at dataNew /
+      // setValue time on GRID values and never re-inspects what beforeSave wrote afterwards. So a derived
+      // column is folded into the baseline here too: `orig === val` → unchanged → skipped, exactly as on an
+      // update, while EVERY other column still sees `orig === undefined` → fully checked (crud_core.js:126).
+      // Without this the create check rejected MOrder.billDefaults' own Bill_Location_ID as
+      // `valrule:not-admitted` — the derived id is legal for the model and simply is not in the picker's set.
+      // Only a NON-EMPTY derivation is folded in: a hook that derived nothing must still let `required` fire.
+      else if (!orig && appliedCols.length) {
+        origV = {};
+        appliedCols.forEach(function (c) { if (vals[c] != null && String(vals[c]).trim() !== '') origV[c] = vals[c]; });
+        if (!Object.keys(origV).length) origV = null;
+      }
       var res = CORE.validate(STORE, e, vals, origV);
       // §PARITY-MANDATORY — the §P5 consequence made witnessable: which required fields the user typed, which the
       // engine derived (iDempiere's defaults/callouts equivalent), and which are still missing (→ REJECT required).
@@ -864,20 +964,25 @@
     // Save validates + diffs against the POST-RENDER baseline (the true user delta) — so untouched fields that the
     //   spec/render handles imperfectly (a readonly fk select that fell to another option, a string-coded fk) never
     //   trip validation and are never written; only what the user actually changed is checked + committed.
-    // ⚠ KNOWN GAP, measured 2026-09-02 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §STATUS, W-PARITY-FIELDSET
-    //   falsifier — OPEN): on a CREATE this hands validate() the post-render baseline, so an untouched EMPTY mandatory
-    //   field reads "unchanged" (crud_core.js validateField's update rule) and its `required` check never fires — an
-    //   inline New saves a Sales Order with no Business Partner. Passing `null` for a create (validateField's own
-    //   documented create contract) is a one-line fix and was tried this session: it is CORRECT (iDempiere
-    //   GridTable.getMandatory runs over the whole new row) but rejects every C_OrderLine create on
-    //   m_attributesetinstance_id + pricelist (AD-mandatory, no seed default, CalloutOrder.product absent from the
-    //   callout engine) and every manual M_InOut on c_doctype_id + c_bpartner_location_id — the O2C cycle's stages
-    //   1/6/7 fall. It needs the New-time default/callout coverage iDempiere has BEFORE it can be turned on. Left as
-    //   shipped, deliberately; not a §P1/§P2 change.
-    var save = function () { if (!_inlineDirty()) return; saveForm(verb, e, _inlineBaseline || orig, id); };
+    // §P7 P7.4 (ERP_IDEMPIERE_UX_PARITY.md §P7-SPEC — Witness: W-PARITY-MANDATORY-CREATE) — GAP CLOSED
+    //   2026-09-03. A CREATE now hands validate() `null`, validateField's own documented create contract
+    //   (crud_core.js:126, `orig===undefined` → EVERY field checked), so an untouched EMPTY mandatory field is
+    //   finally required-checked — iDempiere's GridTable.dataSave:1647-1653 → getMandatory:1973-2001 runs over
+    //   the WHOLE new row, not over a user delta. An UPDATE keeps the post-render baseline (only what the user
+    //   actually changed is checked + committed), which is GridField's unchanged-field rule and is unaffected.
+    //   The earlier attempt at this one-liner failed on C_OrderLine/M_InOut only because three faithful New-time
+    //   behaviours were missing; they are now ported, so the reject set is iDempiere's, not ours:
+    //     P7.1 GridField.isMandatory:377-385  — DocumentNo and M_AttributeSetInstance_ID are NEVER window-mandatory
+    //     P7.2 GridField.defaultFromDatatype:1022-1051 — YesNo→'N', numeric→'0' (and '0'/'N' are not empty at :1985)
+    //     P7.3 DisplayType 37 CostPrice is numeric — PriceEntered/PriceActual/PriceList get their 0
+    //   What remains rejectable is what a real iDempiere user must type (C_BPartner_ID, Warehouse, …); the
+    //   validator is NOT weakened anywhere (§P5). §P7-NOT-BUILT names the three stages still absent
+    //   (@token@ DefaultValue, preference defaults, GridTab.dataNew:1179-1181's New-time callout fan).
+    var baselineFor = function (v) { return v === 'create' ? null : (_inlineBaseline || orig); };
+    var save = function () { if (!_inlineDirty()) return; saveForm(verb, e, baselineFor(verb), id); };
     var wire = function (v, fn) { var b = host.querySelector('.ic-vb[data-v="' + v + '"]'); if (b) b.addEventListener('click', fn); };
     wire('save', save);
-    wire('savenew', function () { if (!_inlineDirty()) return; _inlinePendingNew = true; saveForm(verb, e, _inlineBaseline || orig, id); });
+    wire('savenew', function () { if (!_inlineDirty()) return; _inlinePendingNew = true; saveForm(verb, e, baselineFor(verb), id); });
     wire('ignore', function () { ignoreInline(verb); });
     wire('refresh', function () { if (_inlineOpts && typeof _inlineOpts.refresh === 'function') _inlineOpts.refresh(); });
     wire('new', function () { if (_inlineOpts && typeof _inlineOpts.onNew === 'function') _inlineOpts.onNew(); });
@@ -2127,6 +2232,18 @@
                     formEntry: function () { return _formCtx ? _formCtx.e : null; },              // §P1 (W-PARITY-FIELDSET): the open form's (merged) entry — field set + pins, read-only
                     registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
+                    // §P10 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P4-OPEN item 5 — W-DOCNO-BRANCH):
+                    //   READ-ONLY witness seam over the two IsDocNoControlled branches. The only DocNo witness
+                    //   asserted the TABLE-level path against a MOCKED __idmpDb whose oracle was written beside
+                    //   the assertion, so the doctype-controlled branch (34 seeded doctypes ='Y', all 34 with a
+                    //   resolving ACTIVE ad_sequence) was never judged at all. These expose the SHIPPED functions
+                    //   — no reimplementation — so a witness can drive BOTH branches against the real seed.
+                    //   Neither consumes a sequence: _previewDocNo is the non-consuming preview iDempiere shows
+                    //   on a New form; _allocDocNo (the consuming one) is deliberately NOT exposed.
+                    docNoSeam: { docTypeSeqId: function (fields) {
+                                   var m = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
+                                   return m ? _docTypeSeqId(m, fields) : null; },
+                                 previewDocNo: _previewDocNo },
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
