@@ -2294,6 +2294,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // createInvoice archetype (newVerbs=0). AD_PROCESS_FOLD_LANE §P2-leg2 — Witness: W-PROC-INV-LIVE.
     if (window.ERPEngine && typeof window.AdProcess.registerInvoiceGenerate === 'function')
       window.AdProcess.registerInvoiceGenerate(window.ERPEngine);
+    // §CREATEFROM-LIVE — CreateFromInvoice (AD_Process 200143): the P2P line-maker. It ADDS lines to an
+    // EXISTING drafted vendor invoice (so it is NOT a buildDoc archetype), setting the M_InOutLine_ID that
+    // AD_Field locks — the one thing erp_engine.completeInvoice needed to emit M_MatchInv.
+    // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 2026-09-04 — Witness: W-CREATEFROM-INVOICE.
+    if (window.ERPEngine && typeof window.AdProcess.registerCreateFromInvoice === 'function')
+      window.AdProcess.registerCreateFromInvoice(window.ERPEngine);
     _procHandlersInstalled = true;
     console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N') + ' engine=' + (window.ERPEngine ? 'Y' : 'N'));
   }

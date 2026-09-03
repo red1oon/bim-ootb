@@ -386,6 +386,130 @@
     }, { kind: 'process', action: 'GenerateInvoice' });
   }
 
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
+  // §Fix5 (prompts/ERP_P2P_INVOICE_MATCH.md §Fix5.3) — CreateFromInvoice (AD_Process 200143,
+  //   value 'C_Invoice_CreateFromProcess', classname org.compiere.process.CreateFromInvoice, isReport=N,
+  //   mandatory para C_Invoice_ID — all four read from ad_seed.db, not assumed). The P2P line-maker: it ADDS
+  //   lines to an EXISTING drafted vendor invoice, so it is NOT a buildDoc archetype like InvoiceGenerate.
+  //   This is the piece that unblocks M_MatchInv: erp_engine.completeInvoice already emits one M_MatchInv per
+  //   invoice line carrying m_inoutline_id, and crud_overlay.completeFanoutInvoice already runs it live — the
+  //   lane's measured `§INVOICE-FANOUT … lines=1 matchInvOps=0` was a line with no m_inoutline_id, because
+  //   nothing could create one (AD_Field locks M_InOutLine_ID/C_OrderLine_ID IsReadOnly='Y' on AD_Tab 291 —
+  //   a faithful port: in real iDempiere those columns are only ever set by THIS process).
+  // Java home (EXTRACT, do NOT invent):
+  //   CreateFromInvoice.createLines() — per selected row calls
+  //     invoice.createLineFrom(C_OrderLine_ID, M_InOutLine_ID, M_RMALine_ID, M_Product_ID, C_UOM_ID, QtyEntered)
+  //   MInvoice.createLineFrom (MInvoice.java:3262) — new MInvoiceLine, setQty(Qty)/setQtyInvoiced, resolve the
+  //     receipt line, then invoiceLine.setShipLine(inoutLine) ("overwrites", its own comment).
+  //   MInvoiceLine.setShipLine — the entire field-copy rule ported verbatim by shipLineFields() below.
+  //   MInOutLine.sameOrderLineUOM() — C_OrderLine_ID > 0 && oLine.C_UOM_ID == sLine.C_UOM_ID.
+  // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 2026-09-04 — Witness: W-CREATEFROM-INVOICE
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+  // createFromInvoiceGate — the process's own preconditions as a verdict. Every branch names its source.
+  function createFromInvoiceGate(invoice, selection) {
+    // CreateFromInvoice.doIt: `if (p_C_Invoice_ID == 0) throw new AdempiereUserError("@NotFound@ @C_Invoice_ID@")`
+    if (!invoice || invoice.c_invoice_id == null) return { ok: false, missing: 'C_Invoice_ID', message: '@NotFound@ @C_Invoice_ID@' };
+    // Real iDempiere reaches CreateFrom only from a DRAFTED invoice's toolbar (the tab goes read-only once
+    // Processed='Y'); adding lines to a completed invoice would be a screen the product does not have.
+    if (String(invoice.processed || 'N').toUpperCase() === 'Y' || (invoice.docstatus && invoice.docstatus !== 'DR' && invoice.docstatus !== 'IP'))
+      return { ok: false, missing: 'DocStatus', message: 'Invoice is not drafted (CreateFrom is reachable only on a DR/IP invoice)' };
+    // CreateFromInvoice.doIt: `if (getProcessInfo().getAD_InfoWindow_ID() > 0) return createLines(); else throw "@NotSupported@"`
+    // — the Info Window IS the selection. No selection ⇒ the same refusal, never an invented line.
+    if (!selection || !selection.length) return { ok: false, missing: 'selection', message: '@NotSupported@ (no line selection — CreateFrom needs an Info-Window selection)' };
+    return { ok: true };
+  }
+
+  // sameOrderLineUOM — MInOutLine.sameOrderLineUOM() verbatim.
+  function sameOrderLineUOM(sLine, oLine) {
+    if (!sLine || Number(sLine.c_orderline_id || 0) <= 0) return false;
+    if (!oLine) return false;
+    return Number(oLine.c_uom_id || 0) === Number(sLine.c_uom_id || 0);
+  }
+
+  // shipLineFields — MInvoiceLine.setShipLine(sLine) ported field-for-field. `oLine` is the receipt line's
+  // C_OrderLine (null when it has none). Returns {fields, deferred[]} — a branch we cannot port is DECLARED,
+  // never silently skipped (the same law InOutGenerate's non-F/A DeliveryRules follow).
+  function shipLineFields(sLine, oLine, product) {
+    var f = {}, deferred = [];
+    // VERBATIM COPY, including 0. setShipLine calls the plain setters — it does not translate 0 to NULL, and
+    // `x || null` would: W-CREATEFROM-INVOICE caught exactly that on all 10 fixture rows
+    // (m_attributesetinstance_id op=null src=0). 0 and NULL are different values in the AD dictionary.
+    // Only the BRANCH tests below use the Java's own `== 0` semantics.
+    function copy(v) { return v != null ? v : null; }
+    f.m_inoutline_id = sLine.m_inoutline_id;
+    f.c_orderline_id = copy(sLine.c_orderline_id);
+    f.m_rmaline_id   = copy(sLine.m_rmaline_id);
+    f.line           = sLine.line;
+    f.isdescription  = sLine.isdescription || 'N';
+    f.description    = copy(sLine.description);
+    f.m_product_id   = copy(sLine.m_product_id);
+    // setC_UOM_ID: sLine's UOM when sameOrderLineUOM() OR there is no product; else the PRODUCT's UOM.
+    if (sameOrderLineUOM(sLine, oLine) || !Number(f.m_product_id || 0)) f.c_uom_id = sLine.c_uom_id;
+    else if (product && product.c_uom_id != null)          f.c_uom_id = product.c_uom_id;
+    else { f.c_uom_id = sLine.c_uom_id; deferred.push('product-uom-unavailable(cross-UOM: MUOMConversion)'); }
+    f.m_attributesetinstance_id = copy(sLine.m_attributesetinstance_id);
+    if (!Number(f.m_product_id || 0)) f.c_charge_id = copy(sLine.c_charge_id);   // `if (getM_Product_ID() == 0) setC_Charge_ID(...)`
+    if (Number(f.c_orderline_id || 0) !== 0 && oLine) {
+      // PriceEntered = oLine.PriceEntered when sameOrderLineUOM(), else oLine.PriceActual.
+      f.priceentered = sameOrderLineUOM(sLine, oLine) ? oLine.priceentered : oLine.priceactual;
+      f.priceactual  = oLine.priceactual;
+      f.pricelimit   = oLine.pricelimit;
+      f.pricelist    = oLine.pricelist;
+      f.c_tax_id     = oLine.c_tax_id;
+      f.linenetamt   = oLine.linenetamt;
+      f.c_project_id = oLine.c_project_id != null ? oLine.c_project_id : null;
+    } else if (Number(f.m_rmaline_id || 0) !== 0) {
+      deferred.push('rma-line-pricing(MRMALine — the RMA corpus)');     // setRMALine() branch
+    } else {
+      deferred.push('no-order-line(setPrice()/setTax() — the price-list engine)');
+    }
+    return { fields: f, deferred: deferred };
+  }
+
+  // registerCreateFromInvoice(engine) — wire the handler. ctx seams (same shape as the KIND-2 handlers):
+  //   fetchInvoice(info) -> the C_Invoice row · fetchReceiptLines(info) -> the SELECTED M_InOutLine rows
+  //   fetchOrderLine(id) -> a C_OrderLine row  · fetchProduct(id) -> a M_Product row (optional)
+  // info.params.selection (optional) = [{m_inoutline_id, qty}] — a per-row qty override, exactly the
+  // Info-Window's Qty column. Absent ⇒ each receipt line's own qtyentered, carried verbatim (non-invent).
+  function registerCreateFromInvoice(engine) {
+    registerHandler('org.compiere.process.CreateFromInvoice', function (ctx, info) {
+      var invoice = ctx.fetchInvoice ? ctx.fetchInvoice(info) : null;
+      var sLines  = (ctx.fetchReceiptLines ? ctx.fetchReceiptLines(info) : []) || [];
+      var gate = createFromInvoiceGate(invoice, sLines);
+      if (!gate.ok) return { ok: false, reason: 'createfrom-refused', message: gate.message, rows: 0, result: { gate: gate, ops: [] } };
+      var qtyBy = {};
+      ((info && info.params && info.params.selection) || []).forEach(function (sel) {
+        if (sel && sel.m_inoutline_id != null && sel.qty != null) qtyBy[String(sel.m_inoutline_id)] = sel.qty;
+      });
+      var ops = [], deferred = [];
+      sLines.forEach(function (sLine) {
+        var oLine = (Number(sLine.c_orderline_id || 0) !== 0 && ctx.fetchOrderLine) ? ctx.fetchOrderLine(sLine.c_orderline_id) : null;
+        var product = (sLine.m_product_id && ctx.fetchProduct) ? ctx.fetchProduct(sLine.m_product_id) : null;
+        var built = shipLineFields(sLine, oLine, product);
+        built.deferred.forEach(function (d) { if (deferred.indexOf(d) === -1) deferred.push(d); });
+        // createLineFrom: setQty(Qty) → QtyEntered, and QtyInvoiced = Qty unless a UOM conversion applies
+        // (MUOMConversion — named-deferred above, so the two stay equal here rather than being invented).
+        var qty = qtyBy[String(sLine.m_inoutline_id)];
+        if (qty == null) qty = (sLine.qtyentered != null ? sLine.qtyentered : sLine.movementqty);
+        var op = { op_type: 'CREATE_LINE', table: 'C_InvoiceLine', c_invoice_id: invoice.c_invoice_id,
+                   qtyentered: qty, qtyinvoiced: qty };
+        Object.keys(built.fields).forEach(function (k) { op[k] = built.fields[k]; });
+        ops.push(op);
+      });
+      // invoice.updateFrom(order) copies PaymentRule/C_PaymentTerm_ID/SalesRep_ID and the payment SCHEDULE.
+      // The schedule needs MOrderPaySchedule/MInvoicePaySchedule — declared, not silently skipped.
+      deferred.push('updateFrom(order)-payment-schedule(MOrderPaySchedule)');
+      console.log('§CREATEFROM-INVOICE invoice=' + invoice.c_invoice_id + ' selected=' + sLines.length +
+                  ' linesCreated=' + ops.length + ' withInOutLine=' + ops.filter(function (o) { return o.m_inoutline_id != null; }).length +
+                  ' withOrderLine=' + ops.filter(function (o) { return o.c_orderline_id != null; }).length +
+                  ' deferred=' + JSON.stringify(deferred));
+      return { ok: true, rows: ops.length,
+               message: '@Created@ = ' + ops.length,
+               result: { ops: ops, lineCount: ops.length, deferred: deferred } };
+    }, { kind: 'process', action: 'CreateFromInvoice' });
+  }
+
   // registerInOutGenerate(engine) — wire the KIND-2 handler. ctx: fetchOrder(info)->C_Order row,
   //   fetchOrderLines(info)->C_OrderLine rows, onHandOf(productId)->on-hand qty in the order's warehouse.
   function registerInOutGenerate(engine) {
@@ -627,6 +751,8 @@
     genShipmentLines: genShipmentLines, SHIPMENT_SPEC: SHIPMENT_SPEC,
     registerInvoiceGenerate: registerInvoiceGenerate, invoiceGenGate: invoiceGenGate,
     genInvoiceLines: genInvoiceLines, INVOICE_SPEC: INVOICE_SPEC,
+    registerCreateFromInvoice: registerCreateFromInvoice, createFromInvoiceGate: createFromInvoiceGate,
+    shipLineFields: shipLineFields, sameOrderLineUOM: sameOrderLineUOM,
     readProcess: readProcess, resolveClassname: resolveClassname,
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
