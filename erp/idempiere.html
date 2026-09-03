@@ -3107,8 +3107,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   and the same map crud_overlay's _valRuleCtx reads for a detail tab's @token@ val rules (APP._winCtx).
     ctx.win = _winCtxFor(tab);
     try { window.APP = window.APP || {}; window.APP._winCtx = ctx.win; } catch (eW) {}
+    // §P8 P8.2 (ERP_IDEMPIERE_UX_PARITY.md §P8-SPEC — W-PARITY-REFTABLE): an FK of DisplayType 18/30 takes its
+    //   target table + key column + WhereClause from AD_Ref_Table (MLookupFactory.getLookup_Table), not from the
+    //   `<col minus _id>` TableDIR convention. Same injection shape as refList; the fold stays pure.
+    var refTable = function (id) {
+      try { return (window.ADParser && window.ADParser.resolveRefTable && db) ? window.ADParser.resolveRefTable(db, id) : null; }
+      catch (eRT) { return null; }
+    };
     var spec = window.__crud.core.foldCrudSpec(tab.fields, {
-      key: tn, title: tab.name || tn, isView: _tableIsView(tn), isReadOnly: !!tab.isReadOnly, forVerb: forVerb || 'update', ctx: ctx, refList: refList });
+      key: tn, title: tab.name || tn, isView: _tableIsView(tn), isReadOnly: !!tab.isReadOnly, forVerb: forVerb || 'update', ctx: ctx, refList: refList, refTable: refTable });
     window.__crud.registerFolded(tn, spec);
     console.log('§S2B-FOLD table=' + tn + ' verb=' + (forVerb || 'update') + ' verbs=[' + (spec.verbs || []).join(',') + '] fields=' + (spec.fields || []).length + ' isView=' + spec.isView + ' tabRO=' + !!tab.isReadOnly);
     return spec;

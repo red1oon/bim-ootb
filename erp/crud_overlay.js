@@ -592,6 +592,27 @@
     });
     return ctx;
   }
+  // §P8 P8.5 — _valRuleListFilter: apply a column's AD_Val_Rule to its AD_Ref_List option set. iDempiere runs
+  //   the SAME ValidationCode against the AD_Ref_List query (MLookupFactory.getLookup_List), so the clause is
+  //   evaluated by the SAME shipped engine over ad_ref_list scoped to this reference — not a second evaluator,
+  //   and not a hand-rolled string match. Returns { verdict, admitted:{value:1} } or a named degrade.
+  function _valRuleListFilter(db, f) {
+    var VR = global.AdValRule;
+    if (!VR || f.valruleid == null || f.refListId == null) return { verdict: 'no-engine', admitted: null };
+    var b3 = _mvB3(db), row = null;
+    try { row = b3.prepare('SELECT ad_val_rule_id,name,type,code FROM ad_val_rule WHERE ad_val_rule_id=?').get(Number(f.valruleid)); } catch (e0) {}
+    if (!row || row.code == null) return { verdict: 'no-rule-row', admitted: null };
+    var res;
+    try { res = VR.evalValRule(b3, Number(f.valruleid), { ctx: _valRuleCtx(row.code, f._entry || { fields: [] }, null), table: 'ad_ref_list' }); }
+    catch (e1) { return { verdict: 'engine-error:' + String((e1 && e1.message) || e1).slice(0, 50), admitted: null }; }
+    if (!res || !res.ok) return { verdict: (res && res.deferred) || 'deferred', admitted: null };
+    try {
+      var q = b3.prepare('SELECT value FROM ad_ref_list WHERE ad_reference_id=? AND UPPER(isactive)=\'Y\' AND (' + res.sql + ')')
+                .all(Number(f.refListId));
+      var am = {}; (q || []).forEach(function (r) { am[String(r.value)] = 1; });
+      return { verdict: 'applied', admitted: am, sql: res.sql };
+    } catch (e2) { return { verdict: 'where-failed:' + String((e2 && e2.message) || e2).slice(0, 50), admitted: null }; }
+  }
   // _valRuleFilter — run the SHIPPED interpreter through the SAME better-sqlite3 shim the beforeSave hooks
   // use (_mvB3), so the witnessed engine executes verbatim in the browser and there is no second evaluator.
   function _valRuleFilter(db, f, e, rec) {
@@ -624,6 +645,33 @@
         // mandatory OR has no value yet (MLookup adds "" for non-mandatory; an empty mandatory field must read
         // '' so the validator reports `required` instead of silently persisting the first option).
         var opts = f.optionList || (STORE && STORE.__meta && STORE.__meta[f.ref]) || {}; var cur = el.getAttribute('data-cur') || '';
+        // §P8 P8.5 (ERP_IDEMPIERE_UX_PARITY.md §P8-SPEC — W-PARITY-REFTABLE): a LIST can carry an AD_Val_Rule
+        // too, and iDempiere appends it to the AD_Ref_List query exactly as it does for a table lookup
+        // (MLookupFactory.getLookup_List: the rule's Code IS the lookup's ValidationCode). Measured: `trxtype`
+        // on tab 330 (ref 17, AD_Val_Rule 200012 `AD_Ref_List.Value NOT IN ('A','F')`) is the one val-ruled
+        // list on the five document tabs, and it BITES 6 options → 4. Filtered through the SAME shipped engine
+        // (ad_valrule.js over the AD_Ref_List rows) — no second evaluator. A clause the engine cannot apply
+        // DEGRADES to the unfiltered set and says so, never silently narrows.
+        var listVr = null;
+        if (f.valruleid != null && Array.isArray(f.optionList) && f.optionList.length && typeof withBundle === 'function') {
+          withBundle(function (ldb) {
+            if (!ldb) return;
+            listVr = _valRuleListFilter(ldb, f);
+            if (listVr && listVr.verdict === 'applied') {
+              var keepSet = listVr.admitted;
+              var kept = f.optionList.filter(function (o) { return Object.prototype.hasOwnProperty.call(keepSet, String(o.value)); });
+              if (kept.length) {
+                opts = {}; kept.forEach(function (o) { opts[o.value] = o.name; });
+                // P8.6 — validateField reads the SAME map the picker was built from, so the OFFERED set and
+                // the ACCEPTED set are one set by construction (the §P3.6 invariant, extended to lists).
+                f.options = opts;
+              }
+            }
+          });
+          console.log('§REFLIST-VALRULE col=' + f.col + ' vr=' + f.valruleid +
+                      ' before=' + f.optionList.length + ' after=' + Object.keys(opts).length +
+                      ' verdict=' + (listVr ? listVr.verdict : 'no-engine'));
+        }
         var lo = CORE.listOptions(opts, cur);
         var blank = (!f.required || cur === '') ? '<option value=""' + (cur === '' ? ' selected' : '') + '></option>' : '';
         el.innerHTML = blank + lo.map(function (o) { return '<option value="' + esc(o.value) + '"' + (o.selected ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('');
@@ -644,7 +692,7 @@
           if (keep === '' || keep == null) return;
           withBundle(function (db) {
             try {
-              var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+              var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
               var res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' WHERE ' + pk + '=' + Number(keep));
               var label = (res.length && res[0].values.length) ? (res[0].values[0][1] + ' (' + res[0].values[0][0] + ')') : keep;
               el.innerHTML = '<option value="' + esc(keep) + '" selected>' + esc(label) + '</option>';
@@ -654,14 +702,40 @@
         }
         withBundle(function (db) {
           try {
-            var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+            // §P8 P8.4 (W-PARITY-REFTABLE): the pk is the AD_Ref_Table AD_Key when there is one
+            // (MLookupFactory.getLookup_Table), else the TableDIR convention.
+            var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
             // ── §P3 (§P3-SPEC P3.4 — W-PARITY-VALRULE): narrow the candidate set to exactly the rows this
             // column's AD_Val_Rule admits. MLookupFactory.java:122-125 — the rule's Code IS the lookup's
             // ValidationCode, appended to the lookup query; that is all this does.
             var vr = _valRuleFilter(db, f, e, rec), where = '', noRows = false, before = null, admitted = null;
+            // §P8 P8.4 — AD_Ref_Table.WhereClause is a SECOND narrowing iDempiere appends to the lookup query,
+            // independent of AD_Val_Rule (ref 190 → AD_User restricted to IsSalesRep='Y' partners; ref 138 →
+            // non-summary active partners; ref 130 → AD_Org <> 0). Substituted through the SAME engine as the
+            // val rule (AdValRule.substitute — ONE owner, no second substituter); an unresolved @token@ empties
+            // the clause exactly as Env.java:1641-1645 + MLookup.java:1128-1140 say, and we then decline to
+            // apply it rather than invent a narrowing.
+            var refWhere = null, refWhereState = 'none';
+            if (f.refwhere) {
+              refWhereState = 'unresolved';
+              try {
+                var VRe = global.AdValRule;
+                if (VRe && typeof VRe.substitute === 'function') {
+                  var sub = VRe.substitute(String(f.refwhere), _valRuleCtx(String(f.refwhere), e, rec));
+                  var subSql = (sub && sub.sql != null) ? sub.sql : (typeof sub === 'string' ? sub : null);
+                  var unresolved = sub && sub.unresolved && sub.unresolved.length;
+                  if (subSql && String(subSql).trim() !== '' && !unresolved) { refWhere = subSql; refWhereState = 'applied'; }
+                } else if (String(f.refwhere).indexOf('@') < 0) { refWhere = String(f.refwhere); refWhereState = 'applied'; }
+              } catch (eRw) { refWhereState = 'error'; }
+              if (!refWhere && String(f.refwhere).indexOf('@') < 0) { refWhere = String(f.refwhere); refWhereState = 'applied'; }
+            }
+            var andRef = function (clause) {
+              if (!refWhere) return clause;
+              return clause ? '(' + clause + ') AND (' + refWhere + ')' : refWhere;
+            };
             if (vr) {
               try { var bq = db.exec('SELECT COUNT(*) FROM ' + t); before = bq.length ? bq[0].values[0][0] : null; } catch (eb) {}
-              if (vr.verdict === 'applied') where = ' WHERE (' + vr.sql + ')';
+              if (vr.verdict === 'applied') where = ' WHERE (' + andRef(vr.sql) + ')';
               // E3 — an unresolved @token@ CLEARS the lookup (MLookup.java:1128-1140, "Loader NOT Validated").
               // iDempiere shows NO rows here; it does not silently show all of them. Matching that IS the item.
               else if (vr.verdict === 'unresolved-tokens') noRows = true;
@@ -669,6 +743,7 @@
               // limit, not iDempiere's verdict — degrade to the UNFILTERED picker and say so in the log, rather
               // than hiding rows iDempiere does show. Named, never silent.
             }
+            if (!vr && refWhere) where = ' WHERE (' + refWhere + ')';
             var res = [];
             if (!noRows) {
               try { res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + where + ' ORDER BY ' + pk + ' LIMIT 200'); }
@@ -682,7 +757,7 @@
             // ACCEPTED set are one set by construction and cannot drift apart.
             if (vr && vr.verdict === 'applied') {
               try {
-                var ar = db.exec('SELECT ' + pk + ' FROM ' + t + ' WHERE (' + vr.sql + ')'), am = {};
+                var ar = db.exec('SELECT ' + pk + ' FROM ' + t + ' WHERE (' + andRef(vr.sql) + ')'), am = {};
                 if (ar.length) ar[0].values.forEach(function (r) { am[String(r[0])] = 1; });
                 admitted = am;
               } catch (ea) {}
@@ -698,6 +773,8 @@
             var hasKeep = !kEmpty && rows.some(function (r) { return String(r[0]) === String(keep); });
             var blankSel = (kEmpty || !hasKeep);
             var blankFk = (!f.required || blankSel) ? '<option value=""' + (blankSel ? ' selected' : '') + '></option>' : '';
+            if (f.refsource) console.log('§REFTABLE col=' + f.col + ' src=' + f.refsource + ' table=' + t + ' key=' + pk +
+              ' refWhere=' + refWhereState + ' rows=' + (res.length ? res[0].values.length : 0));
             if (vr) console.log('§VALRULE col=' + f.col + ' vr=' + vr.id + ' rule="' + (vr.name || '') + '" table=' + t +
               ' before=' + before + ' after=' + (admitted ? Object.keys(admitted).length : (noRows ? 0 : before)) +
               ' offered=' + rows.length + ' verdict=' + vr.verdict +

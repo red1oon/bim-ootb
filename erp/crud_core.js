@@ -764,7 +764,7 @@
     opts = opts || {};
     var roTable = !!opts.isView || !!opts.isReadOnly;     // AD_Table.IsView or AD_Tab.IsReadOnly → the whole row is read-only
     var forVerb = opts.forVerb || 'update';
-    var exemptLog = [], dtLog = [], exprLog = [], unresolvedLog = [];   // §P7 — witness seams, emitted once per fold
+    var exemptLog = [], dtLog = [], exprLog = [], unresolvedLog = [], refTblLog = [];   // §P7/§P8 — witness seams, emitted once per fold
     var fields = (adFields || []).map(function (f) {
       // type from the AUTHORITATIVE AD_Reference_ID; fall back to the coarse referenceType string.
       var type = (f && f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f && f.referenceType);
@@ -829,7 +829,24 @@
         var dtd = gridFieldDatatypeDefault(f.columnName, f.referenceId, type);
         if (dtd != null) { spec.default = dtd; spec.defaultsource = 'datatype'; dtLog.push(spec.col + '=' + dtd); }
       }
-      if (type === 'fk') spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
+      if (type === 'fk') {
+        // §P8 P8.2 (ERP_IDEMPIERE_UX_PARITY.md §P8-SPEC — Witness: W-PARITY-REFTABLE): `<col minus _id>` is
+        // iDempiere's TableDIR rule (DisplayType 19, MLookupFactory.getLookup_TableDir) and it is WRONG for
+        // DisplayType 18 (Table) / 30 (Search), whose target is DECLARED in AD_Ref_Table
+        // (getLookup_Table: TableName + AD_Key + AD_Display + WhereClause + OrderByClause). The fold stays
+        // PURE — the host injects opts.refTable(refValueId), exactly as §P2.7 injects opts.refList.
+        // No AD_Ref_Table row (or no resolver) → keep the convention verbatim, unchanged behaviour.
+        spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
+        var rt = (typeof opts.refTable === 'function' && f.referenceValueId != null) ? opts.refTable(f.referenceValueId) : null;
+        if (rt && rt.tableName) {
+          spec.ref = String(rt.tableName).toLowerCase();
+          if (rt.keyCol) spec.refkey = String(rt.keyCol).toLowerCase();
+          if (rt.whereClause) spec.refwhere = rt.whereClause;
+          if (rt.orderByClause) spec.reforder = rt.orderByClause;
+          spec.refsource = 'AD_Ref_Table:' + f.referenceValueId;
+          refTblLog.push(spec.col + '→' + spec.ref + (rt.whereClause ? '+where' : ''));
+        }
+      }
       // §P3 (ERP_IDEMPIERE_UX_PARITY.md §P3-SPEC P3.3 — Witness: W-PARITY-VALRULE): carry the lookup's
       // AD_Val_Rule id so the picker can filter to the rows the rule admits (MLookupFactory.java:122-125 —
       // the rule's Code IS the lookup's ValidationCode). The fold stays PURE: no db, no engine call here;
@@ -863,6 +880,8 @@
                   '] (GridField.defaultFromDatatype:1022-1051)');
       console.log('§GRIDFIELD-EXPR-DEFAULT key=' + (opts.key || '?') + ' resolved=' + exprLog.length + ' [' + exprLog.join(' · ') +
                   '] unresolved=' + unresolvedLog.length + ' [' + unresolvedLog.join(' · ') + '] (GridField.defaultFromExpression:875-913)');
+      console.log('§REFTABLE-FOLD key=' + (opts.key || '?') + ' resolved=' + refTblLog.length + ' [' + refTblLog.join(',') +
+                  '] (MLookupFactory.getLookup_Table — DisplayType 18/30 targets that <col minus _id> gets wrong)');
     }
     return { key: opts.key, title: opts.title || opts.key, folded: true, isView: !!opts.isView,
              verbs: roTable ? [] : ['create', 'update', 'delete'], fields: fields };
@@ -895,9 +914,17 @@
         // this, a lookup that is BOTH curated and val-ruled kept the unfiltered picker: measured 2026-09-02,
         // c_order.C_BPartner_ID (curated, rule 230) offered all 113 partners instead of the 42 iDempiere
         // admits, while the same rule bit correctly on every non-curated column.
-        ['displaylogic', 'readonlylogic', 'mandatorylogic', 'valruleid'].forEach(function (lk) {
+        // §P8 P8.3: `refkey`/`refwhere`/`reforder`/`refsource` join the layered list — purely ADDITIVE (no
+        // curated field has ever carried one), so §IMPL F3's deliberately-pinned attributes are untouched.
+        // `ref` itself is layered ONLY when the AD resolved a target from AD_Ref_Table AND the curated ref
+        // does not name a real table under the convention — bill_bpartner_id IS a curated pin on c_order AND
+        // one of the 18, so without this the fix would miss the very column §MEASURED lists. This is the
+        // §P3-RESULT-DEFECT-2 lesson (a curated pin swallowed the rule) applied in advance rather than after.
+        ['displaylogic', 'readonlylogic', 'mandatorylogic', 'valruleid',
+         'refkey', 'refwhere', 'reforder', 'refsource'].forEach(function (lk) {
           if ((o[lk] == null || String(o[lk]).trim() === '') && ad[lk] != null && String(ad[lk]).trim() !== '') o[lk] = ad[lk];
         });
+        if (ad.refsource && ad.ref && o.type === 'fk' && String(o.ref || '') !== String(ad.ref)) o.ref = ad.ref;
         if (o.seq == null && ad.seq != null) o.seq = ad.seq;
       }
       return o;
