@@ -201,6 +201,20 @@
   var _lastBudgetT = 0;            // periodic-tick throttle clock (150ms — see _tick)
   var _passPromoteSq = 0, _passDemoteSq = 0; // effective thresholds, frozen per-pass (see _evalChunk)
   var _passBoostVal = 0;           // the boost value the CURRENTLY-COMPLETING pass was frozen at
+  // §R15 (2026-09-03, CPE_4D_PERF_MEM_STUDY.md §R15) — closed-loop freshness bookkeeping. The
+  // budget controller's INPUT (_stats.activeElig) is published once per completed scan pass; its
+  // CLOCK is a fixed 150ms tick. A pass is ceil(n/EVAL_CHUNK) chunk-ticks = one rAF frame each,
+  // so on a 122k building the feedback period is 8 frames — 24ms at 330fps (loop closed) but
+  // 154ms at 52fps (LONGER than the control period, loop effectively open). _passSeq counts
+  // completed passes so the controller can tell "I have a new measurement" from "I am about to
+  // integrate the same number twice".
+  var _passSeq = 0;                // monotonic completed-pass counter (published to _stats.passSeq)
+  var _ctlSeq = -1;                // _passSeq value the controller last acted on
+  var _eligBoost = 0;              // the boost the CURRENTLY-PUBLISHED activeElig was measured under
+  // §R15 rule 2 (conditional integration / anti-windup) — the previous (boost, activeElig) PAIR the
+  // controller acted on, so the loop can measure its own plant gain instead of assuming one.
+  var _ctlPrevBoost = null, _ctlPrevElig = 0;
+  var _ctlUpBlocked = false;       // last UP step demonstrably bought nothing ⇒ stop charging
   // §ROOM_OCCL state (§13) — live by default since §19; inert only if roomOcclEnabled is set false
   var _roomIdx = null, _roomIdxBld = null, _roomIdxTriedT = 0, _roomStampRef = null;
   var _roomCur = null, _roomPend, _roomPendN = 0, _roomActive = false, _roomEvals = 0;
@@ -292,7 +306,18 @@
     // behaviour worth keeping a lever for — the flag exists so the A/B can measure its contribution.
     occlStructSelfExclude: true, occlStructSelfExcluded: 0,
     occlStructBiasM: OCCL_STRUCT_BIAS_M, occlStructThinM: OCCL_STRUCT_THIN_M,
-    occlStructThinBiasM: OCCL_STRUCT_THIN_BIAS_M, occlStructThinSubjects: 0 };
+    occlStructThinBiasM: OCCL_STRUCT_THIN_BIAS_M, occlStructThinSubjects: 0,
+    // §R15 controller-health counters — see _passSeq above. budgetTicks = control periods that
+    // reached _budgetControl(); budgetStaleTicks = those where NO scan pass had completed since
+    // the previous control action (an open-loop step); budgetWindupTicks = those where the boost
+    // was already saturated at MAX_BOOST and the measurement still said "below LOW", i.e. steps
+    // that bought nothing and only had to be unwound later. All three are pure bookkeeping.
+    passSeq: 0, budgetTicks: 0, budgetStaleTicks: 0, budgetWindupTicks: 0, budgetUpBlocked: false,
+    // §R15 rules 1 and 2, each independently live-flippable (console/witness only, both
+    // default TRUE = the fixed controller). Setting BOTH false restores the pre-§R15
+    // integrator byte-for-byte, which is how witness/w_budget_converge.js gets its
+    // before/after and its red control out of a SINGLE page load.
+    budgetFreshGate: true, budgetAntiWindup: true };
   window.__dlodNav = _stats;
 
   // §20 — effective boost this pass: forceBoost (witness pin) wins outright; otherwise the
@@ -319,10 +344,33 @@
   function _budgetControl() {
     if (_stats.forceBoost !== null && _stats.forceBoost !== undefined) { _stats.budgetBoost = _stats.forceBoost; return _stats.forceBoost; }
     if (_stats.budgetBoostEnabled !== true) { _budgetBoost = 0; _stats.budgetBoost = 0; return 0; }
-    if (_stats.activeElig < BUDGET_LOW) _budgetBoost = Math.min(MAX_BOOST, _budgetBoost + BUDGET_STEP);
-    else if (_stats.activeElig > BUDGET_HIGH) _budgetBoost = Math.max(0, _budgetBoost - BUDGET_STEP);
+    var elig = _stats.activeElig;
+    // §R15 rule 2 — CONDITIONAL INTEGRATION (anti-windup). Measured defect (CPE_4D_PERF_MEM_STUDY.md
+    // §R15.2): a fly tour begins and ends OUTSIDE the building, where activeElig is legitimately 0
+    // no matter how wide the distance threshold is opened. The unguarded integrator charged all the
+    // way to MAX_BOOST against that dead input, and the instant the tour dived back inside, promote
+    // was 38+60=98m and a huge slice of the model became eligible at once (the user's own
+    // §DLOD_NAV started=21638 — read precisely: _logAccStarted ACCUMULATES fade-starts between the
+    // 2s-throttled log lines, so that is 21,638 transitions over >=2s, not one tick) — a burst of
+    // fades and full instanceMatrix re-uploads that the integrator then had to spend 30 further
+    // steps unwinding at BUDGET_STEP=2m each. Classic actuator windup.
+    // The guard is a MEASUREMENT, not a constant: pair the published activeElig with the boost it
+    // was actually measured under (_eligBoost), and if the last UP step raised the boost without
+    // raising eligibility, the actuator is not authoritative in this regime — stop charging.
+    // Released the moment the measurement re-enters (or exceeds) the working band, so a legitimately
+    // useful ramp is only ever delayed by one pass, never prevented.
+    // The lever exists so the witness can run BOTH controllers in one page load, at one pose
+    // sequence, on one GPU — the before/after is a same-session A/B, not a cross-run comparison.
+    if (_stats.budgetAntiWindup === false) _ctlUpBlocked = false;
+    else if (_ctlPrevBoost !== null && _eligBoost > _ctlPrevBoost && elig <= _ctlPrevElig) _ctlUpBlocked = true;
+    if (elig >= BUDGET_LOW) _ctlUpBlocked = false;
+    _ctlPrevBoost = _eligBoost; _ctlPrevElig = elig;
+    if (elig < BUDGET_LOW) {
+      if (!_ctlUpBlocked) _budgetBoost = Math.min(MAX_BOOST, _budgetBoost + BUDGET_STEP);
+    } else if (elig > BUDGET_HIGH) _budgetBoost = Math.max(0, _budgetBoost - BUDGET_STEP);
     // between watermarks: hold steady, no assignment — this dead band IS the hysteresis
     _stats.budgetBoost = _budgetBoost;
+    _stats.budgetUpBlocked = _ctlUpBlocked;
     return _budgetBoost;
   }
 
@@ -589,7 +637,20 @@
     if (!window.RoomWalker || !window.RoomWalker.buildCameraRoomIndex || !app.db || !app.dbQuery || !_boxIndex) return false;
     var t0 = performance.now(), idx;
     try { idx = window.RoomWalker.buildCameraRoomIndex(app.db); }
-    catch (e) { console.log('§ROOM_OCCL_INDEX_ERR ' + e.message); return false; }
+    // §R15 (2026-09-03): "rooms not compiled yet" reaches here in TWO shapes, not one — an empty
+    // index (below) OR a SQLite schema error, because writeRooms() ALTERs center_x/size_x in when
+    // it first stamps rooms, so a query issued before that stamp raises `no such column: r.center_x`
+    // rather than returning zero rows. Both are the same benign pre-stamp state on the same retry
+    // path; only the second was printing an exception (~5 lines per load, self-healing once
+    // §ROOM_OCCL_INDEX succeeds). Route it to the existing retry message. Any OTHER exception is
+    // still surfaced as an ERR — this narrows the noise, it does not swallow real failures.
+    catch (e) {
+      if (/no such (column|table)/i.test(e.message || '')) {
+        console.log('§ROOM_OCCL_INDEX rects=0 (rooms not compiled yet — will retry) schema=' + e.message);
+        return false;
+      }
+      console.log('§ROOM_OCCL_INDEX_ERR ' + e.message); return false;
+    }
     if (!idx || !idx.rects) { console.log('§ROOM_OCCL_INDEX rects=0 (rooms not compiled yet — will retry)'); return false; }
     // Stamp each element's LOGICAL contained room from rel_contained_in_space (compiled RM_ rows
     // only — the same domain roomAt() resolves into). Elements with no row keep room=undefined and
@@ -1726,6 +1787,11 @@
     _logAccStarted += started;
     if (_evalCursor >= _guidArr.length) { // pass complete — publish partition, rearm on next pose change
       _stats.active = _passReal; _stats.boxed = _passBoxed; _stats.activeElig = _passEligible;
+      // §R15: a NEW measurement is now available, and it is honestly PAIRED with the boost the
+      // completing pass was frozen at (_passBoostVal) — not with whatever the boost happens to be
+      // by the time the controller reads it. The pairing is what makes the gain test below a
+      // measurement rather than a guess.
+      _passSeq++; _stats.passSeq = _passSeq; _eligBoost = _passBoostVal;
       _passReal = 0; _passBoxed = 0; _passEligible = 0;
       _evalCursor = 0;
       // §20: if the boost moved on (periodic tick fired) WHILE this pass was still mid-flight —
@@ -1835,6 +1901,9 @@
       // §20: fresh engage starts the boost ramp at 0 (never carries a stale value across a
       // disengage/re-engage cycle — same discipline as _lastCamSig reset above).
       _budgetBoost = 0; _stats.budgetBoost = 0; _appliedBoost = 0; _lastBudgetT = 0;
+      // §R15: the controller's own loop state resets with it — a stale (boost, elig) pair or a
+      // latched up-block from a previous engagement must never survive into a new one.
+      _ctlPrevBoost = null; _ctlPrevElig = 0; _ctlUpBlocked = false; _ctlSeq = -1; _eligBoost = 0;
       console.log('§DLOD_NAV_ENGAGE bld=' + app.activeBuilding + ' elements=' + app.activeBuildingTotal);
     }
     // §ROOM_OCCL (§13): evaluated only when the console lever is on; the else-branch is a pure
@@ -1867,11 +1936,33 @@
       if (nowB - _lastBudgetT >= 150) {
         _lastBudgetT = nowB;
         if ((_stats.active + _stats.boxed) > 0) {
+          // §R15 PROBE (no behaviour change in this commit): classify this control period before
+          // acting on it. stale = no scan pass has completed since the last control action, so
+          // _stats.activeElig is the SAME number the previous step already integrated. windup =
+          // the actuator is already saturated and the measurement still asks for more.
+          _stats.budgetTicks++;
+          if (_budgetBoost >= MAX_BOOST && _stats.activeElig < BUDGET_LOW) _stats.budgetWindupTicks++;
+          // §R15 rule 1 — FRESHNESS. The controller's INPUT is published once per completed scan
+          // pass; its CLOCK is this fixed 150ms tick. A pass is ceil(n/EVAL_CHUNK) chunk-ticks, one
+          // per rAF frame — 8 frames on a 122k building, which is 24ms at 330fps (loop closed) but
+          // 154ms at 52fps (LONGER than the control period, loop effectively OPEN). Integrating the
+          // same unrefreshed activeElig twice is an open-loop step, and it is self-reinforcing: more
+          // flips ⇒ slower frames ⇒ staler feedback ⇒ larger excursion. Act once per MEASUREMENT
+          // instead of once per millisecond budget. This is a condition, not a tuned constant, and
+          // it scales with the building for free (the pass length is a function of element count).
+          // No deadlock: a boost change re-arms a scan (below), whose completion supplies the next
+          // measurement; a CONVERGED boost stops producing passes and the loop correctly idles.
+          if (_passSeq === _ctlSeq && _stats.budgetFreshGate !== false) { _stats.budgetStaleTicks++; }
+          else {
+          if (_passSeq === _ctlSeq) _stats.budgetStaleTicks++;
+          _ctlSeq = _passSeq;
           var newBoost = _budgetControl();
           if (newBoost !== _appliedBoost) {
             _appliedBoost = newBoost;
             _scanPending = true; // partition must be recomputed under the new effective distance
-            console.log('§DLOD_NAV_BUDGET boost=' + newBoost + ' active=' + _stats.active + ' boxed=' + _stats.boxed);
+            console.log('§DLOD_NAV_BUDGET boost=' + newBoost + ' active=' + _stats.active + ' boxed=' + _stats.boxed +
+              ' elig=' + _stats.activeElig + ' upBlocked=' + (_ctlUpBlocked ? 1 : 0) + ' pass=' + _passSeq);
+          }
           }
         }
       }
