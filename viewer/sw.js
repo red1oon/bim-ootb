@@ -31,7 +31,13 @@
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1132';   // bump on each deploy; per-change detail is the git commit message.
+// v1133 (2026-09-03) §STOREY_DATUM_FRAME: schedule_author.js + time_machine.js changed — the declared
+// storey ladder is now chosen by VERTICAL FRAME (its span must contain the element base-Z median),
+// not by which column is non-empty; on Hospital_meta.db the 56 local-frame elevation rows had won
+// over the 7 world-frame center_z rows and collapsed the building to ONE band (7 tasks, 509 d vs
+// 8 bands / 42 tasks / 318 d). Both files are in PRECACHE_ASSETS, so an installed service worker
+// keeps serving the collapse without this bump. Paired with _GANTT_CACHE_VERSION 38→39.
+const CACHE_VERSION = 'v1133';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

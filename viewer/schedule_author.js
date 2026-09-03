@@ -324,6 +324,118 @@
   // assignStoreyByZ) — ported verbatim, same reasoning: an element with no real storey containment
   // (a literal "Unknown" IFC storey label — 69.9% of Terminal) is reassigned to the nearest REAL
   // storey by median center-Z, deterministic, nothing invented.
+
+  // ══ §STOREY_DATUM_FRAME (2026-09-03, bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.6) ═════════
+  // A DECLARED STOREY DATUM SHIPS IN TWO COLUMN SHAPES, AND THEY CAN BE IN TWO VERTICAL FRAMES.
+  //   `elevation` — IfcBuildingStorey.Elevation (extract.py §STOREY_DATUM, buildings/patches/*.sql)
+  //   `center_z`  — the COMPILED placement point (STC_* rows, size_z NULL/0 ⇒ center_z IS the datum)
+  // #1551 chose between them by EMPTINESS ("elevation rows if any, else center_z"). That is a
+  // statement about the schema, not about the frame. MEASURED 2026-09-03 on the DB the viewer
+  // actually loads (Hospital_meta.db — the split pair streaming.js §DB_SPLIT_DETECT serves; NOT
+  // Hospital_extracted.db, which has no spatial_structure at all and is why #1551's own check read
+  // "no declared storeys ⇒ byte-identical"): 63 IfcBuildingStorey rows in TWO frames —
+  //   56 federated source rows    elevation 0.0 … 34.0 m     (a LOCAL per-file frame)
+  //    7 COMPILED STC_Level_*     center_z  168.7 … 201.4 m  (the model's WORLD frame)
+  // and every element base-Z is 156.6 … 202.8 m. The elevation rows won by emptiness, every element
+  // sat above the top datum, all 63,182 landed in the last band: bandsUsed=1, 7 tasks, 509 days
+  // (was 8 bands / 42 tasks / 318 days). The film did not change length, so calendar-per-second
+  // went +60% — the user's "the bake is too fast paced". The user's own Hospital_silent.db: same.
+  //
+  // THE RULE: a datum set must be in the same vertical frame as the geometry it bands, and that is
+  // CHECKABLE. Both candidates are read, each is tested against the element base-Z distribution,
+  // and the first IN-FRAME one wins — elevation before center_z, so the IFC's own declaration keeps
+  // priority and every building where both are in frame is BYTE-IDENTICAL to #1551 (Terminal,
+  // Clinic, Duplex, HHS: proven per building by witness_storey_datum_frame.js). THE TEST: the
+  // ladder's span [d_0, d_last] must contain the element base-Z MEDIAN. The median is used because
+  // it is the one location statistic that needs no tolerance constant and that a stray element
+  // cannot fake (an interval-overlap test on min/max is defeated by ONE outlier). A ladder that
+  // fails is not this geometry's frame: it is REJECTED and the §-line says so. If no candidate is
+  // in frame the declared path is REFUSED and the old label inference runs — DEGRADE, DON'T
+  // DISABLE — with the reason named. These verbs are exported so the witness judges the SAME
+  // choice on the SAME inputs, never a re-derivation.
+  function _storeyDatumCandidates(db) {
+    function q(sql) {
+      var out = [];
+      try {
+        var res = db.exec(sql);
+        if (res && res.length) res[0].values.forEach(function (v) {
+          var z = Number(v[1]);
+          if (v[0] != null && isFinite(z)) out.push({ name: String(v[0]), z: z });
+        });
+      } catch (e) { /* column or table absent → an EMPTY candidate, never a throw */ }
+      return out;
+    }
+    return [
+      { source: 'elevation', rows: q("SELECT name, elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL") },
+      { source: 'center_z',  rows: q("SELECT name, center_z FROM spatial_structure WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL") }
+    ];
+  }
+  // Sort by datum; two storeys at the same datum are one floor under two names — keep the first,
+  // deterministically. Unchanged from #1551.
+  function _storeyLadder(rows) {
+    var s = rows.slice().sort(function (a, b) { return a.z - b.z || (a.name < b.name ? -1 : 1); });
+    var out = [];
+    for (var i = 0; i < s.length; i++) {
+      if (out.length && Math.abs(s[i].z - out[out.length - 1].z) < 1e-6) continue;
+      out.push(s[i]);
+    }
+    return out;
+  }
+  // Band index of base-Z `bz` on `ladder`. Everything below the lowest datum is band 0
+  // (foundations are the ground floor's groundworks, not a level of their own).
+  function _ladderBandIndex(ladder, bz) {
+    var k = 0;
+    for (var i = 0; i < ladder.length; i++) if (bz >= ladder[i].z - 1e-9) k = i;
+    return k;
+  }
+  // THE FRAME TEST. `cands` in preference order (from _storeyDatumCandidates), `ezs` = element
+  // base-Z with the §4D_NOGEO population already excluded. Pure; no DB, no console.
+  // Returns { mode:'DECLARED'|'INFERRED', source, ladder, lo, hi, rungsUsed, reason, legacySource,
+  //           ez:{n,min,median,max}, candidates:[{source,rows,datums,lo,hi,verdict,rungsUsed,below,above}] }
+  // `rungsUsed` counts populated ladder RUNGS (distinct datums); the §STOREY_DATUM `bandsUsed` counts
+  // distinct NAMES (a name can sit on two rungs 1e-6 apart, e.g. Terminal's 44 rungs → 22 names).
+  // `legacySource` is what #1551's emptiness rule would have picked, so the §-line can say whether
+  // this choice CHANGED anything (PRIMAL LAW clause 4: a pass must be able to report its own no-op).
+  function _chooseStoreyDatum(cands, ezs) {
+    var sorted = ezs.slice().sort(function (a, b) { return a - b; });
+    var n = sorted.length;
+    var ez = n ? { n: n, min: sorted[0], median: sorted[Math.floor(n / 2)], max: sorted[n - 1] }
+               : { n: 0, min: NaN, median: NaN, max: NaN };
+    var legacy = null;
+    for (var li = 0; li < cands.length; li++) if (cands[li].rows.length) { legacy = cands[li].source; break; }
+    var report = [], chosen = null;
+    for (var ci = 0; ci < cands.length; ci++) {
+      var c = cands[ci], ladder = _storeyLadder(c.rows);
+      var rep = { source: c.source, rows: c.rows.length, datums: ladder.length, lo: NaN, hi: NaN,
+        verdict: 'EMPTY', rungsUsed: 0, below: 0, above: 0, ladder: ladder };
+      if (!c.rows.length) { report.push(rep); continue; }
+      rep.lo = ladder[0].z; rep.hi = ladder[ladder.length - 1].z;
+      if (ladder.length < 2) { rep.verdict = 'TOO_FEW'; report.push(rep); continue; }
+      if (!n) { rep.verdict = 'NO_ELEMENTS'; report.push(rep); continue; }
+      var used = {};
+      for (var ei = 0; ei < n; ei++) {
+        var bz = sorted[ei];
+        if (bz < rep.lo) rep.below++; else if (bz >= rep.hi) rep.above++;
+        used[_ladderBandIndex(ladder, bz)] = 1;
+      }
+      rep.rungsUsed = Object.keys(used).length;   // ladder RUNGS populated (distinct datums; names can repeat across rungs)
+      var inFrame = rep.lo <= ez.median && ez.median <= rep.hi;
+      rep.verdict = inFrame ? 'IN_FRAME' : 'OUT_OF_FRAME';
+      report.push(rep);
+      if (inFrame && !chosen) chosen = rep;
+    }
+    if (chosen) {
+      return { mode: 'DECLARED', source: chosen.source, ladder: chosen.ladder, lo: chosen.lo, hi: chosen.hi,
+        rungsUsed: chosen.rungsUsed, reason: 'IN_FRAME', legacySource: legacy, ez: ez, candidates: report };
+    }
+    var reason = !n ? 'NO_ELEMENTS'
+      : !legacy ? 'NO_DECLARED_STOREYS'
+      : report.some(function (x) { return x.verdict === 'OUT_OF_FRAME'; }) ? 'NO_CANDIDATE_IN_FRAME'
+      : 'TOO_FEW_DATUMS';
+    return { mode: 'INFERRED', source: null, ladder: [], lo: NaN, hi: NaN, rungsUsed: 0,
+      reason: reason, legacySource: legacy, ez: ez, candidates: report };
+  }
+
   function _buildScheduleElements(db, rules, opts) {
     opts = opts || {};
     var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
@@ -385,33 +497,22 @@
     // MEASURED on every shipped DB carrying the table, storey rows have size_z NULL/0 — the row IS
     // a placement point, so center_z IS the elevation. Not a proxy, the same number by another name.
     //
-    // ⛔ NO DECLARED STOREYS ⇒ NOTHING CHANGES. Duplex and Hospital ship with no spatial_structure
-    // table at all; they keep the old inference byte-identically, and the §-line says so out loud
-    // rather than implying a datum that does not exist.
-    var _declared = [];
-    try {
-      var _dq = null;
-      try { _dq = db.exec("SELECT name, elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL"); }
-      catch (e0) { _dq = null; }
-      if (!_dq || !_dq.length) {
-        try { _dq = db.exec("SELECT name, center_z FROM spatial_structure WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL"); }
-        catch (e1) { _dq = null; }
-      }
-      if (_dq && _dq.length) {
-        _dq[0].values.forEach(function (v) {
-          var nm = v[0], z = Number(v[1]);
-          if (nm != null && isFinite(z)) _declared.push({ name: String(nm), z: z });
-        });
-      }
-    } catch (e) { _declared = []; }
-    // Two storeys at the same datum are one floor under two names — keep the first, deterministically.
-    _declared.sort(function (a, b) { return a.z - b.z || (a.name < b.name ? -1 : 1); });
-    var _bands = [];
-    for (var _di = 0; _di < _declared.length; _di++) {
-      if (_bands.length && Math.abs(_declared[_di].z - _bands[_bands.length - 1].z) < 1e-6) continue;
-      _bands.push(_declared[_di]);
-    }
-    var _datumMode = _bands.length >= 2;
+    // ⛔ NO DECLARED STOREYS ⇒ NOTHING CHANGES. A DB with no spatial_structure table (Duplex,
+    // LTU_AHouse, every *_extracted.db) keeps the old inference byte-identically, and the §-line
+    // says so out loud rather than implying a datum that does not exist.
+    //
+    // §STOREY_DATUM_FRAME (2026-09-03): the two column shapes are two CANDIDATE sets, and the one
+    // that bands this geometry is the one in its vertical frame — see _chooseStoreyDatum above.
+    // (#1551 picked by emptiness; on Hospital_meta.db that put 63,182 elements in one band.)
+    var _ezs = [];
+    r[0].values.forEach(function (row) {
+      var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
+      if (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0) return;   // §4D_NOGEO, same filter as the recipe below
+      _ezs.push(cz - bz / 2);
+    });
+    var _frame = _chooseStoreyDatum(_storeyDatumCandidates(db), _ezs);
+    var _bands = _frame.ladder;
+    var _datumMode = _frame.mode === 'DECLARED';
 
     var storeyZs = {};
     r[0].values.forEach(function (row) {
@@ -489,12 +590,39 @@
       if (_raw != null && _raw !== '_UNKNOWN' && !/^unknown$/i.test(_raw) && _raw !== _e.storey) _rl++;
       delete _e._rawStorey;
     }
+    // §STOREY_DATUM_FRAME — the line must name WHICH candidate set won, its range, the element
+    // base-Z range it was checked against, and the rejected set; and it must say whether the
+    // choice differs from #1551's (vs#1551=same is the per-building NO-OP proof).
+    var _fz = function (x) { return isFinite(x) ? Number(x).toFixed(3) : 'n/a'; };
+    var _candDesc = _frame.candidates.map(function (c) {
+      return c.source + ':' + c.datums + (isFinite(c.lo) ? '[' + _fz(c.lo) + '..' + _fz(c.hi) + ']' : '') + '=' + c.verdict +
+        ((c.verdict === 'IN_FRAME' || c.verdict === 'OUT_OF_FRAME')
+          ? '(rungsUsed=' + c.rungsUsed + ' below=' + c.below + ' above=' + c.above + ')' : '');
+    }).join(' ');
+    var _rejected = _frame.candidates.filter(function (c) { return c.verdict === 'OUT_OF_FRAME'; });
+    var _bandsUsedNow = Object.keys(_lv).length;
     console.log('§STOREY_DATUM mode=' + (_datumMode ? 'DECLARED' : 'INFERRED') +
+      ' source=' + (_frame.source || 'none') +
       ' declaredStoreys=' + _bands.length + ' labelsInDB=' + storeyNames.length +
-      ' bandsUsed=' + Object.keys(_lv).length + ' relabelled=' + _rl + '/' + _bseList.length +
+      ' bandsUsed=' + _bandsUsedNow + ' relabelled=' + _rl + '/' + _bseList.length +
+      ' ladder=' + (_datumMode ? _bands.length + '[' + _fz(_frame.lo) + '..' + _fz(_frame.hi) + ']' : 'none') +
+      ' elementBaseZ=' + _frame.ez.n + '[' + _fz(_frame.ez.min) + '..' + _fz(_frame.ez.max) + ' median=' + _fz(_frame.ez.median) + ']' +
+      ' rejected=' + (_rejected.length ? _rejected.map(function (c) { return c.source + ':' + c.datums + '[' + _fz(c.lo) + '..' + _fz(c.hi) + ']'; }).join(',') : 'none') +
+      ' vs#1551=' + (_frame.source === _frame.legacySource ? 'same' : 'CHANGED(' + _frame.legacySource + '→' + (_frame.source || 'INFERRED') + ')') +
       (_datumMode
-        ? ' — a level is [datum_i, datum_i+1) and the element sits in the band containing its BASE'
-        : ' — NO declared storey datum in this DB (no spatial_structure): nearest-median-Z INFERENCE, unchanged. Bands here are not a datum.'));
+        ? (_bandsUsedNow < 2 ? ' verdict=NO-OP (the ladder put every element in ONE band — it partitioned nothing)' : '') +
+          ' — a level is [datum_i, datum_i+1) and the element sits in the band containing its BASE'
+        : ' — NO declared storey datum IN FRAME (reason=' + _frame.reason + '): nearest-median-Z INFERENCE, unchanged. Bands here are not a datum.'));
+    console.log('§STOREY_DATUM_FRAME candidates: ' + _candDesc +
+      ' — test: the ladder span must contain the element base-Z median (no tolerance constant; a stray element cannot fake a frame); first IN_FRAME wins, elevation before center_z');
+    _rejected.forEach(function (c) {
+      console.log('§STOREY_DATUM_FRAME_REJECT source=' + c.source + ' ladder=' + c.datums + '[' + _fz(c.lo) + '..' + _fz(c.hi) + ']' +
+        ' vs elementBaseZ median=' + _fz(_frame.ez.median) + ' [' + _fz(_frame.ez.min) + '..' + _fz(_frame.ez.max) + ']' +
+        ' below=' + c.below + ' above=' + c.above + ' rungsUsed=' + c.rungsUsed +
+        ' — not this geometry\'s vertical frame; ' +
+        (_datumMode ? 'banding on ' + _frame.source + ' instead'
+          : 'NO candidate in frame → declared path REFUSED, label inference runs (DEGRADE, not disable)'));
+    });
     return _bseList;
   }
 
@@ -3029,6 +3157,10 @@
     materializeDefault: materializeDefault,
     materializeZones: materializeZones,
     _buildScheduleElements: _buildScheduleElements,
+    // §STOREY_DATUM_FRAME — exported so witness_storey_datum_frame.js judges the same verb
+    _storeyDatumCandidates: _storeyDatumCandidates,
+    _chooseStoreyDatum: _chooseStoreyDatum,
+    _storeyLadder: _storeyLadder,
     instantiateTemplate: instantiateTemplate,
     // §TPL_LEVEL_AXIS — exported so the axis and its disagreement measurement are testable on their
     // own, without having to drive a whole materializeZones write to see them.
