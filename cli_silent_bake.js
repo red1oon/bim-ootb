@@ -8,6 +8,9 @@
 //   node cli_silent_bake.js --db HospitalAjaibPath --out /tmp/hospital.mp4 \
 //     [--plan NAME | --override file.json]            path source (default: DB cinema_path table)
 //     [--buildup] [--label] [--reveal] [--day tr|tl|br|bl|off]   flags composed onto the path
+//     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
+//   With no flag given, the path's OWN saved settings are used (§CPE_FLAGS_PORTABLE) — a path saved
+//   in the viewer bakes exactly as it was authored, with no arguments at all.
 //     [--frames N | --seconds S] [--fps N]            length (default: the plan's own pacing)
 //     [--gpu sw|real|headful] [--chrome-args "..."]   GPU mode (stage-3 feasibility decides)
 //     [--width W --height H] [--port P] [--log FILE] [--profile DIR]
@@ -38,10 +41,29 @@ const MAX_FRAME_MS = +arg('max-frame-ms', 0);              // 0 = off (stage 3 m
 const TIMEOUT_MIN = +arg('timeout-min', 300);
 const PLAN_NAME = arg('plan', null);
 const OV_FILE = arg('override', null);
+// ══ §CLI_BAKE_FLAG_OVERRIDE (2026-09-04, user) ═══════════════════════════════════════════════════
+// USER: "when user saves alt-c setting in path in the DB, during silent bake, user need not pass any
+// argument further and use the stored path settings. Of course user may still pass args to overwrite
+// those settings."
+// THREE STATES, not two. A flag left off the command line must stay UNDEFINED so the stored path's
+// own value survives the merge in cinema_maxq.js's __maxqBake (`if (o.flags[fk] !== undefined)`).
+// Setting it to `false` here would silently overwrite a saved `buildup=1` with off — which is what
+// "no argument passed" must never mean, now that §CPE_FLAGS_PORTABLE makes the saved value real.
+// The `--no-*` forms exist so an override can also turn something OFF: before them the command line
+// could only ever add features, so a path saved with reveal ON could not be baked without it.
+function triState(on, off) {
+  if (has(off)) return false;
+  if (has(on)) return true;
+  return undefined;      // absent — the stored path decides
+}
 const FLAGS = {};
-if (has('buildup')) FLAGS.buildup = true;
-if (has('label')) FLAGS.roomTitle = true;
-if (has('reveal')) FLAGS.reveal = true;
+const _fBuildup = triState('buildup', 'no-buildup');
+const _fLabel = triState('label', 'no-label');
+const _fReveal = triState('reveal', 'no-reveal');
+if (_fBuildup !== undefined) FLAGS.buildup = _fBuildup;
+if (_fLabel !== undefined) FLAGS.roomTitle = _fLabel;
+if (_fReveal !== undefined) FLAGS.reveal = _fReveal;
+// `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');
 
 const logStream = fs.createWriteStream(LOG, { flags: 'w' });
@@ -185,7 +207,25 @@ const server = http.createServer((req, res) => {
 
   // buildup needs an existing schedule; a fresh profile has no gantt cache — run the SHIPPED
   // generation verb (same one a real Time Machine open runs) BEFORE the bake asks.
-  if (FLAGS.buildup) {
+  // §CLI_BAKE_FLAG_OVERRIDE — the gate must ask what the bake WILL ACTUALLY DO, not what the command
+  // line asked for. Since §CPE_FLAGS_PORTABLE the buildup can come from the saved path with no flag
+  // on the command line at all, and gating the prime on FLAGS.buildup alone meant such a run reached
+  // the bake with no timeline primed — the exact case the warning below exists for. Resolution order
+  // here MIRRORS __maxqBake's own merge (CLI wins, else the stored path), and the stored value is read
+  // through the SHIPPED lazy loader (`cinemaPathPlan` triggers `_cpeLoadFromDb`, then
+  // `_getCinemaPathEdit`) rather than a second reader — guarded on `a.db` for the same reason
+  // __maxqBake guards it: probing before the DB is open latches `_cpeLoaded` and blinds the session.
+  const willBuildup = await page.evaluate((f) => {
+    if (f.buildup !== undefined) return { on: !!f.buildup, src: 'cli' };
+    const a = window.APP;
+    if (!a || !a.db) return { on: false, src: 'no-db-yet' };
+    try { if (typeof a.cinemaPathPlan === 'function') a.cinemaPathPlan(60); } catch (e) {}
+    const st = (a._getCinemaPathEdit && a._getCinemaPathEdit()) || null;
+    return { on: !!(st && st.buildup), src: st ? 'stored-path' : 'no-stored-path' };
+  }, FLAGS);
+  log(`§CLI_BAKE_BUILDUP_RESOLVED on=${willBuildup.on ? 1 : 0} source=${willBuildup.src}` +
+      ' — decides whether the Time Machine is primed before the bake asks for a timeline');
+  if (willBuildup.on) {
     const tm = await page.evaluate(async () => {
       if (typeof window.tmActivateForBake !== 'function') return 'no-hook';
       const t0 = performance.now();
