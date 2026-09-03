@@ -170,6 +170,55 @@ function toolkit({ RW, RH }) {
   // read is scene-linear here too (renderer.toneMapping is ACESFilmic, scene.js:110, and is
   // reported in lightState). ACES + exposure are monotonic, so a linear "not brighter" verdict
   // survives them unchanged.
+  // §SFR_LIVELY (U-11, user 2026-09-02: "room lighting should be LIVELY. So far it has never been,
+  // though lighting has been BRIGHT."). Mean luminance is precisely the metric that has been
+  // satisfied while the room still read dead, so this returns the SHAPE of the luminance field
+  // alongside its level. Every one of these is computed from the same single render — no extra
+  // render pass, no extra cost — and every one is a number, never a look:
+  //   cv        = std/mean, the classic coefficient of variation. A flat wash is LOW cv at ANY mean.
+  //   p90p10    = the bright-to-dim ratio a person actually reads as "modelled" vs "washed".
+  //   topShare  = share of the frame's total light carried by its brightest decile. A real light
+  //               source makes a hot spot; a uniform fill spreads its energy evenly (0.10 = flat).
+  //   tileCV    = SPATIAL structure: cv of the 8x6 tile means. cv can be raised by pixel noise or a
+  //               single texture; tileCV only moves when the light varies ACROSS THE ROOM, which is
+  //               what a falloff gradient is. This is the falloff-gradient metric, measured without
+  //               needing to know where any fixture is.
+  //   wcMean/wcStd = the warm/cool chromatic axis (r-b)/(r+b), luminance-weighted. wcStd is
+  //               chromatic SEPARATION: one flat white everywhere is wcStd ~ 0 regardless of level.
+  // Thresholds are NOT invented here: every liveliness number is reported as a RATIO against the
+  // same measurement in the shipped state, so the claim is always "it moved by X", never "X is good".
+  W.stats = (px) => {
+    const n = RW * RH, l = new Float64Array(n);
+    let sum = 0, sum2 = 0, wcW = 0, wcS = 0, wcS2 = 0;
+    const TX = 8, TY = 6, tS = new Float64Array(TX * TY), tN = new Float64Array(TX * TY);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const r = px[p], g = px[p + 1], b = px[p + 2];
+      const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      l[i] = y; sum += y; sum2 += y * y;
+      const d = r + b;
+      if (d > 1e-6) { const wc = (r - b) / d; wcW += y; wcS += y * wc; wcS2 += y * wc * wc; }
+      const x = i % RW, yy = (i / RW) | 0;
+      const ti = Math.min(TY - 1, (yy * TY / RH) | 0) * TX + Math.min(TX - 1, (x * TX / RW) | 0);
+      tS[ti] += y; tN[ti] += 1;
+    }
+    const mean = sum / n, std = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+    const s = Float64Array.from(l).sort();
+    const q = f => s[Math.min(n - 1, Math.floor(n * f))];
+    let topSum = 0; for (let i = Math.floor(n * 0.9); i < n; i++) topSum += s[i];
+    let tm = 0, tc = 0; for (let i = 0; i < tS.length; i++) if (tN[i]) { tS[i] /= tN[i]; tm += tS[i]; tc++; }
+    tm /= (tc || 1);
+    let tv = 0; for (let i = 0; i < tS.length; i++) if (tN[i]) tv += (tS[i] - tm) ** 2;
+    tv = Math.sqrt(tv / (tc || 1));
+    const wcMean = wcW > 0 ? wcS / wcW : 0;
+    const wcStd = wcW > 0 ? Math.sqrt(Math.max(0, wcS2 / wcW - wcMean * wcMean)) : 0;
+    return { mean, p10: q(0.10), p25: q(0.25), p50: q(0.50), p75: q(0.75), p90: q(0.90),
+      std, min: s[0], max: s[n - 1],
+      cv: mean > 0 ? std / mean : 0,
+      p90p10: q(0.10) > 1e-6 ? q(0.90) / q(0.10) : -1,
+      topShare: sum > 0 ? topSum / sum : 0,
+      tileCV: tm > 0 ? tv / tm : 0,
+      wcMean, wcStd };
+  };
   W.renderFrame = () => {
     const bg = A.scene.background;
     A.scene.background = new T.Color(0, 0, 0);
@@ -178,16 +227,14 @@ function toolkit({ RW, RH }) {
     A.renderer.readRenderTargetPixels(W.rt, 0, 0, RW, RH, W.px);
     A.renderer.setRenderTarget(null);
     A.scene.background = bg;
-    let sum = 0, sum2 = 0; const l = [];
-    for (let i = 0; i < W.px.length; i += 4) {
-      const y = 0.2126 * W.px[i] + 0.7152 * W.px[i + 1] + 0.0722 * W.px[i + 2];
-      sum += y; sum2 += y * y; l.push(y);
-    }
-    l.sort((a, b) => a - b);
-    const n = l.length, mean = sum / n;
-    return { mean, p25: l[Math.floor(n * 0.25)], p50: l[Math.floor(n * 0.5)],
-      std: Math.sqrt(Math.max(0, sum2 / n - mean * mean)), min: l[0], max: l[n - 1] };
+    return W.stats(W.px);
   };
+  // Every measured pose must carry the fixture pool a REAL Alt+S still would place there, not the
+  // one left over from the pose staging happened at. tools.js's still branch selects by camera
+  // frustum, so the pool is pose-dependent by construction; measuring five poses against one
+  // stale selection is measuring a scene that never exists. Cost is a shader recompile whenever
+  // the light COUNT changes (§NIGHT_BAKE_POOL) — paid deliberately, and the count is logged.
+  W.poseAndPool = (p, t, fovDeg) => { W.pose(p, t, fovDeg); return W.refreshNightPool(); };
   W.pose = (p, t, fovDeg) => {
     if (W.savedFov === undefined) { W.savedFov = A.camera.fov; W.savedAspect = A.camera.aspect; }
     A.camera.position.set(p[0], p[1], p[2]);
@@ -237,30 +284,57 @@ function toolkit({ RW, RH }) {
     else if (g === 'hemi') { if (W._hemI === undefined) W._hemI = A.hemi.intensity; A.hemi.intensity = on ? W._hemI : 0; }
     else if (g === 'camlight') { if (!A._camLight) return; if (W._camI === undefined) W._camI = A._camLight.intensity; A._camLight.intensity = on ? W._camI : 0; }
     else if (g === 'pl') {
+      // §SFR_GROUP_RESTORE (U-11, 2026-09-02) — THIS WAS A REAL INSTRUMENT BUG AND IT MANUFACTURED
+      // A PUBLISHED FINDING. The previous form captured the restore map ONCE, on first use:
+      //     if (!W._plI) W._plI = new Map(ls.map(l => [l.uuid, l.intensity]));
+      //     ls.forEach(l => { const v = W._plI.get(l.uuid);
+      //                       l.intensity = on ? (v === undefined ? l.intensity : v) : 0; });
+      // First use is the plainNav decomposition, where there are ZERO point lights (night mode is
+      // off), so the map was captured EMPTY and never rebuilt. At Alt+S the 216 staged fixture
+      // lights are all absent from it, so `off` set every one to 0 and `on` restored
+      // `l.intensity = l.intensity` = 0. From the first pl toggle onward the fixture pool was dark
+      // for the REST OF THE RUN — which is where "pl = 0.00000 on the away facade in every run"
+      // and §SFR_INTERIOR_DECOMP's "pl=0.00000, the room is left on the non-directional fill
+      // alone" came from. Both were ARTEFACTS of this line, not properties of the renderer, and
+      // the closure check could not catch it because the all-on reference render for the SECOND
+      // wall side was itself taken after the lights had been zeroed (0 - 0 = 0, closure 1.000).
+      // Corrected form: capture the CURRENT value at the moment of switching off, restore exactly
+      // that. Robust to a pool whose membership changes between calls, which this one does.
       const ls = W.pointLights();
-      if (!W._plI) W._plI = new Map(ls.map(l => [l.uuid, l.intensity]));
-      ls.forEach(l => { const v = W._plI.get(l.uuid); l.intensity = on ? (v === undefined ? l.intensity : v) : 0; });
+      if (!W._plI) W._plI = new Map();
+      if (!on) ls.forEach(l => { W._plI.set(l.uuid, l.intensity); l.intensity = 0; });
+      else ls.forEach(l => { const v = W._plI.get(l.uuid); if (v !== undefined) l.intensity = v; });
     } else if (g === 'emissive') {
       // Night-mode fixture/window GLOW is emissive GEOMETRY, not a light — it is invisible to a
       // light-only decomposition. The first interior decomposition closed at 0.441 with it missing,
       // which is the witness saying it could not account for 56% of the light. Traverse the whole
       // scene, not just _matCache, because the glow quads are their own meshes.
-      if (!W._emis) {
+      // Same §SFR_GROUP_RESTORE correction: the set is re-scanned at every switch-off rather than
+      // cached from the first call. A._applyNightGlowToMatCache() CREATES the luminaire/window glow
+      // during Alt+S staging, so a set captured at plainNav does not contain the very materials
+      // this group exists to measure — which is why `emissive` read 0.00055 and why the Clinic
+      // interior decomposition could only account for 44.7% of its own frame.
+      if (!on) {
         W._emis = [];
         A.scene.traverse(o => {
           const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
           ms.forEach(m => { if (m && m.emissive && m.emissiveIntensity !== undefined) W._emis.push({ m, i: m.emissiveIntensity }); });
         });
+        W._emis.forEach(e => { e.m.emissiveIntensity = 0; e.m.needsUpdate = true; });
+      } else if (W._emis) {
+        W._emis.forEach(e => { e.m.emissiveIntensity = e.i; e.m.needsUpdate = true; });
       }
-      W._emis.forEach(e => { e.m.emissiveIntensity = on ? e.i : 0; e.m.needsUpdate = true; });
     } else if (g === 'env') {
+      // Same correction. A._matCache grows as geometry streams and as staging adds materials, so a
+      // map captured once cannot restore a material created later — it would leave it at 0.
       const mats = Object.values(A._matCache);
-      if (!W._envI) W._envI = new Map(mats.map(m => [m.uuid, m.envMapIntensity]));
-      mats.forEach(m => { if (typeof m.envMapIntensity !== 'number') return;
-        const v = W._envI.get(m.uuid);
-        m.envMapIntensity = on ? (v === undefined ? m.envMapIntensity : v) : 0; m.needsUpdate = true; });
-      if (W._sceneEnv === undefined) W._sceneEnv = A.scene.environment || null;
-      A.scene.environment = on ? W._sceneEnv : null;
+      if (!W._envI) W._envI = new Map();
+      if (!on) mats.forEach(m => { if (typeof m.envMapIntensity !== 'number') return;
+        W._envI.set(m.uuid, m.envMapIntensity); m.envMapIntensity = 0; m.needsUpdate = true; });
+      else mats.forEach(m => { const v = W._envI.get(m.uuid);
+        if (v !== undefined) { m.envMapIntensity = v; m.needsUpdate = true; } });
+      if (!on) { if (W._sceneEnv === undefined) W._sceneEnv = A.scene.environment || null; A.scene.environment = null; }
+      else A.scene.environment = W._sceneEnv === undefined ? A.scene.environment : W._sceneEnv;
     }
   };
   // Freeze the staged state for measurement. The 4096^2 shadow map is re-rendered from 700+
@@ -328,6 +402,178 @@ function toolkit({ RW, RH }) {
     let n = 0;
     ls.forEach(l => { const b = W._plBase.get(l.uuid); if (b === undefined) return; l.intensity = b * f; n++; });
     return { n, sum: +W.pointLights().reduce((a, l) => a + l.intensity, 0).toFixed(3), scale: A._nightPLScale };
+  };
+  // §SFR_MCURVE (U-11, 2026-09-02) — the fixture pool must be REPOPULATED AT THE MEASUREMENT POSE.
+  // The first sweep did not, and printed INCONCLUSIVE for a reason that turned out to be an
+  // INSTRUMENT artefact rather than a property of the feature: A._nightUpdateLights() is driven off
+  // the controls 'change' event (>5 m of travel) and off the still-refine loop, and this witness
+  // moves the camera by writing A.camera.position directly — so the pool stayed wherever the last
+  // real camera move left it and read 0 intensity at every measured pose. Calling the SHIPPED
+  // updater with A._stillRefineActive forced true takes the same §NIGHT_STILL_FRUSTUM branch a real
+  // Alt+S still takes at this pose. Nothing is synthesised: the shipped function does the work.
+  // §SFR_FROZEN_POOL — an INSTRUMENT cost, measured, and paid with the repo's own remedy.
+  // Refreshing the pool at every pose is required (see poseAndPool), but the shipped Alt+S path
+  // (tools.js §NIGHT_LIGHT_CHURN_FIX) lets the scene's point-light COUNT move, and a count is a
+  // shader DEFINE: every count change recompiles every program in the scene. MEASURED HERE, not
+  // assumed: two full runs (Clinic + Hospital, 2026-09-02) each sat >20 min inside the FIRST staged
+  // wall pose and produced nothing — the same cost §NIGHT_BAKE_POOL was written for after the first
+  // headless CLI bake ("count-stable frames fold in 0.8-1.3 s ... every count-changed frame costs
+  // 13-53 s"). So this witness runs the SHIPPED bake-pool path (A._maxqActive) instead of inventing
+  // its own: the pool size is frozen at min(200, fixtures), slots are assigned per pose by
+  // position/colour/intensity (uniform updates, no recompile), and unused slots ride at intensity 0
+  // and contribute nothing. It is also the path the FILM takes — and the film is the artefact the
+  // user's complaint is about. The switch is GATED, not asserted: the same pose is read immediately
+  // before and after and must agree (§SFR_POOLMODE below).
+  W.bakePoolMode = (on) => {
+    if (on && A._nightLightByPos && A._nightLightByPos.size) {
+      // The bake branch returns before the churn branch's own cleanup, so the churn lights would
+      // survive ALONGSIDE the 200 frozen slots and double the scene's light. Dispose them exactly
+      // as _nightUpdateLights disposes an unwanted light — same three calls, same order.
+      A._nightLightByPos.forEach(l => {
+        A.scene.remove(l);
+        if (l.shadow && l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; }
+        l.dispose();
+      });
+      A._nightLightByPos.clear();
+      A._nightLights = [];
+    }
+    A._maxqActive = !!on;
+    const r = W.refreshNightPool();
+    return Object.assign(r, { maxqActive: !!A._maxqActive, bakePoolSlots: (A._nightBakePool || []).length });
+  };
+  W.refreshNightPool = () => {
+    const was = A._stillRefineActive;
+    A._stillRefineActive = true;
+    if (typeof A._nightUpdateLights === 'function') A._nightUpdateLights();
+    A._stillRefineActive = was;
+    const ls = W.pointLights();
+    W._plBase = new Map(ls.map(l => [l.uuid, l.intensity]));   // rebase: the pool identity changed
+    W._plScaleBase = A._nightPLScale || 1;
+    return { nightMode: !!A._nightMode, fixtures: (A._nightFixtures || []).length,
+      lights: ls.length, sum: +ls.reduce((a, l) => a + l.intensity, 0).toFixed(3),
+      max: +ls.reduce((a, l) => Math.max(a, l.intensity), 0).toFixed(3), scale: A._nightPLScale };
+  };
+  // §SFR_POOL_CENSUS — a DIAGNOSTIC, never a light source. It answers WHY the fixture pool reads
+  // what it reads at this pose, so the witness can tell three different failures apart instead of
+  // printing one undifferentiated 0: (a) the building has no luminaires at all (total=0 -> VACUOUS),
+  // (b) luminaires exist near this standpoint but the shipped still-branch selection is
+  // frustum-CONTAINMENT (tools.js §NIGHT_STILL_FRUSTUM) so an overhead fixture just outside the
+  // frustum is dropped even though NIGHT_LIGHT_RANGE = 0 means it still illuminates the frame
+  // (inFrustum=0 while within5m>0 -> a code defect, not a tuning number), (c) they are selected and
+  // lit and still do not move the room. The frustum test below is the SAME test tools.js runs; it is
+  // reproduced only to COUNT, and changes nothing.
+  W.fixtureCensus = () => {
+    const all = (A._nightFixtureWorldPositions ? A._nightFixtureWorldPositions() : []) || [];
+    const fr = new T.Frustum().setFromProjectionMatrix(
+      new T.Matrix4().multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse));
+    const cp = A.camera.position;
+    let inF = 0, n5 = 0, n15 = 0, inF5 = 0;
+    const v = new T.Vector3();
+    for (const p of all) {
+      v.set(p.x, p.y, p.z);
+      const inside = fr.containsPoint(v), d = v.distanceTo(cp);
+      if (inside) inF++;
+      if (d <= 5) { n5++; if (inside) inF5++; }
+      if (d <= 15) n15++;
+    }
+    return { total: all.length, inFrustum: inF, within5m: n5, within15m: n15, inFrustumAndWithin5m: inF5,
+      nightMode: !!A._nightMode, fixtures: (A._nightFixtures || []).length,
+      source: A._nightFixtureSource || '(none)', maxLights: A._nightMaxLights,
+      nearFadeFloor: A._nightNearFadeFloor, stillBoost: !!A._nightStillBoost };
+  };
+  // §NIGHT_LIGHT_MIX already derives a colour temperature per fixture from its own NAME/type
+  // (tools.js A.nightLightColor — NIGHT_COOL 0xdce8ff / NIGHT_WARM 0xffdca8 / exit green). Whether
+  // that mechanism actually REACHES the staged pool is a measurement, not an assumption: count the
+  // distinct colours the live pool carries. One colour = the mix is a no-op here.
+  W.poolColorCensus = () => {
+    const c = {};
+    W.pointLights().forEach(l => { const h = '#' + l.color.getHexString(); c[h] = (c[h] || 0) + 1; });
+    const ds = W.pointLights().map(l => l.decay);
+    return { distinct: Object.keys(c).length, colors: c,
+      decay: ds.length ? Math.min(...ds) + '..' + Math.max(...ds) : 'n/a',
+      distance: W.pointLights().map(l => l.distance)[0] };
+  };
+  // Option F — A._nightNearFadeFloorStill, the constant tools.js already defines for exactly this
+  // ("still: no proximity penalty at all", tools.js:1089) and which MEASURES as never reaching an
+  // Alt+S still: §SFR_POOL reports nearFadeFloor 0.3, the NAVIGATION value. effects.js's
+  // §NIGHT_STILL_LIGHTS block (:4918) is guarded on `A._nightLights && A._nightLights.length`, but
+  // `_applyPhotoStaging()` — the call that turns night mode on and BUILDS those lights — does not
+  // run until :4945. So on the normal path (Alt+S from a session that was not already in Night
+  // Mode) the guard is false, the block is skipped, and the fixture pool is built at the nav floor.
+  // §NIGHT_NEAR_FADE's own words for that floor: "exactly backwards for the complaint now being
+  // made: standing under a fixture gives the WEAKEST light in the scene". This probe sets the
+  // floor to the value the repo already chose for a still and re-runs the SHIPPED updater.
+  W.setNearFadeFloor = (f) => {
+    if (W._nffBase === undefined) W._nffBase = A._nightNearFadeFloor;
+    // HARD GUARD, added after the first run silently measured a BROKEN state: an undefined/null f
+    // sails through `f < 0` and lands in A._nightNearFadeFloor, where the shipped intensity formula
+    // `floor + (1 - floor) * fade` turns it into 0-or-NaN — which DARKENS the near field instead of
+    // lifting it, and (because the pool is rebuilt from that value) poisons every probe that runs
+    // after it. That is exactly what happened: on both buildings the four option rows downstream of
+    // this probe reported byte-identical retP25/retP90/retP10, the signature of a dead pool. Refuse
+    // rather than measure.
+    if (f >= 0 && !(typeof f === 'number' && isFinite(f) && f <= 1))
+      return { ok: false, why: 'non-finite or out-of-range floor: ' + String(f), applied: A._nightNearFadeFloor };
+    A._nightNearFadeFloor = (f < 0) ? W._nffBase : f;
+    const r = W.refreshNightPool();
+    return Object.assign(r, { ok: true, applied: A._nightNearFadeFloor, navValue: W._nffBase,
+      shippedStillConstant: A._nightNearFadeFloorStill });
+  };
+  // Option B — physically-correct inverse-square falloff. tools.js sets NIGHT_LIGHT_DECAY = 1.0
+  // deliberately ("reaches further than physics"); decay is a per-light property that
+  // _nightUpdateLights never rewrites (only intensity is recomputed), so this is a clean probe.
+  W.setPLDecay = (d) => {
+    // PER-LIGHT base. The first version cached ONE scalar from ls[0] — which is a city-prop light
+    // (decay 2, see the §SFR_POOL colour census "decay":"1..2") — so restoring set every FIXTURE
+    // light (decay 1.0) to 2 permanently, dimming the whole far field for the rest of the run.
+    const ls = W.pointLights();
+    if (!W._decayBase) W._decayBase = new Map();
+    ls.forEach(l => { if (!W._decayBase.has(l.uuid)) W._decayBase.set(l.uuid, l.decay); });
+    ls.forEach(l => { const b = W._decayBase.get(l.uuid); l.decay = d < 0 ? (b === undefined ? l.decay : b) : d; });
+    const ds = ls.map(l => l.decay);
+    return { n: ls.length, decayRange: Math.min(...ds) + '..' + Math.max(...ds) };
+  };
+  // Option D — the fixture's own geometry glowing. A._applyNightGlowToMatCache() already sets
+  // emissive 0xffe4b5 @ 0.3 on luminaire materials and 0xfff8ec @ 0.55 on window glass; this scales
+  // exactly that shipped set, so g=1 is the shipped state and the sweep's first sample re-proves it.
+  W.setEmissiveGain = (g) => {
+    if (!W._emisBase) {
+      W._emisBase = [];
+      A.scene.traverse(o => {
+        const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+        ms.forEach(m => { if (m && m.emissive && m.emissiveIntensity > 0) W._emisBase.push({ m, i: m.emissiveIntensity }); });
+      });
+    }
+    W._emisBase.forEach(e => { e.m.emissiveIntensity = e.i * g; e.m.needsUpdate = true; });
+    return { n: W._emisBase.length, gain: g,
+      glowMats: (A._nightGlowMats || []).length,
+      sum: +W._emisBase.reduce((a, e) => a + e.m.emissiveIntensity, 0).toFixed(3) };
+  };
+  // The §SFR_CLAMP fallback lever, as a REAL render rather than an interpolation: put the matte set
+  // back on the staged HDRI at a fraction s of its staged envMapIntensity. s=1 reproduces the
+  // measured RED state exactly (a built-in cross-check); s<0 restores the shipped GREEN (sky env).
+  // envMapIntensity is NOT touched by the shipped fix — only the MAP is — so the saved base is the
+  // staged matte intensity in both states and no compounding is possible across calls.
+  W.setMatteHdriFill = (s) => {
+    const ms = Object.values(A._matCache).filter(m => m && 'envMap' in m &&
+      typeof m.envMapIntensity === 'number' && !(A._isPhotoGlossyMat && A._isPhotoGlossyMat(m)));
+    if (!W._hBase) W._hBase = new Map(ms.map(m => [m.uuid, m.envMapIntensity]));
+    let n = 0;
+    ms.forEach(m => { const b = W._hBase.get(m.uuid); if (b === undefined) return;
+      if (s < 0) { if (W.skyEnv) m.envMap = W.skyEnv; m.envMapIntensity = b; }
+      else { if (W.hdriEnv) m.envMap = W.hdriEnv; m.envMapIntensity = b * s; }
+      m.needsUpdate = true; n++; });
+    return { n, s, map: s < 0 ? 'sky(shipped GREEN)' : 'hdri' };
+  };
+  // Every grid sample records this alongside its luminance. A sample whose pool total does not
+  // match the pose's own baseline (outside a deliberate PL scaling) was taken against a scene the
+  // witness had damaged, and must be reported INCONCLUSIVE rather than scored.
+  W.poolSum = () => {
+    const ls = W.pointLights();
+    return { lights: ls.length, live: ls.filter(l => l.intensity > 0).length,
+      sum: +ls.reduce((a, l) => a + l.intensity, 0).toFixed(3),
+      floor: A._nightNearFadeFloor, scale: A._nightPLScale,
+      decayRange: ls.length ? Math.min(...ls.map(l => l.decay)) + '..' + Math.max(...ls.map(l => l.decay)) : 'n/a' };
   };
   W.unfreeze = () => { A.renderer.shadowMap.autoUpdate = true; A.renderer.shadowMap.needsUpdate = true; };
   W.lightState = () => ({
@@ -398,7 +644,8 @@ function toolkit({ RW, RH }) {
     await page.goto(`http://127.0.0.1:${port}/viewer/viewer.html?db=buildings/${B}_extracted.db&bld=${B}`,
       { waitUntil: 'domcontentloaded', timeout: 120000 });
     let ready = false;
-    for (let i = 0; i < 300 && !ready; i++) {
+    for (let i = 0; i < 900 && !ready; i++) {   // 15 min: Hospital's split DB under software GL,
+                                                // and two witness runs can share one machine
       await page.waitForTimeout(1000);
       try { ready = await page.evaluate(() => !!(window.APP && window.APP.streaming === false && window.APP._matCache && Object.keys(window.APP._matCache).length > 0)); } catch (e) {}
     }
@@ -468,7 +715,7 @@ function toolkit({ RW, RH }) {
       const out = {};
       for (const side of ['sun', 'away']) {
         const o = chosen[side];
-        await page.evaluate(({ o }) => window.__sfr.pose(o.p, o.t, o.fov), { o });
+        const pool = await page.evaluate(({ o }) => window.__sfr.poseAndPool(o.p, o.t, o.fov), { o });
         const cov = await page.evaluate(({ g }) => window.__sfr.coverage(g), { g: o.guid });
         const all = await page.evaluate(() => window.__sfr.renderLinear());
         const c = {};
@@ -481,7 +728,8 @@ function toolkit({ RW, RH }) {
         const sum = GROUPS.reduce((a, g) => a + c[g], 0);
         out[side] = { mean: all.mean, cov, black: all.blackFrac, c, closure: all.mean ? sum / all.mean : 0 };
         S(`§SFR_WALL building=${B} state=${label} face=${side}facing meanLumaLinear=${all.mean.toFixed(5)} cov=${cov.toFixed(2)} ` +
-          GROUPS.map(g => g + '=' + c[g].toFixed(5)).join(' ') + ` closure=${out[side].closure.toFixed(3)}`);
+          GROUPS.map(g => g + '=' + c[g].toFixed(5)).join(' ') + ` closure=${out[side].closure.toFixed(3)} ` +
+          `poolAtThisPose=${pool.lights}@${pool.sum}`);
       }
       const sep = out.sun.mean > 0 ? out.away.mean / out.sun.mean : -1;
       S(`§SFR_SEPARATION building=${B} state=${label} awayFacing/sunFacing=${sep.toFixed(4)}`);
@@ -491,7 +739,7 @@ function toolkit({ RW, RH }) {
       const m = {};
       for (const side of ['sun', 'away']) {
         const o = chosen[side];
-        await page.evaluate(({ o }) => window.__sfr.pose(o.p, o.t, o.fov), { o });
+        await page.evaluate(({ o }) => window.__sfr.poseAndPool(o.p, o.t, o.fov), { o });
         m[side] = (await page.evaluate(() => window.__sfr.renderLinear())).mean;
       }
       const sep = m.sun > 0 ? m.away / m.sun : -1;
@@ -501,11 +749,11 @@ function toolkit({ RW, RH }) {
     async function frameGuard(label) {
       const r = {};
       for (const [n, o] of [['extSun', chosen.sun], ['extAway', chosen.away]]) {
-        await page.evaluate(({ o }) => window.__sfr.pose(o.p, o.t, o.fov), { o });
+        await page.evaluate(({ o }) => window.__sfr.poseAndPool(o.p, o.t, o.fov), { o });
         r[n] = await page.evaluate(() => window.__sfr.renderFrame());
       }
       for (let i = 0; i < inPoses.length; i++) {
-        await page.evaluate(({ o }) => window.__sfr.pose(o.p, o.t, 0), { o: inPoses[i] });
+        await page.evaluate(({ o }) => window.__sfr.poseAndPool(o.p, o.t, 0), { o: inPoses[i] });
         r['interior' + i] = await page.evaluate(() => window.__sfr.renderFrame());
       }
       S(`§SFR_FRAME building=${B} state=${label} ` + Object.keys(r).map(k =>
@@ -548,6 +796,23 @@ function toolkit({ RW, RH }) {
     verdict(stagedLights.glossyTotal > 0 && stagedLights.glossyOnHdri === stagedLights.glossyTotal,
       `${B} the HDRI reflection feature is UNTOUCHED — every glossy material still reads it`,
       `${stagedLights.glossyOnHdri}/${stagedLights.glossyTotal} glossy on HDRI/room-probe, ${stagedLights.matteOnSkyEnv} matte on the sky env`);
+    // POOL-MODE CONTROL (§SFR_FROZEN_POOL) — taken WITHOUT moving the camera, so the pool's
+    // membership cannot change and only the storage mode does. If the two readings disagree, the
+    // instrument change is not neutral and nothing measured after it is usable.
+    // ORDER MATTERS, and the first attempt got it wrong: reading BEFORE the churn-path refresh
+    // compared (stale pool) against (fresh pool + frozen mode) and reported relDrift 0.179 — a
+    // confounded control, not a real disagreement. Refresh on the churn path FIRST, read, then
+    // switch mode and read again: now only the storage mode differs.
+    const churnPool = await page.evaluate(() => window.__sfr.refreshNightPool());
+    const churnRead = await page.evaluate(() => window.__sfr.renderLinear());
+    const bakePool = await page.evaluate(() => window.__sfr.bakePoolMode(true));
+    const bakeRead = await page.evaluate(() => window.__sfr.renderLinear());
+    const pmDrift = churnRead.mean > 0 ? Math.abs(bakeRead.mean - churnRead.mean) / churnRead.mean : 1;
+    S(`§SFR_POOLMODE building=${B} churnPath{mean=${churnRead.mean.toFixed(5)} lights=${churnPool.lights} sum=${churnPool.sum}} -> ` +
+      `frozenBakePool{mean=${bakeRead.mean.toFixed(5)} slots=${bakePool.bakePoolSlots} lights=${bakePool.lights} sum=${bakePool.sum}} ` +
+      `relDrift=${pmDrift.toFixed(5)} (same pose, camera untouched — only the pool's storage mode changed)`);
+    verdict(pmDrift < 0.01, `${B} POOL-MODE CONTROL: freezing the point-light count does not change what is measured`,
+      `relDrift=${pmDrift.toFixed(5)}`);
     const alt = await wallPair('altS_asShipped');
     verdict(Math.abs(alt.out.sun.closure - 1) < 0.05 && Math.abs(alt.out.away.closure - 1) < 0.05,
       `${B} altS light groups close on the total`, `closure ${alt.out.sun.closure.toFixed(3)}/${alt.out.away.closure.toFixed(3)}`);
@@ -635,42 +900,10 @@ function toolkit({ RW, RH }) {
         // DECLARED CONFLICT — the same shape §WALL_SIDE_AND_LIGHT_FLOOR hit and clamped for.
         // Solve it on the knob that is measured to move interiors and NOT the facade: the staged
         // fixture point lights. Point-light contribution is additive, so retention is linear in f.
-        S(`§SFR_CONFLICT building=${B} the away-wall fix costs interior light: retention mean=${t3mean.toFixed(3)} p25=${t3p25.toFixed(3)} below floors ${T3_MEAN}/${T3_P25}. Solving on §STAGED_PL_CUT (measured facade contribution: pl=${alt.out.away.c.pl.toFixed(5)} of ${alt.out.away.mean.toFixed(5)})`);
-        const sweep = [], plSums = [];
-        for (const f of [1, 2, 3]) {
-          const st = await page.evaluate(({ f }) => window.__sfr.setPLScale(f), { f });
-          const n = st.n; plSums.push(st.sum);
-          const fr = await frameGuard(`altS_GREEN_plScale_x${f}`);
-          const wm = await wallMeans(`altS_GREEN_plScale_x${f}`);
-          const m = inKeys.reduce((a, k) => a + fr[k].mean, 0) / inKeys.length;
-          const p = inKeys.reduce((a, k) => a + fr[k].p25, 0) / inKeys.length;
-          sweep.push({ f, n, mean: m, p25: p, retMean: rm > 0 ? m / rm : -1, retP25: rp > 0 ? p / rp : -1, sep: wm.sep });
-          S(`§SFR_PLSWEEP building=${B} f=${f} lights=${n} plIntensitySum=${st.sum} _nightPLScale=${st.scale} interior_mean=${m.toFixed(4)} retMean=${(m / rm).toFixed(3)} retP25=${(p / rp).toFixed(3)} wallSeparation=${wm.sep.toFixed(4)}`);
-        }
-        await page.evaluate(() => window.__sfr.setPLScale(1));   // restore before anything else is read
-        // linear solve from the two end points of the sweep
-        const a0 = sweep[0], a2 = sweep[sweep.length - 1];
-        const slopeM = (a2.mean - a0.mean) / (a2.f - a0.f), slopeP = (a2.p25 - a0.p25) / (a2.f - a0.f);
-        const fM = slopeM > 0 ? a0.f + (T3_MEAN * rm - a0.mean) / slopeM : Infinity;
-        const fP = slopeP > 0 ? a0.f + (T3_P25 * rp - a0.p25) / slopeP : Infinity;
-        plSolve = { fMean: fM, fP25: fP, f: Math.max(fM, fP), sepDrift: Math.abs(a2.sep - a0.sep) };
-        const sumMoved = plSums.length > 1 && Math.abs(plSums[plSums.length - 1] - plSums[0]) > 1e-3;
-        if (!sumMoved) {
-          S(`§SFR_PLSOLVE building=${B} INCONCLUSIVE — the sweep never actually changed the staged fixture light total ` +
-            `(${plSums.join(' -> ')}); nothing was judged, so no claim is made about whether §STAGED_PL_CUT can restore the interior.`);
-        } else if (!isFinite(plSolve.f)) {
-          S(`§SFR_PLSOLVE building=${B} NO-OP — tripling every staged fixture light changed the interior by ` +
-            `${(a2.mean - a0.mean).toFixed(5)} (${a0.mean.toFixed(4)} -> ${a2.mean.toFixed(4)}). The ~${a0.n} night ` +
-            `fixtures do NOT light these standpoints, so §STAGED_PL_CUT is NOT the interior remedy. ` +
-            `HYPOTHESIS REFUTED BY MEASUREMENT — see §SFR_LIGHTS plIntensitySum for whether they carry any intensity at all.`);
-        } else {
-          S(`§SFR_PLSOLVE building=${B} f_for_T3mean=${fM.toFixed(2)} f_for_T3p25=${fP.toFixed(2)} f_required=${plSolve.f.toFixed(2)} ` +
-            `-> _nightPLScaleStill ${(0.5 * plSolve.f).toFixed(3)} (from 0.5); wall separation across the whole sweep moved ${plSolve.sepDrift.toFixed(5)}`);
-        }
-        verdict(plSolve.sepDrift < 0.01, `${B} the interior knob does NOT disturb the wall separation`, `sepDrift=${plSolve.sepDrift.toFixed(5)}`);
+        S(`§SFR_CONFLICT building=${B} the away-wall fix costs interior light: retention mean=${t3mean.toFixed(3)} p25=${t3p25.toFixed(3)} below floors ${T3_MEAN}/${T3_P25}. The middle point the user asked for is solved from a measured curve in §SFR_MCURVE below (measured facade contribution of the fixture lever at this pose: pl=${alt.out.away.c.pl.toFixed(5)} of ${alt.out.away.mean.toFixed(5)})`);
         conflicts++;
         S(`  DECLARED-CONFLICT ${B} T3 interior floor NOT held by part 1 alone — mean=${t3mean.toFixed(3)} p25=${t3p25.toFixed(3)}. ` +
-          `This is reported, not scored: the remedy and its derived value are in §SFR_PLSOLVE, and the alternative (clamping the env cut) is in §SFR_CLAMP.`);
+          `This is reported, not scored: the fixture route (the user's own question — light the room from its own fixtures, not from unshadowed fill) is measured in §SFR_FIXTURE_FIRST / §SFR_FIXTURE_VERDICT below, and the fallback m-lever in §SFR_MSOLVE.`);
         // The clamp alternative, priced from the same linear model, so the trade is on record both ways.
         const inRedM = inKeys.reduce((a, k) => a + beforeFrame[k].mean, 0) / inKeys.length;
         const inGrnM = inKeys.reduce((a, k) => a + altFrame[k].mean, 0) / inKeys.length;
@@ -687,6 +920,239 @@ function toolkit({ RW, RH }) {
       } else {
         verdict(true, `${B} T3 interior luminance floor held`, `mean=${t3mean.toFixed(3)} p25=${t3p25.toFixed(3)}`);
       }
+
+      // ---- 5c. §SFR_FIXTURE_FIRST + §SFR_LIVELY (U-11, re-scoped by the user 2026-09-02) --------
+      // USER Q1: "Will room lighting be better if it has no Sun?" — i.e. light the room from its
+      //   OWN fixtures instead of from sun/environment fill. That is the architecturally correct
+      //   answer and it is measured FIRST, at m=0 (the shipped GREEN env state, byte-untouched):
+      //   fixture point lights are DIRECTIONAL and distance-attenuated, while the HDRI fill the
+      //   m-lever would add back is non-directional and, in three.js, NOT shadow-map-occluded —
+      //   the exact property that caused the defect PR #1622 fixed. The m curve is the FALLBACK.
+      // USER Q2: "it should be LIVELY. So far it has never been, though lighting has been BRIGHT."
+      //   So mean luminance is NOT the objective — it is the metric that was already being met
+      //   while the room read dead. §WALL_SIDE_AND_LIGHT_FLOOR's T3 floors (0.70/0.55) are kept as
+      //   a FLOOR TO CLEAR; the OBJECTIVE is the shape of the field: cv, p90/p10, topShare, tileCV
+      //   (spatial falloff), wcStd (warm/cool chromatic separation). Every one of them is reported
+      //   as a RATIO against the shipped state, so nothing here needs an invented "good" threshold.
+      //
+      // STEP 1 — the instrument defect that made the previous sweep print INCONCLUSIVE is FIXED,
+      // not worked around. A._nightUpdateLights() runs off the controls 'change' event and off the
+      // still-refine loop; this witness poses the camera by writing A.camera.position directly, so
+      // the pool stayed wherever the last real camera move left it. refreshNightPool() calls the
+      // SHIPPED updater with A._stillRefineActive forced true — the same §NIGHT_STILL_FRUSTUM
+      // branch a real Alt+S still takes at this pose. Nothing is synthesised.
+      // Pose-major on purpose: repopulating the pool changes the scene's point-light COUNT, which
+      // is a shader DEFINE (§NIGHT_BAKE_POOL) — one recompile per pose, none per sample.
+      const PL_F = [1, 2, 4];      // x A._nightPLScaleStill (0.5) -> 0.5 / 1.0 / 2.0. Only f<=2 is
+                                   // shippable without inventing a constant: 1.0 is A._nightPLScale's
+                                   // own nav-tuned default, the value §STAGED_PL_CUT cut FROM.
+      const HDRI_S = [0.25, 0.5, 1.0];   // the FALLBACK m-lever, measured not interpolated
+      // Read the still floor OUT OF THE APP rather than typing 1.0 here: if tools.js ever retunes
+      // A._nightNearFadeFloorStill, this witness follows it instead of silently testing a stale value.
+      const A_STILL_FLOOR = await page.evaluate(() => window.APP._nightNearFadeFloorStill);
+      const gPoses = [{ k: 'extSun', o: chosen.sun, fov: chosen.sun.fov, wall: true },
+                      { k: 'extAway', o: chosen.away, fov: chosen.away.fov, wall: true }]
+        .concat(inPoses.map((p, i) => ({ k: 'interior' + i, o: p, fov: 0, wall: false })));
+      const grid = {};
+      for (const P of gPoses) {
+        await page.evaluate(({ o, fov }) => window.__sfr.pose(o.p, o.t, fov), { o: P.o, fov: P.fov });
+        const cen = await page.evaluate(() => window.__sfr.fixtureCensus());
+        const pool = await page.evaluate(() => window.__sfr.refreshNightPool());
+        const col = await page.evaluate(() => window.__sfr.poolColorCensus());
+        S(`§SFR_POOL building=${B} pose=${P.k} census=${JSON.stringify(cen)} pool=${JSON.stringify(pool)} colours=${JSON.stringify(col)}`);
+        if (cen.total > 0 && cen.within5m > 0 && cen.inFrustum === 0)
+          S(`§SFR_POOL_STARVED building=${B} pose=${P.k} — ${cen.within5m} luminaire(s) within 5 m of this standpoint and NOT ONE is inside the camera frustum, so the shipped still-branch selection (tools.js §NIGHT_STILL_FRUSTUM, containment) places no light here even though NIGHT_LIGHT_RANGE = 0 means every one of them would illuminate this frame. That is a selection defect, not a brightness number.`);
+        // wall poses read renderLinear (the same call every separation number in this file came
+        // from); interior poses read renderFrame (the same call the T3 retention floors came from,
+        // now also carrying the §SFR_LIVELY shape statistics).
+        // Every sample carries the pool state it was taken against (§SFR_POOL_INTEGRITY): a
+        // luminance read whose fixture pool was dead is not a measurement of the lever, it is a
+        // measurement of the witness's own damage. The first run had exactly that and scored it.
+        const readS = async () => {
+          const r = P.wall ? await page.evaluate(() => window.__sfr.renderLinear())
+                           : await page.evaluate(() => window.__sfr.renderFrame());
+          r.pool = await page.evaluate(() => window.__sfr.poolSum());
+          return r;
+        };
+        const rec = { pool, cen, col, pl: {}, hdri: {}, opt: {} };
+        for (const f of PL_F) {
+          const st = await page.evaluate(({ f }) => window.__sfr.setPLScale(f), { f });
+          rec.pl[f] = Object.assign(await readS(), { plSum: st.sum });
+        }
+        await page.evaluate(() => window.__sfr.setPLScale(1));
+        // The FALLBACK m-lever is measured HERE, before any option probe, so it can never be
+        // downstream of one. (In the first run it was last, and a broken probe upstream silently
+        // moved its whole curve.)
+        for (const s of HDRI_S) {
+          const st = await page.evaluate(({ s }) => window.__sfr.setMatteHdriFill(s), { s });
+          rec.hdri[s] = Object.assign(await readS(), { nMat: st.n });
+        }
+        await page.evaluate(() => window.__sfr.setMatteHdriFill(-1));
+        // ---- the cheap liveliness options, each ONE render, each a probe of a mechanism that
+        // ALREADY EXISTS in the repo (no new constant is introduced by measuring it) ----
+        // F runs at EVERY pose, walls included: its whole claim is that it lifts light INSIDE a
+        // room (every fixture there is within the 15 m fade window) and leaves a facade 12 m from
+        // the building untouched (its fixtures are already past the window). That is a two-sided
+        // claim, so both sides are measured.
+        {
+          const nf = await page.evaluate(({ f }) => window.__sfr.setNearFadeFloor(f), { f: A_STILL_FLOOR });
+          rec.opt.nearFadeStill = Object.assign(await readS(), { probe: nf });
+          await page.evaluate(() => window.__sfr.setNearFadeFloor(-1));
+        }
+        if (!P.wall) {
+          const dec = await page.evaluate(() => window.__sfr.setPLDecay(2));
+          rec.opt.decay2 = Object.assign(await readS(), { probe: dec });
+          await page.evaluate(() => window.__sfr.setPLDecay(-1));
+          const em = await page.evaluate(() => window.__sfr.setEmissiveGain(3));
+          rec.opt.emissive3 = Object.assign(await readS(), { probe: em });
+          await page.evaluate(() => window.__sfr.setEmissiveGain(1));
+          // A+B together at the shippable PL ceiling — the combination, not two solo readings
+          await page.evaluate(({ f }) => window.__sfr.setPLScale(f), { f: 2 });
+          await page.evaluate(() => window.__sfr.setPLDecay(2));
+          rec.opt.pl2_decay2 = await readS();
+          await page.evaluate(() => window.__sfr.setPLDecay(-1));
+          await page.evaluate(() => window.__sfr.setPLScale(1));
+        }
+        grid[P.k] = rec;
+        const shape = r => `mean=${r.mean.toFixed(5)}` + (P.wall ? '' :
+          ` cv=${r.cv.toFixed(3)} p90p10=${r.p90p10.toFixed(2)} topShare=${r.topShare.toFixed(3)} tileCV=${r.tileCV.toFixed(3)} wcStd=${r.wcStd.toFixed(4)}`) +
+          ` pool[live=${r.pool.live} sum=${r.pool.sum} floor=${r.pool.floor} scale=${r.pool.scale} decay=${r.pool.decayRange}]`;
+        S(`§SFR_GRID building=${B} pose=${P.k} ` +
+          PL_F.map(f => `pl_x${f}{${shape(rec.pl[f])}}`).join(' ') +
+          ' ' + HDRI_S.map(s => `hdri_s${s}{${shape(rec.hdri[s])}}`).join(' ') +
+          ` nearFadeStill{${shape(rec.opt.nearFadeStill)} probe=${JSON.stringify(rec.opt.nearFadeStill.probe)}}` +
+          (P.wall ? '' : ` decay2{${shape(rec.opt.decay2)}} emissive_x3{${shape(rec.opt.emissive3)}} pl2+decay2{${shape(rec.opt.pl2_decay2)}}`) +
+          ` plIntensitySum ${rec.pl[PL_F[0]].plSum}->${rec.pl[PL_F[PL_F.length - 1]].plSum}`);
+      }
+      const avg = (pick, field) => inKeys.reduce((a, k) => a + pick(grid[k])[field], 0) / inKeys.length;
+      const sepAt = pick => pick(grid.extSun).mean > 0 ? pick(grid.extAway).mean / pick(grid.extSun).mean : -1;
+      const SHAPE = ['cv', 'p90p10', 'topShare', 'tileCV', 'wcStd'];
+      // §SFR_REGISTER — the REAL-BAKE A/B of the user's own exported films (Clinic 31 Aug vs 2 Sep,
+      // TerminalMerged 27 Aug vs 2 Sep, ffprobe signalstats over 19-26 sampled frames each) says the
+      // defect is NOT "the shadows went wrong": the BRIGHT register drained. Brightest fifth
+      // 140.7 -> 79.2 (-44%) against the darkest fifth 50.7 -> 35.4 (-30%), with peak barely moved
+      // (149 -> 137) — the signature of a broad fill removed with nothing put back. So the upper and
+      // lower registers are retained SEPARATELY here; a mean alone cannot tell those two apart.
+      const rP90 = inKeys.reduce((a, k) => a + beforeFrame[k].p90, 0) / inKeys.length;
+      const rP10 = inKeys.reduce((a, k) => a + beforeFrame[k].p10, 0) / inKeys.length;
+      const row = (label, pick, wallPick) => {
+        const r = { label, retMean: avg(pick, 'mean') / rm, retP25: avg(pick, 'p25') / rp,
+          retP90: rP90 > 0 ? avg(pick, 'p90') / rP90 : -1, retP10: rP10 > 0 ? avg(pick, 'p10') / rP10 : -1,
+          sep: wallPick === false ? null : sepAt(wallPick || pick),
+          // §SFR_POOL_INTEGRITY — the smallest number of lights actually carrying intensity over the
+          // standpoints this row averages. 0 means the row was measured against a scene with no
+          // fixture light at all, which is a witness fault, not a property of the lever.
+          poolLive: Math.min.apply(null, inKeys.map(k => pick(grid[k]).pool.live)),
+          poolSum: Math.min.apply(null, inKeys.map(k => +pick(grid[k]).pool.sum)) };
+        SHAPE.forEach(f => { r[f] = avg(pick, f); });
+        return r;
+      };
+      // BASELINE RE-PROOF — (pl x1, env sky) IS the shipped GREEN state, so it must reproduce the
+      // separation already measured above. It is measured with the fixture pool REPOPULATED, which
+      // the earlier reading was not: any gap between the two IS the fixture pool's own effect on
+      // the facade, and is reported rather than assumed away.
+      const base = row('m0_shipped', r => r.pl[1]);
+      S(`§SFR_MBASE building=${B} sep_shipped_earlier=${alt.sep.toFixed(5)} sep_at_m0_withPoolLive=${base.sep.toFixed(5)} ` +
+        `delta=${Math.abs(base.sep - alt.sep).toFixed(5)} controlDrift=${drift.toFixed(5)} ` +
+        `interior_retention_at_m0 mean=${base.retMean.toFixed(3)} p25=${base.retP25.toFixed(3)} ` +
+        `upperRegister_p90=${base.retP90.toFixed(3)} lowerRegister_p10=${base.retP10.toFixed(3)} ` +
+        SHAPE.map(f => `${f}=${base[f].toFixed(4)}`).join(' '));
+      verdict(Math.abs(base.sep - alt.sep) < 0.02, `${B} m=0 re-proves the shipped GREEN separation with the fixture pool live`,
+        `${base.sep.toFixed(4)} vs ${alt.sep.toFixed(4)}`);
+      // ---- STEP 1's own gate: can this sweep judge itself at all? -------------------------------
+      const poolLights = gPoses.map(P => grid[P.k].pool.lights);
+      const poolSum = gPoses.map(P => +grid[P.k].pool.sum);
+      const totalFix = grid[gPoses[0].k].cen.total;
+      const plVacuous = poolLights.every(n => n === 0) || poolSum.every(s => s === 0);
+      const plMoved = inKeys.some(k => Math.abs(grid[k].pl[PL_F[PL_F.length - 1]].plSum - grid[k].pl[PL_F[0]].plSum) > 1e-3);
+      if (totalFix === 0) {
+        S(`§SFR_FIXTURE_FIRST building=${B} VACUOUS — the building carries 0 luminaires (${JSON.stringify(grid[gPoses[0].k].cen)}); there is no fixture route to judge here.`);
+        verdict(false, `${B} INCONCLUSIVE — no luminaire population to judge the fixture route on`, `total=0`);
+      } else if (plVacuous || !plMoved) {
+        S(`§SFR_FIXTURE_FIRST building=${B} INCONCLUSIVE — the staged fixture pool never carried intensity at these poses ` +
+          `(lights=${poolLights.join('/')} sums=${poolSum.join('/')} plMoved=${plMoved}); nothing was judged, so NO claim is made about the fixture route. ` +
+          `See §SFR_POOL / §SFR_POOL_STARVED above for which of the three failures this is.`);
+        verdict(false, `${B} INCONCLUSIVE — the fixture sweep could not judge itself`, `lights=${poolLights.join('/')}`);
+      } else {
+        verdict(true, `${B} the fixture pool is LIVE at the measurement poses (step 1's instrument defect is fixed)`,
+          `lights=${poolLights.join('/')} intensitySum=${poolSum.join('/')} distinctColours=${grid[inKeys[0]].col.distinct}`);
+      }
+      // ---- STEP 2: do the fixtures alone reach the floors at m=0, and do they raise LIVELINESS? --
+      const plRows = PL_F.map(f => row(`PL_x${f}`, r => r.pl[f]));
+      const hdriRows = HDRI_S.map(s => row(`HDRI_s${s}`, r => r.hdri[s]));
+      // The option probes are applied at the INTERIOR standpoints only, so they carry no facade
+      // measurement and print separation=n/a rather than repeating m=0's number as if it were
+      // theirs. (Both probes can only ever REDUCE the facade's fixture term, which §SFR_WALL
+      // already measures at pl=0.00000 there — so there is no facade risk to hide, only no data.)
+      const optRows = [row('OPT_F_nearFadeStill', r => r.opt.nearFadeStill, r => r.opt.nearFadeStill)]
+        .concat(grid[inKeys[0]].opt.decay2 ? [
+          row('OPT_B_decay2', r => r.opt.decay2, false),
+          row('OPT_D_emissive_x3', r => r.opt.emissive3, false),
+          row('OPT_A+B_pl_x2_decay2', r => r.opt.pl2_decay2, false)] : []);
+      for (const r of plRows.concat(optRows, hdriRows))
+        S(`§SFR_MCURVE building=${B} lever=${r.label}${r.poolLive === 0 ? ' [INCONCLUSIVE — fixture pool carried no intensity for this sample]' : ''} ` +
+          `retMean=${r.retMean.toFixed(3)} retP25=${r.retP25.toFixed(3)} ` +
+          `retP90=${r.retP90.toFixed(3)} retP10=${r.retP10.toFixed(3)} ` +
+          `separation=${r.sep === null ? 'n/a' : r.sep.toFixed(4)} ` +
+          SHAPE.map(f => `${f}=${r[f].toFixed(4)}(x${(r[f] / (base[f] || 1e-9)).toFixed(2)})`).join(' ') +
+          ` (floors ${T3_MEAN}/${T3_P25}, plainNav sep ${target.toFixed(4)}, shipped sep ${base.sep.toFixed(4)})`);
+      const plTop = plRows[plRows.length - 1];
+      const plShippable = plRows[1];        // f=2 -> _nightPLScaleStill 1.0, the pre-cut repo value
+      const plFacadeCost = Math.abs(plTop.sep - plRows[0].sep);
+      verdict(plFacadeCost < 0.01, `${B} the fixture lever does NOT disturb the wall separation (the facade is free)`,
+        `separation ${plRows[0].sep.toFixed(4)} -> ${plTop.sep.toFixed(4)} across x1..x${PL_F[PL_F.length - 1]}, drift=${plFacadeCost.toFixed(5)}`);
+      const plClears = plTop.retMean >= T3_MEAN && plTop.retP25 >= T3_P25;
+      // TWO-SIDED, and it is the whole point of this section. PR #1622 already RAISED contrast as a
+      // side effect of removing the unoccluded HDRI — measured on the user's own films, Clinic CV
+      // 0.344 -> 0.430 (+25%), spread 42.9 -> 59.1 (+38%), on two buildings. So the baseline is not
+      // "dead", it is "more alive but too dark", and a lever that buys the mean back by flattening
+      // the field would UNDO #1622. Every option is therefore judged on BOTH sides against the
+      // SHIPPED m=0 state: it must not lower cv and it must not lower tileCV. `keepsShape` is that
+      // gate; a lever can only be called a win if it clears the floors AND keeps or raises shape.
+      const SHAPE_TOL = 0.98;   // 2% headroom for render-to-render noise; the RED CONTROL measures
+                                // the instrument's actual drift and is asserted separately.
+      const keepsShape = r => r.cv >= base.cv * SHAPE_TOL && r.tileCV >= base.tileCV * SHAPE_TOL;
+      const plLively = keepsShape(plTop) && (plTop.cv > base.cv || plTop.tileCV > base.tileCV);
+      S(`§SFR_FIXTURE_VERDICT building=${B} atMax=x${PL_F[PL_F.length - 1]} retMean=${plTop.retMean.toFixed(3)}${plTop.retMean >= T3_MEAN ? '(floor MET)' : '(floor MISSED)'} ` +
+        `retP25=${plTop.retP25.toFixed(3)}${plTop.retP25 >= T3_P25 ? '(floor MET)' : '(floor MISSED)'} ` +
+        `atShippableCeiling(_nightPLScaleStill=1.0) retMean=${plShippable.retMean.toFixed(3)} retP25=${plShippable.retP25.toFixed(3)} ` +
+        `LIVELINESS cv x${(plTop.cv / (base.cv || 1e-9)).toFixed(2)} tileCV x${(plTop.tileCV / (base.tileCV || 1e-9)).toFixed(2)} ` +
+        `p90p10 x${(plTop.p90p10 / (base.p90p10 || 1e-9)).toFixed(2)} wcStd x${(plTop.wcStd / (base.wcStd || 1e-9)).toFixed(2)} ` +
+        `upperRegister_p90 ${base.retP90.toFixed(3)} -> ${plTop.retP90.toFixed(3)} ` +
+        `-> floors ${plClears ? 'REACHED' : 'NOT reached'} by fixtures alone at m=0; field shape ${plLively ? 'kept/raised' : 'FLATTENED — this lever would undo #1622'}`);
+      for (const r of plRows.slice(1).concat(optRows, hdriRows)) {
+        if (r.poolLive === 0) {
+          S(`§SFR_TWOSIDED building=${B} option=${r.label} INCONCLUSIVE — measured against a dead fixture pool ` +
+            `(poolLive=0, poolSum=${r.poolSum}); nothing was judged and no verdict is given for this lever.`);
+          continue;
+        }
+        S(`§SFR_TWOSIDED building=${B} option=${r.label} floors=${r.retMean >= T3_MEAN && r.retP25 >= T3_P25 ? 'CLEARED' : 'missed'} ` +
+          `shape=${keepsShape(r) ? 'kept' : 'FLATTENED'} cv=${r.cv.toFixed(4)}vs${base.cv.toFixed(4)} tileCV=${r.tileCV.toFixed(4)}vs${base.tileCV.toFixed(4)} ` +
+          `upperRegister=${r.retP90.toFixed(3)} lowerRegister=${r.retP10.toFixed(3)} ` +
+          `VERDICT=${(r.retMean >= T3_MEAN && r.retP25 >= T3_P25 && keepsShape(r)) ? 'WIN' : (keepsShape(r) ? 'shape kept, floors missed' : 'REJECT — buys brightness by flattening the field')}`);
+      }
+      verdict(keepsShape(base), `${B} the two-sided gate is anchored on the shipped state itself`, `cv=${base.cv.toFixed(4)} tileCV=${base.tileCV.toFixed(4)}`);
+      // ---- the LIVELINESS-PER-COST ranking the user asked for. Cost is stated as what the option
+      // costs to SHIP (parameter vs new mechanism), and gain as the measured shape ratios — both
+      // printed, never averaged into a single invented score.
+      for (const r of plRows.slice(1).concat(optRows))
+        S(`§SFR_LIVELY building=${B} option=${r.label} dMean=${(r.retMean - base.retMean).toFixed(3)} ` +
+          `dCV=${(r.cv - base.cv).toFixed(4)} dTileCV=${(r.tileCV - base.tileCV).toFixed(4)} ` +
+          `dP90P10=${(r.p90p10 - base.p90p10).toFixed(3)} dWcStd=${(r.wcStd - base.wcStd).toFixed(4)} ` +
+          `dSeparation=${r.sep === null ? 'n/a' : (r.sep - base.sep).toFixed(4)} ` +
+          `brightnessNeutralLiveliness=${base.cv > 0 ? ((r.cv / base.cv) / Math.max(1e-9, r.retMean / base.retMean)).toFixed(3) : 'n/a'} ` +
+          `(the last figure is the shape gain PER unit of brightness gain — an option that only adds light scores 1.0)`);
+      // ---- STEP 3: the FALLBACK, only meaningful if the fixture route missed the floors ---------
+      const hdriSolve = hdriRows.filter(r => r.retMean >= T3_MEAN && r.retP25 >= T3_P25)[0] || null;
+      S(`§SFR_MSOLVE building=${B} fixturesReachFloors=${plClears} | FALLBACK m-lever (matte back on the staged HDRI at fraction s): ` +
+        hdriRows.map(r => `${r.label}{retMean=${r.retMean.toFixed(3)} retP25=${r.retP25.toFixed(3)} sep=${r.sep.toFixed(4)} cv=${r.cv.toFixed(3)} tileCV=${r.tileCV.toFixed(3)}}`).join(' ') +
+        ` | smallest s that clears both floors = ${hdriSolve ? hdriSolve.label : 'none of the sampled s'} ` +
+        `| s=1.0 must reproduce the measured RED state: sep_here=${hdriRows[hdriRows.length - 1].sep.toFixed(4)} vs RED=${redSep.toFixed(4)}`);
+      verdict(Math.abs(hdriRows[hdriRows.length - 1].sep - redSep) < 0.03,
+        `${B} the fallback lever's s=1.0 sample reproduces the measured RED state (the m curve is anchored, not fitted)`,
+        `${hdriRows[hdriRows.length - 1].sep.toFixed(4)} vs ${redSep.toFixed(4)}`);
+      plSolve = { plClears, plLively, plFacadeCost, base, plRows, hdriRows, optRows,
+        totalFixtures: totalFix, poolLights, vacuous: plVacuous || !plMoved };
     } else if (!before) {
       S(`§SFR_T3 building=${B} SKIPPED — fix not present in this tree`);
     }
@@ -698,7 +1164,7 @@ function toolkit({ RW, RH }) {
       let bestK = inKeys[0];
       for (const k of inKeys) if (altFrame[k].std > altFrame[bestK].std) bestK = k;
       const idx = parseInt(bestK.replace('interior', ''), 10);
-      await page.evaluate(({ o }) => window.__sfr.pose(o.p, o.t, 0), { o: inPoses[idx] });
+      const decompPool = await page.evaluate(({ o }) => window.__sfr.poseAndPool(o.p, o.t, 0), { o: inPoses[idx] });
       const all = await page.evaluate(() => window.__sfr.renderFrame());
       const c = {};
       for (const g of GROUPS) {
@@ -708,7 +1174,7 @@ function toolkit({ RW, RH }) {
         c[g] = all.mean - r[`mean`];
       }
       const sum = GROUPS.reduce((a, g) => a + c[g], 0);
-      S(`§SFR_INTERIOR_DECOMP building=${B} standpoint=${inPoses[idx].name} meanLumaLinear=${all.mean.toFixed(5)} ` +
+      S(`§SFR_INTERIOR_DECOMP building=${B} standpoint=${inPoses[idx].name} pool=${JSON.stringify(decompPool)} meanLumaLinear=${all.mean.toFixed(5)} ` +
         GROUPS.map(g => g + '=' + c[g].toFixed(5)).join(' ') + ` closure=${(sum / (all.mean || 1)).toFixed(3)} ` +
         `(GREEN state — this is what is left to light an Alt+S interior once the sun is shadow-blocked)`);
       verdict(Math.abs(sum / (all.mean || 1) - 1) < 0.08, `${B} interior decomposition closes on the total`,
@@ -716,10 +1182,10 @@ function toolkit({ RW, RH }) {
     }
 
     // ---- 5b. FREEZE CONTROL, taken at the END when the scene has long settled ------------------
-    await page.evaluate(({ o }) => window.__sfr.pose(o.p, o.t, o.fov), { o: chosen.away });
+    await page.evaluate(({ o }) => window.__sfr.poseAndPool(o.p, o.t, o.fov), { o: chosen.away });
     const frozenRead = await page.evaluate(() => window.__sfr.renderLinear());
     await page.evaluate(() => window.__sfr.unfreeze());
-    await page.evaluate(({ o }) => window.__sfr.pose(o.p, o.t, o.fov), { o: chosen.away });
+    await page.evaluate(({ o }) => window.__sfr.poseAndPool(o.p, o.t, o.fov), { o: chosen.away });
     const liveRead = await page.evaluate(() => window.__sfr.renderLinear());
     const fzDrift = frozenRead.mean > 0 ? Math.abs(liveRead.mean - frozenRead.mean) / frozenRead.mean : 1;
     S(`§SFR_FREEZE_CONTROL building=${B} frozen=${frozenRead.mean.toFixed(5)} liveShadowMap=${liveRead.mean.toFixed(5)} relDrift=${fzDrift.toFixed(5)}`);
@@ -727,6 +1193,9 @@ function toolkit({ RW, RH }) {
       `relDrift=${fzDrift.toFixed(5)}`);
 
     // ---- 6. teardown: staging must leave nothing behind -----------------------------------
+    // Hand the shipped churn path back before teardown, so the teardown census judges the real
+    // exit path and A._nightBakePool is disposed by tools.js's own §NIGHT_BAKE_POOL teardown.
+    await page.evaluate(() => window.__sfr.bakePoolMode(false));
     await page.evaluate(() => { window.APP._stillRefineActive = true; window.APP.stopStillRefine(true, false); });
     await page.waitForTimeout(3000);
     const td = await page.evaluate(() => window.__sfr.teardownCensus());
@@ -744,7 +1213,10 @@ function toolkit({ RW, RH }) {
   for (const r of perBuilding) {
     S(`§SFR_SUMMARY building=${r.B} plainNav=${r.target.toFixed(4)} RED_altS=${r.redSep.toFixed(4)} ` +
       `GREEN_altS=${r.greenSep.toFixed(4)} predicted=${r.predSep.toFixed(4)} fixLive=${r.live} ` +
-      `T3 mean=${r.t3mean.toFixed(3)} p25=${r.t3p25.toFixed(3)} ` + (r.plSolve ? `PL_remedy=${isFinite(r.plSolve.f) ? r.plSolve.f.toFixed(2) : 'NO-OP(refuted)'} ` : '') +
+      `T3 mean=${r.t3mean.toFixed(3)} p25=${r.t3p25.toFixed(3)} ` +
+      (r.plSolve ? (r.plSolve.vacuous ? 'FIXTURES=INCONCLUSIVE ' :
+        `fixtures_reach_floors=${r.plSolve.plClears} fixtures_raise_shape=${r.plSolve.plLively} ` +
+        `facadeCost=${r.plSolve.plFacadeCost.toFixed(5)} luminaires=${r.plSolve.totalFixtures} `) : '') +
       `envShareOfAwayWall staged=${r.envShareStaged.toFixed(3)} plainNav=${r.envSharePlain.toFixed(3)}`);
   }
 
