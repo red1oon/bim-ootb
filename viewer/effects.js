@@ -8015,12 +8015,66 @@ async function setupEffects(A, renderer, scene, camera) {
     // into the forward travel tangent at f=0 over the FINAL CPE_REVEAL_SEAM_FRAC width, so round 2's
     // own opening gaze picks up with zero kink — same contract _revealPose's own end seam keeps at
     // the Beat 4 handoff.
+    // ══ §CPE_FLYBACK_FACE_TRAVEL (2026-09-04, user) ═══════════════════════════════════════════
+    // USER, on a real bake: "During Reveal fly back from last stick back to first, the cam head
+    // angle seems to face sideways all the way instead of direction of flight."
+    // CAUSE, read straight out of the code below as it stood: the gaze HELD `_revealSeamDir(tO)` —
+    // the angle of attack at the LAST stick — for the entire retrace, while the body flew backward
+    // along a corridor that turns. A fixed head on a turning path reads as sideways, and wherever
+    // the path doubles back it reads as backwards. The hold was a deliberate choice ("no reason to
+    // start turning the head before the camera is even back on the path"), but that reasoning only
+    // ever covered the short position-blend seam at the start — not the 12+ seconds of travel after
+    // it. This is the same class of defect §CPE_AIM_DEPTH_RETIRED settled elsewhere: path-follow is
+    // the automatic gaze rule, and this sub-beat was the one place still ignoring it.
+    // FIX: the gaze TRACKS THE DIRECTION OF FLIGHT — `_revealTravelDir(f, -1)`, the SAME helper
+    // round 2 already uses with dir=+1, evaluated at the retrace's own f. No new tangent maths, no
+    // new constant.
+    // THE TWO TURNS THIS CREATES ARE SIZED BY THE REAL ANGLE, not by a fixed fraction. Turning into
+    // the travel direction at the start and out of it into round 2's forward gaze at the end are
+    // both close to 180deg on a path that ends where it began. The reveal sub-beats are NOT covered
+    // by §CPE_GAZE_CONSTANT_RATE's limiter (that spans Beats 3-4 only — see _gazeRateAt's call
+    // sites), so a fixed 8% seam across a reversal would whip at roughly 180 deg/s against a film
+    // whose every other turn is charged at CINEMA_TURN_DPS. Each window is therefore
+    // angle/CINEMA_TURN_DPS seconds expressed as a fraction of this beat, floored at the existing
+    // seam width and capped so the two can never overlap. When the cap bites, the §-line SAYS SO
+    // rather than hiding a whip behind a smooth-looking curve.
+    function _flyBackAngDeg(a, b) {
+      var d = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));
+      return Math.acos(d) * 180 / Math.PI;
+    }
+    function _flyBackTurnWindow(angDeg) {
+      var sec = _useSec && _useSec.flyback > 0 ? _useSec.flyback : 0;
+      if (!(sec > 0)) return CPE_REVEAL_SEAM_FRAC;
+      return Math.max(CPE_REVEAL_SEAM_FRAC, Math.min(0.45, (angDeg / CINEMA_TURN_DPS) / sec));
+    }
+    var _flyBackLogged = false;
     function _flyBackPose(w) {
       w = Math.max(0, Math.min(1, w));
       var e = _cinemaEaseFloored(w);
       var holdDir = _revealSeamDir(tO);           // same "angle of attack" the pull-out opened on
       var pOut = _pullOutPose(1);                 // the pull-out's own final point — this beat's start
-      var onPath = _outPos(1 - e);                // retrace target at this instant
+      var f = 1 - e;                              // the retrace parameter: 1 -> 0
+      var onPath = _outPos(f);                    // retrace target at this instant
+      var travelDir = _revealTravelDir(f, -1);    // §CPE_FLYBACK_FACE_TRAVEL — where it is GOING
+      var endDir = _revealTravelDir(0, 1);        // round 2's own opening gaze
+      var inW = _flyBackTurnWindow(_flyBackAngDeg(holdDir, _revealTravelDir(1, -1)));
+      var outW = _flyBackTurnWindow(_flyBackAngDeg(_revealTravelDir(0, -1), endDir));
+      if (!_flyBackLogged) {
+        _flyBackLogged = true;
+        var inAng = _flyBackAngDeg(holdDir, _revealTravelDir(1, -1));
+        var outAng = _flyBackAngDeg(_revealTravelDir(0, -1), endDir);
+        var sec = _useSec && _useSec.flyback > 0 ? _useSec.flyback : 0;
+        console.log('§CPE_FLYBACK_FACE_TRAVEL gaze=travel-tangent(dir=-1) flybackSec=' + sec.toFixed(1) +
+          ' turnIn=' + inAng.toFixed(1) + 'deg over ' + (inW * sec).toFixed(2) + 's (' +
+          (inAng / Math.max(0.001, inW * sec)).toFixed(1) + ' deg/s)' +
+          ' turnOut=' + outAng.toFixed(1) + 'deg over ' + (outW * sec).toFixed(2) + 's (' +
+          (outAng / Math.max(0.001, outW * sec)).toFixed(1) + ' deg/s)' +
+          ' rate=' + CINEMA_TURN_DPS + 'deg/s' +
+          ((inW >= 0.45 || outW >= 0.45)
+            ? ' ⚠ CAPPED at 0.45 of the beat — this fly-back is too short to turn at the film rate;' +
+              ' the turn is faster than every other turn in the film'
+            : ''));
+      }
       var pos;
       if (w < CPE_REVEAL_SEAM_FRAC) {
         var s = _cinemaSmoothstep(w / CPE_REVEAL_SEAM_FRAC);
@@ -8029,14 +8083,21 @@ async function setupEffects(A, renderer, scene, camera) {
       } else {
         pos = onPath;
       }
-      if (w > 1 - CPE_REVEAL_SEAM_FRAC) {
-        var endDir = _revealTravelDir(0, 1);      // round 2's own opening gaze
+      // Turn INTO the direction of flight, off the pull-out's held angle of attack. Anchoring to
+      // holdDir (not the raw tangent) keeps the tP seam kink-free — the same rule _revealSeamDir
+      // exists to enforce at every other seam in this file.
+      if (w < inW) {
         return _dirBlend(pos.x, pos.y, pos.z, holdDir.x, holdDir.y, holdDir.z,
+          travelDir.x, travelDir.y, travelDir.z, _cinemaSmoothstep(w / inW));
+      }
+      // Turn OUT of it into round 2's opening gaze, so the forward lap starts with zero kink.
+      if (w > 1 - outW) {
+        return _dirBlend(pos.x, pos.y, pos.z, travelDir.x, travelDir.y, travelDir.z,
           endDir.x, endDir.y, endDir.z,
-          _cinemaSmoothstep((w - (1 - CPE_REVEAL_SEAM_FRAC)) / CPE_REVEAL_SEAM_FRAC));
+          _cinemaSmoothstep((w - (1 - outW)) / outW));
       }
       return { x: pos.x, y: pos.y, z: pos.z,
-               tx: pos.x + holdDir.x * 20, ty: pos.y + holdDir.y * 20, tz: pos.z + holdDir.z * 20 };
+               tx: pos.x + travelDir.x * 20, ty: pos.y + travelDir.y * 20, tz: pos.z + travelDir.z * 20 };
     }
     // §CPE_DISCIPLINE_REVEAL_PULLOUT: round 2 (tF..tV) — the SAME path flown again, forward only
     // (0->1), no there-and-back. Starts CLEAN now — the fly-back above already puts the camera on

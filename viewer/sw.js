@@ -52,7 +52,12 @@
 // stat cards ONLY. The held build-up crew roster is no longer one of the slots — it holds,
 // un-rotated, through round 1 where it means something. A build-up slide is not a finished-building
 // highlight (user ruling). cinema_maxq.js?v= bumped in viewer.html.
-const CACHE_VERSION = 'v1136';   // bump on each deploy; per-change detail is the git commit message.
+// v1137 (2026-09-04) §CPE_FLYBACK_FACE_TRAVEL: during the Reveal fly-back the camera now faces the
+// DIRECTION OF FLIGHT (the retrace tangent) instead of holding the angle of attack it arrived on,
+// which read as sideways on every corner. The two end turns are sized by the real angle at
+// CINEMA_TURN_DPS, not a fixed seam, because the reveal sub-beats are outside the gaze rate limiter.
+// effects.js?v=33->34.
+const CACHE_VERSION = 'v1137';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
