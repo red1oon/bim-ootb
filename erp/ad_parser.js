@@ -393,6 +393,52 @@
     return { type: valType || 'unknown', referenceId: referenceId };
   }
 
+  // ── §P8 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P8-SPEC P8.1 — Witness: W-PARITY-REFTABLE) ──
+  /**
+   * resolveRefTable — an FK's REAL target, for DisplayType 18 (Table) and 30 (Search).
+   *
+   * A port of MLookupFactory.getLookup_Table(ctx, WindowNo, AD_Reference_Value_ID): the target table, its key
+   * column and its display column are DECLARED in AD_Ref_Table, not inferred from the column name. The
+   * `<column minus _id>` convention the pickers use is iDempiere's TableDIR rule (DisplayType 19,
+   * getLookup_TableDir) and it is simply WRONG for 18/30 — measured on this seed, 34 of the 115 FK
+   * field-instances across the five document tabs (18 distinct columns: SalesRep_ID -> ad_user,
+   * Bill_BPartner_ID -> c_bpartner, C_DocTypeTarget_ID -> c_doctype, User1_ID/User2_ID -> c_elementvalue and
+   * the DropShip, Return and Bill address family) resolve to a table that does not exist under that
+   * convention, so their pickers degraded to the raw value and their AD_Val_Rules had never bitten at all.
+   *
+   * AD_Ref_Table also carries a WhereClause and an OrderByClause which iDempiere appends to the lookup query —
+   * a SECOND narrowing, independent of AD_Val_Rule (ref 190 restricts AD_User to IsSalesRep='Y' partners;
+   * ref 138 to non-summary active partners; ref 130 excludes AD_Org 0).
+   *
+   * @param {Object} db               sql.js database
+   * @param {number} referenceValueId AD_Reference_Value_ID
+   * @returns {Object|null} { tableName, keyCol, displayCol, isValueDisplayed, whereClause, orderByClause }
+   *                        or null when this reference has no AD_Ref_Table row (caller keeps the convention)
+   */
+  function resolveRefTable(db, referenceValueId) {
+    if (referenceValueId == null || referenceValueId === '') return null;
+    try {
+      var r = db.exec(
+        'SELECT t.TableName, ck.ColumnName AS KeyCol, cd.ColumnName AS DisplayCol, ' +
+        '       rt.isvaluedisplayed, rt.whereclause, rt.orderbyclause ' +
+        'FROM ad_ref_table rt ' +
+        'JOIN AD_Table t ON t.AD_Table_ID = rt.ad_table_id ' +
+        'LEFT JOIN AD_Column ck ON ck.AD_Column_ID = rt.ad_key ' +
+        'LEFT JOIN AD_Column cd ON cd.AD_Column_ID = rt.ad_display ' +
+        'WHERE rt.ad_reference_id = ?', [referenceValueId]);
+      if (!r.length || !r[0].values.length) return null;
+      var v = r[0].values[0];
+      var out = { tableName: v[0], keyCol: v[1], displayCol: v[2],
+                  isValueDisplayed: String(v[3]) === 'Y', whereClause: v[4] || null, orderByClause: v[5] || null };
+      console.log('§AD_PARSER resolveRefTable id=' + referenceValueId + ' table=' + out.tableName +
+                  ' key=' + out.keyCol + ' where=' + (out.whereClause ? 'yes' : 'none'));
+      return out;
+    } catch (e) {
+      console.log('§AD_PARSER resolveRefTable id=' + referenceValueId + ' UNAVAILABLE (' + (e && e.message) + ')');
+      return null;
+    }
+  }
+
   // ── Table name lookup ──────────────────────────────────────────────
 
   /**
@@ -476,6 +522,7 @@
     getFields:            getFields,
     setTipSource:         setTipSource,
     resolveReference:     resolveReference,
+    resolveRefTable:      resolveRefTable,   // §P8 (W-PARITY-REFTABLE): MLookupFactory.getLookup_Table
     getTableName:         getTableName,
     getWindowFromMenu:    getWindowFromMenu,
     evaluateDisplayLogic: evaluateDisplayLogic,
