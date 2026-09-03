@@ -43,7 +43,12 @@
 // nav and bake cannot drift apart), and the camera matrix is refreshed before the cull
 // (§BAKE_FRUSTUM_STALE). An interior pose whose frustum held no fixture centre previously left
 // every §NIGHT_BAKE_POOL slot at intensity 0 — the room lit by flat fill alone. tools.js?v=45->46.
-const CACHE_VERSION = 'v1134';   // bump on each deploy; per-change detail is the git commit message.
+// v1135 (2026-09-04) §CPE_FLAGS_PORTABLE: the building DB's `cinema_path` table now carries the
+// four film flags (buildup, room_title, reveal, day_counter) alongside the path geometry it already
+// stored, so a path saved with Ctrl+S no longer travels with every feature silently OFF. Columns are
+// APPENDED and the reader PRAGMA-probes them, so old and new .db files open in both directions.
+// scene.js?v=59->60, effects.js?v=32->33.
+const CACHE_VERSION = 'v1135';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

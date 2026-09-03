@@ -738,20 +738,42 @@ async function setupScene(A) {
       // ones — a table written by an older build has 13 columns and the reader selects by NAME with
       // a fallback, so both directions of the version skew stay readable (§CPE_PATH_NOT_PORTABLE
       // only just made these files portable at all; do not break that in the next release).
+      // ══ §CPE_FLAGS_PORTABLE (2026-09-04, user: "the HHS silent i have set a stored path which are
+      // all those [buildup/label/reveal ON]" — but the CLI bake of that very .db resolved
+      // `§CLI_BAKE_RESOLVED source=db:cinema_path bands=4 total=61.0s buildup=0 roomTitle=0 reveal=0`).
+      // MEASURED CAUSE, not guessed: the table above stored the path's GEOMETRY and its BEAT SECONDS
+      // and nothing else. The four film flags live on the same `_buildOverride()` object the bands
+      // come from, and the IndexedDB working store keeps them — but the PORTABLE table dropped them,
+      // so a path that travels with the .db arrived with every feature off. The file was not wrong
+      // about the path; it never carried the answer at all.
+      // Appended as columns, never inserted among the existing ones — the same version-skew rule
+      // §CPE_STICK_HOLD's hold_sec already follows, and the reader (effects.js _cpeLoadFromDb)
+      // probes PRAGMA table_info and falls back, so an older .db still opens and a .db written here
+      // still opens in an older build.
       db.run("CREATE TABLE cinema_path (seq INTEGER, ifc_x REAL, ifc_y REAL, ifc_z REAL, " +
              "dir_x REAL, dir_y REAL, dir_z REAL, len REAL, " +
              "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL, " +
-             "hold_sec REAL)");
-      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+             "hold_sec REAL, buildup INTEGER, room_title INTEGER, reveal INTEGER, day_counter TEXT)");
+      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       ov.bands.forEach(function(b, i) {
         var p = A.three2ifc(b.c.x, b.c.y, b.c.z);
         var d = A.three2ifcDir(b.d.x, b.d.y, b.d.z);
         stmt.run([i, p.ix, p.iy, p.iz, d.ix, d.iy, d.iz, b.len,
                   ov._total, ov.diveSec, ov.spinSec, ov.outSec, ov.riseSec,
-                  +(b.hold || 0)]);
+                  +(b.hold || 0),
+                  // §CPE_FLAGS_PORTABLE — the film flags, per row (constant across rows, exactly
+                  // like total_sec/dive_sec above; the reader takes them from row 0).
+                  ov.buildup ? 1 : 0, ov.roomTitle ? 1 : 0, ov.reveal ? 1 : 0,
+                  ov.dayCounter == null ? null : String(ov.dayCounter)]);
       });
       stmt.free();
-      console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's');
+      // §CPE_FLAGS_PORTABLE — the flags are now part of what a save CLAIMS to have written, so a
+      // path that goes out with every feature off says so here rather than being discovered a bake
+      // later. `dayCounter` absent means the reader's own default, not "off".
+      console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's' +
+        ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
+        ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'default') +
+        ' (§CPE_FLAGS_PORTABLE — these travel with the .db now)');
     } catch (e) { console.warn('§CINEMA_PATH_SAVE_FAIL ' + e.message); }
   }
   // prompts/Viewer/SAVE_DB_SCENE_STATE.md §1-4 — camera/display/nav/panel/Find-selection/Time-Machine
