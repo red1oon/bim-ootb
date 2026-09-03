@@ -20,10 +20,25 @@
 // replications of the played layer would be the same defect class this whole section exists to
 // remove. time_machine.js is READ, never edited.
 //
+// ══ §TM_PLAYED_LAYER_MIDAIR (2026-09-04, bim-compiler prompts/4D_MODEL_INTEGRITY.md §M.5 item 2) ══
+// The §TM_PLAYED_LAYER line used to print `midair=` from `dt.midair` — the CPM-DISPLAY judge's count
+// (the §CPM_DISPLAY number) — on the line that says "these are the instants kernel_ops carries". It
+// was the wrong layer's number: re-judged by the OWNER on the played instants, Hospital META 539 (line
+// said 583), Duplex 257 (line said 0), HHS 152 (line said 0), Terminal META 3133 (said 911). Two
+// buildings reported a clean zero while carrying hundreds — a witness lying about its own subject
+// (PRIMAL LAW clause 4). Now: `midairPlayed=` is the OWNER (SupportSweep.midairAudit, §I "is anything
+// floating?") called over the played map — exactly what probe_tm_reveal_shipped.js judge() does —
+// and `midairCpmDisplay=` is the old number, NAMED. There is no bare `midair=` token on that line any
+// more, so the ambiguity cannot return. When the owner is not in the sandbox the line says UNJUDGED;
+// when the population is empty it says VACUOUS — never a 0 that means nothing.
+// Witness: viewer/tests/witness_tm_played_layer_midair.js.
+//
 // EXPORTS
 //   sliceFn(src, name)          brace-matched source slice, by function name
 //   buildSandbox(deps)          a vm context holding the live TM functions
 //   mirrorInjectGantt(opts)     the injectGantt write-path mirror -> { play, disp, cap, ... }
+//   judgePlayedMidair(sb, twItems, map, guidTask)   the OWNER over a played map (§TM_PLAYED_LAYER_MIDAIR)
+//   describeMidair(mj)          the token the § line prints for that verdict (N | UNJUDGED | VACUOUS)
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
 
@@ -76,6 +91,32 @@ function buildSandbox(d) {
   vm.runInContext(code, sb);
   sb.__missing = missing;
   return sb;
+}
+
+// judgePlayedMidair(sb, twItems, map, guidTask) — §TM_PLAYED_LAYER_MIDAIR. THE one place "midair on
+// the played instants" is asked in node. Calls the OWNER — SupportSweep.midairAudit, reached through
+// the sandbox's `_midairAudit` (the same seam injectGantt's own §CPM_DISPLAY audit uses) — over the
+// items injectGantt built, with s/e replaced by the map under judgement. Nothing re-derived: the
+// support relation, the election and the "appears before its support" test are all the owner's.
+// Returns { midair, orphans, guids, judged } or, honestly, { unjudged: reason } / { vacuous: true }.
+function judgePlayedMidair(sb, twItems, map, guidTask) {
+  if (!sb || typeof sb._midairAudit !== 'function')
+    return { midair: null, judged: 0, unjudged: 'SupportSweep.midairAudit not in sandbox — buildSandbox({SS}) was not given support_sweep.js' };
+  const its = [];
+  (twItems || []).forEach(it => {
+    const p = map && map[it.guid]; if (!p) return;
+    its.push(Object.assign({}, it, { s: p.s, e: p.e, task: guidTask ? guidTask[it.guid] : it.task }));
+  });
+  if (!its.length) return { midair: 0, orphans: 0, guids: [], judged: 0, vacuous: true };
+  const ma = sb._midairAudit(its);
+  return { midair: ma.midair, orphans: ma.orphans, guids: ma.guids || [], judged: its.length, ok: ma.ok };
+}
+// describeMidair(mj) — the exact token the § line carries, so a reader can grep ONE spelling.
+function describeMidair(mj) {
+  if (!mj) return 'UNJUDGED';
+  if (mj.unjudged) return 'UNJUDGED';
+  if (mj.vacuous) return 'VACUOUS';
+  return String(mj.midair);
 }
 
 // readDisplayAuthored(db) — the SAME query injectGantt runs (time_machine.js:4967). Never assumed:
@@ -167,16 +208,27 @@ function mirrorInjectGantt(o) {
     // the cache does not.
     const affine = o.wantAffine ? bind(null) : null;
     const r = bind(tiledMap);
+    // §TM_PLAYED_LAYER_MIDAIR — judge THIS map (the instants kernel_ops carries), via the owner. The
+    // CPM-display count is kept, under its own name, so a reader can see both and neither is anonymous.
+    const mj = judgePlayedMidair(sb, twItems, r.map, guidTask);
     const stats = { total: elements.length, clamped: r.clamped, tiled: r.tiled, uncovered: r.uncovered,
-      displayAuthored: displayAuthored, cpm: dt && dt.cpm, midair: dt && dt.midair,
+      displayAuthored: displayAuthored, cpm: dt && dt.cpm,
+      midairPlayed: mj.unjudged ? null : mj.midair, midairPlayedJudged: mj.judged,
+      midairPlayedGuids: mj.guids || [], midairPlayedStatus: describeMidair(mj),
+      midairCpmDisplay: dt && dt.midair,
       applyTiling: !!o.applyTiling, tilingAvailable: typeof sb._tmTilePlayWithinTasks === 'function' };
     log('§TM_PLAYED_LAYER total=' + stats.total + ' clamped=' + r.clamped + ' tiled=' + r.tiled +
         ' uncovered=' + r.uncovered + ' display_authored=' + displayAuthored +
-        ' cpm=' + stats.cpm + ' midair=' + stats.midair +
+        ' cpm=' + stats.cpm +
+        ' midairPlayed=' + describeMidair(mj) + ' judged=' + mj.judged + '/' + stats.total +
+        ' layer=played owner=SupportSweep.midairAudit' +
+        ' midairCpmDisplay=' + stats.midairCpmDisplay + ' (=§CPM_DISPLAY, the CPM-display times, NOT this layer)' +
+        (mj.unjudged ? ' ⛔ ' + mj.unjudged : '') +
         ' (mirrors §TM_ELEMENT_WINDOW_BIND — these are the instants kernel_ops carries)');
     return { ok: true, play: r.map, affine: affine ? affine.map : null, tiledMap: tiledMap,
-      disp: disp, win: win, guidTask: guidTask, winGroups: winGroups, twItems: twItems, stats: stats };
+      disp: disp, win: win, guidTask: guidTask, winGroups: winGroups, twItems: twItems, stats: stats,
+      midairPlayed: mj };
   }
 }
 
-module.exports = { sliceFn, buildSandbox, mirrorInjectGantt, readDisplayAuthored, TM_FNS, DAY_MS };
+module.exports = { sliceFn, buildSandbox, mirrorInjectGantt, readDisplayAuthored, judgePlayedMidair, describeMidair, TM_FNS, DAY_MS };
