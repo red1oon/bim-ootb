@@ -193,8 +193,11 @@ async function runArm(page, name, levers) {
     const loadedWins = loaded.filter(p => p.dtPct !== null && p.dtPct < 0).length;
     const loadedWorse10 = loaded.filter(p => p.dtPct !== null && p.dtPct > 10).length;
     const bestGain = loaded.length ? Math.min(...loaded.map(p => p.dtPct === null ? 0 : p.dtPct)) : null;
+    const anyWorse10 = phases.filter(p => p.dtPct !== null && p.dtPct > 10);
     sink('§R15_LOADED phases=' + loaded.length + ' activeMedian=' + actMid + ' fasterInFixed=' + loadedWins +
-      ' worseBy>10pct=' + loadedWorse10 + ' bestPhaseGain=' + bestGain + '%');
+      ' worseBy>10pct(loaded)=' + loadedWorse10 + ' bestPhaseGain=' + bestGain + '%' +
+      ' | worseBy>10pct(ANY phase, incl. unloaded)=' + anyWorse10.length +
+      (anyWorse10.length ? ' at bins ' + anyWorse10.map(p => p.k + '(' + p.dtPct + '%, ' + p.dtL + '->' + p.dtF + 'ms)').join(',') : ''));
 
     const g1 = F.boostSpan < L.boostSpan || F.boostLines < L.boostLines;         // actuator stops swinging
     const g2 = F.windupTicks < L.windupTicks;                                    // windup removed
@@ -212,7 +215,7 @@ async function runArm(page, name, levers) {
       ' | reversals ' + L.reversals + '->' + F.reversals +
       ' | windupTicks ' + L.windupTicks + '->' + F.windupTicks +
       ' | staleTicks(NOT comparable: LEGACY acted on them, FIXED skipped them) L=' + L.staleTicks + ' F=' + F.staleTicks +
-      ' | flips_mean ' + L.flipsMean + '->' + F.flipsMean + ' (' + g2span + '%)' +
+      ' | flips_mean ' + L.flipsMean + '->' + F.flipsMean + ' (' + flipsPct + '%)' +
       ' | dt_mean ' + L.dtMean + '->' + F.dtMean + ' (' + dPct(F.dtMean, L.dtMean) + '%)' +
       ' | dt_p95 ' + L.dtP95 + '->' + F.dtP95 +
       ' | FPS_MODE_mean ' + L.fpsModeMean + '->' + F.fpsModeMean +
