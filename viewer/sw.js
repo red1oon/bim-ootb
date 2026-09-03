@@ -37,7 +37,13 @@
 // over the 7 world-frame center_z rows and collapsed the building to ONE band (7 tasks, 509 d vs
 // 8 bands / 42 tasks / 318 d). Both files are in PRECACHE_ASSETS, so an installed service worker
 // keeps serving the collapse without this bump. Paired with _GANTT_CACHE_VERSION 38→39.
-const CACHE_VERSION = 'v1133';   // bump on each deploy; per-change detail is the git commit message.
+// v1134 (2026-09-04) §BAKE_INTERIOR_TOPUP: the still/bake fixture-light selection is no longer
+// frustum-centre ONLY — a short in-frustum set is topped up to the still budget with the same
+// nearest-to-aim + §NIGHT_SPREAD rule navigation uses (_nightPickNearest, extracted VERBATIM so
+// nav and bake cannot drift apart), and the camera matrix is refreshed before the cull
+// (§BAKE_FRUSTUM_STALE). An interior pose whose frustum held no fixture centre previously left
+// every §NIGHT_BAKE_POOL slot at intensity 0 — the room lit by flat fill alone. tools.js?v=45->46.
+const CACHE_VERSION = 'v1134';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
