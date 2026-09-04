@@ -1405,6 +1405,16 @@ function setupPanels(A) {
       // the 'h' shortcut + Help listing. Row rendered specially (real texture-swatch) — see
       // _buildShadowGroundRow() below, not the generic drawer-row.
       { id: 'shadow',     name: 'Shadow + Ground', key: 'h', pill: false, icon: I.cloud.svg, fn: function() { if (typeof A.toggleShadow === 'function') A.toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
+      // effects_gi_poc.js §GI_POC: N8AO ambient-occlusion research spike, desktop-only (stubbed to
+      // a no-op on mobile — extra full-res GPU render targets, real memory cost). Registered here
+      // ONLY for desktop findability (2026-07-22 user: "i cant find it") — same fix shape as the
+      // 'o'/dlodnav entry below (v1 shortcut existed but wasn't in any drawer id-list). Do NOT lift
+      // the mobile stub via this entry; it stays hidden/no-op there by design.
+      { id: 'gi-preview', name: 'GI Preview (AO)', key: 'Alt+G', pill: false,
+        icon: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.287L3 12l5.8 1.9a2 2 0 0 1 1.287 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.287L21 12l-5.8-1.9a2 2 0 0 1-1.287-1.287Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>',
+        fn: function() { if (typeof A.toggleGIPreview === 'function') A.toggleGIPreview(); },
+        isActive: function() { return !!A._giComposerActive; },
+        children: [ { name: 'N8AO ambient occlusion (research spike)' }, { name: 'Desktop only — disabled on mobile (memory)' } ] },
       { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A.flyActive; } },
       // FLY_TOUR_DLOD_SCALE.md §9: nav-scope DLOD pill — sibling of Fly Tour (must be reachable
       // during tours/orbit, unlike TM's tm-lod which dies with the TM panel). Same box glyph as
@@ -1699,7 +1709,7 @@ function setupPanels(A) {
     // this only changes which drawer lists it.
     var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly', 'dlodnav']);
     var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'clash', 'xray', 'section', 'tm', 'report']);
-    var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
+    var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot', 'gi-preview']);
 
     // §1 Visual FX — extend the EXISTING Palette/sunglass panel (built earlier at
     // A._buildSunglassPanel(), before _actions existed — this runs AFTER, so it can reuse the
