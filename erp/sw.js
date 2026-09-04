@@ -14,6 +14,8 @@ const CACHE_VERSION = 'v788';   // bump on each deploy; per-change detail is the
 // v788 (2026-09-04, revival of PR #300) §CL-1: pos_lens.js gains a 'Copy op log' button after a
 // deliver-later sale — serializes the op group to a base64 blob for the clipboard, sent via any
 // channel to the WH walk device (see viewer sw bump for §CL-2, the paste side).
+// v787 (#1664) §AD-FORM-LIVE: the Form spine — an 'X' menu leaf resolves its AD_Form row and
+// dispatches on its own Classname; AD_Form 108 (VMatch) is implemented end to end.
 // v772 (rebase of PR #203 onto origin/main) §INTEG-WIRE-B: disposable-host persistence in-app
 // (erp_replica_client.js + erp_persist_ui.js) — back the books up to a SIGNED snapshot the user
 // owns (signed by the edge key), restore on a FRESH device -> replay recomputes tip == signed
