@@ -17,6 +17,7 @@ function setupDLOD(A) {
 
   var EVAL_EVERY = 6;             // frames between evaluations
   var MIN_ELEMENTS = 5000;        // §S271: frustum culling for all non-trivial buildings
+  var _tmGateLogged = false;      // §DLOD_TM_OWNERSHIP — one line per gate episode
   var _frustum = new THREE.Frustum();
   // §CPE_DLOD_VF_UNION (2026-08-05, CINEMA_PATH_EDITOR.md OPEN 4) — this culler zero-scales
   // InstancedMesh instances GLOBALLY (both cameras share the same real geometry, this is not a
@@ -96,6 +97,15 @@ function setupDLOD(A) {
 
   // ── Enable/disable ──
   A.dlodEnable = function() {
+    // §DLOD_TM_OWNERSHIP (2026-09-04, bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §BME.8): while
+    // the Time Machine owns instance matrices this module must not — refs captured after TM has
+    // zero-scaled the unplaced instances are zero, and every later "restore" writes zero back
+    // (measured: 24,992 instances lost at frame 718 of the first Hospital CLI silent bake, never
+    // recovered to Day 310/310). TM's deactivate() re-enables this module.
+    if (A._tmOn) {
+      console.log('[DLOD] §DLOD_SKIP_TM count=' + A.streamedCount + ' — Time Machine owns instance matrices; re-enabled when it closes');
+      return;
+    }
     if (A.streamedCount < MIN_ELEMENTS) {
       console.log('[DLOD] §DLOD_SKIP count=' + A.streamedCount + ' < ' + MIN_ELEMENTS);
       return;
@@ -126,6 +136,11 @@ function setupDLOD(A) {
   // ── Main tick — called from animate loop ──
   A.dlodTick = function() {
     if (!A._dlodEnabled) return;
+    if (A._tmOn) {   // §DLOD_TM_OWNERSHIP — a re-enable that slipped past dlodEnable's guard must still not touch matrices
+      if (!_tmGateLogged) { _tmGateLogged = true; console.log('[DLOD] §DLOD_TM_GATED tick refused — Time Machine owns instance matrices'); }
+      return;
+    }
+    _tmGateLogged = false;
     A._dlodFrame++;
     if (A._dlodFrame % EVAL_EVERY !== 0) return;
 

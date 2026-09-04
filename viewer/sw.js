@@ -62,7 +62,14 @@
 // of being washed out by lamps that filterDiscs has hidden anyway. The all-together slot keeps its
 // lights. Illumination is scaled to 0 rather than torn down, because §NIGHT_BAKE_POOL froze the
 // point-light COUNT for the whole bake on purpose. effects.js?v=34->35, cinema_maxq.js?v=10->11.
-const CACHE_VERSION = 'v1138';   // bump on each deploy; per-change detail is the git commit message.
+// v1139 (2026-09-04) §DLOD_TM_OWNERSHIP: dlod.js stands down while the Time Machine owns instance
+// matrices (time_machine.js _finishActivate → dlodDisable, deactivate → dlodEnable; dlodEnable/Tick
+// refuse under _tmOn). Root cause of the first Hospital CLI silent bake losing 24,992 instanced
+// elements (glass panes, mullions, furniture) at 47.9 s for the rest of the film — dlod.js captured
+// its _origMatrix refs after TM had zero-scaled them and "restored" zero. Also §CPE_CLIP_REVEAL_FILM_T
+// (cinema_maxq.js: the Reveal reads film time, not clip-local time) + dev-only --clip/--tap in
+// cli_silent_bake.js. dlod.js?v, time_machine.js?v, cinema_maxq.js?v bumped in viewer.html.
+const CACHE_VERSION = 'v1139';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

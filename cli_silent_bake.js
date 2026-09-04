@@ -45,6 +45,14 @@ const MAX_FRAME_MS = +arg('max-frame-ms', 0);              // 0 = off (stage 3 m
 const TIMEOUT_MIN = +arg('timeout-min', 300);
 const PLAN_NAME = arg('plan', null);
 const OV_FILE = arg('override', null);
+// §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7) — dev-only instrument hooks:
+//   --clip in:out   bake only that window of the SAME film (§CPE_CLIP: poseAt remaps, frames scale)
+//   --tap file.js   a page script installed at document start (after the pose tap) that may define
+//                   window.__maxqTapReport() → { lines: [...], rows: [...] }; lines are logged as
+//                   §CLI_BAKE_TAP, the whole object is written to <out>_tap.json.
+const CLIP = (() => { const v = arg('clip', null); if (!v) return null; const m = v.split(':').map(Number);
+  return (m.length === 2 && m[1] > m[0] && m[0] >= 0 && m[1] <= 1) ? { in: m[0], out: m[1] } : null; })();
+const TAP_FILE = arg('tap', null) ? path.resolve(arg('tap')) : null;
 // ══ §CLI_BAKE_FLAG_OVERRIDE (2026-09-04, user) ═══════════════════════════════════════════════════
 // USER: "when user saves alt-c setting in path in the DB, during silent bake, user need not pass any
 // argument further and use the stored path settings. Of course user may still pass args to overwrite
@@ -226,6 +234,9 @@ const server = http.createServer((req, res) => {
       await window.__maxqSinkEnd();
     };
   }, JSON.stringify(FLAGS));
+  // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): --tap file.js is installed AFTER the pose
+  // tap above so it can wrap window.__maxqPoseTap (frame boundaries) — dev-only, same family.
+  if (TAP_FILE) await page.evaluateOnNewDocument(fs.readFileSync(TAP_FILE, 'utf8'));
 
   const dbUrl = DB.includes('/') ? DB : `/buildings/${DB}.db`;
   const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=${dbUrl}`;
@@ -300,6 +311,7 @@ const server = http.createServer((req, res) => {
   // start the bake WITHOUT holding a CDP call open for hours: fire, then poll a page global.
   const bakeOpts = { name: PLAN_NAME || undefined, flags: FLAGS, frames: FRAMES, fps: FPS };
   if (OV_FILE) bakeOpts.override = JSON.parse(fs.readFileSync(OV_FILE, 'utf8'));
+  if (CLIP) { bakeOpts.clip = CLIP; log(`§CLI_BAKE_CLIP in=${CLIP.in} out=${CLIP.out} (§SDC — a window of the same film)`); }
   // The plan reads the live camera basis (§CPE_PREVIEW_DIVERGENCE) — save the pre-bake camera so
   // the post-bake pose assertion can rebuild the SAME plan the bake built, not one based at the
   // film's final pose (the loop leaves the camera at the last frame).
@@ -375,6 +387,16 @@ const server = http.createServer((req, res) => {
     } catch (e) { log('§CLI_BAKE_LAND_FAIL ' + e.message); }
   } else {
     log(`§CLI_BAKE_RESULT ${JSON.stringify(result)}`);
+  }
+
+  // §SDC — the tap's own report, if a --tap script defined one (numbers + lines only come back)
+  if (TAP_FILE) {
+    const rep = await page.evaluate(() => { try { return window.__maxqTapReport ? window.__maxqTapReport() : { lines: ['§SDC_VERDICT INCONCLUSIVE reason=no __maxqTapReport in page'] }; }
+      catch (e) { return { lines: ['§SDC_VERDICT INCONCLUSIVE reason=tap-report-threw ' + String(e && e.message)] }; } }).catch(e => ({ lines: ['§SDC_VERDICT INCONCLUSIVE reason=evaluate-failed ' + String(e && e.message)] }));
+    for (const l of (rep && rep.lines) || []) log('§CLI_BAKE_TAP ' + l);
+    const tapOut = OUT.replace(/\.[a-z0-9]+$/i, '') + '_tap.json';
+    fs.writeFileSync(tapOut, JSON.stringify(rep));
+    log(`§CLI_BAKE_TAP_FILE ${tapOut} lines=${((rep && rep.lines) || []).length} rows=${((rep && rep.rows) || []).length}`);
   }
 
   // pose record + independent plan check happen in the page, numbers only come back
