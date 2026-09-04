@@ -2940,6 +2940,56 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason + ' message=' + JSON.stringify(res.message)) : ' reason=' + res.reason));
     renderProcResult(proc, res);
   }
+  // §CREATEFROM-COMMIT / §KIND2-COMMIT — the ONE translation from ENGINE vocabulary to CRUD vocabulary,
+  // shared by both Confirm & Post seams below (it was written once for CreateFromInvoice in #1654; the
+  // KIND-2 generators need the identical shape, so this is hoisted rather than written a second time).
+  //
+  // WHY IT EXISTS: erp_engine/ad_process propose CREATE_DOCUMENT/CREATE_LINE, but crud_core.listTip —
+  // which every grid, every picker and every crud_overlay.completeFanout* reads through — folds ONLY
+  // CRUD_CREATE/CRUD_UPDATE/CRUD_DELETE. A raw engine op therefore commits to the signed log and is then
+  // INVISIBLE to every reader: signed, verified, unreadable. Measured twice —
+  //   #1654 CreateFromInvoice: §GENPROCESS-CONFIRM committed=Y ops=11 verifyOk=true → §INVOICE-FANOUT lines=0
+  //   W-KIND2-READBACK 2026-09-04: §GENPROCESS-CONFIRM committed=Y ops=2 verifyOk=true → §K2RB stage=2
+  //     readableDocs=0 readableLines=0 (and the same for stage 3)
+  // The target shape is exactly what crud_core.buildOp('create') produces, with stdDefaults from the same
+  // window.APP.* that sessionActor() reads. Every field value is the engine op's own — nothing invented.
+  //
+  // opts (KIND-2 only; omit for a lines-into-an-existing-document result like CreateFromInvoice):
+  //   crudMap    — { docParent, lineParent } published by the handler from its OWN buildDoc spec.
+  //                buildDoc writes the engine-internal names `source_id` (on the document) and
+  //                `source_line_id` (on each line); the spec knows which real columns they stand for
+  //                (c_order_id / c_orderline_id, c_project_id / c_projectline_id). Renamed, never dropped.
+  //   parentFk   — the column linking a line to its NEW parent document (docTable + '_id', the same
+  //                key+'_id' convention crud_overlay.recId uses). Set to the {__opRef:0} placeholder that
+  //                crud_overlay._resolveOpRefs turns into the header row's synthetic pk at commit time —
+  //                it cannot be known here, because that pk IS the header op's kernel id.
+  function _asCrudCreates(ops, opts) {
+    opts = opts || {};
+    var map = opts.crudMap || {}, parentFk = opts.parentFk || null;
+    var docParent = map.docParent ? String(map.docParent).toLowerCase() : null;
+    var lineParent = map.lineParent ? String(map.lineParent).toLowerCase() : null;
+    return ops.map(function (o, i) {
+      var fields = {};
+      Object.keys(o).forEach(function (k) {
+        if (k === 'op_type' || k === 'table' || k === '_sv' || k === '_sigv') return;
+        if (o[k] === undefined) return;
+        var lk = String(k).toLowerCase();
+        if (lk === 'source_id') { if (docParent && o[docParent] === undefined) fields[docParent] = o[k]; return; }
+        if (lk === 'source_line_id') { if (lineParent) fields[lineParent] = o[k]; return; }
+        fields[lk] = o[k];
+      });
+      if (parentFk && i > 0) fields[parentFk] = { __opRef: 0 };   // resolved at commit — see crud_overlay._resolveOpRefs
+      var std = null;
+      try {
+        if (window.APP && (window.APP.actor != null || window.APP.clientId != null))
+          std = { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 };
+      } catch (e) { std = null; }
+      var op = { key: String(o.table).toLowerCase(), table: String(o.table).toLowerCase(), verb: 'create',
+                 op_type: 'CRUD_CREATE', fields: fields, cas: null, op_uuid: null };
+      if (std) op.stdDefaults = std;
+      return op;
+    });
+  }
   function renderProcResult(proc, res) {
     var absent = !res.dispatched;
     var pane = el('div', 'idmp-procpane idmp-procresult' + (absent ? ' absent' : ''));
@@ -3019,7 +3069,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var cfMsg = el('div', 'msg'); cfMsg.style.cssText = 'margin-top:6px';
       cfBtn.addEventListener('click', function () {
         cfBtn.disabled = true; cfBtn.textContent = 'Posting…';
-        window.__crud.applyOpGroup(r.ops, function (out) {
+        // §KIND2-COMMIT (prompts/AGENT_QUEUE.md §KIND2-READBACK) — the same commit-seam translation
+        // §CREATEFROM-COMMIT already does, extended with the one thing CreateFromInvoice did not need:
+        // the parent document does not exist yet, so each line's parent FK is the {__opRef:0} placeholder
+        // crud_overlay._resolveOpRefs resolves to the header row's synthetic pk inside the commit window.
+        // MEASURED before this translation (W-KIND2-READBACK, plain origin/main, 2026-09-04):
+        //   §K2RB stage=2 committedOps=2 rawDocs=1 rawLines=1 readableDocs=0 readableLines=0
+        //   §K2RB stage=3 committedOps=2 rawDocs=1 rawLines=1 readableDocs=0 readableLines=0
+        var k2Parent = String(h.table).toLowerCase() + '_id';       // key+'_id' — crud_overlay.recId's convention
+        var k2Ops = _asCrudCreates(r.ops, { crudMap: r.crudMap, parentFk: k2Parent });
+        console.log('§KIND2-COMMIT translating ' + r.ops.length + ' engine op(s) → CRUD_CREATE for ' +
+                    String(h.table).toLowerCase() + ' + ' + (r.ops.length - 1) + ' line(s) parented on ' + k2Parent +
+                    ' (listTip folds CRUD only; a raw CREATE_DOCUMENT/CREATE_LINE would be unreadable)');
+        window.__crud.applyOpGroup(k2Ops, function (out) {
           if (!out || !out.committed) {
             cfBtn.disabled = false; cfBtn.textContent = 'Confirm & Post';
             cfMsg.textContent = 'Not posted: ' + ((out && out.reason) || 'unknown');
@@ -3068,25 +3130,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // So translate at the commit seam into exactly the shape crud_core.buildOp('create') produces —
       // same op_type, same fields, same stdDefaults source (window.APP.*, which is what sessionActor()
       // reads). Nothing is invented: every field value is the engine op's own.
-      function _asCrudCreates(ops) {
-        return ops.map(function (o) {
-          var fields = {};
-          Object.keys(o).forEach(function (k) {
-            if (k === 'op_type' || k === 'table' || k === '_sv' || k === '_sigv') return;
-            if (o[k] === undefined) return;
-            fields[String(k).toLowerCase()] = o[k];
-          });
-          var std = null;
-          try {
-            if (window.APP && (window.APP.actor != null || window.APP.clientId != null))
-              std = { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 };
-          } catch (e) { std = null; }
-          var op = { key: String(o.table).toLowerCase(), table: String(o.table).toLowerCase(), verb: 'create',
-                     op_type: 'CRUD_CREATE', fields: fields, cas: null, op_uuid: null };
-          if (std) op.stdDefaults = std;
-          return op;
-        });
-      }
+      // (the translation itself is _asCrudCreates above renderProcResult — one implementation, two seams)
       cfb.addEventListener('click', function () {
         cfb.disabled = true; cfb.textContent = 'Posting…';
         var crudOps = _asCrudCreates(r.ops);
