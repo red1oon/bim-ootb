@@ -25,6 +25,17 @@ var initSqlJs = require('sql.js');
 
 var ERP = __dirname + '/..';                                   // bim-ootb/erp
 var DEMO = path.join(__dirname, '..', 'preview_demo.db'); // single self-contained db
+// §PREVIEW-DEMO-FROM-SQL (prompts/AGENT_QUEUE.md, §ERP-SESSION-CLOSE-2 §C2.3 item 4): the fixture is no
+// longer a tracked 397 KB BINARY — CLAUDE.md's DB rule bans those outright, and this one was in git only
+// because .gitignore carried an explicit `!erp/preview_demo.db` un-ignore. What is tracked now is
+// tests/fixtures/preview_demo.sql (the verbatim `.dump`, TEXT), and the .db is BUILT from it on demand.
+// Self-healing, exactly like the app's own patch loaders: this is a no-op when the file is already
+// present and newer than the SQL, so nothing in any workflow changes and no run needs a manual step.
+require(path.join(__dirname, 'fixtures', 'build_preview_demo.js')).ensure(function (e) {
+  if (e) { console.log('🔴 the preview_demo fixture could not be built from SQL — ' + e.message); process.exit(1); }
+  main();
+});
+function main() {
 
 global.window = global.window || {};                           // browser IIFEs populate window.*
 require(path.join(ERP, 'post_resolver.js'));                   // window.PostResolver
@@ -155,3 +166,4 @@ function allText(node) { var s = ''; walk(node, function (x) { s += ' ' + (x.tex
     ' — the drawer renders doc_poster\'s oracle-anchored fold (Class A, == fact_acct(318)) on the browser sql.js path; pure projection; gate zero-leak; falsifier load-bearing. UI mount/deploy GO-gated (§9).');
   process.exit(fails === 0 ? 0 : 1);
 })();
+}

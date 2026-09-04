@@ -42,6 +42,14 @@ jobs:
       - name: Spec file paths audit
         run: node tests/audit_spec_paths.js
 
+      # W-AGENT-ZIP-SYNC (prompts/AGENT_QUEUE.md §AGENT-ZIPS-BUILT): the two shipped agent downloads are
+      # BUILT from erp/*_agent/, not tracked. This proves the builder still produces both bundles, that a
+      # user extracts the repo's own files, that each keeps its shipped shape, and that the build is
+      # deterministic. It caught the defect that motivated it: odoo_agent.zip shipped without
+      # extract_model.js, the file the Odoo extraction step needs.
+      - name: Shipped agent zips build from source (W-AGENT-ZIP-SYNC)
+        run: node erp/tests/poc_agent_zip_sync.js
+
       - name: Find multi-select logic (NAV_FIND_002)
         run: node tests/test_find_multiselect.js
 
