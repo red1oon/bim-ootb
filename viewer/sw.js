@@ -78,7 +78,12 @@
 // its _origMatrix refs after TM had zero-scaled them and "restored" zero. Also §CPE_CLIP_REVEAL_FILM_T
 // (cinema_maxq.js: the Reveal reads film time, not clip-local time) + dev-only --clip/--tap in
 // cli_silent_bake.js. dlod.js?v, time_machine.js?v, cinema_maxq.js?v bumped in viewer.html.
-const CACHE_VERSION = 'v1141';   // bump on each deploy; per-change detail is the git commit message.
+// v1142 (2026-09-04) §CPE_REVEAL_LENS_QUAD_OFF: the §GLOW_LENS_QUAD path never honoured
+// A._cpeRevealLightsOff — §CPE_TAIL_LIGHTS_ALL_ONLY turned off the round sprite and the point
+// lights for a one-discipline Reveal slot, but the additive lens quads kept drawing over the trade
+// being revealed. Gated by zeroing the material colour (not by teardown, so §R10's stage-keep guard
+// survives). effects.js bumped in viewer.html.
+const CACHE_VERSION = 'v1142';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

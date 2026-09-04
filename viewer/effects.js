@@ -4811,7 +4811,53 @@ async function setupEffects(A, renderer, scene, camera) {
   var GLOW_LENS_ROUND_ASPECT = 1.25;
   var _glowLensMeshRect = null, _glowLensMeshRound = null;
   var _glowLensStagedCount = -1;   // §R10 — fixture count the CURRENT quads were built with
+  var _glowLensRevealScalar = -1;  // §CPE_REVEAL_LENS_QUAD_OFF — last colour scalar applied (-1 = unset)
+  var _glowLensRevealLogKey = '';  // §CPE_REVEAL_LENS_QUAD_OFF — last LINE emitted, so a re-stage cannot repeat it
+
+  // ══ §CPE_REVEAL_LENS_QUAD_OFF (2026-09-04) ═══════════════════════════════════════════════════
+  // USER: "On the reveal exit pull away path, i raised about the 'lights quads' always visible
+  // obscuring the respective DISCipline display. U did mention before to turn off ie zero the color
+  // so they go invisible."
+  //
+  // §CPE_TAIL_LIGHTS_ALL_ONLY (#1649) already turns the lamps off for a one-discipline slot, and
+  // A._cpeRevealLightsOff is the flag that says so. Before this it was honoured in exactly TWO
+  // places — _glowOn() (the round sprite) and A._nightPLScale = 0 (the real point lights). This
+  // quad path had no guard at all, so its additive quads kept drawing over the trade being revealed.
+  //
+  // ZERO THE COLOUR, DO NOT TEAR DOWN. The quads are InstancedMesh on a MeshBasicMaterial with
+  // AdditiveBlending; three multiplies material.color by instanceColor, so a material colour of 0
+  // makes every instance contribute EXACTLY zero — invisible, with no dispose and no rebuild. That
+  // matters: §R10's stage-keep guard (_teardownStillRefine, keepStaging) deliberately keeps these
+  // quads across bake frames, and tearing them down per slot would pay dispose+rebuild on every
+  // transition and break _glowLensStagedCount's meaning. Same flag, same shape as the round
+  // sprite's guard, applied to the material rather than the lifetime. No new constant.
+  //
+  // Called at the TOP of _glowLensOn, before its already-staged early return, so it runs every
+  // frame on both paths — freshly staged and stage-kept.
+  function _glowLensRevealGate() {
+    var want = A._cpeRevealLightsOff ? 0 : 1;
+    if (_glowLensRevealScalar === want) return want;   // state change only — no per-frame churn
+    _glowLensRevealScalar = want;
+    var quads = 0;
+    if (_glowLensMeshRect && _glowLensMeshRect.material) { _glowLensMeshRect.material.color.setScalar(want); quads += _glowLensMeshRect.count | 0; }
+    if (_glowLensMeshRound && _glowLensMeshRound.material) { _glowLensMeshRound.material.color.setScalar(want); quads += _glowLensMeshRound.count | 0; }
+    // §VAC (R14.0): the applied scalar resets on every _glowLensOff, and a bake tears down and
+    // re-stages EVERY frame — so gating the LOG on the scalar alone repeats the same line ~7x per
+    // frame (measured: 88 lines in the first 12 frames of a Hospital bake, 87 identical and all of
+    // them vacuous). The line is gated on its own content instead: emit only when the
+    // (scalar, staged-or-empty) pair actually changes.
+    var key = want + ':' + (quads > 0 ? 'staged' : 'empty');
+    if (key !== _glowLensRevealLogKey) {
+      _glowLensRevealLogKey = key;
+      console.log('§CPE_REVEAL_LENS_QUAD_OFF colorScalar=' + want + ' quads=' + quads +
+        (quads ? (want ? ' — lamps back for the all-together slot' : ' — one-discipline slot, the quads stop drawing')
+               : ' — VACUOUS: nothing staged yet, this transition proves nothing'));
+    }
+    return want;
+  }
+
   function _glowLensOn() {
+    _glowLensRevealGate();   // §CPE_REVEAL_LENS_QUAD_OFF — before the early return, so a stage-kept frame is gated too
     if (_glowLensMeshRect || _glowLensMeshRound) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
     var pos = A._nightFixtureWorldPositions();
@@ -4894,6 +4940,9 @@ async function setupEffects(A, renderer, scene, camera) {
     if (meshRound.instanceColor) meshRound.instanceColor.needsUpdate = true;
     if (rectN) { A.scene.add(meshRect); _glowLensMeshRect = meshRect; }
     if (roundN) { A.scene.add(meshRound); _glowLensMeshRound = meshRound; }
+    // §CPE_REVEAL_LENS_QUAD_OFF — these meshes are BRAND NEW at material colour 1; re-assert the
+    // slot's gate on them (forced, since the cached scalar refers to the meshes just replaced).
+    _glowLensRevealScalar = -1; _glowLensRevealGate();
     // §GLOW_BUILDUP_EARLY_OUT — this logged rect=0 round=0 on all 3,447 frames of the user's
     // Hospital bake. Say it once: a repeated line carrying no new information hides the ones that do.
     if (rectN === 0 && roundN === 0) {
@@ -4906,6 +4955,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' draw call(s), 0 scene materials touched');
   }
   function _glowLensOff() {
+    _glowLensRevealScalar = -1;   // §CPE_REVEAL_LENS_QUAD_OFF — nothing staged owns a scalar any more
     if (!_glowLensMeshRect && !_glowLensMeshRound) return;
     // Both meshes share ONE PlaneGeometry instance (built fresh each _glowLensOn() call) —
     // dispose it once, off whichever mesh is present, not per-mesh (double-dispose is harmless in
