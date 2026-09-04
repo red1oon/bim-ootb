@@ -37,7 +37,11 @@ quick-push.sh
 
 # Reference context from HP machine (not source) — §S281
 BIM_CONTEXT/
-!erp/preview_demo.db
+# §PREVIEW-DEMO-FROM-SQL 2026-09-04 — the `!erp/preview_demo.db` un-ignore is RETIRED. That 397 KB
+# binary is now BUILT on demand from erp/tests/fixtures/preview_demo.sql (the verbatim `.dump`), which
+# is what git tracks; erp/tests/poc_preview_demo.js builds it itself when absent. Binary .db commits are
+# banned unconditionally by CLAUDE.md's DB rule, and an un-ignore is not an exemption from it.
+erp/preview_demo.db
 !buildings/warehouse_gardenworld.db
 !buildings/HHS_Office_Federated_extracted.db
 
@@ -71,3 +75,11 @@ witness/
 # see prompts/IFC_LARGE_PRIVATE_STRESS_TEST.md). Local-only, not a shipped IFC/ resident.
 IFC/KUL/*
 !IFC/KUL/README.md
+
+# §AGENT-ZIPS-BUILT 2026-09-04 — the two shipped agent downloads are BUILT from their source
+# directories (erp/tools/build_agent_zips.js), by the Pages deploy and by CI's drift check. They
+# duplicated erp/idempiere_agent/ and erp/odoo_agent/ as tracked binaries, and the duplication had
+# already drifted: odoo_agent.zip shipped without extract_model.js. Deterministic build, so
+# `--check` is a content comparison, not a judgement.
+erp/idempiere_agent.zip
+erp/odoo_agent.zip

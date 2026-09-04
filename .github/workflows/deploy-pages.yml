@@ -37,6 +37,14 @@ jobs:
           DATE=$(date -u +%Y-%m-%d)
           printf '{"version":"%s","build":"%s","sha":"%s","pr":%s,"date":"%s"}\n' "$VERSION" "$BUILD" "$SHA" "${PR:-null}" "$DATE" > erp/version.json
           echo "§SYSMON-RELEASE stamped erp/version.json: $(cat erp/version.json)"
+      # Build the two SHIPPED AGENT BUNDLES into the artifact (prompts/AGENT_QUEUE.md §AGENT-ZIPS-BUILT).
+      # Same discipline as the version.json stamp above: generated into the ephemeral checkout, never
+      # committed. erp/*_agent.zip used to be TRACKED BINARIES duplicating erp/*_agent/, and the
+      # duplication had already drifted — odoo_agent.zip shipped WITHOUT extract_model.js, the very file
+      # the Odoo extraction step needs. Building from source makes that impossible by construction.
+      - name: Build the shipped agent zips from their source directories
+        run: node erp/tools/build_agent_zips.js
+
       # Minify OUR OWN JS in the ephemeral checkout only (prompts/UI_PAYLOAD_PERF.md Win #1).
       # The repo source in git is NEVER changed — readable-source ethos preserved; only the
       # uploaded Pages artifact is minified. Whitespace+syntax only (no identifier mangling),
