@@ -43,10 +43,19 @@ function setupClashFilm(A) {
 
     // Pulse, in FILM seconds — never performance.now(), so a 15 fps and a 24 fps bake of the same
     // film pulse identically and a re-bake is reproducible (§4).
-    var PERIOD_S = 4.0;            // "pulsing slowly" — the user's words
+    // ══ §CLASH_FILM_PULSE_ENVELOPE (2026-09-05, user, after seeing the first clip) ═══════════════
+    // USER: "The pulsing is not well done, the red box seen is not pulsing to fade off. It should
+    // come on in 2 secs, hold for a sec, then pulse off for longer as it is just to mark the
+    // territory out in the scene."
+    // So it is NOT a sine — a sine spends its whole cycle mid-bright and never reads as "off". An
+    // asymmetric envelope with a real rest phase does: rise, hold, a LONGER fall, then dark.
+    var RISE_S = 2.0, HOLD_S = 1.0, FALL_S = 3.0, REST_S = 2.0;
+    var PERIOD_S = RISE_S + HOLD_S + FALL_S + REST_S;   // 8.0 s
+    var PEAK = 0.55;               // intensity at full — additive, so this is effectively its alpha
+    var MARKER_MIN_M = 0.30, MARKER_MAX_M = 1.20;   // §CLASH_FILM_CONTACT_MARKER — the marker is the
+                                   // clash, not the element; clamped so a deep penetration cannot
+                                   // grow back into a building-sized box
     var RTREE_WAIT_MS = 120000;    // the clash R-tree is built lazily in-page; a bake must wait for it
-    var BASE = 0.22, AMP = 0.30;   // ambient opacity floor and swing; base chosen against the BUILT
-                                   // model (the busier background), checked against the empty site
     var COL_A = new THREE.Color(1.00, 0.13, 0.10);   // red  — the A-side element of the pair
     var COL_B = new THREE.Color(0.16, 0.44, 1.00);   // blue — the B-side element
 
@@ -56,17 +65,6 @@ function setupClashFilm(A) {
     var _built = false, _lastPulse = -1, _uploads = 0;
 
     A.clashFilm = A.clashFilm || {};
-
-    function boxSizes(guids) {
-      var m = {};
-      for (var i = 0; i < guids.length; i += 400) {
-        var chunk = guids.slice(i, i + 400);
-        var rows = A.dbQuery('SELECT guid, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid IN (' +
-          chunk.map(function () { return '?'; }).join(',') + ')', chunk);
-        for (var r = 0; r < rows.length; r++) m[rows[r][0]] = { bx: rows[r][1] || 0.3, by: rows[r][2] || 0.3, bz: rows[r][3] || 0.3 };
-      }
-      return m;
-    }
 
     function makeSide(n, colour) {
       var geo = new THREE.BoxGeometry(1, 1, 1);
@@ -148,26 +146,49 @@ function setupClashFilm(A) {
           }
           var guids = [];
           recs.forEach(function (p) { guids.push(p.guidA, p.guidB); });
-          var xf = A.clashNarrow.loadTransforms(guids);
-          var sz = boxSizes(guids);
+          var xf = A.clashNarrow.loadTransforms(guids);   // §CLASH_FILM_CONTACT_MARKER: placement only — the element bbox is no longer used
           _pairs = recs;
           _fade = new Float32Array(recs.length);          // phase 1 ships all-ambient (§4b)
           _meshA = makeSide(recs.length, COL_A);
           _meshB = makeSide(recs.length, COL_B);
+          // ══ §CLASH_FILM_CONTACT_MARKER (2026-09-05, user, after seeing the first clip) ═════════
+          // USER: "The clip is not doing well: whole floor slab is marked as a Clash pair."
+          // They were right, and the mesh test was not the problem — every top pair carried
+          // `reason=MESH_TRIANGLES_INTERSECT` with real triangle counts. The MARKER was: phase 1
+          // drew a box around the WHOLE ELEMENT, so an IfcSlab with bbox_x=98.9 m lit up the entire
+          // floor, and an additive box that size washes everything behind it including the sky.
+          // MEASURED: 131 of 271 pairs have an element over 15 m; extents run to 79.7 m
+          // (an exterior wall meeting its foundation along its whole length).
+          //
+          // So the marker is now the CLASH, not the element: two small boxes straddling the contact
+          // point along the A→B axis — red on A's side, blue on B's — sized from the penetration
+          // depth, not the element. Same red/blue pair reading, at the place that is actually wrong.
           var m4 = new THREE.Matrix4(), sc = new THREE.Matrix4(), placed = 0, skipped = 0;
+          var pA = new THREE.Vector3(), pB = new THREE.Vector3(), dir = new THREE.Vector3(), c = new THREE.Vector3();
           for (var i = 0; i < recs.length; i++) {
-            var p = recs[i], ok = 0;
-            [[p.guidA, _meshA], [p.guidB, _meshB]].forEach(function (g) {
-              var t = xf[g[0]], s = sz[g[0]];
-              if (!t || !s) { g[1].setMatrixAt(i, sc.makeScale(0, 0, 0)); return; }
-              A.clashNarrow.worldMatrix(t, m4);            // the verdict's own placement
-              // IFC bbox is (x,y,z); the scene is y-up with z negated (A.ifc2three) — the box is
-              // axis-aligned in the element's LOCAL frame, so the swap is a size relabel, not a rotation.
-              sc.makeScale(Math.max(s.bx, 0.02), Math.max(s.bz, 0.02), Math.max(s.by, 0.02));
-              g[1].setMatrixAt(i, m4.multiply(sc));
-              ok++;
-            });
-            if (ok === 2) placed++; else skipped++;
+            var p = recs[i], ta = xf[p.guidA], tb = xf[p.guidB];
+            if (!p.contact || !ta || !tb) {
+              _meshA.setMatrixAt(i, sc.makeScale(0, 0, 0));
+              _meshB.setMatrixAt(i, sc.makeScale(0, 0, 0));
+              skipped++; continue;
+            }
+            A.clashNarrow.worldMatrix(ta, m4); pA.setFromMatrixPosition(m4);
+            A.clashNarrow.worldMatrix(tb, m4); pB.setFromMatrixPosition(m4);
+            dir.subVectors(pB, pA);
+            if (dir.lengthSq() < 1e-9) dir.set(0, 1, 0); else dir.normalize();
+            // Size from the PENETRATION (severityM), not the element and not extentM — extentM is
+            // how FAR the intersection runs (79 m for a wall-on-foundation join) and would put us
+            // straight back to lighting up the building.
+            var sM = (typeof p.severityM === 'number' && p.severityM > 0) ? p.severityM : 0.2;
+            var box = Math.max(MARKER_MIN_M, Math.min(sM * 2, MARKER_MAX_M));
+            c.set(p.contact.x, p.contact.y, p.contact.z);
+            sc.makeScale(box, box, box);
+            m4.makeTranslation(c.x - dir.x * box * 0.55, c.y - dir.y * box * 0.55, c.z - dir.z * box * 0.55);
+            _meshA.setMatrixAt(i, m4.multiply(sc));
+            sc.makeScale(box, box, box);
+            m4.makeTranslation(c.x + dir.x * box * 0.55, c.y + dir.y * box * 0.55, c.z + dir.z * box * 0.55);
+            _meshB.setMatrixAt(i, m4.multiply(sc));
+            placed++;
           }
           _meshA.instanceMatrix.needsUpdate = true; _meshB.instanceMatrix.needsUpdate = true;
           A.scene.add(_meshA); A.scene.add(_meshB);
@@ -186,9 +207,22 @@ function setupClashFilm(A) {
     // ── UPDATE: one call per frame, driven by FILM seconds (§4).
     // colour = base × mix(pulse(t), 1.0, fade) — per INSTANCE, because a selected pair must hold
     // solid while every other pair keeps breathing (§4b). Phase 2 writes `fade`; nothing else changes.
+    // The envelope, in FILM seconds. Returns 0..1. Piecewise and explicit so the shape is readable
+    // and the witness can assert each phase rather than trusting a formula.
+    function envelope(filmSeconds) {
+      var t = (filmSeconds || 0) % PERIOD_S;
+      if (t < RISE_S) return t / RISE_S;                                  // come on over 2 s
+      t -= RISE_S;
+      if (t < HOLD_S) return 1;                                           // hold for 1 s
+      t -= HOLD_S;
+      if (t < FALL_S) return 1 - (t / FALL_S);                            // fade off over 3 s
+      return 0;                                                           // dark for 2 s
+    }
+    A.clashFilm.envelope = envelope;
+
     A.clashFilm.update = function (filmSeconds) {
       if (!_built || !_meshA || !_pairs.length) return null;
-      var pulse = BASE + AMP * (0.5 + 0.5 * Math.sin(2 * Math.PI * (filmSeconds || 0) / PERIOD_S));
+      var pulse = PEAK * envelope(filmSeconds);
       var ca = _meshA.instanceColor.array, cb = _meshB.instanceColor.array, any = false;
       for (var i = 0; i < _pairs.length; i++) {
         var f = _fade[i], k = pulse + (1 - pulse) * f;     // f=0 → pulsing, f=1 → solid
@@ -214,7 +248,8 @@ function setupClashFilm(A) {
 
     A.clashFilm.stats = function () {
       return { built: _built, pairs: _pairs.length, markers: _pairs.length * 2,
-        lastPulse: _lastPulse, uploads: _uploads, periodS: PERIOD_S, base: BASE, amp: AMP,
+        lastPulse: _lastPulse, uploads: _uploads, periodS: PERIOD_S, peak: PEAK,
+        riseS: RISE_S, holdS: HOLD_S, fallS: FALL_S, restS: REST_S,
         inScene: !!(_meshA && _meshA.parent) };
     };
     A.clashFilm.pairs = function () { return _pairs; };

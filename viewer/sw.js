@@ -92,7 +92,13 @@
 // shells pulsing on FILM time. Not gated by the Time Machine: the markers stand from frame 0 over
 // empty ground so the viewer sees where the trouble will be before it is built. Per-instance fade
 // channel reserved for phase 2's near-and-facing labels. --clash/--no-clash on cli_silent_bake.js.
-const CACHE_VERSION = 'v1144';   // bump on each deploy; per-change detail is the git commit message.
+// v1145 (2026-09-05) §CLASH_FILM_CONTACT_MARKER + §CLASH_FILM_PULSE_ENVELOPE + §CPE_BAKE_RES:
+// the clash marker is now the CLASH (two small boxes straddling the contact, sized from the
+// penetration) not the whole element — a 98.9 m slab was lighting up the floor and washing the sky.
+// The pulse is an asymmetric envelope (2 s rise, 1 s hold, 3 s fall, 2 s dark) instead of a sine
+// that never read as off. Alt+C gains a Clash pairs checkbox and a Silent-bake size select which
+// cli_silent_bake.js honours when --width/--height are absent.
+const CACHE_VERSION = 'v1145';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
