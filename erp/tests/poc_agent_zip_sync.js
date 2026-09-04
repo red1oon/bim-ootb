@@ -25,15 +25,17 @@ function sha(b) { return crypto.createHash('sha256').update(b).digest('hex').sli
 
 console.log('═══ W-AGENT-ZIP-SYNC — the shipped agent downloads are their source directories ═══\n');
 
-// A0 — judged BEFORE anything is rebuilt, and it is the claim that is RED on plain origin/main: whatever
-// zip is sitting there right now, does it match the directory it duplicates? On main odoo_agent.zip is a
-// TRACKED BINARY missing odoo_agent/extract_model.js. Once the zips are built rather than tracked, a
-// developer tree has no zip at all and this claim reports "absent" and is skipped, which is the honest
-// verdict — the drift it guards against cannot exist when nothing is stored.
+// A0 — judged BEFORE anything is rebuilt. TWO claims, and A0a exists because of a measured mistake:
+// these zips were briefly UNTRACKED (#1675) on the assumption that deploy-pages.yml's generated files
+// reach users the way erp/version.json was believed to. They do not. GitHub Pages for this repo is
+// build_type "legacy", source {branch: main, path: /} — it serves the TRACKED FILES ON MAIN, and the
+// Actions artifact is published by nothing. Both downloads 404'd live within the hour. So A0a asserts
+// the zip is THERE, and A0b that it matches its source. §PZ.3 carries the measurement and the decision.
 var pre = B.run(true);
 pre.forEach(function (r) {
-  if (!r.present) { console.log('   ⚪ ' + r.zip + ' A0: no stored zip to check (it is built, not tracked) — SKIPPED, not passed'); return; }
-  verdict(!r.drift, r.zip + ' A0: the STORED zip matches the directory it duplicates',
+  verdict(r.present, r.zip + ' A0a: the zip is PRESENT and TRACKED — GitHub Pages serves the BRANCH, not the artifact', r.present ? 'present' : 'ABSENT — this 404s the live download');
+  if (!r.present) return;
+  verdict(!r.drift, r.zip + ' A0b: the STORED zip matches the directory it duplicates',
     r.drift ? 'stale=[' + r.stale.join(',') + ']' : 'in sync');
 });
 
