@@ -89,8 +89,15 @@ function fmtDur(ms) {
   return (h ? h + 'h' : '') + (h || m ? m + 'm' : '') + sec + 's';
 }
 const logStream = fs.createWriteStream(LOG, { flags: 'w' });
-function log(line) { const s = new Date().toISOString().slice(11, 19) + ' ' + line; logStream.write(s + '\n'); console.log(s); }
-function logRaw(line) { logStream.write(line + '\n'); }   // full console firehose → file only
+// §CLI_BAKE_LOG_TS (2026-09-04, user: "it be good if it has some timestamp") — ONE clock format for
+// every line in the file. The CLI's own lines already carried HH:MM:SS; the page-console firehose,
+// which is the bulk of a bake log and the half that carries the § evidence, carried none — so a
+// §-line could not be placed against a §CLI_BAKE_PROGRESS frame without counting lines. Milliseconds
+// because the bake renders ~1 frame/s and dozens of console lines land inside the same second.
+const _t0 = Date.now();
+function _ts() { const d = new Date(); return d.toISOString().slice(11, 23) + ' +' + ((Date.now() - _t0) / 1000).toFixed(1).padStart(7) + 's'; }
+function log(line) { const s = _ts() + ' ' + line; logStream.write(s + '\n'); console.log(s); }
+function logRaw(line) { logStream.write(_ts() + ' ' + line + '\n'); }   // full console firehose → file only
 
 // ── static server (serves the checkout; symlinked buildings/ resolve normally) ──
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
