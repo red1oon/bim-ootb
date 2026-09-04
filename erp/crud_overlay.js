@@ -369,6 +369,70 @@
       });
       console.log('§CRUD-CALLOUT host bPartner handler registered (CalloutOrder.bPartner — bill+pricelist default; engine handlers untouched)');
     }
+    // §INOUT-CALLOUTS (prompts/AGENT_QUEUE.md §INOUT-CALLOUTS, §ERP-SESSION-CLOSE §CLOSE.4 item 3) — the two
+    // atoms §CLOSE.4 named as "half-built and forced". Both are AD data: ad_column.callout declares
+    // CalloutInOut.bpartner on M_InOut.C_BPartner_ID and CalloutInOut.docType on M_InOut.C_DocType_ID
+    // (queried from ad_seed.db, not assumed). Registered as HOST GLUE for the same reason CalloutOrder.bPartner
+    // is: they need the bundle, and W-CALLOUT PINS the engine's installDefaultHandlers at 6 pure atoms.
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutInOut.bpartner')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutInOut.bpartner', function (ctx, info) {
+        // Java home (EXTRACT, do NOT invent) — CalloutInOut.bpartner (CalloutInOut.java:264-333):
+        //   its whole field-setting body is inside `if (!IsSOTrx)` (:291) — the RECEIPT side. It sets
+        //   C_BPartner_Location_ID = (select max(l.C_BPartner_Location_ID) … where IsActive='Y') (:274,:294-298)
+        //   and AD_User_ID = ShipTo_User_ID when > 0 else max(active AD_User) (:275-276, :300-307).
+        //   The IsSOTrx branch (:311-320) only fires a CreditLimitOver STATUS EVENT — a UI notification, not a
+        //   field — so it is NAMED-DEFERRED, never silently skipped.
+        // This is the atom that makes a Material Receipt create stop needing C_BPartner_Location_ID typed by
+        // hand (witness_p2p_invoice_match had to type 114 explicitly, with a comment saying real iDempiere
+        // defaults it via this very callout).
+        var r = info.record || {};
+        var bp = Number(r.C_BPartner_ID || r.c_bpartner_id || 0);
+        if (!bp) return { derived: {} };
+        // IsSOTrx is not a field on this form; the per-window signal is MovementType (§Fix 2's own finding —
+        // the M_InOut AD_Tab family splits Shipment 'C-' vs Receipt 'V+' by MovementType, never IsSOTrx).
+        // Read the record first, then that window signal — the same precedence _docCtx uses.
+        var so = null;
+        if (r.IsSOTrx != null || r.issotrx != null) so = String(r.IsSOTrx != null ? r.IsSOTrx : r.issotrx).toUpperCase() === 'Y';
+        if (so == null) { var mt = String((global.APP && global.APP._createMovementType) || r.MovementType || r.movementtype || ''); if (/^[A-Z][+-]$/.test(mt)) so = mt.charAt(0) === 'C'; }
+        if (so === true) return { derived: {}, deferred: ['CreditLimitOver (fireDataStatusEEvent — a UI status event, not a field)'] };
+        var bpd = ctx.bpShipDefaults ? ctx.bpShipDefaults(bp) : null;
+        if (!bpd) return { derived: {}, note: 'no c_bpartner row for ' + bp };
+        var d = {};
+        if (bpd.locationId != null) d.C_BPartner_Location_ID = bpd.locationId;
+        if (bpd.userId != null) d.AD_User_ID = bpd.userId;
+        return { derived: d, note: 'receipt-side location/contact defaulted from BP ' + bp };
+      });
+      console.log('§CRUD-CALLOUT host CalloutInOut.bpartner registered (receipt-side C_BPartner_Location_ID + AD_User_ID default; the SO credit-limit branch is a status event, named-deferred)');
+    }
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutInOut.docType')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutInOut.docType', function (ctx, info) {
+        // Java home (EXTRACT, do NOT invent) — CalloutInOut.docType (CalloutInOut.java:191-262): reads the
+        // chosen C_DocType's DocBaseType + IsSOTrx, sets IsSOTrx from the doctype when they differ (:214-227)
+        // and MovementType = MInOut.getMovementType(ctx, C_DocType_ID, IsSOTrx, null) (:229).
+        // getMovementType IS ALREADY PORTED, verbatim, as erp_engine.movementTypeOf(docBaseType, issotrx)
+        // (erp_engine.js:302-309) — landed for E-4/stockMoves. This atom calls it; it does not re-derive it
+        // (§CLOSE.4's own words: "its body sets MovementType via the very rule E-4 already ported").
+        // The DocumentNo re-preview branch (:231-258) is NAMED-DEFERRED: _seedDocNoPreview/_previewDocNo
+        // already own DocumentNo-from-sequence on this form, and two writers to one field is the defect.
+        var r = info.record || {};
+        var dt = Number(r.C_DocType_ID || r.c_doctype_id || 0);
+        if (!dt) return { derived: {} };
+        var info2 = ctx.docTypeInfo ? ctx.docTypeInfo(dt) : null;
+        if (!info2) return { derived: {}, note: 'no c_doctype row for ' + dt };
+        var E = global.ERPEngine;
+        if (!E || typeof E.movementTypeOf !== 'function')
+          return { derived: {}, deferred: ['MovementType (erp_engine.movementTypeOf absent — never re-derived here)'] };
+        var d = {}, deferred = [];
+        var mt = E.movementTypeOf(info2.docBaseType, info2.issotrx);
+        if (mt) d.MovementType = mt; else deferred.push('MovementType (DocBaseType ' + info2.docBaseType + ' is not MMS/MMR — getMovementType returns null)');
+        // IsSOTrx is carried too (the Java sets it), even though M_InOut's create form declares no IsSOTrx
+        // field, so nothing applies it today — MOrder/MInOut beforeSave own that column. Derived, not dropped.
+        if (info2.issotrx === 'Y' || info2.issotrx === 'N') d.IsSOTrx = info2.issotrx;
+        deferred.push('DocumentNo re-preview (:231-258 — _seedDocNoPreview already owns this field)');
+        return { derived: d, deferred: deferred, note: 'DocBaseType ' + info2.docBaseType + ' IsSOTrx ' + info2.issotrx + ' -> MovementType ' + mt };
+      });
+      console.log('§CRUD-CALLOUT host CalloutInOut.docType registered (MovementType via erp_engine.movementTypeOf — the E-4 port, not a second derivation)');
+    }
   }
   function fireCreateCallout(e, changedCol) {
     if (!global.AdCallout || typeof withBundle !== 'function' || !e || !changedCol) return;
@@ -381,6 +445,25 @@
           try { var row = b3.prepare('SELECT m_pricelist_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(bpId));
             return row ? { priceListId: row.m_pricelist_id } : null; } catch (er) { return null; }
         },
+        // §INOUT-CALLOUTS — the two accessors CalloutInOut.bpartner/.docType need, as the SAME kind of
+        // read-the-real-join helper bpDefaults already is. The SQL is the Java's own, transcribed:
+        //   bpShipDefaults ← CalloutInOut.java:274-276 (max active location; ShipTo user else max active user)
+        //   docTypeInfo    ← CalloutInOut.java:197-201 (DocBaseType + IsSOTrx off C_DocType)
+        bpShipDefaults: function (bpId) {
+          try {
+            var row = b3.prepare(
+              "SELECT (SELECT MAX(l.c_bpartner_location_id) FROM c_bpartner_location l WHERE l.c_bpartner_id=p.c_bpartner_id AND l.isactive='Y') AS loc," +
+              " (SELECT MAX(u.ad_user_id) FROM ad_user u WHERE u.c_bpartner_id=p.c_bpartner_id AND u.isactive='Y' AND u.isshipto='Y') AS shipto," +
+              " (SELECT MAX(u.ad_user_id) FROM ad_user u WHERE u.c_bpartner_id=p.c_bpartner_id AND u.isactive='Y') AS anyuser" +
+              " FROM c_bpartner p WHERE p.c_bpartner_id=?").get(Number(bpId));
+            if (!row) return null;
+            return { locationId: row.loc, userId: (Number(row.shipto) > 0 ? row.shipto : row.anyuser) };
+          } catch (er) { return null; }
+        },
+        docTypeInfo: function (dtId) {
+          try { var row = b3.prepare('SELECT docbasetype, issotrx FROM c_doctype WHERE c_doctype_id=?').get(Number(dtId));
+            return row ? { docBaseType: row.docbasetype, issotrx: row.issotrx } : null; } catch (er) { return null; }
+        },
         productPrice: function (pid) {   // forward-compat for a c_orderline create (next leg) — the real price-list join
           try { var row = b3.prepare('SELECT pp.pricestd, pp.pricelist FROM m_productprice pp JOIN m_pricelist_version v ON v.m_pricelist_version_id=pp.m_pricelist_version_id WHERE pp.m_product_id=? LIMIT 1').get(Number(pid));
             return row ? { priceStd: row.pricestd, priceList: row.pricelist } : null; } catch (er) { return null; }
@@ -390,10 +473,19 @@
       var derived = res.derived || {}, applied = [];
       Object.keys(derived).forEach(function (c) {
         var inEl = fhost.querySelector('[data-col="' + c + '"]') || fhost.querySelector('[data-col="' + String(c).toLowerCase() + '"]');
-        if (inEl && !inEl.disabled) { _setVal(inEl, derived[c]); applied.push(c); }
+        // §INOUT-CALLOUTS — a READ-ONLY field is still WRITTEN by a callout. iDempiere's callouts set the
+        // model, not the widget (mTab.setValue(...)); IsReadOnly='Y' stops the USER typing, it does not stop
+        // the engine filling. MEASURED: CalloutInOut.docType derived MovementType='V+' and it was dropped on
+        // the floor, because M_InOut.MovementType is IsReadOnly='Y' on AD_Tab 296 — the very column that tab
+        // is keyed on. Same class for C_OrderLine.QtyOrdered (IsReadOnly='Y' on tab 187), which is exactly
+        // what CalloutOrder.qty exists to fill. gatherVals() reads every field element regardless of
+        // `disabled`, so a value written here reaches the saved record. `(ro)` marks it in the §-log so the
+        // two cases stay distinguishable.
+        if (inEl) { _setVal(inEl, derived[c]); applied.push(c + (inEl.disabled ? '(ro)' : '')); }
       });
       var short = function (n) { return String(n).split('.').slice(-2).join('.'); };
-      console.log('§CRUD-CALLOUT table=' + e.key + ' col=' + changedCol + ' callouts=[' + (res.callouts || []).map(short).join(',') + '] fired=[' + (res.fired || []).map(short).join(',') + '] absent=[' + (res.absent || []).map(short).join(',') + '] derived=' + JSON.stringify(derived) + ' applied=[' + applied.join(',') + ']');
+      console.log('§CRUD-CALLOUT table=' + e.key + ' col=' + changedCol + ' callouts=[' + (res.callouts || []).map(short).join(',') + '] fired=[' + (res.fired || []).map(short).join(',') + '] absent=[' + (res.absent || []).map(short).join(',') + '] derived=' + JSON.stringify(derived) + ' applied=[' + applied.join(',') + ']' +
+        ((res.deferred && res.deferred.length) ? ' deferred=[' + res.deferred.join(' | ') + ']' : ''));
       if (applied.length && typeof applyAdLogic === 'function') try { applyAdLogic(e); } catch (er) {}
     });
   }
@@ -2059,6 +2151,50 @@
   // (none of these ops are owner-gated — every op is a fresh CREATE, matching commitCrud's own "CREATE has
   // no prior owner to gate" note). K.commitGroup's own atomicity guarantee means every op in the group
   // commits together or none do. cb(result) — result = {committed, gid?, ids?, sealed?, verifyOk?, reason?}.
+  // _resolveOpRefs — §KIND2-READBACK (prompts/AGENT_QUEUE.md §K2RB.4). A KIND-2 generator commits a NEW
+  // parent document and its lines in ONE group, so a line's parent FK cannot be written by the caller:
+  // a listTip-created row's pk is the SYNTHETIC negated kernel-op id, which does not exist until the
+  // group is staged. The placeholder {__opRef:i} means "the pk of the row op i creates" and is resolved
+  // HERE, inside the same _withFreshSide window commitGroup is about to stage against — so this is a
+  // READ of the id law the kernel already relies on itself, not a prediction across a gap:
+  //   kernel_ops.js:526-530 — "The staged ops will receive ids = max(id)+1..+N on insert … They are
+  //   contiguous because INTEGER PRIMARY KEY auto-increments monotonically and this group is a single
+  //   transaction."
+  // and crud_core.listTip:414 gives a CRUD_CREATE row the pk `-opId`. Hence op i ⇒ pk -(nextId+i).
+  // Returns a COPY (never mutates the caller's ops); an unresolvable ref is left as-is and logged, so a
+  // shape this does not understand fails loudly instead of committing a silent null FK.
+  function _resolveOpRefs(db, ops) {
+    var hasRef = ops.some(function (o) {
+      var f = o && o.fields; if (!f) return false;
+      for (var k in f) if (f.hasOwnProperty(k) && f[k] && typeof f[k] === 'object' && f[k].__opRef != null) return true;
+      return false;
+    });
+    if (!hasRef) return ops;
+    var nextId = null;
+    try { var r = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'); if (r.length) nextId = Number(r[0].values[0][0]) + 1; } catch (e) { nextId = null; }
+    if (nextId == null) { console.warn('§CRUD-GROUP-OPREF cannot read kernel_ops MAX(id) — leaving refs unresolved'); return ops; }
+    var resolved = 0, unresolved = 0;
+    var out = ops.map(function (o) {
+      if (!o || !o.fields) return o;
+      var f2 = {}, any = false;
+      for (var k in o.fields) if (o.fields.hasOwnProperty(k)) {
+        var v = o.fields[k];
+        if (v && typeof v === 'object' && v.__opRef != null) {
+          var idx = Number(v.__opRef);
+          if (idx >= 0 && idx < ops.length) { f2[k] = -(nextId + idx); resolved++; any = true; continue; }
+          unresolved++;
+        }
+        f2[k] = v;
+      }
+      if (!any && !unresolved) return o;
+      var c = {}; for (var p in o) if (o.hasOwnProperty(p)) c[p] = o[p];
+      c.fields = f2; return c;
+    });
+    console.log('§CRUD-GROUP-OPREF nextId=' + nextId + ' resolved=' + resolved + ' unresolved=' + unresolved +
+                ' (a line\'s parent FK = the synthetic pk listTip will give its header op)');
+    return out;
+  }
+
   function applyOpGroup(ops, cb) {
     cb = cb || function () {};
     if (!ops || !ops.length) { cb({ committed: false, reason: 'empty-group' }); return; }
@@ -2066,7 +2202,7 @@
     withSidecar(function (db) {
       if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD-GROUP kernel/sql.js absent — cannot commit'); cb({ committed: false, reason: 'kernel/sql.js absent' }); return; }
       _withFreshSide(K, function (freshDb, done) {
-        var groupOps = ops.map(function (o) { return { op_type: o.op_type, params: o }; });
+        var groupOps = _resolveOpRefs(freshDb, ops).map(function (o) { return { op_type: o.op_type, params: o }; });
         Promise.resolve(K.commitGroup(freshDb, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) {
             console.warn('§CRUD-GROUP commitGroup not-committed reason=' + (res && res.reason || '?'));

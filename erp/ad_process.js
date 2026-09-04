@@ -381,7 +381,12 @@
       return {
         ok: true, rows: built.lines.length,
         message: '@Created@ = 1 (' + built.lines.length + ' invoice line' + (built.lines.length === 1 ? '' : 's') + ')',
-        result: { ops: ops, lineCount: built.lines.length, header: ops[0], issotrx: ops[0].issotrx, deferredRule: built.deferredRule }
+        // §KIND2-READBACK (prompts/AGENT_QUEUE.md §K2RB.4) — crudMap publishes the spec's OWN engine-internal→
+        // real-column names so the commit seam can translate this op-group into the CRUD vocabulary
+        // crud_core.listTip folds. buildDoc writes `source_id`/`source_line_id` (engine names, not columns);
+        // the spec already knows the columns they stand for. EXTRACT — nothing new is decided here.
+        result: { ops: ops, lineCount: built.lines.length, header: ops[0], issotrx: ops[0].issotrx, deferredRule: built.deferredRule,
+                  crudMap: { docParent: INVOICE_SPEC.parentId, lineParent: INVOICE_SPEC.lineParentId } }
       };
     }, { kind: 'process', action: 'GenerateInvoice' });
   }
@@ -536,7 +541,12 @@
       return {
         ok: true, rows: built.lines.length,
         message: '@Created@ = 1 (' + built.lines.length + ' shipment line' + (built.lines.length === 1 ? '' : 's') + ')',
-        result: { ops: ops, lineCount: built.lines.length, header: ops[0], movementtype: ops[0].movementtype, deferredRule: built.deferredRule }
+        // §KIND2-READBACK (prompts/AGENT_QUEUE.md §K2RB.4) — crudMap publishes the spec's OWN engine-internal→
+        // real-column names so the commit seam can translate this op-group into the CRUD vocabulary
+        // crud_core.listTip folds. buildDoc writes `source_id`/`source_line_id` (engine names, not columns);
+        // the spec already knows the columns they stand for. EXTRACT — nothing new is decided here.
+        result: { ops: ops, lineCount: built.lines.length, header: ops[0], movementtype: ops[0].movementtype, deferredRule: built.deferredRule,
+                  crudMap: { docParent: SHIPMENT_SPEC.parentId, lineParent: SHIPMENT_SPEC.lineParentId } }
       };
     }, { kind: 'process', action: 'GenerateShipment' });
   }
@@ -566,7 +576,12 @@
       return {
         ok: true, rows: norm.length,
         message: '@C_Order_ID@ generated from project (' + norm.length + ' line' + (norm.length === 1 ? '' : 's') + ')',
-        result: { ops: ops, lineCount: norm.length, header: ops[0], issotrx: 'Y', docsubtypeso: 'WI' }
+        // §KIND2-READBACK (prompts/AGENT_QUEUE.md §K2RB.4) — crudMap publishes the spec's OWN engine-internal→
+        // real-column names so the commit seam can translate this op-group into the CRUD vocabulary
+        // crud_core.listTip folds. buildDoc writes `source_id`/`source_line_id` (engine names, not columns);
+        // the spec already knows the columns they stand for. EXTRACT — nothing new is decided here.
+        result: { ops: ops, lineCount: norm.length, header: ops[0], issotrx: 'Y', docsubtypeso: 'WI',
+                  crudMap: { docParent: GENORDER_SPEC.parentId, lineParent: GENORDER_SPEC.lineParentId } }
       };
     }, { kind: 'process', action: 'GenerateOrder' });
   }

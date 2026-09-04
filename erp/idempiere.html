@@ -485,10 +485,14 @@
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
 <script src="erp_descriptor.js?v=1"></script>
-<!-- RENDERER #2 (IDEMPIERE_2.md §pivot) — the Odoo descriptor: registers a 2nd dictionary so ?erp=odoo drives
-     this UNCHANGED chrome over an Odoo model. Reads odoo_model.json + odoo_chain.json (pulled live by
-     odoo_agent/extract_model.js). Inactive unless ?erp=odoo — the AD path is untouched. -->
-<script src="odoo_descriptor.js?v=1"></script>
+<!-- RENDERER #2 (IDEMPIERE_2.md §pivot) — the Odoo descriptor is NOT loaded here any more.
+     §DICT-LAZY (prompts/AGENT_QUEUE.md §CLOSE.4 item 2 — user rule 2026-09-04: "nothing non-core is
+     fetched unless asked for"). It registers a SECOND dictionary; a second dictionary's renderer has no
+     business in the core boot path when nobody asked for it. It is now fetched by _ensureDictionary()
+     in the boot IIFE below, at the moment ?erp=odoo names it, BEFORE ErpDescriptor.use() runs — so the
+     odoo path is unchanged and the default path never touches the file. Kernel purity, not perf.
+     (erp/sw.js still PRECACHES odoo_descriptor.js + odoo_model.json + odoo_chain.json on purpose: that
+     is what makes ?erp=odoo work OFFLINE. Precaching stores; it does not execute, parse, or register.) -->
 <!-- ERP_AUDIT_CHANGELOG Task 2 — resolve audit actor AD_User_ID → real AD_User.Name (NON-INVENT, honest fallback). -->
 <script src="user_names.js?v=1"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
@@ -635,7 +639,37 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // so this is behavior-identical today; ErpDescriptor.use('odoo') repoints the whole chrome at renderer #2.
   // ?erp=<name> selects a descriptor before the aliases are cached (renderer #2 entry point). Fallback to the
   // raw AD globals if the seam module failed to load (never a blank chrome).
-  (function () { try { var w = new URLSearchParams(location.search).get('erp'); if (w && window.ErpDescriptor) window.ErpDescriptor.use(w); } catch (e) {} })();
+  // §DICT-LAZY — a NON-CORE dictionary is fetched only when something asks for it by name (user rule,
+  // 2026-09-04). AD is the core dictionary and ships in the boot path; every other one lives here and is
+  // pulled synchronously, at the moment ?erp=<name> names it and before ErpDescriptor.use(<name>) runs —
+  // registration must already have happened by then, which is why this is a sync XHR + eval and not a
+  // <script> append (odoo_descriptor.js itself loads its two JSON artifacts the same synchronous way, for
+  // the same reason: structure.init(db) is called un-awaited at boot). A failed fetch is logged and the
+  // chrome falls through to AD — never a blank screen.
+  var LAZY_DICTS = { odoo: 'odoo_descriptor.js?v=1' };
+  function _ensureDictionary(name) {
+    var src = LAZY_DICTS[name];
+    if (!src) return false;                                   // not a lazy dictionary (e.g. 'ad') — nothing to do
+    var D = window.ErpDescriptor;
+    if (D && typeof D.list === 'function' && D.list().indexOf(name) >= 0) return true;   // already registered
+    try {
+      var x = new XMLHttpRequest(); x.open('GET', src, false); x.send(null);
+      if (x.status < 200 || x.status >= 300) { console.warn('§DICT-LAZY name=' + name + ' src=' + src + ' status=' + x.status + ' — not registered, falling through to AD'); return false; }
+      (0, eval)(x.responseText);
+      console.log('§DICT-LAZY loaded=' + name + ' src=' + src + ' bytes=' + x.responseText.length +
+                  ' (NOT in the boot path — fetched because ?erp=' + name + ' asked for it)');
+      return true;
+    } catch (e) { console.warn('§DICT-LAZY name=' + name + ' load error — ' + e.message + '; falling through to AD'); return false; }
+  }
+  (function () {
+    try {
+      var w = new URLSearchParams(location.search).get('erp');
+      if (w) _ensureDictionary(w);
+      if (w && window.ErpDescriptor) window.ErpDescriptor.use(w);
+      console.log('§DICT-LAZY asked=' + (w || '(none)') + ' deferred=[' + Object.keys(LAZY_DICTS).join(',') + '] registered=[' +
+                  ((window.ErpDescriptor && window.ErpDescriptor.list) ? window.ErpDescriptor.list().join(',') : '?') + ']');
+    } catch (e) {}
+  })();
   var _D = (window.ErpDescriptor && window.ErpDescriptor.active) || null;
   var ADP = _D ? _D.structure : window.ADParser,
       ADD = _D ? _D.data      : window.ADData,
@@ -1231,6 +1265,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         row.classList.add('active');
         if (node.action === 'W' && node.windowId) _dirtyGuard(function () { openWindow(Number(node.windowId), node.name); });
         else if ((node.action === 'P' || node.action === 'R') && node.processId) openProcess(Number(node.processId), node.name);  // §AD-PROC-LIVE (B-5/C-5)
+        else if (node.action === 'X' && node.formId) openAdForm(Number(node.formId), node.name);                                  // §AD-FORM-LIVE (E-3)
         else status('"' + node.name + '" — action ' + node.action + ' (window opening only in I1)');
         if (window.innerWidth <= 760) document.body.classList.remove('menu-open');
       });
@@ -2528,6 +2563,252 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
     var c = $('idmp-content'); c.innerHTML = ''; c.appendChild(pane);
   }
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
+  // §AD-FORM-LIVE (prompts/AGENT_QUEUE.md §ADFORM-VMATCH, §ERP-SESSION-CLOSE §CLOSE.4 item 4 / E-3) — the
+  // FORM renderer. 49 AD_Form rows are baked in ad_seed.db and, until now, an 'X' menu leaf fell through to
+  // `status("… action X (window opening only in I1)")`. This is the P/R spine's sibling: the menu leaf
+  // resolves the AD_Form row, dispatches on its OWN Classname, and an unregistered classname shows the same
+  // HONEST "not available" card openProcess already shows — never a blank pane, never a fabricated form.
+  // ONE form is implemented end to end, per §CLOSE.4's own scoping: AD_Form 108
+  // "Matching PO-Receipt-Invoice" (org.compiere.apps.form.VMatch), because it is the READ FACE of the very
+  // three-way match this lane closed at #1654/#1661 — the junctions already exist, so nothing is invented.
+  var _FORM_HANDLERS = {};
+  function _registerForm(classname, fn) { _FORM_HANDLERS[classname] = fn; }
+  function openAdForm(formId, name) {
+    var row = _sqlRows('SELECT ad_form_id, name, classname FROM ad_form WHERE ad_form_id=' + Number(formId))[0] || null;
+    var cls = row ? String(row.classname || '') : '';
+    var handled = !!_FORM_HANDLERS[cls];
+    console.log('§AD-FORM-LIVE open form=' + formId + ' name="' + ((row && row.name) || name || '') + '" classname=' + (cls || '(blank)') +
+                ' handled=' + (handled ? 'Y' : 'N') + ' registered=[' + Object.keys(_FORM_HANDLERS).map(function (c) { return c.split('.').pop(); }).join(',') + ']');
+    if (!row) { status('AD_Form ' + formId + ' not found'); return; }
+    if (handled) { _FORM_HANDLERS[cls](row); return; }
+    // the honest absent card — identical in kind to an unregistered process classname
+    var pane = el('div', 'idmp-procpane idmp-procresult absent');
+    pane.appendChild(el('h3', null, row.name || name || ('Form ' + formId)));
+    pane.appendChild(el('div', 'sub', 'AD_Form ' + formId + ' · classname ' + (cls || '(blank)')));
+    pane.appendChild(el('span', 'ok-chip', 'Not available'));
+    pane.appendChild(el('div', 'msg', 'This AD_Form row is real and the menu leaf reaches it, but no renderer is registered for ' +
+      (cls || 'a blank classname') + ' yet. ' + Object.keys(_FORM_HANDLERS).length + ' of ' +
+      (_sqlRows('SELECT count(*) n FROM ad_form')[0] || { n: 0 }).n + ' forms are implemented.'));
+    var back = el('div', null); var bb = el('button', null, 'Close');
+    bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
+    bb.addEventListener('click', function () {
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+    });
+    back.appendChild(bb); pane.appendChild(back);
+    _showProcPane(pane);
+  }
+
+  // _foldTable — read-the-tip for a whole table: the immutable bundle rows PLUS the signed sidecar's
+  // CRUD_CREATE/UPDATE/DELETE overlay, optionally with each row's latest SET_STATUS. Same primitive pair
+  // (listTip + readTip) renderOrderPicker and renderCreateFromPicker already use — hoisted here so the
+  // match form folds a freshly-authored document exactly like a seed one, instead of a third copy of it.
+  function _foldTable(table, pk, base, withStatus, cb) {
+    var c = window.__crud;
+    if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { cb(base); return; }
+    c.withSidecar(function (sdb) {
+      var rows = base;
+      if (sdb) {
+        var folded = null;
+        try { folded = c.core.listTip(sdb, table, pk, base, null); } catch (e) { folded = null; }
+        rows = (folded && folded.rows) || base;
+        if (withStatus && typeof c.core.readTip === 'function')
+          rows.forEach(function (r) { try { var t = c.core.readTip(sdb, table, r[pk], null); if (t != null) r.docstatus = t; } catch (e) {} });
+      }
+      cb(rows);
+    });
+  }
+  // _matchRowsFor — the junction rows for a match table. TWO SOURCES, both real: the bundle's own
+  // M_MatchInv/M_MatchPO rows, and the signed op log — erp_engine.completeInvoice/completeReceipt emit each
+  // junction as a CREATE_LINE op (that is what §P2P stage 4 asserts on), so a match created in THIS session
+  // exists ONLY there. Reading one source and not the other is how this lane's "committed but invisible"
+  // defects happen (§CLOSE.7 rule 1).
+  function _matchRowsFor(table, cb) {
+    var base = _sqlRows('SELECT * FROM ' + table);
+    var c = window.__crud, out = base.slice();
+    var K = (c && typeof c.kernelDb === 'function') ? c.kernelDb() : null;
+    if (K && window.KernelOps && typeof window.KernelOps.replayOps === 'function') {
+      try {
+        window.KernelOps.replayOps(K, 'CREATE_LINE').forEach(function (o) {
+          var p = o.parameters;
+          if (p && String(p.table || '').toLowerCase() === table) {
+            var r = {}; for (var k in p) if (p.hasOwnProperty(k)) r[String(k).toLowerCase()] = p[k];
+            out.push(r);
+          }
+        });
+      } catch (e) {}
+    }
+    console.log('§AD-FORM-MATCH junctions table=' + table + ' bundle=' + base.length + ' oplog=' + (out.length - base.length) + ' total=' + out.length);
+    cb(out);
+  }
+
+  // ── VMatch (AD_Form 108) — Java home, EXTRACT do NOT invent ────────────────────────────────────────────
+  // org.compiere.apps.form.Match (Match.java:301-361 tableInit) picks a SQL pair per direction; the SQL
+  // itself lives on the models as constants, transcribed here field for field:
+  //   Invoice→Receipt   MInvoice.MATCH_TO_RECEIPT_SQL (:85-98) + *_GROUP_BY (:101-110)
+  //   Receipt→Order     MInOut.BASE_MATCHING_SQL (:87-102) with M_MatchPO  + *_TO_ORDER_GROUP_BY (:116-126)
+  //   Receipt→Invoice   the same base with M_MatchInv                       + *_TO_INVOICE_GROUP_BY (:128-141)
+  //   Order→Receipt     MOrder.BASE_MATCHING_SQL (:81-97) with M_MatchPO    + *_TO_RECEIPT_GROUP_BY (:107-124)
+  // The HAVING is the whole semantics: NOT MATCHED = `qty <> SUM(matched)`, MATCHED = `0 <> SUM(matched)`.
+  // Match.getMatchToOptions (:80-96) fixes the legal pairs: Invoice→Shipment, Order→Shipment,
+  // Shipment→{Invoice,Order}. Order→Invoice exists in the model constants but the Java itself says
+  // "only matchToType == MATCH_SHIPMENT is implemented in UI" (:328) — so it is NOT offered here either.
+  // NOT PORTED, NAMED (Match.createMatchRecord :396-468): creating a match by hand. erp_engine's
+  // completeInvoice/completeReceipt already emit every M_MatchInv/M_MatchPO this app has, and a second
+  // writer to one junction is exactly the defect class §INOUT-CALLOUTS just paid a regression to find.
+  // This form is the READ face of that junction; the write leg is declared, not silently missing.
+  var _MATCH_DIRS = {
+    'I>S': {
+      label: 'Invoice → Material Receipt', doc: 'c_invoice', line: 'c_invoiceline', docPk: 'c_invoice_id', linePk: 'c_invoiceline_id',
+      dateCol: 'dateinvoiced', qtyCol: 'qtyinvoiced', docBase: ['API', 'APC'], negBase: ['APC'],
+      match: 'm_matchinv', matchKey: 'c_invoiceline_id', matchNeeds: null,
+      cols: ['Invoice', 'Date', 'BPartner', 'Line', 'Product', 'Qty', 'Matched']
+    },
+    'S>O': {
+      label: 'Material Receipt → Order', doc: 'm_inout', line: 'm_inoutline', docPk: 'm_inout_id', linePk: 'm_inoutline_id',
+      dateCol: 'movementdate', qtyCol: 'movementqty', docBase: ['MMR', 'MMS'], negBase: ['MMS'],
+      match: 'm_matchpo', matchKey: 'm_inoutline_id', matchNeeds: 'm_inoutline_id',
+      cols: ['Receipt', 'Date', 'BPartner', 'Line', 'Product', 'Qty', 'Matched']
+    },
+    'S>I': {
+      label: 'Material Receipt → Invoice', doc: 'm_inout', line: 'm_inoutline', docPk: 'm_inout_id', linePk: 'm_inoutline_id',
+      dateCol: 'movementdate', qtyCol: 'movementqty', docBase: ['MMR', 'MMS'], negBase: ['MMS'],
+      match: 'm_matchinv', matchKey: 'm_inoutline_id', matchNeeds: null,
+      cols: ['Receipt', 'Date', 'BPartner', 'Line', 'Product', 'Qty', 'Matched']
+    },
+    'O>S': {
+      label: 'Order → Material Receipt', doc: 'c_order', line: 'c_orderline', docPk: 'c_order_id', linePk: 'c_orderline_id',
+      dateCol: 'dateordered', qtyCol: 'qtyordered', docBase: ['POO'], negBase: [],
+      match: 'm_matchpo', matchKey: 'c_orderline_id', matchNeeds: 'm_inoutline_id',
+      cols: ['Order', 'Date', 'BPartner', 'Line', 'Product', 'Qty', 'Matched']
+    }
+  };
+  var _MATCH_FROM = [{ k: 'I', n: 'Invoice' }, { k: 'S', n: 'Material Receipt' }, { k: 'O', n: 'Order' }];
+  function _matchToOptions(from) {   // Match.getMatchToOptions:80-96, verbatim
+    if (from === 'I') return ['S'];
+    if (from === 'O') return ['S'];
+    return ['I', 'O'];
+  }
+  _registerForm('org.compiere.apps.form.VMatch', function (form) {
+    var pane = el('div', 'idmp-procpane idmp-procform');
+    pane.appendChild(el('h3', null, form.name));
+    pane.appendChild(el('div', 'sub', 'AD_Form ' + form.ad_form_id + ' · ' + form.classname +
+      ' · read face of M_MatchPO / M_MatchInv (creating a match by hand is named-deferred — the engine owns that junction)'));
+    var ctl = el('div', 'fld');
+    ctl.appendChild(el('label', null, 'Match from'));
+    var fromSel = document.createElement('select'); fromSel.setAttribute('data-match-from', '1');
+    _MATCH_FROM.forEach(function (o) { var op = el('option', null, o.n); op.value = o.k; fromSel.appendChild(op); });
+    ctl.appendChild(fromSel);
+    ctl.appendChild(el('label', null, 'Match to'));
+    var toSel = document.createElement('select'); toSel.setAttribute('data-match-to', '1');
+    ctl.appendChild(toSel);
+    ctl.appendChild(el('label', null, 'Show'));
+    var modeSel = document.createElement('select'); modeSel.setAttribute('data-match-mode', '1');
+    [['N', 'Not Matched'], ['M', 'Matched']].forEach(function (o) { var op = el('option', null, o[1]); op.value = o[0]; modeSel.appendChild(op); });
+    ctl.appendChild(modeSel);
+    pane.appendChild(ctl);
+    var actions = el('div', 'actions');
+    var runBtn = el('button', 'run', 'Refresh'); runBtn.setAttribute('data-match-run', '1');
+    var closeBtn = el('button', null, 'Close');
+    actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
+    var host = el('div', null); host.setAttribute('data-match-host', '1'); pane.appendChild(host);
+    closeBtn.addEventListener('click', function () {
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+    });
+    function paintTo() {
+      var opts = _matchToOptions(fromSel.value);
+      toSel.innerHTML = '';
+      opts.forEach(function (k) { var op = el('option', null, (_MATCH_FROM.filter(function (f) { return f.k === k; })[0] || {}).n); op.value = k; toSel.appendChild(op); });
+    }
+    fromSel.addEventListener('change', function () { paintTo(); run(); });
+    toSel.addEventListener('change', run);
+    modeSel.addEventListener('change', run);
+    runBtn.addEventListener('click', run);
+    function run() {
+      var key = fromSel.value + '>' + toSel.value, dir = _MATCH_DIRS[key];
+      host.innerHTML = '';
+      if (!dir) {
+        host.appendChild(el('div', 'gap', 'Direction ' + key + ' is not offered — Match.getMatchToOptions does not pair those two, and the Java itself notes only Match-to-Receipt is implemented in the UI.'));
+        console.log('§AD-FORM-MATCH dir=' + key + ' offered=N (Match.getMatchToOptions)');
+        return;
+      }
+      var matched = modeSel.value === 'M';
+      // headers: DocStatus IN ('CO','CL') AND the direction's DocBaseType filter — both from the Java's own
+      // INNER JOIN C_DocType (…) clause, applied after the tip fold so a freshly-Completed doc qualifies.
+      var hdrBase = _sqlRows('SELECT * FROM ' + dir.doc);
+      _foldTable(dir.doc, dir.docPk, hdrBase, true, function (hdrs) {
+        var dtBase = {};
+        _sqlRows('SELECT c_doctype_id, docbasetype FROM c_doctype').forEach(function (d) { dtBase[String(d.c_doctype_id)] = d.docbasetype; });
+        var hdrById = {}, kept = 0;
+        hdrs.forEach(function (h) {
+          var st = String(h.docstatus || '').toUpperCase();
+          if (st !== 'CO' && st !== 'CL') return;
+          var base = dtBase[String(h.c_doctype_id)] || null;
+          if (base != null && dir.docBase.indexOf(base) < 0) return;
+          // MInOut's own extra predicate: MMS only counts when IsSOTrx='N' (a vendor RETURN), MMR always
+          if (dir.doc === 'm_inout' && base === 'MMS' && String(h.issotrx) !== 'N') return;
+          h._docbase = base; hdrById[String(h[dir.docPk])] = h; kept++;
+        });
+        var lineBase = _sqlRows('SELECT * FROM ' + dir.line);
+        _foldTable(dir.line, dir.linePk, lineBase, false, function (lns) {
+          _matchRowsFor(dir.match, function (mrows) {
+            var sum = {};
+            mrows.forEach(function (m) {
+              // the Java's CASE: M_MatchPO only counts a row that actually carries the OTHER side's key
+              if (dir.matchNeeds && (m[dir.matchNeeds] == null || m[dir.matchNeeds] === '')) return;
+              var k = m[dir.matchKey]; if (k == null) return;
+              sum[String(k)] = (sum[String(k)] || 0) + Number(m.qty || 0);
+            });
+            var bpName = {}, prName = {}, orgName = {};
+            _sqlRows('SELECT c_bpartner_id, name FROM c_bpartner').forEach(function (r) { bpName[String(r.c_bpartner_id)] = r.name; });
+            _sqlRows('SELECT m_product_id, name FROM m_product').forEach(function (r) { prName[String(r.m_product_id)] = r.name; });
+            _sqlRows('SELECT ad_org_id, name FROM ad_org').forEach(function (r) { orgName[String(r.ad_org_id)] = r.name; });
+            var out = [], scanned = 0;
+            lns.forEach(function (l) {
+              var h = hdrById[String(l[dir.docPk])]; if (!h) return;
+              // the Java's `INNER JOIN M_Product p ON (lin.M_Product_ID=p.M_Product_ID)` — a charge line with
+              // no product is NOT in this form's population, in any direction. An inner join is a filter.
+              if (prName[String(l.m_product_id)] === undefined) return;
+              scanned++;
+              var q = Number(l[dir.qtyCol] || 0);
+              if (dir.negBase.indexOf(h._docbase) >= 0) {
+                // MInvoice: APC negates QtyInvoiced. MInOut: MMS negates MovementQty (and MMS only reaches
+                // here when IsSOTrx='N', which is the same condition the Java's CASE tests).
+                q = -q;
+              }
+              var m = sum[String(l[dir.linePk])] || 0;
+              var keep = matched ? (0 !== m) : (q !== m);     // the HAVING, verbatim
+              if (!keep) return;
+              out.push({ doc: h.documentno, date: h[dir.dateCol], bp: bpName[String(h.c_bpartner_id)] || h.c_bpartner_id,
+                         line: l.line, prod: prName[String(l.m_product_id)] || l.m_product_id, qty: q, matched: m,
+                         org: orgName[String(h.ad_org_id)] || h.ad_org_id });
+            });
+            var t = document.createElement('table'), tr = el('tr');
+            dir.cols.forEach(function (hd, i) { tr.appendChild(el('th', i >= 5 ? 'r' : null, hd)); });
+            t.appendChild(tr);
+            out.forEach(function (r) {
+              tr = el('tr');
+              [r.doc, r.date, r.bp, r.line, r.prod, r.qty, r.matched].forEach(function (cv, i) {
+                tr.appendChild(el('td', i >= 5 ? 'r' : null, cv == null ? '' : String(cv)));
+              });
+              t.appendChild(tr);
+            });
+            host.appendChild(t);
+            host.appendChild(el('div', 'msg', out.length + ' line' + (out.length === 1 ? '' : 's') + ' · ' +
+              (matched ? 'MATCHED (HAVING 0 <> SUM(matched qty))' : 'NOT MATCHED (HAVING qty <> SUM(matched qty))') +
+              ' · ' + kept + ' completed ' + dir.doc + ' header' + (kept === 1 ? '' : 's') + ' in scope, ' + scanned + ' line' + (scanned === 1 ? '' : 's') + ' scanned'));
+            if (!out.length) host.appendChild(el('div', 'gap', 'Nothing to show for this direction and mode — an empty result, not a missing one (' + scanned + ' lines were scanned against ' + Object.keys(sum).length + ' junction keys).'));
+            console.log('§AD-FORM-MATCH dir=' + key + ' mode=' + (matched ? 'matched' : 'notmatched') +
+                        ' headers=' + kept + ' linesScanned=' + scanned + ' junctionKeys=' + Object.keys(sum).length + ' rows=' + out.length);
+          });
+        });
+      });
+    }
+    paintTo();
+    _showProcPane(pane);
+    run();
+  });
+
   // openProcess — the entry for menu P/R leaves + the ?process= deep link (procSet-gated in applySession).
   function openProcess(processId, name) {
     if (!window.AdProcess) { status('Process engine not loaded'); return; }
@@ -2940,6 +3221,56 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason + ' message=' + JSON.stringify(res.message)) : ' reason=' + res.reason));
     renderProcResult(proc, res);
   }
+  // §CREATEFROM-COMMIT / §KIND2-COMMIT — the ONE translation from ENGINE vocabulary to CRUD vocabulary,
+  // shared by both Confirm & Post seams below (it was written once for CreateFromInvoice in #1654; the
+  // KIND-2 generators need the identical shape, so this is hoisted rather than written a second time).
+  //
+  // WHY IT EXISTS: erp_engine/ad_process propose CREATE_DOCUMENT/CREATE_LINE, but crud_core.listTip —
+  // which every grid, every picker and every crud_overlay.completeFanout* reads through — folds ONLY
+  // CRUD_CREATE/CRUD_UPDATE/CRUD_DELETE. A raw engine op therefore commits to the signed log and is then
+  // INVISIBLE to every reader: signed, verified, unreadable. Measured twice —
+  //   #1654 CreateFromInvoice: §GENPROCESS-CONFIRM committed=Y ops=11 verifyOk=true → §INVOICE-FANOUT lines=0
+  //   W-KIND2-READBACK 2026-09-04: §GENPROCESS-CONFIRM committed=Y ops=2 verifyOk=true → §K2RB stage=2
+  //     readableDocs=0 readableLines=0 (and the same for stage 3)
+  // The target shape is exactly what crud_core.buildOp('create') produces, with stdDefaults from the same
+  // window.APP.* that sessionActor() reads. Every field value is the engine op's own — nothing invented.
+  //
+  // opts (KIND-2 only; omit for a lines-into-an-existing-document result like CreateFromInvoice):
+  //   crudMap    — { docParent, lineParent } published by the handler from its OWN buildDoc spec.
+  //                buildDoc writes the engine-internal names `source_id` (on the document) and
+  //                `source_line_id` (on each line); the spec knows which real columns they stand for
+  //                (c_order_id / c_orderline_id, c_project_id / c_projectline_id). Renamed, never dropped.
+  //   parentFk   — the column linking a line to its NEW parent document (docTable + '_id', the same
+  //                key+'_id' convention crud_overlay.recId uses). Set to the {__opRef:0} placeholder that
+  //                crud_overlay._resolveOpRefs turns into the header row's synthetic pk at commit time —
+  //                it cannot be known here, because that pk IS the header op's kernel id.
+  function _asCrudCreates(ops, opts) {
+    opts = opts || {};
+    var map = opts.crudMap || {}, parentFk = opts.parentFk || null;
+    var docParent = map.docParent ? String(map.docParent).toLowerCase() : null;
+    var lineParent = map.lineParent ? String(map.lineParent).toLowerCase() : null;
+    return ops.map(function (o, i) {
+      var fields = {};
+      Object.keys(o).forEach(function (k) {
+        if (k === 'op_type' || k === 'table' || k === '_sv' || k === '_sigv') return;
+        if (o[k] === undefined) return;
+        var lk = String(k).toLowerCase();
+        if (lk === 'source_id') { if (docParent && o[docParent] === undefined) fields[docParent] = o[k]; return; }
+        if (lk === 'source_line_id') { if (lineParent) fields[lineParent] = o[k]; return; }
+        fields[lk] = o[k];
+      });
+      if (parentFk && i > 0) fields[parentFk] = { __opRef: 0 };   // resolved at commit — see crud_overlay._resolveOpRefs
+      var std = null;
+      try {
+        if (window.APP && (window.APP.actor != null || window.APP.clientId != null))
+          std = { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 };
+      } catch (e) { std = null; }
+      var op = { key: String(o.table).toLowerCase(), table: String(o.table).toLowerCase(), verb: 'create',
+                 op_type: 'CRUD_CREATE', fields: fields, cas: null, op_uuid: null };
+      if (std) op.stdDefaults = std;
+      return op;
+    });
+  }
   function renderProcResult(proc, res) {
     var absent = !res.dispatched;
     var pane = el('div', 'idmp-procpane idmp-procresult' + (absent ? ' absent' : ''));
@@ -3019,7 +3350,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var cfMsg = el('div', 'msg'); cfMsg.style.cssText = 'margin-top:6px';
       cfBtn.addEventListener('click', function () {
         cfBtn.disabled = true; cfBtn.textContent = 'Posting…';
-        window.__crud.applyOpGroup(r.ops, function (out) {
+        // §KIND2-COMMIT (prompts/AGENT_QUEUE.md §KIND2-READBACK) — the same commit-seam translation
+        // §CREATEFROM-COMMIT already does, extended with the one thing CreateFromInvoice did not need:
+        // the parent document does not exist yet, so each line's parent FK is the {__opRef:0} placeholder
+        // crud_overlay._resolveOpRefs resolves to the header row's synthetic pk inside the commit window.
+        // MEASURED before this translation (W-KIND2-READBACK, plain origin/main, 2026-09-04):
+        //   §K2RB stage=2 committedOps=2 rawDocs=1 rawLines=1 readableDocs=0 readableLines=0
+        //   §K2RB stage=3 committedOps=2 rawDocs=1 rawLines=1 readableDocs=0 readableLines=0
+        var k2Parent = String(h.table).toLowerCase() + '_id';       // key+'_id' — crud_overlay.recId's convention
+        var k2Ops = _asCrudCreates(r.ops, { crudMap: r.crudMap, parentFk: k2Parent });
+        console.log('§KIND2-COMMIT translating ' + r.ops.length + ' engine op(s) → CRUD_CREATE for ' +
+                    String(h.table).toLowerCase() + ' + ' + (r.ops.length - 1) + ' line(s) parented on ' + k2Parent +
+                    ' (listTip folds CRUD only; a raw CREATE_DOCUMENT/CREATE_LINE would be unreadable)');
+        window.__crud.applyOpGroup(k2Ops, function (out) {
           if (!out || !out.committed) {
             cfBtn.disabled = false; cfBtn.textContent = 'Confirm & Post';
             cfMsg.textContent = 'Not posted: ' + ((out && out.reason) || 'unknown');
@@ -3068,25 +3411,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // So translate at the commit seam into exactly the shape crud_core.buildOp('create') produces —
       // same op_type, same fields, same stdDefaults source (window.APP.*, which is what sessionActor()
       // reads). Nothing is invented: every field value is the engine op's own.
-      function _asCrudCreates(ops) {
-        return ops.map(function (o) {
-          var fields = {};
-          Object.keys(o).forEach(function (k) {
-            if (k === 'op_type' || k === 'table' || k === '_sv' || k === '_sigv') return;
-            if (o[k] === undefined) return;
-            fields[String(k).toLowerCase()] = o[k];
-          });
-          var std = null;
-          try {
-            if (window.APP && (window.APP.actor != null || window.APP.clientId != null))
-              std = { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 };
-          } catch (e) { std = null; }
-          var op = { key: String(o.table).toLowerCase(), table: String(o.table).toLowerCase(), verb: 'create',
-                     op_type: 'CRUD_CREATE', fields: fields, cas: null, op_uuid: null };
-          if (std) op.stdDefaults = std;
-          return op;
-        });
-      }
+      // (the translation itself is _asCrudCreates above renderProcResult — one implementation, two seams)
       cfb.addEventListener('click', function () {
         cfb.disabled = true; cfb.textContent = 'Posting…';
         var crudOps = _asCrudCreates(r.ops);
