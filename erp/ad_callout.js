@@ -98,7 +98,7 @@
   function dispatch(db, info, ctx) {
     ctx = ctx || {};
     var callouts = readCallout(db, info.table, info.column);
-    var fired = [], absent = [], derived = {}, notes = [];
+    var fired = [], absent = [], derived = {}, notes = [], deferred = [];
     callouts.forEach(function (name) {
       if (!hasHandler(name)) { absent.push(name); return; }                   // Core.getCallout==null analogue
       var out;
@@ -107,8 +107,13 @@
       fired.push(name);
       if (out.derived) for (var k in out.derived) if (Object.prototype.hasOwnProperty.call(out.derived, k)) derived[k] = out.derived[k];
       if (out.note) notes.push(out.note);
+      // §INOUT-CALLOUTS — a handler's NAMED-DEFERRED branches were being dropped on the floor here, which is
+      // exactly the failure the standing rule forbids ("a named-deferred branch is declared in result.deferred,
+      // never silently absent" — the convention stockMoves/CreateFromInvoice already follow). Carried through,
+      // tagged with the handler that declared it, so the caller can print it.
+      if (out.deferred && out.deferred.length) out.deferred.forEach(function (dfr) { deferred.push(name.split('.').slice(-2).join('.') + ': ' + dfr); });
     });
-    return { table: info.table, column: info.column, callouts: callouts, fired: fired, absent: absent, derived: derived, notes: notes };
+    return { table: info.table, column: info.column, callouts: callouts, fired: fired, absent: absent, derived: derived, notes: notes, deferred: deferred };
   }
 
   // coverageScan(db) — of the AD_Column callout population, how many cols/classes does the registry dispatch?
