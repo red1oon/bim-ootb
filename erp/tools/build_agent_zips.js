@@ -21,12 +21,14 @@
 var fs = require('fs'), path = require('path'), zlib = require('zlib'), crypto = require('crypto');
 
 var ERP = path.join(__dirname, '..');
-// SHAPE IS PER-BUNDLE, ON PURPOSE. The two shipped zips are NOT alike: idempiere_agent.zip is FLAT
-// (migrate_agent.js at the root) and odoo_agent.zip nests everything under `odoo_agent/` plus a directory
-// entry. Extracting one litters the cwd and the other does not — a real, user-visible difference. Each
-// bundle keeps the shape it already ships with, so rebuilding changes nothing a user sees; the
-// inconsistency is a decision for the owner, recorded in §AZ.3, not something to "tidy" silently here.
-var BUNDLES = [{ dir: 'idempiere_agent', zip: 'idempiere_agent.zip', prefix: '' },
+// SHAPE IS PER-BUNDLE, and both are now NESTED. §AZ.3 asked the owner whether idempiere_agent.zip should
+// stop being FLAT; answered YES, 2026-09-04. It is not only cosmetic — the shipped instruction for that
+// download has ALWAYS said `cd idempiere_agent && npm install && node migrate_agent.js --masters`
+// (common/about_diy.js:199) while the zip put migrate_agent.js at the ROOT, so there was no directory to
+// cd into and the three files landed loose in whatever directory the user was standing in. Nesting makes
+// the instruction the app already prints CORRECT. `prefix` stays per-bundle so the shape is stated data,
+// never an assumption baked into the writer.
+var BUNDLES = [{ dir: 'idempiere_agent', zip: 'idempiere_agent.zip', prefix: 'idempiere_agent/' },
                 { dir: 'odoo_agent', zip: 'odoo_agent.zip', prefix: 'odoo_agent/' }];
 // A FIXED DOS timestamp (1980-01-01 00:00), so the bytes depend on CONTENT only. A real mtime would make
 // every rebuild a different file and turn the drift check into noise.

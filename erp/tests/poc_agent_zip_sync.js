@@ -82,6 +82,24 @@ res.forEach(function (r) {
   verdict(offered, 'D1: ' + r.zip + ' is still offered by common/about_diy.js or erp/erp_picker.js');
 });
 
+// E — THE INSTRUCTION THE APP PRINTS MUST BE RUNNABLE ON THE FILE THE APP SERVES.
+// This is the claim that was RED before §AZ.3 was answered: common/about_diy.js has ALWAYS told the user
+// `cd idempiere_agent && …` while idempiere_agent.zip put migrate_agent.js at the ROOT — there was no
+// directory to cd into, and the three files landed loose in the user's current directory. A download and
+// the sentence next to it are one contract; checking only that the file exists is checking half of it.
+res.forEach(function (r) {
+  var block = (about.split('file: \'erp/' + r.zip + '\'')[1] || about.split(r.zip)[1] || '').slice(0, 400);
+  var m = block.match(/cd ([A-Za-z0-9_.-]+)/);
+  if (!m) { verdict(true, 'E1: ' + r.zip + ' — its offer prints no `cd`, so there is nothing to disagree with'); return; }
+  var content = B.contentOf(fs.readFileSync(path.join(B.ERP, r.zip)));
+  var tops = {};
+  Object.keys(content).forEach(function (k) { tops[k.indexOf('/') >= 0 ? k.slice(0, k.indexOf('/')) : '(root)'] = 1; });
+  var top = Object.keys(tops);
+  verdict(top.length === 1 && top[0] === m[1],
+    'E1: ' + r.zip + ' — the `cd ' + m[1] + '` the app prints is a real folder inside the zip',
+    'instruction=cd ' + m[1] + ' zipTopLevel=[' + top.join(',') + ']');
+});
+
 console.log('\n' + (fails === 0 ? '🟢 W-AGENT-ZIP-SYNC PASS' : '🔴 W-AGENT-ZIP-SYNC FAIL (' + fails + ')') +
   ' — both downloads are built from their source directories, keep their shipped shape, and build deterministically.');
 process.exit(fails === 0 ? 0 : 1);
