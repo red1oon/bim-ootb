@@ -485,10 +485,14 @@
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
 <script src="erp_descriptor.js?v=1"></script>
-<!-- RENDERER #2 (IDEMPIERE_2.md §pivot) — the Odoo descriptor: registers a 2nd dictionary so ?erp=odoo drives
-     this UNCHANGED chrome over an Odoo model. Reads odoo_model.json + odoo_chain.json (pulled live by
-     odoo_agent/extract_model.js). Inactive unless ?erp=odoo — the AD path is untouched. -->
-<script src="odoo_descriptor.js?v=1"></script>
+<!-- RENDERER #2 (IDEMPIERE_2.md §pivot) — the Odoo descriptor is NOT loaded here any more.
+     §DICT-LAZY (prompts/AGENT_QUEUE.md §CLOSE.4 item 2 — user rule 2026-09-04: "nothing non-core is
+     fetched unless asked for"). It registers a SECOND dictionary; a second dictionary's renderer has no
+     business in the core boot path when nobody asked for it. It is now fetched by _ensureDictionary()
+     in the boot IIFE below, at the moment ?erp=odoo names it, BEFORE ErpDescriptor.use() runs — so the
+     odoo path is unchanged and the default path never touches the file. Kernel purity, not perf.
+     (erp/sw.js still PRECACHES odoo_descriptor.js + odoo_model.json + odoo_chain.json on purpose: that
+     is what makes ?erp=odoo work OFFLINE. Precaching stores; it does not execute, parse, or register.) -->
 <!-- ERP_AUDIT_CHANGELOG Task 2 — resolve audit actor AD_User_ID → real AD_User.Name (NON-INVENT, honest fallback). -->
 <script src="user_names.js?v=1"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
@@ -635,7 +639,37 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // so this is behavior-identical today; ErpDescriptor.use('odoo') repoints the whole chrome at renderer #2.
   // ?erp=<name> selects a descriptor before the aliases are cached (renderer #2 entry point). Fallback to the
   // raw AD globals if the seam module failed to load (never a blank chrome).
-  (function () { try { var w = new URLSearchParams(location.search).get('erp'); if (w && window.ErpDescriptor) window.ErpDescriptor.use(w); } catch (e) {} })();
+  // §DICT-LAZY — a NON-CORE dictionary is fetched only when something asks for it by name (user rule,
+  // 2026-09-04). AD is the core dictionary and ships in the boot path; every other one lives here and is
+  // pulled synchronously, at the moment ?erp=<name> names it and before ErpDescriptor.use(<name>) runs —
+  // registration must already have happened by then, which is why this is a sync XHR + eval and not a
+  // <script> append (odoo_descriptor.js itself loads its two JSON artifacts the same synchronous way, for
+  // the same reason: structure.init(db) is called un-awaited at boot). A failed fetch is logged and the
+  // chrome falls through to AD — never a blank screen.
+  var LAZY_DICTS = { odoo: 'odoo_descriptor.js?v=1' };
+  function _ensureDictionary(name) {
+    var src = LAZY_DICTS[name];
+    if (!src) return false;                                   // not a lazy dictionary (e.g. 'ad') — nothing to do
+    var D = window.ErpDescriptor;
+    if (D && typeof D.list === 'function' && D.list().indexOf(name) >= 0) return true;   // already registered
+    try {
+      var x = new XMLHttpRequest(); x.open('GET', src, false); x.send(null);
+      if (x.status < 200 || x.status >= 300) { console.warn('§DICT-LAZY name=' + name + ' src=' + src + ' status=' + x.status + ' — not registered, falling through to AD'); return false; }
+      (0, eval)(x.responseText);
+      console.log('§DICT-LAZY loaded=' + name + ' src=' + src + ' bytes=' + x.responseText.length +
+                  ' (NOT in the boot path — fetched because ?erp=' + name + ' asked for it)');
+      return true;
+    } catch (e) { console.warn('§DICT-LAZY name=' + name + ' load error — ' + e.message + '; falling through to AD'); return false; }
+  }
+  (function () {
+    try {
+      var w = new URLSearchParams(location.search).get('erp');
+      if (w) _ensureDictionary(w);
+      if (w && window.ErpDescriptor) window.ErpDescriptor.use(w);
+      console.log('§DICT-LAZY asked=' + (w || '(none)') + ' deferred=[' + Object.keys(LAZY_DICTS).join(',') + '] registered=[' +
+                  ((window.ErpDescriptor && window.ErpDescriptor.list) ? window.ErpDescriptor.list().join(',') : '?') + ']');
+    } catch (e) {}
+  })();
   var _D = (window.ErpDescriptor && window.ErpDescriptor.active) || null;
   var ADP = _D ? _D.structure : window.ADParser,
       ADD = _D ? _D.data      : window.ADData,
