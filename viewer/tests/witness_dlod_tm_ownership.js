@@ -15,13 +15,24 @@
 // CAN REPORT ITS OWN FAILURE: INCONCLUSIVE (no load / TM did not arm / dlod never enabled / no
 // instances), VACUOUS (a class with 0 placed instances is named, not judged), RED CONTROL (witness_kit).
 // Env: ROOT (checkout to serve, default this file's repo) · BLD · BLD_DIR · GPU=real|sw · PORT · LOAD_MS · LOG
-// ⛔ STATUS 2026-09-04 (session close): this harness has NOT yet gone RED on the unfixed tree — the
-// far/near pass left 25013/25013 non-zero on main (aa06d0f6) because dlod.js's evaluation did not run
-// during flyTo(): main.js's animate loop self-parks when idle (§IDLE_GATE) and markDirty() alone did not
-// wake it in headless. Next step: drive the culler directly the way tour.js:1636 does
-// (`A._dlodFrame = -1; A.dlodTick();`) after each camera set, then re-run RED (ROOT=~/bim-ootb) and
-// GREEN. The GREEN run already shows the hand-off firing (§DLOD_DISABLE(time-machine)=1, refs never
-// rebuilt under TM). The primary evidence for the defect is the full-film §SDC census log, not this file.
+// ✅ RED/GREEN PAIR MEASURED 2026-09-04 (two things had to be fixed in this harness before it could
+// judge anything — both recorded here so neither is re-derived):
+//   (1) main.js's animate loop self-parks when idle (§IDLE_GATE) and markDirty() alone did not wake
+//       it headless, so the culler was never evaluated → flyTo() now drives it the way tour.js:1636
+//       does (`A._dlodFrame = -1; A.dlodTick();`).
+//   (2) the near pose has to contain the WORLD ORIGIN, because that is where dlod.js's refs land
+//       under this defect (see the poseA/poseFar comment below) — the film's own frame-1170 pose
+//       looked away from it and the restore never fired.
+// RED  — ROOT=/home/red1/bim-ootb (main 2ac311ac, unfixed), /tmp/dto_red2.log:
+//        §DTO_PASS out-of-view nonZero=0/25013 → back-in-view nonZero=0/25013 ·
+//        §DTO_CLASS IfcMember lost=5242, IfcPlate 1130, IfcFurniture 179, IfcWindow 46 (22 classes,
+//        25,013 instances lost) · §DTO_CLAIMS §DLOD_DISABLE(time-machine)=0 ·
+//        §WITNESS_DLOD_TM_OWNERSHIP pass=3 fail=1 ran=22.
+// GREEN — this tree (§DLOD_TM_OWNERSHIP), /tmp/dto_green.log:
+//        §DTO_TM_DAY0 dlodEnabled=false dlodDisableLines=1 · §DTO_PASS 25013/25013 → 25013/25013 ·
+//        every class lost=0 · refs never rebuilt at 25013 under TM ·
+//        §WITNESS_DLOD_TM_OWNERSHIP pass=4 fail=0 ran=22.
+// The full-film §SDC census log remains the primary field evidence for the defect; this is its unit.
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
@@ -65,7 +76,14 @@ function pageInstrument() {
     return new Promise(res => {
       A.camera.position.set(p[0], p[1], p[2]); A.controls.target.set(p[3], p[4], p[5]); A.controls.update();
       if (A.markDirty) A.markDirty();
-      let n = 0; (function step() { if (A.markDirty) A.markDirty(); if (++n >= frames) return res(n); requestAnimationFrame(step); })();
+      // main.js's animate loop self-parks when idle (§IDLE_GATE) and markDirty() alone does not
+      // wake it headless, so the culler was never evaluated. Drive it directly the way
+      // tour.js:1636 (_scrubAfterJump) does after every camera set — dlodTick self-throttles on a
+      // frame counter, so force each call through. This is the CLI bake's own situation: the
+      // animate loop DOES run there, this reproduces its evaluation without the loop.
+      let n = 0; (function step() { if (A.markDirty) A.markDirty();
+        if (A.dlodTick) { A._dlodFrame = -1; try { A.dlodTick(); } catch (e) {} }
+        if (++n >= frames) return res(n); requestAnimationFrame(step); })();
     });
   };
 }
@@ -104,8 +122,15 @@ function pageInstrument() {
     const c1 = await page.evaluate(() => window.__dto.census());
     log(`§DTO_TM_DAY0 nonZero=${c1.nonZero}/${c1.inst} dlodEnabled=${c1.dlodEnabled} tmOn=${c1.tmOn} dlodDisableLines=${claims.disable}`);
     // 2. first camera move (the bake's frame 0) — dlod.js builds its refs NOW on an unfixed tree
-    const poseA = [-25, 6.32, -3.02, -44.61, 2.67, -1.56];      // the film's frame 1170 pose (Downloads poses.json)
-    const poseFar = [900, 600, 900, 1200, 0, 1200];              // nothing in the frustum
+    // The two poses are chosen against WHERE dlod.js's refs actually sit under this defect, not
+    // against where the building sits: _buildRefs() reads each instance's world position out of the
+    // matrix it finds, and at TM day 0 every unplaced instance carries makeScale(0,0,0)
+    // (time_machine.js:628) — translation (0,0,0). So the whole ref set collapses onto the WORLD
+    // ORIGIN with a metadata radius. The restore-to-zero therefore only fires when the origin
+    // re-enters the frustum, which is exactly what the film's camera did at 47.9 s. poseNear must
+    // contain the origin; poseFar must not (origin behind the camera).
+    const poseA = [120, 80, 120, 0, 0, 0];                       // origin in frustum — the "back in view" half
+    const poseFar = [900, 600, 900, 1200, 0, 1200];              // origin behind the camera, nothing in the frustum
     await page.evaluate((p) => window.__dto.flyTo(p, 14), poseA);
     const refsAfterMove = claims.refs.length;
     log(`§DTO_FIRST_MOVE refsBuiltLines=${refsAfterMove} ticks=${claims.ticks} gatedLines=${claims.gated} last=${claims.refs[claims.refs.length - 1] || '-'}`);
