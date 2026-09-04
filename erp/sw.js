@@ -10,7 +10,12 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v791';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v792';   // bump on each deploy; per-change detail is the git commit message.
+// v792 (2026-09-04) §ADFORM-TRXMATERIAL: form #2 of 49 — AD_Form 103 "Material Transactions"
+//   (org.compiere.apps.form.VTrxMaterial), the read face of the M_Transaction ledger erp_engine.stockMoves
+//   writes. All six TrxMaterial.refresh() restrictions, and TrxMaterial.zoom()'s five-FK source precedence.
+//   _matchRowsFor renamed _appendOnlyRowsFor — the body was never match-specific, and form #2 reads
+//   M_Transaction through the same two sources (bundle + signed op log).
 // v791 (2026-09-04) §CALLOUT-CAMPAIGN: E-1's ranked callout gap worked. Nine new dispatching atoms —
 //   CalloutInOut.orderLine/.product/.qty, CalloutPayment.invoice/.order/.charge/.docType/.amounts, and
 //   CalloutEngine.dateAcct — take live dispatch on the nine O2C/P2P document tables from 3 to 51 of 78

@@ -2618,12 +2618,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       cb(rows);
     });
   }
-  // _matchRowsFor — the junction rows for a match table. TWO SOURCES, both real: the bundle's own
-  // M_MatchInv/M_MatchPO rows, and the signed op log — erp_engine.completeInvoice/completeReceipt emit each
-  // junction as a CREATE_LINE op (that is what §P2P stage 4 asserts on), so a match created in THIS session
-  // exists ONLY there. Reading one source and not the other is how this lane's "committed but invisible"
-  // defects happen (§CLOSE.7 rule 1).
-  function _matchRowsFor(table, cb) {
+  // _appendOnlyRowsFor — every row of an APPEND-ONLY table, from TWO SOURCES, both real: the bundle's own
+  // rows, and the signed op log — erp_engine emits each such row as a CREATE_LINE op (completeInvoice/
+  // completeReceipt for the M_MatchInv/M_MatchPO junctions, stockMoves for M_Transaction), so a row created
+  // in THIS session exists ONLY there. Reading one source and not the other is how this lane's "committed
+  // but invisible" defects happen (§CLOSE.7 rule 1).
+  // RENAMED from _matchRowsFor 2026-09-04 (§ADFORM-TRXMATERIAL): the body was never match-specific — it
+  // takes the table — and form #2 reads M_Transaction through the same two sources. Same function, honest
+  // name; the §-log tag is generalised with it.
+  function _appendOnlyRowsFor(table, cb) {
     var base = _sqlRows('SELECT * FROM ' + table);
     var c = window.__crud, out = base.slice();
     var K = (c && typeof c.kernelDb === 'function') ? c.kernelDb() : null;
@@ -2638,7 +2641,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         });
       } catch (e) {}
     }
-    console.log('§AD-FORM-MATCH junctions table=' + table + ' bundle=' + base.length + ' oplog=' + (out.length - base.length) + ' total=' + out.length);
+    console.log('§AD-FORM-APPENDONLY table=' + table + ' bundle=' + base.length + ' oplog=' + (out.length - base.length) + ' total=' + out.length);
     cb(out);
   }
 
@@ -2751,7 +2754,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         });
         var lineBase = _sqlRows('SELECT * FROM ' + dir.line);
         _foldTable(dir.line, dir.linePk, lineBase, false, function (lns) {
-          _matchRowsFor(dir.match, function (mrows) {
+          _appendOnlyRowsFor(dir.match, function (mrows) {
             var sum = {};
             mrows.forEach(function (m) {
               // the Java's CASE: M_MatchPO only counts a row that actually carries the OTHER side's key
@@ -2805,6 +2808,121 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       });
     }
     paintTo();
+    _showProcPane(pane);
+    run();
+  });
+
+  // ── VTrxMaterial (AD_Form 103) — form #2 of 49. Java home: TrxMaterial.java, all 163 lines of it.
+  // (prompts/AGENT_QUEUE.md §ADFORM-TRXMATERIAL, owns §ERP-SESSION-CLOSE-2 §C2.3 item 2 / E-3.)
+  // WHY THIS ONE: it is the READ FACE of what erp_engine.stockMoves already writes — every M_Transaction
+  // row this app has is a CREATE_LINE op that verb emits (erp_engine.js:331), so nothing is invented to
+  // fill it, and a receipt completed in THIS session exists ONLY in the signed op log. Same two-source
+  // rule _appendOnlyRowsFor was written for. It is also READ-ONLY, which is the deliberate contrast with
+  // §AF.5's refusal to port Match.createMatchRecord: no second writer to argue about.
+  //   zoom() (TrxMaterial.java:130-162) resolves a row's SOURCE document by a fixed precedence — first
+  //   non-zero of M_InOutLine, M_InventoryLine, M_MovementLine, M_ProductionLine, C_ProjectIssue — and
+  //   warns "Not found zoom table" when none is set. Ported verbatim below. The NAVIGATION to that
+  //   record is the ZK caller's job in the Java too, so the pair is resolved and shown, not followed.
+  var _TRX_ZOOM = [
+    { col: 'm_inoutline_id', table: 'M_InOutLine' }, { col: 'm_inventoryline_id', table: 'M_InventoryLine' },
+    { col: 'm_movementline_id', table: 'M_MovementLine' }, { col: 'm_productionline_id', table: 'M_ProductionLine' },
+    { col: 'c_projectissue_id', table: 'C_ProjectIssue' }
+  ];
+  function _trxZoom(r) {                                  // TrxMaterial.zoom():130-162, same order
+    for (var i = 0; i < _TRX_ZOOM.length; i++) {
+      var v = r[_TRX_ZOOM[i].col];
+      if (v != null && v !== '' && Number(v) !== 0) return { table: _TRX_ZOOM[i].table, id: Number(v) };
+    }
+    return null;                                          // log.warning("Not found zoom table")
+  }
+  _registerForm('org.compiere.apps.form.VTrxMaterial', function (form) {
+    var pane = el('div', 'idmp-procpane idmp-procform');
+    pane.appendChild(el('h3', null, form.name));
+    pane.appendChild(el('div', 'sub', 'AD_Form ' + form.ad_form_id + ' · ' + form.classname +
+      ' · read face of M_Transaction, the ledger erp_engine.stockMoves writes (zoom resolves the source row; following it is the caller’s job in the Java too)'));
+    // the six TrxMaterial.refresh() restrictions, in the Java's own order. Each is skipped when blank,
+    // which is exactly `if (x != null && x.toString().length() > 0)`.
+    var ctl = el('div', 'fld');
+    function pick(label, attr, rows, valCol, labCol) {
+      ctl.appendChild(el('label', null, label));
+      var s = document.createElement('select'); s.setAttribute(attr, '1');
+      var any = el('option', null, '(any)'); any.value = ''; s.appendChild(any);
+      rows.forEach(function (r) { var o = el('option', null, String(r[labCol] == null ? r[valCol] : r[labCol])); o.value = String(r[valCol]); s.appendChild(o); });
+      ctl.appendChild(s); return s;
+    }
+    var orgSel = pick('Organization', 'data-trx-org', _sqlRows('SELECT ad_org_id, name FROM ad_org ORDER BY name'), 'ad_org_id', 'name');
+    var locSel = pick('Locator', 'data-trx-loc', _sqlRows('SELECT m_locator_id, value FROM m_locator ORDER BY value'), 'm_locator_id', 'value');
+    var prdSel = pick('Product', 'data-trx-prod', _sqlRows('SELECT m_product_id, name FROM m_product ORDER BY name'), 'm_product_id', 'name');
+    var mtSel = pick('Movement Type', 'data-trx-mt',
+      _sqlRows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=189 AND upper(isactive)='Y' ORDER BY value"), 'value', 'name');
+    ctl.appendChild(el('label', null, 'Date from'));
+    var d1 = document.createElement('input'); d1.type = 'date'; d1.setAttribute('data-trx-from', '1'); ctl.appendChild(d1);
+    ctl.appendChild(el('label', null, 'Date to'));
+    var d2 = document.createElement('input'); d2.type = 'date'; d2.setAttribute('data-trx-to', '1'); ctl.appendChild(d2);
+    pane.appendChild(ctl);
+    var actions = el('div', 'actions');
+    var runBtn = el('button', 'run', 'Refresh'); runBtn.setAttribute('data-trx-run', '1');
+    var closeBtn = el('button', null, 'Close');
+    actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
+    var host = el('div', null); host.setAttribute('data-trx-host', '1'); pane.appendChild(host);
+    closeBtn.addEventListener('click', function () {
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+    });
+    [orgSel, locSel, prdSel, mtSel].forEach(function (s) { s.addEventListener('change', run); });
+    d1.addEventListener('change', run); d2.addEventListener('change', run);
+    runBtn.addEventListener('click', run);
+    function run() {
+      host.innerHTML = '';
+      // dynInit:59-60 — the STATIC restriction is AD_Client_ID, applied before any user filter.
+      var client = (_session && _session.client) ? Number(_session.client.id) : null;   // the same accessor the project-doctype lookup uses
+      _appendOnlyRowsFor('m_transaction', function (rows) {
+        var prName = {}, locVal = {}, orgName = {}, mtName = {};
+        _sqlRows('SELECT m_product_id, name FROM m_product').forEach(function (r) { prName[String(r.m_product_id)] = r.name; });
+        _sqlRows('SELECT m_locator_id, value FROM m_locator').forEach(function (r) { locVal[String(r.m_locator_id)] = r.value; });
+        _sqlRows('SELECT ad_org_id, name FROM ad_org').forEach(function (r) { orgName[String(r.ad_org_id)] = r.name; });
+        _sqlRows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=189").forEach(function (r) { mtName[String(r.value)] = r.name; });
+        var day = function (v) { return v == null ? '' : String(v).slice(0, 10); };   // TRUNC(MovementDate)
+        var eq = function (want, got) { return want === '' || String(got == null ? '' : got) === String(want); };
+        var scanned = 0, out = [], zoomless = 0;
+        rows.forEach(function (r) {
+          if (client != null && r.ad_client_id != null && Number(r.ad_client_id) !== client) return;
+          scanned++;
+          if (!eq(orgSel.value, r.ad_org_id)) return;
+          if (!eq(locSel.value, r.m_locator_id)) return;
+          if (!eq(prdSel.value, r.m_product_id)) return;
+          if (!eq(mtSel.value, r.movementtype)) return;
+          var d = day(r.movementdate);
+          if (d1.value && (!d || d < d1.value)) return;
+          if (d2.value && (!d || d > d2.value)) return;
+          var z = _trxZoom(r);
+          if (!z) zoomless++;
+          out.push({ date: d, mt: r.movementtype, mtn: mtName[String(r.movementtype)] || r.movementtype,
+                     prod: prName[String(r.m_product_id)] || r.m_product_id, loc: locVal[String(r.m_locator_id)] || r.m_locator_id,
+                     qty: r.movementqty, org: orgName[String(r.ad_org_id)] || r.ad_org_id,
+                     src: z ? (z.table + ' ' + z.id) : 'Not found zoom table' });
+        });
+        out.sort(function (a, b) { return String(a.date) < String(b.date) ? -1 : String(a.date) > String(b.date) ? 1 : 0; });
+        var t = document.createElement('table'), tr = el('tr');
+        ['Date', 'Movement Type', 'Product', 'Locator', 'Organization', 'Qty', 'Source'].forEach(function (hd, i) {
+          tr.appendChild(el('th', i === 5 ? 'r' : null, hd));
+        });
+        t.appendChild(tr);
+        out.forEach(function (r) {
+          tr = el('tr');
+          [r.date, r.mtn + ' (' + r.mt + ')', r.prod, r.loc, r.org, r.qty, r.src].forEach(function (cv, i) {
+            tr.appendChild(el('td', i === 5 ? 'r' : null, cv == null ? '' : String(cv)));
+          });
+          t.appendChild(tr);
+        });
+        host.appendChild(t);
+        host.appendChild(el('div', 'msg', out.length + ' transaction' + (out.length === 1 ? '' : 's') + ' of ' + scanned +
+          ' in this client · ' + (out.length - zoomless) + ' resolve a source row by TrxMaterial.zoom(), ' + zoomless + ' do not'));
+        if (!out.length) host.appendChild(el('div', 'gap', 'No transaction matches these filters — an empty result, not a missing one (' + scanned + ' rows were scanned).'));
+        console.log('§AD-FORM-TRX scanned=' + scanned + ' rows=' + out.length + ' zoomResolved=' + (out.length - zoomless) + ' zoomless=' + zoomless +
+          ' filters={org:"' + orgSel.value + '",loc:"' + locSel.value + '",product:"' + prdSel.value + '",movementType:"' + mtSel.value +
+          '",from:"' + d1.value + '",to:"' + d2.value + '"}');
+      });
+    }
     _showProcPane(pane);
     run();
   });
