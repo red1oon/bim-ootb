@@ -79,6 +79,35 @@ the parentage IS available live; check what the patch has landed before writing 
 hard-coded version, and it is wrong: it would show every other floor's untagged element whenever a
 storey filter is on.
 
+### ✅ FIXED IN EXTRACTION — 2026-09-04, bim-compiler `f72563c6a`, `§STOREY_AGGREGATE_INHERIT`
+`tools/extract.py` `get_storey_for_element()` now walks up `IfcRelAggregates` when containment is
+silent, recursively, depth-capped at 8 against a malformed cyclic aggregate. Rule 1 above,
+implemented; `§STOREY-Z` untouched as the geometric fallback. **Re-extract to pick it up** — this
+DB was built before the fix.
+
+MEASURED old rule vs new on the real source IFCs (`/tmp/verify_storey.py`, no DB rebuild needed):
+
+| source IFC | parent | children | `Unknown` → named | resulting storeys |
+|---|---|---|---|---|
+| `opensourceBIM_HHS_Office_architect.ifc` | `IfcCurtainWall` | 2,096 | **2,096** | **Level 1 = 1,893** · Level 2 = 149 · Level 3 = 54 |
+| `opensourceBIM_HHS_Office_construction.ifc` | `IfcStair` | 24 | **24** | Level 1 = 13 · Level 2 = 11 |
+
+The **1,893 Level 1** panels are the reported ground-floor front wall. Hospital's 9,457 aggregated
+children (178 CurtainWall + 31 Stair + 24 Roof) are fixed by the same pass.
+
+**Confirming a re-import** — one query, not a look:
+```sql
+-- must be 0 after re-extraction; it was 2,120 before
+SELECT COUNT(*) FROM elements_meta m JOIN rel_aggregates r ON r.child_guid = m.guid
+WHERE m.storey IS NULL OR m.storey = 'Unknown';
+```
+
+**USER, 2026-09-04, on why it looked like a translation loss:** *"I ran an open IFCs for HHS and
+found out indeed it has that missing wall. But in all bake movie it appears. Thus indeed we broke
+something in translating that element."* — half right, and the half matters: the **geometry**
+translated correctly (which is exactly why it draws in every bake — a bake applies no storey
+filter); only the **storey tag** was lost.
+
 ### ❌ RULED OUT, with the number that rules it out (do not re-derive)
 
 | candidate | verdict | evidence |
