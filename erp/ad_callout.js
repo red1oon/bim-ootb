@@ -37,7 +37,8 @@
   function hasHandler(name) { return !!REGISTRY[name]; }
   function registeredNames() { return Object.keys(REGISTRY); }
 
-  // installDefaultHandlers — the real line callouts (CalloutOrder / CalloutInvoice). `qtyCol` differs
+  // installDefaultHandlers — the real line callouts (CalloutOrder / CalloutInvoice) + CalloutEngine.dateAcct.
+  // `qtyCol` differs
   // between order (QtyOrdered) and invoice (QtyInvoiced); the math is identical (LineNetAmt = Price × Qty).
   function installDefaultHandlers() {
     // .amt — recompute LineNetAmt from PriceActual × Qty (fired when PriceActual/QtyEntered/TaxAmt change).
@@ -80,6 +81,28 @@
     registerHandler('org.compiere.model.CalloutInvoice.amt',     amtHandler(['QtyInvoiced', 'qtyinvoiced', 'QtyEntered', 'qtyentered']));
     registerHandler('org.compiere.model.CalloutInvoice.qty',     qtyHandler('QtyInvoiced'));
     registerHandler('org.compiere.model.CalloutInvoice.product', productHandler(['QtyInvoiced', 'qtyinvoiced']));
+
+    // §CALLOUT-CAMPAIGN (prompts/AGENT_QUEUE.md §CC.3/§CC.4) — CalloutEngine.dateAcct, the ONE new atom that
+    // belongs in the ENGINE rather than in crud_overlay's host glue: it needs no bundle, no join, no accessor.
+    // Java home (EXTRACT, do NOT invent) — CalloutEngine.java:237-245:
+    //     if (isCalloutActive()) return; if (value == null || !(value instanceof Timestamp)) return;
+    //     mTab.setValue("DateAcct", value); return checkPeriodOpen(...);
+    // That is the whole derive: the accounting date FOLLOWS the document date. checkPeriodOpen (:256-288)
+    // is a VALIDATION — it raises a period-closed error, it sets no field — so it is NAMED-DEFERRED here,
+    // per the seam ad_callout.js's own header pins (a callout DERIVES; ad_valrule validates).
+    // Bound on FOUR document tables at once (measured from ad_column.callout, not assumed):
+    //   c_order.dateordered · c_invoice.dateinvoiced · m_inout.movementdate · c_payment.datetrx
+    // This moves installDefaultHandlers 6 -> 7; W-CALLOUT (scripts/poc_callout.js) pins that count and its
+    // assertion moves with it, stated in §CC.4 so the change is not a silent drift.
+    registerHandler('org.compiere.model.CalloutEngine.dateAcct', function (ctx, info) {
+      var r = info.record || {}, col = String(info.column || '');
+      var v = r[col] != null ? r[col] : r[col.toLowerCase()];
+      // "!(value instanceof Timestamp)" — the JS analogue of the Java's type guard: an empty/unparseable
+      // date is NOT a Timestamp, so the Java returns without setting anything. Never default to today().
+      if (v == null || String(v).trim() === '' || isNaN(Date.parse(String(v)))) return { derived: {} };
+      return { derived: { DateAcct: v },
+               deferred: ['checkPeriodOpen (CalloutEngine.java:256-288 — a period-open VALIDATION, not a derive)'] };
+    });
   }
 
   // readCallout — the AD source: the `;`-separated callout list bound to (table, column). Returns [] if none.

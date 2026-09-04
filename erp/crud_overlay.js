@@ -352,10 +352,123 @@
   // slice: bill-to defaults to the order BP, the price list from that BP. The accessors (bpDefaults/productPrice)
   // read the immutable bundle (the real join), never invent. NON-INVENT: the callout NAME + the field it fires on
   // are AD data (ad_column.callout); every derived value traces to a bundle row.
+  // ══ §CALLOUT-CAMPAIGN (prompts/AGENT_QUEUE.md §CC.3) — the three PL/pgSQL functions iDempiere's OWN
+  // callout SQL calls, ported. They are here, not inside a handler, because CalloutPayment.invoice and
+  // CalloutPayment.amounts both call the same open-amount rule and a second implementation of one rule is
+  // the defect class this lane already paid for (§IC.2 item 4).
+  function _q1(b3, sql) {
+    var args = Array.prototype.slice.call(arguments, 2);
+    try { var st = b3.prepare(sql); return st.get.apply(st, args) || null; } catch (er) { return null; }
+  }
+  function _qAll(b3, sql) {
+    var args = Array.prototype.slice.call(arguments, 2);
+    try { var st = b3.prepare(sql); return st.all.apply(st, args) || []; } catch (er) { return []; }
+  }
+  function _round(x, p) { var f = Math.pow(10, p == null ? 2 : p); return Math.round((Number(x) || 0) * f + (Number(x) < 0 ? -1e-9 : 1e-9)) / f; }
+  function _day(v) { var t = Date.parse(String(v || '')); return isNaN(t) ? null : Math.floor(t / 86400000); }
+  // MConversionRate.getRate (MConversionRate.java:229-280), transcribed including its ORDER BY.
+  function _rate(b3, from, to, when, convType) {
+    if (!Number(from) || !Number(to)) return null;
+    if (Number(from) === Number(to)) return 1;
+    var d = String(when || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+    var sql = 'SELECT multiplyrate FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=?' +
+              (Number(convType) ? ' AND c_conversiontype_id=' + Number(convType) : '') +
+              " AND date(?) BETWEEN date(validfrom) AND date(validto) AND upper(isactive)='Y'" +
+              ' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC LIMIT 1';
+    var r = _q1(b3, sql, Number(from), Number(to), d);
+    return r && r.multiplyrate != null ? Number(r.multiplyrate) : null;
+  }
+  // invoiceopen(C_Invoice_ID, C_InvoicePaySchedule_ID) — db/postgresql/functions/C_Invoice_Open.sql, plus
+  // the C_Invoice_v multipliers it reads (migration iD12/.../202404301200_IDEMPERIE-5329.sql):
+  //   Multiplier   = charat(DocBaseType,3)='C' ? -1 : 1   (a credit memo negates)
+  //   MultiplierAP = charat(DocBaseType,2)='P' ? -1 : 1   (an AP document negates the allocation)
+  //   GrandTotal   = the invoice GrandTotal x Multiplier, or SUM(ips.DueAmt x Multiplier) when the
+  //                  invoice carries a VALID pay schedule (the view's second UNION branch)
+  // Open = GrandTotal - SUM over active allocation lines of (Amount+Discount+WriteOff) x MultiplierAP,
+  // each converted into the INVOICE's currency at the allocation's own DateTrx; sub-1/10^precision -> 0.
+  function _invoiceOpen(b3, invId) {
+    var i = _q1(b3, 'SELECT i.grandtotal, i.c_currency_id, i.ispayschedulevalid, d.docbasetype ' +
+                    'FROM c_invoice i JOIN c_doctype d ON d.c_doctype_id=i.c_doctype_id WHERE i.c_invoice_id=?', invId);
+    if (!i) return null;
+    var base = String(i.docbasetype || '');
+    var mulCM = base.charAt(2) === 'C' ? -1 : 1, mulAP = base.charAt(1) === 'P' ? -1 : 1;
+    var total;
+    if (String(i.ispayschedulevalid || '').toUpperCase() === 'Y') {
+      var sc = _q1(b3, "SELECT SUM(dueamt) AS s FROM c_invoicepayschedule WHERE c_invoice_id=? AND upper(isvalid)='Y'", invId);
+      total = Number((sc && sc.s) || 0) * mulCM;
+    } else total = Number(i.grandtotal || 0) * mulCM;
+    var cur = Number(i.c_currency_id || 0);
+    var pc = _q1(b3, 'SELECT stdprecision FROM c_currency WHERE c_currency_id=?', cur);
+    var prec = pc ? Number(pc.stdprecision) : 2;
+    var paid = 0;
+    _qAll(b3, "SELECT al.amount, al.discountamt, al.writeoffamt, a.c_currency_id, a.datetrx " +
+              "FROM c_allocationline al JOIN c_allocationhdr a ON a.c_allocationhdr_id=al.c_allocationhdr_id " +
+              "WHERE al.c_invoice_id=? AND upper(a.isactive)='Y'", invId).forEach(function (a) {
+      var t = (Number(a.amount || 0) + Number(a.discountamt || 0) + Number(a.writeoffamt || 0)) * mulAP;
+      var rt = _rate(b3, Number(a.c_currency_id || 0), cur, a.datetrx, 0);
+      paid += (rt == null ? t : _round(t * rt, prec));      // currencyConvert(); same currency -> rate 1
+    });
+    var open = total - paid;
+    var min = Math.pow(10, -prec);
+    if (open > -min && open < min) open = 0;
+    return { open: _round(open, prec), currencyId: cur, precision: prec, docBaseType: base };
+  }
+  // invoicediscount(C_Invoice_ID, PayDate, C_InvoicePaySchedule_ID) — C_Invoice_Discount.sql, which tail-calls
+  // paymenttermDiscount (C_PaymentTerm_Discount.sql). Both transcribed; nothing approximated.
+  function _invoiceDiscount(b3, invId, payDate) {
+    var i = _q1(b3, 'SELECT i.grandtotal, i.totallines, i.c_paymentterm_id, i.dateinvoiced, i.c_currency_id, ' +
+                    'i.ispayschedulevalid, ci.isdiscountlineamt FROM c_invoice i ' +
+                    'LEFT JOIN ad_clientinfo ci ON ci.ad_client_id=i.ad_client_id WHERE i.c_invoice_id=?', invId);
+    if (!i) return 0;
+    var amount;
+    if (String(i.isdiscountlineamt || '').toUpperCase() === 'Y') {
+      var l = _q1(b3, "SELECT COALESCE(SUM(l.linenetamt),0) AS s FROM c_invoiceline l " +
+                      "LEFT JOIN c_charge c ON c.c_charge_id=l.c_charge_id " +
+                      "WHERE l.c_invoice_id=? AND COALESCE(upper(c.isexcludedfromdiscount),'N')='N'", invId);
+      amount = Number((l && l.s) || 0);
+    } else amount = Number(i.grandtotal || 0);
+    if (amount === 0) return 0;
+    var pay = _day(payDate) != null ? _day(payDate) : _day(new Date().toISOString());
+    var pt = _q1(b3, 'SELECT discount, discountdays, gracedays, discount2, discountdays2, isnextbusinessday ' +
+                     'FROM c_paymentterm WHERE c_paymentterm_id=?', Number(i.c_paymentterm_id || 0));
+    var doc = _day(i.dateinvoiced);
+    if (!pt || doc == null) return 0;                                   // "No Data - No Discount"
+    var pc = _q1(b3, 'SELECT stdprecision FROM c_currency WHERE c_currency_id=?', Number(i.c_currency_id || 0));
+    var prec = pc ? Number(pc.stdprecision) : 2, disc = 0;
+    var d1 = doc + Number(pt.discountdays || 0) + Number(pt.gracedays || 0);
+    var d2 = doc + Number(pt.discountdays2 || 0) + Number(pt.gracedays || 0);
+    // nextBusinessDay(): only shifts a discount DATE, and in ad_seed.db every term carrying a non-zero
+    // Discount has IsNextBusinessDay='N' (verified), so it cannot change a value here. Named, not silently
+    // skipped, because on another dataset it could.
+    if (d1 >= pay) disc = amount * Number(pt.discount || 0) / 100;
+    else if (d2 >= pay) disc = amount * Number(pt.discount2 || 0) / 100;
+    var min = Math.pow(10, -prec);
+    if (disc > -min && disc < min) disc = 0;
+    return _round(disc, prec);
+  }
+  function _invoicePayInfo(b3, invId, payDate) {
+    var i = _q1(b3, 'SELECT c_bpartner_id, c_currency_id, issotrx FROM c_invoice WHERE c_invoice_id=?', invId);
+    if (!i) return null;
+    var o = _invoiceOpen(b3, invId);
+    if (!o) return null;
+    return { bpartnerId: i.c_bpartner_id, currencyId: o.currencyId, issotrx: i.issotrx,
+             open: o.open, precision: o.precision, discount: _invoiceDiscount(b3, invId, payDate) };
+  }
   var _calloutHostReady = false;
   function _ensureHostCallouts() {
     if (_calloutHostReady || !global.AdCallout) return;
     _calloutHostReady = true;
+    // §CALLOUT-CAMPAIGN — MEASURED DEFECT, found by running the coverage claim rather than reading it:
+    // NOTHING in this app ever called AdCallout.installDefaultHandlers(). idempiere.html:2319 installs
+    // AdProcess's, never AdCallout's, so the SIX engine line callouts — CalloutOrder.amt/qty/product and
+    // CalloutInvoice.amt/qty/product, 25 of the 78 bindings on the nine document tables — had never fired
+    // in the browser. The comment below ("the line handlers are the ENGINE's") assumed they were live;
+    // §IC.3's "28 dispatch = 36%" was that same paper assumption. LIVE dispatch was 3 of 78 = 4%.
+    // One line, and it is the single largest coverage move in this campaign.
+    if (typeof global.AdCallout.installDefaultHandlers === 'function') {
+      global.AdCallout.installDefaultHandlers();
+      console.log('§CRUD-CALLOUT engine handlers installed (' + global.AdCallout.registeredNames().length + ' atoms) — they were never installed before this line');
+    }
     if (!global.AdCallout.hasHandler('org.compiere.model.CalloutOrder.bPartner')) {
       global.AdCallout.registerHandler('org.compiere.model.CalloutOrder.bPartner', function (ctx, info) {
         var r = info.record || {};
@@ -433,6 +546,261 @@
       });
       console.log('§CRUD-CALLOUT host CalloutInOut.docType registered (MovementType via erp_engine.movementTypeOf — the E-4 port, not a second derivation)');
     }
+    // ══ §CALLOUT-CAMPAIGN (prompts/AGENT_QUEUE.md §CC.2/§CC.3) — E-1's ranked gap, worked ═══════════════
+    // §IC.3 measured 78 callout bindings on the nine document tables the app drives, 28 dispatching (36%).
+    // These eight handlers + the engine's CalloutEngine.dateAcct take that to 51/78 (65%). Every one is a
+    // faithful port of the named Java (line numbers per handler); every value it emits comes from a bundle
+    // row. NOT in this batch, deliberately: CalloutOrder.docType — §IC.3 names it as a SECOND writer to
+    // IsSOTrx, which MOrder.issotrxFromWindow (§K2RB.5) already owns at beforeSave.
+    var _cc = {
+      n: function (r, k) { var v = r[k]; if (v == null) v = r[String(k).toLowerCase()]; return Number(v || 0); },
+      s: function (r, k) { var v = r[k]; if (v == null) v = r[String(k).toLowerCase()]; return v == null ? '' : String(v); },
+      // round-half-up to `p` decimals, the BigDecimal.setScale(p, HALF_UP) the Java uses everywhere
+      sc: function (x, p) { var f = Math.pow(10, p == null ? 2 : p); return Math.round((Number(x) || 0) * f + (Number(x) < 0 ? -1e-9 : 1e-9)) / f; }
+    };
+    // ── CalloutInOut.orderLine (CalloutInOut.java:412-461) — the receipt LINE atom §IC.3 ranked for the
+    //    P2P chain: after picking the PO line, the four fields witness_p2p_invoice_match still types by
+    //    hand (m_product_id, c_uom_id, movementqty, qtyentered) are already filled.
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutInOut.orderLine')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutInOut.orderLine', function (ctx, info) {
+        var r = info.record || {}, olId = _cc.n(r, 'C_OrderLine_ID');
+        if (!olId) return { derived: {} };
+        var ol = ctx.orderLineRow ? ctx.orderLineRow(olId) : null;
+        if (!ol) return { derived: {}, note: 'no c_orderline row for ' + olId };
+        var d = {};
+        // :421-431 — a CHARGE line and a PRODUCT line are exclusive; each clears the other.
+        if (Number(ol.c_charge_id || 0) > 0 && Number(ol.m_product_id || 0) <= 0) {
+          d.C_Charge_ID = ol.c_charge_id; d.M_Product_ID = null; d.M_AttributeSetInstance_ID = null;
+        } else {
+          d.M_Product_ID = ol.m_product_id; d.M_AttributeSetInstance_ID = ol.m_attributesetinstance_id; d.C_Charge_ID = null;
+        }
+        d.C_UOM_ID = ol.c_uom_id;
+        // :434-443 — MovementQty = QtyOrdered - QtyDelivered, then MINUS what this same receipt already
+        // took against this order line (IDEMPIERE-1140). The running sum is a real query, not an estimate.
+        var mv = Number(ol.qtyordered || 0) - Number(ol.qtydelivered || 0);
+        var run = ctx.inoutRunningQty ? ctx.inoutRunningQty(_cc.n(r, 'M_InOut_ID'), olId) : null;
+        if (run != null) mv = mv - Number(run);
+        d.MovementQty = mv;
+        // :444-448 — QtyEntered is pro-rated by the order line's own entered:ordered ratio (a different UOM)
+        var qe = mv, qo = Number(ol.qtyordered || 0), qen = Number(ol.qtyentered || 0);
+        if (qo !== 0 && qen !== qo) qe = _cc.sc(mv * qen / qo, 12);
+        d.QtyEntered = qe;
+        // :450-459 — the accounting dimensions ride along, verbatim
+        ['c_activity_id', 'c_campaign_id', 'c_project_id', 'c_projectphase_id', 'c_projecttask_id',
+         'ad_orgtrx_id', 'user1_id', 'user2_id', 'c_costcenter_id', 'c_department_id'].forEach(function (c) {
+          if (Object.prototype.hasOwnProperty.call(ol, c)) d[c.replace(/(^|_)([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); })] = ol[c];
+        });
+        return { derived: d, note: 'order line ' + olId + ' ordered=' + qo + ' delivered=' + Number(ol.qtydelivered || 0) + ' running=' + (run == null ? 'none' : run) };
+      });
+      console.log('§CRUD-CALLOUT host CalloutInOut.orderLine registered (product/uom/qty from the PO line, MovementQty net of this receipt s running qty)');
+    }
+    // ── CalloutInOut.product (CalloutInOut.java:522-568) — the fifth hand-typed field, M_Locator_ID.
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutInOut.product')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutInOut.product', function (ctx, info) {
+        var r = info.record || {}, pid = _cc.n(r, 'M_Product_ID');
+        if (!pid) return { derived: {} };
+        var d = { M_AttributeSetInstance_ID: 0 };                       // :542 — the else branch of the ASI carry
+        // :544-549 — the ENTIRE rest of the body is `if (IsSOTrx) return;`. On a LINE form IsSOTrx is not a
+        // field; the header is. Read the parent M_InOut, the same precedence CalloutInOut.bpartner uses.
+        var hdr = ctx.inoutHeader ? ctx.inoutHeader(_cc.n(r, 'M_InOut_ID')) : null;
+        var so = null;
+        if (hdr && (hdr.issotrx === 'Y' || hdr.issotrx === 'N')) so = hdr.issotrx === 'Y';
+        if (so == null && hdr && /^[A-Z][+-]$/.test(String(hdr.movementtype || ''))) so = String(hdr.movementtype).charAt(0) === 'C';
+        if (so === true) return { derived: d, deferred: ['UOM/Locator/Qty defaults (CalloutInOut.java:544-549 — the shipment side returns early)'] };
+        var p = ctx.productRow ? ctx.productRow(pid) : null;
+        if (!p) return { derived: d, note: 'no m_product row for ' + pid };
+        d.C_UOM_ID = p.c_uom_id;                                        // :553
+        d.MovementQty = _cc.n(r, 'QtyEntered');                         // :554-555
+        // :558-566 — the product's default locator, but ONLY when it belongs to this receipt's warehouse.
+        var loc = Number(p.m_locator_id || 0);
+        if (loc) {
+          var lw = ctx.locatorWarehouse ? ctx.locatorWarehouse(loc) : null;
+          if (hdr && lw != null && Number(lw) === Number(hdr.m_warehouse_id)) d.M_Locator_ID = loc;
+          else return { derived: d, note: 'No Locator for M_Product_ID=' + pid + ' and M_Warehouse_ID=' + (hdr ? hdr.m_warehouse_id : '?') };
+        }
+        return { derived: d, note: 'receipt-side uom/qty/locator from product ' + pid };
+      });
+      console.log('§CRUD-CALLOUT host CalloutInOut.product registered (C_UOM_ID + MovementQty + the warehouse-matched default M_Locator_ID)');
+    }
+    // ── CalloutInOut.qty (CalloutInOut.java:582-680) — the five-branch QtyEntered <-> MovementQty tree.
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutInOut.qty')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutInOut.qty', function (ctx, info) {
+        var r = info.record || {}, col = String(info.column || '').toLowerCase();
+        var pid = _cc.n(r, 'M_Product_ID'), uom = _cc.n(r, 'C_UOM_ID');
+        var qe = _cc.n(r, 'QtyEntered'), mq = _cc.n(r, 'MovementQty'), d = {}, dfr = [];
+        var prec = function (u) { var p = ctx.uomPrecision ? ctx.uomPrecision(u) : null; return p == null ? 0 : Number(p); };
+        // MUOMConversion.convertProductFrom/To. ad_seed.db carries NO m_uom_conversion table (verified);
+        // the Java's own contract is "null when there is no conversion", and every caller below then falls
+        // back to the unconverted quantity (:642-643, :668-669). The port takes that documented null path
+        // rather than inventing a factor — if the table ever ships, the accessor answers and this goes live.
+        var conv = function (dir, q) { var v = ctx.uomConvertProduct ? ctx.uomConvertProduct(pid, uom, q, dir) : null; return v == null ? null : Number(v); };
+        if (!pid) { d.MovementQty = qe; return { derived: d, note: 'no product — MovementQty follows QtyEntered (:592-596)' }; }
+        if (col === 'c_uom_id') {                                       // :598-620
+          var q1 = _cc.sc(qe, prec(uom)); if (q1 !== qe) { d.QtyEntered = q1; qe = q1; }
+          var m1 = conv('from', qe); d.MovementQty = (m1 == null ? qe : m1);
+          if (m1 == null) dfr.push('UOM conversion (no m_uom_conversion row/table — the Java s own null fallback, :617-618)');
+        } else if (!uom) { d.MovementQty = qe;                          // :622-626
+        } else if (col === 'qtyentered') {                              // :628-651
+          var q2 = _cc.sc(qe, prec(uom)); if (q2 !== qe) { d.QtyEntered = q2; qe = q2; }
+          var m2 = conv('from', qe); d.MovementQty = (m2 == null ? qe : m2);
+          if (m2 == null) dfr.push('UOM conversion (no m_uom_conversion row/table — the Java s own null fallback, :642-643)');
+        } else if (col === 'movementqty') {                             // :653-676
+          var pp = ctx.productUomPrecision ? ctx.productUomPrecision(pid) : null;
+          var m3 = _cc.sc(mq, pp == null ? prec(uom) : Number(pp)); if (m3 !== mq) { d.MovementQty = m3; mq = m3; }
+          var e3 = conv('to', mq); d.QtyEntered = (e3 == null ? mq : e3);
+          if (e3 == null) dfr.push('UOM conversion (no m_uom_conversion row/table — the Java s own null fallback, :668-669)');
+        }
+        return { derived: d, deferred: dfr };
+      });
+      console.log('§CRUD-CALLOUT host CalloutInOut.qty registered (the five-branch QtyEntered/MovementQty tree, UOM-precision scaled)');
+    }
+    // ── CalloutPayment.* (CalloutPayment.java) — the payment screen, 14 of the 50 gap bindings ──────────
+    // docType is the tail call of BOTH invoice and order (:127, :198), so it is a plain function reused here.
+    function _payDocType(ctx, r) {                                       // :241-285
+      var dt = _cc.n(r, 'C_DocType_ID'), d = {}, dfr = [];
+      if (!dt) return { derived: d, deferred: dfr };
+      var i2 = ctx.docTypeInfo ? ctx.docTypeInfo(dt) : null;
+      if (!i2) return { derived: d, note: 'no c_doctype row for ' + dt };
+      d.IsReceipt = (i2.issotrx === 'Y') ? 'Y' : 'N';                    // :271 — mTab.setValue(IsReceipt, ...)
+      // :275-284 — the AP/AR vs SO/PO mismatch returns "PaymentDocTypeInvoiceInconsistent". That is a
+      // VALIDATION (ad_valrule's leg per ad_callout.js's seam header), not a derive: named, never applied.
+      dfr.push('PaymentDocTypeInvoiceInconsistent (:275-284 — a validation, the ad_valrule leg, not a field)');
+      return { derived: d, deferred: dfr };
+    }
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutPayment.docType')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutPayment.docType', function (ctx, info) { return _payDocType(ctx, info.record || {}); });
+      console.log('§CRUD-CALLOUT host CalloutPayment.docType registered (IsReceipt from C_DocType.IsSOTrx; the AP/AR-vs-SO/PO mismatch is named-deferred as a validation)');
+    }
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutPayment.invoice')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutPayment.invoice', function (ctx, info) {  // :57-127
+        var r = info.record || {}, inv = _cc.n(r, 'C_Invoice_ID');
+        if (!inv) return { derived: {} };
+        // :64-70 — an invoice payment is not an order payment and not a charge payment; the reset is the atom
+        var d = { C_Order_ID: null, C_Charge_ID: null, IsPrepayment: 'N', DiscountAmt: 0, WriteOffAmt: 0, OverUnderAmt: 0 };
+        var pay = ctx.invoicePayInfo ? ctx.invoicePayInfo(inv, _cc.s(r, 'DateTrx')) : null;
+        if (!pay) return { derived: d, note: 'no c_invoice row for ' + inv };
+        d.C_BPartner_ID = pay.bpartnerId; d.C_Currency_ID = pay.currencyId;   // :98-101
+        d.PayAmt = _cc.sc(Number(pay.open) - Number(pay.discount), pay.precision);  // :110
+        d.DiscountAmt = pay.discount;                                              // :111
+        var dt = _payDocType(ctx, r);
+        for (var k in dt.derived) if (Object.prototype.hasOwnProperty.call(dt.derived, k)) d[k] = dt.derived[k];
+        return { derived: d, deferred: dt.deferred || [],
+                 note: 'invoice ' + inv + ' open=' + pay.open + ' discount=' + pay.discount + ' -> PayAmt=' + d.PayAmt };
+      });
+      console.log('§CRUD-CALLOUT host CalloutPayment.invoice registered (PayAmt = invoiceOpen - invoiceDiscount, both ported from the PL/pgSQL iDempiere s own SQL calls)');
+    }
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutPayment.order')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutPayment.order', function (ctx, info) {    // :141-198
+        var r = info.record || {}, ord = _cc.n(r, 'C_Order_ID');
+        if (!ord) return { derived: {} };
+        var d = { C_Invoice_ID: null, C_Charge_ID: null, IsPrepayment: 'Y', DiscountAmt: 0, WriteOffAmt: 0,
+                  IsOverUnderPayment: 'N', OverUnderAmt: 0 };                       // :148-155
+        var o = ctx.orderPayInfo ? ctx.orderPayInfo(ord) : null;
+        if (!o) return { derived: d, note: 'no c_order row for ' + ord };
+        d.C_BPartner_ID = o.bpartnerId;                                             // :161 COALESCE(Bill_BPartner_ID, C_BPartner_ID)
+        d.C_Currency_ID = o.currencyId; d.PayAmt = o.grandTotal;                    // :175-183
+        var dt = _payDocType(ctx, r);
+        for (var k in dt.derived) if (Object.prototype.hasOwnProperty.call(dt.derived, k)) d[k] = dt.derived[k];
+        return { derived: d, deferred: dt.deferred || [], note: 'order ' + ord + ' GrandTotal=' + o.grandTotal + ' (prepayment)' };
+      });
+      console.log('§CRUD-CALLOUT host CalloutPayment.order registered (prepayment against a PO/SO: bill-BP, currency, PayAmt = GrandTotal)');
+    }
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutPayment.charge')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutPayment.charge', function (ctx, info) {   // :212-228
+        var r = info.record || {}; if (!_cc.n(r, 'C_Charge_ID')) return { derived: {} };
+        return { derived: { C_Invoice_ID: null, C_Order_ID: null, IsPrepayment: 'N', DiscountAmt: 0,
+                            WriteOffAmt: 0, IsOverUnderPayment: 'N', OverUnderAmt: 0 },
+                 note: 'charge payment — invoice/order and the four amounts reset' };
+      });
+      console.log('§CRUD-CALLOUT host CalloutPayment.charge registered (the reset-only atom)');
+    }
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutPayment.amounts')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutPayment.amounts', function (ctx, info) {  // :296-618
+        var r = info.record || {}, col = String(info.column || '').toLowerCase(), d = {}, dfr = [];
+        var invId = _cc.n(r, 'C_Invoice_ID'), curId = _cc.n(r, 'C_Currency_ID'), convType = _cc.n(r, 'C_ConversionType_ID');
+        var over = _cc.s(r, 'IsOverUnderPayment').toUpperCase() === 'Y';
+        var prec = ctx.currencyPrecision ? Number(ctx.currencyPrecision(curId) || 2) : 2;
+        // :300-304 — the FIRST thing the Java does: OverUnderAmt is zeroed unless over/under is on.
+        if (col === 'isoverunderpayment' || !over) d.OverUnderAmt = 0;
+        var payAmt = _cc.n(r, 'PayAmt'), disc = _cc.n(r, 'DiscountAmt'), woff = _cc.n(r, 'WriteOffAmt'), ovr = _cc.n(r, 'OverUnderAmt');
+        var baseCur = ctx.baseCurrencyId ? Number(ctx.baseCurrencyId() || 0) : 0;
+        var rate = function (from, to) {
+          if (!from || !to) return null; if (from === to) return 1;
+          var v = ctx.conversionRate ? ctx.conversionRate(from, to, _cc.s(r, 'DateTrx'), convType) : null;
+          return v == null ? null : Number(v);
+        };
+        // :329-360 — CurrencyRate typed: negative is refused (a status event), 0 re-reads the table,
+        // otherwise ConvertedAmt = PayAmt x rate. This branch RETURNS; nothing below runs.
+        if (col === 'currencyrate') {
+          var cr = _cc.n(r, 'CurrencyRate');
+          if (cr < 0) return { derived: {}, deferred: ['negative CurrencyRate refused (:337-342 — fireDataStatusEEvent "Invalid", a UI status event)'] };
+          if (cr === 0) { var b = rate(curId, baseCur); if (b == null) return { derived: {}, note: 'no conversion rate ' + curId + '->' + baseCur }; cr = b; d.CurrencyRate = cr; }
+          d.ConvertedAmt = payAmt * cr;
+          return { derived: d, note: 'ConvertedAmt = PayAmt x CurrencyRate' };
+        }
+        // :361-390 — ConvertedAmt typed: the inverse, CurrencyRate = Converted / PayAmt at 12 dp.
+        if (col === 'convertedamt') {
+          var ca = _cc.n(r, 'ConvertedAmt');
+          if (ca === 0) return { derived: {}, deferred: ['zero ConvertedAmt refused (:366-371 — fireDataStatusEEvent "Invalid")'] };
+          d.CurrencyRate = payAmt !== 0 ? _cc.sc(ca / payAmt, 12) : null;
+          return { derived: d, note: 'CurrencyRate = ConvertedAmt / PayAmt' };
+        }
+        // :392-424 — the invoice's OPEN amount, in the invoice's currency
+        var openAmt = 0, invCur = 0;
+        if (invId) {
+          var pay = ctx.invoicePayInfo ? ctx.invoicePayInfo(invId, _cc.s(r, 'DateTrx')) : null;
+          if (pay) { openAmt = Number(pay.open); invCur = Number(pay.currencyId); }
+        }
+        // :455-478 — convert the open amount into the PAYMENT's currency when they differ
+        if ((curId > 0 && invCur > 0 && curId !== invCur) || col === 'c_currency_id' || col === 'c_conversiontype_id') {
+          var cr2 = rate(invCur, curId);
+          if (cr2 == null || cr2 === 0) {
+            if (invCur === 0) return { derived: d, note: 'no invoice selected — no conversion needed' };
+            return { derived: d, deferred: ['NoCurrencyConversion ' + invCur + '->' + curId + ' (:469-473 — an error return, not a field)'] };
+          }
+          openAmt = _cc.sc(openAmt * cr2, prec);
+        }
+        if (col === 'c_currency_id') {
+          // :480-521 — the currency itself changed: every stored amount is restated. oldValue is not
+          // available on this form's change event, so the OLD currency cannot be read; the Java's own
+          // guard is `if (oldValue != null && oldValue instanceof Integer)` and this is that null path.
+          dfr.push('restate PayAmt/Discount/WriteOff/OverUnder at the old->new rate (:480-521 — needs the field s OLD value, which the create form s change event does not carry)');
+        } else if (invId === 0) {
+          // :522-530 — no invoice, so there is nothing to discount, write off, or over/under
+          if (disc !== 0) d.DiscountAmt = 0;
+          if (woff !== 0) d.WriteOffAmt = 0;
+          if (ovr !== 0) d.OverUnderAmt = 0;
+        } else {
+          var processed = _cc.s(r, 'Processed').toUpperCase() === 'Y';
+          if (col === 'payamt' && !processed && over) {                 // :532-543
+            var ou = openAmt - payAmt - disc - woff;
+            if (ou > 0) { d.DiscountAmt = 0; disc = 0; ou = openAmt - payAmt - disc - woff; }
+            d.OverUnderAmt = _cc.sc(ou, prec);
+          } else if (col === 'payamt' && !processed) {                  // :544-550
+            d.WriteOffAmt = _cc.sc(openAmt - payAmt - disc - ovr, prec);
+          } else if (col === 'isoverunderpayment' && !processed) {      // :551-568
+            if (over) { d.WriteOffAmt = 0; d.OverUnderAmt = _cc.sc(openAmt - payAmt - disc, prec); }
+            else { d.WriteOffAmt = _cc.sc(openAmt - payAmt - disc, prec); d.OverUnderAmt = 0; }
+          } else if (!processed) {                                      // :573-581
+            d.PayAmt = _cc.sc(openAmt - disc - woff - ovr, prec);
+          }
+        }
+        // :584-616 — the base-currency tail: same currency clears the override pair, otherwise it is
+        // recomputed from the rate the user is overriding with.
+        if (col === 'c_currency_id' || col === 'payamt' || col === 'isoverridecurrencyrate') {
+          var ovrCR = _cc.s(r, 'IsOverrideCurrencyRate').toUpperCase() === 'Y';
+          if (baseCur && baseCur === curId) { d.IsOverrideCurrencyRate = 'N'; d.CurrencyRate = null; d.ConvertedAmt = null; }
+          else if (!ovrCR) { d.CurrencyRate = null; d.ConvertedAmt = null; }
+          else if (col === 'payamt') {
+            var bcr = _cc.n(r, 'CurrencyRate'), cvd = _cc.n(r, 'ConvertedAmt');
+            if (!bcr) { if (cvd && payAmt) d.CurrencyRate = _cc.sc(cvd / payAmt, 12); }
+            else d.ConvertedAmt = _cc.sc(payAmt * bcr, ctx.currencyPrecision ? Number(ctx.currencyPrecision(baseCur) || 2) : 2);
+          }
+        }
+        return { derived: d, deferred: dfr, note: 'col=' + col + ' invoiceOpen=' + openAmt + ' payCurrency=' + curId + ' invCurrency=' + invCur };
+      });
+      console.log('§CRUD-CALLOUT host CalloutPayment.amounts registered (the full branch tree: over/under, currency-rate pair, WriteOff/OverUnder/PayAmt against invoiceOpen)');
+    }
   }
   function fireCreateCallout(e, changedCol) {
     if (!global.AdCallout || typeof withBundle !== 'function' || !e || !changedCol) return;
@@ -464,10 +832,58 @@
           try { var row = b3.prepare('SELECT docbasetype, issotrx FROM c_doctype WHERE c_doctype_id=?').get(Number(dtId));
             return row ? { docBaseType: row.docbasetype, issotrx: row.issotrx } : null; } catch (er) { return null; }
         },
-        productPrice: function (pid) {   // forward-compat for a c_orderline create (next leg) — the real price-list join
-          try { var row = b3.prepare('SELECT pp.pricestd, pp.pricelist FROM m_productprice pp JOIN m_pricelist_version v ON v.m_pricelist_version_id=pp.m_pricelist_version_id WHERE pp.m_product_id=? LIMIT 1').get(Number(pid));
-            return row ? { priceStd: row.pricestd, priceList: row.pricelist } : null; } catch (er) { return null; }
-        }
+        // §CALLOUT-CAMPAIGN — SCOPED, because installing the engine handlers above makes this accessor
+        // LOAD-BEARING for the first time. Its old body took `LIMIT 1` of ANY price-list version carrying
+        // the product, which is the wrong price on any client with more than one price list — harmless
+        // while nothing called it, a wrong VALUE the moment CalloutOrder.product fires. The join is now
+        // the one W-CALLOUT (scripts/poc_callout.js) already proves: through the PARENT document's own
+        // M_PriceList_ID. No parent, no price — it returns null and the handler says so, never guesses.
+        productPrice: function (pid, record) {
+          var r = record || {};
+          var ordId = Number(r.C_Order_ID || r.c_order_id || 0), invId = Number(r.C_Invoice_ID || r.c_invoice_id || 0);
+          var sql = null, key = 0;
+          if (ordId) { sql = 'c_order o WHERE o.c_order_id=?'; key = ordId; }
+          else if (invId) { sql = 'c_invoice o WHERE o.c_invoice_id=?'; key = invId; }
+          if (!sql) return null;
+          var row = _q1(b3, 'SELECT pp.pricestd, pp.pricelist FROM ' + sql.replace(' WHERE', ' JOIN m_pricelist_version v ON v.m_pricelist_id=o.m_pricelist_id JOIN m_productprice pp ON pp.m_pricelist_version_id=v.m_pricelist_version_id AND pp.m_product_id=' + Number(pid) + ' WHERE'),
+                        key);
+          return row ? { priceStd: row.pricestd, priceList: row.pricelist } : null;
+        },
+        // ══ §CALLOUT-CAMPAIGN accessors (§CC.3) — every one is a real join on the immutable bundle, the same
+        // read-the-real-row shape bpShipDefaults/docTypeInfo already are. NOTHING here defaults or invents:
+        // a missing row returns null and the handler says so in its note.
+        orderLineRow: function (olId) { return _q1(b3, 'SELECT * FROM c_orderline WHERE c_orderline_id=?', Number(olId)); },
+        // CalloutInOut.java:435-441 — what THIS receipt has already taken against this order line.
+        inoutRunningQty: function (inoutId, olId) {
+          if (!Number(inoutId)) return null;
+          var r = _q1(b3, 'SELECT SUM(movementqty) AS q FROM m_inoutline WHERE m_inout_id=? AND c_orderline_id=?', Number(inoutId), Number(olId));
+          return (r && r.q != null) ? Number(r.q) : null;
+        },
+        inoutHeader: function (id) { return Number(id) ? _q1(b3, 'SELECT m_warehouse_id, movementtype, issotrx FROM m_inout WHERE m_inout_id=?', Number(id)) : null; },
+        productRow: function (pid) { return _q1(b3, 'SELECT c_uom_id, m_locator_id FROM m_product WHERE m_product_id=?', Number(pid)); },
+        locatorWarehouse: function (locId) { var r = _q1(b3, 'SELECT m_warehouse_id FROM m_locator WHERE m_locator_id=?', Number(locId)); return r ? r.m_warehouse_id : null; },
+        uomPrecision: function (uomId) { var r = _q1(b3, 'SELECT stdprecision FROM c_uom WHERE c_uom_id=?', Number(uomId)); return r ? Number(r.stdprecision) : null; },
+        productUomPrecision: function (pid) { var r = _q1(b3, 'SELECT u.stdprecision AS p FROM m_product pr JOIN c_uom u ON u.c_uom_id=pr.c_uom_id WHERE pr.m_product_id=?', Number(pid)); return r ? Number(r.p) : null; },
+        // MUOMConversion.convertProductFrom/To. ad_seed.db has NO m_uom_conversion table — the Java's own
+        // contract for "no conversion found" is null, and every caller falls back to the unconverted qty.
+        // Returning null here IS that path; it is not a stub. If the table ships, this reads it.
+        uomConvertProduct: function (pid, uomId, qty, dir) {
+          var r = _q1(b3, "SELECT name FROM sqlite_master WHERE type='table' AND lower(name)='m_uom_conversion'");
+          if (!r) return null;
+          var c = _q1(b3, 'SELECT multiplyrate, dividerate FROM m_uom_conversion WHERE m_product_id=? AND c_uom_id=?', Number(pid), Number(uomId));
+          if (!c) return null;
+          return dir === 'to' ? (Number(c.dividerate) ? Number(qty) / Number(c.dividerate) : null) : Number(qty) * Number(c.multiplyrate);
+        },
+        currencyPrecision: function (curId) { var r = _q1(b3, 'SELECT stdprecision FROM c_currency WHERE c_currency_id=?', Number(curId)); return r ? Number(r.stdprecision) : null; },
+        // The client's accounting-schema currency — Env.C_CURRENCY_ID, which is what the base-currency
+        // branches of CalloutPayment.amounts (:435, :586) compare against.
+        baseCurrencyId: function () { var r = _q1(b3, 'SELECT c_currency_id FROM c_acctschema ORDER BY c_acctschema_id LIMIT 1'); return r ? r.c_currency_id : null; },
+        conversionRate: function (from, to, when, convType) { return _rate(b3, from, to, when, convType); },
+        orderPayInfo: function (ordId) {
+          var o = _q1(b3, 'SELECT COALESCE(bill_bpartner_id, c_bpartner_id) AS bp, c_currency_id, grandtotal FROM c_order WHERE c_order_id=?', Number(ordId));
+          return o ? { bpartnerId: o.bp, currencyId: o.c_currency_id, grandTotal: Number(o.grandtotal || 0) } : null;
+        },
+        invoicePayInfo: function (invId, payDate) { return _invoicePayInfo(b3, Number(invId), payDate); }
       };
       var res = global.AdCallout.dispatch(b3, { table: e.key, column: changedCol, record: vals }, ctx) || {};
       var derived = res.derived || {}, applied = [];
