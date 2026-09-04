@@ -1558,14 +1558,20 @@
         // §CPE_DISCIPLINE_REVEAL Mechanism C — pure function of (plan, tNorm), same call the preview
         // loop makes (cinema_path_editor.js's _previewFly) so bake and preview cannot diverge. No-op
         // (returns immediately, does nothing) when reveal is off or tNorm is outside the round.
-        if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tn);
+        // §CPE_CLIP_REVEAL_FILM_T (2026-09-04, found by §SDC's clipped bake — PHOTOREAL_STILL_RENDER.md
+        // §BME.8): the Reveal, its lights-off phase and its caption are functions of the FILM's
+        // fraction, and a clip is fewer frames of the SAME film (§CPE_CLIP). Feeding them the clip-
+        // local _tn played the whole Reveal round inside a 23-frame window. A full bake is unchanged
+        // (_tFilm(_tn) === _tn when no clip is set).
+        var _tnFilm = _tFilm(_tn);
+        if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tnFilm);
         // §CPE_TAIL_LIGHTS_ALL_ONLY (2026-09-04, user: "during last part each DISCipline reveal, the
         // lights are all turned ON that obscures the delicate items scene. Should turn on only during
         // ALL DISCs"). Set BEFORE _applyPhotoStaging runs for this frame — staging is what turns the
         // night lights on and rebuilds the glow, so the flag has to be in place when it does, not
         // after. The answer comes from effects.js's own pure phase function, never re-derived here:
         // the bake, the editor preview and the witness all read the same one.
-        A._cpeRevealLightsOff = A.cpeRevealLightsOffAt ? A.cpeRevealLightsOffAt(plan, _tn) : false;
+        A._cpeRevealLightsOff = A.cpeRevealLightsOffAt ? A.cpeRevealLightsOffAt(plan, _tnFilm) : false;
         if (A._cpeRevealLightsOff !== A._cpeRevealLightsOffLast) {
           A._cpeRevealLightsOffLast = A._cpeRevealLightsOff;
           console.log('§CPE_TAIL_LIGHTS_ALL_ONLY frame=' + i + '/' + nFrames + ' lights=' +
@@ -1677,7 +1683,7 @@
         // it can override; returns null everywhere else (round 1, pull-out, round 2, rise proper), in
         // which case the normal room-title lookup below runs untouched. Same call the preview tick
         // makes (cpe_room_title.js's roomTitleLiveTick) so bake and preview cannot diverge.
-        var _titleInfo = (A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, _tn) : null;
+        var _titleInfo = (A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, _tnFilm) : null;   // §CPE_CLIP_REVEAL_FILM_T
         if (!_titleInfo) {
           _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
         }
@@ -2016,8 +2022,12 @@
         if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter'].forEach(function(fk) {
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
+        // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
+        // §CPE_CLIP field the editor writes, so the loop below needs no second notion of a window.
+        if (o.clip && +o.clip.out > +o.clip.in) ov.clip = { in: +o.clip.in, out: +o.clip.out };
         window.__maxqResolvedOverride = ov;   // for the runner's post-bake pose assertion
         console.log('§CLI_BAKE_RESOLVED source=' + src + ' bands=' + (ov.bands ? ov.bands.length : 0) +
+          (ov.clip ? ' clip=' + ov.clip.in + '→' + ov.clip.out : '') +
           ' total=' + (ov._total != null ? (+ov._total).toFixed(1) : '?') + 's' +
           ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
           ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr'));

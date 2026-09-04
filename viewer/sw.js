@@ -71,7 +71,14 @@
 // log' receive box — paste base64 blob from POS -> pre-gate dedup by op_uuid -> commitGroup into the
 // IDB sidecar (idmp_kanban_proj) -> draftPick refresh -> the pending shipment surfaces in the
 // selector. Paste-twice safe.
-const CACHE_VERSION = 'v1140';   // bump on each deploy; per-change detail is the git commit message.
+// v1141 (2026-09-04) §DLOD_TM_OWNERSHIP: dlod.js stands down while the Time Machine owns instance
+// matrices (time_machine.js _finishActivate → dlodDisable, deactivate → dlodEnable; dlodEnable/Tick
+// refuse under _tmOn). Root cause of the first Hospital CLI silent bake losing 24,992 instanced
+// elements (glass panes, mullions, furniture) at 47.9 s for the rest of the film — dlod.js captured
+// its _origMatrix refs after TM had zero-scaled them and "restored" zero. Also §CPE_CLIP_REVEAL_FILM_T
+// (cinema_maxq.js: the Reveal reads film time, not clip-local time) + dev-only --clip/--tap in
+// cli_silent_bake.js. dlod.js?v, time_machine.js?v, cinema_maxq.js?v bumped in viewer.html.
+const CACHE_VERSION = 'v1141';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

@@ -541,6 +541,7 @@
   var _zeroMatrix = null; // lazy init
   var _whiteColor = null; // §S260f: reusable white for BatchedMesh slot reset
   var _savedInstanceMatrices = {}; // meshId → { idx → Matrix4 }
+  var _dlodPausedByTm = false;     // §DLOD_TM_OWNERSHIP — only re-enable dlod.js if THIS module paused it (a user's own DLOD-off setting is not ours to flip)
 
   // ── TM_DLOD_SCALE.md Phase 3 (redesigned 2026-07-20 per live LTU testing + user ask):
   // representation-by-VIEW, not by construction-time activity. Frontier (building now) and
@@ -8787,6 +8788,11 @@
   }
 
   function _finishActivate(app, silent) {
+    // §DLOD_TM_OWNERSHIP (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.8): dlod.js must hand every
+    // instance matrix back (its own hides restored while its refs are still real) BEFORE this
+    // module's lazy _savedInstanceMatrices reads them, and stay down until deactivate(). One owner.
+    _dlodPausedByTm = false;
+    if (app && typeof app.dlodDisable === 'function' && app._dlodEnabled) { app.dlodDisable('time-machine'); _dlodPausedByTm = true; }
     _active = true;
     app._tmOn = true;  // exposed for pill isActive highlight (panels.js 'tm' entry)
     // §TM_GI_AUTO RETIRED (2026-07-18, user: "its up to user to turn Shadow, G and audio"):
@@ -8932,7 +8938,10 @@
     _panel.style.display = 'none';
     setToolbarHighlight(false);
     restoreVisibility(true);  // §TM_CLOSE_RESTORE: force — nothing (incl. xray-staged ghosts) may survive TM going off
-    // §S262: DLOD runs independently — no pause/resume needed
+    // §DLOD_TM_OWNERSHIP: matrices are real again — dlod.js may take them back (refs rebuilt lazily).
+    if (_dlodPausedByTm && app && typeof app.dlodEnable === 'function' && !app._dlodEnabled) { try { app.dlodEnable(); } catch (eD) {} }
+    _dlodPausedByTm = false;
+    // (§S262's "DLOD runs independently" is retired by §DLOD_TM_OWNERSHIP above — it did not run independently: it fought this module for the same matrices.)
     viewerStatus('');
     console.log('§TIME_MACHINE OFF — restored');
   }
