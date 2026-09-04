@@ -92,7 +92,13 @@
 // shells pulsing on FILM time. Not gated by the Time Machine: the markers stand from frame 0 over
 // empty ground so the viewer sees where the trouble will be before it is built. Per-instance fade
 // channel reserved for phase 2's near-and-facing labels. --clash/--no-clash on cli_silent_bake.js.
-const CACHE_VERSION = 'v1144';   // bump on each deploy; per-change detail is the git commit message.
+// v1145 (2026-09-05) §CLASH_FILM_P2 (MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P2): new viewer/clash_labels.js —
+// the in-scene label for a clash pair within 4.0 m of the camera (release 4.6 m), occluded or not,
+// any number, limited only by screen-space non-overlap. One half-transparent HUD panel per pair
+// (A-side name red above, B-side blue below, from rates.js desc), composited in _captureFrame's
+// 2D pass with a leader to the projected contact; labelled pairs hold solid via clashFilm.setFade.
+// cinema_maxq.js (hooks) + measure.js (setup) + viewer.html changed; all PRECACHE_ASSETS.
+const CACHE_VERSION = 'v1145';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -547,6 +553,7 @@ const PRECACHE_ASSETS = [
   'clash_matrix.js',
   'clash_narrow.js',
   'clash_film.js',
+  'clash_labels.js',
   'measure.js',
   'sitecam.js',
   'issues.js',

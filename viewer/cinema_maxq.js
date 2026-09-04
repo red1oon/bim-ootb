@@ -764,13 +764,22 @@
   // §CPE_DAY_COUNTER: dayInfo ({day,totalDays} or null) rides the SAME 2D context for the SAME
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
-  function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo) {
+  function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo) {
     var A = window.APP;
     if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
     c.width = w; c.height = h;
     var ctx = c.getContext('2d');
     ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
+    // §CLASH_FILM_P2 — the clash-pair labels, FIRST in the 2D pass: they are scene-anchored and
+    // wander, the corner HUD below is fixed furniture, so the HUD must always paint over a label.
+    // Same never-kills-a-bake contract as every other overlay here.
+    if (lblInfo && lblInfo.placed && lblInfo.placed.length && A.clashLabelsCompositeOntoCanvas) try {
+      A.clashLabelsCompositeOntoCanvas(ctx, w, h, lblInfo.placed);
+    } catch (eCLd) {
+      if (!A._clashLblDrawErrLogged) { A._clashLblDrawErrLogged = true;
+        console.warn('§CLASH_LABELS_ERR draw: ' + eCLd.message + ' — labels skipped, frames continue'); }
+    }
     if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
       A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity);
     }
@@ -1427,6 +1436,7 @@
       // global: two bakes in one tab would then share it and a film with no buildup would inherit
       // the previous film's badge.
       var _dayInfo = null;
+      var _lblInfo = null;   // §CLASH_FILM_P2 — this frame's placed labels, same per-bake scoping as _dayInfo
       // §CPE_ROOM_TITLE — one coarse pre-pass over the WHOLE (already clip/buildup-resolved) frame
       // count, not a per-frame room query: nFrames/fps here is the bake's actual, final duration
       // (§CPE_CLIP has already resized it above), so the timeline never disagrees with what's about
@@ -1495,6 +1505,9 @@
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }
         catch (eCF) { console.warn('§CLASH_FILM_BUILD failed: ' + (eCF && eCF.message) + ' — the film bakes without markers'); }
+        // §CLASH_FILM_P2 — fresh hysteresis/fade state per bake; a previous bake's "near" set must
+        // not leak into this one's first frame.
+        if (A.clashLabels && A.clashLabels.reset) try { A.clashLabels.reset(); } catch (eCLr) {}
       } else if (_clash) {
         console.warn('§CLASH_FILM_BUILD INCONCLUSIVE reason=clash_film.js not loaded — nothing judged');
       }
@@ -1584,6 +1597,16 @@
         // performance.now(), so a 15 fps and a 24 fps bake of the same film pulse identically and a
         // re-bake is reproducible. Per-instance, so phase 2 can hold a labelled pair solid while the
         // rest keep breathing (§4b). No TM predicate here: the markers are a forecast (§3b).
+        // §CLASH_FILM_P2 — the label selector runs BEFORE clashFilm.update so the fade it writes
+        // (labelled → solid) lands in THIS frame's marker colours. Proximity + hysteresis + screen-
+        // space placement only; it reads the camera and never moves it (ruling 3). The record is
+        // handed to _captureFrame below, which draws it in the 2D pass (§P2.2).
+        _lblInfo = null;
+        if (_clash && A.clashLabels && A.clashLabels.update) {
+          try { _lblInfo = A.clashLabels.update(A.camera, _tnFilm * _filmSecFull, w, h, i); }
+          catch (eCL) { if (!A._clashLblErrLogged) { A._clashLblErrLogged = true;
+            console.warn('§CLASH_LABELS_ERR update: ' + eCL.message + ' — labels skipped, frames continue'); } }
+        }
         if (_clash && A.clashFilm && A.clashFilm.update) A.clashFilm.update(_tnFilm * _filmSecFull);
         // §CPE_TAIL_LIGHTS_ALL_ONLY (2026-09-04, user: "during last part each DISCipline reveal, the
         // lights are all turned ON that obscures the delicate items scene. Should turn on only during
@@ -1796,7 +1819,7 @@
             _resInfo = { info: _holdInfo, pos: _ovPos };   // nothing to revolve — hold, never blank
           }
         }
-        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo);
+        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
         // connection out from under it (confirmed live: two consecutive rAF gaps of 29s and 67s right
@@ -1879,6 +1902,9 @@
       // user into normal navigation. plan=null is the explicit "force restore" signal.
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
       _workPacingReset();
+      // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
+      // came within 4 m of a pair), then release the selector's state with the markers.
+      if (_clash && A.clashLabels && A.clashLabels.summary) { try { A.clashLabels.summary(framesDone); A.clashLabels.reset(); } catch (eCLs) {} }
       // §CLASH_FILM_P1 — the markers are bake content; never let them survive into the user's scene.
       if (_clash && A.clashFilm && A.clashFilm.dispose) { try { A.clashFilm.dispose(); } catch (eCFd) {} }
       // §CPE_PIE_HOLD — say how much of the film the pie HELD a past composition rather than
