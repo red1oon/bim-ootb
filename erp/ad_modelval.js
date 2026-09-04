@@ -80,6 +80,32 @@
       return !!(info.recordOld && info.record && String(info.recordOld[col]) !== String(info.record[col]));
     }
     var H = [
+      ['MOrder.issotrxFromWindow', function (ctx, info) {
+        // Implementing prompts/AGENT_QUEUE.md §KIND2-READBACK — Witness: W-KIND2-READBACK.
+        // The C_Order sibling of MInvoice.issotrxFromWindow (§Fix 4) and MInOut.movementTypeFromWindow
+        // (§Fix 2): the per-window Sales/Purchase signal reaching the NEW record itself. C_Order was the
+        // one of the three that never got it — its only IsSOTrx seam was docTypeTargetDefault below, and
+        // that derives IsSOTrx **only inside `if (!Number(r.c_doctypetarget_id))`**. C_DocTypeTarget_ID is
+        // IsDisplayed='Y' + IsMandatory='Y' on tab 186, so a user filling the form the normal way SETS it,
+        // the branch never runs, and the order persists with NO IsSOTrx at all.
+        // MEASURED (W-KIND2-READBACK first run, 2026-09-04, plain origin/main): a Sales Order authored
+        // through window 143 and Completed to CO was then REFUSED by both KIND-2 generators —
+        //   §AD-PROC-LIVE proc=118 … ok=N reason=order-not-shippable  message="Order is not a Sales Order"
+        //   §AD-PROC-LIVE proc=119 … ok=N reason=order-not-invoiceable message="Order is not a Sales Order"
+        // …because inoutGenGate/invoiceGenGate test `o.issotrx !== 'Y'`, and §CRUD-PERSIST's own column
+        // list for that create carries no `issotrx`.
+        // Java home (EXTRACT, do NOT invent): a new MOrder gets IsSOTrx from the window it is authored in —
+        // MOrder.setInitialDefaults():455 `setIsSOTrx(true)` for the Sales-Order case, and the ctx path
+        // Env.getContext(ctx,WindowNo,"IsSOTrx"). CalloutOrder.docType reads C_DocType.IsSOTrx but only to
+        // pick SO-vs-PO payment/term defaults — it never writes IsSOTrx back onto the tab, so it is NOT
+        // this seam (it is also one of the 139 named-deferred atoms: §CRUD-CALLOUT … absent=[CalloutOrder.docType]).
+        // ctx.issotrx is already threaded by crud_overlay._docCtx from window.APP._createIsSOTrx, which
+        // idempiere.html's buildForm() extracts from the active AD_Tab's own WhereClause
+        // (tab 186 "C_Order.IsSOTrx='Y'" vs tab 294 "…='N'"). Nothing new is read and nothing is invented.
+        var r = info.record;
+        if (!r.issotrx && (ctx && (ctx.issotrx === 'Y' || ctx.issotrx === 'N'))) d(info).issotrx = ctx.issotrx;
+        return null;
+      }],
       ['MOrder.clientNotZero', function (ctx, info) {        // :1195-1199  "AD_Client_ID = 0" → reject
         return Number(info.record.ad_client_id) === 0 ? 'AD_Client_ID = 0' : null;
       }],
