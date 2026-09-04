@@ -454,6 +454,8 @@ function setupMeasure(A) {
           if (hdrEl) hdrEl.innerHTML = rendered.hdr;
           if (bodyEl) bodyEl.innerHTML = rendered.body;
         }
+        // §MESH_NARROWPHASE: progressive storey rows get their verdict too (same objects, annotated in place)
+        if (A._qualifyClashRows) A._qualifyClashRows(rows, (args.discA + '|' + args.discB + '@' + st));
       }
       console.log('§CLASH_PROGRESSIVE storey=' + st + ' +' + rows.length + ' total=' + (A._currentClashes ? A._currentClashes.length : 0) + ' rtree=' + A._clashRtreeReady);
       setTimeout(_nextStorey, 16);
@@ -855,7 +857,11 @@ function setupMeasure(A) {
         var sk = A._clashPairKey(cc[si][0], cc[si][1]);
         sCounts[A._clashStatuses[sk] || '']++;
       }
-      hdr += '<span style="color:#fff;font-size:11px">' + cc.length + ' <span id="clash-total-count" style="color:#888;font-size:10px"></span></span>';
+      // §MESH_NARROWPHASE: mesh-true count once row[9] verdicts exist (bbox-only rows are struck below)
+      var nJudged = 0, nMeshTrue = 0;
+      for (var qi = 0; qi < cc.length; qi++) { var qv = cc[qi][9]; if (qv && qv.verdict && qv.verdict !== 'UNKNOWN') { nJudged++; if (qv.verdict === 'CLASH') nMeshTrue++; } }
+      hdr += '<span style="color:#fff;font-size:11px">' + cc.length + ' <span id="clash-total-count" style="color:#888;font-size:10px"></span>' +
+        (nJudged ? ' <span id="clash-mesh-true" style="color:#8fef8f;font-size:10px" title="triangle-exact verdict (clash_narrow.js)">mesh-true ' + nMeshTrue + '/' + nJudged + '</span>' : '') + '</span>';
       hdr += '<div style="display:flex;gap:8px;margin:2px 0;font-size:11px;color:#aaa">' +
         '<span>\u{1F7E1}' + sCounts['Reviewed'] + ' RVW</span>' +
         '<span>\u{1F7E2}' + sCounts['Resolved'] + ' SLV</span>' +
@@ -874,11 +880,15 @@ function setupMeasure(A) {
         var pairKey = A._clashPairKey(c[0], c[1]);
         var status = A._clashStatuses[pairKey] || '';
         var ss = A._clashStatusStyles[status];
+        // \u00a7MESH_NARROWPHASE: row[9] = triangle-exact verdict; CLEAR = bbox-only false positive
+        var nv = c[9], nvStyle = '', nvTag = '';
+        if (nv && nv.verdict === 'CLEAR') { nvStyle = 'text-decoration:line-through;opacity:0.45;'; nvTag = ' <span style="color:#aaa;font-size:9px">bbox-only</span>'; }
+        else if (nv && nv.verdict === 'CLASH') { nvTag = ' <span style="color:#8fef8f;font-size:9px" title="' + nv.reason + '">\u2713</span>'; }
         body +=
-          '<span data-clash-idx="' + i + '" style="cursor:pointer;display:block;padding:1px 0;' + ss.style + '">' +
+          '<span data-clash-idx="' + i + '" style="cursor:pointer;display:block;padding:1px 0;' + ss.style + nvStyle + '">' +
           (ss.icon ? ss.icon : '<span style="color:#888">' + (i + 1) + '</span>') +
           ' ' + clsA + '\u2194' + clsB +
-          ' <b style="color:' + sev.color + '">' + overlap.toFixed(2) + 'm</b>' +
+          ' <b style="color:' + sev.color + '">' + overlap.toFixed(2) + 'm</b>' + nvTag +
           '</span>';
       }
       if (cc.length > maxVisible) {
@@ -1088,6 +1098,25 @@ function setupMeasure(A) {
 
   // §S278 Phase 2: _showClashMatrix + _countClashesRtree extracted to clash_matrix.js
   if (typeof setupClashMatrix === 'function') setupClashMatrix(A);
+  // §MESH_NARROWPHASE (CLASH_GATE_OBB_NARROWPHASE.md §M.6): triangle-exact verdicts on the list rows
+  if (typeof setupClashNarrow === 'function') setupClashNarrow(A);
+
+  // Re-render the open list's header/body in place (used after narrow-phase verdicts arrive)
+  A._refreshClashList = function() {
+    if (!A._clashListDiv || !A._renderClashList) return;
+    var r = A._renderClashList();
+    var hdrEl = A._clashListDiv.querySelector('#clash-list-header');
+    var bodyEl = A._clashListDiv.querySelector('#clash-list-body');
+    if (hdrEl) hdrEl.innerHTML = r.hdr;
+    if (bodyEl) bodyEl.innerHTML = r.body;
+  };
+  // §M.6: qualify a set of broad-phase rows (the current page / a progressive storey batch) and refresh
+  A._qualifyClashRows = function(rows, label) {
+    if (!A.clashNarrow || !A.clashNarrow.qualifyRows || !rows || !rows.length) return;
+    A.clashNarrow.qualifyRows(rows, { label: label || (A._currentClashPairLabel || 'list').replace(' vs ', '|') })
+      .then(function() { A._refreshClashList(); })
+      .catch(function(e) { console.warn('§CLASH_NARROW_ERR ' + (e && e.message)); });
+  };
 
   A._dismissClashes = function(keepMatrix) {
     if (!A._clashRevealActive) return;

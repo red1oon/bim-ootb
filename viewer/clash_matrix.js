@@ -316,6 +316,9 @@ function setupClashMatrix(A) {
       A._currentClashPairLabel = discA + ' vs ' + discB;
       var rect = matDiv.getBoundingClientRect();
       A._revealClashes(clashes, rules, rect.left, rect.top, discA + ' vs ' + discB, rule);
+      // §MESH_NARROWPHASE (CLASH_GATE_OBB_NARROWPHASE.md §M.6): triangle-exact verdict on THIS PAGE only,
+      // async in yielding chunks, reusing the §BVH_DEFERRED trees — nothing runs until a cell is clicked.
+      if (A._qualifyClashRows) A._qualifyClashRows(clashes, discA + '|' + discB);
       // Progressive: load remaining storeys async + COUNT in background
       A._loadRemainingStoreys();
       if (!storey) A._countClashesAsync(rules, discA, discB);
