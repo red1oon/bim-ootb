@@ -4,6 +4,40 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.60.0](https://github.com/red1oon/bim-ootb/compare/v1.59.0...v1.60.0) (2026-09-04)
+
+
+### ✨ Features
+
+* **cli:** §CLI_BAKE_FLAG_OVERRIDE — no argument means the saved path decides, and an override can now say OFF ([#1647](https://github.com/red1oon/bim-ootb/issues/1647)) ([73702f2](https://github.com/red1oon/bim-ootb/commit/73702f226f14be0f147c8a245155a90c4621500f))
+* **cli:** §CLI_BAKE_PROGRESS + §CLI_BAKE_LAND_ON_ABORT — frame/ETA while it runs, and Ctrl-C lands the film ([#1651](https://github.com/red1oon/bim-ootb/issues/1651)) ([5933e13](https://github.com/red1oon/bim-ootb/commit/5933e1301f2ee90e8b0105ebe7a228cd21d53700))
+* **erp:** §AD-FORM-LIVE — the Form spine, and AD_Form 108 (VMatch) end to end ([#1664](https://github.com/red1oon/bim-ootb/issues/1664)) ([881e24c](https://github.com/red1oon/bim-ootb/commit/881e24cd9ce5e077be477908c25818046458eb14))
+* **erp:** §INOUT-CALLOUTS — the two named atoms, and the IsSOTrx coupling they exposed ([#1663](https://github.com/red1oon/bim-ootb/issues/1663)) ([6148d2a](https://github.com/red1oon/bim-ootb/commit/6148d2ab80c5d20911def62872d282cff2277c1d))
+* **erp:** §KIND2-READBACK — a generated document is finally readable by the app that generated it ([#1661](https://github.com/red1oon/bim-ootb/issues/1661)) ([05fd302](https://github.com/red1oon/bim-ootb/commit/05fd3024bcd362b0da92c1078227ff0ffd7385b8))
+* **erp+viewer:** §CL — the clipboard op-log relay, revived (E-6 triage of PR [#300](https://github.com/red1oon/bim-ootb/issues/300)) ([#1665](https://github.com/red1oon/bim-ootb/issues/1665)) ([2ac311a](https://github.com/red1oon/bim-ootb/commit/2ac311ac1772834d702fd10a4b87bb690f3398e3))
+* **erp:** E-4 — a completed M_InOut now moves stock (M_Transaction emit + on-hand fold) ([#1644](https://github.com/red1oon/bim-ootb/issues/1644)) ([21ab662](https://github.com/red1oon/bim-ootb/commit/21ab6628cc95fee82d4d5f0e40aaabb95e817c53))
+* **erp:** P2P Fix 5 — CreateFromInvoice, the line-maker that makes M_MatchInv fire (0 -&gt; 10) ([#1643](https://github.com/red1oon/bim-ootb/issues/1643)) ([077a1ec](https://github.com/red1oon/bim-ootb/commit/077a1ec844b1a5dd8cfcd4bbafa19ae39b17e960))
+* **erp:** the CreateFrom entry point — the three-way match closes through the real UI ([#1654](https://github.com/red1oon/bim-ootb/issues/1654)) ([692c2ff](https://github.com/red1oon/bim-ootb/commit/692c2ff4aeb3d4be7f9813032a37ce1137a73264))
+
+
+### 🐛 Fixes
+
+* **4d:** §CACHE_DB_KIND — the 4D cache judges the DB the viewer loads (meta when the split pair exists), keyed and logged by kind ([#1655](https://github.com/red1oon/bim-ootb/issues/1655)) ([65e3200](https://github.com/red1oon/bim-ootb/commit/65e3200e8cc3b919853cce2e56ba2faf9dfec2e5))
+* **4d:** §CACHE_DB_KIND — the 4D cache judges the DB the viewer loads (meta when the split pair exists), keyed and logged by kind ([#1657](https://github.com/red1oon/bim-ootb/issues/1657)) ([1b21388](https://github.com/red1oon/bim-ootb/commit/1b21388d8d12fc2d05ee2cedec06ccc8a559219d))
+* **4d:** §STOREY_DATUM_FRAME — the declared storey ladder must be in the geometry's vertical frame ([#1641](https://github.com/red1oon/bim-ootb/issues/1641)) ([f289da6](https://github.com/red1oon/bim-ootb/commit/f289da6b4ee460786069a4922c091299697f701e))
+* **4d:** §TM_PLAYED_LAYER_MIDAIR — the played-layer line judges its OWN layer, and names both numbers ([#1652](https://github.com/red1oon/bim-ootb/issues/1652)) ([765c480](https://github.com/red1oon/bim-ootb/commit/765c480467daa4ee9062fa0712ba9106b1392402))
+* **4d:** §TM_PLAYED_LAYER_MIDAIR — the played-layer line judges its OWN layer, and names both numbers ([#1656](https://github.com/red1oon/bim-ootb/issues/1656)) ([5049af4](https://github.com/red1oon/bim-ootb/commit/5049af419530d094a01842b16ace7c142a1c8cd8))
+* **bake:** §BAKE_INTERIOR_TOPUP — a bake pose whose frustum holds no fixture centre is no longer unlit ([#1642](https://github.com/red1oon/bim-ootb/issues/1642)) ([cd8dbff](https://github.com/red1oon/bim-ootb/commit/cd8dbff10f47f3974ec4cef88090988e5ff1e549))
+* **cli:** §HEADFUL_GPU_SELECT — headful takes the same GPU selector as real, so the A/B measures one variable ([#1653](https://github.com/red1oon/bim-ootb/issues/1653)) ([6c52873](https://github.com/red1oon/bim-ootb/commit/6c528738449c58801f82bf784deb0bcff099d125))
+* **cpe:** §CPE_FLAGS_PORTABLE — the saved path travels with its film flags, not just its geometry ([#1645](https://github.com/red1oon/bim-ootb/issues/1645)) ([15ca2d4](https://github.com/red1oon/bim-ootb/commit/15ca2d46386e6ba4765974ff2abf8d4713a76435))
+* **cpe:** §CPE_FLYBACK_FACE_TRAVEL — the Reveal fly-back faces where it is going, not where it arrived ([#1648](https://github.com/red1oon/bim-ootb/issues/1648)) ([56a8b41](https://github.com/red1oon/bim-ootb/commit/56a8b416fcb7fe7caf2e454e89cb5dceefa240c2))
+* **cpe:** §CPE_ROSTER_NOT_A_HIGHLIGHT — the Reveal slides are highlights only, not the last build-up card ([#1646](https://github.com/red1oon/bim-ootb/issues/1646)) ([c21c0ee](https://github.com/red1oon/bim-ootb/commit/c21c0ee5057b4fc20c5a01e2b8b4314da0ea6065))
+* **cpe:** §CPE_TAIL_LIGHTS_ALL_ONLY — the lamps come on for the all-together slot, not for each discipline ([#1649](https://github.com/red1oon/bim-ootb/issues/1649)) ([9128b4e](https://github.com/red1oon/bim-ootb/commit/9128b4e9bb9e3b7b79a1a19ed2e33b0cd6f5532c))
+* **erp:** commitGroup hashed every op TWICE — the batch write path was doing 2x the SHA-256 work ([#1638](https://github.com/red1oon/bim-ootb/issues/1638)) ([8564295](https://github.com/red1oon/bim-ootb/commit/8564295e70852e82f4f4935baa2a9006f47babb5))
+* **erp:** rebase() dropped user_tag, killing every non-default actor's signature on sync ([#1640](https://github.com/red1oon/bim-ootb/issues/1640)) ([e5034c2](https://github.com/red1oon/bim-ootb/commit/e5034c23d04d282d56ad229e3fc37e4560d55521))
+* **erp:** the FK picker could not offer a row you just created ([#1650](https://github.com/red1oon/bim-ootb/issues/1650)) ([4fe49fa](https://github.com/red1oon/bim-ootb/commit/4fe49facc1cafcfbc9c7c5c35784e3fb194cba6b))
+* **photoreal:** §SFR_UNIFORM_NOT_DEFINE — same policy, expressed as a uniform instead of a swapped map ([#1659](https://github.com/red1oon/bim-ootb/issues/1659)) ([5cddf01](https://github.com/red1oon/bim-ootb/commit/5cddf01a5b8f835474c1e589d4c7d7a63d832996))
+
 ## [1.59.0](https://github.com/red1oon/bim-ootb/compare/v1.58.1...v1.59.0) (2026-09-03)
 
 
