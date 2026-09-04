@@ -10,10 +10,11 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v788';   // bump on each deploy; per-change detail is the git commit message.
-// v788 (2026-09-04, revival of PR #300) §CL-1: pos_lens.js gains a 'Copy op log' button after a
+const CACHE_VERSION = 'v790';   // bump on each deploy; per-change detail is the git commit message.
+// v790 (2026-09-04, revival of PR #300) §CL-1: pos_lens.js gains a 'Copy op log' button after a
 // deliver-later sale — serializes the op group to a base64 blob for the clipboard, sent via any
 // channel to the WH walk device (see viewer sw bump for §CL-2, the paste side).
+// v789 (#1666) §HYGIENE-E14: ad_table_map.js dropped from the precache — no page loads it.
 // v787 (#1664) §AD-FORM-LIVE: the Form spine — an 'X' menu leaf resolves its AD_Form row and
 // dispatches on its own Classname; AD_Form 108 (VMatch) is implemented end to end.
 // v772 (rebase of PR #203 onto origin/main) §INTEG-WIRE-B: disposable-host persistence in-app
@@ -58,7 +59,12 @@ const PRECACHE_ASSETS = [
   'ad_modelval.js',
   'ad_parser.js',
   'ad_process.js',    // B-5/C-5 — process dispatch spine (window.AdProcess), W-PROC / W-AD-PROC-LIVE
-  'ad_table_map.js',
+  // 'ad_table_map.js' — REMOVED from the precache 2026-09-04 (E-14, prompts/AGENT_QUEUE.md §HYGIENE-E14).
+  // It is the PB bridge module a caller hands to ADData.useBridge(map); the bridge is default OFF
+  // (ad_data.js:8-20) and NO page carries a <script> tag for this file, so precaching it downloaded a
+  // module on every install that could never run. Dormant-by-design, per TRILOGY_STALE_CODE_AUDIT.md —
+  // so the FILE stays; only the unconditional download goes. Whoever turns the bridge on has to add a
+  // script tag anyway, and puts this line back in the same PR.
   'ad_valrule.js',   // §P3 — AD_Val_Rule interpreter feeding the live FK pickers (W-PARITY-VALRULE)
   'vfs_detect.js',    // CONSTRAINT_MITIGATION item 3 — OPFS/IDB detection at boot (§VFS monitor)
   'error_beacon.js',  // SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed)
