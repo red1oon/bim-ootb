@@ -2059,6 +2059,50 @@
   // (none of these ops are owner-gated — every op is a fresh CREATE, matching commitCrud's own "CREATE has
   // no prior owner to gate" note). K.commitGroup's own atomicity guarantee means every op in the group
   // commits together or none do. cb(result) — result = {committed, gid?, ids?, sealed?, verifyOk?, reason?}.
+  // _resolveOpRefs — §KIND2-READBACK (prompts/AGENT_QUEUE.md §K2RB.4). A KIND-2 generator commits a NEW
+  // parent document and its lines in ONE group, so a line's parent FK cannot be written by the caller:
+  // a listTip-created row's pk is the SYNTHETIC negated kernel-op id, which does not exist until the
+  // group is staged. The placeholder {__opRef:i} means "the pk of the row op i creates" and is resolved
+  // HERE, inside the same _withFreshSide window commitGroup is about to stage against — so this is a
+  // READ of the id law the kernel already relies on itself, not a prediction across a gap:
+  //   kernel_ops.js:526-530 — "The staged ops will receive ids = max(id)+1..+N on insert … They are
+  //   contiguous because INTEGER PRIMARY KEY auto-increments monotonically and this group is a single
+  //   transaction."
+  // and crud_core.listTip:414 gives a CRUD_CREATE row the pk `-opId`. Hence op i ⇒ pk -(nextId+i).
+  // Returns a COPY (never mutates the caller's ops); an unresolvable ref is left as-is and logged, so a
+  // shape this does not understand fails loudly instead of committing a silent null FK.
+  function _resolveOpRefs(db, ops) {
+    var hasRef = ops.some(function (o) {
+      var f = o && o.fields; if (!f) return false;
+      for (var k in f) if (f.hasOwnProperty(k) && f[k] && typeof f[k] === 'object' && f[k].__opRef != null) return true;
+      return false;
+    });
+    if (!hasRef) return ops;
+    var nextId = null;
+    try { var r = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'); if (r.length) nextId = Number(r[0].values[0][0]) + 1; } catch (e) { nextId = null; }
+    if (nextId == null) { console.warn('§CRUD-GROUP-OPREF cannot read kernel_ops MAX(id) — leaving refs unresolved'); return ops; }
+    var resolved = 0, unresolved = 0;
+    var out = ops.map(function (o) {
+      if (!o || !o.fields) return o;
+      var f2 = {}, any = false;
+      for (var k in o.fields) if (o.fields.hasOwnProperty(k)) {
+        var v = o.fields[k];
+        if (v && typeof v === 'object' && v.__opRef != null) {
+          var idx = Number(v.__opRef);
+          if (idx >= 0 && idx < ops.length) { f2[k] = -(nextId + idx); resolved++; any = true; continue; }
+          unresolved++;
+        }
+        f2[k] = v;
+      }
+      if (!any && !unresolved) return o;
+      var c = {}; for (var p in o) if (o.hasOwnProperty(p)) c[p] = o[p];
+      c.fields = f2; return c;
+    });
+    console.log('§CRUD-GROUP-OPREF nextId=' + nextId + ' resolved=' + resolved + ' unresolved=' + unresolved +
+                ' (a line\'s parent FK = the synthetic pk listTip will give its header op)');
+    return out;
+  }
+
   function applyOpGroup(ops, cb) {
     cb = cb || function () {};
     if (!ops || !ops.length) { cb({ committed: false, reason: 'empty-group' }); return; }
@@ -2066,7 +2110,7 @@
     withSidecar(function (db) {
       if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD-GROUP kernel/sql.js absent — cannot commit'); cb({ committed: false, reason: 'kernel/sql.js absent' }); return; }
       _withFreshSide(K, function (freshDb, done) {
-        var groupOps = ops.map(function (o) { return { op_type: o.op_type, params: o }; });
+        var groupOps = _resolveOpRefs(freshDb, ops).map(function (o) { return { op_type: o.op_type, params: o }; });
         Promise.resolve(K.commitGroup(freshDb, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) {
             console.warn('§CRUD-GROUP commitGroup not-committed reason=' + (res && res.reason || '?'));
