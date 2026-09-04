@@ -1589,6 +1589,13 @@
         // ever the ORIGINAL fixed 6°. Moving the call to AFTER startStillRefine() re-asserts the
         // correct per-frame elevation once the staging reset has already happened.
         if (A._sunArcStep) A._sunArcStep(_tn);
+        // §SUN_ARC_FILL (2026-09-05, effects.js, witness_sun_arc_fill.js): the fill compensation for
+        // the arc the line above just stepped — as the sun climbs, ambient/hemi/point-light fill rise
+        // so the interior holds the dusk baseline through the whole arc. Runs AFTER _sunArcStep (it
+        // reads the elevation that call just set) and AFTER startStillRefine (whose §NIGHT_STILL_LIGHTS
+        // block has just reset the staged point-light scale this scales from). Bake-only by this gate;
+        // sun position/intensity/shadow are not touched by it.
+        if (A._maxqActive && A._sunArcFillStep) A._sunArcFillStep(_tn);
         var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' capture');
         // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:

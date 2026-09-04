@@ -2636,10 +2636,92 @@ async function setupEffects(A, renderer, scene, camera) {
     var _el = _sunElevationAt(tNorm);
     A.updateSky(_el, PHOTO_SUN_AZIMUTH);
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
+    // §SUN_ARC_FILL reads the elevation this step JUST set — stashed here so the fill compensation
+    // below cannot drift from the arc by re-deriving it (one elevation, two consumers).
+    A._sunArcElevationDeg = _el;
     console.log('§SUN_ARC_STEP tNorm=' + tNorm.toFixed(3) + ' elevation=' + _el.toFixed(1) +
       ' (start=' + PHOTO_SUN_ELEVATION_START + ' end=' + PHOTO_SUN_ELEVATION_END + ')');
+    return _el;
   }
   A._sunArcStep = _sunArcStep;
+  // ══ §SUN_ARC_FILL (2026-09-05, user: "during fly indoors, it seems it is not as bright as when we
+  // do a static alt-s" — bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md "Second open question",
+  // witness: viewer/tests/witness_sun_arc_fill.js) ═══════════════════════════════════════════════
+  // ROOT CAUSE (confirmed by code read, not re-derived here): the bake sweeps the sun 55°→6° per
+  // frame (§SUN_ARC above) but the interior FILL — A.ambient, A.hemi and the fixture point-light
+  // scale A._nightPLScale — is set ONCE at photo-staging entry (_applyPhotoStaging, §MOVIE_SHADOW_TM /
+  // §STAGED_PL_CUT) and never moves again. Every dusk-tuned constant was tuned at PHOTO_SUN_ELEVATION
+  // (6°, dayT≈0.29, the SAME angle Alt+S uses); a near-overhead sun throws little horizontal light
+  // through vertical windows, so with a frame-invariant fill the room reads dim/flat for most of the
+  // arc and only reaches the Alt+S "bright and lively" look on the last frames.
+  // USER'S RULING: do NOT touch the sun arc, its intensity or its shadow map — the bright sun-hit
+  // patch where the beam lands on a floor/wall (A.sun + shadow map; this change adds no beam
+  // entity of its own) keeps rendering exactly as it does today. Compensate
+  // on the FILL side only, so the interior holds the dusk baseline through the WHOLE arc (that sun
+  // patch may read relatively dimmer beside the raised fill — explicitly accepted).
+  // MECHANISM: boost = 1 + SUN_ARC_FILL_NOON_BOOST · u, where u rescales scene.js updateSky's own
+  // dayT = clamp((elevation+10)/55) so u=0 at the dusk baseline (dayT0 = (PHOTO_SUN_ELEVATION+10)/55)
+  // and u=1 at dayT=1 (elevation ≥ 45°). Boost is exactly 1 on the last frame and for Alt+S, so
+  // nothing already tuned moves. Written from the staged BASE every frame (never `*=`, never
+  // compounding), then _nightUpdateLights re-runs so the frozen §NIGHT_BAKE_POOL takes the new scale
+  // before this frame's capture. Writes ambient/hemi/_nightPLScale ONLY. Bake-only: the caller in
+  // cinema_maxq.js gates on A._maxqActive, so plain navigation and a manual Alt+S never reach this.
+  // SUN_ARC_FILL_NOON_BOOST is MEASURED, not chosen: witness_sun_arc_fill.js bakes a fixed indoor pose
+  // at tNorm 0/.25/.5/.75/1 and reads the interior luma back out of the exported frames (window
+  // pixels masked), tuning until the noon frame reads as the untouched dusk frame does.
+  // ⚠ WIP 2026-09-05 (paused mid-calibration, see viewer/tests/logs/sun_arc_fill/): the FIRST
+  // measured pose (Hospital Level 1, a sun-facing 5 m storefront, sunFacing=0.73) did NOT exhibit the
+  // premise — OFF-run interior luma noon=65.6 / mid-arc≈69.8 / dusk=62.4, i.e. noon already reads
+  // brighter than dusk, and k=1 pushed noon to 99.4. 0 keeps the mechanism inert (byte-identical
+  // fill to the pre-fix bake) until a pose that shows the defect settles a real value.
+  var SUN_ARC_FILL_NOON_BOOST = 0.0;
+  function _sunArcFillBoost(elevationDeg) {
+    var dayT = Math.max(0, Math.min(1, (elevationDeg + 10) / 55));            // scene.js updateSky
+    var dayT0 = Math.max(0, Math.min(1, (PHOTO_SUN_ELEVATION + 10) / 55));    // the dusk baseline
+    var u = dayT0 >= 1 ? 0 : Math.max(0, Math.min(1, (dayT - dayT0) / (1 - dayT0)));
+    // A._sunArcFillNoonBoost: dev override for the witness's tuning sweep (0 = compensation off,
+    // numerically the pre-fix bake). Undefined in every user session.
+    var k = (A._sunArcFillNoonBoost != null && isFinite(+A._sunArcFillNoonBoost))
+      ? +A._sunArcFillNoonBoost : SUN_ARC_FILL_NOON_BOOST;
+    return { dayT: dayT, dayT0: dayT0, u: u, k: k, boost: 1 + k * u };
+  }
+  function _sunArcFillStep(tNorm) {
+    var _el = (A._sunArcElevationDeg != null) ? A._sunArcElevationDeg : _sunElevationAt(tNorm);
+    var b = _sunArcFillBoost(_el);
+    var base = A._photoFillBase;
+    if (!base || !A.ambient || !A.hemi) {
+      console.log('§SUN_ARC_FILL SKIP tNorm=' + (+tNorm).toFixed(3) + ' elevation=' + _el.toFixed(2) +
+        ' reason=' + (!base ? 'no staged fill base (photo staging not applied this cycle)' : 'no ambient/hemi light') +
+        ' — fill untouched');
+      return null;
+    }
+    A.ambient.intensity = base.ambI * b.boost;
+    A.hemi.intensity = base.hemiI * b.boost;
+    var plStaged = (typeof A._nightPLScaleStaged === 'number') ? A._nightPLScaleStaged : null;
+    var poolLit = 0, poolSum = 0;
+    if (plStaged != null) {
+      A._nightPLScale = plStaged * b.boost;
+      if (typeof A._nightUpdateLights === 'function') A._nightUpdateLights();
+      var _pool = A._nightBakePool || A._nightLights || [];
+      for (var _pi = 0; _pi < _pool.length; _pi++) {
+        if (_pool[_pi].intensity > 0) { poolLit++; poolSum += _pool[_pi].intensity; }
+      }
+    }
+    var _sp = A.sun && A.sun.position;
+    console.log('§SUN_ARC_FILL tNorm=' + (+tNorm).toFixed(3) + ' elevation=' + _el.toFixed(2) +
+      ' dayT=' + b.dayT.toFixed(4) + ' u=' + b.u.toFixed(4) + ' k=' + b.k + ' boost=' + b.boost.toFixed(4) +
+      ' ambient=' + A.ambient.intensity.toFixed(4) + ' hemi=' + A.hemi.intensity.toFixed(4) +
+      ' plScale=' + (plStaged == null ? '-' : (plStaged * b.boost).toFixed(4)) +
+      ' base=' + base.ambI.toFixed(4) + '/' + base.hemiI.toFixed(4) + '/' + (plStaged == null ? '-' : plStaged) +
+      ' poolLit=' + poolLit + ' poolSum=' + poolSum.toFixed(3) +
+      ' sun=' + (A.sun ? A.sun.intensity.toFixed(4) : '-') +
+      ' sunPos=' + (_sp ? _sp.x.toFixed(3) + ',' + _sp.y.toFixed(3) + ',' + _sp.z.toFixed(3) : '-') +
+      ' (ambient/hemi/plScale only — sun and shadow untouched by this step)');
+    if (A.markDirty) A.markDirty();
+    return b;
+  }
+  A._sunArcFillBoost = _sunArcFillBoost;   // pure — the witness reads the SAME function the bake runs
+  A._sunArcFillStep = _sunArcFillStep;
   var PHOTO_ENVMAP_BOOST = 2.0;   // multiply each material's existing envMapIntensity — stronger
                                    // glass/metal reflections without changing overall scene exposure
                                    // (history: 2.2 -> 3.2 -> 4.5 -> 3.0 -> 2.0. §PHOTO_REALISM_RETUNE
@@ -3621,6 +3703,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // are born at the cut intensity (the §NIGHT_STILL_LIGHTS boost branch alone was proven to not
     // fire on this path — witness 2026-08-16). Reset unconditionally in _removePhotoStaging.
     A._nightPLScale = A._nightPLScaleStill || 1;
+    A._nightPLScaleStaged = A._nightPLScale;   // §SUN_ARC_FILL — the staged base the bake scales FROM
     if (!_photoNightWasOn && A.toggleNightMode) {
       A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow — real light sources
       if (A._nightSaved) {  // always undo the moonlight override (dark intensities) — never mood
@@ -3646,6 +3729,14 @@ async function setupEffects(A, renderer, scene, camera) {
           ' (TM native ratio 2.155 — equal means the bake matches TM shadow strength)');
       }
     }
+    // §SUN_ARC_FILL — snapshot the staged fill ONCE, here, after the block above has landed it (or,
+    // with night mode already on, whatever the fill is at this point): the bake's per-frame
+    // compensation multiplies THIS base every frame, so it can never compound frame over frame.
+    // Cleared in _removePhotoStaging with the rest of the staging state.
+    A._photoFillBase = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
+    console.log('§SUN_ARC_FILL_BASE ambient=' + A._photoFillBase.ambI.toFixed(4) +
+      ' hemi=' + A._photoFillBase.hemiI.toFixed(4) + ' plScaleStaged=' + A._nightPLScaleStaged +
+      ' nightWasOn=' + _photoNightWasOn);
     // §PHOTO_FOG_ORDER_FIX (2026-07-16, RESUME BRIEF ADDENDUM item 2 — "sky/ground darkness, one
     // root cause?"): confirmed YES, one root cause, and it's a real bug, not just physical dusk
     // dimness. TWO things clobber the warm §PHOTO_FOG color if it's applied any earlier in this
@@ -3744,6 +3835,8 @@ async function setupEffects(A, renderer, scene, camera) {
     // §STAGED_PL_CUT — unconditional reset (the boost-branch reset alone was proven unreachable
     // on this path); if night mode stays on (user had it on pre-staging), rebuild at nav intensity.
     A._nightPLScale = 1.0;
+    A._nightPLScaleStaged = null;   // §SUN_ARC_FILL — staging base gone with the staging
+    A._photoFillBase = null;
     if (_photoNightWasOn && typeof A._nightUpdateLights === 'function' && A._nightLights && A._nightLights.length) A._nightUpdateLights();
     _photoDuskMoodApplied = false;
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
@@ -5039,6 +5132,9 @@ async function setupEffects(A, renderer, scene, camera) {
       // frame, measured), and an intensity is a uniform. Same reason the pool's own unused slots
       // ride at 0 instead of being removed.
       if (A._cpeRevealLightsOff) A._nightPLScale = 0;
+      // §SUN_ARC_FILL — this is the per-frame staged value (0.5 cut, or 0 in a lights-off slot) that
+      // the bake's fill compensation scales from; stashed here, where the rule lives, not re-derived.
+      A._nightPLScaleStaged = A._nightPLScale;
       A._nightUpdateLights();
       // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 2,026 firings, ONE distinct line
       // (`raised to 200 lights, near-fade floor 1 …`). The re-raise itself is required every
