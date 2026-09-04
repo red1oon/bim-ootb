@@ -1530,7 +1530,11 @@
                 copyBtn.id = 'pos-copy-oplog';
                 copyBtn.style.cssText = 'margin-top:8px;padding:7px 14px;border:1px solid #2a6a3a;border-radius:6px;' +
                   'background:rgba(40,100,60,0.3);color:#6fb;font-size:12px;cursor:pointer;width:100%;display:flex;align-items:center;gap:6px;justify-content:center';
-                var iconSvg = (window.ICONS && window.ICONS.clipboard) ? window.ICONS.clipboard : '';
+                // §CL-1 REVIVAL DRIFT (2026-09-04): icons.js moved from `ICONS.<name> = '<svg body>'` to
+                // `ICONS.<name> = { svg: '<svg body>' }` in the three months this PR sat open, so the
+                // original read put an OBJECT into the markup and rendered `[object Object]`. `.svg` is
+                // the convention every current consumer uses (idempiere.html:1414/1925/5516).
+                var iconSvg = (window.ICONS && window.ICONS.clipboard && window.ICONS.clipboard.svg) ? window.ICONS.clipboard.svg : '';
                 copyBtn.innerHTML = (iconSvg ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + iconSvg + '</svg>' : '') + ' Copy op log';
                 copyBtn.onclick = function () {
                   navigator.clipboard.writeText(blob).then(function () {
