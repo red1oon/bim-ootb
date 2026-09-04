@@ -4812,6 +4812,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var _glowLensMeshRect = null, _glowLensMeshRound = null;
   var _glowLensStagedCount = -1;   // §R10 — fixture count the CURRENT quads were built with
   var _glowLensRevealScalar = -1;  // §CPE_REVEAL_LENS_QUAD_OFF — last colour scalar applied (-1 = unset)
+  var _glowLensRevealLogKey = '';  // §CPE_REVEAL_LENS_QUAD_OFF — last LINE emitted, so a re-stage cannot repeat it
 
   // ══ §CPE_REVEAL_LENS_QUAD_OFF (2026-09-04) ═══════════════════════════════════════════════════
   // USER: "On the reveal exit pull away path, i raised about the 'lights quads' always visible
@@ -4840,9 +4841,18 @@ async function setupEffects(A, renderer, scene, camera) {
     var quads = 0;
     if (_glowLensMeshRect && _glowLensMeshRect.material) { _glowLensMeshRect.material.color.setScalar(want); quads += _glowLensMeshRect.count | 0; }
     if (_glowLensMeshRound && _glowLensMeshRound.material) { _glowLensMeshRound.material.color.setScalar(want); quads += _glowLensMeshRound.count | 0; }
-    console.log('§CPE_REVEAL_LENS_QUAD_OFF colorScalar=' + want + ' quads=' + quads +
-      (quads ? (want ? ' — lamps back for the all-together slot' : ' — one-discipline slot, the quads stop drawing')
-             : ' — VACUOUS: nothing staged yet, this transition proves nothing'));
+    // §VAC (R14.0): the applied scalar resets on every _glowLensOff, and a bake tears down and
+    // re-stages EVERY frame — so gating the LOG on the scalar alone repeats the same line ~7x per
+    // frame (measured: 88 lines in the first 12 frames of a Hospital bake, 87 identical and all of
+    // them vacuous). The line is gated on its own content instead: emit only when the
+    // (scalar, staged-or-empty) pair actually changes.
+    var key = want + ':' + (quads > 0 ? 'staged' : 'empty');
+    if (key !== _glowLensRevealLogKey) {
+      _glowLensRevealLogKey = key;
+      console.log('§CPE_REVEAL_LENS_QUAD_OFF colorScalar=' + want + ' quads=' + quads +
+        (quads ? (want ? ' — lamps back for the all-together slot' : ' — one-discipline slot, the quads stop drawing')
+               : ' — VACUOUS: nothing staged yet, this transition proves nothing'));
+    }
     return want;
   }
 
