@@ -47,13 +47,37 @@ correctly-tagged `IfcWallStandardCase` on Level 1 stay. The ground floor keeps i
 loses its entire glazed front. With **no** filter active they are all visible — which is exactly why
 every pose-independent instrument below passed.
 
-**Fix, when picked up.** Extraction: a child inherits its aggregate parent's storey. A data-only
-patch is also possible today, since `rel_aggregates` already carries the parentage —
-`UPDATE elements_meta SET storey = <parent's storey> WHERE guid IN (children of IfcCurtainWall)` —
-shipped the normal way (`buildings/patches/*.sql` + the viewer's `_applyPendingPatch`), never a
-binary DB commit. ⚠ `rel_aggregates` exists in `HHS_Office_Federated_silent.db` but **not** in
-`HHS_Office_Federated_extracted.db`; the runtime patch adds 2,120 `rel_aggregates` rows, so the
-parentage IS available live — check which table the patch has already landed before writing the fix.
+**Fix, when picked up — THE RULE ALREADY EXISTS AND IS ALREADY VALIDATED ON THIS BUILDING. Do not
+invent a new one, and do not special-case `IfcCurtainWall` or a storey name.**
+
+`bim-compiler scripts/compile_rooms.py` carries **`§STOREY-Z`** (`storey_z_anchors` +
+`_assign_by_z`), and its own docstring is this exact case, in these words:
+
+> *"the anchor used to reassign 'Unknown'-storey wall-like elements + doors to their actual floor
+> (HHS: all 716 vertical curtain children carry storey 'Unknown'; their z clusters match Level 1/2/3
+> exactly)"*
+
+It takes the per-storey mean `center_z` of the walls that DO carry a storey, and assigns each
+`Unknown` element to the nearest anchor — no constant, no class list, deterministic tie-break.
+**Its only defect is scope: it computes the storey in memory for the room raster and never writes it
+back to `elements_meta.storey`, so the Viewer still reads `Unknown`.** The fix is to persist what
+that rule already decides.
+
+Two rules, in this order — the first is exact, the second is the existing fallback:
+1. **Aggregate inheritance (IFC-semantic, exact).** A part joined by `IfcRelAggregates` inherits its
+   whole's `IfcRelContainedInSpatialStructure`; that is the schema's own rule, so a panel takes its
+   curtain wall's storey. Generic — nothing in it names a class or a building.
+2. **`§STOREY-Z` (geometric fallback)** for anything with no aggregate parent.
+
+Ship it as a data patch, not a binary DB commit: `buildings/patches/*.sql` + the viewer's
+`_applyPendingPatch` (CLAUDE.md "DB CHANGES = MIGRATION SCRIPT + SELF-HEAL LOADER"). ⚠
+`rel_aggregates` exists in `HHS_Office_Federated_silent.db` but **not** in
+`HHS_Office_Federated_extracted.db` — the runtime patch already adds 2,120 `rel_aggregates` rows, so
+the parentage IS available live; check what the patch has landed before writing the fix.
+
+**Do NOT "fix" it by making `_storeyVisible` treat `'Unknown'` as always-visible.** That is the
+hard-coded version, and it is wrong: it would show every other floor's untagged element whenever a
+storey filter is on.
 
 ### ❌ RULED OUT, with the number that rules it out (do not re-derive)
 
