@@ -67,7 +67,11 @@
 // envMapIntensity 0 instead. The swap parked a second texture reference on every matte material for
 // the whole of staging, and updateSky() disposes the target it pointed at. Same picture, no live
 // reference to freed GPU memory. effects.js bumped in viewer.html.
-const CACHE_VERSION = 'v1139';   // bump on each deploy; per-change detail is the git commit message.
+// v1140 (2026-09-04, revival of PR #300) §CL-2: wh_walk.js gains a collapsed 'Paste incoming op
+// log' receive box — paste base64 blob from POS -> pre-gate dedup by op_uuid -> commitGroup into the
+// IDB sidecar (idmp_kanban_proj) -> draftPick refresh -> the pending shipment surfaces in the
+// selector. Paste-twice safe.
+const CACHE_VERSION = 'v1140';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

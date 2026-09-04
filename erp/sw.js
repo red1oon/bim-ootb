@@ -10,7 +10,13 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v789';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v790';   // bump on each deploy; per-change detail is the git commit message.
+// v790 (2026-09-04, revival of PR #300) §CL-1: pos_lens.js gains a 'Copy op log' button after a
+// deliver-later sale — serializes the op group to a base64 blob for the clipboard, sent via any
+// channel to the WH walk device (see viewer sw bump for §CL-2, the paste side).
+// v789 (#1666) §HYGIENE-E14: ad_table_map.js dropped from the precache — no page loads it.
+// v787 (#1664) §AD-FORM-LIVE: the Form spine — an 'X' menu leaf resolves its AD_Form row and
+// dispatches on its own Classname; AD_Form 108 (VMatch) is implemented end to end.
 // v772 (rebase of PR #203 onto origin/main) §INTEG-WIRE-B: disposable-host persistence in-app
 // (erp_replica_client.js + erp_persist_ui.js) — back the books up to a SIGNED snapshot the user
 // owns (signed by the edge key), restore on a FRESH device -> replay recomputes tip == signed
