@@ -10,6 +10,12 @@
 // its files differed from the directory it duplicates.** The duplication had already drifted, silently,
 // and a user downloading the Odoo agent was getting something other than the source in the repo.
 //
+// THEY STAY TRACKED, and the reason is measured (§PZ.3): GitHub Pages for this repo is build_type
+// "legacy", source {branch: main, path: /} — it publishes the TRACKED FILES ON MAIN, and the artifact
+// deploy-pages.yml uploads is served by nothing. Untracking these two 404'd both live downloads inside
+// the hour. Run this after changing anything under erp/*_agent/ and COMMIT the result; CI's A0 fails if
+// you forget, and A0a fails if either file goes missing again.
+//
 // Deterministic on purpose: fixed timestamps, sorted entry order, deflate level 9. The same directory
 // always produces byte-identical bytes, so "did the zip drift" is a hash comparison, not a judgement —
 // which is what W-AGENT-ZIP-SYNC asserts. No dependency: node's own zlib plus the ZIP container written
