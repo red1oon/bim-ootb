@@ -1100,6 +1100,8 @@ function setupMeasure(A) {
   if (typeof setupClashMatrix === 'function') setupClashMatrix(A);
   // §MESH_NARROWPHASE (CLASH_GATE_OBB_NARROWPHASE.md §M.6): triangle-exact verdicts on the list rows
   if (typeof setupClashNarrow === 'function') setupClashNarrow(A);
+  // §CLASH_FILM_P1 — after clash_narrow, which it calls for the mesh-true pair set.
+  if (typeof setupClashFilm === 'function') setupClashFilm(A);
 
   // Re-render the open list's header/body in place (used after narrow-phase verdicts arrive)
   A._refreshClashList = function() {

@@ -87,7 +87,12 @@
 // the clash list's bbox-only rows are annotated with a triangle-exact verdict (OBB/SAT mid phase +
 // three-mesh-bvh intersectsGeometry, reusing the §BVH_DEFERRED trees). clash_matrix.js (qualify on cell
 // click) and measure.js (list render shows mesh-true / bbox-only) changed; all three are PRECACHE_ASSETS.
-const CACHE_VERSION = 'v1143';   // bump on each deploy; per-change detail is the git commit message.
+// v1144 (2026-09-04) §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P1): new viewer/clash_film.js —
+// the mesh-true clash pairs as PERSISTENT world content in a baked film, red/blue instanced box
+// shells pulsing on FILM time. Not gated by the Time Machine: the markers stand from frame 0 over
+// empty ground so the viewer sees where the trouble will be before it is built. Per-instance fade
+// channel reserved for phase 2's near-and-facing labels. --clash/--no-clash on cli_silent_bake.js.
+const CACHE_VERSION = 'v1144';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -541,6 +546,7 @@ const PRECACHE_ASSETS = [
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',
+  'clash_film.js',
   'measure.js',
   'sitecam.js',
   'issues.js',

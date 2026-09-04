@@ -1093,6 +1093,7 @@
     // every consumer — the preview, the bake loop, and anything added later — flies the clip through
     // the same function, and there is no second notion of "which part of the film this is".
     var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null, _reveal = false;
+    var _clash = false;   // §CLASH_FILM_P1 — mesh-true clash pairs as persistent world content
     // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
     // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
     // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
@@ -1277,6 +1278,9 @@
         // film); A.cpeRevealApplyVisual(plan,_tn), called from the per-frame loop below, drives the
         // ARC/STR hide via A.filterDiscs. _reveal itself is only captured here for logging.
         _reveal = !!_ov.reveal;
+        // §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md) — clash_film.js builds the mesh-true pair set
+        // ONCE below, before the frame loop; it is static world content, not per-frame work.
+        _clash = !!_ov.clash;
         if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round + ARC/STR reveal are real ' +
           '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
@@ -1483,6 +1487,17 @@
           _bigCards = A.bigStatsBuild(_resOps, _bkState.projectStart, _bkState.projectEnd);
         }
       } catch (eR) { _resOps = null; _bigCards = null; console.warn('§CPE_RESOURCE_PANEL_ERR ' + eR.message + ' — panel disabled, bake continues'); }
+      // ══ §CLASH_FILM_P1 — build the markers ONCE, before the first frame ═══════════════════
+      // Deliberately BEFORE the loop and never inside it: the narrow phase costs ~2 s on Terminal,
+      // and the pair set is static. The markers are a FORECAST (§3b) — they stand from frame 0 over
+      // empty ground while the buildup rises around them, so nothing here consults the TM cursor.
+      var _filmSecFull = (_clip && _clip.out > _clip.in) ? (nFrames / (_clip.out - _clip.in)) / fps : nFrames / fps;
+      if (_clash && A.clashFilm && A.clashFilm.build) {
+        try { await A.clashFilm.build(); }
+        catch (eCF) { console.warn('§CLASH_FILM_BUILD failed: ' + (eCF && eCF.message) + ' — the film bakes without markers'); }
+      } else if (_clash) {
+        console.warn('§CLASH_FILM_BUILD INCONCLUSIVE reason=clash_film.js not loaded — nothing judged');
+      }
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
@@ -1565,6 +1580,11 @@
         // (_tFilm(_tn) === _tn when no clip is set).
         var _tnFilm = _tFilm(_tn);
         if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tnFilm);
+        // §CLASH_FILM_P1 (§4) — the pulse is a pure function of FILM seconds, never
+        // performance.now(), so a 15 fps and a 24 fps bake of the same film pulse identically and a
+        // re-bake is reproducible. Per-instance, so phase 2 can hold a labelled pair solid while the
+        // rest keep breathing (§4b). No TM predicate here: the markers are a forecast (§3b).
+        if (_clash && A.clashFilm && A.clashFilm.update) A.clashFilm.update(_tnFilm * _filmSecFull);
         // §CPE_TAIL_LIGHTS_ALL_ONLY (2026-09-04, user: "during last part each DISCipline reveal, the
         // lights are all turned ON that obscures the delicate items scene. Should turn on only during
         // ALL DISCs"). Set BEFORE _applyPhotoStaging runs for this frame — staging is what turns the
@@ -1859,6 +1879,8 @@
       // user into normal navigation. plan=null is the explicit "force restore" signal.
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
       _workPacingReset();
+      // §CLASH_FILM_P1 — the markers are bake content; never let them survive into the user's scene.
+      if (_clash && A.clashFilm && A.clashFilm.dispose) { try { A.clashFilm.dispose(); } catch (eCFd) {} }
       // §CPE_PIE_HOLD — say how much of the film the pie HELD a past composition rather than
       // showing today's. A bake where this equals framesDone means no day was ever staffed and the
       // whole panel was a hold: that is a schedule problem, not a HUD one, and must be visible.
@@ -2019,7 +2041,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter'].forEach(function(fk) {
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash'].forEach(function(fk) {
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same

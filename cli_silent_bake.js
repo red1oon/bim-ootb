@@ -8,6 +8,7 @@
 //   node cli_silent_bake.js --db HospitalAjaibPath --out /tmp/hospital.mp4 \
 //     [--plan NAME | --override file.json]            path source (default: DB cinema_path table)
 //     [--buildup] [--label] [--reveal] [--day tr|tl|br|bl|off]   flags composed onto the path
+//     [--clash] [--no-clash]                          mesh-true clash pairs as world content (§CLASH_FILM_P1)
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
 //   With no flag given, the path's OWN saved settings are used (§CPE_FLAGS_PORTABLE) — a path saved
 //   in the viewer bakes exactly as it was authored, with no arguments at all.
@@ -72,9 +73,12 @@ const FLAGS = {};
 const _fBuildup = triState('buildup', 'no-buildup');
 const _fLabel = triState('label', 'no-label');
 const _fReveal = triState('reveal', 'no-reveal');
+// §CLASH_FILM_P1 — the mesh-true clash pairs as persistent world content (MEP_CLASH_REVEAL_MOVIE.md).
+const _fClash = triState('clash', 'no-clash');
 if (_fBuildup !== undefined) FLAGS.buildup = _fBuildup;
 if (_fLabel !== undefined) FLAGS.roomTitle = _fLabel;
 if (_fReveal !== undefined) FLAGS.reveal = _fReveal;
+if (_fClash !== undefined) FLAGS.clash = _fClash;
 // `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');
 
