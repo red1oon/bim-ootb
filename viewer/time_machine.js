@@ -4190,6 +4190,20 @@
     return _4dTemplate;
   }
 
+  // §FUTURE-5A A7 (attempted 2026-09-02, queue item B-3, REVERTED same day) — rates.js's
+  // `var SHIFT_HOURS = 24` is hand-copied as a literal `24` fallback at 4 separate sites in this
+  // file ("the shape that produced §GANTT_SHIFT_HOURS_DESYNC — one copy missed", §FUTURE-5A's own
+  // words). Consolidating all 4 into one `_shiftHoursOrDefault()` helper was tried and REVERTED in
+  // the same session as B1's STRUCT_MAX_SEQ revert, same root cause: `witness_gantt_native_generate.js`
+  // slices `generateGanttSchedule` out of this file as raw source text and evals it in a sandbox
+  // that only also includes `_tmBusyRecording`/`_tmEditLocked` — a call to a shared helper declared
+  // elsewhere in this file is undefined in that sandbox (masked by a SECOND ReferenceError inside
+  // the catch, `_tmEditExceptionRecover is not defined`, since that's ALSO not in the slice — the
+  // real cause only surfaces by removing the outer catch and looking directly). Left as 4 literal
+  // `(window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24` copies, unchanged. Before retrying this
+  // consolidation, audit every `sliceFn`/`new Function` witness in `viewer/tests/` that slices ANY
+  // of the 4 enclosing functions (grep for the pattern first, not just for SHIFT_HOURS).
+
   // §TUKEY_BOUND (4D_GANTT_TM_REFACTOR.md stage 2, 2026-08-17) — hoisted out of _tmDisplayRemap
   // (was a nested closure there) so buildGanttTasks() can share the SAME envelope math instead of
   // re-deriving its own. This is the proven, already-shipped, already-measured rule (Hospital
@@ -4624,8 +4638,12 @@
         return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio);
       }
       // Fallback (ScheduleAuthor not loaded) — old per-element behavior, no area weighting.
+      // §FUTURE-5A A1/B3 (applied 2026-09-02, queue item B-3): reads the SAME
+      // LR._productivity_basis_secs / LR._zero_minute_floor_secs (sequence_rules.json) the primary
+      // ScheduleAuthor._installSecs path above reads, literal-fallback identical to before this fix.
       var resource = rule.resource;
-      if (!resource || !LR[resource]) return 120;
+      var _floorSecs = LR._zero_minute_floor_secs || 120;
+      if (!resource || !LR[resource]) return _floorSecs;
       var labor = LR[resource], bestPk = null, bestLen = 0;
       for (var pk in labor.productivity) {
         if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
@@ -4633,7 +4651,7 @@
       // §TPL_ZERO_MINUTE (§S65) — keep this fallback in step with ScheduleAuthor._installSecs'
       // default_productivity, or the two copies disagree the moment ScheduleAuthor fails to load.
       var prod = bestPk ? labor.productivity[bestPk] : (labor.default_productivity || 0);
-      return prod > 0 ? Math.round(28800 / prod) : 120;
+      return prod > 0 ? Math.round((LR._productivity_basis_secs || 28800) / prod) : _floorSecs;
     }
 
     // Query elements with spatial Z
@@ -4860,11 +4878,13 @@
       else if (LR[_mcRes].max_crews) _maxCrews[_mcRes] = LR[_mcRes].max_crews;
     }
     // Per-trade labour content, straight from the installSecs the scheduler itself uses
-    // (28800s = the 8h crew-day getInstallSecs divides by).
+    // (28800s = the 8h crew-day getInstallSecs divides by). §FUTURE-5A A1 (applied 2026-09-02,
+    // queue item B-3): reads sequence_rules.json LR._productivity_basis_secs, same 28800 fallback.
     var _crewWorkDays = {};
+    var _hrCostBasisSecs = LR._productivity_basis_secs || 28800;
     elements.forEach(function (el) {
       var _r = el.resource || '_DEFAULT';
-      _crewWorkDays[_r] = (_crewWorkDays[_r] || 0) + (el.installSecs || 0) / 28800;
+      _crewWorkDays[_r] = (_crewWorkDays[_r] || 0) + (el.installSecs || 0) / _hrCostBasisSecs;
     });
     // §CREW_DEMAND — "the max resource needed", reported per trade so a user can see what to edit.
     // capacity = crews x projectDays crew-days; utilisation = demand / capacity. A trade over 100%
@@ -5110,7 +5130,13 @@
     //                     gating on it is #1120's measured-and-rejected "attempt 2" (24 false
     //                     positives). Printing it is what makes LIMIT 1 auditable instead of hidden.
     try {
-      var _rgCELL = (ScheduleGate.CELL || 4), _rgEPS = 0.05, _rgGAP = 0.5;
+      // §I.5b (bim-compiler prompts/4D_MODEL_INTEGRITY.md, §FUTURE item 7 Stage 5, queue item B-2)
+      // — EPS/GAP now read from the module they belong to, in the SAME defensive `||` shape CELL and
+      // BIG_ELEMENT_VOL already use two lines apart. schedule_gate.js:1298-1300 exports them with an
+      // explicit reason ("a second copy is a second thing to drift"); this statement obeyed it for
+      // CELL and hand-typed the other two. Nothing changes today — all three literals equal their
+      // source — but a one-line change to GAP now moves this site with the rest of them.
+      var _rgCELL = (ScheduleGate.CELL || 4), _rgEPS = (ScheduleGate.EPS || 0.05), _rgGAP = (ScheduleGate.GAP || 0.5);
       // §SPEC 2026-08-11 1b (4D_SCHEDULE_PERFECTION.md, Witness: witness_big_element_support_
       // coverage.js): widen the audited pool beyond IfcSlab — EVERY element above the measured p95
       // bbox volume (ScheduleGate.BIG_ELEMENT_VOL = 1.556 m³, extracted 2026-08-11) is also audited
@@ -5473,11 +5499,14 @@
       try {
         var _SR = window.SEQUENCE_RULES || {}, _LR = window.LABOR_RATES || {}, _RT = window.RATES || {};
         var _shGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
-        var rres = SA.materializeZones(db, _SR, { start: '2026-01-01', laborRates: _LR, rates: _RT,
+        // §FUTURE-5A B2 (applied 2026-09-02, queue item B-3): sourced from 4D_template.json
+        // calendar.project_start (same literal, '2026-01-01', as before this fix).
+        var _tplStart = (_4dTemplate && _4dTemplate.calendar && _4dTemplate.calendar.project_start) || '2026-01-01';
+        var rres = SA.materializeZones(db, _SR, { start: _tplStart, laborRates: _LR, rates: _RT,
           scheduleGate: window.ScheduleGate, shiftHours: _shGantt, genVersion: _GANTT_CACHE_VERSION,
           displayRemap: _tmDisplayRemap, template: _4dTemplate });   // §ZONE_DISPLAY_AUTHORING + §TPL_WIRED
         if ((!rres || !rres.ok) && SA.materializeDefault) {
-          rres = SA.materializeDefault(db, _SR, { start: '2026-01-01', laborRates: _LR, blank: false,
+          rres = SA.materializeDefault(db, _SR, { start: _tplStart, laborRates: _LR, blank: false,
             genVersion: _GANTT_CACHE_VERSION });
         }
         console.log('§GANTT_SCHEDULE_STALE_REGEN_RESULT ok=' + !!(rres && rres.ok));
@@ -7332,6 +7361,17 @@
         retimeTaskElements(app.db, byTask, res.moved, tasksBeforeLink);
         _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
       }
+      // §FUTURE-5A item 6 (applied 2026-09-02, queue item B-3): the ONLY §GANTT_EDIT_CLAMP call
+      // site in this file with NO on-screen feedback at all — commitGanttDrag/openGanttProps'
+      // Apply already show `blockedBy`/`clampedTo` (the inline tm-gantt-tip pattern _tmSay itself
+      // wraps), but this re-apply-after-link call to moveTaskCascade never checked res.clamped, so
+      // a new link that ALSO clamps the successor left the user with only the earlier "Linked: ..."
+      // message and no word that the date shown isn't where the link math alone would have put it.
+      // res.blockedBy is the engine's own extracted binding predecessor (schedule_author.js
+      // _bindingPred) — never invented here.
+      if (res && res.clamped) {
+        _tmSay('Linked, but ' + succBar.taskId + ' clamped to ' + res.start + ' — blocked by ' + res.blockedBy, 3400);
+      }
     }
     // §GANTT_CPM_ANNOTATE (§S68) — OUTSIDE the moved-check on purpose: a new EDGE changes the graph,
     // so it changes float and criticality even when the clamp left every date exactly where it was.
@@ -8135,7 +8175,12 @@
       var op2 = _ops[ci2];
       var opRes = (op2.parameters || {}).resource || '';
       var lr = LR[opRes];
-      var dailyRate = lr ? lr.rate_per_day * (lr.crew_size || 1) : 95;
+      // §FUTURE-5A B5 (applied 2026-09-02, queue item B-3): the bare "95" was an undocumented
+      // duplicate of sequence_rules.json LABOR_RATES.LABORER (rate_per_day 95, crew_size 1) — read
+      // that entry directly; the literal 95 now fires only if LABORER itself is absent from LR.
+      var _laborerLR = LR.LABORER;
+      var dailyRate = lr ? lr.rate_per_day * (lr.crew_size || 1)
+        : (_laborerLR ? _laborerLR.rate_per_day * (_laborerLR.crew_size || 1) : 95);
       var opStart = op2.start_ts || _projectStart;
       var realEnd = op2.end_ts || _projectEnd;
       var durMs = Math.max(1, realEnd - opStart);
@@ -8403,7 +8448,12 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 38;   // §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
+  // §STOREY_DATUM_FRAME (2026-09-03) 38→39: a v38 schedule authored on Hospital_meta.db / the user's
+  // Hospital_silent.db was banded by a storey ladder in the WRONG vertical frame (56 local-frame
+  // elevation rows won over the 7 world-frame center_z rows by emptiness) — 1 band, 7 tasks, 509 d
+  // instead of 8/42/318. schedule_author.js now picks the ladder whose span contains the element
+  // base-Z median; a persisted v38 grid still carries the collapsed ladder, so regenerate.
+  var _GANTT_CACHE_VERSION = 39;   // §STOREY_DATUM_FRAME (2026-09-03) — see above. Previous: 38 §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
   // was 37:   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
@@ -8719,7 +8769,14 @@
       _finishActivate(app, silent);
       resolve(true);
     }).catch(async function(e) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt in the fallback
-      console.warn('§GANTT_CACHE_ERR ' + e.message);
+      // §GANTT_CACHE_ERR_STACK (2026-08-12) — this handler wraps the WHOLE async activate body
+      // (cache read, _materializeNativeSchedule, injectGantt, loadOps, cachePut), so a message
+      // alone cannot say which. Live user report: "Cannot read properties of undefined (reading
+      // '3iM76qwej9Tf9ttHcbQp2z')" — a GUID used as a key on an undefined object, recovered by the
+      // fallback below (TM still opened with 63,416 ops) but with no way to locate it. Log the
+      // stack and the phase so the next occurrence names its own line.
+      console.warn('§GANTT_CACHE_ERR ' + e.message + ' | phase=' + (_ops && _ops.length ? 'post-loadOps' : 'pre-loadOps') +
+        ' | stack=' + String(e && e.stack || '(none)').split('\n').slice(0, 4).join(' << '));
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
       if (!_ops.length) { await _load4DTemplate(); _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
@@ -9722,12 +9779,14 @@
     return out;
   };
 
-  // §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13) — per-guid completion time, bim-compiler
-  // prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP. The aim system (effects.js) needs to know
-  // whether a SPECIFIC element is placed by a given cursor, not just how many ops are done in total
-  // (tmWorkSchedule/tmPlacedCount above) — otherwise its candidate-facade search during a buildup
-  // bake can still pick unbuilt geometry. One pass, read-only, same guid-extraction every other _ops
-  // reader in this file already uses (tmGroundSchedule, tmOrderByCameraPath) — not a new convention.
+  // Per-guid completion time — "is this SPECIFIC element placed by a given cursor", as opposed to
+  // "how many ops are done in total" (tmWorkSchedule/tmPlacedCount above). One pass, read-only,
+  // same guid-extraction every other _ops reader in this file already uses (tmGroundSchedule,
+  // tmOrderByCameraPath) — not a new convention.
+  // ORIGIN: §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13), so §CPE_AIM_DEPTH's candidate-facade
+  // search could not pick unbuilt geometry during a buildup bake. THAT CALLER IS GONE
+  // (§CPE_AIM_DEPTH_RETIRED, 2026-09-02). This function STAYS: effects.js:4479's glow-lens
+  // first-placement gate is a live, independent consumer — checked before writing this note.
   // MIN, not last-write: if a guid is touched by more than one op (uncommon but not assumed absent),
   // it counts as placed from its EARLIEST completion, matching "when does this first become real".
   window.tmGuidEndTs = function() {

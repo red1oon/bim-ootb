@@ -43,7 +43,27 @@
   // (Terminal/Hospital/Duplex/HHS/Clinic, extraction logged 2026-08-11; p99 was 11.808 m³ — same
   // class mix, less coverage). EXTRACTED, not invented — do not retune without re-measuring.
   var BIG_ELEMENT_VOL = 1.556;  // m³
-  var MAX_CREWS_DEFAULT = 3;  // §CREW-CAP: fallback crew count per resource when no lookup is given
+  // §CREW-CAP: fallback crew count per resource when no lookup is given. §FUTURE-5A B4 (reviewed
+  // 2026-09-02, queue item B-3): sequence_rules.json now carries the SAME missing-value case for the
+  // pricing side as LABOR_RATES._default_max_crews_author (=1) — a real, NOT-fixed-here divergence
+  // from this module's 3 (see that key's own comment). NOT wired to read it: this module receives no
+  // rules/rates object at all (elements already carry a resolved `resource` string, nothing more —
+  // see computeSchedule's own header), so threading one in for a single fallback constant was judged
+  // out of proportion for a refactor whose contract is byte-identical output. Kept in sync by hand.
+  var MAX_CREWS_DEFAULT = 3;
+  // §FUTURE-5A B1 (attempted 2026-09-02, queue item B-3, REVERTED same day) — the audit's own
+  // "highest-value finding": this file tests `seq <= 4` / `seq > 4` as the structure/non-structure
+  // boundary at 20 separate literal sites, one edit away from a silent mis-classification on any
+  // future re-band. A single named `STRUCT_MAX_SEQ` constant was tried and REVERTED in the same
+  // session: `viewer/bar_needs.js` (and, by the same mechanism, potentially other witnesses in this
+  // repo's large sliceFn/`new Function` text-extraction family — grep for that pattern before
+  // retrying) pulls `isPromotedSlab`/`edgeContained` OUT of this file as raw source text and evals
+  // them standalone, outside this module's scope; a named module-level constant referenced inside a
+  // sliced function is undefined in that eval, which crashed witness_bar_schedule.js/
+  // witness_bar_composite.js (ReferenceError: STRUCT_MAX_SEQ is not defined). Left as 20 literal
+  // `4`s, unchanged — real runtime derivation from the template (the audit's own stated ideal) is
+  // still open for whoever next picks this up, but needs an audit of every source-slicing consumer
+  // first, not just a grep for `seq <= 4`.
   // ══ §ARCH_START_TEMPO / M1 — THE 8-HOUR CREW DAY (2026-08-12) ═══════════════════════════════
   // `el.installSecs` is 28800/productivity — 28800 s IS one 8-hour crew-day (schedule_author.js
   // _installSecs line 71, and its own phase widths already divide by `28800 * maxCrews`). But
@@ -401,9 +421,36 @@
 
   // Collapse sub-storeys onto their Level so the phase list stays ~8 (user: "collapsing is better").
   // "Level 3 Ceiling" / "Level 3 TOS" -> "Level 3". Also the JSON phase key + the trade-gate group.
+  //
+  // §STOREY_SUFFIX_PARITY (2026-09-02, bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.5f, §FUTURE
+  // item 7 Stage 5, queue item B-2) — `T.O.S.` ADDED so this rule is a strict SUPERSET of the one
+  // that runs at IMPORT.
+  // TWO rules decide "strip the sub-storey suffix" and they are applied to the SAME name at
+  // different times: import_worker.js `normalizeStorey` (§STOREY_NORMALIZE, list
+  // REF_LEVEL_SUFFIXES = [' Ceiling',' TOS',' T.O.S.',' Top of Steel',' Soffit']) rewrites
+  // elements_meta.storey when the model is imported; this one collapses at schedule time and is
+  // ALSO what deriveStoreyMergeMap keys the merge map off (:399, over the RAW extracted
+  // spatial_structure.name, which normalizeStorey never touches — lib/room_walker.js writes that
+  // table separately). Where the two disagree, the merge map's key can never match the element's
+  // band key and the merge silently no-ops for that storey, with no log: §S18 reports only `names=`
+  // and `merged=` counts.
+  // `T.O.S.` was the single divergent token — rule 2 strips it, `TOS\b` here cannot match it (the
+  // `\b` after `S` fails against the trailing dot). It is now covered as its own alternative,
+  // ahead of the word-bounded group, so this rule strips everything the import rule strips PLUS
+  // `Slab` (which the import rule deliberately does not) — superset, never disagreement.
+  // POPULATION MEASURED, and it is EMPTY: `SELECT COUNT(*) ... LIKE '%T.O.S%'` returns 0 on
+  // elements_meta AND on spatial_structure for all SEVEN shipped buildings (Duplex, HHS, Hospital,
+  // Terminal, Clinic, LTU_AHouse, JKR — re-measured 2026-09-02, matching §I.5f's own 2026-08-27
+  // finding). So this is a latent divergence closed with a provable zero fleet change, reported as
+  // such and not inflated into a live defect. Witness: witness_storey_suffix_parity.js.
+  // ⛔ NOT FIXED HERE, deliberately: Terminal's `Ceiling Level NN` PREFIX form (673 live elements)
+  // is unmergeable by ANY of the three rules — rule 1 needs `\s+` BEFORE the token, rule 2 needs it
+  // at the END, panels.js `collapseLevel` needs a `Level` prefix. Stripping a leading `Ceiling `
+  // would RENAME live Terminal bands and move the schedule, which is a modelling decision, not a
+  // de-drift. See §I.5f.
   function collapsePhase(storey) {
     if (!storey) return '_UNKNOWN';
-    var s = String(storey).replace(/\s+(Ceiling|TOS|Top of Steel|Soffit|Slab)\b.*$/i, '').trim();
+    var s = String(storey).replace(/\s+(?:T\.O\.S\.?|(?:Ceiling|TOS|Top of Steel|Soffit|Slab)\b).*$/i, '').trim();
     return s || String(storey);
   }
 
@@ -561,6 +608,11 @@
     function wallAt(p) { return toWall(p, baseMs); }
     var _prodMsTot = 0;   // §CREW_DAY audit: productive ms actually committed
     function place(el, start) {
+      // §FUTURE-5A B3 (reviewed 2026-09-02, queue item B-3): a SECOND, independent zero-minute floor
+      // — schedule_author.js's own copy is now sourced from sequence_rules.json
+      // LABOR_RATES._zero_minute_floor_secs (see _installSecs); this one stays a literal for the
+      // same reason MAX_CREWS_DEFAULT above do — this module never receives a
+      // rules/rates object, only already-resolved elements. Kept in sync by hand.
       var dur = Math.round((el.installSecs || 120) * scaleFactor * 1000);
       // 8 productive h per calendar day: the remainder rolls to the next day's window start, and a
       // multi-window `dur` consumes as many following windows as it needs.
@@ -1326,7 +1378,7 @@
            e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
   }
 
-  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

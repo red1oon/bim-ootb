@@ -10,10 +10,15 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v773';   // bump on each deploy; per-change detail is the git commit message.
-// v773 (rebase of PR #300 onto origin/main) §CL-1: pos_lens.js gains a 'Copy op log' button
-// after a deliver-later sale — serializes the op group to a base64 blob for the clipboard, sent
-// via any channel to the WH walk device (see viewer sw bump for §CL-2, the paste side).
+const CACHE_VERSION = 'v788';   // bump on each deploy; per-change detail is the git commit message.
+// v788 (2026-09-04, revival of PR #300) §CL-1: pos_lens.js gains a 'Copy op log' button after a
+// deliver-later sale — serializes the op group to a base64 blob for the clipboard, sent via any
+// channel to the WH walk device (see viewer sw bump for §CL-2, the paste side).
+// v772 (rebase of PR #203 onto origin/main) §INTEG-WIRE-B: disposable-host persistence in-app
+// (erp_replica_client.js + erp_persist_ui.js) — back the books up to a SIGNED snapshot the user
+// owns (signed by the edge key), restore on a FRESH device -> replay recomputes tip == signed
+// tip + books to the cent; a tampered/forged file is rejected (no private key). Substrate
+// prompts/ERP_SUBSTRATE_INTEGRATION.md Phase 2 slice B; witness erp/tests/poc_persist_wire.js.
 // v771 (#429 rebase onto origin/main@e9daafa0): OK feedback dialog after both System Monitor resets
 //   (erp/system_monitor.js) — merged forward past v770's independent bumps below, neither dropped.
 // v770 (T-0 item 4, prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md): commitCrud's UPDATE/DELETE path now
@@ -52,6 +57,7 @@ const PRECACHE_ASSETS = [
   'ad_parser.js',
   'ad_process.js',    // B-5/C-5 — process dispatch spine (window.AdProcess), W-PROC / W-AD-PROC-LIVE
   'ad_table_map.js',
+  'ad_valrule.js',   // §P3 — AD_Val_Rule interpreter feeding the live FK pickers (W-PARITY-VALRULE)
   'vfs_detect.js',    // CONSTRAINT_MITIGATION item 3 — OPFS/IDB detection at boot (§VFS monitor)
   'error_beacon.js',  // SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed)
   'field_health.js',  // SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth)
@@ -132,6 +138,8 @@ const PRECACHE_ASSETS = [
   'ninja_sample.xlsx',// runnable sample workbook (generated from ad_seed.db stored columns)
   'erp_period_close.js', // §INTEG-WIRE — period-close fold = signed checkpoint = balance b/f (window.ErpPeriodClose)
   'period_close_ui.js',  // §INTEG-WIRE — in-app close/bootstrap on the live sidecar op-log (window.PeriodClose)
+  'erp_replica_client.js', // §INTEG-WIRE-B — FROZEN read side: replay snapshot → recompute tip (window.ErpReplicaClient)
+  'erp_persist_ui.js',     // §INTEG-WIRE-B — disposable-host persistence gesture: signed backup/restore (window.ErpPersist)
   'migrate_compare.html', // evaluator-facing comparison paper (docs/MigrateComparisonPaper.md) — linked from erp.html+idempiere.html
   'migrate_compare.md',   // its single source; deep papers (ERP/HolyGrail/OpLog/Distributed/BIMERP .md) fetch on-demand, not precached
   'qrcode.min.js',

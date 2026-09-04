@@ -31,11 +31,103 @@
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1124';   // bump on each deploy; per-change detail is the git commit message.
-// v1124 (rebase of PR #300 onto origin/main) §CL-2: wh_walk.js gains a collapsed 'Paste
-// incoming op log' receive box — paste base64 blob from POS -> pre-gate dedup by op_uuid ->
-// commitGroup into IDB sidecar (idmp_kanban_proj) -> draftPick refresh -> pending shipment
-// surfaces in selector. Paste-twice safe. W-WH-POS-PICK-LIVE + W-WH-LIVE PASS.
+// v1133 (2026-09-03) §STOREY_DATUM_FRAME: schedule_author.js + time_machine.js changed — the declared
+// storey ladder is now chosen by VERTICAL FRAME (its span must contain the element base-Z median),
+// not by which column is non-empty; on Hospital_meta.db the 56 local-frame elevation rows had won
+// over the 7 world-frame center_z rows and collapsed the building to ONE band (7 tasks, 509 d vs
+// 8 bands / 42 tasks / 318 d). Both files are in PRECACHE_ASSETS, so an installed service worker
+// keeps serving the collapse without this bump. Paired with _GANTT_CACHE_VERSION 38→39.
+// v1134 (2026-09-04) §BAKE_INTERIOR_TOPUP: the still/bake fixture-light selection is no longer
+// frustum-centre ONLY — a short in-frustum set is topped up to the still budget with the same
+// nearest-to-aim + §NIGHT_SPREAD rule navigation uses (_nightPickNearest, extracted VERBATIM so
+// nav and bake cannot drift apart), and the camera matrix is refreshed before the cull
+// (§BAKE_FRUSTUM_STALE). An interior pose whose frustum held no fixture centre previously left
+// every §NIGHT_BAKE_POOL slot at intensity 0 — the room lit by flat fill alone. tools.js?v=45->46.
+// v1135 (2026-09-04) §CPE_FLAGS_PORTABLE: the building DB's `cinema_path` table now carries the
+// four film flags (buildup, room_title, reveal, day_counter) alongside the path geometry it already
+// stored, so a path saved with Ctrl+S no longer travels with every feature silently OFF. Columns are
+// APPENDED and the reader PRAGMA-probes them, so old and new .db files open in both directions.
+// scene.js?v=59->60, effects.js?v=32->33.
+// v1136 (2026-09-04) §CPE_ROSTER_NOT_A_HIGHLIGHT: the Reveal round's revolving rotation is the
+// stat cards ONLY. The held build-up crew roster is no longer one of the slots — it holds,
+// un-rotated, through round 1 where it means something. A build-up slide is not a finished-building
+// highlight (user ruling). cinema_maxq.js?v= bumped in viewer.html.
+// v1137 (2026-09-04) §CPE_FLYBACK_FACE_TRAVEL: during the Reveal fly-back the camera now faces the
+// DIRECTION OF FLIGHT (the retrace tangent) instead of holding the angle of attack it arrived on,
+// which read as sideways on every corner. The two end turns are sized by the real angle at
+// CINEMA_TURN_DPS, not a fixed seam, because the reveal sub-beats are outside the gaze rate limiter.
+// effects.js?v=33->34.
+// v1138 (2026-09-04) §CPE_TAIL_LIGHTS_ALL_ONLY: during the disc parade's ONE-DISCIPLINE slots the
+// staged luminaires and their glow are OFF — the trade's delicate geometry reads on its own instead
+// of being washed out by lamps that filterDiscs has hidden anyway. The all-together slot keeps its
+// lights. Illumination is scaled to 0 rather than torn down, because §NIGHT_BAKE_POOL froze the
+// point-light COUNT for the whole bake on purpose. effects.js?v=34->35, cinema_maxq.js?v=10->11.
+// v1139 (2026-09-04) §SFR_UNIFORM_NOT_DEFINE: §SUN_FILL_RATIO's policy is unchanged, but it is no
+// longer expressed by swapping m.envMap — every material keeps ONE map and the matte set is held at
+// envMapIntensity 0 instead. The swap parked a second texture reference on every matte material for
+// the whole of staging, and updateSky() disposes the target it pointed at. Same picture, no live
+// reference to freed GPU memory. effects.js bumped in viewer.html.
+// v1140 (2026-09-04, revival of PR #300) §CL-2: wh_walk.js gains a collapsed 'Paste incoming op
+// log' receive box — paste base64 blob from POS -> pre-gate dedup by op_uuid -> commitGroup into the
+// IDB sidecar (idmp_kanban_proj) -> draftPick refresh -> the pending shipment surfaces in the
+// selector. Paste-twice safe.
+const CACHE_VERSION = 'v1140';   // bump on each deploy; per-change detail is the git commit message.
+// v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
+// (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
+// concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
+// so it lit walls facing AWAY from the sun as hard as walls facing it: measured away/sun separation
+// 1.0429 on Clinic (the away wall was BRIGHTER) and 0.9170 on Hospital, against 0.2408/0.2372 in
+// plain navigation. Matte materials now keep the plain-nav sky env map; glossy/mirror keep the HDRI
+// (42/42 and 70/70 asserted still on it). effects.js is in PRECACHE_ASSETS and viewer.html's query
+// is bumped effects.js?v=30->31 in the SAME PR (§CRISIS LESSON 4).
+// Witness: witness_sun_fill_ratio.js (§SFR_REDGREEN, RED CONTROL 0.0005/0.0000).
+// v1131 (2026-09-03) §R15 levers DEFAULT FALSE. #1635 auto-merged before the second
+// W-BUDGET-CONVERGE run returned; that run reports verdict=FAIL (as did the first) with THREE
+// phases 15-45% slower and whole-cycle dt_mean flipping sign between runs. The counters, the
+// richer §DLOD_NAV_BUDGET line and the §ROOM_OCCL_INDEX_ERR fix all stay; only the behaviour
+// change is disarmed until A-27 removes the demote-side fade cost. dlod_nav.js?v=3->4.
+// v1130 (2026-09-03) §R15 DLOD budget controller convergence: the §20 mesh-budget integrator ran
+// at 150 ms while its own feedback (activeElig, published once per completed chunked scan pass)
+// arrived every 387 ms — MEASURED 55.0% of control periods integrated an unrefreshed number — and
+// had no anti-windup, so it charged to MAX_BOOST against an aerial view where widening the distance
+// provably buys nothing. Two rules, both conditions rather than tuned constants: act once per
+// MEASUREMENT, and stop integrating in a direction the last step proved ineffective.
+// viewer.html dlod_nav.js?v=2->3 bumped in the SAME commit. Witness: witness/w_budget_converge.js.
+// v1129 (2026-09-02) §DUCT_SILHOUETTE: new viewer/silhouette_refine.js, hooked at the single
+// geometry choke point A.blobToGeometry (scene.js). §MEP_SMOOTH_NORMALS fixes SHADING at a 55
+// deg crease and provably cannot fix an OUTLINE, so a big duct stayed a visible N-gon while a
+// lamp did not — MEASURED, the two differ 50x in projected chord deviation, not in detection.
+// One level of uniform Phong subdivision on the elements whose own facet step still covers a
+// 1080p pixel at 5 m. Hard edges keep the plain midpoint, so flat surfaces are untouched.
+// viewer.html scene.js?v=58->59 and streaming.js?v=68->69 bumped in the SAME commit.
+// PRECACHE entry added in this same commit — a new module that is not precached is invisible
+// offline, and a precached scene.js served past a version bump would call a function that is
+// not there (the §CRISIS LESSON 4 failure mode noted under v1127).
+// v1127 (2026-09-02) §MEP_COLOR_SURVIVES_PHOTOREAL: streaming.js gives an MEP element its trade
+// HUE when its own colour carries none, keeping the element's own V (and every roughness/metalness/
+// envMap/triplanar term) untouched — so MEP reads by system in an Alt+S still and the Alt+C movie
+// instead of the uniform grey metal the metal triplanar texture multiplied out of the shipped
+// achromatic off-white default. §MEP_DISC_TINT's `!rgbaStr` gate + its 3-class DISC_TINT_CLASSES
+// list are subsumed by ONE owner, A._mepDiscAlbedo. viewer.html streaming.js?v=67->68 bumped in
+// the SAME commit (§CRISIS LESSON 4 — a precached streaming.js is served past a CACHE_VERSION bump
+// without its own ?v= change). The disc->hue mapping is an AUTHORED choice reusing A.DISC_COLORS
+// verbatim, NOT a published MEP standard — no such convention exists in the model data.
+// Witness: witness_mep_color_photoreal.js (W-MEP-COLOR-PHOTOREAL) — 55/55, five buildings, red
+// control + tier-1 byte-identity on the user's own fire-red lever (1300/1300 elements).
+// v1126 (2026-09-02) §CPE_AIM_DEPTH_RETIRED: viewer/effects.js — §CPE_AIM_DEPTH, the last automatic
+// exception to path-follow, is REMOVED on user directive ("its best to leave alone its pointing
+// along its path ... to stay simple and predictable"). Gone with it: §CPE_AIM_GRID, §CPE_AIM_LATCH
+// (the weight running-max; the Beat3→4 hand-off line is RENAMED §CPE_BEAT3_END_DIR, not removed),
+// §CPE_AIM_DEPTH_SERIES/_SCALE/_VERTICALITY/_OPEN_TAPER/_FWD_CLEAR/_BUILDUP, and §CPE_STICK_HOLD's
+// aim half (_holdBoostAt fed only _aimDepthApply — a held beat is now a pure rate dip). KEPT:
+// §CPE_AIM_PIN, the correction window, §CPE_AIM_DEPTH_FREEZE (#1598), §CPE_CORR_BRANCH (#1597).
+// effects.js is in PRECACHE_ASSETS and viewer.html's query is bumped effects.js?v=29->30 in the
+// SAME PR — without both an installed SW keeps serving the pre-change file (§CRISIS LESSON 4).
+// Witness: witness_cpe_aim_retire.js (7/7 depth-OFF, red control fails on the depth-ON arm).
+// v1125 (rebase of PR #1318 onto origin/main) §GANTT_CACHE_ERR_STACK: time_machine.js's
+// injectGantt cache-activate catch block now logs the stack + which phase failed (pre/post
+// loadOps) instead of the bare error message, which could not locate a live user's GUID-key
+// crash. Logging-only, no behavior change.
 // MERGE NOTE (2026-09-01, third of the day, same standing rule: KEEP BOTH notes, take the HIGHER
 // version, each separate change gets its OWN bump):
 // v1119 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
@@ -413,6 +505,7 @@ const PRECACHE_ASSETS = [
   'config.js',
   'db_resolve.js',
   'helpers.js',
+  'silhouette_refine.js',
   'loader.js',
   'effects.js',
   'cinema_maxq.js',

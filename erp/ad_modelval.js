@@ -80,6 +80,32 @@
       return !!(info.recordOld && info.record && String(info.recordOld[col]) !== String(info.record[col]));
     }
     var H = [
+      ['MOrder.issotrxFromWindow', function (ctx, info) {
+        // Implementing prompts/AGENT_QUEUE.md §KIND2-READBACK — Witness: W-KIND2-READBACK.
+        // The C_Order sibling of MInvoice.issotrxFromWindow (§Fix 4) and MInOut.movementTypeFromWindow
+        // (§Fix 2): the per-window Sales/Purchase signal reaching the NEW record itself. C_Order was the
+        // one of the three that never got it — its only IsSOTrx seam was docTypeTargetDefault below, and
+        // that derives IsSOTrx **only inside `if (!Number(r.c_doctypetarget_id))`**. C_DocTypeTarget_ID is
+        // IsDisplayed='Y' + IsMandatory='Y' on tab 186, so a user filling the form the normal way SETS it,
+        // the branch never runs, and the order persists with NO IsSOTrx at all.
+        // MEASURED (W-KIND2-READBACK first run, 2026-09-04, plain origin/main): a Sales Order authored
+        // through window 143 and Completed to CO was then REFUSED by both KIND-2 generators —
+        //   §AD-PROC-LIVE proc=118 … ok=N reason=order-not-shippable  message="Order is not a Sales Order"
+        //   §AD-PROC-LIVE proc=119 … ok=N reason=order-not-invoiceable message="Order is not a Sales Order"
+        // …because inoutGenGate/invoiceGenGate test `o.issotrx !== 'Y'`, and §CRUD-PERSIST's own column
+        // list for that create carries no `issotrx`.
+        // Java home (EXTRACT, do NOT invent): a new MOrder gets IsSOTrx from the window it is authored in —
+        // MOrder.setInitialDefaults():455 `setIsSOTrx(true)` for the Sales-Order case, and the ctx path
+        // Env.getContext(ctx,WindowNo,"IsSOTrx"). CalloutOrder.docType reads C_DocType.IsSOTrx but only to
+        // pick SO-vs-PO payment/term defaults — it never writes IsSOTrx back onto the tab, so it is NOT
+        // this seam (it is also one of the 139 named-deferred atoms: §CRUD-CALLOUT … absent=[CalloutOrder.docType]).
+        // ctx.issotrx is already threaded by crud_overlay._docCtx from window.APP._createIsSOTrx, which
+        // idempiere.html's buildForm() extracts from the active AD_Tab's own WhereClause
+        // (tab 186 "C_Order.IsSOTrx='Y'" vs tab 294 "…='N'"). Nothing new is read and nothing is invented.
+        var r = info.record;
+        if (!r.issotrx && (ctx && (ctx.issotrx === 'Y' || ctx.issotrx === 'N'))) d(info).issotrx = ctx.issotrx;
+        return null;
+      }],
       ['MOrder.clientNotZero', function (ctx, info) {        // :1195-1199  "AD_Client_ID = 0" → reject
         return Number(info.record.ad_client_id) === 0 ? 'AD_Client_ID = 0' : null;
       }],
@@ -105,10 +131,39 @@
         }
         return null;
       }],
+      ['MOrder.bpLocationDefault', function (ctx, info) {    // :1269-1270 ∘ setBPartner :752-774 — location 0 → the BP's own
+        // §P1 P1.5 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL — W-PARITY-FIELDSET / W-MORDER-SAVE).
+        // Java: `if (getC_BPartner_Location_ID() == 0) setBPartner(new MBPartner(...))` (:1269-1270) — it also runs
+        // right after :1239-1252 cleared a foreign location. setBPartner: BP SalesRep_ID if non-zero (:752-753);
+        // loop over the BP's locations — isShipTo → C_BPartner_Location_ID, isBillTo → Bill_Location_ID, each
+        // iteration overwriting (:756-763, so the LAST match wins); still 0 → the first location (:766-769);
+        // no location at all → BPartnerNoShipToAddressException (:772-774). ONLY this slice is ported here — the
+        // payment-term / price-list parts of setBPartner ride the existing :1282/:1315 hooks below.
+        var r = info.record, dd = d(info);
+        var locNow = (dd.c_bpartner_location_id !== undefined) ? dd.c_bpartner_location_id : r.c_bpartner_location_id;
+        if (Number(locNow) > 0 || !(Number(r.c_bpartner_id) > 0)) return null;
+        var bp = null;   // a slimmed bundle without c_bpartner.salesrep_id (bim-compiler's glassbowl_data.db fixture) → no BP sales rep: conservative, never invented
+        try { bp = db.prepare('SELECT salesrep_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(r.c_bpartner_id)); } catch (eGap) { bp = null; }
+        if (bp && Number(bp.salesrep_id) > 0 && !(Number(r.salesrep_id) > 0)) dd.salesrep_id = Number(bp.salesrep_id);
+        var locs = db.prepare("SELECT c_bpartner_location_id, isshipto, isbillto FROM c_bpartner_location WHERE c_bpartner_id=? AND isactive='Y' ORDER BY c_bpartner_location_id").all(Number(r.c_bpartner_id)) || [];
+        if (!locs.length) return 'BPartnerNoShipToAddress';
+        var ship = null, bill = null;
+        locs.forEach(function (l) {
+          if (String(l.isshipto) === 'Y') ship = Number(l.c_bpartner_location_id);
+          if (String(l.isbillto) === 'Y') bill = Number(l.c_bpartner_location_id);
+        });
+        dd.c_bpartner_location_id = ship != null ? ship : Number(locs[0].c_bpartner_location_id);
+        if (bill != null) dd.bill_location_id = bill;
+        else if (!(Number(r.bill_location_id) > 0)) dd.bill_location_id = Number(locs[0].c_bpartner_location_id);
+        return null;
+      }],
       ['MOrder.billDefaults', function (ctx, info) {         // :1272-1279  Bill_* default to the BP/location
-        var r = info.record;
-        if (!Number(r.bill_bpartner_id)) { d(info).bill_bpartner_id = Number(r.c_bpartner_id); d(info).bill_location_id = Number(r.c_bpartner_location_id); }
-        else if (!Number(r.bill_location_id)) d(info).bill_location_id = Number(r.c_bpartner_location_id);
+        var r = info.record, dd = d(info);
+        // §P1: read the EFFECTIVE location — Java's :1269 setBPartner already set it before :1272 reads it.
+        var loc = (dd.c_bpartner_location_id !== undefined && dd.c_bpartner_location_id !== null) ? dd.c_bpartner_location_id : r.c_bpartner_location_id;
+        var billLoc = (dd.bill_location_id !== undefined && dd.bill_location_id !== null) ? dd.bill_location_id : r.bill_location_id;
+        if (!Number(r.bill_bpartner_id)) { dd.bill_bpartner_id = Number(r.c_bpartner_id); dd.bill_location_id = Number(loc); }
+        else if (!Number(billLoc)) dd.bill_location_id = Number(loc);
         return null;
       }],
       ['MOrder.priceListDefault', function (ctx, info) {     // :1282-1290  IsSOPriceList=IsSOTrx ORDER BY IsDefault DESC
@@ -126,6 +181,14 @@
           var pl = db.prepare('SELECT c_currency_id FROM m_pricelist WHERE m_pricelist_id=?').get(Number(plId));
           if (pl && pl.c_currency_id) d(info).c_currency_id = pl.c_currency_id;
         }
+        return null;
+      }],
+      ['MOrder.salesRepFromCtx', function (ctx, info) {      // :1302-1307  SalesRep 0 → Env.SALESREP_ID (the login user); ctx fallback only
+        // §P1 P1.5 — the MOrder twin of MInvoice.salesRepFromCtx (:1183-1188) below; the host feeds ctx.salesrep_id
+        // from window.APP.actor (crud_overlay.js _docCtx). Never overrides a set value (Java defaults ONLY a zero column).
+        var r = info.record, dd = d(info);
+        var srNow = (dd.salesrep_id !== undefined && dd.salesrep_id !== null) ? dd.salesrep_id : r.salesrep_id;
+        if (!(Number(srNow) > 0) && ctx && Number(ctx.salesrep_id) > 0) dd.salesrep_id = Number(ctx.salesrep_id);
         return null;
       }],
       ['MOrder.docTypeTargetDefault', function (ctx, info) { // :1311-1312  default = the Standard SO doctype ('SO')
@@ -208,11 +271,19 @@
         // already-set C_DocType_ID) can never fire for a manually-created record — this is the ONLY seam
         // where the per-window signal (ctx.movementtype, threaded from the AD_Tab's own WhereClause, e.g.
         // Material Receipt tab 296's "MovementType IN ('V+')") can reach the new row at all.
+        // §INOUT-CALLOUTS (prompts/AGENT_QUEUE.md §INOUT-CALLOUTS) — IsSOTrx was NESTED inside "MovementType
+        // was empty", so the moment anything ELSE filled MovementType this branch stopped running and the
+        // receipt persisted with NO IsSOTrx. MEASURED the hour CalloutInOut.docType started filling it:
+        //   §RECEIPT-FANOUT receipt=-4 issotrx=undefined …   →   §P2P stage=3 FAIL, "the CreateFrom pane did
+        //   not offer the fresh receipt line -5" (renderCreateFromPicker keeps `String(h.issotrx)==='N'`).
+        // The two facts are independent in the Java too: CalloutInOut.docType sets IsSOTrx from the DocType
+        // (:214-227) and MovementType (:229) as two separate mTab.setValue calls. So derive IsSOTrx from
+        // whatever MovementType the record ENDS UP with, whoever set it — record first, then this pass's own
+        // derivation, then the window signal.
         var r = info.record;
-        if (!r.movementtype && /^[A-Z][+-]$/.test((ctx && ctx.movementtype) || '')) {
-          d(info).movementtype = ctx.movementtype;
-          if (!r.issotrx) d(info).issotrx = ctx.movementtype.charAt(0) === 'C' ? 'Y' : 'N';
-        }
+        if (!r.movementtype && /^[A-Z][+-]$/.test((ctx && ctx.movementtype) || '')) d(info).movementtype = ctx.movementtype;
+        var mtEff = String(r.movementtype || (info.derived && info.derived.movementtype) || (ctx && ctx.movementtype) || '');
+        if (!r.issotrx && /^[A-Z][+-]$/.test(mtEff)) d(info).issotrx = mtEff.charAt(0) === 'C' ? 'Y' : 'N';
         return null;
       }],
       ['MInOut.movementTypeDerive', function (ctx, info) {   // :1306-1308 ∘ getMovementType:1275-1287

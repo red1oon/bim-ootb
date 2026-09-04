@@ -2,7 +2,7 @@
   "meta": {
     "name": "Default Sequence + Labour Rules",
     "version": "2024.2",
-    "note": "Timeline default steps (ifc_class -> phase/sequence/resource + labour productivity). Values copied verbatim from rates.js (schedule_generator.py / boq_export.py origins). READ THIS BEFORE CITING A NUMBER FROM THIS FILE (corrected 2026-08-13, §RULES_TABLE_SOURCE): this file is NOT what Time Machine injectGantt runs on. viewer.html never calls loadSequenceRules() — only mep_report.html and boq_charts.html do — so rates.js's hardcoded SEQUENCE_RULES/LABOR_RATES/SEQUENCE_DEFAULT/SEQUENCE_NAME_OVERRIDES are what the viewer, Time Machine and the Author wizard actually execute, and this file is their MIRROR plus the Settings-JSON-editor override surface. The previous wording here claimed the opposite and is why every Node probe and viewer/tests/witness_*.js measured this file instead of ship: they had drifted (LABOR_RATES.ELECTRICIAN.productivity held 8 class keys here against rates.js's 15 — IfcSwitchingDevice/IfcSensor/IfcActuator/IfcFlowInstrument/IfcDistributionControlElement/IfcProtectiveDeviceTrippingUnit/IfcUnitaryControlElement were missing), worth 1889.4d vs 1926.4d of Hospital programme. Re-synced 2026-08-13. When you edit rates.js, edit this file in the same commit. | 2026-08-25 §S65 (bim-compiler prompts/4D_SCHEDULE_PERFECTION.md): six §TPL_ZERO_MINUTE fixes — IfcBuildingElementProxy and SEQUENCE_DEFAULT no longer carry resource:null (both -> MASON, productivity copied from the sibling IfcBuildingElementPart:15); MASON.default_productivity added because the productivity lookup is a SUBSTRING match an unmatched class can never satisfy; CARPENTER gained IfcPlate:12/IfcMember:10 (copied from STEEL_ERECTOR) and FINISHER gained IfcBuildingElementPart/Proxy:15 (copied from MASON) so the glazed_curtainwall_facade and furniture_generic_bucket NAME_OVERRIDES stop silently destroying the duration of the elements they reassign; IfcRoof sequence 8 -> 6 (user ruling) so the roof precedes MEP Rough-in and the Architecture band stops overlapping it. Locked by viewer/tests/witness_sequence_template_lock.js."
+    "note": "Timeline default steps (ifc_class -> phase/sequence/resource + labour productivity). Values copied verbatim from rates.js (schedule_generator.py / boq_export.py origins). READ THIS BEFORE CITING A NUMBER FROM THIS FILE (corrected 2026-08-13, §RULES_TABLE_SOURCE): this file is NOT what Time Machine injectGantt runs on. viewer.html never calls loadSequenceRules() — only mep_report.html and boq_charts.html do — so rates.js's hardcoded SEQUENCE_RULES/LABOR_RATES/SEQUENCE_DEFAULT/SEQUENCE_NAME_OVERRIDES are what the viewer, Time Machine and the Author wizard actually execute, and this file is their MIRROR plus the Settings-JSON-editor override surface. The previous wording here claimed the opposite and is why every Node probe and viewer/tests/witness_*.js measured this file instead of ship: they had drifted (LABOR_RATES.ELECTRICIAN.productivity held 8 class keys here against rates.js's 15 — IfcSwitchingDevice/IfcSensor/IfcActuator/IfcFlowInstrument/IfcDistributionControlElement/IfcProtectiveDeviceTrippingUnit/IfcUnitaryControlElement were missing), worth 1889.4d vs 1926.4d of Hospital programme. Re-synced 2026-08-13. When you edit rates.js, edit this file in the same commit. | 2026-08-25 §S65 (bim-compiler prompts/4D_SCHEDULE_PERFECTION.md): six §TPL_ZERO_MINUTE fixes — IfcBuildingElementProxy and SEQUENCE_DEFAULT no longer carry resource:null (both -> MASON, productivity copied from the sibling IfcBuildingElementPart:15); MASON.default_productivity added because the productivity lookup is a SUBSTRING match an unmatched class can never satisfy; CARPENTER gained IfcPlate:12/IfcMember:10 (copied from STEEL_ERECTOR) and FINISHER gained IfcBuildingElementPart/Proxy:15 (copied from MASON) so the glazed_curtainwall_facade and furniture_generic_bucket NAME_OVERRIDES stop silently destroying the duration of the elements they reassign; IfcRoof sequence 8 -> 6 (user ruling) so the roof precedes MEP Rough-in and the Architecture band stops overlapping it. Locked by viewer/tests/witness_sequence_template_lock.js. | 2026-09-02 §A-15 (bim-compiler prompts/AGENT_QUEUE.md A-15, 4D_MODEL_INTEGRITY.md §J.6.4 item 2): stair_member_architecture widened from [IfcMember] to [IfcMember, IfcSlab] so a stair TREAD exported as IfcSlab stops landing on day 0 ahead of its own IfcStairFlight; and CARPENTER gained IfcSlab:35 (COPIED from CONCRETE_GANG, IfcSlab's canonical trade — the same rule the FINISHER entry above was built by) because the widening otherwise re-triggers §TPL_ZERO_MINUTE for the reassigned treads, MEASURED on HHS before the guard was added."
   },
   "NAME_OVERRIDES": [
     {
@@ -54,6 +54,44 @@
       "sequence": 11,
       "resource": "FINISHER",
       "reason": "§FURNITURE_TIER1_SAFEGUARD (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 evening — Witness: witness_tier_serial_display.js W-TS-4): §TIER_SERIAL makes Substructure→Superstructure→Architecture a STRICT serial backbone, so furniture-like content exported under a generic catch-all class (IfcBuildingElementProxy/IfcBuildingElementPart resolve to Architecture/seq 5 — Tier 1) would gate real structural phase completion on a chair or desk. Genuinely-tagged furniture (IfcFurniture/IfcFurnishingElement) already resolves to Finishes/seq 11 — untouched. MEASURED before writing (furniture_measure.log 2026-08-11): a naive unscoped substring pattern gave 327 false positives ('table' substring-matched 'adjustable' in a shower-head name; 'cabinet' matched a fire-extinguisher cabinet already correctly in MEP Final/Tier 2) — hence word boundaries + this class gate. Scoped run: ZERO live hits across all 5 shipped buildings — proactive safeguard (the pile-misclassification precedent proves this bug class is real on real-world IFCs), not a live-defect fix. Known deliberate non-target: Terminal 'Floor:Table Top:904745' (IfcSlab 3.96×22.43m ×150mm built-in counter) stays Superstructure — IfcSlab is an unambiguous class with two measured overrides already, and as a seq<=4 support-pool member reclassifying it would perturb locked floating/§SUPPORT_UNCHECKED baselines; the witness NAMES it as a reported (not gated) case."
+    },
+    {
+      "id": "foundation_wall_substructure",
+      "_why": "2026-08-27 §W_D0 C2. A wall NAMED Foundation is substructure; IfcWall* otherwise resolves to Architecture Envelope seq 5 and lands on DAY 0 five phases ahead of itself. MEASURED under the class gate: Duplex 7, Hospital 28, HHS 0, Terminal 0. The class gate is load-bearing: Terminal's 20 IfcBeam matching /foundation/ and 25 IfcFooting already at seq 1 are correctly untouched.",
+      "classes": [
+        "IfcWall",
+        "IfcWallStandardCase"
+      ],
+      "pattern": "\\bfoundation\\b",
+      "flags": "i",
+      "phase": "Substructure",
+      "sequence": 1,
+      "resource": "CONCRETE_GANG"
+    },
+    {
+      "id": "stair_member_architecture",
+      "_why": "2026-08-27 §W_D0 C2/C3. A stair component authored as IfcMember lands at Superstructure seq 3 (structural framing) and was scheduled on DAY 0, three phases ahead of the IfcStairFlight it belongs to. Target copied verbatim from IfcStairFlight's own class rule. MEASURED under the class gate: Duplex 4 of 4, HHS 0 of 1450, Hospital 0 of 7127, Terminal 0 of 442. — WIDENED TO IfcSlab 2026-09-02 (AGENT_QUEUE.md A-15, spec 4D_MODEL_INTEGRITY.md §J.6.4 item 2): the same defect in a different export class, a stair TREAD authored as IfcSlab, which resolves to Superstructure seq 4 and is scheduled on day 0 ahead of the IfcStairFlight it hangs on (§W_D0 C3 HHS played layer: hanging{IfcSlab:3} waitingOn{IfcSlab<-IfcStairFlight|seq6}). MEASURED under this rule's own ^\\s*stair\\b pattern over the persisted cache of all four buildings (119,568 elements): IfcSlab named Stair* = HHS 4 of 83 (all 'Stair:Massiv - Stufen Naturstein:*', all seq 4), Duplex 0/21, Hospital 0/35, Terminal 0/705 — four elements fleet-wide, zero false positives. ⚠ CORRECTION to the older 'reclassifying IfcSlab moves it out of the support pool' premise (repeated in this file's furniture_tier1_safeguard note and in §J.6.4): supportPool is `e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4) || e.cls === 'IfcStairFlight'`, so the SECOND clause keeps an IfcSlab in the pool at any sequence — verified before/after on the cache, 4 in and 4 in. The removal consequence is real for IfcMember only.",
+      "classes": [
+        "IfcMember",
+        "IfcSlab"
+      ],
+      "pattern": "^\\s*stair\\b",
+      "flags": "i",
+      "phase": "Architecture Envelope",
+      "sequence": 6,
+      "resource": "CARPENTER"
+    },
+    {
+      "id": "finish_floor_finishes",
+      "_why": "2026-08-27 §W_D0 C2. A slab NAMED Finish Floor is a finish, not structure; IfcSlab otherwise resolves to Superstructure seq 4 and was scheduled on DAY 0 on top of a slab still being poured. MEASURED under the class gate: Duplex 14 (Wood x8, Ceramic Tile x6), nothing elsewhere.",
+      "classes": [
+        "IfcSlab"
+      ],
+      "pattern": "\\bfinish(ed)?[ _-]?floor\\b",
+      "flags": "i",
+      "phase": "Finishes",
+      "sequence": 11,
+      "resource": "FINISHER"
     }
   ],
   "SEQUENCE_RULES": {
@@ -433,7 +471,9 @@
         "IfcPile": 4,
         "IfcReinforcingBar": 50,
         "IfcRamp": 3,
-        "IfcRampFlight": 3
+        "IfcRampFlight": 3,
+        "IfcWall": 12,
+        "IfcWallStandardCase": 12
       }
     },
     "MASON": {
@@ -463,7 +503,8 @@
         "IfcRailing": 15,
         "IfcCurtainWall": 8,
         "IfcPlate": 12,
-        "IfcMember": 10
+        "IfcMember": 10,
+        "IfcSlab": 35
       }
     },
     "ROOFER": {
@@ -485,7 +526,8 @@
         "IfcFurniture": 8,
         "IfcFurnishingElement": 8,
         "IfcBuildingElementPart": 15,
-        "IfcBuildingElementProxy": 15
+        "IfcBuildingElementProxy": 15,
+        "IfcSlab": 35
       }
     },
     "LABORER": {
@@ -494,6 +536,12 @@
       "max_crews": 1,
       "trade": "General Laborer",
       "productivity": {}
-    }
+    },
+    "_productivity_basis_secs": 28800,
+    "_productivity_basis_secs_why": "bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §FUTURE-5A row A1 (2026-08-27 inventory, applied 2026-09-02, queue item B-3). 28800s = the 8h crew-day the productivity figures above are QUOTED AGAINST (secsPerUnit = this / productivity). This is NOT calendar.hours_per_shift (4D_template.json, =24, the crew's actual working day) — those are two different quantities that merely share the word 'hours'; collapsing them was the exact 3x conflation bug §FUTURE item 2 chased. Read by schedule_author.js _installSecs/materializeDefault/scheduleContiguous and time_machine.js getInstallSecs/§HR_COST, all with a literal 28800 fallback so a caller that omits this key (an older cached JSON, a minimal test object) is byte-identical to pre-2026-09-02 behaviour.",
+    "_zero_minute_floor_secs": 120,
+    "_zero_minute_floor_secs_why": "§FUTURE-5A row B3. The §TPL_ZERO_MINUTE floor schedule_author.js _installSecs returns when a class has no resource/productivity match. Same fallback-with-literal-120 pattern as _productivity_basis_secs. schedule_gate.js:564's OWN independent `el.installSecs || 120` safety net is NOT wired to this key — that module receives no rules/rates object at all (pure elements-in, times-out), and threading one in was judged out of proportion for this refactor; left as a documented literal there, kept in sync by hand.",
+    "_default_max_crews_author": 1,
+    "_default_max_crews_author_why": "§FUTURE-5A row B4 / separate finding #2 — schedule_author.js's five `(laborRates[t] && laborRates[t].max_crews) || 1` sites (pricing side). schedule_gate.js has its OWN, DIFFERENT default (`MAX_CREWS_DEFAULT = 3`, pacing/solve side) for the identical missing-value case — a real, NAMED, NOT-fixed-here divergence (both defaults are dormant today because all 10 named trades carry an explicit max_crews; only an unnamed/_DEFAULT resource would ever hit either). Deliberately NOT unified into one shared key: doing so would silently change one side's shipped output 3x for any building that ever exercises the fallback, which is a calibration decision, not a refactor. This key relocates ONLY the author-side literal; the gate-side `3` stays a documented JS constant in schedule_gate.js (a pure, rules-free module — see that file's own comment) — do not add a `_default_max_crews_gate` key here unless something is wired to read it, or it becomes exactly the 'config nobody loads' defect this same queue item's Part 2 fixes elsewhere."
   }
 }

@@ -136,7 +136,11 @@ var LABOR_RATES = {
   },
   CONCRETE_GANG: {
     rate_per_day: 145, crew_size: 6, max_crews: 3, trade: 'Concrete Gang (Mixed)',
-    productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3}
+    // §TPL_ZERO_MINUTE guard (2026-08-27): foundation_wall_substructure below reassigns
+    // IfcWall/IfcWallStandardCase to CONCRETE_GANG, which carried neither — same silent 120s-floor
+    // loss §S65 defect 5 hit. Values COPIED VERBATIM from MASON, those classes' own canonical
+    // trade (IfcWall:12, IfcWallStandardCase:12) — extracted, not invented.
+    productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3,IfcWall:12,IfcWallStandardCase:12}
   },
   MASON: {
     rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Mason (Skilled) + Laborers',
@@ -157,7 +161,14 @@ var LABOR_RATES = {
     // fixed those elements' PHASE and silently destroyed their DURATION (Hospital 2211 IfcPlate +
     // 7122 IfcMember, HHS 438 IfcPlate, all 120s). Values COPIED verbatim from STEEL_ERECTOR, the
     // class's own canonical trade above (IfcPlate:12, IfcMember:10) — extracted, not invented.
-    productivity: {IfcDoor:6,IfcWindow:6,IfcStair:2,IfcStairFlight:3,IfcRailing:15,IfcCurtainWall:8,IfcPlate:12,IfcMember:10}
+    // §TPL_ZERO_MINUTE guard (2026-09-02, AGENT_QUEUE.md A-15): stair_member_architecture below was
+    // widened to IfcSlab, and CARPENTER carried no IfcSlab — MEASURED on HHS, the four stair treads
+    // immediately started reporting `§TPL_ZERO_MINUTE cls=IfcSlab resource=CARPENTER
+    // reason=no-productivity-key — 120s floor, this class draws a zero-width bar`. Value COPIED
+    // VERBATIM from CONCRETE_GANG, IfcSlab's own canonical trade (35) — exactly what FINISHER below
+    // did for the same reason when finish_floor_finishes reassigned a named IfcSlab subset. This is
+    // the table's own documented rule ("copy the class's canonical trade"), not a number typed in.
+    productivity: {IfcDoor:6,IfcWindow:6,IfcStair:2,IfcStairFlight:3,IfcRailing:15,IfcCurtainWall:8,IfcPlate:12,IfcMember:10,IfcSlab:35}
   },
   ROOFER: {
     rate_per_day: 175, crew_size: 3, max_crews: 1, trade: 'Roofer (Skilled)',
@@ -168,12 +179,26 @@ var LABOR_RATES = {
     // §TPL_ZERO_MINUTE (§S65 defect 5): furniture_generic_bucket reassigns IfcBuildingElementProxy/
     // IfcBuildingElementPart to FINISHER, which carried neither — same silent duration loss as the
     // curtain-wall override above. Values COPIED from MASON, those classes' own canonical trade (15).
-    productivity: {IfcCovering:20,IfcFurniture:8,IfcFurnishingElement:8,IfcBuildingElementPart:15,IfcBuildingElementProxy:15}
+    // §TPL_ZERO_MINUTE guard (2026-08-27): finish_floor_finishes below reassigns a NAMED subset of
+    // IfcSlab to FINISHER, which carried no IfcSlab. Value COPIED VERBATIM from CONCRETE_GANG,
+    // IfcSlab's own canonical trade (35) — the same "copy the class's canonical trade" rule this
+    // table's existing entries were built by, not a new number typed in for a finish.
+    productivity: {IfcCovering:20,IfcFurniture:8,IfcFurnishingElement:8,IfcBuildingElementPart:15,IfcBuildingElementProxy:15,IfcSlab:35}
   },
   LABORER: {
     rate_per_day: 95, crew_size: 1, max_crews: 1, trade: 'General Laborer',
     productivity: {}
   },
+  // §FUTURE-5A (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md, applied 2026-09-02, queue item B-3).
+  // THIS is the object window.LABOR_RATES actually resolves to on every real viewer.html load
+  // (rates/sequence_rules.json's own header: "viewer.html never calls loadSequenceRules()... this
+  // file is their MIRROR plus the Settings-JSON-editor override surface") — so these three keys
+  // MUST be kept here, byte-identical to their sequence_rules.json mirror, or the JSON edit a
+  // Settings-JSON-editor user makes is invisible on the default (non-overridden) path. See
+  // sequence_rules.json LABOR_RATES for the full provenance comment on each.
+  _productivity_basis_secs: 28800,     // A1 — the 8h crew-day the productivity figures are quoted against
+  _zero_minute_floor_secs: 120,        // B3 — the §TPL_ZERO_MINUTE no-data floor
+  _default_max_crews_author: 1,        // B4 — pricing-side crew-cap fallback (schedule_gate.js keeps its own, different, 3)
 };
 
 // ============================================================================
@@ -362,6 +387,95 @@ var SEQUENCE_NAME_OVERRIDES = [
     id: 'furniture_generic_bucket',
     classes: ['IfcBuildingElementProxy', 'IfcBuildingElementPart'],
     pattern: '\\b(chair|desk|table|sofa|couch|settee|cabinet|wardrobe|shelf|shelving|bookcase|credenza|armchair|furniture|dresser|nightstand|stool|bench)\\b',
+    flags: 'i',
+    phase: 'Finishes',
+    sequence: 11,
+    resource: 'FINISHER'
+  },
+  // §FOUNDATION_WALL_SUBSTRUCTURE (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §W_D0 C2
+  // — Witness: viewer/tests/witness_day0_integrity.js). A wall NAMED "Foundation" is substructure,
+  // but ifc_class alone cannot say so: IfcWall/IfcWallStandardCase resolve to Architecture Envelope
+  // seq 5, so Duplex's 2 'Basic Wall:Foundation - Concrete (417mm)' at base -1.25 were scheduled
+  // into DAY 0 as ENVELOPE work, five phases ahead of themselves, and showed up as C2 intruders.
+  // MEASURED across every shipped building before writing this pattern (the same discipline
+  // furniture_generic_bucket's header records): under the IfcWall class gate it matches exactly
+  // Duplex 7 ('Foundation - Concrete (417mm)' x4, '(435mm)' x3) and Hospital 28 ('Foundation -
+  // 300mm Concrete - Retaining' x18, '375mm w_step' x8, '200mm Retaining' x2), and NOTHING in
+  // HHS/Terminal. The class gate is load-bearing, not decoration: Terminal has 20 IfcBeam matching
+  // /foundation/ (foundation beams, already structural at seq 3) and Duplex/Hospital 25 IfcFooting
+  // already at seq 1 — all correctly untouched, per the standing rule "don't touch classes that are
+  // already unambiguous". Target COPIED from slab_on_grade_substructure / the pile override above,
+  // the two existing seq-1 name rules.
+  {
+    id: 'foundation_wall_substructure',
+    classes: ['IfcWall', 'IfcWallStandardCase'],
+    pattern: '\\bfoundation\\b',
+    flags: 'i',
+    phase: 'Substructure',
+    sequence: 1,
+    resource: 'CONCRETE_GANG'
+  },
+  // §FINISH_FLOOR_FINISHES (2026-08-27, same witness/claim). A slab NAMED "Finish Floor" is a floor
+  // FINISH, not structure — IfcSlab resolves to Superstructure seq 4, so Duplex's 6 'Floor:Finish
+  // Floor - Wood' / '- Ceramic Tile' were scheduled on DAY 0 alongside the foundations, and each
+  // sits at base z~0.00 on a slab that is itself still being poured. MEASURED fleet-wide: under the
+  // IfcSlab class gate this matches exactly Duplex 14 (Wood x8, Ceramic Tile x6) and NOTHING in
+  // HHS/Hospital/Terminal. Target COPIED from furniture_generic_bucket above (Finishes / 11 /
+  // FINISHER), the existing rule for content that is finish rather than fabric.
+  // NOTE the interaction, deliberate: 1 of the 14 is currently reclassified by §GROUNDWORK_SLAB to
+  // phase Substructure at seq 4. Name overrides run AHEAD of the class lookup and groundworkSlabs
+  // only mutates phase in place, so this rule wins for a slab that is a named finish — which is
+  // correct: a wood finish floor is not slab-on-grade groundworks.
+  // §STAIR_MEMBER_ARCHITECTURE (2026-08-27, same witness/claim as the two rules above). A stair
+  // component authored as IfcMember: the class rule sends IfcMember to Superstructure seq 3
+  // (STEEL_ERECTOR, structural framing), so Duplex's stair stringer — spanning base -0.095 to top
+  // 3.005, a full storey — was scheduled on DAY 0 as frame steel, three phases ahead of the
+  // IfcStairFlight it is part of, and hung there with nothing under it. Its own siblings in the
+  // SAME building already resolve correctly: IfcStairFlight x2 and IfcRailing x4 at Architecture
+  // Envelope seq 6. Target COPIED VERBATIM from IfcStairFlight's own class rule (line ~267),
+  // the family this element belongs to — extracted, not chosen.
+  // MEASURED fleet-wide before writing, under the IfcMember class gate: Duplex 4 (all 4 of its
+  // IfcMember are named 'Stair:...'), HHS 0 of 1450, Hospital 0 of 7127, Terminal 0 of 442 —
+  // 9,019 IfcMember across the rest of the fleet, zero false positives. Anchored ^stair\b so a
+  // 'Handrail for Stair' or a stair-adjacent brace is not swept in by a bare substring.
+  // NOTE the deliberate consequence: schedule_gate supportPool is seq<=4 u IfcSlab u
+  // IfcStairFlight u IfcWall*, so moving these from seq 3 to seq 6 REMOVES them from the support
+  // pool. That is correct — a stair stringer carries the stair, not the building.
+  //
+  // ── WIDENED TO IfcSlab, 2026-09-02 (bim-compiler prompts/AGENT_QUEUE.md A-15, spec
+  //    4D_MODEL_INTEGRITY.md §J.6.4 item 2) ─────────────────────────────────────────────────────
+  // The SAME defect, a different export class: a stair TREAD authored as IfcSlab resolves through
+  // the IfcSlab class rule to Superstructure seq 4 and is scheduled on day 0, ahead of the
+  // IfcStairFlight it is part of — and hangs on it. §W_D0 C3 HHS_Office_Federated, on the played
+  // layer: `hanging{IfcSlab:3} waitingOn{IfcSlab<-IfcStairFlight|seq6|Architecture Envelope:3}`.
+  // MEASURED under this rule's own `^\s*stair\b` pattern, over the persisted cache of all four
+  // buildings (119,568 elements, origin/main @ 85fd0732): IfcSlab whose name starts "Stair" =
+  //   HHS 4 of 83  (all four "Stair:Massiv - Stufen Naturstein:*", all at seq 4)
+  //   Duplex 0/21 · Hospital 0/35 · Terminal 0/705.
+  // Four elements fleet-wide, zero false positives — the same anchored pattern that already keeps
+  // a "Handrail for Stair" out. Target unchanged: it is IfcStairFlight's own class rule, which is
+  // exactly the family a tread belongs to.
+  //
+  // ⚠ CORRECTION TO THE NOTE ABOVE, and to §J.6.4's own wording, MEASURED not assumed. Widening
+  // this rule to IfcSlab does NOT take those elements out of the support pool: supportPool
+  // (schedule_gate.js:1348) is `e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4) ||
+  // e.cls === 'IfcStairFlight'` — the SECOND clause catches an IfcSlab at any sequence, so all four
+  // stay in the pool across the move (verified before/after on the cache: 4 in, 4 in). The
+  // "moves IfcSlab out of supportPool" premise that held this change back was wrong; the removal
+  // consequence is real for IfcMember (seq 3 -> 6 crosses the `<= 4` clause) and only for IfcMember.
+  {
+    id: 'stair_member_architecture',
+    classes: ['IfcMember', 'IfcSlab'],
+    pattern: '^\\s*stair\\b',
+    flags: 'i',
+    phase: 'Architecture Envelope',
+    sequence: 6,
+    resource: 'CARPENTER'
+  },
+  {
+    id: 'finish_floor_finishes',
+    classes: ['IfcSlab'],
+    pattern: '\\bfinish(ed)?[ _-]?floor\\b',
     flags: 'i',
     phase: 'Finishes',
     sequence: 11,

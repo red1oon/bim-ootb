@@ -142,11 +142,23 @@
         if (!/^\d{4}-\d{2}-\d{2}/.test(String(val))) return 'type:date';
         break;
       case 'list':
-        var opts = (f.ref && store.__meta && store.__meta[f.ref]) ? store.__meta[f.ref] : null;
+        // §P2 (ERP_IDEMPIERE_UX_PARITY.md §IMPL P2.5, W-PARITY-REFLIST): an AD-folded List carries its own
+        // AD_Ref_List option map (f.options); the curated store's __meta[f.ref] is the legacy source.
+        var opts = f.options || ((f.ref && store && store.__meta && store.__meta[f.ref]) ? store.__meta[f.ref] : null);
         if (opts && !opts.hasOwnProperty(String(val))) return 'list:not-an-option';
+        break;
+      case 'yesno':
+        // §P2: DisplayType 20 may only ever persist 'Y' or 'N' (iDempiere YesNo column semantics).
+        if (String(val) !== 'Y' && String(val) !== 'N') return 'yesno:not-Y/N';
         break;
       case 'fk':
         if (!isFinite(Number(val))) return 'type:fk';
+        // §P3 (ERP_IDEMPIERE_UX_PARITY.md §P3-SPEC P3.6 — W-PARITY-VALRULE): the save-side half of the
+        // AD_Val_Rule. f.admitted is the id-set the interpreter's own where-clause returned when the picker
+        // was built (crud_overlay.populateRefs), so the OFFERED set and the ACCEPTED set are the same set by
+        // construction and cannot drift apart. Absent map (no rule on this column, or the arm degraded and
+        // said so in the log) → unchanged behaviour, never a blanket reject.
+        if (f.admitted && !Object.prototype.hasOwnProperty.call(f.admitted, String(val))) return 'valrule:not-admitted';
         break;
       case 'string':
         if (V.regex && !new RegExp(V.regex).test(String(val))) return 'regex:' + (V.valRule || V.regex);
@@ -445,8 +457,8 @@
             }
             // Task 1 — stamp Updated/UpdatedBy for CRUD_UPDATE (iDempiere PO.save parity)
             var ucols = _getTableCols(want);
-            if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex['Updated'] = _fmtKernelTs(opTs);
-            if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['UpdatedBy'] = p.actor;
+            if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex['updated'] = _fmtKernelTs(opTs);   // lowercase — same #968 convention as its `updatedby` sibling below; CREATE stamps `updated` lowercase (:431), so the mixed-case form left a created-then-updated row carrying BOTH keys
+            if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['updatedby'] = p.actor;   // lowercase — the #968 convention (was 'UpdatedBy': a created-then-updated row carried BOTH keys; W-AUDIT-CHANGELOG/W-RECINFO caught it)
           }
         } else if (type === 'CRUD_DELETE') {
           if (p.id != null && hidden.indexOf(p.id) < 0) hidden.push(p.id);
@@ -608,11 +620,23 @@
   // select always landed on the FIRST __meta key (DR); gatherVals then read DR off a CO order and the save
   // diff emitted a docstatus flip the user never touched (the silent-corruption bug, UI_UNPARK_RESUME B-3).
   // A current value missing from the ref map is PREPENDED (kept), never silently swapped for the first option.
+  // §P2 (W-PARITY-REFLIST): `optsMap` may also be the ORDERED array [{value,name}] an AD_Ref_List fold produces —
+  // a plain object would re-order numeric-like values (PriorityRule 3/5/7 → JS integer-key ordering), so the array
+  // form is the order-preserving one. Same output shape either way.
   function listOptions(optsMap, cur) {
-    var keys = Object.keys(optsMap || {}), c = cur == null ? '' : String(cur);
+    var c = cur == null ? '' : String(cur), keys, labelOf;
+    if (Array.isArray(optsMap)) {
+      var names = {}; keys = [];
+      optsMap.forEach(function (o) { if (!o) return; var v = String(o.value); keys.push(v); names[v] = o.name; });
+      labelOf = function (k) { return names[k]; };
+    } else {
+      keys = Object.keys(optsMap || {});
+      labelOf = function (k) { return optsMap && optsMap[k]; };
+    }
     if (c !== '' && keys.indexOf(c) < 0) keys.unshift(c);
     return keys.map(function (k) {
-      return { value: k, label: k + (optsMap && optsMap[k] ? ' · ' + optsMap[k] : ''), selected: c !== '' && k === c };
+      var n = labelOf(k);
+      return { value: k, label: k + (n ? ' · ' + n : ''), selected: c !== '' && k === c };
     });
   }
 
@@ -667,19 +691,25 @@
   //   the raw AD_Reference_ID (ADParser exposes `referenceId`) so it is correct even where the renderer's coarse
   //   REF_TYPES string is imperfect (e.g. 20=Yes-No, 18=Table). Returns null for an unknown id (→ string fallback).
   //   number: 11 Integer · 12 Amount · 22 Number · 29 Quantity. date: 15 Date · 16 DateTime · 24 Time. fk: 18 Table ·
-  //   19 TableDir · 30 Search. id: 13 ID (hidden PK) · 28 Button (dropped by the caller). else (10 String · 14 Text ·
-  //   17 List · 20 Yes-No · …) → string (LEG-1: list/yesno render as an editable text of the raw value; AD_Ref_List
-  //   option-fold is a named follow-on).
+  //   19 TableDir · 30 Search. id: 13 ID (hidden PK) · 28 Button (dropped by the caller). list: 17 List (AD_Ref_List
+  //   options — §P2, LEG-1 retired 2026-09-02, ERP_IDEMPIERE_UX_PARITY.md §IMPL P2.3). yesno: 20 Yes-No (a Y/N
+  //   control). else (10 String · 14 Text · …) → string.
   function mapRefDisplayType(rid) {
     switch (Number(rid)) {
-      case 11: case 12: case 22: case 29: return 'number';
+      // §P7 P7.3 (ERP_IDEMPIERE_UX_PARITY.md §P7-EXTRACT E4 — W-PARITY-MANDATORY-CREATE): 37 CostPrice is
+      // NUMERIC in iDempiere (DisplayType.java:329-333 isNumeric = {Amount 12, Number 22, CostPrice 37,
+      // Integer 11, Quantity 29}; SystemIDs.java:132 REFERENCE_DATATYPE_COSTPRICE = 37). It fell through to
+      // `string` here, which is why C_OrderLine's mandatory PriceEntered/PriceActual/PriceList rendered as
+      // un-defaulted text boxes instead of the `0` GridField.defaultFromDatatype:1044-1047 gives them.
+      case 11: case 12: case 22: case 29: case 37: return 'number';
       case 15: case 16: case 24: return 'date';
       case 18: case 19: case 30: return 'fk';
       case 13: return 'id'; case 28: return 'button';
+      case 17: return 'list'; case 20: return 'yesno';
       // string-rendered ids — MUST be enumerated so a known id never falls through to the coarse referenceType
-      // fallback (where 20=Yes-No is mislabelled 'table'→fk): 10 String · 14 Text · 17 List · 20 Yes-No · 21 Location
-      // · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment · 34 Memo · 35 PAttribute · 38 PrinterName.
-      case 10: case 14: case 17: case 20: case 21: case 23: case 25: case 31: case 32: case 33: case 34: case 35: case 38: return 'string';
+      // fallback: 10 String · 14 Text · 21 Location · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment
+      // · 34 Memo · 35 PAttribute · 38 PrinterName.
+      case 10: case 14: case 21: case 23: case 25: case 31: case 32: case 33: case 34: case 35: case 38: return 'string';
       default: return null;   // truly unknown id → caller falls back to the referenceType string
     }
   }
@@ -690,13 +720,51 @@
       case 'date': case 'datetime': return 'date';
       case 'tableDirect': case 'table': case 'search': return 'fk';
       case 'id': return 'id'; case 'button': return 'button';
-      default: return 'string';   // string · text · char · list · yesno · unknown
+      case 'list': return 'list'; case 'yesno': return 'yesno';   // §P2 — LEG-1 retired
+      default: return 'string';   // string · text · char · unknown
     }
+  }
+  // ── §P7 (ERP_IDEMPIERE_UX_PARITY.md §P7-EXTRACT E5 — Witness: W-PARITY-MANDATORY-CREATE) ────────────────
+  // gridFieldMandatoryExempt — a FAITHFUL port of GridField.isMandatory(boolean):377-385. In a WINDOW,
+  // iDempiere never treats these five column shapes as mandatory, whatever AD_Column.IsMandatory says,
+  // "(persistence layer manages them)":
+  //     if (m_gridTab != null && ( (m_vo.IsKey && ColumnName.endsWith("_ID"))
+  //        || ColumnName.startsWith("Created") || ColumnName.startsWith("Updated")
+  //        || ColumnName.equals("Value") || ColumnName.equals("DocumentNo")
+  //        || ColumnName.equals("M_AttributeSetInstance_ID")   //  0 is valid
+  //        )) return false;
+  // This is why turning the create-time mandatory check on does NOT need "New-time defaults for DocumentNo
+  // and M_AttributeSetInstance_ID" — iDempiere does not require them either. Case-sensitive on purpose: the
+  // Java compares the raw AD ColumnName, so the AD casing is what is tested (not our lower-cased spec.col).
+  function gridFieldMandatoryExempt(columnName, isKey) {
+    var c = String(columnName == null ? '' : columnName);
+    if (isKey && /_ID$/.test(c)) return 'key_id';
+    if (c.indexOf('Created') === 0) return 'Created*';
+    if (c.indexOf('Updated') === 0) return 'Updated*';
+    if (c === 'Value') return 'Value';
+    if (c === 'DocumentNo') return 'DocumentNo';
+    if (c === 'M_AttributeSetInstance_ID') return 'M_AttributeSetInstance_ID';
+    return null;
+  }
+  // §P7 P7.2 — a FAITHFUL port of GridField.defaultFromDatatype():1022-1051, the LAST stage of
+  // getDefault()'s "123457" priority chain (GridField.java:98). SOURCE ORDER IS LOAD-BEARING: the `_ID` →
+  // null test (:1038-1041) precedes the numeric → "0" test (:1044-1047), so NO *_ID column ever gets 0 here
+  // — M_AttributeSetInstance_ID included (its 0 comes from MOrderLine, not the grid). Returns null when the
+  // stage yields nothing, so the caller leaves the field empty rather than inventing a value.
+  //     Button non-_ID → "N" (:1027-1030) · YesNo → "N" (:1033-1036) · _ID → null · numeric → "0"
+  function gridFieldDatatypeDefault(columnName, refId, type) {
+    var c = String(columnName == null ? '' : columnName), r = Number(refId);
+    if (r === 28 && !/_ID$/.test(c)) return 'N';
+    if (r === 20 || type === 'yesno') return 'N';
+    if (/_ID$/.test(c)) return null;
+    if (type === 'number') return '0';               // type already folds DisplayType.isNumeric (incl. 37, P7.3)
+    return null;
   }
   function foldCrudSpec(adFields, opts) {
     opts = opts || {};
     var roTable = !!opts.isView || !!opts.isReadOnly;     // AD_Table.IsView or AD_Tab.IsReadOnly → the whole row is read-only
     var forVerb = opts.forVerb || 'update';
+    var exemptLog = [], dtLog = [], exprLog = [], unresolvedLog = [], refTblLog = [];   // §P7/§P8 — witness seams, emitted once per fold
     var fields = (adFields || []).map(function (f) {
       // type from the AUTHORITATIVE AD_Reference_ID; fall back to the coarse referenceType string.
       var type = (f && f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f && f.referenceType);
@@ -706,8 +774,12 @@
       // IsUpdateable='N' is SETTABLE on New (iDempiere fills it once) but display-only on Edit; isReadOnly + a
       // read-only table/tab are always read-only.
       var readonly = !!f.isReadOnly || roTable || (forVerb === 'update' && f.isUpdateable === false);
+      // §P7 P7.1 — GridField.isMandatory():377-385's window exemptions, before anything else reads `required`.
+      var exempt = gridFieldMandatoryExempt(f.columnName, !!f.isKey);
+      if (exempt) exemptLog.push(String(f.columnName) + ':' + exempt);
       var spec = { col: String(f.columnName).toLowerCase(), label: f.name || f.columnName, type: type,
-                   required: !!f.isMandatory, readonly: readonly };
+                   required: !!f.isMandatory && !exempt, readonly: readonly };
+      if (exempt) spec.mandatoryexempt = exempt;
       // DEFAULTS: resolve the well-known AD context variables iDempiere's Env fills on New (@#AD_Client_ID@,
       // @#AD_Org_ID@, @#Date@) from opts.ctx — so a mandatory system column (AD_Client_ID/AD_Org_ID) doesn't block a
       // folded create; keep PLAIN literals (0/N/Y/DR…); drop any OTHER unevaluated expression (@SQL=…, functions) —
@@ -720,13 +792,149 @@
         else if (ds === '@#AD_Org_ID@' && ctx.orgId != null) spec.default = ctx.orgId;
         else if (ds === '@#Date@' && ctx.today) spec.default = ctx.today;
         else if (!/[@()]/.test(ds)) spec.default = d;
+        else {
+          // §P7 P7.7 — GridField.defaultFromExpression():875-913, the DefaultValue-expression stage (3) of
+          // getDefault()'s "123457" chain, now resolved against the WINDOW context instead of dropped.
+          // Faithful to the Java: tokenize on `,;` (:884); `@SysDate@` → now (:888-889); `@…@` → Env.parseContext
+          // with ignoreUnparsable=false, so an unresolved token yields "" and the NEXT token is tried (:890-891,
+          // :904); a quoted 'String' has its quotes stripped (:892-893); the first non-empty wins (:907).
+          // `@SQL=` is stage 2 and is NOT run here (no db in a pure fold) — named in §P7-NOT-BUILT.
+          // ctx.win is the window context the host supplies: on a DETAIL tab it is the PARENT row (plus Env
+          // globals), which is what fills C_OrderLine's @C_BPartner_Location_ID@ / @DateOrdered@ /
+          // @M_Warehouse_ID@ / @AD_Client_ID@ / @AD_Org_ID@ — five AD-mandatory line columns.
+          var win = ctx.win || {}, resolved = null;
+          if (ds.indexOf('@SQL=') !== 0) {
+            ds.split(/[,;]/).some(function (tokRaw) {
+              var tok = String(tokRaw).trim(); if (!tok) return false;
+              var v = null;
+              if (tok === '@SysDate@') v = ctx.today || null;
+              else if (tok.indexOf('@') >= 0) {
+                var m = /^@([#$]?[A-Za-z0-9_]+)@$/.exec(tok);
+                if (m) { var w = win[String(m[1]).toLowerCase()]; if (w == null) w = win[String(m[1]).toLowerCase().replace(/^[#$]/, '')]; v = (w == null || String(w) === '') ? null : w; }
+              } else if (tok.indexOf("'") >= 0) v = tok.replace(/'/g, ' ').trim();
+              else v = tok;
+              if (v != null && String(v) !== '') { resolved = v; return true; }
+              return false;
+            });
+          }
+          if (resolved != null) { spec.default = resolved; spec.defaultsource = 'expression'; exprLog.push(spec.col + '="' + ds + '"→' + resolved); }
+          else if (ds.indexOf('@') >= 0) unresolvedLog.push(spec.col + '="' + ds + '"');
+        }
       }
-      if (type === 'fk') spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
+      // §P7 P7.2 — the DATA-TYPE stage of GridField.getDefault(), reached ONLY when no earlier stage
+      // resolved (Java: priority "123457", :98). Faithful to :1022-1051 including its order. iDempiere's
+      // mandatory check then reads this filled row (GridTable.dataNew:2129-2143 → getMandatory:1985, where
+      // "0" and "N" are NOT empty), which is exactly why an untouched New can be required-checked at all.
+      if (!Object.prototype.hasOwnProperty.call(spec, 'default')) {
+        var dtd = gridFieldDatatypeDefault(f.columnName, f.referenceId, type);
+        if (dtd != null) { spec.default = dtd; spec.defaultsource = 'datatype'; dtLog.push(spec.col + '=' + dtd); }
+      }
+      if (type === 'fk') {
+        // §P8 P8.2 (ERP_IDEMPIERE_UX_PARITY.md §P8-SPEC — Witness: W-PARITY-REFTABLE): `<col minus _id>` is
+        // iDempiere's TableDIR rule (DisplayType 19, MLookupFactory.getLookup_TableDir) and it is WRONG for
+        // DisplayType 18 (Table) / 30 (Search), whose target is DECLARED in AD_Ref_Table
+        // (getLookup_Table: TableName + AD_Key + AD_Display + WhereClause + OrderByClause). The fold stays
+        // PURE — the host injects opts.refTable(refValueId), exactly as §P2.7 injects opts.refList.
+        // No AD_Ref_Table row (or no resolver) → keep the convention verbatim, unchanged behaviour.
+        spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
+        var rt = (typeof opts.refTable === 'function' && f.referenceValueId != null) ? opts.refTable(f.referenceValueId) : null;
+        if (rt && rt.tableName) {
+          spec.ref = String(rt.tableName).toLowerCase();
+          if (rt.keyCol) spec.refkey = String(rt.keyCol).toLowerCase();
+          if (rt.whereClause) spec.refwhere = rt.whereClause;
+          if (rt.orderByClause) spec.reforder = rt.orderByClause;
+          spec.refsource = 'AD_Ref_Table:' + f.referenceValueId;
+          refTblLog.push(spec.col + '→' + spec.ref + (rt.whereClause ? '+where' : ''));
+        }
+      }
+      // §P3 (ERP_IDEMPIERE_UX_PARITY.md §P3-SPEC P3.3 — Witness: W-PARITY-VALRULE): carry the lookup's
+      // AD_Val_Rule id so the picker can filter to the rows the rule admits (MLookupFactory.java:122-125 —
+      // the rule's Code IS the lookup's ValidationCode). The fold stays PURE: no db, no engine call here;
+      // crud_overlay.populateRefs runs the interpreter (ad_valrule.js) when it has a real db handle.
+      if (f.valRuleId != null && String(f.valRuleId) !== '') spec.valruleid = f.valRuleId;
+      // §P2 (W-PARITY-REFLIST): a List column's option set is its AD_Reference_Value_ID's AD_Ref_List rows. The
+      // fold stays PURE — the host supplies opts.refList(id) → [{value,name}] (ADParser.resolveReference, active
+      // rows, ordered per AD_Reference.IsOrderByValue). optionList keeps that order for rendering; options is the
+      // validator's membership map. Absent resolver → the editor still renders a select of the raw value.
+      if (type === 'list') {
+        if (f.referenceValueId != null) spec.refListId = f.referenceValueId;
+        var rl = (typeof opts.refList === 'function' && f.referenceValueId != null) ? opts.refList(f.referenceValueId) : null;
+        if (rl && rl.length) {
+          spec.optionList = rl.map(function (o) { return { value: String(o.value), name: o.name == null ? '' : String(o.name) }; });
+          spec.options = {}; spec.optionList.forEach(function (o) { spec.options[o.value] = o.name; });
+        }
+      }
       if (f.displayLogic != null && String(f.displayLogic).trim() !== '') spec.displaylogic = f.displayLogic;
+      // §P1 (W-PARITY-FIELDSET): the other two AD logic strings, now selected by ad_parser.getFields (P2.1); the
+      // evaluator (effectiveFlags) already understood these keys — they simply never arrived.
+      if (f.readOnlyLogic != null && String(f.readOnlyLogic).trim() !== '') spec.readonlylogic = f.readOnlyLogic;
+      if (f.mandatoryLogic != null && String(f.mandatoryLogic).trim() !== '') spec.mandatorylogic = f.mandatoryLogic;
+      if (f.seqNo != null) spec.seq = f.seqNo;
       return spec;
     });
+    // §P7 — the two ports made witnessable per fold (a 0 on either is a real, reportable value, not silence).
+    if (typeof console !== 'undefined') {
+      console.log('§GRIDFIELD-EXEMPT key=' + (opts.key || '?') + ' n=' + exemptLog.length + ' cols=[' + exemptLog.join(',') +
+                  '] (GridField.isMandatory:377-385)');
+      console.log('§GRIDFIELD-DATATYPE-DEFAULT key=' + (opts.key || '?') + ' n=' + dtLog.length + ' [' + dtLog.join(',') +
+                  '] (GridField.defaultFromDatatype:1022-1051)');
+      console.log('§GRIDFIELD-EXPR-DEFAULT key=' + (opts.key || '?') + ' resolved=' + exprLog.length + ' [' + exprLog.join(' · ') +
+                  '] unresolved=' + unresolvedLog.length + ' [' + unresolvedLog.join(' · ') + '] (GridField.defaultFromExpression:875-913)');
+      console.log('§REFTABLE-FOLD key=' + (opts.key || '?') + ' resolved=' + refTblLog.length + ' [' + refTblLog.join(',') +
+                  '] (MLookupFactory.getLookup_Table — DisplayType 18/30 targets that <col minus _id> gets wrong)');
+    }
     return { key: opts.key, title: opts.title || opts.key, folded: true, isView: !!opts.isView,
              verbs: roTable ? [] : ['create', 'update', 'delete'], fields: fields };
+  }
+
+  // ── §P1 (ERP_IDEMPIERE_UX_PARITY.md §IMPL P1.1 — Witness: W-PARITY-FIELDSET) ─────────────────────────────
+  // mergeCuratedWithFold — retire the curated-5 hand list as the FIELD SET without retiring what it alone can
+  // express. PURE. The AD fold is the source of WHICH fields exist; the curated entry contributes verbs/docAction/
+  // ownerGated/cas (the O2C contract nine merged PRs closed against) and the PIN ORDER of its own columns.
+  //   fields = [curated fields, in curated order, each layered with the AD sibling's displaylogic/readonlylogic/
+  //             mandatorylogic/seq when the curated carries none]
+  //          ++ [every folded field whose col is not curated, in AD SeqNo (fold) order]
+  // Curated type/required/readonly/default/validation/ref are NOT overridden: measured 2026-09-02, the AD marks
+  // GrandTotal IsReadOnly on tabs 186/263 while docAction.requires needs it typed (totals are not engine-derived
+  // yet) — an attribute override would make a Sales Order un-completable (§IMPL F3).
+  function mergeCuratedWithFold(curated, folded) {
+    if (!curated) return folded || null;
+    if (!folded || !folded.fields) return curated;
+    var out = {}, k;
+    for (k in curated) if (Object.prototype.hasOwnProperty.call(curated, k) && k !== 'fields') out[k] = curated[k];
+    var byCol = {};
+    (folded.fields || []).forEach(function (f) { byCol[String(f.col).toLowerCase()] = f; });
+    var pinned = (curated.fields || []).map(function (cf) {
+      var o = {}; for (k in cf) if (Object.prototype.hasOwnProperty.call(cf, k)) o[k] = cf[k];
+      var ad = byCol[String(cf.col).toLowerCase()];
+      if (ad) {
+        // §P3 (ERP_IDEMPIERE_UX_PARITY.md §P3-SPEC P3.3): `valruleid` joins the three AD logic strings as a
+        // LAYERED key. It is additive — no curated field has ever carried one — and it does not touch the
+        // attributes §IMPL F3 pinned deliberately (type/required/readonly/default/validation/ref). Without
+        // this, a lookup that is BOTH curated and val-ruled kept the unfiltered picker: measured 2026-09-02,
+        // c_order.C_BPartner_ID (curated, rule 230) offered all 113 partners instead of the 42 iDempiere
+        // admits, while the same rule bit correctly on every non-curated column.
+        // §P8 P8.3: `refkey`/`refwhere`/`reforder`/`refsource` join the layered list — purely ADDITIVE (no
+        // curated field has ever carried one), so §IMPL F3's deliberately-pinned attributes are untouched.
+        // `ref` itself is layered ONLY when the AD resolved a target from AD_Ref_Table AND the curated ref
+        // does not name a real table under the convention — bill_bpartner_id IS a curated pin on c_order AND
+        // one of the 18, so without this the fix would miss the very column §MEASURED lists. This is the
+        // §P3-RESULT-DEFECT-2 lesson (a curated pin swallowed the rule) applied in advance rather than after.
+        ['displaylogic', 'readonlylogic', 'mandatorylogic', 'valruleid',
+         'refkey', 'refwhere', 'reforder', 'refsource'].forEach(function (lk) {
+          if ((o[lk] == null || String(o[lk]).trim() === '') && ad[lk] != null && String(ad[lk]).trim() !== '') o[lk] = ad[lk];
+        });
+        if (ad.refsource && ad.ref && o.type === 'fk' && String(o.ref || '') !== String(ad.ref)) o.ref = ad.ref;
+        if (o.seq == null && ad.seq != null) o.seq = ad.seq;
+      }
+      return o;
+    });
+    var seen = {}; pinned.forEach(function (p) { seen[String(p.col).toLowerCase()] = 1; });
+    var appended = (folded.fields || []).filter(function (f) { return !seen[String(f.col).toLowerCase()]; });
+    out.fields = pinned.concat(appended);
+    out.merged = true; out.pinned = pinned.length; out.appended = appended.length;
+    out.adFields = (folded.fields || []).length; out.curatedFields = (curated.fields || []).length;
+    return out;
   }
 
   // ═══ The formerly-STRANDED pure block (§S60) — these lived BELOW the DOM half’s node return in
@@ -1003,7 +1211,10 @@
 
   var CORE = {
     entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
-    foldCrudSpec: foldCrudSpec, mapRefType: mapRefType,                          // S2B: AD-folded CRUD spec (general, not curated)
+    foldCrudSpec: foldCrudSpec, mapRefType: mapRefType, mapRefDisplayType: mapRefDisplayType,   // S2B: AD-folded CRUD spec (general, not curated)
+    mergeCuratedWithFold: mergeCuratedWithFold,                                  // §P1 (W-PARITY-FIELDSET): AD field set + curated pins/verbs
+    gridFieldMandatoryExempt: gridFieldMandatoryExempt,                          // §P7 (W-PARITY-MANDATORY-CREATE): GridField.isMandatory:377-385
+    gridFieldDatatypeDefault: gridFieldDatatypeDefault,                          // §P7: GridField.defaultFromDatatype:1022-1051
     validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
     docActionOutcome: docActionOutcome, legalDocActions: legalDocActions, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
     normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel,

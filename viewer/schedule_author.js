@@ -16,7 +16,25 @@
   // so authored phases are identical to what injectGantt would group elements into.
   function matchRule(cls, rules, dflt) {
     rules = rules || {};
-    dflt = dflt || { phase: 'Architecture', sequence: 6, resource: null };
+    // §I.5i (bim-compiler prompts/4D_MODEL_INTEGRITY.md, §FUTURE item 7 Stage 5, queue item B-2) —
+    // CONSULT THE CANONICAL OBJECT BEFORE THE LITERAL, as this file's six other fallbacks already do
+    // (`:311`, `:1667`, `:1943`, and schedule_diff.js / time_machine.js's pair). This one did not,
+    // and §I.5i names it "the exception worth watching": the literal is the PRE-§S65 object, and
+    // §S65 changed `resource: null` -> 'MASON' precisely BECAUSE null routes every unmatched class
+    // into _installSecs' no-resource branch and floors it at 120 s — the zero-width-bar defect.
+    // So any future caller that omitted the third argument silently re-acquired that floor.
+    // INERT TODAY, VERIFIED NOT ASSUMED: every call site of ScheduleAuthor.matchRule in this repo
+    // passes a third argument (schedule_author.js :436/:1725/:1967, schedule_diff.js:144,
+    // time_machine.js:3605 via _classifyRule, and 8 witnesses/probes) — the two bare `matchRule(cls)`
+    // hits in a grep are LOCAL functions of their own files (time_machine.js's `_classifyRule`
+    // wrapper, witness_4d_band_monotonic.js's own arrow), not this one. In node, where rates.js is
+    // loaded through a vm sandbox and its vars never reach `global`, this reads undefined and the
+    // literal still applies — behaviour there is byte-identical. The gain is in the browser, where
+    // `global` IS `window` and `window.SEQUENCE_DEFAULT` is always the current object.
+    // ⛔ The seven STALE LITERALS themselves are deliberately NOT rewritten — see the PR: correcting
+    // a value that any path actually reaches is a duration change, not a de-drift, and proving which
+    // paths reach it needs a full-suite canary. Reported, not shipped.
+    dflt = dflt || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
     if (!cls) return dflt;
     var bestKey = null, bestLen = 0;
     for (var key in rules) {
@@ -75,9 +93,14 @@
     console.warn('§TPL_ZERO_MINUTE cls=' + cls + ' resource=' + resource + ' reason=' + why +
       ' — 120s floor, this class draws a zero-width bar (first occurrence only)');
   }
+  // §FUTURE-5A A1/B3 (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md, applied 2026-09-02, queue item
+  // B-3): both numbers below now READ laborRates._productivity_basis_secs / ._zero_minute_floor_secs
+  // (sequence_rules.json), falling back to the SAME literals that shipped before this — a caller
+  // (older cached JSON, a minimal test object) that omits either key is byte-identical to pre-fix.
   function _installSecs(cls, rule, laborRates, realQty, lengthRatio) {
     var resource = rule && rule.resource;
-    if (!resource || !laborRates[resource]) { _reportFloor(cls, resource, 'no-resource'); return 120; }
+    var _floorSecs = (laborRates && laborRates._zero_minute_floor_secs) || 120;
+    if (!resource || !laborRates[resource]) { _reportFloor(cls, resource, 'no-resource'); return _floorSecs; }
     var labor = laborRates[resource], bestPk = null, bestLen = 0;
     for (var pk in labor.productivity) {
       if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
@@ -87,8 +110,8 @@
     // pointed at. default_productivity is the resource's own declared figure for that case; absent,
     // this is 0 and the floor still applies exactly as before (backward-compatible).
     var prod = bestPk ? labor.productivity[bestPk] : (labor.default_productivity || 0);
-    if (prod <= 0) { _reportFloor(cls, resource, bestPk ? 'productivity<=0' : 'no-productivity-key'); return 120; }
-    var secsPerUnit = 28800 / prod;
+    if (prod <= 0) { _reportFloor(cls, resource, bestPk ? 'productivity<=0' : 'no-productivity-key'); return _floorSecs; }
+    var secsPerUnit = ((laborRates && laborRates._productivity_basis_secs) || 28800) / prod;
     if (realQty != null) return Math.round(secsPerUnit * realQty);
     if (lengthRatio != null) return Math.round(secsPerUnit * lengthRatio);
     return Math.round(secsPerUnit);
@@ -301,6 +324,118 @@
   // assignStoreyByZ) — ported verbatim, same reasoning: an element with no real storey containment
   // (a literal "Unknown" IFC storey label — 69.9% of Terminal) is reassigned to the nearest REAL
   // storey by median center-Z, deterministic, nothing invented.
+
+  // ══ §STOREY_DATUM_FRAME (2026-09-03, bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.6) ═════════
+  // A DECLARED STOREY DATUM SHIPS IN TWO COLUMN SHAPES, AND THEY CAN BE IN TWO VERTICAL FRAMES.
+  //   `elevation` — IfcBuildingStorey.Elevation (extract.py §STOREY_DATUM, buildings/patches/*.sql)
+  //   `center_z`  — the COMPILED placement point (STC_* rows, size_z NULL/0 ⇒ center_z IS the datum)
+  // #1551 chose between them by EMPTINESS ("elevation rows if any, else center_z"). That is a
+  // statement about the schema, not about the frame. MEASURED 2026-09-03 on the DB the viewer
+  // actually loads (Hospital_meta.db — the split pair streaming.js §DB_SPLIT_DETECT serves; NOT
+  // Hospital_extracted.db, which has no spatial_structure at all and is why #1551's own check read
+  // "no declared storeys ⇒ byte-identical"): 63 IfcBuildingStorey rows in TWO frames —
+  //   56 federated source rows    elevation 0.0 … 34.0 m     (a LOCAL per-file frame)
+  //    7 COMPILED STC_Level_*     center_z  168.7 … 201.4 m  (the model's WORLD frame)
+  // and every element base-Z is 156.6 … 202.8 m. The elevation rows won by emptiness, every element
+  // sat above the top datum, all 63,182 landed in the last band: bandsUsed=1, 7 tasks, 509 days
+  // (was 8 bands / 42 tasks / 318 days). The film did not change length, so calendar-per-second
+  // went +60% — the user's "the bake is too fast paced". The user's own Hospital_silent.db: same.
+  //
+  // THE RULE: a datum set must be in the same vertical frame as the geometry it bands, and that is
+  // CHECKABLE. Both candidates are read, each is tested against the element base-Z distribution,
+  // and the first IN-FRAME one wins — elevation before center_z, so the IFC's own declaration keeps
+  // priority and every building where both are in frame is BYTE-IDENTICAL to #1551 (Terminal,
+  // Clinic, Duplex, HHS: proven per building by witness_storey_datum_frame.js). THE TEST: the
+  // ladder's span [d_0, d_last] must contain the element base-Z MEDIAN. The median is used because
+  // it is the one location statistic that needs no tolerance constant and that a stray element
+  // cannot fake (an interval-overlap test on min/max is defeated by ONE outlier). A ladder that
+  // fails is not this geometry's frame: it is REJECTED and the §-line says so. If no candidate is
+  // in frame the declared path is REFUSED and the old label inference runs — DEGRADE, DON'T
+  // DISABLE — with the reason named. These verbs are exported so the witness judges the SAME
+  // choice on the SAME inputs, never a re-derivation.
+  function _storeyDatumCandidates(db) {
+    function q(sql) {
+      var out = [];
+      try {
+        var res = db.exec(sql);
+        if (res && res.length) res[0].values.forEach(function (v) {
+          var z = Number(v[1]);
+          if (v[0] != null && isFinite(z)) out.push({ name: String(v[0]), z: z });
+        });
+      } catch (e) { /* column or table absent → an EMPTY candidate, never a throw */ }
+      return out;
+    }
+    return [
+      { source: 'elevation', rows: q("SELECT name, elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL") },
+      { source: 'center_z',  rows: q("SELECT name, center_z FROM spatial_structure WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL") }
+    ];
+  }
+  // Sort by datum; two storeys at the same datum are one floor under two names — keep the first,
+  // deterministically. Unchanged from #1551.
+  function _storeyLadder(rows) {
+    var s = rows.slice().sort(function (a, b) { return a.z - b.z || (a.name < b.name ? -1 : 1); });
+    var out = [];
+    for (var i = 0; i < s.length; i++) {
+      if (out.length && Math.abs(s[i].z - out[out.length - 1].z) < 1e-6) continue;
+      out.push(s[i]);
+    }
+    return out;
+  }
+  // Band index of base-Z `bz` on `ladder`. Everything below the lowest datum is band 0
+  // (foundations are the ground floor's groundworks, not a level of their own).
+  function _ladderBandIndex(ladder, bz) {
+    var k = 0;
+    for (var i = 0; i < ladder.length; i++) if (bz >= ladder[i].z - 1e-9) k = i;
+    return k;
+  }
+  // THE FRAME TEST. `cands` in preference order (from _storeyDatumCandidates), `ezs` = element
+  // base-Z with the §4D_NOGEO population already excluded. Pure; no DB, no console.
+  // Returns { mode:'DECLARED'|'INFERRED', source, ladder, lo, hi, rungsUsed, reason, legacySource,
+  //           ez:{n,min,median,max}, candidates:[{source,rows,datums,lo,hi,verdict,rungsUsed,below,above}] }
+  // `rungsUsed` counts populated ladder RUNGS (distinct datums); the §STOREY_DATUM `bandsUsed` counts
+  // distinct NAMES (a name can sit on two rungs 1e-6 apart, e.g. Terminal's 44 rungs → 22 names).
+  // `legacySource` is what #1551's emptiness rule would have picked, so the §-line can say whether
+  // this choice CHANGED anything (PRIMAL LAW clause 4: a pass must be able to report its own no-op).
+  function _chooseStoreyDatum(cands, ezs) {
+    var sorted = ezs.slice().sort(function (a, b) { return a - b; });
+    var n = sorted.length;
+    var ez = n ? { n: n, min: sorted[0], median: sorted[Math.floor(n / 2)], max: sorted[n - 1] }
+               : { n: 0, min: NaN, median: NaN, max: NaN };
+    var legacy = null;
+    for (var li = 0; li < cands.length; li++) if (cands[li].rows.length) { legacy = cands[li].source; break; }
+    var report = [], chosen = null;
+    for (var ci = 0; ci < cands.length; ci++) {
+      var c = cands[ci], ladder = _storeyLadder(c.rows);
+      var rep = { source: c.source, rows: c.rows.length, datums: ladder.length, lo: NaN, hi: NaN,
+        verdict: 'EMPTY', rungsUsed: 0, below: 0, above: 0, ladder: ladder };
+      if (!c.rows.length) { report.push(rep); continue; }
+      rep.lo = ladder[0].z; rep.hi = ladder[ladder.length - 1].z;
+      if (ladder.length < 2) { rep.verdict = 'TOO_FEW'; report.push(rep); continue; }
+      if (!n) { rep.verdict = 'NO_ELEMENTS'; report.push(rep); continue; }
+      var used = {};
+      for (var ei = 0; ei < n; ei++) {
+        var bz = sorted[ei];
+        if (bz < rep.lo) rep.below++; else if (bz >= rep.hi) rep.above++;
+        used[_ladderBandIndex(ladder, bz)] = 1;
+      }
+      rep.rungsUsed = Object.keys(used).length;   // ladder RUNGS populated (distinct datums; names can repeat across rungs)
+      var inFrame = rep.lo <= ez.median && ez.median <= rep.hi;
+      rep.verdict = inFrame ? 'IN_FRAME' : 'OUT_OF_FRAME';
+      report.push(rep);
+      if (inFrame && !chosen) chosen = rep;
+    }
+    if (chosen) {
+      return { mode: 'DECLARED', source: chosen.source, ladder: chosen.ladder, lo: chosen.lo, hi: chosen.hi,
+        rungsUsed: chosen.rungsUsed, reason: 'IN_FRAME', legacySource: legacy, ez: ez, candidates: report };
+    }
+    var reason = !n ? 'NO_ELEMENTS'
+      : !legacy ? 'NO_DECLARED_STOREYS'
+      : report.some(function (x) { return x.verdict === 'OUT_OF_FRAME'; }) ? 'NO_CANDIDATE_IN_FRAME'
+      : 'TOO_FEW_DATUMS';
+    return { mode: 'INFERRED', source: null, ladder: [], lo: NaN, hi: NaN, rungsUsed: 0,
+      reason: reason, legacySource: legacy, ez: ez, candidates: report };
+  }
+
   function _buildScheduleElements(db, rules, opts) {
     opts = opts || {};
     var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
@@ -328,6 +463,57 @@
       "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
     if (!r.length || !r[0].values.length) return [];
 
+    // ══ §STOREY_DATUM (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.3) ═════════════
+    // A LEVEL IS A DATUM: its floor up to the next level's floor (§C). Bands must be disjoint BY
+    // CONSTRUCTION, and a floor's elevation is a fact the IFC declares — it is not a property of
+    // where its members happen to sit.
+    //
+    // WHAT THIS REPLACES, and why it was wrong (all measured 2026-08-27, not argued):
+    // the previous rule assigned every storey-less element to the NEAREST storey by the MEDIAN
+    // center-Z OF THAT STOREY'S ELEMENTS. Three defects in one line:
+    //   1. median-Z-of-ELEMENTS is the exact inference §PATHS NOT TO TAKE #7 forbids, and which
+    //      deriveStoreyMergeMap's own header cites as forbidden — it was running here anyway;
+    //   2. nearest-neighbour with NO upper bound: an element 20m from every named storey still
+    //      got one;
+    //   3. the candidate pool was every DISTINCT LABEL, so in a federated model with three naming
+    //      systems (Terminal: Malay "Aras *", English "0N ... FLOOR LEVEL", and "Ceiling Level *"
+    //      reference planes) an element could be assigned to a label from a file it has nothing to
+    //      do with.
+    // Terminal is 69.9% storey-less (33,848/48,428), so this ran on most of the building. Result:
+    // the IFC declares 6 storeys, the schedule ran on 22 bands, and "06 ROOF LEVEL" — a label only
+    // 10 elements actually carry — collected 10,950. That is the root of the DAY-0 defects
+    // §W_D0/C1-C4 report (16 ceiling fans scheduled into HOUR 0).
+    //
+    // THE RULE NOW: read the storeys the model DECLARES (spatial_structure IfcBuildingStorey),
+    // sort by datum, and band i = [datum_i, datum_i+1). Assign by the element's OWN BASE (the
+    // floor it sits on), not its centre — a tall element belongs to the floor it stands on.
+    // Disjoint by construction, no tolerance constant, no nearest-neighbour, no label pool.
+    // The LABEL becomes advisory: in a federated model the labels disagree with each other, so
+    // geometry against a declared datum is the only thing all disciplines share.
+    //
+    // `elevation` is the IFC's own IfcBuildingStorey.Elevation — bim-compiler tools/extract.py now
+    // writes it (§STOREY_DATUM there too; it never did before, which is why deriveStoreyMergeMap
+    // has never once run). Shipped DBs predate that, so `center_z` is accepted as the same datum:
+    // MEASURED on every shipped DB carrying the table, storey rows have size_z NULL/0 — the row IS
+    // a placement point, so center_z IS the elevation. Not a proxy, the same number by another name.
+    //
+    // ⛔ NO DECLARED STOREYS ⇒ NOTHING CHANGES. A DB with no spatial_structure table (Duplex,
+    // LTU_AHouse, every *_extracted.db) keeps the old inference byte-identically, and the §-line
+    // says so out loud rather than implying a datum that does not exist.
+    //
+    // §STOREY_DATUM_FRAME (2026-09-03): the two column shapes are two CANDIDATE sets, and the one
+    // that bands this geometry is the one in its vertical frame — see _chooseStoreyDatum above.
+    // (#1551 picked by emptiness; on Hospital_meta.db that put 63,182 elements in one band.)
+    var _ezs = [];
+    r[0].values.forEach(function (row) {
+      var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
+      if (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0) return;   // §4D_NOGEO, same filter as the recipe below
+      _ezs.push(cz - bz / 2);
+    });
+    var _frame = _chooseStoreyDatum(_storeyDatumCandidates(db), _ezs);
+    var _bands = _frame.ladder;
+    var _datumMode = _frame.mode === 'DECLARED';
+
     var storeyZs = {};
     r[0].values.forEach(function (row) {
       var storey = row[3], cz = row[6];
@@ -339,21 +525,32 @@
       var zs = storeyZs[s].slice().sort(function (a, b) { return a - b; });
       storeyMedianZ[s] = zs[Math.floor(zs.length / 2)];
     });
+    // datum band containing `bz`; everything below the lowest datum belongs to the lowest band
+    // (foundations sit under the ground floor — they are that floor's groundworks, not a new level).
+    function _bandOf(bz) {
+      var k = 0;
+      for (var i = 0; i < _bands.length; i++) if (bz >= _bands[i].z - 1e-9) k = i;
+      return _bands[k].name;
+    }
     function assignStoreyByZ(storey, cz) {
-      if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
-      if (!storeyNames.length) return storey;
-      var best = storeyNames[0], bd = Infinity;
-      for (var i = 0; i < storeyNames.length; i++) {
-        var d = Math.abs(cz - storeyMedianZ[storeyNames[i]]);
-        if (d < bd) { bd = d; best = storeyNames[i]; }
+      if (!_datumMode) {                       // no declared datum — old behavior, byte-identical
+        if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
+        if (!storeyNames.length) return storey;
+        var best = storeyNames[0], bd = Infinity;
+        for (var i = 0; i < storeyNames.length; i++) {
+          var d = Math.abs(cz - storeyMedianZ[storeyNames[i]]);
+          if (d < bd) { bd = d; best = storeyNames[i]; }
+        }
+        return best;
       }
-      return best;
+      return null;                             // datum mode resolves per-element, below (needs base_z)
     }
 
     var _bseList = r[0].values.map(function (row) {
       var guid = row[0], cls = row[1], name = row[2], rawStorey = row[3];
       var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
-      var storey = assignStoreyByZ(rawStorey, cz);
+      // §STOREY_DATUM — in datum mode the level is the band containing the element's BASE.
+      var storey = _datumMode ? _bandOf(cz - bz / 2) : assignStoreyByZ(rawStorey, cz);
       var ov = matchNameOverride(cls, name, nameOverrides);
       var rule = ov || matchRule(cls, rules, dflt);
       var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
@@ -374,10 +571,58 @@
         // "REPLICATES ... EXACTLY"): no transform row → COALESCE parks it at origin/zero-bbox. At
         // z=0 it has no support, schedules at day 0, and its zone's MIN start follows it there —
         // that day-0 zone window is what spread walls from day 1 in the live movie.
+        _rawStorey: rawStorey,          // §STOREY_DATUM self-check only (see the §-line below)
         noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
     }).filter(function (e) { return !e.noGeo; });
     _reclassGroundworkSlabs(_bseList, 'schedule_author');
+    // §STOREY_DATUM — SAY WHICH PATH RAN AND WHAT IT COST. A pass that cannot report a no-op is
+    // not a pass (CLAUDE.md PRIMAL LAW clause 4): `relabelled` counts elements whose level differs
+    // from the label they arrived with, so 0 in datum mode means the declared datums changed
+    // nothing and the claim is empty.
+    // _bseList is FILTERED (noGeo dropped), so it does not index-align with the raw query rows —
+    // the label each element arrived with is carried on the element itself instead. (First draft
+    // indexed the raw rows and would have miscounted by exactly the noGeo population.)
+    var _rl = 0, _lv = {};
+    for (var _bi = 0; _bi < _bseList.length; _bi++) {
+      var _e = _bseList[_bi], _raw = _e._rawStorey;
+      _lv[_e.storey] = (_lv[_e.storey] || 0) + 1;
+      if (_raw != null && _raw !== '_UNKNOWN' && !/^unknown$/i.test(_raw) && _raw !== _e.storey) _rl++;
+      delete _e._rawStorey;
+    }
+    // §STOREY_DATUM_FRAME — the line must name WHICH candidate set won, its range, the element
+    // base-Z range it was checked against, and the rejected set; and it must say whether the
+    // choice differs from #1551's (vs#1551=same is the per-building NO-OP proof).
+    var _fz = function (x) { return isFinite(x) ? Number(x).toFixed(3) : 'n/a'; };
+    var _candDesc = _frame.candidates.map(function (c) {
+      return c.source + ':' + c.datums + (isFinite(c.lo) ? '[' + _fz(c.lo) + '..' + _fz(c.hi) + ']' : '') + '=' + c.verdict +
+        ((c.verdict === 'IN_FRAME' || c.verdict === 'OUT_OF_FRAME')
+          ? '(rungsUsed=' + c.rungsUsed + ' below=' + c.below + ' above=' + c.above + ')' : '');
+    }).join(' ');
+    var _rejected = _frame.candidates.filter(function (c) { return c.verdict === 'OUT_OF_FRAME'; });
+    var _bandsUsedNow = Object.keys(_lv).length;
+    console.log('§STOREY_DATUM mode=' + (_datumMode ? 'DECLARED' : 'INFERRED') +
+      ' source=' + (_frame.source || 'none') +
+      ' declaredStoreys=' + _bands.length + ' labelsInDB=' + storeyNames.length +
+      ' bandsUsed=' + _bandsUsedNow + ' relabelled=' + _rl + '/' + _bseList.length +
+      ' ladder=' + (_datumMode ? _bands.length + '[' + _fz(_frame.lo) + '..' + _fz(_frame.hi) + ']' : 'none') +
+      ' elementBaseZ=' + _frame.ez.n + '[' + _fz(_frame.ez.min) + '..' + _fz(_frame.ez.max) + ' median=' + _fz(_frame.ez.median) + ']' +
+      ' rejected=' + (_rejected.length ? _rejected.map(function (c) { return c.source + ':' + c.datums + '[' + _fz(c.lo) + '..' + _fz(c.hi) + ']'; }).join(',') : 'none') +
+      ' vs#1551=' + (_frame.source === _frame.legacySource ? 'same' : 'CHANGED(' + _frame.legacySource + '→' + (_frame.source || 'INFERRED') + ')') +
+      (_datumMode
+        ? (_bandsUsedNow < 2 ? ' verdict=NO-OP (the ladder put every element in ONE band — it partitioned nothing)' : '') +
+          ' — a level is [datum_i, datum_i+1) and the element sits in the band containing its BASE'
+        : ' — NO declared storey datum IN FRAME (reason=' + _frame.reason + '): nearest-median-Z INFERENCE, unchanged. Bands here are not a datum.'));
+    console.log('§STOREY_DATUM_FRAME candidates: ' + _candDesc +
+      ' — test: the ladder span must contain the element base-Z median (no tolerance constant; a stray element cannot fake a frame); first IN_FRAME wins, elevation before center_z');
+    _rejected.forEach(function (c) {
+      console.log('§STOREY_DATUM_FRAME_REJECT source=' + c.source + ' ladder=' + c.datums + '[' + _fz(c.lo) + '..' + _fz(c.hi) + ']' +
+        ' vs elementBaseZ median=' + _fz(_frame.ez.median) + ' [' + _fz(_frame.ez.min) + '..' + _fz(_frame.ez.max) + ']' +
+        ' below=' + c.below + ' above=' + c.above + ' rungsUsed=' + c.rungsUsed +
+        ' — not this geometry\'s vertical frame; ' +
+        (_datumMode ? 'banding on ' + _frame.source + ' instead'
+          : 'NO candidate in frame → declared path REFUSED, label inference runs (DEGRADE, not disable)'));
+    });
     return _bseList;
   }
 
@@ -436,6 +681,14 @@
     laborRates = laborRates || {};
     var shiftSecs = (shiftHours > 0 ? shiftHours : (T.calendar && T.calendar.hours_per_shift) || 24) * 3600;
     var minDays = (T.duration_rule && T.duration_rule.min_days) || 1;
+    // §FUTURE-5A B4 (applied 2026-09-02, queue item B-3): the pricing-side crew-cap fallback for an
+    // unnamed/_DEFAULT resource, now sourced from sequence_rules.json LABOR_RATES._default_max_crews_author
+    // — same literal (1) as before this fix, see that key's own comment for why this is NOT unified
+    // with schedule_gate.js's separate MAX_CREWS_DEFAULT=3 (a real, undisturbed divergence).
+    var _defMaxCrews = (laborRates && laborRates._default_max_crews_author) || 1;
+    // §FUTURE-5A B6: instantiateTemplate's own crew-levelling search guard, now sourced from
+    // 4D_template.json capacity_rule._level_scan_max_days (same literal, 100000, as before).
+    var LEVEL_SCAN_MAX = (T.capacity_rule && T.capacity_rule._level_scan_max_days) || 100000;
     collapse = collapse || function (x) { return x; };
     // Resolved ONCE. With levelAxis absent both of these are literally the expressions that were
     // inline here before, so the flag-off path is unchanged by construction, not by inspection.
@@ -467,7 +720,7 @@
       for (var t in c.secs) {
         if (t === '_DEFAULT') continue;
         any = 1;
-        var cap = (laborRates[t] && laborRates[t].max_crews) || 1;
+        var cap = (laborRates[t] && laborRates[t].max_crews) || _defMaxCrews;
         var td = c.secs[t] / (shiftSecs * cap);
         if (td > d) { d = td; bott = t + '(' + cap + ')'; }
       }
@@ -483,7 +736,8 @@
     var byId = {};
     T.phases.forEach(function (p) { byId[p.id] = p; });
 
-    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, phaseLatestTask = {};
+    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, _ladderBridged = 0,
+        phaseLatestTask = {};
     levels.forEach(function (lv, li) {
       var prevOnLevel = null;   // for the BRIDGED within-level chain (_empty_phase_rule)
       var cursor = 0;
@@ -518,14 +772,57 @@
         }
         var pr = priceCell(c);
         var start = cursor;
-        // across_levels: the §4D_BAND_MONOTONIC ladder — this phase on the level below.
-        if (ladder[p.id] && li > 0) {
-          var below = taskAt[p.name + '||' + levels[li - 1]];
-          if (below) {
-            var need = below.eDays + (ladder[p.id].lag_days || 0);
-            if (need > start) start = need;
+        // §TPL_LADDER_BRIDGE (2026-08-27) — the across_levels ladder MUST bridge past dropped
+        // phases, exactly as the within_level chain already does.
+        //
+        // THE DEFECT THIS FIXES, measured on Duplex: `cursor` resets to 0 for every level, so the
+        // FIRST phase to instantiate on a level has no within-level predecessor and takes its start
+        // from the ladder alone. The ladder looked at `levels[li-1]` ONLY — one level down, no
+        // bridge. Duplex's lowest band T/FDN has no Superstructure (its 184 elements are
+        // Substructure, Architecture and MEP), so `Superstructure @ Level 1` found no task below,
+        // fell back to cursor = 0, and RAN IN PARALLEL WITH `Substructure @ T/FDN` — 4 IfcBeam and
+        // 2 IfcSlab starting at h0.0 while the foundations they sit on ran to h24.0.
+        // The template's own _empty_phase_rule already says a dropped phase must BRIDGE, "never
+        // left dangling"; it was implemented for one of the two chains.
+        //
+        // Two steps, in the template's own order of authority:
+        //   1. same phase, nearest level BELOW — walk down past every level where it was dropped;
+        //   2. failing that, the within_level PREDECESSOR chain, itself walked backwards through
+        //      dropped phases, resolved on this level or the nearest one below. A building-scope
+        //      phase lives only on level 0, which is exactly how Superstructure @ Level 1 reaches
+        //      Substructure @ T/FDN.
+        // Returns null only when nothing precedes this phase anywhere — a genuine programme start.
+        var _bridge = (function () {
+          var d, b;
+          if (ladder[p.id] && li > 0) {
+            for (d = li - 1; d >= 0; d--) {
+              b = taskAt[p.name + '||' + levels[d]];
+              if (b) return { finish: b.eDays + (ladder[p.id].lag_days || 0), via: 'across_levels', hops: li - d };
+            }
           }
-        }
+          var seen = {}, cur2 = p.id, guard = 0;
+          while (guard++ < 32) {
+            var wl2 = (T.dependencies.within_level || []).filter(function (ed) { return ed.succ === cur2; })[0];
+            if (!wl2 || seen[wl2.pred]) break;
+            seen[wl2.pred] = 1; cur2 = wl2.pred;
+            var pp = byId[cur2]; if (!pp) break;
+            for (d = li; d >= 0; d--) {
+              b = taskAt[pp.name + '||' + levels[d]];
+              if (b) return { finish: b.eDays + (wl2.lag_days || 0), via: 'within_level_bridged', hops: li - d };
+            }
+          }
+          return null;
+        })();
+        if (_bridge && _bridge.finish > start) { start = _bridge.finish; if (_bridge.hops > 0 || !prevOnLevel) _ladderBridged++; }
+        // ⚠ BOTH FLOORS APPLY, and they compose (merge of PR #1551 into PR #1571's main,
+        // 2026-09-02). Each only ever RAISES `start`, so the task's start is the MAX of the three:
+        // the within-level `cursor`, §TPL_LADDER_BRIDGE's nearest-instance-below, and
+        // §PHASE_WATERMARK_FLOOR's latest-anywhere watermark. They are NOT duplicates — they reach
+        // different sets: the BRIDGE walks BACKWARDS through arbitrarily many DROPPED predecessor
+        // phases but resolves against the nearest instance at or below this level; the WATERMARK
+        // looks only at the IMMEDIATE declared predecessor but takes its LATEST-finishing instance
+        // anywhere in the building. Neither subsumes the other, so dropping either would lower a
+        // floor that a measured defect put there.
         // §PHASE_WATERMARK_FLOOR (2026-08-27) — a level can start its own within_level chain with
         // NOTHING real behind it: its declared predecessor phase has no LOCAL instance on this
         // level (either it's scope:"building" and filed once elsewhere, or the level's own
@@ -569,13 +866,19 @@
                        lagDays: wl.lag_days || 0, kind: 'phase_watermark' });
         }
         if (ladder[p.id] && li > 0) {
-          var b2 = taskAt[p.name + '||' + levels[li - 1]];
-          if (b2) edges.push({ predId: b2.id, succId: t.id, type: ladder[p.id].type || 'FS',
-                               lagDays: ladder[p.id].lag_days || 0, kind: 'across_levels' });
+          for (var _d2 = li - 1; _d2 >= 0; _d2--) {          // §TPL_LADDER_BRIDGE — same walk as above
+            var b2 = taskAt[p.name + '||' + levels[_d2]];
+            if (b2) { edges.push({ predId: b2.id, succId: t.id, type: ladder[p.id].type || 'FS',
+                                   lagDays: ladder[p.id].lag_days || 0, kind: 'across_levels' }); break; }
+          }
         }
         prevOnLevel = t;
       });
     });
+    console.log('§TPL_LADDER_BRIDGE gatedByBridge=' + _ladderBridged + '/' + tasks.length +
+      ' — a phase whose predecessor was DROPPED on the level below now takes its start from the ' +
+      'nearest level that has one, or from its within_level predecessor chain; 0 = no task needed it');
+
     // ── capacity_rule LEVELLING ────────────────────────────────────────────────────────────
     // The ladder forbids a phase overtaking ITSELF up the building. It does NOT stop two DIFFERENT
     // phases that share a crew pool from running at once on different levels: MEP Rough-in on
@@ -631,13 +934,13 @@
     function fits(t, at) {
       var need = taskTradeCrews(t);
       for (var tr in need) {
-        var cap = (laborRates[tr] && laborRates[tr].max_crews) || 1;
+        var cap = (laborRates[tr] && laborRates[tr].max_crews) || _defMaxCrews;
         for (var d = at; d < at + t.days; d++)
           if (((demand[tr] && demand[tr][d]) || 0) + need[tr] > cap + 1e-9) return false;
       }
       return true;
     }
-    var levelled = 0, levelledDays = 0, LEVEL_SCAN_MAX = 100000;
+    var levelled = 0, levelledDays = 0;   // LEVEL_SCAN_MAX now derived once at function top (§FUTURE-5A B6)
     topo.forEach(function (t) {
       var at = t.sDays, guard = 0;
       while (!fits(t, at) && guard++ < LEVEL_SCAN_MAX) at++;
@@ -697,7 +1000,13 @@
   function materializeZones(db, rules, opts) {
     opts = opts || {};
     var schedId = opts.scheduleId || 'SCH_AUTHORED';
-    var start = opts.start || '2026-01-01';
+    // §FUTURE-5A B2 (applied 2026-09-02, queue item B-3): opts.start (a real caller value) wins as
+    // before; the SECOND choice now reads the declared 4D_template.json calendar.project_start
+    // instead of jumping straight to the bare literal, so a future caller that passes opts.template
+    // but omits opts.start picks up the JSON-declared epoch. Every CURRENT caller that passes
+    // opts.template also passes an explicit opts.start (verified 2026-09-02), so this branch is not
+    // yet live — added for when a caller drops the redundant explicit start, not a behaviour change.
+    var start = opts.start || (opts.template && opts.template.calendar && opts.template.calendar.project_start) || '2026-01-01';
     var SG = opts.scheduleGate || global.ScheduleGate;
     if (!SG || !SG.computeSchedule || !SG.deriveZones) {
       console.log('§AUTHOR_ZONES_FAIL reason=ScheduleGate_not_loaded');
@@ -707,6 +1016,10 @@
     if (!elements.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_elements'); return { ok: false, reason: 'no_elements' }; }
 
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    // §FUTURE-5A B4 (applied 2026-09-02, queue item B-3): same relocation as instantiateTemplate's
+    // own _defMaxCrews (used below by the §ZONE_WINDOW_COVERS_WORK floor) — this function has its
+    // own laborRates local, so it needs its own copy of the derived default, not a shared closure var.
+    var _defMaxCrews = (laborRates && laborRates._default_max_crews_author) || 1;
     var maxCrews = {};
     for (var res in laborRates) if (laborRates[res].max_crews) maxCrews[res] = laborRates[res].max_crews;
     // §GANTT_SHIFT_HOURS_DESYNC (4D_SCHEDULE_PERFECTION.md) — this call used to omit shiftHours,
@@ -883,7 +1196,7 @@
       var _crewDays = 0, _wAnyTrade = 0;
       for (var _wt in _wTrades) {
         _wAnyTrade = 1;
-        var _wCap = (laborRates[_wt] && laborRates[_wt].max_crews) || 1;
+        var _wCap = (laborRates[_wt] && laborRates[_wt].max_crews) || _defMaxCrews;
         var _wd = (_wTrades[_wt] * 1000) / (_shiftMs * _wCap);
         if (_wd > _crewDays) _crewDays = _wd;
       }
@@ -1468,9 +1781,17 @@
          : _mv === 0 ? 'FAIL pass ran but moved nothing — a no-op that looks like a success'
          : _inv === 0 ? 'PASS' : 'FAIL support order still violated inside a task'));
     } catch (e) { console.log('§TPL_LAYER_SELFCHECK_ERROR ' + e.message); }
+    // ⚠ WORDING CORRECTED 2026-09-02 (bim-compiler 4D_GANTT_TM_REFACTOR.md §TM_REVEAL_SHIPPED,
+    // queue item A-0). This line used to end "every element now PLAYS inside the bar that claims
+    // it". That was never true of THIS map: `displaySchedule` is returned below and
+    // viewer/time_machine.js has ZERO readers of it (the only reference repo-wide is the return
+    // statement a few lines down). What the film and the scrubber play is kernel_ops, written by
+    // injectGantt — since #1605 by §TM_REVEAL_TILED, which calls this same verb with its own
+    // arguments. The counts are unchanged; only the false half of the sentence is.
     console.log('§TPL_MOVIE_BINDS_BARS remapped=' + _rm.mapped + '/' + elements.length +
       ' degenerateTasksSpreadEvenly=' + _rm.degenerateTasks +
-      ' — every element now plays inside the bar that claims it');
+      ' — every element is REMAPPED inside the bar that claims it (this is `displaySchedule`;' +
+      ' time_machine.js does not read it — the played layer is kernel_ops, §TM_REVEAL_TILED)');
     return { ok: true, scheduleId: schedId, zoneCount: inst.tasks.length, edgeCount: inst.edges.length,
              totalDays: inst.totalDays, templateVersion: T.meta.version, reports: inst.reports,
              tasks: inst.tasks, displaySchedule: _rm.schedule };
@@ -1479,6 +1800,11 @@
   // materializeDefault(db, rules, opts) — originate the smart-default schedule on a blank model.
   // db: a sql.js Database with `elements_meta`. rules: SEQUENCE_RULES map. opts: {start, phaseDays,
   // scheduleId, defaultRule}. Idempotent — rebuilds the SCH_AUTHORED schedule from scratch.
+  // §FUTURE-5A B2/B7 (reviewed 2026-09-02, queue item B-3): this is the ALTERNATE/legacy authoring
+  // path, never the canonical template one (no caller anywhere in the codebase passes opts.template
+  // here — verified) — so, unlike materializeZones above, its opts.start/opts.phaseDays literal
+  // fallbacks are left untouched rather than threading a dead opts.template read. Their JSON homes
+  // (4D_template.json calendar.project_start / duration_rule) are documented but NOT wired here.
   function materializeDefault(db, rules, opts) {
     opts = opts || {};
     var start = opts.start || '2026-01-01';
@@ -1595,8 +1921,9 @@
       for (var resKey in p.resourceSecs) {
         var secs = p.resourceSecs[resKey];
         laborSecsTotal += secs;
-        var maxCrews = (laborRates[resKey] && laborRates[resKey].max_crews) || 1;
-        var tradeDays = secs / (28800 * maxCrews);
+        // §FUTURE-5A A1/B4 (applied 2026-09-02, queue item B-3) — same relocation as instantiateTemplate.
+        var maxCrews = (laborRates[resKey] && laborRates[resKey].max_crews) || (laborRates._default_max_crews_author || 1);
+        var tradeDays = secs / (((laborRates && laborRates._productivity_basis_secs) || 28800) * maxCrews);
         if (tradeDays > maxTradeDays) maxTradeDays = tradeDays;
       }
       p.widthDays = Math.max(1, Math.ceil(maxTradeDays));
@@ -1662,6 +1989,27 @@
     if (seqN) console.log('§AUTHOR_SEQUENCES schedule=' + schedId + ' edges=' + seqN + ' (SS, lag=leading-phase band-clear days)');
 
     db.run('COMMIT');   // §SE-5a — single commit for the whole rebuild
+
+    // §TPL_MODEL — THE THIRD PRODUCER, named (2026-09-02, bim-compiler
+    // prompts/4D_MODEL_INTEGRITY.md §I.5g, §FUTURE item 7 Stage 5, queue item B-2). Until now only
+    // materializeZones' two branches emitted this line (`model=template`, `model=legacy-deriveZones`),
+    // so the ownership row read as a two-way fork while THREE generators write the same SCH_AUTHORED
+    // schedule id. This one is LIVE UI — schedule_author_ui.js generateDraft() calls it at :276 (the
+    // "Start blank" checkbox) and again at :293 as the fallback when materializeZones returns !ok —
+    // and it emitted no attribution at all. A reader of `§TPL_MODEL` could therefore see the line
+    // ABSENT and had no way to tell "the third producer ran" from "no producer ran": a schedule that
+    // came from neither model was a state the log could not express. PRIMAL LAW clause 4 — a pass
+    // that cannot report which construct produced it is not reporting.
+    // `witness_gantt_edit_coherence.js:210-218` already reports INCONCLUSIVE when no §TPL_MODEL line
+    // was emitted; with this line that third state becomes attributable instead of unknown.
+    // NOT canonical, and the wording says so: the task grid here is phases from SEQUENCE_RULES with
+    // widths from labor workload, not the DECLARED grid in rates/4D_template.json. Same console.log
+    // stream as the other two on purpose (§I.5j(b): a line on console.warn is invisible to every
+    // §-collecting witness in this repo).
+    console.log('§TPL_MODEL model=default-materialize mode=' + (blank ? 'blank' : 'dated') +
+      ' — ⛔ the CANONICAL template path did NOT run: this is materializeDefault, the smart-default ' +
+      'producer (phases from SEQUENCE_RULES, widths from labor workload). The task grid is DERIVED, ' +
+      'not DECLARED by 4D_template.json.');
 
     console.log('§AUTHOR_MATERIALIZE schedule=' + schedId + ' mode=' + (blank ? 'blank' : 'dated') +
       ' phases=' + outPhases.length + ' leafTasks=' + outPhases.length +
@@ -1751,6 +2099,8 @@
   // act (the optional "suggest a start"). Lays the leaf phases out contiguously from opts.start so
   // a blank-materialized (undated) schedule becomes datable on demand. Orders by rowid = insert
   // order = the sequence order materializeDefault used (NULL dates can't be ORDER BY'd).
+  // §FUTURE-5A B2/B7 — same alternate-path note as materializeDefault above: no caller passes
+  // opts.template here, so its start/phaseDays literal fallbacks are left as-is (2026-09-02).
   function scheduleContiguous(db, scheduleId, opts) {
     scheduleId = scheduleId || 'SCH_AUTHORED';
     opts = opts || {};
@@ -1790,8 +2140,9 @@
       }
       var maxTradeDays = 0;
       for (var resKey2 in resourceSecs) {
-        var maxCrews = (laborRates[resKey2] && laborRates[resKey2].max_crews) || 1;
-        var d = resourceSecs[resKey2] / (28800 * maxCrews);
+        // §FUTURE-5A A1/B4 (applied 2026-09-02, queue item B-3) — same relocation as materializeDefault.
+        var maxCrews = (laborRates[resKey2] && laborRates[resKey2].max_crews) || (laborRates._default_max_crews_author || 1);
+        var d = resourceSecs[resKey2] / (((laborRates && laborRates._productivity_basis_secs) || 28800) * maxCrews);
         if (d > maxTradeDays) maxTradeDays = d;
       }
       widthDays[tid] = maxTradeDays > 0 ? Math.max(1, Math.ceil(maxTradeDays)) : phaseDays;
@@ -2806,6 +3157,10 @@
     materializeDefault: materializeDefault,
     materializeZones: materializeZones,
     _buildScheduleElements: _buildScheduleElements,
+    // §STOREY_DATUM_FRAME — exported so witness_storey_datum_frame.js judges the same verb
+    _storeyDatumCandidates: _storeyDatumCandidates,
+    _chooseStoreyDatum: _chooseStoreyDatum,
+    _storeyLadder: _storeyLadder,
     instantiateTemplate: instantiateTemplate,
     // §TPL_LEVEL_AXIS — exported so the axis and its disagreement measurement are testable on their
     // own, without having to drive a whole materializeZones write to see them.

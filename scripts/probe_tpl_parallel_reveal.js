@@ -34,7 +34,13 @@
 //       must never read as a pass.
 //
 // NON-INVENT: reads the persisted cache_4d_run.js run (element reveal times exactly as the shipped
-// materializeZones produced them, plus the shipped task grid). Nothing is re-solved or authored.
+// pipeline produced them, plus the shipped task grid). Nothing is re-solved or authored.
+//
+// ⚠ WHICH LAYER (§CACHE_PLAYED_LAYER, 2026-09-02, queue item A-9). "Reveal AT THE SAME TIME during
+// movie playback" is a question about the map the movie plays — so it is asked of the PLAYED layer
+// (kernel_ops), not materializeZones' displaySchedule, which viewer/time_machine.js never reads
+// (§TM_REVEAL_SHIPPED). Selected through CACHE.layerOf() and named on every line below;
+// `LAYER=display` re-points this probe at the old map deliberately, and it still says so.
 'use strict';
 const path = require('path');
 const CACHE = require(path.join(__dirname, 'cache_4d_run.js'));
@@ -46,7 +52,15 @@ function run(bld, startISO) {
     console.log('§TPL_PARALLEL_REVEAL bld=' + bld + ' INCONCLUSIVE — no cached task grid'); return false;
   }
   const base = Date.parse(startISO || '2026-01-01');
-  const sched = c.sched, tasks = c.tasks;
+  const L = CACHE.layerOf(c);
+  console.log('§TPL_PARALLEL_REVEAL_LAYER bld=' + bld + ' layer=' + L.id + ' key=' + L.key + ' — ' + L.desc);
+  if (L.missing) {
+    console.log('§TPL_PARALLEL_REVEAL bld=' + bld + ' INCONCLUSIVE — layer=' + L.id + ' ABSENT from this cache ' +
+      '(predates §CACHE_PLAYED_LAYER). Rebuild: node scripts/cache_4d_run.js --force ' + bld +
+      '. NOT falling back to the other layer: that substitution is the defect A-9 removed.');
+    return false;
+  }
+  const sched = L.map, tasks = c.tasks, LAY = L.id;
 
   // ── P1: every element sits inside its own task's ABSOLUTE window ─────────────────────────────
   let inWin = 0, outWin = 0, worstMs = 0, judged = 0;
@@ -59,7 +73,7 @@ function run(bld, startISO) {
       if (off > 0) { outWin++; if (off > worstMs) worstMs = off; } else inWin++;
     });
   });
-  console.log('§TPL_REVEAL_ABSOLUTE bld=' + bld + ' elementsInsideOwnTaskWindow=' + inWin + '/' + judged +
+  console.log('§TPL_REVEAL_ABSOLUTE bld=' + bld + ' layer=' + LAY + ' elementsInsideOwnTaskWindow=' + inWin + '/' + judged +
     ' outside=' + outWin + ' worstOffsetDays=' + (worstMs / DAY).toFixed(3) +
     ' — ' + (judged === 0 ? 'VACUOUS (nothing judged)'
       : outWin === 0 ? 'PASS: reveal times are absolute project-timeline instants placed by each task\'s OWN window'
@@ -73,12 +87,12 @@ function run(bld, startISO) {
     if (ov > 0) pairs.push({ a: a, b: b, ov: ov, sameLevel: a.storey === b.storey });
   }
   const crossLevel = pairs.filter(p => !p.sameLevel);
-  console.log('§TPL_REVEAL_CONCURRENCY bld=' + bld + ' overlappingTaskPairs=' + pairs.length +
+  console.log('§TPL_REVEAL_CONCURRENCY bld=' + bld + ' layer=' + LAY + ' overlappingTaskPairs=' + pairs.length +
     ' (crossLevel=' + crossLevel.length + ' sameLevel=' + pairs.filter(p => p.sameLevel).length +
     ') of ' + (tasks.length * (tasks.length - 1) / 2) + ' pairs — sameLevel MUST stay 0 ' +
     '(witness_4d_template_instantiation no-same-level-phase-overlap)');
   if (!crossLevel.length) {
-    console.log('§TPL_PARALLEL_REVEAL bld=' + bld + ' VACUOUS — no two task windows intersect, so P2 judged nothing');
+    console.log('§TPL_PARALLEL_REVEAL bld=' + bld + ' layer=' + LAY + ' VACUOUS — no two task windows intersect, so P2 judged nothing');
     return false;
   }
 
@@ -98,7 +112,7 @@ function run(bld, startISO) {
       .map(s => ({ t: tag, ts: s.s, te: s.e }));
     const A = pick(p.a, 'A'), B = pick(p.b, 'B');
     if (!A.length || !B.length) {
-      console.log('§TPL_REVEAL_INTERLEAVE bld=' + bld + ' ' + p.a.id + ' | ' + p.b.id +
+      console.log('§TPL_REVEAL_INTERLEAVE bld=' + bld + ' layer=' + LAY + ' ' + p.a.id + ' | ' + p.b.id +
         ' VACUOUS — one side contributes no element inside the shared range (nA=' + A.length + ' nB=' + B.length + ')');
       allPass = false; return;
     }
@@ -139,7 +153,7 @@ function run(bld, startISO) {
     // itself makes available to co-occur.
     const ok = alt > 1 && bothActive === Math.min(aBins, bBins);
     if (!ok) allPass = false;
-    console.log('§TPL_REVEAL_DEADAIR bld=' + bld + ' pair=' + p.a.id + '|' + p.b.id +
+    console.log('§TPL_REVEAL_DEADAIR bld=' + bld + ' layer=' + LAY + ' pair=' + p.a.id + '|' + p.b.id +
       ' binsActive A=' + aBins + '/' + BINS + ' B=' + bBins + '/' + BINS + ' both=' + bothActive +
       ' — ' + (bothActive === Math.min(aBins, bBins)
         ? 'every slice the sparser task occupies is SHARED (no serialisation); ' +
@@ -147,7 +161,7 @@ function run(bld, startISO) {
         : 'a slice has one task active while the other is ALSO capable of being active — genuine serialisation'));
     const rng = arr => (Math.min.apply(null, arr.map(x => x.ts)) - base) / DAY;
     const rngE = arr => (Math.max.apply(null, arr.map(x => x.ts)) - base) / DAY;
-    console.log('§TPL_REVEAL_INTERLEAVE bld=' + bld +
+    console.log('§TPL_REVEAL_INTERLEAVE bld=' + bld + ' layer=' + LAY +
       ' A=' + p.a.id + '[' + p.a.sDays + ',' + p.a.eDays + ']' +
       ' B=' + p.b.id + '[' + p.b.sDays + ',' + p.b.eDays + ']' +
       ' sharedWindowDays=[' + ((s0 - base) / DAY).toFixed(1) + ',' + ((e0 - base) / DAY).toFixed(1) + ']' +
@@ -162,7 +176,7 @@ function run(bld, startISO) {
         : 'FAIL: ' + (BINS - bothActive) + ' slice(s) of the shared window have only ONE task revealing'));
   });
 
-  console.log('§TPL_PARALLEL_REVEAL bld=' + bld + ' ' + (outWin === 0 && allPass ? 'PASS' : 'FAIL') +
+  console.log('§TPL_PARALLEL_REVEAL bld=' + bld + ' layer=' + LAY + ' ' + (outWin === 0 && allPass ? 'PASS' : 'FAIL') +
     ' — absolute=' + (outWin === 0) + ' interleaved=' + allPass);
   return outWin === 0 && allPass;
 }

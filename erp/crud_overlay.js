@@ -110,10 +110,30 @@
   //   ANY window is editable per its own dictionary. Lower-cased key, mirrors crud_ops keys.
   var FOLDED = {};
   function registerFolded(key, entry) { if (key && entry) FOLDED[String(key).toLowerCase()] = entry; }
+  // §P1 (ERP_IDEMPIERE_UX_PARITY.md §IMPL P1.2 — Witness: W-PARITY-FIELDSET). PRECEDENCE INVERTED 2026-09-02:
+  //   curated ∧ folded → CORE.mergeCuratedWithFold — the AD fold is the FIELD SET, the curated entry keeps only
+  //   what the AD cannot express (verbs · docAction · ownerGated · cas · docPolicy) plus the PIN ORDER of its own
+  //   columns (so the O2C field positions never move under the user). Re-merged whenever the host re-registers
+  //   the fold (per verb — create/update shape the readonly set differently). curated-only (glassbowl.html, which
+  //   registers no fold) and folded-only (any non-curated window) are unchanged.
+  var _mergedCache = {};
+  function _hasLogic(f) { return [f.displaylogic, f.readonlylogic, f.mandatorylogic].some(function (s) { return s != null && String(s).trim() !== ''; }); }
   function entryFor(key) {
-    if (STORE && !isMeta(key) && STORE[key]) { var e = STORE[key]; e.key = key; return e; }
-    var f = FOLDED[String(key).toLowerCase()];
-    if (f) { f.key = String(key).toLowerCase(); return f; }
+    var lk = String(key == null ? '' : key).toLowerCase();
+    var cur = (STORE && !isMeta(key) && STORE[key]) ? STORE[key] : null;
+    var f = FOLDED[lk] || null;
+    if (cur && f) {
+      var c = _mergedCache[lk];
+      if (!c || c.fold !== f || c.curated !== cur) {
+        var m = CORE.mergeCuratedWithFold(cur, f); m.key = key;
+        console.log('§PARITY-FIELDSET key=' + key + ' curated=' + m.curatedFields + ' ad=' + m.adFields + ' merged=' + m.fields.length +
+                    ' pinned=' + m.pinned + ' appended=' + m.appended + ' withLogic=' + m.fields.filter(_hasLogic).length + ' source=AD-fold+curated-pins');
+        c = _mergedCache[lk] = { fold: f, curated: cur, entry: m };
+      }
+      return c.entry;
+    }
+    if (cur) { cur.key = key; return cur; }
+    if (f) { f.key = lk; return f; }
     return null;
   }
   function hasEntry(key) { return !!(STORE && !isMeta(key) && STORE[key]) || !!FOLDED[String(key).toLowerCase()]; }
@@ -349,6 +369,70 @@
       });
       console.log('§CRUD-CALLOUT host bPartner handler registered (CalloutOrder.bPartner — bill+pricelist default; engine handlers untouched)');
     }
+    // §INOUT-CALLOUTS (prompts/AGENT_QUEUE.md §INOUT-CALLOUTS, §ERP-SESSION-CLOSE §CLOSE.4 item 3) — the two
+    // atoms §CLOSE.4 named as "half-built and forced". Both are AD data: ad_column.callout declares
+    // CalloutInOut.bpartner on M_InOut.C_BPartner_ID and CalloutInOut.docType on M_InOut.C_DocType_ID
+    // (queried from ad_seed.db, not assumed). Registered as HOST GLUE for the same reason CalloutOrder.bPartner
+    // is: they need the bundle, and W-CALLOUT PINS the engine's installDefaultHandlers at 6 pure atoms.
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutInOut.bpartner')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutInOut.bpartner', function (ctx, info) {
+        // Java home (EXTRACT, do NOT invent) — CalloutInOut.bpartner (CalloutInOut.java:264-333):
+        //   its whole field-setting body is inside `if (!IsSOTrx)` (:291) — the RECEIPT side. It sets
+        //   C_BPartner_Location_ID = (select max(l.C_BPartner_Location_ID) … where IsActive='Y') (:274,:294-298)
+        //   and AD_User_ID = ShipTo_User_ID when > 0 else max(active AD_User) (:275-276, :300-307).
+        //   The IsSOTrx branch (:311-320) only fires a CreditLimitOver STATUS EVENT — a UI notification, not a
+        //   field — so it is NAMED-DEFERRED, never silently skipped.
+        // This is the atom that makes a Material Receipt create stop needing C_BPartner_Location_ID typed by
+        // hand (witness_p2p_invoice_match had to type 114 explicitly, with a comment saying real iDempiere
+        // defaults it via this very callout).
+        var r = info.record || {};
+        var bp = Number(r.C_BPartner_ID || r.c_bpartner_id || 0);
+        if (!bp) return { derived: {} };
+        // IsSOTrx is not a field on this form; the per-window signal is MovementType (§Fix 2's own finding —
+        // the M_InOut AD_Tab family splits Shipment 'C-' vs Receipt 'V+' by MovementType, never IsSOTrx).
+        // Read the record first, then that window signal — the same precedence _docCtx uses.
+        var so = null;
+        if (r.IsSOTrx != null || r.issotrx != null) so = String(r.IsSOTrx != null ? r.IsSOTrx : r.issotrx).toUpperCase() === 'Y';
+        if (so == null) { var mt = String((global.APP && global.APP._createMovementType) || r.MovementType || r.movementtype || ''); if (/^[A-Z][+-]$/.test(mt)) so = mt.charAt(0) === 'C'; }
+        if (so === true) return { derived: {}, deferred: ['CreditLimitOver (fireDataStatusEEvent — a UI status event, not a field)'] };
+        var bpd = ctx.bpShipDefaults ? ctx.bpShipDefaults(bp) : null;
+        if (!bpd) return { derived: {}, note: 'no c_bpartner row for ' + bp };
+        var d = {};
+        if (bpd.locationId != null) d.C_BPartner_Location_ID = bpd.locationId;
+        if (bpd.userId != null) d.AD_User_ID = bpd.userId;
+        return { derived: d, note: 'receipt-side location/contact defaulted from BP ' + bp };
+      });
+      console.log('§CRUD-CALLOUT host CalloutInOut.bpartner registered (receipt-side C_BPartner_Location_ID + AD_User_ID default; the SO credit-limit branch is a status event, named-deferred)');
+    }
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutInOut.docType')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutInOut.docType', function (ctx, info) {
+        // Java home (EXTRACT, do NOT invent) — CalloutInOut.docType (CalloutInOut.java:191-262): reads the
+        // chosen C_DocType's DocBaseType + IsSOTrx, sets IsSOTrx from the doctype when they differ (:214-227)
+        // and MovementType = MInOut.getMovementType(ctx, C_DocType_ID, IsSOTrx, null) (:229).
+        // getMovementType IS ALREADY PORTED, verbatim, as erp_engine.movementTypeOf(docBaseType, issotrx)
+        // (erp_engine.js:302-309) — landed for E-4/stockMoves. This atom calls it; it does not re-derive it
+        // (§CLOSE.4's own words: "its body sets MovementType via the very rule E-4 already ported").
+        // The DocumentNo re-preview branch (:231-258) is NAMED-DEFERRED: _seedDocNoPreview/_previewDocNo
+        // already own DocumentNo-from-sequence on this form, and two writers to one field is the defect.
+        var r = info.record || {};
+        var dt = Number(r.C_DocType_ID || r.c_doctype_id || 0);
+        if (!dt) return { derived: {} };
+        var info2 = ctx.docTypeInfo ? ctx.docTypeInfo(dt) : null;
+        if (!info2) return { derived: {}, note: 'no c_doctype row for ' + dt };
+        var E = global.ERPEngine;
+        if (!E || typeof E.movementTypeOf !== 'function')
+          return { derived: {}, deferred: ['MovementType (erp_engine.movementTypeOf absent — never re-derived here)'] };
+        var d = {}, deferred = [];
+        var mt = E.movementTypeOf(info2.docBaseType, info2.issotrx);
+        if (mt) d.MovementType = mt; else deferred.push('MovementType (DocBaseType ' + info2.docBaseType + ' is not MMS/MMR — getMovementType returns null)');
+        // IsSOTrx is carried too (the Java sets it), even though M_InOut's create form declares no IsSOTrx
+        // field, so nothing applies it today — MOrder/MInOut beforeSave own that column. Derived, not dropped.
+        if (info2.issotrx === 'Y' || info2.issotrx === 'N') d.IsSOTrx = info2.issotrx;
+        deferred.push('DocumentNo re-preview (:231-258 — _seedDocNoPreview already owns this field)');
+        return { derived: d, deferred: deferred, note: 'DocBaseType ' + info2.docBaseType + ' IsSOTrx ' + info2.issotrx + ' -> MovementType ' + mt };
+      });
+      console.log('§CRUD-CALLOUT host CalloutInOut.docType registered (MovementType via erp_engine.movementTypeOf — the E-4 port, not a second derivation)');
+    }
   }
   function fireCreateCallout(e, changedCol) {
     if (!global.AdCallout || typeof withBundle !== 'function' || !e || !changedCol) return;
@@ -361,6 +445,25 @@
           try { var row = b3.prepare('SELECT m_pricelist_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(bpId));
             return row ? { priceListId: row.m_pricelist_id } : null; } catch (er) { return null; }
         },
+        // §INOUT-CALLOUTS — the two accessors CalloutInOut.bpartner/.docType need, as the SAME kind of
+        // read-the-real-join helper bpDefaults already is. The SQL is the Java's own, transcribed:
+        //   bpShipDefaults ← CalloutInOut.java:274-276 (max active location; ShipTo user else max active user)
+        //   docTypeInfo    ← CalloutInOut.java:197-201 (DocBaseType + IsSOTrx off C_DocType)
+        bpShipDefaults: function (bpId) {
+          try {
+            var row = b3.prepare(
+              "SELECT (SELECT MAX(l.c_bpartner_location_id) FROM c_bpartner_location l WHERE l.c_bpartner_id=p.c_bpartner_id AND l.isactive='Y') AS loc," +
+              " (SELECT MAX(u.ad_user_id) FROM ad_user u WHERE u.c_bpartner_id=p.c_bpartner_id AND u.isactive='Y' AND u.isshipto='Y') AS shipto," +
+              " (SELECT MAX(u.ad_user_id) FROM ad_user u WHERE u.c_bpartner_id=p.c_bpartner_id AND u.isactive='Y') AS anyuser" +
+              " FROM c_bpartner p WHERE p.c_bpartner_id=?").get(Number(bpId));
+            if (!row) return null;
+            return { locationId: row.loc, userId: (Number(row.shipto) > 0 ? row.shipto : row.anyuser) };
+          } catch (er) { return null; }
+        },
+        docTypeInfo: function (dtId) {
+          try { var row = b3.prepare('SELECT docbasetype, issotrx FROM c_doctype WHERE c_doctype_id=?').get(Number(dtId));
+            return row ? { docBaseType: row.docbasetype, issotrx: row.issotrx } : null; } catch (er) { return null; }
+        },
         productPrice: function (pid) {   // forward-compat for a c_orderline create (next leg) — the real price-list join
           try { var row = b3.prepare('SELECT pp.pricestd, pp.pricelist FROM m_productprice pp JOIN m_pricelist_version v ON v.m_pricelist_version_id=pp.m_pricelist_version_id WHERE pp.m_product_id=? LIMIT 1').get(Number(pid));
             return row ? { priceStd: row.pricestd, priceList: row.pricelist } : null; } catch (er) { return null; }
@@ -370,10 +473,19 @@
       var derived = res.derived || {}, applied = [];
       Object.keys(derived).forEach(function (c) {
         var inEl = fhost.querySelector('[data-col="' + c + '"]') || fhost.querySelector('[data-col="' + String(c).toLowerCase() + '"]');
-        if (inEl && !inEl.disabled) { inEl.value = derived[c] == null ? '' : derived[c]; applied.push(c); }
+        // §INOUT-CALLOUTS — a READ-ONLY field is still WRITTEN by a callout. iDempiere's callouts set the
+        // model, not the widget (mTab.setValue(...)); IsReadOnly='Y' stops the USER typing, it does not stop
+        // the engine filling. MEASURED: CalloutInOut.docType derived MovementType='V+' and it was dropped on
+        // the floor, because M_InOut.MovementType is IsReadOnly='Y' on AD_Tab 296 — the very column that tab
+        // is keyed on. Same class for C_OrderLine.QtyOrdered (IsReadOnly='Y' on tab 187), which is exactly
+        // what CalloutOrder.qty exists to fill. gatherVals() reads every field element regardless of
+        // `disabled`, so a value written here reaches the saved record. `(ro)` marks it in the §-log so the
+        // two cases stay distinguishable.
+        if (inEl) { _setVal(inEl, derived[c]); applied.push(c + (inEl.disabled ? '(ro)' : '')); }
       });
       var short = function (n) { return String(n).split('.').slice(-2).join('.'); };
-      console.log('§CRUD-CALLOUT table=' + e.key + ' col=' + changedCol + ' callouts=[' + (res.callouts || []).map(short).join(',') + '] fired=[' + (res.fired || []).map(short).join(',') + '] absent=[' + (res.absent || []).map(short).join(',') + '] derived=' + JSON.stringify(derived) + ' applied=[' + applied.join(',') + ']');
+      console.log('§CRUD-CALLOUT table=' + e.key + ' col=' + changedCol + ' callouts=[' + (res.callouts || []).map(short).join(',') + '] fired=[' + (res.fired || []).map(short).join(',') + '] absent=[' + (res.absent || []).map(short).join(',') + '] derived=' + JSON.stringify(derived) + ' applied=[' + applied.join(',') + ']' +
+        ((res.deferred && res.deferred.length) ? ' deferred=[' + res.deferred.join(' | ') + ']' : ''));
       if (applied.length && typeof applyAdLogic === 'function') try { applyAdLogic(e); } catch (er) {}
     });
   }
@@ -409,10 +521,11 @@
          '<button class=cfb id=cfCancel>Cancel</button><button class="cfb cfsave" id=cfSave>' + (verb === 'create' ? 'Create' : 'Save') + '</button></div>';
     fhost = form; _inlineHost = null;                           // modal mount (Glass/Gravity ring path)
     form.innerHTML = h; form.className = 'open';
-    populateRefs(e);
+    populateRefs(e, orig);                                      // §P3 — orig is the window context the @token@ feed reads
     applyAdLogic(e);                                            // §AD-LOGIC-LIVE — initial show/hide/enable/require off the AD
     var body = form.querySelector('.cfbody');                   // …and re-apply on every edit so the form REACTS like iDempiere
-    if (body) { body.addEventListener('input', function () { applyAdLogic(e); }); body.addEventListener('change', function () { applyAdLogic(e); }); }
+    if (body) { body.addEventListener('input', function () { applyAdLogic(e); });
+                body.addEventListener('change', function () { applyAdLogic(e); populateRefs(e, orig, { valRuleOnly: true }); }); }
     // §CRUD-CALLOUT (S2/J4) — on a create form, a field change fires the AD callout (price/defaults FILL like
     //   iDempiere: e.g. C_BPartner_ID → bill-to + price list). Fires AFTER applyAdLogic; derived siblings filled.
     if (verb === 'create' && body) body.addEventListener('change', function (ev) {
@@ -462,7 +575,7 @@
     var drift = draftDrift(d, _formCtx.baseline);
     (_formCtx.e.fields || []).forEach(function (f) {
       if (!Object.prototype.hasOwnProperty.call(d.vals || {}, f.col)) return;
-      var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (el) el.value = d.vals[f.col] == null ? '' : d.vals[f.col];
+      var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (el) _setVal(el, d.vals[f.col]);
     });
     try { applyAdLogic(_formCtx.e); } catch (er) {}
     if (drift.drifted) { toast('Restored your draft — note: ' + drift.cols.join(', ') + ' changed underneath since'); }
@@ -495,9 +608,37 @@
     });
     console.log('§AD-LOGIC-LIVE key=' + e.key + ' fields=' + (e.fields || []).length + ' withLogic=' + withLogic + ' visibilityFlips=' + flips + ' applied=DOM');
   }
+  // ── §P2 value seam (ERP_IDEMPIERE_UX_PARITY.md §IMPL P2.6 — Witness: W-PARITY-REFLIST) ─────────────────────
+  // A DisplayType-20 (Yes-No) field is a checkbox, so a field's value is no longer always `el.value`. EVERY read
+  // and write of a form control goes through these two: checked → 'Y'; unchecked EDITABLE → 'N' (iDempiere
+  // GridField.getDefault:1033-1035 — a Yes-No with no default reads N); unchecked DISABLED with no value → ''
+  // (a read-only Yes-No the engine derives — e.g. C_Payment.IsReceipt — is never force-written as N).
+  function _getVal(el) {
+    if (!el) return '';
+    if (el.type === 'checkbox') {
+      if (el.checked) return 'Y';
+      return (el.disabled && el.getAttribute('data-unset') === '1') ? '' : 'N';
+    }
+    return el.value;
+  }
+  function _setVal(el, v) {
+    if (!el) return;
+    if (el.type === 'checkbox') {
+      var s = v == null ? '' : String(v).toUpperCase();
+      el.checked = (s === 'Y' || s === 'TRUE' || s === '1');
+      if (s === '') el.setAttribute('data-unset', '1'); else el.removeAttribute('data-unset');
+      return;
+    }
+    el.value = v == null ? '' : v;
+  }
   function fieldInput(f, val) {
     var v = (val == null ? '' : val), ro = f.readonly ? ' disabled' : '';
     if (f.type === 'list') return '<select class=cfi data-col="' + f.col + '" data-cur="' + esc(v) + '"' + ro + '></select>';   // W-CRUD-DOCSTATUS: carry the CURRENT value to populateRefs
+    if (f.type === 'yesno') {                                 // §P2 — DisplayType 20: a Y/N control, never free text
+      var ys = String(v).toUpperCase(), on = (ys === 'Y' || ys === 'TRUE' || ys === '1');
+      console.log('§YESNO col=' + f.col + ' cur="' + esc(v) + '" editable=' + !f.readonly);
+      return '<input class="cfi cfyn" type="checkbox" data-col="' + f.col + '" data-yesno="1"' + (on ? ' checked' : '') + (ys === '' ? ' data-unset="1"' : '') + ro + '>';
+    }
     if (f.type === 'fk')   return '<select class=cfi data-col="' + f.col + '" data-fk="' + esc(f.ref || '') + '"' + ro + '><option value="' + esc(v) + '">' + esc(v) + '</option></select>';
     var t = f.type === 'number' ? 'number' : (f.type === 'date' ? 'date' : 'text');
     if (f.type === 'date') {                                  // §CRUD-DATE: strip any time component → strict yyyy-MM-dd, else type=date renders blank
@@ -506,18 +647,129 @@
     }
     return '<input class=cfi type="' + t + '" data-col="' + f.col + '" value="' + esc(v) + '"' + ro + (f.readonly ? ' title="derived — read-only"' : '') + '>';
   }
+  // ── §P3 AD_Val_Rule (ERP_IDEMPIERE_UX_PARITY.md §IMPL-P3 — Witness: W-PARITY-VALRULE) ────────────────────
+  // _valRuleCtx — the @token@ context feed, and the ONLY new logic this item adds; the evaluator itself is the
+  // already-witnessed build/erp/ad_valrule.js (W-VALRULE), run verbatim below. iDempiere's window context is
+  // EVERY column of the row under edit plus the Env globals, so the RECORD comes first and the globals fill
+  // only what it lacks. AD tokens are CamelCase and our rows are lowercase, so that case mapping lives HERE —
+  // it is our storage detail, not the engine's — resolved against the rule's own token list.
+  // A token whose value is absent OR EMPTY is deliberately left OUT, so the engine reports it unresolved and
+  // the E3 arm fires (Env.java:1641-1645 + MLookup.java:1128-1140: an unparsable token empties the clause and
+  // the lookup is CLEARED). Never defaulted to something plausible — that would offer rows iDempiere hides.
+  function _valRuleCtx(code, e, rec) {
+    var VR = global.AdValRule, low = {}, k;
+    if (rec) for (k in rec) if (rec[k] != null) low[String(k).toLowerCase()] = rec[k];
+    var vals = gatherVals(e);
+    for (k in vals) if (vals[k] != null && String(vals[k]) !== '') low[String(k).toLowerCase()] = vals[k];
+    var app = global.APP || {};
+    var fill = function (n, v) { if (v != null && String(v) !== '' && (low[n] == null || String(low[n]) === '')) low[n] = v; };
+    // §P7 P7.8 — the PARENT tab's row is part of the same WINDOW context. iDempiere resolves a val rule with
+    // Env.parseContext(ctx, WindowNo, TabNo, …), and Env.getContext falls back from "WindowNo|TabNo|Column" to
+    // "WindowNo|Column" (the window-wide value the parent tab pushed via GridTab.setCurrentRow → updateContext),
+    // so a DETAIL tab's rule sees its header's columns. Measured: without this, C_OrderLine's
+    // C_BPartner_Location_ID (AD_Val_Rule 167 `…C_BPartner_ID=@C_BPartner_ID@…`) can never resolve — the line's
+    // own C_BPartner_ID is IsReadOnly='Y' with an `@SQL=` default we do not run — so the picker offered 0 rows
+    // and the AD-mandatory column was unfillable. Row first, window second: the record under edit always wins.
+    var win = app._winCtx;
+    if (win) for (k in win) fill(String(k).toLowerCase(), win[k]);
+    fill('ad_client_id', app.clientId); fill('ad_org_id', app.orgId);
+    fill('ad_user_id', app.actor); fill('salesrep_id', app.actor); fill('date', today());
+    // the per-window Sales/Purchase signal idempiere.html already extracts from the active AD_Tab's own
+    // WhereClause — reuse it, do NOT write a second reader (_docCtx owns this question).
+    if (app._createIsSOTrx === 'Y' || app._createIsSOTrx === 'N') fill('issotrx', app._createIsSOTrx);
+    var ctx = {};
+    ((VR && VR.tokensIn(code)) || []).forEach(function (tok) {
+      var v = low[String(tok).toLowerCase().replace(/^[#$]/, '')];
+      if (v != null && String(v) !== '') ctx[tok] = v;
+    });
+    return ctx;
+  }
+  // §P8 P8.5 — _valRuleListFilter: apply a column's AD_Val_Rule to its AD_Ref_List option set. iDempiere runs
+  //   the SAME ValidationCode against the AD_Ref_List query (MLookupFactory.getLookup_List), so the clause is
+  //   evaluated by the SAME shipped engine over ad_ref_list scoped to this reference — not a second evaluator,
+  //   and not a hand-rolled string match. Returns { verdict, admitted:{value:1} } or a named degrade.
+  function _valRuleListFilter(db, f) {
+    var VR = global.AdValRule;
+    if (!VR || f.valruleid == null || f.refListId == null) return { verdict: 'no-engine', admitted: null };
+    var b3 = _mvB3(db), row = null;
+    try { row = b3.prepare('SELECT ad_val_rule_id,name,type,code FROM ad_val_rule WHERE ad_val_rule_id=?').get(Number(f.valruleid)); } catch (e0) {}
+    if (!row || row.code == null) return { verdict: 'no-rule-row', admitted: null };
+    var res;
+    try { res = VR.evalValRule(b3, Number(f.valruleid), { ctx: _valRuleCtx(row.code, f._entry || { fields: [] }, null), table: 'ad_ref_list' }); }
+    catch (e1) { return { verdict: 'engine-error:' + String((e1 && e1.message) || e1).slice(0, 50), admitted: null }; }
+    if (!res || !res.ok) return { verdict: (res && res.deferred) || 'deferred', admitted: null };
+    try {
+      var q = b3.prepare('SELECT value FROM ad_ref_list WHERE ad_reference_id=? AND UPPER(isactive)=\'Y\' AND (' + res.sql + ')')
+                .all(Number(f.refListId));
+      var am = {}; (q || []).forEach(function (r) { am[String(r.value)] = 1; });
+      return { verdict: 'applied', admitted: am, sql: res.sql };
+    } catch (e2) { return { verdict: 'where-failed:' + String((e2 && e2.message) || e2).slice(0, 50), admitted: null }; }
+  }
+  // _valRuleFilter — run the SHIPPED interpreter through the SAME better-sqlite3 shim the beforeSave hooks
+  // use (_mvB3), so the witnessed engine executes verbatim in the browser and there is no second evaluator.
+  function _valRuleFilter(db, f, e, rec) {
+    var VR = global.AdValRule;
+    if (!VR || f.valruleid == null || !f.ref) return null;
+    var b3 = _mvB3(db), row = null;
+    try { row = b3.prepare('SELECT ad_val_rule_id,name,type,code FROM ad_val_rule WHERE ad_val_rule_id=?').get(Number(f.valruleid)); } catch (e0) {}
+    if (!row || row.code == null) return { verdict: 'no-rule-row', id: f.valruleid, ctx: {} };
+    var ctx = _valRuleCtx(row.code, e, rec), res;
+    try { res = VR.evalValRule(b3, Number(f.valruleid), { ctx: ctx, table: f.ref }); }
+    catch (e1) { return { verdict: 'engine-error:' + String((e1 && e1.message) || e1).slice(0, 60), id: f.valruleid, name: row.name, ctx: ctx }; }
+    if (!res.ok) return { verdict: res.deferred, id: res.id, name: res.name, unresolved: res.unresolved || [], ctx: ctx };
+    return { verdict: 'applied', id: res.id, name: res.name, sql: res.sql, ctx: ctx };
+  }
+
   // list options from __meta; fk options from the ref table via the page bundle (truth-bound).
-  function populateRefs(e) {
+  // rec (§P3) = the row under edit, the window context the @token@ feed reads. opts.valRuleOnly re-runs ONLY
+  // the val-rule'd fk pickers (a dependent lookup refresh, e.g. C_BPartner_ID → C_BPartner_Location_ID) —
+  // a full re-run would reset every list select back to its render-time data-cur and lose the user's choice.
+  function populateRefs(e, rec, opts) {
+    var only = !!(opts && opts.valRuleOnly);
     (e.fields || []).forEach(function (f) {
+      if (only && !(f.type === 'fk' && f.valruleid != null && !f.readonly)) return;
       var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (!el || el.tagName !== 'SELECT') return;
       if (f.type === 'list') {
         // W-CRUD-DOCSTATUS render arm: the record's CURRENT value must render SELECTED (pre-fix the select
         // landed on the first __meta key → a CO order silently read back as DR).
-        var opts = (STORE.__meta && STORE.__meta[f.ref]) || {}; var cur = el.getAttribute('data-cur') || '';
+        // §P2 (W-PARITY-REFLIST): an AD-folded List carries its own ORDERED AD_Ref_List set (f.optionList);
+        // the curated __meta map is the legacy source. A blank leading option is offered when the field is not
+        // mandatory OR has no value yet (MLookup adds "" for non-mandatory; an empty mandatory field must read
+        // '' so the validator reports `required` instead of silently persisting the first option).
+        var opts = f.optionList || (STORE && STORE.__meta && STORE.__meta[f.ref]) || {}; var cur = el.getAttribute('data-cur') || '';
+        // §P8 P8.5 (ERP_IDEMPIERE_UX_PARITY.md §P8-SPEC — W-PARITY-REFTABLE): a LIST can carry an AD_Val_Rule
+        // too, and iDempiere appends it to the AD_Ref_List query exactly as it does for a table lookup
+        // (MLookupFactory.getLookup_List: the rule's Code IS the lookup's ValidationCode). Measured: `trxtype`
+        // on tab 330 (ref 17, AD_Val_Rule 200012 `AD_Ref_List.Value NOT IN ('A','F')`) is the one val-ruled
+        // list on the five document tabs, and it BITES 6 options → 4. Filtered through the SAME shipped engine
+        // (ad_valrule.js over the AD_Ref_List rows) — no second evaluator. A clause the engine cannot apply
+        // DEGRADES to the unfiltered set and says so, never silently narrows.
+        var listVr = null;
+        if (f.valruleid != null && Array.isArray(f.optionList) && f.optionList.length && typeof withBundle === 'function') {
+          withBundle(function (ldb) {
+            if (!ldb) return;
+            listVr = _valRuleListFilter(ldb, f);
+            if (listVr && listVr.verdict === 'applied') {
+              var keepSet = listVr.admitted;
+              var kept = f.optionList.filter(function (o) { return Object.prototype.hasOwnProperty.call(keepSet, String(o.value)); });
+              if (kept.length) {
+                opts = {}; kept.forEach(function (o) { opts[o.value] = o.name; });
+                // P8.6 — validateField reads the SAME map the picker was built from, so the OFFERED set and
+                // the ACCEPTED set are one set by construction (the §P3.6 invariant, extended to lists).
+                f.options = opts;
+              }
+            }
+          });
+          console.log('§REFLIST-VALRULE col=' + f.col + ' vr=' + f.valruleid +
+                      ' before=' + f.optionList.length + ' after=' + Object.keys(opts).length +
+                      ' verdict=' + (listVr ? listVr.verdict : 'no-engine'));
+        }
         var lo = CORE.listOptions(opts, cur);
-        el.innerHTML = lo.map(function (o) { return '<option value="' + esc(o.value) + '"' + (o.selected ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('');
+        var blank = (!f.required || cur === '') ? '<option value=""' + (cur === '' ? ' selected' : '') + '></option>' : '';
+        el.innerHTML = blank + lo.map(function (o) { return '<option value="' + esc(o.value) + '"' + (o.selected ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('');
         var sel = lo.filter(function (o) { return o.selected; }).map(function (o) { return o.value; })[0];
-        console.log('§CRUD-LIST col=' + f.col + ' cur="' + cur + '" options=' + lo.length + ' selected="' + (sel || '(first)') + '"');
+        if (f.optionList) console.log('§REFLIST col=' + f.col + ' refId=' + f.refListId + ' options=' + f.optionList.length + ' cur="' + cur + '" selected="' + (sel || (cur === '' ? '(blank)' : '(first)')) + '" source=AD_Ref_List');
+        console.log('§CRUD-LIST col=' + f.col + ' cur="' + cur + '" options=' + lo.length + ' selected="' + (sel || (blank ? '(blank)' : '(first)')) + '"');
       } else if (f.type === 'fk' && typeof withBundle === 'function') {
         var keep = el.value;
         // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22) — a readonly fk (a child tab's
@@ -532,7 +784,7 @@
           if (keep === '' || keep == null) return;
           withBundle(function (db) {
             try {
-              var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+              var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
               var res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' WHERE ' + pk + '=' + Number(keep));
               var label = (res.length && res[0].values.length) ? (res[0].values[0][1] + ' (' + res[0].values[0][0] + ')') : keep;
               el.innerHTML = '<option value="' + esc(keep) + '" selected>' + esc(label) + '</option>';
@@ -542,35 +794,205 @@
         }
         withBundle(function (db) {
           try {
-            var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
-            var res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' ORDER BY ' + pk + ' LIMIT 200');
-            if (!res.length) return;
-            el.innerHTML = res[0].values.map(function (r) { return '<option value="' + esc(r[0]) + '"' + (String(r[0]) === String(keep) ? ' selected' : '') + '>' + esc(r[1] + ' (' + r[0] + ')') + '</option>'; }).join('');
+            // §P8 P8.4 (W-PARITY-REFTABLE): the pk is the AD_Ref_Table AD_Key when there is one
+            // (MLookupFactory.getLookup_Table), else the TableDIR convention.
+            var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+            // ── §P3 (§P3-SPEC P3.4 — W-PARITY-VALRULE): narrow the candidate set to exactly the rows this
+            // column's AD_Val_Rule admits. MLookupFactory.java:122-125 — the rule's Code IS the lookup's
+            // ValidationCode, appended to the lookup query; that is all this does.
+            var vr = _valRuleFilter(db, f, e, rec), where = '', noRows = false, before = null, admitted = null;
+            // §P8 P8.4 — AD_Ref_Table.WhereClause is a SECOND narrowing iDempiere appends to the lookup query,
+            // independent of AD_Val_Rule (ref 190 → AD_User restricted to IsSalesRep='Y' partners; ref 138 →
+            // non-summary active partners; ref 130 → AD_Org <> 0). Substituted through the SAME engine as the
+            // val rule (AdValRule.substitute — ONE owner, no second substituter); an unresolved @token@ empties
+            // the clause exactly as Env.java:1641-1645 + MLookup.java:1128-1140 say, and we then decline to
+            // apply it rather than invent a narrowing.
+            var refWhere = null, refWhereState = 'none';
+            if (f.refwhere) {
+              refWhereState = 'unresolved';
+              try {
+                var VRe = global.AdValRule;
+                if (VRe && typeof VRe.substitute === 'function') {
+                  var sub = VRe.substitute(String(f.refwhere), _valRuleCtx(String(f.refwhere), e, rec));
+                  var subSql = (sub && sub.sql != null) ? sub.sql : (typeof sub === 'string' ? sub : null);
+                  var unresolved = sub && sub.unresolved && sub.unresolved.length;
+                  if (subSql && String(subSql).trim() !== '' && !unresolved) { refWhere = subSql; refWhereState = 'applied'; }
+                } else if (String(f.refwhere).indexOf('@') < 0) { refWhere = String(f.refwhere); refWhereState = 'applied'; }
+              } catch (eRw) { refWhereState = 'error'; }
+              if (!refWhere && String(f.refwhere).indexOf('@') < 0) { refWhere = String(f.refwhere); refWhereState = 'applied'; }
+            }
+            var andRef = function (clause) {
+              if (!refWhere) return clause;
+              return clause ? '(' + clause + ') AND (' + refWhere + ')' : refWhere;
+            };
+            if (vr) {
+              try { var bq = db.exec('SELECT COUNT(*) FROM ' + t); before = bq.length ? bq[0].values[0][0] : null; } catch (eb) {}
+              if (vr.verdict === 'applied') where = ' WHERE (' + andRef(vr.sql) + ')';
+              // E3 — an unresolved @token@ CLEARS the lookup (MLookup.java:1128-1140, "Loader NOT Validated").
+              // iDempiere shows NO rows here; it does not silently show all of them. Matching that IS the item.
+              else if (vr.verdict === 'unresolved-tokens') noRows = true;
+              // any other verdict (empty/unsafe/sql-token/no-bound-table/engine-error) is OUR interpreter's
+              // limit, not iDempiere's verdict — degrade to the UNFILTERED picker and say so in the log, rather
+              // than hiding rows iDempiere does show. Named, never silent.
+            }
+            if (!vr && refWhere) where = ' WHERE (' + refWhere + ')';
+            // §FKFOLD — query the TIP-FOLDED row set, so a row the user just created is offerable.
+            var src = _fkFoldSource(db, t, pk);
+            var res = [];
+            if (!noRows) {
+              try { res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + src + where + ' ORDER BY ' + pk + ' LIMIT 200'); }
+              catch (ew) {                                    // a clause naming a column this narrower seed lacks
+                if (vr) vr.verdict = 'where-failed:' + String((ew && ew.message) || ew).slice(0, 60);
+                where = ''; res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + src + ' ORDER BY ' + pk + ' LIMIT 200');
+              }
+            }
+            // f.admitted — the UNLIMITED admitted id-set, so validateField (P3.6) still rejects an excluded row
+            // when a legal one sorts past the picker's LIMIT 200. Same clause, so the OFFERED set and the
+            // ACCEPTED set are one set by construction and cannot drift apart.
+            if (vr && vr.verdict === 'applied') {
+              try {
+                // the ADMITTED set must come from the SAME source as the OFFERED set, or §P3.6's
+                // "one set by construction" invariant breaks the moment a folded row is offered.
+                var ar = db.exec('SELECT ' + pk + ' FROM ' + src + ' WHERE (' + andRef(vr.sql) + ')'), am = {};
+                if (ar.length) ar[0].values.forEach(function (r) { am[String(r[0])] = 1; });
+                admitted = am;
+              } catch (ea) {}
+            } else if (noRows) admitted = {};                 // nothing is admitted while the lookup is not validated
+            f.admitted = admitted;
+            var rows = res.length ? res[0].values : [];
+            // §P2/§P1 (§IMPL F5), PRESERVED and strengthened: a lookup ALWAYS offers an empty choice when the
+            // field is not mandatory, has no value yet, OR its current value is not in the offered set — pre-fix
+            // an empty fk landed on row 1 and cleanVals persisted it on CREATE (harmless at 8 curated fields,
+            // catastrophic at 81: a payment against the first invoice/charge/project…). Filtering can now make a
+            // previously-shown value unmatched, so that third case must offer the blank too, never fall to row 1.
+            var kEmpty = (keep === '' || keep == null);
+            var hasKeep = !kEmpty && rows.some(function (r) { return String(r[0]) === String(keep); });
+            var blankSel = (kEmpty || !hasKeep);
+            var blankFk = (!f.required || blankSel) ? '<option value=""' + (blankSel ? ' selected' : '') + '></option>' : '';
+            if (f.refsource) console.log('§REFTABLE col=' + f.col + ' src=' + f.refsource + ' table=' + t + ' key=' + pk +
+              ' refWhere=' + refWhereState + ' rows=' + (res.length ? res[0].values.length : 0));
+            if (vr) console.log('§VALRULE col=' + f.col + ' vr=' + vr.id + ' rule="' + (vr.name || '') + '" table=' + t +
+              ' before=' + before + ' after=' + (admitted ? Object.keys(admitted).length : (noRows ? 0 : before)) +
+              ' offered=' + rows.length + ' verdict=' + vr.verdict +
+              (vr.unresolved && vr.unresolved.length ? ' unresolved=[' + vr.unresolved.join(',') + ']' : '') +
+              ' ctx=' + JSON.stringify(vr.ctx || {}) + ' kept=' + (hasKeep ? keep : '(blank)'));
+            if (!rows.length && !noRows) return;              // no data at all → leave the raw-value option as-is
+            el.innerHTML = blankFk + rows.map(function (r) { return '<option value="' + esc(r[0]) + '"' + (String(r[0]) === String(keep) ? ' selected' : '') + '>' + esc(r[1] + ' (' + r[0] + ')') + '</option>'; }).join('');
           } catch (er) {}
         });
       }
     });
   }
+  // ── §FKFOLD (prompts/ERP_FK_PICKER_SIDECAR.md) — Witness: W-FK-PICKER-SIDECAR ────────────────────────
+  // _fkFoldSource(db, t, pk) — the table name the FK picker should QUERY.
+  // The picker's candidate SELECT runs against the raw bundle, so a row the user just created (sidecar-only,
+  // negative pk) can never be offered. This file already documents that for the READ-ONLY parent-FK case
+  // (§ORDERLINE-PARENT-FK above: "the full LIST query below is scoped to the raw base table and can NEVER
+  // include a synthetic/overlay-only row"); the EDITABLE case was still raw-only, and an AD_Val_Rule makes
+  // it fatal rather than merely incomplete. MEASURED on the P2P lane's own witness:
+  //   §VALRULE col=c_orderline_id vr=203 rule="C_OrderLine of Order" table=c_orderline
+  //            before=117 after=0 offered=0 verdict=applied ctx={"C_Order_ID":-1}
+  // — the rule correctly filters to the order the user is receiving against, that order is the one they
+  // just created, and the bundle has no such row, so the picker is EMPTY and the receipt line cannot be
+  // linked at all. Create a PO → receive against it → the PO-line picker offers nothing.
+  //
+  // Fix: when (and only when) the sidecar carries CRUD ops for this table, materialise CORE.listTip's
+  // FOLDED rows into a TEMP table and point the SAME query — same val-rule SQL, same refWhere, same LIMIT —
+  // at that instead. One code path, one predicate; creates/updates/tombstones all honoured because listTip
+  // already folds them. No sidecar ops for the table ⇒ returns `t` unchanged and costs one indexed query,
+  // so the overwhelmingly common case is byte-identical to before.
+  var FKFOLD_TMP = '__fk_fold';
+  function _sidecarTouches(sdb, t) {
+    if (!sdb) return false;
+    try {
+      var r = sdb.exec("SELECT 1 FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0" +
+                       " AND lower(parameters) LIKE '%\"table\":\"" + String(t).toLowerCase() + "\"%' LIMIT 1");
+      return !!(r.length && r[0].values.length);
+    } catch (e) { return false; }
+  }
+  function _fkFoldSource(db, t, pk) {
+    var sdb = SIDE;                                   // sync handle; null before hydration → degrade to raw
+    if (!sdb || !CORE || typeof CORE.listTip !== 'function') return t;
+    if (!_sidecarTouches(sdb, t)) return t;           // nothing overlay-side for this table → nothing to fold
+    try {
+      var baseRes = db.exec('SELECT * FROM ' + t);
+      if (!baseRes.length) return t;
+      var cols = baseRes[0].columns, base = baseRes[0].values.map(function (v) {
+        var o = {}; cols.forEach(function (c, i) { o[c] = v[i]; }); return o;
+      });
+      var folded = CORE.listTip(sdb, t, pk, base, null);
+      var rows = (folded && folded.rows) || base;
+      // Rebuild the temp table from the REAL schema, never `AS SELECT … WHERE 0`: that form gives every
+      // column NO declared type, i.e. BLOB affinity, and a val rule comparing an INTEGER key against a
+      // substituted string ('-1') then stops matching rows the base table would have matched. Measured:
+      // with `AS SELECT` the fold contained the row (folded=118 created=1) and the rule STILL returned
+      // after=0 offered=0. PRAGMA table_info gives back the declared types, so affinity is preserved.
+      var ti = db.exec('PRAGMA table_info(' + t + ')');
+      if (!ti.length || !ti[0].values.length) return t;
+      var decl = ti[0].values.map(function (r) { return r[1] + ' ' + (r[2] || ''); }).join(',');
+      db.run('DROP TABLE IF EXISTS ' + FKFOLD_TMP);
+      db.run('CREATE TEMP TABLE ' + FKFOLD_TMP + ' (' + decl + ')');
+      var ph = cols.map(function () { return '?'; }).join(',');
+      var ins = 'INSERT INTO ' + FKFOLD_TMP + ' (' + cols.join(',') + ') VALUES (' + ph + ')';
+      // CASE-INSENSITIVE COLUMN BIND. `cols` are the BUNDLE's column names, which carry the AD's own
+      // CamelCase (C_OrderLine_ID); a listTip-created row's keys are the op's lowercase field names
+      // (c_orderline_id). A direct r[c] lookup therefore binds NULL for EVERY column of a folded row —
+      // measured: the folded row landed as [null,"null",null,"null"] while the JS row read
+      // c_orderline_id=-2 c_order_id=-1, so the row was present and yet matched no predicate.
+      // Base rows were unaffected (they are built from these same `cols`), which is exactly why the
+      // count looked right — inserted=118, tableCount=118 — while the fold did nothing.
+      var st = db.prepare(ins), okN = 0, badN = 0, firstErr = null;
+      rows.forEach(function (r) {
+        var lower = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) lower[String(k).toLowerCase()] = r[k];
+        try {
+          st.run(cols.map(function (c) {
+            var v = (r[c] !== undefined) ? r[c] : lower[String(c).toLowerCase()];
+            return (v === undefined || v === null) ? null : v;
+          }));
+          okN++;
+        } catch (ei) { badN++; if (!firstErr) firstErr = (ei && ei.message) || String(ei); }
+      });
+      st.free();
+      if (badN) console.log('§FKFOLD-INS table=' + t + ' inserted=' + okN + ' FAILED=' + badN + ' firstErr=' + firstErr);
+      // ALIAS IT BACK TO `t`. An AD_Val_Rule's Code is real iDempiere SQL and is routinely
+      // TABLE-QUALIFIED (vr 203 is literally `C_OrderLine.C_Order_ID=@C_Order_ID@`), so a bare temp-table
+      // name makes the qualifier unresolvable and the whole rule degrades to unfiltered. Measured, by the
+      // app's own log, on the first run of this fix:
+      //   §VALRULE … offered=118 verdict=where-failed:no such column: C_OrderLine.C_Order_ID
+      // — i.e. it silently OFFERED all 117 unrelated lines. Aliasing keeps every qualifier resolving
+      // (SQLite identifiers are case-insensitive, so `C_OrderLine.` binds to the alias).
+      var srcExpr = FKFOLD_TMP + ' AS ' + t;
+      console.log('§FKFOLD table=' + t + ' base=' + base.length + ' folded=' + rows.length +
+                  ' created=' + ((folded && folded.created) || []).length +
+                  ' hidden=' + ((folded && folded.hidden) || []).length + ' source=' + srcExpr);
+      return srcExpr;
+    } catch (e) {
+      console.log('§FKFOLD table=' + t + ' FAILED ' + ((e && e.message) || e) + ' → raw bundle (never worse than before)');
+      try { db.run('DROP TABLE IF EXISTS ' + FKFOLD_TMP); } catch (e2) {}
+      return t;
+    }
+  }
   function recHasCol(db, t, c) { try { var pr = db.exec('PRAGMA table_info(' + t + ')'); return pr.length && pr[0].values.some(function (v) { return String(v[1]).toLowerCase() === c; }); } catch (e) { return false; } }
 
   function gatherVals(e) {
     var vals = {};
-    (e.fields || []).forEach(function (f) { var el = fhost.querySelector('[data-col="' + f.col + '"]'); vals[f.col] = el ? el.value : ''; });
+    (e.fields || []).forEach(function (f) { var el = fhost.querySelector('[data-col="' + f.col + '"]'); vals[f.col] = el ? _getVal(el) : ''; });
     return vals;
   }
+  // §P1 P1.4 / §P5 (ERP_IDEMPIERE_UX_PARITY.md §IMPL F4 — Witness: W-PARITY-FIELDSET): SEQUENCE INVERTED
+  // 2026-09-02 — beforeSave hooks FIRST, then the field validator over the derived row. iDempiere's mandatory
+  // check (GridTable.dataSave:1647-1650 → getMandatory:1973-2001, "FillMandatory") runs over a row that dataNew's
+  // defaults and the callouts have already filled; this stack's equivalents of those fills are the faithful
+  // M*.beforeSave ports (ad_modelval.js — C_DocTypeTarget/C_BPartner_Location/SalesRep/C_PaymentTerm/C_Currency/
+  // M_Warehouse). With the full AD field set live (§P1) those columns are visible + mandatory, so the validator
+  // must see what the engine derives — the validator itself is unchanged and still runs over EVERY field.
   function saveForm(verb, e, orig, id) {
     var vals = gatherVals(e);
     Array.prototype.forEach.call(fhost.querySelectorAll('.cfe'), function (s) { s.textContent = ''; });
-    var res = CORE.validate(STORE, e, vals, orig);
-    if (!res.ok) {
-      res.errors.forEach(function (er) { var s = fhost.querySelector('.cfe[data-col="' + er.col + '"]'); if (s) s.textContent = er.why; });
-      console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' REJECT errors=' + JSON.stringify(res.errors));
-      return;
-    }
-    console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' ok');
+    var typedCols = Object.keys(vals).filter(function (c) { return vals[c] != null && String(vals[c]).trim() !== ''; });
     // §AD-MODELVAL-LIVE (UI_UNPARK_RESUME.md B-3) — fire the PROVEN beforeSave hook engine (ad_modelval.js,
-    // W-*-SAVE: faithful M*.beforeSave ports) AFTER the field-level checks: a hook REJECT blocks the save
-    // with the hook's error string; hook-DERIVED values fill the form/op (the info.derived seam).
+    // W-*-SAVE: faithful M*.beforeSave ports): a hook REJECT blocks the save with the hook's error string;
+    // hook-DERIVED values fill the form/op (the info.derived seam) BEFORE the field-level checks (see above).
     fireBeforeSaveHooks(e, vals, orig, function (mv) {
       if (mv && !mv.ok) {
         var s0 = fhost.querySelector('.cfe'); if (s0) s0.textContent = mv.blocked + ': ' + mv.error;
@@ -578,19 +1000,57 @@
         console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' hook=' + mv.blocked + ' verdict=REJECT error="' + mv.error + '"');
         return;
       }
+      var derivedCols = [], appliedCols = [];
       if (mv && mv.derived && Object.keys(mv.derived).length) {
         Object.keys(mv.derived).forEach(function (c) {
           var inEl = fhost.querySelector('[data-col="' + c + '"]');
-          if (inEl) inEl.value = mv.derived[c] == null ? '' : mv.derived[c];
+          if (inEl) _setVal(inEl, mv.derived[c]);
           // a hook-derived value rides the op when it maps to a form field/val; on CREATE, a beforeSave-filled
           // MANDATORY default that has NO visible field (e.g. M_Warehouse_ID defaulted from session context) must
           // STILL persist on the new row — iDempiere saves what beforeSave derived. (UPDATE keeps the tight guard.)
-          if (Object.prototype.hasOwnProperty.call(vals, c) || (e.fields || []).some(function (f) { return f.col === c; }) || verb === 'create') vals[c] = mv.derived[c];
+          if (Object.prototype.hasOwnProperty.call(vals, c) || (e.fields || []).some(function (f) { return f.col === c; }) || verb === 'create') {
+            vals[c] = mv.derived[c]; appliedCols.push(c);
+            if (mv.derived[c] != null && String(mv.derived[c]).trim() !== '' && typedCols.indexOf(c) < 0) derivedCols.push(c);
+          }
         });
         console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' verdict=OK derived=' + JSON.stringify(mv.derived) + ' fired=' + mv.fired);
       } else if (mv) {
         console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' verdict=OK fired=' + mv.fired);
       }
+      // The validator judges the USER's row: an engine-derived value is not a user edit, so a derived column is
+      // folded into the comparison baseline (unchanged → skipped, exactly like an untouched field). Without this
+      // a derivation onto an AD-read-only column (MOrder.currencyFromPriceList → C_Currency_ID, IsReadOnly=Y)
+      // read as a forbidden edit and REJECTED every Sales Order create (found by the O2C regression run).
+      var origV = orig;
+      if (orig && appliedCols.length) { origV = {}; var ok0; for (ok0 in orig) origV[ok0] = orig[ok0]; appliedCols.forEach(function (c) { origV[c] = vals[c]; }); }
+      // §P7 P7.4 — the SAME rule on a CREATE, where `orig` is now null (the whole new row is checked). A
+      // hook-derived value is written by the MODEL layer (MOrder.setBPartner → set_Value), never through the
+      // grid — iDempiere's lookup validation (GridField.validateValueNoDirect:1141-1229) runs at dataNew /
+      // setValue time on GRID values and never re-inspects what beforeSave wrote afterwards. So a derived
+      // column is folded into the baseline here too: `orig === val` → unchanged → skipped, exactly as on an
+      // update, while EVERY other column still sees `orig === undefined` → fully checked (crud_core.js:126).
+      // Without this the create check rejected MOrder.billDefaults' own Bill_Location_ID as
+      // `valrule:not-admitted` — the derived id is legal for the model and simply is not in the picker's set.
+      // Only a NON-EMPTY derivation is folded in: a hook that derived nothing must still let `required` fire.
+      else if (!orig && appliedCols.length) {
+        origV = {};
+        appliedCols.forEach(function (c) { if (vals[c] != null && String(vals[c]).trim() !== '') origV[c] = vals[c]; });
+        if (!Object.keys(origV).length) origV = null;
+      }
+      var res = CORE.validate(STORE, e, vals, origV);
+      // §PARITY-MANDATORY — the §P5 consequence made witnessable: which required fields the user typed, which the
+      // engine derived (iDempiere's defaults/callouts equivalent), and which are still missing (→ REJECT required).
+      var recNow = {}, kk; if (orig) for (kk in orig) recNow[kk] = orig[kk]; for (kk in vals) recNow[kk] = vals[kk];
+      var reqCols = (e.fields || []).filter(function (f) { var ef = CORE.effectiveFlags(f, recNow, recNow); return ef.visible && !ef.readonly && ef.required; }).map(function (f) { return f.col; });
+      var missing = res.errors.filter(function (er) { return er.why === 'required'; }).map(function (er) { return er.col; });
+      console.log('§PARITY-MANDATORY key=' + e.key + ' verb=' + verb + ' required=[' + reqCols.join(',') + '] typed=[' + reqCols.filter(function (c) { return typedCols.indexOf(c) >= 0; }).join(',') +
+                  '] derived=[' + reqCols.filter(function (c) { return derivedCols.indexOf(c) >= 0; }).join(',') + '] missing=[' + missing.join(',') + ']');
+      if (!res.ok) {
+        res.errors.forEach(function (er) { var s = fhost.querySelector('.cfe[data-col="' + er.col + '"]'); if (s) s.textContent = er.why; });
+        console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' REJECT errors=' + JSON.stringify(res.errors));
+        return;
+      }
+      console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' ok');
       var op = CORE.buildOp(verb, e, vals, orig, { id: id });
       if (op.op_type === 'CRUD_UPDATE') {
         // W-CRUD-DOCSTATUS diff arm: docstatus rides the DOC_ACTION lane (SET_STATUS) — never a silent
@@ -672,7 +1132,7 @@
       h += '<label class=cfrow data-row="' + f.col + '" data-ad-table="' + esc(e.key) + '" data-ad-column="' + esc(f.col) + '"><span class=cfl>' + esc(f.label || f.col) + ' <i class=req data-req="' + f.col + '" style="display:none">*</i></span>' + fieldInput(f, vals[f.col]) + '<span class="cfe" data-col="' + f.col + '"></span></label>';
     });
     host.innerHTML = h; host.classList.add('idmp-inline-crud');
-    populateRefs(e);
+    populateRefs(e, orig);                                      // §P3 — see renderForm
     applyAdLogic(e);
     // baseline = the values AS RENDERED (populateRefs picks the selected option, fieldInput normalizes dates/numbers),
     //   so a freshly-mounted form reads CLEAN — dirty is a true user delta, not a render-normalization artifact.
@@ -680,16 +1140,34 @@
     host.addEventListener('input', function () { applyAdLogic(e); _refreshInlineDirty(); });
     host.addEventListener('change', function (ev) {
       applyAdLogic(e);
+      // §P3 — a DEPENDENT lookup refresh: changing @C_BPartner_ID@ must re-narrow C_BPartner_Location_ID.
+      // valRuleOnly, because a full re-run would reset every list select to its render-time data-cur.
+      populateRefs(e, orig, { valRuleOnly: true });
       if (verb === 'create') { var el = ev.target && ev.target.closest ? ev.target.closest('[data-col]') : null; var col = el ? el.getAttribute('data-col') : null; if (col) fireCreateCallout(e, col); }
       _refreshInlineDirty();
     });
     // Save validates + diffs against the POST-RENDER baseline (the true user delta) — so untouched fields that the
     //   spec/render handles imperfectly (a readonly fk select that fell to another option, a string-coded fk) never
     //   trip validation and are never written; only what the user actually changed is checked + committed.
-    var save = function () { if (!_inlineDirty()) return; saveForm(verb, e, _inlineBaseline || orig, id); };
+    // §P7 P7.4 (ERP_IDEMPIERE_UX_PARITY.md §P7-SPEC — Witness: W-PARITY-MANDATORY-CREATE) — GAP CLOSED
+    //   2026-09-03. A CREATE now hands validate() `null`, validateField's own documented create contract
+    //   (crud_core.js:126, `orig===undefined` → EVERY field checked), so an untouched EMPTY mandatory field is
+    //   finally required-checked — iDempiere's GridTable.dataSave:1647-1653 → getMandatory:1973-2001 runs over
+    //   the WHOLE new row, not over a user delta. An UPDATE keeps the post-render baseline (only what the user
+    //   actually changed is checked + committed), which is GridField's unchanged-field rule and is unaffected.
+    //   The earlier attempt at this one-liner failed on C_OrderLine/M_InOut only because three faithful New-time
+    //   behaviours were missing; they are now ported, so the reject set is iDempiere's, not ours:
+    //     P7.1 GridField.isMandatory:377-385  — DocumentNo and M_AttributeSetInstance_ID are NEVER window-mandatory
+    //     P7.2 GridField.defaultFromDatatype:1022-1051 — YesNo→'N', numeric→'0' (and '0'/'N' are not empty at :1985)
+    //     P7.3 DisplayType 37 CostPrice is numeric — PriceEntered/PriceActual/PriceList get their 0
+    //   What remains rejectable is what a real iDempiere user must type (C_BPartner_ID, Warehouse, …); the
+    //   validator is NOT weakened anywhere (§P5). §P7-NOT-BUILT names the three stages still absent
+    //   (@token@ DefaultValue, preference defaults, GridTab.dataNew:1179-1181's New-time callout fan).
+    var baselineFor = function (v) { return v === 'create' ? null : (_inlineBaseline || orig); };
+    var save = function () { if (!_inlineDirty()) return; saveForm(verb, e, baselineFor(verb), id); };
     var wire = function (v, fn) { var b = host.querySelector('.ic-vb[data-v="' + v + '"]'); if (b) b.addEventListener('click', fn); };
     wire('save', save);
-    wire('savenew', function () { if (!_inlineDirty()) return; _inlinePendingNew = true; saveForm(verb, e, _inlineBaseline || orig, id); });
+    wire('savenew', function () { if (!_inlineDirty()) return; _inlinePendingNew = true; saveForm(verb, e, baselineFor(verb), id); });
     wire('ignore', function () { ignoreInline(verb); });
     wire('refresh', function () { if (_inlineOpts && typeof _inlineOpts.refresh === 'function') _inlineOpts.refresh(); });
     wire('new', function () { if (_inlineOpts && typeof _inlineOpts.onNew === 'function') _inlineOpts.onNew(); });
@@ -711,7 +1189,7 @@
       return;
     }
     (_formCtx.e.fields || []).forEach(function (f) {
-      var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (el) el.value = _inlineBaseline[f.col] == null ? '' : _inlineBaseline[f.col];
+      var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (el) _setVal(el, _inlineBaseline[f.col]);
     });
     try { applyAdLogic(_formCtx.e); } catch (e) {}
     var st = _draftStore(); if (st) draftClear(st, _formCtx.e.key, _formCtx.id); _clearDraftPip(_formCtx.e.key, _formCtx.id);   // unsaved → strand no private draft
@@ -796,9 +1274,9 @@
         var prevFhost = fhost; fhost = hostTd;
         hostTd.innerHTML = '<div class="ic-cell">' + fieldInput(f, orig[f.col]) + '<span class="cfe" data-col="' + esc(f.col) + '"></span></div>';
         hostTd.classList.add('idmp-cell-edit');
-        populateRefs(e);                                     // list/fk options (every col but ours → el null → skipped)
+        populateRefs(e, orig);                               // list/fk options (every col but ours → el null → skipped)
         var input = hostTd.querySelector('[data-col="' + f.col + '"]');
-        var baseline = input ? input.value : (orig[f.col] == null ? '' : orig[f.col]);   // AS-RENDERED (selected option / normalized date)
+        var baseline = input ? _getVal(input) : (orig[f.col] == null ? '' : orig[f.col]);   // AS-RENDERED (selected option / normalized date / Y-N)
         fhost = prevFhost;                                   // references captured — restore the module host immediately
         if (!input) { hostTd.classList.remove('idmp-cell-edit'); if (typeof opts.onCancel === 'function') opts.onCancel(); return; }
         try { input.focus(); if (input.select) input.select(); } catch (e0) {}
@@ -806,7 +1284,7 @@
         var cancel = function () { if (done) return; done = true; if (typeof opts.onCancel === 'function') opts.onCancel(); };
         var commit = function (viaBlur) {
           if (done) return;
-          var nv = input.value;
+          var nv = _getVal(input);
           if (String(nv == null ? '' : nv) === String(baseline == null ? '' : baseline)) { cancel(); return; }   // unchanged → revert, commit nothing
           var why = CORE.validateField(STORE, f, nv, orig[f.col], rec || {}, {});
           if (why) {                                         // AD reject: Enter keeps the editor + shows it; blur reverts (focus is gone)
@@ -830,6 +1308,7 @@
           else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
         });
         input.addEventListener('blur', function () { setTimeout(function () { commit(true); }, 0); });   // focus-out = commit-or-revert (GridView leaves the editor)
+        if (input.type === 'checkbox') input.addEventListener('change', function () { commit(false); });   // §P2: a Yes-No cell commits on the click itself
         console.log('§INPLACE-CELL-OPEN table=' + key + ' id=' + (id == null ? 'null' : id) + ' col=' + f.col + ' type=' + f.type + ' editor=inline');
       }, id == null ? null : id);
     });
@@ -886,6 +1365,10 @@
     var ctx = {};
     try {
       var app = global.APP || {}, org = Number(app.orgId) || 0, cli = Number(app.clientId) || 0, wh = null;
+      // §P1 P1.5 (ERP_IDEMPIERE_UX_PARITY.md §IMPL) — Env.SALESREP_ID ("#SalesRep_ID", Env.java:133) is the login
+      // user's AD_User_ID; MOrder.beforeSave:1302-1307 / MInvoice:1183-1188 default SalesRep_ID from it. APP.actor
+      // IS that id (applySession: window.APP.actor = _session.user.id). Read, never invented.
+      if (Number(app.actor) > 0) ctx.salesrep_id = Number(app.actor);
       if (org) { try { var oi = b.prepare("SELECT m_warehouse_id FROM ad_orginfo WHERE ad_org_id=? LIMIT 1").get(org);
         if (oi && oi.m_warehouse_id != null) wh = { m_warehouse_id: oi.m_warehouse_id }; } catch (e0) {} }
       if ((!wh || wh.m_warehouse_id == null) && org) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_org_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(org);
@@ -1278,8 +1761,22 @@
           var receipt = hdrRows.filter(function (r) { return String(r.m_inout_id) === String(op.id); })[0];
           if (!receipt) { console.log('§RECEIPT-COMPLETE fan-out gated: receipt ' + op.id + ' not found (bundle+sidecar) → status-only'); cb(null); return; }
           var lines = lineRows.filter(function (r) { return String(r.m_inout_id) === String(op.id); });
-          var ops = E.completeReceipt(receipt, lines, null).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
-          console.log('§RECEIPT-FANOUT receipt=' + op.id + ' issotrx=' + receipt.issotrx + ' lines=' + lines.length + ' matchPoOps=' + ops.length);
+          // §E4 (prompts/ERP_STOCK_EFFECT.md) — the STOCK EFFECT needs the doctype's DocBaseType, which is
+          // MInOut.getMovementType's only input besides IsSOTrx. Read from the bundle's own c_doctype; when
+          // it cannot be read, stockMoves emits ZERO ops and says why — never a guessed inventory sign.
+          var dbt = null;
+          try {
+            var dtr = _rawRows(db, 'SELECT docbasetype FROM c_doctype WHERE c_doctype_id=' + Number(receipt.c_doctype_id));
+            dbt = dtr.length ? dtr[0].docbasetype : null;
+          } catch (edt) { dbt = null; }
+          var all = E.completeReceipt(receipt, lines, { docBaseType: dbt });
+          var ops = all.filter(function (o) { return o.op_type !== 'SET_STATUS'; });
+          var trx = ops.filter(function (o) { return o.table === 'M_Transaction'; });
+          console.log('§RECEIPT-FANOUT receipt=' + op.id + ' issotrx=' + receipt.issotrx + ' lines=' + lines.length +
+                      ' matchPoOps=' + ops.filter(function (o) { return o.table === 'M_MatchPO'; }).length +
+                      ' docBaseType=' + JSON.stringify(dbt) + ' stockOps=' + trx.length +
+                      ' movementtype=' + (trx.length ? trx[0].movementtype : 'none') +
+                      ' netQty=' + trx.reduce(function (a, o) { return a + Number(o.movementqty || 0); }, 0));
           fanout = ops.length ? { ops: ops, glGate: 'none' } : null;
         } catch (er) { console.log('§RECEIPT-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
         cb(fanout);
@@ -1654,6 +2151,50 @@
   // (none of these ops are owner-gated — every op is a fresh CREATE, matching commitCrud's own "CREATE has
   // no prior owner to gate" note). K.commitGroup's own atomicity guarantee means every op in the group
   // commits together or none do. cb(result) — result = {committed, gid?, ids?, sealed?, verifyOk?, reason?}.
+  // _resolveOpRefs — §KIND2-READBACK (prompts/AGENT_QUEUE.md §K2RB.4). A KIND-2 generator commits a NEW
+  // parent document and its lines in ONE group, so a line's parent FK cannot be written by the caller:
+  // a listTip-created row's pk is the SYNTHETIC negated kernel-op id, which does not exist until the
+  // group is staged. The placeholder {__opRef:i} means "the pk of the row op i creates" and is resolved
+  // HERE, inside the same _withFreshSide window commitGroup is about to stage against — so this is a
+  // READ of the id law the kernel already relies on itself, not a prediction across a gap:
+  //   kernel_ops.js:526-530 — "The staged ops will receive ids = max(id)+1..+N on insert … They are
+  //   contiguous because INTEGER PRIMARY KEY auto-increments monotonically and this group is a single
+  //   transaction."
+  // and crud_core.listTip:414 gives a CRUD_CREATE row the pk `-opId`. Hence op i ⇒ pk -(nextId+i).
+  // Returns a COPY (never mutates the caller's ops); an unresolvable ref is left as-is and logged, so a
+  // shape this does not understand fails loudly instead of committing a silent null FK.
+  function _resolveOpRefs(db, ops) {
+    var hasRef = ops.some(function (o) {
+      var f = o && o.fields; if (!f) return false;
+      for (var k in f) if (f.hasOwnProperty(k) && f[k] && typeof f[k] === 'object' && f[k].__opRef != null) return true;
+      return false;
+    });
+    if (!hasRef) return ops;
+    var nextId = null;
+    try { var r = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'); if (r.length) nextId = Number(r[0].values[0][0]) + 1; } catch (e) { nextId = null; }
+    if (nextId == null) { console.warn('§CRUD-GROUP-OPREF cannot read kernel_ops MAX(id) — leaving refs unresolved'); return ops; }
+    var resolved = 0, unresolved = 0;
+    var out = ops.map(function (o) {
+      if (!o || !o.fields) return o;
+      var f2 = {}, any = false;
+      for (var k in o.fields) if (o.fields.hasOwnProperty(k)) {
+        var v = o.fields[k];
+        if (v && typeof v === 'object' && v.__opRef != null) {
+          var idx = Number(v.__opRef);
+          if (idx >= 0 && idx < ops.length) { f2[k] = -(nextId + idx); resolved++; any = true; continue; }
+          unresolved++;
+        }
+        f2[k] = v;
+      }
+      if (!any && !unresolved) return o;
+      var c = {}; for (var p in o) if (o.hasOwnProperty(p)) c[p] = o[p];
+      c.fields = f2; return c;
+    });
+    console.log('§CRUD-GROUP-OPREF nextId=' + nextId + ' resolved=' + resolved + ' unresolved=' + unresolved +
+                ' (a line\'s parent FK = the synthetic pk listTip will give its header op)');
+    return out;
+  }
+
   function applyOpGroup(ops, cb) {
     cb = cb || function () {};
     if (!ops || !ops.length) { cb({ committed: false, reason: 'empty-group' }); return; }
@@ -1661,7 +2202,7 @@
     withSidecar(function (db) {
       if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD-GROUP kernel/sql.js absent — cannot commit'); cb({ committed: false, reason: 'kernel/sql.js absent' }); return; }
       _withFreshSide(K, function (freshDb, done) {
-        var groupOps = ops.map(function (o) { return { op_type: o.op_type, params: o }; });
+        var groupOps = _resolveOpRefs(freshDb, ops).map(function (o) { return { op_type: o.op_type, params: o }; });
         Promise.resolve(K.commitGroup(freshDb, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) {
             console.warn('§CRUD-GROUP commitGroup not-committed reason=' + (res && res.reason || '?'));
@@ -1790,6 +2331,7 @@
       '#crudForm .cfl{font-size:12.5px;color:#c4a8c0}#crudForm .cfl .req{color:#e2574c;font-style:normal}' +
       '#crudForm .cfi{width:100%;background:#0f0b13;border:1px solid #3a2b38;border-radius:7px;padding:6px 8px;color:#ecdcea;font:13px system-ui}' +
       '#crudForm .cfi:disabled{opacity:.55;cursor:not-allowed}#crudForm .cfi:focus{border-color:#e066c0;outline:none}' +
+      '#crudForm .cfi.cfyn,.idmp-inline-crud .cfi.cfyn{width:auto;justify-self:start;margin:0;padding:0;height:16px}' +   // §P2 — a Yes-No is a checkbox, not a full-width box
       '#crudForm .cfe{grid-column:2;font-size:11px;color:#ff7a6e;min-height:0}' +
       '#crudForm .cfnav{display:flex;align-items:center;gap:8px;margin-top:12px}#crudForm .cfnote{font-size:11px;color:#8a6f86;font-style:italic}#crudForm .cfgrow{flex:1}' +
       '#crudForm .cfb{background:#1e1622;color:#ecdcea;border:1px solid #4a2f44;border-radius:8px;padding:6px 13px;font:13px system-ui;cursor:pointer}#crudForm .cfb:hover{border-color:#e066c0}' +
@@ -1929,8 +2471,22 @@
                     editInline: editInline, createInline: createInline, copyInline: copyInline,   // P2/P3 (W-INPLACE-*): in-place editable form view (no modal, no ✎ Edit) — edit/new/copy
                     editCell: editCell,   // P4 (W-INPLACE-GRID-LIVE): row-wise grid cell edit → ONE signed CRUD_UPDATE (GridView parity)
                     ignoreInline: ignoreInline, inlineDirty: _inlineDirty, formNeedsSave: _inlineContentDirty,   // Leg 4 (W-DIRTY-GATE): content-aware "leaving loses real work?" seam
+                    formValues: function () { return _formCtx ? gatherVals(_formCtx.e) : null; },   // §P2 (W-PARITY-REFLIST): read-only witness seam — the open form's values AS THE ENGINE READS THEM (Y/N for a Yes-No)
+                    formEntry: function () { return _formCtx ? _formCtx.e : null; },              // §P1 (W-PARITY-FIELDSET): the open form's (merged) entry — field set + pins, read-only
                     registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
+                    // §P10 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P4-OPEN item 5 — W-DOCNO-BRANCH):
+                    //   READ-ONLY witness seam over the two IsDocNoControlled branches. The only DocNo witness
+                    //   asserted the TABLE-level path against a MOCKED __idmpDb whose oracle was written beside
+                    //   the assertion, so the doctype-controlled branch (34 seeded doctypes ='Y', all 34 with a
+                    //   resolving ACTIVE ad_sequence) was never judged at all. These expose the SHIPPED functions
+                    //   — no reimplementation — so a witness can drive BOTH branches against the real seed.
+                    //   Neither consumes a sequence: _previewDocNo is the non-consuming preview iDempiere shows
+                    //   on a New form; _allocDocNo (the consuming one) is deliberately NOT exposed.
+                    docNoSeam: { docTypeSeqId: function (fields) {
+                                   var m = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
+                                   return m ? _docTypeSeqId(m, fields) : null; },
+                                 previewDocNo: _previewDocNo },
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,

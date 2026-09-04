@@ -3053,7 +3053,10 @@
         return;
       }
       wrap.style.cssText = 'padding:8px 10px;display:flex;flex-direction:column;gap:6px';
-      var sorted = graph.nodes.slice().sort(function(a, b) {
+      // §SEALED-ROOM (2026-08-03): a room the graph itself marked unreachable (common/room_graph.js
+      // — zero edges even after E1/E2/E6 rescue, A*-verified) is not offered as a From/To target —
+      // it still exists as real data (Room lens etc. are untouched), it just can't be routed to.
+      var sorted = graph.nodes.filter(function(n) { return !n.sealed; }).sort(function(a, b) {
         if (a.storey !== b.storey) return a.storey < b.storey ? -1 : 1;
         return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
       });

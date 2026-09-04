@@ -384,7 +384,7 @@
 
     var doorRows = [];
     try {
-      doorRows = dbQuery('SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y' +
+      doorRows = dbQuery('SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z' +
         ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid' +
         " WHERE m.ifc_class LIKE 'IfcDoor%' AND m.discipline='ARC' AND t.center_x IS NOT NULL") || [];
     } catch (eDr) { log('§ROOM_GRAPH_DOOR_ERR ' + eDr.message); }
@@ -418,7 +418,14 @@
     // blob behavior per storey if the backbone build finds nothing there (short/doorless corridor,
     // or the module isn't available) — never worse than before, never invents a spine that isn't
     // grounded in real doors+walls.
-    var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0, orphanRescued = 0, ambiguousResidualRescued = 0;
+    var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0, orphanRescued = 0, ambiguousResidualRescued = 0, subHumanDoors = 0;
+    // §HUMAN-HEIGHT-DOOR (2026-08-03, user directive): a door/opening whose own measured clear
+    // height is below human passage height is not a route a person can walk through — hatches,
+    // low service ducts, vent louvres modeled as IfcDoor. 1.5m is deliberately far BELOW any real
+    // code-minimum door height (IBC/ADA egress ~2.03m clear) so it only excludes openings no
+    // building code would ever call a door, never a genuine one. Measured via the door's own
+    // bbox_z (same column doorStats() already reads), never a per-building guess.
+    var SUB_HUMAN_DOOR_HEIGHT = 1.5;
     var spineByStorey = {}; // storey -> [{guid,cx,cy}]
     // §CORRIDOR-WIDTH: real, wall-measured corridor rects (see hallway_backbone.js bucketRect) fed
     // into _pointWalkable()'s room-rects fallback — WITHOUT this, a storey with no walkable raster
@@ -471,8 +478,13 @@
     }
 
     doorRows.forEach(function (d) {
-      var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5], bx = d[6] || 0, by = d[7] || 0;
+      var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5], bx = d[6] || 0, by = d[7] || 0, bz = d[8];
       if (!isRoomDoor(name)) { nonRoomDoors++; return; }
+      if (bz != null && bz > 0 && bz < SUB_HUMAN_DOOR_HEIGHT) {
+        subHumanDoors++;
+        log('§ROOM_GRAPH_SUB_HUMAN_DOOR "' + name + '" height=' + bz.toFixed(2) + 'm storey=' + storey + ' (< ' + SUB_HUMAN_DOOR_HEIGHT + 'm, not human-passable)');
+        return;
+      }
       // §DOOR-THRESHOLD-WALKABLE (2026-07-25, measured on the Hospital field-report route): a door
       // opening is walkable BY CONSTRUCTION — it is the only place you can cross a wall — but no
       // walkable-evidence source covered it. The raster is slab-mesh-derived (a threshold often has
@@ -774,6 +786,7 @@
 
     var circCount = order.filter(function (lg) { return nodes[lg].kind === 'circ'; }).length;
     log('§ROOM_GRAPH nodes=' + roomOrder.length + ' doors=' + doorRows.length + ' nonRoomDoors=' + nonRoomDoors +
+      ' subHumanDoors=' + subHumanDoors +
       ' edges=' + edges.filter(function (e) { return e.kind === 'E1'; }).length +
       ' deadend=' + deadend + ' orphan=' + orphan + ' orphanRescued=' + orphanRescued + ' ambiguous=' + ambiguous +
       ' ambiguousResidualRescued=' + ambiguousResidualRescued +
@@ -919,13 +932,21 @@
         return;
       }
       bridgeRejected++;
+      // §SEALED-ROOM (2026-08-03, user directive): a room with zero edges even after every rescue
+      // (E1 door-touch, E2 lone-door, E6 spine-bridge with A*-verified walkable route) is not a
+      // routing failure to keep retrying — it is a genuine dead end by the best evidence this graph
+      // has. Marked, not deleted: the room still exists (real IFC data), it just cannot be a Find
+      // Panel From/To target. Rejection is now per-COMPONENT (the E1 union-find bridge-by-component
+      // change above), so every member of a rejected component is sealed — a cluster of E1-linked
+      // rooms with no way out is a dead end as a WHOLE, not just its nearest-ranked member.
+      members.forEach(function (mlg) { nodes[mlg].sealed = true; });
       log('§ROOM_SPINE_BRIDGE_REJECT' + (members.length > 1 ? '_CLUSTER' : '') + ' storey=' + storey +
           (members.length > 1 ? ' clusterSize=' + members.length + ' clusterMembers=' + members.join(',')
                                : ' room="' + (nodes[members[0]].name || members[0]) + '"') +
-          ' candidates=' + ranked.length + ' nearest=' + (ranked.length ? ranked[0].d.toFixed(2) : '?') + 'm — no walkable route (straight or A*)');
+          ' candidates=' + ranked.length + ' nearest=' + (ranked.length ? ranked[0].d.toFixed(2) : '?') + 'm — no walkable route (straight or A*), marked sealed');
     });
     if (roomBridges || bridgeRejected)
-      log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges + ' rejected=' + bridgeRejected);
+      log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges + ' rejected=' + bridgeRejected + ' sealed=' + bridgeRejected);
 
     return {
       nodes: roomOrder.map(function (lg) { return nodes[lg]; }), // §API-COMPAT: room-only, see file header
@@ -936,11 +957,12 @@
       corridorRectsByStorey: corridorRectsByStorey, // §CORRIDOR-WIDTH: real backbone corridor rects, same fallback
       doorRectsByStorey: doorRectsByStorey, // §DOOR-THRESHOLD-WALKABLE: real door footprints (openings are walkable)
       stairRectsByStorey: stairRectsByStorey, // §STAIR-FOOTPRINT-WALKABLE: real stair footprints (stairs are circulation)
-      stats: { doors: doorRows.length, nonRoomDoors: nonRoomDoors,
+      stats: { doors: doorRows.length, nonRoomDoors: nonRoomDoors, subHumanDoors: subHumanDoors,
         edges: edges.filter(function (e) { return e.kind === 'E1'; }).length,
         deadend: deadend, orphan: orphan, orphanRescued: orphanRescued, ambiguous: ambiguous,
         ambiguousResidualRescued: ambiguousResidualRescued,
-        circ: circCount, stairs: e3, stairsSkipped: e3Skipped, exits: exits, e2: e2 }
+        circ: circCount, stairs: e3, stairsSkipped: e3Skipped, exits: exits, e2: e2,
+        roomBridges: roomBridges, sealed: bridgeRejected }
     };
   }
 

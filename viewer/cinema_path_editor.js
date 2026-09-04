@@ -2782,7 +2782,8 @@
   // on screen but occluded in the depth buffer.
   // §CPE_CONE_ORIENT_ADJUST scoping note (a judgment call, not user-specified): a correction's
   // envelope only ever affects `_beat3Pose` (the walk beat) — effects.js's own comment explains why
-  // (that is where `_pinLookAtAt`/§CPE_AIM_DEPTH already live, and it is the beat the "staring
+  // (that is where `_pinLookAtAt` lives — §CPE_AIM_DEPTH used to as well, retired 2026-09-02,
+  // §CPE_AIM_DEPTH_RETIRED — and it is the beat the "staring
   // skywards" bug this feature targets actually occurs in). Outside the walk beat (dive/spin/orbit/
   // tail) the cone's WORLD position collapses onto a fixed point per-beat (e.g. `settle` throughout
   // the whole spin), so a correction "anchored" there would nearest-point-snap onto the walk's own

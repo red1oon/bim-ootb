@@ -229,6 +229,11 @@ function setupStreaming(A) {
       ' creaseDeg=' + CREASE_DEG + ' minDistinctN=' + CURVE_MIN_DISTINCT + ' ms=' + out.ms +
       (geomsTouched === 0 ? '  INCONCLUSIVE — no curve-class range was found; nothing was judged' : '') +
       '');
+    // §DUCT_SILHOUETTE reports alongside, because the two passes are the two halves of one answer
+    // and reading them apart is what made "roundness works on lamps but not on ducts" hard to
+    // diagnose: this line says how many vertices got a smoother NORMAL, the next says how many
+    // elements got a rounder OUTLINE. A pass that changed nothing prints NO-OP, not silence.
+    if (window.SilhouetteRefine) { try { window.SilhouetteRefine.report(); } catch (e) {} }
     // §IDX16 reports SEPARATELY (2026-08-30): it used to ride the line above, so on Hospital —
     // where this pass did not fire at all — its saving was invisible rather than absent.
     console.log('§IDX16 geoms=' + _idx16Geoms + ' saved=' + (_idx16Saved / 1048576).toFixed(1) + 'MB' +
@@ -610,6 +615,127 @@ function setupStreaming(A) {
     return { code: code, r: ((hex >> 16) & 255) / 255, g: ((hex >> 8) & 255) / 255, b: (hex & 255) / 255 };
   }
 
+  // ── §MEP_COLOR_SURVIVES_PHOTOREAL (PHOTOREAL_STILL_RENDER.md, 2026-09-02) ────────────────────
+  // Implementing PHOTOREAL_STILL_RENDER.md §MEP_COLOR_SURVIVES_PHOTOREAL — Witness: W-MEP-COLOR-PHOTOREAL.
+  //
+  // ⚠ THE PALETTE IS AN AUTHORED CHOICE, NOT A PUBLISHED STANDARD. There is no MEP colour convention
+  // anywhere in the model data — no IfcSystem/`system` column exists on any shipped building DB, and
+  // the colour columns that do exist are either one undifferentiated default or the extractor's own
+  // `≈`-prefixed approximations. EXTRACTED here: `elements_meta.discipline`, `material_rgba`,
+  // `material_name`, `element_name`. AUTHORED here: the discipline→hue assignment, which reuses
+  // A.DISC_COLORS (config.js:43-49) VERBATIM — the same table the HUD bars, bbox placeholders,
+  // city.js, measure.js and the §SUNGLASS band already paint with. NO NEW COLOUR VALUE IS INTRODUCED.
+  //
+  // THE MEASURED DEFECT (spec §MEP_COLOR_SURVIVES_PHOTOREAL, sat_census.log): §MEP_DISC_TINT's gate
+  // `!rgbaStr` asks "does the element have a colour", but on 4 of the 5 shipped buildings 100% of MEP
+  // elements DO carry one — an ACHROMATIC off-white default: Hospital `0.920,0.900,0.850` x 40,563
+  // (material_name NULL), Clinic the same value x 11,712 (`≈ Off-White`), Terminal white/`Silver`.
+  // The tint therefore fired only on HHS. _TRI_METAL then multiplies over that off-white
+  // (`diffuseColor.rgb *= triContrasted` — the shader already tints, it does not replace) and the
+  // frame reads exactly as the user described it: greyish metallic. Its second gate,
+  // DISC_TINT_CLASSES, is the 3 IFC2x3 generic classes, and 0 of Hospital's 41,987 MEP elements are
+  // in it (Hospital exports IFC4-style IfcPipeSegment/IfcDuctFitting/...).
+  //
+  // THE RULE — hue comes from the first source that HAS one; the element always keeps its own value:
+  //   1a. a real authored IFC material name (not `≈`-prefixed)  -> UNTOUCHED, byte-identical
+  //   1b. the element's own rgba already carries a hue (sat>=T) -> UNTOUCHED, byte-identical
+  //       (this is what preserves the user's fire-red lever: Hospital IfcPipeFitting|FP|
+  //        0.843,0.137,0.102 x 1,298, saturation 0.879)
+  //   2.  MEP class, no authored name, colour absent or achromatic -> trade hue+saturation, the
+  //       element's OWN V. Trade colour = _mepNameHint (authored Revit family name, more specific)
+  //       if IT carries a hue, else A.DISC_COLORS[discipline].
+  //   3.  anything else -> unchanged.
+  var MEP_HUE_CLASSES = {
+    // Exactly the two MEP blocks STD_MAT already delimits with its own comments ("MEP: pipes +
+    // ducts", "MEP: terminals + devices") plus the IFC2x3 generic trio DISC_TINT_CLASSES named.
+    // Not a new grouping — the same classes _TRI_METAL/STD_MAT already treat as MEP.
+    IfcFlowSegment: 1, IfcFlowFitting: 1, IfcFlowTerminal: 1, IfcFlowController: 1,
+    IfcFlowMovingDevice: 1, IfcFlowTreatmentDevice: 1, IfcFlowStorageDevice: 1, IfcFlowInstrument: 1,
+    IfcEnergyConversionDevice: 1,
+    IfcPipe: 1, IfcPipeSegment: 1, IfcPipeFitting: 1,
+    IfcDuct: 1, IfcDuctSegment: 1, IfcDuctFitting: 1,
+    IfcCableCarrier: 1, IfcCableCarrierSegment: 1, IfcCableCarrierFitting: 1,
+    IfcValve: 1, IfcAirTerminal: 1, IfcLightFixture: 1, IfcSanitaryTerminal: 1,
+    IfcFireSuppressionTerminal: 1, IfcElectricAppliance: 1, IfcAlarm: 1, IfcSwitchingDevice: 1,
+    IfcDistributionControlElement: 1, IfcElectricDistributionPoint: 1
+  };
+  A._mepHueClasses = MEP_HUE_CLASSES;   // exposed for witness assertions, read-only
+
+  // T — the achromatic threshold. NOT picked: over the tier-2-eligible population fleet-wide (MEP
+  // classes, no authored material name) the distinct HSV saturations present are
+  // {0.000, 0.033, 0.076, 0.100, 0.588, 0.713, 0.879, 1.000}. The widest EMPTY band is
+  // 0.100 -> 0.588 (width 0.4884); T is its midpoint. Split 53,204 achromatic / 85,934 chromatic,
+  // with ZERO elements within +/-0.1 of T — no element's tier depends on the third decimal.
+  // Re-measured by the witness on every run (gap2.log).
+  A.MEP_HUE_ACHROMATIC_MAX = 0.344;
+
+  // ONE owner for "does this colour carry a hue". HSV saturation, the same (max-min)/max the census
+  // used. Returns null when there is no colour at all — a caller must never read that as 0.
+  A._chromaOf = function(rgbaStr) {
+    if (!rgbaStr || rgbaStr.indexOf(',') === -1) return null;
+    var p = rgbaStr.split(',').map(Number);
+    if (!(p.length >= 3) || isNaN(p[0]) || isNaN(p[1]) || isNaN(p[2])) return null;
+    var mx = Math.max(p[0], p[1], p[2]), mn = Math.min(p[0], p[1], p[2]);
+    return mx <= 0 ? 0 : (mx - mn) / mx;
+  };
+  // ONE owner for "is this a real authored IFC material name". The `≈ ` prefix is the EXTRACTOR's own
+  // marker for a synthetic colour approximation — §CPE_MATERIAL_KEY established this test and it is
+  // reused verbatim rather than re-derived (Hospital 6,664/6,664 approx, Terminal 48,428/48,428 real).
+  A._isAuthoredMatName = function(matName) {
+    return !!matName && matName.charAt(0) !== '≈';
+  };
+  // ONE owner for "which trade colour does this MEP element belong to" — the first source that
+  // carries a hue. An achromatic source (the DUCT hint's galvanized grey, sat 0.052; DISC_COLORS.VOID
+  // 0x666666, sat 0) supplies no trade hue and is passed over. Returns null when none does.
+  A._mepTradeHue = function(discipline, mepHint) {
+    var T = A.MEP_HUE_ACHROMATIC_MAX;
+    if (mepHint) {
+      var hs = A._chromaOf(mepHint.r + ',' + mepHint.g + ',' + mepHint.b);
+      if (hs !== null && hs >= T) return { code: mepHint.code, r: mepHint.r, g: mepHint.g, b: mepHint.b, src: 'name-hint' };
+    }
+    if (discipline && A.DISC_COLORS && A.DISC_COLORS[discipline] != null) {
+      var d = _hexToRgb(discipline, A.DISC_COLORS[discipline]);
+      var ds = A._chromaOf(d.r + ',' + d.g + ',' + d.b);
+      if (ds !== null && ds >= T) return { code: discipline, r: d.r, g: d.g, b: d.b, src: 'discipline' };
+    }
+    return null;
+  };
+  // HSV hue transfer: H and S from the trade colour, V from the element's own albedo. HSV and not
+  // HSL because HSL desaturates hard as L->1 — at the off-white default's L=0.885 an HSL
+  // recombination returns near-white, which is the very look being fixed. HSV keeps the chroma:
+  // 0.920,0.900,0.850 under FP (0xcc8844) -> 0.920,0.613,0.306.
+  function _hsvHueTransfer(trade, v) {
+    var mx = Math.max(trade.r, trade.g, trade.b);
+    if (mx <= 0) return { r: 0, g: 0, b: 0 };
+    // Scale the trade colour so its own max channel becomes the element's V. This preserves the
+    // trade colour's H and S exactly (both are ratios between channels, invariant under scaling)
+    // while handing the element's own brightness to the result.
+    var k = v / mx;
+    return { r: trade.r * k, g: trade.g * k, b: trade.b * k };
+  }
+
+  // THE OWNER. Returns the new albedo, or null when the element must be left exactly as it is.
+  // (r,g,b) is the albedo decided so far (the element's own IFC colour, or its STD_MAT class
+  // default when it has none). `A._mepHueOff` is the witness RED CONTROL — it is deliberately NOT
+  // part of _getMaterial's cacheKey, so a caller flipping it MUST clear A._matCache.
+  A._mepDiscAlbedo = function(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName) {
+    if (A._mepHueOff) return null;                                   // RED CONTROL
+    if (!ifcClass || !MEP_HUE_CLASSES[ifcClass]) return null;        // tier 3 — not MEP, never touched
+    if (A._isAuthoredMatName(matName)) return null;                  // tier 1a — real authored material
+    var chroma = A._chromaOf(rgbaStr);
+    if (chroma !== null && chroma >= A.MEP_HUE_ACHROMATIC_MAX) return null;  // tier 1b — already has a hue
+    var trade = A._mepTradeHue(discipline, mepHint);
+    if (!trade) return null;                                         // tier 3 — no trade hue available
+    if (chroma === null) {
+      // The element has no colour at all. Shipped §MEP_DISC_TINT behaviour, byte-identical: the
+      // trade colour is used verbatim (HHS's 3,390 NULL rows are the whole of this population).
+      return { r: trade.r, g: trade.g, b: trade.b, tier: 2, code: trade.code, src: trade.src, v: null };
+    }
+    var out = _hsvHueTransfer(trade, Math.max(r, g, b));
+    out.tier = 2; out.code = trade.code; out.src = trade.src; out.v = Math.max(r, g, b);
+    return out;
+  };
+
   // ── §CPE_MATERIAL_KEY helpers (CINEMA_PATH_EDITOR.md, 2026-09-01) ────────────────────────────
   // Implementing CINEMA_PATH_EDITOR.md §CPE_MATERIAL_KEY — Witness: W-CPE-MATERIAL-KEY.
   // ONE owner for "is this surface transparent". §GLASS_NOT_METAL's rule (alpha<1 ⇒ never an opaque
@@ -675,6 +801,72 @@ function setupStreaming(A) {
     return { bySrc: bySrc, namesHit: namesHit, rows: q.length, named: named, approxNamed: approxNamed };
   };
 
+  // §MEP_COLOR_SURVIVES_PHOTOREAL — shipped §-log rollup, fired once at stream-complete alongside
+  // §TRI_SRC_TALLY. PRIMAL LAW 3: the numbers a witness asserts are emitted by the running app.
+  // Computed over the REAL stream queue through the REAL owner (A._mepDiscAlbedo), element by
+  // element — not from the material cache, which counts materials, and not re-derived.
+  // PRIMAL LAW 4: reports VACUOUS (nothing judged), NO-OP (the rule moved no element) and
+  // INCONCLUSIVE (the owner is not published) explicitly, and never prints a bare 0 as an answer.
+  A._mepHueRollup = function() {
+    var q = A.streamQueue || [];
+    var bld = A.activeBuilding || '?';
+    if (!q.length) { console.log('§MEP_HUE_TALLY VACUOUS bld=' + bld + ' rows=0 — nothing judged'); return null; }
+    if (!A._mepDiscAlbedo) { console.log('§MEP_HUE_TALLY INCONCLUSIVE bld=' + bld + ' — owner not published'); return null; }
+    var mepPop = 0, tinted = 0, tier1name = 0, tier1chroma = 0, noTrade = 0;
+    var hues = {}, codes = {}, minGapDist = 1, tConsulted = 0;
+    for (var i = 0; i < q.length; i++) {
+      var row = q[i], cls = row[11] || '';
+      if (!A._mepHueClasses[cls]) continue;
+      mepPop++;
+      var rgba = row[2], disc = row[3] || '', nm = row[16] || '';
+      var chroma = A._chromaOf(rgba);
+      if (A._isAuthoredMatName(nm)) { tier1name++; continue; }
+      // min_dist_to_T is measured ONLY over the population that actually CONSULTS T. An element
+      // with a real authored material name is settled at tier 1a before T is ever read, so folding
+      // its saturation in here would report a knife-edge that no decision depends on (Terminal's
+      // `Rastelli … Brass - Bronze`, sat 0.314, is 0.030 from T and never once compared against it).
+      if (chroma !== null) { tConsulted++; minGapDist = Math.min(minGapDist, Math.abs(chroma - A.MEP_HUE_ACHROMATIC_MAX)); }
+      if (chroma !== null && chroma >= A.MEP_HUE_ACHROMATIC_MAX) { tier1chroma++; continue; }
+      // Reproduce the element's pre-tint albedo exactly as _getMaterial derives it, so the V handed
+      // to the hue transfer is the real one and not an approximation.
+      var r0 = 0.7, g0 = 0.7, b0 = 0.7;
+      if (rgba && rgba.indexOf(',') !== -1) { var p = rgba.split(',').map(Number); r0 = p[0]; g0 = p[1]; b0 = p[2]; }
+      var alb = A._mepDiscAlbedo(r0, g0, b0, rgba, cls, disc, A._mepNameHint(row[12]), nm);
+      if (!alb) { noTrade++; continue; }
+      tinted++;
+      codes[alb.code] = (codes[alb.code] || 0) + 1;
+      // Hue is what is COUNTED (the ask is "distinct hues", not distinct RGB values — V varies per
+      // element by design). Quantised to 0.1 degree so float noise cannot inflate the count.
+      var mx = Math.max(alb.r, alb.g, alb.b), mn = Math.min(alb.r, alb.g, alb.b), h = 0;
+      if (mx > mn) {
+        if (mx === alb.r) h = 60 * (((alb.g - alb.b) / (mx - mn)) % 6);
+        else if (mx === alb.g) h = 60 * ((alb.b - alb.r) / (mx - mn) + 2);
+        else h = 60 * ((alb.r - alb.g) / (mx - mn) + 4);
+        if (h < 0) h += 360;
+      }
+      hues[h.toFixed(1)] = (hues[h.toFixed(1)] || 0) + 1;
+    }
+    var nHues = Object.keys(hues).length;
+    var legendSize = Object.keys(A.DISC_COLORS || {}).length;
+    if (!mepPop) { console.log('§MEP_HUE_TALLY VACUOUS bld=' + bld + ' rows=' + q.length + ' mep_elements=0 — this building has no MEP class in MEP_HUE_CLASSES, its 0 means nothing'); return null; }
+    console.log('§MEP_HUE_TALLY bld=' + bld + ' rows=' + q.length + ' mep_elements=' + mepPop +
+      ' tinted=' + tinted + ' tier1_authored_name=' + tier1name + ' tier1_own_hue=' + tier1chroma +
+      ' no_trade_hue=' + noTrade + ' distinct_hues=' + nHues + ' trade_codes=' + Object.keys(codes).length +
+      ' legend_ceiling=' + legendSize + ' T=' + A.MEP_HUE_ACHROMATIC_MAX +
+      ' inst_mep_uniform=' + (A._instMepUniform || 0) + ' inst_mep_mixed=' + (A._instMepMixed || 0) +
+      ' consulted_T=' + tConsulted +
+      ' min_dist_to_T=' + (tConsulted ? minGapDist.toFixed(4) : 'VACUOUS') +
+      ' hue_off=' + (A._mepHueOff ? 1 : 0) +
+      (tinted === 0 ? ' NO-OP — the rule moved no element on this building' : ''));
+    Object.keys(codes).sort(function(x, y) { return codes[y] - codes[x]; }).forEach(function(c) {
+      console.log('§MEP_HUE_CODE bld=' + bld + ' code=' + c + ' n=' + codes[c]);
+    });
+    return { mepPop: mepPop, tinted: tinted, tier1name: tier1name, tier1chroma: tier1chroma,
+             noTrade: noTrade, hues: hues, codes: codes, legendSize: legendSize,
+             minGapDist: minGapDist, tConsulted: tConsulted,
+             instMepUniform: A._instMepUniform || 0, instMepMixed: A._instMepMixed || 0 };
+  };
+
   // §CPE_MATERIAL_KEY: `matName` = elements_meta.material_name for this bucket. Measured on
   // Terminal/Hospital/Clinic: material_name is fully determined by (storey, discipline,
   // material_rgba), so adding it to the batch key would add ZERO buckets (244→244, 160→160, 65→65)
@@ -709,7 +901,10 @@ function setupStreaming(A) {
   };
   A._frontSideClasses = FRONT_SIDE_CLASSES; // exposed for witness assertions, read-only
 
-  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName) {
+  // §MEP_COLOR_SURVIVES_PHOTOREAL: `noMepHue` suppresses the trade-hue tier for THIS material.
+  // Its one caller is the InstancedMesh branch, which buckets by GEOMETRY HASH ALONE and can
+  // therefore hand one material to a set that is not uniform on MEP-ness — see the guard there.
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName, noMepHue) {
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -784,13 +979,16 @@ function setupStreaming(A) {
       IfcTransportElement:    { r: 0.50, g: 0.50, b: 0.55, rough: 0.40, metal: 0.50 , envInt: 0.05 },  // elevator
     };
 
-    // §MEP_DISC_TINT: the 3 IFC2x3 generic-MEP classes with no per-trade colour of their own —
-    // confirmed by direct DB query (HHS_Office_Federated: 1381+1284+725=3390, exactly its whole
-    // NULL-material MEP count) as the actual source of "everything reads flat blue-grey metal."
-    // Deliberately NOT the other IfcFlow* classes (Controller/MovingDevice/TreatmentDevice/
-    // EnergyConversionDevice above) — those already carry distinct, non-blue STD_MAT colours
-    // (red valve, greenish device) and tinting them too would overwrite an already-correct look.
-    var DISC_TINT_CLASSES = { IfcFlowSegment: 1, IfcFlowFitting: 1, IfcFlowTerminal: 1 };
+    // §MEP_DISC_TINT's class gate WAS `{IfcFlowSegment, IfcFlowFitting, IfcFlowTerminal}` — the 3
+    // IFC2x3 generic-MEP classes, confirmed by direct DB query (HHS_Office_Federated:
+    // 1381+1284+725=3390, exactly its whole NULL-material MEP count). §MEP_COLOR_SURVIVES_PHOTOREAL
+    // (2026-09-02) RETIRED that variable: it excluded the IFC4-style classes Hospital/Terminal/LTU
+    // actually export, so 0 of Hospital's 41,987 MEP elements were ever eligible. The class set now
+    // lives in MEP_HUE_CLASSES (top of this file, next to _mepNameHint) and the ownership question
+    // "does this element get a trade hue" has ONE answer there. The old rule's caution — do not
+    // overwrite a class that already carries a distinct, correct colour (red valve, greenish
+    // device) — is PRESERVED and generalised: that caution is now tier 1b (an albedo that already
+    // carries a hue is never touched), applied per ELEMENT instead of per class.
 
     // §TRIPLANAR: real PBR texture, still-render-only (PHOTOREAL_STILL_RENDER.md §LAYER 3).
     // World-space triplanar sampling — needs no UV data (IFC extraction has none). Gated at
@@ -967,7 +1165,8 @@ function setupStreaming(A) {
     // `_mk.indexOf('IfcWindow') >= 0` — a SUBSTRING scan of the whole composite key. An authored
     // material literally containing an Ifc class name would otherwise silently join the bloom set.
     // Case-only change: the key stays readable, and the real name lives in mat.userData._matName.
-    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (matName || '').replace(/Ifc/g, 'ifc');
+    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (matName || '').replace(/Ifc/g, 'ifc')
+      + (noMepHue ? '|noMepHue' : '');   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
@@ -987,21 +1186,27 @@ function setupStreaming(A) {
       // fallback hue for the real trade colour outright (full replace, not a wash — user's
       // explicit call: "replace color for color", not a blend). Roughness/metalness stay from
       // STD_MAT, so the metallic PBR read is unchanged, only the hue moves.
-      if (DISC_TINT_CLASSES[ifcClass]) {
-        if (mepHint) {
-          // Preferred: family-name hint (§_mepNameHint) — HHS's `elements_meta.discipline` is
-          // flat "MEP" for every one of these 3390 elements (confirmed by direct DB query), so
-          // the discipline column alone can't tell a duct from a sprinkler from a light fixture.
-          // The real trade IS recoverable from the authored Revit family name — real BIM data.
-          r = mepHint.r; g = mepHint.g; b = mepHint.b;
-        } else if (discipline && A.DISC_COLORS && A.DISC_COLORS[discipline] != null) {
-          // Fallback: discipline-column tint, for buildings/classes the name hint doesn't match.
-          var _dHex = A.DISC_COLORS[discipline];
-          r = ((_dHex >> 16) & 255) / 255;
-          g = ((_dHex >> 8) & 255) / 255;
-          b = (_dHex & 255) / 255;
-        }
-      }
+      // §MEP_COLOR_SURVIVES_PHOTOREAL: DISC_TINT_CLASSES' narrow 3-class gate is subsumed by
+      // A._mepDiscAlbedo below — which is reached from BOTH the has-rgba and the no-rgba path, and
+      // covers every MEP class STD_MAT already lists, not just the IFC2x3 generic trio. The
+      // no-rgba branch of that owner returns the trade colour VERBATIM, so this path is preserved
+      // byte-identically for the one building it ever fired on (HHS, 3,390 NULL rows).
+    }
+    // §MEP_COLOR_SURVIVES_PHOTOREAL (2026-09-02, PHOTOREAL_STILL_RENDER.md): ONE owner decides
+    // whether an MEP element's albedo gains a trade hue, and which. It is called on EVERY element
+    // (not only the !rgbaStr ones) because the measured defect is that 100% of MEP on Hospital /
+    // Clinic / Terminal / LTU DOES carry a colour — an achromatic off-white default the metal
+    // triplanar texture then multiplies into "greyish metallic". Tier 1 (a real authored material
+    // name, or an rgba that already carries a hue — the user's fire-red lever) returns null here
+    // and is byte-identical. Only HUE moves: the element keeps its own V, and roughness/metalness/
+    // envMapIntensity/the triplanar multiply below are all untouched, so the metallic PBR read the
+    // user complimented survives.
+    var _mepAlb = noMepHue ? null : A._mepDiscAlbedo(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName);
+    if (_mepAlb) {
+      r = _mepAlb.r; g = _mepAlb.g; b = _mepAlb.b;
+      A._mepHueCounts = A._mepHueCounts || {};
+      var _mhk = _mepAlb.code + '|' + _mepAlb.src;
+      A._mepHueCounts[_mhk] = (A._mepHueCounts[_mhk] || 0) + 1;
     }
     // §S260d: Gentler near-white taming — let ACES tone mapping handle the rest
     if (r > 0.85 && g > 0.85 && b > 0.85) { r *= 0.92; g *= 0.92; b *= 0.92; }
@@ -1505,6 +1710,7 @@ function setupStreaming(A) {
         }
         A.streaming = false;
         if (A._triSrcTally) A._triSrcTally();   // §CPE_MATERIAL_KEY rollup — shipped §-log evidence
+        if (A._mepHueRollup) A._mepHueRollup();  // §MEP_COLOR_SURVIVES_PHOTOREAL rollup — same reason
         // §RED_GREY_MYSTERY: DISABLED for now — the repair itself is verified correct (patches the
         // broken normal data, confirmed by direct readback) but does NOT change the rendered
         // black-pixel output at all, and costs ~12s per building load for zero visible benefit.
@@ -1979,7 +2185,14 @@ function setupStreaming(A) {
           // §MEP_DISC_TINT: mepHint's `code` appended too, so e.g. duct vs pipe (same NULL rgba,
           // same "MEP" disc, same '' matVariant) don't merge into one shared-colour BatchedMesh.
           // Positional key.split('|') consumers read parts[0..2] only — trailing fields are inert.
-          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '');
+          // §MEP_COLOR_SURVIVES_PHOTOREAL: whether the element is an MEP-hue class joins the key.
+          // MEASURED: on Hospital 21 of 160 (storey|disc|rgba) buckets mix an MEP class with a
+          // non-MEP one, up to 3,714 non-MEP elements (Clinic 2/65, LTU 21/231, Terminal 0/244).
+          // This branch gives the whole bucket ONE material built from items[0]'s class, so
+          // without this bit a mixed bucket would paint its non-MEP members an MEP trade hue.
+          // Splitting the bucket keeps BOTH halves correct; it cannot fragment by more than the
+          // 21 mixed buckets (160 -> at most 181 on the worst building).
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueClasses[el.ifcClass] ? 'M' : '-');
           // §MERGED_GUID: single target selection — merge bucket or batch bucket, never both.
           // Applies to §S280e's low-instance elements too: each is baked individually into the
           // merged buffer with its own index range, so identity survives exactly as for singles.
@@ -1989,7 +2202,19 @@ function setupStreaming(A) {
         }
       } else {
         // LOW_INSTANCE_BATCH_MAX+1 or more instances — InstancedMesh (both desktop and mobile)
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName);
+        // §MEP_COLOR_SURVIVES_PHOTOREAL: this branch buckets by GEOMETRY HASH ALONE, so its members
+        // are not guaranteed to share an ifc_class — the same caveat §MEP_DISC_PALETTE recorded for
+        // discipline below. MEASURED: Hospital 0 of 20,609 hashes and Clinic 0 of 8,459 span an MEP
+        // and a non-MEP class, but LTU_AHouse has 108 of 51,393 (1,386 elements). The bucket cannot
+        // be split here without adding a draw call per mixed hash, so on a mixed set the trade hue
+        // is SUPPRESSED (prior behaviour) and COUNTED — never applied to a set that is not all MEP.
+        var _mepU = !!A._mepHueClasses[elements[0].ifcClass];
+        for (var _mqi = 1; _mqi < elements.length; _mqi++) {
+          if (!!A._mepHueClasses[elements[_mqi].ifcClass] !== _mepU) { _mepU = null; break; }
+        }
+        if (_mepU === null) A._instMepMixed = (A._instMepMixed || 0) + 1;
+        else A._instMepUniform = (A._instMepUniform || 0) + 1;
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName, _mepU === null);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -2606,7 +2831,7 @@ function setupStreaming(A) {
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
 
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '');
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-');   // §MEP_COLOR_SURVIVES_PHOTOREAL — see the same bit on the batch key above
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
@@ -3267,6 +3492,7 @@ function setupStreaming(A) {
     A._instanceMeta = {};
     A._instanceGuids = {};
     A._matCache = {};
+    A._mepHueCounts = {}; A._instMepUniform = 0; A._instMepMixed = 0;   // §MEP_COLOR_SURVIVES_PHOTOREAL — per-building, die with the material cache
     // §CPE_MATERIAL_KEY: the material_name column probe is per-DB, so a scene reset (which is where
     // a DIFFERENT db gets opened) must re-probe rather than carry a stale answer — the exact
     // stale-cache hazard §MERGE_BLDCOL calls out for A._buildingCol.

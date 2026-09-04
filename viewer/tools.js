@@ -1673,6 +1673,51 @@ function setupTools(A) {
     return A._nightFixturePositions;
   };
 
+  // §NIGHT_PICK_NEAREST (extracted 2026-09-04 by §BAKE_INTERIOR_TOPUP from the nav branch of
+  // _nightUpdateLights below, VERBATIM) — the navigation selection rule, moved out so a second
+  // caller can reuse it instead of growing a parallel one: score every candidate by distance to a
+  // point HALFWAY between the eye and the look-at (§S277d), take them nearest-first while skipping
+  // anything within NIGHT_SPREAD_MIN_M of one already picked (§NIGHT_SPREAD), then fill any
+  // remainder ignoring spacing so the budget is always fully used. `already` is the set the caller
+  // has ALREADY placed (the still/bake in-frustum set) — its members are excluded from the pick,
+  // counted against `limit`, and honoured by the spread test, so a top-up lands AWAY from the
+  // lights that are already there. Nav passes `already` empty and is behaviourally identical to
+  // the inline code this replaces. Lifted from the parked bim-ootb PR #1327 (§BAKE_INTERIOR_LIGHTS).
+  var NIGHT_SPREAD_MIN_M = 4;
+  function _nightPickNearest(pool, limit, already) {
+    var picked = already ? already.slice() : [];
+    if (picked.length >= limit) return picked;
+    var camPos = A.camera.position;
+    var _tgt = A.controls ? A.controls.target : camPos;
+    var _aim = {
+      x: camPos.x + (_tgt.x - camPos.x) * 0.5,
+      y: camPos.y + (_tgt.y - camPos.y) * 0.5,
+      z: camPos.z + (_tgt.z - camPos.z) * 0.5
+    };
+    var have = new Set(picked);
+    var sorted = [];
+    for (var pi = 0; pi < pool.length; pi++) {
+      var p = pool[pi];
+      if (have.has(p)) continue;
+      var dx = p.x - _aim.x, dy = p.y - _aim.y, dz = p.z - _aim.z;
+      sorted.push({ pos: p, dist2: dx * dx + dy * dy + dz * dz });
+    }
+    sorted.sort(function(a, b) { return a.dist2 - b.dist2; });
+    for (var si = 0; si < sorted.length && picked.length < limit; si++) {
+      var cand = sorted[si].pos;
+      var tooClose = picked.some(function(pk) {
+        var ddx = pk.x - cand.x, ddy = pk.y - cand.y, ddz = pk.z - cand.z;
+        return (ddx * ddx + ddy * ddy + ddz * ddz) < NIGHT_SPREAD_MIN_M * NIGHT_SPREAD_MIN_M;
+      });
+      if (!tooClose) { picked.push(cand); have.add(cand); }
+    }
+    for (var si2 = 0; si2 < sorted.length && picked.length < limit; si2++) {
+      if (!have.has(sorted[si2].pos)) { picked.push(sorted[si2].pos); have.add(sorted[si2].pos); }
+    }
+    return picked;
+  }
+  var _ntuLastLine = null;   // §BAKE_INTERIOR_TOPUP — run-length guard, this runs once per baked frame
+
   A._nightUpdateLights = function() {
     // §NIGHT_BAKE_POOL teardown — first update after a bake releases the frozen pool. Checked
     // BEFORE the _nightMode gate so a night-off session still cleans up.
@@ -1701,13 +1746,40 @@ function setupTools(A) {
       // rather than a flat count cap; a still pays this cost once, not every frame. 200 is a
       // sanity ceiling against a pathological wide aerial shot with hundreds in frame at once —
       // not a deliberate creative limit.
+      // §BAKE_FRUSTUM_STALE (from PR #1327) — refresh the camera's world matrix BEFORE reading
+      // matrixWorldInverse. cinema_maxq.js's bake loop sets camera.position/controls.target for the
+      // new pose and calls startStillRefine() BEFORE any render of that pose, so an unrefreshed
+      // matrixWorldInverse culls this frame's fixtures against the PREVIOUS frame's view.
+      A.camera.updateMatrixWorld();
       var frustum = new THREE.Frustum();
       var vpMatrix = new THREE.Matrix4().multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(vpMatrix);
       var inView = allPos.filter(function(p) {
         return frustum.containsPoint(new THREE.Vector3(p.x, p.y, p.z));
       });
-      needed = inView.slice(0, 200).map(function(p) { return { pos: p }; });
+      // ══ §BAKE_INTERIOR_TOPUP (2026-09-04, user: "the indoor is gloomy and not lively" on a live
+      // Hospital Alt+C bake; same defect the parked PR #1327 §BAKE_INTERIOR_LIGHTS measured on a
+      // headless Duplex bake — 18 fixture lights at frame 0, 0 from frame 1 on) ═══════════════════
+      // The frustum test asks whether a fixture's CENTRE falls inside the view. An interior pose is
+      // exactly the case it answers wrong: the troffers lighting the room you stand in are overhead
+      // or behind the eye, so the set comes back short — or empty, and then EVERY pool slot below
+      // rides at intensity 0 and the room is lit by flat fill alone. That is structural, not a tuning
+      // question: §STAGED_PL_CUT scales this set, and scaling zero is zero.
+      // FIX: the in-frustum set is never truncated — it is TOPPED UP to the still budget with the
+      // same nearest-to-aim + §NIGHT_SPREAD rule navigation already uses (_nightPickNearest above),
+      // which is why Fly/handsfree always looked right while the bake did not. One selection rule,
+      // not a second mechanism. A frame whose frustum already fills the budget is unchanged.
+      var _tuLimit = Math.max(0, A._nightMaxLights || 0);
+      var _picked = inView.slice(0, 200);
+      var _inViewN = _picked.length;
+      if (_picked.length < _tuLimit) _picked = _nightPickNearest(allPos, _tuLimit, _picked);
+      if (_picked.length !== _inViewN || _inViewN === 0) {
+        var _tuLine = '§BAKE_INTERIOR_TOPUP inFrustum=' + _inViewN + ' toppedUpTo=' + _picked.length +
+          ' budget=' + _tuLimit + ' fixtures=' + allPos.length +
+          (_inViewN === 0 ? ' — frustum found NO fixture centre at this pose; without the top-up this frame had zero fixture light' : '');
+        if (_tuLine !== _ntuLastLine) { _ntuLastLine = _tuLine; console.log(_tuLine); }
+      }
+      needed = _picked.map(function(p) { return { pos: p }; });
     } else if (allPos.length <= A._nightMaxLights) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
@@ -1717,38 +1789,14 @@ function setupTools(A) {
       // transfer ahead as you move). Pure camera-nearest clustered them all at the eye; pure
       // orbit-target clustered them at building centre. Debounced by the controls 'change'
       // listener (>5m move) so small orbits don't thrash the set.
-      var _tgt = A.controls ? A.controls.target : camPos;
-      var _aim = {
-        x: camPos.x + (_tgt.x - camPos.x) * 0.5,
-        y: camPos.y + (_tgt.y - camPos.y) * 0.5,
-        z: camPos.z + (_tgt.z - camPos.z) * 0.5
-      };
-      var sorted = allPos.map(function(p) {
-        var dx = p.x - _aim.x, dy = p.y - _aim.y, dz = p.z - _aim.z;
-        return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
-      }).sort(function(a, b) { return a.dist2 - b.dist2; });
       // §NIGHT_SPREAD (2026-08-07, user: "not in dense area, if two sources nearby spread out to
-      // cover further line of sight") — greedy nearest-first, but skip a candidate within
-      // NIGHT_SPREAD_MIN_M of one already picked, so the 24-light budget reaches further down a
-      // corridor instead of bunching on one dense cluster right at the camera. If spacing can't
-      // fill the budget (not enough distant candidates), a second pass fills the rest ignoring
-      // spacing — the budget is always fully used, spacing is a preference, not a hard cutoff.
-      var NIGHT_SPREAD_MIN_M = 4;
-      var picked = [];
-      for (var si = 0; si < sorted.length && picked.length < A._nightMaxLights; si++) {
-        var cand = sorted[si].pos;
-        var tooClose = picked.some(function(pk) {
-          var ddx = pk.x - cand.x, ddy = pk.y - cand.y, ddz = pk.z - cand.z;
-          return (ddx * ddx + ddy * ddy + ddz * ddz) < NIGHT_SPREAD_MIN_M * NIGHT_SPREAD_MIN_M;
-        });
-        if (!tooClose) picked.push(cand);
-      }
-      if (picked.length < A._nightMaxLights) {
-        for (var si2 = 0; si2 < sorted.length && picked.length < A._nightMaxLights; si2++) {
-          if (picked.indexOf(sorted[si2].pos) === -1) picked.push(sorted[si2].pos);
-        }
-      }
-      needed = picked.map(function(p) { return { pos: p }; });
+      // cover further line of sight") — greedy nearest-first, skipping a candidate within
+      // NIGHT_SPREAD_MIN_M of one already picked, then a second pass fills the rest ignoring
+      // spacing: the budget is always fully used, spacing is a preference, not a hard cutoff.
+      // §BAKE_INTERIOR_TOPUP (2026-09-04): this rule now lives in _nightPickNearest above, called
+      // with an EMPTY `already` set here — behaviourally identical to the inline code it replaces —
+      // so the bake top-up and navigation cannot drift into two different selection rules.
+      needed = _nightPickNearest(allPos, A._nightMaxLights, []).map(function(p) { return { pos: p }; });
     }
     // ══ §NIGHT_BAKE_POOL (2026-09-01, found by the first headless CLI bake — bim-compiler
     // prompts/CINEMA_PATH_EDITOR.md §CLI_SILENT_BAKE stage 4): during a MaxQ bake the in-frustum

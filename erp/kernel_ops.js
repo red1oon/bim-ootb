@@ -596,9 +596,27 @@
     }
 
     // ── 4. SEAL ONCE from the tip forward (the I-D win — not N whole-log re-seals). ──
-    // Rows were inserted ALREADY-sealed (prev_hash/op_hash/sig staged); sealFrom is idempotent over them
-    // and confirms the tip. This keeps per-group seal cost O(N-in-group).
-    var sealRes = await sealFrom(db, tipRow);
+    // Implementing prompts/PROD_SCALE_FORECAST.md §10.3 F1 — Witness: W-SCALE-THRU.
+    // Rows were inserted ALREADY-sealed (prev_hash/op_hash/sig staged off tipRow), so in the CLEAN case
+    // — the tip IS the last row, i.e. nothing below it is unsealed — the staged hashes already ARE the
+    // chain and re-deriving them is pure waste: sealFrom(db, tipRow) selects `id > tipRow.id`, which is
+    // this group's OWN rows, and re-hashes + UPDATEs every one. MEASURED: 2,000 ops cost 4,040 digests
+    // instead of 2,040, and each digest is an await, so the extra 2,000 promise round-trips are what made
+    // batch LOSE to naive per-op commit under CPU contention (§10.1: speedup flipped to 0.82×).
+    // `sealed` still reports ids.length — the rows WERE sealed, at stage time — so the return contract
+    // poc_crud_group.js:91 / test_crud_process_writeloop.js:39 assert on is unchanged.
+    // DIRTY case (unsealed rows sit BELOW the tip, e.g. a prior commitOp that was never sealed) keeps the
+    // full re-seal: those rows must be re-chained, and the staged hashes are superseded by it. It is now
+    // announced (§KRN_GROUP RESEAL) instead of being a silent slow path.
+    var cleanTip = (tipRow.id === nextId - 1);
+    var sealRes;
+    if (cleanTip) {
+      sealRes = { sealed: ids.length, tip: opHashes[opHashes.length - 1], fromId: tipRow.id, skipped: true };
+    } else {
+      console.log('§KRN_GROUP RESEAL gid=' + gid + ' unsealedBelowTip=' + (nextId - 1 - tipRow.id) +
+                  ' rows → full sealFrom(id>' + tipRow.id + ') (staged hashes superseded)');
+      sealRes = await sealFrom(db, tipRow);
+    }
     console.log('§KRN_GROUP committed gid=' + gid + ' ops=' + ids.length + ' groupHash=' + groupHash.slice(0, 12) +
                 '… tip=' + sealRes.tip.slice(0, 12) + '… sealed=' + sealRes.sealed + ' (WHOLE — all-or-none)');
     _persistToIdb(db);
