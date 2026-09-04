@@ -271,11 +271,19 @@
         // already-set C_DocType_ID) can never fire for a manually-created record — this is the ONLY seam
         // where the per-window signal (ctx.movementtype, threaded from the AD_Tab's own WhereClause, e.g.
         // Material Receipt tab 296's "MovementType IN ('V+')") can reach the new row at all.
+        // §INOUT-CALLOUTS (prompts/AGENT_QUEUE.md §INOUT-CALLOUTS) — IsSOTrx was NESTED inside "MovementType
+        // was empty", so the moment anything ELSE filled MovementType this branch stopped running and the
+        // receipt persisted with NO IsSOTrx. MEASURED the hour CalloutInOut.docType started filling it:
+        //   §RECEIPT-FANOUT receipt=-4 issotrx=undefined …   →   §P2P stage=3 FAIL, "the CreateFrom pane did
+        //   not offer the fresh receipt line -5" (renderCreateFromPicker keeps `String(h.issotrx)==='N'`).
+        // The two facts are independent in the Java too: CalloutInOut.docType sets IsSOTrx from the DocType
+        // (:214-227) and MovementType (:229) as two separate mTab.setValue calls. So derive IsSOTrx from
+        // whatever MovementType the record ENDS UP with, whoever set it — record first, then this pass's own
+        // derivation, then the window signal.
         var r = info.record;
-        if (!r.movementtype && /^[A-Z][+-]$/.test((ctx && ctx.movementtype) || '')) {
-          d(info).movementtype = ctx.movementtype;
-          if (!r.issotrx) d(info).issotrx = ctx.movementtype.charAt(0) === 'C' ? 'Y' : 'N';
-        }
+        if (!r.movementtype && /^[A-Z][+-]$/.test((ctx && ctx.movementtype) || '')) d(info).movementtype = ctx.movementtype;
+        var mtEff = String(r.movementtype || (info.derived && info.derived.movementtype) || (ctx && ctx.movementtype) || '');
+        if (!r.issotrx && /^[A-Z][+-]$/.test(mtEff)) d(info).issotrx = mtEff.charAt(0) === 'C' ? 'Y' : 'N';
         return null;
       }],
       ['MInOut.movementTypeDerive', function (ctx, info) {   // :1306-1308 ∘ getMovementType:1275-1287
