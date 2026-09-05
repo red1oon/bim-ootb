@@ -76,10 +76,12 @@ witness/
 IFC/KUL/*
 !IFC/KUL/README.md
 
-# §AGENT-ZIPS-BUILT 2026-09-04 — the two shipped agent downloads are BUILT from their source
-# directories (erp/tools/build_agent_zips.js), by the Pages deploy and by CI's drift check. They
-# duplicated erp/idempiere_agent/ and erp/odoo_agent/ as tracked binaries, and the duplication had
-# already drifted: odoo_agent.zip shipped without extract_model.js. Deterministic build, so
-# `--check` is a content comparison, not a judgement.
-erp/idempiere_agent.zip
-erp/odoo_agent.zip
+# §PAGES-SERVES-THE-BRANCH 2026-09-04 — the two shipped agent downloads are TRACKED AGAIN, and the
+# reason is measured, not preference. GitHub Pages for this repo is build_type "legacy", source
+# {branch: main, path: /} — it publishes the TRACKED FILES ON MAIN, not the Actions artifact. So
+# anything deploy-pages.yml generates into the ephemeral checkout is never served. Untracking these
+# two 404'd both live downloads; erp/version.json, generated the same way since long before, has been
+# 404 all along, and the minify step has never reached a user either. They stay tracked until Pages is
+# switched to build_type "workflow" — a repo-settings decision, recorded in §PZ.3.
+# They cannot drift: erp/tools/build_agent_zips.js is deterministic and W-AGENT-ZIP-SYNC's A0 compares
+# the STORED zip against its source directory on every CI run.

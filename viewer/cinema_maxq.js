@@ -1644,6 +1644,14 @@
         // a clip is fewer frames of the SAME film, so the sun reads the film fraction. A full bake is
         // unchanged (_tFilm(_tn) === _tn when no clip is set).
         if (A._sunArcStep) A._sunArcStep(_tnFilm);
+        // §SUN_ARC_FILL / §BAKE_FILL_PIN (2026-09-05, effects.js, witness_sun_arc_fill.js): the interior
+        // fill — ambient, hemi, fixture point-light scale/budget — is PINNED to the Alt+S baseline on
+        // every frame, whatever the arc above just did to the sun (user ruling: "letting alt-s normal,
+        // and sunlite is brighter"). Runs AFTER _sunArcStep and AFTER startStillRefine, so it is the
+        // last word on the fill before this frame's capture. Bake-only by this gate; sun position/
+        // intensity/shadow are not touched by it. Fed _tnFilm, same §CPE_CLIP_SUN_ARC_FILM_T reason —
+        // its elevation fallback/log label must read the film fraction under a --clip bake too.
+        if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tnFilm);
         var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' capture');
         // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:

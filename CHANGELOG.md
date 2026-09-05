@@ -4,6 +4,29 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.61.0](https://github.com/red1oon/bim-ootb/compare/v1.60.0...v1.61.0) (2026-09-05)
+
+
+### ✨ Features
+
+* **erp:** §ADFORM-TRXMATERIAL — form [#2](https://github.com/red1oon/bim-ootb/issues/2) of 49, the read face of the stock ledger ([#1672](https://github.com/red1oon/bim-ootb/issues/1672)) ([65383ac](https://github.com/red1oon/bim-ootb/commit/65383ac1c6352c9dcf1a0a1b9d7bbff2a78b8c49))
+* **erp:** §CALLOUT-CAMPAIGN — E-1's ranked callout gap worked, and the install call nobody made ([#1669](https://github.com/red1oon/bim-ootb/issues/1669)) ([9317ecf](https://github.com/red1oon/bim-ootb/commit/9317ecfabd3e817d9b0b2b5de10fcc76c5e416c1))
+
+
+### 🐛 Fixes
+
+* **cinema:** §BAKE_FILL_PIN — pin the bake's interior fill to the Alt+S baseline; §NIGHT_STILL_LIGHTS_ORDER — still budget on the first entry ([#1681](https://github.com/red1oon/bim-ootb/issues/1681)) ([82f14bb](https://github.com/red1oon/bim-ootb/commit/82f14bbec75e44390d43399c2208d6598f4299a0))
+* **cinema:** §CPE_REVEAL_LENS_QUAD_OFF — the lens quads honour the one-discipline slot too ([#1674](https://github.com/red1oon/bim-ootb/issues/1674)) ([8a1e5a9](https://github.com/red1oon/bim-ootb/commit/8a1e5a9eb38dd06d53383df8bc55c29204db3190))
+* **erp:** §AZ.3 — nest idempiere_agent.zip, and the instruction it made runnable ([#1677](https://github.com/red1oon/bim-ootb/issues/1677)) ([608ceb1](https://github.com/red1oon/bim-ootb/commit/608ceb1d18bd4a2cee9812d084b89f90a2944cf2))
+* **erp:** §PAGES-SERVES-THE-BRANCH — re-track the agent zips; the deploy artifact is published by nothing ([#1680](https://github.com/red1oon/bim-ootb/issues/1680)) ([7560d0a](https://github.com/red1oon/bim-ootb/commit/7560d0a29250b285cdac1d6706b4b651f2229845))
+* **erp:** §STALE-WITNESSES — poc_odoo_descriptor walks the login card that exists now ([#1673](https://github.com/red1oon/bim-ootb/issues/1673)) ([adab340](https://github.com/red1oon/bim-ootb/commit/adab3406cabe77d2c80a4feacbeb4b372e6732a3))
+* **viewer:** §DLOD_TM_OWNERSHIP — dlod.js stands down while the Time Machine owns instance matrices (missing glass/furniture in the Hospital CLI silent bake) ([#1660](https://github.com/red1oon/bim-ootb/issues/1660)) ([fcd4720](https://github.com/red1oon/bim-ootb/commit/fcd4720c87e278a2ae43864e6e2a2f49c1e2dd8d))
+
+
+### 📝 Documentation
+
+* **buildings:** HHS_Office_Federated IFC/DB analysis — the missing ground-floor front wall, cause found ([#1670](https://github.com/red1oon/bim-ootb/issues/1670)) ([2b7596a](https://github.com/red1oon/bim-ootb/commit/2b7596acbe4beb07e6a891b228be91a2f4814153))
+
 ## [1.60.0](https://github.com/red1oon/bim-ootb/compare/v1.59.0...v1.60.0) (2026-09-04)
 
 
