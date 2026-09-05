@@ -2636,10 +2636,76 @@ async function setupEffects(A, renderer, scene, camera) {
     var _el = _sunElevationAt(tNorm);
     A.updateSky(_el, PHOTO_SUN_AZIMUTH);
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
+    // §SUN_ARC_FILL reads the elevation this step JUST set — stashed here so the fill compensation
+    // below cannot drift from the arc by re-deriving it (one elevation, two consumers).
+    A._sunArcElevationDeg = _el;
     console.log('§SUN_ARC_STEP tNorm=' + tNorm.toFixed(3) + ' elevation=' + _el.toFixed(1) +
       ' (start=' + PHOTO_SUN_ELEVATION_START + ' end=' + PHOTO_SUN_ELEVATION_END + ')');
+    return _el;
   }
   A._sunArcStep = _sunArcStep;
+  // ══ §SUN_ARC_FILL → §BAKE_FILL_PIN (2026-09-05, user: "during fly indoors, it seems it is not as
+  // bright as when we do a static alt-s"; RULING, verbatim: "I know shadowed outside walls are
+  // darker but indoors we reverse it, letting alt-s normal, and sunlite is brighter... do it."
+  // bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md "Second open question"; witness:
+  // viewer/tests/witness_sun_arc_fill.js) ══════════════════════════════════════════════════════
+  // The bake sweeps the sun 55°→6° per frame (§SUN_ARC above) while the interior FILL — A.ambient,
+  // A.hemi, the fixture point-light scale/budget — is staged once at entry. The ruling makes the
+  // fill the Alt+S baseline and PINS it, every frame, regardless of the arc: never below it for any
+  // reason. Where the sun reaches a surface, A.sun (DirectionalLight + shadow map — untouched by
+  // this step) adds on top; a shadowed surface simply sits at the baseline, never darker than Alt+S.
+  // (Superseded the same day: a dayT-driven boost curve, measured on a sun-facing Hospital pose and
+  // found to have no defect to compensate — OFF-run interior luma noon 65.6 / dusk 62.4, logs in
+  // viewer/tests/logs/sun_arc_fill/. The pin replaces it: a flat equality, not a curve.)
+  // MECHANISM: after each frame's _sunArcStep, re-assert from the staged snapshots — A._photoFillBase
+  // (ambient/hemi exactly as _applyPhotoStaging landed them, §MOVIE_SHADOW_TM), A._nightPLScaleStaged
+  // (the §STAGED_PL_CUT value, or 0 in a §CPE_TAIL_LIGHTS_ALL_ONLY slot — a film state, kept), and
+  // the still point-light budget + near-fade floor (§NIGHT_STILL_LIGHTS) — then _nightUpdateLights
+  // so the frozen §NIGHT_BAKE_POOL takes it before capture. Writes ambient/hemi/_nightPLScale/
+  // budget/floor ONLY. Bake-only: cinema_maxq.js gates the call on A._maxqActive. The line it logs
+  // names what it CORRECTED (drift=…), so a frame where it changed nothing reads as a NO-OP rather
+  // than hiding behind a green line. A dev-only tap may replace A._sunArcFillPin with a no-op to
+  // produce the before/after pair the witness compares sun/shadow state across.
+  function _bakeFillPin(tNorm) {
+    var base = A._photoFillBase;
+    var _el = (A._sunArcElevationDeg != null) ? A._sunArcElevationDeg : _sunElevationAt(tNorm);
+    if (!base || !A.ambient || !A.hemi) {
+      console.log('§SUN_ARC_FILL_PIN SKIP tNorm=' + (+tNorm).toFixed(3) + ' elevation=' + _el.toFixed(2) +
+        ' reason=' + (!base ? 'no staged fill base (photo staging not applied this cycle)' : 'no ambient/hemi light') +
+        ' — fill untouched');
+      return null;
+    }
+    var drift = [];
+    function pin(label, cur, want) { if (cur !== want) drift.push(label + ':' + cur + '→' + want); return want; }
+    A.ambient.intensity = pin('ambient', A.ambient.intensity, base.ambI);
+    A.hemi.intensity = pin('hemi', A.hemi.intensity, base.hemiI);
+    var plStaged = (typeof A._nightPLScaleStaged === 'number') ? A._nightPLScaleStaged : null;
+    var poolLit = 0, poolSum = 0;
+    if (plStaged != null && typeof A._nightUpdateLights === 'function') {
+      if (A._nightMaxLightsStill != null) A._nightMaxLights = pin('budget', A._nightMaxLights, A._nightMaxLightsStill);
+      if (A._nightNearFadeFloorStill != null) A._nightNearFadeFloor = pin('nearFloor', A._nightNearFadeFloor, A._nightNearFadeFloorStill);
+      A._nightPLScale = pin('plScale', A._nightPLScale, plStaged);
+      var _pool = A._nightBakePool || A._nightLights || [], litBefore = 0;
+      for (var _pb = 0; _pb < _pool.length; _pb++) if (_pool[_pb].intensity > 0) litBefore++;
+      A._nightUpdateLights();
+      _pool = A._nightBakePool || A._nightLights || [];
+      for (var _pi = 0; _pi < _pool.length; _pi++) if (_pool[_pi].intensity > 0) { poolLit++; poolSum += _pool[_pi].intensity; }
+      if (litBefore !== poolLit) drift.push('poolLit:' + litBefore + '→' + poolLit);
+    }
+    var _sp = A.sun && A.sun.position;
+    console.log('§SUN_ARC_FILL_PIN tNorm=' + (+tNorm).toFixed(3) + ' elevation=' + _el.toFixed(2) +
+      ' ambient=' + A.ambient.intensity.toFixed(4) + ' hemi=' + A.hemi.intensity.toFixed(4) +
+      ' plScale=' + (plStaged == null ? '-' : A._nightPLScale.toFixed(4)) +
+      ' budget=' + A._nightMaxLights + ' nearFloor=' + A._nightNearFadeFloor +
+      ' poolLit=' + poolLit + ' poolSum=' + poolSum.toFixed(3) +
+      ' sun=' + (A.sun ? A.sun.intensity.toFixed(4) : '-') +
+      ' sunPos=' + (_sp ? _sp.x.toFixed(3) + ',' + _sp.y.toFixed(3) + ',' + _sp.z.toFixed(3) : '-') +
+      ' drift=' + (drift.length ? drift.join(';') : 'none') +
+      ' (pinned to the Alt+S baseline — sun and shadow untouched by this step)');
+    if (A.markDirty) A.markDirty();
+    return { drift: drift, poolLit: poolLit };
+  }
+  A._sunArcFillPin = _bakeFillPin;
   var PHOTO_ENVMAP_BOOST = 2.0;   // multiply each material's existing envMapIntensity — stronger
                                    // glass/metal reflections without changing overall scene exposure
                                    // (history: 2.2 -> 3.2 -> 4.5 -> 3.0 -> 2.0. §PHOTO_REALISM_RETUNE
@@ -3621,6 +3687,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // are born at the cut intensity (the §NIGHT_STILL_LIGHTS boost branch alone was proven to not
     // fire on this path — witness 2026-08-16). Reset unconditionally in _removePhotoStaging.
     A._nightPLScale = A._nightPLScaleStill || 1;
+    A._nightPLScaleStaged = A._nightPLScale;   // §SUN_ARC_FILL — the staged base the bake scales FROM
     if (!_photoNightWasOn && A.toggleNightMode) {
       A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow — real light sources
       if (A._nightSaved) {  // always undo the moonlight override (dark intensities) — never mood
@@ -3646,6 +3713,14 @@ async function setupEffects(A, renderer, scene, camera) {
           ' (TM native ratio 2.155 — equal means the bake matches TM shadow strength)');
       }
     }
+    // §SUN_ARC_FILL — snapshot the staged fill ONCE, here, after the block above has landed it (or,
+    // with night mode already on, whatever the fill is at this point): the bake's per-frame
+    // compensation multiplies THIS base every frame, so it can never compound frame over frame.
+    // Cleared in _removePhotoStaging with the rest of the staging state.
+    A._photoFillBase = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
+    console.log('§SUN_ARC_FILL_BASE ambient=' + A._photoFillBase.ambI.toFixed(4) +
+      ' hemi=' + A._photoFillBase.hemiI.toFixed(4) + ' plScaleStaged=' + A._nightPLScaleStaged +
+      ' nightWasOn=' + _photoNightWasOn);
     // §PHOTO_FOG_ORDER_FIX (2026-07-16, RESUME BRIEF ADDENDUM item 2 — "sky/ground darkness, one
     // root cause?"): confirmed YES, one root cause, and it's a real bug, not just physical dusk
     // dimness. TWO things clobber the warm §PHOTO_FOG color if it's applied any earlier in this
@@ -3744,6 +3819,8 @@ async function setupEffects(A, renderer, scene, camera) {
     // §STAGED_PL_CUT — unconditional reset (the boost-branch reset alone was proven unreachable
     // on this path); if night mode stays on (user had it on pre-staging), rebuild at nav intensity.
     A._nightPLScale = 1.0;
+    A._nightPLScaleStaged = null;   // §SUN_ARC_FILL — staging base gone with the staging
+    A._photoFillBase = null;
     if (_photoNightWasOn && typeof A._nightUpdateLights === 'function' && A._nightLights && A._nightLights.length) A._nightUpdateLights();
     _photoDuskMoodApplied = false;
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
@@ -5014,6 +5091,30 @@ async function setupEffects(A, renderer, scene, camera) {
     _glowOff();
     _glowOn(function(p) { return p.__exit; });
     _glowLensOn();
+    A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
+    A._taaPass.accumulate = true;
+    A._taaPass.accumulateIndex = -1;
+    _stillRefineStartMs = performance.now();
+    // §STILL_REFINE_RESTART (2026-07-16, Task 3 — light-ghosting root causes (a) damping glide,
+    // (b) grace-window-swallowed cancel, (c) Fly-mode programmatic motion): capture the pose
+    // signature the accumulation starts from; step() below restarts the accumulation whenever the
+    // pose changes mid-run. Event-driven cancels stay as the fast path — this is the mechanism-
+    // level safety net beneath them: a frozen still can only ever be produced by a camera that
+    // was genuinely still for the whole 16-sample run.
+    _stillSig = _camSig();
+    _stillRestartLogged = false;
+    var _triCount = _setTriplanarActive(true);
+    _applyPhotoStaging();
+    // §NIGHT_STILL_LIGHTS_ORDER (2026-09-05, found by witness_sun_arc_fill.js on a Hospital CLI bake —
+    // §SUN_ARC_FILL poolLit=30 on frame 0, 50 on every later frame): the block below used to sit
+    // ABOVE _applyPhotoStaging(). On the FIRST entry of a photo cycle night mode is not on yet, so
+    // `A._nightLights.length` was 0, the still budget was never raised, and staging's own
+    // toggleNightMode() then built the lights at the NAVIGATION budget (30, near-fade floor 0.3).
+    // That is a cold Alt+S (the branch effects.js §STAGED_PL_CUT already recorded as "proven to not
+    // fire on this path", 2026-08-16) and frame 0 of every bake; frames ≥1, with staging kept
+    // alive, took the intended 50 / 1.0. Ordering it AFTER staging makes the still budget real on
+    // the first entry too — Alt+S and frame 0 now light exactly as the §NIGHT_LIGHT_BUDGET_UP
+    // directive ("during alt-s throw all in, up to 50") described.
     // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
     // navigation budget (every light costs per-pixel work on every lit material every frame); a
     // frozen still renders once and then sits there, so that budget does not apply to it. The
@@ -5039,6 +5140,9 @@ async function setupEffects(A, renderer, scene, camera) {
       // frame, measured), and an intensity is a uniform. Same reason the pool's own unused slots
       // ride at 0 instead of being removed.
       if (A._cpeRevealLightsOff) A._nightPLScale = 0;
+      // §SUN_ARC_FILL — this is the per-frame staged value (0.5 cut, or 0 in a lights-off slot) that
+      // the bake's fill compensation scales from; stashed here, where the rule lives, not re-derived.
+      A._nightPLScaleStaged = A._nightPLScale;
       A._nightUpdateLights();
       // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 2,026 firings, ONE distinct line
       // (`raised to 200 lights, near-fade floor 1 …`). The re-raise itself is required every
@@ -5049,20 +5153,6 @@ async function setupEffects(A, renderer, scene, camera) {
         A._nightPLScale + ' (§STAGED_PL_CUT) for the still',
         'the still budget is re-raised every frame; the values did not change');
     }
-    A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
-    A._taaPass.accumulate = true;
-    A._taaPass.accumulateIndex = -1;
-    _stillRefineStartMs = performance.now();
-    // §STILL_REFINE_RESTART (2026-07-16, Task 3 — light-ghosting root causes (a) damping glide,
-    // (b) grace-window-swallowed cancel, (c) Fly-mode programmatic motion): capture the pose
-    // signature the accumulation starts from; step() below restarts the accumulation whenever the
-    // pose changes mid-run. Event-driven cancels stay as the fast path — this is the mechanism-
-    // level safety net beneath them: a frozen still can only ever be produced by a camera that
-    // was genuinely still for the whole 16-sample run.
-    _stillSig = _camSig();
-    _stillRestartLogged = false;
-    var _triCount = _setTriplanarActive(true);
-    _applyPhotoStaging();
     // §MAXQ_FRAME_BUDGET — read the fold's budget ONCE here; a change mid-fold would split one
     // frame across two settings. A bake sets A._stillBudget; Alt+S leaves it null and gets 16/24.
     var _taaFrames = _stillBudget().taa;
