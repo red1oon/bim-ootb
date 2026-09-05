@@ -101,7 +101,8 @@
 // v1146 (2026-09-05) §CLASH_FILM_SKY_WASH: viewer/clash_film.js — each marker is clamped to a
 // constant small SCREEN size (6 % of frame height) per frame from the camera, so a marker near the
 // lens can no longer balloon over the sky; PEAK 0.55 → 0.30. cinema_maxq.js disposes the markers
-// on the THROW path too and guards the per-frame update.
+// on the THROW path too and guards the per-frame update. Also §CPE_CLIP_SUN_ARC_FILM_T: a --clip
+// bake's sun arc now reads the FILM fraction, not the clip-local one (it swept 55°→6° inside every clip).
 const CACHE_VERSION = 'v1146';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte

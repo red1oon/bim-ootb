@@ -1614,7 +1614,13 @@
         // angle before the frame was ever captured — the arc never reached the output at all, only
         // ever the ORIGINAL fixed 6°. Moving the call to AFTER startStillRefine() re-asserts the
         // correct per-frame elevation once the staging reset has already happened.
-        if (A._sunArcStep) A._sunArcStep(_tn);
+        // §CPE_CLIP_SUN_ARC_FILM_T (2026-09-05, found in the §CLASH_FILM demo clip's own log): the arc
+        // was fed the CLIP-LOCAL _tn, so a --clip bake swept the full 55°→6° arc inside its own
+        // frames wherever the clip sat in the film (measured: elevation 55.0→6.0 across a 206-frame
+        // clip at film 0.66–0.73). Same bug class §CPE_CLIP_REVEAL_FILM_T fixed for the Reveal above:
+        // a clip is fewer frames of the SAME film, so the sun reads the film fraction. A full bake is
+        // unchanged (_tFilm(_tn) === _tn when no clip is set).
+        if (A._sunArcStep) A._sunArcStep(_tnFilm);
         var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' capture');
         // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:
