@@ -113,7 +113,9 @@
 // day counter's family (marker colours tinted 0.45 toward white, weight 700, the counter's corner
 // rule) instead of saturated rgb(255,33,26)/rgb(41,112,255) at 600; the leader line and dot carry a
 // dark halo under the white core so they hold contrast against a lit wall or the sky.
-const CACHE_VERSION = 'v1147';   // bump on each deploy; per-change detail is the git commit message.
+// v1148 (2026-09-05) §P2.1 AMENDED: viewer/clash_labels.js — the label enter/release distance is 10.0 m /
+// 10.6 m (was 4.0 / 4.6; user: "10 meters or half of scene space" after a clip whose nearest pair was 7.98 m).
+const CACHE_VERSION = 'v1148';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

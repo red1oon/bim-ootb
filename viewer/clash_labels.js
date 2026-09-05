@@ -45,7 +45,11 @@ function setupClashLabels(A) {
     var THREE = window.THREE;
     if (!THREE) return;
 
-    var ENTER_M = 4.0, RELEASE_M = 4.6;   // ruling 1 + §P2.1 hysteresis: enter at 4.0 m, release at 4.6 m
+    // ══ §P2.1 AMENDED 2026-09-05 (user, after watching the 20–25 s clip: pulses visible, nothing ever
+    // came close enough to label — nearest 7.98 m): "10 meters or half of scene space". 4.0/4.6 → 10.0/10.6,
+    // the same 0.6 m hysteresis gap scaled up, so labels appear in normal flythrough footage rather than only
+    // on extreme close approaches. 10 m is the concrete number; no scene-relative formula was asked for.
+    var ENTER_M = 10.0, RELEASE_M = 10.6;   // ruling 1 (amended) + §P2.1 hysteresis: enter at 10.0 m, release at 10.6 m
     var FADE_S = 0.5;                      // FILM seconds for a marker to go solid / back to the pulse (§4b: a fade, never a switch)
     // ══ §CLASH_LABEL_HUD_FAMILY (2026-09-05, user: the label styling "seems to be not nicely setup
     // to be consistent as the HUD color scheme") ═════════════════════════════════════════════════

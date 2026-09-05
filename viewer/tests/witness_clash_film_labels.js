@@ -159,62 +159,73 @@ function pageProbe(sabotage) {
     const badName = names.filter(n => !n.name || (n.source === 'rates.js' ? !n.desc : n.name !== n.cls));
     claim('P0_names_extracted_from_rates_or_raw_class', badName.length === 0, `classes=${names.length} viaRates=${names.filter(n => n.source === 'rates.js').length} rawFallback=${names.filter(n => n.source !== 'rates.js').length} bad=${badName.length}`);
 
-    // P1 — the 4 m rule, with hysteresis, on the most isolated pair (so contention cannot confound it)
+    // The distances are DATA read from the module (§P2.1 amended 2026-09-05: 4.0/4.6 → 10.0/10.6), so
+    // every probe distance below is derived from the live enter/release, not pinned to a number that
+    // silently goes stale the next time the ruling moves.
+    const lim = await page.evaluate(() => { const s = window.APP.clashLabels.stats(); return { E: s.enterM, R: s.releaseM }; });
+    const E = lim.E, R = lim.R, GAP = R - E;
+    const dIn = +(E * 0.875).toFixed(2), dMid = +(E + GAP / 2).toFixed(2), dOut = +(R + 0.1).toFixed(2), dFar = +(R + 1.4).toFixed(2), dNear = +(E * 0.5).toFixed(2);
+    log(`§CLL_LIMITS enter=${E}m release=${R}m gap=${GAP.toFixed(2)}m probes: in=${dIn} mid=${dMid} out=${dOut} far=${dFar} near=${dNear}`);
+    if (!(E > 0 && R > E)) { inconclusive(`clashLabels.stats() enter=${E} release=${R} — not a usable rule, nothing judged`); process.exitCode = 2; return; }
+
+    // P1 — the enter-distance rule, with hysteresis, on the most isolated pair (so contention cannot confound it)
     const iso = await page.evaluate(() => window.__cll.pickIsolated());
     log(`§CLL_ISOLATED pair=${iso.pairId} i=${iso.i} isolationM=${iso.isolationM} ${iso.classA}×${iso.classB}`);
     await page.evaluate(() => window.__cll.reset());
-    const r35 = await page.evaluate((c) => window.__cll.at(c, 3.5, 0), iso.contact);
+    const r35 = await page.evaluate((c, d) => window.__cll.at(c, d, 0), iso.contact, dIn);
     const has35 = r35.placed.some(q => q.i === iso.i);
-    claim('P1a_pair_within_4m_is_labelled', has35 && r35.placed.every(q => q.d <= 4.0), `d=3.5 labelled=${has35} eligible=${r35.eligible} labelled=${r35.labelled} maxPlacedD=${Math.max(...r35.placed.map(q => q.d)).toFixed(2)} entered=${r35.entered.join(',')}`);
-    const r43 = await page.evaluate((c) => window.__cll.at(c, 4.3, 0.1), iso.contact);
-    claim('P1b_hysteresis_holds_between_4.0_and_4.6', r43.placed.some(q => q.i === iso.i), `d=4.3 after entering at 3.5: labelled=${r43.placed.some(q => q.i === iso.i)} released=${r43.released.join(',') || '-'}`);
-    const r47 = await page.evaluate((c) => window.__cll.at(c, 4.7, 0.2), iso.contact);
-    claim('P1c_released_beyond_4.6', !r47.placed.some(q => q.i === iso.i) && r47.released.length === 1, `d=4.7: labelled=${r47.placed.some(q => q.i === iso.i)} released=${r47.released.join(',') || '-'}`);
-    const r43b = await page.evaluate((c) => window.__cll.at(c, 4.3, 0.3), iso.contact);
-    claim('P1d_no_reentry_above_4.0', !r43b.placed.some(q => q.i === iso.i) && r43b.entered.length === 0, `d=4.3 after release: labelled=${r43b.placed.some(q => q.i === iso.i)} entered=${r43b.entered.join(',') || '-'}`);
+    claim('P1a_pair_within_enter_is_labelled', has35 && r35.placed.every(q => q.d <= E), `d=${dIn} (enter ${E}) labelled=${has35} eligible=${r35.eligible} labelled=${r35.labelled} maxPlacedD=${Math.max(...r35.placed.map(q => q.d)).toFixed(2)} entered=${r35.entered.join(',')}`);
+    const r43 = await page.evaluate((c, d) => window.__cll.at(c, d, 0.1), iso.contact, dMid);
+    claim('P1b_hysteresis_holds_between_enter_and_release', r43.placed.some(q => q.i === iso.i), `d=${dMid} after entering at ${dIn}: labelled=${r43.placed.some(q => q.i === iso.i)} released=${r43.released.join(',') || '-'}`);
+    const r47 = await page.evaluate((c, d) => window.__cll.at(c, d, 0.2), iso.contact, dOut);
+    claim('P1c_released_beyond_release', !r47.placed.some(q => q.i === iso.i) && r47.released.length === 1, `d=${dOut} (release ${R}): labelled=${r47.placed.some(q => q.i === iso.i)} released=${r47.released.join(',') || '-'}`);
+    const r43b = await page.evaluate((c, d) => window.__cll.at(c, d, 0.3), iso.contact, dMid);
+    claim('P1d_no_reentry_above_enter', !r43b.placed.some(q => q.i === iso.i) && r43b.entered.length === 0, `d=${dMid} after release: labelled=${r43b.placed.some(q => q.i === iso.i)} entered=${r43b.entered.join(',') || '-'}`);
 
     // P4 — no strobe: one straight pass in and out through the boundary flips state exactly twice
     await page.evaluate(() => window.__cll.reset());
-    const sw = await page.evaluate((c, i) => window.__cll.sweep(c, 6.0, 2.0, 0.02, i).concat(window.__cll.sweep(c, 2.02, 6.0, 0.02, i)), iso.contact, iso.i);
+    const sw = await page.evaluate((c, i, a, b) => window.__cll.sweep(c, a, b, 0.02, i).concat(window.__cll.sweep(c, b + 0.02, a, 0.02, i)), iso.contact, iso.i, dFar, dNear);
     let flips = 0, enterAt = null, releaseAt = null;
     for (let k = 1; k < sw.length; k++) if (sw[k][1] !== sw[k - 1][1]) { flips++; if (sw[k][1]) enterAt = sw[k][0]; else releaseAt = sw[k][0]; }
-    claim('P4_no_strobe_two_transitions_per_pass', flips === 2 && enterAt !== null && enterAt <= 4.0 && enterAt > 3.97 && releaseAt !== null && releaseAt >= 4.6 && releaseAt < 4.63,
-      `steps=${sw.length} flips=${flips} enterAt=${enterAt}m releaseAt=${releaseAt}m (expected ≤4.00 and ≥4.60, 0.02 m steps)`);
+    claim('P4_no_strobe_two_transitions_per_pass', flips === 2 && enterAt !== null && enterAt <= E && enterAt > E - 0.03 && releaseAt !== null && releaseAt >= R && releaseAt < R + 0.03,
+      `steps=${sw.length} flips=${flips} enterAt=${enterAt}m releaseAt=${releaseAt}m (expected ≤${E.toFixed(2)} and ≥${R.toFixed(2)}, 0.02 m steps, pass ${dFar}→${dNear}→${dFar})`);
 
-    // P5 — constant size: the panel's pixel box at 1 m equals the box at 3.9 m
+    // P5 — constant size: the panel's pixel box at 1 m equals the box just inside the enter distance
     await page.evaluate(() => window.__cll.reset());
+    const dEdge = +(E - 0.1).toFixed(2);
     const r1 = await page.evaluate((c) => window.__cll.at(c, 1.0, 0), iso.contact);
-    const r39 = await page.evaluate((c) => window.__cll.at(c, 3.9, 0.1), iso.contact);
+    const r39 = await page.evaluate((c, d) => window.__cll.at(c, d, 0.1), iso.contact, dEdge);
     const b1 = r1.placed.find(q => q.i === iso.i), b39 = r39.placed.find(q => q.i === iso.i);
-    claim('P5_constant_screen_size', !!b1 && !!b39 && b1.w === b39.w && b1.h === b39.h, `at 1.0 m ${b1 ? b1.w + 'x' + b1.h : 'none'} px; at 3.9 m ${b39 ? b39.w + 'x' + b39.h : 'none'} px (frame ${sz.W}x${sz.H})`);
+    claim('P5_constant_screen_size', !!b1 && !!b39 && b1.w === b39.w && b1.h === b39.h, `at 1.0 m ${b1 ? b1.w + 'x' + b1.h : 'none'} px; at ${dEdge} m ${b39 ? b39.w + 'x' + b39.h : 'none'} px (frame ${sz.W}x${sz.H})`);
 
     // P2 — occlusion is NOT consulted, and a hidden pair IS labelled
     await page.evaluate(() => window.__cll.reset());
-    const oc = await page.evaluate((c) => window.__cll.occluded(c, 3.5), iso.contact);
+    const oc = await page.evaluate((c, d) => window.__cll.occluded(c, d), iso.contact, dIn);
     const ocLabelled = oc.rec.placed.some(q => q.i === iso.i);
     claim('P2a_no_visibility_call_in_selection', oc.rec.rayDelta === 0, `raycast/BVH calls made by the selector: ${oc.rec.rayDelta} (must be 0)`);
     claim('P2b_pair_behind_a_wall_is_labelled', oc.hiddenByOccluder && ocLabelled, `occluder hit at ${oc.occluderHitAtM} m, contact at ${oc.contactAtM} m → hidden=${oc.hiddenByOccluder}; labelled=${ocLabelled} (the user ruled it in; a fix that hides it is a regression)`);
 
     // P3 — no overlap where the pairs are densest
-    const dn = await page.evaluate(() => window.__cll.pickDense(3.5));
-    log(`§CLL_DENSE pair=${dn.pairId} neighboursWithin3.5m=${dn.neighboursWithin}`);
+    const dn = await page.evaluate((d) => window.__cll.pickDense(d), dIn);
+    log(`§CLL_DENSE pair=${dn.pairId} neighboursWithin${dIn}m=${dn.neighboursWithin}`);
     await page.evaluate(() => window.__cll.reset());
-    const rd = await page.evaluate((c) => window.__cll.at(c, 2.0, 0), dn.contact);
+    const rd = await page.evaluate((c, d) => window.__cll.at(c, d, 0), dn.contact, dNear);
     if (rd.eligible < 2) claim('P3_no_overlap_dense_cluster', false, `INCONCLUSIVE: only ${rd.eligible} eligible at the densest contact — non-overlap was not exercised`);
     else claim('P3_no_overlap_dense_cluster', noOverlap(rd.placed) && rd.labelled + rd.skipped === rd.eligible, `eligible=${rd.eligible} labelled=${rd.labelled} skippedOverlap=${rd.skipped} rects=${rd.placed.map(q => q.w + 'x' + q.h + '@' + q.x + ',' + q.y).join(' ')}`);
 
     // P6 — the fade seam: labelled → marker solid (does not move with t); released → moves again
     await page.evaluate(() => window.__cll.reset());
-    await page.evaluate((c) => window.__cll.at(c, 3.0, 0), iso.contact);
-    await page.evaluate((c) => window.__cll.at(c, 3.0, 1.0), iso.contact);   // ≥ FADE_S of film time → fade reaches 1
+    const dHold = +(E * 0.75).toFixed(2);
+    await page.evaluate((c, d) => window.__cll.at(c, d, 0), iso.contact, dHold);
+    await page.evaluate((c, d) => window.__cll.at(c, d, 1.0), iso.contact, dHold);   // ≥ FADE_S of film time → fade reaches 1
     const on = await page.evaluate((i, p) => window.__cll.markerSolid(i, p), iso.i, st.periodS);
-    await page.evaluate((c) => window.__cll.at(c, 12.0, 2.0), iso.contact);
-    await page.evaluate((c) => window.__cll.at(c, 12.0, 3.0), iso.contact);
+    await page.evaluate((c, d) => window.__cll.at(c, d, 2.0), iso.contact, dFar);
+    await page.evaluate((c, d) => window.__cll.at(c, d, 3.0), iso.contact, dFar);
     const off = await page.evaluate((i, p) => window.__cll.markerSolid(i, p), iso.i, st.periodS);
     claim('P6_fade_seam_labelled_solid_released_pulsing', !!on && !!off && on.fade === 1 && on.a.sel === on.b.sel && on.a.amb !== on.b.amb && off.fade === 0 && off.a.sel !== off.b.sel,
       on && off ? `labelled: fade=${on.fade} marker T/4=${on.a.sel} 3T/4=${on.b.sel} (equal=solid) ambient ${on.a.amb}→${on.b.amb}; released: fade=${off.fade} marker ${off.a.sel}→${off.b.sel} (moves=pulsing)` : 'marker mesh not found');
 
-    // P7 — the stored path: where does the real film come within 4 m? (drives the clip choice; INCONCLUSIVE if never)
+    // P7 — the stored path: where does the real film come within the enter distance? (drives the clip choice; INCONCLUSIVE if never)
     const pp = await page.evaluate(() => window.__cll.pathProfile(1500));
     if (pp.skip) claim('P7_stored_path_proximity', false, 'INCONCLUSIVE: ' + pp.skip);
     else {
@@ -223,7 +234,7 @@ function pageProbe(sabotage) {
       const wins = []; let cur = null;
       pp.rows.forEach(r => { if (cur && r[0] - cur.tEnd <= 1.5 / pp.samples) { cur.tEnd = r[0]; cur.n++; cur.maxE = Math.max(cur.maxE, r[1]); cur.maxL = Math.max(cur.maxL, r[2]); } else { cur = { tStart: r[0], tEnd: r[0], n: 1, maxE: r[1], maxL: r[2] }; wins.push(cur); } });
       wins.forEach(wn => log(`§CLL_PATH_WINDOW t=${wn.tStart}→${wn.tEnd} samples=${wn.n} maxEligible=${wn.maxE} maxLabelled=${wn.maxL}`));
-      if (!pp.framesWithEligible) claim('P7_stored_path_proximity', false, `INCONCLUSIVE: the stored path never comes within 4.0 m of a pair (nearest=${pp.nearestM} m) — a bake of it would be VACUOUS for labels`);
+      if (!pp.framesWithEligible) claim('P7_stored_path_proximity', false, `INCONCLUSIVE: the stored path never comes within ${E} m of a pair (nearest=${pp.nearestM} m) — a bake of it would be VACUOUS for labels`);
       else claim('P7_stored_path_no_overlap_no_raycast', pp.overlaps === 0 && pp.rayDelta === 0, `eligible on ${pp.framesWithEligible}/${pp.samples} samples, maxEligible=${pp.maxEligible} maxLabelled=${pp.maxLabelled}, overlapping panel pairs=${pp.overlaps}, visibility calls=${pp.rayDelta}, enters=${pp.stats.enters} releases=${pp.stats.releases}`);
     }
   } catch (e) { log('§CLL_ERROR ' + (e && e.stack || e)); inconclusive('exception ' + String(e && e.message).slice(0, 160)); process.exitCode = 2; crashed = true; }
@@ -233,7 +244,7 @@ function pageProbe(sabotage) {
   if (!rows.length || crashed) return;
   Witness('clash_film_labels').population(() => rows)
     .schema({ type: 'object', required: ['claim', 'ok'], properties: { claim: { type: 'string', minLength: 1 }, ok: { type: 'integer', minimum: 0, maximum: 1 }, detail: { type: 'string' } } })
-    .invariant('every §CLASH_FILM_P2 claim holds: names extracted, 4 m enter / 4.6 m release with no strobe, occlusion never consulted and a hidden pair labelled, no panel overlap, constant size, fade seam', rs => rs.every(r => r.ok === 1))
+    .invariant('every §CLASH_FILM_P2 claim holds: names extracted, enter/release (read from the module) with no strobe, occlusion never consulted and a hidden pair labelled, no panel overlap, constant size, fade seam', rs => rs.every(r => r.ok === 1))
     .redControl(rs => { const c = rs.map(r => Object.assign({}, r)); if (c[0]) c[0].ok = 0; return c; })
     .run();
   logStream.end();
