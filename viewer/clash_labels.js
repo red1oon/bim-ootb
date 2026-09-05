@@ -47,11 +47,25 @@ function setupClashLabels(A) {
 
     var ENTER_M = 4.0, RELEASE_M = 4.6;   // ruling 1 + §P2.1 hysteresis: enter at 4.0 m, release at 4.6 m
     var FADE_S = 0.5;                      // FILM seconds for a marker to go solid / back to the pulse (§4b: a fade, never a switch)
-    // The marker's own colours (clash_film.js COL_A/COL_B, as rgb bytes) — the row is the same red /
-    // blue as the box it names, so "users will know right away which is which".
-    var COL_A = 'rgb(255,33,26)', COL_B = 'rgb(41,112,255)';
+    // ══ §CLASH_LABEL_HUD_FAMILY (2026-09-05, user: the label styling "seems to be not nicely setup
+    // to be consistent as the HUD color scheme") ═════════════════════════════════════════════════
+    // The plate and the font FAMILY already matched cpe_day_counter.js; the TEXT did not. The day
+    // counter reads white #fff at weight 700 (the reading) beside rgba(255,255,255,0.62) at 500 (the
+    // context); the label put the marker's own saturated rgb(255,33,26) / rgb(41,112,255) at 600 on
+    // the same plate — a neon insert sitting on the HUD rather than part of it. The colour IDENTITY
+    // stays (red = A, blue = B: the user reads a name to its marker by it) — each row is the marker
+    // colour mixed TINT toward white, which lifts its luminance next to the counter's white and takes
+    // the saturation off, set at the counter's own 700. Both rows are the reading, so both are 700.
+    function tint(r, g, b, k) { return 'rgb(' + Math.round(r + (255 - r) * k) + ',' + Math.round(g + (255 - g) * k) + ',' + Math.round(b + (255 - b) * k) + ')'; }
+    var TINT = 0.45;
+    var COL_A = tint(255, 33, 26, TINT), COL_B = tint(41, 112, 255, TINT);   // rgb(255,133,129) / rgb(137,176,255)
+    var WEIGHT = 700;
     var PLATE = 'rgba(0,0,0,0.45)';        // the day counter's plate — one visual language across the HUD
     var FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+    // The leader was ONE near-white stroke, invisible against a lit wall or the sky (review of #1679).
+    // A dark halo under the white core holds contrast on both — the same guarantee the plate gives
+    // the text. The halo is the plate's black, a touch denser because a 1 px line has no area to spare.
+    var LEADER = 'rgba(255,255,255,0.92)', LEADER_HALO = 'rgba(0,0,0,0.55)';
 
     var _pairsRef = null, _near = null, _fade = null, _names = null, _lastFilmS = null, _placed = [];
     var _measureCtx = null, _nameLogged = {};
@@ -100,11 +114,14 @@ function setupClashLabels(A) {
     // HUD at every export size. Nothing here depends on the pair's distance — that is §P2.5 P5.
     function metrics(h) {
       var fontPx = Math.max(12, Math.round(h * 0.022));
-      return { fontPx: fontPx, padX: Math.round(fontPx * 0.7), padY: Math.round(fontPx * 0.45),
-        rowGap: Math.round(fontPx * 0.3), off: Math.round(h * 0.035), margin: Math.round(h * 0.028),
-        line: Math.max(1, Math.round(h * 0.0015)), dot: Math.max(2, Math.round(h * 0.004)), radius: Math.round(fontPx * 0.5) };
+      var padY = Math.round(fontPx * 0.45), rowGap = Math.round(fontPx * 0.3);
+      var bh = padY * 2 + fontPx * 2 + rowGap;
+      return { fontPx: fontPx, padX: Math.round(fontPx * 0.7), padY: padY, rowGap: rowGap, bh: bh,
+        off: Math.round(h * 0.035), margin: Math.round(h * 0.028),
+        line: Math.max(1, Math.round(h * 0.0015)), halo: Math.max(1, Math.round(h * 0.0015)), dot: Math.max(2, Math.round(h * 0.004)),
+        radius: Math.round(bh * 0.22) };   // the day counter's own corner rule (boxH × 0.22), not a separate one
     }
-    function font(px) { return '600 ' + px + 'px ' + FONT; }
+    function font(px) { return WEIGHT + ' ' + px + 'px ' + FONT; }
     function measure(text, px) {
       if (!_measureCtx) { var c = document.createElement('canvas'); c.width = c.height = 8; _measureCtx = c.getContext('2d'); }
       _measureCtx.font = font(px);
@@ -168,7 +185,7 @@ function setupClashLabels(A) {
         var sx = (nx + 1) / 2 * w, sy = (1 - ny) / 2 * h;
         var nm = _names[e.i];
         var bw = M.padX * 2 + Math.ceil(Math.max(measure(nm.a, M.fontPx), measure(nm.b, M.fontPx)));
-        var bh = M.padY * 2 + M.fontPx * 2 + M.rowGap;
+        var bh = M.bh;
         var x = sx + M.off, y = sy - M.off - bh;     // up-right of the anchor …
         if (x + bw > w - M.margin) x = sx - M.off - bw;   // … or up-left when the right side would leave the frame
         if (y < M.margin) y = sy + M.off;                 // … and below it when the top would
@@ -234,9 +251,15 @@ function setupClashLabels(A) {
         if (!q.behind) {
           // leader: from the panel's nearest edge point to the projected contact, plus a dot on it
           var ax = clamp(q.sx, q.x, q.x + q.w), ay = clamp(q.sy, q.y, q.y + q.h);
-          ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = M.line;
+          // §CLASH_LABEL_HUD_FAMILY: halo first, core on top — line and dot alike.
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = LEADER_HALO; ctx.lineWidth = M.line + 2 * M.halo;
           ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(q.sx, q.sy); ctx.stroke();
-          ctx.fillStyle = 'rgba(255,255,255,0.95)';
+          ctx.strokeStyle = LEADER; ctx.lineWidth = M.line;
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(q.sx, q.sy); ctx.stroke();
+          ctx.fillStyle = LEADER_HALO;
+          ctx.beginPath(); ctx.arc(q.sx, q.sy, M.dot + M.halo, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = LEADER;
           ctx.beginPath(); ctx.arc(q.sx, q.sy, M.dot, 0, Math.PI * 2); ctx.fill();
         }
         ctx.fillStyle = PLATE;
@@ -277,6 +300,9 @@ function setupClashLabels(A) {
       return s;
     };
 
-    console.log('§CLASH_LABELS_INIT wired enter=' + ENTER_M + 'm release=' + RELEASE_M + 'm fade=' + FADE_S + 's (no allocation until update)');
+    A.clashLabels.style = function () { return { colA: COL_A, colB: COL_B, tint: TINT, weight: WEIGHT, plate: PLATE, leader: LEADER, leaderHalo: LEADER_HALO }; };
+    console.log('§CLASH_LABELS_INIT wired enter=' + ENTER_M + 'm release=' + RELEASE_M + 'm fade=' + FADE_S + 's' +
+      ' text=A:' + COL_A + '/B:' + COL_B + ' (marker colours tinted ' + TINT + ' toward white) weight=' + WEIGHT +
+      ' plate=' + PLATE + ' leader=' + LEADER + '+halo ' + LEADER_HALO + ' (no allocation until update)');
   }
 }
