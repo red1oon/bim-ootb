@@ -107,7 +107,8 @@
 // v1146 (2026-09-05) §CLASH_FILM_SKY_WASH: viewer/clash_film.js — each marker is clamped to a
 // constant small SCREEN size (6 % of frame height) per frame from the camera, so a marker near the
 // lens can no longer balloon over the sky; PEAK 0.55 → 0.30. cinema_maxq.js disposes the markers
-// on the THROW path too and guards the per-frame update.
+// on the THROW path too and guards the per-frame update. Also §CPE_CLIP_SUN_ARC_FILM_T: a --clip
+// bake's sun arc now reads the FILM fraction, not the clip-local one (it swept 55°→6° inside every clip).
 // v1147 (2026-09-05) §CLASH_LABEL_HUD_FAMILY: viewer/clash_labels.js — the label's text is now the
 // day counter's family (marker colours tinted 0.45 toward white, weight 700, the counter's corner
 // rule) instead of saturated rgb(255,33,26)/rgb(41,112,255) at 600; the leader line and dot carry a
