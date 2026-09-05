@@ -1589,6 +1589,13 @@
         // ever the ORIGINAL fixed 6°. Moving the call to AFTER startStillRefine() re-asserts the
         // correct per-frame elevation once the staging reset has already happened.
         if (A._sunArcStep) A._sunArcStep(_tn);
+        // §SUN_ARC_FILL / §BAKE_FILL_PIN (2026-09-05, effects.js, witness_sun_arc_fill.js): the interior
+        // fill — ambient, hemi, fixture point-light scale/budget — is PINNED to the Alt+S baseline on
+        // every frame, whatever the arc above just did to the sun (user ruling: "letting alt-s normal,
+        // and sunlite is brighter"). Runs AFTER _sunArcStep and AFTER startStillRefine, so it is the
+        // last word on the fill before this frame's capture. Bake-only by this gate; sun position/
+        // intensity/shadow are not touched by it.
+        if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tn);
         var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' capture');
         // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:
