@@ -71,6 +71,20 @@ function pageProbe() {
       A.clashFilm.setFade(0, 0); A.clashFilm.setFade(1, 0);
       return { a, b }; },
     tmCalls: () => window.__tmProbeCalls,
+    // W6 — §CLASH_FILM_SKY_WASH: put the camera at distance d from pair 0's contact, run one update,
+    // and read the box that was actually PLACED against the one severity would have given. The
+    // projected height in px is s / (2·d·tan(fov/2)) · h — the number the clamp exists to bound.
+    clampAt: (d) => { const p = A.clashFilm.pairs()[0]; if (!p || !p.contact) return null;
+      const cam = A.camera, keep = { p: cam.position.clone(), t: A.controls.target.clone() };
+      const c = new THREE.Vector3(p.contact.x, p.contact.y, p.contact.z);
+      cam.position.set(c.x + d, c.y, c.z); A.controls.target.copy(c); A.controls.update(); cam.updateMatrixWorld(true);
+      A.clashFilm.update(0);
+      const b = A.clashFilm.boxOf(0), st = A.clashFilm.stats(), h = A.renderer.domElement.height;
+      const px = (m) => m / (2 * d * Math.tan(cam.fov * Math.PI / 360)) * h;
+      cam.position.copy(keep.p); A.controls.target.copy(keep.t); A.controls.update(); cam.updateMatrixWorld(true);
+      A.clashFilm.update(0);
+      return { d, naturalM: +b.naturalM.toFixed(4), placedM: +b.placedM.toFixed(4), naturalPx: +px(b.naturalM).toFixed(1), placedPx: +px(b.placedM).toFixed(1),
+               capPx: st.lastClamp && st.lastClamp.capPx, clampedN: st.lastClamp && st.lastClamp.clamped, h }; },
     markerCount: () => { const s = A.scene.children.filter(o => o.userData && o.userData.clashFilmSide); return s.reduce((n, m) => n + m.count, 0); },
     setCursor: (c) => { try { window.tmSetCursor(c); return true; } catch (e) { return false; } }
   };
@@ -149,6 +163,21 @@ function pageProbe() {
     else claim('W5_per_instance_fade_holds_solid',
       f.a.sel0 === f.b.sel0 && f.a.sel1 === f.b.sel1 && f.a.amb !== f.b.amb,
       `selected(0,1) at t=0 → ${f.a.sel0},${f.a.sel1} and at t=T/2 → ${f.b.sel0},${f.b.sel1} (must be equal); an ambient instance moved ${f.a.amb} → ${f.b.amb} (must differ)`);
+
+    // W6 — §CLASH_FILM_SKY_WASH: the marker is clamped to a constant small SCREEN size. The defect
+    // this proves or disproves: a marker near the lens ballooned to 15.9 % of the frame and washed
+    // the sky (control diff, 2026-09-05). Near: the placed box must project to ≤ capPx while the
+    // severity box would have projected far larger. Far: the severity box is untouched.
+    const near = await page.evaluate(d => window.__cf.clampAt(d), 0.8);
+    const far = await page.evaluate(d => window.__cf.clampAt(d), 30);
+    if (!near || !far) claim('W6_marker_clamped_to_screen_size', false, 'INCONCLUSIVE: pair 0 has no contact — the clamp was not judged');
+    else {
+      const capPx = Math.round(st.markerMaxPx * near.h);
+      claim('W6_marker_clamped_to_screen_size',
+        near.placedPx <= capPx + 1 && near.placedM < near.naturalM && near.naturalPx > capPx && far.placedM === far.naturalM,
+        `at ${near.d} m: severity box ${near.naturalM} m would be ${near.naturalPx} px, placed ${near.placedM} m = ${near.placedPx} px (cap ${capPx} px @${near.h}, clamped=${near.clampedN}); ` +
+        `at ${far.d} m: placed ${far.placedM} m = severity ${far.naturalM} m (untouched)`);
+    }
   } catch (e) { log('§CFM_ERROR ' + (e && e.stack || e)); inconclusive('exception ' + String(e && e.message).slice(0, 160)); process.exitCode = 2; }
   finally { try { await browser.close(); } catch (e) {} server.close(); try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) {} }
   if (!rows.length) return;
