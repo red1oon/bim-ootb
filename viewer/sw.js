@@ -83,7 +83,43 @@
 // lights for a one-discipline Reveal slot, but the additive lens quads kept drawing over the trade
 // being revealed. Gated by zeroing the material colour (not by teardown, so §R10's stage-keep guard
 // survives). effects.js bumped in viewer.html.
-const CACHE_VERSION = 'v1143';   // bump on each deploy; per-change detail is the git commit message.
+// v1143 (2026-09-04) §MESH_NARROWPHASE (CLASH_GATE_OBB_NARROWPHASE.md §M): new viewer/clash_narrow.js —
+// the clash list's bbox-only rows are annotated with a triangle-exact verdict (OBB/SAT mid phase +
+// three-mesh-bvh intersectsGeometry, reusing the §BVH_DEFERRED trees). clash_matrix.js (qualify on cell
+// click) and measure.js (list render shows mesh-true / bbox-only) changed; all three are PRECACHE_ASSETS.
+// v1144 (2026-09-04) §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P1): new viewer/clash_film.js —
+// the mesh-true clash pairs as PERSISTENT world content in a baked film, red/blue instanced box
+// shells pulsing on FILM time. Not gated by the Time Machine: the markers stand from frame 0 over
+// empty ground so the viewer sees where the trouble will be before it is built. Per-instance fade
+// channel reserved for phase 2's near-and-facing labels. --clash/--no-clash on cli_silent_bake.js.
+// v1145 (2026-09-05) §CLASH_FILM_CONTACT_MARKER + §CLASH_FILM_PULSE_ENVELOPE + §CPE_BAKE_RES:
+// the clash marker is now the CLASH (two small boxes straddling the contact, sized from the
+// penetration) not the whole element — a 98.9 m slab was lighting up the floor and washing the sky.
+// The pulse is an asymmetric envelope (2 s rise, 1 s hold, 3 s fall, 2 s dark) instead of a sine
+// that never read as off. Alt+C gains a Clash pairs checkbox and a Silent-bake size select which
+// cli_silent_bake.js honours when --width/--height are absent.
+// v1145 (2026-09-05) §CLASH_FILM_P2 (MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P2): new viewer/clash_labels.js —
+// the in-scene label for a clash pair within 4.0 m of the camera (release 4.6 m), occluded or not,
+// any number, limited only by screen-space non-overlap. One half-transparent HUD panel per pair
+// (A-side name red above, B-side blue below, from rates.js desc), composited in _captureFrame's
+// 2D pass with a leader to the projected contact; labelled pairs hold solid via clashFilm.setFade.
+// cinema_maxq.js (hooks) + measure.js (setup) + viewer.html changed; all PRECACHE_ASSETS.
+// v1146 (2026-09-05) §CLASH_FILM_SKY_WASH: viewer/clash_film.js — each marker is clamped to a
+// constant small SCREEN size (6 % of frame height) per frame from the camera, so a marker near the
+// lens can no longer balloon over the sky; PEAK 0.55 → 0.30. cinema_maxq.js disposes the markers
+// on the THROW path too and guards the per-frame update. Also §CPE_CLIP_SUN_ARC_FILM_T: a --clip
+// bake's sun arc now reads the FILM fraction, not the clip-local one (it swept 55°→6° inside every clip).
+// v1147 (2026-09-05) §CLASH_LABEL_HUD_FAMILY: viewer/clash_labels.js — the label's text is now the
+// day counter's family (marker colours tinted 0.45 toward white, weight 700, the counter's corner
+// rule) instead of saturated rgb(255,33,26)/rgb(41,112,255) at 600; the leader line and dot carry a
+// dark halo under the white core so they hold contrast against a lit wall or the sky.
+// v1148 (2026-09-05) §P2.1 AMENDED: viewer/clash_labels.js — the label enter/release distance is 10.0 m /
+// 10.6 m (was 4.0 / 4.6; user: "10 meters or half of scene space" after a clip whose nearest pair was 7.98 m).
+// v1149 (2026-09-05) §R17_SHADOWMAP_RELEASE: effects.js — the Alt+S 4096² sun shadow map (and its
+// depth-texture-backed WebGLRenderTarget) is disposed and handed back to the GPU on still-mode exit
+// instead of retained, so repeated Alt+S sessions no longer accumulate a 128 MiB map / 64 MB live RT
+// at rest.
+const CACHE_VERSION = 'v1149';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -536,6 +572,9 @@ const PRECACHE_ASSETS = [
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js',
   'tour.js',
   'clash_matrix.js',
+  'clash_narrow.js',
+  'clash_film.js',
+  'clash_labels.js',
   'measure.js',
   'sitecam.js',
   'issues.js',
