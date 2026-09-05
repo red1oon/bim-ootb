@@ -3014,6 +3014,12 @@ async function setupEffects(A, renderer, scene, camera) {
   // building envelope), NOT reinvented, just triggered from here instead of the 'h' Shadow pill.
   // If the user's OWN Shadow mode is already on, this leaves it alone entirely — never double-set.
   var _photoShadowSelfEnabled = false;
+  // §R17_SHADOWMAP_RELEASE (2026-09-05, bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R17) — the
+  // shadow-map dimensions this staging cycle BORROWED from. Captured at raise time rather than
+  // assumed: tools.js §S288 owns the nav number (2048) and the three.js default when shadows were
+  // never toggled is 512 — MEASURED `§R17_SHADOWMAP S0_pre_press mapSize=512 realMap=0x0` on a real
+  // load, so a hardcoded 2048 restore would silently QUADRUPLE the nav map on that (common) path.
+  var _photoShadowMapSizeSaved = null;
   // §PHOTO_SHADOW_SKIP (2026-07-25, borrowing nav-DLOD's change-detection idea — see
   // prompts/PHOTOREAL_STILL_RENDER.md 2026-07-24/2026-07-25 SPEC ONLY sections): the reassert
   // traversal below existed to catch geometry/visibility that changed AFTER the initial
@@ -3131,8 +3137,25 @@ async function setupEffects(A, renderer, scene, camera) {
     // chosen for a shadow mode active during CONTINUOUS live navigation, a cost/frame every frame;
     // this path only ever runs during a deliberate Alt+S/MaxQ capture, never during normal nav, so
     // the same cost concern does not apply here).
+    // §R17_SHADOWMAP_RELEASE — remember what this raise is BORROWING FROM, then make the raise
+    // actually take effect. MEASURED (§R17 control arm, HHS_Office_Federated, one Alt+S):
+    // `§R17_SHADOWMAP S1c_after_idle6s mapSize=4096 realMap=4096x4096 mapMB=128 castShadow=false`
+    // — the 4096 map survived teardown, survived a second full press cycle, and was still resident
+    // with NOTHING casting into it. So the paragraph above ("this path only ever runs during a
+    // deliberate Alt+S/MaxQ capture, never during normal nav, so the same cost concern does not
+    // apply here") was FALSE AS SHIPPED in both halves: the 4x texel cost it rules out for
+    // navigation was paid on every navigation frame after the first Alt+S, and 128 MiB of GPU
+    // render-target memory was never handed back for the life of the tab.
+    if (_photoShadowMapSizeSaved === null) {
+      _photoShadowMapSizeSaved = { w: A.sun.shadow.mapSize.width, h: A.sun.shadow.mapSize.height };
+    }
     A.sun.shadow.mapSize.width = 4096;
     A.sun.shadow.mapSize.height = 4096;
+    // A map already allocated at the SMALLER nav size would not be reallocated by three.js on a
+    // mapSize change (see _releaseSunShadowMap), so the raise would silently not happen and the
+    // shadow render would target a 4096 viewport inside a 2048 framebuffer. Releasing here makes
+    // the documented intent above true. No-op when no map exists yet, which is the usual case.
+    _releaseSunShadowMap('raise 4096 for still');
     A.sun.shadow.camera.near = Math.max(1, _sunDist * 0.05);
     A.sun.shadow.camera.far = _sunDist * 4;
     A.sun.shadow.camera.left = -_env;
@@ -3220,10 +3243,45 @@ async function setupEffects(A, renderer, scene, camera) {
         ' env=' + _env + ' texelPerM=' + (A.sun.shadow.mapSize.width / (2 * _env)).toFixed(1));
     })();
   }
+  // §R17_SHADOWMAP_RELEASE — three.js allocates `light.shadow.map` ONCE and reallocates it ONLY on a
+  // shadow TYPE change. Verified by reading the vendored build, not recalled: WebGLShadowMap does
+  // `if (null === c.map || true === f) { ...dispose...; c.map = new I(a.x, a.y, ...) }` where
+  // `f = A !== this.type` — a TYPE comparison, with no mapSize term anywhere in the condition.
+  // Two consequences, and the second is why this is a function rather than two assignments:
+  //   1. writing `shadow.mapSize` back frees NOTHING — the old texture stays resident;
+  //   2. it is also WRONG on its own — the renderer sizes the shadow VIEWPORT from mapSize while
+  //      the framebuffer keeps its old dimensions, so a mapSize-only restore corrupts the shadow.
+  // Disposing and nulling the map is what makes the size change real: three.js rebuilds it at the
+  // current mapSize the next time something actually casts, and if nothing does, it simply stays freed.
+  function _releaseSunShadowMap(why) {
+    var sh = A.sun && A.sun.shadow;
+    if (!sh || !sh.map) return 0;
+    var w = sh.map.width, h = sh.map.height;
+    var mb = (w * h * 4 * (sh.map.depthTexture ? 2 : 1)) / 1048576;   // colour plane + paired depth texture
+    try {
+      if (sh.map.depthTexture) { sh.map.depthTexture.dispose(); sh.map.depthTexture = null; }
+      sh.map.dispose();
+      sh.map = null;
+      if (sh.mapPass) { sh.mapPass.dispose(); sh.mapPass = null; }   // VSM-only scratch; null under PCF
+    } catch (e) { console.warn('§SHADOWMAP_RELEASE failed ' + e.message); return 0; }
+    console.log('§SHADOWMAP_RELEASE ' + why + ' was=' + w + 'x' + h + ' freedMB=' + mb.toFixed(1) +
+      ' mapSizeNow=' + sh.mapSize.width + ' (three.js rebuilds at mapSizeNow on the next shadow render, or never)');
+    return mb;
+  }
   function _disablePhotoShadows() {
     if (!_photoShadowSelfEnabled) return;
     _photoShadowSelfEnabled = false;
     A.sun.castShadow = false;
+    // §R17_SHADOWMAP_RELEASE — hand the borrowed 4096 map back. Guarded on _photoShadowSelfEnabled
+    // by the early return above, which is exactly the "we were the ones who raised it" condition:
+    // when the user's own Shadow mode is on, _enablePhotoShadows returns before the raise and this
+    // whole function never runs, so a user-owned shadow map is never touched.
+    if (_photoShadowMapSizeSaved) {
+      A.sun.shadow.mapSize.width = _photoShadowMapSizeSaved.w;
+      A.sun.shadow.mapSize.height = _photoShadowMapSizeSaved.h;
+      _releaseSunShadowMap('still exit — mapSize back to ' + _photoShadowMapSizeSaved.w);
+      _photoShadowMapSizeSaved = null;
+    }
     var _unshadowList = [];
     A.scene.traverse(function(o) { if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) _unshadowList.push(o); });
     var _ui = 0;
