@@ -10,6 +10,21 @@
 // Also proves the two rules the user set: the markers are a FORECAST (present before the buildup
 // places them — §3b), and the pulse is PER-INSTANCE so phase 2 can hold a labelled pair solid while
 // the rest keep breathing (§4b, claim W5 — proven now so it is not a rewrite later).
+//
+// ══ W7-W10 — §CLASH_FILM_SHINE_THROUGH (2026-09-05, §CLASH_FILM_P3 item 2) ══════════════════════
+// THE DEFECT: the marker material shipped with `depthTest: true` — normal z-testing, so a wall/
+// slab in front of a marker correctly occluded it, contradicting the standing ruling that a
+// pulsing pair shines through occlusion. Fix: `depthTest: false` (viewer/clash_film.js makeSide),
+// matching the working precedent at measure.js:717-720 (CINEMA_PATH_EDITOR.md §CPE_CLASH_PIN item 2).
+// A marker has no visibility SELECTION LIST the way a label does (§P2's technique of spying on a
+// raycast and checking a "placed" array doesn't apply — every marker is always drawn, every frame,
+// §3b), so this proves it the way the mechanism actually works: a REAL rendered frame with a
+// synthetic opaque occluder between the camera and a pulsing pair's contact, pixel-read back via
+// `A.renderer.readRenderTargetPixels` (same technique `witness_wall_side_light_floor.js` already
+// uses for numeric pixel proof, not a screenshot), with a SABOTAGE control (force depthTest back to
+// true, the pre-fix state) proving the occluder genuinely sits in front rather than assuming it.
+// W10 proves the fix is material-level, not per-pair: ONE THREE.Material object drives the WHOLE
+// InstancedMesh (every pulsing pair in the film), so there is no per-pair code path to miss.
 // CAN REPORT ITS OWN FAILURE: INCONCLUSIVE (no load / module absent / build refused), VACUOUS
 // (trueClash=0 — a building with no clashes proves nothing about a clash renderer), RED CONTROL.
 // Env: ROOT · BLD (default Hospital_silent_local) · BLD_DIR · GPU=real|sw · PORT · LOAD_MS · LOG
@@ -86,7 +101,94 @@ function pageProbe() {
       return { d, naturalM: +b.naturalM.toFixed(4), placedM: +b.placedM.toFixed(4), naturalPx: +px(b.naturalM).toFixed(1), placedPx: +px(b.placedM).toFixed(1),
                capPx: st.lastClamp && st.lastClamp.capPx, clampedN: st.lastClamp && st.lastClamp.clamped, h }; },
     markerCount: () => { const s = A.scene.children.filter(o => o.userData && o.userData.clashFilmSide); return s.reduce((n, m) => n + m.count, 0); },
-    setCursor: (c) => { try { window.tmSetCursor(c); return true; } catch (e) { return false; } }
+    setCursor: (c) => { try { window.tmSetCursor(c); return true; } catch (e) { return false; } },
+    // ── W7-W10 §CLASH_FILM_SHINE_THROUGH probe ──────────────────────────────────────────────────
+    // Real occluder, real render, real pixel readback. `idx` = pair index (must have a contact).
+    occlusionProbe: (idx) => {
+      const meshA = A.scene.children.find(o => o.userData && o.userData.clashFilmSide === 'A');
+      const meshB = A.scene.children.find(o => o.userData && o.userData.clashFilmSide === 'B');
+      if (!meshA || !meshB) return null;
+      const p = A.clashFilm.pairs()[idx];
+      if (!p || !p.contact) return null;
+      const st = A.clashFilm.stats();
+      const tHold = st.riseS + st.holdS / 2;         // deterministic peak of the pulse envelope
+      A.clashFilm.update(tHold);
+
+      const contact = new THREE.Vector3(p.contact.x, p.contact.y, p.contact.z);
+      const DIR = new THREE.Vector3(1, 0.35, 0.8).normalize();   // same fixed approach direction convention as witness_clash_film_labels.js
+      const D = 5;
+      const camPos = contact.clone().addScaledVector(DIR, D);
+      const keep = { p: A.camera.position.clone(), t: A.controls.target.clone() };
+      A.camera.position.copy(camPos);
+      A.camera.lookAt(contact.x, contact.y, contact.z);
+      A.camera.updateMatrixWorld(true);
+
+      const proj = contact.clone().project(A.camera);
+      const W = A.renderer.domElement.width, H = A.renderer.domElement.height;
+      const px = Math.round((proj.x * 0.5 + 0.5) * W);
+      const py = Math.round((1 - (proj.y * 0.5 + 0.5)) * H);
+
+      // Ordinary opaque occluder — default depthTest:true/depthWrite:true — halfway between camera
+      // and the contact, facing the camera, large enough to fully cover the marker's projection.
+      const occGeo = new THREE.PlaneGeometry(6, 6);
+      const occMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+      const occMesh = new THREE.Mesh(occGeo, occMat);
+      occMesh.position.copy(camPos.clone().lerp(contact, 0.5));
+      occMesh.lookAt(camPos);
+      A.scene.add(occMesh);
+
+      const rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType });
+      const buf = new Float32Array(W * H * 4);
+      function readAt(x, y) {
+        A.renderer.setRenderTarget(rt);
+        A.renderer.render(A.scene, A.camera);
+        A.renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+        A.renderer.setRenderTarget(null);
+        let maxLum = 0, n = 0;
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+          const xx = x + dx, yy = H - 1 - (y + dy);   // WebGL readback rows are bottom-up
+          if (xx < 0 || xx >= W || yy < 0 || yy >= H) continue;
+          const i = (yy * W + xx) * 4;
+          const lum = 0.2126 * buf[i] + 0.7152 * buf[i + 1] + 0.0722 * buf[i + 2];
+          if (lum > maxLum) maxLum = lum;
+          n++;
+        }
+        return { maxLum: +maxLum.toFixed(5), sampled: n };
+      }
+
+      const withOccluderFixed = readAt(px, py);
+
+      // SABOTAGE control — force the SAME shared material's depthTest back to true (the pre-fix
+      // state) and re-read. Proves the occluder genuinely sits in front (a real geometric fact,
+      // not an assumption) and that this ONE property is what shine-through hinges on.
+      const origDepthA = meshA.material.depthTest, origDepthB = meshB.material.depthTest;
+      meshA.material.depthTest = true; meshB.material.depthTest = true;
+      meshA.material.needsUpdate = true; meshB.material.needsUpdate = true;
+      const withOccluderSabotaged = readAt(px, py);
+      meshA.material.depthTest = origDepthA; meshB.material.depthTest = origDepthB;
+      meshA.material.needsUpdate = true; meshB.material.needsUpdate = true;
+
+      // Occluder alone — no clash markers in the scene at all (both meshes hidden).
+      meshA.visible = false; meshB.visible = false;
+      const occluderAlone = readAt(px, py);
+      meshA.visible = true; meshB.visible = true;
+
+      // Baseline — the marker with no occluder at all.
+      A.scene.remove(occMesh);
+      const noOccluder = readAt(px, py);
+
+      A.camera.position.copy(keep.p); A.controls.target.copy(keep.t); A.controls.update(); A.camera.updateMatrixWorld(true);
+      A.clashFilm.update(0);
+      rt.dispose(); occGeo.dispose(); occMat.dispose();
+
+      return {
+        idx, px, py, W, H,
+        materialDepthTestA: origDepthA, materialDepthTestB: origDepthB,
+        materialIsSingleObject: !Array.isArray(meshA.material) && !Array.isArray(meshB.material),
+        instanceCountA: meshA.count, instanceCountB: meshB.count, totalPairs: A.clashFilm.pairs().length,
+        withOccluderFixed, withOccluderSabotaged, occluderAlone, noOccluder
+      };
+    }
   };
 }
 
@@ -178,12 +280,50 @@ function pageProbe() {
         `at ${near.d} m: severity box ${near.naturalM} m would be ${near.naturalPx} px, placed ${near.placedM} m = ${near.placedPx} px (cap ${capPx} px @${near.h}, clamped=${near.clampedN}); ` +
         `at ${far.d} m: placed ${far.placedM} m = severity ${far.naturalM} m (untouched)`);
     }
+
+    // W7-W10 — §CLASH_FILM_SHINE_THROUGH: real occluder, real render, real pixel readback.
+    const occIdx = await page.evaluate(() => window.APP.clashFilm.pairs().findIndex(p => !!p.contact));
+    if (occIdx < 0) {
+      claim('W7_marker_shines_through_occluder', false, 'INCONCLUSIVE: no pair in this building has a contact point — occlusion was not judged');
+    } else {
+      const occ = await page.evaluate(i => window.__cf.occlusionProbe(i), occIdx);
+      log('§CFM_OCCLUSION ' + JSON.stringify(occ));
+      if (!occ) {
+        claim('W7_marker_shines_through_occluder', false, 'INCONCLUSIVE: occlusionProbe returned null');
+      } else {
+        // W10 — structural: ONE material object drives the WHOLE InstancedMesh, so the fix is
+        // material-level, not per-pair — there is no per-pair code path that could miss one.
+        claim('W10_fix_is_material_level_not_per_pair',
+          occ.materialIsSingleObject && occ.instanceCountA === occ.totalPairs && occ.instanceCountB === occ.totalPairs,
+          `single material object=${occ.materialIsSingleObject}  instancesA=${occ.instanceCountA} instancesB=${occ.instanceCountB} totalPairs=${occ.totalPairs} (one material governs every pulsing pair in one draw call)`);
+        // W9 — the fix is live: depthTest is false on both sides' shared material.
+        claim('W9_depthTest_is_false_on_the_shared_material',
+          occ.materialDepthTestA === false && occ.materialDepthTestB === false,
+          `depthTestA=${occ.materialDepthTestA} depthTestB=${occ.materialDepthTestB}`);
+        // W8 — SABOTAGE control: forcing depthTest back to true (the pre-fix state) reproduces
+        // occlusion — the occluder pixel with the marker sabotaged-hidden matches the occluder-alone
+        // reading (within float-render noise), proving the occluder genuinely sits in front.
+        const sabotageMatchesAlone = Math.abs(occ.withOccluderSabotaged.maxLum - occ.occluderAlone.maxLum) < 0.01;
+        claim('W8_sabotage_control_reproduces_occlusion_pre_fix',
+          sabotageMatchesAlone,
+          `sabotaged(depthTest=true)=${occ.withOccluderSabotaged.maxLum}  occluderAlone(no marker)=${occ.occluderAlone.maxLum}  |Δ|=${Math.abs(occ.withOccluderSabotaged.maxLum - occ.occluderAlone.maxLum).toFixed(5)} (must be ~0 — the occluder alone, with no marker light reaching the pixel, is indistinguishable from a fully-occluded marker under the OLD depthTest:true behaviour)`);
+        // W7 — THE FIX ITSELF: with the shipped depthTest:false, the same occluded pixel is
+        // measurably brighter than the occluder-alone control — the marker's light is reaching the
+        // camera THROUGH the occluder, exactly the "shine through walls" behaviour this closes.
+        const shineDelta = occ.withOccluderFixed.maxLum - occ.occluderAlone.maxLum;
+        claim('W7_marker_shines_through_occluder',
+          shineDelta > 0.02 && occ.withOccluderFixed.maxLum > occ.withOccluderSabotaged.maxLum,
+          `withOccluder+fix=${occ.withOccluderFixed.maxLum}  occluderAlone=${occ.occluderAlone.maxLum}  Δ=+${shineDelta.toFixed(5)}  ` +
+          `noOccluder(baseline, unoccluded)=${occ.noOccluder.maxLum}  sabotaged=${occ.withOccluderSabotaged.maxLum} ` +
+          `(fixed reading must clear the occluder-alone floor by a real margin and exceed the sabotaged reading — the marker is visibly contributing light at this pixel despite the opaque occluder in front of it)`);
+      }
+    }
   } catch (e) { log('§CFM_ERROR ' + (e && e.stack || e)); inconclusive('exception ' + String(e && e.message).slice(0, 160)); process.exitCode = 2; }
   finally { try { await browser.close(); } catch (e) {} server.close(); try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) {} }
   if (!rows.length) return;
   Witness('clash_film_markers').population(() => rows)
     .schema({ type: 'object', required: ['claim', 'ok'], properties: { claim: { type: 'string', minLength: 1 }, ok: { type: 'integer', minimum: 0, maximum: 1 }, detail: { type: 'string' } } })
-    .invariant('every §CLASH_FILM_P1 claim holds: the markers are the mesh-true set, they survive the buildup, the pulse is pure in film time and non-zero, and the per-instance fade holds a pair solid', rs => rs.every(r => r.ok === 1))
+    .invariant('every §CLASH_FILM_P1/P3 claim holds: the markers are the mesh-true set, they survive the buildup, the pulse is pure in film time and non-zero, the per-instance fade holds a pair solid, and the markers shine through occluding geometry (material-level, all pairs) same as the working measure.js precedent', rs => rs.every(r => r.ok === 1))
     .redControl(rs => { const c = rs.map(r => Object.assign({}, r)); if (c[0]) c[0].ok = 0; return c; })
     .run();
   logStream.end();

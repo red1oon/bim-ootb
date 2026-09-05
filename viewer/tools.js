@@ -1170,6 +1170,47 @@ function setupTools(A) {
         n.indexOf('surface mounted') >= 0) return NIGHT_WARM;
     return NIGHT_AMBER;
   };
+  // §NIGHT_PL_INTENSITY_HEURISTIC (2026-09-05) — NOT extracted/real photometric data; a STYLE
+  // CONVENTION, same shape and same rank as A.nightLightColor above. Do not mistake this for
+  // "_MEASURED" wattage/lumen data — it is not, and must never be logged or documented as such.
+  //
+  // Investigated first, per this project's Prime Directive (extract, never invent): the shipped
+  // elements_meta schema (guid, ifc_class, element_name, storey, discipline, material_name,
+  // material_rgba, building — verified live against TerminalHi4D.db and Hospital_extracted.db) has
+  // NO property-set table of any kind, and extractIFCtoDB.py's own IsDefinedBy walk
+  // (DAGCompiler/python/extractIFCtoDB.py ~L2246) only ever reads IfcRelDefinesByType for a type NAME
+  // string — it never reads IfcRelDefinesByProperties, so no Pset_LightFixtureTypeCommon/*General
+  // wattage or luminous-flux value is extracted anywhere in this pipeline, for any shipped building.
+  // There is nothing real to join on. See prompts/MEP_CLASH_REVEAL_MOVIE.md's dated §STEP2 section
+  // for the full investigation.
+  //
+  // User directive, 2026-09-05: since no real data exists, unblock a type-based heuristic instead of
+  // leaving every fixture flat — REUSING A.nightLightColor's EXACT SAME name categories, not a new
+  // taxonomy. The troffer/batten/t8/recessed_mprl/low-bay group (today's NIGHT_COOL colour bucket —
+  // larger-format, general-illumination fixture types) reads a MODEST amount brighter than the flat
+  // baseline; the downlight/sconce/pendant/surface-mounted group (today's NIGHT_WARM bucket —
+  // smaller accent/domestic-scale fixture types) reads a MODEST amount dimmer. Everything else
+  // (unmatched names, exit signage) stays at exactly today's flat baseline, unchanged.
+  //
+  // Deliberately excludes nightLightColor's stated cw/ww override: a fixture's colour-temperature
+  // LABEL says nothing about its physical size/output, so it is not reused for intensity.
+  //
+  // Multipliers are small and reasoned off THIS FILE'S OWN tuning history, not invented from
+  // nothing: NIGHT_LIGHT_INTENSITY's own comment below records a -20% step as one real tuning
+  // increment ("2.5->2.0, -20%, indoor MEP-reveal bake still reads too bright"). ±15% here is
+  // deliberately smaller than that already-live step, so adding per-type variance cannot swing the
+  // room brighter/dimmer overall than the existing tuned baseline already sits at.
+  var NIGHT_PL_INTENSITY_COOL_MULT = 1.15;   // troffer/batten/t8/recessed_mprl/low-bay — +15%, heuristic
+  var NIGHT_PL_INTENSITY_WARM_MULT = 0.85;   // downlight/sconce/pendant/surface-mounted — -15%, heuristic
+  A.nightLightIntensityMult = function(name) {
+    var n = String(name || '').toLowerCase();
+    if (!n) return 1;
+    if (n.indexOf('troffer') >= 0 || n.indexOf('batten') >= 0 || n.indexOf('t8') >= 0 ||
+        n.indexOf('recessed_mprl') >= 0 || n.indexOf('low bay') >= 0) return NIGHT_PL_INTENSITY_COOL_MULT;
+    if (n.indexOf('downlight') >= 0 || n.indexOf('sconce') >= 0 || n.indexOf('pendant') >= 0 ||
+        n.indexOf('surface mounted') >= 0) return NIGHT_PL_INTENSITY_WARM_MULT;
+    return 1;   // everything else (including exit signage) — unchanged flat baseline
+  };
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
   var NIGHT_LIGHT_INTENSITY = 2.0; // §S277d, reduced 8.0->6.5->4.5->2.5 2026-08-08, ->2.0 2026-08-14 (user: -20%, indoor MEP-reveal bake still reads too bright)
   // §NIGHT_LIGHT_NEARFIELD (2026-08-13, user: "bright lighting up surrounding when afar, but when
@@ -1630,6 +1671,9 @@ function setupTools(A) {
         // Key the ratio on name+position so it is stable per fixture and independent of row order.
         p.__color = A.nightLightColor(f.name, f.name + '|' + f.x.toFixed(2) + ',' + f.y.toFixed(2) + ',' + f.z.toFixed(2));
         p.__exit = A.nightIsExitSign(f.name);   // §GLOW_EXIT_SOFT — a sign is not a troffer
+        // §NIGHT_PL_INTENSITY_HEURISTIC — style-convention multiplier by name-pattern, NOT real
+        // photometric data (see A.nightLightIntensityMult for the full investigation/framing).
+        p.__intensityMult = A.nightLightIntensityMult(f.name);
         // §GLOW_TRUE_BOTTOM (2026-08-07, replaces §GLOW_EMIT_DOWN's half-bbox-height guess — see
         // NIGHT_AND_FIXTURE_LIGHTING.md §GLOW_TRUE_BOTTOM for the numeric witness). The OLD formula
         // `bbox_z/2 + 0.12` assumed center_z sits at the bbox MIDPOINT. It doesn't: extractIFCtoDB.py
@@ -1717,6 +1761,7 @@ function setupTools(A) {
     return picked;
   }
   var _ntuLastLine = null;   // §BAKE_INTERIOR_TOPUP — run-length guard, this runs once per baked frame
+  var _nbgLastTotal = -1, _nbgLastPlaced = -1, _nbgLastLit = -1;   // §NIGHT_BUILDUP_GATE dedup
 
   A._nightUpdateLights = function() {
     // §NIGHT_BAKE_POOL teardown — first update after a bake releases the frozen pool. Checked
@@ -1730,6 +1775,16 @@ function setupTools(A) {
     }
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
+    // §NIGHT_BUILDUP_GATE (2026-09-05) — mirrors §GLOW_BUILDUP_GATE (effects.js ~L4630): a fixture
+    // with no guid (synthetic per-storey fallback, no real element to gate against) is always
+    // eligible; a real fixture is only eligible to contribute a PointLight once Time Machine has
+    // actually placed it — the SAME predicate the decorative glow sprite already applies to this
+    // exact same position list, so a PointLight and its glow sprite can never disagree about
+    // buildup state. A._tmIsVisible defaults to true when TM is not driving the scene at all, so
+    // plain Night Mode/navigation with no buildup active is unaffected (visPos === allPos).
+    // `allPos` itself stays UNFILTERED below — it also sizes the frozen §NIGHT_BAKE_POOL, which
+    // must have enough slots for fixtures placed LATER in the buildup, not just those placed now.
+    var visPos = allPos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
     var camPos = A.camera.position;
     var needed;
     // §NIGHT_STILL_BOOST_GATE_FIX (2026-08-08): A._nightStillBoost is set true ONCE at init and
@@ -1754,7 +1809,7 @@ function setupTools(A) {
       var frustum = new THREE.Frustum();
       var vpMatrix = new THREE.Matrix4().multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(vpMatrix);
-      var inView = allPos.filter(function(p) {
+      var inView = visPos.filter(function(p) {
         return frustum.containsPoint(new THREE.Vector3(p.x, p.y, p.z));
       });
       // ══ §BAKE_INTERIOR_TOPUP (2026-09-04, user: "the indoor is gloomy and not lively" on a live
@@ -1772,17 +1827,17 @@ function setupTools(A) {
       var _tuLimit = Math.max(0, A._nightMaxLights || 0);
       var _picked = inView.slice(0, 200);
       var _inViewN = _picked.length;
-      if (_picked.length < _tuLimit) _picked = _nightPickNearest(allPos, _tuLimit, _picked);
+      if (_picked.length < _tuLimit) _picked = _nightPickNearest(visPos, _tuLimit, _picked);
       if (_picked.length !== _inViewN || _inViewN === 0) {
         var _tuLine = '§BAKE_INTERIOR_TOPUP inFrustum=' + _inViewN + ' toppedUpTo=' + _picked.length +
-          ' budget=' + _tuLimit + ' fixtures=' + allPos.length +
+          ' budget=' + _tuLimit + ' eligible(placed)=' + visPos.length +
           (_inViewN === 0 ? ' — frustum found NO fixture centre at this pose; without the top-up this frame had zero fixture light' : '');
         if (_tuLine !== _ntuLastLine) { _ntuLastLine = _tuLine; console.log(_tuLine); }
       }
       needed = _picked.map(function(p) { return { pos: p }; });
-    } else if (allPos.length <= A._nightMaxLights) {
-      // Small building — place ALL fixtures, no culling
-      needed = allPos.map(function(p) { return { pos: p }; });
+    } else if (visPos.length <= A._nightMaxLights) {
+      // Small building (or few fixtures placed so far) — place ALL currently-eligible fixtures, no culling
+      needed = visPos.map(function(p) { return { pos: p }; });
     } else {
       // §S277d: MIXED selection — score by a point BETWEEN the eye and the look-at, so the
       // active lights sit near you AND extend down the hall you're flying toward (they
@@ -1796,7 +1851,34 @@ function setupTools(A) {
       // §BAKE_INTERIOR_TOPUP (2026-09-04): this rule now lives in _nightPickNearest above, called
       // with an EMPTY `already` set here — behaviourally identical to the inline code it replaces —
       // so the bake top-up and navigation cannot drift into two different selection rules.
-      needed = _nightPickNearest(allPos, A._nightMaxLights, []).map(function(p) { return { pos: p }; });
+      needed = _nightPickNearest(visPos, A._nightMaxLights, []).map(function(p) { return { pos: p }; });
+    }
+    // §NIGHT_BUILDUP_GATE witness (2026-09-05) — deduped so navigation doesn't spam a line per
+    // frame; logs whenever any of the three counts changes. Invariant asserted every time:
+    // lit(needed) <= placed(visPos) <= total(allPos) — a fixture cannot light before it is placed,
+    // and cannot be placed if it doesn't exist. Cross-check against effects.js's own
+    // §GLOW_LENS_QUAD/§PHOTO_GLOW_SPRITE_GATE staged-count lines nearby — same predicate, same list.
+    if (allPos.length !== _nbgLastTotal || visPos.length !== _nbgLastPlaced || needed.length !== _nbgLastLit) {
+      _nbgLastTotal = allPos.length; _nbgLastPlaced = visPos.length; _nbgLastLit = needed.length;
+      console.log('§NIGHT_BUILDUP_GATE total=' + allPos.length + ' placed=' + visPos.length +
+        ' lit=' + needed.length + ' invariantOK=' +
+        (needed.length <= visPos.length && visPos.length <= allPos.length));
+      // §NIGHT_PL_INTENSITY_HEURISTIC witness — distribution of the (style-convention, NOT real
+      // photometric) intensity multiplier across the fixtures currently lit, proving real variance
+      // (min < mean < max, or all three equal only when every currently-lit fixture happens to share
+      // one category — never a repeated single number by construction).
+      if (needed.length) {
+        var _imMin = Infinity, _imMax = -Infinity, _imSum = 0;
+        for (var _imI = 0; _imI < needed.length; _imI++) {
+          var _im = (needed[_imI].pos.__intensityMult != null) ? needed[_imI].pos.__intensityMult : 1;
+          if (_im < _imMin) _imMin = _im;
+          if (_im > _imMax) _imMax = _im;
+          _imSum += _im;
+        }
+        console.log('§NIGHT_PL_INTENSITY_HEURISTIC n=' + needed.length + ' min=' + _imMin.toFixed(2) +
+          ' max=' + _imMax.toFixed(2) + ' mean=' + (_imSum / needed.length).toFixed(3) +
+          ' (style convention, NOT extracted wattage/lumen data)');
+      }
     }
     // ══ §NIGHT_BAKE_POOL (2026-09-01, found by the first headless CLI bake — bim-compiler
     // prompts/CINEMA_PATH_EDITOR.md §CLI_SILENT_BAKE stage 4): during a MaxQ bake the in-frustum
@@ -1832,7 +1914,8 @@ function setupTools(A) {
           var _floor = A._nightNearFadeFloor;
           _pool[_pi].position.copy(_f.pos);
           _pool[_pi].color.set(_f.pos.__color || 0xffe4b5);
-          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._nightPLScale || 1);   // §STAGED_PL_CUT
+          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._nightPLScale || 1) *
+            (_f.pos.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
         } else {
           _pool[_pi].intensity = 0;
         }
@@ -1866,7 +1949,8 @@ function setupTools(A) {
       // to protect and where the whole point is that the fixture you are standing under reads as
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
-      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._nightPLScale || 1);   // §STAGED_PL_CUT
+      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._nightPLScale || 1) *
+        (f.pos.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
       stillWanted.add(f.pos);
       var light = A._nightLightByPos.get(f.pos);
       if (light) {

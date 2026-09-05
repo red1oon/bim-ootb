@@ -126,11 +126,27 @@ function setupClashFilm(A) {
       return { clamped: clamped, moved: moved, nearestM: nearest, minBoxM: minBox, maxBoxM: maxBox, capPx: Math.round(MARKER_MAX_PX * h), h: h };
     }
 
+    // ══ §CLASH_FILM_SHINE_THROUGH (2026-09-05, §CLASH_FILM_P3 item 2) ═══════════════════════════
+    // THE DEFECT: this material shipped with `depthTest: true` — normal z-testing, so a wall/slab
+    // in front of a marker (closer to the camera, already in the depth buffer) correctly occludes
+    // it. §CLASH_FILM_P1 was SUPPOSED to give clash markers the same shine-through treatment
+    // `measure.js`'s own clash-overlap highlight already has, but the one line that actually does
+    // that work — depthTest — was left at its MeshBasicMaterial default-looking `true` instead.
+    // THE WORKING PRECEDENT (bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_CLASH_PIN item 2, "the
+    // blue/red shine-through already exists — retain it exactly, do not reinvent"): the clash
+    // overlap mesh built by `A._flyToClash` (`measure.js:717-720`) uses
+    // `depthTest: false, depthWrite: false` with `renderOrder 998/999` for exactly this "shine
+    // through walls when passing by" behaviour. Same combination applied here — depthTest false,
+    // depthWrite already false, renderOrder already high (900, after ordinary opaque geometry) so
+    // by the time this draws, the wall is already in the colour buffer and additive blending lands
+    // on top of it rather than being z-rejected.
+    // ONE material per side, shared by the WHOLE InstancedMesh — this fixes every pulsing pair in
+    // one place, not per-pair (there is no per-pair material to miss one of).
     function makeSide(n, colour) {
       var geo = new THREE.BoxGeometry(1, 1, 1);
       var mat = new THREE.MeshBasicMaterial({
         color: 0xffffff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending,
-        depthTest: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide
+        depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide
       });
       var mesh = new THREE.InstancedMesh(geo, mat, n);
       mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
