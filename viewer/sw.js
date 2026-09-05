@@ -98,7 +98,11 @@
 // The pulse is an asymmetric envelope (2 s rise, 1 s hold, 3 s fall, 2 s dark) instead of a sine
 // that never read as off. Alt+C gains a Clash pairs checkbox and a Silent-bake size select which
 // cli_silent_bake.js honours when --width/--height are absent.
-const CACHE_VERSION = 'v1145';   // bump on each deploy; per-change detail is the git commit message.
+// v1146 (2026-09-05) §CLASH_FILM_SKY_WASH: viewer/clash_film.js — each marker is clamped to a
+// constant small SCREEN size (6 % of frame height) per frame from the camera, so a marker near the
+// lens can no longer balloon over the sky; PEAK 0.55 → 0.30. cinema_maxq.js disposes the markers
+// on the THROW path too and guards the per-frame update.
+const CACHE_VERSION = 'v1146';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

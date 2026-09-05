@@ -1584,7 +1584,13 @@
         // performance.now(), so a 15 fps and a 24 fps bake of the same film pulse identically and a
         // re-bake is reproducible. Per-instance, so phase 2 can hold a labelled pair solid while the
         // rest keep breathing (§4b). No TM predicate here: the markers are a forecast (§3b).
-        if (_clash && A.clashFilm && A.clashFilm.update) A.clashFilm.update(_tnFilm * _filmSecFull);
+        // §CLASH_FILM_SKY_WASH: the camera goes with it — update() clamps each marker to a constant
+        // small SCREEN size from this frame's distance. Guarded: a marker fault must not kill the
+        // bake, and the finally's dispose (below) covers the case where it does throw.
+        if (_clash && A.clashFilm && A.clashFilm.update) {
+          try { A.clashFilm.update(_tnFilm * _filmSecFull, A.camera); }
+          catch (eCFu) { if (!A._clashFilmUpdateWarned) { A._clashFilmUpdateWarned = true; console.warn('§CLASH_FILM_UPDATE failed frame=' + i + ': ' + (eCFu && eCFu.message) + ' — markers frozen for the rest of the bake'); } }
+        }
         // §CPE_TAIL_LIGHTS_ALL_ONLY (2026-09-04, user: "during last part each DISCipline reveal, the
         // lights are all turned ON that obscures the delicate items scene. Should turn on only during
         // ALL DISCs"). Set BEFORE _applyPhotoStaging runs for this frame — staging is what turns the
@@ -1950,6 +1956,10 @@
       try { _ghostGroundRestore(); } catch (e4) {}
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { _workPacingReset(); } catch (e5) {}
+      // §CLASH_FILM_P1 — same restore on the THROW path (review of #1678): a throw inside the loop
+      // skips the in-try dispose above and would leave the marker InstancedMeshes in the user's
+      // scene. dispose() is idempotent, so after a normal exit this is a silent no-op.
+      try { if (A.clashFilm && A.clashFilm.dispose) A.clashFilm.dispose(); } catch (eCFd2) {}
       // Recoverability FIRST: clearing the store can itself block for seconds behind the very
       // zombie connection that failed this run, and until these flags reset the next Alt+C is
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.
