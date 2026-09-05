@@ -83,7 +83,7 @@
 // lights for a one-discipline Reveal slot, but the additive lens quads kept drawing over the trade
 // being revealed. Gated by zeroing the material colour (not by teardown, so §R10's stage-keep guard
 // survives). effects.js bumped in viewer.html.
-const CACHE_VERSION = 'v1142';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1143';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
