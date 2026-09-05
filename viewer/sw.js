@@ -83,7 +83,11 @@
 // lights for a one-discipline Reveal slot, but the additive lens quads kept drawing over the trade
 // being revealed. Gated by zeroing the material colour (not by teardown, so §R10's stage-keep guard
 // survives). effects.js bumped in viewer.html.
-const CACHE_VERSION = 'v1142';   // bump on each deploy; per-change detail is the git commit message.
+// v1143 (2026-09-04) §MESH_NARROWPHASE (CLASH_GATE_OBB_NARROWPHASE.md §M): new viewer/clash_narrow.js —
+// the clash list's bbox-only rows are annotated with a triangle-exact verdict (OBB/SAT mid phase +
+// three-mesh-bvh intersectsGeometry, reusing the §BVH_DEFERRED trees). clash_matrix.js (qualify on cell
+// click) and measure.js (list render shows mesh-true / bbox-only) changed; all three are PRECACHE_ASSETS.
+const CACHE_VERSION = 'v1143';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -536,6 +540,7 @@ const PRECACHE_ASSETS = [
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js',
   'tour.js',
   'clash_matrix.js',
+  'clash_narrow.js',
   'measure.js',
   'sitecam.js',
   'issues.js',
