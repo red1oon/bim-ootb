@@ -36,7 +36,13 @@ for (const f of pick) {
     let redTop = 0, redBot = 0, bluTop = 0, bluBot = 0, lum = 0, n = 0;
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
       const o = (y * W + x) * 3, r = raw[o], g = raw[o + 1], b = raw[o + 2]; n++; lum += (r + g + b) / 3;
-      const red = r > 170 && g < 120 && b < 120, blu = b > 170 && r < 130 && g < 170;
+      // §CLASH_LABEL_HUD_FAMILY: the rows are the marker colours tinted 0.45 toward white — rgb(255,133,129)
+      // / rgb(137,176,255) — so the signature is HUE DOMINANCE over the 0.45-black plate, not the old
+      // saturated thresholds (r>170&&g<120 / b>170&&r<130, which the tinted text fails by design). Sky
+      // under the plate reads ≈(66,94,132): below both floors. Old and new tints both pass this rule.
+      // Thresholds sit under the MEASURED worst case (FINAL clip frame 140, red text over sky, H.264 chroma
+      // bleed lifting b): red r-g pct10=43 r-b pct10=24; blue b-r pct10=76 b-g pct10=44.
+      const red = r > 190 && r - g > 35 && r - b > 15, blu = b > 190 && b - r > 50 && b - g > 25;
       if (red) { if (y < ym) redTop++; else redBot++; }
       if (blu) { if (y < ym) bluTop++; else bluBot++; }
     }
