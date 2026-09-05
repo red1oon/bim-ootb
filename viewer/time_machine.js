@@ -8505,7 +8505,10 @@
   function _cacheKey(prefix) {
     var app = A();
     var bld = (app && app.activeBuilding) || 'unknown';
-    var v = (prefix === 'gantt') ? ('v' + _GANTT_CACHE_VERSION + ':') : '';
+    // §HR_COST_CACHE_HIT (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md item 8): 'hrCost' is derived
+    // from the exact same injectGantt() generation run as 'gantt', so it shares that run's version
+    // stamp — a _GANTT_CACHE_VERSION bump invalidates both together, never one without the other.
+    var v = (prefix === 'gantt' || prefix === 'hrCost') ? ('v' + _GANTT_CACHE_VERSION + ':') : '';
     return prefix + ':' + v + bld;
   }
 
@@ -8704,6 +8707,22 @@
         _ops = loadOps(); _ganttDirty = true;
         if (st) st.textContent = '';
         viewerStatus('Time Machine: ' + _ops.length + ' elements (cached)');
+        // §HR_COST_CACHE_HIT (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md item 8): this fast path
+        // never runs injectGantt(), so A()._hrCost (§HR_COST_EXPOSE) is never computed here — restore
+        // the value injectGantt already computed and cached the last time it actually ran (see
+        // §HR_COST_CACHE_SAVE above). If nothing was ever cached (cache written before this fix
+        // shipped, or this is the very first activation), leave A()._hrCost unset — the two
+        // cost/labour cards in cpe_resource_panel.js's A.bigStatsBuild stay correctly DROPPED per
+        // its own "a card whose source is missing is DROPPED, never filled with a plausible number"
+        // rule. Nothing is recomputed or invented on this path — a pure cache restore.
+        var _cachedHrCost = await cacheGet('hrCost');
+        if (_cachedHrCost && _cachedHrCost.total > 0) {
+          app._hrCost = _cachedHrCost;
+          console.log('§HR_COST_CACHE_HIT total=' + _cachedHrCost.total + ' personDays=' + _cachedHrCost.personDays +
+            ' trades=' + _cachedHrCost.trades);
+        } else {
+          console.log('§HR_COST_CACHE_MISS — no cached hrCost for this schedule; cost/labour cards stay dropped until the next cold regenerate');
+        }
         _finishActivate(app, silent);
         resolve(true);
         return;
@@ -8762,6 +8781,15 @@
         if (!_ops.length) { resolve(false); return; }
         // §S260c: Cache the newly computed schedule to IDB
         cachePut('gantt', _ops);
+        // §HR_COST_CACHE_HIT (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md item 8): injectGantt()
+        // just populated A()._hrCost (§HR_COST_EXPOSE, :4936) — persist it alongside the ops it was
+        // derived from, so the NEXT open (the common §GANTT_CACHE_HIT fast path, which never runs
+        // injectGantt at all) can restore it instead of leaving cpe_resource_panel.js's two 5D cards
+        // permanently dropped. Cache only what injectGantt already computed — nothing recomputed here.
+        if (A()._hrCost) {
+          cachePut('hrCost', A()._hrCost);
+          console.log('§HR_COST_CACHE_SAVE total=' + A()._hrCost.total + ' personDays=' + A()._hrCost.personDays);
+        }
         console.log('§S4_ACTIVATION_TIMING_MID afterCachePut=' + (performance.now() - _s4ActT0).toFixed(0));
         console.log('§GANTT_CACHE_SAVE ops=' + _ops.length);
         viewerStatus('Time Machine: ' + _ops.length + ' elements scheduled');
@@ -9016,6 +9044,9 @@
     var wasActive = _active;
     if (_active) deactivate();
     cacheDel('gantt');
+    cacheDel('hrCost');   // §HR_COST_CACHE_HIT: paired lifecycle with 'gantt' — the forced cold
+                          // path this triggers recomputes+re-caches both, this just keeps the two
+                          // entries from disagreeing about which schedule they belong to
     var app = A();
     var cleared = (app && app.db) ? _invalidateSchedule(app.db) : 0;
     console.log('§TM_REFOLD wasActive=' + wasActive + ' clearedPlaceOps=' + cleared);
