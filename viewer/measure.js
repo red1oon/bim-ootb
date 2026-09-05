@@ -1102,6 +1102,8 @@ function setupMeasure(A) {
   if (typeof setupClashNarrow === 'function') setupClashNarrow(A);
   // §CLASH_FILM_P1 — after clash_narrow, which it calls for the mesh-true pair set.
   if (typeof setupClashFilm === 'function') setupClashFilm(A);
+  // §CLASH_FILM_P2 — after clash_film, whose pairs()/setFade() are its only seam.
+  if (typeof setupClashLabels === 'function') setupClashLabels(A);
 
   // Re-render the open list's header/body in place (used after narrow-phase verdicts arrive)
   A._refreshClashList = function() {

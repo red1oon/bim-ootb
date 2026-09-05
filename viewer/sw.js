@@ -98,12 +98,24 @@
 // The pulse is an asymmetric envelope (2 s rise, 1 s hold, 3 s fall, 2 s dark) instead of a sine
 // that never read as off. Alt+C gains a Clash pairs checkbox and a Silent-bake size select which
 // cli_silent_bake.js honours when --width/--height are absent.
+// v1145 (2026-09-05) §CLASH_FILM_P2 (MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P2): new viewer/clash_labels.js —
+// the in-scene label for a clash pair within 4.0 m of the camera (release 4.6 m), occluded or not,
+// any number, limited only by screen-space non-overlap. One half-transparent HUD panel per pair
+// (A-side name red above, B-side blue below, from rates.js desc), composited in _captureFrame's
+// 2D pass with a leader to the projected contact; labelled pairs hold solid via clashFilm.setFade.
+// cinema_maxq.js (hooks) + measure.js (setup) + viewer.html changed; all PRECACHE_ASSETS.
 // v1146 (2026-09-05) §CLASH_FILM_SKY_WASH: viewer/clash_film.js — each marker is clamped to a
 // constant small SCREEN size (6 % of frame height) per frame from the camera, so a marker near the
 // lens can no longer balloon over the sky; PEAK 0.55 → 0.30. cinema_maxq.js disposes the markers
 // on the THROW path too and guards the per-frame update. Also §CPE_CLIP_SUN_ARC_FILM_T: a --clip
 // bake's sun arc now reads the FILM fraction, not the clip-local one (it swept 55°→6° inside every clip).
-const CACHE_VERSION = 'v1146';   // bump on each deploy; per-change detail is the git commit message.
+// v1147 (2026-09-05) §CLASH_LABEL_HUD_FAMILY: viewer/clash_labels.js — the label's text is now the
+// day counter's family (marker colours tinted 0.45 toward white, weight 700, the counter's corner
+// rule) instead of saturated rgb(255,33,26)/rgb(41,112,255) at 600; the leader line and dot carry a
+// dark halo under the white core so they hold contrast against a lit wall or the sky.
+// v1148 (2026-09-05) §P2.1 AMENDED: viewer/clash_labels.js — the label enter/release distance is 10.0 m /
+// 10.6 m (was 4.0 / 4.6; user: "10 meters or half of scene space" after a clip whose nearest pair was 7.98 m).
+const CACHE_VERSION = 'v1148';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -558,6 +570,7 @@ const PRECACHE_ASSETS = [
   'clash_matrix.js',
   'clash_narrow.js',
   'clash_film.js',
+  'clash_labels.js',
   'measure.js',
   'sitecam.js',
   'issues.js',
