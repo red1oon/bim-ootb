@@ -25,15 +25,17 @@ function sha(b) { return crypto.createHash('sha256').update(b).digest('hex').sli
 
 console.log('═══ W-AGENT-ZIP-SYNC — the shipped agent downloads are their source directories ═══\n');
 
-// A0 — judged BEFORE anything is rebuilt, and it is the claim that is RED on plain origin/main: whatever
-// zip is sitting there right now, does it match the directory it duplicates? On main odoo_agent.zip is a
-// TRACKED BINARY missing odoo_agent/extract_model.js. Once the zips are built rather than tracked, a
-// developer tree has no zip at all and this claim reports "absent" and is skipped, which is the honest
-// verdict — the drift it guards against cannot exist when nothing is stored.
+// A0 — judged BEFORE anything is rebuilt. TWO claims, and A0a exists because of a measured mistake:
+// these zips were briefly UNTRACKED (#1675) on the assumption that deploy-pages.yml's generated files
+// reach users the way erp/version.json was believed to. They do not. GitHub Pages for this repo is
+// build_type "legacy", source {branch: main, path: /} — it serves the TRACKED FILES ON MAIN, and the
+// Actions artifact is published by nothing. Both downloads 404'd live within the hour. So A0a asserts
+// the zip is THERE, and A0b that it matches its source. §PZ.3 carries the measurement and the decision.
 var pre = B.run(true);
 pre.forEach(function (r) {
-  if (!r.present) { console.log('   ⚪ ' + r.zip + ' A0: no stored zip to check (it is built, not tracked) — SKIPPED, not passed'); return; }
-  verdict(!r.drift, r.zip + ' A0: the STORED zip matches the directory it duplicates',
+  verdict(r.present, r.zip + ' A0a: the zip is PRESENT and TRACKED — GitHub Pages serves the BRANCH, not the artifact', r.present ? 'present' : 'ABSENT — this 404s the live download');
+  if (!r.present) return;
+  verdict(!r.drift, r.zip + ' A0b: the STORED zip matches the directory it duplicates',
     r.drift ? 'stale=[' + r.stale.join(',') + ']' : 'in sync');
 });
 
@@ -80,6 +82,24 @@ var picker = fs.readFileSync(path.join(B.ERP, 'erp_picker.js'), 'utf8');
 res.forEach(function (r) {
   var offered = about.indexOf('erp/' + r.zip) >= 0 || picker.indexOf(r.zip) >= 0;
   verdict(offered, 'D1: ' + r.zip + ' is still offered by common/about_diy.js or erp/erp_picker.js');
+});
+
+// E — THE INSTRUCTION THE APP PRINTS MUST BE RUNNABLE ON THE FILE THE APP SERVES.
+// This is the claim that was RED before §AZ.3 was answered: common/about_diy.js has ALWAYS told the user
+// `cd idempiere_agent && …` while idempiere_agent.zip put migrate_agent.js at the ROOT — there was no
+// directory to cd into, and the three files landed loose in the user's current directory. A download and
+// the sentence next to it are one contract; checking only that the file exists is checking half of it.
+res.forEach(function (r) {
+  var block = (about.split('file: \'erp/' + r.zip + '\'')[1] || about.split(r.zip)[1] || '').slice(0, 400);
+  var m = block.match(/cd ([A-Za-z0-9_.-]+)/);
+  if (!m) { verdict(true, 'E1: ' + r.zip + ' — its offer prints no `cd`, so there is nothing to disagree with'); return; }
+  var content = B.contentOf(fs.readFileSync(path.join(B.ERP, r.zip)));
+  var tops = {};
+  Object.keys(content).forEach(function (k) { tops[k.indexOf('/') >= 0 ? k.slice(0, k.indexOf('/')) : '(root)'] = 1; });
+  var top = Object.keys(tops);
+  verdict(top.length === 1 && top[0] === m[1],
+    'E1: ' + r.zip + ' — the `cd ' + m[1] + '` the app prints is a real folder inside the zip',
+    'instruction=cd ' + m[1] + ' zipTopLevel=[' + top.join(',') + ']');
 });
 
 console.log('\n' + (fails === 0 ? '🟢 W-AGENT-ZIP-SYNC PASS' : '🔴 W-AGENT-ZIP-SYNC FAIL (' + fails + ')') +
