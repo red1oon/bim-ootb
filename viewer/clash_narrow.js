@@ -334,6 +334,9 @@ function setupClashNarrow(A) {
   A.clashNarrow = A.clashNarrow || {};
   A.clashNarrow.testPair = testPair;
   A.clashNarrow.worldMatrix = worldMatrix;
+  // §CLASH_FILM_P1 — clash_film.js places its markers with the SAME transform load + world matrix the
+  // verdict was computed from, so a marker can never disagree with the judgement that produced it.
+  A.clashNarrow.loadTransforms = loadTransforms;
   A.clashNarrow.satDepth = satDepth;
   A.clashNarrow.runs = [];
   A.clashNarrow.qualifyRows = function (rows, opts) {

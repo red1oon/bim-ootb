@@ -87,7 +87,23 @@
 // the clash list's bbox-only rows are annotated with a triangle-exact verdict (OBB/SAT mid phase +
 // three-mesh-bvh intersectsGeometry, reusing the §BVH_DEFERRED trees). clash_matrix.js (qualify on cell
 // click) and measure.js (list render shows mesh-true / bbox-only) changed; all three are PRECACHE_ASSETS.
-const CACHE_VERSION = 'v1143';   // bump on each deploy; per-change detail is the git commit message.
+// v1144 (2026-09-04) §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P1): new viewer/clash_film.js —
+// the mesh-true clash pairs as PERSISTENT world content in a baked film, red/blue instanced box
+// shells pulsing on FILM time. Not gated by the Time Machine: the markers stand from frame 0 over
+// empty ground so the viewer sees where the trouble will be before it is built. Per-instance fade
+// channel reserved for phase 2's near-and-facing labels. --clash/--no-clash on cli_silent_bake.js.
+// v1145 (2026-09-05) §CLASH_FILM_CONTACT_MARKER + §CLASH_FILM_PULSE_ENVELOPE + §CPE_BAKE_RES:
+// the clash marker is now the CLASH (two small boxes straddling the contact, sized from the
+// penetration) not the whole element — a 98.9 m slab was lighting up the floor and washing the sky.
+// The pulse is an asymmetric envelope (2 s rise, 1 s hold, 3 s fall, 2 s dark) instead of a sine
+// that never read as off. Alt+C gains a Clash pairs checkbox and a Silent-bake size select which
+// cli_silent_bake.js honours when --width/--height are absent.
+// v1146 (2026-09-05) §CLASH_FILM_SKY_WASH: viewer/clash_film.js — each marker is clamped to a
+// constant small SCREEN size (6 % of frame height) per frame from the camera, so a marker near the
+// lens can no longer balloon over the sky; PEAK 0.55 → 0.30. cinema_maxq.js disposes the markers
+// on the THROW path too and guards the per-frame update. Also §CPE_CLIP_SUN_ARC_FILM_T: a --clip
+// bake's sun arc now reads the FILM fraction, not the clip-local one (it swept 55°→6° inside every clip).
+const CACHE_VERSION = 'v1146';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -541,6 +557,7 @@ const PRECACHE_ASSETS = [
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',
+  'clash_film.js',
   'measure.js',
   'sitecam.js',
   'issues.js',

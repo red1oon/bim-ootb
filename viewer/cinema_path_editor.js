@@ -743,6 +743,8 @@
       buildup: !!s.buildup,
       roomTitle: !!s.roomTitle,
       reveal: !!s.reveal,
+      clash: !!s.clash,                    // §CLASH_FILM_P1
+      bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
       dayCounter: s.dayCounter || 'tr',
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
       // §CPE_STICK_HOLD: the TRAVEL part of the walk scales with the user's total, the authored hold
@@ -919,6 +921,26 @@
           // unresolved) — the hint says so, so checking it does not silently do nothing unexplained.
           '<label style="cursor:pointer;margin-left:10px"><input id="cpe-reveal" type="checkbox"> ' +
           'Reveal</label> <span style="color:#666">(retraces the walk, hiding ARC/STR to show MEP, cycling each discipline before the finale)</span></div>' +
+        // §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md) — the mesh-true clash pairs as world content.
+        // The hint states the two things a user cannot see from the checkbox: the pairs are
+        // triangle-exact (not the bounding-box list, a third of which is false), and they stand from
+        // frame 0 rather than appearing when the buildup reaches them.
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-clash" type="checkbox"> ' +
+          'Clash pairs</label> <span style="color:#666">(mesh-true pairs, red/blue at each contact, ' +
+          'pulsing from frame 0 so you see where the trouble is before it is built)</span></div>' +
+        // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+M bake always
+        // renders at this window's canvas (cinema_maxq.js:1120 reads renderer.domElement), so this
+        // select does not resize anything here; it is stored on the path and cli_silent_bake.js
+        // honours it when --width/--height are not passed. Same contract as §CLI_BAKE_FLAG_OVERRIDE:
+        // save it once in the panel, then bake with no arguments.
+        '<div style="margin-top:4px">Silent-bake size ' +
+          '<select id="cpe-bake-res" style="background:#15181c;color:#ddd;border:1px solid #3a3f47;' +
+            'border-radius:3px;font-size:10px;padding:1px 2px">' +
+            '<option value="">this window (interactive)</option>' +
+            '<option value="1280x720@15">1280x720 @15fps</option>' +
+            '<option value="1920x1080@24">1920x1080 @24fps</option>' +
+            '<option value="2560x1440@24">2560x1440 @24fps</option>' +
+          '</select> <span style="color:#666">(silent bake only — Alt+M here always uses this window)</span></div>' +
         // §CPE_DAY_COUNTER_POS — user 2026-08-02: "the movie maker panel puts the Day # counter top
         // right display option". Top right is the DEFAULT so an existing plan re-bakes identically.
         // Only meaningful with the buildup on (there is no day to show without one), which the hint
@@ -2232,7 +2254,8 @@
     var tm = null;
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
-      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal },
+      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash },
+      bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
       tmActive: tm ? !!tm.active : false,
       tmCursor: tm ? tm.cursor : null,
@@ -2281,7 +2304,7 @@
   // this for the select; the sibling checkboxes never got it — this closes that gap.
   function _syncPanelControls() {
     [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
-     ['cpe-reveal', !!_state.reveal]].forEach(function(p) {
+     ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash]].forEach(function(p) {
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
     });
@@ -3450,6 +3473,8 @@
         // §CPE_DISCIPLINE_REVEAL: off by default, same reasoning as roomTitle — a deliberate choice,
         // not a default-on behavior (extra film time + a real visual change, see checkbox hint).
         reveal: false,
+        clash: false,          // §CLASH_FILM_P1
+        bakeRes: '',           // §CPE_BAKE_RES — '' = the window; else '<w>x<h>@<fps>'
         origReveal: false,
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
         // §CPE_PREVIEW_BUTTON: edits counts every landed change; previewedAt is the edit the user
@@ -3590,6 +3615,23 @@
       // live, ~80% of ARC/STR geometry is batched/instanced with materials shared across disciplines
       // by colour, so a scoped translucent ghost would need per-instance shader work; full hide
       // reuses existing code and gets the sunlight-through effect for free).
+      // §CLASH_FILM_P1 — a flag read live by clash_film.js at staging; unlike Reveal it does not
+      // move any beat boundary, so a plain _markPreviewStale() is the whole handler.
+      var _clashEl = document.getElementById('cpe-clash');
+      if (_clashEl) _clashEl.addEventListener('change', function(e) {
+        _state.clash = !!e.target.checked;
+        _markPreviewStale();
+        console.log('§CPE_CLASH checkbox=' + (_state.clash ? 'on' : 'off') +
+          ' — mesh-true clash pairs as world content in the bake');
+      });
+      // §CPE_BAKE_RES — stored on the path for the silent baker; changes nothing in this window.
+      var _resEl = document.getElementById('cpe-bake-res');
+      if (_resEl) _resEl.addEventListener('change', function(e) {
+        _state.bakeRes = e.target.value || '';
+        console.log('§CPE_BAKE_RES stored=' + (_state.bakeRes || 'this window') +
+          ' — silent bake only; Alt+M in this window still renders at ' +
+          A.renderer.domElement.width + 'x' + A.renderer.domElement.height);
+      });
       document.getElementById('cpe-reveal').addEventListener('change', function(e) {
         _state.reveal = !!e.target.checked;
         _markPreviewStale();
