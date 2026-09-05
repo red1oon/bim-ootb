@@ -92,12 +92,22 @@
 // shells pulsing on FILM time. Not gated by the Time Machine: the markers stand from frame 0 over
 // empty ground so the viewer sees where the trouble will be before it is built. Per-instance fade
 // channel reserved for phase 2's near-and-facing labels. --clash/--no-clash on cli_silent_bake.js.
+// v1145 (2026-09-05) §CLASH_FILM_CONTACT_MARKER + §CLASH_FILM_PULSE_ENVELOPE + §CPE_BAKE_RES:
+// the clash marker is now the CLASH (two small boxes straddling the contact, sized from the
+// penetration) not the whole element — a 98.9 m slab was lighting up the floor and washing the sky.
+// The pulse is an asymmetric envelope (2 s rise, 1 s hold, 3 s fall, 2 s dark) instead of a sine
+// that never read as off. Alt+C gains a Clash pairs checkbox and a Silent-bake size select which
+// cli_silent_bake.js honours when --width/--height are absent.
 // v1145 (2026-09-05) §CLASH_FILM_P2 (MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P2): new viewer/clash_labels.js —
 // the in-scene label for a clash pair within 4.0 m of the camera (release 4.6 m), occluded or not,
 // any number, limited only by screen-space non-overlap. One half-transparent HUD panel per pair
 // (A-side name red above, B-side blue below, from rates.js desc), composited in _captureFrame's
 // 2D pass with a leader to the projected contact; labelled pairs hold solid via clashFilm.setFade.
 // cinema_maxq.js (hooks) + measure.js (setup) + viewer.html changed; all PRECACHE_ASSETS.
+// v1146 (2026-09-05) §CLASH_FILM_SKY_WASH: viewer/clash_film.js — each marker is clamped to a
+// constant small SCREEN size (6 % of frame height) per frame from the camera, so a marker near the
+// lens can no longer balloon over the sky; PEAK 0.55 → 0.30. cinema_maxq.js disposes the markers
+// on the THROW path too and guards the per-frame update.
 // v1147 (2026-09-05) §CLASH_LABEL_HUD_FAMILY: viewer/clash_labels.js — the label's text is now the
 // day counter's family (marker colours tinted 0.45 toward white, weight 700, the counter's corner
 // rule) instead of saturated rgb(255,33,26)/rgb(41,112,255) at 600; the leader line and dot carry a

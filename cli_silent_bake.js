@@ -188,9 +188,17 @@ const server = http.createServer((req, res) => {
     }
   }));
   const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL)\b/;
+  // §CLI_BAKE_LOAD_FATAL (2026-09-05) — a DB that cannot be fetched must abort NOW, not in 15 minutes.
+  // MEASURED: a wrong/missing buildings/<name>.db logged `§INIT_ERROR … 404` at 2.7 s, then the load
+  // predicate below (which can never become true without a DB) burned its full 900 s timeout and
+  // died with a bare `TimeoutError: Waiting failed`, naming nothing. Fifteen minutes to learn a path
+  // was wrong. The page already says exactly what happened — read it and stop.
+  let _loadFatal = null;
+  const FATAL_RX = /§INIT_ERROR|§DB_404_OCI_FAIL|Failed to fetch .*\b(40\d|50\d)\b/;
   page.on('console', m => {
     const t = m.text();
     logRaw('[con] ' + t);
+    if (!_loadFatal && FATAL_RX.test(t)) _loadFatal = t.slice(0, 400);
     const mm = t.match(CLAIM_RX);
     if (mm) { (S.claims[mm[1]] = S.claims[mm[1]] || []).push(t); }
     if (/§MAXQ_FRAME i=|§CPE_BUILDUP frame=|§MAXQ_STREAM|warming up|§MAXQ_MP4 |§MAXQ_STITCH|§MAXQ_IDB_READY/.test(t)) S.lastProgress = Date.now();
@@ -259,9 +267,21 @@ const server = http.createServer((req, res) => {
   // Authoritative load-complete signal: streaming.js's completion block adds the building to
   // A.buildingsRendered THE SAME tick it sets A.streaming=false — `!APP.streaming` alone races
   // the load (observed on the first smoke run: __maxqBake fired 7s after nav, before the DB).
-  await page.waitForFunction(() => window.APP.activeBuilding && window.APP.db &&
-    window.APP.buildingsRendered && window.APP.buildingsRendered.has(window.APP.activeBuilding) &&
-    !window.APP.streaming, { timeout: 900000, polling: 1000 });
+  // §CLI_BAKE_LOAD_FATAL — race the load predicate against the page's own error report.
+  await Promise.race([
+    page.waitForFunction(() => window.APP.activeBuilding && window.APP.db &&
+      window.APP.buildingsRendered && window.APP.buildingsRendered.has(window.APP.activeBuilding) &&
+      !window.APP.streaming, { timeout: 900000, polling: 1000 }),
+    new Promise((_, reject) => {
+      const iv = setInterval(() => {
+        if (!_loadFatal) return;
+        clearInterval(iv);
+        reject(new Error('§CLI_BAKE_LOAD_FATAL the building never loaded — ' + _loadFatal +
+          '  [db=' + DB + ' url=' + dbUrl + ' root=' + ROOT + ']  Check that ' +
+          (DB.includes('/') ? DB : 'buildings/' + DB + '.db') + ' exists under --root (a symlink is fine).'));
+      }, 250);
+    })
+  ]);
   log('§CLI_BAKE_LOADED building=' + await page.evaluate(() => window.APP.activeBuilding +
     ' meshes=' + (window.APP.scene ? window.APP.scene.children.length : -1)));
   // §R11: §PHOTO_PREWARM runs on requestIdleCallback (timeout 8s) after streaming completes.
@@ -320,7 +340,33 @@ const server = http.createServer((req, res) => {
   }, 20000);
 
   // start the bake WITHOUT holding a CDP call open for hours: fire, then poll a page global.
-  const bakeOpts = { name: PLAN_NAME || undefined, flags: FLAGS, frames: FRAMES, fps: FPS };
+  // ══ §CPE_BAKE_RES (2026-09-05) — the panel's "Silent-bake size" choice, honoured here ═══════════
+  // Same contract as §CLI_BAKE_FLAG_OVERRIDE: save it once in the Alt+C panel and bake with no
+  // arguments; an explicit --width/--height still wins. The viewport IS the canvas the bake renders
+  // from (cinema_maxq.js:1120 reads renderer.domElement), so setting it here is the whole mechanism.
+  let _fps = FPS, _frames = FRAMES;
+  if (!has('width') && !has('height')) {
+    const storedRes = await page.evaluate(() => {
+      try {
+        const a = window.APP;
+        if (!a.db) return null;
+        if (typeof a.cinemaPathPlan === 'function') { try { a.cinemaPathPlan(60); } catch (e) {} }
+        const st = (a._getCinemaPathEdit && a._getCinemaPathEdit()) || null;
+        return (st && st.bakeRes) ? String(st.bakeRes) : null;
+      } catch (e) { return null; }
+    }).catch(() => null);
+    const m = storedRes && storedRes.match(/^(\d+)x(\d+)(?:@(\d+))?$/);
+    if (m) {
+      const sw = +m[1], sh = +m[2], sf = m[3] ? +m[3] : null;
+      await page.setViewport({ width: sw, height: sh });
+      if (sf && !has('fps')) _fps = sf;
+      log(`§CPE_BAKE_RES applied ${sw}x${sh}${sf ? '@' + sf + 'fps' : ''} from the stored Alt+C path ` +
+        `(was ${W}x${H}${FPS ? '@' + FPS : ''}; pass --width/--height to override)`);
+    } else if (storedRes) {
+      log(`§CPE_BAKE_RES ignored stored="${storedRes}" — not <w>x<h>[@fps]; baking at ${W}x${H}`);
+    }
+  }
+  const bakeOpts = { name: PLAN_NAME || undefined, flags: FLAGS, frames: _frames, fps: _fps };
   if (OV_FILE) bakeOpts.override = JSON.parse(fs.readFileSync(OV_FILE, 'utf8'));
   if (CLIP) { bakeOpts.clip = CLIP; log(`§CLI_BAKE_CLIP in=${CLIP.in} out=${CLIP.out} (§SDC — a window of the same film)`); }
   // The plan reads the live camera basis (§CPE_PREVIEW_DIVERGENCE) — save the pre-bake camera so

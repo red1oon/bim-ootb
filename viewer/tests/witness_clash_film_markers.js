@@ -63,9 +63,10 @@ function pageProbe() {
       if (!mesh) return null;
       const read = (t) => { A.clashFilm.update(t); const c = mesh.instanceColor.array;
         return { sel0: +c[0].toFixed(6), sel1: +c[3].toFixed(6), amb: +c[c.length - 3].toFixed(6) }; };
-      // Sample at the pulse's QUARTER points, not 0 and T/2 — sin(0) and sin(pi) are both 0, so
-      // those two phases give the IDENTICAL ambient value and the test would fail an ambient
-      // instance for not moving when the code is correct. (Measured: both read 0.37.)
+      // Sample at the envelope's QUARTER points: on the shipped rise/hold/fall/rest envelope
+      // (2/1/3/2 s, T=8 s) T/4 = 2.0 s is the start of the HOLD (envelope 1) and 3T/4 = 6.0 s is
+      // the REST (envelope 0), so an ambient instance MUST differ between them. (The original
+      // sine had the same trap at 0 and T/2 — both read 0.37 — which is why quarter points.)
       const a = read(period / 4), b = read(3 * period / 4);
       A.clashFilm.setFade(0, 0); A.clashFilm.setFade(1, 0);
       return { a, b }; },
@@ -103,7 +104,7 @@ function pageProbe() {
     claim('W4a_no_markers_before_build', pre.markers === 0 && !pre.built, `markers=${pre.markers} built=${pre.built}`);
 
     const st = await page.evaluate(() => window.__cf.build());
-    log(`§CFM_BUILT pairs=${st.pairs} markers=${st.markers} inScene=${st.inScene} periodS=${st.periodS} base=${st.base} amp=${st.amp}`);
+    log(`§CFM_BUILT pairs=${st.pairs} markers=${st.markers} inScene=${st.inScene} periodS=${st.periodS} envelope=rise${st.riseS}/hold${st.holdS}/fall${st.fallS}/rest${st.restS} peak=${st.peak} markerMaxPx=${st.markerMaxPx}`);
     if (!st.pairs) { inconclusive(`trueClash=0 on ${BLD} — a building with no clashes proves nothing about a clash renderer (VACUOUS)`); process.exitCode = 2; return; }
 
     // W1 — the markers ARE the mesh-true set
@@ -131,7 +132,9 @@ function pageProbe() {
     } catch (e) { logRaw('[tm] ' + e.message); }
     if (!moved) claim('W2_markers_survive_the_TM_cursor', false, 'INCONCLUSIVE: the Time Machine would not arm, so persistence across the buildup was NOT judged');
     const tmCalls = await page.evaluate(() => window.__cf.tmCalls());
-    claim('W2b_no_placement_predicate_consulted', true, `A._tmIsVisible calls seen during build+update: ${tmCalls} (the narrow phase legitimately uses none; a non-zero count here would mean the markers were being gated)`);
+    // Asserted on the SPY COUNT, not hardcoded (review of #1678 found `true` here — a claim that
+    // could never fail). A non-zero count means the forecast was turned back into a state readout.
+    claim('W2b_no_placement_predicate_consulted', tmCalls === 0, `A._tmIsVisible calls seen during build+update: ${tmCalls} (must be 0 — the narrow phase legitimately uses none; a non-zero count here would mean the markers were being gated)`);
 
     // W3 — the pulse is a pure function of film time, and it actually moves
     const pure = await page.evaluate(() => window.__cf.pureAt(1.234));
