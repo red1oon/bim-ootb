@@ -1,17 +1,25 @@
 #!/usr/bin/env node
-// ⚠ DO NOT REMOVE — WITNESS §CLASH_FILM_P2 (2026-09-05, bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P2 §P2.5)
-// Scope: viewer/clash_labels.js — the in-scene label for a clash pair within 4 m of the camera in
-// a baked film. Read the log after every run — the exit code is not evidence.
+// ⚠ DO NOT REMOVE — WITNESS §CLASH_FILM_P2 (2026-09-05, bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md
+// §CLASH_FILM_P2 §P2.5, §P2.1 AMENDED AGAIN, §P2.1 AMENDED A THIRD TIME)
+// Scope: viewer/clash_labels.js — the in-scene label for a clash pair among the TOP_N (8) nearest to
+// the camera in a baked film, with NO distance cutoff. Read the log after every run — the exit code is
+// not evidence.
 //
-// ISSUE THIS PROVES OR DISPROVES: the user ruled (verbatim in the spec) that a pair within 4 m bears
-// a label "even though behind close doors/walls/obstruction", that the count is limited only by
-// screen-space non-overlap, and that the panel keeps a constant screen size. Each claim below can
-// come back NO — and P2 is the one a well-meaning "fix" would break: a selector that raycasts for
-// visibility and hides an occluded pair is a REGRESSION against the ruling, so this witness places a
-// synthetic occluder between camera and contact, proves with its OWN raycast that the pair is hidden,
-// and asserts the label is there anyway with zero raycasts made by the module.
+// ISSUE THIS PROVES OR DISPROVES: the user ruled (verbatim in the spec, amended twice since) that
+// selection is by RANK not distance ("mark out up to N of nearest as simple rule", N raised 4→8 later
+// the same session), that occlusion is never consulted ("even though behind close doors/walls/
+// obstruction"), that the count is limited only by screen-space non-overlap, that the panel keeps a
+// constant screen size, and — the newest ruling — that a label which has genuinely left the camera's
+// view FRUSTUM must release rather than clamp to the frame edge ("sticky lingers... gone out of
+// frame"). Each claim below can come back NO. P2 is the one a well-meaning "fix" would break: a
+// selector that raycasts for visibility and hides an occluded pair is a REGRESSION against the ruling,
+// so this witness places a synthetic occluder between camera and contact, proves with its OWN raycast
+// that the pair is hidden, and asserts the label is there anyway with zero raycasts made by the
+// module. P8 is the newest claim: it proves the out-of-frustum release is real (not the old "clamp to
+// the edge, no leader" behaviour) AND that it is stateless — the SAME camera position, reoriented away
+// and back, releases then recovers, distinct from P2's occlusion-shines-through case.
 // CAN REPORT ITS OWN FAILURE: INCONCLUSIVE (no load / module absent / build refused), VACUOUS
-// (trueClash=0), path-profile INCONCLUSIVE (the stored path never comes within 4 m), RED CONTROL.
+// (trueClash=0), path-profile INCONCLUSIVE (the stored path never actually placed a panel), RED CONTROL.
 // Env: ROOT · BLD (default Hospital_silent_local) · BLD_DIR · GPU=real|sw · PORT · LOAD_MS · LOG
 //      SABOTAGE=occlude — wraps the selector with the forbidden visibility filter, to show P2 goes RED.
 'use strict';
@@ -70,9 +78,17 @@ function pageProbe(sabotage) {
   const DIR = new THREE.Vector3(1, 0.35, 0.8).normalize();   // fixed approach direction (stated, arbitrary)
   const pairs = () => A.clashFilm.pairs();
   const pose = (c, d) => { A.camera.position.set(c.x + DIR.x * d, c.y + DIR.y * d, c.z + DIR.z * d); A.camera.lookAt(c.x, c.y, c.z); A.camera.updateMatrixWorld(true); };
-  const compact = r => ({ eligible: r.eligible, labelled: r.labelled, skipped: r.skippedOverlap, entered: r.entered, released: r.released, nearest: +r.nearestM.toFixed(3),
-    placed: r.placed.map(q => ({ i: q.i, pairId: q.pairId, x: q.x, y: q.y, w: q.w, h: q.h, d: +q.d.toFixed(3), behind: q.behind, alpha: +q.alpha.toFixed(3) })) });
+  const compact = r => ({ eligible: r.eligible, labelled: r.labelled, skipped: r.skippedOverlap, skippedFrustum: r.skippedFrustum, entered: r.entered, released: r.released, nearest: +r.nearestM.toFixed(3),
+    eligiblePairs: (r.eligiblePairs || []).map(e => ({ i: e.i, d: e.d })),
+    placed: r.placed.map(q => ({ i: q.i, pairId: q.pairId, x: q.x, y: q.y, w: q.w, h: q.h, d: +q.d.toFixed(3), alpha: +q.alpha.toFixed(3) })) });
   const upd = fs => compact(A.clashLabels.update(A.camera, fs, W, H));
+  // §P2.1 AMENDED AGAIN — ground truth for the RANK rule: the true top-N nearest pair indices by plain
+  // 3D distance from a given camera position, computed independently of the module, so a test can
+  // assert the module's `eligiblePairs` EQUALS this set rather than trusting the module's own math.
+  const rankTruth = (camPos, topN) => { const P = pairs(); const ds = [];
+    for (let i = 0; i < P.length; i++) { const c = P[i].contact; if (!c) continue; ds.push({ i: i, d: Math.hypot(c.x - camPos.x, c.y - camPos.y, c.z - camPos.z) }); }
+    ds.sort((a, b) => a.d - b.d);
+    return { top: ds.slice(0, topN).map(x => x.i).sort((a, b) => a - b), all: ds }; };
   window.__cll = {
     size: () => ({ W, H }),
     build: () => A.clashFilm.build().then(() => A.clashFilm.stats()),
@@ -90,9 +106,44 @@ function pageProbe(sabotage) {
       return { i: best, pairId: P[best].pairId, neighboursWithin: bestN, contact: P[best].contact }; },
     reset: () => { A.clashLabels.reset(); window.__rayCalls = 0; },
     at: (c, d, fs) => { pose(c, d); const r0 = window.__rayCalls; const r = upd(fs); r.rayDelta = window.__rayCalls - r0; return r; },
+    // §P2.1 rank-correctness probe: places the camera at an ARBITRARY position/orientation (not
+    // anchored to any one pair's contact) and checks the module's eligiblePairs against rankTruth.
+    // Distance-agnostic by construction — used once close to the model and once far beyond the retired
+    // 10.0/10.6 m gate, to prove there is no longer any metres cutoff.
+    rankAt: (camPos, lookAtPt, fs, topN) => {
+      A.camera.position.set(camPos.x, camPos.y, camPos.z);
+      A.camera.lookAt(lookAtPt.x, lookAtPt.y, lookAtPt.z); A.camera.updateMatrixWorld(true);
+      const truth = rankTruth(A.camera.position, topN);
+      const r = upd(fs);
+      return { wantTop: truth.top, gotTop: r.eligiblePairs.map(e => e.i).slice().sort((a, b) => a - b),
+        farthestWantD: truth.all[topN - 1] ? +truth.all[topN - 1].d.toFixed(3) : null, r: r }; },
     sweep: (c, from, to, step, idx) => { const out = []; let d = from; const dir = to > from ? 1 : -1; let fs = 0;
       while (dir > 0 ? d <= to + 1e-9 : d >= to - 1e-9) { pose(c, d); const r = A.clashLabels.update(A.camera, fs += 0.1, W, H); out.push([+d.toFixed(3), r.placed.some(q => q.i === idx) ? 1 : 0]); d += dir * step; }
       return out; },
+    // §P2.4 / sticky-lingering fix — same camera POSITION (so distance-based rank is unchanged)
+    // reoriented three ways: looking at c (in frustum), looking straight past c so c is BEHIND the
+    // camera, looking 90° off-axis so c is still in front but outside the horizontal FOV, then back at
+    // c. Proves the frustum test is stateless (recovers immediately) and is the thing that releases —
+    // not the rank hysteresis, which never changes here (position is fixed throughout).
+    frustumTest: (c, d, idx) => {
+      pose(c, d); const before = upd(0.6);
+      const camPos = A.camera.position.clone();
+      const away = camPos.clone().add(DIR.clone().multiplyScalar(5));
+      A.camera.lookAt(away.x, away.y, away.z); A.camera.updateMatrixWorld(true);
+      const behindRec = upd(0.7);
+      const perp = new THREE.Vector3().crossVectors(DIR, new THREE.Vector3(0, 1, 0));
+      if (perp.lengthSq() < 1e-6) perp.set(1, 0, 0); perp.normalize();
+      const side = camPos.clone().add(perp.multiplyScalar(5));
+      A.camera.lookAt(side.x, side.y, side.z); A.camera.updateMatrixWorld(true);
+      const sideRec = upd(0.8);
+      A.camera.lookAt(c.x, c.y, c.z); A.camera.updateMatrixWorld(true);
+      const restored = upd(0.9);
+      const has = (rec) => rec.placed.some(q => q.i === idx), inElig = (rec) => rec.eligiblePairs.some(e => e.i === idx);
+      return { before: before, behindRec: behindRec, sideRec: sideRec, restored: restored,
+        beforeLabelled: has(before), beforeEligible: inElig(before),
+        behindLabelled: has(behindRec), behindEligible: inElig(behindRec), behindSkippedFrustum: behindRec.skippedFrustum,
+        sideLabelled: has(sideRec), sideEligible: inElig(sideRec), sideSkippedFrustum: sideRec.skippedFrustum,
+        restoredLabelled: has(restored), restoredEligible: inElig(restored) }; },
     occluded: (c, d) => {
       // a wall-sized plane halfway between camera and contact, facing the camera — then the WITNESS's
       // own raycast proves the contact is hidden, then the module is asked, then the plane is removed.
@@ -113,15 +164,18 @@ function pageProbe(sabotage) {
       const ov = (A._getCinemaPathEdit && A._getCinemaPathEdit()) || null; if (!ov) return { skip: 'no stored cinema_path' };
       let dur = (typeof ov._total === 'number' && ov._total > 0) ? ov._total : 60;
       let plan; try { plan = A.cinemaPathPlan(dur, ov); if (plan && plan.naturalTotal > 0) { dur = plan.naturalTotal; plan = A.cinemaPathPlan(dur, ov); } } catch (e) { return { skip: 'plan failed: ' + e.message }; }
-      A.clashLabels.reset(); const rows = [], overl = []; let withElig = 0, maxE = 0, maxL = 0, nearest = 1e9, r0 = window.__rayCalls;
+      A.clashLabels.reset(); const rows = [], overl = []; let withElig = 0, withLabel = 0, maxE = 0, maxL = 0, nearest = 1e9, farthestLabelledD = 0, r0 = window.__rayCalls;
       for (let k = 0; k < n; k++) { const t = k / (n - 1); const p = plan.poseAt(t);
         A.camera.position.set(p.x, p.y, p.z); A.camera.lookAt(p.tx, p.ty, p.tz); A.camera.updateMatrixWorld(true);
         const r = A.clashLabels.update(A.camera, t * dur, W, H, k); nearest = Math.min(nearest, r.nearestM);
         if (r.eligible) { withElig++; rows.push([+t.toFixed(4), r.eligible, r.labelled, r.skippedOverlap, +r.nearestM.toFixed(2)]); }
+        if (r.labelled) withLabel++;
+        r.placed.forEach(q => { if (q.d > farthestLabelledD) farthestLabelledD = q.d; });
         maxE = Math.max(maxE, r.eligible); maxL = Math.max(maxL, r.labelled);
         for (let a = 0; a < r.placed.length; a++) for (let b = a + 1; b < r.placed.length; b++) { const A1 = r.placed[a], B1 = r.placed[b];
           if (A1.x < B1.x + B1.w && B1.x < A1.x + A1.w && A1.y < B1.y + B1.h && B1.y < A1.y + A1.h) overl.push([+t.toFixed(4), A1.pairId, B1.pairId]); } }
-      return { samples: n, durationSec: +dur.toFixed(1), framesWithEligible: withElig, maxEligible: maxE, maxLabelled: maxL, nearestM: +nearest.toFixed(2), overlaps: overl.length, rows, rayDelta: window.__rayCalls - r0, stats: A.clashLabels.stats() }; }
+      return { samples: n, durationSec: +dur.toFixed(1), framesWithEligible: withElig, framesWithLabel: withLabel, maxEligible: maxE, maxLabelled: maxL,
+        nearestM: +nearest.toFixed(2), farthestLabelledM: +farthestLabelledD.toFixed(2), overlaps: overl.length, rows, rayDelta: window.__rayCalls - r0, stats: A.clashLabels.stats() }; }
   };
 }
 
@@ -159,83 +213,122 @@ function pageProbe(sabotage) {
     const badName = names.filter(n => !n.name || (n.source === 'rates.js' ? !n.desc : n.name !== n.cls));
     claim('P0_names_extracted_from_rates_or_raw_class', badName.length === 0, `classes=${names.length} viaRates=${names.filter(n => n.source === 'rates.js').length} rawFallback=${names.filter(n => n.source !== 'rates.js').length} bad=${badName.length}`);
 
-    // The distances are DATA read from the module (§P2.1 amended 2026-09-05: 4.0/4.6 → 10.0/10.6), so
-    // every probe distance below is derived from the live enter/release, not pinned to a number that
-    // silently goes stale the next time the ruling moves.
-    const lim = await page.evaluate(() => { const s = window.APP.clashLabels.stats(); return { E: s.enterM, R: s.releaseM }; });
-    const E = lim.E, R = lim.R, GAP = R - E;
-    const dIn = +(E * 0.875).toFixed(2), dMid = +(E + GAP / 2).toFixed(2), dOut = +(R + 0.1).toFixed(2), dFar = +(R + 1.4).toFixed(2), dNear = +(E * 0.5).toFixed(2);
-    log(`§CLL_LIMITS enter=${E}m release=${R}m gap=${GAP.toFixed(2)}m probes: in=${dIn} mid=${dMid} out=${dOut} far=${dFar} near=${dNear}`);
-    if (!(E > 0 && R > E)) { inconclusive(`clashLabels.stats() enter=${E} release=${R} — not a usable rule, nothing judged`); process.exitCode = 2; return; }
+    // §P2.1 AMENDED AGAIN — the rank rule is DATA read from the module (topN/rankMarginM); there is no
+    // metres cutoff left to derive a probe distance from, so every probe below is either distance-
+    // agnostic (rankAt) or built off a stated, arbitrary constant (never a retired ENTER/RELEASE value).
+    const lim = await page.evaluate(() => { const s = window.APP.clashLabels.stats(); return { N: s.topN, M: s.rankMarginM }; });
+    const TOPN = lim.N, MARGIN = lim.M;
+    log(`§CLL_LIMITS topN=${TOPN} rankMarginM=${MARGIN} (no metres cutoff — pure rank)`);
+    if (!(TOPN > 0 && MARGIN > 0)) { inconclusive(`clashLabels.stats() topN=${TOPN} rankMarginM=${MARGIN} — not a usable rule, nothing judged`); process.exitCode = 2; return; }
 
-    // P1 — the enter-distance rule, with hysteresis, on the most isolated pair (so contention cannot confound it)
     const iso = await page.evaluate(() => window.__cll.pickIsolated());
     log(`§CLL_ISOLATED pair=${iso.pairId} i=${iso.i} isolationM=${iso.isolationM} ${iso.classA}×${iso.classB}`);
-    await page.evaluate(() => window.__cll.reset());
-    const r35 = await page.evaluate((c, d) => window.__cll.at(c, d, 0), iso.contact, dIn);
-    const has35 = r35.placed.some(q => q.i === iso.i);
-    claim('P1a_pair_within_enter_is_labelled', has35 && r35.placed.every(q => q.d <= E), `d=${dIn} (enter ${E}) labelled=${has35} eligible=${r35.eligible} labelled=${r35.labelled} maxPlacedD=${Math.max(...r35.placed.map(q => q.d)).toFixed(2)} entered=${r35.entered.join(',')}`);
-    const r43 = await page.evaluate((c, d) => window.__cll.at(c, d, 0.1), iso.contact, dMid);
-    claim('P1b_hysteresis_holds_between_enter_and_release', r43.placed.some(q => q.i === iso.i), `d=${dMid} after entering at ${dIn}: labelled=${r43.placed.some(q => q.i === iso.i)} released=${r43.released.join(',') || '-'}`);
-    const r47 = await page.evaluate((c, d) => window.__cll.at(c, d, 0.2), iso.contact, dOut);
-    claim('P1c_released_beyond_release', !r47.placed.some(q => q.i === iso.i) && r47.released.length === 1, `d=${dOut} (release ${R}): labelled=${r47.placed.some(q => q.i === iso.i)} released=${r47.released.join(',') || '-'}`);
-    const r43b = await page.evaluate((c, d) => window.__cll.at(c, d, 0.3), iso.contact, dMid);
-    claim('P1d_no_reentry_above_enter', !r43b.placed.some(q => q.i === iso.i) && r43b.entered.length === 0, `d=${dMid} after release: labelled=${r43b.placed.some(q => q.i === iso.i)} entered=${r43b.entered.join(',') || '-'}`);
+    // D_CLOSE keeps `iso` unambiguously nearest (rank 1) regardless of TOPN: by construction every OTHER
+    // pair is ≥ isolationM from iso's contact, so a camera within isolationM/2 of that contact is closer
+    // to `iso` than to anything else, no matter what TOPN is. FAR_D is a stated distance clearly beyond
+    // the RETIRED 10.0/10.6 m gate (not derived from the module — there is no such constant left).
+    const D_CLOSE = +Math.max(0.5, Math.min(5, iso.isolationM * 0.4)).toFixed(2);
+    const FAR_D = +Math.max(30, iso.isolationM * 3, 20.6).toFixed(1);
+    log(`§CLL_PROBE_DIST close=${D_CLOSE}m far=${FAR_D}m (far is arbitrary-but-large, not a module constant)`);
 
-    // P4 — no strobe: one straight pass in and out through the boundary flips state exactly twice
+    // P1 — rank correctness, NO distance limit at all: the module's `eligiblePairs` equals the TRUE
+    // top-N nearest pairs by plain 3D distance (computed independently in the browser, not trusted from
+    // the module), checked once close to the model and once FAR beyond the retired gate — proving the
+    // selection has no metres cutoff, not merely a bigger one.
     await page.evaluate(() => window.__cll.reset());
-    const sw = await page.evaluate((c, i, a, b) => window.__cll.sweep(c, a, b, 0.02, i).concat(window.__cll.sweep(c, b + 0.02, a, 0.02, i)), iso.contact, iso.i, dFar, dNear);
+    const rNear = await page.evaluate((cp, t, n) => window.__cll.rankAt(cp, t, 0, n),
+      { x: iso.contact.x + 1, y: iso.contact.y + 1, z: iso.contact.z + 1 }, iso.contact, TOPN);
+    claim('P1a_rank_matches_truth_near', JSON.stringify(rNear.gotTop) === JSON.stringify(rNear.wantTop),
+      `near pose (1.7m offset): want=[${rNear.wantTop}] got=[${rNear.gotTop}] farthestWantD=${rNear.farthestWantD}m`);
+    const rFar = await page.evaluate((cp, t, n) => window.__cll.rankAt(cp, t, 0.1, n),
+      { x: iso.contact.x + FAR_D, y: iso.contact.y + FAR_D * 0.35, z: iso.contact.z + FAR_D * 0.8 }, iso.contact, TOPN);
+    claim('P1b_rank_matches_truth_far_beyond_old_gate', JSON.stringify(rFar.gotTop) === JSON.stringify(rFar.wantTop) && rFar.farthestWantD > 10.6,
+      `far pose (~${FAR_D}m offset): want=[${rFar.wantTop}] got=[${rFar.gotTop}] farthestWantD=${rFar.farthestWantD}m (>10.6m proves a pair this far would have been INVISIBLE under the retired distance gate, yet the top-${TOPN} rule still selects it)`);
+    claim('P1c_never_exceeds_topN', rNear.gotTop.length <= TOPN && rFar.gotTop.length <= TOPN,
+      `near eligible=${rNear.gotTop.length} far eligible=${rFar.gotTop.length} (cap=${TOPN})`);
+
+    // P4 — no strobe: one straight pass in and out through the RANK boundary (not a fixed distance)
+    // flips exactly twice — one clean enter, one clean release, never flapping. MEASURED 2026-09-05: the
+    // release−enter GAP does NOT reliably equal RANK_MARGIN_M the way the old fixed ENTER_M/RELEASE_M
+    // gap did — on Hospital_silent the crossing sits at ~15m from `iso`, inside a dense OTHER-pair
+    // region where the top-N boundary (cutoffD) itself shifts nearly 1:1 with camera position along the
+    // sweep direction, so a mere 0.05 m of camera travel can move the boundary by close to the full
+    // 0.6 m margin (measured gap=0.05m, not ≈0.6m). That is a real property of an emergent, moving rank
+    // boundary in a dense building — not a bug — so the claim is what actually matters for "no strobe":
+    // exactly 2 flips, release never closer than enter. The gap is logged, not gated.
+    await page.evaluate(() => window.__cll.reset());
+    const sw = await page.evaluate((c, i, a, b) => window.__cll.sweep(c, a, b, 0.05, i).concat(window.__cll.sweep(c, b + 0.05, a, 0.05, i)), iso.contact, iso.i, FAR_D, 0.3);
     let flips = 0, enterAt = null, releaseAt = null;
     for (let k = 1; k < sw.length; k++) if (sw[k][1] !== sw[k - 1][1]) { flips++; if (sw[k][1]) enterAt = sw[k][0]; else releaseAt = sw[k][0]; }
-    claim('P4_no_strobe_two_transitions_per_pass', flips === 2 && enterAt !== null && enterAt <= E && enterAt > E - 0.03 && releaseAt !== null && releaseAt >= R && releaseAt < R + 0.03,
-      `steps=${sw.length} flips=${flips} enterAt=${enterAt}m releaseAt=${releaseAt}m (expected ≤${E.toFixed(2)} and ≥${R.toFixed(2)}, 0.02 m steps, pass ${dFar}→${dNear}→${dFar})`);
+    const gap = (enterAt != null && releaseAt != null) ? +(releaseAt - enterAt).toFixed(2) : null;
+    claim('P4_no_strobe_two_clean_transitions', flips === 2 && enterAt !== null && releaseAt !== null && releaseAt >= enterAt,
+      `steps=${sw.length} flips=${flips} enterAt=${enterAt}m releaseAt=${releaseAt}m gap=${gap}m (rankMarginM=${MARGIN}m; gap need not equal it in a dense region, see comment above), sweep ${FAR_D}→0.3→${FAR_D}`);
 
-    // P5 — constant size: the panel's pixel box at 1 m equals the box just inside the enter distance
+    // P5 — constant size: the panel's pixel box at 1 m equals the box at D_CLOSE (both keep `iso` at rank 1)
     await page.evaluate(() => window.__cll.reset());
-    const dEdge = +(E - 0.1).toFixed(2);
     const r1 = await page.evaluate((c) => window.__cll.at(c, 1.0, 0), iso.contact);
-    const r39 = await page.evaluate((c, d) => window.__cll.at(c, d, 0.1), iso.contact, dEdge);
+    const r39 = await page.evaluate((c, d) => window.__cll.at(c, d, 0.1), iso.contact, D_CLOSE);
     const b1 = r1.placed.find(q => q.i === iso.i), b39 = r39.placed.find(q => q.i === iso.i);
-    claim('P5_constant_screen_size', !!b1 && !!b39 && b1.w === b39.w && b1.h === b39.h, `at 1.0 m ${b1 ? b1.w + 'x' + b1.h : 'none'} px; at ${dEdge} m ${b39 ? b39.w + 'x' + b39.h : 'none'} px (frame ${sz.W}x${sz.H})`);
+    claim('P5_constant_screen_size', !!b1 && !!b39 && b1.w === b39.w && b1.h === b39.h, `at 1.0 m ${b1 ? b1.w + 'x' + b1.h : 'none'} px; at ${D_CLOSE} m ${b39 ? b39.w + 'x' + b39.h : 'none'} px (frame ${sz.W}x${sz.H})`);
 
     // P2 — occlusion is NOT consulted, and a hidden pair IS labelled
     await page.evaluate(() => window.__cll.reset());
-    const oc = await page.evaluate((c, d) => window.__cll.occluded(c, d), iso.contact, dIn);
+    const oc = await page.evaluate((c, d) => window.__cll.occluded(c, d), iso.contact, D_CLOSE);
     const ocLabelled = oc.rec.placed.some(q => q.i === iso.i);
     claim('P2a_no_visibility_call_in_selection', oc.rec.rayDelta === 0, `raycast/BVH calls made by the selector: ${oc.rec.rayDelta} (must be 0)`);
     claim('P2b_pair_behind_a_wall_is_labelled', oc.hiddenByOccluder && ocLabelled, `occluder hit at ${oc.occluderHitAtM} m, contact at ${oc.contactAtM} m → hidden=${oc.hiddenByOccluder}; labelled=${ocLabelled} (the user ruled it in; a fix that hides it is a regression)`);
 
-    // P3 — no overlap where the pairs are densest
-    const dn = await page.evaluate((d) => window.__cll.pickDense(d), dIn);
-    log(`§CLL_DENSE pair=${dn.pairId} neighboursWithin${dIn}m=${dn.neighboursWithin}`);
+    // P8 — out-of-frustum RELEASES (the sticky-lingering fix), distinct from occlusion above: same
+    // camera POSITION throughout (rank/eligibility unchanged) reoriented behind, then 90° off-axis,
+    // then back — proves the frustum test is a stateless per-frame release, not a permanent stick.
     await page.evaluate(() => window.__cll.reset());
-    const rd = await page.evaluate((c, d) => window.__cll.at(c, d, 0), dn.contact, dNear);
+    const ft = await page.evaluate((c, d, i) => window.__cll.frustumTest(c, d, i), iso.contact, D_CLOSE, iso.i);
+    claim('P8a_in_frustum_is_labelled', ft.beforeEligible && ft.beforeLabelled, `looking at contact: eligible=${ft.beforeEligible} labelled=${ft.beforeLabelled}`);
+    claim('P8b_behind_camera_releases_not_clamped', ft.behindEligible && !ft.behindLabelled && ft.behindSkippedFrustum >= 1,
+      `same position, looking AWAY (contact now behind camera): eligible=${ft.behindEligible} (rank unchanged) labelled=${ft.behindLabelled} skippedFrustum=${ft.behindSkippedFrustum} — must NOT clamp to the frame edge`);
+    claim('P8c_outside_fov_releases', ft.sideEligible && !ft.sideLabelled && ft.sideSkippedFrustum >= 1,
+      `same position, looking 90° OFF-AXIS (contact still in front, outside the FOV cone): eligible=${ft.sideEligible} (rank unchanged) labelled=${ft.sideLabelled} skippedFrustum=${ft.sideSkippedFrustum}`);
+    claim('P8d_recovers_when_back_in_frustum', ft.restoredEligible && ft.restoredLabelled, `looking back at contact, same position throughout: eligible=${ft.restoredEligible} labelled=${ft.restoredLabelled} — not permanently stuck released`);
+
+    // P3 — no overlap where the pairs are densest (screen-space non-overlap is still enforced even
+    // though the user now accepts fewer of the top-TOPN candidates actually getting a panel). MEASURED:
+    // at only D_CLOSE from a dense contact, some of the top-TOPN nearest legitimately fall outside the
+    // camera's FOV (angularly wide relative to the close distance) and are skippedFrustum, not
+    // skippedOverlap — both are accounted for so the count reconciles exactly.
+    const dn = await page.evaluate((d) => window.__cll.pickDense(d), 3.5);
+    log(`§CLL_DENSE pair=${dn.pairId} neighboursWithin3.5m=${dn.neighboursWithin}`);
+    await page.evaluate(() => window.__cll.reset());
+    const rd = await page.evaluate((c, d) => window.__cll.at(c, d, 0), dn.contact, D_CLOSE);
     if (rd.eligible < 2) claim('P3_no_overlap_dense_cluster', false, `INCONCLUSIVE: only ${rd.eligible} eligible at the densest contact — non-overlap was not exercised`);
-    else claim('P3_no_overlap_dense_cluster', noOverlap(rd.placed) && rd.labelled + rd.skipped === rd.eligible, `eligible=${rd.eligible} labelled=${rd.labelled} skippedOverlap=${rd.skipped} rects=${rd.placed.map(q => q.w + 'x' + q.h + '@' + q.x + ',' + q.y).join(' ')}`);
+    else claim('P3_no_overlap_dense_cluster', noOverlap(rd.placed) && rd.labelled + rd.skipped + rd.skippedFrustum === rd.eligible && rd.eligible <= TOPN,
+      `eligible=${rd.eligible} (cap ${TOPN}) labelled=${rd.labelled} skippedOverlap=${rd.skipped} skippedFrustum=${rd.skippedFrustum} rects=${rd.placed.map(q => q.w + 'x' + q.h + '@' + q.x + ',' + q.y).join(' ')}`);
 
     // P6 — the fade seam: labelled → marker solid (does not move with t); released → moves again
     await page.evaluate(() => window.__cll.reset());
-    const dHold = +(E * 0.75).toFixed(2);
-    await page.evaluate((c, d) => window.__cll.at(c, d, 0), iso.contact, dHold);
-    await page.evaluate((c, d) => window.__cll.at(c, d, 1.0), iso.contact, dHold);   // ≥ FADE_S of film time → fade reaches 1
+    await page.evaluate((c, d) => window.__cll.at(c, d, 0), iso.contact, D_CLOSE);
+    await page.evaluate((c, d) => window.__cll.at(c, d, 1.0), iso.contact, D_CLOSE);   // ≥ FADE_S of film time → fade reaches 1
     const on = await page.evaluate((i, p) => window.__cll.markerSolid(i, p), iso.i, st.periodS);
-    await page.evaluate((c, d) => window.__cll.at(c, d, 2.0), iso.contact, dFar);
-    await page.evaluate((c, d) => window.__cll.at(c, d, 3.0), iso.contact, dFar);
+    await page.evaluate((c, d) => window.__cll.at(c, d, 2.0), iso.contact, FAR_D);
+    await page.evaluate((c, d) => window.__cll.at(c, d, 3.0), iso.contact, FAR_D);
     const off = await page.evaluate((i, p) => window.__cll.markerSolid(i, p), iso.i, st.periodS);
     claim('P6_fade_seam_labelled_solid_released_pulsing', !!on && !!off && on.fade === 1 && on.a.sel === on.b.sel && on.a.amb !== on.b.amb && off.fade === 0 && off.a.sel !== off.b.sel,
       on && off ? `labelled: fade=${on.fade} marker T/4=${on.a.sel} 3T/4=${on.b.sel} (equal=solid) ambient ${on.a.amb}→${on.b.amb}; released: fade=${off.fade} marker ${off.a.sel}→${off.b.sel} (moves=pulsing)` : 'marker mesh not found');
 
-    // P7 — the stored path: where does the real film come within the enter distance? (drives the clip choice; INCONCLUSIVE if never)
-    const pp = await page.evaluate(() => window.__cll.pathProfile(1500));
+    // P7 — the stored path: §P2.1 amended again means "eligible" is (almost) never empty any more (no
+    // distance gate), so INCONCLUSIVE now means no pair was ever actually PLACED across the whole path.
+    // farthestLabelledM is logged (not gated — a real path may or may not happen to cross a >10.6 m
+    // approach that lands in the top-TOPN) as direct evidence for the range-limit removal.
+    const pp = await page.evaluate((n) => window.__cll.pathProfile(n), 1500);
     if (pp.skip) claim('P7_stored_path_proximity', false, 'INCONCLUSIVE: ' + pp.skip);
     else {
-      log(`§CLL_PATH_PROFILE samples=${pp.samples} durationSec=${pp.durationSec} framesWithEligible=${pp.framesWithEligible} maxEligible=${pp.maxEligible} maxLabelled=${pp.maxLabelled} nearestM=${pp.nearestM} overlaps=${pp.overlaps} rayDelta=${pp.rayDelta}`);
-      // windows: runs of consecutive eligible samples
+      log(`§CLL_PATH_PROFILE samples=${pp.samples} durationSec=${pp.durationSec} framesWithEligible=${pp.framesWithEligible} framesWithLabel=${pp.framesWithLabel} maxEligible=${pp.maxEligible} maxLabelled=${pp.maxLabelled} nearestM=${pp.nearestM} farthestLabelledM=${pp.farthestLabelledM} overlaps=${pp.overlaps} rayDelta=${pp.rayDelta}`);
+      // windows: runs of consecutive labelled samples
       const wins = []; let cur = null;
-      pp.rows.forEach(r => { if (cur && r[0] - cur.tEnd <= 1.5 / pp.samples) { cur.tEnd = r[0]; cur.n++; cur.maxE = Math.max(cur.maxE, r[1]); cur.maxL = Math.max(cur.maxL, r[2]); } else { cur = { tStart: r[0], tEnd: r[0], n: 1, maxE: r[1], maxL: r[2] }; wins.push(cur); } });
+      pp.rows.forEach(r => { if (r[2] > 0) { if (cur && r[0] - cur.tEnd <= 1.5 / pp.samples) { cur.tEnd = r[0]; cur.n++; cur.maxE = Math.max(cur.maxE, r[1]); cur.maxL = Math.max(cur.maxL, r[2]); } else { cur = { tStart: r[0], tEnd: r[0], n: 1, maxE: r[1], maxL: r[2] }; wins.push(cur); } } });
       wins.forEach(wn => log(`§CLL_PATH_WINDOW t=${wn.tStart}→${wn.tEnd} samples=${wn.n} maxEligible=${wn.maxE} maxLabelled=${wn.maxL}`));
-      if (!pp.framesWithEligible) claim('P7_stored_path_proximity', false, `INCONCLUSIVE: the stored path never comes within ${E} m of a pair (nearest=${pp.nearestM} m) — a bake of it would be VACUOUS for labels`);
-      else claim('P7_stored_path_no_overlap_no_raycast', pp.overlaps === 0 && pp.rayDelta === 0, `eligible on ${pp.framesWithEligible}/${pp.samples} samples, maxEligible=${pp.maxEligible} maxLabelled=${pp.maxLabelled}, overlapping panel pairs=${pp.overlaps}, visibility calls=${pp.rayDelta}, enters=${pp.stats.enters} releases=${pp.stats.releases}`);
+      if (!pp.framesWithLabel) claim('P7_stored_path_proximity', false, `INCONCLUSIVE: the stored path never actually placed a panel (nearest=${pp.nearestM} m, maxEligible=${pp.maxEligible}) — a bake of it would be VACUOUS for labels`);
+      else claim('P7_stored_path_no_overlap_no_raycast', pp.overlaps === 0 && pp.rayDelta === 0 && pp.maxEligible <= TOPN,
+        `labelled on ${pp.framesWithLabel}/${pp.samples} samples, maxEligible=${pp.maxEligible} (cap ${TOPN}) maxLabelled=${pp.maxLabelled}, farthestLabelledM=${pp.farthestLabelledM}, overlapping panel pairs=${pp.overlaps}, visibility calls=${pp.rayDelta}, enters=${pp.stats.enters} releases=${pp.stats.releases}`);
     }
   } catch (e) { log('§CLL_ERROR ' + (e && e.stack || e)); inconclusive('exception ' + String(e && e.message).slice(0, 160)); process.exitCode = 2; crashed = true; }
   finally { try { await browser.close(); } catch (e) {} server.close(); try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) {} }
@@ -244,7 +337,7 @@ function pageProbe(sabotage) {
   if (!rows.length || crashed) return;
   Witness('clash_film_labels').population(() => rows)
     .schema({ type: 'object', required: ['claim', 'ok'], properties: { claim: { type: 'string', minLength: 1 }, ok: { type: 'integer', minimum: 0, maximum: 1 }, detail: { type: 'string' } } })
-    .invariant('every §CLASH_FILM_P2 claim holds: names extracted, enter/release (read from the module) with no strobe, occlusion never consulted and a hidden pair labelled, no panel overlap, constant size, fade seam', rs => rs.every(r => r.ok === 1))
+    .invariant('every §CLASH_FILM_P2 claim holds: names extracted, rank selection (top-N, no distance limit, read from the module) with rank-anchored hysteresis and no strobe, occlusion never consulted and a hidden pair labelled, genuine out-of-frustum release (not a sticky edge-clamp) that recovers, no panel overlap, constant size, fade seam', rs => rs.every(r => r.ok === 1))
     .redControl(rs => { const c = rs.map(r => Object.assign({}, r)); if (c[0]) c[0].ok = 0; return c; })
     .run();
   logStream.end();

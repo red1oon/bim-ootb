@@ -1,7 +1,9 @@
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // §CLASH_FILM_P2 — the in-scene LABEL for a clash pair the camera is passing, in a baked film.
 // Implementing bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P2 — Witness: W-CLASH-LABELS
-//   (viewer/tests/witness_clash_film_labels.js, claims P1–P6 of §P2.5)
+//   (viewer/tests/witness_clash_film_labels.js, claims P0-P8 — P1/P4/P8 rewritten and P8 added for the
+//   two §P2.1 AMENDED AGAIN changes: rank selection replacing the distance gate, and the out-of-frustum
+//   release replacing the old sticky edge-clamp)
 //
 // THE USER'S THREE RULINGS (2026-09-05, verbatim in the spec) — settled, not re-litigated here:
 //   1. "if it is close by where it is clear enough i would say within 4 meters, it will then hold its
@@ -12,16 +14,37 @@
 //      together but its size remain constant to avoid overlaying pov."
 //   3. "No slowing down" — nothing here touches the camera.
 //
-// ── SELECTION IS PROXIMITY, NOT RANKING (§P2.1) ─────────────────────────────────────────────────
-// A pair is ELIGIBLE when its mesh-true `contact` (clash_narrow.js, three.js space) is within
-// ENTER_M of the camera, and stays eligible until it is RELEASE_M away (hysteresis — a pair drifting
-// on the boundary must not strobe). There is NO cap and NO facing test. OCCLUSION IS NEVER CONSULTED:
-// no raycast, no visibility query, no frustum test decides eligibility — a pair behind a door or a
-// wall is labelled and shines through (that is the ruling; a "fix" that hides it is a regression,
-// and the witness's P2 asserts a synthetic pair behind an occluder IS labelled).
-// What limits the count is SCREEN SPACE: the eligible set is walked nearest-first and a panel is
-// placed only if its rectangle does not intersect one already placed this frame. A skipped pair keeps
-// its marker and simply carries no panel this frame.
+// ══ §P2.1 AMENDED AGAIN 2026-09-05 (user, after watching two more demo clips) — verbatim: "The label
+// is sticky still lingers in frame when that clash pair gone out of frame. Two more appearing in the
+// horizon should be labelled next but they could be beyond the 10m mark. Let's not put limit to
+// range. Just mark out up to 4 of nearest as simple rule." Two changes on top of ruling 1 above:
+//   (a) the 10 m (was 4 m) ENTER/RELEASE distance gate is GONE — replaced by a pure RANK rule, always
+//       the TOP_N nearest pairs by current distance, however far away they are (originally shipped
+//       as 4, raised to 8 later the same session — see the third amendment on the TOP_N var below).
+//   (b) the "behind camera → clamp panel to the frame edge, no leader" behaviour (the old §P2.4 rule)
+//       is GONE — it was the sticky-lingering bug. A pair that is genuinely OUT OF FRUSTUM (behind the
+//       camera, or beyond the horizontal/vertical FOV) now carries no panel at all this frame, so it
+//       releases like any other pair leaving contention. This is NOT occlusion (a wall/door in front
+//       of the camera along the line of sight, contact still projecting inside the frustum) — that
+//       still shines through unchanged, per the standing ruling; only a contact that has actually left
+//       the view cone stops being labelled.
+//
+// ── SELECTION IS RANK, NOT DISTANCE (§P2.1 amended again) ───────────────────────────────────────
+// A pair is ELIGIBLE when it is among the TOP_N nearest pairs (by distance from camera to its
+// mesh-true `contact`, clash_narrow.js, three.js space) THIS FRAME. There is NO metres cutoff at all
+// — arbitrarily far pairs are eligible if nothing closer exists. Hysteresis is kept in RANK terms (a
+// pair already near the boundary of the top-N is held past it by RANK_MARGIN_M before release) purely
+// to stop flicker when two pairs' distances are near-tied — it is not a distance gate. OCCLUSION IS
+// NEVER CONSULTED: no raycast, no visibility query decides eligibility — a pair behind a door or a
+// wall is labelled and shines through (that is the ruling; a "fix" that hides it is a regression, and
+// the witness's P2 asserts a synthetic pair behind an occluder IS labelled). A separate, unrelated
+// test — genuinely leaving the camera's view FRUSTUM (behind it, or outside its FOV cone) — does
+// release a pair; see (b) above.
+// What further limits the count is SCREEN SPACE: the eligible set (capped to TOP_N nearest) is walked
+// nearest-first and a panel is placed only if its rectangle does not intersect one already placed this
+// frame. With TOP_N=8 this makes an earnest effort but is no longer expected to keep the frame
+// clean — the user explicitly accepts label clutter/overlap at this count as the tradeoff for seeing
+// more pairs ("clutter acceptable... motion sieves them out").
 //
 // ── THE LABEL IS 2D, COMPOSITED ONTO THE CAPTURE CANVAS (§P2.2) ─────────────────────────────────
 // cinema_maxq.js's _captureFrame draws the WebGL canvas into a 2D context and composites the HUD on
@@ -45,11 +68,16 @@ function setupClashLabels(A) {
     var THREE = window.THREE;
     if (!THREE) return;
 
-    // ══ §P2.1 AMENDED 2026-09-05 (user, after watching the 20–25 s clip: pulses visible, nothing ever
-    // came close enough to label — nearest 7.98 m): "10 meters or half of scene space". 4.0/4.6 → 10.0/10.6,
-    // the same 0.6 m hysteresis gap scaled up, so labels appear in normal flythrough footage rather than only
-    // on extreme close approaches. 10 m is the concrete number; no scene-relative formula was asked for.
-    var ENTER_M = 10.0, RELEASE_M = 10.6;   // ruling 1 (amended) + §P2.1 hysteresis: enter at 10.0 m, release at 10.6 m
+    // ══ §P2.1 AMENDED AGAIN 2026-09-05 (user: "Let's not put limit to range. Just mark out up to 4 of
+    // nearest as simple rule.") — the 4.0/4.6 → 10.0/10.6 m distance gate is retired outright, replaced
+    // by a rank cap. RANK_MARGIN_M reuses the OLD hysteresis gap's magnitude (0.6 m), now measured
+    // against the moving top-N distance boundary instead of a fixed absolute distance.
+    // §P2.1 AMENDED A THIRD TIME (2026-09-05, later same session, user watching the pull-back:
+    // "Labels up to 8 pairs nearest, not by 10m range... clutter acceptable"): 4 → 8. The user
+    // explicitly accepts more label overlap/clutter as the tradeoff — the screen-space non-overlap
+    // walk below still makes an earnest effort, it is just no longer expected to keep the frame clean.
+    var TOP_N = 8;               // always the N nearest pairs — no metres cutoff at all
+    var RANK_MARGIN_M = 0.6;     // hysteresis: a pair already near stays near until it drifts this far past the current Nth-nearest distance
     var FADE_S = 0.5;                      // FILM seconds for a marker to go solid / back to the pulse (§4b: a fade, never a switch)
     // ══ §CLASH_LABEL_HUD_FAMILY (2026-09-05, user: the label styling "seems to be not nicely setup
     // to be consistent as the HUD color scheme") ═════════════════════════════════════════════════
@@ -77,7 +105,7 @@ function setupClashLabels(A) {
     var _stats = null;
     function freshStats() {
       return { frames: 0, framesWithEligible: 0, framesWithLabel: 0, maxEligible: 0, maxLabelled: 0,
-        enters: 0, releases: 0, skippedOverlap: 0, nearestM: Infinity, labelFrames: 0 };
+        enters: 0, releases: 0, skippedOverlap: 0, skippedFrustum: 0, nearestM: Infinity, labelFrames: 0 };
     }
     _stats = freshStats();
 
@@ -146,7 +174,7 @@ function setupClashLabels(A) {
     A.clashLabels.update = function (camera, filmSeconds, w, h, frameIdx) {
       var pairs = (A.clashFilm && A.clashFilm.pairs) ? A.clashFilm.pairs() : null;
       _placed = [];
-      var rec = { placed: _placed, eligible: 0, labelled: 0, skippedOverlap: 0, entered: [], released: [], nearestM: Infinity };
+      var rec = { placed: _placed, eligible: 0, labelled: 0, skippedOverlap: 0, skippedFrustum: 0, entered: [], released: [], nearestM: Infinity };
       if (!pairs || !pairs.length || !camera || !(w > 0) || !(h > 0)) return rec;
       if (_pairsRef !== pairs || !_near || _near.length !== pairs.length) {
         _pairsRef = pairs; _near = new Uint8Array(pairs.length); _fade = new Float32Array(pairs.length); _lastFilmS = null; _names = null;
@@ -159,33 +187,49 @@ function setupClashLabels(A) {
       _cam.setFromMatrixPosition(camera.matrixWorld);
       var M = metrics(h);
 
-      // 1. proximity + hysteresis — no other predicate. Distance is to the mesh-true contact point.
-      var elig = [], i, d, c;
+      // 1. rank + hysteresis — no distance cutoff at all (§P2.1 amended again). `cutoffD` is THIS
+      // FRAME's Nth-nearest distance across every pair (not just the currently-near set): a pair is
+      // admitted once its distance is within the top TOP_N, and held past that boundary by
+      // RANK_MARGIN_M before release — the same hysteresis SHAPE the old fixed ENTER_M/RELEASE_M pair
+      // used, now anchored to a moving rank boundary instead of a fixed absolute distance.
+      var all = [], i, d, c;
       for (i = 0; i < pairs.length; i++) {
         c = pairs[i].contact; if (!c) continue;
         d = Math.sqrt((c.x - _cam.x) * (c.x - _cam.x) + (c.y - _cam.y) * (c.y - _cam.y) + (c.z - _cam.z) * (c.z - _cam.z));
         if (d < rec.nearestM) rec.nearestM = d;
-        if (!_near[i] && d <= ENTER_M) { _near[i] = 1; rec.entered.push(pairs[i].pairId + '@' + d.toFixed(2) + ' ' + _names[i].a + '/' + _names[i].b); }
-        else if (_near[i] && d >= RELEASE_M) { _near[i] = 0; rec.released.push(pairs[i].pairId + '@' + d.toFixed(2)); }
+        all.push({ i: i, d: d });
+      }
+      all.sort(function (a, b) { return a.d - b.d; });
+      var cutoffD = all.length >= TOP_N ? all[TOP_N - 1].d : Infinity;
+      var elig = [];
+      for (var ai = 0; ai < all.length; ai++) {
+        i = all[ai].i; d = all[ai].d;
+        if (!_near[i] && d <= cutoffD) { _near[i] = 1; rec.entered.push(pairs[i].pairId + '@' + d.toFixed(2) + ' ' + _names[i].a + '/' + _names[i].b); }
+        else if (_near[i] && d > cutoffD + RANK_MARGIN_M) { _near[i] = 0; rec.released.push(pairs[i].pairId + '@' + d.toFixed(2)); }
         if (_near[i]) elig.push({ i: i, d: d });
       }
       elig.sort(function (a, b) { return a.d - b.d; });
+      if (elig.length > TOP_N) elig.length = TOP_N;   // hysteresis can hold a few extra just past the boundary; only the nearest TOP_N are ever placed
       rec.eligible = elig.length;
+      // exposed for the witness — the exact {pair index, distance} set the rank rule selected, so a
+      // test can assert it equals the true top-N by distance without reverse-engineering it from the
+      // (screen-space-filtered) placed list.
+      rec.eligiblePairs = elig.map(function (e) { return { i: e.i, d: +e.d.toFixed(3) }; });
 
       // 2. screen space, nearest first, no overlap. Projection only — never a visibility test.
+      // §P2.1 AMENDED AGAIN — the sticky-lingering fix: a contact that is genuinely OUT OF FRUSTUM
+      // (behind the camera, view-space z>0, or projected beyond the horizontal/vertical FOV, |nx|>1 or
+      // |ny|>1 in NDC) carries NO panel this frame — it is skipped outright, not clamped to the frame
+      // edge. That is the opposite of occlusion (a wall/door in front of the camera, contact still
+      // projecting INSIDE the frustum) which is untouched and keeps shining through regardless of this
+      // test. A pair released here re-enters normally once its contact is back inside the frustum.
       for (var k = 0; k < elig.length; k++) {
         var e = elig[k], p = pairs[e.i]; c = p.contact;
         _v.set(c.x, c.y, c.z).applyMatrix4(camera.matrixWorldInverse);
         var behind = _v.z > 0;                       // view space looks down -z
         _v.set(c.x, c.y, c.z).project(camera);
         var nx = _v.x, ny = _v.y;
-        if (behind) {
-          // project() flips a point behind the camera; mirror it back and push it to the frame edge
-          // on the side it is on, so the panel clamps to that edge. §P2.4: no leader for these.
-          nx = -nx; ny = -ny;
-          var mag = Math.max(Math.abs(nx), Math.abs(ny));
-          if (mag > 1e-6) { nx /= mag; ny /= mag; } else { nx = 0; ny = 1; }
-        }
+        if (behind || Math.abs(nx) > 1 || Math.abs(ny) > 1) { rec.skippedFrustum++; continue; }
         var sx = (nx + 1) / 2 * w, sy = (1 - ny) / 2 * h;
         var nm = _names[e.i];
         var bw = M.padX * 2 + Math.ceil(Math.max(measure(nm.a, M.fontPx), measure(nm.b, M.fontPx)));
@@ -198,7 +242,7 @@ function setupClashLabels(A) {
         var hit = false;
         for (var q = 0; q < _placed.length; q++) if (overlaps(_placed[q], rect)) { hit = true; break; }
         if (hit) { rec.skippedOverlap++; continue; }
-        _placed.push({ i: e.i, pairId: p.pairId, x: x, y: y, w: bw, h: bh, sx: sx, sy: sy, behind: behind,
+        _placed.push({ i: e.i, pairId: p.pairId, x: x, y: y, w: bw, h: bh, sx: sx, sy: sy,
           d: e.d, nameA: nm.a, nameB: nm.b, alpha: 0 });
       }
       rec.labelled = _placed.length;
@@ -226,14 +270,16 @@ function setupClashLabels(A) {
       if (elig.length > _stats.maxEligible) _stats.maxEligible = elig.length;
       if (_placed.length > _stats.maxLabelled) _stats.maxLabelled = _placed.length;
       _stats.enters += rec.entered.length; _stats.releases += rec.released.length; _stats.skippedOverlap += rec.skippedOverlap;
+      _stats.skippedFrustum += rec.skippedFrustum;
       if (rec.nearestM < _stats.nearestM) _stats.nearestM = rec.nearestM;
       // … plus every 10th frame while a panel is up, WITH its rectangle — so a probe can go to that
       // frame of the exported film and find the plate in the bytes (the end of the chain).
       var fi = (frameIdx != null ? frameIdx : _stats.frames - 1);
       if (rec.entered.length || rec.released.length || (_placed.length && fi % 10 === 0)) {
-        var panels = _placed.map(function (q) { return q.i + '@' + q.x + ',' + q.y + ',' + q.w + 'x' + q.h + (q.behind ? 'B' : '') + ':' + q.alpha.toFixed(2); });
+        var panels = _placed.map(function (q) { return q.i + '@' + q.x + ',' + q.y + ',' + q.w + 'x' + q.h + ':' + q.alpha.toFixed(2); });
         console.log('§CLASH_LABELS frame=' + fi +
           ' eligible=' + rec.eligible + ' labelled=' + rec.labelled + ' skippedOverlap=' + rec.skippedOverlap +
+          ' skippedFrustum=' + rec.skippedFrustum +
           (rec.entered.length ? ' enter=[' + rec.entered.join(',') + ']' : '') +
           (rec.released.length ? ' release=[' + rec.released.join(',') + ']' : '') +
           ' nearest=' + (isFinite(rec.nearestM) ? rec.nearestM.toFixed(2) + 'm' : '-') +
@@ -242,8 +288,11 @@ function setupClashLabels(A) {
       return rec;
     };
 
-    // ── DRAW: the 2D pass (§P2.2/§P2.4). `placed` is this frame's record from update(); the caller
-    // hands it back so a stale frame's panels can never be drawn on a frame they were not placed for.
+    // ── DRAW: the 2D pass (§P2.2). `placed` is this frame's record from update(); the caller hands it
+    // back so a stale frame's panels can never be drawn on a frame they were not placed for. Every
+    // entry here is guaranteed IN-FRUSTUM by update()'s selection step (§P2.1 amended again) — an
+    // out-of-frustum contact never reaches `placed` at all, so there is no "behind the camera, clamp
+    // to the edge, skip the leader" special case here any more (that was the sticky-lingering bug).
     A.clashLabelsCompositeOntoCanvas = function (ctx, w, h, placed) {
       if (!ctx || !placed || !placed.length) return 0;
       var M = metrics(h), n = 0;
@@ -252,20 +301,18 @@ function setupClashLabels(A) {
         var q = placed[k];
         if (!(q.alpha > 0)) continue;
         ctx.globalAlpha = Math.min(1, q.alpha);
-        if (!q.behind) {
-          // leader: from the panel's nearest edge point to the projected contact, plus a dot on it
-          var ax = clamp(q.sx, q.x, q.x + q.w), ay = clamp(q.sy, q.y, q.y + q.h);
-          // §CLASH_LABEL_HUD_FAMILY: halo first, core on top — line and dot alike.
-          ctx.lineCap = 'round';
-          ctx.strokeStyle = LEADER_HALO; ctx.lineWidth = M.line + 2 * M.halo;
-          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(q.sx, q.sy); ctx.stroke();
-          ctx.strokeStyle = LEADER; ctx.lineWidth = M.line;
-          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(q.sx, q.sy); ctx.stroke();
-          ctx.fillStyle = LEADER_HALO;
-          ctx.beginPath(); ctx.arc(q.sx, q.sy, M.dot + M.halo, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = LEADER;
-          ctx.beginPath(); ctx.arc(q.sx, q.sy, M.dot, 0, Math.PI * 2); ctx.fill();
-        }
+        // leader: from the panel's nearest edge point to the projected contact, plus a dot on it
+        var ax = clamp(q.sx, q.x, q.x + q.w), ay = clamp(q.sy, q.y, q.y + q.h);
+        // §CLASH_LABEL_HUD_FAMILY: halo first, core on top — line and dot alike.
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = LEADER_HALO; ctx.lineWidth = M.line + 2 * M.halo;
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(q.sx, q.sy); ctx.stroke();
+        ctx.strokeStyle = LEADER; ctx.lineWidth = M.line;
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(q.sx, q.sy); ctx.stroke();
+        ctx.fillStyle = LEADER_HALO;
+        ctx.beginPath(); ctx.arc(q.sx, q.sy, M.dot + M.halo, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = LEADER;
+        ctx.beginPath(); ctx.arc(q.sx, q.sy, M.dot, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = PLATE;
         if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(q.x, q.y, q.w, q.h, M.radius); ctx.fill(); }
         else ctx.fillRect(q.x, q.y, q.w, q.h);
@@ -281,31 +328,35 @@ function setupClashLabels(A) {
     A.clashLabels.placed = function () { return _placed.slice(); };
     A.clashLabels.stats = function () {
       var s = {}; for (var k in _stats) s[k] = _stats[k];
-      s.enterM = ENTER_M; s.releaseM = RELEASE_M; s.fadeS = FADE_S; s.pairs = _pairsRef ? _pairsRef.length : 0;
+      s.topN = TOP_N; s.rankMarginM = RANK_MARGIN_M; s.fadeS = FADE_S; s.pairs = _pairsRef ? _pairsRef.length : 0;
       return s;
     };
     A.clashLabels.fadeOf = function (i) { return _fade && i >= 0 && i < _fade.length ? _fade[i] : null; };
 
-    // ── SUMMARY: one line after the loop. VACUOUS when no pair ever came within ENTER_M — a film
-    // whose camera never passed a clash proves nothing about the label, and must say so.
+    // ── SUMMARY: one line after the loop. §P2.1 amended again: there is no distance gate any more, so
+    // "eligible" is (almost) never empty once ≥1 pair exists — the top-N is always something. VACUOUS
+    // now means no pair was ever actually PLACED on screen (every candidate was out-of-frustum or lost
+    // the screen-space overlap contention, every single frame) — a film whose camera never actually
+    // shows a labelled pair proves nothing about the label, and must say so.
     A.clashLabels.summary = function (framesDone) {
       var s = _stats;
       if (!s.frames) { console.log('§CLASH_LABELS_SUMMARY INCONCLUSIVE — update() never ran'); return s; }
-      if (!s.framesWithEligible) {
-        console.log('§CLASH_LABELS_SUMMARY VACUOUS frames=' + s.frames + ' eligibleFrames=0 nearest=' +
-          (isFinite(s.nearestM) ? s.nearestM.toFixed(2) + 'm' : '-') + ' — no pair came within ' + ENTER_M + ' m of the camera; nothing was labelled and nothing is proven');
+      if (!s.framesWithLabel) {
+        console.log('§CLASH_LABELS_SUMMARY VACUOUS frames=' + s.frames + ' labelFrames=0 skippedFrustum=' + s.skippedFrustum +
+          ' skippedOverlap=' + s.skippedOverlap + ' nearest=' + (isFinite(s.nearestM) ? s.nearestM.toFixed(2) + 'm' : '-') +
+          ' — top-' + TOP_N + ' has no distance limit, so a VACUOUS run means every candidate was out-of-frustum or overlap-skipped every frame; nothing was ever drawn and nothing is proven');
         return s;
       }
       console.log('§CLASH_LABELS_SUMMARY frames=' + s.frames + (framesDone != null ? '/' + framesDone : '') +
         ' eligibleFrames=' + s.framesWithEligible + ' labelFrames=' + s.framesWithLabel +
         ' maxEligible=' + s.maxEligible + ' maxLabelled=' + s.maxLabelled + ' enters=' + s.enters +
-        ' releases=' + s.releases + ' skippedOverlap=' + s.skippedOverlap + ' panelsDrawn=' + s.labelFrames +
-        ' nearest=' + s.nearestM.toFixed(2) + 'm enter=' + ENTER_M + 'm release=' + RELEASE_M + 'm');
+        ' releases=' + s.releases + ' skippedOverlap=' + s.skippedOverlap + ' skippedFrustum=' + s.skippedFrustum +
+        ' panelsDrawn=' + s.labelFrames + ' nearest=' + s.nearestM.toFixed(2) + 'm topN=' + TOP_N);
       return s;
     };
 
     A.clashLabels.style = function () { return { colA: COL_A, colB: COL_B, tint: TINT, weight: WEIGHT, plate: PLATE, leader: LEADER, leaderHalo: LEADER_HALO }; };
-    console.log('§CLASH_LABELS_INIT wired enter=' + ENTER_M + 'm release=' + RELEASE_M + 'm fade=' + FADE_S + 's' +
+    console.log('§CLASH_LABELS_INIT wired topN=' + TOP_N + ' rankMarginM=' + RANK_MARGIN_M + ' fade=' + FADE_S + 's' +
       ' text=A:' + COL_A + '/B:' + COL_B + ' (marker colours tinted ' + TINT + ' toward white) weight=' + WEIGHT +
       ' plate=' + PLATE + ' leader=' + LEADER + '+halo ' + LEADER_HALO + ' (no allocation until update)');
   }
