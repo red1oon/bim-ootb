@@ -175,7 +175,8 @@ function pageProbe(sabotage) {
     hudCard: () => { const st = A.clashFilm.stats(); const has = typeof A.bigStatsBuild === 'function';
       const cards = has ? (A.bigStatsBuild([], 0, 0) || []) : null;
       return { hasBuilder: has, cards: cards ? cards.map(c => ({ big: c.big, label: c.label, sub: c.sub || '', src: c.src })) : null,
-        stats: { built: st.built, pairs: st.pairs, broad: st.broad, falseExcluded: st.falseExcluded } }; },
+        stats: { built: st.built, pairs: st.pairs, broad: st.broad, falseExcluded: st.falseExcluded, meshTrue: st.meshTrue, flat: st.flat },
+        flatInFilm: pairs().filter(p => p.overlapFlat === true).length }; },
     pathProfile: (n) => {
       A.camera.position.copy(camLoad.p); A.controls.target.copy(camLoad.t); A.camera.lookAt(camLoad.t); A.camera.updateMatrixWorld(true); A.controls.update();
       try { if (typeof A.cinemaPathPlan === 'function') A.cinemaPathPlan(60); } catch (e) {}
@@ -286,8 +287,12 @@ function pageProbe(sabotage) {
     if (!hud1.hasBuilder) claim('H1_hud_card_reads_the_film_count', false, 'INCONCLUSIVE: A.bigStatsBuild is not wired on this page');
     else claim('H1_hud_card_reads_the_film_count',
       !!card && card.big === String(st.pairs) && hud1.stats.pairs === st.pairs && hud1.stats.broad > st.pairs
-        && card.sub.replace(/,/g, '').indexOf(String(hud1.stats.broad)) >= 0 && card.sub.indexOf(wantPct + '%') >= 0 && hud1.stats.falseExcluded === hud1.stats.broad - st.pairs,
-      `card=${card ? '"' + card.big + ' ' + card.label + ' — ' + card.sub + '" src=' + card.src : 'ABSENT'} film pairs=${st.pairs} broad=${hud1.stats.broad} falseExcluded=${hud1.stats.falseExcluded} wantPct=${wantPct}`);
+        && card.sub.replace(/,/g, '').indexOf(String(hud1.stats.broad)) >= 0 && card.sub.indexOf(wantPct + '%') >= 0 && hud1.stats.falseExcluded === hud1.stats.broad - hud1.stats.meshTrue
+        && (hud1.stats.flat === 0 || card.sub.indexOf(hud1.stats.flat + ' flat touch') >= 0),
+      `card=${card ? '"' + card.big + ' ' + card.label + ' — ' + card.sub + '" src=' + card.src : 'ABSENT'} film pairs=${st.pairs} meshTrue=${hud1.stats.meshTrue} flat=${hud1.stats.flat} broad=${hud1.stats.broad} falseExcluded=${hud1.stats.falseExcluded} wantPct=${wantPct}`);
+    // §CLASH_FILM_FLAT_FILTER P9c — the film's set carries no flat overlap, and the count it dropped reconciles with the verdict count
+    claim('P9c_film_drops_flat_overlaps', hud1.stats.meshTrue >= st.pairs && hud1.stats.flat === hud1.stats.meshTrue - st.pairs && hud1.flatInFilm === 0,
+      `meshTrue=${hud1.stats.meshTrue} film pairs=${st.pairs} flat dropped=${hud1.stats.flat} flat still in film=${hud1.flatInFilm}${hud1.stats.flat === 0 ? ' (no flat pair on this building — the filter was not exercised, the reconciliation was)' : ''}`);
 
     // P1 — rank correctness, NO distance limit at all: the module's `eligiblePairs` equals the TRUE
     // top-N nearest pairs by plain 3D distance (computed independently in the browser, not trusted from

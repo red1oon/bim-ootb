@@ -133,7 +133,11 @@
 //   box of the overlap solid (intersection-curve endpoints + inside vertices, both frames); §CLASH_DEPTH_PROXY
 //   reports how far the SAT proxy sat from it. viewer/clash_labels.js — the [tol / clash] row reads the mesh
 //   figure (clashSrc=mesh), the OBB proxy only as a stated fallback. viewer/clash_film.js — build log counts.
-const CACHE_VERSION = 'v1152';   // bump on each deploy; per-change detail is the git commit message.
+// v1153 (2026-09-06) §CLASH_MARKER_OVERLAP_BOX + §CLASH_FILM_FLAT_FILTER (MEP_CLASH_REVEAL_MOVIE.md): viewer/clash_film.js —
+//   the marker is the oriented box of the REAL overlap solid (overlapCenter + overlapA, A's rotation), split red/blue
+//   along the A→B-aligned axis, per-axis 0.30/1.20 m clamp; flat overlaps (<1 mm) are dropped from the film's set
+//   (verdict untouched). viewer/cpe_resource_panel.js — the clash card notes dropped flat touches.
+const CACHE_VERSION = 'v1153';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

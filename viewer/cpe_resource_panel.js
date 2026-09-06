@@ -313,7 +313,8 @@ function setupCpeResourcePanel(A) {
     if (cf && cf.built && cf.broad > 0) {
       var falsePct = Math.round((cf.falseExcluded / cf.broad) * 1000) / 10;
       out.push({ big: String(cf.pairs), label: 'mesh-true clashes flagged',
-                 sub: cf.broad.toLocaleString() + ' bbox candidates  ·  ' + falsePct + '% false at mesh level',
+                 sub: cf.broad.toLocaleString() + ' bbox candidates  ·  ' + falsePct + '% false at mesh level' +
+                      (cf.flat > 0 ? '  ·  ' + cf.flat + ' flat touch' + (cf.flat > 1 ? 'es' : '') + ' dropped' : ''),   // §CLASH_FILM_FLAT_FILTER
                  src: 'clash_film.js §CLASH_FILM_BUILD' });
     }
     console.log('§CPE_BIG_STATS cards=' + out.length + (out.length
