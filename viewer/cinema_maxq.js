@@ -1654,7 +1654,9 @@
         // last word on the fill before this frame's capture. Bake-only by this gate; sun position/
         // intensity/shadow are not touched by it. Fed _tnFilm, same §CPE_CLIP_SUN_ARC_FILM_T reason —
         // its elevation fallback/log label must read the film fraction under a --clip bake too.
-        if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tnFilm);
+        // §PL_TOPOUT_UNPIN — _revealU exactly as _sunArcStep gets it: past topout the fixtures ease to their
+        // tuned night intensity; before it (or with no plan beats) the pin is byte-identical to before.
+        if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tnFilm, _revealU);
         var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' capture');
         // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:

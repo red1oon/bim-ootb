@@ -133,7 +133,10 @@
 //   box of the overlap solid (intersection-curve endpoints + inside vertices, both frames); §CLASH_DEPTH_PROXY
 //   reports how far the SAT proxy sat from it. viewer/clash_labels.js — the [tol / clash] row reads the mesh
 //   figure (clashSrc=mesh), the OBB proxy only as a stated fallback. viewer/clash_film.js — build log counts.
-const CACHE_VERSION = 'v1152';   // bump on each deploy; per-change detail is the git commit message.
+// v1154 (2026-09-06) §PL_TOPOUT_UNPIN (MEP_CLASH_REVEAL_MOVIE.md): viewer/effects.js — past the plan's topout the bake's
+//   fixture point-lights ease from the staged Alt+S cut (0.5) to nav Night Mode's tuned 1.0 over the sun's own snap
+//   window; pre-topout byte-identical. viewer/cinema_maxq.js passes _revealU to the fill pin. (v1153 = #1689's bump.)
+const CACHE_VERSION = 'v1154';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

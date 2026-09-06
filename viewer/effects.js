@@ -2683,7 +2683,22 @@ async function setupEffects(A, renderer, scene, camera) {
   // names what it CORRECTED (drift=…), so a frame where it changed nothing reads as a NO-OP rather
   // than hiding behind a green line. A dev-only tap may replace A._sunArcFillPin with a no-op to
   // produce the before/after pair the witness compares sun/shadow state across.
-  function _bakeFillPin(tNorm) {
+  // ══ §PL_TOPOUT_UNPIN (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md; user: "The internal will be livelier with
+  // PLs real play seen") — MEASURED on the verified topout-snap bake: at elevation 6.00 the fill is exactly
+  // the Alt+S state (ambient 0.386 hemi 0.617) and plScale is 0.5 — A._nightPLScaleStill, the §STAGED_PL_CUT
+  // "staging-only intensity cut" — while nav Night Mode runs the same fixtures at 1.0 ("full tuned
+  // intensity", the A._nightPLScale = 1.0 write below). That 1.0 is the one sourced value. Past the plan's
+  // topout the fixtures ease from the staged cut to it over the sun's own TOPOUT_SNAP_EASE_U window, so they
+  // come up as the sun goes down; pre-topout, or with no topout known, this function is byte-identical to
+  // the pin. ambient/hemi/budget/floor untouched. A staged 0 (lights-off film state) stays 0.
+  var PL_TOPOUT_TARGET = 1.0;
+  function _plTopoutWant(plStaged, tNorm, topoutU) {
+    if (plStaged == null || !(plStaged > 0) || topoutU == null || !(tNorm > topoutU)) return plStaged;
+    var easeEnd = Math.min(1, topoutU + TOPOUT_SNAP_EASE_U);
+    var u = (tNorm >= easeEnd || easeEnd <= topoutU) ? 1 : (tNorm - topoutU) / (easeEnd - topoutU);
+    return plStaged + (PL_TOPOUT_TARGET - plStaged) * u;
+  }
+  function _bakeFillPin(tNorm, topoutU) {
     var base = A._photoFillBase;
     var _el = (A._sunArcElevationDeg != null) ? A._sunArcElevationDeg : _sunElevationAt(tNorm);
     if (!base || !A.ambient || !A.hemi) {
@@ -2697,11 +2712,12 @@ async function setupEffects(A, renderer, scene, camera) {
     A.ambient.intensity = pin('ambient', A.ambient.intensity, base.ambI);
     A.hemi.intensity = pin('hemi', A.hemi.intensity, base.hemiI);
     var plStaged = (typeof A._nightPLScaleStaged === 'number') ? A._nightPLScaleStaged : null;
+    var plWant = _plTopoutWant(plStaged, tNorm, topoutU);   // §PL_TOPOUT_UNPIN — equals plStaged pre-topout / no topout
     var poolLit = 0, poolSum = 0;
     if (plStaged != null && typeof A._nightUpdateLights === 'function') {
       if (A._nightMaxLightsStill != null) A._nightMaxLights = pin('budget', A._nightMaxLights, A._nightMaxLightsStill);
       if (A._nightNearFadeFloorStill != null) A._nightNearFadeFloor = pin('nearFloor', A._nightNearFadeFloor, A._nightNearFadeFloorStill);
-      A._nightPLScale = pin('plScale', A._nightPLScale, plStaged);
+      A._nightPLScale = pin('plScale', A._nightPLScale, plWant);
       var _pool = A._nightBakePool || A._nightLights || [], litBefore = 0;
       for (var _pb = 0; _pb < _pool.length; _pb++) if (_pool[_pb].intensity > 0) litBefore++;
       A._nightUpdateLights();
@@ -2713,6 +2729,7 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§SUN_ARC_FILL_PIN tNorm=' + (+tNorm).toFixed(3) + ' elevation=' + _el.toFixed(2) +
       ' ambient=' + A.ambient.intensity.toFixed(4) + ' hemi=' + A.hemi.intensity.toFixed(4) +
       ' plScale=' + (plStaged == null ? '-' : A._nightPLScale.toFixed(4)) +
+      ' plTopout=' + (topoutU == null ? '-' : ('staged ' + plStaged + '→' + PL_TOPOUT_TARGET + ' at u>' + topoutU.toFixed(3) + ' now ' + (plWant == null ? '-' : plWant.toFixed(4)))) +
       ' budget=' + A._nightMaxLights + ' nearFloor=' + A._nightNearFadeFloor +
       ' poolLit=' + poolLit + ' poolSum=' + poolSum.toFixed(3) +
       ' sun=' + (A.sun ? A.sun.intensity.toFixed(4) : '-') +
@@ -2720,9 +2737,11 @@ async function setupEffects(A, renderer, scene, camera) {
       ' drift=' + (drift.length ? drift.join(';') : 'none') +
       ' (pinned to the Alt+S baseline — sun and shadow untouched by this step)');
     if (A.markDirty) A.markDirty();
-    return { drift: drift, poolLit: poolLit };
+    return { drift: drift, poolLit: poolLit, poolSum: poolSum, plScale: A._nightPLScale, plStaged: plStaged, plWant: plWant,
+      ambient: A.ambient.intensity, hemi: A.hemi.intensity };
   }
   A._sunArcFillPin = _bakeFillPin;
+  A._plTopoutWant = _plTopoutWant;   // §PL_TOPOUT_UNPIN — the pure curve, for the witness
   var PHOTO_ENVMAP_BOOST = 2.0;   // multiply each material's existing envMapIntensity — stronger
                                    // glass/metal reflections without changing overall scene exposure
                                    // (history: 2.2 -> 3.2 -> 4.5 -> 3.0 -> 2.0. §PHOTO_REALISM_RETUNE
