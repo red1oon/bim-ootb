@@ -80,22 +80,34 @@ function setupClashFilm(A) {
     // §CLASH_FILM_SKY_WASH — per PAIR: contact (×3), A→B axis (×3), the severity-sized box, the box
     // currently placed. The clamp rewrites a pair's two matrices only when its box actually changes.
     var _ctr = null, _dir = null, _nat = null, _cur = null, _updates = 0, _lastClamp = null;
+    // §CLASH_MARKER_OVERLAP_BOX — per PAIR: A's rotation (×4, quaternion), the per-axis clamped extents of
+    // the overlap solid in A's frame (×3), the split axis (0..2) and its sign (+1 = blue half on +axis).
+    var _rot = null, _ext = null, _ax = null, _sg = null, _legacyBox = 0;
     var _broad = 0;         // §CLASH_HUD_CARD: the bbox-only candidate count the mesh stage judged (0 = nothing judged)
+    var _meshTrue = 0, _flat = 0;   // §CLASH_FILM_FLAT_FILTER: the verdict count, and how many flat touches the film dropped
     var _camPos = new THREE.Vector3(), _m4 = new THREE.Matrix4(), _sc = new THREE.Matrix4();
+    var _q = new THREE.Quaternion(), _p3 = new THREE.Vector3(), _s3 = new THREE.Vector3(), _axW = new THREE.Vector3();
 
     A.clashFilm = A.clashFilm || {};
 
-    // The ONE place a marker pair is placed: two boxes of world size `box` straddling the contact
-    // along the A→B axis — red on A's side, blue on B's (§CLASH_FILM_CONTACT_MARKER).
+    // The ONE place a marker pair is placed (§CLASH_MARKER_OVERLAP_BOX, 2026-09-06, MEP_CLASH_REVEAL_MOVIE.md):
+    // the ORIENTED BOX OF THE REAL OVERLAP SOLID — centre = overlapCenter, rotation = A's world rotation,
+    // per-axis size = the clamped overlapA extents — split into two halves along the A-frame axis most
+    // aligned with the A→B direction: red half on A's side, blue on B's (the §CLASH_FILM_CONTACT_MARKER
+    // pair reading, kept). `box` is the target LARGEST extent; the whole box scales uniformly by
+    // box/naturalM so the per-frame screen clamp (§CLASH_FILM_SKY_WASH) shrinks it toward its centre.
     function placePair(i, box) {
-      var i3 = i * 3, cx = _ctr[i3], cy = _ctr[i3 + 1], cz = _ctr[i3 + 2];
-      var dx = _dir[i3], dy = _dir[i3 + 1], dz = _dir[i3 + 2];
-      _sc.makeScale(box, box, box);
-      _m4.makeTranslation(cx - dx * box * 0.55, cy - dy * box * 0.55, cz - dz * box * 0.55);
-      _meshA.setMatrixAt(i, _m4.multiply(_sc));
-      _sc.makeScale(box, box, box);
-      _m4.makeTranslation(cx + dx * box * 0.55, cy + dy * box * 0.55, cz + dz * box * 0.55);
-      _meshB.setMatrixAt(i, _m4.multiply(_sc));
+      var i3 = i * 3, i4 = i * 4, k = _ax[i], sg = _sg[i] || 1;
+      var s = (_nat[i] > 0) ? box / _nat[i] : 0;
+      var ex = _ext[i3] * s, ey = _ext[i3 + 1] * s, ez = _ext[i3 + 2] * s;
+      _q.set(_rot[i4], _rot[i4 + 1], _rot[i4 + 2], _rot[i4 + 3]);
+      _axW.set(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0).applyQuaternion(_q);
+      var full = k === 0 ? ex : (k === 1 ? ey : ez), half = full / 2, off = full / 4;
+      _s3.set(k === 0 ? half : ex, k === 1 ? half : ey, k === 2 ? half : ez);
+      _p3.set(_ctr[i3] - _axW.x * off * sg, _ctr[i3 + 1] - _axW.y * off * sg, _ctr[i3 + 2] - _axW.z * off * sg);
+      _meshA.setMatrixAt(i, _m4.compose(_p3, _q, _s3));
+      _p3.set(_ctr[i3] + _axW.x * off * sg, _ctr[i3 + 1] + _axW.y * off * sg, _ctr[i3 + 2] + _axW.z * off * sg);
+      _meshB.setMatrixAt(i, _m4.compose(_p3, _q, _s3));
       _cur[i] = box;
     }
 
@@ -221,6 +233,12 @@ function setupClashFilm(A) {
         }
         return A.clashNarrow.qualifyRows(allRows, { label: 'film' }).then(function (run) {
           var recs = (run && run.pairs) ? run.pairs.filter(function (p) { return p && p.verdict === 'CLASH'; }) : [];
+          // §CLASH_FILM_FLAT_FILTER (2026-09-06, Option 3 of §TOUCH_BY_THICKNESS): the FILM drops pairs whose
+          // overlap solid is flat (thinnest extent < 1 mm — a touch the segment-length rule still calls
+          // CLASH). The narrowphase verdict itself is untouched; this is the film's own set.
+          _meshTrue = recs.length;
+          recs = recs.filter(function (p) { return p.overlapFlat !== true; });
+          _flat = _meshTrue - recs.length;
           if (!recs.length) {
             console.log('§CLASH_FILM_BUILD discPairs=' + discPairs + ' pairsBroad=' + broad + ' trueClash=0 VACUOUS — every candidate is CLEAR at mesh level; nothing to draw');
             _built = true;
@@ -254,10 +272,19 @@ function setupClashFilm(A) {
           // So the marker is now the CLASH, not the element: two small boxes straddling the contact
           // point along the A→B axis — red on A's side, blue on B's — sized from the penetration
           // depth, not the element. Same red/blue pair reading, at the place that is actually wrong.
+          // ══ §CLASH_MARKER_OVERLAP_BOX (2026-09-06) — the marker is now the oriented box of the REAL
+          // overlap solid (§MESH_OVERLAP_DEPTH's overlapCenter + overlapA, in A's frame, A's rotation from
+          // the same worldMatrix the narrowphase used). Per-axis size clamped to [MARKER_MIN_M, MARKER_MAX_M]
+          // — the cube's own 0.30/1.20 m rule, per axis: a 25 mm overlap is drawn 0.30 m thick so it is
+          // visible; a 5 m through-run is capped at 1.20 m so the marker stays the clash, not the element.
+          // A record without the overlap box (none on Hospital) keeps the old severity cube: legacyBox=N.
           var m4 = new THREE.Matrix4(), sc = new THREE.Matrix4(), placed = 0, skipped = 0;
           var pA = new THREE.Vector3(), pB = new THREE.Vector3(), dir = new THREE.Vector3();
+          var qA = new THREE.Quaternion(), tmpP = new THREE.Vector3(), tmpS = new THREE.Vector3(), axw = new THREE.Vector3();
           _ctr = new Float32Array(recs.length * 3); _dir = new Float32Array(recs.length * 3);
           _nat = new Float32Array(recs.length); _cur = new Float32Array(recs.length);
+          _rot = new Float32Array(recs.length * 4); _ext = new Float32Array(recs.length * 3);
+          _ax = new Int8Array(recs.length); _sg = new Int8Array(recs.length); _legacyBox = 0;
           for (var i = 0; i < recs.length; i++) {
             var p = recs[i], ta = xf[p.guidA], tb = xf[p.guidB];
             if (!p.contact || !ta || !tb) {
@@ -265,19 +292,37 @@ function setupClashFilm(A) {
               _meshB.setMatrixAt(i, sc.makeScale(0, 0, 0));
               _nat[i] = 0; skipped++; continue;
             }
-            A.clashNarrow.worldMatrix(ta, m4); pA.setFromMatrixPosition(m4);
+            A.clashNarrow.worldMatrix(ta, m4); pA.setFromMatrixPosition(m4); m4.decompose(tmpP, qA, tmpS);
             A.clashNarrow.worldMatrix(tb, m4); pB.setFromMatrixPosition(m4);
             dir.subVectors(pB, pA);
             if (dir.lengthSq() < 1e-9) dir.set(0, 1, 0); else dir.normalize();
-            // Size from the PENETRATION (severityM), not the element and not extentM — extentM is
-            // how FAR the intersection runs (79 m for a wall-on-foundation join) and would put us
-            // straight back to lighting up the building.
-            var sM = (typeof p.severityM === 'number' && p.severityM > 0) ? p.severityM : 0.2;
-            var box = Math.max(MARKER_MIN_M, Math.min(sM * 2, MARKER_MAX_M));
-            _ctr[i * 3] = p.contact.x; _ctr[i * 3 + 1] = p.contact.y; _ctr[i * 3 + 2] = p.contact.z;
+            var hasBox = !!(p.overlapCenter && p.overlapA && p.overlapA.length === 3);
+            var e0, e1, e2, c;
+            if (hasBox) {
+              e0 = Math.max(MARKER_MIN_M, Math.min(p.overlapA[0], MARKER_MAX_M));
+              e1 = Math.max(MARKER_MIN_M, Math.min(p.overlapA[1], MARKER_MAX_M));
+              e2 = Math.max(MARKER_MIN_M, Math.min(p.overlapA[2], MARKER_MAX_M));
+              c = p.overlapCenter;
+            } else {
+              // legacy: the severity cube at the contact — sized from the PENETRATION (severityM), never the element
+              var sM = (typeof p.severityM === 'number' && p.severityM > 0) ? p.severityM : 0.2;
+              e0 = e1 = e2 = Math.max(MARKER_MIN_M, Math.min(sM * 2, MARKER_MAX_M));
+              c = p.contact; _legacyBox++;
+            }
+            // split axis: the A-frame axis most aligned with A→B; sign so the blue half lands on B's side
+            var bestK = 0, bestD = -1, bestSign = 1;
+            for (var k = 0; k < 3; k++) {
+              axw.set(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0).applyQuaternion(qA);
+              var dd = axw.dot(dir);
+              if (Math.abs(dd) > bestD) { bestD = Math.abs(dd); bestK = k; bestSign = dd < 0 ? -1 : 1; }
+            }
+            _ctr[i * 3] = c.x; _ctr[i * 3 + 1] = c.y; _ctr[i * 3 + 2] = c.z;
             _dir[i * 3] = dir.x; _dir[i * 3 + 1] = dir.y; _dir[i * 3 + 2] = dir.z;
-            _nat[i] = box;                                 // the severity box — the clamp only ever shrinks it
-            placePair(i, box);
+            _rot[i * 4] = qA.x; _rot[i * 4 + 1] = qA.y; _rot[i * 4 + 2] = qA.z; _rot[i * 4 + 3] = qA.w;
+            _ext[i * 3] = e0; _ext[i * 3 + 1] = e1; _ext[i * 3 + 2] = e2;
+            _ax[i] = bestK; _sg[i] = bestSign;
+            _nat[i] = Math.max(e0, e1, e2);               // the largest clamped extent — the clamp only ever shrinks it
+            placePair(i, _nat[i]);
             placed++;
           }
           _meshA.instanceMatrix.needsUpdate = true; _meshB.instanceMatrix.needsUpdate = true;
@@ -287,7 +332,7 @@ function setupClashFilm(A) {
           var ms = performance.now() - t0;
           console.log('§CLASH_FILM_BUILD discPairs=' + discPairs + ' pairsBroad=' + broad +
             ' trueClash=' + recs.length + ' markers=' + (recs.length * 2) + ' bothPlaced=' + placed +
-            ' incomplete=' + skipped + ' falsePositivesExcluded=' + (broad - recs.length) +
+            ' incomplete=' + skipped + ' falsePositivesExcluded=' + (broad - _meshTrue) + ' flatExcluded=' + _flat + ' legacyBox=' + _legacyBox +
             ' tolStamped=' + tolStamped + '/' + recs.length + ' depthMesh=' + depthMesh + '/' + recs.length + ' depthInexact=' + depthInexact + ' overlapFlat=' + overlapFlat +
             ' ms=' + ms.toFixed(0) + ' (mesh-true set only — the broad set would assert clashes that do not exist)');
           return A.clashFilm.stats();
@@ -352,7 +397,8 @@ function setupClashFilm(A) {
 
     A.clashFilm.stats = function () {
       return { built: _built, pairs: _pairs.length, markers: _pairs.length * 2,
-        broad: _broad, falseExcluded: Math.max(0, _broad - _pairs.length),   // §CLASH_HUD_CARD
+        broad: _broad, meshTrue: _meshTrue, flat: _flat, falseExcluded: Math.max(0, _broad - _meshTrue),   // §CLASH_HUD_CARD / §CLASH_FILM_FLAT_FILTER
+        legacyBox: _legacyBox,
         lastPulse: _lastPulse, uploads: _uploads, periodS: PERIOD_S, peak: PEAK,
         riseS: RISE_S, holdS: HOLD_S, fallS: FALL_S, restS: REST_S,
         markerMaxPx: MARKER_MAX_PX, updates: _updates, lastClamp: _lastClamp,
@@ -361,6 +407,12 @@ function setupClashFilm(A) {
     A.clashFilm.pairs = function () { return _pairs; };
     // The severity box of pair i and the box currently placed — what the clamp witness reads.
     A.clashFilm.boxOf = function (i) { return (_nat && i >= 0 && i < _nat.length) ? { naturalM: _nat[i], placedM: _cur[i] } : null; };
+    // §CLASH_MARKER_OVERLAP_BOX — what the witness decomposes the instance matrices against
+    A.clashFilm.centerOf = function (i) { return (_ctr && i >= 0 && i * 3 < _ctr.length) ? { x: _ctr[i * 3], y: _ctr[i * 3 + 1], z: _ctr[i * 3 + 2] } : null; };
+    A.clashFilm.markerOf = function (i) {
+      if (!_ext || i < 0 || i >= _nat.length) return null;
+      return { ext: [_ext[i * 3], _ext[i * 3 + 1], _ext[i * 3 + 2]], axis: _ax[i], sign: _sg[i], naturalM: _nat[i], placedM: _cur[i], minM: MARKER_MIN_M, maxM: MARKER_MAX_M };
+    };
 
     // IDEMPOTENT: cinema_maxq calls this on the normal exit AND in its outer finally (the THROW
     // path — update() mid-loop can throw), so the second call must be a silent no-op, not a second
@@ -373,7 +425,7 @@ function setupClashFilm(A) {
         m.geometry.dispose(); m.material.dispose();
       });
       _meshA = _meshB = null; _pairs = []; _fade = null; _built = false; _lastPulse = -1;
-      _ctr = _dir = _nat = _cur = null; _updates = 0; _lastClamp = null;
+      _ctr = _dir = _nat = _cur = null; _rot = _ext = _ax = _sg = null; _legacyBox = 0; _meshTrue = 0; _flat = 0; _updates = 0; _lastClamp = null;
       console.log('§CLASH_FILM_DISPOSE markers released');
       return true;
     };
