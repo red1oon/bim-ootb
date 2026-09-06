@@ -98,6 +98,13 @@ function setupClashLabels(A) {
     // A dark halo under the white core holds contrast on both — the same guarantee the plate gives
     // the text. The halo is the plate's black, a touch denser because a 1 px line has no area to spare.
     var LEADER = 'rgba(255,255,255,0.92)', LEADER_HALO = 'rgba(0,0,0,0.55)';
+    // §P2.4 (2026-09-06, user: "[Tolerance mm/Clash mm] below the clash pair in the label") — the 3rd
+    // row is a fact about the PAIR, not a side, so it takes the day counter's CONTEXT register
+    // (rgba(255,255,255,0.62)), not red or blue.
+    var COL_FACT = 'rgba(255,255,255,0.62)';
+    function factRow(q) {
+      return (q && q.tolMm != null && q.clashMm != null) ? '[' + q.tolMm + 'mm / ' + q.clashMm + 'mm]' : '';
+    }
 
     var _pairsRef = null, _near = null, _fade = null, _names = null, _lastFilmS = null, _placed = [];
     var _measureCtx = null, _nameLogged = {};
@@ -147,7 +154,7 @@ function setupClashLabels(A) {
     function metrics(h) {
       var fontPx = Math.max(12, Math.round(h * 0.022));
       var padY = Math.round(fontPx * 0.45), rowGap = Math.round(fontPx * 0.3);
-      var bh = padY * 2 + fontPx * 2 + rowGap;
+      var bh = padY * 2 + fontPx * 3 + rowGap * 2;   // §P2.4: three rows — A, B, [tol / clash]
       return { fontPx: fontPx, padX: Math.round(fontPx * 0.7), padY: padY, rowGap: rowGap, bh: bh,
         off: Math.round(h * 0.035), margin: Math.round(h * 0.028),
         line: Math.max(1, Math.round(h * 0.0015)), halo: Math.max(1, Math.round(h * 0.0015)), dot: Math.max(2, Math.round(h * 0.004)),
@@ -232,7 +239,10 @@ function setupClashLabels(A) {
         if (behind || Math.abs(nx) > 1 || Math.abs(ny) > 1) { rec.skippedFrustum++; continue; }
         var sx = (nx + 1) / 2 * w, sy = (1 - ny) / 2 * h;
         var nm = _names[e.i];
-        var bw = M.padX * 2 + Math.ceil(Math.max(measure(nm.a, M.fontPx), measure(nm.b, M.fontPx)));
+        var clashMm = (typeof p.severityM === 'number') ? Math.round(p.severityM * 1000) : null;
+        var tolMm = (p.tolMm != null) ? p.tolMm : null;
+        var fact = factRow({ tolMm: tolMm, clashMm: clashMm });
+        var bw = M.padX * 2 + Math.ceil(Math.max(measure(nm.a, M.fontPx), measure(nm.b, M.fontPx), fact ? measure(fact, M.fontPx) : 0));
         var bh = M.bh;
         var x = sx + M.off, y = sy - M.off - bh;     // up-right of the anchor …
         if (x + bw > w - M.margin) x = sx - M.off - bw;   // … or up-left when the right side would leave the frame
@@ -243,7 +253,7 @@ function setupClashLabels(A) {
         for (var q = 0; q < _placed.length; q++) if (overlaps(_placed[q], rect)) { hit = true; break; }
         if (hit) { rec.skippedOverlap++; continue; }
         _placed.push({ i: e.i, pairId: p.pairId, x: x, y: y, w: bw, h: bh, sx: sx, sy: sy,
-          d: e.d, nameA: nm.a, nameB: nm.b, alpha: 0 });
+          d: e.d, nameA: nm.a, nameB: nm.b, tolMm: tolMm, clashMm: clashMm, alpha: 0 });
       }
       rec.labelled = _placed.length;
 
@@ -319,6 +329,8 @@ function setupClashLabels(A) {
         ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.font = font(M.fontPx);
         ctx.fillStyle = COL_A; ctx.fillText(q.nameA, q.x + M.padX, q.y + M.padY + M.fontPx / 2);
         ctx.fillStyle = COL_B; ctx.fillText(q.nameB, q.x + M.padX, q.y + M.padY + M.fontPx + M.rowGap + M.fontPx / 2);
+        var fact = factRow(q);   // §P2.4 — 3rd row; empty (not a placeholder) when the pair carries no figures
+        if (fact) { ctx.fillStyle = COL_FACT; ctx.fillText(fact, q.x + M.padX, q.y + M.padY + (M.fontPx + M.rowGap) * 2 + M.fontPx / 2); }
         n++;
       }
       ctx.restore();
@@ -326,6 +338,7 @@ function setupClashLabels(A) {
     };
 
     A.clashLabels.placed = function () { return _placed.slice(); };
+    A.clashLabels.factRow = factRow;   // §P2.4 — the witness reads the exact string the draw pass writes
     A.clashLabels.stats = function () {
       var s = {}; for (var k in _stats) s[k] = _stats[k];
       s.topN = TOP_N; s.rankMarginM = RANK_MARGIN_M; s.fadeS = FADE_S; s.pairs = _pairsRef ? _pairsRef.length : 0;

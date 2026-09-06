@@ -305,6 +305,17 @@ function setupCpeResourcePanel(A) {
       out.push({ big: Math.round(A._hrCost.personDays).toLocaleString(), label: 'person-days of labour',
                  src: '§HR_COST' });
     }
+    // §CLASH_HUD_CARD (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md; user: "the HUD info be in") — the
+    // mesh-true clash count the film ALREADY built (A.clashFilm.stats()), never re-counted here.
+    // Dropped when the film was never built or judged no bbox candidate at all — absent, not a zero.
+    // pairs=0 with broad>0 is a real judged fact (every candidate CLEAR at mesh level) and is shown.
+    var cf = (A.clashFilm && A.clashFilm.stats) ? A.clashFilm.stats() : null;
+    if (cf && cf.built && cf.broad > 0) {
+      var falsePct = Math.round((cf.falseExcluded / cf.broad) * 1000) / 10;
+      out.push({ big: String(cf.pairs), label: 'mesh-true clashes flagged',
+                 sub: cf.broad.toLocaleString() + ' bbox candidates  ·  ' + falsePct + '% false at mesh level',
+                 src: 'clash_film.js §CLASH_FILM_BUILD' });
+    }
     console.log('§CPE_BIG_STATS cards=' + out.length + (out.length
       ? ' [' + out.map(function (c) { return c.label; }).join(' | ') + ']'
       : ' INCONCLUSIVE — no source available (A.db=' + !!A.db + ' ops=' + (ops ? ops.length : 0) + '); panel omitted, not blank'));

@@ -80,6 +80,7 @@ function setupClashFilm(A) {
     // §CLASH_FILM_SKY_WASH — per PAIR: contact (×3), A→B axis (×3), the severity-sized box, the box
     // currently placed. The clamp rewrites a pair's two matrices only when its box actually changes.
     var _ctr = null, _dir = null, _nat = null, _cur = null, _updates = 0, _lastClamp = null;
+    var _broad = 0;         // §CLASH_HUD_CARD: the bbox-only candidate count the mesh stage judged (0 = nothing judged)
     var _camPos = new THREE.Vector3(), _m4 = new THREE.Matrix4(), _sc = new THREE.Matrix4();
 
     A.clashFilm = A.clashFilm || {};
@@ -194,13 +195,17 @@ function setupClashFilm(A) {
         if (rules === null) return null;
         if (!rules || !rules.clash_rules) { console.warn('§CLASH_FILM_BUILD INCONCLUSIVE reason=no clash rules'); return null; }
         var w = A._clashWhereParts ? A._clashWhereParts(rules) : null;
-        var seenPair = {}, allRows = [], broad = 0, discPairs = 0;
+        var seenPair = {}, allRows = [], broad = 0, discPairs = 0, tolByPair = {};
         rules.clash_rules.forEach(function (r) {
           var a = r.source && r.source.discipline, b = r.target && r.target.discipline;
           if (!a || !b) return;
           var k = a < b ? a + '|' + b : b + '|' + a;
           if (seenPair[k]) return;
           seenPair[k] = 1; discPairs++;
+          // §P2.4 (MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06) — the rule's OWN tolerance in mm, kept per
+          // discipline pair; stamped onto every mesh-true pair below for the label's 3rd row. Read
+          // from clash_rules.json, never derived here.
+          if (typeof r.tolerance_m === 'number') tolByPair[k] = Math.round(r.tolerance_m * 1000);
           var rows;
           // storey = null → the WHOLE building. A film is not a storey view.
           try { rows = A._queryClashesPairRtree(null, rules, a, b, 0, w) || []; }
@@ -208,6 +213,7 @@ function setupClashFilm(A) {
           broad += rows.length;
           for (var i = 0; i < rows.length; i++) allRows.push(rows[i]);
         });
+        _broad = broad;
         if (!allRows.length) {
           console.log('§CLASH_FILM_BUILD discPairs=' + discPairs + ' pairsBroad=0 trueClash=0 VACUOUS — this building has no candidate clashes; nothing is judged');
           _built = true;
@@ -220,6 +226,14 @@ function setupClashFilm(A) {
             _built = true;
             return A.clashFilm.stats();
           }
+          // §P2.4 — stamp tolMm (from the rule that produced this discipline pair) onto the pair record;
+          // severityM is already on it. The label reads both at draw time. A pair whose discipline pair
+          // has no rule tolerance is left unstamped and counted, so the log shows the gap.
+          var tolStamped = 0;
+          recs.forEach(function (p) {
+            var kk = p.discA < p.discB ? p.discA + '|' + p.discB : p.discB + '|' + p.discA;
+            if (tolByPair[kk] != null) { p.tolMm = tolByPair[kk]; tolStamped++; }
+          });
           var guids = [];
           recs.forEach(function (p) { guids.push(p.guidA, p.guidB); });
           var xf = A.clashNarrow.loadTransforms(guids);   // §CLASH_FILM_CONTACT_MARKER: placement only — the element bbox is no longer used
@@ -273,6 +287,7 @@ function setupClashFilm(A) {
           console.log('§CLASH_FILM_BUILD discPairs=' + discPairs + ' pairsBroad=' + broad +
             ' trueClash=' + recs.length + ' markers=' + (recs.length * 2) + ' bothPlaced=' + placed +
             ' incomplete=' + skipped + ' falsePositivesExcluded=' + (broad - recs.length) +
+            ' tolStamped=' + tolStamped + '/' + recs.length +
             ' ms=' + ms.toFixed(0) + ' (mesh-true set only — the broad set would assert clashes that do not exist)');
           return A.clashFilm.stats();
         });
@@ -336,6 +351,7 @@ function setupClashFilm(A) {
 
     A.clashFilm.stats = function () {
       return { built: _built, pairs: _pairs.length, markers: _pairs.length * 2,
+        broad: _broad, falseExcluded: Math.max(0, _broad - _pairs.length),   // §CLASH_HUD_CARD
         lastPulse: _lastPulse, uploads: _uploads, periodS: PERIOD_S, peak: PEAK,
         riseS: RISE_S, holdS: HOLD_S, fallS: FALL_S, restS: REST_S,
         markerMaxPx: MARKER_MAX_PX, updates: _updates, lastClamp: _lastClamp,
