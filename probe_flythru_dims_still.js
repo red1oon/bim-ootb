@@ -21,9 +21,22 @@ const PORT = process.env.PORT || '8477';
   // stream every building part in, then wait for the mesh count to settle
   const parts = await p.evaluate(() => (window.APP.dbQuery('SELECT DISTINCT building FROM elements_meta') || []).map(r => r[0]));
   for (const bb of parts) { await p.evaluate(x => { try { window.APP.streamBuilding(x); } catch (e) {} }, bb); }
-  let prev = -1;
-  for (let i = 0; i < 90; i++) { const n = await p.evaluate(() => Object.keys(window.APP.guidMap || {}).length); if (n === prev && n > 0) break; prev = n; await sleep(2000); }
-  console.log('§FDS_MESHES loaded=' + prev);
+  // Wait for the model to actually FINISH streaming. The first run of this probe read
+  // Object.keys(guidMap).length, which plateaued at 500 while the real loader was only at 26%
+  // (status read "Hospital — 16,500/63,182"), so the still was taken against DLOD wireframe bbox
+  // placeholders and every candidate was correctly rejected as too-small-on-screen. Poll the loader's
+  // OWN progress text instead, and require it to be gone (or complete) and then stable.
+  let progress = '', stable = 0;
+  for (let i = 0; i < 400; i++) {
+    const st = await p.evaluate(() => (window.APP.status && window.APP.status.textContent) || '');
+    const m = st.match(/([\d,]+)\s*\/\s*([\d,]+)/);
+    const done = !m || m[1].replace(/,/g, '') === m[2].replace(/,/g, '');
+    if (done) { stable++; if (stable >= 4) { progress = st; break; } } else { stable = 0; progress = st; }
+    await sleep(3000);
+  }
+  const meshCount = await p.evaluate(() => { let n = 0; window.APP.scene.traverse(o => { if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) n++; }); return n; });
+  console.log('§FDS_MESHES sceneMeshes=' + meshCount + ' lastStatus="' + progress + '"');
+  await sleep(6000);
 
   const result = await p.evaluate(() => {
     const A = window.APP, T = window.THREE;

@@ -29,8 +29,35 @@ function setupCpeFlythruDims(A) {
   'use strict';
   {
     // ── Tunables. Named, not magic: each one implements a clause of the user's own sentence. ──
-    var MIN_SPAN_M      = 1.2;    // below this a "gap" is a construction joint, not a feature
-    var MAX_SPAN_M      = 120;    // above this the ray has escaped the building into open sky
+    // §FLYTHRU_SCALE — MIN is anthropometric and stays absolute; MAX is BUILDING-scale and must not be.
+    // MIN_SPAN_M: a void narrower than this is a construction joint or a gap between two adjacent
+    // elements, in a duplex as much as in a terminal — it does not scale with the building.
+    // MAX_SPAN_M: purely "did the ray escape the building into open sky", which is entirely a function
+    // of how big the building IS. Hardcoding 120 m was wrong even for the building it was written
+    // against: Hospital's own envelope measures 115.8 x 164.8 x 47.0 m, so a genuine wing-to-wing span
+    // along the long axis would have been rejected as "escaped". It is now derived from the real
+    // envelope via setScale(), with the 120 m literal kept ONLY as the pre-scale default so a caller
+    // that never sets a scale still behaves, rather than admitting spans of any length.
+    var MIN_SPAN_M      = 1.2;
+    var MAX_SPAN_M      = 120;
+    var _scaled = false;
+    // Call once per building with the element_transforms envelope extents (metres). Nothing inside a
+    // building can be longer than its own diagonal, so that — plus a small margin for a ray leaving at
+    // an angle — is the real ceiling. DEGRADE, DON'T DISABLE: a bad/absent envelope leaves the default.
+    A.flythruSetScale = function (dx, dy, dz) {
+      if (!(dx > 0 && dy > 0 && dz > 0)) {
+        console.log('§FLYTHRU_SCALE INCONCLUSIVE reason=bad-envelope — keeping default maxSpan=' + MAX_SPAN_M + 'm');
+        return null;
+      }
+      var diag = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      MAX_SPAN_M = diag * 1.05;
+      _scaled = true;
+      console.log('§FLYTHRU_SCALE envelope=' + dx.toFixed(1) + 'x' + dy.toFixed(1) + 'x' + dz.toFixed(1) +
+        'm diag=' + diag.toFixed(1) + 'm maxSpan=' + MAX_SPAN_M.toFixed(1) + 'm minSpan=' + MIN_SPAN_M +
+        'm (min is anthropometric, not building-scaled)');
+      return { minSpanM: MIN_SPAN_M, maxSpanM: MAX_SPAN_M, diagM: diag };
+    };
+    A.flythruScaleState = function () { return { scaled: _scaled, minSpanM: MIN_SPAN_M, maxSpanM: MAX_SPAN_M }; };
     var MIN_SCREEN_FRAC = 0.15;   // "stands out": the drawn line must cross >15% of frame width
     var MAX_ALIGN       = 0.80;   // "not confusing": |cos(span, viewDir)| above this reads as a dot
     var EDGE_MARGIN     = 0.06;   // both ends must sit this far inside the frame, in NDC units

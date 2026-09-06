@@ -61,4 +61,41 @@ console.log('  (control) gate rejected ' + rejects.length + ' distinct bad shape
   new Set(rejects).size + ' distinct reasons — a permissive gate would have passed them all');
 
 console.log('\n§FLYTHRU_GATE_LOGIC_TEST pass=' + pass + ' fail=' + fail);
-process.exit(fail ? 1 : 0);
+
+// ── §FLYTHRU_SCALE — generality check. Does the gate adapt to the BUILDING, or is it tuned to one?
+// Real measured envelopes, not invented: Hospital from this session's own §MEASURE_BUILDING_CARD
+// (115.8 x 164.8 x 47.0 m). A duplex-scale and a terminal-scale envelope stand in for the small and
+// large ends of this repo's own building classes.
+console.log('\n--- scale generality ---');
+let p2 = 0, f2 = 0;
+const ck2 = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); ok ? p2++ : f2++;
+  console.log((ok ? '  ok   ' : '  FAIL ') + n + (ok ? '' : ' got=' + JSON.stringify(got) + ' want=' + JSON.stringify(want))); };
+
+const before = A.flythruScaleState();
+ck2('starts unscaled (default, not silently building-specific)', before.scaled, false);
+
+// The bug this test exists for: Hospital's own long axis is 164.8m, LONGER than the old 120m literal.
+const hosp = A.flythruSetScale(115.75, 164.78, 47.05);
+ck2('Hospital maxSpan now exceeds its own long axis', hosp.maxSpanM > 164.78, true);
+const longSpan = { a: { x: -0.4, y: 0, z: 0.5 }, b: { x: 0.4, y: 0, z: 0.5 },
+                   lengthM: 150, alignToView: 0.05, occludedA: false, occludedB: false };
+ck2('a real 150m wing-to-wing span is ADMITTED on Hospital (was rejected by the 120m literal)',
+    A.flythruGate(longSpan).pass, true);
+
+// Small building: the same 150m span is impossible and must still be rejected as an escaped ray.
+const duplex = A.flythruSetScale(12.0, 9.5, 6.2);
+ck2('duplex maxSpan collapses to the building', duplex.maxSpanM < 20, true);
+ck2('the same 150m span is rejected on a duplex (ray escaped)', A.flythruGate(longSpan).why.split(':')[0], 'too-long');
+// ...but a 4m span, meaningless in a terminal, is a real room width in a duplex and must pass.
+const small = { a: { x: -0.3, y: 0, z: 0.5 }, b: { x: 0.3, y: 0, z: 0.5 },
+                lengthM: 4.0, alignToView: 0.05, occludedA: false, occludedB: false };
+ck2('a 4m duplex room width passes', A.flythruGate(small).pass, true);
+
+// Min stays anthropometric — a 0.4m joint is a joint at every building size.
+ck2('min span does NOT scale with the building', A.flythruScaleState().minSpanM, 1.2);
+const joint = JSON.parse(JSON.stringify(small)); joint.lengthM = 0.4;
+A.flythruSetScale(400, 300, 40);   // terminal scale
+ck2('a 0.4m joint is still rejected at terminal scale', A.flythruGate(joint).why.split(':')[0], 'too-short');
+
+console.log('§FLYTHRU_SCALE_TEST pass=' + p2 + ' fail=' + f2);
+process.exit((fail + f2) ? 1 : 0);
