@@ -5777,6 +5777,15 @@ async function setupEffects(A, renderer, scene, camera) {
   // pattern as _cpeHose/_cpeBands above: set from ov.reveal in A.cinemaPathPlan, read inside
   // _cinemaPathPlan's own closure, saved/restored around the call so it never leaks between plans.
   var _cpeReveal = false;
+  // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06) — whether
+  // this bake highlights each storey in sequence during the last 5 real seconds of the `pullback`
+  // beat, ending exactly where `orbit` begins (measured §STOREY_REVEAL_WINDOW below — NOT the orbit
+  // beat itself). Same wrapper pattern as _cpeReveal directly above: set from ov.storeyReveal in
+  // A.cinemaPathPlan, read inside _cinemaPathPlan's own closure, saved/restored around the call so it
+  // never leaks between plans. The per-frame color/caption/stats logic itself lives in
+  // cpe_storey_reveal.js (A.storeyRevealVisualAt etc.) — this flag + the precomputed windowFrac say
+  // whether/where that window is armed for THIS bake.
+  var _cpeStoreyReveal = false;
   // §CPE_CONE_ORIENT_ADJUST (bim-compiler prompts/CINEMA_PATH_EDITOR.md, 2026-08-27) — a small list of
   // ANCHORED gaze corrections, independent of bands: each is {pos:{x,y,z}, dir:{x,y,z}, ramp, hold,
   // decay} (world anchor, corrected unit direction, arc-length meters for the ease-in/hold/ease-out
@@ -7934,6 +7943,25 @@ async function setupEffects(A, renderer, scene, camera) {
     var tF = tP + _useSec.flyback / _shapeTotal;
     var tV = tF + _useSec.reveal / _shapeTotal;
     var tR = tV + _riseFolded / _shapeTotal;   // folded (includes the tail) — see _riseFolded above
+    // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06, user
+    // correction) — CORRECTED WINDOW. First cut of this feature filled the whole `orbit` beat
+    // (tR..1); the user's actual instruction is "final 5 seconds ending before orbit", i.e. the
+    // LAST 5 REAL SECONDS of the `pullback` beat (`_useSec.rise`, the un-folded pull-back budget —
+    // NOT `_riseFolded`, which also contains the disc-parade tail; using the folded value would let
+    // the window bleed into the tail's own caption/visual zone). `_shapeTotal` is the SAME
+    // denominator tD/tS/.../tR are all computed against, so dividing by it turns "5 real seconds"
+    // into a fraction that stays correct under any user re-timing (§CPE_SEC_OVERRIDE) without this
+    // function ever needing `durationSec` again downstream. `Math.min(_useSec.rise, ...)` clamps to
+    // the whole pullback beat on a building whose pullback is naturally shorter than 5s, so the
+    // window can never bleed backward into the tail beat either.
+    var STOREY_REVEAL_WINDOW_SEC = 5;
+    var _storeyRevealWindowSec = Math.min(_useSec.rise, STOREY_REVEAL_WINDOW_SEC);
+    var _storeyRevealWindowFrac = _shapeTotal > 0 ? _storeyRevealWindowSec / _shapeTotal : 0;
+    console.log('§STOREY_REVEAL_WINDOW pullbackSec=' + _useSec.rise.toFixed(1) +
+      ' windowSec=' + _storeyRevealWindowSec.toFixed(1) + ' windowFrac=' + _storeyRevealWindowFrac.toFixed(4) +
+      ' orbitStartFrac(rise)=' + tR.toFixed(4) +
+      ' windowStartFrac=' + (tR - _storeyRevealWindowFrac).toFixed(4) +
+      ' — last ' + _storeyRevealWindowSec.toFixed(1) + 's of pullback, ending exactly where orbit begins');
     console.log('§CINEMA_PACING natural=' + _natTotal.toFixed(1) + 's = dive ' + _natSec.dive.toFixed(1) +
       ' + spin ' + _natSec.spin.toFixed(1) + ' + walk ' + _natSec.out.toFixed(1) +
       ' + pullout ' + _natSec.pullout.toFixed(1) + ' + flyback ' + _natSec.flyback.toFixed(1) +
@@ -9034,6 +9062,12 @@ async function setupEffects(A, renderer, scene, camera) {
              // A.cpeRevealDiscQtyCost's own comment) — {} when the DB query is unavailable/failed.
              reveal: { discs: _revealDiscs, pulloutSec: _revealPulloutSec, roundSec: _revealRoundSec,
                        tailSec: _revealTailSec, riseSec: _useSec.rise, qtyCost: _revealQtyCost },
+             // §STOREY_HIGHLIGHT_REVEAL — arms the LAST `windowFrac` of the `pullback` beat, ending
+             // exactly at plan.beats.rise (orbit start) — see §STOREY_REVEAL_WINDOW above for the
+             // corrected math (this is NOT the orbit beat itself). cpe_storey_reveal.js's
+             // A.storeyRevealVisualAt reads `beats.rise - windowFrac .. beats.rise`; the storey
+             // list/stats are queried live from A.db (cached), never baked in here.
+             storeyReveal: { on: !!_cpeStoreyReveal, windowFrac: _cpeStoreyReveal ? _storeyRevealWindowFrac : 0 },
              // §CINEMA_PATH_EDITOR: the editor's table renders `waypoints` (authored control points,
              // NOT the rounded flown polyline) and re-times off `pathLen`. `sec` echoes the beat
              // seconds actually in force for this plan so the editor never has to guess them back
@@ -9248,7 +9282,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (ov[k] != null && isFinite(ov[k])) _cpeSet(g, ov[k]);
     }
     var savedWp = _cpeWp, savedBands = _cpeBands, savedHose = _cpeHose, savedReveal = _cpeReveal,
-        savedCorr = _cpeCorrections;
+        savedCorr = _cpeCorrections, savedStoreyReveal = _cpeStoreyReveal;
     // §CPE_HOSE: ops ride the same override object the editor already stages and saves, so a hosed
     // path travels through Save / reload / bake by the existing seam — no second persistence path.
     _cpeHose = (ov.hose && ov.hose.length) ? ov.hose : null;
@@ -9257,6 +9291,8 @@ async function setupEffects(A, renderer, scene, camera) {
     // be ambiguous. Bands win because they carry the rigidity constraint that loose points cannot.
     if (ov.bands && ov.bands.length >= 2) { _cpeBands = ov.bands; _cpeWp = null; }
     _cpeReveal = !!ov.reveal;
+    // §STOREY_HIGHLIGHT_REVEAL: same wrapper pattern as _cpeReveal directly above.
+    _cpeStoreyReveal = !!ov.storeyReveal;
     // §CPE_CONE_ORIENT_ADJUST: same wrapper pattern as hose/reveal above — a plain array of plain
     // correction objects, no rigidity/expansion concept like bands, so no precedence rule is needed.
     _cpeCorrections = (ov.aimCorrections && ov.aimCorrections.length) ? ov.aimCorrections : null;
@@ -9265,7 +9301,7 @@ async function setupEffects(A, renderer, scene, camera) {
     } finally {
       for (i = 0; i < _CPE_KEYS.length; i++) _cpeSet(_CPE_KEYS[i][1], saved[i]);
       _cpeWp = savedWp; _cpeBands = savedBands; _cpeHose = savedHose; _cpeSecOverride = savedSecOv;
-      _cpeReveal = savedReveal; _cpeCorrections = savedCorr;
+      _cpeReveal = savedReveal; _cpeCorrections = savedCorr; _cpeStoreyReveal = savedStoreyReveal;
     }
   };
   A.cinemaPathPlanDerived = _cinemaPathPlan;   // unwrapped, for G1's byte-identity comparison

@@ -1482,6 +1482,7 @@
         if (_roomTitle && A.resourcePanelAt && typeof window.tmOpsSnapshot === 'function' && _bkState) {
           A._resHoldFrames = 0; A._resHoldLogged = false;   // §CPE_PIE_HOLD counts are per-bake
           A._statTailFrames = 0; A._statTailLogged = false; // §CPE_STATS_TAIL, same
+          A._measureCardLast = null;                        // §MEASURE_BUILDING_CARD, same per-bake reset
           _resOps = window.tmOpsSnapshot();
           console.log('§CPE_RESOURCE_PANEL ' + (_resOps && _resOps.length
             ? ('on ops=' + _resOps.length + ' rates=' + (!!(window.LABOR_RATES)) + ' pos=' + _ovPos)
@@ -1554,6 +1555,54 @@
         console.log('§CLASH_HUD_PULLBACK_WINDOW INCONCLUSIVE reason=' +
           (!plan ? 'no-plan' : (!plan.beats ? 'no-beats-on-plan' : 'bad-beats')) +
           ' — disc-pair highlight/cards skipped for this bake');
+      }
+      // §CLASH_DISC_ARRIVAL (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md — user: "align the respective DISC
+      // pull out with a focussed DISC by DISC clash set"). Built ONCE per bake off clash_film.js's
+      // already-judged pairs and effects.js's OWN parade order (plan.reveal.discs) — never a second
+      // ordering derived here, so the clash sets cannot drift from the order the camera reveals.
+      var _arrival = null, _arrivalByDisc = {};
+      if (_clash && A.clashFilm && A.clashFilm.discArrivalSchedule &&
+          plan && plan.reveal && plan.reveal.discs && plan.reveal.discs.length) {
+        try {
+          _arrival = A.clashFilm.discArrivalSchedule(plan.reveal.discs);
+          if (_arrival) _arrival.slots.forEach(function (sl) { _arrivalByDisc[sl.disc] = sl; });
+        } catch (eAR) { console.warn('§CLASH_DISC_ARRIVAL failed: ' + eAR.message + ' — parade runs without clash sync'); }
+      } else if (_clash) {
+        console.log('§CLASH_DISC_ARRIVAL INCONCLUSIVE reason=' +
+          (!A.clashFilm || !A.clashFilm.discArrivalSchedule ? 'clash_film-too-old'
+            : 'no-reveal-discs-on-plan') + ' — disc parade runs without clash sync');
+      }
+      // Backdrop pairs (ARC|STR — both disciplines are the shell, which the parade excludes by design)
+      // belong to no parade slot. They land at the START of the pullback rotation instead, which is the
+      // exact instant the shell comes back SOLID (cpeRevealVisualAt returns null from there on). Done by
+      // ORDERING the existing card array, not by a new branch: bigStatsAt walks it in order.
+      if (_arrival && _arrival.backdrop.keys.length && _pairCards.length) {
+        var _bd = {}; _arrival.backdrop.keys.forEach(function (k) { _bd[k] = 1; });
+        _pairCards = _pairCards.slice().sort(function (x, y) {
+          return (_bd[y.discPairKey] ? 1 : 0) - (_bd[x.discPairKey] ? 1 : 0);
+        });
+        console.log('§CLASH_DISC_ARRIVAL pullback card order (backdrop first) [' +
+          _pairCards.map(function (c) { return c.discPairKey; }).join(' ') + ']');
+      }
+      // §MEASURE_BUILDING_CARD — the film's last 3 seconds (the closing roll-to-stop) show the
+      // whole-building Measure figures. Queried once per bake, never per frame.
+      // The CLOSING ORBIT belongs to the Measure totals, start to finish. (User, after watching the
+      // 2026-09-06 ending bake: "The very last quick orbit the cards return to clash info. They should
+      // be playing the Measure totals stats.") It previously took only the last 3s, so the normal
+      // all-card rotation — clash cards included — played over the rest of the orbit, which is exactly
+      // what the user saw. The window is now the whole orbit beat, [beats.rise, 1] — also the one span
+      // the storey reveal never touches (it ends AT beats.rise), so the two cannot overlap.
+      var _measureCards = null;
+      try { if (A.buildingMeasureCards) _measureCards = A.buildingMeasureCards(); }
+      catch (eMB) { console.warn('§MEASURE_BUILDING_CARD failed: ' + eMB.message + ' — final cards skipped'); }
+      var _measureU = (_measureCards && _measureCards.length && plan && plan.beats &&
+                       plan.beats.rise > 0 && plan.beats.rise < 1) ? plan.beats.rise : null;
+      if (_measureU != null) {
+        console.log('§MEASURE_BUILDING_CARD window=[' + _measureU.toFixed(4) + ',1] cards=' + _measureCards.length +
+          ' (the whole closing orbit, ' + ((1 - _measureU) * plan.durationSec).toFixed(1) + 's, ' +
+          (((1 - _measureU) * plan.durationSec) / _measureCards.length).toFixed(1) + 's per card)');
+      } else if (_measureCards) {
+        console.log('§MEASURE_BUILDING_CARD INCONCLUSIVE reason=no-usable-rise-beat — closing cards skipped');
       }
       A._clashHudHighlightLast = null;   // per-bake reset — a prior bake's held highlight must not leak in
       for (var i = 0; i < nFrames; i++) {
@@ -1638,6 +1687,12 @@
         // (_tFilm(_tn) === _tn when no clip is set).
         var _tnFilm = _tFilm(_tn);
         if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tnFilm);
+        // §STOREY_HIGHLIGHT_REVEAL — the storey tint, windowed to the LAST 5s of `pullback` (ending
+        // at plan.beats.rise, the orbit's own start — NOT the orbit beat itself). Pure function of
+        // (plan, tNorm), null outside that narrow window by construction, so this can never fire
+        // inside the disc-reveal round's own tail above. Same "one pure function, two callers" call
+        // cinema_path_editor.js's preview step() makes.
+        if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(plan, _tnFilm);
         // §CLASH_FILM_P1 (§4) — the pulse is a pure function of FILM seconds, never
         // performance.now(), so a 15 fps and a 24 fps bake of the same film pulse identically and a
         // re-bake is reproducible. Per-instance, so phase 2 can hold a labelled pair solid while the
@@ -1796,6 +1851,10 @@
         // which case the normal room-title lookup below runs untouched. Same call the preview tick
         // makes (cpe_room_title.js's roomTitleLiveTick) so bake and preview cannot diverge.
         var _titleInfo = (A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, _tnFilm) : null;   // §CPE_CLIP_REVEAL_FILM_T
+        // §STOREY_HIGHLIGHT_REVEAL — checked next, before the normal room-title lookup. Mutually
+        // exclusive with the disc-parade caption above by construction (this window opens at
+        // plan.beats.rise, the disc parade's tail closes there), so the two can never both fire.
+        if (!_titleInfo && A.storeyRevealCaptionAt) _titleInfo = A.storeyRevealCaptionAt(plan, _tnFilm);
         if (!_titleInfo) {
           _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
         }
@@ -1831,8 +1890,15 @@
         if (_resOps && _bkState && A.resourcePanelHoldAt) {
           _holdInfo = A.resourcePanelHoldAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd);
         }
+        // §CPE_STATS_TAIL_CLIP (2026-09-06) — compare the FILM fraction, not the clip-local one.
+        // `_revealU` is a fraction of the WHOLE film (it comes off the plan's own topout beat), so
+        // testing it against `i/(nFrames-1)` — which runs 0..1 across whatever slice was baked — put
+        // the Reveal round at the wrong instant on every `--clip` run: a clip of the film's last 20%
+        // did not enter the Reveal round until 64% of the way through itself. Same clip-local-vs-film
+        // confusion §BME.8 fixed a few lines above for the reveal visuals; `_tnFilm` is already that
+        // corrected value, and `_tFilm(_tn) === _tn` when no clip is set, so a FULL bake is unchanged.
         var _inReveal = (_revealU != null)
-          ? (nFrames > 1 ? (i / (nFrames - 1)) >= _revealU : false)
+          ? (nFrames > 1 ? _tnFilm >= _revealU : false)
           : !!(_resOps && _bkState && A.resourcePanelFrozenAt &&
                A.resourcePanelFrozenAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd));
         if (!_inReveal) {
@@ -1864,9 +1930,63 @@
           // no disc-pair cards to show) the normal all-card rotation below runs exactly as it always
           // has, and any held highlight is explicitly released on the transition out.
           var _si;
+          // §CLASH_DISC_ARRIVAL — during the tail's disc parade the clash set is driven off the parade's
+          // OWN clock (A.cpeRevealVisualAt, the same pure function the camera/caption already use), not a
+          // second window: when the parade slot shows discipline D, the pairs D BRINGS WITH IT light solid
+          // and the HUD flashes that trade's count. A slot whose trade brings no clash (PLB on Hospital)
+          // shows no clash card at all and clears the highlight — per the user's ruling that a 0 is not
+          // worth a card here ("the idea with HUD is to be best effort and it is abstract, align to what
+          // is been shown"), the same §VACUOUS rule bigStatsBuild already holds every card to.
+          var _pv = (_arrival && A.cpeRevealVisualAt) ? A.cpeRevealVisualAt(plan, _tnFilm) : null;
+          var _paradeSlot = null, _paradeKeys = null, _paradeCard = null;
+          if (_pv && _pv.phase === 'tail-one' && _pv.discs && _pv.discs.length) {
+            _paradeSlot = _arrivalByDisc[_pv.discs[0]] || null;
+            if (_paradeSlot && _paradeSlot.count > 0) {
+              _paradeKeys = _paradeSlot.keys;
+              _paradeCard = { big: String(_paradeSlot.count),
+                label: (A.cpeRevealDiscLabel ? A.cpeRevealDiscLabel(_paradeSlot.disc) : _paradeSlot.disc) + ' clashes',
+                sub: _paradeSlot.running + ' of ' + _arrival.total + ' so far',
+                src: 'clash_film pairs, assigned to the later-arriving trade' };
+            }
+          } else if (_pv && _pv.phase === 'tail-all' && _arrival) {
+            // Services all on screen together — hold every parade-assigned set solid, show the subtotal.
+            _paradeKeys = [];
+            _arrival.slots.forEach(function (sl) { _paradeKeys = _paradeKeys.concat(sl.keys); });
+            if (_paradeKeys.length) {
+              _paradeCard = { big: String(_arrival.slots[_arrival.slots.length - 1].running),
+                label: 'services clashes', sub: 'all trades installed',
+                src: 'clash_film pairs, parade slots summed' };
+            } else { _paradeKeys = null; }
+          }
           var _inPullback = !!(_pullbackU && _tnFilm >= _pullbackU.start && _tnFilm < _pullbackU.end);
-          if (_inPullback && _pairCards.length) {
-            _si = A.bigStatsAt(_pairCards, _tnFilm * _filmSecFull);
+          if (_paradeCard) {
+            _si = { card: _paradeCard, idx: (_paradeSlot ? _paradeSlot.idx : 0),
+                    n: (_arrival ? _arrival.slots.length : 1), opacity: 1 };
+            var _pk = 'PARADE:' + (_paradeSlot ? _paradeSlot.disc : 'ALL');
+            if (A._clashHudHighlightLast !== _pk && A.clashFilm && A.clashFilm.highlightDiscPair) {
+              var _ph = A.clashFilm.highlightDiscPair(_paradeKeys);
+              A._clashHudHighlightLast = _pk;
+              console.log('§CLASH_DISC_ARRIVAL_HIGHLIGHT frame=' + i + ' slot=' + _pk +
+                ' keys=[' + _paradeKeys.join('+') + '] count=' + _paradeCard.big +
+                ' groupSize=' + (_ph && _ph.groupSize) + ' changed=' + (_ph && _ph.changed));
+            }
+          } else if (_pv && (_pv.phase === 'tail-one' || _pv.phase === 'tail-all')) {
+            // A parade slot with nothing to show (e.g. PLB): no clash card, no held highlight.
+            _si = A.tailPanelAt(_bigCards, i / fps, null);
+            if (A.clashFilm && A.clashFilm.highlightDiscPair && A._clashHudHighlightLast != null) {
+              A.clashFilm.highlightDiscPair(null);
+              console.log('§CLASH_DISC_ARRIVAL_HIGHLIGHT frame=' + i + ' slot=PARADE:' +
+                (_pv.discs && _pv.discs[0]) + ' keys=[] count=0 — no clash for this trade, back to ambient');
+              A._clashHudHighlightLast = null;
+            }
+          } else if (_inPullback && _pairCards.length) {
+            // §CPE_CARD_SPAN — index off the WINDOW, not the absolute film clock. bigStatsAt made the
+            // pullback open on whatever card the global rotation happened to be at (measured on the
+            // 2026-09-06 ending bake: ELEC|STR for 0.6s before reaching the intended ARC|STR) and
+            // 7 cards x 4.5s overran the 25.9s window, cutting the tail of the list and repeating the
+            // first. bigStatsAtSpan walks all of them exactly once, so the backdrop card really does
+            // land as the shell comes back solid.
+            _si = A.bigStatsAtSpan(_pairCards, (_tnFilm - _pullbackU.start) / (_pullbackU.end - _pullbackU.start));
             if (_si && _si.card && A.clashFilm && A.clashFilm.highlightDiscPair) {
               if (A._clashHudHighlightLast !== _si.card.discPairKey) {
                 var _hl = A.clashFilm.highlightDiscPair(_si.card.discPairKey);
@@ -1912,6 +2032,31 @@
             }
           } else if (_holdInfo) {
             _resInfo = { info: _holdInfo, pos: _ovPos };   // nothing to revolve — hold, never blank
+          }
+        }
+        // §STOREY_HIGHLIGHT_REVEAL — takes over the SAME panel slot for exactly the narrow last-5s-
+        // of-pullback window (ending at plan.beats.rise). Shaped identically to the `_si`/_statInfo branch above
+        // (A.bigStatsCompositeOntoCanvas reads `.shown.card`/`.idx`/`.n`/`.opacity` either way), so no
+        // new draw code is needed — only which content occupies the slot changes. `_resInfo` is
+        // already null here by construction (it is only ever set in the `!_inReveal` branch far
+        // above, and this window opens well after `_inReveal` goes true), so no second corner panel
+        // can appear alongside it.
+        if (A.storeyRevealStatCardAt) {
+          var _srCard = A.storeyRevealStatCardAt(plan, _tnFilm);
+          if (_srCard) _statInfo = { shown: _srCard, pos: _ovPos, held: null };
+        }
+        // §MEASURE_BUILDING_CARD — the closing roll-to-stop. Last override in the chain, and its window
+        // (the final 3s) is past beats.rise, so it cannot collide with the storey block above (which
+        // ends AT beats.rise) or with either clash window. Same _statInfo shape, no new draw code.
+        if (_measureU != null && _tnFilm >= _measureU) {
+          var _mc = A.bigStatsAtSpan(_measureCards, (_tnFilm - _measureU) / (1 - _measureU));
+          if (_mc) {
+            _statInfo = { shown: _mc, pos: _ovPos, held: null };
+            if (A._measureCardLast !== _mc.idx) {
+              A._measureCardLast = _mc.idx;
+              console.log('§MEASURE_BUILDING_CARD frame=' + i + '/' + nFrames + ' tn=' + _tnFilm.toFixed(4) +
+                ' card=' + (_mc.idx + 1) + '/' + _mc.n + ' — ' + _mc.card.big + ' ' + _mc.card.label);
+            }
           }
         }
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo);
@@ -1996,6 +2141,9 @@
       // §CPE_DISCIPLINE_REVEAL: same contract — ARC/STR left hidden after a bake would follow the
       // user into normal navigation. plan=null is the explicit "force restore" signal.
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
+      // §STOREY_HIGHLIGHT_REVEAL: same contract — a tinted storey left glowing after a bake would
+      // follow the user into normal navigation. plan=null forces the restore.
+      try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
       _workPacingReset();
       // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
       // came within 4 m of a pair), then release the selector's state with the markers.
@@ -2070,6 +2218,7 @@
       try { if (window.tmDeactivateIfBakeOwned) window.tmDeactivateIfBakeOwned(); } catch (eTM2) {}
       try { _ghostGroundRestore(); } catch (e4) {}
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
+      try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR2) {}
       try { _workPacingReset(); } catch (e5) {}
       // §CLASH_FILM_P1 — same restore on the THROW path (review of #1678): a throw inside the loop
       // skips the in-try dispose above and would leave the marker InstancedMeshes in the user's
@@ -2168,7 +2317,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash'].forEach(function(fk) {
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'storeyReveal'].forEach(function(fk) {
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
@@ -2179,7 +2328,8 @@
           (ov.clip ? ' clip=' + ov.clip.in + '→' + ov.clip.out : '') +
           ' total=' + (ov._total != null ? (+ov._total).toFixed(1) : '?') + 's' +
           ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
-          ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr'));
+          ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr') +
+          ' storeyReveal=' + (ov.storeyReveal ? 1 : 0));
         await start({ editor: false, preview: false, override: ov, overrideSource: src,
                       frames: o.frames, fps: o.fps, forceWebm: o.forceWebm });
         return { source: src, deliveredBytes: window.__maxqDeliveredBytes || 0 };
