@@ -89,9 +89,23 @@ function pageProbe() {
     // W6 — §CLASH_FILM_SKY_WASH: put the camera at distance d from pair 0's contact, run one update,
     // and read the box that was actually PLACED against the one severity would have given. The
     // projected height in px is s / (2·d·tan(fov/2)) · h — the number the clamp exists to bound.
+    // §CLASH_MARKER_OVERLAP_BOX W11 — decompose both halves of every pair and return them beside the record's own
+    // overlapCenter/overlapA and A's rotation from clashNarrow.worldMatrix (the witness's arithmetic, not the module's)
+    markerGeometry: () => { const P = A.clashFilm.pairs(); const mA = A.scene.children.find(o => o.userData && o.userData.clashFilmSide === 'A');
+      const mB = A.scene.children.find(o => o.userData && o.userData.clashFilmSide === 'B'); if (!mA || !mB) return null;
+      const m4 = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+      const dec = (m, i) => { m.getMatrixAt(i, m4); m4.decompose(p, q, s); return { p: p.toArray(), q: q.toArray(), s: s.toArray() }; };
+      const out = []; const xf = A.clashNarrow.loadTransforms(P.map(r => r.guidA));
+      for (let i = 0; i < P.length; i++) { const r = P[i], ta = xf[r.guidA]; if (!ta || !r.overlapCenter || !r.overlapA) { out.push({ i, skip: true }); continue; }
+        A.clashNarrow.worldMatrix(ta, m4); m4.decompose(p, q, s); const rotA = q.toArray();
+        const tb = A.clashNarrow.loadTransforms([r.guidB])[r.guidB]; let dir = null;
+        if (tb) { const pa = new THREE.Vector3().setFromMatrixPosition(A.clashNarrow.worldMatrix(ta, m4)); const pb = new THREE.Vector3().setFromMatrixPosition(A.clashNarrow.worldMatrix(tb, m4)); dir = pb.sub(pa); if (dir.lengthSq() < 1e-9) dir.set(0, 1, 0); dir.normalize(); dir = dir.toArray(); }
+        out.push({ i, a: dec(mA, i), b: dec(mB, i), rotA, dir, center: [r.overlapCenter.x, r.overlapCenter.y, r.overlapCenter.z], ext: r.overlapA.slice(), box: A.clashFilm.boxOf(i), mk: A.clashFilm.markerOf(i) }); }
+      return out; },
     clampAt: (d) => { const p = A.clashFilm.pairs()[0]; if (!p || !p.contact) return null;
       const cam = A.camera, keep = { p: cam.position.clone(), t: A.controls.target.clone() };
-      const c = new THREE.Vector3(p.contact.x, p.contact.y, p.contact.z);
+      const c0 = (A.clashFilm.centerOf && A.clashFilm.centerOf(0)) || p.contact;
+      const c = new THREE.Vector3(c0.x, c0.y, c0.z);
       cam.position.set(c.x + d, c.y, c.z); A.controls.target.copy(c); A.controls.update(); cam.updateMatrixWorld(true);
       A.clashFilm.update(0);
       const b = A.clashFilm.boxOf(0), st = A.clashFilm.stats(), h = A.renderer.domElement.height;
@@ -114,7 +128,9 @@ function pageProbe() {
       const tHold = st.riseS + st.holdS / 2;         // deterministic peak of the pulse envelope
       A.clashFilm.update(tHold);
 
-      const contact = new THREE.Vector3(p.contact.x, p.contact.y, p.contact.z);
+      // §CLASH_MARKER_OVERLAP_BOX: the marker sits at the overlap box's centre (centerOf), which is not the contact point
+      const c0 = (A.clashFilm.centerOf && A.clashFilm.centerOf(idx)) || p.contact;
+      const contact = new THREE.Vector3(c0.x, c0.y, c0.z);
       const DIR = new THREE.Vector3(1, 0.35, 0.8).normalize();   // same fixed approach direction convention as witness_clash_film_labels.js
       const D = 5;
       const camPos = contact.clone().addScaledVector(DIR, D);
@@ -279,6 +295,39 @@ function pageProbe() {
         near.placedPx <= capPx + 1 && near.placedM < near.naturalM && near.naturalPx > capPx && far.placedM === far.naturalM,
         `at ${near.d} m: severity box ${near.naturalM} m would be ${near.naturalPx} px, placed ${near.placedM} m = ${near.placedPx} px (cap ${capPx} px @${near.h}, clamped=${near.clampedN}); ` +
         `at ${far.d} m: placed ${far.placedM} m = severity ${far.naturalM} m (untouched)`);
+    }
+
+    // W11 — §CLASH_MARKER_OVERLAP_BOX: the two halves ARE the record's overlap box. Expected values are built
+    // here from the record + worldMatrix (per-axis clamp to [minM,maxM], split axis = A-frame axis most aligned
+    // with A→B, halves offset ±quarter along it, blue on B's side, uniform scale placedM/naturalM).
+    {
+      const g = await page.evaluate(() => window.__cf.markerGeometry());
+      if (!g) claim('W11_marker_is_the_overlap_box', false, 'INCONCLUSIVE: marker meshes not found');
+      else {
+        const rot = (q, v) => { const [x, y, z, w] = q; const ix = w * v[0] + y * v[2] - z * v[1], iy = w * v[1] + z * v[0] - x * v[2], iz = w * v[2] + x * v[1] - y * v[0], iw = -x * v[0] - y * v[1] - z * v[2];
+          return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x]; };
+        const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let judged = 0, bad = [], skipped = 0;
+        for (const r of g) {
+          if (r.skip) { skipped++; continue; }
+          judged++;
+          const mn = r.mk.minM, mx = r.mk.maxM, sc = r.box.naturalM > 0 ? r.box.placedM / r.box.naturalM : 0;
+          const ext = r.ext.map(e => Math.max(mn, Math.min(e, mx)));
+          let k = 0, best = -1, sg = 1;
+          for (let j = 0; j < 3; j++) { const ax = rot(r.rotA, [j === 0 ? 1 : 0, j === 1 ? 1 : 0, j === 2 ? 1 : 0]); const d = dot(ax, r.dir); if (Math.abs(d) > best) { best = Math.abs(d); k = j; sg = d < 0 ? -1 : 1; } }
+          const axW = rot(r.rotA, [k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0]);
+          const wantS = ext.map((e, j) => (j === k ? e / 2 : e) * sc), off = ext[k] / 4 * sc;
+          const wantA = r.center.map((c, j) => c - axW[j] * off * sg), wantB = r.center.map((c, j) => c + axW[j] * off * sg);
+          const tol = 1e-4, near = (u, v) => u.every((x, j) => Math.abs(x - v[j]) < tol);
+          const qOk = Math.abs(Math.abs(dot(r.a.q, r.rotA) + r.a.q[3] * r.rotA[3]) - 1) < 1e-4 && Math.abs(Math.abs(dot(r.b.q, r.rotA) + r.b.q[3] * r.rotA[3]) - 1) < 1e-4;
+          const ok = qOk && near(r.a.s, wantS) && near(r.b.s, wantS) && near(r.a.p, wantA) && near(r.b.p, wantB) && Math.abs(r.box.naturalM - Math.max(ext[0], ext[1], ext[2])) < 1e-6;
+          if (!ok && bad.length < 3) bad.push({ i: r.i, k, sg, sc: +sc.toFixed(4), gotS: r.a.s.map(x => +x.toFixed(4)), wantS: wantS.map(x => +x.toFixed(4)), gotA: r.a.p.map(x => +x.toFixed(4)), wantA: wantA.map(x => +x.toFixed(4)), gotB: r.b.p.map(x => +x.toFixed(4)), wantB: wantB.map(x => +x.toFixed(4)), qOk });
+          if (!ok) bad.push({ i: r.i });
+        }
+        const nbad = bad.filter(b => b.k === undefined).length;
+        claim('W11_marker_is_the_overlap_box', judged > 0 && nbad === 0 && skipped === 0,
+          `pairs judged=${judged} skipped(no overlap box)=${skipped} mismatched=${nbad}${nbad ? ' e.g. ' + JSON.stringify(bad.find(b => b.k !== undefined)) : ''}`);
+      }
     }
 
     // W7-W10 — §CLASH_FILM_SHINE_THROUGH: real occluder, real render, real pixel readback.
