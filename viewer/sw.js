@@ -128,7 +128,12 @@
 //   from the pair's severityM); viewer/clash_film.js — stamps tolMm per pair, stats() exposes broad/
 //   falseExcluded; viewer/cpe_resource_panel.js — reveal-round roster gains a "mesh-true clashes
 //   flagged" card read from A.clashFilm.stats(), dropped when the film was never built.
-const CACHE_VERSION = 'v1151';   // bump on each deploy; per-change detail is the git commit message.
+// v1152 (2026-09-06) §MESH_OVERLAP_DEPTH (MEP_CLASH_REVEAL_MOVIE.md): viewer/clash_narrow.js — every mesh-true
+//   CLASH record now carries depthMeshM/overlapMaxM/overlapA/overlapB/overlapExact/overlapCenter, the EXACT
+//   box of the overlap solid (intersection-curve endpoints + inside vertices, both frames); §CLASH_DEPTH_PROXY
+//   reports how far the SAT proxy sat from it. viewer/clash_labels.js — the [tol / clash] row reads the mesh
+//   figure (clashSrc=mesh), the OBB proxy only as a stated fallback. viewer/clash_film.js — build log counts.
+const CACHE_VERSION = 'v1152';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

@@ -229,10 +229,11 @@ function setupClashFilm(A) {
           // §P2.4 — stamp tolMm (from the rule that produced this discipline pair) onto the pair record;
           // severityM is already on it. The label reads both at draw time. A pair whose discipline pair
           // has no rule tolerance is left unstamped and counted, so the log shows the gap.
-          var tolStamped = 0;
+          var tolStamped = 0, depthMesh = 0, depthInexact = 0, overlapFlat = 0;
           recs.forEach(function (p) {
             var kk = p.discA < p.discB ? p.discA + '|' + p.discB : p.discB + '|' + p.discA;
             if (tolByPair[kk] != null) { p.tolMm = tolByPair[kk]; tolStamped++; }
+            if (typeof p.depthMeshM === 'number') { depthMesh++; if (!p.overlapExact) depthInexact++; if (p.overlapFlat) overlapFlat++; }   // §MESH_OVERLAP_DEPTH
           });
           var guids = [];
           recs.forEach(function (p) { guids.push(p.guidA, p.guidB); });
@@ -287,7 +288,7 @@ function setupClashFilm(A) {
           console.log('§CLASH_FILM_BUILD discPairs=' + discPairs + ' pairsBroad=' + broad +
             ' trueClash=' + recs.length + ' markers=' + (recs.length * 2) + ' bothPlaced=' + placed +
             ' incomplete=' + skipped + ' falsePositivesExcluded=' + (broad - recs.length) +
-            ' tolStamped=' + tolStamped + '/' + recs.length +
+            ' tolStamped=' + tolStamped + '/' + recs.length + ' depthMesh=' + depthMesh + '/' + recs.length + ' depthInexact=' + depthInexact + ' overlapFlat=' + overlapFlat +
             ' ms=' + ms.toFixed(0) + ' (mesh-true set only — the broad set would assert clashes that do not exist)');
           return A.clashFilm.stats();
         });
