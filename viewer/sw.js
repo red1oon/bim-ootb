@@ -137,7 +137,11 @@
 //   the marker is the oriented box of the REAL overlap solid (overlapCenter + overlapA, A's rotation), split red/blue
 //   along the A→B-aligned axis, per-axis 0.30/1.20 m clamp; flat overlaps (<1 mm) are dropped from the film's set
 //   (verdict untouched). viewer/cpe_resource_panel.js — the clash card notes dropped flat touches.
-const CACHE_VERSION = 'v1153';   // bump on each deploy; per-change detail is the git commit message.
+// v1154 (2026-09-06) §SUN_ARC_TOPOUT_SNAP REVERTED (MEP_CLASH_REVEAL_MOVIE.md): viewer/effects.js — the sun's elevation
+//   is the single linear 55°→6° formula of the film fraction again (#1685's post-topout snap removed, user: it was
+//   never to be touched); viewer/cinema_maxq.js — _sunArcStep(_tnFilm) single-argument. TOPOUT_SNAP_EASE_U and the
+//   _revealU wiring stay (the Reveal round and §PL_TOPOUT_UNPIN use them).
+const CACHE_VERSION = 'v1154';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
