@@ -935,11 +935,15 @@
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-storey-reveal" type="checkbox"> ' +
           'Storey highlight</label> <span style="color:#666">(each storey glows blue/green/yellow/orange ' +
           'in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card)</span></div>' +
-        // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+M bake always
+        // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+C bake always
         // renders at this window's canvas (cinema_maxq.js:1120 reads renderer.domElement), so this
         // select does not resize anything here; it is stored on the path and cli_silent_bake.js
         // honours it when --width/--height are not passed. Same contract as §CLI_BAKE_FLAG_OVERRIDE:
         // save it once in the panel, then bake with no arguments.
+        // §CPE_BAKE_RES_COMMAND (2026-09-06, user: "give a silent bake pop up box for user to copy
+        // onto own terminal") — the silent bake is a Node CLI tool with no server-side execution
+        // possible from a static site (there is nothing to click that could run it FOR the user), so
+        // the most honest thing this control can do is hand over the exact command, ready to paste.
         '<div style="margin-top:4px">Silent-bake size ' +
           '<select id="cpe-bake-res" style="background:#15181c;color:#ddd;border:1px solid #3a3f47;' +
             'border-radius:3px;font-size:10px;padding:1px 2px">' +
@@ -947,7 +951,17 @@
             '<option value="1280x720@15">1280x720 @15fps</option>' +
             '<option value="1920x1080@24">1920x1080 @24fps</option>' +
             '<option value="2560x1440@24">2560x1440 @24fps</option>' +
-          '</select> <span style="color:#666">(silent bake only — Alt+M here always uses this window)</span></div>' +
+          '</select> ' +
+          '<span id="cpe-bake-cmd-link" style="cursor:pointer;color:#4fc3f7;font-size:10px;text-decoration:underline">copy bake command</span>' +
+          ' <span style="color:#666">(silent bake only — a developer, terminal tool; Alt+C here always renders at this window\'s size)</span>' +
+          '<div id="cpe-bake-cmd-box" style="display:none;margin-top:4px">' +
+            '<textarea id="cpe-bake-cmd-text" readonly rows="2" style="width:100%;background:rgba(0,0,0,0.3);' +
+              'color:#4fc3f7;font-family:monospace;font-size:10px;border:1px solid #3a3f47;border-radius:4px;' +
+              'padding:6px;resize:none;box-sizing:border-box"></textarea>' +
+            '<button id="cpe-bake-cmd-copy" style="margin-top:2px;padding:2px 10px;font-size:10px;' +
+              'background:#4fc3f7;color:#000;border:none;border-radius:3px;cursor:pointer">Copy</button>' +
+            '<span style="color:#666;font-size:9px;margin-left:6px">paste into a terminal with this repo cloned and Node installed</span>' +
+          '</div></div>' +
         // §CPE_DAY_COUNTER_POS — user 2026-08-02: "the movie maker panel puts the Day # counter top
         // right display option". Top right is the DEFAULT so an existing plan re-bakes identically.
         // Only meaningful with the buildup on (there is no day to show without one), which the hint
@@ -3655,12 +3669,51 @@
           ' — each storey tints in sequence for the last 5s of pull-back, ending at the orbit start');
       });
       // §CPE_BAKE_RES — stored on the path for the silent baker; changes nothing in this window.
+      // §S274 FIX (2026-09-06, live crash reported from production, red1oon.github.io/bim-ootb):
+      // `A` here is the app GETTER FUNCTION (see `var _a = A();` a few lines above in this same
+      // file), not the app object — `A.renderer` was always undefined, `.domElement` on it threw
+      // §ERR_GLOBAL on every selection change. Fixed to call A().
       var _resEl = document.getElementById('cpe-bake-res');
       if (_resEl) _resEl.addEventListener('change', function(e) {
         _state.bakeRes = e.target.value || '';
+        var _app = A();
+        var _winSize = (_app && _app.renderer && _app.renderer.domElement) ?
+          (_app.renderer.domElement.width + 'x' + _app.renderer.domElement.height) : 'this window';
         console.log('§CPE_BAKE_RES stored=' + (_state.bakeRes || 'this window') +
-          ' — silent bake only; Alt+M in this window still renders at ' +
-          A.renderer.domElement.width + 'x' + A.renderer.domElement.height);
+          ' — silent bake only; Alt+C in this window still renders at ' + _winSize);
+      });
+      // §CPE_BAKE_RES_COMMAND — there is no server behind this page, so nothing here can RUN a
+      // bake; the honest control is handing over the exact command for the user's own terminal
+      // (repo cloned, Node installed, the building's DB available locally).
+      var _cmdLink = document.getElementById('cpe-bake-cmd-link');
+      var _cmdBox = document.getElementById('cpe-bake-cmd-box');
+      var _cmdText = document.getElementById('cpe-bake-cmd-text');
+      var _cmdCopyBtn = document.getElementById('cpe-bake-cmd-copy');
+      function _buildBakeCommand() {
+        var _app = A();
+        var bld = (_app && _app.activeBuilding) || 'YOUR_BUILDING';
+        var res = (_resEl && _resEl.value) || '';
+        var flags = '';
+        var m = res.match(/^(\d+)x(\d+)@(\d+)$/);
+        if (m) flags = ' --width ' + m[1] + ' --height ' + m[2] + ' --fps ' + m[3];
+        // no selection = cli_silent_bake.js's own default (1280x720@15), not invented here
+        return 'node cli_silent_bake.js --db ' + bld + flags + ' --gpu real --out /tmp/' + bld + '_bake.mp4';
+      }
+      if (_cmdLink) _cmdLink.addEventListener('click', function() {
+        var shown = _cmdBox && _cmdBox.style.display !== 'none';
+        if (_cmdBox) _cmdBox.style.display = shown ? 'none' : 'block';
+        if (!shown && _cmdText) {
+          _cmdText.value = _buildBakeCommand();
+          console.log('§CPE_BAKE_CMD shown');
+        }
+      });
+      if (_cmdCopyBtn) _cmdCopyBtn.addEventListener('click', function() {
+        var txt = (_cmdText && _cmdText.value) || _buildBakeCommand();
+        navigator.clipboard.writeText(txt).then(function() {
+          _cmdCopyBtn.textContent = 'Copied!';
+          console.log('§CPE_BAKE_CMD copied');
+          setTimeout(function() { _cmdCopyBtn.textContent = 'Copy'; }, 2000);
+        });
       });
       document.getElementById('cpe-reveal').addEventListener('change', function(e) {
         _state.reveal = !!e.target.checked;

@@ -843,6 +843,14 @@ function setupMeasure(A) {
         var tolMm = pairRule ? (pairRule.tolerance_m * 1000).toFixed(0) : '25';
         hdr += '<div style="display:flex;justify-content:space-between;align-items:center">' +
           '<b style="color:#4fc3f7;font-size:12px">' + pairLabel + '</b>' +
+          // \u00a7CLASH_TOL_SOURCING (MEP_CLASH_REVEAL_MOVIE.md \u00a7PENDING.4) \u2014 this slider only ever
+          // changed the tolerance for THIS session's re-query (measure.js ~L925); it never wrote
+          // clash_rules.json, and no per-pair tolerance in that file carries any cited source
+          // (industry standard or otherwise). The gear opens the SAME generic Settings JSON editor
+          // panels.js already ships for clash_rules.json (\u00a7S282c) \u2014 not a new editor \u2014 so a value can
+          // be corrected/documented for every pair, not just re-queried for this one, this session.
+          '<span id="clash-edit-rules" title="edit all discipline-pair tolerances (clash_rules.json)" ' +
+            'style="cursor:pointer;color:#888;font-size:13px;padding:2px 6px" onmouseover="this.style.color=\'#4fc3f7\'" onmouseout="this.style.color=\'#888\'">\u2699</span>' +
           '<span id="clash-list-close" style="cursor:pointer;color:#aaa;font-size:22px;line-height:1;padding:6px">\u2715</span></div>';
         hdr += '<div style="display:flex;align-items:center;gap:4px;margin:2px 0">' +
           '<span style="font-size:9px;color:#aaa">1</span>' +
@@ -883,7 +891,15 @@ function setupMeasure(A) {
         // \u00a7MESH_NARROWPHASE: row[9] = triangle-exact verdict; CLEAR = bbox-only false positive
         var nv = c[9], nvStyle = '', nvTag = '';
         if (nv && nv.verdict === 'CLEAR') { nvStyle = 'text-decoration:line-through;opacity:0.45;'; nvTag = ' <span style="color:#aaa;font-size:9px">bbox-only</span>'; }
-        else if (nv && nv.verdict === 'CLASH') { nvTag = ' <span style="color:#8fef8f;font-size:9px" title="' + nv.reason + '">\u2713</span>'; }
+        else if (nv && nv.verdict === 'CLASH') {
+          nvTag = ' <span style="color:#8fef8f;font-size:9px" title="' + nv.reason + '">\u2713</span>';
+          // \u00a7CLASH_LIST_DEPTH (MEP_CLASH_REVEAL_MOVIE.md \u00a7PENDING.2) \u2014 the mesh-true penetration depth,
+          // same [tol/clash mm] wording the film's own clash_labels.js already draws on-screen; the row
+          // already carries depthMeshM from clash_narrow.js, this is display-only, no new computation.
+          var _cd = (typeof nv.depthMeshM === 'number') ? Math.round(nv.depthMeshM * 1000) : null;
+          var _cf = (A.clashLabels && A.clashLabels.factRow) ? A.clashLabels.factRow({ tolMm: tolMm, clashMm: _cd }) : '';
+          if (_cf) nvTag += ' <span style="color:#888;font-size:9px">' + _cf + '</span>';
+        }
         body +=
           '<span data-clash-idx="' + i + '" style="cursor:pointer;display:block;padding:1px 0;' + ss.style + nvStyle + '">' +
           (ss.icon ? ss.icon : '<span style="color:#888">' + (i + 1) + '</span>') +
@@ -905,6 +921,15 @@ function setupMeasure(A) {
     A._clashListDiv = listDiv;
     A._makeDraggable(listDiv);
     A.measureLabels.push({ div: listDiv, mid: null });
+
+    // §CLASH_TOL_SOURCING — delegated on listDiv (survives _refreshClashList's header innerHTML
+    // replace, unlike a direct listener on the gear span, which would be destroyed the first time
+    // a mesh-qualify pass refreshes the header out from under it).
+    listDiv.addEventListener('click', function(e) {
+      if (!e.target || e.target.id !== 'clash-edit-rules') return;
+      var entry = (A._jsonRegistry || []).filter(function(x) { return x.id === 'clash_rules'; })[0];
+      if (entry && A._openJsonEditor) { console.log('§CLASH_TOL_SOURCING open clash_rules editor'); A._openJsonEditor(entry); }
+    });
 
     // Tolerance slider — re-query on change
     var slider = listDiv.querySelector('#clash-tol-slider');

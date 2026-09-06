@@ -2170,6 +2170,11 @@ function setupPanels(A) {
       content.appendChild(hub);
     }
 
+    // §CLASH_TOL_SOURCING (MEP_CLASH_REVEAL_MOVIE.md §PENDING.4) — exposed so a caller outside this
+    // closure (the Clash panel's own header, measure.js) can jump straight into the SAME editor this
+    // hub already uses, instead of a user hunting through Settings to find it. Not a new editor.
+    A._jsonRegistry = _jsonRegistry;
+
     // Open one registered JSON in a SettingsEditor sub-panel.
     // source:'url' (default) -> fetch + localStorage override (editable).
     // source:'db'           -> entry.project() returns the JSON (e.g. captured 4D).
@@ -2252,6 +2257,7 @@ function setupPanels(A) {
         console.warn('§JSON_EDITOR_FAIL ' + entry.id + ' ' + err);
       });
     }
+    A._openJsonEditor = _openJsonEditor;
 
     // PILL_DRAWER_REORGANIZATION.md §FINAL RAIL ORDER: Document(Save,Open) → Navigate → Inspect
     // → Visual FX → Camera/View → Share → Settings, Help. 9 visible icons (rest are pill:false,

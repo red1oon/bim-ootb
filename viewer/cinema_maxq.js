@@ -1490,17 +1490,17 @@
           console.log('§CPE_RESOURCE_PANEL INCONCLUSIVE reason=' +
             (!_bkState ? 'no-buildup-timeline' : 'no-ops-snapshot') + ' — panel omitted, not blank');
         }
-        // §CPE_BIG_STATS — the second half's cards, built ONCE from real sources. The pie answers
-        // "who is on site today", which is dead after §CPE_BUILDUP_TOPOUT: construction has finished
-        // and no trade is active, so the panel drew nothing for the whole reveal round.
-        if (_roomTitle && A.bigStatsBuild && _bkState) {
-          _bigCards = A.bigStatsBuild(_resOps, _bkState.projectStart, _bkState.projectEnd);
-        }
-      } catch (eR) { _resOps = null; _bigCards = null; console.warn('§CPE_RESOURCE_PANEL_ERR ' + eR.message + ' — panel disabled, bake continues'); }
+      } catch (eR) { _resOps = null; console.warn('§CPE_RESOURCE_PANEL_ERR ' + eR.message + ' — panel disabled, bake continues'); }
       // ══ §CLASH_FILM_P1 — build the markers ONCE, before the first frame ═══════════════════
       // Deliberately BEFORE the loop and never inside it: the narrow phase costs ~2 s on Terminal,
       // and the pair set is static. The markers are a FORECAST (§3b) — they stand from frame 0 over
       // empty ground while the buildup rises around them, so nothing here consults the TM cursor.
+      // §CLASH_HUD_ORDER (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md §PENDING.5 item A — ROOT CAUSE of the
+      // user's "HUD left out Clash stats" report on the full 195.8s film): this block used to run
+      // AFTER §CPE_BIG_STATS below, so `bigStatsBuild()` always read `A.clashFilm.stats().built ===
+      // false` on a fresh page load — the clash film had not been built yet — and §CLASH_HUD_CARD was
+      // silently dropped on EVERY first bake of a tab, `--clash` and pair count notwithstanding. Moved
+      // here, BEFORE §CPE_BIG_STATS, so the card sees the real, already-judged stats.
       var _filmSecFull = (_clip && _clip.out > _clip.in) ? (nFrames / (_clip.out - _clip.in)) / fps : nFrames / fps;
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }
@@ -1511,6 +1511,51 @@
       } else if (_clash) {
         console.warn('§CLASH_FILM_BUILD INCONCLUSIVE reason=clash_film.js not loaded — nothing judged');
       }
+      // §CPE_BIG_STATS — the second half's cards, built ONCE from real sources. The pie answers
+      // "who is on site today", which is dead after §CPE_BUILDUP_TOPOUT: construction has finished
+      // and no trade is active, so the panel drew nothing for the whole reveal round. Runs AFTER
+      // §CLASH_FILM_P1 above (§CLASH_HUD_ORDER) so the clash/disc-pair cards see a built film.
+      var _pairCards = [];
+      try {
+        if (_roomTitle && A.bigStatsBuild && _bkState) {
+          _bigCards = A.bigStatsBuild(_resOps, _bkState.projectStart, _bkState.projectEnd);
+          _pairCards = (_bigCards || []).filter(function (c) { return c && c.discPairKey; });
+        }
+      } catch (eBS) { _bigCards = null; console.warn('§CPE_BIG_STATS_ERR ' + eBS.message + ' — cards disabled, bake continues'); }
+      // §CLASH_HUD_PULLBACK_WINDOW (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md §PENDING.5 item C) — derived
+      // from the SAME beat fractions/seconds effects.js already computes on `plan`, never re-baked or
+      // hardcoded. beats.reveal(tV)/beats.rise(tR) bound the combined tail+pullback span; reveal.tailSec
+      // / reveal.riseSec are the UNFOLDED seconds of the tail-caption sub-phase and the true pull-back
+      // sub-phase §CPE_DISCIPLINE_REVEAL_PULLOUT's own comment says are blended across that span.
+      // tailShare recovers where the tail's caption-cycling ends and the true pull-back begins.
+      // Window ends 5s before orbit (plan.beats.rise) per this task's own boundary rule — the sibling
+      // storey-reveal lane owns everything from there on.
+      var _pullbackU = null;
+      if (_clash && plan && plan.beats && plan.durationSec > 0 &&
+          plan.beats.reveal != null && plan.beats.rise != null && plan.beats.rise > plan.beats.reveal) {
+        var _tV = plan.beats.reveal, _tR = plan.beats.rise;
+        var _tailSec = (plan.reveal && plan.reveal.tailSec) || 0;
+        var _riseSec = (plan.reveal && plan.reveal.riseSec) || (plan.sec && plan.sec.rise) || 0;
+        var _tailShare = (_tailSec + _riseSec) > 0 ? _tailSec / (_tailSec + _riseSec) : 0;
+        var _pbStart = _tV + _tailShare * (_tR - _tV);
+        var _pbEnd = _tR - (5 / plan.durationSec);
+        if (_pbEnd > _pbStart) {
+          _pullbackU = { start: _pbStart, end: _pbEnd };
+          console.log('§CLASH_HUD_PULLBACK_WINDOW start=' + _pbStart.toFixed(3) + ' end=' + _pbEnd.toFixed(3) +
+            ' (tV=' + _tV.toFixed(3) + ' tR=' + _tR.toFixed(3) + ' tailSec=' + _tailSec.toFixed(1) +
+            ' riseSec=' + _riseSec.toFixed(1) + ' tailShare=' + _tailShare.toFixed(3) +
+            ' durationSec=' + plan.durationSec.toFixed(1) + ' pairCards=' + _pairCards.length +
+            ') — 5s before orbit reserved for the storey-reveal lane');
+        } else {
+          console.log('§CLASH_HUD_PULLBACK_WINDOW INCONCLUSIVE reason=window-too-short start=' +
+            _pbStart.toFixed(3) + ' end=' + _pbEnd.toFixed(3) + ' — disc-pair highlight/cards skipped for this plan');
+        }
+      } else if (_clash) {
+        console.log('§CLASH_HUD_PULLBACK_WINDOW INCONCLUSIVE reason=' +
+          (!plan ? 'no-plan' : (!plan.beats ? 'no-beats-on-plan' : 'bad-beats')) +
+          ' — disc-pair highlight/cards skipped for this bake');
+      }
+      A._clashHudHighlightLast = null;   // per-bake reset — a prior bake's held highlight must not leak in
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
@@ -1821,7 +1866,33 @@
           // rotation is now EMPTY and the panel is omitted, where before the roster alone would
           // have kept it on screen. That is the user's ruling ("just highlights"), and the §-line
           // below names it rather than leaving a blank corner unexplained.
-          var _si = A.tailPanelAt(_bigCards, i / fps, null);
+          // §CLASH_HUD_PULLBACK_WINDOW / item C (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md §PENDING.5) —
+          // inside the pullback sub-window the tail rotation is FORCED to just the disc-pair cards,
+          // one discipline pair at a time, and clash_film.js's own highlight (setFade) is driven from
+          // the SAME shown card the SAME frame — "the highlighted markers and the flashed number are
+          // the same fact, not two unrelated timers" (dispatch wording). Outside the window (or with
+          // no disc-pair cards to show) the normal all-card rotation below runs exactly as it always
+          // has, and any held highlight is explicitly released on the transition out.
+          var _si;
+          var _inPullback = !!(_pullbackU && _tnFilm >= _pullbackU.start && _tnFilm < _pullbackU.end);
+          if (_inPullback && _pairCards.length) {
+            _si = A.bigStatsAt(_pairCards, _tnFilm * _filmSecFull);
+            if (_si && _si.card && A.clashFilm && A.clashFilm.highlightDiscPair) {
+              if (A._clashHudHighlightLast !== _si.card.discPairKey) {
+                var _hl = A.clashFilm.highlightDiscPair(_si.card.discPairKey);
+                A._clashHudHighlightLast = _si.card.discPairKey;
+                console.log('§CLASH_HUD_HIGHLIGHT frame=' + i + ' pair=' + _si.card.discPairKey +
+                  ' groupSize=' + (_hl && _hl.groupSize) + ' changed=' + (_hl && _hl.changed));
+              }
+            }
+          } else {
+            _si = A.tailPanelAt(_bigCards, i / fps, null);
+            if (_clash && A.clashFilm && A.clashFilm.highlightDiscPair && A._clashHudHighlightLast != null) {
+              A.clashFilm.highlightDiscPair(null);   // leaving the window — drop back to ambient pulsing
+              console.log('§CLASH_HUD_HIGHLIGHT frame=' + i + ' pair=null (window exited/no pair cards) — back to ambient');
+              A._clashHudHighlightLast = null;
+            }
+          }
           if (!A._statTailRosterLogged) {
             A._statTailRosterLogged = true;
             console.log('§CPE_ROSTER_NOT_A_HIGHLIGHT reveal rotation slots=' +
