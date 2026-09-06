@@ -1483,6 +1483,7 @@
           A._resHoldFrames = 0; A._resHoldLogged = false;   // §CPE_PIE_HOLD counts are per-bake
           A._statTailFrames = 0; A._statTailLogged = false; // §CPE_STATS_TAIL, same
           A._measureCardLast = null;                        // §MEASURE_BUILDING_CARD, same per-bake reset
+          A._clashLblStopped = false;                       // §CLASH_LABELS_STOP, same per-bake reset
           _resOps = window.tmOpsSnapshot();
           console.log('§CPE_RESOURCE_PANEL ' + (_resOps && _resOps.length
             ? ('on ops=' + _resOps.length + ' rates=' + (!!(window.LABOR_RATES)) + ' pos=' + _ovPos)
@@ -1702,7 +1703,23 @@
         // space placement only; it reads the camera and never moves it (ruling 3). The record is
         // handed to _captureFrame below, which draws it in the 2D pass (§P2.2).
         _lblInfo = null;
-        if (_clash && A.clashLabels && A.clashLabels.update) {
+        // §CLASH_LABELS_STOP_AT_DISC_STATS (2026-09-06, user: "the lingering clash pair pop ups have to
+        // end during DISCs stats"). The per-pair [tol/clash mm] pop-ups belong to the FIRST pass, where
+        // the camera is close and each label names the pair under the lens. From beats.reveal onward
+        // the film is telling a different story — whole SETS of clashes lit by trade, with the count in
+        // the HUD — and individual pop-ups compete with the very stats they are meant to support.
+        // Cut them at beats.reveal (the parade start), once, and reset so no placed label lingers.
+        // DEGRADE, DON'T DISABLE: a plan with no usable reveal beat keeps the old always-on behaviour.
+        var _lblStop = (plan && plan.beats && plan.beats.reveal > 0 && plan.beats.reveal < 1)
+          ? plan.beats.reveal : null;
+        if (_lblStop != null && _tnFilm >= _lblStop) {
+          if (!A._clashLblStopped) {
+            A._clashLblStopped = true;
+            if (A.clashLabels && A.clashLabels.reset) try { A.clashLabels.reset(); } catch (eCLx) {}
+            console.log('§CLASH_LABELS_STOP frame=' + i + ' tn=' + _tnFilm.toFixed(4) +
+              ' — per-pair pop-ups end here; the disc stats own the screen from the parade on');
+          }
+        } else if (_clash && A.clashLabels && A.clashLabels.update) {
           try { _lblInfo = A.clashLabels.update(A.camera, _tnFilm * _filmSecFull, w, h, i); }
           catch (eCL) { if (!A._clashLblErrLogged) { A._clashLblErrLogged = true;
             console.warn('§CLASH_LABELS_ERR update: ' + eCL.message + ' — labels skipped, frames continue'); } }
