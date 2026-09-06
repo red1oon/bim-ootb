@@ -4,6 +4,19 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.63.0](https://github.com/red1oon/bim-ootb/compare/v1.62.0...v1.63.0) (2026-09-06)
+
+
+### ✨ Features
+
+* **cinema:** §CLASH_HUD_ORDER + §CLASH_HUD_PAIR_CARDS + pullback disc-pair highlight sync + Measure card ([#1693](https://github.com/red1oon/bim-ootb/issues/1693)) ([7ff4384](https://github.com/red1oon/bim-ootb/commit/7ff4384e291624173cc54d0d57914978747f857e))
+* **clash:** §PENDING.2/.3/.4 — list depth display, cross-caller narrowphase cache, clash_rules gear ([#1694](https://github.com/red1oon/bim-ootb/issues/1694)) ([64a0ed5](https://github.com/red1oon/bim-ootb/commit/64a0ed5d042456809a30934f8a21e154437a3afc))
+
+
+### 🐛 Fixes
+
+* **cinema:** §S274 — Silent-bake size dropdown crashed on every selection in production; add copy-bake-command link ([#1692](https://github.com/red1oon/bim-ootb/issues/1692)) ([024862c](https://github.com/red1oon/bim-ootb/commit/024862c9ec3ac6276a260d25adf0b229305877c6))
+
 ## [1.62.0](https://github.com/red1oon/bim-ootb/compare/v1.61.0...v1.62.0) (2026-09-06)
 
 
