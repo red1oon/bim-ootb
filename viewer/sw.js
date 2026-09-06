@@ -144,7 +144,14 @@
 // v1155 (2026-09-06) §PL_TOPOUT_UNPIN (MEP_CLASH_REVEAL_MOVIE.md): viewer/effects.js — past the plan's topout the bake's
 //   fixture point-lights ease from the staged Alt+S cut (0.5) to nav Night Mode's tuned 1.0 over the sun's own snap
 //   window; pre-topout byte-identical. viewer/cinema_maxq.js passes _revealU to the fill pin. (v1153 = #1689, v1154 = #1691.)
-const CACHE_VERSION = 'v1155';   // bump on each deploy; per-change detail is the git commit message.
+// v1156 (2026-09-06) §S274 FIX + §CPE_BAKE_RES_COMMAND (live crash reported from production): viewer/
+//   cinema_path_editor.js — the Silent-bake size dropdown's change handler read `A.renderer` (A is the
+//   app GETTER FUNCTION, not the object) and threw Cannot read properties of undefined (reading
+//   'domElement') on every selection; fixed to call A(). Also fixed two stale "Alt+M" references
+//   (the real shortcut is Alt+C) and added a "copy bake command" link that hands the user the exact
+//   `node cli_silent_bake.js ...` command for their own terminal — there is no server behind this
+//   page, so nothing here can run a bake for them.
+const CACHE_VERSION = 'v1156';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
