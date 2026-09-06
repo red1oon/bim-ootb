@@ -41,50 +41,139 @@ const PORT = process.env.PORT || '8477';
   const result = await p.evaluate(() => {
     const A = window.APP, T = window.THREE;
     if (!A.flythruGate || !A.flythruGapsAlong) return { err: 'cpe_flythru_dims.js not loaded' };
-    // Pull-back pose: far enough out that both wings are in frame — the shot the user named.
+    // §FLYTHRU_BEAT — INDOORS, during the fly-through ONLY. (User: "during the pullout should be
+    // avoided as it has its focus already meted out for it. The blue dots should be only during the
+    // fly thru" ... "in doors" ... "the wing length is due to it exiting momentarily is what i meant".)
+    // So the wing-to-wing span was never a pull-back shot: it is the moment the walk path briefly
+    // EXITS the building and both wings come into view. That needs no special case — the gate already
+    // fires whatever reads at that instant, so an interior corridor width and a momentary outdoor wing
+    // span come from exactly the same cast.
+    // The walk runs [beats.spin, beats.out] = [0.094, 0.353] on the shipped Hospital path (§CINEMA_BEATS).
     const plan = A.cinemaPathPlan(195.8);
-    const q = plan.poseAt(0.90);
-    A.camera.position.set(q.x, q.y, q.z);
-    A.controls.target.set(q.tx, q.ty, q.tz);
-    A.controls.update(); A.camera.updateMatrixWorld();
-
+    const b0 = plan.beats.spin, b1 = plan.beats.out;
     const meshes = []; A.scene.traverse(o => { if (o.isMesh && o !== A.ground && o.visible) meshes.push(o); });
-    const fwd = new T.Vector3(); A.camera.getWorldDirection(fwd);
+    const env = A.dbQuery('SELECT MIN(center_x - bbox_x/2), MAX(center_x + bbox_x/2),' +
+      ' MIN(center_y - bbox_y/2), MAX(center_y + bbox_y/2),' +
+      ' MIN(center_z - bbox_z/2), MAX(center_z + bbox_z/2) FROM element_transforms')[0];
+    A.flythruSetScale(+env[1] - +env[0], +env[3] - +env[2], +env[5] - +env[4]);
+    const rc = new T.Raycaster();
     const up = new T.Vector3(0, 1, 0);
-    const right = new T.Vector3().crossVectors(fwd, up).normalize();
-    const rc = new T.Raycaster(); rc.far = 400;
-    const origin = A.camera.position.clone();
+    const sbox = new T.Box3(), _t = new T.Box3();
+    meshes.forEach(m => { try { _t.setFromObject(m); if (isFinite(_t.min.x)) sbox.union(_t); } catch (e) {} });
+    const sdiag = sbox.getSize(new T.Vector3()).length();
 
-    // Sweep horizontal rays across the view at a few heights: each ray's hit list gives every void
-    // it crosses. A ray that leaves one wing, crosses open air and enters the other IS the wing gap.
-    const cands = [];
-    for (let s = -0.5; s <= 0.5001; s += 0.1) {
-      for (const hStep of [-18, -8, 2]) {
-        const dir = fwd.clone().addScaledVector(right, s).normalize();
-        const o2 = origin.clone().addScaledVector(up, hStep);
-        rc.set(o2, dir);
+    // Real stair elements -> their SCENE positions, resolved through the mesh, not the DB frame.
+    const stairPts = [];
+    try {
+      const rows = A.dbQuery("SELECT guid FROM elements_meta WHERE ifc_class IN ('IfcStair','IfcStairFlight')") || [];
+      const box = new T.Box3();
+      for (const r of rows) {
+        const e = A.guidMap && A.guidMap[r[0]];
+        const mesh = e && (e.isObject3D ? e : (e.mesh || e.object || null));
+        if (!mesh) continue;
+        try {
+          box.setFromObject(mesh);
+          if (!isFinite(box.min.x)) continue;
+          const c = box.getCenter(new T.Vector3());
+          c.y = box.max.y - 0.05;          // just under the stair's top surface, cast DOWN from there
+          stairPts.push(c);
+        } catch (e2) {}
+      }
+    } catch (eS) {}
+    console.log('§FDS_STAIRS resolved=' + stairPts.length + ' (scene positions via guidMap, not the DB frame)');
+
+    // Sweep the WHOLE walk, score every pose, keep the best — rather than guessing one instant.
+    let best = null; const perPose = [];
+    for (let k = 0; k <= 24; k++) {
+      const tn = b0 + (b1 - b0) * (k / 24);
+      const q = plan.poseAt(tn);
+      A.camera.position.set(q.x, q.y, q.z);
+      A.controls.target.set(q.tx, q.ty, q.tz);
+      A.controls.update(); A.camera.updateMatrixWorld();
+      const fwd = new T.Vector3(); A.camera.getWorldDirection(fwd);
+      const right = new T.Vector3().crossVectors(fwd, up).normalize();
+      const origin = A.camera.position.clone();
+      const cands = [];
+      const castFrom = (o2, dir, fromOrigin) => {
+        rc.far = sdiag * 3; rc.set(o2, dir);
         const hits = rc.intersectObjects(meshes, false);
-        if (hits.length < 2) continue;
-        const ds = hits.map(h => h.distance);
-        for (const g of A.flythruGapsAlong(ds, false)) {
-          const a = o2.clone().addScaledVector(dir, g.from);
+        if (!hits.length) return;
+        for (const g of A.flythruGapsAlong(hits.map(h => h.distance), fromOrigin)) {
+          const aa = o2.clone().addScaledVector(dir, g.from);
           const bb = o2.clone().addScaledVector(dir, g.to);
-          const spanDir = bb.clone().sub(a).normalize();
-          const pa = a.clone().project(A.camera), pb = bb.clone().project(A.camera);
-          // occlusion: does anything sit in front of each endpoint from the CAMERA's eye?
-          const occ = (pt) => { rc.set(origin, pt.clone().sub(origin).normalize());
+          const sd = bb.clone().sub(aa).normalize();
+          const pa = aa.clone().project(A.camera), pb = bb.clone().project(A.camera);
+          const occ = (pt) => { const d = pt.clone().sub(origin); const L = d.length();
+            rc.far = sdiag * 3; rc.set(origin, d.clone().normalize());
             const h = rc.intersectObjects(meshes, false);
-            return !!(h.length && h[0].distance < origin.distanceTo(pt) - 0.25); };
+            return !!(h.length && h[0].distance < L - 0.25); };
+          // §FLYTHRU_SKY_BACKDROP — is there open sky behind this span? Ray from the camera THROUGH
+          // the midpoint: nothing hit => we are looking through the gap at sky, which is what makes
+          // the wing sighting the showpiece rather than just another empty interval.
+          const mid = aa.clone().add(bb).multiplyScalar(0.5);
+          const md = mid.clone().sub(origin); const mL = md.length();
+          rc.far = sdiag * 3; rc.set(origin, md.clone().normalize());
+          const beyond = rc.intersectObjects(meshes, false).filter(h => h.distance > mL + 0.5);
           cands.push({ a: { x: pa.x, y: pa.y, z: pa.z }, b: { x: pb.x, y: pb.y, z: pb.z },
-            lengthM: g.lengthM, alignToView: spanDir.dot(fwd),
-            occludedA: occ(a), occludedB: occ(bb),
-            _wa: [a.x, a.y, a.z], _wb: [bb.x, bb.y, bb.z] });
+            lengthM: g.lengthM, alignToView: sd.dot(fwd), occludedA: occ(aa), occludedB: occ(bb),
+            skyBehind: beyond.length === 0,
+            _wa: [aa.x, aa.y, aa.z], _wb: [bb.x, bb.y, bb.z], _tn: tn });
+        }
+      };
+      // HORIZONTAL, perpendicular to the view: start off to the left of the camera and cast across.
+      // Indoors this crosses the corridor/room the camera is in; at the momentary exit it crosses the
+      // gap between the wings. Same cast, the gate decides which one reads.
+      const LEAD = Math.min(60, sdiag * 0.35);
+      for (const dh of [-1.2, 0, 2.0, 5.0]) {
+        const o2 = origin.clone().addScaledVector(right, -LEAD); o2.y += dh;
+        castFrom(o2, right.clone(), false);
+      }
+      // VERTICAL: HEAD CLEARANCE — from just above the floor beneath the camera, straight up. The
+      // origin->first-hit interval IS the clearance (the camera stands in the void; the first thing
+      // above is the ceiling, a duct or a beam). This is the cue the user named first.
+      for (const df of [0, 4, -4]) {
+        const o2 = origin.clone().addScaledVector(fwd, df); o2.y -= 1.6;
+        castFrom(o2, up.clone(), true);
+      }
+      // STAIRS — the other cue the user named ("height of a part of the stairs to the floor"). Do not
+      // wait for the blind sweep to stumble onto one: go to the real IfcStair elements and cast DOWN
+      // from each to whatever is beneath it. Scene positions come from the MESH (A.guidMap), never
+      // from element_transforms — those are in the DB's own frame, ~169m off the scene's Y, the trap
+      // that returned candidates=0 on an earlier run.
+      if (stairPts.length) {
+        for (const sp of stairPts) {
+          if (sp.distanceTo(origin) > sdiag * 0.35) continue;   // only stairs near this instant
+          castFrom(sp.clone(), up.clone().negate(), true);
         }
       }
+      const sc = cands.map(c => ({ c, g: A.flythruGate(c) }));
+      const ps = sc.filter(x => x.g.pass).sort((x, y) => y.g.score - x.g.score);
+      const top = sc.slice().sort((x, y) => (y.g.screenFrac || 0) - (x.g.screenFrac || 0))[0];
+      perPose.push({ tn: +tn.toFixed(3), cands: cands.length, passed: ps.length,
+                     bestFrac: +((top && top.g.screenFrac) || 0).toFixed(3) });
+      if (ps.length && (!best || ps[0].g.score > best.scored[0].g.score)) best = { tn, scored: ps, all: sc };
     }
-    const scored = cands.map(c => ({ c, g: A.flythruGate(c) }));
-    const passed = scored.filter(x => x.g.pass).sort((x, y) => y.g.score - x.g.score);
+    console.log('§FDS_WALK_SWEEP ' + perPose.map(x => x.tn + ':' + x.passed + '/' + x.cands + '@' + x.bestFrac).join(' '));
+    if (!best) {
+      const flat = perPose.reduce((m, x) => Math.max(m, x.bestFrac), 0);
+      console.log('§FDS_RESULT INCONCLUSIVE — no pose in the walk produced a passing span; bestScreenFrac=' + flat);
+      return { candidates: perPose.reduce((n, x) => n + x.cands, 0), passed: 0, shown: [], perPose };
+    }
+    // Park the camera at the winning instant and draw there.
+    const qb = plan.poseAt(best.tn);
+    A.camera.position.set(qb.x, qb.y, qb.z);
+    A.controls.target.set(qb.tx, qb.ty, qb.tz);
+    A.controls.update(); A.camera.updateMatrixWorld();
+    const scored = best.all, passed = best.scored;
+    console.log('§FDS_BEST_POSE tn=' + best.tn.toFixed(3) + ' passed=' + passed.length +
+      ' top=' + passed.slice(0, 4).map(x => x.c.lengthM.toFixed(1) + 'm' +
+      (x.g.skyBehind ? '/SKY' : '/solid') + '/score' + x.g.score.toFixed(2)).join(' '));
     const why = {}; scored.filter(x => !x.g.pass).forEach(x => { const k = (x.g.why || '?').split(':')[0]; why[k] = (why[k] || 0) + 1; });
+    // Distribution of the measured screen fraction — so a threshold decision is made on data, not feel.
+    const byFrac = scored.slice().sort((x, y) => (y.g.screenFrac || 0) - (x.g.screenFrac || 0)).slice(0, 12);
+    console.log('§FDS_SCREENFRAC_TOP ' + byFrac.map(x =>
+      (x.g.screenFrac || 0).toFixed(3) + '@' + (x.g.lengthM || 0).toFixed(1) + 'm/align' +
+      (x.g.align || 0).toFixed(2) + (x.g.pass ? '/PASS' : '/' + (x.g.why || '').split(':')[0])).join('  '));
 
     // §FLYTHRU_DIM_CUE (user: "the measure visual impose should be the std cue lines with arrow heads
     // to lines with ##mm in between") — the STANDARD architectural dimension cue, not the Measure
@@ -131,9 +220,9 @@ const PORT = process.env.PORT || '8477';
     }
     document.body.appendChild(svg);
     A.markDirty && A.markDirty();
-    console.log('§FDS_RESULT candidates=' + cands.length + ' passed=' + passed.length +
+    console.log('§FDS_RESULT candidates=' + scored.length + ' passed=' + passed.length +
       ' shown=[' + shown.map(s => s.m + 'm').join(', ') + '] rejects=' + JSON.stringify(why));
-    return { candidates: cands.length, passed: passed.length, shown, why };
+    return { candidates: scored.length, passed: passed.length, shown, why, tn: +best.tn.toFixed(4) };
   });
   await sleep(4000);
   await p.screenshot({ path: path.join(OUT, 'flythru_dims_still.png') });
