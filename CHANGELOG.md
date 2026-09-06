@@ -4,6 +4,32 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.62.0](https://github.com/red1oon/bim-ootb/compare/v1.61.0...v1.62.0) (2026-09-06)
+
+
+### ✨ Features
+
+* **cinema:** §CLASH_MARKER_OVERLAP_BOX + §CLASH_FILM_FLAT_FILTER — the marker is the oriented box of the real overlap solid; flat touches leave the film's set ([#1689](https://github.com/red1oon/bim-ootb/issues/1689)) ([22c8ad3](https://github.com/red1oon/bim-ootb/commit/22c8ad3a27d14a21a9703b1c0c7993a3b5f5f1b5))
+* **cinema:** §P2.4 + §CLASH_HUD_CARD — clash label 3rd row [tol mm / clash mm]; reveal roster gains the mesh-true clash card ([#1686](https://github.com/red1oon/bim-ootb/issues/1686)) ([0e72af1](https://github.com/red1oon/bim-ootb/commit/0e72af1c353d7a17f9e550beffb02b11a9405bda))
+* **clash:** §MESH_NARROWPHASE — triangle-exact clash verdict; 33.7% of the bbox list is false on Terminal ([#1676](https://github.com/red1oon/bim-ootb/issues/1676)) ([e6d48aa](https://github.com/red1oon/bim-ootb/commit/e6d48aa5b78f3a63fefb6237a60d5177178959d0))
+* **clash:** §MESH_OVERLAP_DEPTH — the exact box of the overlap solid on every mesh-true pair; the label's clash mm is now mesh-true, not the OBB proxy ([#1688](https://github.com/red1oon/bim-ootb/issues/1688)) ([273e1c5](https://github.com/red1oon/bim-ootb/commit/273e1c59159c52bc35ca4f52df12a995825c0cb6))
+
+
+### 🐛 Fixes
+
+* **cinema:** §SUN_ARC_TOPOUT_SNAP — dramatic dusk angle only after topout, pre-topout untouched ([#1685](https://github.com/red1oon/bim-ootb/issues/1685)) ([ae7b49e](https://github.com/red1oon/bim-ootb/commit/ae7b49ea32d862a38c9973309096f439444f0622))
+* persist §HR_COST alongside the gantt IDB cache, restore it on cache-hit ([#1682](https://github.com/red1oon/bim-ootb/issues/1682)) ([04e3dee](https://github.com/red1oon/bim-ootb/commit/04e3dee2e3b8f7d43f074e4433211317eae19e13))
+
+
+### ⚡ Performance
+
+* **still:** §R17_SHADOWMAP_RELEASE — the Alt+S 4096 shadow map is handed back on exit ([#1683](https://github.com/red1oon/bim-ootb/issues/1683)) ([fa71f16](https://github.com/red1oon/bim-ootb/commit/fa71f162bb8439268f4acff32ce2e16de31b0117))
+
+
+### ⏪ Reverts
+
+* **cinema:** §SUN_ARC_TOPOUT_SNAP — the sun's elevation is the single linear 55°→6° formula of the film fraction again (hand-revert of [#1685](https://github.com/red1oon/bim-ootb/issues/1685) against current main) ([#1691](https://github.com/red1oon/bim-ootb/issues/1691)) ([6363a71](https://github.com/red1oon/bim-ootb/commit/6363a71477d30fd4505c93df6f38a69e0abdf5fe))
+
 ## [1.61.0](https://github.com/red1oon/bim-ootb/compare/v1.60.0...v1.61.0) (2026-09-05)
 
 
