@@ -452,6 +452,15 @@ function setupClashNarrow(A) {
   A.clashNarrow.loadTransforms = loadTransforms;
   A.clashNarrow.satDepth = satDepth;
   A.clashNarrow.runs = [];
+  // §CLASH_NARROW_CACHE (MEP_CLASH_REVEAL_MOVIE.md §PENDING.3) — cross-caller pair-verdict cache.
+  // Lives for the page session (setupClashNarrow runs once at boot, not per building — GUIDs are
+  // globally unique per IFC so no cross-building key collision is possible). A definitive verdict
+  // (CLASH/CLEAR) for a guid pair does not change unless the model geometry itself is edited, which
+  // this lane's read-only review flow never does — so the film's build and the interactive LIST
+  // panel's own qualifyRows() call reuse one judgement instead of two full triangle-exact passes.
+  // UNKNOWN verdicts (geometry not yet resident) are deliberately NOT cached — caching a transient
+  // "geometry missing" result would silently freeze it wrong forever once the mesh does load.
+  A.clashNarrow.pairCache = A.clashNarrow.pairCache || {};
   A.clashNarrow.qualifyRows = function (rows, opts) {
     opts = opts || {};
     var label = opts.label || 'pairs';
@@ -459,7 +468,7 @@ function setupClashNarrow(A) {
     _boxRun = new Map();   // fresh local-box cache per run (geometry may change between runs)
     var t0 = performance.now();
     var mem = { heapBeforeMB: heapMB(), heapPeakMB: heapMB(), heapAfterMB: -1 };
-    var counts = { broad: rows.length, obbSurvivors: 0, obbRejected: 0, rotatedSides: 0, meshTrue: 0, contained: 0, meshClear: 0, unknown: 0, truncated: 0 };
+    var counts = { broad: rows.length, obbSurvivors: 0, obbRejected: 0, rotatedSides: 0, meshTrue: 0, contained: 0, meshClear: 0, unknown: 0, truncated: 0, cacheHits: 0, cacheMisses: 0 };
     var pairs = new Array(rows.length);
     if (!rows.length) {
       var empty = { label: label, pairs: pairs, counts: counts, mem: mem, ms: 0, vacuous: true };
@@ -476,8 +485,25 @@ function setupClashNarrow(A) {
     function geoFor(hash) { return hash ? (A.meshCache[hash] || ctx.transient[hash] || null) : null; }
     var MA = new THREE.Matrix4(), MB = new THREE.Matrix4();
     function judge(i) {
-      var c = rows[i], ta = xf[c[0]], tb = xf[c[1]];
-      var rec = { pairId: pairIdOf(c[0], c[1]), guidA: c[0], guidB: c[1], classA: c[2] || '', classB: c[3] || '',
+      var c = rows[i];
+      var cachedPairId = pairIdOf(c[0], c[1]);
+      var cached = A.clashNarrow.pairCache[cachedPairId];
+      if (cached) {
+        counts.cacheHits++;
+        // Mirrors the exact post-testPair classification below (lines ~524-530) — a cache hit must
+        // land in the same counts bucket a fresh judge() of the same pair would.
+        if (cached.stage === 'OBB') counts.obbRejected++;
+        else {
+          counts.obbSurvivors++;
+          if (cached.verdict === VERDICT.CLASH) { counts.meshTrue++; if (cached.reason === REASON.CONT) counts.contained++; if (cached.truncated) counts.truncated++; if (cached.overlapFlat) counts.overlapFlat = (counts.overlapFlat || 0) + 1; }
+          else { counts.meshClear++; if (cached.reason === REASON.TOUCH) counts.touchOnly = (counts.touchOnly || 0) + 1; }
+        }
+        c[9] = cached; pairs[i] = cached;
+        return;
+      }
+      counts.cacheMisses++;
+      var ta = xf[c[0]], tb = xf[c[1]];
+      var rec = { pairId: cachedPairId, guidA: c[0], guidB: c[1], classA: c[2] || '', classB: c[3] || '',
         discA: c[4] || '', discB: c[5] || '', stage: 'BROAD', verdict: VERDICT.UNKNOWN, reason: REASON.NOGEO,
         aabbOverlapM: (typeof c[8] === 'number') ? c[8] : null, obbDepthM: null, severityM: null, triPairs: 0, truncated: false,
         contact: null, contactIfc: null, extentM: 0, bvhReusedA: false, bvhReusedB: false, ms: 0,
@@ -508,6 +534,9 @@ function setupClashNarrow(A) {
         if (rec.verdict === VERDICT.CLASH) { counts.meshTrue++; if (rec.reason === REASON.CONT) counts.contained++; if (rec.truncated) counts.truncated++; if (rec.overlapFlat) counts.overlapFlat = (counts.overlapFlat || 0) + 1; }
         else { counts.meshClear++; if (rec.reason === REASON.TOUCH) counts.touchOnly = (counts.touchOnly || 0) + 1; }
       }
+      // Only a DEFINITIVE verdict is cacheable — an UNKNOWN (geometry not resident yet) may resolve
+      // differently once the mesh loads, so it must be re-tried, never frozen.
+      if (rec.verdict !== VERDICT.UNKNOWN) A.clashNarrow.pairCache[cachedPairId] = rec;
       c[9] = rec; pairs[i] = rec;
     }
     function finish() {
@@ -524,6 +553,12 @@ function setupClashNarrow(A) {
         ' meshTrue=' + counts.meshTrue + ' contained=' + counts.contained + ' touchOnly=' + (counts.touchOnly || 0) + ' unknown=' + counts.unknown + ' aggregateParent=' + (counts.aggregateParent || 0) +
         ' falsePositiveRate=' + fpRate.toFixed(1) + '% ms=' + ms.toFixed(0) + ' msPerPair=' + (judged ? (ms / judged).toFixed(3) : 'n/a') +
         (judged === 0 ? ' VACUOUS' : ''));
+      // §CLASH_NARROW_CACHE (MEP_CLASH_REVEAL_MOVIE.md §PENDING.3) — proves cross-caller reuse
+      // actually happened this run, not just that the cache object exists (a populated-but-never-hit
+      // cache would be a no-op wearing a feature's clothes).
+      console.log('§CLASH_NARROW_CACHE pair=' + label + ' hits=' + counts.cacheHits + ' misses=' + counts.cacheMisses +
+        ' cacheSize=' + Object.keys(A.clashNarrow.pairCache).length +
+        (counts.cacheHits === 0 ? ' NO-OP(first run this session, or all-new pairs)' : ''));
       console.log('§CLASH_OBB pair=' + label + ' rotatedSides=' + counts.rotatedSides + ' rejected=' + counts.obbRejected + (counts.rotatedSides === 0 ? ' VACUOUS(rotation)' : ''));
       if (counts.unknown) console.log('§CLASH_NARROW_UNKNOWN pair=' + label + ' ' + JSON.stringify(counts.unknownBy));
       // §MESH_OVERLAP_DEPTH — how far the SAT proxy (severityM) sits from the mesh-true overlap, this run
