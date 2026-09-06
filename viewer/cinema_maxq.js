@@ -1643,7 +1643,10 @@
         // clip at film 0.66–0.73). Same bug class §CPE_CLIP_REVEAL_FILM_T fixed for the Reveal above:
         // a clip is fewer frames of the SAME film, so the sun reads the film fraction. A full bake is
         // unchanged (_tFilm(_tn) === _tn when no clip is set).
-        if (A._sunArcStep) A._sunArcStep(_tnFilm);
+        // §SUN_ARC_TOPOUT_SNAP — _revealU is the plan's topout fraction (null if unknown/no beats);
+        // _sunArcStep's own pre-topout branch is untouched when this is passed, only the post-topout
+        // portion of the SAME formula takes the new snap-to-dusk branch (see effects.js).
+        if (A._sunArcStep) A._sunArcStep(_tnFilm, _revealU);
         // §SUN_ARC_FILL / §BAKE_FILL_PIN (2026-09-05, effects.js, witness_sun_arc_fill.js): the interior
         // fill — ambient, hemi, fixture point-light scale/budget — is PINNED to the Alt+S baseline on
         // every frame, whatever the arc above just did to the sun (user ruling: "letting alt-s normal,
