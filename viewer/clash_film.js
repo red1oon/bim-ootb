@@ -405,6 +405,49 @@ function setupClashFilm(A) {
         inScene: !!(_meshA && _meshA.parent) };
     };
     A.clashFilm.pairs = function () { return _pairs; };
+
+    // §CLASH_HUD_PAIR_CARDS (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md §PENDING.5 item B) — the mesh-true
+    // pair set, grouped by discipline pair. Same normalize-order convention this file already uses at
+    // line ~214/252 (a<b ? a+'|'+b : b+'|'+a) — restated locally rather than importing clash_narrow's
+    // private (unexported) `pairIdOf`, so there is one formula, not two names for it. Pure groupby over
+    // data qualifyRows already produced — no new judgment, no new geometry query. Cached because the
+    // pair set is static per bake (same reason _pairs itself is built once).
+    function _discPairKey(p) {
+      var a = p.discA || '?', b = p.discB || '?';
+      return a < b ? (a + '|' + b) : (b + '|' + a);
+    }
+    var _byDiscCache = null, _byDiscCacheLen = -1;
+    A.clashFilm.statsByDiscPair = function () {
+      if (!_built || !_pairs.length) { console.log('§CLASH_HUD_PAIR_CARDS pairs=0 VACUOUS — nothing built to group'); return []; }
+      if (_byDiscCache && _byDiscCacheLen === _pairs.length) return _byDiscCache;
+      var groups = {}, order = [], i, p, a, b, key;
+      for (i = 0; i < _pairs.length; i++) {
+        p = _pairs[i]; a = p.discA || '?'; b = p.discB || '?';
+        key = a < b ? (a + '|' + b) : (b + '|' + a);
+        if (!groups[key]) { groups[key] = { key: key, discA: (a < b ? a : b), discB: (a < b ? b : a), count: 0, indices: [] }; order.push(key); }
+        groups[key].count++; groups[key].indices.push(i);
+      }
+      var out = order.map(function (k) { return groups[k]; }).sort(function (x, y) { return y.count - x.count; });
+      console.log('§CLASH_HUD_PAIR_CARDS pairs=' + out.length + ' [' +
+        out.map(function (g) { return g.key + '=' + g.count; }).join(' ') + ']');
+      _byDiscCache = out; _byDiscCacheLen = _pairs.length;
+      return out;
+    };
+
+    // §CLASH_HUD_PULLBACK_WINDOW / item C — highlight ONE discipline pair solid, fade the rest to
+    // plain ambient pulsing. Pure reuse of the phase-2 per-instance fade channel this file's own
+    // header already documents ("a selected pair must hold solid while every other pair keeps
+    // breathing") — no second highlight mechanism. key=null clears back to all-ambient (every index 0).
+    A.clashFilm.highlightDiscPair = function (key) {
+      if (!_built || !_fade || !_pairs.length) return { changed: 0, groupSize: 0 };
+      var changed = 0, groupSize = 0, i, want;
+      for (i = 0; i < _pairs.length; i++) {
+        want = (key != null && _discPairKey(_pairs[i]) === key) ? 1 : 0;
+        if (want === 1) groupSize++;
+        if (_fade[i] !== want) { A.clashFilm.setFade(i, want); changed++; }
+      }
+      return { changed: changed, groupSize: groupSize };
+    };
     // The severity box of pair i and the box currently placed — what the clamp witness reads.
     A.clashFilm.boxOf = function (i) { return (_nat && i >= 0 && i < _nat.length) ? { naturalM: _nat[i], placedM: _cur[i] } : null; };
     // §CLASH_MARKER_OVERLAP_BOX — what the witness decomposes the instance matrices against
@@ -426,6 +469,7 @@ function setupClashFilm(A) {
       });
       _meshA = _meshB = null; _pairs = []; _fade = null; _built = false; _lastPulse = -1;
       _ctr = _dir = _nat = _cur = null; _rot = _ext = _ax = _sg = null; _legacyBox = 0; _meshTrue = 0; _flat = 0; _updates = 0; _lastClamp = null;
+      _byDiscCache = null; _byDiscCacheLen = -1;   // §CLASH_HUD_PAIR_CARDS — a stale group set must not survive dispose
       console.log('§CLASH_FILM_DISPOSE markers released');
       return true;
     };

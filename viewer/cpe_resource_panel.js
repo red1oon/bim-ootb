@@ -317,6 +317,41 @@ function setupCpeResourcePanel(A) {
                       (cf.flat > 0 ? '  ·  ' + cf.flat + ' flat touch' + (cf.flat > 1 ? 'es' : '') + ' dropped' : ''),   // §CLASH_FILM_FLAT_FILTER
                  src: 'clash_film.js §CLASH_FILM_BUILD' });
     }
+    // §CLASH_HUD_PAIR_CARDS (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md §PENDING.5 item B) — ONE card per
+    // discipline pair that actually has a mesh-true clash, extending (not replacing) the single
+    // aggregate card above. Pure groupby already computed in clash_film.js — no new judgment here.
+    // A pair with 0 clashes gets no card (§VACUOUS), same rule every other card in this function keeps.
+    // `discPairKey` rides along unused by the renderer — cinema_maxq.js reads it during the pullback
+    // window to sync the on-screen highlight to whichever of these cards is currently shown.
+    if (A.clashFilm && A.clashFilm.statsByDiscPair) {
+      var pairGroups = A.clashFilm.statsByDiscPair();
+      pairGroups.forEach(function (g) {
+        if (g.count > 0) {
+          out.push({ big: String(g.count), label: g.discA + ' vs ' + g.discB + ' clashes',
+                     sub: 'discipline pair', src: 'clash_film.js pairs() grouped by discA/discB',
+                     discPairKey: g.key });
+        }
+      });
+    }
+    // §MEASURE_HUD_CARD (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md §PENDING.5 item D) — the Measure tool's
+    // OWN saved measurements from THIS page session (A.measureLabels, measure.js), never a building-
+    // wide area/volume figure (a different question the cards above already answer). Dropped entirely
+    // when nobody measured anything this session — never a fabricated "0 measurements" card. A more
+    // durable source exists (UniversalHistory.recordEvent('MEASURE',...) → common/history_bar.js's own
+    // localStorage-backed tree) but its public API exposes no distance/point data, only label/kind —
+    // using it would need a small additive export on that SHARED cross-app module, not built here
+    // (see prompts/MEP_CLASH_REVEAL_MOVIE.md §PENDING.5 item D for the full note).
+    if (A.measureLabels && A.measureLabels.length) {
+      var mDist = [];
+      A.measureLabels.forEach(function (m) {
+        if (m && m.p1 && m.p2 && m.p1.distanceTo) mDist.push(m.p1.distanceTo(m.p2));
+      });
+      var mSub = mDist.length
+        ? mDist.slice(0, 3).map(function (d) { return d.toFixed(2) + 'm'; }).join('  ·  ')
+        : 'area/point measurements (no distance pair)';
+      out.push({ big: String(A.measureLabels.length), label: 'measurements saved this session',
+                 sub: mSub, src: 'measure.js A.measureLabels' });
+    }
     console.log('§CPE_BIG_STATS cards=' + out.length + (out.length
       ? ' [' + out.map(function (c) { return c.label; }).join(' | ') + ']'
       : ' INCONCLUSIVE — no source available (A.db=' + !!A.db + ' ops=' + (ops ? ops.length : 0) + '); panel omitted, not blank'));
