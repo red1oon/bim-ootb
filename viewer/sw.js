@@ -119,7 +119,11 @@
 // depth-texture-backed WebGLRenderTarget) is disposed and handed back to the GPU on still-mode exit
 // instead of retained, so repeated Alt+S sessions no longer accumulate a 128 MiB map / 64 MB live RT
 // at rest.
-const CACHE_VERSION = 'v1149';   // bump on each deploy; per-change detail is the git commit message.
+// v1150 (2026-09-06) §SUN_ARC_TOPOUT_SNAP: effects.js/cinema_maxq.js — past the plan's topout
+// fraction, the sun arc eases to the dramatic 6° Alt+S angle over a short window instead of crawling
+// there at the film's last frame; the pre-topout formula is an untouched code branch (zero regression
+// to the outdoor shadow-to-sun-angle correlation during active construction). Fill/PL pin unchanged.
+const CACHE_VERSION = 'v1150';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

@@ -2621,8 +2621,24 @@ async function setupEffects(A, renderer, scene, camera) {
   var PHOTO_SUN_ELEVATION_START = 55;  // "high noon" look for an establishing open — not 90 (a
                                         // straight-down sun reads flat/shadowless on a building)
   var PHOTO_SUN_ELEVATION_END = PHOTO_SUN_ELEVATION;
-  function _sunElevationAt(tNorm) {
-    return PHOTO_SUN_ELEVATION_START + (PHOTO_SUN_ELEVATION_END - PHOTO_SUN_ELEVATION_START) * tNorm;
+  // §SUN_ARC_TOPOUT_SNAP (2026-09-06, user: "the good outside building shadow correlation to Sun
+  // angle must not be touched" — bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §SUN_ARC_TOPOUT_SNAP).
+  // `topoutU` is OPTIONAL: omitted (every caller before this change, and the live Cinema Orbit
+  // preview at startCinemaOrbit's step()) returns the ORIGINAL formula, byte-identical, for every
+  // tNorm — zero regression by construction, not by testing alone. Only a caller that passes
+  // `topoutU` (the MaxQ bake, once it knows the plan's topout fraction) gets the new branch, and only
+  // for tNorm PAST that fraction: the pre-topout portion of the SAME call still returns the original
+  // formula unchanged. Past topout, ease from the elevation the arc had already reached down to the
+  // dramatic 6° (PHOTO_SUN_ELEVATION) over a short window instead of crawling there at tNorm=1.
+  var TOPOUT_SNAP_EASE_U = 0.08;   // fraction of the whole film the ease takes, tunable
+  function _sunElevationAt(tNorm, topoutU) {
+    var base = PHOTO_SUN_ELEVATION_START + (PHOTO_SUN_ELEVATION_END - PHOTO_SUN_ELEVATION_START) * tNorm;
+    if (topoutU == null || tNorm <= topoutU) return base;   // pre-topout, or no topout known: unchanged
+    var elAtTopout = PHOTO_SUN_ELEVATION_START + (PHOTO_SUN_ELEVATION_END - PHOTO_SUN_ELEVATION_START) * topoutU;
+    var easeEnd = Math.min(1, topoutU + TOPOUT_SNAP_EASE_U);
+    if (tNorm >= easeEnd || easeEnd <= topoutU) return PHOTO_SUN_ELEVATION_END;   // already dusk, held
+    var u = (tNorm - topoutU) / (easeEnd - topoutU);
+    return elAtTopout + (PHOTO_SUN_ELEVATION_END - elAtTopout) * u;
   }
   // updateSky() repositions the sun/sky/fog/lensflare but does NOT touch the shadow map — it has no
   // reason to, every OTHER caller (Time Machine, plain nav) already re-renders continuously. A film
@@ -2631,16 +2647,17 @@ async function setupEffects(A, renderer, scene, camera) {
   // while every shadow stayed frozen at whatever angle was last baked — worse than not animating at
   // all, since the mismatch reads as a bug rather than a static look. Called every frame the sun
   // moves, right after updateSky(), so no frame captures with a stale shadow angle.
-  function _sunArcStep(tNorm) {
+  function _sunArcStep(tNorm, topoutU) {
     if (!A.updateSky) return;
-    var _el = _sunElevationAt(tNorm);
+    var _el = _sunElevationAt(tNorm, topoutU);
     A.updateSky(_el, PHOTO_SUN_AZIMUTH);
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
     // §SUN_ARC_FILL reads the elevation this step JUST set — stashed here so the fill compensation
     // below cannot drift from the arc by re-deriving it (one elevation, two consumers).
     A._sunArcElevationDeg = _el;
     console.log('§SUN_ARC_STEP tNorm=' + tNorm.toFixed(3) + ' elevation=' + _el.toFixed(1) +
-      ' (start=' + PHOTO_SUN_ELEVATION_START + ' end=' + PHOTO_SUN_ELEVATION_END + ')');
+      ' (start=' + PHOTO_SUN_ELEVATION_START + ' end=' + PHOTO_SUN_ELEVATION_END + ')' +
+      (topoutU != null ? ' topoutU=' + topoutU.toFixed(3) : ''));
     return _el;
   }
   A._sunArcStep = _sunArcStep;
