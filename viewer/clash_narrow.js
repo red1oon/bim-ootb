@@ -53,7 +53,8 @@ function setupClashNarrow(A) {
     if (T) return T;
     T = { m4: new THREE.Matrix4(), m4b: new THREE.Matrix4(), rel: new THREE.Matrix4(), inv: new THREE.Matrix4(),
       e: new THREE.Euler(), q: new THREE.Quaternion(), p: new THREE.Vector3(), one: new THREE.Vector3(1, 1, 1),
-      box: new THREE.Box3(), boxB: new THREE.Box3(), v: new THREE.Vector3(), ray: new THREE.Ray() };
+      box: new THREE.Box3(), boxB: new THREE.Box3(), v: new THREE.Vector3(), ray: new THREE.Ray(),
+      va: new THREE.Vector3(), vb: new THREE.Vector3() };
     return T;
   }
   function heapMB() {
@@ -157,6 +158,85 @@ function setupClashNarrow(A) {
     }
     return { contained: odd >= 2, odd: odd };
   }
+  // ══ §MESH_OVERLAP_DEPTH (2026-09-06, bim-compiler MEP_CLASH_REVEAL_MOVIE.md §MESH_OVERLAP_DEPTH) ═══════
+  // The overlap SOLID A∩B, bounded EXACTLY. For triangle meshes every extreme point of A∩B along any axis
+  // is one of: an intersection-segment endpoint (enumerated below), a vertex of A inside B, or a vertex of
+  // B inside A — a planar face piece or a straight edge piece has no interior extreme; its extremes sit on
+  // its boundary, and that boundary is made of exactly those three kinds of point. So the AABB of that
+  // point set, taken in A's frame and again in B's frame, is the exact box of the overlap solid in each
+  // frame. depthMeshM = the THINNEST of the six extents: the penetration for a poke-in, the full cross
+  // dimension for a pass-through, the inner element's thinnest side when contained.
+  // It is NOT the MTV: severityM (SAT) is "how far to move to separate", which for a nested interval is
+  // hA+hB−|d| (S2: 0.4 for a Ø0.2 pipe centred in a 0.6 m beam); the overlap solid there is 0.2 thick.
+  // Both stay on the record; the label reads depthMeshM. The marker's size is NOT changed here.
+  var VERT_CAP = 4096;   // inside-vertex candidates per side; past it the box is flagged inexact, never guessed
+  function extNew() { return { mn: [Infinity, Infinity, Infinity], mx: [-Infinity, -Infinity, -Infinity], n: 0 }; }
+  function extGrow(E, x, y, z) {
+    if (x < E.mn[0]) E.mn[0] = x; if (y < E.mn[1]) E.mn[1] = y; if (z < E.mn[2]) E.mn[2] = z;
+    if (x > E.mx[0]) E.mx[0] = x; if (y > E.mx[1]) E.mx[1] = y; if (z > E.mx[2]) E.mx[2] = z;
+    E.n++;
+  }
+  function extSize(E) { return E.n ? [E.mx[0] - E.mn[0], E.mx[1] - E.mn[1], E.mx[2] - E.mn[2]] : null; }
+  var _pdirs = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  // point-in-mesh by ray parity — the same 3-axis / odd>=2 rule containedIn uses
+  function insideBvh(bt, p, X) {
+    var odd = 0;
+    for (var i = 0; i < 3; i++) {
+      X.ray.origin.copy(p); X.ray.direction.set(_pdirs[i][0], _pdirs[i][1], _pdirs[i][2]);
+      var hits; try { hits = bt.raycast(X.ray, THREE.DoubleSide); } catch (e) { hits = []; }
+      if (hits.length % 2 === 1) odd++;
+    }
+    return odd >= 2;
+  }
+  // outward normal of face f of `geo`, from its own winding (into `out`)
+  var _fa = new THREE.Vector3(), _fb = new THREE.Vector3(), _fc = new THREE.Vector3();
+  function faceNormal(geo, f, out) {
+    var pos = geo.attributes.position, ix = geo.index;
+    var i0 = ix ? ix.getX(f * 3) : f * 3, i1 = ix ? ix.getX(f * 3 + 1) : f * 3 + 1, i2 = ix ? ix.getX(f * 3 + 2) : f * 3 + 2;
+    _fa.fromBufferAttribute(pos, i0); _fb.fromBufferAttribute(pos, i1); _fc.fromBufferAttribute(pos, i2);
+    return out.subVectors(_fb, _fa).cross(_fc.sub(_fa)).normalize();
+  }
+  // point strictly inside a mesh: ray parity (containedIn's rule) AND the nearest-surface test — the point sits
+  // on the inner side of its closest face by at least half an eps. MEASURED Terminal 2026-09-06: parity alone
+  // read wall vertices as "inside" an IfcColumn whose shells overlap (odd hits from a point outside), which
+  // inflated the overlap box to the wall's full length; the nearest face's winding does not have that failure.
+  var _cpTarget = {}, _cpN = new THREE.Vector3(), _cpD = new THREE.Vector3();
+  function insideMesh(bt, geo, p, X) {
+    if (!insideBvh(bt, p, X)) return false;
+    var cp; try { cp = bt.closestPointToPoint(p, _cpTarget); } catch (e) { cp = null; }
+    if (!cp || !(cp.distance >= TOUCH_EPS * 0.5)) return false;
+    faceNormal(geo, cp.faceIndex, _cpN);
+    return _cpD.subVectors(p, cp.point).dot(_cpN) < 0;
+  }
+  // vertices of `geo` (own frame) inside the OTHER mesh: prefiltered by the other's local box (a vertex inside
+  // the other solid is inside its box), then insideMesh against the other's BVH. Grows Eself (own frame) and
+  // Eother (other frame). toOther: own frame → other frame.
+  function vertsInside(geo, otherGeo, otherBox, toOther, Eself, Eother, X) {
+    var pos = geo.attributes && geo.attributes.position, btOther = otherGeo && otherGeo.boundsTree;
+    var r = { n: 0, cand: 0, truncated: false };
+    if (!pos || !btOther) return r;
+    var v = X.va, w = X.vb;
+    for (var i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i); w.copy(v).applyMatrix4(toOther);
+      if (!otherBox.containsPoint(w)) continue;
+      if (++r.cand > VERT_CAP) { r.truncated = true; break; }
+      if (!insideMesh(btOther, otherGeo, w, X)) continue;
+      r.n++; extGrow(Eself, v.x, v.y, v.z); extGrow(Eother, w.x, w.y, w.z);
+    }
+    return r;
+  }
+  // the six extents → the record fields. EA in A's frame, EB in B's frame.
+  function overlapFields(out, EA, EB, exact, pts, MA) {
+    var a = extSize(EA), b = extSize(EB);
+    if (!a || !b) return;
+    var all = a.concat(b);
+    out.depthMeshM = Math.min.apply(null, all);
+    out.overlapMaxM = Math.max.apply(null, all);
+    out.overlapA = a; out.overlapB = b; out.overlapExact = !!exact; out.overlapPts = pts;
+    var c = new THREE.Vector3((EA.mn[0] + EA.mx[0]) / 2, (EA.mn[1] + EA.mx[1]) / 2, (EA.mn[2] + EA.mx[2]) / 2).applyMatrix4(MA);
+    out.overlapCenter = { x: c.x, y: c.y, z: c.z };
+  }
+
   // ── §M.2 stage 3d — contact/extent from the intersecting triangle PAIRS (one bvhcast, CLASH only) ──
   // The contact is the mean of the pair INTERSECTION SEGMENTS' midpoints and the extent is the bbox
   // diagonal of their endpoints — NOT triangle centroids: a 3 m cylinder side triangle has its centroid
@@ -166,13 +246,15 @@ function setupClashNarrow(A) {
   // Returns { triPairs (every pair the library calls intersecting), penetrating (segments longer than TOUCH_EPS),
   //           touchPairs (coplanar or shorter than TOUCH_EPS), contact, extentM, truncated } — contact/extent from
   //           the PENETRATING segments only.
-  function enumerateContact(btA, btB, rel, MA) {
+  //           §MESH_OVERLAP_DEPTH: EA/EB — the endpoints' extents in A's and (via relInv) B's frame, kept.
+  function enumerateContact(btA, btB, rel, MA, relInv) {
     var n = 0, nSeg = 0, nTouch = 0, truncated = false, sx = 0, sy = 0, sz = 0;
-    var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    var EA = extNew(), EB = extNew(), wv = new THREE.Vector3();
+    var mn = EA.mn, mx = EA.mx;
     var seg = new THREE.Line3();
     function grow(p) {
-      if (p.x < mn[0]) mn[0] = p.x; if (p.y < mn[1]) mn[1] = p.y; if (p.z < mn[2]) mn[2] = p.z;
-      if (p.x > mx[0]) mx[0] = p.x; if (p.y > mx[1]) mx[1] = p.y; if (p.z > mx[2]) mx[2] = p.z;
+      extGrow(EA, p.x, p.y, p.z);
+      if (relInv) { wv.copy(p).applyMatrix4(relInv); extGrow(EB, wv.x, wv.y, wv.z); }
     }
     try {
       btA.bvhcast(btB, rel, { intersectsTriangles: function (t1, t2) {
@@ -188,11 +270,11 @@ function setupClashNarrow(A) {
         if (n >= TRI_PAIR_CAP) { truncated = true; return true; }
         return false;
       } });
-    } catch (e) { return { triPairs: n, penetrating: nSeg, touchPairs: nTouch, truncated: truncated, contact: null, extentM: 0, err: e.message }; }
-    if (!nSeg) return { triPairs: n, penetrating: 0, touchPairs: nTouch, truncated: truncated, contact: null, extentM: 0 };
+    } catch (e) { return { triPairs: n, penetrating: nSeg, touchPairs: nTouch, truncated: truncated, contact: null, extentM: 0, err: e.message, EA: EA, EB: EB }; }
+    if (!nSeg) return { triPairs: n, penetrating: 0, touchPairs: nTouch, truncated: truncated, contact: null, extentM: 0, EA: EA, EB: EB };
     var c = new THREE.Vector3(sx / nSeg, sy / nSeg, sz / nSeg).applyMatrix4(MA);
     var ext = Math.sqrt((mx[0] - mn[0]) * (mx[0] - mn[0]) + (mx[1] - mn[1]) * (mx[1] - mn[1]) + (mx[2] - mn[2]) * (mx[2] - mn[2]));
-    return { triPairs: n, penetrating: nSeg, touchPairs: nTouch, truncated: truncated, contact: { x: c.x, y: c.y, z: c.z }, extentM: ext };
+    return { triPairs: n, penetrating: nSeg, touchPairs: nTouch, truncated: truncated, contact: { x: c.x, y: c.y, z: c.z }, extentM: ext, EA: EA, EB: EB };
   }
   function worldCentroid(geo, M) {
     var bb = localBox(geo);
@@ -212,7 +294,8 @@ function setupClashNarrow(A) {
     var ctx = opts.ctx || { bvhReused: 0, bvhBuiltNew: 0 };
     var X = tmp(), t0 = performance.now();
     var out = { stage: 'BROAD', verdict: VERDICT.UNKNOWN, reason: REASON.NOGEO, aabbOverlapM: null, obbDepthM: null,
-      severityM: null, triPairs: 0, truncated: false, contact: null, extentM: 0, containedOdd: 0, bvhReusedA: false, bvhReusedB: false, ms: 0 };
+      severityM: null, triPairs: 0, truncated: false, contact: null, extentM: 0, containedOdd: 0, bvhReusedA: false, bvhReusedB: false, ms: 0,
+      depthMeshM: null, overlapMaxM: null, overlapA: null, overlapB: null, overlapExact: false, overlapPts: null, overlapCenter: null, depthMs: 0, overlapFlat: false };
     if (!geoA || !geoB) { out.ms = performance.now() - t0; return out; }
     var ab = aabbOverlap(geoA, MA, geoB, MB);
     out.aabbOverlapM = (typeof opts.aabbOverlapM === 'number') ? opts.aabbOverlapM : ab.overlap;
@@ -235,8 +318,28 @@ function setupClashNarrow(A) {
     try { hit = geoA.boundsTree.intersectsGeometry(geoB, X.rel); } catch (e) { out.reason = REASON.NOGEO; out.err = 'intersectsGeometry: ' + (e && e.message); out.ms = performance.now() - t0; return out; }
     var en = null;
     if (hit) {
-      en = enumerateContact(geoA.boundsTree, geoB.boundsTree, X.rel, MA);
+      X.m4b.copy(X.rel).invert();                      // A local → B local
+      en = enumerateContact(geoA.boundsTree, geoB.boundsTree, X.rel, MA, X.m4b);
       out.triPairs = en.triPairs; out.touchPairs = en.touchPairs || 0; out.truncated = en.truncated;
+    }
+    var flat = false;   // §OVERLAP_FLAT annotation (see below)
+    if (hit && en.penetrating > 0) {
+      // §MESH_OVERLAP_DEPTH — curve endpoints (both frames, already in EA/EB) + each side's inside vertices
+      var tD = performance.now();
+      var vA = vertsInside(geoA, geoB, localBox(geoB), X.m4b, en.EA, en.EB, X);
+      var vB = vertsInside(geoB, geoA, localBox(geoA), X.rel, en.EB, en.EA, X);
+      overlapFields(out, en.EA, en.EB, !en.truncated && !vA.truncated && !vB.truncated,
+        { seg: en.penetrating * 2, vertsA: vA.n, vertsB: vB.n, candA: vA.cand, candB: vB.cand }, MA);
+      out.depthMs = performance.now() - tD;
+      // §OVERLAP_FLAT (2026-09-06) — ANNOTATION ONLY, the verdict below is unchanged from main. A column standing
+      // on a slab, or two unit cubes face to face (S7b, RED on main), gives the library edge-length intersection
+      // segments where a side face meets the other's face plane — long, so the "segment > TOUCH_EPS" rule calls
+      // them CLASH. The overlap solid there is FLAT (thinnest extent ~1e-10 m): nothing interpenetrates.
+      // MEASURED 2026-09-06: Terminal 745 of 3703 mesh-true pairs, Hospital 16 of 6733, are flat. Turning this
+      // into the verdict (CLASH requires thickness >= TOUCH_EPS) is a ⛔USER call — MEP_CLASH_REVEAL_MOVIE.md
+      // §MESH_OVERLAP_DEPTH MEASURED — because the witness oracle cannot yet judge multi-shell IFC geometry.
+      flat = (typeof out.depthMeshM === 'number') && out.depthMeshM < TOUCH_EPS;
+      out.overlapFlat = flat;
     }
     if (hit && en.penetrating > 0) {
       out.verdict = VERDICT.CLASH; out.reason = REASON.TRI; out.severityM = depth;
@@ -251,6 +354,16 @@ function setupClashNarrow(A) {
         var inner = ab.bInA ? geoB : geoA, innerM = ab.bInA ? MB : MA;
         out.contact = worldCentroid(inner, innerM);
         var ib = localBox(inner); out.extentM = ib.min.distanceTo(ib.max);
+        // §MESH_OVERLAP_DEPTH — the overlap solid IS the inner element: its box in its own frame, its
+        // vertices' box in the outer frame (every vertex is inside by the verdict; no parity pass needed)
+        var tD2 = performance.now();
+        var Ein = extNew(), Eout = extNew(), posI = inner.attributes && inner.attributes.position;
+        extGrow(Ein, ib.min.x, ib.min.y, ib.min.z); extGrow(Ein, ib.max.x, ib.max.y, ib.max.z);
+        var toOuter = ab.bInA ? X.rel : X.m4;          // B→A when B is inner; A→B (X.m4 = MB⁻¹·MA) when A is inner
+        if (posI) for (var vi = 0; vi < posI.count; vi++) { X.va.fromBufferAttribute(posI, vi).applyMatrix4(toOuter); extGrow(Eout, X.va.x, X.va.y, X.va.z); }
+        overlapFields(out, ab.bInA ? Eout : Ein, ab.bInA ? Ein : Eout, !!posI,
+          { seg: 0, vertsA: ab.bInA ? 0 : (posI ? posI.count : 0), vertsB: ab.bInA ? (posI ? posI.count : 0) : 0, candA: 0, candB: 0 }, MA);
+        out.depthMs = performance.now() - tD2;
       } else {
         out.verdict = VERDICT.CLEAR; out.reason = hit ? REASON.TOUCH : REASON.NONE; if (cont) out.containedOdd = cont.odd;
       }
@@ -367,7 +480,8 @@ function setupClashNarrow(A) {
       var rec = { pairId: pairIdOf(c[0], c[1]), guidA: c[0], guidB: c[1], classA: c[2] || '', classB: c[3] || '',
         discA: c[4] || '', discB: c[5] || '', stage: 'BROAD', verdict: VERDICT.UNKNOWN, reason: REASON.NOGEO,
         aabbOverlapM: (typeof c[8] === 'number') ? c[8] : null, obbDepthM: null, severityM: null, triPairs: 0, truncated: false,
-        contact: null, contactIfc: null, extentM: 0, bvhReusedA: false, bvhReusedB: false, ms: 0 };
+        contact: null, contactIfc: null, extentM: 0, bvhReusedA: false, bvhReusedB: false, ms: 0,
+        depthMeshM: null, overlapMaxM: null, overlapA: null, overlapB: null, overlapExact: false, overlapPts: null, overlapCenter: null, depthMs: 0 };
       var geoA = ta ? geoFor(ta.hash) : null, geoB = tb ? geoFor(tb.hash) : null;
       if (!geoA || !geoB) {
         rec.err = 'geometry: A=' + (ta ? (ta.hash ? (geoA ? 'ok' : 'hash-not-in-cache') : (ta.composed ? 'composed-aggregate-parent' : 'no-hash')) : 'no-transform') +
@@ -382,13 +496,16 @@ function setupClashNarrow(A) {
         rec.stage = v.stage; rec.verdict = v.verdict; rec.reason = v.reason; rec.obbDepthM = v.obbDepthM; rec.severityM = v.severityM;
         rec.triPairs = v.triPairs; rec.touchPairs = v.touchPairs || 0; rec.truncated = v.truncated; rec.contact = v.contact; rec.extentM = v.extentM;
         rec.bvhReusedA = v.bvhReusedA; rec.bvhReusedB = v.bvhReusedB; rec.ms = v.ms; rec.containedOdd = v.containedOdd; if (v.err) rec.err = v.err;
+        rec.depthMeshM = v.depthMeshM; rec.overlapMaxM = v.overlapMaxM; rec.overlapA = v.overlapA; rec.overlapB = v.overlapB;   // §MESH_OVERLAP_DEPTH
+        rec.overlapExact = v.overlapExact; rec.overlapPts = v.overlapPts; rec.overlapCenter = v.overlapCenter; rec.depthMs = v.depthMs;
+        rec.overlapFlat = !!v.overlapFlat;
         if (v.contact && A.three2ifc) { var q = A.three2ifc(v.contact.x, v.contact.y, v.contact.z); rec.contactIfc = { ix: q.ix, iy: q.iy, iz: q.iz }; }
       }
       if (rec.verdict === VERDICT.UNKNOWN) { counts.unknown++; if (rec.reason === REASON.AGG) counts.aggregateParent = (counts.aggregateParent || 0) + 1; var ek = rec.err || 'unknown'; counts.unknownBy = counts.unknownBy || {}; counts.unknownBy[ek] = (counts.unknownBy[ek] || 0) + 1; }
       else if (rec.stage === 'OBB') counts.obbRejected++;
       else {
         counts.obbSurvivors++;
-        if (rec.verdict === VERDICT.CLASH) { counts.meshTrue++; if (rec.reason === REASON.CONT) counts.contained++; if (rec.truncated) counts.truncated++; }
+        if (rec.verdict === VERDICT.CLASH) { counts.meshTrue++; if (rec.reason === REASON.CONT) counts.contained++; if (rec.truncated) counts.truncated++; if (rec.overlapFlat) counts.overlapFlat = (counts.overlapFlat || 0) + 1; }
         else { counts.meshClear++; if (rec.reason === REASON.TOUCH) counts.touchOnly = (counts.touchOnly || 0) + 1; }
       }
       c[9] = rec; pairs[i] = rec;
@@ -409,6 +526,21 @@ function setupClashNarrow(A) {
         (judged === 0 ? ' VACUOUS' : ''));
       console.log('§CLASH_OBB pair=' + label + ' rotatedSides=' + counts.rotatedSides + ' rejected=' + counts.obbRejected + (counts.rotatedSides === 0 ? ' VACUOUS(rotation)' : ''));
       if (counts.unknown) console.log('§CLASH_NARROW_UNKNOWN pair=' + label + ' ' + JSON.stringify(counts.unknownBy));
+      // §MESH_OVERLAP_DEPTH — how far the SAT proxy (severityM) sits from the mesh-true overlap, this run
+      var dn = 0, dInexact = 0, dMsTot = 0, ratios = [], over1p5 = 0, under = 0, dZero = 0;
+      for (var pi = 0; pi < pairs.length; pi++) {
+        var pr = pairs[pi]; if (!pr) continue;
+        dMsTot += pr.depthMs || 0;
+        if (pr.verdict !== VERDICT.CLASH || typeof pr.depthMeshM !== 'number') continue;
+        dn++; if (!pr.overlapExact) dInexact++; if (pr.depthMeshM < TOUCH_EPS) dZero++;
+        if (pr.depthMeshM >= TOUCH_EPS && typeof pr.severityM === 'number') { var rr = pr.severityM / pr.depthMeshM; ratios.push(rr); if (rr >= 1.5) over1p5++; if (rr < 1 - 1e-6) under++; }
+      }
+      ratios.sort(function (a, b) { return a - b; });
+      var med = ratios.length ? ratios[Math.floor(ratios.length / 2)] : null;
+      res.depthProxy = { known: dn, inexact: dInexact, belowTouchEps: dZero, median: med, max: ratios.length ? ratios[ratios.length - 1] : null, satGe1p5x: over1p5, satBelow: under, ms: +dMsTot.toFixed(1) };
+      console.log('§CLASH_DEPTH_PROXY pair=' + label + ' meshTrue=' + counts.meshTrue + ' overlapFlat=' + (counts.overlapFlat || 0) + ' depthKnown=' + dn + ' inexact=' + dInexact + ' belowTouchEps=' + dZero +
+        ' satOverMesh median=' + (med == null ? 'n/a' : med.toFixed(2)) + ' max=' + (ratios.length ? ratios[ratios.length - 1].toFixed(2) : 'n/a') +
+        ' satGe1p5xMesh=' + over1p5 + ' satBelowMesh=' + under + ' depthMs=' + dMsTot.toFixed(0) + (dn === 0 ? ' VACUOUS' : ''));
       var bs = boxStats(); res.boxStats = bs; _boxRun = null;
       console.log('§CLASH_OBB_STALEBOX pair=' + label + ' geometries=' + bs.geometries + ' cachedBoxStale=' + bs.stale + ' maxDeltaM=' + bs.maxDeltaM.toFixed(4) + ' (local box recomputed from positions; the cached geo.boundingBox is never trusted)');
       console.log('§CLASH_NARROW_LOSS pair=' + label + ' broad=' + counts.broad + ' accounted=' + (counts.obbRejected + counts.obbSurvivors + counts.unknown) +
@@ -492,10 +624,43 @@ function setupClashNarrow(A) {
     // S6 — disjoint after a tiny gap on a rotated pair: cube vs 45° cube at (2.5,2.5,0), AABBs do NOT overlap ⇒ still CLEAR (sanity, not a FP case)
     var s6 = testPair(cube2, I, cube2b, mat(2.5, 2.5, 0, Math.PI / 4));
     check('S6_far_pair_clear', 'CLEAR', s6.verdict, s6.verdict === 'CLEAR');
-    [cube2, cube2b, pipe, beam, u1, u2, small].forEach(function (g) { try { if (g.boundsTree && g.disposeBoundsTree) g.disposeBoundsTree(); g.dispose(); } catch (e) {} });
+    // ── §MESH_OVERLAP_DEPTH D-cases: hand-known overlap SOLIDS through the same testPair ──
+    function fx(v) { return (typeof v === 'number') ? v.toFixed(4) : String(v); }
+    function near(v, want, eps) { return typeof v === 'number' && Math.abs(v - want) < eps; }
+    // D5 — §OVERLAP_FLAT: a 0.4×0.4×3 column standing EXACTLY on a 6×0.3×6 slab (bottom face on top face), OBB stage
+    // off so the mesh stage judges it. The side faces cross the slab's top plane along the column's base edges —
+    // 0.4 m segments, so the segment-length rule (unchanged, S7b) says CLASH — and the overlap solid is FLAT:
+    // depthMesh < 1 mm, overlapFlat=true. The verdict is deliberately NOT changed here (⛔USER, see the comment above).
+    var col = mk(new THREE.BoxGeometry(0.4, 3, 0.4)), slab = mk(new THREE.BoxGeometry(6, 0.3, 6));
+    var d5 = testPair(col, mat(0, 1.5, 0, 0), slab, mat(0, -0.15, 0, 0), { skipObb: true });
+    check('D5_column_on_slab_flat_overlap', 'overlapFlat=true depthMesh<0.001 max=0.4000 (verdict unchanged: ' + d5.verdict + ')', 'overlapFlat=' + !!d5.overlapFlat + ' depthMesh=' + fx(d5.depthMeshM) + ' max=' + fx(d5.overlapMaxM) + ' verdict=' + d5.verdict + '@' + d5.stage + ' tri=' + d5.triPairs,
+      d5.overlapFlat === true && typeof d5.depthMeshM === 'number' && d5.depthMeshM < 0.001 && near(d5.overlapMaxM, 0.4, 1e-4));
+    // D6 — the same column sunk 20 mm into the slab ⇒ CLASH, depthMesh=0.020 (SAT agrees here), max=0.4
+    var d6 = testPair(col, mat(0, 1.48, 0, 0), slab, mat(0, -0.15, 0, 0), { skipObb: true });
+    check('D6_column_sunk_20mm', 'CLASH depthMesh=0.0200 max=0.4000', d6.verdict + ' depthMesh=' + fx(d6.depthMeshM) + ' max=' + fx(d6.overlapMaxM) + ' sat=' + fx(d6.severityM) + ' exact=' + d6.overlapExact,
+      d6.verdict === 'CLASH' && near(d6.depthMeshM, 0.02, 1e-4) && near(d6.overlapMaxM, 0.4, 1e-4) && d6.overlapExact === true);
+    // D1 — poke-in: unit cubes offset 0.97 ⇒ overlap solid 0.03×1×1 ⇒ depthMesh=0.030 max=1.000 (SAT agrees: 0.03)
+    var d1 = testPair(u1, I, u2, mat(0.97, 0, 0, 0));
+    check('D1_pokein_depth', 'CLASH depthMesh=0.0300 max=1.0000 exact', d1.verdict + ' depthMesh=' + fx(d1.depthMeshM) + ' max=' + fx(d1.overlapMaxM) + ' sat=' + fx(d1.severityM) + ' exact=' + d1.overlapExact + ' pts=' + JSON.stringify(d1.overlapPts),
+      d1.verdict === 'CLASH' && near(d1.depthMeshM, 0.03, 1e-4) && near(d1.overlapMaxM, 1.0, 1e-4) && d1.overlapExact === true);
+    // D2 — pass-through (S2's pipe/beam): the overlap solid is the Ø0.2 pipe section inside the 0.4-wide beam ⇒
+    // 0.4×0.2×0.2 ⇒ depthMesh=0.2 max=0.4, while SAT says 0.4 (0.1+0.3−0 on y: the MTV of a nested interval) —
+    // the proxy overstates a pass-through 2×. No vertex of either mesh lies inside the other (rings at x=±1.5).
+    check('D2_passthrough_depth_vs_sat', 'depthMesh=0.2000 max=0.4000 sat=0.4000 vertsA=vertsB=0', 'depthMesh=' + fx(s2.depthMeshM) + ' max=' + fx(s2.overlapMaxM) + ' sat=' + fx(s2.severityM) + ' exact=' + s2.overlapExact + ' pts=' + JSON.stringify(s2.overlapPts),
+      near(s2.depthMeshM, 0.2, 2e-3) && near(s2.overlapMaxM, 0.4, 2e-3) && near(s2.severityM, 0.4, 1e-6) && s2.overlapExact === true && s2.overlapPts && s2.overlapPts.vertsA === 0 && s2.overlapPts.vertsB === 0);
+    // D3 — contained (S4's 0.2 cube in the 2 m cube): the overlap solid is the inner cube ⇒ 0.2 on every axis, from the inner element alone
+    check('D3_contained_depth', 'depthMesh=0.2000 max=0.2000 exact', 'depthMesh=' + fx(s4.depthMeshM) + ' max=' + fx(s4.overlapMaxM) + ' sat=' + fx(s4.severityM) + ' exact=' + s4.overlapExact + ' pts=' + JSON.stringify(s4.overlapPts),
+      near(s4.depthMeshM, 0.2, 1e-6) && near(s4.overlapMaxM, 0.2, 1e-6) && s4.overlapExact === true);
+    // D4 — rotated (S5, the 45° cube's edge x+y=1.586 cuts A's corner): overlap = the triangle (1,1),(0.586,1),(1,0.586) × z∈[−1,1].
+    // A frame: 0.414×0.414×2; B frame: 0.293×0.586×2 ⇒ depthMesh=0.2929 (= SAT here, convex) max=2.0. A's corner edge
+    // vertices (1,1,±1) lie ON B's top/bottom faces — boundary points, excluded by insideMesh's half-eps margin by
+    // design (a flush vertex must never inflate the box); the curve endpoints already carry those extremes.
+    check('D4_rotated_corner_depth', 'depthMesh=0.2929 max=2.0000 exact', 'depthMesh=' + fx(s5.depthMeshM) + ' max=' + fx(s5.overlapMaxM) + ' sat=' + fx(s5.severityM) + ' exact=' + s5.overlapExact + ' pts=' + JSON.stringify(s5.overlapPts),
+      near(s5.depthMeshM, 0.29289, 1e-3) && near(s5.overlapMaxM, 2.0, 1e-3) && s5.overlapExact === true);
+    [cube2, cube2b, pipe, beam, u1, u2, small, col, slab].forEach(function (g) { try { if (g.boundsTree && g.disposeBoundsTree) g.disposeBoundsTree(); g.dispose(); } catch (e) {} });
     console.log('§CLASH_NARROW_SELFTEST summary pass=' + pass + ' fail=' + fail + ' bvhReady=' + !!window._bvhReady);
     return { pass: pass, fail: fail, cases: cases };
   };
 
-  console.log('§CLASH_NARROW_INIT wired (no allocation until qualifyRows) triPairCap=' + TRI_PAIR_CAP + ' obbEps=' + OBB_EPS);
+  console.log('§CLASH_NARROW_INIT wired (no allocation until qualifyRows) triPairCap=' + TRI_PAIR_CAP + ' obbEps=' + OBB_EPS + ' vertCap=' + VERT_CAP + ' (§MESH_OVERLAP_DEPTH on)');
 }

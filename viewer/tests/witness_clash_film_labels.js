@@ -161,8 +161,11 @@ function pageProbe(sabotage) {
     // §P2.4 / §CLASH_HUD_CARD (2026-09-06) probes. tolTruth reads what the pair RECORD carries; composite
     // spies ctx.fillText on a real 2D context so the claim is about the string actually written, not a
     // formatter called in isolation; hudCard calls the SHIPPED bigStatsBuild and returns its cards.
+    // §MESH_OVERLAP_DEPTH: the clash figure is depthMeshM when the record carries it (src=mesh), else severityM (src=obb)
     tolTruth: () => pairs().map((p, i) => ({ i: i, discA: p.discA, discB: p.discB, tolMm: (p.tolMm == null ? null : p.tolMm),
-      sevMm: (typeof p.severityM === 'number' ? Math.round(p.severityM * 1000) : null) })),
+      src: (typeof p.depthMeshM === 'number') ? 'mesh' : 'obb',
+      sevMm: (typeof p.depthMeshM === 'number') ? Math.round(p.depthMeshM * 1000) : (typeof p.severityM === 'number' ? Math.round(p.severityM * 1000) : null),
+      obbMm: (typeof p.severityM === 'number' ? Math.round(p.severityM * 1000) : null) })),
     composite: (c, d, fs) => { pose(c, d); const r = A.clashLabels.update(A.camera, fs, W, H);
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
       const texts = []; const orig = ctx.fillText;
@@ -257,9 +260,10 @@ function pageProbe(sabotage) {
       if (!a || !b || typeof r.tolerance_m !== 'number') return; const k = a < b ? a + '|' + b : b + '|' + a; if (tolTruth[k] == null) tolTruth[k] = Math.round(r.tolerance_m * 1000); });
     const keyOf = p => (p.discA < p.discB ? p.discA + '|' + p.discB : p.discB + '|' + p.discA);
     const tt = await page.evaluate(() => window.__cll.tolTruth());
-    const tolBad = tt.filter(p => p.tolMm == null || p.tolMm !== tolTruth[keyOf(p)] || p.sevMm == null || !(p.sevMm > 0));
+    const tolBad = tt.filter(p => p.tolMm == null || p.tolMm !== tolTruth[keyOf(p)] || p.sevMm == null || !(p.sevMm >= 0));
+    const srcMesh = tt.filter(p => p.src === 'mesh').length;
     claim('P9a_every_pair_carries_rule_tolerance_and_measured_clash_mm', tt.length > 0 && tolBad.length === 0,
-      `pairs=${tt.length} rules=${Object.keys(tolTruth).length} [${Object.keys(tolTruth).map(k => k + '=' + tolTruth[k] + 'mm').join(' ')}] bad=${tolBad.length}${tolBad.length ? ' e.g. ' + JSON.stringify(tolBad[0]) : ''}`);
+      `pairs=${tt.length} rules=${Object.keys(tolTruth).length} [${Object.keys(tolTruth).map(k => k + '=' + tolTruth[k] + 'mm').join(' ')}] bad=${tolBad.length} clashSrc mesh=${srcMesh} obb=${tt.length - srcMesh}${tolBad.length ? ' e.g. ' + JSON.stringify(tolBad[0]) : ''}`);
     await page.evaluate(() => window.__cll.reset());
     const cmp = await page.evaluate((c, d) => window.__cll.composite(c, d, 0.6), iso.contact, D_CLOSE);
     const isoP = cmp.placed.find(q => q.i === iso.i), isoT = tt.find(p => p.i === iso.i);
@@ -270,7 +274,7 @@ function pageProbe(sabotage) {
     const row3 = j >= 0 ? cmp.texts[j + 2] : null;
     claim('P9b_third_row_composited_is_tolerance_over_measured_clash',
       !!isoP && !!row3 && row3.t === wantRow && row3.y > cmp.texts[j + 1].y && cmp.texts[j + 1].y > cmp.texts[j].y && isoP.h === h3 && h3 !== h2,
-      `placed=${!!isoP} drawn=${cmp.drawn} rows=[${j >= 0 ? cmp.texts.slice(j, j + 3).map(t => '"' + t.t + '"@y' + t.y).join(' ') : 'not found'}] want="${wantRow}" panelH=${isoP ? isoP.h : '-'} (3-row=${h3}, old 2-row=${h2})`);
+      `placed=${!!isoP} drawn=${cmp.drawn} rows=[${j >= 0 ? cmp.texts.slice(j, j + 3).map(t => '"' + t.t + '"@y' + t.y).join(' ') : 'not found'}] want="${wantRow}" src=${isoT ? isoT.src : '-'} obbWouldSay=${isoT ? isoT.obbMm + 'mm' : '-'} panelH=${isoP ? isoP.h : '-'} (3-row=${h3}, old 2-row=${h2})`);
 
     // ── §CLASH_HUD_CARD — the reveal-round roster carries the film's own count, and only once the film exists
     if (!hud0.hasBuilder) claim('H0_hud_card_absent_before_film_built', false, 'INCONCLUSIVE: A.bigStatsBuild is not wired on this page');

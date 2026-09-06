@@ -239,7 +239,10 @@ function setupClashLabels(A) {
         if (behind || Math.abs(nx) > 1 || Math.abs(ny) > 1) { rec.skippedFrustum++; continue; }
         var sx = (nx + 1) / 2 * w, sy = (1 - ny) / 2 * h;
         var nm = _names[e.i];
-        var clashMm = (typeof p.severityM === 'number') ? Math.round(p.severityM * 1000) : null;
+        // §MESH_OVERLAP_DEPTH — the mesh-true overlap when the record carries it; the OBB proxy only as a stated fallback
+        var dm = (typeof p.depthMeshM === 'number') ? p.depthMeshM : p.severityM;
+        var clashSrc = (typeof p.depthMeshM === 'number') ? 'mesh' : 'obb';
+        var clashMm = (typeof dm === 'number') ? Math.round(dm * 1000) : null;
         var tolMm = (p.tolMm != null) ? p.tolMm : null;
         var fact = factRow({ tolMm: tolMm, clashMm: clashMm });
         var bw = M.padX * 2 + Math.ceil(Math.max(measure(nm.a, M.fontPx), measure(nm.b, M.fontPx), fact ? measure(fact, M.fontPx) : 0));
@@ -253,7 +256,7 @@ function setupClashLabels(A) {
         for (var q = 0; q < _placed.length; q++) if (overlaps(_placed[q], rect)) { hit = true; break; }
         if (hit) { rec.skippedOverlap++; continue; }
         _placed.push({ i: e.i, pairId: p.pairId, x: x, y: y, w: bw, h: bh, sx: sx, sy: sy,
-          d: e.d, nameA: nm.a, nameB: nm.b, tolMm: tolMm, clashMm: clashMm, alpha: 0 });
+          d: e.d, nameA: nm.a, nameB: nm.b, tolMm: tolMm, clashMm: clashMm, clashSrc: clashSrc, alpha: 0 });
       }
       rec.labelled = _placed.length;
 

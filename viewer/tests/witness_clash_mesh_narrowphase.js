@@ -152,6 +152,9 @@ function pageProbe() {
           verdict: v ? v.verdict : 'CLASH', reason: v ? v.reason : 'LEGACY_BBOX_ONLY', stage: v ? v.stage : 'BROAD',
           oracleKnown: known, oracleHit: hit, oracleHow: how, aabbOverlapM: (typeof c[8] === 'number') ? c[8] : null,
           obbDepthM: v ? v.obbDepthM : null, triPairs: v ? (v.triPairs | 0) : 0, hasContact: !!(v && v.contact),
+          // §MESH_OVERLAP_DEPTH — the mesh-true overlap beside the SAT proxy it replaces on the label
+          severityM: v ? v.severityM : null, depthMeshM: (v && typeof v.depthMeshM === 'number') ? v.depthMeshM : null,
+          overlapMaxM: (v && typeof v.overlapMaxM === 'number') ? v.overlapMaxM : null, overlapExact: !!(v && v.overlapExact), overlapFlat: !!(v && v.overlapFlat), depthMs: v ? (v.depthMs || 0) : 0,
           classA: c[2] || '', classB: c[3] || '', err: v && v.err ? String(v.err).slice(0, 80) : undefined,
           oracleNote: (!known) ? ('A=' + (ta ? (ta.hash ? (gA ? (gA.boundsTree ? 'ok' : 'no-bvh') : 'hash-not-in-cache') : 'no-hash') : 'no-transform') + ' B=' + (tb ? (tb.hash ? (gB ? (gB.boundsTree ? 'ok' : 'no-bvh') : 'hash-not-in-cache') : 'no-hash') : 'no-transform')) : undefined });
       });
@@ -177,7 +180,7 @@ function pageProbe() {
   const browser = await puppeteer.launch({ headless: true, userDataDir: profile, protocolTimeout: 30 * 60 * 1000, env: Object.assign({}, process.env, gpuEnv),
     args: ['--no-sandbox', '--hide-crash-restore-bubble', '--window-size=1300,840', '--enable-precise-memory-info'].concat(gpuArgs) });
   const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 720 });
-  page.on('console', m => { const t = m.text(); logRaw('[con] ' + t); if (/§CLASH_(NARROWPHASE|OBB |NARROW_LOSS|MEM|NARROW_SELFTEST|BBOX_FP|NARROW_INIT)|§BVH_(INIT|DEFERRED|SELFTEST)|§CLASH_RTREE ready|§CONTRACT_CHECK/.test(t)) console.log('  ' + t); });
+  page.on('console', m => { const t = m.text(); logRaw('[con] ' + t); if (/§CLASH_(NARROWPHASE|OBB |NARROW_LOSS|MEM|NARROW_SELFTEST|BBOX_FP|NARROW_INIT|DEPTH_PROXY)|§BVH_(INIT|DEFERRED|SELFTEST)|§CLASH_RTREE ready|§CONTRACT_CHECK/.test(t)) console.log('  ' + t); });
   page.on('pageerror', e => logRaw('[pageerror] ' + e.message));
   let R = null, ready = null;
   try {
@@ -216,6 +219,20 @@ function pageProbe() {
       log(`§CLASH_NARROWPHASE pair=TOTAL building=${BLD} LEGACY — no clash_narrow.js on this ROOT; every broad row is reported as a clash`);
     }
     log(`§CMN_PARITY sampled=${R.parity.sampled} maxDiff=${R.parity.maxDiff.toExponential(2)} missing=${R.parity.missing}`);
+    // §MESH_OVERLAP_DEPTH — TOTAL: how wrong the SAT proxy was on THIS building, from the records (measured, logged, not gated);
+    // a flat overlap (thinnest extent < 1 mm) is a touch the segment-length rule still calls CLASH — counted, verdict unchanged (⛔USER)
+    {
+      const cl = R.records.filter(r => r.verdict === 'CLASH' && r.stage === 'MESH');
+      const known = cl.filter(r => typeof r.depthMeshM === 'number');
+      const solid = known.filter(r => r.depthMeshM >= 0.001 && typeof r.severityM === 'number');
+      const ratios = solid.map(r => r.severityM / r.depthMeshM).sort((a, b) => a - b);
+      const med = ratios.length ? ratios[Math.floor(ratios.length / 2)] : null;
+      const worst = solid.slice().sort((a, b) => (b.severityM / b.depthMeshM) - (a.severityM / a.depthMeshM)).slice(0, 5);
+      log(`§CLASH_DEPTH_PROXY pair=TOTAL building=${BLD} meshTrue=${cl.length} depthKnown=${known.length} missing=${cl.length - known.length} overlapFlat=${known.filter(r => r.overlapFlat).length} inexact=${known.filter(r => !r.overlapExact).length}` +
+        ` satOverMesh median=${med == null ? 'n/a' : med.toFixed(2)} max=${ratios.length ? ratios[ratios.length - 1].toFixed(2) : 'n/a'} satGe1p5xMesh=${ratios.filter(x => x >= 1.5).length} satGe3xMesh=${ratios.filter(x => x >= 3).length} satBelowMesh=${ratios.filter(x => x < 1 - 1e-6).length}` +
+        ` depthMsTotal=${R.records.reduce((a, r) => a + (r.depthMs || 0), 0).toFixed(0)}${known.length === 0 ? ' VACUOUS' : ''}`);
+      worst.forEach(r => log(`§CLASH_DEPTH_PROXY_WORST pair=${r.pairId} cls=${r.classA}|${r.classB} sat=${(r.severityM * 1000).toFixed(0)}mm mesh=${(r.depthMeshM * 1000).toFixed(0)}mm max=${(r.overlapMaxM * 1000).toFixed(0)}mm ratio=${(r.severityM / r.depthMeshM).toFixed(2)} exact=${r.overlapExact}`));
+    }
     // name every disagreement and every unknown, so a red line says WHICH pair and WHY (never re-derive from memory)
     const i3 = R.records.filter(r => r.verdict === 'CLEAR' && r.oracleKnown && r.oracleHit);
     const i1 = R.records.filter(r => r.verdict === 'CLASH' && r.oracleKnown && !r.oracleHit);
@@ -241,7 +258,8 @@ function pageProbe() {
     .invariant('I2 no silent loss — one record per broad-phase candidate, verdict from the enum', rs => rs.length === R.broadTotal && rs.every(r => ['CLASH', 'CLEAR', 'UNKNOWN'].includes(r.verdict)))
     .invariant('I3 every CLEAR is really clear — oracle finds no intersection and no containment', rs => rs.filter(r => r.verdict === 'CLEAR' && r.oracleKnown).every(r => !r.oracleHit))
     .invariant('I4 DB-derived world matrix equals the live scene matrix (getMatrixAt) on the sample', () => R.parity.sampled > 0 && R.parity.maxDiff < 1e-5)
-    .invariant('I5 the hand-known synthetic cases (S1-S8, incl. the touch policy) pass through the same testPair', () => !!R.selfTest && R.selfTest.fail === 0 && R.selfTest.pass >= 10)
+    .invariant('I5 the hand-known synthetic cases (S1-S8 incl. the touch policy, D1-D6 the overlap solids) pass through the same testPair', () => !!R.selfTest && R.selfTest.fail === 0 && R.selfTest.pass >= 16)
+    .invariant('I6 §MESH_OVERLAP_DEPTH every MESH-stage CLASH carries a finite depthMeshM >= 0 with overlapMaxM >= depthMeshM', rs => { const cl = rs.filter(r => r.verdict === 'CLASH' && r.stage === 'MESH'); return cl.length > 0 && cl.every(r => typeof r.depthMeshM === 'number' && isFinite(r.depthMeshM) && r.depthMeshM >= 0 && typeof r.overlapMaxM === 'number' && r.overlapMaxM >= r.depthMeshM - 1e-9); })
     .invariant('I6 every CLASH verdict carries a world contact point for the film lane', rs => rs.filter(r => r.verdict === 'CLASH' && r.reason !== 'LEGACY_BBOX_ONLY').every(r => r.hasContact))
     .redControl(rs => { const c = rs.map(r => Object.assign({}, r)); const i = c.findIndex(r => r.verdict === 'CLASH' && r.oracleKnown); if (i >= 0) c[i].oracleHit = false; else if (c[0]) { c[0].verdict = 'CLASH'; c[0].oracleKnown = true; c[0].oracleHit = false; } return c; })
     .run();
