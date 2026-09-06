@@ -161,7 +161,7 @@
 //   (the real shortcut is Alt+C) and added a "copy bake command" link that hands the user the exact
 //   `node cli_silent_bake.js ...` command for their own terminal — there is no server behind this
 //   page, so nothing here can run a bake for them.
-const CACHE_VERSION = 'v1157';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1158';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

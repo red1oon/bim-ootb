@@ -502,6 +502,19 @@ function setupClashFilm(A) {
         ' total=' + total + ' sumCheck=' + (sum === total ? 'OK' : 'MISMATCH:' + sum));
       return { slots: slots, backdrop: backdrop, total: total };
     };
+    // §STOREY_REVEAL_MARKERS_OFF (2026-09-06, user: the markers "should cease to allow the overall
+    // stats grab user attention") — hide/show the marker meshes wholesale. Distinct from setFade/
+    // highlightDiscPair, which only choose between solid and ambient PULSING; both of those leave the
+    // markers on screen, which is exactly what the user is asking to stop for the closing beats.
+    // Non-destructive: dispose() is still the only thing that frees them, so this is reversible and a
+    // later beat (or the next bake) can bring them straight back.
+    A.clashFilm.setVisible = function (v) {
+      if (!_meshA && !_meshB) return false;
+      if (_meshA) _meshA.visible = !!v;
+      if (_meshB) _meshB.visible = !!v;
+      console.log('§CLASH_FILM_VISIBLE ' + (v ? 'shown' : 'hidden'));
+      return true;
+    };
     // The severity box of pair i and the box currently placed — what the clamp witness reads.
     A.clashFilm.boxOf = function (i) { return (_nat && i >= 0 && i < _nat.length) ? { naturalM: _nat[i], placedM: _cur[i] } : null; };
     // §CLASH_MARKER_OVERLAP_BOX — what the witness decomposes the instance matrices against

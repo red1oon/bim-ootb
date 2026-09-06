@@ -51,6 +51,8 @@ function setupCpeStoreyReveal(A) {
   // blue cycle originally asked for). Dropped from the TOP, per the user's own "forego top floors":
   // the lower storeys are the ones the camera has actually been inside during the film.
   var MIN_SLOT_SEC = 1.0;
+  // Fraction of each storey's slot the tint is actually LIT (the rest is the dark rest phase above).
+  var LIT_FRAC = 0.72;
 
   // §STOREY_REVEAL_LIST — the real, ordered set of physical storeys. Excludes ' Ceiling'/' TOS'
   // pseudo-storeys and 'Unknown' (same exclusion elements_meta's own storey column needs elsewhere,
@@ -160,9 +162,14 @@ function setupCpeStoreyReveal(A) {
     var idx = Math.min(list.length - 1, Math.floor(w / slot));
     var u = (w - idx * slot) / slot;                                     // 0..1 within this storey's slot
     var opacity = Math.max(0, Math.min(1, Math.min(u, 1 - u) / FADE_FRAC));
+    // §STOREY_REVEAL_PULSE (2026-09-06, user: "it should be shine thru and then cease, not persist")
+    // — each storey OWNS its slot but only GLOWS for the first LIT_FRAC of it; the tail of the slot is
+    // dark, so the sequence reads as a series of separate pulses instead of one colour handing
+    // straight over to the next with the building never returning to rest. The card/caption keep
+    // running through the dark part (the stats are what the beat is for), only the 3D tint ceases.
     return { idx: idx, n: list.length, storey: list[idx].name,
              color: COLORS[idx % COLORS.length], emoji: EMOJI[idx % EMOJI.length],
-             u: u, opacity: opacity };
+             u: u, opacity: opacity, dark: (u > LIT_FRAC) };
   };
 
   // §STOREY_REVEAL_CAPTION — replaces the room-title/disc-parade caption for exactly this window;
@@ -207,14 +214,16 @@ function setupCpeStoreyReveal(A) {
   // A.filterStorey's hide/show (isolating would hide the "shine THROUGH the whole building" read the
   // spec asks for; a tint keeps the whole building visible while one storey glows the cycle color).
   var _C = (typeof THREE !== 'undefined' && THREE.Color) ? new THREE.Color() : null;
-  var _touched = [], _curIdx = null;
+  var _touched = [], _curIdx = null, _clones = [];
   function _restoreTint() {
     _touched.forEach(function (s) {
       if (s.inst != null && s.m.instanceColor && _C) { s.m.setColorAt(s.inst, _C.setHex(s.c)); s.m.instanceColor.needsUpdate = true; }
       else if (s.batch != null && s.m.setColorAt && _C) { try { s.m.setColorAt(s.batch, _C.setHex(s.c)); } catch (e) {} }
-      else if (s.e != null && s.m.material && s.m.material.emissive) s.m.material.emissive.setHex(s.e);
+      else if (s.mat) s.m.material = s.mat;   // regular mesh: put the ORIGINAL material object back
     });
     _touched = [];
+    _clones.forEach(function (c) { try { c.dispose(); } catch (e) {} });
+    _clones = [];
   }
   function _applyTint(storeyName, hex) {
     if (!_C) return 0;   // node-without-THREE (witness harness) — visual is inert, pacing still testable
@@ -222,11 +231,32 @@ function setupCpeStoreyReveal(A) {
     // Regular meshes — EXACT same predicate panels.js's A.filterStorey uses (§NAV_FIND_002), so this
     // can never pick up an Instanced/BatchedMesh container by accident (those do not carry a single
     // userData.storey — their per-instance storey lives in A._instanceMeta/_batchMeta instead).
+    // §STOREY_REVEAL_TINT_SHARED_MATERIAL (2026-09-06 — the bug the user saw: "not marking by storey
+    // but whole building"). Materials in this viewer are SHARED and cached (A._matCache; A.toggleXray
+    // walks that same cache), so writing `o.material.emissive` for one storey's meshes repainted every
+    // OTHER mesh using the same material — the whole building. It also made the restore a no-op: the
+    // second mesh sharing a material saved the ALREADY-TINTED value as its "original", so the last
+    // write on restore put the tint back and the colour persisted.
+    // Fix: give the storey its OWN material. Cloned ONCE PER DISTINCT MATERIAL (not per mesh — that
+    // would be thousands of clones), assigned to just this storey's meshes, disposed on restore, and
+    // the original material object put straight back. Per-object, exactly like the partition
+    // A.filterStorey uses (obj.visible / filterInstancedMesh / filterBatchedMesh, panels.js:711) —
+    // which never had this problem precisely because visibility is per-object and emissive is not.
+    // opacity=1 on the clone keeps the lit storey SOLID while §STOREY_REVEAL_XRAY has the rest of the
+    // building at 0.3, which is what makes it read as shining THROUGH from an orbit distance.
+    var _matMap = (typeof Map !== 'undefined') ? new Map() : null;
     A.collectMeshes(function (o) { return o.isMesh && o.userData.storey === storeyName; }).forEach(function (o) {
-      if (o.material && o.material.emissive) {
-        _touched.push({ m: o, e: o.material.emissive.getHex() });
-        o.material.emissive.setHex(hex); n++;
+      if (!o.material || Array.isArray(o.material) || !o.material.emissive || !o.material.clone) return;
+      var orig = o.material, cl = _matMap ? _matMap.get(orig) : null;
+      if (!cl) {
+        cl = orig.clone();
+        cl.emissive.setHex(hex);
+        cl.transparent = false; cl.opacity = 1;
+        if (_matMap) _matMap.set(orig, cl);
+        _clones.push(cl);
       }
+      _touched.push({ m: o, mat: orig });
+      o.material = cl; n++;
     });
     A.collectMeshes(function (o) { return o.isInstancedMesh; }).forEach(function (mesh) {
       var meta = A._instanceMeta && A._instanceMeta[mesh.id];
@@ -253,7 +283,7 @@ function setupCpeStoreyReveal(A) {
       }
     });
     console.log('§STOREY_REVEAL_TINT storey="' + storeyName + '" color=#' + hex.toString(16).padStart(6, '0') +
-      ' meshesTouched=' + n);
+      ' meshesTouched=' + n + ' clonedMaterials=' + _clones.length);
     return n;
   }
   // Called every frame by the bake loop and the preview tick (one pure-ish function, two callers —
@@ -261,13 +291,63 @@ function setupCpeStoreyReveal(A) {
   // A.cpeRevealApplyVisual already keeps). `plan`=null (any tNorm) forces a restore-and-exit, the
   // same explicit "force restore" signal cpeRevealApplyVisual(null,0) already uses at every bake/
   // preview exit path.
+  // §STOREY_REVEAL_XRAY (2026-09-06, user: "should the whole building go 'O'cclusion or bbx frame or
+  // x-ray?") — X-RAY, scoped to this window only. A storey lit INSIDE a solid building cannot be seen
+  // from the closing orbit at all; bbox throws the model away and isolating the storey contradicts
+  // "shine through". A.toggleXray already exists (the landed Alt+Z cycle, panels.js/tools.js) and is
+  // what cinema_maxq's own §CINEMA_XRAY_RESET turns OFF at bake start — so this must be a scoped beat
+  // that restores itself, never a global toggle left on. `_xrayByUs` guarantees we only ever undo an
+  // x-ray WE engaged: if it was somehow already on, we leave it exactly as we found it.
+  // §STOREY_REVEAL_MARKERS_OFF (same user pass: "there are still few clash pairs been highlighted.
+  // They should cease to allow the overall stats grab user attention") — the clash markers are hidden
+  // from the moment this window opens and stay hidden for the rest of the film, so the storey colours
+  // and then the closing Measure totals own the screen. Restored on the forced-restore exit path.
+  var _xrayByUs = false, _markersHidden = false;
+  function _enterWindow() {
+    if (!A.xrayOn && typeof A.toggleXray === 'function') {
+      A.toggleXray(); _xrayByUs = true;
+      console.log('§STOREY_REVEAL_XRAY on (scoped to this window; will restore at orbit start)');
+    }
+    if (!_markersHidden && A.clashFilm && A.clashFilm.setVisible) {
+      if (A.clashFilm.setVisible(false)) {
+        _markersHidden = true;
+        console.log('§STOREY_REVEAL_MARKERS_OFF clash markers hidden — stats own the closing beats');
+      }
+    }
+  }
+  function _exitWindow(restoreMarkers) {
+    if (_xrayByUs && A.xrayOn && typeof A.toggleXray === 'function') {
+      A.toggleXray();
+      console.log('§STOREY_REVEAL_XRAY off (restored)');
+    }
+    _xrayByUs = false;
+    if (restoreMarkers && _markersHidden && A.clashFilm && A.clashFilm.setVisible) {
+      A.clashFilm.setVisible(true);
+      console.log('§STOREY_REVEAL_MARKERS_OFF clash markers restored (bake/preview exit)');
+    }
+    if (restoreMarkers) _markersHidden = false;
+  }
+
   A.storeyRevealApplyVisual = function (plan, tNorm) {
-    var vis = plan ? A.storeyRevealVisualAt(plan, tNorm) : null;
-    var key = vis ? vis.idx : null;
+    // plan===null is the FORCED restore (every bake/preview exit path, including the throw path).
+    // It must run unconditionally: by the time it arrives the film has normally already left the
+    // window, so _curIdx is null and the key check below would return early — leaving the clash
+    // markers hidden for the NEXT bake. Restore first, then fall through to the normal no-op.
+    if (!plan) { _restoreTint(); _curIdx = null; _exitWindow(true); return; }
+    var vis = A.storeyRevealVisualAt(plan, tNorm);
+    // A dark slot keeps its own key so the tint is actually taken DOWN between storeys (the "cease").
+    var key = vis ? (vis.idx + (vis.dark ? 'd' : 'l')) : null;
     if (key === _curIdx) return;
     _restoreTint();
     _curIdx = key;
-    if (vis) _applyTint(vis.storey, vis.color);
+    if (vis) {
+      _enterWindow();
+      if (!vis.dark) _applyTint(vis.storey, vis.color);
+    } else {
+      // A real plan whose tNorm is simply past the window: the film moved on to the orbit. Drop the
+      // x-ray, but KEEP the markers hidden — that is the whole point of hiding them.
+      _exitWindow(false);
+    }
   };
 }
 if (typeof window !== 'undefined') window.setupCpeStoreyReveal = setupCpeStoreyReveal;

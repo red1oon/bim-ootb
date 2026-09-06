@@ -1482,7 +1482,7 @@
         if (_roomTitle && A.resourcePanelAt && typeof window.tmOpsSnapshot === 'function' && _bkState) {
           A._resHoldFrames = 0; A._resHoldLogged = false;   // §CPE_PIE_HOLD counts are per-bake
           A._statTailFrames = 0; A._statTailLogged = false; // §CPE_STATS_TAIL, same
-          A._measureCardLogged = false;                     // §MEASURE_BUILDING_CARD, same per-bake reset
+          A._measureCardLast = null;                        // §MEASURE_BUILDING_CARD, same per-bake reset
           _resOps = window.tmOpsSnapshot();
           console.log('§CPE_RESOURCE_PANEL ' + (_resOps && _resOps.length
             ? ('on ops=' + _resOps.length + ' rates=' + (!!(window.LABOR_RATES)) + ' pos=' + _ovPos)
@@ -1586,12 +1586,24 @@
       }
       // §MEASURE_BUILDING_CARD — the film's last 3 seconds (the closing roll-to-stop) show the
       // whole-building Measure figures. Queried once per bake, never per frame.
-      var _measureCard = null;
-      try { if (A.buildingMeasureCard) _measureCard = A.buildingMeasureCard(); }
-      catch (eMB) { console.warn('§MEASURE_BUILDING_CARD failed: ' + eMB.message + ' — final card skipped'); }
-      var _measureU = (_measureCard && plan && plan.durationSec > 0) ? (1 - 3 / plan.durationSec) : null;
-      if (_measureU != null) console.log('§MEASURE_BUILDING_CARD window start=' + _measureU.toFixed(4) +
-        ' (last 3.0s of ' + plan.durationSec.toFixed(1) + 's)');
+      // The CLOSING ORBIT belongs to the Measure totals, start to finish. (User, after watching the
+      // 2026-09-06 ending bake: "The very last quick orbit the cards return to clash info. They should
+      // be playing the Measure totals stats.") It previously took only the last 3s, so the normal
+      // all-card rotation — clash cards included — played over the rest of the orbit, which is exactly
+      // what the user saw. The window is now the whole orbit beat, [beats.rise, 1] — also the one span
+      // the storey reveal never touches (it ends AT beats.rise), so the two cannot overlap.
+      var _measureCards = null;
+      try { if (A.buildingMeasureCards) _measureCards = A.buildingMeasureCards(); }
+      catch (eMB) { console.warn('§MEASURE_BUILDING_CARD failed: ' + eMB.message + ' — final cards skipped'); }
+      var _measureU = (_measureCards && _measureCards.length && plan && plan.beats &&
+                       plan.beats.rise > 0 && plan.beats.rise < 1) ? plan.beats.rise : null;
+      if (_measureU != null) {
+        console.log('§MEASURE_BUILDING_CARD window=[' + _measureU.toFixed(4) + ',1] cards=' + _measureCards.length +
+          ' (the whole closing orbit, ' + ((1 - _measureU) * plan.durationSec).toFixed(1) + 's, ' +
+          (((1 - _measureU) * plan.durationSec) / _measureCards.length).toFixed(1) + 's per card)');
+      } else if (_measureCards) {
+        console.log('§MEASURE_BUILDING_CARD INCONCLUSIVE reason=no-usable-rise-beat — closing cards skipped');
+      }
       A._clashHudHighlightLast = null;   // per-bake reset — a prior bake's held highlight must not leak in
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
@@ -1968,7 +1980,13 @@
               A._clashHudHighlightLast = null;
             }
           } else if (_inPullback && _pairCards.length) {
-            _si = A.bigStatsAt(_pairCards, _tnFilm * _filmSecFull);
+            // §CPE_CARD_SPAN — index off the WINDOW, not the absolute film clock. bigStatsAt made the
+            // pullback open on whatever card the global rotation happened to be at (measured on the
+            // 2026-09-06 ending bake: ELEC|STR for 0.6s before reaching the intended ARC|STR) and
+            // 7 cards x 4.5s overran the 25.9s window, cutting the tail of the list and repeating the
+            // first. bigStatsAtSpan walks all of them exactly once, so the backdrop card really does
+            // land as the shell comes back solid.
+            _si = A.bigStatsAtSpan(_pairCards, (_tnFilm - _pullbackU.start) / (_pullbackU.end - _pullbackU.start));
             if (_si && _si.card && A.clashFilm && A.clashFilm.highlightDiscPair) {
               if (A._clashHudHighlightLast !== _si.card.discPairKey) {
                 var _hl = A.clashFilm.highlightDiscPair(_si.card.discPairKey);
@@ -2031,11 +2049,14 @@
         // (the final 3s) is past beats.rise, so it cannot collide with the storey block above (which
         // ends AT beats.rise) or with either clash window. Same _statInfo shape, no new draw code.
         if (_measureU != null && _tnFilm >= _measureU) {
-          _statInfo = { shown: { card: _measureCard, idx: 0, n: 1, opacity: 1 }, pos: _ovPos, held: null };
-          if (!A._measureCardLogged) {
-            A._measureCardLogged = true;
-            console.log('§MEASURE_BUILDING_CARD on screen from frame ' + i + '/' + nFrames +
-              ' tn=' + _tnFilm.toFixed(4) + ' — ' + _measureCard.big + ' ' + _measureCard.label);
+          var _mc = A.bigStatsAtSpan(_measureCards, (_tnFilm - _measureU) / (1 - _measureU));
+          if (_mc) {
+            _statInfo = { shown: _mc, pos: _ovPos, held: null };
+            if (A._measureCardLast !== _mc.idx) {
+              A._measureCardLast = _mc.idx;
+              console.log('§MEASURE_BUILDING_CARD frame=' + i + '/' + nFrames + ' tn=' + _tnFilm.toFixed(4) +
+                ' card=' + (_mc.idx + 1) + '/' + _mc.n + ' — ' + _mc.card.big + ' ' + _mc.card.label);
+            }
           }
         }
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo);

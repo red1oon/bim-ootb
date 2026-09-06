@@ -373,6 +373,60 @@ function setupCpeResourcePanel(A) {
   // repo orders on). Floor area is the envelope FOOTPRINT (dx x dy), a bbox proxy, labelled as such —
   // never presented as true room area, same rule the storey card's own footprint clause follows.
   // Returns null (never a fabricated card) when the table is missing or the envelope is degenerate.
+  A.buildingMeasureCards = function () {
+    var one = A.buildingMeasureCard();
+    if (!one) return null;
+    var out = [one];
+    var e = one._envelope;
+    // Envelope dimensions as their own card — the "Dimensions XYZ" the user asked for, stated as the
+    // three real extents rather than folded into a sub-line where they read as an afterthought.
+    out.push({ big: e.dx.toFixed(1) + ' \u00D7 ' + e.dy.toFixed(1) + ' \u00D7 ' + e.dz.toFixed(1),
+               label: 'm building envelope', sub: 'X \u00D7 Y \u00D7 Z extents',
+               src: 'element_transforms MIN/MAX' });
+    // Opening census — a COMPLETE count from elements_meta, so these are facts, not proxies.
+    try {
+      var cr = A.dbQuery("SELECT REPLACE(ifc_class,'Ifc','') AS cls, COUNT(*) FROM elements_meta " +
+        "WHERE ifc_class IN ('IfcDoor','IfcWindow','IfcWall','IfcWallStandardCase') GROUP BY cls");
+      var cnt = {}; (cr || []).forEach(function (r) { cnt[r[0]] = (cnt[r[0]] || 0) + (+r[1]); });
+      var walls = (cnt.Wall || 0) + (cnt.WallStandardCase || 0);
+      if (cnt.Door > 0) {
+        var csub = [];
+        if (cnt.Window > 0) csub.push(cnt.Window.toLocaleString() + ' windows');
+        if (walls > 0) csub.push(walls.toLocaleString() + ' walls');
+        out.push({ big: cnt.Door.toLocaleString(), label: 'doors', sub: csub.join('  \u00B7  '),
+                   src: 'elements_meta census' });
+      }
+      console.log('\u00A7MEASURE_BUILDING_CARD census doors=' + (cnt.Door || 0) +
+        ' windows=' + (cnt.Window || 0) + ' walls=' + walls);
+    } catch (eC) { console.warn('\u00A7MEASURE_BUILDING_CARD census failed: ' + eC.message + ' — card omitted'); }
+    // Cost. Labour is REAL (§HR_COST, time-phased off the schedule). Materials are a ROUGH
+    // count x rate — MATERIAL_COSTS rates carry units (M / M2 / EA) that a plain element count does
+    // NOT honour, exactly the caveat effects.js's own cpeRevealDiscQtyCost states about itself. The
+    // card says "rough" on its face rather than passing a proxy off as a bill of quantities.
+    try {
+      var labour = (A._hrCost && A._hrCost.total > 0) ? A._hrCost.total : 0;
+      var mat = 0;
+      if (A.MATERIAL_COSTS) {
+        var mr = A.dbQuery('SELECT ifc_class, COUNT(*) FROM elements_meta GROUP BY ifc_class');
+        (mr || []).forEach(function (r) {
+          var mc = A.MATERIAL_COSTS[r[0]];
+          if (mc) mat += (+r[1]) * mc.rate;
+        });
+      }
+      if (labour + mat > 0) {
+        out.push({ big: Math.round(labour + mat).toLocaleString(), label: 'total estimated cost',
+                   sub: 'labour ' + Math.round(labour).toLocaleString() +
+                        '  \u00B7  materials ' + Math.round(mat).toLocaleString() + ' (rough, count \u00D7 rate)',
+                   src: 'A._hrCost + MATERIAL_COSTS (not unit-aware)' });
+      }
+      console.log('\u00A7MEASURE_BUILDING_CARD cost labour=' + Math.round(labour) +
+        ' materialRough=' + Math.round(mat) + ' total=' + Math.round(labour + mat));
+    } catch (eK) { console.warn('\u00A7MEASURE_BUILDING_CARD cost failed: ' + eK.message + ' — card omitted'); }
+    console.log('\u00A7MEASURE_BUILDING_CARD cards=' + out.length + ' [' +
+      out.map(function (c) { return c.label; }).join(' | ') + ']');
+    return out;
+  };
+
   A.buildingMeasureCard = function () {
     if (typeof A.dbQuery !== 'function') { console.log('§MEASURE_BUILDING_CARD INCONCLUSIVE reason=no-dbQuery'); return null; }
     var r;
@@ -391,10 +445,28 @@ function setupCpeResourcePanel(A) {
     var vol = dx * dy * dz, foot = dx * dy;
     var card = { big: Math.round(vol).toLocaleString(), label: 'm\u00B3 measured volume',
                  sub: Math.round(foot).toLocaleString() + ' m\u00B2 footprint  \u00B7  ' + dz.toFixed(1) + ' m tall',
-                 src: 'element_transforms envelope (bbox proxy, same as measure.js dbl-click)' };
+                 src: 'element_transforms envelope (bbox proxy, same as measure.js dbl-click)',
+                 _envelope: { dx: dx, dy: dy, dz: dz, vol: vol, foot: foot } };
     console.log('\u00A7MEASURE_BUILDING_CARD vol=' + vol.toFixed(1) + 'm3 footprint=' + foot.toFixed(1) +
       'm2 height=' + dz.toFixed(2) + 'm (dx=' + dx.toFixed(2) + ' dy=' + dy.toFixed(2) + ')');
     return card;
+  };
+
+  // §CPE_CARD_SPAN (2026-09-06) — like bigStatsAt, but for a BOUNDED window: `u` (0..1 across that
+  // window) maps onto exactly ONE pass through `cards`, so the first card is always index 0 and the
+  // last one finishes as the window closes. bigStatsAt indexes off ABSOLUTE film seconds, which is
+  // right for an open-ended rotation and wrong for a window: measured on the 2026-09-06 ending bake,
+  // the pullback opened mid-rotation on ELEC|STR for 0.6s before reaching the intended first card,
+  // and 7 cards x CARD_SECONDS (31.5s) overran the 25.9s window so the tail of the list was cut and
+  // the first card repeated. Same fade shape as bigStatsAt — only the indexing differs.
+  A.bigStatsAtSpan = function (cards, u) {
+    if (!cards || !cards.length) return null;
+    var n = cards.length;
+    var w = Math.max(0, Math.min(0.999999, u));
+    var idx = Math.min(n - 1, Math.floor(w * n));
+    var su = w * n - idx;                                  // 0..1 within this card's own slot
+    var fade = Math.min(1, Math.min(su, 1 - su) / 0.12);
+    return { card: cards[idx], idx: idx, n: n, opacity: Math.max(0, fade) };
   };
 
   // Which card is on screen at this film second, and its fade. Pure — the witness gates the rotation
