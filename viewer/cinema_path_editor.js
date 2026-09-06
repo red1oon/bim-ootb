@@ -744,6 +744,7 @@
       roomTitle: !!s.roomTitle,
       reveal: !!s.reveal,
       clash: !!s.clash,                    // §CLASH_FILM_P1
+      storeyReveal: !!s.storeyReveal,       // §STOREY_HIGHLIGHT_REVEAL
       bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
       dayCounter: s.dayCounter || 'tr',
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
@@ -928,6 +929,12 @@
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-clash" type="checkbox"> ' +
           'Clash pairs</label> <span style="color:#666">(mesh-true pairs, red/blue at each contact, ' +
           'pulsing from frame 0 so you see where the trouble is before it is built)</span></div>' +
+        // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06) — the
+        // final 5 real seconds of the pull-back beat, ending exactly where the closing orbit begins,
+        // fill with each storey tinting through in sequence instead of just cruising toward the orbit.
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-storey-reveal" type="checkbox"> ' +
+          'Storey highlight</label> <span style="color:#666">(each storey glows blue/green/yellow/orange ' +
+          'in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card)</span></div>' +
         // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+M bake always
         // renders at this window's canvas (cinema_maxq.js:1120 reads renderer.domElement), so this
         // select does not resize anything here; it is stored on the path and cli_silent_bake.js
@@ -2254,7 +2261,8 @@
     var tm = null;
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
-      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash },
+      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash,
+                    storeyReveal: !!ov.storeyReveal },
       bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
       tmActive: tm ? !!tm.active : false,
@@ -2304,7 +2312,8 @@
   // this for the select; the sibling checkboxes never got it — this closes that gap.
   function _syncPanelControls() {
     [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
-     ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash]].forEach(function(p) {
+     ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash],
+     ['cpe-storey-reveal', !!_state.storeyReveal]].forEach(function(p) {
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
     });
@@ -2321,6 +2330,11 @@
       _state.buildup = !!ps.checkboxes.buildup;
       _state.roomTitle = !!ps.checkboxes.roomTitle;
       _state.reveal = !!ps.checkboxes.reveal;
+      // §STOREY_HIGHLIGHT_REVEAL: restored alongside its siblings. Unlike buildup/roomTitle/reveal it
+      // carries no origX baseline (matching cpe-clash's own lighter treatment — neither participates
+      // in _isEdited()'s dirty-check, both are read live by their own draw code with no beat-boundary
+      // side effect that a stale plan could get wrong).
+      _state.storeyReveal = !!ps.checkboxes.storeyReveal;
       // §CPE_EDIT_BASELINE: a restored plan's own checkbox values are the new "unedited" baseline —
       // reopening a saved buildup=on plan and touching nothing else must not read as edited.
       _state.origBuildup = _state.buildup;
@@ -2478,7 +2492,7 @@
     // sampling loop runs a single near-zero-width pass) purely to RESET the module's `_liveSegs` for
     // this run; without this a PRIOR run's real room-title segments could leak into this one's
     // rise-proper/round-2 stretches, showing stale captions the user just turned off.
-    var _titleOn = !!(s.roomTitle || s.reveal);
+    var _titleOn = !!(s.roomTitle || s.reveal || s.storeyReveal);
     var _titleTotalSec = s.roomTitle ? _buildOverride()._total : 0;
     if (_titleOn && a.roomTitleLiveStart) a.roomTitleLiveStart(s.plan, _titleTotalSec);
     // §CPE_DAY_COUNTER_POS — cpe_day_counter.js has carried dayCounterLiveStart/Tick/Stop since it
@@ -2553,6 +2567,8 @@
         // so user confident it is working") — pure function of (plan, tNorm), the SAME call the bake
         // loop makes (cinema_maxq.js), so preview and bake cannot diverge. No-op when reveal is off.
         if (s.reveal && a.cpeRevealApplyVisual) a.cpeRevealApplyVisual(s.plan, tn);
+        // §STOREY_HIGHLIGHT_REVEAL — same "preview mirrors the bake exactly" call.
+        if (s.storeyReveal && a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(s.plan, tn);
         // §CPE_BUILDUP_OWNS_TM: `bkPrev` alone is a snapshot taken once at flight-start — it never
         // saw a LIVE uncheck of #cpe-buildup mid-flight. Gate on `s.buildup` too so unchecking it
         // stops feeding the cursor on the very next frame, instead of racing the checkbox handler's
@@ -2610,6 +2626,9 @@
         // ended mid-round (or right at it) must not leave ARC/STR hidden for the editing session that
         // follows. plan=null is the explicit "force restore" signal cpeRevealApplyVisual reads.
         if (a.cpeRevealApplyVisual) a.cpeRevealApplyVisual(null, 0);
+        // §STOREY_HIGHLIGHT_REVEAL: same exit contract — a tinted storey must not follow the user
+        // back into normal editing.
+        if (a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(null, 0);
         _state.flying = false;
         // §CPE_SCRUB_PLAY: natural completion — clear the pause hooks, this run is over, not paused.
         s._flyPauseAt = null; s._flyResume = null; s.flyPaused = false;
@@ -3474,6 +3493,7 @@
         // not a default-on behavior (extra film time + a real visual change, see checkbox hint).
         reveal: false,
         clash: false,          // §CLASH_FILM_P1
+        storeyReveal: false,   // §STOREY_HIGHLIGHT_REVEAL — off by default, same reasoning as reveal/clash
         bakeRes: '',           // §CPE_BAKE_RES — '' = the window; else '<w>x<h>@<fps>'
         origReveal: false,
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
@@ -3623,6 +3643,16 @@
         _markPreviewStale();
         console.log('§CPE_CLASH checkbox=' + (_state.clash ? 'on' : 'off') +
           ' — mesh-true clash pairs as world content in the bake');
+      });
+      // §STOREY_HIGHLIGHT_REVEAL — like clash above, this does not move any beat boundary (it reads
+      // the EXISTING plan.beats.rise), so a plain _markPreviewStale() is the whole handler; no
+      // _replanFilm() needed (contrast §CPE_DISCIPLINE_REVEAL's handler below, which does move one).
+      var _storeyRevealEl = document.getElementById('cpe-storey-reveal');
+      if (_storeyRevealEl) _storeyRevealEl.addEventListener('change', function(e) {
+        _state.storeyReveal = !!e.target.checked;
+        _markPreviewStale();
+        console.log('§STOREY_REVEAL checkbox=' + (_state.storeyReveal ? 'on' : 'off') +
+          ' — each storey tints in sequence for the last 5s of pull-back, ending at the orbit start');
       });
       // §CPE_BAKE_RES — stored on the path for the silent baker; changes nothing in this window.
       var _resEl = document.getElementById('cpe-bake-res');

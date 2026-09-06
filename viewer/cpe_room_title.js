@@ -895,6 +895,9 @@ function setupCpeRoomTitle(A) {
     var ctx = c.getContext('2d');
     ctx.clearRect(0, 0, c.width, c.height);
     var info = (plan != null && tNorm != null && A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, tNorm) : null;
+    // §STOREY_HIGHLIGHT_REVEAL — same override chain the bake loop uses (cinema_maxq.js), so the
+    // editor's rehearsal never disagrees with what a real bake would show.
+    if (!info && plan != null && tNorm != null && A.storeyRevealCaptionAt) info = A.storeyRevealCaptionAt(plan, tNorm);
     if (!info) info = A.roomTitleOpacityAt(_liveSegs, tSec);
     if (info) A.roomTitleCompositeOntoCanvas(ctx, c.width, c.height, info.name, info.opacity);
   };

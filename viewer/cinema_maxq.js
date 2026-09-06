@@ -1593,6 +1593,12 @@
         // (_tFilm(_tn) === _tn when no clip is set).
         var _tnFilm = _tFilm(_tn);
         if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tnFilm);
+        // §STOREY_HIGHLIGHT_REVEAL — the storey tint, windowed to the LAST 5s of `pullback` (ending
+        // at plan.beats.rise, the orbit's own start — NOT the orbit beat itself). Pure function of
+        // (plan, tNorm), null outside that narrow window by construction, so this can never fire
+        // inside the disc-reveal round's own tail above. Same "one pure function, two callers" call
+        // cinema_path_editor.js's preview step() makes.
+        if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(plan, _tnFilm);
         // §CLASH_FILM_P1 (§4) — the pulse is a pure function of FILM seconds, never
         // performance.now(), so a 15 fps and a 24 fps bake of the same film pulse identically and a
         // re-bake is reproducible. Per-instance, so phase 2 can hold a labelled pair solid while the
@@ -1751,6 +1757,10 @@
         // which case the normal room-title lookup below runs untouched. Same call the preview tick
         // makes (cpe_room_title.js's roomTitleLiveTick) so bake and preview cannot diverge.
         var _titleInfo = (A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, _tnFilm) : null;   // §CPE_CLIP_REVEAL_FILM_T
+        // §STOREY_HIGHLIGHT_REVEAL — checked next, before the normal room-title lookup. Mutually
+        // exclusive with the disc-parade caption above by construction (this window opens at
+        // plan.beats.rise, the disc parade's tail closes there), so the two can never both fire.
+        if (!_titleInfo && A.storeyRevealCaptionAt) _titleInfo = A.storeyRevealCaptionAt(plan, _tnFilm);
         if (!_titleInfo) {
           _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
         }
@@ -1843,6 +1853,17 @@
             _resInfo = { info: _holdInfo, pos: _ovPos };   // nothing to revolve — hold, never blank
           }
         }
+        // §STOREY_HIGHLIGHT_REVEAL — takes over the SAME panel slot for exactly the narrow last-5s-
+        // of-pullback window (ending at plan.beats.rise). Shaped identically to the `_si`/_statInfo branch above
+        // (A.bigStatsCompositeOntoCanvas reads `.shown.card`/`.idx`/`.n`/`.opacity` either way), so no
+        // new draw code is needed — only which content occupies the slot changes. `_resInfo` is
+        // already null here by construction (it is only ever set in the `!_inReveal` branch far
+        // above, and this window opens well after `_inReveal` goes true), so no second corner panel
+        // can appear alongside it.
+        if (A.storeyRevealStatCardAt) {
+          var _srCard = A.storeyRevealStatCardAt(plan, _tnFilm);
+          if (_srCard) _statInfo = { shown: _srCard, pos: _ovPos, held: null };
+        }
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
@@ -1925,6 +1946,9 @@
       // §CPE_DISCIPLINE_REVEAL: same contract — ARC/STR left hidden after a bake would follow the
       // user into normal navigation. plan=null is the explicit "force restore" signal.
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
+      // §STOREY_HIGHLIGHT_REVEAL: same contract — a tinted storey left glowing after a bake would
+      // follow the user into normal navigation. plan=null forces the restore.
+      try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
       _workPacingReset();
       // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
       // came within 4 m of a pair), then release the selector's state with the markers.
@@ -1999,6 +2023,7 @@
       try { if (window.tmDeactivateIfBakeOwned) window.tmDeactivateIfBakeOwned(); } catch (eTM2) {}
       try { _ghostGroundRestore(); } catch (e4) {}
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
+      try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR2) {}
       try { _workPacingReset(); } catch (e5) {}
       // §CLASH_FILM_P1 — same restore on the THROW path (review of #1678): a throw inside the loop
       // skips the in-try dispose above and would leave the marker InstancedMeshes in the user's
@@ -2097,7 +2122,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash'].forEach(function(fk) {
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'storeyReveal'].forEach(function(fk) {
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
@@ -2108,7 +2133,8 @@
           (ov.clip ? ' clip=' + ov.clip.in + '→' + ov.clip.out : '') +
           ' total=' + (ov._total != null ? (+ov._total).toFixed(1) : '?') + 's' +
           ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
-          ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr'));
+          ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr') +
+          ' storeyReveal=' + (ov.storeyReveal ? 1 : 0));
         await start({ editor: false, preview: false, override: ov, overrideSource: src,
                       frames: o.frames, fps: o.fps, forceWebm: o.forceWebm });
         return { source: src, deliveredBytes: window.__maxqDeliveredBytes || 0 };
