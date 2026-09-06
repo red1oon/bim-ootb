@@ -123,7 +123,12 @@
 // fraction, the sun arc eases to the dramatic 6° Alt+S angle over a short window instead of crawling
 // there at the film's last frame; the pre-topout formula is an untouched code branch (zero regression
 // to the outdoor shadow-to-sun-angle correlation during active construction). Fill/PL pin unchanged.
-const CACHE_VERSION = 'v1150';   // bump on each deploy; per-change detail is the git commit message.
+// v1151 (2026-09-06) §P2.4 + §CLASH_HUD_CARD (MEP_CLASH_REVEAL_MOVIE.md): viewer/clash_labels.js — the
+//   clash label gains a 3rd row "[tolerance mm / clash mm]" (rule tolerance from clash_rules.json, clash
+//   from the pair's severityM); viewer/clash_film.js — stamps tolMm per pair, stats() exposes broad/
+//   falseExcluded; viewer/cpe_resource_panel.js — reveal-round roster gains a "mesh-true clashes
+//   flagged" card read from A.clashFilm.stats(), dropped when the film was never built.
+const CACHE_VERSION = 'v1151';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

@@ -158,6 +158,21 @@ function pageProbe(sabotage) {
     markerSolid: (idx, period) => { const mesh = A.scene.children.find(o => o.userData && o.userData.clashFilmSide === 'A'); if (!mesh) return null;
       const read = t => { A.clashFilm.update(t); const a = mesh.instanceColor.array; return { sel: +a[idx * 3].toFixed(6), amb: +a[(idx === 0 ? 1 : 0) * 3].toFixed(6) }; };
       return { a: read(period / 4), b: read(3 * period / 4), fade: A.clashLabels.fadeOf(idx) }; },
+    // §P2.4 / §CLASH_HUD_CARD (2026-09-06) probes. tolTruth reads what the pair RECORD carries; composite
+    // spies ctx.fillText on a real 2D context so the claim is about the string actually written, not a
+    // formatter called in isolation; hudCard calls the SHIPPED bigStatsBuild and returns its cards.
+    tolTruth: () => pairs().map((p, i) => ({ i: i, discA: p.discA, discB: p.discB, tolMm: (p.tolMm == null ? null : p.tolMm),
+      sevMm: (typeof p.severityM === 'number' ? Math.round(p.severityM * 1000) : null) })),
+    composite: (c, d, fs) => { pose(c, d); const r = A.clashLabels.update(A.camera, fs, W, H);
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
+      const texts = []; const orig = ctx.fillText;
+      ctx.fillText = function (t, x, y) { texts.push({ t: String(t), x: Math.round(x), y: Math.round(y) }); return orig.apply(this, arguments); };
+      const drawn = A.clashLabelsCompositeOntoCanvas(ctx, W, H, r.placed.map(q => Object.assign({}, q, { alpha: 1 })));
+      return { drawn: drawn, texts: texts, placed: r.placed.map(q => ({ i: q.i, pairId: q.pairId, tolMm: q.tolMm, clashMm: q.clashMm, x: q.x, y: q.y, w: q.w, h: q.h, nameA: q.nameA, nameB: q.nameB })) }; },
+    hudCard: () => { const st = A.clashFilm.stats(); const has = typeof A.bigStatsBuild === 'function';
+      const cards = has ? (A.bigStatsBuild([], 0, 0) || []) : null;
+      return { hasBuilder: has, cards: cards ? cards.map(c => ({ big: c.big, label: c.label, sub: c.sub || '', src: c.src })) : null,
+        stats: { built: st.built, pairs: st.pairs, broad: st.broad, falseExcluded: st.falseExcluded } }; },
     pathProfile: (n) => {
       A.camera.position.copy(camLoad.p); A.controls.target.copy(camLoad.t); A.camera.lookAt(camLoad.t); A.camera.updateMatrixWorld(true); A.controls.update();
       try { if (typeof A.cinemaPathPlan === 'function') A.cinemaPathPlan(60); } catch (e) {}
@@ -203,6 +218,8 @@ function pageProbe(sabotage) {
     if (!has) { inconclusive('clash_labels.js not wired — A.clashLabels.update / A.clashLabelsCompositeOntoCanvas absent'); process.exitCode = 2; return; }
     await page.evaluate(pageProbe, SABOTAGE);
     const sz = await page.evaluate(() => window.__cll.size()); log(`§CLL_FRAME ${sz.W}x${sz.H}`);
+    // §CLASH_HUD_CARD H0 — read the roster BEFORE the film is built: the card must be absent (dropped, not a zero)
+    const hud0 = await page.evaluate(() => window.__cll.hudCard());
     const st = await page.evaluate(() => window.__cll.build());
     log(`§CLL_BUILT pairs=${st.pairs} markers=${st.markers} periodS=${st.periodS}`);
     if (!st.pairs) { inconclusive(`trueClash=0 on ${BLD} — a building with no clashes proves nothing about a clash label (VACUOUS)`); process.exitCode = 2; return; }
@@ -230,6 +247,43 @@ function pageProbe(sabotage) {
     const D_CLOSE = +Math.max(0.5, Math.min(5, iso.isolationM * 0.4)).toFixed(2);
     const FAR_D = +Math.max(30, iso.isolationM * 3, 20.6).toFixed(1);
     log(`§CLL_PROBE_DIST close=${D_CLOSE}m far=${FAR_D}m (far is arbitrary-but-large, not a module constant)`);
+
+    // ── §P2.4 — the label's 3rd row: [rule tolerance mm / measured clash mm]. Truth for the tolerance is
+    // clash_rules.json read from DISK here (first rule per discipline pair, the same first-wins the film
+    // build applies); truth for the clash is the pair's own severityM (the marker is already sized from it).
+    const rulesJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer/clash_rules.json'), 'utf8'));
+    const tolTruth = {};
+    (rulesJson.clash_rules || []).forEach(r => { const a = r.source && r.source.discipline, b = r.target && r.target.discipline;
+      if (!a || !b || typeof r.tolerance_m !== 'number') return; const k = a < b ? a + '|' + b : b + '|' + a; if (tolTruth[k] == null) tolTruth[k] = Math.round(r.tolerance_m * 1000); });
+    const keyOf = p => (p.discA < p.discB ? p.discA + '|' + p.discB : p.discB + '|' + p.discA);
+    const tt = await page.evaluate(() => window.__cll.tolTruth());
+    const tolBad = tt.filter(p => p.tolMm == null || p.tolMm !== tolTruth[keyOf(p)] || p.sevMm == null || !(p.sevMm > 0));
+    claim('P9a_every_pair_carries_rule_tolerance_and_measured_clash_mm', tt.length > 0 && tolBad.length === 0,
+      `pairs=${tt.length} rules=${Object.keys(tolTruth).length} [${Object.keys(tolTruth).map(k => k + '=' + tolTruth[k] + 'mm').join(' ')}] bad=${tolBad.length}${tolBad.length ? ' e.g. ' + JSON.stringify(tolBad[0]) : ''}`);
+    await page.evaluate(() => window.__cll.reset());
+    const cmp = await page.evaluate((c, d) => window.__cll.composite(c, d, 0.6), iso.contact, D_CLOSE);
+    const isoP = cmp.placed.find(q => q.i === iso.i), isoT = tt.find(p => p.i === iso.i);
+    const wantRow = isoT ? '[' + tolTruth[keyOf(isoT)] + 'mm / ' + isoT.sevMm + 'mm]' : null;
+    let j = -1; for (let k = 0; k + 2 < cmp.texts.length && isoP; k++) if (cmp.texts[k].t === isoP.nameA && cmp.texts[k + 1].t === isoP.nameB) { j = k; break; }
+    const fpx = Math.max(12, Math.round(sz.H * 0.022)), pY = Math.round(fpx * 0.45), rG = Math.round(fpx * 0.3);
+    const h3 = pY * 2 + fpx * 3 + rG * 2, h2 = pY * 2 + fpx * 2 + rG;
+    const row3 = j >= 0 ? cmp.texts[j + 2] : null;
+    claim('P9b_third_row_composited_is_tolerance_over_measured_clash',
+      !!isoP && !!row3 && row3.t === wantRow && row3.y > cmp.texts[j + 1].y && cmp.texts[j + 1].y > cmp.texts[j].y && isoP.h === h3 && h3 !== h2,
+      `placed=${!!isoP} drawn=${cmp.drawn} rows=[${j >= 0 ? cmp.texts.slice(j, j + 3).map(t => '"' + t.t + '"@y' + t.y).join(' ') : 'not found'}] want="${wantRow}" panelH=${isoP ? isoP.h : '-'} (3-row=${h3}, old 2-row=${h2})`);
+
+    // ── §CLASH_HUD_CARD — the reveal-round roster carries the film's own count, and only once the film exists
+    if (!hud0.hasBuilder) claim('H0_hud_card_absent_before_film_built', false, 'INCONCLUSIVE: A.bigStatsBuild is not wired on this page');
+    else claim('H0_hud_card_absent_before_film_built', hud0.stats.built === false && hud0.cards !== null && !hud0.cards.some(c => c.label === 'mesh-true clashes flagged'),
+      `before build: built=${hud0.stats.built} cards=${hud0.cards ? hud0.cards.length : 'null'} [${hud0.cards ? hud0.cards.map(c => c.label).join(' | ') : ''}]`);
+    const hud1 = await page.evaluate(() => window.__cll.hudCard());
+    const card = hud1.cards ? hud1.cards.find(c => c.label === 'mesh-true clashes flagged') : null;
+    const wantPct = hud1.stats.broad > 0 ? Math.round((hud1.stats.falseExcluded / hud1.stats.broad) * 1000) / 10 : null;
+    if (!hud1.hasBuilder) claim('H1_hud_card_reads_the_film_count', false, 'INCONCLUSIVE: A.bigStatsBuild is not wired on this page');
+    else claim('H1_hud_card_reads_the_film_count',
+      !!card && card.big === String(st.pairs) && hud1.stats.pairs === st.pairs && hud1.stats.broad > st.pairs
+        && card.sub.replace(/,/g, '').indexOf(String(hud1.stats.broad)) >= 0 && card.sub.indexOf(wantPct + '%') >= 0 && hud1.stats.falseExcluded === hud1.stats.broad - st.pairs,
+      `card=${card ? '"' + card.big + ' ' + card.label + ' — ' + card.sub + '" src=' + card.src : 'ABSENT'} film pairs=${st.pairs} broad=${hud1.stats.broad} falseExcluded=${hud1.stats.falseExcluded} wantPct=${wantPct}`);
 
     // P1 — rank correctness, NO distance limit at all: the module's `eligiblePairs` equals the TRUE
     // top-N nearest pairs by plain 3D distance (computed independently in the browser, not trusted from
@@ -337,7 +391,7 @@ function pageProbe(sabotage) {
   if (!rows.length || crashed) return;
   Witness('clash_film_labels').population(() => rows)
     .schema({ type: 'object', required: ['claim', 'ok'], properties: { claim: { type: 'string', minLength: 1 }, ok: { type: 'integer', minimum: 0, maximum: 1 }, detail: { type: 'string' } } })
-    .invariant('every §CLASH_FILM_P2 claim holds: names extracted, rank selection (top-N, no distance limit, read from the module) with rank-anchored hysteresis and no strobe, occlusion never consulted and a hidden pair labelled, genuine out-of-frustum release (not a sticky edge-clamp) that recovers, no panel overlap, constant size, fade seam', rs => rs.every(r => r.ok === 1))
+    .invariant('every §CLASH_FILM_P2 claim holds (+ §P2.4 3rd row [tol mm / clash mm] composited from the rule and severityM, + §CLASH_HUD_CARD present only once the film is built and equal to its count): names extracted, rank selection (top-N, no distance limit, read from the module) with rank-anchored hysteresis and no strobe, occlusion never consulted and a hidden pair labelled, genuine out-of-frustum release (not a sticky edge-clamp) that recovers, no panel overlap, constant size, fade seam', rs => rs.every(r => r.ok === 1))
     .redControl(rs => { const c = rs.map(r => Object.assign({}, r)); if (c[0]) c[0].ok = 0; return c; })
     .run();
   logStream.end();
