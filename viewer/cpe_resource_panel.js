@@ -358,6 +358,45 @@ function setupCpeResourcePanel(A) {
     return out.length ? out : null;
   };
 
+  // §MEASURE_BUILDING_CARD (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md — user: "The Measure stats can take
+  // the orbit last 3 secs.") — the WHOLE-BUILDING figures the in-viewer Measure tool already extracts
+  // on double-click (measure.js's own DB-envelope branch, ~L1483: MIN/MAX of center±bbox/2 over
+  // element_transforms). Restated here against the SAME table and the SAME arithmetic rather than
+  // imported, because measure.js computes it inside a DOM click handler with no return value.
+  //
+  // This REPLACES A.measureLabels as the film's "Measure stats" source. measureLabels holds the
+  // user's own saved tape-measure readings, which are empty on every scripted bake (cli_silent_bake.js
+  // launches Chrome on a fresh throwaway --profile), so that card could never fire in a film. The
+  // envelope figures need no session state and are real on every building.
+  //
+  // Height is the Z extent — element_transforms is Z-up (the same center_z every storey ladder in this
+  // repo orders on). Floor area is the envelope FOOTPRINT (dx x dy), a bbox proxy, labelled as such —
+  // never presented as true room area, same rule the storey card's own footprint clause follows.
+  // Returns null (never a fabricated card) when the table is missing or the envelope is degenerate.
+  A.buildingMeasureCard = function () {
+    if (typeof A.dbQuery !== 'function') { console.log('§MEASURE_BUILDING_CARD INCONCLUSIVE reason=no-dbQuery'); return null; }
+    var r;
+    try {
+      r = A.dbQuery('SELECT MIN(center_x - bbox_x/2), MAX(center_x + bbox_x/2),' +
+        ' MIN(center_y - bbox_y/2), MAX(center_y + bbox_y/2),' +
+        ' MIN(center_z - bbox_z/2), MAX(center_z + bbox_z/2) FROM element_transforms');
+    } catch (e) { console.log('§MEASURE_BUILDING_CARD INCONCLUSIVE reason=query-failed ' + e.message); return null; }
+    var v = r && r[0];
+    if (!v || v[0] == null) { console.log('§MEASURE_BUILDING_CARD INCONCLUSIVE reason=empty-envelope'); return null; }
+    var dx = +v[1] - +v[0], dy = +v[3] - +v[2], dz = +v[5] - +v[4];
+    if (!(dx > 0 && dy > 0 && dz > 0)) {
+      console.log('§MEASURE_BUILDING_CARD INCONCLUSIVE reason=degenerate dx=' + dx + ' dy=' + dy + ' dz=' + dz);
+      return null;
+    }
+    var vol = dx * dy * dz, foot = dx * dy;
+    var card = { big: Math.round(vol).toLocaleString(), label: 'm\u00B3 measured volume',
+                 sub: Math.round(foot).toLocaleString() + ' m\u00B2 footprint  \u00B7  ' + dz.toFixed(1) + ' m tall',
+                 src: 'element_transforms envelope (bbox proxy, same as measure.js dbl-click)' };
+    console.log('\u00A7MEASURE_BUILDING_CARD vol=' + vol.toFixed(1) + 'm3 footprint=' + foot.toFixed(1) +
+      'm2 height=' + dz.toFixed(2) + 'm (dx=' + dx.toFixed(2) + ' dy=' + dy.toFixed(2) + ')');
+    return card;
+  };
+
   // Which card is on screen at this film second, and its fade. Pure — the witness gates the rotation
   // without a bake, same contract dayCounterAt keeps.
   A.bigStatsAt = function (cards, filmSec) {

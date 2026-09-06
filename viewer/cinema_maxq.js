@@ -1482,6 +1482,7 @@
         if (_roomTitle && A.resourcePanelAt && typeof window.tmOpsSnapshot === 'function' && _bkState) {
           A._resHoldFrames = 0; A._resHoldLogged = false;   // §CPE_PIE_HOLD counts are per-bake
           A._statTailFrames = 0; A._statTailLogged = false; // §CPE_STATS_TAIL, same
+          A._measureCardLogged = false;                     // §MEASURE_BUILDING_CARD, same per-bake reset
           _resOps = window.tmOpsSnapshot();
           console.log('§CPE_RESOURCE_PANEL ' + (_resOps && _resOps.length
             ? ('on ops=' + _resOps.length + ' rates=' + (!!(window.LABOR_RATES)) + ' pos=' + _ovPos)
@@ -1555,6 +1556,42 @@
           (!plan ? 'no-plan' : (!plan.beats ? 'no-beats-on-plan' : 'bad-beats')) +
           ' — disc-pair highlight/cards skipped for this bake');
       }
+      // §CLASH_DISC_ARRIVAL (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md — user: "align the respective DISC
+      // pull out with a focussed DISC by DISC clash set"). Built ONCE per bake off clash_film.js's
+      // already-judged pairs and effects.js's OWN parade order (plan.reveal.discs) — never a second
+      // ordering derived here, so the clash sets cannot drift from the order the camera reveals.
+      var _arrival = null, _arrivalByDisc = {};
+      if (_clash && A.clashFilm && A.clashFilm.discArrivalSchedule &&
+          plan && plan.reveal && plan.reveal.discs && plan.reveal.discs.length) {
+        try {
+          _arrival = A.clashFilm.discArrivalSchedule(plan.reveal.discs);
+          if (_arrival) _arrival.slots.forEach(function (sl) { _arrivalByDisc[sl.disc] = sl; });
+        } catch (eAR) { console.warn('§CLASH_DISC_ARRIVAL failed: ' + eAR.message + ' — parade runs without clash sync'); }
+      } else if (_clash) {
+        console.log('§CLASH_DISC_ARRIVAL INCONCLUSIVE reason=' +
+          (!A.clashFilm || !A.clashFilm.discArrivalSchedule ? 'clash_film-too-old'
+            : 'no-reveal-discs-on-plan') + ' — disc parade runs without clash sync');
+      }
+      // Backdrop pairs (ARC|STR — both disciplines are the shell, which the parade excludes by design)
+      // belong to no parade slot. They land at the START of the pullback rotation instead, which is the
+      // exact instant the shell comes back SOLID (cpeRevealVisualAt returns null from there on). Done by
+      // ORDERING the existing card array, not by a new branch: bigStatsAt walks it in order.
+      if (_arrival && _arrival.backdrop.keys.length && _pairCards.length) {
+        var _bd = {}; _arrival.backdrop.keys.forEach(function (k) { _bd[k] = 1; });
+        _pairCards = _pairCards.slice().sort(function (x, y) {
+          return (_bd[y.discPairKey] ? 1 : 0) - (_bd[x.discPairKey] ? 1 : 0);
+        });
+        console.log('§CLASH_DISC_ARRIVAL pullback card order (backdrop first) [' +
+          _pairCards.map(function (c) { return c.discPairKey; }).join(' ') + ']');
+      }
+      // §MEASURE_BUILDING_CARD — the film's last 3 seconds (the closing roll-to-stop) show the
+      // whole-building Measure figures. Queried once per bake, never per frame.
+      var _measureCard = null;
+      try { if (A.buildingMeasureCard) _measureCard = A.buildingMeasureCard(); }
+      catch (eMB) { console.warn('§MEASURE_BUILDING_CARD failed: ' + eMB.message + ' — final card skipped'); }
+      var _measureU = (_measureCard && plan && plan.durationSec > 0) ? (1 - 3 / plan.durationSec) : null;
+      if (_measureU != null) console.log('§MEASURE_BUILDING_CARD window start=' + _measureU.toFixed(4) +
+        ' (last 3.0s of ' + plan.durationSec.toFixed(1) + 's)');
       A._clashHudHighlightLast = null;   // per-bake reset — a prior bake's held highlight must not leak in
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
@@ -1841,8 +1878,15 @@
         if (_resOps && _bkState && A.resourcePanelHoldAt) {
           _holdInfo = A.resourcePanelHoldAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd);
         }
+        // §CPE_STATS_TAIL_CLIP (2026-09-06) — compare the FILM fraction, not the clip-local one.
+        // `_revealU` is a fraction of the WHOLE film (it comes off the plan's own topout beat), so
+        // testing it against `i/(nFrames-1)` — which runs 0..1 across whatever slice was baked — put
+        // the Reveal round at the wrong instant on every `--clip` run: a clip of the film's last 20%
+        // did not enter the Reveal round until 64% of the way through itself. Same clip-local-vs-film
+        // confusion §BME.8 fixed a few lines above for the reveal visuals; `_tnFilm` is already that
+        // corrected value, and `_tFilm(_tn) === _tn` when no clip is set, so a FULL bake is unchanged.
         var _inReveal = (_revealU != null)
-          ? (nFrames > 1 ? (i / (nFrames - 1)) >= _revealU : false)
+          ? (nFrames > 1 ? _tnFilm >= _revealU : false)
           : !!(_resOps && _bkState && A.resourcePanelFrozenAt &&
                A.resourcePanelFrozenAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd));
         if (!_inReveal) {
@@ -1874,8 +1918,56 @@
           // no disc-pair cards to show) the normal all-card rotation below runs exactly as it always
           // has, and any held highlight is explicitly released on the transition out.
           var _si;
+          // §CLASH_DISC_ARRIVAL — during the tail's disc parade the clash set is driven off the parade's
+          // OWN clock (A.cpeRevealVisualAt, the same pure function the camera/caption already use), not a
+          // second window: when the parade slot shows discipline D, the pairs D BRINGS WITH IT light solid
+          // and the HUD flashes that trade's count. A slot whose trade brings no clash (PLB on Hospital)
+          // shows no clash card at all and clears the highlight — per the user's ruling that a 0 is not
+          // worth a card here ("the idea with HUD is to be best effort and it is abstract, align to what
+          // is been shown"), the same §VACUOUS rule bigStatsBuild already holds every card to.
+          var _pv = (_arrival && A.cpeRevealVisualAt) ? A.cpeRevealVisualAt(plan, _tnFilm) : null;
+          var _paradeSlot = null, _paradeKeys = null, _paradeCard = null;
+          if (_pv && _pv.phase === 'tail-one' && _pv.discs && _pv.discs.length) {
+            _paradeSlot = _arrivalByDisc[_pv.discs[0]] || null;
+            if (_paradeSlot && _paradeSlot.count > 0) {
+              _paradeKeys = _paradeSlot.keys;
+              _paradeCard = { big: String(_paradeSlot.count),
+                label: (A.cpeRevealDiscLabel ? A.cpeRevealDiscLabel(_paradeSlot.disc) : _paradeSlot.disc) + ' clashes',
+                sub: _paradeSlot.running + ' of ' + _arrival.total + ' so far',
+                src: 'clash_film pairs, assigned to the later-arriving trade' };
+            }
+          } else if (_pv && _pv.phase === 'tail-all' && _arrival) {
+            // Services all on screen together — hold every parade-assigned set solid, show the subtotal.
+            _paradeKeys = [];
+            _arrival.slots.forEach(function (sl) { _paradeKeys = _paradeKeys.concat(sl.keys); });
+            if (_paradeKeys.length) {
+              _paradeCard = { big: String(_arrival.slots[_arrival.slots.length - 1].running),
+                label: 'services clashes', sub: 'all trades installed',
+                src: 'clash_film pairs, parade slots summed' };
+            } else { _paradeKeys = null; }
+          }
           var _inPullback = !!(_pullbackU && _tnFilm >= _pullbackU.start && _tnFilm < _pullbackU.end);
-          if (_inPullback && _pairCards.length) {
+          if (_paradeCard) {
+            _si = { card: _paradeCard, idx: (_paradeSlot ? _paradeSlot.idx : 0),
+                    n: (_arrival ? _arrival.slots.length : 1), opacity: 1 };
+            var _pk = 'PARADE:' + (_paradeSlot ? _paradeSlot.disc : 'ALL');
+            if (A._clashHudHighlightLast !== _pk && A.clashFilm && A.clashFilm.highlightDiscPair) {
+              var _ph = A.clashFilm.highlightDiscPair(_paradeKeys);
+              A._clashHudHighlightLast = _pk;
+              console.log('§CLASH_DISC_ARRIVAL_HIGHLIGHT frame=' + i + ' slot=' + _pk +
+                ' keys=[' + _paradeKeys.join('+') + '] count=' + _paradeCard.big +
+                ' groupSize=' + (_ph && _ph.groupSize) + ' changed=' + (_ph && _ph.changed));
+            }
+          } else if (_pv && (_pv.phase === 'tail-one' || _pv.phase === 'tail-all')) {
+            // A parade slot with nothing to show (e.g. PLB): no clash card, no held highlight.
+            _si = A.tailPanelAt(_bigCards, i / fps, null);
+            if (A.clashFilm && A.clashFilm.highlightDiscPair && A._clashHudHighlightLast != null) {
+              A.clashFilm.highlightDiscPair(null);
+              console.log('§CLASH_DISC_ARRIVAL_HIGHLIGHT frame=' + i + ' slot=PARADE:' +
+                (_pv.discs && _pv.discs[0]) + ' keys=[] count=0 — no clash for this trade, back to ambient');
+              A._clashHudHighlightLast = null;
+            }
+          } else if (_inPullback && _pairCards.length) {
             _si = A.bigStatsAt(_pairCards, _tnFilm * _filmSecFull);
             if (_si && _si.card && A.clashFilm && A.clashFilm.highlightDiscPair) {
               if (A._clashHudHighlightLast !== _si.card.discPairKey) {
@@ -1934,6 +2026,17 @@
         if (A.storeyRevealStatCardAt) {
           var _srCard = A.storeyRevealStatCardAt(plan, _tnFilm);
           if (_srCard) _statInfo = { shown: _srCard, pos: _ovPos, held: null };
+        }
+        // §MEASURE_BUILDING_CARD — the closing roll-to-stop. Last override in the chain, and its window
+        // (the final 3s) is past beats.rise, so it cannot collide with the storey block above (which
+        // ends AT beats.rise) or with either clash window. Same _statInfo shape, no new draw code.
+        if (_measureU != null && _tnFilm >= _measureU) {
+          _statInfo = { shown: { card: _measureCard, idx: 0, n: 1, opacity: 1 }, pos: _ovPos, held: null };
+          if (!A._measureCardLogged) {
+            A._measureCardLogged = true;
+            console.log('§MEASURE_BUILDING_CARD on screen from frame ' + i + '/' + nFrames +
+              ' tn=' + _tnFilm.toFixed(4) + ' — ' + _measureCard.big + ' ' + _measureCard.label);
+          }
         }
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,

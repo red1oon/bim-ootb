@@ -438,15 +438,69 @@ function setupClashFilm(A) {
     // plain ambient pulsing. Pure reuse of the phase-2 per-instance fade channel this file's own
     // header already documents ("a selected pair must hold solid while every other pair keeps
     // breathing") — no second highlight mechanism. key=null clears back to all-ambient (every index 0).
+    // §CLASH_DISC_ARRIVAL (2026-09-06) — `key` widened from a single key to a key SET (array), so one
+    // discipline slot of the parade can hold ALL the pairs that trade brings with it solid at once.
+    // A plain string still behaves exactly as before (the pullback walkthrough passes one); null still
+    // clears to all-ambient. No second mechanism — same _fade channel, same setFade calls.
     A.clashFilm.highlightDiscPair = function (key) {
       if (!_built || !_fade || !_pairs.length) return { changed: 0, groupSize: 0 };
+      var want_ = null;
+      if (key != null) { want_ = {}; (Array.isArray(key) ? key : [key]).forEach(function (k) { want_[k] = 1; }); }
       var changed = 0, groupSize = 0, i, want;
       for (i = 0; i < _pairs.length; i++) {
-        want = (key != null && _discPairKey(_pairs[i]) === key) ? 1 : 0;
+        want = (want_ && want_[_discPairKey(_pairs[i])] === 1) ? 1 : 0;
         if (want === 1) groupSize++;
         if (_fade[i] !== want) { A.clashFilm.setFade(i, want); changed++; }
       }
       return { changed: changed, groupSize: groupSize };
+    };
+
+    // §CLASH_DISC_ARRIVAL (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md — user: "align the respective DISC
+    // pull out with a focussed DISC by DISC clash set"). THE ASSIGNMENT RULE: a clash cannot be
+    // attributed to a trade that was already on site — it belongs to whichever of its two disciplines
+    // arrived LATER. So every judged pair is assigned to exactly ONE parade slot: the slot of the
+    // later-arriving of its two disciplines. Pairs whose BOTH disciplines are backdrop (ARC/STR — the
+    // shell, which effects.js's own cpeRevealDiscsPresent excludes from the parade by design, see its
+    // bump() guard) belong to no parade slot at all; they are returned in a separate `backdrop` bucket
+    // that the caller fires when the shell comes back solid at the end of the tail.
+    //
+    // Why this rule and not "show every pair containing D": that mapping double-counts (FP|MEP would
+    // light under BOTH FP and MEP) and ORPHANS every backdrop-vs-backdrop pair (ARC|STR = 66 on
+    // Hospital, 24% of all clashes, would never appear). This one partitions: the per-slot counts sum
+    // to the total exactly, so the running figure on the HUD climbs honestly to the real grand total.
+    //
+    // `revealDiscs` is effects.js's OWN ordered parade list (plan.reveal.discs) — passed in, never
+    // re-derived here, so the schedule can never disagree with the order the camera actually reveals.
+    A.clashFilm.discArrivalSchedule = function (revealDiscs) {
+      var groups = A.clashFilm.statsByDiscPair();
+      if (!groups || !groups.length) {
+        console.log('§CLASH_DISC_ARRIVAL VACUOUS — no judged pairs to schedule');
+        return null;
+      }
+      var order = {}, i;
+      (revealDiscs || []).forEach(function (d, ix) { order[d] = ix; });
+      var n = (revealDiscs || []).length;
+      var slots = [], backdrop = { keys: [], count: 0 };
+      for (i = 0; i < n; i++) slots.push({ idx: i, disc: revealDiscs[i], keys: [], count: 0 });
+      groups.forEach(function (g) {
+        var ia = (order[g.discA] != null) ? order[g.discA] : -1;
+        var ib = (order[g.discB] != null) ? order[g.discB] : -1;
+        var later = Math.max(ia, ib);
+        if (later < 0) { backdrop.keys.push(g.key); backdrop.count += g.count; return; }
+        slots[later].keys.push(g.key); slots[later].count += g.count;
+      });
+      // Running total per slot — what the HUD card shows climbing. Backdrop pairs land LAST (the
+      // shell returns solid only after the parade), so they are added on top of the parade total.
+      var running = 0;
+      slots.forEach(function (s) { running += s.count; s.running = running; });
+      backdrop.running = running + backdrop.count;
+      var total = backdrop.running;
+      var sum = 0; slots.forEach(function (s) { sum += s.count; }); sum += backdrop.count;
+      console.log('§CLASH_DISC_ARRIVAL discs=[' + (revealDiscs || []).join(',') + '] ' +
+        slots.map(function (s) { return s.disc + '=' + s.count + '(' + s.keys.join('+') + ')'; }).join(' ') +
+        ' backdrop=' + backdrop.count + '(' + backdrop.keys.join('+') + ')' +
+        ' total=' + total + ' sumCheck=' + (sum === total ? 'OK' : 'MISMATCH:' + sum));
+      return { slots: slots, backdrop: backdrop, total: total };
     };
     // The severity box of pair i and the box currently placed — what the clamp witness reads.
     A.clashFilm.boxOf = function (i) { return (_nat && i >= 0 && i < _nat.length) ? { naturalM: _nat[i], placedM: _cur[i] } : null; };

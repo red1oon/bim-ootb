@@ -41,6 +41,16 @@ function setupCpeStoreyReveal(A) {
   // A.bigStatsAt fade (`min(u,1-u)/0.12`), slightly wider here because a slot can be sub-second
   // (see the spec addendum's dwell-scaling note) and a hard cut reads worse than a fast crossfade.
   var FADE_FRAC = 0.15;
+  // §STOREY_REVEAL_FIT (2026-09-06, user ruling: "HUD cards for the last part is at best effort.
+  // Been too fast is fine. Need not add more secs to it. We can forego top floors if the time frame
+  // does not allow. Qualitative above quantitative.") — the window is FIXED at 5 real seconds and is
+  // never widened to fit more storeys. Instead the sequence is TRUNCATED so each storey it does show
+  // gets at least MIN_SLOT_SEC of screen time. Hospital measures 8 physical storeys; at 5s that would
+  // be 0.63s each, of which FADE_FRAC eats 30% — a colour strobe, not a readable card. Capped at
+  // 1.0s minimum the sequence shows the BOTTOM 5 (which is also exactly the blue/green/yellow/orange/
+  // blue cycle originally asked for). Dropped from the TOP, per the user's own "forego top floors":
+  // the lower storeys are the ones the camera has actually been inside during the film.
+  var MIN_SLOT_SEC = 1.0;
 
   // §STOREY_REVEAL_LIST — the real, ordered set of physical storeys. Excludes ' Ceiling'/' TOS'
   // pseudo-storeys and 'Unknown' (same exclusion elements_meta's own storey column needs elsewhere,
@@ -103,6 +113,32 @@ function setupCpeStoreyReveal(A) {
     return out;
   };
 
+  // §STOREY_REVEAL_FIT — the storeys this plan actually has room to show, longest-readable-first.
+  // DEGRADE, DON'T DISABLE: with no durationSec on the plan (an older cached plan) the window's real
+  // seconds are unknowable, so the full list is used unchanged — the previous behaviour, never a
+  // silent empty sequence. Logged once per (plan, list) so a truncation is never invisible.
+  var _fitLogged = null;
+  function _fitList(plan, sr) {
+    var full = A.storeyRevealList();
+    if (!full.length) return full;
+    var winSec = (plan && plan.durationSec > 0) ? sr.windowFrac * plan.durationSec : 0;
+    if (!(winSec > 0)) return full;
+    var room = Math.max(1, Math.floor(winSec / MIN_SLOT_SEC));
+    var out = (full.length > room) ? full.slice(0, room) : full;
+    var key = full.length + '/' + out.length + '/' + winSec.toFixed(2);
+    if (_fitLogged !== key) {
+      _fitLogged = key;
+      console.log('§STOREY_REVEAL_FIT windowSec=' + winSec.toFixed(2) + ' minSlotSec=' + MIN_SLOT_SEC +
+        ' storeysAvailable=' + full.length + ' shown=' + out.length +
+        ' slotSec=' + (winSec / out.length).toFixed(2) +
+        (out.length < full.length
+          ? ' TRUNCATED dropped=[' + full.slice(out.length).map(function (x) { return x.name; }).join(',') +
+            '] (top floors foregone — window is fixed, best effort)'
+          : ' (all storeys fit)'));
+    }
+    return out;
+  }
+
   // §STOREY_REVEAL_VISUAL — pure function of (plan, tNorm). CORRECTED WINDOW (user, 2026-09-06,
   // relayed mid-session): NOT the orbit beat (beats.rise..1) — the LAST `plan.storeyReveal.windowFrac`
   // of the PRECEDING `pullback` beat, ending exactly at beats.rise (orbit start). `windowFrac` is
@@ -116,7 +152,7 @@ function setupCpeStoreyReveal(A) {
     if (!plan || !sr || !sr.on || !(sr.windowFrac > 0) || !b || !(b.rise > 0) || !(b.rise < 1)) return null;
     var winStart = b.rise - sr.windowFrac;
     if (tNorm == null || tNorm <= winStart || tNorm > b.rise) return null;
-    var list = A.storeyRevealList();
+    var list = _fitList(plan, sr);
     if (!list.length) return null;
     var span = sr.windowFrac;
     var w = Math.min(0.999999, Math.max(0, (tNorm - winStart) / span));   // 0..1 across the whole window
