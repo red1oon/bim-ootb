@@ -413,11 +413,23 @@ function setupCpeResourcePanel(A) {
           if (mc) mat += (+r[1]) * mc.rate;
         });
       }
-      if (labour + mat > 0) {
+      // §VACUOUS — labour is 0 on a silent CLI bake (A._hrCost is only populated by an interactive
+      // schedule run), so calling the figure a "total estimated cost" while it is materials ONLY would
+      // imply labour is folded in when it is not. Name exactly what is in the number: with labour
+      // present it is a total; without, it is a materials estimate and says so. The "rough" caveat
+      // stays either way — MATERIAL_COSTS rates carry M/M2/EA units a plain element count cannot honour.
+      if (labour > 0 && mat > 0) {
         out.push({ big: Math.round(labour + mat).toLocaleString(), label: 'total estimated cost',
                    sub: 'labour ' + Math.round(labour).toLocaleString() +
                         '  \u00B7  materials ' + Math.round(mat).toLocaleString() + ' (rough, count \u00D7 rate)',
                    src: 'A._hrCost + MATERIAL_COSTS (not unit-aware)' });
+      } else if (mat > 0) {
+        out.push({ big: Math.round(mat).toLocaleString(), label: 'material cost estimate',
+                   sub: 'rough: element count \u00D7 rate, not a bill of quantities',
+                   src: 'MATERIAL_COSTS (not unit-aware); no labour figure in this run' });
+      } else if (labour > 0) {
+        out.push({ big: Math.round(labour).toLocaleString(), label: 'labour cost committed',
+                   sub: 'time-phased from the schedule', src: 'A._hrCost' });
       }
       console.log('\u00A7MEASURE_BUILDING_CARD cost labour=' + Math.round(labour) +
         ' materialRough=' + Math.round(mat) + ' total=' + Math.round(labour + mat));

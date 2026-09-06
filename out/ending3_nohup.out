@@ -1,0 +1,37 @@
+13:55:16.483 +    0.0s §CLI_BAKE_ENV root=/tmp/wt-storey-reveal commit=a9cca127 sw=v1158 db=Hospital_silent_local gpu=real out=/tmp/wt-storey-reveal/out/ending3.mp4
+13:55:16.684 +    0.2s §CLI_BAKE_NAV http://127.0.0.1:8544/viewer/viewer.html?db=/buildings/Hospital_silent_local.db
+13:55:45.130 +   28.7s §CLI_BAKE_LOADED building=Hospital meshes=4499
+13:55:45.131 +   28.7s §CLI_BAKE_PREWARM_SEEN §PHOTO_PREWARM ms=4799 did=[mepSmooth,hdri,groundTex] — this work is now OFF the first Alt+S press (measured 8,923.6 ms of it on Hospital)
+13:55:45.185 +   28.7s §CLI_BAKE_GL vendor="Google Inc. (NVIDIA Corporation)" renderer="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL ES 3.2)"
+13:55:46.416 +   29.9s §CLI_BAKE_BUILDUP_RESOLVED on=1 source=stored-path — decides whether the Time Machine is primed before the bake asks for a timeline
+13:55:47.675 +   31.2s §CLI_BAKE_TM_PRIME ok ms=1229
+13:55:47.675 +   31.2s §CLI_BAKE_CLIP in=0.74 out=1 (§SDC — a window of the same film)
+13:56:14.296 +   57.8s §CLI_BAKE_PROGRESS frame=8/1222 0.7% rate=0.710s/frame (trailing 2) elapsed=12s eta=14m21s (1214 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+13:56:44.341 +   87.9s §CLI_BAKE_PROGRESS frame=43/1222 3.5% rate=0.744s/frame (trailing 7) elapsed=39s eta=14m38s (1179 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+13:57:14.356 +  117.9s §CLI_BAKE_PROGRESS frame=104/1222 8.5% rate=0.577s/frame (trailing 10) elapsed=1m10s eta=10m45s (1118 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+13:57:44.386 +  147.9s §CLI_BAKE_PROGRESS frame=165/1222 13.5% rate=0.515s/frame (trailing 10) elapsed=1m41s eta=9m4s (1057 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+13:58:14.430 +  178.0s §CLI_BAKE_PROGRESS frame=223/1222 18.2% rate=0.541s/frame (trailing 10) elapsed=2m13s eta=9m1s (999 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+13:58:44.486 +  208.0s §CLI_BAKE_PROGRESS frame=258/1222 21.1% rate=0.675s/frame (trailing 10) elapsed=2m40s eta=10m51s (964 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+13:59:14.664 +  238.2s §CLI_BAKE_PROGRESS frame=292/1222 23.9% rate=0.920s/frame (trailing 10) elapsed=3m12s eta=14m16s (930 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+13:59:44.943 +  268.5s §CLI_BAKE_PROGRESS frame=317/1222 25.9% rate=1.194s/frame (trailing 10) elapsed=3m45s eta=18m1s (905 frames left)
+14:00:15.242 +  298.8s §CLI_BAKE_PROGRESS frame=337/1222 27.6% rate=1.293s/frame (trailing 10) elapsed=4m10s eta=19m4s (885 frames left)
+14:00:45.409 +  328.9s §CLI_BAKE_PROGRESS frame=361/1222 29.5% rate=1.296s/frame (trailing 10) elapsed=4m41s eta=18m36s (861 frames left)
+14:01:15.725 +  359.3s §CLI_BAKE_PROGRESS frame=385/1222 31.5% rate=1.338s/frame (trailing 10) elapsed=5m14s eta=18m40s (837 frames left)
+14:01:45.853 +  389.4s §CLI_BAKE_PROGRESS frame=405/1222 33.1% rate=1.353s/frame (trailing 10) elapsed=5m41s eta=18m26s (817 frames left)
+14:02:16.037 +  419.6s §CLI_BAKE_PROGRESS frame=429/1222 35.1% rate=1.380s/frame (trailing 10) elapsed=6m15s eta=18m15s (793 frames left)
+14:02:46.119 +  449.6s §CLI_BAKE_PROGRESS frame=449/1222 36.7% rate=1.384s/frame (trailing 10) elapsed=6m42s eta=17m50s (773 frames left)
+14:03:16.332 +  479.9s §CLI_BAKE_PROGRESS frame=473/1222 38.7% rate=1.345s/frame (trailing 10) elapsed=7m14s eta=16m47s (749 frames left)
+14:03:46.431 +  510.0s §CLI_BAKE_PROGRESS frame=493/1222 40.3% rate=1.346s/frame (trailing 10) elapsed=7m41s eta=16m21s (729 frames left)
+14:04:16.638 +  540.2s §CLI_BAKE_PROGRESS frame=517/1222 42.3% rate=1.350s/frame (trailing 10) elapsed=8m14s eta=15m52s (705 frames left)
+14:04:46.860 +  570.4s §CLI_BAKE_PROGRESS frame=541/1222 44.3% rate=1.370s/frame (trailing 10) elapsed=8m46s eta=15m33s (681 frames left)
+14:05:17.054 +  600.6s §CLI_BAKE_PROGRESS frame=561/1222 45.9% rate=1.354s/frame (trailing 10) elapsed=9m13s eta=14m55s (661 frames left)
+14:05:47.214 +  630.7s §CLI_BAKE_PROGRESS frame=585/1222 47.9% rate=1.354s/frame (trailing 10) elapsed=9m46s eta=14m22s (637 frames left)
+14:06:17.457 +  661.0s §CLI_BAKE_PROGRESS frame=605/1222 49.5% rate=1.365s/frame (trailing 10) elapsed=10m13s eta=14m2s (617 frames left)
+14:06:47.703 +  691.2s §CLI_BAKE_PROGRESS frame=629/1222 51.5% rate=1.361s/frame (trailing 10) elapsed=10m46s eta=13m27s (593 frames left)
+14:07:17.919 +  721.4s §CLI_BAKE_PROGRESS frame=649/1222 53.1% rate=1.344s/frame (trailing 10) elapsed=11m12s eta=12m50s (573 frames left)
+14:07:48.105 +  751.6s §CLI_BAKE_PROGRESS frame=673/1222 55.1% rate=1.357s/frame (trailing 10) elapsed=11m45s eta=12m25s (549 frames left)
+14:08:18.291 +  781.8s §CLI_BAKE_PROGRESS frame=693/1222 56.7% rate=1.365s/frame (trailing 10) elapsed=12m12s eta=12m2s (529 frames left)
+14:08:48.496 +  812.0s §CLI_BAKE_PROGRESS frame=717/1222 58.7% rate=1.372s/frame (trailing 10) elapsed=12m46s eta=11m33s (505 frames left)
+14:09:18.710 +  842.2s §CLI_BAKE_PROGRESS frame=737/1222 60.3% rate=1.381s/frame (trailing 10) elapsed=13m13s eta=11m10s (485 frames left)
+14:09:48.979 +  872.5s §CLI_BAKE_PROGRESS frame=761/1222 62.3% rate=1.393s/frame (trailing 10) elapsed=13m47s eta=10m42s (461 frames left)
+14:10:19.084 +  902.6s §CLI_BAKE_PROGRESS frame=781/1222 63.9% rate=1.407s/frame (trailing 10) elapsed=14m15s eta=10m20s (441 frames left)
