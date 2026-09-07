@@ -167,7 +167,7 @@ function setupCpeFlythruDatum(A) {
   // The overall MUST equal the sum of the bays; that is the check a drawing is verified by, and it
   // is asserted rather than assumed (§FLYTHRU_DATUM_CHAIN below).
   var INKS = '#ffd600';
-  var BUB_R = 11, OFF1 = 26, OFF2 = 58;                 // screen px at 720p, scaled by h/720
+  var BUB_R = 11, OFF1 = 34, OFF2 = 74;                 // screen px at 720p, scaled by h/720
   // Standard grid letters omit I (confusable with 1). Practice omits O as well; grid_dims.js's own
   // sequence keeps O, which is why this defines its own rather than importing it.
   var LET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -181,7 +181,15 @@ function setupCpeFlythruDatum(A) {
     if (op <= 0.01) return 0;
     var ext = _lines.ext, z0 = ext[4];
     var P = function (ix, iy, iz) { var p = A.ifc2three(ix, iy, iz); return new T.Vector3(p.x, p.y, p.z); };
-    var pr = function (v) { var p = v.clone().project(cam); return { x: (p.x * .5 + .5) * w, y: (-p.y * .5 + .5) * h, z: p.z }; };
+    // ⚠ NDC z > 1 means BEYOND THE FAR PLANE, not behind the camera — and the x/y projection is still
+    // correct for anything in front of the lens. Rejecting on z>=1 threw away a valid overall whose
+    // far end simply sat past the far plane (MEASURED: declined behind z=0.99,1.23). The real test is
+    // VIEW-SPACE depth: in front of the near plane or not.
+    var pr = function (v) {
+      var vs = v.clone().applyMatrix4(cam.matrixWorldInverse);
+      var p = v.clone().project(cam);
+      return { x: (p.x * .5 + .5) * w, y: (-p.y * .5 + .5) * h, z: p.z, front: vs.z < -0.1 };
+    };
     // NEAR edge per axis, chosen against the camera THIS frame
     // BOTTOM and LEFT of frame — and they need DIFFERENT tests. The bottom edge is the one that
     // projects LOWEST (largest screen y); the left edge is the one that projects LEFTMOST (smallest
@@ -203,7 +211,7 @@ function setupCpeFlythruDatum(A) {
     // frame boundary so it still sits on the line it names; only drop it when the whole line is gone.
     // Report both, because silently losing the bubbles would look like the feature simply stopped.
     function bubble(p2, txt, along) {
-      if (p2.z >= 1) { _bubDrop++; return false; }
+      if (!p2.front) { _bubDrop++; return false; }
       var m = (BUB_R + 4) * k, cl = false;
       if (p2.x < m || p2.x > w - m || p2.y < m || p2.y > h - m) {
         if (along && isFinite(along.x) && isFinite(along.y)) {
@@ -228,9 +236,13 @@ function setupCpeFlythruDatum(A) {
     }
     function dim(a3, b3, metres, tier, refA, refB) {
       var a2 = pr(a3), b2 = pr(b3);
-      if (a2.z >= 1 || b2.z >= 1) return false;
+      if (!a2.front || !b2.front) { if (tier === 2) console.log('§FLYTHRU_DATUM_OVERALL declined — an end is BEHIND the camera'); return false; }
       var dx = b2.x - a2.x, dy = b2.y - a2.y, L = Math.hypot(dx, dy);
-      if (L < 26 * k) return false;
+      // An OVERALL must draw if it can be drawn at all — it is the headline figure. A bay may
+      // decline when it would be unreadable, but the total should not vanish because the axis is
+      // foreshortened toward the camera. MEASURED: overalls=1/2 at HHS t=0 with a flat 26px floor.
+      var floor = (tier === 2) ? 12 * k : 26 * k;
+      if (L < floor) { if (tier === 2) console.log('§FLYTHRU_DATUM_OVERALL declined len=' + L.toFixed(0) + 'px floor=' + floor.toFixed(0)); return false; }
       var ux = dx / L, uy = dy / L, nx = -uy, ny = ux, e = (tier === 2 ? OFF2 : OFF1) * k;
       var A2 = { x: a2.x + nx * e, y: a2.y + ny * e }, B2 = { x: b2.x + nx * e, y: b2.y + ny * e };
       ctx.strokeStyle = '#8899aa'; ctx.fillStyle = '#8899aa';
@@ -240,6 +252,7 @@ function setupCpeFlythruDatum(A) {
       var start = (tier === 2) ? (BUB_R + 3) * k : (e - 8 * k);
       ln(a2.x + nx*start, a2.y + ny*start, A2.x, A2.y);
       ln(b2.x + nx*start, b2.y + ny*start, B2.x, B2.y);
+      ctx.font = '700 ' + ((tier === 2 ? 18 : 15) * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
       var txt = Math.round(metres * 1000).toLocaleString('en-US');
       if (tier === 2 && refA != null && refB != null) txt = refA + ' \u2013 ' + refB + '   ' + txt;
       var tw = ctx.measureText(txt).width + 8 * k, gap = tw / 2 + 5 * k;
@@ -250,10 +263,13 @@ function setupCpeFlythruDatum(A) {
         ctx.lineTo(px+sg*ux*9*k+nx*3.6*k, py+sg*uy*9*k+ny*3.6*k);
         ctx.lineTo(px+sg*ux*9*k-nx*3.6*k, py+sg*uy*9*k-ny*3.6*k); ctx.closePath(); ctx.fill(); };
       tri(A2.x,A2.y,1); tri(B2.x,B2.y,-1);
-      ctx.fillStyle = '#dfe6ee';
-      ctx.lineWidth = 2.6*k; ctx.strokeStyle = 'rgba(10,14,20,0.9)';
-      ctx.strokeText(txt, mx, my); ctx.fillText(txt, mx, my);
-      ctx.lineWidth = 1.3*k;
+      // the number is the point of the string — give it a real halo so it survives any backdrop
+      ctx.lineWidth = 4*k; ctx.strokeStyle = 'rgba(8,11,16,0.95)'; ctx.lineJoin = 'round';
+      ctx.strokeText(txt, mx, my);
+      ctx.fillStyle = (tier === 2) ? '#ffd600' : '#e8eef5';
+      ctx.fillText(txt, mx, my);
+      ctx.lineWidth = 1.3*k; ctx.strokeStyle = '#8899aa';
+      ctx.font = '700 ' + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
       return true;
     }
     // X gridlines -> bubbles on the near Y edge, numerals; bays + overall along that edge
@@ -261,13 +277,13 @@ function setupCpeFlythruDatum(A) {
     _bubClamp = 0; _bubDrop = 0;
     _lines.gx.forEach(function (x, i) { if (bubble(pr(P(x, nearY, z0)), label(i, false), pr(P(x, farY2, z0)))) n++; });
     _lines.gy.forEach(function (y, i) { if (bubble(pr(P(nearX, y, z0)), label(i, true), pr(P(farX2, y, z0)))) n++; });
-    var sumX = 0, sumY = 0;
+    var sumX = 0, sumY = 0, _bay = 0, _ov = 0;
     for (var i = 0; i < _lines.gx.length - 1; i++) {
-      if (dim(P(_lines.gx[i], nearY, z0), P(_lines.gx[i+1], nearY, z0), _lines.gx[i+1]-_lines.gx[i], 1)) n++;
+      if (dim(P(_lines.gx[i], nearY, z0), P(_lines.gx[i+1], nearY, z0), _lines.gx[i+1]-_lines.gx[i], 1)) { n++; _bay++; }
       sumX += _lines.gx[i+1] - _lines.gx[i];
     }
     for (var j = 0; j < _lines.gy.length - 1; j++) {
-      if (dim(P(nearX, _lines.gy[j], z0), P(nearX, _lines.gy[j+1], z0), _lines.gy[j+1]-_lines.gy[j], 1)) n++;
+      if (dim(P(nearX, _lines.gy[j], z0), P(nearX, _lines.gy[j+1], z0), _lines.gy[j+1]-_lines.gy[j], 1)) { n++; _bay++; }
       sumY += _lines.gy[j+1] - _lines.gy[j];
     }
     // LEVEL TAGS on the upright. USER: the ground has too many lines to name, but "the upright
@@ -277,7 +293,7 @@ function setupCpeFlythruDatum(A) {
     var farY = (nearY === ext[2]) ? ext[3] : ext[2];
     (_lines.levels || []).forEach(function (L) {
       var e2 = pr(P(nearX, farY, L.z));
-      if (e2.z >= 1) return;
+      if (!e2.front) return;
       var zTxt = (L.zRaw == null ? L.z : L.zRaw);
       var txt = L.name + '   ' + (zTxt >= 0 ? '+' : '') + zTxt.toFixed(3);
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -297,9 +313,9 @@ function setupCpeFlythruDatum(A) {
     ctx.font = '700 ' + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
     var ovX = _lines.gx[_lines.gx.length-1] - _lines.gx[0], ovY = _lines.gy[_lines.gy.length-1] - _lines.gy[0];
     if (dim(P(_lines.gx[0], nearY, z0), P(_lines.gx[_lines.gx.length-1], nearY, z0), ovX, 2,
-            label(0, false), label(_lines.gx.length - 1, false))) n++;
+            label(0, false), label(_lines.gx.length - 1, false))) { n++; _ov++; }
     if (dim(P(nearX, _lines.gy[0], z0), P(nearX, _lines.gy[_lines.gy.length-1], z0), ovY, 2,
-            label(0, true), label(_lines.gy.length - 1, true))) n++;
+            label(0, true), label(_lines.gy.length - 1, true))) { n++; _ov++; }
     ctx.restore();
     if (_chainKey !== 1) {           // assert the chain ONCE: the overall must equal the sum of bays
       _chainKey = 1;
@@ -309,7 +325,7 @@ function setupCpeFlythruDatum(A) {
         'm delta=' + ey.toFixed(4) + ' -> ' + ((ex < 0.001 && ey < 0.001) ? 'CHAIN ADDS UP' : 'CHAIN MISMATCH'));
     }
     if (n) console.log('§FLYTHRU_DATUM_MARKS drawn=' + n + ' filmSec=' + filmSec.toFixed(2) +
-      ' bubblesClamped=' + _bubClamp + ' bubblesDropped=' + _bubDrop + ' levelTags=' + ((_lines.levels||[]).length) + ' edges=(bottomY@' + nearY.toFixed(1) + ', leftX@' + nearX.toFixed(1) + ') nearEdge=(x@' + nearX.toFixed(1) + ', y@' + nearY.toFixed(1) + ')');
+      ' bays=' + _bay + '/' + (_lines.gx.length-1+_lines.gy.length-1) + ' overalls=' + _ov + '/2 bubblesClamped=' + _bubClamp + ' bubblesDropped=' + _bubDrop + ' levelTags=' + ((_lines.levels||[]).length) + ' edges=(bottomY@' + nearY.toFixed(1) + ', leftX@' + nearX.toFixed(1) + ') nearEdge=(x@' + nearX.toFixed(1) + ', y@' + nearY.toFixed(1) + ')');
     return n;
   };
   var _chainKey = 0, _bubClamp = 0, _bubDrop = 0;
