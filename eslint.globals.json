@@ -130,6 +130,7 @@
   "setupClashSnag": "readonly",
   "setupConfig": "readonly",
   "setupCpeDayCounter": "readonly",
+  "setupCpeFlythruCues": "readonly",
   "setupCpeFlythruDims": "readonly",
   "setupCpePathOverview": "readonly",
   "setupCpeResourcePanel": "readonly",

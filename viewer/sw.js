@@ -144,6 +144,8 @@
 // v1155 (2026-09-06) §PL_TOPOUT_UNPIN (MEP_CLASH_REVEAL_MOVIE.md): viewer/effects.js — past the plan's topout the bake's
 //   fixture point-lights ease from the staged Alt+S cut (0.5) to nav Night Mode's tuned 1.0 over the sun's own snap
 //   window; pre-topout byte-identical. viewer/cinema_maxq.js passes _revealU to the fill pin. (v1153 = #1689, v1154 = #1691.)
+// v1160 (2026-09-07) §FLYTHRU_CUES (MEP_CLASH_REVEAL_MOVIE.md §11/§12/§14): new viewer/cpe_flythru_cues.js
+//   + common/flythru_maths.js + common/storey_raster.js — baseline fly-through measurement cues.
 // v1157 (2026-09-06) §STOREY_HIGHLIGHT_REVEAL (MEP_CLASH_REVEAL_MOVIE.md): new viewer/cpe_storey_reveal.js —
 //   fills the LAST 5 REAL SECONDS of the `pullback` beat (ending exactly where `orbit` begins, plan.beats.rise
 //   — NOT the orbit beat itself) with each real storey (elements_meta, Ceiling/TOS pseudo-storeys excluded)
@@ -161,7 +163,7 @@
 //   (the real shortcut is Alt+C) and added a "copy bake command" link that hands the user the exact
 //   `node cli_silent_bake.js ...` command for their own terminal — there is no server behind this
 //   page, so nothing here can run a bake for them.
-const CACHE_VERSION = 'v1159';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1160';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -612,6 +614,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
+  'cpe_flythru_cues.js','../common/flythru_maths.js','../common/storey_raster.js',
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',
