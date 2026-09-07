@@ -9,6 +9,7 @@
 //     [--plan NAME | --override file.json]            path source (default: DB cinema_path table)
 //     [--buildup] [--label] [--reveal] [--day tr|tl|br|bl|off]   flags composed onto the path
 //     [--clash] [--no-clash]                          mesh-true clash pairs as world content (§CLASH_FILM_P1)
+//     [--measure] [--no-measure]                      setting-out datum drawing (§FLYTHRU_DATUM, MEP_CLASH_REVEAL_MOVIE.md §28.1)
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
@@ -77,12 +78,15 @@ const _fLabel = triState('label', 'no-label');
 const _fReveal = triState('reveal', 'no-reveal');
 // §CLASH_FILM_P1 — the mesh-true clash pairs as persistent world content (MEP_CLASH_REVEAL_MOVIE.md).
 const _fClash = triState('clash', 'no-clash');
+// §FLYTHRU_DATUM (MEP_CLASH_REVEAL_MOVIE.md §28.1) — the Measure checkbox's CLI form, same tri-state as clash.
+const _fMeasure = triState('measure', 'no-measure');
 // §STOREY_HIGHLIGHT_REVEAL — each storey tints in sequence during the closing orbit (same file).
 const _fStoreyReveal = triState('storey-reveal', 'no-storey-reveal');
 if (_fBuildup !== undefined) FLAGS.buildup = _fBuildup;
 if (_fLabel !== undefined) FLAGS.roomTitle = _fLabel;
 if (_fReveal !== undefined) FLAGS.reveal = _fReveal;
 if (_fClash !== undefined) FLAGS.clash = _fClash;
+if (_fMeasure !== undefined) FLAGS.measure = _fMeasure;
 if (_fStoreyReveal !== undefined) FLAGS.storeyReveal = _fStoreyReveal;
 // `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');

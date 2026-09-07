@@ -2387,7 +2387,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'storeyReveal'].forEach(function(fk) {
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
