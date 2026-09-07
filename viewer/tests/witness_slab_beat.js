@@ -63,7 +63,7 @@ const server = http.createServer((req, res) => {
       { timeout: 1500000, polling: 2000 });
     console.log('§WITNESS_SLAB_BEAT_STREAMED meshes=' + await p.evaluate(() => window.APP.scene ? window.APP.scene.children.length : -1));
   }
-  // §30 — does the camera at this stage frame the WHOLE envelope (all 8 DB-bbox corners inside the frustum)?
+  // §33 — does the camera at this stage frame the WHOLE envelope (all 8 DB-bbox corners inside the frustum)?
   const camAt = async (stage) => { const c = await p.evaluate(() => { const A = window.APP, T = window.THREE; if (!A.camera) return null;
       const pos = [+A.camera.position.x.toFixed(1), +A.camera.position.y.toFixed(1), +A.camera.position.z.toFixed(1)];
       let k = null, dist = null;
@@ -77,7 +77,7 @@ const server = http.createServer((req, res) => {
       return { pos, envelopeCorners: k, distToCentre: dist }; });
     console.log('§WITNESS_SLAB_BEAT_CAM stage=' + stage + ' ' + JSON.stringify(c)); return c; };
   await camAt('after-load');
-  // Home frame first — §30 §CLI_BAKE_HOME, the same key the bake now presses
+  // Home frame first — §33 §CLI_BAKE_OPENING, the same key the bake now presses
   await p.evaluate(() => { try { document.body.focus(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); } catch (e) {} });
   await sleep(300);
   await camAt('after-home');

@@ -573,7 +573,7 @@ function setupCpeFlythruDatum(A) {
       ', Y ' + rY.pxU.toFixed(1) + 'x' + rY.pxV.toFixed(1) +
       ', Z ' + rZ.pxU.toFixed(1) + 'x' + rZ.pxV.toFixed(1) +
       ' — a flat ratio means that plane is edge-on to the camera, which is the CAMERA, not the drawing');
-    // §30 §CLI_BAKE_OPENING — the counts as numbers, so a caller can ask "is the whole drawing in frame from
+    // §33 §CLI_BAKE_OPENING — the counts as numbers, so a caller can ask "is the whole drawing in frame from
     // here?" without parsing this log line. The datum is the owner of that question.
     A._flythruDatumLast = { drawn: n, bubbles: _bub, bubblesTotal: _lines.gx.length + _lines.gy.length + _lvz.length,
                             figures: _figs, overalls: _ov, filmSec: filmSec };

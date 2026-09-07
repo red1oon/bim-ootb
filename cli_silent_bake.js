@@ -10,7 +10,7 @@
 //     [--buildup] [--label] [--reveal] [--day tr|tl|br|bl|off]   flags composed onto the path
 //     [--clash] [--no-clash]                          mesh-true clash pairs as world content (§CLASH_FILM_P1)
 //     [--measure] [--no-measure]                      setting-out datum drawing (§FLYTHRU_DATUM, MEP_CLASH_REVEAL_MOVIE.md §28.1)
-//     [--nohome] [--opening-only]                     §30 §CLI_BAKE_OPENING: skip the datum-legibility gate / judge the opening and exit
+//     [--nohome] [--opening-only]                     §33 §CLI_BAKE_OPENING: skip the datum-legibility gate / judge the opening and exit
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
@@ -294,7 +294,7 @@ const server = http.createServer((req, res) => {
   ]);
   log('§CLI_BAKE_LOADED building=' + await page.evaluate(() => window.APP.activeBuilding +
     ' meshes=' + (window.APP.scene ? window.APP.scene.children.length : -1)));
-  // §CLI_BAKE_OPENING (MEP_CLASH_REVEAL_MOVIE.md §30 CORRECTED, user 2026-09-08: "The HHS opening frame has to
+  // §CLI_BAKE_OPENING (MEP_CLASH_REVEAL_MOVIE.md §33 CORRECTED, user 2026-09-08: "The HHS opening frame has to
   // be some distance away to let the dive in catch the 2D Z plane"). The film opens from the DB's SAVED VIEW
   // (scene_state, restored at load by main.js §SCENE_STATE_RESTORE) — the user's own framing — UNLESS Measure
   // is on and the datum is not wholly legible from there. "Legible" is judged by the datum's OWN layout pass
@@ -338,8 +338,8 @@ const server = http.createServer((req, res) => {
     });
     const f = (j) => j ? ('cam=' + JSON.stringify(j.cam) + ' bubbles=' + j.bubbles + '/' + j.bubblesTotal + ' overalls=' + j.overalls + '/3 drawn=' + j.drawn + (j.full ? ' FULL' : ' PARTIAL')) : 'n/a';
     if (jg.err) log('§CLI_BAKE_OPENING INCONCLUSIVE ' + jg.err + ' — opening left as loaded');
-    else if (!jg.pressed) log('§CLI_BAKE_OPENING kept=saved-view ' + f(jg.load) + ' — the whole datum is legible from the saved view (§30)');
-    else log('§CLI_BAKE_OPENING moved=Home load[' + f(jg.load) + '] -> home[' + f(jg.home) + '] — the saved view did not show the whole datum (§30)' +
+    else if (!jg.pressed) log('§CLI_BAKE_OPENING kept=saved-view ' + f(jg.load) + ' — the whole datum is legible from the saved view (§33)');
+    else log('§CLI_BAKE_OPENING moved=Home load[' + f(jg.load) + '] -> home[' + f(jg.home) + '] — the saved view did not show the whole datum (§33)' +
              (jg.home && !jg.home.full ? ' ⚠ Home is not FULL either — the datum will open partially' : ''));
     await new Promise(r => setTimeout(r, 300));
   }

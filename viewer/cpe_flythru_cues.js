@@ -45,8 +45,8 @@ function setupCpeFlythruCues(A) {
   var ORDER = ['envelope', 'storey', 'room', 'corridor'];
 
   var _cues = null, _group = null, _built = false, _lastKey = null;
-  var _envBoxLogged = false;          // §29 — one log line, not one per frame
-  var PANEL_HOLD = 2.0;               // §29 — user: "make the box label persist 2 more secs" (1.4 s full + the 0.6 s fade)
+  var _envBoxLogged = false;          // §32 — one log line, not one per frame
+  var PANEL_HOLD = 2.0;               // §32 — user: "make the box label persist 2 more secs" (1.4 s full + the 0.6 s fade)
 
 
   // 300 samples over the film — §9's own sampling rate, cheap here because only a handful of cue
@@ -342,13 +342,13 @@ function setupCpeFlythruCues(A) {
     var grp = ensureGroup();
     if (!grp) return null;
     if (!a) { if (grp.visible) grp.visible = false; return null; }
-    // §ENVELOPE_BOX_DEPRECATED (MEP_CLASH_REVEAL_MOVIE.md §29, user 2026-09-08: "Remove the whole starting
+    // §ENVELOPE_BOX_DEPRECATED (MEP_CLASH_REVEAL_MOVIE.md §32, user 2026-09-08: "Remove the whole starting
     // envelope tint as it is not needed. The whole envelope box supposed to be deprecated. Just the 2Ds
     // and the box label is good enough.") — the envelope keeps its 2D dimension lines and panel; the 3D
     // fill+outline never shows for it. Other cues are untouched.
     if (a.cue.key === 'envelope') {
       if (grp.visible) grp.visible = false;
-      if (!_envBoxLogged) { _envBoxLogged = true; console.log('§FLYTHRU_ENVELOPE_BOX deprecated — 3D fill/outline skipped for the envelope cue; its 2D dims + panel carry it (§29)'); }
+      if (!_envBoxLogged) { _envBoxLogged = true; console.log('§FLYTHRU_ENVELOPE_BOX deprecated — 3D fill/outline skipped for the envelope cue; its 2D dims + panel carry it (§32)'); }
       return { key: a.cue.key, opacity: a.opacity, box: 'deprecated' };
     }
     var c = a.cue.box.getCenter(new T.Vector3()), s = a.cue.box.getSize(new T.Vector3());
@@ -452,7 +452,7 @@ function setupCpeFlythruCues(A) {
     var T = window.THREE, cam = A.camera;
     if (!T || !cam || !ctx) return 0;
     var a = activeAt(filmSec);
-    // §29 — the envelope PANEL persists PANEL_HOLD past its slot; the arrowed lines do not.
+    // §32 — the envelope PANEL persists PANEL_HOLD past its slot; the arrowed lines do not.
     if (!a && _cues) {
       var _env = null;
       for (var _ei = 0; _ei < _cues.length; _ei++) if (_cues[_ei].key === 'envelope') { _env = _cues[_ei]; break; }
@@ -472,7 +472,7 @@ function setupCpeFlythruCues(A) {
       if (c2.z < 1) { drawPanel(ctx, c2, cue.dims, cue.title || cue.key, ink, k, w, h); drawn++; }
       else _diag.push('panel:behind(z=' + c2.z.toFixed(2) + ')');
     }
-    (a.panelOnly ? [] : (cue.spanAxes || [])).forEach(function (ax) {          // a SINGLE number -> arrowed line (§29: not during the panel hold)
+    (a.panelOnly ? [] : (cue.spanAxes || [])).forEach(function (ax) {          // a SINGLE number -> arrowed line (§32: not during the panel hold)
       var sp = spans.filter(function (q) { return q.axis === ax; })[0];
       if (!sp) return;
       var A2 = proj(sp.a, cam, w, h), B2 = proj(sp.b, cam, w, h);
@@ -488,7 +488,7 @@ function setupCpeFlythruCues(A) {
       ' diag=' + JSON.stringify(_diag));
     if (drawn && _lastDrawKey !== cue.key + '|' + Math.round(filmSec)) {
       _lastDrawKey = cue.key + '|' + Math.round(filmSec);
-      console.log('§FLYTHRU_DIM_DRAW key=' + cue.key + (a.panelOnly ? ' panel-hold (§29, +' + PANEL_HOLD + 's)' : '') + ' filmSec=' + filmSec.toFixed(2) +
+      console.log('§FLYTHRU_DIM_DRAW key=' + cue.key + (a.panelOnly ? ' panel-hold (§32, +' + PANEL_HOLD + 's)' : '') + ' filmSec=' + filmSec.toFixed(2) +
                   ' marks=' + drawn + ' spans=[' + (cue.spanAxes || []).join(',') + ']' +
                   ' panelRows=' + ((cue.dims && cue.dims.length) || 0));
     }
