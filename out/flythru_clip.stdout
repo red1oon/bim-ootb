@@ -1,0 +1,19 @@
+01:04:06.514 +    0.0s §CLI_BAKE_ENV root=/tmp/wt-storey-reveal commit=f937b1d7 sw=v1160 db=Hospital_silent_local gpu=real out=/tmp/wt-storey-reveal/out/flythru_clip.mp4
+01:04:06.963 +    0.5s §CLI_BAKE_NAV http://127.0.0.1:8544/viewer/viewer.html?db=/buildings/Hospital_silent_local.db
+01:04:32.009 +   25.5s §CLI_BAKE_LOADED building=Hospital meshes=4499
+01:04:32.011 +   25.5s §CLI_BAKE_PREWARM_SEEN §PHOTO_PREWARM ms=4183 did=[mepSmooth,hdri,groundTex] — this work is now OFF the first Alt+S press (measured 8,923.6 ms of it on Hospital)
+01:04:32.064 +   25.6s §CLI_BAKE_GL vendor="Google Inc. (NVIDIA Corporation)" renderer="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL ES 3.2)"
+01:04:33.375 +   26.9s §CLI_BAKE_BUILDUP_RESOLVED on=1 source=stored-path — decides whether the Time Machine is primed before the bake asks for a timeline
+01:04:34.696 +   28.2s §CLI_BAKE_TM_PRIME ok ms=1290
+01:04:34.698 +   28.2s §CLI_BAKE_CLIP in=0 out=0.1 (§SDC — a window of the same film)
+01:04:56.133 +   49.6s §CLI_BAKE_PROGRESS frame=12/294 4.1% rate=0.430s/frame (trailing 2) elapsed=7s eta=2m1s (282 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+01:05:26.154 +   79.6s §CLI_BAKE_PROGRESS frame=12/294 4.1% rate=0.430s/frame (trailing 2) elapsed=7s eta=2m1s (282 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+01:05:56.162 +  109.7s §CLI_BAKE_PROGRESS frame=12/294 4.1% rate=0.430s/frame (trailing 2) elapsed=7s eta=2m1s (282 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+01:06:26.165 +  139.7s §CLI_BAKE_PROGRESS frame=12/294 4.1% rate=0.430s/frame (trailing 2) elapsed=7s eta=2m1s (282 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+01:06:27.935 +  141.4s §CLI_BAKE_SIGINT SIGTERM received at frame 12/294 — cancelling the bake and stitching what exists. Press again to give up on the partial film.
+01:06:31.169 +  144.7s §CLI_BAKE_ABORT user (SIGTERM) — landing the 12 frames baked so far
+01:06:31.169 +  144.7s §CLI_BAKE_LAND_FAIL Attempted to use detached Frame '0E420D8EBFBC923B72F5A3E666C94B72'.
+01:06:31.171 +  144.7s §CLI_BAKE_CRASH Error: Attempted to use detached Frame '0E420D8EBFBC923B72F5A3E666C94B72'.
+    at CdpFrame.<anonymous> (/home/red1/bim-compiler/node_modules/puppeteer-core/lib/cjs/puppeteer/util/decorators.js:107:23)
+    at CdpPage.evaluate (/home/red1/bim-compiler/node_modules/puppeteer-core/lib/cjs/puppeteer/api/Page.js:830:43)
+    at /tmp/wt-storey-reveal/cli_silent_bake.js:465:28

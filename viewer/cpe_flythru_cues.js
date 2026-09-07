@@ -312,20 +312,26 @@ function setupCpeFlythruCues(A) {
     return _group;
   }
 
+
+  // ⚠ NEVER CALL A.markDirty() FROM HERE. MEASURED 2026-09-07: a per-frame markDirty while a cue was
+  // up stalled a bake dead at frame 12/294 — the log shows `§STILL_REFINE cancelled (interaction)` and
+  // `§PHOTO_AO off (cancelled (interaction))` repeating forever, because markDirty is read as USER
+  // INTERACTION and tears down the refine/AO passes the bake is waiting on, which then restart and are
+  // cancelled again. cinema_maxq drives rendering itself during a bake, so the call buys nothing.
+  // The convention is already unanimous: cpe_storey_reveal.js and clash_film.js call it ZERO times.
   A.flythruCuesApplyVisual = function (filmSec) {
     var T = window.THREE;
     if (!T || !A.scene) return null;
     var a = (filmSec == null) ? null : activeAt(filmSec);
     var grp = ensureGroup();
     if (!grp) return null;
-    if (!a) { if (grp.visible) { grp.visible = false; if (A.markDirty) A.markDirty(); } return null; }
+    if (!a) { if (grp.visible) grp.visible = false; return null; }
     var c = a.cue.box.getCenter(new T.Vector3()), s = a.cue.box.getSize(new T.Vector3());
     grp.position.copy(c);
     grp.scale.set(Math.max(s.x, 0.01), Math.max(s.y, 0.01), Math.max(s.z, 0.01));
     grp.visible = true;
     grp.children[0].material.opacity = 0.13 * a.opacity;   // §7: a tint, not a curtain
     grp.children[1].material.opacity = 0.95 * a.opacity;
-    if (A.markDirty) A.markDirty();
     return { key: a.cue.key, opacity: a.opacity };
   };
 
