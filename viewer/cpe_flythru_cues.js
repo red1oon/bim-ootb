@@ -39,7 +39,10 @@ function setupCpeFlythruCues(A) {
   // NARRATIVE ORDER (user, §11). The ORDER is fixed; the SECOND is derived from the real camera
   // path, never hardcoded — the user's own storyboard times proved unsafe to assume (at 22s the
   // camera may be outside with the wing blocks in view rather than in a corridor). §12: no knobs.
-  var ORDER = ['envelope', 'storey', 'corridor', 'room'];
+  // The user's storyboard order: envelope, then a storey, then "a room shine thru while traversing
+  // the corridor", then the corridor measured length-wise. Room BEFORE corridor is theirs, not a
+  // convenience — and it matters, because each cue may only take a window after the previous one.
+  var ORDER = ['envelope', 'storey', 'room', 'corridor'];
 
   var _cues = null, _group = null, _built = false, _lastKey = null;
 
@@ -61,6 +64,43 @@ function setupCpeFlythruCues(A) {
     return out;
   }
 
+
+  // DB (IFC, Z-up) extents -> scene Box3, via A.ifc2three — the relation's OWNER (scene.js:499),
+  // exact and established at load from A.modelOffset. Both corners are converted and then re-min/maxed,
+  // because the axis swap sends iy -> -z and so exchanges which corner is the minimum.
+  function dbExtToSceneBox(e) {
+    var T = window.THREE;
+    if (!e || !T || typeof A.ifc2three !== 'function') return null;
+    var a = A.ifc2three(e.minx, e.miny, e.minz), b = A.ifc2three(e.maxx, e.maxy, e.maxz);
+    return new T.Box3(new T.Vector3(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.min(a.z, b.z)),
+                      new T.Vector3(Math.max(a.x, b.x), Math.max(a.y, b.y), Math.max(a.z, b.z)));
+  }
+
+  // Rooms. PREFER A.allRoomVolumes (cached, and it carries the shipped `category` classifier), but
+  // navigate_find.js is LAZY-LOADED (main.js:137) so in a headless bake its init() never runs and the
+  // handle is absent — MEASURED: rooms=false on the first placement probe. Fall back to the same
+  // query it makes, converted through the same owner transform. Never a third convention.
+  function roomRects() {
+    var T = window.THREE;
+    if (typeof A.allRoomVolumes === 'function') {
+      var v = A.allRoomVolumes() || [];
+      if (v.length) return { src: 'allRoomVolumes', rects: v };
+    }
+    if (!A.dbQuery || !T || typeof A.ifc2three !== 'function') return { src: 'none', rects: [] };
+    try {
+      var rows = A.dbQuery("SELECT guid,name,center_x,center_y,center_z,size_x,size_y,size_z,room_guid " +
+                           "FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x IS NOT NULL") || [];
+      var out = [], i, r, c;
+      for (i = 0; i < rows.length; i++) {
+        r = rows[i]; c = A.ifc2three(r[2], r[3], r[4]);
+        out.push({ guid: r[8] || r[0], name: r[1], category: null,
+                   center: new T.Vector3(c.x, c.y, c.z),
+                   size: new T.Vector3(r[5], r[7], r[6]) });   // IFC sx,sy,sz -> scene x,y,z (z-up swap)
+      }
+      return { src: 'spatial_structure', rects: out };
+    } catch (e) { return { src: 'error:' + (e && e.message), rects: [] }; }
+  }
+
   function n0(v) { return Math.round(v).toLocaleString('en-US'); }
   function n2(v) { return (Math.round(v * 100) / 100).toFixed(2); }
 
@@ -68,7 +108,7 @@ function setupCpeFlythruCues(A) {
   // FlythruMaths/StoreyRaster are plain script globals (common/*.js, UMD). If either is missing the
   // cue DEGRADES to its extents-only label rather than inventing an area — §12, never fabricate.
   function dbMeasures() {
-    var out = { ground: null, storeys: {} };
+    var out = { ground: null, storeys: {}, ext: null };
     var FM = window.FlythruMaths, SR = window.StoreyRaster;
     if (!FM || !A.dbQuery) return out;
     try {
@@ -84,8 +124,10 @@ function setupCpeFlythruCues(A) {
         (byS[k] || (byS[k] = [])).push(b);
       }
       out.ground = FM.ftRasterArea(FM.ftRasterizeBoxes(all, FM.RES));
+      out.ext = FM.ftExtents(all);
       for (k in byS) if (byS.hasOwnProperty(k) && k !== 'Unknown')
-        out.storeys[k] = { gross: FM.ftRasterArea(FM.ftRasterizeBoxes(byS[k], FM.RES)) };
+        out.storeys[k] = { gross: FM.ftRasterArea(FM.ftRasterizeBoxes(byS[k], FM.RES)),
+                           ext: FM.ftExtents(byS[k]) };
       if (SR) {
         var wr = A.dbQuery('SELECT storey,res,x0,y0,cols,rows,bits FROM storey_walkable_raster') || [];
         for (i = 0; i < wr.length; i++) {
@@ -102,20 +144,19 @@ function setupCpeFlythruCues(A) {
     if (_built) return _cues;
     _built = true; _cues = [];
     var T = window.THREE;
-    if (!T || !A.collectMeshes) { console.log('§FLYTHRU_CUES INCONCLUSIVE — no THREE/collectMeshes'); return _cues; }
+    if (!T || typeof A.ifc2three !== 'function') { console.log('§FLYTHRU_CUES INCONCLUSIVE — no THREE / no A.ifc2three (scene.js owns the DB->scene relation)'); return _cues; }
     var t0 = (window.performance && performance.now) ? performance.now() : 0;
     var meas = dbMeasures();
 
-    // B1 ENVELOPE — scene box of meshes that belong to a storey (excludes ground/sky/helpers).
-    var envBox = new T.Box3(), envN = 0;
-    A.collectMeshes(function (o) { return o.isMesh && o.userData && o.userData.storey; })
-      .forEach(function (o) { envBox.expandByObject(o); envN++; });
-    if (envN && !envBox.isEmpty()) {
-      var es = envBox.getSize(new T.Vector3());
-      _cues.push({ key: 'envelope', box: envBox.clone(),
-        label: 'Building Envelope — ' + n2(es.x) + ' × ' + n2(es.z) + ' × ' + n2(es.y) + ' m' +
+    // B1 ENVELOPE — extents from the DB (all 64,150 elements), box through the owner transform.
+    // NOT a mesh-filter union: filtering on userData.storey silently dropped the 10,192 elements whose
+    // storey is 'Unknown' and understated the building 115.75 -> 102.03 m (MEASURED, first probe).
+    var envBox = dbExtToSceneBox(meas.ext);
+    if (envBox && meas.ext) {
+      var e = meas.ext;
+      _cues.push({ key: 'envelope', box: envBox, label: 'Building Envelope — ' + n2(e.sx) + ' × ' + n2(e.sy) + ' × ' + n2(e.sz) + ' m' +
                (meas.ground ? '  ·  Ground ' + n0(meas.ground) + ' m²' : '') });
-    }
+    } else { console.log('§FLYTHRU_CUE_DROP envelope — no DB extents or no A.ifc2three'); }
 
     // B2 STOREY — the storey with the largest WALKABLE area (derived, never hardcoded; §12).
     var bestS = null, sk;
@@ -124,20 +165,16 @@ function setupCpeFlythruCues(A) {
       if (m.walk != null && (!bestS || m.walk > meas.storeys[bestS].walk)) bestS = sk;
     }
     if (bestS) {
-      var sBox = new T.Box3(), sN = 0;
-      A.collectMeshes(function (o) { return o.isMesh && o.userData && o.userData.storey === bestS; })
-        .forEach(function (o) { sBox.expandByObject(o); sN++; });
-      if (sN && !sBox.isEmpty()) {
-        var sm = meas.storeys[bestS];
-        _cues.push({ key: 'storey', box: sBox.clone(),
-          label: bestS + ' — Floor ' + n0(sm.gross) + ' m²  ·  Walkable ' + n0(sm.walk) + ' m²' });
-      }
+      var sm = meas.storeys[bestS], sBox = dbExtToSceneBox(sm.ext);
+      if (sBox) _cues.push({ key: 'storey', box: sBox,
+        label: bestS + ' — Floor ' + n0(sm.gross) + ' m²  ·  Walkable ' + n0(sm.walk) + ' m²' });
     }
 
     // B4/B5 — rooms already arrive in THREE units and already carry a category (navigate_find.js).
     // A logical room is the UNION of its sub-rects, so group by guid before measuring (§5).
-    var vols = (typeof A.allRoomVolumes === 'function') ? (A.allRoomVolumes() || []) : [];
-    if (!vols.length) console.log('§FLYTHRU_CUES_ROOMS VACUOUS — allRoomVolumes unavailable or empty; corridor+room cues dropped');
+    var rr0 = roomRects(), vols = rr0.rects;
+    console.log('§FLYTHRU_CUES_ROOMS src=' + rr0.src + ' rects=' + vols.length +
+      (vols.length ? '' : ' — VACUOUS: corridor+room cues dropped'));
     var byG = {}, j;
     for (j = 0; j < vols.length; j++) {
       var v = vols[j], g = v.guid || ('_' + j);
@@ -158,18 +195,22 @@ function setupCpeFlythruCues(A) {
     var corr = rooms.filter(function (r) { return r.category === 'corridor'; });
     if (!corr.length) corr = rooms.filter(function (r) { return r.aspect >= 3; });
     corr.sort(function (a, b) { return b.long - a.long; });
-    if (corr.length) _cues.push({ key: 'corridor', box: corr[0].box.clone(),
-      label: 'Corridor — ' + n2(corr[0].long) + ' m long  ·  ' + n2(corr[0].short) + ' m wide' });
+    if (corr.length) _cues.push({ key: 'corridor', opts: corr.map(function (r) {
+      var rs = r.box.getSize(new T.Vector3());
+      return { box: r.box.clone(), guid: r.guid,
+               label: 'Corridor — ' + n2(r.long) + ' m long  ·  ' + n2(r.short) + ' m wide' };
+    }) });
 
     // The room cue: biggest genuine room that is NOT the corridor pick. 9 m² is the floor below which
     // a compiled rect is a closet, not a room (§11 measured: 0.75 m² and 3.75 m² rects exist).
-    var pickC = corr.length ? corr[0].guid : null;
-    var habs = rooms.filter(function (r) { return r.guid !== pickC && r.aspect < 3 && r.area >= 9; });
+    var habs = rooms.filter(function (r) { return r.aspect < 3 && r.area >= 9; });
     habs.sort(function (a, b) { return b.area - a.area; });
     if (habs.length) {
-      var hs = habs[0].box.getSize(new T.Vector3());
-      _cues.push({ key: 'room', box: habs[0].box.clone(),
-        label: 'Room — ' + n0(habs[0].area) + ' m²  ·  ' + n2(hs.x) + ' × ' + n2(hs.z) + ' m' });
+      _cues.push({ key: 'room', opts: habs.map(function (r) {
+        var hs = r.box.getSize(new T.Vector3());
+        return { box: r.box.clone(), guid: r.guid,
+                 label: 'Room — ' + n0(r.area) + ' m²  ·  ' + n2(hs.x) + ' × ' + n2(hs.z) + ' m' };
+      }) });
     } else if (rooms.length) {
       console.log('§FLYTHRU_CUES_ROOM DROPPED — no room >= 9 m2 with aspect < 3 (largest ' +
         n2(Math.max.apply(null, rooms.map(function (r) { return r.area; }))) + ' m2); showing a closet would advertise a weakness');
@@ -190,23 +231,34 @@ function setupCpeFlythruCues(A) {
     } else {
       for (oi = 0; oi < ORDER.length; oi++) {
         d = byKey[ORDER[oi]]; if (!d) continue;
-        var bs = d.box.getSize(new T.Vector3()), ctr = d.box.getCenter(new T.Vector3());
-        var spanM = Math.max(bs.x, bs.z);
-        wins = A.flythruPathWindows(path, ctr, spanM, { minHoldSec: SPAN }) || [];
-        start = null;
-        for (var wi = 0; wi < wins.length; wi++) {
-          w = wins[wi];
-          var s0 = Math.max(w.startSec, endPrev + SLOT.gap);
-          if (w.endSec - s0 >= SPAN) { start = s0; break; }
+        // §12/§15 — HUNT for the clear-sighted chance rather than assuming the biggest subject is the
+        // visible one. Every candidate of this class is tested in preference order and the FIRST with a
+        // legal window wins. MEASURED why: picking the largest room gave windows=0 (never faced on this
+        // path) and dropped the cue entirely, while smaller rooms were in clear view.
+        var opts = d.opts || [{ box: d.box, label: d.label }];
+        var pick = null, seen = []; start = null;
+        for (var oj = 0; oj < opts.length && !pick; oj++) {
+          var ob = opts[oj].box, bs = ob.getSize(new T.Vector3()), ctr = ob.getCenter(new T.Vector3());
+          var spanM = Math.max(bs.x, bs.z);
+          wins = A.flythruPathWindows(path, ctr, spanM, { minHoldSec: SPAN }) || [];
+          seen.push(spanM.toFixed(1) + 'm:' + wins.length + 'w' +
+            (wins.length ? '@' + wins.map(function (q) { return q.startSec.toFixed(0) + '-' + q.endSec.toFixed(0); }).join('/') : ''));
+          for (var wi = 0; wi < wins.length; wi++) {
+            w = wins[wi];
+            var s0 = Math.max(w.startSec, endPrev + SLOT.gap);
+            if (w.endSec - s0 >= SPAN) { pick = opts[oj]; start = s0; pick._span = spanM; pick._wins = wins.length; break; }
+          }
         }
-        if (start == null) {
-          console.log('§FLYTHRU_CUE_DROP ' + d.key + ' — no window >= ' + SPAN + 's in range+facing after ' +
-                      (endPrev > -Infinity ? endPrev.toFixed(2) + 's' : 'film start') + ' (windows=' + wins.length + ')');
+        if (!pick) {
+          console.log('§FLYTHRU_CUE_DROP ' + d.key + ' — none of ' + opts.length +
+                      ' candidate(s) has a window >= ' + SPAN + 's in range+facing after ' +
+                      (endPrev > -Infinity ? endPrev.toFixed(2) + 's' : 'film start') + ' — [' + seen.join(' | ') + ']');
           continue;
         }
-        d.at = start; kept.push(d); endPrev = start + SPAN;
-        console.log('§FLYTHRU_CUE_PLACE ' + d.key + ' at=' + start.toFixed(2) + 's span=' + spanM.toFixed(1) +
-                    'm windows=' + wins.length + ' dMax=' + (A.flythruMaxDist ? A.flythruMaxDist(spanM).toFixed(0) : '?') + 'm');
+        d.box = pick.box; d.label = pick.label; d.at = start; kept.push(d); endPrev = start + SPAN;
+        console.log('§FLYTHRU_CUE_PLACE ' + d.key + ' at=' + start.toFixed(2) + 's cand=' + opts.length +
+                    ' span=' + pick._span.toFixed(1) + 'm windows=' + pick._wins +
+                    ' dMax=' + (A.flythruMaxDist ? A.flythruMaxDist(pick._span).toFixed(0) : '?') + 'm "' + pick.label + '"');
       }
       _cues = kept;
     }
