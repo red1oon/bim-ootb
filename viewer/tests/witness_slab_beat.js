@@ -162,8 +162,10 @@ const server = http.createServer((req, res) => {
       properties: { guid: { type: 'string', minLength: 1 }, rawName: { type: ['string', 'null'] }, name: { type: ['string', 'null'] }, storey: { type: 'string' },
         sec: { type: 'number', minimum: 0 }, hold: { type: ['number', 'null'] }, area: { type: 'number', exclusiveMinimum: 0 }, bx: { type: 'number', exclusiveMinimum: 0 },
         by: { type: 'number', exclusiveMinimum: 0 }, inDive: { type: 'boolean' }, picked: { type: 'boolean' }, reject: { type: ['string', 'null'] },
-        corners: { type: 'array', minItems: 4, maxItems: 4 }, centerTop: { type: 'array', minItems: 3, maxItems: 3 } } })
+        corners: { type: 'array', minItems: 4, maxItems: 4 }, centerTop: { type: 'array', minItems: 3, maxItems: 3 },
+        claimSec: { type: 'number', minimum: 0 }, buried: { type: 'array' }, under: { type: 'array' } } })
     .invariant('one-beat: picked <= MAX_DIVE(2) and exactly TAKE(1) when a beat exists', rs => { const n = rs.filter(r => r.picked).length; return n <= 2 && (rep.state !== 'BEAT' || n === 1); })
+    .invariant('§26.14 a buried plate is never the pick; every event claimSec <= sec; a chain\'s pick is its top plate', rs => rs.every(r => !(r.picked && r.buriedBy) && r.claimSec <= r.sec + 1e-9))
     .invariant('picked plate is inside the dive and holds >= 2.0 s', rs => rs.filter(r => r.picked).every(r => r.sec < diveSec && (r.hold == null || r.hold >= 2.0)))
     .invariant('inDive flag agrees with sec < diveSec on every row', rs => rs.every(r => r.inDive === (r.sec < diveSec)))
     .invariant('semantic name is a byte-substring of element_name, never composed', rs => rs.every(r => r.name == null || r.rawName == null || String(r.rawName).indexOf(r.name) >= 0))

@@ -203,17 +203,35 @@ function setupCpeSlabBeat(A) {
     var pool = cands.filter(function (c) { return c.area >= CAND_FRAC * amax && c.sec != null; });
     var live = pool.slice().sort(function (a, b) { return a.sec - b.sec; }), events = [];
     log('§SLAB_BEAT_POOL ' + live.map(function (c) { return c.sec.toFixed(2) + 's ' + c.storey + ' ' + fmt(c.area) + 'm2 z=' + c.cz.toFixed(2) + ' t=' + c.bz.toFixed(2); }).join(' | '));
+    // §26.14 §SLAB_BURIAL — three kinds of co-arrival, decided by plan overlap and height, never by area alone:
+    //   in contact on the same plan  -> one floor in two layers, the larger keeps the event (HHS structure+finish)
+    //   above, on the same plan      -> BURIAL: the upper, later plate inherits the event; the host is covered
+    //   underneath, on the same plan -> hidden; recorded, neither buries nor fragments
+    //   elsewhere                    -> a co-arrival that fragments the frame if it is >= CO_FRAC of the host
+    // The chain's claimSec stays the FIRST pop of the chain — that is when the previous plate's mark was covered.
     live.forEach(function (c) {
-      var host = null;
-      if (events.length && c.sec - events[events.length - 1].sec <= ENV_SPAN) host = events[events.length - 1];
-      if (!host) { c.coArrivals = []; events.push(c); return; }
-      if (c.area > host.area) { c.coArrivals = (host.coArrivals || []).concat([host]); events[events.length - 1] = c; }
-      else host.coArrivals.push(c);
+      var host = events.length ? events[events.length - 1] : null;
+      c.coArrivals = []; c.buried = []; c.under = []; c.claimSec = c.sec;
+      if (!host || c.sec - host.sec > ENV_SPAN) { events.push(c); return; }
+      var ov = planOverlap(c, host);
+      if (ov >= STACK_FRAC && verticalContact(c, host)) {
+        if (c.area > host.area) { c.coArrivals = host.coArrivals.concat([host]); c.buried = host.buried; c.under = host.under; c.claimSec = host.claimSec; events[events.length - 1] = c; }
+        else host.coArrivals.push(c);
+        return;
+      }
+      if (ov >= STACK_FRAC && c.cz > host.cz) {                 // BURIAL
+        c.buried = host.buried.concat([host]); c.under = host.under; c.claimSec = host.claimSec;
+        host.buriedBy = c;
+        events[events.length - 1] = c;
+        return;
+      }
+      if (ov >= STACK_FRAC) { host.under.push(c); return; }    // hidden underneath the host
+      host.coArrivals.push(c);                                   // elsewhere
     });
     events.forEach(function (c, i) {
       c.stacked = (c.coArrivals || []).filter(function (x) { return planOverlap(c, x) >= STACK_FRAC && verticalContact(c, x); });
-      c.coSignificant = (c.coArrivals || []).filter(function (x) { return x.area >= CO_FRAC * c.area && c.stacked.indexOf(x) < 0; });
-      c.hold = (i + 1 < events.length) ? events[i + 1].sec - c.sec : Infinity;   // 6. hold
+      c.coSignificant = (c.coArrivals || []).filter(function (x) { return x.area >= CO_FRAC * c.area && planOverlap(c, x) < STACK_FRAC; });
+      c.hold = (i + 1 < events.length) ? events[i + 1].claimSec - c.sec : Infinity;   // 6. hold — until the next chain's FIRST pop
       c.reject = null;
       if (c.hold < MIN_HOLD) c.reject = 'hold ' + c.hold.toFixed(2) + 's < ' + MIN_HOLD;
       else if (c.coSignificant.length) c.reject = c.coSignificant.length + ' co-arrival(s) >= ' + (CO_FRAC * 100) + '% within ' + ENV_SPAN.toFixed(1) + 's, not in vertical contact (' +
@@ -254,13 +272,16 @@ function setupCpeSlabBeat(A) {
       return { guid: e.guid, rawName: e.rawName, name: e.name, storey: e.storey, sec: +e.sec.toFixed(3), hold: e.hold === Infinity ? null : +e.hold.toFixed(3),
                area: +e.area.toFixed(2), bx: +e.bx.toFixed(3), by: +e.by.toFixed(3), inDive: e.sec < diveSec, picked: e === picked,
                reject: e.reject, stacked: (e.stacked || []).map(function (x) { return x.name; }),
+               claimSec: +e.claimSec.toFixed(3), buried: (e.buried || []).map(function (x) { return x.storey + '@' + x.sec.toFixed(2); }),
+               under: (e.under || []).map(function (x) { return x.storey + '@' + x.sec.toFixed(2); }), buriedBy: e.buriedBy ? e.buriedBy.storey : null,
                frustum: e.frustum ? { ok: e.frustum.ok, why: e.frustum.why, diagPx: +e.frustum.diagPx.toFixed(1), dist: +e.frustum.dist.toFixed(2) } : null,
                semantic: e.semantic ? { verdict: e.semantic.verdict, ratio: e.semantic.ratio } : null,
                corners: e.cornersThree.map(function (v) { return [v.x, v.y, v.z]; }), centerTop: [e.centerTop.x, e.centerTop.y, e.centerTop.z] };
     });
     _report.rows.forEach(function (r) {
       log('§SLAB_BEAT_EVENT sec=' + r.sec.toFixed(2) + ' hold=' + (r.hold == null ? '∞' : r.hold.toFixed(2)) + ' area=' + fmt(r.area) + 'm2 storey="' + r.storey +
-          '" name="' + r.name + '"' + (r.stacked.length ? ' stacked=[' + r.stacked.join(', ') + ']' : '') + ' -> ' +
+          '" name="' + r.name + '"' + (r.stacked.length ? ' stacked=[' + r.stacked.join(', ') + ']' : '') +
+          (r.buried.length ? ' buried=[' + r.buried.join(', ') + '] claimSec=' + r.claimSec.toFixed(2) : '') + (r.under.length ? ' under=[' + r.under.join(', ') + ']' : '') + ' -> ' +
           (r.picked ? '✅ DIVE BEAT' : (r.reject || (r.inDive ? 'qualifies' : 'qualifies (after dive)'))));
     });
     if (!picked) {
