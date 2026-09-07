@@ -24,6 +24,10 @@
  * onto the captured frame (cinema_maxq.js:767 _captureFrame). A plain page screenshot MISSES them.
  * So with any layer on, this composites the same way the bake does and saves that, not a screenshot.
  *
+ * ⚠ --nostream SKIPS the model entirely (MEASURED: ~7 min -> seconds). Only for judging the 2D
+ * annotation layers, which are built from DB + camera and read no mesh. The scene is EMPTY, so
+ * visibleMeshes / occlusion / buildup in such a frame are VACUOUS, not evidence.
+ *
  * RUN: node scripts/snap_timeline.js --db Hospital_silent_local --dur 195.8 --at 0,3,6,9
  *      node scripts/snap_timeline.js --db Hospital_silent_local --at 9,13 --clash --cues,12
  *      node scripts/snap_timeline.js --db HHS_silent --dur 61 --from 0 --to 20 --step 2
@@ -39,11 +43,19 @@ const DUR = Number(arg('dur', 195.8));
 const OUT = arg('out', path.join(__dirname, '..', 'out', 'snaps'));
 const W = Number(arg('width', 1280)), H = Number(arg('height', 720));
 const CLASH = process.argv.includes('--clash');
+// ⚠ --nostream: SKIP the model stream entirely. MEASURED 2026-09-07: a one-frame Hospital run cost
+// ~7 min, and essentially all of it was streaming 64,150 elements + waiting for the count to settle.
+// The DATUM ANNOTATION (cpe_flythru_datum.js) is built from DB queries and the camera pose alone —
+// no mesh is read — so judging its LAYOUT does not need the building in the scene at all. Use this
+// while iterating on labelling; drop it the moment the question is about occlusion or the buildup.
+const NOSTREAM = process.argv.includes('--nostream');
 const CUES = process.argv.includes('--cues');
 let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
   : (() => { const a = [], f = Number(arg('from', 0)), t = Number(arg('to', 10)), s = Number(arg('step', 1));
              for (let x = f; x <= t + 1e-9; x += s) a.push(+x.toFixed(3)); return a; })();
 
+const T0 = Date.now();
+let tReady = T0;
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const b = await puppeteer.launch({ headless: 'new', protocolTimeout: 1800000,
@@ -56,7 +68,10 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
   // ⚠ Forward the LAYER tags too. This filter previously matched only §SNAP_, so every
   // §FLYTHRU_DIM_DRAW line the marking pass emitted was discarded before reaching the log — three
   // runs looked like "nothing drew" when the evidence was being filtered out at this line.
-  p.on('console', m => { const t = m.text(); if (/§SNAP_|§FLYTHRU_|§CLASH_LABELS|PAGEERROR/.test(t)) console.log('  ' + t); });
+  // ⚠ WIDEN BEFORE CONCLUDING. This filter matched only §SNAP_ once and discarded every
+  // §FLYTHRU_ line, which cost three runs diagnosing a feature that was working. It then hid
+  // §CINEMA_PATH_RESTORE / §CINEMA_PIVOT while --nostream was being judged on its camera.
+  p.on('console', m => { const t = m.text(); if (/§SNAP_|§FLYTHRU_|§CLASH_LABELS|§CINEMA_|§CPE_|PAGEERROR/.test(t)) console.log('  ' + t); });
   p.on('pageerror', e => console.log('  PAGEERROR ' + e.message));
   console.log('§SNAP_ENV db=' + DB + ' dur=' + DUR + 's times=[' + TIMES.join(',') + '] out=' + OUT);
   await p.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${DB}.db`,
@@ -78,20 +93,67 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
   console.log('§SNAP_SW unregistered=' + swKilled.workers + ' cachesCleared=' + swKilled.caches + ' — reloading for fresh JS');
   await p.reload({ waitUntil: 'domcontentloaded', timeout: 90000 });
   await p.waitForFunction(() => window.APP && window.APP.cinemaPathPlan, { timeout: 240000 });
+  tReady = Date.now();
   const hasDim = await p.evaluate(() => typeof window.APP.flythruCuesCompositeOntoCanvas === 'function');
   console.log('§SNAP_JS flythruCuesCompositeOntoCanvas=' + (hasDim ? 'present' : 'ABSENT — page is still on stale JS'));
-  const parts = await p.evaluate(() => (window.APP.dbQuery('SELECT DISTINCT building FROM elements_meta') || []).map(r => r[0]));
-  for (const bb of parts) await p.evaluate(x => { try { window.APP.streamBuilding(x); } catch (e) {} }, bb);
-  let stable = 0;
-  for (let i = 0; i < 400; i++) {
-    const st = await p.evaluate(() => (window.APP.status && window.APP.status.textContent) || '');
-    const m = st.match(/([\d,]+)\s*\/\s*([\d,]+)/);
-    if (!m || m[1].replace(/,/g, '') === m[2].replace(/,/g, '')) { if (++stable >= 4) break; } else stable = 0;
+  if (NOSTREAM) {
+    // ⚠ SKIPPING THE STREAM IS NOT SKIPPING THE DB. window.APP.cinemaPathPlan exists before the
+    // SQLite handle is usable — MEASURED: the first --nostream run logged
+    // '§FLYTHRU_DATUM VACUOUS — no structural extent' because dbQuery returned nothing yet, and a
+    // VACUOUS datum would have been read as a broken annotation. Wait for a real row instead.
+    const ok = await p.waitForFunction(() => {
+      try { const r = window.APP.dbQuery('SELECT COUNT(*) FROM element_transforms'); return !!(r && r[0] && r[0][0] > 0); }
+      catch (e) { return false; }
+    }, { timeout: 120000 }).then(() => true).catch(() => false);
+    // ⚠ "EMPTY" WOULD BE A LIE — MEASURED 504 visible meshes with --nostream on Hospital. The viewer
+    // still draws whatever loads without streamBuilding (wireframe placeholders), and the film's own
+    // buildup shows 3 meshes at t=0. So the scene is NOT the film's scene: occlusion, mesh counts and
+    // the day cursor are VACUOUS here. The CAMERA, however, is exact (see the pivot note below).
+    console.log('§SNAP_STREAM SKIPPED (--nostream) — dbReady=' + ok + '. The camera and every DB-derived ' +
+                'layer are exact; the SCENE is not the film\'s (no buildup), so occlusion and mesh counts are VACUOUS.');
+    if (!ok) console.log('§SNAP_WARN --nostream gave up waiting for the DB — every layer below is VACUOUS');
+    // ⚠ AND THE CAMERA IS NOT FREE EITHER. MEASURED: --nostream first put Hospital t=0 at
+    // (135.8,181.0,135.8) against the streamed (85.5,70.0,58.9) — a completely different film.
+    // Cause, straight out of §CINEMA_PIVOT's own log: with nothing streamed, A.controls.target is
+    // still at the ORIGIN and PASSES the planner's plausibility test (offCentre 19.7 < boundingR/2 =
+    // 45.7), so the whole path orbits (0,0,0) instead of the building.
+    // ⚠ PARKING THE TARGET FAR AWAY IS NOT THE FIX. It worked on Hospital only because Hospital has
+    // an AUTHORED cinema_path (bands=4, absolute coordinates); HHS's path is DERIVED, so it followed
+    // the parked target and t=0 came out at (88452,88455,88452). The fix is to give the viewer the
+    // same home framing it computes for itself after a stream — scene.js:_homeFillFrame — from the
+    // DB alone: whole-building element_transforms bbox, dist = max(80, envelope), camera at
+    // ctr + dist*(0.6, 0.8, 0.6), target at ctr. Same formula, no second invented framing.
+    const fit = await p.evaluate(() => {
+      const A = window.APP;
+      try {
+        const b = A.dbQuery('SELECT MIN(center_x),MAX(center_x),MIN(center_y),MAX(center_y),MIN(center_z),MAX(center_z) FROM element_transforms')[0];
+        if (b == null || b[0] == null) return null;
+        const envelope = Math.max(b[1] - b[0], b[3] - b[2], b[5] - b[4]);
+        const dist = Math.max(80, envelope);
+        const ctr = A.ifc2three((b[0] + b[1]) / 2, (b[2] + b[3]) / 2, (b[4] + b[5]) / 2);
+        A.camera.position.set(ctr.x + dist * 0.6, ctr.y + dist * 0.8, ctr.z + dist * 0.6);
+        A.controls.target.set(ctr.x, ctr.y, ctr.z);
+        A.controls.update();
+        return { envelope: +envelope.toFixed(1), dist: +dist.toFixed(1) };
+      } catch (e) { return null; }
+    });
+    console.log('§SNAP_FIT ' + (fit ? 'home framing from the DB, envelope=' + fit.envelope + 'm dist=' + fit.dist + 'm (scene.js _homeFillFrame formula)'
+                                   : 'FAILED — the camera keeps the viewer default and §CINEMA_PIVOT may orbit the origin'));
+  } else {
+    const parts = await p.evaluate(() => (window.APP.dbQuery('SELECT DISTINCT building FROM elements_meta') || []).map(r => r[0]));
+    for (const bb of parts) await p.evaluate(x => { try { window.APP.streamBuilding(x); } catch (e) {} }, bb);
+    let stable = 0;
+    for (let i = 0; i < 400; i++) {
+      const st = await p.evaluate(() => (window.APP.status && window.APP.status.textContent) || '');
+      const m = st.match(/([\d,]+)\s*\/\s*([\d,]+)/);
+      if (!m || m[1].replace(/,/g, '') === m[2].replace(/,/g, '')) { if (++stable >= 4) break; } else stable = 0;
+      await sleep(3000);
+    }
     await sleep(3000);
   }
-  await sleep(3000);
+  console.log('§SNAP_T stream=' + ((Date.now() - T0) / 1000).toFixed(1) + 's (page ready at ' + ((tReady - T0) / 1000).toFixed(1) + 's)');
 
-  const armed = await p.evaluate(async () => {
+  const armed = NOSTREAM ? null : await p.evaluate(async () => {
     const A = window.APP;
     if (typeof window.tmFollowTimeline !== 'function' || typeof window.tmActivateForBake !== 'function') {
       console.log('§SNAP_BUILDUP INCONCLUSIVE — tmFollowTimeline/tmActivateForBake absent; frames would show the FINISHED building');
@@ -128,7 +190,7 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
     return R;
   }, CLASH, CUES, DUR);
 
-  if (!armed) console.log('§SNAP_WARN buildup NOT armed — every frame below is the FINISHED building, NOT the film at that second');
+  if (!armed && !NOSTREAM) console.log('§SNAP_WARN buildup NOT armed — every frame below is the FINISHED building, NOT the film at that second');
   const rows = [];
   for (const t of TIMES) {
     const info = await p.evaluate(async (t, dur, armed, w, h, layers) => {
@@ -185,6 +247,9 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
         } catch (e) { console.log('§SNAP_COMPOSITE FAILED ' + e.message + ' — falling back to a plain screenshot'); }
       }
       const day = (A.dayCounterAt && cursorMs != null) ? 'cursor=' + new Date(cursorMs).toISOString().slice(0, 10) : 'cursor=n/a';
+      console.log('§SNAP_POSE t=' + t.toFixed(2) + ' poseAt=(' + pz.x.toFixed(1) + ',' + pz.y.toFixed(1) + ',' + pz.z.toFixed(1) +
+                  ') cameraAtComposite=(' + A.camera.position.x.toFixed(1) + ',' + A.camera.position.y.toFixed(1) + ',' + A.camera.position.z.toFixed(1) +
+                  ') target=(' + pz.tx.toFixed(1) + ',' + pz.ty.toFixed(1) + ',' + pz.tz.toFixed(1) + ')');
       console.log('§SNAP_FRAME t=' + t.toFixed(2) + 's u=' + u.toFixed(4) + ' ' + day +
                   ' visibleMeshes=' + visible + ' clashLabels=' + lblN + ' composited=' + (dataUrl ? 'yes' : 'no'));
       return { t: t, u: u, cursorMs: cursorMs, visible: visible, clashLabels: lblN, dataUrl: dataUrl,
@@ -200,6 +265,7 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
   }
   await p.evaluate(() => { try { if (window.tmRestoreDerivedOrder) window.tmRestoreDerivedOrder(); } catch (e) {} });
   fs.writeFileSync(path.join(OUT, DB + '_snaps.json'), JSON.stringify(rows, null, 1));
-  console.log('§SNAP_DONE frames=' + rows.length + ' dir=' + OUT);
+  console.log('§SNAP_DONE frames=' + rows.length + ' dir=' + OUT +
+              ' wall=' + ((Date.now() - T0) / 1000).toFixed(1) + 's' + (NOSTREAM ? ' (--nostream)' : ''));
   await b.close();
 })().catch(e => { console.error('SNAP FAILED ' + e.message); process.exit(1); });

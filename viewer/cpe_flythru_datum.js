@@ -31,7 +31,10 @@
  */
 function setupCpeFlythruDatum(A) {
   if (!A) return;
-  var INK = 0x8899aa, INK_STOREY = 0xffd600, MIN_SEP = 6.0;
+  // ONE INK for the whole datum, 3D lines included (spec §24.1.2). The storey rules used to be
+  // YELLOW against grey ground lines — hierarchy signalled by hue. They are the same ink now,
+  // separated by weight: the rules read stronger because they are fewer, not because they differ.
+  var INK = 0x8899aa, INK_STOREY = 0xb9c6d6, MIN_SEP = 6.0;
   var _grp = null, _built = false, _info = null, _faces = null, _lines = null;
 
   function q(sql) { try { return A.dbQuery(sql) || []; } catch (e) { return []; } }
@@ -49,19 +52,36 @@ function setupCpeFlythruDatum(A) {
     var rows = q("SELECT name, elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL ORDER BY elevation");
     var src = 'elevation';
     if (!rows.length) { rows = q("SELECT name, center_z FROM spatial_structure WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL ORDER BY center_z"); src = 'center_z'; }
-    // ⚠ MERGE NEAR-DUPLICATES. Hospital records 'Level 2' at BOTH 6.00 and 6.10 — the same floor
-    // twice, 100 mm apart. Exact-value dedupe kept both and drew a doubled rule (12 rules for ~8
-    // floors). Anything within TOL of an existing level is the same floor.
-    var TOL = 0.30, out = [];
+    // ⚠ MERGE NEAR-DUPLICATES, THEN VOTE — first-seen was printing the odd row out. Hospital
+    // records 'Level 2' at BOTH 6.00 and 6.10 (one floor, 100 mm apart) so exact dedupe drew a
+    // doubled rule; but keeping the FIRST row of a merged cluster is just as wrong. MEASURED
+    // 2026-09-07 on Hospital: 3 of 8 printed elevations were the single outlier of their cluster
+    // (Level 3 +10.973 over 6 rows at 11.000; Level 4 +15.850 over 6 at 16.000; Level 5 +20.726
+    // over 5 at 21.000), and the 31.0 m cluster printed 'Level 7' from one row while TWO rows say
+    // 'Level 7A' — so the drawing carried Level 7 twice, at 31 and at 34.
+    // So: cluster within TOL, then take the MODAL name and the MODAL elevation of the cluster.
+    var TOL = 0.30, cl = [];
     rows.forEach(function (r) {
       var n = String(r[0] || '');
       if (/\s+(Ceiling|TOS)$/i.test(n)) return;                 // pseudo-level, not a floor
       var z = Math.round(Number(r[1]) * 100) / 100;
-      for (var i = 0; i < out.length; i++) if (Math.abs(out[i].z - z) <= TOL) return;
-      out.push({ name: n, z: z });
+      for (var i = 0; i < cl.length; i++) if (Math.abs(cl[i].z0 - z) <= TOL) { cl[i].rows.push({ n: n, z: z }); return; }
+      cl.push({ z0: z, rows: [{ n: n, z: z }] });
+    });
+    var out = [], voted = 0;
+    cl.forEach(function (c) {
+      var cn = {}, cz = {}, kn = 0, kz = 0;
+      c.rows.forEach(function (r) { cn[r.n] = (cn[r.n] || 0) + 1; cz[r.z] = (cz[r.z] || 0) + 1; });
+      var bn = null, bnc = 0, bz = null, bzc = 0, k1, k2;
+      for (k1 in cn) { kn++; if (cn[k1] > bnc) { bnc = cn[k1]; bn = k1; } }
+      for (k2 in cz) { kz++; if (cz[k2] > bzc) { bzc = cz[k2]; bz = Number(k2); } }
+      if (kn > 1 || kz > 1) voted++;
+      out.push({ name: bn, z: bz });
     });
     out.sort(function (a, b) { return a.z - b.z; });
-    return { src: src, levels: out, rawRows: rows.length };
+    if (voted) console.log('§FLYTHRU_DATUM_LEVELVOTE clusters=' + out.length + ' needingAVote=' + voted +
+      ' (a cluster whose rows disagree on the name or the elevation takes the MODAL one, not the first)');
+    return { src: src, levels: out, rawRows: rows.length, voted: voted };
   }
 
   A.flythruDatumBuild = function () {
@@ -153,218 +173,410 @@ function setupCpeFlythruDatum(A) {
     return op;
   };
 
-  // ══ BUBBLES + THE TWO-TIER STRING, on the NEAR edges, drawn in the 2D composite pass ═══════════
-  // USER: "make the ground 2D markings on the near sides of course unless u dont want anyone to read
-  // well". So the PLANE goes AWAY from the camera (occluded by the build) while the ANNOTATION comes
-  // TOWARD it (readable). Same camera vector, opposite sign — and that is also how a drawing works:
-  // the strings sit on the side you read from, not tucked behind the plan.
-  // ⚠ NEAR must be evaluated PER FRAME. The camera moves through the dive, so a side chosen at build
-  // time ends up on the wrong edge halfway through.
+  // ══ THE ANNOTATION — ONE LAYOUT PASS, NOT FOUR INDEPENDENT LOOPS (spec §24) ═══════════════════
+  // USER (2026-09-07), on the version this replaces: "update prompt to do labelling well. Due to
+  // cramming of space, u can always align in parallel to the line. Avoid diff coloring as outright
+  // well laid out lines bubbles will point to the right picture. Font been bold is like shouting
+  // and noise. Organise that u need not label every small inner lengths simply not smart.
+  // Selective, good design."
   //
-  // The string is the standard nested pair (user: "u have length between inner lines, then outer"):
-  //   TIER 1 — bay, gridline to gridline, nearest the building
-  //   TIER 2 — overall, stepped further out
-  // The overall MUST equal the sum of the bays; that is the check a drawing is verified by, and it
-  // is asserted rather than assumed (§FLYTHRU_DATUM_CHAIN below).
-  var INKS = '#ffd600';
-  var BUB_R = 11, OFF1 = 34, OFF2 = 74;                 // screen px at 720p, scaled by h/720
+  // FOUR RULINGS, each one decision in this pass:
+  //   1. TEXT RUNS PARALLEL TO ITS LINE — every figure is rotated to its own line's angle. Horizontal
+  //      text on an angled string is what forced the value out into space and caused the cramming.
+  //   2. ONE INK, no colour coding. Bays were near-white and overalls yellow — hierarchy signalled by
+  //      hue. Position and structure carry it instead. (§7's yellow belongs to the MEASUREMENT CUES,
+  //      a different layer. The datum is drafting furniture and reads as one quiet system.)
+  //   3. NO BOLD — regular weight throughout; the halo, not the weight, keeps it legible.
+  //   4. SELECTIVE — the overall ALWAYS, plus a regular SAMPLE of the chain. Labelling all 27
+  //      Hospital bays was never the goal.
+  //
+  // ⚠ THE STRUCTURAL FAULT THIS FIXES (§24.3). Bubbles, bay chain, overalls and level tags were four
+  // loops each deciding alone whether to draw, with nothing coordinating them: Hospital drew 11 of 27
+  // bays — a chain with 16 random gaps, which reads as broken rather than thinned — and HHS stranded
+  // 10 of 17 bubbles on the frame edge. So MEASURE the plan on screen, decide everything ONCE, and
+  // place every label against a SHARED OCCUPANCY REGISTER so nothing lands on anything else.
+  //
+  // ⚠ LADDER ORDER, outward from the plan edge — this is what makes the strings read as one set:
+  //        plan edge --> TIER 1 (bay chain) --> TIER 2 (overall) --> BUBBLES, outermost.
+  // Each gridline supplies its OWN projected outward vector, so a bubble sits on the extension of the
+  // line it names and the overall's witness lines physically reach it ("outright well laid out lines
+  // bubbles will point to the right picture"). The previous version put bubbles ON the plan edge and
+  // offset the strings along an UNSIGNED perpendicular, so the figures landed INSIDE the plan half
+  // the time. That was the cramming.
+  //
+  // USER, on which side: "make the ground 2D markings on the near sides of course unless u dont want
+  // anyone to read well". The PLANE goes AWAY from the camera (occluded by the build); the ANNOTATION
+  // comes TOWARD it. ⚠ Bottom and left need DIFFERENT tests — bottom projects LOWEST (largest screen
+  // y), left projects LEFTMOST (smallest screen x). One test for both put the letters on whichever
+  // long edge happened to sit lower.
+  var INK = '#c9d3df';                                  // the ONE ink (ruling 2)
+  var HALO = 'rgba(8,11,16,0.92)';
+  // ⚠ THE RUNGS NEED ROOM, and the first spacing did not have it. At 34/68/98 px (x0.82 on Hospital
+  // = 28/56/80) the bay figure, the overall figure and the bubbles all competed for the same 50 px
+  // and the register refused 10 of them. Widening the ladder is the fix; crowding it and then
+  // dropping labels is what "cramming" means.
+  var BUB_R = 11, OFF1 = 32, OFF2 = 80, OFFB = 120;     // px at 720p, scaled by h/720 AND by plan size
+  var MAX_FIG = 4;                                      // most bay figures per axis (ruling 4)
   // Standard grid letters omit I (confusable with 1). Practice omits O as well; grid_dims.js's own
   // sequence keeps O, which is why this defines its own rather than importing it.
   var LET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   function label(i, useLetters) { return useLetters ? (LET[i] || ('Z' + i)) : String(i + 1); }
+  var _chainKey = 0;
 
   A.flythruDatumCompositeOntoCanvas = function (ctx, w, h, filmSec, filmSecFull) {
-    if (!_lines || !ctx || !A.camera) return 0;
+    if (!_lines || !ctx || !A.camera) { console.log('§FLYTHRU_DATUM_MARKS INCONCLUSIVE — no datum built'); return 0; }
     var T = window.THREE, cam = A.camera, k = h / 720;
     var holdTo = Math.max(6, (filmSecFull || 0) * 0.094);
     var op = filmSec <= holdTo ? 1 : Math.max(0, 1 - (filmSec - holdTo) / 2.0);
     if (op <= 0.01) return 0;
     var ext = _lines.ext, z0 = ext[4];
     var P = function (ix, iy, iz) { var p = A.ifc2three(ix, iy, iz); return new T.Vector3(p.x, p.y, p.z); };
-    // ⚠ NDC z > 1 means BEYOND THE FAR PLANE, not behind the camera — and the x/y projection is still
-    // correct for anything in front of the lens. Rejecting on z>=1 threw away a valid overall whose
-    // far end simply sat past the far plane (MEASURED: declined behind z=0.99,1.23). The real test is
-    // VIEW-SPACE depth: in front of the near plane or not.
+    // ⚠ NDC z >= 1 means BEYOND THE FAR PLANE, not behind the camera — and x/y stay correct for
+    // anything in front of the lens. Rejecting on z>=1 threw away a valid overall whose far end
+    // simply sat past the far plane (MEASURED: declined behind z=0.99,1.23). Test VIEW-SPACE depth.
     var pr = function (v) {
       var vs = v.clone().applyMatrix4(cam.matrixWorldInverse);
       var p = v.clone().project(cam);
       return { x: (p.x * .5 + .5) * w, y: (-p.y * .5 + .5) * h, z: p.z, front: vs.z < -0.1 };
     };
-    // NEAR edge per axis, chosen against the camera THIS frame
-    // BOTTOM and LEFT of frame — and they need DIFFERENT tests. The bottom edge is the one that
-    // projects LOWEST (largest screen y); the left edge is the one that projects LEFTMOST (smallest
-    // screen x). Using the y-comparison for both put the letter bubbles on whichever long edge
-    // happened to sit lower, not on the left.
-    // ══ LAYOUT PASS. Previously four independent loops each decided alone whether to draw, which
-    // gave a chain with 16 random gaps (Hospital 11/27) and 10 of 17 bubbles piled on the frame edge.
-    // A drawing that cannot fit every bay shows every Nth one — REGULARLY thinned reads as intentional,
-    // irregularly dropped reads as broken. So: measure the plan on screen, then decide everything once.
-    var midX = (ext[0]+ext[1])/2, midY = (ext[2]+ext[3])/2;
+
+    // ── 1. MEASURE THE PLAN ON SCREEN, ONCE. Every offset below scales from it: fixed pixel offsets
+    //       crowd a small plan and scatter a large one.
+    var midX = (ext[0] + ext[1]) / 2, midY = (ext[2] + ext[3]) / 2;
     var yA = pr(P(midX, ext[2], z0)), yB = pr(P(midX, ext[3], z0));
     var xA = pr(P(ext[0], midY, z0)), xB = pr(P(ext[1], midY, z0));
-    var nearY = (yA.y >= yB.y) ? ext[2] : ext[3];      // bottom of frame -> numerals
-    var nearX = (xA.x <= xB.x) ? ext[0] : ext[1];      // left of frame   -> letters
-    // plan size on screen decides the offsets — fixed pixels crowd a small plan and scatter a large one
-    var c1 = pr(P(ext[0], ext[2], z0)), c2b = pr(P(ext[1], ext[2], z0)),
-        c3 = pr(P(ext[0], ext[3], z0)), c4 = pr(P(ext[1], ext[3], z0));
-    var planPx = Math.max(Math.hypot(c2b.x-c1.x, c2b.y-c1.y), Math.hypot(c3.x-c1.x, c3.y-c1.y), 1);
+    var nearY = (yA.y >= yB.y) ? ext[2] : ext[3], farY = (nearY === ext[2]) ? ext[3] : ext[2];
+    var nearX = (xA.x <= xB.x) ? ext[0] : ext[1], farX = (nearX === ext[0]) ? ext[1] : ext[0];
+    var c1 = pr(P(ext[0], ext[2], z0)), c2 = pr(P(ext[1], ext[2], z0)), c3 = pr(P(ext[0], ext[3], z0));
+    var planPx = Math.max(Math.hypot(c2.x - c1.x, c2.y - c1.y), Math.hypot(c3.x - c1.x, c3.y - c1.y), 1);
     var scale = Math.max(0.6, Math.min(1.8, planPx / 620));
-    var off1 = OFF1 * k * scale, off2 = OFF2 * k * scale;
-    // ONE stride for the whole chain, from the tightest average bay on screen
-    function strideFor(vals, isX) {
-      if (vals.length < 2) return 1;
-      var a = pr(P(isX ? vals[0] : nearX, isX ? nearY : vals[0], z0));
-      var b = pr(P(isX ? vals[vals.length-1] : nearX, isX ? nearY : vals[vals.length-1], z0));
-      var per = Math.hypot(b.x-a.x, b.y-a.y) / (vals.length - 1);
+    var off1 = OFF1 * k * scale, off2 = OFF2 * k * scale, offB = OFFB * k * scale;
+
+    // ── 2. THE SHARED OCCUPANCY REGISTER. Everything that prints ink claims a rectangle; anything
+    //       that cannot find room is DROPPED and COUNTED (silence would look like the pass stopped).
+    var occ = [], _reg = occ, _dry = false, _coll = 0;
+    function fits(r) {
+      for (var i = 0; i < _reg.length; i++) {
+        var o = _reg[i];
+        if (r.x0 < o.x1 && r.x1 > o.x0 && r.y0 < o.y1 && r.y1 > o.y0) return false;
+      }
+      return true;
+    }
+    function claim(r) { _reg.push(r); }
+    function fontOf(px) { return '400 ' + px.toFixed(0) + 'px Segoe UI, system-ui, sans-serif'; }
+
+    // ── 3. TEXT PARALLEL TO ITS LINE (ruling 1). The angle comes from the line's own screen
+    //       direction; it is flipped past vertical so a figure never reads upside-down. The claimed
+    //       rectangle is the AABB of the ROTATED box, not of the horizontal one.
+    function placeText(txt, cx, cy, ux, uy, px, force, pad) {
+      ctx.font = fontOf(px);
+      var tw = ctx.measureText(txt).width, fh = px * 1.15;
+      var ang = Math.atan2(uy, ux);
+      if (ang > Math.PI / 2 + 1e-6 || ang < -Math.PI / 2 - 1e-6) ang += Math.PI;
+      var pd = (pad == null ? 3 : pad) * k;
+      var ca = Math.abs(Math.cos(ang)), sa = Math.abs(Math.sin(ang));
+      var hw = ca * tw / 2 + sa * fh / 2 + pd, hh = sa * tw / 2 + ca * fh / 2 + pd;
+      var r = { x0: cx - hw, y0: cy - hh, x1: cx + hw, y1: cy + hh };
+      if (cx < 4 * k || cx > w - 4 * k || cy < 4 * k || cy > h - 4 * k) { _coll++; return false; }
+      if (!force && !fits(r)) { if (!_dry) _coll++; return false; }
+      claim(r);
+      if (_dry) return { w: tw, ang: ang };          // scored, not drawn
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3.4 * k; ctx.strokeStyle = HALO; ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+      ctx.strokeText(txt, 0, 0);
+      ctx.fillStyle = INK; ctx.fillText(txt, 0, 0);
+      ctx.restore();
+      return { w: tw, ang: ang };
+    }
+
+    // ── 4. AN AXIS. Gridline value -> its base point on the near edge, and its own outward vector
+    //       (from the far edge toward the near one), so ladder rung N sits at base + out * offN.
+    function mkAxis(vals, isX) {
+      var near = isX ? nearY : nearX, far = isX ? farY : farX;
+      function base(v) { return pr(isX ? P(v, near, z0) : P(near, v, z0)); }
+      function inner(v) { return pr(isX ? P(v, far, z0) : P(far, v, z0)); }
+      function out(v) {
+        var b = base(v), i = inner(v), dx = b.x - i.x, dy = b.y - i.y, L = Math.hypot(dx, dy) || 1;
+        return { x: dx / L, y: dy / L };
+      }
+      function at(v, off) { var b = base(v), d = out(v); return { x: b.x + d.x * off, y: b.y + d.y * off, front: b.front }; }
+      return { vals: vals, isX: isX, base: base, out: out, at: at };
+    }
+    var axX = mkAxis(_lines.gx, true), axY = mkAxis(_lines.gy, false);
+
+    // ── 5. ONE STRIDE PER AXIS for the chain SEGMENTS (readability floor), and a second, coarser
+    //       stride for the FIGURES (ruling 4). The chain still spans 0 -> N -> 2N -> last, so it sums
+    //       to the overall exactly however hard it is thinned.
+    function strideFor(ax) {
+      var v = ax.vals; if (v.length < 2) return 1;
+      var a = ax.at(v[0], off1), b = ax.at(v[v.length - 1], off1);
+      var per = Math.hypot(b.x - a.x, b.y - a.y) / (v.length - 1);
       return Math.max(1, Math.ceil(40 * k / Math.max(per, 1)));
     }
-    var strX = strideFor(_lines.gx, true), strY = strideFor(_lines.gy, false);
-    var n = 0;
-    ctx.save(); ctx.globalAlpha = op;
-    ctx.lineWidth = 1.3 * k; ctx.font = '700 ' + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+    var strX = strideFor(axX), strY = strideFor(axY);
+    // ⚠ ONE INDEX LIST, shared by the chain ticks AND the bubbles, so the two read as one structure.
+    // The final stride rarely lands on the last gridline; APPENDING it made a stub bay — MEASURED on
+    // Hospital's Y axis, bubbles N(12) and P(13) came out one gridline apart and overlapped while
+    // every other pair was two apart. A stub shorter than a full stride is ABSORBED into the bay
+    // before it, which is what a drawing does with an odd end bay.
+    function idxFor(nv, str) {
+      var idx = [];
+      for (var i = 0; i < nv; i += str) idx.push(i);
+      var last = nv - 1;
+      if (idx[idx.length - 1] !== last) {
+        if (last - idx[idx.length - 1] < str) idx[idx.length - 1] = last; else idx.push(last);
+      }
+      return idx;
+    }
+    var ixX = idxFor(_lines.gx.length, strX), ixY = idxFor(_lines.gy.length, strY);
+
+    var ln = function (x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
+
+    // ── 6. A DIMENSION. Witness lines, the run, ticks, and the figure IN THE BREAK in its own line
+    //       (§24.2: no box on a value — the box ruling was about the PANEL, a container for a SET).
+    //       tier 1 = bay, oblique ticks (quiet, and standard for a chain);
+    //       tier 2 = overall, arrowheads, running bubble-to-bubble.
+    var _ovDiag = [];
+    function dim(ax, vA, vB, metres, tier, refA, refB, withFig) {
+      var e = (tier === 2) ? off2 : off1;
+      var A2 = ax.at(vA, e), B2 = ax.at(vB, e);
+      if (!A2.front || !B2.front) { if (tier === 2) _ovDiag.push('end-behind-camera'); return 0; }
+      var dx = B2.x - A2.x, dy = B2.y - A2.y, L = Math.hypot(dx, dy);
+      // An OVERALL must draw if it can be drawn at all — it is the headline figure and is guaranteed
+      // (§24.3). A bay may decline when it would be unreadable; the total may not vanish merely
+      // because its axis is foreshortened toward the camera.
+      var floor = (tier === 2) ? 12 * k : 26 * k;
+      if (L < floor) { if (tier === 2) _ovDiag.push('len=' + L.toFixed(0) + 'px<floor=' + floor.toFixed(0)); return 0; }
+      var ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+      ctx.strokeStyle = INK; ctx.fillStyle = INK; ctx.lineWidth = 1.1 * k;
+      ctx.globalAlpha = op * 0.72;
+      // witness lines: tier 1 short, straddling its own run; tier 2 reaches OUT to the bubble edge.
+      var wa0 = (tier === 2) ? e : e - 9 * k, wa1 = (tier === 2) ? (offB - BUB_R * k - 2 * k) : e + 6 * k;
+      [[vA, A2], [vB, B2]].forEach(function (p) {
+        var s = ax.at(p[0], wa0), t2 = ax.at(p[0], wa1);
+        ln(s.x, s.y, t2.x, t2.y);
+      });
+      // WHERE THE FIGURE GOES, and it differs by tier for a measured reason.
+      // ⚠ MEASURED 2026-09-07: with BOTH tiers breaking their line for the figure, bayFigures=0 on
+      // Hospital — a 6.5 m bay seen from 100 m is ~30 px wide while "12,882" is ~40 px, so the break
+      // can never hold it and every bay silently declined. A break is for a LONG run. So:
+      //   tier 2 (overall, hundreds of px)  -> the figure sits IN THE BREAK in its own line
+      //   tier 1 (bay, tens of px)          -> the figure sits ABOVE the line, parallel to it
+      // Both are standard, neither is a box (§24.2), and the bay is no longer width-constrained.
+      var txt = Math.round(metres * 1000).toLocaleString('en-US');
+      if (tier === 2 && refA != null && refB != null) txt = refA + ' – ' + refB + '    ' + txt;
+      var size = (tier === 2 ? 17 : 13) * k;
+      ctx.font = fontOf(size);
+      var tw = ctx.measureText(txt).width;
+      var mx = (A2.x + B2.x) / 2, my = (A2.y + B2.y) / 2;
+      var fig = null;
+      if (withFig) {
+        ctx.globalAlpha = op;
+        if (tier === 2) { if (L > tw + 22 * k) fig = placeText(txt, mx, my, ux, uy, size, true); }
+        // ⚠ ISO places the figure just OUTSIDE its dimension line. That was tried first and lost 5 of
+        // 8 to the overall's corridor; moving it INSIDE fixed the collisions but put every bay value
+        // over the model. Neither was the real fault — the LADDER was too tight. With tier 2 at 80 px
+        // the outside is free again, which is where the figure belongs.
+        else { var F = ax.at((vA + vB) / 2, e + 9 * k); fig = placeText(txt, F.x, F.y, ux, uy, size, false, 2); }
+        ctx.globalAlpha = op * 0.62;
+      }
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.1 * k;
+      if (fig && tier === 2) { var g = fig.w / 2 + 6 * k; ln(A2.x, A2.y, mx - ux * g, my - uy * g); ln(mx + ux * g, my + uy * g, B2.x, B2.y); }
+      else ln(A2.x, A2.y, B2.x, B2.y);
+      if (tier === 2) {
+        var tri = function (px2, py2, sg) {
+          ctx.beginPath(); ctx.moveTo(px2, py2);
+          ctx.lineTo(px2 + sg * ux * 9 * k + nx * 3.4 * k, py2 + sg * uy * 9 * k + ny * 3.4 * k);
+          ctx.lineTo(px2 + sg * ux * 9 * k - nx * 3.4 * k, py2 + sg * uy * 9 * k - ny * 3.4 * k);
+          ctx.closePath(); ctx.fill();
+        };
+        tri(A2.x, A2.y, 1); tri(B2.x, B2.y, -1);
+      } else {
+        var tick = function (px2, py2) {           // oblique 45 deg slash, the architectural chain tick
+          var sx = (ux + nx) * 4.6 * k, sy = (uy + ny) * 4.6 * k;
+          ln(px2 - sx, py2 - sy, px2 + sx, py2 + sy);
+        };
+        tick(A2.x, A2.y); tick(B2.x, B2.y);
+      }
+      ctx.globalAlpha = op;
+      return fig ? 2 : 1;
+    }
+
+    var n = 0, _bay = 0, _fig = 0, _ov = 0, _bubClamp = 0, _bubDrop = 0;
+    ctx.save();
+    ctx.globalAlpha = op; ctx.lineJoin = 'round';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-    // ⚠ NO-SPACE CASE. A sheet is fixed, so a drawing never has this problem; a moving camera does.
-    // When the near edge leaves the frame — the camera descends into the building, or the plan fills
-    // the view — the bubble's natural position is off-screen. Slide it ALONG ITS OWN GRIDLINE to the
-    // frame boundary so it still sits on the line it names; only drop it when the whole line is gone.
-    // Report both, because silently losing the bubbles would look like the feature simply stopped.
-    function bubble(p2, txt, along) {
-      if (!p2.front) { _bubDrop++; return false; }
-      var m = (BUB_R + 4) * k, cl = false;
-      if (p2.x < m || p2.x > w - m || p2.y < m || p2.y > h - m) {
-        if (along && isFinite(along.x) && isFinite(along.y)) {
-          var dx = along.x - p2.x, dy = along.y - p2.y, L = Math.hypot(dx, dy);
-          if (L > 1) {
-            var ux = dx / L, uy = dy / L, t = 0;
-            if (p2.x < m && ux > 0) t = Math.max(t, (m - p2.x) / ux);
-            if (p2.x > w - m && ux < 0) t = Math.max(t, (w - m - p2.x) / ux);
-            if (p2.y < m && uy > 0) t = Math.max(t, (m - p2.y) / uy);
-            if (p2.y > h - m && uy < 0) t = Math.max(t, (h - m - p2.y) / uy);
-            p2 = { x: p2.x + ux * t, y: p2.y + uy * t, z: p2.z }; cl = true;
-          }
+    // ── 7. THE OVERALLS GO IN FIRST — they are guaranteed, so they claim their space before anything
+    //       else can take it (§24.3). Their refs name the two end bubbles: "1 - 15    95,915".
+    function overall(ax) {
+      var v = ax.vals; if (v.length < 2) return 0;
+      var useLet = !ax.isX;
+      return dim(ax, v[0], v[v.length - 1], v[v.length - 1] - v[0], 2,
+                 label(0, useLet), label(v.length - 1, useLet), true) ? 1 : 0;
+    }
+    var oX = overall(axX), oY = overall(axY);
+    _ov = oX + oY; n += _ov;
+
+    // ── 8. BUBBLES, outermost rung, ALL-OR-NONE PER AXIS. A row of bubbles stranded on the frame
+    //       boundary is worse than none. They sit at the SAME indices the chain ticks at, so bubble
+    //       and chain read as one structure rather than two overlaid drawings.
+    function inFrame(p2) { return p2.front && p2.x > 14 * k && p2.x < w - 14 * k && p2.y > 14 * k && p2.y < h - 14 * k; }
+    function bubbleSet(ax, idx, useLet) {
+      var v = ax.vals;
+      var ok = idx.filter(function (i2) { return inFrame(ax.at(v[i2], offB)); }).length;
+      if (ok < Math.ceil(idx.length * 0.6)) return { drawn: 0, set: false };
+      var drawn = 0;
+      idx.forEach(function (i2) {
+        var p2 = ax.at(v[i2], offB);
+        if (!p2.front) { _bubDrop++; return; }
+        // ⚠ NO-SPACE CASE. A sheet is fixed; a moving camera is not. When the near edge leaves the
+        // frame the bubble's natural position is off-screen — slide it ALONG ITS OWN GRIDLINE to the
+        // boundary so it still sits on the line it names, and drop it only when the line is gone.
+        var m = (BUB_R + 4) * k;
+        if (p2.x < m || p2.x > w - m || p2.y < m || p2.y > h - m) {
+          var d = ax.out(v[i2]), t2 = 0;
+          if (p2.x < m && -d.x > 0) t2 = Math.max(t2, (m - p2.x) / -d.x);
+          if (p2.x > w - m && -d.x < 0) t2 = Math.max(t2, (w - m - p2.x) / -d.x);
+          if (p2.y < m && -d.y > 0) t2 = Math.max(t2, (m - p2.y) / -d.y);
+          if (p2.y > h - m && -d.y < 0) t2 = Math.max(t2, (h - m - p2.y) / -d.y);
+          p2 = { x: p2.x - d.x * t2, y: p2.y - d.y * t2 };
+          if (p2.x < -m || p2.x > w + m || p2.y < -m || p2.y > h + m) { _bubDrop++; return; }
+          _bubClamp++;
         }
-        if (p2.x < -m || p2.x > w + m || p2.y < -m || p2.y > h + m) { _bubDrop++; return false; }
-        if (cl) _bubClamp++;
-      }
-      ctx.beginPath(); ctx.arc(p2.x, p2.y, BUB_R * k, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(8,11,16,0.55)'; ctx.fill();     // just enough to sit on the model
-      ctx.strokeStyle = '#aab6c4'; ctx.stroke();
-      ctx.fillStyle = '#eef3f8'; ctx.fillText(txt, p2.x, p2.y + 0.5 * k);
-      return true;
+        // nudge outward, once, if the overall's figure already owns this spot
+        var r = { x0: p2.x - (BUB_R + 2) * k, y0: p2.y - (BUB_R + 2) * k, x1: p2.x + (BUB_R + 2) * k, y1: p2.y + (BUB_R + 2) * k };
+        if (!fits(r)) {
+          var d2 = ax.out(v[i2]), s = 2.2 * BUB_R * k;
+          p2 = { x: p2.x + d2.x * s, y: p2.y + d2.y * s };
+          r = { x0: p2.x - (BUB_R + 2) * k, y0: p2.y - (BUB_R + 2) * k, x1: p2.x + (BUB_R + 2) * k, y1: p2.y + (BUB_R + 2) * k };
+        }
+        claim(r);
+        ctx.beginPath(); ctx.arc(p2.x, p2.y, BUB_R * k, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(8,11,16,0.62)'; ctx.fill();      // just enough to sit on the model
+        ctx.strokeStyle = INK; ctx.lineWidth = 1.1 * k; ctx.globalAlpha = op * 0.8; ctx.stroke();
+        ctx.globalAlpha = op;
+        ctx.font = fontOf(12 * k); ctx.fillStyle = INK;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(label(i2, useLet), p2.x, p2.y + 0.5 * k);
+        drawn++;
+      });
+      return { drawn: drawn, set: true };
     }
-    function dim(a3, b3, metres, tier, refA, refB) {
-      var a2 = pr(a3), b2 = pr(b3);
-      if (!a2.front || !b2.front) { if (tier === 2) console.log('§FLYTHRU_DATUM_OVERALL declined — an end is BEHIND the camera'); return false; }
-      var dx = b2.x - a2.x, dy = b2.y - a2.y, L = Math.hypot(dx, dy);
-      // An OVERALL must draw if it can be drawn at all — it is the headline figure. A bay may
-      // decline when it would be unreadable, but the total should not vanish because the axis is
-      // foreshortened toward the camera. MEASURED: overalls=1/2 at HHS t=0 with a flat 26px floor.
-      var floor = (tier === 2) ? 12 * k : 26 * k;
-      if (L < floor) { if (tier === 2) console.log('§FLYTHRU_DATUM_OVERALL declined len=' + L.toFixed(0) + 'px floor=' + floor.toFixed(0)); return false; }
-      var ux = dx / L, uy = dy / L, nx = -uy, ny = ux, e = (tier === 2 ? OFF2 : OFF1) * k;
-      var A2 = { x: a2.x + nx * e, y: a2.y + ny * e }, B2 = { x: b2.x + nx * e, y: b2.y + ny * e };
-      ctx.strokeStyle = '#8899aa'; ctx.fillStyle = '#8899aa';
-      var ln = function (x1,y1,x2,y2){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); };
-      // TIER 2 runs bubble-to-bubble: start the witness lines just clear of the bubble so the
-      // overall visibly CONNECTS the two end bubbles instead of floating beside them.
-      var start = (tier === 2) ? (BUB_R + 3) * k : (e - 8 * k);
-      ln(a2.x + nx*start, a2.y + ny*start, A2.x, A2.y);
-      ln(b2.x + nx*start, b2.y + ny*start, B2.x, B2.y);
-      ctx.font = '700 ' + ((tier === 2 ? 18 : 15) * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
-      var txt = Math.round(metres * 1000).toLocaleString('en-US');
-      if (tier === 2 && refA != null && refB != null) txt = refA + ' \u2013 ' + refB + '   ' + txt;
-      var tw = ctx.measureText(txt).width + 8 * k, gap = tw / 2 + 5 * k;
-      var mx = (A2.x + B2.x) / 2, my = (A2.y + B2.y) / 2;
-      if (L > tw + 20 * k) { ln(A2.x, A2.y, mx - ux*gap, my - uy*gap); ln(mx + ux*gap, my + uy*gap, B2.x, B2.y); }
-      else ln(A2.x, A2.y, B2.x, B2.y);
-      var tri = function (px,py,sg){ ctx.beginPath(); ctx.moveTo(px,py);
-        ctx.lineTo(px+sg*ux*9*k+nx*3.6*k, py+sg*uy*9*k+ny*3.6*k);
-        ctx.lineTo(px+sg*ux*9*k-nx*3.6*k, py+sg*uy*9*k-ny*3.6*k); ctx.closePath(); ctx.fill(); };
-      tri(A2.x,A2.y,1); tri(B2.x,B2.y,-1);
-      // the number is the point of the string — give it a real halo so it survives any backdrop
-      ctx.lineWidth = 4*k; ctx.strokeStyle = 'rgba(8,11,16,0.95)'; ctx.lineJoin = 'round';
-      ctx.strokeText(txt, mx, my);
-      ctx.fillStyle = (tier === 2) ? '#ffd600' : '#e8eef5';
-      ctx.fillText(txt, mx, my);
-      ctx.lineWidth = 1.3*k; ctx.strokeStyle = '#8899aa';
-      ctx.font = '700 ' + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
-      return true;
+    var bX = bubbleSet(axX, ixX, false), bY = bubbleSet(axY, ixY, true);
+    n += bX.drawn + bY.drawn;
+
+    // ── 9. THE BAY CHAIN. Every strided segment draws its line and ticks; only a REGULAR SAMPLE
+    //       carries a figure (ruling 4 — "u need not label every small inner lengths"). Regularly
+    //       thinned reads as intentional; irregularly dropped reads as broken.
+    function chain(ax, idx) {
+      var v = ax.vals, segs = [];
+      for (var i = 0; i < idx.length - 1; i++) segs.push([idx[i], idx[i + 1]]);
+      var figEvery = Math.max(1, Math.ceil(segs.length / MAX_FIG));
+      var drew = 0, figs = 0, sum = 0;
+      segs.forEach(function (s, si) {
+        var wantFig = (si % figEvery === 0);
+        var r = dim(ax, v[s[0]], v[s[1]], v[s[1]] - v[s[0]], 1, null, null, wantFig);
+        if (r) drew++;
+        if (r === 2) figs++;
+        sum += v[s[1]] - v[s[0]];
+      });
+      return { drew: drew, figs: figs, sum: sum, segs: segs.length, figEvery: figEvery };
     }
-    // X gridlines -> bubbles on the near Y edge, numerals; bays + overall along that edge
-    var farY2 = (nearY === ext[2]) ? ext[3] : ext[2], farX2 = (nearX === ext[0]) ? ext[1] : ext[0];
-    _bubClamp = 0; _bubDrop = 0;
-    // ALL OR NONE per axis. If most of a set would have to be clamped to the frame edge, the set is
-    // not readable and a row of bubbles stranded on the boundary is worse than none at all.
-    function inFrame(p2) { return p2.front && p2.x > 14*k && p2.x < w-14*k && p2.y > 14*k && p2.y < h-14*k; }
-    var okX = _lines.gx.filter(function (x) { return inFrame(pr(P(x, nearY, z0))); }).length;
-    var okY = _lines.gy.filter(function (y) { return inFrame(pr(P(nearX, y, z0))); }).length;
-    var drawBubX = okX >= Math.ceil(_lines.gx.length * 0.6), drawBubY = okY >= Math.ceil(_lines.gy.length * 0.6);
-    if (drawBubX) _lines.gx.forEach(function (x, i) { if (i % strX === 0 || i === _lines.gx.length-1) if (bubble(pr(P(x, nearY, z0)), label(i, false), pr(P(x, farY2, z0)))) n++; });
-    if (drawBubY) _lines.gy.forEach(function (y, i) { if (i % strY === 0 || i === _lines.gy.length-1) if (bubble(pr(P(nearX, y, z0)), label(i, true), pr(P(farX2, y, z0)))) n++; });
-    var sumX = 0, sumY = 0, _bay = 0, _ov = 0;
-    // Strided chain: 0 -> str -> 2*str -> ... -> last. It still spans the full extent, so the chain
-    // adds up to the overall exactly as an unthinned one does.
-    function chain(vals, str, isX) {
-      var drew = 0, sum = 0;
-      for (var i = 0; i < vals.length - 1; i += str) {
-        var j2 = Math.min(i + str, vals.length - 1);
-        var a = isX ? P(vals[i], nearY, z0) : P(nearX, vals[i], z0);
-        var b = isX ? P(vals[j2], nearY, z0) : P(nearX, vals[j2], z0);
-        if (dim(a, b, vals[j2] - vals[i], 1)) { drew++; }
-        sum += vals[j2] - vals[i];
-        if (j2 === vals.length - 1) break;
-      }
-      return { drew: drew, sum: sum };
+    var cX = chain(axX, ixX), cY = chain(axY, ixY);
+    _bay = cX.drew + cY.drew; _fig = cX.figs + cY.figs; n += _bay;
+
+    // ── 10. LEVEL TAGS on the upright. USER: the ground has too many lines to name, but "the upright
+    //        storeys are few and well known, easily given by the DB". A level datum reads name +
+    //        elevation, and the elevation printed is the LOCAL one (Level 2 +6.000), never the 156 m
+    //        global figure the geometry needs. Parallel to its own rule, like every other figure.
+    //        Seeded LOWEST and HIGHEST first so a crowded stack thins from the middle, not the top.
+    // ⚠ ORDER DECIDES WHICH ONES SURVIVE. Bottom-up seeding kept the lowest floors and lost the top;
+    // MEASURED, Hospital t=0: 8 rules span ~120 px at their near end, so ~14 px of text plus padding
+    // lets only 4-6 fit. Bisecting — ground, top, middle, quarters — thins EVENLY, which is the same
+    // reason the bay chain uses one stride: regular reads as intentional, ragged reads as broken.
+    var lv = (_lines.levels || []), lvOrder = (function (nv) {
+      if (nv <= 0) return [];
+      var used = [], ord = [], qq = [[0, nv - 1]];
+      function take(i) { if (i >= 0 && i < nv && !used[i]) { used[i] = 1; ord.push(i); } }
+      take(0); take(nv - 1);
+      while (qq.length) { var sg = qq.shift(); if (sg[1] - sg[0] < 2) continue; var m = (sg[0] + sg[1]) >> 1; take(m); qq.push([sg[0], m]); qq.push([m, sg[1]]); }
+      for (var i2 = 0; i2 < nv; i2++) take(i2);
+      return ord;
+    })(lv.length);
+    var _lvDrawn = 0, _lvEnd = 0;
+    // ⚠ ONE END FOR THE WHOLE STACK, decided by a DRY RUN. Letting each tag fall back independently
+    // got 7 of 8 on Hospital but scattered them across BOTH ends of the rules — four on the left,
+    // three on the right — which reads as debris, not a stack. This is the same ruling the bubbles
+    // already follow (§24.3, all-or-none per axis): a level datum column belongs on ONE side. So
+    // score both ends against a scratch register and commit the side that carries more.
+    function placeLevels() { var c = 0; lvOrder.forEach(function (i2) { if (oneLevel(lv[i2])) c++; }); return c; }
+    var _lvScore = [0, 0];
+    for (var eTry = 0; eTry < 2; eTry++) {
+      _dry = true; _reg = occ.slice(); _lvEnd = eTry; _lvScore[eTry] = placeLevels();
+      _dry = false; _reg = occ;
     }
-    var cx2 = chain(_lines.gx, strX, true), cy2 = chain(_lines.gy, strY, false);
-    _bay = cx2.drew + cy2.drew; n += _bay; sumX = cx2.sum; sumY = cy2.sum;
-    // LEVEL TAGS on the upright. USER: the ground has too many lines to name, but "the upright
-    // storeys are few and well known, easily given by the DB". A level datum on a drawing reads
-    // name + elevation, and the elevation printed is the LOCAL one (Level 2 +6.000), never the
-    // 156 m global figure the geometry needs.
-    var farY = (nearY === ext[2]) ? ext[3] : ext[2];
-    (_lines.levels || []).forEach(function (L) {
-      var e2 = pr(P(nearX, farY, L.z));
-      if (!e2.front) return;
+    _lvEnd = (_lvScore[1] > _lvScore[0]) ? 1 : 0;
+    function oneLevel(L) {
       var zTxt = (L.zRaw == null ? L.z : L.zRaw);
       var txt = L.name + '   ' + (zTxt >= 0 ? '+' : '') + zTxt.toFixed(3);
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.font = '600 ' + (12 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
-      var tw2 = ctx.measureText(txt).width;
-      var bx = e2.x + 8 * k, by = e2.y;
-      if (bx + tw2 + 10 * k > w) bx = e2.x - tw2 - 14 * k;      // keep it on screen
-      // A level datum sits ON its line with a small tick — no rectangle. The text carries a dark
-      // halo instead, which is what keeps it legible over the model.
-      ctx.strokeStyle = INKS; ctx.lineWidth = 1.1 * k;
-      ctx.beginPath(); ctx.moveTo(e2.x, e2.y); ctx.lineTo(bx - 4 * k, by); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(e2.x, e2.y - 4 * k); ctx.lineTo(e2.x, e2.y + 4 * k); ctx.stroke();
-      ctx.lineWidth = 3.5 * k; ctx.strokeStyle = 'rgba(8,11,16,0.95)'; ctx.lineJoin = 'round';
-      ctx.strokeText(txt, bx, by - 4 * k);
-      ctx.fillStyle = INKS; ctx.fillText(txt, bx, by - 4 * k);
-      ctx.lineWidth = 1.1 * k;
-      n++;
-    });
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = '700 ' + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
-    var ovX = _lines.gx[_lines.gx.length-1] - _lines.gx[0], ovY = _lines.gy[_lines.gy.length-1] - _lines.gy[0];
-    if (dim(P(_lines.gx[0], nearY, z0), P(_lines.gx[_lines.gx.length-1], nearY, z0), ovX, 2,
-            label(0, false), label(_lines.gx.length - 1, false))) { n++; _ov++; }
-    if (dim(P(nearX, _lines.gy[0], z0), P(nearX, _lines.gy[_lines.gy.length-1], z0), ovY, 2,
-            label(0, true), label(_lines.gy.length - 1, true))) { n++; _ov++; }
+      ctx.font = fontOf(11 * k);
+      var tw = ctx.measureText(txt).width;
+      var a2, ux, uy;
+      // ⚠ STAGGER IN TWO COLUMNS, don't surrender and don't escalate. Trying ONE position and
+      // dropping on collision left 2 of 8 tags (the rules are ~17 px apart at their near end and the
+      // text ~14 px tall). Four escalating steps got 4 tags but put them at four different distances,
+      // which reads as scatter rather than a stack. A drawing staggers crowded datums into TWO ranks:
+      // near column, far column, alternating. Two positions, nothing further.
+      var aE = pr(P(_lvEnd ? farX : nearX, farY, L.z)), bE = pr(P(_lvEnd ? nearX : farX, farY, L.z));
+      if (!aE.front) return;
+      var dxE = bE.x - aE.x, dyE = bE.y - aE.y, LnE = Math.hypot(dxE, dyE) || 1;
+      var uxE = -dxE / LnE, uyE = -dyE / LnE;
+      var fig = null, dUsed = 0;
+      for (var st2 = 0; st2 < 2 && !fig; st2++) {
+        dUsed = tw / 2 + 12 * k + st2 * (tw + 14 * k);
+        fig = placeText(txt, aE.x + uxE * dUsed, aE.y + uyE * dUsed, -uxE, -uyE, 11 * k, false, 1.5);
+      }
+      if (!fig) return;
+      if (_dry) return true;                            // scored only — no ink in a trial pass
+      a2 = aE; ux = uxE; uy = uyE;
+      // ⚠ THE LEADER MUST REACH THE TEXT. A tag pushed to the far column with an 8 px stub still
+      // attached to the rule end is a number floating in the sky — the association is the whole
+      // point ("well laid out lines bubbles will point to the right picture").
+      ctx.globalAlpha = op * 0.62; ctx.strokeStyle = INK; ctx.lineWidth = 1.1 * k;
+      var lEnd = dUsed - tw / 2 - 4 * k;
+      ln(a2.x, a2.y, a2.x + ux * lEnd, a2.y + uy * lEnd);                // leader, all the way
+      ln(a2.x - uy * 4 * k, a2.y + ux * 4 * k, a2.x + uy * 4 * k, a2.y - ux * 4 * k);   // datum tick
+      ctx.globalAlpha = op;
+      _lvDrawn++; n++;
+      return true;
+    }
+    placeLevels();
     ctx.restore();
-    if (_chainKey !== 1) {           // assert the chain ONCE: the overall must equal the sum of bays
+
+    // ── 11. THE CHECK A DRAWING IS VERIFIED BY: the overall must equal the sum of the bays. Asserted
+    //        once, not assumed — and the sum is taken from the GEOMETRY, so thinning cannot fake it.
+    var ovX = _lines.gx[_lines.gx.length - 1] - _lines.gx[0], ovY = _lines.gy[_lines.gy.length - 1] - _lines.gy[0];
+    if (_chainKey !== 1) {
       _chainKey = 1;
-      var ex = Math.abs(sumX - ovX), ey = Math.abs(sumY - ovY);
-      console.log('§FLYTHRU_DATUM_CHAIN X bays=' + sumX.toFixed(3) + 'm overall=' + ovX.toFixed(3) +
-        'm delta=' + ex.toFixed(4) + ' | Y bays=' + sumY.toFixed(3) + 'm overall=' + ovY.toFixed(3) +
+      var ex = Math.abs(cX.sum - ovX), ey = Math.abs(cY.sum - ovY);
+      console.log('§FLYTHRU_DATUM_CHAIN X bays=' + cX.sum.toFixed(3) + 'm overall=' + ovX.toFixed(3) +
+        'm delta=' + ex.toFixed(4) + ' | Y bays=' + cY.sum.toFixed(3) + 'm overall=' + ovY.toFixed(3) +
         'm delta=' + ey.toFixed(4) + ' -> ' + ((ex < 0.001 && ey < 0.001) ? 'CHAIN ADDS UP' : 'CHAIN MISMATCH'));
     }
-    if (n) console.log('§FLYTHRU_DATUM_MARKS drawn=' + n + ' filmSec=' + filmSec.toFixed(2) +
-      ' bays=' + _bay + ' stride=' + strX + '/' + strY + ' bubbleSets=' + (drawBubX?'X':'-') + (drawBubY?'Y':'-') + ' scale=' + scale.toFixed(2) + ' overalls=' + _ov + '/2 bubblesClamped=' + _bubClamp + ' bubblesDropped=' + _bubDrop + ' levelTags=' + ((_lines.levels||[]).length) + ' edges=(bottomY@' + nearY.toFixed(1) + ', leftX@' + nearX.toFixed(1) + ') nearEdge=(x@' + nearX.toFixed(1) + ', y@' + nearY.toFixed(1) + ')');
+    if (_ov < 2) console.log('§FLYTHRU_DATUM_OVERALL declined=' + (2 - _ov) + ' reasons=[' + _ovDiag.join('; ') + ']');
+    // PRIMAL LAW §4 — a pass that draws nothing must SAY nothing drew, or it is indistinguishable
+    // from one that worked.
+    console.log('§FLYTHRU_DATUM_MARKS ' + (n ? 'drawn=' + n : 'NOTHING drawn=0') + ' filmSec=' + filmSec.toFixed(2) +
+      ' overalls=' + _ov + '/2 baySegs=' + _bay + '/' + (cX.segs + cY.segs) + ' bayFigures=' + _fig +
+      ' figEvery=' + cX.figEvery + '/' + cY.figEvery + ' stride=' + strX + '/' + strY +
+      ' bubbleSets=' + (bX.set ? 'X' : '-') + (bY.set ? 'Y' : '-') + ' bubbles=' + (bX.drawn + bY.drawn) +
+      ' clamped=' + _bubClamp + ' droppedOffFrame=' + _bubDrop +
+      ' levelTags=' + _lvDrawn + '/' + lv.length + '(end=' + (_lvEnd ? 'far' : 'near') + ' scored ' + _lvScore[0] + '/' + _lvScore[1] + ')' + ' collisionsDropped=' + _coll +
+      ' scale=' + scale.toFixed(2) + ' edges=(bottomY@' + nearY.toFixed(1) + ', leftX@' + nearX.toFixed(1) + ')');
     return n;
   };
-  var _chainKey = 0, _bubClamp = 0, _bubDrop = 0;
 
   A.flythruDatumDispose = function () { if (_grp && A.scene) { A.scene.remove(_grp); _grp.children.forEach(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); _grp = null; } };
   console.log('§FLYTHRU_DATUM_INIT wired (ground grid + ONE upright with storey rules; depth-tested, occluded by the build)');
