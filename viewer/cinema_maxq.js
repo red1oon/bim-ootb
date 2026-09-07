@@ -777,6 +777,18 @@
     // Same never-kills-a-bake contract as every other overlay here.
     // §FLYTHRU_DIM_CUE — the measurement marking. Composited here because the bake captures this
     // 2D context, not the WebGL canvas: a marking drawn in 3D text would not survive the capture.
+    // §FLYTHRU_DATUM (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §24) — the opening setting-out
+    // drawing: grid bubbles, bay chains and level rules laid IN THE MODEL'S OWN PLANES.
+    // ⚠ Until now this layer existed only in scripts/snap_timeline.js: it had never been composited
+    // by a real bake, so no Alt-C film has ever carried it. Same never-kills-a-bake contract as the
+    // overlays around it, and gated by the Measure checkbox rather than always-on.
+    // ⚠ _captureFrame is its OWN function, not a closure over the bake body — which is exactly why
+    // _fcFilmSec above is read off window.APP rather than captured. The datum's two values cross the
+    // same way; declaring them in the bake body would have compiled cleanly and thrown at run time.
+    if (A._flythruDatumOn && A.flythruDatumCompositeOntoCanvas) {
+      try { A.flythruDatumCompositeOntoCanvas(ctx, w, h, _fcFilmSec, A._flythruFilmSecFull || 0); }
+      catch (eFDM) { if (!A._flythruDatumWarned) { A._flythruDatumWarned = true; console.warn('§FLYTHRU_DATUM_DRAW failed: ' + (eFDM && eFDM.message)); } }
+    }
     if (A.flythruCuesCompositeOntoCanvas) {
       try { A.flythruCuesCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
       catch (eFDC) { if (!A._flythruDimWarned) { A._flythruDimWarned = true; console.warn('§FLYTHRU_DIM_DRAW failed: ' + (eFDC && eFDC.message)); } }
@@ -1110,6 +1122,7 @@
     // the same function, and there is no second notion of "which part of the film this is".
     var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null, _reveal = false;
     var _clash = false;   // §CLASH_FILM_P1 — mesh-true clash pairs as persistent world content
+    var _measure = false;      // §FLYTHRU_DATUM — Alt-C 'Measure' checkbox
     // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
     // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
     // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
@@ -1297,6 +1310,8 @@
         // §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md) — clash_film.js builds the mesh-true pair set
         // ONCE below, before the frame loop; it is static world content, not per-frame work.
         _clash = !!_ov.clash;
+        // §FLYTHRU_DATUM — the Measure overlay, authored beside Clash in the Alt-C panel.
+        _measure = !!_ov.measure;
         if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round + ARC/STR reveal are real ' +
           '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
@@ -1517,6 +1532,14 @@
         try { A.flythruCuesBuild(plan, _filmSecFull); }
         catch (eFC) { console.warn('§FLYTHRU_CUES_BUILD failed: ' + (eFC && eFC.message) + ' — cues disabled for this bake'); }
       }
+      // §FLYTHRU_DATUM — built once from the DB, so it stands at frame one whatever the buildup has
+      // reached. Only when Measure is on; a bake without it must cost nothing.
+      A._flythruFilmSecFull = _filmSecFull;
+      A._flythruDatumOn = !!_measure;
+      if (_measure && A.flythruDatumBuild) {
+        try { A.flythruDatumBuild(); }
+        catch (eFDB) { console.warn('§FLYTHRU_DATUM_BUILD failed: ' + (eFDB && eFDB.message) + ' — the film bakes without the datum'); }
+      }
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }
         catch (eCF) { console.warn('§CLASH_FILM_BUILD failed: ' + (eCF && eCF.message) + ' — the film bakes without markers'); }
@@ -1707,6 +1730,12 @@
         // inside the disc-reveal round's own tail above. Same "one pure function, two callers" call
         // cinema_path_editor.js's preview step() makes.
         if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(plan, _tnFilm);
+        // §FLYTHRU_DATUM — the 3D half: the grid and level rules fade on the same schedule the 2D
+        // annotation uses, and depth-test normally so the rising build occludes them (§17.5).
+        if (_measure && A.flythruDatumAt) {
+          try { A.flythruDatumAt(_tnFilm * _filmSecFull, _filmSecFull); }
+          catch (eFDA) { if (!A._flythruDatumAtWarned) { A._flythruDatumAtWarned = true; console.warn('§FLYTHRU_DATUM_AT failed frame=' + i + ': ' + (eFDA && eFDA.message)); } }
+        }
         if (A.flythruCuesApplyVisual) {
           try { A._flythruFilmSec = _tnFilm * _filmSecFull; A.flythruCuesApplyVisual(A._flythruFilmSec); }
           catch (eFV) { if (!A._flythruCueWarned) { A._flythruCueWarned = true; console.warn('§FLYTHRU_CUE_VISUAL failed frame=' + i + ': ' + (eFV && eFV.message)); } }

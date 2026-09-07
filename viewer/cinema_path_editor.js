@@ -744,6 +744,7 @@
       roomTitle: !!s.roomTitle,
       reveal: !!s.reveal,
       clash: !!s.clash,                    // §CLASH_FILM_P1
+      measure: !!s.measure,                // §FLYTHRU_DATUM
       storeyReveal: !!s.storeyReveal,       // §STOREY_HIGHLIGHT_REVEAL
       bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
       dayCounter: s.dayCounter || 'tr',
@@ -929,6 +930,14 @@
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-clash" type="checkbox"> ' +
           'Clash pairs</label> <span style="color:#666">(mesh-true pairs, red/blue at each contact, ' +
           'pulsing from frame 0 so you see where the trouble is before it is built)</span></div>' +
+        // §FLYTHRU_DATUM (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §24) — the setting-out
+        // drawing. The hint names the two things the checkbox cannot show: the grid is the REAL
+        // column grid out of the DB, not a decorative module, and the marks are laid in the model's
+        // own planes, so they foreshorten with the building instead of facing the camera.
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-measure" type="checkbox"> ' +
+          'Measure</label> <span style="color:#666">(setting-out drawing from the real column grid — ' +
+          'numbered and lettered bubbles, bay chains that sum to the overall, storey rules; ' +
+          'up at frame 0, drawn in the model\'s own planes, occluded by the build as it rises)</span></div>' +
         // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06) — the
         // final 5 real seconds of the pull-back beat, ending exactly where the closing orbit begins,
         // fill with each storey tinting through in sequence instead of just cruising toward the orbit.
@@ -2275,7 +2284,7 @@
     var tm = null;
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
-      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash,
+      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash, measure: !!ov.measure,
                     storeyReveal: !!ov.storeyReveal },
       bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
@@ -2326,7 +2335,7 @@
   // this for the select; the sibling checkboxes never got it — this closes that gap.
   function _syncPanelControls() {
     [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
-     ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash],
+     ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash], ['cpe-measure', !!_state.measure],
      ['cpe-storey-reveal', !!_state.storeyReveal]].forEach(function(p) {
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
@@ -3507,6 +3516,7 @@
         // not a default-on behavior (extra film time + a real visual change, see checkbox hint).
         reveal: false,
         clash: false,          // §CLASH_FILM_P1
+        measure: false,        // §FLYTHRU_DATUM — same off-by-default reasoning as clash/reveal
         storeyReveal: false,   // §STOREY_HIGHLIGHT_REVEAL — off by default, same reasoning as reveal/clash
         bakeRes: '',           // §CPE_BAKE_RES — '' = the window; else '<w>x<h>@<fps>'
         origReveal: false,
@@ -3657,6 +3667,15 @@
         _markPreviewStale();
         console.log('§CPE_CLASH checkbox=' + (_state.clash ? 'on' : 'off') +
           ' — mesh-true clash pairs as world content in the bake');
+      });
+      // §FLYTHRU_DATUM — like clash above, a pure overlay flag: it moves no beat boundary, so
+      // _markPreviewStale() is the whole handler.
+      var _measureEl = document.getElementById('cpe-measure');
+      if (_measureEl) _measureEl.addEventListener('change', function(e) {
+        _state.measure = !!e.target.checked;
+        _markPreviewStale();
+        console.log('§CPE_MEASURE checkbox=' + (_state.measure ? 'on' : 'off') +
+          ' — setting-out drawing (grid bubbles, bay chains, storey rules) in the bake');
       });
       // §STOREY_HIGHLIGHT_REVEAL — like clash above, this does not move any beat boundary (it reads
       // the EXISTING plan.beats.rise), so a plain _markPreviewStale() is the whole handler; no

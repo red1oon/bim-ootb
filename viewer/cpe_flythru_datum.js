@@ -324,6 +324,26 @@ function setupCpeFlythruDatum(A) {
     var _lvz = (_lines.levels || []);
     var zMid = _lvz.length ? _lvz[(_lvz.length / 2) | 0].z : z0;
     var zNearX = dTo(ext[1], farY, zMid) > dTo(ext[0], farY, zMid) ? ext[1] : ext[0];
+    // ⚠ THE UPRIGHT HAS TWO VERTICAL PLANES TO LIE IN, AND ONE OF THEM IS EDGE-ON.
+    // USER (2026-09-08): "are the bubbles sizes consistent on Z scale to the floor one?" — in the
+    // MODEL they are identical (perAxisR 1.21/1.21/1.21), but that is not what reads. The level
+    // annotation used to be pinned to the X-Z plane at the far Y face; at second zero the camera
+    // sits off a corner, so that face is nearly edge-on and every level bubble projects to a
+    // sliver while the ground's project as proper ellipses. Same radius, wholly different reading.
+    // The fix is not to turn the marks toward the viewer — that is billboarding, and the whole
+    // layer exists to avoid it. It is to CHOOSE THE PLANE, the same way the near-side ruling chooses
+    // the edge: of the two vertical faces, take the one whose normal points most directly at the
+    // camera. Measured per frame with a dot product, so it follows the dive instead of being fixed.
+    function faceOn(nx, ny) {
+      var o = P(midX, midY, zMid);
+      var nrm = P(midX + nx, midY + ny, zMid).sub(o).normalize();
+      var vw = o.clone().sub(cam.position).normalize();
+      return Math.abs(nrm.dot(vw));
+    }
+    var _fY = faceOn(0, 1), _fX = faceOn(1, 0), _zPlane = (_fX > _fY) ? 'X-face' : 'Y-face';
+    // the far Y edge, for when the stack hangs off an X face instead
+    var zNearY = dTo(midX, ext[1 + 2], zMid) > dTo(midX, ext[0 + 2], zMid) ? ext[3] : ext[2];
+    var sgnZY = (zNearY === ext[2]) ? -1 : 1;
 
     // sign of "outward" per axis, in model units
     var sgnY = (nearY === ext[2]) ? -1 : 1, sgnX = (nearX === ext[0]) ? -1 : 1;
@@ -429,10 +449,17 @@ function setupCpeFlythruDatum(A) {
       var digits = 6, figW = digits * TXT * 0.62;
       var step = Math.max(1, Math.ceil(figW / minGap));
       var drewFig = 0, drewBub = 0, sum = 0;
+      var _pxU = 0, _pxV = 0;    // projected semi-axes of a bubble on this axis, in screen px
       for (var i = 0; i < vals.length; i++) {
         var pB = at(vals[i], OFFB);
-        if (inkBubble(plane(pB[0], pB[1], pB[2], along.x * R_BUB * 2, along.y * R_BUB * 2, along.z * R_BUB * 2,
-                            out.x * R_BUB * 2, out.y * R_BUB * 2, out.z * R_BUB * 2), lab(i), R_BUB, TXT)) { drewBub++; n++; }
+        var mB = plane(pB[0], pB[1], pB[2], along.x * R_BUB * 2, along.y * R_BUB * 2, along.z * R_BUB * 2,
+                       out.x * R_BUB * 2, out.y * R_BUB * 2, out.z * R_BUB * 2);
+        // ⚠ MEASURE THE MARK, do not infer it from the picture. The basis vectors of the plane
+        // transform ARE the projected axes of the circle: a bubble of model radius R drawn through
+        // them lands as an ellipse whose semi-axes are half their screen lengths. Recording them
+        // makes "are the Z bubbles the same size as the ground ones" a question with an answer.
+        if (mB && !_pxU) { _pxU = Math.hypot(mB.a, mB.b) / 2; _pxV = Math.hypot(mB.c, mB.d) / 2; }
+        if (inkBubble(mB, lab(i), R_BUB, TXT)) { drewBub++; n++; }
         var pA = at(vals[i], OFF1), pC = at(vals[i], OFFB - R_BUB * 1.4);
         seg(P(pA[0], pA[1], pA[2]), P(pC[0], pC[1], pC[2]));           // witness line, rung to bubble
       }
@@ -460,7 +487,7 @@ function setupCpeFlythruDatum(A) {
       if (inkText(plane(op2[0], op2[1], op2[2], along.x, along.y, along.z, out.x, out.y, out.z), ovTxt, TXT * 1.25)) { n++; }
       if (drewOv) { _ov++; }
       _bub += drewBub; _figs += drewFig;
-      return { bubbles: drewBub, figures: drewFig, step: step, sum: sum, R: R_BUB, gap: minGap };
+      return { bubbles: drewBub, figures: drewFig, step: step, sum: sum, R: R_BUB, gap: minGap, pxU: _pxU, pxV: _pxV };
     }
 
     var rX = axis(_lines.gx, function (i) { return label(i, false); },
@@ -469,11 +496,15 @@ function setupCpeFlythruDatum(A) {
     var rY = axis(_lines.gy, function (i) { return label(i, true); },
                   function (v, o) { return [nearX + sgnX * o, v, z0]; },
                   { x: 0, y: 1, z: 0 }, { x: sgnX, y: 0, z: 0 }, false);
-    var rZ = { bubbles: 0, figures: 0, step: 1, sum: 0, R: 0, gap: 0 };
+    var rZ = { bubbles: 0, figures: 0, step: 1, sum: 0, R: 0, gap: 0, pxU: 0, pxV: 0 };
     if (_lvz.length > 1) {
-      rZ = axis(_lvz.map(function (L) { return L.z; }), function (i) { return storeyRefFor(_lvz, i); },
-                function (v, o) { return [zNearX + sgnZ * o, farY, v]; },
-                { x: 0, y: 0, z: 1 }, { x: sgnZ, y: 0, z: 0 }, true);
+      rZ = (_zPlane === 'X-face')
+        ? axis(_lvz.map(function (L) { return L.z; }), function (i) { return storeyRefFor(_lvz, i); },
+               function (v, o) { return [zNearX, zNearY + sgnZY * o, v]; },
+               { x: 0, y: 0, z: 1 }, { x: 0, y: sgnZY, z: 0 }, true)
+        : axis(_lvz.map(function (L) { return L.z; }), function (i) { return storeyRefFor(_lvz, i); },
+               function (v, o) { return [zNearX + sgnZ * o, farY, v]; },
+               { x: 0, y: 0, z: 1 }, { x: sgnZ, y: 0, z: 0 }, true);
     }
     ctx.restore();
 
@@ -488,6 +519,21 @@ function setupCpeFlythruDatum(A) {
         'm delta=' + ey.toFixed(4) + ' | Z storeys=' + rZ.sum.toFixed(3) + 'm overall=' + ovZ.toFixed(3) +
         'm delta=' + ez.toFixed(4) + ' -> ' + ((ex < 0.001 && ey < 0.001 && ez < 0.001) ? 'CHAIN ADDS UP' : 'CHAIN MISMATCH'));
     }
+    // ⚠ CONSISTENCY IS ASSERTED IN THE NUMBERS, NEVER JUDGED FROM THE PICTURE (user, 2026-09-08:
+    // "Consistent has to be on paper ie in the maths not relying merely on visual to judge").
+    // Two separate claims, and they must not be confused: the marks are the SAME SIZE IN THE MODEL
+    // (that is a property of the drawing), and they PROJECT to different screen sizes (that is a
+    // property of the camera). Both are printed, so neither has to be taken on trust.
+    var _rs = [rX.R, rY.R, rZ.R].filter(function (v) { return v > 0; });
+    var _rMax = Math.max.apply(null, _rs), _rMin = Math.min.apply(null, _rs);
+    var _same = _rs.length < 2 || (_rMax - _rMin) <= 0.005;
+    console.log('§FLYTHRU_DATUM_CONSISTENCY modelRadius X/Y/Z = ' +
+      rX.R.toFixed(3) + '/' + rY.R.toFixed(3) + '/' + rZ.R.toFixed(3) + 'm -> ' +
+      (_same ? 'IDENTICAL' : 'DIFFER by ' + (_rMax - _rMin).toFixed(3) + 'm (an axis was capped by its own gap)') +
+      ' | projected semi-axes px X ' + rX.pxU.toFixed(1) + 'x' + rX.pxV.toFixed(1) +
+      ', Y ' + rY.pxU.toFixed(1) + 'x' + rY.pxV.toFixed(1) +
+      ', Z ' + rZ.pxU.toFixed(1) + 'x' + rZ.pxV.toFixed(1) +
+      ' — a flat ratio means that plane is edge-on to the camera, which is the CAMERA, not the drawing');
     console.log('§FLYTHRU_DATUM_MARKS ' + (n ? 'drawn=' + n : 'NOTHING drawn=0') + ' filmSec=' + filmSec.toFixed(2) +
       ' IN-PLANE (no screen-space sizing, no register, no ranks, no clamping)' +
       ' sizedFromGrid(bubbleR = 0.153 x medianBay, the ratio read off the accepted HHS frame)' +
@@ -503,7 +549,8 @@ function setupCpeFlythruDatum(A) {
       ' bubbles=' + _bub + '/' + (_lines.gx.length + _lines.gy.length + _lvz.length) +
       ' figures=' + _figs + ' overalls=' + _ov + '/3' +
       ' figStride=' + rX.step + '/' + rY.step + '/' + rZ.step +
-      ' sides=(numerals Y@' + nearY.toFixed(1) + ' near, letters X@' + nearX.toFixed(1) + ' near, levels X@' + zNearX.toFixed(1) + ' back)');
+      ' sides=(numerals Y@' + nearY.toFixed(1) + ' near, letters X@' + nearX.toFixed(1) + ' near, levels X@' + zNearX.toFixed(1) +
+      ' back on the ' + _zPlane + ', faceOn Y ' + _fY.toFixed(2) + ' vs X ' + _fX.toFixed(2) + ')');
     return n;
   };
 
