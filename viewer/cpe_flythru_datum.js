@@ -195,11 +195,30 @@ function setupCpeFlythruDatum(A) {
     // projects LOWEST (largest screen y); the left edge is the one that projects LEFTMOST (smallest
     // screen x). Using the y-comparison for both put the letter bubbles on whichever long edge
     // happened to sit lower, not on the left.
+    // ══ LAYOUT PASS. Previously four independent loops each decided alone whether to draw, which
+    // gave a chain with 16 random gaps (Hospital 11/27) and 10 of 17 bubbles piled on the frame edge.
+    // A drawing that cannot fit every bay shows every Nth one — REGULARLY thinned reads as intentional,
+    // irregularly dropped reads as broken. So: measure the plan on screen, then decide everything once.
     var midX = (ext[0]+ext[1])/2, midY = (ext[2]+ext[3])/2;
     var yA = pr(P(midX, ext[2], z0)), yB = pr(P(midX, ext[3], z0));
     var xA = pr(P(ext[0], midY, z0)), xB = pr(P(ext[1], midY, z0));
     var nearY = (yA.y >= yB.y) ? ext[2] : ext[3];      // bottom of frame -> numerals
     var nearX = (xA.x <= xB.x) ? ext[0] : ext[1];      // left of frame   -> letters
+    // plan size on screen decides the offsets — fixed pixels crowd a small plan and scatter a large one
+    var c1 = pr(P(ext[0], ext[2], z0)), c2b = pr(P(ext[1], ext[2], z0)),
+        c3 = pr(P(ext[0], ext[3], z0)), c4 = pr(P(ext[1], ext[3], z0));
+    var planPx = Math.max(Math.hypot(c2b.x-c1.x, c2b.y-c1.y), Math.hypot(c3.x-c1.x, c3.y-c1.y), 1);
+    var scale = Math.max(0.6, Math.min(1.8, planPx / 620));
+    var off1 = OFF1 * k * scale, off2 = OFF2 * k * scale;
+    // ONE stride for the whole chain, from the tightest average bay on screen
+    function strideFor(vals, isX) {
+      if (vals.length < 2) return 1;
+      var a = pr(P(isX ? vals[0] : nearX, isX ? nearY : vals[0], z0));
+      var b = pr(P(isX ? vals[vals.length-1] : nearX, isX ? nearY : vals[vals.length-1], z0));
+      var per = Math.hypot(b.x-a.x, b.y-a.y) / (vals.length - 1);
+      return Math.max(1, Math.ceil(40 * k / Math.max(per, 1)));
+    }
+    var strX = strideFor(_lines.gx, true), strY = strideFor(_lines.gy, false);
     var n = 0;
     ctx.save(); ctx.globalAlpha = op;
     ctx.lineWidth = 1.3 * k; ctx.font = '700 ' + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
@@ -229,9 +248,9 @@ function setupCpeFlythruDatum(A) {
         if (cl) _bubClamp++;
       }
       ctx.beginPath(); ctx.arc(p2.x, p2.y, BUB_R * k, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(10,14,20,0.72)'; ctx.fill();
-      ctx.strokeStyle = '#8899aa'; ctx.stroke();
-      ctx.fillStyle = '#dfe6ee'; ctx.fillText(txt, p2.x, p2.y + 0.5 * k);
+      ctx.fillStyle = 'rgba(8,11,16,0.55)'; ctx.fill();     // just enough to sit on the model
+      ctx.strokeStyle = '#aab6c4'; ctx.stroke();
+      ctx.fillStyle = '#eef3f8'; ctx.fillText(txt, p2.x, p2.y + 0.5 * k);
       return true;
     }
     function dim(a3, b3, metres, tier, refA, refB) {
@@ -275,17 +294,31 @@ function setupCpeFlythruDatum(A) {
     // X gridlines -> bubbles on the near Y edge, numerals; bays + overall along that edge
     var farY2 = (nearY === ext[2]) ? ext[3] : ext[2], farX2 = (nearX === ext[0]) ? ext[1] : ext[0];
     _bubClamp = 0; _bubDrop = 0;
-    _lines.gx.forEach(function (x, i) { if (bubble(pr(P(x, nearY, z0)), label(i, false), pr(P(x, farY2, z0)))) n++; });
-    _lines.gy.forEach(function (y, i) { if (bubble(pr(P(nearX, y, z0)), label(i, true), pr(P(farX2, y, z0)))) n++; });
+    // ALL OR NONE per axis. If most of a set would have to be clamped to the frame edge, the set is
+    // not readable and a row of bubbles stranded on the boundary is worse than none at all.
+    function inFrame(p2) { return p2.front && p2.x > 14*k && p2.x < w-14*k && p2.y > 14*k && p2.y < h-14*k; }
+    var okX = _lines.gx.filter(function (x) { return inFrame(pr(P(x, nearY, z0))); }).length;
+    var okY = _lines.gy.filter(function (y) { return inFrame(pr(P(nearX, y, z0))); }).length;
+    var drawBubX = okX >= Math.ceil(_lines.gx.length * 0.6), drawBubY = okY >= Math.ceil(_lines.gy.length * 0.6);
+    if (drawBubX) _lines.gx.forEach(function (x, i) { if (i % strX === 0 || i === _lines.gx.length-1) if (bubble(pr(P(x, nearY, z0)), label(i, false), pr(P(x, farY2, z0)))) n++; });
+    if (drawBubY) _lines.gy.forEach(function (y, i) { if (i % strY === 0 || i === _lines.gy.length-1) if (bubble(pr(P(nearX, y, z0)), label(i, true), pr(P(farX2, y, z0)))) n++; });
     var sumX = 0, sumY = 0, _bay = 0, _ov = 0;
-    for (var i = 0; i < _lines.gx.length - 1; i++) {
-      if (dim(P(_lines.gx[i], nearY, z0), P(_lines.gx[i+1], nearY, z0), _lines.gx[i+1]-_lines.gx[i], 1)) { n++; _bay++; }
-      sumX += _lines.gx[i+1] - _lines.gx[i];
+    // Strided chain: 0 -> str -> 2*str -> ... -> last. It still spans the full extent, so the chain
+    // adds up to the overall exactly as an unthinned one does.
+    function chain(vals, str, isX) {
+      var drew = 0, sum = 0;
+      for (var i = 0; i < vals.length - 1; i += str) {
+        var j2 = Math.min(i + str, vals.length - 1);
+        var a = isX ? P(vals[i], nearY, z0) : P(nearX, vals[i], z0);
+        var b = isX ? P(vals[j2], nearY, z0) : P(nearX, vals[j2], z0);
+        if (dim(a, b, vals[j2] - vals[i], 1)) { drew++; }
+        sum += vals[j2] - vals[i];
+        if (j2 === vals.length - 1) break;
+      }
+      return { drew: drew, sum: sum };
     }
-    for (var j = 0; j < _lines.gy.length - 1; j++) {
-      if (dim(P(nearX, _lines.gy[j], z0), P(nearX, _lines.gy[j+1], z0), _lines.gy[j+1]-_lines.gy[j], 1)) { n++; _bay++; }
-      sumY += _lines.gy[j+1] - _lines.gy[j];
-    }
+    var cx2 = chain(_lines.gx, strX, true), cy2 = chain(_lines.gy, strY, false);
+    _bay = cx2.drew + cy2.drew; n += _bay; sumX = cx2.sum; sumY = cy2.sum;
     // LEVEL TAGS on the upright. USER: the ground has too many lines to name, but "the upright
     // storeys are few and well known, easily given by the DB". A level datum on a drawing reads
     // name + elevation, and the elevation printed is the LOCAL one (Level 2 +6.000), never the
@@ -301,12 +334,15 @@ function setupCpeFlythruDatum(A) {
       var tw2 = ctx.measureText(txt).width;
       var bx = e2.x + 8 * k, by = e2.y;
       if (bx + tw2 + 10 * k > w) bx = e2.x - tw2 - 14 * k;      // keep it on screen
+      // A level datum sits ON its line with a small tick — no rectangle. The text carries a dark
+      // halo instead, which is what keeps it legible over the model.
       ctx.strokeStyle = INKS; ctx.lineWidth = 1.1 * k;
       ctx.beginPath(); ctx.moveTo(e2.x, e2.y); ctx.lineTo(bx - 4 * k, by); ctx.stroke();
-      ctx.fillStyle = 'rgba(10,14,20,0.72)';
-      ctx.fillRect(bx - 4 * k, by - 9 * k, tw2 + 8 * k, 18 * k);
-      ctx.strokeRect(bx - 4 * k, by - 9 * k, tw2 + 8 * k, 18 * k);
-      ctx.fillStyle = INKS; ctx.fillText(txt, bx, by + 0.5 * k);
+      ctx.beginPath(); ctx.moveTo(e2.x, e2.y - 4 * k); ctx.lineTo(e2.x, e2.y + 4 * k); ctx.stroke();
+      ctx.lineWidth = 3.5 * k; ctx.strokeStyle = 'rgba(8,11,16,0.95)'; ctx.lineJoin = 'round';
+      ctx.strokeText(txt, bx, by - 4 * k);
+      ctx.fillStyle = INKS; ctx.fillText(txt, bx, by - 4 * k);
+      ctx.lineWidth = 1.1 * k;
       n++;
     });
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -325,7 +361,7 @@ function setupCpeFlythruDatum(A) {
         'm delta=' + ey.toFixed(4) + ' -> ' + ((ex < 0.001 && ey < 0.001) ? 'CHAIN ADDS UP' : 'CHAIN MISMATCH'));
     }
     if (n) console.log('§FLYTHRU_DATUM_MARKS drawn=' + n + ' filmSec=' + filmSec.toFixed(2) +
-      ' bays=' + _bay + '/' + (_lines.gx.length-1+_lines.gy.length-1) + ' overalls=' + _ov + '/2 bubblesClamped=' + _bubClamp + ' bubblesDropped=' + _bubDrop + ' levelTags=' + ((_lines.levels||[]).length) + ' edges=(bottomY@' + nearY.toFixed(1) + ', leftX@' + nearX.toFixed(1) + ') nearEdge=(x@' + nearX.toFixed(1) + ', y@' + nearY.toFixed(1) + ')');
+      ' bays=' + _bay + ' stride=' + strX + '/' + strY + ' bubbleSets=' + (drawBubX?'X':'-') + (drawBubY?'Y':'-') + ' scale=' + scale.toFixed(2) + ' overalls=' + _ov + '/2 bubblesClamped=' + _bubClamp + ' bubblesDropped=' + _bubDrop + ' levelTags=' + ((_lines.levels||[]).length) + ' edges=(bottomY@' + nearY.toFixed(1) + ', leftX@' + nearX.toFixed(1) + ') nearEdge=(x@' + nearX.toFixed(1) + ', y@' + nearY.toFixed(1) + ')');
     return n;
   };
   var _chainKey = 0, _bubClamp = 0, _bubDrop = 0;

@@ -404,9 +404,9 @@ function setupCpeFlythruCues(A) {
       ctx.closePath(); ctx.fill();
     };
     tri(A2.x, A2.y, 1); tri(B2.x, B2.y, -1);
-    // §7 / user 2026-09-07: OUTLINED box, never a filled plate — it would blot out the detail.
-    ctx.lineWidth = 1.2 * k;
-    ctx.beginPath(); ctx.rect(mx2 - tw / 2, my2 - th / 2, tw, th); ctx.stroke();
+    // ⚠ NO BOX ROUND A DIMENSION VALUE. Drafting breaks the line and sets the number in the gap —
+    // that is the whole convention. The "outlined box" ruling was about the PANEL (a container for a
+    // SET of numbers), and applying it to every individual value put a rectangle round every figure.
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 3 * k; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
     ctx.strokeText(mm, mx2, my2); ctx.fillText(mm, mx2, my2);   // opposite-colour halo, §7
