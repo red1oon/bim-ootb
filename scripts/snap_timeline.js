@@ -18,7 +18,14 @@
  * Geometry, camera and buildup are true; lighting/AO polish is not. Use it to judge WHAT IS IN FRAME,
  * never to judge final image quality.
  *
- * RUN: node scripts/snap_timeline.js --db Hospital_silent_local --dur 195.8 --at 0,3,6,9,12
+ * LAYERS: --clash turns on the clash markers AND their [tol/clash mm] labels; --cues turns on the
+ * fly-through measurement cues. Both OFF by default so a plain frame stays cheap.
+ * ⚠ 2D layers (labels, captions, day counter) are NOT in the WebGL canvas — the bake composites them
+ * onto the captured frame (cinema_maxq.js:767 _captureFrame). A plain page screenshot MISSES them.
+ * So with any layer on, this composites the same way the bake does and saves that, not a screenshot.
+ *
+ * RUN: node scripts/snap_timeline.js --db Hospital_silent_local --dur 195.8 --at 0,3,6,9
+ *      node scripts/snap_timeline.js --db Hospital_silent_local --at 9,13 --clash --cues,12
  *      node scripts/snap_timeline.js --db HHS_silent --dur 61 --from 0 --to 20 --step 2
  */
 'use strict';
@@ -31,6 +38,8 @@ const DB = arg('db', 'Hospital_silent_local');
 const DUR = Number(arg('dur', 195.8));
 const OUT = arg('out', path.join(__dirname, '..', 'out', 'snaps'));
 const W = Number(arg('width', 1280)), H = Number(arg('height', 720));
+const CLASH = process.argv.includes('--clash');
+const CUES = process.argv.includes('--cues');
 let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
   : (() => { const a = [], f = Number(arg('from', 0)), t = Number(arg('to', 10)), s = Number(arg('step', 1));
              for (let x = f; x <= t + 1e-9; x += s) a.push(+x.toFixed(3)); return a; })();
@@ -78,10 +87,27 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
     return st ? true : null;
   });
 
+  const layers = await p.evaluate(async (clash, cues, dur) => {
+    const A = window.APP, R = { clash: false, cues: 0 };
+    if (clash) {
+      if (A.clashFilm && A.clashFilm.build) {
+        try { await A.clashFilm.build(); R.clash = true; }
+        catch (e) { console.log('§SNAP_CLASH FAILED ' + e.message); }
+      } else console.log('§SNAP_CLASH INCONCLUSIVE — A.clashFilm.build absent');
+    }
+    if (cues && A.flythruCuesBuild) {
+      try { R.cues = (A.flythruCuesBuild(A.cinemaPathPlan(dur), dur) || []).length; }
+      catch (e) { console.log('§SNAP_CUES FAILED ' + e.message); }
+    }
+    console.log('§SNAP_LAYERS clash=' + (clash ? (R.clash ? 'on' : 'REQUESTED-BUT-OFF') : 'off') +
+                ' cues=' + (cues ? R.cues : 'off'));
+    return R;
+  }, CLASH, CUES, DUR);
+
   if (!armed) console.log('§SNAP_WARN buildup NOT armed — every frame below is the FINISHED building, NOT the film at that second');
   const rows = [];
   for (const t of TIMES) {
-    const info = await p.evaluate(async (t, dur, armed) => {
+    const info = await p.evaluate(async (t, dur, armed, w, h, layers) => {
       const A = window.APP, u = Math.max(0, Math.min(1, t / dur));
       const plan = A.cinemaPathPlan(dur);
       let cursorMs = null;
@@ -95,18 +121,49 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
       A.camera.position.set(pz.x, pz.y, pz.z);
       A.camera.lookAt(pz.tx, pz.ty, pz.tz);
       A.camera.updateMatrixWorld(true);
+      const filmSec = u * dur;
+      // 3D layers first — they write into the scene the renderer is about to draw.
+      if (layers.clash && A.clashFilm && A.clashFilm.update) { try { A.clashFilm.update(filmSec, A.camera); } catch (e) {} }
+      if (layers.cues && A.flythruCuesApplyVisual) { try { A.flythruCuesApplyVisual(filmSec); } catch (e) {} }
       if (A.markDirty) A.markDirty();          // interactive render — NOT a bake, so this is correct here
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       let visible = 0;
       try { A.scene.traverse(function (o) { if (o.visible && (o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) visible++; }); } catch (e) {}
+      // ── COMPOSITE, the way cinema_maxq.js:767 _captureFrame does ────────────────────────────────
+      // Render explicitly so the drawing buffer is guaranteed populated for drawImage, then lay the
+      // 2D layers on top. Without this the labels/captions simply are not in the picture.
+      let dataUrl = null, lblN = 0;
+      if (layers.clash || layers.cues) {
+        try {
+          A.renderer.render(A.scene, A.camera);
+          const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+          const ctx = cv.getContext('2d');
+          ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
+          if (layers.clash && A.clashLabels && A.clashLabels.update && A.clashLabelsCompositeOntoCanvas) {
+            const li = A.clashLabels.update(A.camera, filmSec, w, h, 0);
+            if (li && li.placed && li.placed.length) { lblN = li.placed.length; A.clashLabelsCompositeOntoCanvas(ctx, w, h, li.placed); }
+          }
+          if (layers.cues && A.flythruCueCaptionAt && A.roomTitleCompositeOntoCanvas) {
+            const ti = A.flythruCueCaptionAt(filmSec);
+            if (ti && ti.opacity > 0) A.roomTitleCompositeOntoCanvas(ctx, w, h, ti.name, ti.opacity);
+          }
+          if (cursorMs != null && A.dayCounterAt && A.dayCounterCompositeOntoCanvas) {
+            try { const di = A.dayCounterAt(cursorMs); if (di) A.dayCounterCompositeOntoCanvas(ctx, w, h, di, 1, 'tl'); } catch (e) {}
+          }
+          dataUrl = cv.toDataURL('image/png');
+        } catch (e) { console.log('§SNAP_COMPOSITE FAILED ' + e.message + ' — falling back to a plain screenshot'); }
+      }
       const day = (A.dayCounterAt && cursorMs != null) ? 'cursor=' + new Date(cursorMs).toISOString().slice(0, 10) : 'cursor=n/a';
-      console.log('§SNAP_FRAME t=' + t.toFixed(2) + 's u=' + u.toFixed(4) + ' ' + day + ' visibleMeshes=' + visible);
-      return { t: t, u: u, cursorMs: cursorMs, visible: visible,
+      console.log('§SNAP_FRAME t=' + t.toFixed(2) + 's u=' + u.toFixed(4) + ' ' + day +
+                  ' visibleMeshes=' + visible + ' clashLabels=' + lblN + ' composited=' + (dataUrl ? 'yes' : 'no'));
+      return { t: t, u: u, cursorMs: cursorMs, visible: visible, clashLabels: lblN, dataUrl: dataUrl,
                cam: [+pz.x.toFixed(1), +pz.y.toFixed(1), +pz.z.toFixed(1)] };
-    }, t, DUR, armed);
+    }, t, DUR, armed, W, H, layers);
     await sleep(350);
     const f = path.join(OUT, DB + '_t' + String(t).replace('.', 'p') + 's.png');
-    await p.screenshot({ path: f });
+    if (info.dataUrl) fs.writeFileSync(f, Buffer.from(info.dataUrl.split(',')[1], 'base64'));
+    else await p.screenshot({ path: f });
+    delete info.dataUrl;
     info.file = f; rows.push(info);
     console.log('  §SNAP_WROTE ' + path.basename(f) + '  visibleMeshes=' + info.visible);
   }
