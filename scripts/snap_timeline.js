@@ -116,6 +116,9 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
         catch (e) { console.log('§SNAP_CLASH FAILED ' + e.message); }
       } else console.log('§SNAP_CLASH INCONCLUSIVE — A.clashFilm.build absent');
     }
+    if (cues && A.flythruDatumBuild) {
+      try { R.datum = A.flythruDatumBuild(); } catch (e) { console.log('§SNAP_DATUM FAILED ' + e.message); }
+    }
     if (cues && A.flythruCuesBuild) {
       try { R.cues = (A.flythruCuesBuild(A.cinemaPathPlan(dur), dur) || []).length; }
       catch (e) { console.log('§SNAP_CUES FAILED ' + e.message); }
@@ -145,6 +148,7 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
       const filmSec = u * dur;
       // 3D layers first — they write into the scene the renderer is about to draw.
       if (layers.clash && A.clashFilm && A.clashFilm.update) { try { A.clashFilm.update(filmSec, A.camera); } catch (e) {} }
+      if (layers.cues && A.flythruDatumAt) { try { A.flythruDatumAt(filmSec, dur); } catch (e) {} }
       if (layers.cues && A.flythruCuesApplyVisual) { try { A.flythruCuesApplyVisual(filmSec); } catch (e) {} }
       if (A.markDirty) A.markDirty();          // interactive render — NOT a bake, so this is correct here
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));

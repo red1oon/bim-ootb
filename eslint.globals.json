@@ -131,6 +131,7 @@
   "setupConfig": "readonly",
   "setupCpeDayCounter": "readonly",
   "setupCpeFlythruCues": "readonly",
+  "setupCpeFlythruDatum": "readonly",
   "setupCpeFlythruDims": "readonly",
   "setupCpePathOverview": "readonly",
   "setupCpeResourcePanel": "readonly",
