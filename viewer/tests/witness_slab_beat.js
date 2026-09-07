@@ -104,7 +104,7 @@ const server = http.createServer((req, res) => {
       const plan = A.cinemaPathPlan(dur);
       R.dur = dur; R.beats = plan && plan.beats; R.bk = !!bk;
       R.opening = plan ? plan.poseAt(0) : null;
-      R.cursor = [1.0, 2.0, 3.0, 8.5].map(sec => { const u = sec / dur; const ms = bk ? A.buildupCursorAt(A.buildupTAt(u, plan), bk, dur) : null;
+      R.cursor = [1.0, 2.0, 3.0, 5.0, 8.5, 10.0, 11.96].map(sec => { const u = sec / dur; const ms = bk ? A.buildupCursorAt(A.buildupTAt(u, plan), bk, dur) : null;
         return { sec, ms, day: (bk && ms != null) ? +((ms - bk.projectStart) / 86400000).toFixed(2) : null, placed: (bk && typeof window.tmPlacedCount === 'function') ? window.tmPlacedCount(ms) : null }; });
       R.rep = A.slabBeatBuild(plan, dur, bk, dur);
       R.frames = [];
