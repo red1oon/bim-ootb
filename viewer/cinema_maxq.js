@@ -1504,6 +1504,12 @@
       // silently dropped on EVERY first bake of a tab, `--clash` and pair count notwithstanding. Moved
       // here, BEFORE §CPE_BIG_STATS, so the card sees the real, already-judged stats.
       var _filmSecFull = (_clip && _clip.out > _clip.in) ? (nFrames / (_clip.out - _clip.in)) / fps : nFrames / fps;
+      // §FLYTHRU_CUES — baseline measurement cues (B1/B2/B4/B5). Built once, placed against the
+      // REAL camera path. Never allowed to kill a bake: same try/catch contract as every overlay here.
+      if (A.flythruCuesBuild) {
+        try { A.flythruCuesBuild(plan, _filmSecFull); }
+        catch (eFC) { console.warn('§FLYTHRU_CUES_BUILD failed: ' + (eFC && eFC.message) + ' — cues disabled for this bake'); }
+      }
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }
         catch (eCF) { console.warn('§CLASH_FILM_BUILD failed: ' + (eCF && eCF.message) + ' — the film bakes without markers'); }
@@ -1694,6 +1700,10 @@
         // inside the disc-reveal round's own tail above. Same "one pure function, two callers" call
         // cinema_path_editor.js's preview step() makes.
         if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(plan, _tnFilm);
+        if (A.flythruCuesApplyVisual) {
+          try { A.flythruCuesApplyVisual(_tnFilm * _filmSecFull); }
+          catch (eFV) { if (!A._flythruCueWarned) { A._flythruCueWarned = true; console.warn('§FLYTHRU_CUE_VISUAL failed frame=' + i + ': ' + (eFV && eFV.message)); } }
+        }
         // §CLASH_FILM_P1 (§4) — the pulse is a pure function of FILM seconds, never
         // performance.now(), so a 15 fps and a 24 fps bake of the same film pulse identically and a
         // re-bake is reproducible. Per-instance, so phase 2 can hold a labelled pair solid while the
@@ -1872,6 +1882,11 @@
         // exclusive with the disc-parade caption above by construction (this window opens at
         // plan.beats.rise, the disc parade's tail closes there), so the two can never both fire.
         if (!_titleInfo && A.storeyRevealCaptionAt) _titleInfo = A.storeyRevealCaptionAt(plan, _tnFilm);
+        // §FLYTHRU_CUES caption — the cue's own number, in the SAME {name,opacity} shape, so it uses
+        // the existing title renderer and can never draw a second text layer beside another caption.
+        if (!_titleInfo && A.flythruCueCaptionAt) {
+          try { _titleInfo = A.flythruCueCaptionAt(_tnFilm * _filmSecFull); } catch (eFCap) {}
+        }
         if (!_titleInfo) {
           _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
         }
@@ -2161,6 +2176,7 @@
       // §STOREY_HIGHLIGHT_REVEAL: same contract — a tinted storey left glowing after a bake would
       // follow the user into normal navigation. plan=null forces the restore.
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
+      try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
       _workPacingReset();
       // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
       // came within 4 m of a pair), then release the selector's state with the markers.
@@ -2236,6 +2252,7 @@
       try { _ghostGroundRestore(); } catch (e4) {}
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR2) {}
+      try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD2) {}
       try { _workPacingReset(); } catch (e5) {}
       // §CLASH_FILM_P1 — same restore on the THROW path (review of #1678): a throw inside the loop
       // skips the in-try dispose above and would leave the marker InstancedMeshes in the user's
