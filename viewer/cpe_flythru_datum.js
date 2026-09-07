@@ -444,8 +444,20 @@ function setupCpeFlythruDatum(A) {
       // 0.40 x this axis's own smallest gap guarantees clearance (diameter <= 0.8 of the gap) and,
       // CHECKED before it shipped, binds on exactly one axis across all three buildings — Terminal's
       // Z, 1.21 m -> 0.17 m — leaving HHS and Hospital, both already accepted, untouched.
-      var R_BUB = Math.min(R_GRID, 0.40 * minGap);
-      var TXT = 0.70 * R_BUB, OFF1 = 2.0 * R_BUB, OFF2 = 4.0 * R_BUB, OFFB = 6.0 * R_BUB;
+      // ⚠ THE BUBBLE IS SIZED BY ITS OWN LABEL, nothing else. USER (2026-09-08): "keep them tight
+      // smaller just enough to cover the letters/numerics. Now they are big and overlapping other
+      // markings." A circle at the full grid radius is a container built for a module, not for a
+      // two-character ref, so it swallowed the dimension lines and figures around it.
+      // The text size and the whole ladder stay pinned to the GRID exactly as before — only the
+      // circle shrinks — so nothing else in the drawing moves. The label width is MEASURED with
+      // measureText at the real size, not assumed from a character count, because "15" and "L7A"
+      // are not the same width and the widest ref on the axis is what has to fit.
+      var TXT = 0.70 * R_GRID, OFF1 = 2.0 * R_GRID, OFF2 = 4.0 * R_GRID, OFFB = 6.0 * R_GRID;
+      // ⚠ ONE RADIUS FOR THE WHOLE DRAWING, sized to the widest ref ANYWHERE on it — see R_ONE
+      // above. Sizing each axis to its own label was tried first and is wrong: "L3" is 0.77 m wide
+      // against "9" at 0.40 m, so the axes came out at 0.42/0.42/0.52 m and the consistency witness
+      // correctly reported DIFFER. A drawing has one bubble size; the widest ref sets it.
+      var R_BUB = R_ONE, _wMax = _wAll;
       var digits = 6, figW = digits * TXT * 0.62;
       var step = Math.max(1, Math.ceil(figW / minGap));
       var drewFig = 0, drewBub = 0, sum = 0;
@@ -487,8 +499,35 @@ function setupCpeFlythruDatum(A) {
       if (inkText(plane(op2[0], op2[1], op2[2], along.x, along.y, along.z, out.x, out.y, out.z), ovTxt, TXT * 1.25)) { n++; }
       if (drewOv) { _ov++; }
       _bub += drewBub; _figs += drewFig;
-      return { bubbles: drewBub, figures: drewFig, step: step, sum: sum, R: R_BUB, gap: minGap, pxU: _pxU, pxV: _pxV };
+      return { bubbles: drewBub, figures: drewFig, step: step, sum: sum, R: R_BUB, gap: minGap, pxU: _pxU, pxV: _pxV, fit: R_BUB, wMax: _wMax };
     }
+
+    // ⚠ THE BUBBLE IS SIZED BY ITS LABEL, AND BY THE WIDEST LABEL ON THE WHOLE DRAWING.
+    // USER (2026-09-08): "keep them tight smaller just enough to cover the letters/numerics. Now
+    // they are big and overlapping other markings." A circle at the full grid radius is a container
+    // built for a module, not for a two-character ref, so it swallowed the lines and figures around
+    // it. The text size and the entire ladder stay pinned to the GRID exactly as before — only the
+    // circle shrinks — so nothing else in the drawing moves.
+    // Widths are MEASURED with measureText at the real size, never assumed from a character count.
+    var _txtAll = 0.70 * R_GRID, _wAll = 0;
+    (function () {
+      var sets = [];
+      for (var i = 0; i < _lines.gx.length; i++) sets.push(label(i, false));
+      for (var j = 0; j < _lines.gy.length; j++) sets.push(label(j, true));
+      for (var k = 0; k < _lvz.length; k++) sets.push(storeyRefFor(_lvz, k));
+      ctx.save();
+      ctx.font = '400 ' + (_txtAll * UNIT).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+      for (var s = 0; s < sets.length; s++) _wAll = Math.max(_wAll, ctx.measureText(sets[s]).width / UNIT);
+      ctx.restore();
+    })();
+    // half the widest label's box plus a hair of air, never smaller than the glyph is tall, never
+    // larger than the grid radius, and never wider than 0.40 of the tightest gap on any axis
+    var _gapMin = Infinity;
+    [_lines.gx, _lines.gy, _lvz.map(function (L) { return L.z; })].forEach(function (v) {
+      for (var i = 1; i < v.length; i++) _gapMin = Math.min(_gapMin, Math.abs(v[i] - v[i - 1]));
+    });
+    if (!isFinite(_gapMin) || _gapMin <= 0) _gapMin = B;
+    var R_ONE = Math.min(Math.max(_wAll / 2 + 0.20 * _txtAll, 0.60 * _txtAll), R_GRID, 0.40 * _gapMin);
 
     var rX = axis(_lines.gx, function (i) { return label(i, false); },
                   function (v, o) { return [v, nearY + sgnY * o, z0]; },
@@ -496,7 +535,7 @@ function setupCpeFlythruDatum(A) {
     var rY = axis(_lines.gy, function (i) { return label(i, true); },
                   function (v, o) { return [nearX + sgnX * o, v, z0]; },
                   { x: 0, y: 1, z: 0 }, { x: sgnX, y: 0, z: 0 }, false);
-    var rZ = { bubbles: 0, figures: 0, step: 1, sum: 0, R: 0, gap: 0, pxU: 0, pxV: 0 };
+    var rZ = { bubbles: 0, figures: 0, step: 1, sum: 0, R: 0, gap: 0, pxU: 0, pxV: 0, fit: 0, wMax: 0 };
     if (_lvz.length > 1) {
       rZ = (_zPlane === 'X-face')
         ? axis(_lvz.map(function (L) { return L.z; }), function (i) { return storeyRefFor(_lvz, i); },
@@ -529,7 +568,7 @@ function setupCpeFlythruDatum(A) {
     var _same = _rs.length < 2 || (_rMax - _rMin) <= 0.005;
     console.log('§FLYTHRU_DATUM_CONSISTENCY modelRadius X/Y/Z = ' +
       rX.R.toFixed(3) + '/' + rY.R.toFixed(3) + '/' + rZ.R.toFixed(3) + 'm -> ' +
-      (_same ? 'IDENTICAL' : 'DIFFER by ' + (_rMax - _rMin).toFixed(3) + 'm (an axis was capped by its own gap)') +
+      (_same ? 'IDENTICAL' : 'DIFFER by ' + (_rMax - _rMin).toFixed(3) + 'm — UNEXPECTED, one radius is now used for the whole drawing') +
       ' | projected semi-axes px X ' + rX.pxU.toFixed(1) + 'x' + rX.pxV.toFixed(1) +
       ', Y ' + rY.pxU.toFixed(1) + 'x' + rY.pxV.toFixed(1) +
       ', Z ' + rZ.pxU.toFixed(1) + 'x' + rZ.pxV.toFixed(1) +
@@ -544,6 +583,8 @@ function setupCpeFlythruDatum(A) {
       // as drawn is the vacuous witness PRIMAL LAW §4 forbids, so the ratio is stated per axis. When
       // it is small the cause is upstream: refs packed far tighter than the grid they belong to.
       ' perAxisR=' + rX.R.toFixed(2) + '/' + rY.R.toFixed(2) + '/' + rZ.R.toFixed(2) + 'm' +
+      ' widestRef=' + rX.wMax.toFixed(2) + '/' + rY.wMax.toFixed(2) + '/' + rZ.wMax.toFixed(2) + 'm' +
+      ' fitR=' + rX.fit.toFixed(2) + '/' + rY.fit.toFixed(2) + '/' + rZ.fit.toFixed(2) + 'm' +
       ' ofNominal=' + [rX, rY, rZ].map(function (r) { return R_GRID > 0 ? Math.round(r.R / R_GRID * 100) + '%' : '-'; }).join('/') +
       ' minGap=' + rX.gap.toFixed(2) + '/' + rY.gap.toFixed(2) + '/' + rZ.gap.toFixed(2) + 'm' +
       ' bubbles=' + _bub + '/' + (_lines.gx.length + _lines.gy.length + _lvz.length) +
