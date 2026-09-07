@@ -48,7 +48,7 @@ function setupCpeFlythruDatum(A) {
   }
 
   // Real floors only. 'Level 2 Ceiling' / 'Level 3 TOS' are not floors.
-  function storeyLevels() {
+  function storeyLevels(medianBay) {
     var rows = q("SELECT name, elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL ORDER BY elevation");
     var src = 'elevation';
     if (!rows.length) { rows = q("SELECT name, center_z FROM spatial_structure WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL ORDER BY center_z"); src = 'center_z'; }
@@ -82,6 +82,27 @@ function setupCpeFlythruDatum(A) {
       out.push({ name: bn, z: bz });
     });
     out.sort(function (a, b) { return a.z - b.z; });
+    // ⚠ A LEVEL RULE MUST EARN ITS PLACE: it has to clear the bubble the drawing actually uses.
+    // USER (2026-09-07): "can we reduce the number of lines ie on the vertical Z? ... just stick to
+    // real storey differentiator? Or simply remove lines that are relatively too close" and, on why:
+    // "This is so that the bubbles can have breathing space and their marking lengths are somewhat
+    // noticeable. Users need not really read it as it is a movie, but they get the impression it has
+    // 2D layout rendition on the fly."
+    // So the threshold is not a fraction of anything arbitrary — it is the drawing's own bubble:
+    // 2 x R (diameter) plus a quarter for air, where R is the grid-derived radius 0.153 x medianBay.
+    // A pair closer than that could never be drawn with two readable refs anyway; keeping them only
+    // shrank the whole level column until it vanished (Terminal's Z refs had fallen to 13% of
+    // nominal). CHECKED on all three buildings before shipping: HHS 3 -> 3 and Hospital 8 -> 8, both
+    // untouched, while Terminal goes 23 -> 12 and its Z refs return to 100% of nominal size.
+    // Of a too-close pair the LOWER survives — a floor datum is the slab it stands on.
+    var _rGrid = 0.153 * (medianBay > 0 ? medianBay : 6.0), _tol = 2.5 * _rGrid, _before = out.length;
+    var thinned = [];
+    out.forEach(function (L) { if (!thinned.length || L.z - thinned[thinned.length - 1].z > _tol) thinned.push(L); });
+    if (thinned.length !== _before)
+      console.log('§FLYTHRU_DATUM_LEVELTHIN ' + _before + ' -> ' + thinned.length + ' rules; a level closer than ' +
+        _tol.toFixed(2) + 'm to the one below cannot clear the ' + (2 * _rGrid).toFixed(2) +
+        'm bubble this drawing uses, so it is not a storey differentiator here');
+    out = thinned;
     // ⚠ NAME THE FEDERATION FAULT RATHER THAN DRAW IT SILENTLY. When one storey NAME survives at two
     // or more separate elevations, the storey table is carrying two datums at once and no drawing can
     // be right. MEASURED on Terminal: "Aras 01..04" appear at 8/12/16/20 m AND again at 15.15/19.15/
@@ -111,7 +132,12 @@ function setupCpeFlythruDatum(A) {
     if (!ext || ext[0] == null) { console.log('§FLYTHRU_DATUM VACUOUS — no structural extent'); return null; }
     var gx = linesFrom(cols.map(function (r) { return r[0]; }), MIN_SEP);
     var gy = linesFrom(cols.map(function (r) { return r[1]; }), MIN_SEP);
-    var st = storeyLevels();
+    // same median the annotation uses: every bay on both ground axes, so the two agree by construction
+    var _bays = [];
+    for (var _bi = 0; _bi < gx.length - 1; _bi++) _bays.push(gx[_bi + 1] - gx[_bi]);
+    for (var _bj = 0; _bj < gy.length - 1; _bj++) _bays.push(gy[_bj + 1] - gy[_bj]);
+    _bays.sort(function (a, b) { return a - b; });
+    var st = storeyLevels(_bays.length ? _bays[_bays.length >> 1] : 0);
     // ⚠ DATUM. MEASURED 2026-09-07: Hospital records storey elevation 0..34 m (local, zero-based)
     // while its elements sit at 156.61..203.62 — 0 of 56 rules would land inside the building.
     // HHS records center_z 0.22..7.43 against elements -0.21..10.90 and already agrees. So DETECT
@@ -325,6 +351,16 @@ function setupCpeFlythruDatum(A) {
       if (!m) return false;
       ctx.save(); ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f); fn(); ctx.restore(); return true;
     }
+    // ⚠ THE FIGURES STAY IN THE MODEL, and this was settled twice from opposite directions.
+    // USER (2026-09-07): "it is in 3D space, do not force it to be readable. Keep it static true to
+    // its 2D plane" · "Optics will impress." Then (2026-09-08), asked for the measuring lengths of
+    // the earlier screen-space frame back — so they were briefly drawn at a fixed pixel size, angle
+    // from the plane — and then, on seeing it: "They maybe small but at least in real 3Dspace we can
+    // make it out legibly at some point in the dive in."
+    // That is the answer, and it is the stronger one: a figure that is small at 98 m is not
+    // unreadable, it is FAR. The camera closes, and the number resolves the way a real one would.
+    // Drawing it at a fixed pixel size would have made it the only thing in the drawing that does
+    // not obey the perspective, and would have put this layer back to being re-laid out per frame.
     function inkText(m, txt, size) {           // size in MODEL METRES
       return withPlane(m, function () {
         ctx.scale(1 / UNIT, 1 / UNIT);
@@ -411,7 +447,8 @@ function setupCpeFlythruDatum(A) {
         seg(P(a1[0], a1[1], a1[2]), P(b1[0], b1[1], b1[2]));
         var mv = (vals[j] + vals[k2]) / 2, mp = at(mv, OFF1 + TXT * 0.9);
         if (inkText(plane(mp[0], mp[1], mp[2], along.x * 1, along.y * 1, along.z * 1,
-                          out.x * 1, out.y * 1, out.z * 1), Math.round((vals[k2] - vals[j]) * 1000).toLocaleString('en-US'), TXT)) { drewFig++; n++; }
+                          out.x * 1, out.y * 1, out.z * 1),
+                    Math.round((vals[k2] - vals[j]) * 1000).toLocaleString('en-US'), TXT)) { drewFig++; n++; }
         sum += vals[k2] - vals[j];
         if (k2 === vals.length - 1) break;
       }
