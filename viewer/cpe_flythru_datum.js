@@ -573,6 +573,10 @@ function setupCpeFlythruDatum(A) {
       ', Y ' + rY.pxU.toFixed(1) + 'x' + rY.pxV.toFixed(1) +
       ', Z ' + rZ.pxU.toFixed(1) + 'x' + rZ.pxV.toFixed(1) +
       ' — a flat ratio means that plane is edge-on to the camera, which is the CAMERA, not the drawing');
+    // §30 §CLI_BAKE_OPENING — the counts as numbers, so a caller can ask "is the whole drawing in frame from
+    // here?" without parsing this log line. The datum is the owner of that question.
+    A._flythruDatumLast = { drawn: n, bubbles: _bub, bubblesTotal: _lines.gx.length + _lines.gy.length + _lvz.length,
+                            figures: _figs, overalls: _ov, filmSec: filmSec };
     console.log('§FLYTHRU_DATUM_MARKS ' + (n ? 'drawn=' + n : 'NOTHING drawn=0') + ' filmSec=' + filmSec.toFixed(2) +
       ' IN-PLANE (no screen-space sizing, no register, no ranks, no clamping)' +
       ' sizedFromGrid(bubbleR = 0.153 x medianBay, the ratio read off the accepted HHS frame)' +

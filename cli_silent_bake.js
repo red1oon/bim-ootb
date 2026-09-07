@@ -10,6 +10,7 @@
 //     [--buildup] [--label] [--reveal] [--day tr|tl|br|bl|off]   flags composed onto the path
 //     [--clash] [--no-clash]                          mesh-true clash pairs as world content (§CLASH_FILM_P1)
 //     [--measure] [--no-measure]                      setting-out datum drawing (§FLYTHRU_DATUM, MEP_CLASH_REVEAL_MOVIE.md §28.1)
+//     [--nohome] [--opening-only]                     §30 §CLI_BAKE_OPENING: skip the datum-legibility gate / judge the opening and exit
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
@@ -293,6 +294,60 @@ const server = http.createServer((req, res) => {
   ]);
   log('§CLI_BAKE_LOADED building=' + await page.evaluate(() => window.APP.activeBuilding +
     ' meshes=' + (window.APP.scene ? window.APP.scene.children.length : -1)));
+  // §CLI_BAKE_OPENING (MEP_CLASH_REVEAL_MOVIE.md §30 CORRECTED, user 2026-09-08: "The HHS opening frame has to
+  // be some distance away to let the dive in catch the 2D Z plane"). The film opens from the DB's SAVED VIEW
+  // (scene_state, restored at load by main.js §SCENE_STATE_RESTORE) — the user's own framing — UNLESS Measure
+  // is on and the datum is not wholly legible from there. "Legible" is judged by the datum's OWN layout pass
+  // at filmSec 0 (bubbles drawn == bubbles total AND overalls == 3/3), never by a distance threshold: the
+  // datum is the owner of "is my drawing in frame", and §17 requires it up at second 0. Then the viewer's
+  // Home key is pressed ONCE on document (a double dispatch fired §ROOM_HOME twice and left the plan on the
+  // load camera — MEASURED, witness_slab_beat.js) and the datum is judged again. MEASURED before this gate:
+  // Hospital's saved view already shows 37/37 bubbles + 3/3 overalls (kept); HHS's saved view (8.7 m up,
+  // 49.8 m out) does not and its dive went underground by 3.1 s (§28.2). Must run BEFORE any plan is trusted.
+  const measureOn = await page.evaluate((f) => {
+    if (f.measure !== undefined) return !!f.measure;
+    const a = window.APP;
+    try { if (typeof a.cinemaPathPlan === 'function') a.cinemaPathPlan(60); } catch (e) {}
+    const st = (a._getCinemaPathEdit && a._getCinemaPathEdit()) || null;
+    return !!(st && st.measure);
+  }, FLAGS);
+  if (has('nohome')) log('§CLI_BAKE_OPENING kept=load-camera (--nohome) — the datum gate was not consulted');
+  else if (!measureOn) log('§CLI_BAKE_OPENING kept=load-camera (Measure off — the datum gate does not apply; the film opens from the saved view)');
+  else {
+    const jg = await page.evaluate(() => {
+      const A = window.APP;
+      const rd = () => ({ x: +A.camera.position.x.toFixed(1), y: +A.camera.position.y.toFixed(1), z: +A.camera.position.z.toFixed(1) });
+      if (!A.flythruDatumBuild || !A.flythruDatumCompositeOntoCanvas) return { err: 'no datum module on APP' };
+      try { A.flythruDatumBuild(); } catch (e) { return { err: 'datum build: ' + e.message }; }
+      const cv = document.createElement('canvas');
+      cv.width = (A.renderer && A.renderer.domElement.width) || 1280; cv.height = (A.renderer && A.renderer.domElement.height) || 720;
+      const ctx = cv.getContext('2d');
+      const judge = () => {
+        A.camera.updateMatrixWorld(true); A.camera.updateProjectionMatrix();
+        try { A.flythruDatumCompositeOntoCanvas(ctx, cv.width, cv.height, 0, 100); } catch (e) { return { err: 'datum composite: ' + e.message }; }
+        const L = A._flythruDatumLast || {};
+        return { cam: rd(), drawn: L.drawn, bubbles: L.bubbles, bubblesTotal: L.bubblesTotal, overalls: L.overalls,
+                 full: L.bubblesTotal > 0 && L.bubbles === L.bubblesTotal && L.overalls === 3 };
+      };
+      const atLoad = judge(); if (atLoad.err) return atLoad;
+      if (atLoad.full) return { load: atLoad, pressed: false };
+      try { document.body.focus(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); }
+      catch (e) { return { load: atLoad, pressed: false, err: 'Home: ' + e.message }; }
+      const atHome = judge();
+      return { load: atLoad, pressed: true, home: atHome };
+    });
+    const f = (j) => j ? ('cam=' + JSON.stringify(j.cam) + ' bubbles=' + j.bubbles + '/' + j.bubblesTotal + ' overalls=' + j.overalls + '/3 drawn=' + j.drawn + (j.full ? ' FULL' : ' PARTIAL')) : 'n/a';
+    if (jg.err) log('§CLI_BAKE_OPENING INCONCLUSIVE ' + jg.err + ' — opening left as loaded');
+    else if (!jg.pressed) log('§CLI_BAKE_OPENING kept=saved-view ' + f(jg.load) + ' — the whole datum is legible from the saved view (§30)');
+    else log('§CLI_BAKE_OPENING moved=Home load[' + f(jg.load) + '] -> home[' + f(jg.home) + '] — the saved view did not show the whole datum (§30)' +
+             (jg.home && !jg.home.full ? ' ⚠ Home is not FULL either — the datum will open partially' : ''));
+    await new Promise(r => setTimeout(r, 300));
+  }
+  if (has('opening-only')) {   // dry run: judge the opening, bake nothing (no GPU cost)
+    log('§CLI_BAKE_OPENING_ONLY exit — no bake requested');
+    try { await browser.close(); } catch (e) {}
+    server.close(); process.exit(0);
+  }
   // §R11: §PHOTO_PREWARM runs on requestIdleCallback (timeout 8s) after streaming completes.
   // Give it its window BEFORE the bake so the claim is observable as shipped — the fallback path
   // (first fold doing the work itself) would mask it. Proceed after 20s either way, with a note.

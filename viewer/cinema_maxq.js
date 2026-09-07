@@ -1540,6 +1540,15 @@
         try { A.flythruDatumBuild(); }
         catch (eFDB) { console.warn('§FLYTHRU_DATUM_BUILD failed: ' + (eFDB && eFDB.message) + ' — the film bakes without the datum'); }
       }
+      // §SLAB_BEAT (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §26) — ONE floor plate marked as it
+      // is laid: depth-tested tint + X, shine-through label. Rides Measure with the datum. Needs the
+      // buildup state (nothing pops without it) and the SAME cursor clock the loop below drives
+      // (buildupTAt + buildupCursorAt with nFrames/fps), so the pop second it computes is the frame
+      // the film shows. Same never-kills-a-bake contract as its neighbours.
+      if (_measure && A.slabBeatBuild) {
+        try { A.slabBeatBuild(plan, _filmSecFull, _bkState, _filmSecFull); }
+        catch (eSB) { console.warn('§SLAB_BEAT_BUILD failed: ' + (eSB && eSB.message) + ' — the film bakes without the slab beat'); }
+      }
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }
         catch (eCF) { console.warn('§CLASH_FILM_BUILD failed: ' + (eCF && eCF.message) + ' — the film bakes without markers'); }
@@ -1690,7 +1699,14 @@
           // §CPE_BUILDUP_WORK_PACED: was `projectStart + t*span` — linear in DAYS. Now linear in
           // ELEMENTS, so the building rises at an even rate regardless of how the derived 4D order
           // clusters its timestamps.
-          var _bkMs = _workCursorAt(_bkT, _bkState, nFrames / fps);
+          // §CPE_CLIP_BUILDUP_FILM_T (2026-09-08, found by witness_slab_beat.js's cursor cross-check against the
+          // 3 s Clash+Measure bake): this passed `nFrames / fps` — the CLIP's length once §CPE_CLIP has scaled
+          // nFrames — so the §CPE_BUILDUP_ONSET_BLEND window read onsetU = min(0.5, 10/3.0) = 0.5 on a 3 s
+          // clip and 10/195.8 on the full film: a clip laid the building on a different clock from the film
+          // it claims to be a window of. Third instance of the same class (§CPE_CLIP_REVEAL_FILM_T,
+          // §CPE_CLIP_SUN_ARC_FILM_T): a clip is fewer frames of the SAME film, so the blend reads the FULL
+          // film's seconds. A full bake is unchanged (_filmSecFull === nFrames / fps when no clip is set).
+          var _bkMs = _workCursorAt(_bkT, _bkState, _filmSecFull);
           window.tmSetCursor(_bkMs);
           // §CPE_GHOST_GROUND: same film fraction the cursor rides, so the ghost cannot drift out of
           // step with what is actually placed.
@@ -1703,7 +1719,7 @@
             // cannot be handed a position that belongs to a different frame.
             if (_dayInfo) _dayInfo.pos = _dayPos;
           }
-          var _ggO = _ghostGroundAt(_bkT, nFrames / fps, _bkState, _bkMs);
+          var _ggO = _ghostGroundAt(_bkT, _filmSecFull, _bkState, _bkMs);   // §CPE_CLIP_BUILDUP_FILM_T — same class: the fade is in FILM seconds
           if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
             if (_dayInfo) console.log('§CPE_DAY_COUNTER frame=' + i + ' day=' + _dayInfo.day +
               ' of=' + _dayInfo.totalDays + ' pos=' + _dayInfo.pos + ' cursor=' + Math.round(_bkMs));
@@ -1735,6 +1751,11 @@
         if (_measure && A.flythruDatumAt) {
           try { A.flythruDatumAt(_tnFilm * _filmSecFull, _filmSecFull); }
           catch (eFDA) { if (!A._flythruDatumAtWarned) { A._flythruDatumAtWarned = true; console.warn('§FLYTHRU_DATUM_AT failed frame=' + i + ': ' + (eFDA && eFDA.message)); } }
+        }
+        // §SLAB_BEAT — envelope + label lifetime, same film clock as the datum above.
+        if (_measure && A.slabBeatAt) {
+          try { A.slabBeatAt(_tnFilm * _filmSecFull); }
+          catch (eSBA) { if (!A._slabBeatAtWarned) { A._slabBeatAtWarned = true; console.warn('§SLAB_BEAT_AT failed frame=' + i + ': ' + (eSBA && eSBA.message)); } }
         }
         if (A.flythruCuesApplyVisual) {
           try { A._flythruFilmSec = _tnFilm * _filmSecFull; A.flythruCuesApplyVisual(A._flythruFilmSec); }
@@ -2213,6 +2234,7 @@
       // follow the user into normal navigation. plan=null forces the restore.
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
+      try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD) {}   // §SLAB_BEAT — restores the tint, removes X + label
       _workPacingReset();
       // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
       // came within 4 m of a pair), then release the selector's state with the markers.
@@ -2289,6 +2311,7 @@
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR2) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD2) {}
+      try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD2) {}
       try { _workPacingReset(); } catch (e5) {}
       // §CLASH_FILM_P1 — same restore on the THROW path (review of #1678): a throw inside the loop
       // skips the in-try dispose above and would leave the marker InstancedMeshes in the user's

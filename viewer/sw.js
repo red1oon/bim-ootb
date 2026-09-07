@@ -163,7 +163,10 @@
 //   (the real shortcut is Alt+C) and added a "copy bake command" link that hands the user the exact
 //   `node cli_silent_bake.js ...` command for their own terminal — there is no server behind this
 //   page, so nothing here can run a bake for them.
-const CACHE_VERSION = 'v1162';   // bump on each deploy; per-change detail is the git commit message.
+// v1163 (2026-09-08) §SLAB_BEAT (MEP_CLASH_REVEAL_MOVIE.md §26): new viewer/cpe_slab_beat.js — one floor plate
+//   marked as it is laid (depth-tested tint + X, shine-through label), riding the Alt-C Measure checkbox; wired in
+//   cinema_maxq.js beside the datum; cli_silent_bake.js gains --measure/--no-measure (§28.1).
+const CACHE_VERSION = 'v1163';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -614,7 +617,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','../common/flythru_maths.js','../common/storey_raster.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','cpe_slab_beat.js','../common/flythru_maths.js','../common/storey_raster.js',
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',
