@@ -243,14 +243,41 @@ function setupCpeFlythruDatum(A) {
     // ── 1. MEASURE THE PLAN ON SCREEN, ONCE. Every offset below scales from it: fixed pixel offsets
     //       crowd a small plan and scatter a large one.
     var midX = (ext[0] + ext[1]) / 2, midY = (ext[2] + ext[3]) / 2;
-    var yA = pr(P(midX, ext[2], z0)), yB = pr(P(midX, ext[3], z0));
-    var xA = pr(P(ext[0], midY, z0)), xB = pr(P(ext[1], midY, z0));
-    var nearY = (yA.y >= yB.y) ? ext[2] : ext[3], farY = (nearY === ext[2]) ? ext[3] : ext[2];
-    var nearX = (xA.x <= xB.x) ? ext[0] : ext[1], farX = (nearX === ext[0]) ? ext[1] : ext[0];
     var c1 = pr(P(ext[0], ext[2], z0)), c2 = pr(P(ext[1], ext[2], z0)), c3 = pr(P(ext[0], ext[3], z0));
     var planPx = Math.max(Math.hypot(c2.x - c1.x, c2.y - c1.y), Math.hypot(c3.x - c1.x, c3.y - c1.y), 1);
     var scale = Math.max(0.6, Math.min(1.8, planPx / 620));
     var off1 = OFF1 * k * scale, off2 = OFF2 * k * scale, offB = OFFB * k * scale;
+
+    // ── 1b. WHICH EDGE THE ANNOTATION HANGS OFF — SCORED, not decided by a min/max test.
+    // USER (2026-09-07): "the axis bubbles why not use the open space in the foreground?"
+    // ⚠ THIS SUPERSEDES §24.4's "bottom by lowest projection, left by leftmost". Those two tests
+    // each looked at ONE coordinate of ONE midpoint, so on Hospital the letter row landed on the
+    // upper-left edge — laid ACROSS the building — while the whole foreground of the frame was empty.
+    // A draughtsman hangs the strings off the side with room on it. Score both candidate edges of
+    // each axis by where their OUTERMOST rung (the bubbles) actually lands:
+    //     inFrac  — how much of the row is inside the frame at all (an off-frame row is worthless)
+    //     depth   — how far down the frame it sits, which IS the foreground for a camera looking
+    //               down at a building: open ground below, model above.
+    // Ties are impossible in practice; when both edges score equal the lower-index edge wins, so the
+    // choice stays deterministic.
+    function edgeScore(vals, isX, ec, eo) {
+      var inN = 0, sy = 0, nP = 0;
+      for (var i = 0; i < vals.length; i++) {
+        var b = isX ? pr(P(vals[i], ec, z0)) : pr(P(ec, vals[i], z0));
+        var o = isX ? pr(P(vals[i], eo, z0)) : pr(P(eo, vals[i], z0));
+        if (!b.front) continue;
+        var dx = b.x - o.x, dy = b.y - o.y, L = Math.hypot(dx, dy) || 1;
+        var px = b.x + dx / L * offB, py = b.y + dy / L * offB;
+        nP++; sy += py;
+        if (px > 14 * k && px < w - 14 * k && py > 14 * k && py < h - 14 * k) inN++;
+      }
+      if (!nP) return -1;
+      return (inN / nP) * 2 + (sy / nP) / h;
+    }
+    var sY0 = edgeScore(_lines.gx, true, ext[2], ext[3]), sY1 = edgeScore(_lines.gx, true, ext[3], ext[2]);
+    var sX0 = edgeScore(_lines.gy, false, ext[0], ext[1]), sX1 = edgeScore(_lines.gy, false, ext[1], ext[0]);
+    var nearY = (sY1 > sY0) ? ext[3] : ext[2], farY = (nearY === ext[2]) ? ext[3] : ext[2];
+    var nearX = (sX1 > sX0) ? ext[1] : ext[0], farX = (nearX === ext[0]) ? ext[1] : ext[0];
 
     // ── 2. THE SHARED OCCUPANCY REGISTER. Everything that prints ink claims a rectangle; anything
     //       that cannot find room is DROPPED and COUNTED (silence would look like the pass stopped).
@@ -292,18 +319,56 @@ function setupCpeFlythruDatum(A) {
 
     // ── 4. AN AXIS. Gridline value -> its base point on the near edge, and its own outward vector
     //       (from the far edge toward the near one), so ladder rung N sits at base + out * offN.
-    function mkAxis(vals, isX) {
-      var near = isX ? nearY : nearX, far = isX ? farY : farX;
-      function base(v) { return pr(isX ? P(v, near, z0) : P(near, v, z0)); }
-      function inner(v) { return pr(isX ? P(v, far, z0) : P(far, v, z0)); }
+    // The axis is defined by two closures — where a value sits on the annotated edge, and where the
+    // SAME value sits on the opposite edge. Their difference is that value's outward vector, so every
+    // rung of the ladder is one scalar step along it. Nothing here knows about X, Y or Z.
+    function mkAxis(vals, base, inner, lab) {
       function out(v) {
         var b = base(v), i = inner(v), dx = b.x - i.x, dy = b.y - i.y, L = Math.hypot(dx, dy) || 1;
         return { x: dx / L, y: dy / L };
       }
       function at(v, off) { var b = base(v), d = out(v); return { x: b.x + d.x * off, y: b.y + d.y * off, front: b.front }; }
-      return { vals: vals, isX: isX, base: base, out: out, at: at };
+      return { vals: vals, base: base, out: out, at: at, lab: lab };
     }
-    var axX = mkAxis(_lines.gx, true), axY = mkAxis(_lines.gy, false);
+    var axX = mkAxis(_lines.gx, function (v) { return pr(P(v, nearY, z0)); }, function (v) { return pr(P(v, farY, z0)); },
+                     function (i) { return label(i, false); });
+    var axY = mkAxis(_lines.gy, function (v) { return pr(P(nearX, v, z0)); }, function (v) { return pr(P(farX, v, z0)); },
+                     function (i) { return label(i, true); });
+    // ── THE Z AXIS. USER (2026-09-07): "need consistency - the Z plane has to have same style bubbles
+    // and proper." It was a different object entirely — free text tags reading "Level 4   +16.000",
+    // staggered into two columns, with none of the ladder the ground uses. It is now the SAME axis
+    // type: bubble outermost carrying the storey's own ref, tier 2 the overall height bubble-to-
+    // bubble, tier 1 the storey-height chain. The ref is EXTRACTED from the storey name (the trailing
+    // "7A" of "Level 7A"), never invented; a name with no number falls back to its index.
+    var _lvz = (_lines.levels || []);
+    // ⚠ A BARE NUMERAL IN A Z BUBBLE READS AS A GRIDLINE. The X axis already owns 1..15, so storey 3
+    // and gridline 3 came out as the same mark in the same style. The prefix is EXTRACTED from the
+    // storey's own name — the initial of its leading word ("Level 4" -> L4, "Storey 4" -> S4) — not a
+    // convention invented here. A name with no leading word falls back to a bare index.
+    function storeyRef(i) {
+      var nm = String((_lvz[i] || {}).name || '');
+      var m = nm.match(/([0-9]+[A-Za-z]?)\s*$/), w = nm.match(/^\s*([A-Za-z])/);
+      return (w ? w[1].toUpperCase() : '') + (m ? m[1] : String(i + 1));
+    }
+    // Which end of the level rules the stack hangs off — scored the same way the ground edges are.
+    var zEndScore = [0, 0];
+    for (var zE = 0; zE < 2; zE++) {
+      var ec = zE ? farX : nearX, eo = zE ? nearX : farX, inN = 0, sy = 0, nP = 0;
+      for (var zi = 0; zi < _lvz.length; zi++) {
+        var b0 = pr(P(ec, farY, _lvz[zi].z)), o0 = pr(P(eo, farY, _lvz[zi].z));
+        if (!b0.front) continue;
+        var ddx = b0.x - o0.x, ddy = b0.y - o0.y, dL = Math.hypot(ddx, ddy) || 1;
+        var qx = b0.x + ddx / dL * offB, qy = b0.y + ddy / dL * offB;
+        nP++; sy += qy;
+        if (qx > 14 * k && qx < w - 14 * k && qy > 14 * k && qy < h - 14 * k) inN++;
+      }
+      zEndScore[zE] = nP ? (inN / nP) * 2 + (sy / nP) / h : -1;
+    }
+    var zNearX = (zEndScore[1] > zEndScore[0]) ? farX : nearX, zFarX = (zNearX === nearX) ? farX : nearX;
+    var axZ = mkAxis(_lvz.map(function (L) { return L.z; }),
+                     function (v) { return pr(P(zNearX, farY, v)); },
+                     function (v) { return pr(P(zFarX, farY, v)); },
+                     storeyRef);
 
     // ── 5. ONE STRIDE PER AXIS for the chain SEGMENTS (readability floor), and a second, coarser
     //       stride for the FIGURES (ruling 4). The chain still spans 0 -> N -> 2N -> last, so it sums
@@ -327,6 +392,11 @@ function setupCpeFlythruDatum(A) {
       if (idx[idx.length - 1] !== last) {
         if (last - idx[idx.length - 1] < str) idx[idx.length - 1] = last; else idx.push(last);
       }
+      // ⚠ ...but absorbing must never eat the ONLY interval. MEASURED on HHS's Z axis: 3 storey rules
+      // with stride 3 gave [0], the stub rule replaced it with [2], and a one-entry list has no
+      // segments at all — §FLYTHRU_DATUM_CHAIN went 'Z storeys=0.000 overall=7.210 CHAIN MISMATCH'.
+      // Two ends are the minimum a chain can be.
+      if (idx.length < 2 && nv > 1) idx = [0, last];
       return idx;
     }
     var ixX = idxFor(_lines.gx.length, strX), ixY = idxFor(_lines.gy.length, strY);
@@ -378,7 +448,16 @@ function setupCpeFlythruDatum(A) {
         // 8 to the overall's corridor; moving it INSIDE fixed the collisions but put every bay value
         // over the model. Neither was the real fault — the LADDER was too tight. With tier 2 at 80 px
         // the outside is free again, which is where the figure belongs.
-        else { var F = ax.at((vA + vB) / 2, e + 9 * k); fig = placeText(txt, F.x, F.y, ux, uy, size, false, 2); }
+        else {
+          // ⚠ TWO TRIES, outer then inner. MEASURED: Hospital's Z chain drew 3 of 3 segments and
+          // zero figures — the overall's own rotated figure sits mid-stack and its AABB swallowed
+          // every storey height. The strip inside tier 1 is empty by construction, so a figure that
+          // cannot take its ISO position outside the line takes the one inside it rather than
+          // vanishing. Both are on the line's own angle; neither is a box.
+          var F = ax.at((vA + vB) / 2, e + 9 * k);
+          fig = placeText(txt, F.x, F.y, ux, uy, size, false, 2);
+          if (!fig) { var F2 = ax.at((vA + vB) / 2, e - 11 * k); fig = placeText(txt, F2.x, F2.y, ux, uy, size, false, 2); }
+        }
         ctx.globalAlpha = op * 0.62;
       }
       ctx.strokeStyle = INK; ctx.lineWidth = 1.1 * k;
@@ -412,18 +491,17 @@ function setupCpeFlythruDatum(A) {
     //       else can take it (§24.3). Their refs name the two end bubbles: "1 - 15    95,915".
     function overall(ax) {
       var v = ax.vals; if (v.length < 2) return 0;
-      var useLet = !ax.isX;
       return dim(ax, v[0], v[v.length - 1], v[v.length - 1] - v[0], 2,
-                 label(0, useLet), label(v.length - 1, useLet), true) ? 1 : 0;
+                 ax.lab(0), ax.lab(v.length - 1), true) ? 1 : 0;
     }
-    var oX = overall(axX), oY = overall(axY);
-    _ov = oX + oY; n += _ov;
+    var oX = overall(axX), oY = overall(axY), oZ = overall(axZ);
+    _ov = oX + oY + oZ; n += _ov;
 
     // ── 8. BUBBLES, outermost rung, ALL-OR-NONE PER AXIS. A row of bubbles stranded on the frame
     //       boundary is worse than none. They sit at the SAME indices the chain ticks at, so bubble
     //       and chain read as one structure rather than two overlaid drawings.
     function inFrame(p2) { return p2.front && p2.x > 14 * k && p2.x < w - 14 * k && p2.y > 14 * k && p2.y < h - 14 * k; }
-    function bubbleSet(ax, idx, useLet) {
+    function bubbleSet(ax, idx) {
       var v = ax.vals;
       var ok = idx.filter(function (i2) { return inFrame(ax.at(v[i2], offB)); }).length;
       if (ok < Math.ceil(idx.length * 0.6)) return { drawn: 0, set: false };
@@ -459,13 +537,14 @@ function setupCpeFlythruDatum(A) {
         ctx.globalAlpha = op;
         ctx.font = fontOf(12 * k); ctx.fillStyle = INK;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(label(i2, useLet), p2.x, p2.y + 0.5 * k);
+        ctx.fillText(ax.lab(i2), p2.x, p2.y + 0.5 * k);
         drawn++;
       });
       return { drawn: drawn, set: true };
     }
-    var bX = bubbleSet(axX, ixX, false), bY = bubbleSet(axY, ixY, true);
-    n += bX.drawn + bY.drawn;
+    var ixZ = idxFor(axZ.vals.length, strideFor(axZ));
+    var bX = bubbleSet(axX, ixX), bY = bubbleSet(axY, ixY), bZ = bubbleSet(axZ, ixZ);
+    n += bX.drawn + bY.drawn + bZ.drawn;
 
     // ── 9. THE BAY CHAIN. Every strided segment draws its line and ticks; only a REGULAR SAMPLE
     //       carries a figure (ruling 4 — "u need not label every small inner lengths"). Regularly
@@ -484,75 +563,17 @@ function setupCpeFlythruDatum(A) {
       });
       return { drew: drew, figs: figs, sum: sum, segs: segs.length, figEvery: figEvery };
     }
-    var cX = chain(axX, ixX), cY = chain(axY, ixY);
-    _bay = cX.drew + cY.drew; _fig = cX.figs + cY.figs; n += _bay;
+    var cX = chain(axX, ixX), cY = chain(axY, ixY), cZ = chain(axZ, ixZ);
+    _bay = cX.drew + cY.drew + cZ.drew; _fig = cX.figs + cY.figs + cZ.figs; n += _bay;
 
-    // ── 10. LEVEL TAGS on the upright. USER: the ground has too many lines to name, but "the upright
-    //        storeys are few and well known, easily given by the DB". A level datum reads name +
-    //        elevation, and the elevation printed is the LOCAL one (Level 2 +6.000), never the 156 m
-    //        global figure the geometry needs. Parallel to its own rule, like every other figure.
-    //        Seeded LOWEST and HIGHEST first so a crowded stack thins from the middle, not the top.
-    // ⚠ ORDER DECIDES WHICH ONES SURVIVE. Bottom-up seeding kept the lowest floors and lost the top;
-    // MEASURED, Hospital t=0: 8 rules span ~120 px at their near end, so ~14 px of text plus padding
-    // lets only 4-6 fit. Bisecting — ground, top, middle, quarters — thins EVENLY, which is the same
-    // reason the bay chain uses one stride: regular reads as intentional, ragged reads as broken.
-    var lv = (_lines.levels || []), lvOrder = (function (nv) {
-      if (nv <= 0) return [];
-      var used = [], ord = [], qq = [[0, nv - 1]];
-      function take(i) { if (i >= 0 && i < nv && !used[i]) { used[i] = 1; ord.push(i); } }
-      take(0); take(nv - 1);
-      while (qq.length) { var sg = qq.shift(); if (sg[1] - sg[0] < 2) continue; var m = (sg[0] + sg[1]) >> 1; take(m); qq.push([sg[0], m]); qq.push([m, sg[1]]); }
-      for (var i2 = 0; i2 < nv; i2++) take(i2);
-      return ord;
-    })(lv.length);
-    var _lvDrawn = 0, _lvEnd = 0;
-    // ⚠ ONE END FOR THE WHOLE STACK, decided by a DRY RUN. Letting each tag fall back independently
-    // got 7 of 8 on Hospital but scattered them across BOTH ends of the rules — four on the left,
-    // three on the right — which reads as debris, not a stack. This is the same ruling the bubbles
-    // already follow (§24.3, all-or-none per axis): a level datum column belongs on ONE side. So
-    // score both ends against a scratch register and commit the side that carries more.
-    function placeLevels() { var c = 0; lvOrder.forEach(function (i2) { if (oneLevel(lv[i2])) c++; }); return c; }
-    var _lvScore = [0, 0];
-    for (var eTry = 0; eTry < 2; eTry++) {
-      _dry = true; _reg = occ.slice(); _lvEnd = eTry; _lvScore[eTry] = placeLevels();
-      _dry = false; _reg = occ;
-    }
-    _lvEnd = (_lvScore[1] > _lvScore[0]) ? 1 : 0;
-    function oneLevel(L) {
-      var zTxt = (L.zRaw == null ? L.z : L.zRaw);
-      var txt = L.name + '   ' + (zTxt >= 0 ? '+' : '') + zTxt.toFixed(3);
-      ctx.font = fontOf(11 * k);
-      var tw = ctx.measureText(txt).width;
-      var a2, ux, uy;
-      // ⚠ STAGGER IN TWO COLUMNS, don't surrender and don't escalate. Trying ONE position and
-      // dropping on collision left 2 of 8 tags (the rules are ~17 px apart at their near end and the
-      // text ~14 px tall). Four escalating steps got 4 tags but put them at four different distances,
-      // which reads as scatter rather than a stack. A drawing staggers crowded datums into TWO ranks:
-      // near column, far column, alternating. Two positions, nothing further.
-      var aE = pr(P(_lvEnd ? farX : nearX, farY, L.z)), bE = pr(P(_lvEnd ? nearX : farX, farY, L.z));
-      if (!aE.front) return;
-      var dxE = bE.x - aE.x, dyE = bE.y - aE.y, LnE = Math.hypot(dxE, dyE) || 1;
-      var uxE = -dxE / LnE, uyE = -dyE / LnE;
-      var fig = null, dUsed = 0;
-      for (var st2 = 0; st2 < 2 && !fig; st2++) {
-        dUsed = tw / 2 + 12 * k + st2 * (tw + 14 * k);
-        fig = placeText(txt, aE.x + uxE * dUsed, aE.y + uyE * dUsed, -uxE, -uyE, 11 * k, false, 1.5);
-      }
-      if (!fig) return;
-      if (_dry) return true;                            // scored only — no ink in a trial pass
-      a2 = aE; ux = uxE; uy = uyE;
-      // ⚠ THE LEADER MUST REACH THE TEXT. A tag pushed to the far column with an 8 px stub still
-      // attached to the rule end is a number floating in the sky — the association is the whole
-      // point ("well laid out lines bubbles will point to the right picture").
-      ctx.globalAlpha = op * 0.62; ctx.strokeStyle = INK; ctx.lineWidth = 1.1 * k;
-      var lEnd = dUsed - tw / 2 - 4 * k;
-      ln(a2.x, a2.y, a2.x + ux * lEnd, a2.y + uy * lEnd);                // leader, all the way
-      ln(a2.x - uy * 4 * k, a2.y + ux * 4 * k, a2.x + uy * 4 * k, a2.y - ux * 4 * k);   // datum tick
-      ctx.globalAlpha = op;
-      _lvDrawn++; n++;
-      return true;
-    }
-    placeLevels();
+    // ── 10. THE Z LADDER IS THE SAME LADDER (see mkAxis above) — nothing special-cases it any more.
+    //        USER: "need consistency - the Z plane has to have same style bubbles and proper."
+    //        What was here instead: free "Level 4   +16.000" strings, staggered into two columns,
+    //        with their own dry-run side-picker, their own leader, their own tick and their own font.
+    //        Four bespoke mechanisms for one axis, and none of them the ones the ground uses. Gone.
+    //        The storey rules now carry bubbles (the storey's own ref), a tier-1 chain of
+    //        FLOOR-TO-FLOOR heights and a tier-2 OVERALL height spanning bubble to bubble — read at
+    //        the same offsets, in the same ink, at the same weight, by the same code.
     ctx.restore();
 
     // ── 11. THE CHECK A DRAWING IS VERIFIED BY: the overall must equal the sum of the bays. Asserted
@@ -560,21 +581,26 @@ function setupCpeFlythruDatum(A) {
     var ovX = _lines.gx[_lines.gx.length - 1] - _lines.gx[0], ovY = _lines.gy[_lines.gy.length - 1] - _lines.gy[0];
     if (_chainKey !== 1) {
       _chainKey = 1;
-      var ex = Math.abs(cX.sum - ovX), ey = Math.abs(cY.sum - ovY);
+      var ovZ = axZ.vals.length > 1 ? axZ.vals[axZ.vals.length - 1] - axZ.vals[0] : 0;
+      var ex = Math.abs(cX.sum - ovX), ey = Math.abs(cY.sum - ovY), ez = Math.abs(cZ.sum - ovZ);
       console.log('§FLYTHRU_DATUM_CHAIN X bays=' + cX.sum.toFixed(3) + 'm overall=' + ovX.toFixed(3) +
         'm delta=' + ex.toFixed(4) + ' | Y bays=' + cY.sum.toFixed(3) + 'm overall=' + ovY.toFixed(3) +
-        'm delta=' + ey.toFixed(4) + ' -> ' + ((ex < 0.001 && ey < 0.001) ? 'CHAIN ADDS UP' : 'CHAIN MISMATCH'));
+        'm delta=' + ey.toFixed(4) + ' | Z storeys=' + cZ.sum.toFixed(3) + 'm overall=' + ovZ.toFixed(3) +
+        'm delta=' + ez.toFixed(4) + ' -> ' + ((ex < 0.001 && ey < 0.001 && ez < 0.001) ? 'CHAIN ADDS UP' : 'CHAIN MISMATCH'));
     }
     if (_ov < 2) console.log('§FLYTHRU_DATUM_OVERALL declined=' + (2 - _ov) + ' reasons=[' + _ovDiag.join('; ') + ']');
     // PRIMAL LAW §4 — a pass that draws nothing must SAY nothing drew, or it is indistinguishable
     // from one that worked.
     console.log('§FLYTHRU_DATUM_MARKS ' + (n ? 'drawn=' + n : 'NOTHING drawn=0') + ' filmSec=' + filmSec.toFixed(2) +
-      ' overalls=' + _ov + '/2 baySegs=' + _bay + '/' + (cX.segs + cY.segs) + ' bayFigures=' + _fig +
+      ' overalls=' + _ov + '/3 baySegs=' + _bay + '/' + (cX.segs + cY.segs) + ' bayFigures=' + _fig +
       ' figEvery=' + cX.figEvery + '/' + cY.figEvery + ' stride=' + strX + '/' + strY +
       ' bubbleSets=' + (bX.set ? 'X' : '-') + (bY.set ? 'Y' : '-') + ' bubbles=' + (bX.drawn + bY.drawn) +
       ' clamped=' + _bubClamp + ' droppedOffFrame=' + _bubDrop +
-      ' levelTags=' + _lvDrawn + '/' + lv.length + '(end=' + (_lvEnd ? 'far' : 'near') + ' scored ' + _lvScore[0] + '/' + _lvScore[1] + ')' + ' collisionsDropped=' + _coll +
-      ' scale=' + scale.toFixed(2) + ' edges=(bottomY@' + nearY.toFixed(1) + ', leftX@' + nearX.toFixed(1) + ')');
+      ' zRules=' + axZ.vals.length + ' zBubbles=' + bZ.drawn + ' zSegs=' + cZ.drew + '/' + cZ.segs + ' zFigures=' + cZ.figs +
+      ' zEnd=' + (zNearX === nearX ? 'near' : 'far') + '(scored ' + zEndScore[0].toFixed(2) + '/' + zEndScore[1].toFixed(2) + ')' +
+      ' collisionsDropped=' + _coll +
+      ' scale=' + scale.toFixed(2) + ' edges=(numeralsOn Y@' + nearY.toFixed(1) + ' scored ' + sY0.toFixed(2) + '/' + sY1.toFixed(2) +
+      ', lettersOn X@' + nearX.toFixed(1) + ' scored ' + sX0.toFixed(2) + '/' + sX1.toFixed(2) + ')');
     return n;
   };
 

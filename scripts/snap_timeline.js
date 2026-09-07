@@ -112,33 +112,30 @@ let tReady = T0;
     console.log('§SNAP_STREAM SKIPPED (--nostream) — dbReady=' + ok + '. The camera and every DB-derived ' +
                 'layer are exact; the SCENE is not the film\'s (no buildup), so occlusion and mesh counts are VACUOUS.');
     if (!ok) console.log('§SNAP_WARN --nostream gave up waiting for the DB — every layer below is VACUOUS');
-    // ⚠ AND THE CAMERA IS NOT FREE EITHER. MEASURED: --nostream first put Hospital t=0 at
-    // (135.8,181.0,135.8) against the streamed (85.5,70.0,58.9) — a completely different film.
-    // Cause, straight out of §CINEMA_PIVOT's own log: with nothing streamed, A.controls.target is
-    // still at the ORIGIN and PASSES the planner's plausibility test (offCentre 19.7 < boundingR/2 =
-    // 45.7), so the whole path orbits (0,0,0) instead of the building.
-    // ⚠ PARKING THE TARGET FAR AWAY IS NOT THE FIX. It worked on Hospital only because Hospital has
-    // an AUTHORED cinema_path (bands=4, absolute coordinates); HHS's path is DERIVED, so it followed
-    // the parked target and t=0 came out at (88452,88455,88452). The fix is to give the viewer the
-    // same home framing it computes for itself after a stream — scene.js:_homeFillFrame — from the
-    // DB alone: whole-building element_transforms bbox, dist = max(80, envelope), camera at
-    // ctr + dist*(0.6, 0.8, 0.6), target at ctr. Same formula, no second invented framing.
-    const fit = await p.evaluate(() => {
-      const A = window.APP;
-      try {
-        const b = A.dbQuery('SELECT MIN(center_x),MAX(center_x),MIN(center_y),MAX(center_y),MIN(center_z),MAX(center_z) FROM element_transforms')[0];
-        if (b == null || b[0] == null) return null;
-        const envelope = Math.max(b[1] - b[0], b[3] - b[2], b[5] - b[4]);
-        const dist = Math.max(80, envelope);
-        const ctr = A.ifc2three((b[0] + b[1]) / 2, (b[2] + b[3]) / 2, (b[4] + b[5]) / 2);
-        A.camera.position.set(ctr.x + dist * 0.6, ctr.y + dist * 0.8, ctr.z + dist * 0.6);
-        A.controls.target.set(ctr.x, ctr.y, ctr.z);
-        A.controls.update();
-        return { envelope: +envelope.toFixed(1), dist: +dist.toFixed(1) };
-      } catch (e) { return null; }
+    // ⚠ AND THE CAMERA IS NOT FREE EITHER — THIS IS WHY --nostream IS NOT EVIDENCE ON ITS OWN.
+    // With nothing streamed, A.controls.target is still at the ORIGIN and PASSES §CINEMA_PIVOT's
+    // plausibility test (offCentre 19.7 < boundingR/2 = 45.7), so the path orbits (0,0,0): Hospital
+    // t=0 came out at (135.8,181.0,135.8) against the streamed (85.5,70.0,58.9).
+    // THREE FIXES WERE TRIED. All are recorded because each looked right and each was wrong:
+    // (a) park the target far so the planner takes its arc-bbox-centre branch — with the controls
+    //     LIVE, OrbitControls repositions the camera to keep its offset and HHS flew to (88452,...);
+    // (b) imitate scene.js _homeFillFrame from the DB — it CANNOT be imitated, it centres on
+    //     A.buildingCentres which only streaming populates. The substitute camera changed the PLAN
+    //     (§CINEMA_PIVOT reads A.camera.position), poseAt drifted to (83.2,121.0,106.9), and whether
+    //     this script or the app's own render loop won the race decided which pose the frame used:
+    //     THREE IDENTICAL RUNS PRODUCED TWO DIFFERENT FRAMES;
+    // (c) disable the controls and park the target — the drawn frame became stable at the streamed
+    //     pose, but only because the app's loop overrides this script. poseAt itself still alternated
+    //     between (85.5,70.0,58.9) and the parked (88451,88457,88451).
+    // SO: disable the controls (nothing drags the camera) and CHANGE NOTHING ELSE, then STATE the
+    // divergence instead of hiding it. §SNAP_POSE prints poseAt AND the camera actually used; when
+    // they differ the frame is NOT the film's framing and the run must not be used to judge layout.
+    // Use --nostream to iterate cheaply; confirm on a streamed run before believing a frame.
+    await p.evaluate(() => {
+      try { const A = window.APP; if (A.controls) { A.controls.enableDamping = false; A.controls.enabled = false; } } catch (e) {}
     });
-    console.log('§SNAP_FIT ' + (fit ? 'home framing from the DB, envelope=' + fit.envelope + 'm dist=' + fit.dist + 'm (scene.js _homeFillFrame formula)'
-                                   : 'FAILED — the camera keeps the viewer default and §CINEMA_PIVOT may orbit the origin'));
+    console.log('§SNAP_FIT controls disabled; camera left as the page set it. ⚠ --nostream framing is ' +
+                'APPROXIMATE — compare poseAt with cameraAtComposite in §SNAP_POSE before trusting a frame.');
   } else {
     const parts = await p.evaluate(() => (window.APP.dbQuery('SELECT DISTINCT building FROM elements_meta') || []).map(r => r[0]));
     for (const bb of parts) await p.evaluate(x => { try { window.APP.streamBuilding(x); } catch (e) {} }, bb);
@@ -247,9 +244,11 @@ let tReady = T0;
         } catch (e) { console.log('§SNAP_COMPOSITE FAILED ' + e.message + ' — falling back to a plain screenshot'); }
       }
       const day = (A.dayCounterAt && cursorMs != null) ? 'cursor=' + new Date(cursorMs).toISOString().slice(0, 10) : 'cursor=n/a';
+      var _dCam = Math.hypot(A.camera.position.x - pz.x, A.camera.position.y - pz.y, A.camera.position.z - pz.z);
       console.log('§SNAP_POSE t=' + t.toFixed(2) + ' poseAt=(' + pz.x.toFixed(1) + ',' + pz.y.toFixed(1) + ',' + pz.z.toFixed(1) +
                   ') cameraAtComposite=(' + A.camera.position.x.toFixed(1) + ',' + A.camera.position.y.toFixed(1) + ',' + A.camera.position.z.toFixed(1) +
-                  ') target=(' + pz.tx.toFixed(1) + ',' + pz.ty.toFixed(1) + ',' + pz.tz.toFixed(1) + ')');
+                  ') delta=' + _dCam.toFixed(1) + 'm ' + (_dCam < 0.5 ? 'AGREE' : '⚠ DISAGREE — the frame is NOT this plan\'s framing') +
+                  ' target=(' + pz.tx.toFixed(1) + ',' + pz.ty.toFixed(1) + ',' + pz.tz.toFixed(1) + ')');
       console.log('§SNAP_FRAME t=' + t.toFixed(2) + 's u=' + u.toFixed(4) + ' ' + day +
                   ' visibleMeshes=' + visible + ' clashLabels=' + lblN + ' composited=' + (dataUrl ? 'yes' : 'no'));
       return { t: t, u: u, cursorMs: cursorMs, visible: visible, clashLabels: lblN, dataUrl: dataUrl,
