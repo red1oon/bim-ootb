@@ -154,8 +154,14 @@ function setupCpeFlythruCues(A) {
     var envBox = dbExtToSceneBox(meas.ext);
     if (envBox && meas.ext) {
       var e = meas.ext;
-      _cues.push({ key: 'envelope', box: envBox, label: 'Building Envelope — ' + n2(e.sx) + ' × ' + n2(e.sy) + ' × ' + n2(e.sz) + ' m' +
-               (meas.ground ? '  ·  Ground ' + n0(meas.ground) + ' m²' : '') });
+      _cues.push({ key: 'envelope', box: envBox,
+        label: 'Building Envelope — ' + n2(e.sx) + ' × ' + n2(e.sy) + ' × ' + n2(e.sz) + ' m' +
+               (meas.ground ? '  ·  Ground ' + n0(meas.ground) + ' m²' : ''),
+        // X/Y/Z are spans -> arrowed lines. Ground area and volume are SCALARS with no span to
+        // arrow (§20.11), so they go in the panel.
+        spanAxes: ['x', 'z', 'y'], title: 'Building Envelope',
+        dims: meas.ground ? ['Ground  ' + n0(meas.ground) + ' m²',
+                             'Envelope  ' + n0(meas.ground * e.sz) + ' m³'] : [] });
     } else { console.log('§FLYTHRU_CUE_DROP envelope — no DB extents or no A.ifc2three'); }
 
     // B2 STOREY — the storey with the largest WALKABLE area (derived, never hardcoded; §12).
@@ -167,7 +173,9 @@ function setupCpeFlythruCues(A) {
     if (bestS) {
       var sm = meas.storeys[bestS], sBox = dbExtToSceneBox(sm.ext);
       if (sBox) _cues.push({ key: 'storey', box: sBox,
-        label: bestS + ' — Floor ' + n0(sm.gross) + ' m²  ·  Walkable ' + n0(sm.walk) + ' m²' });
+        label: bestS + ' — Floor ' + n0(sm.gross) + ' m²  ·  Walkable ' + n0(sm.walk) + ' m²',
+        spanAxes: ['x', 'z'], title: bestS,
+        dims: ['Floor  ' + n0(sm.gross) + ' m²', 'Walkable  ' + n0(sm.walk) + ' m²'] });
     }
 
     // B4/B5 — rooms already arrive in THREE units and already carry a category (navigate_find.js).
@@ -197,8 +205,10 @@ function setupCpeFlythruCues(A) {
     corr.sort(function (a, b) { return b.long - a.long; });
     if (corr.length) _cues.push({ key: 'corridor', opts: corr.map(function (r) {
       var rs = r.box.getSize(new T.Vector3());
+      var cs = r.box.getSize(new T.Vector3());
       return { box: r.box.clone(), guid: r.guid,
-               label: 'Corridor — ' + n2(r.long) + ' m long  ·  ' + n2(r.short) + ' m wide' };
+               label: 'Corridor — ' + n2(r.long) + ' m long  ·  ' + n2(r.short) + ' m wide',
+               spanAxes: [cs.x >= cs.z ? 'x' : 'z'], dims: [] };
     }) });
 
     // The room cue: biggest genuine room that is NOT the corridor pick. 9 m² is the floor below which
@@ -209,7 +219,10 @@ function setupCpeFlythruCues(A) {
       _cues.push({ key: 'room', opts: habs.map(function (r) {
         var hs = r.box.getSize(new T.Vector3());
         return { box: r.box.clone(), guid: r.guid,
-                 label: 'Room — ' + n0(r.area) + ' m²  ·  ' + n2(hs.x) + ' × ' + n2(hs.z) + ' m' };
+                 label: 'Room — ' + n0(r.area) + ' m²  ·  ' + n2(hs.x) + ' × ' + n2(hs.z) + ' m',
+                 spanAxes: [], title: 'Room',
+                 dims: [n2(hs.x) + ' × ' + n2(hs.z) + ' m', 'Area  ' + n0(r.area) + ' m²',
+                        'Volume  ' + n0(r.area * hs.y) + ' m³'] };
       }) });
     } else if (rooms.length) {
       console.log('§FLYTHRU_CUES_ROOM DROPPED — no room >= 9 m2 with aspect < 3 (largest ' +
@@ -255,7 +268,8 @@ function setupCpeFlythruCues(A) {
                       (endPrev > -Infinity ? endPrev.toFixed(2) + 's' : 'film start') + ' — [' + seen.join(' | ') + ']');
           continue;
         }
-        d.box = pick.box; d.label = pick.label; d.at = start; kept.push(d); endPrev = start + SPAN;
+        d.box = pick.box; d.label = pick.label; d.at = start;
+        d.spanAxes = pick.spanAxes || d.spanAxes || []; d.dims = pick.dims || d.dims || []; d.title = pick.title || d.title; kept.push(d); endPrev = start + SPAN;
         console.log('§FLYTHRU_CUE_PLACE ' + d.key + ' at=' + start.toFixed(2) + 's cand=' + opts.length +
                     ' span=' + pick._span.toFixed(1) + 'm windows=' + pick._wins +
                     ' dMax=' + (A.flythruMaxDist ? A.flythruMaxDist(pick._span).toFixed(0) : '?') + 'm "' + pick.label + '"');
@@ -334,6 +348,133 @@ function setupCpeFlythruCues(A) {
     grp.children[1].material.opacity = 0.95 * a.opacity;
     return { key: a.cue.key, opacity: a.opacity };
   };
+
+
+  // ══ §FLYTHRU_DIM_CUE — THE MARKING. Composited onto the bake's 2D pass, never the WebGL canvas ══
+  // Ported from probe_flythru_dims_still.js:197-222, which the user accepted visually. That geometry
+  // only ever lived in a probe; shipping a plain box + caption instead is what made the first preview
+  // "a bad job" (user, 2026-09-07).
+  //
+  // §20.11 — FORM FOLLOWS HOW MANY NUMBERS THERE ARE, not taste:
+  //   a SINGLE number  -> one arrowed dimension line, which points at what it measured
+  //   a SET of numbers -> one panel; five strings round a room is clutter, and a SCALAR (area,
+  //                       volume) has no span to arrow in the first place.
+  // Ink is §7's: yellow on dark. Pixel constants scale with height so a 1440p frame is not hairline.
+  var EXT = 13, AR = 11, ARW = 4.5, FS = 15;
+
+  function proj(v, cam, w, h) {
+    var p = v.clone().project(cam);
+    return { x: (p.x * 0.5 + 0.5) * w, y: (-p.y * 0.5 + 0.5) * h, z: p.z };
+  }
+  // The three box edges NEAREST the camera, so the triad reads as an orthogonal corner instead of
+  // crossing the model. Each is [a,b] in world space plus the axis it measures.
+  function edgeSpans(box, cam) {
+    var T = window.THREE, mn = box.min, mx = box.max, c = cam.position;
+    var xz = (c.z > (mn.z + mx.z) / 2) ? mx.z : mn.z, zx = (c.x > (mn.x + mx.x) / 2) ? mx.x : mn.x;
+    return [
+      { axis: 'x', m: mx.x - mn.x, a: new T.Vector3(mn.x, mn.y, xz), b: new T.Vector3(mx.x, mn.y, xz) },
+      { axis: 'z', m: mx.z - mn.z, a: new T.Vector3(zx, mn.y, mn.z), b: new T.Vector3(zx, mn.y, mx.z) },
+      { axis: 'y', m: mx.y - mn.y, a: new T.Vector3(zx, mn.y, xz), b: new T.Vector3(zx, mx.y, xz) }
+    ];
+  }
+
+  function drawDim(ctx, A2, B2, metres, ink, k) {
+    var dx = B2.x - A2.x, dy = B2.y - A2.y, L = Math.hypot(dx, dy);
+    if (L < 24 * k) return false;                        // too short to read — decline, don't scribble
+    var ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+    var ext = EXT * k, ar = AR * k, arw = ARW * k, fs = FS * k;
+    ctx.save();
+    ctx.strokeStyle = ink; ctx.fillStyle = ink; ctx.lineWidth = 1.6 * k;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    var line = function (x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
+    line(A2.x + nx * ext, A2.y + ny * ext, A2.x - nx * ext, A2.y - ny * ext);   // witness line
+    line(B2.x + nx * ext, B2.y + ny * ext, B2.x - nx * ext, B2.y - ny * ext);
+    var mm = Math.round(metres * 1000).toLocaleString('en-US') + ' mm';
+    ctx.font = '700 ' + fs.toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+    var tw = ctx.measureText(mm).width + 14 * k, th = 21 * k, gap = tw / 2 + 6 * k;
+    var mx2 = (A2.x + B2.x) / 2, my2 = (A2.y + B2.y) / 2;
+    if (L > tw + 24 * k) {                               // value BREAKS the line at its midpoint
+      line(A2.x, A2.y, mx2 - ux * gap, my2 - uy * gap);
+      line(mx2 + ux * gap, my2 + uy * gap, B2.x, B2.y);
+    } else line(A2.x, A2.y, B2.x, B2.y);
+    var tri = function (px, py, s) {                     // arrow heads turned INWARD
+      ctx.beginPath(); ctx.moveTo(px, py);
+      ctx.lineTo(px + s * ux * ar + nx * arw, py + s * uy * ar + ny * arw);
+      ctx.lineTo(px + s * ux * ar - nx * arw, py + s * uy * ar - ny * arw);
+      ctx.closePath(); ctx.fill();
+    };
+    tri(A2.x, A2.y, 1); tri(B2.x, B2.y, -1);
+    // §7 / user 2026-09-07: OUTLINED box, never a filled plate — it would blot out the detail.
+    ctx.lineWidth = 1.2 * k;
+    ctx.beginPath(); ctx.rect(mx2 - tw / 2, my2 - th / 2, tw, th); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3 * k; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.strokeText(mm, mx2, my2); ctx.fillText(mm, mx2, my2);   // opposite-colour halo, §7
+    ctx.restore();
+    return true;
+  }
+
+  function drawPanel(ctx, anchor2, rows, title, ink, k, w, h) {
+    var fs = FS * k, pad = 9 * k, rowH = 20 * k;
+    ctx.save();
+    ctx.font = '700 ' + fs.toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+    var tw = ctx.measureText(title).width;
+    rows.forEach(function (r) { tw = Math.max(tw, ctx.measureText(r).width); });
+    var pw = tw + pad * 2, ph = rowH * (rows.length + 1) + pad * 2;
+    // Keep it on screen and off the anchor itself
+    var px = Math.min(Math.max(anchor2.x + 26 * k, 6), w - pw - 6);
+    var py = Math.min(Math.max(anchor2.y - ph / 2, 6), h - ph - 6);
+    ctx.strokeStyle = ink; ctx.lineWidth = 1.4 * k;
+    ctx.fillStyle = 'rgba(10,14,20,0.62)';               // §20.11: a PLATE is allowed for a panel
+    ctx.beginPath(); ctx.rect(px, py, pw, ph); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(anchor2.x, anchor2.y);   // leader
+    ctx.lineTo(px, py + ph / 2); ctx.stroke();
+    ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(title, px + pad, py + pad + rowH / 2);
+    ctx.font = (fs * 0.92).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+    rows.forEach(function (r, i) { ctx.fillText(r, px + pad, py + pad + rowH * (i + 1.5)); });
+    ctx.restore();
+  }
+
+  // Called by cinema_maxq's _captureFrame chain and by scripts/snap_timeline.js.
+  A.flythruCuesCompositeOntoCanvas = function (ctx, w, h, filmSec) {
+    var T = window.THREE, cam = A.camera;
+    if (!T || !cam || !ctx) return 0;
+    var a = activeAt(filmSec);
+    if (!a) { console.log('§FLYTHRU_DIM_DRAW INACTIVE filmSec=' + filmSec.toFixed(2) +
+      ' cues=' + ((_cues && _cues.length) || 0) +
+      ' windows=[' + ((_cues || []).map(function (c) { return c.key + ':' + c.at.toFixed(1) + '-' + (c.at + SPAN).toFixed(1); }).join(' ')) + ']'); return 0; }
+    var k = h / 720, ink = '#ffd600', cue = a.cue, drawn = 0, _diag = [];
+    ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a.opacity));
+    var spans = edgeSpans(cue.box, cam);
+    if (cue.dims && cue.dims.length) {                    // a SET of numbers -> panel (§20.11)
+      var c3 = cue.box.getCenter(new T.Vector3()), c2 = proj(c3, cam, w, h);
+      if (c2.z < 1) { drawPanel(ctx, c2, cue.dims, cue.title || cue.key, ink, k, w, h); drawn++; }
+      else _diag.push('panel:behind(z=' + c2.z.toFixed(2) + ')');
+    }
+    (cue.spanAxes || []).forEach(function (ax) {          // a SINGLE number -> arrowed line
+      var sp = spans.filter(function (q) { return q.axis === ax; })[0];
+      if (!sp) return;
+      var A2 = proj(sp.a, cam, w, h), B2 = proj(sp.b, cam, w, h);
+      if (A2.z >= 1 || B2.z >= 1) { _diag.push(ax + ':behind(z=' + A2.z.toFixed(2) + ',' + B2.z.toFixed(2) + ')'); return; }
+      var _L = Math.hypot(B2.x - A2.x, B2.y - A2.y);
+      if (drawDim(ctx, A2, B2, sp.m, ink, k)) drawn++; else _diag.push(ax + ':short(L=' + _L.toFixed(0) + 'px)');
+    });
+    ctx.restore();
+    // §4 PRIMAL LAW — a pass that draws nothing must SAY so, with the reason. Silence here cost a
+    // three-frame run: the function ran, threw nothing, returned 0, and looked like success.
+    if (!drawn) console.log('§FLYTHRU_DIM_DRAW NOTHING key=' + cue.key + ' filmSec=' + filmSec.toFixed(2) +
+      ' spanAxes=[' + (cue.spanAxes || []).join(',') + '] panelRows=' + ((cue.dims && cue.dims.length) || 0) +
+      ' diag=' + JSON.stringify(_diag));
+    if (drawn && _lastDrawKey !== cue.key + '|' + Math.round(filmSec)) {
+      _lastDrawKey = cue.key + '|' + Math.round(filmSec);
+      console.log('§FLYTHRU_DIM_DRAW key=' + cue.key + ' filmSec=' + filmSec.toFixed(2) +
+                  ' marks=' + drawn + ' spans=[' + (cue.spanAxes || []).join(',') + ']' +
+                  ' panelRows=' + ((cue.dims && cue.dims.length) || 0));
+    }
+    return drawn;
+  };
+  var _lastDrawKey = null;
 
   A.flythruCuesDispose = function () {
     if (_group && A.scene) {

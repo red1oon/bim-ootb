@@ -765,6 +765,7 @@
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
   function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo) {
+    var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
     if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
@@ -774,6 +775,12 @@
     // §CLASH_FILM_P2 — the clash-pair labels, FIRST in the 2D pass: they are scene-anchored and
     // wander, the corner HUD below is fixed furniture, so the HUD must always paint over a label.
     // Same never-kills-a-bake contract as every other overlay here.
+    // §FLYTHRU_DIM_CUE — the measurement marking. Composited here because the bake captures this
+    // 2D context, not the WebGL canvas: a marking drawn in 3D text would not survive the capture.
+    if (A.flythruCuesCompositeOntoCanvas) {
+      try { A.flythruCuesCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
+      catch (eFDC) { if (!A._flythruDimWarned) { A._flythruDimWarned = true; console.warn('§FLYTHRU_DIM_DRAW failed: ' + (eFDC && eFDC.message)); } }
+    }
     if (lblInfo && lblInfo.placed && lblInfo.placed.length && A.clashLabelsCompositeOntoCanvas) try {
       A.clashLabelsCompositeOntoCanvas(ctx, w, h, lblInfo.placed);
     } catch (eCLd) {
@@ -1701,7 +1708,7 @@
         // cinema_path_editor.js's preview step() makes.
         if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(plan, _tnFilm);
         if (A.flythruCuesApplyVisual) {
-          try { A.flythruCuesApplyVisual(_tnFilm * _filmSecFull); }
+          try { A._flythruFilmSec = _tnFilm * _filmSecFull; A.flythruCuesApplyVisual(A._flythruFilmSec); }
           catch (eFV) { if (!A._flythruCueWarned) { A._flythruCueWarned = true; console.warn('§FLYTHRU_CUE_VISUAL failed frame=' + i + ': ' + (eFV && eFV.message)); } }
         }
         // §CLASH_FILM_P1 (§4) — the pulse is a pure function of FILM seconds, never

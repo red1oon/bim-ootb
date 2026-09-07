@@ -53,12 +53,33 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
       '--disable-dev-shm-usage', '--js-flags=--max-old-space-size=3072',
       '--disable-extensions', '--disable-background-networking'] });
   const p = await b.newPage(); await p.setViewport({ width: W, height: H });
-  p.on('console', m => { const t = m.text(); if (/§SNAP_|PAGEERROR/.test(t)) console.log('  ' + t); });
+  // ⚠ Forward the LAYER tags too. This filter previously matched only §SNAP_, so every
+  // §FLYTHRU_DIM_DRAW line the marking pass emitted was discarded before reaching the log — three
+  // runs looked like "nothing drew" when the evidence was being filtered out at this line.
+  p.on('console', m => { const t = m.text(); if (/§SNAP_|§FLYTHRU_|§CLASH_LABELS|PAGEERROR/.test(t)) console.log('  ' + t); });
   p.on('pageerror', e => console.log('  PAGEERROR ' + e.message));
   console.log('§SNAP_ENV db=' + DB + ' dur=' + DUR + 's times=[' + TIMES.join(',') + '] out=' + OUT);
   await p.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${DB}.db`,
     { waitUntil: 'domcontentloaded', timeout: 90000 });
+  // ⚠ THE SERVICE WORKER SERVES STALE JS. viewer.html loads cpe_*.js with a FIXED ?v= query, and
+  // sw.js precaches them, so an edited module is invisible to the page until CACHE_VERSION is bumped.
+  // MEASURED 2026-09-07: a whole three-frame run drew no markings because the page held the previous
+  // copy of cpe_flythru_cues.js — while `curl` showed the new file, because curl bypasses the worker.
+  // A probe tool must never depend on a deploy-time version bump: unregister and clear, then reload.
+  const swKilled = await p.evaluate(async () => {
+    let n = 0, c = 0;
+    if (navigator.serviceWorker) {
+      const rs = await navigator.serviceWorker.getRegistrations();
+      for (const r of rs) { await r.unregister(); n++; }
+    }
+    if (window.caches) { const ks = await caches.keys(); for (const k of ks) { await caches.delete(k); c++; } }
+    return { workers: n, caches: c };
+  }).catch(() => ({ workers: -1, caches: -1 }));
+  console.log('§SNAP_SW unregistered=' + swKilled.workers + ' cachesCleared=' + swKilled.caches + ' — reloading for fresh JS');
+  await p.reload({ waitUntil: 'domcontentloaded', timeout: 90000 });
   await p.waitForFunction(() => window.APP && window.APP.cinemaPathPlan, { timeout: 240000 });
+  const hasDim = await p.evaluate(() => typeof window.APP.flythruCuesCompositeOntoCanvas === 'function');
+  console.log('§SNAP_JS flythruCuesCompositeOntoCanvas=' + (hasDim ? 'present' : 'ABSENT — page is still on stale JS'));
   const parts = await p.evaluate(() => (window.APP.dbQuery('SELECT DISTINCT building FROM elements_meta') || []).map(r => r[0]));
   for (const bb of parts) await p.evaluate(x => { try { window.APP.streamBuilding(x); } catch (e) {} }, bb);
   let stable = 0;
@@ -142,6 +163,9 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
           if (layers.clash && A.clashLabels && A.clashLabels.update && A.clashLabelsCompositeOntoCanvas) {
             const li = A.clashLabels.update(A.camera, filmSec, w, h, 0);
             if (li && li.placed && li.placed.length) { lblN = li.placed.length; A.clashLabelsCompositeOntoCanvas(ctx, w, h, li.placed); }
+          }
+          if (layers.cues && A.flythruCuesCompositeOntoCanvas) {
+            try { A.flythruCuesCompositeOntoCanvas(ctx, w, h, filmSec); } catch (e) { console.log('§SNAP_DIM FAILED ' + e.message); }
           }
           if (layers.cues && A.flythruCueCaptionAt && A.roomTitleCompositeOntoCanvas) {
             const ti = A.flythruCueCaptionAt(filmSec);
