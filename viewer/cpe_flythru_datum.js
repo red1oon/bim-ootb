@@ -278,10 +278,36 @@ function setupCpeFlythruDatum(A) {
       // even in the frame" by an order of magnitude. In frame is worth 2; depth breaks ties, 0..1.
       return (inN / nP) * 2 + Math.max(0, Math.min(1, (sy / nP) / h));
     }
+    // ⚠⚠ NEAR IS A CONSTRAINT, NOT A SCORE TERM. THIS IS THE USER'S RULING AND IT OUTRANKS THE SCORE.
+    // USER (2026-09-07): "make the ground 2D markings on the near sides of course unless u dont want
+    // anyone to read well" and, on seeing the result: "I asked that they be in the forefront, but u
+    // placed them in the back."
+    // WHAT WENT WRONG, so it is not repeated: §23 implemented the ruling as an explicit near-side
+    // test. §24 replaced that test with edgeScore() — and a score is free to trade the ruling away.
+    // It did: "inside the frame" is weighted x2, the near edge's outward band runs TOWARD the camera
+    // and therefore off the bottom of the frame, so the near edge scored lower and the annotation
+    // moved to the BACK of the building. A stated requirement must be a hard constraint; turning one
+    // into one weighted term among others is how it gets silently overridden.
+    // NEAR = smaller camera distance, measured, and it decides the side outright. The score is kept
+    // ONLY as a fallback for when the near edge has nothing in front of the lens at all.
+    function edgeDist(isX, ec) {
+      var pt = isX ? P(midX, ec, z0) : P(ec, midY, z0);
+      return pt.distanceTo(cam.position);
+    }
     var sY0 = edgeScore(_lines.gx, true, ext[2], ext[3]), sY1 = edgeScore(_lines.gx, true, ext[3], ext[2]);
     var sX0 = edgeScore(_lines.gy, false, ext[0], ext[1]), sX1 = edgeScore(_lines.gy, false, ext[1], ext[0]);
-    var nearY = (sY1 > sY0) ? ext[3] : ext[2], farY = (nearY === ext[2]) ? ext[3] : ext[2];
-    var nearX = (sX1 > sX0) ? ext[1] : ext[0], farX = (nearX === ext[0]) ? ext[1] : ext[0];
+    var dY0 = edgeDist(true, ext[2]), dY1 = edgeDist(true, ext[3]);
+    var dX0 = edgeDist(false, ext[0]), dX1 = edgeDist(false, ext[1]);
+    // ⚠ PREFERENCE WITH A DECLARED FALLBACK, not a weighted sum and not an absolute. MEASURED on
+    // HHS at second zero: as a hard absolute it drew NOTHING — camera 8.7 m up and close, so the
+    // near edge's outward band runs straight off the bottom of the frame and every axis withdrew.
+    // Second zero is the frame whose whole job is to say "this is a real BIM model", so drawing
+    // nothing is the worst outcome available. Order: near side if it can carry its refs, else the
+    // far side, else withdraw — and SAY which, every frame, so a silent slide to the back is
+    // impossible (that slide is exactly what the score allowed).
+    var nearY = (dY1 < dY0) ? ext[3] : ext[2], nearX = (dX1 < dX0) ? ext[1] : ext[0];
+    var farY = (nearY === ext[2]) ? ext[3] : ext[2], farX = (nearX === ext[0]) ? ext[1] : ext[0];
+    var _sideY = 'near', _sideX = 'near';
 
     // ── 2. THE SHARED OCCUPANCY REGISTER. Everything that prints ink claims a rectangle; anything
     //       that cannot find room is DROPPED and COUNTED (silence would look like the pass stopped).
@@ -375,7 +401,12 @@ function setupCpeFlythruDatum(A) {
       }
       zEndScore[zE] = nP ? (inN / nP) * 2 + Math.max(0, Math.min(1, (sy / nP) / h)) : -1;
     }
-    var zNearX = (zEndScore[1] > zEndScore[0]) ? ext[1] : ext[0], zFarX = (zNearX === ext[0]) ? ext[1] : ext[0];
+    // Same ruling for the upright: the level stack hangs off the corner NEAREST the camera.
+    var zMidZ = _lvz.length ? _lvz[(_lvz.length / 2) | 0].z : z0;
+    var dZ0 = P(ext[0], farY, zMidZ).distanceTo(cam.position), dZ1 = P(ext[1], farY, zMidZ).distanceTo(cam.position);
+    var zNearX = (dZ1 < dZ0) ? ext[1] : ext[0];
+    if (zEndScore[0] < 0 || zEndScore[1] < 0) zNearX = (zEndScore[1] > zEndScore[0]) ? ext[1] : ext[0];
+    var zFarX = (zNearX === ext[0]) ? ext[1] : ext[0];
     var axZ = mkAxis(_lvz.map(function (L) { return L.z; }),
                      function (v) { return pr(P(zNearX, farY, v)); },
                      function (v) { return pr(P(zFarX, farY, v)); },
@@ -506,6 +537,19 @@ function setupCpeFlythruDatum(A) {
                  ax.lab(0), ax.lab(v.length - 1), true) ? 1 : 0;
     }
     var ixZ0 = idxFor(axZ.vals.length, strideFor(axZ));
+    // NEAR FIRST, then fall back per axis. Rebuilding an axis is two closures, so a swap is cheap
+    // and nothing else about the axis changes.
+    function buildX() { axX = mkAxis(_lines.gx, function (v) { return pr(P(v, nearY, z0)); },
+                                     function (v) { return pr(P(v, farY, z0)); }, function (i) { return label(i, false); }); }
+    function buildY() { axY = mkAxis(_lines.gy, function (v) { return pr(P(nearX, v, z0)); },
+                                     function (v) { return pr(P(farX, v, z0)); }, function (i) { return label(i, true); }); }
+    function buildZ() { axZ = mkAxis(_lvz.map(function (L) { return L.z; }),
+                                     function (v) { return pr(P(zNearX, farY, v)); },
+                                     function (v) { return pr(P(zFarX, farY, v)); }, storeyRef); }
+    if (!canSet(axX, ixX)) { var t1 = nearY; nearY = farY; farY = t1; _sideY = 'FAR'; buildX(); buildZ(); }
+    if (!canSet(axY, ixY)) { var t2 = nearX; nearX = farX; farX = t2; _sideX = 'FAR'; buildY(); }
+    var _sideZ = 'near';
+    if (!canSet(axZ, ixZ0)) { var t3 = zNearX; zNearX = zFarX; zFarX = t3; _sideZ = 'FAR'; buildZ(); }
     var setX = canSet(axX, ixX), setY = canSet(axY, ixY), setZ = canSet(axZ, ixZ0);
     var oX = setX ? overall(axX) : 0, oY = setY ? overall(axY) : 0, oZ = setZ ? overall(axZ) : 0;
     _ov = oX + oY + oZ; n += _ov;
@@ -624,10 +668,11 @@ function setupCpeFlythruDatum(A) {
       (setX && setY && setZ ? '' : ' (withdrawn: an axis whose refs will not fit does not draw its chain)') + ' bubbles=' + (bX.drawn + bY.drawn) +
       ' clamped=' + _bubClamp + ' droppedOffFrame=' + _bubDrop +
       ' zRules=' + axZ.vals.length + ' zBubbles=' + bZ.drawn + ' zSegs=' + cZ.drew + '/' + cZ.segs + ' zFigures=' + cZ.figs +
-      ' zEnd=x@' + zNearX.toFixed(1) + '(scored ' + zEndScore[0].toFixed(2) + '/' + zEndScore[1].toFixed(2) + ')' +
+      ' zEnd=x@' + zNearX.toFixed(1) + ' camDist ' + dZ0.toFixed(0) + '/' + dZ1.toFixed(0) + 'm' + '(scored ' + zEndScore[0].toFixed(2) + '/' + zEndScore[1].toFixed(2) + ')' +
       ' collisionsDropped=' + _coll +
-      ' scale=' + scale.toFixed(2) + ' edges=(numeralsOn Y@' + nearY.toFixed(1) + ' scored ' + sY0.toFixed(2) + '/' + sY1.toFixed(2) +
-      ', lettersOn X@' + nearX.toFixed(1) + ' scored ' + sX0.toFixed(2) + '/' + sX1.toFixed(2) + ')');
+      ' scale=' + scale.toFixed(2) + ' edges=(numeralsOn Y@' + nearY.toFixed(1) + ' camDist ' + dY0.toFixed(0) + '/' + dY1.toFixed(0) + 'm scored ' + sY0.toFixed(2) + '/' + sY1.toFixed(2) +
+      ', lettersOn X@' + nearX.toFixed(1) + ' camDist ' + dX0.toFixed(0) + '/' + dX1.toFixed(0) + 'm scored ' + sX0.toFixed(2) + '/' + sX1.toFixed(2) +
+      ') sides=(numerals ' + _sideY + ', letters ' + _sideX + ', levels ' + _sideZ + ')');
     return n;
   };
 
