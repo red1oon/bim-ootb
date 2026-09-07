@@ -63,7 +63,10 @@ function setupCpeFlythruDatum(A) {
     var TOL = 0.30, cl = [];
     rows.forEach(function (r) {
       var n = String(r[0] || '');
-      if (/\s+(Ceiling|TOS)$/i.test(n)) return;                 // pseudo-level, not a floor
+      // ⚠ MATCH THE WORD ANYWHERE, not only as a trailing one. The end-anchored form stripped
+      // Hospital's "Level 2 Ceiling" and caught NONE of Terminal's "Ceiling Level 01" — 0 of 5,
+      // because there the word leads. MEASURED on Terminal: 27 rules -> 23 with this one change.
+      if (/\b(Ceiling|TOS)\b/i.test(n)) return;                  // pseudo-level, not a floor
       var z = Math.round(Number(r[1]) * 100) / 100;
       for (var i = 0; i < cl.length; i++) if (Math.abs(cl[i].z0 - z) <= TOL) { cl[i].rows.push({ n: n, z: z }); return; }
       cl.push({ z0: z, rows: [{ n: n, z: z }] });
@@ -79,6 +82,18 @@ function setupCpeFlythruDatum(A) {
       out.push({ name: bn, z: bz });
     });
     out.sort(function (a, b) { return a.z - b.z; });
+    // ⚠ NAME THE FEDERATION FAULT RATHER THAN DRAW IT SILENTLY. When one storey NAME survives at two
+    // or more separate elevations, the storey table is carrying two datums at once and no drawing can
+    // be right. MEASURED on Terminal: "Aras 01..04" appear at 8/12/16/20 m AND again at 15.15/19.15/
+    // 23.15 m — the same names a constant ~3.15 m apart — with a third, English set ("02 FIRST FLOOR
+    // LEVEL") about 15 m lower again. That is why a 6-storey terminal yields 23 level rules. Choosing
+    // between the datums would be invention, so the levels are drawn as recorded and the condition is
+    // reported, with the offenders named.
+    var _byName = {}, _split = [];
+    out.forEach(function (L) { (_byName[L.name] = _byName[L.name] || []).push(L.z); });
+    Object.keys(_byName).forEach(function (k) { if (_byName[k].length > 1) _split.push(k + '@[' + _byName[k].map(function (z) { return z.toFixed(2); }).join(',') + ']'); });
+    if (_split.length) console.log('§FLYTHRU_DATUM_LEVELSPLIT ' + _split.length + ' storey name(s) recorded at MORE THAN ONE elevation — ' +
+      'the storey table carries more than one datum, so these rules cannot all be floors: ' + _split.join(' | '));
     if (voted) console.log('§FLYTHRU_DATUM_LEVELVOTE clusters=' + out.length + ' needingAVote=' + voted +
       ' (a cluster whose rows disagree on the name or the elevation takes the MODAL one, not the first)');
     return { src: src, levels: out, rawRows: rows.length, voted: voted };
@@ -211,12 +226,9 @@ function setupCpeFlythruDatum(A) {
   // long edge happened to sit lower.
   var INK = '#c9d3df';                                  // the ONE ink (ruling 2)
   var HALO = 'rgba(8,11,16,0.92)';
-  // ⚠ THE RUNGS NEED ROOM, and the first spacing did not have it. At 34/68/98 px (x0.82 on Hospital
-  // = 28/56/80) the bay figure, the overall figure and the bubbles all competed for the same 50 px
-  // and the register refused 10 of them. Widening the ladder is the fix; crowding it and then
-  // dropping labels is what "cramming" means.
-  var BUB_R = 11, OFF1 = 32, OFF2 = 80, OFFB = 120;     // px at 720p, scaled by h/720 AND by plan size
-  var MAX_FIG = 4;                                      // most bay figures per axis (ruling 4)
+  // (The pixel ladder that used to live here — BUB_R 11, OFF1/2/B 32/80/120 px, MAX_FIG 4 — went with
+  // the screen-space layer. Every size is now a length in the model, derived per axis inside the
+  // composite. Left in place these names would silently shadow the real ones.)
   // Standard grid letters omit I (confusable with 1). Practice omits O as well; grid_dims.js's own
   // sequence keeps O, which is why this defines its own rather than importing it.
   var LET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -250,11 +262,15 @@ function setupCpeFlythruDatum(A) {
     // annotation scales itself to any building without a single tuned pixel constant. Bubble diameter
     // 0.40 of a bay CANNOT collide with its neighbour by construction — which is why every stride,
     // rank, clamp and occupancy test that used to live here is gone.
+    // ⚠ B is the median BAY, and it has a fallback that must announce itself: a building with no
+    // usable column grid would otherwise be drawn at a made-up 6 m module with nothing saying so.
     var bays = [];
     for (var bi = 0; bi < _lines.gx.length - 1; bi++) bays.push(_lines.gx[bi + 1] - _lines.gx[bi]);
     for (var bj = 0; bj < _lines.gy.length - 1; bj++) bays.push(_lines.gy[bj + 1] - _lines.gy[bj]);
     bays.sort(function (a, b) { return a - b; });
     var B = bays.length ? bays[bays.length >> 1] : 6.0;
+    if (!bays.length) console.log('§FLYTHRU_DATUM_BAY VACUOUS — no bays measured; every size below ' +
+      'falls back to a 6.00 m module, which is a DEFAULT, not this building\'s grid');
     // ⚠ SIZES COME FROM THE DRAFTING CONVENTION, NOT FROM A FRACTION OF THE BAY. A bay fraction was
     // tried first and is wrong: 0.20*B gave a 1.31 m radius on a 6.54 m bay — a bubble 40% of a bay
     // wide, and 8.8 m rungs that pushed the numerals off frame. Architectural practice sizes these on
@@ -262,17 +278,16 @@ function setupCpeFlythruDatum(A) {
     // dimension line ~10 mm off the outline with equal steps for each chain. Read at 1:100 those are
     // metres on the model, which is what this layer draws in. B is still measured, and still decides
     // when a figure must be skipped.
-    // The one thing left to decide is the PLOT SCALE, and a draughtsman does not guess it either:
-    // pick the smallest standard scale on which the plan still fits the sheet, then every size is a
-    // fixed number of millimetres AT that scale. Both earlier attempts failed by skipping this step —
-    // 0.20*B gave a bubble 40% of a bay wide, and a flat 1:100 gave marks a few pixels across on a
-    // 102 m plan. Sheet taken as A1's usable 800 mm.
-    var _diag = Math.hypot(ext[1] - ext[0], ext[3] - ext[2]);
-    var SCALES = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000];
-    var S = SCALES[SCALES.length - 1];
-    for (var si = 0; si < SCALES.length; si++) if (_diag / SCALES[si] <= 0.80) { S = SCALES[si]; break; }
-    var mm = function (v) { return v * S / 1000; };          // millimetres on the sheet -> metres on the model
-    var R_BUB = mm(5), TXT = mm(3.5), OFF1 = mm(10), OFF2 = mm(20), OFFB = mm(30);
+    // ⚠ THE SIZE FOLLOWS THE GRID, NOT THE PLAN. Deriving a plot scale from the plan's own size was
+    // tried and is wrong: a 102 m plan picks 1:200 while a 177 m plan tips over the sheet into 1:500,
+    // so the SAME 6.5 m bay got a 1.00 m bubble on one building and a 2.50 m bubble on the other —
+    // 78% of a bay, the numerals piling into one solid chain of overlapping ellipses (MEASURED,
+    // Hospital second zero). Two buildings with the same grid must be drawn the same way.
+    // The ratio is not invented: it is read back off the HHS second-zero frame the user accepted —
+    // 1.00 m bubble radius on a 6.54 m median bay = 0.153. The rest keep the sheet's own
+    // proportions to that bubble (text 3.5/5 of it; the first dimension line at 10/5, then equal
+    // steps), so the drawing is self-similar on any building and identical wherever the bay is.
+    var R_GRID = 0.153 * B;      // the grid's candidate radius; each axis may only reduce it
 
     // ── 2. NEAR SIDE, and the upright to the BACK — both are user rulings, both measured ──────────
     var midX = (ext[0] + ext[1]) / 2, midY = (ext[2] + ext[3]) / 2;
@@ -320,15 +335,18 @@ function setupCpeFlythruDatum(A) {
         ctx.fillStyle = INK; ctx.fillText(txt, 0, 0);
       });
     }
-    function inkBubble(m, txt) {
+    // ⚠ r and th are PASSED IN. They used to close over module-level R_BUB/TXT; with sizing now per
+    // axis those names do not exist at this scope, and the failure would be a ReferenceError at call
+    // time that `node --check` cannot see.
+    function inkBubble(m, txt, r, th) {
       return withPlane(m, function () {
-        ctx.beginPath(); ctx.arc(0, 0, R_BUB, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(8,11,16,0.62)'; ctx.fill();
-        ctx.strokeStyle = INK; ctx.lineWidth = R_BUB * 0.10; ctx.stroke();
+        ctx.strokeStyle = INK; ctx.lineWidth = r * 0.10; ctx.stroke();
         ctx.scale(1 / UNIT, 1 / UNIT);
-        ctx.font = '400 ' + (TXT * UNIT).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+        ctx.font = '400 ' + (th * UNIT).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = INK; ctx.fillText(txt, 0, TXT * UNIT * 0.05);
+        ctx.fillStyle = INK; ctx.fillText(txt, 0, th * UNIT * 0.05);
       });
     }
     function seg(p1, p2) {
@@ -347,19 +365,47 @@ function setupCpeFlythruDatum(A) {
     function axis(vals, lab, at, along, out, isUpright) {
       // at(v, off) -> [ix,iy,iz] of the point for value v, off metres outward
       // along / out -> unit model directions, for the text plane
-      // A figure is only skipped when the NEXT figure would overlap it in the MODEL — a proportion
-      // of the bay, not a screen test, so the same drawing thins the same way from any viewpoint.
+      // ⚠ ONE VALUE IS NOT AN AXIS. With vals.length < 2 the stride below evaluates vals[1] as
+      // undefined, so step becomes NaN, `j += NaN` exits the loop on its first test, and the axis
+      // draws nothing while reporting nothing — the silent-failure shape PRIMAL LAW §4 forbids.
+      if (!vals || vals.length < 2) {
+        console.log('§FLYTHRU_DATUM_AXIS VACUOUS — ' + ((vals && vals.length) || 0) +
+                    ' value(s); an axis needs two to carry a dimension, so it is omitted');
+        return { bubbles: 0, figures: 0, step: 1, sum: 0 };
+      }
+      // A figure is skipped only when the next one would overlap it IN THE MODEL, so the same
+      // drawing thins the same way from any viewpoint. ⚠ Measured against the SMALLEST gap, not
+      // vals[1]-vals[0]: the first gap is not the tightest, and on an irregular grid using it lets
+      // figures collide wherever the spacing tightens later along the axis.
+      var minGap = Infinity;
+      for (var gi = 1; gi < vals.length; gi++) minGap = Math.min(minGap, Math.abs(vals[gi] - vals[gi - 1]));
+      if (!isFinite(minGap) || minGap <= 0) minGap = 0.01;
+      // ⚠ THE CLEARANCE IS PER AXIS, because each axis is spaced by a different thing — the ground
+      // axes by their bays, the upright by its storey heights, and a coarser building does not make
+      // its floors further apart. The grid ratio alone is not enough: MEASURED on Terminal, whose
+      // storey table is federated, the tightest gap is 0.43 m against a 2.42 m bubble — 560%
+      // occupancy, the level column drawn as a solid overlapping stack. Capping the radius at
+      // 0.40 x this axis's own smallest gap guarantees clearance (diameter <= 0.8 of the gap) and,
+      // CHECKED before it shipped, binds on exactly one axis across all three buildings — Terminal's
+      // Z, 1.21 m -> 0.17 m — leaving HHS and Hospital, both already accepted, untouched.
+      var R_BUB = Math.min(R_GRID, 0.40 * minGap);
+      var TXT = 0.70 * R_BUB, OFF1 = 2.0 * R_BUB, OFF2 = 4.0 * R_BUB, OFFB = 6.0 * R_BUB;
       var digits = 6, figW = digits * TXT * 0.62;
-      var step = Math.max(1, Math.ceil(figW / Math.max(vals[1] - vals[0], 0.01)));
+      var step = Math.max(1, Math.ceil(figW / minGap));
       var drewFig = 0, drewBub = 0, sum = 0;
       for (var i = 0; i < vals.length; i++) {
         var pB = at(vals[i], OFFB);
         if (inkBubble(plane(pB[0], pB[1], pB[2], along.x * R_BUB * 2, along.y * R_BUB * 2, along.z * R_BUB * 2,
-                            out.x * R_BUB * 2, out.y * R_BUB * 2, out.z * R_BUB * 2), lab(i))) { drewBub++; n++; }
+                            out.x * R_BUB * 2, out.y * R_BUB * 2, out.z * R_BUB * 2), lab(i), R_BUB, TXT)) { drewBub++; n++; }
         var pA = at(vals[i], OFF1), pC = at(vals[i], OFFB - R_BUB * 1.4);
         seg(P(pA[0], pA[1], pA[2]), P(pC[0], pC[1], pC[2]));           // witness line, rung to bubble
       }
-      for (var j = 0; j + step < vals.length || (j < vals.length - 1 && j === 0); j += step) {
+      // ⚠ THE LAST SEGMENT IS OFTEN PARTIAL AND MUST STILL BE TAKEN. The guard was
+      // `j + step < length`, which exits before a final stub: MEASURED on Hospital, 8 storey levels
+      // at stride 2 ran 0-2, 2-4, 4-6 and never summed 6-7, so the witness reported
+      // "Z storeys=31.000m overall=34.000m delta=3.0000 CHAIN MISMATCH". HHS hid it because every
+      // stride there was 1. Walk while a segment remains and clamp its far end to the last value.
+      for (var j = 0; j < vals.length - 1; j += step) {
         var k2 = Math.min(j + step, vals.length - 1);
         var a1 = at(vals[j], OFF1), b1 = at(vals[k2], OFF1);
         seg(P(a1[0], a1[1], a1[2]), P(b1[0], b1[1], b1[2]));
@@ -377,7 +423,7 @@ function setupCpeFlythruDatum(A) {
       if (inkText(plane(op2[0], op2[1], op2[2], along.x, along.y, along.z, out.x, out.y, out.z), ovTxt, TXT * 1.25)) { n++; }
       if (drewOv) { _ov++; }
       _bub += drewBub; _figs += drewFig;
-      return { bubbles: drewBub, figures: drewFig, step: step, sum: sum };
+      return { bubbles: drewBub, figures: drewFig, step: step, sum: sum, R: R_BUB, gap: minGap };
     }
 
     var rX = axis(_lines.gx, function (i) { return label(i, false); },
@@ -386,7 +432,7 @@ function setupCpeFlythruDatum(A) {
     var rY = axis(_lines.gy, function (i) { return label(i, true); },
                   function (v, o) { return [nearX + sgnX * o, v, z0]; },
                   { x: 0, y: 1, z: 0 }, { x: sgnX, y: 0, z: 0 }, false);
-    var rZ = { bubbles: 0, figures: 0, step: 1, sum: 0 };
+    var rZ = { bubbles: 0, figures: 0, step: 1, sum: 0, R: 0, gap: 0 };
     if (_lvz.length > 1) {
       rZ = axis(_lvz.map(function (L) { return L.z; }), function (i) { return storeyRefFor(_lvz, i); },
                 function (v, o) { return [zNearX + sgnZ * o, farY, v]; },
@@ -407,9 +453,10 @@ function setupCpeFlythruDatum(A) {
     }
     console.log('§FLYTHRU_DATUM_MARKS ' + (n ? 'drawn=' + n : 'NOTHING drawn=0') + ' filmSec=' + filmSec.toFixed(2) +
       ' IN-PLANE (no screen-space sizing, no register, no ranks, no clamping)' +
-      ' plotScale=1:' + S + ' (planDiag=' + _diag.toFixed(0) + 'm on an 800mm sheet)' +
-      ' medianBay=' + B.toFixed(2) + 'm bubbleR=' + R_BUB.toFixed(2) + 'm textH=' + TXT.toFixed(2) + 'm' +
-      ' rungs=' + OFF1.toFixed(1) + '/' + OFF2.toFixed(1) + '/' + OFFB.toFixed(1) + 'm' +
+      ' sizedFromGrid(bubbleR = 0.153 x medianBay, the ratio read off the accepted HHS frame)' +
+      ' medianBay=' + B.toFixed(2) + 'm gridR=' + R_GRID.toFixed(2) + 'm' +
+      ' perAxisR=' + rX.R.toFixed(2) + '/' + rY.R.toFixed(2) + '/' + rZ.R.toFixed(2) + 'm' +
+      ' minGap=' + rX.gap.toFixed(2) + '/' + rY.gap.toFixed(2) + '/' + rZ.gap.toFixed(2) + 'm' +
       ' bubbles=' + _bub + '/' + (_lines.gx.length + _lines.gy.length + _lvz.length) +
       ' figures=' + _figs + ' overalls=' + _ov + '/3' +
       ' figStride=' + rX.step + '/' + rY.step + '/' + rZ.step +
