@@ -334,7 +334,8 @@ function setupCpeFlythruDatum(A) {
       var ca = Math.abs(Math.cos(ang)), sa = Math.abs(Math.sin(ang));
       var hw = ca * tw / 2 + sa * fh / 2 + pd, hh = sa * tw / 2 + ca * fh / 2 + pd;
       var r = { x0: cx - hw, y0: cy - hh, x1: cx + hw, y1: cy + hh };
-      if (cx < 4 * k || cx > w - 4 * k || cy < 4 * k || cy > h - 4 * k) { _coll++; return false; }
+      // (no frame-edge refusal here — a figure that straddles the edge is a cropped figure, not a
+      // misplaced one. Only a real overlap with something already placed can refuse it.)
       if (!force && !fits(r)) { if (!_dry) _coll++; return false; }
       claim(r);
       if (_dry) return { w: tw, ang: ang };          // scored, not drawn
@@ -404,7 +405,12 @@ function setupCpeFlythruDatum(A) {
     // Same ruling for the upright: the level stack hangs off the corner NEAREST the camera.
     var zMidZ = _lvz.length ? _lvz[(_lvz.length / 2) | 0].z : z0;
     var dZ0 = P(ext[0], farY, zMidZ).distanceTo(cam.position), dZ1 = P(ext[1], farY, zMidZ).distanceTo(cam.position);
-    var zNearX = (dZ1 < dZ0) ? ext[1] : ext[0];
+    // ⚠ THE LEVEL STACK GOES TO THE BACK, ON PURPOSE — it is the one axis the near-side ruling does
+    // NOT apply to. USER, 2026-09-07: "Why not place Ls at the back instead of cramming with the
+    // front?" The ground annotation owns the two front corners (that is the near-side ruling), and
+    // the level rules already live on the FAR face, occluded by the build. Sending the Ls to the far
+    // corner puts the plan and the elevation on separate corners instead of competing for one.
+    var zNearX = (dZ1 > dZ0) ? ext[1] : ext[0];
     if (zEndScore[0] < 0 || zEndScore[1] < 0) zNearX = (zEndScore[1] > zEndScore[0]) ? ext[1] : ext[0];
     var zFarX = (zNearX === ext[0]) ? ext[1] : ext[0];
     var axZ = mkAxis(_lvz.map(function (L) { return L.z; }),
@@ -419,7 +425,13 @@ function setupCpeFlythruDatum(A) {
       var v = ax.vals; if (v.length < 2) return 1;
       var a = ax.at(v[0], off1), b = ax.at(v[v.length - 1], off1);
       var per = Math.hypot(b.x - a.x, b.y - a.y) / (v.length - 1);
-      return Math.max(1, Math.ceil(40 * k / Math.max(per, 1)));
+      // ⚠ THE FLOOR IS THE BUBBLE, NOT THE FIGURE. This stride governs the chain ticks AND the
+      // bubbles that sit on them, so the thing it must not let collide is the bubble — diameter
+      // 2*BUB_R plus a hair. A 40 px floor was the width a dimension FIGURE wants, and applying it
+      // here thinned refs that had room: MEASURED on HHS, three storeys projecting ~35 px apart lost
+      // L2 to it (zBubbles=2 of 3) though a 22 px bubble clears 35 px easily. Figure crowding is
+      // already handled separately by figEvery, and dim() still refuses a segment under 26 px.
+      return Math.max(1, Math.ceil((2 * BUB_R + 6) * k / Math.max(per, 1)));
     }
     var strX = strideFor(axX), strY = strideFor(axY);
     // ⚠ ONE INDEX LIST, shared by the chain ticks AND the bubbles, so the two read as one structure.
@@ -450,8 +462,8 @@ function setupCpeFlythruDatum(A) {
     //       tier 1 = bay, oblique ticks (quiet, and standard for a chain);
     //       tier 2 = overall, arrowheads, running bubble-to-bubble.
     var _ovDiag = [];
-    function dim(ax, vA, vB, metres, tier, refA, refB, withFig) {
-      var e = (tier === 2) ? off2 : off1;
+    function dim(ax, vA, vB, metres, tier, refA, refB, withFig, offOverride) {
+      var e = (offOverride != null) ? offOverride : ((tier === 2) ? off2 : off1);
       var A2 = ax.at(vA, e), B2 = ax.at(vB, e);
       if (!A2.front || !B2.front) { if (tier === 2) _ovDiag.push('end-behind-camera'); return 0; }
       var dx = B2.x - A2.x, dy = B2.y - A2.y, L = Math.hypot(dx, dy);
@@ -524,7 +536,14 @@ function setupCpeFlythruDatum(A) {
       return fig ? 2 : 1;
     }
 
-    var n = 0, _bay = 0, _fig = 0, _ov = 0, _bubClamp = 0, _bubDrop = 0;
+    var n = 0, _bay = 0, _fig = 0, _ov = 0, _bubClamp = 0, _bubDrop = 0, _bubOut = 0;
+    // ⚠ MEASURE THE STATION POINT, never eyeball it from a world-space y. The camera's y is in the
+    // scene's own frame and the model carries a large offset, so "8.7" says nothing on its own.
+    // Height above the structural base and distance to the plan centre are what decide whether this
+    // camera has a plan view to annotate at all.
+    var _gBase = P(midX, midY, ext[4]);
+    var _camH = cam.position.y - _gBase.y, _camD = _gBase.distanceTo(cam.position);
+    var _planDiag = Math.hypot(ext[1] - ext[0], ext[3] - ext[2]);
     ctx.save();
     ctx.globalAlpha = op; ctx.lineJoin = 'round';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -536,7 +555,14 @@ function setupCpeFlythruDatum(A) {
       return dim(ax, v[0], v[v.length - 1], v[v.length - 1] - v[0], 2,
                  ax.lab(0), ax.lab(v.length - 1), true) ? 1 : 0;
     }
-    var ixZ0 = idxFor(axZ.vals.length, strideFor(axZ));
+    // No stride on the upright: parallel rungs separate the storeys, so every floor keeps its bubble.
+    var _strZ = 1, ixZ0 = (function () { var a = []; for (var i = 0; i < axZ.vals.length; i++) a.push(i); return a; })();
+    // how far apart the storey rules actually project, so a thinned level stack states its reason
+    var _zSpanPx = (function () {
+      var v = axZ.vals; if (v.length < 2) return 0;
+      var a = axZ.at(v[0], off1), b = axZ.at(v[v.length - 1], off1);
+      return Math.hypot(b.x - a.x, b.y - a.y) / (v.length - 1);
+    })();
     // NEAR FIRST, then fall back per axis. Rebuilding an axis is two closures, so a swap is cheap
     // and nothing else about the axis changes.
     function buildX() { axX = mkAxis(_lines.gx, function (v) { return pr(P(v, nearY, z0)); },
@@ -548,8 +574,8 @@ function setupCpeFlythruDatum(A) {
                                      function (v) { return pr(P(zFarX, farY, v)); }, storeyRef); }
     if (!canSet(axX, ixX)) { var t1 = nearY; nearY = farY; farY = t1; _sideY = 'FAR'; buildX(); buildZ(); }
     if (!canSet(axY, ixY)) { var t2 = nearX; nearX = farX; farX = t2; _sideX = 'FAR'; buildY(); }
-    var _sideZ = 'near';
-    if (!canSet(axZ, ixZ0)) { var t3 = zNearX; zNearX = zFarX; zFarX = t3; _sideZ = 'FAR'; buildZ(); }
+    var _sideZ0 = 'back';
+    if (!canSet(axZ, ixZ0)) { var t3 = zNearX; zNearX = zFarX; zFarX = t3; _sideZ0 = 'FRONT (back corner carried nothing)'; buildZ(); }
     var setX = canSet(axX, ixX), setY = canSet(axY, ixY), setZ = canSet(axZ, ixZ0);
     var oX = setX ? overall(axX) : 0, oY = setY ? overall(axY) : 0, oZ = setZ ? overall(axZ) : 0;
     _ov = oX + oY + oZ; n += _ov;
@@ -563,32 +589,72 @@ function setupCpeFlythruDatum(A) {
     // ZERO bubbles and 1 of 3 overalls: a chain of anonymous numbers with nothing to point at, which
     // is exactly the "reads as broken" failure §24.3 named. If an axis cannot carry its refs it does
     // not get to draw its chain either. Withdrawn axes are named in §FLYTHRU_DATUM_MARKS.
+    // ⚠ CUTTING OFF IS CORRECT — it is not a failure to be prevented. USER, 2026-09-07: "if a
+    // building is opened nearby not within frame, the bubbles gets cut off correctly."
+    // §24.3 had this as all-or-none at 60%, which withdrew a whole axis for the normal case of a
+    // close camera. The two rules that survive are: a bubble off the frame is simply gone (no
+    // sliding, no warping), and an axis draws as long as ANY of its refs is on screen. Only a
+    // completely absent axis withdraws — that is the one case where the chain would carry numbers
+    // with nothing to point at.
     function canSet(ax, idx) {
       var v = ax.vals;
       if (v.length < 2) return false;
-      var ok = idx.filter(function (i2) { return inFrame(ax.at(v[i2], offB)); }).length;
-      return ok >= Math.ceil(idx.length * 0.6);
+      return idx.some(function (i2) { return ax.at(v[i2], offB).front; });
     }
-    function bubbleSet(ax, idx) {
+    // ══ SPACING BUBBLES ON ANY GRID — ONE ROUTINE, NO PER-BUILDING NUMBERS ════════════════════════
+    // USER, 2026-09-07: "have a good routine that space bubbles out in abstract manner to any
+    // building grid."
+    // The only real constraint is that two bubbles must not touch: they need 2*BUB_R + a hair of
+    // screen separation. Everything else follows from the projection, measured per frame.
+    //   1. measure the projected spacing between adjacent refs at the bubble rung;
+    //   2. RANKS = ceil(needed / measured) — spread the row over that many rungs stepped outward,
+    //      bubble i on rank i % RANKS, so alternate bubbles clear each other radially while every
+    //      one stays ON ITS OWN GRIDLINE. No lateral movement, so nothing skews (the user's rule);
+    //   3. cap RANKS at what the frame can actually hold, measured, not chosen;
+    //   4. only if the capped ranks still cannot clear does a stride thin the row — dropping a ref
+    //      is the last resort, not the first.
+    // This is why the upright needed help at all: MEASURED on HHS second zero its three storey rules
+    // project 15 px apart against a 28 px need, so a single-rank row can never hold them.
+    function bubbleRanks(ax, idx) {
+      var v = ax.vals;
+      if (idx.length < 2) return { ranks: 1, step: 0 };
+      var a = ax.at(v[idx[0]], offB), b = ax.at(v[idx[idx.length - 1]], offB);
+      var per = Math.hypot(b.x - a.x, b.y - a.y) / (idx.length - 1);
+      var need = (2 * BUB_R + 4) * k;
+      var ranks = Math.max(1, Math.ceil(need / Math.max(per, 1)));
+      var step = need;
+      // cap: the outermost rank must still land in front of the lens and inside the frame
+      while (ranks > 1) {
+        var ok = true;
+        for (var i = 0; i < idx.length; i++) {
+          var p = ax.at(v[idx[i]], offB + (ranks - 1) * step);
+          if (!p.front) { ok = false; break; }
+        }
+        if (ok) break;
+        ranks--;
+      }
+      return { ranks: ranks, step: step, per: per, need: need };
+    }
+    function bubbleSet(ax, idx, rk) {
       var v = ax.vals;
       var drawn = 0;
       idx.forEach(function (i2) {
-        var p2 = ax.at(v[i2], offB);
+        var p2 = ax.at(v[i2], offB + ((rk && rk.ranks > 1) ? (idx.indexOf(i2) % rk.ranks) * rk.step : 0));
         if (!p2.front) { _bubDrop++; return; }
         // ⚠ NO-SPACE CASE. A sheet is fixed; a moving camera is not. When the near edge leaves the
         // frame the bubble's natural position is off-screen — slide it ALONG ITS OWN GRIDLINE to the
         // boundary so it still sits on the line it names, and drop it only when the line is gone.
+        // ⚠ TRUE POSITION ALWAYS. THE FRAME CROPS; THE DRAWING DOES NOT MOVE.
+        // USER, 2026-09-07: "Even when near, the bubbles will go out of frame, not forced to warp up
+        // so bad" · "if a building is opened nearby not within frame, the bubbles gets cut off
+        // correctly" · "align the labelling proper without skewing. Maintain shape even out of frame".
+        // §23 slid an off-frame bubble ALONG its gridline to the boundary. That keeps the
+        // association and destroys the row: survivors sit true, slid ones pile against the edge, so
+        // the spacing lies about the grid. Then dropping them instead was still wrong — a bubble
+        // half past the edge is simply a cropped bubble. So: draw at the projected position, let the
+        // canvas clip, and count how many fell outside for the log.
         var m = (BUB_R + 4) * k;
-        if (p2.x < m || p2.x > w - m || p2.y < m || p2.y > h - m) {
-          var d = ax.out(v[i2]), t2 = 0;
-          if (p2.x < m && -d.x > 0) t2 = Math.max(t2, (m - p2.x) / -d.x);
-          if (p2.x > w - m && -d.x < 0) t2 = Math.max(t2, (w - m - p2.x) / -d.x);
-          if (p2.y < m && -d.y > 0) t2 = Math.max(t2, (m - p2.y) / -d.y);
-          if (p2.y > h - m && -d.y < 0) t2 = Math.max(t2, (h - m - p2.y) / -d.y);
-          p2 = { x: p2.x - d.x * t2, y: p2.y - d.y * t2 };
-          if (p2.x < -m || p2.x > w + m || p2.y < -m || p2.y > h + m) { _bubDrop++; return; }
-          _bubClamp++;
-        }
+        if (p2.x < m || p2.x > w - m || p2.y < m || p2.y > h - m) _bubOut++;
         // nudge outward, once, if the overall's figure already owns this spot
         var r = { x0: p2.x - (BUB_R + 2) * k, y0: p2.y - (BUB_R + 2) * k, x1: p2.x + (BUB_R + 2) * k, y1: p2.y + (BUB_R + 2) * k };
         if (!fits(r)) {
@@ -609,9 +675,10 @@ function setupCpeFlythruDatum(A) {
       return { drawn: drawn, set: true };
     }
     var ixZ = ixZ0;
-    var bX = setX ? bubbleSet(axX, ixX) : { drawn: 0, set: false },
-        bY = setY ? bubbleSet(axY, ixY) : { drawn: 0, set: false },
-        bZ = setZ ? bubbleSet(axZ, ixZ) : { drawn: 0, set: false };
+    var rkX = bubbleRanks(axX, ixX), rkY = bubbleRanks(axY, ixY), rkZ = bubbleRanks(axZ, ixZ);
+    var bX = setX ? bubbleSet(axX, ixX, rkX) : { drawn: 0, set: false },
+        bY = setY ? bubbleSet(axY, ixY, rkY) : { drawn: 0, set: false },
+        bZ = setZ ? bubbleSet(axZ, ixZ, rkZ) : { drawn: 0, set: false };
     n += bX.drawn + bY.drawn + bZ.drawn;
 
     // ── 9. THE BAY CHAIN. Every strided segment draws its line and ticks; only a REGULAR SAMPLE
@@ -631,8 +698,27 @@ function setupCpeFlythruDatum(A) {
       });
       return { drew: drew, figs: figs, sum: sum, segs: segs.length, figEvery: figEvery };
     }
+    // ⚠ THE UPRIGHT USES PARALLEL DIMENSIONS, NOT A CHAIN. USER, 2026-09-07: "U can have L1-L2,
+    // L1-L3, separated crosses." A chain puts every storey height on ONE line, so its ticks and
+    // figures are only as far apart as the rules themselves — MEASURED on HHS, three storeys project
+    // ~25 px apart at second zero, under the 28 px a bubble needs, so the stride thinned L2 away.
+    // Parallel dimensioning (ISO 129-1's other system: every measure taken from ONE origin, each on
+    // its own rung stepped outward) takes the separation from the OFFSET axis instead, so a short
+    // upright can state every floor without crowding. L1 is the origin; L1-L2, L1-L3 ... step out.
+    function parallel(ax, rungStep) {
+      var v = ax.vals, drew = 0, figs = 0;
+      for (var i = 1; i < v.length; i++) {
+        var r = dim(ax, v[0], v[i], v[i] - v[0], 1, null, null, true, off1 + (i - 1) * rungStep);
+        if (r) drew++;
+        if (r === 2) figs++;
+      }
+      return { drew: drew, figs: figs, sum: v.length > 1 ? v[v.length - 1] - v[0] : 0,
+               segs: Math.max(0, v.length - 1), figEvery: 1, rungs: v.length - 1 };
+    }
     var NOCHAIN = { drew: 0, figs: 0, sum: 0, segs: 0, figEvery: 1 };
-    var cX = setX ? chain(axX, ixX) : NOCHAIN, cY = setY ? chain(axY, ixY) : NOCHAIN, cZ = setZ ? chain(axZ, ixZ) : NOCHAIN;
+    var _zRung = (2 * BUB_R + 6) * k;
+    var cX = setX ? chain(axX, ixX) : NOCHAIN, cY = setY ? chain(axY, ixY) : NOCHAIN,
+        cZ = setZ ? parallel(axZ, _zRung) : NOCHAIN;
     _bay = cX.drew + cY.drew + cZ.drew; _fig = cX.figs + cY.figs + cZ.figs; n += _bay;
 
     // ── 10. THE Z LADDER IS THE SAME LADDER (see mkAxis above) — nothing special-cases it any more.
@@ -666,13 +752,16 @@ function setupCpeFlythruDatum(A) {
       ' figEvery=' + cX.figEvery + '/' + cY.figEvery + ' stride=' + strX + '/' + strY +
       ' axes=' + (setX ? 'X' : '-') + (setY ? 'Y' : '-') + (setZ ? 'Z' : '-') +
       (setX && setY && setZ ? '' : ' (withdrawn: an axis whose refs will not fit does not draw its chain)') + ' bubbles=' + (bX.drawn + bY.drawn) +
-      ' clamped=' + _bubClamp + ' droppedOffFrame=' + _bubDrop +
-      ' zRules=' + axZ.vals.length + ' zBubbles=' + bZ.drawn + ' zSegs=' + cZ.drew + '/' + cZ.segs + ' zFigures=' + cZ.figs +
+      ' ranks=' + rkX.ranks + '/' + rkY.ranks + '/' + rkZ.ranks +
+      ' bubbleGap=' + (rkX.per||0).toFixed(0) + '/' + (rkY.per||0).toFixed(0) + '/' + (rkZ.per||0).toFixed(0) + 'px(need=' + ((2*BUB_R+4)*k).toFixed(0) + ')' +
+      ' croppedByFrame=' + _bubOut + ' behindCamera=' + _bubDrop +
+      ' zRules=' + axZ.vals.length + ' zStride=' + _strZ + ' zRuleGap=' + _zSpanPx.toFixed(0) + 'px(floor=' + ((2 * BUB_R + 6) * k).toFixed(0) + ')' + ' zBubbles=' + bZ.drawn + ' zSegs=' + cZ.drew + '/' + cZ.segs + ' zFigures=' + cZ.figs +
       ' zEnd=x@' + zNearX.toFixed(1) + ' camDist ' + dZ0.toFixed(0) + '/' + dZ1.toFixed(0) + 'm' + '(scored ' + zEndScore[0].toFixed(2) + '/' + zEndScore[1].toFixed(2) + ')' +
       ' collisionsDropped=' + _coll +
+      ' station=(h=' + _camH.toFixed(1) + 'm above base, d=' + _camD.toFixed(0) + 'm to centre, planDiag=' + _planDiag.toFixed(0) + 'm)' +
       ' scale=' + scale.toFixed(2) + ' edges=(numeralsOn Y@' + nearY.toFixed(1) + ' camDist ' + dY0.toFixed(0) + '/' + dY1.toFixed(0) + 'm scored ' + sY0.toFixed(2) + '/' + sY1.toFixed(2) +
       ', lettersOn X@' + nearX.toFixed(1) + ' camDist ' + dX0.toFixed(0) + '/' + dX1.toFixed(0) + 'm scored ' + sX0.toFixed(2) + '/' + sX1.toFixed(2) +
-      ') sides=(numerals ' + _sideY + ', letters ' + _sideX + ', levels ' + _sideZ + ')');
+      ') sides=(numerals ' + _sideY + ', letters ' + _sideX + ', levels ' + _sideZ0 + ')');
     return n;
   };
 

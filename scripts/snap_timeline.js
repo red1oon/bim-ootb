@@ -49,6 +49,19 @@ const CLASH = process.argv.includes('--clash');
 // no mesh is read — so judging its LAYOUT does not need the building in the scene at all. Use this
 // while iterating on labelling; drop it the moment the question is about occlusion or the buildup.
 const NOSTREAM = process.argv.includes('--nostream');
+// --home: press the viewer's OWN Home key before planning, so the film is planned from the app's
+// defined exterior frame instead of whatever the page happened to be left at. scene.js binds Home to
+// _homeResetAndFrame -> _homeFillFrame (dist = max(80, envelope)). Using the real key, not a copy of
+// the formula: an imitation of that function was tried and cannot work, it centres on
+// A.buildingCentres. §CINEMA_PIVOT reads A.camera.position and A.controls.target, so the framing the
+// page is left at DOES change the plan — MEASURED on HHS: pivot resolved to (0,0,0) accepted from a
+// default controls.target, station 48 m from a 102 m plan.
+// ⚠ DEFAULT ON for a streamed run. USER, 2026-09-07: "Opening has to be set at a distance where
+// whole building will be as the silent baked mp4. If that can happen, i see why not your snap can't
+// do same." MEASURED on HHS second zero: without it, station = 14.7 m above base and 48 m from a
+// 102 m plan; with it, 70.0 m above base and 98 m out — the whole building in frame — and the
+// near-side annotation rule then holds on all three axes by itself. Pass --nohome to opt out.
+const HOME = !process.argv.includes('--nohome');
 const CUES = process.argv.includes('--cues');
 let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
   : (() => { const a = [], f = Number(arg('from', 0)), t = Number(arg('to', 10)), s = Number(arg('step', 1));
@@ -149,6 +162,23 @@ let tReady = T0;
     await sleep(3000);
   }
   console.log('§SNAP_T stream=' + ((Date.now() - T0) / 1000).toFixed(1) + 's (page ready at ' + ((tReady - T0) / 1000).toFixed(1) + 's)');
+
+  if (HOME) {
+    const hz = await p.evaluate(() => {
+      try {
+        document.body.focus();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        const A = window.APP;
+        return { x: +A.camera.position.x.toFixed(1), y: +A.camera.position.y.toFixed(1), z: +A.camera.position.z.toFixed(1),
+                 tx: +A.controls.target.x.toFixed(1), ty: +A.controls.target.y.toFixed(1), tz: +A.controls.target.z.toFixed(1) };
+      } catch (e) { return null; }
+    });
+    await sleep(600);
+    const hz2 = await p.evaluate(() => { const A = window.APP;
+      return { x: +A.camera.position.x.toFixed(1), y: +A.camera.position.y.toFixed(1), z: +A.camera.position.z.toFixed(1) }; });
+    console.log('§SNAP_HOME pressed Home -> camera ' + JSON.stringify(hz2) + ' (was ' + (hz ? JSON.stringify({x:hz.x,y:hz.y,z:hz.z}) : 'unknown') + ')');
+  }
 
   const armed = NOSTREAM ? null : await p.evaluate(async () => {
     const A = window.APP;
