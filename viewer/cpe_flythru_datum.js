@@ -455,7 +455,13 @@ function setupCpeFlythruDatum(A) {
       ' IN-PLANE (no screen-space sizing, no register, no ranks, no clamping)' +
       ' sizedFromGrid(bubbleR = 0.153 x medianBay, the ratio read off the accepted HHS frame)' +
       ' medianBay=' + B.toFixed(2) + 'm gridR=' + R_GRID.toFixed(2) + 'm' +
+      // ⚠ REPORT THE SHRINK. A bubble capped far below the grid's nominal size still counts as
+      // "drawn" while being invisible — MEASURED on Terminal, the Z refs land at 0.16 m against a
+      // 1.21 m nominal, 13%, and cannot be read at any viewing distance. Counting an invisible mark
+      // as drawn is the vacuous witness PRIMAL LAW §4 forbids, so the ratio is stated per axis. When
+      // it is small the cause is upstream: refs packed far tighter than the grid they belong to.
       ' perAxisR=' + rX.R.toFixed(2) + '/' + rY.R.toFixed(2) + '/' + rZ.R.toFixed(2) + 'm' +
+      ' ofNominal=' + [rX, rY, rZ].map(function (r) { return R_GRID > 0 ? Math.round(r.R / R_GRID * 100) + '%' : '-'; }).join('/') +
       ' minGap=' + rX.gap.toFixed(2) + '/' + rY.gap.toFixed(2) + '/' + rZ.gap.toFixed(2) + 'm' +
       ' bubbles=' + _bub + '/' + (_lines.gx.length + _lines.gy.length + _lvz.length) +
       ' figures=' + _figs + ' overalls=' + _ov + '/3' +
