@@ -1,0 +1,17 @@
+12:28:24.818 +    0.0s §CLI_BAKE_ENV root=/tmp/wt-storey-reveal commit=a5647547 sw=v1157 db=Hospital_silent_local gpu=real out=/tmp/wt-storey-reveal/out/ending_verify.mp4
+12:28:25.025 +    0.2s §CLI_BAKE_NAV http://127.0.0.1:8544/viewer/viewer.html?db=/buildings/Hospital_silent_local.db
+12:28:45.989 +   21.2s §CLI_BAKE_LOADED building=Hospital meshes=4499
+12:28:45.989 +   21.2s §CLI_BAKE_PREWARM_SEEN §PHOTO_PREWARM ms=4201 did=[mepSmooth,hdri,groundTex] — this work is now OFF the first Alt+S press (measured 8,923.6 ms of it on Hospital)
+12:28:46.035 +   21.2s §CLI_BAKE_GL vendor="Google Inc. (NVIDIA Corporation)" renderer="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL ES 3.2)"
+12:28:47.171 +   22.4s §CLI_BAKE_BUILDUP_RESOLVED on=1 source=stored-path — decides whether the Time Machine is primed before the bake asks for a timeline
+12:28:48.403 +   23.6s §CLI_BAKE_TM_PRIME ok ms=1171
+12:28:48.404 +   23.6s §CLI_BAKE_CLIP in=0.8 out=1 (§SDC — a window of the same film)
+12:29:15.198 +   50.4s §CLI_BAKE_PROGRESS frame=6/940 0.6% rate=1.048s/frame (trailing 2) elapsed=13s eta=16m19s (934 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+12:29:45.274 +   80.5s §CLI_BAKE_PROGRESS frame=28/940 3.0% rate=1.204s/frame (trailing 7) elapsed=41s eta=18m18s (912 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+12:29:56.831 +   92.0s §CLI_BAKE_SIGINT SIGTERM received at frame 36/940 — cancelling the bake and stitching what exists. Press again to give up on the partial film.
+12:30:00.351 +   95.5s §CLI_BAKE_ABORT user (SIGTERM) — landing the 36 frames baked so far
+12:30:00.351 +   95.5s §CLI_BAKE_LAND_FAIL Attempted to use detached Frame '47BAE8B5B6686D763AB4865C6F1CA6A2'.
+12:30:00.352 +   95.5s §CLI_BAKE_CRASH Error: Attempted to use detached Frame '47BAE8B5B6686D763AB4865C6F1CA6A2'.
+    at CdpFrame.<anonymous> (/home/red1/bim-compiler/node_modules/puppeteer-core/lib/cjs/puppeteer/util/decorators.js:107:23)
+    at CdpPage.evaluate (/home/red1/bim-compiler/node_modules/puppeteer-core/lib/cjs/puppeteer/api/Page.js:830:43)
+    at /tmp/wt-storey-reveal/cli_silent_bake.js:465:28
