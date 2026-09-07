@@ -32,7 +32,7 @@
 function setupCpeFlythruDatum(A) {
   if (!A) return;
   var INK = 0x8899aa, INK_STOREY = 0xffd600, MIN_SEP = 6.0;
-  var _grp = null, _built = false, _info = null;
+  var _grp = null, _built = false, _info = null, _faces = null, _lines = null;
 
   function q(sql) { try { return A.dbQuery(sql) || []; } catch (e) { return []; } }
 
@@ -49,15 +49,19 @@ function setupCpeFlythruDatum(A) {
     var rows = q("SELECT name, elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL ORDER BY elevation");
     var src = 'elevation';
     if (!rows.length) { rows = q("SELECT name, center_z FROM spatial_structure WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL ORDER BY center_z"); src = 'center_z'; }
-    var seen = {}, out = [];
+    // ⚠ MERGE NEAR-DUPLICATES. Hospital records 'Level 2' at BOTH 6.00 and 6.10 — the same floor
+    // twice, 100 mm apart. Exact-value dedupe kept both and drew a doubled rule (12 rules for ~8
+    // floors). Anything within TOL of an existing level is the same floor.
+    var TOL = 0.30, out = [];
     rows.forEach(function (r) {
       var n = String(r[0] || '');
       if (/\s+(Ceiling|TOS)$/i.test(n)) return;                 // pseudo-level, not a floor
       var z = Math.round(Number(r[1]) * 100) / 100;
-      if (seen[z]) return;
-      seen[z] = 1; out.push({ name: n, z: z });
+      for (var i = 0; i < out.length; i++) if (Math.abs(out[i].z - z) <= TOL) return;
+      out.push({ name: n, z: z });
     });
-    return { src: src, levels: out };
+    out.sort(function (a, b) { return a.z - b.z; });
+    return { src: src, levels: out, rawRows: rows.length };
   }
 
   A.flythruDatumBuild = function () {
@@ -73,6 +77,20 @@ function setupCpeFlythruDatum(A) {
     var gx = linesFrom(cols.map(function (r) { return r[0]; }), MIN_SEP);
     var gy = linesFrom(cols.map(function (r) { return r[1]; }), MIN_SEP);
     var st = storeyLevels();
+    // ⚠ DATUM. MEASURED 2026-09-07: Hospital records storey elevation 0..34 m (local, zero-based)
+    // while its elements sit at 156.61..203.62 — 0 of 56 rules would land inside the building.
+    // HHS records center_z 0.22..7.43 against elements -0.21..10.90 and already agrees. So DETECT
+    // rather than always offset: shift only when the levels fall outside the element range.
+    var zLo = ext[4], zHi = ext[5], off = 0;
+    if (st.levels.length) {
+      var lo = Math.min.apply(null, st.levels.map(function (L) { return L.z; }));
+      var hi = Math.max.apply(null, st.levels.map(function (L) { return L.z; }));
+      st.levels.forEach(function (L) { L.zRaw = L.z; });   // the number a drawing prints
+      if (lo < zLo - 1 || hi > zHi + 1) { off = zLo - lo; st.levels.forEach(function (L) { L.z += off; }); }
+      console.log('§FLYTHRU_DATUM_ZDATUM levels=' + lo.toFixed(2) + '..' + hi.toFixed(2) +
+        ' elements=' + zLo.toFixed(2) + '..' + zHi.toFixed(2) + ' offset=' + off.toFixed(2) + 'm' +
+        (off ? ' (levels were in a LOCAL datum)' : ' (already in the element datum)'));
+    }
     // ⚠ DEGRADE, never invent: no columns -> no ground grid, and say so rather than draw a made-up module.
     if (gx.length < 2 || gy.length < 2) console.log('§FLYTHRU_DATUM_GRID VACUOUS — columns=' + cols.length + ' gave ' + gx.length + 'x' + gy.length + ' lines; ground grid omitted');
     if (!st.levels.length) console.log('§FLYTHRU_DATUM_STOREY VACUOUS — no storey levels; upright drawn without rules');
@@ -87,18 +105,28 @@ function setupCpeFlythruDatum(A) {
     gx.forEach(function (x) { g.push(P(x, ext[2], z0), P(x, ext[3], z0)); });
     gy.forEach(function (y) { g.push(P(ext[0], y, z0), P(ext[1], y, z0)); });
     // UPRIGHT — ONE plane only (§22.5). Verticals follow the X gridlines; horizontals are the STOREYS.
-    var yBack = ext[3];
-    gx.forEach(function (x) { g.push(P(x, yBack, ext[4]), P(x, yBack, ext[5])); });
-    st.levels.forEach(function (L) { s.push(P(ext[0], yBack, L.z), P(ext[1], yBack, L.z)); });
+    // UPRIGHT — level lines and nothing else. Vertical gridlines were added here and do not belong:
+    // the ground already states the grid, so repeating it upright is clutter, not information.
+    // Build the level lines on BOTH Y faces and show only the FAR one each frame (§17.2 back-face).
+    // The side was hardcoded to max-Y, which puts the plane between camera and building whenever the
+    // camera is on that side — "the upright is wrong".
+    var sNear = [];
+    st.levels.forEach(function (L) {
+      s.push(P(ext[0], ext[3], L.z), P(ext[1], ext[3], L.z));
+      sNear.push(P(ext[0], ext[2], L.z), P(ext[1], ext[2], L.z));
+    });
+    _faces = { yMaxIfc: ext[3], yMinIfc: ext[2] };
     var mk = function (pts, m) { var gm = new T.BufferGeometry().setFromPoints(pts); var o = new T.LineSegments(gm, m); o.renderOrder = 1; return o; };
-    if (g.length) _grp.add(mk(g, mat));
-    if (s.length) _grp.add(mk(s, matS));
+    if (g.length) { var og = mk(g, mat); og.name = 'ground'; _grp.add(og); }
+    if (s.length) { var o1 = mk(s, matS); o1.name = 'levelsYmax'; _grp.add(o1);
+                    var o2 = mk(sNear, matS.clone()); o2.name = 'levelsYmin'; _grp.add(o2); }
     _grp.visible = false;
     A.scene.add(_grp);
+    _lines = { gx: gx, gy: gy, ext: ext, levels: st.levels };
     _info = { gridX: gx.length, gridY: gy.length, storeys: st.levels.length, storeySrc: st.src, columns: cols.length,
               bayMedianM: (function () { var b = []; for (var i = 0; i < gx.length - 1; i++) b.push(gx[i + 1] - gx[i]); b.sort(function (p, q2) { return p - q2; }); return b.length ? +b[b.length >> 1].toFixed(2) : 0; })() };
     console.log('§FLYTHRU_DATUM_BUILT columns=' + cols.length + ' groundGrid=' + gx.length + 'x' + gy.length +
-      ' medianBay=' + _info.bayMedianM + 'm upright=1(plane) storeyRules=' + st.levels.length + ' src=' + st.src +
+      ' medianBay=' + _info.bayMedianM + 'm upright=1(plane) storeyRules=' + st.levels.length + ' src=' + st.src + ' rawStoreyRows=' + (st.rawRows||0) +
       ' segs=' + (g.length / 2 + s.length / 2) + (st.levels.length ? '' : ' — VACUOUS storeys'));
     return _info;
   };
@@ -110,9 +138,147 @@ function setupCpeFlythruDatum(A) {
     var holdTo = Math.max(6, (filmSecFull || 0) * 0.094);   // beats.dive
     var op = filmSec <= holdTo ? 1 : Math.max(0, 1 - (filmSec - holdTo) / 2.0);
     _grp.visible = op > 0.01;
-    _grp.children.forEach(function (o) { o.material.opacity = (o.material.color.getHex() === INK_STOREY ? 0.75 : 0.5) * op; });
+    var cam = A.camera, camFar = null;
+    if (cam && _faces && typeof A.ifc2three === 'function') {
+      var a = A.ifc2three(0, _faces.yMaxIfc, 0), b = A.ifc2three(0, _faces.yMinIfc, 0);
+      var da = Math.abs(cam.position.z - a.z), db = Math.abs(cam.position.z - b.z);
+      camFar = da >= db ? 'levelsYmax' : 'levelsYmin';
+    }
+    _grp.children.forEach(function (o) {
+      var isLvl = o.name === 'levelsYmax' || o.name === 'levelsYmin';
+      var vis = !isLvl || !camFar || o.name === camFar;
+      o.visible = vis;
+      o.material.opacity = (isLvl ? 0.75 : 0.5) * op;
+    });
     return op;
   };
+
+  // ══ BUBBLES + THE TWO-TIER STRING, on the NEAR edges, drawn in the 2D composite pass ═══════════
+  // USER: "make the ground 2D markings on the near sides of course unless u dont want anyone to read
+  // well". So the PLANE goes AWAY from the camera (occluded by the build) while the ANNOTATION comes
+  // TOWARD it (readable). Same camera vector, opposite sign — and that is also how a drawing works:
+  // the strings sit on the side you read from, not tucked behind the plan.
+  // ⚠ NEAR must be evaluated PER FRAME. The camera moves through the dive, so a side chosen at build
+  // time ends up on the wrong edge halfway through.
+  //
+  // The string is the standard nested pair (user: "u have length between inner lines, then outer"):
+  //   TIER 1 — bay, gridline to gridline, nearest the building
+  //   TIER 2 — overall, stepped further out
+  // The overall MUST equal the sum of the bays; that is the check a drawing is verified by, and it
+  // is asserted rather than assumed (§FLYTHRU_DATUM_CHAIN below).
+  var INKS = '#ffd600';
+  var BUB_R = 11, OFF1 = 26, OFF2 = 58;                 // screen px at 720p, scaled by h/720
+  // Standard grid letters omit I (confusable with 1). Practice omits O as well; grid_dims.js's own
+  // sequence keeps O, which is why this defines its own rather than importing it.
+  var LET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  function label(i, useLetters) { return useLetters ? (LET[i] || ('Z' + i)) : String(i + 1); }
+
+  A.flythruDatumCompositeOntoCanvas = function (ctx, w, h, filmSec, filmSecFull) {
+    if (!_lines || !ctx || !A.camera) return 0;
+    var T = window.THREE, cam = A.camera, k = h / 720;
+    var holdTo = Math.max(6, (filmSecFull || 0) * 0.094);
+    var op = filmSec <= holdTo ? 1 : Math.max(0, 1 - (filmSec - holdTo) / 2.0);
+    if (op <= 0.01) return 0;
+    var ext = _lines.ext, z0 = ext[4];
+    var P = function (ix, iy, iz) { var p = A.ifc2three(ix, iy, iz); return new T.Vector3(p.x, p.y, p.z); };
+    var pr = function (v) { var p = v.clone().project(cam); return { x: (p.x * .5 + .5) * w, y: (-p.y * .5 + .5) * h, z: p.z }; };
+    // NEAR edge per axis, chosen against the camera THIS frame
+    var cMin = pr(P(ext[0], ext[2], z0)), cMax = pr(P(ext[0], ext[3], z0));
+    var nearY = (pr(P((ext[0]+ext[1])/2, ext[2], z0)).y > pr(P((ext[0]+ext[1])/2, ext[3], z0)).y) ? ext[2] : ext[3];
+    var nearX = (pr(P(ext[0], (ext[2]+ext[3])/2, z0)).y > pr(P(ext[1], (ext[2]+ext[3])/2, z0)).y) ? ext[0] : ext[1];
+    var n = 0;
+    ctx.save(); ctx.globalAlpha = op;
+    ctx.lineWidth = 1.3 * k; ctx.font = '700 ' + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+    function bubble(p2, txt) {
+      if (p2.z >= 1) return false;
+      ctx.beginPath(); ctx.arc(p2.x, p2.y, BUB_R * k, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(10,14,20,0.72)'; ctx.fill();
+      ctx.strokeStyle = '#8899aa'; ctx.stroke();
+      ctx.fillStyle = '#dfe6ee'; ctx.fillText(txt, p2.x, p2.y + 0.5 * k);
+      return true;
+    }
+    function dim(a3, b3, metres, tier) {
+      var a2 = pr(a3), b2 = pr(b3);
+      if (a2.z >= 1 || b2.z >= 1) return false;
+      var dx = b2.x - a2.x, dy = b2.y - a2.y, L = Math.hypot(dx, dy);
+      if (L < 26 * k) return false;
+      var ux = dx / L, uy = dy / L, nx = -uy, ny = ux, e = (tier === 2 ? OFF2 : OFF1) * k;
+      var A2 = { x: a2.x + nx * e, y: a2.y + ny * e }, B2 = { x: b2.x + nx * e, y: b2.y + ny * e };
+      ctx.strokeStyle = '#8899aa'; ctx.fillStyle = '#8899aa';
+      var ln = function (x1,y1,x2,y2){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); };
+      ln(a2.x + nx*(e-8*k), a2.y + ny*(e-8*k), A2.x, A2.y);          // witness lines
+      ln(b2.x + nx*(e-8*k), b2.y + ny*(e-8*k), B2.x, B2.y);
+      var txt = Math.round(metres * 1000).toLocaleString('en-US');
+      var tw = ctx.measureText(txt).width + 8 * k, gap = tw / 2 + 5 * k;
+      var mx = (A2.x + B2.x) / 2, my = (A2.y + B2.y) / 2;
+      if (L > tw + 20 * k) { ln(A2.x, A2.y, mx - ux*gap, my - uy*gap); ln(mx + ux*gap, my + uy*gap, B2.x, B2.y); }
+      else ln(A2.x, A2.y, B2.x, B2.y);
+      var tri = function (px,py,sg){ ctx.beginPath(); ctx.moveTo(px,py);
+        ctx.lineTo(px+sg*ux*9*k+nx*3.6*k, py+sg*uy*9*k+ny*3.6*k);
+        ctx.lineTo(px+sg*ux*9*k-nx*3.6*k, py+sg*uy*9*k-ny*3.6*k); ctx.closePath(); ctx.fill(); };
+      tri(A2.x,A2.y,1); tri(B2.x,B2.y,-1);
+      ctx.fillStyle = '#dfe6ee';
+      ctx.lineWidth = 2.6*k; ctx.strokeStyle = 'rgba(10,14,20,0.9)';
+      ctx.strokeText(txt, mx, my); ctx.fillText(txt, mx, my);
+      ctx.lineWidth = 1.3*k;
+      return true;
+    }
+    // X gridlines -> bubbles on the near Y edge, numerals; bays + overall along that edge
+    _lines.gx.forEach(function (x, i) { if (bubble(pr(P(x, nearY, z0)), label(i, false))) n++; });
+    _lines.gy.forEach(function (y, i) { if (bubble(pr(P(nearX, y, z0)), label(i, true))) n++; });
+    var sumX = 0, sumY = 0;
+    for (var i = 0; i < _lines.gx.length - 1; i++) {
+      if (dim(P(_lines.gx[i], nearY, z0), P(_lines.gx[i+1], nearY, z0), _lines.gx[i+1]-_lines.gx[i], 1)) n++;
+      sumX += _lines.gx[i+1] - _lines.gx[i];
+    }
+    for (var j = 0; j < _lines.gy.length - 1; j++) {
+      if (dim(P(nearX, _lines.gy[j], z0), P(nearX, _lines.gy[j+1], z0), _lines.gy[j+1]-_lines.gy[j], 1)) n++;
+      sumY += _lines.gy[j+1] - _lines.gy[j];
+    }
+    // LEVEL TAGS on the upright. USER: the ground has too many lines to name, but "the upright
+    // storeys are few and well known, easily given by the DB". A level datum on a drawing reads
+    // name + elevation, and the elevation printed is the LOCAL one (Level 2 +6.000), never the
+    // 156 m global figure the geometry needs.
+    var farY = (nearY === ext[2]) ? ext[3] : ext[2];
+    (_lines.levels || []).forEach(function (L) {
+      var e2 = pr(P(nearX, farY, L.z));
+      if (e2.z >= 1) return;
+      var zTxt = (L.zRaw == null ? L.z : L.zRaw);
+      var txt = L.name + '   ' + (zTxt >= 0 ? '+' : '') + zTxt.toFixed(3);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.font = '600 ' + (12 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+      var tw2 = ctx.measureText(txt).width;
+      var bx = e2.x + 8 * k, by = e2.y;
+      if (bx + tw2 + 10 * k > w) bx = e2.x - tw2 - 14 * k;      // keep it on screen
+      ctx.strokeStyle = INKS; ctx.lineWidth = 1.1 * k;
+      ctx.beginPath(); ctx.moveTo(e2.x, e2.y); ctx.lineTo(bx - 4 * k, by); ctx.stroke();
+      ctx.fillStyle = 'rgba(10,14,20,0.72)';
+      ctx.fillRect(bx - 4 * k, by - 9 * k, tw2 + 8 * k, 18 * k);
+      ctx.strokeRect(bx - 4 * k, by - 9 * k, tw2 + 8 * k, 18 * k);
+      ctx.fillStyle = INKS; ctx.fillText(txt, bx, by + 0.5 * k);
+      n++;
+    });
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '700 ' + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+    var ovX = _lines.gx[_lines.gx.length-1] - _lines.gx[0], ovY = _lines.gy[_lines.gy.length-1] - _lines.gy[0];
+    if (dim(P(_lines.gx[0], nearY, z0), P(_lines.gx[_lines.gx.length-1], nearY, z0), ovX, 2)) n++;
+    if (dim(P(nearX, _lines.gy[0], z0), P(nearX, _lines.gy[_lines.gy.length-1], z0), ovY, 2)) n++;
+    ctx.restore();
+    if (_chainKey !== 1) {           // assert the chain ONCE: the overall must equal the sum of bays
+      _chainKey = 1;
+      var ex = Math.abs(sumX - ovX), ey = Math.abs(sumY - ovY);
+      console.log('§FLYTHRU_DATUM_CHAIN X bays=' + sumX.toFixed(3) + 'm overall=' + ovX.toFixed(3) +
+        'm delta=' + ex.toFixed(4) + ' | Y bays=' + sumY.toFixed(3) + 'm overall=' + ovY.toFixed(3) +
+        'm delta=' + ey.toFixed(4) + ' -> ' + ((ex < 0.001 && ey < 0.001) ? 'CHAIN ADDS UP' : 'CHAIN MISMATCH'));
+    }
+    if (n) console.log('§FLYTHRU_DATUM_MARKS drawn=' + n + ' filmSec=' + filmSec.toFixed(2) +
+      ' levelTags=' + ((_lines.levels||[]).length) + ' nearEdge=(x@' + nearX.toFixed(1) + ', y@' + nearY.toFixed(1) + ')');
+    return n;
+  };
+  var _chainKey = 0;
+
   A.flythruDatumDispose = function () { if (_grp && A.scene) { A.scene.remove(_grp); _grp.children.forEach(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); _grp = null; } };
   console.log('§FLYTHRU_DATUM_INIT wired (ground grid + ONE upright with storey rules; depth-tested, occluded by the build)');
 }

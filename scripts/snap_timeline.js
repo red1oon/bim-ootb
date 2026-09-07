@@ -168,6 +168,9 @@ let TIMES = arg('at', null) ? arg('at').split(',').map(Number)
             const li = A.clashLabels.update(A.camera, filmSec, w, h, 0);
             if (li && li.placed && li.placed.length) { lblN = li.placed.length; A.clashLabelsCompositeOntoCanvas(ctx, w, h, li.placed); }
           }
+          if (layers.cues && A.flythruDatumCompositeOntoCanvas) {
+            try { A.flythruDatumCompositeOntoCanvas(ctx, w, h, filmSec, dur); } catch (e) { console.log('§SNAP_DATUMMARK FAILED ' + e.message); }
+          }
           if (layers.cues && A.flythruCuesCompositeOntoCanvas) {
             try { A.flythruCuesCompositeOntoCanvas(ctx, w, h, filmSec); } catch (e) { console.log('§SNAP_DIM FAILED ' + e.message); }
           }
