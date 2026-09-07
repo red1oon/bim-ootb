@@ -272,7 +272,11 @@ function setupCpeFlythruDatum(A) {
         if (px > 14 * k && px < w - 14 * k && py > 14 * k && py < h - 14 * k) inN++;
       }
       if (!nP) return -1;
-      return (inN / nP) * 2 + (sy / nP) / h;
+      // ⚠ CLAMP THE DEPTH TERM. Unclamped it is a mean screen y divided by the frame height, and a
+      // point projected far outside the frame makes that arbitrarily large: the streamed Hospital run
+      // logged edge scores of 19.10, 8.93 and 7.76, so "how far down the frame" was outvoting "is it
+      // even in the frame" by an order of magnitude. In frame is worth 2; depth breaks ties, 0..1.
+      return (inN / nP) * 2 + Math.max(0, Math.min(1, (sy / nP) / h));
     }
     var sY0 = edgeScore(_lines.gx, true, ext[2], ext[3]), sY1 = edgeScore(_lines.gx, true, ext[3], ext[2]);
     var sX0 = edgeScore(_lines.gy, false, ext[0], ext[1]), sX1 = edgeScore(_lines.gy, false, ext[1], ext[0]);
@@ -351,9 +355,16 @@ function setupCpeFlythruDatum(A) {
       return (w ? w[1].toUpperCase() : '') + (m ? m[1] : String(i + 1));
     }
     // Which end of the level rules the stack hangs off — scored the same way the ground edges are.
+    // ⚠ SCORED OVER THE PLAN'S OWN X EXTREMES, CLAMPED, AND INDEPENDENT OF THE GROUND'S CHOICE.
+    // Two faults were here at once, and the streamed run showed both. (a) The depth term was
+    // unclamped exactly as the ground's was — logged `zEnd=far(scored 0.20/19.10)`. (b) It scored
+    // nearX vs farX, which are the GROUND's picks, so clamping the ground silently moved the level
+    // stack to a different corner and withdrew it: at t=9 the same frame went from
+    // `far(scored 0.43/2.28)`, four bubbles drawn and reading, to `near(scored 0.82/-1.00)` and
+    // withdrawn. The upright's anchor is its own question — score ext[0] against ext[1] directly.
     var zEndScore = [0, 0];
     for (var zE = 0; zE < 2; zE++) {
-      var ec = zE ? farX : nearX, eo = zE ? nearX : farX, inN = 0, sy = 0, nP = 0;
+      var ec = zE ? ext[1] : ext[0], eo = zE ? ext[0] : ext[1], inN = 0, sy = 0, nP = 0;
       for (var zi = 0; zi < _lvz.length; zi++) {
         var b0 = pr(P(ec, farY, _lvz[zi].z)), o0 = pr(P(eo, farY, _lvz[zi].z));
         if (!b0.front) continue;
@@ -362,9 +373,9 @@ function setupCpeFlythruDatum(A) {
         nP++; sy += qy;
         if (qx > 14 * k && qx < w - 14 * k && qy > 14 * k && qy < h - 14 * k) inN++;
       }
-      zEndScore[zE] = nP ? (inN / nP) * 2 + (sy / nP) / h : -1;
+      zEndScore[zE] = nP ? (inN / nP) * 2 + Math.max(0, Math.min(1, (sy / nP) / h)) : -1;
     }
-    var zNearX = (zEndScore[1] > zEndScore[0]) ? farX : nearX, zFarX = (zNearX === nearX) ? farX : nearX;
+    var zNearX = (zEndScore[1] > zEndScore[0]) ? ext[1] : ext[0], zFarX = (zNearX === ext[0]) ? ext[1] : ext[0];
     var axZ = mkAxis(_lvz.map(function (L) { return L.z; }),
                      function (v) { return pr(P(zNearX, farY, v)); },
                      function (v) { return pr(P(zFarX, farY, v)); },
@@ -494,17 +505,28 @@ function setupCpeFlythruDatum(A) {
       return dim(ax, v[0], v[v.length - 1], v[v.length - 1] - v[0], 2,
                  ax.lab(0), ax.lab(v.length - 1), true) ? 1 : 0;
     }
-    var oX = overall(axX), oY = overall(axY), oZ = overall(axZ);
+    var ixZ0 = idxFor(axZ.vals.length, strideFor(axZ));
+    var setX = canSet(axX, ixX), setY = canSet(axY, ixY), setZ = canSet(axZ, ixZ0);
+    var oX = setX ? overall(axX) : 0, oY = setY ? overall(axY) : 0, oZ = setZ ? overall(axZ) : 0;
     _ov = oX + oY + oZ; n += _ov;
 
     // ── 8. BUBBLES, outermost rung, ALL-OR-NONE PER AXIS. A row of bubbles stranded on the frame
     //       boundary is worse than none. They sit at the SAME indices the chain ticks at, so bubble
     //       and chain read as one structure rather than two overlaid drawings.
     function inFrame(p2) { return p2.front && p2.x > 14 * k && p2.x < w - 14 * k && p2.y > 14 * k && p2.y < h - 14 * k; }
+    // ⚠ THE WHOLE AXIS IS ALL-OR-NOTHING, not just its bubbles. MEASURED on the streamed Hospital
+    // run at t=9,16,18 — camera inside the building — the ground drew 22-24 bay dimension lines with
+    // ZERO bubbles and 1 of 3 overalls: a chain of anonymous numbers with nothing to point at, which
+    // is exactly the "reads as broken" failure §24.3 named. If an axis cannot carry its refs it does
+    // not get to draw its chain either. Withdrawn axes are named in §FLYTHRU_DATUM_MARKS.
+    function canSet(ax, idx) {
+      var v = ax.vals;
+      if (v.length < 2) return false;
+      var ok = idx.filter(function (i2) { return inFrame(ax.at(v[i2], offB)); }).length;
+      return ok >= Math.ceil(idx.length * 0.6);
+    }
     function bubbleSet(ax, idx) {
       var v = ax.vals;
-      var ok = idx.filter(function (i2) { return inFrame(ax.at(v[i2], offB)); }).length;
-      if (ok < Math.ceil(idx.length * 0.6)) return { drawn: 0, set: false };
       var drawn = 0;
       idx.forEach(function (i2) {
         var p2 = ax.at(v[i2], offB);
@@ -542,8 +564,10 @@ function setupCpeFlythruDatum(A) {
       });
       return { drawn: drawn, set: true };
     }
-    var ixZ = idxFor(axZ.vals.length, strideFor(axZ));
-    var bX = bubbleSet(axX, ixX), bY = bubbleSet(axY, ixY), bZ = bubbleSet(axZ, ixZ);
+    var ixZ = ixZ0;
+    var bX = setX ? bubbleSet(axX, ixX) : { drawn: 0, set: false },
+        bY = setY ? bubbleSet(axY, ixY) : { drawn: 0, set: false },
+        bZ = setZ ? bubbleSet(axZ, ixZ) : { drawn: 0, set: false };
     n += bX.drawn + bY.drawn + bZ.drawn;
 
     // ── 9. THE BAY CHAIN. Every strided segment draws its line and ticks; only a REGULAR SAMPLE
@@ -563,7 +587,8 @@ function setupCpeFlythruDatum(A) {
       });
       return { drew: drew, figs: figs, sum: sum, segs: segs.length, figEvery: figEvery };
     }
-    var cX = chain(axX, ixX), cY = chain(axY, ixY), cZ = chain(axZ, ixZ);
+    var NOCHAIN = { drew: 0, figs: 0, sum: 0, segs: 0, figEvery: 1 };
+    var cX = setX ? chain(axX, ixX) : NOCHAIN, cY = setY ? chain(axY, ixY) : NOCHAIN, cZ = setZ ? chain(axZ, ixZ) : NOCHAIN;
     _bay = cX.drew + cY.drew + cZ.drew; _fig = cX.figs + cY.figs + cZ.figs; n += _bay;
 
     // ── 10. THE Z LADDER IS THE SAME LADDER (see mkAxis above) — nothing special-cases it any more.
@@ -582,7 +607,8 @@ function setupCpeFlythruDatum(A) {
     if (_chainKey !== 1) {
       _chainKey = 1;
       var ovZ = axZ.vals.length > 1 ? axZ.vals[axZ.vals.length - 1] - axZ.vals[0] : 0;
-      var ex = Math.abs(cX.sum - ovX), ey = Math.abs(cY.sum - ovY), ez = Math.abs(cZ.sum - ovZ);
+      var ex = setX ? Math.abs(cX.sum - ovX) : 0, ey = setY ? Math.abs(cY.sum - ovY) : 0,
+          ez = setZ ? Math.abs(cZ.sum - ovZ) : 0;
       console.log('§FLYTHRU_DATUM_CHAIN X bays=' + cX.sum.toFixed(3) + 'm overall=' + ovX.toFixed(3) +
         'm delta=' + ex.toFixed(4) + ' | Y bays=' + cY.sum.toFixed(3) + 'm overall=' + ovY.toFixed(3) +
         'm delta=' + ey.toFixed(4) + ' | Z storeys=' + cZ.sum.toFixed(3) + 'm overall=' + ovZ.toFixed(3) +
@@ -594,10 +620,11 @@ function setupCpeFlythruDatum(A) {
     console.log('§FLYTHRU_DATUM_MARKS ' + (n ? 'drawn=' + n : 'NOTHING drawn=0') + ' filmSec=' + filmSec.toFixed(2) +
       ' overalls=' + _ov + '/3 baySegs=' + _bay + '/' + (cX.segs + cY.segs) + ' bayFigures=' + _fig +
       ' figEvery=' + cX.figEvery + '/' + cY.figEvery + ' stride=' + strX + '/' + strY +
-      ' bubbleSets=' + (bX.set ? 'X' : '-') + (bY.set ? 'Y' : '-') + ' bubbles=' + (bX.drawn + bY.drawn) +
+      ' axes=' + (setX ? 'X' : '-') + (setY ? 'Y' : '-') + (setZ ? 'Z' : '-') +
+      (setX && setY && setZ ? '' : ' (withdrawn: an axis whose refs will not fit does not draw its chain)') + ' bubbles=' + (bX.drawn + bY.drawn) +
       ' clamped=' + _bubClamp + ' droppedOffFrame=' + _bubDrop +
       ' zRules=' + axZ.vals.length + ' zBubbles=' + bZ.drawn + ' zSegs=' + cZ.drew + '/' + cZ.segs + ' zFigures=' + cZ.figs +
-      ' zEnd=' + (zNearX === nearX ? 'near' : 'far') + '(scored ' + zEndScore[0].toFixed(2) + '/' + zEndScore[1].toFixed(2) + ')' +
+      ' zEnd=x@' + zNearX.toFixed(1) + '(scored ' + zEndScore[0].toFixed(2) + '/' + zEndScore[1].toFixed(2) + ')' +
       ' collisionsDropped=' + _coll +
       ' scale=' + scale.toFixed(2) + ' edges=(numeralsOn Y@' + nearY.toFixed(1) + ' scored ' + sY0.toFixed(2) + '/' + sY1.toFixed(2) +
       ', lettersOn X@' + nearX.toFixed(1) + ' scored ' + sX0.toFixed(2) + '/' + sX1.toFixed(2) + ')');
