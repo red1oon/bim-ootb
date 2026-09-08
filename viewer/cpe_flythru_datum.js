@@ -157,8 +157,15 @@ function setupCpeFlythruDatum(A) {
     if (!st.levels.length) console.log('§FLYTHRU_DATUM_STOREY VACUOUS — no storey levels; upright drawn without rules');
 
     _grp = new T.Group(); _grp.name = 'flythruDatum';
-    var mat = new T.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.5 });      // depthTest TRUE — §17.5
-    var matS = new T.LineBasicMaterial({ color: INK_STOREY, transparent: true, opacity: 0.75 });
+    // §34.3 (MEP_CLASH_REVEAL_MOVIE.md — user, 2026-09-08: "make the grid lines more pts thicker"):
+    // LineBasicMaterial draws 1px regardless of `linewidth` (a WebGL limitation) and the bundle ships
+    // no LineSegments2/LineMaterial (grep: 0 hits), so the lines are now flat ribbon quads — real
+    // world-space width, MeshBasicMaterial, depthTest left at its TRUE default (§17.5 still holds: the
+    // ribbons must be occluded by the building, never shine through).
+    var medianBay = _bays.length ? _bays[_bays.length >> 1] : 0;
+    var R_BUB = 0.153 * (medianBay > 0 ? medianBay : 6.0);   // the grid's own bubble ratio, §17.3/§22
+    var mat = new T.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.5, side: T.DoubleSide });      // depthTest TRUE — §17.5
+    var matS = new T.MeshBasicMaterial({ color: INK_STOREY, transparent: true, opacity: 0.75, side: T.DoubleSide });
     var P = function (ix, iy, iz) { var p = A.ifc2three(ix, iy, iz); return new T.Vector3(p.x, p.y, p.z); };
     var g = [], s = [];
     // GROUND — the plan grid, laid on the structural base
@@ -177,10 +184,58 @@ function setupCpeFlythruDatum(A) {
       sNear.push(P(ext[0], ext[2], L.z), P(ext[1], ext[2], L.z));
     });
     _faces = { yMaxIfc: ext[3], yMinIfc: ext[2] };
-    var mk = function (pts, m) { var gm = new T.BufferGeometry().setFromPoints(pts); var o = new T.LineSegments(gm, m); o.renderOrder = 1; return o; };
-    if (g.length) { var og = mk(g, mat); og.name = 'ground'; _grp.add(og); }
-    if (s.length) { var o1 = mk(s, matS); o1.name = 'levelsYmax'; _grp.add(o1);
-                    var o2 = mk(sNear, matS.clone()); o2.name = 'levelsYmin'; _grp.add(o2); }
+    // §34.3 width, MEASURED not guessed: a fixed 0.06×R_BUB ratio (R_BUB = grid bubble radius, §17.3)
+    // was tried first and gave a Hospital line 0.059m wide — 0.37px at the film's real ~262m opening
+    // distance, THINNER on screen than the 1px hairline it replaces (§FLYTHRU_DATUM_LINES first run).
+    // World-space geometry viewed from hundreds of metres needs metres of width to read as a few
+    // pixels, so the width is derived from THIS BUILD'S OWN opening camera distance to hit a stated
+    // pixel target instead — "derived, not authored" (§12/§17.3) anchored to a quantity commensurate
+    // with what the eye judges (screen pixels), not to bay spacing. Degrades to the bubble ratio when
+    // no camera/viewport is up yet (never invent a number).
+    var TARGET_PX = 2.5;   // modestly thicker than a 1px hairline, not a bar
+    var gridCentre = P((ext[0] + ext[1]) / 2, (ext[2] + ext[3]) / 2, z0);
+    var _cam = A.camera, _rh = A.renderer && A.renderer.domElement && A.renderer.domElement.height;
+    var _camDist = _cam ? _cam.position.distanceTo(gridCentre) : null;
+    var ribbonHalfW, _widthSrc, _widthMeasured = false;
+    if (_camDist && _cam.fov && _rh) {
+      ribbonHalfW = (TARGET_PX * 2 * _camDist * Math.tan(_cam.fov * Math.PI / 360) / _rh) / 2;
+      _widthSrc = 'camera d=' + _camDist.toFixed(1) + 'm fov=' + _cam.fov.toFixed(0) + ' h=' + _rh + 'px';
+      _widthMeasured = true;
+    } else {
+      ribbonHalfW = 0.03 * R_BUB;
+      _widthSrc = 'DEGRADED — no camera/viewport yet, fell back to 0.06 x R_BUB(' + R_BUB.toFixed(3) + 'm)';
+    }
+    // ONE flat quad per segment, all segments of a group merged into ONE BufferGeometry — §17.7's
+    // "3 draw calls" budget is unchanged, only each draw call now emits triangles instead of lines.
+    // The quad stays IN the plane the segment already lies in: `normal` is that plane's normal, so
+    // `along × normal` gives the in-plane perpendicular to widen along (ground -> Y-up normal, widens
+    // in X/Z; the elevation plane -> Z normal, widens vertically) — never a rod poking out of the face.
+    var mkRibbon = function (pts, m, halfW, normal) {
+      var pos = [], i, A2, B2, along, perp, a0, a1, b0, b1;
+      for (i = 0; i < pts.length; i += 2) {
+        A2 = pts[i]; B2 = pts[i + 1];
+        along = B2.clone().sub(A2);
+        if (along.lengthSq() < 1e-9) continue;
+        along.normalize();
+        perp = new T.Vector3().crossVectors(along, normal).normalize().multiplyScalar(halfW);
+        a0 = A2.clone().sub(perp); a1 = A2.clone().add(perp);
+        b0 = B2.clone().sub(perp); b1 = B2.clone().add(perp);
+        pos.push(a0.x, a0.y, a0.z, b0.x, b0.y, b0.z, b1.x, b1.y, b1.z);
+        pos.push(a0.x, a0.y, a0.z, b1.x, b1.y, b1.z, a1.x, a1.y, a1.z);
+      }
+      var gm = new T.BufferGeometry();
+      gm.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+      var o = new T.Mesh(gm, m); o.renderOrder = 1; return o;
+    };
+    var Y_UP = new T.Vector3(0, 1, 0), Z_AX = new T.Vector3(0, 0, 1);
+    if (g.length) { var og = mkRibbon(g, mat, ribbonHalfW, Y_UP); og.name = 'ground'; _grp.add(og); }
+    if (s.length) { var o1 = mkRibbon(s, matS, ribbonHalfW, Z_AX); o1.name = 'levelsYmax'; _grp.add(o1);
+                    var o2 = mkRibbon(sNear, matS.clone(), ribbonHalfW, Z_AX); o2.name = 'levelsYmin'; _grp.add(o2); }
+    // §34.3 witness — the width actually chosen, how it was derived, and what it measures on screen
+    // AT THE REAL OPENING DISTANCE (not a made-up reference range), so a later "thin again"
+    // regression is caught as a number, not an eyeball.
+    console.log('§FLYTHRU_DATUM_LINES widthM=' + (2 * ribbonHalfW).toFixed(4) + ' src=[' + _widthSrc + ']' +
+      (_widthMeasured ? ' px@' + _camDist.toFixed(0) + 'm=' + TARGET_PX.toFixed(2) : ' px@?=n/a'));
     _grp.visible = false;
     A.scene.add(_grp);
     _lines = { gx: gx, gy: gy, ext: ext, levels: st.levels };

@@ -45,7 +45,7 @@ function setupCpeFlythruCues(A) {
   var ORDER = ['envelope', 'storey', 'room', 'corridor'];
 
   var _cues = null, _group = null, _built = false, _lastKey = null;
-  var _envBoxLogged = false;          // §32 — one log line, not one per frame
+  var _envBoxLogged = false;          // §34.1 — one log line, not one per frame
   var PANEL_HOLD = 2.0;               // §32 — user: "make the box label persist 2 more secs" (1.4 s full + the 0.6 s fade)
 
 
@@ -109,24 +109,45 @@ function setupCpeFlythruCues(A) {
   // ── numbers from the DB (the two primitives) ────────────────────────────────────────────────────
   // FlythruMaths/StoreyRaster are plain script globals (common/*.js, UMD). If either is missing the
   // cue DEGRADES to its extents-only label rather than inventing an area — §12, never fabricate.
+  // §34.2 (MEP_CLASH_REVEAL_MOVIE.md — user, 2026-09-08: "the outer perimeter still does not ignore
+  // rogue elements... it may influence the total/walkable areas"): the BUILDING-LEVEL envelope/ground
+  // numbers must take the §20.9 structural envelope (window.BOMExtract.ENV_CLASSES — column/pile/wall/
+  // slab/beam/footing/curtainwall/roof), same rule as bom_extract.js and cpe_flythru_datum.js's own
+  // grid extent, so a stray IfcStair off the main building is outside the envelope by construction.
+  // Per-storey gross/walk (out.storeys[k]) is untouched — that scope was not asked for.
+  var _envelopeLogged = false;
   function dbMeasures() {
     var out = { ground: null, storeys: {}, ext: null };
     var FM = window.FlythruMaths, SR = window.StoreyRaster;
+    var EC = (window.BOMExtract && window.BOMExtract.ENV_CLASSES) || null;
     if (!FM || !A.dbQuery) return out;
     try {
-      var rows = A.dbQuery('SELECT t.center_x,t.center_y,t.center_z,t.bbox_x,t.bbox_y,t.bbox_z,m.storey ' +
+      var rows = A.dbQuery('SELECT t.center_x,t.center_y,t.center_z,t.bbox_x,t.bbox_y,t.bbox_z,m.storey,m.ifc_class ' +
                            'FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid') || [];
       if (!rows.length) return out;
-      var all = [], byS = {}, i, r, b, k;
+      var all = [], struct = [], dropped = {}, byS = {}, i, r, b, k, cls;
       for (i = 0; i < rows.length; i++) {
         r = rows[i];
         b = { cx: r[0], cy: r[1], cz: r[2], sx: r[3], sy: r[4], sz: r[5] };
         all.push(b);
+        cls = r[7];
+        if (EC && EC[cls]) struct.push(b);
+        else if (EC) dropped[cls] = (dropped[cls] || 0) + 1;
         k = String(r[6] || 'Unknown').replace(/\s+(Ceiling|TOS)$/i, '');   // fold pseudo-storeys
         (byS[k] || (byS[k] = [])).push(b);
       }
-      out.ground = FM.ftRasterArea(FM.ftRasterizeBoxes(all, FM.RES));
-      out.ext = FM.ftExtents(all);
+      // Fallback to all-elements if the class filter left nothing structural (§20.9's own convention).
+      var groundSrc = (EC && struct.length) ? struct : all;
+      out.ground = FM.ftRasterArea(FM.ftRasterizeBoxes(groundSrc, FM.RES));
+      out.ext = FM.ftExtents(groundSrc);
+      if (EC && !_envelopeLogged) {
+        _envelopeLogged = true;
+        var extAll = FM.ftExtents(all);
+        var droppedStr = Object.keys(dropped).sort().map(function (c) { return c + ':' + dropped[c]; }).join(',');
+        console.log('§FLYTHRU_ENVELOPE all=' + (extAll ? n2(extAll.sx) + 'x' + n2(extAll.sy) + 'x' + n2(extAll.sz) : 'n/a') +
+          ' structural=' + (out.ext ? n2(out.ext.sx) + 'x' + n2(out.ext.sy) + 'x' + n2(out.ext.sz) : 'n/a') +
+          ' dropped=[' + droppedStr + ']');
+      }
       for (k in byS) if (byS.hasOwnProperty(k) && k !== 'Unknown')
         out.storeys[k] = { gross: FM.ftRasterArea(FM.ftRasterizeBoxes(byS[k], FM.RES)),
                            ext: FM.ftExtents(byS[k]) };
@@ -150,9 +171,11 @@ function setupCpeFlythruCues(A) {
     var t0 = (window.performance && performance.now) ? performance.now() : 0;
     var meas = dbMeasures();
 
-    // B1 ENVELOPE — extents from the DB (all 64,150 elements), box through the owner transform.
+    // B1 ENVELOPE — structural-only extents from the DB (§20.9, §34.2), box through the owner transform.
     // NOT a mesh-filter union: filtering on userData.storey silently dropped the 10,192 elements whose
     // storey is 'Unknown' and understated the building 115.75 -> 102.03 m (MEASURED, first probe).
+    // NOT a class filter either, pre-§34.2: ALL 64,150 elements (including a rogue stair) used to stretch
+    // this box; dbMeasures() now takes ENV_CLASSES only, all-vs-structural logged once (§FLYTHRU_ENVELOPE).
     var envBox = dbExtToSceneBox(meas.ext);
     if (envBox && meas.ext) {
       var e = meas.ext;
@@ -341,23 +364,14 @@ function setupCpeFlythruCues(A) {
     var a = (filmSec == null) ? null : activeAt(filmSec);
     var grp = ensureGroup();
     if (!grp) return null;
-    if (!a) { if (grp.visible) grp.visible = false; return null; }
-    // §ENVELOPE_BOX_DEPRECATED (MEP_CLASH_REVEAL_MOVIE.md §32, user 2026-09-08: "Remove the whole starting
-    // envelope tint as it is not needed. The whole envelope box supposed to be deprecated. Just the 2Ds
-    // and the box label is good enough.") — the envelope keeps its 2D dimension lines and panel; the 3D
-    // fill+outline never shows for it. Other cues are untouched.
-    if (a.cue.key === 'envelope') {
-      if (grp.visible) grp.visible = false;
-      if (!_envBoxLogged) { _envBoxLogged = true; console.log('§FLYTHRU_ENVELOPE_BOX deprecated — 3D fill/outline skipped for the envelope cue; its 2D dims + panel carry it (§32)'); }
-      return { key: a.cue.key, opacity: a.opacity, box: 'deprecated' };
-    }
-    var c = a.cue.box.getCenter(new T.Vector3()), s = a.cue.box.getSize(new T.Vector3());
-    grp.position.copy(c);
-    grp.scale.set(Math.max(s.x, 0.01), Math.max(s.y, 0.01), Math.max(s.z, 0.01));
-    grp.visible = true;
-    grp.children[0].material.opacity = 0.13 * a.opacity;   // §7: a tint, not a curtain
-    grp.children[1].material.opacity = 0.95 * a.opacity;
-    return { key: a.cue.key, opacity: a.opacity };
+    if (grp.visible) grp.visible = false;
+    if (!a) return null;
+    // §FLYTHRU_CUE_BOX deprecated (MEP_CLASH_REVEAL_MOVIE.md §34.1, user 2026-09-08: "The whole envelope
+    // tint is still there" — §32 only skipped the box for key==='envelope', but the STOREY cue drew the
+    // same fill+outline round its extents and read as the same tint. Ruling extends to ALL cues: no 3D
+    // box for any cue, ever — 2D dims + panel carry every cue.)
+    if (!_envBoxLogged) { _envBoxLogged = true; console.log('§FLYTHRU_CUE_BOX deprecated — 3D fill/outline skipped for all cues; 2D dims + panel carry them (§34.1)'); }
+    return { key: a.cue.key, opacity: a.opacity, box: 'deprecated' };
   };
 
 

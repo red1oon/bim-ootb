@@ -163,10 +163,16 @@
 //   (the real shortcut is Alt+C) and added a "copy bake command" link that hands the user the exact
 //   `node cli_silent_bake.js ...` command for their own terminal — there is no server behind this
 //   page, so nothing here can run a bake for them.
+// v1164 (2026-09-08) §34's 3 user corrections (MEP_CLASH_REVEAL_MOVIE.md §34.1/§34.2/§34.3): cpe_flythru_cues.js
+//   never shows the 3D fill/outline box for ANY cue now (§32 had only skipped it for 'envelope'); dbMeasures()
+//   takes the §20.9 structural envelope (bom_extract.js's ENV_CLASSES, now exported) for envelope/ground/volume,
+//   logging all-vs-structural-vs-dropped once (a rogue IfcStair no longer stretches the building box); the datum's
+//   ground/upright grid lines in cpe_flythru_datum.js are now depth-tested ribbon quads (MeshBasicMaterial) sized
+//   from the real opening camera distance to a stated px target, replacing the 1px LineBasicMaterial hairline.
 // v1163 (2026-09-08) §SLAB_BEAT (MEP_CLASH_REVEAL_MOVIE.md §26): new viewer/cpe_slab_beat.js — one floor plate
 //   marked as it is laid (depth-tested tint + X, shine-through label), riding the Alt-C Measure checkbox; wired in
 //   cinema_maxq.js beside the datum; cli_silent_bake.js gains --measure/--no-measure (§28.1).
-const CACHE_VERSION = 'v1163';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1164';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
