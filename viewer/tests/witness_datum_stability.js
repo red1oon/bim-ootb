@@ -18,7 +18,7 @@ const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const { Witness } = require('../../witness_kit/contract');
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i > 0 ? process.argv[i + 1] : d; };
 const ROOT = path.resolve(__dirname, '..', '..'), PORT = +arg('port', 8580), DB = arg('db', 'HHS_silent');
-const DUR = +arg('dur', 130.4), TO = +arg('to', 20), FPS = +arg('fps', 24);
+const DUR = +arg('dur', 130.4), TO = +arg('to', 20), FPS = +arg('fps', 24), LIFE2 = process.argv.includes('--life2');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm', '.db': 'application/octet-stream', '.png': 'image/png', '.svg': 'image/svg+xml', '.hdr': 'application/octet-stream', '.gz': 'application/gzip', '.woff2': 'font/woff2' };
 const server = http.createServer((req, res) => { try { const u = decodeURIComponent(req.url.split('?')[0]); let fp = path.join(ROOT, u.replace(/^\/+/, ''));
   if (fs.existsSync(fp) && fs.statSync(fp).isDirectory()) fp = path.join(fp, 'index.html'); if (!fs.existsSync(fp)) { res.writeHead(404); res.end('404'); return; }
@@ -34,7 +34,7 @@ const server = http.createServer((req, res) => { try { const u = decodeURICompon
   await p.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
   await p.waitForFunction(() => window.APP && window.APP.cinemaPathPlan && window.APP.flythruDatumBuild && window.APP.flythruCuesBuild, { timeout: 300000 });
   await p.waitForFunction(() => window.APP.db && window.APP.activeBuilding, { timeout: 600000, polling: 1000 });
-  const out = await p.evaluate((dur, to, fps) => {
+  const out = await p.evaluate((dur, to, fps, life2) => {
     const A = window.APP, R = {};
     try {
       // the bake opens from the DB's saved view (main.js §SCENE_STATE_RESTORE); apply it here so the plan is the film's
@@ -48,14 +48,20 @@ const server = http.createServer((req, res) => { try { const u = decodeURICompon
       if (!atLoad.full) { document.body.focus(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); A.flythruDatumDispose(); A.flythruDatumBuild(); R.gate.pressed = true; R.gate.home = judge(); }
       A.flythruDatumDispose(); A.flythruDatumBuild();          // fresh life for the run: first composite decides the sides
       const plan = A.cinemaPathPlan(dur); R.beats = plan.beats;
+      const srw = (plan.storeyReveal && plan.storeyReveal.on && plan.storeyReveal.windowFrac > 0) ? plan.storeyReveal.windowFrac : 0;
+      const l2from = (life2 && life2.from != null) ? life2.from : plan.beats.flyback * dur, l2to = (life2 && life2.to != null) ? life2.to : (plan.beats.rise - srw) * dur;
+      if (A.flythruDatumSetLife2) A.flythruDatumSetLife2(l2from, l2to);
+      R.life2 = { from: +l2from.toFixed(2), to: +l2to.toFixed(2), beatsSec: { out: +(plan.beats.out * dur).toFixed(2), pullout: +(plan.beats.pullout * dur).toFixed(2), flyback: +(plan.beats.flyback * dur).toFixed(2), round2: +(plan.beats.round2 * dur).toFixed(2), reveal: plan.beats.reveal == null ? null : +(plan.beats.reveal * dur).toFixed(2), rise: +(plan.beats.rise * dur).toFixed(2) } };
       let cues = []; try { cues = A.flythruCuesBuild(plan, dur) || []; } catch (e) { R.cuesErr = e.message; }
       R.cues = cues.map(c => ({ key: c.key, at: +c.at.toFixed(2) }));
       R.holdTo = Math.max(6, dur * 0.094) + 2;
       try { const g = A.ifc2three(0, 0, A.groundIfcZ != null ? A.groundIfcZ : 0); R.groundY = g.y; } catch (e) { R.groundY = 0; }
       R.frames = [];
-      const N = Math.round(to * fps);
+      const t0 = life2 ? Math.max(0, R.life2.from - 2) : 0, tEnd = life2 ? R.life2.to + 2 : to;
+      R.outsideSecs = [];   // where the camera is outside the building box, sampled each second (the measurement the window rests on)
+      const N = Math.round((tEnd - t0) * fps);
       for (let i = 0; i <= N; i++) {
-        const sec = i / fps, u = Math.min(1, sec / dur), pz = plan.poseAt(u);
+        const sec = t0 + i / fps, u = Math.min(1, sec / dur), pz = plan.poseAt(u);
         A.camera.position.set(pz.x, pz.y, pz.z); A.camera.lookAt(pz.tx, pz.ty, pz.tz); A.camera.updateMatrixWorld(true);
         const op = A.flythruDatumAt(sec, dur);
         ctx.clearRect(0, 0, 1280, 720);
@@ -63,17 +69,43 @@ const server = http.createServer((req, res) => { try { const u = decodeURICompon
         try { A.flythruCuesApplyVisual(sec); } catch (e) {}
         let cm = 0; try { cm = A.flythruCuesCompositeOntoCanvas(ctx, 1280, 720, sec); } catch (e) {}
         const C = A._flythruCuesLast && Math.abs((A._flythruCuesLast.filmSec || -1) - sec) < 1e-6 ? A._flythruCuesLast : null;
-        R.frames.push({ i, sec: +sec.toFixed(3), drawn: n, dDrawn: L.dDrawn, sidesChanged: !!L.sidesChanged, sidesNow: L.sidesNowKey, sidesKey: L.sidesKey, bubbles: L.bubbles, op: +op.toFixed(3),
+        R.frames.push({ i, sec: +sec.toFixed(3), drawn: n, dDrawn: L.dDrawn, sidesChanged: !!L.sidesChanged, sidesNow: L.sidesNowKey, sidesKey: L.sidesKey, bubbles: L.bubbles, op: +op.toFixed(3), life: L.life || 1,
                         entered: !!(L.enteredAt != null), enteredAt: L.enteredAt == null ? null : +L.enteredAt.toFixed(3),
                         cueLocked: C ? C.lockedAxes.join('') : null, belowGround: A.camera.position.y < (R.groundY != null ? R.groundY : 0),
-                        behind: L.behind ? L.behind.bubbles.join('/') : null, camY: +A.camera.position.y.toFixed(2),
+                        behind: L.behind ? L.behind.bubbles.join('/') : null, behindTot: L.behind ? L.behind.bubbles.reduce((a2, b2) => a2 + b2, 0) + L.behind.figures.reduce((a2, b2) => a2 + b2, 0) : null, camY: +A.camera.position.y.toFixed(2),
                         cueKey: C ? C.key : null, cueAxes: C ? C.axes.join('') : null, cueMarks: cm, cuePanel: C ? C.panelOnly : null });
       }
     } catch (e) { R.err = e.message + ' @ ' + (e.stack || '').split('\n')[1]; }
     return R;
-  }, DUR, TO, FPS);
+  }, DUR, TO, FPS, LIFE2 ? { from: arg('from', null) ? +arg('from') : null, to: arg('to2', null) ? +arg('to2') : null } : null);
   await b.close(); server.close();
   if (out.err) { console.log('§WITNESS_DATUM_STABILITY INCONCLUSIVE — page threw: ' + out.err); process.exit(1); }
+  if (LIFE2) {
+    const F2 = out.frames, L2 = out.life2, span = L2.to - L2.from;
+    console.log('§WITNESS_DATUM_STABILITY_LIFE2 db=' + DB + ' window=' + JSON.stringify(L2) + ' span=' + span.toFixed(2) + 's frames=' + F2.length);
+    const onFrames = F2.filter(f => f.drawn > 0); console.log('§WITNESS_DATUM_STABILITY_LIFE2_ON drawnFrames=' + onFrames.length + (onFrames.length ? ' from ' + onFrames[0].sec + 's to ' + onFrames[onFrames.length - 1].sec + 's' : '') + ' — frames the camera was OUTSIDE the building box and the sheet drew');
+    if (span <= 3.0) { console.log('§WITNESS_DATUM_STABILITY_LIFE2 VACUOUS — the search window is empty on this path; nothing to judge, as the module says'); process.exit(0); }
+    const start = (F2.find(f => f.life === 2 && f.drawn > 0) || {}).sec, hold = Math.max(6, DUR * 0.094), end = start == null ? null : Math.min(L2.to, start + hold + 2.0);
+    if (start == null) { console.log('§WITNESS_DATUM_STABILITY_LIFE2 VACUOUS — the camera is never outside the building inside the search window (' + L2.from + '-' + L2.to + ' s); the module printed no start'); process.exit(0); }
+    const inside = F2.filter(f => start != null && f.sec >= start + 1.0 && f.sec <= end - 2.0), before = F2.filter(f => f.sec < L2.from), after = F2.filter(f => end != null && f.sec > end + 0.1);
+    console.log('§WITNESS_DATUM_STABILITY_LIFE2_PLAN start=' + start + ' hold=' + hold.toFixed(1) + ' end=' + end + ' (search ' + L2.from + '-' + L2.to + ')');
+    for (let s2 = Math.floor(L2.from) - 1; s2 <= Math.ceil(L2.to) + 1; s2 += 3) { const f = F2.find(x => Math.abs(x.sec - s2) < 0.5 / FPS) || F2[0]; console.log(`§WITNESS_DATUM_STABILITY_T sec=${s2} drawn=${f.drawn} life=${f.life} camY=${f.camY} below=${f.belowGround}`); }
+    const unpaid = inside.filter((r, i) => i > 0 && r.dDrawn > 0 && !(inside[i - 1].behindTot != null && (inside[i - 1].behindTot - r.behindTot) >= r.dDrawn - 3));
+    console.log('§WITNESS_DATUM_STABILITY_LIFE2_SUMMARY start=' + start + ' insideFrames=' + inside.length + ' minDrawnInside=' + (inside.length ? Math.min(...inside.map(f => f.drawn)) : 'n/a') + ' rises=' + inside.filter(f => f.dDrawn > 0).length + ' unpaidRises=' + unpaid.length + (unpaid.length ? ' at=[' + unpaid.slice(0, 5).map(f => f.sec + ':+' + f.dDrawn).join(',') + ']' : '') + ' decisions=' + new Set(inside.map(f => f.sidesKey)).size + ' beforeMaxDrawn=' + Math.max(0, ...before.map(f => f.drawn)) + ' afterMaxDrawn=' + Math.max(0, ...after.map(f => f.drawn)));
+    Witness('datum_life2')
+      .population(() => inside)
+      .schema({ type: 'object', required: ['sec', 'drawn', 'life'], properties: { sec: { type: 'number' }, drawn: { type: 'integer', minimum: 0 }, life: { type: 'integer' } } })
+      .invariant('the second life started inside its window and is life=2 on every judged frame', rs => start != null && start >= L2.from - 1e-6 && rs.every(r => r.life === 2))
+      .invariant('drawn > 0 on every frame from ramp-in to fade-out (the sheet is up over the finished building)', rs => rs.every(r => r.drawn > 0))
+      // an ORBITING camera legitimately brings marks back in front of it; what must never happen is a rise the behind-camera
+      // ledger does not pay for (that would be a decision change). Overalls are not in the ledger, hence the slack of 3.
+      .invariant('every rise in drawn is paid for by a fall in the behind-camera ledger (re-entry, not re-decision)', rs => rs.every((r, i) => i === 0 || r.dDrawn == null || r.dDrawn <= 0 || (rs[i - 1].behindTot != null && r.behindTot != null && (rs[i - 1].behindTot - r.behindTot) >= r.dDrawn - 3)))
+      .invariant('one side decision for the whole second life', rs => new Set(rs.map(r => r.sidesKey)).size === 1)
+      .invariant('nothing drawn before the window opens or after it closes', () => before.every(f => f.drawn === 0) && after.every(f => f.drawn === 0))
+      .redControl(rs => { const c = rs.map(r => Object.assign({}, r)); if (c[3]) c[3].drawn = 0; return c; })
+      .run();
+    process.exit(0);
+  }
   // judged = inside the hold, before the camera enters the envelope (§20.8 — the drawing fades on entry and is not judged after)
   const F = out.frames, entryAt = (F.find(f => f.entered) || {}).enteredAt, holdEnd = out.holdTo - 1.5 / FPS;
   const aliveAll = F.filter(f => f.sec < holdEnd), under = aliveAll.filter(f => f.belowGround), alive = aliveAll.filter(f => !f.belowGround && (entryAt == null || f.sec < entryAt));

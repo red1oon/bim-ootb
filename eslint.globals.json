@@ -134,6 +134,7 @@
   "setupCpeFlythruDatum": "readonly",
   "setupCpeSlabBeat": "readonly",
   "setupCpeLinearBeat": "readonly",
+  "setupCpeIndoorBeats": "readonly",
   "setupCpeFlythruDims": "readonly",
   "setupCpePathOverview": "readonly",
   "setupCpeResourcePanel": "readonly",

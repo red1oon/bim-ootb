@@ -107,9 +107,20 @@ function setupCpeStoreyReveal(A) {
       "JOIN spatial_structure bs ON bs.guid=sp.parent_guid AND bs.type='IfcBuildingStorey' " +
       "WHERE sp.type='IfcSpace' AND bs.name=?", [name]);
     if (r && r[0] != null) roomCount = +r[0];
-    var out = { doorCount: doorCount, bx: bx, by: by, roomCount: roomCount };
+    // §37.1 (MEP_CLASH_REVEAL_MOVIE.md W6) — the walkable area, from the same storey_walkable_raster §29's hall uses:
+    // mesh-derived, absent from the IFC, the figure a BIM audience leans in at. null when the storey has no raster.
+    var walk = null;
+    try {
+      var FM = window.FlythruMaths, SR = window.StoreyRaster;
+      if (FM && SR && typeof A.dbQuery === 'function') {
+        var wr = A.dbQuery('SELECT storey,res,x0,y0,cols,rows,bits FROM storey_walkable_raster WHERE storey=?', [name]) || [];
+        if (wr.length) walk = FM.ftRasterArea(SR.fromRow(wr[0]));
+      }
+    } catch (eW) { walk = null; }
+    var out = { doorCount: doorCount, bx: bx, by: by, roomCount: roomCount, walk: walk };
     _stats[name] = out;
     console.log('§STOREY_REVEAL_STATS storey="' + name + '" doors=' + doorCount +
+      ' walkable=' + (walk != null ? walk.toFixed(0) + 'm2 (storey_walkable_raster)' : 'n/a (no raster — clause omitted)') +
       ' footprint=' + (bx != null ? bx.toFixed(1) + 'x' + by.toFixed(1) + 'm(estimate,IfcSlab bbox)' : 'n/a') +
       ' rooms=' + roomCount + (roomCount === 0 ? ' (0 — VACUOUS, card omits the room clause)' : ' compiled'));
     return out;
@@ -200,6 +211,7 @@ function setupCpeStoreyReveal(A) {
     if (!vis) return null;
     var st = A.storeyRevealStatsFor(vis.storey);
     var subParts = [];
+    if (st.walk != null && st.walk > 0) subParts.push('walkable ' + Math.round(st.walk).toLocaleString('en-US') + ' m²');   // §37.1 — first, it is the figure the IFC lacks
     if (st.bx != null) subParts.push(st.bx.toFixed(1) + '×' + st.by.toFixed(1) + ' m footprint (estimate)');
     if (st.roomCount > 0) subParts.push(st.roomCount + ' room' + (st.roomCount === 1 ? '' : 's') + ' compiled');
     var card = { big: String(st.doorCount), label: 'doors · ' + vis.storey };
