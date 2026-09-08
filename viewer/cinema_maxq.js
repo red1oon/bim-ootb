@@ -764,9 +764,12 @@
   // §CPE_DAY_COUNTER: dayInfo ({day,totalDays} or null) rides the SAME 2D context for the SAME
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
-  function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo) {
+  function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
+    // §40.1 — the Measure queue is per FRAME. Reset before the beat compositors run so a
+    // posting can never survive into the next frame's box.
+    if (A.filmBoxesMeasureReset) A.filmBoxesMeasureReset();
     if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -798,9 +801,20 @@
       try { A.linearBeatCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
       catch (eLBC) { if (!A._linearBeatWarned) { A._linearBeatWarned = true; console.warn('§LINEAR_BEAT_DRAW failed: ' + (eLBC && eLBC.message)); } }
     }
+    // §SLAB_BEAT (§40.2) — the plate's surface area posts into the Measure queue here, in the 2D
+    // pass, for the same reason every other beat does: this is the only point that reaches the
+    // exported bytes. Its in-model marks (tint + box outline) are 3D and already in the frame.
+    if (A._flythruDatumOn && A.slabBeatCompositeOntoCanvas) {
+      try { A.slabBeatCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
+      catch (eSBC) { if (!A._slabBeatWarned) { A._slabBeatWarned = true; console.warn('§SLAB_BEAT_DRAW failed: ' + (eSBC && eSBC.message)); } }
+    }
     if (A._flythruDatumOn && A.indoorBeatsCompositeOntoCanvas) {
       try { A.indoorBeatsCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
       catch (eIBC) { if (!A._indoorBeatsWarned) { A._indoorBeatsWarned = true; console.warn('§INDOOR_BEAT_DRAW failed: ' + (eIBC && eIBC.message)); } }
+    }
+    if (A._flythruDatumOn && A.flyoutBeatsCompositeOntoCanvas) {
+      try { A.flyoutBeatsCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
+      catch (eFBC) { if (!A._flyoutBeatsWarned) { A._flyoutBeatsWarned = true; console.warn('§FLYOUT_BEAT_DRAW failed: ' + (eFBC && eFBC.message)); } }
     }
     if (lblInfo && lblInfo.placed && lblInfo.placed.length && A.clashLabelsCompositeOntoCanvas) try {
       A.clashLabelsCompositeOntoCanvas(ctx, w, h, lblInfo.placed);
@@ -808,7 +822,21 @@
       if (!A._clashLblDrawErrLogged) { A._clashLblDrawErrLogged = true;
         console.warn('§CLASH_LABELS_ERR draw: ' + eCLd.message + ' — labels skipped, frames continue'); }
     }
-    if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
+    // §MEASURE_BOX (§38.1a, §40.1) — every Measure beat above posted into the queue instead of
+    // hanging a roaming plate off its subject; ONE fixed panel draws them, and draws NOTHING when
+    // nothing posted. After the beats (so the queue is complete), before the HUD furniture.
+    if (A.filmBoxesDrawMeasure) {
+      try { A.filmBoxesDrawMeasure(ctx, w, h); }
+      catch (eMB) { if (!A._measureBoxWarned) { A._measureBoxWarned = true; console.warn('§MEASURE_BOX draw failed: ' + (eMB && eMB.message)); } }
+    }
+    // §STATUS_BOX (§38.1b, §40.1) — REPLACES the centred lower-third caption plate for the bake.
+    // A.roomTitleCompositeOntoCanvas is untouched and still serves the live editor preview and its
+    // six witnesses; only the exported frame stops using it, because that plate sized itself to its
+    // own text and re-centred every frame — the "status that flickers around" the user named.
+    if (A.filmBoxesDrawStatus) {
+      try { A.filmBoxesDrawStatus(ctx, w, h, A.filmBoxesStatusRows(statusSrc)); }
+      catch (eSB) { if (!A._statusBoxWarned) { A._statusBoxWarned = true; console.warn('§STATUS_BOX draw failed: ' + (eSB && eSB.message)); } }
+    } else if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
       A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity);
     }
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
@@ -1570,6 +1598,13 @@
         try { A.indoorBeatsBuild(plan, _filmSecFull, _bkState); }
         catch (eIB) { console.warn('§INDOOR_BEAT_BUILD failed: ' + (eIB && eIB.message) + ' — the film bakes without the indoor beats'); }
       }
+      // §FLYOUT_BEATS (§38.2 / §40.3) — wing spans + roof-edge-to-sill on the clean pull-out canvas.
+      // LAST of the Measure builders on purpose: it reads every other layer's taken windows (§14
+      // across layers) and must therefore be built after them.
+      if (_measure && A.flyoutBeatsBuild) {
+        try { A.flyoutBeatsBuild(plan, _filmSecFull); }
+        catch (eFB2) { console.warn('§FLYOUT_BEAT_BUILD failed: ' + (eFB2 && eFB2.message) + ' — the film bakes without the fly-out beats'); }
+      }
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }
         catch (eCF) { console.warn('§CLASH_FILM_BUILD failed: ' + (eCF && eCF.message) + ' — the film bakes without markers'); }
@@ -1590,6 +1625,20 @@
           _pairCards = (_bigCards || []).filter(function (c) { return c && c.discPairKey; });
         }
       } catch (eBS) { _bigCards = null; console.warn('§CPE_BIG_STATS_ERR ' + eBS.message + ' — cards disabled, bake continues'); }
+      // §HUD_BOX / §STATUS_BOX / §MEASURE_BOX (§38.1b, §40.1) — the three rectangles are decided ONCE
+      // here, from which HUD members THIS bake has, and never again. Per-frame arming would put the
+      // status box back on the move the moment the day counter or the pie dropped out for a stretch,
+      // which is the whole defect. The stats slot is reserved whenever the labels are on: four
+      // different contents take that slot over a film (roster, stat cards, storey-reveal card,
+      // measure card) and they all sit at the same stack offset.
+      if (A.filmBoxesArm) {
+        try {
+          A.filmBoxesArm(w, h, { pos: _ovPos,
+                                 day: (_dayPos !== 'off' && !!_bkState && !!A.dayCounterAt),
+                                 overview: !!_ovPath,
+                                 stats: !!_roomTitle });
+        } catch (eFB) { console.warn('§FILM_BOXES_ARM_ERR ' + eFB.message + ' — boxes fall back to the old caption plate'); }
+      }
       // §CLASH_HUD_PULLBACK_WINDOW (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md §PENDING.5 item C) — derived
       // from the SAME beat fractions/seconds effects.js already computes on `plan`, never re-baked or
       // hardcoded. beats.reveal(tV)/beats.rise(tR) bound the combined tail+pullback span; reveal.tailSec
@@ -1959,19 +2008,23 @@
         // it can override; returns null everywhere else (round 1, pull-out, round 2, rise proper), in
         // which case the normal room-title lookup below runs untouched. Same call the preview tick
         // makes (cpe_room_title.js's roomTitleLiveTick) so bake and preview cannot diverge.
-        var _titleInfo = (A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, _tnFilm) : null;   // §CPE_CLIP_REVEAL_FILM_T
-        // §STOREY_HIGHLIGHT_REVEAL — checked next, before the normal room-title lookup. Mutually
-        // exclusive with the disc-parade caption above by construction (this window opens at
-        // plan.beats.rise, the disc parade's tail closes there), so the two can never both fire.
-        if (!_titleInfo && A.storeyRevealCaptionAt) _titleInfo = A.storeyRevealCaptionAt(plan, _tnFilm);
-        // §FLYTHRU_CUES caption — the cue's own number, in the SAME {name,opacity} shape, so it uses
-        // the existing title renderer and can never draw a second text layer beside another caption.
-        if (!_titleInfo && A.flythruCueCaptionAt) {
-          try { _titleInfo = A.flythruCueCaptionAt(_tnFilm * _filmSecFull); } catch (eFCap) {}
-        }
-        if (!_titleInfo) {
-          _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
-        }
+        // §40.1 — each source is asked EXACTLY ONCE and kept separately, then two things are built
+        // from the same answers: `_statusSrc` (the four fixed §STATUS_BOX rows) and `_titleInfo`
+        // (the old single-winner caption, still needed for the DOM status line below and for the
+        // fallback path when cpe_film_boxes.js failed to load). Asking twice would double-log
+        // §FLYTHRU_CUE_ON and §STOREY_REVEAL_TIMING.
+        var _srReveal = (A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, _tnFilm) : null;
+        var _srStorey = (A.storeyRevealCaptionAt) ? A.storeyRevealCaptionAt(plan, _tnFilm) : null;
+        var _srRoom = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
+        // §FLYTHRU_CUES caption — it used to ride the ROOM-TITLE renderer. §40.1 moves it to the
+        // Measure box (cpe_flythru_cues.js posts it there); it is asked here only so the DOM status
+        // line and the no-boxes fallback keep the behaviour they had.
+        var _srCue = null;
+        if (A.flythruCueCaptionAt) { try { _srCue = A.flythruCueCaptionAt(_tnFilm * _filmSecFull); } catch (eFCap) {} }
+        // the frontier phase was smuggled into the room caption as " [phase]" by roomTitleFinalText,
+        // which is what made that plate resize mid-shot. It gets its own fixed row now.
+        var _statusSrc = { storey: _srStorey, room: _srRoom, buildup: A.tmFrontierPhase || '', reveal: _srReveal };
+        var _titleInfo = _srReveal || _srStorey || _srCue || _srRoom || null;
         // §CPE_PATH_OVERVIEW — the pose is read HERE, after every camera write for this frame and
         // immediately before the capture, so the head marks the shot that was actually rendered.
         // §CPE_POV_MARKER's rule (cinema_path_editor.js:3789): read the REAL transform, never
@@ -2173,7 +2226,7 @@
             }
           }
         }
-        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo);
+        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
         // connection out from under it (confirmed live: two consecutive rAF gaps of 29s and 67s right
@@ -2262,6 +2315,7 @@
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD) {}   // §SLAB_BEAT — restores the tint, removes X + label
       try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD) {}
       try { if (A.indoorBeatsDispose) A.indoorBeatsDispose(); } catch (eIBD) {}
+      try { if (A.flyoutBeatsDispose) A.flyoutBeatsDispose(); } catch (eFBD) {}
       _workPacingReset();
       // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
       // came within 4 m of a pair), then release the selector's state with the markers.
@@ -2341,6 +2395,7 @@
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD2) {}
       try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD2) {}
       try { if (A.indoorBeatsDispose) A.indoorBeatsDispose(); } catch (eIBD2) {}
+      try { if (A.flyoutBeatsDispose) A.flyoutBeatsDispose(); } catch (eFBD2) {}
       try { _workPacingReset(); } catch (e5) {}
       // §CLASH_FILM_P1 — same restore on the THROW path (review of #1678): a throw inside the loop
       // skips the in-try dispose above and would leave the marker InstancedMeshes in the user's
@@ -2348,6 +2403,9 @@
       try { if (A.clashFilm && A.clashFilm.dispose) A.clashFilm.dispose(); } catch (eCFd2) {}
       // §CLASH_FILM_P2 — same: a thrown loop leaves the label's hysteresis/fade state for the next bake otherwise.
       try { if (A.clashLabels && A.clashLabels.reset) A.clashLabels.reset(); } catch (eCLr2) {}
+      // §40.1 — a second bake, or the live editor preview, must not inherit THIS bake's armed
+      // rectangles: a different frame size or a different corner would then draw into stale boxes.
+      try { if (A.filmBoxesDisarm) A.filmBoxesDisarm(); } catch (eFBd) {}
       // Recoverability FIRST: clearing the store can itself block for seconds behind the very
       // zombie connection that failed this run, and until these flags reset the next Alt+C is
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.

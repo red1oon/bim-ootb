@@ -135,6 +135,8 @@
   "setupCpeSlabBeat": "readonly",
   "setupCpeLinearBeat": "readonly",
   "setupCpeIndoorBeats": "readonly",
+  "setupCpeFlyoutBeats": "readonly",
+  "setupCpeFilmBoxes": "readonly",
   "setupCpeFlythruDims": "readonly",
   "setupCpePathOverview": "readonly",
   "setupCpeResourcePanel": "readonly",

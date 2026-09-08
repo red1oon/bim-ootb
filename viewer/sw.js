@@ -177,7 +177,12 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1168';   // bump on each deploy; per-change detail is the git commit message.
+// v1169 (2026-09-08) §38.1a/§38.1b/§40: THREE FIXED FILM BOXES — new viewer/cpe_film_boxes.js (§HUD_BOX, §STATUS_BOX
+//   below it with four fixed rows, §MEASURE_BOX opposite, geometry a pure function of frame size + corner, never of the
+//   text); cinema_maxq.js retires the roaming lower-third caption plate for the bake and routes every Measure figure to
+//   the one panel; cpe_slab_beat.js posts the plate's MESH FOOTPRINT area there and draws a box outline instead of the X;
+//   new viewer/cpe_flyout_beats.js (wing spans + roof-edge-to-sill on the pull-out canvas, §38.2).
+const CACHE_VERSION = 'v1169';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -628,7 +633,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','../common/flythru_maths.js','../common/storey_raster.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js','cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js',
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',

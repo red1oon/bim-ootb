@@ -440,6 +440,13 @@ function setupCpeFlythruCues(A) {
   }
 
   function drawPanel(ctx, anchor2, rows, title, ink, k, w, h) {
+    // §38.1a / §40.1 — the Measure figures now post to ONE fixed panel (§MEASURE_BOX) instead of a
+    // roaming plate hung off the subject with a leader. The leader dies with the roaming plate: a
+    // line from a fixed corner box to a subject 800 px away is a distraction, not a pointer, and the
+    // in-model dimension arrows already say WHERE. Every call site is unchanged — this function is
+    // the seam. When the boxes are not armed (live editor preview, scripts/snap_timeline.js) the
+    // original roaming plate below still draws, so nothing that worked before stops working.
+    if (A.filmBoxesMeasurePost && A.filmBoxesMeasurePost(title, rows, ink)) return;
     var fs = FS * k, pad = 9 * k, rowH = 20 * k;
     ctx.save();
     ctx.font = '700 ' + fs.toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
@@ -486,14 +493,18 @@ function setupCpeFlythruCues(A) {
     if (!a) { console.log('§FLYTHRU_DIM_DRAW INACTIVE filmSec=' + filmSec.toFixed(2) +
       ' cues=' + ((_cues && _cues.length) || 0) +
       ' windows=[' + ((_cues || []).map(function (c) { return c.key + ':' + c.at.toFixed(1) + '-' + (c.at + SPAN).toFixed(1); }).join(' ')) + ']'); return 0; }
-    var k = h / 720, ink = '#ffd600', cue = a.cue, drawn = 0, _diag = [];
+    var k = h / 720, ink = '#ffd600', cue = a.cue, drawn = 0, _diag = [], posted = false;
     ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a.opacity));
     var spans = edgeSpans(cue.box, cam);
     if (cue.dims && cue.dims.length) {                    // a SET of numbers -> panel (§20.11)
       var c3 = cue.box.getCenter(new T.Vector3()), c2 = proj(c3, cam, w, h);
-      if (c2.z < 1) { drawPanel(ctx, c2, cue.dims, cue.title || cue.key, ink, k, w, h); drawn++; }
+      if (c2.z < 1) { drawPanel(ctx, c2, cue.dims, cue.title || cue.key, ink, k, w, h); drawn++; posted = true; }
       else _diag.push('panel:behind(z=' + c2.z.toFixed(2) + ')');
     }
+    // §40.1 — a cue with no dims panel still has a number to say. It used to say it through
+    // A.flythruCueCaptionAt and the ROOM-TITLE renderer, i.e. in the status band; it belongs in the
+    // Measure box with every other Measure figure.
+    if (!posted && cue.label && A.filmBoxesMeasurePost) A.filmBoxesMeasurePost(cue.title || cue.key, [cue.label], ink);
     // §36 W1 — WHICH spans a cue draws is decided ONCE, on its first frame, and held for its window. The
     // per-frame length test made a span flicker in and out as its projected length crossed 24 px (HHS full
     // bake: storey 1→2→1, corridor 1→0→1 inside single cues). A span admitted on frame one is drawn to the

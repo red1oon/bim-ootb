@@ -56,9 +56,9 @@ function setupCpeSlabBeat(A) {
   var ENV_SPAN = ENV.fadeIn + ENV.hold + ENV.fadeOut;         // 2.2 s on screen
   var TINT_HEX = 0xffb300;                                     // amber (§26.2)
   var INK = 0xffd600;                                          // §7 yellow — the measurement ink
-  var LABEL_SHARE = 1 / 3;  // label box spans a third of the plate's SHORTER side, so it sits inside the X
 
   var _built = false, _report = null, _beat = null, _grp = null, _label = null, _diag = null;
+  var _labelRows = [], _labelTitle = 'Floor plate';   // §40.2 — what the §MEASURE_BOX posts
   var _tintOn = false, _touched = [], _clones = [], _labelOn = false, _labelOffReason = null;
   var _envDone = false, _labelNeverLogged = false, _C = null;
 
@@ -150,6 +150,88 @@ function setupCpeSlabBeat(A) {
     var ratio = c.area / walk;
     return { verdict: ratio >= 1 ? 'FLOOR-PLATE' : 'NOT-A-FLOOR-PLATE', ratio: ratio, walk: walk,
              why: ratio >= 1 ? 'bbox covers the storey walkable' : 'bbox smaller than the storey it would floor — a finish patch, not the plate' };
+  }
+
+  // ── §40.2 THE PLATE'S SURFACE AREA, from the plate's OWN MESH (§38.1, user 2026-09-08: the plate
+  // "is a 2+3 wing shape thus no other dims looks feasible" — so the bbox rectangle, and the X that
+  // discharges it, are the wrong statement; the area is the statement).
+  // Sums the XZ-projected area of the UP-FACING triangles only. Summing every triangle double-counts
+  // a closed solid (its top face and its bottom face project onto the same footprint), which is why
+  // the down-facing sum is measured too and printed beside it: the two should agree to within the
+  // slab's own edge chamfers, and if they do not, the mesh is not a plate and the log says so.
+  // World "up" is +Y here (A.ifc2three's convention — the picked plate's four corners all share y).
+  var _tri = null;
+  function _worldTris(o, out) {
+    var T = window.THREE, g = o.geometry;
+    if (!g || !g.attributes || !g.attributes.position) return 0;
+    var pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count, added = 0;
+    if (!_tri) _tri = { a: new T.Vector3(), b: new T.Vector3(), c: new T.Vector3(), m: new T.Matrix4() };
+    var mats = [];
+    if (o.isInstancedMesh) {
+      var meta = A._instanceMeta && A._instanceMeta[o.id];
+      for (var q = 0; q < o.count; q++) {
+        if (meta && meta[q] && meta[q].guid !== _beatGuid) continue;
+        var mm = new T.Matrix4(); o.getMatrixAt(q, mm);
+        mats.push(new T.Matrix4().multiplyMatrices(o.matrixWorld, mm));
+      }
+    } else mats.push(o.matrixWorld);
+    for (var mi = 0; mi < mats.length; mi++) {
+      for (var i = 0; i < n; i += 3) {
+        var i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
+        _tri.a.fromBufferAttribute(pos, i0).applyMatrix4(mats[mi]);
+        _tri.b.fromBufferAttribute(pos, i1).applyMatrix4(mats[mi]);
+        _tri.c.fromBufferAttribute(pos, i2).applyMatrix4(mats[mi]);
+        // N = (b-a) x (c-a); the projected area onto the ground plane is |N.y| / 2, and N.y's SIGN
+        // is which way the face looks. No trig, no normals attribute to trust.
+        var ny = (_tri.b.z - _tri.a.z) * (_tri.c.x - _tri.a.x) - (_tri.b.x - _tri.a.x) * (_tri.c.z - _tri.a.z);
+        if (ny > 0) out.up += ny / 2; else out.down += -ny / 2;
+        added++;
+      }
+    }
+    return added;
+  }
+  var _beatGuid = null;
+  // Returns {m2, src, up, down, tris, meshes} — src is one of 'mesh' | 'raster' | 'bbox', in §38.1's
+  // own order of honesty. NEVER invents: with no mesh and no raster it says bbox and the caller
+  // writes "(est., bbox)".
+  function footprintArea(beat) {
+    var out = { up: 0, down: 0 }, tris = 0, meshes = 0, batched = 0;
+    _beatGuid = beat.guid;
+    if (A.collectMeshes) {
+      try {
+        A.collectMeshes(function (o) {
+          return (o.isMesh || o.isInstancedMesh) && !o.isBatchedMesh &&
+                 ((o.userData && o.userData.guid === beat.guid) ||
+                  (o.isInstancedMesh && A._instanceMeta && A._instanceMeta[o.id] &&
+                   A._instanceMeta[o.id].some(function (m) { return m && m.guid === beat.guid; })));
+        }).forEach(function (o) { var n = _worldTris(o, out); if (n) { tris += n; meshes++; } });
+        // a BatchedMesh keeps its geometry in one shared buffer addressed by slot; there is no
+        // per-slot triangle range exposed here, so it is COUNTED and named rather than guessed at.
+        A.collectMeshes(function (o) { return o.isBatchedMesh; }).forEach(function (mesh) {
+          var meta = A._batchMeta && A._batchMeta[mesh.id];
+          if (!meta) return;
+          for (var i = 0; i < meta.length; i++) if (meta[i] && meta[i].guid === beat.guid) batched++;
+        });
+      } catch (e) { log('§SLAB_BEAT_AREA mesh walk failed: ' + e.message); }
+    }
+    var bbox = beat.bx * beat.by;
+    if (out.up > 0) {
+      log('§SLAB_BEAT_AREA src=mesh m2=' + fmt(out.up) + ' up=' + fmt(out.up) + ' down=' + fmt(out.down) +
+          ' tris=' + tris + ' meshes=' + meshes + (batched ? ' batchedSlotsSkipped=' + batched : '') +
+          ' bboxM2=' + fmt(bbox) + ' fill=' + (out.up / bbox).toFixed(3) +
+          ' (up-facing triangles projected to the ground plane; down-facing printed as the cross-check)');
+      return { m2: out.up, src: 'mesh', up: out.up, down: out.down, tris: tris, meshes: meshes, bbox: bbox };
+    }
+    var sem = beat.semantic || {};
+    if (sem.walk > 0) {
+      log('§SLAB_BEAT_AREA src=raster m2=' + fmt(sem.walk) + ' (storey_walkable_raster, a LOWER bound — ' +
+          'no plate mesh in the scene at the pop' + (batched ? ', ' + batched + ' batched slot(s) not addressable' : '') +
+          ') bboxM2=' + fmt(bbox) + ' tris=0');
+      return { m2: sem.walk, src: 'raster', up: 0, down: 0, tris: 0, meshes: 0, bbox: bbox };
+    }
+    log('§SLAB_BEAT_AREA src=bbox m2=' + fmt(bbox) + ' — no plate mesh and no walkable raster; the ' +
+        'figure is the bbox product and is written "(est., bbox)"' + (batched ? ' batchedSlots=' + batched : ''));
+    return { m2: bbox, src: 'bbox', up: 0, down: 0, tris: 0, meshes: 0, bbox: bbox };
   }
 
   // ── BUILD ONCE ─────────────────────────────────────────────────────────────────────────────────
@@ -302,61 +384,57 @@ function setupCpeSlabBeat(A) {
     // ── DRAW: geometry prepared once; opacity is the only per-frame write ─────────────────────────
     _beat = picked;
     _grp = new T.Group(); _grp.name = 'slabBeat';
-    // X — both diagonals of the measured box, on the plate's top face, depth-tested with the tint
+    // §40.2 — OUTLINE, not an X. The X existed to discharge the bbox rectangle the label stated
+    // (§26.3's honesty device: "here is the rectangle I measured"). The label no longer states a
+    // rectangle — it states the plate's own surface area — so there is nothing for the diagonals to
+    // discharge, and on a 2+3 wing plan they draw a cross over shapes that are not there. The four
+    // edges of the measured box remain the honest mark: they say WHICH plate, and nothing more.
     var g = new T.BufferGeometry();
     var c4 = picked.cornersThree, pos = new Float32Array([
-      c4[0].x, c4[0].y, c4[0].z, c4[2].x, c4[2].y, c4[2].z,
-      c4[1].x, c4[1].y, c4[1].z, c4[3].x, c4[3].y, c4[3].z]);
+      c4[0].x, c4[0].y, c4[0].z, c4[1].x, c4[1].y, c4[1].z,
+      c4[1].x, c4[1].y, c4[1].z, c4[2].x, c4[2].y, c4[2].z,
+      c4[2].x, c4[2].y, c4[2].z, c4[3].x, c4[3].y, c4[3].z,
+      c4[3].x, c4[3].y, c4[3].z, c4[0].x, c4[0].y, c4[0].z]);
     g.setAttribute('position', new T.BufferAttribute(pos, 3));
     _diag = new T.LineSegments(g, new T.LineBasicMaterial({ color: TINT_HEX, transparent: true, opacity: 0, depthTest: true, depthWrite: false }));
-    _diag.name = 'slabBeatX'; _diag.visible = false; _diag.renderOrder = 10;
+    _diag.name = 'slabBeatOutline'; _diag.visible = false; _diag.renderOrder = 10;
     _grp.add(_diag);
-    // label — in the plate's plane at the crossing; shines through (depthTest:false, renderOrder 900)
-    var text1 = fmt(picked.bx, 2) + ' × ' + fmt(picked.by, 2) + ' m = ' + fmt(picked.area, 0) + ' m² (est.)';
+    // §40.2 / §38.1a — THE INFO BOX. The in-plane textured plane is gone: from a camera 63 m off
+    // and barely above the roof line it is a foreshortened sliver, which is exactly why the user did
+    // not see it in the full film ("no info box giving its surface area"). The figure now posts to
+    // the ONE fixed §MEASURE_BOX, the same 2D panel the indoor hall beat uses and the one the user
+    // confirms works. Only the AREA is stated — the plate is a 2+3 wing shape, so a bbox X × Y is
+    // the wrong sentence about it (§38.1).
+    var _fp = footprintArea(picked);
+    var text1 = (_fp.src === 'bbox')
+      ? fmt(picked.bx, 2) + ' × ' + fmt(picked.by, 2) + ' m = ' + fmt(_fp.m2, 0) + ' m² (est., bbox)'
+      : (_fp.src === 'raster')
+        ? 'Floor area ≥ ' + fmt(_fp.m2, 0) + ' m² (walkable raster, lower bound)'
+        : 'Floor area ' + fmt(_fp.m2, 0) + ' m² (mesh footprint)';
     var text2 = picked.name || '';
-    var cw = 1024, ch = 256, cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
-    var ctx = cv.getContext('2d');
-    ctx.fillStyle = 'rgba(0,0,0,0.60)'; ctx.fillRect(0, 0, cw, ch);
-    ctx.strokeStyle = '#' + INK.toString(16).padStart(6, '0'); ctx.lineWidth = 6; ctx.strokeRect(3, 3, cw - 6, ch - 6);
-    ctx.fillStyle = ctx.strokeStyle; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = '400 92px system-ui, sans-serif'; ctx.fillText(text1, cw / 2, ch * 0.36, cw - 40);
-    ctx.font = '400 62px system-ui, sans-serif'; ctx.fillText(text2, cw / 2, ch * 0.74, cw - 40);
-    var tex = new T.CanvasTexture(cv);
-    try { if (A.renderer && A.renderer.capabilities) tex.anisotropy = A.renderer.capabilities.getMaxAnisotropy(); } catch (eAn) {}
-    var lw = LABEL_SHARE * Math.min(picked.bx, picked.by), lh = lw * ch / cw;
-    _label = new T.Mesh(new T.PlaneGeometry(lw, lh), new T.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, side: T.DoubleSide }));
-    _label.name = 'slabBeatLabel'; _label.renderOrder = 900; _label.visible = false;
-    _label.position.copy(picked.centerTop);
-    // lie flat (plane faces +Y), then turn so the text's top points AWAY from the camera at the pop —
-    // decided ONCE from the pose, from four axis choices; the camera cannot re-decide it per frame.
-    var pf = picked.frustum && picked.frustum.cam ? picked.frustum.cam : null;
-    var yaw = 0;
-    if (pf) {
-      var hx2 = picked.centerTop.x - pf.x, hz2 = picked.centerTop.z - pf.z;   // camera -> plate, horizontal
-      var best = -Infinity;
-      [0, Math.PI / 2, Math.PI, -Math.PI / 2].forEach(function (r) {
-        // the plane's local +Y (text up) after rotation.x=-90° points to world -Z; a yaw r about Y turns it
-        var ux = -Math.sin(r), uz = -Math.cos(r);
-        var d = ux * hx2 + uz * hz2;
-        if (d > best) { best = d; yaw = r; }
-      });
-    }
-    // compose as Y(yaw) * X(-90): flat first, then turned so the text top points away from the camera
-    _label.rotation.set(0, 0, 0);
-    _label.rotateY(yaw); _label.rotateX(-Math.PI / 2);
-    _grp.add(_label);
+    _labelRows = [text1].concat(text2 ? [text2] : []).concat([picked.storey]);
+    _labelTitle = 'Floor plate';
+    _label = null;
     if (A.scene) A.scene.add(_grp);
     _report.state = 'BEAT';
     _report.beat = { guid: picked.guid, storey: picked.storey, sec: picked.sec, hold: picked.hold, area: picked.area, bx: picked.bx, by: picked.by, name: picked.name, rawName: picked.rawName };
-    _report.label = { text1: text1, text2: text2, w: lw, h: lh, depthTest: _label.material.depthTest, renderOrder: _label.renderOrder,
-                      yawDeg: Math.round(yaw * 180 / Math.PI), position: [_label.position.x, _label.position.y, _label.position.z] };
-    _report.diag = { depthTest: _diag.material.depthTest, endpoints: [[c4[0].x, c4[0].y, c4[0].z], [c4[2].x, c4[2].y, c4[2].z], [c4[1].x, c4[1].y, c4[1].z], [c4[3].x, c4[3].y, c4[3].z]] };
+    _report.label = { text1: text1, text2: text2, title: _labelTitle, rows: _labelRows.slice(),
+                      surface: 'measure-box', panel: true };
+    _report.area = { m2: _fp.m2, src: _fp.src, up: _fp.up, down: _fp.down, tris: _fp.tris,
+                     meshes: _fp.meshes, bboxM2: _fp.bbox };
+    _report.diag = { depthTest: _diag.material.depthTest, shape: 'outline',
+                     endpoints: [[c4[0].x, c4[0].y, c4[0].z], [c4[1].x, c4[1].y, c4[1].z],
+                                 [c4[1].x, c4[1].y, c4[1].z], [c4[2].x, c4[2].y, c4[2].z],
+                                 [c4[2].x, c4[2].y, c4[2].z], [c4[3].x, c4[3].y, c4[3].z],
+                                 [c4[3].x, c4[3].y, c4[3].z], [c4[0].x, c4[0].y, c4[0].z]] };
     log('§SLAB_BEAT_PICK take=1/' + TAKE + ' (cap ' + MAX_DIVE + ', in-dive candidates=' + dive.length + ') sec=' + picked.sec.toFixed(2) + ' hold=' +
         (picked.hold === Infinity ? '∞' : picked.hold.toFixed(2)) + 's storey="' + picked.storey + '" guid=' + picked.guid + ' envelope=' + ENV.fadeIn + '/' + ENV.hold + '/' + ENV.fadeOut +
         ' (' + ENV_SPAN.toFixed(1) + 's) popAt=endTs(' + new Date(picked.endTs).toISOString().slice(0, 10) + ')');
-    log('§SLAB_BEAT_LABEL text="' + text1 + ' — ' + text2 + '" w=' + lw.toFixed(2) + 'm h=' + lh.toFixed(2) + 'm depthTest=' + _label.material.depthTest +
-        ' renderOrder=' + _label.renderOrder + ' yaw=' + Math.round(yaw * 180 / Math.PI) + '° in the plate\'s plane; (est.) because the area is the bbox product');
-    log('§SLAB_BEAT_DIAG depthTest=' + _diag.material.depthTest + ' corners=' + c4.map(function (v) { return '(' + v.x.toFixed(2) + ',' + v.y.toFixed(2) + ',' + v.z.toFixed(2) + ')'; }).join(' '));
+    log('§SLAB_BEAT_LABEL title="' + _labelTitle + '" rows=[' + _labelRows.join(' · ') + '] surface=§MEASURE_BOX ' +
+        '(2D fixed panel, §38.1a) areaSrc=' + _fp.src + ' m2=' + fmt(_fp.m2) +
+        ' — the in-plane textured plane is retired; from 63 m off it read as a foreshortened sliver');
+    log('§SLAB_BEAT_DIAG depthTest=' + _diag.material.depthTest + ' shape=outline segments=4 corners=' +
+        c4.map(function (v) { return '(' + v.x.toFixed(2) + ',' + v.y.toFixed(2) + ',' + v.z.toFixed(2) + ')'; }).join(' '));
     return _report;
   };
 
@@ -434,15 +512,26 @@ function setupCpeSlabBeat(A) {
       if (_diag.visible) _diag.visible = false;
       if (!_envDone) { _envDone = true; log('§SLAB_BEAT_ENVELOPE done filmSec=' + filmSec.toFixed(2) + ' tintTouched=' + (_beat.tintTouched || 0) + ' — tint and X released; the label stays while its crossing is in frame'); }
     }
-    // label lifetime (§26.2): from the pop until the crossing leaves frame (a later beat may claim it — none yet)
+    // label lifetime (§26.2): from the pop until the crossing leaves frame (a later beat may claim it — none yet).
+    // §40.2 — the lifetime rule is UNCHANGED; only the surface changed. `_labelOn` now gates a
+    // posting into the fixed §MEASURE_BOX instead of a mesh's `.visible`, so the panel appears at
+    // the pop and leaves when the plate's crossing does, exactly as it did before.
     if (dt >= 0 && !_labelOffReason && A.camera) {
       var q = _beat.centerTop.clone().project(A.camera);
       var inF = Math.abs(q.x) <= 1 && Math.abs(q.y) <= 1 && q.z < 1;
-      if (inF) { if (!_labelOn) { _labelOn = true; _label.visible = true; log('§SLAB_BEAT_LABEL on filmSec=' + filmSec.toFixed(2) + ' ndc=(' + q.x.toFixed(2) + ',' + q.y.toFixed(2) + ')'); } }
-      else if (_labelOn) { _labelOn = false; _label.visible = false; _labelOffReason = 'crossing left the frame'; log('§SLAB_BEAT_LABEL off filmSec=' + filmSec.toFixed(2) + ' reason=' + _labelOffReason); }
+      if (inF) { if (!_labelOn) { _labelOn = true; log('§SLAB_BEAT_LABEL on filmSec=' + filmSec.toFixed(2) + ' ndc=(' + q.x.toFixed(2) + ',' + q.y.toFixed(2) + ')'); } }
+      else if (_labelOn) { _labelOn = false; _labelOffReason = 'crossing left the frame'; log('§SLAB_BEAT_LABEL off filmSec=' + filmSec.toFixed(2) + ' reason=' + _labelOffReason); }
       else if (dt >= ENV_SPAN && !_labelNeverLogged) { _labelNeverLogged = true; log('§SLAB_BEAT_LABEL never in frame through the envelope ndc=(' + q.x.toFixed(2) + ',' + q.y.toFixed(2) + ',' + q.z.toFixed(2) + ')'); }
     }
     return { env: env, tintOn: _tintOn, labelOn: _labelOn, tintTouched: _beat.tintTouched == null ? null : _beat.tintTouched };
+  };
+
+  // ── §40.2 — the 2D pass. Called from cinema_maxq's _captureFrame chain beside the other beats, so
+  // the posting lands INSIDE the frame's Measure queue (the queue is reset at the top of that
+  // function; a post made earlier, from slabBeatAt, would be wiped before it could be drawn).
+  A.slabBeatCompositeOntoCanvas = function (ctx, w, h, filmSec) {
+    if (!_beat || !_labelOn || !A.filmBoxesMeasurePost) return 0;
+    return A.filmBoxesMeasurePost(_labelTitle, _labelRows, INK) ? 1 : 0;
   };
 
   A.slabBeatReport = function () { return _report; };
@@ -451,8 +540,9 @@ function setupCpeSlabBeat(A) {
     try { if (_tintOn) restoreTint(); } catch (e) {}
     if (_grp && A.scene) { A.scene.remove(_grp); _grp.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); }
     _grp = null; _label = null; _diag = null; _beat = null; _built = false; _report = null;
+    _labelRows = []; _labelTitle = 'Floor plate';
     _labelOn = false; _labelOffReason = null; _envDone = false; _labelNeverLogged = false;
   };
-  log('§SLAB_BEAT_INIT wired (one floor plate per film, marked as it is laid: depth-tested tint + X, shine-through label in the plate\'s plane)');
+  log('§SLAB_BEAT_INIT wired (one floor plate per film, marked as it is laid: depth-tested tint + box OUTLINE, surface area posted to the fixed §MEASURE_BOX — §40.2 retired the X and the in-plane label plane)');
 }
 if (typeof window !== 'undefined') window.setupCpeSlabBeat = setupCpeSlabBeat;
