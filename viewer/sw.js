@@ -172,7 +172,9 @@
 // v1163 (2026-09-08) §SLAB_BEAT (MEP_CLASH_REVEAL_MOVIE.md §26): new viewer/cpe_slab_beat.js — one floor plate
 //   marked as it is laid (depth-tested tint + X, shine-through label), riding the Alt-C Measure checkbox; wired in
 //   cinema_maxq.js beside the datum; cli_silent_bake.js gains --measure/--no-measure (§28.1).
-const CACHE_VERSION = 'v1164';   // bump on each deploy; per-change detail is the git commit message.
+// v1165 (2026-09-08) §36 W1/W3 (MEP_CLASH_REVEAL_MOVIE.md): datum sides/plane decided ONCE per life + drop ledger + §20.8 entry
+//   latch (cpe_flythru_datum.js); cue span sets locked per window (cpe_flythru_cues.js); §33 gate rebuilds the datum after Home.
+const CACHE_VERSION = 'v1165';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

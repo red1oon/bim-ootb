@@ -333,6 +333,9 @@ const server = http.createServer((req, res) => {
       if (atLoad.full) return { load: atLoad, pressed: false };
       try { document.body.focus(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); }
       catch (e) { return { load: atLoad, pressed: false, err: 'Home: ' + e.message }; }
+      // §36 W3 — the datum was built at the saved view: its ribbon width (§35) and its side decisions (§36 W1)
+      // both read the camera at build / first composite. Rebuild at the opening the gate actually chose.
+      try { A.flythruDatumDispose(); A.flythruDatumBuild(); } catch (e2) { return { load: atLoad, pressed: true, err: 'rebuild: ' + e2.message }; }
       const atHome = judge();
       return { load: atLoad, pressed: true, home: atHome };
     });

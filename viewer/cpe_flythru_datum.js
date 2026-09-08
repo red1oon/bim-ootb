@@ -36,6 +36,35 @@ function setupCpeFlythruDatum(A) {
   // separated by weight: the rules read stronger because they are fewer, not because they differ.
   var INK = 0x8899aa, INK_STOREY = 0xb9c6d6, MIN_SEP = 6.0;
   var _grp = null, _built = false, _info = null, _faces = null, _lines = null;
+  var _sides = null, _camFar = null, _lastDrawn = null;   // §36 W1 — decided once per datum life, reset on dispose
+  var _enteredAt = null, _envBox = null;                    // §20.8 — the drawing ends when the camera enters the envelope
+  // §20.8 / §36 W1 — ONE lifetime rule for the 3D planes and the 2D annotation: up from second 0, held through
+  // the dive, faded over 2 s after it — AND gone 0.6 s after the camera ENTERS the structural envelope. Inside
+  // the building the setting-out sheet has nothing to say and its non-depth-tested 2D marks were re-admitted
+  // through the walls as the camera turned (HHS full bake: drawn 8→24 at 7 s, inside at ~4 m). One-way latch.
+  function lifeOpacity(filmSec, filmSecFull) {
+    var holdTo = Math.max(6, (filmSecFull || 0) * 0.094);   // beats.dive
+    var op = filmSec <= holdTo ? 1 : Math.max(0, 1 - (filmSec - holdTo) / 2.0);
+    var T = window.THREE, cam = A.camera;
+    if (_lines && _lines.ext && T && cam && typeof A.ifc2three === 'function') {
+      if (!_envBox) {
+        // the TOP of "inside" is the highest storey the drawing itself marks (Hospital: Level 7 at 34.0 m), not the
+        // bbox top (47 m — a plant tower): above the roof line, looking down, the sheet still reads.
+        var e = _lines.ext, zTop = e[5];
+        if (_lines.levels && _lines.levels.length) { zTop = -Infinity; for (var li = 0; li < _lines.levels.length; li++) zTop = Math.max(zTop, _lines.levels[li].z); if (!isFinite(zTop) || zTop <= e[4]) zTop = e[5]; }
+        var a1 = A.ifc2three(e[0], e[2], e[4]), b1 = A.ifc2three(e[1], e[3], zTop);
+        _envBox = new T.Box3(new T.Vector3(Math.min(a1.x, b1.x), Math.min(a1.y, b1.y), Math.min(a1.z, b1.z)),
+                             new T.Vector3(Math.max(a1.x, b1.x), Math.max(a1.y, b1.y), Math.max(a1.z, b1.z)));
+      }
+      if (_enteredAt == null && _envBox.containsPoint(cam.position)) {
+        _enteredAt = filmSec;
+        console.log('§FLYTHRU_DATUM_ENTRY filmSec=' + filmSec.toFixed(2) + ' cam=(' + cam.position.x.toFixed(1) + ',' + cam.position.y.toFixed(1) + ',' + cam.position.z.toFixed(1) +
+          ') — camera inside the structural envelope (plan footprint, below the top storey rule); the setting-out drawing fades over 0.6 s and stays off (§20.8)' + (filmSec < 0.05 ? ' ⚠ AT THE OPENING: the film starts inside the building' : ''));
+      }
+    }
+    if (_enteredAt != null) op = Math.min(op, Math.max(0, 1 - (filmSec - _enteredAt) / 0.6));
+    return op;
+  }
 
   function q(sql) { try { return A.dbQuery(sql) || []; } catch (e) { return []; } }
 
@@ -251,15 +280,17 @@ function setupCpeFlythruDatum(A) {
   // mid-film would compete with the measurement cues for the same ink (§17.6).
   A.flythruDatumAt = function (filmSec, filmSecFull) {
     if (!_grp) return 0;
-    var holdTo = Math.max(6, (filmSecFull || 0) * 0.094);   // beats.dive
-    var op = filmSec <= holdTo ? 1 : Math.max(0, 1 - (filmSec - holdTo) / 2.0);
+    var op = lifeOpacity(filmSec, filmSecFull);
     _grp.visible = op > 0.01;
-    var cam = A.camera, camFar = null;
-    if (cam && _faces && typeof A.ifc2three === 'function') {
+    var cam = A.camera;
+    // §36 W1 — which upright is the FAR one is decided ONCE (the opening pose), not per frame: re-picking it
+    // as the dive crossed the Y mid-plane swapped the visible upright and its whole storey annotation.
+    if (!_camFar && cam && _faces && typeof A.ifc2three === 'function') {
       var a = A.ifc2three(0, _faces.yMaxIfc, 0), b = A.ifc2three(0, _faces.yMinIfc, 0);
       var da = Math.abs(cam.position.z - a.z), db = Math.abs(cam.position.z - b.z);
-      camFar = da >= db ? 'levelsYmax' : 'levelsYmin';
+      _camFar = da >= db ? 'levelsYmax' : 'levelsYmin';
     }
+    var camFar = _camFar;
     _grp.children.forEach(function (o) {
       var isLvl = o.name === 'levelsYmax' || o.name === 'levelsYmin';
       var vis = !isLvl || !camFar || o.name === camFar;
@@ -327,9 +358,8 @@ function setupCpeFlythruDatum(A) {
   A.flythruDatumCompositeOntoCanvas = function (ctx, w, h, filmSec, filmSecFull) {
     if (!_lines || !ctx || !A.camera) { console.log('§FLYTHRU_DATUM_MARKS INCONCLUSIVE — no datum built'); return 0; }
     var T = window.THREE, cam = A.camera;
-    var holdTo = Math.max(6, (filmSecFull || 0) * 0.094);
-    var op = filmSec <= holdTo ? 1 : Math.max(0, 1 - (filmSec - holdTo) / 2.0);
-    if (op <= 0.01) return 0;
+    var op = lifeOpacity(filmSec, filmSecFull);
+    if (op <= 0.01) { A._flythruDatumLast = { drawn: 0, filmSec: filmSec, enteredAt: _enteredAt, faded: true }; _lastDrawn = 0; return 0; }
     var ext = _lines.ext, z0 = ext[4];
     var P = function (ix, iy, iz) { var p = A.ifc2three(ix, iy, iz); return new T.Vector3(p.x, p.y, p.z); };
     var pr = function (v) {
@@ -370,39 +400,45 @@ function setupCpeFlythruDatum(A) {
     // steps), so the drawing is self-similar on any building and identical wherever the bay is.
     var R_GRID = 0.153 * B;      // the grid's candidate radius; each axis may only reduce it
 
-    // ── 2. NEAR SIDE, and the upright to the BACK — both are user rulings, both measured ──────────
+    // ── 2. NEAR SIDE, and the upright to the BACK — both are user rulings, both measured — DECIDED ONCE ──
+    // §36 W1 (2026-09-08). These were re-decided EVERY frame. When the dive crossed a mid-plane the near
+    // side flipped and the whole annotation jumped to the other edge: HHS full bake, drawn 40→6→22 inside one
+    // second while bubbles walked 20→8 one per frame. A drawing is decided once, at the opening pose, and
+    // then only leaves frame or fades (§24.10, §25.1). `sidesNow` is still computed each frame and REPORTED
+    // (sidesChanged=) so the stability witness can see what would have flipped, without acting on it.
+    // USER (2026-09-07) on the side: "make the ground 2D markings on the near sides of course unless u dont
+    // want anyone to read well" — the near side of the OPENING, where the drawing is read.
     var midX = (ext[0] + ext[1]) / 2, midY = (ext[2] + ext[3]) / 2;
     function dTo(ix, iy, iz) { return P(ix, iy, iz).distanceTo(cam.position); }
-    var nearY = dTo(midX, ext[3], z0) < dTo(midX, ext[2], z0) ? ext[3] : ext[2];
-    var nearX = dTo(ext[1], midY, z0) < dTo(ext[0], midY, z0) ? ext[1] : ext[0];
-    var farY = (nearY === ext[2]) ? ext[3] : ext[2], farX = (nearX === ext[0]) ? ext[1] : ext[0];
     var _lvz = (_lines.levels || []);
     var zMid = _lvz.length ? _lvz[(_lvz.length / 2) | 0].z : z0;
-    var zNearX = dTo(ext[1], farY, zMid) > dTo(ext[0], farY, zMid) ? ext[1] : ext[0];
-    // ⚠ THE UPRIGHT HAS TWO VERTICAL PLANES TO LIE IN, AND ONE OF THEM IS EDGE-ON.
-    // USER (2026-09-08): "are the bubbles sizes consistent on Z scale to the floor one?" — in the
-    // MODEL they are identical (perAxisR 1.21/1.21/1.21), but that is not what reads. The level
-    // annotation used to be pinned to the X-Z plane at the far Y face; at second zero the camera
-    // sits off a corner, so that face is nearly edge-on and every level bubble projects to a
-    // sliver while the ground's project as proper ellipses. Same radius, wholly different reading.
-    // The fix is not to turn the marks toward the viewer — that is billboarding, and the whole
-    // layer exists to avoid it. It is to CHOOSE THE PLANE, the same way the near-side ruling chooses
-    // the edge: of the two vertical faces, take the one whose normal points most directly at the
-    // camera. Measured per frame with a dot product, so it follows the dive instead of being fixed.
+    // ⚠ THE UPRIGHT HAS TWO VERTICAL PLANES TO LIE IN, AND ONE OF THEM IS EDGE-ON — of the two vertical
+    // faces, take the one whose normal points most directly at the camera (billboarding would be the
+    // wrong fix; choosing the plane is the right one). Now chosen once, like the near sides.
     function faceOn(nx, ny) {
       var o = P(midX, midY, zMid);
       var nrm = P(midX + nx, midY + ny, zMid).sub(o).normalize();
       var vw = o.clone().sub(cam.position).normalize();
       return Math.abs(nrm.dot(vw));
     }
-    var _fY = faceOn(0, 1), _fX = faceOn(1, 0), _zPlane = (_fX > _fY) ? 'X-face' : 'Y-face';
-    // the far Y edge, for when the stack hangs off an X face instead
-    var zNearY = dTo(midX, ext[1 + 2], zMid) > dTo(midX, ext[0 + 2], zMid) ? ext[3] : ext[2];
-    var sgnZY = (zNearY === ext[2]) ? -1 : 1;
-
+    function decideSides() {
+      var nY = dTo(midX, ext[3], z0) < dTo(midX, ext[2], z0) ? ext[3] : ext[2];
+      var nX = dTo(ext[1], midY, z0) < dTo(ext[0], midY, z0) ? ext[1] : ext[0];
+      var fYe = (nY === ext[2]) ? ext[3] : ext[2], fXe = (nX === ext[0]) ? ext[1] : ext[0];
+      var zNX = dTo(ext[1], fYe, zMid) > dTo(ext[0], fYe, zMid) ? ext[1] : ext[0];
+      var fY = faceOn(0, 1), fX = faceOn(1, 0), zP = (fX > fY) ? 'X-face' : 'Y-face';
+      var zNY = dTo(midX, ext[3], zMid) > dTo(midX, ext[2], zMid) ? ext[3] : ext[2];
+      return { nearY: nY, nearX: nX, farY: fYe, farX: fXe, zNearX: zNX, fY: fY, fX: fX, zPlane: zP, zNearY: zNY,
+               sgnZY: (zNY === ext[2]) ? -1 : 1, sgnY: (nY === ext[2]) ? -1 : 1, sgnX: (nX === ext[0]) ? -1 : 1, sgnZ: (zNX === ext[0]) ? -1 : 1,
+               key: nY.toFixed(2) + '|' + nX.toFixed(2) + '|' + zNX.toFixed(2) + '|' + zP + '|' + zNY.toFixed(2) };
+    }
+    var sidesNow = decideSides();
+    if (!_sides) { _sides = sidesNow; _sides.decidedAt = filmSec; }
+    var _sidesChanged = sidesNow.key !== _sides.key;
+    var nearY = _sides.nearY, nearX = _sides.nearX, farY = _sides.farY, farX = _sides.farX, zNearX = _sides.zNearX;
+    var _fY = _sides.fY, _fX = _sides.fX, _zPlane = _sides.zPlane, zNearY = _sides.zNearY, sgnZY = _sides.sgnZY;
     // sign of "outward" per axis, in model units
-    var sgnY = (nearY === ext[2]) ? -1 : 1, sgnX = (nearX === ext[0]) ? -1 : 1;
-    var sgnZ = (zNearX === ext[0]) ? -1 : 1;
+    var sgnY = _sides.sgnY, sgnX = _sides.sgnX, sgnZ = _sides.sgnZ;
 
     // ── 3. THE ONLY DRAWING PRIMITIVE: LAY THE INK IN ITS OWN PLANE ───────────────────────────────
     // USER, 2026-09-07: "it is in 3D space, do not force it to be readable. Keep it static true to
@@ -515,7 +551,7 @@ function setupCpeFlythruDatum(A) {
       var R_BUB = R_ONE, _wMax = _wAll;
       var digits = 6, figW = digits * TXT * 0.62;
       var step = Math.max(1, Math.ceil(figW / minGap));
-      var drewFig = 0, drewBub = 0, sum = 0;
+      var drewFig = 0, drewBub = 0, sum = 0, behindB = 0, behindF = 0;   // §36 W1 ledger: not drawn = behind the camera (plane() null)
       var _pxU = 0, _pxV = 0;    // projected semi-axes of a bubble on this axis, in screen px
       for (var i = 0; i < vals.length; i++) {
         var pB = at(vals[i], OFFB);
@@ -526,7 +562,7 @@ function setupCpeFlythruDatum(A) {
         // them lands as an ellipse whose semi-axes are half their screen lengths. Recording them
         // makes "are the Z bubbles the same size as the ground ones" a question with an answer.
         if (mB && !_pxU) { _pxU = Math.hypot(mB.a, mB.b) / 2; _pxV = Math.hypot(mB.c, mB.d) / 2; }
-        if (inkBubble(mB, lab(i), R_BUB, TXT)) { drewBub++; n++; }
+        if (inkBubble(mB, lab(i), R_BUB, TXT)) { drewBub++; n++; } else behindB++;
         var pA = at(vals[i], OFF1), pC = at(vals[i], OFFB - R_BUB * 1.4);
         seg(P(pA[0], pA[1], pA[2]), P(pC[0], pC[1], pC[2]));           // witness line, rung to bubble
       }
@@ -542,7 +578,7 @@ function setupCpeFlythruDatum(A) {
         var mv = (vals[j] + vals[k2]) / 2, mp = at(mv, OFF1 + TXT * 0.9);
         if (inkText(plane(mp[0], mp[1], mp[2], along.x * 1, along.y * 1, along.z * 1,
                           out.x * 1, out.y * 1, out.z * 1),
-                    Math.round((vals[k2] - vals[j]) * 1000).toLocaleString('en-US'), TXT)) { drewFig++; n++; }
+                    Math.round((vals[k2] - vals[j]) * 1000).toLocaleString('en-US'), TXT)) { drewFig++; n++; } else behindF++;
         sum += vals[k2] - vals[j];
         if (k2 === vals.length - 1) break;
       }
@@ -554,7 +590,7 @@ function setupCpeFlythruDatum(A) {
       if (inkText(plane(op2[0], op2[1], op2[2], along.x, along.y, along.z, out.x, out.y, out.z), ovTxt, TXT * 1.25)) { n++; }
       if (drewOv) { _ov++; }
       _bub += drewBub; _figs += drewFig;
-      return { bubbles: drewBub, figures: drewFig, step: step, sum: sum, R: R_BUB, gap: minGap, pxU: _pxU, pxV: _pxV, fit: R_BUB, wMax: _wMax };
+      return { bubbles: drewBub, figures: drewFig, step: step, sum: sum, R: R_BUB, gap: minGap, pxU: _pxU, pxV: _pxV, fit: R_BUB, wMax: _wMax, behindB: behindB, behindF: behindF };
     }
 
     // ⚠ THE BUBBLE IS SIZED BY ITS LABEL, AND BY THE WIDEST LABEL ON THE WHOLE DRAWING.
@@ -590,7 +626,7 @@ function setupCpeFlythruDatum(A) {
     var rY = axis(_lines.gy, function (i) { return label(i, true); },
                   function (v, o) { return [nearX + sgnX * o, v, z0]; },
                   { x: 0, y: 1, z: 0 }, { x: sgnX, y: 0, z: 0 }, false);
-    var rZ = { bubbles: 0, figures: 0, step: 1, sum: 0, R: 0, gap: 0, pxU: 0, pxV: 0, fit: 0, wMax: 0 };
+    var rZ = { bubbles: 0, figures: 0, step: 1, sum: 0, R: 0, gap: 0, pxU: 0, pxV: 0, fit: 0, wMax: 0, behindB: 0, behindF: 0 };
     if (_lvz.length > 1) {
       rZ = (_zPlane === 'X-face')
         ? axis(_lvz.map(function (L) { return L.z; }), function (i) { return storeyRefFor(_lvz, i); },
@@ -630,8 +666,12 @@ function setupCpeFlythruDatum(A) {
       ' — a flat ratio means that plane is edge-on to the camera, which is the CAMERA, not the drawing');
     // §33 §CLI_BAKE_OPENING — the counts as numbers, so a caller can ask "is the whole drawing in frame from
     // here?" without parsing this log line. The datum is the owner of that question.
+    var _dDrawn = (_lastDrawn == null) ? null : n - _lastDrawn;
     A._flythruDatumLast = { drawn: n, bubbles: _bub, bubblesTotal: _lines.gx.length + _lines.gy.length + _lvz.length,
-                            figures: _figs, overalls: _ov, filmSec: filmSec };
+                            figures: _figs, overalls: _ov, filmSec: filmSec, dDrawn: _dDrawn, sidesChanged: _sidesChanged,
+                            sidesKey: _sides.key, sidesNowKey: sidesNow.key, decidedAt: _sides.decidedAt,
+                            behind: { bubbles: [rX.behindB, rY.behindB, rZ.behindB], figures: [rX.behindF, rY.behindF, rZ.behindF] }, enteredAt: _enteredAt, op: op };
+    _lastDrawn = n;
     console.log('§FLYTHRU_DATUM_MARKS ' + (n ? 'drawn=' + n : 'NOTHING drawn=0') + ' filmSec=' + filmSec.toFixed(2) +
       ' IN-PLANE (no screen-space sizing, no register, no ranks, no clamping)' +
       ' sizedFromGrid(bubbleR = 0.153 x medianBay, the ratio read off the accepted HHS frame)' +
@@ -650,11 +690,21 @@ function setupCpeFlythruDatum(A) {
       ' figures=' + _figs + ' overalls=' + _ov + '/3' +
       ' figStride=' + rX.step + '/' + rY.step + '/' + rZ.step +
       ' sides=(numerals Y@' + nearY.toFixed(1) + ' near, letters X@' + nearX.toFixed(1) + ' near, levels X@' + zNearX.toFixed(1) +
-      ' back on the ' + _zPlane + ', faceOn Y ' + _fY.toFixed(2) + ' vs X ' + _fX.toFixed(2) + ')');
+      ' back on the ' + _zPlane + ', faceOn Y ' + _fY.toFixed(2) + ' vs X ' + _fX.toFixed(2) + ')' +
+      // §36 W1 — the drop ledger and the frame delta the reviewer asked for: what was NOT drawn and why,
+      // how the count moved since the last frame, and whether a per-frame decision WOULD have flipped.
+      ' dropped=[behindCam bubbles X/Y/Z=' + rX.behindB + '/' + rY.behindB + '/' + rZ.behindB +
+      ' figures=' + rX.behindF + '/' + rY.behindF + '/' + rZ.behindF + '] dDrawn=' + (_dDrawn == null ? 'first' : (_dDrawn >= 0 ? '+' : '') + _dDrawn) +
+      ' sidesChanged=' + (_sidesChanged ? 1 : 0) + ' decidedAt=' + _sides.decidedAt.toFixed(2) + 's');
     return n;
   };
 
-  A.flythruDatumDispose = function () { if (_grp && A.scene) { A.scene.remove(_grp); _grp.children.forEach(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); _grp = null; } };
+  A.flythruDatumDispose = function () {
+    if (_grp && A.scene) { A.scene.remove(_grp); _grp.children.forEach(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+    // §36 W1/W3 — a dispose is a full reset, so the §33 gate can rebuild the datum at the opening it actually
+    // chose (ribbon width and side decisions both read the camera at build/first composite).
+    _grp = null; _built = false; _info = null; _faces = null; _lines = null; _sides = null; _camFar = null; _lastDrawn = null; _enteredAt = null; _envBox = null;
+  };
   console.log('§FLYTHRU_DATUM_INIT wired (ground grid + ONE upright with storey rules; depth-tested, occluded by the build)');
 }
 if (typeof window !== 'undefined') window.setupCpeFlythruDatum = setupCpeFlythruDatum;

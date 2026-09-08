@@ -403,9 +403,9 @@ function setupCpeFlythruCues(A) {
     ];
   }
 
-  function drawDim(ctx, A2, B2, metres, ink, k) {
+  function drawDim(ctx, A2, B2, metres, ink, k, force) {
     var dx = B2.x - A2.x, dy = B2.y - A2.y, L = Math.hypot(dx, dy);
-    if (L < 24 * k) return false;                        // too short to read — decline, don't scribble
+    if (!force && L < 24 * k) return false;              // too short to read — decline, don't scribble (§36 W1: decided once per cue window, see _spanLock)
     var ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
     var ext = EXT * k, ar = AR * k, arw = ARW * k, fs = FS * k;
     ctx.save();
@@ -486,14 +486,25 @@ function setupCpeFlythruCues(A) {
       if (c2.z < 1) { drawPanel(ctx, c2, cue.dims, cue.title || cue.key, ink, k, w, h); drawn++; }
       else _diag.push('panel:behind(z=' + c2.z.toFixed(2) + ')');
     }
+    // §36 W1 — WHICH spans a cue draws is decided ONCE, on its first frame, and held for its window. The
+    // per-frame length test made a span flicker in and out as its projected length crossed 24 px (HHS full
+    // bake: storey 1→2→1, corridor 1→0→1 inside single cues). A span admitted on frame one is drawn to the
+    // end of the window even if it shortens; one declined stays declined. Behind-camera still skips.
+    if (!cue._spanLock) cue._spanLock = { at: filmSec, axes: {} };
+    var _drawnAxes = [];
     (a.panelOnly ? [] : (cue.spanAxes || [])).forEach(function (ax) {          // a SINGLE number -> arrowed line (§32: not during the panel hold)
       var sp = spans.filter(function (q) { return q.axis === ax; })[0];
       if (!sp) return;
       var A2 = proj(sp.a, cam, w, h), B2 = proj(sp.b, cam, w, h);
       if (A2.z >= 1 || B2.z >= 1) { _diag.push(ax + ':behind(z=' + A2.z.toFixed(2) + ',' + B2.z.toFixed(2) + ')'); return; }
       var _L = Math.hypot(B2.x - A2.x, B2.y - A2.y);
-      if (drawDim(ctx, A2, B2, sp.m, ink, k)) drawn++; else _diag.push(ax + ':short(L=' + _L.toFixed(0) + 'px)');
+      var lock = cue._spanLock.axes[ax];
+      if (lock === undefined) { lock = _L >= 24 * k; cue._spanLock.axes[ax] = lock; }
+      if (!lock) { _diag.push(ax + ':declined-at-lock(L=' + _L.toFixed(0) + 'px)'); return; }
+      if (drawDim(ctx, A2, B2, sp.m, ink, k, true)) { drawn++; _drawnAxes.push(ax); }
     });
+    A._flythruCuesLast = { key: cue.key, filmSec: filmSec, marks: drawn, axes: _drawnAxes, panelOnly: !!a.panelOnly,
+                           window: [cue.at, cue.at + SPAN], lockedAxes: Object.keys(cue._spanLock.axes).filter(function (x) { return cue._spanLock.axes[x]; }) };
     ctx.restore();
     // §4 PRIMAL LAW — a pass that draws nothing must SAY so, with the reason. Silence here cost a
     // three-frame run: the function ran, threw nothing, returned 0, and looked like success.
@@ -503,6 +514,7 @@ function setupCpeFlythruCues(A) {
     if (drawn && _lastDrawKey !== cue.key + '|' + Math.round(filmSec)) {
       _lastDrawKey = cue.key + '|' + Math.round(filmSec);
       console.log('§FLYTHRU_DIM_DRAW key=' + cue.key + (a.panelOnly ? ' panel-hold (§32, +' + PANEL_HOLD + 's)' : '') + ' filmSec=' + filmSec.toFixed(2) +
+                  ' window=' + cue.at.toFixed(2) + '-' + (cue.at + SPAN).toFixed(2) + ' lockedAxes=[' + Object.keys(cue._spanLock.axes).filter(function (x) { return cue._spanLock.axes[x]; }).join(',') + ']' +
                   ' marks=' + drawn + ' spans=[' + (cue.spanAxes || []).join(',') + ']' +
                   ' panelRows=' + ((cue.dims && cue.dims.length) || 0));
     }
