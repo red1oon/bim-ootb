@@ -161,10 +161,18 @@ function setupCpeSlabBeat(A) {
   // slab's own edge chamfers, and if they do not, the mesh is not a plate and the log says so.
   // World "up" is +Y here (A.ifc2three's convention — the picked plate's four corners all share y).
   var _tri = null;
-  function _worldTris(o, out) {
+  // `range` (BatchedMesh only) restricts the walk to ONE slot's own index/vertex span; without it the
+  // walk would sum the whole shared batch buffer, i.e. the entire building, and report a footprint
+  // hundreds of times too big.
+  function _worldTris(o, out, range) {
     var T = window.THREE, g = o.geometry;
     if (!g || !g.attributes || !g.attributes.position) return 0;
-    var pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count, added = 0;
+    var pos = g.attributes.position, idx = g.index, added = 0;
+    var from = 0, n = idx ? idx.count : pos.count;
+    if (range) {
+      if (idx && range.indexCount > 0) { from = range.indexStart; n = range.indexStart + range.indexCount; }
+      else if (!idx && range.vertexCount > 0) { from = range.vertexStart; n = range.vertexStart + range.vertexCount; }
+    }
     if (!_tri) _tri = { a: new T.Vector3(), b: new T.Vector3(), c: new T.Vector3(), m: new T.Matrix4() };
     var mats = [];
     if (o.isInstancedMesh) {
@@ -174,9 +182,11 @@ function setupCpeSlabBeat(A) {
         var mm = new T.Matrix4(); o.getMatrixAt(q, mm);
         mats.push(new T.Matrix4().multiplyMatrices(o.matrixWorld, mm));
       }
+    } else if (range && range.matrix) {
+      mats.push(new T.Matrix4().multiplyMatrices(o.matrixWorld, range.matrix));
     } else mats.push(o.matrixWorld);
     for (var mi = 0; mi < mats.length; mi++) {
-      for (var i = 0; i < n; i += 3) {
+      for (var i = from; i < n; i += 3) {
         var i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
         _tri.a.fromBufferAttribute(pos, i0).applyMatrix4(mats[mi]);
         _tri.b.fromBufferAttribute(pos, i1).applyMatrix4(mats[mi]);
@@ -205,12 +215,31 @@ function setupCpeSlabBeat(A) {
                   (o.isInstancedMesh && A._instanceMeta && A._instanceMeta[o.id] &&
                    A._instanceMeta[o.id].some(function (m) { return m && m.guid === beat.guid; })));
         }).forEach(function (o) { var n = _worldTris(o, out); if (n) { tris += n; meshes++; } });
-        // a BatchedMesh keeps its geometry in one shared buffer addressed by slot; there is no
-        // per-slot triangle range exposed here, so it is COUNTED and named rather than guessed at.
+        // A BatchedMesh keeps every element's triangles in ONE shared buffer, so a naive walk would
+        // sum the whole building. THREE exposes the per-slot span: getGeometryIdAt(instanceId) then
+        // getGeometryRangeAt(geometryId) gives {indexStart,indexCount,vertexStart,vertexCount}, and
+        // getMatrixAt(instanceId) gives that slot's own transform. MEASURED 2026-09-08: Hospital's
+        // picked plate is a BATCHED slot, not an InstancedMesh instance — without this branch the
+        // mesh path never fires on Hospital at all and the figure silently falls back to the raster.
+        // Any THREE build without these accessors is COUNTED and named, never guessed at.
+        var T2 = window.THREE;
         A.collectMeshes(function (o) { return o.isBatchedMesh; }).forEach(function (mesh) {
           var meta = A._batchMeta && A._batchMeta[mesh.id];
           if (!meta) return;
-          for (var i = 0; i < meta.length; i++) if (meta[i] && meta[i].guid === beat.guid) batched++;
+          for (var i = 0; i < meta.length; i++) {
+            if (!meta[i] || meta[i].guid !== beat.guid) continue;
+            var slot = meta[i].slotId;
+            if (typeof mesh.getGeometryIdAt !== 'function' || typeof mesh.getGeometryRangeAt !== 'function') { batched++; continue; }
+            var gid, rg = {};
+            try {
+              gid = mesh.getGeometryIdAt(slot);
+              mesh.getGeometryRangeAt(gid, rg);
+              if (typeof mesh.getMatrixAt === 'function') { rg.matrix = new T2.Matrix4(); mesh.getMatrixAt(slot, rg.matrix); }
+            } catch (eB) { batched++; continue; }
+            if (!(rg.indexCount > 0 || rg.vertexCount > 0)) { batched++; continue; }
+            var nb = _worldTris(mesh, out, rg);
+            if (nb) { tris += nb; meshes++; } else batched++;
+          }
         });
       } catch (e) { log('§SLAB_BEAT_AREA mesh walk failed: ' + e.message); }
     }
