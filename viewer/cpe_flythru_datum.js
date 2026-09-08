@@ -699,6 +699,21 @@ function setupCpeFlythruDatum(A) {
     return n;
   };
 
+  // §27.5.3 — the figures this drawing PRINTS, for the datum-restatement guard: storey heights (consecutive level
+  // rules > 1 m apart), the three overalls, and every bay of the ground grid. Read from the build, never re-derived.
+  A.flythruDatumFigures = function () {
+    if (!_lines) return null;
+    var lv = (_lines.levels || []).map(function (L) { return L.z; }).sort(function (a, b) { return a - b; });
+    var storeys = [], bays = [], i;
+    for (i = 1; i < lv.length; i++) if (lv[i] - lv[i - 1] > 1.0) storeys.push(lv[i] - lv[i - 1]);
+    for (i = 1; i < _lines.gx.length; i++) bays.push(_lines.gx[i] - _lines.gx[i - 1]);
+    for (i = 1; i < _lines.gy.length; i++) bays.push(_lines.gy[i] - _lines.gy[i - 1]);
+    var ov = [];
+    if (_lines.gx.length > 1) ov.push(_lines.gx[_lines.gx.length - 1] - _lines.gx[0]);
+    if (_lines.gy.length > 1) ov.push(_lines.gy[_lines.gy.length - 1] - _lines.gy[0]);
+    if (lv.length > 1) ov.push(lv[lv.length - 1] - lv[0]);
+    return { storeys: storeys, bays: bays, overalls: ov, levels: lv };
+  };
   A.flythruDatumDispose = function () {
     if (_grp && A.scene) { A.scene.remove(_grp); _grp.children.forEach(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
     // §36 W1/W3 — a dispose is a full reset, so the §33 gate can rebuild the datum at the opening it actually

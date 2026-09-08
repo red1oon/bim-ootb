@@ -248,6 +248,14 @@ function setupCpeSlabBeat(A) {
       var ct = A.ifc2three(c.cx, c.cy, zTop + 0.05); c.centerTop = new T.Vector3(ct.x, ct.y, ct.z);
     });
 
+    // §14 across layers (2026-09-08): the 2D cues (envelope, storey, room, corridor) own their windows; a plate whose
+    // 2.7 s slot overlaps one is not taken — HHS's Level 1 pops at 0.00 s, inside the envelope cue's 0–4.2 s window.
+    var cueWins = (typeof A.flythruCuesWindows === 'function') ? A.flythruCuesWindows() : [];
+    events.forEach(function (e) {
+      if (e.reject) return;
+      for (var wi = 0; wi < cueWins.length; wi++) { var w = cueWins[wi]; if (e.sec < w.to && e.sec + ENV_SPAN + 0.5 > w.from) { e.reject = 'screen taken by cue:' + w.key + ' ' + w.from.toFixed(2) + '-' + w.to.toFixed(2) + ' (§14 across layers)'; break; } }
+    });
+    if (cueWins.length) log('§SLAB_BEAT_TAKEN ' + cueWins.map(function (w) { return 'cue:' + w.key + ' ' + w.from.toFixed(2) + '-' + w.to.toFixed(2); }).join(' | '));
     // 7. the guard — inside the dive, longest hold first, the camera must frame the crossing at the pop
     var qual = events.filter(function (e) { return !e.reject; });
     var dive = qual.filter(function (e) { return e.sec < diveSec; }).sort(function (a, b) { return b.hold - a.hold; });
@@ -438,6 +446,7 @@ function setupCpeSlabBeat(A) {
   };
 
   A.slabBeatReport = function () { return _report; };
+  A.slabBeatClock = makeClock;   // §27.5.1 — the ONE owner-clock inverter, shared with cpe_linear_beat.js
   A.slabBeatDispose = function () {
     try { if (_tintOn) restoreTint(); } catch (e) {}
     if (_grp && A.scene) { A.scene.remove(_grp); _grp.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); }

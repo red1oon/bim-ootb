@@ -102,6 +102,7 @@ const server = http.createServer((req, res) => {
       const dur = durArg || (plan0 && plan0.naturalTotal) || 195.8;
       R.durSrc = durArg ? '--dur' : (plan0 && plan0.naturalTotal ? 'plan.naturalTotal' : 'default 195.8');
       const plan = A.cinemaPathPlan(dur);
+      try { A.flythruCuesBuild(plan, dur); } catch (e) { R.cuesErr = e.message; }   // the bake builds the 2D cues BEFORE the beats (§14 across layers)
       R.dur = dur; R.beats = plan && plan.beats; R.bk = !!bk;
       R.opening = plan ? plan.poseAt(0) : null;
       R.cursor = [1.0, 2.0, 3.0, 5.0, 8.5, 10.0, 11.96].map(sec => { const u = sec / dur; const ms = bk ? A.buildupCursorAt(A.buildupTAt(u, plan), bk, dur) : null;

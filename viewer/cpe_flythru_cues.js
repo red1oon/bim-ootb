@@ -461,6 +461,14 @@ function setupCpeFlythruCues(A) {
     ctx.restore();
   }
 
+  // §27.5.6 — the dimension-line and panel drawers, exported so cpe_linear_beat.js draws the SAME standard cue.
+  A.flythruDrawDim = drawDim; A.flythruDrawPanel = drawPanel; A.flythruProj = proj;
+  // §14 across layers — the windows this module occupies, so the beat allocators (cpe_linear_beat.js) treat them as
+  // taken slots instead of drawing a second cue over them. The envelope's panel hold (§32) counts as occupied.
+  A.flythruCuesWindows = function () {
+    return (_cues || []).map(function (c) { return { key: c.key, from: c.at, to: c.at + SPAN + (c.key === 'envelope' ? PANEL_HOLD : 0) }; });
+  };
+
   // Called by cinema_maxq's _captureFrame chain and by scripts/snap_timeline.js.
   A.flythruCuesCompositeOntoCanvas = function (ctx, w, h, filmSec) {
     var T = window.THREE, cam = A.camera;

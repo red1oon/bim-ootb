@@ -793,6 +793,11 @@
       try { A.flythruCuesCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
       catch (eFDC) { if (!A._flythruDimWarned) { A._flythruDimWarned = true; console.warn('§FLYTHRU_DIM_DRAW failed: ' + (eFDC && eFDC.message)); } }
     }
+    // §LINEAR_BEAT (§27) — the column/beam dimension cues, same 2D pass, same never-kills-a-bake contract.
+    if (A._flythruDatumOn && A.linearBeatCompositeOntoCanvas) {
+      try { A.linearBeatCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
+      catch (eLBC) { if (!A._linearBeatWarned) { A._linearBeatWarned = true; console.warn('§LINEAR_BEAT_DRAW failed: ' + (eLBC && eLBC.message)); } }
+    }
     if (lblInfo && lblInfo.placed && lblInfo.placed.length && A.clashLabelsCompositeOntoCanvas) try {
       A.clashLabelsCompositeOntoCanvas(ctx, w, h, lblInfo.placed);
     } catch (eCLd) {
@@ -1549,6 +1554,11 @@
         try { A.slabBeatBuild(plan, _filmSecFull, _bkState, _filmSecFull); }
         catch (eSB) { console.warn('§SLAB_BEAT_BUILD failed: ' + (eSB && eSB.message) + ' — the film bakes without the slab beat'); }
       }
+      // §LINEAR_BEAT (§27) — one column + one beam during the dive, slots clear of the plate's. Rides Measure.
+      if (_measure && A.linearBeatBuild) {
+        try { A.linearBeatBuild(plan, _filmSecFull, _bkState, _filmSecFull); }
+        catch (eLB) { console.warn('§LINEAR_BEAT_BUILD failed: ' + (eLB && eLB.message) + ' — the film bakes without the linear beat'); }
+      }
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }
         catch (eCF) { console.warn('§CLASH_FILM_BUILD failed: ' + (eCF && eCF.message) + ' — the film bakes without markers'); }
@@ -2235,6 +2245,7 @@
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD) {}   // §SLAB_BEAT — restores the tint, removes X + label
+      try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD) {}
       _workPacingReset();
       // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
       // came within 4 m of a pair), then release the selector's state with the markers.
@@ -2312,6 +2323,7 @@
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR2) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD2) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD2) {}
+      try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD2) {}
       try { _workPacingReset(); } catch (e5) {}
       // §CLASH_FILM_P1 — same restore on the THROW path (review of #1678): a throw inside the loop
       // skips the in-try dispose above and would leave the marker InstancedMeshes in the user's
