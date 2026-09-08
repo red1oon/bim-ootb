@@ -9,6 +9,42 @@
 async function setupEffects(A, renderer, scene, camera) {
   A._composer = null;
   A._ssaoPass = null;
+
+  // ══ §AO_EXCLUDE (2026-09-09, MEP_CLASH_REVEAL_MOVIE.md §46 — MEASURED, not guessed) ══════════════
+  // An AO pass renders its OWN depth/normal prepass of the scene. It does that with an override
+  // material (SSAOPass) or its own depth shader (N8AO), and BOTH ignore per-object material flags —
+  // `depthWrite:false` included. So annotation geometry added to the scene is written into the AO
+  // buffer as SOLID surface, and the whole picture's ambient occlusion is computed against it.
+  // MEASURED on the 1080p Hospital film: 42 frames of |ΔY|>15 inside §FLYTHRU_DATUM_LIFE2's
+  // 148.70-169.10 s window with Measure on, 0 with --no-measure; frame-for-frame against that twin
+  // the Measure film swings 39..104 around a steady 56 — whole-frame error in BOTH directions,
+  // which is what a polluted AO buffer looks like.
+  // ⚠ WHICH PASS: the bake's AO is §PHOTO_AO's **N8AOPass**, not SSAOPass (which ships
+  // `enabled = false`). Wrapping the wrong one is a no-op that LOOKS like a fix — so this helper is
+  // applied to every AO pass we construct, and each logs §AO_EXCLUDE the first time it hides anything.
+  // Opt-in: geometry that SHOULD occlude simply does not set `userData.excludeFromAO`.
+  A._aoExcludeWrap = function (pass, label, sceneRef) {
+    if (!pass || typeof pass.render !== 'function' || pass.__aoExcludeWrapped) return pass;
+    pass.__aoExcludeWrapped = true;
+    var orig = pass.render.bind(pass), hidden = [], logged = false;
+    pass.render = function (renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+      hidden.length = 0;
+      try {
+        sceneRef.traverse(function (o) {
+          if (o.visible && o.userData && o.userData.excludeFromAO) { o.visible = false; hidden.push(o); }
+        });
+      } catch (e) { /* the guard must never cost a frame */ }
+      if (hidden.length && !logged) {
+        logged = true;
+        console.log('§AO_EXCLUDE pass=' + label + ' objects=' + hidden.length + ' [' +
+          hidden.map(function (o) { return o.name || '(unnamed)'; }).join(' ') +
+          '] — hidden for the AO depth prepass only; the beauty pass and TAA fold still see them');
+      }
+      try { orig(renderer, writeBuffer, readBuffer, deltaTime, maskActive); }
+      finally { for (var i = 0; i < hidden.length; i++) hidden[i].visible = true; }
+    };
+    return pass;
+  };
   A._outlinePass = null;
   A._composerEnabled = false;
 
@@ -51,40 +87,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _ssaoPass.minDistance = 0.001;
     _ssaoPass.maxDistance = 0.1;
     _ssaoPass.enabled = false;  // off by default — toggled with Shadow or UI
-    // ══ §AO_EXCLUDE (2026-09-09, MEP_CLASH_REVEAL_MOVIE.md §46 — MEASURED, not guessed) ═══════════
-    // SSAOPass renders its OWN depth+normal prepass with `scene.overrideMaterial` set (SSAOPass.js
-    // _renderOverride, line 284), and an override material IGNORES every per-object material flag —
-    // `depthWrite:false` included. So any annotation geometry added to the scene is written into the
-    // AO buffer as a SOLID surface and occludes the picture behind it.
-    // MEASURED on the 1080p Hospital film: with Measure on, 42 frames of |ΔY|>15 (max 59.6) inside
-    // §FLYTHRU_DATUM_LIFE2's 148.70-169.10 s window and 0 outside; the same window with --no-measure
-    // is FLAT (0 jumps, max 9.2), and frame-for-frame against that twin the Measure film swings
-    // 39..104 around a steady 56 — a whole-frame error in BOTH directions, which is what a polluted
-    // AO buffer looks like. Two earlier "fixes" (depthWrite:false, dropping the plate tint) changed
-    // the count by 1, because neither is read by an override material.
-    // THE FIX IS EXCLUSION: anything marked `userData.excludeFromAO` is hidden for the duration of
-    // the AO pass ONLY. Nothing else in the frame changes — the beauty pass, the TAA fold and every
-    // other pass still see it. Opt-in, so a layer that WANTS to occlude simply does not set the flag.
-    (function wrapSsaoForExclusion() {
-      var _orig = _ssaoPass.render.bind(_ssaoPass), _hidden = [], _logged = false;
-      _ssaoPass.render = function (renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
-        _hidden.length = 0;
-        try {
-          scene.traverse(function (o) {
-            if (o.visible && o.userData && o.userData.excludeFromAO) { o.visible = false; _hidden.push(o); }
-          });
-        } catch (e) { /* never let the guard cost a frame */ }
-        if (_hidden.length && !_logged) {
-          _logged = true;
-          console.log('§AO_EXCLUDE active objects=' + _hidden.length + ' [' +
-            _hidden.map(function (o) { return o.name || '(unnamed)'; }).join(' ') + '] — hidden for the SSAO ' +
-            'depth/normal prepass only (§46: an override material ignores depthWrite, so annotation ' +
-            'geometry would otherwise occlude the AO buffer)');
-        }
-        try { _orig(renderer, writeBuffer, readBuffer, deltaTime, maskActive); }
-        finally { for (var i = 0; i < _hidden.length; i++) _hidden[i].visible = true; }
-      };
-    })();
+    A._aoExcludeWrap(_ssaoPass, 'SSAOPass', scene);   // §AO_EXCLUDE — usually disabled, wrapped anyway
     _composer.addPass(_ssaoPass);
 
     // Pass 3: Outline — mesh silhouette on pick/clash/find
@@ -4164,6 +4167,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (!bundle.N8AOPass) { console.warn('§PHOTO_AO_INIT_FAIL bundle has no N8AOPass export'); return null; }
       var rt = A._composer.renderTarget1;  // composer buffer size INCLUDES pixelRatio — match it exactly
       var n8 = new bundle.N8AOPass(scene, camera, rt.width, rt.height);
+      A._aoExcludeWrap(n8, 'N8AOPass', scene);   // §AO_EXCLUDE — THIS is the pass the bake runs (§PHOTO_AO)
       n8.configuration.autoRenderBeauty = false;  // beauty = the frozen TAA image, injected by the adapter
       n8.autoDetectTransparency = false;          // transparency machinery only works with autoRenderBeauty;
                                                   // left on it would feed EMPTY transparency targets to the
