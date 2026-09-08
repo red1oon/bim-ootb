@@ -271,6 +271,23 @@ const server = http.createServer((req, res) => {
   const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=${dbUrl}`;
   log(`§CLI_BAKE_NAV ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  // ⚠ §CLI_BAKE_SW_PURGE (2026-09-08, MEP_CLASH_REVEAL_MOVIE.md §43) — THE BAKE MUST NOT RUN STALE JS.
+  // viewer.html and every module are precached by viewer/sw.js at a FIXED `?v=` query, so a profile
+  // that has ever loaded the viewer keeps serving the OLD viewer.html — which means a NEW <script>
+  // tag added this session is simply absent, and the bake silently exercises the previous build.
+  // MEASURED: the 0-30 s Hospital bake of 2026-09-08 printed the PREVIOUS build's
+  // `§SLAB_BEAT_INIT … depth-tested tint + X, shine-through label` and emitted no §HUD_BOX /
+  // §STATUS_BOX / §MEASURE_BOX / §SLAB_BEAT_AREA at all — 8 minutes of GPU spent testing code that
+  // was not in the film. Every witness_*.js already does exactly this; the bake runner never did.
+  const _swPurge = await page.evaluate(async () => {
+    let regs = 0, ks = 0;
+    try { if (navigator.serviceWorker) { const rs = await navigator.serviceWorker.getRegistrations();
+      regs = rs.length; for (const r of rs) await r.unregister(); } } catch (e) {}
+    try { if (window.caches) { const k = await caches.keys(); ks = k.length; for (const n of k) await caches.delete(n); } } catch (e) {}
+    return { regs, ks };
+  });
+  log(`§CLI_BAKE_SW_PURGE unregistered=${_swPurge.regs} cachesDeleted=${_swPurge.ks} — reloading so the bake runs THIS build, not the precached one`);
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.APP && window.APP.renderer && window.APP.camera &&
     typeof window.APP.startMaxQualityOrbit === 'function' && typeof window.__maxqBake === 'function',
     { timeout: 300000 });
