@@ -182,7 +182,12 @@
 //   text); cinema_maxq.js retires the roaming lower-third caption plate for the bake and routes every Measure figure to
 //   the one panel; cpe_slab_beat.js posts the plate's MESH FOOTPRINT area there and draws a box outline instead of the X;
 //   new viewer/cpe_flyout_beats.js (wing spans + roof-edge-to-sill on the pull-out canvas, §38.2).
-const CACHE_VERSION = 'v1169';   // bump on each deploy; per-change detail is the git commit message.
+// v1170 (2026-09-08) §42 FLICKER FOUND: cpe_flythru_datum.js's transparent ribbons had THREE's default
+//   depthWrite=true, so over a COMPLETE building the transparent queue's per-frame re-sort flipped large
+//   areas between building and sky — 42 frames of |dY|>15 (max 59.6), 100% inside §FLYTHRU_DATUM_LIFE2's
+//   148.70-169.10s window, 0 outside; three datum-free films show 0-2. depthWrite:false; depthTest stays
+//   TRUE (§17.5). New scripts/probe_film_flicker.py judges any baked mp4 for this.
+const CACHE_VERSION = 'v1170';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

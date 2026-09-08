@@ -242,8 +242,18 @@ function setupCpeFlythruDatum(A) {
     // ribbons must be occluded by the building, never shine through).
     var medianBay = _bays.length ? _bays[_bays.length >> 1] : 0;
     var R_BUB = 0.153 * (medianBay > 0 ? medianBay : 6.0);   // the grid's own bubble ratio, §17.3/§22
-    var mat = new T.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.5, side: T.DoubleSide });      // depthTest TRUE — §17.5
-    var matS = new T.MeshBasicMaterial({ color: INK_STOREY, transparent: true, opacity: 0.75, side: T.DoubleSide });
+    // ⚠ depthWrite MUST be false on a TRANSPARENT material, and leaving it at THREE's `true` default
+    // is what made the film flicker at 2:28 (MEP_CLASH_REVEAL_MOVIE.md §42, MEASURED). A transparent
+    // double-sided ribbon that writes depth occludes whatever is drawn after it in the transparent
+    // queue; the queue is re-sorted by distance every frame, so over a COMPLETE building (LIFE2) the
+    // sort order flips frame to frame and large areas swap between building and sky. MEASURED on
+    // `Hospital_FULL_measure_2026-09-08.mp4`: 42 frames of |ΔY|>15 (max 59.6), 100 % of them inside
+    // §FLYTHRU_DATUM_LIFE2's 148.70-169.10 s window and ZERO outside it; one frame at 155.27 s swings
+    // 35.5 % of the picture from RGB 29/32/28 to 185/189/197. The pre-Measure bake, which has no
+    // datum at all, shows 0 such frames in the same phase (max |ΔY| 10.2). depthTEST stays TRUE —
+    // §17.5's occlusion reading is the point of the opening — only the WRITE is wrong.
+    var mat = new T.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.5, side: T.DoubleSide, depthWrite: false });      // depthTest TRUE — §17.5
+    var matS = new T.MeshBasicMaterial({ color: INK_STOREY, transparent: true, opacity: 0.75, side: T.DoubleSide, depthWrite: false });
     var P = function (ix, iy, iz) { var p = A.ifc2three(ix, iy, iz); return new T.Vector3(p.x, p.y, p.z); };
     var g = [], s = [];
     // GROUND — the plan grid, laid on the structural base
