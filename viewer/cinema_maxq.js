@@ -798,6 +798,10 @@
       try { A.linearBeatCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
       catch (eLBC) { if (!A._linearBeatWarned) { A._linearBeatWarned = true; console.warn('§LINEAR_BEAT_DRAW failed: ' + (eLBC && eLBC.message)); } }
     }
+    if (A._flythruDatumOn && A.indoorBeatsCompositeOntoCanvas) {
+      try { A.indoorBeatsCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
+      catch (eIBC) { if (!A._indoorBeatsWarned) { A._indoorBeatsWarned = true; console.warn('§INDOOR_BEAT_DRAW failed: ' + (eIBC && eIBC.message)); } }
+    }
     if (lblInfo && lblInfo.placed && lblInfo.placed.length && A.clashLabelsCompositeOntoCanvas) try {
       A.clashLabelsCompositeOntoCanvas(ctx, w, h, lblInfo.placed);
     } catch (eCLd) {
@@ -1559,6 +1563,11 @@
         try { A.linearBeatBuild(plan, _filmSecFull, _bkState, _filmSecFull); }
         catch (eLB) { console.warn('§LINEAR_BEAT_BUILD failed: ' + (eLB && eLB.message) + ' — the film bakes without the linear beat'); }
       }
+      // §INDOOR_BEATS (§29) — hall walkable area, stair going, door type, clear height, inside the dive→out window. Rides Measure.
+      if (_measure && A.indoorBeatsBuild) {
+        try { A.indoorBeatsBuild(plan, _filmSecFull, _bkState); }
+        catch (eIB) { console.warn('§INDOOR_BEAT_BUILD failed: ' + (eIB && eIB.message) + ' — the film bakes without the indoor beats'); }
+      }
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }
         catch (eCF) { console.warn('§CLASH_FILM_BUILD failed: ' + (eCF && eCF.message) + ' — the film bakes without markers'); }
@@ -1766,6 +1775,10 @@
         if (_measure && A.slabBeatAt) {
           try { A.slabBeatAt(_tnFilm * _filmSecFull); }
           catch (eSBA) { if (!A._slabBeatAtWarned) { A._slabBeatAtWarned = true; console.warn('§SLAB_BEAT_AT failed frame=' + i + ': ' + (eSBA && eSBA.message)); } }
+        }
+        if (_measure && A.indoorBeatsAt) {
+          try { A.indoorBeatsAt(_tnFilm * _filmSecFull); }
+          catch (eIBA) { if (!A._indoorBeatsAtWarned) { A._indoorBeatsAtWarned = true; console.warn('§INDOOR_BEAT_AT failed frame=' + i + ': ' + (eIBA && eIBA.message)); } }
         }
         if (A.flythruCuesApplyVisual) {
           try { A._flythruFilmSec = _tnFilm * _filmSecFull; A.flythruCuesApplyVisual(A._flythruFilmSec); }
@@ -2246,6 +2259,7 @@
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD) {}   // §SLAB_BEAT — restores the tint, removes X + label
       try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD) {}
+      try { if (A.indoorBeatsDispose) A.indoorBeatsDispose(); } catch (eIBD) {}
       _workPacingReset();
       // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
       // came within 4 m of a pair), then release the selector's state with the markers.
@@ -2324,6 +2338,7 @@
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD2) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD2) {}
       try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD2) {}
+      try { if (A.indoorBeatsDispose) A.indoorBeatsDispose(); } catch (eIBD2) {}
       try { _workPacingReset(); } catch (e5) {}
       // §CLASH_FILM_P1 — same restore on the THROW path (review of #1678): a throw inside the loop
       // skips the in-try dispose above and would leave the marker InstancedMeshes in the user's
