@@ -765,6 +765,7 @@
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
   function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo) {
+    var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
     if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
@@ -774,6 +775,29 @@
     // §CLASH_FILM_P2 — the clash-pair labels, FIRST in the 2D pass: they are scene-anchored and
     // wander, the corner HUD below is fixed furniture, so the HUD must always paint over a label.
     // Same never-kills-a-bake contract as every other overlay here.
+    // §FLYTHRU_DIM_CUE — the measurement marking. Composited here because the bake captures this
+    // 2D context, not the WebGL canvas: a marking drawn in 3D text would not survive the capture.
+    // §FLYTHRU_DATUM (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §24) — the opening setting-out
+    // drawing: grid bubbles, bay chains and level rules laid IN THE MODEL'S OWN PLANES.
+    // ⚠ Until now this layer existed only in scripts/snap_timeline.js: it had never been composited
+    // by a real bake, so no Alt-C film has ever carried it. Same never-kills-a-bake contract as the
+    // overlays around it, and gated by the Measure checkbox rather than always-on.
+    // ⚠ _captureFrame is its OWN function, not a closure over the bake body — which is exactly why
+    // _fcFilmSec above is read off window.APP rather than captured. The datum's two values cross the
+    // same way; declaring them in the bake body would have compiled cleanly and thrown at run time.
+    if (A._flythruDatumOn && A.flythruDatumCompositeOntoCanvas) {
+      try { A.flythruDatumCompositeOntoCanvas(ctx, w, h, _fcFilmSec, A._flythruFilmSecFull || 0); }
+      catch (eFDM) { if (!A._flythruDatumWarned) { A._flythruDatumWarned = true; console.warn('§FLYTHRU_DATUM_DRAW failed: ' + (eFDM && eFDM.message)); } }
+    }
+    if (A.flythruCuesCompositeOntoCanvas) {
+      try { A.flythruCuesCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
+      catch (eFDC) { if (!A._flythruDimWarned) { A._flythruDimWarned = true; console.warn('§FLYTHRU_DIM_DRAW failed: ' + (eFDC && eFDC.message)); } }
+    }
+    // §LINEAR_BEAT (§27) — the column/beam dimension cues, same 2D pass, same never-kills-a-bake contract.
+    if (A._flythruDatumOn && A.linearBeatCompositeOntoCanvas) {
+      try { A.linearBeatCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
+      catch (eLBC) { if (!A._linearBeatWarned) { A._linearBeatWarned = true; console.warn('§LINEAR_BEAT_DRAW failed: ' + (eLBC && eLBC.message)); } }
+    }
     if (lblInfo && lblInfo.placed && lblInfo.placed.length && A.clashLabelsCompositeOntoCanvas) try {
       A.clashLabelsCompositeOntoCanvas(ctx, w, h, lblInfo.placed);
     } catch (eCLd) {
@@ -1103,6 +1127,7 @@
     // the same function, and there is no second notion of "which part of the film this is".
     var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null, _reveal = false;
     var _clash = false;   // §CLASH_FILM_P1 — mesh-true clash pairs as persistent world content
+    var _measure = false;      // §FLYTHRU_DATUM — Alt-C 'Measure' checkbox
     // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
     // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
     // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
@@ -1290,6 +1315,8 @@
         // §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md) — clash_film.js builds the mesh-true pair set
         // ONCE below, before the frame loop; it is static world content, not per-frame work.
         _clash = !!_ov.clash;
+        // §FLYTHRU_DATUM — the Measure overlay, authored beside Clash in the Alt-C panel.
+        _measure = !!_ov.measure;
         if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round + ARC/STR reveal are real ' +
           '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
@@ -1504,6 +1531,34 @@
       // silently dropped on EVERY first bake of a tab, `--clash` and pair count notwithstanding. Moved
       // here, BEFORE §CPE_BIG_STATS, so the card sees the real, already-judged stats.
       var _filmSecFull = (_clip && _clip.out > _clip.in) ? (nFrames / (_clip.out - _clip.in)) / fps : nFrames / fps;
+      // §FLYTHRU_CUES — baseline measurement cues (B1/B2/B4/B5). Built once, placed against the
+      // REAL camera path. Never allowed to kill a bake: same try/catch contract as every overlay here.
+      if (A.flythruCuesBuild) {
+        try { A.flythruCuesBuild(plan, _filmSecFull); }
+        catch (eFC) { console.warn('§FLYTHRU_CUES_BUILD failed: ' + (eFC && eFC.message) + ' — cues disabled for this bake'); }
+      }
+      // §FLYTHRU_DATUM — built once from the DB, so it stands at frame one whatever the buildup has
+      // reached. Only when Measure is on; a bake without it must cost nothing.
+      A._flythruFilmSecFull = _filmSecFull;
+      A._flythruDatumOn = !!_measure;
+      if (_measure && A.flythruDatumBuild) {
+        try { A.flythruDatumBuild(); }
+        catch (eFDB) { console.warn('§FLYTHRU_DATUM_BUILD failed: ' + (eFDB && eFDB.message) + ' — the film bakes without the datum'); }
+      }
+      // §SLAB_BEAT (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §26) — ONE floor plate marked as it
+      // is laid: depth-tested tint + X, shine-through label. Rides Measure with the datum. Needs the
+      // buildup state (nothing pops without it) and the SAME cursor clock the loop below drives
+      // (buildupTAt + buildupCursorAt with nFrames/fps), so the pop second it computes is the frame
+      // the film shows. Same never-kills-a-bake contract as its neighbours.
+      if (_measure && A.slabBeatBuild) {
+        try { A.slabBeatBuild(plan, _filmSecFull, _bkState, _filmSecFull); }
+        catch (eSB) { console.warn('§SLAB_BEAT_BUILD failed: ' + (eSB && eSB.message) + ' — the film bakes without the slab beat'); }
+      }
+      // §LINEAR_BEAT (§27) — one column + one beam during the dive, slots clear of the plate's. Rides Measure.
+      if (_measure && A.linearBeatBuild) {
+        try { A.linearBeatBuild(plan, _filmSecFull, _bkState, _filmSecFull); }
+        catch (eLB) { console.warn('§LINEAR_BEAT_BUILD failed: ' + (eLB && eLB.message) + ' — the film bakes without the linear beat'); }
+      }
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }
         catch (eCF) { console.warn('§CLASH_FILM_BUILD failed: ' + (eCF && eCF.message) + ' — the film bakes without markers'); }
@@ -1654,7 +1709,14 @@
           // §CPE_BUILDUP_WORK_PACED: was `projectStart + t*span` — linear in DAYS. Now linear in
           // ELEMENTS, so the building rises at an even rate regardless of how the derived 4D order
           // clusters its timestamps.
-          var _bkMs = _workCursorAt(_bkT, _bkState, nFrames / fps);
+          // §CPE_CLIP_BUILDUP_FILM_T (2026-09-08, found by witness_slab_beat.js's cursor cross-check against the
+          // 3 s Clash+Measure bake): this passed `nFrames / fps` — the CLIP's length once §CPE_CLIP has scaled
+          // nFrames — so the §CPE_BUILDUP_ONSET_BLEND window read onsetU = min(0.5, 10/3.0) = 0.5 on a 3 s
+          // clip and 10/195.8 on the full film: a clip laid the building on a different clock from the film
+          // it claims to be a window of. Third instance of the same class (§CPE_CLIP_REVEAL_FILM_T,
+          // §CPE_CLIP_SUN_ARC_FILM_T): a clip is fewer frames of the SAME film, so the blend reads the FULL
+          // film's seconds. A full bake is unchanged (_filmSecFull === nFrames / fps when no clip is set).
+          var _bkMs = _workCursorAt(_bkT, _bkState, _filmSecFull);
           window.tmSetCursor(_bkMs);
           // §CPE_GHOST_GROUND: same film fraction the cursor rides, so the ghost cannot drift out of
           // step with what is actually placed.
@@ -1667,7 +1729,7 @@
             // cannot be handed a position that belongs to a different frame.
             if (_dayInfo) _dayInfo.pos = _dayPos;
           }
-          var _ggO = _ghostGroundAt(_bkT, nFrames / fps, _bkState, _bkMs);
+          var _ggO = _ghostGroundAt(_bkT, _filmSecFull, _bkState, _bkMs);   // §CPE_CLIP_BUILDUP_FILM_T — same class: the fade is in FILM seconds
           if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
             if (_dayInfo) console.log('§CPE_DAY_COUNTER frame=' + i + ' day=' + _dayInfo.day +
               ' of=' + _dayInfo.totalDays + ' pos=' + _dayInfo.pos + ' cursor=' + Math.round(_bkMs));
@@ -1694,6 +1756,21 @@
         // inside the disc-reveal round's own tail above. Same "one pure function, two callers" call
         // cinema_path_editor.js's preview step() makes.
         if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(plan, _tnFilm);
+        // §FLYTHRU_DATUM — the 3D half: the grid and level rules fade on the same schedule the 2D
+        // annotation uses, and depth-test normally so the rising build occludes them (§17.5).
+        if (_measure && A.flythruDatumAt) {
+          try { A.flythruDatumAt(_tnFilm * _filmSecFull, _filmSecFull); }
+          catch (eFDA) { if (!A._flythruDatumAtWarned) { A._flythruDatumAtWarned = true; console.warn('§FLYTHRU_DATUM_AT failed frame=' + i + ': ' + (eFDA && eFDA.message)); } }
+        }
+        // §SLAB_BEAT — envelope + label lifetime, same film clock as the datum above.
+        if (_measure && A.slabBeatAt) {
+          try { A.slabBeatAt(_tnFilm * _filmSecFull); }
+          catch (eSBA) { if (!A._slabBeatAtWarned) { A._slabBeatAtWarned = true; console.warn('§SLAB_BEAT_AT failed frame=' + i + ': ' + (eSBA && eSBA.message)); } }
+        }
+        if (A.flythruCuesApplyVisual) {
+          try { A._flythruFilmSec = _tnFilm * _filmSecFull; A.flythruCuesApplyVisual(A._flythruFilmSec); }
+          catch (eFV) { if (!A._flythruCueWarned) { A._flythruCueWarned = true; console.warn('§FLYTHRU_CUE_VISUAL failed frame=' + i + ': ' + (eFV && eFV.message)); } }
+        }
         // §CLASH_FILM_P1 (§4) — the pulse is a pure function of FILM seconds, never
         // performance.now(), so a 15 fps and a 24 fps bake of the same film pulse identically and a
         // re-bake is reproducible. Per-instance, so phase 2 can hold a labelled pair solid while the
@@ -1872,6 +1949,11 @@
         // exclusive with the disc-parade caption above by construction (this window opens at
         // plan.beats.rise, the disc parade's tail closes there), so the two can never both fire.
         if (!_titleInfo && A.storeyRevealCaptionAt) _titleInfo = A.storeyRevealCaptionAt(plan, _tnFilm);
+        // §FLYTHRU_CUES caption — the cue's own number, in the SAME {name,opacity} shape, so it uses
+        // the existing title renderer and can never draw a second text layer beside another caption.
+        if (!_titleInfo && A.flythruCueCaptionAt) {
+          try { _titleInfo = A.flythruCueCaptionAt(_tnFilm * _filmSecFull); } catch (eFCap) {}
+        }
         if (!_titleInfo) {
           _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
         }
@@ -2161,6 +2243,9 @@
       // §STOREY_HIGHLIGHT_REVEAL: same contract — a tinted storey left glowing after a bake would
       // follow the user into normal navigation. plan=null forces the restore.
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
+      try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
+      try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD) {}   // §SLAB_BEAT — restores the tint, removes X + label
+      try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD) {}
       _workPacingReset();
       // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
       // came within 4 m of a pair), then release the selector's state with the markers.
@@ -2236,6 +2321,9 @@
       try { _ghostGroundRestore(); } catch (e4) {}
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR2) {}
+      try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD2) {}
+      try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD2) {}
+      try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD2) {}
       try { _workPacingReset(); } catch (e5) {}
       // §CLASH_FILM_P1 — same restore on the THROW path (review of #1678): a throw inside the loop
       // skips the in-try dispose above and would leave the marker InstancedMeshes in the user's
@@ -2334,7 +2422,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'storeyReveal'].forEach(function(fk) {
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same

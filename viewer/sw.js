@@ -144,6 +144,8 @@
 // v1155 (2026-09-06) §PL_TOPOUT_UNPIN (MEP_CLASH_REVEAL_MOVIE.md): viewer/effects.js — past the plan's topout the bake's
 //   fixture point-lights ease from the staged Alt+S cut (0.5) to nav Night Mode's tuned 1.0 over the sun's own snap
 //   window; pre-topout byte-identical. viewer/cinema_maxq.js passes _revealU to the fill pin. (v1153 = #1689, v1154 = #1691.)
+// v1160 (2026-09-07) §FLYTHRU_CUES (MEP_CLASH_REVEAL_MOVIE.md §11/§12/§14): new viewer/cpe_flythru_cues.js
+//   + common/flythru_maths.js + common/storey_raster.js — baseline fly-through measurement cues.
 // v1157 (2026-09-06) §STOREY_HIGHLIGHT_REVEAL (MEP_CLASH_REVEAL_MOVIE.md): new viewer/cpe_storey_reveal.js —
 //   fills the LAST 5 REAL SECONDS of the `pullback` beat (ending exactly where `orbit` begins, plan.beats.rise
 //   — NOT the orbit beat itself) with each real storey (elements_meta, Ceiling/TOS pseudo-storeys excluded)
@@ -161,7 +163,19 @@
 //   (the real shortcut is Alt+C) and added a "copy bake command" link that hands the user the exact
 //   `node cli_silent_bake.js ...` command for their own terminal — there is no server behind this
 //   page, so nothing here can run a bake for them.
-const CACHE_VERSION = 'v1159';   // bump on each deploy; per-change detail is the git commit message.
+// v1164 (2026-09-08) §34's 3 user corrections (MEP_CLASH_REVEAL_MOVIE.md §34.1/§34.2/§34.3): cpe_flythru_cues.js
+//   never shows the 3D fill/outline box for ANY cue now (§32 had only skipped it for 'envelope'); dbMeasures()
+//   takes the §20.9 structural envelope (bom_extract.js's ENV_CLASSES, now exported) for envelope/ground/volume,
+//   logging all-vs-structural-vs-dropped once (a rogue IfcStair no longer stretches the building box); the datum's
+//   ground/upright grid lines in cpe_flythru_datum.js are now depth-tested ribbon quads (MeshBasicMaterial) sized
+//   from the real opening camera distance to a stated px target, replacing the 1px LineBasicMaterial hairline.
+// v1163 (2026-09-08) §SLAB_BEAT (MEP_CLASH_REVEAL_MOVIE.md §26): new viewer/cpe_slab_beat.js — one floor plate
+//   marked as it is laid (depth-tested tint + X, shine-through label), riding the Alt-C Measure checkbox; wired in
+//   cinema_maxq.js beside the datum; cli_silent_bake.js gains --measure/--no-measure (§28.1).
+// v1165 (2026-09-08) §36 W1/W3 (MEP_CLASH_REVEAL_MOVIE.md): datum sides/plane decided ONCE per life + drop ledger + §20.8 entry
+//   latch (cpe_flythru_datum.js); cue span sets locked per window (cpe_flythru_cues.js); §33 gate rebuilds the datum after Home.
+// v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
+const CACHE_VERSION = 'v1166';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -612,6 +626,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','cpe_slab_beat.js','cpe_linear_beat.js','../common/flythru_maths.js','../common/storey_raster.js',
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',

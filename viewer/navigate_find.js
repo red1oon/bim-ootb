@@ -2287,6 +2287,11 @@
       return out; // exception path — never cached, so the next entry retries fresh rather than sticking with a partial result
     }
 
+    // §FLYTHRU_ROOMS (2026-09-07) — exposed for cpe_flythru_cues.js. Read-only handle to the SAME
+    // cached function the Room Lens uses; no behaviour change here, and the cue layer must never
+    // get its own second room query (prompts/MEP_CLASH_REVEAL_MOVIE.md §10.2).
+    A.allRoomVolumes = _allRoomVolumes;
+
     // Remove boxes, restore opacity (turn X-Ray off if WE turned it on), drop outline.
     function _roomLensReset() {
       _clearRoomBoxes();
