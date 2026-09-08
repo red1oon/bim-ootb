@@ -1548,6 +1548,8 @@
       if (_measure && A.flythruDatumBuild) {
         try { A.flythruDatumBuild(); }
         catch (eFDB) { console.warn('§FLYTHRU_DATUM_BUILD failed: ' + (eFDB && eFDB.message) + ' — the film bakes without the datum'); }
+        // §37.2 — the datum's second life over the finished building, on the pull-out→flyback stretch.
+        try { if (A.flythruDatumSetLife2 && plan && plan.beats) A.flythruDatumSetLife2(plan.beats.flyback * _filmSecFull, (plan.beats.rise - ((plan.storeyReveal && plan.storeyReveal.on && plan.storeyReveal.windowFrac > 0) ? plan.storeyReveal.windowFrac : 0)) * _filmSecFull); } catch (eL2) {}
       }
       // §SLAB_BEAT (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §26) — ONE floor plate marked as it
       // is laid: depth-tested tint + X, shine-through label. Rides Measure with the datum. Needs the

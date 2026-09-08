@@ -38,6 +38,17 @@ function setupCpeFlythruDatum(A) {
   var _grp = null, _built = false, _info = null, _faces = null, _lines = null;
   var _sides = null, _camFar = null, _lastDrawn = null;   // §36 W1 — decided once per datum life, reset on dispose
   var _enteredAt = null, _envBox = null;                    // §20.8 — the drawing ends when the camera enters the envelope
+  var _life2 = null, _life2Started = null, _life2End = 0, _life2LeftAt = null, _life2Logged = false, _sheetGroundY = 0;   // §37.2 — the second life over the finished building
+  // §37.2 — the second life's SEARCH window: from flyback to the storey-reveal window. MEASURED 2026-09-08 (Hospital): the
+  // pull-out and pull-back are flown INSIDE the building's plan (below the roof) from 69 s to 148.6 s, so "out→flyback" holds no
+  // exterior frame at all; the first exterior frame is 148.6 s, at the start of the reveal round. So the life STARTS at the first
+  // exterior frame inside this window, HOLDS as long as the opening did (max(6, 0.094·film)), fades 2 s, and never runs into the
+  // storey-reveal window. A path with no exterior frame in the window prints VACUOUS at the end of the film.
+  A.flythruDatumSetLife2 = function (fromSec, toSec) {
+    _life2 = (isFinite(fromSec) && isFinite(toSec) && toSec - fromSec > 3.0) ? { from: fromSec, to: toSec } : null;
+    console.log('§FLYTHRU_DATUM_LIFE2 ' + (_life2 ? 'search=' + fromSec.toFixed(2) + '-' + toSec.toFixed(2) + 's (flyback → storey-reveal); starts at the first exterior frame, holds like the opening, fades 2 s'
+                                            : 'VACUOUS — flyback→storey-reveal is ' + (isFinite(fromSec) && isFinite(toSec) ? (toSec - fromSec).toFixed(2) + ' s' : 'undefined') + ', no second life'));
+  };
   // §20.8 / §36 W1 — ONE lifetime rule for the 3D planes and the 2D annotation: up from second 0, held through
   // the dive, faded over 2 s after it — AND gone 0.6 s after the camera ENTERS the structural envelope. Inside
   // the building the setting-out sheet has nothing to say and its non-depth-tested 2D marks were re-admitted
@@ -48,21 +59,41 @@ function setupCpeFlythruDatum(A) {
     var T = window.THREE, cam = A.camera;
     if (_lines && _lines.ext && T && cam && typeof A.ifc2three === 'function') {
       if (!_envBox) {
-        // the TOP of "inside" is the highest storey the drawing itself marks (Hospital: Level 7 at 34.0 m), not the
-        // bbox top (47 m — a plant tower): above the roof line, looking down, the sheet still reads.
-        var e = _lines.ext, zTop = e[5];
+        // ONE definition of "inside the building", for both lives: the COLUMN GRID's plan (gx/gy extents — the structural
+        // box reaches 30 m past it on Hospital, foundation walls) below the highest storey the drawing itself marks
+        // (Hospital: Level 7 at 34.0 m, not the 47 m plant tower): above the roof line, looking down, the sheet still reads.
+        var e = _lines.ext, zTop = e[5], gx = _lines.gx || [], gy = _lines.gy || [];
         if (_lines.levels && _lines.levels.length) { zTop = -Infinity; for (var li = 0; li < _lines.levels.length; li++) zTop = Math.max(zTop, _lines.levels[li].z); if (!isFinite(zTop) || zTop <= e[4]) zTop = e[5]; }
-        var a1 = A.ifc2three(e[0], e[2], e[4]), b1 = A.ifc2three(e[1], e[3], zTop);
+        var px0 = gx.length > 1 ? gx[0] : e[0], px1 = gx.length > 1 ? gx[gx.length - 1] : e[1], py0 = gy.length > 1 ? gy[0] : e[2], py1 = gy.length > 1 ? gy[gy.length - 1] : e[3];
+        var a1 = A.ifc2three(px0, py0, e[4]), b1 = A.ifc2three(px1, py1, zTop);
+        _sheetGroundY = A.ifc2three(0, 0, e[4]).y;
         _envBox = new T.Box3(new T.Vector3(Math.min(a1.x, b1.x), Math.min(a1.y, b1.y), Math.min(a1.z, b1.z)),
                              new T.Vector3(Math.max(a1.x, b1.x), Math.max(a1.y, b1.y), Math.max(a1.z, b1.z)));
       }
       if (_enteredAt == null && _envBox.containsPoint(cam.position)) {
         _enteredAt = filmSec;
         console.log('§FLYTHRU_DATUM_ENTRY filmSec=' + filmSec.toFixed(2) + ' cam=(' + cam.position.x.toFixed(1) + ',' + cam.position.y.toFixed(1) + ',' + cam.position.z.toFixed(1) +
-          ') — camera inside the structural envelope (plan footprint, below the top storey rule); the setting-out drawing fades over 0.6 s and stays off (§20.8)' + (filmSec < 0.05 ? ' ⚠ AT THE OPENING: the film starts inside the building' : ''));
+          ') — camera inside the building (column-grid plan, below the top storey rule); the setting-out drawing fades over 0.6 s and stays off (§20.8)' + (filmSec < 0.05 ? ' ⚠ AT THE OPENING: the film starts inside the building' : ''));
       }
     }
     if (_enteredAt != null) op = Math.min(op, Math.max(0, 1 - (filmSec - _enteredAt) / 0.6));
+    // §37.2 — the second life: [out, flyback], ramp 1 s in, fade 2 s out, only while the camera is OUTSIDE the envelope.
+    // The first frame of this life re-decides the sides once (the camera is elsewhere now) — see the compositor.
+    if (_life2 && filmSec >= _life2.from && filmSec <= _life2.to && _envBox && cam) {
+      // "Outside" for the second life = outside the SAME building box the entry latch uses, and above the ground grid.
+      var outside = !_envBox.containsPoint(cam.position) && cam.position.y >= _sheetGroundY;
+      if (outside && _life2Started == null) {
+        _life2Started = filmSec; _sides = null; _camFar = null; _lastDrawn = null;
+        _life2End = Math.min(_life2.to, filmSec + holdTo + 2.0);
+        if (!_life2Logged) { _life2Logged = true; console.log('§FLYTHRU_DATUM_LIFE2 start filmSec=' + filmSec.toFixed(2) + ' end=' + _life2End.toFixed(2) + 's (hold ' + holdTo.toFixed(1) + 's + 2 s fade) — the setting-out sheet over the FINISHED building; sides re-decided once for this life'); }
+      }
+      if (_life2Started != null) {
+        if (!outside && _life2LeftAt == null) { _life2LeftAt = filmSec; console.log('§FLYTHRU_DATUM_LIFE2 camera re-entered the building at ' + filmSec.toFixed(2) + 's — second life fades'); }
+        var op2 = Math.min(1, (filmSec - _life2Started) / 1.0, Math.max(0, (_life2End - filmSec) / 2.0));
+        if (_life2LeftAt != null) op2 = Math.min(op2, Math.max(0, 1 - (filmSec - _life2LeftAt) / 0.6));
+        op = Math.max(op, op2);
+      }
+    }
     return op;
   }
 
@@ -688,7 +719,7 @@ function setupCpeFlythruDatum(A) {
     A._flythruDatumLast = { drawn: n, bubbles: _bub, bubblesTotal: _lines.gx.length + _lines.gy.length + _lvz.length,
                             figures: _figs, overalls: _ov, filmSec: filmSec, dDrawn: _dDrawn, sidesChanged: _sidesChanged,
                             sidesKey: _sides.key, sidesNowKey: sidesNow.key, decidedAt: _sides.decidedAt,
-                            behind: { bubbles: [rX.behindB, rY.behindB, rZ.behindB], figures: [rX.behindF, rY.behindF, rZ.behindF] }, enteredAt: _enteredAt, op: op };
+                            behind: { bubbles: [rX.behindB, rY.behindB, rZ.behindB], figures: [rX.behindF, rY.behindF, rZ.behindF] }, enteredAt: _enteredAt, op: op, life: (_life2Started != null && filmSec >= _life2Started ? 2 : 1) };
     _lastDrawn = n;
     console.log('§FLYTHRU_DATUM_MARKS ' + (n ? 'drawn=' + n : 'NOTHING drawn=0') + ' filmSec=' + filmSec.toFixed(2) +
       ' IN-PLANE (no screen-space sizing, no register, no ranks, no clamping)' +
@@ -713,7 +744,7 @@ function setupCpeFlythruDatum(A) {
       // how the count moved since the last frame, and whether a per-frame decision WOULD have flipped.
       ' dropped=[behindCam bubbles X/Y/Z=' + rX.behindB + '/' + rY.behindB + '/' + rZ.behindB +
       ' figures=' + rX.behindF + '/' + rY.behindF + '/' + rZ.behindF + '] dDrawn=' + (_dDrawn == null ? 'first' : (_dDrawn >= 0 ? '+' : '') + _dDrawn) +
-      ' sidesChanged=' + (_sidesChanged ? 1 : 0) + ' decidedAt=' + _sides.decidedAt.toFixed(2) + 's');
+      ' sidesChanged=' + (_sidesChanged ? 1 : 0) + ' decidedAt=' + _sides.decidedAt.toFixed(2) + 's life=' + (_life2Started != null && filmSec >= _life2Started ? 2 : 1));
     return n;
   };
 
@@ -737,7 +768,7 @@ function setupCpeFlythruDatum(A) {
     if (_grp && A.scene) { A.scene.remove(_grp); _grp.children.forEach(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
     // §36 W1/W3 — a dispose is a full reset, so the §33 gate can rebuild the datum at the opening it actually
     // chose (ribbon width and side decisions both read the camera at build/first composite).
-    _grp = null; _built = false; _info = null; _faces = null; _lines = null; _sides = null; _camFar = null; _lastDrawn = null; _enteredAt = null; _envBox = null;
+    _grp = null; _built = false; _info = null; _faces = null; _lines = null; _sides = null; _camFar = null; _lastDrawn = null; _enteredAt = null; _envBox = null; _life2Started = null; _life2LeftAt = null; _life2Logged = false;
   };
   console.log('§FLYTHRU_DATUM_INIT wired (ground grid + ONE upright with storey rules; depth-tested, occluded by the build)');
 }
