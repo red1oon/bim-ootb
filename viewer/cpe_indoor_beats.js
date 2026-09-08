@@ -221,6 +221,7 @@ function setupCpeIndoorBeats(A) {
     // ── draw: the hall tint mesh (row-run quads), depth-tested, on the floor
     if (hall) {
       _grp = new T.Group(); _grp.name = 'indoorBeats';
+      _grp.userData.excludeFromAO = true;   // §46 / §AO_EXCLUDE — the hall tint is an annotation, not a surface
       var r = hall.raster, byRow = {}; hall.comp.cells.forEach(function (p) { (byRow[p[1]] = byRow[p[1]] || []).push(p[0]); });
       var pos = [], idx = [], vi = 0, z = hall.floorZ + 0.03;
       Object.keys(byRow).forEach(function (rr) { var cs = byRow[rr].sort(function (a, b) { return a - b; }), i = 0; rr = +rr;

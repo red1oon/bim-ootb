@@ -325,6 +325,11 @@ function setupCpeFlythruDatum(A) {
     console.log('§FLYTHRU_DATUM_LINES widthM=' + (2 * ribbonHalfW).toFixed(4) + ' src=[' + _widthSrc + ']' +
       (_widthMeasured ? ' px@' + _camDist.toFixed(0) + 'm=' + TARGET_PX.toFixed(2) : ' px@?=n/a'));
     _grp.visible = false;
+    // §46 / §AO_EXCLUDE — the setting-out sheet is an ANNOTATION, not a surface. Without this the
+    // SSAO prepass (which uses scene.overrideMaterial and so ignores depthWrite) writes these
+    // ribbons in as solid geometry and the whole picture's ambient occlusion is computed against
+    // them: MEASURED as 42 frames of |dY|>15 inside LIFE2's window, 0 with Measure off.
+    _grp.userData.excludeFromAO = true;
     A.scene.add(_grp);
     _lines = { gx: gx, gy: gy, ext: ext, levels: st.levels };
     _info = { gridX: gx.length, gridY: gy.length, storeys: st.levels.length, storeySrc: st.src, columns: cols.length,

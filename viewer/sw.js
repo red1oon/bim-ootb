@@ -192,7 +192,13 @@
 //   contract) plus its area in the fixed §MEASURE_BOX. MEASURED cause: all 23 |dY|>15 jumps of the 0-30s test
 //   bake sat on the tint's 9.38s pop + 2.2s envelope, and the tint wrote setColorAt into a SHARED instance/batch
 //   colour buffer every frame, so it could move pixels anywhere in the picture.
-const CACHE_VERSION = 'v1171';   // bump on each deploy; per-change detail is the git commit message.
+// v1172 (2026-09-09) §46 §AO_EXCLUDE — THE FLICKER'S ROOT CAUSE. SSAOPass renders its depth/normal prepass
+//   with scene.overrideMaterial set, which IGNORES per-object depthWrite, so Measure's annotation geometry
+//   (datum ribbons, plate outline, hall tint) was written into the AO buffer as solid surface and occluded
+//   the whole picture. MEASURED: 42 frames of |dY|>15 inside LIFE2's window with Measure on vs 0 with
+//   --no-measure, and 39..104 swings against a flat 56 on the twin. effects.js now hides anything marked
+//   userData.excludeFromAO for that pass ONLY; the beauty pass and TAA fold are untouched.
+const CACHE_VERSION = 'v1172';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

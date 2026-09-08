@@ -51,6 +51,40 @@ async function setupEffects(A, renderer, scene, camera) {
     _ssaoPass.minDistance = 0.001;
     _ssaoPass.maxDistance = 0.1;
     _ssaoPass.enabled = false;  // off by default — toggled with Shadow or UI
+    // ══ §AO_EXCLUDE (2026-09-09, MEP_CLASH_REVEAL_MOVIE.md §46 — MEASURED, not guessed) ═══════════
+    // SSAOPass renders its OWN depth+normal prepass with `scene.overrideMaterial` set (SSAOPass.js
+    // _renderOverride, line 284), and an override material IGNORES every per-object material flag —
+    // `depthWrite:false` included. So any annotation geometry added to the scene is written into the
+    // AO buffer as a SOLID surface and occludes the picture behind it.
+    // MEASURED on the 1080p Hospital film: with Measure on, 42 frames of |ΔY|>15 (max 59.6) inside
+    // §FLYTHRU_DATUM_LIFE2's 148.70-169.10 s window and 0 outside; the same window with --no-measure
+    // is FLAT (0 jumps, max 9.2), and frame-for-frame against that twin the Measure film swings
+    // 39..104 around a steady 56 — a whole-frame error in BOTH directions, which is what a polluted
+    // AO buffer looks like. Two earlier "fixes" (depthWrite:false, dropping the plate tint) changed
+    // the count by 1, because neither is read by an override material.
+    // THE FIX IS EXCLUSION: anything marked `userData.excludeFromAO` is hidden for the duration of
+    // the AO pass ONLY. Nothing else in the frame changes — the beauty pass, the TAA fold and every
+    // other pass still see it. Opt-in, so a layer that WANTS to occlude simply does not set the flag.
+    (function wrapSsaoForExclusion() {
+      var _orig = _ssaoPass.render.bind(_ssaoPass), _hidden = [], _logged = false;
+      _ssaoPass.render = function (renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+        _hidden.length = 0;
+        try {
+          scene.traverse(function (o) {
+            if (o.visible && o.userData && o.userData.excludeFromAO) { o.visible = false; _hidden.push(o); }
+          });
+        } catch (e) { /* never let the guard cost a frame */ }
+        if (_hidden.length && !_logged) {
+          _logged = true;
+          console.log('§AO_EXCLUDE active objects=' + _hidden.length + ' [' +
+            _hidden.map(function (o) { return o.name || '(unnamed)'; }).join(' ') + '] — hidden for the SSAO ' +
+            'depth/normal prepass only (§46: an override material ignores depthWrite, so annotation ' +
+            'geometry would otherwise occlude the AO buffer)');
+        }
+        try { _orig(renderer, writeBuffer, readBuffer, deltaTime, maskActive); }
+        finally { for (var i = 0; i < _hidden.length; i++) _hidden[i].visible = true; }
+      };
+    })();
     _composer.addPass(_ssaoPass);
 
     // Pass 3: Outline — mesh silhouette on pick/clash/find

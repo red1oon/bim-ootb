@@ -447,6 +447,7 @@ function setupCpeSlabBeat(A) {
     _labelRows = [text1].concat(text2 ? [text2] : []).concat([picked.storey]);
     _labelTitle = 'Floor plate';
     _label = null;
+    _grp.userData.excludeFromAO = true;   // §46 / §AO_EXCLUDE — a mark, not a surface
     if (A.scene) A.scene.add(_grp);
     _report.state = 'BEAT';
     _report.beat = { guid: picked.guid, storey: picked.storey, sec: picked.sec, hold: picked.hold, area: picked.area, bx: picked.bx, by: picked.by, name: picked.name, rawName: picked.rawName };
