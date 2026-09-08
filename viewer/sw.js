@@ -175,7 +175,8 @@
 // v1165 (2026-09-08) §36 W1/W3 (MEP_CLASH_REVEAL_MOVIE.md): datum sides/plane decided ONCE per life + drop ledger + §20.8 entry
 //   latch (cpe_flythru_datum.js); cue span sets locked per window (cpe_flythru_cues.js); §33 gate rebuilds the datum after Home.
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
-const CACHE_VERSION = 'v1166';   // bump on each deploy; per-change detail is the git commit message.
+// v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
+const CACHE_VERSION = 'v1167';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -626,7 +627,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','cpe_slab_beat.js','cpe_linear_beat.js','../common/flythru_maths.js','../common/storey_raster.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','../common/flythru_maths.js','../common/storey_raster.js',
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',

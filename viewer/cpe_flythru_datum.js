@@ -176,10 +176,28 @@ function setupCpeFlythruDatum(A) {
       var lo = Math.min.apply(null, st.levels.map(function (L) { return L.z; }));
       var hi = Math.max.apply(null, st.levels.map(function (L) { return L.z; }));
       st.levels.forEach(function (L) { L.zRaw = L.z; });   // the number a drawing prints
-      if (lo < zLo - 1 || hi > zHi + 1) { off = zLo - lo; st.levels.forEach(function (L) { L.z += off; }); }
+      var _offSrc = 'none';
+      if (lo < zLo - 1 || hi > zHi + 1) {
+        // ⚠ ANCHOR TO THE STOREYS' OWN SLABS, NOT TO THE LOWEST ELEMENT. MEASURED 2026-09-08 (§36 W5): `zLo - lo`
+        // took the footing bottom (156.61) as Level 1's zero, while Level 1's slab top is 165.81 — every storey rule
+        // was drawn 9.2 m too low, the camera landing on Level 1 read as "Level 3", and the indoor hall used the
+        // wrong storey's raster. For each level NAME, the largest planar slab on that storey gives slabTop − elevation;
+        // the median over storeys is the offset (Hospital: 165.81 on 9 of 9 storeys, spread 0.08 m). Falls back to the
+        // old rule only when no storey has a slab, and says so.
+        var _fits = [];
+        try {
+          var _sl = q("SELECT m.storey, t.center_z + t.bbox_z/2, t.bbox_x*t.bbox_y FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+                      "WHERE m.ifc_class IN ('IfcSlab','IfcSlabStandardCase') AND t.bbox_z < 0.5*MIN(t.bbox_x,t.bbox_y)");
+          var _top = {}; _sl.forEach(function (v) { var k = String(v[0]); if (!_top[k] || v[2] > _top[k].a) _top[k] = { z: +v[1], a: v[2] }; });
+          st.levels.forEach(function (L) { var k = String(L.name || ''); if (_top[k]) _fits.push(_top[k].z - L.zRaw); });
+        } catch (eZ) {}
+        if (_fits.length) { _fits.sort(function (a, b) { return a - b; }); off = _fits[_fits.length >> 1]; _offSrc = 'slabs(n=' + _fits.length + ', spread=' + (_fits[_fits.length - 1] - _fits[0]).toFixed(2) + 'm)'; }
+        else { off = zLo - lo; _offSrc = 'FALLBACK lowest element (no storey has a planar slab) ⚠'; }
+        st.levels.forEach(function (L) { L.z += off; });
+      }
       console.log('§FLYTHRU_DATUM_ZDATUM levels=' + lo.toFixed(2) + '..' + hi.toFixed(2) +
         ' elements=' + zLo.toFixed(2) + '..' + zHi.toFixed(2) + ' offset=' + off.toFixed(2) + 'm' +
-        (off ? ' (levels were in a LOCAL datum)' : ' (already in the element datum)'));
+        (off ? ' (levels were in a LOCAL datum; anchored to ' + _offSrc + ')' : ' (already in the element datum)'));
     }
     // ⚠ DEGRADE, never invent: no columns -> no ground grid, and say so rather than draw a made-up module.
     if (gx.length < 2 || gy.length < 2) console.log('§FLYTHRU_DATUM_GRID VACUOUS — columns=' + cols.length + ' gave ' + gx.length + 'x' + gy.length + ' lines; ground grid omitted');
@@ -712,7 +730,8 @@ function setupCpeFlythruDatum(A) {
     if (_lines.gx.length > 1) ov.push(_lines.gx[_lines.gx.length - 1] - _lines.gx[0]);
     if (_lines.gy.length > 1) ov.push(_lines.gy[_lines.gy.length - 1] - _lines.gy[0]);
     if (lv.length > 1) ov.push(lv[lv.length - 1] - lv[0]);
-    return { storeys: storeys, bays: bays, overalls: ov, levels: lv };
+    var named = (_lines.levels || []).slice().sort(function (a, b) { return a.z - b.z; });
+    return { storeys: storeys, bays: bays, overalls: ov, levels: lv, levelNames: named.map(function (L) { return String(L.name || ''); }) };
   };
   A.flythruDatumDispose = function () {
     if (_grp && A.scene) { A.scene.remove(_grp); _grp.children.forEach(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
