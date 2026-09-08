@@ -187,7 +187,12 @@
 //   areas between building and sky — 42 frames of |dY|>15 (max 59.6), 100% inside §FLYTHRU_DATUM_LIFE2's
 //   148.70-169.10s window, 0 outside; three datum-free films show 0-2. depthWrite:false; depthTest stays
 //   TRUE (§17.5). New scripts/probe_film_flicker.py judges any baked mp4 for this.
-const CACHE_VERSION = 'v1170';   // bump on each deploy; per-change detail is the git commit message.
+// v1171 (2026-09-08) §45 TINT DROPPED (user): cpe_slab_beat.js no longer repaints the model at all — the
+//   plate is named by a SHINE-THROUGH box outline (depthTest:false, renderOrder 951, the clash marks' own §7
+//   contract) plus its area in the fixed §MEASURE_BOX. MEASURED cause: all 23 |dY|>15 jumps of the 0-30s test
+//   bake sat on the tint's 9.38s pop + 2.2s envelope, and the tint wrote setColorAt into a SHARED instance/batch
+//   colour buffer every frame, so it could move pixels anywhere in the picture.
+const CACHE_VERSION = 'v1171';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,

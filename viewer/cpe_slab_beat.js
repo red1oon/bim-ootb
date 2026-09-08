@@ -59,8 +59,8 @@ function setupCpeSlabBeat(A) {
 
   var _built = false, _report = null, _beat = null, _grp = null, _label = null, _diag = null;
   var _labelRows = [], _labelTitle = 'Floor plate';   // §40.2 — what the §MEASURE_BOX posts
-  var _tintOn = false, _touched = [], _clones = [], _labelOn = false, _labelOffReason = null;
-  var _envDone = false, _labelNeverLogged = false, _C = null;
+  var _labelOn = false, _labelOffReason = null;
+  var _envDone = false, _labelNeverLogged = false;
 
   function log(s) { console.log(s); }
   function fmt(n, dp) {
@@ -278,7 +278,6 @@ function setupCpeSlabBeat(A) {
     if (!(plan.beats && plan.beats.dive > 0)) return fail('INCONCLUSIVE', 'plan has no dive beat');
     if (!(filmSecFull > 0)) return fail('INCONCLUSIVE', 'filmSecFull ' + filmSecFull);
     if (!(cursorTotalSec > 0)) cursorTotalSec = filmSecFull;
-    _C = new T.Color();
     var diveSec = plan.beats.dive * filmSecFull;
 
     // 1. candidates — DB extents, planar by their OWN footprint (§26.4.1)
@@ -425,8 +424,12 @@ function setupCpeSlabBeat(A) {
       c4[2].x, c4[2].y, c4[2].z, c4[3].x, c4[3].y, c4[3].z,
       c4[3].x, c4[3].y, c4[3].z, c4[0].x, c4[0].y, c4[0].z]);
     g.setAttribute('position', new T.BufferAttribute(pos, 3));
-    _diag = new T.LineSegments(g, new T.LineBasicMaterial({ color: TINT_HEX, transparent: true, opacity: 0, depthTest: true, depthWrite: false }));
-    _diag.name = 'slabBeatOutline'; _diag.visible = false; _diag.renderOrder = 10;
+    // §45 (USER, 2026-09-08: "If tint is the issue, then drop tint, and just have label box with mark
+    // outline similar to Clash pair shine thru"). The outline is now the ONLY in-model mark and it
+    // SHINES THROUGH — depthTest:false, high renderOrder, the same §7 cue contract the clash marks
+    // keep — so the plate is named without repainting a single pixel of the building.
+    _diag = new T.LineSegments(g, new T.LineBasicMaterial({ color: INK, transparent: true, opacity: 0, depthTest: false, depthWrite: false }));
+    _diag.name = 'slabBeatOutline'; _diag.visible = false; _diag.renderOrder = 951;
     _grp.add(_diag);
     // §40.2 / §38.1a — THE INFO BOX. The in-plane textured plane is gone: from a camera 63 m off
     // and barely above the roof line it is a foreshortened sliver, which is exactly why the user did
@@ -451,7 +454,8 @@ function setupCpeSlabBeat(A) {
                       surface: 'measure-box', panel: true };
     _report.area = { m2: _fp.m2, src: _fp.src, up: _fp.up, down: _fp.down, tris: _fp.tris,
                      meshes: _fp.meshes, bboxM2: _fp.bbox };
-    _report.diag = { depthTest: _diag.material.depthTest, shape: 'outline',
+    _report.tint = 'NONE (§45 — dropped; the outline names the plate, the §MEASURE_BOX carries the figures)';
+    _report.diag = { depthTest: _diag.material.depthTest, shineThrough: true, renderOrder: _diag.renderOrder, shape: 'outline',
                      endpoints: [[c4[0].x, c4[0].y, c4[0].z], [c4[1].x, c4[1].y, c4[1].z],
                                  [c4[1].x, c4[1].y, c4[1].z], [c4[2].x, c4[2].y, c4[2].z],
                                  [c4[2].x, c4[2].y, c4[2].z], [c4[3].x, c4[3].y, c4[3].z],
@@ -467,60 +471,14 @@ function setupCpeSlabBeat(A) {
     return _report;
   };
 
-  // ── TINT — the cpe_storey_reveal.js:249 pattern, by GUID; clone per distinct material, exact restore ──
-  var _tintLateFrames = 0;
-  function applyTint(quiet) {
-    _tintOn = true; _touched = []; _clones = [];
-    var gid = _beat.guid, n = 0, matMap = new Map(), cl0 = null;
-    A.collectMeshes(function (o) { return o.isMesh && !o.isInstancedMesh && !o.isBatchedMesh && o.userData && o.userData.guid === gid; }).forEach(function (o) {
-      if (!o.material || Array.isArray(o.material) || !o.material.emissive || !o.material.clone) return;
-      var orig = o.material, cl = matMap.get(orig);
-      if (!cl) { cl = orig.clone(); cl.emissive.setHex(TINT_HEX); cl.emissiveIntensity = 0; matMap.set(orig, cl); _clones.push(cl); cl0 = cl0 || cl; }
-      _touched.push({ m: o, mat: orig }); o.material = cl; n++;
-    });
-    A.collectMeshes(function (o) { return o.isInstancedMesh; }).forEach(function (mesh) {
-      var meta = A._instanceMeta && A._instanceMeta[mesh.id];
-      if (!meta || !mesh.setColorAt) return;
-      for (var i = 0; i < meta.length; i++) {
-        if (!meta[i] || meta[i].guid !== gid) continue;
-        var prev = 0xffffff; if (mesh.instanceColor) { mesh.getColorAt(i, _C); prev = _C.getHex(); }
-        _touched.push({ m: mesh, inst: i, c: prev }); n++;
-      }
-    });
-    A.collectMeshes(function (o) { return o.isBatchedMesh; }).forEach(function (mesh) {
-      var meta = A._batchMeta && A._batchMeta[mesh.id];
-      if (!meta || !mesh.setColorAt) return;
-      for (var i = 0; i < meta.length; i++) {
-        if (!meta[i] || meta[i].guid !== gid) continue;
-        var pb = 0xffffff; try { mesh.getColorAt(meta[i].slotId, _C); pb = _C.getHex(); } catch (e) {}
-        _touched.push({ m: mesh, batch: meta[i].slotId, c: pb }); n++;
-      }
-    });
-    _beat.tintTouched = n;
-    if (quiet && !n) { _tintLateFrames++; return; }   // the pop can land a frame after the bisected second; retry silently
-    log('§SLAB_BEAT_TINT guid=' + gid + ' meshesTouched=' + n + (n ? ' depthTest=' + (cl0 ? cl0.depthTest : 'inherited(instance colour)') :
-        ' NO-MESH — the plate is not in the scene at this frame (not streamed, or not yet placed by the buildup); X and label still draw') +
-        ' color=#' + TINT_HEX.toString(16) + (quiet && n ? ' (placed ' + _tintLateFrames + ' frame(s) after the bisected pop second)' : ''));
-  }
-  function setTintIntensity(env) {
-    _clones.forEach(function (cl) { cl.emissiveIntensity = env; });
-    var tint = new window.THREE.Color(TINT_HEX), any = null;
-    _touched.forEach(function (s) {
-      if (s.inst != null) { _C.setHex(s.c).lerp(tint, env); s.m.setColorAt(s.inst, _C); any = s.m; }
-      else if (s.batch != null) { _C.setHex(s.c).lerp(tint, env); try { s.m.setColorAt(s.batch, _C); } catch (e) {} }
-    });
-    if (any && any.instanceColor) any.instanceColor.needsUpdate = true;
-  }
-  function restoreTint() {
-    _touched.forEach(function (s) {
-      if (s.inst != null && s.m.instanceColor) { s.m.setColorAt(s.inst, _C.setHex(s.c)); s.m.instanceColor.needsUpdate = true; }
-      else if (s.batch != null && s.m.setColorAt) { try { s.m.setColorAt(s.batch, _C.setHex(s.c)); } catch (e) {} }
-      else if (s.mat) s.m.material = s.mat;
-    });
-    _touched = [];
-    _clones.forEach(function (c) { try { c.dispose(); } catch (e) {} });
-    _clones = []; _tintOn = false;
-  }
+  // ── §45 NO TINT. MEASURED (§44, real 0-30 s bake): every one of the 23 |dY|>15 jumps in the
+  // opening landed in 8.88-11.00 s, i.e. on the plate beat's own 9.38 s pop + 2.2 s envelope — not
+  // spread across the datum's continuous 0-11.34 s window. The tint wrote `setColorAt` into a SHARED
+  // InstancedMesh/BatchedMesh colour buffer every frame of that envelope, so it could move pixels
+  // anywhere in the picture, which is exactly what the film showed.
+  // USER'S RULING: drop the tint. The plate is named by its OUTLINE and its figures by the fixed
+  // §MEASURE_BOX — nothing repaints the model. `tintTouched` is kept in the report as a constant 0
+  // so a reader of an old log is not left guessing whether the field vanished or the tint failed.
 
   // ── PER FRAME — called by the bake loop beside flythruDatumAt; one pure-ish function ─────────────
   A.slabBeatAt = function (filmSec) {
@@ -532,14 +490,10 @@ function setupCpeSlabBeat(A) {
     else if (dt < ENV_SPAN) env = 1 - (dt - ENV.fadeIn - ENV.hold) / ENV.fadeOut;
     else env = 0;
     if (env > 0) {
-      if (!_tintOn) applyTint(false);
-      else if (_beat.tintTouched === 0) applyTint(true);   // not placed yet at the first frame — keep asking, quietly
-      setTintIntensity(env);
       _diag.visible = true; _diag.material.opacity = env;
     } else if (dt >= ENV_SPAN) {
-      if (_tintOn) restoreTint();
       if (_diag.visible) _diag.visible = false;
-      if (!_envDone) { _envDone = true; log('§SLAB_BEAT_ENVELOPE done filmSec=' + filmSec.toFixed(2) + ' tintTouched=' + (_beat.tintTouched || 0) + ' — tint and X released; the label stays while its crossing is in frame'); }
+      if (!_envDone) { _envDone = true; log('§SLAB_BEAT_ENVELOPE done filmSec=' + filmSec.toFixed(2) + ' tint=NONE (§45 retired) — the outline is released; the label stays while its crossing is in frame'); }
     }
     // label lifetime (§26.2): from the pop until the crossing leaves frame (a later beat may claim it — none yet).
     // §40.2 — the lifetime rule is UNCHANGED; only the surface changed. `_labelOn` now gates a
@@ -552,7 +506,7 @@ function setupCpeSlabBeat(A) {
       else if (_labelOn) { _labelOn = false; _labelOffReason = 'crossing left the frame'; log('§SLAB_BEAT_LABEL off filmSec=' + filmSec.toFixed(2) + ' reason=' + _labelOffReason); }
       else if (dt >= ENV_SPAN && !_labelNeverLogged) { _labelNeverLogged = true; log('§SLAB_BEAT_LABEL never in frame through the envelope ndc=(' + q.x.toFixed(2) + ',' + q.y.toFixed(2) + ',' + q.z.toFixed(2) + ')'); }
     }
-    return { env: env, tintOn: _tintOn, labelOn: _labelOn, tintTouched: _beat.tintTouched == null ? null : _beat.tintTouched };
+    return { env: env, tintOn: false, labelOn: _labelOn, tintTouched: 0 };   // §45 — no tint, ever
   };
 
   // ── §40.2 — the 2D pass. Called from cinema_maxq's _captureFrame chain beside the other beats, so
@@ -566,12 +520,11 @@ function setupCpeSlabBeat(A) {
   A.slabBeatReport = function () { return _report; };
   A.slabBeatClock = makeClock;   // §27.5.1 — the ONE owner-clock inverter, shared with cpe_linear_beat.js
   A.slabBeatDispose = function () {
-    try { if (_tintOn) restoreTint(); } catch (e) {}
     if (_grp && A.scene) { A.scene.remove(_grp); _grp.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); }
     _grp = null; _label = null; _diag = null; _beat = null; _built = false; _report = null;
     _labelRows = []; _labelTitle = 'Floor plate';
     _labelOn = false; _labelOffReason = null; _envDone = false; _labelNeverLogged = false;
   };
-  log('§SLAB_BEAT_INIT wired (one floor plate per film, marked as it is laid: depth-tested tint + box OUTLINE, surface area posted to the fixed §MEASURE_BOX — §40.2 retired the X and the in-plane label plane)');
+  log('§SLAB_BEAT_INIT wired (one floor plate per film, marked as it is laid: NO TINT (§45) — a shine-through box OUTLINE plus the surface area in the fixed §MEASURE_BOX; §40.2 retired the X and the in-plane label plane)');
 }
 if (typeof window !== 'undefined') window.setupCpeSlabBeat = setupCpeSlabBeat;

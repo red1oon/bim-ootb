@@ -204,21 +204,24 @@ const server = http.createServer((req, res) => {
     .invariant('§40.2 the posted figure is the plate\'s AREA from a NAMED source, within 1% of that source\'s own number', rs => rs.filter(r => r.picked).every(r => { const L = parseArea(r.labelText1); return !!L && L.src === r.areaSrc && Math.abs(L.m2 - Math.round(r.areaM2)) <= Math.max(1, 0.01 * r.areaM2); }))
     .invariant('label second line is the semantic name', rs => rs.filter(r => r.picked).every(r => r.labelText2 === (r.name || '')))
     .invariant('§40.2 the mark is the box OUTLINE (4 edges, corner to corner), not the X', rs => rs.filter(r => r.picked).every(r => { const e = r.diagEndpoints, c = r.corners; const eq = (a, b) => a.every((v, i) => near(v, b[i], 1e-6)); return r.diagShape === 'outline' && r.outlineName === 'slabBeatOutline' && e && e.length === 8 && eq(e[0], c[0]) && eq(e[1], c[1]) && eq(e[2], c[1]) && eq(e[3], c[2]) && eq(e[4], c[2]) && eq(e[5], c[3]) && eq(e[6], c[3]) && eq(e[7], c[0]); }))
-    .invariant('§40.2 the in-model marks are depth-tested and the label plane is GONE from the scene', rs => rs.filter(r => r.picked).every(r => r.diagDepthTest === true && r.sceneLabel === null && r.sceneDiag && r.sceneDiag.depthTest === true && r.sceneDiag.n === 8))
+    .invariant('§45 NO TINT, and the outline SHINES THROUGH (depthTest:false, renderOrder>=900) like the clash marks; the label plane is GONE',
+      rs => rs.filter(r => r.picked).every(r => r.diagDepthTest === false && r.sceneLabel === null &&
+        r.sceneDiag && r.sceneDiag.depthTest === false && r.sceneDiag.n === 8 &&
+        r.frames.every(f => f.tintOn === false && f.tintTouched === 0)))
     .invariant('§38.1a the figure posts to the fixed §MEASURE_BOX on exactly the frames the label window is open, and to nothing on the others',
       rs => rs.filter(r => r.picked).every(r => r.labelSurface === 'measure-box' && !r.postErr && r.frames.length &&
         r.frames.every(f => f.post && f.post.n === (f.labelOn ? 1 : 0) && (!f.labelOn || (f.post.title === 'Floor plate' && f.post.row0 === r.labelText1))) &&
         r.frames.some(f => !f.labelOn) && r.frames.some(f => f.labelOn)))
     .invariant('§40.2 a mesh-sourced area is cross-checked by its own down-facing sum (within 5%) and is <= the bbox', rs => rs.filter(r => r.picked && r.areaSrc === 'mesh').every(r => r.areaM2 <= r.areaBbox * 1.001 && r.areaTris > 0 && (r.areaDown === 0 || Math.abs(r.areaUp - r.areaDown) <= 0.05 * r.areaUp)))
     .invariant('picked plate framed by the camera at its own second (frustum)', rs => rs.filter(r => r.picked).every(r => r.frustum && r.frustum.ok))
-    .invariant('envelope 0.6/1.0/0.6: env(-0.1)=0, env(0.3)=0.5, env(1.0)=1, env(2.1)~0.17, env(2.5)=0 and tint released', rs => rs.filter(r => r.picked).every(r => { const f = {}; r.frames.forEach(x => f[x.dt] = x); return f[-0.1].env === 0 && near(f[0.3].env, 0.5, 0.01) && f[1.0].env === 1 && near(f[2.1].env, 1 - 0.5 / 0.6, 0.01) && f[2.5].env === 0 && !f[2.5].tintOn; }))
+    .invariant('envelope 0.6/1.0/0.6: env(-0.1)=0, env(0.3)=0.5, env(1.0)=1, env(2.1)~0.17, env(2.5)=0', rs => rs.filter(r => r.picked).every(r => { const f = {}; r.frames.forEach(x => f[x.dt] = x); return f[-0.1].env === 0 && near(f[0.3].env, 0.5, 0.01) && f[1.0].env === 1 && near(f[2.1].env, 1 - 0.5 / 0.6, 0.01) && f[2.5].env === 0; }))
     .invariant('label on at the pop (dt 0.3) and never on before it', rs => rs.filter(r => r.picked).every(r => { const f = {}; r.frames.forEach(x => f[x.dt] = x); return !f[-0.1].labelOn && f[0.3].labelOn; }))
-    .invariant(NOSTREAM ? 'tint touches the plate mesh — INCONCLUSIVE under --nostream (no mesh in scene), not asserted' : 'tint touches >= 1 mesh of the plate inside the envelope (streamed)',
-      rs => NOSTREAM ? true : rs.filter(r => r.picked).every(r => r.frames.some(x => x.dt >= 0.02 && x.dt <= 2.1 && x.tintTouched >= 1)))
+    .invariant('§45 the beat NEVER repaints the model — no frame reports a touched mesh (this is the point of dropping the tint)',
+      rs => rs.filter(r => r.picked).every(r => r.frames.every(x => !x.tintTouched)))
     // §40.2 — the red control now breaks the AREA the panel states: the posted sentence keeps its
     // number while the measured source moves, which is exactly the failure the label must not have.
     .redControl(rs => { const c = rs.map(r => Object.assign({}, r)); const q = c.filter(r => r.picked)[0]; if (q) { q.areaM2 = q.areaM2 * 1.5; q.bx = q.bx + 1.0; } else if (c[0]) c[0].name = 'INVENTED NAME'; return c; })
     .run();
-  if (NOSTREAM) console.log('§WITNESS_SLAB_BEAT_TINT INCONCLUSIVE — --nostream: the plate mesh is not in the scene, tintTouched=' + JSON.stringify((out.frames || []).map(f => f.tintTouched)));
+  console.log('§WITNESS_SLAB_BEAT_TINT NONE — §45 dropped the tint; the plate is named by a shine-through outline and the §MEASURE_BOX');
   console.log('§WITNESS_SLAB_BEAT_CLOCK ' + JSON.stringify(rep.clock));
 })().catch(e => { console.error('WITNESS FAILED ' + e.message); try { server.close(); } catch (e2) {} process.exit(1); });
