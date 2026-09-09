@@ -58,6 +58,13 @@ const OV_FILE = arg('override', null);
 const CLIP = (() => { const v = arg('clip', null); if (!v) return null; const m = v.split(':').map(Number);
   return (m.length === 2 && m[1] > m[0] && m[0] >= 0 && m[1] <= 1) ? { in: m[0], out: m[1] } : null; })();
 const TAP_FILE = arg('tap', null) ? path.resolve(arg('tap')) : null;
+// §DATUM_DECOUPLE (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — dev-only bisect instrument:
+//   --burnin-datum-src clean.mp4   skip the GPU render + every other overlay; load clean.mp4's own
+//                                   frames instead and draw ONLY the datum layer on top. Use the SAME
+//                                   --clip/--fps/--width/--height the clean.mp4 was baked with, or the
+//                                   frame count will not line up (a mismatch fails loudly per-frame,
+//                                   §DATUM_DECOUPLE_ERR, not silently).
+const BURNIN_SRC = arg('burnin-datum-src', null) ? path.resolve(arg('burnin-datum-src')) : null;
 // ══ §CLI_BAKE_FLAG_OVERRIDE (2026-09-04, user) ═══════════════════════════════════════════════════
 // USER: "when user saves alt-c setting in path in the DB, during silent bake, user need not pass any
 // argument further and use the stored path settings. Of course user may still pass args to overwrite
@@ -453,6 +460,22 @@ const server = http.createServer((req, res) => {
   const bakeOpts = { name: PLAN_NAME || undefined, flags: FLAGS, frames: _frames, fps: _fps };
   if (OV_FILE) bakeOpts.override = JSON.parse(fs.readFileSync(OV_FILE, 'utf8'));
   if (CLIP) { bakeOpts.clip = CLIP; log(`§CLI_BAKE_CLIP in=${CLIP.in} out=${CLIP.out} (§SDC — a window of the same film)`); }
+  if (BURNIN_SRC) {
+    const stem = path.basename(BURNIN_SRC).replace(/\.[a-z0-9]+$/i, '');
+    const frameDir = path.join(ROOT, 'out', stem + '_burninframes');
+    fs.mkdirSync(frameDir, { recursive: true });
+    let existing = fs.readdirSync(frameDir).filter(f => /^frame_\d{5}\.png$/.test(f));
+    if (!existing.length) {
+      log(`§DATUM_DECOUPLE_EXTRACT src=${BURNIN_SRC} dir=${frameDir} (ffmpeg, one-time)`);
+      execFileSync('ffmpeg', ['-y', '-i', BURNIN_SRC, '-start_number', '0', path.join(frameDir, 'frame_%05d.png')]);
+      existing = fs.readdirSync(frameDir).filter(f => /^frame_\d{5}\.png$/.test(f));
+    } else {
+      log(`§DATUM_DECOUPLE_EXTRACT dir=${frameDir} already has ${existing.length} frames — reusing`);
+    }
+    bakeOpts.burninDatumDir = '/' + path.relative(ROOT, frameDir) + '/';
+    log(`§DATUM_DECOUPLE_EXTRACT frames=${existing.length} urlDir=${bakeOpts.burninDatumDir} — ` +
+      `must match this bake's own nFrames or per-frame loads will fail loudly (§DATUM_DECOUPLE_ERR)`);
+  }
   // The plan reads the live camera basis (§CPE_PREVIEW_DIVERGENCE) — save the pre-bake camera so
   // the post-bake pose assertion can rebuild the SAME plan the bake built, not one based at the
   // film's final pose (the loop leaves the camera at the last frame).

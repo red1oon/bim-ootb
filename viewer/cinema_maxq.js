@@ -764,16 +764,37 @@
   // §CPE_DAY_COUNTER: dayInfo ({day,totalDays} or null) rides the SAME 2D context for the SAME
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
-  function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc) {
+  async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
     // §40.1 — the Measure queue is per FRAME. Reset before the beat compositors run so a
     // posting can never survive into the next frame's box.
     if (A.filmBoxesMeasureReset) A.filmBoxesMeasureReset();
-    if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
     c.width = w; c.height = h;
     var ctx = c.getContext('2d');
+    // §DATUM_DECOUPLE (prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — bisect-only mode, NOT the normal path.
+    // No GPU render, no other overlay: the source PNG already carries everything except the datum
+    // (baked with its two draw entry points stubbed, out/tap_datum_off.js). Isolates whether the
+    // defect is in the function's own math/state or in something about the live GPU bake loop.
+    if (A._burninDatumDir) {
+      var _bIdx = A._burninFrameIdx || 0;
+      var _bUrl = A._burninDatumDir + 'frame_' + String(_bIdx).padStart(5, '0') + '.png';
+      var _bImg = await new Promise(function (resolve, reject) {
+        var im = new Image();
+        im.onload = function () { resolve(im); };
+        im.onerror = function () { reject(new Error('§DATUM_DECOUPLE_ERR frame load failed: ' + _bUrl)); };
+        im.src = _bUrl;
+      });
+      ctx.drawImage(_bImg, 0, 0, w, h);
+      if (A._flythruDatumOn && A.flythruDatumCompositeOntoCanvas) {
+        try { A.flythruDatumCompositeOntoCanvas(ctx, w, h, _fcFilmSec, A._flythruFilmSecFull || 0); }
+        catch (eFDM) { console.warn('§FLYTHRU_DATUM_DRAW failed (burn-in): ' + (eFDM && eFDM.message)); }
+      }
+      if (_bIdx === 0 || _bIdx % 100 === 0) console.log('§DATUM_DECOUPLE_FRAME i=' + _bIdx + ' src=' + _bUrl);
+      return new Promise(function (res) { c.toBlob(res, 'image/webp', 0.92); });
+    }
+    if (A._composer) A._composer.render();
     ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
     // §CLASH_FILM_P2 — the clash-pair labels, FIRST in the 2D pass: they are scene-anchored and
     // wander, the corner HUD below is fixed furniture, so the HUD must always paint over a label.
@@ -1074,6 +1095,12 @@
       console.log('§CINEMA_XRAY_RESET x-ray was on, turned off before orbit');
     }
     var nFrames = opts.frames || MAXQ_N_FRAMES, fps = opts.fps || MAXQ_FPS;
+    // §DATUM_DECOUPLE (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — bisect-only mode. When set,
+    // _captureFrame skips its own GPU render and every OTHER 2D overlay (already baked into the source
+    // clip) and draws only the datum layer on top of a pre-extracted clean frame. Reset every run so a
+    // stale flag from a prior burn-in bake can never leak into a normal one.
+    A._burninDatumDir = opts.burninDatumDir || null;
+    if (A._burninDatumDir) console.log('§DATUM_DECOUPLE dir=' + A._burninDatumDir + ' — skipping GPU render + every non-datum overlay this run');
     _active = true; _cancel = false;
     // §MAXQ_HIDDEN_PAUSE / §MAXQ_QUALITY counters are per-RUN, not per-session — a second bake must
     // not inherit the first one's pauses or its unconverged count and report someone else's health.
@@ -1739,7 +1766,12 @@
         // §MAXQ_HIDDEN_PAUSE: park BEFORE the cook, not after. Waiting here means the frame is
         // begun with the tab already visible, so the fold has a real rAF loop to converge on.
         await _awaitVisible('frame ' + i + '/' + nFrames);
-        await _raf2('frame ' + i + ' settle');
+        // §DATUM_DECOUPLE — _raf2 waits for two real rAF ticks, falling back to a 1500ms timeout if
+        // none fire. With no _composer.render() to composite, Chromium never schedules a real rAF for
+        // this page, so BOTH _raf2 calls below hit their fallback every frame — MEASURED: exactly the
+        // ~3s dead gap between frames (out/L2_burnin_2026-09-09.log, i=60→61 etc, zero log lines in
+        // the gap). Skip them; there is no compositor tick to sync a static PNG draw against.
+        if (!A._burninDatumDir) await _raf2('frame ' + i + ' settle');
         // §MAXQ_STAGE_KEEP: SETTLE_MS existed to keep the NEXT staging from capturing mid-restore
         // sun-tint/exposure values as "original" (see its declaration). With staging kept alive
         // there is no restore in flight — sleep only when staging is actually down (frame 0, or a
@@ -1885,7 +1917,11 @@
             (A._cpeRevealLightsOff ? 'OFF (one-discipline slot — the trade reads on its own)'
                                    : 'ON (not a one-discipline slot)'));
         }
-        A.startStillRefine();
+        // §DATUM_DECOUPLE — no real render happens in this mode (§53), so there is no fold to
+        // converge: starting it would just accumulate against a canvas nothing ever reads, and
+        // §IDLE_GATE's general idle-parking (which normally sees per-frame _composer.render() calls
+        // as activity) stalls it forever — MEASURED, first burn-in attempt hung 0 frames/580s+.
+        if (!A._burninDatumDir) A.startStillRefine();
         // §SUN_ARC_STOMP_FIX (found live, 2026-08-11 — user report "not high noon" on a real
         // HHS_Office_Federated bake): startStillRefine() calls _applyPhotoStaging() synchronously,
         // which unconditionally re-runs A.updateSky(PHOTO_SUN_ELEVATION, ...) — the FIXED dusk
@@ -1914,8 +1950,8 @@
         // §PL_TOPOUT_UNPIN — _revealU exactly as _sunArcStep gets it: past topout the fixtures ease to their
         // tuned night intensity; before it (or with no plan beats) the pin is byte-identical to before.
         if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tnFilm, _revealU);
-        var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
-        await _raf2('frame ' + i + ' capture');
+        var ok = A._burninDatumDir ? true : await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
+        if (!A._burninDatumDir) await _raf2('frame ' + i + ' capture');
         // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:
         // does the actively-installing (frontier) geometry have castShadow=true right now, right
         // before this exact frame gets saved? Only logs when there's something under construction
@@ -2226,6 +2262,7 @@
             }
           }
         }
+        window.APP._burninFrameIdx = i;   // §DATUM_DECOUPLE — which pre-extracted clean PNG this frame loads
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
@@ -2511,7 +2548,8 @@
           ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr') +
           ' storeyReveal=' + (ov.storeyReveal ? 1 : 0));
         await start({ editor: false, preview: false, override: ov, overrideSource: src,
-                      frames: o.frames, fps: o.fps, forceWebm: o.forceWebm });
+                      frames: o.frames, fps: o.fps, forceWebm: o.forceWebm,
+                      burninDatumDir: o.burninDatumDir });   // §DATUM_DECOUPLE — was silently dropped here
         return { source: src, deliveredBytes: window.__maxqDeliveredBytes || 0 };
       };
       clearInterval(_attach);
