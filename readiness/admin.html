@@ -45,6 +45,21 @@ a{color:var(--accent-ink)}
 .row:last-child{border-bottom:none}
 .row .k{color:var(--ink-2)}
 .row .v{font-weight:600;text-align:right}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--surface-2);border-radius:8px;padding:12px 14px}
+.stat .k{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
+.stat .v{display:block;font-size:20px;font-weight:700;line-height:1.25}
+.stat .note{display:block;font-weight:400;font-size:11px;color:var(--faint);margin-top:2px}
+.subhead{font-size:12.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.03em;margin:18px 0 8px}
+.dimtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.dimtable td{padding:6px 4px;border-bottom:1px solid var(--rule-soft)}
+.dimtable tr:last-child td{border-bottom:none}
+.dimtable td.n{text-align:right;color:var(--ink-2);white-space:nowrap}
+.breakdown{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.breakdown h4{font-size:12.5px;margin:0 0 6px;color:var(--ink-2)}
+.breakdown ul{margin:0;padding:0;list-style:none;font-size:13.5px}
+.breakdown li{display:flex;justify-content:space-between;gap:8px;padding:3px 0;color:var(--ink-2)}
+.breakdown li span:last-child{color:var(--muted)}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;font-size:12.5px;font-weight:600}
 .pill.ok{background:var(--accent-wash);color:var(--accent-ink)}
 .pill.warn{background:var(--warn-wash);color:var(--warn)}
@@ -76,7 +91,7 @@ footer{margin-top:30px;color:var(--faint);font-size:12px}
 
   <div class="card">
     <h2>Submission status</h2>
-    <div id="subStatus" class="row"><span class="k">Loading&hellip;</span><span class="v"></span></div>
+    <div id="subStatus" class="sub">Loading&hellip;</div>
   </div>
 
   <div class="card">
@@ -140,32 +155,44 @@ async function loadSubmissionStatus() {
         if (r.ok) rows.push(await r.json());
       } catch (e) { /* one bad row doesn't break the count */ }
     }
-    var perDim = DIM_GROUPS.map(function (d) {
+    var dimRows = DIM_GROUPS.map(function (d) {
       var n = rows.map(function (row) { return meanOf(d.idx.map(function (i) { return row.answers && row.answers[i]; })); })
         .filter(function (v) { return v !== null; }).length;
-      return d.name + ': ' + n + (n >= K_ANON_FLOOR ? ' (comparison live)' : ' (need ' + K_ANON_FLOOR + ')');
-    }).join(' &middot; ');
-    var breakdown = ['firm_size', 'firm_type', 'locale'].map(function (field) {
+      var status = n >= K_ANON_FLOOR ? 'comparison live' : 'need ' + K_ANON_FLOOR;
+      return '<tr><td>' + esc(d.name) + '</td><td class="n">' + n + '</td><td class="n">' + status + '</td></tr>';
+    }).join('');
+    var breakdownHTML = ['firm_size', 'firm_type', 'locale'].map(function (field) {
       var tally = {};
       rows.forEach(function (row) {
         var v = row[field] || 'unknown';
         tally[v] = (tally[v] || 0) + 1;
       });
-      var parts = Object.keys(tally).sort(function (a, b) { return tally[b] - tally[a]; })
-        .map(function (k) { return k + ' (' + tally[k] + ')'; }).join(', ');
-      return '<div>' + field.replace('_', ' ') + ': ' + (parts || 'none yet') + '</div>';
+      var keys = Object.keys(tally).sort(function (a, b) { return tally[b] - tally[a]; });
+      var items = keys.length
+        ? keys.map(function (k) { return '<li><span>' + esc(k) + '</span><span>' + tally[k] + '</span></li>'; }).join('')
+        : '<li><span>none yet</span></li>';
+      var title = { firm_size: 'By firm size', firm_type: 'By firm type', locale: 'By locale' }[field];
+      return '<div><h4>' + title + '</h4><ul>' + items + '</ul></div>';
     }).join('');
+
     el.innerHTML =
-      '<div class="row"><span class="k">Link status</span><span class="v">' + expiryHTML + '</span></div>' +
-      '<div class="row"><span class="k">Total responses submitted</span><span class="v">' + rows.length + '</span></div>' +
-      '<div class="row"><span class="k">Per dimension</span><span class="v" style="text-align:right;font-weight:400;color:var(--ink-2)">' + perDim + '</span></div>' +
-      '<div class="row"><span class="k">Respondent breakdown</span><span class="v" style="text-align:right;font-weight:400;color:var(--ink-2)">' + breakdown + '</span></div>' +
-      '<div class="row"><span class="k">Contact link clicks</span><span class="v">' + contactCount +
-        '<div style="font-weight:400;font-size:11.5px;color:var(--faint)">clicks on the contact link, not confirmed sent emails</div></span></div>';
+      '<div class="stats">' +
+        '<div class="stat"><span class="k">Link status</span><span class="v">' + expiryHTML + '</span></div>' +
+        '<div class="stat"><span class="k">Total responses</span><span class="v">' + rows.length + '</span></div>' +
+        '<div class="stat"><span class="k">Contact link clicks</span><span class="v">' + contactCount +
+          '<span class="note">clicks, not confirmed sent emails</span></span></div>' +
+      '</div>' +
+      '<div class="subhead">Per dimension</div>' +
+      '<table class="dimtable">' + dimRows + '</table>' +
+      '<div class="subhead">Respondent breakdown</div>' +
+      '<div class="breakdown">' + breakdownHTML + '</div>';
   } catch (e) {
     el.innerHTML =
-      '<div class="row"><span class="k">Link status</span><span class="v">' + expiryHTML + '</span></div>' +
-      '<div class="row"><span class="k">Response count</span><span class="v">' + pill('bad', 'could not read: ' + esc(e.message)) + '</span></div>';
+      '<div class="stats">' +
+        '<div class="stat"><span class="k">Link status</span><span class="v">' + expiryHTML + '</span></div>' +
+        '<div class="stat"><span class="k">Response count</span><span class="v">' + pill('bad', 'could not read') + '</span></div>' +
+      '</div>' +
+      '<p class="sub" style="margin:8px 0 0">' + esc(e.message) + '</p>';
   }
 }
 
