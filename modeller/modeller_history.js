@@ -18,7 +18,7 @@
   var OP_TYPES = { 'BUILDING_OPEN': true, 'GEOM_EXTRUDE': true, 'GEOM_EXTRUDE_POLY': true,
     'GEOM_SWEEP': true, 'GEOM_CUT': true, 'GEOM_FILLET': true, 'GEOM_GRID_MOVE': true,
     'GEOM_MOVE': true, 'GEOM_ROTATE': true, 'GEOM_SCALE': true, 'GEOM_INSERT': true,
-    'GEOM_OPENING': true, 'STR_WALK_EDIT': true };
+    'GEOM_OPENING': true, 'STR_WALK_EDIT': true, 'GEOM_DELETE': true };
   var PROFILES = { high: { op: OP_TYPES } };
   PROFILES.all = PROFILES.high; PROFILES.doc = PROFILES.high;   // legacy aliases HistoryBar falls back to
 
@@ -35,15 +35,17 @@
     if (opType === 'GEOM_OPENING') return 'Opening';
     if (opType === 'GEOM_SWEEP') return 'Sweep';
     if (opType === 'STR_WALK_EDIT') return 'STR re-walk';
+    if (opType === 'GEOM_DELETE') return 'Delete #' + p.featureId + (p.rows && p.rows.length > 1 ? ' (+' + (p.rows.length - 1) + ')' : '');
     return opType.replace(/^GEOM_/, '').replace(/_/g, ' ').toLowerCase();
   }
 
   // Push ONE node per commit-worth-of-rows (a single commit() row, or a whole commitGesture() group —
   // exactly the unit Bonsai.oplog.undo()/redo() already treats as one atomic LIFO step, Phase 1 fixed).
+  // §MHIST-ROWS: opts.rows = the kernel_ops ids this node owns (persisted with the node) — _restore flips exactly those.
   function _push(opType, params, opts) {
     opts = opts || {};
     HB.push({ bucket: 'op', kind: 'op', type: opType, label: _humanLabel(opType, params),
-      readonly: !!opts.readonly, opId: opts.opId, gid: opts.gid, params: params || {},
+      readonly: !!opts.readonly, opId: opts.opId, gid: opts.gid, rows: opts.rows || null, params: params || {},
       ref: (opType === 'BUILDING_OPEN' && params && params.building) ? { building: params.building, db: params.db } : null,
       sigKey: 'op:' + opType + ':' + (opts.gid || opts.opId || '') });
   }
@@ -62,6 +64,7 @@
   // Bonsai.oplog.undo(). Neither call takes a target id — both always act on the current LIFO boundary,
   // which HistoryBar's tree-walk (undo to common ancestor, then redo down the target path) keeps in
   // exact lockstep with, by construction (paths in the tree are chronological commit order).
+  // §MHIST-ROWS: that boundary walk is now the LEGACY path (nodes persisted without `rows`) — see _restore.
   //
   // ASYNC NOTE: HistoryBar's undo()/redo()/switchToId() call restore() SYNCHRONOUSLY (viewer's kernel
   // calls are plain sql.js, no await needed) — but Modeller's own undo()/redo() are `async` (they await
@@ -77,7 +80,12 @@
     var O = window.Bonsai && window.Bonsai.oplog;
     if (!entry || !O) { _pending = null; return; }
     if (entry.type === 'BUILDING_OPEN') { _pending = null; return; }   // read-only milestone — nothing to flip
-    _pending = (forward ? O.redo() : O.undo());
+    // §MHIST-ROWS: a node that recorded its rows replays EXACTLY those (O.setUndone): a GEOM_DELETE node's forward =
+    // rows undone / backward = rows active, a commit node the reverse. The boundary walk cannot serve a delete —
+    // deleted rows are `undone` too, so redo()'s lowest-id pick returns a deleted row instead of the node's own
+    // (delete D, commit K, Ctrl+Z, Ctrl+Y resurrected D's row) — hence every node with rows is id-targeted.
+    var rows = entry.rows, del = entry.type === 'GEOM_DELETE';
+    _pending = (rows && rows.length && O.setUndone) ? O.setUndone(rows, forward ? del : !del) : (forward ? O.redo() : O.undo());
     _pending.catch(function (e) { console.warn('§MHIST_RESTORE_ERR', e); });
   }
 
@@ -98,15 +106,20 @@
     docTypes: { 'BUILDING_OPEN': true }    // mirror building-open milestones to the cross-page WholeHistory log
   });
 
-  // Wrap commit()/commitGesture() — record EVERY real edit as it lands. deleteFeature()/commitSeedGroup()
-  // are intentionally NOT wrapped yet (deleteFeature flags EXISTING rows rather than committing a new one —
-  // doesn't fit the "one push per new commit" shape; commitSeedGroup is the one-time whole-building ARC
-  // seed, never Ctrl+Z'd row-by-row in practice) — flagged as a follow-up in
-  // prompts/MODELLER_GIT_FAITHFUL_HISTORY.md, not silently half-wired.
+  // Wrap commit()/commitGesture()/deleteFeature() — record EVERY real model mutation as it lands, each node carrying
+  // its own row ids (§MHIST-ROWS). deleteFeature is the follow-up prompts/MODELLER_GIT_FAITHFUL_HISTORY.md flagged: it
+  // flags EXISTING rows (no new commit), so it cannot be a boundary step — it is a node whose forward = those rows
+  // undone. Left off-tree it was invisible to the tree: Ctrl+Z after a delete undid the previous commit and the delete
+  // itself was unreachable (witness_e2e_delete D4). commitSeedGroup stays unwrapped: it is the base state under the
+  // BUILDING_OPEN milestone, not an edit (§P8 U5: an 'arcseed-*' group must never mass-undo).
   (function wrapCommits() {
     var O = window.Bonsai && window.Bonsai.oplog;
     if (!O || O.__mhistWrapped) { if (!O) setTimeout(wrapCommits, 200); return; }
-    var origCommit = O.commit, origGesture = O.commitGesture;
+    var origCommit = O.commit, origGesture = O.commitGesture, origDelete = O.deleteFeature;
+    // commit()/commitGesture() nodes carry NO `rows` — they stay on the LEGACY boundary-walk path (O.undo()/
+    // O.redo()), unchanged from before §MHIST-ROWS (witness_e2e_dm_gridundo U6 asserts exactly one O.undo()
+    // call per Ctrl+Z; routing these through setUndone() would silently swap that call for a different one).
+    // Only GEOM_DELETE (below) needs id-targeting, because it flags EXISTING rows instead of pushing a new one.
     O.commit = async function (op, opts) {
       var r = await origCommit.call(this, op, opts);
       try { _push(op.op_type, op.parameters, { opId: r && r.id }); } catch (e) { console.warn('§MHIST_REC_ERR', e); }
@@ -122,8 +135,13 @@
       } catch (e) { console.warn('§MHIST_REC_ERR', e); }
       return r;
     };
+    O.deleteFeature = async function (featureId) {
+      var r = await origDelete.call(this, featureId);
+      try { if (r && r.deleted && r.deleted.length) _push('GEOM_DELETE', { featureId: featureId, rows: r.deleted }, { opId: featureId, rows: r.deleted }); } catch (e) { console.warn('§MHIST_REC_ERR', e); }
+      return r;
+    };
     O.__mhistWrapped = true;
-    console.log('§MHIST_WRAP commit/commitGesture wrapped');
+    console.log('§MHIST_WRAP commit/commitGesture wrapped +deleteFeature (§MHIST-ROWS)');
   })();
 
   window.ModellerHistory = {
