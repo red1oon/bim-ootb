@@ -425,6 +425,14 @@ function setupCpeFlythruDatum(A) {
     var op = lifeOpacity(filmSec, filmSecFull);
     if (op <= 0.01) { A._flythruDatumLast = { drawn: 0, filmSec: filmSec, enteredAt: _enteredAt, faded: true }; _lastDrawn = 0; return 0; }
     var ext = _lines.ext, z0 = ext[4];
+    var _maxScale = 0, _degenerate = 0;   // §DATUM_PLANE_SCALE (2026-09-09) — max |affine basis| this frame,
+    // and how many plane() calls were rejected as degenerate (§46/§52/§53 flicker root cause: a
+    // near-camera/off-axis anchor point passes the .front depth guard but its screen-space projection
+    // is enormous — ctx.setTransform then blows one glyph/bubble draw up into a giant colour blob for
+    // that single frame. MEASURED: all 47/47 luma jumps in the LIFE2 flicker window carry a maxPlaneScale
+    // of 14,000-385,750 on a 1280px canvas (out/L2_diag_2026-09-09.log). A legitimate mark never needs a
+    // basis vector anywhere near canvas size, so any multiple that large is rejected outright.
+    var _PLANE_MAG_MAX = Math.max(w, h) * 4;
     var P = function (ix, iy, iz) { var p = A.ifc2three(ix, iy, iz); return new T.Vector3(p.x, p.y, p.z); };
     var pr = function (v) {
       var vs = v.clone().applyMatrix4(cam.matrixWorldInverse);
@@ -518,7 +526,11 @@ function setupCpeFlythruDatum(A) {
     function plane(ox, oy, oz, ux, uy, uz, vx, vy, vz) {
       var O = pr(P(ox, oy, oz)), U = pr(P(ox + ux, oy + uy, oz + uz)), V = pr(P(ox + vx, oy + vy, oz + vz));
       if (!O.front || !U.front || !V.front) return null;
-      return { a: U.x - O.x, b: U.y - O.y, c: V.x - O.x, d: V.y - O.y, e: O.x, f: O.y };
+      var _m = { a: U.x - O.x, b: U.y - O.y, c: V.x - O.x, d: V.y - O.y, e: O.x, f: O.y };
+      var _mag = Math.max(Math.abs(_m.a), Math.abs(_m.b), Math.abs(_m.c), Math.abs(_m.d));
+      if (_mag > _PLANE_MAG_MAX) { _degenerate++; return null; }   // §DATUM_PLANE_SCALE — reject, don't draw a blob
+      if (_mag > _maxScale) _maxScale = _mag;
+      return _m;
     }
     var INK = '#c9d3df', HALO = 'rgba(8,11,16,0.92)';
     var UNIT = 100;   // canvas cannot set a sub-pixel font, so text is drawn at UNIT x and scaled back
@@ -759,7 +771,8 @@ function setupCpeFlythruDatum(A) {
       // how the count moved since the last frame, and whether a per-frame decision WOULD have flipped.
       ' dropped=[behindCam bubbles X/Y/Z=' + rX.behindB + '/' + rY.behindB + '/' + rZ.behindB +
       ' figures=' + rX.behindF + '/' + rY.behindF + '/' + rZ.behindF + '] dDrawn=' + (_dDrawn == null ? 'first' : (_dDrawn >= 0 ? '+' : '') + _dDrawn) +
-      ' sidesChanged=' + (_sidesChanged ? 1 : 0) + ' decidedAt=' + _sides.decidedAt.toFixed(2) + 's life=' + (_life2Started != null && filmSec >= _life2Started ? 2 : 1));
+      ' sidesChanged=' + (_sidesChanged ? 1 : 0) + ' decidedAt=' + _sides.decidedAt.toFixed(2) + 's life=' + (_life2Started != null && filmSec >= _life2Started ? 2 : 1) +
+      ' maxPlaneScale=' + _maxScale.toFixed(0) + ' degenerate=' + _degenerate);   // §DATUM_PLANE_SCALE — rejected blow-ups this frame
     return n;
   };
 
