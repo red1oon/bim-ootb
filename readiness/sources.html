@@ -899,7 +899,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   <h3>Correspondence</h3>
   <p>Author of record and corresponding author: <strong>Mohd Faizal Bin Yusof</strong>.</p>
   <p>Queries about a figure, a source, or a request for the underlying data:
-  <a href="mailto:yfaizal@gmail.com">yfaizal@gmail.com</a></p>
+  <a href="mailto:yfaizal@gmail.com" id="contactlink">yfaizal@gmail.com</a></p>
   <p>Ethics committee approval for the participant-facing study:
   <strong>not required.</strong> The researcher has determined that this study does not require
   formal ethics committee review.</p>
@@ -914,3 +914,19 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </div>
 
 <script src="i18n_shell.js" data-page="sources"></script>
+<script>
+/* Anonymous click ping on the contact link, so the admin view can show contact volume without
+   knowing who clicked or whether an email was actually sent. Fire-and-forget: never blocks or
+   alters the mailto: link's own behaviour. Same write-only OCI link assess.html uses for
+   submissions, a separate 'contacts/' prefix so the two counts never mix. */
+(function () {
+  var PAR_WRITE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/p/Q5DFzad-KKtyTsrY2yt7HKxSM3M6aBDSXW4tL4p4ZjtEQlWugoMvkyk35Oi8tOWB/n/ax3cp6tzwuy2/b/openbim-readiness-responses/o/';
+  var link = document.getElementById('contactlink');
+  if (!link) return;
+  link.addEventListener('click', function () {
+    var name = 'contacts/' + new Date().toISOString().replace(/[:.]/g, '-') + '-' + Math.random().toString(36).slice(2, 10) + '.json';
+    fetch(PAR_WRITE + name, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'contact_click', page: 'sources' }) })
+      .catch(function () { /* best-effort only */ });
+  });
+})();
+</script>

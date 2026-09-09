@@ -429,7 +429,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
 <div class="mockbar" id="mockbar">
   <span>⚠ Research instrument, v0.1 — the model check, readiness-profile scoring, and anonymous submission are all live; gap analysis and recommendations are still illustrative example content</span>
   <span>·</span>
-  <span id="buildstamp">build 2026-09-09T14:53Z</span>
+  <span id="buildstamp">build 2026-09-09T22:54Z</span>
 </div>
 
 <div class="shell">
@@ -993,7 +993,7 @@ SCREENS.model = function () { return '' +
       '<dd>' + T('consent.ethics_dd', 'Not required. The researcher has determined that this study ' +
         'does not require formal ethics committee review.') + '</dd>' +
       '<dt>' + T('consent.contact_dt', 'Questions or complaints') + '</dt>' +
-      '<dd>' + T('consent.contact_dd', 'Mohd Faizal Bin Yusof &mdash; <a href="mailto:yfaizal@gmail.com">yfaizal@gmail.com</a>') + '</dd>' +
+      '<dd>' + T('consent.contact_dd', 'Mohd Faizal Bin Yusof &mdash; <a href="mailto:yfaizal@gmail.com" id="contactlink">yfaizal@gmail.com</a>') + '</dd>' +
     '</dl>' +
     '<label class="chk" style="margin-top:16px"><input type="checkbox" id="submitconsent"' +
       ((document.getElementById('includebenchmark') || {}).checked ? ' checked' : '') + '>' +
@@ -1845,6 +1845,16 @@ document.addEventListener('click', function (e) {
   if (e.target && e.target.id === 'submitbtn') submitAssessment();
 });
 
+/* Anonymous click ping on the contact link — see toolkit_sources.html for the identical
+   pattern and why it exists. Separate 'contacts/' prefix, never mixed with real submissions. */
+document.addEventListener('click', function (e) {
+  if (!(e.target && e.target.id === 'contactlink')) return;
+  if (!SUBMIT_PAR_WRITE) return;
+  var name = 'contacts/' + new Date().toISOString().replace(/[:.]/g, '-') + '-' + Math.random().toString(36).slice(2, 10) + '.json';
+  fetch(SUBMIT_PAR_WRITE + name, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'contact_click', page: 'assess' }) })
+    .catch(function () { /* best-effort only */ });
+});
+
 function composePrompt() {
   var weak = weakest(3).map(function (id) { return { id: id, r: itemById(id) }; });
   var picks = weak.map(function (w) {
@@ -2193,7 +2203,7 @@ document.addEventListener('keydown', function (e) {
 /* A tab left open serves whatever it loaded, and GH Pages caches for 10 minutes on top of that.
    Rather than expecting anyone to guess, the page checks its own build against the published one
    and says plainly when it is out of date. Cache-busted so the check itself is never stale. */
-var BUILD_ID = '2026-09-09T14:53Z';
+var BUILD_ID = '2026-09-09T22:54Z';
 (function checkBuild() {
   try {
     fetch('version.json?t=' + Date.now(), { cache: 'no-store' })

@@ -1,0 +1,317 @@
+<meta charset="utf-8">
+<title>Admin — OpenBIM Readiness Toolkit</title>
+<style>
+:root{
+  --ink:#131e1b; --ink-2:#3a4a45; --muted:#6b7d78; --faint:#9aaba6;
+  --paper:#f5f7f5; --surface:#ffffff; --surface-2:#eaefed; --surface-3:#dbe3e0;
+  --rule:#d3dcd9; --rule-soft:#e4e9e7;
+  --accent:#00897b; --accent-ink:#00695f; --accent-wash:#e0efec;
+  --warn:#a06a00; --warn-wash:#f7efdd;
+  --bad:#b3261e; --bad-wash:#fbe9e7;
+  --focus:#00897b;
+  --shadow:0 1px 2px rgba(19,30,27,.05),0 10px 30px -18px rgba(19,30,27,.22);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+    --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+    --rule:#2d3e39; --rule-soft:#22302c;
+    --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+    --warn:#b1811f; --warn-wash:#2f2612;
+    --bad:#ff6b5b; --bad-wash:#3a1c18;
+    --focus:#4fc9b0;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+  --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+  --rule:#2d3e39; --rule-soft:#22302c;
+  --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+  --warn:#b1811f; --warn-wash:#2f2612;
+  --bad:#ff6b5b; --bad-wash:#3a1c18;
+  --focus:#4fc9b0;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"Instrument Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:15.5px;line-height:1.55}
+.shell{max-width:840px;margin:0 auto;padding:28px 20px 60px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+h1{font-size:22px;margin:0}
+h2{font-size:16px;margin:0 0 4px}
+.tag{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.sub{color:var(--muted);font-size:13.5px;margin:0 0 24px}
+a{color:var(--accent-ink)}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:18px 20px;margin-bottom:18px;box-shadow:var(--shadow)}
+.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--rule-soft);font-size:14px}
+.row:last-child{border-bottom:none}
+.row .k{color:var(--ink-2)}
+.row .v{font-weight:600;text-align:right}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;font-size:12.5px;font-weight:600}
+.pill.ok{background:var(--accent-wash);color:var(--accent-ink)}
+.pill.warn{background:var(--warn-wash);color:var(--warn)}
+.pill.bad{background:var(--bad-wash);color:var(--bad)}
+.pill.pending{background:var(--surface-2);color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:99px;background:currentColor;display:inline-block}
+.checklist{display:flex;flex-direction:column}
+.chk-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--rule-soft)}
+.chk-row:last-child{border-bottom:none}
+.chk-row .pill{flex:none;margin-top:1px}
+.chk-body{flex:1;min-width:0}
+.chk-title{font-weight:600;font-size:14px}
+.chk-detail{color:var(--muted);font-size:12.5px;margin-top:2px;word-break:break-word}
+.chk-detail ul{margin:4px 0 0;padding-left:18px}
+.btn{font:inherit;font-weight:600;font-size:14px;padding:9px 16px;border-radius:8px;border:1px solid var(--accent-ink);background:var(--accent);color:#fff;cursor:pointer}
+.btn:disabled{opacity:.6;cursor:default}
+.btn.sec{background:transparent;color:var(--accent-ink)}
+.stamp{color:var(--muted);font-size:12.5px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+footer{margin-top:30px;color:var(--faint);font-size:12px}
+</style>
+
+<div class="shell">
+  <header>
+    <div><span class="tag">Admin — not for respondents</span><h1>Toolkit operations</h1></div>
+    <a href="index.html">&larr; back to the toolkit</a>
+  </header>
+  <p class="sub">A plain view of whether the live OpenBIM Readiness Toolkit is actually working. No login, because nothing here is secret beyond what the assessment page's own source already contains.</p>
+
+  <div class="card">
+    <h2>Submission status</h2>
+    <div id="subStatus" class="row"><span class="k">Loading&hellip;</span><span class="v"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Fitness checklist</h2>
+    <p class="sub" style="margin-bottom:12px">Checks every readiness page loads, every internal link and glossary reference resolves, and the submission links respond as expected.</p>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <button class="btn" id="runBtn">Run all checks</button>
+      <span class="stamp" id="stamp">Not run yet</span>
+    </div>
+    <div class="checklist" id="checklist"></div>
+  </div>
+
+  <footer>OpenBIM Readiness Assessment Toolkit &middot; admin view &middot; see <span class="mono">submit_endpoint/OPERATIONS.md</span> for how submission works.</footer>
+</div>
+
+<script>
+var PAGES = ['index.html', 'assess.html', 'proposal.html', 'why.html', 'faq.html', 'sources.html', 'disclaimer.html'];
+var SUBMIT_PAR_READ = 'https://objectstorage.ap-kulai-2.oraclecloud.com/p/rEov_-HGgt5l9c25o33gQpoRrdSFipA8jj5hijoa_CCqG6Dqddg8vDX_j01eBB99/n/ax3cp6tzwuy2/b/openbim-readiness-responses/o/';
+var SUBMIT_PAR_WRITE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/p/Q5DFzad-KKtyTsrY2yt7HKxSM3M6aBDSXW4tL4p4ZjtEQlWugoMvkyk35Oi8tOWB/n/ax3cp6tzwuy2/b/openbim-readiness-responses/o/';
+var K_ANON_FLOOR = 20;
+var PAR_EXPIRY = new Date('2031-09-09T00:00:00Z');
+var DIM_GROUPS = [
+  { id: 'A', name: 'Governance', idx: [0, 1, 2, 3] },
+  { id: 'B', name: 'People and skills', idx: [4, 5, 6, 7] },
+  { id: 'C', name: 'Technology', idx: [8, 9, 10, 11] },
+  { id: 'D', name: 'Data and standards', idx: [12, 13, 14, 15] },
+  { id: 'E', name: 'Organisational processes', idx: [16, 17, 18, 19] }
+];
+
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+function pill(status, label) {
+  return '<span class="pill ' + status + '"><span class="dot"></span>' + esc(label) + '</span>';
+}
+
+function meanOf(values) {
+  var nums = values.filter(function (v) { return typeof v === 'number'; });
+  return nums.length < 2 ? null : nums.reduce(function (a, b) { return a + b; }, 0) / nums.length;
+}
+
+/* ---------- Section 1: submission status ---------- */
+async function loadSubmissionStatus() {
+  var el = document.getElementById('subStatus');
+  var daysLeft = Math.round((PAR_EXPIRY - new Date()) / 86400000);
+  var expiryHTML = daysLeft > 0
+    ? pill('ok', 'active until ' + PAR_EXPIRY.toISOString().slice(0, 10) + ' (' + daysLeft + ' days left)')
+    : pill('bad', 'EXPIRED ' + PAR_EXPIRY.toISOString().slice(0, 10));
+
+  try {
+    var resp = await fetch(SUBMIT_PAR_READ);
+    if (!resp.ok) throw new Error('read link returned ' + resp.status);
+    var listing = await resp.json();
+    var names = (listing.objects || listing || []).map(function (o) { return o.name || o; });
+    var responseNames = names.filter(function (n) { return n.indexOf('responses/') === 0; });
+    var contactCount = names.filter(function (n) { return n.indexOf('contacts/') === 0; }).length;
+
+    var rows = [];
+    for (var i = 0; i < responseNames.length; i++) {
+      try {
+        var r = await fetch(SUBMIT_PAR_READ + responseNames[i]);
+        if (r.ok) rows.push(await r.json());
+      } catch (e) { /* one bad row doesn't break the count */ }
+    }
+    var perDim = DIM_GROUPS.map(function (d) {
+      var n = rows.map(function (row) { return meanOf(d.idx.map(function (i) { return row.answers && row.answers[i]; })); })
+        .filter(function (v) { return v !== null; }).length;
+      return d.name + ': ' + n + (n >= K_ANON_FLOOR ? ' (comparison live)' : ' (need ' + K_ANON_FLOOR + ')');
+    }).join(' &middot; ');
+    var breakdown = ['firm_size', 'firm_type', 'locale'].map(function (field) {
+      var tally = {};
+      rows.forEach(function (row) {
+        var v = row[field] || 'unknown';
+        tally[v] = (tally[v] || 0) + 1;
+      });
+      var parts = Object.keys(tally).sort(function (a, b) { return tally[b] - tally[a]; })
+        .map(function (k) { return k + ' (' + tally[k] + ')'; }).join(', ');
+      return '<div>' + field.replace('_', ' ') + ': ' + (parts || 'none yet') + '</div>';
+    }).join('');
+    el.innerHTML =
+      '<div class="row"><span class="k">Link status</span><span class="v">' + expiryHTML + '</span></div>' +
+      '<div class="row"><span class="k">Total responses submitted</span><span class="v">' + rows.length + '</span></div>' +
+      '<div class="row"><span class="k">Per dimension</span><span class="v" style="text-align:right;font-weight:400;color:var(--ink-2)">' + perDim + '</span></div>' +
+      '<div class="row"><span class="k">Respondent breakdown</span><span class="v" style="text-align:right;font-weight:400;color:var(--ink-2)">' + breakdown + '</span></div>' +
+      '<div class="row"><span class="k">Contact link clicks</span><span class="v">' + contactCount +
+        '<div style="font-weight:400;font-size:11.5px;color:var(--faint)">clicks on the contact link, not confirmed sent emails</div></span></div>';
+  } catch (e) {
+    el.innerHTML =
+      '<div class="row"><span class="k">Link status</span><span class="v">' + expiryHTML + '</span></div>' +
+      '<div class="row"><span class="k">Response count</span><span class="v">' + pill('bad', 'could not read: ' + esc(e.message)) + '</span></div>';
+  }
+}
+
+/* ---------- Section 2: fitness checklist ---------- */
+function extractLinks(html) {
+  var links = [];
+  var re = /<a\s[^>]*href="([^"]+)"/gi, m;
+  while ((m = re.exec(html))) {
+    var href = m[1];
+    if (/^https?:|^mailto:|^javascript:/i.test(href)) continue;
+    /* assess.html builds most of its markup as JS string concatenation, so its raw source
+       contains a few '<a href="...">' fragments where the real target is computed at runtime
+       (e.g. one of 20 possible glossary anchors, chosen by which items score lowest). A quote
+       or plus sign inside the captured value is the signature of that — not a real static
+       href — so it can't be checked here and is skipped rather than misreported as broken. */
+    if (/['+]/.test(href)) continue;
+    if (href === './' || href === '.') href = 'index.html';
+    links.push(href);
+  }
+  return links;
+}
+
+async function checkPagesServe() {
+  var results = [], pageHTML = {};
+  for (var i = 0; i < PAGES.length; i++) {
+    var page = PAGES[i];
+    try {
+      var r = await fetch(page + '?t=' + Date.now(), { cache: 'no-store' });
+      pageHTML[page] = r.ok ? await r.text() : '';
+      results.push({ page: page, ok: r.ok, status: r.status });
+    } catch (e) {
+      results.push({ page: page, ok: false, status: 'network error' });
+      pageHTML[page] = '';
+    }
+  }
+  return { results: results, pageHTML: pageHTML };
+}
+
+function checkInternalLinks(pageHTML) {
+  var broken = [], checkedCount = 0;
+  PAGES.forEach(function (page) {
+    var html = pageHTML[page];
+    if (!html) return;
+    extractLinks(html).forEach(function (href) {
+      checkedCount++;
+      var hashIdx = href.indexOf('#');
+      var targetPage = hashIdx === 0 ? page : (hashIdx > -1 ? href.slice(0, hashIdx) : href);
+      var fragment = hashIdx > -1 ? href.slice(hashIdx + 1) : null;
+      if (!targetPage) targetPage = page;
+      var targetHTML = pageHTML[targetPage];
+      if (targetHTML === undefined) {
+        broken.push(page + ' &rarr; ' + href + ' (target page not in the known set)');
+        return;
+      }
+      if (!targetHTML) {
+        broken.push(page + ' &rarr; ' + href + ' (target page did not load)');
+        return;
+      }
+      if (fragment && targetHTML.indexOf('id="' + fragment + '"') === -1) {
+        broken.push(page + ' &rarr; ' + href + ' (anchor #' + fragment + ' not found on ' + targetPage + ')');
+      }
+    });
+  });
+  return { broken: broken, checkedCount: checkedCount };
+}
+
+async function checkReadLink() {
+  try {
+    var r = await fetch(SUBMIT_PAR_READ);
+    return { ok: r.ok, status: r.status };
+  } catch (e) {
+    return { ok: false, status: 'network error' };
+  }
+}
+
+async function checkWriteLink() {
+  /* Deliberately not a write test — see OPERATIONS.md. A bare GET against a write-only
+     bucket-level PAR is expected to come back 404 (listing refused); that specific status
+     is this project's own recorded signature of "healthy". */
+  try {
+    var r = await fetch(SUBMIT_PAR_WRITE);
+    return { healthy: r.status === 404, status: r.status };
+  } catch (e) {
+    return { healthy: false, status: 'network error' };
+  }
+}
+
+function renderChecklist(items) {
+  document.getElementById('checklist').innerHTML = items.map(function (it) {
+    return '<div class="chk-row">' + pill(it.status, it.status === 'ok' ? 'pass' : it.status === 'warn' ? 'check' : it.status === 'bad' ? 'fail' : '…') +
+      '<div class="chk-body"><div class="chk-title">' + esc(it.title) + '</div>' +
+      (it.detail ? '<div class="chk-detail">' + it.detail + '</div>' : '') + '</div></div>';
+  }).join('');
+}
+
+async function runAllChecks() {
+  var btn = document.getElementById('runBtn');
+  btn.disabled = true; btn.textContent = 'Running…';
+  renderChecklist(PAGES.map(function (p) { return { title: 'Checking ' + p + '…', status: 'pending' }; })
+    .concat([{ title: 'Checking internal links…', status: 'pending' },
+             { title: 'Checking read link…', status: 'pending' },
+             { title: 'Checking write link…', status: 'pending' }]));
+
+  var pagesResult = await checkPagesServe();
+  var linkResult = checkInternalLinks(pagesResult.pageHTML);
+  var readResult = await checkReadLink();
+  var writeResult = await checkWriteLink();
+
+  var items = [];
+  var allPagesOk = pagesResult.results.every(function (r) { return r.ok; });
+  items.push({
+    title: 'All pages serve (' + pagesResult.results.filter(function (r) { return r.ok; }).length + ' / ' + PAGES.length + ')',
+    status: allPagesOk ? 'ok' : 'bad',
+    detail: allPagesOk ? PAGES.join(', ') : pagesResult.results.filter(function (r) { return !r.ok; })
+      .map(function (r) { return r.page + ': ' + r.status; }).join(', ')
+  });
+  items.push({
+    title: 'Site online',
+    status: allPagesOk ? 'ok' : 'bad',
+    detail: allPagesOk ? 'GitHub Pages responded to every page fetched above' : 'one or more pages did not respond'
+  });
+  items.push({
+    title: 'Internal links resolve, including glossary references (' + linkResult.checkedCount + ' checked)',
+    status: linkResult.broken.length === 0 ? 'ok' : 'bad',
+    detail: linkResult.broken.length === 0 ? 'no broken links or anchors found' :
+      '<ul>' + linkResult.broken.map(function (b) { return '<li>' + b + '</li>'; }).join('') + '</ul>'
+  });
+  items.push({
+    title: 'Read link responds',
+    status: readResult.ok ? 'ok' : 'bad',
+    detail: readResult.ok ? 'listing fetched successfully (status ' + readResult.status + ')' : 'status: ' + readResult.status
+  });
+  items.push({
+    title: 'Write link reachable',
+    status: writeResult.healthy ? 'ok' : 'warn',
+    detail: writeResult.healthy
+      ? 'responded 404 to a plain GET — the expected signature for a write-only link (see OPERATIONS.md). This does not test writing, on purpose: a synthetic submission could not be deleted afterwards through this link.'
+      : 'unexpected response (status: ' + writeResult.status + ') — check manually in the OCI console before assuming a problem'
+  });
+
+  renderChecklist(items);
+  document.getElementById('stamp').textContent = 'Last checked: ' + new Date().toLocaleString();
+  btn.disabled = false; btn.textContent = 'Run all checks';
+}
+
+document.getElementById('runBtn').addEventListener('click', runAllChecks);
+loadSubmissionStatus();
+runAllChecks();
+</script>
