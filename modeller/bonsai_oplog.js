@@ -457,6 +457,18 @@
       console.log(TAG + ' delete feature=' + featureId + (kids.length ? ' +kids[' + kids + ']' : '') + ' active=' + this.length);
       return { deleted: ids };
     },
+    // §MHIST-ROWS (modeller_history.js): id-TARGETED flip of EXACTLY these rows, same fold+emit tail as delete/undo/redo.
+    // Required because redo() is NOT the inverse of deleteFeature(): both leave `undone=1` and redo() picks the LOWEST-id
+    // undone row — delete A(1) then B(2), reverse B ⇒ redo() brings back A. The history tree records each node's rows at
+    // push time and replays them here; undo()/redo() (boundary walk) stay untouched for nodes that recorded none.
+    async setUndone(ids, val) {
+      if (!this.db || !ids || !ids.length) return val ? { undone: null } : { redone: null };
+      this._setUndone(ids, val ? 1 : 0);
+      await this._foldUpto(); this._emit();
+      console.log(TAG + ' setUndone=' + (val ? 1 : 0) + ' ids=[' + ids + '] active=' + this.length);
+      const group = ids.length > 1 ? ids.slice() : undefined;
+      return val ? { undone: ids[0], group } : { redone: ids[0], group };
+    },
     // Undo = soft-delete the most-recent ACTIVE feature (LIFO; newest has no active dependents).
     // §P8: if the top row belongs to a gesture group, the WHOLE group undoes together (one gesture = one Ctrl+Z —
     // a grid-stretch's induced rider moves revert with the stretch, never a half-reverted gesture).
