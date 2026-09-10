@@ -115,6 +115,43 @@ expectation, update it" from "real regression, don't paper over it" for each, an
   PAUSED note above) — don't redispatch with the original roof-inclusive brief, use the narrowed one
   in "Full original engine brief" above (AngleEdge already marked ⛔ there).
 
+## Separate backlog item (2026-09-10, not part of the engine work) — repo-root script clutter
+
+`bim-ootb` repo root has ~202 loose scripts that should be nested into their proper folders:
+- **163 `witness_*.js`** directly at root (not in any `tests/` dir). By naming (`witness_cinema_*`,
+  `witness_gantt_*`, `witness_tour_*`, `witness_room_*`, `witness_cpe_*`, `witness_maxq_*`,
+  `witness_photo_*`, etc.) these clearly belong in `viewer/tests/` alongside the 133 already there —
+  confirmed ZERO filename collisions against every existing nested tests dir (viewer/modeller/
+  hr_bim_asset/erp/geomapping/teams/common/tests).
+- **39 other loose scripts** (`probe_*`, `sandbox_*`, `cli_*`, `poc_*`, `smoke_*`, `drag_test.js`,
+  `optics_*`, `cdp.js`, `import_own.js`) plus **1 `.py`** (`score_frame_budget.py`) — same clutter
+  pattern. `eslint.config.js` is legitimate, leave it at root.
+
+**NOT a safe blind `git mv`.** At least 66 of the 163 witness files build filesystem paths off
+`__dirname` ASSUMING `__dirname` is the repo root — e.g. `path.join(__dirname, 'viewer', 'scene.js')`,
+`path.join(__dirname, 'common', 'room_graph.js')`, `path.join(__dirname, 'buildings', ...)`,
+`path.join(__dirname, 'modeller', 'lib', 'sql-wasm.wasm')`. Moving any of them one directory deeper
+breaks that resolution silently. (One exception found: `execSync('git show origin/main:common/...',
+{cwd:__dirname})` is SAFE regardless of depth — git resolves `rev:path` against the repo root, not
+cwd, as long as cwd is anywhere inside the repo.)
+
+**The fix is mechanically uniform IF the move is exactly one level deep** (e.g. everything into
+`viewer/tests/`, which is one level deeper than root): every repo-root-relative `path.join(__dirname,
+X, ...)` / `__dirname + '/X/...'` needs exactly one `'..'` inserted right after `__dirname`. But
+"uniform mechanical fix" still means: apply it, then actually RUN a representative sample of the
+moved witness files to confirm nothing broke — don't trust the pattern-match alone. That's real token
+cost (a meaningful fraction of 163 test runs, several needing headless Chrome), which is why this was
+deferred rather than done same-session (user, 2026-09-10: "be careful on the tokens burning fast").
+
+**Not investigated at all yet:** which folder each of the 39 non-witness scripts actually belongs in
+(probably `scripts/` or a new `sandbox/`/`probes/` dir — didn't check for an existing home), and
+whether THEY have the same `__dirname`-as-root coupling (likely, given the shared authoring pattern,
+but unconfirmed).
+
+**Suggested approach next session:** pick ONE destination folder, move+fix+verify in a small batch
+(e.g. 10-15 files), confirm the pattern holds, then batch the rest — don't attempt all ~200 in one
+pass untested.
+
 ## How to resume next session
 
 1. Try `SendMessage` to agent id `a9dfff070e94bb7ce` (the engine) first — cheapest path if it resolves.
