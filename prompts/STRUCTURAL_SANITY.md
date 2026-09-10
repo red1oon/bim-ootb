@@ -16,8 +16,10 @@
 #   steel serviceability is deflection-based (Δ≤span/360 from actual load+section I), so
 #   span/depth-as-proxy is inherently a rule-of-thumb, not a verified limit. Do NOT ship
 #   these as CRITICAL-capable until a cited code clause or an engineer sets them — see
-#   `max_severity: WARNING` cap on both span_depth rules below. Treat every number in
-#   `structural_rules.json` as an editable placeholder, not a validated default.
+#   `max_severity: WARNING` cap on ALL THREE span_depth rules below (steel, concrete, AND
+#   cantilever — cantilever's different numbers do not make it any less uncited). Treat
+#   every number in `structural_rules.json` as an editable placeholder, not a validated
+#   default.
 
 ## WHY
 Clash detection (`measure.js`, `clash_report.js`) proves the pattern: instant, in-browser,
@@ -80,6 +82,9 @@ written, per Prime Directive (verify against real data, not assumption). It over
 badly — see VALIDATION below. Rules below are the corrected v1, re-validated on the same
 data. `structural_rules.json` still holds every threshold; nothing here is hardcoded in JS.
 
+Numbered 1–5 below to match `structural_rules.json`'s 5 entries exactly (span/depth splits
+into 2 JSON entries — steel and concrete — so this is 5 rules total, not 4):
+
 1. **Floating member (headline rule, highest confidence)** — `IfcBeam`: rtree query at
    BOTH end points for a support within `tolerance_m`. A support is (a) a vertical STR
    element (`IfcColumn`/`IfcWallStandardCase`/`IfcFooting`/`IfcMember`) whose Z-range
@@ -87,19 +92,23 @@ data. `structural_rules.json` still holds every threshold; nothing here is hardc
    zmin within `framing_dz_m` of this beam's zmin) — beam-to-beam framing is normal steel
    practice and must count as support, or every secondary beam false-flags. Zero support
    at BOTH ends → **CRITICAL "floating member"**, independent of span/depth.
-2. **Span/depth ratio** — `IfcBeam` only (NOT `IfcSlab` — a slab's own bbox spans the
-   whole floor plate, not a real structural span; see VALIDATION). Section material is
-   inferred from `element_name` prefix (steel: `UB`/`UC`/`Channel`/`HSS`/`W-shape`;
-   concrete: `Concrete`/`RC`) since `material_name` is often blank — this is extraction
-   from real text, not invention, but IS a heuristic; log `§MATERIAL_INFERRED unmatched=N`
-   so an unmatched fallback is visible, never silent. Steel placeholder: `warning_ratio:
-   24`, `critical_ratio: 30`. Concrete placeholder: `warning_ratio: 20`, `critical_ratio:
-   26`. **NOT sourced from a code citation** — trial-adjusted against Hospital's flag
-   count only (see THRESHOLD DISCLAIMER at top). **Ships as WARNING-ceiling only in v1**
-   (never auto-CRITICAL) until an engineer or a cited code clause sets real values.
-3. **Cantilever span/depth** — beam with support at exactly one end (rule 1's supported_at,
-   not both/neither) — tighter default: `warning_ratio: 12`, `critical_ratio: 16`.
-4. **Column load-path continuity** — `IfcColumn`: rtree query for a column/footing/wall
+2. **Span/depth ratio — steel** — `IfcBeam` only (NOT `IfcSlab` — a slab's own bbox spans
+   the whole floor plate, not a real structural span; see VALIDATION). Section material is
+   inferred from `element_name` prefix (steel: `UB`/`UC`/`Channel`/`HSS`/`W-shape`) since
+   `material_name` is often blank — this is extraction from real text, not invention, but
+   IS a heuristic; log `§MATERIAL_INFERRED unmatched=N` so an unmatched fallback is
+   visible, never silent. Placeholder: `warning_ratio: 24`, `critical_ratio: 30`. **NOT
+   sourced from a code citation** — trial-adjusted against Hospital's flag count only (see
+   THRESHOLD DISCLAIMER at top). **Ships as WARNING-ceiling only in v1** (never
+   auto-CRITICAL) until an engineer or a cited code clause sets real values.
+3. **Span/depth ratio — concrete** — same check as rule 2, `element_name` hints
+   `Concrete`/`RC`. Placeholder: `warning_ratio: 20`, `critical_ratio: 26`. Same
+   uncited/WARNING-ceiling caveat as rule 2.
+4. **Cantilever span/depth** — beam with support at exactly one end (rule 1's supported_at,
+   not both/neither) — tighter default: `warning_ratio: 12`, `critical_ratio: 16`. Equally
+   uncited/trial-adjusted as rules 2–3 — **also WARNING-ceiling only**, not exempt from the
+   THRESHOLD DISCLAIMER just because the numbers differ.
+5. **Column load-path continuity** — `IfcColumn`: rtree query for a column/footing/wall
    footprint within `tolerance_m` on the storey immediately below (or at foundation level).
    `tolerance_m: 0.3` (NOT clash's 0.025–0.05 — that tolerance is for flush-surface clash,
    this is storey-to-storey centerline drift, a different physical question; see
@@ -118,7 +127,7 @@ data. `structural_rules.json` still holds every threshold; nothing here is hardc
       "name_hints": ["Concrete","RC"], "cantilever": false,
       "warning_ratio": 20, "critical_ratio": 26, "max_severity": "WARNING" },
     { "name": "span_depth_cantilever", "applies_to": ["IfcBeam"], "cantilever": true,
-      "warning_ratio": 12, "critical_ratio": 16 },
+      "warning_ratio": 12, "critical_ratio": 16, "max_severity": "WARNING" },
     { "name": "column_continuity", "applies_to": ["IfcColumn"], "tolerance_m": 0.3 }
   ]
 }
@@ -145,12 +154,15 @@ from a Python prototype against the real DB, not invented:
 - **Revised rules (this spec)**: floating-member (rule 1) = **43/1970 beams (2.2%)**,
   clustered at roof levels (Level 6: 26, Level 7: 8, Level 3–5: 9) — a real, explainable,
   demo-worthy finding (something a visual scan of the model would not catch). Span/depth
-  with the trial-adjusted 24/30 thresholds still flags ~23% (248 CRIT/215 WARN) —
-  materially better than 40% but still high enough, and still uncited, that it ships
-  WARNING-ceiling only until an engineer or code clause validates it, per rule 2 above.
-  Column continuity at 0.3m tolerance = 22/255 (8.6%) — also trial-adjusted (see
-  THRESHOLD DISCLAIMER), not a cited alignment tolerance, and not yet spot-checked
-  against actual transfer conditions.
+  (rules 2–4 combined — steel + cantilever sub-rules together, since Hospital's beams are
+  100% steel-section-named) still flags ~23% (248 would-be-CRIT/215 WARN of 1970) with the
+  trial-adjusted thresholds — materially better than the rejected draft's 40% but still
+  high enough, and still uncited, that it ships WARNING-ceiling only until an engineer or
+  code clause validates it, per rules 2–4 above. This combined figure has NOT been broken
+  down per sub-rule (steel vs cantilever counted separately) — do that in T2's witness
+  before treating either sub-rule's individual count as known. Column continuity (rule 5)
+  at 0.3m tolerance = 22/255 (8.6%) — also trial-adjusted (see THRESHOLD DISCLAIMER), not
+  a cited alignment tolerance, and not yet spot-checked against actual transfer conditions.
 - **Showcase verdict**: YES, Hospital gives a real showcase — lead the panel with the
   floating-member finding (small, high-confidence, visually obvious once zoomed-to).
   Treat span/depth as secondary/advisory in v1. Do not oversell column continuity in a
@@ -185,7 +197,8 @@ Clash's matrix works because clash is a genuine pairwise relationship (ARC×MEP 
 a real 2D intersection). Sanity's rules are independent categories on one discipline (STR)
 with no meaningful "X vs Y" cell — a matrix here would be mostly-empty and forced. Instead:
 - **3 toggle buttons**: Floating Member / Span-Depth / Column Continuity (filters to one
-  rule category), plus an **"All"** default view.
+  rule category), plus an **"All"** default view. "Span-Depth" is ONE button covering all
+  3 of rules 2–4 (steel, concrete, cantilever) — not a separate button per sub-rule.
 - **"All" view groups by severity first** (CRITICAL across all rules together, scannable
   triage list), rule name shown per row — not siloed by category by default.
 - Lead the panel with the **floating member** group — smallest, highest-confidence, most
@@ -261,11 +274,13 @@ building shows this pass is not cheap — do not pre-build one speculatively.
   (sitecam.js precedent) and `#<checkId>=<rule>` reopens the matching panel pre-filtered.
   Sanity calls it with `checkId='sanity'`. Witness: URL round-trip (build → parse → same
   guid + checkId + rule out).
-- ☐ **T0-forward** (informational, not a Sanity task): `prompts/EGRESS_SANITY.md` specs the
-  next rule-based checker (door width + travel-to-exit), built AFTER T1-T7 ship, consuming
-  T3/T5/T6's generic chassis with zero new UI code — only its own rule evaluator.
 - ☐ **T7 (optional, only if T2 profiling on Terminal/Hospital-scale building is slow)**
   sidecar bake following `analysis_sidecar.js`'s `get5D`/`get4D` OPFS pattern.
+
+**Note (not a numbered task, no action here):** `prompts/EGRESS_SANITY.md` specs the next
+rule-based checker (door width + travel-to-exit), sequenced to build AFTER T1–T7 above
+ship, consuming T3/T5/T6's generic chassis with zero new UI code — only its own rule
+evaluator.
 
 ## TEST / DEPLOY
 Whitebox §-log first (`§STRUCT_SANITY rule=<name> severity=<n>`). `node --check` every
