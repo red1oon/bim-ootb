@@ -182,8 +182,12 @@ runE2E('W-E2E-GRIDMOVE-REAL', async (t) => {
   const riderCmd = gestureOps.find(o => o.op_type === 'GEOM_MOVE' && o.parameters && o.parameters.parent === doorFid && o.parameters.induced === 'hosted-by');
   const totalRiders = gestureOps.filter(o => o.op_type === 'GEOM_MOVE' && o.parameters && o.parameters.induced === 'hosted-by').length;
   console.log('  §GESTURE-RIDERS n=' + totalRiders + ' tail=' + JSON.stringify(gestureOps.map(o => o.op_type + (o.parameters && o.parameters.parent != null ? ':' + o.parameters.parent : ''))));
-  t.assert('G7 RIDE (host wall106\'s real hosted door rode via §STRETCH-RIDE, not left behind)',
-    doorFid != null && riderCmd && riderCmd.parameters && riderCmd.parameters.parent === doorFid && doorC0 && doorC1 && Math.abs((doorC1[1] - doorC0[1]) - riderCmd.parameters.dy) < 0.01,
+  // §DAGEVU (SPEC_DAGEVU_ENGINE.md §5): the old G7 expected the door to RIDE (always-ride default) — STALE. The
+  // anchor default HOLDS the real hosted door in place while wall106 grows (+DY at the gridline end): no induced
+  // rider row for it, centre unchanged. (ride is now the explicit ctrl+click opt-in — proven in
+  // witness_e2e_stretch_ride E5 / witness_e2e_grid_greenorange H3.)
+  t.assert('G7 ANCHOR (host wall106\'s real hosted door HELD in place — no induced rider row, centre unchanged; §DAGEVU default)',
+    doorFid != null && !riderCmd && doorC0 && doorC1 && Math.abs(doorC1[1] - doorC0[1]) < 1e-3 && Math.abs(doorC1[0] - doorC0[0]) < 1e-3,
     'doorFid=' + doorFid + ' door y ' + (doorC0 && doorC0[1].toFixed(3)) + '→' + (doorC1 && doorC1[1].toFixed(3)) + ' riderDy=' + (riderCmd && riderCmd.parameters && riderCmd.parameters.dy && riderCmd.parameters.dy.toFixed(3)) + ' induced=' + (riderCmd && riderCmd.parameters && riderCmd.parameters.induced));
 
   t.assert('G8 CHAIN-OK (verifyChain)', chain === true, 'verifyChain=' + chain);
