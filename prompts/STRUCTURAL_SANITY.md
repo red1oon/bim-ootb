@@ -7,6 +7,16 @@
 #   from element_transforms + elements_meta, or a rule threshold in structural_rules.json.
 #   No solver, no mocked utilization/deflection numbers in the live panel. Ever.
 # HONOUR until ✅ DONE.
+# ⚠ THRESHOLD DISCLAIMER: floating-member (rule 1) and slab-exclusion are verified logic —
+#   span/depth NUMBERS (24/30 steel, 20/26 concrete) and the 0.3m column tolerance are
+#   NOT sourced from a cited code (no Eurocode/ACI/BS lookup done). They were calibrated
+#   by trial against Hospital's flag count to reduce noise — that is NOT the same as
+#   standards compliance. Steel in particular has no code span/depth table at all; real
+#   steel serviceability is deflection-based (Δ≤span/360 from actual load+section I), so
+#   span/depth-as-proxy is inherently a rule-of-thumb, not a verified limit. Do NOT ship
+#   these as CRITICAL-capable until a cited code clause or an engineer sets them — see
+#   `max_severity: WARNING` cap on both span_depth rules below. Treat every number in
+#   `structural_rules.json` as an editable placeholder, not a validated default.
 
 ## WHY
 Clash detection (`measure.js`, `clash_report.js`) proves the pattern: instant, in-browser,
@@ -50,10 +60,11 @@ data. `structural_rules.json` still holds every threshold; nothing here is hardc
    inferred from `element_name` prefix (steel: `UB`/`UC`/`Channel`/`HSS`/`W-shape`;
    concrete: `Concrete`/`RC`) since `material_name` is often blank — this is extraction
    from real text, not invention, but IS a heuristic; log `§MATERIAL_INFERRED unmatched=N`
-   so an unmatched fallback is visible, never silent. Steel default: `warning_ratio: 24`,
-   `critical_ratio: 30`. Concrete default: `warning_ratio: 20`, `critical_ratio: 26`.
-   **Ships as WARNING-ceiling only in v1** (never auto-CRITICAL) until an engineer
-   confirms per-section-type thresholds against real Hospital output — see VALIDATION.
+   so an unmatched fallback is visible, never silent. Steel placeholder: `warning_ratio:
+   24`, `critical_ratio: 30`. Concrete placeholder: `warning_ratio: 20`, `critical_ratio:
+   26`. **NOT sourced from a code citation** — trial-adjusted against Hospital's flag
+   count only (see THRESHOLD DISCLAIMER at top). **Ships as WARNING-ceiling only in v1**
+   (never auto-CRITICAL) until an engineer or a cited code clause sets real values.
 3. **Cantilever span/depth** — beam with support at exactly one end (rule 1's supported_at,
    not both/neither) — tighter default: `warning_ratio: 12`, `critical_ratio: 16`.
 4. **Column load-path continuity** — `IfcColumn`: rtree query for a column/footing/wall
@@ -102,10 +113,12 @@ from a Python prototype against the real DB, not invented:
 - **Revised rules (this spec)**: floating-member (rule 1) = **43/1970 beams (2.2%)**,
   clustered at roof levels (Level 6: 26, Level 7: 8, Level 3–5: 9) — a real, explainable,
   demo-worthy finding (something a visual scan of the model would not catch). Span/depth
-  with steel-appropriate thresholds (24/30) still flags ~23% (248 CRIT/215 WARN) —
-  materially better than 40% but still high enough that it ships WARNING-ceiling only
-  until validated, per rule 2 above. Column continuity at 0.3m tolerance = 22/255 (8.6%),
-  plausible order of magnitude, not yet spot-checked against actual transfer conditions.
+  with the trial-adjusted 24/30 thresholds still flags ~23% (248 CRIT/215 WARN) —
+  materially better than 40% but still high enough, and still uncited, that it ships
+  WARNING-ceiling only until an engineer or code clause validates it, per rule 2 above.
+  Column continuity at 0.3m tolerance = 22/255 (8.6%) — also trial-adjusted (see
+  THRESHOLD DISCLAIMER), not a cited alignment tolerance, and not yet spot-checked
+  against actual transfer conditions.
 - **Showcase verdict**: YES, Hospital gives a real showcase — lead the panel with the
   floating-member finding (small, high-confidence, visually obvious once zoomed-to).
   Treat span/depth as secondary/advisory in v1. Do not oversell column continuity in a
