@@ -87,7 +87,15 @@ expectation, update it" from "real regression, don't paper over it" for each, an
   publicly, held for explicit go-ahead).
 - **Next session: just merge both PRs if the diffs still look right — no further coding needed here.**
 
-### 2. 🔶 IN PROGRESS, KILLED MID-TASK — along-host opening-slide drag (separate feature, not the engine)
+### 2. ✅ DONE 2026-09-10 (stacked PR on feat/dagevu-engine) — along-host opening-slide drag, finished AS THE ENGINE'S SECOND CONSUMER
+- The killed agent's 256-line draft was reviewed cold, applied, and its S2 constraint math moved into
+  `dagevu_engine.js` `HostFillEdge.constrain()` (spec: `prompts/SPEC_DAGEVU_SLIDE.md`). Witnesses: node
+  witness_opening_slide 9/9, e2e witness_e2e_opening_slide 8/8, engine 13/13; guards green.
+- Real-data finding: on real SampleHouse EVERY filling refuses the slide (7/7) because the seeded walls are real
+  LOD-300 meshes with the door holes baked in — honest, asserted in O0. The slide is live for sketched rectangular
+  walls (GEOM_EXTRUDE_POLY) + sketched doors; a void-translate op for baked holes remains NOT BUILT.
+- Original state before this session, kept for history:
+#### (was) 🔶 IN PROGRESS, KILLED MID-TASK — along-host opening-slide drag
 - Scope was: let `bonsai_itemdrag.js`'s free single-item drag constrain a hosted filling to slide
   along its OWN host wall's plane/bounds (not free 3D), and either keep a real carved cut void in sync
   or honestly refuse — the gap that file's own header flags at line ~88 ("no separate along-host

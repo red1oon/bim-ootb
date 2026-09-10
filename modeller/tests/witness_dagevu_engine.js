@@ -20,6 +20,9 @@
  *   D8 ABUTS-WRAP       — real wall + constructed flush neighbour (A8 precedent): proposal == gate proposedDelta;
  *                         the commands list is NOT changed by it (report-only)
  *   D9 ROSETTA          — anchor: stretch then exact inverse ⇒ host extent restored ≤1e-9, filling delta 0 both ways
+ *   D10 CONSTRAIN-PROJECT — (SPEC_DAGEVU_SLIDE.md §5) filling-driven: orthogonal + z DROPPED, t exact, axis = host long axis
+ *   D11 CONSTRAIN-BOUNDS  — t beyond either end ⇒ null + refusal (no clamp); t = tMax exactly ⇒ ok; an overhang has tMax = TOL
+ *   D12 CONSTRAIN-OPENING — a wider opening box tightens the bounds vs filling-only (the void travels with the door)
  */
 'use strict';
 var fs = require('fs'), path = require('path');
@@ -183,6 +186,29 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   chk('D9 ROSETTA: stretch then exact inverse ⇒ host extent + min restored ≤1e-9; the held filling never moved (0 both ways)',
     extErr <= 1e-9 && minErr <= 1e-9 && r3.held.indexOf(doorFid) >= 0 && r9.held.indexOf(doorFid) >= 0 && !r9.riders.some(function (r) { return r.featureId === doorFid; }),
     'extErr=' + extErr.toExponential(2) + ' minErr=' + minErr.toExponential(2));
+
+  // ── D10-D12 CONSTRAIN (SPEC_DAGEVU_SLIDE.md) — the inverse direction: the filling drives, the host constrains ──
+  var edgeS = eng.edgeFor(doorFid);
+  var cand = [0.3, 0.7, 0.2], other = 1 - K;
+  var c10 = edgeS.constrain(cand, { boxByFid: boxByFid });
+  chk('D10 CONSTRAIN-PROJECT: 1-DOF along the host long axis — t = candidate[' + ax + '] exactly, orthogonal + z dropped, label names both fids',
+    c10 && c10.axis === ax && c10.t === cand[K] && c10.delta[K] === cand[K] && c10.delta[other] === 0 && c10.delta[2] === 0 &&
+    c10.dimLabel.indexOf('#' + doorFid + ' along #' + hostFid) === 0 && edgeS.openingFid === (fbg[edgeRow.opening_guid] != null ? fbg[edgeRow.opening_guid] : null),
+    'r=' + j(c10));
+  var atMax = [0, 0, 0]; atMax[K] = c10.tMax; var pastMax = atMax.slice(); pastMax[K] += 1e-6; var pastMin = [0, 0, 0]; pastMin[K] = c10.tMin - 1e-6;
+  var okMax = edgeS.constrain(atMax, { boxByFid: boxByFid }), refMax = edgeS.constrain(pastMax, { boxByFid: boxByFid }), rfMax = edgeS.refusal;
+  var refMin = edgeS.constrain(pastMin, { boxByFid: boxByFid }), rfMin = edgeS.refusal;
+  var boxOver = Object.assign({}, boxByFid); var fbo = fb.slice(); var push = (hb[2 * K + 1] - fb[2 * K + 1]) + 0.3; fbo[2 * K] += push; fbo[2 * K + 1] += push; boxOver[doorFid] = fbo;
+  var over = edgeS.constrain([0, 0, 0], { boxByFid: boxOver });
+  chk('D11 CONSTRAIN-BOUNDS: t=tMax ok (gapHi=0.05 exactly); t past either end ⇒ null + refusal{slide-off-host,t}, never clamped; an as-extracted overhang gets tMax = TOL (slides back in, never further out)',
+    okMax && Math.abs(okMax.gapHi + 0.05) < 1e-9 && refMax === null && rfMax && rfMax.kind === 'slide-off-host' && rfMax.t === pastMax[K] &&
+    refMin === null && rfMin && rfMin.kind === 'slide-off-host' && over && Math.abs(over.tMax - 0.05) < 1e-12 && over.tMin < -0.3,
+    'tMax=' + c10.tMax.toFixed(3) + ' tMin=' + c10.tMin.toFixed(3) + ' overhang tMax=' + (over && over.tMax) + ' tMin=' + (over && over.tMin.toFixed(3)));
+  var OP = 9003, boxOp = Object.assign({}, boxByFid); var opb = fb.slice(); opb[2 * K + 1] += 0.5; boxOp[OP] = opb;
+  var edgeOp = new D.HostFillEdge({ hostFid: hostFid, fillingFid: doorFid, hostGuid: edgeRow.host_guid, fillingGuid: edgeRow.filling_guid, openingGuid: 'g-op', openingFid: OP, provenance: 'fixture' });
+  var c12 = edgeOp.constrain([0, 0, 0], { boxByFid: boxOp });
+  chk('D12 CONSTRAIN-OPENING: a seeded opening box 0.5m wider on the hi side tightens tMax by exactly 0.5 and leaves tMin unchanged (the void bounds the slide)',
+    c12 && Math.abs((c10.tMax - c12.tMax) - 0.5) < 1e-9 && Math.abs(c12.tMin - c10.tMin) < 1e-12, 'tMax ' + c10.tMax.toFixed(3) + '→' + (c12 && c12.tMax.toFixed(3)));
 
   console.log('W-DAGEVU-ENGINE: ' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);
