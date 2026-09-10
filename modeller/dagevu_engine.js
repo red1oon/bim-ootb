@@ -14,6 +14,11 @@
 // leave its door in the air). The grid dictates which end grows; the edge VERIFIES that end is free of the opening
 // with the gate's own fit rule (fitBefore && !fitAfter, tol 0.05 on the changed axis) and REFUSES otherwise.
 // mode 'ride' = today's proportional ride, now an explicit per-element opt-in.
+// HostFillEdge.constrain() (SPEC_DAGEVU_SLIDE.md §2) — the INVERSE direction: a FILLING-driven drag constrained by
+// its host. 1-DOF along the host's long plan axis; orthogonal + z dropped (the face offset stays invariant); bounds
+// are delta-honest (an as-extracted overhang may slide back in, never further out); beyond the wall's ends ⇒ null
+// + refusal — never a clamp (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3.3 forbids the nudge that converts an invalid drop
+// into a valid one). The seeded opening element (the row's opening_guid) travels with the door and bounds the slide.
 // AbutsEdge: reports the gate's proposedDelta for a neighbour pulled away — REPORTS ONLY (accept-gated apply is a
 // future op per SDG_BACKPROP_ABUTS_REALIGN.md). AngleEdge: ⛔ PAUSED, not built (no measured roof-slope data).
 //
@@ -55,10 +60,32 @@
 
   class HostFillEdge extends RelationEdge {
     // row = one REAL rel_fills_host row {host_guid, filling_guid, provenance}; fids resolved through the §ARC-1 bridge
-    constructor({ hostFid, fillingFid, hostGuid, fillingGuid, provenance, mode, cascade }) {
+    constructor({ hostFid, fillingFid, hostGuid, fillingGuid, openingGuid, openingFid, provenance, mode, cascade }) {
       super('fills', hostFid, fillingFid);
       this.hostFid = hostFid; this.fillingFid = fillingFid; this.hostGuid = hostGuid; this.fillingGuid = fillingGuid;
+      this.openingGuid = openingGuid != null ? openingGuid : null; this.openingFid = openingFid != null ? openingFid : null;
       this.provenance = provenance; this.cascade = cascade; this.setMode(mode || 'anchor');
+    }
+    // constrain(candidateDelta, { boxByFid }) → { delta, axis, t, tMin, tMax, gapLo, gapHi, dimLabel } | null (refused)
+    //   candidateDelta = the pointer's world offset from the filling's PRE-DRAG centre. SPEC_DAGEVU_SLIDE.md §2.
+    constrain(candidateDelta, geo) {
+      this.refusal = null;
+      const hb = geo && geo.boxByFid && geo.boxByFid[this.hostFid], fb = geo && geo.boxByFid && geo.boxByFid[this.fillingFid];
+      if (!hb || !fb || !Array.isArray(candidateDelta)) return null;              // no honest pre-state → no claim
+      const ob = this.openingFid != null ? geo.boxByFid[this.openingFid] : null;   // the seeded void rides with the door
+      const k = (hb[1] - hb[0]) <= (hb[3] - hb[2]) ? 1 : 0;                        // thin axis = x when ex ≤ ey → slide along y (resolveHost's wall rule)
+      const lo = ob ? Math.min(fb[2 * k], ob[2 * k]) : fb[2 * k], hi = ob ? Math.max(fb[2 * k + 1], ob[2 * k + 1]) : fb[2 * k + 1];
+      const tMin = -Math.max(0, lo - hb[2 * k]) - FIT_TOL, tMax = Math.max(0, hb[2 * k + 1] - hi) + FIT_TOL;
+      const t = candidateDelta[k] || 0;
+      if (t < tMin || t > tMax) {
+        this.refusal = { kind: 'slide-off-host', fillingFid: this.fillingFid, hostFid: this.hostFid, axis: 'xy'[k], t, tMin, tMax };
+        return null;
+      }
+      const delta = [0, 0, 0]; delta[k] = t;
+      const gapLo = (lo + t) - hb[2 * k], gapHi = hb[2 * k + 1] - (hi + t);
+      const dimLabel = '#' + this.fillingFid + ' along #' + this.hostFid + ' ' + 'xy'[k] + ' ' + (t >= 0 ? '+' : '') + t.toFixed(2) + 'm · ' +
+        gapLo.toFixed(2) + '|' + gapHi.toFixed(2) + 'm to ends';
+      return { delta, axis: 'xy'[k], t, tMin, tMax, gapLo, gapHi, dimLabel };
     }
     setMode(mode) { if (MODES.indexOf(mode) < 0) throw new Error('HostFillEdge mode must be anchor|ride, got ' + mode); this.mode = mode; return this; }
     row() { return { host_guid: this.hostGuid, filling_guid: this.fillingGuid, provenance: this.provenance }; }
@@ -122,7 +149,9 @@
       for (const e of fills || []) {
         const h = this.fidByGuid[e.host_guid], f = this.fidByGuid[e.filling_guid];
         if (h == null || f == null || !cascade) continue;                 // unresolvable row → no edge (non-invent)
+        const o = e.opening_guid != null ? this.fidByGuid[e.opening_guid] : null;
         const edge = new HostFillEdge({ hostFid: h, fillingFid: f, hostGuid: e.host_guid, fillingGuid: e.filling_guid,
+          openingGuid: e.opening_guid, openingFid: o != null ? o : null,
           provenance: e.provenance, mode: ride.has(f) ? 'ride' : 'anchor', cascade });
         this.edges.push(edge); (this.byFilling[f] = this.byFilling[f] || []).push(edge); (this.byHost[h] = this.byHost[h] || []).push(edge);
       }
@@ -133,6 +162,13 @@
       }
     }
     isFilling(fid) { return !!this.byFilling[fid]; }
+    edgeFor(fid) { const es = this.byFilling[fid]; return es ? es[0] : null; }   // first host that resolves (stretchRide's "first host wins")
+    // constrainSlide(fillingFid, candidateDelta, boxByFid) → HostFillEdge.constrain result + { edge } | null. SPEC_DAGEVU_SLIDE.md §2.
+    constrainSlide(fid, candidateDelta, boxByFid) {
+      const edge = this.edgeFor(fid); if (!edge) return null;
+      const r = edge.constrain(candidateDelta, { boxByFid: boxByFid || {} });
+      return r ? Object.assign(r, { edge }) : null;
+    }
     modeOf(fid) { const es = this.byFilling[fid]; return es ? es[0].mode : null; }
     setMode(fid, mode) { (this.byFilling[fid] || []).forEach(e => e.setMode(mode)); return this.modeOf(fid); }
     toggleMode(fid) { return this.setMode(fid, this.modeOf(fid) === 'ride' ? 'anchor' : 'ride'); }

@@ -287,7 +287,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      real_placement_resolver.js (loaded immediately above) as its up-front gate — both load AFTER their
      dependencies, and both are additive: neither modifies the grid, BOM or walker modules. -->
 <script src="bonsai_roommove.js?v=1" onerror="console.warn('§ROOMMOVE LOAD_FAIL bonsai_roommove.js')"></script>
-<script src="bonsai_itemdrag.js?v=1" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
+<script src="bonsai_itemdrag.js?v=2" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
 <script src="routewalker.js?v=6" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
@@ -2136,6 +2136,7 @@ function enterItemDrag() {
 function exitItemDrag() {
   itemDragging = false; _itemDrag = null; bItemDrag.innerHTML = IDRAG_ARM; controls.enabled = true; applyModeCursor();
   gmClearTints();
+  if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7 / §DAGEVU: the readout lives only while the drag is live
   if (window.Bonsai.itemdrag && window.Bonsai.itemdrag.endDragSession) window.Bonsai.itemdrag.endDragSession();
 }
 bItemDrag.onclick = () => itemDragging ? exitItemDrag() : enterItemDrag();
@@ -2188,7 +2189,10 @@ canvas.addEventListener('pointermove', (e) => {
   const v = window.Bonsai.itemdrag.canDropAt(hit.x, hit.y, z);
   idTint(_itemDrag.fid, v.valid);
   _itemDrag.candidate = [hit.x, hit.y, z];
-  setStat((v.valid ? 'valid drop' : 'blocked: ' + v.reason) + ' — release to ' + (v.valid ? 'commit' : 'cancel'));
+  // §DAGEVU (SPEC_DAGEVU_SLIDE.md §4): a constrained drag carries the engine's measured readout (t along the host,
+  // clearance to both wall ends) — printed in the status line AND the §V7 floating label, the SAME string.
+  setStat((v.valid ? 'valid drop' : 'blocked: ' + v.reason) + ' — release to ' + (v.valid ? 'commit' : 'cancel') + (v.dimLabel ? ' · ' + v.dimLabel : ''));
+  if (typeof dimLabelShow === 'function') { if (v.valid && v.dimLabel) dimLabelShow(v.dimLabel, hit); else if (typeof dimLabelHide === 'function') dimLabelHide(); }
 });
 canvas.addEventListener('pointerup', async () => {
   if (!itemDragging || !_itemDrag) return;
@@ -2198,7 +2202,9 @@ canvas.addEventListener('pointerup', async () => {
   try {
     const res = await window.Bonsai.itemdrag.commit(x, y, z);
     if (res.committed) {
-      const gateMsg = _runGate(_gateBefore, [_itemDrag.fid]);
+      // §SLIDE S3/S4: a filling slide moves its opening rider too — gate BOTH (mirror commitGridMove's ids.concat(riders)).
+      const gateMsg = _runGate(_gateBefore, res.moved || [_itemDrag.fid]);
+      window.__lastGate = gateMsg;                          // test hook (W-E2E-OPENING-SLIDE) — same as commitGridMove/commitMove
       setStat('item #' + _itemDrag.fid + ' moved verify=' + res.verify + (gateMsg ? '  ' + gateMsg : ''));
       audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     } else {

@@ -38,6 +38,51 @@
 //     drag time (e.g. a catalog-drop flow that still has it in hand) may pass `opts.productHint` and the drag
 //     proceeds on REAL dims. Nothing is ever derived, defaulted, or guessed.
 //
+// §SLIDE — the along-host OPENING SLIDE (spec §3.1: "A FILLING (door/window) may be dragged … but its motion is
+// constrained along its real host wall (Q5 scopes v1)"; Q5's last clause asks "whether filling-drag (along-host
+// slide) is in or out of v1 scope" — resolved IN here). Witness: W-E2E-OPENING-SLIDE (witness_e2e_opening_slide.js).
+//   S1 SESSION — a dragged fid that a REAL rel_fills_host row names as `filling_guid` (through the §ARC-1 bridge,
+//      first host that resolves to a scene feature — stretchRide's own "first host wins") starts a SLIDE session
+//      instead of the resolver-gated fixture session above. This is NOT the catch-and-substitute §3.2 forbids: the
+//      resolver is never consulted for a filling because there is nothing for it to look up — REAL_PRODUCT_DIM keys
+//      MEP product ids (TOILET/SINK/…, real_placement_resolver.js:43-62) and carries no door/window row, while BOTH
+//      inputs a slide needs are recovered rows: the host is the edge's `host_guid` (provenance ifc:recovered, never
+//      proximity) and the dims are the filling's OWN measured pre-drag AABB — the very boxByFid snapshot
+//      sdg_cascade.js stretchRide already rides on (extent never changes in a slide; a rigid translate needs no
+//      catalog). Refusals (session → null, logged `§ITEMDRAG §SLIDE REFUSED`): host not WALL-class; host obliquely
+//      yawed/tilted per GridKinematics' OWN _isObliqueYaw/_hasTilt (an oblique host's AABB long edge is not its
+//      plane — the same §ROTATION-GUARD gridmove applies); host body not a plain axis-aligned box — for a
+//      GEOM_INSERT per Bonsai._insertCutBox's OWN vertex test (a real LOD-300 wall mesh carries its door holes BAKED
+//      IN — no op can translate them; measured 2026-09-10: EVERY real SampleHouse host refuses here, honestly), for
+//      a GEOM_EXTRUDE_POLY per plainExtrudeProfile() below (a 4-point axis-aligned rectangle; its holes are GEOM_CUT
+//      ops, caught next — mirrors bonsai_kernel.js canCut's "a non-insert solid is already worker-native B-rep");
+//      host class KNOWN and not WALL (an unrecorded class = freshly-sketched content stays eligible, the SAME rule
+//      bonsai_gridmove.js elementData applies); an ACTIVE
+//      GEOM_CUT whose `parent` IS the host and whose void box overlaps the filling's pre-drag box (a REAL carved
+//      void tied to this filling — the worker has no op that translates a committed void, so the door would move
+//      and the hole would stay: REFUSE, DON'T FABRICATE); SdgGate unavailable (cannot gate honestly).
+//   S2 CONSTRAINT — 1-DOF, OWNED BY THE ENGINE (prompts/SPEC_DAGEVU_SLIDE.md §2-3): dagevu_engine.js
+//      HostFillEdge.constrain(candidate − preCentre, {boxByFid}) is the ONE place the along-host projection + bounds
+//      live — axis = the host AABB's LONG plan axis (the complement of the thin axis resolveHost's wall branch snaps
+//      along); the orthogonal coordinate and z are HELD at their pre-drag values (the filling↔host face offset stays
+//      invariant, exactly as stretchRide holds it). Bounds are delta-honest: the filling (∪ its seeded
+//      IfcOpeningElement) may slide until flush with either wall end (± FIT_TOL = HOST_TOL); an as-extracted overhang
+//      is never pushed further out, and never "fixed". Beyond the ends the engine returns null (never a clamp);
+//      snappedPos = the constrained point — a derivation from the real host (spec §3.3), never a nudge away from a
+//      conflict. The engine is a HARD dependency of the slide: absent ⇒ REFUSE (the free-drag path is untouched).
+//   S3 GATE — per frame AND at drop: SdgGate.evaluate(preBoxes, shiftedBoxes, moved, rel) — the codebase's own
+//      RED/ORANGE conformity logic, reused unmodified. Any RED (clash / door-out / door-crush) ⇒ valid:false with
+//      the offending fids; ORANGE is soft (reported, never blocks). Delta-honest by construction: a pre-existing
+//      as-extracted overlap never blocks a slide. Measured on real Duplex: a curtain-window raw bbox covers a door,
+//      two corner walls and the coverings — the ABSOLUTE overlap test the fixture path uses (overlaps() below) would
+//      refuse every real filling at t=0, so it is not the honest rule for moving an EXISTING element.
+//   S4 OP SHAPE — GEOM_MOVE {parent: fillingFid, dx,dy,dz} (the existing row shape). When the row's `opening_guid`
+//      resolves to a seeded IfcOpeningElement (a VISIBLE raw-bbox insert on this substrate — the representational
+//      void), ONE rider GEOM_MOVE {parent: openingFid, same delta, induced:'fills-opening'} rides with it, committed
+//      together through oplog.commitGesture (one gesture = one Ctrl+Z, §P8 — the exact pattern gridmove.commit uses
+//      for stretch riders). No opening seeded ⇒ the single commit() path, unchanged.
+//   S5 NOT BUILT — a void-translate op (kernel + worker surgery) for a baked GEOM_CUT; refused instead (S1).
+//
 // DUAL-EXPORT (window + node) like sdg_cascade.js / real_placement_resolver.js so the witness runs pure-node.
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory();
@@ -81,12 +126,20 @@
            (Math.min(a[3], b[3]) - Math.max(a[2], b[2])) > -tol;
   }
 
+  // Soft dependencies resolved LAZILY at call time (cross_edges.js:52 documents why a load-time capture would
+  // freeze a null): the caller's ctx value first, then the page global, then a node require for the witnesses.
+  function _dep(ctxVal, winKey, file) {
+    if (ctxVal) return ctxVal;
+    if (typeof window !== 'undefined' && window[winKey]) return window[winKey];
+    if (typeof require === 'function') { try { return require(file); } catch (e) { } }
+    return null;
+  }
+
   // ── §3.1 ELIGIBILITY ────────────────────────────────────────────────────────────────────────────────
   // A HOST (anything appearing as `host_guid` in the REAL rel_fills_host edges) is EXCLUDED — walls move via
   // gridmove or Feature A. A structural class is excluded. A FILLING may be dragged (sdg_cascade.js's own
-  // directional rule says it never drags its host) — Q5 note: filling-drag is IN scope only insofar as the
-  // gate lets it start; there is no separate along-host slide constraint in v1 (spec §3.1 defers it to Q5,
-  // and the §3.3 host constraint already binds a WALL-hosted item to a real wall face).
+  // directional rule says it never drags its host) — its motion is the constrained along-host slide (§SLIDE in
+  // this file's header), never a free 3D drag: beginItemDragSession routes a real filling to beginSlideSession.
   function eligibility(ctx) {
     var fid = ctx.fid, guidByFid = ctx.guidByFid || {}, cls = (ctx.classByFid || {})[fid];
     var structural = ctx.structuralClasses || STRUCTURAL_CLASSES;
@@ -120,6 +173,15 @@
       console.error(TAG + ' REFUSED fid=' + fid + ' — no pre-drag AABB in the session snapshot (nothing honest to snap back to)');
       return null;
     }
+    // §SLIDE S1: a real FILLING takes the constrained slide session — the resolver is not consulted for it.
+    var fe = fillingEdge(ctx, fid);
+    if (fe) {
+      if (fe.hostFid == null) {
+        console.error(TAG + ' §SLIDE REFUSED fid=' + fid + ' — rel_fills_host names this filling but its host_guid resolves to no scene feature (no honest host to slide along; mirrors stretchRide "no fid → no ride")');
+        return null;
+      }
+      return beginSlideSession(ctx, fe, pre);
+    }
     var params = ctx.insertParams || {};
     var resolver = ctx.resolver ||
       (typeof window !== 'undefined' && window.RealPlacementResolver) || null;
@@ -148,6 +210,150 @@
     return session;
   }
 
+  // ── §SLIDE S1 — the FILLING's real edge and the constrained session ─────────────────────────────────
+  // fillingEdge(ctx, fid) → null (not a filling), or {edge, hostFid, openingFid} — hostFid null when rows exist
+  // but no host_guid resolves through the bridge. fidByGuid is the caller's (window.__arcFidByGuid) or the exact
+  // inverse of guidByFid (the §ARC-1 bridge is 1:1 — arc_editable.js buildBridge writes both from ONE list).
+  function fillingEdge(ctx, fid) {
+    var g = (ctx.guidByFid || {})[fid];
+    if (g == null || !Array.isArray(ctx.fills)) return null;
+    var fbg = ctx.fidByGuid;
+    if (!fbg) { fbg = {}; Object.keys(ctx.guidByFid).forEach(function (k) { fbg[ctx.guidByFid[k]] = isNaN(+k) ? k : +k; }); }
+    var saw = null;
+    for (var i = 0; i < ctx.fills.length; i++) {
+      var e = ctx.fills[i];
+      if (!e || e.filling_guid !== g) continue;
+      saw = e;
+      var h = fbg[e.host_guid];
+      if (h == null) continue;                                  // first host that IS a scene feature wins (stretchRide)
+      var o = e.opening_guid != null ? fbg[e.opening_guid] : null;
+      return { edge: e, hostFid: h, openingFid: o != null ? o : null };
+    }
+    return saw ? { edge: saw, hostFid: null, openingFid: null } : null;
+  }
+  // The host's in-plan pose from its committed GEOM_INSERT placement — the SAME read bonsai_gridmove.js
+  // _buildInsertMaps does (`.rot` is DEGREES at this boundary → radians; rotX/rotY already radians).
+  function hostPose(pl) {
+    if (!pl) return { yawRad: undefined, tiltX: undefined, tiltY: undefined };
+    return { yawRad: typeof pl.rot === 'number' ? pl.rot * Math.PI / 180 : undefined,
+             tiltX: typeof pl.rotX === 'number' ? pl.rotX : undefined, tiltY: typeof pl.rotY === 'number' ? pl.rotY : undefined };
+  }
+  // An ACTIVE GEOM_CUT {parent: host, void:{c1,c2}} (modeller.html bCut's own row shape) whose void box overlaps
+  // the filling's pre-drag box = a REAL carved void tied to THIS filling. Returns the cut's op id, else null.
+  function bakedVoidFor(cutOps, hostFid, box) {
+    for (var i = 0; i < cutOps.length; i++) {
+      var c = cutOps[i], P = c.parameters || c.params || {};
+      if (P.parent == null || String(P.parent) !== String(hostFid) || !P.void || !P.void.c1 || !P.void.c2) continue;
+      var a = P.void.c1, b = P.void.c2;
+      var vb = [Math.min(a[0], b[0]), Math.max(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.max(a[2], b[2])];
+      if (overlaps(vb, box)) return c.id;
+    }
+    return null;
+  }
+  // plainExtrudeProfile(points) → true iff a GEOM_EXTRUDE_POLY profile is a 4-point AXIS-ALIGNED rectangle with real
+  // extent on both axes — the sketched-wall body whose AABB long axis IS its run (an L-shaped or oblique profile has
+  // an AABB the door could slide into thin air along). Reads the op's own parameters; derives nothing.
+  function plainExtrudeProfile(points) {
+    if (!Array.isArray(points) || points.length !== 4) return false;
+    var EPS = 1e-9, xs = [], ys = [];
+    for (var i = 0; i < 4; i++) {
+      var a = points[i], b = points[(i + 1) % 4];
+      if (!a || !b || a.length < 2 || b.length < 2) return false;
+      var dx = Math.abs(a[0] - b[0]), dy = Math.abs(a[1] - b[1]);
+      if (!((dx <= EPS && dy > EPS) || (dy <= EPS && dx > EPS))) return false;   // every edge axis-parallel and non-degenerate
+      xs.push(a[0]); ys.push(a[1]);
+    }
+    return (Math.max.apply(null, xs) - Math.min.apply(null, xs)) > EPS && (Math.max.apply(null, ys) - Math.min.apply(null, ys)) > EPS;
+  }
+  // Fallback gate relation derived from the SAME fills rows when the caller passes no `rel` — the fills half of
+  // modeller.html's _gateRel (host↔filling = expected contact, hostOf drives door-out); abuts need the derived
+  // edge set the page holds, so a caller that has it passes rel:_gateRel() (the browser layer below does).
+  function relFromFills(ctx, fbg) {
+    var relSet = {}, hostOf = {};
+    (ctx.fills || []).forEach(function (e) {
+      var h = fbg[e.host_guid], f = fbg[e.filling_guid];
+      if (h == null || f == null) return;
+      relSet[Math.min(+h, +f) + '|' + Math.max(+h, +f)] = 1; hostOf[f] = h;
+    });
+    return { related: function (a, b) { return !!relSet[Math.min(+a, +b) + '|' + Math.max(+a, +b)]; }, hostOf: hostOf, abuts: [] };
+  }
+  function beginSlideSession(ctx, fe, fb) {
+    var fid = ctx.fid, boxByFid = ctx.boxByFid || {}, hb = boxByFid[fe.hostFid];
+    var refuse = function (why) { console.error(TAG + ' §SLIDE REFUSED fid=' + fid + ' host=' + fe.hostFid + ' — ' + why); return null; };
+    if (!hb) return refuse('host has no pre-drag AABB in the session snapshot');
+    var hcls = (ctx.classByFid || {})[fe.hostFid];
+    if (hcls != null && HOST_CLASSES.WALL.indexOf(hcls) === -1) return refuse('host class ' + hcls + ' is not a WALL (HOST_CLASSES.WALL) — only the wall-face slide is defined');   // unrecorded class (sketched) stays eligible, as in gridmove
+    var GK = _dep(ctx.kinematics, 'GridKinematics', './grid_kinematics.js');
+    if (!GK || !GK._isObliqueYaw || !GK._hasTilt) return refuse('GridKinematics yaw guard unavailable — cannot verify the host plane is AABB-representable');
+    var pose = hostPose((ctx.placementByFid || {})[fe.hostFid]);
+    if (GK._isObliqueYaw(pose.yawRad) || GK._hasTilt(pose.tiltX, pose.tiltY))
+      return refuse('host is obliquely yawed / tilted (§ROTATION-GUARD, yaw=' + pose.yawRad + ') — its AABB long edge is not its plane; refusing rather than sliding along an unreal axis');
+    if (typeof ctx.plainBoxOf !== 'function') return refuse('no plainBoxOf oracle supplied — cannot verify the host body carries no baked opening');
+    if (!ctx.plainBoxOf(fe.hostFid)) return refuse('host body is not a plain axis-aligned box (Bonsai._insertCutBox rule) — a real blob may carry a baked opening no op can translate; refusing rather than leaving a hole behind');
+    if (!Array.isArray(ctx.cutOps)) return refuse('no cutOps (active GEOM_CUT rows) supplied — cannot verify no baked void is tied to this filling');
+    var cutId = bakedVoidFor(ctx.cutOps, fe.hostFid, fb);
+    if (cutId != null) return refuse('a REAL baked void (GEOM_CUT #' + cutId + ', parent=host) coincides with this filling; no op exists to translate a committed void, so a slide would leave the hole behind — REFUSE, DON\'T FABRICATE (spec §1 item 5)');
+    var gate = _dep(ctx.gate, 'SdgGate', './sdg_gate.js');
+    if (!gate || !gate.evaluate) return refuse('SdgGate unavailable — cannot gate the slide honestly');
+    // S2 axis + bounds — the engine's HostFillEdge.constrain (SPEC_DAGEVU_SLIDE.md §3). Probe at t=0 (always
+    // admissible by construction) for axis/tMin/tMax; per-frame calls go through canSlideTo below.
+    var DE = _dep(ctx.dagevu, 'DagevuEngine', './dagevu_engine.js');
+    if (!DE || !DE.HostFillEdge) return refuse('DagevuEngine unavailable — the slide constraint is HostFillEdge.constrain; nothing local to fall back on');
+    var ob = fe.openingFid != null ? boxByFid[fe.openingFid] : null;
+    var e = fe.edge;
+    var edge = new DE.HostFillEdge({ hostFid: fe.hostFid, fillingFid: fid, hostGuid: e.host_guid, fillingGuid: e.filling_guid,
+      openingGuid: e.opening_guid, openingFid: ob ? fe.openingFid : null, provenance: e.provenance,
+      cascade: _dep(ctx.cascade, 'SdgCascade', './sdg_cascade.js') });
+    var probe = edge.constrain([0, 0, 0], { boxByFid: boxByFid });
+    if (!probe) return refuse('engine refused the pre-drag pose itself (' + JSON.stringify(edge.refusal) + ')');
+    var axis = probe.axis === 'x' ? 0 : 1, tMin = probe.tMin, tMax = probe.tMax;
+    var moved = [fid]; if (ob) moved.push(fe.openingFid);
+    // S3 gate inputs: every mesh box EXCEPT invisible ride anchors (modeller.html _gateBoxes excludes them too).
+    var anc = ctx.anchorFids || null, before = {};
+    Object.keys(boxByFid).forEach(function (k) { if (anc && (anc.has(+k) || anc.has(k))) return; before[k] = boxByFid[k]; });
+    var fbg = ctx.fidByGuid; if (!fbg) { fbg = {}; Object.keys(ctx.guidByFid || {}).forEach(function (k) { fbg[ctx.guidByFid[k]] = isNaN(+k) ? k : +k; }); }
+    var session = {
+      fid: fid, preBox: fb.slice(), preCentre: [(fb[0] + fb[1]) / 2, (fb[2] + fb[3]) / 2, (fb[4] + fb[5]) / 2],
+      real: { width: fb[1] - fb[0], depth: fb[3] - fb[2], height: fb[5] - fb[4], anchor: { requires_host: 'WALL', conn_points: [] },
+        matchedProductId: 'FILLING:' + (e.filling_class || (ctx.classByFid || {})[fid] || '?'),
+        source: 'rel_fills_host:' + e.opening_guid + ' (filling ' + e.filling_guid + ' → host ' + e.host_guid + '); dims = own measured pre-drag AABB' },
+      gateBoxes: (function () { var o = {}; Object.keys(boxByFid).forEach(function (k) { if (String(k) !== String(fid)) o[k] = boxByFid[k]; }); return o; })(),
+      classByFid: ctx.classByFid || {},
+      slide: { hostFid: fe.hostFid, openingFid: ob ? fe.openingFid : null, axis: axis, tMin: tMin, tMax: tMax, moved: moved,
+        before: before, gate: gate, rel: ctx.rel || relFromFills(ctx, fbg), hostBox: hb.slice(),
+        edge: edge, boxByFid: boxByFid }                              // §DAGEVU: the engine edge + its pre-drag boxes (per-frame constrain input)
+    };
+    console.log(TAG + ' §SESSION begin fid=' + fid + ' product=' + session.real.matchedProductId +
+      ' dims(w,d,h)=' + session.real.width.toFixed(3) + ',' + session.real.depth.toFixed(3) + ',' + session.real.height.toFixed(3) +
+      ' requires_host=WALL source=' + session.real.source);
+    console.log(TAG + ' §SLIDE host=' + fe.hostFid + ' axis=' + 'xy'[axis] + ' t∈[' + tMin.toFixed(3) + ',' + tMax.toFixed(3) + ']' +
+      ' opening=' + (ob ? fe.openingFid + ' (rides, induced=fills-opening)' : 'none seeded') + ' constraint=DagevuEngine.HostFillEdge.constrain gate=SdgGate.evaluate (delta-honest)');
+    return session;
+  }
+  // ── §SLIDE S2/S3 — the per-frame constraint + gate ──────────────────────────────────────────────────
+  function canSlideTo(session, x, y, z) {
+    var a = session.slide, c = session.preCentre;
+    // §DAGEVU: the engine projects + bounds (SPEC_DAGEVU_SLIDE.md §2); null = beyond the wall's ends, never clamped.
+    var r = a.edge.constrain([x - c[0], y - c[1], z - c[2]], { boxByFid: a.boxByFid });
+    if (!r) { var rf = a.edge.refusal || {}; return { valid: false, conflictIds: [], reason: 'off-host-extent', t: rf.t, hostFid: String(a.hostFid), refusal: rf }; }
+    var t = r.t, d = r.delta;
+    var after = {};
+    Object.keys(a.before).forEach(function (k) { after[k] = a.before[k]; });
+    a.moved.forEach(function (f) { var b = a.before[f]; if (b) after[f] = [b[0] + d[0], b[1] + d[0], b[2] + d[1], b[3] + d[1], b[4] + d[2], b[5] + d[2]]; });
+    var res = a.gate.evaluate(a.before, after, a.moved, a.rel, {});
+    if (res.red.length) {
+      var ids = [], kinds = {};
+      res.red.forEach(function (r) {
+        kinds[r.kind] = 1;
+        var other = a.moved.some(function (m) { return +m === +r.a; }) ? r.b : r.a;
+        if (ids.indexOf(String(other)) === -1) ids.push(String(other));
+      });
+      return { valid: false, conflictIds: ids, reason: 'gate-red:' + Object.keys(kinds).join('+'), t: t, hostFid: String(a.hostFid), gate: res };
+    }
+    return { valid: true, conflictIds: [], snappedPos: [c[0] + d[0], c[1] + d[1], c[2] + d[2]], hostFid: String(a.hostFid),
+      reason: 'ok', t: t, delta: d, moved: a.moved.slice(), gate: res, dimLabel: r.dimLabel, gapLo: r.gapLo, gapHi: r.gapHi };
+  }
+
   // ── §3.3 PER-FRAME VALIDATION CONTRACT ──────────────────────────────────────────────────────────────
   // canDropAt(session, x, y, z) -> { valid, conflictIds, snappedPos?, reason }
   // PURE. Session-cached inputs only. Validity is decided AT THE CANDIDATE; `snappedPos` is returned ONLY when
@@ -155,6 +361,7 @@
   // pascalorg's `adjustedY` we never return a corrected position that converts an invalid drop into a valid one.
   function canDropAt(session, x, y, z) {
     if (!session) return { valid: false, conflictIds: [], reason: 'no-session' };
+    if (session.slide) return canSlideTo(session, x, y, z);        // §SLIDE: 1-DOF along the real host, SdgGate-checked
     var r = session.real, need = r.anchor && r.anchor.requires_host;
     var cand = box(x, y, z, r.width, r.depth, r.height);
 
@@ -230,16 +437,20 @@
     var v = canDropAt(session, x, y, z);
     if (!v.valid) return { committed: false, op: null, verdict: v };
     var p = v.snappedPos || [x, y, z], c = session.preCentre;
-    return {
-      committed: true, verdict: v,
-      op: { op_type: 'GEOM_MOVE', parameters: { parent: session.fid, dx: p[0] - c[0], dy: p[1] - c[1], dz: p[2] - c[2] } }
-    };
+    var op = { op_type: 'GEOM_MOVE', parameters: { parent: session.fid, dx: p[0] - c[0], dy: p[1] - c[1], dz: p[2] - c[2] } };
+    // §SLIDE S4: the seeded opening element rides by the IDENTICAL delta — one induced GEOM_MOVE per rider, the
+    // row shape gridmove.commit's stretch riders already use, tagged induced:'fills-opening' (its real edge).
+    var riders = session.slide ? session.slide.moved.filter(function (f) { return String(f) !== String(session.fid); }).map(function (f) {
+      return { op_type: 'GEOM_MOVE', parameters: { parent: f, dx: op.parameters.dx, dy: op.parameters.dy, dz: op.parameters.dz, induced: 'fills-opening' } };
+    }) : [];
+    return { committed: true, verdict: v, op: op, riders: riders };
   }
 
   var API = {
     STRUCTURAL_CLASSES: STRUCTURAL_CLASSES, HOST_CLASSES: HOST_CLASSES, HOST_TOL: HOST_TOL,
     eligibility: eligibility, beginItemDragSession: beginItemDragSession,
-    canDropAt: canDropAt, resolveHost: resolveHost, resolveDrop: resolveDrop
+    canDropAt: canDropAt, resolveHost: resolveHost, resolveDrop: resolveDrop,
+    fillingEdge: fillingEdge, bakedVoidFor: bakedVoidFor, canSlideTo: canSlideTo, plainExtrudeProfile: plainExtrudeProfile
   };
 
   // ── BROWSER lifecycle — mirrors bonsai_gridmove.js in STRUCTURE (session cache at grab, one shared
@@ -259,16 +470,36 @@
         });
         return out;
       },
-      _buildClassByFid: function () {
-        var out = {}, O = window.Bonsai && window.Bonsai.oplog;
+      // One pass over the committed GEOM_INSERT rows → ifc_class AND placement per fid (§SLIDE needs the host's
+      // pose for the yaw guard — same query, same parse, mirrors bonsai_gridmove.js _buildInsertMaps).
+      _buildInsertMaps: function () {
+        var out = { classByFid: {}, placementByFid: {} }, O = window.Bonsai && window.Bonsai.oplog;
         if (!O || !O.db) return out;
         try {
           var r = O.db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='GEOM_INSERT'");
           if (r.length) r[0].values.forEach(function (v) {
-            try { var p = JSON.parse(v[1]); if (p && p.ifc_class) out[v[0]] = p.ifc_class; } catch (e) { }
+            try { var p = JSON.parse(v[1]); if (p && p.ifc_class) out.classByFid[v[0]] = p.ifc_class; if (p && p.placement) out.placementByFid[v[0]] = p.placement; } catch (e) { }
           });
         } catch (e) { }
         return out;
+      },
+      _buildClassByFid: function () { return this._buildInsertMaps().classByFid; },
+      // §SLIDE S1 inputs, read from the LIVE op-log (active rows only — _geomOps filters undone=0):
+      //   _cutOps    → every active GEOM_CUT row (the baked-void check needs their {parent, void}).
+      //   _plainBoxOf → is this fid's insert a plain axis-aligned box? Asks the PRODUCTION cut gate itself
+      //                (bonsai_kernel.js _insertCutBox — the same function bCut/canCut use), never a re-derived test.
+      _cutOps: function () {
+        var O = window.Bonsai && window.Bonsai.oplog;
+        try { return (O && O._geomOps) ? O._geomOps().filter(function (o) { return o.op_type === 'GEOM_CUT'; }) : []; } catch (e) { return []; }
+      },
+      _plainBoxOf: function (fid) {
+        var O = window.Bonsai && window.Bonsai.oplog, K = window.Bonsai;
+        if (!O || !O._geomOps || !K || !K._insertCutBox) return null;
+        var op = O._geomOps().filter(function (o) { return String(o.id) === String(fid); })[0];
+        if (!op) return null;
+        if (op.op_type === 'GEOM_INSERT') { try { return !!K._insertCutBox(op); } catch (e) { return false; } }
+        if (op.op_type === 'GEOM_EXTRUDE_POLY') { var P = op.parameters || {}; return plainExtrudeProfile(P.profile && P.profile.points); }
+        return false;                                              // any other body → unknown → refuse
       },
       _insertParams: function (fid) {
         var O = window.Bonsai && window.Bonsai.oplog;
@@ -284,16 +515,25 @@
       // console.error'd) and counts the drag refused. Nothing is substituted.
       beginItemDragSession: function (fid, opts) {
         opts = opts || {};
+        var maps = this._buildInsertMaps(), self = this;
         this._session = beginItemDragSession({
           fid: fid,
           insertParams: this._insertParams(fid),
           boxByFid: this._buildBoxByFid(),
-          classByFid: this._buildClassByFid(),
+          classByFid: maps.classByFid,
           guidByFid: window.__arcGuidByFid || {},
           fills: (window.swXEdges && window.swXEdges.fills) || null,
           resolver: window.RealPlacementResolver,
           discipline: opts.discipline || null,
-          productHint: opts.productHint || null
+          productHint: opts.productHint || null,
+          // §SLIDE S1 — the bridge's own inverse, the host pose, the live cut rows, the production box gate, the
+          // page's gate relation (hosted-by + abuts, anchors excluded) and the anchor set _gateBoxes excludes.
+          fidByGuid: window.__arcFidByGuid || null,
+          placementByFid: maps.placementByFid,
+          cutOps: this._cutOps(),
+          plainBoxOf: function (f) { return self._plainBoxOf(f); },
+          rel: (typeof window.__gateRel === 'function') ? window.__gateRel() : null,
+          anchorFids: window.__arcAnchorFids || null
         });
         return this._session;
       },
@@ -310,12 +550,25 @@
             ' — NO COMMIT, item stays at its pre-drag position (never auto-relocated). Spec §3.4');
           return { committed: false, verdict: d.verdict };
         }
-        var P = d.op.parameters;
-        var res = await window.Bonsai.oplog.commit({ op_type: d.op.op_type, parameters: P }, {});
+        var P = d.op.parameters, riders = d.riders || [], res;
+        if (riders.length) {
+          // §SLIDE S4: filling + its opening rider = ONE user gesture → one signed gesture group (bonsai_oplog.js
+          // commitGesture, the path gridmove.commit takes for stretch riders) so a single Ctrl+Z reverts both.
+          if (!window.Bonsai.oplog.commitGesture) throw new Error(TAG + ' commitGesture unavailable — refusing to move the filling without its opening rider');
+          res = await window.Bonsai.oplog.commitGesture([{ op_type: d.op.op_type, params: P }].concat(
+            riders.map(function (r) { return { op_type: r.op_type, params: r.parameters }; })));
+        } else {
+          res = await window.Bonsai.oplog.commit({ op_type: d.op.op_type, parameters: P }, {});
+        }
+        var moved = [s.fid].concat(riders.map(function (r) { return r.parameters.parent; }));
         console.log(TAG + ' commit fid=' + s.fid + ' Δ(' + P.dx.toFixed(3) + ',' + P.dy.toFixed(3) + ',' + P.dz.toFixed(3) + ')' +
-          ' host=' + d.verdict.hostFid + (d.verdict.snappedPos ? ' snapped-to-real-host-face' : '') +
+          ' host=' + d.verdict.hostFid +
+          (s.slide ? (' §SLIDE axis=' + 'xy'[s.slide.axis] + ' t=' + d.verdict.t.toFixed(3) +
+            (riders.length ? ' rider=' + riders.map(function (r) { return r.parameters.parent; }).join(',') + ' induced=fills-opening §GESTURE gid=' + res.gid : ' rider=none') +
+            ' orange=' + ((d.verdict.gate && d.verdict.gate.orange) ? d.verdict.gate.orange.length : 0))
+            : (d.verdict.snappedPos ? ' snapped-to-real-host-face' : '')) +
           ' verify=' + res.verify);
-        return Object.assign({ committed: true, verdict: d.verdict }, res);
+        return Object.assign({ committed: true, verdict: d.verdict, moved: moved }, res);
       },
 
       endDragSession: function () {
