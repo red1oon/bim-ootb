@@ -156,6 +156,30 @@ from a Python prototype against the real DB, not invented:
   Treat span/depth as secondary/advisory in v1. Do not oversell column continuity in a
   demo until spot-checked.
 
+## SHARED CHASSIS vs SEPARATE ENGINES — precedent: clash_narrow.js
+A third rule-based checker is already planned (see `prompts/EGRESS_SANITY.md`, built after
+this one) — worth deciding now what to share. Real precedent already exists in this
+codebase: `clash_narrow.js` (mesh-true SAT/triangle-exact narrowphase) is ONE shared engine
+consumed by two different callers — the live Clash panel (`measure.js` →
+`A.clashNarrow.qualifyRows`) AND the movie-bake reveal (`clash_film.js`) — proving shared
+engines work here when the underlying computation is genuinely the same.
+
+Sanity vs Egress is the opposite case: Sanity's computation is rtree/bbox point-support
+checks; Egress's core check (travel distance to exit) reuses the EXISTING room-graph
+pathfinder (`navigate_find.js` `_roomGraphFor()` / `window.RoomGraph.shortestPath()`) —
+a different data shape entirely (graph traversal, not spatial point checks). Forcing both
+into one "rule engine" would bend Egress's real need to fit Sanity's narrower shape — the
+premature-abstraction trap, not a saving.
+
+**Decision: share the UI/interaction chassis only, keep rule evaluators separate.**
+Proven identical across Clash (existing), Sanity (this spec), and Egress (planned): the
+severity-grouped panel shape, `zoomToGuid` click, Mode-tint (color-keyed wireframe overlay),
+and the `?guid=&#check=rule` share deep-link. Build these as small parameterized functions
+now (`A.showRuleChecklist(config)`, a generic `SEVERITY_COLORS`-driven tint helper, a
+generic share-deep-link builder) instead of Sanity-only hardcoded ones — near-zero extra
+cost since Sanity needs them anyway, and it means Egress needs no new UI code, only its own
+rule evaluator. T3/T5/T6 below are written against this shared-chassis shape.
+
 ## UI MODEL — toggle + severity list, NOT a matrix
 Clash's matrix works because clash is a genuine pairwise relationship (ARC×MEP ≠ ARC×STR —
 a real 2D intersection). Sanity's rules are independent categories on one discipline (STR)
@@ -217,20 +241,29 @@ building shows this pass is not cheap — do not pre-build one speculatively.
   one known-unsupported column, one clean beam → assert exact severities. Then run against
   real `buildings/Hospital_meta.db` and assert floating-member count is in the 40–50 range
   and concentrated at roof-level storeys — regression guard on the VALIDATION numbers above.
-- ☐ **T3** `A.showStructuralSanity()` panel — reuse `A.zoomToGuid`, `_elInfo`-style lookup,
-  diff.js row template, plus the 3-button/All toggle (UI MODEL). Witness: node-level render
-  of the HTML string, assert row count/severity grouping matches T2 fixture output, and
-  assert toggle filters to the right rule category (no live browser needed for this part).
+- ☐ **T3** `A.showRuleChecklist(config)` — GENERIC panel (config: title, button label,
+  color map, rule-category list, rows), not Sanity-hardcoded, per SHARED CHASSIS decision
+  above. `A.showStructuralSanity()` becomes a thin call into it with Sanity's config. Reuse
+  `A.zoomToGuid`, `_elInfo`-style lookup, diff.js row template, plus the 3-button/All toggle
+  (UI MODEL). Witness: node-level render of the HTML string, assert row count/severity
+  grouping matches T2 fixture output, and assert toggle filters to the right rule category
+  (no live browser needed for this part).
 - ☐ **T4** Trigger wiring — sidebar button/menu entry beside existing Clash entry point
   (find it in `viewer.html`'s clash-panel toggle; mirror, don't duplicate the panel-open
   plumbing). Button label "Sanity".
-- ☐ **T5** Sanity Mode 3D tint — `SEVERITY_COLORS` wireframe overlay on STR elements,
-  same technique as Clash Mode's `DISC_COLORS` overlay (measure.js ~1723). Witness: assert
-  the material/opacity config matches Clash Mode's, only the color lookup differs.
-- ☐ **T6** Long-press share deep-link — row long-press builds `?guid=<guid>#sanity=<rule>`
-  and calls existing `A.shareUrl()`; on load, `?guid=` re-zooms (sitecam.js precedent) and
-  `#sanity=<rule>` reopens the panel pre-filtered. Witness: URL round-trip (build → parse →
-  same guid + rule out).
+- ☐ **T5** GENERIC Mode 3D tint helper — takes a `{guid: severity}` map + a color lookup,
+  wireframe-overlays those elements. Same technique as Clash Mode's `DISC_COLORS` overlay
+  (measure.js ~1723), just parameterized instead of hardcoded to discipline. Sanity Mode
+  calls it with `SEVERITY_COLORS`. Witness: assert material/opacity config matches Clash
+  Mode's, only the color lookup differs.
+- ☐ **T6** GENERIC long-press share deep-link — takes `{guid, checkId, rule}`, builds
+  `?guid=<guid>#<checkId>=<rule>`, calls existing `A.shareUrl()`; on load, `?guid=` re-zooms
+  (sitecam.js precedent) and `#<checkId>=<rule>` reopens the matching panel pre-filtered.
+  Sanity calls it with `checkId='sanity'`. Witness: URL round-trip (build → parse → same
+  guid + checkId + rule out).
+- ☐ **T0-forward** (informational, not a Sanity task): `prompts/EGRESS_SANITY.md` specs the
+  next rule-based checker (door width + travel-to-exit), built AFTER T1-T7 ship, consuming
+  T3/T5/T6's generic chassis with zero new UI code — only its own rule evaluator.
 - ☐ **T7 (optional, only if T2 profiling on Terminal/Hospital-scale building is slow)**
   sidecar bake following `analysis_sidecar.js`'s `get5D`/`get4D` OPFS pattern.
 
