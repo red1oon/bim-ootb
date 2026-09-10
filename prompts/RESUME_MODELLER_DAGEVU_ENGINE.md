@@ -106,7 +106,18 @@ expectation, update it" from "real regression, don't paper over it" for each, an
   diff itself, it's small enough to read cold.
 - **Not part of the "foundational engine" ask** — lower priority, resume only after the engine itself.
 
-### 3. 🔶 BARELY STARTED, KILLED — dagevu_engine.js itself (THE foundational task)
+### 3. ✅ DONE 2026-09-10 (this PR) — dagevu_engine.js (THE foundational task)
+- Built by the primary session (no subagent), spec-first: `prompts/SPEC_DAGEVU_ENGINE.md`. `modeller/dagevu_engine.js`
+  (RelationEdge / HostFillEdge anchor|ride / AbutsEdge / DagevuEngine), wired into `bonsai_gridmove.js` +
+  `modeller.html` (anchor default, ctrl+click on an opening = anchor↔ride, refusal blocks commit, engine dimLabel
+  in setStat + dimLabelShow). W-DAGEVU-ENGINE 10/10; e2e stretch_ride 11/11, greenorange 13/13, gridmove_real 8/8,
+  gridstretch 7/7; node stretch_ride 9/9, sdg_cascade 7/7, sdg_gate 11/11. void_anchor G6 fails identically on
+  untouched main (cross-edge count drift, pre-existing, not this change).
+- Recon correction: grid-move DID already show a §V7 readout (modeller.html ~line 2004, grid Δ only); the engine
+  label now rides on it.
+- Status of item 1 as of 2026-09-10: bim-ootb PR #1704 MERGED; BIMCompiler PR #100 still OPEN (docs).
+- Original state before this session, kept for history:
+#### (was) 🔶 BARELY STARTED, KILLED — dagevu_engine.js itself
 - Agent got only as far as "I'll start by exploring the codebase" — **zero files touched, no worktree
   ever created**. Genuinely nothing lost; also genuinely nothing done.
 - Agent id: `a9dfff070e94bb7ce` (same resumability caveat as above — try SendMessage first, fall back

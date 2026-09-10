@@ -30,9 +30,38 @@
     // OUT of the current drag (green). Seeded empty every session (modeller.html enterGridMove/exitGridMove
     // call resetOverrides()) — NOT persisted, NOT a per-user config (that's explicitly deferred).
     _overrides: new Set(),
-    resetOverrides() { this._overrides = new Set(); console.log(TAG + ' §GREEN-EXCLUDE reset (new drag session, all orange)'); },
+    // §DAGEVU (prompts/SPEC_DAGEVU_ENGINE.md §4): per-session RIDE opt-in set for hosted openings. ANCHOR (the
+    // opening keeps its world position while its host's length changes) is the DEFAULT; a filling in this set
+    // rides proportionally instead (the pre-§DAGEVU behaviour). Same lifecycle as _overrides (reset per session).
+    _rideFids: new Set(), _dagevuCache: null,
+    resetOverrides() { this._overrides = new Set(); this._rideFids = new Set(); this._dagevuCache = null; console.log(TAG + ' §GREEN-EXCLUDE reset (new drag session, all orange) §DAGEVU all openings anchor'); },
+    // The DAGeVu relationship-edge engine over the REAL rel_fills_host + abuts rows through the §ARC-1 bridge.
+    // Cached per drag session (§SCALE_CHECK_FIX invariant — never rebuilt per pointermove frame); invalidated on
+    // a ride toggle; build-and-discard outside a session. null when the engine or the bridge is not loaded — the
+    // caller then falls back to the pre-§DAGEVU stretchRide path byte-identically.
+    _dagevu() {
+      if (this._dagevuCache) return this._dagevuCache;
+      const DE = window.DagevuEngine && window.DagevuEngine.DagevuEngine;
+      if (!DE || !window.SdgCascade || !window.__arcGuidByFid || !window.__arcFidByGuid || !window.swXEdges || !window.swXEdges.fills) return null;
+      const eng = new DE({ guidByFid: window.__arcGuidByFid, fidByGuid: window.__arcFidByGuid, fills: window.swXEdges.fills,
+        abuts: window.swXEdges.abuts || [], cascade: window.SdgCascade, gate: window.SdgGate, rideFids: Array.from(this._rideFids) });
+      if (this._engine) this._dagevuCache = eng;              // inside a drag session → cache alongside the attach-map engine
+      return eng;
+    },
+    isFilling(fid) { const e = this._dagevu(); return !!(e && e.isFilling(fid)); },
+    rideList() { return Array.from(this._rideFids); },
     // toggleOverride(fid) → true if now EXCLUDED (green), false if now back to included (orange). Bidirectional.
+    // §DAGEVU: a hosted OPENING (a real rel_fills_host filling) is never directly governed — for it the SAME
+    // ctrl+click toggles anchor(held, green) ↔ ride(moves, blue) instead: returns true when now HELD (anchor),
+    // false when now RIDING. One interaction, two meanings, decided by what was clicked (spec §1 reuse row 5).
     toggleOverride(fid) {
+      if (this.isFilling(fid)) {
+        const wasRide = this._rideFids.has(fid);
+        if (wasRide) this._rideFids.delete(fid); else this._rideFids.add(fid);
+        this._dagevuCache = null;
+        console.log(TAG + ' §DAGEVU toggle opening fid=' + fid + ' -> ' + (wasRide ? 'anchor(held)' : 'ride(opt-in)'));
+        return wasRide;
+      }
       const wasExcluded = this._overrides.has(fid);
       if (wasExcluded) this._overrides.delete(fid); else this._overrides.add(fid);
       console.log(TAG + ' §GREEN-EXCLUDE toggle fid=' + fid + ' -> ' + (wasExcluded ? 'orange(included)' : 'green(excluded)'));
@@ -189,7 +218,7 @@
     // scene, so a scene edit between drags is never served a stale attach map.
     endDragSession() {
       if (this._engine) console.log(TAG + ' §SCALE_CHECK_FIX drag-session end — caches cleared');
-      this._engine = null; this._meshCache = null; this._boxCache = null; this._insertMapsCache = null;
+      this._engine = null; this._meshCache = null; this._boxCache = null; this._insertMapsCache = null; this._dagevuCache = null;
       this._dragAxis = null; this._dragOrthoAt = null;
     },
     // PURE recompose: use the cached attached engine if a drag session is active, else build-and-discard
@@ -238,8 +267,21 @@
     // commit can never disagree.
     previewCommands(gridId, delta) {
       let commands = this.computeCommands(gridId, delta);
-      let riders = [];
-      // §STRETCH-RIDE: a hosted opening must NOT divorce or scale when its host wall is grid-stretched — the
+      let riders = [], held = [], refusals = [], proposals = [], dimLabel = '';
+      // §DAGEVU (SPEC_DAGEVU_ENGINE.md §4): the relationship-edge engine replaces the direct stretchRide call.
+      // ANCHOR default — a hosted opening keeps its world position while its host's LENGTH changes (SCALE ⇒ zero
+      // induced delta; TRANSLATE still carries it rigidly); RIDE is the per-opening ctrl+click opt-in; an
+      // opening the dictated end would cross is REFUSED (reported here, blocks commit() below). The ride math
+      // itself is still sdg_cascade.stretchRide, called by the engine — one implementation.
+      const dagevu = this._dagevu();
+      if (dagevu) {
+        const out = dagevu.propagateCommands(commands, this._boxByFid());
+        commands = out.commands; riders = out.riders; held = out.held; refusals = out.refusals; proposals = out.proposals; dimLabel = out.dimLabel;
+        const applied = this.applyOverrides(commands, riders);
+        return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded, held, refusals, proposals, dimLabel };
+      }
+      // §STRETCH-RIDE (pre-§DAGEVU path, kept byte-identical for a LOAD_FAIL of dagevu_engine.js or an absent bridge):
+      // a hosted opening must NOT divorce or scale when its host wall is grid-stretched — the
       // engine classifies EVERY authored mesh independently (doors/windows included), so strip any rider's OWN
       // command and induce ONE rigid move instead, resolved ONLY over the REAL rel_fills_host edges through the
       // §ARC-1 bridge (non-invent — never a proximity heuristic). Absent the bridge (no fills data for this
@@ -252,7 +294,7 @@
         commands = ride.commands; riders = ride.riders;
       }
       const applied = this.applyOverrides(commands, riders);
-      return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded };
+      return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded, held, refusals, proposals, dimLabel };
     },
 
     // Commit ONE signed GEOM_GRID_MOVE per drag-release; the worker folds the recompose deterministically.
@@ -260,6 +302,19 @@
     async commit(gridId, delta) {
       const preview = this.previewCommands(gridId, delta);
       let commands = preview.commands, riders = preview.riders;
+      // §DAGEVU: an honest refusal is a hard stop, never a fabricated resolution — nothing is committed. The thrown
+      // message lands in modeller.html's existing catch → status 'FAIL …' with the drag still armed, so the user
+      // can shorten the drag or ctrl+click the opening to let it ride.
+      if (preview.refusals && preview.refusals.length) {
+        const r = preview.refusals[0];
+        const msg = '§DAGEVU refused: opening #' + r.fillingFid + ' would leave wall #' + r.hostFid + ' on ' + r.axis +
+          ' (wall ' + r.hostAfter[0].toFixed(2) + '..' + r.hostAfter[1].toFixed(2) + ' vs opening ' + r.filling[0].toFixed(2) + '..' + r.filling[1].toFixed(2) +
+          ') — drag less, or ctrl+click the opening to let it ride' + (preview.refusals.length > 1 ? ' [+' + (preview.refusals.length - 1) + ' more]' : '');
+        console.warn(TAG + ' ' + msg);
+        throw new Error(msg);
+      }
+      if (preview.held && preview.held.length) console.log(TAG + ' §DAGEVU anchor held=' + preview.held.length + ' opening(s) in place: ' + preview.held.join(','));
+      if (preview.proposals && preview.proposals.length) console.log(TAG + ' §DAGEVU abuts-realign proposed (report-only, not applied): ' + JSON.stringify(preview.proposals));
       if (preview.excluded.length) console.log(TAG + ' §GREEN-EXCLUDE commit skipped=' + preview.excluded.length + ' fid(s) (green, did not move): ' + preview.excluded.join(','));
       if (riders.length) console.log(TAG + ' §STRETCH-RIDE stripped=' + riders.length + ' rider cmd(s) → induced move instead: ' + riders.map(r => r.featureId).join(','));
       // §P8 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-GESTURE-UNDO): with riders, the stretch + its

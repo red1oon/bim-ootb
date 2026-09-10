@@ -4,6 +4,13 @@
  * NOT divorce or scale its hosted door/window). Implementing RESUME_CASCADE_INTO_STRETCH.md §STRETCH-RIDE —
  * Witness: W-STRETCH-RIDE. Read the log after every run.
  *
+ * §DAGEVU UPDATE (2026-09-10, prompts/SPEC_DAGEVU_ENGINE.md §5): the DEFAULT for a hosted opening under a host
+ * LENGTH change is now ANCHOR (the opening keeps its world position; the wall's free end absorbs the delta) —
+ * the proportional RIDE is an explicit per-opening opt-in (ctrl+click / gridmove.toggleOverride). E2b/E3a below
+ * were STALE expectations of the old always-ride default and now assert the anchor default; E5 proves the opt-in
+ * still yields the old ride exactly. E1 additionally requires a pair the engine does not REFUSE (a shrink that
+ * would push the held opening out of its wall is refused honestly, never committed).
+ *
  * Real production path (real toolbar + real drag hook), REAL SampleHouse (7 rel_fills_host rows, §ARC-1 substrate
  * auto-seeded on Open — see str_walker_outliner.js _seedArcEditable). No hardcoded featureIds: the host/gridline/
  * delta/rider are DISCOVERED live from the app's own engine (window.Bonsai.gridmove.computeCommands) cross-checked
@@ -45,7 +52,7 @@ runE2E('W-E2E-STRETCH-RIDE', async (t) => {
     function centreOf(b) { return [(b[0] + b[1]) / 2, (b[2] + b[3]) / 2, (b[4] + b[5]) / 2]; }
     const fbg = window.__arcFidByGuid, gbf = window.__arcGuidByFid, fills = window.swXEdges.fills;
     const lines = window.Bonsai.gridmove.gridLines();      // REAL authoring grid, current state
-    const deltas = [1, -1, 2, -2, 0.5, -0.5, 1.5, -1.5, 3, -3, 4, -4];
+    const deltas = [1, 2, 0.5, 1.5, 3, 4, -0.5, -1, -1.5, -2, -3, -4];   // §DAGEVU: grows first (never refused); shrinks may be refused
     for (const line of lines) {
       for (const d of deltas) {
         let cmds; try { cmds = window.Bonsai.gridmove.computeCommands(line.id, d); } catch (e) { continue; }
@@ -61,7 +68,10 @@ runE2E('W-E2E-STRETCH-RIDE', async (t) => {
             const doorFid = fbg[edge.filling_guid];
             const rb = boxOf(doorFid); if (!rb) continue;
             if (!withinXY(hb, centreOf(rb), 0.05)) continue;    // the SAME honest pre-check the production gate uses
-            return { gridId: line.id, delta: d, hostFid: c.featureId, doorFid: doorFid, hostGuid, doorGuid: edge.filling_guid };
+            // §DAGEVU: the production preview must HOLD this door (anchor default) and refuse nothing for this drag
+            let pv; try { pv = window.Bonsai.gridmove.previewCommands(line.id, d); } catch (e) { continue; }
+            if (!pv || (pv.refusals && pv.refusals.length) || !(pv.held || []).includes(doorFid)) continue;
+            return { gridId: line.id, delta: d, hostFid: c.featureId, doorFid: doorFid, hostGuid, doorGuid: edge.filling_guid, dimLabel: pv.dimLabel };
           }
         }
       }
@@ -101,11 +111,15 @@ runE2E('W-E2E-STRETCH-RIDE', async (t) => {
   console.log('  §STRETCH-RIDE E2 pre.dims=' + JSON.stringify(pre && pre.dims) + ' post.dims=' + JSON.stringify(post && post.dims) + ' dimDelta=' + dimDelta.toExponential(2));
   console.log('  §STRETCH-RIDE E2 pre.centre=' + JSON.stringify(pre && pre.centre) + ' post.centre=' + JSON.stringify(post && post.centre) + ' centreShift=' + centreShift.toFixed(4) + 'm');
   console.log('  §STRETCH-RIDE E2 lastGate="' + lastGate + '" oplog ' + before.len + '→' + after.len);
+  // Log Mandate: surface the app's OWN §GATE / §DAGEVU / §GRIDMOVE lines (captured off the page console) so the
+  // gate's actual RED/ORANGE kinds are in this log, not just the status-bar summary string.
+  t.slog.filter(l => /§GATE|§DAGEVU|§STRETCH-RIDE|§GREEN-EXCLUDE/.test(l)).forEach(l => console.log('    ' + l.slice(0, 400)));
   await t.shot('03-post-ride');
 
-  t.assert('E2a RIDE — rider mesh extent UNCHANGED (no scale reached it, tol 1e-4)', dimDelta < 1e-4, 'dimDelta=' + dimDelta.toExponential(2));
-  t.assert('E2b RIDE — rider mesh centre MOVED (the ride fired)', centreShift > 0.01, 'centreShift=' + centreShift.toFixed(4) + 'm');
-  t.assert('E2c RIDE — gate shows no door-out RED (legitimate stretch)', !/RED/.test(lastGate) || !/door-out/.test(lastGate), 'lastGate="' + lastGate + '"');
+  t.assert('E2a ANCHOR — opening mesh extent UNCHANGED (no scale reached it, tol 1e-4)', dimDelta < 1e-4, 'dimDelta=' + dimDelta.toExponential(2));
+  t.assert('E2b ANCHOR — opening mesh centre UNCHANGED (§DAGEVU default: the wall\'s free end absorbed the delta, the opening stayed put)', centreShift < 1e-3, 'centreShift=' + centreShift.toFixed(4) + 'm');
+  t.assert('E2c ANCHOR — gate shows no door-out/door-crush RED (the held opening is still inside its wall)', !/RED/.test(lastGate) || !/door-(out|crush)/.test(lastGate), 'lastGate="' + lastGate + '"');
+  t.assert('E2d READOUT — the engine\'s dimLabel carried the measured wall length change (w→w\') + "held"', typeof disc.dimLabel === 'string' && /→/.test(disc.dimLabel) && /held/.test(disc.dimLabel), 'dimLabel="' + disc.dimLabel + '"');
 
   // E3 — real op-log: exactly one induced GEOM_MOVE {induced:'hosted-by', parent:doorFid} for the rider, and the
   // committed GEOM_GRID_MOVE's own parameters.commands has NO entry for the rider (stripped, not just overridden).
@@ -118,8 +132,8 @@ runE2E('W-E2E-STRETCH-RIDE', async (t) => {
     return { addedTypes: added.map(o => o.op_type), inducedCount: inducedMoves.length, strippedOk, gridMoveCmds: gridMove ? gridMove.parameters.commands.length : null };
   }, disc.doorFid, before.len);
   console.log('  §STRETCH-RIDE E3 ' + JSON.stringify(opCheck));
-  t.assert('E3a OP-LOG — exactly ONE induced GEOM_MOVE {induced:hosted-by, parent:rider} for the rider', opCheck.inducedCount === 1, JSON.stringify(opCheck));
-  t.assert('E3b OP-LOG — the committed GEOM_GRID_MOVE carries NO entry for the rider (stripped)', opCheck.strippedOk, JSON.stringify(opCheck));
+  t.assert('E3a OP-LOG — ZERO induced GEOM_MOVE for the held opening (anchor default: nothing to induce)', opCheck.inducedCount === 0, JSON.stringify(opCheck));
+  t.assert('E3b OP-LOG — the committed GEOM_GRID_MOVE carries NO entry for the opening (stripped, never scaled)', opCheck.strippedOk, JSON.stringify(opCheck));
 
   // E4 — pixel-readback visibility (open rigor item): project the rider's post-ride world bbox centre to screen
   // space and readPixels a small rect around it; assert non-background colour + visible + opaque + in-frustum.
@@ -162,4 +176,28 @@ runE2E('W-E2E-STRETCH-RIDE', async (t) => {
   await t.shotClip('04-rider-visible', disc.doorFid, 60);
   t.assert('E4a VISIBLE — rider is in-frustum, mesh.visible, opacity>0', vis.ok && vis.inFrustum && vis.visible === true && (vis.opacity == null || vis.opacity > 0), JSON.stringify(vis));
   t.assert('E4b VISIBLE — readPixels around the rider finds non-background pixels (rasterized, not just data-visible)', vis.ok && vis.total > 0 && vis.nonBg > 0, 'nonBg=' + vis.nonBg + '/' + vis.total);
+
+  // E5 — RIDE OPT-IN: undo the anchored stretch, opt the opening into RIDE (the production toggle the ctrl+click
+  // handler calls), re-run the SAME stretch → the pre-§DAGEVU behaviour exactly: centre moved, one induced move.
+  await t.undoToCursor(before.cur);
+  const undone = await t.oplog();
+  const optIn = await t.pg.evaluate((fid) => { const held = window.Bonsai.gridmove.toggleOverride(fid); return { held, ride: window.Bonsai.gridmove.rideList() }; }, disc.doorFid);
+  await t.pg.evaluate((id, d) => window.__gridStretch(id, d), disc.gridId, disc.delta);
+  await t.sleep(900);
+  const post5 = await t.pg.evaluate((fid) => {
+    const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid);
+    if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox;
+    return { dims: [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z], centre: [(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2] };
+  }, disc.doorFid);
+  const op5 = await t.pg.evaluate((doorFid, beforeLen) => {
+    const added = window.Bonsai.oplog._geomOps().slice(beforeLen);
+    return { addedTypes: added.map(o => o.op_type), inducedCount: added.filter(o => o.op_type === 'GEOM_MOVE' && o.parameters && o.parameters.induced === 'hosted-by' && o.parameters.parent === doorFid).length };
+  }, disc.doorFid, before.len);
+  const shift5 = pre && post5 ? Math.hypot(...pre.centre.map((v, i) => v - post5.centre[i])) : 0;
+  const dim5 = pre && post5 ? Math.max(...pre.dims.map((v, i) => Math.abs(v - post5.dims[i]))) : Infinity;
+  console.log('  §DAGEVU E5 undone.cur=' + undone.cur + ' optIn=' + JSON.stringify(optIn) + ' centreShift=' + shift5.toFixed(4) + 'm ops=' + JSON.stringify(op5));
+  await t.shot('05-ride-optin');
+  t.assert('E5 RIDE OPT-IN — after undo + toggleOverride(opening) the SAME stretch rides it: centre MOVED, extent unchanged, exactly ONE induced hosted-by GEOM_MOVE',
+    undone.cur === before.cur && optIn.held === false && optIn.ride.includes(disc.doorFid) && shift5 > 0.01 && dim5 < 1e-4 && op5.inducedCount === 1,
+    'shift=' + shift5.toFixed(4) + ' dim=' + dim5.toExponential(2) + ' ' + JSON.stringify(op5));
 }, { width: 1280, height: 860, dpr: 2 });
