@@ -263,6 +263,23 @@ function setupCpeIndoorBeats(A) {
   A.indoorBeatsCompositeOntoCanvas = function (ctx, w, h, filmSec) {
     if (!_beats.length || !ctx || !A.camera || typeof A.flythruDrawDim !== 'function') return 0;
     var cam = A.camera, k = h / 720, drawn = 0, T = window.THREE;
+    // USER, 2026-09-10 (watching Hospital_FULL_1080p_2026-09-10.mp4 22nd second): "the height message
+    // can also be put below the Walkable area message in the same info box, and allowing it to
+    // linger on." The clear-height beat only ever exists when a hall does (§29.8.6 reads a point
+    // INSIDE the hall), and its 2.2s window is measured to sit fully inside the hall's own much
+    // longer persistence (§INDOOR_BEAT_HALL sec=18.35→off 32.17 vs §INDOOR_BEAT_HEIGHT sec=21.60,
+    // Hospital_FULL_1080p_2026-09-10.log) — so while the hall is on screen, its own post is the one
+    // to carry BOTH rows; the height beat's SEPARATE post below is only the fallback for a building
+    // where the hall has already framed out by the time height's window opens.
+    // §57.1 — GENERALIZED: any of stair/door/height that is concurrently live while hall is on
+    // screen combines into HALL's own post, not just height. §56.1 special-cased height only; that
+    // was incomplete — MEASURED on a real bake (out/HHS_lowres_storeyreveal_2026-09-10.log) that
+    // stair collides with hall exactly the same way height does (both draw filmSec=17.01), because
+    // hall's §29.6 persistence (9-16s measured) far outlives its own 2.7s §14 slot reservation, so
+    // ANY later beat scheduled just outside that reservation still lands inside hall's real
+    // on-screen life. `combinedByHall[key]` is the FALLBACK gate: a beat only skips its own solo
+    // post when hall's branch actually had room to carry its row this frame.
+    var combinedByHall = {};
     _beats.forEach(function (b) {
       if (b.key === 'hall') {
         var H0 = b.hall; if (H0.off || filmSec < b.sec) return;
@@ -270,10 +287,15 @@ function setupCpeIndoorBeats(A) {
         var pts = [[H0.centroid.ix, H0.centroid.iy], [H0.bbox.minx, H0.bbox.miny], [H0.bbox.maxx, H0.bbox.miny], [H0.bbox.maxx, H0.bbox.maxy], [H0.bbox.minx, H0.bbox.maxy]], q = null, best = Infinity;
         pts.forEach(function (pt) { var v = A.ifc2three(pt[0], pt[1], H0.floorZ), qq = new T.Vector3(v.x, v.y, v.z).project(cam); if (qq.z >= 1) return; var d = Math.hypot(qq.x, qq.y); if (d < best) { best = d; q = qq; } });
         if (!q) return;   // the whole hall is behind the camera this frame — the 3D tint still shows what is in front
+        var rows = ['Walkable area: ' + fmt(H0.area) + ' m²', H0.storey];
+        var cap = (A.filmBoxesMeasureRowCap || 4) - rows.length;
+        var extras = _beats.filter(function (bb) { return bb.key !== 'hall' && envAt(filmSec - bb.sec) > 0; });
+        var combined = extras.slice(0, Math.max(0, cap));
+        combined.forEach(function (bb) { rows.push(bb.label); combinedByHall[bb.key] = true; });
         ctx.save(); ctx.globalAlpha = op;
-        A.flythruDrawPanel(ctx, { x: Math.max(0, Math.min(w, (q.x + 1) / 2 * w)), y: Math.max(0, Math.min(h, (1 - q.y) / 2 * h)) }, ['Walkable area: ' + fmt(H0.area) + ' m²', H0.storey], 'Hall-Corridor', INK, k, w, h);
+        A.flythruDrawPanel(ctx, { x: Math.max(0, Math.min(w, (q.x + 1) / 2 * w)), y: Math.max(0, Math.min(h, (1 - q.y) / 2 * h)) }, rows, 'Hall-Corridor', INK, k, w, h);
         ctx.restore(); drawn++;
-        var key = 'hall|' + Math.floor(filmSec); if (!_lastLog[key]) { _lastLog[key] = 1; console.log('§INDOOR_BEAT_DRAW key=hall filmSec=' + filmSec.toFixed(2) + ' op=' + op.toFixed(2) + ' area=' + fmt(H0.area) + 'm2'); }
+        var key = 'hall|' + Math.floor(filmSec); if (!_lastLog[key]) { _lastLog[key] = 1; console.log('§INDOOR_BEAT_DRAW key=hall filmSec=' + filmSec.toFixed(2) + ' op=' + op.toFixed(2) + ' area=' + fmt(H0.area) + 'm2' + (combined.length ? ' +' + combined.map(function (bb) { return bb.key; }).join(',+') + ' (combined, §57.1)' : '') + (extras.length > combined.length ? ' §14_OVERFLOW=' + (extras.length - combined.length) + ' (row cap reached, falls to solo post)' : '')); }
         return;
       }
       var op2 = envAt(filmSec - b.sec); if (op2 <= 0) return;
@@ -282,8 +304,12 @@ function setupCpeIndoorBeats(A) {
       ctx.save(); ctx.globalAlpha = op2;
       var ok = A.flythruDrawDim(ctx, A2, B2, b.metres, INK, k, true);
       if (b.span2) { var C2 = A.flythruProj(b.span2.a, cam, w, h), D2 = A.flythruProj(b.span2.b, cam, w, h); if (C2.z < 1 && D2.z < 1) A.flythruDrawDim(ctx, C2, D2, b.metres2, INK, k, true); }
-      if (ok) { drawn++; A.flythruDrawPanel(ctx, { x: (A2.x + B2.x) / 2, y: (A2.y + B2.y) / 2 }, [b.label].concat(b.sem ? [b.sem] : []), b.title, INK, k, w, h);
-        var key2 = b.key + '|' + Math.floor(filmSec * 2); if (!_lastLog[key2]) { _lastLog[key2] = 1; console.log('§INDOOR_BEAT_DRAW key=' + b.key + ' filmSec=' + filmSec.toFixed(2) + ' op=' + op2.toFixed(2) + ' ' + b.label); } }
+      // this beat's own panel post is the FALLBACK — skipped only when the hall branch above already
+      // combined its row into ITS post this same frame, so the box never shows two competing posts
+      // for the one figure.
+      var skipPanel = combinedByHall[b.key];
+      if (ok) { drawn++; if (!skipPanel) A.flythruDrawPanel(ctx, { x: (A2.x + B2.x) / 2, y: (A2.y + B2.y) / 2 }, [b.label].concat(b.sem ? [b.sem] : []), b.title, INK, k, w, h);
+        var key2 = b.key + '|' + Math.floor(filmSec * 2); if (!_lastLog[key2]) { _lastLog[key2] = 1; console.log('§INDOOR_BEAT_DRAW key=' + b.key + ' filmSec=' + filmSec.toFixed(2) + ' op=' + op2.toFixed(2) + ' ' + b.label + (skipPanel ? ' (panel combined into hall\'s post, §57.1)' : '')); } }
       ctx.restore();
     });
     return drawn;

@@ -107,7 +107,7 @@ function setupCpeFilmBoxes(A) {
   A.filmBoxesLayoutOf = function () { return _layout; };
   A.filmBoxesArmed = function () { return _armed; };
   A.filmBoxesStatusRowNames = function () { return STATUS_ROWS.slice(); };
-  A.filmBoxesDisarm = function () { _armed = null; _layout = null; _queue = []; };
+  A.filmBoxesDisarm = function () { _armed = null; _layout = null; _queue = []; _lastEntry = null; _lastPostSec = -Infinity; _lingering = false; };
 
   // ── STATUS ROWS. Pure: takes the four caption sources the bake already computes and returns the
   // fixed four rows. A source that is null yields '' — the row still exists.
@@ -204,30 +204,41 @@ function setupCpeFilmBoxes(A) {
   };
   A.filmBoxesMeasureQueue = function () { return _queue.slice(); };
 
-  var _measLogged = null, _measIdleLogged = false;
-  A.filmBoxesDrawMeasure = function (ctx, w, h, armed) {
-    var L = (armed ? A.filmBoxesLayout(w, h, armed) : _layout) || A.filmBoxesLayout(w, h, _armed || {});
-    var b = L.measure;
-    var q = _queue; _queue = [];
-    if (!ctx || !b) return 0;
-    if (!q.length) {
-      if (!_measIdleLogged) { _measIdleLogged = true; console.log('§MEASURE_BOX rows=0 idle — no Measure beat live, nothing drawn'); }
-      _measLogged = null;
-      return 0;
-    }
-    _measIdleLogged = false;
-    // more than one beat posting in the same frame is a §14 slot collision; the box shows the FIRST
-    // and names the rest rather than stacking two panels into a fixed height.
-    var head = q[0];
-    var lines = head.rows.slice(0, b.rows);
-    var extra = q.length - 1;
+  // §56.1 (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md) — USER: "the marker line on canvas may
+  // disappear out of frame but the info box should linger on as the next marker has not shown up yet,
+  // so that user can eyeball what just went past." The queue drains every frame (below); without a
+  // linger, the box goes blank the very next frame nothing posts — this is that fix, centralised here
+  // rather than in each of the three beats that post (slab/flythru-cues/flyout), per the spec's own
+  // reasoning: a per-beat fix means touching all three identically, easy to drift out of sync.
+  //
+  // LINGER_S IS MEASURED, NOT GUESSED: it is the SAME "one cue's readable dwell" the whole cue system
+  // already uses for itself — §14's envelope (fadeIn 0.6 + hold 1.0 + fadeOut 0.6 = 2.2s), shared byte-
+  // for-byte by cpe_slab_beat.js/cpe_linear_beat.js/cpe_flythru_cues.js/cpe_flyout_beats.js/
+  // cpe_indoor_beats.js as "long enough to read one cue". Giving the box that same span again, now that
+  // the marker itself is gone, is grounded in that existing convention, not a new number invented here.
+  // A real bake (Hospital_FULL_1080p_2026-09-10.log) shows why a fixed span is needed at all: the
+  // "Floor plate" label's own on-screen life measured 5.42s (§SLAB_BEAT_LABEL on 9.42→off 14.84) and
+  // "Hall-Corridor"'s measured 13.8s (§INDOOR_BEAT_HALL off … persisted 13.8s) — both far longer than
+  // the box has to work with once the marker is gone, so the linger only ever has to bridge the gap
+  // AFTER that life ends, not stand in for it.
+  //
+  // FILM SECONDS, never wall-clock — same reproducibility rule clash_film.js's pulse envelope already
+  // established ("a 15fps and 24fps bake pulse identically and a re-bake is reproducible"). A caller
+  // that does not pass filmSec (the live editor preview, older scripts) gets the ORIGINAL behaviour —
+  // go blank the frame nothing posts — never a silent guess at elapsed time.
+  var LINGER_S = 2.2;
+  var _measLogged = null, _measIdleLogged = false, _lastEntry = null, _lastPostSec = -Infinity, _lingering = false;
+  A.filmBoxesMeasureLingerS = LINGER_S;
+  A.filmBoxesMeasureRowCap = MEASURE_ROWS;   // §57.1 — so callers combining rows into one post don't duplicate this constant
+
+  function drawMeasureEntry(ctx, b, head, lines) {
     ctx.save();
     plate(ctx, b);
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     var titlePx = Math.max(11, Math.round(b.rowH * 0.56));
     var rowPx = Math.max(11, Math.round(b.rowH * 0.62));
     var innerW = b.w - b.pad * 2;
-    ctx.fillStyle = head.ink != null ? '#ffd600' : '#ffd600';    // §7's cue ink, one colour for Measure
+    ctx.fillStyle = '#ffd600';    // §7's cue ink, one colour for Measure
     drawFitted(ctx, head.title || 'Measure', b.x + b.pad, b.y + b.pad + b.rowH * 0.5, innerW,
                titlePx, Math.max(9, Math.round(titlePx * 0.7)), '700');
     ctx.fillStyle = '#fff';
@@ -236,6 +247,44 @@ function setupCpeFilmBoxes(A) {
                  rowPx, Math.max(9, Math.round(rowPx * 0.7)), '500');
     }
     ctx.restore();
+  }
+
+  A.filmBoxesDrawMeasure = function (ctx, w, h, armed, filmSec) {
+    var L = (armed ? A.filmBoxesLayout(w, h, armed) : _layout) || A.filmBoxesLayout(w, h, _armed || {});
+    var b = L.measure;
+    var q = _queue; _queue = [];
+    if (!ctx || !b) return 0;
+    var hasFilmSec = typeof filmSec === 'number' && isFinite(filmSec);
+    if (!q.length) {
+      var canLinger = hasFilmSec && _lastEntry != null && (filmSec - _lastPostSec) <= LINGER_S;
+      if (!canLinger) {
+        if (_lastEntry != null) {
+          console.log('§MEASURE_BOX_LINGER end' + (hasFilmSec ? ' filmSec=' + filmSec.toFixed(2) : '') +
+            ' lastPostSec=' + _lastPostSec.toFixed(2) + ' — linger expired (>' + LINGER_S + 's), box clears');
+        }
+        _lastEntry = null; _lingering = false;
+        if (!_measIdleLogged) { _measIdleLogged = true; console.log('§MEASURE_BOX rows=0 idle — no Measure beat live, nothing drawn'); }
+        _measLogged = null;
+        return 0;
+      }
+      if (!_lingering) {
+        _lingering = true;
+        console.log('§MEASURE_BOX_LINGER start filmSec=' + filmSec.toFixed(2) + ' lastPostSec=' + _lastPostSec.toFixed(2) +
+          ' title="' + _lastEntry.head.title + '" — marker gone, box holds its last content up to ' + LINGER_S + 's');
+      }
+      _measIdleLogged = false;
+      drawMeasureEntry(ctx, b, _lastEntry.head, _lastEntry.lines);
+      return _lastEntry.lines.length;
+    }
+    _measIdleLogged = false; _lingering = false;
+    // more than one beat posting in the same frame is a §14 slot collision; the box shows the FIRST
+    // and names the rest rather than stacking two panels into a fixed height.
+    var head = q[0];
+    var lines = head.rows.slice(0, b.rows);
+    var extra = q.length - 1;
+    _lastEntry = { head: head, lines: lines };
+    if (hasFilmSec) _lastPostSec = filmSec;
+    drawMeasureEntry(ctx, b, head, lines);
     var key = head.title + '|' + lines.join('|') + '|' + extra;
     if (_measLogged !== key) {
       _measLogged = key;

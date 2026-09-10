@@ -847,7 +847,7 @@
     // hanging a roaming plate off its subject; ONE fixed panel draws them, and draws NOTHING when
     // nothing posted. After the beats (so the queue is complete), before the HUD furniture.
     if (A.filmBoxesDrawMeasure) {
-      try { A.filmBoxesDrawMeasure(ctx, w, h); }
+      try { A.filmBoxesDrawMeasure(ctx, w, h, null, _fcFilmSec); }
       catch (eMB) { if (!A._measureBoxWarned) { A._measureBoxWarned = true; console.warn('§MEASURE_BOX draw failed: ' + (eMB && eMB.message)); } }
     }
     // §STATUS_BOX (§38.1b, §40.1) — REPLACES the centred lower-third caption plate for the bake.

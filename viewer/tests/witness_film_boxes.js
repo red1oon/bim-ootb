@@ -8,7 +8,9 @@
 // text draw into exactly THREE rectangles that (a) are identical on every frame of a whole film,
 // (b) never overlap each other, and (c) account for every text draw in _captureFrame — with a row
 // that has nothing to say left BLANK rather than removed, and the Measure panel drawn NOT AT ALL
-// when no Measure beat is live?
+// when no Measure beat is live? §56.1 (2026-09-10): once a marker's own posting window ends, does
+// the Measure box LINGER on its last content for up to filmBoxesMeasureLingerS() film-seconds
+// before finally clearing, rather than going blank the very next frame nothing posts?
 // It can say NO: FAIL on any of the invariants; INCONCLUSIVE when the sampled film produced no text
 // at all (nothing was judged); and the static scan FAILS on any unregistered draw call, which is the
 // guard against the scope-blind pass (a new overlay added to _captureFrame that nobody classified).
@@ -81,6 +83,7 @@ console.log('§WITNESS_FILM_BOXES_RECT hud=' + JSON.stringify(L0.hud) + ' status
   ' measure=' + JSON.stringify(L0.measure));
 
 const rows = [];
+let _lastLiveSec = -Infinity;
 mute = true;
 for (let i = 0; i < NFRAMES; i += Math.max(1, Math.round(NFRAMES / 400))) {   // 400 samples over the film
   const sec = i / FPS;
@@ -94,12 +97,20 @@ for (let i = 0; i < NFRAMES; i += Math.max(1, Math.round(NFRAMES / 400))) {   //
   };
   const statusRows = A.filmBoxesStatusRows(src2);
   const ctx = recCtx();
-  // Measure posts only inside the beats' own windows — everywhere else the box must draw NOTHING.
+  // Measure posts only inside the beats' own windows — everywhere else the box must draw NOTHING,
+  // except within LINGER_S of the LAST SAMPLE that actually posted (§56.1) — not the window's nominal
+  // edge, since the 0.5s sampling stride does not land exactly on it, same as a real bake's own last
+  // real frame before a marker leaves.
   A.filmBoxesMeasureReset();
-  const measureLive = (sec > 9.3 && sec < 14.9) || (sec > 18.2 && sec < 32.2);
+  const WINDOWS = [[9.3, 14.9], [18.2, 32.2]];   // the real film's own gap between them (3.3s) exceeds
+                                                   // LINGER_S, so linger from one window never reaches the next
+  const measureLive = WINDOWS.some(([a, b]) => sec > a && sec < b);
+  const LINGER_S = A.filmBoxesMeasureLingerS;
+  if (measureLive) _lastLiveSec = sec;
+  const lingering = !measureLive && _lastLiveSec > -Infinity && (sec - _lastLiveSec) <= LINGER_S;
   if (measureLive) A.filmBoxesMeasurePost('Floor plate', ['Floor area 7,585 m² (mesh footprint)', '150mm Concrete With 75mm Metal Deck', 'Level 6']);
   A.filmBoxesDrawStatus(ctx, W, H, statusRows);
-  const mDrawn = A.filmBoxesDrawMeasure(ctx, W, H);
+  const mDrawn = A.filmBoxesDrawMeasure(ctx, W, H, undefined, sec);
   const L = A.filmBoxesLayout(W, H, armed);
   const texts = ctx.draws.filter(d => d.kind === 'text');
   const boxes = { hud: L.hud, status: L.status, measure: L.measure };
@@ -108,7 +119,7 @@ for (let i = 0; i < NFRAMES; i += Math.max(1, Math.round(NFRAMES / 400))) {   //
     hud: L.hud, status: L.status, measure: L.measure,
     statusFilled: statusRows.filter(r => r.text).length,
     statusLabels: statusRows.map(r => r.label).join('|'),
-    measureLive: measureLive, measureDrawn: mDrawn,
+    measureLive: measureLive, lingering: lingering, measureDrawn: mDrawn,
     texts: texts.length,
     unattributed: texts.filter(d => !Object.keys(boxes).some(k => inside(d, boxes[k]))).length
   });
@@ -150,13 +161,13 @@ if (!totalText) console.log('§WITNESS_FILM_BOXES INCONCLUSIVE — no text was d
 const eqRect = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 Witness('film_boxes')
   .population(() => rows)
-  .schema({ type: 'object', required: ['frame', 'sec', 'hud', 'status', 'measure', 'texts', 'unattributed', 'statusFilled', 'measureLive', 'measureDrawn'],
+  .schema({ type: 'object', required: ['frame', 'sec', 'hud', 'status', 'measure', 'texts', 'unattributed', 'statusFilled', 'measureLive', 'lingering', 'measureDrawn'],
     properties: { frame: { type: 'integer', minimum: 0 }, sec: { type: 'number', minimum: 0 },
       hud: { type: 'object', required: ['x', 'y', 'w', 'h'] }, status: { type: 'object', required: ['x', 'y', 'w', 'h'] },
       measure: { type: 'object', required: ['x', 'y', 'w', 'h'] },
       texts: { type: 'integer', minimum: 0 }, unattributed: { type: 'integer', minimum: 0 },
       statusFilled: { type: 'integer', minimum: 0, maximum: 4 }, statusLabels: { type: 'string' },
-      measureLive: { type: 'boolean' }, measureDrawn: { type: 'integer', minimum: 0 } } })
+      measureLive: { type: 'boolean' }, lingering: { type: 'boolean' }, measureDrawn: { type: 'integer', minimum: 0 } } })
   .invariant('§38.1b the three rectangles are IDENTICAL on every frame of the film',
     rs => rs.every(r => eqRect(r.hud, rs[0].hud) && eqRect(r.status, rs[0].status) && eqRect(r.measure, rs[0].measure)))
   .invariant('the three rectangles are pairwise non-overlapping',
@@ -170,8 +181,12 @@ Witness('film_boxes')
     rs => rs.every(r => r.statusLabels === 'Storey|Room|Build-up|Reveal' && r.status.h === rs[0].status.h))
   .invariant('the film really does have silent stretches AND filled ones (else the constancy proves nothing)',
     rs => rs.some(r => r.statusFilled === 0 || r.statusFilled < 4) && rs.some(r => r.statusFilled > 0))
-  .invariant('§38.1a the Measure box draws NOTHING when no Measure beat is live, and something when one is',
-    rs => rs.every(r => (r.measureLive ? r.measureDrawn > 0 : r.measureDrawn === 0)) && rs.some(r => r.measureDrawn > 0))
+  .invariant('§38.1a the Measure box draws NOTHING when no Measure beat is live and its §56.1 linger has expired, and something when either is true',
+    rs => rs.every(r => ((r.measureLive || r.lingering) ? r.measureDrawn > 0 : r.measureDrawn === 0)) && rs.some(r => r.measureDrawn > 0))
+  .invariant('§56.1 the box actually exercises the lingering path at least once (else the claim below is untested)',
+    rs => rs.some(r => r.lingering))
+  .invariant('§56.1 the box actually exercises full expiry at least once — some sample sits past every window\'s own end plus the linger, and is blank',
+    rs => rs.some(r => !r.measureLive && !r.lingering && r.measureDrawn === 0))
   .invariant('§40.1 every composite call in _captureFrame is registered to a box (no scope-blind pass)',
     () => unregistered.length === 0)
   .invariant('_captureFrame draws the status box, the measure box, and uses the caption plate ONLY as the module-missing fallback',

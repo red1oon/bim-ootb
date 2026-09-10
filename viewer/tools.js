@@ -1578,7 +1578,26 @@ function setupTools(A) {
       // startStillRefine), this just stops staging it for navigation.
       if (A.controls && !A._nightControlsListener) {
         var _nightLastCamPos = A.camera.position.clone();
+        // §57.3 (2026-09-11) — PARTIAL MITIGATION ONLY, re-baked and MEASURED, do not re-claim
+        // this as the flicker's fix. Guarding this listener during a bake (A._maxqActive) reduced
+        // same-frame `§NIGHT_BUILDUP_GATE lit=X` disagreements from 1079 to 935 on a like-for-like
+        // HHS re-bake (out/HHS_lowres_storeyreveal_2026-09-10.log vs out/HHS_lowres_v2_2026-09-11.log,
+        // both 854x480@15fps) — a real but modest effect — and probe_film_flicker.py's own jump
+        // count on the cruise beat was UNCHANGED (24-25 jumps, same ~74-76s cluster, both runs).
+        // The DOMINANT source is NOT this listener: it is effects.js's OWN deliberate architecture —
+        // `_teardownStillRefine` (effects.js ~L4551) and `A.startStillRefine` (effects.js ~L5273)
+        // EACH call A._nightUpdateLights() once, back to back, every single baked frame (stop with
+        // the NAV light budget as the camera is about to move, restart with the STILL/bake budget
+        // once it lands) — by design, not a leak. The remaining ~935 disagreements are this
+        // intentional round-trip; whether the CAPTURED frame consistently lands on the settled
+        // "restarted" state (or sometimes catches the torn-down "nav" one) is the open question for
+        // whoever picks this back up — not yet traced against _captureFrame's own exact timing.
+        // Kept this guard anyway: same anti-pattern class as §19 (a per-frame markDirty stalling a
+        // bake), same fix shape (an interactive-only convenience must not fire during a deterministic
+        // bake that already drives this itself), real (if partial) measured improvement, zero
+        // regression on the verification bake (unconverged=0, fileOk=true).
         A._nightControlsListener = function() {
+          if (A._maxqActive) return;
           var d2 = A.camera.position.distanceToSquared(_nightLastCamPos);
           if (d2 < 25) return;
           _nightLastCamPos.copy(A.camera.position);
