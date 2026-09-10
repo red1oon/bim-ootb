@@ -36,7 +36,7 @@ function setupCpeFlythruDatum(A) {
   // separated by weight: the rules read stronger because they are fewer, not because they differ.
   var INK = 0x8899aa, INK_STOREY = 0xb9c6d6, MIN_SEP = 6.0;
   var _grp = null, _built = false, _info = null, _faces = null, _lines = null;
-  var _sides = null, _camFar = null, _lastDrawn = null;   // §36 W1 — decided once per datum life, reset on dispose
+  var _sides = null, _camNear = null, _lastDrawn = null;   // §36 W1 — decided once per datum life, reset on dispose
   var _enteredAt = null, _envBox = null;                    // §20.8 — the drawing ends when the camera enters the envelope
   var _life2 = null, _life2Started = null, _life2End = 0, _life2LeftAt = null, _life2Logged = false, _sheetGroundY = 0;   // §37.2 — the second life over the finished building
   // §37.2 — the second life's SEARCH window: from flyback to the storey-reveal window. MEASURED 2026-09-08 (Hospital): the
@@ -83,7 +83,7 @@ function setupCpeFlythruDatum(A) {
       // "Outside" for the second life = outside the SAME building box the entry latch uses, and above the ground grid.
       var outside = !_envBox.containsPoint(cam.position) && cam.position.y >= _sheetGroundY;
       if (outside && _life2Started == null) {
-        _life2Started = filmSec; _sides = null; _camFar = null; _lastDrawn = null;
+        _life2Started = filmSec; _sides = null; _camNear = null; _lastDrawn = null;
         _life2End = Math.min(_life2.to, filmSec + holdTo + 2.0);
         if (!_life2Logged) { _life2Logged = true; console.log('§FLYTHRU_DATUM_LIFE2 start filmSec=' + filmSec.toFixed(2) + ' end=' + _life2End.toFixed(2) + 's (hold ' + holdTo.toFixed(1) + 's + 2 s fade) — the setting-out sheet over the FINISHED building; sides re-decided once for this life'); }
       }
@@ -238,8 +238,10 @@ function setupCpeFlythruDatum(A) {
     // §34.3 (MEP_CLASH_REVEAL_MOVIE.md — user, 2026-09-08: "make the grid lines more pts thicker"):
     // LineBasicMaterial draws 1px regardless of `linewidth` (a WebGL limitation) and the bundle ships
     // no LineSegments2/LineMaterial (grep: 0 hits), so the lines are now flat ribbon quads — real
-    // world-space width, MeshBasicMaterial, depthTest left at its TRUE default (§17.5 still holds: the
-    // ribbons must be occluded by the building, never shine through).
+    // world-space width, MeshBasicMaterial. depthTest was TRUE by default here (§17.5: "the ribbons
+    // must be occluded by the building, never shine through") — §GROUND_SHINE_THRU below (2026-09-10)
+    // measured that this left the ground ribbon permanently invisible from outside and overrode it
+    // for the ground plane only; the upright/levels planes keep the original depthTest:TRUE.
     var medianBay = _bays.length ? _bays[_bays.length >> 1] : 0;
     var R_BUB = 0.153 * (medianBay > 0 ? medianBay : 6.0);   // the grid's own bubble ratio, §17.3/§22
     // ⚠ depthWrite MUST be false on a TRANSPARENT material, and leaving it at THREE's `true` default
@@ -252,8 +254,23 @@ function setupCpeFlythruDatum(A) {
     // 35.5 % of the picture from RGB 29/32/28 to 185/189/197. The pre-Measure bake, which has no
     // datum at all, shows 0 such frames in the same phase (max |ΔY| 10.2). depthTEST stays TRUE —
     // §17.5's occlusion reading is the point of the opening — only the WRITE is wrong.
-    var mat = new T.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.5, side: T.DoubleSide, depthWrite: false });      // depthTest TRUE — §17.5
-    var matS = new T.MeshBasicMaterial({ color: INK_STOREY, transparent: true, opacity: 0.75, side: T.DoubleSide, depthWrite: false });
+    // §GROUND_SHINE_THRU (2026-09-10, user-directed, after MEASUREMENT not guesswork): a raycast
+    // witness (out/tap_ground_raycast.js) cast rays from the LIVE camera to sample points on the
+    // ground ribbon's own geometry across 142 checks spanning filmSec 0.0-179.6s (the opening
+    // through the storey-reveal/orbit beats) — occludedCount was 5/5 on EVERY single check, at
+    // camera positions that varied wildly. Blocker distances were consistently 10-30+ METRES closer
+    // than the ribbon (never near-equal, so this is not a z-fighting/coplanar issue a height offset
+    // could fix) — the ground ribbon sits at the building's own base level and is blocked by the
+    // building's own walls/floors from every exterior angle tested. §17.5's depthTest:TRUE was a
+    // deliberate choice ("occlusion reading is the point of the opening") but it means the ground
+    // grid has likely never been visible from any exterior shot. User's call: shine it through like
+    // the clash markers do (depthTest:false, clash_film.js's proven "shine through walls when
+    // passing by" pattern) — it fades out within seconds per its own lifecycle, so it is not
+    // meaningfully obscuring the building. Scoped to GROUND ONLY: matS (the upright/levels planes)
+    // is untouched and keeps depthTest:TRUE — §17.5's occlusion reading still holds there, this was
+    // never measured as a problem for the upright plane.
+    var mat = new T.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.5, side: T.DoubleSide, depthWrite: false, depthTest: false });
+    var matS = new T.MeshBasicMaterial({ color: INK_STOREY, transparent: true, opacity: 0.75, side: T.DoubleSide, depthWrite: false });      // depthTest TRUE — §17.5, ground-only override above
     var P = function (ix, iy, iz) { var p = A.ifc2three(ix, iy, iz); return new T.Vector3(p.x, p.y, p.z); };
     var g = [], s = [];
     // GROUND — the plan grid, laid on the structural base
@@ -280,7 +297,14 @@ function setupCpeFlythruDatum(A) {
     // pixel target instead — "derived, not authored" (§12/§17.3) anchored to a quantity commensurate
     // with what the eye judges (screen pixels), not to bay spacing. Degrades to the bubble ratio when
     // no camera/viewport is up yet (never invent a number).
-    var TARGET_PX = 2.5;   // modestly thicker than a 1px hairline, not a bar
+    // §RIBBON_THINNER (2026-09-10, user: "the white grid lines are still large, get them all
+    // thinner but sharp") — this is the FIRST direct judgment of the ribbon's true on-screen
+    // size: it was occluded/invisible before §GROUND_SHINE_THRU, so 2.5px was never actually
+    // seen and confirmed. Lowered for both ground and upright (they share this one constant).
+    // Some of the reported thickness may also be the shadow bug (§DATUM_NO_SHADOW, fixed
+    // separately) bulking lines out with a cast shadow alongside the real line — re-judge after
+    // that fix lands before cutting this further.
+    var TARGET_PX = 1.5;
     var gridCentre = P((ext[0] + ext[1]) / 2, (ext[2] + ext[3]) / 2, z0);
     var _cam = A.camera, _rh = A.renderer && A.renderer.domElement && A.renderer.domElement.height;
     var _camDist = _cam ? _cam.position.distanceTo(gridCentre) : null;
@@ -316,13 +340,32 @@ function setupCpeFlythruDatum(A) {
       var o = new T.Mesh(gm, m); o.renderOrder = 1; return o;
     };
     var Y_UP = new T.Vector3(0, 1, 0), Z_AX = new T.Vector3(0, 0, 1);
-    if (g.length) { var og = mkRibbon(g, mat, ribbonHalfW, Y_UP); og.name = 'ground'; _grp.add(og); }
-    if (s.length) { var o1 = mkRibbon(s, matS, ribbonHalfW, Z_AX); o1.name = 'levelsYmax'; _grp.add(o1);
-                    var o2 = mkRibbon(sNear, matS.clone(), ribbonHalfW, Z_AX); o2.name = 'levelsYmin'; _grp.add(o2); }
+    // §34.3b GROUND_WIDTH_BOOST — REVERTED (2026-09-10). Tried a 2x boost on the theory the ground
+    // ribbon looked thinner than the Z plane from foreshortening. User's own measurement after the
+    // real bug (§GROUND_SHINE_THRU — it was OCCLUDED, not thin) was fixed: "the ground grid is
+    // overly thick now... it was OK before, need no fix, the shine thru shows it." The original
+    // ribbonHalfW (same derivation as the upright plane, no multiplier) was correct all along; the
+    // width was never the actual defect.
+    // §DATUM_NO_SHADOW (2026-09-10, user: "i suspect the dark lines are the shadows.. check that")
+    // — CONFIRMED: effects.js's _reassertPhotoShadowCoverage force-enables castShadow=true on
+    // EVERY visible mesh every still-refine tick (§PHOTO_SHADOW_FORCE_REASSERT), and a separate
+    // one-time sweep (_shadowList) does the same at photo-staging setup — neither has an exclusion
+    // for annotation geometry (unlike the AO pass, which already has userData.excludeFromAO). The
+    // datum's ribbons are real Mesh objects, so without this they cast real shadows onto the
+    // building — a ribbon-shaped shadow reads as exactly the "dark grid lines"/"rogue black grid"
+    // reported, independent of whatever colour/tint logic is drawing the ribbon itself. Both flags
+    // set explicitly AND userData.excludeFromShadow marks them for effects.js's two force-sweeps
+    // to skip permanently (a plain castShadow=false alone would just get flipped back to true on
+    // the next reassert tick).
+    var _noShadow = function (o) { o.castShadow = false; o.receiveShadow = false; o.userData.excludeFromShadow = true; return o; };
+    if (g.length) { var og = _noShadow(mkRibbon(g, mat, ribbonHalfW, Y_UP)); og.name = 'ground'; _grp.add(og); }
+    if (s.length) { var o1 = _noShadow(mkRibbon(s, matS, ribbonHalfW, Z_AX)); o1.name = 'levelsYmax'; _grp.add(o1);
+                    var o2 = _noShadow(mkRibbon(sNear, matS.clone(), ribbonHalfW, Z_AX)); o2.name = 'levelsYmin'; _grp.add(o2); }
     // §34.3 witness — the width actually chosen, how it was derived, and what it measures on screen
     // AT THE REAL OPENING DISTANCE (not a made-up reference range), so a later "thin again"
     // regression is caught as a number, not an eyeball.
-    console.log('§FLYTHRU_DATUM_LINES widthM=' + (2 * ribbonHalfW).toFixed(4) + ' src=[' + _widthSrc + ']' +
+    console.log('§FLYTHRU_DATUM_LINES widthM=' + (2 * ribbonHalfW).toFixed(4) +
+      ' src=[' + _widthSrc + ']' +
       (_widthMeasured ? ' px@' + _camDist.toFixed(0) + 'm=' + TARGET_PX.toFixed(2) : ' px@?=n/a'));
     _grp.visible = false;
     // §46 / §AO_EXCLUDE — the setting-out sheet is an ANNOTATION, not a surface. Without this the
@@ -347,17 +390,33 @@ function setupCpeFlythruDatum(A) {
     var op = lifeOpacity(filmSec, filmSecFull);
     _grp.visible = op > 0.01;
     var cam = A.camera;
-    // §36 W1 — which upright is the FAR one is decided ONCE (the opening pose), not per frame: re-picking it
-    // as the dive crossed the Y mid-plane swapped the visible upright and its whole storey annotation.
-    if (!_camFar && cam && _faces && typeof A.ifc2three === 'function') {
+    // §Z_NEAR_SIDE (2026-09-10, user: "Z plane bubbles should be at the nearer side to be more
+    // visible than now at the far side") — this used to pick and show the FARTHER upright
+    // (`_camFar`, `da >= db`); inverted to show the NEARER one instead, renamed throughout for
+    // clarity. §36 W1 still holds: decided ONCE per datum life (the opening pose), not per frame —
+    // re-picking as the dive crosses the Y mid-plane would swap the visible upright and its whole
+    // storey annotation mid-shot.
+    if (!_camNear && cam && _faces && typeof A.ifc2three === 'function') {
       var a = A.ifc2three(0, _faces.yMaxIfc, 0), b = A.ifc2three(0, _faces.yMinIfc, 0);
       var da = Math.abs(cam.position.z - a.z), db = Math.abs(cam.position.z - b.z);
-      _camFar = da >= db ? 'levelsYmax' : 'levelsYmin';
+      // §Z_NEAR_REVERT (2026-09-10, user: "u moved the whole Z plane to the left front which
+      // is hard to view. I am asking only the bubbles not the whole plane.") — reverted to the
+      // original FAR pick. Only zNearX (which END of the still-far ribbon the labels cluster
+      // toward) changes for "bubbles nearer" now — that axis doesn't relocate the plane itself.
+      _camNear = da >= db ? 'levelsYmax' : 'levelsYmin';
+      console.log('§Z_NEAR_SIDE decided=' + _camNear + ' (da=' + da.toFixed(1) + ' db=' + db.toFixed(1) + ')');
     }
-    var camFar = _camFar;
+    var camNear = _camNear;
+    // §ROGUE_UPRIGHT_DIAG (2026-09-10, user: "a rogue z grid shorter and black with no markings
+    // appearing few secs into the movie") — if camNear is ever falsy here (the guard above didn't
+    // fire — cam/_faces/ifc2three unavailable that frame), BOTH levelsYmax and levelsYmin fall
+    // through to visible=true simultaneously: the normally-hidden upright shows with no matching
+    // 2D bubbles/text (those are computed for only the expected side), which is exactly the
+    // reported symptom. Logged once per occurrence rather than assumed — not yet confirmed.
+    if (!camNear) console.log('§ROGUE_UPRIGHT_DIAG camNear UNSET at filmSec=' + filmSec.toFixed(2) + ' — both uprights fall through to visible=true this frame');
     _grp.children.forEach(function (o) {
       var isLvl = o.name === 'levelsYmax' || o.name === 'levelsYmin';
-      var vis = !isLvl || !camFar || o.name === camFar;
+      var vis = !isLvl || !camNear || o.name === camNear;
       o.visible = vis;
       o.material.opacity = (isLvl ? 0.75 : 0.5) * op;
     });
@@ -497,8 +556,16 @@ function setupCpeFlythruDatum(A) {
       var nY = dTo(midX, ext[3], z0) < dTo(midX, ext[2], z0) ? ext[3] : ext[2];
       var nX = dTo(ext[1], midY, z0) < dTo(ext[0], midY, z0) ? ext[1] : ext[0];
       var fYe = (nY === ext[2]) ? ext[3] : ext[2], fXe = (nX === ext[0]) ? ext[1] : ext[0];
-      var zNX = dTo(ext[1], fYe, zMid) > dTo(ext[0], fYe, zMid) ? ext[1] : ext[0];
+      // §Z_NEAR_SIDE (2026-09-10, user: "Z plane bubbles should be at the nearer side to be
+      // more visible than now at the far side") — this used `>` (picks the FARTHER of the two
+      // X-extremes) despite being named zNearX; ground's own nX/nY above correctly use `<`. Fixed
+      // to match that pattern — genuinely near now, not far-mislabeled-near.
+      var zNX = dTo(ext[1], fYe, zMid) < dTo(ext[0], fYe, zMid) ? ext[1] : ext[0];
       var fY = faceOn(0, 1), fX = faceOn(1, 0), zP = (fX > fY) ? 'X-face' : 'Y-face';
+      // §Z_NEAR_REVERT — zNY selects between the SAME ext[3]/ext[2] pair _camNear does (the
+      // plane's own Y-face), not a within-plane refinement like zNearX is. Reverted to `>` (far)
+      // so the 2D label branch that uses it (_zPlane==='X-face', the active branch in the
+      // reported case) stays aligned with the still-far 3D ribbon instead of relocating it.
       var zNY = dTo(midX, ext[3], zMid) > dTo(midX, ext[2], zMid) ? ext[3] : ext[2];
       return { nearY: nY, nearX: nX, farY: fYe, farX: fXe, zNearX: zNX, fY: fY, fX: fX, zPlane: zP, zNearY: zNY,
                sgnZY: (zNY === ext[2]) ? -1 : 1, sgnY: (nY === ext[2]) ? -1 : 1, sgnX: (nX === ext[0]) ? -1 : 1, sgnZ: (zNX === ext[0]) ? -1 : 1,
@@ -585,7 +652,11 @@ function setupCpeFlythruDatum(A) {
     // ── 4. ONE AXIS ROUTINE, USED THREE TIMES. Ground X and Y lie in the ground plane; the upright
     //       lies in the far-Y plane. The only difference between them is which model directions are
     //       "along" and "outward" — the drawing itself is identical.
-    function axis(vals, lab, at, along, out, isUpright) {
+    // §DIM_LABEL_KIND (2026-09-10, user: "gridlines? Then why not just label as such" —
+    // the per-bay/per-storey figure used to be a bare number with no unit and no way to tell
+    // an X bay from a Y bay from a storey height. axisKind ('X'/'Y'/'Storey') plus an explicit
+    // 'mm' unit fixes both without inventing new geometry or a new draw call.
+    function axis(vals, lab, at, along, out, isUpright, axisKind) {
       // at(v, off) -> [ix,iy,iz] of the point for value v, off metres outward
       // along / out -> unit model directions, for the text plane
       // ⚠ ONE VALUE IS NOT AN AXIS. With vals.length < 2 the stride below evaluates vals[1] as
@@ -625,7 +696,7 @@ function setupCpeFlythruDatum(A) {
       // against "9" at 0.40 m, so the axes came out at 0.42/0.42/0.52 m and the consistency witness
       // correctly reported DIFFER. A drawing has one bubble size; the widest ref sets it.
       var R_BUB = R_ONE, _wMax = _wAll;
-      var digits = 6, figW = digits * TXT * 0.62;
+      var digits = 9, figW = digits * TXT * 0.62;   // §DIM_LABEL_KIND — widened from 6 for the new axisKind+unit text
       var step = Math.max(1, Math.ceil(figW / minGap));
       var drewFig = 0, drewBub = 0, sum = 0, behindB = 0, behindF = 0;   // §36 W1 ledger: not drawn = behind the camera (plane() null)
       var _pxU = 0, _pxV = 0;    // projected semi-axes of a bubble on this axis, in screen px
@@ -654,15 +725,15 @@ function setupCpeFlythruDatum(A) {
         var mv = (vals[j] + vals[k2]) / 2, mp = at(mv, OFF1 + TXT * 0.9);
         if (inkText(plane(mp[0], mp[1], mp[2], along.x * 1, along.y * 1, along.z * 1,
                           out.x * 1, out.y * 1, out.z * 1),
-                    Math.round((vals[k2] - vals[j]) * 1000).toLocaleString('en-US'), TXT)) { drewFig++; n++; } else behindF++;
+                    axisKind + ' ' + Math.round((vals[k2] - vals[j]) * 1000).toLocaleString('en-US') + 'mm', TXT)) { drewFig++; n++; } else behindF++;
         sum += vals[k2] - vals[j];
         if (k2 === vals.length - 1) break;
       }
       var oA = at(vals[0], OFF2), oB = at(vals[vals.length - 1], OFF2);
       var drewOv = seg(P(oA[0], oA[1], oA[2]), P(oB[0], oB[1], oB[2]));
       var om = (vals[0] + vals[vals.length - 1]) / 2, op2 = at(om, OFF2 + TXT * 1.1);
-      var ovTxt = lab(0) + ' – ' + lab(vals.length - 1) + '   ' +
-                  Math.round((vals[vals.length - 1] - vals[0]) * 1000).toLocaleString('en-US');
+      var ovTxt = axisKind + ' ' + lab(0) + ' – ' + lab(vals.length - 1) + '   ' +
+                  Math.round((vals[vals.length - 1] - vals[0]) * 1000).toLocaleString('en-US') + 'mm';
       if (inkText(plane(op2[0], op2[1], op2[2], along.x, along.y, along.z, out.x, out.y, out.z), ovTxt, TXT * 1.25)) { n++; }
       if (drewOv) { _ov++; }
       _bub += drewBub; _figs += drewFig;
@@ -698,20 +769,33 @@ function setupCpeFlythruDatum(A) {
 
     var rX = axis(_lines.gx, function (i) { return label(i, false); },
                   function (v, o) { return [v, nearY + sgnY * o, z0]; },
-                  { x: 1, y: 0, z: 0 }, { x: 0, y: sgnY, z: 0 }, false);
+                  { x: 1, y: 0, z: 0 }, { x: 0, y: sgnY, z: 0 }, false, 'X');
     var rY = axis(_lines.gy, function (i) { return label(i, true); },
                   function (v, o) { return [nearX + sgnX * o, v, z0]; },
-                  { x: 0, y: 1, z: 0 }, { x: sgnX, y: 0, z: 0 }, false);
+                  { x: 0, y: 1, z: 0 }, { x: sgnX, y: 0, z: 0 }, false, 'Y');
     var rZ = { bubbles: 0, figures: 0, step: 1, sum: 0, R: 0, gap: 0, pxU: 0, pxV: 0, fit: 0, wMax: 0, behindB: 0, behindF: 0 };
+    var _zLabelY = null;   // §Z_PLANE_WITNESS — whichever Y this branch actually targets, for the cross-check below
     if (_lvz.length > 1) {
+      _zLabelY = (_zPlane === 'X-face') ? zNearY : farY;
       rZ = (_zPlane === 'X-face')
         ? axis(_lvz.map(function (L) { return L.z; }), function (i) { return storeyRefFor(_lvz, i); },
                function (v, o) { return [zNearX, zNearY + sgnZY * o, v]; },
-               { x: 0, y: 0, z: 1 }, { x: 0, y: sgnZY, z: 0 }, true)
+               { x: 0, y: 0, z: 1 }, { x: 0, y: sgnZY, z: 0 }, true, 'Storey')
         : axis(_lvz.map(function (L) { return L.z; }), function (i) { return storeyRefFor(_lvz, i); },
                function (v, o) { return [zNearX + sgnZ * o, farY, v]; },
-               { x: 0, y: 0, z: 1 }, { x: sgnZ, y: 0, z: 0 }, true);
+               { x: 0, y: 0, z: 1 }, { x: sgnZ, y: 0, z: 0 }, true, 'Storey');
     }
+    // §Z_PLANE_WITNESS (2026-09-10, user: "do strengthen your WITNESS logging to give you headsup
+    // well") — the 3D ribbon's visible Y-face (_camNear, decided independently in flythruDatumAt)
+    // and the 2D label's target Y (_zLabelY, decided independently right above via decideSides())
+    // are TWO SEPARATE calculations that happen to need to agree. They silently disagreeing is
+    // exactly the class of bug that shipped as "moved the whole Z plane" (§Z_NEAR_SIDE/§Z_NEAR_REVERT,
+    // this session) — a rendered frame was needed to catch it because nothing printed the two
+    // decisions side by side. Logged every frame's build (cheap — two number compares) so a future
+    // divergence is a MISMATCH string in the log, not a bake-and-eyeball round trip.
+    var _campVisY = _camNear ? ((_camNear === 'levelsYmax') ? _faces.yMaxIfc : _faces.yMinIfc) : null;
+    var _zPlaneMatch = (_zLabelY == null || _campVisY == null) ? 'n/a(no levels or camNear unset)'
+      : (Math.abs(_zLabelY - _campVisY) < 1e-6 ? 'MATCH' : 'MISMATCH ribbonY=' + _campVisY.toFixed(2) + ' labelY=' + _zLabelY.toFixed(2));
     ctx.restore();
 
     var ovX = _lines.gx[_lines.gx.length - 1] - _lines.gx[0],
@@ -766,7 +850,8 @@ function setupCpeFlythruDatum(A) {
       ' figures=' + _figs + ' overalls=' + _ov + '/3' +
       ' figStride=' + rX.step + '/' + rY.step + '/' + rZ.step +
       ' sides=(numerals Y@' + nearY.toFixed(1) + ' near, letters X@' + nearX.toFixed(1) + ' near, levels X@' + zNearX.toFixed(1) +
-      ' back on the ' + _zPlane + ', faceOn Y ' + _fY.toFixed(2) + ' vs X ' + _fX.toFixed(2) + ')' +
+      ' near(X)/far(Y-face) on the ' + _zPlane + ', faceOn Y ' + _fY.toFixed(2) + ' vs X ' + _fX.toFixed(2) + ')' +
+      ' zPlaneWitness=' + _zPlaneMatch +
       // §36 W1 — the drop ledger and the frame delta the reviewer asked for: what was NOT drawn and why,
       // how the count moved since the last frame, and whether a per-frame decision WOULD have flipped.
       ' dropped=[behindCam bubbles X/Y/Z=' + rX.behindB + '/' + rY.behindB + '/' + rZ.behindB +
@@ -796,7 +881,7 @@ function setupCpeFlythruDatum(A) {
     if (_grp && A.scene) { A.scene.remove(_grp); _grp.children.forEach(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
     // §36 W1/W3 — a dispose is a full reset, so the §33 gate can rebuild the datum at the opening it actually
     // chose (ribbon width and side decisions both read the camera at build/first composite).
-    _grp = null; _built = false; _info = null; _faces = null; _lines = null; _sides = null; _camFar = null; _lastDrawn = null; _enteredAt = null; _envBox = null; _life2Started = null; _life2LeftAt = null; _life2Logged = false;
+    _grp = null; _built = false; _info = null; _faces = null; _lines = null; _sides = null; _camNear = null; _lastDrawn = null; _enteredAt = null; _envBox = null; _life2Started = null; _life2LeftAt = null; _life2Logged = false;
   };
   console.log('§FLYTHRU_DATUM_INIT wired (ground grid + ONE upright with storey rules; depth-tested, occluded by the build)');
 }

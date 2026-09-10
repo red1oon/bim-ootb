@@ -2059,8 +2059,15 @@
         if (A.flythruCueCaptionAt) { try { _srCue = A.flythruCueCaptionAt(_tnFilm * _filmSecFull); } catch (eFCap) {} }
         // the frontier phase was smuggled into the room caption as " [phase]" by roomTitleFinalText,
         // which is what made that plate resize mid-shot. It gets its own fixed row now.
-        var _statusSrc = { storey: _srStorey, room: _srRoom, buildup: A.tmFrontierPhase || '', reveal: _srReveal };
-        var _titleInfo = _srReveal || _srStorey || _srCue || _srRoom || null;
+        // §STOREY_INFO_NOT_IN_HUB (2026-09-10, user: "the storey by storey info should not be in
+        // the HUB but in that extra right bottom side info panel consistent with other measures") —
+        // _srStorey is still computed above (keeps its own §STOREY_REVEAL_TIMING logging alive) but
+        // deliberately excluded from both the STATUS_BOX's four fixed rows and the single-winner
+        // caption fallback. storeyRevealStatCardAt's own card.label already carries the storey name
+        // ('doors · ' + vis.storey) through the SAME bottom-right bigStats panel every other measure
+        // card uses (§CPE_HUD_ORDER) — that is now the ONLY place storey info appears on screen.
+        var _statusSrc = { storey: null, room: _srRoom, buildup: A.tmFrontierPhase || '', reveal: _srReveal };
+        var _titleInfo = _srReveal || _srCue || _srRoom || null;
         // §CPE_PATH_OVERVIEW — the pose is read HERE, after every camera write for this frame and
         // immediately before the capture, so the head marks the shot that was actually rendered.
         // §CPE_POV_MARKER's rule (cinema_path_editor.js:3789): read the REAL transform, never

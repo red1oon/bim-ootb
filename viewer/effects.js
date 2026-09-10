@@ -2927,6 +2927,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var changed = false, _visMeshes = 0, _flippedOn = 0;
     A.scene.traverse(function(o) {
       if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible) return;
+      if (o.userData && o.userData.excludeFromShadow) return;   // §DATUM_NO_SHADOW — annotation geometry, not a real caster
       _visMeshes++;
       if (!o.castShadow) {
         o.castShadow = true; o.receiveShadow = true; changed = true; _flippedOn++;
@@ -3265,7 +3266,11 @@ async function setupEffects(A, renderer, scene, camera) {
     A.sun.shadow.camera.updateProjectionMatrix();
     if (A.ground) A.ground.receiveShadow = true;
     var _shadowList = [];
-    A.scene.traverse(function(o) { if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) _shadowList.push(o); });
+    A.scene.traverse(function(o) {
+      if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return;
+      if (o.userData && o.userData.excludeFromShadow) return;   // §DATUM_NO_SHADOW — annotation geometry, not a real caster
+      _shadowList.push(o);
+    });
     // §PHOTO_SHADOW_FRUSTUM_COVERAGE (2026-08-11, real user ask: "GIGO code witness logging must
     // reveal" -- not another video/frame-extraction round-trip): direct geometric proof of whether
     // the shadow camera can actually SEE the casting geometry, computed from live scene state, no
@@ -7992,7 +7997,14 @@ async function setupEffects(A, renderer, scene, camera) {
     // function ever needing `durationSec` again downstream. `Math.min(_useSec.rise, ...)` clamps to
     // the whole pullback beat on a building whose pullback is naturally shorter than 5s, so the
     // window can never bleed backward into the tail beat either.
-    var STOREY_REVEAL_WINDOW_SEC = 5;
+    // §STOREY_REVEAL_WINDOW_SEC widened 5->10 (2026-09-10, user: "seems to wait too long...
+    // rather uneventful or redundant repeat" / "they enjoy a bit more stay rather than rush
+    // thru"). MEASURED on Hospital: the authored pullback beat is 30.8s, so a 5s window left
+    // ~25.8s of pullback playing before any highlight started, and truncated the 8 real storeys
+    // down to 5 (MIN_SLOT_SEC=1.0 in cpe_storey_reveal.js). 10s halves the dead lead-in and, at
+    // 1.0s/storey minimum, comfortably fits all 8 without truncation (1.25s each) — still clamped
+    // to the whole pullback beat below on a building whose pullback is naturally shorter.
+    var STOREY_REVEAL_WINDOW_SEC = 10;
     var _storeyRevealWindowSec = Math.min(_useSec.rise, STOREY_REVEAL_WINDOW_SEC);
     var _storeyRevealWindowFrac = _shapeTotal > 0 ? _storeyRevealWindowSec / _shapeTotal : 0;
     console.log('§STOREY_REVEAL_WINDOW pullbackSec=' + _useSec.rise.toFixed(1) +

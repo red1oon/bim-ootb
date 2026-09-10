@@ -49,8 +49,12 @@ function setupClashFilm(A) {
     // territory out in the scene."
     // So it is NOT a sine — a sine spends its whole cycle mid-bright and never reads as "off". An
     // asymmetric envelope with a real rest phase does: rise, hold, a LONGER fall, then dark.
-    var RISE_S = 2.0, HOLD_S = 1.0, FALL_S = 3.0, REST_S = 2.0;
-    var PERIOD_S = RISE_S + HOLD_S + FALL_S + REST_S;   // 8.0 s
+    // §CLASH_PULSE_SHORTER (2026-09-10, user: "let it pulse appearance shorter with same pause so
+    // not to disturb the overall aesthetics") — visible portion (rise+hold+fall) halved, 6.0s->3.0s,
+    // same 2:1:3 shape ratio just scaled down. REST_S deliberately UNCHANGED per "same pause" — the
+    // ask was a shorter flash, not a longer gap. Duty cycle: was 75% visible/25% dark, now 60%/40%.
+    var RISE_S = 1.0, HOLD_S = 0.5, FALL_S = 1.5, REST_S = 2.0;
+    var PERIOD_S = RISE_S + HOLD_S + FALL_S + REST_S;   // 5.0 s
     // ══ §CLASH_FILM_SKY_WASH (2026-09-05, user: "IT seems to leak into outside sky etc that floor
     // slab turning light blue" … "is the sky bug fixed?") ═══════════════════════════════════════════
     // MEASURED by diffing a --clash clip against a --no-clash CONTROL of the same window (0.28:0.32,

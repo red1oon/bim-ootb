@@ -178,9 +178,17 @@ function setupCpeStoreyReveal(A) {
     // dark, so the sequence reads as a series of separate pulses instead of one colour handing
     // straight over to the next with the building never returning to rest. The card/caption keep
     // running through the dark part (the stats are what the beat is for), only the 3D tint ceases.
+    // §STOREY_REVEAL_LAST_STAYS_LIT (2026-09-10, user: "at the end of highlight it seems to color
+    // dark over whole building or parts. IT should not, or retain its coloring to original.") — the
+    // §STOREY_REVEAL_PULSE cease-per-slot above is right for storey N handing over to storey N+1 (a
+    // dark beat reads as a beat, not a fault), but the LAST storey has no next colour to hand over to
+    // — its own dark tail was the whole building sitting in the x-ray wash with nothing lit, right
+    // before the hard cut to orbit. The final storey simply never enters its dark phase, so the glow
+    // (and the x-ray shine-through it needs) carries straight through to the window's end.
+    var isLast = idx === list.length - 1;
     return { idx: idx, n: list.length, storey: list[idx].name,
              color: COLORS[idx % COLORS.length], emoji: EMOJI[idx % EMOJI.length],
-             u: u, opacity: opacity, dark: (u > LIT_FRAC) };
+             u: u, opacity: opacity, dark: (!isLast && u > LIT_FRAC) };
   };
 
   // §STOREY_REVEAL_CAPTION — replaces the room-title/disc-parade caption for exactly this window;
@@ -227,6 +235,58 @@ function setupCpeStoreyReveal(A) {
   // spec asks for; a tint keeps the whole building visible while one storey glows the cycle color).
   var _C = (typeof THREE !== 'undefined' && THREE.Color) ? new THREE.Color() : null;
   var _touched = [], _curIdx = null, _clones = [];
+
+  // §FACADE_ONLY_TINT (2026-09-10, user: "Yes. My original request prior" — confirming: tint just
+  // the storey's FACADE, no x-ray, no dimming, no see-through of the rest of the building). An
+  // orbiting exterior camera already sees a storey's exterior wall directly — nothing needs to
+  // become transparent for that. NON-INVENT: facade membership is a live geometric test (does the
+  // wall's own bbox touch the building's own overall footprint boundary), not a guessed IFC flag —
+  // this DB has no IsExternal property to read (checked: 0 hits for IsExternal/is_external in the
+  // whole viewer). Reuses the SAME structural-class set flythruDatumBuild's own footprint query uses,
+  // so the "outer edge" this measures against is the one already accepted as this building's extent.
+  var _facadeGuids = {}, _facadeKey = null;
+  function _facadeGuidsFor(storeyName) {
+    var bkey = (A.activeBuilding || A.currentBuilding || 'bld');
+    if (_facadeKey !== bkey) { _facadeGuids = {}; _facadeKey = bkey; }
+    if (_facadeGuids[storeyName]) return _facadeGuids[storeyName];
+    var set = {};
+    try {
+      // §FACADE_PER_STOREY_FIX (2026-09-10) — MEASURED DEFECT: the footprint was computed across
+      // the WHOLE BUILDING (all storeys pooled), so on a building with setbacks (a hospital's upper
+      // floors routinely sit inset from the ground floor's wider base/canopy) only the storey that
+      // happens to match the building's widest extent ever touched that global edge — Hospital
+      // measured facadeWalls=3 on Level 1, then 0/VACUOUS on Level 2, 3, 4, 5. Fixed: the footprint
+      // is now computed from elements ON THIS STOREY ONLY, so each floor is judged against its own
+      // plan, not a global envelope no single upper floor may ever reach.
+      // §FACADE_WALL_ONLY_FOOTPRINT (2026-09-10) — MEASURED DEFECT #2: including columns/slabs/beams
+      // in the footprint still left Level 3 and Level 7 VACUOUS at TOL=1.0m — MEASURED, the closest
+      // wall on Level 3 sat 1.67m from that footprint, and on Level 7 (a small penthouse) 4.54m,
+      // because a roof/slab overhang there extends well past where the walls actually are. Fixed at
+      // the root: the footprint is now built from WALLS ONLY — by construction the outermost walls
+      // then sit at distance 0 from it (VERIFIED: Level 7's own outermost walls measure exactly
+      // 0.0m on all four sides against a wall-only footprint), so TOL only needs to cover real
+      // construction tolerance, not "how far a slab overhangs its walls".
+      var TOL = 0.5;   // metres — construction tolerance only, now that the footprint is wall-derived
+      var rows = A.dbQuery(
+        "WITH footprint AS (" +
+        "  SELECT MIN(t.center_x-t.bbox_x/2) minX, MAX(t.center_x+t.bbox_x/2) maxX," +
+        "         MIN(t.center_y-t.bbox_y/2) minY, MAX(t.center_y+t.bbox_y/2) maxY" +
+        "  FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid" +
+        "  WHERE m.storey=? AND m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcCurtainWall')" +
+        ")" +
+        "SELECT m.guid FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid, footprint f " +
+        "WHERE m.storey=? AND m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcCurtainWall') AND (" +
+        "  ABS((t.center_x-t.bbox_x/2)-f.minX) < ? OR ABS((t.center_x+t.bbox_x/2)-f.maxX) < ? OR" +
+        "  ABS((t.center_y-t.bbox_y/2)-f.minY) < ? OR ABS((t.center_y+t.bbox_y/2)-f.maxY) < ?" +
+        ")", [storeyName, storeyName, TOL, TOL, TOL, TOL]) || [];
+      rows.forEach(function (r) { set[r[0]] = true; });
+    } catch (e) { console.log('§FACADE_ONLY_TINT query failed for storey="' + storeyName + '": ' + e.message); }
+    var n = Object.keys(set).length;
+    console.log('§FACADE_ONLY_TINT storey="' + storeyName + '" facadeWalls=' + n +
+      (n === 0 ? ' — VACUOUS: no wall on this storey touches the building footprint edge, nothing will tint' : ''));
+    _facadeGuids[storeyName] = set;
+    return set;
+  }
   function _restoreTint() {
     _touched.forEach(function (s) {
       if (s.inst != null && s.m.instanceColor && _C) { s.m.setColorAt(s.inst, _C.setHex(s.c)); s.m.instanceColor.needsUpdate = true; }
@@ -254,10 +314,12 @@ function setupCpeStoreyReveal(A) {
     // the original material object put straight back. Per-object, exactly like the partition
     // A.filterStorey uses (obj.visible / filterInstancedMesh / filterBatchedMesh, panels.js:711) —
     // which never had this problem precisely because visibility is per-object and emissive is not.
-    // opacity=1 on the clone keeps the lit storey SOLID while §STOREY_REVEAL_XRAY has the rest of the
-    // building at 0.3, which is what makes it read as shining THROUGH from an orbit distance.
+    // opacity=1 on the clone keeps the lit facade SOLID and fully opaque — §FACADE_ONLY_TINT means
+    // the rest of the building needs no special treatment at all (no x-ray, no dim); it is simply
+    // left alone, already visible or occluded exactly like any other geometry in the film.
+    var facadeGuids = _facadeGuidsFor(storeyName);
     var _matMap = (typeof Map !== 'undefined') ? new Map() : null;
-    A.collectMeshes(function (o) { return o.isMesh && o.userData.storey === storeyName; }).forEach(function (o) {
+    A.collectMeshes(function (o) { return o.isMesh && o.userData.storey === storeyName && facadeGuids[o.userData.guid]; }).forEach(function (o) {
       if (!o.material || Array.isArray(o.material) || !o.material.emissive || !o.material.clone) return;
       var orig = o.material, cl = _matMap ? _matMap.get(orig) : null;
       if (!cl) {
@@ -275,7 +337,7 @@ function setupCpeStoreyReveal(A) {
       if (!meta || !mesh.setColorAt) return;
       var any = false;
       for (var i = 0; i < meta.length; i++) {
-        if (meta[i].storey !== storeyName) continue;
+        if (meta[i].storey !== storeyName || !facadeGuids[meta[i].guid]) continue;
         var had = !!mesh.instanceColor, prev = 0xffffff;
         if (had) { mesh.getColorAt(i, _C); prev = _C.getHex(); }
         _touched.push({ m: mesh, inst: i, c: prev });
@@ -287,7 +349,7 @@ function setupCpeStoreyReveal(A) {
       var meta = A._batchMeta && A._batchMeta[mesh.id];
       if (!meta || !mesh.setColorAt) return;
       for (var i = 0; i < meta.length; i++) {
-        if (meta[i].storey !== storeyName) continue;
+        if (meta[i].storey !== storeyName || !facadeGuids[meta[i].guid]) continue;
         var pb = 0xffffff;
         try { mesh.getColorAt(meta[i].slotId, _C); pb = _C.getHex(); } catch (e) {}
         _touched.push({ m: mesh, batch: meta[i].slotId, c: pb });
@@ -298,28 +360,21 @@ function setupCpeStoreyReveal(A) {
       ' meshesTouched=' + n + ' clonedMaterials=' + _clones.length);
     return n;
   }
-  // Called every frame by the bake loop and the preview tick (one pure-ish function, two callers —
-  // "pure-ish" because it mutates scene material state, exactly the same contract
-  // A.cpeRevealApplyVisual already keeps). `plan`=null (any tNorm) forces a restore-and-exit, the
-  // same explicit "force restore" signal cpeRevealApplyVisual(null,0) already uses at every bake/
-  // preview exit path.
-  // §STOREY_REVEAL_XRAY (2026-09-06, user: "should the whole building go 'O'cclusion or bbx frame or
-  // x-ray?") — X-RAY, scoped to this window only. A storey lit INSIDE a solid building cannot be seen
-  // from the closing orbit at all; bbox throws the model away and isolating the storey contradicts
-  // "shine through". A.toggleXray already exists (the landed Alt+Z cycle, panels.js/tools.js) and is
-  // what cinema_maxq's own §CINEMA_XRAY_RESET turns OFF at bake start — so this must be a scoped beat
-  // that restores itself, never a global toggle left on. `_xrayByUs` guarantees we only ever undo an
-  // x-ray WE engaged: if it was somehow already on, we leave it exactly as we found it.
-  // §STOREY_REVEAL_MARKERS_OFF (same user pass: "there are still few clash pairs been highlighted.
-  // They should cease to allow the overall stats grab user attention") — the clash markers are hidden
-  // from the moment this window opens and stay hidden for the rest of the film, so the storey colours
-  // and then the closing Measure totals own the screen. Restored on the forced-restore exit path.
-  var _xrayByUs = false, _markersHidden = false;
-  function _enterWindow() {
-    if (!A.xrayOn && typeof A.toggleXray === 'function') {
-      A.toggleXray(); _xrayByUs = true;
-      console.log('§STOREY_REVEAL_XRAY on (scoped to this window; will restore at orbit start)');
-    }
+
+  // §FACADE_ONLY_REVERT_XRAY (2026-09-10, user, after seeing the darken-above approach fail on
+  // lighting-direction unevenness: "Yes. My original request prior" — confirming the ORIGINAL ask
+  // was always just "highlight the storey's facade", not "reveal it through the rest of the
+  // building"). Both x-ray (§STOREY_REVEAL_XRAY, tried first) and darken-above
+  // (§STOREY_REVEAL_DIM_ABOVE, tried second) existed ONLY to make an otherwise-hidden storey visible
+  // from outside a solid building. Neither is needed once the tint is scoped to facade/exterior-wall
+  // elements (§FACADE_ONLY_TINT above): a storey's exterior wall is already the outermost, camera-
+  // visible surface on any exterior orbit shot — nothing needs to become see-through or dimmed for
+  // it to be seen. So: no x-ray, no darkening, no transparency, no per-pixel/per-triangle cost during
+  // this window at all — it now runs at the SAME cost as any other beat. Normal occlusion applies
+  // like anywhere else in the film: if a facade happens to be hidden from a given camera angle, it
+  // is simply hidden, the same as any other geometry — no special-casing.
+  var _markersHidden = false;
+  function _hideMarkers() {
     if (!_markersHidden && A.clashFilm && A.clashFilm.setVisible) {
       if (A.clashFilm.setVisible(false)) {
         _markersHidden = true;
@@ -327,17 +382,12 @@ function setupCpeStoreyReveal(A) {
       }
     }
   }
-  function _exitWindow(restoreMarkers) {
-    if (_xrayByUs && A.xrayOn && typeof A.toggleXray === 'function') {
-      A.toggleXray();
-      console.log('§STOREY_REVEAL_XRAY off (restored)');
-    }
-    _xrayByUs = false;
-    if (restoreMarkers && _markersHidden && A.clashFilm && A.clashFilm.setVisible) {
+  function _restoreMarkers() {
+    if (_markersHidden && A.clashFilm && A.clashFilm.setVisible) {
       A.clashFilm.setVisible(true);
       console.log('§STOREY_REVEAL_MARKERS_OFF clash markers restored (bake/preview exit)');
     }
-    if (restoreMarkers) _markersHidden = false;
+    _markersHidden = false;
   }
 
   A.storeyRevealApplyVisual = function (plan, tNorm) {
@@ -345,21 +395,23 @@ function setupCpeStoreyReveal(A) {
     // It must run unconditionally: by the time it arrives the film has normally already left the
     // window, so _curIdx is null and the key check below would return early — leaving the clash
     // markers hidden for the NEXT bake. Restore first, then fall through to the normal no-op.
-    if (!plan) { _restoreTint(); _curIdx = null; _exitWindow(true); return; }
+    if (!plan) { _restoreTint(); _curIdx = null; _restoreMarkers(); return; }
     var vis = A.storeyRevealVisualAt(plan, tNorm);
     // A dark slot keeps its own key so the tint is actually taken DOWN between storeys (the "cease").
+    // The last storey never reports dark (§STOREY_REVEAL_LAST_STAYS_LIT), so this key never flips to
+    // its 'd' form for it — the tint rides to the window's end instead of ceasing.
     var key = vis ? (vis.idx + (vis.dark ? 'd' : 'l')) : null;
     if (key === _curIdx) return;
     _restoreTint();
     _curIdx = key;
     if (vis) {
-      _enterWindow();
+      _hideMarkers();
       if (!vis.dark) _applyTint(vis.storey, vis.color);
-    } else {
-      // A real plan whose tNorm is simply past the window: the film moved on to the orbit. Drop the
-      // x-ray, but KEEP the markers hidden — that is the whole point of hiding them.
-      _exitWindow(false);
     }
+    // vis===null but plan truthy: the film simply moved on to the orbit. No action needed — the
+    // tint block above already restored on its own key change, and markers intentionally STAY
+    // hidden (only the forced-restore path above un-hides them) — that is the whole point of
+    // §STOREY_REVEAL_MARKERS_OFF: once hidden, they stay hidden for the rest of the film.
   };
 }
 if (typeof window !== 'undefined') window.setupCpeStoreyReveal = setupCpeStoreyReveal;
