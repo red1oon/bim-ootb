@@ -1,8 +1,9 @@
-# ⚠ DO NOT REMOVE — Structural Sanity: rule-based load-path/serviceability screening panel
-# SCOPE: a clash-matrix-style sidebar panel that flags STR-discipline elements against a
-#   small set of deterministic, config-driven rules (geometry + classification only — no
-#   FEA, no invented loads/materials). Groups by severity, click row → zoom to element
-#   (reuse A.zoomToGuid). Read the log (§ lines) after every run.
+# ⚠ DO NOT REMOVE — "Sanity" (Structural Sanity): rule-based load-path/serviceability panel
+# SCOPE: a clash-checklist-style sidebar panel (NOT a matrix — see UI MODEL) that flags
+#   STR-discipline elements against a small set of deterministic, config-driven rules
+#   (geometry + classification only — no FEA, no invented loads/materials). Groups by
+#   severity, click row → zoom to element (reuse A.zoomToGuid). Long-press row → shareable
+#   deep-link URL (reuse A.shareUrl). Read the log (§ lines) after every run.
 # PRIME RULE: EXTRACT OR COMPILE ONLY. Every flag traces to a real bbox/storey/ifc_class
 #   from element_transforms + elements_meta, or a rule threshold in structural_rules.json.
 #   No solver, no mocked utilization/deflection numbers in the live panel. Ever.
@@ -29,6 +30,37 @@ Decision (from prior discussion): scope this as **rule-based structural sanity**
 value lane as Solibri Model Checker (instant, deterministic, code-adjacent heuristics) —
 NOT the Revit+Robot lane (real FEA numbers). If a real solver is ever integrated, it is a
 separate, clearly-labelled feature — this panel never blends the two.
+
+## NAMING — "Sanity", not "Stress" or "Structural Analysis"
+Feature name: **Structural Sanity**, UI button label: **"Sanity"** (parallel to "Clash").
+Rejected alternatives and why:
+- **"Stress"** — collides with a precise engineering term (force/area, MPa) this panel
+  never computes. Worse than a stretch: an engineer opening it expecting a stress value
+  and finding a ratio breaks trust immediately.
+- **"Structural Analysis"** — this IS the correct umbrella term for the field, and it's
+  fair to describe Sanity as *part of the structural-analysis workflow* (a pre-analysis
+  screening step, same category real engineers call "preliminary review"). But naming
+  the FEATURE itself "Structural Analysis" collides even harder than "Stress" — that
+  phrase is the canonical name for the real solver-based discipline (ETABS/Robot/STAAD).
+  "Sanity" avoids the collision while still being honest: "sanity check" is an established
+  engineering idiom for *quick plausibility check, not rigorous proof* — which is exactly
+  and only what this panel does.
+
+## WHY NOT REAL FEA (asked directly — answering honestly, not dismissing it)
+The solver itself is not the hard part: linear-elastic frame analysis (matrix stiffness
+method) is well-documented, 1970s-era numerics, and entirely feasible client-side/WASM for
+a building this size (thousands of members, not millions) — this is a data problem, not a
+compute problem. The hard part is INPUT: real analysis needs loads (dead/live/wind/seismic),
+material grade (E, yield strength), and boundary conditions (pinned/fixed/roller at each
+joint) — and VALIDATION on Hospital proved `material_name` is BLANK for all 1970 STR beams
+in a real, representative architectural-coordination IFC export. Typical coordination-grade
+IFC files do not carry loads or connection stiffness at all; that data lives in a separate
+engineer's analysis model, not the BIM coordination model. Bolting a real solver onto
+incomplete input produces confident-looking WRONG numbers — more dangerous than no analysis,
+and a direct violation of the non-invent Prime Rule. Real FEA is a legitimate, separate,
+future roadmap item IF gated on a data-availability check (does this IFC actually carry
+loads/material grade/supports?) — never blended into Sanity's rule-based severity model,
+and never shipped as a silent fallback when that data is missing.
 
 ## SOURCE OF TRUTH (non-invent)
 - Geometry/classification: `element_transforms` (guid, center_x/y/z, bbox_x/y/z) JOIN
@@ -124,15 +156,37 @@ from a Python prototype against the real DB, not invented:
   Treat span/depth as secondary/advisory in v1. Do not oversell column continuity in a
   demo until spot-checked.
 
-## SEVERITY → UI (reuse diff.js row pattern)
-Lead the panel with the **floating member** group — smallest, highest-confidence, most
-demo-worthy (see VALIDATION). Span/depth and column-continuity groups render below it.
+## UI MODEL — toggle + severity list, NOT a matrix
+Clash's matrix works because clash is a genuine pairwise relationship (ARC×MEP ≠ ARC×STR —
+a real 2D intersection). Sanity's rules are independent categories on one discipline (STR)
+with no meaningful "X vs Y" cell — a matrix here would be mostly-empty and forced. Instead:
+- **3 toggle buttons**: Floating Member / Span-Depth / Column Continuity (filters to one
+  rule category), plus an **"All"** default view.
+- **"All" view groups by severity first** (CRITICAL across all rules together, scannable
+  triage list), rule name shown per row — not siloed by category by default.
+- Lead the panel with the **floating member** group — smallest, highest-confidence, most
+  demo-worthy (see VALIDATION). Span/depth and column-continuity groups render below it.
 `CRITICAL` (red `#cc4444`) / `WARNING` (orange `#ffaa33`) / `OPTIMIZED` (green `#44cc44`,
 collapsed by default — only CRITICAL/WARNING expanded, matching clash-panel noise rules).
 Panel = `A.showStructuralSanity()`, same shape as `A.showDiffSummary` (diff.js:246): fixed
 sidebar div, grouped rows, `onclick="APP.zoomToGuid(guid)"` (diff.js:187, reused as-is —
 no new zoom code). Row shows ifc_class, name, storey, rule name + computed ratio/margin
-("Vital Stats"). No new camera/highlight logic.
+("Vital Stats"). No new camera/highlight logic for click — see 3D TINT below for the
+Sanity-Mode wireframe overlay (entered separately from a row click).
+
+## 3D TINT (Sanity Mode) — reuse Clash Mode's technique, keyed by severity not discipline
+Clash Mode tints every element by `DISC_COLORS[discipline]` as a translucent wireframe
+(`measure.js` ~1723, `MeshBasicMaterial{wireframe:true, opacity:0.2}`). Sanity Mode does the
+same over STR elements only, keyed by a new `SEVERITY_COLORS` lookup (red/orange/green) —
+same material/technique, no new shader, no per-face tinting, no X-ray logic.
+
+## SHARE / DEEP LINK — long-press row, reuse existing share plumbing (no new infra)
+Long-press is an established gesture already (`panels.js`, `picking.js`, `measure.js`).
+`sitecam.js` already builds per-element deep links (`?guid=${guid}` → re-zooms on load).
+`A.shareUrl(url, title)` (`share.js`) already powers Clash's "Share Report"/"Copy Link".
+Sanity row long-press: build `?guid=<guid>#sanity=<rule>` (guid re-triggers zoomToGuid on
+load; `sanity=<rule>` hash reopens the panel pre-filtered to that row's category) → call
+existing `A.shareUrl(url, title)`. No new sharing code — wires two existing mechanisms.
 
 ## COMPUTE STRATEGY — live, on panel open (no sidecar for v1)
 Same trigger as clash: lazy, on first panel open, not on model load. One linear pass over
@@ -164,12 +218,20 @@ building shows this pass is not cheap — do not pre-build one speculatively.
   real `buildings/Hospital_meta.db` and assert floating-member count is in the 40–50 range
   and concentrated at roof-level storeys — regression guard on the VALIDATION numbers above.
 - ☐ **T3** `A.showStructuralSanity()` panel — reuse `A.zoomToGuid`, `_elInfo`-style lookup,
-  diff.js row template. Witness: node-level render of the HTML string, assert row count/
-  severity grouping matches T2 fixture output (no live browser needed for this part).
+  diff.js row template, plus the 3-button/All toggle (UI MODEL). Witness: node-level render
+  of the HTML string, assert row count/severity grouping matches T2 fixture output, and
+  assert toggle filters to the right rule category (no live browser needed for this part).
 - ☐ **T4** Trigger wiring — sidebar button/menu entry beside existing Clash entry point
   (find it in `viewer.html`'s clash-panel toggle; mirror, don't duplicate the panel-open
-  plumbing).
-- ☐ **T5 (optional, only if T2 profiling on Terminal/Hospital-scale building is slow)**
+  plumbing). Button label "Sanity".
+- ☐ **T5** Sanity Mode 3D tint — `SEVERITY_COLORS` wireframe overlay on STR elements,
+  same technique as Clash Mode's `DISC_COLORS` overlay (measure.js ~1723). Witness: assert
+  the material/opacity config matches Clash Mode's, only the color lookup differs.
+- ☐ **T6** Long-press share deep-link — row long-press builds `?guid=<guid>#sanity=<rule>`
+  and calls existing `A.shareUrl()`; on load, `?guid=` re-zooms (sitecam.js precedent) and
+  `#sanity=<rule>` reopens the panel pre-filtered. Witness: URL round-trip (build → parse →
+  same guid + rule out).
+- ☐ **T7 (optional, only if T2 profiling on Terminal/Hospital-scale building is slow)**
   sidecar bake following `analysis_sidecar.js`'s `get5D`/`get4D` OPFS pattern.
 
 ## TEST / DEPLOY
