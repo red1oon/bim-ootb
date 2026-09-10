@@ -57,10 +57,12 @@
 //      a GEOM_EXTRUDE_POLY per plainExtrudeProfile() below (a 4-point axis-aligned rectangle; its holes are GEOM_CUT
 //      ops, caught next — mirrors bonsai_kernel.js canCut's "a non-insert solid is already worker-native B-rep");
 //      host class KNOWN and not WALL (an unrecorded class = freshly-sketched content stays eligible, the SAME rule
-//      bonsai_gridmove.js elementData applies); an ACTIVE
-//      GEOM_CUT whose `parent` IS the host and whose void box overlaps the filling's pre-drag box (a REAL carved
-//      void tied to this filling — the worker has no op that translates a committed void, so the door would move
-//      and the hole would stay: REFUSE, DON'T FABRICATE); SdgGate unavailable (cannot gate honestly).
+//      bonsai_gridmove.js elementData applies); SdgGate unavailable (cannot gate honestly). An ACTIVE GEOM_CUT whose
+//      `parent` IS the host and whose void box overlaps the filling's pre-drag box (a REAL carved void tied to this
+//      filling) NO LONGER refuses — §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md §4): the session records every such cut
+//      and the slide commits one GEOM_CUT_MOVE rider per cut (S5), so the hole travels with the door. It still refuses
+//      when cut_move.js or the full active op list is unavailable, or the host was rotated/arrayed after the cut
+//      (cut_move.js frameScale: no honest authored→world frame) — never a guessed frame.
 //   S2 CONSTRAINT — 1-DOF, OWNED BY THE ENGINE (prompts/SPEC_DAGEVU_SLIDE.md §2-3): dagevu_engine.js
 //      HostFillEdge.constrain(candidate − preCentre, {boxByFid}) is the ONE place the along-host projection + bounds
 //      live — axis = the host AABB's LONG plan axis (the complement of the thin axis resolveHost's wall branch snaps
@@ -81,7 +83,10 @@
 //      void), ONE rider GEOM_MOVE {parent: openingFid, same delta, induced:'fills-opening'} rides with it, committed
 //      together through oplog.commitGesture (one gesture = one Ctrl+Z, §P8 — the exact pattern gridmove.commit uses
 //      for stretch riders). No opening seeded ⇒ the single commit() path, unchanged.
-//   S5 NOT BUILT — a void-translate op (kernel + worker surgery) for a baked GEOM_CUT; refused instead (S1).
+//   S5 BUILT 2026-09-11 — GEOM_CUT_MOVE {cutId, parent, dx,dy,dz, induced:'fills-opening'} (prompts/SPEC_GEOM_CUT_MOVE.md):
+//      the worker fold shifts the cut's void BEFORE subtracting; the slide's world delta rides in the cut's AUTHORED
+//      frame (cut_move.js slideShift = t / F, F = the host's post-cut SCALE product). One rider per overlapping cut,
+//      same gesture group as S4. Holes BAKED into extracted LOD-300 meshes stay refused (the plain-box rule above).
 //
 // DUAL-EXPORT (window + node) like sdg_cascade.js / real_placement_resolver.js so the witness runs pure-node.
 (function (root, factory) {
@@ -290,9 +295,18 @@
       return refuse('host is obliquely yawed / tilted (§ROTATION-GUARD, yaw=' + pose.yawRad + ') — its AABB long edge is not its plane; refusing rather than sliding along an unreal axis');
     if (typeof ctx.plainBoxOf !== 'function') return refuse('no plainBoxOf oracle supplied — cannot verify the host body carries no baked opening');
     if (!ctx.plainBoxOf(fe.hostFid)) return refuse('host body is not a plain axis-aligned box (Bonsai._insertCutBox rule) — a real blob may carry a baked opening no op can translate; refusing rather than leaving a hole behind');
-    if (!Array.isArray(ctx.cutOps)) return refuse('no cutOps (active GEOM_CUT rows) supplied — cannot verify no baked void is tied to this filling');
-    var cutId = bakedVoidFor(ctx.cutOps, fe.hostFid, fb);
-    if (cutId != null) return refuse('a REAL baked void (GEOM_CUT #' + cutId + ', parent=host) coincides with this filling; no op exists to translate a committed void, so a slide would leave the hole behind — REFUSE, DON\'T FABRICATE (spec §1 item 5)');
+    if (!Array.isArray(ctx.cutOps)) return refuse('no cutOps (active GEOM_CUT rows) supplied — cannot verify whether a carved void is tied to this filling');
+    // §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md §4): a REAL carved void over the filling used to REFUSE here ("no op
+    // exists to translate a committed void"). It now RIDES — every overlapping active GEOM_CUT (cut_move.js cutsOver,
+    // over the CURRENT net-shifted voids) is recorded and resolveDrop emits one GEOM_CUT_MOVE per cut. Its frame
+    // factor F needs the host's post-cut transform history (frameScale over the FULL active op list) — refuse without.
+    var CM = _dep(ctx.cutMove, 'CutMove', './cut_move.js');
+    if (!CM) {
+      var legacyCutId = bakedVoidFor(ctx.cutOps, fe.hostFid, fb);
+      if (legacyCutId != null) return refuse('a REAL carved void (GEOM_CUT #' + legacyCutId + ', parent=host) coincides with this filling and cut_move.js is unavailable — no honest way to carry the hole; refusing rather than leaving it behind');
+    }
+    var cutRows = CM ? CM.cutsOver(ctx.cutOps, fe.hostFid, fb) : [];
+    if (cutRows.length && !Array.isArray(ctx.geomOps)) return refuse('a REAL carved void (GEOM_CUT #' + cutRows[0].id + ', parent=host) coincides with this filling but no geomOps (full active op list) was supplied — cannot derive the cut\'s frame (post-cut host transforms); refusing rather than assuming F=1');
     var gate = _dep(ctx.gate, 'SdgGate', './sdg_gate.js');
     if (!gate || !gate.evaluate) return refuse('SdgGate unavailable — cannot gate the slide honestly');
     // S2 axis + bounds — the engine's HostFillEdge.constrain (SPEC_DAGEVU_SLIDE.md §3). Probe at t=0 (always
@@ -307,6 +321,12 @@
     var probe = edge.constrain([0, 0, 0], { boxByFid: boxByFid });
     if (!probe) return refuse('engine refused the pre-drag pose itself (' + JSON.stringify(edge.refusal) + ')');
     var axis = probe.axis === 'x' ? 0 : 1, tMin = probe.tMin, tMax = probe.tMax;
+    var cuts = [];                                                    // §CUT-MOVE: [{cutId, parent, F}] per carved void
+    for (var ci = 0; ci < cutRows.length; ci++) {
+      var fr = CM.frameScale(ctx.geomOps, cutRows[ci], axis);
+      if (!fr.ok) return refuse('carved void GEOM_CUT #' + cutRows[ci].id + ' cannot follow the slide — ' + fr.reason + '; refusing rather than leaving the hole behind');
+      cuts.push({ cutId: cutRows[ci].id, parent: fe.hostFid, F: fr.f });
+    }
     var moved = [fid]; if (ob) moved.push(fe.openingFid);
     // S3 gate inputs: every mesh box EXCEPT invisible ride anchors (modeller.html _gateBoxes excludes them too).
     var anc = ctx.anchorFids || null, before = {};
@@ -321,13 +341,16 @@
       classByFid: ctx.classByFid || {},
       slide: { hostFid: fe.hostFid, openingFid: ob ? fe.openingFid : null, axis: axis, tMin: tMin, tMax: tMax, moved: moved,
         before: before, gate: gate, rel: ctx.rel || relFromFills(ctx, fbg), hostBox: hb.slice(),
-        edge: edge, boxByFid: boxByFid }                              // §DAGEVU: the engine edge + its pre-drag boxes (per-frame constrain input)
+        edge: edge, boxByFid: boxByFid,                               // §DAGEVU: the engine edge + its pre-drag boxes (per-frame constrain input)
+        cuts: cuts }                                                  // §CUT-MOVE: carved voids that ride (GEOM_CUT_MOVE riders)
     };
     console.log(TAG + ' §SESSION begin fid=' + fid + ' product=' + session.real.matchedProductId +
       ' dims(w,d,h)=' + session.real.width.toFixed(3) + ',' + session.real.depth.toFixed(3) + ',' + session.real.height.toFixed(3) +
       ' requires_host=WALL source=' + session.real.source);
     console.log(TAG + ' §SLIDE host=' + fe.hostFid + ' axis=' + 'xy'[axis] + ' t∈[' + tMin.toFixed(3) + ',' + tMax.toFixed(3) + ']' +
-      ' opening=' + (ob ? fe.openingFid + ' (rides, induced=fills-opening)' : 'none seeded') + ' constraint=DagevuEngine.HostFillEdge.constrain gate=SdgGate.evaluate (delta-honest)');
+      ' opening=' + (ob ? fe.openingFid + ' (rides, induced=fills-opening)' : 'none seeded') +
+      ' §CUT-MOVE cuts=' + (cuts.length ? cuts.map(function (c) { return '#' + c.cutId + '(F=' + c.F + ')'; }).join(',') + ' (ride, GEOM_CUT_MOVE induced=fills-opening)' : 'none') +
+      ' constraint=DagevuEngine.HostFillEdge.constrain gate=SdgGate.evaluate (delta-honest)');
     return session;
   }
   // ── §SLIDE S2/S3 — the per-frame constraint + gate ──────────────────────────────────────────────────
@@ -443,6 +466,17 @@
     var riders = session.slide ? session.slide.moved.filter(function (f) { return String(f) !== String(session.fid); }).map(function (f) {
       return { op_type: 'GEOM_MOVE', parameters: { parent: f, dx: op.parameters.dx, dy: op.parameters.dy, dz: op.parameters.dz, induced: 'fills-opening' } };
     }) : [];
+    // §CUT-MOVE S5: every carved void tied to the filling rides by the SAME world delta, expressed in the cut's
+    // AUTHORED frame on the slide axis (cut_move.js slideShift = t / F; the other components are 0 by construction) —
+    // one GEOM_CUT_MOVE rider per cut, in the same gesture group (one Ctrl+Z reverts door + hole together).
+    if (session.slide && session.slide.cuts && session.slide.cuts.length) {
+      var CMd = _dep(null, 'CutMove', './cut_move.js');
+      session.slide.cuts.forEach(function (cu) {
+        var d = [op.parameters.dx, op.parameters.dy, op.parameters.dz];
+        d[session.slide.axis] = CMd.slideShift(d[session.slide.axis], cu.F);
+        riders.push({ op_type: 'GEOM_CUT_MOVE', parameters: { cutId: cu.cutId, parent: cu.parent, dx: d[0], dy: d[1], dz: d[2], induced: 'fills-opening' } });
+      });
+    }
     return { committed: true, verdict: v, op: op, riders: riders };
   }
 
@@ -492,6 +526,11 @@
         var O = window.Bonsai && window.Bonsai.oplog;
         try { return (O && O._geomOps) ? O._geomOps().filter(function (o) { return o.op_type === 'GEOM_CUT'; }) : []; } catch (e) { return []; }
       },
+      //   _geomOps   → EVERY active GEOM row (§CUT-MOVE frameScale walks the host's post-cut transforms in it).
+      _geomOps: function () {
+        var O = window.Bonsai && window.Bonsai.oplog;
+        try { return (O && O._geomOps) ? O._geomOps() : []; } catch (e) { return []; }
+      },
       _plainBoxOf: function (fid) {
         var O = window.Bonsai && window.Bonsai.oplog, K = window.Bonsai;
         if (!O || !O._geomOps || !K || !K._insertCutBox) return null;
@@ -531,6 +570,7 @@
           fidByGuid: window.__arcFidByGuid || null,
           placementByFid: maps.placementByFid,
           cutOps: this._cutOps(),
+          geomOps: this._geomOps(),                              // §CUT-MOVE: the full active log for frameScale
           plainBoxOf: function (f) { return self._plainBoxOf(f); },
           rel: (typeof window.__gateRel === 'function') ? window.__gateRel() : null,
           anchorFids: window.__arcAnchorFids || null
@@ -560,11 +600,16 @@
         } else {
           res = await window.Bonsai.oplog.commit({ op_type: d.op.op_type, parameters: P }, {});
         }
-        var moved = [s.fid].concat(riders.map(function (r) { return r.parameters.parent; }));
+        // §CUT-MOVE: a GEOM_CUT_MOVE rider moves a VOID, not an element — it is NOT in the gate's changed set.
+        var mvRiders = riders.filter(function (r) { return r.op_type === 'GEOM_MOVE'; });
+        var cutRiders = riders.filter(function (r) { return r.op_type === 'GEOM_CUT_MOVE'; });
+        var moved = [s.fid].concat(mvRiders.map(function (r) { return r.parameters.parent; }));
         console.log(TAG + ' commit fid=' + s.fid + ' Δ(' + P.dx.toFixed(3) + ',' + P.dy.toFixed(3) + ',' + P.dz.toFixed(3) + ')' +
           ' host=' + d.verdict.hostFid +
           (s.slide ? (' §SLIDE axis=' + 'xy'[s.slide.axis] + ' t=' + d.verdict.t.toFixed(3) +
-            (riders.length ? ' rider=' + riders.map(function (r) { return r.parameters.parent; }).join(',') + ' induced=fills-opening §GESTURE gid=' + res.gid : ' rider=none') +
+            (mvRiders.length ? ' rider=' + mvRiders.map(function (r) { return r.parameters.parent; }).join(',') + ' induced=fills-opening' : ' rider=none') +
+            (cutRiders.length ? ' §CUT-MOVE cut=' + cutRiders.map(function (r) { var q = r.parameters; return '#' + q.cutId + ' d=(' + q.dx.toFixed(3) + ',' + q.dy.toFixed(3) + ',' + q.dz.toFixed(3) + ')'; }).join(',') : '') +
+            (riders.length ? ' §GESTURE gid=' + res.gid : '') +
             ' orange=' + ((d.verdict.gate && d.verdict.gate.orange) ? d.verdict.gate.orange.length : 0))
             : (d.verdict.snappedPos ? ' snapped-to-real-host-face' : '')) +
           ' verify=' + res.verify);
