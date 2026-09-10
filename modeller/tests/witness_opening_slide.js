@@ -17,10 +17,12 @@
  *   S4 OP          — resolveDrop ⇒ GEOM_MOVE {parent:filling, constrained delta}; one 'fills-opening' rider iff a
  *                    seeded opening resolves (same delta)
  *   S5 GATE-RED    — a constructed blocker box on the slide path ⇒ valid:false 'gate-red:clash', conflictIds names it
- *   S6 BAKED-VOID  — an active GEOM_CUT {parent:host} over the filling ⇒ session null (refuse, don't leave a hole)
+ *   S6 CARVED-VOID — an active GEOM_CUT {parent:host} over the filling ⇒ the session CARRIES the cut and resolveDrop adds a
+ *                    GEOM_CUT_MOVE rider (§CUT-MOVE, prompts/SPEC_GEOM_CUT_MOVE.md); REFUSED without an honest frame (no
+ *                    geomOps supplied / the host was rotated after the cut) — never a guessed frame
  *   S7 NO-ENGINE   — DagevuEngine absent ⇒ session null (the constraint has no local fallback)
  *   S8 PLAIN-EXTRUDE — plainExtrudeProfile: a 4-point axis-aligned rectangle ⇒ true; L-shape / rotated / 3-point ⇒ false
- *                    (a sketched rectangular wall is a slide host; its holes are GEOM_CUT ops, caught by S6)
+ *                    (a sketched rectangular wall is a slide host; its holes are GEOM_CUT ops, riding per S6)
  */
 'use strict';
 var fs = require('fs'), path = require('path');
@@ -152,11 +154,24 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     tB >= sl.tMin && tB <= sl.tMax && v5 && v5.valid === false && /^gate-red:/.test(v5.reason) && /clash/.test(v5.reason) && v5.conflictIds.indexOf('9100') >= 0,
     j({ tB: tB, reason: v5 && v5.reason, conflicts: v5 && v5.conflictIds }));
 
-  // S6 — BAKED VOID
-  var cut = { id: 777, op_type: 'GEOM_CUT', parameters: { parent: pick.host, void: { c1: [fb[0], fb[2], fb[4]], c2: [fb[1], fb[3], fb[5]] } } };
-  var S6 = ItemDrag.beginItemDragSession(ctxFor(pick.fid, { cutOps: [cut] }));
-  chk('S6 BAKED-VOID: an active GEOM_CUT {parent:host} whose void overlaps the filling ⇒ session REFUSED (no op can move a committed void — never leave the hole behind)',
-    S6 === null && ItemDrag.bakedVoidFor([cut], pick.host, fb) === 777);
+  // S6 — CARVED VOID (§CUT-MOVE, prompts/SPEC_GEOM_CUT_MOVE.md §4): an active GEOM_CUT over the filling no longer
+  // refuses — it RIDES as a GEOM_CUT_MOVE rider in the cut's authored frame. Refuses only without an honest frame.
+  var cut = { id: 777, op_type: 'GEOM_CUT', parent: pick.host, parameters: { parent: pick.host, void: { c1: [fb[0], fb[2], fb[4]], c2: [fb[1], fb[3], fb[5]] } } };
+  var S6a = ItemDrag.beginItemDragSession(ctxFor(pick.fid, { cutOps: [cut] }));                 // no geomOps ⇒ no frame ⇒ refuse
+  var S6 = ItemDrag.beginItemDragSession(ctxFor(pick.fid, { cutOps: [cut], geomOps: [cut] }));
+  var c6 = c.slice(); c6[K] += (tOK != null ? tOK : 0); c6[other] += 0.3; c6[2] += 0.1;
+  var d6 = S6 ? ItemDrag.resolveDrop(S6, c6[0], c6[1], c6[2]) : null;
+  var cr6 = d6 && d6.riders ? d6.riders.filter(function (r) { return r.op_type === 'GEOM_CUT_MOVE'; }) : [];
+  var dk = ax === 'x' ? 'dx' : 'dy';
+  chk('S6 CARVED-VOID rides (§CUT-MOVE): an active GEOM_CUT {parent:host} over the filling ⇒ session carries cuts=[{cutId:777,F:1}]; resolveDrop adds ONE GEOM_CUT_MOVE {cutId:777, parent:host, d = the door\'s delta (F=1), induced:fills-opening}; WITHOUT geomOps (no frame) ⇒ REFUSED',
+    S6a === null && !!S6 && S6.slide.cuts.length === 1 && S6.slide.cuts[0].cutId === 777 && S6.slide.cuts[0].F === 1 && ItemDrag.bakedVoidFor([cut], pick.host, fb) === 777 &&
+    !!d6 && d6.committed && cr6.length === 1 && cr6[0].parameters.cutId === 777 && String(cr6[0].parameters.parent) === String(pick.host) &&
+    Math.abs(cr6[0].parameters[dk] - d6.op.parameters[dk]) < 1e-12 && cr6[0].parameters.induced === 'fills-opening',
+    j({ S6a: S6a, cuts: S6 && S6.slide.cuts, rider: cr6[0] && cr6[0].parameters, door: d6 && d6.op && d6.op.parameters }));
+  // S6b — a post-cut GEOM_ROTATE on the host ⇒ no honest authored→world frame ⇒ REFUSED (never a guessed F)
+  var rot = { id: 778, op_type: 'GEOM_ROTATE', parent: pick.host, parameters: { parent: pick.host, drot: 30 } };
+  var S6b = ItemDrag.beginItemDragSession(ctxFor(pick.fid, { cutOps: [cut], geomOps: [cut, rot] }));
+  chk('S6b CARVED-VOID after a host ROTATE ⇒ session REFUSED (frameScale: rotated-after-cut — the authored axis is no longer a world axis)', S6b === null);
 
   // S7 — NO ENGINE
   var S7 = ItemDrag.beginItemDragSession(ctxFor(pick.fid, { dagevu: { HostFillEdge: null } }));
