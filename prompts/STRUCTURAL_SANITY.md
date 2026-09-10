@@ -31,38 +31,89 @@ separate, clearly-labelled feature — this panel never blends the two.
   `viewer/rates/clash_rules.json`. Every number an engineer can inspect/edit, none
   hardcoded in JS.
 
-## RULES v1 (geometry + classification only — no material property required)
-Each rule reads its threshold from `structural_rules.json`; defaults below are standard
-preliminary-design serviceability ratios (textbook rule-of-thumb), explicitly labelled as
-screening heuristics, not a substitute for full analysis:
+## RULES v1 — REVISED after dry-run validation against real Hospital_meta.db
+First draft (concrete-style thresholds, slabs included, vertical-only supports) was
+validated against `buildings/Hospital_meta.db` (2827 STR elements) before any code was
+written, per Prime Directive (verify against real data, not assumption). It over-flagged
+badly — see VALIDATION below. Rules below are the corrected v1, re-validated on the same
+data. `structural_rules.json` still holds every threshold; nothing here is hardcoded in JS.
 
-1. **Span/depth ratio** — `IfcBeam`/`IfcSlab`, discipline STR: long horizontal bbox dim
-   (span) ÷ vertical bbox dim (depth). `warning_ratio: 20`, `critical_ratio: 26`.
-2. **Cantilever span/depth** — same element, flagged cantilever (no support within
-   tolerance at one end via rtree check) — tighter default: `warning_ratio: 7`,
-   `critical_ratio: 10`.
-3. **Column load-path continuity** — `IfcColumn`: rtree query for a column footprint
-   (X/Y within `tolerance_m`) on the storey immediately below. None found (and not
-   ground/foundation storey) → CRITICAL "unsupported column".
-4. **Beam/slab end support** — `IfcBeam`/`IfcSlab` end points: rtree query for a
-   column/wall footprint within `tolerance_m` directly below each end. Neither end
-   supported → CRITICAL "floating member".
+1. **Floating member (headline rule, highest confidence)** — `IfcBeam`: rtree query at
+   BOTH end points for a support within `tolerance_m`. A support is (a) a vertical STR
+   element (`IfcColumn`/`IfcWallStandardCase`/`IfcFooting`/`IfcMember`) whose Z-range
+   brackets the beam end, OR (b) another `IfcBeam` framing in at the same level (its
+   zmin within `framing_dz_m` of this beam's zmin) — beam-to-beam framing is normal steel
+   practice and must count as support, or every secondary beam false-flags. Zero support
+   at BOTH ends → **CRITICAL "floating member"**, independent of span/depth.
+2. **Span/depth ratio** — `IfcBeam` only (NOT `IfcSlab` — a slab's own bbox spans the
+   whole floor plate, not a real structural span; see VALIDATION). Section material is
+   inferred from `element_name` prefix (steel: `UB`/`UC`/`Channel`/`HSS`/`W-shape`;
+   concrete: `Concrete`/`RC`) since `material_name` is often blank — this is extraction
+   from real text, not invention, but IS a heuristic; log `§MATERIAL_INFERRED unmatched=N`
+   so an unmatched fallback is visible, never silent. Steel default: `warning_ratio: 24`,
+   `critical_ratio: 30`. Concrete default: `warning_ratio: 20`, `critical_ratio: 26`.
+   **Ships as WARNING-ceiling only in v1** (never auto-CRITICAL) until an engineer
+   confirms per-section-type thresholds against real Hospital output — see VALIDATION.
+3. **Cantilever span/depth** — beam with support at exactly one end (rule 1's supported_at,
+   not both/neither) — tighter default: `warning_ratio: 12`, `critical_ratio: 16`.
+4. **Column load-path continuity** — `IfcColumn`: rtree query for a column/footing/wall
+   footprint within `tolerance_m` on the storey immediately below (or at foundation level).
+   `tolerance_m: 0.3` (NOT clash's 0.025–0.05 — that tolerance is for flush-surface clash,
+   this is storey-to-storey centerline drift, a different physical question; see
+   VALIDATION). None found → CRITICAL "unsupported column".
 
 `structural_rules.json` shape (mirrors `clash_rules.json`):
 ```json
 {
   "structural_rules": [
-    { "name": "span_depth_beam", "applies_to": ["IfcBeam","IfcSlab"], "cantilever": false,
-      "warning_ratio": 20, "critical_ratio": 26 },
-    { "name": "span_depth_cantilever", "applies_to": ["IfcBeam","IfcSlab"], "cantilever": true,
-      "warning_ratio": 7, "critical_ratio": 10 },
-    { "name": "column_continuity", "applies_to": ["IfcColumn"], "tolerance_m": 0.15 },
-    { "name": "member_end_support", "applies_to": ["IfcBeam","IfcSlab"], "tolerance_m": 0.15 }
+    { "name": "floating_member", "applies_to": ["IfcBeam"], "tolerance_m": 0.15,
+      "framing_dz_m": 0.4 },
+    { "name": "span_depth_steel", "applies_to": ["IfcBeam"], "material": "steel",
+      "name_hints": ["UB","UC","Channel","HSS"], "cantilever": false,
+      "warning_ratio": 24, "critical_ratio": 30, "max_severity": "WARNING" },
+    { "name": "span_depth_concrete", "applies_to": ["IfcBeam"], "material": "concrete",
+      "name_hints": ["Concrete","RC"], "cantilever": false,
+      "warning_ratio": 20, "critical_ratio": 26, "max_severity": "WARNING" },
+    { "name": "span_depth_cantilever", "applies_to": ["IfcBeam"], "cantilever": true,
+      "warning_ratio": 12, "critical_ratio": 16 },
+    { "name": "column_continuity", "applies_to": ["IfcColumn"], "tolerance_m": 0.3 }
   ]
 }
 ```
 
+## VALIDATION — dry run against buildings/Hospital_meta.db (2827 STR elements)
+Run before implementation (Spec-First: prove the design on real data first). Numbers are
+from a Python prototype against the real DB, not invented:
+
+- **Building profile**: 1970 `IfcBeam`, 553 `IfcFooting`, 255 `IfcColumn`, 28
+  `IfcWallStandardCase`, 8 storeys (Level 1–7A). `material_name` is BLANK for all 1970
+  beams — confirmed by query, not assumed — so material inference must use
+  `element_name` (100% of Hospital beams carry a UB/UC/Channel steel-section prefix,
+  e.g. `UB-Universal Beam:838x292x194UB`).
+- **First-draft rules (rejected)**: span/depth on slabs → 9/11 slabs false-CRITICAL
+  (ratios 219–672 — bbox-is-not-span artifact). Span/depth with concrete-style
+  thresholds (20/26) on steel beams → 252 CRITICAL + 547 WARNING of 1970 (40% flagged).
+  End-support check counting only vertical elements → traced one flagged "unsupported"
+  17m beam and found it frames cleanly into two perpendicular primary beams — beam-to-
+  beam framing wasn't recognized as support. Column continuity at clash-style
+  `tolerance_m=0.15` → 55/255 (22%) flagged; raising to 0.3 dropped it to 22/255 (8.6%)
+  and it plateaus by 0.5–1.0m (17–18) — 0.15 was measuring ordinary storey-to-storey
+  centerline drift, not real discontinuity.
+- **Revised rules (this spec)**: floating-member (rule 1) = **43/1970 beams (2.2%)**,
+  clustered at roof levels (Level 6: 26, Level 7: 8, Level 3–5: 9) — a real, explainable,
+  demo-worthy finding (something a visual scan of the model would not catch). Span/depth
+  with steel-appropriate thresholds (24/30) still flags ~23% (248 CRIT/215 WARN) —
+  materially better than 40% but still high enough that it ships WARNING-ceiling only
+  until validated, per rule 2 above. Column continuity at 0.3m tolerance = 22/255 (8.6%),
+  plausible order of magnitude, not yet spot-checked against actual transfer conditions.
+- **Showcase verdict**: YES, Hospital gives a real showcase — lead the panel with the
+  floating-member finding (small, high-confidence, visually obvious once zoomed-to).
+  Treat span/depth as secondary/advisory in v1. Do not oversell column continuity in a
+  demo until spot-checked.
+
 ## SEVERITY → UI (reuse diff.js row pattern)
+Lead the panel with the **floating member** group — smallest, highest-confidence, most
+demo-worthy (see VALIDATION). Span/depth and column-continuity groups render below it.
 `CRITICAL` (red `#cc4444`) / `WARNING` (orange `#ffaa33`) / `OPTIMIZED` (green `#44cc44`,
 collapsed by default — only CRITICAL/WARNING expanded, matching clash-panel noise rules).
 Panel = `A.showStructuralSanity()`, same shape as `A.showDiffSummary` (diff.js:246): fixed
@@ -90,11 +141,15 @@ building shows this pass is not cheap — do not pre-build one speculatively.
 ## TASKS / STATE
 - ☐ **T1** `viewer/rates/structural_rules.json` — default rules above, loader mirroring
   `rates.js loadSequenceRules()` (JSON overrides in place, hardcoded fallback always present).
-- ☐ **T2** `viewer/structural_sanity.js` — rule evaluator: query STR elements, run the 4
-  rules, return `[{guid, ifc_class, name, storey, rule, severity, ratio}]`. Witness:
+- ☐ **T2** `viewer/structural_sanity.js` — rule evaluator: query STR elements, run the 5
+  rules (floating member, span/depth steel, span/depth concrete, cantilever, column
+  continuity), return `[{guid, ifc_class, name, storey, rule, severity, ratio}]`. Witness:
   `tests/test_structural_sanity_rules.js` — synthetic element_transforms/elements_meta
-  fixture (same pattern as `witness_disc_room_type_weight.js`) with one known-CRITICAL
-  span/depth beam, one known-unsupported column, one clean beam → assert exact severities.
+  fixture (same pattern as `witness_disc_room_type_weight.js`) with one floating beam
+  (zero support both ends), one beam framing into another beam (must NOT flag floating),
+  one known-unsupported column, one clean beam → assert exact severities. Then run against
+  real `buildings/Hospital_meta.db` and assert floating-member count is in the 40–50 range
+  and concentrated at roof-level storeys — regression guard on the VALIDATION numbers above.
 - ☐ **T3** `A.showStructuralSanity()` panel — reuse `A.zoomToGuid`, `_elInfo`-style lookup,
   diff.js row template. Witness: node-level render of the HTML string, assert row count/
   severity grouping matches T2 fixture output (no live browser needed for this part).
