@@ -5662,7 +5662,15 @@ async function setupEffects(A, renderer, scene, camera) {
   // be good") — same "both visible together briefly" technique as CPE_REVEAL_FADE_SEC above, applied
   // to the ARC/STR drop-out at ghost-phase onset instead of a parade slot boundary, at the length the
   // user asked for. See A.cpeRevealVisualAt's ghost-phase branch.
-  var ARCH_DROP_FADE_SEC = 2.0;
+  var ARCH_DROP_FADE_SEC = 1.0;   // §57.4b (2026-09-11, user: "even 1 sec as it can be expensive")
+  // §57.4b — the instanced/batched majority (no alpha channel, still a boolean cut) fires at the
+  // MIDPOINT of the regular-mesh fade (opacity ~50%, inside the user's named 70%-30% band) instead
+  // of at the fade's own end, so the bulk pop lands WHILE the visible dissolve is already halfway
+  // through — the eye is already tracking a fade in progress, and that fade keeps visibly running
+  // for the second half of the window AFTER the bulk vanishes, carrying the transition forward
+  // rather than the pop reading as a separate, disconnected event. User: "make it go from 70% to
+  // 30% so the cutover gives impression of carry over fade."
+  var ARCH_BULK_CUT_FRAC = 0.5;
   // §CPE_NOISE_LAW — the user's ONE pacing dial ("have a speed range… don't overdo it"), and the
   // only knob the noise ratio is allowed to have. Declared here, at module scope, because the law
   // governs EVERY beat: the dive's cost table (built with the plan) and the walk's blended cost
@@ -5937,11 +5945,13 @@ async function setupEffects(A, renderer, scene, camera) {
     var tF = (b.flyback != null && b.flyback > tP) ? b.flyback : tP;
     if (tNorm <= tF) return null;                              // pull-out + fly-back: ARC/STR SOLID
     if (tNorm <= b.reveal) {
-      // §57.4 — ARC/STR stay in visDiscs (what A.cpeRevealApplyVisual actually shows) for
-      // ARCH_DROP_FADE_SEC after ghost starts, so the drop reads as a brief fade rather than an
-      // instant cut. `discs` (the caption identity) is untouched — the caption never claimed ARC/STR.
+      // §57.4/§57.4b — ARC/STR stay in visDiscs (what A.cpeRevealApplyVisual actually shows,
+      // the boolean cut for Instanced/BatchedMesh) only through the MIDPOINT of the fade window —
+      // A.cpeArchFadeApplyVisual's regular-mesh opacity ramp keeps running past that point to the
+      // window's own end, so the visible dissolve carries on after the bulk cut instead of ending
+      // there. `discs` (the caption identity) is untouched — the caption never claimed ARC/STR.
       var fadeFrac = (plan.durationSec > 0) ? ARCH_DROP_FADE_SEC / plan.durationSec : 0;
-      var inArchFade = tNorm <= tF + fadeFrac;
+      var inArchFade = tNorm <= tF + fadeFrac * ARCH_BULK_CUT_FRAC;
       return { phase: 'ghost', discs: rv.discs.slice(),
                visDiscs: inArchFade ? rv.discs.concat(['ARC', 'STR']) : rv.discs.slice() };
     }  // round 2
@@ -6048,16 +6058,20 @@ async function setupEffects(A, renderer, scene, camera) {
     var st = (plan && A.cpeRevealVisualAt) ? A.cpeRevealVisualAt(plan, tNorm) : null;
     return !!(st && st.phase === 'tail-one');
   };
-  // §57.4-REAL-FADE (2026-09-11, user: "real fade for what can fade") — the visDiscs-overlap
-  // technique above only ever DELAYED the boolean cut (A._applyDiscVisibility has no opacity
-  // concept at all, confirmed by reading it — §CPE_DISCIPLINE_REVEAL_FADE's own comment already
-  // says so), so ARC/STR stayed fully, normally visible for the whole 2s window and then vanished
-  // instantly — not a dissolve, just a postponed cut. REGULAR (non-Instanced/BatchedMesh) meshes
-  // CAN take a real per-object opacity ramp; Instanced/BatchedMesh cannot (no alpha channel in
-  // instanceColor / the batched colours texture — verified against viewer/lib/three.core.min.js
-  // directly, same check §57.2 already did for a different reason). So: regular ARC/STR meshes get
-  // a genuine 1.0->0.0 fade over ARCH_DROP_FADE_SEC; Instanced/BatchedMesh ARC/STR stays on the
-  // existing visDiscs delayed-cut path, unchanged. Materials are CLONED (per distinct original,
+  // §57.4-REAL-FADE / §57.4b (2026-09-11) — the visDiscs-overlap technique above only ever
+  // DELAYED the boolean cut (A._applyDiscVisibility has no opacity concept at all, confirmed by
+  // reading it — §CPE_DISCIPLINE_REVEAL_FADE's own comment already says so): ARC/STR stayed fully,
+  // normally visible for the whole window and then vanished instantly — not a dissolve, just a
+  // postponed cut. REGULAR (non-Instanced/BatchedMesh) meshes CAN take a real per-object opacity
+  // ramp; Instanced/BatchedMesh cannot (no alpha channel in instanceColor / the batched colours
+  // texture — verified against viewer/lib/three.core.min.js directly, same check §57.2 already
+  // did for a different reason). So: regular ARC/STR meshes get a genuine 1.0->0.0 fade over the
+  // WHOLE ARCH_DROP_FADE_SEC window (now 1.0s — user: "even 1 sec as it can be expensive");
+  // Instanced/BatchedMesh ARC/STR is cut via the existing visDiscs boolean path, but user-timed to
+  // fire at ARCH_BULK_CUT_FRAC (the window's own midpoint, ~50%, inside the user's named 70%-30%
+  // opacity band) rather than the window's end — the regular-mesh fade keeps visibly running for
+  // the SECOND half of the window after the bulk pop, carrying the transition forward instead of
+  // the pop reading as its own disconnected event. Materials are CLONED (per distinct original,
   // deduped) before animating opacity — never written in place — because materials in this viewer
   // are SHARED/cached (A._matCache), the exact bug §STOREY_REVEAL_TINT_SHARED_MATERIAL already
   // found and fixed for the storey-reveal tint; this reuses that same discipline.
