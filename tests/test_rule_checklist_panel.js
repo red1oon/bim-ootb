@@ -69,8 +69,15 @@ chk('Floating Member filter includes only beam-floating', fmResult.html.indexOf(
 // Extra structural checks — toggle buttons rendered, click/zoom wiring present, empty state.
 chk('renders one toggle button per category + All', (html.match(/class="rc-toggle-btn"/g) || []).length === categories.length + 1,
   'found=' + ((html.match(/class="rc-toggle-btn"/g) || []).length));
-chk('row onclick wires APP.zoomToGuid', html.indexOf("onclick=\"APP.zoomToGuid('beam-floating')\"") >= 0);
+// 2026-09-12 (user directive, "follow Clash exact"): rows no longer carry an inline onclick —
+// click/selection is delegated through ListKeyNav (window.makeListKeyNav, browser-only glue in
+// rule_checklist.js's _wireRowEvents), exactly like Clash's own row list. Assert the delegation
+// contract instead: no inline zoom handler on the row, but the data- attributes a delegated
+// handler needs (guid/rule/severity) are all present.
+chk('row carries NO inline onclick (click is delegated, matching Clash\'s row list)',
+  html.indexOf('onclick="APP.zoomToGuid(') === -1);
 chk('data-rc-rule carries the rule name for delegated long-press', html.indexOf('data-rc-rule="floating_member"') >= 0);
+chk('data-rc-severity carries the severity for delegated multi-select tinting', html.indexOf('data-rc-severity="CRITICAL"') >= 0);
 chk('OPTIMIZED group collapsed by default when present', (() => {
   const optRows = [{ guid: 'opt-1', ifc_class: 'IfcBeam', name: 'OK', storey: 'L1', rule: 'span_depth_steel', severity: 'OPTIMIZED', ratio: 2 }];
   const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: optRows }, null);
@@ -112,14 +119,20 @@ chk('(d) mixed rules within one severity tier get one rule-set header EACH, not 
     const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: mixed }, null);
     return r.html.indexOf('Floating Member &mdash; 2 flagged') >= 0 && r.html.indexOf('Column Continuity &mdash; 1 flagged') >= 0;
   })());
-chk('(d) rule-set header click also fits the WHOLE set in frame (APP.zoomToGuids, every member guid + the severity color)',
+// 2026-09-12 (user directive, "ignore my reframe whole... follow Clash exact: nothing during
+// category, zoom when selected item"): the rule-set HEADER is a category/grouping level, like a
+// Clash discipline-pair toggle — it must do NOTHING to the camera or scene, only expand/collapse.
+// Selecting actual rows (via ListKeyNav) is what drives the camera now — see rule_checklist.js's
+// _wireRowEvents/_rcOnSelect (browser-only glue, not Node-testable here, same as
+// A.showRuleModeTint's own untested-in-Node precedent).
+chk('(d) rule-set header click does NOT touch the camera/scene (no zoomToGuids/showRuleModeTint call)',
   (() => {
     const setRows = [
       { guid: 'x1', ifc_class: 'IfcBeam', name: 'X1', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
       { guid: 'x2', ifc_class: 'IfcBeam', name: 'X2', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
     ];
     const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: setRows }, null);
-    return r.html.indexOf("APP.zoomToGuids('x1,x2'.split(','), '#cc4444')") >= 0;
+    return r.html.indexOf('zoomToGuids') === -1 && r.html.indexOf('showRuleModeTint') === -1;
   })());
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -228,41 +228,28 @@ function setupDiff(A) {
     console.log('[S225] §ZOOM guid=' + guid.substring(0, 12));
   };
 
-  // Zoom camera to fit a SET of meshes by guid — mirrors the EXISTING Clash multi-select pattern
-  // (scene.js's clashListNav onToggle, "indices.length > 1" branch: a marker dot per item, camera
-  // PULLS BACK along whatever direction it's already looking rather than jumping to a fixed
-  // isometric-style angle, 20-frame ease-out) instead of reinventing a different convention — a
-  // user who already knows Clash's multi-select gets the same visual language here. `color`
-  // (hex number, e.g. 0xcc4444) marks each dot; a rule set is monochromatic by construction (one
-  // rule's severity never varies row-to-row — see structural_sanity.js/egress_sanity.js), so the
-  // caller passes the rule's own severity color once, not per-guid.
-  // Consumer: viewer/rule_checklist.js's rule-set header click ("zoom to fit this whole set").
-  A.zoomToGuids = function(guids, color) {
+  // Camera-only: pull back to fit a SET of meshes by guid, same direction-preserving move as
+  // Clash's multi-select camera step (scene.js clashListNav onToggle, "indices.length > 1"
+  // branch) — pulls back along whatever direction the camera is already looking, 20-frame
+  // ease-out, rather than jumping to a fixed isometric-style angle. NO markers of its own — for
+  // Sanity/Egress rows, the marker is A.showRuleModeTint's real-shape wireframe (rule_checklist.js
+  // wires both together on multi-select), not a dot: a rule-set element's own SHAPE is the
+  // finding (a floating beam's real length, an unsupported column's real footprint), unlike a
+  // clash's point-of-intersection, which has no shape of its own to show.
+  // Consumer: viewer/rule_checklist.js's row multi-select (via ListKeyNav, same mechanism Clash
+  // itself uses — not a bespoke trigger).
+  A.zoomToGuids = function(guids) {
     guids = (guids || []).filter(Boolean);
     if (!guids.length) return;
-    color = (color === undefined || color === null) ? 0xff4444 : color;
     var guidSet = {};
     guids.forEach(function(g) { guidSet[g] = true; });
     var targets = A.collectMeshes(function(o) { return o.isMesh && guidSet[o.userData.guid]; });
     if (!targets.length) { console.log('[S225] §ZOOM_SET_MISS n=' + guids.length); return; }
 
-    // Clear this set's previous dots before dropping new ones (same clear-then-repopulate as
-    // Clash's A._clashHighlights) — a stale dot cloud from the last rule set opened must not
-    // linger into the next.
-    if (A._ruleSetHighlights) A._ruleSetHighlights.forEach(function(h) { A.measureGroup.remove(h); });
-    A._ruleSetHighlights = [];
-
     var minV = new THREE.Vector3(Infinity, Infinity, Infinity);
     var maxV = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
     targets.forEach(function(mesh) {
       var mid = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
-      var sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(0.3, 8, 8),
-        new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.7, depthTest: false })
-      );
-      sphere.position.copy(mid);
-      A.measureGroup.add(sphere);
-      A._ruleSetHighlights.push(sphere);
       minV.min(mid); maxV.max(mid);
     });
 

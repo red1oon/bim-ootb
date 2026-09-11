@@ -47,14 +47,15 @@ function _rcBtnStyle(active) {
     (active ? 'background:#1565c0;color:#fff' : 'background:rgba(255,255,255,0.05);color:#ccc');
 }
 
-// One row: guid/rule carried via data-rc-guid/data-rc-rule (delegated long-press reads these,
-// see _wireRuleChecklistRowEvents below); click → APP.zoomToGuid, exactly like diff.js's row().
+// One row: guid/rule/severity carried via data-rc-guid/data-rc-rule/data-rc-severity. NO inline
+// onclick — click/selection is delegated through ListKeyNav (_wireRowEvents below), exactly like
+// Clash's row list (measure.js/scene.js clashListNav: "ALL clicks route through ListKeyNav so
+// anchor/cursor track correctly"), not a per-row handler. Long-press (share) still reads these
+// data- attributes via the same delegated listener.
 function _rcRowHtml(r, colorMap) {
   var color = (colorMap && colorMap[r.severity]) || '#888';
-  var guidJs = _rcEscJs(r.guid);
   var name = String(r.name || '').substring(0, 30);
-  var html = '<div class="rc-row" data-rc-guid="' + _rcEscAttr(r.guid) + '" data-rc-rule="' + _rcEscAttr(r.rule) + '"' +
-    ' onclick="APP.zoomToGuid(\'' + guidJs + '\')"' +
+  var html = '<div class="rc-row" data-rc-guid="' + _rcEscAttr(r.guid) + '" data-rc-rule="' + _rcEscAttr(r.rule) + '" data-rc-severity="' + _rcEscAttr(r.severity) + '"' +
     ' style="padding:4px 6px;margin:2px 0;border-radius:4px;cursor:pointer;border-left:3px solid ' + color +
     ';background:rgba(255,255,255,0.03);transition:background 0.1s"' +
     ' onmouseover="this.style.background=\'rgba(255,255,255,0.08)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.03)\'">';
@@ -84,16 +85,14 @@ function _rcPrettyRule(name) {
 function _rcRuleSetHtml(ruleName, ruleRows, colorMap) {
   if (!ruleRows.length) return '';
   var color = (colorMap && colorMap[ruleRows[0].severity]) || '#888';
-  // Clicking the header both expands the list AND frames the WHOLE set in one shot — A.zoomToGuids
-  // (diff.js), mirroring the EXISTING Clash multi-select convention (dot per item, pull back along
-  // the current view direction) rather than a different one-off framing. A rule set is
-  // monochromatic (one rule's severity never varies row-to-row), so the same `color` already
-  // computed for this header's own edge bar is passed straight through for the dots. GUIDs are
-  // real IFC guids (base64-like, no commas) so a plain comma-join + split round-trips safely.
-  var guidList = ruleRows.map(function (r) { return _rcEscJs(r.guid); }).join(',');
+  // Header click is EXPAND/COLLAPSE ONLY — same as a Clash category toggle, "nothing during
+  // category" (user directive, 2026-09-12). No camera move, no markers: this is a filter/grouping
+  // level, not a selection. Selecting actual ITEMS (the rows underneath, once expanded) is what
+  // drives the camera — via ListKeyNav, see _wireRowEvents below — matching Clash's own list
+  // exactly instead of inventing a second, header-level selection concept.
   var html = '<div class="rc-ruleset">';
   html += '<div class="rc-ruleset-header" data-rc-rule="' + _rcEscAttr(ruleName) + '"' +
-    ' onclick="var b=this.nextElementSibling; b.style.display = (b.style.display===\'none\')?\'block\':\'none\'; this.firstChild.textContent = (b.style.display===\'none\')?\'▸ \':\'▾ \'; if (window.APP && APP.zoomToGuids) APP.zoomToGuids(\'' + guidList + '\'.split(\',\'), \'' + _rcEscJs(color) + '\');"' +
+    ' onclick="var b=this.nextElementSibling; b.style.display = (b.style.display===\'none\')?\'block\':\'none\'; this.firstChild.textContent = (b.style.display===\'none\')?\'▸ \':\'▾ \';"' +
     ' style="cursor:pointer;font-size:10px;color:' + color + ';margin:3px 0 1px;padding:2px 4px;border-left:3px solid ' + color + ';background:rgba(255,255,255,0.02)">' +
     '<span>▸ </span>' + _rcEscAttr(_rcPrettyRule(ruleName)) + ' &mdash; ' + ruleRows.length + ' flagged</div>';
   html += '<div class="rc-ruleset-body" style="display:none;padding-left:6px">';
@@ -220,12 +219,63 @@ function setupRuleChecklist(A) {
       ' critical=' + result.counts.CRITICAL + ' warning=' + result.counts.WARNING + ' optimized=' + result.counts.OPTIMIZED);
   }
 
-  // Row long-press (350ms, cancel-on-move-10px) — event delegation on the panel's row-container
-  // div, attached ONCE (not per-row), mirrors viewer/measure.js's clash-row long-press mechanics
-  // (lines ~969-1034) exactly: pointerdown arms a 350ms timer, pointermove cancels past 10px
-  // (dx²+dy²>100), pointerup/pointercancel clear the timer.
+  // Only VISIBLE rows are real ListKeyNav items — a row inside a collapsed rule-set (display:none
+  // ancestor) is not on screen and must not be selectable/counted, unlike Clash's flat list which
+  // has no per-row collapse to account for.
+  function _rcVisibleRows(panel) {
+    return Array.from(panel.querySelectorAll('[data-rc-guid]')).filter(function (el) {
+      return el.offsetParent !== null;
+    });
+  }
+
+  // Selection → camera/highlight, mirroring Clash's clashListNav onToggle EXACTLY (scene.js
+  // ~line 2247): single item -> A.zoomToGuid (fly to it, as before); MULTIPLE items -> the
+  // whole-set treatment — but using A.showRuleModeTint's real-shape wireframe instead of Clash's
+  // dot spheres (a Sanity/Egress finding's own SHAPE is the point, a clash's point-of-intersection
+  // has none — see A.zoomToGuids' own header in diff.js) plus the same pull-back camera move.
+  function _rcOnSelect(guids) {
+    guids = (guids || []).filter(Boolean);
+    if (!guids.length) return;
+    if (guids.length === 1) { if (A.zoomToGuid) A.zoomToGuid(guids[0]); return; }
+    var cfg = A._ruleChecklistConfig;
+    var colorMap = (cfg && cfg.colorMap) || {};
+    var panel = document.getElementById('rule-checklist-panel');
+    var map = {};
+    if (panel) {
+      guids.forEach(function (g) {
+        var el = panel.querySelector('[data-rc-guid="' + g.replace(/"/g, '') + '"]');
+        if (el) map[g] = el.getAttribute('data-rc-severity');
+      });
+    }
+    if (A.showRuleModeTint) A.showRuleModeTint(map, colorMap);
+    if (A.zoomToGuids) A.zoomToGuids(guids);
+  }
+
+  // Row long-press (350ms, cancel-on-move-10px, share deep-link) + click/selection, both event-
+  // delegated on the panel's row-container div, attached ONCE (not per-row) — mirrors viewer/
+  // measure.js's clash-row mechanics exactly (lines ~969-1034): pointerdown arms a 350ms long-
+  // press timer, pointermove cancels past 10px (dx²+dy²>100), a quick tap (no long-press fired,
+  // no move) routes through ListKeyNav's onClick so single/multi-select stay consistent with
+  // Clash's own list instead of a bespoke per-row handler.
   function _wireRowEvents(panel) {
     var lp = null, fired = false, movedTooFar = false, sx = 0, sy = 0;
+    var nav = (typeof window.makeListKeyNav === 'function')
+      ? window.makeListKeyNav(
+          function () { return _rcVisibleRows(panel); },
+          function (indices) {
+            var items = _rcVisibleRows(panel);
+            _rcOnSelect(indices.map(function (i) { return items[i] && items[i].getAttribute('data-rc-guid'); }));
+          },
+          function (idx) {
+            var items = _rcVisibleRows(panel);
+            if (items[idx]) _rcOnSelect([items[idx].getAttribute('data-rc-guid')]);
+          }
+        )
+      : null;
+    if (nav && typeof window._registerPanel === 'function') {
+      window._registerPanel('rule-checklist', panel, nav, function () { panel.style.display = 'none'; });
+    }
+
     panel.addEventListener('pointerdown', function (ev) {
       var target = ev.target.closest('[data-rc-guid]');
       if (!target) return;
@@ -246,7 +296,15 @@ function setupRuleChecklist(A) {
       var dx = ev.clientX - sx, dy = ev.clientY - sy;
       if (dx * dx + dy * dy > 100) { movedTooFar = true; clearTimeout(lp); lp = null; }
     });
-    panel.addEventListener('pointerup', function () { if (lp) { clearTimeout(lp); lp = null; } });
+    panel.addEventListener('pointerup', function (ev) {
+      if (lp) { clearTimeout(lp); lp = null; }
+      if (fired || movedTooFar) return; // long-press already handled it, or it was a scroll
+      var target = ev.target.closest('[data-rc-guid]');
+      if (!target || !nav) return;
+      var items = _rcVisibleRows(panel);
+      var idx = items.indexOf(target);
+      if (idx >= 0) nav.onClick(idx, ev);
+    });
     panel.addEventListener('pointercancel', function () { if (lp) { clearTimeout(lp); lp = null; } });
   }
 
