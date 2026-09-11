@@ -69,18 +69,53 @@ function _rcRowHtml(r, colorMap) {
   return html;
 }
 
+// ── Pure: prettify a raw rule name for display — 'span_depth_cantilever' -> 'Span Depth Cantilever'.
+// Generic (works for Sanity's and Egress's rule names alike), no hardcoded per-rule label table.
+function _rcPrettyRule(name) {
+  return String(name || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+}
+
+// One RULE SET within a severity tier — a rule's flagged elements are ONE finding to grasp, not
+// N (§RULE_FILM_SET_PULSE, prompts/MEP_CLASH_REVEAL_MOVIE.md §77, bim-compiler repo: "509
+// findings on Hospital are not 509 stories — they are six [rules]"). Collapsed by default,
+// STATING THE SET TOTAL OUTRIGHT in the header (not "N of M visible" — there is no "visible"
+// concept in a DOM list, but the same principle applies: the count must be graspable without
+// expanding). Same click-to-expand mechanic as the old flat group, now one level deeper.
+function _rcRuleSetHtml(ruleName, ruleRows, colorMap) {
+  if (!ruleRows.length) return '';
+  var color = (colorMap && colorMap[ruleRows[0].severity]) || '#888';
+  var html = '<div class="rc-ruleset">';
+  html += '<div class="rc-ruleset-header" data-rc-rule="' + _rcEscAttr(ruleName) + '"' +
+    ' onclick="var b=this.nextElementSibling; b.style.display = (b.style.display===\'none\')?\'block\':\'none\'; this.firstChild.textContent = (b.style.display===\'none\')?\'▸ \':\'▾ \';"' +
+    ' style="cursor:pointer;font-size:10px;color:' + color + ';margin:3px 0 1px;padding:2px 4px;border-left:3px solid ' + color + ';background:rgba(255,255,255,0.02)">' +
+    '<span>▸ </span>' + _rcEscAttr(_rcPrettyRule(ruleName)) + ' &mdash; ' + ruleRows.length + ' flagged</div>';
+  html += '<div class="rc-ruleset-body" style="display:none;padding-left:6px">';
+  for (var i = 0; i < ruleRows.length; i++) html += _rcRowHtml(ruleRows[i], colorMap);
+  html += '</div></div>';
+  return html;
+}
+
 // One severity group — CRITICAL/WARNING expanded by default, OPTIMIZED collapsed (matches
-// clash-panel noise convention per UI MODEL: "only CRITICAL/WARNING expanded"). Collapse toggle
-// is a plain click-to-expand div (no exact clash-panel group-collapse precedent found to mirror
-// verbatim — brief allows this fallback).
+// clash-panel noise convention per UI MODEL: "only CRITICAL/WARNING expanded"). "Expanded" now
+// means the LIST OF RULE SETS is visible (each still collapsed to its own count-only header) —
+// the old behaviour dumped every individual element row here, which is exactly the "509 stories"
+// spam the bake session independently diagnosed and fixed the same way (group by rule, state the
+// total, let the viewer drill in). Collapse toggle is a plain click-to-expand div (no exact
+// clash-panel group-collapse precedent found to mirror verbatim — brief allows this fallback).
 function _rcGroupHtml(label, sevRows, headerColor, expanded, colorMap) {
   if (!sevRows.length) return '';
+  var byRule = {}, ruleOrder = [];
+  for (var i = 0; i < sevRows.length; i++) {
+    var rn = sevRows[i].rule;
+    if (!byRule[rn]) { byRule[rn] = []; ruleOrder.push(rn); }
+    byRule[rn].push(sevRows[i]);
+  }
   var html = '<div class="rc-group">';
   html += '<div class="rc-group-header" onclick="var b=this.nextElementSibling; b.style.display = (b.style.display===\'none\')?\'block\':\'none\';"' +
     ' style="cursor:pointer;font-size:11px;font-weight:600;color:' + headerColor + ';margin:6px 0 2px">' +
-    (expanded ? '▾' : '▸') + ' ' + label + ' (' + sevRows.length + ')</div>';
+    (expanded ? '▾' : '▸') + ' ' + label + ' (' + sevRows.length + ' across ' + ruleOrder.length + (ruleOrder.length === 1 ? ' set' : ' sets') + ')</div>';
   html += '<div class="rc-group-body" style="display:' + (expanded ? 'block' : 'none') + '">';
-  for (var i = 0; i < sevRows.length; i++) html += _rcRowHtml(sevRows[i], colorMap);
+  for (var j = 0; j < ruleOrder.length; j++) html += _rcRuleSetHtml(ruleOrder[j], byRule[ruleOrder[j]], colorMap);
   html += '</div></div>';
   return html;
 }

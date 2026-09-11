@@ -74,7 +74,7 @@ chk('data-rc-rule carries the rule name for delegated long-press', html.indexOf(
 chk('OPTIMIZED group collapsed by default when present', (() => {
   const optRows = [{ guid: 'opt-1', ifc_class: 'IfcBeam', name: 'OK', storey: 'L1', rule: 'span_depth_steel', severity: 'OPTIMIZED', ratio: 2 }];
   const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: optRows }, null);
-  const groupStart = r.html.indexOf('OPTIMIZED (1)');
+  const groupStart = r.html.search(/OPTIMIZED \(1 across/);
   const bodyDisplay = r.html.slice(groupStart, groupStart + 400).match(/rc-group-body" style="display:(\w+)/);
   return bodyDisplay && bodyDisplay[1] === 'none';
 })());
@@ -82,6 +82,36 @@ chk('empty rows renders "No flags." with zero data-rc-guid rows', (() => {
   const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: [] }, null);
   return r.html.indexOf('No flags.') >= 0 && (r.html.match(/data-rc-guid="/g) || []).length === 0;
 })());
+
+// ── §RULE_FILM_SET_PULSE-inspired grouping (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §77):
+// N findings of the SAME rule must render as ONE rule-set header stating the count outright, not
+// N individual rows dumped flat — the exact "509 stories, not 6" spam the movie-bake session
+// independently diagnosed and fixed the same way, now applied to the live panel too. ──
+console.log('§W-RULE-CHECKLIST rule-set grouping (many rows, one rule)');
+const manyRows = [];
+for (let i = 0; i < 50; i++) manyRows.push({ guid: 'beam-' + i, ifc_class: 'IfcBeam', name: 'UB-' + i, storey: 'L' + (i % 5), rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 + i * 0.1 });
+const manyResult = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: manyRows }, null);
+chk('(d) 50 same-rule rows collapse to exactly ONE rule-set header, stating the count outright',
+  (manyResult.html.match(/class="rc-ruleset-header"/g) || []).length === 1 &&
+  manyResult.html.indexOf('Span Depth Steel &mdash; 50 flagged') >= 0,
+  'headers=' + ((manyResult.html.match(/class="rc-ruleset-header"/g) || []).length));
+chk('(d) all 50 individual rows are still present underneath (drill-down not lost)',
+  (manyResult.html.match(/data-rc-guid="beam-/g) || []).length === 50);
+chk('(d) the rule-set body is collapsed by default (display:none)', (() => {
+  const start = manyResult.html.indexOf('class="rc-ruleset-header"');
+  const body = manyResult.html.slice(start, start + 600).match(/rc-ruleset-body" style="display:(\w+)/);
+  return body && body[1] === 'none';
+})());
+chk('(d) mixed rules within one severity tier get one rule-set header EACH, not merged',
+  (() => {
+    const mixed = [
+      { guid: 'a1', ifc_class: 'IfcBeam', name: 'A1', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
+      { guid: 'a2', ifc_class: 'IfcBeam', name: 'A2', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
+      { guid: 'a3', ifc_class: 'IfcColumn', name: 'A3', storey: 'L1', rule: 'column_continuity', severity: 'CRITICAL', ratio: null },
+    ];
+    const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: mixed }, null);
+    return r.html.indexOf('Floating Member &mdash; 2 flagged') >= 0 && r.html.indexOf('Column Continuity &mdash; 1 flagged') >= 0;
+  })());
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
