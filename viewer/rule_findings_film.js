@@ -58,12 +58,19 @@ function setupRuleFindingsFilm(A) {
   // caused the 2-finding cap, §59.8's NOFIT and §60.5's caption/tint mismatch. These four constants
   // are clash_labels.js's OWN values, reused verbatim rather than a second ranking scheme invented
   // here — including the clutter tradeoff the user already accepted for clash in §P2.1.
-  var TOP_N = 8;               // the N nearest findings carry a label; no distance cutoff
-  var RANK_MARGIN_M = 0.6;     // hysteresis against the moving Nth-nearest boundary
-  var FADE_S = 0.5;            // film seconds to fade a label in/out — a fade, never a switch
+  // ── §77 §RULE_FILM_SET_PULSE ────────────────────────────────────────────────────────────────────
+  // The unit is the SET (one rule's flagged elements), not the element. 509 Hospital findings are six
+  // rules; 215 HHS findings are three. §70's per-element labels repeated the same handful of sentences
+  // hundreds of times — which is why the film read as spam. §70's TOP_N/RANK_MARGIN_M ranking, §71's
+  // visible-first pass, §73.4/§74's TTL ageing and §72's Measure echo are RETIRED with it: all of them
+  // managed crowding that one-box-per-rule does not create.
+  var DWELL_MIN_S = 2.0;       // §77.2 — a newly-visible member must stay this long to trigger a pulse
+  var WAVE_S = 1.0;            // §77.2 — time for the wave to travel from the nearest member to the farthest
+  var PULSE_DECAY_S = 0.8;     // each element's own glow decay once the wave reaches it
+  var BOX_LINGER_S = 2.0;      // §77.2 — the box stays this long after the wave ends
+  var DWELL_SAMPLE_S = 0.25;   // §77.3 — pose sampling step for the exact dwell precompute
+  var FOV_DEG = 60;            // viewer/scene.js:139 — the bake's own fov, read not guessed
   var LABEL_PLATE = 'rgba(0,0,0,0.45)';   // §73.3 — same family as the cam-path box (cpe_path_overview.js:208)
-  var LABEL_TTL_S = 3.0;       // §73.4 — after this long on screen a label SHRINKS rather than leaving
-  var LABEL_AGED_SCALE = 0.7;  // §74 — user: "How about they become smaller by 30% instead, after 3 secs?"
   var EDGE_BAR_PX = 3;         // §73.2 — category edge bar: a SHAPE cue, since hue alone is unreliable
 
   // ── §RULE_FILM_MESSAGING (MEP_CLASH_REVEAL_MOVIE.md §63, 2026-09-11) ───────────────────────────
@@ -124,7 +131,49 @@ function setupRuleFindingsFilm(A) {
   };
 
   var _built = false, _report = null, _picks = [], _stats = null;
-  var _marks = [], _near = null, _fade = null, _lastFilmS = null, _lastLog = -1;   // §70
+  var _sets = [], _lastFilmS = null, _lastLog = -1;   // §77 — one entry per RULE, not per element
+
+  // ── §77.3 EXACT DWELL, only possible in a bake ─────────────────────────────────────────────────
+  // The whole camera path exists before the first frame renders (plan.poseAt(tNorm), the same
+  // function cinema_maxq.js:1202 drives the bake with), so "will this member stay in frame 2 seconds?"
+  // is a LOOKUP, not an estimate. Sample the path, frustum-test every marked element at each sample,
+  // and keep each element's visible intervals. A live viewer could not do this; the film can.
+  // Cost is one pass at build: 509 elements x ~780 samples is a few hundred thousand dot products.
+  function _visibleIntervals(plan, durationSec, at, guids) {
+    var out = {}, i, g;
+    for (i = 0; i < guids.length; i++) out[guids[i]] = [];
+    if (!plan || typeof plan.poseAt !== 'function' || !(durationSec > 0)) return out;
+    var halfFov = (FOV_DEG * Math.PI / 180) / 2;
+    var cosLimit = Math.cos(Math.min(1.45, halfFov * 1.35));   // widened for aspect; conservative
+    var nSteps = Math.max(2, Math.ceil(durationSec / DWELL_SAMPLE_S));
+    var openAt = {};
+    for (var sIdx = 0; sIdx <= nSteps; sIdx++) {
+      var tSec = Math.min(durationSec, sIdx * DWELL_SAMPLE_S);
+      var pose;
+      try { pose = plan.poseAt(tSec / durationSec); } catch (e) { return out; }
+      if (!pose) continue;
+      var fx = pose.tx - pose.x, fy = pose.ty - pose.y, fz = pose.tz - pose.z;
+      var fl = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
+      fx /= fl; fy /= fl; fz /= fl;
+      for (i = 0; i < guids.length; i++) {
+        g = guids[i];
+        var pt = at[g]; if (!pt) continue;
+        var dx = pt.x - pose.x, dy = pt.y - pose.y, dz = pt.z - pose.z;
+        var dl = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+        var vis = ((dx * fx + dy * fy + dz * fz) / dl) >= cosLimit;
+        if (vis && openAt[g] === undefined) openAt[g] = tSec;
+        else if (!vis && openAt[g] !== undefined) { out[g].push([openAt[g], tSec]); delete openAt[g]; }
+      }
+    }
+    for (g in openAt) out[g].push([openAt[g], durationSec]);
+    return out;
+  }
+  // How long g stays continuously visible from tSec on — 0 if not visible at tSec.
+  function _dwellFrom(iv, tSec) {
+    var a = iv || [];
+    for (var k = 0; k < a.length; k++) if (tSec >= a[k][0] && tSec < a[k][1]) return a[k][1] - tSec;
+    return 0;
+  }
   var _shown = null, _retired = null, _resets = 0;   // §73.4 — per-mark time on screen, and its turn
   function log(s) { console.log(s); }
 
@@ -178,19 +227,28 @@ function setupRuleFindingsFilm(A) {
       ((structRules && structRules.structural_rules) || []).forEach(function (r) { _ruleDefs[r.name] = r; });
       ((egressRules && egressRules.egress_rules) || []).forEach(function (r) { _ruleDefs[r.name] = r; });
 
-      // §70 — EVERY finding becomes world content, not one per storey. The label text is §63's
-      // settled messaging; `title`/`rows` keep their shape so the closing cards and any Measure-box
-      // caller are unaffected.
-      _marks = rowsS.map(function (r) { return { row: r, category: 'structural' }; })
+      // §77 — group by RULE into SETS. One box per set, never one per element.
+      var allRows = rowsS.map(function (r) { return { row: r, category: 'structural' }; })
         .concat(rowsE.map(function (r) { return { row: r, category: 'egress' }; }));
-      _marks.forEach(function (m) {
-        var r = m.row;
-        m.guid = r.guid;
-        m.ink = CATEGORY_COLOR[m.category];
-        m.title = (m.category === 'structural' ? 'Structural — ' : 'Safety — ') + r.rule.replace(/_/g, ' ');
-        m.rows = [shortName(r.name) || r.ifc_class, r.storey, valueRow(_ruleDefs[r.rule], r.ratio, r.severity)];
+      var byRule = {}, ruleOrder = [];
+      allRows.forEach(function (m) {
+        var k = m.row.rule;
+        if (!byRule[k]) { byRule[k] = { rule: k, category: m.category, members: [] }; ruleOrder.push(k); }
+        byRule[k].members.push(m.row);
       });
-      _picks = _marks;   // the closing cards and stats read this; every finding now qualifies
+      _sets = ruleOrder.map(function (k) {
+        var st = byRule[k];
+        st.ink = CATEGORY_COLOR[st.category];
+        st.title = (st.category === 'structural' ? 'Structural — ' : 'Safety — ') + k.replace(/_/g, ' ');
+        // §77.2 — the box states the set TOTAL outright, not the visible share. The user's ruling:
+        // "a grasp of total outright is more important than to await whole film revealing the total."
+        st.total = st.members.length;
+        st.rows = [st.total + ' flagged', st.members.length === 1 ? shortName(st.members[0].name) : ''];
+        st.guids = st.members.map(function (r) { return r.guid; });
+        st.pulseStart = -Infinity; st.seen = {};
+        return st;
+      }).filter(function (st) { return st.total > 0; });
+      _picks = _sets;   // stats + the closing cards read this
 
       // §59 user addition — the Safety card's own "longest distance to exit" stat, real graph-
       // measured metres (RoomGraph.escapeRoute()/shortestPath(), egress_sanity.js's own `ratio`),
@@ -211,19 +269,33 @@ function setupRuleFindingsFilm(A) {
         maxExitDistSec: maxDist != null ? maxDist / (A.WALK_SPEED || 1.2) : null,
         maxExitDistSteps: maxDist != null ? Math.round(maxDist / STEP_M) : null
       };
-      log('§RULE_FILM marked=' + _marks.length + ' structuralTotal=' + rowsS.length + ' egressTotal=' + rowsE.length +
+      log('§RULE_FILM sets=' + _sets.length + ' marked=' + allRows.length + ' structuralTotal=' + rowsS.length + ' egressTotal=' + rowsE.length +
           ' bothCategories=' + (rowsS.length && rowsE.length ? 'yes' : 'no') +
           (maxDist != null ? ' maxExitDistM=' + maxDist.toFixed(1) : ' maxExitDistM=none') +
-          ' — §70: every finding is world content for the whole film, labels ranked per frame');
+          ' — §77: one box per rule; ' + _sets.map(function (t) { return t.rule + '=' + t.total; }).join(' '));
 
       // §70 — the 3-D wireframe tint now covers EVERY finding, not 1-2. Cost is one InstancedMesh per
       // colour regardless of count (rule_checklist.js), so 509 markers cost what 2 did. Still static,
       // never animated: §59.4's "one attention-getter, everything else static" applies to motion, and
       // the per-frame LABEL ranking below is what now decides where attention goes.
-      if (_picks.length && typeof A.showRuleModeTint === 'function') {
-        var guidCat = {}; _picks.forEach(function (p) { guidCat[p.guid] = p.category; });
+      if (_sets.length && typeof A.showRuleModeTint === 'function') {
+        var guidCat = {};
+        _sets.forEach(function (st) { st.guids.forEach(function (g) { guidCat[g] = st.category; }); });
         try { A.showRuleModeTint(guidCat, CATEGORY_COLOR, { shineThrough: true }); }   // §62
         catch (e) { log('§RULE_FILM_TINT_ERR ' + e.message); }
+        // §77.3 — precompute every member's visible intervals from the plan's own camera path.
+        var _at = A._ruleTintAt || {};
+        var _dur = (plan && plan.durationSec) || 0;
+        var _allGuids = [];
+        _sets.forEach(function (st) { st.guids.forEach(function (g) { if (_at[g]) _allGuids.push(g); }); });
+        var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+        var _iv = _visibleIntervals(plan, _dur, _at, _allGuids);
+        _sets.forEach(function (st) { st.iv = _iv; });
+        var _withAny = _allGuids.filter(function (g) { return (_iv[g] || []).length; }).length;
+        log('§RULE_FILM_DWELL members=' + _allGuids.length + ' everVisible=' + _withAny +
+            ' sampleStep=' + DWELL_SAMPLE_S + 's durationSec=' + _dur.toFixed(1) +
+            ' ms=' + (((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - _t0).toFixed(0) +
+            ' — exact, from plan.poseAt (§77.3)');
       }
       return _report;
     }
@@ -252,130 +324,122 @@ function setupRuleFindingsFilm(A) {
 
   A.ruleFindingsFilmCompositeOntoCanvas = function (ctx, w, h, filmSec) {
     var cam = A.camera, at = A._ruleTintAt;
-    if (!ctx || !_marks.length || !cam || !at || !(w > 0) || !(h > 0)) return 0;
-    if (!_near || _near.length !== _marks.length) {
-      _near = new Uint8Array(_marks.length); _fade = new Float32Array(_marks.length);
-      _shown = new Float32Array(_marks.length); _retired = new Uint8Array(_marks.length);   // §73.4
-      _lastFilmS = null; _resets = 0;
-    }
+    if (!ctx || !_sets.length || !cam || !at || !(w > 0) || !(h > 0)) return 0;
     var fs = filmSec || 0;
-    var dt = (_lastFilmS == null) ? FADE_S : Math.max(0, fs - _lastFilmS);
     _lastFilmS = fs;
     cam.updateMatrixWorld(true);
     var cx = cam.matrixWorld.elements[12], cy = cam.matrixWorld.elements[13], cz = cam.matrixWorld.elements[14];
-
-    // §71 §RULE_FILM_VISIBLE_FIRST — rank by what is ON SCREEN, then by distance. Ranking by raw
-    // distance first (clash's order) suits clash because a clash contact is a POINT, so nearest is a
-    // good proxy for visible. These markers are elements and rooms, and indoors the nearest eight are
-    // routinely behind the camera: the real bake HHS_final_854x480.mp4 logged skippedFrustum=8..12
-    // with labelled=0 for 75 of 131 film seconds — over half the film silent while 215 findings sat
-    // marked. Frustum-testing BEFORE the cap spends the eight slots on findings that can actually be
-    // seen. Everything else (TOP_N, hysteresis, fade, overlap walk) is unchanged.
     var V = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3() : null;
     if (!V) return 0;
-    var all = [], i, m, pt, offscreen = 0;
-    for (i = 0; i < _marks.length; i++) {
-      pt = at[_marks[i].guid]; if (!pt) continue;
-      V.set(pt.x, pt.y, pt.z).applyMatrix4(cam.matrixWorldInverse);
-      var behind = V.z > 0;
-      V.set(pt.x, pt.y, pt.z).project(cam);
-      if (behind || Math.abs(V.x) > 1 || Math.abs(V.y) > 1) { offscreen++; continue; }
-      var dx = pt.x - cx, dy = pt.y - cy, dz = pt.z - cz;
-      all.push({ i: i, d: Math.sqrt(dx * dx + dy * dy + dz * dz), pt: pt,
-                 sx: (V.x + 1) / 2 * w, sy: (1 - V.y) / 2 * h });
+    // camera forward, for view-DEPTH ordering (§77.2: not straight-line distance — down a corridor or
+    // a long span, depth along the view axis is what reads as depth)
+    var e = cam.matrixWorld.elements;
+    var fwdX = -e[8], fwdY = -e[9], fwdZ = -e[10];
+
+    var visSet = {}, boxes = [], pulsing = 0;
+    for (var si = 0; si < _sets.length; si++) {
+      var st = _sets[si];
+      // which members are on screen right now, and how deep each is along the view axis
+      var vis = [], minD = Infinity, maxD = -Infinity, gained = 0;
+      for (var gi = 0; gi < st.guids.length; gi++) {
+        var g = st.guids[gi], pt = at[g]; if (!pt) continue;
+        V.set(pt.x, pt.y, pt.z).applyMatrix4(cam.matrixWorldInverse);
+        var behind = V.z > 0;
+        V.set(pt.x, pt.y, pt.z).project(cam);
+        if (behind || Math.abs(V.x) > 1 || Math.abs(V.y) > 1) { st.seen[g] = 0; continue; }
+        var dx = pt.x - cx, dy = pt.y - cy, dz = pt.z - cz;
+        var depth = dx * fwdX + dy * fwdY + dz * fwdZ;          // §77.2 view-direction depth
+        if (depth < minD) minD = depth;
+        if (depth > maxD) maxD = depth;
+        vis.push({ g: g, depth: depth, sx: (V.x + 1) / 2 * w, sy: (1 - V.y) / 2 * h });
+        // §77.2 — the DWELL is the gate, not turnover. A member counts as a trigger only if it is
+        // NEW on screen and will stay >= DWELL_MIN_S, which §77.3 makes a lookup rather than a guess.
+        if (!st.seen[g]) { if (_dwellFrom(st.iv && st.iv[g], fs) >= DWELL_MIN_S) gained++; }
+        st.seen[g] = 1;
+      }
+      if (!vis.length) continue;
+      visSet[st.rule] = vis.length;
+      // §77.2 — a set cannot restart while its own pulse is still running: wave + linger is the only
+      // rate limit, ~3s, structural rather than a tuned cooldown constant.
+      var running = (fs - st.pulseStart) < (WAVE_S + PULSE_DECAY_S + BOX_LINGER_S);
+      if (gained > 0 && !running) { st.pulseStart = fs; running = true; }
+      if (!running) continue;
+      pulsing++;
+      var since = fs - st.pulseStart;
+      var span = (maxD - minD) || 1;
+      // the wave: each member lights when the front reaches its own depth, then decays
+      for (var vi = 0; vi < vis.length; vi++) {
+        var frac = (vis[vi].depth - minD) / span;
+        var lit = since - frac * WAVE_S;
+        vis[vi].glow = (lit < 0) ? 0 : Math.max(0, 1 - lit / PULSE_DECAY_S);
+      }
+      // §77.5 P6 — expose the wave's per-member glow so a witness can assert the DEPTH ORDER rather
+      // than merely that a box appeared. Debug surface only; nothing in the film reads it.
+      A._ruleFilmLastWave = A._ruleFilmLastWave || {};
+      A._ruleFilmLastWave[st.rule] = vis.map(function (v) { return { g: v.g, depth: v.depth, glow: v.glow }; });
+      if (since <= WAVE_S + PULSE_DECAY_S + BOX_LINGER_S) {
+        boxes.push({ st: st, since: since,
+                     anchor: vis.reduce(function (a, b) { return a.depth < b.depth ? a : b; }) });
+      }
     }
-    all.sort(function (a, b) { return a.d - b.d; });
 
-    // §73.4 — a label lives at most LABEL_TTL_S, then RETIRES and yields its slot. With 509 findings
-    // and 8 slots a purely distance-ranked set is a static crowd; retiring turns it into a rotation,
-    // which is what the user's "too many, spawn all over the screen" actually needs. A retired mark
-    // does not come back until every other on-screen candidate has had its turn — then the rotation
-    // resets, so the film keeps cycling rather than going permanently quiet.
-    var fresh = all;   // §74 — nothing retires now; turnover comes from the camera moving the ranking
-
-    var cutoff = fresh.length >= TOP_N ? fresh[TOP_N - 1].d : Infinity;
-    var elig = [];
-    for (var ai = 0; ai < fresh.length; ai++) {
-      i = fresh[ai].i;
-      if (!_near[i] && fresh[ai].d <= cutoff) _near[i] = 1;
-      else if (_near[i] && fresh[ai].d > cutoff + RANK_MARGIN_M) _near[i] = 0;
-      // §74 — a label does NOT vanish at the TTL; it shrinks to LABEL_AGED_SCALE and stays. The first
-      // 3s at full size is the attention-getter, after which it keeps its information available while
-      // taking 30% less of the scene. New findings entering the ranked set are full size and so still
-      // stand out against aged ones. Replaces §73.4's retire-and-rotate on the user's own call.
-      if (_near[i]) _shown[i] += dt;
-      _fade[i] = Math.max(0, Math.min(1, _fade[i] + (_near[i] ? dt : -dt) / FADE_S));
-      if (_near[i] || _fade[i] > 0) elig.push(fresh[ai]);
-    }
-
-    // §70.6 — the MARKERS follow this same ranking, not just the labels.
+    // §77.2 — only the sets that are pulsing keep their markers lit; everything else is off.
     if (typeof A.ruleTintShowOnly === 'function') {
-      var vis = {};
-      for (var vi = 0; vi < elig.length; vi++) vis[_marks[elig[vi].i].guid] = 1;
-      A.ruleTintShowOnly(vis);
+      var show = {};
+      boxes.forEach(function (b) { b.st.guids.forEach(function (g) { show[g] = 1; }); });
+      A.ruleTintShowOnly(show);
     }
 
-    var placed = [], skippedFrustum = offscreen, skippedOverlap = 0, labelled = 0, echoed = false, agedCount = 0;
-    for (var k = 0; k < elig.length; k++) {
-      i = elig[k].i; m = _marks[i];
-      var sx = elig[k].sx, sy = elig[k].sy;   // §71 — projected once, above
-      // §73.4 — smaller print so the labels obscure less of the scene (was h*0.016).
-      // §73.4 smaller print, §74 shrunk a further 30% once past the TTL.
-      var aged = _shown[i] >= LABEL_TTL_S;
-      var basePx = Math.max(9, Math.round(h * 0.013));
-      var px = aged ? Math.max(7, Math.round(basePx * LABEL_AGED_SCALE)) : basePx;
-      var pad = Math.round(px * 0.5), lh = Math.round(px * 1.35);
+    var placed = [], drawn = 0;
+    for (var bi = 0; bi < boxes.length; bi++) {
+      var b = boxes[bi], set = b.st;
+      var px = Math.max(10, Math.round(h * 0.016)), pad = Math.round(px * 0.6), lh = Math.round(px * 1.4);
       ctx.font = '700 ' + px + 'px BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
-      var lines = [m.title, m.rows[0], m.rows[1] + ' · ' + m.rows[2]];
-      var bw = pad * 2, li;
-      for (li = 0; li < lines.length; li++) bw = Math.max(bw, pad * 2 + Math.ceil(ctx.measureText(lines[li]).width));
+      var lines = [set.title, set.total + ' flagged'];
+      var bw = pad * 2 + EDGE_BAR_PX, li;
+      for (li = 0; li < lines.length; li++) bw = Math.max(bw, pad * 2 + EDGE_BAR_PX + Math.ceil(ctx.measureText(lines[li]).width));
       var bh = pad * 2 + lh * lines.length;
-      var box = { x: Math.min(w - bw - 4, sx + 12), y: Math.max(4, sy - 12 - bh), w: bw, h: bh };
-      var clash = false;
-      for (var q = 0; q < placed.length; q++) if (overlaps(box, placed[q])) { clash = true; break; }
-      if (clash) { skippedOverlap++; continue; }
-      placed.push(box);
+      var bx = Math.max(4, Math.min(w - bw - 4, b.anchor.sx + 14));
+      var by = Math.max(4, Math.min(h - bh - 4, b.anchor.sy - 14 - bh));
+      // §77.2 — if two set boxes collide, MOVE one into free space; never suppress it.
+      for (var tries = 0; tries < 8; tries++) {
+        var clash = false;
+        for (var q = 0; q < placed.length; q++) {
+          var o = placed[q];
+          if (bx < o.x + o.w && o.x < bx + bw && by < o.y + o.h && o.y < by + bh) { clash = true; break; }
+        }
+        if (!clash) break;
+        by += bh + 8;
+        if (by + bh > h - 4) { by = 4 + tries * (bh + 8); bx = Math.max(4, bx - bw - 12); }
+      }
+      placed.push({ x: bx, y: by, w: bw, h: bh });
+      var op = (b.since <= WAVE_S + PULSE_DECAY_S) ? 1
+             : Math.max(0, 1 - (b.since - WAVE_S - PULSE_DECAY_S) / BOX_LINGER_S);
       ctx.save();
-      ctx.globalAlpha = _fade[i];
+      ctx.globalAlpha = op;
       ctx.fillStyle = LABEL_PLATE;
-      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(box.x, box.y, bw, bh, Math.round(px * 0.4)); ctx.fill(); }
-      else ctx.fillRect(box.x, box.y, bw, bh);
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, Math.round(px * 0.4)); ctx.fill(); }
+      else ctx.fillRect(bx, by, bw, bh);
       ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
-      ctx.fillStyle = m.ink;                                  // §73.2 — category edge bar, a SHAPE cue
-      ctx.fillRect(box.x, box.y, EDGE_BAR_PX, bh);
+      ctx.fillStyle = set.ink; ctx.fillRect(bx, by, EDGE_BAR_PX, bh);
       ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-      // §76 §HUD_TEXT_SHADOW — at the cam-path box's 72% see-through, coloured text over a sunlit
-      // facade measured 1.03-1.34:1, i.e. effectively invisible, and the user has ruled out fixing
-      // that by darkening the plate. So the glyph carries its own contrast instead: a soft dark
-      // shadow, which is the standard broadcast-graphics answer and keeps the scene fully visible.
-      // The shadow — not the plate — is what the eye reads the letterform against.
-      ctx.shadowColor = 'rgba(0,0,0,0.95)';
-      ctx.shadowBlur = Math.max(2, Math.round(px * 0.35));
-      ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 1;
+      ctx.shadowColor = 'rgba(0,0,0,0.95)'; ctx.shadowBlur = Math.max(2, Math.round(px * 0.35)); ctx.shadowOffsetY = 1;
       for (li = 0; li < lines.length; li++) {
-        ctx.fillStyle = li === 0 ? m.ink : '#fff';
-        ctx.fillText(lines[li], box.x + pad + EDGE_BAR_PX, box.y + pad + lh * (li + 0.5));
+        ctx.fillStyle = li === 0 ? set.ink : '#fff';
+        ctx.fillText(lines[li], bx + pad + EDGE_BAR_PX, by + pad + lh * (li + 0.5));
       }
       ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
       ctx.restore();
-      if (aged) agedCount++;
-      // §72 §RULE_FILM_MEASURE_ECHO — the user's standing instruction (2026-09-11): "Sanity messages
-      // are to append to that [the Measure box]". §70's rewrite dropped the filmBoxesMeasurePost call
-      // outright when it replaced the storey-slot posting with the label pass. The NEAREST labelled
-      // finding is echoed into the Measure box, so the box still carries a Sanity entry whenever one
-      // is on screen. Only the first — the box shows one entry at a time (§14 slot collision), and
-      // elig is distance-sorted, so this is the nearest visible finding, not an arbitrary one.
-      if (!echoed && A.filmBoxesMeasurePost) { A.filmBoxesMeasurePost(m.title, m.rows, m.ink); echoed = true; }
-      labelled++;
+      drawn++;
+      if (A.filmBoxesMeasurePost && bi === 0) A.filmBoxesMeasurePost(set.title, set.rows, set.ink);
     }
     if (Math.floor(fs) !== _lastLog) {
       _lastLog = Math.floor(fs);
-      log('§RULE_FILM_LABELS filmSec=' + fs.toFixed(1) + ' marks=' + _marks.length +
-          ' eligible=' + elig.length + ' labelled=' + labelled +
-          ' skippedOverlap=' + skippedOverlap + ' skippedFrustum=' + skippedFrustum +
-          ' markersShown=' + elig.length + '/' + _marks.length + ' aged=' + agedCount + ' measureEcho=' + (echoed ? 'yes' : 'no') + ' topN=' + TOP_N);
+      log('§RULE_FILM_SETS filmSec=' + fs.toFixed(1) + ' sets=' + _sets.length +
+          ' pulsing=' + pulsing + ' boxes=' + drawn +
+          ' visible=' + JSON.stringify(visSet));
     }
-    return labelled;
+    return drawn;
   };
 
   A.ruleFindingsFilm = A.ruleFindingsFilm || {};

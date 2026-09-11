@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 /**
  * # ⚠ DO NOT REMOVE — W-RULE-FINDINGS-FILM scope (READ THE LOG after every run)
- * SCOPE: bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §59 + §63 + §68 + §70. Node, no browser.
+ * SCOPE: bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §63, §67, §73, §77. Node, no browser.
  * RUN: node witness_rule_findings_film.js
  *
- * §70 REWRITE: findings are no longer tied to the storey-reveal window. They are world content for
- * the whole film with labels ranked per frame, exactly as clash does it. Every check that existed
- * only to test the storey window (the old scenarios 1-5: window-fits, NOFIT, INCONCLUSIVE-on-no-
- * storeyReveal, linger-fit, HHS slot arithmetic) is RETIRED WITH ITS CAUSE, not silently deleted —
- * K2 and K6 below assert the retirement itself so a reader can see it was deliberate.
+ * §77 REWRITE. The unit is the SET (one rule's flagged elements), not the element: 509 Hospital
+ * findings are six rules, 215 HHS findings are three. Every check that existed only to manage
+ * per-element crowding — §70's TOP_N ranking and hysteresis, §71's visible-first pass, §73.4/§74's
+ * TTL ageing, §72's Measure echo of one rotating finding — is RETIRED WITH ITS CAUSE, and P1 asserts
+ * the retirement itself so a later reader sees it was deliberate rather than dropped.
  *
  * ISSUES THIS WITNESS EXPOSES:
- *   K1 ALL-FINDINGS-MARKED      — every finding's guid reaches showRuleModeTint, not 1-2 picks.
- *   K2 NO-STOREY-DEPENDENCY     — a plan with NO storeyReveal still reaches BEAT and marks all.
- *   K3 TOP-N-NEAREST-WINS       — the nearest findings are labelled; at most TOP_N in a frame.
- *   K4 FRUSTUM-SKIP             — a finding behind the camera carries no label, and is counted.
- *   K5 OVERLAP-SKIP             — two findings on the same screen point yield one label, one skip.
- *   K6 NOFIT-IS-GONE            — no NOFIT state exists any more; a short window is not a failure.
- *   G1-G5 §63 MESSAGING         — unit from the rule definition, Revit name trimmed.
- *   X1-X3 §59/§68               — category inks, shine-through opt-in, distance-to-exit arithmetic.
+ *   P1 ONE-BOX-PER-RULE     — N findings over R rules give at most R boxes, never N.
+ *   P2 TOTAL-NOT-VISIBLE    — the box states the set's FULL count, not the on-screen share.
+ *   P3 DWELL-GATE-IS-EXACT  — computed from plan.poseAt, so 1.5s never triggers and 2.5s does.
+ *   P4 ANY-NEW-MEMBER       — ONE new qualifying member re-pulses; no turnover fraction required.
+ *   P5 NO-RESTART-MID-PULSE — a pulsing set does not restart, giving the ~3s floor.
+ *   P6 WAVE-IS-VIEW-DEPTH   — nearest member lights first, farthest last, along the view axis.
+ *   P7 LINGER               — the box survives 2s past the wave, then goes.
+ *   G1-G5 §63 messaging, X1 §73 palette, X2 §62 shine-through.
  */
 'use strict';
 const path = require('path');
@@ -79,156 +79,106 @@ function recCtx() {
     set globalAlpha(v){}, get globalAlpha(){ return 1; } };
 }
 
+function shortNameOf(name) {
+  const seg = String(name).split(':'), out = [];
+  for (let i = 0; i < seg.length; i++) {
+    const last = i === seg.length - 1;
+    if (last && out.length && /^\d+$/.test(seg[i])) continue;
+    if (out.length && seg[i] === out[out.length - 1]) continue;
+    out.push(seg[i]);
+  }
+  return out.length ? out.join(' · ') : String(name);
+}
+
 (async () => {
-  // ── K1 / K2: no storeyReveal anywhere on the plan ──
+  // ── build: sets, messaging, palette ──
   const { A: A1, report: r1 } = await build({ beats: { rise: 0.9 }, durationSec: 100 });
-  chk('K2 §70 a plan with NO storeyReveal still reaches BEAT (the old INCONCLUSIVE is retired with its cause)',
-      r1.state === 'BEAT', r1.state);
-  chk('K1 §70 EVERY finding is marked — all 5, not 1-2 picks',
-      A1._tints.length === 1 && Object.keys(A1._tints[0].map).length === 5,
-      'tinted=' + (A1._tints[0] && Object.keys(A1._tints[0].map).length));
+  const sets = r1.picks;
+  // P1 needs MANY findings per rule or it proves nothing — five findings across five distinct rules
+  // would give five sets and look like a pass while grouping nothing. Hospital's real shape instead.
+  const many = [];
+  for (let i = 0; i < 217; i++) many.push({ guid: 'c' + i, ifc_class: 'IfcBeam', name: 'Cant ' + i, storey: 'L1', rule: 'span_depth_cantilever', severity: 'WARNING', ratio: 14 });
+  for (let i = 0; i < 43; i++) many.push({ guid: 'f' + i, ifc_class: 'IfcBeam', name: 'Float ' + i, storey: 'L2', rule: 'floating_member', severity: 'CRITICAL', ratio: null });
+  const manyE = [];
+  for (let i = 0; i < 13; i++) manyE.push({ guid: 'r' + i, ifc_class: 'IfcSpace', name: 'Room ' + i, storey: 'L1', rule: 'circulation_distance', severity: 'WARNING', ratio: 50 });
+  const { report: rM } = await build({ beats: { rise: 0.9 }, durationSec: 100 }, { sRows: many, eRows: manyE });
+  chk('P1 §77 273 findings over 3 rules collapse to 3 sets — not 273 boxes',
+      rM.picks.length === 3 && many.length + manyE.length === 273,
+      rM.picks.length + ' sets from 273 findings: ' + rM.picks.map(t => t.rule + '=' + t.total).join(' '));
+  chk('P2b §77.2 a set states its FULL total (217), independent of how many are on screen',
+      rM.picks[0].total === 217, String(rM.picks[0].total));
+
+  chk('P2 §77.2 each set states its own TOTAL',
+      sets.every(t => t.total === t.members.length), sets.map(t => t.rule + '=' + t.total).join(' '));
   chk('X2 §62 the tint is still asked for shine-through',
-      A1._tints[0] && A1._tints[0].o && A1._tints[0].o.shineThrough === true, JSON.stringify(A1._tints[0].o));
+      A1._tints.length === 1 && A1._tints[0].o && A1._tints[0].o.shineThrough === true, JSON.stringify(A1._tints[0].o));
+  chk('X2b §77 EVERY member of every set is marked, not a ranked few',
+      Object.keys(A1._tints[0].map).length === 5, Object.keys(A1._tints[0].map).length + ' guids');
   const st1 = A1.ruleFindingsFilm.stats();
-  chk('K6 §70 there is no NOFIT state any more — a short/absent window is not a failure',
-      r1.state !== 'NOFIT' && st1.built === true, r1.state);
   chk('X3 §59.4 distance-to-exit arithmetic survives the rework (37.5m @1.2 = 31.25s, /0.75 = 50 steps)',
       Math.abs(st1.maxExitDistSec - 37.5 / 1.2) < 1e-9 && st1.maxExitDistSteps === 50,
       st1.maxExitDistSec + 's / ' + st1.maxExitDistSteps + ' steps');
 
-  const byRule = {}; r1.picks.forEach(p => { byRule[p.row.rule] = p; });
+  const byRule = {}; sets.forEach(t => { byRule[t.rule] = t; });
   chk('X1 §73.2 category inks — structural amber #ffb300, safety violet #ea80fc (NOT red: clash owns red)',
       byRule.span_depth_steel.ink === '#ffb300' && byRule.door_clear_width.ink === '#ea80fc',
       byRule.span_depth_steel.ink + ' / ' + byRule.door_clear_width.ink);
-  chk('G1 §63 a metre rule says "0.80 m", not "ratio 0.8"', byRule.door_clear_width.rows[2] === '0.80 m', byRule.door_clear_width.rows[2]);
-  chk('G2 §63 a ratio rule still says "ratio 27.3"', byRule.span_depth_steel.rows[2] === 'ratio 27.3', byRule.span_depth_steel.rows[2]);
-  chk('G3 §63 a rule declaring neither unit gets the bare number, no unit word', byRule.floating_member.rows[2] === '4.2', byRule.floating_member.rows[2]);
-  chk('G4 §63 ratio==null still shows the severity word', byRule.column_continuity.rows[2] === 'CRITICAL', byRule.column_continuity.rows[2]);
-  chk('G5 §63 the real HHS Revit name trims to family + type', byRule.column_continuity.rows[0] === 'STB Stütze - rund · STB d=30', byRule.column_continuity.rows[0]);
-  chk('G5b §63 a name with no ":" is unchanged', byRule.floating_member.rows[0] === 'Plain Name', byRule.floating_member.rows[0]);
 
-  // ── K3/K4/K5: the per-frame label pass ──
-  // Positions: b1 near, b2 far, b3 behind camera, d1+r1 on the SAME screen point as each other.
-  const AT = { b1:{x:0,y:0,z:-10}, b2:{x:0,y:0,z:-500}, b3:{x:0,y:0,z:10}, d1:{x:5,y:0,z:-20}, r1:{x:5,y:0,z:-20} };
-  A1._ruleTintAt = AT;
-  A1.camera = fakeCamera(v => {
-    const behind = v.z > 0;
-    // everything maps inside NDC except the behind-camera one
-    const key = Object.keys(AT).find(k => AT[k].x === v.x && AT[k].z === v.z);
-    const sameSpot = (v.x === 5);
-    return { viewZ: behind ? 1 : -1, x: sameSpot ? 0.2 : (v.z === -10 ? -0.5 : 0.6), y: 0, z: 0 };
-  });
-  let shownGuids = null;
-  A1.ruleTintShowOnly = (set) => { shownGuids = Object.keys(set || {}); return shownGuids.length; };
-  const ctx = recCtx();
-  const labelled = A1.ruleFindingsFilmCompositeOntoCanvas(ctx, 1280, 720, 1.0);
-  chk('K3 §70 labels are drawn from the ranked nearest set, capped at TOP_N',
-      labelled > 0 && labelled <= 8, 'labelled=' + labelled);
-  chk('K4 §70 the finding BEHIND the camera carries no label',
-      ctx.draws.filter(d => d.kind === 'text' && /floating member/.test(d.text)).length === 0, 'b3 absent');
-  chk('K5 §70 two findings on the same screen point yield ONE label, not two',
-      labelled < 4, 'labelled=' + labelled + ' of 4 in-frustum marks (one rejected by overlap)');
-  chk('K7b §70.6 markers are handed a ranked visibility set every frame (not left all-on)',
-      shownGuids !== null, shownGuids ? 'ruleTintShowOnly called with ' + shownGuids.length : 'never called');
-  chk('K5b §70 something really was drawn — the pass is not vacuously empty',
-      ctx.draws.filter(d => d.kind === 'text').length > 0, ctx.draws.filter(d => d.kind==='text').length + ' text draws');
+  // §63 messaging still applies to the single-member case, where a name is still worth showing
+  const oneName = byRule.column_continuity.members[0].name;
+  chk('G5 §63 the real HHS Revit name still trims to family + type',
+      shortNameOf(oneName) === 'STB Stütze - rund · STB d=30', shortNameOf(oneName));
 
-  // ── K7: narrowing only bites when there are MORE findings than TOP_N (8). The fixture above has 5,
-  // so it proves nothing about the cap — this one uses 20. That is the same vacuous-pass trap §66's C3
-  // fell into: a check must reach the behaviour it names.
-  const many = [];
-  for (let i = 0; i < 20; i++) many.push({ guid: 'm' + i, ifc_class: 'IfcBeam', name: 'Beam ' + i, storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 + i });
-  const { A: A2 } = await build({ beats: { rise: 0.9 }, durationSec: 100 }, { sRows: many, eRows: [] });
-  const AT2 = {}; many.forEach((m, i) => { AT2[m.guid] = { x: 0, y: 0, z: -(10 + i * 10) }; });
-  A2._ruleTintAt = AT2;
-  A2.camera = fakeCamera(v => ({ viewZ: -1, x: 0, y: 0, z: 0 }));
-  let shown2 = null;
-  A2.ruleTintShowOnly = (set) => { shown2 = Object.keys(set || {}); return shown2.length; };
-  A2.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 1.0);
-  chk('K7 §70.6 with 20 findings and TOP_N=8, markers are narrowed to the ranked few — not all 20',
-      shown2 !== null && shown2.length <= 8 && shown2.length > 0, 'shown=' + (shown2 ? shown2.length : 'never') + ' of 20');
-  chk('K7c §70.6 the NEAREST findings are the ones kept visible',
-      shown2 !== null && shown2.indexOf('m0') >= 0 && shown2.indexOf('m19') < 0,
-      'nearest m0 in=' + (shown2 && shown2.indexOf('m0') >= 0) + ', farthest m19 in=' + (shown2 && shown2.indexOf('m19') >= 0));
+  // ── P3-P7: the pulse itself, driven through a synthetic plan + camera ──
+  const pulseRows = [];
+  for (let i = 0; i < 4; i++) pulseRows.push({ guid: 'p' + i, ifc_class: 'IfcBeam', name: 'P' + i, storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 });
+  const AT = { p0: { x: 0, y: 0, z: -10 }, p1: { x: 0, y: 0, z: -20 }, p2: { x: 0, y: 0, z: -30 }, p3: { x: 0, y: 0, z: -40 } };
+  // a plan whose camera stares down -z for the whole film, so every member is visible throughout
+  const planStare = { durationSec: 100, poseAt: () => ({ x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: -1 }) };
+  const { A: AP } = await build(planStare, { sRows: pulseRows, eRows: [], A: { showRuleModeTint: function () { this._ruleTintAt = AT; } } });
+  AP._ruleTintAt = AT;
+  const camF = { matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+                 matrixWorldInverse: { viewZ: () => -1 }, updateMatrixWorld() {}, projectPoint: () => ({ x: 0, y: 0, z: 0 }) };
+  AP.camera = camF;
+  const set0 = AP.ruleFindingsFilm && null;
+  const drawAt = (t) => { const c = recCtx(); const n = AP.ruleFindingsFilmCompositeOntoCanvas(c, 1280, 720, t); return { n, c }; };
 
-  // ── §71 V1/V2: rank by what is ON SCREEN, then distance. The old order spent all 8 slots on the
-  // nearest findings even when every one was behind the camera — 75 of 131 film seconds silent.
-  // Fixture: 3 findings very near but BEHIND the camera, 3 far but in front. The far ones must win.
-  const vRows = [];
-  for (let i = 0; i < 3; i++) vRows.push({ guid: 'near' + i, ifc_class: 'IfcBeam', name: 'Near ' + i, storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 });
-  for (let i = 0; i < 3; i++) vRows.push({ guid: 'far' + i, ifc_class: 'IfcBeam', name: 'Far ' + i, storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 });
-  const { A: A3 } = await build({ beats: { rise: 0.9 }, durationSec: 100 }, { sRows: vRows, eRows: [] });
-  const AT3 = {};
-  vRows.forEach((r, i) => { AT3[r.guid] = i < 3 ? { x: 0, y: 0, z: 2 + i } : { x: 0, y: 0, z: -(100 + i) }; });
-  A3._ruleTintAt = AT3;
-  A3.camera = fakeCamera(v => ({ viewZ: v.z > 0 ? 1 : -1, x: 0, y: 0, z: 0 }));
-  let shown3 = null;
-  A3.ruleTintShowOnly = (set) => { shown3 = Object.keys(set || {}); };
-  const ctx3 = recCtx();
-  const lab3 = A3.ruleFindingsFilmCompositeOntoCanvas(ctx3, 1280, 720, 1.0);
-  chk('V1 §71 findings BEHIND the camera never take a slot, even though they are nearest',
-      shown3 !== null && shown3.every(g => g.indexOf('near') !== 0),
-      'shown=' + JSON.stringify(shown3));
-  chk('V2 §71 the FAR but visible findings get the slots, and are labelled',
-      lab3 > 0 && shown3.length === 3, 'labelled=' + lab3 + ' shown=' + shown3.length + ' of 3 visible');
+  chk('P3 §77.3 the dwell gate is computed from plan.poseAt — members visible for the whole film qualify',
+      drawAt(0).n === 1, 'boxes at t=0: ' + drawAt(0).n);
+  chk('P5 §77.2 a pulsing set does not restart mid-pulse — one box, not one per frame',
+      drawAt(1).n === 1 && drawAt(2).n === 1, 'still one box through the pulse');
+  chk('P7 §77.2 the box survives the 2s linger and is gone after (wave 1.0 + decay 0.8 + linger 2.0)',
+      drawAt(3.5).n === 1 && drawAt(4.5).n === 0, 't=3.5 -> ' + drawAt(3.5).n + ', t=4.5 -> ' + drawAt(4.5).n);
 
-  // ── §72 M1/M2: the Measure box must still receive a Sanity entry. The user's standing instruction
-  // was "Sanity messages are to append to that"; §70's rewrite silently dropped the call.
-  const posts = [];
-  const { A: A4 } = await build({ beats: { rise: 0.9 }, durationSec: 100 },
-    { A: { filmBoxesMeasurePost: (t, r, ink) => { posts.push({ t, r, ink }); return true; } } });
-  const AT4 = {}; S_ROWS.concat(E_ROWS).forEach((r, i) => { AT4[r.guid] = { x: 0, y: 0, z: -(10 + i * 40) }; });
-  A4._ruleTintAt = AT4;
-  A4.camera = fakeCamera(() => ({ viewZ: -1, x: 0, y: 0, z: 0 }));
-  A4.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 1.0);
-  chk('M1 §72 the Measure box still receives a Sanity entry when one is on screen',
-      posts.length > 0, posts.length ? JSON.stringify(posts[0].t) : 'NO POST — §70 regression');
-  chk('M2 §72 exactly ONE entry is posted per frame (the box shows one at a time), and it is the NEAREST',
-      posts.length === 1 && posts[0].r[0] === 'Beam A · T1',
-      'posts=' + posts.length + ' first=' + (posts[0] && posts[0].r[0]));
-  chk('M3 §72 the echoed entry carries its category ink, so §68 colouring still applies',
-      posts[0] && /^#(ffb300|ea80fc)$/.test(posts[0].ink), posts[0] && posts[0].ink);   // §73.2
+  // P6 must assert the DEPTH ORDER, not merely that a box appeared — an earlier draft of this check
+  // did the latter and passed while proving nothing. The composite exposes the wave's per-member glow.
+  drawAt(0.35);
+  const wave = (AP._ruleFilmLastWave || {}).span_depth_steel || [];
+  const byG = {}; wave.forEach(v => { byG[v.g] = v; });
+  chk('P6-setup the wave is exposed with all four members and their view depths',
+      wave.length === 4 && byG.p0 && byG.p3, wave.length + ' members');
+  chk('P6 §77.2 mid-wave the NEAREST member is lit and the FARTHEST is not yet — the wave travels in depth',
+      byG.p0 && byG.p3 && byG.p0.glow > 0 && byG.p3.glow === 0,
+      'near p0 glow=' + (byG.p0 && byG.p0.glow.toFixed(2)) + '  far p3 glow=' + (byG.p3 && byG.p3.glow.toFixed(2)));
+  chk('P6b §77.2 the depths really are ordered near-to-far along the view axis',
+      byG.p0.depth < byG.p1.depth && byG.p1.depth < byG.p2.depth && byG.p2.depth < byG.p3.depth,
+      [byG.p0, byG.p1, byG.p2, byG.p3].map(v => v.depth.toFixed(0)).join(' < '));
 
-  // ── §73 S1/S4/S5: palette identity, the 3s TTL, and the rotation it creates.
-  // Perceptual CIE-Lab dE, not RGB distance: RGB under-reports how close two pinks look, which is how
-  // #e57373 passed an eyeball check while being the same colour as clash A.
-  const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [(n>>16)&255, (n>>8)&255, n&255]; };
-  const fL = t => t > 0.008856 ? Math.cbrt(t) : (7.787 * t + 16 / 116);
-  const toLab = (rgb) => { const s = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
-    const R = s(rgb[0]), G = s(rgb[1]), B = s(rgb[2]);
-    const X = (R*0.4124+G*0.3576+B*0.1805)/0.95047, Y = R*0.2126+G*0.7152+B*0.0722, Z = (R*0.0193+G*0.1192+B*0.9505)/1.08883;
-    return [116*fL(Y)-16, 500*(fL(X)-fL(Y)), 200*(fL(Y)-fL(Z))]; };
-  const dE = (a, b) => { const x = toLab(hexRgb(a)), y = toLab(hexRgb(b)); return Math.hypot(x[0]-y[0], x[1]-y[1], x[2]-y[2]); };
-  const FIXED = { 'clash A': '#ff8581', 'clash B': '#7aa9ff', 'scene green': '#4caf50' };
-  const minDE = (c) => Math.min.apply(null, Object.values(FIXED).map(h => dE(c, h)));
-  chk('S1 §73.1 safety ink separates from everything already on screen (dE > 40); the old #e57373 did not',
-      minDE('#ea80fc') > 40 && minDE('#e57373') < 15,
-      'new dE=' + minDE('#ea80fc').toFixed(1) + '  old dE=' + minDE('#e57373').toFixed(1));
-  chk('S1b §73.2 the two Sanity inks separate from each other',
-      dE('#ffb300', '#ea80fc') > 40, dE('#ffb300', '#ea80fc').toFixed(1));
-
-  // S4/S5 — one finding, camera fixed: it must vanish after LABEL_TTL_S of screen time.
-  const ttlRows = [{ guid: 't1', ifc_class: 'IfcBeam', name: 'T', storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 },
-                   { guid: 't2', ifc_class: 'IfcBeam', name: 'U', storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 }];
-  const { A: A5 } = await build({ beats: { rise: 0.9 }, durationSec: 100 }, { sRows: ttlRows, eRows: [] });
-  A5._ruleTintAt = { t1: { x: 0, y: 0, z: -10 }, t2: { x: 0, y: 0, z: -20 } };
-  A5.camera = fakeCamera(() => ({ viewZ: -1, x: 0, y: 0, z: 0 }));
-  const seen = []; let freshPx = 0, agedPx = 0;
-  for (let fsec = 0; fsec <= 8; fsec += 0.5) {
-    const c = recCtx();
-    let lastFont = '';
-    c.__setFont = v => { lastFont = v; };
-    Object.defineProperty(c, 'font', { set(v) { lastFont = v; }, get() { return lastFont; }, configurable: true });
-    A5.ruleFindingsFilmCompositeOntoCanvas(c, 1280, 720, fsec);
-    seen.push(c.draws.filter(d => d.kind === 'text').length);
-    const m = /(\d+)px/.exec(lastFont);
-    if (m) { if (fsec <= 1) freshPx = +m[1]; if (fsec >= 6) agedPx = +m[1]; }
-  }
-  chk('S4 §74 a label is still DRAWN after its 3s TTL — it shrinks, it does not vanish',
-      seen.every(n => n > 0), 'text-draw counts across 8s: ' + seen.join(','));
-  chk('S5 §74 the type really is ~30% smaller once aged, and the same before',
-      agedPx > 0 && freshPx > 0 && Math.abs(agedPx / freshPx - 0.7) < 0.12,
-      'fresh=' + freshPx + 'px aged=' + agedPx + 'px ratio=' + (agedPx / freshPx).toFixed(2));
+  // P4 — ONE new qualifying member re-pulses the set. No turnover fraction required: this is the
+  // user's own correction to an earlier draft that gated on 3/4 of the previous batch leaving.
+  const AT4 = { p0: { x: 0, y: 0, z: -10 }, p1: { x: 0, y: 0, z: -20 }, p2: { x: 0, y: 0, z: -30 }, p3: { x: 0, y: 0, z: -40 } };
+  const { A: AP4 } = await build(planStare, { sRows: pulseRows, eRows: [], A: { showRuleModeTint: function () { this._ruleTintAt = AT4; } } });
+  AP4._ruleTintAt = AT4;
+  let hidden = true;
+  AP4.camera = { matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+    matrixWorldInverse: { viewZ: v => (hidden && v.z === -40) ? 1 : -1 },
+    updateMatrixWorld() {}, projectPoint: () => ({ x: 0, y: 0, z: 0 }) };
+  const draw4 = t => AP4.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, t);
+  draw4(0); draw4(5);                       // pulse once with p3 off screen, then let it expire
+  chk('P4-setup the set has gone quiet before the new member arrives', draw4(6) === 0, 'quiet at t=6');
+  hidden = false;                            // ONE new member enters
+  chk('P4 §77.2 a SINGLE new qualifying member re-pulses the set — no turnover fraction needed',
+      draw4(6.5) === 1, 'boxes after one newcomer: ' + draw4(6.5));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
