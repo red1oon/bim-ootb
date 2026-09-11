@@ -160,7 +160,7 @@ function setupRuleFindingsFilm(A) {
   var _built = false, _report = null, _picks = [], _stats = null;
   var _sets = [], _lastFilmS = null, _lastLog = -1;   // §77 — one entry per RULE, not per element
   // §82 — exactly one set holds the scene; the rest wait their turn in `_queue`, never dropped.
-  var _queue = [], _active = null;
+  var _queue = [], _active = null, _exitStatLogged = false;
   // §82 vs §78.3 — THE SLOT ONLY EXPIRES WHEN SOMEONE IS ACTUALLY WAITING. Queueing exists to cut
   // crowding, and with an empty queue there is no crowding to cut; §78.3's held box is a direct user
   // instruction ("Keeping the same box until end of pulsing helps eyeballing it well"). So a lone set
@@ -335,7 +335,7 @@ function setupRuleFindingsFilm(A) {
         st.slotStart = -Infinity; st.slotEndSec = null; st._queued = false; st._queuedAt = 0;   // §82
         return st;
       }).filter(function (st) { return st.total > 0; });
-      _queue = []; _active = null;   // §82 — a rebuild starts the queue empty
+      _queue = []; _active = null; _exitStatLogged = false;   // §82/§84 — a rebuild starts the queue empty
       _picks = _sets;   // stats + the closing cards read this
 
 
@@ -355,6 +355,7 @@ function setupRuleFindingsFilm(A) {
       log('§RULE_FILM sets=' + _sets.length + ' marked=' + allRows.length + ' structuralTotal=' + rowsS.length + ' egressTotal=' + rowsE.length +
           ' bothCategories=' + (rowsS.length && rowsE.length ? 'yes' : 'no') +
           (maxDist != null ? ' maxExitDistM=' + maxDist.toFixed(1) : ' maxExitDistM=none') +
+          ' exitStat=' + (maxSteps != null ? '~' + maxSteps + ' steps' : 'none — no circulation_distance row (§84.3: dropped, never "0 steps")') +
           ' — §77: one box per rule; ' + _sets.map(function (t) { return t.rule + '=' + t.total; }).join(' '));
 
       // §70 — the 3-D wireframe tint now covers EVERY finding, not 1-2. Cost is one InstancedMesh per
@@ -607,6 +608,13 @@ function setupRuleFindingsFilm(A) {
       ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
       ctx.restore();
       drawn++;
+      // §84 — a GREPPABLE proof that the exit line reached the canvas on a real bake, not merely that
+      // it was computed at build. One line per film. "The fix is in" is not the same claim as "the fix
+      // fires" (§80.1), and this lane has shipped a no-op on that exact confusion before.
+      if (set.exitLine && !_exitStatLogged) {
+        _exitStatLogged = true;
+        log('§RULE_FILM_EXIT_STAT drawn filmSec=' + fs.toFixed(1) + ' rule=' + set.rule + ' line="' + set.exitLine + '"');
+      }
       // §82 — the Measure echo follows the scene-holder, not whichever box happened to be drawn first
       if (A.filmBoxesMeasurePost && set === _active) A.filmBoxesMeasurePost(set.title, set.rows, set.ink);
     }
@@ -624,7 +632,7 @@ function setupRuleFindingsFilm(A) {
   A.ruleFindingsFilm = A.ruleFindingsFilm || {};
   A.ruleFindingsFilm.stats = function () { return _stats; };
   A.ruleFindingsFilmReport = function () { return _report; };
-  A.ruleFindingsFilmDispose = function () { _built = false; _report = null; _picks = []; _stats = null; _queue = []; _active = null; };
+  A.ruleFindingsFilmDispose = function () { _built = false; _report = null; _picks = []; _stats = null; _queue = []; _active = null; _exitStatLogged = false; };
   log('§RULE_FILM_INIT wired (Structural Sanity + Egress findings as world content for the whole film, clash model — §70)');
 }
 if (typeof window !== 'undefined') window.setupRuleFindingsFilm = setupRuleFindingsFilm;
