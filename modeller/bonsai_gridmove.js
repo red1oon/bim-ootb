@@ -332,11 +332,14 @@
             if (c.action === 'TRANSLATE') { minShift[k] += c.delta || 0; continue; }
             const r = CM.anchorShift({ cutOp, ops, hostBox: hb, axis: k, f: c.newScale != null ? c.newScale : 1, translateDelta: c.translateDelta || 0, minShift: minShift[k] });
             if (!r.ok) { bad = r.reason; break; }
-            d[k] += r.s;
+            // §CUT-FRAME-ROTATE: r.s/r.g are AUTHORED-frame quantities — place them at r.authoredAxis (= M.perm[k]),
+            // NOT at the world axis k, once a post-cut rotation can permute the frame (identity-perm ⇒ same index,
+            // so this is a no-op for every unrotated host — byte-identical to step 1/2).
+            d[r.authoredAxis] += r.s;
             // §CUT-RESIZE (SPEC_GEOM_CUT_RESIZE.md §3): a non-through axis is fully held — accumulate the resize
             // g=1/f and the residual on it is 0; a through axis (the bCut's thickness axis) gets NO resize and keeps
             // reporting its residual as before (shrinking a through-void by 1/f could stop it cutting through).
-            if (!r.through) { g[k] *= r.g; } else if (Math.abs(r.residual) > Math.abs(res)) res = r.residual;
+            if (!r.through) { g[r.authoredAxis] *= r.g; } else if (Math.abs(r.residual) > Math.abs(res)) res = r.residual;
           }
           if (bad) { out.refused.push(cutOp.id); refusals.push({ kind: 'cut-move-unmappable', fillingFid: fid, hostFid: host, cutId: cutOp.id, reason: bad }); continue; }
           out.riders.push({ cutId: cutOp.id, parent: host, dx: d[0], dy: d[1], dz: d[2], fx: g[0], fy: g[1], fz: g[2], fillingFid: fid, residual: res });
