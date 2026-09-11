@@ -6048,6 +6048,50 @@ async function setupEffects(A, renderer, scene, camera) {
     var st = (plan && A.cpeRevealVisualAt) ? A.cpeRevealVisualAt(plan, tNorm) : null;
     return !!(st && st.phase === 'tail-one');
   };
+  // §57.4-REAL-FADE (2026-09-11, user: "real fade for what can fade") — the visDiscs-overlap
+  // technique above only ever DELAYED the boolean cut (A._applyDiscVisibility has no opacity
+  // concept at all, confirmed by reading it — §CPE_DISCIPLINE_REVEAL_FADE's own comment already
+  // says so), so ARC/STR stayed fully, normally visible for the whole 2s window and then vanished
+  // instantly — not a dissolve, just a postponed cut. REGULAR (non-Instanced/BatchedMesh) meshes
+  // CAN take a real per-object opacity ramp; Instanced/BatchedMesh cannot (no alpha channel in
+  // instanceColor / the batched colours texture — verified against viewer/lib/three.core.min.js
+  // directly, same check §57.2 already did for a different reason). So: regular ARC/STR meshes get
+  // a genuine 1.0->0.0 fade over ARCH_DROP_FADE_SEC; Instanced/BatchedMesh ARC/STR stays on the
+  // existing visDiscs delayed-cut path, unchanged. Materials are CLONED (per distinct original,
+  // deduped) before animating opacity — never written in place — because materials in this viewer
+  // are SHARED/cached (A._matCache), the exact bug §STOREY_REVEAL_TINT_SHARED_MATERIAL already
+  // found and fixed for the storey-reveal tint; this reuses that same discipline.
+  var _archFadeTouched = [], _archFadeMatMap = null;
+  function _archFadeRestore() {
+    _archFadeTouched.forEach(function(t) { t.mesh.material = t.orig; });
+    _archFadeTouched = [];
+    if (_archFadeMatMap) { _archFadeMatMap.forEach(function(cl) { try { cl.dispose(); } catch (e) {} }); _archFadeMatMap = null; }
+  }
+  A.cpeArchFadeApplyVisual = function(plan, tNorm) {
+    var b = plan && plan.beats;
+    if (!b || typeof A.collectMeshes !== 'function') { if (_archFadeTouched.length) _archFadeRestore(); return; }
+    var tP = (b.pullout != null && b.pullout > b.out) ? b.pullout : b.out;
+    var tF = (b.flyback != null && b.flyback > tP) ? b.flyback : tP;
+    var fadeFrac = (plan.durationSec > 0) ? ARCH_DROP_FADE_SEC / plan.durationSec : 0;
+    var inWindow = fadeFrac > 0 && b.reveal > tF && tNorm > tF && tNorm <= tF + fadeFrac;
+    if (!inWindow) { if (_archFadeTouched.length) _archFadeRestore(); return; }
+    if (!_archFadeTouched.length) {
+      _archFadeMatMap = (typeof Map !== 'undefined') ? new Map() : null;
+      A.collectMeshes(function(o) { return o.isMesh && (o.userData.disc === 'ARC' || o.userData.disc === 'STR'); }).forEach(function(o) {
+        if (!o.material || Array.isArray(o.material) || !o.material.clone) return;
+        var orig = o.material, cl = _archFadeMatMap ? _archFadeMatMap.get(orig) : null;
+        if (!cl) { cl = orig.clone(); cl.transparent = true; if (_archFadeMatMap) _archFadeMatMap.set(orig, cl); }
+        _archFadeTouched.push({ mesh: o, orig: orig });
+        o.material = cl;
+      });
+      console.log('§CPE_ARCH_FADE start meshesTouched=' + _archFadeTouched.length +
+        ' clonedMaterials=' + (_archFadeMatMap ? _archFadeMatMap.size : 0) +
+        ' — Instanced/BatchedMesh ARC/STR (no alpha channel) stay on the delayed-cut path');
+    }
+    var u = (tNorm - tF) / fadeFrac, op = Math.max(0, 1 - u);   // 1 at tF, 0 at tF+ARCH_DROP_FADE_SEC
+    if (_archFadeMatMap) _archFadeMatMap.forEach(function(cl) { cl.opacity = op; });
+  };
+
   A.cpeRevealApplyVisual = function(plan, tNorm) {
     if (typeof A.filterDiscs !== 'function' || !A.hiddenDiscs) return;
     var st = plan ? A.cpeRevealVisualAt(plan, tNorm) : null;

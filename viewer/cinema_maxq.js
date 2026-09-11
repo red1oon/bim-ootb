@@ -1889,6 +1889,7 @@
         // (_tFilm(_tn) === _tn when no clip is set).
         var _tnFilm = _tFilm(_tn);
         if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tnFilm);
+        if (A.cpeArchFadeApplyVisual) A.cpeArchFadeApplyVisual(plan, _tnFilm);   // §57.4-REAL-FADE
         // §STOREY_HIGHLIGHT_REVEAL — the storey tint, windowed to the LAST 5s of `pullback` (ending
         // at plan.beats.rise, the orbit's own start — NOT the orbit beat itself). Pure function of
         // (plan, tNorm), null outside that narrow window by construction, so this can never fire
@@ -2399,6 +2400,7 @@
       // §CPE_DISCIPLINE_REVEAL: same contract — ARC/STR left hidden after a bake would follow the
       // user into normal navigation. plan=null is the explicit "force restore" signal.
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
+      try { if (A.cpeArchFadeApplyVisual) A.cpeArchFadeApplyVisual(null, 0); } catch (eRVf) {}
       // §STOREY_HIGHLIGHT_REVEAL: same contract — a tinted storey left glowing after a bake would
       // follow the user into normal navigation. plan=null forces the restore.
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
@@ -2481,6 +2483,7 @@
       try { if (window.tmDeactivateIfBakeOwned) window.tmDeactivateIfBakeOwned(); } catch (eTM2) {}
       try { _ghostGroundRestore(); } catch (e4) {}
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
+      try { if (A.cpeArchFadeApplyVisual) A.cpeArchFadeApplyVisual(null, 0); } catch (eRVf2) {}
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR2) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD2) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD2) {}
