@@ -43,6 +43,17 @@ function setupRuleFindingsFilm(A) {
   var CATEGORY_COLOR = { structural: '#ffaa33', egress: '#e57373' };
   var SEV_RANK = { CRITICAL: 2, WARNING: 1 };
 
+  // ── §RULE_FILM_CLASH_MODEL (MEP_CLASH_REVEAL_MOVIE.md §70, 2026-09-11) ─────────────────────────
+  // User: "Isn't it supposed to appear during movie similar to clash?" It is. §59.3 tied findings to
+  // the storey-reveal window only to avoid building a screen-time metric, and that one shortcut
+  // caused the 2-finding cap, §59.8's NOFIT and §60.5's caption/tint mismatch. These four constants
+  // are clash_labels.js's OWN values, reused verbatim rather than a second ranking scheme invented
+  // here — including the clutter tradeoff the user already accepted for clash in §P2.1.
+  var TOP_N = 8;               // the N nearest findings carry a label; no distance cutoff
+  var RANK_MARGIN_M = 0.6;     // hysteresis against the moving Nth-nearest boundary
+  var FADE_S = 0.5;            // film seconds to fade a label in/out — a fade, never a switch
+  var LABEL_PLATE = 'rgba(0,0,0,0.85)';   // §68's measured-legible plate
+
   // ── §RULE_FILM_MESSAGING (MEP_CLASH_REVEAL_MOVIE.md §63, 2026-09-11) ───────────────────────────
   // §63.1 `ratio` is an OVERLOADED field on the evaluator rows: metres for door_clear_width
   // (egress_sanity.js:80) and circulation_distance (:116), a real dimensionless ratio for
@@ -101,6 +112,7 @@ function setupRuleFindingsFilm(A) {
   };
 
   var _built = false, _report = null, _picks = [], _stats = null;
+  var _marks = [], _near = null, _fade = null, _lastFilmS = null, _lastLog = -1;   // §70
   function log(s) { console.log(s); }
 
   function fetchRules(url, fallback) {
@@ -133,53 +145,12 @@ function setupRuleFindingsFilm(A) {
       return Promise.resolve(_report);
     }
     if (typeof dbQuery !== 'function') return fail('INCONCLUSIVE', 'no dbQuery');
-    if (typeof A.storeyRevealList !== 'function') return fail('INCONCLUSIVE', 'cpe_storey_reveal.js not loaded');
-    if (!plan || !plan.beats || !(plan.beats.rise > 0) || !plan.storeyReveal || !plan.storeyReveal.on ||
-        !(plan.storeyReveal.windowFrac > 0) || !(plan.durationSec > 0)) {
-      return fail('INCONCLUSIVE', 'no storey-reveal window on this plan — nothing to schedule a finding against');
-    }
+    // §70 — the storey-reveal window is NO LONGER consulted. Findings are world content for the whole
+    // film (clash's model), so a plan without a storey-reveal lane is not a failure any more.
     if (typeof StructuralSanity === 'undefined' && typeof EgressSanity === 'undefined') {
       return fail('INCONCLUSIVE', 'neither StructuralSanity nor EgressSanity is loaded');
     }
-    var fullList = A.storeyRevealList();
-    if (!fullList.length) return fail('VACUOUS', 'no storeys');
 
-    // SAME window/truncation arithmetic cpe_storey_reveal.js's own _fitList uses — read here, not
-    // re-derived differently, so this can never disagree with which storey is actually on screen.
-    var winSec = plan.storeyReveal.windowFrac * plan.durationSec;
-    var winStartSec = (plan.beats.rise - plan.storeyReveal.windowFrac) * plan.durationSec;
-    var room = Math.max(1, Math.floor(winSec / MIN_SLOT_SEC));
-    var list = fullList.length > room ? fullList.slice(0, room) : fullList;
-    var slotSec = winSec / list.length;
-    // §RULE_FILM_LINGER_FIT (MEP_CLASH_REVEAL_MOVIE.md §59.8, 2026-09-11, user: "Even if 1.1s, let the
-    // message linger 3 secs etc. Outlier edge cases."). The old gate compared slotSec alone against
-    // ENV_SPAN, as though the Measure box cleared the instant a storey's slot ended. It does not:
-    // cpe_film_boxes.js holds the last posted entry for a further LINGER_S (§MEASURE_BOX_LINGER), so
-    // a finding posted inside HHS's real 1.01s slot is already on screen ~3.21s. Read the LIVE value
-    // rather than hardcode a second 2.2 — if cpe_film_boxes.js ever retunes its linger, this follows.
-    // Absent (no Measure box wired) ⇒ 0 ⇒ the original slotSec-only test, so the NOFIT branch stays.
-    var lingerSec = (typeof A.filmBoxesMeasureLingerS === 'number') ? A.filmBoxesMeasureLingerS : 0;
-    var effectiveSec = slotSec + lingerSec;
-    log('§RULE_FILM_WINDOW winSec=' + winSec.toFixed(2) + ' storeys=' + list.length +
-        ' slotSec=' + slotSec.toFixed(2) + ' lingerSec=' + lingerSec.toFixed(2) +
-        ' effectiveSec=' + effectiveSec.toFixed(2) +
-        ' eligible(>=' + ENV_SPAN + 's)=' + (effectiveSec >= ENV_SPAN));
-
-    function pickFor(byStorey, category, excludeStorey) {
-      for (var i = 0; i < list.length; i++) {
-        var name = list[i].name;
-        if (excludeStorey && name === excludeStorey) continue;
-        var row = byStorey[name];
-        if (!row) continue;
-        var startSec = winStartSec + i * slotSec;
-        return {
-          category: category, guid: row.guid, ifc_class: row.ifc_class, name: row.name,
-          storey: row.storey, rule: row.rule, severity: row.severity, ratio: row.ratio,
-          startSec: startSec, endSec: startSec + ENV_SPAN, ink: CATEGORY_COLOR[category]
-        };
-      }
-      return null;
-    }
 
     function go(structRules, egressRules) {
       var rowsS = [], rowsE = [];
@@ -188,39 +159,25 @@ function setupRuleFindingsFilm(A) {
       try { if (typeof EgressSanity !== 'undefined') rowsE = EgressSanity.evaluate(dbQuery, egressRules, { log: log }) || []; }
       catch (e) { log('§RULE_FILM_EGRESS_ERR ' + e.message); }
 
-      if (effectiveSec < ENV_SPAN) {
-        log('§RULE_FILM NOFIT slotSec=' + slotSec.toFixed(2) + 's + lingerSec=' + lingerSec.toFixed(2) +
-            's = ' + effectiveSec.toFixed(2) + 's < ' + ENV_SPAN + 's — not on screen long enough even with the Measure box linger, nothing scheduled');
-        _report.state = 'NOFIT';
-        _stats = { built: true, structuralTotal: rowsS.length, egressTotal: rowsE.length, structuralPicked: false, egressPicked: false };
-        return _report;
-      }
-
-      // §59.8 honest cost — when the slot alone was too short, the caption outlives its OWN storey
-      // tint by this much: for that long the box names a finding on storey N while N+1 is tinted.
-      // §59.3's "scheduled while its own storey is reveal-active" is relaxed here, never silently.
       // §63.1 — the unit comes from the rule definitions actually passed to the evaluators above,
       // so a fetched rules file and the fallback behave identically and cannot drift apart.
       var _ruleDefs = {};
       ((structRules && structRules.structural_rules) || []).forEach(function (r) { _ruleDefs[r.name] = r; });
       ((egressRules && egressRules.egress_rules) || []).forEach(function (r) { _ruleDefs[r.name] = r; });
 
-      if (slotSec < ENV_SPAN) {
-        log('§RULE_FILM_LINGER_FIT slotSec=' + slotSec.toFixed(2) + 's < ' + ENV_SPAN +
-            's but lingerSec=' + lingerSec.toFixed(2) + 's carries it to ' + effectiveSec.toFixed(2) +
-            's — admitted; caption outlives its own storey tint by overrunSec=' + (ENV_SPAN - slotSec).toFixed(2) + 's');
-      }
-
-      var byStoreyS = bestPerStorey(rowsS), byStoreyE = bestPerStorey(rowsE);
-      var pickS = pickFor(byStoreyS, 'structural', null);
-      var pickE = pickFor(byStoreyE, 'egress', pickS ? pickS.storey : null);
-      if (!pickE && pickS) pickE = pickFor(byStoreyE, 'egress', null);   // only eligible storey also has egress — share it rather than drop the category
-
-      _picks = [pickS, pickE].filter(Boolean);
-      _picks.forEach(function (p) {
-        p.title = (p.category === 'structural' ? 'Structural — ' : 'Safety — ') + p.rule.replace(/_/g, ' ');
-        p.rows = [shortName(p.name) || p.ifc_class, p.storey, valueRow(_ruleDefs[p.rule], p.ratio, p.severity)];   // §63
+      // §70 — EVERY finding becomes world content, not one per storey. The label text is §63's
+      // settled messaging; `title`/`rows` keep their shape so the closing cards and any Measure-box
+      // caller are unaffected.
+      _marks = rowsS.map(function (r) { return { row: r, category: 'structural' }; })
+        .concat(rowsE.map(function (r) { return { row: r, category: 'egress' }; }));
+      _marks.forEach(function (m) {
+        var r = m.row;
+        m.guid = r.guid;
+        m.ink = CATEGORY_COLOR[m.category];
+        m.title = (m.category === 'structural' ? 'Structural — ' : 'Safety — ') + r.rule.replace(/_/g, ' ');
+        m.rows = [shortName(r.name) || r.ifc_class, r.storey, valueRow(_ruleDefs[r.rule], r.ratio, r.severity)];
       });
+      _picks = _marks;   // the closing cards and stats read this; every finding now qualifies
 
       // §59 user addition — the Safety card's own "longest distance to exit" stat, real graph-
       // measured metres (RoomGraph.escapeRoute()/shortestPath(), egress_sanity.js's own `ratio`),
@@ -233,7 +190,7 @@ function setupRuleFindingsFilm(A) {
       _stats = {
         built: true,
         structuralTotal: rowsS.length, egressTotal: rowsE.length,
-        structuralPicked: !!pickS, egressPicked: !!pickE,
+        structuralPicked: rowsS.length > 0, egressPicked: rowsE.length > 0,   // §70 — all findings marked, not one per storey
         maxExitDistM: maxDist,
         // A.WALK_SPEED (config.js) is an EXISTING constant, currently used for tour-camera pacing —
         // repurposed here for a time estimate, not invented. STEP_M has no codebase precedent (see
@@ -241,14 +198,15 @@ function setupRuleFindingsFilm(A) {
         maxExitDistSec: maxDist != null ? maxDist / (A.WALK_SPEED || 1.2) : null,
         maxExitDistSteps: maxDist != null ? Math.round(maxDist / STEP_M) : null
       };
-      log('§RULE_FILM picks=' + _picks.length + ' structuralTotal=' + rowsS.length + ' egressTotal=' + rowsE.length +
-          ' oneOfEach=' + (pickS && pickE ? 'yes' : 'no') +
-          (maxDist != null ? ' maxExitDistM=' + maxDist.toFixed(1) : ' maxExitDistM=none'));
+      log('§RULE_FILM marked=' + _marks.length + ' structuralTotal=' + rowsS.length + ' egressTotal=' + rowsE.length +
+          ' bothCategories=' + (rowsS.length && rowsE.length ? 'yes' : 'no') +
+          (maxDist != null ? ' maxExitDistM=' + maxDist.toFixed(1) : ' maxExitDistM=none') +
+          ' — §70: every finding is world content for the whole film, labels ranked per frame');
 
-      // Static 3D wireframe tint — ONLY the picked guids (1-2 elements: "chase only clear
-      // opportunities" means a demonstration, not a flood), shown for the whole bake, never
-      // animated. Explicit divergence from clash_film.js's shared-breathing-phase convention — see
-      // §59.4: the requirement here is the opposite (one attention-getter, everything else static).
+      // §70 — the 3-D wireframe tint now covers EVERY finding, not 1-2. Cost is one InstancedMesh per
+      // colour regardless of count (rule_checklist.js), so 509 markers cost what 2 did. Still static,
+      // never animated: §59.4's "one attention-getter, everything else static" applies to motion, and
+      // the per-frame LABEL ranking below is what now decides where attention goes.
       if (_picks.length && typeof A.showRuleModeTint === 'function') {
         var guidCat = {}; _picks.forEach(function (p) { guidCat[p.guid] = p.category; });
         try { A.showRuleModeTint(guidCat, CATEGORY_COLOR, { shineThrough: true }); }   // §62
@@ -274,21 +232,86 @@ function setupRuleFindingsFilm(A) {
   // 2D pass — called from cinema_maxq's _captureFrame chain beside the other Measure beats, so the
   // posting lands INSIDE the frame's Measure queue (same convention cpe_slab_beat.js's own
   // CompositeOntoCanvas comment documents: the queue is reset at the top of that function).
+  // §70 — clash_labels.js's algorithm, applied to findings: rank every marker by camera distance,
+  // admit the TOP_N nearest with RANK_MARGIN_M hysteresis, drop anything outside the frustum, walk the
+  // rest rejecting screen-space overlaps, fade each over FADE_S. No window, no storey slot, no cap at 2.
+  function overlaps(a, b) { return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h; }
+
   A.ruleFindingsFilmCompositeOntoCanvas = function (ctx, w, h, filmSec) {
-    if (!_picks.length || !A.filmBoxesMeasurePost) return 0;
-    var drawn = 0;
-    _picks.forEach(function (p) {
-      if (filmSec < p.startSec || filmSec >= p.endSec) return;
-      if (A.filmBoxesMeasurePost(p.title, p.rows, p.ink)) drawn++;
-    });
-    return drawn;
+    var cam = A.camera, at = A._ruleTintAt;
+    if (!ctx || !_marks.length || !cam || !at || !(w > 0) || !(h > 0)) return 0;
+    if (!_near || _near.length !== _marks.length) { _near = new Uint8Array(_marks.length); _fade = new Float32Array(_marks.length); _lastFilmS = null; }
+    var fs = filmSec || 0;
+    var dt = (_lastFilmS == null) ? FADE_S : Math.max(0, fs - _lastFilmS);
+    _lastFilmS = fs;
+    cam.updateMatrixWorld(true);
+    var cx = cam.matrixWorld.elements[12], cy = cam.matrixWorld.elements[13], cz = cam.matrixWorld.elements[14];
+
+    var all = [], i, m, pt;
+    for (i = 0; i < _marks.length; i++) {
+      pt = at[_marks[i].guid]; if (!pt) continue;
+      var dx = pt.x - cx, dy = pt.y - cy, dz = pt.z - cz;
+      all.push({ i: i, d: Math.sqrt(dx * dx + dy * dy + dz * dz), pt: pt });
+    }
+    all.sort(function (a, b) { return a.d - b.d; });
+    var cutoff = all.length >= TOP_N ? all[TOP_N - 1].d : Infinity;
+    var elig = [];
+    for (var ai = 0; ai < all.length; ai++) {
+      i = all[ai].i;
+      if (!_near[i] && all[ai].d <= cutoff) _near[i] = 1;
+      else if (_near[i] && all[ai].d > cutoff + RANK_MARGIN_M) _near[i] = 0;
+      _fade[i] = Math.max(0, Math.min(1, _fade[i] + (_near[i] ? dt : -dt) / FADE_S));
+      if (_near[i] || _fade[i] > 0) elig.push(all[ai]);
+    }
+
+    var placed = [], skippedFrustum = 0, skippedOverlap = 0, labelled = 0;
+    var V = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3() : null;
+    for (var k = 0; k < elig.length && V; k++) {
+      i = elig[k].i; m = _marks[i]; pt = elig[k].pt;
+      V.set(pt.x, pt.y, pt.z).applyMatrix4(cam.matrixWorldInverse);
+      var behind = V.z > 0;
+      V.set(pt.x, pt.y, pt.z).project(cam);
+      if (behind || Math.abs(V.x) > 1 || Math.abs(V.y) > 1) { skippedFrustum++; continue; }
+      var sx = (V.x + 1) / 2 * w, sy = (1 - V.y) / 2 * h;
+      var px = Math.max(10, Math.round(h * 0.016)), pad = Math.round(px * 0.5), lh = Math.round(px * 1.35);
+      ctx.font = '700 ' + px + 'px BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
+      var lines = [m.title, m.rows[0], m.rows[1] + ' · ' + m.rows[2]];
+      var bw = pad * 2, li;
+      for (li = 0; li < lines.length; li++) bw = Math.max(bw, pad * 2 + Math.ceil(ctx.measureText(lines[li]).width));
+      var bh = pad * 2 + lh * lines.length;
+      var box = { x: Math.min(w - bw - 4, sx + 12), y: Math.max(4, sy - 12 - bh), w: bw, h: bh };
+      var clash = false;
+      for (var q = 0; q < placed.length; q++) if (overlaps(box, placed[q])) { clash = true; break; }
+      if (clash) { skippedOverlap++; continue; }
+      placed.push(box);
+      ctx.save();
+      ctx.globalAlpha = _fade[i];
+      ctx.fillStyle = LABEL_PLATE;
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(box.x, box.y, bw, bh, Math.round(px * 0.4)); ctx.fill(); }
+      else ctx.fillRect(box.x, box.y, bw, bh);
+      ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      for (li = 0; li < lines.length; li++) {
+        ctx.fillStyle = li === 0 ? m.ink : '#fff';
+        ctx.fillText(lines[li], box.x + pad, box.y + pad + lh * (li + 0.5));
+      }
+      ctx.restore();
+      labelled++;
+    }
+    if (Math.floor(fs) !== _lastLog) {
+      _lastLog = Math.floor(fs);
+      log('§RULE_FILM_LABELS filmSec=' + fs.toFixed(1) + ' marks=' + _marks.length +
+          ' eligible=' + elig.length + ' labelled=' + labelled +
+          ' skippedOverlap=' + skippedOverlap + ' skippedFrustum=' + skippedFrustum + ' topN=' + TOP_N);
+    }
+    return labelled;
   };
 
   A.ruleFindingsFilm = A.ruleFindingsFilm || {};
   A.ruleFindingsFilm.stats = function () { return _stats; };
   A.ruleFindingsFilmReport = function () { return _report; };
   A.ruleFindingsFilmDispose = function () { _built = false; _report = null; _picks = []; _stats = null; };
-  log('§RULE_FILM_INIT wired (Structural Sanity + Egress findings baked into the storey-reveal window, rides Measure)');
+  log('§RULE_FILM_INIT wired (Structural Sanity + Egress findings as world content for the whole film, clash model — §70)');
 }
 if (typeof window !== 'undefined') window.setupRuleFindingsFilm = setupRuleFindingsFilm;
 if (typeof module !== 'undefined' && module.exports) module.exports = setupRuleFindingsFilm;

@@ -1,239 +1,133 @@
 #!/usr/bin/env node
 /**
- * # ⚠ DO NOT REMOVE — MEP_CLASH_REVEAL_MOVIE.md §59 witness (READ THE LOG after every run)
- * SCOPE: proves viewer/rule_findings_film.js's OWN new logic — the scheduling/selection/ink/window-
- * gating this file adds on top of StructuralSanity/EgressSanity, which are already witnessed
- * elsewhere (tests/test_structural_sanity_rules.js, tests/test_egress_sanity_rules.js) and are NOT
- * re-verified here.
- *
- * StructuralSanity.evaluate() runs for REAL, against a real in-memory sql.js DB (same dbQuery
- * contract production code uses) — proving the Structural half of Build() calls the real evaluator,
- * not a mock. EgressSanity is STUBBED with a fixed evaluate() (a known circulation_distance ratio),
- * because building a full synthetic RoomGraph fixture (spatial_structure/storey_walkable_raster
- * schema) would only re-prove egress_sanity.js's own rule math, already covered by
- * tests/test_egress_sanity_rules.js — this witness needs a KNOWN, controlled distance figure to
- * check the scheduler's arithmetic, not a second copy of that coverage.
- *
- * CLAIMS CHECKED:
- *   1. ONE-OF-EACH — a Structural-only storey and an Egress-only storey both get a pick, on their
- *      own distinct storeys, when the reveal window has room for both (>=2.2s/storey).
- *   2. NOFIT — shrinking the same window below 2.2s/storey drops BOTH picks (never a half-fit),
- *      while still reporting the real totals (never silently swallowed).
- *   3. WINDOW-GATING — CompositeOntoCanvas posts a pick's title/rows/ink ONLY inside its own
- *      [startSec, endSec) slot, proven by sampling before/inside/after each pick's window.
- *   4. CATEGORY INK — Structural picks post '#ffaa33', Egress picks post '#cc4444' — never severity-
- *      based, always category-based (rule_checklist.js's own hexes, different axis).
- *   5. DISTANCE-TO-EXIT ARITHMETIC — a known 37.5m circulation_distance ratio converts to
- *      distance/A.WALK_SPEED seconds and round(distance/0.75) steps, using the EXISTING A.WALK_SPEED
- *      constant (not a re-derived one).
- *   6. showRuleModeTint is called once with exactly the picked guids, keyed by CATEGORY not severity.
+ * # ⚠ DO NOT REMOVE — W-RULE-FINDINGS-FILM scope (READ THE LOG after every run)
+ * SCOPE: bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §59 + §63 + §68 + §70. Node, no browser.
  * RUN: node witness_rule_findings_film.js
+ *
+ * §70 REWRITE: findings are no longer tied to the storey-reveal window. They are world content for
+ * the whole film with labels ranked per frame, exactly as clash does it. Every check that existed
+ * only to test the storey window (the old scenarios 1-5: window-fits, NOFIT, INCONCLUSIVE-on-no-
+ * storeyReveal, linger-fit, HHS slot arithmetic) is RETIRED WITH ITS CAUSE, not silently deleted —
+ * K2 and K6 below assert the retirement itself so a reader can see it was deliberate.
+ *
+ * ISSUES THIS WITNESS EXPOSES:
+ *   K1 ALL-FINDINGS-MARKED      — every finding's guid reaches showRuleModeTint, not 1-2 picks.
+ *   K2 NO-STOREY-DEPENDENCY     — a plan with NO storeyReveal still reaches BEAT and marks all.
+ *   K3 TOP-N-NEAREST-WINS       — the nearest findings are labelled; at most TOP_N in a frame.
+ *   K4 FRUSTUM-SKIP             — a finding behind the camera carries no label, and is counted.
+ *   K5 OVERLAP-SKIP             — two findings on the same screen point yield one label, one skip.
+ *   K6 NOFIT-IS-GONE            — no NOFIT state exists any more; a short window is not a failure.
+ *   G1-G5 §63 MESSAGING         — unit from the rule definition, Revit name trimmed.
+ *   X1-X3 §59/§68               — category inks, shine-through opt-in, distance-to-exit arithmetic.
  */
 'use strict';
-const fs = require('fs'), path = require('path');
-const initSqlJs = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'sql.js'));
-global.StructuralSanity = require('./viewer/structural_sanity.js');
-const setupRuleFindingsFilm = require('./viewer/rule_findings_film.js');
-
+const path = require('path');
 let pass = 0, fail = 0;
 const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };
 
-const SCHEMA = `
-CREATE TABLE elements_meta (guid TEXT, ifc_class TEXT, element_name TEXT, storey TEXT, discipline TEXT, material_name TEXT, material_rgba TEXT, building TEXT);
-CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center_z REAL, rotation_x REAL, rotation_y REAL, rotation_z REAL, bbox_x REAL, bbox_y REAL, bbox_z REAL);
-`;
+// ── minimal THREE: only Vector3.set/applyMatrix4/project are used by the label pass ──
+global.THREE = { Vector3: class { 
+  constructor(){ this.x=0; this.y=0; this.z=0; }
+  set(x,y,z){ this.x=x; this.y=y; this.z=z; return this; }
+  applyMatrix4(m){ this.z = m.viewZ(this); return this; }
+  project(c){ const p = c.projectPoint(this); this.x=p.x; this.y=p.y; this.z=p.z; return this; }
+} };
+const setup = require('./viewer/rule_findings_film.js');
+global.fetch = () => Promise.reject(new Error('no network in this witness — exercises the fallback path'));
+
+const S_ROWS = [
+  { guid:'b1', ifc_class:'IfcBeam',   name:'Beam A:T1:T1:99',            storey:'L1', rule:'span_depth_steel',   severity:'WARNING',  ratio:27.3 },
+  { guid:'b2', ifc_class:'IfcColumn', name:'STB Stütze - rund:STB d=30:STB d=30:573295', storey:'L2', rule:'column_continuity', severity:'CRITICAL', ratio:null },
+  { guid:'b3', ifc_class:'IfcBeam',   name:'Plain Name',                 storey:'L1', rule:'floating_member',   severity:'CRITICAL', ratio:4.2 },
+];
+const E_ROWS = [
+  { guid:'d1', ifc_class:'IfcDoor',  name:'Drehflügel 1-flg - Stahlzarge:76 x 2.26:76 x 2.26:578641', storey:'L2', rule:'door_clear_width', severity:'WARNING', ratio:0.8 },
+  { guid:'r1', ifc_class:'IfcSpace', name:'Ward 2A', storey:'L2', rule:'circulation_distance', severity:'WARNING', ratio:37.5, target:'exit' },
+];
+function build(plan, opts) {
+  opts = opts || {};
+  global.StructuralSanity = { evaluate: () => (opts.sRows || S_ROWS) };
+  global.EgressSanity = { evaluate: () => (opts.eRows || E_ROWS) };
+  const tints = [];
+  const A = Object.assign({
+    dbQuery: () => [], WALK_SPEED: 1.2,
+    showRuleModeTint: (map, colors, o) => tints.push({ map, colors, o }),
+  }, opts.A || {});
+  setup(A);
+  A._tints = tints;
+  return A.ruleFindingsFilmBuild(A.dbQuery, plan).then(r => ({ A, report: r }));
+}
+// a camera whose view-z and projection we control per finding position
+function fakeCamera(project) {
+  return {
+    matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+    matrixWorldInverse: { viewZ: v => project(v).viewZ },
+    updateMatrixWorld(){},
+    projectPoint: v => project(v),
+  };
+}
+function recCtx() {
+  const draws = [];
+  return { draws, save(){}, restore(){}, beginPath(){}, fill(){}, stroke(){},
+    fillRect(x,y,w,h){ draws.push({kind:'rect',x,y,w,h}); },
+    roundRect(x,y,w,h){ draws.push({kind:'rect',x,y,w,h}); },
+    measureText(t){ return { width: String(t).length * 6 }; },
+    fillText(t,x,y){ draws.push({kind:'text',text:String(t),x,y}); },
+    set font(v){}, get font(){ return '12px x'; },
+    set fillStyle(v){ this._fs=v; }, get fillStyle(){ return this._fs; },
+    set strokeStyle(v){}, set lineWidth(v){}, set textBaseline(v){}, set textAlign(v){},
+    set globalAlpha(v){}, get globalAlpha(){ return 1; } };
+}
 
 (async () => {
-  console.log('§W-RULE-FILM synthetic fixture (real StructuralSanity, stubbed EgressSanity)');
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
-  db.run(SCHEMA);
+  // ── K1 / K2: no storeyReveal anywhere on the plan ──
+  const { A: A1, report: r1 } = await build({ beats: { rise: 0.9 }, durationSec: 100 });
+  chk('K2 §70 a plan with NO storeyReveal still reaches BEAT (the old INCONCLUSIVE is retired with its cause)',
+      r1.state === 'BEAT', r1.state);
+  chk('K1 §70 EVERY finding is marked — all 5, not 1-2 picks',
+      A1._tints.length === 1 && Object.keys(A1._tints[0].map).length === 5,
+      'tinted=' + (A1._tints[0] && Object.keys(A1._tints[0].map).length));
+  chk('X2 §62 the tint is still asked for shine-through',
+      A1._tints[0] && A1._tints[0].o && A1._tints[0].o.shineThrough === true, JSON.stringify(A1._tints[0].o));
+  const st1 = A1.ruleFindingsFilm.stats();
+  chk('K6 §70 there is no NOFIT state any more — a short/absent window is not a failure',
+      r1.state !== 'NOFIT' && st1.built === true, r1.state);
+  chk('X3 §59.4 distance-to-exit arithmetic survives the rework (37.5m @1.2 = 31.25s, /0.75 = 50 steps)',
+      Math.abs(st1.maxExitDistSec - 37.5 / 1.2) < 1e-9 && st1.maxExitDistSteps === 50,
+      st1.maxExitDistSec + 's / ' + st1.maxExitDistSteps + ' steps');
 
-  function meta(guid, cls, name, storey) { return [guid, cls, name, storey, 'STR', '', '', 'Fixture']; }
-  function xform(guid, cx, cy, cz, bx, by, bz) { return [guid, cx, cy, cz, 0, 0, 0, bx, by, bz]; }
+  const byRule = {}; r1.picks.forEach(p => { byRule[p.row.rule] = p; });
+  chk('X1 §68 category inks — structural #ffaa33, safety #e57373',
+      byRule.span_depth_steel.ink === '#ffaa33' && byRule.door_clear_width.ink === '#e57373',
+      byRule.span_depth_steel.ink + ' / ' + byRule.door_clear_width.ink);
+  chk('G1 §63 a metre rule says "0.80 m", not "ratio 0.8"', byRule.door_clear_width.rows[2] === '0.80 m', byRule.door_clear_width.rows[2]);
+  chk('G2 §63 a ratio rule still says "ratio 27.3"', byRule.span_depth_steel.rows[2] === 'ratio 27.3', byRule.span_depth_steel.rows[2]);
+  chk('G3 §63 a rule declaring neither unit gets the bare number, no unit word', byRule.floating_member.rows[2] === '4.2', byRule.floating_member.rows[2]);
+  chk('G4 §63 ratio==null still shows the severity word', byRule.column_continuity.rows[2] === 'CRITICAL', byRule.column_continuity.rows[2]);
+  chk('G5 §63 the real HHS Revit name trims to family + type', byRule.column_continuity.rows[0] === 'STB Stütze - rund · STB d=30', byRule.column_continuity.rows[0]);
+  chk('G5b §63 a name with no ":" is unchanged', byRule.floating_member.rows[0] === 'Plain Name', byRule.floating_member.rows[0]);
 
-  // L1: one isolated (floating) beam — a real, code-verified CRITICAL floating_member finding.
-  // L2: no STR elements at all — zero structural findings there, by construction (not stubbed).
-  db.run('INSERT INTO elements_meta VALUES (?,?,?,?,?,?,?,?)', meta('beam-floating', 'IfcBeam', 'B-1', 'L1'));
-  db.run('INSERT INTO element_transforms VALUES (?,?,?,?,?,?,?,?,?,?)', xform('beam-floating', 200, 200, 20, 6, 0.3, 0.5));
-
-  function dbQuery(sql, params) { const r = params ? db.exec(sql, params) : db.exec(sql); return r.length ? r[0].values : []; }
-
-  global.EgressSanity = {
-    evaluate: function () {
-      // Known figure, on L2 only — L1 has zero egress findings, by construction.
-      return [{ guid: 'room-far', ifc_class: 'IfcSpace', name: 'Ward 2A', storey: 'L2',
-                rule: 'circulation_distance', severity: 'WARNING', ratio: 37.5, target: 'exit' }];
-    }
-  };
-  global.fetch = () => Promise.reject(new Error('no network in this witness — exercises the fallback path'));
-
-  function makeA(overrides) {
-    const posts = [], tints = [];
-    const A = Object.assign({
-      dbQuery: dbQuery,
-      WALK_SPEED: 1.2,
-      storeyRevealList: function () { return [{ name: 'L1', z: 0 }, { name: 'L2', z: 3 }]; },
-      filmBoxesMeasurePost: function (title, rows, ink) { posts.push({ title, rows, ink }); return true; },
-      showRuleModeTint: function (guidCategoryMap, colorMap, opts) { tints.push({ guidCategoryMap, colorMap, opts }); }
-    }, overrides);
-    setupRuleFindingsFilm(A);
-    A._posts = posts; A._tints = tints;
-    return A;
-  }
-
-  // ── Scenario 1: window fits both (winSec=6s / 2 storeys = 3s/storey >= 2.2s) ──
-  const A1 = makeA({});
-  const plan1 = { beats: { rise: 0.9 }, storeyReveal: { on: true, windowFrac: 0.06 }, durationSec: 100 };
-  const report1 = await A1.ruleFindingsFilmBuild(A1.dbQuery, plan1);
-  console.log('  report1:', JSON.stringify(report1));
-  const stats1 = A1.ruleFindingsFilm.stats();
-  console.log('  stats1:', JSON.stringify(stats1));
-
-  chk('scenario 1: state=BEAT', report1.state === 'BEAT', report1.state);
-  chk('scenario 1: one-of-each — both categories picked', stats1.structuralPicked && stats1.egressPicked);
-  const pickS1 = report1.picks.find(p => p.category === 'structural');
-  const pickE1 = report1.picks.find(p => p.category === 'egress');
-  chk('scenario 1: structural pick is on L1 (the only storey with a structural finding)', pickS1 && pickS1.storey === 'L1', pickS1 && pickS1.storey);
-  chk('scenario 1: egress pick is on L2 (the only storey with an egress finding) — distinct storeys', pickE1 && pickE1.storey === 'L2', pickE1 && pickE1.storey);
-  chk('scenario 1: structural ink = category orange, not severity-derived', pickS1 && pickS1.ink === '#ffaa33', pickS1 && pickS1.ink);
-  chk('scenario 1: egress ink = category red (§68 #e57373 — #cc4444 could not clear WCAG 4.5 at any plate alpha)', pickE1 && pickE1.ink === '#e57373', pickE1 && pickE1.ink);
-
-  // window bounds, real arithmetic: winStartSec=(0.9-0.06)*100=84, slotSec=3
-  chk('scenario 1: structural window = [84, 86.2)', pickS1 && Math.abs(pickS1.startSec - 84) < 1e-6 && Math.abs(pickS1.endSec - 86.2) < 1e-6,
-      pickS1 && (pickS1.startSec + '-' + pickS1.endSec));
-  chk('scenario 1: egress window = [87, 89.2)', pickE1 && Math.abs(pickE1.startSec - 87) < 1e-6 && Math.abs(pickE1.endSec - 89.2) < 1e-6,
-      pickE1 && (pickE1.startSec + '-' + pickE1.endSec));
-
-  chk('scenario 1: distance-to-exit seconds = 37.5/1.2', Math.abs(stats1.maxExitDistSec - 37.5 / 1.2) < 1e-6, stats1.maxExitDistSec);
-  chk('scenario 1: distance-to-exit steps = round(37.5/0.75) = 50', stats1.maxExitDistSteps === 50, stats1.maxExitDistSteps);
-
-  chk('scenario 1: showRuleModeTint called once, keyed by CATEGORY not severity',
-      A1._tints.length === 1 && A1._tints[0].guidCategoryMap['beam-floating'] === 'structural' && A1._tints[0].guidCategoryMap['room-far'] === 'egress',
-      JSON.stringify(A1._tints));
-
-  // ── Window-gating: sample before / inside / gap / inside / after ──
-  function sample(A, t) { A._posts.length = 0; A.ruleFindingsFilmCompositeOntoCanvas(null, 0, 0, t); return A._posts.slice(); }
-  chk('gating: before structural window (83.9s) — no post', sample(A1, 83.9).length === 0);
-  const atS = sample(A1, 85);
-  chk('gating: inside structural window (85s) — posts Structural title + orange ink',
-      atS.length === 1 && /^Structural/.test(atS[0].title) && atS[0].ink === '#ffaa33', JSON.stringify(atS));
-  chk('gating: in the gap between windows (86.5s) — no post', sample(A1, 86.5).length === 0);
-  const atE = sample(A1, 88);
-  chk('gating: inside egress window (88s) — posts Safety title + red ink',
-      atE.length === 1 && /^Safety/.test(atE[0].title) && atE[0].ink === '#e57373', JSON.stringify(atE));   // §68
-  chk('gating: after egress window (89.3s) — no post', sample(A1, 89.3).length === 0);
-
-  // §62 T3 — the capability existing is not the same claim as the film asking for it.
-  chk('T3 §62 the film passes { shineThrough: true } so its marker is not hidden behind walls',
-      A1._tints.length === 1 && A1._tints[0].opts && A1._tints[0].opts.shineThrough === true,
-      JSON.stringify(A1._tints[0] && A1._tints[0].opts));
-
-  // ── Scenario 2: same totals, window too short (winSec=0.5s / 2 storeys = 0.25s/storey < 2.2s) ──
-  const A2 = makeA({});
-  const plan2 = { beats: { rise: 0.9 }, storeyReveal: { on: true, windowFrac: 0.005 }, durationSec: 100 };
-  const report2 = await A2.ruleFindingsFilmBuild(A2.dbQuery, plan2);
-  const stats2 = A2.ruleFindingsFilm.stats();
-  console.log('  report2:', JSON.stringify(report2), 'stats2:', JSON.stringify(stats2));
-  chk('scenario 2: NOFIT — never a half-fit (neither category picked)', !stats2.structuralPicked && !stats2.egressPicked);
-  chk('scenario 2: real totals still reported despite NOFIT (never silently swallowed)',
-      stats2.structuralTotal === 1 && stats2.egressTotal === 1, JSON.stringify(stats2));
-  chk('scenario 2: no tint call when nothing was picked', A2._tints.length === 0);
-
-  // ── Scenario 4 (§59.8): the SAME too-short window, but with the Measure box's real linger wired.
-  // ISSUE: §RULE_FILM_LINGER_FIT — the old gate compared slotSec alone, ignoring that the box holds
-  // its last entry for a further LINGER_S. Scenario 2 above is the control: it sets no
-  // filmBoxesMeasureLingerS, so it MUST still be NOFIT (L2), which also proves the fix reads the
-  // live value instead of assuming 2.2 unconditionally. ──
-  const lines4 = [];
-  const A4 = makeA({ filmBoxesMeasureLingerS: 2.2, log: null });
-  const _log4 = console.log; console.log = (m) => { if (typeof m === 'string') lines4.push(m); _log4(m); };
-  const plan4 = { beats: { rise: 0.9 }, storeyReveal: { on: true, windowFrac: 0.005 }, durationSec: 100 };
-  const report4 = await A4.ruleFindingsFilmBuild(A4.dbQuery, plan4);
-  console.log = _log4;
-  const stats4 = A4.ruleFindingsFilm.stats();
-  chk('L1 §59.8 linger admits a slot the old gate rejected (0.50s + 2.2s >= 2.2s)',
-      report4.state === 'BEAT', report4.state);
-  // winSec 0.5s / MIN_SLOT_SEC 1.0 truncates the reveal list to ONE storey (L1), so only the
-  // structural category has a storey left to ride — egress correctly unpicked, not a half-fit bug.
-  // One-of-each is asserted on scenario 5 below, where both storeys survive truncation.
-  chk('L1b the one surviving storey IS picked (truncation, not a dropped category)',
-      stats4.structuralPicked && !stats4.egressPicked, JSON.stringify(stats4));
-  chk('L3 overrun is REPORTED, not hidden — §RULE_FILM_LINGER_FIT names overrunSec',
-      lines4.some(l => l.indexOf('\u00A7RULE_FILM_LINGER_FIT') === 0 && /overrunSec=1\.70s/.test(l)),
-      lines4.filter(l => l.indexOf('\u00A7RULE_FILM_LINGER_FIT') === 0).join(' | ') || 'not logged');
-  chk('L3b §RULE_FILM_WINDOW now reports lingerSec and effectiveSec, not slotSec alone',
-      lines4.some(l => /\u00A7RULE_FILM_WINDOW .*lingerSec=2\.20 effectiveSec=2\.70 eligible\(>=2\.2s\)=true/.test(l)),
-      lines4.filter(l => l.indexOf('\u00A7RULE_FILM_WINDOW') === 0).join(' | '));
-
-  // ── Scenario 5 (§59.8 L4): HHS's OWN real numbers — winSec 4.03 over 4 storeys = 1.01s/storey,
-  // the figure that NOFITed on 5 real bakes. Must now be admitted with overrunSec 1.19s. ──
-  const lines5 = [];
-  const A5 = makeA({
-    filmBoxesMeasureLingerS: 2.2,
-    storeyRevealList: () => [{ name: 'L1', z: 0 }, { name: 'L2', z: 3 }, { name: 'L3', z: 6 }, { name: 'L4', z: 9 }]
+  // ── K3/K4/K5: the per-frame label pass ──
+  // Positions: b1 near, b2 far, b3 behind camera, d1+r1 on the SAME screen point as each other.
+  const AT = { b1:{x:0,y:0,z:-10}, b2:{x:0,y:0,z:-500}, b3:{x:0,y:0,z:10}, d1:{x:5,y:0,z:-20}, r1:{x:5,y:0,z:-20} };
+  A1._ruleTintAt = AT;
+  A1.camera = fakeCamera(v => {
+    const behind = v.z > 0;
+    // everything maps inside NDC except the behind-camera one
+    const key = Object.keys(AT).find(k => AT[k].x === v.x && AT[k].z === v.z);
+    const sameSpot = (v.x === 5);
+    return { viewZ: behind ? 1 : -1, x: sameSpot ? 0.2 : (v.z === -10 ? -0.5 : 0.6), y: 0, z: 0 };
   });
-  const _log5 = console.log; console.log = (m) => { if (typeof m === 'string') lines5.push(m); _log5(m); };
-  // windowFrac * durationSec = 4.03s, matching the real bake's §RULE_FILM_WINDOW winSec=4.03
-  const report5 = await A5.ruleFindingsFilmBuild(A5.dbQuery, { beats: { rise: 0.9 }, storeyReveal: { on: true, windowFrac: 0.0403 }, durationSec: 100 });
-  console.log = _log5;
-  chk('L4 HHS real window (4.03s / 4 storeys = 1.01s) is admitted, not NOFIT',
-      report5.state === 'BEAT', report5.state);
-  const stats5 = A5.ruleFindingsFilm.stats();
-  chk('L4c one-of-each honoured on HHS\'s real 4-storey window (both categories survive truncation)',
-      stats5.structuralPicked && stats5.egressPicked, JSON.stringify(stats5));
-  chk('L4b HHS real overrun reported as 1.19s',
-      lines5.some(l => /\u00A7RULE_FILM_LINGER_FIT .*slotSec=1\.01s .*overrunSec=1\.19s/.test(l)),
-      lines5.filter(l => l.indexOf('\u00A7RULE_FILM_LINGER_FIT') === 0).join(' | ') || 'not logged');
-
-  // ── §63 §RULE_FILM_MESSAGING — what the Measure box SAYS about its own numbers.
-  // Real HHS strings from out/HHS_lingerfit2_854x480.log, not invented samples. ──
-  const mkRows = async (sanityRows, egressRows) => {
-    const S = global.StructuralSanity, E = global.EgressSanity;
-    global.StructuralSanity = { evaluate: () => sanityRows };
-    global.EgressSanity = { evaluate: () => egressRows };
-    const Ax = makeA({ storeyRevealList: () => [{ name: 'L1', z: 0 }, { name: 'L2', z: 3 }] });
-    const rep = await Ax.ruleFindingsFilmBuild(Ax.dbQuery, { beats: { rise: 0.9 }, storeyReveal: { on: true, windowFrac: 0.06 }, durationSec: 100 });
-    global.StructuralSanity = S; global.EgressSanity = E;
-    const out = {};
-    (rep.picks || []).forEach(p => { out[p.rule] = p.rows; });
-    return out;
-  };
-  const HHS_DOOR = 'Drehflügel 1-flg - Stahlzarge:76 x 2.26:76 x 2.26:578641';
-  const HHS_COL = 'STB Stütze - rund:STB d=30:STB d=30:573295';
-
-  const g1 = await mkRows(
-    [{ guid: 'b1', ifc_class: 'IfcBeam', name: HHS_COL, storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 27.3 }],
-    [{ guid: 'd1', ifc_class: 'IfcDoor', name: HHS_DOOR, storey: 'L2', rule: 'door_clear_width', severity: 'WARNING', ratio: 0.8 }]);
-  chk('G1 §63.1 a METRE rule (door_clear_width, critical_m) says "0.80 m", not "ratio 0.8"',
-      g1.door_clear_width && g1.door_clear_width[2] === '0.80 m', JSON.stringify(g1.door_clear_width));
-  chk('G2 §63.1 a RATIO rule (span_depth_steel, critical_ratio) still says "ratio 27.3" — not relabelled to metres',
-      g1.span_depth_steel && g1.span_depth_steel[2] === 'ratio 27.3', JSON.stringify(g1.span_depth_steel));
-  chk('G5 §63.2 the real HHS door name trims to family + type, dropping the duplicate segment and the Revit id',
-      g1.door_clear_width && g1.door_clear_width[0] === 'Drehflügel 1-flg - Stahlzarge · 76 x 2.26',
-      g1.door_clear_width && g1.door_clear_width[0]);
-  chk('G5b §63.2 the real HHS column name trims the same way',
-      g1.span_depth_steel && g1.span_depth_steel[0] === 'STB Stütze - rund · STB d=30',
-      g1.span_depth_steel && g1.span_depth_steel[0]);
-
-  const g3 = await mkRows(
-    [{ guid: 'b2', ifc_class: 'IfcBeam', name: 'Plain Name', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: 4.2 }],
-    []);
-  chk('G3 §63.1 a rule declaring NEITHER unit key gets the bare number and NO unit word (never a guess)',
-      g3.floating_member && g3.floating_member[2] === '4.2', JSON.stringify(g3.floating_member));
-  chk('G5c §63.2 a name with no ":" is returned unchanged',
-      g3.floating_member && g3.floating_member[0] === 'Plain Name', g3.floating_member && g3.floating_member[0]);
-
-  const g4 = await mkRows(
-    [{ guid: 'c1', ifc_class: 'IfcColumn', name: HHS_COL, storey: 'L1', rule: 'column_continuity', severity: 'CRITICAL', ratio: null }],
-    []);
-  chk('G4 §63.1 ratio==null still shows the SEVERITY word — the ink is category, not severity, so this is the only place it is stated',
-      g4.column_continuity && g4.column_continuity[2] === 'CRITICAL', JSON.stringify(g4.column_continuity));
-
-  // ── Scenario 3: no storey-reveal window on the plan at all — degrades to INCONCLUSIVE, never throws ──
-  const A3 = makeA({});
-  const report3 = await A3.ruleFindingsFilmBuild(A3.dbQuery, { beats: { rise: 0.9 } });
-  chk('scenario 3: INCONCLUSIVE (no storeyReveal), no throw', report3.state === 'INCONCLUSIVE', report3.state);
+  const ctx = recCtx();
+  const labelled = A1.ruleFindingsFilmCompositeOntoCanvas(ctx, 1280, 720, 1.0);
+  chk('K3 §70 labels are drawn from the ranked nearest set, capped at TOP_N',
+      labelled > 0 && labelled <= 8, 'labelled=' + labelled);
+  chk('K4 §70 the finding BEHIND the camera carries no label',
+      ctx.draws.filter(d => d.kind === 'text' && /floating member/.test(d.text)).length === 0, 'b3 absent');
+  chk('K5 §70 two findings on the same screen point yield ONE label, not two',
+      labelled < 4, 'labelled=' + labelled + ' of 4 in-frustum marks (one rejected by overlap)');
+  chk('K5b §70 something really was drawn — the pass is not vacuously empty',
+      ctx.draws.filter(d => d.kind === 'text').length > 0, ctx.draws.filter(d => d.kind==='text').length + ' text draws');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

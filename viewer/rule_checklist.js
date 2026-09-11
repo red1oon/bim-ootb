@@ -323,6 +323,7 @@ function setupRuleChecklist(A) {
       (byColor[color] = byColor[color] || []).push(row);
     });
 
+    var _tintAt = {};
     var geo = new THREE.BoxGeometry(1, 1, 1);
     var _m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _quat = new THREE.Quaternion();
     A._ruleTintMeshes = [];
@@ -338,6 +339,7 @@ function setupRuleChecklist(A) {
       for (var j = 0; j < crows.length; j++) {
         var r = crows[j];
         var p = A.ifc2three(r[1], r[2], r[3]);
+        _tintAt[r[0]] = { x: p.x, y: p.y, z: p.z };   // §70
         var bx = r[4] || 0.3, by = r[5] || 0.3, bz = r[6] || 0.3;
         _pos.set(p.x, p.y, p.z);
         _scl.set(bx, bz, by);
@@ -350,6 +352,9 @@ function setupRuleChecklist(A) {
       total += crows.length;
     }
 
+    // §70 — record the world position of every marker so the film can rank/label them per frame
+    // without re-querying. One source of truth: these are the SAME points the boxes were placed at.
+    A._ruleTintAt = _tintAt;
     A._ruleTintActive = true;
     console.log('§RULE_TINT_ENTER elements=' + total + ' colors=' + Object.keys(byColor).length +
       ' guidsAsked=' + guids.length + ' meshesHidden=' + _hidden.length +
@@ -361,6 +366,7 @@ function setupRuleChecklist(A) {
 
   A.exitRuleModeTint = function () {
     if (!A._ruleTintActive) return;
+    A._ruleTintAt = null;   // §70
     (A._ruleTintMeshes || []).forEach(function (m) {
       A.scene.remove(m);
       if (m.material) m.material.dispose();
