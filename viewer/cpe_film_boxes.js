@@ -159,11 +159,29 @@ function setupCpeFilmBoxes(A) {
     while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
     return { px: p, text: t + '…' };
   }
+  // §86 — drawFitted now REPORTS what it did. The user: "some HUD strings will truncate, better to
+  // wrap them." Whether to wrap, and which rows need it, is a question about REAL strings at a REAL
+  // frame size, and neither the §STATUS_BOX_ROWS line nor a frame grab answers it: the log printed
+  // the text that was ASKED for, never the text that was DRAWN, so a row silently losing half its
+  // characters looked identical to one that fitted. Returns the outcome so the caller can say so —
+  // §-tagged logging, not pixel-derived evidence.
   function drawFitted(ctx, text, x, y, maxW, px, floor, weight) {
     var r = fitText(ctx, text, maxW, px, floor, weight);
-    var t = text;
-    if (r && r.text != null) { t = r.text; ctx.font = weight + ' ' + r.px + 'px ' + F; }
+    var t = text, out;
+    if (r && r.text != null) {
+      t = r.text; ctx.font = weight + ' ' + r.px + 'px ' + F;
+      out = { fit: 'ELLIPSIS', px: r.px, drew: Math.max(0, t.length - 1), of: text.length };
+    } else {
+      out = { fit: (r < px ? 'shrunk' : 'full'), px: r, drew: text.length, of: text.length };
+    }
     ctx.fillText(t, x, y);
+    return out;
+  }
+  // one compact token per row for the log line
+  function fitTag(label, o) {
+    if (!o) return label + '=blank';
+    return label + '=' + o.fit + '@' + o.px + 'px' +
+           (o.fit === 'ELLIPSIS' ? '(' + o.drew + '/' + o.of + 'ch, ' + (o.of - o.drew) + ' LOST)' : '');
   }
 
   // ── STATUS BOX draw. ONE implementation, so a live preview and the exported bytes cannot disagree
@@ -180,7 +198,7 @@ function setupCpeFilmBoxes(A) {
     var labPx = Math.max(9, Math.round(b.rowH * 0.46));
     var valPx = Math.max(11, Math.round(b.rowH * 0.60));
     var labW = Math.round(b.w * 0.30), gapX = Math.round(b.pad * 0.6);
-    var n = 0;
+    var n = 0, _fits = [];   // §86
     for (var i = 0; i < rows.length; i++) {
       var cy = b.y + b.pad + b.rowH * (i + 0.5);
       ctx.fillStyle = 'rgba(255,255,255,0.50)';
@@ -188,8 +206,8 @@ function setupCpeFilmBoxes(A) {
       ctx.fillText(rows[i].label, b.x + b.pad, cy);
       if (!rows[i].text) continue;                        // BLANK, and the row still occupies its slot
       ctx.fillStyle = '#fff';
-      drawFitted(ctx, rows[i].text, b.x + b.pad + labW + gapX, cy,
-                 b.w - b.pad * 2 - labW - gapX, valPx, Math.max(9, Math.round(valPx * 0.66)), '600');
+      _fits.push(fitTag(rows[i].label, drawFitted(ctx, rows[i].text, b.x + b.pad + labW + gapX, cy,
+                 b.w - b.pad * 2 - labW - gapX, valPx, Math.max(9, Math.round(valPx * 0.66)), '600')));
       n++;
     }
     ctx.restore();
@@ -197,7 +215,8 @@ function setupCpeFilmBoxes(A) {
     if (_statLogged !== key) {
       _statLogged = key;
       console.log('§STATUS_BOX_ROWS ' + rows.map(function (r) { return r.label + '="' + r.text + '"'; }).join(' ') +
-        ' filled=' + n + '/' + rows.length + ' rect=' + b.x + ',' + b.y + ' ' + b.w + 'x' + b.h);
+        ' filled=' + n + '/' + rows.length + ' rect=' + b.x + ',' + b.y + ' ' + b.w + 'x' + b.h +
+        ' §86fit ' + _fits.join(' '));
     }
     return n;
   };
@@ -239,6 +258,7 @@ function setupCpeFilmBoxes(A) {
   // that does not pass filmSec (the live editor preview, older scripts) gets the ORIGINAL behaviour —
   // go blank the frame nothing posts — never a silent guess at elapsed time.
   var LINGER_S = 2.2;
+  var _measFitLogged = null;   // §86
   var _measLogged = null, _measIdleLogged = false, _lastEntry = null, _lastPostSec = -Infinity, _lingering = false;
   A.filmBoxesMeasureLingerS = LINGER_S;
   A.filmBoxesMeasureRowCap = MEASURE_ROWS;   // §57.1 — so callers combining rows into one post don't duplicate this constant
@@ -268,12 +288,19 @@ function setupCpeFilmBoxes(A) {
     // choice, so the glyph carries its own contrast rather than relying on the plate behind it.
     ctx.shadowColor = 'rgba(0,0,0,0.95)'; ctx.shadowBlur = Math.max(2, Math.round(titlePx * 0.35)); ctx.shadowOffsetY = 1;
     ctx.fillStyle = head.ink || '#4fc3f7';
-    drawFitted(ctx, head.title || 'Measure', b.x + b.pad, b.y + b.pad + b.rowH * 0.5, innerW,
-               titlePx, Math.max(9, Math.round(titlePx * 0.7)), '700');
+    var mFits = [fitTag('title', drawFitted(ctx, head.title || 'Measure', b.x + b.pad, b.y + b.pad + b.rowH * 0.5, innerW,
+               titlePx, Math.max(9, Math.round(titlePx * 0.7)), '700'))];
     ctx.fillStyle = '#fff';
     for (var i = 0; i < lines.length; i++) {
-      drawFitted(ctx, lines[i], b.x + b.pad, b.y + b.pad + b.rowH * (i + 1.5), innerW,
-                 rowPx, Math.max(9, Math.round(rowPx * 0.7)), '500');
+      mFits.push(fitTag('r' + i, drawFitted(ctx, lines[i], b.x + b.pad, b.y + b.pad + b.rowH * (i + 1.5), innerW,
+                 rowPx, Math.max(9, Math.round(rowPx * 0.7)), '500')));
+    }
+    // §86 — same reporting as the status box, and on the same one-per-CHANGE cadence: the Measure
+    // entry only changes when a new beat posts, so this is a handful of lines per film, not per frame.
+    var mKey = mFits.join(' ');
+    if (_measFitLogged !== mKey) {
+      _measFitLogged = mKey;
+      console.log('§MEASURE_BOX_FIT ' + mKey + ' innerW=' + innerW + ' rect=' + b.x + ',' + b.y + ' ' + b.w + 'x' + b.h);
     }
     ctx.restore();
     ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;   // §76
