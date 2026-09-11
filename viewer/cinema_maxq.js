@@ -2140,7 +2140,17 @@
         // caption fallback. storeyRevealStatCardAt's own card.label already carries the storey name
         // ('doors · ' + vis.storey) through the SAME bottom-right bigStats panel every other measure
         // card uses (§CPE_HUD_ORDER) — that is now the ONLY place storey info appears on screen.
-        var _statusSrc = { storey: null, room: _srRoom, buildup: A.tmFrontierPhase || '', reveal: _srReveal };
+        // §75 (2026-09-12, user: "Just the storey sub title is blank, take it from the long
+        // truncating line"). The Room row was carrying the storey AND the rooms in one line —
+        // "Level 1 ≈ Hall/Corridor 1, ≈ Hall/Corridor 2, Level 4 ≈ Hall/Corridor 4" — which
+        // truncated, while the Storey row beside it sat empty. cpe_room_title.js now hands back the
+        // two halves separately (split where the line is COMPOSED, never by re-parsing it), so each
+        // row shows its own part and the room line is roughly half as long.
+        var _srStoreyRow = (_srRoom && _srRoom.storeyName)
+          ? { name: _srRoom.storeyName, opacity: _srRoom.opacity } : _srStorey;
+        var _srRoomRow = (_srRoom && _srRoom.roomName)
+          ? { name: _srRoom.roomName, opacity: _srRoom.opacity } : _srRoom;
+        var _statusSrc = { storey: _srStoreyRow, room: _srRoomRow, buildup: A.tmFrontierPhase || '', reveal: _srReveal };
         var _titleInfo = _srReveal || _srCue || _srRoom || null;
         // §CPE_PATH_OVERVIEW — the pose is read HERE, after every camera write for this frame and
         // immediately before the capture, so the head marks the shot that was actually rendered.

@@ -40,7 +40,16 @@ function setupRuleFindingsFilm(A) {
   // HUD plate at EVERY alpha up to 0.90, so it can never be made legible by darkening the plate.
   // #e57373 is the same red family, lighter, and clears 4.5 with margin. Structural #ffaa33 passes
   // unchanged. The interactive Rule panel keeps #cc4444 — different surface, not this change.
-  var CATEGORY_COLOR = { structural: '#ffaa33', egress: '#e57373' };
+  // §73.2 §HUD_MEDIA_SCHEMA — four identities that separate at a glance. Clash owns red and blue
+  // (clash_labels.js:93 COL_A rgb(255,133,129), COL_B light blue) and they are not this feature's to
+  // move. §68's egress #e57373 = rgb(229,115,115) was THE SAME SALMON as clash's A-side — chosen on
+  // contrast maths alone, never checked against the palette already on screen, so a Safety finding
+  // read as a clash element. Amber for structural (load/caution, far from clash red); magenta for
+  // safety, deliberately NOT red. #d500f9 was CHOSEN BY MEASUREMENT, not taste: of ten candidates
+  // it maximises the minimum CIE-Lab dE to everything already on screen (clash A, clash B, structural
+  // amber, scene green) at dE 60+. The old #e57373 scored 8.1 against clash A — perceptually the
+  // same colour, which is exactly why nothing separated at a glance.
+  var CATEGORY_COLOR = { structural: '#ffb300', egress: '#ea80fc' };
   var SEV_RANK = { CRITICAL: 2, WARNING: 1 };
 
   // ── §RULE_FILM_CLASH_MODEL (MEP_CLASH_REVEAL_MOVIE.md §70, 2026-09-11) ─────────────────────────
@@ -52,7 +61,10 @@ function setupRuleFindingsFilm(A) {
   var TOP_N = 8;               // the N nearest findings carry a label; no distance cutoff
   var RANK_MARGIN_M = 0.6;     // hysteresis against the moving Nth-nearest boundary
   var FADE_S = 0.5;            // film seconds to fade a label in/out — a fade, never a switch
-  var LABEL_PLATE = 'rgba(0,0,0,0.85)';   // §68's measured-legible plate
+  var LABEL_PLATE = 'rgba(0,0,0,0.45)';   // §73.3 — same family as the cam-path box (cpe_path_overview.js:208)
+  var LABEL_TTL_S = 3.0;       // §73.4 — after this long on screen a label SHRINKS rather than leaving
+  var LABEL_AGED_SCALE = 0.7;  // §74 — user: "How about they become smaller by 30% instead, after 3 secs?"
+  var EDGE_BAR_PX = 3;         // §73.2 — category edge bar: a SHAPE cue, since hue alone is unreliable
 
   // ── §RULE_FILM_MESSAGING (MEP_CLASH_REVEAL_MOVIE.md §63, 2026-09-11) ───────────────────────────
   // §63.1 `ratio` is an OVERLOADED field on the evaluator rows: metres for door_clear_width
@@ -113,6 +125,7 @@ function setupRuleFindingsFilm(A) {
 
   var _built = false, _report = null, _picks = [], _stats = null;
   var _marks = [], _near = null, _fade = null, _lastFilmS = null, _lastLog = -1;   // §70
+  var _shown = null, _retired = null, _resets = 0;   // §73.4 — per-mark time on screen, and its turn
   function log(s) { console.log(s); }
 
   function fetchRules(url, fallback) {
@@ -240,7 +253,11 @@ function setupRuleFindingsFilm(A) {
   A.ruleFindingsFilmCompositeOntoCanvas = function (ctx, w, h, filmSec) {
     var cam = A.camera, at = A._ruleTintAt;
     if (!ctx || !_marks.length || !cam || !at || !(w > 0) || !(h > 0)) return 0;
-    if (!_near || _near.length !== _marks.length) { _near = new Uint8Array(_marks.length); _fade = new Float32Array(_marks.length); _lastFilmS = null; }
+    if (!_near || _near.length !== _marks.length) {
+      _near = new Uint8Array(_marks.length); _fade = new Float32Array(_marks.length);
+      _shown = new Float32Array(_marks.length); _retired = new Uint8Array(_marks.length);   // §73.4
+      _lastFilmS = null; _resets = 0;
+    }
     var fs = filmSec || 0;
     var dt = (_lastFilmS == null) ? FADE_S : Math.max(0, fs - _lastFilmS);
     _lastFilmS = fs;
@@ -268,14 +285,27 @@ function setupRuleFindingsFilm(A) {
                  sx: (V.x + 1) / 2 * w, sy: (1 - V.y) / 2 * h });
     }
     all.sort(function (a, b) { return a.d - b.d; });
-    var cutoff = all.length >= TOP_N ? all[TOP_N - 1].d : Infinity;
+
+    // §73.4 — a label lives at most LABEL_TTL_S, then RETIRES and yields its slot. With 509 findings
+    // and 8 slots a purely distance-ranked set is a static crowd; retiring turns it into a rotation,
+    // which is what the user's "too many, spawn all over the screen" actually needs. A retired mark
+    // does not come back until every other on-screen candidate has had its turn — then the rotation
+    // resets, so the film keeps cycling rather than going permanently quiet.
+    var fresh = all;   // §74 — nothing retires now; turnover comes from the camera moving the ranking
+
+    var cutoff = fresh.length >= TOP_N ? fresh[TOP_N - 1].d : Infinity;
     var elig = [];
-    for (var ai = 0; ai < all.length; ai++) {
-      i = all[ai].i;
-      if (!_near[i] && all[ai].d <= cutoff) _near[i] = 1;
-      else if (_near[i] && all[ai].d > cutoff + RANK_MARGIN_M) _near[i] = 0;
+    for (var ai = 0; ai < fresh.length; ai++) {
+      i = fresh[ai].i;
+      if (!_near[i] && fresh[ai].d <= cutoff) _near[i] = 1;
+      else if (_near[i] && fresh[ai].d > cutoff + RANK_MARGIN_M) _near[i] = 0;
+      // §74 — a label does NOT vanish at the TTL; it shrinks to LABEL_AGED_SCALE and stays. The first
+      // 3s at full size is the attention-getter, after which it keeps its information available while
+      // taking 30% less of the scene. New findings entering the ranked set are full size and so still
+      // stand out against aged ones. Replaces §73.4's retire-and-rotate on the user's own call.
+      if (_near[i]) _shown[i] += dt;
       _fade[i] = Math.max(0, Math.min(1, _fade[i] + (_near[i] ? dt : -dt) / FADE_S));
-      if (_near[i] || _fade[i] > 0) elig.push(all[ai]);
+      if (_near[i] || _fade[i] > 0) elig.push(fresh[ai]);
     }
 
     // §70.6 — the MARKERS follow this same ranking, not just the labels.
@@ -285,11 +315,16 @@ function setupRuleFindingsFilm(A) {
       A.ruleTintShowOnly(vis);
     }
 
-    var placed = [], skippedFrustum = offscreen, skippedOverlap = 0, labelled = 0, echoed = false;
+    var placed = [], skippedFrustum = offscreen, skippedOverlap = 0, labelled = 0, echoed = false, agedCount = 0;
     for (var k = 0; k < elig.length; k++) {
       i = elig[k].i; m = _marks[i];
       var sx = elig[k].sx, sy = elig[k].sy;   // §71 — projected once, above
-      var px = Math.max(10, Math.round(h * 0.016)), pad = Math.round(px * 0.5), lh = Math.round(px * 1.35);
+      // §73.4 — smaller print so the labels obscure less of the scene (was h*0.016).
+      // §73.4 smaller print, §74 shrunk a further 30% once past the TTL.
+      var aged = _shown[i] >= LABEL_TTL_S;
+      var basePx = Math.max(9, Math.round(h * 0.013));
+      var px = aged ? Math.max(7, Math.round(basePx * LABEL_AGED_SCALE)) : basePx;
+      var pad = Math.round(px * 0.5), lh = Math.round(px * 1.35);
       ctx.font = '700 ' + px + 'px BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
       var lines = [m.title, m.rows[0], m.rows[1] + ' · ' + m.rows[2]];
       var bw = pad * 2, li;
@@ -306,12 +341,24 @@ function setupRuleFindingsFilm(A) {
       if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(box.x, box.y, bw, bh, Math.round(px * 0.4)); ctx.fill(); }
       else ctx.fillRect(box.x, box.y, bw, bh);
       ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = m.ink;                                  // §73.2 — category edge bar, a SHAPE cue
+      ctx.fillRect(box.x, box.y, EDGE_BAR_PX, bh);
       ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      // §76 §HUD_TEXT_SHADOW — at the cam-path box's 72% see-through, coloured text over a sunlit
+      // facade measured 1.03-1.34:1, i.e. effectively invisible, and the user has ruled out fixing
+      // that by darkening the plate. So the glyph carries its own contrast instead: a soft dark
+      // shadow, which is the standard broadcast-graphics answer and keeps the scene fully visible.
+      // The shadow — not the plate — is what the eye reads the letterform against.
+      ctx.shadowColor = 'rgba(0,0,0,0.95)';
+      ctx.shadowBlur = Math.max(2, Math.round(px * 0.35));
+      ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 1;
       for (li = 0; li < lines.length; li++) {
         ctx.fillStyle = li === 0 ? m.ink : '#fff';
-        ctx.fillText(lines[li], box.x + pad, box.y + pad + lh * (li + 0.5));
+        ctx.fillText(lines[li], box.x + pad + EDGE_BAR_PX, box.y + pad + lh * (li + 0.5));
       }
+      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
       ctx.restore();
+      if (aged) agedCount++;
       // §72 §RULE_FILM_MEASURE_ECHO — the user's standing instruction (2026-09-11): "Sanity messages
       // are to append to that [the Measure box]". §70's rewrite dropped the filmBoxesMeasurePost call
       // outright when it replaced the storey-slot posting with the label pass. The NEAREST labelled
@@ -326,7 +373,7 @@ function setupRuleFindingsFilm(A) {
       log('§RULE_FILM_LABELS filmSec=' + fs.toFixed(1) + ' marks=' + _marks.length +
           ' eligible=' + elig.length + ' labelled=' + labelled +
           ' skippedOverlap=' + skippedOverlap + ' skippedFrustum=' + skippedFrustum +
-          ' markersShown=' + elig.length + '/' + _marks.length + ' measureEcho=' + (echoed ? 'yes' : 'no') + ' topN=' + TOP_N);
+          ' markersShown=' + elig.length + '/' + _marks.length + ' aged=' + agedCount + ' measureEcho=' + (echoed ? 'yes' : 'no') + ' topN=' + TOP_N);
     }
     return labelled;
   };

@@ -139,7 +139,7 @@ function setupCpeFilmBoxes(A) {
   function plate(ctx, b) {
     var rad = Math.round(Math.min(b.h, b.w) * 0.09);
     if (typeof A.cpePanelPlate === 'function') { A.cpePanelPlate(ctx, b.x, b.y, b.w, b.h, rad); return; }
-    ctx.fillStyle = 'rgba(0,0,0,0.85)';   // §68 — matches A.cpePanelPlate's measured alpha
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';   // §73.3 — cpe_path_overview.js:208's no-blur fallback
     if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, rad); ctx.fill(); }
     else ctx.fillRect(b.x, b.y, b.w, b.h);
   }
@@ -264,6 +264,9 @@ function setupCpeFilmBoxes(A) {
     // (cpe_linear_beat/cpe_flyout_beats/cpe_indoor_beats/cpe_flythru_cues/cpe_flythru_dims); the
     // user was offered all six and chose the box title alone (§61.1). A queued category ink (§59
     // structural #ffaa33 / egress #cc4444) still overrides this default — §61.3.
+    // §76 §HUD_TEXT_SHADOW — see rule_findings_film.js. The plate is 72% see-through by the user's
+    // choice, so the glyph carries its own contrast rather than relying on the plate behind it.
+    ctx.shadowColor = 'rgba(0,0,0,0.95)'; ctx.shadowBlur = Math.max(2, Math.round(titlePx * 0.35)); ctx.shadowOffsetY = 1;
     ctx.fillStyle = head.ink || '#4fc3f7';
     drawFitted(ctx, head.title || 'Measure', b.x + b.pad, b.y + b.pad + b.rowH * 0.5, innerW,
                titlePx, Math.max(9, Math.round(titlePx * 0.7)), '700');
@@ -273,6 +276,7 @@ function setupCpeFilmBoxes(A) {
                  rowPx, Math.max(9, Math.round(rowPx * 0.7)), '500');
     }
     ctx.restore();
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;   // §76
   }
 
   A.filmBoxesDrawMeasure = function (ctx, w, h, armed, filmSec) {

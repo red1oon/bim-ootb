@@ -97,8 +97,8 @@ function recCtx() {
       st1.maxExitDistSec + 's / ' + st1.maxExitDistSteps + ' steps');
 
   const byRule = {}; r1.picks.forEach(p => { byRule[p.row.rule] = p; });
-  chk('X1 §68 category inks — structural #ffaa33, safety #e57373',
-      byRule.span_depth_steel.ink === '#ffaa33' && byRule.door_clear_width.ink === '#e57373',
+  chk('X1 §73.2 category inks — structural amber #ffb300, safety violet #ea80fc (NOT red: clash owns red)',
+      byRule.span_depth_steel.ink === '#ffb300' && byRule.door_clear_width.ink === '#ea80fc',
       byRule.span_depth_steel.ink + ' / ' + byRule.door_clear_width.ink);
   chk('G1 §63 a metre rule says "0.80 m", not "ratio 0.8"', byRule.door_clear_width.rows[2] === '0.80 m', byRule.door_clear_width.rows[2]);
   chk('G2 §63 a ratio rule still says "ratio 27.3"', byRule.span_depth_steel.rows[2] === 'ratio 27.3', byRule.span_depth_steel.rows[2]);
@@ -187,7 +187,48 @@ function recCtx() {
       posts.length === 1 && posts[0].r[0] === 'Beam A · T1',
       'posts=' + posts.length + ' first=' + (posts[0] && posts[0].r[0]));
   chk('M3 §72 the echoed entry carries its category ink, so §68 colouring still applies',
-      posts[0] && /^#(ffaa33|e57373)$/.test(posts[0].ink), posts[0] && posts[0].ink);
+      posts[0] && /^#(ffb300|ea80fc)$/.test(posts[0].ink), posts[0] && posts[0].ink);   // §73.2
+
+  // ── §73 S1/S4/S5: palette identity, the 3s TTL, and the rotation it creates.
+  // Perceptual CIE-Lab dE, not RGB distance: RGB under-reports how close two pinks look, which is how
+  // #e57373 passed an eyeball check while being the same colour as clash A.
+  const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [(n>>16)&255, (n>>8)&255, n&255]; };
+  const fL = t => t > 0.008856 ? Math.cbrt(t) : (7.787 * t + 16 / 116);
+  const toLab = (rgb) => { const s = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    const R = s(rgb[0]), G = s(rgb[1]), B = s(rgb[2]);
+    const X = (R*0.4124+G*0.3576+B*0.1805)/0.95047, Y = R*0.2126+G*0.7152+B*0.0722, Z = (R*0.0193+G*0.1192+B*0.9505)/1.08883;
+    return [116*fL(Y)-16, 500*(fL(X)-fL(Y)), 200*(fL(Y)-fL(Z))]; };
+  const dE = (a, b) => { const x = toLab(hexRgb(a)), y = toLab(hexRgb(b)); return Math.hypot(x[0]-y[0], x[1]-y[1], x[2]-y[2]); };
+  const FIXED = { 'clash A': '#ff8581', 'clash B': '#7aa9ff', 'scene green': '#4caf50' };
+  const minDE = (c) => Math.min.apply(null, Object.values(FIXED).map(h => dE(c, h)));
+  chk('S1 §73.1 safety ink separates from everything already on screen (dE > 40); the old #e57373 did not',
+      minDE('#ea80fc') > 40 && minDE('#e57373') < 15,
+      'new dE=' + minDE('#ea80fc').toFixed(1) + '  old dE=' + minDE('#e57373').toFixed(1));
+  chk('S1b §73.2 the two Sanity inks separate from each other',
+      dE('#ffb300', '#ea80fc') > 40, dE('#ffb300', '#ea80fc').toFixed(1));
+
+  // S4/S5 — one finding, camera fixed: it must vanish after LABEL_TTL_S of screen time.
+  const ttlRows = [{ guid: 't1', ifc_class: 'IfcBeam', name: 'T', storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 },
+                   { guid: 't2', ifc_class: 'IfcBeam', name: 'U', storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 }];
+  const { A: A5 } = await build({ beats: { rise: 0.9 }, durationSec: 100 }, { sRows: ttlRows, eRows: [] });
+  A5._ruleTintAt = { t1: { x: 0, y: 0, z: -10 }, t2: { x: 0, y: 0, z: -20 } };
+  A5.camera = fakeCamera(() => ({ viewZ: -1, x: 0, y: 0, z: 0 }));
+  const seen = []; let freshPx = 0, agedPx = 0;
+  for (let fsec = 0; fsec <= 8; fsec += 0.5) {
+    const c = recCtx();
+    let lastFont = '';
+    c.__setFont = v => { lastFont = v; };
+    Object.defineProperty(c, 'font', { set(v) { lastFont = v; }, get() { return lastFont; }, configurable: true });
+    A5.ruleFindingsFilmCompositeOntoCanvas(c, 1280, 720, fsec);
+    seen.push(c.draws.filter(d => d.kind === 'text').length);
+    const m = /(\d+)px/.exec(lastFont);
+    if (m) { if (fsec <= 1) freshPx = +m[1]; if (fsec >= 6) agedPx = +m[1]; }
+  }
+  chk('S4 §74 a label is still DRAWN after its 3s TTL — it shrinks, it does not vanish',
+      seen.every(n => n > 0), 'text-draw counts across 8s: ' + seen.join(','));
+  chk('S5 §74 the type really is ~30% smaller once aged, and the same before',
+      agedPx > 0 && freshPx > 0 && Math.abs(agedPx / freshPx - 0.7) < 0.12,
+      'fresh=' + freshPx + 'px aged=' + agedPx + 'px ratio=' + (agedPx / freshPx).toFixed(2));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

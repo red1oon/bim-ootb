@@ -216,11 +216,11 @@ if (!totalText) console.log('§WITNESS_FILM_BOXES INCONCLUSIVE — no text was d
   const pt = plateAndTitle('#ffaa33');
   mk('P1 §64 the plate RGB is NOT the title\'s own RGB (the yellow-on-yellow bug)',
      !sameHue(pt.plate, pt.title), 'plate=' + pt.plate + ' title=' + pt.title);
-  mk('P2 §64.1/§68 the Measure plate is the standard dark fill at the measured alpha, with an ink',
-     pt.plate === 'rgba(0,0,0,0.85)', String(pt.plate));
+  mk('P2 §64.1/§73.3 the Measure plate is the shared translucent fill, with an ink',
+     pt.plate === 'rgba(0,0,0,0.45)', String(pt.plate));
   const pt2 = plateAndTitle(undefined);
-  mk('P2b §64.1/§68 the Measure plate is the standard dark fill at the measured alpha, without an ink',
-     pt2.plate === 'rgba(0,0,0,0.85)', String(pt2.plate));
+  mk('P2b §64.1/§73.3 the Measure plate is the shared translucent fill, without an ink',
+     pt2.plate === 'rgba(0,0,0,0.45)', String(pt2.plate));
   mk('P3 §64.2 the category ink still reaches the TITLE — no information lost',
      pt.title === '#ffaa33', String(pt.title));
   mk('P3b §61 intact — no ink still draws the blue title',

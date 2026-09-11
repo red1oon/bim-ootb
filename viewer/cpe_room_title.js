@@ -434,7 +434,14 @@ function setupCpeRoomTitle(A) {
       if (srcCat !== 'containment') srcCat = 'sight';
     }
     if (!parts.length && bldName) { parts.push(bldName); keyParts.push('b'); srcCat = 'building'; }
-    return { parts: parts, keyParts: keyParts, srcCat: srcCat };
+    // §75 — hand back the storey half separately from the room half. The composed single line stays
+    // EXACTLY as it was (every existing caller and witness sees the same `parts`); this is additive.
+    // parts[0] is the storey iff the stSame/stU branch above pushed it — checked by that flag, not by
+    // re-parsing the joined string, so the split can never disagree with the grammar that built it.
+    var _hasStorey = !!(stSame && stU);
+    return { parts: parts, keyParts: keyParts, srcCat: srcCat,
+             storeyPart: _hasStorey ? stU : null,
+             roomParts: _hasStorey ? parts.slice(1) : parts.slice() };
   }
 
   // Coarse-samples the whole (or clipped) film ONCE, collapses into room-dwell segments, and drops
@@ -617,6 +624,7 @@ function setupCpeRoomTitle(A) {
               // key separator is TAB — room-graph guids legitimately contain '|'
               // (CORRIDOR_ROOM::Level 4|y|12.84), which a '|' join would corrupt.
               prevSeg = { guid: 'group:' + keyParts.join('\t'), name: name,
+                          storeyName: C.storeyPart, roomName: C.roomParts.join(' · '),   // §75
                           tStart: t0w, tEnd: t1w, group: 1, groupSrc: srcCat };
               held.push(prevSeg);
               gAdded++; gSec += t1w - t0w; byCat[srcCat] += t1w - t0w;
@@ -786,7 +794,8 @@ function setupCpeRoomTitle(A) {
                (t > s.tEnd) ? 1 - (t - s.tEnd) / FADE : 1;
       // §CPE_ROOM_TITLE_COLLECTIVE: the composed label is what the film shows; the bare room
       // name survives on the segment for the timing/identity witnesses and as the degrade path.
-      if (!best || op > best.opacity) best = { name: s.label || s.name, guid: s.guid, opacity: op };
+      if (!best || op > best.opacity) best = { name: s.label || s.name, guid: s.guid, opacity: op,
+        storeyName: s.storeyName || null, roomName: s.roomName || null };   // §75
     });
     return best;
   };

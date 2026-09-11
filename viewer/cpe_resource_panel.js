@@ -542,7 +542,12 @@ function setupCpeResourcePanel(A) {
   // legible"). Measured, not chosen by eye: at the old 0.28/0.45 every ink fell under WCAG 4.5 over a
   // bright backdrop (white facade / sky), because a translucent plate lets a bright scene through.
   // 0.85 is the alpha at which every HUD ink clears 4.5 over BOTH the darkest and brightest frames.
-    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    // §73.3 — translucency restored (user: "Restore back the info panels translucence see thru...
+    // Yes they may not be that legible but user can pause and the scene movement helps contrast").
+    // The value is cpe_path_overview.js:208's — the top-left cam-path box the user pointed at
+    // ("It looks more like 70%, very nice, not obscuring background scene much"). Matched exactly
+    // rather than approximated, so the two boxes cannot drift apart. 0.28 = 72% see-through.
+    ctx.fillStyle = glass ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.45)';
     ctx.fill();
     _round(ctx, x, y, bw, bh, rad);
     ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
