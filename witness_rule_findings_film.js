@@ -186,6 +186,50 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
       lines5.some(l => /\u00A7RULE_FILM_LINGER_FIT .*slotSec=1\.01s .*overrunSec=1\.19s/.test(l)),
       lines5.filter(l => l.indexOf('\u00A7RULE_FILM_LINGER_FIT') === 0).join(' | ') || 'not logged');
 
+  // ── §63 §RULE_FILM_MESSAGING — what the Measure box SAYS about its own numbers.
+  // Real HHS strings from out/HHS_lingerfit2_854x480.log, not invented samples. ──
+  const mkRows = async (sanityRows, egressRows) => {
+    const S = global.StructuralSanity, E = global.EgressSanity;
+    global.StructuralSanity = { evaluate: () => sanityRows };
+    global.EgressSanity = { evaluate: () => egressRows };
+    const Ax = makeA({ storeyRevealList: () => [{ name: 'L1', z: 0 }, { name: 'L2', z: 3 }] });
+    const rep = await Ax.ruleFindingsFilmBuild(Ax.dbQuery, { beats: { rise: 0.9 }, storeyReveal: { on: true, windowFrac: 0.06 }, durationSec: 100 });
+    global.StructuralSanity = S; global.EgressSanity = E;
+    const out = {};
+    (rep.picks || []).forEach(p => { out[p.rule] = p.rows; });
+    return out;
+  };
+  const HHS_DOOR = 'Drehflügel 1-flg - Stahlzarge:76 x 2.26:76 x 2.26:578641';
+  const HHS_COL = 'STB Stütze - rund:STB d=30:STB d=30:573295';
+
+  const g1 = await mkRows(
+    [{ guid: 'b1', ifc_class: 'IfcBeam', name: HHS_COL, storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 27.3 }],
+    [{ guid: 'd1', ifc_class: 'IfcDoor', name: HHS_DOOR, storey: 'L2', rule: 'door_clear_width', severity: 'WARNING', ratio: 0.8 }]);
+  chk('G1 §63.1 a METRE rule (door_clear_width, critical_m) says "0.80 m", not "ratio 0.8"',
+      g1.door_clear_width && g1.door_clear_width[2] === '0.80 m', JSON.stringify(g1.door_clear_width));
+  chk('G2 §63.1 a RATIO rule (span_depth_steel, critical_ratio) still says "ratio 27.3" — not relabelled to metres',
+      g1.span_depth_steel && g1.span_depth_steel[2] === 'ratio 27.3', JSON.stringify(g1.span_depth_steel));
+  chk('G5 §63.2 the real HHS door name trims to family + type, dropping the duplicate segment and the Revit id',
+      g1.door_clear_width && g1.door_clear_width[0] === 'Drehflügel 1-flg - Stahlzarge · 76 x 2.26',
+      g1.door_clear_width && g1.door_clear_width[0]);
+  chk('G5b §63.2 the real HHS column name trims the same way',
+      g1.span_depth_steel && g1.span_depth_steel[0] === 'STB Stütze - rund · STB d=30',
+      g1.span_depth_steel && g1.span_depth_steel[0]);
+
+  const g3 = await mkRows(
+    [{ guid: 'b2', ifc_class: 'IfcBeam', name: 'Plain Name', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: 4.2 }],
+    []);
+  chk('G3 §63.1 a rule declaring NEITHER unit key gets the bare number and NO unit word (never a guess)',
+      g3.floating_member && g3.floating_member[2] === '4.2', JSON.stringify(g3.floating_member));
+  chk('G5c §63.2 a name with no ":" is returned unchanged',
+      g3.floating_member && g3.floating_member[0] === 'Plain Name', g3.floating_member && g3.floating_member[0]);
+
+  const g4 = await mkRows(
+    [{ guid: 'c1', ifc_class: 'IfcColumn', name: HHS_COL, storey: 'L1', rule: 'column_continuity', severity: 'CRITICAL', ratio: null }],
+    []);
+  chk('G4 §63.1 ratio==null still shows the SEVERITY word — the ink is category, not severity, so this is the only place it is stated',
+      g4.column_continuity && g4.column_continuity[2] === 'CRITICAL', JSON.stringify(g4.column_continuity));
+
   // ── Scenario 3: no storey-reveal window on the plan at all — degrades to INCONCLUSIVE, never throws ──
   const A3 = makeA({});
   const report3 = await A3.ruleFindingsFilmBuild(A3.dbQuery, { beats: { rise: 0.9 } });

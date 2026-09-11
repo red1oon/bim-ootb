@@ -39,6 +39,37 @@ function setupRuleFindingsFilm(A) {
   var CATEGORY_COLOR = { structural: '#ffaa33', egress: '#cc4444' };   // reuses rule_checklist.js's WARNING/CRITICAL hexes, category axis not severity
   var SEV_RANK = { CRITICAL: 2, WARNING: 1 };
 
+  // ── §RULE_FILM_MESSAGING (MEP_CLASH_REVEAL_MOVIE.md §63, 2026-09-11) ───────────────────────────
+  // §63.1 `ratio` is an OVERLOADED field on the evaluator rows: metres for door_clear_width
+  // (egress_sanity.js:80) and circulation_distance (:116), a real dimensionless ratio for
+  // span_depth_* (structural_sanity.js:219). Printing 'ratio N' for all three told the viewer
+  // "ratio 0.8" about a door that is 0.80 m wide. The unit is already declared by the RULE
+  // DEFINITION — warning_m/critical_m vs warning_ratio/critical_ratio — so read it from there;
+  // never keep a hardcoded list of rule names, and never guess a unit that isn't declared.
+  function valueRow(ruleDef, ratio, severity) {
+    if (ratio == null) return severity;              // §63.1 — the box ink is CATEGORY, not severity,
+                                                     // so this is the only place severity is stated
+    if (!ruleDef) return String(ratio);
+    if (ruleDef.warning_m != null || ruleDef.critical_m != null) return ratio.toFixed(2) + ' m';
+    if (ruleDef.warning_ratio != null || ruleDef.critical_ratio != null) return 'ratio ' + ratio.toFixed(1);
+    return String(ratio);                            // declared neither — bare number, NO unit word
+  }
+  // §63.2 element_name follows Revit's `family:type:type:id` export convention — 5,303 of 6,880 rows
+  // in HHS match `%:%:%:%`. Drop a segment identical to the one before it, and a trailing all-digits
+  // id; join with ' · '. Deterministic, no lookup table, and lossless for identity — the guid is on
+  // the pick and in the log. A name with no ':' comes back unchanged.
+  function shortName(name) {
+    if (!name) return '';
+    var seg = String(name).split(':'), out = [];
+    for (var i = 0; i < seg.length; i++) {
+      var last = i === seg.length - 1;
+      if (last && out.length && /^\d+$/.test(seg[i])) continue;
+      if (out.length && seg[i] === out[out.length - 1]) continue;
+      out.push(seg[i]);
+    }
+    return out.length ? out.join(' · ') : String(name);
+  }
+
   // Copied verbatim from rule_checklist.js's own hardcoded fallbacks (never invented numbers) — used
   // only when the live fetch fails, same discipline A.showStructuralSanity/A.showEgressSanity apply.
   var STRUCTURAL_RULES_FALLBACK = {
@@ -164,6 +195,12 @@ function setupRuleFindingsFilm(A) {
       // §59.8 honest cost — when the slot alone was too short, the caption outlives its OWN storey
       // tint by this much: for that long the box names a finding on storey N while N+1 is tinted.
       // §59.3's "scheduled while its own storey is reveal-active" is relaxed here, never silently.
+      // §63.1 — the unit comes from the rule definitions actually passed to the evaluators above,
+      // so a fetched rules file and the fallback behave identically and cannot drift apart.
+      var _ruleDefs = {};
+      ((structRules && structRules.structural_rules) || []).forEach(function (r) { _ruleDefs[r.name] = r; });
+      ((egressRules && egressRules.egress_rules) || []).forEach(function (r) { _ruleDefs[r.name] = r; });
+
       if (slotSec < ENV_SPAN) {
         log('§RULE_FILM_LINGER_FIT slotSec=' + slotSec.toFixed(2) + 's < ' + ENV_SPAN +
             's but lingerSec=' + lingerSec.toFixed(2) + 's carries it to ' + effectiveSec.toFixed(2) +
@@ -178,7 +215,7 @@ function setupRuleFindingsFilm(A) {
       _picks = [pickS, pickE].filter(Boolean);
       _picks.forEach(function (p) {
         p.title = (p.category === 'structural' ? 'Structural — ' : 'Safety — ') + p.rule.replace(/_/g, ' ');
-        p.rows = [p.name || p.ifc_class, p.storey, p.ratio != null ? 'ratio ' + p.ratio.toFixed(1) : p.severity];
+        p.rows = [shortName(p.name) || p.ifc_class, p.storey, valueRow(_ruleDefs[p.rule], p.ratio, p.severity)];   // §63
       });
 
       // §59 user addition — the Safety card's own "longest distance to exit" stat, real graph-
