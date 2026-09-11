@@ -4099,6 +4099,12 @@
         console.log('§CPM_DISPLAY on — one-DAG schedule authored the display timeline' +
           ' midair=' + aud.midair + ' orphans=' + aud.orphans +
           ' stragglers=' + r.graph.counts.stragglers + ' (0 midair = nothing appears before what it touches)');
+        // §GROUND_CONNECTED (2026-09-12) — NAME the orphans. The aggregate above never named an
+        // element; the HHS Stahlbalkon brackets were found by watching a bake. Capped at 20 here
+        // (the lock breach's own cap); the full list is _midairAudit's orphanGuids.
+        if (aud.orphans) console.log('§SUPPORT_ORPHAN_GUIDS n=' + aud.orphans + ' seedMode=' + aud.groundSeedMode +
+          ' first20=' + JSON.stringify((aud.orphanGuids || []).slice(0, 20)) +
+          ' — not ground-connected through any bearing/carrier/embedded support chain; reported, never moved');
         var _cstrag = {};
         for (var _ci = 0; _ci < items.length; _ci++) if (r.graph.stragglerOf[_ci]) _cstrag[items[_ci].guid] = 1;
         return { cpm: true, midair: aud.midair, stats: r, strag: _cstrag };
