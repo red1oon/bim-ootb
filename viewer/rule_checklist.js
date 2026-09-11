@@ -190,6 +190,43 @@ function _buildRuleDeepLinkUrl(p) {
     '#' + p.checkId + '=' + encodeURIComponent(p.rule);
 }
 
+// ── Pure: longest measured distance-to-exit, in steps — the bottom-status-bar headline stat
+// (user directive, 2026-09-12: "longest path to exit — ## steps... indicative of the BIM
+// capability of our model, not confusing"). Same real ratio (metres) already on every
+// circulation_distance row (RoomGraph.escapeRoute()/shortestPath() distance — see
+// egress_sanity.js's own header), just the WORST case across the whole evaluated set, converted
+// to a step count. 0.75m/step is a standard adult-stride ergonomic convention from OUTSIDE this
+// project (no stride-length constant exists anywhere in this codebase to extract) — same
+// disclosure discipline as every other uncited number in this PR, labelled "~" (estimate) by the
+// caller below, never presented as a measured fact. Returns null (never a fabricated "0 steps")
+// when no circulation_distance row exists — mirrors EGRESS_SANITY.md's own "dropped, never 0s /
+// 0 steps" contract for the same stat in the movie-bake spec this was modelled on
+// (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §59.4).
+function _rcLongestExitSteps(rows) {
+  var maxM = null;
+  (rows || []).forEach(function (r) {
+    if (r.rule !== 'circulation_distance' || r.ratio == null || isNaN(r.ratio)) return;
+    if (maxM === null || r.ratio > maxM) maxM = r.ratio;
+  });
+  return maxM === null ? null : Math.round(maxM / 0.75);
+}
+
+// Momentary bottom-status-bar confirmation — same self-clearing convention as dlod_nav.js's own
+// _statusMsg ("Auto-clears after 5s ONLY if nothing overwrote it"), reused here rather than a
+// second status-message idiom. No-ops (never shows "0 steps") when there is nothing to say.
+var _rcStatusClearT = null;
+function _rcShowLongestExitStatus(A, rows) {
+  if (!A || !A.status) return;
+  var steps = _rcLongestExitSteps(rows);
+  if (steps === null) return;
+  var msg = 'Longest path to exit — ~' + steps + ' steps';
+  A.status.textContent = msg;
+  if (_rcStatusClearT) clearTimeout(_rcStatusClearT);
+  _rcStatusClearT = setTimeout(function () {
+    if (A.status.textContent === msg) A.status.textContent = '';
+  }, 5000);
+}
+
 // ── Browser glue (T3/T4/T5/T6) ──
 function setupRuleChecklist(A) {
   'use strict';
@@ -572,6 +609,7 @@ function setupRuleChecklist(A) {
           ],
           rows: rows
         });
+        _rcShowLongestExitStatus(A, rows);
       };
       if (window.RoomGraph) { go(); return; }
       if (A.loadNavigate) A.loadNavigate().then(go).catch(function (e) { console.warn('§EGRESS_ROOMGRAPH_LOAD_FAIL ' + (e && e.message)); go(); });
@@ -600,6 +638,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     buildRuleChecklistHtml: _buildRuleChecklistHtml,
     buildRuleDeepLinkUrl: _buildRuleDeepLinkUrl,
-    RULE_TINT_MATERIAL_OPTS: RULE_TINT_MATERIAL_OPTS
+    RULE_TINT_MATERIAL_OPTS: RULE_TINT_MATERIAL_OPTS,
+    longestExitSteps: _rcLongestExitSteps
   };
 }

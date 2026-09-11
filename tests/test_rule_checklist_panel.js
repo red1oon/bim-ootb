@@ -135,5 +135,20 @@ chk('(d) rule-set header click does NOT touch the camera/scene (no zoomToGuids/s
     return r.html.indexOf('zoomToGuids') === -1 && r.html.indexOf('showRuleModeTint') === -1;
   })());
 
+// ── §LONGEST-EXIT-STATUS (user directive, 2026-09-12): bottom-status-bar headline stat, "Longest
+// path to exit — ~N steps", from real circulation_distance ratios. ──
+console.log('§W-RULE-CHECKLIST longest-exit-steps');
+chk('(e) picks the WORST (max) circulation_distance ratio, ignores other rules', RC.longestExitSteps([
+  { rule: 'door_clear_width', ratio: 0.5 },
+  { rule: 'circulation_distance', ratio: 30 },
+  { rule: 'circulation_distance', ratio: 75 }, // worst — 75/0.75 = 100 steps
+  { rule: 'isolated_room', ratio: null },
+]) === 100);
+chk('(e) returns null (never a fabricated "0 steps") when no circulation_distance row exists',
+  RC.longestExitSteps([{ rule: 'door_clear_width', ratio: 0.5 }]) === null);
+chk('(e) returns null on an empty row set', RC.longestExitSteps([]) === null);
+chk('(e) ignores a circulation_distance row with a null/NaN ratio rather than picking it as "worst"',
+  RC.longestExitSteps([{ rule: 'circulation_distance', ratio: null }, { rule: 'circulation_distance', ratio: 15 }]) === 20);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
