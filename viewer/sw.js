@@ -177,7 +177,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1168';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1169';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -634,6 +634,9 @@ const PRECACHE_ASSETS = [
   'clash_narrow.js',
   'clash_film.js',
   'clash_labels.js',
+  'structural_sanity.js',
+  'egress_sanity.js',
+  'rule_checklist.js',
   'measure.js',
   'sitecam.js',
   'issues.js',
