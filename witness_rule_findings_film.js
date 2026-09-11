@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * # ⚠ DO NOT REMOVE — W-RULE-FINDINGS-FILM scope (READ THE LOG after every run)
- * SCOPE: bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §63, §67, §73, §77-§84. Node, no browser.
+ * SCOPE: bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §63, §67, §73, §77-§85. Node, no browser.
  * RUN: node witness_rule_findings_film.js
  *
  * §77 REWRITE. The unit is the SET (one rule's flagged elements), not the element: 509 Hospital
@@ -28,6 +28,9 @@
  *   E3 DROPPED-NEVER-ZERO — no circulation_distance row means no line, never "0 steps".
  *   E4 SAME-NUMBER        — the box and the closing card cannot disagree about one building.
  *   E5 STILL-ONE-BOX      — §84 adds a LINE, not a box: §82's concurrency cap survives it.
+ *   H0/H1 HUD-CLEARANCE   — the set box is nudged clear of the three fixed HUD rects (§85).
+ *   H2 STILL-PINNED       — the nudge sticks; §80's pin survives §85.
+ *   H3 NO-LAYOUT-NO-CHANGE— without a layout, placement is byte-for-byte pre-§85.
  *   G1-G5 §63 messaging, X1 §73 palette, X2 §62 shine-through.
  */
 'use strict';
@@ -381,6 +384,63 @@ function shortNameOf(name) {
   for (let t = 0; t <= 40; t += 5) { const cc = recCtx(); AE5.ruleFindingsFilmCompositeOntoCanvas(cc, 1280, 720, t); if (textOf(cc).some(x => /Longest path to exit/.test(x))) sawExit = true; }
   chk('E5 §84.6 STILL-ONE-BOX — the exit line adds a LINE, not a box: §82\'s concurrency cap survives §84',
       n5 === 1 && sawExit, 'boxes at t=0: ' + n5 + ' · exit line seen during circulation_distance\'s own slot: ' + sawExit);
+  // ── §85 §RULE_FILM_HUD_CLEARANCE — H1-H3 ──────────────────────────────────────────────────────
+  // User: "the pop up messages have to avoid been obscured by other HUDs." cpe_film_boxes.js already
+  // owns the three fixed rects, so the witness drives the REAL layout function rather than a
+  // hand-copied stub of its geometry — a stub would pass forever while the real layout moved.
+  const setupFilmBoxes = require('./viewer/cpe_film_boxes.js');
+  const AFB = {}; setupFilmBoxes(AFB);
+  const HUD_L = AFB.filmBoxesLayout(1280, 720, { pos: 'tr', day: true, overview: true, stats: true });
+  const hudRects = [HUD_L.hud, HUD_L.status, HUD_L.measure];
+  const rectsHit = (bx, by, bw, bh) => hudRects.filter(r => AFB.filmBoxesOverlap({ x: bx, y: by, w: bw, h: bh }, r));
+
+  const H_ROWS = [{ guid: 'h0', ifc_class: 'IfcBeam', name: 'H', storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 }];
+  const ATH = { h0: { x: 0, y: 0, z: -10 } };
+  // the anchor projects INTO the top-right HUD column, which is exactly where the box used to land
+  const camHud = { matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+    matrixWorldInverse: { viewZ: () => -1 }, updateMatrixWorld() {},
+    projectPoint: () => ({ x: 0.75, y: 0.9, z: 0 }) };
+
+  // H0 — the control. WITHOUT the reservation the box lands ON the HUD: the defect, reproduced.
+  const { A: AH0 } = await build(planStare, { sRows: H_ROWS, eRows: [], A: { showRuleModeTint: function () { this._ruleTintAt = ATH; } } });
+  AH0._ruleTintAt = ATH; AH0.camera = camHud;
+  AH0.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 1);
+  const pin0 = AH0._ruleFilmLastBoxPin;
+  const bw0 = 2 * Math.round(Math.max(10, Math.round(720 * 0.016)) * 0.6) + 3 +
+              Math.ceil(String('Structural — span depth steel').length * 6);
+  const bh0 = 2 * Math.round(Math.max(10, Math.round(720 * 0.016)) * 0.6) + 2 * Math.round(Math.max(10, Math.round(720 * 0.016)) * 1.4);
+  chk('H0-control §85 with NO layout armed the box lands ON the HUD column — the defect this fixes',
+      rectsHit(pin0.x, pin0.y, bw0, bh0).length > 0,
+      'pin ' + JSON.stringify(pin0) + ' hits ' + rectsHit(pin0.x, pin0.y, bw0, bh0).length + ' of 3 HUD rects');
+
+  // H1 — with the layout armed, the SAME anchor is nudged clear of all three.
+  const { A: AH1 } = await build(planStare, { sRows: H_ROWS, eRows: [],
+    A: { showRuleModeTint: function () { this._ruleTintAt = ATH; }, filmBoxesLayoutOf: () => HUD_L } });
+  AH1._ruleTintAt = ATH; AH1.camera = camHud;
+  AH1.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 1);
+  const pin1 = AH1._ruleFilmLastBoxPin;
+  chk('H1 §85 NO-OVERLAP — the set box is nudged clear of the HUD column, the status box and the Measure panel',
+      rectsHit(pin1.x, pin1.y, bw0, bh0).length === 0 && (pin1.x !== pin0.x || pin1.y !== pin0.y),
+      'moved ' + JSON.stringify(pin0) + ' → ' + JSON.stringify(pin1) +
+      ', hits ' + rectsHit(pin1.x, pin1.y, bw0, bh0).length + ' of 3');
+  chk('H1b §77.2 MOVED-NEVER-SUPPRESSED — it is still drawn; clearing the HUD must not cost the film a finding',
+      AH1.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 1.2) === 1, 'still 1 box');
+
+  // H2 — §80's pin must survive §85: once nudged clear it STAYS, it does not re-nudge every frame.
+  let flip = false;
+  AH1.camera = { matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+    matrixWorldInverse: { viewZ: () => -1 }, updateMatrixWorld() {},
+    projectPoint: () => ({ x: flip ? -0.8 : 0.75, y: flip ? -0.8 : 0.9, z: 0 }) };
+  AH1.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 2);
+  const before85 = JSON.stringify(AH1._ruleFilmLastBoxPin);
+  flip = true;
+  AH1.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 2.2);
+  chk('H2 §80+§85 STILL-PINNED — the nudge sticks; the box does not hop when the anchor moves',
+      before85 === JSON.stringify(AH1._ruleFilmLastBoxPin), 'pinned at ' + before85 + ' across the anchor jump');
+
+  // H3 — no layout (a witness, or a film with no boxes armed): placement must be UNCHANGED, not crash.
+  chk('H3 §85 NO-LAYOUT-NO-CHANGE — without filmBoxesLayoutOf the pin is exactly what it was before §85',
+      JSON.stringify(pin0) === JSON.stringify(AH0._ruleFilmLastBoxPin), 'unchanged at ' + JSON.stringify(pin0));
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

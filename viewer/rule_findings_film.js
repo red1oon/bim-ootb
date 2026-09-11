@@ -160,7 +160,7 @@ function setupRuleFindingsFilm(A) {
   var _built = false, _report = null, _picks = [], _stats = null;
   var _sets = [], _lastFilmS = null, _lastLog = -1;   // §77 — one entry per RULE, not per element
   // §82 — exactly one set holds the scene; the rest wait their turn in `_queue`, never dropped.
-  var _queue = [], _active = null, _exitStatLogged = false;
+  var _queue = [], _active = null, _exitStatLogged = false, _hudReserveLogged = false;
   // §82 vs §78.3 — THE SLOT ONLY EXPIRES WHEN SOMEONE IS ACTUALLY WAITING. Queueing exists to cut
   // crowding, and with an empty queue there is no crowding to cut; §78.3's held box is a direct user
   // instruction ("Keeping the same box until end of pulsing helps eyeballing it well"). So a lone set
@@ -335,7 +335,7 @@ function setupRuleFindingsFilm(A) {
         st.slotStart = -Infinity; st.slotEndSec = null; st._queued = false; st._queuedAt = 0;   // §82
         return st;
       }).filter(function (st) { return st.total > 0; });
-      _queue = []; _active = null; _exitStatLogged = false;   // §82/§84 — a rebuild starts the queue empty
+      _queue = []; _active = null; _exitStatLogged = false; _hudReserveLogged = false;   // §82/§84/§85 — a rebuild starts the queue empty
       _picks = _sets;   // stats + the closing cards read this
 
 
@@ -555,7 +555,28 @@ function setupRuleFindingsFilm(A) {
       A.ruleTintShowOnly(show);
     }
 
+    // ── §85 §RULE_FILM_HUD_CLEARANCE (user: "the pop up messages have to avoid been obscured by
+    // other HUDs") ────────────────────────────────────────────────────────────────────────────────
+    // cpe_film_boxes.js ALREADY owns the three fixed HUD rectangles and already exports a rect test.
+    // They are armed once per bake and cannot move afterwards (§38.1b: "a day counter that drops out
+    // for a stretch must not move the boxes underneath it"), so reserving them is just seeding the
+    // SAME `placed` list the §77.2 collision nudge already walks — no second placement algorithm, no
+    // copy of the layout maths, nothing new to keep in step. §65: share the implementation.
+    // Absent (a Node witness, or a film with no boxes armed) it is simply not seeded, and placement
+    // is byte-for-byte what it was.
     var placed = [], drawn = 0;
+    var _hudL = (typeof A.filmBoxesLayoutOf === 'function') ? A.filmBoxesLayoutOf() : null;
+    if (_hudL) {
+      [_hudL.hud, _hudL.status, _hudL.measure].forEach(function (r) {
+        if (r && r.w > 0 && r.h > 0) placed.push({ x: r.x, y: r.y, w: r.w, h: r.h });
+      });
+      if (!_hudReserveLogged) {
+        _hudReserveLogged = true;
+        log('§RULE_FILM_HUD_RESERVE n=' + placed.length + ' rects=' +
+            placed.map(function (r) { return r.x + ',' + r.y + ' ' + r.w + 'x' + r.h; }).join(' · ') +
+            ' — set boxes are nudged clear of these (§85)');
+      }
+    }
     for (var bi = 0; bi < boxes.length; bi++) {
       var b = boxes[bi], set = b.st;
       var px = Math.max(10, Math.round(h * 0.016)), pad = Math.round(px * 0.6), lh = Math.round(px * 1.4);
@@ -577,16 +598,28 @@ function setupRuleFindingsFilm(A) {
                        y: Math.max(4, Math.min(h - bh - 4, b.anchor.sy - 14 - bh)), fw: w, fh: h };
       }
       var bx = set.boxPin.x, by = set.boxPin.y;
-      // §77.2 — if two set boxes collide, MOVE one into free space; never suppress it.
-      for (var tries = 0; tries < 8; tries++) {
-        var clash = false;
+      // §77.2 — if a set box collides, MOVE it into free space; never suppress it. §85 seeds `placed`
+      // with the fixed HUD rects, so the same loop clears those too.
+      // §85 — the step used to be one BOX-HEIGHT at a time, which needs 8 hops to clear a 392px HUD
+      // column and ran out of tries first: measured at 1280x720, the box landed ON the status box on
+      // the frame it appeared and only escaped on the NEXT one. Jump straight past whatever was hit
+      // instead — it converges in one or two moves regardless of how tall the obstacle is.
+      for (var tries = 0; tries < 12; tries++) {
+        var hit = null;
         for (var q = 0; q < placed.length; q++) {
           var o = placed[q];
-          if (bx < o.x + o.w && o.x < bx + bw && by < o.y + o.h && o.y < by + bh) { clash = true; break; }
+          if (bx < o.x + o.w && o.x < bx + bw && by < o.y + o.h && o.y < by + bh) { hit = o; break; }
         }
-        if (!clash) break;
-        by += bh + 8;
-        if (by + bh > h - 4) { by = 4 + tries * (bh + 8); bx = Math.max(4, bx - bw - 12); }
+        if (!hit) break;
+        by = hit.y + hit.h + 8;                                   // straight below what it hit
+        if (by + bh > h - 4) { by = 4; bx = hit.x - bw - 12; }     // out of height: the column beside it
+        if (bx < 4) { bx = 4; by = Math.max(4, Math.min(h - bh - 4, by)); break; }
+        // nowhere free left: it is still DRAWN, clamped in frame. §77.2 — suppressing a box would
+        // make the film lie by omission, which is worse than an overlap the viewer can still read.
+      }
+      if (bx !== set.boxPin.x || by !== set.boxPin.y) {
+        log('§RULE_FILM_HUD_NUDGE rule=' + set.rule + ' from=' + set.boxPin.x + ',' + set.boxPin.y +
+            ' to=' + bx + ',' + by + ' filmSec=' + fs.toFixed(1) + ' — moved clear, never suppressed (§77.2/§85)');
       }
       set.boxPin.x = bx; set.boxPin.y = by;
       A._ruleFilmLastBoxPin = { x: bx, y: by };   // §80.5 — debug surface so a witness can assert the pin   // §80 — a collision nudge sticks, never re-nudged each frame
@@ -632,7 +665,7 @@ function setupRuleFindingsFilm(A) {
   A.ruleFindingsFilm = A.ruleFindingsFilm || {};
   A.ruleFindingsFilm.stats = function () { return _stats; };
   A.ruleFindingsFilmReport = function () { return _report; };
-  A.ruleFindingsFilmDispose = function () { _built = false; _report = null; _picks = []; _stats = null; _queue = []; _active = null; _exitStatLogged = false; };
+  A.ruleFindingsFilmDispose = function () { _built = false; _report = null; _picks = []; _stats = null; _queue = []; _active = null; _exitStatLogged = false; _hudReserveLogged = false; };
   log('§RULE_FILM_INIT wired (Structural Sanity + Egress findings as world content for the whole film, clash model — §70)');
 }
 if (typeof window !== 'undefined') window.setupRuleFindingsFilm = setupRuleFindingsFilm;

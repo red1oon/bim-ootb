@@ -329,3 +329,4 @@ function setupCpeFilmBoxes(A) {
     'geometry is a pure function of frame size + corner + armed members — never of the text)');
 }
 if (typeof window !== 'undefined') window.setupCpeFilmBoxes = setupCpeFilmBoxes;
+if (typeof module !== "undefined" && module.exports) module.exports = setupCpeFilmBoxes;   // §85 — so a Node witness can use the REAL layout, not a hand-copied stub of it
