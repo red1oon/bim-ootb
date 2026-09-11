@@ -155,7 +155,7 @@
     (rules.structural_rules || []).forEach(function (r) { byName[r.name] = r; });
     var floatingRule = byName.floating_member || { tolerance_m: 0.15, framing_dz_m: 0.4 };
     var steelRule = byName.span_depth_steel || { warning_ratio: 24, critical_ratio: 30, max_severity: 'WARNING', name_hints: ['UB', 'UC', 'Channel', 'HSS'] };
-    var concreteRule = byName.span_depth_concrete || { warning_ratio: 20, critical_ratio: 26, max_severity: 'WARNING', name_hints: ['Concrete', 'RC'] };
+    var concreteRule = byName.span_depth_concrete || { warning_ratio: 16, critical_ratio: 21, max_severity: 'WARNING', name_hints: ['Concrete', 'RC'] };
     var cantileverRule = byName.span_depth_cantilever || { warning_ratio: 12, critical_ratio: 16, max_severity: 'WARNING' };
     var columnRule = byName.column_continuity || { tolerance_m: 0.3 };
 

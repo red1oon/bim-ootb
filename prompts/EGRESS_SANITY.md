@@ -10,13 +10,29 @@
 #   emergency exit) isn't reliably extractable, say so and scope the rule down or drop it —
 #   do not guess.
 # HONOUR until ✅ DONE.
-# ⚠ THRESHOLD DISCLAIMER (stated up front this time, not retrofitted): door-width and
-#   circulation-distance numbers below are UNCITED placeholders (no IBC/NFPA/local-code
-#   lookup done). Ship WARNING-ceiling only, same as Structural Sanity's span/depth rule,
-#   until an engineer or a cited code clause sets real values per jurisdiction (egress code
-#   varies by jurisdiction far more than structural span/depth does — do not ship a single
-#   global default as if universal). EXCEPTION: rule 3 (isolated room) is a graph-
+# ⚠ THRESHOLD DISCLAIMER — UPDATED 2026-09-12 with real IBC lookups (WebSearch-verified against
+#   multiple independent sources, not from memory). Ship WARNING-ceiling only either way, same
+#   as Structural Sanity's span/depth rule — a citation upgrades the disclosure, not the severity
+#   cap (per-rule reasoning below). EXCEPTION unchanged: rule 3 (isolated room) is a graph-
 #   connectivity FACT, not a threshold guess — it is allowed to ship CRITICAL.
+#   - **door_clear_width critical_m=0.813 (was 0.80)** — CITED: IBC 2021 §1010.1.1, general
+#     minimum clear opening width (32in). warning_m=0.85 stays an uncited buffer above it. IBC
+#     also requires 1.054m (41.5in) for Group I-2 bed-movement egress doors specifically —
+#     Hospital's real occupancy — but this pipeline extracts no occupancy classification
+#     (checked: `project_metadata` only carries building_name/import_date), so the stricter
+#     figure is NOT applied; a blanket 1.054m would false-flag every non-bed-movement door.
+#   - **circulation_distance critical_m=60.96 (was 45)** — CITED: IBC 2021 Table 1017.2, Group
+#     I-2 sprinklered max exit access travel distance = 200ft = 60.96m. warning_m=45.7 (~75%) is
+#     an uncited buffer. ⚠ KNOWN METRIC MISMATCH, disclosed not hidden: Table 1017.2 limits
+#     distance to the nearest AVAILABLE exit — on a multi-storey building normally the protected
+#     exit-stair enclosure on the occupant's own floor — but `escapeRoute()` measures distance
+#     all the way to a real EXTERIOR door (E4 exit-detection only finds ground-floor exits on
+#     Hospital). So this number is a real measured UPPER BOUND, likely overstating true
+#     code-relevant distance for upper-floor rooms — conservative (over-flags, never
+#     under-flags), not equivalent to "measures what Table 1017.2 measures." Also assumes I-2
+#     occupancy without verifying it (no occupancy data exists in this pipeline to check
+#     against) — a different building type has a different, uncited-here Table 1017.2 limit.
+#     Do not present a flagged row here as a confirmed code violation on this evidence alone.
 # ⚠ VALIDATION UPDATE (done in-session via Node witness, see RULES v1): the original
 #   "travel distance to exit" framing is DEAD — RoomGraph.escapeRoute() returns null for
 #   every Hospital room (exits=0 fleet-wide, a documented, deliberate state in
@@ -102,9 +118,12 @@ next domain following the Clash → Structural Sanity precedent (same rule-based
   room/door adjacency if the room-graph needs it; confirmed present, not assumed.
 
 ## RULES v1 — REVISED after witness validation (witness_egress_travel_distance.js)
-1. **Door clear width** — `IfcDoor`: `max(bbox_x, bbox_y)`. Placeholder `warning_m: 0.85`,
-   `critical_m: 0.80` (UNCITED — see disclaimer). `max_severity: WARNING` in v1. VALIDATED:
-   0/440 Hospital doors flagged (all ≥0.859m) — clean pass, not a showcase for this rule.
+1. **Door clear width** — `IfcDoor`: `max(bbox_x, bbox_y)`. `warning_m: 0.85` (uncited
+   buffer), `critical_m: 0.813` — **CITED: IBC 2021 §1010.1.1** general minimum clear
+   opening width (32in). See THRESHOLD DISCLAIMER for the I-2 bed-movement-door figure this
+   does NOT apply (no occupancy data to gate it on). `max_severity: WARNING` in v1.
+   VALIDATED: 0/440 Hospital doors flagged (all ≥0.859m) — clean pass, not a showcase for
+   this rule.
 2. **Distance to real exit, falling back to circulation spine** (UPDATED 2026-09-11, see
    UPDATE above — `escapeRoute()` is real now) — per room, `RoomGraph.escapeRoute(graph,
    room.guid)`; if that returns null (building has no raster — fleet coverage gap — or the
@@ -112,13 +131,15 @@ next domain following the Clash → Structural Sanity precedent (same rule-based
    no-path-at-all case against the SPINE target), fall back to
    `RoomGraph.shortestPath(room, 'CIRC::'+storey)` and label the row "to circulation
    (fallback)" vs "to exit" so the UI never overclaims which target a given row actually
-   measured. Placeholder `warning_m: 30`, `critical_m: 45` carried forward UNCHANGED from
-   v1's circulation-only design — **NOT re-calibrated for the new exit-distance metric**,
-   which measures materially farther (median 93.6m vs circulation's 51.5m) because it
-   folds in real stair-weighted vertical travel. `max_severity: WARNING` (still uncited).
-   90.6% of Hospital's exit-reachable rooms now exceed the warning threshold — ship it,
-   but do not present it as a tuned screening signal until an engineer resets these two
-   numbers for what "distance to a real exit" actually means on a multi-storey building.
+   measured. `warning_m: 45.7` (uncited buffer, ~75% of the limit below), `critical_m: 60.96`
+   — **CITED: IBC 2021 Table 1017.2**, Group I-2 sprinklered max exit access travel distance
+   (200ft). See THRESHOLD DISCLAIMER for the real, disclosed metric mismatch (this measures
+   distance-to-exterior-door, Table 1017.2 regulates distance-to-nearest-available-exit,
+   normally a same-floor stair enclosure on a multi-storey building — likely a conservative
+   over-estimate, not an exact match) and the unverified-occupancy caveat. `max_severity:
+   WARNING`. 126/149 (84.6%) of Hospital's exit-reachable rooms now exceed the CITED 60.96m
+   limit itself, not just the warning buffer — a striking real number, but read it as "this
+   tool's proxy exceeds the code figure," not "126 rooms are a confirmed code violation."
 3. **Isolated room (new — found via validation, not originally speced)** — `RoomGraph.
    shortestPath(room, 'CIRC::'+storey)` returns null (no path at all, not just a long one).
    `max_severity` uncapped — this is a real graph-connectivity fact (no measured route out),
@@ -184,6 +205,12 @@ Whitebox §-log first (`§EGRESS rule=<name> severity=<n>`). `node --check` ever
 Worktree off fresh origin/main, sequenced after `feat/structural-sanity` merges (depends on
 its T3/T5/T6 chassis functions existing). T1's validation is done (`witness_egress_travel_
 distance.js`, 4/4 pass) — this spec now has the same pre-validation discipline as
-Structural Sanity, with one open item carried forward: the >100m circulation-distance
-outliers are witnessed but not yet root-caused (real vs. routing artifact) — resolve that
-before treating `warning_m: 30`/`critical_m: 45` as more than a placeholder shape.
+Structural Sanity. `door_clear_width` and `circulation_distance` are now CITED (IBC 2021
+§1010.1.1 / Table 1017.2, see THRESHOLD DISCLAIMER) rather than uncited placeholders — but
+`circulation_distance` still carries two open items before its 84.6%-of-rooms flag rate
+means what it looks like it means: (1) the disclosed exterior-door-vs-nearest-exit metric
+mismatch (this tool likely overstates true code-relevant distance), and (2) unverified I-2
+occupancy (assumed from Hospital's real building type, not extracted/confirmed). Resolving
+either — a same-floor stair-enclosure exit target, or real occupancy extraction — would
+tighten this from "a real code figure, applied with disclosed caveats" to "a validated
+per-room code check."

@@ -536,7 +536,7 @@ function setupRuleChecklist(A) {
         warning_ratio: 24, critical_ratio: 30, max_severity: 'WARNING' },
       { name: 'span_depth_concrete', applies_to: ['IfcBeam'], material: 'concrete',
         name_hints: ['Concrete', 'RC'], cantilever: false,
-        warning_ratio: 20, critical_ratio: 26, max_severity: 'WARNING' },
+        warning_ratio: 16, critical_ratio: 21, max_severity: 'WARNING' },
       { name: 'span_depth_cantilever', applies_to: ['IfcBeam'], cantilever: true,
         warning_ratio: 12, critical_ratio: 16, max_severity: 'WARNING' },
       { name: 'column_continuity', applies_to: ['IfcColumn'], tolerance_m: 0.3 }
@@ -583,9 +583,9 @@ function setupRuleChecklist(A) {
   var EGRESS_RULES_FALLBACK = {
     egress_rules: [
       { name: 'door_clear_width', applies_to: ['IfcDoor'],
-        warning_m: 0.85, critical_m: 0.80, max_severity: 'WARNING' },
+        warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' },
       { name: 'circulation_distance', applies_to: ['room_graph_node'],
-        target: 'exit_or_own_storey_circ', warning_m: 30, critical_m: 45, max_severity: 'WARNING' },
+        target: 'exit_or_own_storey_circ', warning_m: 45.7, critical_m: 60.96, max_severity: 'WARNING' },
       { name: 'isolated_room', applies_to: ['room_graph_node'], target: 'own_storey_circ' }
     ]
   };

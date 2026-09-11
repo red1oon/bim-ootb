@@ -8,18 +8,51 @@
 #   from element_transforms + elements_meta, or a rule threshold in structural_rules.json.
 #   No solver, no mocked utilization/deflection numbers in the live panel. Ever.
 # HONOUR until ✅ DONE.
-# ⚠ THRESHOLD DISCLAIMER: floating-member (rule 1) and slab-exclusion are verified logic —
-#   span/depth NUMBERS (24/30 steel, 20/26 concrete) and the 0.3m column tolerance are
-#   NOT sourced from a cited code (no Eurocode/ACI/BS lookup done). They were calibrated
-#   by trial against Hospital's flag count to reduce noise — that is NOT the same as
-#   standards compliance. Steel in particular has no code span/depth table at all; real
-#   steel serviceability is deflection-based (Δ≤span/360 from actual load+section I), so
-#   span/depth-as-proxy is inherently a rule-of-thumb, not a verified limit. Do NOT ship
-#   these as CRITICAL-capable until a cited code clause or an engineer sets them — see
-#   `max_severity: WARNING` cap on ALL THREE span_depth rules below (steel, concrete, AND
-#   cantilever — cantilever's different numbers do not make it any less uncited). Treat
-#   every number in `structural_rules.json` as an editable placeholder, not a validated
-#   default.
+# ⚠ THRESHOLD DISCLAIMER — UPDATED 2026-09-12 with real code lookups (WebSearch, verified
+#   against multiple independent sources per number, not from memory). Floating-member
+#   (rule 1) and slab-exclusion remain verified LOGIC, unaffected by this update. Status per
+#   number below; still `max_severity: WARNING` on ALL THREE span_depth rules AND on
+#   column_continuity — a real citation upgrades the DISCLOSURE, not the severity cap (see
+#   each item's own reasoning for why CRITICAL still isn't warranted even where cited).
+#   - **span_depth_concrete (16/21, was 20/26)** — CITED: ACI 318-19 Table 9.3.1.1, minimum
+#     beam depth to be EXEMPT from an explicit deflection calculation: simply supported
+#     h≥L/16, one-end-continuous h≥L/18.5, both-ends-continuous h≥L/21, cantilever h≥L/8.
+#     This tool cannot yet classify continuous vs. simply-supported (no such signal is
+#     extracted), so it conservatively uses the TIGHTEST case (simply supported, span/depth
+#     ≤16) as `warning_ratio`; `critical_ratio`=21 reuses the code's OWN both-ends-continuous
+#     figure as a "even the most lenient real code condition is exceeded" heuristic, not a
+#     cited critical value in its own right. Still WARNING-ceiling: crossing this ratio means
+#     the code REQUIRES a deflection calculation (ACI 24.2), not that the member IS deficient
+#     — a real calculation could still pass. NOT YET EMPIRICALLY RE-VALIDATED against a real
+#     building (Hospital's 1970 STR beams are 100% steel-named, zero concrete beams to test
+#     flag counts against) — grounded in a real citation now, still unvalidated by flag-count.
+#   - **span_depth_steel (24/30, unchanged)** — CONFIRMED NOT cited by any code: AISC has no
+#     prescribed span/depth table (steel serviceability is deflection-based, Δ≤L/360 live /
+#     L/240 total, computed from real load+section I — data this architecture doesn't have).
+#     20–24 IS a real, widely-cited PRELIMINARY-SIZING rule of thumb across structural
+#     engineering references for W-shape floor beams under typical office loading — our
+#     existing 24 sits at the upper (more permissive) end of that real, corroborated range,
+#     not an arbitrary number. Still an industry convention, not a code mandate — kept
+#     unchanged, now with a verified source for the convention instead of a bare guess.
+#   - **span_depth_cantilever (12/16, unchanged)** — PARTIALLY informed: ACI 318-19's own
+#     cantilever exemption is h≥L/8 (span/depth≤8) for CONCRETE — tighter than our 12. This
+#     rule is material-agnostic (steel and concrete cantilevers share one threshold per
+#     RULES v1), so blindly adopting the concrete-only ACI figure would misapply a
+#     concrete-specific code number to steel cantilevers. Kept unchanged pending a
+#     material-split cantilever rule (mirroring span_depth_steel/concrete's own split) —
+#     flagged as a known gap, not silently resolved.
+#   - **column_continuity (0.3m tolerance, unchanged)** — RESEARCHED, no applicable citation
+#     found. AISC Code of Standard Practice §7.13 gives a real, citable column PLUMBNESS
+#     tolerance (≈1:500, deviation from vertical over a column's own height) — but that
+#     measures a DIFFERENT question (is this one column straight) from what this rule checks
+#     (is there a real support roughly below this column on the floor below — a load-path
+#     continuity/transfer-condition screen). Citing the plumbness number here would overclaim
+#     code authority for a metric it doesn't actually regulate. Stays an uncited,
+#     trial-calibrated heuristic (0.3m, see VALIDATION below) — now with evidence a citation
+#     was actually sought and found inapplicable, not just skipped.
+#   Treat every number in `structural_rules.json` as an editable placeholder pending an
+#   engineer's sign-off, cited or not — a citation here means "grounded in a real code
+#   figure," not "validated for this specific screening use."
 
 ## WHY
 Clash detection (`measure.js`, `clash_report.js`) proves the pattern: instant, in-browser,
@@ -97,22 +130,31 @@ into 2 JSON entries — steel and concrete — so this is 5 rules total, not 4):
    inferred from `element_name` prefix (steel: `UB`/`UC`/`Channel`/`HSS`/`W-shape`) since
    `material_name` is often blank — this is extraction from real text, not invention, but
    IS a heuristic; log `§MATERIAL_INFERRED unmatched=N` so an unmatched fallback is
-   visible, never silent. Placeholder: `warning_ratio: 24`, `critical_ratio: 30`. **NOT
-   sourced from a code citation** — trial-adjusted against Hospital's flag count only (see
-   THRESHOLD DISCLAIMER at top). **Ships as WARNING-ceiling only in v1** (never
-   auto-CRITICAL) until an engineer or a cited code clause sets real values.
+   visible, never silent. `warning_ratio: 24`, `critical_ratio: 30` — a real, widely-cited
+   20–24 preliminary-sizing rule of thumb for steel W-shapes (verified via WebSearch,
+   2026-09-12), NOT a code table (AISC has none — steel serviceability is deflection-based,
+   see THRESHOLD DISCLAIMER). **Ships as WARNING-ceiling only in v1** (never auto-CRITICAL).
 3. **Span/depth ratio — concrete** — same check as rule 2, `element_name` hints
-   `Concrete`/`RC`. Placeholder: `warning_ratio: 20`, `critical_ratio: 26`. Same
-   uncited/WARNING-ceiling caveat as rule 2.
+   `Concrete`/`RC`. `warning_ratio: 16`, `critical_ratio: 21` — **CITED: ACI 318-19 Table
+   9.3.1.1**, the minimum-depth-to-skip-a-deflection-calculation limits (simply supported
+   L/16 used as `warning_ratio`, conservatively — this tool can't yet distinguish continuous
+   spans; both-ends-continuous L/21 reused as `critical_ratio`, a heuristic reuse of the
+   code's own most-lenient figure, not itself a cited critical value). Still WARNING-ceiling
+   — see THRESHOLD DISCLAIMER for why a real citation doesn't change the severity cap here.
 4. **Cantilever span/depth** — beam with support at exactly one end (rule 1's supported_at,
-   not both/neither) — tighter default: `warning_ratio: 12`, `critical_ratio: 16`. Equally
-   uncited/trial-adjusted as rules 2–3 — **also WARNING-ceiling only**, not exempt from the
-   THRESHOLD DISCLAIMER just because the numbers differ.
-5. **Column load-path continuity** — `IfcColumn`: rtree query for a column/footing/wall
-   footprint within `tolerance_m` on the storey immediately below (or at foundation level).
-   `tolerance_m: 0.3` (NOT clash's 0.025–0.05 — that tolerance is for flush-surface clash,
-   this is storey-to-storey centerline drift, a different physical question; see
-   VALIDATION). None found → CRITICAL "unsupported column".
+   not both/neither) — tighter default: `warning_ratio: 12`, `critical_ratio: 16`. ACI
+   318-19's own concrete cantilever exemption (L/8) is tighter still, but this rule is
+   material-agnostic (steel + concrete share one threshold) so the concrete-only code figure
+   isn't blindly applied — see THRESHOLD DISCLAIMER. **WARNING-ceiling only**, uncited.
+5. **Column load-path continuity** — `IfcColumn`: centerline-distance query (NOT footprint
+   overlap — see `viewer/structural_sanity.js`'s own header for why) for a column/footing/
+   wall support on the storey immediately below (or at foundation level). `tolerance_m: 0.3`
+   (NOT clash's 0.025–0.05 — that tolerance is for flush-surface clash, this is
+   storey-to-storey centerline drift, a different physical question; see VALIDATION).
+   Researched for a citation (AISC §7.13 column plumbness, ≈1:500) — inapplicable, it
+   measures a different question (one column's own verticality, not floor-to-floor support
+   alignment); stays an uncited, trial-calibrated heuristic. None found → CRITICAL
+   "unsupported column".
 
 `structural_rules.json` shape (mirrors `clash_rules.json`):
 ```json
@@ -125,7 +167,7 @@ into 2 JSON entries — steel and concrete — so this is 5 rules total, not 4):
       "warning_ratio": 24, "critical_ratio": 30, "max_severity": "WARNING" },
     { "name": "span_depth_concrete", "applies_to": ["IfcBeam"], "material": "concrete",
       "name_hints": ["Concrete","RC"], "cantilever": false,
-      "warning_ratio": 20, "critical_ratio": 26, "max_severity": "WARNING" },
+      "warning_ratio": 16, "critical_ratio": 21, "max_severity": "WARNING" },
     { "name": "span_depth_cantilever", "applies_to": ["IfcBeam"], "cantilever": true,
       "warning_ratio": 12, "critical_ratio": 16, "max_severity": "WARNING" },
     { "name": "column_continuity", "applies_to": ["IfcColumn"], "tolerance_m": 0.3 }

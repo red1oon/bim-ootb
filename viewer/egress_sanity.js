@@ -11,11 +11,32 @@
 // (a building without a raster — fleet coverage gap — or a genuinely exit-unreachable room). Every
 // row is labelled which target it actually measured ('exit' vs 'circulation (fallback)') so the UI
 // never overclaims. Measured on real Hospital_meta.db (see tests/test_egress_sanity_rules.js):
-// escapeRoute() now reaches 149/156 rooms; the OLD warning_m:30/critical_m:45 thresholds (carried
-// forward from the circulation-only design) are NOT re-calibrated for this farther metric — see
-// EGRESS_SANITY.md's own UPDATE section. Shipped anyway (WARNING-ceiling, uncited placeholder,
-// same discipline as every other threshold in this PR) with that miscalibration disclosed, not
-// hidden.
+// escapeRoute() now reaches 149/156 rooms.
+//
+// THRESHOLD CITATIONS (2026-09-12, WebSearch-verified, see EGRESS_SANITY.md's own UPDATE section
+// for the full reasoning):
+//   - door_clear_width critical_m=0.813 — CITED: IBC 2021 §1010.1.1, the general minimum clear
+//     opening width (32in). warning_m=0.85 stays an uncited early-heads-up buffer above it, not
+//     itself cited. NOTE: IBC also requires 1.054m (41.5in) for Group I-2 bed-movement egress
+//     doors specifically — Hospital's own real occupancy — but this pipeline extracts no
+//     occupancy classification (checked: project_metadata only carries building_name/
+//     import_date), so the stricter I-2 figure is NOT applied; using it as a blanket default
+//     would false-flag every non-bed-movement door in the building.
+//   - circulation_distance critical_m=60.96 — CITED: IBC 2021 Table 1017.2, Group I-2
+//     (sprinklered, required for I-2) maximum exit access travel distance = 200ft = 60.96m.
+//     warning_m=45.7 (~75%) is an uncited early-heads-up buffer. ⚠ KNOWN METRIC MISMATCH: Table
+//     1017.2 limits distance to the NEAREST AVAILABLE EXIT, which on a multi-storey building is
+//     normally the protected exit-stair ENCLOSURE on the occupant's own floor — but
+//     RoomGraph.escapeRoute() measures distance all the way to a real EXTERIOR door (this
+//     session's E4 exit-detection only finds ground-floor exits on Hospital, since that's where
+//     its raster-confirmed exterior doors are). So this tool's number is a real measured upper
+//     bound, not the code-defined quantity — it likely OVERSTATES true code-relevant distance
+//     for upper-floor rooms (conservative bias: over-flags, never under-flags, the safer
+//     direction for a screening tool, but not the same claim as "measures Table 1017.2's own
+//     quantity"). Do not present a flagged row as a confirmed code violation on this evidence
+//     alone. Also assumes I-2 occupancy (Hospital's real classification) without verifying it —
+//     this pipeline has no occupancy data to check against; a non-institutional building would
+//     have a different, uncited-here Table 1017.2 limit.
 //
 // §EGRESS_ROOMGRAPH_LATE_BIND (real bug found via a sibling session baking this into a movie,
 // bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §59.7, 2026-09-11 — fixed here independently on
@@ -61,8 +82,8 @@
     var log = opts.log || (typeof console !== 'undefined' ? console.log.bind(console) : function () {});
     var byName = {};
     (rules.egress_rules || []).forEach(function (r) { byName[r.name] = r; });
-    var doorRule = byName.door_clear_width || { warning_m: 0.85, critical_m: 0.80, max_severity: 'WARNING' };
-    var circRule = byName.circulation_distance || { warning_m: 30, critical_m: 45, max_severity: 'WARNING' };
+    var doorRule = byName.door_clear_width || { warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' };
+    var circRule = byName.circulation_distance || { warning_m: 45.7, critical_m: 60.96, max_severity: 'WARNING' };
 
     var rows = [];
 
