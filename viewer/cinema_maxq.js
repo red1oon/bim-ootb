@@ -1202,6 +1202,50 @@
       return { x: tgt.x + radius * Math.cos(az), y: tgt.y + height, z: tgt.z + radius * Math.sin(az),
                tx: tgt.x, ty: tgt.y, tz: tgt.z };
     }
+
+    // §57.5 (2026-09-11, user: "go ahead with that frames spacing into a jump") — smooth the
+    // camera's LOOK DIRECTION across a small tNorm window around each captured frame. Does NOT
+    // touch position or any beat's own duration.
+    // MEASURED root cause: a beat whose own real-seconds span is shorter than one frame's tNorm
+    // step (found: HHS's dive->spin handoff, an 87 deg gaze snap in a single frame —
+    // out/HHS_lowres_v2_2026-09-11_poses.json frames 40->41, reproduced identically on a second,
+    // independent bake) gets its whole turn skipped between the two frames straddling it.
+    // poseAt's own math is continuous (Beat 1's end target and Beat 2's start target agree
+    // exactly at tD — verified by hand against the source); the problem is purely that no
+    // frame's own tNorm ever lands inside that beat's narrow window, so its motion never
+    // appears in any exported frame at all.
+    // Blending GAZE_BLEND_N samples' DIRECTION (yaw/pitch, wrap-safe — never raw target points:
+    // averaging points can walk THROUGH the camera on some geometries, the exact bug
+    // §CINEMA_TURN_SLERP / _cinemaGazeBlend above already found and fixed at a different seam in
+    // this same file) spreads that motion across the frames whose windows overlap it, instead of
+    // losing it entirely. Position is untouched — MEASURED position is already continuous
+    // everywhere this was found, and blending it too would needlessly soften the carefully-paced
+    // dive/walk/orbit speed tuning (§CPE_PACE_SWING and friends) for no benefit.
+    // NOT a duration floor: §CPE_SETTLE_HOLD (2026-08-04) already settled that a beat with
+    // nothing to turn through stays zero-length ("no hard coded" pause) — this is a sampling fix
+    // at the capture step, not a timing change, and leaves every beat's own duration untouched.
+    var GAZE_BLEND_N = 5;                 // odd: the frame's own exact tNorm is always one sample
+    function _blendedGazeTarget(tn, pos, origDist) {
+      // nFrames is read HERE, not precomputed at declaration time — it gets reassigned more than
+      // once during setup (natural pacing §CPE_PACING, clip-window rescale) and this function
+      // isn't actually invoked until the frame loop below, by which point nFrames already holds
+      // its FINAL value. A precomputed half-width would silently use a stale/wrong one.
+      var gazeBlendHalf = 1.5 / Math.max(1, nFrames - 1);   // ~1.5 frame-widths either side
+      var refYaw = null, sumYaw = 0, sumPit = 0;
+      for (var k = 0; k < GAZE_BLEND_N; k++) {
+        var frac = (GAZE_BLEND_N === 1) ? 0 : (k / (GAZE_BLEND_N - 1) - 0.5) * 2;   // -1..1
+        var t = Math.max(0, Math.min(1, tn + frac * gazeBlendHalf));
+        var p = poseAt(t);
+        var dx = p.tx - p.x, dy = p.ty - p.y, dz = p.tz - p.z;
+        var yaw = Math.atan2(dz, dx), pit = Math.atan2(dy, Math.hypot(dx, dz));
+        if (refYaw === null) refYaw = yaw;
+        var dYawK = yaw - refYaw;
+        dYawK -= 2 * Math.PI * Math.round(dYawK / (2 * Math.PI));   // shortest way — same rule _cinemaGazeBlend uses
+        sumYaw += refYaw + dYawK; sumPit += pit;
+      }
+      var ayaw = sumYaw / GAZE_BLEND_N, apit = sumPit / GAZE_BLEND_N, cp = Math.cos(apit);
+      return { tx: pos.x + Math.cos(ayaw) * origDist * cp, ty: pos.y + Math.sin(apit) * origDist, tz: pos.z + Math.sin(ayaw) * origDist * cp };
+    }
     // §CPE_STICK_APPROACH: same _tFilm remap as poseAt, so the reported stick matches the pose
     // actually flown THIS frame (a clip window shifts both together). No-op (null) on a circle
     // fallback plan or a plan/path with no user-dropped sticks (plan.stickCount === 0, the common
@@ -1780,6 +1824,9 @@
         _freezeRandom();
         var _tn = nFrames > 1 ? i / (nFrames - 1) : 0;
         var pose = poseAt(_tn);  // tNorm hits 1.0 on the last frame so the pull-back completes
+        var _gazeDist = Math.hypot(pose.tx - pose.x, pose.ty - pose.y, pose.tz - pose.z);
+        var _gazeB = _blendedGazeTarget(_tn, pose, _gazeDist);   // §57.5 — direction only, position untouched
+        pose.tx = _gazeB.tx; pose.ty = _gazeB.ty; pose.tz = _gazeB.tz;
         var _stickNow = stickApproachAt(_tn);  // §CPE_STICK_APPROACH — null unless the path has sticks
         A.camera.position.set(pose.x, pose.y, pose.z);
         A.controls.target.set(pose.tx, pose.ty, pose.tz);

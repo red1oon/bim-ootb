@@ -1791,6 +1791,7 @@ function setupTools(A) {
       }
       console.log('§NIGHT_BAKE_POOL disposed n=' + A._nightBakePool.length + ' — bake over, nav path restored');
       A._nightBakePool = null;
+      A._nightBakeSlotByPos = null;   // §57.3-FIX — stale slot assignments must not leak into the next bake
     }
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
@@ -1925,16 +1926,44 @@ function setupTools(A) {
           ' — point-light COUNT frozen for the bake; unused slots ride at intensity 0');
       }
       var _pool = A._nightBakePool;
+      // §57.3-FIX (2026-09-11) — STABLE SLOT ASSIGNMENT, the same technique §NIGHT_LIGHT_CHURN_FIX
+      // already ships below for the interactive/nav path (A._nightLightByPos), applied here for
+      // the bake-only frozen pool too. MEASURED root cause of the HHS cruise-beat flicker (§55.7/
+      // §57.3): `needed` is rebuilt fresh every frame — the frustum+topup SELECTION legitimately
+      // reshuffles as the camera pans (MEASURED: §BAKE_INTERIOR_TOPUP's own inFrustum count swept
+      // 49->21->44 smoothly over ~2s in the flagged window — real camera motion, not noise in the
+      // selection itself) — but it was being assigned to `_pool[_pi]` by RAW POSITIONAL INDEX. So
+      // even when the overall LIT SET barely changed frame to frame, individual PointLight objects
+      // teleported between physically different fixture positions every single frame, because
+      // `needed[3]` this frame is rarely the same fixture as `needed[3]` last frame — a real,
+      // visible light-position discontinuity, independent of the (correctly stable) total count.
+      // Fix: key each fixture's position object (stable references — A._nightFixtureWorldPositions
+      // memoizes them, the exact assumption A._nightLightByPos below already relies on) to a FIXED
+      // pool slot, reassigning a slot only once its previous fixture actually drops out of `needed`.
+      // Changes WHICH POOL SLOT holds a fixture's data, never which fixtures get lit or how many.
+      if (!A._nightBakeSlotByPos) A._nightBakeSlotByPos = new Map();   // fixture pos -> pool slot index
+      var _slotMap = A._nightBakeSlotByPos;
+      var _wantedPos = new Set(needed.map(function(f) { return f.pos; }));
+      _slotMap.forEach(function(slot, pos) { if (!_wantedPos.has(pos)) _slotMap.delete(pos); });
+      var _usedSlots = new Set(_slotMap.values());
+      var _freeSlots = [];
+      for (var _si = 0; _si < _pool.length; _si++) if (!_usedSlots.has(_si)) _freeSlots.push(_si);
+      var _freeI = 0;
+      needed.forEach(function(f) {
+        if (!_slotMap.has(f.pos) && _freeI < _freeSlots.length) _slotMap.set(f.pos, _freeSlots[_freeI++]);
+      });
+      var _slotToPos = new Array(_pool.length).fill(null);
+      _slotMap.forEach(function(slot, pos) { _slotToPos[slot] = pos; });
       for (var _pi = 0; _pi < _pool.length; _pi++) {
-        var _f = needed[_pi];
-        if (_f) {
-          var _dist = camPos.distanceTo(_f.pos);
+        var _posObj = _slotToPos[_pi];
+        if (_posObj) {
+          var _dist = camPos.distanceTo(_posObj);
           var _fade = Math.min(1.0, _dist / 15);
           var _floor = A._nightNearFadeFloor;
-          _pool[_pi].position.copy(_f.pos);
-          _pool[_pi].color.set(_f.pos.__color || 0xffe4b5);
+          _pool[_pi].position.copy(_posObj);
+          _pool[_pi].color.set(_posObj.__color || 0xffe4b5);
           _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._nightPLScale || 1) *
-            (_f.pos.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
+            (_posObj.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
         } else {
           _pool[_pi].intensity = 0;
         }

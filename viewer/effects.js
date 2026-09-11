@@ -5658,6 +5658,11 @@ async function setupEffects(A, renderer, scene, camera) {
   // TOGETHER at each tail-parade boundary before narrowing to just the incoming one. Not a literal
   // dissolve — documented as such in A.cpeRevealVisualAt so it's never mistaken for one later.
   var CPE_REVEAL_FADE_SEC = 0.4;
+  // §57.4 (2026-09-11, user: "the ARCH elements should fade off rather than cut off... 2 sec fade
+  // be good") — same "both visible together briefly" technique as CPE_REVEAL_FADE_SEC above, applied
+  // to the ARC/STR drop-out at ghost-phase onset instead of a parade slot boundary, at the length the
+  // user asked for. See A.cpeRevealVisualAt's ghost-phase branch.
+  var ARCH_DROP_FADE_SEC = 2.0;
   // §CPE_NOISE_LAW — the user's ONE pacing dial ("have a speed range… don't overdo it"), and the
   // only knob the noise ratio is allowed to have. Declared here, at module scope, because the law
   // governs EVERY beat: the dive's cost table (built with the plan) and the walk's blended cost
@@ -5931,7 +5936,15 @@ async function setupEffects(A, renderer, scene, camera) {
     // previous behaviour — same rule cpeRevealDiscQtyCost above already follows.
     var tF = (b.flyback != null && b.flyback > tP) ? b.flyback : tP;
     if (tNorm <= tF) return null;                              // pull-out + fly-back: ARC/STR SOLID
-    if (tNorm <= b.reveal) return { phase: 'ghost', discs: rv.discs.slice() };  // round 2
+    if (tNorm <= b.reveal) {
+      // §57.4 — ARC/STR stay in visDiscs (what A.cpeRevealApplyVisual actually shows) for
+      // ARCH_DROP_FADE_SEC after ghost starts, so the drop reads as a brief fade rather than an
+      // instant cut. `discs` (the caption identity) is untouched — the caption never claimed ARC/STR.
+      var fadeFrac = (plan.durationSec > 0) ? ARCH_DROP_FADE_SEC / plan.durationSec : 0;
+      var inArchFade = tNorm <= tF + fadeFrac;
+      return { phase: 'ghost', discs: rv.discs.slice(),
+               visDiscs: inArchFade ? rv.discs.concat(['ARC', 'STR']) : rv.discs.slice() };
+    }  // round 2
     if (!(b.rise > b.reveal)) return null;
     var riseSpanSec = (rv.riseSec || 0) + (rv.tailSec || 0);
     if (!(riseSpanSec > 0)) return null;
