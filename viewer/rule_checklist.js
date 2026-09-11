@@ -36,6 +36,7 @@ var RULE_TINT_MATERIAL_OPTS = { wireframe: true, transparent: true, opacity: 0.2
 // deliberately diverged (clash_film.js §CLASH_FILM_SHINE_THROUGH), and these are its exact values,
 // retained not reinvented, per measure.js:717-720's standing "the shine-through already exists".
 // Without opts the result is byte-identical to the base — interactive Rule Mode is unaffected.
+var ROOM_ANCHOR_M = 1.2;                    // §71 — a room is marked by a point, not by its extent
 var RULE_TINT_RENDER_ORDER = -1;            // unchanged default: draws before ordinary opaque geometry
 var RULE_TINT_SHINE_RENDER_ORDER = 900;     // clash_film.js's own value — after opaque geometry
 function ruleTintMaterialOpts(opts) {
@@ -74,6 +75,7 @@ function ruleTintRowsFor(dbQuery, guids) {
   var missing = guids.filter(function (g) { return !rowsByGuid[g]; });
   if (missing.length) {
     pull('SELECT guid, center_x, center_y, center_z, size_x, size_y, size_z FROM spatial_structure WHERE guid IN (?PH?)', missing);
+    missing.forEach(function (g) { if (rowsByGuid[g]) rowsByGuid[g]._isRoom = true; });   // §71
     var found = missing.filter(function (g) { return !!rowsByGuid[g]; });
     if (found.length) console.log('\u00A7RULE_TINT_ROOM_GEOM n=' + found.length + ' resolved from spatial_structure (injected rooms carry no element_transforms row)');
     var still = missing.filter(function (g) { return !rowsByGuid[g]; });
@@ -340,7 +342,13 @@ function setupRuleChecklist(A) {
         var r = crows[j];
         var p = A.ifc2three(r[1], r[2], r[3]);
         _tintAt[r[0]] = { x: p.x, y: p.y, z: p.z };   // §70
-        var bx = r[4] || 0.3, by = r[5] || 0.3, bz = r[6] || 0.3;
+        // §71 §RULE_TINT_ROOM_ANCHOR — a ROOM's bbox is a REGION, not a thing: metres across, so at
+        // close range its wireframe wraps the whole camera (real bake HHS_final_854x480.mp4 t=48s,
+        // camera inside a room). Mark a room with a small fixed anchor cube at its centre instead.
+        // Real ELEMENTS keep their true bbox — for those the outline IS the useful information.
+        var bx, by, bz;
+        if (r._isRoom) { bx = by = bz = ROOM_ANCHOR_M; }
+        else { bx = r[4] || 0.3; by = r[5] || 0.3; bz = r[6] || 0.3; }
         _pos.set(p.x, p.y, p.z);
         _scl.set(bx, bz, by);
         _m4.compose(_pos, _quat, _scl);

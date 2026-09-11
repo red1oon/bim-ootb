@@ -247,11 +247,25 @@ function setupRuleFindingsFilm(A) {
     cam.updateMatrixWorld(true);
     var cx = cam.matrixWorld.elements[12], cy = cam.matrixWorld.elements[13], cz = cam.matrixWorld.elements[14];
 
-    var all = [], i, m, pt;
+    // §71 §RULE_FILM_VISIBLE_FIRST — rank by what is ON SCREEN, then by distance. Ranking by raw
+    // distance first (clash's order) suits clash because a clash contact is a POINT, so nearest is a
+    // good proxy for visible. These markers are elements and rooms, and indoors the nearest eight are
+    // routinely behind the camera: the real bake HHS_final_854x480.mp4 logged skippedFrustum=8..12
+    // with labelled=0 for 75 of 131 film seconds — over half the film silent while 215 findings sat
+    // marked. Frustum-testing BEFORE the cap spends the eight slots on findings that can actually be
+    // seen. Everything else (TOP_N, hysteresis, fade, overlap walk) is unchanged.
+    var V = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3() : null;
+    if (!V) return 0;
+    var all = [], i, m, pt, offscreen = 0;
     for (i = 0; i < _marks.length; i++) {
       pt = at[_marks[i].guid]; if (!pt) continue;
+      V.set(pt.x, pt.y, pt.z).applyMatrix4(cam.matrixWorldInverse);
+      var behind = V.z > 0;
+      V.set(pt.x, pt.y, pt.z).project(cam);
+      if (behind || Math.abs(V.x) > 1 || Math.abs(V.y) > 1) { offscreen++; continue; }
       var dx = pt.x - cx, dy = pt.y - cy, dz = pt.z - cz;
-      all.push({ i: i, d: Math.sqrt(dx * dx + dy * dy + dz * dz), pt: pt });
+      all.push({ i: i, d: Math.sqrt(dx * dx + dy * dy + dz * dz), pt: pt,
+                 sx: (V.x + 1) / 2 * w, sy: (1 - V.y) / 2 * h });
     }
     all.sort(function (a, b) { return a.d - b.d; });
     var cutoff = all.length >= TOP_N ? all[TOP_N - 1].d : Infinity;
@@ -264,23 +278,17 @@ function setupRuleFindingsFilm(A) {
       if (_near[i] || _fade[i] > 0) elig.push(all[ai]);
     }
 
-    // §70.6 — the MARKERS follow this same ranking, not just the labels. 215 room/element bboxes with
-    // depthTest off filled the frame (real bake, t=48s/92s); the nearest-N alone reads cleanly.
+    // §70.6 — the MARKERS follow this same ranking, not just the labels.
     if (typeof A.ruleTintShowOnly === 'function') {
       var vis = {};
       for (var vi = 0; vi < elig.length; vi++) vis[_marks[elig[vi].i].guid] = 1;
       A.ruleTintShowOnly(vis);
     }
 
-    var placed = [], skippedFrustum = 0, skippedOverlap = 0, labelled = 0;
-    var V = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3() : null;
-    for (var k = 0; k < elig.length && V; k++) {
-      i = elig[k].i; m = _marks[i]; pt = elig[k].pt;
-      V.set(pt.x, pt.y, pt.z).applyMatrix4(cam.matrixWorldInverse);
-      var behind = V.z > 0;
-      V.set(pt.x, pt.y, pt.z).project(cam);
-      if (behind || Math.abs(V.x) > 1 || Math.abs(V.y) > 1) { skippedFrustum++; continue; }
-      var sx = (V.x + 1) / 2 * w, sy = (1 - V.y) / 2 * h;
+    var placed = [], skippedFrustum = offscreen, skippedOverlap = 0, labelled = 0;
+    for (var k = 0; k < elig.length; k++) {
+      i = elig[k].i; m = _marks[i];
+      var sx = elig[k].sx, sy = elig[k].sy;   // §71 — projected once, above
       var px = Math.max(10, Math.round(h * 0.016)), pad = Math.round(px * 0.5), lh = Math.round(px * 1.35);
       ctx.font = '700 ' + px + 'px BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
       var lines = [m.title, m.rows[0], m.rows[1] + ' · ' + m.rows[2]];

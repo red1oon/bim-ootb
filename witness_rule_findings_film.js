@@ -151,6 +151,27 @@ function recCtx() {
       shown2 !== null && shown2.indexOf('m0') >= 0 && shown2.indexOf('m19') < 0,
       'nearest m0 in=' + (shown2 && shown2.indexOf('m0') >= 0) + ', farthest m19 in=' + (shown2 && shown2.indexOf('m19') >= 0));
 
+  // ── §71 V1/V2: rank by what is ON SCREEN, then distance. The old order spent all 8 slots on the
+  // nearest findings even when every one was behind the camera — 75 of 131 film seconds silent.
+  // Fixture: 3 findings very near but BEHIND the camera, 3 far but in front. The far ones must win.
+  const vRows = [];
+  for (let i = 0; i < 3; i++) vRows.push({ guid: 'near' + i, ifc_class: 'IfcBeam', name: 'Near ' + i, storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 });
+  for (let i = 0; i < 3; i++) vRows.push({ guid: 'far' + i, ifc_class: 'IfcBeam', name: 'Far ' + i, storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 });
+  const { A: A3 } = await build({ beats: { rise: 0.9 }, durationSec: 100 }, { sRows: vRows, eRows: [] });
+  const AT3 = {};
+  vRows.forEach((r, i) => { AT3[r.guid] = i < 3 ? { x: 0, y: 0, z: 2 + i } : { x: 0, y: 0, z: -(100 + i) }; });
+  A3._ruleTintAt = AT3;
+  A3.camera = fakeCamera(v => ({ viewZ: v.z > 0 ? 1 : -1, x: 0, y: 0, z: 0 }));
+  let shown3 = null;
+  A3.ruleTintShowOnly = (set) => { shown3 = Object.keys(set || {}); };
+  const ctx3 = recCtx();
+  const lab3 = A3.ruleFindingsFilmCompositeOntoCanvas(ctx3, 1280, 720, 1.0);
+  chk('V1 §71 findings BEHIND the camera never take a slot, even though they are nearest',
+      shown3 !== null && shown3.every(g => g.indexOf('near') !== 0),
+      'shown=' + JSON.stringify(shown3));
+  chk('V2 §71 the FAR but visible findings get the slots, and are labelled',
+      lab3 > 0 && shown3.length === 3, 'labelled=' + lab3 + ' shown=' + shown3.length + ' of 3 visible');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
