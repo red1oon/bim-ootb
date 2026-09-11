@@ -375,7 +375,7 @@ function setupRuleFindingsFilm(A) {
         // so returning to view re-pulses through the normal gained>0 path rather than snapping on.
         if (st.pulseStart > -Infinity && st.lastSeenSec != null && (fs - st.lastSeenSec) < BOX_LINGER_S) {
           st.fadingOut = 1 - (fs - st.lastSeenSec) / BOX_LINGER_S;
-        } else { st.fadingOut = 0; }
+        } else { st.fadingOut = 0; st.boxPin = null; }   // §80 — off screen long enough: unpin
         continue;
       }
       st.fadingOut = 0;
@@ -439,8 +439,17 @@ function setupRuleFindingsFilm(A) {
       var bw = pad * 2 + EDGE_BAR_PX, li;
       for (li = 0; li < lines.length; li++) bw = Math.max(bw, pad * 2 + EDGE_BAR_PX + Math.ceil(ctx.measureText(lines[li]).width));
       var bh = pad * 2 + lh * lines.length;
-      var bx = Math.max(4, Math.min(w - bw - 4, b.anchor.sx + 14));
-      var by = Math.max(4, Math.min(h - bh - 4, b.anchor.sy - 14 - bh));
+      // §80 (user: "The pop up Sanity message box still renew instead of staying"). It WAS drawn every
+      // frame — but ANCHORED to the set's nearest visible member, which changes as the camera moves, so
+      // it hopped around the frame and read as a new box each time. The position is PINNED when the box
+      // first appears and kept while the set stays on screen; it re-places only if the frame size
+      // changes. Staying put is the point: "Keeping the same box until end of pulsing helps eyeballing
+      // it well."
+      if (!set.boxPin || set.boxPin.fw !== w || set.boxPin.fh !== h) {
+        set.boxPin = { x: Math.max(4, Math.min(w - bw - 4, b.anchor.sx + 14)),
+                       y: Math.max(4, Math.min(h - bh - 4, b.anchor.sy - 14 - bh)), fw: w, fh: h };
+      }
+      var bx = set.boxPin.x, by = set.boxPin.y;
       // §77.2 — if two set boxes collide, MOVE one into free space; never suppress it.
       for (var tries = 0; tries < 8; tries++) {
         var clash = false;
@@ -452,6 +461,8 @@ function setupRuleFindingsFilm(A) {
         by += bh + 8;
         if (by + bh > h - 4) { by = 4 + tries * (bh + 8); bx = Math.max(4, bx - bw - 12); }
       }
+      set.boxPin.x = bx; set.boxPin.y = by;
+      A._ruleFilmLastBoxPin = { x: bx, y: by };   // §80.5 — debug surface so a witness can assert the pin   // §80 — a collision nudge sticks, never re-nudged each frame
       placed.push({ x: bx, y: by, w: bw, h: bh });
       var op = 1;   // §78 — held at full while the set is on screen; it fades only on leaving frame
       ctx.save();

@@ -166,6 +166,21 @@ function shortNameOf(name) {
       byG.p0.depth < byG.p1.depth && byG.p1.depth < byG.p2.depth && byG.p2.depth < byG.p3.depth,
       [byG.p0, byG.p1, byG.p2, byG.p3].map(v => v.depth.toFixed(0)).join(' < '));
 
+  // §80 — the box must STAY PUT. It was drawn every frame but anchored to the nearest visible member,
+  // so it hopped as the camera moved and read as renewing. Drive the camera so the "nearest" member
+  // changes, and assert the box does not move with it.
+  let nearFlip = false;
+  AP.camera = { matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+    matrixWorldInverse: { viewZ: () => -1 }, updateMatrixWorld() {},
+    projectPoint: v => ({ x: nearFlip ? 0.8 : -0.8, y: nearFlip ? 0.8 : -0.8, z: 0 }) };
+  drawAt(8);
+  const posAt = () => { drawAt(8.2); return JSON.stringify(AP._ruleFilmLastBoxPin || null); };
+  const before = posAt();
+  nearFlip = true;                     // the projected anchor jumps to the opposite corner
+  const after = posAt();
+  chk('P10 §80 the box stays put when the anchor member moves — it does not hop with the camera',
+      before === after && before !== 'null', 'pinned at ' + before + ' before and after the anchor jump');
+
   // §79 — the RELEASE must travel in the same direction as the fill, or the eye is given half a
   // motion and the depth reads as decoration. Near lets go first, far holds longest.
   drawAt(3.4);
