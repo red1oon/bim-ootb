@@ -40,8 +40,15 @@ var ROOM_ANCHOR_M = 1.2;                    // §71 — a room is marked by a po
 var RULE_TINT_RENDER_ORDER = -1;            // unchanged default: draws before ordinary opaque geometry
 var RULE_TINT_SHINE_RENDER_ORDER = 900;     // clash_film.js's own value — after opaque geometry
 function ruleTintMaterialOpts(opts) {
-  if (!opts || !opts.shineThrough) return Object.assign({}, RULE_TINT_MATERIAL_OPTS);
-  return Object.assign({}, RULE_TINT_MATERIAL_OPTS, { depthTest: false, toneMapped: false });
+  var o = Object.assign({}, RULE_TINT_MATERIAL_OPTS);
+  // §78 (user: "I thought it be more filled bboxes see thru") — FILM-ONLY, opt-in, exactly like
+  // shineThrough. Editing the shared constant would also change interactive Rule Mode and break T5's
+  // "must equal Clash MODE's material" contract, which §62.2 ruled out of scope; a first attempt did
+  // exactly that and broke tests/test_rule_mode_tint.js. Costs nothing: same geometry, same instanced
+  // draw, one flag. opacity 0.22 keeps the scene fully readable through a solid box.
+  if (opts && opts.filled) { o.wireframe = false; o.opacity = 0.22; }
+  if (!opts || !opts.shineThrough) return o;
+  return Object.assign(o, { depthTest: false, toneMapped: false });
 }
 function ruleTintRenderOrder(opts) {
   return (opts && opts.shineThrough) ? RULE_TINT_SHINE_RENDER_ORDER : RULE_TINT_RENDER_ORDER;
@@ -381,19 +388,40 @@ function setupRuleChecklist(A) {
   // Hidden instances are scaled to zero rather than removed, so the mesh, its material and its
   // instance count never change — no rebuild, no reallocation, ~215 matrix writes a frame.
   var _ZERO = null;
+  // §78 — the value per guid is an INTENSITY 0..1, not a boolean. §77's depth wave computes a glow
+  // per member and previously had nowhere to put it: this function only toggled visibility, so every
+  // member of a set appeared at once and the outward wave was invisible on screen (user: "don't
+  // notice the pulse outward effect"). Intensity now drives BOTH per-instance colour (instanceColor
+  // multiplies the shared material, so one material still serves the whole bucket) and a small scale
+  // pop, which is what makes the travelling front readable.
+  var _ZEROM = null;
   A.ruleTintShowOnly = function (guidSet) {
     if (!A._ruleTintMeshes || !A._ruleTintMeshes.length) return 0;
-    if (!_ZERO) _ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
-    var shown = 0;
-    A._ruleTintMeshes.forEach(function (m) {
-      var gs = m.userData.ruleTintGuids, ms = m.userData.ruleTintMats;
+    if (!_ZEROM) _ZEROM = new THREE.Matrix4().makeScale(0, 0, 0);
+    var shown = 0, _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+    A._ruleTintMeshes.forEach(function (mesh) {
+      var gs = mesh.userData.ruleTintGuids, ms = mesh.userData.ruleTintMats;
       if (!gs || !ms) return;
-      for (var i = 0; i < gs.length; i++) {
-        var on = !guidSet || guidSet[gs[i]];
-        m.setMatrixAt(i, on ? ms[i] : _ZERO);
-        if (on) shown++;
+      if (!mesh.instanceColor && THREE.InstancedBufferAttribute) {
+        mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(gs.length * 3).fill(1), 3);
       }
-      m.instanceMatrix.needsUpdate = true;
+      for (var i = 0; i < gs.length; i++) {
+        var v = guidSet ? guidSet[gs[i]] : 1;
+        var k = (typeof v === 'number') ? v : (v ? 1 : 0);
+        if (!k) { mesh.setMatrixAt(i, _ZEROM); continue; }
+        shown++;
+        // scale pop: 1.0 at rest, up to 1.35 at the crest of the wave
+        ms[i].decompose(_p, _q, _s);
+        var g = 1 + 0.35 * k;
+        _m.compose(_p, _q, _s.clone().multiplyScalar(g));
+        mesh.setMatrixAt(i, _m);
+        if (mesh.instanceColor) {
+          var b = 0.45 + 0.55 * k;            // dim at rest, full brightness at the crest
+          mesh.instanceColor.setXYZ(i, b, b, b);
+        }
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     });
     return shown;
   };

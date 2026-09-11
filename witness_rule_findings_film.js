@@ -147,8 +147,10 @@ function shortNameOf(name) {
       drawAt(0).n === 1, 'boxes at t=0: ' + drawAt(0).n);
   chk('P5 §77.2 a pulsing set does not restart mid-pulse — one box, not one per frame',
       drawAt(1).n === 1 && drawAt(2).n === 1, 'still one box through the pulse');
-  chk('P7 §77.2 the box survives the 2s linger and is gone after (wave 1.0 + decay 0.8 + linger 2.0)',
-      drawAt(3.5).n === 1 && drawAt(4.5).n === 0, 't=3.5 -> ' + drawAt(3.5).n + ', t=4.5 -> ' + drawAt(4.5).n);
+  chk('P8 §78 the box is HELD while the set stays on screen — it does not blink out and back while ' +
+      'the viewer is still reading it',
+      [3.5, 4.5, 8, 20, 60].every(t => drawAt(t).n === 1),
+      'box present at t=3.5,4.5,8,20,60s: ' + [3.5, 4.5, 8, 20, 60].map(t => drawAt(t).n).join(','));
 
   // P6 must assert the DEPTH ORDER, not merely that a box appeared — an earlier draft of this check
   // did the latter and passed while proving nothing. The composite exposes the wave's per-member glow.
@@ -164,8 +166,9 @@ function shortNameOf(name) {
       byG.p0.depth < byG.p1.depth && byG.p1.depth < byG.p2.depth && byG.p2.depth < byG.p3.depth,
       [byG.p0, byG.p1, byG.p2, byG.p3].map(v => v.depth.toFixed(0)).join(' < '));
 
-  // P4 — ONE new qualifying member re-pulses the set. No turnover fraction required: this is the
-  // user's own correction to an earlier draft that gated on 3/4 of the previous batch leaving.
+  // P4 — ONE new qualifying member re-fires the WAVE. No turnover fraction: the user's own correction
+  // to an earlier draft. Since §78 holds the box while the set is visible, the observable is the wave
+  // restarting, not a box reappearing — asserted on the exposed per-member glow.
   const AT4 = { p0: { x: 0, y: 0, z: -10 }, p1: { x: 0, y: 0, z: -20 }, p2: { x: 0, y: 0, z: -30 }, p3: { x: 0, y: 0, z: -40 } };
   const { A: AP4 } = await build(planStare, { sRows: pulseRows, eRows: [], A: { showRuleModeTint: function () { this._ruleTintAt = AT4; } } });
   AP4._ruleTintAt = AT4;
@@ -174,11 +177,17 @@ function shortNameOf(name) {
     matrixWorldInverse: { viewZ: v => (hidden && v.z === -40) ? 1 : -1 },
     updateMatrixWorld() {}, projectPoint: () => ({ x: 0, y: 0, z: 0 }) };
   const draw4 = t => AP4.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, t);
-  draw4(0); draw4(5);                       // pulse once with p3 off screen, then let it expire
-  chk('P4-setup the set has gone quiet before the new member arrives', draw4(6) === 0, 'quiet at t=6');
+  const glow4 = () => { const w = (AP4._ruleFilmLastWave || {}).span_depth_steel || []; const m = {}; w.forEach(v => { m[v.g] = v.glow; }); return m; };
+  draw4(0); draw4(5);                        // first wave fires, then fully decays
+  draw4(10);
+  chk('P4-setup the first wave has fully decayed before the newcomer arrives',
+      Object.values(glow4()).every(g => g === 0), JSON.stringify(glow4()));
   hidden = false;                            // ONE new member enters
-  chk('P4 §77.2 a SINGLE new qualifying member re-pulses the set — no turnover fraction needed',
-      draw4(6.5) === 1, 'boxes after one newcomer: ' + draw4(6.5));
+  draw4(10.2);                               // pulse starts here; at since=0 every glow is still 0
+  draw4(10.6);                               // sample AFTER the attack has begun, or the check reads 0 and proves nothing
+  const g2 = glow4();
+  chk('P4 §77.2 a SINGLE new qualifying member re-fires the wave — no turnover fraction needed',
+      Object.values(g2).some(g => g > 0), 'glows after one newcomer: ' + JSON.stringify(g2));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

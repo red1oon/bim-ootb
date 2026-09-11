@@ -90,6 +90,20 @@ chk('T2d §62.4 shineThrough leaves wireframe/transparent/opacity/depthWrite unt
 //      so every room-based Safety finding was dropped from the 3-D tint. Fails pre-change.
 //   R2 a real IFC element still resolves from element_transforms — §67 did not break the main path.
 //   R3 a guid in NEITHER table is NAMED in the log, never dropped in silence.
+// ══ §78 FILLED — a film-only opt-in, exactly like shineThrough ═════════════════════════════════
+//   F1 the shared constant is UNTOUCHED, so interactive Rule Mode keeps Clash MODE's wireframe and
+//      T5's contract above still holds. A first attempt edited that constant and broke this file.
+//   F2 {filled:true} gives the FILM a solid, see-through box.
+console.log('§W-RULE-TINT §78 filled opt-in');
+chk('F1 §78 no-opts is STILL Clash Mode wireframe — interactive Rule Mode unchanged',
+  RC.ruleTintMaterialOpts().wireframe === true && RC.ruleTintMaterialOpts().opacity === 0.2,
+  JSON.stringify(RC.ruleTintMaterialOpts()));
+const filled78 = RC.ruleTintMaterialOpts({ shineThrough: true, filled: true });
+chk('F2 §78 the FILM gets a solid box', filled78.wireframe === false, String(filled78.wireframe));
+chk('F2b §78 still see-through, and still shining through walls',
+  filled78.opacity < 0.3 && filled78.depthTest === false,
+  'opacity=' + filled78.opacity + ' depthTest=' + filled78.depthTest);
+
 console.log('§W-RULE-TINT §67 two-table geometry (real Hospital_silent.db)');
 (function roomGeom() {
   const dbFile = path.join(process.env.HOME, 'Downloads', 'Hospital_silent.db');

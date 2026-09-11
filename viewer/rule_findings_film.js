@@ -65,8 +65,16 @@ function setupRuleFindingsFilm(A) {
   // visible-first pass, §73.4/§74's TTL ageing and §72's Measure echo are RETIRED with it: all of them
   // managed crowding that one-box-per-rule does not create.
   var DWELL_MIN_S = 2.0;       // §77.2 — a newly-visible member must stay this long to trigger a pulse
-  var WAVE_S = 1.0;            // §77.2 — time for the wave to travel from the nearest member to the farthest
-  var PULSE_DECAY_S = 0.8;     // each element's own glow decay once the wave reaches it
+  // §78 (user: "Hope the pulse out is dramatic, not pops, but wave out, remaining in pulse, before
+  // fade out"). Four phases, not two. The first cut faded each member as soon as the front passed it,
+  // so the near end was dark before the far end lit — a travelling blip, not a wave. Now the wave
+  // FILLS the set outward, everything it has reached HOLDS lit, and then the whole set releases
+  // together. That is what makes it read as one body of findings rather than scattered flickers.
+  var WAVE_S = 1.4;            // front travel time, nearest member to farthest
+  var ATTACK_S = 0.18;         // per-member ramp up as the front arrives — a swell, not a switch
+  var HOLD_S = 1.2;            // the whole set stays lit after the front completes
+  var FADE_OUT_S = 0.9;        // then releases together
+  var PULSE_S = WAVE_S + HOLD_S + FADE_OUT_S;
   var BOX_LINGER_S = 2.0;      // §77.2 — the box stays this long after the wave ends
   var DWELL_SAMPLE_S = 0.25;   // §77.3 — pose sampling step for the exact dwell precompute
   var FOV_DEG = 60;            // viewer/scene.js:139 — the bake's own fov, read not guessed
@@ -281,7 +289,7 @@ function setupRuleFindingsFilm(A) {
       if (_sets.length && typeof A.showRuleModeTint === 'function') {
         var guidCat = {};
         _sets.forEach(function (st) { st.guids.forEach(function (g) { guidCat[g] = st.category; }); });
-        try { A.showRuleModeTint(guidCat, CATEGORY_COLOR, { shineThrough: true }); }   // §62
+        try { A.showRuleModeTint(guidCat, CATEGORY_COLOR, { shineThrough: true, filled: true }); }   // §62
         catch (e) { log('§RULE_FILM_TINT_ERR ' + e.message); }
         // §77.3 — precompute every member's visible intervals from the plan's own camera path.
         var _at = A._ruleTintAt || {};
@@ -357,36 +365,60 @@ function setupRuleFindingsFilm(A) {
         if (!st.seen[g]) { if (_dwellFrom(st.iv && st.iv[g], fs) >= DWELL_MIN_S) gained++; }
         st.seen[g] = 1;
       }
-      if (!vis.length) continue;
+      if (!vis.length) {
+        // §78 — off screen: hold the box for the linger, then drop it. The set keeps its pulse clock,
+        // so returning to view re-pulses through the normal gained>0 path rather than snapping on.
+        if (st.pulseStart > -Infinity && st.lastSeenSec != null && (fs - st.lastSeenSec) < BOX_LINGER_S) {
+          st.fadingOut = 1 - (fs - st.lastSeenSec) / BOX_LINGER_S;
+        } else { st.fadingOut = 0; }
+        continue;
+      }
+      st.fadingOut = 0;
       visSet[st.rule] = vis.length;
       // §77.2 — a set cannot restart while its own pulse is still running: wave + linger is the only
       // rate limit, ~3s, structural rather than a tuned cooldown constant.
-      var running = (fs - st.pulseStart) < (WAVE_S + PULSE_DECAY_S + BOX_LINGER_S);
-      if (gained > 0 && !running) { st.pulseStart = fs; running = true; }
-      if (!running) continue;
+      // §78 (user: "the same Sanity message box need not renew while they remain or repulse on screen.
+      // Keeping the same box until end of pulsing helps eyeballing it well"). The BOX and the PULSE are
+      // now separate lifetimes. The pulse is the wave, and re-fires on a new qualifying member; the box
+      // is held for as long as the set has ANY member on screen, so it never blinks out and back while
+      // the viewer is still reading it. It leaves only when the set itself leaves frame.
+      var waveRunning = (fs - st.pulseStart) < PULSE_S;
+      if (gained > 0 && !waveRunning) { st.pulseStart = fs; waveRunning = true; }
+      if (st.pulseStart === -Infinity) continue;         // never pulsed: no box yet
+      st.lastSeenSec = fs;                                // members are on screen this frame
+      var boxAlive = true;                                // held while visible — §78
       pulsing++;
       var since = fs - st.pulseStart;
       var span = (maxD - minD) || 1;
       // the wave: each member lights when the front reaches its own depth, then decays
       for (var vi = 0; vi < vis.length; vi++) {
-        var frac = (vis[vi].depth - minD) / span;
-        var lit = since - frac * WAVE_S;
-        vis[vi].glow = (lit < 0) ? 0 : Math.max(0, 1 - lit / PULSE_DECAY_S);
+        var arrive = ((vis[vi].depth - minD) / span) * WAVE_S;   // the front reaches this depth here
+        var g;
+        if (since < arrive) g = 0;                                // not reached yet
+        else if (since < arrive + ATTACK_S) g = (since - arrive) / ATTACK_S;   // swell in
+        else if (since < WAVE_S + HOLD_S) g = 1;                  // HOLD — stays lit while the wave completes
+        else g = Math.max(0, 1 - (since - WAVE_S - HOLD_S) / FADE_OUT_S);      // release together
+        vis[vi].glow = g;
       }
       // §77.5 P6 — expose the wave's per-member glow so a witness can assert the DEPTH ORDER rather
       // than merely that a box appeared. Debug surface only; nothing in the film reads it.
       A._ruleFilmLastWave = A._ruleFilmLastWave || {};
       A._ruleFilmLastWave[st.rule] = vis.map(function (v) { return { g: v.g, depth: v.depth, glow: v.glow }; });
-      if (since <= WAVE_S + PULSE_DECAY_S + BOX_LINGER_S) {
-        boxes.push({ st: st, since: since,
+      if (boxAlive) {
+        boxes.push({ st: st, since: since, waveRunning: waveRunning,
                      anchor: vis.reduce(function (a, b) { return a.depth < b.depth ? a : b; }) });
       }
     }
 
     // §77.2 — only the sets that are pulsing keep their markers lit; everything else is off.
     if (typeof A.ruleTintShowOnly === 'function') {
+      // §78 — hand the WAVE's per-member glow through, not a boolean. This is what makes the outward
+      // pulse visible; before, every member of a pulsing set was simply shown at once.
       var show = {};
-      boxes.forEach(function (b) { b.st.guids.forEach(function (g) { show[g] = 1; }); });
+      boxes.forEach(function (b) {
+        var w = (A._ruleFilmLastWave || {})[b.st.rule] || [];
+        w.forEach(function (v) { show[v.g] = Math.max(show[v.g] || 0, 0.15 + 0.85 * (v.glow || 0)); });
+      });
       A.ruleTintShowOnly(show);
     }
 
@@ -413,8 +445,7 @@ function setupRuleFindingsFilm(A) {
         if (by + bh > h - 4) { by = 4 + tries * (bh + 8); bx = Math.max(4, bx - bw - 12); }
       }
       placed.push({ x: bx, y: by, w: bw, h: bh });
-      var op = (b.since <= WAVE_S + PULSE_DECAY_S) ? 1
-             : Math.max(0, 1 - (b.since - WAVE_S - PULSE_DECAY_S) / BOX_LINGER_S);
+      var op = 1;   // §78 — held at full while the set is on screen; it fades only on leaving frame
       ctx.save();
       ctx.globalAlpha = op;
       ctx.fillStyle = LABEL_PLATE;
@@ -436,7 +467,7 @@ function setupRuleFindingsFilm(A) {
     if (Math.floor(fs) !== _lastLog) {
       _lastLog = Math.floor(fs);
       log('§RULE_FILM_SETS filmSec=' + fs.toFixed(1) + ' sets=' + _sets.length +
-          ' pulsing=' + pulsing + ' boxes=' + drawn +
+          ' pulsing=' + pulsing + ' boxes=' + drawn + ' heldBoxes=' + boxes.filter(function (b) { return !b.waveRunning; }).length +
           ' visible=' + JSON.stringify(visSet));
     }
     return drawn;
