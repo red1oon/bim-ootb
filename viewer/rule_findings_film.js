@@ -285,7 +285,7 @@ function setupRuleFindingsFilm(A) {
       A.ruleTintShowOnly(vis);
     }
 
-    var placed = [], skippedFrustum = offscreen, skippedOverlap = 0, labelled = 0;
+    var placed = [], skippedFrustum = offscreen, skippedOverlap = 0, labelled = 0, echoed = false;
     for (var k = 0; k < elig.length; k++) {
       i = elig[k].i; m = _marks[i];
       var sx = elig[k].sx, sy = elig[k].sy;   // §71 — projected once, above
@@ -312,6 +312,13 @@ function setupRuleFindingsFilm(A) {
         ctx.fillText(lines[li], box.x + pad, box.y + pad + lh * (li + 0.5));
       }
       ctx.restore();
+      // §72 §RULE_FILM_MEASURE_ECHO — the user's standing instruction (2026-09-11): "Sanity messages
+      // are to append to that [the Measure box]". §70's rewrite dropped the filmBoxesMeasurePost call
+      // outright when it replaced the storey-slot posting with the label pass. The NEAREST labelled
+      // finding is echoed into the Measure box, so the box still carries a Sanity entry whenever one
+      // is on screen. Only the first — the box shows one entry at a time (§14 slot collision), and
+      // elig is distance-sorted, so this is the nearest visible finding, not an arbitrary one.
+      if (!echoed && A.filmBoxesMeasurePost) { A.filmBoxesMeasurePost(m.title, m.rows, m.ink); echoed = true; }
       labelled++;
     }
     if (Math.floor(fs) !== _lastLog) {
@@ -319,7 +326,7 @@ function setupRuleFindingsFilm(A) {
       log('§RULE_FILM_LABELS filmSec=' + fs.toFixed(1) + ' marks=' + _marks.length +
           ' eligible=' + elig.length + ' labelled=' + labelled +
           ' skippedOverlap=' + skippedOverlap + ' skippedFrustum=' + skippedFrustum +
-          ' markersShown=' + elig.length + '/' + _marks.length + ' topN=' + TOP_N);
+          ' markersShown=' + elig.length + '/' + _marks.length + ' measureEcho=' + (echoed ? 'yes' : 'no') + ' topN=' + TOP_N);
     }
     return labelled;
   };

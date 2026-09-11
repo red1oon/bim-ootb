@@ -172,6 +172,23 @@ function recCtx() {
   chk('V2 §71 the FAR but visible findings get the slots, and are labelled',
       lab3 > 0 && shown3.length === 3, 'labelled=' + lab3 + ' shown=' + shown3.length + ' of 3 visible');
 
+  // ── §72 M1/M2: the Measure box must still receive a Sanity entry. The user's standing instruction
+  // was "Sanity messages are to append to that"; §70's rewrite silently dropped the call.
+  const posts = [];
+  const { A: A4 } = await build({ beats: { rise: 0.9 }, durationSec: 100 },
+    { A: { filmBoxesMeasurePost: (t, r, ink) => { posts.push({ t, r, ink }); return true; } } });
+  const AT4 = {}; S_ROWS.concat(E_ROWS).forEach((r, i) => { AT4[r.guid] = { x: 0, y: 0, z: -(10 + i * 40) }; });
+  A4._ruleTintAt = AT4;
+  A4.camera = fakeCamera(() => ({ viewZ: -1, x: 0, y: 0, z: 0 }));
+  A4.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 1.0);
+  chk('M1 §72 the Measure box still receives a Sanity entry when one is on screen',
+      posts.length > 0, posts.length ? JSON.stringify(posts[0].t) : 'NO POST — §70 regression');
+  chk('M2 §72 exactly ONE entry is posted per frame (the box shows one at a time), and it is the NEAREST',
+      posts.length === 1 && posts[0].r[0] === 'Beam A · T1',
+      'posts=' + posts.length + ' first=' + (posts[0] && posts[0].r[0]));
+  chk('M3 §72 the echoed entry carries its category ink, so §68 colouring still applies',
+      posts[0] && /^#(ffaa33|e57373)$/.test(posts[0].ink), posts[0] && posts[0].ink);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
