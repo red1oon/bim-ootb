@@ -36,7 +36,11 @@ function setupRuleFindingsFilm(A) {
   var ENV_SPAN = 2.2;                 // §14 — same "readable dwell" every other Measure cue uses
   var MIN_SLOT_SEC = 1.0;             // MUST match cpe_storey_reveal.js's own _fitList truncation floor
   var STEP_M = 0.75;                  // external ergonomic convention (no codebase precedent) — labelled as an estimate, never presented as measured
-  var CATEGORY_COLOR = { structural: '#ffaa33', egress: '#cc4444' };   // reuses rule_checklist.js's WARNING/CRITICAL hexes, category axis not severity
+  // §68 — egress was #cc4444 (rule_checklist's CRITICAL hex). Measured: it fails WCAG 4.5 against the
+  // HUD plate at EVERY alpha up to 0.90, so it can never be made legible by darkening the plate.
+  // #e57373 is the same red family, lighter, and clears 4.5 with margin. Structural #ffaa33 passes
+  // unchanged. The interactive Rule panel keeps #cc4444 — different surface, not this change.
+  var CATEGORY_COLOR = { structural: '#ffaa33', egress: '#e57373' };
   var SEV_RANK = { CRITICAL: 2, WARNING: 1 };
 
   // ── §RULE_FILM_MESSAGING (MEP_CLASH_REVEAL_MOVIE.md §63, 2026-09-11) ───────────────────────────

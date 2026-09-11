@@ -353,7 +353,7 @@ function setupCpeResourcePanel(A) {
                     ' (' + rf.maxExitDistM.toFixed(1) + 'm @ ' + (A.WALK_SPEED || 1.2) + ' m/s est.)';
         }
         out.push({ big: String(rf.egressTotal), label: 'safety issues flagged',
-                   sub: exitSub, src: 'egress_sanity.js', ink: '#cc4444' });
+                   sub: exitSub, src: 'egress_sanity.js', ink: '#e57373' });   // §68 — #cc4444 failed WCAG 4.5 at every plate alpha
       }
     }
     // §MEASURE_HUD_CARD (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md §PENDING.5 item D) — the Measure tool's
@@ -538,7 +538,11 @@ function setupCpeResourcePanel(A) {
   A.cpePanelPlate = function (ctx, x, y, bw, bh, rad) {
     var glass = _glass(ctx, x, y, bw, bh, rad);
     _round(ctx, x, y, bw, bh, rad);
-    ctx.fillStyle = glass ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.45)';
+  // §HUD_LEGIBLE (MEP_CLASH_REVEAL_MOVIE.md §68, 2026-09-11, user: "Just make sure everything is
+  // legible"). Measured, not chosen by eye: at the old 0.28/0.45 every ink fell under WCAG 4.5 over a
+  // bright backdrop (white facade / sky), because a translucent plate lets a bright scene through.
+  // 0.85 is the alpha at which every HUD ink clears 4.5 over BOTH the darkest and brightest frames.
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
     ctx.fill();
     _round(ctx, x, y, bw, bh, rad);
     ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
@@ -644,7 +648,7 @@ function setupCpeResourcePanel(A) {
       // At 171 px even the floor size cannot fit it on one line, and the real bake cut it mid-word
       // at "time-phased, n…". There IS vertical room — the dots sit at bh-pad*0.7 and the sub starts
       // at 0.30*bh — so it wraps to a second line instead of losing the caveat it exists to carry.
-      ctx.fillStyle = 'rgba(255,255,255,0.60)';
+      ctx.fillStyle = 'rgba(255,255,255,0.78)';   // §68 — 0.60 measured 2.46 against the plate, under 4.5
       _wrapText(ctx, c.sub, colX, baseY + Math.round(bh * 0.30), colW,
                 Math.round(bh * 0.085), Math.round(bh * 0.058), '500', F, 2);
     }

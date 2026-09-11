@@ -97,7 +97,7 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
   chk('scenario 1: structural pick is on L1 (the only storey with a structural finding)', pickS1 && pickS1.storey === 'L1', pickS1 && pickS1.storey);
   chk('scenario 1: egress pick is on L2 (the only storey with an egress finding) — distinct storeys', pickE1 && pickE1.storey === 'L2', pickE1 && pickE1.storey);
   chk('scenario 1: structural ink = category orange, not severity-derived', pickS1 && pickS1.ink === '#ffaa33', pickS1 && pickS1.ink);
-  chk('scenario 1: egress ink = category red', pickE1 && pickE1.ink === '#cc4444', pickE1 && pickE1.ink);
+  chk('scenario 1: egress ink = category red (§68 #e57373 — #cc4444 could not clear WCAG 4.5 at any plate alpha)', pickE1 && pickE1.ink === '#e57373', pickE1 && pickE1.ink);
 
   // window bounds, real arithmetic: winStartSec=(0.9-0.06)*100=84, slotSec=3
   chk('scenario 1: structural window = [84, 86.2)', pickS1 && Math.abs(pickS1.startSec - 84) < 1e-6 && Math.abs(pickS1.endSec - 86.2) < 1e-6,
@@ -121,7 +121,7 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
   chk('gating: in the gap between windows (86.5s) — no post', sample(A1, 86.5).length === 0);
   const atE = sample(A1, 88);
   chk('gating: inside egress window (88s) — posts Safety title + red ink',
-      atE.length === 1 && /^Safety/.test(atE[0].title) && atE[0].ink === '#cc4444', JSON.stringify(atE));
+      atE.length === 1 && /^Safety/.test(atE[0].title) && atE[0].ink === '#e57373', JSON.stringify(atE));   // §68
   chk('gating: after egress window (89.3s) — no post', sample(A1, 89.3).length === 0);
 
   // §62 T3 — the capability existing is not the same claim as the film asking for it.

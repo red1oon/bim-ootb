@@ -139,7 +139,7 @@ function setupCpeFilmBoxes(A) {
   function plate(ctx, b) {
     var rad = Math.round(Math.min(b.h, b.w) * 0.09);
     if (typeof A.cpePanelPlate === 'function') { A.cpePanelPlate(ctx, b.x, b.y, b.w, b.h, rad); return; }
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';   // §68 — matches A.cpePanelPlate's measured alpha
     if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, rad); ctx.fill(); }
     else ctx.fillRect(b.x, b.y, b.w, b.h);
   }
