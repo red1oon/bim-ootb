@@ -166,6 +166,18 @@ function shortNameOf(name) {
       byG.p0.depth < byG.p1.depth && byG.p1.depth < byG.p2.depth && byG.p2.depth < byG.p3.depth,
       [byG.p0, byG.p1, byG.p2, byG.p3].map(v => v.depth.toFixed(0)).join(' < '));
 
+  // §79 — the RELEASE must travel in the same direction as the fill, or the eye is given half a
+  // motion and the depth reads as decoration. Near lets go first, far holds longest.
+  drawAt(3.4);
+  const rel = (AP._ruleFilmLastWave || {}).span_depth_steel || [];
+  const relG = {}; rel.forEach(v => { relG[v.g] = v.glow; });
+  chk('P9 §79 the release travels outward too — mid-release the NEAREST is dimmer than the FARTHEST',
+      relG.p0 < relG.p3 && relG.p0 < 1 && relG.p3 === 1,
+      'near p0=' + relG.p0.toFixed(2) + '  p1=' + relG.p1.toFixed(2) + '  p2=' + relG.p2.toFixed(2) + '  far p3=' + relG.p3.toFixed(2));
+  chk('P9b §79 the release is monotonic in depth — a clean front, not scattered fades',
+      relG.p0 <= relG.p1 && relG.p1 <= relG.p2 && relG.p2 <= relG.p3,
+      'ordered near->far');
+
   // P4 — ONE new qualifying member re-fires the WAVE. No turnover fraction: the user's own correction
   // to an earlier draft. Since §78 holds the box while the set is visible, the observable is the wave
   // restarting, not a box reappearing — asserted on the exposed per-member glow.

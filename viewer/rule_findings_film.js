@@ -73,8 +73,13 @@ function setupRuleFindingsFilm(A) {
   var WAVE_S = 1.4;            // front travel time, nearest member to farthest
   var ATTACK_S = 0.18;         // per-member ramp up as the front arrives — a swell, not a switch
   var HOLD_S = 1.2;            // the whole set stays lit after the front completes
-  var FADE_OUT_S = 0.9;        // then releases together
-  var PULSE_S = WAVE_S + HOLD_S + FADE_OUT_S;
+  // §79 (user: "the release should also directional wave out, so the optics gives cognition") — the
+  // release TRAVELS too, near member letting go first, far last, on the same axis as the fill. A
+  // simultaneous fade threw the direction away at the end and left the eye with only half a motion;
+  // two directional fronts, in and out, is what makes the depth legible rather than decorative.
+  var RELEASE_S = 0.9;         // travel time of the release front, nearest to farthest
+  var FADE_OUT_S = 0.6;        // each member's own fade once the release front reaches it
+  var PULSE_S = WAVE_S + HOLD_S + RELEASE_S + FADE_OUT_S;
   var BOX_LINGER_S = 2.0;      // §77.2 — the box stays this long after the wave ends
   var DWELL_SAMPLE_S = 0.25;   // §77.3 — pose sampling step for the exact dwell precompute
   var FOV_DEG = 60;            // viewer/scene.js:139 — the bake's own fov, read not guessed
@@ -396,8 +401,11 @@ function setupRuleFindingsFilm(A) {
         var g;
         if (since < arrive) g = 0;                                // not reached yet
         else if (since < arrive + ATTACK_S) g = (since - arrive) / ATTACK_S;   // swell in
-        else if (since < WAVE_S + HOLD_S) g = 1;                  // HOLD — stays lit while the wave completes
-        else g = Math.max(0, 1 - (since - WAVE_S - HOLD_S) / FADE_OUT_S);      // release together
+        else {
+          // §79 — the release front travels outward on the SAME axis, so near lets go first.
+          var releaseAt = WAVE_S + HOLD_S + ((vis[vi].depth - minD) / span) * RELEASE_S;
+          g = (since < releaseAt) ? 1 : Math.max(0, 1 - (since - releaseAt) / FADE_OUT_S);
+        }
         vis[vi].glow = g;
       }
       // §77.5 P6 — expose the wave's per-member glow so a witness can assert the DEPTH ORDER rather
