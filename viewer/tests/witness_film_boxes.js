@@ -53,8 +53,8 @@ function recCtx() {
     draws,
     canvas: { width: W, height: H },
     save() {}, restore() {}, beginPath() {}, fill() {}, stroke() {}, clip() {},
-    fillRect(x, y, w, h) { draws.push({ kind: 'rect', x, y, w, h }); },
-    roundRect(x, y, w, h) { draws.push({ kind: 'rect', x, y, w, h }); },
+    fillRect(x, y, w, h) { draws.push({ kind: 'rect', x, y, w, h, fill: st.fillStyle }); },
+    roundRect(x, y, w, h) { draws.push({ kind: 'rect', x, y, w, h, fill: st.fillStyle }); },
     measureText(t) { const px = +(/(\d+)px/.exec(this.font) || [0, 12])[1]; return { width: String(t).length * px * 0.55 }; },
     fillText(t, x, y) {
       const px = +(/(\d+)px/.exec(this.font) || [0, 12])[1];
@@ -190,6 +190,41 @@ if (!totalText) console.log('§WITNESS_FILM_BOXES INCONCLUSIVE — no text was d
   mk('M3 §61 body rows stay white — only the title colour moved',
      plain.rows.length > 0 && plain.rows.every(r => r.fill === '#fff'),
      plain.rows.map(r => r.fill).join(','));
+
+  // §64 §MEASURE_PLATE_SAME_HUE — the plate must never be filled with the title's own colour.
+  function plateAndTitle(ink) {
+    const c = recCtx();
+    A.filmBoxesMeasureReset();
+    A.filmBoxesArm(W, H, armed);
+    A.filmBoxesMeasurePost('Structural — column continuity', ['STB Stütze', 'Level 1', 'CRITICAL'], ink);
+    A.filmBoxesDrawMeasure(c, W, H, armed, 10);
+    const rect = c.draws.filter(d => d.kind === 'rect');
+    const text = c.draws.filter(d => d.kind === 'text');
+    return { plate: rect.length ? rect[0].fill : null, title: text.length ? text[0].fill : null };
+  }
+  // Compare the actual RGB, never the strings: 'rgba(255,170,51,0.32)' and '#ffaa33' are the SAME
+  // hue in two notations, and a string compare would call that a pass — the exact way this bug hid.
+  function rgbOf(css) {
+    if (!css) return null;
+    let m = /^#?([0-9a-f]{6})$/i.exec(css);
+    if (m) { const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+    m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(css);
+    return m ? [+m[1], +m[2], +m[3]] : null;
+  }
+  const sameHue = (a, b) => { const x = rgbOf(a), y = rgbOf(b); return !!x && !!y && x[0] === y[0] && x[1] === y[1] && x[2] === y[2]; };
+
+  const pt = plateAndTitle('#ffaa33');
+  mk('P1 §64 the plate RGB is NOT the title\'s own RGB (the yellow-on-yellow bug)',
+     !sameHue(pt.plate, pt.title), 'plate=' + pt.plate + ' title=' + pt.title);
+  mk('P2 §64.1 the Measure plate is the standard dark fill, with an ink',
+     pt.plate === 'rgba(0,0,0,0.45)', String(pt.plate));
+  const pt2 = plateAndTitle(undefined);
+  mk('P2b §64.1 the Measure plate is the standard dark fill, without an ink',
+     pt2.plate === 'rgba(0,0,0,0.45)', String(pt2.plate));
+  mk('P3 §64.2 the category ink still reaches the TITLE — no information lost',
+     pt.title === '#ffaa33', String(pt.title));
+  mk('P3b §61 intact — no ink still draws the blue title',
+     pt2.title === '#4fc3f7', String(pt2.title));
 
   const bad = MB.filter(m => !m.ok);
   console.log('§WITNESS_MEASURE_TITLE_INK pass=' + (MB.length - bad.length) + ' fail=' + bad.length);
