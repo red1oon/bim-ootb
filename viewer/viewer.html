@@ -893,7 +893,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      loaded on demand by APP.loadNavigate() (see rule_checklist.js's A.showEgressSanity) — this
      tag only needs to load before A.showEgressSanity() can run, same as structural_sanity.js. -->
 <script src="egress_sanity.js?v=2" onerror="console.warn('§LOAD_FAIL egress_sanity.js')"></script>
-<script src="rule_checklist.js?v=3" onerror="console.warn('§LOAD_FAIL rule_checklist.js')"></script>
+<script src="rule_checklist.js?v=4" onerror="console.warn('§LOAD_FAIL rule_checklist.js')"></script>
 <!-- MEP_CLASH_REVEAL_MOVIE.md §59 — rule_findings_film.js only CALLS StructuralSanity/EgressSanity/
      A.storeyRevealList/A.filmBoxesMeasurePost/A.showRuleModeTint at bake time (A.ruleFindingsFilmBuild),
      never at parse time, so load order relative to those tags doesn't matter; placed here for

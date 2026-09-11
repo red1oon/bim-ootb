@@ -296,10 +296,19 @@ function setupRuleChecklist(A) {
 
     var guidSet = {};
     guids.forEach(function (g) { guidSet[g] = true; });
-    A.collectMeshes(function (o) {
+    // §RULE_TINT_NO_COLLATERAL (MEP_CLASH_REVEAL_MOVIE.md §69, 2026-09-11, user: "are there any
+    // incidental element marked for the Sanity occurrence?"). The match is on a SINGLE
+    // userData.guid, which BatchedMesh/InstancedMesh never carry (time_machine.js:1439,
+    // hba_lens.js:604) — so a picked element sitting in a batch leaves its batch-mates alone and no
+    // neighbour is ever hidden. That was true but UNCOUNTED: nothing said how many meshes went
+    // invisible, so a batch that ever did carry a guid would take its whole bucket down in silence.
+    // Counted and logged now, one number a future bake can be checked against.
+    var _hidden = A.collectMeshes(function (o) {
       return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh || o.isLineSegments) &&
         o.userData && guidSet[o.userData.guid];
-    }).forEach(function (o) {
+    });
+    var _hiddenBatched = _hidden.filter(function (o) { return o.isInstancedMesh || o.isBatchedMesh; }).length;
+    _hidden.forEach(function (o) {
       o.userData._ruleTintHidden = true;
       o.visible = false;
     });
@@ -343,6 +352,8 @@ function setupRuleChecklist(A) {
 
     A._ruleTintActive = true;
     console.log('§RULE_TINT_ENTER elements=' + total + ' colors=' + Object.keys(byColor).length +
+      ' guidsAsked=' + guids.length + ' meshesHidden=' + _hidden.length +
+      (_hiddenBatched ? ' ⚠ batchedHidden=' + _hiddenBatched + ' (a batch carried a single guid — its bucket-mates went with it)' : '') +
       ' shineThrough=' + !!(opts && opts.shineThrough) + ' renderOrder=' + ruleTintRenderOrder(opts) +
       ' depthTest=' + (ruleTintMaterialOpts(opts).depthTest !== false));
     if (A.markDirty) A.markDirty();
