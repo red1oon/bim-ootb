@@ -60,6 +60,28 @@ function setupCpeStoreyReveal(A) {
   // would call a storey. Ordered by mean element Z — the same real-Z-ladder cpe_room_title.js's
   // _storeyLadderForGroups() already builds (not re-derived differently here; this is a query against
   // the same two tables, kept local because that function is private to cpe_room_title.js).
+  // §STOREY_REVEAL_REAL_STOREYS_ONLY (2026-09-11, MEP_CLASH_REVEAL_MOVIE.md §60.1 — user: the reveal
+  // highlights are "still not satisfactory"). The three string filters above are NECESSARY but not
+  // SUFFICIENT: `elements_meta.storey` is a free-text label an exporter writes per element, not the
+  // IFC spatial hierarchy. MEASURED on the canonical ~/Downloads/HHS_Office_Federated_silent.db —
+  // `spatial_structure` holds exactly 3 `IfcBuildingStorey` rows (Level 1/2/3) while `elements_meta`
+  // also carries `storey='Roof Level'` on 45 elements (22 IfcFlowSegment, 10 IfcFlowFitting, 7
+  // IfcSlab, 5 IfcBuildingElementProxy, 1 IfcEnergyConversionDevice — ZERO walls, ZERO doors, ZERO
+  // IfcSpace, no storey_walkable_raster row). That is rooftop MEP, not an occupiable storey, and it
+  // was taking a full reveal slot: on the 2026-09-11 HHS bake that is 1.01s of a 4.03s window (25%)
+  // spent on `§STOREY_REVEAL_TINT storey="Roof Level" meshesTouched=0` — a card reading "0 doors"
+  // over a building with nothing lit (0 tinted pixels on screen, every frame of the slot, measured).
+  // It also silently defeated §STOREY_REVEAL_LAST_STAYS_LIT, whose whole purpose is that the window
+  // must not END dark: the storey it kept "lit" lit nothing.
+  // So: intersect with the names the model ITSELF calls `IfcBuildingStorey`. Same table/type predicate
+  // cpe_storey_reveal.js's own room-count query already trusts (`bs.type='IfcBuildingStorey'` in
+  // storeyRevealStatsFor below) — EXTRACT, don't invent a second notion of "is a storey".
+  // DEGRADE, DON'T DISABLE, twice over: a DB whose `spatial_structure` declares NO storey at all (an
+  // older export) keeps the pre-fix list untouched, and a cross-check that would empty the list
+  // entirely (label/name drift between the two tables) is REFUSED and falls back to the full list —
+  // a silent zero-storey reveal is never an acceptable outcome of a filter. Both cases are logged.
+  // CROSS-BUILDING SAFETY, checked before writing this: ~/Downloads/Hospital_silent.db declares 64
+  // `IfcBuildingStorey` rows covering Level 1..7A, so every storey Hospital shows today survives.
   var _list = null, _listKey = null;
   A.storeyRevealList = function () {
     var key = (A.activeBuilding || A.currentBuilding || 'bld') + '|' + (A._metaGen || 0);
@@ -73,11 +95,38 @@ function setupCpeStoreyReveal(A) {
         "AND m.storey NOT LIKE '% Ceiling' AND m.storey NOT LIKE '% TOS' " +
         "GROUP BY m.storey");
     } catch (e) { rows = []; }
-    _list = (rows || []).map(function (r) { return { name: String(r[0]), z: +r[1] }; });
-    _list.sort(function (a, b) { return a.z - b.z; });
+    var all = (rows || []).map(function (r) { return { name: String(r[0]), z: +r[1] }; });
+    all.sort(function (a, b) { return a.z - b.z; });
+    var declared = null;
+    try {
+      var sr = A.dbQuery(
+        "SELECT name FROM spatial_structure WHERE type='IfcBuildingStorey' " +
+        "AND name IS NOT NULL AND name <> ''") || [];
+      if (sr.length) { declared = {}; sr.forEach(function (r) { declared[String(r[0])] = true; }); }
+    } catch (eS) { declared = null; }
+    var dropped = [], note = '';
+    if (declared) {
+      var kept = all.filter(function (s) {
+        if (declared[s.name]) return true;
+        dropped.push(s.name); return false;
+      });
+      if (kept.length) { _list = kept; }
+      else {
+        _list = all; dropped = [];
+        note = ' — CROSS-CHECK REFUSED: spatial_structure declares storeys but none matches an' +
+               ' elements_meta storey label (name drift); keeping the full list rather than' +
+               ' emptying the reveal';
+      }
+    } else {
+      _list = all;
+      note = ' (spatial_structure declares no IfcBuildingStorey — no cross-check, pre-§60.1 behaviour)';
+    }
     _listKey = key;
     console.log('§STOREY_REVEAL_LIST n=' + _list.length +
       ' storeys=[' + _list.map(function (s) { return s.name; }).join(',') + ']' +
+      (dropped.length ? ' dropped=[' + dropped.join(',') + ']' +
+        ' (§60.1 — labelled on elements but NOT an IfcBuildingStorey in spatial_structure,' +
+        ' so not a reveal slot)' : '') + note +
       (_list.length ? '' : ' — VACUOUS: no non-pseudo storey found, reveal will stay off'));
     return _list;
   };
@@ -477,3 +526,7 @@ function setupCpeStoreyReveal(A) {
   };
 }
 if (typeof window !== 'undefined') window.setupCpeStoreyReveal = setupCpeStoreyReveal;
+// Dual-mode, same convention rule_findings_film.js already uses — lets witness_storey_reveal_list.js
+// exercise A.storeyRevealList against a real in-memory sql.js DB in Node. The browser path is
+// unchanged: `window.setupCpeStoreyReveal` above is still what viewer/main.js loads.
+if (typeof module !== 'undefined' && module.exports) module.exports = setupCpeStoreyReveal;
