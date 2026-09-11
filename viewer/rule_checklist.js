@@ -46,6 +46,42 @@ function ruleTintRenderOrder(opts) {
   return (opts && opts.shineThrough) ? RULE_TINT_SHINE_RENDER_ORDER : RULE_TINT_RENDER_ORDER;
 }
 
+// ── §RULE_TINT_ROOM_GEOM (MEP_CLASH_REVEAL_MOVIE.md §67, 2026-09-11) ────────────────────────────
+// Resolve a bbox row per flagged guid. Chunked by ~900 per IN-clause, the same pattern
+// viewer/diff.js A._diffToVoRows (~L308) uses.
+// TWO TABLES, not one. element_transforms holds real IFC elements; INJECTED ROOMS (guid prefix RM_,
+// §ROOM_INJECTOR_NEEDLE) live only in spatial_structure and have NO element_transforms row —
+// measured on ~/Downloads/Hospital_silent.db: 8 RM_ rows in spatial_structure, 0 in
+// element_transforms. Both of egress's graph rules (isolated_room, circulation_distance) pick ROOMS,
+// so before this every room-based Safety finding was dropped from the 3-D tint IN SILENCE: Hospital's
+// real bake logged `§RULE_TINT_ENTER elements=1` against `§RULE_FILM picks=2` with nothing saying
+// which pick vanished. spatial_structure's center_x/y/z + size_x/y/z are the same shape as
+// element_transforms' center_* + bbox_*, so this geometry is real and extracted, never synthesised.
+// Anything resolving in NEITHER table is named in the log rather than dropped quietly.
+function ruleTintRowsFor(dbQuery, guids) {
+  var rowsByGuid = {};
+  function pull(sql, list) {
+    for (var i = 0; i < list.length; i += 900) {
+      var chunk = list.slice(i, i + 900);
+      var ph = chunk.map(function () { return '?'; }).join(',');
+      var rows;
+      try { rows = dbQuery(sql.replace('?PH?', ph), chunk); }
+      catch (e) { console.warn('\u00A7RULE_TINT query err ' + e.message); rows = []; }
+      (rows || []).forEach(function (r) { rowsByGuid[r[0]] = r; });
+    }
+  }
+  pull('SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid IN (?PH?)', guids);
+  var missing = guids.filter(function (g) { return !rowsByGuid[g]; });
+  if (missing.length) {
+    pull('SELECT guid, center_x, center_y, center_z, size_x, size_y, size_z FROM spatial_structure WHERE guid IN (?PH?)', missing);
+    var found = missing.filter(function (g) { return !!rowsByGuid[g]; });
+    if (found.length) console.log('\u00A7RULE_TINT_ROOM_GEOM n=' + found.length + ' resolved from spatial_structure (injected rooms carry no element_transforms row)');
+    var still = missing.filter(function (g) { return !rowsByGuid[g]; });
+    if (still.length) console.log('\u00A7RULE_TINT_NO_GEOM n=' + still.length + ' guids=[' + still.join(',') + '] — in neither element_transforms nor spatial_structure, no marker drawn (never silent)');
+  }
+  return rowsByGuid;
+}
+
 // ── Pure: HTML-escape for a double-quoted HTML attribute / text node ──
 function _rcEscAttr(s) {
   return String(s == null ? '' : s)
@@ -268,18 +304,7 @@ function setupRuleChecklist(A) {
       o.visible = false;
     });
 
-    // Query bbox rows for just the flagged guids, chunked by ~900 per IN-clause (same pattern as
-    // viewer/diff.js A._diffToVoRows ~line 308).
-    var rowsByGuid = {};
-    for (var i = 0; i < guids.length; i += 900) {
-      var chunk = guids.slice(i, i + 900);
-      var ph = chunk.map(function () { return '?'; }).join(',');
-      var rows;
-      try {
-        rows = A.dbQuery('SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid IN (' + ph + ')', chunk);
-      } catch (e) { console.warn('§RULE_TINT query err ' + e.message); rows = []; }
-      rows.forEach(function (r) { rowsByGuid[r[0]] = r; });
-    }
+    var rowsByGuid = ruleTintRowsFor(A.dbQuery, guids);   // §67 — two tables, see the helper
 
     var byColor = {};
     guids.forEach(function (g) {
@@ -521,6 +546,7 @@ if (typeof module !== 'undefined' && module.exports) {
     buildRuleDeepLinkUrl: _buildRuleDeepLinkUrl,
     RULE_TINT_MATERIAL_OPTS: RULE_TINT_MATERIAL_OPTS,
     ruleTintMaterialOpts: ruleTintMaterialOpts,
-    ruleTintRenderOrder: ruleTintRenderOrder
+    ruleTintRenderOrder: ruleTintRenderOrder,
+    ruleTintRowsFor: ruleTintRowsFor
   };
 }

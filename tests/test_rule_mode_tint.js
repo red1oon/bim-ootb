@@ -84,5 +84,38 @@ chk('T2d §62.4 shineThrough leaves wireframe/transparent/opacity/depthWrite unt
   shine62.wireframe === true && shine62.transparent === true && shine62.opacity === 0.2 && shine62.depthWrite === false,
   JSON.stringify(shine62));
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// ══ §RULE_TINT_ROOM_GEOM (MEP_CLASH_REVEAL_MOVIE.md §67) — real Hospital DB ═════════════════════
+// ISSUES THESE PROVE OR DISPROVE:
+//   R1 an injected room guid (RM_, spatial_structure only) resolves a bbox — before §67 it did not,
+//      so every room-based Safety finding was dropped from the 3-D tint. Fails pre-change.
+//   R2 a real IFC element still resolves from element_transforms — §67 did not break the main path.
+//   R3 a guid in NEITHER table is NAMED in the log, never dropped in silence.
+console.log('§W-RULE-TINT §67 two-table geometry (real Hospital_silent.db)');
+(function roomGeom() {
+  const dbFile = path.join(process.env.HOME, 'Downloads', 'Hospital_silent.db');
+  if (!fs.existsSync(dbFile)) {
+    console.log('  §W-RULE-TINT SKIP-DB — ' + dbFile + ' absent; R1/R2/R3 not run');
+    console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
+  }
+  const initSqlJs = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'sql.js'));
+  return initSqlJs().then(SQL => {
+    const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbFile)));
+    const dbQuery = (sql, params) => { const r = db.exec(sql, params); return r.length ? r[0].values : []; };
+    const roomGuid = dbQuery("SELECT guid FROM spatial_structure WHERE guid LIKE 'RM_%' LIMIT 1")[0][0];
+    const elemGuid = dbQuery("SELECT guid FROM element_transforms LIMIT 1")[0][0];
+    const inET = dbQuery("SELECT COUNT(*) FROM element_transforms WHERE guid = ?", [roomGuid])[0][0];
+    chk('R1-setup the room guid really has NO element_transforms row (the premise)', inET === 0, 'rows=' + inET);
+    const got = RC.ruleTintRowsFor(dbQuery, [elemGuid, roomGuid, 'NOT_A_GUID']);
+    chk('R1 §67 an injected room resolves a bbox from spatial_structure',
+      !!got[roomGuid] && got[roomGuid].length === 7, roomGuid + ' -> ' + JSON.stringify(got[roomGuid]));
+    chk('R1b its size_* land in the bbox slots as real non-zero extents (geometry, not a placeholder)',
+      !!got[roomGuid] && got[roomGuid][4] > 0 && got[roomGuid][5] > 0 && got[roomGuid][6] > 0,
+      got[roomGuid] && got[roomGuid].slice(4).join('x'));
+    chk('R2 §67 a real IFC element still resolves from element_transforms (main path intact)',
+      !!got[elemGuid], elemGuid);
+    chk('R3 §67 a guid in neither table resolves nothing and is reported, not silently dropped',
+      !got['NOT_A_GUID'], 'absent as expected');
+    console.log(`\n${pass} passed, ${fail} failed`);
+    process.exit(fail ? 1 : 0);
+  });
+})();
