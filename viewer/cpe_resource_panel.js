@@ -529,14 +529,20 @@ function setupCpeResourcePanel(A) {
   // ── Frosted plate. Cheap only HERE: _captureFrame has already drawn the rendered frame into this
   // context, so the pixels behind the panel exist and can be blurred back over themselves. ONE
   // implementation for both modes — the plate must not change tone as the content swaps.
-  function _plate(ctx, B) {
-    var glass = _glass(ctx, B.x, B.y, B.bw, B.bh, B.rad);
-    _round(ctx, B.x, B.y, B.bw, B.bh, B.rad);
+  function _plate(ctx, B) { A.cpePanelPlate(ctx, B.x, B.y, B.bw, B.bh, B.rad); }
+
+  // §MEASURE_PLATE_MATCHES_HUD (MEP_CLASH_REVEAL_MOVIE.md §65, 2026-09-11, user: "just make background
+  // same as main HUD which has no issue"). Exported so cpe_film_boxes.js's three boxes draw the SAME
+  // plate as this panel rather than a second look-alike — one implementation, so the two surfaces
+  // cannot drift apart. Same "ONE implementation for both modes" discipline this plate already kept.
+  A.cpePanelPlate = function (ctx, x, y, bw, bh, rad) {
+    var glass = _glass(ctx, x, y, bw, bh, rad);
+    _round(ctx, x, y, bw, bh, rad);
     ctx.fillStyle = glass ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.45)';
     ctx.fill();
-    _round(ctx, B.x, B.y, B.bw, B.bh, B.rad);
+    _round(ctx, x, y, bw, bh, rad);
     ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
-  }
+  };
 
   // ── The pie + ring are static for a whole calendar day, so they are rendered once into an
   // offscreen canvas and blitted. The user's own instruction: "yes reprint if no change".

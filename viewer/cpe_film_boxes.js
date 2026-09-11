@@ -129,8 +129,16 @@ function setupCpeFilmBoxes(A) {
   // §59 (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md) — optional `tint` hex lets a queued Measure
   // entry (e.g. a Structural/Egress category colour) fill this plate instead of the default black.
   // HUD/status boxes never pass it (2-arg calls, untouched, still plain black).
+  // §MEASURE_PLATE_MATCHES_HUD (MEP_CLASH_REVEAL_MOVIE.md §65, 2026-09-11, user: "just make background
+  // same as main HUD which has no issue"). The main HUD is cpe_resource_panel.js's frosted plate —
+  // blurred backdrop + rgba(0,0,0,0.28) + a 1px rgba(255,255,255,0.20) edge. Call ITS implementation
+  // (A.cpePanelPlate) rather than reproduce the values here, so the two surfaces cannot drift apart.
+  // Fallback keeps the previous flat fill for the case where cpe_resource_panel.js is not loaded —
+  // and it is also the value that panel itself falls back to when the blur is unavailable, so the
+  // two agree even then. All three boxes share this function, so all three match the main HUD.
   function plate(ctx, b) {
     var rad = Math.round(Math.min(b.h, b.w) * 0.09);
+    if (typeof A.cpePanelPlate === 'function') { A.cpePanelPlate(ctx, b.x, b.y, b.w, b.h, rad); return; }
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, rad); ctx.fill(); }
     else ctx.fillRect(b.x, b.y, b.w, b.h);

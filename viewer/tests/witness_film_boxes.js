@@ -226,6 +226,27 @@ if (!totalText) console.log('§WITNESS_FILM_BOXES INCONCLUSIVE — no text was d
   mk('P3b §61 intact — no ink still draws the blue title',
      pt2.title === '#4fc3f7', String(pt2.title));
 
+  // §65 — when the main HUD's plate is available the boxes must DELEGATE to it, not paint a
+  // look-alike. The checks above exercise the fallback (this mock A has no cpePanelPlate).
+  (function delegates() {
+    const calls = [];
+    const saved = A.cpePanelPlate;
+    A.cpePanelPlate = (ctx, x, y, w, h, rad) => { calls.push({ x, y, w, h, rad }); };
+    const c = recCtx();
+    A.filmBoxesMeasureReset();
+    A.filmBoxesArm(W, H, armed);
+    A.filmBoxesMeasurePost('Structural — column continuity', ['a', 'b', 'c'], '#ffaa33');
+    A.filmBoxesDrawMeasure(c, W, H, armed, 10);
+    A.cpePanelPlate = saved;
+    const L = A.filmBoxesLayout(W, H, armed);
+    mk('P4 §65 the Measure box delegates its background to the main HUD plate (A.cpePanelPlate)',
+       calls.length === 1 && calls[0].x === L.measure.x && calls[0].y === L.measure.y &&
+       calls[0].w === L.measure.w && calls[0].h === L.measure.h, JSON.stringify(calls));
+    mk('P4b §65 and paints NO fill of its own when delegating (no look-alike plate underneath)',
+       c.draws.filter(d => d.kind === 'rect').length === 0,
+       JSON.stringify(c.draws.filter(d => d.kind === 'rect').map(d => d.fill)));
+  })();
+
   const bad = MB.filter(m => !m.ok);
   console.log('§WITNESS_MEASURE_TITLE_INK pass=' + (MB.length - bad.length) + ' fail=' + bad.length);
   if (bad.length) throw new Error('§61 §MEASURE_TITLE_INK FAILED: ' + bad.map(m => m.n).join(' | '));
