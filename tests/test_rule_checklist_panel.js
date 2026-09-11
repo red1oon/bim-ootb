@@ -99,7 +99,7 @@ chk('(d) all 50 individual rows are still present underneath (drill-down not los
   (manyResult.html.match(/data-rc-guid="beam-/g) || []).length === 50);
 chk('(d) the rule-set body is collapsed by default (display:none)', (() => {
   const start = manyResult.html.indexOf('class="rc-ruleset-header"');
-  const body = manyResult.html.slice(start, start + 600).match(/rc-ruleset-body" style="display:(\w+)/);
+  const body = manyResult.html.slice(start).match(/rc-ruleset-body" style="display:(\w+)/);
   return body && body[1] === 'none';
 })());
 chk('(d) mixed rules within one severity tier get one rule-set header EACH, not merged',
@@ -111,6 +111,15 @@ chk('(d) mixed rules within one severity tier get one rule-set header EACH, not 
     ];
     const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: mixed }, null);
     return r.html.indexOf('Floating Member &mdash; 2 flagged') >= 0 && r.html.indexOf('Column Continuity &mdash; 1 flagged') >= 0;
+  })());
+chk('(d) rule-set header click also fits the WHOLE set in frame (APP.zoomToGuids with every member guid)',
+  (() => {
+    const setRows = [
+      { guid: 'x1', ifc_class: 'IfcBeam', name: 'X1', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
+      { guid: 'x2', ifc_class: 'IfcBeam', name: 'X2', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
+    ];
+    const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: setRows }, null);
+    return r.html.indexOf("APP.zoomToGuids('x1,x2'.split(','))") >= 0;
   })());
 
 console.log(`\n${pass} passed, ${fail} failed`);

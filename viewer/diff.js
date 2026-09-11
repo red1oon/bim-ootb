@@ -228,6 +228,42 @@ function setupDiff(A) {
     console.log('[S225] §ZOOM guid=' + guid.substring(0, 12));
   };
 
+  // Zoom camera to fit a SET of meshes by guid — same fit math as zoomToGuid above (union Box3
+  // instead of one mesh's), no per-element highlight (a highlight per member of a 200+-element
+  // rule set would be clutter, not signal — see rule_checklist.js's own Mode-tint for the
+  // "highlight every flagged element" case, a separate deliberate toggle, not bundled here).
+  // Consumer: viewer/rule_checklist.js's rule-set header click ("zoom to fit this whole set").
+  A.zoomToGuids = function(guids) {
+    guids = (guids || []).filter(Boolean);
+    if (!guids.length) return;
+    var guidSet = {};
+    guids.forEach(function(g) { guidSet[g] = true; });
+    var targets = A.collectMeshes(function(o) { return o.isMesh && guidSet[o.userData.guid]; });
+    if (!targets.length) { console.log('[S225] §ZOOM_SET_MISS n=' + guids.length); return; }
+
+    var box = new THREE.Box3();
+    targets.forEach(function(t) { box.expandByObject(t); });
+    var center = box.getCenter(new THREE.Vector3());
+    var size = box.getSize(new THREE.Vector3());
+    var dist = Math.max(size.x, size.y, size.z) * 1.5 + 2; // 1.5x (not 3x): a set already spans real
+    // distance by construction — a single-element zoom's 3x margin left a multi-storey set's fit
+    // needlessly distant, so the multiplier is proportionally tighter here.
+    var end = center.clone().add(new THREE.Vector3(dist * 0.5, dist * 0.5, dist * 0.7));
+    var start = A.camera.position.clone();
+    var t = 0;
+    function anim() {
+      t += 0.04;
+      if (t > 1) t = 1;
+      var e = 1 - Math.pow(1 - t, 3);
+      A.camera.position.lerpVectors(start, end, e);
+      A.controls.target.copy(center);
+      A.controls.update();
+      if (t < 1) requestAnimationFrame(anim);
+    }
+    anim();
+    console.log('[S225] §ZOOM_SET n=' + targets.length + '/' + guids.length);
+  };
+
   // Look up element info from either DB
   function _elInfo(guid) {
     var dbs = [A.diffDb, A.db];
