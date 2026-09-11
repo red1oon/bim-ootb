@@ -254,6 +254,8 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="arc_editable.js?v=5" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
 <script src="sdg_gate.js?v=1" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
+<!-- §DAGEVU: relationship-edge engine (anchor-default hosted openings) — wraps sdg_cascade + sdg_gate above. -->
+<script src="dagevu_engine.js?v=1" onerror="console.warn('§DAGEVU LOAD_FAIL dagevu_engine.js')"></script>
 <!-- §SAVE-1/2 (MODELLER_SAVE_COMPLETEIT.md): Save = validated snapshot promotion. sdg_save.js = pure
      classify/plan-op core (auto-heal planning); save_catalog.js = the shared landing-page IndexedDB
      versions[]/latestVersion catalog writer (same store import_own.js reads/writes). -->
@@ -1878,12 +1880,13 @@ function gmPreviewLine(axis, coord) {
 // host (§STRETCH-RIDE induced move, fixed here to tint correctly instead of showing their own raw — possibly
 // WRONG — command); excludedFids = green, always wins over blue/orange.
 const GM_GREEN = 0x1ea83c;
+const GM_RED = 0xc81e1e;        // §DAGEVU: a refused host/opening pair (the drag would push the held opening out of its wall)
 function gmClearTints() {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   g.children.forEach(m => { if (m.isMesh && m.material && m.material.emissive) m.material.emissive.setHex(0x000000); });
 }
-function gmTint(commands, riders, excludedFids) {
-  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { t: 0, s: 0, x: 0 };
+function gmTint(commands, riders, excludedFids, dagevu) {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { t: 0, s: 0, x: 0, h: 0, r: 0 };
   // §SCALE_CHECK_FIX (Finding 1): g.children.find() per command was an O(n) lookup per command per frame — at
   // Terminal scale (35,818 elements) this compounded on top of the engine rebuild. bonsai_gridmove.js now caches
   // a fid->mesh map ONCE per drag session (built alongside the attach-map engine on gridline-grab); reuse it here
@@ -1912,8 +1915,14 @@ function gmTint(commands, riders, excludedFids) {
     if (!m || !m.material || !m.material.emissive) return;
     _emis(m, GM_GREEN); x++;
   });
+  // §DAGEVU (SPEC_DAGEVU_ENGINE.md §4): a HELD opening (anchor default — stays put while its wall's length changes)
+  // reads green like any non-mover; a REFUSED pair (the dictated end would cross the opening) reads red on BOTH the
+  // wall and the opening — the commit will refuse, so the preview must say so before release.
+  let h = 0, r = 0;
+  ((dagevu && dagevu.held) || []).forEach(fid => { const m = meshFor(fid); if (m && m.material && m.material.emissive) { _emis(m, GM_GREEN); h++; } });
+  ((dagevu && dagevu.refusals) || []).forEach(rf => { [rf.hostFid, rf.fillingFid].forEach(fid => { const m = meshFor(fid); if (m && m.material && m.material.emissive) _emis(m, GM_RED); }); r++; });
   if (window.A && A.requestRender) A.requestRender();
-  return { t, s, x };
+  return { t, s, x, h, r };
 }
 function enterGridMove() {
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
@@ -1921,7 +1930,7 @@ function enterGridMove() {
   // §GREEN-EXCLUDE: fresh empty opt-out set every session — seeded empty, scoped to THIS drag session only (not
   // persisted, not a per-user default — GRID_PREDRAG_GREENORANGE_PREVIEW.md explicitly defers that).
   if (window.Bonsai.gridmove && window.Bonsai.gridmove.resetOverrides) window.Bonsai.gridmove.resetOverrides();
-  setStat('move grid: hover a gridline, drag it — affected walls preview (blue=move, orange=stretch, ctrl+click=opt-out green)');
+  setStat('move grid: hover a gridline, drag it — affected walls preview (blue=move, orange=stretch, ctrl+click wall=opt-out green, ctrl+click opening=anchor↔ride)');
 }
 function exitGridMove() {
   gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true; applyModeCursor();
@@ -1949,14 +1958,15 @@ canvas.addEventListener('pointerdown', (e) => {
         // reflected exactly as commit() would see it (riders + overrides), not just this one mesh.
         try {
           const preview = window.Bonsai.gridmove.previewCommands(_dragGrid.id, _dragGrid.delta);
-          const r2 = gmTint(preview.commands, preview.riders, preview.excluded);
-          setStat('grid ' + _dragGrid.id + ' Δ' + _dragGrid.delta.toFixed(2) + ' — ' + r2.t + ' move, ' + r2.s + ' stretch, ' + r2.x + ' excluded(green)');
+          const r2 = gmTint(preview.commands, preview.riders, preview.excluded, preview);
+          setStat(gmStatText(_dragGrid, r2, preview));
         } catch (err) { }
       } else {
         // no gridline grabbed yet — nothing to recompute against; give immediate feedback on this one mesh.
         _emis(hit.object, nowExcluded ? GM_GREEN : 0x000000);
         if (window.A && A.requestRender) A.requestRender();
-        setStat((nowExcluded ? 'excluded (green) ' : 're-included (orange) ') + '#' + fid + ' for this grid-move — now hover/drag a gridline');
+        const isOpening = window.Bonsai.gridmove.isFilling && window.Bonsai.gridmove.isFilling(fid);   // §DAGEVU: opening ⇒ anchor/ride, wall ⇒ exclude/include
+        setStat((isOpening ? (nowExcluded ? 'opening held (anchor) ' : 'opening rides (opt-in) ') : (nowExcluded ? 'excluded (green) ' : 're-included (orange) ')) + '#' + fid + ' for this grid-move — now hover/drag a gridline');
       }
     }
     return;   // ctrl+click never grabs a gridline
@@ -1997,12 +2007,21 @@ canvas.addEventListener('pointermove', (e) => {
   // PREVIEW which walls move/stretch — previewCommands() applies §STRETCH-RIDE (openings ride, never their own
   // raw command) AND §GREEN-EXCLUDE (opt-out) BEFORE tinting, so this can never disagree with commit() below
   // (both call the SAME bonsai_gridmove.js pipeline).
+  let lbl = _dragGrid.id + ' Δ' + (_dragGrid.delta >= 0 ? '+' : '') + _dragGrid.delta.toFixed(2) + 'm';
   try { const preview = window.Bonsai.gridmove.previewCommands(_dragGrid.id, _dragGrid.delta);
-    const r2 = gmTint(preview.commands, preview.riders, preview.excluded);
-    setStat('grid ' + _dragGrid.id + ' Δ' + _dragGrid.delta.toFixed(2) + ' — ' + r2.t + ' move, ' + r2.s + ' stretch' +
-      (r2.x ? ', ' + r2.x + ' excluded(green)' : '')); } catch (err) { }
-  if (typeof dimLabelShow === 'function') dimLabelShow(_dragGrid.id + ' Δ' + (_dragGrid.delta >= 0 ? '+' : '') + _dragGrid.delta.toFixed(2) + 'm', hit);   // §V7
+    const r2 = gmTint(preview.commands, preview.riders, preview.excluded, preview);
+    setStat(gmStatText(_dragGrid, r2, preview));
+    if (preview.dimLabel) lbl += ' · ' + preview.dimLabel;   // §DAGEVU: the engine's measured readout (wall w→w', held/ride/REFUSED) — the SAME string the status line carries
+  } catch (err) { }
+  if (typeof dimLabelShow === 'function') dimLabelShow(lbl, hit);   // §V7
 });
+// §DAGEVU: ONE status-line composer for the pointermove frame AND the mid-drag ctrl+click recompute (both print
+// the engine's dimLabel verbatim — never a second math path, per §V7's own rule).
+function gmStatText(dg, r2, preview) {
+  return 'grid ' + dg.id + ' Δ' + dg.delta.toFixed(2) + ' — ' + r2.t + ' move, ' + r2.s + ' stretch' +
+    (r2.x ? ', ' + r2.x + ' excluded(green)' : '') + (r2.h ? ', ' + r2.h + ' held' : '') +
+    (r2.r ? ', ' + r2.r + ' REFUSED(red)' : '') + (preview.dimLabel ? ' · ' + preview.dimLabel : '');
+}
 async function commitGridMove() {
   if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7 (also covers the FAIL path below)
   if (!_dragGrid || Math.abs(_dragGrid.delta || 0) < 0.05) { exitGridMove(); return; }

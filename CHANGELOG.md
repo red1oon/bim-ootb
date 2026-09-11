@@ -4,6 +4,14 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.64.0](https://github.com/red1oon/bim-ootb/compare/v1.63.0...v1.64.0) (2026-09-08)
+
+
+### ✨ Features
+
+* **cinema:** Measure in the film — Alt-C Measure checkbox, datum, slab + linear beats, opening gate (§24–§36) ([#1697](https://github.com/red1oon/bim-ootb/issues/1697)) ([5b3d9ef](https://github.com/red1oon/bim-ootb/commit/5b3d9ef1c7d65f459f4a6cfe0ffb2c147314b4b7))
+* **cinema:** Measure to the end — §29 indoor beats, §37 walkable storey cards + datum second life, datum Z-anchor fix ([#1699](https://github.com/red1oon/bim-ootb/issues/1699)) ([f1ac7ce](https://github.com/red1oon/bim-ootb/commit/f1ac7ce1f921265ae6c1a4b7848596c472843ac7))
+
 ## [1.63.0](https://github.com/red1oon/bim-ootb/compare/v1.62.0...v1.63.0) (2026-09-07)
 
 

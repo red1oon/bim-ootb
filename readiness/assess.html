@@ -427,9 +427,9 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
 </style>
 
 <div class="mockbar" id="mockbar">
-  <span>⚠ Research instrument, v0.1 — the model check is live; scoring is not wired yet</span>
+  <span>⚠ Research instrument, v0.1 — the model check, readiness-profile scoring, and anonymous submission are all live; gap analysis and recommendations are still illustrative example content</span>
   <span>·</span>
-  <span id="buildstamp">build 2026-08-26T09:49Z</span>
+  <span id="buildstamp">build 2026-09-09T22:54Z</span>
 </div>
 
 <div class="shell">
@@ -477,8 +477,10 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
 
 <script>
 /* ============================================================
-   MOCKUP ONLY — canned data, no scoring, no parsing, no network.
-   Real logic specified in SCORING_SPEC.md; wiring comes later.
+   Track A readiness-profile scoring (computeDims, §6.1-§6.4) and Track B model parsing
+   (metrics_worker.js) are both real. Still canned: the gap-analysis/recommendations cards
+   and the two summary indices (§6.6, weights uncalibrated) below the profile chart, and
+   there is no submission endpoint. See SCORING_SPEC.md §6.7 and §12 for what's still open.
    ============================================================ */
 
 /* Anchors deep-link into sources.html, which carries the clause each was verified against and
@@ -510,15 +512,9 @@ function q(id, title, tip, anchor, list) {
     TIP(tip, anchor) + '</div>' + opts(id, list) + '</div>';
 }
 
-/* ---------- CANNED RESULTS ---------- */
-/* target = proportionate level for an 11-50 firm, engineering, mixed projects (§6.5) */
-var DIMS = [
-  { name: 'Governance',               measured: 2.0, claimed: 2.25, target: 3 },
-  { name: 'People and skills',        measured: 1.5, claimed: 1.75, target: 2 },
-  { name: 'Technology',               measured: 2.8, claimed: 3.00, target: 3 },
-  { name: 'Data and standards',       measured: 1.0, claimed: 3.25, target: 3 },
-  { name: 'Organisational processes', measured: 1.8, claimed: 2.00, target: 2 }
-];
+/* Readiness-profile scoring (§6.1-§6.4) lives in computeDims(), defined below once STATE and
+   DIMENSIONS exist. No canned results array any more — chartRows() and SCREENS.results both
+   call computeDims() fresh on every render. */
 
 var SCREENS = {};
 
@@ -550,7 +546,7 @@ SCREENS.intro =
     'browser and is never uploaded &mdash; you can see exactly what would leave your device at any point.</p>' +
     '<label class="chk" style="margin-top:14px"><input type="checkbox" checked>' +
       '<span>Answer anonymously. No name, firm, email, or project details are collected.</span></label>' +
-    '<label class="chk"><input type="checkbox">' +
+    '<label class="chk"><input type="checkbox" id="includebenchmark">' +
       '<span>Include my (anonymous) results in the industry benchmark, so I can see how I compare. ' +
       'You are asked to consent separately, at the end, once you can see exactly what would be sent.</span></label>' +
   '</div>' +
@@ -564,19 +560,25 @@ SCREENS.intro =
     'questions across five dimensions, each naming the published standard it is drawn from. A fixed ' +
     'set on purpose &mdash; a score is only reproducible if everyone answers the same things.</p>' +
     '<p class="small"><strong>2 &middot; What your model shows.</strong> Optionally, one IFC file, ' +
-    'read inside your browser and never uploaded. It is measured, and it is opened &mdash; by ' +
-    'software that is not the software you authored it in. That is one of these questions ' +
-    '(<span class="mono">A3</span>) performed rather than asked.</p>' +
-    '<p class="small"><strong>3 &middot; Where the two disagree.</strong> A readiness profile, a gap ' +
-    'analysis and a set of recommendations, plus the places the model did not support the answer ' +
-    'given. In between sits an optional <strong>guided conversation</strong>: the toolkit builds a ' +
+    'read inside your browser and never uploaded. It is measured, then opened in a free, ' +
+    'independent OpenBIM project &mdash; not the software you built it in. That answers, by doing ' +
+    'it, one of the questions later in this assessment (<span class="mono">A3</span>): have you ' +
+    'ever taken a finished model out of your BIM software and opened it elsewhere?</p>' +
+    '<p class="small"><strong>3 &middot; Where the two disagree.</strong> A readiness profile ' +
+    '&mdash; five dimension scores, never one combined number &mdash; a gap analysis measured ' +
+    'against a target proportionate to your firm, and a set of recommendations, plus the places ' +
+    'the model did not support the answer given. In between sits an optional ' +
+    '<strong>guided conversation</strong>: the toolkit builds a ' +
     'prompt from your answers and you run it in whatever AI service you already use. No account ' +
     'here, no API key, no cost, and it changes none of your scores.</p>' +
     '<p class="small"><strong>This is an assessment. The app behind step 2 is how you check it</strong> ' +
     '&mdash; it is open source and free, a worked example rather than the subject of the research.</p>' +
-    '<p class="small">Everything is at <strong>v0.1</strong> and mocked: no answer is scored yet, no ' +
-    'file is read yet, and nothing is transmitted. What the numbers <em>will</em> mean is set out in ' +
-    '<a href="proposal.html">the research proposal</a>.</p>' +
+    '<p class="small">Still at <strong>v0.1</strong>. Your readiness profile (the five dimension ' +
+    'scores above) and the model check are both real, computed from what you actually answer and the ' +
+    'file you supply. The gap analysis, recommendations and the two summary indices further down are ' +
+    'still illustrative example content, and nothing is transmitted anywhere &mdash; see the payload ' +
+    'card before the results screen for exactly what that will mean once it is. What the full set of ' +
+    'numbers will mean is set out in <a href="proposal.html">the research proposal</a>.</p>' +
   '</div>' +
 
   '<p class="small" style="margin-top:20px">This toolkit is the artifact of a funded research ' +
@@ -744,7 +746,7 @@ var DIMENSIONS = [
     o:['Paper or PDF drawings only','Native model files, as asked','IFC alongside other formats','IFC to the authority&rsquo;s named schema, every submission','Validated against the authority&rsquo;s criteria before sending','Validation findings change our authoring templates'], na:true }
 ]},
 { key:'B', name:'People and skills', blurb:'Where open-standards knowledge sits, and what happens without it', items:[
-  { id:'B1', pre:2, q:'Who in the firm could explain what an IFC property set is?',
+  { id:'B1', pre:2, q:'Who in the firm could explain what an IFC <a href="faq.html#gt-property-set">property set</a> is?',
     tip:'This item records whether open-standards understanding sits with one person or is distributed &mdash; that difference determines how fragile the capability is.',
     anchor:'ISO 19650-1 &middot; capability and capacity',
     cl:'§3.3.18 · §3.3.19 · Clause 8', tier:'T1',
@@ -788,7 +790,7 @@ var DIMENSIONS = [
     o:['Never considered it','Discussed only','Someone trialled one','Evaluation is a defined periodic exercise','Switching cost is quantified','That figure informs procurement'] }
 ]},
 { key:'D', name:'Data and standards', blurb:'What the model contains', items:[
-  { id:'D1', pre:4, q:'Do your models use a classification system?',
+  { id:'D1', pre:4, q:'Do your models use a <a href="faq.html#gt-classification">classification</a> system?',
     tip:'A file-naming convention is not a classification system. Both are useful and answer different questions &mdash; the gap analysis distinguishes between them.',
     anchor:'ISO 12006-2 &middot; framework for classification',
     cl:'Clause 1 Scope · Clause 5', tier:'T1',
@@ -814,7 +816,7 @@ var DIMENSIONS = [
     tip:'This item distinguishes a location where files are stored from an environment that manages versions, status and access.',
     anchor:'ISO 19650-1 &middot; Common Data Environment',
     cl:'§3.3.15 · Clause 12, states 12.2–12.7', tier:'T1',
-    o:['Email or file transfer','A shared drive','A CDE for documents','A CDE handling models, with defined states','CDE compliance is measured','Measurement drives CDE configuration'] },
+    o:['Email or file transfer','A shared drive','A <a href="faq.html#gt-cde">CDE</a> for documents','A CDE handling models, with defined states','CDE compliance is measured','Measurement drives CDE configuration'] },
   { id:'E2', pre:3, q:'Are model exchanges scheduled?',
     tip:'Scheduled exchange allows other disciplines to plan around the delivery. Ad hoc exchange on request is common.',
     anchor:'ISO 19650-2 &middot; information delivery planning',
@@ -876,8 +878,8 @@ SCREENS.model = function () { return '' +
   '<p class="sub small">This is question <span class="mono">A3</span> performed instead of asked: ' +
   '<em>have you ever taken a finished model out of your BIM software and opened it elsewhere?</em> ' +
   'A file you choose will be read <strong>here, in your browser</strong>, never uploaded &mdash; ' +
-  'measured against what you told us, and opened by software that is not the software you authored ' +
-  'it in.</p>' +
+  'measured against what you told us, then opened in a free, independent OpenBIM project, not the ' +
+  'one you authored it in.</p>' +
   '<input type="file" id="ifcfile" accept=".ifc,.IFC" hidden>' +
   '<div class="drop" id="drop" tabindex="0" role="button" ' +
        'aria-label="Choose an IFC file, or drop one here">' +
@@ -902,8 +904,8 @@ SCREENS.model = function () { return '' +
         '</div>' +
         '<button class="btn sec sm" type="button" id="rechoose">Choose a different file</button>' +
       '</div>' +
-      '<p class="small" style="margin:12px 0 0;text-align:left">This is your model, read by ' +
-      'software that is not the software you authored it in. That is question ' +
+      '<p class="small" style="margin:12px 0 0;text-align:left">This is your model, opened in a ' +
+      'free, independent OpenBIM project, not the one you authored it in. That is question ' +
       '<span class="mono">A3</span>, answered.</p>' +
 
       /* §HANDOVER — the visitor leaves holding their own data. */
@@ -952,9 +954,9 @@ SCREENS.model = function () { return '' +
     '<p class="small" style="margin:9px 0 13px">Numbers and fixed categories only. No file, no names, no GUIDs, ' +
     'no coordinates, no free text.</p>' +
     '<pre class="payload" id="payloadbox">{\n' +
-      '  "locale":        "AE",\n' +
-      '  "firm_size":     "11-50",\n' +
-      '  "firm_type":     "engineering",\n' +
+      '  "locale":        "' + ctxValue('c1', 'United Arab Emirates') + '",\n' +
+      '  "firm_size":     "' + firmSizeValue() + '",\n' +
+      '  "firm_type":     "' + ctxValue('c4', 'Engineering (structural / MEP)') + '",\n' +
       '  "answers":       [' + answerVector() + '],\n' + payloadModelLines() +
       '  "toolkit":       "v0.1",\n' +
       '  "kb":            "core-0.1 / ae-v1"' + (LANGS[LANG].pack === 'en-v1' ? '' : ',') + '\n' +
@@ -966,11 +968,7 @@ SCREENS.model = function () { return '' +
      so consent is asked separately from the disclaimer, at the point of collection. */
   '<div class="card">' +
     '<h3>' + T('consent.h3', 'Taking part in the research') + '</h3>' +
-    '<div class="call warnc">' + T('consent.endpoint', '<strong>Version 0.1 has no submission endpoint.</strong> Nothing is ' +
-    'transmitted from this page, and no response data is collected or stored by any party. The ' +
-    'checkbox below is part of the mocked flow. This consent statement is published now, ahead of ' +
-    'that capability, so it can be reviewed before it ever governs a real submission.') + '</div>' +
-    '<p class="small" style="margin:12px 0 13px">' + T('consent.intro', 'When submission does exist, sending the payload above ' +
+    '<p class="small" style="margin:12px 0 13px">' + T('consent.intro', 'Sending the payload above ' +
     'will make you a participant in a funded research study on these terms.') + '</p>' +
     '<dl class="consent">' +
       '<dt>' + T('consent.who_dt', 'Who is running it') + '</dt>' +
@@ -992,18 +990,23 @@ SCREENS.model = function () { return '' +
       '<dd>' + T('consent.kept_dd', 'For the life of the research project and any publication arising from it. Aggregates may be ' +
         'published as supplementary data; the individual responses behind them are not republished.') + '</dd>' +
       '<dt>' + T('consent.ethics_dt', 'Ethics approval') + '</dt>' +
-      '<dd><span class="todo">' + T('consent.ethics_todo', 'ethics approval reference &mdash; to be inserted') + '</span> ' + T('consent.ethics_dd', 'Any ethics ' +
-        'determination for the study rests with the researcher&rsquo;s institution. The reference will ' +
-        'appear here before the first submission is ever accepted.') + '</dd>' +
+      '<dd>' + T('consent.ethics_dd', 'Not required. The researcher has determined that this study ' +
+        'does not require formal ethics committee review.') + '</dd>' +
       '<dt>' + T('consent.contact_dt', 'Questions or complaints') + '</dt>' +
-      '<dd><span class="todo">' + T('consent.contact_todo', 'contact address &mdash; to be inserted') + '</span></dd>' +
+      '<dd>' + T('consent.contact_dd', 'Mohd Faizal Bin Yusof &mdash; <a href="mailto:yfaizal@gmail.com" id="contactlink">yfaizal@gmail.com</a>') + '</dd>' +
     '</dl>' +
-    '<label class="chk" style="margin-top:16px"><input type="checkbox">' +
+    '<label class="chk" style="margin-top:16px"><input type="checkbox" id="submitconsent"' +
+      ((document.getElementById('includebenchmark') || {}).checked ? ' checked' : '') + '>' +
       '<span>' + T('consent.checkbox', 'I have read the above and consent to my anonymous responses being used for research. ' +
       '<strong>Optional</strong> &mdash; your report is complete either way.') + '</span></label>' +
     '<p class="small" style="margin-top:11px">' + T('consent.footer', 'Full declarations &mdash; funding, competing interests, ' +
     'data availability, ethics, use of generative AI, licence &mdash; are at ' +
     '<a href="disclaimer.html">the Disclaimer Notice</a>.') + '</p>' +
+    '<div style="margin-top:14px">' +
+      '<button class="btn" id="submitbtn" type="button"' +
+        (((document.getElementById('includebenchmark') || {}).checked) ? '' : ' disabled') + '>Submit anonymously</button>' +
+      '<span id="submitstatus" class="small" style="margin-left:10px"></span>' +
+    '</div>' +
   '</div>' +
 
   '<div class="actions">' +
@@ -1014,7 +1017,16 @@ SCREENS.model = function () { return '' +
 
 /* ---------- 5 · RESULTS ---------- */
 function chartRows() {
+  var DIMS = computeDims();
   return DIMS.map(function (d) {
+    if (d.insufficient) {
+      var t0 = (d.target / 5 * 100).toFixed(1);
+      return '<div class="crow" title="' + d.name + ' — not enough answers to assess (' +
+        d.answered + ' of 4 usable)">' +
+        '<div class="cname">' + d.name + '</div>' +
+        '<div class="ctrack"><div class="ctarget" style="width:' + t0 + '%"></div></div>' +
+        '<div class="cval">insufficient evidence</div></div>';
+    }
     var w = (d.measured / 5 * 100).toFixed(1), t = (d.target / 5 * 100).toFixed(1);
     var met = d.measured >= d.target;
     var short = (d.target - d.measured);
@@ -1029,7 +1041,7 @@ function chartRows() {
   }).join('');
 }
 
-SCREENS.results =
+SCREENS.results = function () { var DIMS = computeDims(); return (
   '<p class="eyebrow">Step 11 of 11 &middot; Your results</p>' +
   '<h2>Results</h2>' +
   '<p class="sub small">Two numbers per dimension: what your answers claimed, and what the evidence supports. ' +
@@ -1037,7 +1049,7 @@ SCREENS.results =
 
   '<div class="card">' +
     '<h3>Readiness profile</h3>' +
-    '<p class="small" style="margin-top:5px">ISO/IEC 33020 capability levels 0&ndash;5, against a target proportionate to your firm</p>' +
+    '<p class="small" style="margin-top:5px">ISO/IEC 33020 <a href="faq.html#gt-capability-level">capability levels</a> 0&ndash;5, against a target proportionate to your firm</p>' +
     '<div class="chart">' + chartRows() +
       '<div class="cscale"><span></span><div class="cticks">' +
         '<span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div><span></span></div>' +
@@ -1050,6 +1062,10 @@ SCREENS.results =
     '<details class="tvwrap"><summary>View as a table</summary>' +
       '<table class="tv"><thead><tr><th>Dimension</th><th>Assessed</th><th>Target</th><th>Gap</th><th>You said</th></tr></thead><tbody>' +
       DIMS.map(function (d) {
+        if (d.insufficient) {
+          return '<tr><td>' + d.name + '</td><td class="n">insufficient evidence</td><td class="n">' +
+            d.target + '</td><td class="n">&mdash;</td><td class="n">' + d.answered + ' of 4</td></tr>';
+        }
         var g = d.target - d.measured;
         return '<tr><td>' + d.name + '</td><td class="n">' + d.measured.toFixed(1) + '</td><td class="n">' +
           d.target + '</td><td class="n">' + (g <= 0 ? 'met' : '&minus;' + g.toFixed(1)) + '</td><td class="n">' +
@@ -1090,7 +1106,7 @@ SCREENS.results =
       'tool. The question should be put to your insurer in writing.</p></div></li>' +
       '<li><div><h4>No named accountable party for information</h4>' +
       '<p>Governance sits below its proportionate target and no one role carries information management ' +
-      'with authority. Under ISO 19650 that accountability does not disappear &mdash; it defaults upward to ' +
+      'with authority. Under <a href="faq.html#gt-iso19650">ISO 19650</a> that accountability does not disappear &mdash; it defaults upward to ' +
       'whoever signed.</p></div></li>' +
       '<li><div><h4>Single-vendor continuity</h4>' +
       '<p>No model has been retrieved from your authoring tool and opened elsewhere, so the cost and ' +
@@ -1102,7 +1118,7 @@ SCREENS.results =
     '<h3>Recommendations</h3>' +
     '<p class="small" style="margin-top:5px">Each recommendation is placed in one of the three categories &mdash; capability development, standards adoption, implementation planning &mdash; and the set is ordered by how much each unlocks downstream</p>' +
     '<ol class="fixes">' +
-      '<li><div><span class="cat">Standards adoption</span><h4>Add spaces to the model</h4><p>Zero IfcSpace entities. Rooms are required by downstream ' +
+      '<li><div><span class="cat">Standards adoption</span><h4>Add spaces to the model</h4><p>Zero <a href="faq.html#gt-ifcspace">IfcSpace</a> entities. Rooms are required by downstream ' +
       'uses &mdash; FM, area schedules, analysis. A consumer that requires spaces cannot use this file.</p></div></li>' +
       '<li><div><span class="cat plan">Implementation planning</span><h4>Classify at type level, not element level</h4><p>234 of 339 types carry no code. Coding types ' +
       'rather than 12,847 elements is roughly a day of work instead of a month.</p></div></li>' +
@@ -1117,19 +1133,20 @@ SCREENS.results =
 
   '<div class="idx2">' +
     '<div class="ix"><span class="who">Can we start?</span>' +
-      '<div class="v">1.9<small> / 5</small></div>' +
+      '<div class="v">&mdash;</div>' +
       '<div style="font-weight:600;font-size:14px">Entry readiness</div>' +
-      '<p>The open route is reachable, but not with this model as it stands.</p></div>' +
+      '<p>Not yet calculated &mdash; this index&rsquo;s item weights (§6.6) are not calibrated. It will ' +
+      'read from your five dimension scores above once they are.</p></div>' +
     '<div class="ix"><span class="who">How exposed are we?</span>' +
-      '<div class="v">3.9<small> / 5</small></div>' +
+      '<div class="v">&mdash;</div>' +
       '<div style="font-weight:600;font-size:14px">Lock-in exposure</div>' +
-      '<p>High. No model has been retrieved from your authoring tool and re-opened elsewhere.</p></div>' +
+      '<p>Not yet calculated, same reason. A3 &mdash; whether a model has been opened outside its ' +
+      'authoring tool &mdash; is one of this index&rsquo;s inputs.</p></div>' +
   '</div>' +
 
   '<div class="card flat" style="background:var(--surface-2)">' +
     '<h3>Compare yourself to others</h3>' +
-    '<p class="small" style="margin-top:8px">No assessments have been submitted yet &mdash; yours would be the ' +
-    'first. As responses accumulate this becomes an industry picture built from practitioner reports.</p>' +
+    comparisonHTML() +
   '</div>' +
 
     '<div id="aibox"></div>' +
@@ -1187,7 +1204,8 @@ SCREENS.results =
   '<p class="small mono" style="margin-top:20px;padding-top:14px;border-top:1px solid var(--rule)">' +
   'core-0.1 · locale ae-v1 · toolkit v0.1 · terms v0.1 acknowledged · scope: one office or region · scoring is deterministic &mdash; ' +
   'same answers and same versions always produce this same result. Technical readiness assessment only: ' +
-  'self-reported, unaudited, qualifies nothing and no one, confers no certification or professional status.</p>';
+  'self-reported, unaudited, qualifies nothing and no one, confers no certification or professional status.</p>'
+); };
 
 
 
@@ -1634,7 +1652,7 @@ var PROMPT_VERSION = 'bridge-v2';
 
 /* Answer state. Seeded from the mockup's canned values, then updated for real as the
    respondent answers, so the composed prompt reflects what they actually said. */
-var STATE = { answers: {}, findings: null, rejected: 0 };
+var STATE = { answers: {}, findings: null, rejected: 0, comparison: null };
 DIMENSIONS.forEach(function (d) {
   d.items.forEach(function (it) { STATE.answers[it.id] = it.pre; });
 });
@@ -1651,7 +1669,9 @@ function itemById(id) {
    object key order. Seeds on lowest absolute level; switch to largest gap against the
    proportionate target once threshold calibration lands (§ROADMAP action 2). */
 function weakest(n) {
-  return Object.keys(STATE.answers).sort(function (a, b) {
+  return Object.keys(STATE.answers).filter(function (id) {
+    return typeof STATE.answers[id] === 'number'; /* 'na'/'dk' aren't a level, can't be "weakest" */
+  }).sort(function (a, b) {
     var d = STATE.answers[a] - STATE.answers[b];
     return d !== 0 ? d : (a < b ? -1 : 1);
   }).slice(0, n);
@@ -1661,6 +1681,179 @@ function ctxValue(id, fallback) {
   var el = document.getElementById(id);
   return el && el.value ? el.value : fallback;
 }
+
+/* c2 (firm size) is a radio group, not a single element with id="c2" -- ctxValue('c2', ...)
+   returns undefined/fallback every time since document.getElementById('c2') matches nothing.
+   Read the checked radio directly instead. Shared by firmSizeValue() and targetLevel(). */
+var FIRM_SIZE_BANDS = ['1', '2–10', '11–50', '51–200', '200+'];
+function c2Index() {
+  var checked = document.querySelector('input[name="c2"]:checked');
+  var i = checked ? parseInt(checked.id.slice(2), 10) : 2;
+  return isNaN(i) ? 2 : i;
+}
+function firmSizeValue() { return FIRM_SIZE_BANDS[c2Index()]; }
+
+/* §6.5 proportionate target level, by firm size (c2 radio group, index 0-4: '1' · '2-10' ·
+   '11-50' · '51-200' · '200+'). Table copied verbatim from SCORING_SPEC.md §6.5's illustrative
+   shape — the spec itself marks these bands "illustrative... to be calibrated during KB
+   authoring, not invented here"; this is that same table, not a new number. Where §6.5 gives a
+   range ("L2-L3"), this resolves to the lower bound: a proportionate target should not demand
+   more than the band asks for. Firm type (c4) and project value band (c5, not yet a built
+   field) are not in the spec's table and are not used here. */
+var TARGET_BY_SIZE = [2, 2, 2, 3, 3];
+
+function targetLevel() { return TARGET_BY_SIZE[c2Index()]; }
+
+/* §6.1-§6.4: a dimension score is the mean of its items' levels. N/A and "not known" are
+   excluded from the divisor (§2.1, §6.4), never scored as L0. Fewer than 2 answered items
+   reports as insufficient evidence, never a low score (§6.4). measured === claimed here
+   because Track B has no calibrated threshold-to-level mapping yet (§6.2, §12 open item) —
+   there is no independent measured value to diverge from self-report, so §6.3's "measured
+   supersedes claim" rule has nothing to act on until that calibration lands. */
+function computeDims() {
+  var target = targetLevel();
+  return DIMENSIONS.map(function (d) {
+    var levels = d.items.map(function (it) { return STATE.answers[it.id]; })
+      .filter(function (v) { return typeof v === 'number'; });
+    if (levels.length < 2) {
+      return { name: d.name, insufficient: true, answered: levels.length, target: target };
+    }
+    var mean = levels.reduce(function (a, b) { return a + b; }, 0) / levels.length;
+    return { name: d.name, measured: mean, claimed: mean, target: target, answered: levels.length };
+  });
+}
+
+/* ============================================================
+   SUBMISSION — SCORING_SPEC.md §9.2. No server, no Function, no VM: the browser writes
+   straight to an OCI Object Storage bucket via a Pre-Authenticated Request URL (write-only,
+   can't list or read), then reads the same bucket back via a second PAR (read+list only) to
+   compute the "compare yourself to others" numbers itself. Nothing else exists in between.
+   See ~/Projects/Dubai/plan/submit_endpoint/OPERATIONS.md for how this actually works, in
+   plain language, and where the two URLs below come from.
+   ============================================================ */
+var SUBMIT_PAR_WRITE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/p/Q5DFzad-KKtyTsrY2yt7HKxSM3M6aBDSXW4tL4p4ZjtEQlWugoMvkyk35Oi8tOWB/n/ax3cp6tzwuy2/b/openbim-readiness-responses/o/';
+var SUBMIT_PAR_READ = 'https://objectstorage.ap-kulai-2.oraclecloud.com/p/rEov_-HGgt5l9c25o33gQpoRrdSFipA8jj5hijoa_CCqG6Dqddg8vDX_j01eBB99/n/ax3cp6tzwuy2/b/openbim-readiness-responses/o/';
+var K_ANON_FLOOR = 20; /* below this many stored answers for a dimension, show no comparison —
+                           §6.4: at low n a respondent could back out someone else's exact score */
+
+var DIM_GROUPS = [
+  { id: 'A', name: 'Governance', idx: [0, 1, 2, 3] },
+  { id: 'B', name: 'People and skills', idx: [4, 5, 6, 7] },
+  { id: 'C', name: 'Technology', idx: [8, 9, 10, 11] },
+  { id: 'D', name: 'Data and standards', idx: [12, 13, 14, 15] },
+  { id: 'E', name: 'Organisational processes', idx: [16, 17, 18, 19] }
+];
+
+function meanOf(values) {
+  var nums = values.filter(function (v) { return typeof v === 'number'; });
+  return nums.length < 2 ? null : nums.reduce(function (a, b) { return a + b; }, 0) / nums.length;
+}
+
+function buildSubmissionPayload() {
+  var answers = [];
+  DIMENSIONS.forEach(function (d) { d.items.forEach(function (it) { answers.push(STATE.answers[it.id]); }); });
+  var m = MEASURED;
+  return {
+    locale: ctxValue('c1', 'United Arab Emirates'),
+    firm_size: firmSizeValue(),
+    firm_type: ctxValue('c4', 'Engineering (structural / MEP)'),
+    answers: answers,
+    measured: !!(m && !m.sample),
+    schema: (m && m.schema) || 'unknown',
+    elements: (m && m.elements) || 0,
+    spaces: (m && m.spaces) || 0,
+    classified_pc: (m && m.classified_pc) || 0,
+    psets_pc: (m && m.psets_pc) || 0,
+    quantities: !!(m && m.quantities),
+    georef: !!(m && m.georef),
+    dup_guids: (m && m.dup_guids) || 0,
+    exporter: (m && m.exporter) || 'other',
+    toolkit: 'v0.1',
+    kb: 'core-0.1 / ae-v1'
+  };
+}
+
+/* Fetches every stored submission via the read-link and averages each dimension, same rule
+   as computeDims(): 'na'/'dk' excluded, <2 numeric answers = not counted for that dimension.
+   Runs entirely in the visitor's browser -- nothing server-side computes this. */
+async function fetchComparison(myAnswers) {
+  if (!SUBMIT_PAR_READ) return null;
+  var listResp = await fetch(SUBMIT_PAR_READ);
+  if (!listResp.ok) throw new Error('could not list stored responses');
+  var listing = await listResp.json();
+  var names = (listing.objects || listing || []).map(function (o) { return o.name || o; });
+  var rows = [];
+  for (var i = 0; i < names.length; i++) {
+    try {
+      var r = await fetch(SUBMIT_PAR_READ + names[i]); /* names[i] already carries the 'responses/' prefix from the listing */
+      if (r.ok) rows.push(await r.json());
+    } catch (e) { /* one bad row doesn't break the whole comparison */ }
+  }
+  return DIM_GROUPS.map(function (d) {
+    var means = rows.map(function (row) { return meanOf(d.idx.map(function (i) { return row.answers && row.answers[i]; })); })
+      .filter(function (v) { return v !== null; });
+    var you = meanOf(d.idx.map(function (i) { return myAnswers[i]; }));
+    var n = means.length;
+    return { id: d.id, name: d.name, you: you, n: n,
+      industry_mean: n >= K_ANON_FLOOR ? meanOf(means) : null };
+  });
+}
+
+async function submitAssessment() {
+  var btn = document.getElementById('submitbtn'), status = document.getElementById('submitstatus');
+  if (!SUBMIT_PAR_WRITE) { status.textContent = 'Not live yet — no submission link configured.'; return; }
+  btn.disabled = true; status.textContent = 'Submitting…';
+  try {
+    var payload = buildSubmissionPayload();
+    var name = 'responses/' + new Date().toISOString().replace(/[:.]/g, '-') + '-' + Math.random().toString(36).slice(2, 10) + '.json';
+    var putResp = await fetch(SUBMIT_PAR_WRITE + name, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    if (!putResp.ok) throw new Error('submission failed (' + putResp.status + ')');
+    status.textContent = 'Submitted. Computing comparison…';
+    STATE.comparison = await fetchComparison(payload.answers);
+    status.textContent = 'Submitted — thank you.';
+  } catch (e) {
+    status.textContent = 'Could not submit: ' + e.message;
+    btn.disabled = false;
+  }
+}
+
+function comparisonHTML() {
+  if (!STATE.comparison) {
+    return '<p class="small" style="margin-top:8px">No comparison yet &mdash; submit your anonymous ' +
+      'answers (on the previous screen) to see how you compare. Nothing is submitted automatically.</p>';
+  }
+  return '<div class="small" style="margin-top:8px">' +
+    STATE.comparison.map(function (d) {
+      if (d.industry_mean === null) {
+        return '<p><strong>' + d.name + ':</strong> you ' + (d.you === null ? 'n/a' : d.you.toFixed(1)) +
+          ' &mdash; not enough responses yet for a comparison (' + d.n + ' so far, need ' + K_ANON_FLOOR + ')</p>';
+      }
+      return '<p><strong>' + d.name + ':</strong> you ' + d.you.toFixed(1) + ', others average ' +
+        d.industry_mean.toFixed(1) + ' (n=' + d.n + ')</p>';
+    }).join('') + '</div>';
+}
+
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.id === 'submitconsent') {
+    var btn = document.getElementById('submitbtn');
+    if (btn) btn.disabled = !e.target.checked;
+  }
+});
+document.addEventListener('click', function (e) {
+  if (e.target && e.target.id === 'submitbtn') submitAssessment();
+});
+
+/* Anonymous click ping on the contact link — see toolkit_sources.html for the identical
+   pattern and why it exists. Separate 'contacts/' prefix, never mixed with real submissions. */
+document.addEventListener('click', function (e) {
+  if (!(e.target && e.target.id === 'contactlink')) return;
+  if (!SUBMIT_PAR_WRITE) return;
+  var name = 'contacts/' + new Date().toISOString().replace(/[:.]/g, '-') + '-' + Math.random().toString(36).slice(2, 10) + '.json';
+  fetch(SUBMIT_PAR_WRITE + name, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'contact_click', page: 'assess' }) })
+    .catch(function () { /* best-effort only */ });
+});
 
 function composePrompt() {
   var weak = weakest(3).map(function (id) { return { id: id, r: itemById(id) }; });
@@ -1953,8 +2146,11 @@ document.addEventListener('change', function (e) {
 document.addEventListener('change', function (e) {
   var el = e.target;
   if (el && el.type === 'radio' && /^[A-E][1-4]$/.test(el.name || '')) {
-    var lvl = parseInt(String(el.id).slice(el.name.length), 10);
-    if (!isNaN(lvl)) STATE.answers[el.name] = lvl;
+    var suffix = String(el.id).slice(el.name.length);
+    var lvl = parseInt(suffix, 10);
+    /* 'na' or 'dk' stay strings — §2.1/§6.4: neither is a level, both are excluded from
+       the dimension mean, not scored as L0. */
+    STATE.answers[el.name] = !isNaN(lvl) ? lvl : suffix;
   }
 });
 
@@ -2007,7 +2203,7 @@ document.addEventListener('keydown', function (e) {
 /* A tab left open serves whatever it loaded, and GH Pages caches for 10 minutes on top of that.
    Rather than expecting anyone to guess, the page checks its own build against the published one
    and says plainly when it is out of date. Cache-busted so the check itself is never stale. */
-var BUILD_ID = '2026-08-26T09:49Z';
+var BUILD_ID = '2026-09-09T22:54Z';
 (function checkBuild() {
   try {
     fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
