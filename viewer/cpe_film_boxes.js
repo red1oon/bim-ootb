@@ -126,11 +126,21 @@ function setupCpeFilmBoxes(A) {
              { label: 'Reveal', text: pick(src.reveal) } ];
   };
 
-  function plate(ctx, b) {
+  // §59 (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md) — optional `tint` hex lets a queued Measure
+  // entry (e.g. a Structural/Egress category colour) fill this plate instead of the default black.
+  // HUD/status boxes never pass it (2-arg calls, untouched, still plain black).
+  function plate(ctx, b, tint) {
     var rad = Math.round(Math.min(b.h, b.w) * 0.09);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillStyle = tint ? _hexToRgba(tint, 0.32) : 'rgba(0,0,0,0.45)';
     if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, rad); ctx.fill(); }
     else ctx.fillRect(b.x, b.y, b.w, b.h);
+  }
+
+  function _hexToRgba(hex, a) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return 'rgba(0,0,0,0.45)';
+    var n = parseInt(m[1], 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
   }
   // shrink, then ellipsis — the same rule §CPE_CARD_FIT settled for the stat card: a label a client
   // cannot read is the same failure as no label at all.
@@ -233,12 +243,12 @@ function setupCpeFilmBoxes(A) {
 
   function drawMeasureEntry(ctx, b, head, lines) {
     ctx.save();
-    plate(ctx, b);
+    plate(ctx, b, head.ink);
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     var titlePx = Math.max(11, Math.round(b.rowH * 0.56));
     var rowPx = Math.max(11, Math.round(b.rowH * 0.62));
     var innerW = b.w - b.pad * 2;
-    ctx.fillStyle = '#ffd600';    // §7's cue ink, one colour for Measure
+    ctx.fillStyle = head.ink || '#ffd600';    // §7's cue ink is the default; a queued category ink (§59) overrides it
     drawFitted(ctx, head.title || 'Measure', b.x + b.pad, b.y + b.pad + b.rowH * 0.5, innerW,
                titlePx, Math.max(9, Math.round(titlePx * 0.7)), '700');
     ctx.fillStyle = '#fff';

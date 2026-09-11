@@ -837,6 +837,10 @@
       try { A.flyoutBeatsCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
       catch (eFBC) { if (!A._flyoutBeatsWarned) { A._flyoutBeatsWarned = true; console.warn('§FLYOUT_BEAT_DRAW failed: ' + (eFBC && eFBC.message)); } }
     }
+    if (A._flythruDatumOn && A.ruleFindingsFilmCompositeOntoCanvas) {
+      try { A.ruleFindingsFilmCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
+      catch (eRFC) { if (!A._ruleFindingsFilmWarned) { A._ruleFindingsFilmWarned = true; console.warn('§RULE_FILM_DRAW failed: ' + (eRFC && eRFC.message)); } }
+    }
     if (lblInfo && lblInfo.placed && lblInfo.placed.length && A.clashLabelsCompositeOntoCanvas) try {
       A.clashLabelsCompositeOntoCanvas(ctx, w, h, lblInfo.placed);
     } catch (eCLd) {
@@ -1675,6 +1679,13 @@
       if (_measure && A.flyoutBeatsBuild) {
         try { A.flyoutBeatsBuild(plan, _filmSecFull); }
         catch (eFB2) { console.warn('§FLYOUT_BEAT_BUILD failed: ' + (eFB2 && eFB2.message) + ' — the film bakes without the fly-out beats'); }
+      }
+      // §RULE_FILM (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §59) — Structural Sanity + Egress
+      // findings, scheduled into the storey-reveal window built above. Async (fetches rules JSON,
+      // may lazy-load RoomGraph), so awaited like §CLASH_FILM_BUILD below.
+      if (_measure && A.ruleFindingsFilmBuild) {
+        try { await A.ruleFindingsFilmBuild(A.dbQuery, plan); }
+        catch (eRF) { console.warn('§RULE_FILM_BUILD failed: ' + (eRF && eRF.message) + ' — the film bakes without rule findings'); }
       }
       if (_clash && A.clashFilm && A.clashFilm.build) {
         try { await A.clashFilm.build(); }

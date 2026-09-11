@@ -894,6 +894,11 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      tag only needs to load before A.showEgressSanity() can run, same as structural_sanity.js. -->
 <script src="egress_sanity.js?v=1" onerror="console.warn('§LOAD_FAIL egress_sanity.js')"></script>
 <script src="rule_checklist.js?v=1" onerror="console.warn('§LOAD_FAIL rule_checklist.js')"></script>
+<!-- MEP_CLASH_REVEAL_MOVIE.md §59 — rule_findings_film.js only CALLS StructuralSanity/EgressSanity/
+     A.storeyRevealList/A.filmBoxesMeasurePost/A.showRuleModeTint at bake time (A.ruleFindingsFilmBuild),
+     never at parse time, so load order relative to those tags doesn't matter; placed here for
+     readability, right after the evaluators/panel it rides on. -->
+<script src="rule_findings_film.js?v=1" onerror="console.warn('§LOAD_FAIL rule_findings_film.js')"></script>
 <script src="measure.js?v=52" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
 <script src="sitecam.js?v=7" onerror="console.warn('§LOAD_FAIL sitecam.js')"></script>
 <script src="share.js?v=2" onerror="console.warn('§LOAD_FAIL share.js')"></script>

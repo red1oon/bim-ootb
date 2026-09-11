@@ -140,6 +140,7 @@ const REGISTRY = {
   slabBeatCompositeOntoCanvas: 'measure',            // posts only
   indoorBeatsCompositeOntoCanvas: 'in-model',
   flyoutBeatsCompositeOntoCanvas: 'in-model',      // arrowed spans in the model; its figure posts to §MEASURE_BOX
+  ruleFindingsFilmCompositeOntoCanvas: 'measure',    // §59 — posts only, same as slabBeatCompositeOntoCanvas
   clashLabelsCompositeOntoCanvas: 'clash-exception', // §40.1: leader-anchored to a 3D contact
   filmBoxesDrawMeasure: 'measure',
   filmBoxesDrawStatus: 'status',

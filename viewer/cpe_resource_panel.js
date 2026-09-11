@@ -333,6 +333,29 @@ function setupCpeResourcePanel(A) {
         }
       });
     }
+    // §RULE_FILM_HUD_CARD (2026-09-11, MEP_CLASH_REVEAL_MOVIE.md §59) — Structural Sanity + Egress
+    // counts the film ALREADY evaluated (A.ruleFindingsFilm.stats()), never re-counted here. Same
+    // §CLASH_HUD_CARD discipline: one card per NON-EMPTY category, dropped entirely (never a
+    // fabricated zero) when a category found nothing. `ink` is new on this renderer's card shape —
+    // bigStatsCompositeOntoCanvas reads it when present and falls back to its existing white/grey
+    // for every pre-existing card, which never sets it.
+    var rf = (A.ruleFindingsFilm && A.ruleFindingsFilm.stats) ? A.ruleFindingsFilm.stats() : null;
+    if (rf && rf.built) {
+      if (rf.structuralTotal > 0) {
+        out.push({ big: String(rf.structuralTotal), label: 'structural issues flagged',
+                   sub: rf.structuralPicked ? 'floating members · unsupported columns · span/depth' : 'no storey stayed on screen long enough to show one',
+                   src: 'structural_sanity.js', ink: '#ffaa33' });
+      }
+      if (rf.egressTotal > 0) {
+        var exitSub = 'isolated rooms · circulation distance · door width';
+        if (rf.maxExitDistM != null) {
+          exitSub = 'longest distance to exit — ' + Math.round(rf.maxExitDistSec) + 's / ~' + rf.maxExitDistSteps + ' steps' +
+                    ' (' + rf.maxExitDistM.toFixed(1) + 'm @ ' + (A.WALK_SPEED || 1.2) + ' m/s est.)';
+        }
+        out.push({ big: String(rf.egressTotal), label: 'safety issues flagged',
+                   sub: exitSub, src: 'egress_sanity.js', ink: '#cc4444' });
+      }
+    }
     // §MEASURE_HUD_CARD (2026-09-06, MEP_CLASH_REVEAL_MOVIE.md §PENDING.5 item D) — the Measure tool's
     // OWN saved measurements from THIS page session (A.measureLabels, measure.js), never a building-
     // wide area/volume figure (a different question the cards above already answer). Dropped entirely
@@ -595,7 +618,7 @@ function setupCpeResourcePanel(A) {
     do { ctx.font = '800 ' + big + 'px ' + F; tw = ctx.measureText(c.big).width; if (tw <= colW) break; big -= 2; }
     while (big > 14);
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = c.ink || '#fff';   // §59 — a category ink (Structural/Safety cards) overrides the default white; every pre-existing card never sets c.ink
     var baseY = y + pad + big * 0.86;
     ctx.fillText(c.big, colX, baseY);
     // §CPE_CARD_FIT (2026-09-01, found in the user's OWN Hospital bake, not by reading): once
