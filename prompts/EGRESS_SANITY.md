@@ -1,8 +1,10 @@
 # ⚠ DO NOT REMOVE — "Egress" (Life-Safety/Fire-Egress Sanity): door-width + travel-distance
-# SCOPE: SEQUENCED AFTER prompts/STRUCTURAL_SANITY.md ships (T1–T7). Reuses that spec's
-#   generic chassis (`A.showRuleChecklist`, generic Mode-tint, generic share deep-link) —
-#   this spec adds ONLY a rule evaluator + rule config, zero new UI code. Read the log
-#   (§ lines) after every run.
+# SCOPE: SEQUENCED AFTER prompts/STRUCTURAL_SANITY.md (T1-T7) AND prompts/EXIT_DETECTION.md
+#   (T1-T4) — the latter is what upgrades rule 2 from "circulation spine" to a real exit
+#   distance (see EXIT_DETECTION.md T5); rules 1 and 3 don't need it. Reuses Structural
+#   Sanity's generic chassis (`A.showRuleChecklist`, generic Mode-tint, generic share
+#   deep-link) — this spec adds ONLY a rule evaluator + rule config, zero new UI code. Read
+#   the log (§ lines) after every run.
 # PRIME RULE: EXTRACT OR COMPILE ONLY. Same discipline as Structural Sanity — no invented
 #   loads, no invented exit designations. Where a needed signal (e.g. which door is an
 #   emergency exit) isn't reliably extractable, say so and scope the rule down or drop it —

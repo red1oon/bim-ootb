@@ -277,10 +277,12 @@ building shows this pass is not cheap — do not pre-build one speculatively.
 - ☐ **T7 (optional, only if T2 profiling on Terminal/Hospital-scale building is slow)**
   sidecar bake following `analysis_sidecar.js`'s `get5D`/`get4D` OPFS pattern.
 
-**Note (not a numbered task, no action here):** `prompts/EGRESS_SANITY.md` specs the next
-rule-based checker (door width + travel-to-exit), sequenced to build AFTER T1–T7 above
-ship, consuming T3/T5/T6's generic chassis with zero new UI code — only its own rule
-evaluator.
+**Note (not a numbered task, no action here):** implementation order across the 3 specs in
+this PR is **Structural Sanity (this file) → `prompts/EXIT_DETECTION.md` →
+`prompts/EGRESS_SANITY.md`**. Egress's door-width/circulation-spine/isolated-room rules
+consume this file's T3/T5/T6 generic chassis (zero new UI code); Exit Detection is a fix to
+the shared `common/room_graph.js` engine that Egress's real distance-to-exit rule depends
+on (see EXIT_DETECTION.md T5) but does not block Egress's other 3 rules from shipping.
 
 ## TEST / DEPLOY
 Whitebox §-log first (`§STRUCT_SANITY rule=<name> severity=<n>`). `node --check` every
