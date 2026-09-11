@@ -84,14 +84,16 @@ function _rcPrettyRule(name) {
 function _rcRuleSetHtml(ruleName, ruleRows, colorMap) {
   if (!ruleRows.length) return '';
   var color = (colorMap && colorMap[ruleRows[0].severity]) || '#888';
-  // Clicking the header both expands the list AND frames the WHOLE set in one shot
-  // (A.zoomToGuids, diff.js — union-bbox fit, same simple lerp as the single-element zoom, no
-  // orbit/pull-back flourish per this codebase's existing click-to-zoom convention). GUIDs are
+  // Clicking the header both expands the list AND frames the WHOLE set in one shot — A.zoomToGuids
+  // (diff.js), mirroring the EXISTING Clash multi-select convention (dot per item, pull back along
+  // the current view direction) rather than a different one-off framing. A rule set is
+  // monochromatic (one rule's severity never varies row-to-row), so the same `color` already
+  // computed for this header's own edge bar is passed straight through for the dots. GUIDs are
   // real IFC guids (base64-like, no commas) so a plain comma-join + split round-trips safely.
   var guidList = ruleRows.map(function (r) { return _rcEscJs(r.guid); }).join(',');
   var html = '<div class="rc-ruleset">';
   html += '<div class="rc-ruleset-header" data-rc-rule="' + _rcEscAttr(ruleName) + '"' +
-    ' onclick="var b=this.nextElementSibling; b.style.display = (b.style.display===\'none\')?\'block\':\'none\'; this.firstChild.textContent = (b.style.display===\'none\')?\'▸ \':\'▾ \'; if (window.APP && APP.zoomToGuids) APP.zoomToGuids(\'' + guidList + '\'.split(\',\'));"' +
+    ' onclick="var b=this.nextElementSibling; b.style.display = (b.style.display===\'none\')?\'block\':\'none\'; this.firstChild.textContent = (b.style.display===\'none\')?\'▸ \':\'▾ \'; if (window.APP && APP.zoomToGuids) APP.zoomToGuids(\'' + guidList + '\'.split(\',\'), \'' + _rcEscJs(color) + '\');"' +
     ' style="cursor:pointer;font-size:10px;color:' + color + ';margin:3px 0 1px;padding:2px 4px;border-left:3px solid ' + color + ';background:rgba(255,255,255,0.02)">' +
     '<span>▸ </span>' + _rcEscAttr(_rcPrettyRule(ruleName)) + ' &mdash; ' + ruleRows.length + ' flagged</div>';
   html += '<div class="rc-ruleset-body" style="display:none;padding-left:6px">';

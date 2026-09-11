@@ -112,14 +112,14 @@ chk('(d) mixed rules within one severity tier get one rule-set header EACH, not 
     const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: mixed }, null);
     return r.html.indexOf('Floating Member &mdash; 2 flagged') >= 0 && r.html.indexOf('Column Continuity &mdash; 1 flagged') >= 0;
   })());
-chk('(d) rule-set header click also fits the WHOLE set in frame (APP.zoomToGuids with every member guid)',
+chk('(d) rule-set header click also fits the WHOLE set in frame (APP.zoomToGuids, every member guid + the severity color)',
   (() => {
     const setRows = [
       { guid: 'x1', ifc_class: 'IfcBeam', name: 'X1', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
       { guid: 'x2', ifc_class: 'IfcBeam', name: 'X2', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
     ];
     const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: setRows }, null);
-    return r.html.indexOf("APP.zoomToGuids('x1,x2'.split(','))") >= 0;
+    return r.html.indexOf("APP.zoomToGuids('x1,x2'.split(','), '#cc4444')") >= 0;
   })());
 
 console.log(`\n${pass} passed, ${fail} failed`);
