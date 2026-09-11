@@ -22,7 +22,18 @@
 })(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
   var ROOT = (typeof window !== 'undefined') ? window : {};
-  var RoomGraph = (typeof module !== 'undefined' && module.exports) ? require('../common/room_graph.js') : ROOT.RoomGraph;
+  // §EGRESS_ROOMGRAPH_LATE_BIND (MEP_CLASH_REVEAL_MOVIE.md §59.7 D1, 2026-09-11) — resolve at CALL
+  // time, never at factory time. This file is a static <script> in viewer.html that runs at page
+  // boot, while common/room_graph.js is lazy-loaded later by APP.loadNavigate(). A factory-time
+  // `ROOT.RoomGraph` read therefore captured `undefined` PERMANENTLY and no later lazy-load could
+  // ever reach it, so egress rules 2/3 were skipped on every real browser run and every silent
+  // bake — real evidence: `§EGRESS_NO_ROOMGRAPH` on the HHS bake, on a run where RoomGraph was
+  // demonstrably loaded and had built a 77-node graph (`§ROOM_GRAPH nodes=77`) moments earlier.
+  // The Node branch keeps its eager require (no lazy-loading exists there, and every Node caller
+  // + witness_rule_findings_film.js's stubbed EgressSanity depend on the unchanged behaviour).
+  var _IS_NODE = (typeof module !== 'undefined' && module.exports);
+  var _nodeRoomGraph = _IS_NODE ? require('../common/room_graph.js') : null;
+  function _resolveRoomGraph() { return _IS_NODE ? _nodeRoomGraph : ROOT.RoomGraph; }
 
   function _severityBelow(value, rule) {
     // Door width: NARROWER is worse (flag when value <= threshold), opposite direction from a
@@ -72,6 +83,7 @@
     log('§EGRESS rule=door_clear_width severity=' + (doorFlags.CRITICAL + doorFlags.WARNING) + ' critical=' + doorFlags.CRITICAL);
 
     // ── Rules 2 + 3: circulation-distance / isolated-room, via the real room graph ──
+    var RoomGraph = _resolveRoomGraph();   // §59.7 D1 — call time, see the binding note above
     if (!RoomGraph) {
       log('§EGRESS_NO_ROOMGRAPH RoomGraph module not available — rules 2/3 skipped');
       return rows;

@@ -147,6 +147,17 @@ async function initViewer() {
         // per-storey walkable raster; must load BEFORE room_graph.js (buildGraph() references
         // window.StoreyRaster when it reads storey_walkable_raster).
         '../common/storey_raster.js?v=1',
+        // §STOREY_FOOTPRINT_NOT_LOADED (MEP_CLASH_REVEAL_MOVIE.md §59.7 D2, 2026-09-11) — the
+        // flood-fill that tells a real exterior side of a door apart from an enclosed internal
+        // void (atrium/shaft). room_graph.js:84 binds window.StoreyFootprint at factory time and
+        // E4 exit detection hard-gates on it (`if (!raster || !footprint) { exitsNoRaster++ }`),
+        // so while this line was missing EVERY door was skipped: the real HHS bake logged
+        // `§ROOM_GRAPH_EXITS exits=0 noRaster=133 of 133 doors` on a run whose own
+        // `§PATH_LEGAL_RASTER` proves the rasters were built — a module gap, never a data gap.
+        // Same class as §HALLWAY-BACKBONE-NOT-LOADED below: witness_exit_detection.js requires
+        // this file and passes in Node, which is no evidence at all that the browser path runs it.
+        // Must load BEFORE room_graph.js, for the identical reason storey_raster.js above does.
+        '../common/storey_footprint.js?v=1',
         // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §7 — room-to-room adjacency graph + pathfinding,
         // consumed by navigate_find.js's Room axis "Path" sub-mode. Same lazy-load rationale as
         // room_habitability.js above (only needed alongside navigate_find.js itself).
