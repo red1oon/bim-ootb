@@ -248,7 +248,14 @@ function setupCpeFilmBoxes(A) {
     var titlePx = Math.max(11, Math.round(b.rowH * 0.56));
     var rowPx = Math.max(11, Math.round(b.rowH * 0.62));
     var innerW = b.w - b.pad * 2;
-    ctx.fillStyle = head.ink || '#ffd600';    // §7's cue ink is the default; a queued category ink (§59) overrides it
+    // §MEASURE_TITLE_INK (MEP_CLASH_REVEAL_MOVIE.md §61, 2026-09-11, user: "the yellow HUD coloring
+    // is not helping optics ... HUD is isolated colour schema. Replace yellow with blue is better
+    // contrast"). #4fc3f7 is the established project blue (190 uses across viewer/*.js), not a new
+    // swatch. SCOPE IS THIS TITLE ONLY — §7's #ffd600 stays on the dimension-cue overlays
+    // (cpe_linear_beat/cpe_flyout_beats/cpe_indoor_beats/cpe_flythru_cues/cpe_flythru_dims); the
+    // user was offered all six and chose the box title alone (§61.1). A queued category ink (§59
+    // structural #ffaa33 / egress #cc4444) still overrides this default — §61.3.
+    ctx.fillStyle = head.ink || '#4fc3f7';
     drawFitted(ctx, head.title || 'Measure', b.x + b.pad, b.y + b.pad + b.rowH * 0.5, innerW,
                titlePx, Math.max(9, Math.round(titlePx * 0.7)), '700');
     ctx.fillStyle = '#fff';

@@ -58,7 +58,7 @@ function recCtx() {
     measureText(t) { const px = +(/(\d+)px/.exec(this.font) || [0, 12])[1]; return { width: String(t).length * px * 0.55 }; },
     fillText(t, x, y) {
       const px = +(/(\d+)px/.exec(this.font) || [0, 12])[1];
-      draws.push({ kind: 'text', text: String(t), x, y, w: this.measureText(t).width, px });
+      draws.push({ kind: 'text', text: String(t), x, y, w: this.measureText(t).width, px, fill: st.fillStyle });
     },
     get font() { return st.font; }, set font(v) { st.font = v; },
     get fillStyle() { return st.fillStyle; }, set fillStyle(v) { st.fillStyle = v; },
@@ -158,6 +158,43 @@ const fallbackOnly = /\} else if \(titleInfo && titleInfo\.opacity > 0 && A\.roo
 
 const totalText = rows.reduce((a, r) => a + r.texts, 0);
 if (!totalText) console.log('§WITNESS_FILM_BOXES INCONCLUSIVE — no text was drawn on any sampled frame; nothing was judged');
+
+// ══ §MEASURE_TITLE_INK (MEP_CLASH_REVEAL_MOVIE.md §61) — the Measure box title default is BLUE ══
+// ISSUES THESE PROVE OR DISPROVE:
+//   M1 the title default really moved off §7's yellow to the project blue (fails pre-change)
+//   M2 §61.3 — a QUEUED category ink (§59 structural/egress) still overrides that default, so the
+//      Sanity entries look exactly as they did; changing the fallback must not change them
+//   M3 only the TITLE colour moved — the body rows are still white
+// Thrown, not chained: these judge one draw each, not the sampled film population above.
+(function measureTitleInk() {
+  const MB = [];
+  function titleAndRows(ink) {
+    const c = recCtx();
+    A.filmBoxesMeasureReset();
+    A.filmBoxesArm(W, H, armed);
+    A.filmBoxesMeasurePost('Structural — column continuity', ['STB Stütze', 'Level 1', 'CRITICAL'], ink);
+    A.filmBoxesDrawMeasure(c, W, H, armed, 10);
+    const t = c.draws.filter(d => d.kind === 'text');
+    return { title: t[0], rows: t.slice(1) };
+  }
+  const mk = (n, ok, x) => { MB.push({ n, ok, x }); console.log('  ' + (ok ? 'PASS' : 'FAIL') + ' ' + n + (x ? '  ' + x : '')); };
+
+  const plain = titleAndRows(undefined);
+  mk('M1 §61 Measure title default is #4fc3f7, not §7\'s #ffd600',
+     plain.title && plain.title.fill === '#4fc3f7', plain.title && plain.title.fill);
+
+  const tinted = titleAndRows('#ffaa33');
+  mk('M2 §61.3 a queued category ink still overrides the default (Sanity look unchanged)',
+     tinted.title && tinted.title.fill === '#ffaa33', tinted.title && tinted.title.fill);
+
+  mk('M3 §61 body rows stay white — only the title colour moved',
+     plain.rows.length > 0 && plain.rows.every(r => r.fill === '#fff'),
+     plain.rows.map(r => r.fill).join(','));
+
+  const bad = MB.filter(m => !m.ok);
+  console.log('§WITNESS_MEASURE_TITLE_INK pass=' + (MB.length - bad.length) + ' fail=' + bad.length);
+  if (bad.length) throw new Error('§61 §MEASURE_TITLE_INK FAILED: ' + bad.map(m => m.n).join(' | '));
+})();
 
 const eqRect = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 Witness('film_boxes')
