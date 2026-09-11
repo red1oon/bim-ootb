@@ -81,6 +81,20 @@ function setupRuleFindingsFilm(A) {
   var FADE_OUT_S = 0.6;        // each member's own fade once the release front reaches it
   var PULSE_S = WAVE_S + HOLD_S + RELEASE_S + FADE_OUT_S;
   var BOX_LINGER_S = 2.0;      // §77.2 — the box stays this long after the wave ends
+  // ── §82 §RULE_FILM_SET_QUEUE ────────────────────────────────────────────────────────────────────
+  // Baking a THIRD building found the defect §77 did not anticipate: nothing capped how many SETS
+  // pulse at once. `Terminal_silent.db` is the first model where all eight rules fire, and it put
+  // 7-8 set boxes on screen for 29 of ~53 seconds — §77 cut hundreds of per-element labels down to a
+  // handful of set boxes and then hit crowding again from the other direction. HHS never exceeded 2
+  // sets and Hospital 6, so this could not appear until an unfamiliar building was baked on purpose.
+  // The user's fix, verbatim: "it is simply a matter of sequencing what comes on the scene, require a
+  // simple routine of which can be delayed to later or if all seems equal appearance slots, just
+  // stagger along consecutively with a 5 sec slot each. This is for earnest effort, some maybe missed."
+  // EARNEST EFFORT, NOT A GUARANTEE — a set whose members never come back into frame is simply never
+  // shown. The camera is never bent and no shot is held to fit a set in, and nothing is hidden by the
+  // omission: the closing cards (cpe_resource_panel.js:342) carry every set's total from the build-time
+  // evaluation, so the film under-SHOWS without ever under-REPORTING.
+  var SET_SLOT_S = 5.0;        // §82.1 the user's own number; §82.2 — one 4.1s pulse with room to breathe
   var DWELL_SAMPLE_S = 0.25;   // §77.3 — pose sampling step for the exact dwell precompute
   var FOV_DEG = 60;            // viewer/scene.js:139 — the bake's own fov, read not guessed
   var LABEL_PLATE = 'rgba(0,0,0,0.45)';   // §73.3 — same family as the cam-path box (cpe_path_overview.js:208)
@@ -145,6 +159,40 @@ function setupRuleFindingsFilm(A) {
 
   var _built = false, _report = null, _picks = [], _stats = null;
   var _sets = [], _lastFilmS = null, _lastLog = -1;   // §77 — one entry per RULE, not per element
+  // §82 — exactly one set holds the scene; the rest wait their turn in `_queue`, never dropped.
+  var _queue = [], _active = null;
+  // §82 vs §78.3 — THE SLOT ONLY EXPIRES WHEN SOMEONE IS ACTUALLY WAITING. Queueing exists to cut
+  // crowding, and with an empty queue there is no crowding to cut; §78.3's held box is a direct user
+  // instruction ("Keeping the same box until end of pulsing helps eyeballing it well"). So a lone set
+  // keeps the scene and behaves exactly as it did before §82 — P8 is unchanged, not weakened.
+  function _anyWaitingVisible(byRuleFrame) {
+    for (var i = 0; i < _queue.length; i++) {
+      var f = byRuleFrame[_queue[i].rule];
+      if (f && f.vis.length) return true;
+    }
+    return false;
+  }
+  // §82.1 — order by OPPORTUNITY where there is one to judge: the set whose members leave frame
+  // soonest goes FIRST, because the one with a long dwell can still be shown later. §77.3's exact
+  // dwell (from plan.poseAt, known before rendering) is what makes that a judgement rather than a
+  // guess. "When they look equal, just take turns" — ties fall back to the order they queued in, and
+  // each then holds one consecutive SET_SLOT_S slot. No cleverness.
+  // A queued set with nothing on screen right now is SKIPPED, never discarded (§82 Q2): it keeps its
+  // place and takes the next free slot it is visible for. If it never returns it is never shown, and
+  // that is the accepted cost (§82 Q5).
+  function _takeNextSet(byRuleFrame) {
+    var best = -1, bestDwell = Infinity, bestQ = Infinity;
+    for (var i = 0; i < _queue.length; i++) {
+      var f = byRuleFrame[_queue[i].rule];
+      if (!f || !f.vis.length) continue;
+      var d = f.dwell, q = _queue[i]._queuedAt;
+      if (d < bestDwell - 1e-6 || (Math.abs(d - bestDwell) <= 1e-6 && q < bestQ)) { best = i; bestDwell = d; bestQ = q; }
+    }
+    if (best < 0) return null;
+    var st = _queue.splice(best, 1)[0];
+    st._queued = false;
+    return st;
+  }
 
   // ── §77.3 EXACT DWELL, only possible in a bake ─────────────────────────────────────────────────
   // The whole camera path exists before the first frame renders (plan.poseAt(tNorm), the same
@@ -259,8 +307,10 @@ function setupRuleFindingsFilm(A) {
         st.rows = [st.total + ' flagged', st.members.length === 1 ? shortName(st.members[0].name) : ''];
         st.guids = st.members.map(function (r) { return r.guid; });
         st.pulseStart = -Infinity; st.seen = {};
+        st.slotStart = -Infinity; st.slotEndSec = null; st._queued = false; st._queuedAt = 0;   // §82
         return st;
       }).filter(function (st) { return st.total > 0; });
+      _queue = []; _active = null;   // §82 — a rebuild starts the queue empty
       _picks = _sets;   // stats + the closing cards read this
 
       // §59 user addition — the Safety card's own "longest distance to exit" stat, real graph-
@@ -349,11 +399,12 @@ function setupRuleFindingsFilm(A) {
     var e = cam.matrixWorld.elements;
     var fwdX = -e[8], fwdY = -e[9], fwdZ = -e[10];
 
-    var visSet = {}, boxes = [], pulsing = 0;
+    // ── PASS 1 — who is on screen, how deep, who just gained a qualifying member, how long the set
+    // has left in frame. Every set is measured every frame; §82's queue only decides who gets SHOWN.
+    var visSet = {}, frame = [], byRuleFrame = {};
     for (var si = 0; si < _sets.length; si++) {
       var st = _sets[si];
-      // which members are on screen right now, and how deep each is along the view axis
-      var vis = [], minD = Infinity, maxD = -Infinity, gained = 0;
+      var vis = [], minD = Infinity, maxD = -Infinity, gained = 0, dwell = 0;
       for (var gi = 0; gi < st.guids.length; gi++) {
         var g = st.guids[gi], pt = at[g]; if (!pt) continue;
         V.set(pt.x, pt.y, pt.z).applyMatrix4(cam.matrixWorldInverse);
@@ -367,66 +418,119 @@ function setupRuleFindingsFilm(A) {
         vis.push({ g: g, depth: depth, sx: (V.x + 1) / 2 * w, sy: (1 - V.y) / 2 * h });
         // §77.2 — the DWELL is the gate, not turnover. A member counts as a trigger only if it is
         // NEW on screen and will stay >= DWELL_MIN_S, which §77.3 makes a lookup rather than a guess.
-        if (!st.seen[g]) { if (_dwellFrom(st.iv && st.iv[g], fs) >= DWELL_MIN_S) gained++; }
+        // §82.1 — the same lookup answers the QUEUE's question too: how much longer does this set
+        // have an opportunity at all? That is what lets order-by-opportunity be judged, not guessed.
+        var dw = _dwellFrom(st.iv && st.iv[g], fs);
+        if (dw > dwell) dwell = dw;
+        if (!st.seen[g] && dw >= DWELL_MIN_S) gained++;
         st.seen[g] = 1;
       }
-      if (!vis.length) {
+      var f = { st: st, vis: vis, minD: minD, maxD: maxD, gained: gained, dwell: dwell };
+      frame.push(f); byRuleFrame[st.rule] = f;
+      if (vis.length) visSet[st.rule] = vis.length;
+    }
+
+    // ── PASS 2 — §82 THE QUEUE. One set holds the scene; the rest wait their turn. ──
+    for (var qi = 0; qi < frame.length; qi++) {
+      var qf = frame[qi];
+      if (!qf.gained || qf.st === _active || qf.st._queued) continue;
+      qf.st._queued = true; qf.st._queuedAt = fs;
+      _queue.push(qf.st);
+    }
+    if (_active) {
+      var af = byRuleFrame[_active.rule];
+      var goneFor = (_active.lastSeenSec == null) ? Infinity : (fs - _active.lastSeenSec);
+      var spent = (fs - _active.slotStart) >= SET_SLOT_S;
+      // §82.1 "earnest effort" cuts both ways — do not spend the scene on a set that has left frame
+      // and is not coming back into this slot. Handing over early is not bending the film; it is
+      // declining to hold a shot for a set that is gone, which §82.1 forbids doing.
+      var abandoned = (!af || !af.vis.length) && goneFor >= BOX_LINGER_S;
+      if ((spent && _anyWaitingVisible(byRuleFrame)) || abandoned) { _active.slotEndSec = fs; _active = null; }
+    }
+    if (!_active) {
+      var nxt = _takeNextSet(byRuleFrame);
+      if (nxt) { _active = nxt; nxt.slotStart = fs; nxt.pulseStart = fs; nxt.slotEndSec = null; }
+    }
+    // §82 debug surface — the queue is the thing under test, so it is observable. Nothing in the film
+    // reads this; the witness asserts Q1-Q4 against it (§78.1's lesson: a computed value with no
+    // consumer is worth nothing, and a queue no test can see is exactly that).
+    var _dbgDwell = {};
+    frame.forEach(function (d) { if (d.vis.length) _dbgDwell[d.st.rule] = Math.round(d.dwell * 100) / 100; });
+    A._ruleFilmQueue = { active: _active ? _active.rule : null,
+                         slotStart: _active ? _active.slotStart : null,
+                         queued: _queue.map(function (s) { return s.rule; }),
+                         dwell: _dbgDwell };
+
+    // ── PASS 3 — the wave, for the set holding the scene, and the boxes. ──
+    var boxes = [], pulsing = 0, activeWave = null;
+    for (var pi = 0; pi < frame.length; pi++) {
+      var pf = frame[pi], ps = pf.st;
+      if (!pf.vis.length) {
         // §78 — off screen: hold the box for the linger, then drop it. The set keeps its pulse clock,
-        // so returning to view re-pulses through the normal gained>0 path rather than snapping on.
-        if (st.pulseStart > -Infinity && st.lastSeenSec != null && (fs - st.lastSeenSec) < BOX_LINGER_S) {
-          st.fadingOut = 1 - (fs - st.lastSeenSec) / BOX_LINGER_S;
-        } else { st.fadingOut = 0; st.boxPin = null; }   // §80 — off screen long enough: unpin
+        // so returning to view re-queues through the normal gained>0 path rather than snapping on.
+        var offSince = (ps.slotEndSec != null) ? Math.min(fs - ps.slotEndSec, ps.lastSeenSec != null ? fs - ps.lastSeenSec : Infinity)
+                                               : (ps.lastSeenSec != null ? fs - ps.lastSeenSec : Infinity);
+        if (ps.pulseStart > -Infinity && offSince < BOX_LINGER_S) ps.fadingOut = 1 - offSince / BOX_LINGER_S;
+        else { ps.fadingOut = 0; ps.boxPin = null; }
         continue;
       }
-      st.fadingOut = 0;
-      visSet[st.rule] = vis.length;
+      ps.lastSeenSec = fs;                                // members are on screen this frame
+      if (ps !== _active) {
+        // §82 — this set does not hold the scene. Either it is waiting its turn (no box, no glow) or
+        // it has just handed over, in which case its box fades across BOX_LINGER_S instead of
+        // snapping off. That overlap is the only time two boxes coexist, and the §77.2 collision
+        // nudge below still handles it.
+        if (ps.pulseStart > -Infinity && ps.slotEndSec != null && (fs - ps.slotEndSec) < BOX_LINGER_S) {
+          ps.fadingOut = 1 - (fs - ps.slotEndSec) / BOX_LINGER_S;
+          boxes.push({ st: ps, since: fs - ps.pulseStart, waveRunning: false, alpha: ps.fadingOut,
+                       anchor: pf.vis.reduce(function (a, b) { return a.depth < b.depth ? a : b; }) });
+        } else { ps.fadingOut = 0; ps.boxPin = null; }
+        continue;
+      }
+      ps.fadingOut = 0;
       // §77.2 — a set cannot restart while its own pulse is still running: wave + linger is the only
       // rate limit, ~3s, structural rather than a tuned cooldown constant.
       // §78 (user: "the same Sanity message box need not renew while they remain or repulse on screen.
       // Keeping the same box until end of pulsing helps eyeballing it well"). The BOX and the PULSE are
-      // now separate lifetimes. The pulse is the wave, and re-fires on a new qualifying member; the box
-      // is held for as long as the set has ANY member on screen, so it never blinks out and back while
-      // the viewer is still reading it. It leaves only when the set itself leaves frame.
-      var waveRunning = (fs - st.pulseStart) < PULSE_S;
-      if (gained > 0 && !waveRunning) { st.pulseStart = fs; waveRunning = true; }
-      if (st.pulseStart === -Infinity) continue;         // never pulsed: no box yet
-      st.lastSeenSec = fs;                                // members are on screen this frame
-      var boxAlive = true;                                // held while visible — §78
+      // separate lifetimes. The pulse is the wave, and re-fires on a new qualifying member; the box is
+      // held for as long as the set holds the scene, so it never blinks out and back while the viewer
+      // is still reading it.
+      var waveRunning = (fs - ps.pulseStart) < PULSE_S;
+      if (pf.gained > 0 && !waveRunning) { ps.pulseStart = fs; waveRunning = true; }
+      if (ps.pulseStart === -Infinity) continue;         // never pulsed: no box yet
       pulsing++;
-      var since = fs - st.pulseStart;
-      var span = (maxD - minD) || 1;
+      var since = fs - ps.pulseStart;
+      var span = (pf.maxD - pf.minD) || 1;
       // the wave: each member lights when the front reaches its own depth, then decays
-      for (var vi = 0; vi < vis.length; vi++) {
-        var arrive = ((vis[vi].depth - minD) / span) * WAVE_S;   // the front reaches this depth here
-        var g;
-        if (since < arrive) g = 0;                                // not reached yet
-        else if (since < arrive + ATTACK_S) g = (since - arrive) / ATTACK_S;   // swell in
+      for (var vi = 0; vi < pf.vis.length; vi++) {
+        var arrive = ((pf.vis[vi].depth - pf.minD) / span) * WAVE_S;   // the front reaches this depth here
+        var gl;
+        if (since < arrive) gl = 0;                                    // not reached yet
+        else if (since < arrive + ATTACK_S) gl = (since - arrive) / ATTACK_S;   // swell in
         else {
           // §79 — the release front travels outward on the SAME axis, so near lets go first.
-          var releaseAt = WAVE_S + HOLD_S + ((vis[vi].depth - minD) / span) * RELEASE_S;
-          g = (since < releaseAt) ? 1 : Math.max(0, 1 - (since - releaseAt) / FADE_OUT_S);
+          var releaseAt = WAVE_S + HOLD_S + ((pf.vis[vi].depth - pf.minD) / span) * RELEASE_S;
+          gl = (since < releaseAt) ? 1 : Math.max(0, 1 - (since - releaseAt) / FADE_OUT_S);
         }
-        vis[vi].glow = g;
+        pf.vis[vi].glow = gl;
       }
       // §77.5 P6 — expose the wave's per-member glow so a witness can assert the DEPTH ORDER rather
       // than merely that a box appeared. Debug surface only; nothing in the film reads it.
       A._ruleFilmLastWave = A._ruleFilmLastWave || {};
-      A._ruleFilmLastWave[st.rule] = vis.map(function (v) { return { g: v.g, depth: v.depth, glow: v.glow }; });
-      if (boxAlive) {
-        boxes.push({ st: st, since: since, waveRunning: waveRunning,
-                     anchor: vis.reduce(function (a, b) { return a.depth < b.depth ? a : b; }) });
-      }
+      activeWave = pf.vis.map(function (v) { return { g: v.g, depth: v.depth, glow: v.glow }; });
+      A._ruleFilmLastWave[ps.rule] = activeWave;
+      boxes.push({ st: ps, since: since, waveRunning: waveRunning, alpha: 1,
+                   anchor: pf.vis.reduce(function (a, b) { return a.depth < b.depth ? a : b; }) });
     }
 
-    // §77.2 — only the sets that are pulsing keep their markers lit; everything else is off.
+    // §77.2 — only the set that holds the scene keeps its markers lit; everything else is off.
     if (typeof A.ruleTintShowOnly === 'function') {
       // §78 — hand the WAVE's per-member glow through, not a boolean. This is what makes the outward
-      // pulse visible; before, every member of a pulsing set was simply shown at once.
+      // pulse visible; before, every member of a pulsing set was simply shown at once. §82 narrows it
+      // to the one active set: a queued set is not lit either, or the 3D would crowd where the HUD no
+      // longer does.
       var show = {};
-      boxes.forEach(function (b) {
-        var w = (A._ruleFilmLastWave || {})[b.st.rule] || [];
-        w.forEach(function (v) { show[v.g] = Math.max(show[v.g] || 0, 0.15 + 0.85 * (v.glow || 0)); });
-      });
+      (activeWave || []).forEach(function (v) { show[v.g] = Math.max(show[v.g] || 0, 0.15 + 0.85 * (v.glow || 0)); });
       A.ruleTintShowOnly(show);
     }
 
@@ -464,7 +568,7 @@ function setupRuleFindingsFilm(A) {
       set.boxPin.x = bx; set.boxPin.y = by;
       A._ruleFilmLastBoxPin = { x: bx, y: by };   // §80.5 — debug surface so a witness can assert the pin   // §80 — a collision nudge sticks, never re-nudged each frame
       placed.push({ x: bx, y: by, w: bw, h: bh });
-      var op = 1;   // §78 — held at full while the set is on screen; it fades only on leaving frame
+      var op = (b.alpha == null) ? 1 : b.alpha;   // §78 held at full while the set holds the scene; §82 fades it on handover
       ctx.save();
       ctx.globalAlpha = op;
       ctx.fillStyle = LABEL_PLATE;
@@ -481,12 +585,15 @@ function setupRuleFindingsFilm(A) {
       ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
       ctx.restore();
       drawn++;
-      if (A.filmBoxesMeasurePost && bi === 0) A.filmBoxesMeasurePost(set.title, set.rows, set.ink);
+      // §82 — the Measure echo follows the scene-holder, not whichever box happened to be drawn first
+      if (A.filmBoxesMeasurePost && set === _active) A.filmBoxesMeasurePost(set.title, set.rows, set.ink);
     }
     if (Math.floor(fs) !== _lastLog) {
       _lastLog = Math.floor(fs);
       log('§RULE_FILM_SETS filmSec=' + fs.toFixed(1) + ' sets=' + _sets.length +
           ' pulsing=' + pulsing + ' boxes=' + drawn + ' heldBoxes=' + boxes.filter(function (b) { return !b.waveRunning; }).length +
+          ' active=' + (_active ? _active.rule : 'none') + ' queued=' + _queue.length +
+          (_queue.length ? ' waiting=' + _queue.map(function (s) { return s.rule; }).join(',') : '') +
           ' visible=' + JSON.stringify(visSet));
     }
     return drawn;
@@ -495,7 +602,7 @@ function setupRuleFindingsFilm(A) {
   A.ruleFindingsFilm = A.ruleFindingsFilm || {};
   A.ruleFindingsFilm.stats = function () { return _stats; };
   A.ruleFindingsFilmReport = function () { return _report; };
-  A.ruleFindingsFilmDispose = function () { _built = false; _report = null; _picks = []; _stats = null; };
+  A.ruleFindingsFilmDispose = function () { _built = false; _report = null; _picks = []; _stats = null; _queue = []; _active = null; };
   log('§RULE_FILM_INIT wired (Structural Sanity + Egress findings as world content for the whole film, clash model — §70)');
 }
 if (typeof window !== 'undefined') window.setupRuleFindingsFilm = setupRuleFindingsFilm;

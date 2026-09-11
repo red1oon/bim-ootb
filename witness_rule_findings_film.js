@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * # ⚠ DO NOT REMOVE — W-RULE-FINDINGS-FILM scope (READ THE LOG after every run)
- * SCOPE: bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §63, §67, §73, §77. Node, no browser.
+ * SCOPE: bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §63, §67, §73, §77-§82. Node, no browser.
  * RUN: node witness_rule_findings_film.js
  *
  * §77 REWRITE. The unit is the SET (one rule's flagged elements), not the element: 509 Hospital
@@ -18,6 +18,11 @@
  *   P5 NO-RESTART-MID-PULSE — a pulsing set does not restart, giving the ~3s floor.
  *   P6 WAVE-IS-VIEW-DEPTH   — nearest member lights first, farthest last, along the view axis.
  *   P7 LINGER               — the box survives 2s past the wave, then goes.
+ *   Q1 CONCURRENCY-CAP    — eight eligible sets give ONE box on screen, not eight (§82).
+ *   Q2 QUEUE-NOT-DROP     — the deferred sets still take their turn later; none is discarded.
+ *   Q3 SHORT-DWELL-FIRST  — the set leaving frame soonest is scheduled first, not the first declared.
+ *   Q4 EQUAL-MEANS-STAGGER— equal dwell means consecutive 5s slots, in queue order.
+ *   Q5 MISSED-IS-HONEST   — a set that never returns is never shown, and its total is still reported.
  *   G1-G5 §63 messaging, X1 §73 palette, X2 §62 shine-through.
  */
 'use strict';
@@ -216,6 +221,110 @@ function shortNameOf(name) {
   chk('P4 §77.2 a SINGLE new qualifying member re-fires the wave — no turnover fraction needed',
       Object.values(g2).some(g => g > 0), 'glows after one newcomer: ' + JSON.stringify(g2));
 
+  // ── §82 §RULE_FILM_SET_QUEUE — Q1-Q5 ──────────────────────────────────────────────────────────
+  // Terminal_silent.db is the first building where all EIGHT rules fire, and it put 7-8 set boxes on
+  // screen for 29 of ~53 seconds. §77 cut hundreds of per-element labels down to a handful of set
+  // boxes and then hit crowding again from the other direction. These checks drive that same
+  // eight-set shape through the composite. Q1 FAILS against the pre-§82 code (boxes=8), which is the
+  // point: the defect is named by the test, not merely described.
+  const Q_S = ['column_continuity', 'floating_member', 'span_depth_concrete', 'span_depth_cantilever', 'span_depth_steel'];
+  const Q_E = ['circulation_distance', 'door_clear_width', 'isolated_room'];
+  const qS = [], qE = [], AT8 = {};
+  Q_S.forEach((rule, ri) => { for (let i = 0; i < 3; i++) { const g = rule + i; qS.push({ guid: g, ifc_class: 'IfcBeam', name: rule + ' ' + i, storey: 'L1', rule, severity: 'WARNING', ratio: 20 }); AT8[g] = { x: 0, y: 0, z: -10 - ri * 5 - i }; } });
+  Q_E.forEach((rule, ri) => { for (let i = 0; i < 3; i++) { const g = rule + i; qE.push({ guid: g, ifc_class: 'IfcSpace', name: rule + ' ' + i, storey: 'L1', rule, severity: 'WARNING', ratio: 30 }); AT8[g] = { x: 0, y: 0, z: -50 - ri * 5 - i }; } });
+  const build8 = () => build(planStare, { sRows: qS, eRows: qE, A: { showRuleModeTint: function () { this._ruleTintAt = AT8; } } })
+    .then(({ A }) => { A._ruleTintAt = AT8; A.camera = camF; return A; });
+
+  // the queue is read through a guard so this block FAILS rather than throws against pre-§82 code —
+  // a witness that crashes proves nothing to the next reader (§81.5's "a test that passes without
+  // reaching its subject is not a test", in its other direction)
+  const qState = A => (A && A._ruleFilmQueue) || { active: null, queued: [], dwell: {} };
+  const AQ = await build8();
+  const drawQ = t => AQ.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, t);
+  const q0 = drawQ(0);
+  chk('Q1 §82 CONCURRENCY-CAP — eight sets eligible in the SAME window give ONE box on screen, not eight',
+      q0 === 1 && qState(AQ).queued.length === 7,
+      'boxes=' + q0 + ' active=' + qState(AQ).active + ' deferred=' + qState(AQ).queued.length);
+
+  // Q2 — DEFERRED, never dropped. Walk the film in 5s slots and collect who holds the scene.
+  const turns = [qState(AQ).active];
+  for (let t = 5; t <= 40; t += 5) {
+    drawQ(t);
+    const a = qState(AQ).active;
+    if (a && a !== turns[turns.length - 1]) turns.push(a);
+  }
+  chk('Q2 §82 QUEUE-NOT-DROP — all eight sets get their turn, none silently discarded',
+      turns.length === 8 && new Set(turns).size === 8 && qState(AQ).queued.length === 0,
+      turns.join(' → '));
+  // Q2b — the ONLY time two boxes coexist is the handover: §78 fades the outgoing box across
+  // BOX_LINGER_S=2s instead of snapping it off. Sample every 0.5s and assert the overlap is bounded
+  // at two AND gone by mid-slot — that is what separates "a queue" from "still crowded, just fewer".
+  const AQ2b = await build8();
+  const seen2b = [];
+  for (let t = 0; t <= 40.0001; t += 0.5) seen2b.push({ t: Math.round(t * 10) / 10, n: AQ2b.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, t) });
+  const peak2b = Math.max(...seen2b.map(r => r.n));
+  const midSlot = seen2b.filter(r => (r.t % 5) >= 2.5 && (r.t % 5) <= 4.5);
+  chk('Q2b §82 at most TWO boxes and only across a handover — by mid-slot exactly one set holds the scene',
+      peak2b === 2 && midSlot.length > 0 && midSlot.every(r => r.n === 1),
+      'peak=' + peak2b + ' over 81 samples; mid-slot frames all show ' +
+      [...new Set(midSlot.map(r => r.n))].join('/') + ' box (' + midSlot.length + ' sampled)');
+
+  // Q4 — the slot is 5s, and with equal dwell it is plain FIFO: "just stagger along consecutively".
+  const AQ2 = await build8();
+  const drawQ2 = t => AQ2.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, t);
+  drawQ2(0);   const a0 = qState(AQ2).active;
+  drawQ2(4.9); const a49 = qState(AQ2).active;
+  drawQ2(5.0); const a50 = qState(AQ2).active;
+  drawQ2(9.9); const a99 = qState(AQ2).active;
+  chk('Q4 §82.1 EQUAL-MEANS-STAGGER — SET_SLOT_S=5: unchanged at 4.9s, handed to the NEXT in queue order at 5.0s',
+      a0 === a49 && a50 !== a0 && a99 === a50 && a0 === Q_S[0] && a50 === Q_S[1],
+      `t=0 ${a0} · t=4.9 ${a49} · t=5.0 ${a50} · t=9.9 ${a99}`);
+
+  // Q3 — the order is a JUDGEMENT, not FIFO. The plan turns the camera 90° across the film, so the
+  // two sets have genuinely different remaining dwell (§77.3's exact intervals, from plan.poseAt).
+  // The long-dwell rule is declared FIRST, so a FIFO queue would pick it — the dwell must override.
+  const DUR = 40;
+  const planTurn = { durationSec: DUR, poseAt: n => { const a = n * Math.PI / 2; return { x: 0, y: 0, z: 0, tx: Math.sin(a), ty: 0, tz: -Math.cos(a) }; } };
+  const dS = [{ guid: 'L0', ifc_class: 'IfcBeam', name: 'long', storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 },
+              { guid: 'S0', ifc_class: 'IfcColumn', name: 'short', storey: 'L1', rule: 'column_continuity', severity: 'CRITICAL', ratio: null }];
+  const ATT = { L0: { x: Math.SQRT1_2 * 100, y: 0, z: -Math.SQRT1_2 * 100 },   // 45° off the start heading: in frame ~2s-38s
+                S0: { x: 0, y: 0, z: -100 } };                                 // dead ahead at t=0: gone by ~18s
+  const { A: AQ3 } = await build(planTurn, { sRows: dS, eRows: [], A: { showRuleModeTint: function () { this._ruleTintAt = ATT; } } });
+  AQ3._ruleTintAt = ATT;
+  AQ3.camera = camF;   // the COMPOSITE camera sees both right now; the PLAN is what decides who leaves first
+  AQ3.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 5);
+  chk('Q3 §82.1 SHORT-DWELL-FIRST — the set whose members leave frame soonest takes the slot, though the other was declared first',
+      qState(AQ3).active === 'column_continuity' && qState(AQ3).queued.join() === 'span_depth_steel',
+      'active=' + qState(AQ3).active + ' waiting=' + qState(AQ3).queued.join() +
+      ' dwell=' + JSON.stringify(qState(AQ3).dwell));
+
+  // Q5 — "earnest effort, some maybe missed". A set that leaves for good is never shown; it is still
+  // QUEUED (not discarded), and the closing card carries its total regardless.
+  const gRows = [{ guid: 'H0', ifc_class: 'IfcBeam', name: 'stays', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
+                 { guid: 'G0', ifc_class: 'IfcColumn', name: 'goes', storey: 'L1', rule: 'column_continuity', severity: 'CRITICAL', ratio: null }];
+  const ATG = { H0: { x: 0, y: 0, z: -10 }, G0: { x: 0, y: 0, z: -20 } };
+  const { A: AQ5 } = await build(planStare, { sRows: gRows, eRows: [], A: { showRuleModeTint: function () { this._ruleTintAt = ATG; } } });
+  AQ5._ruleTintAt = ATG;
+  let gGone = false;
+  AQ5.camera = { matrixWorld: { elements: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+    matrixWorldInverse: { viewZ: v => (gGone && v.z === -20) ? 1 : -1 },
+    updateMatrixWorld() {}, projectPoint: () => ({ x: 0, y: 0, z: 0 }) };
+  const drawQ5 = t => AQ5.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, t);
+  drawQ5(0);
+  const firstActive = qState(AQ5).active;
+  gGone = true;                                  // column_continuity leaves frame and never comes back
+  let everActive = false, peak5 = 0;
+  for (let t = 0.5; t <= 30; t += 0.5) {
+    peak5 = Math.max(peak5, drawQ5(t));
+    if (qState(AQ5).active === 'column_continuity') everActive = true;
+  }
+  const st5 = AQ5.ruleFindingsFilm.stats();
+  chk('Q5 §82.1 MISSED-IS-HONEST — a set that leaves frame for good is never shown, and is still WAITING rather than discarded',
+      firstActive === 'floating_member' && !everActive && peak5 === 1 &&
+      qState(AQ5).queued.join() === 'column_continuity',
+      'held by ' + qState(AQ5).active + ' throughout, waiting=' + qState(AQ5).queued.join() + ', peak boxes=' + peak5);
+  chk('Q5b §82.1 …and the film still REPORTS what it never showed — the closing card counts both sets',
+      st5.structuralTotal === 2, 'cpe_resource_panel.js:344 reads structuralTotal=' + st5.structuralTotal);
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
