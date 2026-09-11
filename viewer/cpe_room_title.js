@@ -704,7 +704,16 @@ function setupCpeRoomTitle(A) {
           (s.sight || []).forEach(function(n) { if (!sightMap[n.guid]) sightMap[n.guid] = n; });
         }
         var C = _lineFrom(stSame, stU, ctSame, ctNode, ctU, sightMap, bldNm);
-        if (C.parts.length) { seg.label = C.parts.join(' · '); labelled++; }
+        // §80.3 — the DWELL-caption pass is the one the film actually reads (roomTitleOpacityAt takes
+      // `s.label || s.name`). §80 attached storeyName/roomName only to the gap-fill segments, so the
+      // real clip still logged Storey="" on every frame — filled=0 blank=112, unchanged. Both
+      // producers must carry the split, which is exactly what this file's own §CPE_ROOM_TITLE_
+      // COLLECTIVE comment warns about: ONE composer, TWO callers.
+      if (C.parts.length) {
+        seg.label = C.parts.join(' · ');
+        seg.storeyName = C.storeyPart; seg.roomName = C.roomParts.join(' · ');
+        labelled++;
+      }
       });
       console.log('§CPE_ROOM_TITLE_COLLECTIVE labelled=' + labelled + '/' + dwellN +
         ' dwell captions composed via the group grammar (label only — name/guid/times untouched)' +
