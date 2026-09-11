@@ -1746,8 +1746,23 @@
             ' durationSec=' + plan.durationSec.toFixed(1) + ' pairCards=' + _pairCards.length +
             ') — 5s before orbit reserved for the storey-reveal lane');
         } else {
-          console.log('§CLASH_HUD_PULLBACK_WINDOW INCONCLUSIVE reason=window-too-short start=' +
-            _pbStart.toFixed(3) + ' end=' + _pbEnd.toFixed(3) + ' — disc-pair highlight/cards skipped for this plan');
+          // §CLASH_WINDOW_DIAGNOSTIC (MEP_CLASH_REVEAL_MOVIE.md §66, 2026-09-11) — the old message said
+          // "window-too-short" for what is really an INVERSION: the fixed 5s reservation above is
+          // larger than the whole pullback sub-phase, so end lands BEFORE start. Same family as
+          // §60.4 — a constant tuned on long films degenerating on short ones. Skipping stays correct
+          // (clamping the reservation would leave ~0.25s per pair card, unreadable), but the numbers
+          // have to be here or a reader cannot tell this is a fact about the film's beat geometry
+          // rather than a defect. Real HHS: span 4.03s vs a 5.0s reservation.
+          var _spanSec = (_tR - _pbStart) * plan.durationSec;
+          var _shortfall = (_pbStart - _pbEnd) * plan.durationSec;
+          console.log('§CLASH_HUD_PULLBACK_WINDOW INCONCLUSIVE reason=' +
+            (_pbEnd < _pbStart ? 'reservation-exceeds-span' : 'window-too-short') +
+            ' start=' + _pbStart.toFixed(3) + ' end=' + _pbEnd.toFixed(3) +
+            ' pullbackSpanSec=' + _spanSec.toFixed(2) + ' reservedSec=5.00 shortBySec=' + _shortfall.toFixed(2) +
+            ' pairCards=' + _pairCards.length + ' durationSec=' + plan.durationSec.toFixed(1) +
+            ' — the 5s storey-reveal reservation is wider than this film\'s whole pullback;' +
+            ' disc-pair highlight/cards skipped (a clamped window would give ' +
+            (_pairCards.length ? (_spanSec / _pairCards.length).toFixed(2) : '0') + 's per card, unreadable)');
         }
       } else if (_clash) {
         console.log('§CLASH_HUD_PULLBACK_WINDOW INCONCLUSIVE reason=' +
