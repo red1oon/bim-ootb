@@ -116,8 +116,19 @@ function setupRuleFindingsFilm(A) {
     var room = Math.max(1, Math.floor(winSec / MIN_SLOT_SEC));
     var list = fullList.length > room ? fullList.slice(0, room) : fullList;
     var slotSec = winSec / list.length;
+    // §RULE_FILM_LINGER_FIT (MEP_CLASH_REVEAL_MOVIE.md §59.8, 2026-09-11, user: "Even if 1.1s, let the
+    // message linger 3 secs etc. Outlier edge cases."). The old gate compared slotSec alone against
+    // ENV_SPAN, as though the Measure box cleared the instant a storey's slot ended. It does not:
+    // cpe_film_boxes.js holds the last posted entry for a further LINGER_S (§MEASURE_BOX_LINGER), so
+    // a finding posted inside HHS's real 1.01s slot is already on screen ~3.21s. Read the LIVE value
+    // rather than hardcode a second 2.2 — if cpe_film_boxes.js ever retunes its linger, this follows.
+    // Absent (no Measure box wired) ⇒ 0 ⇒ the original slotSec-only test, so the NOFIT branch stays.
+    var lingerSec = (typeof A.filmBoxesMeasureLingerS === 'number') ? A.filmBoxesMeasureLingerS : 0;
+    var effectiveSec = slotSec + lingerSec;
     log('§RULE_FILM_WINDOW winSec=' + winSec.toFixed(2) + ' storeys=' + list.length +
-        ' slotSec=' + slotSec.toFixed(2) + ' eligible(>=' + ENV_SPAN + 's)=' + (slotSec >= ENV_SPAN));
+        ' slotSec=' + slotSec.toFixed(2) + ' lingerSec=' + lingerSec.toFixed(2) +
+        ' effectiveSec=' + effectiveSec.toFixed(2) +
+        ' eligible(>=' + ENV_SPAN + 's)=' + (effectiveSec >= ENV_SPAN));
 
     function pickFor(byStorey, category, excludeStorey) {
       for (var i = 0; i < list.length; i++) {
@@ -142,11 +153,21 @@ function setupRuleFindingsFilm(A) {
       try { if (typeof EgressSanity !== 'undefined') rowsE = EgressSanity.evaluate(dbQuery, egressRules, { log: log }) || []; }
       catch (e) { log('§RULE_FILM_EGRESS_ERR ' + e.message); }
 
-      if (slotSec < ENV_SPAN) {
-        log('§RULE_FILM NOFIT slotSec=' + slotSec.toFixed(2) + 's < ' + ENV_SPAN + 's — no storey stays on screen long enough, nothing scheduled (chase only clear opportunities)');
+      if (effectiveSec < ENV_SPAN) {
+        log('§RULE_FILM NOFIT slotSec=' + slotSec.toFixed(2) + 's + lingerSec=' + lingerSec.toFixed(2) +
+            's = ' + effectiveSec.toFixed(2) + 's < ' + ENV_SPAN + 's — not on screen long enough even with the Measure box linger, nothing scheduled');
         _report.state = 'NOFIT';
         _stats = { built: true, structuralTotal: rowsS.length, egressTotal: rowsE.length, structuralPicked: false, egressPicked: false };
         return _report;
+      }
+
+      // §59.8 honest cost — when the slot alone was too short, the caption outlives its OWN storey
+      // tint by this much: for that long the box names a finding on storey N while N+1 is tinted.
+      // §59.3's "scheduled while its own storey is reveal-active" is relaxed here, never silently.
+      if (slotSec < ENV_SPAN) {
+        log('§RULE_FILM_LINGER_FIT slotSec=' + slotSec.toFixed(2) + 's < ' + ENV_SPAN +
+            's but lingerSec=' + lingerSec.toFixed(2) + 's carries it to ' + effectiveSec.toFixed(2) +
+            's — admitted; caption outlives its own storey tint by overrunSec=' + (ENV_SPAN - slotSec).toFixed(2) + 's');
       }
 
       var byStoreyS = bestPerStorey(rowsS), byStoreyE = bestPerStorey(rowsE);

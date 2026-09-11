@@ -135,6 +135,52 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
       stats2.structuralTotal === 1 && stats2.egressTotal === 1, JSON.stringify(stats2));
   chk('scenario 2: no tint call when nothing was picked', A2._tints.length === 0);
 
+  // ── Scenario 4 (§59.8): the SAME too-short window, but with the Measure box's real linger wired.
+  // ISSUE: §RULE_FILM_LINGER_FIT — the old gate compared slotSec alone, ignoring that the box holds
+  // its last entry for a further LINGER_S. Scenario 2 above is the control: it sets no
+  // filmBoxesMeasureLingerS, so it MUST still be NOFIT (L2), which also proves the fix reads the
+  // live value instead of assuming 2.2 unconditionally. ──
+  const lines4 = [];
+  const A4 = makeA({ filmBoxesMeasureLingerS: 2.2, log: null });
+  const _log4 = console.log; console.log = (m) => { if (typeof m === 'string') lines4.push(m); _log4(m); };
+  const plan4 = { beats: { rise: 0.9 }, storeyReveal: { on: true, windowFrac: 0.005 }, durationSec: 100 };
+  const report4 = await A4.ruleFindingsFilmBuild(A4.dbQuery, plan4);
+  console.log = _log4;
+  const stats4 = A4.ruleFindingsFilm.stats();
+  chk('L1 §59.8 linger admits a slot the old gate rejected (0.50s + 2.2s >= 2.2s)',
+      report4.state === 'BEAT', report4.state);
+  // winSec 0.5s / MIN_SLOT_SEC 1.0 truncates the reveal list to ONE storey (L1), so only the
+  // structural category has a storey left to ride — egress correctly unpicked, not a half-fit bug.
+  // One-of-each is asserted on scenario 5 below, where both storeys survive truncation.
+  chk('L1b the one surviving storey IS picked (truncation, not a dropped category)',
+      stats4.structuralPicked && !stats4.egressPicked, JSON.stringify(stats4));
+  chk('L3 overrun is REPORTED, not hidden — §RULE_FILM_LINGER_FIT names overrunSec',
+      lines4.some(l => l.indexOf('\u00A7RULE_FILM_LINGER_FIT') === 0 && /overrunSec=1\.70s/.test(l)),
+      lines4.filter(l => l.indexOf('\u00A7RULE_FILM_LINGER_FIT') === 0).join(' | ') || 'not logged');
+  chk('L3b §RULE_FILM_WINDOW now reports lingerSec and effectiveSec, not slotSec alone',
+      lines4.some(l => /\u00A7RULE_FILM_WINDOW .*lingerSec=2\.20 effectiveSec=2\.70 eligible\(>=2\.2s\)=true/.test(l)),
+      lines4.filter(l => l.indexOf('\u00A7RULE_FILM_WINDOW') === 0).join(' | '));
+
+  // ── Scenario 5 (§59.8 L4): HHS's OWN real numbers — winSec 4.03 over 4 storeys = 1.01s/storey,
+  // the figure that NOFITed on 5 real bakes. Must now be admitted with overrunSec 1.19s. ──
+  const lines5 = [];
+  const A5 = makeA({
+    filmBoxesMeasureLingerS: 2.2,
+    storeyRevealList: () => [{ name: 'L1', z: 0 }, { name: 'L2', z: 3 }, { name: 'L3', z: 6 }, { name: 'L4', z: 9 }]
+  });
+  const _log5 = console.log; console.log = (m) => { if (typeof m === 'string') lines5.push(m); _log5(m); };
+  // windowFrac * durationSec = 4.03s, matching the real bake's §RULE_FILM_WINDOW winSec=4.03
+  const report5 = await A5.ruleFindingsFilmBuild(A5.dbQuery, { beats: { rise: 0.9 }, storeyReveal: { on: true, windowFrac: 0.0403 }, durationSec: 100 });
+  console.log = _log5;
+  chk('L4 HHS real window (4.03s / 4 storeys = 1.01s) is admitted, not NOFIT',
+      report5.state === 'BEAT', report5.state);
+  const stats5 = A5.ruleFindingsFilm.stats();
+  chk('L4c one-of-each honoured on HHS\'s real 4-storey window (both categories survive truncation)',
+      stats5.structuralPicked && stats5.egressPicked, JSON.stringify(stats5));
+  chk('L4b HHS real overrun reported as 1.19s',
+      lines5.some(l => /\u00A7RULE_FILM_LINGER_FIT .*slotSec=1\.01s .*overrunSec=1\.19s/.test(l)),
+      lines5.filter(l => l.indexOf('\u00A7RULE_FILM_LINGER_FIT') === 0).join(' | ') || 'not logged');
+
   // ── Scenario 3: no storey-reveal window on the plan at all — degrades to INCONCLUSIVE, never throws ──
   const A3 = makeA({});
   const report3 = await A3.ruleFindingsFilmBuild(A3.dbQuery, { beats: { rise: 0.9 } });
