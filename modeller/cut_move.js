@@ -173,31 +173,138 @@
   // slideShift(t, F) → the authored-frame shift that moves the hole by world t.
   function slideShift(t, F) { return (+t || 0) / (F || 1); }
 
-  // anchorShift({ cutOp, ops, hostBox, axis, f, translateDelta, minShift }) → { ok, s, q, delta, residual, F, w, reason }
-  //   hostBox = the host's measured PRE-DRAG AABB (boxByFid layout); f/translateDelta = the SCALE command about to
-  //   fold; minShift = Σ TRANSLATE deltas on this axis that precede the SCALE in the same gesture (usually 0).
-  // §CUT-RESIZE additions: g = 1/f — the authored-frame resize factor that cancels THIS fold's own proportional
-  // widening (spec §1: f·(F·w·g) = F·w); through = the void OVERHANGS the host on this axis (its box extends beyond
-  // the host's measured pre-drag AABB by more than THROUGH_TOL) — a through-axis (the bCut's thickness axis) gets NO
-  // resize (shrinking a through-void by 1/f could stop it cutting through). `residual` is unchanged: what a caller
-  // that emits no resize still sees.
+  // §CUT-FRAME-ROTATE (prompts/SPEC_CUT_FRAME_ROTATE.md — cut-move step 3): hostFrame(ops, cutOp, hostBoxNow) →
+  // { ok, M:{perm,a,b}, boxAtCut, reason }. M is the affine map authored→world composed from the ACTIVE post-cut ops
+  // that transform the host, in log order: world_k = a_k · authored_{perm[k]} + b_k. With only TRANSLATE / SCALE /
+  // a 90°-multiple ROTATE this map is "axis-aligned affine" (§1). TRANSLATE and SCALE are the SAME self-referential-
+  // anchor transforms frameScale already walked (a SCALE anchors at its OWN current min, so the min's own trajectory
+  // is purely additive translateDelta regardless of intervening scale factors — this is WHY frameScale never needed
+  // to measure the host box). A 90°-multiple ROTATE has the identical property (it spins about its OWN current bbox
+  // centre), so a BACKWARD replay from the measured `hostBoxNow` — undoing each post-cut op in reverse — recovers
+  // `boxAtCut` (the host's box AT THE CUT's own moment) exactly, then a FORWARD replay from boxAtCut composes M
+  // (tracking the box forward too, since SCALE's m_k and ROTATE's centre c are read off the box AT THAT MOMENT).
+  var ROT_HALF_PI = Math.PI / 2;
+  function mapPoint(M, p) { return [M.a[0] * p[M.perm[0]] + M.b[0], M.a[1] * p[M.perm[1]] + M.b[1], M.a[2] * p[M.perm[2]] + M.b[2]]; }
+  // mapBox: authored box corners → world box (min/max per world axis; a_k may be negative under a rotation flip).
+  function mapBox(M, box) {
+    var c1 = [box[0], box[2], box[4]], c2 = [box[1], box[3], box[5]], w1 = mapPoint(M, c1), w2 = mapPoint(M, c2);
+    return [Math.min(w1[0], w2[0]), Math.max(w1[0], w2[0]), Math.min(w1[1], w2[1]), Math.max(w1[1], w2[1]), Math.min(w1[2], w2[2]), Math.max(w1[2], w2[2])];
+  }
+  // swapXYAboutCentre: the box-shape effect of a 90° OR 270° rotation about the box's OWN centre (x/y half-extents
+  // swap, centre invariant); self-inverse (applying it twice restores the original box) — used both forward and
+  // backward for odd n. A 180° rotation about its own centre leaves the box shape unchanged (only M's sign/b flip).
+  function swapXYAboutCentre(box) {
+    var cx = (box[0] + box[1]) / 2, cy = (box[2] + box[3]) / 2, hx = (box[1] - box[0]) / 2, hy = (box[3] - box[2]) / 2;
+    return [cx - hy, cx + hy, cy - hx, cy + hx, box[4], box[5]];
+  }
+  // applyRotateToM: compose a n·90° rotation (about the CURRENT box centre cx,cy) onto M — spec §1's three explicit
+  // cases (n≡1 given verbatim; n≡2/n≡3 derived the same way — substitute world_x/world_y into the point-rotation law).
+  function applyRotateToM(M, n, cx, cy) {
+    var perm = M.perm, a = M.a, b = M.b;
+    if (n === 1) { M.perm = [perm[1], perm[0], perm[2]]; M.a = [-a[1], a[0], a[2]]; M.b = [cx + cy - b[1], cy - cx + b[0], b[2]]; }
+    else if (n === 2) { M.a = [-a[0], -a[1], a[2]]; M.b = [2 * cx - b[0], 2 * cy - b[1], b[2]]; }
+    else if (n === 3) { M.perm = [perm[1], perm[0], perm[2]]; M.a = [a[1], -a[0], a[2]]; M.b = [cx - cy + b[1], cx + cy - b[0], b[2]]; }
+  }
+  function hostFrame(ops, cutOp, hostBoxNow) {
+    var host = parentOf(cutOp, params(cutOp)), events = [], i;
+    for (i = 0; i < (ops || []).length; i++) {
+      var op = ops[i]; if (!op || !(op.id > cutOp.id)) continue;
+      var P = params(op);
+      if (op.op_type === 'GEOM_GRID_MOVE') {
+        var cmds = P.commands || [];
+        for (var j = 0; j < cmds.length; j++) {
+          var c = cmds[j]; if (!c || !same(c.featureId, host)) continue;
+          var k = AX[c.axis]; if (k == null) continue;
+          if (c.action === 'TRANSLATE') { var d0 = [0, 0, 0]; d0[k] = +c.delta || 0; events.push({ type: 't', d: d0 }); continue; }
+          var tiltX = typeof c.tiltXRad === 'number' && isFinite(c.tiltXRad) ? Math.abs(c.tiltXRad) : 0;
+          var tiltY = typeof c.tiltYRad === 'number' && isFinite(c.tiltYRad) ? Math.abs(c.tiltYRad) : 0;
+          if (tiltX > YAW_TOL || tiltY > YAW_TOL) continue;                     // worker: refused no-op
+          var oblique = typeof c.yawRad === 'number' && isFinite(c.yawRad) && Math.abs(c.yawRad - Math.round(c.yawRad / HALF_PI) * HALF_PI) > YAW_TOL;
+          if (oblique && (c.axis === 'x' || c.axis === 'y')) return { ok: false, reason: 'oblique-yaw-scale-after-cut (GEOM_GRID_MOVE #' + op.id + ')' };
+          events.push({ type: 's', axis: k, f: c.newScale != null ? c.newScale : 1, t: +c.translateDelta || 0 });
+        }
+      } else if (op.op_type === 'GEOM_MOVE') {
+        if (same(parentOf(op, P), host)) events.push({ type: 't', d: [+P.dx || 0, +P.dy || 0, +P.dz || 0] });
+      } else if (op.op_type === 'GEOM_ROOM_MOVE') {
+        var mem = P.members || []; for (var m = 0; m < mem.length; m++) if (mem[m] && same(mem[m].featureId, host)) { events.push({ type: 't', d: [+P.dx || 0, +P.dy || 0, +P.dz || 0] }); break; }
+      } else if (op.op_type === 'GEOM_ROTATE') {
+        if (!same(parentOf(op, P), host)) continue;
+        var deg = P.drot != null ? P.drot : (P.deg || 0), theta = deg * Math.PI / 180, nExact = theta / ROT_HALF_PI, n = Math.round(nExact);
+        if (Math.abs(theta - n * ROT_HALF_PI) > YAW_TOL) return { ok: false, reason: 'oblique-rotate-after-cut (GEOM_ROTATE #' + op.id + ') — the authored axis is no longer a world axis' };
+        n = ((n % 4) + 4) % 4; if (n !== 0) events.push({ type: 'r', n: n });
+      } else if (op.op_type === 'GEOM_ARRAY') {
+        if (same(parentOf(op, P), host)) return { ok: false, reason: 'arrayed-after-cut (GEOM_ARRAY #' + op.id + ') — the host was replaced by clones' };
+      }
+    }
+    // BACKWARD replay: hostBoxNow → boxAtCut, undoing each event in reverse.
+    var box = hostBoxNow.slice();
+    for (i = events.length - 1; i >= 0; i--) {
+      var ev = events[i];
+      if (ev.type === 't') { for (var kk = 0; kk < 3; kk++) { box[2 * kk] -= ev.d[kk] || 0; box[2 * kk + 1] -= ev.d[kk] || 0; } }
+      else if (ev.type === 's') { var kx = ev.axis, minAfter = box[2 * kx], maxAfter = box[2 * kx + 1], minBefore = minAfter - ev.t, width = (maxAfter - minAfter) / (ev.f || 1); box[2 * kx] = minBefore; box[2 * kx + 1] = minBefore + width; }
+      else if (ev.type === 'r' && (ev.n === 1 || ev.n === 3)) { box = swapXYAboutCentre(box); }
+    }
+    var boxAtCut = box;
+    // FORWARD replay: compose M from boxAtCut, tracking the box forward for each SCALE's m_k / ROTATE's centre c.
+    var M = { perm: [0, 1, 2], a: [1, 1, 1], b: [0, 0, 0] }, curBox = boxAtCut.slice();
+    for (i = 0; i < events.length; i++) {
+      var e = events[i];
+      if (e.type === 't') { for (var kt = 0; kt < 3; kt++) { M.b[kt] += e.d[kt] || 0; curBox[2 * kt] += e.d[kt] || 0; curBox[2 * kt + 1] += e.d[kt] || 0; } }
+      else if (e.type === 's') {
+        var ks = e.axis, mk = curBox[2 * ks], fk = e.f, tk = e.t;
+        M.a[ks] *= fk; M.b[ks] = fk * M.b[ks] + mk * (1 - fk) + tk;
+        var newMin = mk + tk, widthBefore = curBox[2 * ks + 1] - curBox[2 * ks];
+        curBox[2 * ks] = newMin; curBox[2 * ks + 1] = newMin + fk * widthBefore;
+      } else if (e.type === 'r') {
+        var cx = (curBox[0] + curBox[1]) / 2, cy = (curBox[2] + curBox[3]) / 2;
+        applyRotateToM(M, e.n, cx, cy);
+        if (e.n === 1 || e.n === 3) curBox = swapXYAboutCentre(curBox);
+      }
+    }
+    var check = mapBox(M, boxAtCut), TOL9 = 1e-9;
+    for (i = 0; i < 6; i++) if (Math.abs(check[i] - hostBoxNow[i]) > TOL9) return { ok: false, reason: 'frame-replay-mismatch (axis ' + (i >> 1) + ')' };
+    return { ok: true, M: M, boxAtCut: boxAtCut, reason: null };
+  }
+  // slideShiftM(d, M) → the authored-frame shift vector that moves the hole by WORLD delta d (the frame-general form
+  // of slideShift; d is nonzero only on the slide's own world axis by construction, but this composes any 3-vector).
+  function slideShiftM(d, M) {
+    var s = [0, 0, 0];
+    for (var k = 0; k < 3; k++) s[M.perm[k]] = (d[k] || 0) / (M.a[k] || 1);
+    return s;
+  }
+
+  // anchorShift({ cutOp, ops, hostBox, axis, f, translateDelta, minShift }) → { ok, s, q, delta, residual, F, w, g,
+  //   through, authoredAxis, reason }. hostBox = the host's measured PRE-DRAG AABB; f/translateDelta = the SCALE
+  //   command about to fold; minShift = Σ TRANSLATE deltas on this axis preceding the SCALE in the same gesture.
+  // Internally calls hostFrame (§CUT-FRAME-ROTATE) instead of frameScale, so a host rotated by a 90°-multiple after
+  // its cut is handled too; for an unrotated host (M identity-perm, a=F) every number is BYTE-IDENTICAL to step 1/2.
+  // `authoredAxis` = M.perm[axis] — the AUTHORED axis `s`/`g` land on (a caller placing them into a per-axis vector
+  // MUST index by this, not by the world `axis` passed in, once a rotation can permute the frame).
+  // §CUT-RESIZE: g = 1/f cancels THIS fold's own proportional widening (f·(F·w·g) = F·w, independent of sign/perm);
+  // through = the void OVERHANGS the host on WORLD axis `axis` (mapped through M, compared with hostBox) — a
+  // through-axis (the bCut's thickness axis) gets NO resize (shrinking it by 1/f could stop it cutting through).
   function anchorShift(a) {
     var k = typeof a.axis === 'string' ? AX[a.axis] : a.axis;
-    var fr = frameScale(a.ops, a.cutOp, k);
-    if (!fr.ok) return { ok: false, reason: fr.reason, F: fr.f };
+    var hf = hostFrame(a.ops, a.cutOp, a.hostBox);
+    if (!hf.ok) return { ok: false, reason: hf.reason, F: null };
+    var M = hf.M, pk = M.perm[k], ak = M.a[k];
     var net = netOverrides(a.ops), P = params(a.cutOp);
     var vb = voidBox(applyOverrides(P.void, net.byCut[String(a.cutOp.id)]));
-    var vc = (vb[2 * k] + vb[2 * k + 1]) / 2, w = vb[2 * k + 1] - vb[2 * k];
-    var minNow = a.hostBox[2 * k] + (+a.minShift || 0), minCut = a.hostBox[2 * k] - fr.tPost;
+    var vCentre = [(vb[0] + vb[1]) / 2, (vb[2] + vb[3]) / 2, (vb[4] + vb[5]) / 2];
+    var w = vb[2 * pk + 1] - vb[2 * pk];                                       // authored-axis width on the pre-image axis
+    var q = mapPoint(M, vCentre)[k];                                          // the hole's CURRENT world centre on axis k
+    var minNow = a.hostBox[2 * k] + (+a.minShift || 0);
     var f = a.f != null ? a.f : 1, t = +a.translateDelta || 0;
-    var q = minNow + fr.f * (vc - minCut);                                     // the hole's CURRENT world centre
     var delta = (q - minNow) * (f - 1) + t;                                    // the fold's proportional shift of it
-    var s = -delta / (f * fr.f);
-    var through = vb[2 * k] < a.hostBox[2 * k] - THROUGH_TOL || vb[2 * k + 1] > a.hostBox[2 * k + 1] + THROUGH_TOL;
-    return { ok: true, s: s, q: q, delta: delta, residual: (f - 1) * fr.f * w, F: fr.f, w: w, g: 1 / f, through: through, reason: null };
+    var s = -delta / (f * ak);
+    var Fmag = Math.abs(ak);
+    var wvb = mapBox(M, vb);                                                   // the void box mapped into WORLD
+    var through = wvb[2 * k] < a.hostBox[2 * k] - THROUGH_TOL || wvb[2 * k + 1] > a.hostBox[2 * k + 1] + THROUGH_TOL;
+    return { ok: true, s: s, q: q, delta: delta, residual: (f - 1) * Fmag * w, F: Fmag, w: w, g: 1 / f, through: through, authoredAxis: pk, reason: null };
   }
 
   return { TAG: TAG, AX: AX, OVERLAP_EPS: OVERLAP_EPS, THROUGH_TOL: THROUGH_TOL, voidBox: voidBox, shiftVoid: shiftVoid,
     applyOverrides: applyOverrides, netShifts: netShifts, netOverrides: netOverrides, keySuffix: keySuffix,
-    cutsOver: cutsOver, frameScale: frameScale, slideShift: slideShift, anchorShift: anchorShift };
+    cutsOver: cutsOver, frameScale: frameScale, slideShift: slideShift, hostFrame: hostFrame, mapPoint: mapPoint,
+    mapBox: mapBox, slideShiftM: slideShiftM, anchorShift: anchorShift };
 });

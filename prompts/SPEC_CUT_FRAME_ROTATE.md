@@ -70,5 +70,51 @@ gizmo if one exists for solids (grep `GEOM_ROTATE` commits in modeller.html; els
 for the fixture, say so in the assert name), re-inject the fills row, real-drag the door along the wall's NEW long axis
 (y) by 0.8 and assert hole + door moved together in Y, x unchanged, one gesture, Ctrl+Z reverts.
 
-## §4 Status
-- [ ] hostFrame + backward replay · [ ] slideShiftM / anchorShift via M · [ ] itemdrag/gridmove switched · [ ] F0-F5 · [ ] M7
+## §4 Status (2026-09-11)
+- [x] hostFrame + backward/forward replay (cut_move.js) · [x] slideShiftM · [x] anchorShift rewritten to call
+  hostFrame internally (byte-identical for an unrotated host) · [x] itemdrag/gridmove switched · [x] F0-F5 · [x] M7
+- **Deviations from the spec text** (both deliberate, both explained where they land in the code):
+  1. `frameScale`/`slideShift` are left COMPLETELY UNTOUCHED rather than rewritten as a "thin wrapper over
+     hostFrame" — the existing standalone algorithm is already exact for an identity-perm host (proved: a SCALE
+     anchors at its own current min, so the min's trajectory is pure additive `ΣtranslateDelta` regardless of
+     intervening scale factors — this is WHY frameScale never needed to measure the host box), and rewriting it
+     added risk for zero behavioral gain. `hostFrame` is the new general primitive; both are exported side by side.
+  2. The spec's own C5 example numbers (`a=[1.25,1,1], b=[0.5,0,0]`) are WRONG — `b` is the general-point affine
+     offset (needed to map the void's CENTRE, not just the host's min), which is a genuinely different quantity
+     from frameScale's `tPost` (a min-only telescoping sum). For the exact C5 fixture (hostBoxNow starting at
+     `[0,5,0.5,0.7,...]`), the correct `b.x = 0.625`, independently verified two ways in witness_cut_move.mjs's F0
+     (direct point-mapping AND anchorShift/slideShiftM reducing to the EXACT byte-identical step-1/2 numbers,
+     s=−0.4, slideShiftM=0.64 — which a `b=0.5` would NOT reproduce). Documented inline in the F0 witness.
+  3. `bonsai_gridmove.js`'s `_cutRiders` needed a real (small) fix, not zero changes as first assumed: `d[k] +=
+     r.s` / `g[k] *= r.g` were indexed by the SCALE command's WORLD axis `k`, but `r.s`/`r.g` are AUTHORED-frame
+     quantities — under a permuted frame these belong at `r.authoredAxis` (`M.perm[k]`), not `k`. Fixed by adding
+     `authoredAxis` to anchorShift's return and indexing by it (byte-identical for an unrotated host, since
+     `authoredAxis === k` there).
+  4. **Known, undocumented-until-now limitation, left OUT of scope**: `cutsOver` (used by
+     `bonsai_itemdrag.js beginSlideSession` and `bonsai_gridmove.js _cutRiders` to discover "is this GEOM_CUT
+     coincident with this filling") compares the void's box in the cut's AUTHORED frame directly against the
+     filling's WORLD box — correct for an unrotated host (authored ≡ world), but NOT rotation-aware: it never maps
+     the void through `hostFrame` before the overlap check. M7's witness happens to pass because the fixture's
+     void and door boxes still numerically overlap post-rotation by coincidence (the void was never moved off its
+     original X-position before the rotate); a differently-positioned fixture could fail to discover a real
+     coincident cut under a rotated host. Fixing this is a discovery-heuristic problem, not a frame-math one —
+     outside this spec's stated scope ("Everything step 1/2 emits [...] is re-expressed through this one map",
+     which lists slide/anchor shift/resize, not `cutsOver`). Flagged here for a future spec if it ever bites.
+- [x] witness_cut_move.mjs 26/26 (C0-C6 + R1-R5 unchanged + F0 IDENTITY×2, F1 ROTATE-90×2 — real worker fold,
+  hole's world extent swaps to Y width 1.6 centred 0.1, X width 0.2 (the wall's own thickness, the void's oversized
+  through-overshoot having already been CLIPPED to it at cut time, before the rotate) — F2 ROTATE-180×1 (mirror,
+  `a=[-1,-1,1]`, anchor-held centre/width EXACT through the sign-flipped path), F3 ROTATE-270×1 + two 90°s compose
+  to F2's map×1, F4 OBLIQUE×1 (drot=30 ⇒ ok:false), F5 REPLAY×1 (mapBox(M,boxAtCut)==hostBoxNow ≤1e-6, independently
+  re-derived, not just internally trusted))
+- [x] witness_e2e_cut_move.js 12/12 (M1-M6 unchanged from step 2 + M7: a REAL `#dim-rot` typed commit — the SAME
+  production path W-E2E-NUMROT/W-E2E-SCALEROT prove for a standalone solid, no `oplog.commit` fallback needed —
+  rotates the wall 90°, then a REAL mouse drag slides the door +0.8m along the wall's NEW long axis (world Y); the
+  gesture is GEOM_MOVE + GEOM_CUT_MOVE with the authored shift correctly landing on x (via slideShiftM, not the
+  slide's own world axis); one real Ctrl+Z reverts it)
+- [x] guards: witness_opening_slide 10/10 (S6b's drot=30 fixture still refuses, now via hostFrame's
+  oblique-rotate-after-cut reason instead of frameScale's rotated-after-cut — same net effect, label text
+  unchanged since the assertion only checks `=== null`) · witness_gridmove_fold_pure 12/12 · witness_dagevu_engine
+  13/13 · witness_e2e_opening_slide 8/8 (O0 7/7 real SampleHouse refusals) · witness_e2e_gridstretch 7/7 ·
+  witness_e2e_stretch_ride 11/11 · witness_e2e_grid_greenorange 13/13
+- witness_e2e_cut C4/C6 (pix 9970636→9970636) FAIL IDENTICALLY to untouched main and to the step-2 branch —
+  pre-existing, not this change.

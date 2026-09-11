@@ -321,11 +321,14 @@
     var probe = edge.constrain([0, 0, 0], { boxByFid: boxByFid });
     if (!probe) return refuse('engine refused the pre-drag pose itself (' + JSON.stringify(edge.refusal) + ')');
     var axis = probe.axis === 'x' ? 0 : 1, tMin = probe.tMin, tMax = probe.tMax;
-    var cuts = [];                                                    // §CUT-MOVE: [{cutId, parent, F}] per carved void
+    var cuts = [];                                                    // §CUT-MOVE: [{cutId, parent, F, M}] per carved void
+    // §CUT-FRAME-ROTATE (prompts/SPEC_CUT_FRAME_ROTATE.md): hostFrame (not frameScale) so a host rotated by a
+    // 90°-multiple after its cut still slides — the authored shift may land on a DIFFERENT authored axis than the
+    // slide's own world axis (slideShiftM resolves this at commit time). F is kept for logging/back-compat only.
     for (var ci = 0; ci < cutRows.length; ci++) {
-      var fr = CM.frameScale(ctx.geomOps, cutRows[ci], axis);
-      if (!fr.ok) return refuse('carved void GEOM_CUT #' + cutRows[ci].id + ' cannot follow the slide — ' + fr.reason + '; refusing rather than leaving the hole behind');
-      cuts.push({ cutId: cutRows[ci].id, parent: fe.hostFid, F: fr.f });
+      var hf = CM.hostFrame(ctx.geomOps, cutRows[ci], hb);
+      if (!hf.ok) return refuse('carved void GEOM_CUT #' + cutRows[ci].id + ' cannot follow the slide — ' + hf.reason + '; refusing rather than leaving the hole behind');
+      cuts.push({ cutId: cutRows[ci].id, parent: fe.hostFid, F: Math.abs(hf.M.a[axis]), M: hf.M });
     }
     var moved = [fid]; if (ob) moved.push(fe.openingFid);
     // S3 gate inputs: every mesh box EXCEPT invisible ride anchors (modeller.html _gateBoxes excludes them too).
@@ -467,14 +470,17 @@
       return { op_type: 'GEOM_MOVE', parameters: { parent: f, dx: op.parameters.dx, dy: op.parameters.dy, dz: op.parameters.dz, induced: 'fills-opening' } };
     }) : [];
     // §CUT-MOVE S5: every carved void tied to the filling rides by the SAME world delta, expressed in the cut's
-    // AUTHORED frame on the slide axis (cut_move.js slideShift = t / F; the other components are 0 by construction) —
-    // one GEOM_CUT_MOVE rider per cut, in the same gesture group (one Ctrl+Z reverts door + hole together).
+    // AUTHORED frame — one GEOM_CUT_MOVE rider per cut, in the same gesture group (one Ctrl+Z reverts door + hole
+    // together). §CUT-FRAME-ROTATE: slideShiftM(d, cu.M) (not slideShift(t,F)) so a host rotated by a 90°-multiple
+    // after its cut lands the shift on the correct (possibly permuted) authored axis, not just the slide's own
+    // world axis; for an unrotated host (M identity-perm) this is byte-identical to `slideShift(d[axis], cu.F)`.
     if (session.slide && session.slide.cuts && session.slide.cuts.length) {
       var CMd = _dep(null, 'CutMove', './cut_move.js');
       session.slide.cuts.forEach(function (cu) {
         var d = [op.parameters.dx, op.parameters.dy, op.parameters.dz];
-        d[session.slide.axis] = CMd.slideShift(d[session.slide.axis], cu.F);
-        riders.push({ op_type: 'GEOM_CUT_MOVE', parameters: { cutId: cu.cutId, parent: cu.parent, dx: d[0], dy: d[1], dz: d[2], induced: 'fills-opening' } });
+        var dWorld = [0, 0, 0]; dWorld[session.slide.axis] = d[session.slide.axis];
+        var s = CMd.slideShiftM(dWorld, cu.M);
+        riders.push({ op_type: 'GEOM_CUT_MOVE', parameters: { cutId: cu.cutId, parent: cu.parent, dx: s[0], dy: s[1], dz: s[2], induced: 'fills-opening' } });
       });
     }
     return { committed: true, verdict: v, op: op, riders: riders };
