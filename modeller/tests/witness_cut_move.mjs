@@ -74,6 +74,7 @@ const WALL_BOX = [0, 4, 0, 0.2, 0, 3];
 const wallOp = (h) => ({ id: 1, op_hash: 'wall:' + h, op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } });
 const cutOp = (h) => ({ id: 2, op_hash: 'cut:' + h, op_type: 'GEOM_CUT', parent: 1, parameters: { parent: 1, void: { c1: [1.2, -0.5, 0.9], c2: [2.8, 0.7, 2.1] } } });
 const cmOp = (id, h, s, cutId) => ({ id, op_hash: 'cm:' + h + ':' + id, op_type: 'GEOM_CUT_MOVE', parent: 1, parameters: { cutId: cutId == null ? 2 : cutId, parent: 1, dx: s[0], dy: s[1], dz: s[2], induced: 'test' } });
+const rzOp = (id, h, fx, fy, fz, cutId) => ({ id, op_hash: 'rz:' + h + ':' + id, op_type: 'GEOM_CUT_RESIZE', parent: 1, parameters: { cutId: cutId == null ? 2 : cutId, parent: 1, fx: fx, fy: fy, fz: fz, induced: 'test' } });
 const gridOp = (id, h, f, td) => ({ id, op_hash: 'grid:' + h + ':' + id, op_type: 'GEOM_GRID_MOVE', parameters: { gridId: 'gx1', delta: 1, commands: [{ featureId: 1, action: 'SCALE', axis: 'x', newScale: f, translateDelta: td }] } });
 async function fold(ops) { const r = await send({ id: ++seq, ops }); if (!r.ok) throw new Error('fold failed: ' + r.error); const m = r.meshes.find(x => x.featureId === 1); return { box: aabb(m.positions), hole: holeX(m.positions, 0, 3), stats: r.stats }; }
 
@@ -143,6 +144,43 @@ const c6 = await fold(prior.concat([cmOp(4, 'c6', [s6, 0, 0])]));
 console.log('  C6 authored shift=' + s6 + ' hole=' + j(c6.hole));
 chk('C6 SLIDE-FOLD: after the prior stretch (hole centre 2.5), a slide of world +0.8 rides as authored 0.64; the folded hole centre is 3.3 = 2.5 + 0.8 exactly',
   approx(s6, 0.64) && approx(c6.hole.c, 3.3) && approx(c6.hole.w, 2.0), j(c6.hole));
+
+// ── R1 NET-OVERRIDES (pure) ─────────────────────────────────────────────────────────────────────────────────
+const n1r = CM.netOverrides([wallOp('A'), cutOp('A'), rzOp(3, 'r1', 0.5), rzOp(4, 'r1', 0.8), rzOp(5, 'r1', 0), rzOp(6, 'r1', 9, 9, 9, 777)]);
+const nsOnly = CM.netShifts([wallOp('A'), cutOp('A'), cmOp(3, 'r1s', [0.5, 0, 0]), cmOp(4, 'r1s', [0.3, 0, 0.1])]);
+console.log('  R1 f=' + j(n1r.byCut['2'] && n1r.byCut['2'].f) + ' sig=' + n1r.sig + ' netShifts-only sig=' + nsOnly.sig);
+chk('R1 NET-OVERRIDES: two GEOM_CUT_RESIZE rows fx=0.5 and fx=0.8 on cut #2 multiply to f=[0.4,1,1]; a row with fx=0 is IGNORED (and one naming non-active cut #777); sig contains both s and f; the netShifts wrapper (shift rows only, no resize in play) still returns the SAME sig SHAPE step 1 produced (backwards-compatible keys)',
+  n1r.byCut['2'] && approx(n1r.byCut['2'].f[0], 0.4) && approx(n1r.byCut['2'].f[1], 1) && approx(n1r.byCut['2'].f[2], 1) && !n1r.byCut['777'] &&
+  /^2:0,0,0\*0\.4,1,1$/.test(n1r.sig) && nsOnly.sig === '2:0.8,0,0.1' && CM.keySuffix(nsOnly.sig) === '|cm:2:0.8,0,0.1',
+  j({ sig: n1r.sig, f: n1r.byCut['2'].f, nsOnlySig: nsOnly.sig }));
+
+// ── R2 FOLD-RESIZE ───────────────────────────────────────────────────────────────────────────────────────────
+const r2 = await fold([wallOp('A'), cutOp('A'), rzOp(3, 'r2', 0.5)]);
+console.log('  R2 hole=' + j(r2.hole) + ' box=' + j(r2.box.map(v => +v.toFixed(4))));
+chk('R2 FOLD-RESIZE: + GEOM_CUT_RESIZE {cutId:2, fx:0.5} ⇒ the worker resizes the void ABOUT ITS OWN CENTRE to [1.6,2.4] (centre 2.0 kept, width 0.8); wall outline unchanged',
+  approx(r2.hole.xmin, 1.6) && approx(r2.hole.xmax, 2.4) && approx(r2.hole.c, 2.0) && approx(r2.hole.w, 0.8) && approx(r2.box[0], 0) && approx(r2.box[1], 4), j(r2.hole));
+
+// ── R3 WIDTH-HOLD ────────────────────────────────────────────────────────────────────────────────────────────
+const a3x = CM.anchorShift({ cutOp: cutOp('A'), ops: [wallOp('A'), cutOp('A')], hostBox: WALL_BOX, axis: 0, f: 1.25, translateDelta: 0 });
+const a3y = CM.anchorShift({ cutOp: cutOp('A'), ops: [wallOp('A'), cutOp('A')], hostBox: WALL_BOX, axis: 1, f: 1, translateDelta: 0 });
+const r3 = await fold([wallOp('A'), cutOp('A'), gridOp(3, 'r3', 1.25, 0), cmOp(4, 'r3', [a3x.s, 0, 0]), rzOp(5, 'r3', a3x.g)]);
+console.log('  R3 anchorShift.x=' + j(a3x) + ' anchorShift.y=' + j(a3y) + ' hole=' + j(r3.hole) + ' box=' + j(r3.box.map(v => +v.toFixed(4))));
+chk('R3 WIDTH-HOLD: GRID SCALE f=1.25 + GEOM_CUT_MOVE s=−0.4 (step 1\'s centre-hold) + GEOM_CUT_RESIZE fx=1/f=0.8 (the width-hold) ⇒ hole centre 2.0 AND width 1.6 EXACTLY (the step-1 residual is gone); anchorShift returns g=0.8 on x, through=false on x (in-plane) and through=true on y (the ±0.5 thickness overhang past the 0.2m-thick wall)',
+  a3x.ok && approx(a3x.g, 0.8) && a3x.through === false && a3y.through === true &&
+  approx(r3.hole.c, 2.0) && approx(r3.hole.w, 1.6) && approx(r3.box[1], 5), j({ a3x, a3y, hole: r3.hole }));
+
+// ── R4 COMMUTE ───────────────────────────────────────────────────────────────────────────────────────────────
+const r4 = await fold([wallOp('A'), cutOp('A'), gridOp(3, 'r4', 1.25, 0), rzOp(4, 'r4', a3x.g), cmOp(5, 'r4', [a3x.s, 0, 0])]);
+console.log('  R4 hole=' + j(r4.hole) + ' box=' + j(r4.box.map(v => +v.toFixed(4))));
+chk('R4 COMMUTE: the R3 chain with the MOVE and RESIZE rows swapped in id/array order ⇒ byte-identical hole (the resize is about the void\'s OWN centre and the shift moves that centre, so shift and resize commute — the row order in the log is irrelevant)',
+  approx(r4.hole.c, r3.hole.c, 1e-9) && approx(r4.hole.w, r3.hole.w, 1e-9) && approx(r4.hole.xmin, r3.hole.xmin, 1e-9) && approx(r4.hole.xmax, r3.hole.xmax, 1e-9), j({ r3: r3.hole, r4: r4.hole }));
+
+// ── R5 CACHE ─────────────────────────────────────────────────────────────────────────────────────────────────
+const r5 = await fold([wallOp('A'), cutOp('A')]);   // the SAME op_hashes as C0/C4 — must hit the ORIGINAL (unsuffixed) keys
+const sigR3 = CM.netOverrides([wallOp('A'), cutOp('A'), gridOp(3, 'r3', 1.25, 0), cmOp(4, 'r3', [a3x.s, 0, 0]), rzOp(5, 'r3', a3x.g)]).sig;
+console.log('  R5 hole=' + j(r5.hole) + ' stats=' + j(r5.stats) + ' sigR3=' + sigR3);
+chk('R5 CACHE: after the R2/R3 folds, re-folding the plain wall+cut chain (same op_hashes as C0) is a cache HIT and yields the ORIGINAL hole [1.2,2.8]; the R3 fold\'s cut-move+resize signature differs from step 1\'s shift-only signature (\'2:-0.4,0,0\') — resize is in the cache key, no stale hits either way',
+  approx(r5.hole.xmin, 1.2) && approx(r5.hole.xmax, 2.8) && r5.stats.hits >= 1 && r5.stats.rebuilt === 0 && sigR3 !== '2:-0.4,0,0', j({ hole: r5.hole, stats: r5.stats, sigR3 }));
 
 console.log('W-CUT-MOVE: ' + pass + ' PASS / ' + fail + ' FAIL');
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}

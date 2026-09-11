@@ -16,9 +16,10 @@
  *   M3 HOLE-FOLLOWS — the rendered hole moved by the SAME dx as the door (vertex-measured); width unchanged
  *   M4 UNDO        — ONE real Ctrl+Z (one gesture) deactivates both rows and restores door AND hole
  *   M5 ANCHOR      — Move-Grid: drag gridline B (x=4) +1 with the door HELD (anchor default) ⇒ GEOM_GRID_MOVE +
- *                    GEOM_CUT_MOVE (the inverse shift); door centre unchanged, hole centre unchanged (≤1e-3), the wall
- *                    is 5 m, the hole is 1.25× wide (the reported residual); §V7 label says "1 hole held"; verifyChain
- *   M6 UNDO        — ONE real Ctrl+Z restores wall, door and hole (the GEOM_CUT_MOVE rider undoes with its gesture)
+ *                    GEOM_CUT_MOVE (the inverse shift) + GEOM_CUT_RESIZE{fx≈1/f} (SPEC_GEOM_CUT_RESIZE.md §4 — the
+ *                    width-hold that fixes step 1's residual); door centre unchanged, hole centre AND WIDTH unchanged
+ *                    (≤1e-3, 1.6 m), the wall is 5 m; §V7 label says "1 hole held" with no "(Δw …)" suffix; verifyChain
+ *   M6 UNDO        — ONE real Ctrl+Z restores wall, door and hole (all three gesture rows undo together)
  */
 'use strict';
 const { runE2E } = require('./e2e_harness');
@@ -137,25 +138,29 @@ runE2E('W-E2E-CUT-MOVE', async (t) => {
   const after5 = await t.oplog(); const chain5 = await t.verifyChain();
   const ops5 = await t.pg.evaluate((fromLen) => {
     const added = window.Bonsai.oplog._geomOps().slice(fromLen);
-    const gm = added.find(o => o.op_type === 'GEOM_GRID_MOVE'), cm = added.find(o => o.op_type === 'GEOM_CUT_MOVE');
-    return { types: added.map(o => o.op_type), cmds: gm ? gm.parameters.commands : null, cm: cm ? cm.parameters : null };
+    const gm = added.find(o => o.op_type === 'GEOM_GRID_MOVE'), cm = added.find(o => o.op_type === 'GEOM_CUT_MOVE'), rz = added.find(o => o.op_type === 'GEOM_CUT_RESIZE');
+    return { types: added.map(o => o.op_type), cmds: gm ? gm.parameters.commands : null, cm: cm ? cm.parameters : null, rz: rz ? rz.parameters : null };
   }, before5.len);
   const hole5 = await holeOf(t, ids.host), door5 = await centreOf(t, ids.door);
   t.slog.slice(logAt).filter(l => /§GRIDMOVE commit|§CUT-MOVE|§DAGEVU/.test(l)).forEach(l => console.log('    ' + l.slice(0, 320))); logAt = t.slog.length;
   console.log('  §CUT-MOVE M5 dimLabel="' + mid5.dim + '" ops=' + JSON.stringify(ops5) + ' hole5=' + JSON.stringify(hole5) + ' door5=' + JSON.stringify(door5) + ' oplog ' + before5.len + '→' + after5.len + ' chain=' + chain5);
   const sc = ops5.cmds && ops5.cmds.find(c => c.featureId === ids.host && c.action === 'SCALE');
   const f = sc ? sc.newScale : NaN, wantS = sc ? -((hole4.c - hole4.wall[0]) * (f - 1) + (sc.translateDelta || 0)) / f : NaN;   // spec §3: s = −Δ/(f·F), F=1 here
-  t.assert('M5 ANCHOR (gesture = GEOM_GRID_MOVE(SCALE wall) + GEOM_CUT_MOVE{dx = −Δ/f}; the HELD door\'s centre is unchanged; the hole\'s centre is unchanged ≤1e-3 under the fold\'s own scale; hole width = f×1.6 (the reported residual); mid-drag §V7 label says "1 hole held"; verifyChain)',
-    after5.len === before5.len + 2 && ops5.cm && ops5.cm.cutId === cut.id && ops5.cm.induced === 'anchor-hold' && sc && near(ops5.cm.dx, wantS, 1e-6) && ops5.cm.dy === 0 &&
-    door5 && near(door5[0], door4[0], 1e-6) && hole5 && near(hole5.c, hole4.c, 1e-3) && near(hole5.w, hole4.w * f, 1e-3) && hole5.wall[1] > 4.5 &&
-    typeof mid5.dim === 'string' && /1 hole held/.test(mid5.dim) && chain5 === true,
-    'f=' + f + ' wantS=' + (isFinite(wantS) ? wantS.toFixed(4) : '?') + ' cm.dx=' + (ops5.cm ? ops5.cm.dx.toFixed(4) : '?') + ' hole4.c=' + hole4.c.toFixed(4) + ' hole5=' + JSON.stringify(hole5) + ' door4.x=' + door4[0].toFixed(4) + ' door5.x=' + (door5 ? door5[0].toFixed(4) : '?') + ' dim="' + mid5.dim + '"');
+  // §CUT-RESIZE (SPEC_GEOM_CUT_RESIZE.md §4 M5): a THIRD row rides the SAME gesture — GEOM_CUT_RESIZE{fx≈1/f, fy=fz=1} —
+  // and the hole's WORLD width is now UNCHANGED (1.6 m, not f×1.6): the step 1 residual is gone.
+  t.assert('M5 ANCHOR (gesture = GEOM_GRID_MOVE(SCALE wall) + GEOM_CUT_MOVE{dx = −Δ/f} + GEOM_CUT_RESIZE{fx≈1/f, fy=fz=1}; the HELD door\'s centre is unchanged; the hole\'s centre AND WIDTH are unchanged ≤1e-3 (1.6 m, the step-1 residual is gone); mid-drag §V7 label matches "1 hole held" with NO "(Δw …)" suffix; verifyChain)',
+    after5.len === before5.len + 3 && ops5.cm && ops5.cm.cutId === cut.id && ops5.cm.induced === 'anchor-hold' && sc && near(ops5.cm.dx, wantS, 1e-6) && ops5.cm.dy === 0 &&
+    ops5.rz && ops5.rz.cutId === cut.id && ops5.rz.induced === 'anchor-hold' && near(ops5.rz.fx, 1 / f, 1e-6) && ops5.rz.fy === 1 && ops5.rz.fz === 1 &&
+    door5 && near(door5[0], door4[0], 1e-6) && hole5 && near(hole5.c, hole4.c, 1e-3) && near(hole5.w, hole4.w, 1e-3) && hole5.wall[1] > 4.5 &&
+    typeof mid5.dim === 'string' && /1 hole held(?! \()/.test(mid5.dim) && chain5 === true,
+    'f=' + f + ' wantS=' + (isFinite(wantS) ? wantS.toFixed(4) : '?') + ' cm.dx=' + (ops5.cm ? ops5.cm.dx.toFixed(4) : '?') + ' rz.fx=' + (ops5.rz ? ops5.rz.fx.toFixed(4) : '?') +
+    ' hole4.c=' + hole4.c.toFixed(4) + ' hole5=' + JSON.stringify(hole5) + ' door4.x=' + door4[0].toFixed(4) + ' door5.x=' + (door5 ? door5[0].toFixed(4) : '?') + ' dim="' + mid5.dim + '"');
   await t.shot('07-stretched-held');
 
   // ── M6 UNDO ───────────────────────────────────────────────────────────────────────────────────────────────────
   await ctrlZ(t);
   const undone6 = await t.oplog(); const hole6 = await holeOf(t, ids.host); const door6 = await centreOf(t, ids.door);
-  t.assert('M6 UNDO (ONE real Ctrl+Z: both gesture rows deactivated, wall back to 4 m, hole back at its pre-stretch extent, door unchanged)',
+  t.assert('M6 UNDO (ONE real Ctrl+Z: all three gesture rows — GRID_MOVE, CUT_MOVE, CUT_RESIZE — deactivated, wall back to 4 m, hole back at its pre-stretch extent, door unchanged)',
     undone6.len === before5.len && hole6 && near(hole6.wall[1], 4, 1e-6) && near(hole6.xmin, hole4.xmin, 1e-6) && near(hole6.xmax, hole4.xmax, 1e-6) && door6 && near(door6[0], door4[0], 1e-6), JSON.stringify({ len: undone6.len, want: before5.len, hole6 }));
   await t.shot('08-undone');
 }, { width: 1280, height: 860, dpr: 2 });

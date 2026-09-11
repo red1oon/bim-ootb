@@ -326,16 +326,20 @@
         const fb = boxByFid[fid], hb = boxByFid[host]; if (!fb || !hb) continue;
         for (const cutOp of CM.cutsOver(ops, host, fb)) {
           if (seen[cutOp.id]) continue; seen[cutOp.id] = 1;
-          const d = [0, 0, 0], minShift = [0, 0, 0]; let bad = null, res = 0;
+          const d = [0, 0, 0], g = [1, 1, 1], minShift = [0, 0, 0]; let bad = null, res = 0;
           for (const c of cmds) {                                  // in command order: a preceding TRANSLATE moves the anchor min
             const k = AXI[c.axis]; if (k == null) continue;
             if (c.action === 'TRANSLATE') { minShift[k] += c.delta || 0; continue; }
             const r = CM.anchorShift({ cutOp, ops, hostBox: hb, axis: k, f: c.newScale != null ? c.newScale : 1, translateDelta: c.translateDelta || 0, minShift: minShift[k] });
             if (!r.ok) { bad = r.reason; break; }
-            d[k] += r.s; if (Math.abs(r.residual) > Math.abs(res)) res = r.residual;
+            d[k] += r.s;
+            // §CUT-RESIZE (SPEC_GEOM_CUT_RESIZE.md §3): a non-through axis is fully held — accumulate the resize
+            // g=1/f and the residual on it is 0; a through axis (the bCut's thickness axis) gets NO resize and keeps
+            // reporting its residual as before (shrinking a through-void by 1/f could stop it cutting through).
+            if (!r.through) { g[k] *= r.g; } else if (Math.abs(r.residual) > Math.abs(res)) res = r.residual;
           }
           if (bad) { out.refused.push(cutOp.id); refusals.push({ kind: 'cut-move-unmappable', fillingFid: fid, hostFid: host, cutId: cutOp.id, reason: bad }); continue; }
-          out.riders.push({ cutId: cutOp.id, parent: host, dx: d[0], dy: d[1], dz: d[2], fillingFid: fid, residual: res });
+          out.riders.push({ cutId: cutOp.id, parent: host, dx: d[0], dy: d[1], dz: d[2], fx: g[0], fy: g[1], fz: g[2], fillingFid: fid, residual: res });
           if (Math.abs(res) > Math.abs(out.residual)) out.residual = res;
         }
       }
@@ -371,20 +375,25 @@
       // half-reverted stretch in between). Rider ops stay byte-identical GEOM_MOVE {parent,d*,induced} rows —
       // only the grouping changes. Zero riders ⇒ the existing single-op path below, untouched.
       // §CUT-MOVE: the held openings' carved voids ride the SAME gesture as GEOM_CUT_MOVE rows (SPEC_GEOM_CUT_MOVE.md §4).
+      // §CUT-RESIZE: when any factor ≠ 1, one GEOM_CUT_RESIZE row rides the SAME gesture too (SPEC_GEOM_CUT_RESIZE.md §3).
       const cutRiders = preview.cutRiders || [];
+      const resizeRiders = cutRiders.filter(c => c.fx !== 1 || c.fy !== 1 || c.fz !== 1);
       if ((riders.length || cutRiders.length) && window.Bonsai.oplog.commitGesture) {
         const ops = [{ op_type: 'GEOM_GRID_MOVE', params: { gridId, delta, commands } }]
           .concat(riders.map(r => ({ op_type: 'GEOM_MOVE',
             params: { parent: r.featureId, dx: r.dx, dy: r.dy, dz: r.dz, induced: 'hosted-by' } })))
           .concat(cutRiders.map(c => ({ op_type: 'GEOM_CUT_MOVE',
-            params: { cutId: c.cutId, parent: c.parent, dx: c.dx, dy: c.dy, dz: c.dz, induced: 'anchor-hold' } })));
+            params: { cutId: c.cutId, parent: c.parent, dx: c.dx, dy: c.dy, dz: c.dz, induced: 'anchor-hold' } })))
+          .concat(resizeRiders.map(c => ({ op_type: 'GEOM_CUT_RESIZE',
+            params: { cutId: c.cutId, parent: c.parent, fx: c.fx, fy: c.fy, fz: c.fz, induced: 'anchor-hold' } })));
         const gres = await window.Bonsai.oplog.commitGesture(ops);
         console.log(TAG + ' commit grid=' + gridId + ' delta=' + delta + ' cmds=' + commands.length +
           ' §GESTURE gid=' + gres.gid + ' riders=' + riders.length + ' cutRiders=' + cutRiders.length + ' verify=' + gres.verify + ' tris=' + gres.triangleCount);
         riders.forEach(r => console.log(TAG + ' §STRETCH-RIDE hosted-by rider=' + r.featureId + ' induced dx=' + r.dx.toFixed(3) +
           ' dy=' + r.dy.toFixed(3) + ' dz=' + r.dz.toFixed(3) + ' (in gesture group)'));
         cutRiders.forEach(c => console.log(TAG + ' §CUT-MOVE anchor-hold cut=#' + c.cutId + ' (wall #' + c.parent + ', under held opening #' + c.fillingFid + ') authored shift dx=' + c.dx.toFixed(3) +
-          ' dy=' + c.dy.toFixed(3) + ' dz=' + c.dz.toFixed(3) + ' width residual=' + c.residual.toFixed(3) + 'm (reported, not corrected — void resize is step 2) (in gesture group)'));
+          ' dy=' + c.dy.toFixed(3) + ' dz=' + c.dz.toFixed(3) + ' resize=(' + c.fx.toFixed(3) + ',' + c.fy.toFixed(3) + ',' + c.fz.toFixed(3) + ')' +
+          ' width residual=' + c.residual.toFixed(3) + 'm (reported for through-axes only, not corrected) (in gesture group)'));
         return { ...gres, commands, riders, cutRiders };
       }
       const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_GRID_MOVE',
