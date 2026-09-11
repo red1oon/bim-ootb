@@ -297,6 +297,16 @@ function setupRuleFindingsFilm(A) {
         if (!byRule[k]) { byRule[k] = { rule: k, category: m.category, members: [] }; ruleOrder.push(k); }
         byRule[k].members.push(m.row);
       });
+      // §59 user addition — the Safety card's own "longest distance to exit" stat, real graph-
+      // measured metres (RoomGraph.escapeRoute()/shortestPath(), egress_sanity.js's own `ratio`),
+      // never a fabricated figure. Independent of which storey got the BEAT above.
+      var maxDist = null;
+      rowsE.forEach(function (r) { if (r.rule === 'circulation_distance' && r.ratio != null && (maxDist == null || r.ratio > maxDist)) maxDist = r.ratio; });
+      // §84 §SANITY_EXIT_STAT — ONE conversion, read by both the closing card (_stats below) and the
+      // in-film box. §84.4: `0.75` and this rounding already exist a second time in rule_checklist.js
+      // on feat/structural-sanity (PR #1715); do not add a THIRD expression of it here. When that
+      // branch merges, extract one helper and have all three surfaces call it (§65).
+      var maxSteps = maxDist != null ? Math.round(maxDist / STEP_M) : null;
       _sets = ruleOrder.map(function (k) {
         var st = byRule[k];
         st.ink = CATEGORY_COLOR[st.category];
@@ -305,6 +315,21 @@ function setupRuleFindingsFilm(A) {
         // "a grasp of total outright is more important than to await whole film revealing the total."
         st.total = st.members.length;
         st.rows = [st.total + ' flagged', st.members.length === 1 ? shortName(st.members[0].name) : ''];
+        // §84 §SANITY_EXIT_STAT (user: "the main BIM View session has taken on the 'Longest path to
+        // exit - ## steps' which originated in specs here, so put that in also for next task when
+        // Sanity HUD is flashing messages"). §84.2 — ONLY on circulation_distance: that rule owns the
+        // number (the worst `ratio` across its own rows). On any other set's box it would be a true
+        // number attached to the wrong finding. A LINE, never a ninth box — §82 has just cut the box
+        // count from 8 to 2 and a new box would hand that straight back.
+        // §84.1 — the live panel's wording verbatim (rule_checklist.js `_rcShowLongestExitStatus`,
+        // feat/structural-sanity), NOT the closing card's richer seconds/metres form. The card is a
+        // held still; this box flashes for one 5s slot on a moving frame. §73.0 ruled that axis
+        // already: a film is not a web page. The user kept the card rich and this short.
+        // §84.3 — the `~` is MANDATORY: STEP_M has no precedent in this codebase (see the file
+        // header), so dropping it would state an estimate as a measurement. Null — never "0 steps" —
+        // when no circulation_distance row exists, same contract both other surfaces hold.
+        st.exitLine = (k === 'circulation_distance' && maxSteps != null)
+          ? 'Longest path to exit — ~' + maxSteps + ' steps' : null;
         st.guids = st.members.map(function (r) { return r.guid; });
         st.pulseStart = -Infinity; st.seen = {};
         st.slotStart = -Infinity; st.slotEndSec = null; st._queued = false; st._queuedAt = 0;   // §82
@@ -313,11 +338,6 @@ function setupRuleFindingsFilm(A) {
       _queue = []; _active = null;   // §82 — a rebuild starts the queue empty
       _picks = _sets;   // stats + the closing cards read this
 
-      // §59 user addition — the Safety card's own "longest distance to exit" stat, real graph-
-      // measured metres (RoomGraph.escapeRoute()/shortestPath(), egress_sanity.js's own `ratio`),
-      // never a fabricated figure. Independent of which storey got the BEAT above.
-      var maxDist = null;
-      rowsE.forEach(function (r) { if (r.rule === 'circulation_distance' && r.ratio != null && (maxDist == null || r.ratio > maxDist)) maxDist = r.ratio; });
 
       _report.state = _picks.length ? 'BEAT' : 'VACUOUS';
       _report.picks = _picks;
@@ -330,7 +350,7 @@ function setupRuleFindingsFilm(A) {
         // repurposed here for a time estimate, not invented. STEP_M has no codebase precedent (see
         // file header) and is reported as an estimate, never a measured fact.
         maxExitDistSec: maxDist != null ? maxDist / (A.WALK_SPEED || 1.2) : null,
-        maxExitDistSteps: maxDist != null ? Math.round(maxDist / STEP_M) : null
+        maxExitDistSteps: maxSteps                                   // §84.4 — one conversion, shared
       };
       log('§RULE_FILM sets=' + _sets.length + ' marked=' + allRows.length + ' structuralTotal=' + rowsS.length + ' egressTotal=' + rowsE.length +
           ' bothCategories=' + (rowsS.length && rowsE.length ? 'yes' : 'no') +
@@ -540,6 +560,8 @@ function setupRuleFindingsFilm(A) {
       var px = Math.max(10, Math.round(h * 0.016)), pad = Math.round(px * 0.6), lh = Math.round(px * 1.4);
       ctx.font = '700 ' + px + 'px BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
       var lines = [set.title, set.total + ' flagged'];
+      if (set.exitLine) lines.push(set.exitLine);   // §84 — its own line: the total is a COUNT, this is a MAX
+
       var bw = pad * 2 + EDGE_BAR_PX, li;
       for (li = 0; li < lines.length; li++) bw = Math.max(bw, pad * 2 + EDGE_BAR_PX + Math.ceil(ctx.measureText(lines[li]).width));
       var bh = pad * 2 + lh * lines.length;

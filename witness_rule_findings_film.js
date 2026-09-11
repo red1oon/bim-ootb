@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * # ⚠ DO NOT REMOVE — W-RULE-FINDINGS-FILM scope (READ THE LOG after every run)
- * SCOPE: bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §63, §67, §73, §77-§82. Node, no browser.
+ * SCOPE: bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §63, §67, §73, §77-§84. Node, no browser.
  * RUN: node witness_rule_findings_film.js
  *
  * §77 REWRITE. The unit is the SET (one rule's flagged elements), not the element: 509 Hospital
@@ -23,6 +23,11 @@
  *   Q3 SHORT-DWELL-FIRST  — the set leaving frame soonest is scheduled first, not the first declared.
  *   Q4 EQUAL-MEANS-STAGGER— equal dwell means consecutive 5s slots, in queue order.
  *   Q5 MISSED-IS-HONEST   — a set that never returns is never shown, and its total is still reported.
+ *   E1 RIGHT-BOX-ONLY     — the exit line is on circulation_distance's box and no other (§84).
+ *   E2 ESTIMATE-MARKED    — the drawn text carries the ~; STEP_M has no codebase precedent.
+ *   E3 DROPPED-NEVER-ZERO — no circulation_distance row means no line, never "0 steps".
+ *   E4 SAME-NUMBER        — the box and the closing card cannot disagree about one building.
+ *   E5 STILL-ONE-BOX      — §84 adds a LINE, not a box: §82's concurrency cap survives it.
  *   G1-G5 §63 messaging, X1 §73 palette, X2 §62 shine-through.
  */
 'use strict';
@@ -325,6 +330,57 @@ function shortNameOf(name) {
       'held by ' + qState(AQ5).active + ' throughout, waiting=' + qState(AQ5).queued.join() + ', peak boxes=' + peak5);
   chk('Q5b §82.1 …and the film still REPORTS what it never showed — the closing card counts both sets',
       st5.structuralTotal === 2, 'cpe_resource_panel.js:344 reads structuralTotal=' + st5.structuralTotal);
+  // ── §84 §SANITY_EXIT_STAT — E1-E5 ─────────────────────────────────────────────────────────────
+  // The 'Longest path to exit — ~## steps' line, in the live panel's own wording (rule_checklist.js
+  // _rcShowLongestExitStatus on feat/structural-sanity), on the circulation_distance box ONLY.
+  const textOf = c => c.draws.filter(d => d.kind === 'text').map(d => d.text);
+  const EX_E = [
+    { guid: 'x0', ifc_class: 'IfcSpace', name: 'Ward A', storey: 'L1', rule: 'circulation_distance', severity: 'WARNING', ratio: 96.4 },
+    { guid: 'x1', ifc_class: 'IfcSpace', name: 'Ward B', storey: 'L1', rule: 'circulation_distance', severity: 'WARNING', ratio: 40.0 },
+    { guid: 'y0', ifc_class: 'IfcDoor', name: 'Door A', storey: 'L1', rule: 'door_clear_width', severity: 'WARNING', ratio: 0.8 },
+    { guid: 'y1', ifc_class: 'IfcDoor', name: 'Door B', storey: 'L1', rule: 'door_clear_width', severity: 'WARNING', ratio: 0.78 }
+  ];
+  const ATE = { x0: { x: 0, y: 0, z: -10 }, x1: { x: 0, y: 0, z: -12 }, y0: { x: 0, y: 0, z: -14 }, y1: { x: 0, y: 0, z: -16 } };
+  const { A: AE } = await build(planStare, { sRows: [], eRows: EX_E, A: { showRuleModeTint: function () { this._ruleTintAt = ATE; } } });
+  AE._ruleTintAt = ATE; AE.camera = camF;
+  const drawE = t => { const c = recCtx(); AE.ruleFindingsFilmCompositeOntoCanvas(c, 1280, 720, t); return { c, q: (AE._ruleFilmQueue || {}) }; };
+  const e1 = drawE(1);                               // circulation_distance declared first: it holds slot 1
+  const exitLine = textOf(e1.c).find(t => /Longest path to exit/.test(t));
+  chk('E1 §84.2 RIGHT-BOX — the exit line is drawn on the circulation_distance box',
+      e1.q.active === 'circulation_distance' && !!exitLine, 'active=' + e1.q.active + ' · ' + exitLine);
+  chk('E2 §84.3 ESTIMATE-MARKED — the DRAWN text carries the ~; STEP_M has no codebase precedent, so ' +
+      'dropping it would state an estimate as a measurement',
+      /~\d+ steps$/.test(exitLine || ''), exitLine);
+  chk('E4 §84.6 SAME-NUMBER-AS-THE-CARD — the box and the closing card cannot disagree (96.4m / 0.75)',
+      parseInt((exitLine || '').replace(/\D+/g, ''), 10) === AE.ruleFindingsFilm.stats().maxExitDistSteps &&
+      AE.ruleFindingsFilm.stats().maxExitDistSteps === 129,
+      'box says ' + parseInt((exitLine || '').replace(/\D+/g, ''), 10) + ', stats.maxExitDistSteps=' + AE.ruleFindingsFilm.stats().maxExitDistSteps);
+  // the slot clock starts at the set's FIRST composited frame (t=1 here), not at film t=0 — so the
+  // handover lands at 1.0 + SET_SLOT_S = 6.0, and the outgoing box then fades for BOX_LINGER_S.
+  drawE(7.5);                                        // slot 2 — door_clear_width takes the scene
+  const e1b = drawE(10);                             // past the 2s handover fade, so only the new box is drawn
+  chk('E1b §84.2 RIGHT-BOX-ONLY — the door_clear_width box does NOT carry it: a true number on the wrong finding',
+      e1b.q.active === 'door_clear_width' && !textOf(e1b.c).some(t => /Longest path to exit/.test(t)),
+      'active=' + e1b.q.active + ' lines: ' + JSON.stringify(textOf(e1b.c)));
+
+  // E3 — no circulation_distance row at all: the line is DROPPED, never a fabricated "0 steps"
+  const { A: AE3 } = await build(planStare, { sRows: [], eRows: EX_E.filter(r => r.rule === 'door_clear_width'),
+    A: { showRuleModeTint: function () { this._ruleTintAt = ATE; } } });
+  AE3._ruleTintAt = ATE; AE3.camera = camF;
+  const c3 = recCtx(); AE3.ruleFindingsFilmCompositeOntoCanvas(c3, 1280, 720, 1);
+  chk('E3 §84.3 DROPPED-NEVER-ZERO — with no circulation_distance row there is no third line, not "0 steps"',
+      textOf(c3).length === 2 && !textOf(c3).some(t => /steps|Longest/.test(t)) &&
+      AE3.ruleFindingsFilm.stats().maxExitDistSteps === null,
+      JSON.stringify(textOf(c3)) + ' · stats.maxExitDistSteps=' + AE3.ruleFindingsFilm.stats().maxExitDistSteps);
+
+  // E5 — §84 must not quietly undo §82. Same eight-set fixture, exit line present, still ONE box.
+  const AE5 = await build8();
+  const c5 = recCtx();
+  const n5 = AE5.ruleFindingsFilmCompositeOntoCanvas(c5, 1280, 720, 0);
+  let sawExit = false;
+  for (let t = 0; t <= 40; t += 5) { const cc = recCtx(); AE5.ruleFindingsFilmCompositeOntoCanvas(cc, 1280, 720, t); if (textOf(cc).some(x => /Longest path to exit/.test(x))) sawExit = true; }
+  chk('E5 §84.6 STILL-ONE-BOX — the exit line adds a LINE, not a box: §82\'s concurrency cap survives §84',
+      n5 === 1 && sawExit, 'boxes at t=0: ' + n5 + ' · exit line seen during circulation_distance\'s own slot: ' + sawExit);
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
