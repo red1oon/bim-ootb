@@ -2192,7 +2192,22 @@ function setupStreaming(A) {
           // without this bit a mixed bucket would paint its non-MEP members an MEP trade hue.
           // Splitting the bucket keeps BOTH halves correct; it cannot fragment by more than the
           // 21 mixed buckets (160 -> at most 181 on the worst building).
-          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueClasses[el.ifcClass] ? 'M' : '-');
+          // §BATCH_BUCKET_CLASS_PAINT (2026-09-11, bim-compiler prompts/4D_MODEL_INTEGRITY.md §O) —
+          // the `M`/`-` bit above fixed ONE case of the general hazard the comment right above it
+          // names. The bucket's single material is built from `items[0].el.ifcClass` (~:2300 below),
+          // so ANY bucket holding two ifc_classes paints one of them with the other's material —
+          // and two NON-MEP classes still collided. MEASURED on the shipped set: 36,434 elements
+          // fleet-wide painted with a foreign class's material (LTU_AHouse 25,913, Hospital 5,998,
+          // JKR 1,493, Clinic 1,077, HHS 911, Duplex 250, Terminal/TermRooms 396 each).
+          // The user-visible instance that found it: HHS bucket "Level 3|ARC|_default|||-" leads with
+          // an IfcBuildingElementProxy, so its 18 IfcCovering + 16 IfcDoor + 3 IfcRailing members were
+          // painted PROXY TEAL — one of them (3XrBtx9eX7mQE6EqWHPeEe, a 5.89x7.33m suspended ceiling
+          // at z=9.78m) is the "floating blue piece" in the HHS_lingerfit2 bake, frames 3-36.
+          // With the class in the key, `items[0].el.ifcClass` IS every member's class by construction.
+          // Splits ONLY buckets that were already mixed: a class-pure bucket keys identically before
+          // and after, so its draw-call count is unchanged.
+          // Positional `key.split('|')` consumers read parts[0..2] — this stays a TRAILING field.
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueClasses[el.ifcClass] ? 'M' : '-') + '|' + (el.ifcClass || '');
           // §MERGED_GUID: single target selection — merge bucket or batch bucket, never both.
           // Applies to §S280e's low-instance elements too: each is baked individually into the
           // merged buffer with its own index range, so identity survives exactly as for singles.
@@ -2831,7 +2846,7 @@ function setupStreaming(A) {
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
 
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-');   // §MEP_COLOR_SURVIVES_PHOTOREAL — see the same bit on the batch key above
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-') + '|' + (ifcClass || '');   // §MEP_COLOR_SURVIVES_PHOTOREAL — see the same bit on the batch key above. §BATCH_BUCKET_CLASS_PAINT (§O): the trailing class term must match the batch key's, or this consolidate pass re-merges what that key split and re-introduces the foreign-class paint.
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
