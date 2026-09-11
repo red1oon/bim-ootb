@@ -264,6 +264,14 @@ function setupRuleFindingsFilm(A) {
       if (_near[i] || _fade[i] > 0) elig.push(all[ai]);
     }
 
+    // §70.6 — the MARKERS follow this same ranking, not just the labels. 215 room/element bboxes with
+    // depthTest off filled the frame (real bake, t=48s/92s); the nearest-N alone reads cleanly.
+    if (typeof A.ruleTintShowOnly === 'function') {
+      var vis = {};
+      for (var vi = 0; vi < elig.length; vi++) vis[_marks[elig[vi].i].guid] = 1;
+      A.ruleTintShowOnly(vis);
+    }
+
     var placed = [], skippedFrustum = 0, skippedOverlap = 0, labelled = 0;
     var V = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3() : null;
     for (var k = 0; k < elig.length && V; k++) {
@@ -302,7 +310,8 @@ function setupRuleFindingsFilm(A) {
       _lastLog = Math.floor(fs);
       log('§RULE_FILM_LABELS filmSec=' + fs.toFixed(1) + ' marks=' + _marks.length +
           ' eligible=' + elig.length + ' labelled=' + labelled +
-          ' skippedOverlap=' + skippedOverlap + ' skippedFrustum=' + skippedFrustum + ' topN=' + TOP_N);
+          ' skippedOverlap=' + skippedOverlap + ' skippedFrustum=' + skippedFrustum +
+          ' markersShown=' + elig.length + '/' + _marks.length + ' topN=' + TOP_N);
     }
     return labelled;
   };

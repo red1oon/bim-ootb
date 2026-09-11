@@ -118,6 +118,8 @@ function recCtx() {
     const sameSpot = (v.x === 5);
     return { viewZ: behind ? 1 : -1, x: sameSpot ? 0.2 : (v.z === -10 ? -0.5 : 0.6), y: 0, z: 0 };
   });
+  let shownGuids = null;
+  A1.ruleTintShowOnly = (set) => { shownGuids = Object.keys(set || {}); return shownGuids.length; };
   const ctx = recCtx();
   const labelled = A1.ruleFindingsFilmCompositeOntoCanvas(ctx, 1280, 720, 1.0);
   chk('K3 §70 labels are drawn from the ranked nearest set, capped at TOP_N',
@@ -126,8 +128,28 @@ function recCtx() {
       ctx.draws.filter(d => d.kind === 'text' && /floating member/.test(d.text)).length === 0, 'b3 absent');
   chk('K5 §70 two findings on the same screen point yield ONE label, not two',
       labelled < 4, 'labelled=' + labelled + ' of 4 in-frustum marks (one rejected by overlap)');
+  chk('K7b §70.6 markers are handed a ranked visibility set every frame (not left all-on)',
+      shownGuids !== null, shownGuids ? 'ruleTintShowOnly called with ' + shownGuids.length : 'never called');
   chk('K5b §70 something really was drawn — the pass is not vacuously empty',
       ctx.draws.filter(d => d.kind === 'text').length > 0, ctx.draws.filter(d => d.kind==='text').length + ' text draws');
+
+  // ── K7: narrowing only bites when there are MORE findings than TOP_N (8). The fixture above has 5,
+  // so it proves nothing about the cap — this one uses 20. That is the same vacuous-pass trap §66's C3
+  // fell into: a check must reach the behaviour it names.
+  const many = [];
+  for (let i = 0; i < 20; i++) many.push({ guid: 'm' + i, ifc_class: 'IfcBeam', name: 'Beam ' + i, storey: 'L1', rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 + i });
+  const { A: A2 } = await build({ beats: { rise: 0.9 }, durationSec: 100 }, { sRows: many, eRows: [] });
+  const AT2 = {}; many.forEach((m, i) => { AT2[m.guid] = { x: 0, y: 0, z: -(10 + i * 10) }; });
+  A2._ruleTintAt = AT2;
+  A2.camera = fakeCamera(v => ({ viewZ: -1, x: 0, y: 0, z: 0 }));
+  let shown2 = null;
+  A2.ruleTintShowOnly = (set) => { shown2 = Object.keys(set || {}); return shown2.length; };
+  A2.ruleFindingsFilmCompositeOntoCanvas(recCtx(), 1280, 720, 1.0);
+  chk('K7 §70.6 with 20 findings and TOP_N=8, markers are narrowed to the ranked few — not all 20',
+      shown2 !== null && shown2.length <= 8 && shown2.length > 0, 'shown=' + (shown2 ? shown2.length : 'never') + ' of 20');
+  chk('K7c §70.6 the NEAREST findings are the ones kept visible',
+      shown2 !== null && shown2.indexOf('m0') >= 0 && shown2.indexOf('m19') < 0,
+      'nearest m0 in=' + (shown2 && shown2.indexOf('m0') >= 0) + ', farthest m19 in=' + (shown2 && shown2.indexOf('m19') >= 0));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

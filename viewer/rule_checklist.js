@@ -347,6 +347,8 @@ function setupRuleChecklist(A) {
         iMesh.setMatrixAt(j, _m4);
       }
       iMesh.instanceMatrix.needsUpdate = true;
+      iMesh.userData.ruleTintGuids = crows.map(function (r) { return r[0]; });   // §70.6
+      iMesh.userData.ruleTintMats = crows.map(function (r, j) { var mm = new THREE.Matrix4(); iMesh.getMatrixAt(j, mm); return mm; });
       A.scene.add(iMesh);
       A._ruleTintMeshes.push(iMesh);
       total += crows.length;
@@ -362,6 +364,30 @@ function setupRuleChecklist(A) {
       ' shineThrough=' + !!(opts && opts.shineThrough) + ' renderOrder=' + ruleTintRenderOrder(opts) +
       ' depthTest=' + (ruleTintMaterialOpts(opts).depthTest !== false));
     if (A.markDirty) A.markDirty();
+  };
+
+  // §70.6 §RULE_TINT_SHOW_ONLY — markers follow the SAME nearest-N ranking the labels use, instead of
+  // all being visible at once. Clash can show every marker because a clash marker is a small contact
+  // box; a Sanity marker is a whole-element or whole-ROOM bbox, and 215 of those with depthTest off
+  // filled the frame with wireframe (real HHS bake out/HHS_clashmodel_854x480.mp4 at t=48s and 92s).
+  // Hidden instances are scaled to zero rather than removed, so the mesh, its material and its
+  // instance count never change — no rebuild, no reallocation, ~215 matrix writes a frame.
+  var _ZERO = null;
+  A.ruleTintShowOnly = function (guidSet) {
+    if (!A._ruleTintMeshes || !A._ruleTintMeshes.length) return 0;
+    if (!_ZERO) _ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+    var shown = 0;
+    A._ruleTintMeshes.forEach(function (m) {
+      var gs = m.userData.ruleTintGuids, ms = m.userData.ruleTintMats;
+      if (!gs || !ms) return;
+      for (var i = 0; i < gs.length; i++) {
+        var on = !guidSet || guidSet[gs[i]];
+        m.setMatrixAt(i, on ? ms[i] : _ZERO);
+        if (on) shown++;
+      }
+      m.instanceMatrix.needsUpdate = true;
+    });
+    return shown;
   };
 
   A.exitRuleModeTint = function () {
