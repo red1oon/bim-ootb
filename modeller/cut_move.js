@@ -34,6 +34,7 @@
   var TAG = '§CUT-MOVE';
   var AX = { x: 0, y: 1, z: 2 };
   var OVERLAP_EPS = 1e-6;     // m — bonsai_itemdrag.js's own flush-contact rule (0 overlap = adjacency, not a hit)
+  var THROUGH_TOL = 0.05;     // m — SPEC_GEOM_CUT_RESIZE.md §3 anchorShift.through: the void overhangs the host
   var HALF_PI = Math.PI / 2;
   var YAW_TOL = 0.01;         // rad — bonsai_kernel_worker.js §SCALE-YAW-GUARD / GRID_ROTATION_GUARD.md §1
 
@@ -58,36 +59,76 @@
              c2: [v.c2[0] + (d[0] || 0), v.c2[1] + (d[1] || 0), v.c2[2] + (d[2] || 0)] };
   }
 
-  // netShifts(ops) → { byCut: {cutId: [dx,dy,dz]}, sig } over the ACTIVE rows of one fold. Only cutIds that are an
-  // active GEOM_CUT in the same list count; `sig` is a deterministic, order-independent signature of the non-zero
-  // shifts ('' when none) — the cache-key suffix (spec §2 CACHE).
-  function netShifts(ops) {
+  // applyOverrides({c1,c2}, ov) → a NEW {c1,c2}; `ov` = one netOverrides byCut entry ({s,f}) or undefined ⇒ a copy.
+  // SPEC_GEOM_CUT_RESIZE.md §2 FOLD ORDER: centre' = centre + Σshift; half' = half ⊙ Πfactor; c1' = centre' − half';
+  // c2' = centre' + half' — the resize is about the void's OWN (already-shifted) centre, so shift and resize commute.
+  function applyOverrides(v, ov) {
+    if (!ov) return { c1: v.c1.slice(), c2: v.c2.slice() };
+    var s = ov.s || [0, 0, 0], f = ov.f || [1, 1, 1], c1 = v.c1, c2 = v.c2, out1 = [0, 0, 0], out2 = [0, 0, 0];
+    for (var k = 0; k < 3; k++) {
+      var centre = (c1[k] + c2[k]) / 2 + (s[k] || 0);
+      var half = Math.abs(c2[k] - c1[k]) / 2 * (f[k] != null ? f[k] : 1);
+      var sign = c2[k] >= c1[k] ? 1 : -1;
+      out1[k] = centre - sign * half; out2[k] = centre + sign * half;
+    }
+    return { c1: out1, c2: out2 };
+  }
+
+  // netOverrides(ops) → { byCut: {cutId: {s:[dx,dy,dz], f:[fx,fy,fz]}}, sig } over the ACTIVE rows of one fold. Same
+  // walk as netShifts — sums GEOM_CUT_MOVE into s, multiplies GEOM_CUT_RESIZE into f (start [1,1,1]); only cutIds
+  // that are an active GEOM_CUT in the same list count. A GEOM_CUT_RESIZE row with any factor ≤0 or non-finite is
+  // IGNORED WHOLE (tolerant, like a cut-move naming a non-active cut) and logged. `sig` is a deterministic,
+  // order-independent signature ('' when none) — the cache-key suffix (spec §2 CACHE); an entry whose resize is
+  // still identity (f=[1,1,1]) prints the OLD shift-only shape so step 1's cache keys/signatures stay byte-identical
+  // when no resize is in play; a resize (alone or with a shift) appends `*fx,fy,fz`.
+  function netOverrides(ops) {
     var cuts = {}, byCut = {}, i, op, P, id;
     for (i = 0; i < (ops || []).length; i++) { op = ops[i]; if (op && op.op_type === 'GEOM_CUT') cuts[String(op.id)] = 1; }
     for (i = 0; i < (ops || []).length; i++) {
-      op = ops[i]; if (!op || op.op_type !== 'GEOM_CUT_MOVE') continue;
-      P = params(op); id = P.cutId != null ? String(P.cutId) : null;
-      if (id == null || !cuts[id]) continue;                                      // tolerant: names no active cut → ignored
-      var s = byCut[id] || (byCut[id] = [0, 0, 0]);
-      s[0] += +P.dx || 0; s[1] += +P.dy || 0; s[2] += +P.dz || 0;
+      op = ops[i]; if (!op) continue;
+      if (op.op_type === 'GEOM_CUT_MOVE') {
+        P = params(op); id = P.cutId != null ? String(P.cutId) : null;
+        if (id == null || !cuts[id]) continue;                                    // tolerant: names no active cut → ignored
+        var ov = byCut[id] || (byCut[id] = { s: [0, 0, 0], f: [1, 1, 1] });
+        ov.s[0] += +P.dx || 0; ov.s[1] += +P.dy || 0; ov.s[2] += +P.dz || 0;
+      } else if (op.op_type === 'GEOM_CUT_RESIZE') {
+        P = params(op); id = P.cutId != null ? String(P.cutId) : null;
+        if (id == null || !cuts[id]) continue;
+        var fx = P.fx != null ? +P.fx : 1, fy = P.fy != null ? +P.fy : 1, fz = P.fz != null ? +P.fz : 1;
+        var bad = function (v) { return !(v > 0) || !isFinite(v); };
+        if (bad(fx) || bad(fy) || bad(fz)) { console.log(TAG + ' ignored GEOM_CUT_RESIZE #' + op.id + ': non-positive factor'); continue; }
+        var ovr = byCut[id] || (byCut[id] = { s: [0, 0, 0], f: [1, 1, 1] });
+        ovr.f[0] *= fx; ovr.f[1] *= fy; ovr.f[2] *= fz;
+      }
     }
-    var keys = Object.keys(byCut).filter(function (k) { var s = byCut[k]; return s[0] !== 0 || s[1] !== 0 || s[2] !== 0; })
+    var keys = Object.keys(byCut).filter(function (k) { var o = byCut[k]; return o.s[0] !== 0 || o.s[1] !== 0 || o.s[2] !== 0 || o.f[0] !== 1 || o.f[1] !== 1 || o.f[2] !== 1; })
       .sort(function (a, b) { return (+a) - (+b); });
-    var sig = keys.map(function (k) { var s = byCut[k]; return k + ':' + s[0] + ',' + s[1] + ',' + s[2]; }).join(';');
+    var sig = keys.map(function (k) {
+      var o = byCut[k], out = k + ':' + o.s[0] + ',' + o.s[1] + ',' + o.s[2];
+      if (o.f[0] !== 1 || o.f[1] !== 1 || o.f[2] !== 1) out += '*' + o.f[0] + ',' + o.f[1] + ',' + o.f[2];
+      return out;
+    }).join(';');
     return { byCut: byCut, sig: sig };
+  }
+  // netShifts(ops) → { byCut: {cutId: [dx,dy,dz]}, sig } — a thin backwards-compatible wrapper over netOverrides
+  // (step 1's shape; bonsai_ifc keeps calling this) so callers unaware of resize see byte-identical output.
+  function netShifts(ops) {
+    var ov = netOverrides(ops), byCut = {};
+    Object.keys(ov.byCut).forEach(function (k) { var s = ov.byCut[k].s; if (s[0] !== 0 || s[1] !== 0 || s[2] !== 0) byCut[k] = s; });
+    return { byCut: byCut, sig: ov.sig };
   }
   function keySuffix(sig) { return sig ? '|cm:' + sig : ''; }
 
-  // cutsOver(ops, hostFid, box) → every ACTIVE GEOM_CUT {parent: host} whose (net-shifted) void overlaps `box` — the
-  // "a REAL carved void tied to THIS filling" rule bonsai_itemdrag.js bakedVoidFor introduced, now over the CURRENT
-  // void (prior cut-moves applied) so a hole that was already slid is still found under its door.
+  // cutsOver(ops, hostFid, box) → every ACTIVE GEOM_CUT {parent: host} whose (net-overridden) void overlaps `box` —
+  // the "a REAL carved void tied to THIS filling" rule bonsai_itemdrag.js bakedVoidFor introduced, now over the
+  // CURRENT void (prior cut-moves/resizes applied) so a hole that was already slid/resized is still found under its door.
   function cutsOver(ops, hostFid, box) {
-    var net = netShifts(ops), out = [];
+    var net = netOverrides(ops), out = [];
     for (var i = 0; i < (ops || []).length; i++) {
       var op = ops[i]; if (!op || op.op_type !== 'GEOM_CUT') continue;
       var P = params(op);
       if (!same(parentOf(op, P), hostFid) || !P.void || !P.void.c1 || !P.void.c2) continue;
-      if (overlaps(voidBox(shiftVoid(P.void, net.byCut[String(op.id)])), box)) out.push(op);
+      if (overlaps(voidBox(applyOverrides(P.void, net.byCut[String(op.id)])), box)) out.push(op);
     }
     return out;
   }
@@ -135,21 +176,28 @@
   // anchorShift({ cutOp, ops, hostBox, axis, f, translateDelta, minShift }) → { ok, s, q, delta, residual, F, w, reason }
   //   hostBox = the host's measured PRE-DRAG AABB (boxByFid layout); f/translateDelta = the SCALE command about to
   //   fold; minShift = Σ TRANSLATE deltas on this axis that precede the SCALE in the same gesture (usually 0).
+  // §CUT-RESIZE additions: g = 1/f — the authored-frame resize factor that cancels THIS fold's own proportional
+  // widening (spec §1: f·(F·w·g) = F·w); through = the void OVERHANGS the host on this axis (its box extends beyond
+  // the host's measured pre-drag AABB by more than THROUGH_TOL) — a through-axis (the bCut's thickness axis) gets NO
+  // resize (shrinking a through-void by 1/f could stop it cutting through). `residual` is unchanged: what a caller
+  // that emits no resize still sees.
   function anchorShift(a) {
     var k = typeof a.axis === 'string' ? AX[a.axis] : a.axis;
     var fr = frameScale(a.ops, a.cutOp, k);
     if (!fr.ok) return { ok: false, reason: fr.reason, F: fr.f };
-    var net = netShifts(a.ops), P = params(a.cutOp);
-    var vb = voidBox(shiftVoid(P.void, net.byCut[String(a.cutOp.id)]));
+    var net = netOverrides(a.ops), P = params(a.cutOp);
+    var vb = voidBox(applyOverrides(P.void, net.byCut[String(a.cutOp.id)]));
     var vc = (vb[2 * k] + vb[2 * k + 1]) / 2, w = vb[2 * k + 1] - vb[2 * k];
     var minNow = a.hostBox[2 * k] + (+a.minShift || 0), minCut = a.hostBox[2 * k] - fr.tPost;
     var f = a.f != null ? a.f : 1, t = +a.translateDelta || 0;
     var q = minNow + fr.f * (vc - minCut);                                     // the hole's CURRENT world centre
     var delta = (q - minNow) * (f - 1) + t;                                    // the fold's proportional shift of it
     var s = -delta / (f * fr.f);
-    return { ok: true, s: s, q: q, delta: delta, residual: (f - 1) * fr.f * w, F: fr.f, w: w, reason: null };
+    var through = vb[2 * k] < a.hostBox[2 * k] - THROUGH_TOL || vb[2 * k + 1] > a.hostBox[2 * k + 1] + THROUGH_TOL;
+    return { ok: true, s: s, q: q, delta: delta, residual: (f - 1) * fr.f * w, F: fr.f, w: w, g: 1 / f, through: through, reason: null };
   }
 
-  return { TAG: TAG, AX: AX, OVERLAP_EPS: OVERLAP_EPS, voidBox: voidBox, shiftVoid: shiftVoid, netShifts: netShifts,
-    keySuffix: keySuffix, cutsOver: cutsOver, frameScale: frameScale, slideShift: slideShift, anchorShift: anchorShift };
+  return { TAG: TAG, AX: AX, OVERLAP_EPS: OVERLAP_EPS, THROUGH_TOL: THROUGH_TOL, voidBox: voidBox, shiftVoid: shiftVoid,
+    applyOverrides: applyOverrides, netShifts: netShifts, netOverrides: netOverrides, keySuffix: keySuffix,
+    cutsOver: cutsOver, frameScale: frameScale, slideShift: slideShift, anchorShift: anchorShift };
 });

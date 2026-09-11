@@ -90,6 +90,22 @@ Guards to re-run and paste counts into §5: witness_opening_slide (10/10), witne
 witness_gridmove_fold_pure 12/12, witness_dagevu_engine 13/13. Known pre-existing: witness_e2e_cut C4/C6 fail on
 untouched main (pixel-sum checks) — do not "fix" them here, note them.
 
-## §5 Status
-- [ ] cut_move.js netOverrides/applyOverrides/anchorShift.g,through · [ ] worker fold + v9 · [ ] gridmove resize rider
-- [ ] ifc/history/html registration · [ ] W-CUT-MOVE R1-R5 · [ ] W-E2E-CUT-MOVE M5/M6 updated · [ ] guards pasted
+## §5 Status (2026-09-11)
+- [x] cut_move.js netOverrides/applyOverrides/anchorShift.g,through · [x] worker fold + v9 · [x] gridmove resize rider
+- [x] ifc/history/html registration · [x] W-CUT-MOVE R1-R5 · [x] W-E2E-CUT-MOVE M5/M6 updated · [x] guards pasted
+- [x] witness_cut_move.mjs 16/16 (REAL worker fold: C0-C6 as step 1 + R1 f=[0.4,1,1] sig with *fx,fy,fz suffix, netShifts
+  wrapper byte-identical when shift-only; R2 fx=0.5 ⇒ hole [1.6,2.4]; R3 GRID SCALE f=1.25 + s=−0.4 + fx=g=0.8 ⇒ hole
+  centre 2.0 AND width 1.6 EXACTLY, anchorShift.through=false on x / true on y; R4 MOVE/RESIZE swapped in log order ⇒
+  byte-identical hole; R5 plain wall+cut re-fold is a cache HIT with the original hole, R3's signature differs from
+  step 1's shift-only signature)
+- [x] witness_e2e_cut_move.js 8/8 (real bCut + real mouse: M1-M4 unchanged from step 1; M5 gesture = GEOM_GRID_MOVE +
+  GEOM_CUT_MOVE{dx=-0.4} + GEOM_CUT_RESIZE{fx=0.8,fy=fz=1}, hole centre AND width unchanged (1.6 m, the step 1
+  residual is gone), dimLabel exactly "… · 1 held · 1 hole held" (no Δw suffix); M6 one real Ctrl+Z reverts all three
+  gesture rows)
+- [x] guards: witness_opening_slide 10/10 · witness_gridmove_fold_pure 12/12 · witness_dagevu_engine 13/13 ·
+  witness_e2e_opening_slide 8/8 (O0 7/7 real SampleHouse refusals) · witness_e2e_gridstretch 7/7 ·
+  witness_e2e_stretch_ride 11/11 · witness_e2e_grid_greenorange 13/13
+- witness_e2e_cut C4/C6 (framebuffer pixel-sum checks, pix 9970636→9970636) FAIL IDENTICALLY to untouched main —
+  pre-existing (spec preamble step 1 §6), not this change; C1-C3/C5 pass.
+- STEP 3 (not built): a 90°-multiple GEOM_ROTATE frame mapping for a host rotated after its cut — spec
+  prompts/SPEC_CUT_FRAME_ROTATE.md, flagged ask-first, low priority.
