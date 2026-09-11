@@ -8078,11 +8078,24 @@ async function setupEffects(A, renderer, scene, camera) {
     var STOREY_REVEAL_WINDOW_SEC = 10;
     var _storeyRevealWindowSec = Math.min(_useSec.rise, STOREY_REVEAL_WINDOW_SEC);
     var _storeyRevealWindowFrac = _shapeTotal > 0 ? _storeyRevealWindowSec / _shapeTotal : 0;
+    // §STOREY_REVEAL_WINDOW_REAL_SEC (2026-09-11, MEP_CLASH_REVEAL_MOVIE.md §60.2). `windowSec` above
+    // is in SHAPE seconds (`_useSec.rise`, whose denominator is `_shapeTotal`) — it is NOT the number
+    // of film seconds the window occupies once the plan is re-paced to `durationSec`. On the real
+    // 2026-09-11 HHS bake those two disagreed by 49%: this line printed `windowSec=2.7` while
+    // cpe_storey_reveal.js's own `§STOREY_REVEAL_FIT windowSec=4.03` (windowFrac x durationSec) was
+    // the one the film actually played — confirmed frame-by-frame, 4 slots of 1.01s. Under this
+    // lane's Log Mandate that is a real defect: §STOREY_REVEAL_WINDOW is the FIRST line a session
+    // reads about this feature (§59.6c had to go find the FIT number instead). So print the real
+    // film seconds too, from the same `durationSec` the very next console.log already uses.
+    var _storeyRevealRealSec = _storeyRevealWindowFrac * durationSec;
     console.log('§STOREY_REVEAL_WINDOW pullbackSec=' + _useSec.rise.toFixed(1) +
-      ' windowSec=' + _storeyRevealWindowSec.toFixed(1) + ' windowFrac=' + _storeyRevealWindowFrac.toFixed(4) +
+      ' windowSec=' + _storeyRevealWindowSec.toFixed(1) + '(shape)' +
+      ' realWindowSec=' + _storeyRevealRealSec.toFixed(2) + '(film, =windowFrac*durationSec ' +
+      durationSec.toFixed(1) + 's — THIS is the one §STOREY_REVEAL_FIT slices into slots)' +
+      ' windowFrac=' + _storeyRevealWindowFrac.toFixed(4) +
       ' orbitStartFrac(rise)=' + tR.toFixed(4) +
       ' windowStartFrac=' + (tR - _storeyRevealWindowFrac).toFixed(4) +
-      ' — last ' + _storeyRevealWindowSec.toFixed(1) + 's of pullback, ending exactly where orbit begins');
+      ' — last ' + _storeyRevealWindowSec.toFixed(1) + 's(shape) of pullback, ending exactly where orbit begins');
     console.log('§CINEMA_PACING natural=' + _natTotal.toFixed(1) + 's = dive ' + _natSec.dive.toFixed(1) +
       ' + spin ' + _natSec.spin.toFixed(1) + ' + walk ' + _natSec.out.toFixed(1) +
       ' + pullout ' + _natSec.pullout.toFixed(1) + ' + flyback ' + _natSec.flyback.toFixed(1) +
