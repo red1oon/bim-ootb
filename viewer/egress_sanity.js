@@ -16,13 +16,26 @@
 // EGRESS_SANITY.md's own UPDATE section. Shipped anyway (WARNING-ceiling, uncited placeholder,
 // same discipline as every other threshold in this PR) with that miscalibration disclosed, not
 // hidden.
+//
+// §EGRESS_ROOMGRAPH_LATE_BIND (real bug found via a sibling session baking this into a movie,
+// bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §59.7, 2026-09-11 — fixed here independently on
+// this branch): this file is a static <script> in viewer.html, loaded at page boot; common/
+// room_graph.js is lazy-loaded later by APP.loadNavigate() (viewer/main.js). Reading
+// `ROOT.RoomGraph` ONCE at factory time (module load) captured `undefined` PERMANENTLY — a later
+// loadNavigate() populates window.RoomGraph, but nothing here ever looked again, so rules 2/3
+// silently no-op'd in every real browser/bake run despite every Node witness passing (Node's
+// require() branch was never the broken half). Fixed by resolving RoomGraph at CALL time inside
+// evaluate() instead — the Node require() branch is untouched (no lazy-loading exists there).
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory();
   else root.EgressSanity = factory();
 })(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
   var ROOT = (typeof window !== 'undefined') ? window : {};
-  var RoomGraph = (typeof module !== 'undefined' && module.exports) ? require('../common/room_graph.js') : ROOT.RoomGraph;
+  // Node: eager require (no lazy-loading exists there — every Node caller expects this to just
+  // work). Browser: resolved at CALL time by _resolveRoomGraph() below, not captured here.
+  var _nodeRoomGraph = (typeof module !== 'undefined' && module.exports) ? require('../common/room_graph.js') : null;
+  function _resolveRoomGraph() { return _nodeRoomGraph || ROOT.RoomGraph; }
 
   function _severityBelow(value, rule) {
     // Door width: NARROWER is worse (flag when value <= threshold), opposite direction from a
@@ -72,6 +85,10 @@
     log('§EGRESS rule=door_clear_width severity=' + (doorFlags.CRITICAL + doorFlags.WARNING) + ' critical=' + doorFlags.CRITICAL);
 
     // ── Rules 2 + 3: circulation-distance / isolated-room, via the real room graph ──
+    // Resolved HERE, at call time — not captured at module-load time (§EGRESS_ROOMGRAPH_LATE_BIND
+    // above). A caller that awaits A.loadNavigate() before calling evaluate() (rule_checklist.js's
+    // A.showEgressSanity does exactly this) now actually sees the loaded RoomGraph.
+    var RoomGraph = _resolveRoomGraph();
     if (!RoomGraph) {
       log('§EGRESS_NO_ROOMGRAPH RoomGraph module not available — rules 2/3 skipped');
       return rows;
