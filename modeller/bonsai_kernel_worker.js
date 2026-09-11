@@ -4,6 +4,10 @@
 // typed arrays. The fold is the SAME code path proven by W-KERNEL-FOLD (build/kernel/spike.html).
 // occt needs WASM tail-calls => Chrome 114+/Safari 17.2+, NO Firefox (gated host-side in bonsai_kernel.js).
 import { OcctKernel } from './lib/kernel/index.js';
+// §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE's meaning — a classic triple-export
+// script evaluated here as a module (it binds `self.CutMove`; the main thread's <script> binds window.CutMove).
+import './cut_move.js?v=2';
+const CutMove = self.CutMove;
 
 let kernelPromise = null;
 let _wasmBytes = null;   // pre-fetched bytes handed in by the host (preload) → single download, no re-fetch
@@ -397,18 +401,32 @@ function buildSolids(kernel, ops, seedBoxes, seedLayers) {
       solids.set(+fid, { shape: combined, hash: 'seedlayers:' + fid + ':' + ranges.length });
     }
   }
+  // §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md §2 — Witness: W-CUT-MOVE): a GEOM_CUT_MOVE {cutId, dx,dy,dz} is a pure
+  // FOLD OVERRIDE of an EARLIER GEOM_CUT's void (the signed row is never rewritten). Pre-scan THIS fold's rows → net
+  // shift per cutId (cut_move.js netShifts — rows naming a cut that is not active here are ignored, tolerant like
+  // GEOM_MOVE on a missing parent); the GEOM_CUT branch below subtracts `void + shift` at the cut's own position.
+  // CACHE: op_hash keys assume output = f(prefix); a cut-move is retroactive, so when any shift is non-zero EVERY key
+  // in this fold carries the fold's cut-move signature — one rebuild per distinct shift set, and a scrub/undo back to
+  // a prefix without the move hits the original (unsuffixed) keys. Zero cut-moves ⇒ keys byte-identical to before.
+  const cutMoves = CutMove.netOverrides(ops), cmKey = CutMove.keySuffix(cutMoves.sig);
   for (const op of ops) {
     const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
-    const key = op.op_hash || ('nohash:' + op.id);    // op_hash = unique per immutable prefix → the cache key
+    const key = (op.op_hash || ('nohash:' + op.id)) + cmKey;    // op_hash = unique per immutable prefix → the cache key (+ §CUT-MOVE suffix)
     if (op.op_type === 'GEOM_CUT') {
       const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_CUT parent ' + op.parent + ' not found');
       if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
       _stats.rebuilt++;
       const v = (a) => ({ x: a[0], y: a[1], z: a[2] });
-      const void_ = kernel.makeBoxFromCorners(v(P.void.c1), v(P.void.c2));
+      const ov = cutMoves.byCut[String(op.id)];
+      const vd = ov ? CutMove.applyOverrides(P.void, ov) : P.void;   // §CUT-MOVE/§CUT-RESIZE: the void at its net-overridden place
+      const void_ = kernel.makeBoxFromCorners(v(vd.c1), v(vd.c2));
       const cut = kernel.cut(pe.shape, void_);
       kernel.release(void_);                          // local intermediate (parent is cached → NOT released)
       shapeCache.set(key, cut); solids.set(op.parent, { shape: cut, hash: key });
+    } else if (op.op_type === 'GEOM_CUT_MOVE') {       // §CUT-MOVE: folded at ITS CUT's position via the pre-scan above
+      continue;                                        // (a no-op here; never a leaf, never a parent lookup)
+    } else if (op.op_type === 'GEOM_CUT_RESIZE') {     // §CUT-RESIZE: folded at ITS CUT's position via the pre-scan above
+      continue;                                        // (a no-op here; never a leaf, never a parent lookup)
     } else if (op.op_type === 'GEOM_FILLET') {
       const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_FILLET parent ' + op.parent + ' not found');
       if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }

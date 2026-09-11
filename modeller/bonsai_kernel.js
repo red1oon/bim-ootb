@@ -32,7 +32,7 @@
     init() {
       if (this._worker) return this._worker;
       if (!this.isSupported()) { console.warn(TAG + ' unsupported host (needs WASM tail-calls + Worker)'); return null; }
-      const url = new URL('bonsai_kernel_worker.js?v=7', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b) · v6: §CUT-ON-ARC seedBoxes (promote box-like insert to B-rep for GEOM_CUT/FILLET) · v7: Tier 1 shoulders GEOM_REVOLVE/SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT + listFaces
+      const url = new URL('bonsai_kernel_worker.js?v=9', _self);   // v9: §CUT-RESIZE GEOM_CUT_RESIZE fold override (cut_move.js netOverrides/applyOverrides) · v8: §CUT-MOVE GEOM_CUT_MOVE fold override (cut_move.js) · v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b) · v6: §CUT-ON-ARC seedBoxes (promote box-like insert to B-rep for GEOM_CUT/FILLET) · v7: Tier 1 shoulders GEOM_REVOLVE/SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT + listFaces
       this._worker = new Worker(url.href, { type: 'module' });
       this._worker.onmessage = (e) => {
         const d = e.data || {};

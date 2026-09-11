@@ -278,7 +278,15 @@
         const out = dagevu.propagateCommands(commands, this._boxByFid());
         commands = out.commands; riders = out.riders; held = out.held; refusals = out.refusals; proposals = out.proposals; dimLabel = out.dimLabel;
         const applied = this.applyOverrides(commands, riders);
-        return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded, held, refusals, proposals, dimLabel };
+        // §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md §4): a carved void (active GEOM_CUT on the host, overlapping an
+        // ANCHORED opening) would be carried away by the fold's SCALE while the door is held — emit the inverse shift
+        // as one GEOM_CUT_MOVE rider per hole (computed from the POST-override commands, so a green-excluded wall
+        // emits none). An unmappable frame is a refusal that blocks commit() like anchor-no-free-end.
+        const cm = this._cutRiders(applied.commands, held.concat(applied.riders.map(r => r.featureId)), dagevu, refusals);
+        if (cm.riders.length) dimLabel = (dimLabel ? dimLabel + ' · ' : '') + cm.riders.length + ' hole' + (cm.riders.length > 1 ? 's' : '') + ' held' +
+          (Math.abs(cm.residual) > 1e-9 ? ' (Δw ' + (cm.residual >= 0 ? '+' : '') + cm.residual.toFixed(2) + 'm)' : '');
+        if (cm.refused.length) dimLabel = (dimLabel ? dimLabel + ' · ' : '') + 'REFUSED hole #' + cm.refused.join(',#');
+        return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded, held, refusals, proposals, dimLabel, cutRiders: cm.riders };
       }
       // §STRETCH-RIDE (pre-§DAGEVU path, kept byte-identical for a LOAD_FAIL of dagevu_engine.js or an absent bridge):
       // a hosted opening must NOT divorce or scale when its host wall is grid-stretched — the
@@ -294,7 +302,51 @@
         commands = ride.commands; riders = ride.riders;
       }
       const applied = this.applyOverrides(commands, riders);
-      return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded, held, refusals, proposals, dimLabel };
+      return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded, held, refusals, proposals, dimLabel, cutRiders: [] };
+    },
+    // §CUT-MOVE (SPEC_GEOM_CUT_MOVE.md §3-4): for every ANCHORED opening whose host has a SCALE command, every active
+    // GEOM_CUT {parent: host} whose (net-shifted) void overlaps the opening's pre-drag AABB gets the inverse of the
+    // fold's proportional shift, s = −Δ/(f·F), so its centre stays under the held door (cut_move.js anchorShift — the
+    // ONE definition the worker fold, the slide and this path share). TRANSLATE-only hosts need nothing (hole and
+    // held door move together); a RIDE opening needs nothing (door and hole take the same mapping). The width
+    // residual (f−1)·F·w is REPORTED (max-magnitude, signed), never corrected (a void resize is step 2).
+    _cutRiders(commands, candidateFids, dagevu, refusals) {
+      const out = { riders: [], refused: [], residual: 0 };
+      const CM = window.CutMove; if (!CM || !dagevu || !candidateFids.length) return out;
+      const O = window.Bonsai.oplog, ops = (O && O._geomOps) ? O._geomOps() : [];
+      const boxByFid = this._boxByFid(), AXI = CM.AX;
+      const cmdsByHost = {};
+      commands.forEach(c => { if (c && c.featureId != null) (cmdsByHost[c.featureId] = cmdsByHost[c.featureId] || []).push(c); });
+      const seen = {};
+      for (const fid of candidateFids) {
+        if (dagevu.modeOf(fid) !== 'anchor') continue;
+        const edge = dagevu.edgeFor(fid); if (!edge) continue;
+        const host = edge.hostFid, cmds = cmdsByHost[host] || [];
+        if (!cmds.some(c => c.action !== 'TRANSLATE')) continue;
+        const fb = boxByFid[fid], hb = boxByFid[host]; if (!fb || !hb) continue;
+        for (const cutOp of CM.cutsOver(ops, host, fb)) {
+          if (seen[cutOp.id]) continue; seen[cutOp.id] = 1;
+          const d = [0, 0, 0], g = [1, 1, 1], minShift = [0, 0, 0]; let bad = null, res = 0;
+          for (const c of cmds) {                                  // in command order: a preceding TRANSLATE moves the anchor min
+            const k = AXI[c.axis]; if (k == null) continue;
+            if (c.action === 'TRANSLATE') { minShift[k] += c.delta || 0; continue; }
+            const r = CM.anchorShift({ cutOp, ops, hostBox: hb, axis: k, f: c.newScale != null ? c.newScale : 1, translateDelta: c.translateDelta || 0, minShift: minShift[k] });
+            if (!r.ok) { bad = r.reason; break; }
+            // §CUT-FRAME-ROTATE: r.s/r.g are AUTHORED-frame quantities — place them at r.authoredAxis (= M.perm[k]),
+            // NOT at the world axis k, once a post-cut rotation can permute the frame (identity-perm ⇒ same index,
+            // so this is a no-op for every unrotated host — byte-identical to step 1/2).
+            d[r.authoredAxis] += r.s;
+            // §CUT-RESIZE (SPEC_GEOM_CUT_RESIZE.md §3): a non-through axis is fully held — accumulate the resize
+            // g=1/f and the residual on it is 0; a through axis (the bCut's thickness axis) gets NO resize and keeps
+            // reporting its residual as before (shrinking a through-void by 1/f could stop it cutting through).
+            if (!r.through) { g[r.authoredAxis] *= r.g; } else if (Math.abs(r.residual) > Math.abs(res)) res = r.residual;
+          }
+          if (bad) { out.refused.push(cutOp.id); refusals.push({ kind: 'cut-move-unmappable', fillingFid: fid, hostFid: host, cutId: cutOp.id, reason: bad }); continue; }
+          out.riders.push({ cutId: cutOp.id, parent: host, dx: d[0], dy: d[1], dz: d[2], fx: g[0], fy: g[1], fz: g[2], fillingFid: fid, residual: res });
+          if (Math.abs(res) > Math.abs(out.residual)) out.residual = res;
+        }
+      }
+      return out;
     },
 
     // Commit ONE signed GEOM_GRID_MOVE per drag-release; the worker folds the recompose deterministically.
@@ -307,9 +359,12 @@
       // can shorten the drag or ctrl+click the opening to let it ride.
       if (preview.refusals && preview.refusals.length) {
         const r = preview.refusals[0];
-        const msg = '§DAGEVU refused: opening #' + r.fillingFid + ' would leave wall #' + r.hostFid + ' on ' + r.axis +
+        const msg = (r.kind === 'cut-move-unmappable'
+          ? '§CUT-MOVE refused: hole GEOM_CUT #' + r.cutId + ' under held opening #' + r.fillingFid + ' on wall #' + r.hostFid + ' cannot follow the stretch (' + r.reason +
+            ') — ctrl+click the opening to let it ride, or ctrl+click the wall to exclude it'
+          : '§DAGEVU refused: opening #' + r.fillingFid + ' would leave wall #' + r.hostFid + ' on ' + r.axis +
           ' (wall ' + r.hostAfter[0].toFixed(2) + '..' + r.hostAfter[1].toFixed(2) + ' vs opening ' + r.filling[0].toFixed(2) + '..' + r.filling[1].toFixed(2) +
-          ') — drag less, or ctrl+click the opening to let it ride' + (preview.refusals.length > 1 ? ' [+' + (preview.refusals.length - 1) + ' more]' : '');
+          ') — drag less, or ctrl+click the opening to let it ride') + (preview.refusals.length > 1 ? ' [+' + (preview.refusals.length - 1) + ' more]' : '');
         console.warn(TAG + ' ' + msg);
         throw new Error(msg);
       }
@@ -322,16 +377,27 @@
       // Ctrl+Z reverts the whole thing (before: GEOM_GRID_MOVE then N separate GEOM_MOVEs = N+1 undos, a
       // half-reverted stretch in between). Rider ops stay byte-identical GEOM_MOVE {parent,d*,induced} rows —
       // only the grouping changes. Zero riders ⇒ the existing single-op path below, untouched.
-      if (riders.length && window.Bonsai.oplog.commitGesture) {
+      // §CUT-MOVE: the held openings' carved voids ride the SAME gesture as GEOM_CUT_MOVE rows (SPEC_GEOM_CUT_MOVE.md §4).
+      // §CUT-RESIZE: when any factor ≠ 1, one GEOM_CUT_RESIZE row rides the SAME gesture too (SPEC_GEOM_CUT_RESIZE.md §3).
+      const cutRiders = preview.cutRiders || [];
+      const resizeRiders = cutRiders.filter(c => c.fx !== 1 || c.fy !== 1 || c.fz !== 1);
+      if ((riders.length || cutRiders.length) && window.Bonsai.oplog.commitGesture) {
         const ops = [{ op_type: 'GEOM_GRID_MOVE', params: { gridId, delta, commands } }]
           .concat(riders.map(r => ({ op_type: 'GEOM_MOVE',
-            params: { parent: r.featureId, dx: r.dx, dy: r.dy, dz: r.dz, induced: 'hosted-by' } })));
+            params: { parent: r.featureId, dx: r.dx, dy: r.dy, dz: r.dz, induced: 'hosted-by' } })))
+          .concat(cutRiders.map(c => ({ op_type: 'GEOM_CUT_MOVE',
+            params: { cutId: c.cutId, parent: c.parent, dx: c.dx, dy: c.dy, dz: c.dz, induced: 'anchor-hold' } })))
+          .concat(resizeRiders.map(c => ({ op_type: 'GEOM_CUT_RESIZE',
+            params: { cutId: c.cutId, parent: c.parent, fx: c.fx, fy: c.fy, fz: c.fz, induced: 'anchor-hold' } })));
         const gres = await window.Bonsai.oplog.commitGesture(ops);
         console.log(TAG + ' commit grid=' + gridId + ' delta=' + delta + ' cmds=' + commands.length +
-          ' §GESTURE gid=' + gres.gid + ' riders=' + riders.length + ' verify=' + gres.verify + ' tris=' + gres.triangleCount);
+          ' §GESTURE gid=' + gres.gid + ' riders=' + riders.length + ' cutRiders=' + cutRiders.length + ' verify=' + gres.verify + ' tris=' + gres.triangleCount);
         riders.forEach(r => console.log(TAG + ' §STRETCH-RIDE hosted-by rider=' + r.featureId + ' induced dx=' + r.dx.toFixed(3) +
           ' dy=' + r.dy.toFixed(3) + ' dz=' + r.dz.toFixed(3) + ' (in gesture group)'));
-        return { ...gres, commands, riders };
+        cutRiders.forEach(c => console.log(TAG + ' §CUT-MOVE anchor-hold cut=#' + c.cutId + ' (wall #' + c.parent + ', under held opening #' + c.fillingFid + ') authored shift dx=' + c.dx.toFixed(3) +
+          ' dy=' + c.dy.toFixed(3) + ' dz=' + c.dz.toFixed(3) + ' resize=(' + c.fx.toFixed(3) + ',' + c.fy.toFixed(3) + ',' + c.fz.toFixed(3) + ')' +
+          ' width residual=' + c.residual.toFixed(3) + 'm (reported for through-axes only, not corrected) (in gesture group)'));
+        return { ...gres, commands, riders, cutRiders };
       }
       const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_GRID_MOVE',
         parameters: { gridId, delta, commands } }, {});

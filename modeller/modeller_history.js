@@ -18,7 +18,7 @@
   var OP_TYPES = { 'BUILDING_OPEN': true, 'GEOM_EXTRUDE': true, 'GEOM_EXTRUDE_POLY': true,
     'GEOM_SWEEP': true, 'GEOM_CUT': true, 'GEOM_FILLET': true, 'GEOM_GRID_MOVE': true,
     'GEOM_MOVE': true, 'GEOM_ROTATE': true, 'GEOM_SCALE': true, 'GEOM_INSERT': true,
-    'GEOM_OPENING': true, 'STR_WALK_EDIT': true, 'GEOM_DELETE': true };
+    'GEOM_OPENING': true, 'STR_WALK_EDIT': true, 'GEOM_DELETE': true, 'GEOM_CUT_MOVE': true, 'GEOM_CUT_RESIZE': true };
   var PROFILES = { high: { op: OP_TYPES } };
   PROFILES.all = PROFILES.high; PROFILES.doc = PROFILES.high;   // legacy aliases HistoryBar falls back to
 
@@ -27,6 +27,8 @@
     if (opType === 'BUILDING_OPEN') return 'Opened ' + (p.building || p.name || 'building');
     if (opType === 'GEOM_GRID_MOVE') return 'Grid ' + (p.label || p.gridId || '') + ' move';
     if (opType === 'GEOM_CUT') return 'Cut';
+    if (opType === 'GEOM_CUT_MOVE') return 'Cut move #' + p.cutId;   // §CUT-MOVE (a lone commit; inside a gesture the first op labels the node)
+    if (opType === 'GEOM_CUT_RESIZE') return 'Cut resize #' + p.cutId;   // §CUT-RESIZE (ditto)
     if (opType === 'GEOM_FILLET') return 'Fillet';
     if (opType === 'GEOM_ROTATE') return 'Rotate';
     if (opType === 'GEOM_SCALE') return 'Scale';

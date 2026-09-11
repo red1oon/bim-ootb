@@ -78,6 +78,7 @@
       const api = await this._init();
       const T = WebIFC;
       const ops = window.Bonsai.oplog._geomOps();          // [{id, op_type, parameters, parent}]
+      const _cutMoves = window.CutMove ? window.CutMove.netOverrides(ops) : null;   // §CUT-MOVE/§CUT-RESIZE: net void overrides (cut_move.js, one definition)
       if (!ops.length) throw new Error('nothing authored to export');
       const mID = api.CreateModel({ schema: 'IFC4', name: 'bonsai_model.ifc' });
       const len = v => api.CreateIfcType(mID, T.IFCLENGTHMEASURE, v);
@@ -120,7 +121,11 @@
           wallByFeature.set(op.id, wall); walls++;
           if (!firstWall) firstWall = { points: pts, depth };
         } else if (op.op_type === 'GEOM_CUT') {
-          const { c1, c2 } = op.parameters.void;
+          // §CUT-MOVE/§CUT-RESIZE: the IfcOpeningElement is the SAME net-overridden void the worker subtracts — an
+          // active GEOM_CUT_MOVE/GEOM_CUT_RESIZE on this cut moves/resizes the exported void too; the signed
+          // GEOM_CUT row is never rewritten.
+          const _cmOv = _cutMoves ? _cutMoves.byCut[String(op.id)] : null;
+          const { c1, c2 } = _cmOv ? window.CutMove.applyOverrides(op.parameters.void, _cmOv) : op.parameters.void;
           const dx = Math.abs(c2[0] - c1[0]), dy = Math.abs(c2[1] - c1[1]), dz = Math.abs(c2[2] - c1[2]);
           const cx = (c1[0] + c2[0]) / 2, cy = (c1[1] + c2[1]) / 2, z0 = Math.min(c1[2], c2[2]);
           const rectPlace = api.CreateIfcEntity(mID, T.IFCAXIS2PLACEMENT2D, api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(0), len(0)]), null);

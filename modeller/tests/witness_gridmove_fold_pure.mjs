@@ -67,6 +67,7 @@ for (const f of fs.readdirSync(path.join(MOD, 'lib', 'kernel'))) {
 }
 fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module"}');
 fs.copyFileSync(path.join(MOD, 'bonsai_kernel_worker.js'), path.join(tmp, 'worker.mjs'));
+fs.copyFileSync(path.join(MOD, 'cut_move.js'), path.join(tmp, 'cut_move.js'));   // §CUT-MOVE: the worker's own `import './cut_move.js?v=1'` (harness plumbing, byte-identical copy)
 
 globalThis.self = globalThis.self || {};
 self.postMessage = () => {}; // top-level `self.postMessage({ready:true})` fires at import time
