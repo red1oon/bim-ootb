@@ -57,19 +57,39 @@ next domain following the Clash → Structural Sanity precedent (same rule-based
   travel-distance rule CAN be dry-run with a Node witness, exactly like Sanity's rules —
   no live browser needed for validation. Done: `witness_egress_travel_distance.js` (repo
   root), run against real `buildings/Hospital_meta.db`, 4/4 checks pass.
-- **Exit target CHANGED from "nearest IfcStair" to "own-storey circulation spine"**, based
-  on what the witness found: `RoomGraph.escapeRoute()` (the module's actual nearest-EXIT
-  function) returns **null for every one of Hospital's 156 rooms** — confirmed by running
-  it, not assumed from a comment. This is by the module's own documented design
+- **UPDATE 2026-09-11 (prompts/EXIT_DETECTION.md T1-T4 landed)**: the paragraph below (kept
+  for history) describes v1's situation BEFORE real exit detection existed. It no longer
+  applies — `RoomGraph.escapeRoute()` now reaches **149/156 Hospital rooms** (measured after
+  the fix, `witness_egress_travel_distance.js` E1), because `common/room_graph.js` gained a
+  real, MEASURED raster+footprint exterior-door test (`common/storey_footprint.js`) and E3
+  stair edges now carry a real equivalent-corridor-metres weight (not raw vertical rise).
+  **Rule 2 is now "distance to real exit" via `escapeRoute()`, demoting circulation-spine
+  distance to a FALLBACK** for a room whose building lacks a raster (fleet coverage gap —
+  `escapeRoute()` returns null there, same as before) or is one of the genuinely isolated
+  rooms. See RULES v1 (REVISED) below for the dual-target design and the real numbers this
+  changes — **the old warning_m:30/critical_m:45 thresholds no longer mean what they meant**:
+  measured median distance-to-real-exit on Hospital is 93.6m (vs circulation-spine's 51.5m),
+  because a real exit concentrated on one storey (Level 1 here) pulls in stair-weighted
+  vertical travel for every room above it — 135/149 reachable rooms (90.6%) now exceed the
+  OLD 30m warning threshold. Shipping those numbers unchanged would flag nearly every room,
+  which is not a useful screening signal — treat them as needing fresh calibration against
+  this NEW metric, not just carried forward. T3's evaluator ships a wider placeholder
+  (documented there) rather than silently keeping numbers now known to be miscalibrated.
+- **HISTORY (pre-2026-09-11, kept for context) — exit target CHANGED from "nearest
+  IfcStair" to "own-storey circulation spine"**, based on what the witness found:
+  `RoomGraph.escapeRoute()` (the module's actual nearest-EXIT function) returns **null for
+  every one of Hospital's 156 rooms** — confirmed by running it, not assumed from a comment.
+  This was by the module's own documented design at the time
   (`common/room_graph.js` ~line 768: a prior exit-auto-detection attempt was reverted
   fleet-wide for false positives — "exits=0... that is the HONEST state, not a regression"
-  — pending a real exterior-door test that doesn't exist yet). So "distance to exit" as
-  originally speced cannot be built on `escapeRoute()` today, and there is no ready-made
-  "nearest stair" helper either (stairs appear as `E3` edges between per-storey `CIRC::*`
-  circulation nodes, not as targetable point nodes). **v1 uses `RoomGraph.shortestPath(room,
-  'CIRC::'+storey)`** — distance from a room to its own storey's circulation spine — the
-  achievable, real, non-invented proxy; call it "distance to circulation," not "distance to
-  exit," in the UI to avoid the same overclaim class as "Stress."
+  — pending a real exterior-door test that didn't exist yet). So "distance to exit" as
+  originally speced could not be built on `escapeRoute()` at the time, and there was no
+  ready-made "nearest stair" helper either (stairs appear as `E3` edges between per-storey
+  `CIRC::*` circulation nodes, not as targetable point nodes). **v1 used
+  `RoomGraph.shortestPath(room, 'CIRC::'+storey)`** — distance from a room to its own
+  storey's circulation spine — the achievable, real, non-invented proxy at the time; called
+  "distance to circulation," not "distance to exit," in the UI to avoid the same overclaim
+  class as "Stress." This is now the FALLBACK target, per the UPDATE above.
 - **Real witnessed numbers** (`witness_egress_travel_distance.js`, Hospital, 156 rooms):
   149/156 reachable to their own circulation spine, median 51.5m, farthest outliers 110m–
   260m (14 rooms over 100m) — **NOT yet root-caused as real vs. a routing artifact**; before
@@ -85,13 +105,20 @@ next domain following the Clash → Structural Sanity precedent (same rule-based
 1. **Door clear width** — `IfcDoor`: `max(bbox_x, bbox_y)`. Placeholder `warning_m: 0.85`,
    `critical_m: 0.80` (UNCITED — see disclaimer). `max_severity: WARNING` in v1. VALIDATED:
    0/440 Hospital doors flagged (all ≥0.859m) — clean pass, not a showcase for this rule.
-2. **Distance to circulation spine** (renamed from "travel distance to exit" — see
-   CORRECTION above; this is NOT distance to a building exit, `escapeRoute()` proved that
-   isn't measurable yet) — per room, `RoomGraph.shortestPath(room, 'CIRC::'+storey)`.
-   Placeholder `warning_m: 30`, `critical_m: 45` (UNCITED, jurisdiction-dependent — see
-   disclaimer). `max_severity: WARNING` in v1. VALIDATED but numbers not yet trusted:
-   14/149 reachable rooms exceed 100m, median 51.5m — the >100m outliers need a manual
-   look (real large floor plate vs. routing artifact) before these thresholds mean anything.
+2. **Distance to real exit, falling back to circulation spine** (UPDATED 2026-09-11, see
+   UPDATE above — `escapeRoute()` is real now) — per room, `RoomGraph.escapeRoute(graph,
+   room.guid)`; if that returns null (building has no raster — fleet coverage gap — or the
+   room is genuinely isolated, distinct from rule 3 below which only fires on the
+   no-path-at-all case against the SPINE target), fall back to
+   `RoomGraph.shortestPath(room, 'CIRC::'+storey)` and label the row "to circulation
+   (fallback)" vs "to exit" so the UI never overclaims which target a given row actually
+   measured. Placeholder `warning_m: 30`, `critical_m: 45` carried forward UNCHANGED from
+   v1's circulation-only design — **NOT re-calibrated for the new exit-distance metric**,
+   which measures materially farther (median 93.6m vs circulation's 51.5m) because it
+   folds in real stair-weighted vertical travel. `max_severity: WARNING` (still uncited).
+   90.6% of Hospital's exit-reachable rooms now exceed the warning threshold — ship it,
+   but do not present it as a tuned screening signal until an engineer resets these two
+   numbers for what "distance to a real exit" actually means on a multi-storey building.
 3. **Isolated room (new — found via validation, not originally speced)** — `RoomGraph.
    shortestPath(room, 'CIRC::'+storey)` returns null (no path at all, not just a long one).
    `max_severity` uncapped — this is a real graph-connectivity fact (no measured route out),
@@ -105,7 +132,7 @@ next domain following the Clash → Structural Sanity precedent (same rule-based
     { "name": "door_clear_width", "applies_to": ["IfcDoor"],
       "warning_m": 0.85, "critical_m": 0.80, "max_severity": "WARNING" },
     { "name": "circulation_distance", "applies_to": ["room_graph_node"],
-      "target": "own_storey_circ", "warning_m": 30, "critical_m": 45,
+      "target": "exit_or_own_storey_circ", "warning_m": 30, "critical_m": 45,
       "max_severity": "WARNING" },
     { "name": "isolated_room", "applies_to": ["room_graph_node"],
       "target": "own_storey_circ" }
@@ -138,17 +165,18 @@ as Structural Sanity leading with Floating Member.
   7/156 rooms fully isolated (promoted to its own rule, #3, CRITICAL-capable). RULES v1
   above already reflects these findings — do not re-derive them, extend the witness instead
   if more validation is needed.
-- ☐ **T2** `viewer/rates/egress_rules.json` — the three rules above, loader mirroring
+- ✅ **T2** `viewer/rates/egress_rules.json` — the three rules above, loader mirroring
   `structural_rules.json`'s pattern.
-- ☐ **T3** `viewer/egress_sanity.js` — evaluator: door width (straightforward, same shape
+- ✅ **T3** `viewer/egress_sanity.js` — evaluator: door width (straightforward, same shape
   as Sanity's span/depth query) + circulation-distance + isolated-room (both via
-  `common/room_graph.js`'s `buildGraph`/`shortestPath`, same module `witness_egress_travel_
-  distance.js` already proved works — port that witness into this evaluator's core loop
-  rather than rewriting it). Witness fixture for door width (known-narrow, known-wide).
-  Circulation-distance/isolated-room witness: extend `witness_egress_travel_distance.js`
-  in place with `chk()` assertions against the exact numbers already recorded in T1 (149
-  reachable, 7 isolated) as a regression guard, same pattern as Sanity's T2.
-- ☐ **T4** Wire into `A.showRuleChecklist` with Egress's config — no new panel code.
+  `common/room_graph.js`'s `buildGraph`/`escapeRoute`/`shortestPath` — `escapeRoute()` is
+  real now, see the UPDATE above; try it first, fall back to `shortestPath(room,
+  'CIRC::'+storey)` only when `escapeRoute()` returns null). Witness fixture for door width
+  (known-narrow, known-wide). Circulation-distance/isolated-room witness: extend
+  `witness_egress_travel_distance.js` in place with `chk()` assertions against real numbers
+  (149/156 reachable via escapeRoute() post-fix, 7 isolated) as a regression guard, same
+  pattern as Sanity's T2.
+- ✅ **T4** Wire into `A.showRuleChecklist` with Egress's config — no new panel code.
   Button label "Egress" beside "Sanity" and "Clash".
 
 ## TEST / DEPLOY

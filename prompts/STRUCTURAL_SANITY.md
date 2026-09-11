@@ -243,9 +243,9 @@ building shows this pass is not cheap — do not pre-build one speculatively.
   real panel or by `showStructuralSanity()`.
 
 ## TASKS / STATE
-- ☐ **T1** `viewer/rates/structural_rules.json` — default rules above, loader mirroring
+- ✅ **T1** `viewer/rates/structural_rules.json` — default rules above, loader mirroring
   `rates.js loadSequenceRules()` (JSON overrides in place, hardcoded fallback always present).
-- ☐ **T2** `viewer/structural_sanity.js` — rule evaluator: query STR elements, run the 5
+- ✅ **T2** `viewer/structural_sanity.js` — rule evaluator: query STR elements, run the 5
   rules (floating member, span/depth steel, span/depth concrete, cantilever, column
   continuity), return `[{guid, ifc_class, name, storey, rule, severity, ratio}]`. Witness:
   `tests/test_structural_sanity_rules.js` — synthetic element_transforms/elements_meta
@@ -254,27 +254,27 @@ building shows this pass is not cheap — do not pre-build one speculatively.
   one known-unsupported column, one clean beam → assert exact severities. Then run against
   real `buildings/Hospital_meta.db` and assert floating-member count is in the 40–50 range
   and concentrated at roof-level storeys — regression guard on the VALIDATION numbers above.
-- ☐ **T3** `A.showRuleChecklist(config)` — GENERIC panel (config: title, button label,
+- ✅ **T3** `A.showRuleChecklist(config)` — GENERIC panel (config: title, button label,
   color map, rule-category list, rows), not Sanity-hardcoded, per SHARED CHASSIS decision
   above. `A.showStructuralSanity()` becomes a thin call into it with Sanity's config. Reuse
   `A.zoomToGuid`, `_elInfo`-style lookup, diff.js row template, plus the 3-button/All toggle
   (UI MODEL). Witness: node-level render of the HTML string, assert row count/severity
   grouping matches T2 fixture output, and assert toggle filters to the right rule category
   (no live browser needed for this part).
-- ☐ **T4** Trigger wiring — sidebar button/menu entry beside existing Clash entry point
+- ✅ **T4** Trigger wiring — sidebar button/menu entry beside existing Clash entry point
   (find it in `viewer.html`'s clash-panel toggle; mirror, don't duplicate the panel-open
   plumbing). Button label "Sanity".
-- ☐ **T5** GENERIC Mode 3D tint helper — takes a `{guid: severity}` map + a color lookup,
+- ✅ **T5** GENERIC Mode 3D tint helper — takes a `{guid: severity}` map + a color lookup,
   wireframe-overlays those elements. Same technique as Clash Mode's `DISC_COLORS` overlay
   (measure.js ~1723), just parameterized instead of hardcoded to discipline. Sanity Mode
   calls it with `SEVERITY_COLORS`. Witness: assert material/opacity config matches Clash
   Mode's, only the color lookup differs.
-- ☐ **T6** GENERIC long-press share deep-link — takes `{guid, checkId, rule}`, builds
+- ✅ **T6** GENERIC long-press share deep-link — takes `{guid, checkId, rule}`, builds
   `?guid=<guid>#<checkId>=<rule>`, calls existing `A.shareUrl()`; on load, `?guid=` re-zooms
   (sitecam.js precedent) and `#<checkId>=<rule>` reopens the matching panel pre-filtered.
   Sanity calls it with `checkId='sanity'`. Witness: URL round-trip (build → parse → same
   guid + checkId + rule out).
-- ☐ **T7 (optional, only if T2 profiling on Terminal/Hospital-scale building is slow)**
+- ✅ **T7 SKIPPED (optional, only if T2 profiling on Terminal/Hospital-scale building is slow)**
   sidecar bake following `analysis_sidecar.js`'s `get5D`/`get4D` OPFS pattern.
 
 **Note (not a numbered task, no action here):** implementation order across the 3 specs in

@@ -77,7 +77,7 @@ correcting). Placeholder constants (UNCITED, see disclaimer): `STAIR_SPEED_MPS: 
 corridor meters" unit — do not switch to a time unit for just this edge kind.
 
 ## TASKS / STATE
-- ☐ **T1 (blocking — design + witness before anything else)** Design the building-footprint
+- ✅ **T1 (blocking — design + witness before anything else)** Design the building-footprint
   boundary test (the missing half of "raster + footprint"). Options to evaluate against real
   Hospital data: (a) union of all storeys' raster extents as a 2D footprint polygon/hull, (b)
   the building's own overall bbox from `elements_meta`/`spatial_structure` with a slack
@@ -86,17 +86,17 @@ corridor meters" unit — do not switch to a time unit for just this edge kind.
   needed) against real `buildings/Hospital_meta.db`. Record real candidate count and
   manually inspect each candidate door in the viewer before trusting any of them — same bar
   the original work order set for HHS (3/133, each one checked, not just counted).
-- ☐ **T2** Wire the passing candidates as real `EXIT::` nodes in `buildGraph()`, replacing
+- ✅ **T2** Wire the passing candidates as real `EXIT::` nodes in `buildGraph()`, replacing
   `var exits = 0;` (room_graph.js ~line 785) — keep the §-log line shape, `exits=N` now real.
-- ☐ **T3** `escapeRoute()` regression witness: re-run `witness_egress_travel_distance.js`'s
+- ✅ **T3** `escapeRoute()` regression witness: re-run `witness_egress_travel_distance.js`'s
   E1 check — it should now show `reachable > 0` where it previously asserted `reachable ===
   0`. Update that witness's assertion once T1/T2 land (do not leave a stale "always null"
   assertion in a file this spec depends on).
-- ☐ **T4** Stair-time weighting: replace the E3 weight formula (PART 2), witness against a
+- ✅ **T4** Stair-time weighting: replace the E3 weight formula (PART 2), witness against a
   known real flight (compare old vertical-rise weight vs new equivalent-distance weight on
   the same real Hospital stair, confirm the new number is larger — stairs should never get
   CHEAPER than the old proxy).
-- ☐ **T5** Once T1–T4 land, update `prompts/EGRESS_SANITY.md` rule 2 to use the now-real
+- ✅ **T5** Once T1–T4 land, update `prompts/EGRESS_SANITY.md` rule 2 to use the now-real
   `escapeRoute()` for actual distance-to-exit, demoting "distance to circulation spine" to a
   fallback for buildings where the raster/footprint test is unavailable (fleet coverage gap
   above) rather than the only option.

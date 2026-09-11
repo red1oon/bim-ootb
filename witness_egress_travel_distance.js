@@ -42,13 +42,17 @@ const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  '
   console.log('§GRAPH nodes=' + graph.nodes.length + ' edges=' + graph.edges.length);
   chk('G0 real graph built from real Hospital data', graph.nodes.length > 0);
 
-  // E1 — confirm escapeRoute is a real dead end today, not assumed from the source comment.
+  // E1 — UPDATED (prompts/EXIT_DETECTION.md T1-T3, 2026-09-11): real exit detection landed in
+  // common/room_graph.js (measured raster+footprint exterior-door test, common/storey_footprint.js
+  // — see witness_exit_detection.js for that test's own validation). escapeRoute() is no longer a
+  // guaranteed dead end; this assertion flips from "confirms it's unusable" to "confirms it's now
+  // usable for the large majority of rooms" — a real regression guard, not a stale premise kept.
   const escAll = graph.nodes.map(r => RoomGraph.escapeRoute(graph, r.guid, { log: () => {} }));
   const escReachable = escAll.filter(Boolean).length;
   console.log('§ESCAPE_ROUTE reachable=' + escReachable + '/' + graph.nodes.length);
-  chk('E1 escapeRoute (nearest EXIT) is null for every room — confirms exits=0 blocks the ' +
-    'original "distance to exit" rule as speced, not usable until real exterior-door detection lands',
-    escReachable === 0, 'reachable=' + escReachable);
+  chk('E1 escapeRoute (nearest EXIT) now reaches a real majority of rooms — exit detection landed, ' +
+    'the original "distance to exit" rule is usable again (EXIT_DETECTION.md T1-T3)',
+    escReachable > 0 && escReachable >= graph.nodes.length * 0.5, 'reachable=' + escReachable + '/' + graph.nodes.length);
 
   // E2 — real v1 proxy: distance to own-storey circulation spine.
   let reachable = 0, unreachable = 0;
