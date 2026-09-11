@@ -51,6 +51,13 @@
 //           examine, never absorbed silently. Purely geometric (x0/x1/y0/y1/bz/tz), independent of
 //           which display-authoring path ran — re-measured fresh this stage, not assumed carried
 //           over from the legacy-chain numbers.
+//           §GROUND_CONNECTED RE-LOCK (2026-09-12, bim-compiler prompts/4D_MODEL_INTEGRITY.md §N):
+//           "orphan" now means NOT GROUND-CONNECTED — unreachable from the classified ground
+//           population (seq===1 / phase==='Substructure'; ground-band fallback when a building has
+//           none) along the DIRECTED supporter->supported contact chain. The old rule exempted any
+//           element that was merely the lowest thing in its own footprint, which silently absorbed
+//           HHS's three floating Stahlbalkon brackets. census() re-derives the new rule
+//           independently; W-MZ-4b asserts the engine's own count agrees with it.
 //   W-MZ-5  Wiring: the kernel_ops path calls `_displayTimeline` (unchanged assertion), and
 //           `_displayTimeline`'s CPM branch actually calls `CpmSchedule.run` then `_midairAudit`
 //           on success — replaces the old "legacy branch still runs _twoTierRemap then
@@ -294,6 +301,11 @@ const CPM_MIDAIR_BASELINE = baseline('midair');
 // elements/transforms as the deprecated extracted file but different elevations (sum(center_z)
 // 1,557,254 → 847,396, PR #1427's patch), so 18 more elements genuinely touch nothing. Orphans are
 // purely geometric, so the DB is the only thing that can move this number.
+// §GROUND_CONNECTED RE-LOCK (2026-09-12) — a RULE change, same DB files: "orphan" is now "not
+// ground-connected" (see W-MZ-4 in the header). Terminal 25→2740 · Hospital 35→69 · Duplex 1→0 ·
+// HHS 36→44 · Clinic 27→27 · LTU_AHouse 865→3288 · JKR 1→2 — the per-building WHY, including the
+// Terminal_meta roof-deck and LTU_meta MEP-island findings, is in baselines/midair.json
+// `_relocked_2026_09_12`. Contact relations are byte-unchanged (§CPM_PARITY); only the verdict moved.
 const CPM_ORPHAN_BASELINE = baseline('orphans');
 const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
 const D = 86400000;
@@ -312,9 +324,12 @@ function census(items) {
       for (let b = Math.floor(e.y0 / CELL); b <= Math.floor(e.y1 / CELL); b++) o.push(a + ',' + b);
     return o; };
   items.forEach((it, i) => cellsOf(it).forEach(c => (grid[c] = grid[c] || []).push(i)));
-  let midair = 0, orphan = 0, grounded = 0, ok = 0;
+  let midair = 0, grounded = 0, ok = 0;
   const worst = [];
   let probe = null;   // any non-grounded element WITH contacts — used by W-MZ-7 to re-create a hanging
+  // §GROUND_CONNECTED (2026-09-12) — per-element supporter lists and the footprint-local ground
+  // flag, kept for the orphan walk below (midair/grounded/ok counts are untouched by it).
+  const supporters = new Array(items.length), groundLocal = new Uint8Array(items.length);
   items.forEach((T, i) => {
     let lowest = Infinity, firstContact = Infinity, contacts = 0, embHit = false;
     const seen = {};
@@ -336,11 +351,13 @@ function census(items) {
         if (!bearing && !carrier && !embedded) continue;
         if (embedded) embHit = true;   // §S51 — the judge's own enclosure clause, recorded per element
         contacts++;
+        (supporters[i] || (supporters[i] = [])).push(j);
         if (S.s < firstContact) firstContact = S.s;
       }
     }
     const isGround = !(lowest < T.bz - GAP);
-    if (!contacts) { if (isGround) grounded++; else orphan++; return; }
+    groundLocal[i] = isGround ? 1 : 0;
+    if (!contacts) { if (isGround) grounded++; return; }   // orphan-or-not is the walk's verdict below, never isGround's
     if (!isGround && !probe && firstContact > 0) probe = { i, guid: T.guid, firstContact };
     if (firstContact <= T.s + 1) { ok++; return; }
     if (isGround) { grounded++; return; }
@@ -348,7 +365,27 @@ function census(items) {
     worst.push({ cls: T.cls, seq: T.seq, phase: T.phase, bz: T.bz, start: T.s / D, sup: firstContact / D, emb: embHit });
   });
   worst.sort((a, b) => (b.sup - b.start) - (a.sup - a.start));
-  return { midair, orphan, grounded, ok, worst, probe };
+  // §GROUND_CONNECTED orphan rule, RE-DERIVED here independently of SupportSweep (the same
+  // discipline as the contact relation above): seeds = classified ground (seq===1 ||
+  // phase==='Substructure'), or — only when a population has none — footprint-grounded elements
+  // within ScheduleGate.GROUND_BAND of the 1st-percentile base; then a DIRECTED walk supporter ->
+  // supported. An element the walk never reaches is an orphan regardless of isGround. W-MZ-4b
+  // asserts the engine's own count agrees with this one.
+  const n = items.length, reach = new Uint8Array(n), stack = [];
+  let seeds = 0, seedMode = 'classification';
+  items.forEach((T, i) => { if (T.seq === 1 || T.phase === 'Substructure') { reach[i] = 1; stack.push(i); seeds++; } });
+  if (!seeds && n) {
+    seedMode = 'ground-band';
+    const zs = items.map(it => it.bz).sort((a, b) => a - b);
+    const datum = zs[Math.floor(n * 0.01)] + ScheduleGate.GROUND_BAND;
+    items.forEach((T, i) => { if (groundLocal[i] && T.bz <= datum) { reach[i] = 1; stack.push(i); seeds++; } });
+  }
+  const supportedBy = items.map(() => []);
+  supporters.forEach((l, i) => { if (l) l.forEach(j => supportedBy[j].push(i)); });
+  while (stack.length) { const u = stack.pop(); for (const v of supportedBy[u]) if (!reach[v]) { reach[v] = 1; stack.push(v); } }
+  let orphan = 0; const orphanGuids = [];
+  for (let i = 0; i < n; i++) if (!reach[i]) { orphan++; orphanGuids.push(items[i].guid); }
+  return { midair, orphan, grounded, ok, worst, probe, seedMode, seeds, orphanGuids };
 }
 
 (async () => {
@@ -419,6 +456,7 @@ function census(items) {
     };
     const floatPre = _floatAt();
     console.log('§MIDAIR_BEFORE ' + bld + ' midair=' + before.midair + ' orphan=' + before.orphan +
+      ' (orphanSeedMode=' + before.seedMode + ' seeds=' + before.seeds + ')' +
       ' grounded=' + before.grounded + ' ok=' + before.ok + ' total=' + items.length);
     before.worst.slice(0, 3).forEach(w => console.log('    worst ' + w.cls + ' seq=' + w.seq + ' bz=' + w.bz.toFixed(2) +
       ' start=' + w.start.toFixed(1) + 'd firstSupport=' + w.sup.toFixed(1) + 'd'));
@@ -576,8 +614,19 @@ function census(items) {
       it.s = keepS; it.e = keepE;
     } else { assert(false, 'W-MZ-7 ' + bld + ' no probe candidate found — census produced nothing to test with'); }
     assert(after.orphan === CPM_ORPHAN_BASELINE[bld],
-      'W-MZ-4 ' + bld + ' orphans (touch nothing in the model) locked at ' + CPM_ORPHAN_BASELINE[bld] + ' (got ' + after.orphan +
-      ') — an extraction limit, reported never gated, purely geometric (same either display-authoring path)');
+      'W-MZ-4 ' + bld + ' orphans (NOT ground-connected — unreachable from classified ground along the support chain, §GROUND_CONNECTED) locked at ' +
+      CPM_ORPHAN_BASELINE[bld] + ' (got ' + after.orphan + ', seedMode=' + after.seedMode +
+      ') — an extraction/classification limit, reported never gated, purely geometric (same either display-authoring path)');
+    console.log('§MIDAIR_ORPHAN_GUIDS ' + bld + ' n=' + after.orphan + ' seedMode=' + after.seedMode + ' first20=' + JSON.stringify(after.orphanGuids.slice(0, 20)));
+    // W-MZ-4b — §GROUND_CONNECTED: census() above re-derives the orphan rule on its own; the ENGINE's
+    // own count must agree, or one of the two judges has drifted. This is the §S58.5 question ("do
+    // the two judges still describe one physics?") answered for THIS metric; it stays open for midair.
+    {
+      const eng = SupportSweep.contactGraph(items);
+      assert(eng.ok && eng.orphans === after.orphan && eng.groundSeedMode === after.seedMode,
+        'W-MZ-4b ' + bld + ' the engine\'s own contactGraph orphans (' + eng.orphans + ', seedMode=' + eng.groundSeedMode +
+        ') equal this INDEPENDENT census (' + after.orphan + ', ' + after.seedMode + ') — the two orphan judges describe ONE physics');
+    }
     db.close();   // §S50 — was closed before _displayTimeline; the location axis needs it live
   }
   finish();
