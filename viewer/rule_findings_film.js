@@ -210,7 +210,7 @@ function setupRuleFindingsFilm(A) {
       // §59.4: the requirement here is the opposite (one attention-getter, everything else static).
       if (_picks.length && typeof A.showRuleModeTint === 'function') {
         var guidCat = {}; _picks.forEach(function (p) { guidCat[p.guid] = p.category; });
-        try { A.showRuleModeTint(guidCat, CATEGORY_COLOR); }
+        try { A.showRuleModeTint(guidCat, CATEGORY_COLOR, { shineThrough: true }); }   // §62
         catch (e) { log('§RULE_FILM_TINT_ERR ' + e.message); }
       }
       return _report;

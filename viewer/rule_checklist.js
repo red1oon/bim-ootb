@@ -29,6 +29,23 @@
 // caller (it varies; these four do not) — see A.showRuleModeTint below.
 var RULE_TINT_MATERIAL_OPTS = { wireframe: true, transparent: true, opacity: 0.2, depthWrite: false };
 
+// ── §RULE_TINT_SHINE_THROUGH (MEP_CLASH_REVEAL_MOVIE.md §62, 2026-09-11) ─────────────────────────
+// Pure: layer the film's opt-in shine-through onto the base opts WITHOUT editing the constant above.
+// The constant is T5's contract (tests/test_rule_mode_tint.js, 11/11) and must keep deep-equalling
+// Clash MODE's material — Clash Mode is interactive browsing, where z-testing is correct. Clash FILM
+// deliberately diverged (clash_film.js §CLASH_FILM_SHINE_THROUGH), and these are its exact values,
+// retained not reinvented, per measure.js:717-720's standing "the shine-through already exists".
+// Without opts the result is byte-identical to the base — interactive Rule Mode is unaffected.
+var RULE_TINT_RENDER_ORDER = -1;            // unchanged default: draws before ordinary opaque geometry
+var RULE_TINT_SHINE_RENDER_ORDER = 900;     // clash_film.js's own value — after opaque geometry
+function ruleTintMaterialOpts(opts) {
+  if (!opts || !opts.shineThrough) return Object.assign({}, RULE_TINT_MATERIAL_OPTS);
+  return Object.assign({}, RULE_TINT_MATERIAL_OPTS, { depthTest: false, toneMapped: false });
+}
+function ruleTintRenderOrder(opts) {
+  return (opts && opts.shineThrough) ? RULE_TINT_SHINE_RENDER_ORDER : RULE_TINT_RENDER_ORDER;
+}
+
 // ── Pure: HTML-escape for a double-quoted HTML attribute / text node ──
 function _rcEscAttr(s) {
   return String(s == null ? '' : s)
@@ -233,7 +250,7 @@ function setupRuleChecklist(A) {
   A._ruleTintMeshes = A._ruleTintMeshes || [];
   A._ruleTintActive = false;
 
-  A.showRuleModeTint = function (guidSeverityMap, colorMap) {
+  A.showRuleModeTint = function (guidSeverityMap, colorMap, opts) {
     if (!A.scene || !A.dbQuery || typeof THREE === 'undefined') { console.warn('§RULE_TINT no scene/dbQuery/THREE'); return; }
     if (A._ruleTintActive) A.exitRuleModeTint();
     guidSeverityMap = guidSeverityMap || {};
@@ -278,11 +295,11 @@ function setupRuleChecklist(A) {
     var total = 0;
     for (var color in byColor) {
       var crows = byColor[color];
-      var matOpts = Object.assign({ color: color }, RULE_TINT_MATERIAL_OPTS);
+      var matOpts = Object.assign({ color: color }, ruleTintMaterialOpts(opts));   // §62 — opt-in shine-through
       var mat = new THREE.MeshBasicMaterial(matOpts);
       var iMesh = new THREE.InstancedMesh(geo, mat, crows.length);
       iMesh.frustumCulled = false;
-      iMesh.renderOrder = -1;
+      iMesh.renderOrder = ruleTintRenderOrder(opts);   // §62 — 900 when shining through, else the original -1
       iMesh.userData.isRuleTintBbox = true;
       for (var j = 0; j < crows.length; j++) {
         var r = crows[j];
@@ -300,7 +317,9 @@ function setupRuleChecklist(A) {
     }
 
     A._ruleTintActive = true;
-    console.log('§RULE_TINT_ENTER elements=' + total + ' colors=' + Object.keys(byColor).length);
+    console.log('§RULE_TINT_ENTER elements=' + total + ' colors=' + Object.keys(byColor).length +
+      ' shineThrough=' + !!(opts && opts.shineThrough) + ' renderOrder=' + ruleTintRenderOrder(opts) +
+      ' depthTest=' + (ruleTintMaterialOpts(opts).depthTest !== false));
     if (A.markDirty) A.markDirty();
   };
 
@@ -500,6 +519,8 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     buildRuleChecklistHtml: _buildRuleChecklistHtml,
     buildRuleDeepLinkUrl: _buildRuleDeepLinkUrl,
-    RULE_TINT_MATERIAL_OPTS: RULE_TINT_MATERIAL_OPTS
+    RULE_TINT_MATERIAL_OPTS: RULE_TINT_MATERIAL_OPTS,
+    ruleTintMaterialOpts: ruleTintMaterialOpts,
+    ruleTintRenderOrder: ruleTintRenderOrder
   };
 }

@@ -57,5 +57,32 @@ if (clashMatLine) {
   chk('measure.js literal still contains transparent: true', /transparent:\s*true/.test(lit));
 }
 
+
+// ══ §RULE_TINT_SHINE_THROUGH (MEP_CLASH_REVEAL_MOVIE.md §62) ═══════════════════════════════════
+// ISSUES THESE PROVE OR DISPROVE:
+//   T1 the opt-in did NOT edit the shared constant — T5's Clash-Mode contract above still holds and
+//      the no-opts path is byte-identical to it, renderOrder -1 included
+//   T2 with {shineThrough:true} the film marker gets clash_film.js's exact escape from z-testing
+//      (depthTest false, toneMapped false, renderOrder 900) and nothing else moves
+console.log('§W-RULE-TINT §62 shine-through layering');
+const base62 = RC.ruleTintMaterialOpts();
+chk('T1 §62 no-opts material still deep-equals Clash Mode\'s config (T5 intact)',
+  deepEqual(base62, CLASH_MODE_MATERIAL_OPTS), JSON.stringify(base62));
+chk('T1b §62 no-opts renderOrder is still the original -1',
+  RC.ruleTintRenderOrder() === -1, String(RC.ruleTintRenderOrder()));
+chk('T1c §62 no-opts material has NO depthTest key (unchanged shape, not a false value)',
+  !('depthTest' in base62), JSON.stringify(Object.keys(base62)));
+
+const shine62 = RC.ruleTintMaterialOpts({ shineThrough: true });
+chk('T2 §62 shineThrough sets depthTest:false — the one line that makes it visible through a wall',
+  shine62.depthTest === false, String(shine62.depthTest));
+chk('T2b §62 shineThrough sets toneMapped:false, matching clash_film.js',
+  shine62.toneMapped === false, String(shine62.toneMapped));
+chk('T2c §62 shineThrough renderOrder is 900 — clash_film.js\'s own value, after opaque geometry',
+  RC.ruleTintRenderOrder({ shineThrough: true }) === 900, String(RC.ruleTintRenderOrder({ shineThrough: true })));
+chk('T2d §62.4 shineThrough leaves wireframe/transparent/opacity/depthWrite untouched (opacity 0.2 NOT raised)',
+  shine62.wireframe === true && shine62.transparent === true && shine62.opacity === 0.2 && shine62.depthWrite === false,
+  JSON.stringify(shine62));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

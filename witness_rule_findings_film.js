@@ -75,7 +75,7 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
       WALK_SPEED: 1.2,
       storeyRevealList: function () { return [{ name: 'L1', z: 0 }, { name: 'L2', z: 3 }]; },
       filmBoxesMeasurePost: function (title, rows, ink) { posts.push({ title, rows, ink }); return true; },
-      showRuleModeTint: function (guidCategoryMap, colorMap) { tints.push({ guidCategoryMap, colorMap }); }
+      showRuleModeTint: function (guidCategoryMap, colorMap, opts) { tints.push({ guidCategoryMap, colorMap, opts }); }
     }, overrides);
     setupRuleFindingsFilm(A);
     A._posts = posts; A._tints = tints;
@@ -123,6 +123,11 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
   chk('gating: inside egress window (88s) — posts Safety title + red ink',
       atE.length === 1 && /^Safety/.test(atE[0].title) && atE[0].ink === '#cc4444', JSON.stringify(atE));
   chk('gating: after egress window (89.3s) — no post', sample(A1, 89.3).length === 0);
+
+  // §62 T3 — the capability existing is not the same claim as the film asking for it.
+  chk('T3 §62 the film passes { shineThrough: true } so its marker is not hidden behind walls',
+      A1._tints.length === 1 && A1._tints[0].opts && A1._tints[0].opts.shineThrough === true,
+      JSON.stringify(A1._tints[0] && A1._tints[0].opts));
 
   // ── Scenario 2: same totals, window too short (winSec=0.5s / 2 storeys = 0.25s/storey < 2.2s) ──
   const A2 = makeA({});
