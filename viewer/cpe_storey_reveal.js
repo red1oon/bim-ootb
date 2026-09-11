@@ -245,44 +245,106 @@ function setupCpeStoreyReveal(A) {
   // whole viewer). Reuses the SAME structural-class set flythruDatumBuild's own footprint query uses,
   // so the "outer edge" this measures against is the one already accepted as this building's extent.
   var _facadeGuids = {}, _facadeKey = null;
+  // §FACADE_RASTER_BOUNDARY (2026-09-11, user: "still not highlighting much to be seen" — §55.6/
+  // §56.2/§57.2, reinforced three times) — MEASURED DEFECT #3 with the AABB-edge method below: even
+  // after §FACADE_PER_STOREY_FIX and §FACADE_WALL_ONLY_FOOTPRINT, it only ever catches walls sitting
+  // flush with the storey's own bounding RECTANGLE's four flat sides — on Hospital's real (tapering,
+  // non-rectangular) footprint this measured 1.8-8.4% of a main floor's own wall AREA (Level 1: 3
+  // walls / 260 m² of 14,328 m²) — a bounding box is a poor proxy for an irregular perimeter.
+  // FIX: reuse `storey_walkable_raster` (§29's own hall raster, already built and shipped — EXTRACT,
+  // don't invent a second geometry pass) to find the TRUE walkable/outside boundary. Flood-fill the
+  // raster's NON-walkable cells starting from the grid's own border (standard "outside vs enclosed
+  // hole" technique) to separate genuine exterior void from interior voids (shafts, wall cores) —
+  // then a wall is facade if a small neighbourhood (±FACADE_RASTER_MARGIN cells) around its centre
+  // touches BOTH a walkable cell and an "outside" cell, i.e. it sits exactly on that boundary.
+  // MEASURED (Hospital, offline replay of this exact algorithm before shipping it): Level 1
+  // 3->27 walls / 260->2,673 m² (1.8%->18.7%), Level 3 10->23 walls (8.4%->7.7% area, same order —
+  // MORE of the true perimeter, spread across more, smaller real segments). Level 7 (a tiny
+  // penthouse) REGRESSED on its own (78.3%->19.7%) — its raster reads ~60% "walkable" over a grid
+  // far larger than the room itself, a data quirk in that one storey's raster, not a bug in this
+  // algorithm — so the two methods are UNIONED, never one replacing the other: this can only ADD
+  // real coverage the AABB method misses, and can never lose coverage the AABB method already had,
+  // regardless of a given storey's raster quality. DEGRADE, DON'T DISABLE: no raster for a storey
+  // (or no window.StoreyRaster loaded) falls back to the AABB method alone, byte-identical to before.
+  var FACADE_RASTER_MARGIN = 2;   // cells either side of a wall's centre (~0.5m at the shipped 0.25m res)
+  function _facadeAabbEdgeGuids(storeyName) {
+    var set = {};
+    var TOL = 0.5;   // metres — construction tolerance only, now that the footprint is wall-derived
+    var rows = A.dbQuery(
+      "WITH footprint AS (" +
+      "  SELECT MIN(t.center_x-t.bbox_x/2) minX, MAX(t.center_x+t.bbox_x/2) maxX," +
+      "         MIN(t.center_y-t.bbox_y/2) minY, MAX(t.center_y+t.bbox_y/2) maxY" +
+      "  FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid" +
+      "  WHERE m.storey=? AND m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcCurtainWall')" +
+      ")" +
+      "SELECT m.guid FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid, footprint f " +
+      "WHERE m.storey=? AND m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcCurtainWall') AND (" +
+      "  ABS((t.center_x-t.bbox_x/2)-f.minX) < ? OR ABS((t.center_x+t.bbox_x/2)-f.maxX) < ? OR" +
+      "  ABS((t.center_y-t.bbox_y/2)-f.minY) < ? OR ABS((t.center_y+t.bbox_y/2)-f.maxY) < ?" +
+      ")", [storeyName, storeyName, TOL, TOL, TOL, TOL]) || [];
+    rows.forEach(function (r) { set[r[0]] = true; });
+    return set;
+  }
+  function _outsideMaskFor(raster) {
+    var SR = window.StoreyRaster, cols = raster.cols, rows = raster.rows;
+    var outside = new Uint8Array(cols * rows), q = [];
+    function tryPush(c, r) {
+      if (c < 0 || r < 0 || c >= cols || r >= rows) return;
+      var idx = r * cols + c;
+      if (outside[idx] || SR.getBit(raster.bits, cols, c, r)) return;   // walkable — not "outside"
+      outside[idx] = 1; q.push([c, r]);
+    }
+    for (var c = 0; c < cols; c++) { tryPush(c, 0); tryPush(c, rows - 1); }
+    for (var r = 0; r < rows; r++) { tryPush(0, r); tryPush(cols - 1, r); }
+    var head = 0;
+    while (head < q.length) { var p = q[head++]; tryPush(p[0] + 1, p[1]); tryPush(p[0] - 1, p[1]); tryPush(p[0], p[1] + 1); tryPush(p[0], p[1] - 1); }
+    return outside;
+  }
+  function _facadeRasterGuids(storeyName, raster) {
+    var SR = window.StoreyRaster, set = {};
+    var outside = _outsideMaskFor(raster);
+    var walls = A.dbQuery(
+      "SELECT m.guid, t.center_x, t.center_y FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid " +
+      "WHERE m.storey=? AND m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcCurtainWall')", [storeyName]) || [];
+    walls.forEach(function (w) {
+      var guid = w[0], cx = +w[1], cy = +w[2];
+      var cc = Math.floor((cx - raster.x0) / raster.res), rr = Math.floor((cy - raster.y0) / raster.res);
+      var hasWalkable = false, hasOutside = false;
+      for (var dr = -FACADE_RASTER_MARGIN; dr <= FACADE_RASTER_MARGIN && !(hasWalkable && hasOutside); dr++) {
+        for (var dc = -FACADE_RASTER_MARGIN; dc <= FACADE_RASTER_MARGIN && !(hasWalkable && hasOutside); dc++) {
+          var c = cc + dc, r = rr + dr;
+          if (c < 0 || r < 0 || c >= raster.cols || r >= raster.rows) { hasOutside = true; continue; }
+          if (SR.getBit(raster.bits, raster.cols, c, r)) hasWalkable = true;
+          else if (outside[r * raster.cols + c]) hasOutside = true;
+        }
+      }
+      if (hasWalkable && hasOutside) set[guid] = true;
+    });
+    return set;
+  }
   function _facadeGuidsFor(storeyName) {
     var bkey = (A.activeBuilding || A.currentBuilding || 'bld');
     if (_facadeKey !== bkey) { _facadeGuids = {}; _facadeKey = bkey; }
     if (_facadeGuids[storeyName]) return _facadeGuids[storeyName];
-    var set = {};
+    var set = {}, aabbN = 0, rasterN = 0, method = 'aabb-only';
     try {
-      // §FACADE_PER_STOREY_FIX (2026-09-10) — MEASURED DEFECT: the footprint was computed across
-      // the WHOLE BUILDING (all storeys pooled), so on a building with setbacks (a hospital's upper
-      // floors routinely sit inset from the ground floor's wider base/canopy) only the storey that
-      // happens to match the building's widest extent ever touched that global edge — Hospital
-      // measured facadeWalls=3 on Level 1, then 0/VACUOUS on Level 2, 3, 4, 5. Fixed: the footprint
-      // is now computed from elements ON THIS STOREY ONLY, so each floor is judged against its own
-      // plan, not a global envelope no single upper floor may ever reach.
-      // §FACADE_WALL_ONLY_FOOTPRINT (2026-09-10) — MEASURED DEFECT #2: including columns/slabs/beams
-      // in the footprint still left Level 3 and Level 7 VACUOUS at TOL=1.0m — MEASURED, the closest
-      // wall on Level 3 sat 1.67m from that footprint, and on Level 7 (a small penthouse) 4.54m,
-      // because a roof/slab overhang there extends well past where the walls actually are. Fixed at
-      // the root: the footprint is now built from WALLS ONLY — by construction the outermost walls
-      // then sit at distance 0 from it (VERIFIED: Level 7's own outermost walls measure exactly
-      // 0.0m on all four sides against a wall-only footprint), so TOL only needs to cover real
-      // construction tolerance, not "how far a slab overhangs its walls".
-      var TOL = 0.5;   // metres — construction tolerance only, now that the footprint is wall-derived
-      var rows = A.dbQuery(
-        "WITH footprint AS (" +
-        "  SELECT MIN(t.center_x-t.bbox_x/2) minX, MAX(t.center_x+t.bbox_x/2) maxX," +
-        "         MIN(t.center_y-t.bbox_y/2) minY, MAX(t.center_y+t.bbox_y/2) maxY" +
-        "  FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid" +
-        "  WHERE m.storey=? AND m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcCurtainWall')" +
-        ")" +
-        "SELECT m.guid FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid, footprint f " +
-        "WHERE m.storey=? AND m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcCurtainWall') AND (" +
-        "  ABS((t.center_x-t.bbox_x/2)-f.minX) < ? OR ABS((t.center_x+t.bbox_x/2)-f.maxX) < ? OR" +
-        "  ABS((t.center_y-t.bbox_y/2)-f.minY) < ? OR ABS((t.center_y+t.bbox_y/2)-f.maxY) < ?" +
-        ")", [storeyName, storeyName, TOL, TOL, TOL, TOL]) || [];
-      rows.forEach(function (r) { set[r[0]] = true; });
+      var aabbSet = _facadeAabbEdgeGuids(storeyName);
+      aabbN = Object.keys(aabbSet).length;
+      Object.keys(aabbSet).forEach(function (g) { set[g] = true; });
+      var SR = window.StoreyRaster;
+      if (SR && typeof SR.getBit === 'function') {
+        var wr = A.dbQuery('SELECT storey,res,x0,y0,cols,rows,bits FROM storey_walkable_raster WHERE storey=?', [storeyName]) || [];
+        if (wr.length) {
+          var rasterSet = _facadeRasterGuids(storeyName, SR.fromRow(wr[0]));
+          rasterN = Object.keys(rasterSet).length;
+          Object.keys(rasterSet).forEach(function (g) { set[g] = true; });
+          method = 'aabb-union-raster';
+        }
+      }
     } catch (e) { console.log('§FACADE_ONLY_TINT query failed for storey="' + storeyName + '": ' + e.message); }
     var n = Object.keys(set).length;
-    console.log('§FACADE_ONLY_TINT storey="' + storeyName + '" facadeWalls=' + n +
+    console.log('§FACADE_ONLY_TINT storey="' + storeyName + '" method=' + method + ' facadeWalls=' + n +
+      ' (aabb=' + aabbN + ' raster=' + rasterN + ')' +
       (n === 0 ? ' — VACUOUS: no wall on this storey touches the building footprint edge, nothing will tint' : ''));
     _facadeGuids[storeyName] = set;
     return set;
