@@ -1,0 +1,11 @@
+{
+  "egress_rules": [
+    { "name": "door_clear_width", "applies_to": ["IfcDoor"],
+      "warning_m": 0.85, "critical_m": 0.813, "max_severity": "WARNING" },
+    { "name": "circulation_distance", "applies_to": ["room_graph_node"],
+      "target": "exit_or_own_storey_circ", "warning_m": 45.7, "critical_m": 60.96,
+      "max_severity": "WARNING" },
+    { "name": "isolated_room", "applies_to": ["room_graph_node"],
+      "target": "own_storey_circ" }
+  ]
+}

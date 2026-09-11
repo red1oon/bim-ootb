@@ -882,6 +882,16 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="clash_narrow.js?v=2" onerror="console.warn('§LOAD_FAIL clash_narrow.js')"></script>
 <script src="clash_film.js?v=6" onerror="console.warn('§LOAD_FAIL clash_film.js')"></script>
 <script src="clash_labels.js?v=5" onerror="console.warn('§LOAD_FAIL clash_labels.js')"></script>
+<!-- STRUCTURAL_SANITY.md T4 — structural_sanity.js is portable/no-deps (loads early); rule_checklist.js's
+     setup call (setupRuleChecklist(APP)) runs later in main.js, after setupShare/setupDiff give it
+     A.shareUrl / A.zoomToGuid — this <script> tag only defines the function, load order here is fine. -->
+<script src="structural_sanity.js?v=1" onerror="console.warn('§LOAD_FAIL structural_sanity.js')"></script>
+<!-- EGRESS_SANITY.md T4 — egress_sanity.js requires('../common/room_graph.js') only in Node
+     (dual-mode, see its own header); in the browser it reads window.RoomGraph, which is lazy-
+     loaded on demand by APP.loadNavigate() (see rule_checklist.js's A.showEgressSanity) — this
+     tag only needs to load before A.showEgressSanity() can run, same as structural_sanity.js. -->
+<script src="egress_sanity.js?v=1" onerror="console.warn('§LOAD_FAIL egress_sanity.js')"></script>
+<script src="rule_checklist.js?v=1" onerror="console.warn('§LOAD_FAIL rule_checklist.js')"></script>
 <script src="measure.js?v=52" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
 <script src="sitecam.js?v=7" onerror="console.warn('§LOAD_FAIL sitecam.js')"></script>
 <script src="share.js?v=2" onerror="console.warn('§LOAD_FAIL share.js')"></script>
