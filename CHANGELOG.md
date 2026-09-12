@@ -4,6 +4,24 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.66.0](https://github.com/red1oon/bim-ootb/compare/v1.65.0...v1.66.0) (2026-09-12)
+
+
+### ✨ Features
+
+* **rules:** §RULE_REPORT — findings without the film, + a data-sufficiency and per-finding witness pass ([#1718](https://github.com/red1oon/bim-ootb/issues/1718)) ([719ebb9](https://github.com/red1oon/bim-ootb/commit/719ebb92455abe8cf78bca3534cd042c8585a0f3))
+
+
+### 🐛 Fixes
+
+* **support_sweep:** orphan exemption is classification + ground reachability, never grounded[i] (§GROUND_CONNECTED) ([#1717](https://github.com/red1oon/bim-ootb/issues/1717)) ([a9f88df](https://github.com/red1oon/bim-ootb/commit/a9f88df7365d284f87027bc4dbf33b72aabb8f12))
+
+
+### 📝 Documentation
+
+* **internal:** CodeScrapBook — measured 101 tour of the codebase ([#1719](https://github.com/red1oon/bim-ootb/issues/1719)) ([1cfce7f](https://github.com/red1oon/bim-ootb/commit/1cfce7fe49d74118c6dc772bde4b0b36f7b529c6))
+* **spec:** T11 §BENCH_CONTINUE — the next session's brief for the sanity benchmark ([#1721](https://github.com/red1oon/bim-ootb/issues/1721)) ([1f795c7](https://github.com/red1oon/bim-ootb/commit/1f795c7047bf46ce25abfae0689fab57f5b1079f))
+
 ## [1.65.0](https://github.com/red1oon/bim-ootb/compare/v1.64.0...v1.65.0) (2026-09-10)
 
 
