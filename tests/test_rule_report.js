@@ -19,6 +19,11 @@ const EgressSanity = require('../viewer/egress_sanity.js');
 let pass = 0, fail = 0;
 const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };
 
+// T12.6 — support_classes_present reads the evaluator's OWN lists rather than keeping a copy;
+// unsupplied it reports 'unavailable' by design, so every call that expects a measured verdict
+// must hand them over. This is the shape both production call sites use.
+const SUFF_OPTS = { supportClasses: StructuralSanity.SUPPORT_CLASSES, colSupportClasses: StructuralSanity.COL_SUPPORT_CLASSES };
+
 const STRUCT_RULES = JSON.parse(fs.readFileSync(path.join(__dirname, '../viewer/rates/structural_rules.json'), 'utf8'));
 const EGRESS_RULES = JSON.parse(fs.readFileSync(path.join(__dirname, '../viewer/rates/egress_rules.json'), 'utf8'));
 
@@ -144,7 +149,7 @@ const ROWS_E = [
     db.run("INSERT INTO spatial_structure VALUES ('s2','IfcSpace','⚠ Level 1 R2')");
     const q = (sql, p) => { const r = p ? db.exec(sql, p) : db.exec(sql); return r.length ? r[0].values : []; };
     const logs = [];
-    const suff = RuleReport.runSufficiencyProbes(q, { log: (m) => logs.push(m) });
+    const suff = RuleReport.runSufficiencyProbes(q, Object.assign({ log: (m) => logs.push(m) }, SUFF_OPTS));
     const by = {}; suff.forEach(s => by[s.check] = s);
 
     chk('R10 footings_modelled = absent (0 IfcFooting, 2 columns) — the HHS 131/131 cause',
@@ -154,8 +159,17 @@ const ROWS_E = [
     chk('R10 room_confidence_sigils counts the ≈/⚠ marks the evaluators ignore',
       by.room_confidence_sigils.measured.approx === 1 && by.room_confidence_sigils.measured.suspect === 1,
       JSON.stringify(by.room_confidence_sigils.measured));
-    chk('R10 support_classes_present = degraded when IfcWall outnumbers the listed classes',
-      by.support_classes_present.verdict === 'degraded', JSON.stringify(by.support_classes_present.measured));
+    // ⚠ THIS ASSERTION USED TO READ "= degraded when IfcWall outnumbers the listed classes", and
+    // it passed for the life of the bug: the fixture's 3 IfcWall could only outnumber the listed
+    // classes because the probe's PRIVATE COPY of the list had never been told T9.1 added
+    // IfcWall. A guard written from the buggy code's own output (T11.5 trap 3). What the probe
+    // actually claims now is that walls count, so that is what is asserted.
+    chk('R10 support_classes_present counts IfcWall as real support — T9.1 added it',
+      by.support_classes_present.verdict === 'ok' && by.support_classes_present.measured.byClass.IfcWall === 3,
+      'verdict=' + by.support_classes_present.verdict + ' ' + JSON.stringify(by.support_classes_present.measured.byClass));
+    chk('R10 and it no longer claims IfcWall/IfcSlab are unsupported',
+      !/neither support list/.test(by.support_classes_present.consequence),
+      by.support_classes_present.consequence.slice(0, 80));
     chk('R10 beam_material_named = absent (material_name NULL on every beam)',
       by.beam_material_named.verdict === 'absent', JSON.stringify(by.beam_material_named.measured));
     chk('R10 axis_aligned_bboxes = degraded (one rotated column)',
@@ -170,7 +184,7 @@ const ROWS_E = [
     const bare = new SQL.Database();
     bare.run('CREATE TABLE unrelated_table (x INT)');
     const bq = (sql) => { const r = bare.exec(sql); return r.length ? r[0].values : []; };
-    const suffBare = RuleReport.runSufficiencyProbes(bq, { log: () => {} });
+    const suffBare = RuleReport.runSufficiencyProbes(bq, Object.assign({ log: () => {} }, SUFF_OPTS));
     chk('R9 every probe over a DB with no elements_meta reports "unavailable", never ok/0',
       suffBare.every(s => s.verdict === 'unavailable'), JSON.stringify(suffBare.map(s => s.check + '=' + s.verdict)));
     chk('R9 an unavailable probe carries the reason, not a null measured passed off as a count',
@@ -208,7 +222,7 @@ const ROWS_E = [
     const slog = [], elog = [];
     const rowsS = StructuralSanity.evaluate(hq, STRUCT_RULES, { log: (m) => slog.push(m) });
     const rowsE = EgressSanity.evaluate(hq, EGRESS_RULES, { log: (m) => elog.push(m) });
-    const suff = RuleReport.runSufficiencyProbes(hq, { log: () => {} });
+    const suff = RuleReport.runSufficiencyProbes(hq, Object.assign({ log: () => {} }, SUFF_OPTS));
     const rep = RuleReport.buildRuleReport({ rowsS, rowsE, ruleDefs: [STRUCT_RULES, EGRESS_RULES],
       meta: { building: 'Hospital', sufficiency: suff, populations: RuleReport.rulePopulations(hq) } });
 
@@ -625,6 +639,84 @@ const ROWS_E = [
         noW.length === sRows.length, noW.length + ' without witness vs ' + sRows.length + ' with');
     } else {
       console.log('  ⚠ R22 SKIPPED — buildings/Hospital_meta.db absent (this is a reported absence, not a pass)');
+    }
+  }
+
+  // ── R23 §T12.6 THE PROBE MUST NOT KEEP ITS OWN COPY OF THE SUPPORT LISTS.
+  // The bug this replaces: `support_classes_present` carried a typed copy of SUPPORT_CLASSES /
+  // COL_SUPPORT_CLASSES in a comment and in its own SQL IN-list. T9.1 added IfcWall to both real
+  // lists and T9.3 added IfcSlab; the probe never noticed and went on reporting "IfcWall and
+  // IfcSlab are in neither support list", flagging Terminal_silent `degraded` for a gap that had
+  // been closed for two PRs. R23b is the assertion that would have caught it: feed the probe a
+  // DIFFERENT list and its answer must change. A probe with a private copy cannot pass that.
+  console.log('§W-RULE-REPORT R23 SUPPORT-LISTS-ARE-READ-NOT-COPIED');
+  {
+    const SC = StructuralSanity.SUPPORT_CLASSES, CSC = StructuralSanity.COL_SUPPORT_CLASSES;
+    chk('R23 the evaluator really does list IfcWall and IfcSlab — the claim the old probe denied',
+      SC.indexOf('IfcWall') !== -1 && SC.indexOf('IfcSlab') !== -1 &&
+      CSC.indexOf('IfcWall') !== -1 && CSC.indexOf('IfcSlab') !== -1, 'beam=' + SC.join('/') + '  col=' + CSC.join('/'));
+    let mutated = false;
+    try { SC.push('IfcMutated'); mutated = SC.indexOf('IfcMutated') !== -1; } catch (e) { /* frozen, strict mode throws */ }
+    chk('R23 the exported lists are frozen — a consumer cannot corrupt them for the next caller',
+      !mutated && StructuralSanity.SUPPORT_CLASSES.indexOf('IfcMutated') === -1,
+      'length=' + StructuralSanity.SUPPORT_CLASSES.length);
+
+    const mk = (counts) => {
+      const d = new SQL.Database();
+      d.run('CREATE TABLE elements_meta (guid TEXT, ifc_class TEXT)');
+      Object.keys(counts).forEach(c => { for (let i = 0; i < counts[c]; i++) d.run('INSERT INTO elements_meta VALUES (?,?)', [c + i, c]); });
+      return (sql, p) => { const r = p ? d.exec(sql, p) : d.exec(sql); return r.length ? r[0].values : []; };
+    };
+    const probe = (q, o) => RuleReport.runSufficiencyProbes(q, o || { log: () => {} }).filter(x => x.check === 'support_classes_present')[0];
+    const real = { log: () => {}, supportClasses: StructuralSanity.SUPPORT_CLASSES, colSupportClasses: StructuralSanity.COL_SUPPORT_CLASSES };
+
+    const q = mk({ IfcWall: 10, IfcSlab: 7, IfcColumn: 5, IfcBeam: 3 });
+    const a = probe(q, real);
+    chk('R23 walls and slabs now COUNT as support, and the verdict is ok',
+      a.verdict === 'ok' && a.measured.byClass.IfcWall === 10 && a.measured.byClass.IfcSlab === 7,
+      'verdict=' + a.verdict + ' ' + JSON.stringify(a.measured.byClass));
+    chk('R23 the stale sentence is gone',
+      !/neither support list/.test(a.consequence), a.consequence.slice(0, 80));
+
+    // R23b — THE DECISIVE ONE. Same DB, a list that omits IfcWall. A copy cannot react to this.
+    const b = probe(q, { log: () => {}, supportClasses: ['IfcColumn'], colSupportClasses: ['IfcColumn'] });
+    chk('R23b passing a DIFFERENT list changes the answer — the probe reads it, never a copy',
+      b.measured.byClass.IfcWall === undefined && b.measured.supportElements === 5,
+      JSON.stringify(b.measured.byClass) + ' supportElements=' + b.measured.supportElements);
+
+    // R23c — no lists supplied is 'unavailable', never 'ok' and never a guessed fallback.
+    const c = probe(q, { log: () => {} });
+    chk('R23c with no lists the verdict is "unavailable", not "ok"',
+      c.verdict === 'unavailable' && c.measured === null, 'verdict=' + c.verdict);
+    chk('R23c and it says why, naming the exports to pass',
+      /StructuralSanity\.SUPPORT_CLASSES/.test(c.consequence), c.consequence.slice(0, 70));
+
+    // R23d — a frame holding itself up. IfcBeam and IfcColumn are THEMSELVES support classes
+    // (beams frame into beams, columns land on transfer beams), so "zero support elements" is
+    // unreachable in any model with something to check; the question that is not vacuous is
+    // whether there is bearing geometry BESIDES the members being checked.
+    const d = probe(mk({ IfcBeam: 40, IfcColumn: 9, IfcDoor: 12 }), real);
+    chk('R23d beams and columns alone, no wall/slab/footing/plate, reports "absent"',
+      d.verdict === 'absent' && d.measured.bearingBesidesSubjects === 0 && d.measured.supportElements === 49,
+      'verdict=' + d.verdict + ' besides=' + d.measured.bearingBesidesSubjects + ' total=' + d.measured.supportElements);
+    chk('R23d and says the findings describe the extraction, not the building',
+      /describe the extraction/.test(d.consequence));
+
+    // R23e — the one-sided blind spot is DERIVED from the two lists, not named in the source.
+    const e = probe(mk({ IfcPlate: 2211, IfcColumn: 604 }), real);
+    chk('R23e IfcPlate is reported as beam-only support — the real asymmetry, derived not typed',
+      /IfcPlate can hold a beam end but not a column/.test(e.consequence), e.consequence.slice(-120));
+
+    // R23f — on the real building the false 'degraded' must be gone.
+    if (fs.existsSync(HOSPITAL)) {
+      const hdb = new SQL.Database(new Uint8Array(fs.readFileSync(HOSPITAL)));
+      const hq = (sql, p) => { const r = p ? hdb.exec(sql, p) : hdb.exec(sql); return r.length ? r[0].values : []; };
+      const h = probe(hq, real);
+      chk('R23f real Hospital_meta.db no longer reports a gap that T9.1/T9.3 closed',
+        h.verdict === 'ok' && !/neither support list/.test(h.consequence),
+        'verdict=' + h.verdict + ' supportElements=' + h.measured.supportElements);
+    } else {
+      console.log('  ⚠ R23f SKIPPED — Hospital_meta.db absent (a reported absence, not a pass)');
     }
   }
 

@@ -313,7 +313,12 @@ function setupRuleChecklist(A) {
         // T8.11 — the panel has A.dbQuery, so it can review its own input the same way the CLI
         // does. Probes are read-only counts over elements_meta/element_transforms/
         // spatial_structure; if dbQuery is missing the section reports null, never "all clear".
-        sufficiency: A.dbQuery ? RuleReport.runSufficiencyProbes(A.dbQuery, { log: console.log }) : null,
+        // T12.6 — support_classes_present reads StructuralSanity's OWN lists; without them it
+        // reports 'unavailable' rather than fall back to a copy that can go stale.
+        sufficiency: A.dbQuery ? RuleReport.runSufficiencyProbes(A.dbQuery, Object.assign({ log: console.log },
+          (typeof StructuralSanity !== 'undefined')
+            ? { supportClasses: StructuralSanity.SUPPORT_CLASSES, colSupportClasses: StructuralSanity.COL_SUPPORT_CLASSES }
+            : {})) : null,
         populations: A.dbQuery ? RuleReport.rulePopulations(A.dbQuery) : null
       }
     });
