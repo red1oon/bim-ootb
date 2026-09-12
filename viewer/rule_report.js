@@ -407,16 +407,38 @@
       check: 'axis_aligned_bboxes',
       rules: ['floating_member', 'column_continuity', 'span_depth_steel', 'span_depth_concrete', 'span_depth_cantilever'],
       run: function (dbQuery) {
-        // structural_sanity.js's own header: "rotation_z confirmed 0 for all Hospital STR beams/
-        // columns". Every footprint test here is axis-aligned; a rotated member would be tested
-        // against the wrong rectangle. Verify per building rather than inheriting the assumption.
+        // Every footprint and centreline test in structural_sanity.js is axis-aligned; a rotated
+        // member would be tested against the wrong rectangle.
+        //
+        // ⚠ THE FIRST VERSION OF THIS PROBE WAS WRONG, and wrong in the direction that matters:
+        // it counted beams/columns with rotation_z != 0, found none, and reported `ok` —
+        // "every beam and column is axis-aligned". MEASURED afterwards: rotation_x, rotation_y
+        // AND rotation_z are zero on ALL 118,490 element_transforms rows across Hospital_meta,
+        // Terminal_meta and HHS_Office_Federated_silent — never non-zero, never null. The column
+        // is present, typed and populated with a constant. It carries no information at all.
+        //
+        // "No element is rotated" and "rotation was never recorded" produce the identical query
+        // result and mean opposite things, and only one of them justifies trusting an
+        // axis-aligned test. A probe that cannot tell them apart must not say `ok`. So: look for
+        // a non-zero rotation ANYWHERE in the table, across every class. If the whole column is
+        // constant, the datum is uninformative and the verdict says so.
         var rotated = _q1(dbQuery, "SELECT COUNT(*) FROM element_transforms t JOIN elements_meta m ON m.guid = t.guid " +
-          "WHERE m.ifc_class IN ('IfcBeam','IfcColumn') AND ABS(COALESCE(t.rotation_z, 0)) > 0.001");
+          "WHERE m.ifc_class IN ('IfcBeam','IfcColumn') AND ABS(COALESCE(t.rotation_z, 0)) > 0.0001");
+        var anyRot = _q1(dbQuery, "SELECT COUNT(*) FROM element_transforms WHERE " +
+          "ABS(COALESCE(rotation_x, 0)) > 0.0001 OR ABS(COALESCE(rotation_y, 0)) > 0.0001 OR ABS(COALESCE(rotation_z, 0)) > 0.0001");
+        var total = _q1(dbQuery, "SELECT COUNT(*) FROM element_transforms");
+        if (anyRot === 0 && total > 0) {
+          return {
+            measured: { rotatedBeamsAndColumns: 0, anyRotatedElementInModel: 0, transformRows: total },
+            verdict: 'uninformative',
+            consequence: 'rotation_x/y/z are zero on ALL ' + total + ' transform rows, every class — the column is populated with a constant and records nothing. This is NOT evidence that the model is axis-aligned: a rotated member would look identical here. Every footprint and centreline test is axis-aligned, so any element that IS rotated in the real model is being tested against the wrong rectangle, silently'
+          };
+        }
         return {
-          measured: { rotatedBeamsAndColumns: rotated },
+          measured: { rotatedBeamsAndColumns: rotated, anyRotatedElementInModel: anyRot, transformRows: total },
           verdict: rotated === 0 ? 'ok' : 'degraded',
           consequence: rotated === 0
-            ? 'every beam and column is axis-aligned, which is what the footprint and centreline tests assume'
+            ? 'rotation is genuinely recorded in this model (' + anyRot + ' rotated elements exist) and no beam or column is rotated, so the axis-aligned footprint and centreline tests apply'
             : rotated + ' beams/columns carry a non-zero rotation_z; their bbox is not the shape being tested, so support and continuity results for those elements are not reliable'
         };
       }

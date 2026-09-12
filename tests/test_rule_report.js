@@ -429,6 +429,51 @@ const ROWS_E = [
       Array.isArray(RuleReport.buildRuleReport({ rowsE: [], ruleDefs: [] }).rulesProvenance));
   }
 
+  // ── R17 CONSTANT-COLUMN-IS-NOT-EVIDENCE — proves: a field that is present, typed and always
+  // the same value must never be read as a measurement. This test exists because the FIRST
+  // version of the axis_aligned_bboxes probe reported `ok` ("every beam and column is
+  // axis-aligned") on three real buildings whose rotation_x/y/z are zero on ALL 118,490
+  // transform rows — the column records nothing. "No element is rotated" and "rotation was never
+  // recorded" give the identical query result and mean opposite things; only one of them
+  // justifies trusting an axis-aligned test.
+  console.log('§W-RULE-REPORT R17 CONSTANT-COLUMN-IS-NOT-EVIDENCE');
+  {
+    const mk = (rotZ) => {
+      const d = new SQL.Database();
+      d.run(`CREATE TABLE elements_meta (guid TEXT, ifc_class TEXT, element_name TEXT, storey TEXT, discipline TEXT, material_name TEXT, material_rgba TEXT, building TEXT);
+             CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center_z REAL, rotation_x REAL, rotation_y REAL, rotation_z REAL, bbox_x REAL, bbox_y REAL, bbox_z REAL);
+             CREATE TABLE spatial_structure (guid TEXT, type TEXT, name TEXT);`);
+      d.run("INSERT INTO elements_meta VALUES ('c1','IfcColumn','C1','L1','STR',NULL,'','F')");
+      d.run("INSERT INTO elements_meta VALUES ('w1','IfcWall','W1','L1','ARC',NULL,'','F')");
+      d.run("INSERT INTO element_transforms VALUES ('c1',0,0,1.5,0,0,0,0.4,0.4,3)");
+      d.run(`INSERT INTO element_transforms VALUES ('w1',5,0,1.5,0,0,${rotZ},4,0.2,3)`);
+      return (sql, p) => { const r = p ? d.exec(sql, p) : d.exec(sql); return r.length ? r[0].values : []; };
+    };
+
+    const flat = RuleReport.runSufficiencyProbes(mk(0), { log: () => {} }).filter(x => x.check === 'axis_aligned_bboxes')[0];
+    chk('R17 an all-zero rotation column reports "uninformative", NOT "ok"',
+      flat.verdict === 'uninformative', JSON.stringify(flat.measured) + ' verdict=' + flat.verdict);
+    chk('R17 it says the column records nothing, not that the model is axis-aligned',
+      /records nothing/.test(flat.consequence) && /NOT evidence/.test(flat.consequence));
+    chk('R17 it still reports the row count it looked at', flat.measured.transformRows === 2, JSON.stringify(flat.measured));
+
+    // The control: the same probe on a DB where rotation IS recorded must go back to a real verdict.
+    const live = RuleReport.runSufficiencyProbes(mk(0.8), { log: () => {} }).filter(x => x.check === 'axis_aligned_bboxes')[0];
+    chk('R17 when rotation IS recorded somewhere, the verdict becomes real again',
+      live.verdict === 'ok' && live.measured.anyRotatedElementInModel === 1, JSON.stringify(live.measured) + ' verdict=' + live.verdict);
+    chk('R17 and that "ok" explicitly cites the evidence for it',
+      /rotation is genuinely recorded/.test(live.consequence), live.consequence.slice(0, 90));
+
+    // On the real building the false all-clear must be gone.
+    if (fs.existsSync(HOSPITAL)) {
+      const hdb = new SQL.Database(new Uint8Array(fs.readFileSync(HOSPITAL)));
+      const hq = (sql, p) => { const r = p ? hdb.exec(sql, p) : hdb.exec(sql); return r.length ? r[0].values : []; };
+      const real = RuleReport.runSufficiencyProbes(hq, { log: () => {} }).filter(x => x.check === 'axis_aligned_bboxes')[0];
+      chk('R17 real Hospital_meta.db no longer reports a false "ok" for rotation',
+        real.verdict === 'uninformative', 'verdict=' + real.verdict + ' ' + JSON.stringify(real.measured));
+    }
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
