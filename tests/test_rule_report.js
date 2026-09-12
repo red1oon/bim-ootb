@@ -273,6 +273,207 @@ const ROWS_E = [
     console.log('  §W-RULE-REPORT SKIP R12 — buildings/Hospital_meta.db not present');
   }
 
+  // ── R13 ONE-LITERAL — proves: the thresholds exist in ONE place per evaluator, and that place
+  // agrees with the AUTHORED rates/*.json. This is the guard the movie-bake session asked for:
+  // the film branch shipped span_depth_concrete 20/26 against main's cited 16/21 because a second
+  // copy existed and nothing compared them. A silent edit to either side now fails here.
+  console.log('§W-RULE-REPORT R13 ONE-LITERAL');
+  {
+    const sDiff = RuleReport.diffRuleThresholds(StructuralSanity.FALLBACK_RULES, STRUCT_RULES);
+    chk('R13 StructuralSanity.FALLBACK_RULES == rates/structural_rules.json', sDiff.length === 0, JSON.stringify(sDiff));
+    const eDiff = RuleReport.diffRuleThresholds(EgressSanity.FALLBACK_RULES, EGRESS_RULES);
+    chk('R13 EgressSanity.FALLBACK_RULES == rates/egress_rules.json', eDiff.length === 0, JSON.stringify(eDiff));
+
+    // No OTHER file may re-declare them. Counts whole fallback objects, not the JSON source.
+    const scan = (f) => { try { return fs.readFileSync(path.join(__dirname, '..', f), 'utf8'); } catch (e) { return ''; } };
+    const others = ['viewer/rule_checklist.js', 'viewer/rule_report.js', 'cli_silent_bake.js'];
+    others.forEach(f => {
+      const txt = scan(f);
+      chk('R13 ' + f + ' declares no fallback rules object of its own',
+        !/RULES_FALLBACK\s*=\s*\{|FALLBACK_RULES\s*=\s*\{/.test(txt));
+    });
+    // And the control: the diff function must actually be able to fail.
+    const drifted = JSON.parse(JSON.stringify(STRUCT_RULES));
+    drifted.structural_rules.find(r => r.name === 'span_depth_concrete').warning_ratio = 20;
+    const d = RuleReport.diffRuleThresholds(StructuralSanity.FALLBACK_RULES, drifted);
+    chk('R13 the drift guard CATCHES the exact film-branch drift (concrete 16 -> 20)',
+      d.length === 1 && d[0].field === 'span_depth_concrete.warning_ratio' && d[0].a === 16 && d[0].b === 20,
+      JSON.stringify(d));
+  }
+
+  // ── R14 LOADRULES-SHAPE — proves: one shape for "which rules file ran", and a failed fetch is
+  // never a silent substitution. The film session writes its closing-card line against this.
+  console.log('§W-RULE-REPORT R14 LOADRULES-SHAPE');
+  {
+    const okFetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(STRUCT_RULES) });
+    const r1 = await RuleReport.loadRules(okFetch, 'rates/structural_rules.json', StructuralSanity.FALLBACK_RULES);
+    chk('R14 a good fetch reports source=fetched with no error', r1.source === 'fetched' && r1.error === null, JSON.stringify({ s: r1.source, e: r1.error }));
+
+    const badFetch = () => Promise.resolve({ ok: false, status: 404 });
+    const r2 = await RuleReport.loadRules(badFetch, 'rates/structural_rules.json', StructuralSanity.FALLBACK_RULES);
+    chk('R14 a 404 reports source=fallback AND carries the reason', r2.source === 'fallback' && /404/.test(r2.error), JSON.stringify({ s: r2.source, e: r2.error }));
+    chk('R14 the fallback it hands back is the evaluator\'s ONE literal', r2.rules === StructuralSanity.FALLBACK_RULES);
+
+    const r3 = await RuleReport.loadRules(null, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES);
+    chk('R14 no fetch at all still reports fallback, never fetched', r3.source === 'fallback' && !!r3.error, JSON.stringify({ s: r3.source, e: r3.error }));
+
+    const throwFetch = () => Promise.reject(new Error('network down'));
+    const r4 = await RuleReport.loadRules(throwFetch, 'x.json', EgressSanity.FALLBACK_RULES);
+    chk('R14 a thrown fetch is caught and reported, not propagated', r4.source === 'fallback' && /network down/.test(r4.error));
+
+    // The whole point: the source survives into the report the user reads.
+    const rep = RuleReport.buildRuleReport({ rowsS: ROWS_S, ruleDefs: [r2.rules], meta: { rulesSource: { structural: r2.source } } });
+    chk('R14 the fallback fact reaches the report provenance header', rep.rulesSource.structural === 'fallback', JSON.stringify(rep.rulesSource));
+  }
+
+  // ── R15 OVERLAY-MERGE — proves: a jurisdiction can override ONE threshold without restating
+  // the rulebook, and the report can still say where every number came from. The motivating case
+  // is real and already in egress_sanity.js's header: IBC 2021 requires 1.054m for Group I-2
+  // bed-movement egress doors, but main ships the general §1010.1.1 0.813m because a blanket
+  // 1.054 would false-flag every non-bed-movement door.
+  console.log('§W-RULE-REPORT R15 OVERLAY-MERGE');
+  {
+    const overlay = { egress_rules: [{ name: 'door_clear_width', critical_m: 1.054 }] };
+    const m = RuleReport.mergeRuleSets(EGRESS_RULES, overlay, { overlayId: 'i2_us' });
+    const dw = m.rules.egress_rules.find(r => r.name === 'door_clear_width');
+    chk('R15 the named field is overridden', dw.critical_m === 1.054, JSON.stringify(dw));
+    chk('R15 unnamed fields of the SAME rule are inherited, not dropped',
+      dw.warning_m === 0.85 && dw.max_severity === 'WARNING' && JSON.stringify(dw.applies_to) === '["IfcDoor"]',
+      JSON.stringify(dw));
+    chk('R15 rules the overlay never mentions are untouched',
+      JSON.stringify(m.rules.egress_rules.filter(r => r.name !== 'door_clear_width')) ===
+      JSON.stringify(EGRESS_RULES.egress_rules.filter(r => r.name !== 'door_clear_width')));
+    chk('R15 rule ORDER follows the base, so output stays deterministic (T8.6)',
+      JSON.stringify(m.rules.egress_rules.map(r => r.name)) === JSON.stringify(EGRESS_RULES.egress_rules.map(r => r.name)),
+      m.rules.egress_rules.map(r => r.name).join(','));
+    chk('R15 the BASE object is not mutated (a second merge must start clean)',
+      EGRESS_RULES.egress_rules.find(r => r.name === 'door_clear_width').critical_m === 0.813);
+
+    // Provenance — the gap that per-file rulesSource could not close.
+    chk('R15 provenance names the rule, the overlay, the field, and BOTH values',
+      m.provenance.length === 1 && m.provenance[0].rule === 'door_clear_width' &&
+      m.provenance[0].source === 'i2_us' && m.provenance[0].changed[0].field === 'critical_m' &&
+      m.provenance[0].changed[0].from === 0.813 && m.provenance[0].changed[0].to === 1.054,
+      JSON.stringify(m.provenance));
+    const same = RuleReport.mergeRuleSets(EGRESS_RULES, { egress_rules: [{ name: 'door_clear_width', critical_m: 0.813 }] }, { overlayId: 'x' });
+    chk('R15 an overlay that restates the SAME value records no override', same.provenance.length === 0, JSON.stringify(same.provenance));
+
+    // A jurisdiction adding a check it alone requires.
+    const added = RuleReport.mergeRuleSets(EGRESS_RULES, { egress_rules: [{ name: 'refuge_area', applies_to: ['room_graph_node'], min_m2: 2.5 }] }, { overlayId: 'my' });
+    chk('R15 a rule present ONLY in the overlay is added', added.rules.egress_rules.length === EGRESS_RULES.egress_rules.length + 1);
+    chk('R15 an added rule is marked added in provenance',
+      added.provenance.length === 1 && added.provenance[0].added === true, JSON.stringify(added.provenance));
+
+    // Arrays replace wholesale — documented, and asserted so nobody "improves" it into a union.
+    const arr = RuleReport.mergeRuleSets(STRUCT_RULES, { structural_rules: [{ name: 'span_depth_steel', name_hints: ['UB'] }] }, { overlayId: 'x' });
+    chk('R15 an array field is REPLACED, never unioned',
+      JSON.stringify(arr.rules.structural_rules.find(r => r.name === 'span_depth_steel').name_hints) === '["UB"]');
+
+    chk('R15 no overlay at all returns the base unchanged',
+      RuleReport.mergeRuleSets(EGRESS_RULES, null).rules === EGRESS_RULES);
+
+    // And the merged set still passes the evaluators — a merge that produced an unusable rule
+    // object would otherwise only show up as findings quietly vanishing.
+    if (fs.existsSync(HOSPITAL)) {
+      const hdb = new SQL.Database(new Uint8Array(fs.readFileSync(HOSPITAL)));
+      const hq = (sql, p) => { const r = p ? hdb.exec(sql, p) : hdb.exec(sql); return r.length ? r[0].values : []; };
+      const bef = EgressSanity.evaluate(hq, EGRESS_RULES, { log: () => {} }).filter(r => r.rule === 'door_clear_width').length;
+      const aft = EgressSanity.evaluate(hq, m.rules, { log: () => {} }).filter(r => r.rule === 'door_clear_width').length;
+      chk('R15 the merged rulebook RUNS and the stricter threshold actually bites',
+        aft > bef, 'Hospital door_clear_width 0.813m -> ' + bef + ' findings; I-2 1.054m -> ' + aft);
+    }
+  }
+
+  // ── R16 OVERLAY-LOAD — proves: an absent overlay is the ordinary case, not a failure, and a
+  // BROKEN overlay is never disguised as "no override".
+  console.log('§W-RULE-REPORT R16 OVERLAY-LOAD');
+  {
+    const baseOk = (u) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EGRESS_RULES) });
+    const r1 = await RuleReport.loadRules(baseOk, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES);
+    chk('R16 no overlay requested reports source=none, not an error', r1.overlay.source === 'none' && r1.provenance.length === 0, JSON.stringify(r1.overlay));
+
+    const mixed = (u) => /_my\.json$/.test(u)
+      ? Promise.resolve({ ok: false, status: 404 })
+      : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EGRESS_RULES) });
+    const r2 = await RuleReport.loadRules(mixed, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES,
+      { overlayUrl: 'rates/egress_rules_my.json', overlayId: 'my' });
+    chk('R16 a 404 overlay reports "absent" and keeps the base rules', r2.overlay.source === 'absent' && r2.overlay.error === null, JSON.stringify(r2.overlay));
+    chk('R16 base source is still fetched — an absent overlay must not degrade it', r2.source === 'fetched');
+    chk('R16 an absent overlay leaves the rulebook byte-identical',
+      JSON.stringify(r2.rules) === JSON.stringify(EGRESS_RULES));
+
+    const broken = (u) => /_my\.json$/.test(u)
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error('Unexpected token')) })
+      : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EGRESS_RULES) });
+    const r3 = await RuleReport.loadRules(broken, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES,
+      { overlayUrl: 'rates/egress_rules_my.json', overlayId: 'my' });
+    chk('R16 a MALFORMED overlay reports "error", distinct from "absent"',
+      r3.overlay.source === 'error' && /Unexpected token/.test(r3.overlay.error), JSON.stringify(r3.overlay));
+    chk('R16 a malformed overlay still leaves the base rules usable', JSON.stringify(r3.rules) === JSON.stringify(EGRESS_RULES));
+
+    const good = (u) => /_my\.json$/.test(u)
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ egress_rules: [{ name: 'door_clear_width', critical_m: 1.054 }] }) })
+      : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EGRESS_RULES) });
+    const r4 = await RuleReport.loadRules(good, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES,
+      { overlayUrl: 'rates/egress_rules_my.json', overlayId: 'my' });
+    chk('R16 a good overlay merges and reports its provenance',
+      r4.overlay.source === 'fetched' && r4.provenance.length === 1 &&
+      r4.rules.egress_rules.find(r => r.name === 'door_clear_width').critical_m === 1.054);
+
+    const rep = RuleReport.buildRuleReport({ rowsE: ROWS_E, ruleDefs: [r4.rules],
+      meta: { rulesSource: { egress: r4.source }, rulesOverlay: { egress: r4.overlay }, rulesProvenance: r4.provenance } });
+    chk('R16 overlay + per-rule provenance reach the report the user reads',
+      rep.rulesOverlay.egress.id === 'my' && rep.rulesProvenance[0].changed[0].to === 1.054,
+      JSON.stringify(rep.rulesProvenance));
+    chk('R16 with no overlay the report says so as an empty list, not a missing key',
+      Array.isArray(RuleReport.buildRuleReport({ rowsE: [], ruleDefs: [] }).rulesProvenance));
+  }
+
+  // ── R17 CONSTANT-COLUMN-IS-NOT-EVIDENCE — proves: a field that is present, typed and always
+  // the same value must never be read as a measurement. This test exists because the FIRST
+  // version of the axis_aligned_bboxes probe reported `ok` ("every beam and column is
+  // axis-aligned") on three real buildings whose rotation_x/y/z are zero on ALL 118,490
+  // transform rows — the column records nothing. "No element is rotated" and "rotation was never
+  // recorded" give the identical query result and mean opposite things; only one of them
+  // justifies trusting an axis-aligned test.
+  console.log('§W-RULE-REPORT R17 CONSTANT-COLUMN-IS-NOT-EVIDENCE');
+  {
+    const mk = (rotZ) => {
+      const d = new SQL.Database();
+      d.run(`CREATE TABLE elements_meta (guid TEXT, ifc_class TEXT, element_name TEXT, storey TEXT, discipline TEXT, material_name TEXT, material_rgba TEXT, building TEXT);
+             CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center_z REAL, rotation_x REAL, rotation_y REAL, rotation_z REAL, bbox_x REAL, bbox_y REAL, bbox_z REAL);
+             CREATE TABLE spatial_structure (guid TEXT, type TEXT, name TEXT);`);
+      d.run("INSERT INTO elements_meta VALUES ('c1','IfcColumn','C1','L1','STR',NULL,'','F')");
+      d.run("INSERT INTO elements_meta VALUES ('w1','IfcWall','W1','L1','ARC',NULL,'','F')");
+      d.run("INSERT INTO element_transforms VALUES ('c1',0,0,1.5,0,0,0,0.4,0.4,3)");
+      d.run(`INSERT INTO element_transforms VALUES ('w1',5,0,1.5,0,0,${rotZ},4,0.2,3)`);
+      return (sql, p) => { const r = p ? d.exec(sql, p) : d.exec(sql); return r.length ? r[0].values : []; };
+    };
+
+    const flat = RuleReport.runSufficiencyProbes(mk(0), { log: () => {} }).filter(x => x.check === 'axis_aligned_bboxes')[0];
+    chk('R17 an all-zero rotation column reports "uninformative", NOT "ok"',
+      flat.verdict === 'uninformative', JSON.stringify(flat.measured) + ' verdict=' + flat.verdict);
+    chk('R17 it says the column records nothing, not that the model is axis-aligned',
+      /records nothing/.test(flat.consequence) && /NOT evidence/.test(flat.consequence));
+    chk('R17 it still reports the row count it looked at', flat.measured.transformRows === 2, JSON.stringify(flat.measured));
+
+    // The control: the same probe on a DB where rotation IS recorded must go back to a real verdict.
+    const live = RuleReport.runSufficiencyProbes(mk(0.8), { log: () => {} }).filter(x => x.check === 'axis_aligned_bboxes')[0];
+    chk('R17 when rotation IS recorded somewhere, the verdict becomes real again',
+      live.verdict === 'ok' && live.measured.anyRotatedElementInModel === 1, JSON.stringify(live.measured) + ' verdict=' + live.verdict);
+    chk('R17 and that "ok" explicitly cites the evidence for it',
+      /rotation is genuinely recorded/.test(live.consequence), live.consequence.slice(0, 90));
+
+    // On the real building the false all-clear must be gone.
+    if (fs.existsSync(HOSPITAL)) {
+      const hdb = new SQL.Database(new Uint8Array(fs.readFileSync(HOSPITAL)));
+      const hq = (sql, p) => { const r = p ? hdb.exec(sql, p) : hdb.exec(sql); return r.length ? r[0].values : []; };
+      const real = RuleReport.runSufficiencyProbes(hq, { log: () => {} }).filter(x => x.check === 'axis_aligned_bboxes')[0];
+      chk('R17 real Hospital_meta.db no longer reports a false "ok" for rotation',
+        real.verdict === 'uninformative', 'verdict=' + real.verdict + ' ' + JSON.stringify(real.measured));
+    }
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

@@ -45,8 +45,73 @@
 })(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
 
-  var SUPPORT_CLASSES = ['IfcColumn', 'IfcWallStandardCase', 'IfcFooting', 'IfcMember'];
-  var COL_SUPPORT_CLASSES = ['IfcColumn', 'IfcWallStandardCase', 'IfcFooting'];
+  // ══ §RULE_FALLBACK_ONE_SOURCE (prompts/STRUCTURAL_SANITY.md T8.13) ═══════════════════════════
+  // THE ONE LITERAL. Every threshold this file can apply without a rules file is written HERE and
+  // nowhere else. It is a verbatim copy of viewer/rates/structural_rules.json — the AUTHORED
+  // source — kept in JS because a browser cannot read that file synchronously when the fetch for
+  // it has just failed.
+  //
+  // ⚠ Before T8.13 this object existed THREE times: here (as per-rule inline `byName.x || {...}`
+  // defaults), in rule_checklist.js as STRUCTURAL_RULES_FALLBACK, and again in
+  // rule_findings_film.js. They HAD already drifted across a branch boundary — the film branch
+  // carries span_depth_concrete 20/26 and door_clear_width 0.80 where main carries the #1715
+  // cited values 16/21 and 0.813 — which is exactly how a bake reports 205 findings for a
+  // building main's own evaluators score at 203. One literal, or that recurs.
+  //
+  // Changing a number here changes it for the panel, the film and the report at once. If you
+  // change one, change rates/structural_rules.json to match — T8.13's witness fails otherwise.
+  var FALLBACK_RULES = {
+    structural_rules: [
+      { name: 'floating_member', applies_to: ['IfcBeam'], tolerance_m: 0.15, framing_dz_m: 0.4 },
+      { name: 'span_depth_steel', applies_to: ['IfcBeam'], material: 'steel',
+        name_hints: ['UB', 'UC', 'Channel', 'HSS'], cantilever: false,
+        warning_ratio: 24, critical_ratio: 30, max_severity: 'WARNING' },
+      { name: 'span_depth_concrete', applies_to: ['IfcBeam'], material: 'concrete',
+        name_hints: ['Concrete', 'RC'], cantilever: false,
+        warning_ratio: 16, critical_ratio: 21, max_severity: 'WARNING' },
+      { name: 'span_depth_cantilever', applies_to: ['IfcBeam'], cantilever: true,
+        warning_ratio: 12, critical_ratio: 16, max_severity: 'WARNING' },
+      { name: 'column_continuity', applies_to: ['IfcColumn'], tolerance_m: 0.3 }
+    ]
+  };
+  function _fallback(name) {
+    var rs = FALLBACK_RULES.structural_rules;
+    for (var i = 0; i < rs.length; i++) if (rs[i].name === name) return rs[i];
+    return {};
+  }
+
+  // ══ §SUPPORT_CLASS_PARITY (prompts/STRUCTURAL_SANITY.md T9.1) ════════════════════════════════
+  // `IfcWall` was missing from BOTH lists. IfcWall vs IfcWallStandardCase is an EXPORTER choice,
+  // not a structural distinction — a beam bearing on a wall is bearing on a wall either way.
+  // MEASURED on the fleet: Terminal models all 333 of its walls as IfcWall and has ZERO
+  // IfcWallStandardCase, so before this line a Terminal column could only be supported by another
+  // column; 108 beam free-ends and 1 column rejection across the fleet sat on an IfcWall.
+  //
+  // For COLUMNS, IfcSlab (80 fleet rejections), IfcBeam (51) and IfcMember (9) are added too: a
+  // column landing on a transfer slab, a transfer beam or a truss member is real structure. The
+  // continuity test is not made vacuous by this — it still requires the support's TOP within
+  // tolerance_m of the column's BOTTOM, which finishes and services never satisfy.
+  //
+  // ══ §SLAB_BEARING (T9.3) — IfcSlab IS a beam support, and the z-bracket already makes it safe ═
+  // Held back through T9.1 on the worry that a slab spans a whole floor, so its footprint contains
+  // nearly every beam at that level and adding it would make floating_member vacuous. MEASURED,
+  // that worry was wrong on the mechanism: the vertical test is
+  //     if (pt.z < sb.zmin - tol || pt.z > sb.zmax + tol) continue;
+  // and `pt.z` is the beam's CENTRE. A beam hanging BELOW a slab has its centre under the slab's
+  // zmin and is rejected — which is the case that must stay flagged. Only a beam whose centre
+  // lies within the slab's own z-range is admitted, and such a beam is inside the floor plate, not
+  // suspended in space.
+  //
+  // The evidence: of the 247 remaining fleet DEFECTS (load-bearing geometry inside the rule's own
+  // 0.15 m tolerance), 246 are IfcSlab. Of those, 201 have the slab OVERLAPPING the beam's z-range
+  // and only 3 have it entirely above. Slab footprints are whole floors — median long side 48.8 m,
+  // p90 119.6 m — which is exactly why "is the end near a slab EDGE" is the wrong question: at
+  // p50 the endpoint is 0.76 m from an edge and at p90 it is 5.95 m, and neither says anything
+  // about whether the beam has a load path.
+  //
+  // Non-vacuity is guarded by a fixture: a beam suspended BELOW a slab must still flag CRITICAL.
+  var SUPPORT_CLASSES = ['IfcColumn', 'IfcWall', 'IfcWallStandardCase', 'IfcFooting', 'IfcMember', 'IfcPlate', 'IfcSlab'];
+  var COL_SUPPORT_CLASSES = ['IfcColumn', 'IfcWall', 'IfcWallStandardCase', 'IfcFooting', 'IfcSlab', 'IfcBeam', 'IfcMember'];
 
   function bbox(row) {
     // row: [guid, ifc_class|name, storey, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z]
@@ -96,7 +161,7 @@
     return best;
   }
 
-  function _supportChecks(beams, supports, tolerance_m, framing_dz_m, anyRows) {
+  function _supportChecks(beams, supports, tolerance_m, framing_dz_m, anyRows, framingCandidates) {
     // out[guid] = { supportedCount: 0|1|2, span, depth, freeEnds:[witness] }
     var out = {};
     for (var i = 0; i < beams.length; i++) {
@@ -115,12 +180,28 @@
           if (!pointInFootprint(pt, sb, tolerance_m)) continue;
           found = true; break;
         }
-        // (b) another beam framing in at the same level
+        // (b) another beam framing in at the same level.
+        //
+        // ══ §FRAMING_TOP_OF_STEEL (T9.2) — THIS TEST USED THE WRONG DATUM ═══════════════════
+        // It compared BOTTOMS (`ob.zmin - bb.zmin`). Steel frames to TOP of steel: a shallower
+        // beam framing into a deeper one has its top flush and its bottom high. MEASURED on
+        // Hospital_meta.db: of the 55 beam-to-beam free ends among the 43 flagged floating
+        // members, 55/55 were rejected by the bottom test and 55/55 would pass a top test — a
+        // typical pair being a 0.355 m beam into a 0.841 m beam, tops 4 mm apart and bottoms
+        // 482 mm apart. The bake DBs name the storeys "Level 6 TOS", "Level 7 TOS" — Top Of
+        // Steel — so the model states the convention the test was ignoring.
+        //
+        // Accept EITHER datum: top-flush (the steel norm) or bottom-flush (soffit-aligned
+        // concrete framing, which the original test was right about). Widening to two datums
+        // cannot hide a genuinely unsupported end — nothing is near either way.
         if (!found) {
-          for (var j = 0; j < beams.length; j++) {
-            if (j === i) continue;
-            var ob = bbox(beams[j]);
-            if (Math.abs(ob.zmin - bb.zmin) > framing_dz_m) continue;
+          var cands = framingCandidates || beams;
+          for (var j = 0; j < cands.length; j++) {
+            if (cands[j][0] === beam[0]) continue;
+            var ob = bbox(cands[j]);
+            var topAligned = Math.abs(ob.zmax - bb.zmax) <= framing_dz_m;
+            var botAligned = Math.abs(ob.zmin - bb.zmin) <= framing_dz_m;
+            if (!topAligned && !botAligned) continue;
             if (!pointInFootprint(pt, ob, tolerance_m)) continue;
             found = true; break;
           }
@@ -211,22 +292,40 @@
 
     var byName = {};
     (rules.structural_rules || []).forEach(function (r) { byName[r.name] = r; });
-    var floatingRule = byName.floating_member || { tolerance_m: 0.15, framing_dz_m: 0.4 };
-    var steelRule = byName.span_depth_steel || { warning_ratio: 24, critical_ratio: 30, max_severity: 'WARNING', name_hints: ['UB', 'UC', 'Channel', 'HSS'] };
-    var concreteRule = byName.span_depth_concrete || { warning_ratio: 16, critical_ratio: 21, max_severity: 'WARNING', name_hints: ['Concrete', 'RC'] };
-    var cantileverRule = byName.span_depth_cantilever || { warning_ratio: 12, critical_ratio: 16, max_severity: 'WARNING' };
-    var columnRule = byName.column_continuity || { tolerance_m: 0.3 };
+    // T8.13 — defaults come from the ONE literal above, never re-typed per call site.
+    var floatingRule = byName.floating_member || _fallback('floating_member');
+    var steelRule = byName.span_depth_steel || _fallback('span_depth_steel');
+    var concreteRule = byName.span_depth_concrete || _fallback('span_depth_concrete');
+    var cantileverRule = byName.span_depth_cantilever || _fallback('span_depth_cantilever');
+    var columnRule = byName.column_continuity || _fallback('column_continuity');
 
     var beamRows = dbQuery(
       "SELECT em.guid, em.element_name, em.storey, et.center_x, et.center_y, et.center_z, et.bbox_x, et.bbox_y, et.bbox_z " +
       "FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid " +
       "WHERE em.discipline = 'STR' AND em.ifc_class = 'IfcBeam'"
     );
+    // ══ §SUPPORT_NOT_DISCIPLINE_FILTERED (T9.4) — THE ROOT DEFECT ══════════════════════════════
+    // These support queries used to carry `em.discipline = 'STR'`. `discipline` is a label the
+    // EXTRACTION assigns for view/layer purposes — it is not a structural fact, and a column holds
+    // a beam up whether an exporter tagged it ARC or STR.
+    //
+    // MEASURED across the fleet, elements in a SUPPORT class that the STR filter hid:
+    //   Hospital  349 of 604 IfcColumn (58%), 1282 IfcWallStandardCase, 158 IfcWall, 2211 IfcPlate
+    //   Terminal  ALL 333 IfcWall, ALL 705 IfcSlab, 33,324 IfcPlate — its walls and slabs are
+    //             entirely ARC, so before this change nothing but a column could support anything
+    //   LTU       780 of 1785 IfcColumn, 2408 IfcWallStandardCase, 896 IfcSlab
+    // The five Hospital beams still flagged floating after the class-list and datum fixes each sat
+    // on an IfcWall at gapHoriz 0 m / gapVert 0 m — touching — and the rule could not see it
+    // because that wall is discipline ARC.
+    //
+    // The SUBJECT of a rule stays STR-filtered (we check structural beams and columns). What may
+    // HOLD SOMETHING UP is selected by ifc_class alone. Those are different questions and only one
+    // of them is about which drawing layer an element was exported on.
     var colClassesSql = "'" + SUPPORT_CLASSES.join("','") + "'";
     var supportRows = dbQuery(
       "SELECT em.guid, em.element_name, em.storey, et.center_x, et.center_y, et.center_z, et.bbox_x, et.bbox_y, et.bbox_z " +
       "FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid " +
-      "WHERE em.discipline = 'STR' AND em.ifc_class IN (" + colClassesSql + ")"
+      "WHERE em.ifc_class IN (" + colClassesSql + ")"
     );
     var colRows = dbQuery(
       "SELECT em.guid, em.element_name, em.storey, et.center_x, et.center_y, et.center_z, et.bbox_x, et.bbox_y, et.bbox_z " +
@@ -237,7 +336,7 @@
     var colSupportRows = dbQuery(
       "SELECT em.guid, em.element_name, em.storey, et.center_x, et.center_y, et.center_z, et.bbox_x, et.bbox_y, et.bbox_z " +
       "FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid " +
-      "WHERE em.discipline = 'STR' AND em.ifc_class IN (" + colSupportClassesSql + ")"
+      "WHERE em.ifc_class IN (" + colSupportClassesSql + ")"   // §SUPPORT_NOT_DISCIPLINE_FILTERED
     );
 
     // ── §STRUCT_WITNESS (prompts/STRUCTURAL_SANITY.md T8.12) — OPT-IN, default OFF.
@@ -258,8 +357,16 @@
 
     var rows = [];
 
+    // §SUPPORT_NOT_DISCIPLINE_FILTERED also applies to the beam-framing half of the support test:
+    // an ARC-tagged beam frames a STR beam just as well. Subject list stays STR; candidate list does not.
+    var framingRows = dbQuery(
+      "SELECT em.guid, em.element_name, em.storey, et.center_x, et.center_y, et.center_z, et.bbox_x, et.bbox_y, et.bbox_z " +
+      "FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid " +
+      "WHERE em.ifc_class = 'IfcBeam'"
+    );
+
     // Rule 1 (+ classification feeding rules 2-4)
-    var support = _supportChecks(beamRows, supportRows, floatingRule.tolerance_m, floatingRule.framing_dz_m, anyRows);
+    var support = _supportChecks(beamRows, supportRows, floatingRule.tolerance_m, floatingRule.framing_dz_m, anyRows, framingRows);
     var floatingCount = { CRITICAL: 0 };
     var unmatched = 0;
     var spanDepthCounts = { span_depth_steel: { WARNING: 0, uncapped_critical: 0 }, span_depth_concrete: { WARNING: 0, uncapped_critical: 0 }, span_depth_cantilever: { WARNING: 0, uncapped_critical: 0 } };
@@ -349,6 +456,9 @@
   }
 
   return { evaluate: evaluate,
+    // T8.13 — the ONE fallback literal, exported so rule_checklist.js / rule_findings_film.js
+    // consume it instead of each keeping a copy that drifts.
+    FALLBACK_RULES: FALLBACK_RULES,
     // exported for the witness fixture / debugging — not part of the row-producing contract above
     _supportChecks: _supportChecks, _columnContinuity: _columnContinuity, _matchesHints: _matchesHints
   };

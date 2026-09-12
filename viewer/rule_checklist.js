@@ -307,6 +307,8 @@ function setupRuleChecklist(A) {
           ? { egress: config.rulesSource || 'unknown' }
           : { structural: config.rulesSource || 'unknown' },
         roomGraph: config.roomGraph || null,
+        rulesOverlay: config.rulesOverlay || null,
+        rulesProvenance: config.rulesProvenance || [],
         longestExitSteps: _rcLongestExitSteps(rows),
         // T8.11 — the panel has A.dbQuery, so it can review its own input the same way the CLI
         // does. Probes are read-only counts over elements_meta/element_transforms/
@@ -604,20 +606,55 @@ function setupRuleChecklist(A) {
   // brief). Loads viewer/rates/structural_rules.json via fetch, hardcoded-fallback pattern
   // mirroring viewer/rates.js loadSequenceRules() (fetch → apply; on any failure, fall back to
   // the SAME 5 rules already in structural_rules.json, copied verbatim, never invented numbers).
-  var STRUCTURAL_RULES_FALLBACK = {
-    structural_rules: [
-      { name: 'floating_member', applies_to: ['IfcBeam'], tolerance_m: 0.15, framing_dz_m: 0.4 },
-      { name: 'span_depth_steel', applies_to: ['IfcBeam'], material: 'steel',
-        name_hints: ['UB', 'UC', 'Channel', 'HSS'], cantilever: false,
-        warning_ratio: 24, critical_ratio: 30, max_severity: 'WARNING' },
-      { name: 'span_depth_concrete', applies_to: ['IfcBeam'], material: 'concrete',
-        name_hints: ['Concrete', 'RC'], cantilever: false,
-        warning_ratio: 16, critical_ratio: 21, max_severity: 'WARNING' },
-      { name: 'span_depth_cantilever', applies_to: ['IfcBeam'], cantilever: true,
-        warning_ratio: 12, critical_ratio: 16, max_severity: 'WARNING' },
-      { name: 'column_continuity', applies_to: ['IfcColumn'], tolerance_m: 0.3 }
-    ]
+  // T8.13 §RULE_FALLBACK_ONE_SOURCE — the STRUCTURAL_RULES_FALLBACK constant that used to sit
+  // here is GONE. It is now StructuralSanity.FALLBACK_RULES, in the module that owns the rule
+  // semantics, because a second copy here is what let the film branch ship span_depth_concrete
+  // 20/26 against main's cited 16/21. Handed to this session by the movie-bake session, which
+  // found the two copies and (correctly, within its own branch) reported them identical.
+
+  // T8.13 — the ONE place the viewer decides which rules file ran. Caches the answer on A so a
+  // second panel open (or the Report button) reports the same source it actually used, and
+  // exposes it as A._<kind>RulesSource for the report's provenance header. Returns the shape
+  // RuleReport.loadRules defines: { rules, source, url, error }.
+  var RULE_SETS = {
+    structural: { url: 'rates/structural_rules.json', cache: '_structuralRulesCache', src: '_structuralRulesSource',
+                  fallback: function () { return (typeof StructuralSanity !== 'undefined') ? StructuralSanity.FALLBACK_RULES : { structural_rules: [] }; } },
+    egress:     { url: 'rates/egress_rules.json', cache: '_egressRulesCache', src: '_egressRulesSource',
+                  fallback: function () { return (typeof EgressSanity !== 'undefined') ? EgressSanity.FALLBACK_RULES : { egress_rules: [] }; } }
   };
+
+  // T8.14 — which jurisdiction's overlay to apply, selected EXACTLY the way rates.js already
+  // selects its 16 cost packs: a URL param, else the stored pack, else none. Reusing that key
+  // (`bim_5d_pack`) deliberately — a user who has chosen cidb2024_my for costs has stated their
+  // jurisdiction once, and asking again in a second registry is how the two drift apart. Returns
+  // null when nothing is selected, which is the ordinary case and NOT an error.
+  function _rcOverlayId() {
+    try {
+      var p = new URLSearchParams(window.location.search).get('rules');
+      if (p) return p;
+    } catch (e) { /* no location (test/headless) — fall through */ }
+    try { return localStorage.getItem('bim_5d_pack') || null; } catch (e) { return null; }
+  }
+
+  function _rcLoadRules(kind) {
+    var cfg = RULE_SETS[kind];
+    if (A[cfg.cache]) {
+      return Promise.resolve({ rules: A[cfg.cache], source: A[cfg.src] || 'unknown', url: cfg.url, error: null,
+        overlay: A._ruleOverlay || null, provenance: A._ruleProvenance || [] });
+    }
+    var fb = cfg.fallback();
+    var oid = _rcOverlayId();
+    var opts = oid ? { overlayUrl: 'rates/' + kind + '_rules_' + oid + '.json', overlayId: oid, log: console.log }
+                   : { log: console.log };
+    var go = (typeof RuleReport !== 'undefined')
+      ? RuleReport.loadRules(typeof fetch === 'function' ? fetch.bind(window) : null, cfg.url, fb, opts)
+      : Promise.resolve({ rules: fb, source: 'fallback', url: cfg.url, error: 'rule_report.js not loaded', overlay: null, provenance: [] });
+    return go.then(function (r) {
+      A[cfg.cache] = r.rules; A[cfg.src] = r.source;
+      A._ruleOverlay = r.overlay || null; A._ruleProvenance = r.provenance || [];
+      return r;
+    });
+  }
 
   A.showStructuralSanity = function () {
     // T8.4 — `fetched` vs `fallback` must reach the report. The §STRUCT_RULES_JSON line already
@@ -629,6 +666,7 @@ function setupRuleChecklist(A) {
       A.showRuleChecklist({
         title: 'Structural Sanity', checkId: 'sanity',
         rulesUsed: rules, rulesSource: source || 'unknown',
+        rulesOverlay: A._ruleOverlay || null, rulesProvenance: A._ruleProvenance || [],
         colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },
         categories: [
           { label: 'Floating Member', ruleNames: ['floating_member'] },
@@ -639,17 +677,12 @@ function setupRuleChecklist(A) {
       });
     }
     if (A._structuralRulesCache) { runWith(A._structuralRulesCache, A._structuralRulesSource); return; }
-    fetch('rates/structural_rules.json').then(function (resp) {
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      return resp.json();
-    }).then(function (json) {
-      A._structuralRulesCache = json; A._structuralRulesSource = 'fetched';
-      console.log('§STRUCT_RULES_JSON loaded=json rules=' + ((json.structural_rules || []).length));
-      runWith(json, 'fetched');
-    }).catch(function (err) {
-      console.warn('§STRUCT_RULES_JSON loaded=fallback error=' + err.message);
-      A._structuralRulesCache = STRUCTURAL_RULES_FALLBACK; A._structuralRulesSource = 'fallback';
-      runWith(STRUCTURAL_RULES_FALLBACK, 'fallback');
+    // T8.13 — ONE mechanism for "which rules file ran", shared with the film and the report.
+    // The §STRUCT_RULES_JSON line is kept for log continuity; the fact now also travels as DATA.
+    _rcLoadRules('structural').then(function (r) {
+      console.log('§STRUCT_RULES_JSON loaded=' + (r.source === 'fetched' ? 'json' : 'fallback') +
+        ' rules=' + ((r.rules.structural_rules || []).length) + (r.error ? ' error=' + r.error : ''));
+      runWith(r.rules, r.source);
     });
   };
 
@@ -660,15 +693,7 @@ function setupRuleChecklist(A) {
   // same shape as A.showStructuralSanity() above (fetch rates/egress_rules.json, hardcoded-
   // fallback pattern mirroring rates.js loadSequenceRules(), same 3 rules copied verbatim from
   // egress_rules.json — never invented numbers). ──
-  var EGRESS_RULES_FALLBACK = {
-    egress_rules: [
-      { name: 'door_clear_width', applies_to: ['IfcDoor'],
-        warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' },
-      { name: 'circulation_distance', applies_to: ['room_graph_node'],
-        target: 'exit_or_own_storey_circ', warning_m: 45.7, critical_m: 60.96, max_severity: 'WARNING' },
-      { name: 'isolated_room', applies_to: ['room_graph_node'], target: 'own_storey_circ' }
-    ]
-  };
+  // T8.13 — EGRESS_RULES_FALLBACK likewise removed; see EgressSanity.FALLBACK_RULES.
 
   A.showEgressSanity = function () {
     function runWith(rules, source) {
@@ -694,7 +719,8 @@ function setupRuleChecklist(A) {
         } catch (e) { console.warn('§RULE_REPORT_ROOMGRAPH_FACTS_FAIL ' + e.message); }
         A.showRuleChecklist({
           title: 'Egress', checkId: 'egress',
-          rulesUsed: rules, rulesSource: source || 'unknown', roomGraph: rgFacts,
+          rulesUsed: rules, rulesSource: source || 'unknown',
+        rulesOverlay: A._ruleOverlay || null, rulesProvenance: A._ruleProvenance || [], roomGraph: rgFacts,
           colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },
           categories: [
             { label: 'Isolated Room', ruleNames: ['isolated_room'] },
@@ -710,17 +736,10 @@ function setupRuleChecklist(A) {
       else go(); // defensive — evaluator itself logs §EGRESS_NO_ROOMGRAPH and skips rules 2/3
     }
     if (A._egressRulesCache) { runWith(A._egressRulesCache, A._egressRulesSource); return; }
-    fetch('rates/egress_rules.json').then(function (resp) {
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      return resp.json();
-    }).then(function (json) {
-      A._egressRulesCache = json; A._egressRulesSource = 'fetched';
-      console.log('§EGRESS_RULES_JSON loaded=json rules=' + ((json.egress_rules || []).length));
-      runWith(json, 'fetched');
-    }).catch(function (err) {
-      console.warn('§EGRESS_RULES_JSON loaded=fallback error=' + err.message);
-      A._egressRulesCache = EGRESS_RULES_FALLBACK; A._egressRulesSource = 'fallback';
-      runWith(EGRESS_RULES_FALLBACK, 'fallback');
+    _rcLoadRules('egress').then(function (r) {
+      console.log('§EGRESS_RULES_JSON loaded=' + (r.source === 'fetched' ? 'json' : 'fallback') +
+        ' rules=' + ((r.rules.egress_rules || []).length) + (r.error ? ' error=' + r.error : ''));
+      runWith(r.rules, r.source);
     });
   };
   A._ruleChecklistOpeners.egress = A.showEgressSanity;

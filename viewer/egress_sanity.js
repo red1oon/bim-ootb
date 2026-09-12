@@ -58,6 +58,45 @@
   var _nodeRoomGraph = (typeof module !== 'undefined' && module.exports) ? require('../common/room_graph.js') : null;
   function _resolveRoomGraph() { return _nodeRoomGraph || ROOT.RoomGraph; }
 
+  // ══ §RULE_FALLBACK_ONE_SOURCE (prompts/STRUCTURAL_SANITY.md T8.13) ═══════════════════════════
+  // THE ONE LITERAL for this evaluator — verbatim from viewer/rates/egress_rules.json. See
+  // structural_sanity.js's twin for the full reasoning; the short version is that this object
+  // used to exist three times and the copies had ALREADY drifted across a branch boundary
+  // (circulation_distance 30/45 on the film branch vs the #1715 cited 45.7/60.96 here).
+  var FALLBACK_RULES = {
+    egress_rules: [
+      { name: 'door_clear_width', applies_to: ['IfcDoor'],
+        warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' },
+      { name: 'circulation_distance', applies_to: ['room_graph_node'],
+        target: 'exit_or_own_storey_circ', warning_m: 45.7, critical_m: 60.96, max_severity: 'WARNING' },
+      { name: 'isolated_room', applies_to: ['room_graph_node'], target: 'own_storey_circ' }
+    ]
+  };
+  function _fallback(name) {
+    var rs = FALLBACK_RULES.egress_rules;
+    for (var i = 0; i < rs.length; i++) if (rs[i].name === name) return rs[i];
+    return {};
+  }
+
+  // §CIRC_NODE_NOT_A_GUESSED_GUID (T9.6) — every circulation node on a storey, however the graph
+  // chose to name it. `kind === 'circ'` is the graph's own marker; the guid prefixes are the
+  // fallback for nodes that carry the storey only in their id. Returns [] when a storey genuinely
+  // has no circulation, which is a real finding and different from "we looked up the wrong name".
+  function _circulationNodesOn(graph, storey) {
+    var out = [];
+    (graph.nodes || []).forEach(function (n) {
+      if (n.storey === storey && n.kind === 'circ' && out.indexOf(n.guid) === -1) out.push(n.guid);
+    });
+    Object.keys(graph.nodesByGuid || {}).forEach(function (gid) {
+      if (out.indexOf(gid) !== -1) return;
+      if (gid.indexOf('CIRC::') !== 0 && gid.indexOf('SPINE::') !== 0) return;
+      var n = graph.nodesByGuid[gid];
+      // Match on the node's own storey when it has one, else on the storey embedded in the guid.
+      if ((n && n.storey === storey) || gid.indexOf('::' + storey) === gid.indexOf('::')) out.push(gid);
+    });
+    return out;
+  }
+
   function _severityBelow(value, rule) {
     // Door width: NARROWER is worse (flag when value <= threshold), opposite direction from a
     // span/depth ratio rule.
@@ -82,8 +121,9 @@
     var log = opts.log || (typeof console !== 'undefined' ? console.log.bind(console) : function () {});
     var byName = {};
     (rules.egress_rules || []).forEach(function (r) { byName[r.name] = r; });
-    var doorRule = byName.door_clear_width || { warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' };
-    var circRule = byName.circulation_distance || { warning_m: 45.7, critical_m: 60.96, max_severity: 'WARNING' };
+    // T8.13 — from the ONE literal above, never re-typed here.
+    var doorRule = byName.door_clear_width || _fallback('door_clear_width');
+    var circRule = byName.circulation_distance || _fallback('circulation_distance');
 
     var rows = [];
 
@@ -149,8 +189,22 @@
       if (esc && esc.distance != null) {
         target = 'exit'; distance = esc.distance; viaExit++;
       } else {
-        var circGuid = 'CIRC::' + r.storey;
-        var sp = graph.nodesByGuid[circGuid] ? RoomGraph.shortestPath(graph, r.guid, circGuid) : null;
+        // ══ §CIRC_NODE_NOT_A_GUESSED_GUID (T9.6) — the fallback used to CONSTRUCT one guid,
+        // 'CIRC::' + storey, and give up if that exact string was not a node. The graph does not
+        // name circulation that way everywhere: it also emits SPINE:: nodes keyed by storey AND
+        // axis position, e.g. 'SPINE::Level 1|x|-7.00'. MEASURED on HHS_Office_Federated: the
+        // graph holds 3 CIRC:: nodes and 15 SPINE:: nodes, and the single room reported
+        // `isolated_room` had **6 edges, four of them doors onto SPINE::Unknown|x|32.44** — its
+        // own storey's circulation. The rule looked up 'CIRC::Unknown', found nothing, and called
+        // a connected room isolated. A guessed identifier is not a lookup.
+        //
+        // Reach for ANY circulation node on the storey and take the nearest reachable one.
+        var circNodes = _circulationNodesOn(graph, r.storey);
+        var sp = null;
+        for (var ci = 0; ci < circNodes.length; ci++) {
+          var cand = RoomGraph.shortestPath(graph, r.guid, circNodes[ci]);
+          if (cand && cand.distance != null && (!sp || cand.distance < sp.distance)) sp = cand;
+        }
         if (sp && sp.distance != null) { target = 'circulation (fallback)'; distance = sp.distance; viaFallback++; }
         else {
           // Rule 3: isolated — no path to escape via a real exit NOR to this storey's own
@@ -198,5 +252,5 @@
     return rows;
   }
 
-  return { evaluate: evaluate };
+  return { evaluate: evaluate, FALLBACK_RULES: FALLBACK_RULES };
 });

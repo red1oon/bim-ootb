@@ -524,3 +524,332 @@ column on the model's lowest plane in a model with no footings. HHS measures **1
 **Tests:** R12 (above) — rows identical on/off; every `isolated_room` states degree and
 neighbours; a degree>0 room reads differently from a degree-0 one; every `column_continuity` names
 what is below it or that nothing is, with a reason; every cantilever discloses the inference.
+
+**T8.13 §RULE_FALLBACK_ONE_SOURCE — one literal for the thresholds, one shape for "which file ran".**
+*(Handed to this session by the movie-bake session, 2026-09-12: "they own the mechanism — one
+source of truth for which rules file loaded, exposed as data rather than a console line. I own the
+film's consumer of it: one line on the closing card, written against whatever shape they land.")*
+
+**The hazard was already a bug.** That session verified its two copies byte-identical and concluded
+the dedup would be a pure move. That is true *within* its own branch and false across the repo —
+`feat/rule-findings-film` is based on `42340b46`, before #1715, so **three** files on it carry
+pre-#1715 thresholds:
+
+| source | `span_depth_concrete` | `door_clear_width` critical | `circulation_distance` |
+|---|---|---|---|
+| main `rates/*.json` (authored) | **16 / 21** | **0.813 m** | **45.7 / 60.96 m** |
+| main `rule_checklist.js` | 16 / 21 | 0.813 m | 45.7 / 60.96 m |
+| main evaluators (inline defaults) | 16 / 21 | 0.813 m | 45.7 / 60.96 m |
+| film `rates/*.json` | 20 / 26 | 0.80 m | 30 / 45 m |
+| film `rule_checklist.js` | 20 / 26 | 0.80 m | 30 / 45 m |
+| film `rule_findings_film.js` | 20 / 26 | 0.80 m | 30 / 45 m |
+
+That is the whole of the bake-vs-main gap already measured this session: Terminal 205 vs 203, HHS
+215 vs 212, Hospital 509 vs 509. Reconciliation IS required on rebase, and the answer is main's
+cited values (ACI 318-19 Table 9.3.1.1; IBC 2021 §1010.1.1 and Table 1017.2).
+
+**There were four copies, not two.** Besides the two constants that session found, each evaluator
+re-typed every threshold inline as `byName.<rule> || { … }`.
+
+**The shape, landed here:**
+1. **`StructuralSanity.FALLBACK_RULES` / `EgressSanity.FALLBACK_RULES`** — the ONE literal each,
+   in the module that owns the rule semantics. The inline per-rule defaults now read from it.
+   `rule_checklist.js`'s two constants are deleted.
+2. **`RuleReport.loadRules(fetchFn, url, fallback, opts)` → `Promise<{ rules, source, url, error }>`**,
+   `source` ∈ `fetched` | `fallback`. `fetchFn` is injected, so it stays DOM-free and
+   Node-testable. It defines a mechanism, never a fourth copy of the numbers — the fallback is
+   passed in by the caller from the evaluator that owns it. A failed fetch is never a silent
+   substitution: the caller gets the fallback *and* the reason. Logs `§RULE_RULES_SOURCE`.
+3. **`RuleReport.diffRuleThresholds(a, b)`** — compares by rule name and every numeric field, so a
+   reordered file passes and a changed threshold does not.
+4. The panel caches on `A._structuralRulesSource` / `A._egressRulesSource`; the report's
+   `rulesSource` header already carries it (T8.4). `§STRUCT_RULES_JSON` / `§EGRESS_RULES_JSON` are
+   kept for log continuity — the fact now travels as data *as well as* a console line.
+
+**The boundary, as that session drew it:** this session owns the mechanism; the film session owns
+the film's consumer of it — one line on the closing card, written against the shape above. Nothing
+here invents that line's format.
+
+**Tests:** R13 ONE-LITERAL — each `FALLBACK_RULES` equals its `rates/*.json` (a silent edit to
+either side fails CI); no other file declares a fallback rules object; and a control proving the
+guard catches the exact film-branch drift (concrete 16→20). R14 LOADRULES-SHAPE — `fetched` on ok;
+`fallback` + reason on 404, on a thrown fetch, and with no fetch at all; the fallback handed back
+IS the evaluator's one literal; and the fact reaches the report's provenance header.
+
+**T8.14 §RULE_OVERLAY — per-jurisdiction rules, merged the way `rates.js` already merges packs.**
+*(User instruction, 2026-09-12, after the movie-bake session's observation that `viewer/rates/`
+holds 16 per-jurisdiction cost packs against 2 global compliance rulebooks.)*
+
+**Verified before building, because the precedent is stronger than "unused plumbing":** the 16
+packs each carry a 9-key schema (materials, labor, equipment, equipment_allocation, `sequence`,
+smm_sections, work_packages, provisions, meta), and **15 of them already ship 49 `sequence`
+entries** that `rates.js loadRateTemplate()` merges into `SEQUENCE_RULES`. One rulebook is already
+regionalised through this mechanism. **No pack carries any compliance block** — so the real
+asymmetry is 16 packs × 9 keys, none of them compliance, versus 2 global compliance files.
+
+**The gap this closes.** `loadRateTemplate` merges *per key* — the JSON wins, keys it omits keep
+their base value. `RuleReport.loadRules` was all-or-nothing: fetched **or** fallback. A regional
+file that wants to change one threshold and inherit the rest could not work on it.
+
+**Merge is per FIELD, one level finer than rates.** An overlay rule patches the fields it names and
+inherits the rest:
+
+```
+base:    { name: 'door_clear_width', applies_to: ['IfcDoor'], warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' }
+overlay: { name: 'door_clear_width', critical_m: 1.054 }
+result:  { name: 'door_clear_width', applies_to: ['IfcDoor'], warning_m: 0.85, critical_m: 1.054, max_severity: 'WARNING' }
+```
+
+That case is real and already documented in `egress_sanity.js`'s own header: IBC 2021 requires
+1.054 m (41.5 in) for Group I-2 bed-movement egress doors — Hospital's own occupancy — but main
+ships the general §1010.1.1 0.813 m because a blanket 1.054 would false-flag every
+non-bed-movement door. **Measured:** Hospital reports **0** `door_clear_width` findings at 0.813 m
+and **65** at 1.054 m. An overlay is how that number gets stated without restating the rulebook.
+
+Rules the overlay does not mention are untouched; a rule present only in the overlay is **added**;
+rule ORDER follows the base so output stays deterministic (T8.6); the base object is never
+mutated; **arrays (`applies_to`, `name_hints`) are replaced wholesale** — there is no sensible
+element-wise merge, and silently unioning hints would change which beams a rule claims.
+
+**⚠ An absent overlay is the ORDINARY case, not a failure.** "This jurisdiction states no
+override" must not degrade the base the way a failed *base* fetch does. A 404 reports
+`source: 'absent'`; a file that exists but will not parse reports `source: 'error'` with the
+reason. Conflating those would hide a broken regional file as "no override". Either way the base
+rulebook is kept intact and usable.
+
+**⚠ Provenance is the point, not a nicety.** With two layers, `rulesSource: fetched|fallback` per
+FILE stops answering "where did this threshold come from" — the question a report exists for. The
+report now carries `rulesOverlay` (which overlay, and whether it was fetched/absent/error/none)
+and `rulesProvenance`: per overridden rule, exactly which fields the overlay supplied and **what
+the base said**. An overlay that restates an identical value records no override.
+
+**Selection follows the rates convention, and reuses its key deliberately:** `?rules=<id>`, else
+`localStorage['bim_5d_pack']`, else none. A user who picked `cidb2024_my` for costs has stated
+their jurisdiction once; asking again in a second registry is how two registries drift apart —
+the exact failure T8.13 just cleaned up. File name: `rates/<kind>_rules_<id>.json`.
+CLI: `--rules-overlay ID`, logging `§RULE_OVERLAY` and `§RULE_OVERLAY_APPLIED` per changed rule.
+
+**No jurisdiction file ships in this PR.** The mechanism is here; authoring `egress_rules_my.json`
+is a separate decision needing a real code citation per number, exactly as the THRESHOLD
+DISCLAIMER demands of every threshold already in the tree.
+
+**Tests:** R15 OVERLAY-MERGE — field override, sibling-field inheritance, untouched rules, stable
+order, base not mutated, provenance naming both values, no-op override recording nothing, added
+rule, arrays replaced, and the merged rulebook actually running on Hospital (0 → 65 findings).
+R16 OVERLAY-LOAD — `none` when unrequested; `absent` on 404 with the base byte-identical and its
+own source undegraded; `error` (distinct from absent) on a malformed file with the base still
+usable; merge + provenance on a good overlay; and both reaching the report.
+
+## T9 §ZERO_DEFECT_TOOLS — driving the rules to zero LOGIC defects, using T8's fast report as the bench
+*(User instruction, 2026-09-12: "we supposed to land an all systems check without baking that is much
+faster and report in toto. So use that as benchmark to work till zero defect in tools.")*
+
+**The metric.** Not "fewer findings" — a rule can reach zero by becoming vacuous. The bench is the
+**artifact rate**: findings whose OWN witness (T8.12) shows the rule rejected real load-bearing
+geometry. Only classes that can carry vertical load count as evidence — `IfcCovering`,
+`IfcOpeningElement` (a VOID), ducts, railings and furniture do NOT. The first version of this bench
+counted any nearby element and read 76%; corrected, the true baseline was 63%.
+
+| | findings | artifacts | rate |
+|---|---|---|---|
+| baseline | 2046 | 1295 | **63%** |
+| after T9.1 + T9.2 | 1949 | 1205 | 62% |
+| after T9.4 | **1603** | **858** | **54%** |
+
+Per building, the rules that moved: Hospital `floating_member` **43 → 0**, `span_depth_cantilever`
+**217 → 43**, `column_continuity` 24 → 15; Terminal `column_continuity` **108 → 11**.
+`span_depth_steel` rose 204 → 263, which is correct — beams wrongly routed to the cantilever rule
+returned to their own material rule.
+
+**T9.1 §SUPPORT_CLASS_PARITY.** `IfcWall` was in neither support list. IfcWall vs
+IfcWallStandardCase is an exporter choice, not a structural distinction — Terminal models all 333
+of its walls as `IfcWall` and has zero `IfcWallStandardCase`, so a Terminal column could only be
+supported by another column. Columns additionally gained `IfcSlab` (80 fleet rejections), `IfcBeam`
+(51) and `IfcMember` (9): landing on a transfer slab, transfer beam or truss member is real.
+
+**T9.2 §FRAMING_TOP_OF_STEEL — the framing test used the wrong datum.** It compared beam BOTTOMS.
+Steel frames to TOP of steel. Of the 55 beam-to-beam free ends among Hospital's 43 flagged floating
+members, **55/55 were rejected by the bottom test and 55/55 pass a top test** — typically a 0.355 m
+beam into a 0.841 m beam, tops 4 mm apart, bottoms 482 mm apart. The bake DBs name the storeys
+"Level 6 TOS" / "Level 7 TOS" — Top Of Steel. The model stated the convention the test ignored. Now
+accepts either datum; a genuinely unsupported end has nothing near either way.
+
+**T9.3 §SLAB_BEARING — NOT DONE, deliberately.** 434 fleet free-ends still sit on an `IfcSlab`.
+Adding `IfcSlab` to the BEAM support list would drive `floating_member` toward zero by making the
+test vacuous, not correct: a slab spans a whole floor, so its footprint contains nearly every beam
+at that level. The right change is a bearing test — beam end at a slab EDGE, not anywhere beneath
+it — which is a real design decision, not a class-list edit. Left open and stated.
+
+**T9.4 §SUPPORT_NOT_DISCIPLINE_FILTERED — the root defect.** Every support query carried
+`em.discipline = 'STR'`. `discipline` is a label the EXTRACTION assigns for view/layer purposes; a
+column holds a beam up whether an exporter tagged it ARC or STR. Hidden by that filter:
+
+| building | support-class elements the rule could not see |
+|---|---|
+| Hospital | **349 of 604 `IfcColumn` (58%)**, 1282 `IfcWallStandardCase`, 158 `IfcWall`, 2211 `IfcPlate` |
+| Terminal | **ALL 333 `IfcWall`, ALL 705 `IfcSlab`**, 33,324 `IfcPlate` |
+| LTU_AHouse | 780 of 1785 `IfcColumn`, 2408 `IfcWallStandardCase`, 896 `IfcSlab` |
+
+The five Hospital beams still flagged floating after T9.1/T9.2 each sat on an `IfcWall` at
+gapHoriz **0 m** / gapVert **0 m** — touching — invisible only because that wall is discipline ARC.
+The SUBJECT of a rule stays STR-filtered; what may HOLD SOMETHING UP is now selected by
+`ifc_class` alone. Those are different questions and only one is about drawing layers.
+
+**⚠ THE OLD REGRESSION GUARDS WERE CIRCULAR, and passed for the life of the feature.**
+`tests/test_structural_sanity_rules.js` asserted Hospital floating-member count `in [40,50]` and
+">=50% at roof levels". Both came from this file's own VALIDATION section, written from the output
+of the buggy code. The roof clustering was the bug's fingerprint — roof levels are where beam
+depths change — so asserting it kept the bug alive. Replaced with the property the rule actually
+claims: **no flagged beam has load-bearing geometry inside the rule's own `tolerance_m`**, with
+near-misses OUTSIDE tolerance reported and not asserted, because a tolerance is an engineer's call
+and not something a test may settle by widening a number until it passes. Non-vacuity is guarded by
+the synthetic fixture, which still flags its deliberately unsupported beam CRITICAL.
+
+**What remains, and why it is not a logic defect:** the `IfcSlab` bearing test (T9.3); the 0.3 m
+`column_continuity` tolerance (191 fleet rejections are centreline near-misses — a threshold
+question under the THRESHOLD DISCLAIMER); and HHS's 128 ground-floor columns, which are a real
+DATA gap the model has no footings for and which T8.11's `footings_modelled: absent` already
+discloses on every report.
+
+**T9.5 §ARTIFACT_RATE — the bench, shipped as a tool, and the metric corrected twice.**
+*(User: "exploit this benchmark runner.")* `tests/bench_rule_artifacts.js` — fleet runner over every
+`buildings/*_{meta,silent}.db`, `--json` to record, `--gate <baseline>` to enforce.
+`RuleReport.artifactRates(rows, ruleDefs)` is the pure core, so **every T8 report now grades its own
+findings** rather than the metric living in a throwaway script.
+
+**The metric was wrong twice, and both corrections changed which fix looked right.**
+1. *Too generous:* the first version counted ANY nearby element as proof a rule erred — including
+   `IfcCovering`, ducts, railings and `IfcOpeningElement`, which is a **void**. It read 76% against
+   a true 63%, and would have justified adding `IfcSlab` to the beam support list, i.e. T9.3, the
+   change that makes the rule vacuous.
+2. *Conflated defect with threshold:* the witness searches deliberately WIDER than the rule (4×
+   tolerance). Counting every near-miss as an artifact put the fleet at 52% and pointed at
+   `floating_member` in LTU_AHouse — where **240 beam-at-free-end cases looked like rule failures
+   until the pair was checked properly and not one had a beam both top-aligned AND inside the
+   footprint.** They are threshold questions, not logic to repair.
+
+The metric now splits:
+- **`defect`** — load-bearing geometry INSIDE the rule's own `tolerance_m`. The rule looked and
+  missed. This is what T9 drives to zero.
+- **`nearMiss`** — load-bearing geometry outside it. An engineer's threshold call, reported and
+  never "fixed" by widening a number until the bench goes green.
+
+| | found | defect | rate | nearMiss |
+|---|---|---|---|---|
+| `column_continuity` | 923 | **1** | 0% | 331 |
+| `span_depth_cantilever` | 472 | 61 | 13% | 252 |
+| `isolated_room` | 23 | 8 | 35% | 0 |
+| `floating_member` | 328 | **140** | **43%** | 119 |
+| **fleet** | **1746** | **210** | **12.0%** | 702 |
+
+So the honest state after T9.1–T9.4: **12% defects, not 52%**, `column_continuity` is effectively
+clean at 1-in-923, and the whole remaining target is `floating_member`'s 140 — which is T9.3, the
+slab bearing test, still deliberately undone.
+
+**Two traps the gate catches, both demonstrated:**
+- **§BENCH_GATE_VACUOUS** — findings collapse >50% while the defect rate does not improve. A rule
+  that stops firing without getting more accurate has been switched off, not fixed. Verified
+  against a synthetic baseline: `findings 1000 -> 328 (-67%) but rate 43% -> 43%` → FAIL.
+- **§BENCH_GATE_FLEET_MISMATCH** — these are fleet TOTALS, and `buildings/*.db` is gitignored, so a
+  fresh checkout measures a smaller fleet and every rule silently looks improved. The gate compares
+  the measured building set first and refuses to grade across a different one. Verified by hiding
+  `Clinic_meta` → FAIL naming the missing building.
+
+**Why a bench and not a test:** these numbers are properties of real buildings and move when a model
+is re-extracted. Freezing one into an assertion is the circular-guard mistake T9 documents —
+`test_structural_sanity_rules.js` asserted "count in [40,50]" for the life of a bug because that
+range came from the buggy code's own output. The baseline is recorded data; the gate compares
+against it; non-vacuity is guarded by fixtures that must still fail.
+
+**T9.3 §SLAB_BEARING — done, and the reason it was held back was wrong.**
+Deferred through T9.1 on the worry that a whole-floor slab would make `floating_member` vacuous.
+The worry named the right risk and the wrong mechanism. The vertical test is
+`if (pt.z < sb.zmin - tol || pt.z > sb.zmax + tol) continue;` and **`pt.z` is the beam's CENTRE**:
+a beam hanging BELOW a slab has its centre under the slab's `zmin` and is rejected — which is
+precisely the case that must stay flagged. Only a beam whose centre lies inside the slab's own
+z-range is admitted, and that beam is inside the floor plate, not suspended.
+
+Evidence that settled it: of the 247 fleet defects then outstanding, **246 were `IfcSlab`**, and of
+those **201 had the slab OVERLAPPING the beam's z-range** against 3 entirely above it. "Is the end
+near a slab EDGE" turned out to be the wrong question — slab footprints are whole floors (median
+long side 48.8 m, p90 119.6 m), so the endpoint sits 0.76 m from an edge at p50 and 5.95 m at p90,
+and neither number says anything about whether the beam has a load path.
+
+Non-vacuity is guarded by a fixture PAIR on one 40 x 20 m slab: `beam-in-slab` (centre inside the
+slab's z-range) must NOT flag, `beam-under-slab` (same footprint, hanging 3 m below) MUST flag
+CRITICAL. Both assert; a class-list edit that switched the rule off would fail the second.
+
+**T9.6 §CIRC_NODE_NOT_A_GUESSED_GUID — `isolated_room`'s fallback looked up an invented identifier.**
+It CONSTRUCTED `'CIRC::' + storey` and gave up when that exact string was not a node. The graph does
+not name circulation that way everywhere: it also emits `SPINE::` nodes keyed by storey AND axis
+position. MEASURED on HHS_Office_Federated: the graph holds 3 `CIRC::` nodes and 15 `SPINE::` nodes,
+and the one room reported isolated had **6 edges, four of them doors onto `SPINE::Unknown|x|32.44`
+— its own storey's circulation**. The rule looked up `CIRC::Unknown`, found nothing, and called a
+connected room isolated. A guessed identifier is not a lookup. Now reaches for ANY circulation node
+on the storey and takes the nearest reachable one.
+
+**The fleet after T9.3 + T9.6, and widened to 14 DBs including `_extracted` (so JKR, which has no
+`_meta`, is in it):**
+
+| rule | found | defect | rate | nearMiss |
+|---|---|---|---|---|
+| `column_continuity` | 1746 | 5 | 0% | 544 |
+| `span_depth_cantilever` | 560 | **0** | 0% | 339 |
+| `floating_member` | 187 | 1 | 1% | 112 |
+| `isolated_room` | 52 | 2 | 4% | 0 |
+| **fleet** | **2545** | **8** | **0.3%** | 995 |
+
+**63% → 12% → 0.3%.** `span_depth_cantilever` is at zero across 560 findings.
+
+**Out-of-sample check: JKR_extracted** (9,410 elements, a building none of this work was developed
+against) — **256 findings, 0 defects** on all four testable rules, first run, no tuning.
+
+What is left is 8 defects and 995 near-misses. The near-misses are threshold questions under the
+THRESHOLD DISCLAIMER and are not to be "fixed" by widening a number until the bench goes green.
+
+## T10 OPEN — "Hospital's ground-floor slabs are missing": traced, and the baking is NOT the cause
+*(User, 2026-09-12: "i wonder if the baking broke the Hospital ground floor slabs seems to be
+missing! Check, trace, update the right prompts. New session we pursue this and sanity checking
+code." Recorded here as a HANDOVER: the trace below is done, the conclusion is not.)*
+
+**RULED OUT — the bake did not touch them.** `IfcSlab = 35` identically in all four Hospital DBs,
+with the same per-storey distribution and the same slab z-range (164.93 .. 203.22) in each:
+
+| DB | size | elements | IfcSlab |
+|---|---|---|---|
+| `Hospital_extracted.db` (closest to the IFC import) | 265 MB | 64,150 | **35** |
+| `Hospital_meta.db` | 26 MB | 63,415 | **35** |
+| `HospitalAjaibPath.db` | 262 MB | 63,415 | **35** |
+| `Hospital_silent.db` (the bake DB) | 315 MB | 64,150 | **35** |
+
+Whatever is or is not there, it is there identically before and after baking. Do not spend the next
+session on the bake path.
+
+**RULED OUT — the ground floor slab exists and is normal-sized.** Level 1 carries an **8,899 m²**
+slab (`Floor:Concrete-150 mm slab on 300mm base`, x −5..94, y 38..128, z 165.59) plus two small
+ones. That is in line with every other storey: L2 8,963 · L3 9,192 · L4 8,270 · L5 8,343 · L6 7,585.
+553 `IfcFooting` sit directly beneath it at z 161.51..165.06.
+
+**⚠ CORRECTION to an in-session claim:** I first reported columns descending to z 156.61, "8.75 m
+below the lowest slab", which suggested an unmodelled substructure. That is **one single outlier
+column**. The real column bases are 164.2 (30), 165.1 (6), 165.5 (60), 165.6 (38), 165.8 (61) —
+all at or just under the Level 1 slab. There is no missing basement.
+
+**STILL OPEN — two things the trace did surface, neither yet diagnosed:**
+1. **8% of Level 1 sits outside the Level 1 slab footprint.** Level 1 elements span y 46..152; the
+   slab covers y 38..128. **648 of 8,466 Level 1 elements (8%)** fall outside it, concentrated in
+   y 128..152. Whether that is a genuine gap, an atrium/courtyard with no floor by design, or an
+   external canopy area cannot be settled from bounding boxes alone — it needs the geometry looked
+   at. **Do not assume a defect.**
+2. **Only 11 of the 35 slabs are structural floors** (`Floor:*`), one per storey — each a single
+   monolithic 98 × 90 m element. The other **24 are `Basic Roof:*`** (Grass Roof, Paver Roof), all
+   at Level 3, z 176.81. A "one slab per storey" model is why T9.3's slab footprints are whole
+   floors, and why an edge-based bearing test was the wrong design.
+
+**For the sanity-checking code, the concrete follow-up:** there is no rule that checks slab
+COVERAGE — whether the elements assigned to a storey actually have a floor beneath them. Every
+existing rule is per-element (does THIS beam have support); nothing asks whether a storey's floor
+plate covers its own contents. That is a different shape of rule and it is what would have answered
+this question directly instead of by hand. It also needs the T8.11 sufficiency treatment: a
+building modelling floors as `IfcCovering` or `IfcPlate` rather than `IfcSlab` must report
+`uninformative`, not a false all-clear — Hospital carries 602 `IfcCovering` and 2,211 `IfcPlate`.
