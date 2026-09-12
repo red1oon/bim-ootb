@@ -662,7 +662,121 @@ becomes unmaintainable.
 
 ---
 
-## 13. Re-measure
+## 13. Is this easier to pick up than iDempiere?
+
+Both trees measured, not estimated. iDempiere at `87968daa` (2026-01-16), from
+`~/idempiere-dev-setup/idempiere`. bim-ootb at `719ebb92`.
+
+| | bim-ootb | iDempiere |
+|---|---|---|
+| own SLOC (excl. vendored) | **372k** | **1.43M** |
+| source files | 1,684 `.js` | 4,465 `.java` |
+| modules | 3 loose areas | 72 OSGi plugins, 39 manifests |
+| biggest file you must know | `erp/ad_ui.js` 3,361 | `PO.java` 6,550 |
+| files with a stated spec | 559 | ~0 |
+| tests | 602 witnesses | 157 test classes |
+| age / contributors | 4 months, 3 | ~20 years, hundreds |
+
+**Verdict: easier to start, harder to navigate, much harder for anyone who is
+not the author.**
+
+| dimension | winner | why |
+|---|---|---|
+| time to first edit | **bim-ootb**, hugely | open file, save, refresh. iDempiere needs Eclipse + `loadtargetplatform.xml` + `setup-db.sh` + Postgres + Jython — a day. `~/idempiere-dev-setup/` is a pile of scripts that exists *because* of this. |
+| stated intent | **bim-ootb** | 559 spec headers vs `PO.java`'s 6,550 lines with no header naming its invariants |
+| uniformity | **iDempiere**, decisively | learn `GridTab`/`GridTable`/`PO` once and all 72 plugins read alike. bim-ootb is three worlds — viewer, modeller, erp — sharing almost no shape |
+| IDE navigation | **iDempiere** | call hierarchy, find-references, type-safe Ctrl-click on `PO.save()`. See §14 — this is the one that hurts |
+| external knowledge | **iDempiere**, not close | books, wiki, 20 years of forum archive, hundreds of devs who can answer. bim-ootb has 3 contributors and no outside memory |
+| theory survival (§11.7) | **iDempiere** | its theory lives in a community. This one lives in one head, and much of it was generated rather than reasoned through |
+
+**The sharp version:** *iDempiere is hard to get into and easy to stay in. This
+is easy to get into and hard to stay in.* For a stranger, iDempiere is the safer
+bet today. For its author, this one is easier — the spec headers are his own
+notes to himself.
+
+---
+
+## 14. The navigation tax — measured, and what was done about it
+
+### The finding
+
+The god object has **three spellings**.
+
+```js
+// viewer/main.js:10 — created as APP
+const APP = window.APP = {};
+_mods.forEach(function (fn) { fn(APP); });   // handed to every module
+
+// viewer/scene.js:141 — but every module receives it as `A`
+function setupScene(A) { A.camera = camera; }
+
+// viewer/time_machine.js:8831 — and a third spelling exists
+app._tmOn = true;
+```
+
+So the object is **read as `APP.x`** and **written as `A.x` or `app.x`**.
+
+> `grep "APP.camera ="` returns **nothing**. The field is defined at
+> `viewer/scene.js:141` as `A.camera = camera`.
+
+Measured at `719ebb92` over 1,669 non-vendored files:
+
+| | |
+|---|---:|
+| distinct fields on the object | **1,105** |
+| written only as `A.x` / `app.x` — invisible to an `APP.` grep | **991** (90%) |
+| read but never written anywhere — phantom | 53 |
+| — of those, read from production code | **32** |
+
+**90% of the object cannot be found by grepping the name you read.** §14 says
+the IDE cannot follow a global; this is worse — the one tool left, grep, is
+lying too. That is the real pick-up cost, and it is one character wide.
+
+The 53 phantoms are a second, smaller finding: fields read but never written
+under any spelling. `APP._walkMode` (`viewer/panels.js:1358`) is read once and
+assigned nowhere in the tree — a guard that can never be true. 32 of these sit
+in production files and are worth a pass.
+
+### The fix — and what was deliberately not done
+
+**Done — `scripts/gen_app_surface.js` → `internal/APP_SURFACE.md`.** A generated
+symbol table: every field, its production definition as `file:line`, its write
+and read counts, and the phantoms called out. It is the "go to definition" the
+architecture never had. **Zero runtime risk** — it reads the tree and writes a
+markdown file; not one line of shipping code changes. Proven by
+`tests/witness_app_surface.js`, 9 cases (R1–R8 + a negative), all passing.
+
+Regenerate after any change that moves a definition:
+
+```bash
+node scripts/gen_app_surface.js     # §APP_SURFACE files=… fields=… phantom=…
+node tests/witness_app_surface.js   # 9/9 expected
+```
+
+**Not done — renaming `A` → `APP` across the tree.** That is 991 fields over
+~295 files of running code, for a benefit the index already delivers. It is the
+change most likely to break something working, and §12.5's own rule applies: a
+hung queen is not worth a tidier board. If it is ever done, do it one module at
+a time behind its witness.
+
+### Impact
+
+- A newcomer's "where is this defined?" goes from **an unanswerable grep** to
+  one lookup in a generated table — for **991 fields** that previously had no
+  findable definition.
+- **32 production phantoms** surfaced that no one was looking for, each either a
+  dead guard or a writer that was deleted.
+- Costs one `node` command in review to stay current, and the witness fails
+  loudly if the generator regresses.
+
+**This is the §12.6 removal test, run for real.** The claim was "globals are
+survivable because they are greppable" (§12.3). Tested, it was false — 90% were
+not greppable. So the piece got a prop rather than a eulogy: the convention is
+now documented and indexed instead of merely asserted.
+
+---
+
+## 15. Re-measure
 
 ```bash
 cd ~/bim-ootb
@@ -673,4 +787,8 @@ grep -rhoiE 'FROM [a-z_]+' viewer/*.js | sort | uniq -c | sort -rn | head  # hot
 grep -rl 'DO NOT REMOVE' --include='*.js' . | wc -l        # spec blocks
 git ls-files | grep -ciE 'witness'                         # witnesses
 git ls-files viewer | grep '\.js$' | grep -v 'viewer/lib/' | xargs wc -l | tail -1
+
+# §14 — the god-object symbol table (regenerate, then prove it)
+node scripts/gen_app_surface.js     # writes internal/APP_SURFACE.md
+node tests/witness_app_surface.js   # 9/9 expected
 ```
