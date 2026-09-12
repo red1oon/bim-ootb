@@ -24,6 +24,15 @@
 // MERGE NOTE (2026-09-02): this branch and origin/main both bumped to v1121 concurrently (§MEP_DISC_PALETTE
 // below took v1121 first). Same standing rule as every sw.js merge: KEEP BOTH notes, take the HIGHER
 // version, each separate change gets its OWN bump — so §TM_REVEAL_TILED is v1122.
+// v1174 (2026-09-13) §SUFFICIENCY_READS_THE_LIST (T12.6): rule_report.js, rule_checklist.js and
+// structural_sanity.js all changed — the data-sufficiency probe stops carrying its own stale copy
+// of the support-class lists and reads StructuralSanity's exports instead. All THREE are in
+// PRECACHE_ASSETS, so without this bump an installed worker keeps serving the old probe and the
+// false "IfcWall and IfcSlab are in neither support list" verdict never stops being printed —
+// §CRISIS LESSON 4, the miss that happened twice in 90 minutes on 2026-08-25.
+// Numbered v1174, not v1171: the concurrent film branch (fix/bucket-key-floor) is already at v1173
+// for the v87 bake. Taking a number ABOVE it means no two builds ever claim the same id and the
+// standing "take the HIGHER version" merge rule resolves cleanly in one direction.
 // v1122 (2026-09-02) §TM_REVEAL_TILED (4D_GANTT_TM_REFACTOR.md §FUTURE item 2 / §TM_REVEAL_SHIPPED):
 // time_machine.js changed — kernel_ops timestamps are now tiled inside each task bar (CPM order,
 // own-duration width, no dead air) instead of the per-task affine that left 44-71% of every bar
@@ -177,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1170';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1174';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
