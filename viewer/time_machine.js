@@ -9086,7 +9086,12 @@
       // fallback below (TM still opened with 63,416 ops) but with no way to locate it. Log the
       // stack and the phase so the next occurrence names its own line.
       console.warn('§GANTT_CACHE_ERR ' + e.message + ' | phase=' + (_ops && _ops.length ? 'post-loadOps' : 'pre-loadOps') +
-        ' | stack=' + String(e && e.stack || '(none)').split('\n').slice(0, 4).join(' << '));
+        ' | stack=' + String(e && e.stack || '(none)').split('\n').slice(0, 4).join(' << ') +
+        // §KERNEL_OPS_SCHED_AGREE (2026-09-12): the line above promises the next occurrence will name
+        // itself, and it did not — a silent-bake cold derive on Hospital logged `undefined | stack=(none)`
+        // because sql.js throws a bare STRING ("Statement closed"), which has neither .message nor
+        // .stack. One occurrence cost a whole diagnosis round. Print what a non-Error throw actually is.
+        ' | thrown type=' + (typeof e) + ' value=' + String(e));
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
       if (!_ops.length) { await _load4DTemplate(); _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
