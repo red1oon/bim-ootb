@@ -723,10 +723,10 @@ Measured at `719ebb92` over 1,669 non-vendored files:
 
 | | |
 |---|---:|
-| distinct fields on the object | **1,105** |
-| written only as `A.x` / `app.x` — invisible to an `APP.` grep | **991** (90%) |
-| read but never written anywhere — phantom | 53 |
-| — of those, read from production code | **32** |
+| distinct fields on the object | **1,098** |
+| written only as `A.x` / `app.x` — invisible to an `APP.` grep | **979** (89%) |
+| read but never written anywhere — phantom | 60 |
+| — of those, read from production code | **36** |
 
 **90% of the object cannot be found by grepping the name you read.** §14 says
 the IDE cannot follow a global; this is worse — the one tool left, grep, is
@@ -744,13 +744,13 @@ symbol table: every field, its production definition as `file:line`, its write
 and read counts, and the phantoms called out. It is the "go to definition" the
 architecture never had. **Zero runtime risk** — it reads the tree and writes a
 markdown file; not one line of shipping code changes. Proven by
-`tests/witness_app_surface.js`, 9 cases (R1–R8 + a negative), all passing.
+`tests/witness_app_surface.js`, 10 cases (R1–R9 + a negative), all passing.
 
 Regenerate after any change that moves a definition:
 
 ```bash
 node scripts/gen_app_surface.js     # §APP_SURFACE files=… fields=… phantom=…
-node tests/witness_app_surface.js   # 9/9 expected
+node tests/witness_app_surface.js   # 10/10 expected
 
 # §15 — pattern adoption across production .js (the health metric that matters)
 P=$(git ls-files '*.js' | grep -vE '(/lib/|\.min\.|web-ifc|qrcode|/tests/|witness|probe|spike)')
@@ -762,7 +762,18 @@ echo "setupX(A):  $(echo "$P" | xargs grep -lE 'function setup\w*\s*\(\s*A\b' 2>
 echo "witnesses on the contract: $(grep -rl 'Witness(' --include='*.js' . | grep -v /lib/ | wc -l) of $(find . -name '*witness*.js' -not -path './*/lib/*' | wc -l)"
 ```
 
-**Not done — renaming `A` → `APP` across the tree.** That is 991 fields over
+> **R9 was added after the fact, and is worth knowing about.** The generator is
+> regex-based, and a regex cannot tell code from prose. This tree documents its
+> own fields *in comments* — `viewer/effects.js:4567` says "Set `A._emberEnabled
+> = true` to re-arm for experiments." **30 such sentences were entering the index
+> as definitions.** R8 had patched one instance of this class (the tool indexing
+> its own spec block); R9 closes the class by blanking comment bodies before
+> matching, preserving line and column offsets so every `file:line` still points
+> at the real line. The corrected totals are above — and 7 fields moved from
+> "defined" to "phantom" once their only "definition" turned out to be a sentence
+> about them.
+
+**Not done — renaming `A` → `APP` across the tree.** That is 979 fields over
 ~295 files of running code, for a benefit the index already delivers. It is the
 change most likely to break something working, and §12.5's own rule applies: a
 hung queen is not worth a tidier board. If it is ever done, do it one module at
@@ -938,7 +949,7 @@ git ls-files viewer | grep '\.js$' | grep -v 'viewer/lib/' | xargs wc -l | tail 
 
 # §14 — the god-object symbol table (regenerate, then prove it)
 node scripts/gen_app_surface.js     # writes internal/APP_SURFACE.md
-node tests/witness_app_surface.js   # 9/9 expected
+node tests/witness_app_surface.js   # 10/10 expected
 
 # §15 — pattern adoption across production .js (the health metric that matters)
 P=$(git ls-files '*.js' | grep -vE '(/lib/|\.min\.|web-ifc|qrcode|/tests/|witness|probe|spike)')

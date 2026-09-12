@@ -51,6 +51,11 @@ ok('R3', !/web-ifc|\/lib\//.test(idx), 'no vendored path leaked into the index')
 // R8 — the tool does not index itself off its own spec comments.
 ok('R8', !/gen_app_surface\.js:|witness_app_surface\.js:/.test(idx), 'generator/witness excluded from their own index');
 
+// R9 — prose is not code. viewer/effects.js:4567 says "Set A._emberEnabled = true to
+//      re-arm for experiments" in a comment. That sentence must NOT become a definition.
+ok('R9', !/`APP\._emberEnabled` \| `viewer\/effects\.js:4567`/.test(idx),
+   'comment prose not indexed as a write site');
+
 // R5 negative — the gate holds: a bare local `A` in a file that never binds A to APP
 //               must not pollute. THREE.js math helpers use `A.x`/`A.y` heavily.
 ok('R5n', !/`APP\.(elements|isVector3)`/.test(idx), 'unbound local `A` did not pollute the index');

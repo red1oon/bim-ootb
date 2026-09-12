@@ -19,6 +19,10 @@
 //   R6 same gate for the third spelling, lowercase `app.x` (time_machine.js writes this one)
 //   R7 the "written at" column shows a PRODUCTION write site when one exists, never a test's
 //   R8 this script and its witness are excluded — they quote `APP.x` in prose and would self-index
+//   R9 comments are stripped before matching. A regex cannot tell code from prose, and this
+//      tree documents its own fields IN prose ("set A._bloomOff = false to try it again").
+//      Without R9 those 30 sentences enter the index as definitions. R8 patched one instance
+//      of this class (the tool indexing itself); R9 closes the class.
 // NON-INVENT: every line number is a real match; nothing is inferred or carried over.
 // Run: node scripts/gen_app_surface.js   (writes internal/APP_SURFACE.md, prints the counts)
 'use strict';
@@ -57,7 +61,12 @@ const add = (m, k, v) => (m.get(k) || m.set(k, []).get(k)).push(v);
 const files = walk(ROOT, []);
 for (const f of files) {
   const rel = path.relative(ROOT, f);
-  const src = fs.readFileSync(f, 'utf8');
+  // R9: blank out comment bodies, preserving line count and column offsets so every
+  // reported file:line still points at the real line in the untouched file.
+  const raw = fs.readFileSync(f, 'utf8');
+  const src = raw
+    .replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:'"\\])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(m.length - p.length));
   const aliased = BINDS_A.test(src);           // R5: only then is bare `A.` the god object
   const lcAlias = BINDS_app.test(src);         // R6: same gate for the lowercase `app.` spelling
   src.split('\n').forEach((ln, i) => {
