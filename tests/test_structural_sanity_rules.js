@@ -118,15 +118,56 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
     hlogs.forEach(l => console.log('  ' + l));
 
     const floatingRows = hrows.filter(r => r.rule === 'floating_member');
-    chk('Hospital floating-member count in [40,50]',
-      floatingRows.length >= 40 && floatingRows.length <= 50, 'count=' + floatingRows.length);
 
+    // ⚠ THESE TWO GUARDS USED TO ASSERT count in [40,50] AND ">=50% at roof levels", and they
+    // passed for the whole life of the feature — against a rule that was wrong. Both numbers came
+    // from STRUCTURAL_SANITY.md's VALIDATION section, which was itself written from the output of
+    // the same buggy code: the framing test compared beam BOTTOMS on a model framed to TOP of
+    // steel (§FRAMING_TOP_OF_STEEL). A shallow beam framing into a deep one read as unsupported,
+    // which is why the flags clustered at roof levels — that is where the depth changes are.
+    // Measured after the fix: 43 -> 5. The roof clustering was the bug's fingerprint, not a
+    // property of the building, so asserting it kept the bug alive.
+    //
+    // A count is not a property. What floating_member actually claims is "nothing holds this beam
+    // up", so that is what these assert now — via the rule's own witness, which names what sits
+    // at each rejected end.
+    const LOAD_BEARING = ['IfcColumn', 'IfcWall', 'IfcWallStandardCase', 'IfcFooting', 'IfcMember', 'IfcBeam', 'IfcSlab', 'IfcPlate'];
+    const hw = StructuralSanity.evaluate(hq, rules, { log: () => {}, witness: true }).filter(r => r.rule === 'floating_member');
+    const withRealBearing = hw.filter(r => (r.witness.freeEnds || [])
+      .some(e => e.nearest && LOAD_BEARING.indexOf(e.nearest.ifc_class) !== -1));
+    // NOT asserted as "> 0". Hospital reaches ZERO after §FRAMING_TOP_OF_STEEL,
+    // §SUPPORT_CLASS_PARITY and §SUPPORT_NOT_DISCIPLINE_FILTERED (43 -> 5 -> 0), and demanding a
+    // non-zero count would be the same circular mistake as the [40,50] guard this replaced:
+    // encoding yesterday's output as today's requirement. What must hold is that the rule can
+    // still FAIL — the synthetic fixture above flags its deliberately unsupported beam CRITICAL,
+    // and that check is the non-vacuity guard for this one.
+    chk('Hospital floating members are a small minority of its 1970 beams (<2%)',
+      floatingRows.length < 39, 'count=' + floatingRows.length +
+      (floatingRows.length === 0 ? ' — every beam has real bearing once supports are not discipline-filtered' : ''));
+    // The line between a DEFECT and a THRESHOLD. The witness deliberately searches wider than the
+    // rule (4x tolerance_m) so a near-miss is visible as a near-miss. Load-bearing geometry INSIDE
+    // the rule's own tolerance would be a logic defect — the rule looked and failed to see what it
+    // was looking for. Outside it is a threshold judgement, which is an engineer's call and not
+    // something a test may quietly settle by widening a number until it passes.
+    const TOL = (rules.structural_rules.filter(r => r.name === 'floating_member')[0] || {}).tolerance_m;
+    const insideTol = withRealBearing.filter(r => (r.witness.freeEnds || [])
+      .some(e => e.nearest && LOAD_BEARING.indexOf(e.nearest.ifc_class) !== -1 &&
+                 e.nearest.gapHorizM <= TOL && e.nearest.gapVertM <= TOL));
+    chk('no Hospital floating member has load-bearing geometry INSIDE the rule\'s own ' + TOL + ' m tolerance',
+      insideTol.length === 0,
+      insideTol.length + '/' + hw.length + (insideTol.length ? ' — the rule looked and missed it: ' +
+        JSON.stringify(insideTol.slice(0, 2).map(r => r.witness.freeEnds.map(e => e.nearest && (e.nearest.ifc_class + '@' + e.nearest.gapHorizM + 'm')))) : ''));
+    // Reported, NOT asserted: near-misses outside tolerance. These are the open threshold question
+    // (see STRUCTURAL_SANITY.md's THRESHOLD DISCLAIMER), and loosening tolerance_m to absorb them
+    // would be fitting the rule to the data rather than fixing anything.
+    const nearMiss = withRealBearing.length - insideTol.length;
+    console.log('    ℹ ' + nearMiss + '/' + hw.length + ' flagged beams have load-bearing geometry OUTSIDE the ' + TOL +
+      ' m tolerance — a threshold question, disclosed not asserted: ' +
+      JSON.stringify(withRealBearing.slice(0, 3).map(r => r.witness.freeEnds.filter(e => e.nearest)
+        .map(e => e.nearest.ifc_class + '@' + e.nearest.gapHorizM + 'm'))));
     const byStorey = {};
     floatingRows.forEach(r => { byStorey[r.storey] = (byStorey[r.storey] || 0) + 1; });
-    const roofLevels = ['Level 6', 'Level 7', 'Level 7A'];
-    const roofCount = roofLevels.reduce((s, l) => s + (byStorey[l] || 0), 0);
-    chk('Hospital floating-member concentrated at roof levels (>=50% at Level 6/7/7A)',
-      roofCount / floatingRows.length >= 0.5, 'roof=' + roofCount + '/' + floatingRows.length + ' byStorey=' + JSON.stringify(byStorey));
+    console.log('    ℹ floating members by storey after the datum fix: ' + JSON.stringify(byStorey));
 
     const colRows = hrows.filter(r => r.rule === 'column_continuity');
     chk('Hospital column_continuity flags a non-trivial minority (not 0, not all)',

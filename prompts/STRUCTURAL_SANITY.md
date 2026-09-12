@@ -639,3 +639,74 @@ rule, arrays replaced, and the merged rulebook actually running on Hospital (0 �
 R16 OVERLAY-LOAD — `none` when unrequested; `absent` on 404 with the base byte-identical and its
 own source undegraded; `error` (distinct from absent) on a malformed file with the base still
 usable; merge + provenance on a good overlay; and both reaching the report.
+
+## T9 §ZERO_DEFECT_TOOLS — driving the rules to zero LOGIC defects, using T8's fast report as the bench
+*(User instruction, 2026-09-12: "we supposed to land an all systems check without baking that is much
+faster and report in toto. So use that as benchmark to work till zero defect in tools.")*
+
+**The metric.** Not "fewer findings" — a rule can reach zero by becoming vacuous. The bench is the
+**artifact rate**: findings whose OWN witness (T8.12) shows the rule rejected real load-bearing
+geometry. Only classes that can carry vertical load count as evidence — `IfcCovering`,
+`IfcOpeningElement` (a VOID), ducts, railings and furniture do NOT. The first version of this bench
+counted any nearby element and read 76%; corrected, the true baseline was 63%.
+
+| | findings | artifacts | rate |
+|---|---|---|---|
+| baseline | 2046 | 1295 | **63%** |
+| after T9.1 + T9.2 | 1949 | 1205 | 62% |
+| after T9.4 | **1603** | **858** | **54%** |
+
+Per building, the rules that moved: Hospital `floating_member` **43 → 0**, `span_depth_cantilever`
+**217 → 43**, `column_continuity` 24 → 15; Terminal `column_continuity` **108 → 11**.
+`span_depth_steel` rose 204 → 263, which is correct — beams wrongly routed to the cantilever rule
+returned to their own material rule.
+
+**T9.1 §SUPPORT_CLASS_PARITY.** `IfcWall` was in neither support list. IfcWall vs
+IfcWallStandardCase is an exporter choice, not a structural distinction — Terminal models all 333
+of its walls as `IfcWall` and has zero `IfcWallStandardCase`, so a Terminal column could only be
+supported by another column. Columns additionally gained `IfcSlab` (80 fleet rejections), `IfcBeam`
+(51) and `IfcMember` (9): landing on a transfer slab, transfer beam or truss member is real.
+
+**T9.2 §FRAMING_TOP_OF_STEEL — the framing test used the wrong datum.** It compared beam BOTTOMS.
+Steel frames to TOP of steel. Of the 55 beam-to-beam free ends among Hospital's 43 flagged floating
+members, **55/55 were rejected by the bottom test and 55/55 pass a top test** — typically a 0.355 m
+beam into a 0.841 m beam, tops 4 mm apart, bottoms 482 mm apart. The bake DBs name the storeys
+"Level 6 TOS" / "Level 7 TOS" — Top Of Steel. The model stated the convention the test ignored. Now
+accepts either datum; a genuinely unsupported end has nothing near either way.
+
+**T9.3 §SLAB_BEARING — NOT DONE, deliberately.** 434 fleet free-ends still sit on an `IfcSlab`.
+Adding `IfcSlab` to the BEAM support list would drive `floating_member` toward zero by making the
+test vacuous, not correct: a slab spans a whole floor, so its footprint contains nearly every beam
+at that level. The right change is a bearing test — beam end at a slab EDGE, not anywhere beneath
+it — which is a real design decision, not a class-list edit. Left open and stated.
+
+**T9.4 §SUPPORT_NOT_DISCIPLINE_FILTERED — the root defect.** Every support query carried
+`em.discipline = 'STR'`. `discipline` is a label the EXTRACTION assigns for view/layer purposes; a
+column holds a beam up whether an exporter tagged it ARC or STR. Hidden by that filter:
+
+| building | support-class elements the rule could not see |
+|---|---|
+| Hospital | **349 of 604 `IfcColumn` (58%)**, 1282 `IfcWallStandardCase`, 158 `IfcWall`, 2211 `IfcPlate` |
+| Terminal | **ALL 333 `IfcWall`, ALL 705 `IfcSlab`**, 33,324 `IfcPlate` |
+| LTU_AHouse | 780 of 1785 `IfcColumn`, 2408 `IfcWallStandardCase`, 896 `IfcSlab` |
+
+The five Hospital beams still flagged floating after T9.1/T9.2 each sat on an `IfcWall` at
+gapHoriz **0 m** / gapVert **0 m** — touching — invisible only because that wall is discipline ARC.
+The SUBJECT of a rule stays STR-filtered; what may HOLD SOMETHING UP is now selected by
+`ifc_class` alone. Those are different questions and only one is about drawing layers.
+
+**⚠ THE OLD REGRESSION GUARDS WERE CIRCULAR, and passed for the life of the feature.**
+`tests/test_structural_sanity_rules.js` asserted Hospital floating-member count `in [40,50]` and
+">=50% at roof levels". Both came from this file's own VALIDATION section, written from the output
+of the buggy code. The roof clustering was the bug's fingerprint — roof levels are where beam
+depths change — so asserting it kept the bug alive. Replaced with the property the rule actually
+claims: **no flagged beam has load-bearing geometry inside the rule's own `tolerance_m`**, with
+near-misses OUTSIDE tolerance reported and not asserted, because a tolerance is an engineer's call
+and not something a test may settle by widening a number until it passes. Non-vacuity is guarded by
+the synthetic fixture, which still flags its deliberately unsupported beam CRITICAL.
+
+**What remains, and why it is not a logic defect:** the `IfcSlab` bearing test (T9.3); the 0.3 m
+`column_continuity` tolerance (191 fleet rejections are centreline near-misses — a threshold
+question under the THRESHOLD DISCLAIMER); and HHS's 128 ground-floor columns, which are a real
+DATA gap the model has no footings for and which T8.11's `footings_modelled: absent` already
+discloses on every report.
