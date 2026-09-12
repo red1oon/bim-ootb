@@ -32,8 +32,10 @@
  *   H2 STILL-PINNED       — the nudge sticks; §80's pin survives §85.
  *   H3 NO-LAYOUT-NO-CHANGE— without a layout, placement is byte-for-byte pre-§85.
  *   G1-G5 §63 messaging, X1 §73 palette, X2 §62 shine-through.
+ *   C1 CONTRACT           — §89: the real rule_checklist.js still DEFINES what this file stubs.
  */
 'use strict';
+const fs = require('fs');
 const path = require('path');
 let pass = 0, fail = 0;
 const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };
@@ -441,6 +443,22 @@ function shortNameOf(name) {
   // H3 — no layout (a witness, or a film with no boxes armed): placement must be UNCHANGED, not crash.
   chk('H3 §85 NO-LAYOUT-NO-CHANGE — without filmBoxesLayoutOf the pin is exactly what it was before §85',
       JSON.stringify(pin0) === JSON.stringify(AH0._ruleFilmLastBoxPin), 'unchanged at ' + JSON.stringify(pin0));
+  // ── C1 §89 CONTRACT — the one check that would have caught the v87 merge ──────────────────────
+  // Every check above STUBS showRuleModeTint and assigns _ruleTintAt itself, which is correct for
+  // testing the film's own logic but blind to the producer disappearing. It did disappear: the merge
+  // at ee7666ac took main's rule_checklist.js, which never carried §70's map or §78's intensity
+  // driver, and the 1080p bake logged `§RULE_FILM_DWELL members=0` with ZERO §RULE_FILM_SETS lines
+  // while all 37 checks here still passed. Source-level on purpose — the film is DOM-free and cannot
+  // run the real tint, but it CAN assert the two symbols it consumes are still written somewhere in
+  // that file. Cheap, and it disproves exactly this regression.
+  const _rcSrc = fs.readFileSync(path.join(__dirname, 'viewer', 'rule_checklist.js'), 'utf8');
+  chk('C1 §89 CONTRACT — rule_checklist.js still defines A._ruleTintAt (the §77.3 dwell pass reads it; absent ⇒ members=0)',
+      /A\._ruleTintAt\s*=/.test(_rcSrc), 'viewer/rule_checklist.js');
+  chk('C1b §89 CONTRACT — rule_checklist.js still defines A.ruleTintShowOnly (§78 hands it the wave intensity; absent ⇒ no depth wave)',
+      /A\.ruleTintShowOnly\s*=\s*function/.test(_rcSrc), 'viewer/rule_checklist.js');
+  chk('C1c §62/§78 CONTRACT — showRuleModeTint still takes the third `opts` arg the film passes (shineThrough/filled)',
+      /A\.showRuleModeTint\s*=\s*function\s*\([^)]*,[^)]*,\s*opts\s*\)/.test(_rcSrc), 'viewer/rule_checklist.js');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
