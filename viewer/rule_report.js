@@ -484,6 +484,94 @@
     });
   }
 
+  // ══ T9.5 §ARTIFACT_RATE — the report grades its own findings ═════════════════════════════════
+  // A finding is an ARTIFACT when the rule's own witness (T8.12) shows it rejected real
+  // load-bearing geometry: a beam end touching a wall, a column standing on a slab, a room with
+  // graph edges called isolated. This is the metric T9 drives to zero, and it belongs IN the
+  // report because "how much of this should you believe" is the question a findings file exists
+  // to answer.
+  //
+  // ⚠ ONLY LOAD-BEARING CLASSES COUNT AS EVIDENCE. The first version of this metric accepted any
+  // nearby element and read 76% against a true 63% — it would have counted an IfcCovering, a duct,
+  // a railing, and an IfcOpeningElement (a VOID) as proof that a beam was supported, and would
+  // have justified exactly the wrong fix. A generous metric is worse than none: it licenses
+  // changes that make a rule vacuous while the number improves.
+  var LOAD_BEARING_CLASSES = ['IfcColumn', 'IfcWall', 'IfcWallStandardCase', 'IfcFooting',
+                              'IfcMember', 'IfcBeam', 'IfcSlab', 'IfcPlate'];
+
+  function _isLoadBearing(cls) { return LOAD_BEARING_CLASSES.indexOf(cls) !== -1; }
+
+  // Per rule: { rule, found, artifact, rate, basis }. `artifact` is null — never 0 — for a rule
+  // with no artifact test, so "not measured" never reads as "measured clean". Requires rows
+  // evaluated with witness:true; without it every rule reports null and says why.
+  // `rules` (the parsed rules JSONs) is REQUIRED to classify honestly: without each rule's own
+  // tolerance there is no line between "the rule looked and missed" and "something is nearby".
+  function artifactRates(rows, rules) {
+    var tol = {};
+    (rules || []).forEach(function (d) {
+      ['structural_rules', 'egress_rules'].forEach(function (k) {
+        ((d || {})[k] || []).forEach(function (r) { if (r.tolerance_m != null) tol[r.name] = r.tolerance_m; });
+      });
+    });
+    // span_depth_cantilever has no tolerance of its own — its classification comes from
+    // floating_member's support test, so it is judged by that rule's tolerance.
+    if (tol.floating_member != null && tol.span_depth_cantilever == null) tol.span_depth_cantilever = tol.floating_member;
+    var by = {};
+    (rows || []).forEach(function (r) { (by[r.rule] = by[r.rule] || []).push(r); });
+    return Object.keys(by).map(function (rule) {
+      var rs = by[rule], art = null, basis = null, near = null;
+      var hasWitness = rs.some(function (r) { return r.witness !== undefined; });
+      if (!hasWitness) {
+        return { rule: rule, found: rs.length, defect: null, nearMiss: null, rate: null,
+                 basis: 'not measured — these rows were evaluated without witness:true' };
+      }
+      // ⚠ DEFECT vs NEAR-MISS. The witness deliberately searches WIDER than the rule (4x
+      // tolerance horizontally, ~1 m vertically) so a near-miss is visible as one. Counting every
+      // near-miss as an artifact inflates the number and, worse, points the fix at the wrong
+      // thing: LTU_AHouse's 240 beam-at-free-end cases looked like rule failures until the pair
+      // was checked properly — not one had a beam BOTH top-aligned and inside the footprint.
+      // Those are threshold questions for an engineer, not logic to repair.
+      //   defect   = load-bearing geometry INSIDE the rule's own tolerance — it looked and missed
+      //   nearMiss = load-bearing geometry outside it — a threshold judgement, reported not fixed
+      var t = tol[rule];
+      if (rule === 'floating_member' || rule === 'span_depth_cantilever') {
+        basis = 'load-bearing geometry at an end the rule called unsupported, INSIDE tolerance ' + t + ' m';
+        var hits = rs.filter(function (r) {
+          return ((r.witness || {}).freeEnds || []).some(function (e) {
+            return e.nearest && _isLoadBearing(e.nearest.ifc_class);
+          });
+        });
+        art = hits.filter(function (r) {
+          return (r.witness.freeEnds || []).some(function (e) {
+            return e.nearest && _isLoadBearing(e.nearest.ifc_class) &&
+                   t != null && e.nearest.gapHorizM <= t && e.nearest.gapVertM <= t;
+          });
+        }).length;
+        near = hits.length - art;
+      } else if (rule === 'column_continuity') {
+        basis = 'load-bearing geometry directly below, INSIDE tolerance ' + t + ' m';
+        var chits = rs.filter(function (r) {
+          var b = (r.witness || {}).nearestBelow;
+          return b && _isLoadBearing(b.ifc_class);
+        });
+        art = chits.filter(function (r) {
+          var b = r.witness.nearestBelow;
+          return t != null && b.centrelineOffsetM <= t && b.topToColumnBaseM <= t;
+        }).length;
+        near = chits.length - art;
+      } else if (rule === 'isolated_room') {
+        basis = 'the room has edges in the room graph';
+        art = rs.filter(function (r) { return ((r.witness || {}).graphDegree || 0) > 0; }).length;
+      } else {
+        // door_clear_width / circulation_distance / span_depth_* are threshold judgements with no
+        // geometric contradiction to test. Saying so beats inventing a test that always passes.
+        basis = 'no artifact test — this rule is a threshold judgement, not a geometric claim';
+      }
+      return { rule: rule, found: rs.length, defect: art, nearMiss: near,
+               rate: art === null ? null : +(art / rs.length).toFixed(4), basis: basis };
+    });
+  }
+
   // ── Pure: flagged/population per rule (T8.11). A rule firing on ~90% of its population is not
   // discriminating on that building — the ratio is the whole argument, so the report states it
   // and says nothing more. `populations` is supplied by the caller (it needs the DB); a rule with
@@ -613,6 +701,8 @@
       // (a panel with no dbQuery, say) — stated as null, not as an empty "all clear".
       dataSufficiency: meta.sufficiency || null,
       flagRates: meta.sufficiency ? flagRates(rules, meta.populations || {}) : null,
+      // T9.5 — how much of the above should be believed, measured from the findings' own evidence.
+      artifactRates: artifactRates(all, p.ruleDefs),
       dataSufficiencyNote: meta.sufficiency
         ? 'Measured from this DB. A degraded or absent verdict means the rule could not see the datum it depends on — read its findings as questions, not defects. Findings above are untouched by this section.'
         : 'not run — the caller supplied no sufficiency probes',
@@ -626,6 +716,8 @@
   return {
     buildRuleReport: buildRuleReport,
     loadRules: loadRules,
+    artifactRates: artifactRates,
+    LOAD_BEARING_CLASSES: LOAD_BEARING_CLASSES,
     mergeRuleSets: mergeRuleSets,
     diffRuleThresholds: diffRuleThresholds,
     runSufficiencyProbes: runSufficiencyProbes,

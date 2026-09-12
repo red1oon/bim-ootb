@@ -710,3 +710,53 @@ the synthetic fixture, which still flags its deliberately unsupported beam CRITI
 question under the THRESHOLD DISCLAIMER); and HHS's 128 ground-floor columns, which are a real
 DATA gap the model has no footings for and which T8.11's `footings_modelled: absent` already
 discloses on every report.
+
+**T9.5 §ARTIFACT_RATE — the bench, shipped as a tool, and the metric corrected twice.**
+*(User: "exploit this benchmark runner.")* `tests/bench_rule_artifacts.js` — fleet runner over every
+`buildings/*_{meta,silent}.db`, `--json` to record, `--gate <baseline>` to enforce.
+`RuleReport.artifactRates(rows, ruleDefs)` is the pure core, so **every T8 report now grades its own
+findings** rather than the metric living in a throwaway script.
+
+**The metric was wrong twice, and both corrections changed which fix looked right.**
+1. *Too generous:* the first version counted ANY nearby element as proof a rule erred — including
+   `IfcCovering`, ducts, railings and `IfcOpeningElement`, which is a **void**. It read 76% against
+   a true 63%, and would have justified adding `IfcSlab` to the beam support list, i.e. T9.3, the
+   change that makes the rule vacuous.
+2. *Conflated defect with threshold:* the witness searches deliberately WIDER than the rule (4×
+   tolerance). Counting every near-miss as an artifact put the fleet at 52% and pointed at
+   `floating_member` in LTU_AHouse — where **240 beam-at-free-end cases looked like rule failures
+   until the pair was checked properly and not one had a beam both top-aligned AND inside the
+   footprint.** They are threshold questions, not logic to repair.
+
+The metric now splits:
+- **`defect`** — load-bearing geometry INSIDE the rule's own `tolerance_m`. The rule looked and
+  missed. This is what T9 drives to zero.
+- **`nearMiss`** — load-bearing geometry outside it. An engineer's threshold call, reported and
+  never "fixed" by widening a number until the bench goes green.
+
+| | found | defect | rate | nearMiss |
+|---|---|---|---|---|
+| `column_continuity` | 923 | **1** | 0% | 331 |
+| `span_depth_cantilever` | 472 | 61 | 13% | 252 |
+| `isolated_room` | 23 | 8 | 35% | 0 |
+| `floating_member` | 328 | **140** | **43%** | 119 |
+| **fleet** | **1746** | **210** | **12.0%** | 702 |
+
+So the honest state after T9.1–T9.4: **12% defects, not 52%**, `column_continuity` is effectively
+clean at 1-in-923, and the whole remaining target is `floating_member`'s 140 — which is T9.3, the
+slab bearing test, still deliberately undone.
+
+**Two traps the gate catches, both demonstrated:**
+- **§BENCH_GATE_VACUOUS** — findings collapse >50% while the defect rate does not improve. A rule
+  that stops firing without getting more accurate has been switched off, not fixed. Verified
+  against a synthetic baseline: `findings 1000 -> 328 (-67%) but rate 43% -> 43%` → FAIL.
+- **§BENCH_GATE_FLEET_MISMATCH** — these are fleet TOTALS, and `buildings/*.db` is gitignored, so a
+  fresh checkout measures a smaller fleet and every rule silently looks improved. The gate compares
+  the measured building set first and refuses to grade across a different one. Verified by hiding
+  `Clinic_meta` → FAIL naming the missing building.
+
+**Why a bench and not a test:** these numbers are properties of real buildings and move when a model
+is re-extracted. Freezing one into an assertion is the circular-guard mistake T9 documents —
+`test_structural_sanity_rules.js` asserted "count in [40,50]" for the life of a bug because that
+range came from the buggy code's own output. The baseline is recorded data; the gate compares
+against it; non-vacuity is guarded by fixtures that must still fail.
