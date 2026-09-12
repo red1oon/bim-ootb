@@ -182,7 +182,11 @@ const server = http.createServer((req, res) => {
 
   // console firehose → log file; §-lines also drive the health watchdog + summary
   const S = { frames: 0, total: 0, elapsedMs: 0, lastProgress: Date.now(), perFrame: [], fatal: null,
-              done: false, claims: {}, heap: [], abortRequested: null, lastProgressLog: 0, rateHist: [] };
+              done: false, claims: {}, heap: [], abortRequested: null, lastProgressLog: 0, rateHist: [],
+              // §CLI_BAKE_POINT_OF_NO_RETURN — set the moment __maxqSinkBegin fires. Past it there
+              // are no frames left to abandon: the film is fully encoded and muxed in the page and
+              // the only work remaining is writing it to disk. See the handler below.
+              sinkBegun: false, sinkBytes: 0, sinkTotal: 0 };
   // ══ §CLI_BAKE_LAND_ON_ABORT — Ctrl-C is the abort switch, and it LANDS the film ════════════════
   // USER, 2026-09-04: "an abort switch where the frames to date are landed." A plain Ctrl-C killed
   // node outright, taking the browser and every baked frame with it — even though cinema_maxq's
@@ -190,10 +194,28 @@ const server = http.createServer((req, res) => {
   // stall/timeout watchdogs already use, so there is ONE abort path, not a second one to keep in
   // step. A second Ctrl-C is honoured immediately: an operator who has changed their mind about
   // waiting for a 2,000-frame encode must never be trapped by the graceful path.
+  //
+  // ⚠ §CLI_BAKE_POINT_OF_NO_RETURN (2026-09-12) — THE CANCEL MUST NOT FIRE DURING THE FINAL WRITE.
+  // MEASURED, and the reason this guard exists: the Hospital v86 bake (4,699 frames, 1h41m) took a
+  // SIGTERM at +6101.9s — five seconds AFTER `§MAXQ_MP4 encoded chunks=4699 bytes=242117405`,
+  // after the mux, and after `§CLI_BAKE_SINK begin totalBytes=242156095`. Every frame was already
+  // encoded and muxed; the only work left was streaming a finished 242 MB blob to disk. The
+  // handler cancelled anyway — "stitching what exists" — and left 121,634,816 bytes, exactly
+  // 50.2%, unplayable as delivered. The salvage path destroyed a finished film because it had no
+  // notion of a point past which there is nothing to salvage.
+  //
+  // Landing frames early is right DURING capture and wrong during delivery. So: once the sink has
+  // begun, the first signal declines to cancel and lets the write finish (seconds, not minutes).
+  // A second signal still exits immediately — an operator is never trapped, which was the whole
+  // point of the original handler.
   let sigCount = 0;
   ['SIGINT', 'SIGTERM'].forEach(sig => process.on(sig, () => {
     sigCount++;
-    if (sigCount === 1) {
+    if (sigCount === 1 && S.sinkBegun) {
+      log(`§CLI_BAKE_SIGINT ${sig} received DURING THE FINAL WRITE (${S.sinkBytes} of ${S.sinkTotal} bytes written) —` +
+          ' the film is already fully encoded; finishing the write rather than truncating it.' +
+          ' Press again to abandon a half-written file.');
+    } else if (sigCount === 1) {
       S.abortRequested = `user (${sig}) — landing the ${S.frames} frames baked so far`;
       log(`§CLI_BAKE_SIGINT ${sig} received at frame ${S.frames}/${S.total || '?'}` +
           ' — cancelling the bake and stitching what exists. Press again to give up on the partial film.');
@@ -237,11 +259,12 @@ const server = http.createServer((req, res) => {
   let sink = null, sinkName = null, sinkBytes = 0;
   await page.exposeFunction('__maxqSinkBegin', (name, type, total) => {
     sinkName = name; sinkBytes = 0;
+    S.sinkBegun = true; S.sinkBytes = 0; S.sinkTotal = total;   // §CLI_BAKE_POINT_OF_NO_RETURN — past here a cancel only truncates
     sink = fs.createWriteStream(OUT);
     log(`§CLI_BAKE_SINK begin name=${name} type=${type} totalBytes=${total} → ${OUT}`);
   });
   await page.exposeFunction('__maxqSink', b64 => new Promise((res, rej) => {
-    const buf = Buffer.from(b64, 'base64'); sinkBytes += buf.length;
+    const buf = Buffer.from(b64, 'base64'); sinkBytes += buf.length; S.sinkBytes = sinkBytes;
     sink.write(buf, e => e ? rej(e) : res());
   }));
   await page.exposeFunction('__maxqSinkEnd', () => new Promise(res => {
