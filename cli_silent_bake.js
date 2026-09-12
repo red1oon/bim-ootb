@@ -11,6 +11,8 @@
 //     [--clash] [--no-clash]                          mesh-true clash pairs as world content (§CLASH_FILM_P1)
 //     [--measure] [--no-measure]                      setting-out datum drawing (§FLYTHRU_DATUM, MEP_CLASH_REVEAL_MOVIE.md §28.1)
 //     [--nohome] [--opening-only]                     §33 §CLI_BAKE_OPENING: skip the datum-legibility gate / judge the opening and exit
+//     [--findings-only]                               §RULE_REPORT (STRUCTURAL_SANITY.md T8): run the Sanity + Egress
+//                                                       evaluators, write <out>.json, exit before ANY cinema work
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
@@ -294,6 +296,91 @@ const server = http.createServer((req, res) => {
   ]);
   log('§CLI_BAKE_LOADED building=' + await page.evaluate(() => window.APP.activeBuilding +
     ' meshes=' + (window.APP.scene ? window.APP.scene.children.length : -1)));
+  // ── §RULE_REPORT (prompts/STRUCTURAL_SANITY.md T8) — the findings WITHOUT the film ──────────
+  // MEASURED case for the flag: Hospital knows all 509 findings at +101.3s and finishes the film
+  // at ~+6,000s (1.7% analysis); Terminal, 3.5%. Of Hospital's 101.3s, 71.3s is the model load
+  // just logged above and ~29s is the cinema path planning + render staging BELOW this block —
+  // which is exactly why the exit goes HERE, before the datum gate, not next to --opening-only.
+  //
+  // ⚠ T8.3 — this must NOT call A.ruleFindingsFilmBuild. That needs a plan (its dwell precompute
+  // calls plan.poseAt), a tint and later a camera: everything findings-only exists to skip. Call
+  // the evaluators directly — the same two the panels use, with zero duplicated rule logic.
+  if (has('findings-only')) {
+    const jsonOut = OUT.replace(/\.mp4$/i, '') + '.json';
+    const report = await page.evaluate(async () => {
+      const A = window.APP;
+      const out = { err: null };
+      try {
+        if (typeof RuleReport === 'undefined') return { err: 'rule_report.js not loaded' };
+        if (!A.dbQuery) return { err: 'no A.dbQuery' };
+        const fetchRules = async (url, fallbackKey) => {
+          try {
+            const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status);
+            return { rules: await r.json(), source: 'fetched' };
+          } catch (e) { return { rules: null, source: 'fallback', error: e.message }; }
+        };
+        const sj = await fetchRules('rates/structural_rules.json');
+        const ej = await fetchRules('rates/egress_rules.json');
+        // A missing rules file is NOT silently replaced with an invented default here: the
+        // evaluators carry their own documented fallbacks, and rulesSource records which ran.
+        let rowsS = [], rowsE = [], rgFacts = null;
+        const logS = [], logE = [];
+        if (typeof StructuralSanity !== 'undefined') {
+          // witness:true — T8.12. A report exists to be inspected; a row that cannot show WHY it
+          // fired is the thing this whole surface is trying to stop being. Additive only.
+          rowsS = StructuralSanity.evaluate(A.dbQuery, sj.rules || {}, { log: (m) => { logS.push(m); console.log(m); }, witness: true }) || [];
+        }
+        if (typeof EgressSanity !== 'undefined') {
+          // RoomGraph genuinely IS needed by egress rules 2/3 — findings-only skips the film, not
+          // the data. Same lazy loader the Egress panel awaits (§EGRESS_ROOMGRAPH_LATE_BIND).
+          if (!window.RoomGraph && A.loadNavigate) { try { await A.loadNavigate(); } catch (e) {} }
+          rowsE = EgressSanity.evaluate(A.dbQuery, ej.rules || {}, { log: (m) => { logE.push(m); console.log(m); }, witness: true }) || [];
+          if (window.RoomGraph) {
+            // §ROOM_GRAPH_EXITS is emitted by buildGraph, whose log egress_sanity.js silences.
+            const capt = [];
+            try { window.RoomGraph.buildGraph(A.dbQuery, { log: (m) => capt.push(m) }); } catch (e) {}
+            rgFacts = RuleReport.parseRoomGraphExits(capt);
+          }
+        }
+        const pops = RuleReport.rulePopulations(A.dbQuery);
+        const suff = RuleReport.runSufficiencyProbes(A.dbQuery, { log: console.log });
+        out.report = RuleReport.buildRuleReport({
+          rowsS: rowsS, rowsE: rowsE,
+          ruleDefs: [sj.rules, ej.rules].filter(Boolean),
+          meta: {
+            building: A.activeBuilding,
+            rulesSource: { structural: sj.source, egress: ej.source },
+            roomGraph: rgFacts, sufficiency: suff, populations: pops
+          }
+        });
+      } catch (e) { out.err = e.message; }
+      return out;
+    });
+    if (report.err) {
+      log('§RULE_REPORT_FAIL ' + report.err);
+      try { await browser.close(); } catch (e) {}
+      server.close(); process.exit(1);
+    }
+    const r = report.report;
+    r.db = DB; r.commit = (() => { try { return execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch (e) { return null; } })();
+    try { r.dbBytes = fs.statSync(DB.includes('/') ? DB : path.join(ROOT, 'buildings', DB + '.db')).size; } catch (e) { r.dbBytes = null; }
+    fs.writeFileSync(jsonOut, JSON.stringify(r, null, 2));
+    log('§RULE_REPORT building=' + r.building + ' findings=' + r.totals.findings + ' rules=' + r.totals.rules +
+        ' critical=' + r.totals.severity.CRITICAL + ' warning=' + r.totals.severity.WARNING +
+        ' rulesSource=' + JSON.stringify(r.rulesSource) +
+        ' roomGraph=' + (r.roomGraph ? JSON.stringify(r.roomGraph) : 'null') +
+        ' out=' + jsonOut);
+    (r.rules || []).forEach(x => log('§RULE_REPORT_SET rule=' + x.rule + ' count=' + x.count +
+        ' critical=' + x.severity.CRITICAL + ' warning=' + x.severity.WARNING + ' unit=' + x.unit));
+    (r.dataSufficiency || []).forEach(x => log('§RULE_REPORT_SUFFICIENCY check=' + x.check + ' verdict=' + x.verdict +
+        ' rules=' + x.rules.join(',') + ' measured=' + JSON.stringify(x.measured)));
+    (r.flagRates || []).forEach(x => log('§RULE_REPORT_RATE rule=' + x.rule + ' flagged=' + x.flagged +
+        ' population=' + x.population + ' rate=' + x.rate));
+    log('§RULE_REPORT_ONLY exit — no bake requested, no frame drawn');
+    try { await browser.close(); } catch (e) {}
+    server.close(); process.exit(0);
+  }
+
   // §CLI_BAKE_OPENING (MEP_CLASH_REVEAL_MOVIE.md §33 CORRECTED, user 2026-09-08: "The HHS opening frame has to
   // be some distance away to let the dive in catch the 2D Z plane"). The film opens from the DB's SAVED VIEW
   // (scene_state, restored at load by main.js §SCENE_STATE_RESTORE) — the user's own framing — UNLESS Measure

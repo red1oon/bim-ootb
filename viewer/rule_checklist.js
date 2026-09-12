@@ -165,6 +165,12 @@ function _buildRuleChecklistHtml(config, activeCategory) {
     var c = categories[k];
     html += '<button type="button" class="rc-toggle-btn" data-rc-cat="' + _rcEscAttr(c.label) + '" onclick="APP._setRuleChecklistCategory(\'' + _rcEscJs(c.label) + '\')" style="' + _rcBtnStyle(activeCat === c) + '">' + _rcEscAttr(c.label) + '</button>';
   }
+  // T8.8 — the Report button lives HERE, in the generic chassis, not in either panel's own glue.
+  // Both A.showStructuralSanity and A.showEgressSanity render through this function, so one edit
+  // gives both panels the button and a third rule panel added later inherits it for free. It
+  // exports what the panel is CURRENTLY SHOWING (the filtered rows), so an applied category
+  // filter is honoured rather than silently ignored.
+  html += '<button type="button" class="rc-report-btn" onclick="APP._downloadRuleReport()" title="Download these findings as JSON" style="' + _rcBtnStyle(false) + ';margin-left:auto">\u2193 Report</button>';
   html += '</div>';
 
   html += '<div style="margin-top:2px;color:#888;font-size:11px">Click element to zoom &middot; long-press to share</div>';
@@ -255,6 +261,76 @@ function setupRuleChecklist(A) {
     console.log('§RULE_CHECKLIST checkId=' + config.checkId + ' category=' + (A._ruleChecklistActiveCategory || 'All') +
       ' critical=' + result.counts.CRITICAL + ' warning=' + result.counts.WARNING + ' optimized=' + result.counts.OPTIMIZED);
   }
+
+  // ── T8.2/T8.8: Report download — GENERIC, driven entirely by the open panel's own config.
+  // Nothing Sanity- or Egress-specific here: each panel puts `rulesUsed`/`rulesSource` (and
+  // Egress its captured `roomGraph` facts) into the config it already passes to
+  // A.showRuleChecklist, and this reads them back. A third rule panel gets Report for free.
+  //
+  // ⚠ It exports the FILTERED rows — what the panel is currently showing — so a category the
+  // user has clicked is honoured, not silently ignored (T8.8). Download convention is the one
+  // already in the tree at variation_order.js ~267: Blob -> a.download -> revokeObjectURL, plus
+  // a §-tagged console line.
+  A._downloadRuleReport = function () {
+    var config = A._ruleChecklistConfig;
+    if (!config) { console.warn('§RULE_REPORT_UNAVAILABLE no panel open'); return null; }
+    if (typeof RuleReport === 'undefined') { console.warn('§RULE_REPORT_UNAVAILABLE rule_report.js not loaded'); return null; }
+    // T8.12 — the panel renders WITHOUT witness (evidence is dead weight in a list you scroll).
+    // An explicit export is the moment it earns its cost, so re-run the same evaluator with
+    // witness:true here. Additive by construction — R12 asserts the counts do not move — so the
+    // re-run cannot disagree with the panel above it. Falls back to the displayed rows if the
+    // evaluator is unreachable, and says which it used in the § line.
+    var rows = config.rows || [], witnessed = false;
+    try {
+      if (config.rulesUsed && A.dbQuery) {
+        if (config.checkId === 'sanity' && typeof StructuralSanity !== 'undefined') {
+          rows = StructuralSanity.evaluate(A.dbQuery, config.rulesUsed, { log: function () {}, witness: true }) || rows;
+          witnessed = true;
+        } else if (config.checkId === 'egress' && typeof EgressSanity !== 'undefined') {
+          rows = EgressSanity.evaluate(A.dbQuery, config.rulesUsed, { log: function () {}, witness: true }) || rows;
+          witnessed = true;
+        }
+      }
+    } catch (e) { console.warn('§RULE_REPORT_WITNESS_FAIL ' + e.message + ' — exporting the displayed rows without evidence'); rows = config.rows || []; }
+    var cat = A._ruleChecklistActiveCategory;
+    if (cat) {
+      var hit = (config.categories || []).filter(function (c) { return c.label === cat; })[0];
+      if (hit) rows = rows.filter(function (r) { return hit.ruleNames.indexOf(r.rule) !== -1; });
+    }
+    var report = RuleReport.buildRuleReport({
+      rows: rows,
+      ruleDefs: config.rulesUsed ? [config.rulesUsed] : [],
+      meta: {
+        building: A.activeBuilding, db: A.activeBuilding,
+        swVersion: (A._swCacheVersion || null),
+        rulesSource: config.checkId === 'egress'
+          ? { egress: config.rulesSource || 'unknown' }
+          : { structural: config.rulesSource || 'unknown' },
+        roomGraph: config.roomGraph || null,
+        longestExitSteps: _rcLongestExitSteps(rows),
+        // T8.11 — the panel has A.dbQuery, so it can review its own input the same way the CLI
+        // does. Probes are read-only counts over elements_meta/element_transforms/
+        // spatial_structure; if dbQuery is missing the section reports null, never "all clear".
+        sufficiency: A.dbQuery ? RuleReport.runSufficiencyProbes(A.dbQuery, { log: console.log }) : null,
+        populations: A.dbQuery ? RuleReport.rulePopulations(A.dbQuery) : null
+      }
+    });
+    try {
+      var blob = new Blob([RuleReport.toJson(report)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'RuleReport_' + (config.checkId || 'rules') + '_' + (A.activeBuilding || 'building') +
+        '_' + new Date().toISOString().split('T')[0] + '.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { console.warn('§RULE_REPORT_DOWNLOAD_FAIL ' + e.message); }
+    console.log('§RULE_REPORT checkId=' + config.checkId + ' category=' + (cat || 'All') +
+      ' findings=' + report.totals.findings + ' rules=' + report.totals.rules +
+      ' witness=' + (witnessed ? report.totals.withWitness : 'off') +
+      ' rulesSource=' + JSON.stringify(report.rulesSource) +
+      ' roomGraph=' + (report.roomGraph ? JSON.stringify(report.roomGraph) : 'null'));
+    return report;
+  };
 
   // Only VISIBLE rows are real ListKeyNav items — a row inside a collapsed rule-set (display:none
   // ancestor) is not on screen and must not be selectable/counted, unlike Clash's flat list which
@@ -544,11 +620,15 @@ function setupRuleChecklist(A) {
   };
 
   A.showStructuralSanity = function () {
-    function runWith(rules) {
+    // T8.4 — `fetched` vs `fallback` must reach the report. The §STRUCT_RULES_JSON line already
+    // draws that distinction for the log; this carries the SAME fact into the config so a
+    // downloaded report can never present the fallback constant above as an authored threshold.
+    function runWith(rules, source) {
       if (typeof StructuralSanity === 'undefined' || !A.dbQuery) { console.warn('§STRUCT_SANITY_UNAVAILABLE no evaluator or dbQuery'); return; }
       var rows = StructuralSanity.evaluate(A.dbQuery, rules, { log: console.log });
       A.showRuleChecklist({
         title: 'Structural Sanity', checkId: 'sanity',
+        rulesUsed: rules, rulesSource: source || 'unknown',
         colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },
         categories: [
           { label: 'Floating Member', ruleNames: ['floating_member'] },
@@ -558,18 +638,18 @@ function setupRuleChecklist(A) {
         rows: rows
       });
     }
-    if (A._structuralRulesCache) { runWith(A._structuralRulesCache); return; }
+    if (A._structuralRulesCache) { runWith(A._structuralRulesCache, A._structuralRulesSource); return; }
     fetch('rates/structural_rules.json').then(function (resp) {
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       return resp.json();
     }).then(function (json) {
-      A._structuralRulesCache = json;
+      A._structuralRulesCache = json; A._structuralRulesSource = 'fetched';
       console.log('§STRUCT_RULES_JSON loaded=json rules=' + ((json.structural_rules || []).length));
-      runWith(json);
+      runWith(json, 'fetched');
     }).catch(function (err) {
       console.warn('§STRUCT_RULES_JSON loaded=fallback error=' + err.message);
-      A._structuralRulesCache = STRUCTURAL_RULES_FALLBACK;
-      runWith(STRUCTURAL_RULES_FALLBACK);
+      A._structuralRulesCache = STRUCTURAL_RULES_FALLBACK; A._structuralRulesSource = 'fallback';
+      runWith(STRUCTURAL_RULES_FALLBACK, 'fallback');
     });
   };
 
@@ -591,7 +671,7 @@ function setupRuleChecklist(A) {
   };
 
   A.showEgressSanity = function () {
-    function runWith(rules) {
+    function runWith(rules, source) {
       if (typeof EgressSanity === 'undefined' || !A.dbQuery) { console.warn('§EGRESS_UNAVAILABLE no evaluator or dbQuery'); return; }
       // room_graph.js is lazy-loaded (viewer/main.js APP.loadNavigate — 78KB saved on first paint,
       // not a static viewer.html <script>, unlike structural_sanity.js). Rules 2/3 need
@@ -599,8 +679,22 @@ function setupRuleChecklist(A) {
       // adding a second script-loading path.
       var go = function () {
         var rows = EgressSanity.evaluate(A.dbQuery, rules, { log: console.log });
+        // T8.4 — §ROOM_GRAPH_EXITS's own numbers (exits / noRaster / doors). The evaluator calls
+        // RoomGraph.buildGraph with its log SILENCED, so that line never reaches console here;
+        // build it once more with a CAPTURING log purely to read the facts. buildGraph is
+        // deterministic on the same dbQuery, so this observes the same graph the rules used — it
+        // does not change any count. Null (with a stated reason in the report) if it cannot run.
+        var rgFacts = null;
+        try {
+          if (window.RoomGraph && typeof RuleReport !== 'undefined') {
+            var capt = [];
+            window.RoomGraph.buildGraph(A.dbQuery, { log: function (m) { capt.push(m); } });
+            rgFacts = RuleReport.parseRoomGraphExits(capt);
+          }
+        } catch (e) { console.warn('§RULE_REPORT_ROOMGRAPH_FACTS_FAIL ' + e.message); }
         A.showRuleChecklist({
           title: 'Egress', checkId: 'egress',
+          rulesUsed: rules, rulesSource: source || 'unknown', roomGraph: rgFacts,
           colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },
           categories: [
             { label: 'Isolated Room', ruleNames: ['isolated_room'] },
@@ -615,18 +709,18 @@ function setupRuleChecklist(A) {
       if (A.loadNavigate) A.loadNavigate().then(go).catch(function (e) { console.warn('§EGRESS_ROOMGRAPH_LOAD_FAIL ' + (e && e.message)); go(); });
       else go(); // defensive — evaluator itself logs §EGRESS_NO_ROOMGRAPH and skips rules 2/3
     }
-    if (A._egressRulesCache) { runWith(A._egressRulesCache); return; }
+    if (A._egressRulesCache) { runWith(A._egressRulesCache, A._egressRulesSource); return; }
     fetch('rates/egress_rules.json').then(function (resp) {
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       return resp.json();
     }).then(function (json) {
-      A._egressRulesCache = json;
+      A._egressRulesCache = json; A._egressRulesSource = 'fetched';
       console.log('§EGRESS_RULES_JSON loaded=json rules=' + ((json.egress_rules || []).length));
-      runWith(json);
+      runWith(json, 'fetched');
     }).catch(function (err) {
       console.warn('§EGRESS_RULES_JSON loaded=fallback error=' + err.message);
-      A._egressRulesCache = EGRESS_RULES_FALLBACK;
-      runWith(EGRESS_RULES_FALLBACK);
+      A._egressRulesCache = EGRESS_RULES_FALLBACK; A._egressRulesSource = 'fallback';
+      runWith(EGRESS_RULES_FALLBACK, 'fallback');
     });
   };
   A._ruleChecklistOpeners.egress = A.showEgressSanity;

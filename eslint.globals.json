@@ -65,6 +65,7 @@
   "ScheduleGate": "readonly",
   "SectionCut": "readonly",
   "SettingsEditor": "readonly",
+  "RuleReport": "readonly",
   "StructuralSanity": "readonly",
   "SupportSweep": "readonly",
   "SwipeStack": "readonly",

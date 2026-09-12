@@ -100,7 +100,12 @@
       var sev = _severityBelow(width, doorRule);
       if (sev) {
         doorFlags[sev]++;
-        rows.push({ guid: guid, ifc_class: 'IfcDoor', name: name, storey: storey, rule: 'door_clear_width', severity: sev, ratio: width });
+        rows.push({ guid: guid, ifc_class: 'IfcDoor', name: name, storey: storey, rule: 'door_clear_width', severity: sev, ratio: width,
+          witness: opts.witness ? {
+            bboxXM: +(bx || 0).toFixed(3), bboxYM: +(by || 0).toFixed(3), widthTakenAs: (bx >= by ? 'bbox_x' : 'bbox_y'),
+            warningM: doorRule.warning_m, criticalM: doorRule.critical_m,
+            reads: 'width is the NOMINAL bbox extent. Clear opening width — what the threshold cites — is narrower by the stop, the leaf thickness and the hardware, none of which this schema carries, so this rule under-flags'
+          } : undefined });
       }
     });
     log('§EGRESS rule=door_clear_width severity=' + (doorFlags.CRITICAL + doorFlags.WARNING) + ' critical=' + doorFlags.CRITICAL);
@@ -117,6 +122,27 @@
     var graph = RoomGraph.buildGraph(dbQuery, { log: function () {} });
     var circCount = { WARNING: 0, uncapped_critical: 0 }, isolatedCount = 0;
     var viaExit = 0, viaFallback = 0;
+
+    // ── §EGRESS_WITNESS (prompts/STRUCTURAL_SANITY.md T8.12) — OPT-IN, default OFF.
+    // "Isolated room" is the finding a reader most wants to disbelieve on sight, and the rule's
+    // own evidence for it is an ABSENCE (no path found), which is exactly what a bare row cannot
+    // show. This indexes the graph's own edges once so a flagged room can state its degree, its
+    // actual neighbours, and whether its storey even HAS a circulation node to reach — the three
+    // facts that separate "genuinely sealed off" from "the graph never connected it".
+    var degree = null, neighbours = null, storeyHasCirc = null, exitCount = 0;
+    if (opts.witness) {
+      degree = {}; neighbours = {}; storeyHasCirc = {};
+      (graph.edges || []).forEach(function (e) {
+        degree[e.a] = (degree[e.a] || 0) + 1; degree[e.b] = (degree[e.b] || 0) + 1;
+        (neighbours[e.a] = neighbours[e.a] || []).push({ guid: e.b, via: e.kind, doorName: e.doorName || null });
+        (neighbours[e.b] = neighbours[e.b] || []).push({ guid: e.a, via: e.kind, doorName: e.doorName || null });
+      });
+      (graph.nodes || []).forEach(function (n) { if (n.kind === 'circ') storeyHasCirc[n.storey] = true; });
+      Object.keys(graph.nodesByGuid || {}).forEach(function (g) { if (g.indexOf('EXIT::') === 0) exitCount++; });
+      log('§EGRESS_WITNESS enabled nodes=' + (graph.nodes || []).length + ' edges=' + (graph.edges || []).length +
+        ' exitNodes=' + exitCount + ' storeysWithCirc=' + Object.keys(storeyHasCirc).length);
+    }
+
     graph.nodes.forEach(function (r) {
       var esc = RoomGraph.escapeRoute(graph, r.guid, { log: function () {} });
       var target, distance;
@@ -129,7 +155,21 @@
         else {
           // Rule 3: isolated — no path to escape via a real exit NOR to this storey's own
           // circulation spine at all. A real graph-connectivity fact, not a threshold guess.
-          rows.push({ guid: r.guid, ifc_class: 'IfcSpace', name: r.name, storey: r.storey, rule: 'isolated_room', severity: 'CRITICAL', ratio: null });
+          rows.push({ guid: r.guid, ifc_class: 'IfcSpace', name: r.name, storey: r.storey, rule: 'isolated_room', severity: 'CRITICAL', ratio: null,
+            witness: opts.witness ? {
+              graphDegree: degree[r.guid] || 0,
+              neighbours: (neighbours[r.guid] || []).slice(0, 8),
+              storeyHasCirculationNode: !!storeyHasCirc[r.storey],
+              exitNodesInModel: exitCount,
+              // The room's own name carries the extraction's confidence mark (≈ approximate,
+              // ⚠ suspect). The rule cannot read it; the witness can, so the reader sees whether
+              // the "room" that failed to connect was itself a guess.
+              roomNameSigil: (function (n) { var c = String(n || '').charAt(0); return c === '\u2248' ? 'approximate' : (c === '\u26a0' ? 'suspect' : null); })(r.name),
+              reads: (degree[r.guid] || 0) === 0
+                ? 'this node has NO edges at all — the room graph never connected it to anything, so "isolated" here describes the extraction, not necessarily the building'
+                : 'this node HAS ' + (degree[r.guid] || 0) + ' edge(s) but no route reaches an exit or its storey\'s circulation spine' +
+                  (storeyHasCirc[r.storey] ? '' : '; note its storey has NO circulation node at all, so the fallback target did not exist')
+            } : undefined });
           isolatedCount++;
           return;
         }
@@ -139,7 +179,16 @@
         circCount.WARNING++;
         if (distance >= circRule.critical_m) circCount.uncapped_critical++;
         rows.push({ guid: r.guid, ifc_class: 'IfcSpace', name: r.name, storey: r.storey,
-          rule: 'circulation_distance', severity: sev, ratio: distance, target: target });
+          rule: 'circulation_distance', severity: sev, ratio: distance, target: target,
+          witness: opts.witness ? {
+            measuredTo: target, hops: (esc && esc.path) ? esc.path.length : null,
+            doorsOnRoute: (esc && esc.doors) ? esc.doors.length : null,
+            warningM: circRule.warning_m, criticalM: circRule.critical_m,
+            roomNameSigil: (function (n) { var c = String(n || '').charAt(0); return c === '\u2248' ? 'approximate' : (c === '\u26a0' ? 'suspect' : null); })(r.name),
+            reads: target === 'exit'
+              ? 'distance is to a real EXTERIOR door, not to the nearest protected exit stair the travel-distance code actually regulates — on an upper storey this overstates the code quantity'
+              : 'no exit was reachable; this is the distance to the storey\'s own circulation spine, a weaker claim than distance-to-exit'
+          } : undefined });
       }
     });
     log('§EGRESS rule=circulation_distance severity=' + circCount.WARNING + ' uncapped_critical=' + circCount.uncapped_critical +
