@@ -806,3 +806,50 @@ against) — **256 findings, 0 defects** on all four testable rules, first run, 
 
 What is left is 8 defects and 995 near-misses. The near-misses are threshold questions under the
 THRESHOLD DISCLAIMER and are not to be "fixed" by widening a number until the bench goes green.
+
+## T10 OPEN — "Hospital's ground-floor slabs are missing": traced, and the baking is NOT the cause
+*(User, 2026-09-12: "i wonder if the baking broke the Hospital ground floor slabs seems to be
+missing! Check, trace, update the right prompts. New session we pursue this and sanity checking
+code." Recorded here as a HANDOVER: the trace below is done, the conclusion is not.)*
+
+**RULED OUT — the bake did not touch them.** `IfcSlab = 35` identically in all four Hospital DBs,
+with the same per-storey distribution and the same slab z-range (164.93 .. 203.22) in each:
+
+| DB | size | elements | IfcSlab |
+|---|---|---|---|
+| `Hospital_extracted.db` (closest to the IFC import) | 265 MB | 64,150 | **35** |
+| `Hospital_meta.db` | 26 MB | 63,415 | **35** |
+| `HospitalAjaibPath.db` | 262 MB | 63,415 | **35** |
+| `Hospital_silent.db` (the bake DB) | 315 MB | 64,150 | **35** |
+
+Whatever is or is not there, it is there identically before and after baking. Do not spend the next
+session on the bake path.
+
+**RULED OUT — the ground floor slab exists and is normal-sized.** Level 1 carries an **8,899 m²**
+slab (`Floor:Concrete-150 mm slab on 300mm base`, x −5..94, y 38..128, z 165.59) plus two small
+ones. That is in line with every other storey: L2 8,963 · L3 9,192 · L4 8,270 · L5 8,343 · L6 7,585.
+553 `IfcFooting` sit directly beneath it at z 161.51..165.06.
+
+**⚠ CORRECTION to an in-session claim:** I first reported columns descending to z 156.61, "8.75 m
+below the lowest slab", which suggested an unmodelled substructure. That is **one single outlier
+column**. The real column bases are 164.2 (30), 165.1 (6), 165.5 (60), 165.6 (38), 165.8 (61) —
+all at or just under the Level 1 slab. There is no missing basement.
+
+**STILL OPEN — two things the trace did surface, neither yet diagnosed:**
+1. **8% of Level 1 sits outside the Level 1 slab footprint.** Level 1 elements span y 46..152; the
+   slab covers y 38..128. **648 of 8,466 Level 1 elements (8%)** fall outside it, concentrated in
+   y 128..152. Whether that is a genuine gap, an atrium/courtyard with no floor by design, or an
+   external canopy area cannot be settled from bounding boxes alone — it needs the geometry looked
+   at. **Do not assume a defect.**
+2. **Only 11 of the 35 slabs are structural floors** (`Floor:*`), one per storey — each a single
+   monolithic 98 × 90 m element. The other **24 are `Basic Roof:*`** (Grass Roof, Paver Roof), all
+   at Level 3, z 176.81. A "one slab per storey" model is why T9.3's slab footprints are whole
+   floors, and why an edge-based bearing test was the wrong design.
+
+**For the sanity-checking code, the concrete follow-up:** there is no rule that checks slab
+COVERAGE — whether the elements assigned to a storey actually have a floor beneath them. Every
+existing rule is per-element (does THIS beam have support); nothing asks whether a storey's floor
+plate covers its own contents. That is a different shape of rule and it is what would have answered
+this question directly instead of by hand. It also needs the T8.11 sufficiency treatment: a
+building modelling floors as `IfcCovering` or `IfcPlate` rather than `IfcSlab` must report
+`uninformative`, not a false all-clear — Hospital carries 602 `IfcCovering` and 2,211 `IfcPlate`.
