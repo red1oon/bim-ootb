@@ -853,3 +853,71 @@ plate covers its own contents. That is a different shape of rule and it is what 
 this question directly instead of by hand. It also needs the T8.11 sufficiency treatment: a
 building modelling floors as `IfcCovering` or `IfcPlate` rather than `IfcSlab` must report
 `uninformative`, not a false all-clear — Hospital carries 602 `IfcCovering` and 2,211 `IfcPlate`.
+
+## T11 §BENCH_CONTINUE — the next session's brief for the sanity benchmark
+**State at handover: fleet DEFECT rate 0.3% — 2,545 findings, 8 defects, 995 near-misses over 14
+DBs** (was 63%). Baseline recorded in `tests/bench_baseline.json`. PR **#1720**, branch
+`feat/rule-report`. Everything below is a target, not a guess.
+
+**T11.1 THE 8 REMAINING DEFECTS ARE ALL IN ONE BUILDING — LTU_AHouse.**
+
+| DB | rule | defect / found |
+|---|---|---|
+| `LTU_AHouse_extracted` | `column_continuity` | 4 / 471 |
+| `LTU_AHouse_extracted` | `isolated_room` | 2 / 17 |
+| `LTU_AHouse_meta` | `floating_member` | 1 / 172 |
+| `LTU_AHouse_meta` | `column_continuity` | 1 / 663 |
+
+Start there and nowhere else. Every other DB in the fleet is at zero. Each of these is
+load-bearing geometry INSIDE the rule's own tolerance — the rule looked and missed — so each has a
+findable cause. Read the row's own `witness` (T8.12) before touching any rule.
+
+**T11.2 ⚠ THE 995 NEAR-MISSES ARE NOT THE BACKLOG.** They are load-bearing geometry OUTSIDE the
+rule's tolerance: `span_depth_cantilever` 271 and `column_continuity` 194 on LTU_AHouse alone,
+`column_continuity` 64 each on both HHS DBs. **Closing them means widening a tolerance until the
+bench goes green, which is the single failure this whole benchmark exists to prevent.** They are an
+engineer's threshold call under the THRESHOLD DISCLAIMER. If someone with authority over the
+numbers wants them revisited, that is a spec change with citations, not a tuning pass.
+
+**T11.3 THE RULE THAT DOESN'T EXIST YET — slab coverage (from T10).** Every rule here is
+per-element: "does THIS beam have support". None asks whether a storey's floor plate covers its own
+contents. That is why the "Hospital ground-floor slabs are missing" question (T10) had to be
+answered by hand. Building it needs the T8.11 treatment: a model floors in `IfcCovering` or
+`IfcPlate` rather than `IfcSlab` must report **`uninformative`**, never a false all-clear —
+Hospital carries 602 and 2,211 of those. Measured starting point: 648 of 8,466 Level 1 elements
+(8%) fall outside the Level 1 slab footprint, in y 128..152.
+
+**T11.4 COMMANDS.**
+```
+node tests/bench_rule_artifacts.js                              # 14-DB fleet, ~2.5 min
+node tests/bench_rule_artifacts.js --gate tests/bench_baseline.json
+node tests/bench_rule_artifacts.js /path/to/Extra.db            # ad-hoc DB — NEVER a symlink, see T11.5
+node cli_silent_bake.js --db <name> --findings-only             # full report, ~8s + model load
+```
+
+**T11.5 FIVE TRAPS THIS SESSION ACTUALLY FELL INTO. Do not re-discover them.**
+1. **A generous metric licenses the wrong fix.** The artifact metric first counted ANY nearby
+   element — `IfcCovering`, ducts, railings, and `IfcOpeningElement`, which is a **void** — reading
+   76% against a true 63%, and would have justified the one change that makes `floating_member`
+   vacuous. Only load-bearing classes count as evidence.
+2. **Defect ≠ threshold.** The second version counted near-misses as defects, read 52%, and aimed
+   at LTU_AHouse's `floating_member` — where **not one** of 240 beam-at-free-end cases had a beam
+   both top-aligned AND inside the footprint. A rule that was behaving correctly nearly got
+   "fixed".
+3. **Circular guards pass for the life of a bug.** `count in [40,50]` and ">=50% at roof levels"
+   both came from this file's own VALIDATION section, written from the buggy code's output. The
+   roof clustering WAS the bug's fingerprint. Assert the property a rule claims, never last week's
+   number.
+4. **A constant column is not a measurement.** `rotation_x/y/z` are zero on all 118,490 transform
+   rows across three buildings. The probe reported `ok`. "No element is rotated" and "rotation was
+   never recorded" give the identical query result and mean opposite things.
+5. **`buildings/HHS_Office_Federated_extracted.db` and `buildings/warehouse_gardenworld.db` are
+   TRACKED** despite `.gitignore` `*.db`. A symlink over one is committed as 63 bytes and destroys
+   the real file. #1071 did it, #1073 restored it, and this session did it again. Ad-hoc DBs go on
+   the command line.
+
+**T11.6 WHAT DONE LOOKS LIKE.** `§BENCH_GATE_OK` with the 4 LTU defect rows at zero, the near-miss
+counts UNCHANGED (moving them means a tolerance was widened), and the synthetic fixtures still
+failing when they should — `beam-under-slab` CRITICAL, `col-unsupported` CRITICAL. Per the Log
+Mandate: grep a real log, quote the number that moved, and check that a passing test could have
+failed.
