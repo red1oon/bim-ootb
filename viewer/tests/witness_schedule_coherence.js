@@ -43,6 +43,12 @@ const initSqlJs = require(path.join(os.homedir(), 'bim-ootb', 'node_modules', 's
 const SQLJS_DIST = path.join(os.homedir(), 'bim-ootb', 'node_modules', 'sql.js', 'dist');
 const BLD_DIR = process.env.BLD_DIR || path.join(os.homedir(), 'bim-ootb', 'buildings');
 const BASELINE = process.env.BASELINE === undefined ? null : +process.env.BASELINE;
+// §KERNEL_OPS_SCHED_AGREE (2026-09-12): G-SC-TE promoted from reported-only to BASELINE-gated, the
+// same shape as G-SC-SELF — fails on an INCREASE, so it lands against today's fleet unchanged while
+// making "a persisted op whose _task has no task_elements row for its guid" a regression from here
+// on. This is the DB-only, no-GPU, no-browser witness that would have caught §SCHED_TASK_BUCKET_
+// SPLIT_BRAIN: Hospital_silent.db reads 13,574 with the shipped frozen ops and 0 once they re-derive.
+const TE_BASELINE = process.env.TE_BASELINE === undefined ? null : +process.env.TE_BASELINE;
 
 const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const rows = (db, sql) => { try { const r = db.exec(sql); return r.length ? r[0].values : []; } catch (e) { return []; } };
@@ -103,8 +109,17 @@ const EPS = 0.05, GAP = 0.5;
     samples.forEach(s => console.log(`§W-SCHED-COHERE   first ${s}`));
     if (!selfOk) fail++;
 
-    console.log(`§W-SCHED-COHERE G-SC-TE ${name} taskElementsMismatch=` +
-      (haveTe ? noTeMatch : 'n/a (no task_elements)') + ' — reported, never blocking (§88.10d)');
+    // G-SC-TE — §KERNEL_OPS_SCHED_AGREE (2026-09-12). Was reported-only because §88.10d showed the
+    // OP is the better witness on the one-storey band shifts (it matches elements_meta.storey 7,491
+    // times, task_elements 0) — which remains true, and is exactly why nothing here judges WHICH side
+    // to copy. What it does now assert is weaker and sound: this number may not GROW. A persisted op
+    // whose _task has no task_elements row for its own guid is an op that is no longer true of the DB
+    // it sits in, whichever side drifted, and the cure is re-derivation, never a rewrite.
+    const teOk = TE_BASELINE === null || !haveTe ? true : noTeMatch <= TE_BASELINE;
+    console.log(`§W-SCHED-COHERE G-SC-TE ${teOk ? 'PASS' : 'FAIL'} ${name} taskElementsMismatch=` +
+      (haveTe ? noTeMatch : 'n/a (no task_elements)') +
+      (TE_BASELINE === null ? ' (no TE_BASELINE — reported only)' : ' baseline=' + TE_BASELINE));
+    if (!teOk) fail++;
 
     // ── G-SC-CARRY: in-extent structural carriers that finish after the slab they carry ─────────
     // Carrier pool mirrors §PROMOTED_CARRIER_POOL: seq<=4 u IfcSlab. seq comes from the OP's own

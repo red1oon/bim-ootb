@@ -8714,13 +8714,136 @@
     return n;
   }
 
+  // §KERNEL_OPS_SCHED_AGREE (2026-09-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+  // §SCHED_TASK_BUCKET_SPLIT_BRAIN) — DOES THIS PERSISTED SCHEDULE STILL AGREE WITH THIS DB?
+  //
+  // §KERNEL_OPS_SCHED_VERSION below asks "were these ops produced by the current ALGORITHM?". It
+  // never asks "are they still TRUE OF the model they sit in?", and those are different questions.
+  // Measured consequence: Hospital_silent.db ships 63,415 ELEMENT_PLACE rows stamped _genVersion=39
+  // against _GANTT_CACHE_VERSION=39, so they are adopted verbatim — yet its `tasks`/`task_elements`
+  // tables were RE-AUTHORED after those ops were captured, so 13,574 of them (21.4%) carry a `_task`
+  // that matches no task_elements row for their own guid, and the op calendar (2026-09-10..2027-07-17)
+  // sits 233 days outside the task calendar (2026-01-01..2026-11-26) even though the DB's own
+  // schedules.display_authored=1 asserts the task windows are VIEWS of these very element times.
+  // 28 of those mis-bucketed rows are Level 1 foundation walls that carry an 8,899 m² ground slab and
+  // are scheduled 13.47 h AFTER it, so §XRAY_STAGING_REMOVED correctly refuses to draw the floor.
+  // Re-deriving (verified in a real browser: §GANTT_SOURCE, staged 544→501, slab leaves staging, wall
+  // returns to TASK_Substructure_Level_1, span becomes 1/10/2026→11/26/2026) produces the right answer
+  // — the TABLES are right, only the frozen answer is wrong.
+  //
+  // Deliberately NOT fixed by bumping _GANTT_CACHE_VERSION: that is a one-shot data patch. It
+  // discards every user's warm gantt:v39:* entry fleet-wide (correct ones included) and leaves the
+  // hole open, so the next re-authoring of `tasks` freezes a wrong answer again at v40. This makes
+  // the staleness decision a property of the DB instead of a constant a human must remember to bump.
+  //
+  // TWO INDEPENDENT CLAUSES, both cheap, both measured to flag Hospital and NOT to flag a building
+  // whose ops are correct (HHS_Office_Federated_silent: 0/6,880 task-link mismatches, op window
+  // inside its task window):
+  //   B-WIN  armed only when schedules.display_authored=1 — that flag IS the DB asserting the task
+  //          windows are views of these element times, so containment must hold by construction.
+  //          One MIN/MAX over the dated leaf tasks + one pass over ops already parsed in memory.
+  //   B-TE   a SAMPLE of ops must have a task_elements row for their own guid and _task. One
+  //          `guid IN (…)` query, so the cost is bounded by the sample, not by model size (loading
+  //          the whole 63,415-row map costs 72 ms in sql.js and is not affordable per activate).
+  //          At Hospital's 21.4% defect rate a sample of 50 detects in 2000/2000 trials.
+  // ⚠ This NEVER rewrites an op from task_elements — a disagreement only triggers RE-DERIVATION by
+  // the shipped verb. On the 13,546 one-storey shifts the OP is the better witness (it matches
+  // elements_meta.storey 7,491 times, task_elements 0), so copying one table over the other would
+  // repair 28 rows and break 13,546. Freshly derived ops measure 0/63,415 on B-TE and land inside the
+  // task window, so neither clause re-fires and there is no derive-every-activate loop.
+  var _AGREE_SAMPLE = 64;                    // ops sampled for B-TE (evenly spaced, deterministic)
+  var _AGREE_WINDOW_SLACK_MS = 86400000;     // `tasks` bounds are DATE-only; allow a day either side
+
+  function _schedOpsAgreementFail(db, placeOps) {
+    if (!db || !placeOps || !placeOps.length) return '';
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var reason = '', detail = '', winMs = 0, teMs = 0;
+    try {
+      // ── B-WIN ──────────────────────────────────────────────────────────────────────────────────
+      var _da = 0;
+      try {
+        var r0 = db.exec('SELECT MAX(display_authored) FROM schedules');
+        if (r0.length && r0[0].values.length && r0[0].values[0][0] != null) _da = r0[0].values[0][0] | 0;
+      } catch (e) { _da = 0; }   // pre-§ZONE_DISPLAY_AUTHORING DB: no column, clause simply not armed
+      if (_da === 1) {
+        var r1 = db.exec('SELECT MIN(schedule_start), MAX(schedule_finish) FROM tasks ' +
+          'WHERE schedule_start IS NOT NULL AND (is_summary IS NULL OR is_summary=0)');
+        if (r1.length && r1[0].values.length && r1[0].values[0][0] && r1[0].values[0][1]) {
+          var tS = Date.parse(r1[0].values[0][0]), tE = Date.parse(r1[0].values[0][1]);
+          if (isFinite(tS) && isFinite(tE)) {
+            var oS = Infinity, oE = -Infinity;
+            for (var i = 0; i < placeOps.length; i++) {
+              var pp = placeOps[i].parameters || {};
+              var s = placeOps[i].start_ts, e = pp._end_ts;
+              if (typeof s === 'number' && s < oS) oS = s;
+              if (typeof e === 'number' && e > oE) oE = e;
+            }
+            if (isFinite(oS) && isFinite(oE) &&
+                (oS < tS - _AGREE_WINDOW_SLACK_MS || oE > tE + _AGREE_WINDOW_SLACK_MS)) {
+              reason = 'window';
+              detail = ' ops=' + new Date(oS).toISOString().slice(0, 10) + '..' + new Date(oE).toISOString().slice(0, 10) +
+                ' tasks=' + r1[0].values[0][0] + '..' + r1[0].values[0][1] +
+                ' (display_authored=1 asserts these are the same window)';
+            }
+          }
+        }
+      }
+      winMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0;
+      // ── B-TE ───────────────────────────────────────────────────────────────────────────────────
+      if (!reason) {
+        var step = Math.max(1, Math.floor(placeOps.length / _AGREE_SAMPLE));
+        var want = {}, list = [], n = 0;
+        for (var j = 0; j < placeOps.length && list.length < _AGREE_SAMPLE; j += step) {
+          var o = placeOps[j], par = o.parameters || {};
+          if (!o.output_guid || !par._task) continue;            // generated (uncaptured) op: no bucket to check
+          if (/['\\]/.test(o.output_guid)) continue;             // IFC guids never contain these; skip rather than quote
+          want[o.output_guid] = par._task; list.push(o.output_guid); n++;
+        }
+        if (n) {
+          var got = {};
+          var r2 = db.exec("SELECT guid, task_id FROM task_elements WHERE guid IN ('" + list.join("','") + "')");
+          if (r2.length) for (var k = 0; k < r2[0].values.length; k++) {
+            var g = r2[0].values[k][0];
+            (got[g] = got[g] || []).push(r2[0].values[k][1]);
+          }
+          var bad = 0, firstBad = '';
+          for (var g2 in want) {
+            if (!got[g2] || got[g2].indexOf(want[g2]) < 0) {
+              bad++;
+              if (!firstBad) firstBad = g2 + ' _task=' + want[g2] + ' task_elements=' + JSON.stringify(got[g2] || null);
+            }
+          }
+          if (bad) {
+            reason = 'taskLink';
+            detail = ' sampled=' + n + ' mismatched=' + bad + ' first ' + firstBad;
+          }
+        }
+      }
+      teMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0 - winMs;
+    } catch (e) {
+      // A DB that cannot answer the question is never called stale on that account — an agreement
+      // test that fails OPEN would re-derive every building with a missing table on every activate.
+      console.log('§KERNEL_OPS_SCHED_AGREE unavailable (' + e.message + ') — agreement clause skipped');
+      return '';
+    }
+    console.log('§KERNEL_OPS_SCHED_AGREE ops=' + placeOps.length +
+      ' winMs=' + winMs.toFixed(1) + ' teMs=' + teMs.toFixed(1) +
+      ' totalMs=' + (winMs + teMs).toFixed(1) +
+      ' verdict=' + (reason || 'agrees') + detail);
+    return reason;
+  }
+
   // §KERNEL_OPS_SCHED_VERSION (2026-08-11): pure predicate, no db/window — placeOps materialized
   // under an OLDER schedule-generation algorithm (missing/mismatched _genVersion stamp) must never
   // be silently reused. currentVersion is _GANTT_CACHE_VERSION, passed in rather than closed over so
   // this stays independently testable (same idiom as _tier1Extents/_tier1Serialize below).
-  function _kernelOpsSchedStale(placeOps, currentVersion) {
-    return !!(placeOps && placeOps.length && placeOps[0].parameters &&
-      placeOps[0].parameters._genVersion !== currentVersion);
+  // §KERNEL_OPS_SCHED_AGREE (2026-09-12): agreementFail is likewise PASSED IN, already computed by
+  // _schedOpsAgreementFail above — this predicate stays pure, with no db or window of its own, so
+  // witness_kernel_ops_sched_version.js can keep slicing and calling it in a bare vm sandbox.
+  function _kernelOpsSchedStale(placeOps, currentVersion, agreementFail) {
+    if (!(placeOps && placeOps.length && placeOps[0].parameters)) return false;
+    if (placeOps[0].parameters._genVersion !== currentVersion) return true;
+    return !!agreementFail;
   }
 
   // ── Activate / Deactivate ──
@@ -8825,6 +8948,21 @@
           _hasCachedPlaces = false;
         }
       }
+      // §KERNEL_OPS_SCHED_AGREE (2026-09-12) — kernel_ops HAS TWO HOMES and this branch is the other
+      // one. It returns before the persisted-table branch below is ever reached, DELETE+INSERTing the
+      // cached JSON over the DB's rows, so gating only the table would leave this home able to serve a
+      // frozen answer the table can no longer serve. Same predicate, same question: is this cache
+      // still TRUE OF this db? (A cache whose absence changes the answer is not a cache.)
+      if (_hasCachedPlaces) {
+        var _cachedPlaces = cachedOps.filter(function(o) { return o.op_type === 'ELEMENT_PLACE'; });
+        var _cacheAgreeFail = _schedOpsAgreementFail(app.db, _cachedPlaces);
+        if (_cacheAgreeFail) {
+          console.log('§GANTT_STALE_CACHE ops=' + cachedOps.length + ' agreementFail=' + _cacheAgreeFail +
+            ' — cached schedule no longer agrees with this DB, dropping cache and re-deriving');
+          cacheDel('gantt');
+          _hasCachedPlaces = false;
+        }
+      }
       if (_hasCachedPlaces) {
         // Fast path: inject cached JSON into kernel_ops table
         console.log('§GANTT_CACHE_HIT ops=' + cachedOps.length);
@@ -8883,10 +9021,15 @@
       // HHS_Office_Federated still showing MEP Rough-in starting 20.8d before Architecture finished,
       // §TIER_SERIAL's own witness (which reads the freshly-recomputed _disp, not kernel_ops) could
       // not have caught it. Stamp+check closes the same gap _end_ts's check closes for schema shape.
-      if (_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION)) {
+      // §KERNEL_OPS_SCHED_AGREE (2026-09-12): …and the second question the stamp cannot answer —
+      // do these rows still agree with THIS db's tasks/task_elements? See the long note on
+      // _schedOpsAgreementFail. Computed here so the predicate itself stays pure.
+      var _agreeFail = _schedOpsAgreementFail(app.db, _placeOps);
+      if (_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION, _agreeFail)) {
         try { app.db.run("DELETE FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE'"); } catch(e) {}
         console.log('§KERNEL_OPS_SCHED_VERSION stale genVersion=' + _placeOps[0].parameters._genVersion +
-          ' current=' + _GANTT_CACHE_VERSION + ' — cleared ' + _placeOps.length + ' ops, will re-inject');
+          ' current=' + _GANTT_CACHE_VERSION + ' agreementFail=' + (_agreeFail || 'none') +
+          ' — cleared ' + _placeOps.length + ' ops, will re-inject');
         _placeOps = [];
       }
       if (_placeOps.length) { _ops = _placeOps; _ganttDirty = true; }
