@@ -269,7 +269,211 @@ model bolted on, and an early-2000s script-tag deployment story.
 
 ---
 
-## Re-measure
+## 11. Who argued about this — the named debates
+
+Every choice in this codebase is a position in a fight that real, named people
+have had in public. Knowing the names is the difference between *"that's just how
+it came out"* and *"that's a side, and here's who holds it."*
+
+Nothing here is settled. Both sides are quoted so you can concede a point
+gracefully when a dev has a good one.
+
+---
+
+### 11.1 No build, plain script tags
+
+**For — ship files, skip the toolchain**
+
+- **David Heinemeier Hansson (DHH)** — took Rails off webpack and back to
+  import maps in Rails 7, arguing the build step was accidental complexity that
+  bought little for most apps. Hotwire is the same bet.
+- **Carson Gross** — htmx, and the *Hypermedia Systems* book. Argues the SPA
+  build pipeline was a wrong turn for the majority of applications, and that
+  hypermedia already had the answer.
+- **Alex Russell** (Chrome) — from a different angle: his *Performance
+  Inequality Gap* writing is a long, data-heavy prosecution of framework
+  payload cost on ordinary devices. Not anti-build, but brutal about what the
+  build is buying.
+- **Tom MacWright** — *Second-guessing the modern web* (2020), the essay that
+  crystallised the doubt for a lot of people.
+
+**Against — the toolchain earns its keep**
+
+- **Rich Harris** (Svelte, now Vercel) — *In defense of the modern web* (2021),
+  the direct reply to MacWright. Concedes real bloat, argues the component
+  model and build-time optimisation are genuine wins you cannot hand-roll.
+- The whole **ES-modules-won** consensus — after the AMD/CommonJS/UMD wars,
+  the field standardised on modules precisely to kill implicit load-order
+  coupling.
+
+**Where this codebase sits:** hard on the no-build side, and further out than
+DHH or htmx go — *no import maps either*, just 177 ordered `<script>` tags.
+The honest cost: load order is invisible coupling a bundler would catch at build
+time. The honest benefit: the files you edit are the files that deploy, and the
+thing still runs with zero install.
+
+---
+
+### 11.2 Globals and one god object
+
+**Against — the case is strong and old**
+
+- **Douglas Crockford** — *JavaScript: The Good Parts*. Global variables are
+  the language's worst feature; implicit globals were his standing complaint.
+  The module pattern exists because of this argument.
+- **Miško Hevery** (AngularJS, now Qwik) — *Singletons are Pathological Liars*
+  and *Root Cause of Singletons* on the Google Testing Blog. The sharpest
+  formulation: global state makes a function's real dependencies invisible, so
+  you cannot test it in isolation. This applies to `window.APP` verbatim.
+- **Michael Feathers** — *Working Effectively with Legacy Code*. Global state
+  is the top reason code resists being put under test.
+- **Arthur Riel** — *Object-Oriented Design Heuristics*, where the God Object
+  anti-pattern gets its formal statement.
+
+**For — or at least, the mitigating tradition**
+
+- **Rich Hickey** — *Simple Made Easy* (Strange Loop, 2011). Not a defence of
+  globals, but the relevant reframe: the sin is *complecting*, not visibility.
+  One explicit, inspectable ambient environment can be simpler than a hidden
+  injected graph you cannot follow.
+- The lineage you already know — **Emacs**, **AutoCAD**, and
+  **iDempiere's own `Ctx`** — all ship a large ambient context and are not
+  obviously worse for it in their domain.
+
+**Where this codebase sits:** guilty as charged on testability, and you should
+say so plainly. The defence is that `window.APP` is *greppable* — one `grep` for
+`APP.thing =` finds the provider, where an injected graph would need tooling.
+That is a real trade, not a free pass. Hevery would still win the argument on
+unit-testing; the witness scripts are the compensating control.
+
+---
+
+### 11.3 Op-log as the source of truth
+
+This is your best-defended choice — the pundits are largely **on your side**.
+
+**For**
+
+- **Greg Young** — named and popularised CQRS and Event Sourcing. The canonical
+  source.
+- **Martin Fowler** — the *Event Sourcing* bliki entry (2005) that put it in
+  front of the enterprise world.
+- **Jay Kreps** (Kafka, Confluent) — *The Log: What every software engineer
+  should know about real-time data's unifying abstraction* (2013). The essay
+  that made log-as-truth infrastructure orthodoxy.
+- **Rich Hickey** — Datomic, *Deconstructing the Database* and *The Value of
+  Values*. A database as an accumulating set of facts; a query is a fold at a
+  point in time. Your `kernel_ops` fold is this idea.
+- **Pat Helland** — *Immutability Changes Everything*. The systems-level
+  argument that append-only beats update-in-place once storage is cheap.
+
+**Against — the practitioner backlash**
+
+- **Greg Young himself** has repeatedly warned it is over-applied — most
+  systems do not need it, and teams adopt it for the wrong reasons.
+- **Udi Dahan** — the most prominent nuancer; argues event sourcing is a
+  narrow tool oversold as an architecture.
+- The recurring practitioner genre (*"event sourcing is hard"*): schema
+  evolution of old events, replay cost as the log grows, and the fact that
+  debugging a fold is harder than reading a row.
+
+**Where this codebase sits:** the critics' strongest point — *"you didn't need
+this"* — is answered by your domain, not by theory. A CAD feature tree
+**is** an op-log; undo-as-re-fold is the requirement, not a flourish. When both
+the model and the accounts fold from one log and co-vanish on undo, you are
+using it for the thing it is actually good at.
+
+---
+
+### 11.4 Spec blocks in the source
+
+**Against — the loudest modern voice**
+
+- **Robert C. Martin (Uncle Bob)** — *Clean Code*, comments chapter: "a comment
+  is a failure to express yourself in code." Comments rot, code does not lie.
+  This is a direct, frontal objection to the 559 `DO NOT REMOVE — SPEC` headers.
+
+**For**
+
+- **Donald Knuth** — *Literate Programming* (1984). Programs should be written
+  for humans first, with the prose primary and the code woven through it.
+- **D. Richard Hipp** — SQLite. Long prose headers stating invariants, plus
+  *How SQLite Is Tested* and 100% MC/DC branch coverage. The living proof that
+  prose-plus-obsessive-tests produces some of the most reliable code shipped.
+- **Peter Naur** — *Programming as Theory Building* (1985). The central claim:
+  the program is not the artifact, the **theory in the programmer's head** is;
+  source code is a lossy projection of it. Written-down intent is the only
+  transmission mechanism.
+- **Hillel Wayne** — *Why Don't People Use Formal Methods?* and related
+  writing. Lightweight specs catch design errors tests never reach.
+
+**Where this codebase sits:** Martin's objection has real force — a header that
+drifts from the body is worse than no header. Your answer is structural, and it
+is a good one: each `R1..Rn` rule names a **witness** that fails when the rule
+is violated, so the spec cannot silently rot without a test going red. That
+converts prose into something executable, which is precisely the move Martin's
+critique does not cover.
+
+---
+
+### 11.5 Witnesses instead of a unit-test suite
+
+**For a different kind of test**
+
+- **James Coplien** — *Why Most Unit Testing is Waste*. Most unit tests assert
+  implementation detail and pay no rent; test at the level where behaviour is
+  meaningful.
+- **DHH** — *TDD is dead. Long live testing.* (2014), which triggered the
+  **Is TDD Dead?** conversations with **Kent Beck** and **Martin Fowler** — the
+  most-watched debate in the field on how much and what kind of testing.
+- **John Hughes** — QuickCheck, *Testing the Hard Stuff and Staying Sane*.
+  Property-based testing: state the property, let the machine hunt the
+  counterexample. A witness that proves one named claim is a cousin of this.
+
+**Against**
+
+- **Kent Beck** — the TDD case, argued patiently in that same series: tests
+  drive design, not just verification, and you lose that if tests come after.
+
+**Where this codebase sits:** closer to Coplien and Hughes than to Beck. The
+house rule — *every test must name the issue it proves or disproves* — is the
+Coplien position stated as policy. The gap Beck would point at: witnesses
+verify, but they never got to shape the design, because they are written after.
+
+---
+
+### 11.6 The meta-argument — worse is better
+
+- **Richard P. Gabriel** — *Worse Is Better* (the "New Jersey style" essay).
+  The most-cited framing in the field for why the simpler, less complete,
+  easier-to-ship thing beats the correct and elegant thing in practice. Gabriel
+  spent years arguing with himself in public about whether he was right.
+
+A static-file app with globals and inline SQL that opens in any browser with no
+install is a **New Jersey** artifact, unmistakably. That is a lineage with a
+strong track record — C, Unix, and the web itself — and a well-documented
+failure mode. Know both halves.
+
+---
+
+### 11.7 The one essay to read for your actual situation
+
+**Peter Naur, *Programming as Theory Building* (1985).**
+
+Naur's argument: a program's real value is the **theory** its builders hold —
+why it is shaped this way, which changes are in the spirit of the design and
+which are violence to it. Source code is a lossy projection. A team that loses
+the theory cannot maintain the program even with complete source, which is why
+handing a codebase to fresh developers so often fails.
+
+It is the most precise statement of the position you are in after months of
+generating 19,000 lines a week. **Reading the code recovers the projection;
+the theory is recovered by working with it** — which is exactly why the
+witness-script route in §8 beats reading straight through.
+
+---
+
+## 12. Re-measure
 
 ```bash
 cd ~/bim-ootb
