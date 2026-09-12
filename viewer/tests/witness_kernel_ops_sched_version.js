@@ -76,8 +76,15 @@ function sliceFn(src, name, optional) {
 
 // The version-check clause in _activateAsync must call this EXACT function name — assert wired,
 // not just present, so a future refactor that silently drops the call still fails this witness.
-if (tmSrc.indexOf('_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION)') < 0) {
-  assert(false, 'W-KOS-0 _activateAsync calls _kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION)');
+// §KERNEL_OPS_SCHED_AGREE (2026-09-12) added a THIRD argument — the agreement verdict, computed by
+// _schedOpsAgreementFail and passed IN so this predicate stays pure (no db, no window) and W-KOS-1/2/3
+// below can keep slicing and calling it in a bare vm sandbox. Both halves asserted wired.
+if (tmSrc.indexOf('_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION, _agreeFail)') < 0) {
+  assert(false, 'W-KOS-0 _activateAsync calls _kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION, _agreeFail)');
+  finish();
+}
+if (tmSrc.indexOf('_agreeFail = _schedOpsAgreementFail(app.db, _placeOps)') < 0) {
+  assert(false, 'W-KOS-0a _activateAsync computes the agreement verdict via _schedOpsAgreementFail(app.db, _placeOps)');
   finish();
 }
 const genVersionLine = '_genVersion:_GANTT_CACHE_VERSION';
@@ -127,6 +134,22 @@ assert(stale([{ parameters: { cls: 'IfcSlab', _genVersion: 8 } }], CUR) === true
 assert(stale([{ parameters: { cls: 'IfcSlab', _genVersion: CUR } }], CUR) === false,
   'W-KOS-3 ops correctly stamped _genVersion=' + CUR + ' NOT flagged (no needless regenerate)');
 assert(stale([], CUR) === false, 'W-KOS-3b empty ops array NOT flagged (nothing to invalidate yet)');
+
+// ── W-KOS-3c/3d/3e: §KERNEL_OPS_SCHED_AGREE's third argument ──
+// ISSUE PROVED: Hospital_silent.db's 63,415 ops are stamped _genVersion=39 against
+// _GANTT_CACHE_VERSION=39, so the version clause alone answers "not stale" and a schedule that no
+// longer matches its own tasks/task_elements is adopted forever (13,574 ops with a _task that has no
+// task_elements row; op calendar 233 days outside the task calendar; an 8,899 m² floor held back by
+// §XRAY_STAGING_REMOVED as a result). These three pin the OR, and pin that it costs a correct
+// building nothing.
+assert(stale([{ parameters: { cls: 'IfcSlab', _genVersion: CUR } }], CUR, 'taskLink') === true,
+  'W-KOS-3c correctly-STAMPED ops flagged stale when the agreement verdict says they disagree with the DB');
+assert(stale([{ parameters: { cls: 'IfcSlab', _genVersion: CUR } }], CUR, '') === false,
+  'W-KOS-3d correctly-stamped ops that AGREE are still NOT flagged (an agreeing building pays no regenerate)');
+assert(stale([{ parameters: { cls: 'IfcSlab', _genVersion: CUR } }], CUR) === false,
+  'W-KOS-3e a caller that passes no verdict at all behaves exactly as before (version clause only)');
+assert(stale([{ parameters: { cls: 'IfcSlab', _genVersion: 8 } }], CUR, '') === true,
+  'W-KOS-3f an AGREEING but version-stale table is still flagged — the two clauses are independent');
 
 // ── W-KOS-4: real per-building magnitude, against the live CPM display-authoring path ──
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
