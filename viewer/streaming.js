@@ -2207,7 +2207,7 @@ function setupStreaming(A) {
           // Splits ONLY buckets that were already mixed: a class-pure bucket keys identically before
           // and after, so its draw-call count is unchanged.
           // Positional `key.split('|')` consumers read parts[0..2] — this stays a TRAILING field.
-          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueClasses[el.ifcClass] ? 'M' : '-') + '|' + (el.ifcClass || '');
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueClasses[el.ifcClass] ? 'M' : '-');   // §88.7b REVERTED 2026-09-13 — this term isolated Hospital's ground slab into a 1-slot BatchedMesh, where §XRAY_STAGING_REMOVED's standing hold reached the pixel and the 8,899 m2 floor was never drawn. Restore once PR #1727 fixes the hold itself.
           // §MERGED_GUID: single target selection — merge bucket or batch bucket, never both.
           // Applies to §S280e's low-instance elements too: each is baked individually into the
           // merged buffer with its own index range, so identity survives exactly as for singles.
@@ -2846,7 +2846,7 @@ function setupStreaming(A) {
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
 
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-') + '|' + (ifcClass || '');   // §MEP_COLOR_SURVIVES_PHOTOREAL — see the same bit on the batch key above. §BATCH_BUCKET_CLASS_PAINT (§O): the trailing class term must match the batch key's, or this consolidate pass re-merges what that key split and re-introduces the foreign-class paint.
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-');   // §88.7b REVERTED 2026-09-13 — see the batch key above   // §MEP_COLOR_SURVIVES_PHOTOREAL — see the same bit on the batch key above. §BATCH_BUCKET_CLASS_PAINT (§O): the trailing class term must match the batch key's, or this consolidate pass re-merges what that key split and re-introduces the foreign-class paint.
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
