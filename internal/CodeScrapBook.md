@@ -1012,13 +1012,123 @@ failure in this codebase is not building the wrong thing — it is stopping one
 step after the thing works.** Every row above is a step that was not taken, and
 none of them is hard.
 
-### 16.4 Closed
+### 16.4 More rows
+
+§17.5 adds rows 7-10 (error handling, cache pins, SQL). Row 7 outranks
+everything above it.
+
+### 16.5 Closed
 
 *(empty — move rows here with the closing PR number and date.)*
 
 ---
 
-## 17. Re-measure
+## 17. Five more patterns — the error, cache and SQL layers
+
+> Measured at `719ebb92` over the same **427 production `.js`** files as §15.
+> Observation only; nothing here was changed.
+
+### 17.1 The finding that matters: a `§`-tag can be silenced
+
+**1,639 single-level `catch` blocks** in production code:
+
+| | | |
+|---|---:|---:|
+| **empty — swallow, no log** | **584** | **35.6%** |
+| logged (`console.*`) | 369 | 22.5% |
+| handled / returned | 686 | 41.9% |
+
+584 silent swallows across **107 of 427 files**, concentrated in
+`viewer/time_machine.js` (44), `viewer/cinema_maxq.js` (38),
+`erp/crud_overlay.js` (36), `viewer/navigate_find.js` (22).
+
+That alone is ordinary. This is not:
+
+> **15 `try` blocks that emit a `§`-tag are wrapped in an empty `catch`.**
+
+| tag | site |
+|---|---|
+| `§IFC_WASM_FROM_CACHE` | `import_own.js:267` |
+| `§PLUGIN` | `erp/plugin_release.js:111`, `:115` |
+| `§SYSTEM` | `erp/system_tenant.js:63`, `erp/system_monitor.js:314` |
+| `§TEAMS` | `erp/teams_embed.js:22` |
+
+If the work inside throws before the `console.log`, **the tag never prints and
+nothing records that it didn't.** The log is clean. The grep comes back empty.
+
+This is a direct hit on the project's own standing rule — *prove a fix FIRES,
+grep a real log; "code changed" ≠ "behaviour changed"* — and on the Log Mandate
+(*exit code alone is not evidence; silent failures only appear in the log*). In
+these 15 places **the log is not evidence either**, because the mechanism that
+writes it can fail silently.
+
+A missing tag currently has two indistinguishable meanings: *the path did not
+run*, or *the path ran and threw*. Only the first is what a reader assumes.
+
+### 17.2 `?v=<n>` — the widest undocumented convention
+
+**246 pinned script references** (`foo.js?v=12`). Larger adoption than three of
+the five patterns in §15, and named nowhere.
+
+It is hand-maintained, and §16.1 records the failure it exists to prevent: a
+stale `navigate_find.js?v=57` kept its own copy of the ERP-push block while the
+new wiring never ran. **Editing one of those files means bumping its number**, and
+nothing enforces it — there is no witness for a forgotten bump. Combined with the
+service-worker cache, a missed bump ships old code to returning users while the
+tree looks correct.
+
+### 17.3 SQL construction — and a genuine strength
+
+| | |
+|---|---:|
+| `dbQuery` with a `?` placeholder | 33 |
+| `dbQuery` built by concatenation / `${}` | 103 |
+
+76% interpolated. The obvious worry is the typed natural-language query
+(README: *"type a question in the viewer bar → SQL"*) — user text reaching a
+concatenated statement.
+
+**It does not.** `viewer/nlp.js` (686 lines) is built correctly: user terms go
+into a `params` array behind `?` placeholders, and the `${…}` interpolations are
+*generated fragments* (`LOWER(ifc_class) LIKE LOWER(?)` joined by `OR`), never
+raw input:
+
+```js
+// viewer/nlp.js:59
+if (syns) return { sql: syns.map(() => `LOWER(ifc_class) LIKE LOWER(?)`).join(' OR '),
+                   params: syns.map(t => `%${t}%`) };
+```
+
+The remaining 103 interpolate internally-derived values — class names, building
+names already read from the DB. **The one path carrying external input is the one
+that is parameterised.** Worth recording as deliberate, not luck.
+
+### 17.4 Two idioms that are not patterns
+
+Named here so nobody mistakes them for house style:
+
+- **"Honest no-op" / degrade-visibly** — `§ERP_PUSH_MODULE_ABSENT`, the
+  "honest-disabled" Rule pill. A good idea: a missing dependency makes its
+  surface inert *and says so*, rather than half-working. **10 files.** Same shape
+  as §15 — well conceived, barely applied.
+- **Idempotent init guard** (`if (A._xLoaded) return;`) — **3 of 426 files.**
+  Not a convention; noise. Given three boot owners (§16.1), its absence is worth
+  a thought rather than a rollout.
+
+### 17.5 Register additions
+
+Added to §16.2, unactioned:
+
+| # | observation | recommendation |
+|---|---|---|
+| 7 | **15 `§`-tags inside empty catches** — the log can be silently wrong | **Highest priority of anything found.** Not a sweep: these 15 undermine the evidence rule every other finding is verified with. Smallest honest fix is `catch (e) { console.warn('§TAG_FAILED', e); }` so absence and failure stop looking alike. |
+| 8 | **584 empty catches (35.6%)** in 107 files | Do **not** sweep. Triage the 4 concentrations only — `time_machine.js`, `cinema_maxq.js`, `crud_overlay.js`, `navigate_find.js` are 140 of the 584. |
+| 9 | **246 `?v=` refs, hand-maintained, unenforced** | A witness could compare each `?v=` against the file's last-changed commit and fail on a stale pin. Closes a known shipping hazard. |
+| 10 | **`nlp.js` parameterisation is a strength with no test** | One witness asserting user text never reaches `sql`, only `params`, would lock in the good behaviour before someone "simplifies" it. |
+
+---
+
+## 18. Re-measure
 
 ```bash
 cd ~/bim-ootb
