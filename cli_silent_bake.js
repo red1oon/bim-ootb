@@ -33,7 +33,28 @@
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http');
 const { execFileSync } = require('child_process');
-const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
+// ⚠ puppeteer is RESOLVED, not hardcoded. This line used to read
+//   require('/home/red1/bim-compiler/node_modules/puppeteer')
+// — an absolute path carrying one developer's username, in the very file the usage block above
+// tells every user to run. It failed for everyone else with a MODULE_NOT_FOUND naming a home
+// directory they do not have. puppeteer is a HEAVY optional dep (it ships a browser), so it is
+// deliberately NOT in package.json: resolve it, and if it is genuinely absent say what to install
+// instead of dying on someone else's path.
+const puppeteer = (function () {
+  const tried = [];
+  for (const id of [process.env.PUPPETEER_PATH,
+                    'puppeteer',
+                    path.join(process.env.HOME || '', 'bim-compiler', 'node_modules', 'puppeteer')]) {
+    if (!id) continue;
+    tried.push(id);
+    try { return require(id); } catch (e) { /* next */ }
+  }
+  console.error('§CLI_BAKE_NO_PUPPETEER could not load puppeteer. Tried: ' + tried.join(', '));
+  console.error('  This script drives a real headless browser, so puppeteer is required.');
+  console.error('  Fix: `npm install puppeteer` in the repo root, or set PUPPETEER_PATH=/abs/path.');
+  console.error('  (The in-BROWSER bake needs none of this — open index.html and bake from the viewer.)');
+  process.exit(1);
+})();
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);

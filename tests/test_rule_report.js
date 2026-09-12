@@ -11,7 +11,7 @@
  */
 'use strict';
 const fs = require('fs'), path = require('path');
-const initSqlJs = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'sql.js'));
+const initSqlJs = require('./_sqljs.js').requireSqlJs();   // §SQLJS_MISSING: local dep first, sibling checkout second — never a bare MODULE_NOT_FOUND
 const RuleReport = require('../viewer/rule_report.js');
 const StructuralSanity = require('../viewer/structural_sanity.js');
 const EgressSanity = require('../viewer/egress_sanity.js');
