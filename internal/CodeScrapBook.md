@@ -557,10 +557,22 @@ pieces defend each other:
 |---|---|
 | no build step | is *why* it installs nowhere and runs offline — the product thesis |
 | 235 globals | the price of no build; made greppable by one naming convention |
-| `window.APP` god object | survivable because state is **replayable** from the op-log, not scattered |
+| `window.APP` god object | **nothing covers it — checked, 2026-09-12.** See the note below. |
 | no type system | covered by 602 witnesses that fail on a violated rule |
 | 1,684 unnavigable files | covered by 559 spec headers that answer before you open the body |
 | inline SQL | the schema *is* the model; no ORM layer to drift from it |
+
+> **One row of that table failed its own test, and it is left in as the example.**
+> The first draft claimed `window.APP` was "survivable because state is
+> replayable from the op-log." Checked at `719ebb92`: the op-log is real and the
+> viewer does use it — `kernel_ops` is referenced in **30** `viewer/*.js` files,
+> and `viewer/kernel_ops.js` is a genuine hash-chained transactional write path.
+> But it covers **authored geometry ops**, not `APP`. `window.APP` is created
+> once at `viewer/main.js:10` and mutated in place forever — there is no
+> rebuild, no re-fold, no reset anywhere in the tree. Its 165 fields — camera,
+> controls, composer, panels, highlights — are ordinary unprotected mutable
+> state. Hevery's objection (§11.2) stands undefended on this row. The interlock
+> is real for five rows; the sixth was narration.
 
 - **David Parnas** — *On the Criteria To Be Used in Decomposing Systems into
   Modules* (1972). The foundational point: modularity is about what a part
