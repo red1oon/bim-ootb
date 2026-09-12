@@ -1741,6 +1741,43 @@
             if (_dayInfo) _dayInfo.pos = _dayPos;
           }
           var _ggO = _ghostGroundAt(_bkT, _filmSecFull, _bkState, _bkMs);   // §CPE_CLIP_BUILDUP_FILM_T — same class: the fade is in FILM seconds
+          // ══ §CPE_BUILDUP_PLACED (MEP_CLASH_REVEAL_MOVIE.md §88.3/§88.6e) ═══════════════════════
+          // The frame number lives HERE; what is actually on screen for a watched guid lives in the
+          // Time Machine's traverse. This is the seam. Read every frame (so no state change is
+          // missed between two §CPE_BUILDUP samples 60 frames apart) but LOG only on change — a
+          // 4,699-frame Hospital bake costs a handful of lines, not 4,699 × |watch|.
+          if (typeof window.tmWatchState === 'function') {
+            var _bdNow = window.tmWatchState();
+            if (_bdNow) {
+              if (!A._bdSeenLast) A._bdSeenLast = {};
+              for (var _bdG in _bdNow) {
+                var _bdS = _bdNow[_bdG];
+                var _bdK = _bdS.op + '|' + _bdS.mesh + '|' + _bdS.visible + '|' + _bdS.host + '|' + _bdS.y;
+                if (A._bdSeenLast[_bdG] === _bdK) continue;
+                A._bdSeenLast[_bdG] = _bdK;
+                console.log('§CPE_BUILDUP_PLACED frame=' + i + '/' + nFrames + ' guid=' + _bdG +
+                  ' cls=' + _bdS.cls + ' storey="' + _bdS.storey + '"' +
+                  ' op=' + _bdS.op + ' mesh=' + _bdS.mesh + ' visible=' + _bdS.visible +
+                  ' host=' + _bdS.host + ' y=' + _bdS.y +
+                  ' groundY=' + (A.ground ? A.ground.position.y.toFixed(3) : 'n/a') +
+                  (_ggO == null ? '' : ' groundOpacity=' + _ggO.toFixed(3)) +
+                  (_bdS.mesh === 'MISSING' ? ' — scheduled, but NO mesh in the scene carries this guid'
+                   : _bdS.visible ? ' — drawn' : ' — mesh exists, left hidden'));
+              }
+              if (!A._bdEverDrawn) A._bdEverDrawn = {};
+              for (var _bdG2 in _bdNow) if (_bdNow[_bdG2].visible) A._bdEverDrawn[_bdG2] = i;
+              // §88.5's "what DONE looks like": one line a grep can settle the question on.
+              if (i === nFrames - 1) {
+                var _bdAll = Object.keys(_bdNow), _bdNever = [];
+                for (var _bdI = 0; _bdI < _bdAll.length; _bdI++)
+                  if (A._bdEverDrawn[_bdAll[_bdI]] === undefined)
+                    _bdNever.push(_bdAll[_bdI] + '(' + _bdNow[_bdAll[_bdI]].storey + ',' + _bdNow[_bdAll[_bdI]].mesh + ')');
+                console.log('§CPE_BUILDUP_PLACED_SUMMARY watched=' + _bdAll.length +
+                  ' drawn=' + (_bdAll.length - _bdNever.length) +
+                  ' neverDrawn=' + (_bdNever.length ? '[' + _bdNever.join(' ') + ']' : 'none'));
+              }
+            }
+          }
           if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
             if (_dayInfo) console.log('§CPE_DAY_COUNTER frame=' + i + ' day=' + _dayInfo.day +
               ' of=' + _dayInfo.totalDays + ' pos=' + _dayInfo.pos + ' cursor=' + Math.round(_bkMs));
