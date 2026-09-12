@@ -473,7 +473,184 @@ witness-script route in §8 beats reading straight through.
 
 ---
 
-## 12. Re-measure
+## 12. The sum, not the units — and who has argued it
+
+> A working belief of this project, stated plainly: **a design is only as good as
+> its sum, not its units — like chess.** §11 judged each choice on its own and
+> most of them lost. This section is the rebuttal, the limits of the rebuttal,
+> and a test that can settle it.
+
+---
+
+### 13.1 The claim, and who states it best
+
+- **Fred Brooks** — *The Mythical Man-Month* (1975). The strongest single
+  statement in software: **"conceptual integrity is the most important
+  consideration in system design."** And the corollary that matters here — it is
+  better for a system to omit good features and reflect *one* set of design
+  ideas than to contain many good but uncoordinated ones. Coherence beats
+  a higher-scoring parts list.
+- **Russell Ackoff** — a system is never the sum of its parts; it is the
+  **product of their interactions**. His thought experiment is the cleanest
+  version: take the best engine, the best transmission, the best brakes from
+  different cars and assemble them — you do not get the best car. You do not get
+  a car at all.
+- **Donella Meadows** — *Thinking in Systems: A Primer* (2008) and *Leverage
+  Points: Places to Intervene in a System* (1999). Structure generates
+  behaviour; you cannot predict a system's behaviour by inspecting its
+  components, and the highest-leverage interventions are almost never the
+  obvious local ones.
+- **Christopher Alexander** — *A Pattern Language* (1977), *The Timeless Way of
+  Building* (1979), *The Nature of Order* (2002–04). A pattern has no meaning
+  outside its context, and in *Nature of Order* he argues **the whole is prior
+  to the parts** — centers get their life from the wholes they sit in. Doubly
+  relevant here: he was a building architect, and he is the direct ancestor of
+  the software patterns movement. At his OOPSLA 1996 keynote he told that
+  movement, to its face, that it had taken his catalogue and left his point.
+- **John Gall** — *Systemantics* (1975). **Gall's Law:** "A complex system that
+  works is invariably found to have evolved from a simple system that worked. A
+  complex system designed from scratch never works and cannot be patched up to
+  make it work." Coherence is grown, not assembled.
+- **Aristotle**, *Metaphysics* — usually quoted as "the whole is greater than
+  the sum of its parts," which he did not write. The actual claim is sharper:
+  the whole is something **over and above** its parts — a different kind of
+  thing, not a bigger pile.
+
+---
+
+### 13.2 The chess version — and the real debate behind it
+
+The analogy is not decorative. Chess had this exact argument, between two named
+players, and the holistic side won.
+
+- **Siegbert Tarrasch** — the great dogmatist. Rules stated absolutely: knights
+  before bishops, never this pawn structure, the pieces belong *here*. Judge the
+  unit, and the position follows.
+- **Aron Nimzowitsch** — *My System* (1925). Attacked Tarrasch head-on and won
+  the argument. The **bad bishop** is the crux: a bishop is not bad by nature,
+  it is bad **because your own pawns block its diagonals**. Change the pawns and
+  the same piece is strong. Value is positional, never intrinsic. Prophylaxis
+  and overprotection are the same idea — moves that are pointless as units and
+  decisive in relation.
+- **Wilhelm Steinitz** — accumulation theory. Small advantages, none of them
+  individually winning, sum into a won position; and you may only attack when
+  the position has already earned it.
+- **Richard Réti** — *Modern Ideas in Chess* (1922). The hypermodern turn:
+  control the centre from a distance. A square's value is entirely relational.
+- **AlphaZero** — the modern empirical confirmation, documented in
+  **Matthew Sadler & Natasha Regan, *Game Changer*** (2019). Trained without
+  hand-coded piece values, it routinely gives up material for long-term
+  positional compensation that classical engines scored as simply losing. The
+  strongest player ever built does not believe in intrinsic unit value.
+
+**Tarrasch is Uncle Bob. Nimzowitsch is Hickey.** The §11 debates are this
+debate, run again on different material.
+
+---
+
+### 13.3 Why the frame fits this codebase
+
+Read §11 as a parts list and every line is a loss. Read it as a position and the
+pieces defend each other:
+
+| the "weak" unit | what covers it |
+|---|---|
+| no build step | is *why* it installs nowhere and runs offline — the product thesis |
+| 235 globals | the price of no build; made greppable by one naming convention |
+| `window.APP` god object | survivable because state is **replayable** from the op-log, not scattered |
+| no type system | covered by 602 witnesses that fail on a violated rule |
+| 1,684 unnavigable files | covered by 559 spec headers that answer before you open the body |
+| inline SQL | the schema *is* the model; no ORM layer to drift from it |
+
+- **David Parnas** — *On the Criteria To Be Used in Decomposing Systems into
+  Modules* (1972). The foundational point: modularity is about what a part
+  **hides from** the others. Quality lives in the relations, not the units.
+- **Rich Hickey** — *Simple Made Easy* (2011). **Complecting** — braiding
+  together — is the sin; simplicity is a property of how things relate, not of
+  how small they are.
+- **Melvin Conway** — *How Do Committees Invent?* (1968). One author, one
+  theory, one uniform shape. Conway's Law predicts this codebase's coherence
+  from its org chart of one.
+
+---
+
+### 13.4 Where the chess analogy breaks
+
+Two ways, and the second is the one to worry about.
+
+1. **Chess resets. Software never does.** Every game starts from the same
+   position; software inherits its position permanently, and mistakes compound
+   instead of clearing. **Ward Cunningham**, who coined *technical debt* (OOPSLA
+   1992), was explicit that the debt is the gap between your current
+   understanding and what the code says — which is exactly the gap that months
+   of generated code opens.
+2. **Chess terminates. Software does not.** **James P. Carse**, *Finite and
+   Infinite Games* (1986): a finite game is played to win, an infinite game to
+   continue play. There is no checkmate here, so "good design" cannot mean a
+   winning evaluation. It can only mean **the position keeps absorbing moves** —
+   a harsher test than elegance, and the right one.
+
+---
+
+### 13.5 Where holism does not save you
+
+The belief has a failure mode: it can absorb any criticism. Some defects are
+absolute, and no coherence redeems them.
+
+- **Saltzer & Schroeder** — *The Protection of Information in Computer Systems*
+  (1975), and **Bruce Schneier** after them: security is a chain, and a chain is
+  exactly as strong as its weakest link. No amount of positional compensation
+  fixes one broken link.
+- **Tony Hoare** — introduced the null reference in 1965 and later called it his
+  **"billion-dollar mistake."** One local decision, unbounded systemic cost.
+  See also his Turing lecture, *The Emperor's Old Clothes* (1980).
+- **Nancy Leveson** — *Engineering a Safer World* (2011) and the definitive
+  **Therac-25** analysis. Her finding cuts *both* ways and is the honest
+  position: serious accidents usually come from unsafe **interactions** among
+  components that never individually failed — but Therac-25 still killed people,
+  and a local defect was still in the chain.
+
+**In chess terms:** a bad bishop is positional and arguable. A hung queen is
+not. Hevery's testability complaint against `window.APP` (§11.2) is a bad
+bishop. **A rule that fires wrong with no witness to catch it is a hung queen** —
+and this project's own standing rules exist precisely to keep those off the
+board.
+
+---
+
+### 13.6 The test that settles it
+
+The claim is only worth holding if it can be wrong. **Karl Popper** — a
+proposition that explains every outcome explains nothing.
+
+So make it falsifiable. **Take one piece off the board and see what collapses.**
+
+> Add a bundler tomorrow.
+> - *"A lot breaks, because the load order encodes real initialization
+>   knowledge"* → the interlock is real, the piece was load-bearing, the
+>   position is a position.
+> - *"Nothing breaks, it would just be better"* → that piece was habit, not
+>   design, and the coherence was narrated after the fact.
+
+Run it on all six rows of the §12.3 table. Whatever survives is the actual
+design; the rest is sediment.
+
+The warning attached to this, and it is a sharp one:
+
+- **Parnas & Clements** — *A Rational Design Process: How and Why to Fake It*
+  (1986). Their observation is that no real system is ever designed by the
+  rational process we describe afterward — **the coherent rationale is
+  reconstructed once you already know how it turned out.** That is precisely the
+  risk in "a design is only as good as its sum." The removal test is what keeps
+  the claim honest, because sediment cannot survive it and structure can.
+
+**Related:** §11.7 — Naur's *theory* is the whole this section is arguing for.
+The sum *is* the theory. Losing it is how a codebase with complete source
+becomes unmaintainable.
+
+---
+
+## 13. Re-measure
 
 ```bash
 cd ~/bim-ootb
