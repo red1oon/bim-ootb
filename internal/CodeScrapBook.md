@@ -935,7 +935,90 @@ finishing, not designing.*
 
 ---
 
-## 16. Re-measure
+## 16. Open observations — found, not actioned
+
+> **Nothing in this section has been changed.** These are findings awaiting a
+> decision. Measured at `719ebb92`, 2026-09-12. When one is closed, move it to
+> the log at the end with the PR that closed it.
+>
+> House rule this section exists to serve: *observe and document; the fix is a
+> separate decision.*
+
+### 16.1 Two corrections to this document, found while compiling the register
+
+**§1 is incomplete. There is a third boot mechanism.** §1 says the 177
+`<script>` tags in `viewer.html` are the dependency graph. They are not the whole
+story — `viewer/main.js:185-213` lazy-loads six more modules at runtime,
+sequentially, on first use:
+
+```
+find_erp_push.js?v=1 → navigate_find.js?v=58 → navigate_grid.js?v=1
+→ navigate_path.js?v=1 → navigate_engine.js?v=1 → navigate_controls.js?v=2
+→ navigate.js?v=10      … then setupNavigate(APP), §NAVIGATE_LAZY_LOADED (§S239)
+```
+
+Consequences a newcomer will hit:
+- `grep 'navigate_controls' viewer/viewer.html` returns **nothing**. The file is
+  live, loaded from JS, and looks dead to the obvious check.
+- The `?v=` suffixes are **hand-maintained cache-bust versions**, and the
+  comment at `main.js:189` records why: a stale `navigate_find.js?v=57` kept its
+  own copy of the ERP-push block while the new wiring never ran. Bumping that
+  number is part of editing those files. This is an undocumented convention with
+  a known failure mode.
+
+**The "9 unaccounted `setupX`" was a false alarm — but it found a real one.**
+45 `setupX` functions exist, 36 are named in `main.js`. The other 9 resolve:
+
+| function | initialised by |
+|---|---|
+| `setupClashFilm`, `setupClashLabels`, `setupClashMatrix`, `setupClashNarrow`, `setupClashReporter`, `setupClashSnag` | **`viewer/measure.js`** |
+| `setupEffects`, `setupGIPoc` | `viewer/scene.js` |
+| `setupPointerLock` | itself, `navigate_controls.js:57` (file-local, not a module entry) |
+
+None is dead. But **the boot sequence has three owners, not one** — `main.js`,
+`scene.js`, and `measure.js` (which initialises the entire six-module clash
+subsystem, something its name gives no hint of). §1 and §2 should say so.
+
+---
+
+### 16.2 The register
+
+Ordered by recommended sequence, not severity.
+
+| # | observation | evidence | recommendation |
+|---|---|---|---|
+| 1 | **3 spec blocks cite a witness that does not exist** | `erp/tests/poc_preview_demo.js` → `w_demo.js`; `erp/tests/earn_gw_hospital_actual.js` → `w_hospital_actual.js`; `erp/tests/fixtures/build_preview_demo.js` → `w_demo.js` | **Do first.** Smallest possible unit, and it is the only case in the tree where the spec convention is actively lying. Either write the witness or drop the citation. 98% integrity (§15.3) becomes 100%. |
+| 2 | **Document the three boot owners and the lazy loader** | §16.1 above | **Do second.** Pure documentation, zero risk, and it removes the single most likely wrong conclusion a newcomer can reach ("this file is dead"). |
+| 3 | **36 production phantom fields** — read, never written under any spelling | full list in `internal/APP_SURFACE.md`; e.g. `APP._walkMode`, `viewer/panels.js:1358`, read once, assigned nowhere | Triage, do not bulk-delete. Each is either a dead guard (remove the branch) or a writer that was deleted (restore it — that one is a live bug). Sort into those two piles before touching anything. |
+| 4 | **`A` → `APP` rename** | 63 production files bind `A`; 979 fields invisible to an `APP.` grep (§14) | Agreed in principle. Per module, as the reading exercise, starting with `viewer/scene.js` (606 sites, and where `APP.camera` is born). Reuse the `BINDS_A` gate from `scripts/gen_app_surface.js`. Verify with the index: field and phantom counts must be **identical** before and after a pure rename. |
+| 5 | **`redControl` adoption: 43 of 545 witnesses (8%)** | `witness_kit/contract.js`; the tree's own `WITNESS_CONTRACT_AUDIT.md §RESULTS` (2026-08-24) already found 12+ files omitting the summary line | Highest value, highest cost (§15.5). Do not sweep. Convert a witness when you next touch the thing it guards. Track the ratio with the §17 block as the health metric. |
+| 6 | **`gen_app_surface.js` is regex-based; the string case is still open** | R8 closed self-indexing, R9 closed comments (30 entries). A string literal containing `A.foo =` would still index as a write. Not observed in the tree — **not searched for either** | Either search for it and close the register entry, or swap the scanner to an `acorn` AST walk (~20 lines) which closes R5/R8/R9 and this by construction. The R-rule list is evidence the regex approach keeps finding new leaks. |
+
+---
+
+### 16.3 What the register is really tracking
+
+Items 1, 3, 5 and 6 are the same shape: **an instance was fixed and the class was
+left open.**
+
+- R8 patched the tool indexing itself; the comment case (R9, 30 entries) stayed
+  open until someone asked a second question.
+- The witness-citation convention holds at 98% — the 2% are not decay, they are
+  three files that never got finished.
+- `redControl` was designed, proven, adopted 43 times, and stopped.
+
+That is §15.3 stated as a work queue rather than a finding. **The recurring
+failure in this codebase is not building the wrong thing — it is stopping one
+step after the thing works.** Every row above is a step that was not taken, and
+none of them is hard.
+
+### 16.4 Closed
+
+*(empty — move rows here with the closing PR number and date.)*
+
+---
+
+## 17. Re-measure
 
 ```bash
 cd ~/bim-ootb
