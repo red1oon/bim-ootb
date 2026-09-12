@@ -331,3 +331,196 @@ Whitebox §-log first (`§STRUCT_SANITY rule=<name> severity=<n>`). `node --chec
 edited JS. Worktree `feat/structural-sanity` off fresh origin/main. Witness each rule with
 a fixture assertion (exact severity), not the exit code. No live-panel screenshot claim
 without an actual browser run (`run` skill) against a real building DB.
+
+## T8 §RULE_REPORT — the findings WITHOUT the film, and a Report button on both panels
+**Spec origin: `bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §87` (2026-09-12), authored by
+the movie-bake session off its own measured bake logs.** Restated here because the
+implementation lands in THIS repo; §87 is the authority on rationale, this section on contract.
+
+**T8.1 THE MEASURED CASE.** From that session's bakes: Terminal knows all 205 findings at
+**+42s** and finishes the film at +1,194s (3.5% analysis); Hospital knows all 509 at **+101.3s**
+and finishes at ~+6,000s (1.7%). Of Hospital's 101.3s, **71.3s is model load** (`§CLI_BAKE_LOADED`)
+and ~29s is cinema path planning + render staging a report does not need. The rules themselves
+cost about a second. `cli_silent_bake.js` had `--opening-only` but nothing that stops at the
+knowing.
+
+**T8.2 ONE PURE BUILDER, THREE SURFACES.** `viewer/rule_report.js` exports
+`buildRuleReport({ rowsS, rowsE, ruleDefs, meta })` → a plain object. No DOM, no THREE, no
+camera, no `plan` — same portability contract as `viewer/structural_sanity.js`. Surfaces:
+
+| surface | how it gets there | in this repo? |
+|---|---|---|
+| CLI | `cli_silent_bake.js --findings-only` → writes `<out>.json`, exits before the first frame | ✅ this PR |
+| Sanity/Egress panels | a **Report** button → the same object → Blob download | ✅ this PR |
+| the film's closing card | `rule_findings_film.js` `_stats` reads the SAME builder | ⛔ that file is on `feat/rule-findings-film`, not on main — wired by that session when it merges |
+
+All surfaces must be unable to disagree about one building. This is the lesson of `0.75` m/step
+being written twice across two branches, applied BEFORE the drift rather than after.
+
+**T8.3 ⚠ THE REPORT MUST NOT RIDE `A.ruleFindingsFilmBuild`.** That function needs a `plan`
+(§77.3's dwell precompute calls `plan.poseAt`), `A.showRuleModeTint`, and later a camera —
+everything findings-only exists to skip. Call `StructuralSanity.evaluate(dbQuery, rules)` and
+`EgressSanity.evaluate(dbQuery, rules)` DIRECTLY, the same evaluators the panels already share.
+RoomGraph still loads, because egress genuinely needs it.
+
+**T8.4 WHAT IS IN IT — only what already exists, nothing composed.**
+- **Provenance**: db name, commit, sw `CACHE_VERSION`, ISO timestamp, and **`rulesSource` per
+  rule file: `fetched` | `fallback` | `unknown`.** The panels already draw that distinction
+  (`§STRUCT_RULES_JSON loaded=json|fallback`); a report that hid it would present this repo's
+  hardcoded fallback thresholds as the project's authored ones.
+- **Per-rule set totals** — the same grouping the panel headers and the film boxes state.
+- **Per-finding rows**: `guid, ifc_class, name, shortName, storey, rule, severity` and the value
+  as `{ value, unit }` — **never a bare `ratio`**, which is metres for `door_clear_width` /
+  `circulation_distance` and a dimensionless ratio for `span_depth_*`.
+- **Egress stats**: `maxExitDistM`, `maxExitSteps`, carrying the `~` estimate disclosure and the
+  `0.75 m/step` assumption as a named field, read from `rule_checklist.js`'s own
+  `longestExitSteps()` — not a second copy of the arithmetic.
+- **Room-graph facts**: `exits`, `noRaster`, `doors` from `§ROOM_GRAPH_EXITS`. `buildGraph` is
+  called by `egress_sanity.js` with its log SILENCED, so the builder cannot see that line; the
+  CALLER captures it and passes it in `meta.roomGraph`. Absent → `null` with a stated reason,
+  never a fabricated 0.
+
+**T8.5 A ZERO IS A RESULT HERE — a deliberate divergence from the film, stated so nobody
+"fixes" it.** The film drops a vacuous card ("never a fabricated zero"). A report lists a rule
+with **0 findings explicitly**: "we checked `door_clear_width` and found none" is information on
+a page and noise on a moving card. Same data, different surface, different right answer. The
+builder therefore needs `ruleDefs` — the rule NAMES it was asked to check — not just the rows.
+
+**T8.6 DETERMINISM IS THE POINT.** Same DB → byte-identical JSON but for the timestamp. That is
+what makes it diffable across builds and across rule changes, which is the actual disruption:
+today sharpening any of the eight rules costs a full bake to see on a real model.
+
+**T8.7 FORMAT.** One JSON object. CLI writes `<out>.json`; the panel downloads the same bytes
+through the convention already in the tree (`variation_order.js` ~267: Blob → `a.download` →
+`URL.revokeObjectURL`, plus a `§`-tagged console line). NOT xlsx now — `exceljs` is already here
+for Variation Orders and can layer on the same builder later.
+
+**T8.8 THE PIN.** `_buildRuleChecklistHtml(config)` is a GENERIC chassis already rendering a
+button row ("All" + one per `config.categories`) and a Close button; both `A.showStructuralSanity`
+and `A.showEgressSanity` call it with their own config. **The Report button joins that row, once**
+— not per panel — so a third rule panel added later inherits it for free. It reports what the
+panel is currently showing (`config.rows`), so an applied category filter is honoured rather than
+silently ignored.
+
+**T8.9 TESTS (R-series), `tests/test_rule_report.js`.**
+- **R1 PURE** — the builder runs in Node with no DOM/THREE/camera/plan. Fails any version that
+  reaches for film state.
+- **R2 SAME-NUMBERS** — builder per-rule totals equal a direct count over the same rows. (§87's
+  own R2 compares against `ruleFindingsFilm.stats()`; that file is not on main — the film session
+  adds that half on its branch. Stated, not silently dropped.)
+- **R3 ZERO-IS-LISTED** — a rule in `ruleDefs` with 0 rows appears with `count: 0`.
+- **R4 PROVENANCE** — `rulesSource: 'fallback'` survives into the report; a missing source reads
+  `unknown`, never `fetched`.
+- **R5 UNIT-NOT-BARE** — `door_clear_width` reports `unit: 'm'` and `span_depth_steel` reports
+  `unit: 'ratio'`. The overloaded `ratio` field never printed bare.
+- **R6 DETERMINISTIC** — the same rows twice give identical JSON but for the timestamp.
+- **R7 NO-FILM-DEPS** — a real `--findings-only` run emits no `§MAXQ_*` line and no frames. Grep
+  the log; exit code is not evidence.
+- **R8 REAL-BUILDING** — the builder over real `buildings/Hospital_meta.db` reproduces the
+  evaluators' own `§`-logged counts.
+
+**T8.10 OPEN, NOT SOLVED BY THIS — THE LOAD.** 71.3s of Hospital's 101.3s is model load and the
+report cannot go below it. Findings-only makes that the WHOLE cost instead of 1.7% of it, which
+is what makes it worth attacking next; measure peak RSS across the load phase before changing
+anything.
+
+**T8.11 §RULE_SUFFICIENCY — the report reviews ITS OWN INPUT DATA, not just the findings.**
+*(User directive, 2026-09-12: "use it to do the review of data sufficiency also." Added to T8
+because a findings file that does not say what it could not see invites the reader to treat a
+metadata gap as a structural defect.)*
+
+Measured on the bake DBs this session, by running the shipped evaluators in Node against
+`buildings/{Hospital,Terminal,HHS_Office_Federated}_silent.db` — the gaps are not hypothetical:
+- `Terminal` and `HHS_Office_Federated` contain **0 `IfcFooting`**. HHS flags **131/131** of its
+  Level 1 columns on `column_continuity`, 61% of that building's entire finding count. Terminal
+  flags 108/158, of which its two ground storeys are 30/30 and 56/56.
+- Terminal has **0 `IfcWallStandardCase`** (all 333 walls are `IfcWall`) and 705 `IfcSlab`;
+  neither class is in `COL_SUPPORT_CLASSES`, so a Terminal column can only be supported by
+  another column.
+- `SUPPORT_CLASSES` omits `IfcWall`. Of Hospital's 217 `span_depth_cantilever` findings — 43% of
+  that building's 509 — **not one has a genuinely free end**: 121 sit on an `IfcWall`, 41 on an
+  `IfcWallStandardCase` just outside the 0.15 m tolerance, 33 on an `IfcStair`. No Hospital beam
+  is named "cantilever" anywhere; `isCantilever` is `supportedCount === 1`, an inference, and it
+  PREEMPTS material classification. All 217 are named steel sections and 113 of them would be
+  clean under `span_depth_steel`'s own 24/30.
+- All 1970 Hospital beams and 604 Hospital columns have `material_name` NULL; HHS columns carry
+  `"≈ White"`, a colour. The steel/concrete split therefore runs on `name_hints` alone.
+- `IfcSpace` count in `elements_meta` is **0 in all three buildings**. Every room-rule finding
+  sits on a synthesized room, and the injection labels its own confidence in the NAME — `≈`
+  approximate, `⚠` suspect. Neither evaluator reads that sigil.
+
+**The contract.** `RuleReport.runSufficiencyProbes(dbQuery)` executes a fixed list of probes over
+the SAME `dbQuery(sql, params) -> rows` contract the evaluators use — portable, no DOM, no new
+table. Each probe returns `{ check, rules, measured, verdict, consequence }` where:
+- `measured` is a real count from a real query. Never a guess; a probe whose table/column is
+  missing returns `verdict: 'unavailable'` with the error, never a 0 that would read as a finding.
+- `verdict` is `ok` | `degraded` | `absent` | `unavailable`, DERIVED from the count by a stated
+  threshold in the probe itself — not an opinion typed into the report.
+- `consequence` names which rule reads which way when the datum is missing, in plain words.
+
+**Flag-rate is part of sufficiency, not a separate idea.** A rule that fires on ~90% of its
+population is not discriminating on that building (HHS `circulation_distance` 68/76; Hospital's
+own `Hospital_meta.db` 135/149). The report states `flagged/population` per rule as a measured
+ratio and says nothing more about it — the number is the argument.
+
+**The report never downgrades a finding.** Sufficiency sits beside the findings, never edits or
+suppresses them: the rules said what they said. The reader decides.
+
+**Tests (extending T8.9):**
+- **R9 PROBES-MEASURED** — every probe's `measured` traces to a query actually run; a probe over
+  a DB missing the table reports `unavailable`, not `ok` and not `0`.
+- **R10 GAP-IS-CAUGHT** — a fixture with 0 `IfcFooting` and columns at the lowest storey yields
+  `verdict: 'absent'` on the footing probe. Fails a version that stays silent on the gap that
+  produced 131/131 on a real building.
+- **R11 FINDINGS-UNTOUCHED** — the finding rows and per-rule totals are byte-identical with and
+  without the sufficiency section. Proves it annotates rather than filters.
+
+**T8.12 §STRUCT_WITNESS / §EGRESS_WITNESS — a finding must be able to show its own working.**
+*(User directive, 2026-09-12: "so that users can inspect how truthful the output is based on what
+assumptions, will right away eye ball that so called isolated rooms are actually not so etc. In
+this case, you can harden WITNESS logging to debug if so.")*
+
+T8.11 reviews the DB. This reviews the ROW. A finding's evidence is frequently an ABSENCE — "no
+support found", "no path found" — and an absence is precisely what a bare row cannot show. The
+reader cannot tell *nothing is there* from *something is there that this rule cannot count*.
+
+**Opt-in, default OFF.** `evaluate(dbQuery, rules, { witness: true })`. Off, nothing changes and
+nothing is paid. On, `structural_sanity.js` runs ONE extra query for every element with a
+transform — every class, every discipline, the candidates the rules deliberately do not consult —
+and `egress_sanity.js` indexes the room graph's own edges once. Measured cost: Hospital 1.4 s,
+Terminal 0.56 s, HHS 0.08 s.
+
+**⚠ ADDITIVE OR NOTHING.** The witness explains a finding; it must never create, drop or move one.
+R12 asserts `guid|rule|severity|ratio` is identical with witness on and off, on the real
+Hospital_meta.db (488 structural + 142 egress rows, unchanged). A witness pass that quietly
+widened a tolerance would change counts *and* agree with itself — that is the trap.
+
+**What each rule shows, and what it settles.** Measured on real data, not designed in the abstract:
+- `isolated_room` → `graphDegree`, `neighbours[]` (with the edge kind and door name), and
+  `storeyHasCirculationNode`. Hospital's 7 isolated rooms are all `graphDegree: 0` with
+  `storeyHasCirculationNode: false` — the graph never connected them, so "isolated" describes the
+  extraction. HHS's single isolated room has **`graphDegree: 6`**, with four E2 door edges to its
+  own storey's spine: it is demonstrably **not** isolated, and the row now says so on its face.
+- `column_continuity` → `nearestBelow` (guid, class, centreline offset, top-to-base gap) and
+  `rejectedBecause`. Hospital's 24: twelve rejected on centreline offset — one is an
+  `IfcWallStandardCase` **foundation retaining wall at 0.315 m against a 0.3 m tolerance**, a
+  15 mm miss — nine because `IfcMember` is not a column-support class, two on the z gap, and
+  exactly **one** has nothing below it at all.
+- `span_depth_cantilever` → `classifiedBy` states outright that cantilever is an INFERENCE from
+  `supportedCount === 1` and that no cantilever attribute exists in the schema; `freeEnds[].nearest`
+  names what sits at the un-counted end; `wouldBeCleanUnderSteelRule` says whether the
+  classification is what produced the flag. Hospital's 217: only **2** have nothing near the free
+  end (76 `IfcWall`, 59 `IfcWallStandardCase`, 20 `IfcSlab`, 18 `IfcBeam`…), and **113 of 217**
+  would be clean under `span_depth_steel`'s own 24/30.
+- `floating_member` → both free ends with their nearest neighbour, searched at 4× the rule's
+  tolerance so a near-miss reads as a near-miss rather than as nothing.
+- `door_clear_width` → `bboxXM`/`bboxYM` and `widthTakenAs`, plus the standing disclosure that a
+  bbox extent is nominal, not clear, width.
+- `circulation_distance` → `measuredTo`, `hops`, `doorsOnRoute`, and the room's own `≈`/`⚠` sigil.
+
+**`atLowestModelledLevel`** on `column_continuity` names the commonest false positive outright: a
+column on the model's lowest plane in a model with no footings. HHS measures **131/131**.
+
+**Tests:** R12 (above) — rows identical on/off; every `isolated_room` states degree and
+neighbours; a degree>0 room reads differently from a degree-0 one; every `column_continuity` names
+what is below it or that nothing is, with a reason; every cantilever discloses the inference.

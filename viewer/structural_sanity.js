@@ -72,14 +72,39 @@
   }
 
   // ── Rule 1: floating member (also feeds rules 2-4's supportedCount classification) ──
-  function _supportChecks(beams, supports, tolerance_m, framing_dz_m) {
-    // out[guid] = { supportedCount: 0|1|2 }
+  // ── §STRUCT_WITNESS (T8.12): what actually sits at an end the rule judged UNSUPPORTED.
+  // `anyRows` is the WIDE candidate set (every class, every discipline) that the rule itself does
+  // NOT consult — the point is to show the reader the element the rule could not count, so
+  // "floating" and "cantilever" can be eyeballed instead of taken on trust. Returns null when
+  // genuinely nothing is near. Distances are real, never rounded away.
+  function _nearestAtPoint(pt, anyRows, selfGuid, horizTol, vertTol) {
+    var best = null;
+    for (var i = 0; i < anyRows.length; i++) {
+      var r = anyRows[i];
+      if (r[0] === selfGuid) continue;
+      var b = bbox(r);
+      var dxy = Math.max(0, Math.max(b.xmin - pt.x, pt.x - b.xmax));
+      var dy = Math.max(0, Math.max(b.ymin - pt.y, pt.y - b.ymax));
+      dxy = Math.sqrt(dxy * dxy + dy * dy);
+      if (dxy > horizTol) continue;
+      var dz = (pt.z < b.zmin) ? (b.zmin - pt.z) : (pt.z > b.zmax ? pt.z - b.zmax : 0);
+      if (dz > vertTol) continue;
+      var d = dxy + dz;
+      if (!best || d < best._d) best = { guid: r[0], ifc_class: r[9] || null, name: r[1], gapHorizM: +dxy.toFixed(3), gapVertM: +dz.toFixed(3), _d: d };
+    }
+    if (best) delete best._d;
+    return best;
+  }
+
+  function _supportChecks(beams, supports, tolerance_m, framing_dz_m, anyRows) {
+    // out[guid] = { supportedCount: 0|1|2, span, depth, freeEnds:[witness] }
     var out = {};
     for (var i = 0; i < beams.length; i++) {
       var beam = beams[i];
       var bb = bbox(beam);
       var ends = beamEndpoints(bb);
       var supportedCount = 0;
+      var freeEnds = [];
       for (var e = 0; e < ends.length; e++) {
         var pt = ends[e];
         var found = false;
@@ -101,14 +126,19 @@
           }
         }
         if (found) supportedCount++;
+        // Witness only for the ends the rule REJECTED — a supported end needs no explaining.
+        // Search radius is deliberately WIDER than the rule's own tolerance (4x horizontal, 1m
+        // vertical) so a near-miss shows up as a near-miss instead of as nothing.
+        else if (anyRows) freeEnds.push({ end: e, at: { x: +pt.x.toFixed(2), y: +pt.y.toFixed(2), z: +pt.z.toFixed(2) },
+          nearest: _nearestAtPoint(pt, anyRows, beam[0], tolerance_m * 4, 1.0) });
       }
-      out[beam[0]] = { supportedCount: supportedCount, span: Math.max(bb.bx, bb.by), depth: bb.bz };
+      out[beam[0]] = { supportedCount: supportedCount, span: Math.max(bb.bx, bb.by), depth: bb.bz, freeEnds: freeEnds };
     }
     return out;
   }
 
   // ── Rule 5: column load-path continuity — centerline distance, not footprint overlap ──
-  function _columnContinuity(columns, supports, tolerance_m) {
+  function _columnContinuity(columns, supports, tolerance_m, anyRows) {
     var out = {};
     for (var i = 0; i < columns.length; i++) {
       var col = columns[i];
@@ -123,7 +153,35 @@
         if (Math.abs(sb.zmax - cb.zmin) > tolerance_m) continue;
         found = true; break;
       }
-      out[col[0]] = { supported: found };
+      var witness = null;
+      if (!found && anyRows) {
+        // §STRUCT_WITNESS — what IS under this column, across EVERY class (not just
+        // COL_SUPPORT_CLASSES), at a deliberately looser radius than the rule's own. This is the
+        // difference between "nothing is there" and "an IfcMember is there, 0.42 m out, and the
+        // rule cannot count an IfcMember" — the reader can tell those apart at a glance.
+        var best = null;
+        for (var k = 0; k < anyRows.length; k++) {
+          var r = anyRows[k];
+          if (r[0] === col[0]) continue;
+          var b = bbox(r);
+          var ddx = cb.cx - b.cx, ddy = cb.cy - b.cy;
+          var dxy = Math.sqrt(ddx * ddx + ddy * ddy);
+          if (dxy > tolerance_m * 4) continue;
+          var dz = Math.abs(b.zmax - cb.zmin);
+          if (dz > 1.0) continue;
+          var d = dxy + dz;
+          if (!best || d < best._d) best = { guid: r[0], ifc_class: r[9] || null, name: r[1],
+            centrelineOffsetM: +dxy.toFixed(3), topToColumnBaseM: +dz.toFixed(3), _d: d };
+        }
+        if (best) {
+          delete best._d;
+          best.rejectedBecause = (best.centrelineOffsetM > tolerance_m ? 'centreline offset > tolerance ' + tolerance_m + ' m' : null) ||
+            (best.topToColumnBaseM > tolerance_m ? 'top-to-base gap > tolerance ' + tolerance_m + ' m' : null) ||
+            (COL_SUPPORT_CLASSES.indexOf(best.ifc_class) === -1 ? best.ifc_class + ' is not a column-support class (' + COL_SUPPORT_CLASSES.join('/') + ')' : 'unknown');
+        }
+        witness = { nearestBelow: best, columnBaseZ: +cb.zmin.toFixed(2) };
+      }
+      out[col[0]] = { supported: found, witness: witness };
     }
     return out;
   }
@@ -182,10 +240,26 @@
       "WHERE em.discipline = 'STR' AND em.ifc_class IN (" + colSupportClassesSql + ")"
     );
 
+    // ── §STRUCT_WITNESS (prompts/STRUCTURAL_SANITY.md T8.12) — OPT-IN, default OFF.
+    // The rules above deliberately look only at STR-discipline support classes. That is what
+    // makes a "floating" or "unsupported" verdict cheap — and also what makes it unreadable: the
+    // user cannot tell "nothing is there" from "something is there that this rule cannot count".
+    // With opts.witness, ONE extra query fetches every element that has a transform, across every
+    // class and discipline, purely so a flagged row can name the neighbour it was measured
+    // against. It changes NO count and produces NO row — R12 asserts exactly that.
+    var anyRows = null;
+    if (opts.witness) {
+      anyRows = dbQuery(
+        "SELECT em.guid, em.element_name, em.storey, et.center_x, et.center_y, et.center_z, et.bbox_x, et.bbox_y, et.bbox_z, em.ifc_class " +
+        "FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid"
+      );
+      log('§STRUCT_WITNESS enabled candidates=' + anyRows.length + ' (every class/discipline with a transform — evidence only, never a rule input)');
+    }
+
     var rows = [];
 
     // Rule 1 (+ classification feeding rules 2-4)
-    var support = _supportChecks(beamRows, supportRows, floatingRule.tolerance_m, floatingRule.framing_dz_m);
+    var support = _supportChecks(beamRows, supportRows, floatingRule.tolerance_m, floatingRule.framing_dz_m, anyRows);
     var floatingCount = { CRITICAL: 0 };
     var unmatched = 0;
     var spanDepthCounts = { span_depth_steel: { WARNING: 0, uncapped_critical: 0 }, span_depth_concrete: { WARNING: 0, uncapped_critical: 0 }, span_depth_cantilever: { WARNING: 0, uncapped_critical: 0 } };
@@ -194,7 +268,9 @@
       var guid = b[0], name = b[1], storey = b[2];
       var sup = support[guid];
       if (sup.supportedCount === 0) {
-        rows.push({ guid: guid, ifc_class: 'IfcBeam', name: name, storey: storey, rule: 'floating_member', severity: 'CRITICAL', ratio: null });
+        rows.push({ guid: guid, ifc_class: 'IfcBeam', name: name, storey: storey, rule: 'floating_member', severity: 'CRITICAL', ratio: null,
+          witness: anyRows ? { supportedEnds: 0, of: 2, freeEnds: sup.freeEnds,
+            reads: 'neither end found a support within ' + floatingRule.tolerance_m + ' m; `nearest` is what actually sits there, searched at 4x that radius across every class' } : undefined });
         floatingCount.CRITICAL++;
         return; // floating members aren't also scored for span/depth
       }
@@ -216,7 +292,23 @@
       var sev = _severityForRatio(ratio, rule);
       if (sev) {
         spanDepthCounts[ruleName].WARNING += (sev === 'WARNING' ? 1 : 0);
-        rows.push({ guid: guid, ifc_class: 'IfcBeam', name: name, storey: storey, rule: ruleName, severity: sev, ratio: ratio });
+        var w;
+        if (anyRows) {
+          w = { supportedEnds: sup.supportedCount, of: 2, spanM: +sup.span.toFixed(3), depthM: +sup.depth.toFixed(3),
+                warningRatio: rule.warning_ratio, criticalRatio: rule.critical_ratio };
+          if (isCantilever) {
+            // The single highest-value witness in this file. `isCantilever` is an INFERENCE
+            // (supportedCount === 1) that preempts material classification, and it routes the
+            // beam to a 12/16 ratio instead of its material's own. Naming what sits at the
+            // un-counted end lets the reader see at once whether this is a real cantilever.
+            w.freeEnds = sup.freeEnds;
+            w.classifiedAs = 'cantilever';
+            w.classifiedBy = 'inference: exactly one end found a support — NOT a modelled cantilever attribute (none exists in this schema)';
+            w.wouldBeCleanUnderSteelRule = (steelRule.warning_ratio != null && ratio < steelRule.warning_ratio);
+            w.reads = 'if `nearest` at the free end is real bearing, this beam is not a cantilever and the 12/16 ratio does not apply to it';
+          }
+        }
+        rows.push({ guid: guid, ifc_class: 'IfcBeam', name: name, storey: storey, rule: ruleName, severity: sev, ratio: ratio, witness: w });
       }
     });
 
@@ -227,12 +319,27 @@
     });
 
     // Rule 5: column continuity
-    var colContinuity = _columnContinuity(colRows, colSupportRows, columnRule.tolerance_m);
+    var colContinuity = _columnContinuity(colRows, colSupportRows, columnRule.tolerance_m, anyRows);
     var unsupportedColCount = 0;
+    var colLowestZ = null;
+    colRows.forEach(function (c) { var z = bbox(c).zmin; if (colLowestZ === null || z < colLowestZ) colLowestZ = z; });
     colRows.forEach(function (c) {
       var guid = c[0], name = c[1], storey = c[2];
       if (!colContinuity[guid].supported) {
-        rows.push({ guid: guid, ifc_class: 'IfcColumn', name: name, storey: storey, rule: 'column_continuity', severity: 'CRITICAL', ratio: null });
+        var w;
+        if (anyRows) {
+          w = colContinuity[guid].witness || {};
+          w.toleranceM = columnRule.tolerance_m;
+          w.supportClasses = COL_SUPPORT_CLASSES.slice();
+          // A column standing on the model's lowest plane with no footing under it is the single
+          // commonest false positive this rule produces (a real building measured 131/131 of its
+          // ground-floor columns flagged, with 0 IfcFooting anywhere). Say so on the row.
+          w.atLowestModelledLevel = (colLowestZ !== null && bbox(c).zmin <= colLowestZ + 0.5);
+          w.reads = w.atLowestModelledLevel
+            ? 'this column sits on the lowest modelled level — if the model has no footings, there is nothing here for the rule to find and this flag is a metadata gap, not a load-path break (see dataSufficiency.footings_modelled)'
+            : 'nothing in ' + COL_SUPPORT_CLASSES.join('/') + ' lies within ' + columnRule.tolerance_m + ' m below; `nearestBelow` is what is actually there';
+        }
+        rows.push({ guid: guid, ifc_class: 'IfcColumn', name: name, storey: storey, rule: 'column_continuity', severity: 'CRITICAL', ratio: null, witness: w });
         unsupportedColCount++;
       }
     });
