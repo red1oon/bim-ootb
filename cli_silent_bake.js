@@ -252,6 +252,12 @@ const server = http.createServer((req, res) => {
       if (MAX_FRAME_MS && +fm[4] > MAX_FRAME_MS) S.fatal = `perFrameMs ${fm[4]} > --max-frame-ms ${MAX_FRAME_MS}: ${t}`; }
     if (/§MAXQ_FAIL|§MAXQ_GL_LOST|§MAXQ_IDB_LOST|§CPE_BUILDUP_SKIP/.test(t)) log('⚠ ' + t);
     if (/§MAXQ_FAIL/.test(t)) S.fatal = t;
+    // §CLI_BAKE_FAIL_NO_TIMELINE (MEP_CLASH_REVEAL_MOVIE.md §88.10e/§88.12) — the Time Machine
+    // refusing to arm is a FAILED buildup, not a cosmetic note. It used to pass through as a
+    // page-side warning while the run delivered a film with the buildup silently dropped and
+    // exited 0, because S.fatal was only ever set by §MAXQ_FAIL or --max-frame-ms. §88 cost
+    // four sessions partly because a bake's exit code said nothing about what it actually drew.
+    if (/§CPE_BUILDUP_ARM_GATE timeout/.test(t)) S.fatal = t;
   });
   page.on('pageerror', e => { logRaw('[pageerror] ' + e.message); log('⚠ PAGEERROR ' + e.message.slice(0, 160)); });
 
@@ -515,7 +521,64 @@ const server = http.createServer((req, res) => {
       return (ok ? 'ok' : 'FAILED') + ' ms=' + Math.round(performance.now() - t0);
     });
     log(`§CLI_BAKE_TM_PRIME ${tm}`);
-    if (/FAILED|no-hook/.test(tm)) log('⚠ buildup will be skipped by the bake (no timeline)');
+    if (/FAILED|no-hook/.test(tm)) {
+      // §CLI_BAKE_FAIL_NO_TIMELINE — buildup was RESOLVED ON (cli flag or the stored path) and the
+      // shipped activation verb then produced no timeline. Delivering the film anyway hands back a
+      // silent, exit-0 lie: the requested feature is simply absent from the frames. Refuse here,
+      // before a single frame is spent. Nothing is repaired — this bake only declines to pretend.
+      log(`§CLI_BAKE_FAIL_NO_TIMELINE buildup=on source=${willBuildup.src} prime=${tm} — ` +
+          'the Time Machine armed no timeline; refusing to deliver a film with the buildup silently dropped');
+      server.close();
+      process.exit(1);
+    }
+
+    // ══ §CLI_BAKE_SCHED_COHERENCE (MEP_CLASH_REVEAL_MOVIE.md §88.12) — READ-ONLY ════════════════
+    // The bake replays whatever kernel_ops the DB already holds: injectGantt() sits behind
+    // `if (!_placeOps.length)` and a shipped 4D DB never enters it, so no §GANTT_SOURCE line is
+    // written and no re-derivation happens (§88.10a/b — the browser does exactly the same; this is
+    // NOT a bake-side deviation). The only staleness gate is `_genVersion !== _GANTT_CACHE_VERSION`,
+    // which asks whether the current ALGORITHM produced these ops, never whether they still agree
+    // with `tasks`/`task_elements` — so a misassignment, once written, is replayed forever.
+    //
+    // §88's whole cost came from that being invisible: 28 Level 1 "Foundation" walls carry
+    // phase='Substructure' and _cell='L0·T1·L0' while their _task says Architecture_Envelope, which
+    // pours them 13.47 h AFTER the 8,899 m² ground slab they carry — so §XRAY_STAGING_REMOVED
+    // correctly refused to draw the floor, and nothing in any log said why.
+    //
+    // This counts, it does not repair: pure SELECTs, no write, no exit code. Per §88.12 a non-zero
+    // count is REPORTED, never fatal — Hospital's honest numbers are 39 and 13,574, and a bake must
+    // not start refusing films over a pre-existing condition it has shipped for weeks.
+    const coh = await page.evaluate(() => {
+      const A = window.APP, norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!A || !A.db) return null;
+      const one = sql => { try { const r = A.db.exec(sql); return r.length ? r[0].values : []; } catch (e) { return []; } };
+      const ops = one("SELECT output_guid, parameters FROM kernel_ops WHERE op_type='ELEMENT_PLACE' AND undone=0 AND output_guid IS NOT NULL");
+      if (!ops.length) return { ops: 0 };
+      const te = {};
+      one('SELECT task_id, guid FROM task_elements').forEach(r => { (te[r[1]] = te[r[1]] || []).push(r[0]); });
+      const haveTe = Object.keys(te).length > 0;
+      let selfContra = 0, noTeMatch = 0, sample = null;
+      for (const [guid, par] of ops) {
+        let p; try { p = JSON.parse(par) || {}; } catch (e) { continue; }
+        const t = p._task || '', i = t.lastIndexOf('_Level_');
+        if (p.phase && i > 0 && norm(t.slice(5, i)) !== norm(p.phase)) {
+          selfContra++;
+          if (!sample) sample = guid + ' phase=' + p.phase + ' _task=' + t;
+        }
+        if (haveTe && t && !(te[guid] || []).includes(t)) noTeMatch++;
+      }
+      return { ops: ops.length, selfContra, noTeMatch, haveTe, sample };
+    }).catch(() => null);
+    if (coh && coh.ops) {
+      log(`§CLI_BAKE_SCHED_COHERENCE ops=${coh.ops} selfContradictory=${coh.selfContra} ` +
+          `taskElementsMismatch=${coh.haveTe ? coh.noTeMatch : 'n/a(no task_elements)'}` +
+          (coh.sample ? ` first=[${coh.sample}]` : '') +
+          ' — persisted kernel_ops replayed as-is (injectGantt does not re-derive, §88.10b);' +
+          ' selfContradictory = the op\'s own phase disagrees with its own _task bucket, which is' +
+          ' what mis-orders an element against the things that carry it. Reported, never repaired.');
+    } else if (coh) {
+      log('§CLI_BAKE_SCHED_COHERENCE ops=0 — no ELEMENT_PLACE rows to audit');
+    }
   }
 
   // heap sampling (Log Mandate: numbers, on an interval, into the log)
