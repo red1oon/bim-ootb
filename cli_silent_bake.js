@@ -13,6 +13,9 @@
 //     [--nohome] [--opening-only]                     §33 §CLI_BAKE_OPENING: skip the datum-legibility gate / judge the opening and exit
 //     [--findings-only]                               §RULE_REPORT (STRUCTURAL_SANITY.md T8): run the Sanity + Egress
 //                                                       evaluators, write <out>.json, exit before ANY cinema work
+//     [--rules-overlay ID]                            §RULE_OVERLAY (T8.14): also apply rates/<kind>_rules_<ID>.json
+//                                                       over the base rulebook (per-FIELD merge, same shape as the
+//                                                       16 rates packs). Absent file = no override, not an error.
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
@@ -307,7 +310,7 @@ const server = http.createServer((req, res) => {
   // the evaluators directly — the same two the panels use, with zero duplicated rule logic.
   if (has('findings-only')) {
     const jsonOut = OUT.replace(/\.mp4$/i, '') + '.json';
-    const report = await page.evaluate(async () => {
+    const report = await page.evaluate(async (OVERLAY_ID) => {
       const A = window.APP;
       const out = { err: null };
       try {
@@ -316,12 +319,15 @@ const server = http.createServer((req, res) => {
         // T8.13 — the SAME loader the panel uses, with the SAME fallback constants the
         // evaluators own. This path used to hand `null` to evaluate() and let the evaluator's
         // own inline defaults apply silently; now the fallback is explicit and `source` says so.
+        // T8.14 — an overlay id makes this a jurisdiction run; without one it is the global
+        // rulebook exactly as before. The id is passed in from the CLI flag, never guessed here.
+        const ov = (id, kind) => id ? { overlayUrl: 'rates/' + kind + '_rules_' + id + '.json', overlayId: id } : {};
         const sj = await RuleReport.loadRules(fetch.bind(window), 'rates/structural_rules.json',
           (typeof StructuralSanity !== 'undefined') ? StructuralSanity.FALLBACK_RULES : { structural_rules: [] },
-          { log: (m) => console.log(m) });
+          Object.assign({ log: (m) => console.log(m) }, ov(OVERLAY_ID, 'structural')));
         const ej = await RuleReport.loadRules(fetch.bind(window), 'rates/egress_rules.json',
           (typeof EgressSanity !== 'undefined') ? EgressSanity.FALLBACK_RULES : { egress_rules: [] },
-          { log: (m) => console.log(m) });
+          Object.assign({ log: (m) => console.log(m) }, ov(OVERLAY_ID, 'egress')));
         let rowsS = [], rowsE = [], rgFacts = null;
         const logS = [], logE = [];
         if (typeof StructuralSanity !== 'undefined') {
@@ -349,12 +355,14 @@ const server = http.createServer((req, res) => {
           meta: {
             building: A.activeBuilding,
             rulesSource: { structural: sj.source, egress: ej.source },
+            rulesOverlay: { structural: sj.overlay, egress: ej.overlay },
+            rulesProvenance: (sj.provenance || []).concat(ej.provenance || []),
             roomGraph: rgFacts, sufficiency: suff, populations: pops
           }
         });
       } catch (e) { out.err = e.message; }
       return out;
-    });
+    }, arg('rules-overlay', null) || null);
     if (report.err) {
       log('§RULE_REPORT_FAIL ' + report.err);
       try { await browser.close(); } catch (e) {}
@@ -364,6 +372,8 @@ const server = http.createServer((req, res) => {
     r.db = DB; r.commit = (() => { try { return execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch (e) { return null; } })();
     try { r.dbBytes = fs.statSync(DB.includes('/') ? DB : path.join(ROOT, 'buildings', DB + '.db')).size; } catch (e) { r.dbBytes = null; }
     fs.writeFileSync(jsonOut, JSON.stringify(r, null, 2));
+    (r.rulesProvenance || []).forEach(x => log('§RULE_OVERLAY_APPLIED rule=' + x.rule + ' source=' + x.source +
+        (x.added ? ' added=true' : ' changed=' + x.changed.map(c => c.field + ' ' + JSON.stringify(c.from) + '->' + JSON.stringify(c.to)).join(' '))));
     log('§RULE_REPORT building=' + r.building + ' findings=' + r.totals.findings + ' rules=' + r.totals.rules +
         ' critical=' + r.totals.severity.CRITICAL + ' warning=' + r.totals.severity.WARNING +
         ' rulesSource=' + JSON.stringify(r.rulesSource) +

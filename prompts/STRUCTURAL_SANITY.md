@@ -575,3 +575,67 @@ either side fails CI); no other file declares a fallback rules object; and a con
 guard catches the exact film-branch drift (concrete 16→20). R14 LOADRULES-SHAPE — `fetched` on ok;
 `fallback` + reason on 404, on a thrown fetch, and with no fetch at all; the fallback handed back
 IS the evaluator's one literal; and the fact reaches the report's provenance header.
+
+**T8.14 §RULE_OVERLAY — per-jurisdiction rules, merged the way `rates.js` already merges packs.**
+*(User instruction, 2026-09-12, after the movie-bake session's observation that `viewer/rates/`
+holds 16 per-jurisdiction cost packs against 2 global compliance rulebooks.)*
+
+**Verified before building, because the precedent is stronger than "unused plumbing":** the 16
+packs each carry a 9-key schema (materials, labor, equipment, equipment_allocation, `sequence`,
+smm_sections, work_packages, provisions, meta), and **15 of them already ship 49 `sequence`
+entries** that `rates.js loadRateTemplate()` merges into `SEQUENCE_RULES`. One rulebook is already
+regionalised through this mechanism. **No pack carries any compliance block** — so the real
+asymmetry is 16 packs × 9 keys, none of them compliance, versus 2 global compliance files.
+
+**The gap this closes.** `loadRateTemplate` merges *per key* — the JSON wins, keys it omits keep
+their base value. `RuleReport.loadRules` was all-or-nothing: fetched **or** fallback. A regional
+file that wants to change one threshold and inherit the rest could not work on it.
+
+**Merge is per FIELD, one level finer than rates.** An overlay rule patches the fields it names and
+inherits the rest:
+
+```
+base:    { name: 'door_clear_width', applies_to: ['IfcDoor'], warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' }
+overlay: { name: 'door_clear_width', critical_m: 1.054 }
+result:  { name: 'door_clear_width', applies_to: ['IfcDoor'], warning_m: 0.85, critical_m: 1.054, max_severity: 'WARNING' }
+```
+
+That case is real and already documented in `egress_sanity.js`'s own header: IBC 2021 requires
+1.054 m (41.5 in) for Group I-2 bed-movement egress doors — Hospital's own occupancy — but main
+ships the general §1010.1.1 0.813 m because a blanket 1.054 would false-flag every
+non-bed-movement door. **Measured:** Hospital reports **0** `door_clear_width` findings at 0.813 m
+and **65** at 1.054 m. An overlay is how that number gets stated without restating the rulebook.
+
+Rules the overlay does not mention are untouched; a rule present only in the overlay is **added**;
+rule ORDER follows the base so output stays deterministic (T8.6); the base object is never
+mutated; **arrays (`applies_to`, `name_hints`) are replaced wholesale** — there is no sensible
+element-wise merge, and silently unioning hints would change which beams a rule claims.
+
+**⚠ An absent overlay is the ORDINARY case, not a failure.** "This jurisdiction states no
+override" must not degrade the base the way a failed *base* fetch does. A 404 reports
+`source: 'absent'`; a file that exists but will not parse reports `source: 'error'` with the
+reason. Conflating those would hide a broken regional file as "no override". Either way the base
+rulebook is kept intact and usable.
+
+**⚠ Provenance is the point, not a nicety.** With two layers, `rulesSource: fetched|fallback` per
+FILE stops answering "where did this threshold come from" — the question a report exists for. The
+report now carries `rulesOverlay` (which overlay, and whether it was fetched/absent/error/none)
+and `rulesProvenance`: per overridden rule, exactly which fields the overlay supplied and **what
+the base said**. An overlay that restates an identical value records no override.
+
+**Selection follows the rates convention, and reuses its key deliberately:** `?rules=<id>`, else
+`localStorage['bim_5d_pack']`, else none. A user who picked `cidb2024_my` for costs has stated
+their jurisdiction once; asking again in a second registry is how two registries drift apart —
+the exact failure T8.13 just cleaned up. File name: `rates/<kind>_rules_<id>.json`.
+CLI: `--rules-overlay ID`, logging `§RULE_OVERLAY` and `§RULE_OVERLAY_APPLIED` per changed rule.
+
+**No jurisdiction file ships in this PR.** The mechanism is here; authoring `egress_rules_my.json`
+is a separate decision needing a real code citation per number, exactly as the THRESHOLD
+DISCLAIMER demands of every threshold already in the tree.
+
+**Tests:** R15 OVERLAY-MERGE — field override, sibling-field inheritance, untouched rules, stable
+order, base not mutated, provenance naming both values, no-op override recording nothing, added
+rule, arrays replaced, and the merged rulebook actually running on Hospital (0 → 65 findings).
+R16 OVERLAY-LOAD — `none` when unrequested; `absent` on 404 with the base byte-identical and its
+own source undegraded; `error` (distinct from absent) on a malformed file with the base still
+usable; merge + provenance on a good overlay; and both reaching the report.

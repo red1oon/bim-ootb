@@ -326,6 +326,109 @@ const ROWS_E = [
     chk('R14 the fallback fact reaches the report provenance header', rep.rulesSource.structural === 'fallback', JSON.stringify(rep.rulesSource));
   }
 
+  // ── R15 OVERLAY-MERGE — proves: a jurisdiction can override ONE threshold without restating
+  // the rulebook, and the report can still say where every number came from. The motivating case
+  // is real and already in egress_sanity.js's header: IBC 2021 requires 1.054m for Group I-2
+  // bed-movement egress doors, but main ships the general §1010.1.1 0.813m because a blanket
+  // 1.054 would false-flag every non-bed-movement door.
+  console.log('§W-RULE-REPORT R15 OVERLAY-MERGE');
+  {
+    const overlay = { egress_rules: [{ name: 'door_clear_width', critical_m: 1.054 }] };
+    const m = RuleReport.mergeRuleSets(EGRESS_RULES, overlay, { overlayId: 'i2_us' });
+    const dw = m.rules.egress_rules.find(r => r.name === 'door_clear_width');
+    chk('R15 the named field is overridden', dw.critical_m === 1.054, JSON.stringify(dw));
+    chk('R15 unnamed fields of the SAME rule are inherited, not dropped',
+      dw.warning_m === 0.85 && dw.max_severity === 'WARNING' && JSON.stringify(dw.applies_to) === '["IfcDoor"]',
+      JSON.stringify(dw));
+    chk('R15 rules the overlay never mentions are untouched',
+      JSON.stringify(m.rules.egress_rules.filter(r => r.name !== 'door_clear_width')) ===
+      JSON.stringify(EGRESS_RULES.egress_rules.filter(r => r.name !== 'door_clear_width')));
+    chk('R15 rule ORDER follows the base, so output stays deterministic (T8.6)',
+      JSON.stringify(m.rules.egress_rules.map(r => r.name)) === JSON.stringify(EGRESS_RULES.egress_rules.map(r => r.name)),
+      m.rules.egress_rules.map(r => r.name).join(','));
+    chk('R15 the BASE object is not mutated (a second merge must start clean)',
+      EGRESS_RULES.egress_rules.find(r => r.name === 'door_clear_width').critical_m === 0.813);
+
+    // Provenance — the gap that per-file rulesSource could not close.
+    chk('R15 provenance names the rule, the overlay, the field, and BOTH values',
+      m.provenance.length === 1 && m.provenance[0].rule === 'door_clear_width' &&
+      m.provenance[0].source === 'i2_us' && m.provenance[0].changed[0].field === 'critical_m' &&
+      m.provenance[0].changed[0].from === 0.813 && m.provenance[0].changed[0].to === 1.054,
+      JSON.stringify(m.provenance));
+    const same = RuleReport.mergeRuleSets(EGRESS_RULES, { egress_rules: [{ name: 'door_clear_width', critical_m: 0.813 }] }, { overlayId: 'x' });
+    chk('R15 an overlay that restates the SAME value records no override', same.provenance.length === 0, JSON.stringify(same.provenance));
+
+    // A jurisdiction adding a check it alone requires.
+    const added = RuleReport.mergeRuleSets(EGRESS_RULES, { egress_rules: [{ name: 'refuge_area', applies_to: ['room_graph_node'], min_m2: 2.5 }] }, { overlayId: 'my' });
+    chk('R15 a rule present ONLY in the overlay is added', added.rules.egress_rules.length === EGRESS_RULES.egress_rules.length + 1);
+    chk('R15 an added rule is marked added in provenance',
+      added.provenance.length === 1 && added.provenance[0].added === true, JSON.stringify(added.provenance));
+
+    // Arrays replace wholesale — documented, and asserted so nobody "improves" it into a union.
+    const arr = RuleReport.mergeRuleSets(STRUCT_RULES, { structural_rules: [{ name: 'span_depth_steel', name_hints: ['UB'] }] }, { overlayId: 'x' });
+    chk('R15 an array field is REPLACED, never unioned',
+      JSON.stringify(arr.rules.structural_rules.find(r => r.name === 'span_depth_steel').name_hints) === '["UB"]');
+
+    chk('R15 no overlay at all returns the base unchanged',
+      RuleReport.mergeRuleSets(EGRESS_RULES, null).rules === EGRESS_RULES);
+
+    // And the merged set still passes the evaluators — a merge that produced an unusable rule
+    // object would otherwise only show up as findings quietly vanishing.
+    if (fs.existsSync(HOSPITAL)) {
+      const hdb = new SQL.Database(new Uint8Array(fs.readFileSync(HOSPITAL)));
+      const hq = (sql, p) => { const r = p ? hdb.exec(sql, p) : hdb.exec(sql); return r.length ? r[0].values : []; };
+      const bef = EgressSanity.evaluate(hq, EGRESS_RULES, { log: () => {} }).filter(r => r.rule === 'door_clear_width').length;
+      const aft = EgressSanity.evaluate(hq, m.rules, { log: () => {} }).filter(r => r.rule === 'door_clear_width').length;
+      chk('R15 the merged rulebook RUNS and the stricter threshold actually bites',
+        aft > bef, 'Hospital door_clear_width 0.813m -> ' + bef + ' findings; I-2 1.054m -> ' + aft);
+    }
+  }
+
+  // ── R16 OVERLAY-LOAD — proves: an absent overlay is the ordinary case, not a failure, and a
+  // BROKEN overlay is never disguised as "no override".
+  console.log('§W-RULE-REPORT R16 OVERLAY-LOAD');
+  {
+    const baseOk = (u) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EGRESS_RULES) });
+    const r1 = await RuleReport.loadRules(baseOk, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES);
+    chk('R16 no overlay requested reports source=none, not an error', r1.overlay.source === 'none' && r1.provenance.length === 0, JSON.stringify(r1.overlay));
+
+    const mixed = (u) => /_my\.json$/.test(u)
+      ? Promise.resolve({ ok: false, status: 404 })
+      : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EGRESS_RULES) });
+    const r2 = await RuleReport.loadRules(mixed, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES,
+      { overlayUrl: 'rates/egress_rules_my.json', overlayId: 'my' });
+    chk('R16 a 404 overlay reports "absent" and keeps the base rules', r2.overlay.source === 'absent' && r2.overlay.error === null, JSON.stringify(r2.overlay));
+    chk('R16 base source is still fetched — an absent overlay must not degrade it', r2.source === 'fetched');
+    chk('R16 an absent overlay leaves the rulebook byte-identical',
+      JSON.stringify(r2.rules) === JSON.stringify(EGRESS_RULES));
+
+    const broken = (u) => /_my\.json$/.test(u)
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error('Unexpected token')) })
+      : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EGRESS_RULES) });
+    const r3 = await RuleReport.loadRules(broken, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES,
+      { overlayUrl: 'rates/egress_rules_my.json', overlayId: 'my' });
+    chk('R16 a MALFORMED overlay reports "error", distinct from "absent"',
+      r3.overlay.source === 'error' && /Unexpected token/.test(r3.overlay.error), JSON.stringify(r3.overlay));
+    chk('R16 a malformed overlay still leaves the base rules usable', JSON.stringify(r3.rules) === JSON.stringify(EGRESS_RULES));
+
+    const good = (u) => /_my\.json$/.test(u)
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ egress_rules: [{ name: 'door_clear_width', critical_m: 1.054 }] }) })
+      : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EGRESS_RULES) });
+    const r4 = await RuleReport.loadRules(good, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES,
+      { overlayUrl: 'rates/egress_rules_my.json', overlayId: 'my' });
+    chk('R16 a good overlay merges and reports its provenance',
+      r4.overlay.source === 'fetched' && r4.provenance.length === 1 &&
+      r4.rules.egress_rules.find(r => r.name === 'door_clear_width').critical_m === 1.054);
+
+    const rep = RuleReport.buildRuleReport({ rowsE: ROWS_E, ruleDefs: [r4.rules],
+      meta: { rulesSource: { egress: r4.source }, rulesOverlay: { egress: r4.overlay }, rulesProvenance: r4.provenance } });
+    chk('R16 overlay + per-rule provenance reach the report the user reads',
+      rep.rulesOverlay.egress.id === 'my' && rep.rulesProvenance[0].changed[0].to === 1.054,
+      JSON.stringify(rep.rulesProvenance));
+    chk('R16 with no overlay the report says so as an empty list, not a missing key',
+      Array.isArray(RuleReport.buildRuleReport({ rowsE: [], ruleDefs: [] }).rulesProvenance));
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

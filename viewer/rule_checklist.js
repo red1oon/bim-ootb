@@ -307,6 +307,8 @@ function setupRuleChecklist(A) {
           ? { egress: config.rulesSource || 'unknown' }
           : { structural: config.rulesSource || 'unknown' },
         roomGraph: config.roomGraph || null,
+        rulesOverlay: config.rulesOverlay || null,
+        rulesProvenance: config.rulesProvenance || [],
         longestExitSteps: _rcLongestExitSteps(rows),
         // T8.11 — the panel has A.dbQuery, so it can review its own input the same way the CLI
         // does. Probes are read-only counts over elements_meta/element_transforms/
@@ -620,14 +622,38 @@ function setupRuleChecklist(A) {
     egress:     { url: 'rates/egress_rules.json', cache: '_egressRulesCache', src: '_egressRulesSource',
                   fallback: function () { return (typeof EgressSanity !== 'undefined') ? EgressSanity.FALLBACK_RULES : { egress_rules: [] }; } }
   };
+
+  // T8.14 — which jurisdiction's overlay to apply, selected EXACTLY the way rates.js already
+  // selects its 16 cost packs: a URL param, else the stored pack, else none. Reusing that key
+  // (`bim_5d_pack`) deliberately — a user who has chosen cidb2024_my for costs has stated their
+  // jurisdiction once, and asking again in a second registry is how the two drift apart. Returns
+  // null when nothing is selected, which is the ordinary case and NOT an error.
+  function _rcOverlayId() {
+    try {
+      var p = new URLSearchParams(window.location.search).get('rules');
+      if (p) return p;
+    } catch (e) { /* no location (test/headless) — fall through */ }
+    try { return localStorage.getItem('bim_5d_pack') || null; } catch (e) { return null; }
+  }
+
   function _rcLoadRules(kind) {
     var cfg = RULE_SETS[kind];
-    if (A[cfg.cache]) return Promise.resolve({ rules: A[cfg.cache], source: A[cfg.src] || 'unknown', url: cfg.url, error: null });
+    if (A[cfg.cache]) {
+      return Promise.resolve({ rules: A[cfg.cache], source: A[cfg.src] || 'unknown', url: cfg.url, error: null,
+        overlay: A._ruleOverlay || null, provenance: A._ruleProvenance || [] });
+    }
     var fb = cfg.fallback();
+    var oid = _rcOverlayId();
+    var opts = oid ? { overlayUrl: 'rates/' + kind + '_rules_' + oid + '.json', overlayId: oid, log: console.log }
+                   : { log: console.log };
     var go = (typeof RuleReport !== 'undefined')
-      ? RuleReport.loadRules(typeof fetch === 'function' ? fetch.bind(window) : null, cfg.url, fb)
-      : Promise.resolve({ rules: fb, source: 'fallback', url: cfg.url, error: 'rule_report.js not loaded' });
-    return go.then(function (r) { A[cfg.cache] = r.rules; A[cfg.src] = r.source; return r; });
+      ? RuleReport.loadRules(typeof fetch === 'function' ? fetch.bind(window) : null, cfg.url, fb, opts)
+      : Promise.resolve({ rules: fb, source: 'fallback', url: cfg.url, error: 'rule_report.js not loaded', overlay: null, provenance: [] });
+    return go.then(function (r) {
+      A[cfg.cache] = r.rules; A[cfg.src] = r.source;
+      A._ruleOverlay = r.overlay || null; A._ruleProvenance = r.provenance || [];
+      return r;
+    });
   }
 
   A.showStructuralSanity = function () {
@@ -640,6 +666,7 @@ function setupRuleChecklist(A) {
       A.showRuleChecklist({
         title: 'Structural Sanity', checkId: 'sanity',
         rulesUsed: rules, rulesSource: source || 'unknown',
+        rulesOverlay: A._ruleOverlay || null, rulesProvenance: A._ruleProvenance || [],
         colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },
         categories: [
           { label: 'Floating Member', ruleNames: ['floating_member'] },
@@ -692,7 +719,8 @@ function setupRuleChecklist(A) {
         } catch (e) { console.warn('§RULE_REPORT_ROOMGRAPH_FACTS_FAIL ' + e.message); }
         A.showRuleChecklist({
           title: 'Egress', checkId: 'egress',
-          rulesUsed: rules, rulesSource: source || 'unknown', roomGraph: rgFacts,
+          rulesUsed: rules, rulesSource: source || 'unknown',
+        rulesOverlay: A._ruleOverlay || null, rulesProvenance: A._ruleProvenance || [], roomGraph: rgFacts,
           colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },
           categories: [
             { label: 'Isolated Room', ruleNames: ['isolated_room'] },

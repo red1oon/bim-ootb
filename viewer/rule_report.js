@@ -111,21 +111,140 @@
   function loadRules(fetchFn, url, fallback, opts) {
     opts = opts || {};
     var log = opts.log || function () {};
-    if (typeof fetchFn !== 'function') {
-      log('§RULE_RULES_SOURCE url=' + url + ' source=fallback reason=no-fetch');
-      return Promise.resolve({ rules: fallback, source: 'fallback', url: url, error: 'no fetch available' });
+
+    function base() {
+      if (typeof fetchFn !== 'function') {
+        log('§RULE_RULES_SOURCE url=' + url + ' source=fallback reason=no-fetch');
+        return Promise.resolve({ rules: fallback, source: 'fallback', url: url, error: 'no fetch available' });
+      }
+      return fetchFn(url).then(function (resp) {
+        if (!resp || !resp.ok) throw new Error('HTTP ' + (resp && resp.status));
+        return resp.json();
+      }).then(function (json) {
+        log('§RULE_RULES_SOURCE url=' + url + ' source=fetched');
+        return { rules: json, source: 'fetched', url: url, error: null };
+      })['catch'](function (err) {
+        // Never a silent substitution: the caller gets the fallback AND the fact that it is one.
+        log('§RULE_RULES_SOURCE url=' + url + ' source=fallback error=' + (err && err.message));
+        return { rules: fallback, source: 'fallback', url: url, error: (err && err.message) || String(err) };
+      });
     }
-    return fetchFn(url).then(function (resp) {
-      if (!resp || !resp.ok) throw new Error('HTTP ' + (resp && resp.status));
-      return resp.json();
-    }).then(function (json) {
-      log('§RULE_RULES_SOURCE url=' + url + ' source=fetched');
-      return { rules: json, source: 'fetched', url: url, error: null };
-    })['catch'](function (err) {
-      // Never a silent substitution: the caller gets the fallback AND the fact that it is one.
-      log('§RULE_RULES_SOURCE url=' + url + ' source=fallback error=' + (err && err.message));
-      return { rules: fallback, source: 'fallback', url: url, error: (err && err.message) || String(err) };
+
+    return base().then(function (r) {
+      // T8.14 — no overlay asked for is the ordinary case; say so as data, not by omission.
+      if (!opts.overlayUrl) {
+        r.overlay = { url: null, source: 'none', error: null, id: null };
+        r.provenance = [];
+        return r;
+      }
+      var oid = opts.overlayId || opts.overlayUrl;
+      if (typeof fetchFn !== 'function') {
+        log('§RULE_OVERLAY url=' + opts.overlayUrl + ' source=unavailable reason=no-fetch');
+        r.overlay = { url: opts.overlayUrl, source: 'unavailable', error: 'no fetch available', id: oid };
+        r.provenance = [];
+        return r;
+      }
+      return fetchFn(opts.overlayUrl).then(function (resp) {
+        // ⚠ A MISSING OVERLAY IS NOT A FAILURE. "This jurisdiction states no override" is the
+        // normal case for most buildings, and must not degrade the base the way a failed BASE
+        // fetch does. It is reported as `absent`, distinct from `error` (a file that exists but
+        // would not parse) — conflating those would hide a broken regional file as "no override".
+        if (resp && resp.status === 404) { var e = new Error('absent'); e._absent = true; throw e; }
+        if (!resp || !resp.ok) throw new Error('HTTP ' + (resp && resp.status));
+        return resp.json();
+      }).then(function (ov) {
+        var m = mergeRuleSets(r.rules, ov, { overlayId: oid });
+        r.rules = m.rules;
+        r.provenance = m.provenance;
+        r.overlay = { url: opts.overlayUrl, source: 'fetched', error: null, id: oid };
+        log('§RULE_OVERLAY url=' + opts.overlayUrl + ' source=fetched overrides=' + m.provenance.length +
+          (m.provenance.length ? ' rules=' + m.provenance.map(function (x) { return x.rule; }).join(',') : ''));
+        return r;
+      })['catch'](function (err) {
+        var absent = !!(err && err._absent);
+        log('§RULE_OVERLAY url=' + opts.overlayUrl + ' source=' + (absent ? 'absent' : 'error') +
+          (absent ? '' : ' error=' + (err && err.message)) + ' — base rules kept unchanged');
+        r.overlay = { url: opts.overlayUrl, source: absent ? 'absent' : 'error', id: oid,
+          error: absent ? null : ((err && err.message) || String(err)) };
+        r.provenance = [];
+        return r;
+      });
     });
+  }
+
+  // ── T8.14 §RULE_OVERLAY — per-jurisdiction rules, merged the way rates.js already merges packs.
+  // viewer/rates.js loadRateTemplate() has merged 16 jurisdiction packs per-key for months (JSON
+  // wins, keys the pack omits keep their base value) — and 15 of those packs already carry 49
+  // `sequence` entries each, so one rulebook is ALREADY regionalised through that mechanism.
+  // Compliance never was. This is the same discipline, one level finer:
+  //
+  //   base:    { name: 'door_clear_width', applies_to: ['IfcDoor'], warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' }
+  //   overlay: { name: 'door_clear_width', critical_m: 1.054 }
+  //   result:  { name: 'door_clear_width', applies_to: ['IfcDoor'], warning_m: 0.85, critical_m: 1.054, max_severity: 'WARNING' }
+  //
+  // That example is real and already documented in egress_sanity.js's own header: IBC 2021
+  // requires 1.054 m (41.5in) for Group I-2 bed-movement egress doors, but applying it as a
+  // blanket default would false-flag every non-bed-movement door, so main ships the general
+  // §1010.1.1 figure. An overlay is how a jurisdiction (or an occupancy) states its own number
+  // WITHOUT restating the seven rules it does not change.
+  //
+  // MERGE IS PER FIELD, not per rule: an overlay rule patches the fields it names and inherits
+  // the rest. A rule the overlay does not mention is untouched. A rule ONLY in the overlay is
+  // ADDED (a jurisdiction with an extra check). Arrays (applies_to, name_hints) are REPLACED
+  // wholesale — there is no sensible element-wise merge for them, and silently unioning hints
+  // would change which beams a rule claims.
+  //
+  // ⚠ PROVENANCE IS THE POINT, not a nicety. With two layers, `rulesSource: fetched|fallback` per
+  // FILE stops being enough to answer "where did this threshold come from" — the question a
+  // report exists to answer. mergeRuleSets returns, per overridden rule, exactly which fields the
+  // overlay supplied and what the base said, so the report can show both.
+  function mergeRuleSets(base, overlay, opts) {
+    opts = opts || {};
+    var overlayId = opts.overlayId || 'overlay';
+    var provenance = [];
+    if (!overlay) return { rules: base, provenance: provenance };
+
+    var out = {}, KEYS = ['structural_rules', 'egress_rules'];
+    KEYS.forEach(function (k) {
+      var baseList = ((base || {})[k] || []);
+      var overList = ((overlay || {})[k] || []);
+      if (!baseList.length && !overList.length) return;
+
+      var byName = {};
+      overList.forEach(function (r) { if (r && r.name) byName[r.name] = r; });
+
+      // Base order is preserved so the output is deterministic (T8.6) regardless of overlay order.
+      var merged = baseList.map(function (b) {
+        var o = byName[b.name];
+        if (!o) return b;
+        var copy = {}, changed = [];
+        Object.keys(b).forEach(function (f) { copy[f] = b[f]; });
+        Object.keys(o).forEach(function (f) {
+          if (f === 'name') return;
+          var was = copy[f], now = o[f];
+          if (JSON.stringify(was) !== JSON.stringify(now)) {
+            changed.push({ field: f, from: was === undefined ? null : was, to: now });
+          }
+          copy[f] = now;
+        });
+        if (changed.length) provenance.push({ rule: b.name, source: overlayId, changed: changed });
+        delete byName[b.name];
+        return copy;
+      });
+
+      // Anything left in the overlay is new — appended in the overlay's own order, after the base.
+      overList.forEach(function (o) {
+        if (!o || !o.name || !byName[o.name]) return;
+        merged.push(o);
+        provenance.push({ rule: o.name, source: overlayId, added: true });
+        delete byName[o.name];
+      });
+      out[k] = merged;
+    });
+
+    // Carry through any non-rule keys the base had (meta, etc.) without inventing any.
+    Object.keys(base || {}).forEach(function (k) { if (KEYS.indexOf(k) === -1 && !(k in out)) out[k] = base[k]; });
+    return { rules: out, provenance: provenance };
   }
 
   // ── Pure: do two rule objects apply the same numbers? The cross-surface drift guard. Compares
@@ -447,6 +566,12 @@
       // thresholds and this repo's hardcoded copies. `unknown` when the caller cannot say;
       // never silently `fetched`.
       rulesSource: { structural: src.structural || 'unknown', egress: src.egress || 'unknown' },
+      // T8.14 — with an overlay in play, one word per FILE no longer answers "where did this
+      // threshold come from". These name the overlay and, per rule, exactly which fields it
+      // changed and what the base said. Empty array = no override applied, which is not the same
+      // as "not checked" — `rulesOverlay.source` says which.
+      rulesOverlay: meta.rulesOverlay || null,
+      rulesProvenance: meta.rulesProvenance || [],
       totals: { findings: all.length, rules: rules.length, severity: bySev,
         withWitness: all.filter(function (r) { return r.witness !== undefined; }).length },
       rules: rules,
@@ -479,6 +604,7 @@
   return {
     buildRuleReport: buildRuleReport,
     loadRules: loadRules,
+    mergeRuleSets: mergeRuleSets,
     diffRuleThresholds: diffRuleThresholds,
     runSufficiencyProbes: runSufficiencyProbes,
     rulePopulations: rulePopulations,
