@@ -751,6 +751,15 @@ Regenerate after any change that moves a definition:
 ```bash
 node scripts/gen_app_surface.js     # §APP_SURFACE files=… fields=… phantom=…
 node tests/witness_app_surface.js   # 9/9 expected
+
+# §15 — pattern adoption across production .js (the health metric that matters)
+P=$(git ls-files '*.js' | grep -vE '(/lib/|\.min\.|web-ifc|qrcode|/tests/|witness|probe|spike)')
+echo "production files: $(echo "$P" | wc -l)"
+for pat in 'DO NOT REMOVE' 'SPDX-License-Identifier'; do
+  echo "$pat: $(echo "$P" | xargs grep -l "$pat" 2>/dev/null | wc -l)"
+done
+echo "setupX(A):  $(echo "$P" | xargs grep -lE 'function setup\w*\s*\(\s*A\b' 2>/dev/null | wc -l)"
+echo "witnesses on the contract: $(grep -rl 'Witness(' --include='*.js' . | grep -v /lib/ | wc -l) of $(find . -name '*witness*.js' -not -path './*/lib/*' | wc -l)"
 ```
 
 **Not done — renaming `A` → `APP` across the tree.** That is 991 fields over
@@ -776,7 +785,146 @@ now documented and indexed instead of merely asserted.
 
 ---
 
-## 15. Re-measure
+## 15. The theory behind the patterns — measured
+
+> §11 covered who argued about architecture in general. This is the theory of
+> **this** codebase: what its patterns actually are, how widely they are kept,
+> and the one structural fact that a newcomer most needs and cannot see.
+> All figures measured at `719ebb92` over **427 production `.js`** files
+> (excluding vendored, minified, tests, witnesses, probes).
+
+---
+
+### 15.1 The five house patterns
+
+| pattern | what it is | files | adoption |
+|---|---|---:|---:|
+| SPDX licence header | provenance on every file | 322 | **75%** |
+| `§`-tagged log line | `console.log('§TAG …')` — proof a path fired | 194 | **45%** |
+| IIFE + `window.X =` export | the module system (§1) | 167 | **39%** |
+| spec block `⚠ DO NOT REMOVE` | stated scope, rules, non-invent clause | 90 | **21%** |
+| `setupX(A)` module entry | the god-object injection contract (§2, §14) | 42 | **10%** |
+
+Alongside these, three smaller conventions carry real weight:
+
+- **`prompts/*.md` — a 43-file design ledger.** Each opens with a
+  `# ⚠ DO NOT REMOVE` preamble stating scope and "read the log after every run,"
+  and stays authoritative until the work is DONE. This is where a decision lives
+  before it becomes code.
+- **`§S<n>` — a numbered decision stream.** 74 distinct numbers, currently
+  running to `§S288b`. A tag in the source cites the decision that produced the
+  line. `§S282b`, `§S287b` — a suffix means the decision was revised.
+- **Facade-first migration.** `viewer/input_registry.js` is the clearest
+  statement: *"P0 is a FACADE over the existing scene.js focus state … adds the
+  API surface WITHOUT changing any behaviour … later phases migrate ownership
+  in."* Introduce the seam first, move the logic later, never both at once.
+
+---
+
+### 15.2 The best idea in the tree, and its adoption
+
+`witness_kit/contract.js` states it outright:
+
+> *"JS has no compiler to refuse an incomplete implementer, so the guarantee is
+> moved here instead: one shared function every witness is forced to go through,
+> that refuses to run without a population, a schema, and a **redControl** — and
+> that **PROVES the redControl actually fails**, so a witness that cannot fail is
+> caught at author time, not by luck."*
+
+A `Witness()` will not run unless you also supply a deliberately corrupted
+population, and the kit then **verifies that corruption is rejected**. A test
+that cannot fail is refused at author time.
+
+That is mutation testing's central insight, enforced as a mandatory builder
+contract rather than an optional tool — and it is the mechanical form of this
+project's own standing rule, *every test must name the issue it proves or
+disproves*. It is the strongest single idea in the codebase.
+
+| | |
+|---|---:|
+| witness-named `.js` files | 545 |
+| that go through the `Witness()` contract | **43** |
+| **adoption** | **8%** |
+
+The tree already knows: `contract.js` cites an audit
+(`WITNESS_CONTRACT_AUDIT.md §RESULTS`, 2026-08-24) that found 12+ files omitting
+even the summary line. **The best idea here is the least adopted one.**
+
+---
+
+### 15.3 The structural finding
+
+Test whether the conventions **rot** — a spec block citing a witness file that
+no longer exists:
+
+| | |
+|---|---:|
+| files carrying a spec block | 561 |
+| of those, citing a witness by filename | 174 (31%) |
+| whose cited witness **exists on disk** | **171** |
+| dangling citations | **3** |
+
+> **Integrity where applied: 98%. Coverage: 10–45%.**
+
+This is the theory, and it holds across all five patterns independently:
+
+> **The patterns here are invented rigorously and adopted partially. The failure
+> mode is not decay — it is incompleteness.** Nothing rots. The tail simply never
+> gets converted, because the next pattern is more interesting to invent than the
+> last one is to finish.
+
+---
+
+### 15.4 Why this is the real comprehension hazard
+
+Bigger than the naming tax of §14, and harder to see.
+
+The documented theory — this README, the spec headers, `CLAUDE.md`'s standing
+rules — describes a codebase that exists in **10–45% of the files**. A newcomer
+reads `viewer/db_resolve.js` with its numbered rules and named witness, forms a
+theory of a rigorous tree, then opens one of the 79% with no spec block and
+concludes the convention is decoration. **Both conclusions are wrong**, and
+nothing in the tree tells them which file they are holding.
+
+This is **Naur (§11.7) with a twist**. He warned the projection is *lossy*. Here
+it is also **aspirational**: the documents describe the intended theory, not the
+realized one. A reader cannot recover the theory from the artifact, because the
+artifact is a partially-applied version of it.
+
+Hence a rule worth adding to the reading order in §8:
+
+> **Check adoption before you trust a convention.** Before assuming a pattern is
+> house style, count it. The `Re-measure` block in §16 is there for exactly this.
+
+---
+
+### 15.5 What follows from it
+
+The measurements point one way, and it is not toward more design.
+
+1. **Stop inventing patterns; convert the tail.** Five patterns is plenty. None
+   is below 98% integrity where applied, so none needs redesign — they need
+   coverage. Invention is the pleasant half and it is already done.
+2. **The highest-leverage target is `redControl`: 43 of 545.** Everything else
+   here defends against *misunderstanding* the code. This one defends against a
+   test that silently proves nothing — the only failure that can make every other
+   guarantee in this document false at once. §12.5's hung queen, exactly.
+3. **Convert as you read, not in a sweep.** The same argument as §14's rename:
+   adding a spec block to a file forces you to state its scope and its
+   non-invent clause, which cannot be done without understanding it. Naur's
+   theory is rebuilt by the act of writing the header, and not at all by a
+   scripted pass.
+4. **Adoption is measurable, so make it visible.** The §16 block already counts
+   four of the five patterns. A trend line on those numbers is a better health
+   metric for this codebase than any test-pass count.
+
+**The one-sentence theory:** *this codebase is a set of well-designed
+conventions applied to a minority of itself, and the work that remains is
+finishing, not designing.*
+
+---
+
+## 16. Re-measure
 
 ```bash
 cd ~/bim-ootb
@@ -791,4 +939,13 @@ git ls-files viewer | grep '\.js$' | grep -v 'viewer/lib/' | xargs wc -l | tail 
 # §14 — the god-object symbol table (regenerate, then prove it)
 node scripts/gen_app_surface.js     # writes internal/APP_SURFACE.md
 node tests/witness_app_surface.js   # 9/9 expected
+
+# §15 — pattern adoption across production .js (the health metric that matters)
+P=$(git ls-files '*.js' | grep -vE '(/lib/|\.min\.|web-ifc|qrcode|/tests/|witness|probe|spike)')
+echo "production files: $(echo "$P" | wc -l)"
+for pat in 'DO NOT REMOVE' 'SPDX-License-Identifier'; do
+  echo "$pat: $(echo "$P" | xargs grep -l "$pat" 2>/dev/null | wc -l)"
+done
+echo "setupX(A):  $(echo "$P" | xargs grep -lE 'function setup\w*\s*\(\s*A\b' 2>/dev/null | wc -l)"
+echo "witnesses on the contract: $(grep -rl 'Witness(' --include='*.js' . | grep -v /lib/ | wc -l) of $(find . -name '*witness*.js' -not -path './*/lib/*' | wc -l)"
 ```
