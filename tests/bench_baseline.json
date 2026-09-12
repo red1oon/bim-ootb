@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-09-12T03:31:25.865Z",
+  "generatedAt": "2026-09-12T04:15:32.657Z",
   "buildings": {
+    "HHS_Office_Federated_extracted": {
+      "findings": 140,
+      "rules": [
+        {
+          "rule": "column_continuity",
+          "found": 128,
+          "defect": 0,
+          "nearMiss": 64,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 12,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        }
+      ]
+    },
     "Clinic_extracted": {
       "findings": 26,
       "rules": [
@@ -39,7 +60,7 @@
           "defect": 0,
           "nearMiss": null,
           "rate": 0,
-          "basis": "the room has edges in the room graph"
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
         }
       ]
     },
@@ -52,28 +73,7 @@
           "defect": 0,
           "nearMiss": 1,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
-        }
-      ]
-    },
-    "HHS_Office_Federated_extracted": {
-      "findings": 140,
-      "rules": [
-        {
-          "rule": "column_continuity",
-          "found": 128,
-          "defect": 0,
-          "nearMiss": 64,
-          "rate": 0,
-          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
-        },
-        {
-          "rule": "door_clear_width",
-          "found": 12,
-          "defect": null,
-          "nearMiss": null,
-          "rate": null,
-          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         }
       ]
     },
@@ -123,7 +123,7 @@
           "defect": 0,
           "nearMiss": 25,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "column_continuity",
@@ -152,7 +152,7 @@
           "defect": 0,
           "nearMiss": 28,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "column_continuity",
@@ -176,7 +176,7 @@
           "defect": 0,
           "nearMiss": null,
           "rate": 0,
-          "basis": "the room has edges in the room graph"
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
         }
       ]
     },
@@ -197,7 +197,7 @@
           "defect": 0,
           "nearMiss": 8,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "column_continuity",
@@ -221,7 +221,7 @@
           "defect": 0,
           "nearMiss": null,
           "rate": 0,
-          "basis": "the room has edges in the room graph"
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
         }
       ]
     },
@@ -234,7 +234,7 @@
           "defect": 0,
           "nearMiss": 1,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "floating_member",
@@ -242,7 +242,7 @@
           "defect": 0,
           "nearMiss": 0,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "column_continuity",
@@ -266,7 +266,7 @@
           "defect": 0,
           "nearMiss": null,
           "rate": 0,
-          "basis": "the room has edges in the room graph"
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
         }
       ]
     },
@@ -287,7 +287,7 @@
           "defect": 0,
           "nearMiss": 0,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "floating_member",
@@ -295,14 +295,14 @@
           "defect": 0,
           "nearMiss": 2,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "column_continuity",
           "found": 471,
-          "defect": 4,
+          "defect": 0,
           "nearMiss": 72,
-          "rate": 0.0085,
+          "rate": 0,
           "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
         },
         {
@@ -316,10 +316,10 @@
         {
           "rule": "isolated_room",
           "found": 17,
-          "defect": 2,
+          "defect": 0,
           "nearMiss": null,
-          "rate": 0.1176,
-          "basis": "the room has edges in the room graph"
+          "rate": 0,
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
         },
         {
           "rule": "circulation_distance",
@@ -340,15 +340,15 @@
           "defect": 0,
           "nearMiss": 271,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "floating_member",
           "found": 172,
-          "defect": 1,
-          "nearMiss": 106,
-          "rate": 0.0058,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "defect": 0,
+          "nearMiss": 107,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "span_depth_concrete",
@@ -361,9 +361,9 @@
         {
           "rule": "column_continuity",
           "found": 663,
-          "defect": 1,
-          "nearMiss": 194,
-          "rate": 0.0015,
+          "defect": 0,
+          "nearMiss": 195,
+          "rate": 0,
           "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
         },
         {
@@ -417,7 +417,7 @@
           "defect": 0,
           "nearMiss": null,
           "rate": 0,
-          "basis": "the room has edges in the room graph"
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
         }
       ]
     },
@@ -470,7 +470,7 @@
           "defect": 0,
           "nearMiss": null,
           "rate": 0,
-          "basis": "the room has edges in the room graph"
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
         }
       ]
     },
@@ -499,7 +499,7 @@
           "defect": 0,
           "nearMiss": 4,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "span_depth_cantilever",
@@ -507,7 +507,7 @@
           "defect": 0,
           "nearMiss": 5,
           "rate": 0,
-          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
         },
         {
           "rule": "column_continuity",
@@ -539,7 +539,7 @@
           "defect": 0,
           "nearMiss": null,
           "rate": 0,
-          "basis": "the room has edges in the room graph"
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
         }
       ]
     }
@@ -548,15 +548,15 @@
     "rules": {
       "column_continuity": {
         "found": 1746,
-        "artifact": 5,
-        "nearMiss": 544,
-        "rate": 0.0029
+        "artifact": 0,
+        "nearMiss": 545,
+        "rate": 0
       },
       "isolated_room": {
         "found": 52,
-        "artifact": 2,
+        "artifact": 0,
         "nearMiss": 0,
-        "rate": 0.0385
+        "rate": 0
       },
       "span_depth_cantilever": {
         "found": 560,
@@ -566,14 +566,14 @@
       },
       "floating_member": {
         "found": 187,
-        "artifact": 1,
-        "nearMiss": 112,
-        "rate": 0.0053
+        "artifact": 0,
+        "nearMiss": 113,
+        "rate": 0
       }
     },
     "found": 2545,
-    "artifact": 8,
-    "rate": 0.0031,
+    "artifact": 0,
+    "rate": 0,
     "buildingsMeasured": 14
   }
 }

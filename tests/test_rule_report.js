@@ -195,7 +195,13 @@ const ROWS_E = [
 
   // ── R8 REAL-BUILDING — proves: on a real DB the report reproduces the evaluators' own § counts.
   console.log('§W-RULE-REPORT R8 REAL-BUILDING (buildings/Hospital_meta.db)');
-  const HOSPITAL = path.join(__dirname, '../buildings/Hospital_meta.db');
+  // buildings/ is gitignored, so a WORKTREE (the mandated dev environment here) holds only the
+  // two TRACKED DBs and the real-building arms of these tests would all report themselves
+  // skipped. BIM_BUILDINGS points them at a checkout that has the fleet. Never a symlink INTO
+  // buildings/ — T11.5 trap 5: two of those files are tracked and a symlink over one is
+  // committed as 63 bytes.
+  const BUILDINGS = process.env.BIM_BUILDINGS || path.join(__dirname, '../buildings');
+  const HOSPITAL = path.join(BUILDINGS, 'Hospital_meta.db');
   if (fs.existsSync(HOSPITAL)) {
     const hdb = new SQL.Database(new Uint8Array(fs.readFileSync(HOSPITAL)));
     const hq = (sql, p) => { const r = p ? hdb.exec(sql, p) : hdb.exec(sql); return r.length ? r[0].values : []; };
@@ -471,6 +477,154 @@ const ROWS_E = [
       const real = RuleReport.runSufficiencyProbes(hq, { log: () => {} }).filter(x => x.check === 'axis_aligned_bboxes')[0];
       chk('R17 real Hospital_meta.db no longer reports a false "ok" for rotation',
         real.verdict === 'uninformative', 'verdict=' + real.verdict + ' ' + JSON.stringify(real.measured));
+    }
+  }
+
+  // ── R18-R21 §BENCH_DEFECT_ZERO (T12) — the artifact METRIC's own qualifying conditions.
+  // Each of the four cases below is a REAL row from the fleet at 1f795c70 that `artifactRates`
+  // scored as a defect while the rule had judged it correctly. The control beside each one is
+  // the same shape moved to where the rule really would have missed, so a passing test here is
+  // one that could have failed (T11.5 trap 3).
+  const RD = [STRUCT_RULES, EGRESS_RULES];
+  const colRow = (near) => [{ guid: 'c9', ifc_class: 'IfcColumn', name: 'C', storey: 'VÅN 2',
+    rule: 'column_continuity', severity: 'CRITICAL', ratio: null,
+    witness: { nearestBelow: near, columnBaseZ: 7.9, toleranceM: 0.3 } }];
+  const beamRow = (nearest) => [{ guid: 'b9', ifc_class: 'IfcBeam', name: 'B', storey: 'VÅN 2',
+    rule: 'floating_member', severity: 'CRITICAL', ratio: null,
+    witness: { supportedEnds: 0, of: 2, freeEnds: [{ end: 0, at: { x: 0, y: 0, z: 0 }, nearest: nearest }] } }];
+  const roomRow = (w) => [{ guid: 'RM_9', ifc_class: 'IfcSpace', name: '≈ R9', storey: 'VÅNING 4',
+    rule: 'isolated_room', severity: 'CRITICAL', ratio: null, witness: w }];
+  const rate = (rows) => RuleReport.artifactRates(rows, RD)[0];
+
+  console.log('§W-RULE-REPORT R18 PRECISION-DECIDED-A-TOLERANCE');
+  {
+    // LTU_AHouse_extracted T0_..._0JpN4ZIbD1EfEtuz0sIANj: the real gap is 0.300001621 m against a
+    // 0.3 m tolerance. At toFixed(3) it printed 0.3 and the metric read it as INSIDE.
+    const out = rate(colRow({ guid: 'x', ifc_class: 'IfcColumn', name: '-',
+      centrelineOffsetM: 0.025024, topToColumnBaseM: 0.300002, topBelowColumnBaseM: 0.300002 }));
+    chk('R18 a 0.300002 m gap against a 0.3 m tolerance is NOT a defect',
+      out.defect === 0, 'defect=' + out.defect + ' nearMiss=' + out.nearMiss);
+    chk('R18 and it is still counted as evidence seen — a near-miss, not silence', out.nearMiss === 1);
+    // CONTROL: inside the tolerance for real. If this does not fire, the test above proves nothing.
+    const ctl = rate(colRow({ guid: 'x', ifc_class: 'IfcColumn', name: '-',
+      centrelineOffsetM: 0.025024, topToColumnBaseM: 0.299000, topBelowColumnBaseM: 0.299000 }));
+    chk('R18 CONTROL 0.299 m IS a defect — the test can still fail',
+      ctl.defect === 1, 'defect=' + ctl.defect);
+    // And the evaluator must publish enough digits for that distinction to survive to the metric.
+    const cols = [['col', 'C', 'VÅN 2', 0, 0, 8.05, 0.1, 0.3, 0.3000016212463379]];
+    const sups = [['sup', 'S', 'VÅN 2', 0.025024414, 0, 7.925, 0.15, 0.3, 0.5500016212463379]];
+    const any = [['sup', 'S', 'VÅN 2', 0.025024414, 0, 7.925, 0.15, 0.3, 0.5500016212463379, 'IfcColumn']];
+    const w = StructuralSanity._columnContinuity(cols, sups, 0.3, any).col.witness.nearestBelow;
+    chk('R18 the witness publishes the gap at 6 dp, not 3 — 3 dp cannot express it',
+      w.topToColumnBaseM > 0.3, 'topToColumnBaseM=' + w.topToColumnBaseM + ' (at 3 dp this is 0.3)');
+  }
+
+  console.log('§W-RULE-REPORT R19 A-TWIN-IS-NOT-A-SUPPORT');
+  {
+    // The real shape of the four LTU rows: an ARC column sharing the STR column's TOP plane
+    // EXACTLY and running 0.25 m past its bottom. It contains the column; it does not hold it up.
+    // Two of the four measure 0.300000190 m from the base against a 0.3 m tolerance — 190 nm, a
+    // distinction no rounding decides honestly — so the test that has to carry this is the one
+    // that is exact: does the candidate reach as high as the column itself.
+    const twin = { guid: 'x', ifc_class: 'IfcColumn', name: '-', centrelineOffsetM: 0.025024,
+      topToColumnBaseM: 0.300000, topBelowColumnBaseM: -0.300000, topAboveColumnTopM: 0 };
+    const out = rate(colRow(twin));
+    chk('R19 a candidate reaching the column\'s own top is not a defect, even at 0.300000 m',
+      out.defect === 0, 'defect=' + out.defect);
+    chk('R19 nor a near-miss — no threshold turns a co-located twin into a support',
+      out.nearMiss === 0, 'nearMiss=' + out.nearMiss);
+    // CONTROL: genuinely underneath, same distances. That IS a threshold call for an engineer.
+    const ctl = rate(colRow(Object.assign({}, twin, { topAboveColumnTopM: -0.55, topBelowColumnBaseM: 0.300002, topToColumnBaseM: 0.300002 })));
+    chk('R19 CONTROL a candidate genuinely below is still counted as a near-miss',
+      ctl.nearMiss === 1 && ctl.defect === 0, 'defect=' + ctl.defect + ' nearMiss=' + ctl.nearMiss);
+    // CONTROL 2: the knife-edge row must not be excluded for being 190 nm out — it is excluded
+    // for reaching the column's top. Move only that field and it comes back as a real defect.
+    const inside = rate(colRow(Object.assign({}, twin, { topAboveColumnTopM: -0.25, topToColumnBaseM: 0.3, topBelowColumnBaseM: 0.3 })));
+    chk('R19 CONTROL the same 0.3 m gap from something genuinely below IS a defect',
+      inside.defect === 1, 'defect=' + inside.defect);
+    // The evaluator must actually publish the field, computed off real bboxes.
+    const w = StructuralSanity._columnContinuity(
+      [['col', 'C', 'L', 0, 0, 8.05, 0.1, 0.3, 0.3000016212463379]], [], 0.3,
+      [['t', 'T', 'L', 0.025, 0, 7.925, 0.15, 0.3, 0.5500016212463379, 'IfcColumn']]
+    ).col.witness.nearestBelow;
+    chk('R19 a twin sharing the column\'s top plane publishes topAboveColumnTopM === 0',
+      w.topAboveColumnTopM === 0, 'topAboveColumnTopM=' + w.topAboveColumnTopM);
+    chk('R19 and rejectedBecause names it — no more "unknown"',
+      /co-located duplicate/.test(w.rejectedBecause), w.rejectedBecause);
+  }
+
+  console.log('§W-RULE-REPORT R20 A-BEAM-BEARS-BY-FRAMING');
+  {
+    // LTU_AHouse_meta 1XTQObkjP83Rry27DGiIWn: an ARC precast beam butting end-to-end 0.013 m away
+    // — and 0.4993 m higher. §FRAMING_TOP_OF_STEEL's datum is 0.4 m, so the rule cannot count it.
+    const out = rate(beamRow({ guid: 'x', ifc_class: 'IfcBeam', name: '-',
+      gapHorizM: 0.013, gapVertM: 0.111, topDzM: 0.499251, bottomDzM: 0.498896 }));
+    chk('R20 a beam 0.499 m off BOTH framing datums is not a defect',
+      out.defect === 0, 'defect=' + out.defect + ' nearMiss=' + out.nearMiss);
+    chk('R20 it is still evidence the reader should see — a near-miss', out.nearMiss === 1);
+    // CONTROL 1: top-flush. The steel norm. This is a real miss and must fire.
+    const ctl = rate(beamRow({ guid: 'x', ifc_class: 'IfcBeam', name: '-',
+      gapHorizM: 0.013, gapVertM: 0.111, topDzM: 0.004, bottomDzM: 0.482 }));
+    chk('R20 CONTROL a top-flush beam at the same point IS a defect',
+      ctl.defect === 1, 'defect=' + ctl.defect);
+    // CONTROL 2: a class the z-bracket really does govern must be judged exactly as before.
+    const wall = rate(beamRow({ guid: 'x', ifc_class: 'IfcWall', name: '-',
+      gapHorizM: 0.013, gapVertM: 0.111, topDzM: null, bottomDzM: null }));
+    chk('R20 CONTROL a wall at the same point is still a defect — only beams changed',
+      wall.defect === 1, 'defect=' + wall.defect);
+    // A pre-T12 witness carries no datums. It must keep the OLD answer, never a silent clean.
+    const old = rate(beamRow({ guid: 'x', ifc_class: 'IfcBeam', name: '-', gapHorizM: 0.013, gapVertM: 0.111 }));
+    chk('R20 a witness with no framing datums falls back to the old test, not to "clean"',
+      old.defect === 1, 'defect=' + old.defect);
+  }
+
+  console.log('§W-RULE-REPORT R21 ISOLATED-IS-REACHABILITY-NOT-DEGREE');
+  {
+    // LTU_AHouse_extracted RM_VÅNING_4_10/_11: wired to each other and to nothing else, on a
+    // storey with no circulation node, in a model with zero exit nodes.
+    const out = rate(roomRow({ graphDegree: 1, neighbours: [{ guid: 'RM_9b', via: 'E1' }],
+      storeyHasCirculationNode: false, exitNodesInModel: 0, componentSize: 2, componentHasExitOrCirc: false }));
+    chk('R21 a sealed two-room component is not a defect, whatever its degree',
+      out.defect === 0, 'defect=' + out.defect);
+    // CONTROL: T9.6's real HHS bug — 6 edges, four onto its own storey's SPINE, called isolated.
+    const ctl = rate(roomRow({ graphDegree: 6, neighbours: [{ guid: 'SPINE::VÅNING 4|x|32.44', via: 'E6' }],
+      storeyHasCirculationNode: true, exitNodesInModel: 3, componentSize: 41, componentHasExitOrCirc: true }));
+    chk('R21 CONTROL the T9.6 shape — a room wired to its own storey circulation — IS a defect',
+      ctl.defect === 1, 'defect=' + ctl.defect);
+    chk('R21 the basis states reachability, not degree',
+      /connected component/.test(ctl.basis), ctl.basis);
+    // A pre-T12 witness has no component fields; it must keep the old answer rather than go quiet.
+    const old = rate(roomRow({ graphDegree: 1, neighbours: [], storeyHasCirculationNode: false, exitNodesInModel: 0 }));
+    chk('R21 a witness with no component field falls back to the old degree test',
+      old.defect === 1, 'defect=' + old.defect);
+  }
+
+  console.log('§W-RULE-REPORT R22 THE-NEW-WITNESS-FIELDS-EXIST-ON-A-REAL-BUILDING');
+  {
+    if (fs.existsSync(HOSPITAL)) {
+      const hdb = new SQL.Database(new Uint8Array(fs.readFileSync(HOSPITAL)));
+      const hq = (sql, p) => { const r = p ? hdb.exec(sql, p) : hdb.exec(sql); return r.length ? r[0].values : []; };
+      const sRows = StructuralSanity.evaluate(hq, STRUCT_RULES, { log: () => {}, witness: true });
+      const cols = sRows.filter(r => r.rule === 'column_continuity' && (r.witness || {}).nearestBelow);
+      chk('R22 real column witnesses carry the signed gap',
+        cols.length > 0 && cols.every(r => typeof r.witness.nearestBelow.topBelowColumnBaseM === 'number'),
+        cols.length + ' column rows with a nearestBelow');
+      const beamNear = sRows.filter(r => (r.rule === 'floating_member' || r.rule === 'span_depth_cantilever'))
+        .reduce((a, r) => a.concat(((r.witness || {}).freeEnds || []).map(e => e.nearest).filter(n => n && n.ifc_class === 'IfcBeam')), []);
+      chk('R22 real beam-class neighbours carry both framing datums',
+        beamNear.length > 0 && beamNear.every(n => typeof n.topDzM === 'number' && typeof n.bottomDzM === 'number'),
+        beamNear.length + ' beam-class nearest neighbours');
+      const eRows = EgressSanity.evaluate(hq, EGRESS_RULES, { log: () => {}, witness: true })
+        .filter(r => r.rule === 'isolated_room');
+      chk('R22 real isolated_room witnesses carry the component fields',
+        eRows.length === 0 || eRows.every(r => typeof r.witness.componentHasExitOrCirc === 'boolean'),
+        eRows.length + ' isolated_room rows');
+      // R11's contract, re-checked: witness:true adds evidence and changes no count.
+      const noW = StructuralSanity.evaluate(hq, STRUCT_RULES, { log: () => {} });
+      chk('R22 the new witness fields change NO finding count',
+        noW.length === sRows.length, noW.length + ' without witness vs ' + sRows.length + ' with');
+    } else {
+      console.log('  ⚠ R22 SKIPPED — buildings/Hospital_meta.db absent (this is a reported absence, not a pass)');
     }
   }
 

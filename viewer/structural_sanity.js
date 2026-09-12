@@ -142,7 +142,21 @@
   // NOT consult — the point is to show the reader the element the rule could not count, so
   // "floating" and "cantilever" can be eyeballed instead of taken on trust. Returns null when
   // genuinely nothing is near. Distances are real, never rounded away.
-  function _nearestAtPoint(pt, anyRows, selfGuid, horizTol, vertTol) {
+  //
+  // ══ T12.3 — PUBLISHED AT 6 dp, AND A BEAM CANDIDATE CARRIES ITS FRAMING DATUM ═══════════════
+  // These numbers are not decoration: `artifactRates` compares the PUBLISHED value against the
+  // rule's own tolerance to decide defect vs near-miss. At `toFixed(3)` a real 0.300001621 m gap
+  // prints as `0.3` and reads as INSIDE a 0.3 m tolerance the rule measured it OUTSIDE of — which
+  // is how four LTU_AHouse columns became "defects" the rule had judged correctly (T12.1). µm on
+  // metres is the precision that separates inside from outside here, so it earns its digits.
+  //
+  // `topDzM`/`bottomDzM` exist for the same reason. An `IfcBeam` is load-bearing, but this rule
+  // admits one ONLY through the §FRAMING_TOP_OF_STEEL path — top- or bottom-flush within
+  // `framing_dz_m`, then footprint — never by bare 3D proximity. Without the two datums published,
+  // the metric cannot apply the condition the rule applies, and a parallel precast beam running
+  // end-to-end half a metre higher reads as proof of support (T12.1 row 6). Null for a
+  // non-beam candidate, whose support test really is the z-bracket `gapVertM` already carries.
+  function _nearestAtPoint(pt, anyRows, selfGuid, horizTol, vertTol, subj) {
     var best = null;
     for (var i = 0; i < anyRows.length; i++) {
       var r = anyRows[i];
@@ -155,9 +169,16 @@
       var dz = (pt.z < b.zmin) ? (b.zmin - pt.z) : (pt.z > b.zmax ? pt.z - b.zmax : 0);
       if (dz > vertTol) continue;
       var d = dxy + dz;
-      if (!best || d < best._d) best = { guid: r[0], ifc_class: r[9] || null, name: r[1], gapHorizM: +dxy.toFixed(3), gapVertM: +dz.toFixed(3), _d: d };
+      if (!best || d < best._d) best = { guid: r[0], ifc_class: r[9] || null, name: r[1],
+        gapHorizM: +dxy.toFixed(6), gapVertM: +dz.toFixed(6), topDzM: null, bottomDzM: null, _d: d, _b: b };
     }
-    if (best) delete best._d;
+    if (best) {
+      if (subj && best.ifc_class === 'IfcBeam') {
+        best.topDzM = +Math.abs(best._b.zmax - subj.zmax).toFixed(6);
+        best.bottomDzM = +Math.abs(best._b.zmin - subj.zmin).toFixed(6);
+      }
+      delete best._d; delete best._b;
+    }
     return best;
   }
 
@@ -211,7 +232,7 @@
         // Search radius is deliberately WIDER than the rule's own tolerance (4x horizontal, 1m
         // vertical) so a near-miss shows up as a near-miss instead of as nothing.
         else if (anyRows) freeEnds.push({ end: e, at: { x: +pt.x.toFixed(2), y: +pt.y.toFixed(2), z: +pt.z.toFixed(2) },
-          nearest: _nearestAtPoint(pt, anyRows, beam[0], tolerance_m * 4, 1.0) });
+          nearest: _nearestAtPoint(pt, anyRows, beam[0], tolerance_m * 4, 1.0, bb) });
       }
       out[beam[0]] = { supportedCount: supportedCount, span: Math.max(bb.bx, bb.by), depth: bb.bz, freeEnds: freeEnds };
     }
@@ -251,12 +272,32 @@
           var dz = Math.abs(b.zmax - cb.zmin);
           if (dz > 1.0) continue;
           var d = dxy + dz;
+          // T12.3 — 6 dp, and the SIGNED gap alongside the absolute one. `topToColumnBaseM` is
+          // an absolute value, so a candidate whose top sits 0.30 m ABOVE this column's base
+          // measures identically to one sitting 0.30 m BELOW it. The four LTU_AHouse columns
+          // that read as defects at handover were each an ARC twin of the same physical column,
+          // sharing its top plane and running 0.25 m past its bottom — a thing that CONTAINS the
+          // column, not a thing that holds it up. `topBelowColumnBaseM` is positive only when the
+          // candidate really is underneath.
+          //
+          // `topAboveColumnTopM` is the one comparison here that does NOT sit on a knife edge.
+          // Two of these twins measure 0.300000190 m from the column's base against a 0.3 m
+          // tolerance — a 190 nm difference, which is float noise on a building, not geometry,
+          // and no rounding can decide it honestly. But the twin and the column share a top
+          // plane EXACTLY (identical doubles, 8.200000762939453), so "does this candidate reach
+          // as high as the column itself" is decided by an equality that is exact. A support
+          // below a column always has its top under the column's top; a co-located duplicate
+          // does not.
           if (!best || d < best._d) best = { guid: r[0], ifc_class: r[9] || null, name: r[1],
-            centrelineOffsetM: +dxy.toFixed(3), topToColumnBaseM: +dz.toFixed(3), _d: d };
+            centrelineOffsetM: +dxy.toFixed(6), topToColumnBaseM: +dz.toFixed(6),
+            topBelowColumnBaseM: +(cb.zmin - b.zmax).toFixed(6),
+            topAboveColumnTopM: +(b.zmax - cb.zmax).toFixed(6), _d: d };
         }
         if (best) {
           delete best._d;
           best.rejectedBecause = (best.centrelineOffsetM > tolerance_m ? 'centreline offset > tolerance ' + tolerance_m + ' m' : null) ||
+            (best.topAboveColumnTopM >= 0 ? 'its top reaches ' + best.topAboveColumnTopM + ' m ABOVE this column\'s own top — a co-located duplicate, not something underneath the column' : null) ||
+            (best.topBelowColumnBaseM < -tolerance_m ? 'its top is ' + (-best.topBelowColumnBaseM) + ' m above this column\'s base — it overlaps the column rather than sitting below it' : null) ||
             (best.topToColumnBaseM > tolerance_m ? 'top-to-base gap > tolerance ' + tolerance_m + ' m' : null) ||
             (COL_SUPPORT_CLASSES.indexOf(best.ifc_class) === -1 ? best.ifc_class + ' is not a column-support class (' + COL_SUPPORT_CLASSES.join('/') + ')' : 'unknown');
         }

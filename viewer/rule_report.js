@@ -501,16 +501,36 @@
 
   function _isLoadBearing(cls) { return LOAD_BEARING_CLASSES.indexOf(cls) !== -1; }
 
+  // Can this neighbour bear the end vertically, by the test the RULE would apply to its class?
+  // A column/wall/slab/footing/plate holds a beam by the z-bracket `gapVertM` measures. A BEAM
+  // holds another beam only by framing: tops flush or bottoms flush within `framing_dz_m`.
+  // Judging a beam by `gapVertM` is how a parallel precast beam running end-to-end half a metre
+  // higher read as proof of support (T12.1 row 6).
+  //
+  // `framingDz` comes from the SAME parsed rules JSON the caller already hands us — T8.13's one
+  // source. Two ways out, both of which must keep the OLD test rather than silently score a row
+  // clean: a pre-T12 witness with no datums, and a rules file with no framing_dz_m.
+  function _bearsVertically(nearest, tolerance_m, framingDz) {
+    if (nearest.ifc_class !== 'IfcBeam') return nearest.gapVertM <= tolerance_m;
+    if (framingDz == null) return nearest.gapVertM <= tolerance_m;
+    if (nearest.topDzM == null && nearest.bottomDzM == null) return nearest.gapVertM <= tolerance_m;
+    return (nearest.topDzM != null && nearest.topDzM <= framingDz) ||
+           (nearest.bottomDzM != null && nearest.bottomDzM <= framingDz);
+  }
+
   // Per rule: { rule, found, artifact, rate, basis }. `artifact` is null — never 0 — for a rule
   // with no artifact test, so "not measured" never reads as "measured clean". Requires rows
   // evaluated with witness:true; without it every rule reports null and says why.
   // `rules` (the parsed rules JSONs) is REQUIRED to classify honestly: without each rule's own
   // tolerance there is no line between "the rule looked and missed" and "something is nearby".
   function artifactRates(rows, rules) {
-    var tol = {};
+    var tol = {}, framingDz = null;
     (rules || []).forEach(function (d) {
       ['structural_rules', 'egress_rules'].forEach(function (k) {
-        ((d || {})[k] || []).forEach(function (r) { if (r.tolerance_m != null) tol[r.name] = r.tolerance_m; });
+        ((d || {})[k] || []).forEach(function (r) {
+          if (r.tolerance_m != null) tol[r.name] = r.tolerance_m;
+          if (r.name === 'floating_member' && r.framing_dz_m != null) framingDz = r.framing_dz_m;
+        });
       });
     });
     // span_depth_cantilever has no tolerance of its own — its classification comes from
@@ -533,9 +553,21 @@
       // Those are threshold questions for an engineer, not logic to repair.
       //   defect   = load-bearing geometry INSIDE the rule's own tolerance — it looked and missed
       //   nearMiss = load-bearing geometry outside it — a threshold judgement, reported not fixed
+      //
+      // ══ T12.3 — THE EVIDENCE TEST MUST CARRY THE RULE'S OWN QUALIFYING CONDITIONS ═══════════
+      // Not the rule's code (that would make this metric tautologically zero — trap 3), but the
+      // conditions that decide whether a neighbour is CAPABLE of being the support the rule is
+      // accused of missing. Three were absent at handover and produced all 8 remaining fleet
+      // defects, every one on geometry the rule had judged correctly (T12.1):
+      //   - proximity was compared at the witness's DISPLAY precision (3 dp), so a 0.300001621 m
+      //     gap read as inside a 0.3 m tolerance. The witness now publishes 6 dp.
+      //   - an `IfcBeam` was accepted on 3D proximity alone, though the rule admits one only by
+      //     the §FRAMING_TOP_OF_STEEL datum test — top- or bottom-flush within framing_dz_m.
+      //   - a column candidate ABOVE the column's base counted the same as one below it.
       var t = tol[rule];
       if (rule === 'floating_member' || rule === 'span_depth_cantilever') {
-        basis = 'load-bearing geometry at an end the rule called unsupported, INSIDE tolerance ' + t + ' m';
+        basis = 'load-bearing geometry at an end the rule called unsupported, INSIDE tolerance ' + t + ' m' +
+                (framingDz == null ? '' : ' (a beam candidate additionally top- or bottom-flush within ' + framingDz + ' m, per §FRAMING_TOP_OF_STEEL)');
         var hits = rs.filter(function (r) {
           return ((r.witness || {}).freeEnds || []).some(function (e) {
             return e.nearest && _isLoadBearing(e.nearest.ifc_class);
@@ -543,8 +575,8 @@
         });
         art = hits.filter(function (r) {
           return (r.witness.freeEnds || []).some(function (e) {
-            return e.nearest && _isLoadBearing(e.nearest.ifc_class) &&
-                   t != null && e.nearest.gapHorizM <= t && e.nearest.gapVertM <= t;
+            return e.nearest && _isLoadBearing(e.nearest.ifc_class) && t != null &&
+                   e.nearest.gapHorizM <= t && _bearsVertically(e.nearest, t, framingDz);
           });
         }).length;
         near = hits.length - art;
@@ -552,7 +584,23 @@
         basis = 'load-bearing geometry directly below, INSIDE tolerance ' + t + ' m';
         var chits = rs.filter(function (r) {
           var b = (r.witness || {}).nearestBelow;
-          return b && _isLoadBearing(b.ifc_class);
+          // A candidate whose top reaches AS HIGH AS the column's own top is a co-located
+          // duplicate, not something underneath — not a defect, and not a near-miss either,
+          // because no threshold an engineer could pick turns a twin into a support.
+          //
+          // ⚠ THIS TEST, AND NOT THE OTHER ONE. `topBelowColumnBaseM >= -tolerance` reads as the
+          // more natural phrasing of the same idea and was tried first. MEASURED over the fleet's
+          // 549 column findings that have a load-bearing `nearestBelow`: it removes 51 of them —
+          // the 4 real twins plus 47 deeper overlaps across EIGHT buildings, dropping the fleet
+          // near-miss count 544 -> 498. `topAboveColumnTopM < 0` removes exactly the 4, and only
+          // LTU_AHouse_extracted moves. The 47 are a separate question and answering it by
+          // side-effect would have buried it.
+          //
+          // It is also the only comparison here not sitting on a knife edge: two of the four
+          // twins measure 0.300000190 m against a 0.3 m tolerance, which no rounding decides
+          // honestly, while all four share the column's top plane as the identical double.
+          return b && _isLoadBearing(b.ifc_class) &&
+                 (b.topAboveColumnTopM === undefined || b.topAboveColumnTopM < 0);
         });
         art = chits.filter(function (r) {
           var b = r.witness.nearestBelow;
@@ -560,8 +608,16 @@
         }).length;
         near = chits.length - art;
       } else if (rule === 'isolated_room') {
-        basis = 'the room has edges in the room graph';
-        art = rs.filter(function (r) { return ((r.witness || {}).graphDegree || 0) > 0; }).length;
+        basis = 'the room\'s connected component holds an exit, or circulation on its own storey — a target the rule should have reached';
+        // NOT `graphDegree > 0`: the rule does not claim the room has no edges, it claims no
+        // route reaches an exit or this storey's circulation spine. A pair of rooms wired only to
+        // each other, on a storey with no circulation node and in a model with zero exit nodes,
+        // satisfies the rule's claim exactly — LTU_AHouse's two "defects" were that pair.
+        art = rs.filter(function (r) {
+          var w = r.witness || {};
+          if (w.componentHasExitOrCirc === undefined) return (w.graphDegree || 0) > 0;   // pre-T12 witness
+          return !!w.componentHasExitOrCirc;
+        }).length;
       } else {
         // door_clear_width / circulation_distance / span_depth_* are threshold judgements with no
         // geometric contradiction to test. Saying so beats inventing a test that always passes.

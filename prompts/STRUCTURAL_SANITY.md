@@ -921,3 +921,134 @@ counts UNCHANGED (moving them means a tolerance was widened), and the synthetic 
 failing when they should — `beam-under-slab` CRITICAL, `col-unsupported` CRITICAL. Per the Log
 Mandate: grep a real log, quote the number that moved, and check that a passing test could have
 failed.
+
+## T12 §BENCH_DEFECT_ZERO — all 8 remaining defects are in the METRIC, not in a rule
+**Spec-first. Every number below is from a witness dump or a raw `element_transforms` query over
+the fleet DBs, run before any file was edited** (`§STRUCT_WITNESS`/`§EGRESS_WITNESS` rows produced
+by the shipped evaluators at `1f795c70`). No rule threshold changes in this task, and none did.
+
+**T12.0 THE FLEET DRIFTED SINCE THE BASELINE — fix the environment, do not re-record.** A bare
+`node tests/bench_rule_artifacts.js --gate tests/bench_baseline.json` in the main checkout now
+exits 1 on `§BENCH_GATE_FLEET_MISMATCH` before a single rule is consulted:
+`buildings/Terminal_silent.db` is gone (its symlink target still exists at
+`~/Downloads/Terminal_silent.db`, 316 MB) and `buildings/TermRooms_extracted.db` — a 28 MB
+byte-identical twin of `Terminal_extracted.db` — has appeared and joined the fleet. That swap
+alone moves `isolated_room` from 52 findings to 102 and `column_continuity` from 1746 to 1692.
+**Re-recording the baseline here would have silently redefined the benchmark.** The 14 DBs the
+baseline was recorded on are named in the gate's own failure message; pass the missing ones on the
+command line (T11.5 trap 5 forbids symlinking them into `buildings/`).
+
+**T12.1 THE EVIDENCE, ROW BY ROW.** All 8 in `LTU_AHouse`, as T11.1 said.
+
+| # | DB · rule | witness says | raw geometry says | verdict |
+|---|---|---|---|---|
+| 1-4 | `_extracted` · `column_continuity` | ARC `IfcColumn`, `centrelineOffsetM` 0.025, `topToColumnBaseM` **0.300**, `rejectedBecause` **"unknown"** | candidate `zmax` **equals the subject's own `zmax`**; true gap 0.300001621…, tolerance 0.3 | metric artifact ×2 |
+| 5 | `_meta` · `column_continuity` | ARC `IfcWallStandardCase`, `centrelineOffsetM` **0.300**, `topToColumnBaseM` 0.123 | true centreline distance **0.300462350…** m | metric artifact (rounding) → near-miss |
+| 6 | `_meta` · `floating_member` | end 0 nearest = ARC `IfcBeam`, `gapHorizM` 0.013, `gapVertM` 0.111 | `\|zmax−zmax\|` **0.499251**, `\|zmin−zmin\|` **0.498896**, `framing_dz_m` = 0.4 | metric artifact (missing condition) → near-miss |
+| 7-8 | `_extracted` · `isolated_room` | `graphDegree` 1, sole neighbour is the other room, `exitNodesInModel` **0**, `storeyHasCirculationNode` **false** | the pair is its own connected component | metric artifact (wrong predicate) |
+
+**T12.2 WHY "THE METRIC, NOT THE RULE" IS NOT A SELF-SERVING READING.** Run it the other way: if
+the metric were right, the rule change that closes each row is — for 1-5, a `column_continuity`
+tolerance past 0.300462 m; for 6, a `framing_dz_m` past 0.4993 m; for 7-8, deleting
+`isolated_room`'s fallback. **All four are tolerance widenings, the single failure T11.2 says this
+benchmark exists to prevent.** The witness said so itself and was not read: `rejectedBecause` is
+`"unknown"` on all five column rows — the field exists precisely to name why a candidate was
+rejected, and "unknown" is it reporting that its own numbers do not explain the rejection. They do
+not explain it because they are the display-rounded numbers, not the measured ones.
+
+**T12.3 THE THREE DEFECTS, AND THE FIX FOR EACH. No rule threshold moves.**
+
+1. **Rounding decided a tolerance comparison.** `_nearestAtPoint` and `_columnContinuity` publish
+   distances at `toFixed(3)`; `artifactRates` then compares those published numbers against the
+   rule's tolerance. 0.300001621 and 0.300462350 both print as `0.3` and read as *inside* 0.3.
+   Publish at `toFixed(6)` — µm precision on metres, which is exactly the precision that separates
+   "inside" from "outside" here and so earns its digits. The metric keeps comparing published
+   numbers, so it stays independent of the rule's own code.
+2. **A candidate ABOVE the column is not a support below it.** `topToColumnBaseM` is
+   `Math.abs(cand.zmax − col.zmin)`, so a candidate whose top sits 0.30 m *above* the column's base
+   — rows 1-4, an ARC twin of the same physical column, sharing its top plane and extending 0.25 m
+   past its bottom — measures identically to one sitting 0.30 m *below* it.
+   **⚠ AND 6 dp IS NOT ENOUGH FOR TWO OF THEM.** The `VÅN 1` pair measures **0.300000190** m
+   against a 0.3 m tolerance. 190 nanometres. No rounding decides that honestly, and a metric that
+   needs 9 dp to get an answer is reading float noise, not geometry. But those same four rows share
+   the column's top plane as the **identical double** (`8.200000762939453`), so the test that can
+   carry this is the exact one: publish `topAboveColumnTopM` = `cand.zmax − col.zmax` and drop a
+   candidate from the evidence set when it is `>= 0`. A support below a column always has its top
+   under the column's top; a co-located duplicate does not.
+   **MEASURED, both candidate gates, over the fleet's 549 column findings that have a load-bearing
+   `nearestBelow`** (one witness pass, `--gate` numbers confirmed after):
+
+   | gate | fleet defect | fleet nearMiss | rows removed from the evidence set |
+   |---|---|---|---|
+   | none (6 dp only) | **2** | 547 | 0 |
+   | `topBelowColumnBaseM >= -tolerance` | **2** | **498** | 51, across 8 buildings |
+   | `topAboveColumnTopM < 0` | **0** | **545** | 4, all LTU_AHouse_extracted, all `above == 0` |
+
+   `topBelowColumnBaseM >= -tolerance` is the phrasing that comes to mind first, and it is the
+   wrong one: it also removes 47 deeper overlaps (12 LTU columns, 8 JKR columns, 8 HHS
+   `IfcMember`s, 3 Terminal_silent `IfcSlab`s …) and drops the fleet near-miss count to 498.
+   **Those 47 are a real question and answering it as a side-effect of this task would have buried
+   it.** `topAboveColumnTopM < 0` touches exactly the four rows this task is about. The signed
+   `topBelowColumnBaseM` is still published — it is what `rejectedBecause` says out loud — it just
+   does not gate.
+   ⚠ The RULE's own test is `Math.abs(...)` too, so it can also call a column "supported" by
+   something overlapping it. That is a possible false ALL-CLEAR, it would *raise* finding counts to
+   fix, and it is out of T12's scope — recorded here, not silently repaired.
+3. **A beam supports a beam only by framing.** The rule admits an `IfcBeam` candidate only through
+   the `§FRAMING_TOP_OF_STEEL` path: top- OR bottom-flush within `framing_dz_m`, then footprint.
+   `artifactRates` skips that and asks only "is an `IfcBeam` within `tolerance_m` in 3D", which is
+   how a parallel precast beam running end-to-end 0.5 m higher (row 6) became a defect. Publish
+   `topDzM`/`bottomDzM` on a beam-class `nearest`, and judge a beam candidate by `framing_dz_m`
+   against those, not by `gapVertM`. **This is trap 1 in a new costume** — a generous metric
+   pointing the fix at the wrong thing.
+4. **`graphDegree > 0` is not what `isolated_room` claims.** The rule's claim is *no route reaches
+   an exit or this storey's circulation spine*; having an edge does not contradict that. Rows 7-8
+   are a sealed two-room component on a storey with no circulation node, in a model with **zero**
+   exit nodes — there was no target to fail to reach. Replace the predicate with the one that
+   really contradicts the rule: **does this room's connected component contain an exit or a
+   circulation node at all?** Plain undirected connectivity over `graph.edges` is strictly weaker
+   than `RoomGraph.escapeRoute`'s weighted, door-aware search, so it stays independent of the rule
+   while being a genuine contradiction when it fires.
+   **Non-vacuity, checked against a real past bug:** T9.6's HHS room had 6 edges, four of them onto
+   `SPINE::Unknown|x|32.44` — its own storey's circulation — and was called isolated. Its component
+   contains a circ node, so this predicate flags it. The test can still fail; it just no longer
+   fires on a component that genuinely has nowhere to go.
+
+**T12.4 WHAT MOVED, AND WHAT DID NOT.** Fleet `DEFECT` **8 → 0**, rate 0.3% → 0.0%, over the same
+14 DBs the baseline was recorded on. Near-misses do not stay perfectly flat and the arithmetic is
+stated, not hidden:
+
+| rule | found | defect | nearMiss |
+|---|---|---|---|
+| `column_continuity` | 1746 → **1746** | 5 → **0** | 544 → **545** |
+| `floating_member` | 187 → **187** | 1 → **0** | 112 → **113** |
+| `isolated_room` | 52 → **52** | 2 → **0** | 0 → 0 |
+| `span_depth_cantilever` | 560 → **560** | 0 → 0 | 339 → **339** |
+
+The two +1s are rows 5 and 6, reclassified *defect → near-miss*. Rows 1-4 left the evidence set
+(a twin is not a threshold judgement) and rows 7-8 have no near-miss bucket. T11.6's "near-misses
+UNCHANGED" guards against near-misses being *absorbed* by a widened tolerance: **a near-miss count
+that FALLS is the alarm; one that rises by exactly the number of reclassified defects is the
+reclassification being visible.** Not one finding count moved — no rule was touched — which is what
+keeps `§BENCH_GATE_VACUOUS` silent, and the fixtures still fail as they should
+(`beam-under-slab` CRITICAL, `col-unsupported` CRITICAL, `§SLAB_BEARING` non-vacuity intact).
+
+**T12.4b THE BASELINE IS RE-RECORDED, and that is not what T12.0 warned against.** T12.0's warning
+is about re-recording on a DIFFERENT fleet, which makes every total incomparable and the failure
+silent. This re-record is on the SAME 14 DBs, byte-for-byte the same membership list, after a run
+whose finding counts are identical to the old baseline's — so every number is comparable and only
+the defect column moved. It has to happen: `§BENCH_GATE_WORSE` fires on a rate RISE of more than
+0.5 percentage points, so against the old 0.3% baseline a full regression back to 0.3% would have
+passed the gate in silence. Recorded: `tests/bench_baseline.json`, defect 0 of 2545,
+near-miss 545/113/339.
+
+**T12.5 WHAT IS STILL OPEN.** None of this touched a rule, so nothing about the rules got better —
+what got better is the benchmark's ability to tell you so. Still open, in order:
+- **T11.3's slab-coverage rule** — unbuilt. No rule asks whether a storey's floor plate covers its
+  own contents, which is why T10's Hospital question had to be answered by hand.
+- **The 47 deeper column overlaps** that `topBelowColumnBaseM >= -tolerance` would have removed:
+  load-bearing geometry whose top is more than a tolerance above the column's base, counted today
+  as near-misses across 8 buildings. Are they support, or more duplicates? Nobody has looked.
+- **`_columnContinuity`'s `Math.abs`**, above: a possible false all-clear, not a false alarm.
+- **The 995 near-misses remain the engineer's call** under the THRESHOLD DISCLAIMER, exactly as
+  T11.2 left them. 545 + 113 + 339 = 997 now, and the 2 added are the ones this task reclassified.
