@@ -169,7 +169,7 @@
     // show. This indexes the graph's own edges once so a flagged room can state its degree, its
     // actual neighbours, and whether its storey even HAS a circulation node to reach — the three
     // facts that separate "genuinely sealed off" from "the graph never connected it".
-    var degree = null, neighbours = null, storeyHasCirc = null, exitCount = 0;
+    var degree = null, neighbours = null, storeyHasCirc = null, exitCount = 0, comp = null;
     if (opts.witness) {
       degree = {}; neighbours = {}; storeyHasCirc = {};
       (graph.edges || []).forEach(function (e) {
@@ -179,8 +179,60 @@
       });
       (graph.nodes || []).forEach(function (n) { if (n.kind === 'circ') storeyHasCirc[n.storey] = true; });
       Object.keys(graph.nodesByGuid || {}).forEach(function (g) { if (g.indexOf('EXIT::') === 0) exitCount++; });
+      comp = _components(graph);
       log('§EGRESS_WITNESS enabled nodes=' + (graph.nodes || []).length + ' edges=' + (graph.edges || []).length +
-        ' exitNodes=' + exitCount + ' storeysWithCirc=' + Object.keys(storeyHasCirc).length);
+        ' exitNodes=' + exitCount + ' storeysWithCirc=' + Object.keys(storeyHasCirc).length +
+        ' components=' + comp.count);
+    }
+
+    // ── T12.3 §ISOLATED_COMPONENT — union-find over the graph's own edge list. Returns, per
+    // node, its component id, that component's size, and whether the component contains ANY
+    // exit or circulation node. Deliberately topological only: no distances, no door
+    // admissibility, none of escapeRoute's own logic — the witness must be able to disagree
+    // with the rule, which it cannot do if it IS the rule.
+    function _components(g) {
+      var parent = {};
+      function find(x) { while (parent[x] !== undefined && parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+      function union(a, b) { if (parent[a] === undefined) parent[a] = a; if (parent[b] === undefined) parent[b] = b; var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+      (g.nodes || []).forEach(function (n) { if (parent[n.guid] === undefined) parent[n.guid] = n.guid; });
+      Object.keys(g.nodesByGuid || {}).forEach(function (k) { if (parent[k] === undefined) parent[k] = k; });
+      (g.edges || []).forEach(function (e) { union(e.a, e.b); });
+      // The target set is the RULE's, not a looser one: escapeRoute reaches any EXIT node, and
+      // the fallback reaches a circulation node ON THE ROOM'S OWN STOREY only
+      // (_circulationNodesOn above). Accepting another storey's circulation here would invent
+      // disagreements the rule never had.
+      var of = {}, size = {}, hasExit = {}, circStoreys = {}, roots = {};
+      function _circStorey(gid, n) {
+        if (n && n.storey != null) return String(n.storey);
+        var i = gid.indexOf('::');
+        if (i === -1) return null;
+        var rest = gid.slice(i + 2), bar = rest.indexOf('|');
+        return bar === -1 ? rest : rest.slice(0, bar);   // 'SPINE::Level 1|x|-7.00' -> 'Level 1'
+      }
+      Object.keys(parent).forEach(function (k) {
+        var r = find(k);
+        of[k] = r; roots[r] = 1;
+        size[r] = (size[r] || 0) + 1;
+        var n = (g.nodesByGuid || {})[k] || null;
+        if (k.indexOf('EXIT::') === 0 || (n && n.kind === 'exit')) hasExit[r] = true;
+        var isCirc = k.indexOf('CIRC::') === 0 || k.indexOf('SPINE::') === 0 ||
+                     (n && (n.kind === 'circ' || n.kind === 'spine'));
+        if (isCirc) {
+          var st = _circStorey(k, n);
+          if (st != null) (circStoreys[r] = circStoreys[r] || {})[st] = true;
+        }
+      });
+      var perNode = {};
+      Object.keys(of).forEach(function (k) { perNode[k] = size[of[k]]; });
+      return {
+        of: of, size: perNode, count: Object.keys(roots).length,
+        // true when this node's component holds a target the rule itself would have aimed at
+        hasTargetFor: function (guid, storey) {
+          var r = of[guid];
+          if (r === undefined) return false;
+          return !!hasExit[r] || !!((circStoreys[r] || {})[String(storey)]);
+        }
+      };
     }
 
     graph.nodes.forEach(function (r) {
@@ -215,6 +267,14 @@
               neighbours: (neighbours[r.guid] || []).slice(0, 8),
               storeyHasCirculationNode: !!storeyHasCirc[r.storey],
               exitNodesInModel: exitCount,
+              // T12.3 — the fact that can actually CONTRADICT this rule. "Has an edge"
+              // (graphDegree) cannot: the rule's claim is that no route reaches an exit or this
+              // storey's circulation spine, and a room wired only to another sealed room is
+              // exactly that. Plain undirected connectivity over graph.edges is strictly weaker
+              // than escapeRoute's weighted, door-aware search, so a component that DOES hold an
+              // exit or circ node while the rule reports "isolated" is a real disagreement.
+              componentSize: comp.size[r.guid] || 1,
+              componentHasExitOrCirc: comp.hasTargetFor(r.guid, r.storey),
               // The room's own name carries the extraction's confidence mark (≈ approximate,
               // ⚠ suspect). The rule cannot read it; the witness can, so the reader sees whether
               // the "room" that failed to connect was itself a guess.
