@@ -94,6 +94,63 @@
     return out;
   }
 
+  // ══ T8.13 §RULE_FALLBACK_ONE_SOURCE — "which rules file actually ran", as DATA ═════════════
+  // Handed over by the movie-bake session (2026-09-12): all three surfaces — panel, film, report
+  // — need to state which thresholds they applied, and each had grown its own console.warn plus
+  // its own copy of the fallback constant. A console line cannot reach the report's provenance
+  // header, and copies drift: the film branch's copies ALREADY carried span_depth_concrete 20/26
+  // and circulation_distance 30/45 where main carries the #1715 cited 16/21 and 45.7/60.96.
+  //
+  // ONE SHAPE, declared here: loadRules() -> Promise<{ rules, source, url, error }> where
+  // `source` is 'fetched' | 'fallback'. The fallback object is NOT defined here — it comes from
+  // the evaluator that owns the rule semantics (StructuralSanity.FALLBACK_RULES /
+  // EgressSanity.FALLBACK_RULES), so this file adds a mechanism, not a fourth copy of the numbers.
+  //
+  // `fetchFn` is injected rather than reached for, so this stays DOM-free and Node-testable —
+  // the same portability rule the rest of this file follows.
+  function loadRules(fetchFn, url, fallback, opts) {
+    opts = opts || {};
+    var log = opts.log || function () {};
+    if (typeof fetchFn !== 'function') {
+      log('§RULE_RULES_SOURCE url=' + url + ' source=fallback reason=no-fetch');
+      return Promise.resolve({ rules: fallback, source: 'fallback', url: url, error: 'no fetch available' });
+    }
+    return fetchFn(url).then(function (resp) {
+      if (!resp || !resp.ok) throw new Error('HTTP ' + (resp && resp.status));
+      return resp.json();
+    }).then(function (json) {
+      log('§RULE_RULES_SOURCE url=' + url + ' source=fetched');
+      return { rules: json, source: 'fetched', url: url, error: null };
+    })['catch'](function (err) {
+      // Never a silent substitution: the caller gets the fallback AND the fact that it is one.
+      log('§RULE_RULES_SOURCE url=' + url + ' source=fallback error=' + (err && err.message));
+      return { rules: fallback, source: 'fallback', url: url, error: (err && err.message) || String(err) };
+    });
+  }
+
+  // ── Pure: do two rule objects apply the same numbers? The cross-surface drift guard. Compares
+  // by rule name + every numeric field, so a reordered file passes and a changed threshold does
+  // not. Returns [] when they agree, else one entry per disagreement.
+  function diffRuleThresholds(a, b) {
+    function flat(o) {
+      var out = {};
+      ['structural_rules', 'egress_rules'].forEach(function (k) {
+        ((o || {})[k] || []).forEach(function (r) {
+          Object.keys(r).forEach(function (f) {
+            if (typeof r[f] === 'number') out[r.name + '.' + f] = r[f];
+          });
+        });
+      });
+      return out;
+    }
+    var fa = flat(a), fb = flat(b), out = [];
+    var keys = Object.keys(fa).concat(Object.keys(fb).filter(function (k) { return !(k in fa); }));
+    keys.forEach(function (k) {
+      if (fa[k] !== fb[k]) out.push({ field: k, a: fa[k] === undefined ? null : fa[k], b: fb[k] === undefined ? null : fb[k] });
+    });
+    return out;
+  }
+
   // ══ T8.11 §RULE_SUFFICIENCY — the report reviews its own INPUT, not just its output ═══════
   // A findings file that does not say what it could not see invites the reader to read a metadata
   // gap as a structural defect. Every number below comes from a real query over the SAME
@@ -421,6 +478,8 @@
 
   return {
     buildRuleReport: buildRuleReport,
+    loadRules: loadRules,
+    diffRuleThresholds: diffRuleThresholds,
     runSufficiencyProbes: runSufficiencyProbes,
     rulePopulations: rulePopulations,
     flagRates: flagRates,

@@ -313,28 +313,27 @@ const server = http.createServer((req, res) => {
       try {
         if (typeof RuleReport === 'undefined') return { err: 'rule_report.js not loaded' };
         if (!A.dbQuery) return { err: 'no A.dbQuery' };
-        const fetchRules = async (url, fallbackKey) => {
-          try {
-            const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status);
-            return { rules: await r.json(), source: 'fetched' };
-          } catch (e) { return { rules: null, source: 'fallback', error: e.message }; }
-        };
-        const sj = await fetchRules('rates/structural_rules.json');
-        const ej = await fetchRules('rates/egress_rules.json');
-        // A missing rules file is NOT silently replaced with an invented default here: the
-        // evaluators carry their own documented fallbacks, and rulesSource records which ran.
+        // T8.13 — the SAME loader the panel uses, with the SAME fallback constants the
+        // evaluators own. This path used to hand `null` to evaluate() and let the evaluator's
+        // own inline defaults apply silently; now the fallback is explicit and `source` says so.
+        const sj = await RuleReport.loadRules(fetch.bind(window), 'rates/structural_rules.json',
+          (typeof StructuralSanity !== 'undefined') ? StructuralSanity.FALLBACK_RULES : { structural_rules: [] },
+          { log: (m) => console.log(m) });
+        const ej = await RuleReport.loadRules(fetch.bind(window), 'rates/egress_rules.json',
+          (typeof EgressSanity !== 'undefined') ? EgressSanity.FALLBACK_RULES : { egress_rules: [] },
+          { log: (m) => console.log(m) });
         let rowsS = [], rowsE = [], rgFacts = null;
         const logS = [], logE = [];
         if (typeof StructuralSanity !== 'undefined') {
           // witness:true — T8.12. A report exists to be inspected; a row that cannot show WHY it
           // fired is the thing this whole surface is trying to stop being. Additive only.
-          rowsS = StructuralSanity.evaluate(A.dbQuery, sj.rules || {}, { log: (m) => { logS.push(m); console.log(m); }, witness: true }) || [];
+          rowsS = StructuralSanity.evaluate(A.dbQuery, sj.rules, { log: (m) => { logS.push(m); console.log(m); }, witness: true }) || [];
         }
         if (typeof EgressSanity !== 'undefined') {
           // RoomGraph genuinely IS needed by egress rules 2/3 — findings-only skips the film, not
           // the data. Same lazy loader the Egress panel awaits (§EGRESS_ROOMGRAPH_LATE_BIND).
           if (!window.RoomGraph && A.loadNavigate) { try { await A.loadNavigate(); } catch (e) {} }
-          rowsE = EgressSanity.evaluate(A.dbQuery, ej.rules || {}, { log: (m) => { logE.push(m); console.log(m); }, witness: true }) || [];
+          rowsE = EgressSanity.evaluate(A.dbQuery, ej.rules, { log: (m) => { logE.push(m); console.log(m); }, witness: true }) || [];
           if (window.RoomGraph) {
             // §ROOM_GRAPH_EXITS is emitted by buildGraph, whose log egress_sanity.js silences.
             const capt = [];

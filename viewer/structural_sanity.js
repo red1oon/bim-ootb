@@ -45,6 +45,41 @@
 })(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
 
+  // ══ §RULE_FALLBACK_ONE_SOURCE (prompts/STRUCTURAL_SANITY.md T8.13) ═══════════════════════════
+  // THE ONE LITERAL. Every threshold this file can apply without a rules file is written HERE and
+  // nowhere else. It is a verbatim copy of viewer/rates/structural_rules.json — the AUTHORED
+  // source — kept in JS because a browser cannot read that file synchronously when the fetch for
+  // it has just failed.
+  //
+  // ⚠ Before T8.13 this object existed THREE times: here (as per-rule inline `byName.x || {...}`
+  // defaults), in rule_checklist.js as STRUCTURAL_RULES_FALLBACK, and again in
+  // rule_findings_film.js. They HAD already drifted across a branch boundary — the film branch
+  // carries span_depth_concrete 20/26 and door_clear_width 0.80 where main carries the #1715
+  // cited values 16/21 and 0.813 — which is exactly how a bake reports 205 findings for a
+  // building main's own evaluators score at 203. One literal, or that recurs.
+  //
+  // Changing a number here changes it for the panel, the film and the report at once. If you
+  // change one, change rates/structural_rules.json to match — T8.13's witness fails otherwise.
+  var FALLBACK_RULES = {
+    structural_rules: [
+      { name: 'floating_member', applies_to: ['IfcBeam'], tolerance_m: 0.15, framing_dz_m: 0.4 },
+      { name: 'span_depth_steel', applies_to: ['IfcBeam'], material: 'steel',
+        name_hints: ['UB', 'UC', 'Channel', 'HSS'], cantilever: false,
+        warning_ratio: 24, critical_ratio: 30, max_severity: 'WARNING' },
+      { name: 'span_depth_concrete', applies_to: ['IfcBeam'], material: 'concrete',
+        name_hints: ['Concrete', 'RC'], cantilever: false,
+        warning_ratio: 16, critical_ratio: 21, max_severity: 'WARNING' },
+      { name: 'span_depth_cantilever', applies_to: ['IfcBeam'], cantilever: true,
+        warning_ratio: 12, critical_ratio: 16, max_severity: 'WARNING' },
+      { name: 'column_continuity', applies_to: ['IfcColumn'], tolerance_m: 0.3 }
+    ]
+  };
+  function _fallback(name) {
+    var rs = FALLBACK_RULES.structural_rules;
+    for (var i = 0; i < rs.length; i++) if (rs[i].name === name) return rs[i];
+    return {};
+  }
+
   var SUPPORT_CLASSES = ['IfcColumn', 'IfcWallStandardCase', 'IfcFooting', 'IfcMember'];
   var COL_SUPPORT_CLASSES = ['IfcColumn', 'IfcWallStandardCase', 'IfcFooting'];
 
@@ -211,11 +246,12 @@
 
     var byName = {};
     (rules.structural_rules || []).forEach(function (r) { byName[r.name] = r; });
-    var floatingRule = byName.floating_member || { tolerance_m: 0.15, framing_dz_m: 0.4 };
-    var steelRule = byName.span_depth_steel || { warning_ratio: 24, critical_ratio: 30, max_severity: 'WARNING', name_hints: ['UB', 'UC', 'Channel', 'HSS'] };
-    var concreteRule = byName.span_depth_concrete || { warning_ratio: 16, critical_ratio: 21, max_severity: 'WARNING', name_hints: ['Concrete', 'RC'] };
-    var cantileverRule = byName.span_depth_cantilever || { warning_ratio: 12, critical_ratio: 16, max_severity: 'WARNING' };
-    var columnRule = byName.column_continuity || { tolerance_m: 0.3 };
+    // T8.13 — defaults come from the ONE literal above, never re-typed per call site.
+    var floatingRule = byName.floating_member || _fallback('floating_member');
+    var steelRule = byName.span_depth_steel || _fallback('span_depth_steel');
+    var concreteRule = byName.span_depth_concrete || _fallback('span_depth_concrete');
+    var cantileverRule = byName.span_depth_cantilever || _fallback('span_depth_cantilever');
+    var columnRule = byName.column_continuity || _fallback('column_continuity');
 
     var beamRows = dbQuery(
       "SELECT em.guid, em.element_name, em.storey, et.center_x, et.center_y, et.center_z, et.bbox_x, et.bbox_y, et.bbox_z " +
@@ -349,6 +385,9 @@
   }
 
   return { evaluate: evaluate,
+    // T8.13 — the ONE fallback literal, exported so rule_checklist.js / rule_findings_film.js
+    // consume it instead of each keeping a copy that drifts.
+    FALLBACK_RULES: FALLBACK_RULES,
     // exported for the witness fixture / debugging — not part of the row-producing contract above
     _supportChecks: _supportChecks, _columnContinuity: _columnContinuity, _matchesHints: _matchesHints
   };

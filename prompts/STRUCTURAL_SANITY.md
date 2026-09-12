@@ -524,3 +524,54 @@ column on the model's lowest plane in a model with no footings. HHS measures **1
 **Tests:** R12 (above) — rows identical on/off; every `isolated_room` states degree and
 neighbours; a degree>0 room reads differently from a degree-0 one; every `column_continuity` names
 what is below it or that nothing is, with a reason; every cantilever discloses the inference.
+
+**T8.13 §RULE_FALLBACK_ONE_SOURCE — one literal for the thresholds, one shape for "which file ran".**
+*(Handed to this session by the movie-bake session, 2026-09-12: "they own the mechanism — one
+source of truth for which rules file loaded, exposed as data rather than a console line. I own the
+film's consumer of it: one line on the closing card, written against whatever shape they land.")*
+
+**The hazard was already a bug.** That session verified its two copies byte-identical and concluded
+the dedup would be a pure move. That is true *within* its own branch and false across the repo —
+`feat/rule-findings-film` is based on `42340b46`, before #1715, so **three** files on it carry
+pre-#1715 thresholds:
+
+| source | `span_depth_concrete` | `door_clear_width` critical | `circulation_distance` |
+|---|---|---|---|
+| main `rates/*.json` (authored) | **16 / 21** | **0.813 m** | **45.7 / 60.96 m** |
+| main `rule_checklist.js` | 16 / 21 | 0.813 m | 45.7 / 60.96 m |
+| main evaluators (inline defaults) | 16 / 21 | 0.813 m | 45.7 / 60.96 m |
+| film `rates/*.json` | 20 / 26 | 0.80 m | 30 / 45 m |
+| film `rule_checklist.js` | 20 / 26 | 0.80 m | 30 / 45 m |
+| film `rule_findings_film.js` | 20 / 26 | 0.80 m | 30 / 45 m |
+
+That is the whole of the bake-vs-main gap already measured this session: Terminal 205 vs 203, HHS
+215 vs 212, Hospital 509 vs 509. Reconciliation IS required on rebase, and the answer is main's
+cited values (ACI 318-19 Table 9.3.1.1; IBC 2021 §1010.1.1 and Table 1017.2).
+
+**There were four copies, not two.** Besides the two constants that session found, each evaluator
+re-typed every threshold inline as `byName.<rule> || { … }`.
+
+**The shape, landed here:**
+1. **`StructuralSanity.FALLBACK_RULES` / `EgressSanity.FALLBACK_RULES`** — the ONE literal each,
+   in the module that owns the rule semantics. The inline per-rule defaults now read from it.
+   `rule_checklist.js`'s two constants are deleted.
+2. **`RuleReport.loadRules(fetchFn, url, fallback, opts)` → `Promise<{ rules, source, url, error }>`**,
+   `source` ∈ `fetched` | `fallback`. `fetchFn` is injected, so it stays DOM-free and
+   Node-testable. It defines a mechanism, never a fourth copy of the numbers — the fallback is
+   passed in by the caller from the evaluator that owns it. A failed fetch is never a silent
+   substitution: the caller gets the fallback *and* the reason. Logs `§RULE_RULES_SOURCE`.
+3. **`RuleReport.diffRuleThresholds(a, b)`** — compares by rule name and every numeric field, so a
+   reordered file passes and a changed threshold does not.
+4. The panel caches on `A._structuralRulesSource` / `A._egressRulesSource`; the report's
+   `rulesSource` header already carries it (T8.4). `§STRUCT_RULES_JSON` / `§EGRESS_RULES_JSON` are
+   kept for log continuity — the fact now travels as data *as well as* a console line.
+
+**The boundary, as that session drew it:** this session owns the mechanism; the film session owns
+the film's consumer of it — one line on the closing card, written against the shape above. Nothing
+here invents that line's format.
+
+**Tests:** R13 ONE-LITERAL — each `FALLBACK_RULES` equals its `rates/*.json` (a silent edit to
+either side fails CI); no other file declares a fallback rules object; and a control proving the
+guard catches the exact film-branch drift (concrete 16→20). R14 LOADRULES-SHAPE — `fetched` on ok;
+`fallback` + reason on 404, on a thrown fetch, and with no fetch at all; the fallback handed back
+IS the evaluator's one literal; and the fact reaches the report's provenance header.

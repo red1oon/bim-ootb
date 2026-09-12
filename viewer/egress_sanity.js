@@ -58,6 +58,26 @@
   var _nodeRoomGraph = (typeof module !== 'undefined' && module.exports) ? require('../common/room_graph.js') : null;
   function _resolveRoomGraph() { return _nodeRoomGraph || ROOT.RoomGraph; }
 
+  // ══ §RULE_FALLBACK_ONE_SOURCE (prompts/STRUCTURAL_SANITY.md T8.13) ═══════════════════════════
+  // THE ONE LITERAL for this evaluator — verbatim from viewer/rates/egress_rules.json. See
+  // structural_sanity.js's twin for the full reasoning; the short version is that this object
+  // used to exist three times and the copies had ALREADY drifted across a branch boundary
+  // (circulation_distance 30/45 on the film branch vs the #1715 cited 45.7/60.96 here).
+  var FALLBACK_RULES = {
+    egress_rules: [
+      { name: 'door_clear_width', applies_to: ['IfcDoor'],
+        warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' },
+      { name: 'circulation_distance', applies_to: ['room_graph_node'],
+        target: 'exit_or_own_storey_circ', warning_m: 45.7, critical_m: 60.96, max_severity: 'WARNING' },
+      { name: 'isolated_room', applies_to: ['room_graph_node'], target: 'own_storey_circ' }
+    ]
+  };
+  function _fallback(name) {
+    var rs = FALLBACK_RULES.egress_rules;
+    for (var i = 0; i < rs.length; i++) if (rs[i].name === name) return rs[i];
+    return {};
+  }
+
   function _severityBelow(value, rule) {
     // Door width: NARROWER is worse (flag when value <= threshold), opposite direction from a
     // span/depth ratio rule.
@@ -82,8 +102,9 @@
     var log = opts.log || (typeof console !== 'undefined' ? console.log.bind(console) : function () {});
     var byName = {};
     (rules.egress_rules || []).forEach(function (r) { byName[r.name] = r; });
-    var doorRule = byName.door_clear_width || { warning_m: 0.85, critical_m: 0.813, max_severity: 'WARNING' };
-    var circRule = byName.circulation_distance || { warning_m: 45.7, critical_m: 60.96, max_severity: 'WARNING' };
+    // T8.13 — from the ONE literal above, never re-typed here.
+    var doorRule = byName.door_clear_width || _fallback('door_clear_width');
+    var circRule = byName.circulation_distance || _fallback('circulation_distance');
 
     var rows = [];
 
@@ -198,5 +219,5 @@
     return rows;
   }
 
-  return { evaluate: evaluate };
+  return { evaluate: evaluate, FALLBACK_RULES: FALLBACK_RULES };
 });

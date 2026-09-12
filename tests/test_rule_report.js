@@ -273,6 +273,59 @@ const ROWS_E = [
     console.log('  §W-RULE-REPORT SKIP R12 — buildings/Hospital_meta.db not present');
   }
 
+  // ── R13 ONE-LITERAL — proves: the thresholds exist in ONE place per evaluator, and that place
+  // agrees with the AUTHORED rates/*.json. This is the guard the movie-bake session asked for:
+  // the film branch shipped span_depth_concrete 20/26 against main's cited 16/21 because a second
+  // copy existed and nothing compared them. A silent edit to either side now fails here.
+  console.log('§W-RULE-REPORT R13 ONE-LITERAL');
+  {
+    const sDiff = RuleReport.diffRuleThresholds(StructuralSanity.FALLBACK_RULES, STRUCT_RULES);
+    chk('R13 StructuralSanity.FALLBACK_RULES == rates/structural_rules.json', sDiff.length === 0, JSON.stringify(sDiff));
+    const eDiff = RuleReport.diffRuleThresholds(EgressSanity.FALLBACK_RULES, EGRESS_RULES);
+    chk('R13 EgressSanity.FALLBACK_RULES == rates/egress_rules.json', eDiff.length === 0, JSON.stringify(eDiff));
+
+    // No OTHER file may re-declare them. Counts whole fallback objects, not the JSON source.
+    const scan = (f) => { try { return fs.readFileSync(path.join(__dirname, '..', f), 'utf8'); } catch (e) { return ''; } };
+    const others = ['viewer/rule_checklist.js', 'viewer/rule_report.js', 'cli_silent_bake.js'];
+    others.forEach(f => {
+      const txt = scan(f);
+      chk('R13 ' + f + ' declares no fallback rules object of its own',
+        !/RULES_FALLBACK\s*=\s*\{|FALLBACK_RULES\s*=\s*\{/.test(txt));
+    });
+    // And the control: the diff function must actually be able to fail.
+    const drifted = JSON.parse(JSON.stringify(STRUCT_RULES));
+    drifted.structural_rules.find(r => r.name === 'span_depth_concrete').warning_ratio = 20;
+    const d = RuleReport.diffRuleThresholds(StructuralSanity.FALLBACK_RULES, drifted);
+    chk('R13 the drift guard CATCHES the exact film-branch drift (concrete 16 -> 20)',
+      d.length === 1 && d[0].field === 'span_depth_concrete.warning_ratio' && d[0].a === 16 && d[0].b === 20,
+      JSON.stringify(d));
+  }
+
+  // ── R14 LOADRULES-SHAPE — proves: one shape for "which rules file ran", and a failed fetch is
+  // never a silent substitution. The film session writes its closing-card line against this.
+  console.log('§W-RULE-REPORT R14 LOADRULES-SHAPE');
+  {
+    const okFetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(STRUCT_RULES) });
+    const r1 = await RuleReport.loadRules(okFetch, 'rates/structural_rules.json', StructuralSanity.FALLBACK_RULES);
+    chk('R14 a good fetch reports source=fetched with no error', r1.source === 'fetched' && r1.error === null, JSON.stringify({ s: r1.source, e: r1.error }));
+
+    const badFetch = () => Promise.resolve({ ok: false, status: 404 });
+    const r2 = await RuleReport.loadRules(badFetch, 'rates/structural_rules.json', StructuralSanity.FALLBACK_RULES);
+    chk('R14 a 404 reports source=fallback AND carries the reason', r2.source === 'fallback' && /404/.test(r2.error), JSON.stringify({ s: r2.source, e: r2.error }));
+    chk('R14 the fallback it hands back is the evaluator\'s ONE literal', r2.rules === StructuralSanity.FALLBACK_RULES);
+
+    const r3 = await RuleReport.loadRules(null, 'rates/egress_rules.json', EgressSanity.FALLBACK_RULES);
+    chk('R14 no fetch at all still reports fallback, never fetched', r3.source === 'fallback' && !!r3.error, JSON.stringify({ s: r3.source, e: r3.error }));
+
+    const throwFetch = () => Promise.reject(new Error('network down'));
+    const r4 = await RuleReport.loadRules(throwFetch, 'x.json', EgressSanity.FALLBACK_RULES);
+    chk('R14 a thrown fetch is caught and reported, not propagated', r4.source === 'fallback' && /network down/.test(r4.error));
+
+    // The whole point: the source survives into the report the user reads.
+    const rep = RuleReport.buildRuleReport({ rowsS: ROWS_S, ruleDefs: [r2.rules], meta: { rulesSource: { structural: r2.source } } });
+    chk('R14 the fallback fact reaches the report provenance header', rep.rulesSource.structural === 'fallback', JSON.stringify(rep.rulesSource));
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
