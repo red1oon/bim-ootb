@@ -56,7 +56,10 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
   chk('wide door NOT flagged', !byGuid['door-wide'], JSON.stringify(byGuid['door-wide']));
 
   // ── Real Hospital_meta.db regression guard — full evaluator pipeline, not just raw RoomGraph ──
-  const HOSPITAL_DB = path.join(__dirname, '../buildings/Hospital_meta.db');
+  // BIM_BUILDINGS: a worktree's buildings/ holds only the two TRACKED DBs, so without it this
+  // real-DB guard reports itself skipped exactly where it is most needed. Never a symlink INTO
+  // buildings/ (T11.5 trap 5).
+  const HOSPITAL_DB = path.join(process.env.BIM_BUILDINGS || path.join(__dirname, '../buildings'), 'Hospital_meta.db');
   if (fs.existsSync(HOSPITAL_DB)) {
     console.log('§W-EGRESS-SANITY real Hospital_meta.db');
     const hdb = new SQL.Database(new Uint8Array(fs.readFileSync(HOSPITAL_DB)));

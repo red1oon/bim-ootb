@@ -56,6 +56,116 @@
   var _tmXraySolidifyTs = {};
   var _tmXrayStagedTotal = 0;   // total guids ever eligible to stage, this activation (the "n=")
   var _tmXraySolidifiedN = 0;   // guids that have crossed their solidify ms so far (the "solidified=")
+
+  // ══ §CPE_BUILDUP_PLACED (MEP_CLASH_REVEAL_MOVIE.md §88.3/§88.6e) ═════════════════════════════
+  // §CPE_BUILDUP reports an AGGREGATE — `placed=N/63415` — and nothing else in this codebase names
+  // a single element. So when Hospital's 8,899 m² Level 1 slab read as bare ground from the opening
+  // seconds to the closing reveal (§88), no bake log could say whether it was placed at frame 50,
+  // at frame 4000, or never: the op count reads identically whether the guid has no mesh at all,
+  // has one that was left hidden, or has one that is drawn and occluded by something else. Those
+  // are three different bugs with three different fixes, and a count cannot tell them apart.
+  //
+  // The observation rides along in the ONE traverse that already decides visibility — no second
+  // pass, no second opinion about what is on screen. A WATCH SET (≤16 guids) is the only per-object
+  // cost: one lookup in a null-prototype map per traversed object, and a getWorldPosition for the
+  // handful that match.
+  //
+  // ⚠ The record PERSISTS across ticks and is never reset to MISSING. The traverse's incremental
+  // path (`_incrOK`) legitimately SKIPS whole BatchedMesh/InstancedMesh objects on ticks where
+  // nothing in them changed — resetting each tick would report those frames as "mesh vanished"
+  // every time the delta path engaged. Only `op` (which comes from the schedule, not the scene) is
+  // recomputed every tick; `mesh`/`visible`/`y`/`host` are last-observed values.
+  var _bdWatch = null;          // guid -> { cls, storey } | null when not yet built, false when off
+  var _bdState = Object.create(null);   // guid -> { op, mesh, visible, y, host }
+
+  // Watch set, in the §88.6e order: an explicit `?watch=guid,guid` on the viewer URL wins; else the
+  // largest slab per storey — the floor plates, which is exactly the population §88 is about and the
+  // same pool §SLAB_BEAT already picks its beat from.
+  function _bdWatchSet(app) {
+    if (_bdWatch !== null) return _bdWatch;
+    _bdWatch = false;
+    try {
+      var w = Object.create(null), n = 0, i;
+      var q = (typeof location !== 'undefined' && location.search) ? location.search : '';
+      var m = /[?&]watch=([^&]+)/.exec(q);
+      if (m) {
+        var gs = decodeURIComponent(m[1]).split(',');
+        for (i = 0; i < gs.length && n < 16; i++) {
+          var g = gs[i].trim(); if (!g) continue;
+          w[g] = { cls: '?', storey: '?' }; n++;
+        }
+        if (n) {
+          // Fill in cls/storey for the explicit set so the log line reads without a second lookup.
+          if (app && app.db) {
+            var keys = Object.keys(w).map(function (k) { return "'" + k.replace(/'/g, "''") + "'"; });
+            var rr = app.db.exec('SELECT guid, ifc_class, storey FROM elements_meta WHERE guid IN (' + keys.join(',') + ')');
+            if (rr.length) for (i = 0; i < rr[0].values.length; i++) {
+              var rv = rr[0].values[i];
+              if (w[rv[0]]) { w[rv[0]].cls = rv[1] || '?'; w[rv[0]].storey = rv[2] || '?'; }
+            }
+          }
+          _bdWatch = w;
+          console.log('§CPE_BUILDUP_PLACED_WATCH n=' + n + ' src=url guids=' + Object.keys(w).join(','));
+          return _bdWatch;
+        }
+      }
+      if (!app || !app.db) { _bdWatch = null; return null; }   // retry next tick, the DB may not be up yet
+      var r = app.db.exec(
+        'SELECT m.guid, m.ifc_class, m.storey, MAX(t.bbox_x * t.bbox_y) AS area ' +
+        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid ' +
+        "WHERE m.ifc_class = 'IfcSlab' AND t.bbox_x IS NOT NULL AND t.bbox_y IS NOT NULL " +
+        'GROUP BY m.storey ORDER BY area DESC LIMIT 16'
+      );
+      if (!r.length || !r[0].values.length) {
+        console.log('§CPE_BUILDUP_PLACED_WATCH n=0 src=slab-per-storey — this model has no IfcSlab with a bbox; pass ?watch=<guid> to name one');
+        _bdWatch = false; return false;
+      }
+      var names = [];
+      for (i = 0; i < r[0].values.length; i++) {
+        var v = r[0].values[i];
+        w[v[0]] = { cls: v[1] || '?', storey: v[2] || '?' };
+        names.push((v[2] || '?') + ' ' + Math.round(v[3]) + 'm2');
+        n++;
+      }
+      _bdWatch = w;
+      console.log('§CPE_BUILDUP_PLACED_WATCH n=' + n + ' src=slab-per-storey ' + names.join(' | '));
+    } catch (e) {
+      console.warn('§CPE_BUILDUP_PLACED_WATCH_FAIL ' + (e && e.message));
+      _bdWatch = false;
+    }
+    return _bdWatch;
+  }
+
+  function _bdRec(g) {
+    var s = _bdState[g];
+    if (!s) s = _bdState[g] = { op: 'pending', mesh: 'MISSING', visible: false, y: null, host: '-' };
+    return s;
+  }
+
+  // Called from the traverse the moment a watched guid's rendering path has decided its visibility.
+  // `obj` is optional and only used for the world Y — the number that says whether a drawn element
+  // is above or below the ghost-ground plane (§88.6a), which is the whole reason y is reported.
+  function _bdSeen(g, host, visible, obj) {
+    var s = _bdRec(g);
+    s.mesh = 'found'; s.host = host; s.visible = !!visible;
+    if (obj && obj.getWorldPosition) {
+      try { var v = new THREE.Vector3(); obj.getWorldPosition(v); s.y = +v.y.toFixed(3); } catch (e) {}
+    }
+  }
+
+  // The bake reads this once per frame (cinema_maxq.js) and logs only what CHANGED, so a 4,699-frame
+  // film costs a handful of lines rather than 4,699 × |watch|.
+  window.tmWatchState = function () {
+    if (!_bdWatch) return null;
+    var out = {};
+    for (var g in _bdWatch) {
+      var s = _bdState[g];
+      out[g] = { cls: _bdWatch[g].cls, storey: _bdWatch[g].storey,
+                 op: s ? s.op : 'pending', mesh: s ? s.mesh : 'MISSING',
+                 visible: s ? s.visible : false, y: s ? s.y : null, host: s ? s.host : '-' };
+    }
+    return out;
+  };
   var _ganttVisible = false;
   var _dashVisible = false;
   // §TM-VARIANCE (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL): planned = TM's own generated timeline; actual = a
@@ -1440,6 +1550,12 @@
     // below can match against. Reading straight from `frontier` is correct regardless of which
     // rendering path a given guid ends up on.
     window.__tmFrontierGuidsNow = new Set(Object.keys(frontier));
+    // §CPE_BUILDUP_PLACED — refresh ONLY the schedule half of each watched guid's record. The scene
+    // half is written by the traverse below and deliberately survives ticks the delta path skips.
+    var _bdW = _bdWatchSet(app);
+    if (_bdW) for (var _bg in _bdW) {
+      _bdRec(_bg).op = frontier[_bg] ? 'frontier' : (placed[_bg] ? 'placed' : 'pending');
+    }
     var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0, _perfHideForProxy = 0;
     app.scene.traverse(function(obj) {
       _perfObjs++;
@@ -1488,6 +1604,7 @@
           obj.visible = false;
           if (obj._tm_highlighted) restoreMaterial(obj);
         }
+        if (_bdW && _bdW[g]) _bdSeen(g, obj.isMesh ? 'Mesh' : 'Obj', obj.visible, obj);
 
         // Shadow + camera (merged — was 3 separate traversals)
         // §S260b: Only set shadow flags if Sunglass shadow is ON
@@ -1546,7 +1663,15 @@
           // MEP, batched for performance) previously had NO staging check at all and showed fully
           // solid before its own support finished — the worse half of the bug this removal closes.
           var bStaged = !frontier[bg] && (_tmXraySolidifyTs[bg] !== undefined && cursorMs < _tmXraySolidifyTs[bg]);
-          if ((placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy && !bStaged) {
+          var bShow = (placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy && !bStaged;
+          if (_bdW && _bdW[bg]) {
+            _bdSeen(bg, 'BM', bShow, null);
+            // §CPE_BUILDUP_PLACED — a batched slot's world Y comes from its own slot matrix, not
+            // from the host mesh's position (the host is one object for thousands of elements).
+            obj.getMatrixAt(sid, _bmM4); _bmPos.setFromMatrixPosition(_bmM4);
+            _bdRec(bg).y = +(_bmPos.y + (obj.position ? obj.position.y : 0)).toFixed(3);
+          }
+          if (bShow) {
             obj.setVisibleAt(sid, true);
             anyVis = true;
             if (frontier[bg]) {
@@ -1614,7 +1739,14 @@
           var iHideForProxy = _dlodOn && !!placed[ig] && !frontier[ig] && recent[ig] === undefined && !_dlodInView(ig);
           // §XRAY_STAGING_REMOVED — same gate as the single-mesh/BatchedMesh branches.
           var iStaged = !frontier[ig] && (_tmXraySolidifyTs[ig] !== undefined && cursorMs < _tmXraySolidifyTs[ig]);
-          if ((placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy && !iStaged) {
+          var iShow = (placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy && !iStaged;
+          if (_bdW && _bdW[ig]) {
+            _bdSeen(ig, 'IM', iShow, null);
+            var _isv = _savedInstanceMatrices[meshId][mi];
+            if (_isv) { _tmV2.setFromMatrixPosition(_isv);
+              _bdRec(ig).y = +(_tmV2.y + (obj.position ? obj.position.y : 0)).toFixed(3); }
+          }
+          if (iShow) {
             if (_savedInstanceMatrices[meshId][mi]) {
               obj.setMatrixAt(mi, _savedInstanceMatrices[meshId][mi]);
             }
@@ -4099,6 +4231,12 @@
         console.log('§CPM_DISPLAY on — one-DAG schedule authored the display timeline' +
           ' midair=' + aud.midair + ' orphans=' + aud.orphans +
           ' stragglers=' + r.graph.counts.stragglers + ' (0 midair = nothing appears before what it touches)');
+        // §GROUND_CONNECTED (2026-09-12) — NAME the orphans. The aggregate above never named an
+        // element; the HHS Stahlbalkon brackets were found by watching a bake. Capped at 20 here
+        // (the lock breach's own cap); the full list is _midairAudit's orphanGuids.
+        if (aud.orphans) console.log('§SUPPORT_ORPHAN_GUIDS n=' + aud.orphans + ' seedMode=' + aud.groundSeedMode +
+          ' first20=' + JSON.stringify((aud.orphanGuids || []).slice(0, 20)) +
+          ' — not ground-connected through any bearing/carrier/embedded support chain; reported, never moved');
         var _cstrag = {};
         for (var _ci = 0; _ci < items.length; _ci++) if (r.graph.stragglerOf[_ci]) _cstrag[items[_ci].guid] = 1;
         return { cpm: true, midair: aud.midair, stats: r, strag: _cstrag };
@@ -8576,13 +8714,136 @@
     return n;
   }
 
+  // §KERNEL_OPS_SCHED_AGREE (2026-09-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+  // §SCHED_TASK_BUCKET_SPLIT_BRAIN) — DOES THIS PERSISTED SCHEDULE STILL AGREE WITH THIS DB?
+  //
+  // §KERNEL_OPS_SCHED_VERSION below asks "were these ops produced by the current ALGORITHM?". It
+  // never asks "are they still TRUE OF the model they sit in?", and those are different questions.
+  // Measured consequence: Hospital_silent.db ships 63,415 ELEMENT_PLACE rows stamped _genVersion=39
+  // against _GANTT_CACHE_VERSION=39, so they are adopted verbatim — yet its `tasks`/`task_elements`
+  // tables were RE-AUTHORED after those ops were captured, so 13,574 of them (21.4%) carry a `_task`
+  // that matches no task_elements row for their own guid, and the op calendar (2026-09-10..2027-07-17)
+  // sits 233 days outside the task calendar (2026-01-01..2026-11-26) even though the DB's own
+  // schedules.display_authored=1 asserts the task windows are VIEWS of these very element times.
+  // 28 of those mis-bucketed rows are Level 1 foundation walls that carry an 8,899 m² ground slab and
+  // are scheduled 13.47 h AFTER it, so §XRAY_STAGING_REMOVED correctly refuses to draw the floor.
+  // Re-deriving (verified in a real browser: §GANTT_SOURCE, staged 544→501, slab leaves staging, wall
+  // returns to TASK_Substructure_Level_1, span becomes 1/10/2026→11/26/2026) produces the right answer
+  // — the TABLES are right, only the frozen answer is wrong.
+  //
+  // Deliberately NOT fixed by bumping _GANTT_CACHE_VERSION: that is a one-shot data patch. It
+  // discards every user's warm gantt:v39:* entry fleet-wide (correct ones included) and leaves the
+  // hole open, so the next re-authoring of `tasks` freezes a wrong answer again at v40. This makes
+  // the staleness decision a property of the DB instead of a constant a human must remember to bump.
+  //
+  // TWO INDEPENDENT CLAUSES, both cheap, both measured to flag Hospital and NOT to flag a building
+  // whose ops are correct (HHS_Office_Federated_silent: 0/6,880 task-link mismatches, op window
+  // inside its task window):
+  //   B-WIN  armed only when schedules.display_authored=1 — that flag IS the DB asserting the task
+  //          windows are views of these element times, so containment must hold by construction.
+  //          One MIN/MAX over the dated leaf tasks + one pass over ops already parsed in memory.
+  //   B-TE   a SAMPLE of ops must have a task_elements row for their own guid and _task. One
+  //          `guid IN (…)` query, so the cost is bounded by the sample, not by model size (loading
+  //          the whole 63,415-row map costs 72 ms in sql.js and is not affordable per activate).
+  //          At Hospital's 21.4% defect rate a sample of 50 detects in 2000/2000 trials.
+  // ⚠ This NEVER rewrites an op from task_elements — a disagreement only triggers RE-DERIVATION by
+  // the shipped verb. On the 13,546 one-storey shifts the OP is the better witness (it matches
+  // elements_meta.storey 7,491 times, task_elements 0), so copying one table over the other would
+  // repair 28 rows and break 13,546. Freshly derived ops measure 0/63,415 on B-TE and land inside the
+  // task window, so neither clause re-fires and there is no derive-every-activate loop.
+  var _AGREE_SAMPLE = 64;                    // ops sampled for B-TE (evenly spaced, deterministic)
+  var _AGREE_WINDOW_SLACK_MS = 86400000;     // `tasks` bounds are DATE-only; allow a day either side
+
+  function _schedOpsAgreementFail(db, placeOps) {
+    if (!db || !placeOps || !placeOps.length) return '';
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var reason = '', detail = '', winMs = 0, teMs = 0;
+    try {
+      // ── B-WIN ──────────────────────────────────────────────────────────────────────────────────
+      var _da = 0;
+      try {
+        var r0 = db.exec('SELECT MAX(display_authored) FROM schedules');
+        if (r0.length && r0[0].values.length && r0[0].values[0][0] != null) _da = r0[0].values[0][0] | 0;
+      } catch (e) { _da = 0; }   // pre-§ZONE_DISPLAY_AUTHORING DB: no column, clause simply not armed
+      if (_da === 1) {
+        var r1 = db.exec('SELECT MIN(schedule_start), MAX(schedule_finish) FROM tasks ' +
+          'WHERE schedule_start IS NOT NULL AND (is_summary IS NULL OR is_summary=0)');
+        if (r1.length && r1[0].values.length && r1[0].values[0][0] && r1[0].values[0][1]) {
+          var tS = Date.parse(r1[0].values[0][0]), tE = Date.parse(r1[0].values[0][1]);
+          if (isFinite(tS) && isFinite(tE)) {
+            var oS = Infinity, oE = -Infinity;
+            for (var i = 0; i < placeOps.length; i++) {
+              var pp = placeOps[i].parameters || {};
+              var s = placeOps[i].start_ts, e = pp._end_ts;
+              if (typeof s === 'number' && s < oS) oS = s;
+              if (typeof e === 'number' && e > oE) oE = e;
+            }
+            if (isFinite(oS) && isFinite(oE) &&
+                (oS < tS - _AGREE_WINDOW_SLACK_MS || oE > tE + _AGREE_WINDOW_SLACK_MS)) {
+              reason = 'window';
+              detail = ' ops=' + new Date(oS).toISOString().slice(0, 10) + '..' + new Date(oE).toISOString().slice(0, 10) +
+                ' tasks=' + r1[0].values[0][0] + '..' + r1[0].values[0][1] +
+                ' (display_authored=1 asserts these are the same window)';
+            }
+          }
+        }
+      }
+      winMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0;
+      // ── B-TE ───────────────────────────────────────────────────────────────────────────────────
+      if (!reason) {
+        var step = Math.max(1, Math.floor(placeOps.length / _AGREE_SAMPLE));
+        var want = {}, list = [], n = 0;
+        for (var j = 0; j < placeOps.length && list.length < _AGREE_SAMPLE; j += step) {
+          var o = placeOps[j], par = o.parameters || {};
+          if (!o.output_guid || !par._task) continue;            // generated (uncaptured) op: no bucket to check
+          if (/['\\]/.test(o.output_guid)) continue;             // IFC guids never contain these; skip rather than quote
+          want[o.output_guid] = par._task; list.push(o.output_guid); n++;
+        }
+        if (n) {
+          var got = {};
+          var r2 = db.exec("SELECT guid, task_id FROM task_elements WHERE guid IN ('" + list.join("','") + "')");
+          if (r2.length) for (var k = 0; k < r2[0].values.length; k++) {
+            var g = r2[0].values[k][0];
+            (got[g] = got[g] || []).push(r2[0].values[k][1]);
+          }
+          var bad = 0, firstBad = '';
+          for (var g2 in want) {
+            if (!got[g2] || got[g2].indexOf(want[g2]) < 0) {
+              bad++;
+              if (!firstBad) firstBad = g2 + ' _task=' + want[g2] + ' task_elements=' + JSON.stringify(got[g2] || null);
+            }
+          }
+          if (bad) {
+            reason = 'taskLink';
+            detail = ' sampled=' + n + ' mismatched=' + bad + ' first ' + firstBad;
+          }
+        }
+      }
+      teMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0 - winMs;
+    } catch (e) {
+      // A DB that cannot answer the question is never called stale on that account — an agreement
+      // test that fails OPEN would re-derive every building with a missing table on every activate.
+      console.log('§KERNEL_OPS_SCHED_AGREE unavailable (' + e.message + ') — agreement clause skipped');
+      return '';
+    }
+    console.log('§KERNEL_OPS_SCHED_AGREE ops=' + placeOps.length +
+      ' winMs=' + winMs.toFixed(1) + ' teMs=' + teMs.toFixed(1) +
+      ' totalMs=' + (winMs + teMs).toFixed(1) +
+      ' verdict=' + (reason || 'agrees') + detail);
+    return reason;
+  }
+
   // §KERNEL_OPS_SCHED_VERSION (2026-08-11): pure predicate, no db/window — placeOps materialized
   // under an OLDER schedule-generation algorithm (missing/mismatched _genVersion stamp) must never
   // be silently reused. currentVersion is _GANTT_CACHE_VERSION, passed in rather than closed over so
   // this stays independently testable (same idiom as _tier1Extents/_tier1Serialize below).
-  function _kernelOpsSchedStale(placeOps, currentVersion) {
-    return !!(placeOps && placeOps.length && placeOps[0].parameters &&
-      placeOps[0].parameters._genVersion !== currentVersion);
+  // §KERNEL_OPS_SCHED_AGREE (2026-09-12): agreementFail is likewise PASSED IN, already computed by
+  // _schedOpsAgreementFail above — this predicate stays pure, with no db or window of its own, so
+  // witness_kernel_ops_sched_version.js can keep slicing and calling it in a bare vm sandbox.
+  function _kernelOpsSchedStale(placeOps, currentVersion, agreementFail) {
+    if (!(placeOps && placeOps.length && placeOps[0].parameters)) return false;
+    if (placeOps[0].parameters._genVersion !== currentVersion) return true;
+    return !!agreementFail;
   }
 
   // ── Activate / Deactivate ──
@@ -8687,6 +8948,21 @@
           _hasCachedPlaces = false;
         }
       }
+      // §KERNEL_OPS_SCHED_AGREE (2026-09-12) — kernel_ops HAS TWO HOMES and this branch is the other
+      // one. It returns before the persisted-table branch below is ever reached, DELETE+INSERTing the
+      // cached JSON over the DB's rows, so gating only the table would leave this home able to serve a
+      // frozen answer the table can no longer serve. Same predicate, same question: is this cache
+      // still TRUE OF this db? (A cache whose absence changes the answer is not a cache.)
+      if (_hasCachedPlaces) {
+        var _cachedPlaces = cachedOps.filter(function(o) { return o.op_type === 'ELEMENT_PLACE'; });
+        var _cacheAgreeFail = _schedOpsAgreementFail(app.db, _cachedPlaces);
+        if (_cacheAgreeFail) {
+          console.log('§GANTT_STALE_CACHE ops=' + cachedOps.length + ' agreementFail=' + _cacheAgreeFail +
+            ' — cached schedule no longer agrees with this DB, dropping cache and re-deriving');
+          cacheDel('gantt');
+          _hasCachedPlaces = false;
+        }
+      }
       if (_hasCachedPlaces) {
         // Fast path: inject cached JSON into kernel_ops table
         console.log('§GANTT_CACHE_HIT ops=' + cachedOps.length);
@@ -8745,10 +9021,15 @@
       // HHS_Office_Federated still showing MEP Rough-in starting 20.8d before Architecture finished,
       // §TIER_SERIAL's own witness (which reads the freshly-recomputed _disp, not kernel_ops) could
       // not have caught it. Stamp+check closes the same gap _end_ts's check closes for schema shape.
-      if (_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION)) {
+      // §KERNEL_OPS_SCHED_AGREE (2026-09-12): …and the second question the stamp cannot answer —
+      // do these rows still agree with THIS db's tasks/task_elements? See the long note on
+      // _schedOpsAgreementFail. Computed here so the predicate itself stays pure.
+      var _agreeFail = _schedOpsAgreementFail(app.db, _placeOps);
+      if (_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION, _agreeFail)) {
         try { app.db.run("DELETE FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE'"); } catch(e) {}
         console.log('§KERNEL_OPS_SCHED_VERSION stale genVersion=' + _placeOps[0].parameters._genVersion +
-          ' current=' + _GANTT_CACHE_VERSION + ' — cleared ' + _placeOps.length + ' ops, will re-inject');
+          ' current=' + _GANTT_CACHE_VERSION + ' agreementFail=' + (_agreeFail || 'none') +
+          ' — cleared ' + _placeOps.length + ' ops, will re-inject');
         _placeOps = [];
       }
       if (_placeOps.length) { _ops = _placeOps; _ganttDirty = true; }
@@ -8805,7 +9086,12 @@
       // fallback below (TM still opened with 63,416 ops) but with no way to locate it. Log the
       // stack and the phase so the next occurrence names its own line.
       console.warn('§GANTT_CACHE_ERR ' + e.message + ' | phase=' + (_ops && _ops.length ? 'post-loadOps' : 'pre-loadOps') +
-        ' | stack=' + String(e && e.stack || '(none)').split('\n').slice(0, 4).join(' << '));
+        ' | stack=' + String(e && e.stack || '(none)').split('\n').slice(0, 4).join(' << ') +
+        // §KERNEL_OPS_SCHED_AGREE (2026-09-12): the line above promises the next occurrence will name
+        // itself, and it did not — a silent-bake cold derive on Hospital logged `undefined | stack=(none)`
+        // because sql.js throws a bare STRING ("Statement closed"), which has neither .message nor
+        // .stack. One occurrence cost a whole diagnosis round. Print what a non-Error throw actually is.
+        ' | thrown type=' + (typeof e) + ' value=' + String(e));
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
       if (!_ops.length) { await _load4DTemplate(); _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)

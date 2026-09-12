@@ -29,68 +29,6 @@
 // caller (it varies; these four do not) — see A.showRuleModeTint below.
 var RULE_TINT_MATERIAL_OPTS = { wireframe: true, transparent: true, opacity: 0.2, depthWrite: false };
 
-// ── §RULE_TINT_SHINE_THROUGH (MEP_CLASH_REVEAL_MOVIE.md §62, 2026-09-11) ─────────────────────────
-// Pure: layer the film's opt-in shine-through onto the base opts WITHOUT editing the constant above.
-// The constant is T5's contract (tests/test_rule_mode_tint.js, 11/11) and must keep deep-equalling
-// Clash MODE's material — Clash Mode is interactive browsing, where z-testing is correct. Clash FILM
-// deliberately diverged (clash_film.js §CLASH_FILM_SHINE_THROUGH), and these are its exact values,
-// retained not reinvented, per measure.js:717-720's standing "the shine-through already exists".
-// Without opts the result is byte-identical to the base — interactive Rule Mode is unaffected.
-var ROOM_ANCHOR_M = 1.2;                    // §71 — a room is marked by a point, not by its extent
-var RULE_TINT_RENDER_ORDER = -1;            // unchanged default: draws before ordinary opaque geometry
-var RULE_TINT_SHINE_RENDER_ORDER = 900;     // clash_film.js's own value — after opaque geometry
-function ruleTintMaterialOpts(opts) {
-  var o = Object.assign({}, RULE_TINT_MATERIAL_OPTS);
-  // §78 (user: "I thought it be more filled bboxes see thru") — FILM-ONLY, opt-in, exactly like
-  // shineThrough. Editing the shared constant would also change interactive Rule Mode and break T5's
-  // "must equal Clash MODE's material" contract, which §62.2 ruled out of scope; a first attempt did
-  // exactly that and broke tests/test_rule_mode_tint.js. Costs nothing: same geometry, same instanced
-  // draw, one flag. opacity 0.22 keeps the scene fully readable through a solid box.
-  if (opts && opts.filled) { o.wireframe = false; o.opacity = 0.22; }
-  if (!opts || !opts.shineThrough) return o;
-  return Object.assign(o, { depthTest: false, toneMapped: false });
-}
-function ruleTintRenderOrder(opts) {
-  return (opts && opts.shineThrough) ? RULE_TINT_SHINE_RENDER_ORDER : RULE_TINT_RENDER_ORDER;
-}
-
-// ── §RULE_TINT_ROOM_GEOM (MEP_CLASH_REVEAL_MOVIE.md §67, 2026-09-11) ────────────────────────────
-// Resolve a bbox row per flagged guid. Chunked by ~900 per IN-clause, the same pattern
-// viewer/diff.js A._diffToVoRows (~L308) uses.
-// TWO TABLES, not one. element_transforms holds real IFC elements; INJECTED ROOMS (guid prefix RM_,
-// §ROOM_INJECTOR_NEEDLE) live only in spatial_structure and have NO element_transforms row —
-// measured on ~/Downloads/Hospital_silent.db: 8 RM_ rows in spatial_structure, 0 in
-// element_transforms. Both of egress's graph rules (isolated_room, circulation_distance) pick ROOMS,
-// so before this every room-based Safety finding was dropped from the 3-D tint IN SILENCE: Hospital's
-// real bake logged `§RULE_TINT_ENTER elements=1` against `§RULE_FILM picks=2` with nothing saying
-// which pick vanished. spatial_structure's center_x/y/z + size_x/y/z are the same shape as
-// element_transforms' center_* + bbox_*, so this geometry is real and extracted, never synthesised.
-// Anything resolving in NEITHER table is named in the log rather than dropped quietly.
-function ruleTintRowsFor(dbQuery, guids) {
-  var rowsByGuid = {};
-  function pull(sql, list) {
-    for (var i = 0; i < list.length; i += 900) {
-      var chunk = list.slice(i, i + 900);
-      var ph = chunk.map(function () { return '?'; }).join(',');
-      var rows;
-      try { rows = dbQuery(sql.replace('?PH?', ph), chunk); }
-      catch (e) { console.warn('\u00A7RULE_TINT query err ' + e.message); rows = []; }
-      (rows || []).forEach(function (r) { rowsByGuid[r[0]] = r; });
-    }
-  }
-  pull('SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid IN (?PH?)', guids);
-  var missing = guids.filter(function (g) { return !rowsByGuid[g]; });
-  if (missing.length) {
-    pull('SELECT guid, center_x, center_y, center_z, size_x, size_y, size_z FROM spatial_structure WHERE guid IN (?PH?)', missing);
-    missing.forEach(function (g) { if (rowsByGuid[g]) rowsByGuid[g]._isRoom = true; });   // §71
-    var found = missing.filter(function (g) { return !!rowsByGuid[g]; });
-    if (found.length) console.log('\u00A7RULE_TINT_ROOM_GEOM n=' + found.length + ' resolved from spatial_structure (injected rooms carry no element_transforms row)');
-    var still = missing.filter(function (g) { return !rowsByGuid[g]; });
-    if (still.length) console.log('\u00A7RULE_TINT_NO_GEOM n=' + still.length + ' guids=[' + still.join(',') + '] — in neither element_transforms nor spatial_structure, no marker drawn (never silent)');
-  }
-  return rowsByGuid;
-}
-
 // ── Pure: HTML-escape for a double-quoted HTML attribute / text node ──
 function _rcEscAttr(s) {
   return String(s == null ? '' : s)
@@ -109,14 +47,15 @@ function _rcBtnStyle(active) {
     (active ? 'background:#1565c0;color:#fff' : 'background:rgba(255,255,255,0.05);color:#ccc');
 }
 
-// One row: guid/rule carried via data-rc-guid/data-rc-rule (delegated long-press reads these,
-// see _wireRuleChecklistRowEvents below); click → APP.zoomToGuid, exactly like diff.js's row().
+// One row: guid/rule/severity carried via data-rc-guid/data-rc-rule/data-rc-severity. NO inline
+// onclick — click/selection is delegated through ListKeyNav (_wireRowEvents below), exactly like
+// Clash's row list (measure.js/scene.js clashListNav: "ALL clicks route through ListKeyNav so
+// anchor/cursor track correctly"), not a per-row handler. Long-press (share) still reads these
+// data- attributes via the same delegated listener.
 function _rcRowHtml(r, colorMap) {
   var color = (colorMap && colorMap[r.severity]) || '#888';
-  var guidJs = _rcEscJs(r.guid);
   var name = String(r.name || '').substring(0, 30);
-  var html = '<div class="rc-row" data-rc-guid="' + _rcEscAttr(r.guid) + '" data-rc-rule="' + _rcEscAttr(r.rule) + '"' +
-    ' onclick="APP.zoomToGuid(\'' + guidJs + '\')"' +
+  var html = '<div class="rc-row" data-rc-guid="' + _rcEscAttr(r.guid) + '" data-rc-rule="' + _rcEscAttr(r.rule) + '" data-rc-severity="' + _rcEscAttr(r.severity) + '"' +
     ' style="padding:4px 6px;margin:2px 0;border-radius:4px;cursor:pointer;border-left:3px solid ' + color +
     ';background:rgba(255,255,255,0.03);transition:background 0.1s"' +
     ' onmouseover="this.style.background=\'rgba(255,255,255,0.08)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.03)\'">';
@@ -131,18 +70,58 @@ function _rcRowHtml(r, colorMap) {
   return html;
 }
 
+// ── Pure: prettify a raw rule name for display — 'span_depth_cantilever' -> 'Span Depth Cantilever'.
+// Generic (works for Sanity's and Egress's rule names alike), no hardcoded per-rule label table.
+function _rcPrettyRule(name) {
+  return String(name || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+}
+
+// One RULE SET within a severity tier — a rule's flagged elements are ONE finding to grasp, not
+// N (§RULE_FILM_SET_PULSE, prompts/MEP_CLASH_REVEAL_MOVIE.md §77, bim-compiler repo: "509
+// findings on Hospital are not 509 stories — they are six [rules]"). Collapsed by default,
+// STATING THE SET TOTAL OUTRIGHT in the header (not "N of M visible" — there is no "visible"
+// concept in a DOM list, but the same principle applies: the count must be graspable without
+// expanding). Same click-to-expand mechanic as the old flat group, now one level deeper.
+function _rcRuleSetHtml(ruleName, ruleRows, colorMap) {
+  if (!ruleRows.length) return '';
+  var color = (colorMap && colorMap[ruleRows[0].severity]) || '#888';
+  // Header click is EXPAND/COLLAPSE ONLY — same as a Clash category toggle, "nothing during
+  // category" (user directive, 2026-09-12). No camera move, no markers: this is a filter/grouping
+  // level, not a selection. Selecting actual ITEMS (the rows underneath, once expanded) is what
+  // drives the camera — via ListKeyNav, see _wireRowEvents below — matching Clash's own list
+  // exactly instead of inventing a second, header-level selection concept.
+  var html = '<div class="rc-ruleset">';
+  html += '<div class="rc-ruleset-header" data-rc-rule="' + _rcEscAttr(ruleName) + '"' +
+    ' onclick="var b=this.nextElementSibling; b.style.display = (b.style.display===\'none\')?\'block\':\'none\'; this.firstChild.textContent = (b.style.display===\'none\')?\'▸ \':\'▾ \';"' +
+    ' style="cursor:pointer;font-size:10px;color:' + color + ';margin:3px 0 1px;padding:2px 4px;border-left:3px solid ' + color + ';background:rgba(255,255,255,0.02)">' +
+    '<span>▸ </span>' + _rcEscAttr(_rcPrettyRule(ruleName)) + ' &mdash; ' + ruleRows.length + ' flagged</div>';
+  html += '<div class="rc-ruleset-body" style="display:none;padding-left:6px">';
+  for (var i = 0; i < ruleRows.length; i++) html += _rcRowHtml(ruleRows[i], colorMap);
+  html += '</div></div>';
+  return html;
+}
+
 // One severity group — CRITICAL/WARNING expanded by default, OPTIMIZED collapsed (matches
-// clash-panel noise convention per UI MODEL: "only CRITICAL/WARNING expanded"). Collapse toggle
-// is a plain click-to-expand div (no exact clash-panel group-collapse precedent found to mirror
-// verbatim — brief allows this fallback).
+// clash-panel noise convention per UI MODEL: "only CRITICAL/WARNING expanded"). "Expanded" now
+// means the LIST OF RULE SETS is visible (each still collapsed to its own count-only header) —
+// the old behaviour dumped every individual element row here, which is exactly the "509 stories"
+// spam the bake session independently diagnosed and fixed the same way (group by rule, state the
+// total, let the viewer drill in). Collapse toggle is a plain click-to-expand div (no exact
+// clash-panel group-collapse precedent found to mirror verbatim — brief allows this fallback).
 function _rcGroupHtml(label, sevRows, headerColor, expanded, colorMap) {
   if (!sevRows.length) return '';
+  var byRule = {}, ruleOrder = [];
+  for (var i = 0; i < sevRows.length; i++) {
+    var rn = sevRows[i].rule;
+    if (!byRule[rn]) { byRule[rn] = []; ruleOrder.push(rn); }
+    byRule[rn].push(sevRows[i]);
+  }
   var html = '<div class="rc-group">';
   html += '<div class="rc-group-header" onclick="var b=this.nextElementSibling; b.style.display = (b.style.display===\'none\')?\'block\':\'none\';"' +
     ' style="cursor:pointer;font-size:11px;font-weight:600;color:' + headerColor + ';margin:6px 0 2px">' +
-    (expanded ? '▾' : '▸') + ' ' + label + ' (' + sevRows.length + ')</div>';
+    (expanded ? '▾' : '▸') + ' ' + label + ' (' + sevRows.length + ' across ' + ruleOrder.length + (ruleOrder.length === 1 ? ' set' : ' sets') + ')</div>';
   html += '<div class="rc-group-body" style="display:' + (expanded ? 'block' : 'none') + '">';
-  for (var i = 0; i < sevRows.length; i++) html += _rcRowHtml(sevRows[i], colorMap);
+  for (var j = 0; j < ruleOrder.length; j++) html += _rcRuleSetHtml(ruleOrder[j], byRule[ruleOrder[j]], colorMap);
   html += '</div></div>';
   return html;
 }
@@ -186,6 +165,12 @@ function _buildRuleChecklistHtml(config, activeCategory) {
     var c = categories[k];
     html += '<button type="button" class="rc-toggle-btn" data-rc-cat="' + _rcEscAttr(c.label) + '" onclick="APP._setRuleChecklistCategory(\'' + _rcEscJs(c.label) + '\')" style="' + _rcBtnStyle(activeCat === c) + '">' + _rcEscAttr(c.label) + '</button>';
   }
+  // T8.8 — the Report button lives HERE, in the generic chassis, not in either panel's own glue.
+  // Both A.showStructuralSanity and A.showEgressSanity render through this function, so one edit
+  // gives both panels the button and a third rule panel added later inherits it for free. It
+  // exports what the panel is CURRENTLY SHOWING (the filtered rows), so an applied category
+  // filter is honoured rather than silently ignored.
+  html += '<button type="button" class="rc-report-btn" onclick="APP._downloadRuleReport()" title="Download these findings as JSON" style="' + _rcBtnStyle(false) + ';margin-left:auto">\u2193 Report</button>';
   html += '</div>';
 
   html += '<div style="margin-top:2px;color:#888;font-size:11px">Click element to zoom &middot; long-press to share</div>';
@@ -209,6 +194,43 @@ function _buildRuleDeepLinkUrl(p) {
   p = p || {};
   return (p.origin || '') + (p.pathname || '') + '?guid=' + encodeURIComponent(p.guid) +
     '#' + p.checkId + '=' + encodeURIComponent(p.rule);
+}
+
+// ── Pure: longest measured distance-to-exit, in steps — the bottom-status-bar headline stat
+// (user directive, 2026-09-12: "longest path to exit — ## steps... indicative of the BIM
+// capability of our model, not confusing"). Same real ratio (metres) already on every
+// circulation_distance row (RoomGraph.escapeRoute()/shortestPath() distance — see
+// egress_sanity.js's own header), just the WORST case across the whole evaluated set, converted
+// to a step count. 0.75m/step is a standard adult-stride ergonomic convention from OUTSIDE this
+// project (no stride-length constant exists anywhere in this codebase to extract) — same
+// disclosure discipline as every other uncited number in this PR, labelled "~" (estimate) by the
+// caller below, never presented as a measured fact. Returns null (never a fabricated "0 steps")
+// when no circulation_distance row exists — mirrors EGRESS_SANITY.md's own "dropped, never 0s /
+// 0 steps" contract for the same stat in the movie-bake spec this was modelled on
+// (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §59.4).
+function _rcLongestExitSteps(rows) {
+  var maxM = null;
+  (rows || []).forEach(function (r) {
+    if (r.rule !== 'circulation_distance' || r.ratio == null || isNaN(r.ratio)) return;
+    if (maxM === null || r.ratio > maxM) maxM = r.ratio;
+  });
+  return maxM === null ? null : Math.round(maxM / 0.75);
+}
+
+// Momentary bottom-status-bar confirmation — same self-clearing convention as dlod_nav.js's own
+// _statusMsg ("Auto-clears after 5s ONLY if nothing overwrote it"), reused here rather than a
+// second status-message idiom. No-ops (never shows "0 steps") when there is nothing to say.
+var _rcStatusClearT = null;
+function _rcShowLongestExitStatus(A, rows) {
+  if (!A || !A.status) return;
+  var steps = _rcLongestExitSteps(rows);
+  if (steps === null) return;
+  var msg = 'Longest path to exit — ~' + steps + ' steps';
+  A.status.textContent = msg;
+  if (_rcStatusClearT) clearTimeout(_rcStatusClearT);
+  _rcStatusClearT = setTimeout(function () {
+    if (A.status.textContent === msg) A.status.textContent = '';
+  }, 5000);
 }
 
 // ── Browser glue (T3/T4/T5/T6) ──
@@ -240,12 +262,135 @@ function setupRuleChecklist(A) {
       ' critical=' + result.counts.CRITICAL + ' warning=' + result.counts.WARNING + ' optimized=' + result.counts.OPTIMIZED);
   }
 
-  // Row long-press (350ms, cancel-on-move-10px) — event delegation on the panel's row-container
-  // div, attached ONCE (not per-row), mirrors viewer/measure.js's clash-row long-press mechanics
-  // (lines ~969-1034) exactly: pointerdown arms a 350ms timer, pointermove cancels past 10px
-  // (dx²+dy²>100), pointerup/pointercancel clear the timer.
+  // ── T8.2/T8.8: Report download — GENERIC, driven entirely by the open panel's own config.
+  // Nothing Sanity- or Egress-specific here: each panel puts `rulesUsed`/`rulesSource` (and
+  // Egress its captured `roomGraph` facts) into the config it already passes to
+  // A.showRuleChecklist, and this reads them back. A third rule panel gets Report for free.
+  //
+  // ⚠ It exports the FILTERED rows — what the panel is currently showing — so a category the
+  // user has clicked is honoured, not silently ignored (T8.8). Download convention is the one
+  // already in the tree at variation_order.js ~267: Blob -> a.download -> revokeObjectURL, plus
+  // a §-tagged console line.
+  A._downloadRuleReport = function () {
+    var config = A._ruleChecklistConfig;
+    if (!config) { console.warn('§RULE_REPORT_UNAVAILABLE no panel open'); return null; }
+    if (typeof RuleReport === 'undefined') { console.warn('§RULE_REPORT_UNAVAILABLE rule_report.js not loaded'); return null; }
+    // T8.12 — the panel renders WITHOUT witness (evidence is dead weight in a list you scroll).
+    // An explicit export is the moment it earns its cost, so re-run the same evaluator with
+    // witness:true here. Additive by construction — R12 asserts the counts do not move — so the
+    // re-run cannot disagree with the panel above it. Falls back to the displayed rows if the
+    // evaluator is unreachable, and says which it used in the § line.
+    var rows = config.rows || [], witnessed = false;
+    try {
+      if (config.rulesUsed && A.dbQuery) {
+        if (config.checkId === 'sanity' && typeof StructuralSanity !== 'undefined') {
+          rows = StructuralSanity.evaluate(A.dbQuery, config.rulesUsed, { log: function () {}, witness: true }) || rows;
+          witnessed = true;
+        } else if (config.checkId === 'egress' && typeof EgressSanity !== 'undefined') {
+          rows = EgressSanity.evaluate(A.dbQuery, config.rulesUsed, { log: function () {}, witness: true }) || rows;
+          witnessed = true;
+        }
+      }
+    } catch (e) { console.warn('§RULE_REPORT_WITNESS_FAIL ' + e.message + ' — exporting the displayed rows without evidence'); rows = config.rows || []; }
+    var cat = A._ruleChecklistActiveCategory;
+    if (cat) {
+      var hit = (config.categories || []).filter(function (c) { return c.label === cat; })[0];
+      if (hit) rows = rows.filter(function (r) { return hit.ruleNames.indexOf(r.rule) !== -1; });
+    }
+    var report = RuleReport.buildRuleReport({
+      rows: rows,
+      ruleDefs: config.rulesUsed ? [config.rulesUsed] : [],
+      meta: {
+        building: A.activeBuilding, db: A.activeBuilding,
+        swVersion: (A._swCacheVersion || null),
+        rulesSource: config.checkId === 'egress'
+          ? { egress: config.rulesSource || 'unknown' }
+          : { structural: config.rulesSource || 'unknown' },
+        roomGraph: config.roomGraph || null,
+        rulesOverlay: config.rulesOverlay || null,
+        rulesProvenance: config.rulesProvenance || [],
+        longestExitSteps: _rcLongestExitSteps(rows),
+        // T8.11 — the panel has A.dbQuery, so it can review its own input the same way the CLI
+        // does. Probes are read-only counts over elements_meta/element_transforms/
+        // spatial_structure; if dbQuery is missing the section reports null, never "all clear".
+        sufficiency: A.dbQuery ? RuleReport.runSufficiencyProbes(A.dbQuery, { log: console.log }) : null,
+        populations: A.dbQuery ? RuleReport.rulePopulations(A.dbQuery) : null
+      }
+    });
+    try {
+      var blob = new Blob([RuleReport.toJson(report)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'RuleReport_' + (config.checkId || 'rules') + '_' + (A.activeBuilding || 'building') +
+        '_' + new Date().toISOString().split('T')[0] + '.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { console.warn('§RULE_REPORT_DOWNLOAD_FAIL ' + e.message); }
+    console.log('§RULE_REPORT checkId=' + config.checkId + ' category=' + (cat || 'All') +
+      ' findings=' + report.totals.findings + ' rules=' + report.totals.rules +
+      ' witness=' + (witnessed ? report.totals.withWitness : 'off') +
+      ' rulesSource=' + JSON.stringify(report.rulesSource) +
+      ' roomGraph=' + (report.roomGraph ? JSON.stringify(report.roomGraph) : 'null'));
+    return report;
+  };
+
+  // Only VISIBLE rows are real ListKeyNav items — a row inside a collapsed rule-set (display:none
+  // ancestor) is not on screen and must not be selectable/counted, unlike Clash's flat list which
+  // has no per-row collapse to account for.
+  function _rcVisibleRows(panel) {
+    return Array.from(panel.querySelectorAll('[data-rc-guid]')).filter(function (el) {
+      return el.offsetParent !== null;
+    });
+  }
+
+  // Selection → camera/highlight, mirroring Clash's clashListNav onToggle EXACTLY (scene.js
+  // ~line 2247): single item -> A.zoomToGuid (fly to it, as before); MULTIPLE items -> the
+  // whole-set treatment — but using A.showRuleModeTint's real-shape wireframe instead of Clash's
+  // dot spheres (a Sanity/Egress finding's own SHAPE is the point, a clash's point-of-intersection
+  // has none — see A.zoomToGuids' own header in diff.js) plus the same pull-back camera move.
+  function _rcOnSelect(guids) {
+    guids = (guids || []).filter(Boolean);
+    if (!guids.length) return;
+    if (guids.length === 1) { if (A.zoomToGuid) A.zoomToGuid(guids[0]); return; }
+    var cfg = A._ruleChecklistConfig;
+    var colorMap = (cfg && cfg.colorMap) || {};
+    var panel = document.getElementById('rule-checklist-panel');
+    var map = {};
+    if (panel) {
+      guids.forEach(function (g) {
+        var el = panel.querySelector('[data-rc-guid="' + g.replace(/"/g, '') + '"]');
+        if (el) map[g] = el.getAttribute('data-rc-severity');
+      });
+    }
+    if (A.showRuleModeTint) A.showRuleModeTint(map, colorMap);
+    if (A.zoomToGuids) A.zoomToGuids(guids);
+  }
+
+  // Row long-press (350ms, cancel-on-move-10px, share deep-link) + click/selection, both event-
+  // delegated on the panel's row-container div, attached ONCE (not per-row) — mirrors viewer/
+  // measure.js's clash-row mechanics exactly (lines ~969-1034): pointerdown arms a 350ms long-
+  // press timer, pointermove cancels past 10px (dx²+dy²>100), a quick tap (no long-press fired,
+  // no move) routes through ListKeyNav's onClick so single/multi-select stay consistent with
+  // Clash's own list instead of a bespoke per-row handler.
   function _wireRowEvents(panel) {
     var lp = null, fired = false, movedTooFar = false, sx = 0, sy = 0;
+    var nav = (typeof window.makeListKeyNav === 'function')
+      ? window.makeListKeyNav(
+          function () { return _rcVisibleRows(panel); },
+          function (indices) {
+            var items = _rcVisibleRows(panel);
+            _rcOnSelect(indices.map(function (i) { return items[i] && items[i].getAttribute('data-rc-guid'); }));
+          },
+          function (idx) {
+            var items = _rcVisibleRows(panel);
+            if (items[idx]) _rcOnSelect([items[idx].getAttribute('data-rc-guid')]);
+          }
+        )
+      : null;
+    if (nav && typeof window._registerPanel === 'function') {
+      window._registerPanel('rule-checklist', panel, nav, function () { panel.style.display = 'none'; });
+    }
+
     panel.addEventListener('pointerdown', function (ev) {
       var target = ev.target.closest('[data-rc-guid]');
       if (!target) return;
@@ -266,7 +411,15 @@ function setupRuleChecklist(A) {
       var dx = ev.clientX - sx, dy = ev.clientY - sy;
       if (dx * dx + dy * dy > 100) { movedTooFar = true; clearTimeout(lp); lp = null; }
     });
-    panel.addEventListener('pointerup', function () { if (lp) { clearTimeout(lp); lp = null; } });
+    panel.addEventListener('pointerup', function (ev) {
+      if (lp) { clearTimeout(lp); lp = null; }
+      if (fired || movedTooFar) return; // long-press already handled it, or it was a scroll
+      var target = ev.target.closest('[data-rc-guid]');
+      if (!target || !nav) return;
+      var items = _rcVisibleRows(panel);
+      var idx = items.indexOf(target);
+      if (idx >= 0) nav.onClick(idx, ev);
+    });
     panel.addEventListener('pointercancel', function () { if (lp) { clearTimeout(lp); lp = null; } });
   }
 
@@ -295,7 +448,7 @@ function setupRuleChecklist(A) {
   A._ruleTintMeshes = A._ruleTintMeshes || [];
   A._ruleTintActive = false;
 
-  A.showRuleModeTint = function (guidSeverityMap, colorMap, opts) {
+  A.showRuleModeTint = function (guidSeverityMap, colorMap) {
     if (!A.scene || !A.dbQuery || typeof THREE === 'undefined') { console.warn('§RULE_TINT no scene/dbQuery/THREE'); return; }
     if (A._ruleTintActive) A.exitRuleModeTint();
     guidSeverityMap = guidSeverityMap || {};
@@ -305,24 +458,26 @@ function setupRuleChecklist(A) {
 
     var guidSet = {};
     guids.forEach(function (g) { guidSet[g] = true; });
-    // §RULE_TINT_NO_COLLATERAL (MEP_CLASH_REVEAL_MOVIE.md §69, 2026-09-11, user: "are there any
-    // incidental element marked for the Sanity occurrence?"). The match is on a SINGLE
-    // userData.guid, which BatchedMesh/InstancedMesh never carry (time_machine.js:1439,
-    // hba_lens.js:604) — so a picked element sitting in a batch leaves its batch-mates alone and no
-    // neighbour is ever hidden. That was true but UNCOUNTED: nothing said how many meshes went
-    // invisible, so a batch that ever did carry a guid would take its whole bucket down in silence.
-    // Counted and logged now, one number a future bake can be checked against.
-    var _hidden = A.collectMeshes(function (o) {
+    A.collectMeshes(function (o) {
       return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh || o.isLineSegments) &&
         o.userData && guidSet[o.userData.guid];
-    });
-    var _hiddenBatched = _hidden.filter(function (o) { return o.isInstancedMesh || o.isBatchedMesh; }).length;
-    _hidden.forEach(function (o) {
+    }).forEach(function (o) {
       o.userData._ruleTintHidden = true;
       o.visible = false;
     });
 
-    var rowsByGuid = ruleTintRowsFor(A.dbQuery, guids);   // §67 — two tables, see the helper
+    // Query bbox rows for just the flagged guids, chunked by ~900 per IN-clause (same pattern as
+    // viewer/diff.js A._diffToVoRows ~line 308).
+    var rowsByGuid = {};
+    for (var i = 0; i < guids.length; i += 900) {
+      var chunk = guids.slice(i, i + 900);
+      var ph = chunk.map(function () { return '?'; }).join(',');
+      var rows;
+      try {
+        rows = A.dbQuery('SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid IN (' + ph + ')', chunk);
+      } catch (e) { console.warn('§RULE_TINT query err ' + e.message); rows = []; }
+      rows.forEach(function (r) { rowsByGuid[r[0]] = r; });
+    }
 
     var byColor = {};
     guids.forEach(function (g) {
@@ -332,103 +487,40 @@ function setupRuleChecklist(A) {
       (byColor[color] = byColor[color] || []).push(row);
     });
 
-    var _tintAt = {};
     var geo = new THREE.BoxGeometry(1, 1, 1);
     var _m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _quat = new THREE.Quaternion();
     A._ruleTintMeshes = [];
     var total = 0;
     for (var color in byColor) {
       var crows = byColor[color];
-      var matOpts = Object.assign({ color: color }, ruleTintMaterialOpts(opts));   // §62 — opt-in shine-through
+      var matOpts = Object.assign({ color: color }, RULE_TINT_MATERIAL_OPTS);
       var mat = new THREE.MeshBasicMaterial(matOpts);
       var iMesh = new THREE.InstancedMesh(geo, mat, crows.length);
       iMesh.frustumCulled = false;
-      iMesh.renderOrder = ruleTintRenderOrder(opts);   // §62 — 900 when shining through, else the original -1
+      iMesh.renderOrder = -1;
       iMesh.userData.isRuleTintBbox = true;
       for (var j = 0; j < crows.length; j++) {
         var r = crows[j];
         var p = A.ifc2three(r[1], r[2], r[3]);
-        _tintAt[r[0]] = { x: p.x, y: p.y, z: p.z };   // §70
-        // §71 §RULE_TINT_ROOM_ANCHOR — a ROOM's bbox is a REGION, not a thing: metres across, so at
-        // close range its wireframe wraps the whole camera (real bake HHS_final_854x480.mp4 t=48s,
-        // camera inside a room). Mark a room with a small fixed anchor cube at its centre instead.
-        // Real ELEMENTS keep their true bbox — for those the outline IS the useful information.
-        var bx, by, bz;
-        if (r._isRoom) { bx = by = bz = ROOM_ANCHOR_M; }
-        else { bx = r[4] || 0.3; by = r[5] || 0.3; bz = r[6] || 0.3; }
+        var bx = r[4] || 0.3, by = r[5] || 0.3, bz = r[6] || 0.3;
         _pos.set(p.x, p.y, p.z);
         _scl.set(bx, bz, by);
         _m4.compose(_pos, _quat, _scl);
         iMesh.setMatrixAt(j, _m4);
       }
       iMesh.instanceMatrix.needsUpdate = true;
-      iMesh.userData.ruleTintGuids = crows.map(function (r) { return r[0]; });   // §70.6
-      iMesh.userData.ruleTintMats = crows.map(function (r, j) { var mm = new THREE.Matrix4(); iMesh.getMatrixAt(j, mm); return mm; });
       A.scene.add(iMesh);
       A._ruleTintMeshes.push(iMesh);
       total += crows.length;
     }
 
-    // §70 — record the world position of every marker so the film can rank/label them per frame
-    // without re-querying. One source of truth: these are the SAME points the boxes were placed at.
-    A._ruleTintAt = _tintAt;
     A._ruleTintActive = true;
-    console.log('§RULE_TINT_ENTER elements=' + total + ' colors=' + Object.keys(byColor).length +
-      ' guidsAsked=' + guids.length + ' meshesHidden=' + _hidden.length +
-      (_hiddenBatched ? ' ⚠ batchedHidden=' + _hiddenBatched + ' (a batch carried a single guid — its bucket-mates went with it)' : '') +
-      ' shineThrough=' + !!(opts && opts.shineThrough) + ' renderOrder=' + ruleTintRenderOrder(opts) +
-      ' depthTest=' + (ruleTintMaterialOpts(opts).depthTest !== false));
+    console.log('§RULE_TINT_ENTER elements=' + total + ' colors=' + Object.keys(byColor).length);
     if (A.markDirty) A.markDirty();
-  };
-
-  // §70.6 §RULE_TINT_SHOW_ONLY — markers follow the SAME nearest-N ranking the labels use, instead of
-  // all being visible at once. Clash can show every marker because a clash marker is a small contact
-  // box; a Sanity marker is a whole-element or whole-ROOM bbox, and 215 of those with depthTest off
-  // filled the frame with wireframe (real HHS bake out/HHS_clashmodel_854x480.mp4 at t=48s and 92s).
-  // Hidden instances are scaled to zero rather than removed, so the mesh, its material and its
-  // instance count never change — no rebuild, no reallocation, ~215 matrix writes a frame.
-  var _ZERO = null;
-  // §78 — the value per guid is an INTENSITY 0..1, not a boolean. §77's depth wave computes a glow
-  // per member and previously had nowhere to put it: this function only toggled visibility, so every
-  // member of a set appeared at once and the outward wave was invisible on screen (user: "don't
-  // notice the pulse outward effect"). Intensity now drives BOTH per-instance colour (instanceColor
-  // multiplies the shared material, so one material still serves the whole bucket) and a small scale
-  // pop, which is what makes the travelling front readable.
-  var _ZEROM = null;
-  A.ruleTintShowOnly = function (guidSet) {
-    if (!A._ruleTintMeshes || !A._ruleTintMeshes.length) return 0;
-    if (!_ZEROM) _ZEROM = new THREE.Matrix4().makeScale(0, 0, 0);
-    var shown = 0, _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
-    A._ruleTintMeshes.forEach(function (mesh) {
-      var gs = mesh.userData.ruleTintGuids, ms = mesh.userData.ruleTintMats;
-      if (!gs || !ms) return;
-      if (!mesh.instanceColor && THREE.InstancedBufferAttribute) {
-        mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(gs.length * 3).fill(1), 3);
-      }
-      for (var i = 0; i < gs.length; i++) {
-        var v = guidSet ? guidSet[gs[i]] : 1;
-        var k = (typeof v === 'number') ? v : (v ? 1 : 0);
-        if (!k) { mesh.setMatrixAt(i, _ZEROM); continue; }
-        shown++;
-        // scale pop: 1.0 at rest, up to 1.35 at the crest of the wave
-        ms[i].decompose(_p, _q, _s);
-        var g = 1 + 0.35 * k;
-        _m.compose(_p, _q, _s.clone().multiplyScalar(g));
-        mesh.setMatrixAt(i, _m);
-        if (mesh.instanceColor) {
-          var b = 0.45 + 0.55 * k;            // dim at rest, full brightness at the crest
-          mesh.instanceColor.setXYZ(i, b, b, b);
-        }
-      }
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    });
-    return shown;
   };
 
   A.exitRuleModeTint = function () {
     if (!A._ruleTintActive) return;
-    A._ruleTintAt = null;   // §70
     (A._ruleTintMeshes || []).forEach(function (m) {
       A.scene.remove(m);
       if (m.material) m.material.dispose();
@@ -514,27 +606,67 @@ function setupRuleChecklist(A) {
   // brief). Loads viewer/rates/structural_rules.json via fetch, hardcoded-fallback pattern
   // mirroring viewer/rates.js loadSequenceRules() (fetch → apply; on any failure, fall back to
   // the SAME 5 rules already in structural_rules.json, copied verbatim, never invented numbers).
-  var STRUCTURAL_RULES_FALLBACK = {
-    structural_rules: [
-      { name: 'floating_member', applies_to: ['IfcBeam'], tolerance_m: 0.15, framing_dz_m: 0.4 },
-      { name: 'span_depth_steel', applies_to: ['IfcBeam'], material: 'steel',
-        name_hints: ['UB', 'UC', 'Channel', 'HSS'], cantilever: false,
-        warning_ratio: 24, critical_ratio: 30, max_severity: 'WARNING' },
-      { name: 'span_depth_concrete', applies_to: ['IfcBeam'], material: 'concrete',
-        name_hints: ['Concrete', 'RC'], cantilever: false,
-        warning_ratio: 20, critical_ratio: 26, max_severity: 'WARNING' },
-      { name: 'span_depth_cantilever', applies_to: ['IfcBeam'], cantilever: true,
-        warning_ratio: 12, critical_ratio: 16, max_severity: 'WARNING' },
-      { name: 'column_continuity', applies_to: ['IfcColumn'], tolerance_m: 0.3 }
-    ]
+  // T8.13 §RULE_FALLBACK_ONE_SOURCE — the STRUCTURAL_RULES_FALLBACK constant that used to sit
+  // here is GONE. It is now StructuralSanity.FALLBACK_RULES, in the module that owns the rule
+  // semantics, because a second copy here is what let the film branch ship span_depth_concrete
+  // 20/26 against main's cited 16/21. Handed to this session by the movie-bake session, which
+  // found the two copies and (correctly, within its own branch) reported them identical.
+
+  // T8.13 — the ONE place the viewer decides which rules file ran. Caches the answer on A so a
+  // second panel open (or the Report button) reports the same source it actually used, and
+  // exposes it as A._<kind>RulesSource for the report's provenance header. Returns the shape
+  // RuleReport.loadRules defines: { rules, source, url, error }.
+  var RULE_SETS = {
+    structural: { url: 'rates/structural_rules.json', cache: '_structuralRulesCache', src: '_structuralRulesSource',
+                  fallback: function () { return (typeof StructuralSanity !== 'undefined') ? StructuralSanity.FALLBACK_RULES : { structural_rules: [] }; } },
+    egress:     { url: 'rates/egress_rules.json', cache: '_egressRulesCache', src: '_egressRulesSource',
+                  fallback: function () { return (typeof EgressSanity !== 'undefined') ? EgressSanity.FALLBACK_RULES : { egress_rules: [] }; } }
   };
 
+  // T8.14 — which jurisdiction's overlay to apply, selected EXACTLY the way rates.js already
+  // selects its 16 cost packs: a URL param, else the stored pack, else none. Reusing that key
+  // (`bim_5d_pack`) deliberately — a user who has chosen cidb2024_my for costs has stated their
+  // jurisdiction once, and asking again in a second registry is how the two drift apart. Returns
+  // null when nothing is selected, which is the ordinary case and NOT an error.
+  function _rcOverlayId() {
+    try {
+      var p = new URLSearchParams(window.location.search).get('rules');
+      if (p) return p;
+    } catch (e) { /* no location (test/headless) — fall through */ }
+    try { return localStorage.getItem('bim_5d_pack') || null; } catch (e) { return null; }
+  }
+
+  function _rcLoadRules(kind) {
+    var cfg = RULE_SETS[kind];
+    if (A[cfg.cache]) {
+      return Promise.resolve({ rules: A[cfg.cache], source: A[cfg.src] || 'unknown', url: cfg.url, error: null,
+        overlay: A._ruleOverlay || null, provenance: A._ruleProvenance || [] });
+    }
+    var fb = cfg.fallback();
+    var oid = _rcOverlayId();
+    var opts = oid ? { overlayUrl: 'rates/' + kind + '_rules_' + oid + '.json', overlayId: oid, log: console.log }
+                   : { log: console.log };
+    var go = (typeof RuleReport !== 'undefined')
+      ? RuleReport.loadRules(typeof fetch === 'function' ? fetch.bind(window) : null, cfg.url, fb, opts)
+      : Promise.resolve({ rules: fb, source: 'fallback', url: cfg.url, error: 'rule_report.js not loaded', overlay: null, provenance: [] });
+    return go.then(function (r) {
+      A[cfg.cache] = r.rules; A[cfg.src] = r.source;
+      A._ruleOverlay = r.overlay || null; A._ruleProvenance = r.provenance || [];
+      return r;
+    });
+  }
+
   A.showStructuralSanity = function () {
-    function runWith(rules) {
+    // T8.4 — `fetched` vs `fallback` must reach the report. The §STRUCT_RULES_JSON line already
+    // draws that distinction for the log; this carries the SAME fact into the config so a
+    // downloaded report can never present the fallback constant above as an authored threshold.
+    function runWith(rules, source) {
       if (typeof StructuralSanity === 'undefined' || !A.dbQuery) { console.warn('§STRUCT_SANITY_UNAVAILABLE no evaluator or dbQuery'); return; }
       var rows = StructuralSanity.evaluate(A.dbQuery, rules, { log: console.log });
       A.showRuleChecklist({
         title: 'Structural Sanity', checkId: 'sanity',
+        rulesUsed: rules, rulesSource: source || 'unknown',
+        rulesOverlay: A._ruleOverlay || null, rulesProvenance: A._ruleProvenance || [],
         colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },
         categories: [
           { label: 'Floating Member', ruleNames: ['floating_member'] },
@@ -544,18 +676,13 @@ function setupRuleChecklist(A) {
         rows: rows
       });
     }
-    if (A._structuralRulesCache) { runWith(A._structuralRulesCache); return; }
-    fetch('rates/structural_rules.json').then(function (resp) {
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      return resp.json();
-    }).then(function (json) {
-      A._structuralRulesCache = json;
-      console.log('§STRUCT_RULES_JSON loaded=json rules=' + ((json.structural_rules || []).length));
-      runWith(json);
-    }).catch(function (err) {
-      console.warn('§STRUCT_RULES_JSON loaded=fallback error=' + err.message);
-      A._structuralRulesCache = STRUCTURAL_RULES_FALLBACK;
-      runWith(STRUCTURAL_RULES_FALLBACK);
+    if (A._structuralRulesCache) { runWith(A._structuralRulesCache, A._structuralRulesSource); return; }
+    // T8.13 — ONE mechanism for "which rules file ran", shared with the film and the report.
+    // The §STRUCT_RULES_JSON line is kept for log continuity; the fact now also travels as DATA.
+    _rcLoadRules('structural').then(function (r) {
+      console.log('§STRUCT_RULES_JSON loaded=' + (r.source === 'fetched' ? 'json' : 'fallback') +
+        ' rules=' + ((r.rules.structural_rules || []).length) + (r.error ? ' error=' + r.error : ''));
+      runWith(r.rules, r.source);
     });
   };
 
@@ -566,18 +693,10 @@ function setupRuleChecklist(A) {
   // same shape as A.showStructuralSanity() above (fetch rates/egress_rules.json, hardcoded-
   // fallback pattern mirroring rates.js loadSequenceRules(), same 3 rules copied verbatim from
   // egress_rules.json — never invented numbers). ──
-  var EGRESS_RULES_FALLBACK = {
-    egress_rules: [
-      { name: 'door_clear_width', applies_to: ['IfcDoor'],
-        warning_m: 0.85, critical_m: 0.80, max_severity: 'WARNING' },
-      { name: 'circulation_distance', applies_to: ['room_graph_node'],
-        target: 'exit_or_own_storey_circ', warning_m: 30, critical_m: 45, max_severity: 'WARNING' },
-      { name: 'isolated_room', applies_to: ['room_graph_node'], target: 'own_storey_circ' }
-    ]
-  };
+  // T8.13 — EGRESS_RULES_FALLBACK likewise removed; see EgressSanity.FALLBACK_RULES.
 
   A.showEgressSanity = function () {
-    function runWith(rules) {
+    function runWith(rules, source) {
       if (typeof EgressSanity === 'undefined' || !A.dbQuery) { console.warn('§EGRESS_UNAVAILABLE no evaluator or dbQuery'); return; }
       // room_graph.js is lazy-loaded (viewer/main.js APP.loadNavigate — 78KB saved on first paint,
       // not a static viewer.html <script>, unlike structural_sanity.js). Rules 2/3 need
@@ -585,8 +704,23 @@ function setupRuleChecklist(A) {
       // adding a second script-loading path.
       var go = function () {
         var rows = EgressSanity.evaluate(A.dbQuery, rules, { log: console.log });
+        // T8.4 — §ROOM_GRAPH_EXITS's own numbers (exits / noRaster / doors). The evaluator calls
+        // RoomGraph.buildGraph with its log SILENCED, so that line never reaches console here;
+        // build it once more with a CAPTURING log purely to read the facts. buildGraph is
+        // deterministic on the same dbQuery, so this observes the same graph the rules used — it
+        // does not change any count. Null (with a stated reason in the report) if it cannot run.
+        var rgFacts = null;
+        try {
+          if (window.RoomGraph && typeof RuleReport !== 'undefined') {
+            var capt = [];
+            window.RoomGraph.buildGraph(A.dbQuery, { log: function (m) { capt.push(m); } });
+            rgFacts = RuleReport.parseRoomGraphExits(capt);
+          }
+        } catch (e) { console.warn('§RULE_REPORT_ROOMGRAPH_FACTS_FAIL ' + e.message); }
         A.showRuleChecklist({
           title: 'Egress', checkId: 'egress',
+          rulesUsed: rules, rulesSource: source || 'unknown',
+        rulesOverlay: A._ruleOverlay || null, rulesProvenance: A._ruleProvenance || [], roomGraph: rgFacts,
           colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },
           categories: [
             { label: 'Isolated Room', ruleNames: ['isolated_room'] },
@@ -595,23 +729,17 @@ function setupRuleChecklist(A) {
           ],
           rows: rows
         });
+        _rcShowLongestExitStatus(A, rows);
       };
       if (window.RoomGraph) { go(); return; }
       if (A.loadNavigate) A.loadNavigate().then(go).catch(function (e) { console.warn('§EGRESS_ROOMGRAPH_LOAD_FAIL ' + (e && e.message)); go(); });
       else go(); // defensive — evaluator itself logs §EGRESS_NO_ROOMGRAPH and skips rules 2/3
     }
-    if (A._egressRulesCache) { runWith(A._egressRulesCache); return; }
-    fetch('rates/egress_rules.json').then(function (resp) {
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      return resp.json();
-    }).then(function (json) {
-      A._egressRulesCache = json;
-      console.log('§EGRESS_RULES_JSON loaded=json rules=' + ((json.egress_rules || []).length));
-      runWith(json);
-    }).catch(function (err) {
-      console.warn('§EGRESS_RULES_JSON loaded=fallback error=' + err.message);
-      A._egressRulesCache = EGRESS_RULES_FALLBACK;
-      runWith(EGRESS_RULES_FALLBACK);
+    if (A._egressRulesCache) { runWith(A._egressRulesCache, A._egressRulesSource); return; }
+    _rcLoadRules('egress').then(function (r) {
+      console.log('§EGRESS_RULES_JSON loaded=' + (r.source === 'fetched' ? 'json' : 'fallback') +
+        ' rules=' + ((r.rules.egress_rules || []).length) + (r.error ? ' error=' + r.error : ''));
+      runWith(r.rules, r.source);
     });
   };
   A._ruleChecklistOpeners.egress = A.showEgressSanity;
@@ -624,8 +752,6 @@ if (typeof module !== 'undefined' && module.exports) {
     buildRuleChecklistHtml: _buildRuleChecklistHtml,
     buildRuleDeepLinkUrl: _buildRuleDeepLinkUrl,
     RULE_TINT_MATERIAL_OPTS: RULE_TINT_MATERIAL_OPTS,
-    ruleTintMaterialOpts: ruleTintMaterialOpts,
-    ruleTintRenderOrder: ruleTintRenderOrder,
-    ruleTintRowsFor: ruleTintRowsFor
+    longestExitSteps: _rcLongestExitSteps
   };
 }

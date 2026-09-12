@@ -198,7 +198,10 @@
 //   the whole picture. MEASURED: 42 frames of |dY|>15 inside LIFE2's window with Measure on vs 0 with
 //   --no-measure, and 39..104 swings against a flat 56 on the twin. effects.js now hides anything marked
 //   userData.excludeFromAO for that pass ONLY; the beauty pass and TAA fold are untouched.
-const CACHE_VERSION = 'v1172';   // bump on each deploy; per-change detail is the git commit message.
+// v1173 (2026-09-13) MERGE — origin/main's hardened Sanity/Egress rules (#1715 #1718 #1720 #1724)
+//   folded into the rule-findings film branch, plus §88.7b's bucket-key revert. New cache version so
+//   no client serves a half-and-half mix of the two rule engines.
+const CACHE_VERSION = 'v1173';   // bump on each deploy; per-change detail is the git commit message.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -655,6 +658,10 @@ const PRECACHE_ASSETS = [
   'clash_narrow.js',
   'clash_film.js',
   'clash_labels.js',
+  'structural_sanity.js',
+  'egress_sanity.js',
+  'rule_report.js',
+  'rule_checklist.js',
   'measure.js',
   'sitecam.js',
   'issues.js',

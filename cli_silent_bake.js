@@ -11,6 +11,11 @@
 //     [--clash] [--no-clash]                          mesh-true clash pairs as world content (§CLASH_FILM_P1)
 //     [--measure] [--no-measure]                      setting-out datum drawing (§FLYTHRU_DATUM, MEP_CLASH_REVEAL_MOVIE.md §28.1)
 //     [--nohome] [--opening-only]                     §33 §CLI_BAKE_OPENING: skip the datum-legibility gate / judge the opening and exit
+//     [--findings-only]                               §RULE_REPORT (STRUCTURAL_SANITY.md T8): run the Sanity + Egress
+//                                                       evaluators, write <out>.json, exit before ANY cinema work
+//     [--rules-overlay ID]                            §RULE_OVERLAY (T8.14): also apply rates/<kind>_rules_<ID>.json
+//                                                       over the base rulebook (per-FIELD merge, same shape as the
+//                                                       16 rates packs). Absent file = no override, not an error.
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
@@ -184,7 +189,11 @@ const server = http.createServer((req, res) => {
 
   // console firehose → log file; §-lines also drive the health watchdog + summary
   const S = { frames: 0, total: 0, elapsedMs: 0, lastProgress: Date.now(), perFrame: [], fatal: null,
-              done: false, claims: {}, heap: [], abortRequested: null, lastProgressLog: 0, rateHist: [] };
+              done: false, claims: {}, heap: [], abortRequested: null, lastProgressLog: 0, rateHist: [],
+              // §CLI_BAKE_POINT_OF_NO_RETURN — set the moment __maxqSinkBegin fires. Past it there
+              // are no frames left to abandon: the film is fully encoded and muxed in the page and
+              // the only work remaining is writing it to disk. See the handler below.
+              sinkBegun: false, sinkBytes: 0, sinkTotal: 0 };
   // ══ §CLI_BAKE_LAND_ON_ABORT — Ctrl-C is the abort switch, and it LANDS the film ════════════════
   // USER, 2026-09-04: "an abort switch where the frames to date are landed." A plain Ctrl-C killed
   // node outright, taking the browser and every baked frame with it — even though cinema_maxq's
@@ -192,10 +201,28 @@ const server = http.createServer((req, res) => {
   // stall/timeout watchdogs already use, so there is ONE abort path, not a second one to keep in
   // step. A second Ctrl-C is honoured immediately: an operator who has changed their mind about
   // waiting for a 2,000-frame encode must never be trapped by the graceful path.
+  //
+  // ⚠ §CLI_BAKE_POINT_OF_NO_RETURN (2026-09-12) — THE CANCEL MUST NOT FIRE DURING THE FINAL WRITE.
+  // MEASURED, and the reason this guard exists: the Hospital v86 bake (4,699 frames, 1h41m) took a
+  // SIGTERM at +6101.9s — five seconds AFTER `§MAXQ_MP4 encoded chunks=4699 bytes=242117405`,
+  // after the mux, and after `§CLI_BAKE_SINK begin totalBytes=242156095`. Every frame was already
+  // encoded and muxed; the only work left was streaming a finished 242 MB blob to disk. The
+  // handler cancelled anyway — "stitching what exists" — and left 121,634,816 bytes, exactly
+  // 50.2%, unplayable as delivered. The salvage path destroyed a finished film because it had no
+  // notion of a point past which there is nothing to salvage.
+  //
+  // Landing frames early is right DURING capture and wrong during delivery. So: once the sink has
+  // begun, the first signal declines to cancel and lets the write finish (seconds, not minutes).
+  // A second signal still exits immediately — an operator is never trapped, which was the whole
+  // point of the original handler.
   let sigCount = 0;
   ['SIGINT', 'SIGTERM'].forEach(sig => process.on(sig, () => {
     sigCount++;
-    if (sigCount === 1) {
+    if (sigCount === 1 && S.sinkBegun) {
+      log(`§CLI_BAKE_SIGINT ${sig} received DURING THE FINAL WRITE (${S.sinkBytes} of ${S.sinkTotal} bytes written) —` +
+          ' the film is already fully encoded; finishing the write rather than truncating it.' +
+          ' Press again to abandon a half-written file.');
+    } else if (sigCount === 1) {
       S.abortRequested = `user (${sig}) — landing the ${S.frames} frames baked so far`;
       log(`§CLI_BAKE_SIGINT ${sig} received at frame ${S.frames}/${S.total || '?'}` +
           ' — cancelling the bake and stitching what exists. Press again to give up on the partial film.');
@@ -232,6 +259,12 @@ const server = http.createServer((req, res) => {
       if (MAX_FRAME_MS && +fm[4] > MAX_FRAME_MS) S.fatal = `perFrameMs ${fm[4]} > --max-frame-ms ${MAX_FRAME_MS}: ${t}`; }
     if (/§MAXQ_FAIL|§MAXQ_GL_LOST|§MAXQ_IDB_LOST|§CPE_BUILDUP_SKIP/.test(t)) log('⚠ ' + t);
     if (/§MAXQ_FAIL/.test(t)) S.fatal = t;
+    // §CLI_BAKE_FAIL_NO_TIMELINE (MEP_CLASH_REVEAL_MOVIE.md §88.10e/§88.12) — the Time Machine
+    // refusing to arm is a FAILED buildup, not a cosmetic note. It used to pass through as a
+    // page-side warning while the run delivered a film with the buildup silently dropped and
+    // exited 0, because S.fatal was only ever set by §MAXQ_FAIL or --max-frame-ms. §88 cost
+    // four sessions partly because a bake's exit code said nothing about what it actually drew.
+    if (/§CPE_BUILDUP_ARM_GATE timeout/.test(t)) S.fatal = t;
   });
   page.on('pageerror', e => { logRaw('[pageerror] ' + e.message); log('⚠ PAGEERROR ' + e.message.slice(0, 160)); });
 
@@ -239,11 +272,12 @@ const server = http.createServer((req, res) => {
   let sink = null, sinkName = null, sinkBytes = 0;
   await page.exposeFunction('__maxqSinkBegin', (name, type, total) => {
     sinkName = name; sinkBytes = 0;
+    S.sinkBegun = true; S.sinkBytes = 0; S.sinkTotal = total;   // §CLI_BAKE_POINT_OF_NO_RETURN — past here a cancel only truncates
     sink = fs.createWriteStream(OUT);
     log(`§CLI_BAKE_SINK begin name=${name} type=${type} totalBytes=${total} → ${OUT}`);
   });
   await page.exposeFunction('__maxqSink', b64 => new Promise((res, rej) => {
-    const buf = Buffer.from(b64, 'base64'); sinkBytes += buf.length;
+    const buf = Buffer.from(b64, 'base64'); sinkBytes += buf.length; S.sinkBytes = sinkBytes;
     sink.write(buf, e => e ? rej(e) : res());
   }));
   await page.exposeFunction('__maxqSinkEnd', () => new Promise(res => {
@@ -318,6 +352,97 @@ const server = http.createServer((req, res) => {
   ]);
   log('§CLI_BAKE_LOADED building=' + await page.evaluate(() => window.APP.activeBuilding +
     ' meshes=' + (window.APP.scene ? window.APP.scene.children.length : -1)));
+  // ── §RULE_REPORT (prompts/STRUCTURAL_SANITY.md T8) — the findings WITHOUT the film ──────────
+  // MEASURED case for the flag: Hospital knows all 509 findings at +101.3s and finishes the film
+  // at ~+6,000s (1.7% analysis); Terminal, 3.5%. Of Hospital's 101.3s, 71.3s is the model load
+  // just logged above and ~29s is the cinema path planning + render staging BELOW this block —
+  // which is exactly why the exit goes HERE, before the datum gate, not next to --opening-only.
+  //
+  // ⚠ T8.3 — this must NOT call A.ruleFindingsFilmBuild. That needs a plan (its dwell precompute
+  // calls plan.poseAt), a tint and later a camera: everything findings-only exists to skip. Call
+  // the evaluators directly — the same two the panels use, with zero duplicated rule logic.
+  if (has('findings-only')) {
+    const jsonOut = OUT.replace(/\.mp4$/i, '') + '.json';
+    const report = await page.evaluate(async (OVERLAY_ID) => {
+      const A = window.APP;
+      const out = { err: null };
+      try {
+        if (typeof RuleReport === 'undefined') return { err: 'rule_report.js not loaded' };
+        if (!A.dbQuery) return { err: 'no A.dbQuery' };
+        // T8.13 — the SAME loader the panel uses, with the SAME fallback constants the
+        // evaluators own. This path used to hand `null` to evaluate() and let the evaluator's
+        // own inline defaults apply silently; now the fallback is explicit and `source` says so.
+        // T8.14 — an overlay id makes this a jurisdiction run; without one it is the global
+        // rulebook exactly as before. The id is passed in from the CLI flag, never guessed here.
+        const ov = (id, kind) => id ? { overlayUrl: 'rates/' + kind + '_rules_' + id + '.json', overlayId: id } : {};
+        const sj = await RuleReport.loadRules(fetch.bind(window), 'rates/structural_rules.json',
+          (typeof StructuralSanity !== 'undefined') ? StructuralSanity.FALLBACK_RULES : { structural_rules: [] },
+          Object.assign({ log: (m) => console.log(m) }, ov(OVERLAY_ID, 'structural')));
+        const ej = await RuleReport.loadRules(fetch.bind(window), 'rates/egress_rules.json',
+          (typeof EgressSanity !== 'undefined') ? EgressSanity.FALLBACK_RULES : { egress_rules: [] },
+          Object.assign({ log: (m) => console.log(m) }, ov(OVERLAY_ID, 'egress')));
+        let rowsS = [], rowsE = [], rgFacts = null;
+        const logS = [], logE = [];
+        if (typeof StructuralSanity !== 'undefined') {
+          // witness:true — T8.12. A report exists to be inspected; a row that cannot show WHY it
+          // fired is the thing this whole surface is trying to stop being. Additive only.
+          rowsS = StructuralSanity.evaluate(A.dbQuery, sj.rules, { log: (m) => { logS.push(m); console.log(m); }, witness: true }) || [];
+        }
+        if (typeof EgressSanity !== 'undefined') {
+          // RoomGraph genuinely IS needed by egress rules 2/3 — findings-only skips the film, not
+          // the data. Same lazy loader the Egress panel awaits (§EGRESS_ROOMGRAPH_LATE_BIND).
+          if (!window.RoomGraph && A.loadNavigate) { try { await A.loadNavigate(); } catch (e) {} }
+          rowsE = EgressSanity.evaluate(A.dbQuery, ej.rules, { log: (m) => { logE.push(m); console.log(m); }, witness: true }) || [];
+          if (window.RoomGraph) {
+            // §ROOM_GRAPH_EXITS is emitted by buildGraph, whose log egress_sanity.js silences.
+            const capt = [];
+            try { window.RoomGraph.buildGraph(A.dbQuery, { log: (m) => capt.push(m) }); } catch (e) {}
+            rgFacts = RuleReport.parseRoomGraphExits(capt);
+          }
+        }
+        const pops = RuleReport.rulePopulations(A.dbQuery);
+        const suff = RuleReport.runSufficiencyProbes(A.dbQuery, { log: console.log });
+        out.report = RuleReport.buildRuleReport({
+          rowsS: rowsS, rowsE: rowsE,
+          ruleDefs: [sj.rules, ej.rules].filter(Boolean),
+          meta: {
+            building: A.activeBuilding,
+            rulesSource: { structural: sj.source, egress: ej.source },
+            rulesOverlay: { structural: sj.overlay, egress: ej.overlay },
+            rulesProvenance: (sj.provenance || []).concat(ej.provenance || []),
+            roomGraph: rgFacts, sufficiency: suff, populations: pops
+          }
+        });
+      } catch (e) { out.err = e.message; }
+      return out;
+    }, arg('rules-overlay', null) || null);
+    if (report.err) {
+      log('§RULE_REPORT_FAIL ' + report.err);
+      try { await browser.close(); } catch (e) {}
+      server.close(); process.exit(1);
+    }
+    const r = report.report;
+    r.db = DB; r.commit = (() => { try { return execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch (e) { return null; } })();
+    try { r.dbBytes = fs.statSync(DB.includes('/') ? DB : path.join(ROOT, 'buildings', DB + '.db')).size; } catch (e) { r.dbBytes = null; }
+    fs.writeFileSync(jsonOut, JSON.stringify(r, null, 2));
+    (r.rulesProvenance || []).forEach(x => log('§RULE_OVERLAY_APPLIED rule=' + x.rule + ' source=' + x.source +
+        (x.added ? ' added=true' : ' changed=' + x.changed.map(c => c.field + ' ' + JSON.stringify(c.from) + '->' + JSON.stringify(c.to)).join(' '))));
+    log('§RULE_REPORT building=' + r.building + ' findings=' + r.totals.findings + ' rules=' + r.totals.rules +
+        ' critical=' + r.totals.severity.CRITICAL + ' warning=' + r.totals.severity.WARNING +
+        ' rulesSource=' + JSON.stringify(r.rulesSource) +
+        ' roomGraph=' + (r.roomGraph ? JSON.stringify(r.roomGraph) : 'null') +
+        ' out=' + jsonOut);
+    (r.rules || []).forEach(x => log('§RULE_REPORT_SET rule=' + x.rule + ' count=' + x.count +
+        ' critical=' + x.severity.CRITICAL + ' warning=' + x.severity.WARNING + ' unit=' + x.unit));
+    (r.dataSufficiency || []).forEach(x => log('§RULE_REPORT_SUFFICIENCY check=' + x.check + ' verdict=' + x.verdict +
+        ' rules=' + x.rules.join(',') + ' measured=' + JSON.stringify(x.measured)));
+    (r.flagRates || []).forEach(x => log('§RULE_REPORT_RATE rule=' + x.rule + ' flagged=' + x.flagged +
+        ' population=' + x.population + ' rate=' + x.rate));
+    log('§RULE_REPORT_ONLY exit — no bake requested, no frame drawn');
+    try { await browser.close(); } catch (e) {}
+    server.close(); process.exit(0);
+  }
+
   // §CLI_BAKE_OPENING (MEP_CLASH_REVEAL_MOVIE.md §33 CORRECTED, user 2026-09-08: "The HHS opening frame has to
   // be some distance away to let the dive in catch the 2D Z plane"). The film opens from the DB's SAVED VIEW
   // (scene_state, restored at load by main.js §SCENE_STATE_RESTORE) — the user's own framing — UNLESS Measure
@@ -420,7 +545,17 @@ const server = http.createServer((req, res) => {
       return (ok ? 'ok' : 'FAILED') + ' ms=' + Math.round(performance.now() - t0);
     });
     log(`§CLI_BAKE_TM_PRIME ${tm}`);
-    if (/FAILED|no-hook/.test(tm)) log('⚠ buildup will be skipped by the bake (no timeline)');
+    if (/FAILED|no-hook/.test(tm)) {
+      // §CLI_BAKE_FAIL_NO_TIMELINE — buildup was RESOLVED ON (cli flag or the stored path) and the
+      // shipped activation verb then produced no timeline. Delivering the film anyway hands back a
+      // silent, exit-0 lie: the requested feature is simply absent from the frames. Refuse here,
+      // before a single frame is spent. Nothing is repaired — this bake only declines to pretend.
+      log(`§CLI_BAKE_FAIL_NO_TIMELINE buildup=on source=${willBuildup.src} prime=${tm} — ` +
+          'the Time Machine armed no timeline; refusing to deliver a film with the buildup silently dropped');
+      server.close();
+      process.exit(1);
+    }
+
   }
 
   // heap sampling (Log Mandate: numbers, on an interval, into the log)

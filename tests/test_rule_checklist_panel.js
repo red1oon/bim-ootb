@@ -69,12 +69,19 @@ chk('Floating Member filter includes only beam-floating', fmResult.html.indexOf(
 // Extra structural checks — toggle buttons rendered, click/zoom wiring present, empty state.
 chk('renders one toggle button per category + All', (html.match(/class="rc-toggle-btn"/g) || []).length === categories.length + 1,
   'found=' + ((html.match(/class="rc-toggle-btn"/g) || []).length));
-chk('row onclick wires APP.zoomToGuid', html.indexOf("onclick=\"APP.zoomToGuid('beam-floating')\"") >= 0);
+// 2026-09-12 (user directive, "follow Clash exact"): rows no longer carry an inline onclick —
+// click/selection is delegated through ListKeyNav (window.makeListKeyNav, browser-only glue in
+// rule_checklist.js's _wireRowEvents), exactly like Clash's own row list. Assert the delegation
+// contract instead: no inline zoom handler on the row, but the data- attributes a delegated
+// handler needs (guid/rule/severity) are all present.
+chk('row carries NO inline onclick (click is delegated, matching Clash\'s row list)',
+  html.indexOf('onclick="APP.zoomToGuid(') === -1);
 chk('data-rc-rule carries the rule name for delegated long-press', html.indexOf('data-rc-rule="floating_member"') >= 0);
+chk('data-rc-severity carries the severity for delegated multi-select tinting', html.indexOf('data-rc-severity="CRITICAL"') >= 0);
 chk('OPTIMIZED group collapsed by default when present', (() => {
   const optRows = [{ guid: 'opt-1', ifc_class: 'IfcBeam', name: 'OK', storey: 'L1', rule: 'span_depth_steel', severity: 'OPTIMIZED', ratio: 2 }];
   const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: optRows }, null);
-  const groupStart = r.html.indexOf('OPTIMIZED (1)');
+  const groupStart = r.html.search(/OPTIMIZED \(1 across/);
   const bodyDisplay = r.html.slice(groupStart, groupStart + 400).match(/rc-group-body" style="display:(\w+)/);
   return bodyDisplay && bodyDisplay[1] === 'none';
 })());
@@ -82,6 +89,66 @@ chk('empty rows renders "No flags." with zero data-rc-guid rows', (() => {
   const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: [] }, null);
   return r.html.indexOf('No flags.') >= 0 && (r.html.match(/data-rc-guid="/g) || []).length === 0;
 })());
+
+// ── §RULE_FILM_SET_PULSE-inspired grouping (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §77):
+// N findings of the SAME rule must render as ONE rule-set header stating the count outright, not
+// N individual rows dumped flat — the exact "509 stories, not 6" spam the movie-bake session
+// independently diagnosed and fixed the same way, now applied to the live panel too. ──
+console.log('§W-RULE-CHECKLIST rule-set grouping (many rows, one rule)');
+const manyRows = [];
+for (let i = 0; i < 50; i++) manyRows.push({ guid: 'beam-' + i, ifc_class: 'IfcBeam', name: 'UB-' + i, storey: 'L' + (i % 5), rule: 'span_depth_steel', severity: 'WARNING', ratio: 25 + i * 0.1 });
+const manyResult = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: manyRows }, null);
+chk('(d) 50 same-rule rows collapse to exactly ONE rule-set header, stating the count outright',
+  (manyResult.html.match(/class="rc-ruleset-header"/g) || []).length === 1 &&
+  manyResult.html.indexOf('Span Depth Steel &mdash; 50 flagged') >= 0,
+  'headers=' + ((manyResult.html.match(/class="rc-ruleset-header"/g) || []).length));
+chk('(d) all 50 individual rows are still present underneath (drill-down not lost)',
+  (manyResult.html.match(/data-rc-guid="beam-/g) || []).length === 50);
+chk('(d) the rule-set body is collapsed by default (display:none)', (() => {
+  const start = manyResult.html.indexOf('class="rc-ruleset-header"');
+  const body = manyResult.html.slice(start).match(/rc-ruleset-body" style="display:(\w+)/);
+  return body && body[1] === 'none';
+})());
+chk('(d) mixed rules within one severity tier get one rule-set header EACH, not merged',
+  (() => {
+    const mixed = [
+      { guid: 'a1', ifc_class: 'IfcBeam', name: 'A1', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
+      { guid: 'a2', ifc_class: 'IfcBeam', name: 'A2', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
+      { guid: 'a3', ifc_class: 'IfcColumn', name: 'A3', storey: 'L1', rule: 'column_continuity', severity: 'CRITICAL', ratio: null },
+    ];
+    const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: mixed }, null);
+    return r.html.indexOf('Floating Member &mdash; 2 flagged') >= 0 && r.html.indexOf('Column Continuity &mdash; 1 flagged') >= 0;
+  })());
+// 2026-09-12 (user directive, "ignore my reframe whole... follow Clash exact: nothing during
+// category, zoom when selected item"): the rule-set HEADER is a category/grouping level, like a
+// Clash discipline-pair toggle — it must do NOTHING to the camera or scene, only expand/collapse.
+// Selecting actual rows (via ListKeyNav) is what drives the camera now — see rule_checklist.js's
+// _wireRowEvents/_rcOnSelect (browser-only glue, not Node-testable here, same as
+// A.showRuleModeTint's own untested-in-Node precedent).
+chk('(d) rule-set header click does NOT touch the camera/scene (no zoomToGuids/showRuleModeTint call)',
+  (() => {
+    const setRows = [
+      { guid: 'x1', ifc_class: 'IfcBeam', name: 'X1', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
+      { guid: 'x2', ifc_class: 'IfcBeam', name: 'X2', storey: 'L1', rule: 'floating_member', severity: 'CRITICAL', ratio: null },
+    ];
+    const r = RC.buildRuleChecklistHtml({ title: 't', checkId: 'sanity', colorMap: colorMap, categories: categories, rows: setRows }, null);
+    return r.html.indexOf('zoomToGuids') === -1 && r.html.indexOf('showRuleModeTint') === -1;
+  })());
+
+// ── §LONGEST-EXIT-STATUS (user directive, 2026-09-12): bottom-status-bar headline stat, "Longest
+// path to exit — ~N steps", from real circulation_distance ratios. ──
+console.log('§W-RULE-CHECKLIST longest-exit-steps');
+chk('(e) picks the WORST (max) circulation_distance ratio, ignores other rules', RC.longestExitSteps([
+  { rule: 'door_clear_width', ratio: 0.5 },
+  { rule: 'circulation_distance', ratio: 30 },
+  { rule: 'circulation_distance', ratio: 75 }, // worst — 75/0.75 = 100 steps
+  { rule: 'isolated_room', ratio: null },
+]) === 100);
+chk('(e) returns null (never a fabricated "0 steps") when no circulation_distance row exists',
+  RC.longestExitSteps([{ rule: 'door_clear_width', ratio: 0.5 }]) === null);
+chk('(e) returns null on an empty row set', RC.longestExitSteps([]) === null);
+chk('(e) ignores a circulation_distance row with a null/NaN ratio rather than picking it as "worst"',
+  RC.longestExitSteps([{ rule: 'circulation_distance', ratio: null }, { rule: 'circulation_distance', ratio: 15 }]) === 20);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -26,6 +26,7 @@
   "EQUIPMENT_ALLOCATION": "readonly",
   "EQUIPMENT_RATES": "readonly",
   "ERPEngine": "readonly",
+  "EgressSanity": "readonly",
   "Elevation": "readonly",
   "GridAssembler": "readonly",
   "GridConfig": "readonly",
@@ -64,6 +65,8 @@
   "ScheduleGate": "readonly",
   "SectionCut": "readonly",
   "SettingsEditor": "readonly",
+  "RuleReport": "readonly",
+  "StructuralSanity": "readonly",
   "SupportSweep": "readonly",
   "SwipeStack": "readonly",
   "USD_RATE": "readonly",
@@ -159,6 +162,7 @@
   "setupNlp": "readonly",
   "setupPanels": "readonly",
   "setupPicking": "readonly",
+  "setupRuleChecklist": "readonly",
   "setupScene": "readonly",
   "setupShare": "readonly",
   "setupSitecam": "readonly",
@@ -179,5 +183,7 @@
   "toggleWalkMode": "readonly",
   "toggleXray": "readonly",
   "updateAmbience": "readonly",
-  "updateLighting": "readonly"
+  "updateLighting": "readonly",
+  "VideoEncoder": "readonly",
+  "VideoFrame": "readonly"
 }

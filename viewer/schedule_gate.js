@@ -37,6 +37,15 @@
   var CELL = 4;     // m — XY grid cell for the spatial support index
   var EPS  = 0.05;  // m — a support must start at least this far below me (excludes same-level peers)
   var GAP  = 0.5;   // m — audit: a support tops within this of my base (the thing I bear on)
+  // §GROUND_CONNECTED (2026-09-12, bim-compiler prompts/4D_MODEL_INTEGRITY.md §N) — ground DATUM band
+  // for SupportSweep/CpmSchedule contactGraph's seed FALLBACK, used ONLY when a population carries no
+  // classified ground at all (no seq===1 / phase==='Substructure' member — the
+  // buildingModelsSubstructure=false case auditFloating already names, HHS today): a footprint-
+  // grounded element within this of the building's 1st-percentile base is treated as resting on
+  // soil. Same value and same datum rule as the engine-blind witness_true_orphan_floating.js
+  // (PR #1712), which keeps its own literal DELIBERATELY — it must never read the engine it
+  // cross-checks. Owned here so the two contactGraph copies never re-type it.
+  var GROUND_BAND = 1.0;  // m
   // §SUPPORT_UNCHECKED — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 (1a), Witness:
   // witness_big_element_support_coverage.js. "Big element" bbox-volume cutoff = the MEASURED p95 of
   // bbox_x*bbox_y*bbox_z across 135,630 real elements in the 5 shipped buildings
@@ -1378,7 +1387,7 @@
            e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
   }
 
-  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, GROUND_BAND: GROUND_BAND, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

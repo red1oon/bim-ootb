@@ -16,9 +16,10 @@
  *   M3 HOLE-FOLLOWS — the rendered hole moved by the SAME dx as the door (vertex-measured); width unchanged
  *   M4 UNDO        — ONE real Ctrl+Z (one gesture) deactivates both rows and restores door AND hole
  *   M5 ANCHOR      — Move-Grid: drag gridline B (x=4) +1 with the door HELD (anchor default) ⇒ GEOM_GRID_MOVE +
- *                    GEOM_CUT_MOVE (the inverse shift); door centre unchanged, hole centre unchanged (≤1e-3), the wall
- *                    is 5 m, the hole is 1.25× wide (the reported residual); §V7 label says "1 hole held"; verifyChain
- *   M6 UNDO        — ONE real Ctrl+Z restores wall, door and hole (the GEOM_CUT_MOVE rider undoes with its gesture)
+ *                    GEOM_CUT_MOVE (the inverse shift) + GEOM_CUT_RESIZE{fx≈1/f} (SPEC_GEOM_CUT_RESIZE.md §4 — the
+ *                    width-hold that fixes step 1's residual); door centre unchanged, hole centre AND WIDTH unchanged
+ *                    (≤1e-3, 1.6 m), the wall is 5 m; §V7 label says "1 hole held" with no "(Δw …)" suffix; verifyChain
+ *   M6 UNDO        — ONE real Ctrl+Z restores wall, door and hole (all three gesture rows undo together)
  */
 'use strict';
 const { runE2E } = require('./e2e_harness');
@@ -37,6 +38,14 @@ const holeOf = (t, fid) => t.pg.evaluate((f) => {
   return { xmin, xmax, c: (xmin + xmax) / 2, w: xmax - xmin, n, wall: [bb.min.x, bb.max.x] };
 }, fid);
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
+// §CUT-FRAME-ROTATE (M7): holeOf generalized to any axis (0=x,1=y) — after a 90° rotate the hole's long axis is Y.
+const holeOnAxis = (t, fid, axis) => t.pg.evaluate((f, ax) => {
+  const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === f);
+  if (!m) return null; m.geometry.computeBoundingBox(); const bb = m.geometry.boundingBox;
+  const p = m.geometry.getAttribute('position').array; let mn = Infinity, mx = -Infinity, n = 0;
+  for (let i = 0; i < p.length; i += 3) { const z = p[i + 2]; if (z > bb.min.z + 1e-6 && z < bb.max.z - 1e-6) { const v = p[i + ax]; mn = Math.min(mn, v); mx = Math.max(mx, v); n++; } }
+  return { min: mn, max: mx, c: (mn + mx) / 2, w: mx - mn, n };
+}, fid, axis);
 // the REAL undo path (modeller.html keydown → doUndo): ONE gesture = ONE Ctrl+Z — unlike the history slider (a scrub:
 // a prefix re-fold that leaves every row ACTIVE), this deactivates the gesture's rows so the NEXT commit builds on the
 // reverted log — exactly what M5 needs after M2.
@@ -137,25 +146,92 @@ runE2E('W-E2E-CUT-MOVE', async (t) => {
   const after5 = await t.oplog(); const chain5 = await t.verifyChain();
   const ops5 = await t.pg.evaluate((fromLen) => {
     const added = window.Bonsai.oplog._geomOps().slice(fromLen);
-    const gm = added.find(o => o.op_type === 'GEOM_GRID_MOVE'), cm = added.find(o => o.op_type === 'GEOM_CUT_MOVE');
-    return { types: added.map(o => o.op_type), cmds: gm ? gm.parameters.commands : null, cm: cm ? cm.parameters : null };
+    const gm = added.find(o => o.op_type === 'GEOM_GRID_MOVE'), cm = added.find(o => o.op_type === 'GEOM_CUT_MOVE'), rz = added.find(o => o.op_type === 'GEOM_CUT_RESIZE');
+    return { types: added.map(o => o.op_type), cmds: gm ? gm.parameters.commands : null, cm: cm ? cm.parameters : null, rz: rz ? rz.parameters : null };
   }, before5.len);
   const hole5 = await holeOf(t, ids.host), door5 = await centreOf(t, ids.door);
   t.slog.slice(logAt).filter(l => /§GRIDMOVE commit|§CUT-MOVE|§DAGEVU/.test(l)).forEach(l => console.log('    ' + l.slice(0, 320))); logAt = t.slog.length;
   console.log('  §CUT-MOVE M5 dimLabel="' + mid5.dim + '" ops=' + JSON.stringify(ops5) + ' hole5=' + JSON.stringify(hole5) + ' door5=' + JSON.stringify(door5) + ' oplog ' + before5.len + '→' + after5.len + ' chain=' + chain5);
   const sc = ops5.cmds && ops5.cmds.find(c => c.featureId === ids.host && c.action === 'SCALE');
   const f = sc ? sc.newScale : NaN, wantS = sc ? -((hole4.c - hole4.wall[0]) * (f - 1) + (sc.translateDelta || 0)) / f : NaN;   // spec §3: s = −Δ/(f·F), F=1 here
-  t.assert('M5 ANCHOR (gesture = GEOM_GRID_MOVE(SCALE wall) + GEOM_CUT_MOVE{dx = −Δ/f}; the HELD door\'s centre is unchanged; the hole\'s centre is unchanged ≤1e-3 under the fold\'s own scale; hole width = f×1.6 (the reported residual); mid-drag §V7 label says "1 hole held"; verifyChain)',
-    after5.len === before5.len + 2 && ops5.cm && ops5.cm.cutId === cut.id && ops5.cm.induced === 'anchor-hold' && sc && near(ops5.cm.dx, wantS, 1e-6) && ops5.cm.dy === 0 &&
-    door5 && near(door5[0], door4[0], 1e-6) && hole5 && near(hole5.c, hole4.c, 1e-3) && near(hole5.w, hole4.w * f, 1e-3) && hole5.wall[1] > 4.5 &&
-    typeof mid5.dim === 'string' && /1 hole held/.test(mid5.dim) && chain5 === true,
-    'f=' + f + ' wantS=' + (isFinite(wantS) ? wantS.toFixed(4) : '?') + ' cm.dx=' + (ops5.cm ? ops5.cm.dx.toFixed(4) : '?') + ' hole4.c=' + hole4.c.toFixed(4) + ' hole5=' + JSON.stringify(hole5) + ' door4.x=' + door4[0].toFixed(4) + ' door5.x=' + (door5 ? door5[0].toFixed(4) : '?') + ' dim="' + mid5.dim + '"');
+  // §CUT-RESIZE (SPEC_GEOM_CUT_RESIZE.md §4 M5): a THIRD row rides the SAME gesture — GEOM_CUT_RESIZE{fx≈1/f, fy=fz=1} —
+  // and the hole's WORLD width is now UNCHANGED (1.6 m, not f×1.6): the step 1 residual is gone.
+  t.assert('M5 ANCHOR (gesture = GEOM_GRID_MOVE(SCALE wall) + GEOM_CUT_MOVE{dx = −Δ/f} + GEOM_CUT_RESIZE{fx≈1/f, fy=fz=1}; the HELD door\'s centre is unchanged; the hole\'s centre AND WIDTH are unchanged ≤1e-3 (1.6 m, the step-1 residual is gone); mid-drag §V7 label matches "1 hole held" with NO "(Δw …)" suffix; verifyChain)',
+    after5.len === before5.len + 3 && ops5.cm && ops5.cm.cutId === cut.id && ops5.cm.induced === 'anchor-hold' && sc && near(ops5.cm.dx, wantS, 1e-6) && ops5.cm.dy === 0 &&
+    ops5.rz && ops5.rz.cutId === cut.id && ops5.rz.induced === 'anchor-hold' && near(ops5.rz.fx, 1 / f, 1e-6) && ops5.rz.fy === 1 && ops5.rz.fz === 1 &&
+    door5 && near(door5[0], door4[0], 1e-6) && hole5 && near(hole5.c, hole4.c, 1e-3) && near(hole5.w, hole4.w, 1e-3) && hole5.wall[1] > 4.5 &&
+    typeof mid5.dim === 'string' && /1 hole held(?! \()/.test(mid5.dim) && chain5 === true,
+    'f=' + f + ' wantS=' + (isFinite(wantS) ? wantS.toFixed(4) : '?') + ' cm.dx=' + (ops5.cm ? ops5.cm.dx.toFixed(4) : '?') + ' rz.fx=' + (ops5.rz ? ops5.rz.fx.toFixed(4) : '?') +
+    ' hole4.c=' + hole4.c.toFixed(4) + ' hole5=' + JSON.stringify(hole5) + ' door4.x=' + door4[0].toFixed(4) + ' door5.x=' + (door5 ? door5[0].toFixed(4) : '?') + ' dim="' + mid5.dim + '"');
   await t.shot('07-stretched-held');
 
   // ── M6 UNDO ───────────────────────────────────────────────────────────────────────────────────────────────────
   await ctrlZ(t);
   const undone6 = await t.oplog(); const hole6 = await holeOf(t, ids.host); const door6 = await centreOf(t, ids.door);
-  t.assert('M6 UNDO (ONE real Ctrl+Z: both gesture rows deactivated, wall back to 4 m, hole back at its pre-stretch extent, door unchanged)',
+  t.assert('M6 UNDO (ONE real Ctrl+Z: all three gesture rows — GRID_MOVE, CUT_MOVE, CUT_RESIZE — deactivated, wall back to 4 m, hole back at its pre-stretch extent, door unchanged)',
     undone6.len === before5.len && hole6 && near(hole6.wall[1], 4, 1e-6) && near(hole6.xmin, hole4.xmin, 1e-6) && near(hole6.xmax, hole4.xmax, 1e-6) && door6 && near(door6[0], door4[0], 1e-6), JSON.stringify({ len: undone6.len, want: before5.len, hole6 }));
+
+  // ── M7 ROTATE-90 + SLIDE (SPEC_CUT_FRAME_ROTATE.md §3, cut-move step 3): a host rotated after its cut still
+  // slides — hostFrame (not frameScale) resolves the authored→world map through the 90° spin. The ROTATE itself
+  // is committed via the REAL production path: select the wall, enter Move mode, type 90⏎ into #dim-rot (the SAME
+  // typed-commit path W-E2E-NUMROT/W-E2E-SCALEROT prove for a standalone B-rep solid — modeller.html's own comment
+  // at the GEOM_ROTATE worker branch lists "extrude/poly walls" as spinnable). No fallback to oplog.commit needed.
+  await t.pg.evaluate((f) => window.Bonsai.select(f), ids.host); await t.sleep(150);
+  await t.clickSel('#b-move'); await t.sleep(350);
+  const before7 = await t.oplog();
+  await t.pg.click('#dim-rot'); await t.pg.type('#dim-rot', '90'); await t.pg.keyboard.press('Enter'); await t.sleep(1000);
+  const rot7 = await t.lastOp(); const after7 = await t.oplog();
+  t.slog.slice(logAt).filter(l => /§CUT-MOVE|ROTATE/.test(l)).forEach(l => console.log('    ' + l.slice(0, 320))); logAt = t.slog.length;
+  console.log('  §CUT-MOVE M7a rot7=' + JSON.stringify(rot7) + ' oplog ' + before7.len + '→' + after7.len);
+  t.assert('M7a ROTATE (real #dim-rot typed commit on the wall, a standalone GEOM_EXTRUDE_POLY solid: ONE signed GEOM_ROTATE {parent:host, drot:90})',
+    after7.len === before7.len + 1 && rot7 && rot7.op_type === 'GEOM_ROTATE' && rot7.parameters.parent === ids.host && rot7.parameters.drot === 90,
+    JSON.stringify({ before: before7.len, after: after7.len, rot7 }));
+  await t.clickSel('#b-move'); await t.sleep(250);   // exit move mode — back to the neutral state M1/M2/M5 ran from
+  await t.shot('08-rotated');
+  const holeY7pre = await holeOnAxis(t, ids.host, 1), door7pre = await centreOf(t, ids.door);
+  console.log('  §CUT-MOVE M7 post-rotate holeY=' + JSON.stringify(holeY7pre) + ' door=' + JSON.stringify(door7pre));
+
+  // ── M7b GRAB: the door (still authored along the OLD x-axis, unrotated itself) grabs into a slide session whose
+  // axis is now the wall's NEW long axis — world Y (HostFillEdge.constrain reads the host's CURRENT AABB).
+  const grab7 = await t.pg.evaluate((fid) => {
+    const ok = window.__armItemDrag(fid, {}); const s = window.Bonsai.itemdrag._session;
+    return ok && s && s.slide ? { ok, axis: s.slide.axis, cuts: s.slide.cuts, tMin: s.slide.tMin, tMax: s.slide.tMax } : { ok, slide: false };
+  }, ids.door);
+  t.slog.slice(logAt).filter(l => /§SLIDE|§CUT-MOVE/.test(l)).forEach(l => console.log('    ' + l.slice(0, 300))); logAt = t.slog.length;
+  console.log('  §CUT-MOVE M7b grab7=' + JSON.stringify(grab7));
+  t.assert('M7b GRAB (post-rotate, the door grabs into a SLIDE session on the wall\'s NEW long axis — world Y — carrying the same cut; hostFrame replaces frameScale so this is no longer the S6b oblique-rotate refusal, a CLEAN 90° spin is honestly mappable)',
+    grab7.ok && grab7.axis === 1 && Array.isArray(grab7.cuts) && grab7.cuts.length === 1 && grab7.cuts[0].cutId === cut.id, JSON.stringify(grab7));
+  if (!grab7.ok || grab7.slide === false) { console.log('  M7 SKIPPED (grab refused) — see §SLIDE REFUSED reason in the log above'); }
+  else {
+    // ── M7c COMMIT+MATHS: a real +0.8m mouse drag along world Y ─────────────────────────────────────────────────
+    const T7 = 0.8;
+    const q0 = await t.proj(door7pre[0], door7pre[1], door7pre[2]), q1 = await t.proj(door7pre[0], door7pre[1] + T7, door7pre[2]);
+    const before7b = await t.oplog();
+    await t.pg.mouse.move(q0[0], q0[1]); await t.sleep(40); await t.pg.mouse.down(); await t.sleep(40);
+    await t.pg.mouse.move((q0[0] + q1[0]) / 2, (q0[1] + q1[1]) / 2, { steps: 5 }); await t.sleep(120);
+    await t.pg.mouse.move(q1[0], q1[1], { steps: 5 }); await t.sleep(150);
+    await t.pg.mouse.up(); await t.sleep(1200);
+    const after7b = await t.oplog(); const chain7 = await t.verifyChain();
+    const ops7 = await t.pg.evaluate((fromLen) => {
+      const added = window.Bonsai.oplog._geomOps().slice(fromLen);
+      const mv = added.find(o => o.op_type === 'GEOM_MOVE'), cm = added.find(o => o.op_type === 'GEOM_CUT_MOVE');
+      return { types: added.map(o => o.op_type), mv: mv ? mv.parameters : null, cm: cm ? cm.parameters : null };
+    }, before7b.len);
+    const holeY7post = await holeOnAxis(t, ids.host, 1), door7post = await centreOf(t, ids.door);
+    t.slog.slice(logAt).filter(l => /§ITEMDRAG commit|§CUT-MOVE/.test(l)).forEach(l => console.log('    ' + l.slice(0, 320))); logAt = t.slog.length;
+    console.log('  §CUT-MOVE M7c ops=' + JSON.stringify(ops7) + ' holeY ' + JSON.stringify(holeY7pre) + '→' + JSON.stringify(holeY7post) + ' door ' + JSON.stringify(door7pre) + '→' + JSON.stringify(door7post) + ' oplog ' + before7b.len + '→' + after7b.len + ' chain=' + chain7);
+    t.assert('M7c COMMIT+MATHS (ONE gesture: GEOM_MOVE(door) + GEOM_CUT_MOVE{cutId, via slideShiftM — the authored shift may land on a DIFFERENT axis than the slide\'s own world axis}; door AND hole moved together in world Y by ≈0.8m, x unchanged on both; verifyChain true)',
+      after7b.len === before7b.len + 2 && ops7.mv && ops7.cm && ops7.cm.cutId === cut.id &&
+      near(door7post[1] - door7pre[1], T7, 0.06) && near(door7post[0], door7pre[0], 1e-6) &&
+      near(holeY7post.c - holeY7pre.c, T7, 0.05) && near(holeY7post.w, holeY7pre.w, 1e-3) && chain7 === true,
+      JSON.stringify({ ops7, dDoorY: door7post[1] - door7pre[1], dHoleY: holeY7post.c - holeY7pre.c }));
+
+    // ── M7d UNDO ───────────────────────────────────────────────────────────────────────────────────────────────
+    await ctrlZ(t);
+    const undone7 = await t.oplog(); const holeY7undo = await holeOnAxis(t, ids.host, 1); const door7undo = await centreOf(t, ids.door);
+    t.assert('M7d UNDO (ONE real Ctrl+Z reverts the slide gesture: hole and door back at their post-rotate, pre-slide positions)',
+      undone7.len === before7b.len && near(holeY7undo.c, holeY7pre.c, 1e-3) && door7undo && near(door7undo[1], door7pre[1], 1e-3),
+      JSON.stringify({ len: undone7.len, want: before7b.len, holeY7undo, door7undo }));
+  }
   await t.shot('08-undone');
 }, { width: 1280, height: 860, dpr: 2 });

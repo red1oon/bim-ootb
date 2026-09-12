@@ -85,11 +85,41 @@
           }
         }
       }
-      grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;
+      grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
       contacts[i] = list;
-      if (grounded[i]) groundedN++; else if (!list) orphans++;
+      if (grounded[i]) groundedN++;
     }
-    return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN };
+    // §GROUND_CONNECTED (2026-09-12, bim-compiler prompts/4D_MODEL_INTEGRITY.md §N) — byte-identical
+    // twin of support_sweep.js _contactGraph's block; the full doctrine comment lives THERE (one
+    // home), probe_cpm_schedule.js §CPM_PARITY diffs the two verdicts element-for-element. Summary:
+    // the orphan exemption is classification + DIRECTED reachability (supporter -> supported) over
+    // the contacts just built, seeded from seq===1 / phase==='Substructure'; a population with no
+    // classified ground at all falls back to footprint-grounded elements within
+    // ScheduleGate.GROUND_BAND of its 1st-percentile base. `grounded[i]` is never the exemption.
+    var reach = new Uint8Array(n), stack = new Int32Array(n), sp = 0, seeds = 0, seedMode = 'classification';
+    for (i = 0; i < n; i++) {
+      T = items[i];
+      if (T.seq === 1 || T.phase === 'Substructure') { reach[i] = 1; stack[sp++] = i; seeds++; }
+    }
+    if (!seeds && n) {
+      seedMode = 'ground-band';
+      var zs = new Float64Array(n);
+      for (i = 0; i < n; i++) zs[i] = items[i].bz;
+      zs.sort();                                                   // typed-array sort is numeric
+      var datum = zs[Math.floor(n * 0.01)] + SG.GROUND_BAND;
+      for (i = 0; i < n; i++) if (grounded[i] && items[i].bz <= datum) { reach[i] = 1; stack[sp++] = i; seeds++; }
+    }
+    var deg = new Int32Array(n + 1);                               // CSR of the REVERSE edges: supporter -> supported
+    for (i = 0; i < n; i++) { arr = contacts[i]; if (arr) for (k = 0; k < arr.length; k++) deg[arr[k] + 1]++; }
+    for (i = 0; i < n; i++) deg[i + 1] += deg[i];
+    var fill = deg.slice(0, n), sup = new Int32Array(deg[n]);
+    for (i = 0; i < n; i++) { arr = contacts[i]; if (arr) for (k = 0; k < arr.length; k++) sup[fill[arr[k]]++] = i; }
+    while (sp) { j = stack[--sp]; for (k = deg[j]; k < deg[j + 1]; k++) { c = sup[k]; if (!reach[c]) { reach[c] = 1; stack[sp++] = c; } } }
+    var groundConnectedN = 0;
+    for (i = 0; i < n; i++) if (reach[i]) groundConnectedN++;
+    orphans = n - groundConnectedN;
+    return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN,
+             groundConnected: reach, groundConnectedN: groundConnectedN, groundSeeds: seeds, groundSeedMode: seedMode };
   }
 
   // designatedSupport(items, G) -> Int32Array: for each element with contacts, the ONE support

@@ -4,6 +4,45 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.66.0](https://github.com/red1oon/bim-ootb/compare/v1.65.0...v1.66.0) (2026-09-12)
+
+
+### ✨ Features
+
+* **rules:** §RULE_REPORT — findings without the film, + a data-sufficiency and per-finding witness pass ([#1718](https://github.com/red1oon/bim-ootb/issues/1718)) ([719ebb9](https://github.com/red1oon/bim-ootb/commit/719ebb92455abe8cf78bca3534cd042c8585a0f3))
+
+
+### 🐛 Fixes
+
+* **support_sweep:** orphan exemption is classification + ground reachability, never grounded[i] (§GROUND_CONNECTED) ([#1717](https://github.com/red1oon/bim-ootb/issues/1717)) ([a9f88df](https://github.com/red1oon/bim-ootb/commit/a9f88df7365d284f87027bc4dbf33b72aabb8f12))
+
+
+### 📝 Documentation
+
+* **internal:** CodeScrapBook — measured 101 tour of the codebase ([#1719](https://github.com/red1oon/bim-ootb/issues/1719)) ([1cfce7f](https://github.com/red1oon/bim-ootb/commit/1cfce7fe49d74118c6dc772bde4b0b36f7b529c6))
+* **spec:** T11 §BENCH_CONTINUE — the next session's brief for the sanity benchmark ([#1721](https://github.com/red1oon/bim-ootb/issues/1721)) ([1f795c7](https://github.com/red1oon/bim-ootb/commit/1f795c7047bf46ce25abfae0689fab57f5b1079f))
+
+## [1.65.0](https://github.com/red1oon/bim-ootb/compare/v1.64.0...v1.65.0) (2026-09-10)
+
+
+### ✨ Features
+
+* **modeller:** §DAGEVU relationship-edge engine — openings anchor by default under grid stretch, ride is opt-in ([#1706](https://github.com/red1oon/bim-ootb/issues/1706)) ([76f8365](https://github.com/red1oon/bim-ootb/commit/76f8365c76b3d280bbb2fbd1d529e9dbda99f580))
+* **modeller:** §DAGEVU-SLIDE — along-host opening slide as the engine's second consumer; HostFillEdge.constrain() ([#1710](https://github.com/red1oon/bim-ootb/issues/1710)) ([20e4fd2](https://github.com/red1oon/bim-ootb/commit/20e4fd2843d317c6b567e2e7221059aa954ebc4b))
+* **readiness:** admin CPanel for Faizal — submission status + fitness checklist ([#1703](https://github.com/red1oon/bim-ootb/issues/1703)) ([7c3d392](https://github.com/red1oon/bim-ootb/commit/7c3d39292e442be69f37b07818ed03f3f11d9531))
+* **readiness:** open the pilot to real respondents — ethics clearance not required, real scoring and submission ship ([#1702](https://github.com/red1oon/bim-ootb/issues/1702)) ([cada5ff](https://github.com/red1oon/bim-ootb/commit/cada5ff53774f7fe603fa92307e4a598527fd581))
+
+
+### 🐛 Fixes
+
+* **modeller:** route soft-delete through the git-faithful history tree ([#1704](https://github.com/red1oon/bim-ootb/issues/1704)) ([a961f34](https://github.com/red1oon/bim-ootb/commit/a961f345fdc3e0765ed1456353826b6831a1fe8a))
+* **readiness:** admin CPanel — stop squeezing submission-status text into a narrow column ([#1705](https://github.com/red1oon/bim-ootb/issues/1705)) ([8b8fbc8](https://github.com/red1oon/bim-ootb/commit/8b8fbc8f1572143faf50b71471285a6cac77fb5c))
+
+
+### 📝 Documentation
+
+* **prompts:** spec Structural Sanity rule-based screening panel ([#1709](https://github.com/red1oon/bim-ootb/issues/1709)) ([468d047](https://github.com/red1oon/bim-ootb/commit/468d04730f16abd8f4a7cfabe0535c78b6c1e7ec))
+
 ## [1.64.0](https://github.com/red1oon/bim-ootb/compare/v1.63.0...v1.64.0) (2026-09-08)
 
 

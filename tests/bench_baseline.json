@@ -1,0 +1,579 @@
+{
+  "generatedAt": "2026-09-12T04:15:32.657Z",
+  "buildings": {
+    "HHS_Office_Federated_extracted": {
+      "findings": 140,
+      "rules": [
+        {
+          "rule": "column_continuity",
+          "found": 128,
+          "defect": 0,
+          "nearMiss": 64,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 12,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        }
+      ]
+    },
+    "Clinic_extracted": {
+      "findings": 26,
+      "rules": [
+        {
+          "rule": "column_continuity",
+          "found": 26,
+          "defect": 0,
+          "nearMiss": 24,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        }
+      ]
+    },
+    "Clinic_meta": {
+      "findings": 95,
+      "rules": [
+        {
+          "rule": "column_continuity",
+          "found": 26,
+          "defect": 0,
+          "nearMiss": 24,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "circulation_distance",
+          "found": 68,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 1,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
+        }
+      ]
+    },
+    "Duplex_extracted": {
+      "findings": 1,
+      "rules": [
+        {
+          "rule": "span_depth_cantilever",
+          "found": 1,
+          "defect": 0,
+          "nearMiss": 1,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        }
+      ]
+    },
+    "HHS_Office_Federated_silent": {
+      "findings": 208,
+      "rules": [
+        {
+          "rule": "column_continuity",
+          "found": 128,
+          "defect": 0,
+          "nearMiss": 64,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 12,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "circulation_distance",
+          "found": 68,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        }
+      ]
+    },
+    "Hospital_extracted": {
+      "findings": 384,
+      "rules": [
+        {
+          "rule": "span_depth_steel",
+          "found": 327,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "span_depth_cantilever",
+          "found": 42,
+          "defect": 0,
+          "nearMiss": 25,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 15,
+          "defect": 0,
+          "nearMiss": 14,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        }
+      ]
+    },
+    "Hospital_meta": {
+      "findings": 526,
+      "rules": [
+        {
+          "rule": "span_depth_steel",
+          "found": 327,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "span_depth_cantilever",
+          "found": 42,
+          "defect": 0,
+          "nearMiss": 28,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 15,
+          "defect": 0,
+          "nearMiss": 14,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "circulation_distance",
+          "found": 135,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 7,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
+        }
+      ]
+    },
+    "Hospital_silent": {
+      "findings": 398,
+      "rules": [
+        {
+          "rule": "span_depth_steel",
+          "found": 327,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "span_depth_cantilever",
+          "found": 42,
+          "defect": 0,
+          "nearMiss": 8,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 15,
+          "defect": 0,
+          "nearMiss": 14,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "circulation_distance",
+          "found": 13,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 1,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
+        }
+      ]
+    },
+    "JKR_extracted": {
+      "findings": 256,
+      "rules": [
+        {
+          "rule": "span_depth_cantilever",
+          "found": 38,
+          "defect": 0,
+          "nearMiss": 1,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "floating_member",
+          "found": 7,
+          "defect": 0,
+          "nearMiss": 0,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 172,
+          "defect": 0,
+          "nearMiss": 34,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 24,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 15,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
+        }
+      ]
+    },
+    "LTU_AHouse_extracted": {
+      "findings": 560,
+      "rules": [
+        {
+          "rule": "span_depth_concrete",
+          "found": 5,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "span_depth_cantilever",
+          "found": 2,
+          "defect": 0,
+          "nearMiss": 0,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "floating_member",
+          "found": 4,
+          "defect": 0,
+          "nearMiss": 2,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 471,
+          "defect": 0,
+          "nearMiss": 72,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 58,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 17,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
+        },
+        {
+          "rule": "circulation_distance",
+          "found": 3,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        }
+      ]
+    },
+    "LTU_AHouse_meta": {
+      "findings": 1285,
+      "rules": [
+        {
+          "rule": "span_depth_cantilever",
+          "found": 388,
+          "defect": 0,
+          "nearMiss": 271,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "floating_member",
+          "found": 172,
+          "defect": 0,
+          "nearMiss": 107,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "span_depth_concrete",
+          "found": 4,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 663,
+          "defect": 0,
+          "nearMiss": 195,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 58,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        }
+      ]
+    },
+    "Terminal_extracted": {
+      "findings": 63,
+      "rules": [
+        {
+          "rule": "span_depth_steel",
+          "found": 1,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "span_depth_concrete",
+          "found": 21,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 11,
+          "defect": 0,
+          "nearMiss": 5,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 25,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 5,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
+        }
+      ]
+    },
+    "Terminal_meta": {
+      "findings": 71,
+      "rules": [
+        {
+          "rule": "span_depth_steel",
+          "found": 1,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "span_depth_concrete",
+          "found": 20,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 11,
+          "defect": 0,
+          "nearMiss": 5,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 25,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "circulation_distance",
+          "found": 11,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 3,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
+        }
+      ]
+    },
+    "Terminal_silent": {
+      "findings": 137,
+      "rules": [
+        {
+          "rule": "span_depth_steel",
+          "found": 1,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "span_depth_concrete",
+          "found": 20,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "floating_member",
+          "found": 4,
+          "defect": 0,
+          "nearMiss": 4,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "span_depth_cantilever",
+          "found": 5,
+          "defect": 0,
+          "nearMiss": 5,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m (a beam candidate additionally top- or bottom-flush within 0.4 m, per §FRAMING_TOP_OF_STEEL)"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 65,
+          "defect": 0,
+          "nearMiss": 16,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 25,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "circulation_distance",
+          "found": 14,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 3,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room's connected component holds an exit, or circulation on its own storey — a target the rule should have reached"
+        }
+      ]
+    }
+  },
+  "fleet": {
+    "rules": {
+      "column_continuity": {
+        "found": 1746,
+        "artifact": 0,
+        "nearMiss": 545,
+        "rate": 0
+      },
+      "isolated_room": {
+        "found": 52,
+        "artifact": 0,
+        "nearMiss": 0,
+        "rate": 0
+      },
+      "span_depth_cantilever": {
+        "found": 560,
+        "artifact": 0,
+        "nearMiss": 339,
+        "rate": 0
+      },
+      "floating_member": {
+        "found": 187,
+        "artifact": 0,
+        "nearMiss": 113,
+        "rate": 0
+      }
+    },
+    "found": 2545,
+    "artifact": 0,
+    "rate": 0,
+    "buildingsMeasured": 14
+  }
+}
