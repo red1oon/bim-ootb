@@ -1128,7 +1128,57 @@ Added to §16.2, unactioned:
 
 ---
 
-## 18. Re-measure
+## 18. Housekeeping — the low-risk pile
+
+> Measured 2026-09-13 at `719ebb92`. Observation only; nothing changed.
+> Separated from §16 because these cost nothing to reason about — but two of
+> them are **not** as free as they look, and that is said plainly below.
+
+### 18.1 Genuinely free
+
+| # | item | measured | why it is free |
+|---|---|---|---|
+| H1 | **105 production files missing the SPDX header** | 75% have it (§15); the gap is 105 files — `common/history_tap.js`, `erp/bigdecimal.js`, `erp/erp_persist_ui.js`, `geomapping/classify_geom.js`, … | A comment line. No behaviour, no load order, no test. Closes the highest-adoption pattern in §15 at 100%. |
+| H2 | **~28 real `TODO` markers** | 30 outside `locales/`, 2 of those in vendored `lib/sql-wasm*.js` | Read them and either file or delete. Several name real work: `panels.js:1160` "wire to ubbl_rules.json checker", `doc_canvas.js:1143` "log as GRID_CALIBRATE kernel_op", `erp/chat_lens.js:22` a marked stub. |
+| H3 | **`npm run lint` cannot run as configured** | `node_modules` absent; `package.json` pins `eslint ^9.13.0`, but `npx` resolves **10.4.1**, which crashes on this box's **Node v18.19.1** (`TypeError: util.styleText is not a function`) | The lint script is nominal — it has not been runnable here. Pin the major (`eslint@9`) or raise the Node floor, and say which in `package.json`. |
+
+> **Measurement note, since it is instructive.** A first pass reported **140**
+> `TODO` markers. It was wrong: `TODO` is a substring of *METODOLOGI* in the
+> Malay, Indonesian, Spanish and Portuguese locale files. The real count is ~28.
+> The same class of error as R9 in §14 — a regex that cannot tell a word from a
+> word fragment. Re-check any grep count before acting on it.
+
+### 18.2 Cheap, but not free — read the cost first
+
+| # | item | measured | the catch |
+|---|---|---|---|
+| H4 | **121 MB of build artifacts committed** | 19 files under `out/` — `Hospital_FULL_720p_2026-09-07.mp4`, cue/dimcue PNGs, pose JSON. `.gitignore` covers `*.log` and `erp/tests/*.log` but **not `out/`** | Adding `out/` to `.gitignore` stops *new* ones and is free. It does **not** remove the 121 MB already in history — that needs a history rewrite, which is not housekeeping and breaks every open PR and all 1,099 branches. **Do the `.gitignore` line; leave history alone.** |
+| H5 | **217 loose `.js` at the repo root, 206 of them scratch** | 167 `witness_*`, 39 `probe_*`. Meanwhile `tests/`, `viewer/tests/` and `erp/tests/` all exist — witnesses live in **four** places: 168 root, 142 `viewer/tests`, 28 `erp/tests`, 23 `tests/` | Moving them is not zero-impact: **43 witness/probe filenames are referenced by name** in CI and scripts, and `compare_witnesses.sh:8-12` hardcodes 13 of them expecting the repo root. A move means updating those 43 references in the same commit. Worth doing, but it is a change, not a tidy. |
+
+### 18.3 What this pile says
+
+Nothing here is a defect. H1, H2 and H3 are three more instances of the §15.3
+shape — **a convention applied to most of the tree, with a tail nobody
+finished**, and a tool configured but never actually run.
+
+H4 and H5 are different, and worth naming separately: they are the residue of
+working *fast in one tree*. Probes and bake outputs landed where they were
+created, at the root, and were committed because nothing said not to. That is
+not carelessness — it is what velocity looks like afterwards. The `.gitignore`
+line (H4) is the one change that stops the pile growing, and it costs nothing.
+
+### 18.4 Suggested order, if any of it is wanted
+
+1. **H4's `.gitignore` line** — one line, stops 121 MB becoming 200 MB.
+2. **H3** — pin `eslint@9` or raise the Node floor, so `npm run lint` is real.
+   Until then no lint finding in this document can be trusted to be complete.
+3. **H1** — 105 header lines, mechanical, verifiable by re-running §15's count.
+4. **H2** — read 28 TODOs, file or delete.
+5. **H5** — last, and only with the 43 references updated in the same commit.
+
+---
+
+## 19. Re-measure
 
 ```bash
 cd ~/bim-ootb
