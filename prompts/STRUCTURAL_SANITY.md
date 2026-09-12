@@ -760,3 +760,49 @@ is re-extracted. Freezing one into an assertion is the circular-guard mistake T9
 `test_structural_sanity_rules.js` asserted "count in [40,50]" for the life of a bug because that
 range came from the buggy code's own output. The baseline is recorded data; the gate compares
 against it; non-vacuity is guarded by fixtures that must still fail.
+
+**T9.3 §SLAB_BEARING — done, and the reason it was held back was wrong.**
+Deferred through T9.1 on the worry that a whole-floor slab would make `floating_member` vacuous.
+The worry named the right risk and the wrong mechanism. The vertical test is
+`if (pt.z < sb.zmin - tol || pt.z > sb.zmax + tol) continue;` and **`pt.z` is the beam's CENTRE**:
+a beam hanging BELOW a slab has its centre under the slab's `zmin` and is rejected — which is
+precisely the case that must stay flagged. Only a beam whose centre lies inside the slab's own
+z-range is admitted, and that beam is inside the floor plate, not suspended.
+
+Evidence that settled it: of the 247 fleet defects then outstanding, **246 were `IfcSlab`**, and of
+those **201 had the slab OVERLAPPING the beam's z-range** against 3 entirely above it. "Is the end
+near a slab EDGE" turned out to be the wrong question — slab footprints are whole floors (median
+long side 48.8 m, p90 119.6 m), so the endpoint sits 0.76 m from an edge at p50 and 5.95 m at p90,
+and neither number says anything about whether the beam has a load path.
+
+Non-vacuity is guarded by a fixture PAIR on one 40 x 20 m slab: `beam-in-slab` (centre inside the
+slab's z-range) must NOT flag, `beam-under-slab` (same footprint, hanging 3 m below) MUST flag
+CRITICAL. Both assert; a class-list edit that switched the rule off would fail the second.
+
+**T9.6 §CIRC_NODE_NOT_A_GUESSED_GUID — `isolated_room`'s fallback looked up an invented identifier.**
+It CONSTRUCTED `'CIRC::' + storey` and gave up when that exact string was not a node. The graph does
+not name circulation that way everywhere: it also emits `SPINE::` nodes keyed by storey AND axis
+position. MEASURED on HHS_Office_Federated: the graph holds 3 `CIRC::` nodes and 15 `SPINE::` nodes,
+and the one room reported isolated had **6 edges, four of them doors onto `SPINE::Unknown|x|32.44`
+— its own storey's circulation**. The rule looked up `CIRC::Unknown`, found nothing, and called a
+connected room isolated. A guessed identifier is not a lookup. Now reaches for ANY circulation node
+on the storey and takes the nearest reachable one.
+
+**The fleet after T9.3 + T9.6, and widened to 14 DBs including `_extracted` (so JKR, which has no
+`_meta`, is in it):**
+
+| rule | found | defect | rate | nearMiss |
+|---|---|---|---|---|
+| `column_continuity` | 1746 | 5 | 0% | 544 |
+| `span_depth_cantilever` | 560 | **0** | 0% | 339 |
+| `floating_member` | 187 | 1 | 1% | 112 |
+| `isolated_room` | 52 | 2 | 4% | 0 |
+| **fleet** | **2545** | **8** | **0.3%** | 995 |
+
+**63% → 12% → 0.3%.** `span_depth_cantilever` is at zero across 560 findings.
+
+**Out-of-sample check: JKR_extracted** (9,410 elements, a building none of this work was developed
+against) — **256 findings, 0 defects** on all four testable rules, first run, no tuning.
+
+What is left is 8 defects and 995 near-misses. The near-misses are threshold questions under the
+THRESHOLD DISCLAIMER and are not to be "fixed" by widening a number until the bench goes green.

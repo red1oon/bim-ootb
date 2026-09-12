@@ -78,6 +78,25 @@
     return {};
   }
 
+  // §CIRC_NODE_NOT_A_GUESSED_GUID (T9.6) — every circulation node on a storey, however the graph
+  // chose to name it. `kind === 'circ'` is the graph's own marker; the guid prefixes are the
+  // fallback for nodes that carry the storey only in their id. Returns [] when a storey genuinely
+  // has no circulation, which is a real finding and different from "we looked up the wrong name".
+  function _circulationNodesOn(graph, storey) {
+    var out = [];
+    (graph.nodes || []).forEach(function (n) {
+      if (n.storey === storey && n.kind === 'circ' && out.indexOf(n.guid) === -1) out.push(n.guid);
+    });
+    Object.keys(graph.nodesByGuid || {}).forEach(function (gid) {
+      if (out.indexOf(gid) !== -1) return;
+      if (gid.indexOf('CIRC::') !== 0 && gid.indexOf('SPINE::') !== 0) return;
+      var n = graph.nodesByGuid[gid];
+      // Match on the node's own storey when it has one, else on the storey embedded in the guid.
+      if ((n && n.storey === storey) || gid.indexOf('::' + storey) === gid.indexOf('::')) out.push(gid);
+    });
+    return out;
+  }
+
   function _severityBelow(value, rule) {
     // Door width: NARROWER is worse (flag when value <= threshold), opposite direction from a
     // span/depth ratio rule.
@@ -170,8 +189,22 @@
       if (esc && esc.distance != null) {
         target = 'exit'; distance = esc.distance; viaExit++;
       } else {
-        var circGuid = 'CIRC::' + r.storey;
-        var sp = graph.nodesByGuid[circGuid] ? RoomGraph.shortestPath(graph, r.guid, circGuid) : null;
+        // ══ §CIRC_NODE_NOT_A_GUESSED_GUID (T9.6) — the fallback used to CONSTRUCT one guid,
+        // 'CIRC::' + storey, and give up if that exact string was not a node. The graph does not
+        // name circulation that way everywhere: it also emits SPINE:: nodes keyed by storey AND
+        // axis position, e.g. 'SPINE::Level 1|x|-7.00'. MEASURED on HHS_Office_Federated: the
+        // graph holds 3 CIRC:: nodes and 15 SPINE:: nodes, and the single room reported
+        // `isolated_room` had **6 edges, four of them doors onto SPINE::Unknown|x|32.44** — its
+        // own storey's circulation. The rule looked up 'CIRC::Unknown', found nothing, and called
+        // a connected room isolated. A guessed identifier is not a lookup.
+        //
+        // Reach for ANY circulation node on the storey and take the nearest reachable one.
+        var circNodes = _circulationNodesOn(graph, r.storey);
+        var sp = null;
+        for (var ci = 0; ci < circNodes.length; ci++) {
+          var cand = RoomGraph.shortestPath(graph, r.guid, circNodes[ci]);
+          if (cand && cand.distance != null && (!sp || cand.distance < sp.distance)) sp = cand;
+        }
         if (sp && sp.distance != null) { target = 'circulation (fallback)'; distance = sp.distance; viaFallback++; }
         else {
           // Rule 3: isolated — no path to escape via a real exit NOR to this storey's own

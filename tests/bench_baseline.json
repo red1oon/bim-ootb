@@ -1,8 +1,21 @@
 {
-  "generatedAt": "2026-09-12T02:50:08.179Z",
+  "generatedAt": "2026-09-12T03:29:04.386Z",
   "buildings": {
+    "Clinic_extracted": {
+      "findings": 26,
+      "rules": [
+        {
+          "rule": "column_continuity",
+          "found": 26,
+          "defect": 0,
+          "nearMiss": 24,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        }
+      ]
+    },
     "Clinic_meta": {
-      "findings": 117,
+      "findings": 95,
       "rules": [
         {
           "rule": "column_continuity",
@@ -14,7 +27,7 @@
         },
         {
           "rule": "circulation_distance",
-          "found": 90,
+          "found": 68,
           "defect": null,
           "nearMiss": null,
           "rate": null,
@@ -30,8 +43,42 @@
         }
       ]
     },
+    "Duplex_extracted": {
+      "findings": 1,
+      "rules": [
+        {
+          "rule": "span_depth_cantilever",
+          "found": 1,
+          "defect": 0,
+          "nearMiss": 1,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+        }
+      ]
+    },
+    "HHS_Office_Federated_extracted": {
+      "findings": 140,
+      "rules": [
+        {
+          "rule": "column_continuity",
+          "found": 128,
+          "defect": 0,
+          "nearMiss": 64,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 12,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        }
+      ]
+    },
     "HHS_Office_Federated_silent": {
-      "findings": 209,
+      "findings": 208,
       "rules": [
         {
           "rule": "column_continuity",
@@ -56,19 +103,11 @@
           "nearMiss": null,
           "rate": null,
           "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
-        },
-        {
-          "rule": "isolated_room",
-          "found": 1,
-          "defect": 1,
-          "nearMiss": null,
-          "rate": 1,
-          "basis": "the room has edges in the room graph"
         }
       ]
     },
-    "Hospital_meta": {
-      "findings": 527,
+    "Hospital_extracted": {
+      "findings": 384,
       "rules": [
         {
           "rule": "span_depth_steel",
@@ -80,10 +119,39 @@
         },
         {
           "rule": "span_depth_cantilever",
-          "found": 43,
-          "defect": 1,
+          "found": 42,
+          "defect": 0,
+          "nearMiss": 25,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 15,
+          "defect": 0,
+          "nearMiss": 14,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        }
+      ]
+    },
+    "Hospital_meta": {
+      "findings": 526,
+      "rules": [
+        {
+          "rule": "span_depth_steel",
+          "found": 327,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "span_depth_cantilever",
+          "found": 42,
+          "defect": 0,
           "nearMiss": 28,
-          "rate": 0.0233,
+          "rate": 0,
           "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
         },
         {
@@ -113,7 +181,7 @@
       ]
     },
     "Hospital_silent": {
-      "findings": 406,
+      "findings": 398,
       "rules": [
         {
           "rule": "span_depth_steel",
@@ -125,7 +193,7 @@
         },
         {
           "rule": "span_depth_cantilever",
-          "found": 43,
+          "found": 42,
           "defect": 0,
           "nearMiss": 8,
           "rate": 0,
@@ -149,36 +217,142 @@
         },
         {
           "rule": "isolated_room",
-          "found": 8,
-          "defect": 7,
+          "found": 1,
+          "defect": 0,
           "nearMiss": null,
-          "rate": 0.875,
+          "rate": 0,
           "basis": "the room has edges in the room graph"
         }
       ]
     },
-    "LTU_AHouse_meta": {
-      "findings": 1429,
+    "JKR_extracted": {
+      "findings": 256,
       "rules": [
         {
-          "rule": "floating_member",
-          "found": 324,
-          "defect": 140,
-          "nearMiss": 115,
-          "rate": 0.4321,
+          "rule": "span_depth_cantilever",
+          "found": 38,
+          "defect": 0,
+          "nearMiss": 1,
+          "rate": 0,
           "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
         },
         {
+          "rule": "floating_member",
+          "found": 7,
+          "defect": 0,
+          "nearMiss": 0,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 172,
+          "defect": 0,
+          "nearMiss": 34,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 24,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 15,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room has edges in the room graph"
+        }
+      ]
+    },
+    "LTU_AHouse_extracted": {
+      "findings": 560,
+      "rules": [
+        {
+          "rule": "span_depth_concrete",
+          "found": 5,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
           "rule": "span_depth_cantilever",
-          "found": 381,
-          "defect": 60,
-          "nearMiss": 211,
-          "rate": 0.1575,
+          "found": 2,
+          "defect": 0,
+          "nearMiss": 0,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+        },
+        {
+          "rule": "floating_member",
+          "found": 4,
+          "defect": 0,
+          "nearMiss": 2,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 471,
+          "defect": 4,
+          "nearMiss": 72,
+          "rate": 0.0085,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 58,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 17,
+          "defect": 2,
+          "nearMiss": null,
+          "rate": 0.1176,
+          "basis": "the room has edges in the room graph"
+        },
+        {
+          "rule": "circulation_distance",
+          "found": 3,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        }
+      ]
+    },
+    "LTU_AHouse_meta": {
+      "findings": 1285,
+      "rules": [
+        {
+          "rule": "span_depth_cantilever",
+          "found": 388,
+          "defect": 0,
+          "nearMiss": 271,
+          "rate": 0,
+          "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
+        },
+        {
+          "rule": "floating_member",
+          "found": 172,
+          "defect": 1,
+          "nearMiss": 106,
+          "rate": 0.0058,
           "basis": "load-bearing geometry at an end the rule called unsupported, INSIDE tolerance 0.15 m"
         },
         {
           "rule": "span_depth_concrete",
-          "found": 3,
+          "found": 4,
           "defect": null,
           "nearMiss": null,
           "rate": null,
@@ -199,6 +373,51 @@
           "nearMiss": null,
           "rate": null,
           "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        }
+      ]
+    },
+    "Terminal_extracted": {
+      "findings": 63,
+      "rules": [
+        {
+          "rule": "span_depth_steel",
+          "found": 1,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "span_depth_concrete",
+          "found": 21,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "column_continuity",
+          "found": 11,
+          "defect": 0,
+          "nearMiss": 5,
+          "rate": 0,
+          "basis": "load-bearing geometry directly below, INSIDE tolerance 0.3 m"
+        },
+        {
+          "rule": "door_clear_width",
+          "found": 25,
+          "defect": null,
+          "nearMiss": null,
+          "rate": null,
+          "basis": "no artifact test — this rule is a threshold judgement, not a geometric claim"
+        },
+        {
+          "rule": "isolated_room",
+          "found": 5,
+          "defect": 0,
+          "nearMiss": null,
+          "rate": 0,
+          "basis": "the room has edges in the room graph"
         }
       ]
     },
@@ -328,33 +547,33 @@
   "fleet": {
     "rules": {
       "column_continuity": {
-        "found": 923,
-        "artifact": 1,
-        "nearMiss": 331,
-        "rate": 0.0011
+        "found": 1746,
+        "artifact": 5,
+        "nearMiss": 544,
+        "rate": 0.0029
       },
       "isolated_room": {
-        "found": 23,
-        "artifact": 8,
+        "found": 52,
+        "artifact": 2,
         "nearMiss": 0,
-        "rate": 0.3478
+        "rate": 0.0385
       },
       "span_depth_cantilever": {
-        "found": 472,
-        "artifact": 61,
-        "nearMiss": 252,
-        "rate": 0.1292
+        "found": 560,
+        "artifact": 0,
+        "nearMiss": 339,
+        "rate": 0
       },
       "floating_member": {
-        "found": 328,
-        "artifact": 140,
-        "nearMiss": 119,
-        "rate": 0.4268
+        "found": 187,
+        "artifact": 1,
+        "nearMiss": 112,
+        "rate": 0.0053
       }
     },
-    "found": 1746,
-    "artifact": 210,
-    "rate": 0.1203,
-    "buildingsMeasured": 7
+    "found": 2545,
+    "artifact": 8,
+    "rate": 0.0031,
+    "buildingsMeasured": 14
   }
 }

@@ -44,6 +44,13 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
     meta('beam-main', 'IfcBeam', 'UB-Main', 'L1'),
     meta('beam-framing', 'IfcBeam', 'UB-Framing', 'L1'),
     meta('beam-floating', 'IfcBeam', 'UB-Floating', 'Roof'),
+    // §SLAB_BEARING (T9.3) non-vacuity pair. IfcSlab became a beam support because a beam whose
+    // CENTRE lies inside a slab's z-range is embedded in the floor plate, not suspended. The
+    // danger is that a whole-floor slab then "supports" everything. These two prove the z-bracket
+    // still discriminates: same slab, same footprint, one beam in-plane and one hanging below it.
+    meta('slab-floor', 'IfcSlab', 'Floor Slab 300mm', 'L2'),
+    meta('beam-in-slab', 'IfcBeam', 'UB-InSlab', 'L2'),
+    meta('beam-under-slab', 'IfcBeam', 'UB-HangingUnderSlab', 'L2'),
   ];
   const xformRows = [
     // Columns L1: z 0..3. Footings just below: z -1..0 (touch at z=0).
@@ -68,6 +75,14 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
     // Floating beam: isolated, no support at either end -> CRITICAL floating_member.
     xform('beam-floating', 200, 200, 20, 6, 0.3, 0.5),
   ];
+  // A 40m x 20m slab at z 10.00..10.30 — a real whole-floor plate, the shape that made this
+  // change look dangerous.
+  xformRows.push(xform('slab-floor', 20, 10, 10.15, 40, 20, 0.3));
+  // In-plane: centre z 10.15 sits INSIDE the slab's [10.00, 10.30]. Embedded -> supported.
+  xformRows.push(xform('beam-in-slab', 20, 5, 10.15, 8, 0.2, 0.3));
+  // Hanging 3 m below the same slab, same footprint. Centre z 7.15 is under slab.zmin -> the
+  // z-bracket must reject it and the beam must still read CRITICAL floating.
+  xformRows.push(xform('beam-under-slab', 20, 15, 7.15, 8, 0.2, 0.3));
 
   metaRows.forEach(r => db.run('INSERT INTO elements_meta VALUES (?,?,?,?,?,?,?,?)', r));
   xformRows.forEach(r => db.run('INSERT INTO element_transforms VALUES (?,?,?,?,?,?,?,?,?,?)', r));
@@ -98,6 +113,13 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
 
   chk('clean beam (both ends columned, low ratio) has no rows',
     !byGuid['beam-clean'], JSON.stringify(byGuid['beam-clean']));
+
+  chk('§SLAB_BEARING a beam embedded IN a slab is NOT floating (centre inside the slab z-range)',
+    !(byGuid['beam-in-slab'] || []).some(r => r.rule === 'floating_member'),
+    JSON.stringify(byGuid['beam-in-slab']));
+  chk('§SLAB_BEARING a beam HANGING 3m BELOW the same slab IS still flagged CRITICAL — the rule did not go vacuous',
+    (byGuid['beam-under-slab'] || []).some(r => r.rule === 'floating_member' && r.severity === 'CRITICAL'),
+    JSON.stringify(byGuid['beam-under-slab']));
 
   chk('known-unsupported column flagged CRITICAL column_continuity',
     (byGuid['col-unsupported'] || []).some(r => r.rule === 'column_continuity' && r.severity === 'CRITICAL'),

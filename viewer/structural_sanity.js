@@ -92,12 +92,25 @@
   // continuity test is not made vacuous by this — it still requires the support's TOP within
   // tolerance_m of the column's BOTTOM, which finishes and services never satisfy.
   //
-  // ⚠ IfcSlab is deliberately NOT added for BEAM ends, though 440 fleet free-ends sit on one. A
-  // slab spans a whole floor, so its footprint contains nearly every beam at that level and its
-  // z-bracket admits them: adding it would drive floating_member toward zero by making the test
-  // vacuous rather than by making it correct. That needs a bearing test (beam end at a slab EDGE,
-  // not anywhere under it), which is a separate change, not a class-list edit. See T9.3.
-  var SUPPORT_CLASSES = ['IfcColumn', 'IfcWall', 'IfcWallStandardCase', 'IfcFooting', 'IfcMember', 'IfcPlate'];
+  // ══ §SLAB_BEARING (T9.3) — IfcSlab IS a beam support, and the z-bracket already makes it safe ═
+  // Held back through T9.1 on the worry that a slab spans a whole floor, so its footprint contains
+  // nearly every beam at that level and adding it would make floating_member vacuous. MEASURED,
+  // that worry was wrong on the mechanism: the vertical test is
+  //     if (pt.z < sb.zmin - tol || pt.z > sb.zmax + tol) continue;
+  // and `pt.z` is the beam's CENTRE. A beam hanging BELOW a slab has its centre under the slab's
+  // zmin and is rejected — which is the case that must stay flagged. Only a beam whose centre
+  // lies within the slab's own z-range is admitted, and such a beam is inside the floor plate, not
+  // suspended in space.
+  //
+  // The evidence: of the 247 remaining fleet DEFECTS (load-bearing geometry inside the rule's own
+  // 0.15 m tolerance), 246 are IfcSlab. Of those, 201 have the slab OVERLAPPING the beam's z-range
+  // and only 3 have it entirely above. Slab footprints are whole floors — median long side 48.8 m,
+  // p90 119.6 m — which is exactly why "is the end near a slab EDGE" is the wrong question: at
+  // p50 the endpoint is 0.76 m from an edge and at p90 it is 5.95 m, and neither says anything
+  // about whether the beam has a load path.
+  //
+  // Non-vacuity is guarded by a fixture: a beam suspended BELOW a slab must still flag CRITICAL.
+  var SUPPORT_CLASSES = ['IfcColumn', 'IfcWall', 'IfcWallStandardCase', 'IfcFooting', 'IfcMember', 'IfcPlate', 'IfcSlab'];
   var COL_SUPPORT_CLASSES = ['IfcColumn', 'IfcWall', 'IfcWallStandardCase', 'IfcFooting', 'IfcSlab', 'IfcBeam', 'IfcMember'];
 
   function bbox(row) {

@@ -37,7 +37,7 @@ function fleet() {
     // Terminal_silent onto one key and the second silently overwrote the first — a bench that
     // quietly measures fewer buildings than it lists is the failure this file exists to prevent.
     names = fs.readdirSync(dir)
-      .filter(f => /_(meta|silent)\.db$/.test(f))
+      .filter(f => /_(meta|silent|extracted)\.db$/.test(f))   // _extracted included so JKR (which has no _meta) is in the fleet
       .map(f => [f.replace(/\.db$/, ''), path.join(dir, f)]);
   } catch (e) { /* no buildings dir */ }
   const extra = process.argv.filter(a => /\.db$/.test(a)).map(p => [path.basename(p, '.db'), p]);
