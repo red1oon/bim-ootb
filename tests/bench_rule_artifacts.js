@@ -26,7 +26,14 @@ const ROOT = path.join(__dirname, '..');
 const sr = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer/rates/structural_rules.json'), 'utf8'));
 const er = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer/rates/egress_rules.json'), 'utf8'));
 
-// Every *_meta.db and *_silent.db under buildings/, plus anything named on the command line.
+// ⚠ DO NOT SYMLINK A DB INTO buildings/ TO GET IT INTO THE FLEET. `.gitignore` has `*.db`, but
+// `buildings/HHS_Office_Federated_extracted.db` and `buildings/warehouse_gardenworld.db` are
+// TRACKED — gitignore does not protect a file already in the index, so a symlink placed over one
+// is committed as a 63-byte link and the real 75 MB DB is destroyed in the history. That has
+// happened before on this repo: #1071 did it and #1073 had to restore the file. Pass ad-hoc DBs as
+// command-line arguments instead — this runner accepts any `*.db` path as an extra fleet member.
+//
+// Every *_meta.db, *_silent.db and *_extracted.db under buildings/, plus anything named on the CLI.
 // A DB that is absent is REPORTED as absent, never silently skipped — a fleet bench that quietly
 // shrinks its own fleet is the same silent-SKIP failure the Log Mandate exists to stop.
 function fleet() {
