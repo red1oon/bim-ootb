@@ -500,6 +500,17 @@
     // T8.13 — the ONE fallback literal, exported so rule_checklist.js / rule_findings_film.js
     // consume it instead of each keeping a copy that drifts.
     FALLBACK_RULES: FALLBACK_RULES,
+    // T12.6 — exported for the SAME reason. rule_report.js's `support_classes_present` probe
+    // used to carry a TYPED COPY of these two lists in a comment and in its own SQL, and that
+    // copy went stale the moment §SUPPORT_CLASS_PARITY (T9.1) added IfcWall and §SLAB_BEARING
+    // (T9.3) added IfcSlab: the probe went on reporting "IfcWall and IfcSlab are in neither
+    // support list" and flagging Terminal_silent `degraded` for a gap that had been closed.
+    // The probe reads these now. A copy of a list is a list that will disagree with it.
+    // Frozen: these are handed to rule_report.js's probe, and a consumer that mutated the array
+    // it was given would corrupt the list for every later caller — the same class of drift the
+    // export exists to end.
+    SUPPORT_CLASSES: Object.freeze(SUPPORT_CLASSES.slice()),
+    COL_SUPPORT_CLASSES: Object.freeze(COL_SUPPORT_CLASSES.slice()),
     // exported for the witness fixture / debugging — not part of the row-producing contract above
     _supportChecks: _supportChecks, _columnContinuity: _columnContinuity, _matchesHints: _matchesHints
   };

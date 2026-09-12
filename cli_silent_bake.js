@@ -377,7 +377,12 @@ const server = http.createServer((req, res) => {
           }
         }
         const pops = RuleReport.rulePopulations(A.dbQuery);
-        const suff = RuleReport.runSufficiencyProbes(A.dbQuery, { log: console.log });
+        // T12.6 — support_classes_present reads the evaluator's OWN lists; without them it
+        // reports 'unavailable' rather than fall back to a copy that can go stale.
+        const suff = RuleReport.runSufficiencyProbes(A.dbQuery, Object.assign({ log: console.log },
+          (typeof StructuralSanity !== 'undefined')
+            ? { supportClasses: StructuralSanity.SUPPORT_CLASSES, colSupportClasses: StructuralSanity.COL_SUPPORT_CLASSES }
+            : {}));
         out.report = RuleReport.buildRuleReport({
           rowsS: rowsS, rowsE: rowsE,
           ruleDefs: [sj.rules, ej.rules].filter(Boolean),
