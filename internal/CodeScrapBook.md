@@ -1558,7 +1558,115 @@ Postgres tenant extrapolates to ~300 MB SQLite, past what one tab holds.
 
 ---
 
-## 22. Re-measure
+## 22. Why this codebase can skip a layer iDempiere could not
+
+> The architectural argument behind §21.5's ratio. Measured 2026-09-13 across
+> both trees. Observation; nothing changed.
+
+### 22.1 The same dictionary, read two ways
+
+`GenerateModel.java` (`org.adempiere.base.process`) reads `AD_Table` and
+`AD_Column` at **build time** and emits one typed Java class per table.
+`erp/ad_parser.js` reads `AD_Table`, `AD_Column`, `AD_Field`, `AD_Tab`,
+`AD_Menu`, `AD_Reference` at **run time** and returns structured objects.
+
+Same dictionary. Same tables. Different era.
+
+| | iDempiere | here |
+|---|---|---|
+| mechanism | `GenerateModel.java` → source files | `erp/ad_parser.js` interprets |
+| when | build time | run time |
+| artifact | **760 `X_*.java`, 345,490 LOC** (+ 227,100 `I_*`) | **536 lines** |
+| one table's cost | `X_C_Order.java` = **2,497 lines** | 0 — no per-table artifact |
+| safety from | the Java compiler | 602 witnesses |
+
+**536 lines against 345,490.** That single comparison is most of the ratio in
+§21.5, and it is not a cleverness gap — it is a difference in what the language
+and the era made possible.
+
+### 22.2 Why `X_*` had to exist
+
+`X_C_Order.java` carries the header *"Copyright (C) 1999–2012 ComPiere, Inc."*
+Compiere began around **1999**. At that point Java had:
+
+- **no annotations and no generics** — both arrived in Java 5, **2004**
+- **no mature ORM** — Hibernate 2001, JPA not until **2006**
+
+So the problem *"give me compile-time type safety over a schema defined at
+runtime in a database"* had exactly one answer available: **generate a typed
+class per table.** Raw JDBC gave string column names and no safety. Reflection
+gave neither types nor speed. Code generation was not a shortcut — **it was the
+only mechanism the language offered**, and it was the right call.
+
+The design then compounds. §21.5 measured it: **511 of 582 `M*` classes (88%)
+extend their generated `X_*`**, over `PO.java`'s 6,550 lines. The generated layer
+is load-bearing, not decorative — which is why it cannot simply be deleted from
+iDempiere today.
+
+### 22.3 The correction worth making
+
+It is tempting to say modern AI tooling removes the grunt work of writing that
+layer. **It does not, because there never was any.**
+
+`X_*` has been machine-generated since ~2001. Nobody ever typed one of those
+760 files. Codegen removed that grunt a quarter-century ago, and no copilot
+improves on a generator that already runs in a build step.
+
+**What AI changed is the other side of the trade.**
+
+`X_*` buys compile-time safety and charges 345,490 lines that sit in every stack
+trace (§21.5: in the debug path 88% of the time). The alternative — read the
+dictionary at runtime, generate nothing, stay dynamic — was **always available**.
+It always lost, because the safety had to come from somewhere, and writing that
+many tests by hand was unaffordable.
+
+> **That is the cost that collapsed.** Not writing the boilerplate — writing the
+> thing that makes not needing the boilerplate safe.
+
+This tree is the demonstration: no generated layer, `ad_parser.js` interpreting
+the AD at runtime, and the guarantee carried by **602 witnesses instead of 760
+generated classes**.
+
+### 22.4 The honest asymmetry
+
+Witnesses are not a strict substitute for a compiler, and the difference should
+be stated plainly rather than argued past:
+
+| | generated `X_*` | witnesses |
+|---|---|---|
+| coverage | **exhaustive** — every column access on every table | **sampled** — only what someone wrote a witness for |
+| when it fires | at compile, before the code can exist | on a run, after the code exists |
+| cost of a gap | impossible | silent |
+| cost to carry | 345,490 lines in every trace | 602 files you can ignore |
+
+A compiler cannot be partially adopted. **A witness suite can — and §15 measured
+exactly that: `redControl` at 43 of 545, 8%.**
+
+So the trade this codebase has taken is real but **not yet fully paid for**. It
+swapped an exhaustive, expensive guarantee for a sampled, cheap one, and the
+sampled one is currently at a fraction of its own standard. That is not an
+argument against the trade. It is the reason §16's row 5 exists.
+
+### 22.5 What follows
+
+1. **The ratio is architectural, not a quality claim.** 38.9× largely measures
+   *"generated a typed layer"* versus *"interpreted a dictionary"*. Say it that
+   way — it is more interesting than "less code" and it is what actually happened.
+2. **`X_*` deserves respect in the telling.** It was the correct answer to a 1999
+   constraint, and the README's "cathedral" framing already gets this right.
+   A comparison that mocks it is both unfair and weaker.
+3. **The trade's second half is the open work.** Witnesses are what this codebase
+   traded a compiler for. Every percentage point of `redControl` adoption is
+   literally paying down that swap.
+
+**One sentence:** *iDempiere generates a type system because 1999 Java had no
+other way to get one; this codebase interprets the same dictionary and buys its
+safety back in witnesses — which only became affordable recently, and is only
+8% bought so far.*
+
+---
+
+## 23. Re-measure
 
 ```bash
 cd ~/bim-ootb
