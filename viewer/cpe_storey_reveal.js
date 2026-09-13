@@ -532,6 +532,27 @@ function setupCpeStoreyReveal(A) {
   // the rest of the storey builds onto a ground the eye can already read. Separable because the batch
   // bucket key carries ifcClass (streaming.js:2210, §BATCH_BUCKET_CLASS_PAINT), so a BatchedMesh holds
   // exactly one class and its material can take its own plane.
+  // §100 (user: "the upper sweep begins when the storey is about to reach its full end") — THE RAKE.
+  // Two storeys sweeping at once means the reveal threshold varies with HEIGHT, which is not a step
+  // function needing separate planes (the shared-material wall that killed the fade, §92.2) but simply
+  // a TILTED plane: f.p - k*y >= c. One plane, one extra term. The bottom leads, the top lags, and k
+  // IS the stagger, derived from the building rather than tuned:
+  //     k = (1 - overlap) * (n - 1) * D / H      D = sweep span along the axis, H = band height
+  // Measured: Hospital (D~100, H~47, n=8) gives k~11.9, a plane 5deg off horizontal; HHS (D~68, H~20,
+  // n=3) gives k~5.4, about 10deg. So the staggered horizontal sweep converges on a near-horizontal
+  // cut with a slight rake — the two axes stop being different shapes at these tilts.
+  // With the rake on there are no per-slot pauses and no band planes: the tilt alone gives every
+  // storey its turn, so the motion never stops. CUT_RAKE_OVERLAP = null disables it and restores the
+  // per-storey banded behaviour with its 1.5s/0.5s slots.
+  // VERDICT 2026-09-13, user, LOCKED: "The rake seems ugly and cheap or done the way i meant. Drop
+  // that for simplicity." Measured on HHS (k=7.14, 8.0deg off horizontal, derived): the mechanism
+  // works but it dissolves the thing the beat is for — at prog 0.34 the card read "Level 2" while the
+  // frame was one diagonal slice through the whole building, and the opening frames were near-empty
+  // because a single sweep spread across the window takes most of the beat to arrive. It also slices
+  // the context city diagonally. The tilt IS what removes the discreteness, so one plane cannot give
+  // overlap AND storey identity. Do not re-enable without a new user ask; the code path stays only so
+  // the finding is reproducible.
+  var CUT_RAKE_OVERLAP = null;
   var SLAB_LEAD_FRAC = 0.35;   // slab completes in the first 35% of the sweep; the rest uses the other 65%
   // §99.8 — the slab class set is DERIVED per building, not a fixed vocabulary: the fleet does not
   // agree on one. The regex is only the seed; _cutBounds asks the DB which of these classes this
@@ -539,7 +560,7 @@ function setupCpeStoreyReveal(A) {
   // they can never disagree. A model with none degrades to storey-mean midpoints and "nothing leads".
   var SLAB_RE = /IfcSlab|IfcFloor|IfcPlate/i;
   var _slabClasses = [];   // the classes this building actually uses, filled by _cutBounds
-  var _axisLatch = null, _boundsLogged = false;
+  var _axisLatch = null, _boundsLogged = false, _rakeLogged = null;
 
   // Per-storey cut boundaries, derived from the SAME list the slots use. The top of storey i is the
   // next storey's elevation; the last storey has no next, so it is extrapolated by the MEDIAN storey
@@ -629,7 +650,7 @@ function setupCpeStoreyReveal(A) {
     var from = si === 0 ? b.base : b.tops[si - 1];
     var to = b.tops[si];
     var k = Math.min(1, vis.u / CUT_RISE_FRAC);          // 0..1 rising, then pinned at 1 = held
-    return { cutZ: from + (to - from) * k, floorZ: from, ceilZ: to, k: k,
+    return { cutZ: from + (to - from) * k, floorZ: from, ceilZ: to, k: k, u: vis.u,
              storey: vis.storey, idx: vis.idx, n: vis.n,
              phase: vis.u < CUT_RISE_FRAC ? 'rise' : 'hold' };
   };
@@ -662,6 +683,49 @@ function setupCpeStoreyReveal(A) {
       }
     }
     var axis = _axisLatch.axis, out;
+    if (CUT_RAKE_OVERLAP != null && CUT_RAKE_OVERLAP > 0) {
+      var rb = _cutBounds();
+      if (rb && rb.plan && typeof A.ifc2three === 'function') {
+        // horizontal sweep direction: the same snapped world axis, so the rake degrades gracefully
+        var rf = new T.Vector3();
+        if (_axisLatch.useX == null) { _axisLatch.useX = Math.abs(fwd.x) >= Math.abs(fwd.z); _axisLatch.sign = _axisLatch.useX ? (fwd.x >= 0 ? 1 : -1) : (fwd.z >= 0 ? 1 : -1); }
+        if (_axisLatch.useX) rf.set(_axisLatch.sign, 0, 0); else rf.set(0, 0, _axisLatch.sign);
+        var H = (rb.tops[rb.tops.length - 1] - rb.base) || 1;
+        var nS = cut.n || 1;
+        // span of the model along rf, from its own bbox corners
+        var zsR = [rb.base, rb.tops[rb.tops.length - 1]];
+        var dLo = null, dHi = null;
+        for (var xr = 0; xr < 2; xr++) for (var yr = 0; yr < 2; yr++) for (var zr = 0; zr < 2; zr++) {
+          var qr = A.ifc2three(xr ? rb.plan.x1 : rb.plan.x0, yr ? rb.plan.y1 : rb.plan.y0, zsR[zr]);
+          var pv = rf.dot(new T.Vector3(qr.x, 0, qr.z));
+          if (dLo === null || pv < dLo) dLo = pv;
+          if (dHi === null || pv > dHi) dHi = pv;
+        }
+        var D = (dHi - dLo) || 1;
+        var k = (1 - CUT_RAKE_OVERLAP) * (nS - 1) * D / H;
+        var nrm = new T.Vector3(rf.x, -k, rf.z);
+        var len = nrm.length() || 1;
+        nrm.multiplyScalar(1 / len);
+        // c sweeps the full range of (rf.p - k*y) over the model, so the plane starts clear of it and
+        // finishes past it. Progress is the WHOLE window, continuous — no per-slot restart.
+        var offR = A.modelOffset ? A.modelOffset.z : 0;
+        var yLo = rb.base - offR, yHi = rb.tops[rb.tops.length - 1] - offR;
+        var cHi = dHi - k * yLo, cLo = dLo - k * yHi;
+        var prog = (cut.idx + cut.u) / nS;
+        var cLead = cHi - (cHi - cLo) * Math.min(1, prog / (1 - 0.15));      // slab runs slightly ahead
+        var cTrail = cHi - (cHi - cLo) * prog;
+        if (_rakeLogged !== cut.idx) {
+          _rakeLogged = cut.idx;
+          console.log('§STOREY_CUT_RAKE k=' + k.toFixed(2) + ' tiltFromHorizontalDeg=' +
+            (Math.atan2(1, k) * 180 / Math.PI).toFixed(1) + ' overlap=' + CUT_RAKE_OVERLAP +
+            ' D=' + D.toFixed(1) + ' H=' + H.toFixed(1) + ' n=' + nS + ' storey="' + cut.storey +
+            '" prog=' + prog.toFixed(3) + ' — one raked plane, no bands, no pauses (§100)');
+        }
+        return { slab: [new T.Plane(nrm.clone(), -cLead / len)],
+                 rest: [new T.Plane(nrm.clone(), -cTrail / len)],
+                 intersection: false, global: [], axisName: _axisLatch.useX ? 'X' : 'Y' };
+      }
+    }
     if (axis === 'Z') {
       // Looking down: one plane, keep everything BELOW the rising cut. Intersection semantics are
       // irrelevant with a single plane. Same plane grid_views.js:195 builds.
@@ -792,7 +856,7 @@ function setupCpeStoreyReveal(A) {
     if (A.renderer) A.renderer.clippingPlanes = [];
     _cutMats.forEach(function (m) { m.clippingPlanes = null; m.clipIntersection = false; m.clipShadows = false; m.needsUpdate = true; });
     console.log('§STOREY_CUT_CLEAR materials=' + _cutMats.length + ' restored');
-    _cutMats = []; _cutSlab = null; _cutRest = null; _cutGlobal = []; _cutArmed = false; _cutAxisLogged = null; _axisLatch = null; _boundsLogged = false;
+    _cutMats = []; _cutSlab = null; _cutRest = null; _cutGlobal = []; _cutArmed = false; _cutAxisLogged = null; _axisLatch = null; _boundsLogged = false; _rakeLogged = null;
   }
 
   // EVERY FRAME (unlike storeyRevealApplyVisual, which is key-gated on the slot): the plane constant
