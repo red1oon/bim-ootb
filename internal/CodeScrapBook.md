@@ -1015,7 +1015,8 @@ none of them is hard.
 ### 16.4 More rows
 
 §17.5 adds rows 7-10 (error handling, cache pins, SQL). Row 7 outranks
-everything above it.
+everything above it. §19.4 adds rows 11-13 (duplication) — all gated on the
+version freeze.
 
 ### 16.5 Closed
 
@@ -1178,7 +1179,97 @@ line (H4) is the one change that stops the pile growing, and it costs nothing.
 
 ---
 
-## 19. Re-measure
+## 19. Refactoring room — measured duplication
+
+> Clone scan over the tree at `719ebb92`, 2026-09-13: comments and blanks
+> stripped, whitespace normalised, 6–7 line sliding windows, cross-file matches
+> only. Observation; nothing changed. **Do this after the version freeze** — every
+> row below touches files that open PRs also touch.
+
+### 19.1 The headline: the test harness, and it already exists
+
+| | |
+|---|---:|
+| files inlining their own static server + browser launch | **345** |
+| files using the shared harness `modeller/tests/e2e_harness.js` | **69** |
+| average boilerplate per inlining file | ~43 lines |
+| **duplicated lines** | **~14,800** |
+
+`modeller/tests/e2e_harness.js` (352 lines) already exports exactly what is
+needed — `serve()` and `runE2E(NAME, body, opts)` — and **69 files already use
+it**. The other 345 each carry their own copy of the same five moves:
+
+```js
+const MIME = { '.html':'text/html', '.js':'text/javascript', … };
+const server = http.createServer((q, r) => {
+  let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/modeller.html';
+  fs.readFile(path.join(VIEWER, p), (e, b) => {
+    if (e) { r.writeHead(404); r.end('404 ' + p); return; }
+    r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || '…' }); r.end(b); }); });
+await new Promise(r => server.listen(0, r)); const port = server.address().port;
+```
+
+By directory: `modeller` 121, `erp` 118, `viewer` 69, root 21.
+
+**This is §15.3 again, and it is the largest instance in the tree.** The shared
+thing was designed, built to 352 lines, adopted 69 times, and stopped. Nothing is
+wrong with it. The tail was never converted.
+
+Related: **two browser drivers run in parallel** — 300 `puppeteer` references and
+284 `playwright`. A shared harness is also where that gets decided once instead
+of per file.
+
+### 19.2 Production duplication — four clean extractions
+
+Smaller, but these are shipping code, and each has an obvious home.
+
+| # | duplicated logic | copies | where it belongs |
+|---|---|---:|---|
+| D1 | **OPFS write path** — `navigator.storage.getDirectory()` → `bim_analysis/` → `bim_project_orders.db` → `createWritable()` → write → close | 4 | `common/` — a `writeAnalysisDb(bytes)`. Files: `viewer/diff.js`, `viewer/find_erp_push.js`, `viewer/schedule_author_ui.js`, `viewer/whatif_panel.js` |
+| D2 | **Pill flyout positioning** — the `_vertical` / `_base` `cssText` block computing a fixed-position flyout from the host rect | 3 | **`common/pill_builder.js` already exists (384 lines)** and is the home. Copies sit in `erp/glassbowl_pills.js`, `erp/idmp_pills.js`, `viewer/panels.js` |
+| D3 | **`_toast(msg)`** — identical 10-line DOM toast | 3 | `common/` — no shared toast exists yet. `erp/erp_pills.js:22`, `erp/glassbowl_pills.js:25`, `erp/idmp_pills.js:27` |
+| D4 | **HR connector bootstrap** — the `_r`/`_g`/`C` require-or-global preamble | 4 | `hr_bim_asset/` — one `_boot.js`. Files: `access.js`, `attendance.js`, `occupancy.js`, `request.js` |
+
+**D2 is the one to note.** The shared module exists, is loaded by the viewer
+already, and three files still carry their own copy of its job. Same shape as
+§19.1 at 1/100th the scale.
+
+### 19.3 What the scan does not say
+
+Honest limits, so these numbers are not over-read:
+
+- **1,350 cross-file 6-line clones** exist in the 402 production files. Most are
+  not refactoring targets — they are idiom (the IIFE preamble, `try`/`catch`
+  around a `dbQuery`, `A.x = A.x || {}`). Only the four in §19.2 were verified
+  by reading them as a unit with a single obvious extraction.
+- The scan is **textual**. Logic duplicated with different variable names does
+  not appear. The real figure is higher, not lower.
+- It **excludes** `viewer/lib/`, minified bundles, and `locales/`.
+
+### 19.4 Register additions
+
+Added to §16.2, unactioned, **all gated on the version freeze**:
+
+| # | observation | recommendation |
+|---|---|---|
+| 11 | **345 files inline a test harness that already exists** (~14,800 lines) | Biggest single win in the tree. Convert per directory, not per file — `modeller` (121) is the natural first batch since the harness lives there. Each converted file must still pass its own witness before the next. |
+| 12 | **Two browser drivers in parallel** — puppeteer 300, playwright 284 | Decide once, inside the harness. Do not chase it file by file. |
+| 13 | **D1–D4: four production extractions**, 14 copies total | Small, safe after the freeze, and D2's home (`common/pill_builder.js`) already exists and is already loaded. |
+
+### 19.5 The pattern under all of it
+
+Every duplication cluster here has a **designed, working, shared version already
+in the tree** — `e2e_harness.js`, `common/pill_builder.js`, `common/` itself.
+None of this is missing abstraction. It is **abstraction that exists and was not
+reached for**, because inlining 43 lines is faster in the moment than finding the
+module that already does it.
+
+Which is the same sentence as §15.3, §16.3 and §18.3, arriving from a fourth
+direction: **the work here is finishing, not designing.**
+
+---
+
+## 20. Re-measure
 
 ```bash
 cd ~/bim-ootb
