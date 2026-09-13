@@ -990,7 +990,7 @@ Ordered by recommended sequence, not severity.
 | 1 | **3 spec blocks cite a witness that does not exist** | `erp/tests/poc_preview_demo.js` → `w_demo.js`; `erp/tests/earn_gw_hospital_actual.js` → `w_hospital_actual.js`; `erp/tests/fixtures/build_preview_demo.js` → `w_demo.js` | **Do first.** Smallest possible unit, and it is the only case in the tree where the spec convention is actively lying. Either write the witness or drop the citation. 98% integrity (§15.3) becomes 100%. |
 | 2 | **Document the three boot owners and the lazy loader** | §16.1 above | **Do second.** Pure documentation, zero risk, and it removes the single most likely wrong conclusion a newcomer can reach ("this file is dead"). |
 | 3 | **36 production phantom fields** — read, never written under any spelling | full list in `internal/APP_SURFACE.md`; e.g. `APP._walkMode`, `viewer/panels.js:1358`, read once, assigned nowhere | Triage, do not bulk-delete. Each is either a dead guard (remove the branch) or a writer that was deleted (restore it — that one is a live bug). Sort into those two piles before touching anything. |
-| 4 | **`A` → `APP` rename** | 63 production files bind `A`; 979 fields invisible to an `APP.` grep (§14) | Agreed in principle. Per module, as the reading exercise, starting with `viewer/scene.js` (606 sites, and where `APP.camera` is born). Reuse the `BINDS_A` gate from `scripts/gen_app_surface.js`. Verify with the index: field and phantom counts must be **identical** before and after a pure rename. |
+| 4 | **`A` → `APP` rename — ★ FIRST TASK OF THE FREEZE SESSION** (red1, 2026-09-13) | 63 production files bind `A`; 979 fields invisible to an `APP.` grep (§14) | Per module, as the reading exercise, starting with `viewer/scene.js` (606 sites, and where `APP.camera` is born). Reuse the `BINDS_A` gate from `scripts/gen_app_surface.js`. **Verification is mechanical:** field count and phantom count in `internal/APP_SURFACE.md` must be **identical** before and after — a pure rename moves neither. Run the module's own witness before starting the next file. |
 | 5 | **`redControl` adoption: 43 of 545 witnesses (8%)** | `witness_kit/contract.js`; the tree's own `WITNESS_CONTRACT_AUDIT.md §RESULTS` (2026-08-24) already found 12+ files omitting the summary line | Highest value, highest cost (§15.5). Do not sweep. Convert a witness when you next touch the thing it guards. Track the ratio with the §17 block as the health metric. |
 | 6 | **`gen_app_surface.js` is regex-based; the string case is still open** | R8 closed self-indexing, R9 closed comments (30 entries). A string literal containing `A.foo =` would still index as a write. Not observed in the tree — **not searched for either** | Either search for it and close the register entry, or swap the scanner to an `acorn` AST walk (~20 lines) which closes R5/R8/R9 and this by construction. The R-rule list is evidence the regex approach keeps finding new leaks. |
 
@@ -1462,45 +1462,88 @@ thread support gains nothing from isolation.
 **That is one `§`-tagged probe, not a project** — and it is the correct next
 step, ahead of both options above.
 
-### 21.5 On "server is dead" and "90% bloat reduction"
+### 21.5 The size claim — corrected twice
 
-**The first claim is sound. The second is not in the tree, and the measurements
-do not support it as stated.**
+> **This section was wrong on first writing, and its replacement was then wrong
+> in the other direction. Both corrections are kept rather than the history
+> deleted.**
 
-Searched `README.md` and `docs/`: **zero occurrences** of "90%" or "bloat". The
-README's actual claim is *serverless, offline, in the same tab* — which is true,
-and is a different axis from payload size.
+**Correction 1 — the claim is sourced.** The section originally said a "90% bloat
+reduction" claim "exists nowhere in the tree and is not supported." The search was
+real but the conclusion was not: it covered `bim-ootb/README.md` and `docs/`,
+while the claim lives in **another repository** — the published paper at
+`red1oon.github.io/BIMCompiler/MigrateComparisonPaper/`. **Absence from one tree
+is not absence.** Three numbers, each measured and dated:
 
-Measured first load of `viewer/viewer.html`:
+| claim | against | method |
+|---|---|---|
+| **36,641 JS LOC / 131 files**, ≈**38.9×** built-so-far · ~19× at conservative full parity | iDempiere's **1,427,147** Java LOC | now pinned — see below |
+| **26.1 MB** SQLite seed AD | **45.2 MB** Postgres dump | `du`/`wc`, 2026-06-06 |
+| **43 MB** SQLite live (925 tables, 187,133 rows) — **3.3×**; gzip 11.7 MB, zstd-19 8.5 MB | **143 MB** Postgres on-disk | `bim-compiler/internal/BLOAT_MEASUREMENT.md` |
+
+That evidence file is the house standard working correctly: it names the
+container, the schema, the migration script, keeps the migrated 43 MB database as
+the witness, and volunteers its own caveats unprompted — *"the whole saving is
+shedding indexes (regenerable) + MVCC/catalog/bloat — NOT data loss"* and *"This
+is delivery/definition size, NOT feature parity."*
+
+**Now re-runnable.** The 2026-06-12 figure (28,184 LOC / 132 files / ≈51×) was
+measured by hand, and a re-check could only reproduce its basis to ±3 files.
+`bim-compiler/scripts/measure_bloat.js` makes the footnote's method executable —
+*dedup union of `build/erp` + `origin/main:erp`, non-lib non-min, tests excluded* —
+and prints one line:
+
+```
+§BLOAT date=2026-09-13 files=131 loc=36641 ratio=38.9x ratio_vs_M=2.9x java=1427147
+```
+
+It reproduces the original basis to **131 against 132**, within one file.
+`tests/witness_bloat_measure.js` proves R1–R6 and carries a **redControl**, so the
+witness can fail. The paper was updated to these figures on 2026-09-13; the
+ratio fell 51× → 38.9× because coverage grew, which the paper's own line already
+predicted (*"the ratio falls as real coverage grows"*).
+
+**Correction 2 — what generated code costs a coder.** The replacement text put
+the comprehension-relevant ratio at **2.9×** (36,641 JS against iDempiere's
+104,940 `M*` code-LOC), reasoning that nobody deliberately reads
+`X_MOrder.java`. **That understates it. Generated code shows up while you
+debug.** Measured in `~/idempiere-dev-setup/idempiere`:
 
 | | |
 |---|---:|
+| `X_*.java` generated classes | 760 |
+| `M*.java` business classes | 582 |
+| **`M*` that extend a generated `X_*`** | **511 (88%)** |
+| `PO.java` at the base of the chain | 6,550 lines |
+
+`MOrder extends X_C_Order extends PO`. Stack frames, step-into, call hierarchy,
+find-references and grep hits all cross generated code. **It is in the path 88%
+of the time, not beside it.**
+
+> **The honest statement is a bounded range, not a number.** 2.9× counts only
+> what you choose to read. 38.9× counts everything shipped. The cost a coder
+> actually pays sits well above 2.9×, because generated code is luggage the
+> tooling carries for you whether or not you open it. Neither bound should be
+> quoted alone — `measure_bloat.js` prints both for exactly this reason.
+
+**What stays out of the claim: payload.** LOC and database footprint are where
+the evidence is. Browser payload is not:
+
+| viewer first load | |
+|---|---:|
 | eager `<script>` tags | 172 |
-| own code | 6.04 MB |
-| vendored (`lib/`, `.min`) | 0.37 MB |
-| **total JS, raw** | **6.41 MB** |
-| **total JS, gzipped (as GH Pages serves it)** | **2.12 MB** |
-| + `web-ifc` and `sqlite` wasm when a model opens | **+1.85 MB** |
+| JS raw | 6.41 MB |
+| **JS gzipped (as GH Pages serves)** | **2.12 MB** |
+| + `web-ifc` / `sqlite` wasm on model open | +1.85 MB |
 
-**2.12 MB over the wire in 172 requests is not a lean-payload story**, and a
-"90% bloat reduction" framing invites a comparison this codebase would lose.
-Alex Russell's performance work (§11.1) would score 6.41 MB of parse-and-execute
-as heavy, not light.
+2.12 MB over the wire in 172 requests is not a lean-payload story, and Alex
+Russell's criteria (§11.1) would score 6.41 MB of parse-and-execute as heavy.
+The paper is right not to go there. **If "bloat" is ever restated loosely, restate
+it as lines and database footprint — what was measured — never as payload.**
 
-**The defensible claim is stronger than the bloat one anyway:**
-
-> Not *"90% smaller"* — **"zero install, zero server, zero seat licence, and it
-> keeps working with the network off."** That is an availability and ownership
-> claim, it is true, it is verifiable by opening a URL, and no competitor
-> disputes it by shipping a smaller bundle.
-
-The payload axis is one this project does not need and should not pick, because
-the opponent there is a native installer that ships 2 GB and is measured once at
-install time, whereas 2.12 MB is measured on every cold visit.
-
-**If a size claim is ever wanted, it must be sourced** — the honest form is a
-measured comparison against a named tool on a named model, with the method
-published, in the style of every other claim here.
+And the roadmap caveat `BLOAT_MEASUREMENT.md` raises on itself: *"browser holds
+SQLite in RAM (sql.js) — ~300 MB needs sharding/streaming, not one tab."* A 1 GB
+Postgres tenant extrapolates to ~300 MB SQLite, past what one tab holds.
 
 ### 21.6 Register additions
 
@@ -1509,7 +1552,9 @@ published, in the style of every other claim here.
 | 17 | **Is `occt-wasm` even built with pthreads?** Unmeasured | **Do this before rows 15, 18 or 19.** One probe. If the answer is no, the whole isolation question is moot. |
 | 18 | **Option A (OCI origin) cannot set COOP/COEP alone** — verified against documented capability, not against the live bucket | One `curl -I` against a served object settles it. Do that before any planning. |
 | 19 | **Option B (SW header injection) is the thesis-preserving route** — `viewer/sw.js` already has the machinery | Scope it with the `COEP: credentialless` variant so the OCI-hosted building DBs keep loading. First load stays un-isolated by design; degrade honestly. |
-| 20 | **A "90% bloat reduction" claim exists nowhere in the tree and is not supported** by the 6.41 MB / 2.12 MB measurement | Do not adopt it. The serverless/offline/no-install claim is true and stronger. Any size claim needs a named comparison and a published method. |
+| 20 | **The LOC ratio is now pinned and the paper updated** — `measure_bloat.js` → `§BLOAT … ratio=38.9x`, paper synced 2026-09-13 (was 51× / 28,184, stale by 3 months) | **Closed, but give it a cadence:** re-run the script before the paper is cited again. `internal/BLOAT_MEASUREMENT.md`'s DB figures are still 2026-06-06 and unverified since. |
+| 21 | **"Bloat" restated as payload would not survive** — 6.41 MB raw / 2.12 MB gzipped over 172 requests | Keep the claim on the two measured axes: lines and database footprint. Do not let it drift into a bundle-size claim in slides. |
+| 22 | **Both bloat ratios must travel together** — 38.9× (all shipped) and 2.9× (`M*` only), with generated code in the debug path 88% of the time | Quote the range, never one bound. The script prints both. |
 
 ---
 
