@@ -1764,7 +1764,125 @@ first and is 8% into the second.*
 
 ---
 
-## 24. Re-measure
+## 24. A reading path — what to study, in order
+
+> For getting hands-on after a long stretch of generated code. Picked for
+> density, not size. ~1,600 lines total, ~700 read closely.
+
+### 24.0 Start here: the `A` → `APP` rename (§16 row 4)
+
+`viewer/scene.js`, 606 `A.` sites — and where `APP.camera` is born. Renaming it
+forces a full read, and the verification is arithmetic, not judgement: field and
+phantom counts in `internal/APP_SURFACE.md` must be **identical** before and
+after. Better than reading five files, because you have to be right about all 606.
+
+### 24.1 `witness_kit/contract.js` — 144 lines. Read first.
+
+Smallest high-value file in the tree. Three constructs a Java reader trips on:
+
+| construct | where | what it is |
+|---|---|---|
+| **closure as private state** | `const spec = {…}` captured by every `api` method | JS's answer to `private` — no keyword, the variable is simply unreachable from outside. *The* idiom; once seen, half the tree reads differently |
+| **chained builder** | `population(fn) { spec._population = fn; return api; }` | the same shape as a Java builder — the bridge from what you know |
+| **typed JSDoc** | `@param {() => object[]} fn` | already written the way `tsc --checkJS` wants (§16 row 16). Shows that gate would cost nothing here |
+
+And it is the `redControl` doctrine — 8% adopted (§15.2). You cannot spread a
+pattern you have not read.
+
+### 24.2 `erp/kernel_ops.js` — read one chain, not the file
+
+`stableStringify` → `_canonicalV2` → `_contentHash` → `commitOp`. Skip the other
+~900 lines on a first pass. That chain is how an operation becomes a hash-chained
+fact — `SHA-256(prev_hash | canonical(op))`.
+
+- **the IIFE module** — `(function () { 'use strict';` — JS's answer to a
+  package, and the reason there is no `import` anywhere (§1)
+- **`Object.keys(v).sort().map(...)`** in `stableStringify` — the functional array
+  pipeline, the biggest daily-idiom gap from Java, here doing something that
+  matters: canonical serialisation so the same op always hashes the same
+- **the idea** — §22's entire argument rests on this file
+
+### 24.3 `erp/ad_parser.js` — 536 lines. Home turf, read last as the reward.
+
+`AD_Table`, `AD_Column`, `AD_Field`, `AD_Tab` — you know these better than any
+reviewer. This does at **run time** what `GenerateModel.java` does at build time
+into 345,490 lines of `X_*`. Reading it with iDempiere in hand makes §22 yours
+rather than someone's assertion.
+
+---
+
+## 25. Witnessing the canvas — the one case `§`-logs cannot reach
+
+> The standing rule *no pixel-derived evidence* (frame diffing and IoU are GIGO)
+> is correct and is **not** relaxed here. This section says what to assert
+> instead, and draws the line precisely.
+
+### 25.1 Why a `§`-log cannot settle a render bug
+
+A `§`-tag proves a code path ran. It cannot prove a triangle landed in the right
+place, and "it rendered" has no honest log line. That is the real gap — not
+tooling, and not discipline.
+
+**But the frame is not the only evidence available.** Everything the rasteriser
+consumes is a number that can be read back and asserted on, *before* a pixel
+exists. Assert on the renderer's **inputs**, not its output.
+
+### 25.2 The tiers — each one a number, each one greppable
+
+| tier | question | mechanism | already in the tree |
+|---|---|---|---|
+| **T0** | is it in the scene, where, and enabled? | `object.matrixWorld`, `geometry.boundingBox`, `.visible`, `.layers` | the 0.000 mm geometry witnesses already work this way |
+| **T1** | is it on screen, and at what coordinate? | `v.clone().project(camera)` → NDC; inside `[-1,1]` = on screen | `cpe_slab_beat.js:125,130,439`, `city.js:1028` |
+| **T2** | is it visible, unoccluded, and is it **this** object? | `Raycaster` from camera through the T1 NDC point; assert the first hit's `guid` | `picking.js`, `hover_name.js`, `grid_drag.js`, `effects.js`, `doc_canvas.js` |
+| **T3** | did the rasteriser actually put something there? | `gl.readPixels(x, y, 1, 1)` at the T1-computed coordinate | `witness_photo_skyline_shadow_frustum.js` |
+| **—** | was it drawn at all this frame? | `renderer.info.render.calls` / `.triangles` delta | referenced in `effects.js:4005`, `scene.js:220` |
+
+**T2 is the foolproof one.** A raycast from the camera through a point derived
+from a known GUID answers *"would this pixel show the door"* using the same
+geometry the renderer uses — and returns a **string to compare**, not an image to
+judge. It fails loudly, it is deterministic, and it needs no screenshot.
+
+### 25.3 The line — why T3 is not the thing the rule forbids
+
+This is the distinction that matters, and it reconciles rather than contradicts
+the standing rule:
+
+> **GIGO is a whole frame compared to another whole frame.** A single pixel read
+> at a coordinate *derived from the model* is a witness.
+>
+> `readPixels` at "where GUID `3xY…` must project given this camera" is an
+> assertion with a stated predicate. An IoU over two PNGs is a similarity score
+> with no predicate at all — which is exactly why it is garbage in, garbage out.
+
+The coordinate is the evidence. If it comes from the model, the pixel is
+admissible. If it comes from the frame, nothing is.
+
+### 25.4 Where none of this reaches — say so rather than fake it
+
+**Shading is genuinely a pixel property.** Wrong colour, wrong light direction,
+wrong material, a bloom that is too strong — no scene-graph read settles those,
+because the output *is* the claim.
+
+For those, do not assert the output. **Assert the input:** the uniform value, the
+light's intensity and position, the material's `.color.getHex()`, the tone-mapping
+exposure. That converts *"does it look right"* into *"is the exposure 1.2"* — a
+narrower claim, honestly stated, and testable.
+
+**And when the claim truly is "does it look right," that is not a bug report —
+it is a judgement, and it needs a human eye.** Asking for a screenshot there is
+correct behaviour, not a failure of the witness system. The error is only asking
+for one when T0–T3 would have answered.
+
+### 25.5 Register additions
+
+| # | observation | recommendation |
+|---|---|---|
+| 23 | **Canvas claims have no witness tier** — the machinery (Raycaster, `.project`, `readPixels`, `renderer.info`) is all in the tree and used in **production code**, but witnesses assert on `§`-logs instead | Add a `witness_kit/render.js` helper exposing `onScreen(guid, cam)`, `visibleHit(guid, cam)` and `drawCalls()`. Same shape as `contract.js`: one place the guarantee lives, so a render claim cannot be made without one. |
+| 24 | **The "no pixel evidence" rule reads as banning all pixels** — it means banning *frame-derived* coordinates | Restate it as §25.3: the coordinate must come from the model. A one-line amendment that unblocks T3 without weakening the rule. |
+
+---
+
+## 26. Re-measure
 
 ```bash
 cd ~/bim-ootb
