@@ -1016,7 +1016,8 @@ none of them is hard.
 
 §17.5 adds rows 7-10 (error handling, cache pins, SQL). Row 7 outranks
 everything above it. §19.4 adds rows 11-13 (duplication) — all gated on the
-version freeze.
+version freeze. §20.5 adds rows 14-16 (WASM duplication, the thread
+ceiling, and the unexplored checkJS gate).
 
 ### 16.5 Closed
 
@@ -1269,7 +1270,115 @@ direction: **the work here is finishing, not designing.**
 
 ---
 
-## 20. Re-measure
+## 20. WebAssembly in this codebase — where it wins, and its ceiling
+
+> Measured 2026-09-13 at `719ebb92`. Scoped to **where WASM is superior**, because
+> a blanket claim would not survive §20.3 — and the case for it is stronger stated
+> narrowly.
+>
+> **A dating note, since it affects planning:** WASM is not new. The MVP shipped in
+> all four major browsers in **March 2017** and became a W3C Recommendation in
+> **December 2019** — older than this codebase by years. What *is* new is
+> §20.4: WasmGC, memory64, JSPI, tail calls.
+
+### 20.1 What is actually running
+
+**11 `.wasm` files, ~30 MB — but only 6 unique binaries.** Five are duplicate
+copies shipped under different paths.
+
+| binary | size | callers | what it is |
+|---|---:|---:|---|
+| `occt-wasm.wasm` | **21.0 MB** | 29 | OpenCASCADE B-rep kernel — the modeller's `ops → mesh` fold |
+| `web-ifc.wasm` | 1.2 MB ×2 | 11 | IFC2x3 / IFC4 parser |
+| `sql-wasm-fts5.wasm` | 1.2 MB ×2 | 6 | SQLite + full-text search |
+| `httpvfs-sql-wasm.wasm` | 1.2 MB | — | SQLite over range-request HTTP |
+| `sql-wasm.wasm` | 0.6 MB ×3 | — | plain SQLite |
+| `planegcs.wasm` | 0.5 MB ×2 | 10 | 2D geometric constraint solver |
+
+### 20.2 Where it is decisively superior
+
+Not "faster JS." **These things cannot be written in JS at all, at any speed.**
+
+- **`occt-wasm` (21 MB)** is OpenCASCADE — decades of B-rep solid modelling
+  (booleans, fillets, chamfers, sweeps) in C++. Reimplementing it in JS is not a
+  performance question; it is a decade of work nobody would repeat.
+- **`planegcs`** is a real constraint solver. **`web-ifc`** is a schema-complete
+  IFC parser. **SQLite** is SQLite.
+
+The superiority is **not the instruction set — it is the library.** WASM's real
+achievement is that thirty years of C and C++ engineering became available inside
+a browser tab with no install. Every ambitious claim this project makes — a B-rep
+authoring kernel, a full ERP over real SQLite, IFC parsed client-side — rests on
+that and on nothing else. **No install + a C++ kernel is a combination only WASM
+offers.** Java applets died; Python in the browser is heavy and marginal.
+
+Secondary and real: **predictable performance.** WASM has no JIT warmup, no
+deopt, no GC pause in the numeric path. For a 98-minute movie bake, consistency
+matters more than peak.
+
+### 20.3 Where it is not superior — including the obvious idea
+
+**Compiling this project's own JS to WASM would be a net loss.** JS semantics —
+dynamic types, prototype chains, GC — mean a JS→WASM compiler must ship a JS
+engine *inside* the WASM. That is what Javy does (QuickJS in WASM, for
+server-side determinism) and it runs **slower** than the browser's own JIT.
+Porffor compiles a subset AOT and is experimental. Neither would speed up
+`panels.js`.
+
+**The browser already compiles to bytecode.** V8 parses to Ignition bytecode and
+JIT-optimises hot paths in TurboFan. There is no portable "ship the bytecode"
+artifact for the web: V8's code cache is engine- and version-locked, so
+precompiling buys nothing and breaks on the next Chrome.
+
+**WASM would not catch this document's defects.** The three receiver spellings
+(§14), the 60 phantom fields, the 15 silenced `§`-tags (§17) are not type errors
+a WASM compile would see. That class needs **static analysis of JS** — `tsc
+--noEmit --checkJS` over the JSDoc types already present in 48 files. A dev-time
+gate, no build step, no runtime change.
+
+> **The division that holds:** WASM for kernels someone else wrote in C++. Static
+> analysis for the JS you wrote. They fix different problems and neither
+> substitutes for the other.
+
+### 20.4 The ceiling — and it is already documented here
+
+`erp/vfs_detect.js:9-12` states it exactly, for storage:
+
+> *"GitHub Pages sets no COOP/COEP → `crossOriginIsolated` is false → IDB-only
+> there. That is a HOSTING reality, not a bug."*
+
+**The same header requirement gates `SharedArrayBuffer`, and therefore WASM
+threads.** The consequence is not recorded anywhere in the tree:
+
+> On the GitHub Pages deploy, **all 30 MB of WASM runs single-threaded** — the
+> 21 MB OpenCASCADE kernel included. Not a tuning problem. A hosting fact, with
+> the same root cause `vfs_detect.js` already handles for OPFS.
+
+Two ways out, both real: serve from an origin that sets COOP/COEP (the OCI base
+in `config.js` already serves building DBs), or accept single-threaded and say so
+in the perf notes. Worth deciding deliberately rather than discovering later.
+
+**What is genuinely new, and what each would mean here:**
+
+| feature | shipped | relevance |
+|---|---|---|
+| **WasmGC** | Chrome 119 / Firefox 120, late 2023 | GC'd languages compile to WASM without shipping their own heap. Makes Java/Kotlin/Dart in the browser practical — the "why not Java" question of §13 has a different answer than it did in 2019 |
+| **memory64** | recent | >4 GB linear memory. A very large IFC currently hits a 32-bit ceiling |
+| **JSPI** | recent | lets synchronous C++ call async JS without blocking — directly relevant to a 21 MB kernel doing I/O |
+| **SIMD** | Chrome 91, 2021 | already available; worth confirming the shipped kernels were built with it |
+| **threads** | requires COOP/COEP | **blocked on this deploy** — see above |
+
+### 20.5 Register additions
+
+| # | observation | recommendation |
+|---|---|---|
+| 14 | **5 duplicate `.wasm` binaries** — 11 files, 6 unique, ~5 MB shipped twice (`sql-wasm.wasm` in 3 places, `web-ifc.wasm` and `sql-wasm-fts5.wasm` in 2 each) | Housekeeping, post-freeze. One copy, referenced by path. Check the service-worker precache list in the same commit. |
+| 15 | **WASM threads unavailable on GH Pages; not recorded** | Document the single-thread ceiling next to `vfs_detect.js`'s note, or move the WASM-heavy surfaces to the COOP/COEP-capable origin. Decide, do not drift. |
+| 16 | **`tsc --noEmit --checkJS` is unexplored** — 2 `@ts-check` pragmas in 1,684 files, 0 tsconfig, typed JSDoc already in 48 | The cheapest large win available: catches §14 and §17's defect classes at author time, touches no running code, needs no build step. |
+
+---
+
+## 21. Re-measure
 
 ```bash
 cd ~/bim-ootb
