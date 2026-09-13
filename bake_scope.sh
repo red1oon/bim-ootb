@@ -25,7 +25,15 @@ if ! command -v systemd-run >/dev/null 2>&1; then
 fi
 
 unit="bake-$$-$(date +%s)"
-props=(-p ManagedOOMMemoryPressure=kill)
+# §91.7 — a scope OUTLIVES its launcher. Measured 2026-09-13: when the harness killed the shell that
+# had launched a bake, the scope and its whole chrome tree kept running (1.15 GB renderer still
+# climbing 22 s later) and had to be reaped by hand. --collect garbage-collects the unit once it
+# stops, and the trap stops the scope on any signal the shell can still catch. A SIGKILL to the
+# launcher cannot be trapped, so the unit name is also recorded where a later cleanup can find it:
+#   systemctl --user list-units --type=scope --plain | grep bake-   # then stop what is stale
+echo "$unit" >> "${TMPDIR:-/tmp}/bake_scope_units.log"
+trap 'systemctl --user stop "$unit.scope" >/dev/null 2>&1 || true' EXIT INT TERM HUP
+props=(--collect -p ManagedOOMMemoryPressure=kill)
 [ -n "${BAKE_MEM_HIGH:-}" ] && props+=(-p "MemoryHigh=$BAKE_MEM_HIGH")
 [ -n "${BAKE_MEM_MAX:-}" ]  && props+=(-p "MemoryMax=$BAKE_MEM_MAX")
 [ -n "${BAKE_SWAP_MAX:-}" ] && props+=(-p "MemorySwapMax=$BAKE_SWAP_MAX")
