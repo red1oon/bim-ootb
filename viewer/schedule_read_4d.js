@@ -260,7 +260,79 @@
     return out;
   }
 
-  var API = { phaseOrder: phaseOrder, readTasks: readTasks, discOfResource: discOfResource, dayNum: dayNum };
+  // ── windowForGuid(db, guid, opts) ───────────────────────────────────────────────────────────
+  // S7 §S7-DO item 1 — the ONLY new engine surface the "when does this get built, on the thing
+  // itself" stage needs. One element's persisted construction window, off the SAME `tasks` ⋈
+  // `task_elements` this file already reads for readTasks — never a second reader, never a
+  // recompute. opts: { scheduleAuthor } — the same override hook readTasks exposes, so a witness
+  // can inject a stub without touching global state.
+  //
+  // Returns { taskId, name, startDate, finishDate, resource, totalFloat, isCritical } or null.
+  // Every field is copied straight off the ONE `tasks` row `task_elements` points the guid at —
+  // nothing here is a join RESULT that got computed, only a row that got LOOKED UP. That is the
+  // §3 "read the twin, don't recompute" doctrine this whole file exists to keep, and the reason
+  // this is not a second copy of `time_machine.js:9106 window.tmJumpToElement(guid)` — that scans
+  // `_ops` and needs Time Machine active + `_ops` loaded; this needs neither, it is a plain SQL read.
+  //
+  // MULTI-TASK GUID: `task_elements`' primary key is (task_id, guid), not guid alone — the schema
+  // permits one guid under more than one task. Checked 2026-09-13 against both real schedules that
+  // exist (Hospital_silent.db, 63,415 task_elements rows; HHS_Office_Federated_silent.db, 6,880
+  // rows): `SELECT guid, COUNT(DISTINCT task_id) ... GROUP BY guid` tops out at 1 in both — it does
+  // not happen today. Because the hover line / #info-4d block this feeds can only render ONE
+  // window, a tie-break is still picked so the function has a defined answer if that ever changes:
+  // earliest `schedule_start`, then `task_id` ascending — "the first real work this element is part
+  // of" — never an arbitrary SQLite row-order pick. Logged via §4D_ON_ELEMENT_MULTI (not silent) so
+  // a future occurrence is visible instead of quietly always resolving the same way for the wrong
+  // reason.
+  function windowForGuid(db, guid, opts) {
+    opts = opts || {};
+    if (!db || !guid) return null;
+    var SA = opts.scheduleAuthor || global.ScheduleAuthor;
+    if (!SA || !SA.activeSchedule) {
+      console.log('§4D_ON_ELEMENT_GATE guid=' + guid + ' reason=no_active_schedule');
+      return null;
+    }
+    var sched = null;
+    try { sched = SA.activeSchedule(db); } catch (e) { sched = null; }
+    if (!sched || !sched.id) {
+      console.log('§4D_ON_ELEMENT_GATE guid=' + guid + ' reason=no_active_schedule');
+      return null;
+    }
+
+    // Scoped to the ACTIVE schedule's own tasks only (t.schedule_id=?), same as readTasks — a
+    // task_elements row left over from a stale/non-active schedule_id must not leak through and
+    // must read as "not in a task" from the active schedule's point of view.
+    var rows = execRows(db,
+      'SELECT t.task_id, t.name, t.schedule_start, t.schedule_finish, t.resource, t.total_float, t.is_critical ' +
+      'FROM task_elements te JOIN tasks t ON t.task_id = te.task_id ' +
+      'WHERE te.guid=? AND t.schedule_id=? ' +
+      'ORDER BY t.schedule_start ASC, t.task_id ASC', [guid, sched.id]);
+    if (!rows || !rows.length) {
+      console.log('§4D_ON_ELEMENT_GATE guid=' + guid + ' reason=guid_not_in_task');
+      return null;
+    }
+    if (rows.length > 1) {
+      console.log('§4D_ON_ELEMENT_MULTI guid=' + guid + ' count=' + rows.length + ' picked=' + rows[0][0]);
+    }
+    var r = rows[0];
+    if (!r[2] || !r[3]) {            // §MI-FLOW blank-start: a real row, just not dated yet
+      console.log('§4D_ON_ELEMENT_GATE guid=' + guid + ' reason=undated task=' + r[0]);
+      return null;
+    }
+    var win = {
+      taskId: r[0], name: r[1] || r[0],
+      startDate: String(r[2]).slice(0, 10), finishDate: String(r[3]).slice(0, 10),
+      resource: r[4], totalFloat: r[5], isCritical: r[6]
+    };
+    console.log('§4D_ON_ELEMENT guid=' + guid + ' task=' + win.taskId + ' start=' + win.startDate +
+      ' finish=' + win.finishDate + ' resource=' + win.resource + ' critical=' + win.isCritical);
+    return win;
+  }
+
+  var API = {
+    phaseOrder: phaseOrder, readTasks: readTasks, discOfResource: discOfResource, dayNum: dayNum,
+    windowForGuid: windowForGuid
+  };
   if (typeof window !== 'undefined') window.ScheduleRead4D = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleRead4D = API;
