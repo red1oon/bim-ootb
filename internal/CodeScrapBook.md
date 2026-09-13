@@ -1666,7 +1666,105 @@ safety back in witnesses — which only became affordable recently, and is only
 
 ---
 
-## 23. Re-measure
+## 23. Rot, measured — the ceiling rose, the floor did not
+
+> Measured 2026-09-13 at `719ebb92` with `git log --diff-filter=A` and
+> `git blame`. Observation; nothing changed.
+
+### 23.1 The claim under test
+
+The working belief is that a no-build JS tree is *"quick to fix and guard"*, and
+that this offsets the safety a compiler would give. §22 accepts the guard half.
+This section tests the **fix** half, because "quick to fix" and "actually fixed"
+are different claims and only one of them is about people.
+
+### 23.2 The decisive measurement
+
+`modeller/tests/e2e_harness.js` — 352 lines, `serve()` and `runE2E()` — was
+created **2026-07-01**. 345 files still inline their own static server instead
+(§19.1). Dating each of those files by when it entered the tree:
+
+| | |
+|---|---:|
+| created **before** the harness existed | 201 |
+| created **after** the harness existed | **144** |
+
+**144 files — 42% of the duplication — were written after the shared version was
+already sitting in the tree.** Newest: `witness_cpe_maxq_status_day_label.js`
+(2026-08-03), `witness_cpe_room_title_collective.js` (2026-08-02),
+`witness_staffage_outside.js` (2026-07-26).
+
+That is not legacy debt awaiting a cleanup. **It is the current rate.**
+
+### 23.3 The same test on the other findings
+
+| finding | evidence | age |
+|---|---|---|
+| `§IFC_WASM_FROM_CACHE` in an empty catch | `import_own.js:267` | line last written **2026-06-18** |
+| `§PLUGIN` ×2, `§SYSTEM` ×2 in empty catches | `plugin_release.js:111,115`, `system_tenant.js:63`, `system_monitor.js:314` | **2026-06-19** |
+| `§TEAMS` in an empty catch | `teams_embed.js:22` | **2026-07-01** |
+| spec block citing a missing witness | `erp/tests/poc_preview_demo.js` | **2026-06-10** |
+| ditto | `erp/tests/earn_gw_hospital_actual.js` | **2026-06-22** |
+| ditto | `erp/tests/fixtures/build_preview_demo.js` | **2026-09-04** |
+
+Every one is minutes of work. The oldest have stood for three months. **And the
+last one is nine days old** — the spec convention was broken again this month, so
+these are not a batch of old mistakes either.
+
+### 23.4 Ceiling and floor
+
+The friction argument is sound in one direction and silent in the other.
+
+> **Low friction raised the ceiling: 19,000 lines in a week, a film computed from
+> a room graph in under a second, a B-rep kernel in a tab. It did not raise the
+> floor: 144 files chose the copy over the module that already existed, after it
+> existed.**
+
+A compiler is a floor. It is not fast, not clever, and cannot be skipped — that
+is its entire contribution. Dropping it removes a constraint on the worst case,
+not on the best one. §22's trade was real; **this is its unpriced half.**
+
+### 23.5 Why it happens — an incentive gradient, not a discipline failure
+
+Worth stating without blame, because blame gets the mechanism wrong.
+
+Inlining 43 lines you can already see costs less **right now** than finding a
+module you would first have to go read. With no imports, no compiler and no
+symbol table (§14), *locating* the shared thing is itself work — and the copy is
+always in front of you. The same property that makes this tree fast to work in
+makes the shared version lose, every time, on a gradient nobody chooses.
+
+Which is why exhortation will not shift it, and why §15.3's sentence keeps
+arriving from new directions: **the patterns are good, and finishing is what
+does not happen.** Not because anyone decided against it — because nothing ever
+made not-finishing cost anything.
+
+### 23.6 What would change it
+
+Only mechanism. Each of these is small, and each converts a good intention into
+something that fails loudly:
+
+| | guard | catches |
+|---|---|---|
+| 1 | a witness that **fails when a new file contains `http.createServer`** and does not require the harness | row 11 — stops the 144 becoming 200 |
+| 2 | a witness that **fails when a `§`-tag's `try` has an empty `catch`** | row 7 — the log that can lie |
+| 3 | `tests/audit_spec_paths.js` **already exists** — extend it to fail on a spec block citing a missing witness | the 3 dangling citations, including this month's |
+| 4 | `internal/APP_SURFACE.md` regenerated in CI, **failing on a phantom-count increase** | new phantom fields, and the §14 rename's own verification |
+
+Note what #3 says about all of this: **the audit family already exists** —
+`tests/audit_script_tags.js`, `audit_specs.js`, `audit_spec_paths.js`,
+`audit_sw_precache.js` and three more. The floor-raising mechanism was built,
+and is itself only partially adopted.
+
+**The one sentence:** *nothing here rots — the tree is young and integrity where
+a convention is applied is 98% (§15.3). What happens instead is that the fix is
+cheap, obvious, agreed, and does not get made, because only a compiler or a
+witness ever makes not-finishing cost something, and this tree traded away the
+first and is 8% into the second.*
+
+---
+
+## 24. Re-measure
 
 ```bash
 cd ~/bim-ootb
