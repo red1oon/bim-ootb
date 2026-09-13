@@ -590,6 +590,22 @@ for one when T0–T3 would have answered.
 
 | # | observation | recommendation |
 |---|---|---|
+| 7 | **15 `§`-tags inside empty catches** — the log can be silently wrong | **Highest priority of anything found.** Not a sweep: these 15 undermine the evidence rule every other finding is verified with. Smallest honest fix is `catch (e) { console.warn('§TAG_FAILED', e); }` so absence and failure stop looking alike. |
+| 8 | **584 empty catches (35.6%)** in 107 files | Do **not** sweep. Triage the 4 concentrations only — `time_machine.js`, `cinema_maxq.js`, `crud_overlay.js`, `navigate_find.js` are 140 of the 584. |
+| 9 | **246 `?v=` refs, hand-maintained, unenforced** | A witness could compare each `?v=` against the file's last-changed commit and fail on a stale pin. Closes a known shipping hazard. |
+| 10 | **`nlp.js` parameterisation is a strength with no test** | One witness asserting user text never reaches `sql`, only `params`, would lock in the good behaviour before someone "simplifies" it. |
+| 11 | **345 files inline a test harness that already exists** (~14,800 lines) | Biggest single win in the tree. Convert per directory, not per file — `modeller` (121) is the natural first batch since the harness lives there. Each converted file must still pass its own witness before the next. |
+| 12 | **Two browser drivers in parallel** — puppeteer 300, playwright 284 | Decide once, inside the harness. Do not chase it file by file. |
+| 13 | **D1–D4: four production extractions**, 14 copies total | Small, safe after the freeze, and D2's home (`common/pill_builder.js`) already exists and is already loaded. |
+| 14 | **5 duplicate `.wasm` binaries** — 11 files, 6 unique, ~5 MB shipped twice (`sql-wasm.wasm` in 3 places, `web-ifc.wasm` and `sql-wasm-fts5.wasm` in 2 each) | Housekeeping, post-freeze. One copy, referenced by path. Check the service-worker precache list in the same commit. |
+| 15 | **WASM threads unavailable on GH Pages; not recorded** | Document the single-thread ceiling next to `vfs_detect.js`'s note, or move the WASM-heavy surfaces to the COOP/COEP-capable origin. Decide, do not drift. |
+| 16 | **`tsc --noEmit --checkJS` is unexplored** — 2 `@ts-check` pragmas in 1,684 files, 0 tsconfig, typed JSDoc already in 48 | The cheapest large win available: catches §14 and §17's defect classes at author time, touches no running code, needs no build step. |
+| 17 | **Is `occt-wasm` even built with pthreads?** Unmeasured | **Do this before rows 15, 18 or 19.** One probe. If the answer is no, the whole isolation question is moot. |
+| 18 | **Option A (OCI origin) cannot set COOP/COEP alone** — verified against documented capability, not against the live bucket | One `curl -I` against a served object settles it. Do that before any planning. |
+| 19 | **Option B (SW header injection) is the thesis-preserving route** — `viewer/sw.js` already has the machinery | Scope it with the `COEP: credentialless` variant so the OCI-hosted building DBs keep loading. First load stays un-isolated by design; degrade honestly. |
+| 20 | **The LOC ratio is now pinned and the paper updated** — `measure_bloat.js` → `§BLOAT … ratio=38.9x`, paper synced 2026-09-13 (was 51× / 28,184, stale by 3 months) | **Closed, but give it a cadence:** re-run the script before the paper is cited again. `internal/BLOAT_MEASUREMENT.md`'s DB figures are still 2026-06-06 and unverified since. |
+| 21 | **"Bloat" restated as payload would not survive** — 6.41 MB raw / 2.12 MB gzipped over 172 requests | Keep the claim on the two measured axes: lines and database footprint. Do not let it drift into a bundle-size claim in slides. |
+| 22 | **Both bloat ratios must travel together** — 38.9× (all shipped) and 2.9× (`M*` only), with generated code in the debug path 88% of the time | Quote the range, never one bound. The script prints both. |
 | 23 | **Canvas claims have no witness tier** — the machinery (Raycaster, `.project`, `readPixels`, `renderer.info`) is all in the tree and used in **production code**, but witnesses assert on `§`-logs instead | Add a `witness_kit/render.js` helper exposing `onScreen(guid, cam)`, `visibleHit(guid, cam)` and `drawCalls()`. Same shape as `contract.js`: one place the guarantee lives, so a render claim cannot be made without one. |
 | 24 | **The "no pixel evidence" rule reads as banning all pixels** — it means banning *frame-derived* coordinates | Restate it as §14.3: the coordinate must come from the model. A one-line amendment that unblocks T3 without weakening the rule. |
 
