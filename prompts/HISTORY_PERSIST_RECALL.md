@@ -5,7 +5,7 @@
 #        user wants: **return to the same building later and recall the history.** Decisions are made;
 #        confirm the two §VERIFY-FIRST items, then implement the §LOCKED spine + witness + PR.
 #        Whitebox §-log is the witness; save every run to a log and READ it before concluding.
-#        Edit shipping code ONLY in /home/red1/bim-ootb/. Honour until ✅ DONE.
+#        Edit shipping code in a /tmp/wt-<feature> worktree, PR to main — the shared tree /home/red1/bim-ootb/ is DENIED by the worktree-enforcement hook (installed 2026-06-06). Honour until ✅ DONE.
 
 ## ▶ INTENT (user, verbatim sense)
 "When we leave a building page to go to the main landing HTML, or to iDempiere, or even close the

@@ -3,12 +3,12 @@
 #        thing the user actually does in a viewing session — ELEMENT_PICK selections — so the bar shows
 #        nothing you did. Fix curation (pick = first-class selection), restore picks read-only, add the
 #        Glassbowl #scrub double-tap-to-chips bloom, re-seat the bar as ONE row directly UNDER the status
-#        bar, and FULLY retire the legacy grid undo. Edit shipping code ONLY in /home/red1/bim-ootb/viewer/.
+#        bar, and FULLY retire the legacy grid undo. Edit viewer code in a /tmp/wt-<feature> worktree, PR to main — the shared tree /home/red1/bim-ootb/ is DENIED by the worktree-enforcement hook (installed 2026-06-06).
 #        Whitebox §-log is the PRIMARY witness; SAVE every run to a log and READ it before any conclusion.
 #        Witness headless (leak-safe, below). Honour until ✅ DONE.
 
 ## ☠ HARD RULES (cost real incidents)
-- Edit shipping code ONLY in `/home/red1/bim-ootb/viewer/`. Whitebox `§`-tagged console.log is PRIMARY;
+- Edit viewer code in a `/tmp/wt-<feature>` worktree, PR to main (the shared tree is hook-DENIED). Whitebox `§`-tagged console.log is PRIMARY;
   Playwright is wiring-only. SAVE every probe run to a log and READ it before concluding.
 - Shared `/home/red1/bim-ootb` tree is DIRTY + other sessions are live in it. Do NOT git switch/stash/
   reset/rebase/pull it. Deploy ONLY via an ISOLATED worktree off origin/main → PR → CI → squash-merge.

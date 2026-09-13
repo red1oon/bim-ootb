@@ -6,7 +6,7 @@
 #        log and READ it before any conclusion. Witness headless (leak-safe, below). Until ✅ DONE.
 
 ## ☠ HARD RULES (cost real incidents)
-- Edit shipping code ONLY in `/home/red1/bim-ootb/viewer/`. Whitebox `§`-tagged console.log is the
+- Edit viewer code in a `/tmp/wt-<feature>` worktree, PR to main (the shared tree is hook-DENIED). Whitebox `§`-tagged console.log is the
   PRIMARY witness; Playwright is wiring-only. SAVE every probe run to a log and READ it before concluding.
 - Shared `/home/red1/bim-ootb` tree is DIRTY + other sessions are live in it. Do NOT git switch/stash/
   reset/rebase/pull it. Deploy ONLY via an ISOLATED worktree: `git fetch origin && git worktree add -b
