@@ -1882,7 +1882,90 @@ for one when T0–T3 would have answered.
 
 ---
 
-## 26. Re-measure
+## 26. The handover header — what carries a session across a renewal
+
+> Reference implementation: `bim-compiler/prompts/MEP_CLASH_REVEAL_MOVIE.md`
+> (5,968 lines, marked *"second hand-off"*, 2026-09-13). Read 2026-09-14.
+> Observation; the bim-ootb prompts are **not** being retrofitted to this — see
+> §26.4.
+
+### 26.1 Why this one file is the exception
+
+Every other section of this document records the same shape: a convention
+invented rigorously and adopted partially (§15.3). **This file inverts it.** The
+convention is invented *and* fully applied.
+
+The reason is not discipline. It is that in this lane **hand-offs actually
+happen**, so the cost of not maintaining the header is paid immediately and by
+the same person. Everywhere else, not-finishing costs nothing — which is §23's
+finding arriving from the opposite side, and the strongest evidence in this
+document that the fix is never exhortation.
+
+### 26.2 The template — six blocks
+
+Consolidated from what that file does. A spec header (§5) says what a file *is*;
+a handover header says where the **work** is. They are different documents and
+should not be merged.
+
+| block | answers | worked example from the reference |
+|---|---|---|
+| **STATE** | where is this *now*, and where is the code? | one dated paragraph + § refs; then worktree `/tmp/wt-storey-cut`, branch `feat/storey-section-cut`, base `7833b639`, commits `f3d36dda`/`9a02db1c`, rake still uncommitted, **nothing pushed, no PR** |
+| **START** | what do I read first, and what will kill me? | *"New session, in this order: 1–5"*, with the trap at #1 — §91.4 *before running any bake*, because three consecutive sessions died on 2026-09-13 |
+| **LOCKED** | what must I not relitigate? | *"no tint, no fade, no darkening, no lit edge, no rake, clash/Sanity layers stay on"* — plus pre-derived constants (Hospital `0.9077..0.9590`, Terminal `0.7252..0.8390`, HHS `0.6877..0.7674`) so nothing is re-measured |
+| **OPEN** | what is unfinished, and **what is unverified?** | *"STILL OPEN, none started: …"* and, critically, per-item verification status — *"§100's rake is the newest and is **UNJUDGED on frames**"* |
+| **PRACTICE** | what is true of this lane regardless of the current bug? | §59.6, explicitly *"not tied to any one bug"*: canonical DB `~/Downloads/<Name>_silent.db`, verify by `md5sum`, canonical invocation bare `--db --out --gpu real` |
+| **UPKEEP** | how does this file stay readable? | archive pointers with line counts and contents, and the self-executing rule — *"do that again on sight, don't wait to be asked"* |
+
+Copyable skeleton:
+
+```
+# ⚠ DO NOT REMOVE — <lane>. Read the log after every run.
+#   Archives: <file> (§a-§b, N lines). Consolidate on sight past ~2,400 lines.
+**ONE-LINE STATE (<date>, <nth> hand-off):** <where it is, § refs>.
+  Code: worktree <path>, branch <name>, base <sha>, commits <shas>, <what is uncommitted/unpushed>.
+**New session, in this order:** 1. <the trap>  2. <the constants>  3. <the live work>  4. <rulings>  5. <still open>
+**LOCKED:** <settled verdicts — do not relitigate>
+**OPEN / UNVERIFIED:** <item> — <status: not started | built but UNJUDGED on X>
+**PRACTICE (not tied to one bug):** <canonical inputs, canonical invocation>
+```
+
+### 26.3 What this replaces
+
+An earlier sketch in this session proposed a four-line preamble — SCOPE, PRIME
+RULE, FALSIFIER, HONOUR-until-DONE. **Wrong shape.** That is a spec header, and
+the code tree already has 559 of them. None of it survives a session boundary,
+because none of it says where the work stopped.
+
+The **OPEN / UNVERIFIED** block is also a better instrument than the proposed
+FALSIFIER line. A falsifier states what *would* disprove a claim; *"built but
+UNJUDGED on frames"* states that nobody has looked yet — which is the precise
+condition under which a returning session (or an assistant) reports something as
+done. §25.4's rule lives here: when the claim needs a human eye, say so in the
+header rather than discovering it a round later.
+
+### 26.4 Adoption — deliberately not retrofitted
+
+**No bim-ootb prompt is being converted to this.** Measured 2026-09-14: the
+`⚠ DO NOT REMOVE` marker is in **41 of 42** prompt files, but the content is not
+a template — "read the §-log" appears in **5**, PRIME RULE in **6**,
+HONOUR-until-DONE in **6**, a named witness in **10**, a falsifier in **1**.
+Imposing a sixth pattern across 42 files at 2% adoption is precisely the
+overthinking §16's rows exist to avoid.
+
+**Let it converge instead.** The blocks above earn their place the first time a
+lane survives a real hand-off; a lane that never hands off does not need them.
+The one prompt that needed this invented it unprompted — which is the only
+adoption mechanism this document has seen actually work.
+
+What *was* repaired (2026-09-14, PR #1719): five stale lines in four prompt files
+instructing `Edit shipping code ONLY in /home/red1/bim-ootb/` — the exact action
+the worktree hook has denied since 2026-06-06. Those were not a missing
+convention; they were an active trap, three months old, costing a wasted round to
+every session that obeyed them.
+
+---
+
+## 27. Re-measure
 
 ```bash
 cd ~/bim-ootb
