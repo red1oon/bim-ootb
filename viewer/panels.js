@@ -8,6 +8,10 @@
 // Implementing S265_UI_AESTHETICS.md §Implementation — Witness: W-PANEL
 var ICONS = {
   clock:     { svg: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', trl: 'ui_tt_tm', key: 'T', desc: 'Time Machine' },
+  // S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 4) — Lucide "calendar" verbatim, distinct from clock
+  // (Time Machine) above: this pill is the data-gated indicator that THIS building carries a
+  // persisted 4D schedule (hover/click already read it — see hover_name.js/find_erp_push.js).
+  calendar:  { svg: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>', trl: null, key: null, desc: '4D Construction Window' },
   ruler:     { svg: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>', trl: 'ui_tt_measure', key: null, desc: 'Measure' },
   search:    { svg: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', trl: 'ui_tt_find', key: null, desc: 'Find' },
   share:     { svg: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', trl: 'ui_tt_share', key: null, desc: 'Share' },
@@ -1403,6 +1407,26 @@ function setupPanels(A) {
       { id: 'bbox',       name: 'Bounding Boxes',  key: null, pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
       { id: 'tm',         name: 'Time Machine',    key: 't', pill: false, icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
         children: [ { name: 'Gantt timeline' }, { name: 'Author 4D schedule (✎)' }, { name: 'What-if (slip a phase)' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
+      // S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 4) — DATA-GATED like whwalk/hbaFM above (starts
+      // pill:false; a poll below flips it on ONLY when ScheduleAuthor.activeSchedule(A.db) resolves
+      // a real schedule — "no data -> no icon, no clutter", same rule as hba_lens.js's family pill
+      // and S2's own §TM_VAR_GATE). Per §S7-DATA-REALITY the icon is ABSENT on every published
+      // building until ✎ Author has run — that is correct, not a bug (W-S7-GATE). The window itself
+      // renders automatically on hover (hover_name.js) and on pick (#info-4d, find_erp_push.js
+      // _show4DWindow) — this icon is a discoverability cue, not a required step, so its tap just
+      // surfaces the currently-open info panel / a one-line hint rather than opening a new panel
+      // (§S7-NOT-DOING rules out a second pop-up).
+      { id: 'sched4d',    name: '4D Window',      pill: false, icon: I.calendar.svg,
+        fn: function() {
+          var box = document.getElementById('info-4d');
+          if (box && box.style.display !== 'none') {
+            var ipnl = document.getElementById('info-panel'); if (ipnl) ipnl.style.display = 'block';
+          } else if (A.status) {
+            A.status.textContent = 'Construction window: hover or click any element to see its scheduled task, dates and trade.';
+          }
+          console.log('§4D_PILL_TAP shown=' + !!(box && box.style.display !== 'none'));
+        },
+        children: [ { name: 'Task name + start→finish beside the picked element' }, { name: 'Trade + float, critical-path marker' }, { name: 'One extra line on hover' }, { name: 'Shown only when this building has an authored schedule' } ] },
       { id: 'section',    name: 'Section Cut',     key: 'x', pill: false, icon: I.scissors.svg, fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; },
         children: [ { name: 'Y axis (vertical)' }, { name: 'X axis (lateral)' }, { name: 'Z axis (depth)' }, { name: 'Slider 0–100%' }, { name: 'Bookmarks' } ] },
       // PILL_DRAWER_REORGANIZATION.md §1 Visual FX — absorbed into the Palette (sunglass) panel.
@@ -2277,7 +2301,7 @@ function setupPanels(A) {
     // absorbed into a drawer or Help/Settings-only — still present here so Settings' pill editor
     // and any localStorage-order migration have a stable position for them).
     var _defaultOrder = ['save','open','navigate','inspect','palette','camview','share','settings','help',
-      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','roleFilter','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk'];
+      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','roleFilter','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk','sched4d'];
 
     // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
     var _mainPill = PillBuilder({
@@ -2292,6 +2316,28 @@ function setupPanels(A) {
     window._syncPillHighlights = _mainPill.sync;
     window.toggleMobilePill = _mainPill.toggle;
     window._mainPillActions = _mainPill.actions; // §S281: exposed for Help panel dynamic merge
+
+    // S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 4) — DATA-GATE poll for the 'sched4d' pill, mirroring
+    // wh_walk.js's own poll (both eager-loaded modules, both flip `.pill` on window._mainPillActions
+    // then call A._buildPill()). Unlike wh_walk/hba_lens this does NOT need to wait on guidMap/
+    // streaming — ScheduleAuthor.activeSchedule() is a single query against the sql.js db the
+    // building already loaded with, so it can resolve as soon as A.db exists. One-shot (matches the
+    // existing convention): evaluated once at the FIRST building this session loads, same limitation
+    // wh_walk/hba_lens already carry (a mid-session building switch does not re-probe).
+    (function () {
+      var _tries = 0, _poll = setInterval(function () {
+        _tries++;
+        if (!A || !A.db) { if (_tries > 240) clearInterval(_poll); return; }
+        clearInterval(_poll);
+        var SA = window.ScheduleAuthor;
+        var has = false;
+        try { has = !!(SA && SA.activeSchedule && SA.activeSchedule(A.db) && SA.activeSchedule(A.db).id); } catch (e) { has = false; }
+        var acts = window._mainPillActions || [];
+        for (var i = 0; i < acts.length; i++) { if (acts[i].id === 'sched4d') acts[i].pill = has ? undefined : false; }
+        if (A._buildPill) A._buildPill();
+        console.log('§4D_PILL_GATE has_schedule=' + has);
+      }, 500);
+    })();
 
     // §S282: Shortcut audit — cross-check key props vs scene.js _shortcuts at init
     setTimeout(function() {
