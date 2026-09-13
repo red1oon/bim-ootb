@@ -509,13 +509,37 @@ function setupCpeStoreyReveal(A) {
   // footprint (L1 = 98.6x90.3 m), so the failure mode is removed rather than tuned around.
   // NON-INVENT: the cut elevations are `A.storeyRevealList()`'s own AVG(center_z) per storey — the
   // same rows the slots are built from — and the scene conversion is the one grid_views.js:193 uses.
-  var CUT_RISE_FRAC = 0.75;   // §92.6 UNSETTLED (1.5s per level vs whole sweep): the plane rises over
-                              // this much of a slot, then HOLDS on the slab for the rest. At the
-                              // current 1.25s slot that is 0.94s rising + 0.31s held.
+  // §98 (user, settled): "X or Y storey by storey reverse section cut in 1.5s, then .5s pause, then
+  // the next upper storey does the axis section reverse cut." So a slot is SWEEP + PAUSE = 2.0s and
+  // the split is 0.75. NOTE: that lands as literally 1.5s/0.5s only when the fitted slot IS 2.0s;
+  // today the window is sized by STOREY_REVEAL_WINDOW_SEC=10 (effects.js:8078) so HHS's slot is
+  // 1.92s -> 1.44s/0.48s. Making it exact needs the window sized as n x CUT_SLOT_SEC, which is a
+  // change in effects.js, not here.
+  var CUT_SWEEP_SEC = 1.5, CUT_PAUSE_SEC = 0.5;
+  var CUT_RISE_FRAC = CUT_SWEEP_SEC / (CUT_SWEEP_SEC + CUT_PAUSE_SEC);
   var CUT_PITCH_DEG = 25;     // §94.4: steeper than this and the camera is looking DOWN, where a
                               // horizontal cut exposes floor plates. Shallower and it sees facades,
                               // where a horizontal cut shows nothing — take the camera-facing one.
-  var _cutPlane = null, _cutMats = [], _cutArmed = false, _cutAxisLogged = null, _cutLogIdx = null;
+  var _cutSlab = null, _cutRest = null, _cutGlobal = [], _cutMats = [], _cutArmed = false, _cutAxisLogged = null, _cutLogIdx = null;
+  // §98.1 (user: "HHS was starting on one axis when it switched to another. Perhaps it just persist?
+  // ... the angle became sharper but it is still consistent and that is more important optics").
+  // The axis decision is LATCHED for the whole window. Both halves of it were being recomputed every
+  // frame — the Z-vs-XY pitch test and the world X-vs-Y snap — so a camera that rotates during the
+  // beat flipped the cut 90deg mid-sweep. Consistency beats picking the locally-better angle, and a
+  // latched axis also keeps the sweep direction from reversing if the camera crosses the diagonal.
+  // §99.1 (user: "the floor slab to cut first too ... this lends to visual cognition well") — within
+  // a storey's sweep the SLAB leads and everything else follows, so the floor plate lands first and
+  // the rest of the storey builds onto a ground the eye can already read. Separable because the batch
+  // bucket key carries ifcClass (streaming.js:2210, §BATCH_BUCKET_CLASS_PAINT), so a BatchedMesh holds
+  // exactly one class and its material can take its own plane.
+  var SLAB_LEAD_FRAC = 0.35;   // slab completes in the first 35% of the sweep; the rest uses the other 65%
+  // §99.8 — the slab class set is DERIVED per building, not a fixed vocabulary: the fleet does not
+  // agree on one. The regex is only the seed; _cutBounds asks the DB which of these classes this
+  // model actually carries, and both the band boundaries and the material split use that same set so
+  // they can never disagree. A model with none degrades to storey-mean midpoints and "nothing leads".
+  var SLAB_RE = /IfcSlab|IfcFloor|IfcPlate/i;
+  var _slabClasses = [];   // the classes this building actually uses, filled by _cutBounds
+  var _axisLatch = null, _boundsLogged = false;
 
   // Per-storey cut boundaries, derived from the SAME list the slots use. The top of storey i is the
   // next storey's elevation; the last storey has no next, so it is extrapolated by the MEDIAN storey
@@ -527,12 +551,30 @@ function setupCpeStoreyReveal(A) {
     for (var i = 1; i < list.length; i++) gaps.push(list[i].z - list[i - 1].z);
     gaps.slice().sort(function (a, b) { return a - b; });
     var med = gaps[gaps.length >> 1] || 1;
-    // `z` is AVG(center_z) — a storey's MID-HEIGHT, not its slab. Cutting at the next storey's mean
-    // would rest the plane halfway up the floor above instead of on the slab between them, so the
-    // boundary is the MIDPOINT of two adjacent means: a derived ESTIMATE of the slab level, labelled
-    // as such (same convention the stat card's footprint estimate already uses). If frames show the
-    // plane slicing mid-storey, the refinement is a real MIN(center_z-bbox_z/2) IfcSlab query per
-    // storey — not a tuning constant.
+    // §99.4 — THE BOUNDARY IS THE REAL SLAB, not the midpoint of two storey means. §94.2 predicted
+    // this refinement would be needed if frames showed the plane slicing mid-storey; the user saw
+    // worse than that ("The top roof came first before the storey in it"), and the data says why.
+    // Measured on HHS: Level 1's band by midpoint ran 0.74..4.30, while Level 2's floor slab sits at
+    // 3.50..3.98 — INSIDE Level 1's band. Since slabs lead (§99.1), the storey above's floor slab
+    // arrived first and capped Level 1 from above. Real slab bottoms are Level 1 -0.21, Level 2 3.50,
+    // Level 3 7.00, Roof 10.59, so banding on them puts each storey's own slab at the FLOOR of its
+    // band and the slab above in the NEXT band, which is what "storey by storey" means.
+    var slabBottom = {};
+    _slabClasses = [];
+    try {
+      // Which classes actually carry this building's plates? Ask the DB, do not assume a vocabulary.
+      var cls = A.dbQuery("SELECT DISTINCT ifc_class FROM elements_meta WHERE ifc_class IS NOT NULL") || [];
+      cls.forEach(function (r) { if (SLAB_RE.test(String(r[0]))) _slabClasses.push(String(r[0])); });
+      if (_slabClasses.length) {
+        var marks = _slabClasses.map(function () { return '?'; }).join(',');
+        var sb = A.dbQuery(
+          "SELECT m.storey, MIN(t.center_z - t.bbox_z/2.0) FROM elements_meta m " +
+          "JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class IN (" + marks + ") " +
+          "AND m.storey IS NOT NULL AND m.storey NOT IN ('','Unknown') GROUP BY m.storey",
+          _slabClasses) || [];
+        sb.forEach(function (r) { if (r[1] != null) slabBottom[String(r[0])] = +r[1]; });
+      }
+    } catch (eSB) { slabBottom = {}; }
     // The LAST top must clear the real model, not an extrapolation. Measured on Hospital: the top
     // storey's mean is 200.40 while the model reaches 203.65, so `z + med/2` = 202.66 would leave the
     // final ~1 m of parapet and roof plant permanently sliced off at the window's end — the beat would
@@ -543,12 +585,34 @@ function setupCpeStoreyReveal(A) {
       var tr = A.dbQuery('SELECT MAX(center_z + bbox_z/2.0) FROM element_transforms');
       if (tr && tr.length && tr[0][0] != null) top = +tr[0][0];
     } catch (eT) { top = null; }
-    var tops = [];
+    // Horizontal extent, for the XY sweep's depth span (§96.4 fix). Same one cached query shape.
+    var plan = null;
+    try {
+      var hr = A.dbQuery('SELECT MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y) FROM element_transforms');
+      if (hr && hr.length && hr[0][0] != null) plan = { x0: +hr[0][0], x1: +hr[0][1], y0: +hr[0][2], y1: +hr[0][3] };
+    } catch (eH) { plan = null; }
+    var tops = [], usedSlab = 0, usedMid = 0;
     for (var j = 0; j < list.length; j++) {
-      if (j + 1 < list.length) tops.push((list[j].z + list[j + 1].z) / 2);
-      else tops.push(Math.max(list[j].z + med / 2, top == null ? -Infinity : top));
+      if (j + 1 < list.length) {
+        var nb = slabBottom[list[j + 1].name];
+        if (nb != null) { tops.push(nb); usedSlab++; }
+        else { tops.push((list[j].z + list[j + 1].z) / 2); usedMid++; }   // fallback: no slab on that storey
+      } else {
+        tops.push(Math.max(list[j].z + med / 2, top == null ? -Infinity : top));
+      }
     }
-    return { list: list, tops: tops, base: list[0].z - med / 2, med: med, modelTop: top };
+    // The base is this storey's OWN slab bottom where we know it, so the first band opens on its plate.
+    var base0 = slabBottom[list[0].name];
+    if (base0 == null) base0 = list[0].z - med / 2;
+    if (!_boundsLogged) {
+      _boundsLogged = true;
+      console.log('§STOREY_CUT_BOUNDS base=' + base0.toFixed(2) + ' tops=[' +
+        tops.map(function (t) { return t.toFixed(2); }).join(',') + '] fromSlab=' + usedSlab +
+        ' fromMidpointFallback=' + usedMid +
+        ' slabClasses=[' + _slabClasses.join(',') + ']' +
+        ' (§99.4 — real slab bottoms, not storey-mean midpoints; classes derived from this DB, §99.8)');
+    }
+    return { list: list, tops: tops, base: base0, med: med, modelTop: top, plan: plan };
   }
 
   // PURE (§ the file's own one-function/two-callers rule) — the cut state for a film fraction.
@@ -565,97 +629,211 @@ function setupCpeStoreyReveal(A) {
     var from = si === 0 ? b.base : b.tops[si - 1];
     var to = b.tops[si];
     var k = Math.min(1, vis.u / CUT_RISE_FRAC);          // 0..1 rising, then pinned at 1 = held
-    return { cutZ: from + (to - from) * k, storey: vis.storey, idx: vis.idx, n: vis.n,
+    return { cutZ: from + (to - from) * k, floorZ: from, ceilZ: to, k: k,
+             storey: vis.storey, idx: vis.idx, n: vis.n,
              phase: vis.u < CUT_RISE_FRAC ? 'rise' : 'hold' };
   };
 
-  // Which plane this camera can actually read (§94.4). Returns a THREE.Plane already positioned.
-  function _cutPlaneFor(cutZ) {
+  // Which plane set this camera can actually read (§94.4), and how to combine them (§96.4).
+  // Returns { planes: [...], intersection: bool } — never a bare plane, because the eye-level case
+  // needs three.
+  function _cutPlanesFor(cut) {
     var T = window.THREE, cam = A.camera;
     if (!T || !cam) return null;
-    var cutY = cutZ - (A.modelOffset ? A.modelOffset.z : 0);
+    var off = A.modelOffset ? A.modelOffset.z : 0;
     var tgt = A.controls && A.controls.target ? A.controls.target : null;
     var fwd = new T.Vector3();
     if (tgt) fwd.subVectors(tgt, cam.position).normalize();
     else cam.getWorldDirection(fwd);
     var pitchDeg = Math.asin(Math.max(-1, Math.min(1, -fwd.y))) * 180 / Math.PI;
-    var axis, plane;
-    if (pitchDeg >= CUT_PITCH_DEG) {
-      // Looking down: keep everything BELOW cutY. Same plane grid_views.js:195 builds.
-      axis = 'Z';
-      plane = new T.Plane(new T.Vector3(0, -1, 0), cutY);
+    if (!_axisLatch) {
+      // §99.9 — axis OVERRIDE, for comparing the two on the same camera without editing code:
+      //   window.__storeyCutAxis = 'XY' | 'Z'   (anything else, or unset, derives it from pitch)
+      // The open question it exists to answer is whether a vertical cut also reads under an OVERHEAD
+      // rig; if it does, the Z branch has no reason to exist and this becomes a fixed choice.
+      var forced = (typeof window !== 'undefined' && window.__storeyCutAxis) || null;
+      var derived = pitchDeg >= CUT_PITCH_DEG ? 'Z' : 'XY';
+      _axisLatch = { axis: (forced === 'XY' || forced === 'Z') ? forced : derived,
+                     forced: (forced === 'XY' || forced === 'Z') ? forced : null,
+                     derived: derived, pitchAtLatch: pitchDeg };
+      if (_axisLatch.axis === 'XY') {
+        _axisLatch.useX = Math.abs(fwd.x) >= Math.abs(fwd.z);
+        _axisLatch.sign = _axisLatch.useX ? (fwd.x >= 0 ? 1 : -1) : (fwd.z >= 0 ? 1 : -1);
+      }
+    }
+    var axis = _axisLatch.axis, out;
+    if (axis === 'Z') {
+      // Looking down: one plane, keep everything BELOW the rising cut. Intersection semantics are
+      // irrelevant with a single plane. Same plane grid_views.js:195 builds.
+      // slab leads, rest follows (§99.1): two cut heights from the same slot progress
+      var kL = Math.min(1, cut.k / SLAB_LEAD_FRAC);
+      var kR = Math.max(0, (cut.k - SLAB_LEAD_FRAC) / (1 - SLAB_LEAD_FRAC));
+      var zFrom = cut.floorZ, zTo = cut.ceilZ;
+      var cutY = (zFrom + (zTo - zFrom) * kL) - off;
+      var cutYr = (zFrom + (zTo - zFrom) * kR) - off;
+      out = { slab: [new T.Plane(new T.Vector3(0, -1, 0), cutY)],
+              rest: [new T.Plane(new T.Vector3(0, -1, 0), cutYr)],
+              intersection: false, global: [], axisName: null };
     } else {
-      // Eye level: a horizontal cut is invisible from here (§94.4). Sweep a VERTICAL plane along the
-      // camera's own forward axis instead, keeping what is FARTHER than the sweep depth — the
-      // building peels open toward the viewer. Depth is carried by the same rise/hold fraction, so
-      // the beat's timing is identical; only the axis changes.
-      axis = 'XY';
-      var f = new T.Vector3(fwd.x, 0, fwd.z);
-      if (f.lengthSq() < 1e-9) f.set(0, 0, 1);
-      f.normalize();
-      // Map the storey ladder's own span onto view depth so the sweep covers the model, not a guess.
+      // Eye level (§96.4). A depth sweep alone peels the WHOLE building open, which is a fine section
+      // but is not a storey reveal — the card would name one level while three are on screen. Fix:
+      // peel only INSIDE the named storey's own band and leave the rest of the building solid, using
+      // UNION semantics (clipIntersection = true, already used in this build at navigate_find.js:1818
+      // for §ROOM-CLIP). Keep a point if it is beyond the sweep OR above the storey's ceiling OR
+      // below its floor — so within the band only what is past the sweep survives, and outside the
+      // band nothing is touched.
+      var axisName = null;
+      // §98 — PER STOREY, not one sweep across the building. For the storey in this slot:
+      //   storeys ABOVE it are hidden outright, the storey itself sweeps in from the far face toward
+      //   the camera, and every storey BELOW is already solid. That is
+      //      keep = (y <= ceil) AND ( (y <= floor) OR (f.p >= d) )
+      //   which is an AND over an OR, so it cannot be one plane array in either mode. THREE's two
+      //   clipping levels express it exactly: renderer.clippingPlanes is ALWAYS intersected with the
+      //   material's, so the ceiling goes global and the (floor OR sweep) pair goes on the material
+      //   with clipIntersection = true. Nothing else in this viewer sets the global array.
+      // §96.9 (user): snap to ONE world axis — "just X or Y depending on angle of cam" — rather than
+      // the camera-forward diagonal. DB X/Y map to scene x/z (the loader's axis swap sends iy -> -z).
+      var f = new T.Vector3();
+      if (_axisLatch.useX) f.set(_axisLatch.sign, 0, 0); else f.set(0, 0, _axisLatch.sign);
+      axisName = _axisLatch.useX ? 'X' : 'Y';
       var b = _cutBounds();
-      var span = b ? (b.tops[b.tops.length - 1] - b.base) : 0;
-      var prog = b ? (cutZ - b.base) / (span || 1) : 0;
-      var tgtDepth = tgt ? f.dot(new T.Vector3(tgt.x, 0, tgt.z).sub(new T.Vector3(cam.position.x, 0, cam.position.z))) : span;
-      var d = tgtDepth + span / 2 - span * prog;         // far side -> toward the camera
-      plane = new T.Plane(f.clone(), -(f.dot(new T.Vector3(cam.position.x, 0, cam.position.z)) + d));
+      var lo = null, hi = null;
+      if (b && b.plan && typeof A.ifc2three === 'function') {
+        var zs = [b.base, b.tops[b.tops.length - 1]];
+        for (var xi = 0; xi < 2; xi++) for (var yi = 0; yi < 2; yi++) for (var zi = 0; zi < 2; zi++) {
+          var q = A.ifc2three(xi ? b.plan.x1 : b.plan.x0, yi ? b.plan.y1 : b.plan.y0, zs[zi]);
+          var pr = f.dot(new T.Vector3(q.x, 0, q.z));
+          if (lo === null || pr < lo) lo = pr;
+          if (hi === null || pr > hi) hi = pr;
+        }
+      }
+      if (lo === null) { lo = f.dot(new T.Vector3(cam.position.x, 0, cam.position.z)); hi = lo + 100; }
+      // PER-SLOT k (not cumulative): each storey runs its own full far->near sweep, then holds for
+      // the pause while the next storey waits its turn. d = hi hides the storey; d = lo completes it.
+      var kL2 = Math.min(1, cut.k / SLAB_LEAD_FRAC);
+      var kR2 = Math.max(0, (cut.k - SLAB_LEAD_FRAC) / (1 - SLAB_LEAD_FRAC));
+      var d = hi - (hi - lo) * kL2;          // slab: leading plane (the edge rides this one)
+      var dRest = hi - (hi - lo) * kR2;      // everything else: trailing
+      var floorY = cut.floorZ - off, ceilY = cut.ceilZ - off;
+      // perpendicular horizontal extent, from the same 8 projected corners
+      var pa = null, pbb = null;
+      if (b && b.plan && typeof A.ifc2three === 'function') {
+        var perp = new T.Vector3(-f.z, 0, f.x);
+        var zs2 = [b.base, b.tops[b.tops.length - 1]];
+        for (var xj = 0; xj < 2; xj++) for (var yj = 0; yj < 2; yj++) {
+          var qq = A.ifc2three(xj ? b.plan.x1 : b.plan.x0, yj ? b.plan.y1 : b.plan.y0, zs2[0]);
+          var pp = perp.dot(new T.Vector3(qq.x, 0, qq.z));
+          if (pa === null || pp < pa) pa = pp;
+          if (pbb === null || pp > pbb) pbb = pp;
+        }
+      }
+      out = { slab: [new T.Plane(new T.Vector3(0, -1, 0), floorY), new T.Plane(f.clone(), -d)],
+              rest: [new T.Plane(new T.Vector3(0, -1, 0), floorY), new T.Plane(f.clone(), -dRest)],
+              intersection: true,
+              global: [new T.Plane(new T.Vector3(0, -1, 0), ceilY)],  // storeys above: not yet
+              axisName: axisName };
     }
-    if (_cutAxisLogged !== axis) {
-      _cutAxisLogged = axis;
+    var _logKey = axis + '/' + (out.axisName || '-');
+    if (_cutAxisLogged !== _logKey) {
+      _cutAxisLogged = _logKey;
       console.log('§STOREY_CUT_AXIS axis=' + axis + ' pitchDeg=' + pitchDeg.toFixed(1) +
-        ' threshold=' + CUT_PITCH_DEG + ' — ' + (axis === 'Z'
+        (out.axisName ? ' worldAxis=' + out.axisName : '') +
+        ' latchedAtPitch=' + _axisLatch.pitchAtLatch.toFixed(1) +
+        (_axisLatch.forced ? ' FORCED=' + _axisLatch.forced + ' (derived would be ' + _axisLatch.derived + ')' : '') +
+        ' threshold=' + CUT_PITCH_DEG + ' planes=' + out.slab.length + ' slabLead=' + SLAB_LEAD_FRAC +
+        ' clipIntersection=' + out.intersection + ' — ' + (axis === 'Z'
           ? 'camera looks down, horizontal cut exposes floor plates'
-          : 'camera near eye level, horizontal cut would be invisible; sweeping toward the viewer'));
+          : 'camera near eye level; full-depth section sweeping toward the viewer (§96.6)'));
     }
-    return plane;
+    return out;
+  }
+
+  // The class of a mesh or a (single-class) batch, for the slab/rest split.
+  function _meshClass(o) {
+    if (o.userData && o.userData.ifcClass) return o.userData.ifcClass;
+    var meta = A._batchMeta && A._batchMeta[o.id];
+    return (meta && meta.length && meta[0].ifcClass) || '';
   }
 
   // Arm ONCE per window (§94.3): walk the materials and attach the plane. Per frame we only mutate
   // plane.normal/constant, so there is no material walk and no needsUpdate in the frame loop.
-  function _armCut(plane) {
+  function _armCut(set) {
     if (_cutArmed) return;
-    _cutPlane = plane;
+    _cutSlab = set.slab; _cutRest = set.rest;
+    _cutGlobal = set.global || [];
+    if (A.renderer) A.renderer.clippingPlanes = _cutGlobal;   // ALWAYS intersected with the material's
     _cutMats = [];
     var seen = (typeof Set !== 'undefined') ? new Set() : null;
-    function take(m) {
+    var nSlab = 0, nRest = 0;
+    A.collectMeshes(function (o) { return o.isMesh || o.isBatchedMesh; }).forEach(function (o) {
+      var m = o.material;
       if (!m || Array.isArray(m) || (seen && seen.has(m))) return;
       if (seen) seen.add(m);
-      m.clippingPlanes = [_cutPlane];
+      var isSlab = false;
+      try {
+        var mc = _meshClass(o);
+        isSlab = _slabClasses.length ? _slabClasses.indexOf(mc) >= 0 : SLAB_RE.test(mc);
+      } catch (eC) { isSlab = false; }
+      m.clippingPlanes = isSlab ? _cutSlab : _cutRest;
+      m.clipIntersection = set.intersection;
       m.clipShadows = true;
       m.needsUpdate = true;
       _cutMats.push(m);
-    }
-    A.collectMeshes(function (o) { return o.isMesh || o.isBatchedMesh; }).forEach(function (o) { take(o.material); });
+      if (isSlab) nSlab++; else nRest++;
+    });
     _cutArmed = true;
-    console.log('§STOREY_CUT_ARM materials=' + _cutMats.length +
+    console.log('§STOREY_CUT_ARM materials=' + _cutMats.length + ' slab=' + nSlab + ' rest=' + nRest +
+      ' leadFrac=' + SLAB_LEAD_FRAC +
       ' (one clippingPlanes assignment per distinct material; per-frame cost is a constant update only)');
   }
 
   function _clearCut() {
     if (!_cutArmed) return;
-    _cutMats.forEach(function (m) { m.clippingPlanes = null; m.clipShadows = false; m.needsUpdate = true; });
+    if (A.renderer) A.renderer.clippingPlanes = [];
+    _cutMats.forEach(function (m) { m.clippingPlanes = null; m.clipIntersection = false; m.clipShadows = false; m.needsUpdate = true; });
     console.log('§STOREY_CUT_CLEAR materials=' + _cutMats.length + ' restored');
-    _cutMats = []; _cutPlane = null; _cutArmed = false; _cutAxisLogged = null;
+    _cutMats = []; _cutSlab = null; _cutRest = null; _cutGlobal = []; _cutArmed = false; _cutAxisLogged = null; _axisLatch = null; _boundsLogged = false;
   }
 
   // EVERY FRAME (unlike storeyRevealApplyVisual, which is key-gated on the slot): the plane constant
   // moves continuously, so this cannot ride the slot key.
   A.storeyRevealApplyCut = function (plan, tNorm) {
+    try { _applyCutInner(plan, tNorm); } catch (e) {
+      if (!_cutFailWarned) {
+        _cutFailWarned = true;
+        console.log('§STOREY_CUT_FAIL ' + (e && e.message) + ' | stack: ' + String(e && e.stack).split('\n').slice(0, 4).join(' <- '));
+      }
+      throw e;
+    }
+  };
+  var _cutFailWarned = false;
+  function _applyCutInner(plan, tNorm) {
     if (!plan) { _clearCut(); return; }
     var cut = A.storeyRevealCutAt(plan, tNorm);
     if (!cut) { _clearCut(); return; }
-    var plane = _cutPlaneFor(cut.cutZ);
-    if (!plane) return;
-    if (!_cutArmed) _armCut(plane);
-    else { _cutPlane.normal.copy(plane.normal); _cutPlane.constant = plane.constant; }
+    var set = _cutPlanesFor(cut);
+    if (!set) return;
+    // A change of axis changes the PLANE COUNT and the combine mode, so it must re-arm, not update.
+    if (_cutArmed && (_cutSlab.length !== set.slab.length ||
+        _cutGlobal.length !== (set.global || []).length)) _clearCut();
+    if (!_cutArmed) _armCut(set);
+    else {
+      for (var i = 0; i < set.slab.length; i++) {
+        _cutSlab[i].normal.copy(set.slab[i].normal); _cutSlab[i].constant = set.slab[i].constant;
+        _cutRest[i].normal.copy(set.rest[i].normal); _cutRest[i].constant = set.rest[i].constant;
+      }
+      var g = set.global || [];
+      for (var j = 0; j < g.length && j < _cutGlobal.length; j++) {
+        _cutGlobal[j].normal.copy(g[j].normal); _cutGlobal[j].constant = g[j].constant;
+      }
+    }
     if (_cutLogIdx !== cut.idx) {
       _cutLogIdx = cut.idx;
       console.log('§STOREY_CUT storey="' + cut.storey + '" slot=' + (cut.idx + 1) + '/' + cut.n +
         ' cutZ=' + cut.cutZ.toFixed(2) + ' phase=' + cut.phase + ' riseFrac=' + CUT_RISE_FRAC +
         ' (boundary=midpoint of adjacent AVG(center_z) — a labelled slab-level ESTIMATE, §94.2)');
     }
-  };
+  }
 
   A.storeyRevealApplyVisual = function (plan, tNorm) {
     // plan===null is the FORCED restore (every bake/preview exit path, including the throw path).
