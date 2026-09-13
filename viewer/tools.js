@@ -1618,6 +1618,7 @@ function setupTools(A) {
         });
         A._nightGlowMats = null;
         A._nightGlowMatKeys = null;
+        A._nightGlowMatsDimmed = null;   // §118 — or a later re-arm would think it had already run
       }
       // Restore day
       if (A._nightSaved) {
@@ -1807,6 +1808,8 @@ function setupTools(A) {
     var visPos = allPos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
     var camPos = A.camera.position;
     var needed;
+    if (typeof _sclLast === 'undefined') var _sclLast = null;   // §115 dedupe
+    if (typeof _ilOffLast === 'undefined') var _ilOffLast = null;  // §116 dedupe
     // §NIGHT_STILL_BOOST_GATE_FIX (2026-08-08): A._nightStillBoost is set true ONCE at init and
     // never reset — it's a static "is the still-boost feature enabled" flag (effects.js reads it
     // the same way, correctly, to decide whether Alt+S is ALLOWED to raise the cap). Reading it
@@ -1872,6 +1875,60 @@ function setupTools(A) {
       // with an EMPTY `already` set here — behaviourally identical to the inline code it replaces —
       // so the bake top-up and navigation cannot drift into two different selection rules.
       needed = _nightPickNearest(visPos, A._nightMaxLights, []).map(function(p) { return { pos: p }; });
+    }
+    // ══ §115 STOREY-REVEAL LIGHT GATE (2026-09-13, user: "Lighting should not be on own, not grouped
+    // with storeys as their appearance clutters") ═══════════════════════════════════════════════
+    // The interior fixtures are gated by the BUILDUP schedule (§NIGHT_BUILDUP_GATE, right below) but
+    // never by the storey reveal, so through the whole closing beat every storey's lights burn at
+    // once — MEASURED `poolLit=200` on every frame of Hospital's window — while the cut has removed
+    // the geometry they belong to. The result is pools of light hanging in empty air above the cut,
+    // which is the clutter. A PointLight is not a mesh, so cpe_storey_reveal.js never sees it: its
+    // clipping planes and its per-object visibility both apply to meshes alone. Gate the SELECTION
+    // instead, on the one number the reveal already computes — the ceiling it is cutting at.
+    // A fixture lights with the storey it sits in, and not before.
+    // §116 — the absolute rule, ahead of §115's per-storey cap: from the last stick onward there are
+    // no interior fixture lights at all. The camera is outside and climbing by then.
+    // §118 — the fixture MESHES glow by emissive material (§NIGHT_MODE ... glowMats=N), which is a
+    // light source with no PointLight and no sprite behind it. Held at 0 while the interior lights
+    // are off, and put back to the stored original the moment they are not.
+    if (A._nightGlowMats && !(typeof window !== 'undefined' && window.__noEmisGate)) {
+      var _want = A._interiorLightsOff ? 0 : 1;
+      // Act only on a REAL transition. Without the `!= null` test the first frame of every film ran
+      // the restore branch, writing each material's original emissive back onto itself and setting
+      // needsUpdate — two pointless shader recompiles mid-film, logged under a tag that read OFF
+      // while the lights were on. Measured on a Hospital clip entirely BEFORE the last stick.
+      if (A._nightGlowMatsDimmed !== _want &&
+          !(_want === 1 && A._nightGlowMatsDimmed == null)) {
+        A._nightGlowMatsDimmed = _want;
+        A._nightGlowMats.forEach(function (g) {
+          if (_want) { g.mat.emissive.setHex(g.origE); g.mat.emissiveIntensity = g.origEI; }
+          else { g.mat.emissive.setHex(0x000000); g.mat.emissiveIntensity = 0; }
+          g.mat.needsUpdate = true;
+        });
+        console.log((_want ? '§INTERIOR_LIGHTS_ON' : '§INTERIOR_LIGHTS_OFF') +
+          ' glowMats=' + A._nightGlowMats.length + ' emissive -> ' + (_want ? 'restored' : '0') +
+          ' (§118 — the emissive fixture materials are a light source of their own)');
+      }
+    }
+    if (A._interiorLightsOff && needed && needed.length) {
+      if (_ilOffLast !== needed.length) {
+        _ilOffLast = needed.length;
+        console.log('§INTERIOR_LIGHTS_OFF pointLights ' + needed.length + ' -> 0' +
+          ' (§116 — from beats.out to the end of the film; supersedes the §115 per-storey cap)');
+      }
+      needed = [];
+    }
+    if (needed && needed.length && A._storeyCutCeilY != null) {
+      var _preCut = needed.length;
+      needed = needed.filter(function (f) { return f.pos && f.pos.y <= A._storeyCutCeilY; });
+      if (_sclLast !== _preCut + '/' + needed.length) {
+        _sclLast = _preCut + '/' + needed.length;
+        console.log('§STOREY_CUT_LIGHT_GATE ceilY=' + A._storeyCutCeilY.toFixed(2) +
+          ' fixturesLitBefore=' + _preCut + ' after=' + needed.length +
+          ' droppedAboveCut=' + (_preCut - needed.length) +
+          ' (§115 — a fixture lights with the storey it belongs to; above the cut its geometry is' +
+          ' not there and neither is its light)');
+      }
     }
     // §NIGHT_BUILDUP_GATE witness (2026-09-05) — deduped so navigation doesn't spam a line per
     // frame; logs whenever any of the three counts changes. Invariant asserted every time:

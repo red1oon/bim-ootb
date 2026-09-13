@@ -36,6 +36,11 @@ function setupCpeStoreyReveal(A) {
   // generalized past exactly 5 storeys since real buildings rarely have exactly 5 (Hospital has 8
   // countable levels once Ceiling/TOS pseudo-storeys are excluded — see storeyRevealList below).
   var COLORS = [0x2979ff, 0x00c853, 0xffd600, 0xff6d00];   // blue, green, yellow, orange
+  // §108 — the tint (and the clash-marker hide that travelled with it) is OFF. §93 measured why it
+  // could not carry this beat and §98 replaced it with the section cut; the locked verdict is "no
+  // tint ... clash/Sanity layers stay on". The code path is left intact behind this one flag so the
+  // §93 measurements stay reproducible, and so the restore path can never be orphaned.
+  var STOREY_REVEAL_TINT = false;
   var EMOJI  = ['🔵', '🟢', '🟡', '🟠'];  // 🔵 🟢 🟡 🟠
   // Fade in/out fraction of each storey's own slot — same shape as cpe_resource_panel.js's
   // A.bigStatsAt fade (`min(u,1-u)/0.12`), slightly wider here because a slot can be sub-second
@@ -51,6 +56,11 @@ function setupCpeStoreyReveal(A) {
   // blue cycle originally asked for). Dropped from the TOP, per the user's own "forego top floors":
   // the lower storeys are the ones the camera has actually been inside during the film.
   var MIN_SLOT_SEC = 1.0;
+  // §103.2 — a band carrying below this fraction of the MEDIAN band's DOOR count is a pseudo storey.
+  // 0.10 sits in a wide measured gap on both fleet buildings: Hospital's occupied storeys run
+  // 56-114 doors (median 64.5, so the line is at 6.45) against Level 6's 5, Level 7A's 0 and
+  // Level 7's 1; HHS runs 34-43 (line at 3.65) against Roof Level's 0. Nothing sits near the line.
+  var PSEUDO_FRAC = 0.10;
   // Fraction of each storey's slot the tint is actually LIT (the rest is the dark rest phase above).
   var LIT_FRAC = 0.72;
 
@@ -89,13 +99,14 @@ function setupCpeStoreyReveal(A) {
     var rows = [];
     try {
       rows = A.dbQuery(
-        "SELECT m.storey, AVG(COALESCE(t.center_z,0)) FROM elements_meta m " +
+        "SELECT m.storey, AVG(COALESCE(t.center_z,0)), COUNT(*), " +
+        "SUM(CASE WHEN m.ifc_class='IfcDoor' THEN 1 ELSE 0 END) FROM elements_meta m " +
         "JOIN element_transforms t ON t.guid=m.guid " +
         "WHERE m.storey IS NOT NULL AND m.storey NOT IN ('','Unknown') " +
         "AND m.storey NOT LIKE '% Ceiling' AND m.storey NOT LIKE '% TOS' " +
         "GROUP BY m.storey");
     } catch (e) { rows = []; }
-    var all = (rows || []).map(function (r) { return { name: String(r[0]), z: +r[1] }; });
+    var all = (rows || []).map(function (r) { return { name: String(r[0]), z: +r[1], n: +r[2] || 0, doors: +r[3] || 0 }; });
     all.sort(function (a, b) { return a.z - b.z; });
     var declared = null;
     try {
@@ -120,6 +131,79 @@ function setupCpeStoreyReveal(A) {
     } else {
       _list = all;
       note = ' (spatial_structure declares no IfcBuildingStorey — no cross-check, pre-§60.1 behaviour)';
+    }
+    // §103 (user, 2026-09-13): "Group pseudo storeys into real storeys to reduce passes." A plant
+    // deck / partial roof level is a declared IfcBuildingStorey, so §60.1's cross-check keeps it and
+    // it buys a whole 2.0s pass to reveal ~100 elements. DERIVED, not a name list: a band carrying
+    // less than PSEUDO_FRAC of the MEDIAN band's element count is not a storey the eye reads as one,
+    // so it is ABSORBED into the nearest real storey BELOW it — the group keeps the lower storey's
+    // name (what the stat card names) and its members ride that storey's sweep.
+    // Measured 2026-09-13: Hospital counts [8485,6364,10578,11470,7940,1487,155,114], median 7152 —
+    // Level 7A (155 = 2.2%) and Level 7 (114 = 1.6%) absorb into Level 6, 8 passes -> 6. Level 6
+    // (1487 = 20.8%) is well clear and stays its own pass. HHS [1505,1783,1427] — nothing absorbs,
+    // the rule is a no-op there, which is the check that it is not tuned to one building.
+    if (_list.length > 1) {
+      // §103.2 (user, 2026-09-13): "I suspect 0 doors is the pseudo floor thus has to combine with
+      // another." Right, and doors are a much sharper predicate than element count — a storey people
+      // occupy has doors; a plant deck or roof does not. MEASURED on both fleet buildings, and the
+      // gap is not marginal: Hospital's occupied storeys carry 56/73/88/96/114 doors while Level 6
+      // carries 5, Level 7A 0 and Level 7 1; HHS carries 34/39/43 against Roof Level's 0. Element
+      // count could not see Level 6 at all (1,487 elements = 20.8% of median, comfortably "real"),
+      // which is exactly the floor the user spotted on the card. Same median-fraction shape as
+      // before, applied to doors.
+      var _ns = _list.map(function (x) { return x.doors; }).slice().sort(function (a, b) { return a - b; });
+      var _med = _ns.length % 2 ? _ns[(_ns.length - 1) / 2] : (_ns[_ns.length / 2 - 1] + _ns[_ns.length / 2]) / 2;
+      if (_med > 0) {
+        // §103.1 (user, 2026-09-13): "Since roof is highly visible, it can be accepted as a last
+        // single pass." The TRAILING run of pseudo bands is the roof/plant deck — the most visible
+        // thing in the silhouette — so it is NOT absorbed downward. It becomes ONE final pass of its
+        // own, however many thin bands it contains. Only INTERIOR pseudo bands absorb into the storey
+        // below them, where nothing is lost to the eye. Hospital: Level 7A + Level 7 are the trailing
+        // run, so 8 passes -> 7, the last being the roof; HHS has no pseudo band at all and is
+        // untouched, which is the check that the rule is derived rather than fitted to one model.
+        var _tail = _list.length;
+        while (_tail > 0 && (_list[_tail - 1].doors / _med) < PSEUDO_FRAC) _tail--;
+        var roofRun = (_tail > 0 && _tail < _list.length) ? _list.slice(_tail) : [];
+        var body = roofRun.length ? _list.slice(0, _tail) : _list;
+        var grouped = [], absorbed = [];
+        body.forEach(function (st) {
+          var isPseudo = (st.doors / _med) < PSEUDO_FRAC;
+          if (isPseudo && grouped.length) {                 // nothing below to absorb into = keep it
+            var host = grouped[grouped.length - 1];
+            host.absorbs = (host.absorbs || []).concat([st.name]);
+            host.zTop = st.z;                                // the group now reaches this band's height
+            absorbed.push(st.name + '(' + st.doors + ' doors=' + (100 * st.doors / _med).toFixed(1) + '% of median)');
+          } else grouped.push(st);
+        });
+        if (roofRun.length) {
+          var roof = { name: roofRun[0].name, z: roofRun[0].z,
+                       n: roofRun.reduce(function (a, x) { return a + x.n; }, 0), isRoofPass: true };
+          if (roofRun.length > 1) {
+            roof.absorbs = roofRun.slice(1).map(function (x) { return x.name; });
+            roof.zTop = roofRun[roofRun.length - 1].z;
+          }
+          grouped.push(roof);
+          console.log('§STOREY_REVEAL_ROOF_PASS bands=[' +
+            roofRun.map(function (x) { return x.name + '(' + x.doors + ' doors,' + x.n + ' elements)'; }).join(',') +
+            '] elements=' + roof.n + ' keptAsOneFinalPass name="' + roof.name +
+            '" (§103.1 — the roof is the most visible band in the silhouette, so it gets its own' +
+            ' pass instead of being absorbed downward)');
+        }
+        if (absorbed.length || roofRun.length) {
+          console.log('§STOREY_REVEAL_GROUP medianDoors=' + _med + ' pseudoFrac=' + PSEUDO_FRAC +
+            ' passes=' + _list.length + '->' + grouped.length +
+            ' absorbedDownward=[' + (absorbed.join(',') || 'none') + ']' +
+            ' roofPass=' + (roofRun.length ? roofRun.length + ' band(s) kept as the last pass' : 'none') +
+            ' groups=[' + grouped.map(function (g) {
+              return g.name + (g.absorbs ? '+{' + g.absorbs.join(',') + '}' : '');
+            }).join(',') + '] (§103 — derived from element counts, not a name list)');
+          _list = grouped;
+        } else {
+          console.log('§STOREY_REVEAL_GROUP medianDoors=' + _med + ' pseudoFrac=' + PSEUDO_FRAC +
+            ' passes=' + _list.length + ' absorbed=none (every band is >= ' + (100 * PSEUDO_FRAC) +
+            '% of the median — no pseudo storey in this building)');
+        }
+      }
     }
     _listKey = key;
     console.log('§STOREY_REVEAL_LIST n=' + _list.length +
@@ -179,20 +263,126 @@ function setupCpeStoreyReveal(A) {
   // DEGRADE, DON'T DISABLE: with no durationSec on the plan (an older cached plan) the window's real
   // seconds are unknowable, so the full list is used unchanged — the previous behaviour, never a
   // silent empty sequence. Logged once per (plan, list) so a truncation is never invisible.
-  var _fitLogged = null;
+  var _fitLogged = null, _slotSec = 0, _fitted = null, _slotBounds = null, _drawn = null, _drawnOrder = [];
+  var _fitMemo = null, _fitMemoKey = null;   // §119 — the fit is per (list, window), not per frame
   function _fitList(plan, sr) {
     var full = A.storeyRevealList();
     if (!full.length) return full;
     var winSec = (plan && plan.durationSec > 0) ? sr.windowFrac * plan.durationSec : 0;
     if (!(winSec > 0)) return full;
-    var room = Math.max(1, Math.floor(winSec / MIN_SLOT_SEC));
-    var out = (full.length > room) ? full.slice(0, room) : full;
+    // §104 (user, 2026-09-13): "Too fast, mandatory 1.5s to reveal each storey." The fit used to pack
+    // storeys in at MIN_SLOT_SEC=1.0, so Hospital's 12.04s window split 8 ways into 1.51s slots whose
+    // SWEEP was only 0.75 x 1.51 = 1.13s. The slot budget is now the real one — CUT_SWEEP_SEC +
+    // CUT_PAUSE_SEC = 2.0s — so a storey that is shown is shown at full speed or not at all.
+    // EPSILON, not decoration: effects.js sizes the window as groups x 2.0s, but it arrives here as
+    // windowFrac x durationSec and comes back 11.99987 for a 12.00s window — a bare floor() then says
+    // 5 slots and truncates the top group off a window that was sized precisely to hold it.
+    var room = Math.max(1, Math.floor(winSec / (CUT_SWEEP_SEC + CUT_PAUSE_SEC) + 1e-6));
+    // §106 (user, 2026-09-13): "Floor slabs after the ground one goes along with its storey it's
+    // supporting. 1. Ground floor slab. 2. 1st storey. 3. Floor slab together with its 2nd storey..."
+    // A slab supports the storey ABOVE it, and §99.2 already bands from real slab bottoms, so every
+    // slab from the 2nd up arrives with the storey it carries. The GROUND slab is the exception: it
+    // supports Level 1 and has nothing below it, so it gets a pass of its own at the front and
+    // Level 1's own pass then lays the storey onto a plate the eye has already read. One extra slot.
+    // §119 — MEMOIZE. _fitList is called from storeyRevealVisualAt, i.e. EVERY FRAME, and everything
+    // below it (the weights, _slotBounds, the clone of the list, §109's _drawn flags and the
+    // §STOREY_REVEAL_SLOTS line) was being rebuilt each time: 1,460 duplicate log lines on one
+    // 414-frame clip, and _drawn reset every frame so §109's "already drawn" flag could never fire.
+    // The fit depends only on (list, window), so compute it once per key and hand back the same array.
+    var _memoKey = full.length + '|' + winSec.toFixed(4) + '|' + (full[0] && full[0].name);
+    if (_fitMemo && _fitMemoKey === _memoKey) return _fitMemo;
+    var storeyRoom = Math.max(1, room - 1);
+    var out = (full.length > storeyRoom) ? full.slice(0, storeyRoom) : full;
+    out = [{ name: full[0].name, z: full[0].z, n: full[0].n, doors: full[0].doors, isGroundSlab: true }].concat(out);
+    // §107 (user, 2026-09-13: "This gives more time slots to each storey not to rush, is needs > 2s
+    // due to its qty") — the slots are no longer equal. A storey's sweep is scaled by HOW MUCH
+    // ARRIVES in it, against the median storey, and floored at CUT_SWEEP_SEC so 1.5s stays the
+    // minimum rather than the target. The ground-slab pass carries only its plate, so it takes the
+    // floor. Weights come from the same element counts §103's grouping already reads — derived.
+    var _cnt = out.map(function (e) { return e.isGroundSlab ? 0 : (e.n || 0); }).filter(function (x) { return x > 0; }).sort(function (a, b) { return a - b; });
+    var _cMed = _cnt.length ? (_cnt.length % 2 ? _cnt[(_cnt.length - 1) / 2] : (_cnt[_cnt.length / 2 - 1] + _cnt[_cnt.length / 2]) / 2) : 0;
+    // §110 (user, 2026-09-13: "Make each slab+storey reveal to enjoy as much slot time as it helps
+    // in cinematic effect") — the base sweep is no longer pinned at the 1.5s FLOOR. It is SOLVED from
+    // the window the film can afford: take the pauses off the top, divide what is left by the sum of
+    // the quantity weights, and let every slot breathe at that rate. Clamped to [CUT_SWEEP_SEC,
+    // CUT_SWEEP_MAX] so 1.5s stays the guaranteed minimum (§104) and no single storey can sit long
+    // enough to stall the beat.
+    out.forEach(function (e) { e.qtyRatio = (_cMed > 0 && !e.isGroundSlab) ? (e.n || 0) / _cMed : 1; });
+    // §120 — CLAMP PER SLOT, THEN SOLVE. The first version clamped the BASE to
+    // [CUT_SWEEP_SEC, CUT_SWEEP_MAX] and multiplied each slot by its weight afterwards, so a heavy
+    // storey got base x ratio and escaped the ceiling entirely, while the rescale that made the sum
+    // fit pushed the light ones under §104's mandatory floor. Hospital and HHS both sit near ratio
+    // 1.0 and never showed it; Terminal measured sweeps of 5.83s (ceiling 3.0) and 1.37s (floor 1.5)
+    // in the same window. Every slot is now clamped INDIVIDUALLY, and the base is solved so the
+    // clamped total fits — bisection, because the clamps make the total a non-linear function of the
+    // base. The floor is never traded away: if even an all-floor fit is too long the slot count is
+    // what gives (the §104 rule), not the speed.
+    var _forPauses = out.length * CUT_PAUSE_SEC;
+    function _totalAt(base) {
+      var t = 0;
+      for (var i = 0; i < out.length; i++) {
+        t += Math.max(CUT_SWEEP_SEC, Math.min(CUT_SWEEP_MAX, base * out[i].qtyRatio));
+      }
+      return t + _forPauses;
+    }
+    var _base;
+    if (_totalAt(CUT_SWEEP_MAX) <= winSec) _base = CUT_SWEEP_MAX;      // everything can breathe
+    else if (_totalAt(CUT_SWEEP_SEC) >= winSec) _base = CUT_SWEEP_SEC; // already at the floor
+    else {
+      var _lo = CUT_SWEEP_SEC, _hi = CUT_SWEEP_MAX;
+      for (var _it = 0; _it < 40; _it++) {
+        var _mid = (_lo + _hi) / 2;
+        if (_totalAt(_mid) > winSec) _hi = _mid; else _lo = _mid;
+      }
+      _base = _lo;
+    }
+    out.forEach(function (e) {
+      e.sweepSec = Math.max(CUT_SWEEP_SEC, Math.min(CUT_SWEEP_MAX, _base * e.qtyRatio));
+      e.slotSec = e.sweepSec + CUT_PAUSE_SEC;
+    });
+    var _wantSec = out.reduce(function (a, e) { return a + e.slotSec; }, 0);
+    // The plan's window is what it is; if it came back short of what the weights want, everything
+    // scales down together and the 1.5s floor is reported as missed rather than silently broken.
+    // §120 — the residual scale only ever SHRINKS, and only when the floor fit is still too long for
+    // the window the plan handed back. It is reported, never silent.
+    var _scale = _wantSec > 0 ? Math.min(1, winSec / _wantSec) : 1;
+    _slotBounds = []; var _acc = 0;
+    out.forEach(function (e) {
+      e.slotSec *= _scale; e.sweepSec = Math.min(e.sweepSec * _scale, e.slotSec);
+      _acc += e.slotSec; _slotBounds.push(_acc / winSec);
+    });
+    _slotBounds[_slotBounds.length - 1] = 1;
+    // §109 (user, 2026-09-13: "Use good array flags to mark once drawn") — one flag per slot, set the
+    // first time that slot is entered. A slot that is entered a SECOND time after another slot has
+    // run in between is a real defect (a storey rebuilt, the thing §97.4 was fixed for once already),
+    // so it is logged loudly rather than absorbed. Reset whenever the fit is recomputed.
+    _drawn = out.map(function () { return false; });
+    _drawnOrder = [];
+    console.log('§STOREY_REVEAL_SLOTS medianCount=' + _cMed + ' wantSec=' + _wantSec.toFixed(2) +
+      ' windowSec=' + winSec.toFixed(2) + ' scale=' + _scale.toFixed(3) +
+      (_scale < 0.999 ? ' SHORT — the window could not hold the weighted slots, every sweep is below its target'
+                      : ' (weights fit)') +
+      ' baseSweepSec=' + _base.toFixed(2) + '(floor ' + CUT_SWEEP_SEC + ', ceiling ' + CUT_SWEEP_MAX +
+      ', solved by bisection §120)' +
+      ' sweepRange=' + Math.min.apply(null, out.map(function (e) { return e.sweepSec; })).toFixed(2) +
+      '..' + Math.max.apply(null, out.map(function (e) { return e.sweepSec; })).toFixed(2) +
+      ' slots=[' + out.map(function (e) {
+        return e.name + (e.isGroundSlab ? '(slab)' : '') + ':' + e.n + 'el x' + e.qtyRatio.toFixed(2) +
+               '=' + e.sweepSec.toFixed(2) + 's+' + (e.slotSec - e.sweepSec).toFixed(2) + 's';
+      }).join(' ') + '] (§107 — sweep scales with what arrives in the slot, floor ' + CUT_SWEEP_SEC + 's)');
+    // The sweep is then pinned to CUT_SWEEP_SEC in wall-clock (storeyRevealCutAt reads this), so a
+    // window that divides to MORE than 2.0s per slot spends the surplus on the PAUSE, never on a
+    // slower sweep. 1.5s is a floor and a target, not a ratio.
+    _slotSec = winSec / out.length;
     var key = full.length + '/' + out.length + '/' + winSec.toFixed(2);
+    _fitted = out; _fitMemo = out; _fitMemoKey = _memoKey;
     if (_fitLogged !== key) {
       _fitLogged = key;
       console.log('§STOREY_REVEAL_FIT windowSec=' + winSec.toFixed(2) + ' minSlotSec=' + MIN_SLOT_SEC +
         ' storeysAvailable=' + full.length + ' shown=' + out.length +
         ' slotSec=' + (winSec / out.length).toFixed(2) +
+        ' sweepSec=' + Math.min(CUT_SWEEP_SEC, winSec / out.length).toFixed(2) +
+        ' pauseSec=' + Math.max(0, (winSec / out.length) - CUT_SWEEP_SEC).toFixed(2) + ' (§104)' +
         (out.length < full.length
           ? ' TRUNCATED dropped=[' + full.slice(out.length).map(function (x) { return x.name; }).join(',') +
             '] (top floors foregone — window is fixed, best effort)'
@@ -218,9 +408,21 @@ function setupCpeStoreyReveal(A) {
     if (!list.length) return null;
     var span = sr.windowFrac;
     var w = Math.min(0.999999, Math.max(0, (tNorm - winStart) / span));   // 0..1 across the whole window
-    var slot = 1 / list.length;
-    var idx = Math.min(list.length - 1, Math.floor(w / slot));
-    var u = (w - idx * slot) / slot;                                     // 0..1 within this storey's slot
+    // §107 — slots are WEIGHTED, so the boundaries come from _slotBounds (cumulative fractions of
+    // the window) rather than from an equal division. Falls back to equal slots if the weights
+    // could not be computed, which is the pre-§107 behaviour exactly.
+    var idx, u;
+    if (_slotBounds && _slotBounds.length === list.length) {
+      idx = 0;
+      while (idx < _slotBounds.length - 1 && w >= _slotBounds[idx]) idx++;
+      var lo0 = idx > 0 ? _slotBounds[idx - 1] : 0, hi0 = _slotBounds[idx];
+      u = (hi0 > lo0) ? (w - lo0) / (hi0 - lo0) : 0;
+      u = Math.max(0, Math.min(0.999999, u));
+    } else {
+      var slot = 1 / list.length;
+      idx = Math.min(list.length - 1, Math.floor(w / slot));
+      u = (w - idx * slot) / slot;                                     // 0..1 within this storey's slot
+    }
     var opacity = Math.max(0, Math.min(1, Math.min(u, 1 - u) / FADE_FRAC));
     // §STOREY_REVEAL_PULSE (2026-09-06, user: "it should be shine thru and then cease, not persist")
     // — each storey OWNS its slot but only GLOWS for the first LIT_FRAC of it; the tail of the slot is
@@ -255,7 +457,11 @@ function setupCpeStoreyReveal(A) {
         ' idx=' + vis.idx + '/' + vis.n + ' tNorm=' + tNorm.toFixed(4) +
         ' color=#' + vis.color.toString(16).padStart(6, '0'));
     }
-    return { name: vis.emoji + ' ' + vis.storey, opacity: vis.opacity };
+    // §108 — the ground-slab pass is a slot on Level 1 but is NOT Level 1 arriving, so it must not
+    // print the same caption the next slot prints, or the beat reads as a storey drawn twice.
+    var entC = _fitted && _fitted[vis.idx];
+    var capName = (entC && entC.isGroundSlab) ? 'Ground slab' : vis.storey;
+    return { name: vis.emoji + ' ' + capName, opacity: vis.opacity };
   };
 
   // §STOREY_REVEAL_STATCARD — shaped exactly like cpe_resource_panel.js's `shown` (the `A.tailPanelAt`
@@ -271,7 +477,11 @@ function setupCpeStoreyReveal(A) {
     if (st.walk != null && st.walk > 0) subParts.push('walkable ' + Math.round(st.walk).toLocaleString('en-US') + ' m²');   // §37.1 — first, it is the figure the IFC lacks
     if (st.bx != null) subParts.push(st.bx.toFixed(1) + '×' + st.by.toFixed(1) + ' m footprint (estimate)');
     if (st.roomCount > 0) subParts.push(st.roomCount + ' room' + (st.roomCount === 1 ? '' : 's') + ' compiled');
-    var card = { big: String(st.doorCount), label: 'doors · ' + vis.storey };
+    var entS = _fitted && _fitted[vis.idx];
+    var card = (entS && entS.isGroundSlab)
+      ? { big: (st.bx != null ? st.bx.toFixed(0) + '×' + st.by.toFixed(0) : String(st.doorCount)),
+          label: (st.bx != null ? 'm ground slab' : 'doors · ground slab') }
+      : { big: String(st.doorCount), label: 'doors · ' + vis.storey };
     if (subParts.length) card.sub = subParts.join(' · ');
     return { card: card, idx: vis.idx, n: vis.n, opacity: vis.opacity };
   };
@@ -516,11 +726,20 @@ function setupCpeStoreyReveal(A) {
   // 1.92s -> 1.44s/0.48s. Making it exact needs the window sized as n x CUT_SLOT_SEC, which is a
   // change in effects.js, not here.
   var CUT_SWEEP_SEC = 1.5, CUT_PAUSE_SEC = 0.5;
+  // §110 — the ceiling on one storey's sweep. Twice the mandated floor: enough for a heavy storey to
+  // read as an event, short enough that the beat never stalls on one plate. The base sweep floats
+  // between the two, solved from whatever window the film can afford (see _fitList).
+  var CUT_SWEEP_MAX = 2 * CUT_SWEEP_SEC;
   var CUT_RISE_FRAC = CUT_SWEEP_SEC / (CUT_SWEEP_SEC + CUT_PAUSE_SEC);
-  var CUT_PITCH_DEG = 25;     // §94.4: steeper than this and the camera is looking DOWN, where a
+  var CUT_PITCH_DEG = 25;     // §94.4 — DEAD. §102 replaced the pitch test, the X/Y snap and the Z
+                              // branch with ONE rule: the plane faces the camera. Kept only because
+                              // §STOREY_CUT_AXIS still prints it. Original note: steeper than this
+                              // and the camera is looking DOWN, where a
                               // horizontal cut exposes floor plates. Shallower and it sees facades,
                               // where a horizontal cut shows nothing — take the camera-facing one.
   var _cutSlab = null, _cutRest = null, _cutGlobal = [], _cutMats = [], _cutArmed = false, _cutAxisLogged = null, _cutLogIdx = null;
+  var _cutObjs = [], _cutHidden = [], _cutClones = [];   // §105 — building-scoped arming bookkeeping
+  var _planeCeil = null, _planeSweepSlab = null, _planeSweepRest = null, _matVariants = null;  // §112
   // §98.1 (user: "HHS was starting on one axis when it switched to another. Perhaps it just persist?
   // ... the angle became sharper but it is still consistent and that is more important optics").
   // The axis decision is LATCHED for the whole window. Both halves of it were being recomputed every
@@ -649,10 +868,34 @@ function setupCpeStoreyReveal(A) {
     if (si < 0) return null;
     var from = si === 0 ? b.base : b.tops[si - 1];
     var to = b.tops[si];
-    var k = Math.min(1, vis.u / CUT_RISE_FRAC);          // 0..1 rising, then pinned at 1 = held
+    // §104 — the sweep is CUT_SWEEP_SEC of wall-clock, so the rising fraction of the slot is derived
+    // from the slot's REAL length rather than the fixed 0.75 that assumed a 2.0s slot.
+    var entF = _fitted && _fitted[vis.idx];
+    var riseFrac = (entF && entF.slotSec > 0) ? Math.min(1, entF.sweepSec / entF.slotSec)
+                 : ((_slotSec > 0) ? Math.min(1, CUT_SWEEP_SEC / _slotSec) : CUT_RISE_FRAC);
+    var k = Math.min(1, vis.u / riseFrac);              // 0..1 rising, then pinned at 1 = held
+    // §106 — three kinds of slot. The ground-slab pass sweeps the SLAB alone and leaves the storey
+    // hidden; Level 1's pass then sweeps the REST with its plate already down; every storey above
+    // sweeps its own floor slab in front of its contents, which is §99.1's lead unchanged.
+    var ent = _fitted && _fitted[vis.idx];
+    var slabK, restK;
+    if (ent && ent.isGroundSlab) { slabK = k; restK = 0; }
+    else if (si === 0)           { slabK = 1; restK = k; }
+    // §106.1 (user, 2026-09-13: "I see the floors still not accompanying 2nd storey onwards") —
+    // ACCOMPANYING, not leading. §99.1's SLAB_LEAD_FRAC put the plate down over the first 35% of the
+    // slot and only then swept the storey onto it, which was right while the storey's own band began
+    // at its floor; now that the ground plate has its own pass (§106) every remaining slab belongs to
+    // the storey it supports and travels on the SAME plane as it. One sweep per storey, slab included.
+    else { slabK = k; restK = k; }
     return { cutZ: from + (to - from) * k, floorZ: from, ceilZ: to, k: k, u: vis.u,
+             slabK: slabK, restK: restK, isGroundSlab: !!(ent && ent.isGroundSlab),
+             // §106 — the slot index is NO LONGER the group index: the ground-slab pass occupies
+             // slot 0 without being a group. si is the band this slot cuts in, resolved by name, so
+             // it IS the group index and is what the hide-above test must use.
+             si: si,
+             slotSec: entF ? entF.slotSec : _slotSec, sweepSec: entF ? entF.sweepSec : 0,
              storey: vis.storey, idx: vis.idx, n: vis.n,
-             phase: vis.u < CUT_RISE_FRAC ? 'rise' : 'hold' };
+             phase: vis.u < riseFrac ? 'rise' : 'hold' };
   };
 
   // Which plane set this camera can actually read (§94.4), and how to combine them (§96.4).
@@ -681,6 +924,24 @@ function setupCpeStoreyReveal(A) {
         _axisLatch.useX = Math.abs(fwd.x) >= Math.abs(fwd.z);
         _axisLatch.sign = _axisLatch.useX ? (fwd.x >= 0 ? 1 : -1) : (fwd.z >= 0 ? 1 : -1);
       }
+      // §102 (user, 2026-09-13): the cut is no longer a world axis at all — "not to be XYZ but simply
+      // from afar towards cam pov. This also ensure standard code applicable irrespective of angle."
+      // The plane FACES THE CAMERA and sweeps from the far side toward it, so there is no X-vs-Y snap,
+      // no CUT_PITCH_DEG test and no Z branch — one rule for every building and every rig. This
+      // SUPERSEDES §98.3's world-axis snap ("just X or Y depending on angle of cam"), on the user's
+      // own later ruling; do not re-snap to X/Y without a new ask. Two readings of "towards cam pov":
+      // The pitch is DISCARDED, so the plane is vertical and reads as a section: taking the full
+      // camera vector instead tilts it by the rig's pitch (45.7deg on Hospital), which is
+      // geometrically the rake already dropped in §100.6. Baked both ways 2026-09-13 to be sure.
+      // Latched for the whole window, exactly as §98.3 demanded of the axis it replaces — the bearing
+      // is a camera quantity, so a rotating camera would otherwise rotate the cut mid-beat.
+      var bf = fwd.clone();
+      bf.y = 0;                                      // pitch discarded: the plane stays VERTICAL
+      if (bf.lengthSq() < 1e-9) bf.set(0, 0, 1);     // camera dead vertical: fall back to +Z
+      bf.normalize();
+      _axisLatch.axis = 'XY';                        // the banded construction, always
+      _axisLatch.bearing = bf;
+      _axisLatch.bearingTiltDeg = Math.asin(Math.max(-1, Math.min(1, -bf.y))) * 180 / Math.PI;
     }
     var axis = _axisLatch.axis, out;
     if (CUT_RAKE_OVERLAP != null && CUT_RAKE_OVERLAP > 0) {
@@ -730,8 +991,8 @@ function setupCpeStoreyReveal(A) {
       // Looking down: one plane, keep everything BELOW the rising cut. Intersection semantics are
       // irrelevant with a single plane. Same plane grid_views.js:195 builds.
       // slab leads, rest follows (§99.1): two cut heights from the same slot progress
-      var kL = Math.min(1, cut.k / SLAB_LEAD_FRAC);
-      var kR = Math.max(0, (cut.k - SLAB_LEAD_FRAC) / (1 - SLAB_LEAD_FRAC));
+      var kL = (cut.slabK != null) ? cut.slabK : Math.min(1, cut.k / SLAB_LEAD_FRAC);
+      var kR = (cut.restK != null) ? cut.restK : Math.max(0, (cut.k - SLAB_LEAD_FRAC) / (1 - SLAB_LEAD_FRAC));
       var zFrom = cut.floorZ, zTo = cut.ceilZ;
       var cutY = (zFrom + (zTo - zFrom) * kL) - off;
       var cutYr = (zFrom + (zTo - zFrom) * kR) - off;
@@ -758,24 +1019,29 @@ function setupCpeStoreyReveal(A) {
       // §96.9 (user): snap to ONE world axis — "just X or Y depending on angle of cam" — rather than
       // the camera-forward diagonal. DB X/Y map to scene x/z (the loader's axis swap sends iy -> -z).
       var f = new T.Vector3();
-      if (_axisLatch.useX) f.set(_axisLatch.sign, 0, 0); else f.set(0, 0, _axisLatch.sign);
-      axisName = _axisLatch.useX ? 'X' : 'Y';
+      if (_axisLatch.bearing) {
+        f.copy(_axisLatch.bearing);                       // §102 — faces the camera, sweeps toward it
+        axisName = 'CAM';
+      } else if (_axisLatch.useX) { f.set(_axisLatch.sign, 0, 0); axisName = 'X'; }
+      else { f.set(0, 0, _axisLatch.sign); axisName = 'Y'; }
       var b = _cutBounds();
       var lo = null, hi = null;
       if (b && b.plan && typeof A.ifc2three === 'function') {
         var zs = [b.base, b.tops[b.tops.length - 1]];
         for (var xi = 0; xi < 2; xi++) for (var yi = 0; yi < 2; yi++) for (var zi = 0; zi < 2; zi++) {
           var q = A.ifc2three(xi ? b.plan.x1 : b.plan.x0, yi ? b.plan.y1 : b.plan.y0, zs[zi]);
-          var pr = f.dot(new T.Vector3(q.x, 0, q.z));
+          // §102 — with a pitched normal the corner's HEIGHT is part of its projection, so the span
+          // must be taken in 3D. y follows the same convention as the band planes below: ifc z - off.
+          var pr = f.dot(new T.Vector3(q.x, f.y ? (zs[zi] - off) : 0, q.z));
           if (lo === null || pr < lo) lo = pr;
           if (hi === null || pr > hi) hi = pr;
         }
       }
-      if (lo === null) { lo = f.dot(new T.Vector3(cam.position.x, 0, cam.position.z)); hi = lo + 100; }
+      if (lo === null) { lo = f.dot(new T.Vector3(cam.position.x, f.y ? cam.position.y : 0, cam.position.z)); hi = lo + 100; }
       // PER-SLOT k (not cumulative): each storey runs its own full far->near sweep, then holds for
       // the pause while the next storey waits its turn. d = hi hides the storey; d = lo completes it.
-      var kL2 = Math.min(1, cut.k / SLAB_LEAD_FRAC);
-      var kR2 = Math.max(0, (cut.k - SLAB_LEAD_FRAC) / (1 - SLAB_LEAD_FRAC));
+      var kL2 = (cut.slabK != null) ? cut.slabK : Math.min(1, cut.k / SLAB_LEAD_FRAC);
+      var kR2 = (cut.restK != null) ? cut.restK : Math.max(0, (cut.k - SLAB_LEAD_FRAC) / (1 - SLAB_LEAD_FRAC));
       var d = hi - (hi - lo) * kL2;          // slab: leading plane (the edge rides this one)
       var dRest = hi - (hi - lo) * kR2;      // everything else: trailing
       var floorY = cut.floorZ - off, ceilY = cut.ceilZ - off;
@@ -798,6 +1064,15 @@ function setupCpeStoreyReveal(A) {
               axisName: axisName };
     }
     var _logKey = axis + '/' + (out.axisName || '-');
+    if (_axisLatch.bearing && _cutAxisLogged !== _logKey) {
+      var _bg = _axisLatch.bearing;
+      console.log('§STOREY_CUT_BEARING normal=' +
+        _bg.x.toFixed(3) + ',' + _bg.y.toFixed(3) + ',' + _bg.z.toFixed(3) +
+        ' tiltFromVerticalPlaneDeg=' + _axisLatch.bearingTiltDeg.toFixed(1) +
+        ' camPitchDeg=' + pitchDeg.toFixed(1) +
+        ' (§102 — plane faces the camera and sweeps toward it; worldAxis snap and the Z branch are' +
+        ' both bypassed, so this is the SAME code on every building and every rig)');
+    }
     if (_cutAxisLogged !== _logKey) {
       _cutAxisLogged = _logKey;
       console.log('§STOREY_CUT_AXIS axis=' + axis + ' pitchDeg=' + pitchDeg.toFixed(1) +
@@ -812,6 +1087,232 @@ function setupCpeStoreyReveal(A) {
     return out;
   }
 
+  // §105 (user, 2026-09-13): "Silhouette background buildings still got cut scoped into action."
+  // The cut was SCENE-scoped, not BUILDING-scoped, at BOTH levels: renderer.clippingPlanes is global
+  // to everything drawn, and _armCut walked A.collectMeshes, which traverses the whole scene
+  // (helpers.js:20, excluding only A.ground) — so the context city took the sweep plane AND was
+  // beheaded by the ceiling. HHS showed it because its bands are low (tops=[3.50,7.00,15.07], so
+  // storeys 1-2 put the ceiling at 3.50m/7.00m and cut the city off there); Hospital's sit at
+  // 164-204m, above its context, which is exactly why the same code looked building-specific.
+  //
+  // The storey an object belongs to. Subject-building geometry carries one (§S260's _batchMeta, the
+  // merged path's _mergedMeta, _instanceMeta, or plain userData); context city, ground, sky, markers
+  // and decoration carry none — and "has no storey" IS the test for "not the building being revealed".
+  function _objStorey(o) {
+    if (o.userData && o.userData.storey) return String(o.userData.storey);
+    var m = (A._batchMeta && A._batchMeta[o.id]) || (A._mergedMeta && A._mergedMeta[o.id]) ||
+            (A._instanceMeta && A._instanceMeta[o.id]);
+    if (m && m.length && m[0] && m[0].storey) return String(m[0].storey);
+    return null;
+  }
+
+  // Which band an object sits in, from its own world bounding box. The LAST band is open-topped so
+  // roof plant above the extrapolated top still lands on the top group rather than falling out.
+  // §111 DIAGNOSTIC — how many BANDS does this object's own geometry cover? Visibility can only ever
+  // show or hide a whole object, so any object spanning more than one band is one the ceiling used to
+  // clip and that visibility CANNOT express: showing it reveals every storey it touches at once.
+  function _bandSpanOf(o, b) {
+    if (!b || !b.tops || !b.tops.length) return 0;
+    var T = window.THREE;
+    if (!T || !o.geometry) return 0;
+    try {
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      var bb = o.geometry.boundingBox;
+      if (!bb) return 0;
+      o.updateWorldMatrix(true, false);
+      var off = A.modelOffset ? A.modelOffset.z : 0;
+      var lo = new T.Vector3(0, bb.min.y, 0).applyMatrix4(o.matrixWorld).y + off;
+      var hi = new T.Vector3(0, bb.max.y, 0).applyMatrix4(o.matrixWorld).y + off;
+      var nb = 0;
+      for (var i = 0; i < b.tops.length; i++) {
+        var f = i === 0 ? b.base : b.tops[i - 1], c = b.tops[i];
+        if (hi > f && lo < c) nb++;
+      }
+      return nb;
+    } catch (e) { return 0; }
+  }
+
+  // §111 — the band of EACH INSTANCE of a multi-band object. §105 replaced the global ceiling plane
+  // with whole-object visibility, which is exact only while an object belongs to one storey. It does
+  // not: HHS measures 120 of 411 armed objects spanning 2-3 bands (the 629 storey='Unknown' IfcPlates
+  // run z 0.15..10.55, the full height), because the InstancedMesh path buckets by GEOMETRY HASH
+  // ALONE (streaming.js ~L2220) and carries the same plate on every floor. Showing such an object
+  // shows every storey it touches — the "still showing 2 storeys at once" report. Both container
+  // types can hide a single member, so the ceiling is enforced per instance instead.
+  // §112 — a multi-band container cannot wear the 'current' material (its already-revealed members
+  // would be swept a second time) so it wears 'revealed' and its members are gated INDIVIDUALLY:
+  // a member shows when its band is below the one being revealed, or when its band IS the one being
+  // revealed and the sweep has reached it. That is the same far->near order the plane draws, at
+  // member granularity. This is the projection each member is compared on, taken once at arm time.
+  function _perInstanceProj(o, f) {
+    var T = window.THREE;
+    if (!T || !f) return null;
+    var out = [], box = new T.Box3(), m = new T.Matrix4(), v = new T.Vector3();
+    try {
+      o.updateWorldMatrix(true, false);
+      if (o.isInstancedMesh) {
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        var gc = o.geometry.boundingBox.getCenter(new T.Vector3());
+        for (var i = 0; i < o.count; i++) {
+          o.getMatrixAt(i, m);
+          v.copy(gc).applyMatrix4(m).applyMatrix4(o.matrixWorld);
+          out.push(f.x * v.x + f.z * v.z);
+        }
+        return out;
+      }
+      if (o.isBatchedMesh && typeof o.getBoundingBoxAt === 'function') {
+        var n = (A._batchMeta && A._batchMeta[o.id] && A._batchMeta[o.id].length) || o.maxInstanceCount || 0;
+        for (var j = 0; j < n; j++) {
+          if (!o.getBoundingBoxAt(j, box)) { out.push(null); continue; }
+          box.getCenter(v).applyMatrix4(o.matrixWorld);
+          out.push(f.x * v.x + f.z * v.z);
+        }
+        return out.length ? out : null;
+      }
+    } catch (e) { return null; }
+    return null;
+  }
+
+  // §127 — an element's elevation comes from the MODEL, not from the scene graph. Deriving it from
+  // container transforms was wrong twice over on Terminal: InstancedMesh instances all reported the
+  // SAME height (the per-instance matrices do not carry the placement this code assumed), and the
+  // value itself — 17.50 — matches ZERO elements in the DB, whose Unknown-ARC elevations cluster at
+  // 18.7 / 20.8 / 22.3-22.6. element_transforms.center_z is the number the census already uses, so
+  // banding on it makes the scene and the witness agree by construction instead of by coincidence.
+  var _zByGuid = null, _zByGuidKey = null;
+  function _elevationByGuid() {
+    var key = (A.activeBuilding || A.currentBuilding || 'bld');
+    if (_zByGuid && _zByGuidKey === key) return _zByGuid;
+    var map = {};
+    try {
+      var rows = A.dbQuery('SELECT guid, center_z FROM element_transforms WHERE center_z IS NOT NULL') || [];
+      for (var i = 0; i < rows.length; i++) map[String(rows[i][0])] = +rows[i][1];
+      console.log('§STOREY_ELEV_BY_GUID n=' + rows.length +
+        ' (§127 — per-element elevations straight from element_transforms; the reveal and the' +
+        ' §121 census now band on the same number)');
+    } catch (e) { map = {}; }
+    _zByGuid = map; _zByGuidKey = key;
+    return _zByGuid;
+  }
+
+  function _perInstanceBands(o, b) {
+    var T = window.THREE;
+    if (!T || !b || !b.tops || !b.tops.length) return null;
+    var off = A.modelOffset ? A.modelOffset.z : 0;
+    var out = [], box = new T.Box3(), m = new T.Matrix4(), v = new T.Vector3();
+    function bandOfZ(z) {
+      for (var i = 0; i < b.tops.length; i++) if (z < b.tops[i]) return i;
+      return b.tops.length - 1;
+    }
+    // §127 — authoritative path: the container's own member list carries a guid per member.
+    var _meta = (A._batchMeta && A._batchMeta[o.id]) || (A._mergedMeta && A._mergedMeta[o.id]) ||
+                (A._instanceMeta && A._instanceMeta[o.id]) || null;
+    if (_meta && _meta.length) {
+      var _zmap = _elevationByGuid(), _hit = 0;
+      for (var _k = 0; _k < _meta.length; _k++) {
+        var _z = _meta[_k] && _meta[_k].guid != null ? _zmap[String(_meta[_k].guid)] : undefined;
+        if (_z == null) { out.push(-1); continue; }
+        _hit++; out.push(bandOfZ(_z));
+      }
+      if (_hit) { _elevFromDb += _hit; return out; }
+      out.length = 0;                                   // no guids resolved — fall through
+    }
+    try {
+      o.updateWorldMatrix(true, false);
+      if (o.isInstancedMesh) {
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        var gc = o.geometry.boundingBox.getCenter(new T.Vector3());
+        var _dbgY = [];
+        for (var i = 0; i < o.count; i++) {
+          o.getMatrixAt(i, m);
+          v.copy(gc).applyMatrix4(m).applyMatrix4(o.matrixWorld);
+          if (_dbgY.length < 6) _dbgY.push((v.y + off).toFixed(2));
+          out.push(bandOfZ(v.y + off));
+        }
+        if (o.count > 2000 && _instDbg.length < 3) {
+          var _meta2 = A._instanceMeta && A._instanceMeta[o.id];
+          _instDbg.push('id' + o.id + ' count=' + o.count + ' metaLen=' + (_meta2 ? _meta2.length : 'none') +
+            ' outLen=' + out.length + ' firstZ=[' + _dbgY.join(',') + ']' +
+            ' offset=' + off.toFixed(2) + ' tops=[' + b.tops.map(function (t) { return t.toFixed(1); }).join(',') + ']');
+        }
+        return out;
+      }
+      if (o.isBatchedMesh && typeof o.getBoundingBoxAt === 'function') {
+        // §124 — index by the batch's OWN slot id, not by the position of the entry in _batchMeta.
+        // §S260 stores {guid, storey, disc, ifcClass, slotId} and slotId is what BatchedMesh knows;
+        // the two are not the same number. Passing the array position made getBoundingBoxAt fail,
+        // every band came back -1, and the tally then fell back to the container's single band —
+        // which is why Terminal booked all 33,406 of its unlabelled ARC elements to one storey even
+        // though the DB spreads them 12,588 / 18,224 / 2,522 across bands 3/4/5.
+        var _bm = (A._batchMeta && A._batchMeta[o.id]) || null;
+        var n = (_bm && _bm.length) || o.maxInstanceCount || 0;
+        var _im = new T.Matrix4();
+        for (var j = 0; j < n; j++) {
+          var _sid = (_bm && _bm[j] && _bm[j].slotId != null) ? _bm[j].slotId : j;
+          if (!o.getBoundingBoxAt(_sid, box)) { out.push(-1); continue; }
+          // §125 — getBoundingBoxAt returns the GEOMETRY's box, NOT the placed instance's. Without
+          // the per-instance matrix every instance sharing a geometry reports the same height, so a
+          // whole batch collapses onto one band. MEASURED on Terminal: 34,655 ARC elements went
+          // through the per-element path and still all landed in band 3, while the DB spreads them
+          // 12,588 / 18,224 / 2,522 across bands 3/4/5. Apply the instance matrix, then the object's.
+          box.getCenter(v);
+          if (typeof o.getMatrixAt === 'function') { o.getMatrixAt(_sid, _im); v.applyMatrix4(_im); }
+          v.applyMatrix4(o.matrixWorld);
+          out.push(bandOfZ(v.y + off));
+        }
+        return out.length ? out : null;
+      }
+    } catch (e) { return null; }
+    return null;
+  }
+
+  // Hide or show ONE member of a container. BatchedMesh has setVisibleAt; InstancedMesh has no such
+  // API, so it uses this codebase's own zero-scale convention (helpers.js A.filterInstancedMesh).
+  function _setInstanceVisible(rec, i, on) {
+    var o = rec.o, T = window.THREE;
+    if (o.isBatchedMesh && typeof o.setVisibleAt === 'function') {
+      var _bm = A._batchMeta && A._batchMeta[o.id];       // §124 — slot id, not array position
+      var _sid = (_bm && _bm[i] && _bm[i].slotId != null) ? _bm[i].slotId : i;
+      o.setVisibleAt(_sid, on);
+      return;
+    }
+    if (o.isInstancedMesh && rec.imat0) {
+      var m = new T.Matrix4();
+      if (on) m.fromArray(rec.imat0, i * 16);
+      else m.makeScale(0, 0, 0);
+      o.setMatrixAt(i, m);
+      rec.dirty = true;
+    }
+  }
+
+  function _bandOf(o, b) {
+    if (!b || !b.tops || !b.tops.length) return -1;
+    var T = window.THREE;
+    if (!T || !o.geometry) return -1;
+    try {
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      var bb = o.geometry.boundingBox;
+      if (!bb) return -1;
+      var c = bb.getCenter(new T.Vector3());
+      o.updateWorldMatrix(true, false);
+      c.applyMatrix4(o.matrixWorld);
+      var off = A.modelOffset ? A.modelOffset.z : 0;
+      var z = c.y + off;                       // back to the ifc elevations the bands are stated in
+      for (var i = 0; i < b.tops.length; i++) if (z < b.tops[i]) return i;
+      return b.tops.length - 1;                // above the top band: it belongs to the top group
+    } catch (e) { return -1; }
+  }
+
+  // name -> group index, absorbed pseudo storeys (§103) resolving to their host group.
+  function _storeyGroupIndex(b) {
+    var map = {};
+    (b.list || []).forEach(function (g, i) {
+      map[g.name] = i;
+      (g.absorbs || []).forEach(function (nm) { map[nm] = i; });
+    });
+    return map;
+  }
+
   // The class of a mesh or a (single-class) batch, for the slab/rest split.
   function _meshClass(o) {
     if (o.userData && o.userData.ifcClass) return o.userData.ifcClass;
@@ -824,39 +1325,423 @@ function setupCpeStoreyReveal(A) {
   function _armCut(set) {
     if (_cutArmed) return;
     _cutSlab = set.slab; _cutRest = set.rest;
-    _cutGlobal = set.global || [];
-    if (A.renderer) A.renderer.clippingPlanes = _cutGlobal;   // ALWAYS intersected with the material's
-    _cutMats = [];
+    _cutGlobal = [];
+    var _T = window.THREE;
+    _planeCeil = new _T.Plane(new _T.Vector3(0, -1, 0), 0);
+    _planeSweepSlab = new _T.Plane(new _T.Vector3(1, 0, 0), 0);
+    _planeSweepRest = new _T.Plane(new _T.Vector3(1, 0, 0), 0);
+    _matVariants = new Map();
+    // §105 — the renderer's GLOBAL array is never used again. It is the one clipping level that cannot
+    // be scoped to an object, so the "storeys above are not yet built" half of §98.2's
+    //   keep = (y <= ceil) AND ((y <= floor) OR (f.p >= d))
+    // is expressed with VISIBILITY instead (_applyHideAbove below). That is exact rather than
+    // approximate here: the batch bucket key LEADS with el.storey (streaming.js:2210), so every batch
+    // holds exactly one storey and can be hidden whole. What is left on the material is the union
+    // ((y <= floor) OR (f.p >= d)), which needs no ceiling — storeys above are simply not drawn.
+    if (A.renderer) A.renderer.clippingPlanes = [];
+    _cutMats = []; _cutObjs = []; _cutHidden = [];
     var seen = (typeof Set !== 'undefined') ? new Set() : null;
-    var nSlab = 0, nRest = 0;
-    A.collectMeshes(function (o) { return o.isMesh || o.isBatchedMesh; }).forEach(function (o) {
+    var b = _cutBounds();
+    var gmap = b ? _storeyGroupIndex(b) : {};
+    var nSlab = 0, nRest = 0, nSubj = 0, nCtx = 0, noStorey = 0, byHeight = 0, _spanners = 0, _spanEx = [], _perInstObjs = 0, _spanUnhandled = 0;
+    _armedDisc = []; _perInstBadBands = 0;
+    var _attrPerEl = 0, _attrByObj = 0, _arcPerEl = 0, _arcByObj = 0, _arcTop = [], _bigARC = {};
+    var subjMats = (typeof Set !== 'undefined') ? new Set() : null;
+    var ctxObjs = [];
+    A.collectMeshes(function (o) { return o.isMesh || o.isBatchedMesh || o.isInstancedMesh; }).forEach(function (o) {
       var m = o.material;
-      if (!m || Array.isArray(m) || (seen && seen.has(m))) return;
+      if (!m || Array.isArray(m)) return;
+      var st = _objStorey(o);
+      if (st == null) { nCtx++; ctxObjs.push(o); return; }   // context city / ground / markers: untouched
+      nSubj++;
+      var gi = gmap[st];
+      var _byHeightThisObj = false;
+      if (gi == null) {
+        // A storey label that is not a reveal group — §60.1 drops any elements_meta storey that
+        // spatial_structure does not declare (HHS's "Roof Level", 45 elements). The global ceiling
+        // plane used to clip those anyway; with it gone they would float above an unrevealed
+        // building, so resolve them BY ELEVATION against the same bands: the object's own world
+        // bbox centre picks the group whose band contains it. Derived from the geometry, no names.
+        gi = _bandOf(o, b);
+        if (gi < 0) noStorey++; else { byHeight++; _byHeightThisObj = true; }
+      }
+      var _span = _bandSpanOf(o, b);
+      var _rec = { o: o, gi: gi, vis0: o.visible, span: _span, mat0: o.material };
+      // §121's per-discipline tally runs AFTER the span block below — it needs _rec.perInst.
+      // §123 — PER-ELEMENT BANDING FOR UNLABELLED GEOMETRY. A container whose elements carry no
+      // storey cannot be placed by name, and banding the whole container by its bbox centre books
+      // every element it holds to one storey. MEASURED on Terminal: 33,406 of its 35,552 ARC
+      // elements are storey='Unknown' (94%), so that one decision moved essentially all of the
+      // building's architecture into a single pass — the "storeys missing ARCH" report. Whenever the
+      // label is missing, band each element by its OWN elevation, whatever the container's span.
+      if (_span > 1 || _byHeightThisObj) {
+        if (_span > 1) _spanners++;
+        if (o.isInstancedMesh && o.instanceMatrix && o.instanceMatrix.array) {
+          _rec.imat0 = o.instanceMatrix.array.slice(0);     // §111 zero-scale restore (NOT mat0 — that is the material)
+        }
+        _rec.perInst = _perInstanceBands(o, b);
+        if (_rec.perInst) {
+          var _bad = 0;
+          for (var _pb = 0; _pb < _rec.perInst.length; _pb++) if (_rec.perInst[_pb] < 0) _bad++;
+          if (_bad) _perInstBadBands += _bad;
+          if (_bad === _rec.perInst.length) _rec.perInst = null;   // no usable per-element band
+        }
+        _rec.perProj = _axisLatch && _axisLatch.bearing ? _perInstanceProj(o, _axisLatch.bearing) : null;
+        if (_rec.perInst) _perInstObjs++; else _spanUnhandled++;
+      }
+      // §121 — count the ELEMENTS this object carries, per discipline, against the group it will be
+      // revealed in. An object is a container: one batch can hold hundreds of elements, so counting
+      // objects would never line up with the DB census.
+      try {
+        var _meta = (A._batchMeta && A._batchMeta[o.id]) || (A._mergedMeta && A._mergedMeta[o.id]) ||
+                    (A._instanceMeta && A._instanceMeta[o.id]) || null;
+        if (_meta && _meta.length) {
+          for (var _mi = 0; _mi < _meta.length; _mi++) {
+            var _gi2 = gi;
+            if (_rec.perInst && _rec.perInst[_mi] != null && _rec.perInst[_mi] >= 0) {
+              _gi2 = _rec.perInst[_mi]; _attrPerEl++;
+            } else _attrByObj++;
+            if (_meta[_mi] && _meta[_mi].disc === 'ARC' && _meta.length > 2000) {
+              if (!_bigARC[o.id]) _bigARC[o.id] = {
+                type: (o.isBatchedMesh ? 'Batched' : o.isInstancedMesh ? 'Instanced' : 'Mesh'),
+                n: _meta.length, gi: gi, span: _span, hasPerInst: !!_rec.perInst,
+                hasGetMatrixAt: (typeof o.getMatrixAt === 'function'),
+                slotIdSample: (_meta[0] && _meta[0].slotId), bands: {} };
+              var _bk = _bigARC[o.id].bands;
+              _bk[_gi2] = (_bk[_gi2] || 0) + 1;
+            }
+            if (_meta[_mi] && _meta[_mi].disc === 'ARC') {
+              if (_rec.perInst) _arcPerEl++; else { _arcByObj++;
+                if (_arcTop.length < 5) _arcTop.push((o.isBatchedMesh ? 'B' : o.isInstancedMesh ? 'I' : 'M') +
+                  ':' + _meta.length + 'el:gi' + gi + ':span' + _span + ':st=' + (st || '?')); }
+            }
+            var _d = (_meta[_mi] && _meta[_mi].disc) || '?';
+            if (!_armedDisc[_gi2]) _armedDisc[_gi2] = {};
+            _armedDisc[_gi2][_d] = (_armedDisc[_gi2][_d] || 0) + 1;
+          }
+        } else {
+          var _d1 = (o.userData && o.userData.disc) || '?';
+          if (!_armedDisc[gi]) _armedDisc[gi] = {};
+          _armedDisc[gi][_d1] = (_armedDisc[gi][_d1] || 0) + 1;
+        }
+      } catch (eD) {}
+      _cutObjs.push(_rec);
       if (seen) seen.add(m);
+      if (subjMats) subjMats.add(m);
       var isSlab = false;
       try {
         var mc = _meshClass(o);
         isSlab = _slabClasses.length ? _slabClasses.indexOf(mc) >= 0 : SLAB_RE.test(mc);
       } catch (eC) { isSlab = false; }
-      m.clippingPlanes = isSlab ? _cutSlab : _cutRest;
-      m.clipIntersection = set.intersection;
-      m.clipShadows = true;
-      m.needsUpdate = true;
-      _cutMats.push(m);
+      // §112 — TWO VARIANTS PER MATERIAL, and which one an object wears says what role it is playing
+      // this slot. Both use INTERSECTION (AND) semantics, so the ceiling is always in force:
+      //     revealed : [ceil]          — solid up to the ceiling, protrusions wait their turn
+      //     current  : [ceil, sweep]   — only what is inside the band AND past the sweep
+      // The union form this replaces needed one material to serve both roles, which is the only
+      // reason the ceiling had to live on the renderer's global array in the first place.
+      _rec.isSlab = isSlab; _rec.mat = m;
+      if (!_matVariants.has(m)) {
+        var rv = m.clone(), cu = m.clone();
+        rv.clippingPlanes = [_planeCeil]; rv.clipIntersection = false; rv.clipShadows = true; rv.needsUpdate = true;
+        cu.clippingPlanes = [_planeCeil, isSlab ? _planeSweepSlab : _planeSweepRest];
+        cu.clipIntersection = false; cu.clipShadows = true; cu.needsUpdate = true;
+        _matVariants.set(m, { revealed: rv, current: cu });
+        _cutMats.push(rv); _cutMats.push(cu);
+      }
       if (isSlab) nSlab++; else nRest++;
     });
+    // every armed object remembers the material it came in wearing, so _clearCut can put it back
+    _cutObjs.forEach(function (e) { if (!e.mat0) e.mat0 = e.o.material; });
+    // A material SHARED between the building and something that is not it would leak the sweep plane
+    // back into the context through A._matCache (§90.3, the same sharing that killed the fade in
+    // §92.2). Clone it for the CONTEXT side — always the smaller set — so the building keeps the
+    // shared instance and nothing else is clipped. Logged, because a nonzero count means the scene
+    // does share materials across that boundary and the count is the cost.
+    var leaked = 0;
+    if (subjMats) ctxObjs.forEach(function (o) {
+      if (o.material && !Array.isArray(o.material) && subjMats.has(o.material)) {
+        var c = o.material.clone();
+        c.clippingPlanes = null; c.clipIntersection = false; c.clipShadows = false;
+        _cutClones.push({ o: o, m0: o.material });
+        o.material = c; leaked++;
+      }
+    });
     _cutArmed = true;
+    // §121 ARCH WITNESS — per group, what the DB says the storey holds against what the reveal
+    // actually armed. A shortfall means those elements are in NO pass and never appear: the
+    // "storeys missing ARCH" report. Reported for every discipline, not just ARC, because a
+    // shortfall in any of them is the same defect.
+    try {
+      var _cen = _discCensusFor(b);
+      var _lines = [], _anyShort = 0;
+      for (var _ci = 0; _ci < _cen.length; _ci++) {
+        var _want = _cen[_ci] || {}, _got = _armedDisc[_ci] || {};
+        var _parts = [];
+        Object.keys(_want).sort().forEach(function (d) {
+          var w = _want[d] || 0, g = _got[d] || 0;
+          if (g < w) _anyShort += (w - g);
+          _parts.push(d + ' ' + g + '/' + w + (g < w ? ' SHORT' : ''));
+        });
+        _lines.push(b.list[_ci].name + '[' + _parts.join(' ') + ']');
+      }
+      console.log('§STOREY_ARCH_WITNESS ' + _lines.join(' ') + ' => ' +
+        (_anyShort === 0 ? 'PASS (every element the DB places on a storey is armed into that storey\'s pass)'
+                         : 'FAIL — ' + _anyShort + ' element(s) are on a storey but in no pass, so they' +
+                           ' never appear during the reveal'));
+    } catch (eAW) { console.log('§STOREY_ARCH_WITNESS unavailable: ' + (eAW && eAW.message)); }
     console.log('§STOREY_CUT_ARM materials=' + _cutMats.length + ' slab=' + nSlab + ' rest=' + nRest +
-      ' leadFrac=' + SLAB_LEAD_FRAC +
-      ' (one clippingPlanes assignment per distinct material; per-frame cost is a constant update only)');
+      ' leadFrac=' + SLAB_LEAD_FRAC + ' subjectObjs=' + nSubj + ' contextObjsUntouched=' + nCtx +
+      ' storeyByHeight=' + byHeight + ' unresolved=' + noStorey + ' contextClonesForSharedMat=' + leaked +
+      ' multiBandObjs=' + _spanners + ' perInstanceCeiling=' + _perInstObjs +
+      ' perElementBandLookupFailures=' + _perInstBadBands +
+      ' elementsBandedFromDbElevation=' + _elevFromDb +
+      ' attribution{perElement=' + _attrPerEl + ' byContainer=' + _attrByObj +
+      ' ARC:perElement=' + _arcPerEl + ' byContainer=' + _arcByObj +
+      ' biggestARCbyContainer=[' + _arcTop.join(' ') + ']}' +
+      ' spanUnhandled=' + _spanUnhandled + ' (§111 — a multi-band object gets its ceiling per INSTANCE;' +
+      ' spanUnhandled>0 would mean some container can still show two storeys at once)' +
+      ' globalPlanes=0 (§105 — the cut is scoped to the building that carries storeys; the renderer' +
+      ' global array is empty, so nothing in the background is clipped)');
+  }
+
+  // §105 — the ceiling half of the predicate, as visibility. Storeys ABOVE the group being revealed
+  // are not drawn at all; the group itself and everything below stay on and let the material planes
+  // decide. Only objects this module armed are touched, and every one is restored in _clearCut.
+  // §121 — the per-(group, discipline) CENSUS straight from the DB, so "this storey is missing its
+  // ARCH" is answerable against a number the reveal did not produce. Queried once per building.
+  var _discCensus = null, _discCensusKey = null, _armedDisc = [], _perInstBadBands = 0, _instDbg = [], _elevFromDb = 0;
+  function _discCensusFor(b) {
+    var key = (A.activeBuilding || A.currentBuilding || 'bld') + '|' + (b.list || []).length;
+    if (_discCensus && _discCensusKey === key) return _discCensus;
+    // §126 — the census must be built the SAME WAY the reveal assigns elements, or the comparison is
+    // meaningless. An element whose storey label is a reveal group is counted there; an element whose
+    // label is missing or was dropped by §60.1 is counted into the band its OWN center_z falls in,
+    // exactly as _perInstanceBands does in the scene. Comparing armed-including-unlabelled against a
+    // declared-labels-only census is what produced "ARC 33814/67": a denominator that never included
+    // Terminal's 33,406 unlabelled ARC elements at all.
+    var byStorey = {}, byBand = [];
+    var _names = {};
+    (b.list || []).forEach(function (g) {
+      _names[g.name] = true;
+      (g.absorbs || []).forEach(function (nm) { _names[nm] = true; });
+    });
+    function _bandOfZ(z) {
+      for (var i = 0; i < b.tops.length; i++) if (z < b.tops[i]) return i;
+      return b.tops.length - 1;
+    }
+    try {
+      var rows = A.dbQuery("SELECT m.storey, m.discipline, COUNT(*) FROM elements_meta m " +
+        "WHERE m.storey IS NOT NULL AND m.discipline IS NOT NULL GROUP BY m.storey, m.discipline") || [];
+      rows.forEach(function (r) {
+        var st = String(r[0]), d = String(r[1]);
+        if (!_names[st]) return;                      // handled by the elevation pass below
+        (byStorey[st] || (byStorey[st] = {}))[d] = +r[2] || 0;
+      });
+      var namesList = Object.keys(_names).map(function (n) { return "'" + n.replace(/'/g, "''") + "'"; }).join(',');
+      var rows2 = A.dbQuery("SELECT m.discipline, t.center_z, COUNT(*) FROM elements_meta m " +
+        "JOIN element_transforms t ON t.guid=m.guid " +
+        "WHERE m.discipline IS NOT NULL AND (m.storey IS NULL OR m.storey NOT IN (" + namesList + ")) " +
+        "GROUP BY m.discipline, t.center_z") || [];
+      rows2.forEach(function (r) {
+        var d = String(r[0]), bi = _bandOfZ(+r[1]), n = +r[2] || 0;
+        if (!byBand[bi]) byBand[bi] = {};
+        byBand[bi][d] = (byBand[bi][d] || 0) + n;
+      });
+    } catch (e) { byStorey = {}; byBand = []; }
+    // fold the absorbed pseudo storeys (§103) into their host group, same as the bands
+    _discCensus = (b.list || []).map(function (g, gi) {
+      var agg = {};
+      [g.name].concat(g.absorbs || []).forEach(function (nm) {
+        var m = byStorey[nm]; if (!m) return;
+        Object.keys(m).forEach(function (d) { agg[d] = (agg[d] || 0) + m[d]; });
+      });
+      var bb = byBand[gi];                                   // §126 — unlabelled, banded by height
+      if (bb) Object.keys(bb).forEach(function (d) { agg[d] = (agg[d] || 0) + bb[d]; });
+      return agg;
+    });
+    _discCensusKey = key;
+    console.log('§STOREY_DISC_CENSUS ' + _discCensus.map(function (agg, i) {
+      return (b.list[i].name) + '{' + Object.keys(agg).sort().map(function (d) {
+        return d + ':' + agg[d]; }).join(',') + '}';
+    }).join(' ') + ' (§121 — from elements_meta.discipline, the number the ARCH witness checks against)');
+    return _discCensus;
+  }
+
+  var _hideCount = 0, _hideInstCount = 0, _lastHideGi = null, _roleCount = '';
+  // §112 — ROLES, every frame. The role assignment itself only changes on a slot boundary; the
+  // per-member sweep gate for multi-band containers has to run every frame, because d moves.
+  function _applyRoles(gi, dSlab, dRest) {
+    if (!_cutObjs.length) return;
+    var roleChanged = (_lastHideGi !== gi);
+    if (roleChanged) { _lastHideGi = gi; _hideCount = 0; _hideInstCount = 0; }
+    var nRev = 0, nCur = 0, nHid = 0;
+    for (var i = 0; i < _cutObjs.length; i++) {
+      var e = _cutObjs[i], v = _matVariants && _matVariants.get(e.mat);
+      if (e.perInst) {
+        // multi-band: always 'revealed' (ceiling only), gated member by member
+        if (roleChanged && v && e.o.material !== v.revealed) e.o.material = v.revealed;
+        if (e.o.visible !== true) e.o.visible = true;      // §122 — container on, members gate
+        var d = e.isSlab ? dSlab : dRest;
+        e.dirty = false;
+        for (var j = 0; j < e.perInst.length; j++) {
+          var bj = e.perInst[j], pj = e.perProj ? e.perProj[j] : null;
+          var on;
+          if (bj < 0) on = true;
+          else if (bj < gi) on = true;                              // already revealed, stays
+          else if (bj > gi) on = false;                             // not yet built
+          else on = (pj == null) ? true : (pj >= d);                // this slot: the sweep decides
+          if (e.instOn == null) e.instOn = [];
+          if (e.instOn[j] !== on) { _setInstanceVisible(e, j, on); e.instOn[j] = on; }
+          if (!on) _hideInstCount++;
+        }
+        if (e.dirty && e.o.instanceMatrix) e.o.instanceMatrix.needsUpdate = true;
+        nRev++;
+        continue;
+      }
+      if (!roleChanged) continue;
+      // §122 — a revealed/current storey is ON, full stop. This used to restore e.vis0, the
+      // visibility captured at ARM time, which froze whatever transient state the Time Machine was
+      // in on the window's first frame: measured 556 already-revealed objects dark by the last slot
+      // on Terminal, growing every slot. vis0 survives only for _clearCut's restore.
+      if (e.gi < 0) {                                               // labelled but off the ladder
+        if (v && e.o.material !== v.revealed) e.o.material = v.revealed;
+        if (e.o.visible !== true) e.o.visible = true;
+        nRev++;
+      } else if (e.gi < gi) {
+        if (v && e.o.material !== v.revealed) e.o.material = v.revealed;
+        if (e.o.visible !== true) e.o.visible = true;
+        nRev++;
+      } else if (e.gi === gi) {
+        if (v && e.o.material !== v.current) e.o.material = v.current;
+        if (e.o.visible !== true) e.o.visible = true;
+        nCur++;
+      } else {
+        // §113 — a hidden object still gets the ceiling-clipped variant. It is not drawn, so this
+        // changes nothing on screen; it means the invariant "everything armed is ceiling-clipped"
+        // holds unconditionally, so anything that turns an object back on by some other path
+        // (x-ray, a panel filter, the buildup schedule) cannot reintroduce the protrusion leak.
+        if (v && e.o.material !== v.revealed) e.o.material = v.revealed;
+        if (e.o.visible !== false) e.o.visible = false;
+        nHid++; _hideCount++;
+      }
+    }
+    if (roleChanged) _roleCount = 'revealed=' + nRev + ' current=' + nCur + ' hidden=' + nHid;
+    if (roleChanged) _witness(gi);
+  }
+
+  // §113 WITNESS — the two defects this beat actually had, each expressed as a number that must be
+  // zero, computed from the live scene rather than inferred from the slot arithmetic.
+  //   A) "2 storeys at once"  — nothing from a band ABOVE the one being revealed may be drawable,
+  //      and every armed material in use must carry the CEILING plane (whole-object visibility
+  //      cannot clip inside an object, which is what let protrusions through).
+  //   B) "the upper storey cut again" — an object's role must be MONOTONE: hidden(0) -> current(1)
+  //      -> revealed(2), never backwards. A backwards step IS a second draw.
+  function _witness(gi) {
+    var aboveVisible = 0, aboveInst = 0, ceilMissing = 0, roleRegress = 0, belowInstOff = 0;
+    // §122 PERSISTENCE — a storey that has had its pass must STAY on screen for the rest of the beat.
+    // Role monotonicity (§113) does not prove that: an object can hold the `revealed` role and still
+    // be invisible, or be cut away by the very ceiling plane that role carries. Three ways it can
+    // vanish, each counted from the live scene:
+    //   gone     — role says revealed, object.visible is false
+    //   wrongMat — wearing something other than its `revealed` variant, so the ceiling is not what
+    //              the role thinks it is
+    //   ceilCut  — its geometry reaches ABOVE the current ceiling, so the plane clips part of a
+    //              storey that was already fully shown
+    var persistGone = 0, persistWrongMat = 0, persistCeilCut = 0;
+    var _T = window.THREE, _ceilY = _planeCeil ? _planeCeil.constant : null;
+    var RANK = { hidden: 0, current: 1, revealed: 2 };
+    for (var i = 0; i < _cutObjs.length; i++) {
+      var e = _cutObjs[i];
+      var role = e.perInst ? 'revealed'
+               : (e.gi < 0 || e.gi < gi) ? 'revealed'
+               : (e.gi === gi) ? 'current' : 'hidden';
+      if (!e.perInst && e.gi > gi && e.o.visible) aboveVisible++;
+      var r = RANK[role];
+      if (e.rolePrev != null && r < e.rolePrev) roleRegress++;
+      e.rolePrev = r;
+      var mm = e.o.material;
+      if (mm && !Array.isArray(mm)) {
+        var pl = mm.clippingPlanes;
+        if (!pl || pl.indexOf(_planeCeil) < 0) ceilMissing++;
+      }
+      // §122 — only objects that have ALREADY had their pass are checked for persistence.
+      if (role === 'revealed' && e.gi >= 0 && e.gi < gi) {
+        if (!e.o.visible) persistGone++;
+        var _v = _matVariants && _matVariants.get(e.mat);
+        if (_v && e.o.material !== _v.revealed) persistWrongMat++;
+        if (_T && _ceilY != null && e.o.geometry) {
+          try {
+            if (!e.o.geometry.boundingBox) e.o.geometry.computeBoundingBox();
+            var _bb = e.o.geometry.boundingBox;
+            if (_bb) {
+              e.o.updateWorldMatrix(true, false);
+              var _topY = new _T.Vector3(0, _bb.max.y, 0).applyMatrix4(e.o.matrixWorld).y;
+              if (_topY > _ceilY + 1e-3) persistCeilCut++;
+            }
+          } catch (eP) {}
+        }
+      }
+      if (e.perInst && e.instOn) {
+        for (var j = 0; j < e.perInst.length; j++) {
+          var bj = e.perInst[j];
+          if (bj > gi && e.instOn[j]) aboveInst++;
+          if (bj >= 0 && bj < gi && !e.instOn[j]) belowInstOff++;
+        }
+      }
+    }
+    // persistCeilCut is INFORMATIONAL. The ceiling is monotone — cut.ceilZ is tops[si] and si only
+    // advances — so it can never clip something it previously allowed. A tall element straddling two
+    // bands is SUPPOSED to arrive in two pieces; counting that as a failure would make the witness
+    // unsatisfiable on any building with a double-height space.
+    var ok = (aboveVisible === 0 && aboveInst === 0 && ceilMissing === 0 &&
+              roleRegress === 0 && belowInstOff === 0 &&
+              persistGone === 0 && persistWrongMat === 0);
+    console.log('§STOREY_CUT_WITNESS slot=' + gi +
+      ' aboveVisible=' + aboveVisible + ' aboveInstVisible=' + aboveInst +
+      ' ceilPlaneMissing=' + ceilMissing + ' roleRegressions=' + roleRegress +
+      ' revealedInstTurnedOff=' + belowInstOff +
+      ' persistGone=' + persistGone + ' persistWrongMat=' + persistWrongMat +
+      ' persistCeilCut=' + persistCeilCut + '(informational)' +
+      ' => ' + (ok ? 'PASS (nothing above the cut is drawable; every armed material carries the' +
+                     ' ceiling; no object or member was drawn twice)'
+                   : 'FAIL — above* means two storeys show at once; roleRegressions means' +
+                     ' something is drawn twice; persist* means a storey that already had its pass' +
+                     ' has stopped being fully drawn (§122)'));
   }
 
   function _clearCut() {
     if (!_cutArmed) return;
     if (A.renderer) A.renderer.clippingPlanes = [];
-    _cutMats.forEach(function (m) { m.clippingPlanes = null; m.clipIntersection = false; m.clipShadows = false; m.needsUpdate = true; });
-    console.log('§STOREY_CUT_CLEAR materials=' + _cutMats.length + ' restored');
-    _cutMats = []; _cutSlab = null; _cutRest = null; _cutGlobal = []; _cutArmed = false; _cutAxisLogged = null; _axisLatch = null; _boundsLogged = false; _rakeLogged = null;
+    // §112 — _cutMats now holds CLONES only; the originals were never mutated, so there is nothing
+    // to undo on them. The clones are disposed below once every object is off them.
+
+    // §105 — every visibility flip and every context clone this module made is undone here. The
+    // reveal must leave the scene exactly as it found it: this is the path every bake/preview exit
+    // takes, including the throw path.
+    var nVis = 0, nInst = 0;
+    var nMat = 0;
+    _cutObjs.forEach(function (e) {
+      if (e.perInst) {                                     // §111 — every member back on
+        for (var j = 0; j < e.perInst.length; j++) _setInstanceVisible(e, j, true);
+        if (e.o.instanceMatrix) e.o.instanceMatrix.needsUpdate = true;
+        e.instOn = null;
+        nInst++;
+      }
+      if (e.mat0 && e.o.material !== e.mat0) { e.o.material = e.mat0; nMat++; }   // §112
+      if (e.o.visible !== e.vis0) { e.o.visible = e.vis0; nVis++; }
+    });
+    A._storeyCutCeilY = null;                                  // §115 — lights unrestricted again
+    if (_matVariants) _matVariants.forEach(function (v) {
+      try { v.revealed.dispose(); } catch (e1) {}
+      try { v.current.dispose(); } catch (e2) {}
+    });
+    _matVariants = null; _planeCeil = null; _planeSweepSlab = null; _planeSweepRest = null;
+    _cutClones.forEach(function (c) { if (c.o.material && c.o.material !== c.m0) { try { c.o.material.dispose(); } catch (eD) {} c.o.material = c.m0; } });
+    console.log('§STOREY_CUT_CLEAR materials=' + _cutMats.length + ' visibilityRestored=' + nVis +
+      ' perInstanceObjsRestored=' + nInst + ' materialsRestored=' + nMat +
+      ' contextClonesReverted=' + _cutClones.length + ' restored');
+    _cutMats = []; _cutObjs = []; _cutHidden = []; _cutClones = [];
+    _cutSlab = null; _cutRest = null; _cutGlobal = []; _cutArmed = false; _cutAxisLogged = null; _axisLatch = null; _boundsLogged = false; _rakeLogged = null;
   }
 
   // EVERY FRAME (unlike storeyRevealApplyVisual, which is key-gated on the slot): the plane constant
@@ -878,23 +1763,54 @@ function setupCpeStoreyReveal(A) {
     var set = _cutPlanesFor(cut);
     if (!set) return;
     // A change of axis changes the PLANE COUNT and the combine mode, so it must re-arm, not update.
-    if (_cutArmed && (_cutSlab.length !== set.slab.length ||
-        _cutGlobal.length !== (set.global || []).length)) _clearCut();
+    if (_cutArmed && _cutSlab.length !== set.slab.length) _clearCut();
     if (!_cutArmed) _armCut(set);
     else {
       for (var i = 0; i < set.slab.length; i++) {
         _cutSlab[i].normal.copy(set.slab[i].normal); _cutSlab[i].constant = set.slab[i].constant;
         _cutRest[i].normal.copy(set.rest[i].normal); _cutRest[i].constant = set.rest[i].constant;
       }
-      var g = set.global || [];
-      for (var j = 0; j < g.length && j < _cutGlobal.length; j++) {
-        _cutGlobal[j].normal.copy(g[j].normal); _cutGlobal[j].constant = g[j].constant;
-      }
     }
+    // §112 — the three planes every armed material shares. The ceiling is BACK (it was never
+    // optional: it clips WITHIN an object, which visibility cannot do — that is why protrusions were
+    // revealed early and then re-swept), and it lives on the materials, not on the renderer's global
+    // array, so the background is still untouched.
+    var _T2 = window.THREE, _sd = null, _sr = null;
+    if (_planeCeil && set.global && set.global.length) {
+      _planeCeil.normal.copy(set.global[0].normal); _planeCeil.constant = set.global[0].constant;
+    }
+    if (_planeSweepSlab && set.slab.length > 1) {
+      _planeSweepSlab.normal.copy(set.slab[1].normal); _planeSweepSlab.constant = set.slab[1].constant;
+      _sd = -set.slab[1].constant;
+    }
+    if (_planeSweepRest && set.rest.length > 1) {
+      _planeSweepRest.normal.copy(set.rest[1].normal); _planeSweepRest.constant = set.rest[1].constant;
+      _sr = -set.rest[1].constant;
+    }
+    // §115 — publish the ceiling the cut is at, in WORLD y, so the interior-light selection can gate
+    // on it (tools.js §STOREY_CUT_LIGHT_GATE). A PointLight is not a mesh and can never be reached by
+    // this module's clipping planes or visibility, so the one number is the whole interface.
+    A._storeyCutCeilY = cut.ceilZ - (A.modelOffset ? A.modelOffset.z : 0);
+    _applyRoles(cut.si != null ? cut.si : cut.idx, _sd, _sr);
     if (_cutLogIdx !== cut.idx) {
       _cutLogIdx = cut.idx;
+      // §109 — mark once drawn, and shout if a slot is re-entered out of order.
+      if (_drawn && cut.idx < _drawn.length) {
+        if (_drawn[cut.idx] && _drawnOrder[_drawnOrder.length - 1] !== cut.idx) {
+          console.log('§STOREY_REVEAL_REDRAW slot=' + cut.idx + ' storey="' + cut.storey +
+            '" order=[' + _drawnOrder.join(',') + '] — this slot has already been drawn once and is' +
+            ' being swept AGAIN; the reveal must be one arrival per group (§97.4)');
+        }
+        _drawn[cut.idx] = true;
+        if (_drawnOrder[_drawnOrder.length - 1] !== cut.idx) _drawnOrder.push(cut.idx);
+      }
       console.log('§STOREY_CUT storey="' + cut.storey + '" slot=' + (cut.idx + 1) + '/' + cut.n +
-        ' cutZ=' + cut.cutZ.toFixed(2) + ' phase=' + cut.phase + ' riseFrac=' + CUT_RISE_FRAC +
+        ' cutZ=' + cut.cutZ.toFixed(2) + ' phase=' + cut.phase +
+        ' slotSec=' + (cut.slotSec || 0).toFixed(2) + ' sweepSec=' + (cut.sweepSec || 0).toFixed(2) +
+        ' roles(' + _roleCount + ') of ' + _cutObjs.length +
+        ' instancesHiddenAbove=' + _hideInstCount +
+        ' slabK=' + cut.slabK.toFixed(2) + ' restK=' + cut.restK.toFixed(2) +
+        (cut.isGroundSlab ? ' GROUND_SLAB_PASS(§106)' : '') +
         ' (boundary=midpoint of adjacent AVG(center_z) — a labelled slab-level ESTIMATE, §94.2)');
     }
   }
@@ -913,7 +1829,16 @@ function setupCpeStoreyReveal(A) {
     if (key === _curIdx) return;
     _restoreTint();
     _curIdx = key;
-    if (vis) {
+    // §108 (user, 2026-09-13: "Why is there lingering blue tint? Remove any stale effects") — the
+    // TINT AND THE MARKER HIDE ARE BOTH DEAD and were still running underneath the section cut.
+    // COLORS[0] is 0x2979ff, so every slot was still painting its storey's facade subset blue over
+    // a beat whose whole mechanism is now geometric; and because the ground-slab pass and Level 1's
+    // pass are both slots on the SAME storey, that storey got tinted twice in a row, which is the
+    // "2nd floor got drawn twice" report — one cause, two symptoms. Both contradict the locked
+    // verdict this file's preamble carries: "no tint, no fade, no darkening, no lit edge, no rake,
+    // clash/Sanity layers stay on". _restoreTint() above STAYS — it is the restore path for any
+    // tint a previous build left applied, and it is a no-op when nothing is touched.
+    if (vis && STOREY_REVEAL_TINT) {
       _hideMarkers();
       if (!vis.dark) _applyTint(vis.storey, vis.color);
     }

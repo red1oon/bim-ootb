@@ -1958,6 +1958,28 @@
         // (plan, tNorm), null outside that narrow window by construction, so this can never fire
         // inside the disc-reveal round's own tail above. Same "one pure function, two callers" call
         // cinema_path_editor.js's preview step() makes.
+        // §116 (user, 2026-09-13): "Better just hide them all at pull out or last stick as not really
+        // needed." The per-storey light gate (§115) capped the SELECTION but the fixtures were still
+        // reading as clutter on frames, so the ruling is simpler and absolute: from the LAST STICK
+        // (beats.out — where the walk ends and the pull-out begins) to the end of the film, the
+        // interior fixtures are OFF. By that point the camera is outside and climbing away; their
+        // only contribution is glow in rooms nobody is looking into.
+        // §118 — TWO separate facts, deliberately. `_ilPastStick` is WHEN THE WITNESS CHECKS (are we
+        // past the last stick?); `_interiorLightsOff` is WHETHER THE GATE IS APPLIED. Tying the
+        // witness to the gate flag would make the falsifiability control silence the very check it
+        // exists to trip, and a check that switches itself off with the fix is not a check.
+        A._ilPastStick = !!(plan && plan.beats && _tnFilm >= plan.beats.out);
+        if (plan && plan.beats && !A._ilBoundaryLogged) {
+          A._ilBoundaryLogged = true;
+          console.log('§INTERIOR_LIGHTS_BOUNDARY lastStickFrac=' + plan.beats.out.toFixed(4) +
+            ' (beats.out — interior fixtures are ON before this and OFF from here to the end; a bake' +
+            ' clipped entirely below it must show no §INTERIOR_LIGHTS_OFF line at all)');
+        }
+        A._interiorLightsOff = A._ilPastStick &&
+          !(typeof window !== 'undefined' && window.__ilForceOn);
+        // §117's witness runs just before capture (search §INTERIOR_LIGHTS_WITNESS), not here:
+        // sampled at this point it would read the PREVIOUS frame's lighting and report a phantom
+        // FAIL on the first gated frame. Measured — that is exactly what the first version did.
         if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(plan, _tnFilm);
         // §STOREY_SECTION_CUT — NOT key-gated like ApplyVisual above: the plane constant moves
         // every frame, so it cannot ride the slot key (§94.3).
@@ -2394,6 +2416,46 @@
           }
         }
         window.APP._burninFrameIdx = i;   // §DATUM_DECOUPLE — which pre-extracted clean PNG this frame loads
+        // §117 WITNESS (user: "Don't you WITNESS log to prove that it's not working?") — §113's
+        // witness covers the CUT and proved nothing about lighting, which is exactly why §115's
+        // per-storey cap read as working in the log while fixture GLOW was still on screen: the
+        // PointLights and the glow sprites are two different object families and only one was being
+        // counted. This counts every interior emitter there is, from the live scene, and must read
+        // zero on every frame after the last stick. It reads the PREVIOUS frame's writes, which is
+        // what makes it independent of the gate's own arithmetic rather than a restatement of it.
+        if (A._ilPastStick) {
+          var _wPool = 0, _wNav = 0;
+          if (A._nightBakePool) for (var _wi = 0; _wi < A._nightBakePool.length; _wi++) {
+            if (A._nightBakePool[_wi].intensity > 0) _wPool++;
+          }
+          if (A._nightLightByPos && A._nightLightByPos.forEach) {
+            A._nightLightByPos.forEach(function (l) { if (l && l.intensity > 0) _wNav++; });
+          }
+          var _wGlow = A._glowStagedCount || 0;
+          // §118 — FOUR families, not three. The first version counted pool lights, nav lights and
+          // the sprite cloud, reported PASS, and fixtures were still visibly lit: the lens quad and
+          // the emissive fixture materials were never in the count. A witness that cannot see a
+          // family cannot fail on it.
+          var _wLens = A._glowLensLive ? 1 : 0;
+          var _wEmis = 0;
+          if (A._nightGlowMats) for (var _ge = 0; _ge < A._nightGlowMats.length; _ge++) {
+            var _gm = A._nightGlowMats[_ge].mat;
+            if (_gm && _gm.emissiveIntensity > 0 && _gm.emissive && _gm.emissive.getHex() !== 0) _wEmis++;
+          }
+          var _wKey = _wPool + '/' + _wNav + '/' + _wGlow + '/' + _wLens + '/' + _wEmis;
+          if (A._ilWitnessKey !== _wKey) {
+            A._ilWitnessKey = _wKey;
+            console.log('§INTERIOR_LIGHTS_WITNESS poolLit=' + _wPool + '/' +
+              ((A._nightBakePool && A._nightBakePool.length) || 0) + ' navLit=' + _wNav +
+              ' glowSpritesStaged=' + _wGlow + ' lensQuadLive=' + _wLens +
+              ' emissiveMatsLit=' + _wEmis + '/' + ((A._nightGlowMats && A._nightGlowMats.length) || 0) +
+              ' => ' +
+              ((_wPool + _wNav + _wGlow + _wLens + _wEmis === 0)
+                ? 'PASS (no interior emitter of any family is on after the last stick)'
+                : 'FAIL — something interior is still emitting. Each count prints over its own' +
+                  ' DENOMINATOR so a zero can be told apart from an absent family (a vacuous pass).'));
+          }
+        } else A._ilWitnessKey = null;
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
@@ -2479,6 +2541,7 @@
       try { if (A.cpeArchFadeApplyVisual) A.cpeArchFadeApplyVisual(null, 0); } catch (eRVf) {}
       // §STOREY_HIGHLIGHT_REVEAL: same contract — a tinted storey left glowing after a bake would
       // follow the user into normal navigation. plan=null forces the restore.
+      A._interiorLightsOff = false; A._ilBoundaryLogged = false;     // §116 restore
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
       try { if (A.storeyRevealApplyCut) A.storeyRevealApplyCut(null, 0); } catch (eSC) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
@@ -2561,6 +2624,7 @@
       try { _ghostGroundRestore(); } catch (e4) {}
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { if (A.cpeArchFadeApplyVisual) A.cpeArchFadeApplyVisual(null, 0); } catch (eRVf2) {}
+      A._interiorLightsOff = false; A._ilBoundaryLogged = false;     // §116 restore
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR2) {}
       try { if (A.storeyRevealApplyCut) A.storeyRevealApplyCut(null, 0); } catch (eSC2) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD2) {}

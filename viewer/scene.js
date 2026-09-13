@@ -750,11 +750,23 @@ async function setupScene(A) {
       // §CPE_STICK_HOLD's hold_sec already follows, and the reader (effects.js _cpeLoadFromDb)
       // probes PRAGMA table_info and falls back, so an older .db still opens and a .db written here
       // still opens in an older build.
+      // ══ §CPE_FLAGS_PORTABLE_2 (2026-09-14, user: "it seems that the latest features are not
+      // included in the path saving") — §CPE_FLAGS_PORTABLE persisted FOUR of the override's film
+      // flags. `_buildOverride()` carries SIX: clash (§CLASH_FILM_P1), measure (§FLYTHRU_DATUM) and
+      // storeyReveal (§STOREY_HIGHLIGHT_REVEAL) were added to the panel afterwards and were left out
+      // of the portable table, so a saved path travelled with those three silently off and a CLI bake
+      // of that .db had to be told each one on the command line. Same failure §CPE_FLAGS_PORTABLE
+      // already fixed once, one panel revision later.
+      // Appended after day_counter, never inserted among the existing columns — the version-skew rule
+      // §CPE_STICK_HOLD and §CPE_FLAGS_PORTABLE both follow, and the reader probes PRAGMA table_info
+      // per optional column, so an older .db still opens here and a .db written here still opens in
+      // an older build.
       db.run("CREATE TABLE cinema_path (seq INTEGER, ifc_x REAL, ifc_y REAL, ifc_z REAL, " +
              "dir_x REAL, dir_y REAL, dir_z REAL, len REAL, " +
              "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL, " +
-             "hold_sec REAL, buildup INTEGER, room_title INTEGER, reveal INTEGER, day_counter TEXT)");
-      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+             "hold_sec REAL, buildup INTEGER, room_title INTEGER, reveal INTEGER, day_counter TEXT, " +
+             "clash INTEGER, measure INTEGER, storey_reveal INTEGER)");
+      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       ov.bands.forEach(function(b, i) {
         var p = A.three2ifc(b.c.x, b.c.y, b.c.z);
         var d = A.three2ifcDir(b.d.x, b.d.y, b.d.z);
@@ -764,7 +776,9 @@ async function setupScene(A) {
                   // §CPE_FLAGS_PORTABLE — the film flags, per row (constant across rows, exactly
                   // like total_sec/dive_sec above; the reader takes them from row 0).
                   ov.buildup ? 1 : 0, ov.roomTitle ? 1 : 0, ov.reveal ? 1 : 0,
-                  ov.dayCounter == null ? null : String(ov.dayCounter)]);
+                  ov.dayCounter == null ? null : String(ov.dayCounter),
+                  // §CPE_FLAGS_PORTABLE_2 — the other three the panel tracks.
+                  ov.clash ? 1 : 0, ov.measure ? 1 : 0, ov.storeyReveal ? 1 : 0]);
       });
       stmt.free();
       // §CPE_FLAGS_PORTABLE — the flags are now part of what a save CLAIMS to have written, so a
@@ -773,6 +787,8 @@ async function setupScene(A) {
       console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's' +
         ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
         ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'default') +
+        ' clash=' + (ov.clash ? 1 : 0) + ' measure=' + (ov.measure ? 1 : 0) +
+        ' storeyReveal=' + (ov.storeyReveal ? 1 : 0) +
         ' (§CPE_FLAGS_PORTABLE — these travel with the .db now)');
     } catch (e) { console.warn('§CINEMA_PATH_SAVE_FAIL ' + e.message); }
   }

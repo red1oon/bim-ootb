@@ -4821,7 +4821,7 @@ async function setupEffects(A, renderer, scene, camera) {
         if (!_glowSkipLogged) { _glowSkipLogged = true;
           console.log('§GLOW_BUILDUP_EARLY_OUT skipping — cursor is before the first fixture placement; ' +
             'logged once, not once per frame'); }
-        _glowStagedCount = 0;
+        _glowStagedCount = 0; A._glowStagedCount = 0; A._glowStagedCount = 0;
         return;
       }
     }
@@ -4831,12 +4831,25 @@ async function setupEffects(A, renderer, scene, camera) {
     // a real fixture only glows once Time Machine has actually placed it. A._tmIsVisible defaults
     // to true when TM isn't driving the scene at all, so plain Night Mode (no buildup in progress)
     // is completely unchanged.
+    // §116 — from the last stick to the end of the film the interior fixtures are OFF, glow sprites
+    // included. They are a separate object family from the PointLights, which is why capping the
+    // lights alone (§115) still left fixture glow on screen.
+    if (A._interiorLightsOff) {
+      _glowStagedCount = 0; A._glowStagedCount = 0;
+      if (!A._glowOffLogged) {
+        A._glowOffLogged = true;
+        console.log('§INTERIOR_LIGHTS_OFF glowSprites staged=0 of ' + allPos.length +
+          ' (§116 — from beats.out to the end of the film)');
+      }
+      return;
+    }
+    A._glowOffLogged = false;
     var pos = allPos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
     // §GLOW_LENS_QUAD (this session's own merge) — optional extra filter, e.g. the still stages
     // ONLY the exit-sign subset here (the quad handles everything else). Applied on TOP of the
     // buildup gate above, not instead of it.
     if (filterFn) pos = pos.filter(filterFn);
-    _glowStagedCount = pos.length;
+    _glowStagedCount = pos.length; A._glowStagedCount = pos.length;
     if (!pos.length) {
       console.log('§PHOTO_GLOW_SPRITE_GATE 0/' + allPos.length + ' fixtures placed yet — nothing to light');
       return;
@@ -5061,6 +5074,12 @@ async function setupEffects(A, renderer, scene, camera) {
   }
 
   function _glowLensOn() {
+    // §118 — the lens quad is a FOURTH emitter family, separate from the sprite cloud, the PointLights
+    // and the emissive fixture materials. §116 took down three of the four, which is why fixtures
+    // still read as lit after the last stick. Gated HERE, at its own staging site — an earlier
+    // attempt put the check in _teardownStillRefine and its `return` skipped the rest of that
+    // teardown, which corrupted frame capture (§MAXQ_FAIL createImageBitmap, fileOk=false).
+    if (A._interiorLightsOff && !(typeof window !== 'undefined' && window.__noLensGate)) { _glowLensOff(); return; }
     _glowLensRevealGate();   // §CPE_REVEAL_LENS_QUAD_OFF — before the early return, so a stage-kept frame is gated too
     if (_glowLensMeshRect || _glowLensMeshRound) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
@@ -5074,7 +5093,7 @@ async function setupEffects(A, renderer, scene, camera) {
     pos = pos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
     // §R10 — recorded BEFORE the zero-check, same placement _glowStagedCount uses above, so a
     // teardown-time comparison sees "0 visible" as a real, stable count rather than "unset".
-    _glowLensStagedCount = pos.length;
+    A._glowLensLive = 1; _glowLensStagedCount = pos.length;
     if (!pos.length) { console.log('§GLOW_LENS_QUAD_GATE 0 fixtures placed yet — nothing to light'); return; }
     var geo = new THREE.PlaneGeometry(1, 1);
     var matRect = new THREE.MeshBasicMaterial({
@@ -5159,6 +5178,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' draw call(s), 0 scene materials touched');
   }
   function _glowLensOff() {
+    A._glowLensLive = 0;          // §118 — read by §INTERIOR_LIGHTS_WITNESS
     _glowLensRevealScalar = -1;   // §CPE_REVEAL_LENS_QUAD_OFF — nothing staged owns a scalar any more
     if (!_glowLensMeshRect && !_glowLensMeshRound) return;
     // Both meshes share ONE PlaneGeometry instance (built fresh each _glowLensOn() call) —
@@ -8040,8 +8060,73 @@ async function setupEffects(A, renderer, scene, camera) {
     // `_useSec.rise` (and therefore `sec.rise`/`naturalSec.rise`) stays the TRUE unfolded pull-back
     // budget always, safe to round-trip through the override channel any number of times.
     var _riseFolded = _useSec.rise + (_useSec.tail || 0);
+    // §107.1 (user, 2026-09-13: "Push back the path time range if not sufficient within the lull") —
+    // GROW THE PULL-BACK when the lull in front of the orbit cannot hold the weighted reveal slots.
+    // Stealing from the neighbouring beats was tried first and does not generalise: HHS's reveal,
+    // flyback and pullout budgets are ALL 0s, so there was nothing behind the pull-back to take.
+    // The pull-back's own share of the film is what has to grow. Solving
+    //     rise / (shapeWithoutRise + rise) = wantRealSec / durationSec
+    // for rise gives rise = k*S0/(1-k), which lands the window on exactly wantRealSec of film. The
+    // film's total length does not change — the other beats keep their shape seconds and therefore
+    // play proportionally faster, which is the trade this ruling accepts. Capped at RISE_GROW_MAX of
+    // the shape so a building with many storeys cannot swallow the film, and logged either way.
+    var RISE_GROW_MAX = 0.45;
+    var _riseGrown = null, _riseKept = null, _stealSec = 0;
+    try {
+      var _rl = (typeof A.storeyRevealList === 'function' && A.storeyRevealList()) || [];
+      if (_rl.length && durationSec > 0) {
+        var _cn = _rl.map(function (x) { return x.n || 0; }).filter(function (x) { return x > 0; }).sort(function (a, b) { return a - b; });
+        var _cm = _cn.length ? (_cn.length % 2 ? _cn[(_cn.length - 1) / 2] : (_cn[_cn.length / 2 - 1] + _cn[_cn.length / 2]) / 2) : 0;
+        // §110 — ask for the GENEROUS window: the base sweep at its ceiling (2 x the 1.5s floor),
+        // scaled by each storey's quantity weight. _fitList then solves the actual base down from
+        // this if the film could not afford all of it, so this is a request, not a promise.
+        var _SWEEP_MAX = 3.0;
+        var _W = _SWEEP_MAX + 0.5;                                 // the ground-slab pass
+        _rl.forEach(function (g) { _W += Math.max(1.5, _SWEEP_MAX * (_cm > 0 ? (g.n || 0) / _cm : 1)) + 0.5; });
+        // §107.2 (user, 2026-09-13: "if U can steal time from prior to the lull ie mid pull out, it
+        // be good effect for smoothness" + "Taking up path time as it is, not lengthening the movie
+        // duration") — STEAL BEFORE GROWING. The window may run back through the beats that feed the
+        // orbit (reveal, then flyback, then pullout) at no cost to anything: those seconds are
+        // already in the film and the camera is already drifting through them, so the reveal simply
+        // starts earlier inside the same pull-out. Only the SHORTFALL past that lull is taken by
+        // growing the pull-back's share, which is the part that makes every other beat play faster.
+        // Hospital has a real pullout+flyback and so pays little or nothing; HHS measures 0s for all
+        // three, which is why it still has to grow.
+        var _lull = (_useSec.reveal || 0) + (_useSec.flyback || 0) + (_useSec.pullout || 0);
+        var _S0 = _useSec.dive + _useSec.spin + _useSec.out + _useSec.orbit +
+                  (_riseFolded - _useSec.rise);
+        var _k = Math.min(RISE_GROW_MAX, _W / durationSec);
+        var _extWant = _k * _S0 / (1 - _k);          // total extendable seconds the window needs
+        var _riseWant = _extWant - _lull;            // what is left once the lull is spent
+        _stealSec = Math.min(_lull, Math.max(0, _extWant - _useSec.rise));
+        if (_riseWant > _useSec.rise) {
+          _riseGrown = { from: _useSec.rise, to: _riseWant, wantRealSec: _W, lull: _lull, steal: _stealSec };
+          _riseFolded += (_riseWant - _useSec.rise);
+          _useSec.rise = _riseWant;
+        } else if (_stealSec > 0) {
+          _riseKept = { rise: _useSec.rise, lull: _lull, steal: _stealSec, wantRealSec: _W };
+        }
+      }
+    } catch (eRG) { _riseGrown = null; }
     var _shapeTotal = _useSec.dive + _useSec.spin + _useSec.out + _useSec.pullout + _useSec.flyback +
                        _useSec.reveal + _riseFolded + _useSec.orbit;
+    if (_riseKept) {
+      console.log('§STOREY_REVEAL_STEAL pullbackShapeSec=' + _riseKept.rise.toFixed(2) +
+        ' lullBehindSec=' + _riseKept.lull.toFixed(2) + '(reveal+flyback+pullout)' +
+        ' stolenSec=' + _riseKept.steal.toFixed(2) + ' wantRealSec=' + _riseKept.wantRealSec.toFixed(2) +
+        ' pullbackGrewBy=0.00 (§107.2 — the window runs back into the pull-out; no other beat is' +
+        ' sped up, the film keeps its length and its pacing)');
+    }
+    if (_riseGrown) {
+      console.log('§STOREY_REVEAL_RISE_GROW lullBehindSec=' + _riseGrown.lull.toFixed(2) +
+        '(reveal+flyback+pullout, all spent first) stolenSec=' + _riseGrown.steal.toFixed(2) +
+        ' pullbackShapeSec=' + _riseGrown.from.toFixed(2) + '->' +
+        _riseGrown.to.toFixed(2) + ' wantRealSec=' + _riseGrown.wantRealSec.toFixed(2) +
+        ' durationSec=' + durationSec.toFixed(1) + ' shapeTotal=' + _shapeTotal.toFixed(2) +
+        ' newRiseFrac=' + (_useSec.rise / _shapeTotal).toFixed(4) + ' cap=' + RISE_GROW_MAX +
+        ' (§107.1 — the pull-back grows so the reveal gets its weighted slots; the film keeps its' +
+        ' length, the other beats play proportionally faster)');
+    }
     var tD = _useSec.dive / _shapeTotal;
     var tS = tD + _useSec.spin / _shapeTotal;
     var tO = tS + _useSec.out / _shapeTotal;
@@ -8076,7 +8161,68 @@ async function setupEffects(A, renderer, scene, camera) {
     // 1.0s/storey minimum, comfortably fits all 8 without truncation (1.25s each) — still clamped
     // to the whole pullback beat below on a building whose pullback is naturally shorter.
     var STOREY_REVEAL_WINDOW_SEC = 10;
-    var _storeyRevealWindowSec = Math.min(_useSec.rise, STOREY_REVEAL_WINDOW_SEC);
+    // §104 (user, 2026-09-13: "Too fast, mandatory 1.5s to reveal each storey") — the window is now
+    // SIZED BY THE BUILDING rather than fixed. A storey's slot is 1.5s sweep + 0.5s pause = 2.0s, so
+    // the window it needs is groups x 2.0 REAL FILM seconds, and §103's grouping is what makes that
+    // affordable (Hospital 8 passes -> 6). Fixed 10s was the §92.4 defect twice over: at 8 storeys it
+    // gave 1.25s slots (1.13s sweeps, the "too fast"), and once the slot budget became a real 2.0s it
+    // TRUNCATED the top group away instead — dropping Level 6+{7A,7}, so the building never topped
+    // out. Converted back into SHAPE seconds via _shapeTotal/durationSec, the same two quantities
+    // §STOREY_REVEAL_WINDOW_REAL_SEC below already reconciles, and still clamped to the pullback beat
+    // so it can never bleed into the tail. Hospital: 6 x 2.0 = 12.0s real out of a 30.8s pullback.
+    var _revealSlotSec = 2.0;                       // CUT_SWEEP_SEC + CUT_PAUSE_SEC, cpe_storey_reveal.js
+    var _revealGroups = 0, _revealList = [];
+    try { _revealList = (typeof A.storeyRevealList === 'function' && A.storeyRevealList()) || []; _revealGroups = _revealList.length; } catch (eG) { _revealGroups = 0; }
+    // §106 — one extra slot at the front for the ground slab's own pass.
+    // §107 — and the slots are WEIGHTED by element quantity, so the window has to ask for the same
+    // sum cpe_storey_reveal.js's _fitList will compute: each storey's sweep is CUT_SWEEP_SEC scaled
+    // by its element count against the median, floored at CUT_SWEEP_SEC, plus a pause each. Asking
+    // for a flat (n+1) x 2.0 here would hand _fitList a window it then has to shrink every sweep to
+    // fit, which is exactly the "rushed" symptom the weights exist to remove.
+    var _revealSweepSec = 1.5, _revealPauseSec = 0.5;
+    var _cnts = _revealList.map(function (x) { return x.n || 0; }).filter(function (x) { return x > 0; }).sort(function (a, b) { return a - b; });
+    var _cMedE = _cnts.length ? (_cnts.length % 2 ? _cnts[(_cnts.length - 1) / 2] : (_cnts[_cnts.length / 2 - 1] + _cnts[_cnts.length / 2]) / 2) : 0;
+    // §110 — the SAME generous request the rise-grow block above solved for, or the window frac ends
+    // up sized off the old 1.5s-floor figure and the grown pull-back is wasted. One base, both places.
+    var _revealSweepMax = 2 * _revealSweepSec;
+    var _wantRealSec = STOREY_REVEAL_WINDOW_SEC;
+    if (_revealGroups > 0) {
+      _wantRealSec = _revealSweepMax + _revealPauseSec;                 // the ground-slab pass
+      _revealList.forEach(function (g) {
+        var r = _cMedE > 0 ? (g.n || 0) / _cMedE : 1;
+        _wantRealSec += Math.max(_revealSweepSec, _revealSweepMax * r) + _revealPauseSec;
+      });
+    }
+    var _wantShapeSec = (durationSec > 0 && _shapeTotal > 0) ? _wantRealSec * (_shapeTotal / durationSec) : _wantRealSec;
+    // §107.1 (user, 2026-09-13: "Push back the path time range if not sufficient within the lull") —
+    // the window may now extend EARLIER than the pull-back beat when the pull-back alone cannot hold
+    // the weighted slots, eating backward into the `reveal` beat rather than truncating storeys or
+    // rushing every sweep. HHS is the case that needs it: a 2.7s(shape) pull-back cannot hold four
+    // passes at any speed. Still bounded — it can reach back through `reveal` and no further, so the
+    // beats before it keep their own captions and visuals.
+    // HHS measured 2026-09-13: its `reveal` beat is 0s, so rise+reveal gave nothing to push back into
+    // and Level 3 truncated anyway. The lull in front of the orbit is the pull-back AND the beats
+    // that feed it — reveal, then flyback, then pullout — so the window may reach back through all
+    // three. It still stops before the round-2 walk, which has its own captions and cues.
+    // §107.2 — the window may reach back through the lull that feeds the orbit, on top of whatever
+    // the pull-back itself holds. _riseFolded/_shapeTotal above have already settled by this point.
+    var _revealCap = _useSec.rise + (_useSec.reveal || 0) + (_useSec.flyback || 0) + (_useSec.pullout || 0);
+    var _storeyRevealWindowSec = Math.min(_revealCap, _wantShapeSec);
+    if (_storeyRevealWindowSec > _useSec.rise) {
+      console.log('§STOREY_REVEAL_PUSHBACK pullbackSec=' + _useSec.rise.toFixed(2) +
+        '(shape) wantShapeSec=' + _wantShapeSec.toFixed(2) + ' capShapeSec=' + _revealCap.toFixed(2) +
+        ' usedShapeSec=' + _storeyRevealWindowSec.toFixed(2) +
+        ' extendsBackBy=' + (_storeyRevealWindowSec - _useSec.rise).toFixed(2) + 's(shape)' +
+        ' beatsBehind=reveal:' + (_useSec.reveal || 0).toFixed(2) + ' flyback:' + (_useSec.flyback || 0).toFixed(2) +
+        ' pullout:' + (_useSec.pullout || 0).toFixed(2) +
+        ' (§107.1 — the pull-back alone could not hold the weighted slots)');
+    }
+    console.log('§STOREY_REVEAL_WINDOW_FIT groups=' + _revealGroups + ' slotSec=' + _revealSlotSec +
+      ' wantRealSec=' + _wantRealSec.toFixed(2) + ' wantShapeSec=' + _wantShapeSec.toFixed(2) +
+      ' pullbackSec=' + _useSec.rise.toFixed(1) + ' usedShapeSec=' + _storeyRevealWindowSec.toFixed(2) +
+      (_wantShapeSec > _revealCap ? ' CLAMPED at the reveal beat — some top groups will still truncate'
+                                  : ' fits, no truncation') +
+      ' (§104 — the window is sized by the building, not a constant)');
     var _storeyRevealWindowFrac = _shapeTotal > 0 ? _storeyRevealWindowSec / _shapeTotal : 0;
     // §STOREY_REVEAL_WINDOW_REAL_SEC (2026-09-11, MEP_CLASH_REVEAL_MOVIE.md §60.2). `windowSec` above
     // is in SHAPE seconds (`_useSec.rise`, whose denominator is `_shapeTotal`) — it is NOT the number
@@ -9286,19 +9432,25 @@ async function setupEffects(A, renderer, scene, camera) {
       // hold_sec, so the same one-probe-per-optional-column rule applies — a .db written by any
       // earlier build simply has neither, and asking for them would take the WHOLE path down over
       // fields whose absence has a documented default (every flag off, dayCounter unset).
-      var _hasHold = false, _hasFlags = false;
+      // §CPE_FLAGS_PORTABLE_2 (2026-09-14): clash/measure/storey_reveal were appended after
+      // day_counter, so they get their own probe — a .db written between the two revisions has the
+      // first four flags and not these three, and must still open.
+      var _hasHold = false, _hasFlags = false, _hasFlags2 = false;
       try {
         var ti = A.dbQuery("PRAGMA table_info(cinema_path)");
         for (var _ti = 0; _ti < (ti || []).length; _ti++) {
           if (ti[_ti][1] === 'hold_sec') _hasHold = true;
           if (ti[_ti][1] === 'buildup') _hasFlags = true;
+          if (ti[_ti][1] === 'storey_reveal') _hasFlags2 = true;
         }
       } catch (eTi) {}
       var rows = A.dbQuery("SELECT seq,ifc_x,ifc_y,ifc_z,dir_x,dir_y,dir_z,len," +
         "total_sec,dive_sec,spin_sec,out_sec,rise_sec," +
         (_hasHold ? "hold_sec" : "0 AS hold_sec") + "," +
         (_hasFlags ? "buildup,room_title,reveal,day_counter"
-                   : "0 AS buildup,0 AS room_title,0 AS reveal,NULL AS day_counter") +
+                   : "0 AS buildup,0 AS room_title,0 AS reveal,NULL AS day_counter") + "," +
+        (_hasFlags2 ? "clash,measure,storey_reveal"
+                    : "NULL AS clash,NULL AS measure,NULL AS storey_reveal") +
         " FROM cinema_path ORDER BY seq");
       if (!rows || rows.length < 2) { console.log('§CINEMA_PATH_RESTORE none (0 rows) — derived path'); return; }
       // §CPE_BANDS: rebuilt as bands, so the rigid-straight invariant is restored with the data
@@ -9322,6 +9474,22 @@ async function setupEffects(A, renderer, scene, camera) {
         A._cinemaPathEdit.reveal = !!rows[0][16];
         if (rows[0][17] != null && rows[0][17] !== '') A._cinemaPathEdit.dayCounter = String(rows[0][17]);
       }
+      // §CPE_FLAGS_PORTABLE_2 — NULL means "this .db predates the columns", which is not the same as
+      // "off": leave them undefined so the consumer's existing default still applies, exactly as
+      // §CPE_FLAGS_PORTABLE does for an older file.
+      if (_hasFlags2) {
+        if (rows[0][18] != null) A._cinemaPathEdit.clash = !!rows[0][18];
+        if (rows[0][19] != null) A._cinemaPathEdit.measure = !!rows[0][19];
+        if (rows[0][20] != null) A._cinemaPathEdit.storeyReveal = !!rows[0][20];
+      }
+      console.log('§CPE_FLAGS_RESTORE hasFlags=' + (_hasFlags ? 1 : 0) + ' hasFlags2=' + (_hasFlags2 ? 1 : 0) +
+        ' buildup=' + (A._cinemaPathEdit.buildup === undefined ? '-' : (A._cinemaPathEdit.buildup ? 1 : 0)) +
+        ' roomTitle=' + (A._cinemaPathEdit.roomTitle === undefined ? '-' : (A._cinemaPathEdit.roomTitle ? 1 : 0)) +
+        ' reveal=' + (A._cinemaPathEdit.reveal === undefined ? '-' : (A._cinemaPathEdit.reveal ? 1 : 0)) +
+        ' clash=' + (A._cinemaPathEdit.clash === undefined ? '-' : (A._cinemaPathEdit.clash ? 1 : 0)) +
+        ' measure=' + (A._cinemaPathEdit.measure === undefined ? '-' : (A._cinemaPathEdit.measure ? 1 : 0)) +
+        ' storeyReveal=' + (A._cinemaPathEdit.storeyReveal === undefined ? '-' : (A._cinemaPathEdit.storeyReveal ? 1 : 0)) +
+        " (§CPE_FLAGS_PORTABLE_2 — '-' means the column is absent in this .db, so the consumer default applies)");
       console.log('§CINEMA_PATH_RESTORE bands=' + bands.length + ' total=' + rows[0][8].toFixed(1) +
         's holdCol=' + _hasHold + ' holds=' + bands.filter(function(b) { return b.hold > 0.01; }).length +
         ' flagCol=' + _hasFlags +
