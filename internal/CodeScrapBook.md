@@ -1017,7 +1017,8 @@ none of them is hard.
 §17.5 adds rows 7-10 (error handling, cache pins, SQL). Row 7 outranks
 everything above it. §19.4 adds rows 11-13 (duplication) — all gated on the
 version freeze. §20.5 adds rows 14-16 (WASM duplication, the thread
-ceiling, and the unexplored checkJS gate).
+ceiling, and the unexplored checkJS gate). §21.6 adds rows 17-20 (the
+isolation options and the unsupported size claim); row 17 gates 18 and 19.
 
 ### 16.5 Closed
 
@@ -1378,7 +1379,141 @@ in the perf notes. Worth deciding deliberately rather than discovering later.
 
 ---
 
-## 21. Re-measure
+## 21. Cross-origin isolation — the OCI option, and what the real claim is
+
+> Measured 2026-09-13 at `719ebb92`. Observation; nothing changed.
+
+### 21.1 The problem restated
+
+`crossOriginIsolated === true` requires two response headers on the **document**:
+
+```
+Cross-Origin-Opener-Policy:   same-origin
+Cross-Origin-Embedder-Policy: require-corp     (or credentialless)
+```
+
+Without them the browser withholds `SharedArrayBuffer`, and therefore **WASM
+threads** and `performance.measureUserAgentSpecificMemory()`. `erp/vfs_detect.js:9-12`
+already records the storage half: *"GitHub Pages sets no COOP/COEP →
+`crossOriginIsolated` is false → IDB-only there. That is a HOSTING reality."*
+The WASM-thread half follows from the same fact and is recorded nowhere.
+
+### 21.2 Option A — move the app to the OCI origin
+
+**Already half-built.** `viewer/config.js:17-18` detects being served from OCI
+Object Storage and re-bases DB URLs to the same bucket:
+
+```js
+const _ociMatch = location.href.match(/(https:\/\/objectstorage\.[^/]+\/n\/[^/]+\/b\/[^/]+\/o\/)/);
+const _base = _ociMatch ? _ociMatch[1] : '';
+```
+
+So serving `viewer.html` from `objectstorage.ap-kulai-2.oraclecloud.com/.../b/bim-ootb/o/`
+already resolves buildings correctly with no code change.
+
+**The catch, and it is the deciding one.** OCI Object Storage lets you set an
+object's `Content-Type`, `Content-Encoding`, `Content-Disposition` and
+`Cache-Control`. **COOP and COEP are not in that set** — there is no per-object
+arbitrary response-header facility. So moving the app to the bucket **does not by
+itself** produce cross-origin isolation. It would need a fronting layer that can
+inject headers: OCI API Gateway, a CDN in front of the bucket, or a small
+always-on service — each of which reintroduces the one thing the project exists
+to avoid.
+
+> **Verify before planning on this.** The claim above is from the documented
+> capability set, not from a test against your bucket. The honest check is one
+> `curl -I` against a served object to see exactly which headers come back.
+
+### 21.3 Option B — the service worker, which you already ship
+
+The standard answer for static hosts that cannot set headers: **a service worker
+that re-serves the document with COOP/COEP attached** (the well-known
+`coi-serviceworker` technique). The SW intercepts, fetches, and returns a new
+`Response` carrying the two headers. On the second load the page is isolated.
+
+**`viewer/sw.js` is 935 lines and already does the required moves** — it calls
+`event.respondWith()` in three places and constructs `new Response(…, { headers })`
+at line 901. The mechanism is present; only the header injection is absent.
+
+Costs, stated plainly:
+
+- **`COEP: require-corp` is strict.** Every cross-origin subresource must then
+  carry `Cross-Origin-Resource-Policy`, or be fetched with CORS. **Your building
+  DBs come from the OCI bucket** — a different origin — so they would need CORP
+  or CORS configured on the bucket, or they stop loading. `COEP: credentialless`
+  relaxes this and is the usual escape.
+- **First load is never isolated.** The SW has to install first, so isolation
+  begins on the second visit. Any thread-dependent path must degrade, in the
+  `vfs_detect.js` "honest no-op" style rather than silently.
+- **It affects the whole origin**, ERP and modeller included, not just the
+  viewer.
+
+**Option B is the one that preserves the thesis.** It needs no server, no
+gateway, no CDN — and the file it needs to change is one you already own.
+
+### 21.4 Is single-threaded actually costing anything?
+
+**Unknown, and that is the point.** Nothing in the tree measures a threaded
+versus single-threaded kernel run. Before either option is worth the disruption,
+the question to answer is: *does `occt-wasm` (21 MB, 29 callers) even use
+threads, and was it built with pthreads enabled?* A kernel compiled without
+thread support gains nothing from isolation.
+
+**That is one `§`-tagged probe, not a project** — and it is the correct next
+step, ahead of both options above.
+
+### 21.5 On "server is dead" and "90% bloat reduction"
+
+**The first claim is sound. The second is not in the tree, and the measurements
+do not support it as stated.**
+
+Searched `README.md` and `docs/`: **zero occurrences** of "90%" or "bloat". The
+README's actual claim is *serverless, offline, in the same tab* — which is true,
+and is a different axis from payload size.
+
+Measured first load of `viewer/viewer.html`:
+
+| | |
+|---|---:|
+| eager `<script>` tags | 172 |
+| own code | 6.04 MB |
+| vendored (`lib/`, `.min`) | 0.37 MB |
+| **total JS, raw** | **6.41 MB** |
+| **total JS, gzipped (as GH Pages serves it)** | **2.12 MB** |
+| + `web-ifc` and `sqlite` wasm when a model opens | **+1.85 MB** |
+
+**2.12 MB over the wire in 172 requests is not a lean-payload story**, and a
+"90% bloat reduction" framing invites a comparison this codebase would lose.
+Alex Russell's performance work (§11.1) would score 6.41 MB of parse-and-execute
+as heavy, not light.
+
+**The defensible claim is stronger than the bloat one anyway:**
+
+> Not *"90% smaller"* — **"zero install, zero server, zero seat licence, and it
+> keeps working with the network off."** That is an availability and ownership
+> claim, it is true, it is verifiable by opening a URL, and no competitor
+> disputes it by shipping a smaller bundle.
+
+The payload axis is one this project does not need and should not pick, because
+the opponent there is a native installer that ships 2 GB and is measured once at
+install time, whereas 2.12 MB is measured on every cold visit.
+
+**If a size claim is ever wanted, it must be sourced** — the honest form is a
+measured comparison against a named tool on a named model, with the method
+published, in the style of every other claim here.
+
+### 21.6 Register additions
+
+| # | observation | recommendation |
+|---|---|---|
+| 17 | **Is `occt-wasm` even built with pthreads?** Unmeasured | **Do this before rows 15, 18 or 19.** One probe. If the answer is no, the whole isolation question is moot. |
+| 18 | **Option A (OCI origin) cannot set COOP/COEP alone** — verified against documented capability, not against the live bucket | One `curl -I` against a served object settles it. Do that before any planning. |
+| 19 | **Option B (SW header injection) is the thesis-preserving route** — `viewer/sw.js` already has the machinery | Scope it with the `COEP: credentialless` variant so the OCI-hosted building DBs keep loading. First load stays un-isolated by design; degrade honestly. |
+| 20 | **A "90% bloat reduction" claim exists nowhere in the tree and is not supported** by the 6.41 MB / 2.12 MB measurement | Do not adopt it. The serverless/offline/no-install claim is true and stronger. Any size claim needs a named comparison and a published method. |
+
+---
+
+## 22. Re-measure
 
 ```bash
 cd ~/bim-ootb
