@@ -2592,6 +2592,7 @@
         if (s.reveal && a.cpeRevealApplyVisual) a.cpeRevealApplyVisual(s.plan, tn);
         // §STOREY_HIGHLIGHT_REVEAL — same "preview mirrors the bake exactly" call.
         if (s.storeyReveal && a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(s.plan, tn);
+        if (s.storeyReveal && a.storeyRevealApplyCut) a.storeyRevealApplyCut(s.plan, tn);
         // §CPE_BUILDUP_OWNS_TM: `bkPrev` alone is a snapshot taken once at flight-start — it never
         // saw a LIVE uncheck of #cpe-buildup mid-flight. Gate on `s.buildup` too so unchecking it
         // stops feeding the cursor on the very next frame, instead of racing the checkbox handler's
@@ -2652,6 +2653,7 @@
         // §STOREY_HIGHLIGHT_REVEAL: same exit contract — a tinted storey must not follow the user
         // back into normal editing.
         if (a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(null, 0);
+        if (a.storeyRevealApplyCut) a.storeyRevealApplyCut(null, 0);
         _state.flying = false;
         // §CPE_SCRUB_PLAY: natural completion — clear the pause hooks, this run is over, not paused.
         s._flyPauseAt = null; s._flyResume = null; s.flyPaused = false;

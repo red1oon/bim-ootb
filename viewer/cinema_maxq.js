@@ -1959,6 +1959,9 @@
         // inside the disc-reveal round's own tail above. Same "one pure function, two callers" call
         // cinema_path_editor.js's preview step() makes.
         if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(plan, _tnFilm);
+        // §STOREY_SECTION_CUT — NOT key-gated like ApplyVisual above: the plane constant moves
+        // every frame, so it cannot ride the slot key (§94.3).
+        if (A.storeyRevealApplyCut) A.storeyRevealApplyCut(plan, _tnFilm);
         // §FLYTHRU_DATUM — the 3D half: the grid and level rules fade on the same schedule the 2D
         // annotation uses, and depth-test normally so the rising build occludes them (§17.5).
         if (_measure && A.flythruDatumAt) {
@@ -2477,6 +2480,7 @@
       // §STOREY_HIGHLIGHT_REVEAL: same contract — a tinted storey left glowing after a bake would
       // follow the user into normal navigation. plan=null forces the restore.
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
+      try { if (A.storeyRevealApplyCut) A.storeyRevealApplyCut(null, 0); } catch (eSC) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD) {}   // §SLAB_BEAT — restores the tint, removes X + label
       try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD) {}
@@ -2558,6 +2562,7 @@
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { if (A.cpeArchFadeApplyVisual) A.cpeArchFadeApplyVisual(null, 0); } catch (eRVf2) {}
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR2) {}
+      try { if (A.storeyRevealApplyCut) A.storeyRevealApplyCut(null, 0); } catch (eSC2) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD2) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD2) {}
       try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD2) {}
