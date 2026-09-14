@@ -67,16 +67,28 @@ function loadDb(SQL, absOrRelPath) {
   return new SQL.Database(new Uint8Array(fs.readFileSync(p)));
 }
 
+
+// §CI_NO_UNDEF — digest, not Buffer. eslint.config.js lints viewer/tests/** with BROWSER globals plus
+// the declared project set (eslint.globals.json carries require/process/__dirname; it deliberately does
+// NOT carry Buffer, which is not a browser global). A `Buffer.from(db.export())` comparison therefore
+// fails the repo's no-undef gate — the right fix is to stop reaching for a Node-only global in a
+// browser-linted tree, not to widen the gate for every viewer/ runtime file. A sha256 over the exported
+// bytes is also a STRONGER statement of "byte-identical" than .equals(): it names a value the log can
+// carry, so a failure shows WHICH digest changed rather than just "not equal".
+function _dbDigest(db) {
+  return require('crypto').createHash('sha256').update(db.export()).digest('hex');
+}
+
 // Assert inject() refuses AND leaves the db byte-identical — the two halves of "never overwrite".
 async function assertRefusesUntouched(label, db, rules) {
-  const before = Buffer.from(db.export());
+  const before = _dbDigest(db);
   const res = await ScheduleInject.inject({ db: db }, {
     scheduleAuthor: ScheduleAuthor, rules: rules.SEQUENCE_RULES, laborRates: rules.LABOR_RATES,
     scheduleGate: ScheduleGate, template: TEMPLATE
   });
-  const after = Buffer.from(db.export());
+  const after = _dbDigest(db);
   assert(res && res.ok === false && res.reason === 'exists', label + ': inject() REFUSED (reason=' + (res && res.reason) + '), never a fabricated schedule over an existing one');
-  assert(before.equals(after), label + ': every row is BYTE-IDENTICAL after the refused call (db.export() unchanged) — refusing means refusing, not "no new schedule row while something else moved"');
+  assert(before === after, label + ': every row is BYTE-IDENTICAL after the refused call (sha256 ' + before.slice(0, 12) + ' unchanged) — refusing means refusing, not "no new schedule row while something else moved"');
   return res;
 }
 

@@ -63,6 +63,18 @@ const TEMPLATE = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 
 function loadDb(SQL, file) { return new SQL.Database(new Uint8Array(fs.readFileSync(path.join(BLD_DIR, file)))); }
 function tableCount(db, t) { try { const r = db.exec('SELECT COUNT(*) FROM ' + t); return r.length ? r[0].values[0][0] : 0; } catch (e) { return -1; } }
 
+
+// §CI_NO_UNDEF — digest, not Buffer. eslint.config.js lints viewer/tests/** with BROWSER globals plus
+// the declared project set (eslint.globals.json carries require/process/__dirname; it deliberately does
+// NOT carry Buffer, which is not a browser global). A `Buffer.from(db.export())` comparison therefore
+// fails the repo's no-undef gate — the right fix is to stop reaching for a Node-only global in a
+// browser-linted tree, not to widen the gate for every viewer/ runtime file. A sha256 over the exported
+// bytes is also a STRONGER statement of "byte-identical" than .equals(): it names a value the log can
+// carry, so a failure shows WHICH digest changed rather than just "not equal".
+function _dbDigest(db) {
+  return require('crypto').createHash('sha256').update(db.export()).digest('hex');
+}
+
 async function run(file, opts) {
   const SQL = await initSqlJs();
   const rules = loadRules();
@@ -102,11 +114,11 @@ async function run(file, opts) {
   assert(!!(win && win.startDate && win.finishDate), file + ': windowForGuid resolves a real window for that guid (' + JSON.stringify(win) + ')');
 
   // ── re-running injection on the NOW-scheduled db is a no-op ──────────────────────────────────────
-  const exportBefore = Buffer.from(db.export());
+  const digestBefore = _dbDigest(db);
   const res2 = await ScheduleInject.inject(A, { scheduleAuthor: ScheduleAuthor, rules: rules.SEQUENCE_RULES, laborRates: rules.LABOR_RATES, scheduleGate: ScheduleGate, template: TEMPLATE });
-  const exportAfter = Buffer.from(db.export());
+  const digestAfter = _dbDigest(db);
   assert(res2 && res2.ok === false && res2.reason === 'exists', file + ': re-running inject() is a documented no-op (reason=' + (res2 && res2.reason) + '), not a silent success or a second write');
-  assert(exportBefore.equals(exportAfter), file + ": re-running inject() left the db BYTE-IDENTICAL (db.export() unchanged) — 'once' really means once");
+  assert(digestBefore === digestAfter, file + ": re-running inject() left the db BYTE-IDENTICAL (sha256 " + digestBefore.slice(0, 12) + " unchanged) — 'once' really means once");
   assert(tableCount(db, 'schedules') === 1, file + ': still exactly one schedule after the no-op re-run');
 
   db.close();
