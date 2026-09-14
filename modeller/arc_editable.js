@@ -231,9 +231,15 @@
       // §ARC-YAW-ONLY (code-parity audit vs the Viewer): viewer/streaming.js applies the FULL 3-axis Euler
       // (_euler.set(el.rotX, el.rotZ, -el.rotY)) — every rotation_x/y/z column, straight radians. This ARC-seed
       // path only ever fed rotation_z through place()'s single yaw (cos/sin about Z); rotation_x/rotation_y were
-      // read nowhere and silently discarded. Real ARC content (walls/columns/slabs) is upright in every building
-      // measured so far (Duplex/SampleHouse/SampleCastle: 0 non-zero rotation_x/rotation_y rows) so this has
-      // never yet dropped real tilt — but a silent drop is still a drop. Make it an AUDITED, non-invented fact:
+      // read nowhere and silently discarded. ⚠ CORRECTED 2026-09-15 (W-ARC-3AXIS, measured — the claim that
+      // stood here, "Duplex/SampleHouse/SampleCastle: 0 non-zero rotation_x/rotation_y rows", was FALSE for
+      // SampleCastle): the shipped SampleCastle_ARC.db carries 293 such rows — all of them rotation_y = ±π/2
+      // exactly, with rotation_x and rotation_z zero, across IfcCovering 125 · IfcWindow 80 · IfcWall 32 ·
+      // IfcDoor 28 · IfcWallStandardCase 21 · IfcRailing 7. So this path is NOT untested on real tilt; it is
+      // exercised on 293 real elements every time SampleCastle opens, and 230 of them genuinely need the
+      // rotation (their pre-placement mesh extent differs from their authored world AABB). W-ARC-3AXIS
+      // asserts 0 dropped and goes RED at exactly 230 if place()'s 3-axis branch is neutered.
+      // Make it an AUDITED, non-invented fact:
       // count + log any element this seed CANNOT represent, instead of pretending yaw-only is the whole story.
       if (rx || ry) tilted++;
       // honest-refuse: never fabricate a box for a NULL/degenerate-bbox element (skipped + logged, excluded from count)
