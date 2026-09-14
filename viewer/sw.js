@@ -186,7 +186,16 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1176';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1177';   // bump on each deploy; per-change detail is the git commit message.
+// v1177 (2026-09-14) TM_4D5D_VARIANCE_LANE §S7-INJECT: new viewer/schedule_inject.js ("Generate
+//   programme" — materializeZones+persistDb on the fly, best-effort save, honest saved/session-only
+//   message); panels.js 'sched4d' pill gate changed from "has a schedule" to "engine capable" so the
+//   new action is reachable with no schedule yet (viewer.html script tag added); info_4d_panel.js
+//   now renders the schedule's provenance (generated vs authored) beside the window; time_machine.js
+//   exposes window.tm4DTemplate (the ONE _load4DTemplate, reused, never a second fetch). All of
+//   panels.js/info_4d_panel.js/time_machine.js/schedule_inject.js are in PRECACHE_ASSETS, so without
+//   this bump an installed worker keeps serving the old pill (schedule-carrying buildings only) and
+//   the on-the-fly action never reaches an existing user (§CRISIS LESSON 4).
 // v1175 (2026-09-13) TM_4D5D_VARIANCE_LANE §S7 legs 2-4: #info-4d block (viewer.html) + eager
 //   schedule_read_4d.js load; hover_name.js one-line 4D augmentation; panels.js data-gated
 //   'sched4d' pill; find_erp_push.js _show4DWindow + rendered cost matchCount (§S7-GRAIN).
@@ -727,6 +736,19 @@ const PRECACHE_ASSETS = [
   // §S7-OPEN (v1176): the #info-4d renderer, extracted out of the lazy Find bundle so a plain
   // 3D-canvas pick can render it. KEEP BOTH on any precache conflict.
   'info_4d_panel.js',
+  // §S7-INJECT (v1177): Generate programme — the on-the-fly materialize+persist trigger behind the
+  // sched4d pill. KEEP BOTH on any precache conflict.
+  // WARNING, NO APOSTROPHES OR QUOTE CHARACTERS IN COMMENTS INSIDE THIS ARRAY.
+  // tests/audit_sw_precache.js tokenises this array body with a naive single-quote pairing regex and
+  // does NOT strip comments first. ONE apostrophe in a comment here opens a phantom string,
+  // desynchronises every quote pair after it, and makes the audit silently report EVERY later entry
+  // as unlisted: 12 files it had happily seen the commit before, print_sheet.js and ghostglass.js
+  // among them. The gate then goes red pointing at innocent files and says nothing about the real
+  // cause. Measured twice while landing this entry: first by the word pill-apostrophe-s in the line
+  // above, then AGAIN by a rewrite of this very warning that quoted the offending regex verbatim.
+  // Hardening that tokeniser (strip comments before pairing quotes) is the proper fix and is
+  // deliberately NOT done here — it changes a CI gate, which is its own decision.
+  'schedule_inject.js',
   'schedule_author_ui.js',
   'foreign_schedule.js',    // §TM_P6_FOLD — lazy-loaded by the TM panel P6/MSP section; precached so it works offline
   'schedule_diff.js',       // §TM_P6_FOLD — same (Diff-vs-Model engine)
