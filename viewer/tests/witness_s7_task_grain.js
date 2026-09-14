@@ -25,7 +25,19 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const initSqlJs = require('sql.js');
+// §SQLJS_MISSING (PR #1730's class of bug, hit again 2026-09-14): a bare require('sql.js') resolves
+// only when node_modules happens to sit above this file — which a FRESH WORKTREE does not have, so
+// these witnesses were unrunnable outside the shared checkout. Fall back to the shared clone's copy,
+// overridable by SQLJS_HOME, and say so loudly rather than dying on a MODULE_NOT_FOUND stack.
+const initSqlJs = (function () {
+  try { return require('sql.js'); } catch (e) {
+    const alt = path.join(process.env.SQLJS_HOME || path.join(os.homedir(), 'bim-ootb'), 'node_modules', 'sql.js');
+    try { return require(alt); } catch (e2) {
+      console.log('§SQLJS_MISSING neither require("sql.js") nor ' + alt + ' resolved — set SQLJS_HOME');
+      throw e2;
+    }
+  }
+})();
 const ScheduleRead4D = require('../schedule_read_4d.js');
 const ScheduleAuthor = require('../schedule_author.js');
 
@@ -103,6 +115,10 @@ function makeFakeDom() {
   const els = makeFakeDom();
   global.ScheduleRead4D = ScheduleRead4D;
   global.ScheduleAuthor = ScheduleAuthor;
+    // §S7-OPEN: the renderer moved OUT of find_erp_push.js into its own eager module so the plain
+    // canvas-pick path can reach it; _show4DWindow now delegates. Register it the way viewer.html's
+    // eager script tag does, or the delegation honestly no-ops (§4D_INFO_PANEL reason=info_4d_panel_absent).
+    global.Info4DPanel = require('../info_4d_panel.js');
   const FindErpPush = require('../find_erp_push.js');
   const A = { db: db, activeBuilding: 'Hospital', cachedFetch: function () { return Promise.resolve(null); } };
   const mod = FindErpPush.create({ A: A, getLastSelSet: function () { return null; }, getLastSelLabel: function () { return ''; }, selectionPriced: function () { return null; }, cur: function () { return 'RM'; } });

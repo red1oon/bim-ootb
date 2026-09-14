@@ -229,37 +229,19 @@
     //   isn't in a dated task                   next to a pill that IS showing (blank-but-visible reads as
     //                                           broken, not as absent)
     function _show4DWindow(guid) {
-      var box = document.getElementById('info-4d'); if (!box) return;
-      box.style.display = 'none';
-      var RD = global.ScheduleRead4D, SA = global.ScheduleAuthor;
-      if (!RD || !RD.windowForGuid || !A.db) return;   // module/db not ready — honest no-op, same guard style as _ensureErpDb's SQL-absent check
-      var sched = null;
-      try { sched = (SA && SA.activeSchedule) ? SA.activeSchedule(A.db) : null; } catch (e) { sched = null; }
-      if (!sched || !sched.id) { console.log('§4D_INFO_PANEL guid="' + guid + '" skip reason=no_active_schedule'); return; }
-      var win = null;
-      // Pass scheduleAuthor explicitly — the SAME override seam windowForGuid documents ("so a
-      // witness can inject a stub without touching global state"). Costs nothing in the browser
-      // (SA is already window.ScheduleAuthor there) and keeps this function witnessable headlessly,
-      // where schedule_read_4d.js's own `global` (bound via `typeof self!=='undefined'?self:this`)
-      // is the module's own exports object, not globalThis — a Node-only quirk this sidesteps.
-      try { win = RD.windowForGuid(A.db, guid, { scheduleAuthor: SA }); } catch (e) { win = null; }
-      var html = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:3px">Construction window</div>';
-      if (!win) {
-        // schedule exists (the pill is showing) but this element has no dated task yet — windowForGuid
-        // already logged the exact reason (guid_not_in_task/undated) via §4D_ON_ELEMENT_GATE; this line
-        // just needs to tell the USER why the block isn't empty-looking, not re-derive which reason it was.
-        html += '<div style="color:#888;font-size:11px">Not yet assigned to a dated task in "' + (sched.name || sched.id) + '".</div>';
-      } else {
-        var crit = win.isCritical ? ' <b style="color:#ff6b6b">(critical path)</b>' : '';
-        html += '<div><span class="label">Task</span>: <span class="value">' + win.name + '</span></div>';
-        html += '<div><span class="label">Window</span>: <span class="value">' + win.startDate + ' → ' + win.finishDate + crit + '</span></div>';
-        if (win.resource) html += '<div><span class="label">Trade</span>: <span class="value">' + win.resource + '</span></div>';
-        if (win.totalFloat != null && win.totalFloat !== '') html += '<div><span class="label">Float</span>: <span class="value">' + win.totalFloat + ' d</span></div>';
+      // §S7-OPEN (2026-09-14): the renderer MOVED to viewer/info_4d_panel.js so the plain 3D-canvas
+      // click path (picking.js) can reach it too — find_erp_push.js lives inside APP.loadNavigate()'s
+      // LAZY bundle, so until Find had been opened once this function did not exist and the headline
+      // interaction rendered nothing. This is now a delegating seam, NOT a second copy: one renderer,
+      // two call sites. If Info4DPanel is absent the block simply stays hidden, same honest no-op the
+      // body used to perform itself.
+      var P = global.Info4DPanel;   // the module-scope global (browser: window; node: globalThis) — NOT `window`, which does not exist headlessly
+      if (!P || !P.render) {
+        var box = document.getElementById('info-4d'); if (box) box.style.display = 'none';
+        console.log('§4D_INFO_PANEL guid="' + guid + '" skip reason=info_4d_panel_absent');
+        return;
       }
-      box.innerHTML = html;
-      box.style.display = 'block';
-      var ipnl = document.getElementById('info-panel'); if (ipnl) ipnl.style.display = 'block';
-      console.log('§4D_INFO_PANEL guid="' + guid + '" hit=' + !!win + (win ? (' task=' + win.taskId + ' start=' + win.startDate + ' finish=' + win.finishDate) : ''));
+      P.render(A, guid);
     }
 
     // BIM→Project: every › ERP push outcome gets audio + a clear status (user: "good practice — a status
