@@ -346,6 +346,13 @@ async function runE2E(NAME, body, opts) {
 
   await br.close(); server.close();
   console.log(NAME + ': ' + pass + ' PASS / ' + fail + ' FAIL');
+  // §MULTIRUN (MODELLER_MASTER.md row 24, 2026-09-15): this process.exit() is why `smoke_arc_only.js`
+  // silently ran ONE of its two buildings for months and still exited 0 — the first `await runE2E(...)`
+  // never returns, so every later iteration is unreachable and nothing reports the omission. The exit is
+  // KEPT as the default because every other witness is a single run and CI reads its exit code. A caller
+  // that runs more than one must pass `opts.noExit` and own the exit itself (see smoke_arc_only.js):
+  // runE2E then RESOLVES with {name, pass, fail} instead. Single-run callers are byte-unchanged.
+  if (opts.noExit) return { name: NAME, pass: pass, fail: fail };
   process.exit(fail ? 1 : 0);
 }
 
