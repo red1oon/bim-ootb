@@ -1014,6 +1014,11 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      vs schedule_author.js does not matter — both are read via a lazy `global.X` lookup at CALL
      time, never at load time (see schedule_read_4d.js's own windowForGuid/readTasks). -->
 <script src="schedule_read_4d.js?v=1" onerror="console.warn('§LOAD_FAIL schedule_read_4d.js — 4D window lookup unavailable')"></script>
+<!-- §S7-OPEN: the #info-4d RENDERER. Eager (not in APP.loadNavigate's lazy bundle) so a plain
+     3D-canvas click via picking.js can render the construction window without the Find panel having
+     been opened first. find_erp_push.js's _show4DWindow delegates to this same module — one renderer,
+     two call sites, never a second copy. -->
+<script src="info_4d_panel.js?v=1" onerror="console.warn('§LOAD_FAIL info_4d_panel.js — #info-4d will stay hidden')"></script>
 <script src="schedule_author.js?v=14" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
 <script src="schedule_author_ui.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>

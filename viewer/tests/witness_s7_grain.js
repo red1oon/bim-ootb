@@ -26,7 +26,19 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const initSqlJs = require('sql.js');
+// §SQLJS_MISSING (PR #1730's class of bug, hit again 2026-09-14): a bare require('sql.js') resolves
+// only when node_modules happens to sit above this file — which a FRESH WORKTREE does not have, so
+// these witnesses were unrunnable outside the shared checkout. Fall back to the shared clone's copy,
+// overridable by SQLJS_HOME, and say so loudly rather than dying on a MODULE_NOT_FOUND stack.
+const initSqlJs = (function () {
+  try { return require('sql.js'); } catch (e) {
+    const alt = path.join(process.env.SQLJS_HOME || path.join(os.homedir(), 'bim-ootb'), 'node_modules', 'sql.js');
+    try { return require(alt); } catch (e2) {
+      console.log('§SQLJS_MISSING neither require("sql.js") nor ' + alt + ' resolved — set SQLJS_HOME');
+      throw e2;
+    }
+  }
+})();
 
 let pass = 0, fail = 0;
 function assert(cond, msg) {
