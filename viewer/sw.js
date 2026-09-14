@@ -738,16 +738,10 @@ const PRECACHE_ASSETS = [
   'info_4d_panel.js',
   // §S7-INJECT (v1177): Generate programme — the on-the-fly materialize+persist trigger behind the
   // sched4d pill. KEEP BOTH on any precache conflict.
-  // WARNING, NO APOSTROPHES OR QUOTE CHARACTERS IN COMMENTS INSIDE THIS ARRAY.
-  // tests/audit_sw_precache.js tokenises this array body with a naive single-quote pairing regex and
-  // does NOT strip comments first. ONE apostrophe in a comment here opens a phantom string,
-  // desynchronises every quote pair after it, and makes the audit silently report EVERY later entry
-  // as unlisted: 12 files it had happily seen the commit before, print_sheet.js and ghostglass.js
-  // among them. The gate then goes red pointing at innocent files and says nothing about the real
-  // cause. Measured twice while landing this entry: first by the word pill-apostrophe-s in the line
-  // above, then AGAIN by a rewrite of this very warning that quoted the offending regex verbatim.
-  // Hardening that tokeniser (strip comments before pairing quotes) is the proper fix and is
-  // deliberately NOT done here — it changes a CI gate, which is its own decision.
+  // (Comments in this array used to be dangerous: tests/audit_sw_precache.js paired quotes without
+  // stripping them, so ONE apostrophe silently dropped every later entry and reported innocent files
+  // as unlisted. Hardened 2026-09-15, §SW_AUDIT_QUOTE — apostrophes and brackets in comments here are
+  // safe now, and two planted-failure checks in that audit keep them safe.)
   'schedule_inject.js',
   'schedule_author_ui.js',
   'foreign_schedule.js',    // §TM_P6_FOLD — lazy-loaded by the TM panel P6/MSP section; precached so it works offline
