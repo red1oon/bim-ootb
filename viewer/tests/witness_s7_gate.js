@@ -1,13 +1,27 @@
 #!/usr/bin/env node
 // WITNESS — W-S7-GATE — on a building with no `schedules` row, #info-4d does not render an empty
-// block (it states the reason or stays hidden) and the pill icon is absent.
-// Spec: bim-compiler prompts/TM_4D5D_VARIANCE_LANE.md §S7-DO item 4 / §S7-DATA-REALITY /
-// §S7-WITNESS.
+// block (it states the reason or stays hidden), and the pill icon's reachability tracks the
+// ENGINE'S capability, never a fabricated/empty affordance.
+// Spec: bim-compiler prompts/TM_4D5D_VARIANCE_LANE.md §S7-DO item 4 / §S7-DATA-REALITY / §S7-INJECT
+// ("WHERE IT HANGS") / §S7-WITNESS.
+//
+// ⚠ AMENDED 2026-09-14 for §S7-INJECT ("generate the programme once, on the fly"). Read this before
+// assuming the PILL half of this witness still says what it said when it shipped (PR #1733):
+// pre-§S7-INJECT, "no schedule" meant the pill stayed OFF ("no data -> no icon" read literally: no
+// schedule = nothing to show). §S7-INJECT's decision — stated in the leg's own task text — is that a
+// no-schedule building is NOT a dead end any more: the pill now offers a second state, "Generate
+// programme", precisely when there is no schedule, so it must be REACHABLE there. What did NOT
+// change (the same text: "that gating stays for the panel") is #info-4d's OWN gate — it is still
+// keyed to an ACTIVE schedule (info_4d_panel.js render()), so it stays absent/hidden on a fresh
+// no-schedule load exactly as before. This file's PART B negative-leg assertions were updated
+// in-place to match (see the comment beside them) rather than left to silently fail against the new,
+// deliberate behaviour — the OLD assertions are not preserved anywhere as a "red control": the old
+// behaviour is superseded, not a case that still needs to be provably false.
 //
 // ISSUE THIS PROVES OR DISPROVES: §S7-DATA-REALITY measured that NO published building carries a
 // persisted schedule — every `*_extracted.db`/`*_meta.db` has `schedules=0`. That is the COMMON
 // case, not an edge case, so getting this wrong (an empty-but-visible #info-4d box, or a pill icon
-// that lights up with nothing behind it) would be wrong on almost every real load. This witness
+// that lights up with nothing real behind it) would be wrong on almost every real load. This witness
 // proves TWO distinct claims kept separate on purpose (§S7-DO item 4's own text):
 //   PART A (Node, pure) — find_erp_push.js's _show4DWindow(guid):
 //     (1) on a REAL building DB with zero `schedules` rows, the box stays HIDDEN — never an empty
@@ -15,14 +29,17 @@
 //     (2) on a REAL building DB that DOES have a schedule, a guid genuinely absent from every task
 //         renders a STATED reason (non-empty, visible) — the pill would be showing, so a silent
 //         blank box next to it would be the OTHER failure mode named in the spec.
-//     (3) the exact boolean panels.js's data-gate poll evaluates (ScheduleAuthor.activeSchedule(db)
-//         resolving an id) is false for the no-schedule DB and true for the schedule DB — the same
-//         condition that decides the pill's `.pill` flag.
+//     (3) TWO booleans, kept distinct since §S7-INJECT: gateCondition (ScheduleAuthor.activeSchedule
+//         resolving an id — still what gates #info-4d and the pill's hover-title text) is false for
+//         the no-schedule DB and true for the schedule DB; pillCapableCondition (the engine itself
+//         being loaded — what now gates the PILL's visibility) is TRUE on BOTH, because §S7-INJECT
+//         made the pill reachable whether or not a schedule exists yet.
 //   PART B (live browser, Chromium via puppeteer) — the REAL DOM: on the no-schedule building the
-//     rendered pill rail carries NO `#pill-sched4d` button and `window._mainPillActions` marks it
-//     `pill:false`; on the schedule-carrying building the button exists in the DOM. This is the
-//     part Part A's boolean check cannot see on its own — the actual wiring from that boolean to
-//     the rendered icon (panels.js's poll + pill_builder.js's `if (act.pill===false) return;`).
+//     rendered pill rail NOW carries a `#pill-sched4d` button (`window._mainPillActions` marks it
+//     NOT `pill:false`) whose title advertises the generate action; #info-4d is still absent/hidden.
+//     On the schedule-carrying building the button exists too, as it always did. This is the part
+//     Part A's boolean checks cannot see on their own — the actual wiring from those booleans to the
+//     rendered icon (panels.js's poll + pill_builder.js's `if (act.pill===false) return;`).
 //
 // POPULATION: Duplex_extracted.db (9.6MB, real building, 0 `schedules` rows, per §S7-DATA-REALITY's
 // own measured table) for the negative leg; Hospital_silent.db / HHS_Office_Federated_silent.db
@@ -77,11 +94,27 @@ function makeFakeDom() {
   return els;
 }
 
-// The EXACT boolean panels.js's data-gate poll evaluates (see viewer/panels.js, the 'sched4d'
-// pill's gating IIFE) — duplicated here on purpose so a change to the condition's SHAPE (not just
-// its inputs) would need a matching change here, keeping this witness honest about what it checks.
+// The EXACT boolean panels.js's data-gate poll evaluates for `has` (see viewer/panels.js, the
+// 'sched4d' pill's gating IIFE) — duplicated here on purpose so a change to the condition's SHAPE
+// (not just its inputs) would need a matching change here, keeping this witness honest about what
+// it checks. Since §S7-INJECT (2026-09-14) this boolean no longer decides the PILL's visibility
+// (see pillCapableCondition below) — it now only decides #info-4d's own render() gate and the
+// pill's hover-title text (panels.js _syncSched4dTitle). Kept under its original name because that
+// is still exactly what it means: "does an active schedule exist right now".
 function gateCondition(SA, db) {
   try { return !!(SA && SA.activeSchedule && SA.activeSchedule(db) && SA.activeSchedule(db).id); }
+  catch (e) { return false; }
+}
+
+// §S7-INJECT — the boolean that NOW decides the 'sched4d' pill's VISIBILITY (viewer/panels.js's gate
+// poll, `capable`). The pill's second state ("Generate programme") must be reachable precisely when
+// there is NO schedule yet, so visibility can no longer be gated on gateCondition() above — it is
+// gated on the 4D AUTHORING ENGINE being loaded at all, which is true on every real building this
+// app can open (elements_meta always exists; only a genuine module-load failure reads as "no data").
+// Duplicated here for the same reason gateCondition() is: a change to panels.js's condition SHAPE
+// must break this witness, not silently stop testing what actually ships.
+function pillCapableCondition(SA) {
+  try { return !!(SA && SA.materializeZones && SA.activeSchedule && SA.persistDb); }
   catch (e) { return false; }
 }
 
@@ -98,6 +131,9 @@ async function partA() {
     const schedCount = schedCountRows.length ? schedCountRows[0].values[0][0] : -1;
     assert(schedCount === 0, 'Duplex_extracted.db verified to carry 0 `schedules` rows (§S7-DATA-REALITY population)');
     assert(gateCondition(ScheduleAuthor, db) === false, 'gate condition (ScheduleAuthor.activeSchedule resolving) is FALSE for a real no-schedule DB');
+    // §S7-INJECT: capability (what now gates the PILL) is TRUE even though there is no schedule —
+    // this is the whole point of the leg (the pill must be reachable to offer "Generate programme").
+    assert(pillCapableCondition(ScheduleAuthor) === true, '§S7-INJECT: pill CAPABILITY condition is TRUE on this same no-schedule DB — the engine can generate one even though it has not yet');
 
     const guidRow = db.exec('SELECT guid FROM elements_meta LIMIT 1');
     const guid = guidRow.length ? guidRow[0].values[0][0] : null;
@@ -128,6 +164,7 @@ async function partA() {
     const sched = ScheduleAuthor.activeSchedule(db);
     assert(!!(sched && sched.id), 'Hospital_silent.db has a real active schedule');
     assert(gateCondition(ScheduleAuthor, db) === true, 'gate condition is TRUE for a real schedule-carrying DB');
+    assert(pillCapableCondition(ScheduleAuthor) === true, '§S7-INJECT: pill CAPABILITY condition is also TRUE here — same engine, a schedule already exists');
 
     const SENTINEL = 'NOT_A_REAL_GUID_S7_GATE_WITNESS';
     const presentRows = db.exec('SELECT COUNT(*) FROM task_elements WHERE guid=?', [SENTINEL]);
@@ -187,7 +224,14 @@ async function partB() {
   catch (e) { skip('PART B skipped — Chromium failed to launch (' + e.message + ')'); server.close(); return; }
 
   try {
-    // ---- negative leg: Duplex_extracted.db (0 schedules) — pill must be ABSENT from the DOM ------
+    // ---- negative leg: Duplex_extracted.db (0 schedules) ------------------------------------------
+    // §S7-INJECT (2026-09-14) CHANGED THIS LEG'S EXPECTATION, documented here rather than silently
+    // edited: pre-§S7-INJECT, "no schedule" meant the pill stayed OFF (§S7-DATA-REALITY's own
+    // "no data -> no icon" reading of that state). §S7-INJECT's whole point is that a no-schedule
+    // building is no longer a dead end — the pill now offers "Generate programme" precisely HERE, so
+    // it must be ON. What did NOT change, and what this leg's own spec text says "stays for the
+    // panel": #info-4d itself is still gated on an ACTIVE schedule (info_4d_panel.js render()), so it
+    // stays absent/hidden on initial load exactly as before — only the PILL's reachability moved.
     {
       const page = await browser.newPage();
       const errs = [];
@@ -203,12 +247,13 @@ async function partB() {
       await new Promise((r) => setTimeout(r, 2000));
       const state = await page.evaluate(() => {
         const act = (window._mainPillActions || []).find((a) => a.id === 'sched4d');
-        return { actPill: act ? act.pill : 'MISSING_ACTION', domBtn: !!document.getElementById('pill-sched4d'), info4d: document.getElementById('info-4d') ? document.getElementById('info-4d').style.display : 'NO_ELEMENT' };
+        return { actPill: act ? act.pill : 'MISSING_ACTION', actTitle: act ? act.title : null, domBtn: !!document.getElementById('pill-sched4d'), info4d: document.getElementById('info-4d') ? document.getElementById('info-4d').style.display : 'NO_ELEMENT' };
       });
       console.log('  Duplex (no schedule): ' + JSON.stringify(state));
-      assert(state.actPill === false, 'PART B negative: window._mainPillActions sched4d.pill === false (no-schedule building)');
-      assert(state.domBtn === false, 'PART B negative: NO #pill-sched4d button in the real rendered DOM');
-      assert(state.info4d === 'NO_ELEMENT' || state.info4d === 'none', 'PART B negative: #info-4d is absent or hidden on initial load');
+      assert(state.actPill !== false, '§S7-INJECT PART B negative: window._mainPillActions sched4d.pill !== false — the pill is now REACHABLE with no schedule, to offer "Generate programme" (was pill===false pre-§S7-INJECT)');
+      assert(state.domBtn === true, '§S7-INJECT PART B negative: #pill-sched4d button IS present in the real rendered DOM (was absent pre-§S7-INJECT)');
+      assert(/generate a programme/i.test(state.actTitle || ''), 'PART B negative: the pill\'s hover title advertises the generate action ("' + state.actTitle + '")');
+      assert(state.info4d === 'NO_ELEMENT' || state.info4d === 'none', 'PART B negative: #info-4d is STILL absent or hidden on initial load — UNCHANGED, "that gating stays for the panel"');
       assert(errs.length === 0, 'zero pageerrors on the no-schedule building (errs=' + errs.join(' | ') + ')');
       await page.close();
     }

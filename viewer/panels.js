@@ -1408,25 +1408,55 @@ function setupPanels(A) {
       { id: 'tm',         name: 'Time Machine',    key: 't', pill: false, icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
         children: [ { name: 'Gantt timeline' }, { name: 'Author 4D schedule (✎)' }, { name: 'What-if (slip a phase)' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
       // S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 4) — DATA-GATED like whwalk/hbaFM above (starts
-      // pill:false; a poll below flips it on ONLY when ScheduleAuthor.activeSchedule(A.db) resolves
-      // a real schedule — "no data -> no icon, no clutter", same rule as hba_lens.js's family pill
-      // and S2's own §TM_VAR_GATE). Per §S7-DATA-REALITY the icon is ABSENT on every published
-      // building until ✎ Author has run — that is correct, not a bug (W-S7-GATE). The window itself
-      // renders automatically on hover (hover_name.js) and on pick (#info-4d, find_erp_push.js
-      // _show4DWindow) — this icon is a discoverability cue, not a required step, so its tap just
-      // surfaces the currently-open info panel / a one-line hint rather than opening a new panel
-      // (§S7-NOT-DOING rules out a second pop-up).
+      // pill:false; a poll below flips it on ONLY when the 4D authoring engine is loaded — "no data
+      // -> no icon, no clutter", same rule as hba_lens.js's family pill and S2's own §TM_VAR_GATE).
+      // §S7-INJECT (2026-09-14) CHANGED WHAT "no data" MEANS HERE. Originally (§S7-DO item 4, PR
+      // #1733) this gated on ScheduleAuthor.activeSchedule(A.db) resolving a REAL schedule, so the
+      // icon stayed absent on every published building until ✎ Author had run (W-S7-GATE, then
+      // correct). §S7-INJECT's whole point is that the user no longer has to find ✎ Author first —
+      // so the icon must now be reachable BEFORE a schedule exists too, to offer the one-tap
+      // "Generate programme" action. The gate below therefore checks ENGINE CAPABILITY (materializeZones
+      // /activeSchedule/persistDb all present), not SCHEDULE PRESENCE — capability is what "no data ->
+      // no icon" should have meant all along (a building this app opened always has elements_meta to
+      // schedule from; the only true "no data" case is the engine module failing to load at all).
+      // #info-4d's OWN gating (info_4d_panel.js render(), keyed on activeSchedule + windowForGuid) is
+      // UNCHANGED — a schedule-less building still shows no window on hover/click, only the pill's
+      // reachability changed. See viewer/tests/witness_s7_gate.js for the updated PART B assertions
+      // this required (documented there, not silently changed).
       { id: 'sched4d',    name: '4D Window',      pill: false, icon: I.calendar.svg,
         fn: function() {
-          var box = document.getElementById('info-4d');
-          if (box && box.style.display !== 'none') {
-            var ipnl = document.getElementById('info-panel'); if (ipnl) ipnl.style.display = 'block';
-          } else if (A.status) {
-            A.status.textContent = 'Construction window: hover or click any element to see its scheduled task, dates and trade.';
+          var SA = window.ScheduleAuthor;
+          var sched = null;
+          try { sched = SA && SA.activeSchedule ? SA.activeSchedule(A.db) : null; } catch (e) { sched = null; }
+          if (sched && sched.id) {
+            // Unchanged from pre-§S7-INJECT behaviour: a schedule already exists, so this tap is a
+            // discoverability cue, not an action — surface whatever #info-4d already resolved, or a
+            // one-line hint if nothing has been hovered/clicked yet (§S7-NOT-DOING rules out a
+            // second pop-up panel).
+            var box = document.getElementById('info-4d');
+            if (box && box.style.display !== 'none') {
+              var ipnl = document.getElementById('info-panel'); if (ipnl) ipnl.style.display = 'block';
+            } else if (A.status) {
+              A.status.textContent = 'Construction window: hover or click any element to see its scheduled task, dates and trade.';
+            }
+            console.log('§4D_PILL_TAP mode=hint shown=' + !!(box && box.style.display !== 'none'));
+            return;
           }
-          console.log('§4D_PILL_TAP shown=' + !!(box && box.style.display !== 'none'));
+          // No schedule yet — §S7-INJECT's "Generate programme" action.
+          if (!window.ScheduleInject || !window.ScheduleInject.inject) {
+            if (A.status) A.status.textContent = '4D authoring engine not loaded — cannot generate a programme.';
+            console.log('§4D_PILL_TAP mode=generate skip reason=schedule_inject_not_loaded');
+            return;
+          }
+          console.log('§4D_PILL_TAP mode=generate');
+          window.ScheduleInject.inject(A).then(function (res) {
+            // A successful generate flips this building into the "has schedule" state — rebuild so
+            // the NEXT tap (and the gate's own title text) reflects that without waiting on the
+            // one-shot poll (which has already fired and will not run again this session).
+            if (res && res.ok) _syncSched4dTitle(true);
+          });
         },
-        children: [ { name: 'Task name + start→finish beside the picked element' }, { name: 'Trade + float, critical-path marker' }, { name: 'One extra line on hover' }, { name: 'Shown only when this building has an authored schedule' } ] },
+        children: [ { name: 'Task name + start→finish beside the picked element' }, { name: 'Trade + float, critical-path marker' }, { name: 'One extra line on hover' }, { name: 'No schedule yet? Tap to generate one on the fly' } ] },
       { id: 'section',    name: 'Section Cut',     key: 'x', pill: false, icon: I.scissors.svg, fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; },
         children: [ { name: 'Y axis (vertical)' }, { name: 'X axis (lateral)' }, { name: 'Z axis (depth)' }, { name: 'Slider 0–100%' }, { name: 'Bookmarks' } ] },
       // PILL_DRAWER_REORGANIZATION.md §1 Visual FX — absorbed into the Palette (sunglass) panel.
@@ -2317,25 +2347,48 @@ function setupPanels(A) {
     window.toggleMobilePill = _mainPill.toggle;
     window._mainPillActions = _mainPill.actions; // §S281: exposed for Help panel dynamic merge
 
+    // §S7-INJECT — keep the 'sched4d' pill's hover title in step with which of its two states is
+    // live, without waiting on the (one-shot) gate poll below: called once right after that poll
+    // resolves, and again the instant a tap generates a programme (panels.js's own fn, above), so
+    // the tooltip never lies about which tap behaviour is currently wired.
+    function _syncSched4dTitle(hasSchedule) {
+      var acts = window._mainPillActions || [];
+      for (var i = 0; i < acts.length; i++) {
+        if (acts[i].id !== 'sched4d') continue;
+        acts[i].title = hasSchedule ? '4D Window' : '4D Window — tap to generate a programme';
+      }
+      if (A._buildPill) A._buildPill();
+    }
+
     // S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 4) — DATA-GATE poll for the 'sched4d' pill, mirroring
     // wh_walk.js's own poll (both eager-loaded modules, both flip `.pill` on window._mainPillActions
     // then call A._buildPill()). Unlike wh_walk/hba_lens this does NOT need to wait on guidMap/
     // streaming — ScheduleAuthor.activeSchedule() is a single query against the sql.js db the
     // building already loaded with, so it can resolve as soon as A.db exists. One-shot (matches the
     // existing convention): evaluated once at the FIRST building this session loads, same limitation
-    // wh_walk/hba_lens already carry (a mid-session building switch does not re-probe).
+    // wh_walk/hba_lens already carry (a mid-session building switch does not re-probe — §S7-INJECT
+    // leaves this known limitation as-is, see the spec note by the same name).
+    //
+    // §S7-INJECT (2026-09-14) CHANGED THE CONDITION, not just the mechanism — see the long comment
+    // on the 'sched4d' action above for why: CAPABLE (the authoring engine is loaded) replaces HAS A
+    // SCHEDULE ALREADY as the pill-VISIBILITY gate, because the pill's new second state ("Generate
+    // programme") must be reachable precisely when there is NO schedule yet. `has` is still computed
+    // and still logged — it now only drives the tooltip text (_syncSched4dTitle) and is otherwise
+    // informational, kept so this log line stays a superset of what it reported before, not a
+    // narrower one.
     (function () {
       var _tries = 0, _poll = setInterval(function () {
         _tries++;
         if (!A || !A.db) { if (_tries > 240) clearInterval(_poll); return; }
         clearInterval(_poll);
         var SA = window.ScheduleAuthor;
+        var capable = !!(SA && SA.materializeZones && SA.activeSchedule && SA.persistDb);
         var has = false;
-        try { has = !!(SA && SA.activeSchedule && SA.activeSchedule(A.db) && SA.activeSchedule(A.db).id); } catch (e) { has = false; }
+        try { has = !!(capable && SA.activeSchedule(A.db) && SA.activeSchedule(A.db).id); } catch (e) { has = false; }
         var acts = window._mainPillActions || [];
-        for (var i = 0; i < acts.length; i++) { if (acts[i].id === 'sched4d') acts[i].pill = has ? undefined : false; }
-        if (A._buildPill) A._buildPill();
-        console.log('§4D_PILL_GATE has_schedule=' + has);
+        for (var i = 0; i < acts.length; i++) { if (acts[i].id === 'sched4d') acts[i].pill = capable ? undefined : false; }
+        _syncSched4dTitle(has);
+        console.log('§4D_PILL_GATE capable=' + capable + ' has_schedule=' + has);
       }, 500);
     })();
 

@@ -867,7 +867,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="silhouette_refine.js?v=1" onerror="console.warn('§LOAD_FAIL silhouette_refine.js')"></script>
 <script src="streaming.js?v=69" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=9" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
-<script src="panels.js?v=45" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="panels.js?v=46" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=46" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=30" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="hover_name.js?v=2" onerror="console.warn('§LOAD_FAIL hover_name.js — hover-name disabled')"></script>
@@ -1005,7 +1005,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      Must load BEFORE time_machine.js — its _zoneIndexBuild wrapper calls it. -->
 <script src="zone_index.js?v=1" onerror="console.warn('§LOAD_FAIL zone_index.js — storey banding unavailable (zone inference falls back to declared storey)')"></script>
 <script src="support_sweep.js?v=1" onerror="console.warn('§LOAD_FAIL support_sweep.js — support-order physics unavailable (schedule repair, judge parity, lock-gate midair audit)')"></script>
-<script src="time_machine.js?v=78" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="time_machine.js?v=79" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="dlod_nav.js?v=4" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
 <!-- S7 (TM_4D5D_VARIANCE_LANE §S7-DO 2/3/4): the pure, DOM-free 4D reader — already loaded by
      boq_charts.html, NOT previously loaded here. windowForGuid(db, guid) is the ONLY source
@@ -1018,8 +1018,14 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      3D-canvas click via picking.js can render the construction window without the Find panel having
      been opened first. find_erp_push.js's _show4DWindow delegates to this same module — one renderer,
      two call sites, never a second copy. -->
-<script src="info_4d_panel.js?v=1" onerror="console.warn('§LOAD_FAIL info_4d_panel.js — #info-4d will stay hidden')"></script>
+<script src="info_4d_panel.js?v=2" onerror="console.warn('§LOAD_FAIL info_4d_panel.js — #info-4d will stay hidden')"></script>
 <script src="schedule_author.js?v=14" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<!-- §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-INJECT): "generate the programme once, on the fly" trigger
+     + honest progress/persist reporting. Depends on ScheduleAuthor (loaded above) and, lazily at
+     call time, window.tm4DTemplate (time_machine.js) / window._4dTemplate — never loads a second
+     copy of the template (§S7-GRAIN/§S7-INJECT-WHERE). Order vs schedule_author_ui.js does not
+     matter (lazy global lookups, never load-time). -->
+<script src="schedule_inject.js?v=1" onerror="console.warn('§LOAD_FAIL schedule_inject.js — the sched4d pill will not be able to generate a programme')"></script>
 <script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
 <script src="schedule_author_ui.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
 <script src="error_reporter.js?v=1" onerror="console.warn('§LOAD_FAIL error_reporter.js')"></script>

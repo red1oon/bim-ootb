@@ -61,10 +61,20 @@
     if (!win) {
       // A schedule exists but this element has no dated task. windowForGuid already logged the exact
       // reason (guid_not_in_task/undated) via §4D_ON_ELEMENT_GATE; this line tells the USER why the
-      // block is not showing dates, instead of rendering an empty box that looks broken.
+      // block is not showing dates, instead of rendering an empty box that looks broken. It already
+      // names the schedule inline, so no separate provenance line is added on this branch.
       html += '<div style="color:#888;font-size:11px">Not yet assigned to a dated task in "' +
         (sched.name || sched.id) + '".</div>';
     } else {
+      // §S7-INJECT HONESTY — provenance lives in schedules.name ('Default Programme (auto-generated)'
+      // vs the wizard's 'Authored Schedule (4D template)'/'Authored Schedule…'), never in schedule_id
+      // (stays 'SCH_AUTHORED' either way — see schedule_inject.js header) or any other column. Render
+      // it right beside the real dates so a generated default can never be mistaken for the
+      // project's committed programme just because this block also shows a normal-looking window.
+      if (sched.name) {
+        html += '<div style="color:#888;font-size:10px;margin-bottom:2px" title="Which schedule this window comes from">' +
+          sched.name + '</div>';
+      }
       var crit = win.isCritical ? ' <b style="color:#ff6b6b">(critical path)</b>' : '';
       html += '<div><span class="label">Task</span>: <span class="value">' + win.name + '</span></div>';
       html += '<div><span class="label">Window</span>: <span class="value">' + win.startDate + ' → ' + win.finishDate + crit + '</span></div>';
