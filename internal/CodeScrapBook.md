@@ -772,3 +772,51 @@ echo "witnesses on the contract: $(grep -rl 'Witness(' --include='*.js' . | grep
 ```
 
 ---
+
+## 17. Local-first as the load-bearing pattern, not a preference (2026-09-16)
+
+> red1, reading `viewer/main.js` in full: "This local first savings runs across
+> all the code as a killer framework. In a way it is a gigantic blueprint
+> pattern, where its only gap is DistributedERP which we plug with a 'relay
+> folder'."
+
+### What `main.js` alone does that a server/SDK/bundler stack would otherwise own
+
+Read end-to-end (1,285 lines, `initViewer()`). Five places it reaches for a
+browser primitive instead of infrastructure most BIM viewers assume exists:
+
+| Capability | Server-stack equivalent | What this does instead | Where |
+|---|---|---|---|
+| 4D Gantt ↔ 3D sync | one SPA process, shared state (Synchro, Navisworks TimeLiner) | two browser tabs, `BroadcastChannel('bim_4d')` | `viewer/main.js` L326-678 |
+| Host-embed cross-highlight | vendor SDK (Forge, Trimble Connect Web SDK) | raw `postMessage`, no SDK | `viewer/main.js` L18-92 |
+| Feature module loading | bundler code-splitting (`import()`) | hand-chained `<script>` tags, load order kept in comments | `viewer/main.js` L124-252 |
+| "Reopen where you left off" | server-side per-user/project table | `scene_state` table inside the portable SQLite model file itself | `viewer/main.js` L1164-1214 |
+| Render scheduling | framework's own scheduler | hand-built self-parking `requestAnimationFrame` loop, debugged through real incidents (§S287b double-loop, §IDLE-PARK) | `viewer/main.js` L680-965 |
+
+Caveat: the "server-stack equivalent" column is inference from the known,
+public architecture of Forge/Trimble Connect/Synchro/Navisworks — not a
+source diff. Their code has not been read in this session.
+
+### The pattern, generalised
+
+Not a one-off trick in this one file — the same substitution repeats at
+every layer already on record in [§10 "Where this shape comes
+from"](#10-where-this-shape-comes-from): script-tags-and-globals instead of
+a build step, `window.APP` instead of an injected context, the
+`kernel_ops` signed log instead of a database-of-record — each traced there
+to real prior art (event sourcing, CAD feature trees, SQLite's own source
+tree). `main.js` is where all of those meet at once, at boot.
+
+### The one acknowledged gap — DistributedERP
+
+`erp/DistributedERP.md` §6 / §11.1 already specs the one piece this
+local-first shape cannot supply alone: cross-device/cross-branch sync, via a
+**"dumb post office" relay** — order + persist + relay only, no business
+logic (doctrine-only today, per `teams/ERP_CONTEXT.md` — not yet built).
+red1's framing, stated this session: plug that relay with a **"relay
+folder"** — a shared folder standing in for the relay process, so the one
+gap in the pattern gets closed without reintroducing a server just for it.
+**Not yet designed or built — recorded here as the stated direction, not as
+a spec.**
+
+---
