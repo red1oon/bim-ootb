@@ -309,6 +309,21 @@
       ' viaExit=' + viaExit + ' viaFallback=' + viaFallback);
     log('§EGRESS rule=isolated_room severity=' + isolatedCount);
 
+    // LARGE_DB_BAKE.md §2 L1 — this is "the egress rule" the raster is for: without
+    // storey_walkable_raster, every room's shortestPath() fallback above legalizes its chords from
+    // scratch (rect/corridor scan instead of an O(1) bitset lookup). A building that never grew a
+    // raster paid that cost silently unless a session went looking for it in the per-call
+    // §PATH_LEGAL lines; this is the one summary line that stops that being silent.
+    if (!graph.rasters || !Object.keys(graph.rasters).length) {
+      var _lgSt = graph._legalizeStats;
+      if (_lgSt && _lgSt.calls) {
+        var _bnRows = dbQuery("SELECT value FROM project_metadata WHERE key='building_name'") || [];
+        var _bname = (_bnRows[0] && _bnRows[0][0]) || 'unknown';
+        log('§PATH_LEGAL_NO_RASTER building=' + _bname + ' legalizations=' + _lgSt.legalized +
+          ' calls=' + _lgSt.calls + ' ms=' + _lgSt.ms.toFixed(1));
+      }
+    }
+
     return rows;
   }
 

@@ -1553,6 +1553,7 @@
   // wherever a chord fails. Never touches WHICH rooms/doors the route uses (`doors` list
   // untouched) — only the polyline's intermediate points, exactly per the spec's scope fence.
   function _legalizePath(graph, path) {
+    var _legT0 = (typeof Date !== 'undefined') ? Date.now() : 0;
     var legalized = 0, detoured = 0;
     var out = [path[0]];
     for (var i = 0; i + 1 < path.length; i++) {
@@ -1625,6 +1626,16 @@
       out.push(path[i + 1]);
     }
     if (legalized) _log('§PATH_LEGAL legalized=' + legalized + ' detoured=' + detoured);
+    // LARGE_DB_BAKE.md §2 L1 — accumulate on the graph itself so a whole-building sweep
+    // (egress_sanity.js's rule 2/3 loop, one shortestPath() per room) can print ONE summary line
+    // for the raster-absent case instead of the per-call §PATH_LEGAL noise above being the only
+    // trace anything was slow. Never gated on rasters here — the caller decides whether the
+    // absence is newsworthy; this just carries the numbers.
+    if (graph) {
+      var _legSt = graph._legalizeStats || (graph._legalizeStats = { calls: 0, legalized: 0, detoured: 0, ms: 0 });
+      _legSt.calls++; _legSt.legalized += legalized; _legSt.detoured += detoured;
+      _legSt.ms += (typeof Date !== 'undefined') ? (Date.now() - _legT0) : 0;
+    }
     return out;
   }
 
