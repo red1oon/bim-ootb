@@ -1112,10 +1112,16 @@
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
     // §MAXQ_FRAME_BUDGET — the bake's still fold, cheaper than Alt+S's. Cleared on every exit path
     // below (_bakeBudgetRelease), so a still after a bake is never quietly degraded.
-    A._stillBudget = { taa: MAXQ_STILL_BUDGET.taa, ao: MAXQ_STILL_BUDGET.ao };
+    // LARGE_DB_BAKE.md §2 L3 — the delivery budget (8/12) is the single biggest wall-time knob on a
+    // large building (~1.7s of every LTU/Hospital frame is these re-renders) but was not reachable
+    // from the CLI. opts.stillBudget (cli_silent_bake.js's --still-budget taa,ao) overrides it for a
+    // quick-check bake; no flag on the CLI is byte-identical to before this change.
+    var _sb = (opts.stillBudget && opts.stillBudget.taa != null && opts.stillBudget.ao != null)
+      ? opts.stillBudget : MAXQ_STILL_BUDGET;
+    A._stillBudget = { taa: _sb.taa, ao: _sb.ao };
     console.log('§MAXQ_FRAME_BUDGET taa=' + A._stillBudget.taa + ' ao=' + A._stillBudget.ao +
       ' renders/frame=' + (A._stillBudget.taa + A._stillBudget.ao) + ' (was 16+24=40) — bake only,' +
-      ' Alt+S stills keep the full fold');
+      ' Alt+S stills keep the full fold' + (_sb !== MAXQ_STILL_BUDGET ? ' (CLI override)' : ''));
     _wakeAcquire();
     _dampHold();   // §CINEMA_DAMPING_BLEED — the preview and the bake are both authored cameras
     // §MAXQ_STREAM_FIRST (user report, LTU_AHouse/122k: preview was SEEN showing boxes — initial
@@ -1189,6 +1195,11 @@
     // every consumer — the preview, the bake loop, and anything added later — flies the clip through
     // the same function, and there is no second notion of "which part of the film this is".
     var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null, _reveal = false;
+    // LARGE_DB_BAKE.md §2 L4 — a frame-exact subset of the FULL film's own tn_i = i/(N-1) grid
+    // (unlike --clip, whose n frames re-derive tn_i = i/(n-1) across [in,out] — NOT a subset of the
+    // full film's own frame grid, see §0's Clip-to-frame mapping note). Lets K bakes on K ports
+    // split one long film into disjoint frame ranges and concat byte-identical output.
+    var _frameRange = null;   // { a, b, total } once resolved below
     var _clash = false;   // §CLASH_FILM_P1 — mesh-true clash pairs as persistent world content
     var _measure = false;      // §FLYTHRU_DATUM — Alt-C 'Measure' checkbox
     // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
@@ -1234,7 +1245,14 @@
       // once during setup (natural pacing §CPE_PACING, clip-window rescale) and this function
       // isn't actually invoked until the frame loop below, by which point nFrames already holds
       // its FINAL value. A precomputed half-width would silently use a stale/wrong one.
-      var gazeBlendHalf = 1.5 / Math.max(1, nFrames - 1);   // ~1.5 frame-widths either side
+      // LARGE_DB_BAKE.md §2 L4 (found via §L4_PLAN_DUMP bisection, 2026-09-15): "1.5 frame-widths"
+      // means 1.5 widths of a FULL-FILM frame — in --frame-range mode nFrames is this RUN's local
+      // slice count (b-a), not the film's, so this blended THE WRONG WIDTH (17%-37% of the whole
+      // film's tNorm range instead of ~0.17%), averaging gaze direction over a huge, run-size-
+      // dependent arc instead of a tiny neighborhood. Camera POSITION (pure _tn) matched between
+      // two --frame-range runs of the same global frame; only the LOOK-AT target diverged — this is
+      // why. A normal/--clip bake is unaffected: _frameRange is null there, same as before.
+      var gazeBlendHalf = 1.5 / Math.max(1, (_frameRange ? _frameRange.total : nFrames) - 1);   // ~1.5 frame-widths either side
       var refYaw = null, sumYaw = 0, sumPit = 0;
       for (var k = 0; k < GAZE_BLEND_N; k++) {
         var frac = (GAZE_BLEND_N === 1) ? 0 : (k / (GAZE_BLEND_N - 1) - 0.5) * 2;   // -1..1
@@ -1400,9 +1418,21 @@
         // was never ported. The plan above had already succeeded — a stale LOG line was killing the
         // bake. Count what the plan actually flew, and never let this line be the thing that throws.
         var _ov = _cpeRes.override;
+        // LARGE_DB_BAKE.md §2 L4 — `--frame-range a:b` wins over `--clip` when both are given
+        // (the CLI itself already refuses to accept both). Renders exactly frames a..b-1 of the
+        // FULL film at THAT film's own tn_i = i/(N-1) step; poseAt/_tFilm are never touched, so a
+        // frame rendered here and the same frame rendered in a K=1 full bake take the identical path.
+        if (opts.frameRange) {
+          var _fr = opts.frameRange;
+          if (_fr.b > nFrames) throw new Error('§FRAME_RANGE_OOB b=' + _fr.b + ' > full film frames=' + nFrames);
+          _frameRange = { a: _fr.a, b: _fr.b, total: nFrames };
+          nFrames = _fr.b - _fr.a;
+          console.log('§FRAME_RANGE a=' + _frameRange.a + ' b=' + _frameRange.b +
+            ' totalFullFilmFrames=' + _frameRange.total + ' rendersThisRun=' + nFrames +
+            ' (frame-exact subset of the FULL film, not a --clip remap)');
         // §CPE_CLIP: a clip is fewer frames of the SAME film, so the frame count scales with the
         // window — not the duration, which the editor already derived for the whole path.
-        if (_ov.clip && _ov.clip.out > _ov.clip.in) {
+        } else if (_ov.clip && _ov.clip.out > _ov.clip.in) {
           _clip = { in: _ov.clip.in, out: _ov.clip.out };
           var _span = _clip.out - _clip.in;
           var _framesFull = nFrames;
@@ -1637,7 +1667,15 @@
       // false` on a fresh page load — the clash film had not been built yet — and §CLASH_HUD_CARD was
       // silently dropped on EVERY first bake of a tab, `--clash` and pair count notwithstanding. Moved
       // here, BEFORE §CPE_BIG_STATS, so the card sees the real, already-judged stats.
-      var _filmSecFull = (_clip && _clip.out > _clip.in) ? (nFrames / (_clip.out - _clip.in)) / fps : nFrames / fps;
+      // LARGE_DB_BAKE.md §2 L4 — same invariant the --clip branch already protects ("a full bake is
+      // unchanged, _filmSecFull === nFrames / fps when no clip is set", see the comment near
+      // _workCursorAt below): in frame-range mode `nFrames` has ALREADY been narrowed to this run's
+      // slice (b-a), so falling through to the plain `nFrames / fps` here silently fed every
+      // absolute-seconds effect below (clash timing, ghost-ground fade, flythru cues, slab/indoor
+      // beats — all keyed off `_tnFilm * _filmSecFull`) the wrong film length. FOUND via the
+      // §FRAME_HASH seam witness: a=780 rendered completely different pixels under b=781 vs b=785.
+      var _filmSecFull = _frameRange ? (_frameRange.total / fps)
+        : (_clip && _clip.out > _clip.in) ? (nFrames / (_clip.out - _clip.in)) / fps : nFrames / fps;
       // §FLYTHRU_CUES — baseline measurement cues (B1/B2/B4/B5). Built once, placed against the
       // REAL camera path. Never allowed to kill a bake: same try/catch contract as every overlay here.
       if (A.flythruCuesBuild) {
@@ -1848,7 +1886,11 @@
         // teardown forced by an interaction mid-bake).
         if (!A._photoStagingOn) await _sleep(SETTLE_MS);
         _freezeRandom();
-        var _tn = nFrames > 1 ? i / (nFrames - 1) : 0;
+        // LARGE_DB_BAKE.md §2 L4 — in frame-range mode tNorm is the FULL film's own i/(N-1), offset
+        // by the range's start, so a frame at global index g renders identically whether this run
+        // covers [0,N) in one bake or [g,g+1) as one slice of a K-way split.
+        var _tn = _frameRange ? (_frameRange.a + i) / (_frameRange.total - 1)
+                              : (nFrames > 1 ? i / (nFrames - 1) : 0);
         var pose = poseAt(_tn);  // tNorm hits 1.0 on the last frame so the pull-back completes
         var _gazeDist = Math.hypot(pose.tx - pose.x, pose.ty - pose.y, pose.tz - pose.z);
         var _gazeB = _blendedGazeTarget(_tn, pose, _gazeDist);   // §57.5 — direction only, position untouched
@@ -2457,6 +2499,15 @@
           }
         } else A._ilWitnessKey = null;
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc);
+        // LARGE_DB_BAKE.md §2 L4 — seam-equivalence witness: hash the ENCODED bytes of this frame,
+        // keyed by its GLOBAL index in the full film (not this run's local i), so a K=1 bake and a
+        // --frame-range slice of the same span can be diffed frame-for-frame without decoding video.
+        try {
+          var _fhBuf = await blob.arrayBuffer();
+          var _fhDig = await crypto.subtle.digest('SHA-256', _fhBuf);
+          var _fhHex = Array.prototype.map.call(new Uint8Array(_fhDig), function(b) { return ('0' + b.toString(16)).slice(-2); }).join('').slice(0, 16);
+          console.log('§FRAME_HASH i=' + (_frameRange ? _frameRange.a + i : i) + ' sha=' + _fhHex);
+        } catch (eFh) { console.warn('§FRAME_HASH_ERR ' + eFh.message); }
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
         // connection out from under it (confirmed live: two consecutive rAF gaps of 29s and 67s right
@@ -2748,7 +2799,9 @@
           ' storeyReveal=' + (ov.storeyReveal ? 1 : 0));
         await start({ editor: false, preview: false, override: ov, overrideSource: src,
                       frames: o.frames, fps: o.fps, forceWebm: o.forceWebm,
-                      burninDatumDir: o.burninDatumDir });   // §DATUM_DECOUPLE — was silently dropped here
+                      burninDatumDir: o.burninDatumDir,   // §DATUM_DECOUPLE — was silently dropped here
+                      stillBudget: o.stillBudget,   // LARGE_DB_BAKE.md §2 L3 — CLI --still-budget override
+                      frameRange: o.frameRange });   // LARGE_DB_BAKE.md §2 L4 — CLI --frame-range override
         return { source: src, deliveredBytes: window.__maxqDeliveredBytes || 0 };
       };
       clearInterval(_attach);

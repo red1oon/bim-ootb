@@ -27,6 +27,11 @@
 //     [--stall-min N] [--max-frame-ms N]              health watchdog (abort early, not at the end)
 //     [--timeout-min N]                               hard wall-clock cap
 //     [--progress-every-sec N] [--abort-land-min N]   progress cadence (30) / abort landing cap (10)
+//     [--still-budget taa,ao]                          override the 8/12 bake fold (LARGE_DB_BAKE.md
+//                                                       §2 L3); absent = unchanged default quality
+//     [--frame-range a:b]                              render frames a..b-1 of the FULL film,
+//                                                       frame-exact (LARGE_DB_BAKE.md §2 L4) — NOT
+//                                                       the same grid as --clip (§0), mutually exclusive
 //
 //   PROGRESS + ETA print as §CLI_BAKE_PROGRESS while the bake runs. Ctrl-C (SIGINT) aborts CLEANLY:
 //   the frames baked so far are stitched and delivered to --out. Press it twice to give up on that.
@@ -62,6 +67,13 @@ const OV_FILE = arg('override', null);
 //                   §CLI_BAKE_TAP, the whole object is written to <out>_tap.json.
 const CLIP = (() => { const v = arg('clip', null); if (!v) return null; const m = v.split(':').map(Number);
   return (m.length === 2 && m[1] > m[0] && m[0] >= 0 && m[1] <= 1) ? { in: m[0], out: m[1] } : null; })();
+// LARGE_DB_BAKE.md §2 L4 — `--frame-range a:b` renders frames a..b-1 of the FULL film at that
+// film's own tn_i = i/(N-1) step (§0's Clip-to-frame mapping note: a --clip is NOT this — its n
+// frames re-derive tn_i = i/(n-1) across [in,out], a different grid). Lets K bakes on K ports split
+// one long film into disjoint, byte-identical-at-the-seam ranges (§FRAME_HASH proves it).
+const FRAME_RANGE = (() => { const v = arg('frame-range', null); if (!v) return null; const m = v.split(':').map(Number);
+  return (m.length === 2 && Number.isInteger(m[0]) && Number.isInteger(m[1]) && m[1] > m[0] && m[0] >= 0) ? { a: m[0], b: m[1] } : null; })();
+if (FRAME_RANGE && CLIP) { console.error('§CLI_BAKE_ARG_CONFLICT --frame-range and --clip are two different frame grids (§0) — pass only one'); process.exit(1); }
 const TAP_FILE = arg('tap', null) ? path.resolve(arg('tap')) : null;
 // §DATUM_DECOUPLE (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — dev-only bisect instrument:
 //   --burnin-datum-src clean.mp4   skip the GPU render + every other overlay; load clean.mp4's own
@@ -103,6 +115,14 @@ if (_fMeasure !== undefined) FLAGS.measure = _fMeasure;
 if (_fStoreyReveal !== undefined) FLAGS.storeyReveal = _fStoreyReveal;
 // `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');
+// LARGE_DB_BAKE.md §2 L3 — `--still-budget taa,ao` overrides cinema_maxq.js's hardcoded 8/12 bake
+// fold (20 renders/frame — ~1.7s of every LTU/Hospital frame). Absent = byte-identical to before
+// this flag existed; the default delivery quality is unchanged unless the caller asks for less.
+const STILL_BUDGET = (() => {
+  const v = arg('still-budget', null); if (!v) return null;
+  const m = v.split(',').map(Number);
+  return (m.length === 2 && m[0] >= 0 && m[1] >= 0) ? { taa: m[0], ao: m[1] } : null;
+})();
 
 // §CLI_BAKE_PROGRESS / §CLI_BAKE_LAND_ON_ABORT — how often the progress line prints, and how long an
 // abort is allowed to spend landing the partial film before the runner gives up on it.
@@ -595,6 +615,8 @@ const server = http.createServer((req, res) => {
   const bakeOpts = { name: PLAN_NAME || undefined, flags: FLAGS, frames: _frames, fps: _fps };
   if (OV_FILE) bakeOpts.override = JSON.parse(fs.readFileSync(OV_FILE, 'utf8'));
   if (CLIP) { bakeOpts.clip = CLIP; log(`§CLI_BAKE_CLIP in=${CLIP.in} out=${CLIP.out} (§SDC — a window of the same film)`); }
+  if (STILL_BUDGET) { bakeOpts.stillBudget = STILL_BUDGET; log(`§CLI_BAKE_STILL_BUDGET taa=${STILL_BUDGET.taa} ao=${STILL_BUDGET.ao} (default 8/12)`); }
+  if (FRAME_RANGE) { bakeOpts.frameRange = FRAME_RANGE; log(`§CLI_BAKE_FRAME_RANGE a=${FRAME_RANGE.a} b=${FRAME_RANGE.b} (frame-exact subset of the FULL film)`); }
   if (BURNIN_SRC) {
     const stem = path.basename(BURNIN_SRC).replace(/\.[a-z0-9]+$/i, '');
     const frameDir = path.join(ROOT, 'out', stem + '_burninframes');
