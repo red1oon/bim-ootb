@@ -145,6 +145,57 @@ Undo is not a compensating transaction — it is *dropping an op and re-folding*
 This is why the modeller's op-log **is** the feature tree, and why one log can
 fold into two surfaces (model + accounts) that co-vanish on undo.
 
+### The chain, mechanically
+
+`commitOp()` (`erp/kernel_ops.js:70`) only inserts the row — `op_hash`/
+`prev_hash` stay NULL. Hashing is a separate step, `sealChain()`
+(`erp/kernel_ops.js:309`):
+
+```
+stableStringify(v)   — object → text, keys sorted, so same content → same text
+_canonicalV2(op)     — the 7 meaning-bearing fields only, through stableStringify
+_contentHash(op)     — SHA-256('cs2|' + canonical) — one fingerprint per op
+sealChain(db)        — walks every row in id order:
+                        op_hash[i] = SHA-256(op_hash[i-1] + '|' + canonical(op[i]))
+```
+
+That last line is the whole trick: each row's hash folds in the row before it —
+a **git commit chain**, not a database column. `sealFrom()` (line 340) is the
+incremental sibling, sealing only what's new since the last sealed tip;
+`sealChain` is the full recompute, and it is what `compact()` (line 805) must
+call afterward, because compaction deletes/collapses rows and every hash past
+the first deleted row would otherwise be wrong.
+
+### Where an iDempiere dev pushes back
+
+1. **Replay cost.** "Is this order complete" folds the whole log at O(n) per
+   read, versus an indexed `DocStatus` column at O(1). Real cost — partially
+   answered by `compact()`, the checkpoint mechanism event-sourcing always
+   needs, but not eliminated.
+2. **Concurrency.** iDempiere's multi-user integrity is row locks + MVCC,
+   enforced by Oracle/PostgreSQL. This log's cross-tab guard
+   (`_storedTipIsAncestor`, line 109) is a **fail-open, last-writer-wins
+   heuristic** — weaker by design, because it targets one SQLite file in one
+   browser tab, not a shared multi-user server.
+3. **The sharpest one — compaction rewrites a "tamper-evident" chain.**
+   `sealChain`'s own comment says it is a full recompute "because compact()
+   may delete/collapse ops." So the chain is tamper-evident only *since the
+   last compaction* — compaction is the codebase's own code, legitimately
+   rewriting history, a materially weaker guarantee than "nobody ever
+   tampered." An accounting ledger never rewrites; it reverses with a new
+   entry. This op-log mixes UI-trivial ops (`GRID_MOVE`, `VIEW_FILTER`) with
+   business-meaningful ones in one flat log under one compaction policy — no
+   visible split between "safe to compact freely" and "needs the harder,
+   append-only guarantee." A question for the author, not a fix.
+4. **Concession — tamper evidence beats `AD_ChangeLog`.** iDempiere's
+   `AD_ChangeLog` (`MChangeLog.java`) is an ordinary table; a DBA edits it and
+   nothing detects it. A silent edit here breaks the SHA-256 chain visibly.
+   Real upgrade, no iDempiere equivalent.
+5. **Concession — undo as reversal, generalized.** iDempiere never deletes a
+   posted document; it reverses with a new GL entry. "Drop the op, re-fold" is
+   the same principle, applied uniformly to every operation instead of
+   hand-built per document type.
+
 ---
 
 ## 5. The spec-block convention — your cheat sheet
