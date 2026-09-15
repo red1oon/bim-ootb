@@ -10,7 +10,15 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v792';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v793';   // bump on each deploy; per-change detail is the git commit message.
+// v793 (2026-09-15) §Phase E (PLUGIN_SYSTEM_LANE.md): ad_modelval_bridge.js bridges the real
+//   ad_modelvalidator AD table (3 rows: Libero MFG/Fixed Assets/Product Price) into the already-shipped
+//   plugin host — adding an ad_modelvalidator row is now the AD-native way to add a validator, install
+//   only (never auto-start — Q1; plugin_release.js's existing enable/disable click still approves).
+//   ad_seed.db gains the ad_modelvalidator table (erp/tests/bake_modelvalidator_seed.js) — it was
+//   entirely absent from the live-loaded seed before this (verified; ad_full.db, the offline oracle,
+//   is the only place these 3 rows previously existed). ad_seed_v17 -> ad_seed_v18 IDB cache key bump
+//   forces re-fetch of the updated seed for returning users (same convention as v768a).
 // v792 (2026-09-04) §ADFORM-TRXMATERIAL: form #2 of 49 — AD_Form 103 "Material Transactions"
 //   (org.compiere.apps.form.VTrxMaterial), the read face of the M_Transaction ledger erp_engine.stockMoves
 //   writes. All six TrxMaterial.refresh() restrictions, and TrxMaterial.zoom()'s five-FK source precedence.
@@ -117,6 +125,7 @@ const PRECACHE_ASSETS = [
   'ad_callout.js',     // PLUGIN_SYSTEM_LANE §Phase D — callout dispatch (window.AdCallout); gives callout bundles a live target
   'plugin_registry.js',// PLUGIN_SYSTEM_LANE §Phase A — Fold-Engine plugin host (window.PluginRegistry), W-PLUGIN
   'plugin_overlay.js', // PLUGIN_SYSTEM_LANE §Phase D — the Plugin Engine pill overlay (window.PluginEngine); v2 = +Create face
+  'ad_modelval_bridge.js', // PLUGIN_SYSTEM_LANE §Phase E — bridges ad_modelvalidator AD rows into the plugin host (window.AdModelValBridge)
   'ninja_model.js',   // NINJA CREATE (PackOut) — pure model-sheet parser (window.NinjaModel)
   'ninja_stage.js',   // NINJA CREATE — stageModels/rollbackModel into the sql.js AD (window.NinjaStage)
   'ninja_bundle.js',  // NINJA CREATE — emitBundle + makeWritableDbHost (window.NinjaBundle)

@@ -369,21 +369,36 @@
     _populateWindows(doc);
   }
 
+  // ensure(glue) — build-or-return the ONE shared registry singleton, without opening the DOM overlay.
+  //   PLUGIN_SYSTEM_LANE.md §Phase E: the AD-row bridge (ad_modelval_bridge.js) needs to install a
+  //   candidate bundle into the SAME registry plugin_release.js's Plugin Management list reads
+  //   (pluginReg() -> PluginEngine._reg()) — otherwise an AD-row install would be invisible until an
+  //   admin happened to open the Plugin Engine pill first. This is exactly open()'s own glue/registry
+  //   setup (below), factored out so a non-DOM caller can reach it; open()'s own behavior is unchanged.
+  function ensure(glue) {
+    if (!global.PluginRegistry) return null;
+    if (!_glue) {
+      glue = glue || {};
+      _glue = {
+        db: glue.db || null,
+        adQ: glue.adQ || null,
+        KO: glue.KO || global.KernelOps || null,
+        engines: glue.engines || {
+          modelval: global.AdModelVal, callout: global.AdCallout, process: global.AdProcess,
+          postTokens: (global.PostResolver && global.PostResolver.TOKENS) || null
+        }
+      };
+    }
+    if (!_reg) _reg = _buildRegistry(_glue);
+    return _reg;
+  }
+
   // open({ doc, db, adQ, KO, engines }) — host injects the page glue; build/hydrate the registry once.
   function open(opts) {
     opts = opts || {};
     var doc = opts.doc || global.document;
     if (!global.PluginRegistry) { _toast(doc, 'plugin_registry.js not loaded'); return; }
-    _glue = {
-      db: opts.db || null,
-      adQ: opts.adQ || null,
-      KO: opts.KO || global.KernelOps || null,
-      engines: opts.engines || {
-        modelval: global.AdModelVal, callout: global.AdCallout, process: global.AdProcess,
-        postTokens: (global.PostResolver && global.PostResolver.TOKENS) || null
-      }
-    };
-    if (!_reg) _reg = _buildRegistry(_glue);
+    ensure(opts);
 
     _css(doc);
     _close(doc);
@@ -438,5 +453,5 @@
     console.log('§PLUGIN-PILL open bundles=' + (_reg ? _reg.list().length : 0));
   }
 
-  global.PluginEngine = { open: open, _reg: function () { return _reg; } };
+  global.PluginEngine = { open: open, ensure: ensure, _reg: function () { return _reg; } };
 })(typeof window !== 'undefined' ? window : this);

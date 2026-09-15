@@ -532,6 +532,11 @@
 <script src="ninja_starter.js?v=1"></script>
 <script src="ninja_export.js?v=1"></script>
 <script src="plugin_overlay.js?v=4"></script>
+<!-- PLUGIN_SYSTEM_LANE.md §Phase E — bridges the real ad_modelvalidator AD table (ad_modelval.js
+     readValidators) into the plugin host above: adding an ad_modelvalidator row becomes the AD-native
+     way to add a validator. Install-only (never auto-start — Q1); loads after ad_modelval.js/
+     plugin_overlay.js, called lazily by crud_overlay.js's existing model-validator install pass. -->
+<script src="ad_modelval_bridge.js?v=1"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (supersedes migrate_showme + the Install/Migrate
      pills). Mounted from the `showme` pill → AboutDIY.open(). icons.js + overlay_kit loaded above. -->
 <script src="../common/about_diy.js?v=1"></script>
@@ -709,7 +714,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function status(main) { if (main != null) $('idmp-status-main').textContent = main; }
 
-  // ── IndexedDB cache (shares 'ad_seed_v17' with erp.html) ──
+  // ── IndexedDB cache (shares 'ad_seed_v18' with erp.html) ──
   function idbGet(key) {
     return new Promise(function (resolve) {
       try {
@@ -804,8 +809,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // clobber a ?seed= gen db), and only when rows actually merged. INSERT OR IGNORE upstream keeps it idempotent.
       var persisted = false;
       if (mRow > 0 && (!seedParam || seedFile === 'ad_seed.db')) {
-        try { idbPut('ad_seed_v17', db.export().buffer); persisted = true;
-          console.log('§IDEMPIERE shard-persist key=ad_seed_v17 rows=' + mRow + ' resident=Y');
+        try { idbPut('ad_seed_v18', db.export().buffer); persisted = true;
+          console.log('§IDEMPIERE shard-persist key=ad_seed_v18 rows=' + mRow + ' resident=Y');
           // CONSISTENCY_FINISH.md §K-3 — a tenant becoming resident is the largest state change a user
           // can make; it earns a World-history dot like any doc moment. Guarded, best-effort, NOT a
           // signed op (install = infrastructure, deliberately outside the Z fold lane).
@@ -845,8 +850,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§GENESIS-RESIDENT-LIVE install name=' + name + ' client=' + newId + ' rows=' + rows + ' grants=' + grants + ' clients→' + clAfter);
     var persisted = false;
     if (rows > 0) {
-      try { idbPut('ad_seed_v17', db.export().buffer); persisted = true;
-        console.log('§GENESIS-RESIDENT-LIVE persist key=ad_seed_v17 client=' + newId + ' resident=Y');
+      try { idbPut('ad_seed_v18', db.export().buffer); persisted = true;
+        console.log('§GENESIS-RESIDENT-LIVE persist key=ad_seed_v18 client=' + newId + ' resident=Y');
         try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
           label: 'Installed tenant ' + name + ' (' + rows + ' rows, client ' + newId + ')' }); } catch (e2) {} }
       catch (e) { console.warn('§GENESIS-RESIDENT-LIVE persist failed ' + e.message); }
@@ -909,7 +914,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var seedFile = (seedParam && /^[\w.-]+\.db$/.test(seedParam)) ? seedParam : 'ad_seed.db';
     var src = seedParam ? 'gen:' + seedFile : 'network';
     if (!seedParam) {
-      var cached = await idbGet('ad_seed_v17');
+      var cached = await idbGet('ad_seed_v18');
       if (cached && cached.byteLength > 1000) {
         var sig = String.fromCharCode.apply(null, new Uint8Array(cached, 0, 6));
         if (sig === 'SQLite') { db = new SQL.Database(new Uint8Array(cached)); src = 'idb_cache'; }
@@ -918,7 +923,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!db) {
       var resp = await fetch(seedFile); var buf = await resp.arrayBuffer();
       db = new SQL.Database(new Uint8Array(buf));
-      if (!seedParam) idbPut('ad_seed_v17', buf);   // cache only the real seed, never a ?seed= override
+      if (!seedParam) idbPut('ad_seed_v18', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
     // BIM→Project round-trip §B (docs/BIMtoERP.md): overlay the viewer-folded Project Orders + VO amendments
@@ -1124,7 +1129,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     $('idmp-del-go').onclick = function () {
       var res = SES.deleteClient(db, c.id);
       if (!res.ok) { closeOv(); return; }
-      try { idbPut('ad_seed_v17', db.export().buffer); } catch (e) {}
+      try { idbPut('ad_seed_v18', db.export().buffer); } catch (e) {}
       console.log('§IDEMPIERE tenant-deleted client=' + c.id + ' rows=' + res.deleted + ' tables=' + res.tables + ' persisted=Y');
       try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
         label: 'Deleted tenant ' + c.name + ' (Client ' + c.id + ', ' + res.deleted + ' rows)' }); } catch (e) {}
