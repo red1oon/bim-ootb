@@ -838,4 +838,50 @@ without reintroducing a server just for it. Given the above, that's not
 speculative — it's the last wiring step on top of a mechanism already
 witnessed 7/7, not a fresh design.
 
+### The irreducible anchor, sharpened — and a second one behind it (2026-09-16)
+
+> red1: "...in more advanced future version, we can have a setup config that
+> decides what to be relayed but question is will such selected service be
+> at a disadvantage outside the 'server'?"
+
+**What (bim-compiler) `scripts/poc_rotate.js` actually witnesses is
+narrower than "revocation."** `revoke(db, auth, revokedKid, newKid, ts)` at
+line 63, and every witnessed call has `auth === revokedKid` —
+`revoke(dbR, 'K1', 'K1', 'K2', ...)`: the key revokes **itself**. Same shape
+for `ROTATE`, counter-signed by the **outgoing** key. That's cooperative
+offboarding. The file's own header (line 9) names the harder case and stops
+there: *"rotation/compromise/offboarding is only NAMED as 'the one
+irreducible anchor' — never witnessed."* Device stolen, holder
+uncooperative, someone **else** must kill that key — no witness for that.
+
+A minimal auth/token service closes exactly that gap, and only that gap:
+hold (or co-sign) an authority key that can force a `REVOKE` op into the log
+for a key that won't revoke itself. One write per incident, not a
+session-per-request server.
+
+**red1's forward idea — a config deciding what gets relayed
+(aggregate/need-to-know) — is cheap to *compute*.** It fits the shape
+everything else already has: (bim-compiler) `docs/DistributedERP.md:174`'s
+G-IDENTITY already mints identity at the edge; a redaction/aggregation
+projection is just another edge-computed op before signing. No new server
+capability is needed to decide the policy.
+
+**But deciding it and enforcing it are different claims, and only one is
+free.** A client-side "only relay the aggregate" default is honest-operator
+hygiene — it protects nothing against a compromised or rogue edge, which can
+simply choose to relay the raw data, because the dumb relay (§6 — "order +
+persist + relay only, no business logic") isn't checking. If need-to-know
+has to be a guarantee, not a default, something the sender doesn't control
+has to check it before the data crosses the boundary — a second small
+exception to "dumb relay," the same shape as the revocation anchor.
+
+**So: not at a disadvantage for policy — at a disadvantage for enforcement,
+and it's the same disadvantage as revocation.** The honest answer is
+probably one minimal service with two jobs, not two services: hold the
+authority key that can (a) force a `REVOKE`, and (b) gate what crosses the
+boundary when the edge can't be trusted to self-police. Both are the same
+shape — a small, deliberate, named exception to "no business logic," not the
+server the whole architecture otherwise avoids. **Open question, not a
+spec — no config or enforcement checkpoint exists yet.**
+
 ---
