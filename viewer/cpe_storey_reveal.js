@@ -92,6 +92,162 @@ function setupCpeStoreyReveal(A) {
   // a silent zero-storey reveal is never an acceptable outcome of a filter. Both cases are logged.
   // CROSS-BUILDING SAFETY, checked before writing this: ~/Downloads/Hospital_silent.db declares 64
   // `IfcBuildingStorey` rows covering Level 1..7A, so every storey Hospital shows today survives.
+  // §STOREY_RUNG_LADDER (2026-09-15, MEP_CLASH_REVEAL_MOVIE.md §128.10 item 14 — Fable's root cause).
+  // A federated export carries ONE NAMING SYSTEM PER SUB-MODEL: LTU_AHouse declares 43 storey rows —
+  // six sub-models x "Plan 1-4", plus VÅN 1-5, Storey 1-3, VÅNING 1-4, TAKPLAN, Ref. — for 5 PHYSICAL
+  // levels. The list above groups by LABEL, so a per-label ceiling (next label's slab bottom)
+  // interleaves naming systems in Z order and is not monotone by construction: §STOREY_CUT_BOUNDS
+  // measured base=0.81 tops=[0.70,0.70,4.39,4.65,2.70,...] on LTU, real arithmetic on a broken
+  // premise, not a bug in the arithmetic. THE FIX: the reveal's ruler must be the PHYSICAL LEVEL
+  // LADDER, with storey labels folded in as aliases of whichever rung their elements actually sit on
+  // — never a list of labels. Both halves already have owners:
+  //   ladder    = ScheduleAuthor._chooseStoreyDatum(_storeyDatumCandidates(db), elementBaseZs) —
+  //               already runs for the 4D schedule and prints §STOREY_DATUM ladder=5 on LTU; picks
+  //               between `elevation`/`center_z` candidates by checking which is IN FRAME (its span
+  //               contains the element base-Z median), so LTU's 38 bogus center_z=0.00 federated rows
+  //               never win over the 5 real compiled rows (VÅNING 1-4, TAKPLAN).
+  //   which rung = each LABEL (not each element — _objStorey() only ever returns a label, the scene
+  //               graph carries no per-member geometry cheap enough to re-derive here) maps to the
+  //               ladder rung nearest its own mean-Z (LevelDeriver.nearestIdx, the same nearest-band
+  //               verb the 4D level axis already uses, gate-passed on 7 fleet buildings) — matches
+  //               Fable's measurement that every naming system's "N" labels cluster at the same
+  //               physical band (VÅNING 1/VÅN 1/Storey 1/Plan 1 all 2.7-5.3m, etc).
+  // DEGRADE, DON'T DISABLE (same discipline as the cross-check above): a building with no usable datum
+  // frame (`_chooseStoreyDatum` returns INFERRED — no spatial_structure elevation/center_z in frame
+  // with the elements, e.g. a bare `_extracted.db`) or fewer than 2 rungs keeps the pre-existing
+  // per-label list untouched. `deriveStoreyMergeMap` is NOT used — Fable measured it runs on nothing
+  // in the fleet (no caller ever wires it up); do not resurrect it here.
+  var _rungKey = null, _rungFrame = null;
+  function _chooseRungFrame() {
+    var key = (A.activeBuilding || A.currentBuilding || 'bld') + '|' + (A._metaGen || 0);
+    if (_rungFrame !== null && _rungKey === key) return _rungFrame || null;
+    _rungKey = key;
+    _rungFrame = null;
+    try {
+      var SA = window.ScheduleAuthor, LD = window.LevelDeriver;
+      if (!SA || !SA._chooseStoreyDatum || !SA._storeyDatumCandidates || !SA._ladderBandIndex || !LD || !LD.nearestIdx) {
+        console.log('§STOREY_RUNG_LADDER unavailable=' + (SA ? 'LevelDeriver' : 'ScheduleAuthor') +
+          ' not loaded — keeping the per-label list (§60.1 pre-fix behaviour)');
+        return null;
+      }
+      // Same population §STOREY_DATUM's own frame test uses: real geometry, no openings/spaces/no-geo.
+      var ezs = [];
+      (A.dbQuery(
+        "SELECT t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z " +
+        "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid " +
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'") || []).forEach(function (r) {
+        var cx = +r[0] || 0, cy = +r[1] || 0, cz = +r[2] || 0, bx = +r[3] || 0, by = +r[4] || 0, bz = +r[5] || 0;
+        if (cx === 0 && cy === 0 && cz === 0 && bx === 0 && by === 0 && bz === 0) return;   // §4D_NOGEO
+        ezs.push(cz - bz / 2);
+      });
+      var frame = SA._chooseStoreyDatum(SA._storeyDatumCandidates(A.db), ezs);
+      if (frame.mode !== 'DECLARED' || frame.ladder.length < 2) {
+        console.log('§STOREY_RUNG_LADDER mode=' + frame.mode + ' reason=' + (frame.reason || 'n/a') +
+          ' rungs=' + frame.ladder.length +
+          ' — no usable physical-level datum, keeping the per-label list (degrade, don\'t disable)');
+        return null;
+      }
+      var ladderZs = frame.ladder.map(function (r) { return r.z; });
+      console.log('§STOREY_RUNG_LADDER mode=DECLARED source=' + frame.source + ' rungs=' + frame.ladder.length +
+        ' ladder=[' + frame.ladder.map(function (r) { return r.name + '@' + r.z.toFixed(2); }).join(',') + ']');
+      _rungFrame = { ladder: frame.ladder, ladderZs: ladderZs, nearestIdx: LD.nearestIdx,
+        ladderBandIndex: SA._ladderBandIndex };
+    } catch (e) {
+      console.warn('§STOREY_RUNG_LADDER_ERR ' + e.message + ' — keeping the per-label list');
+      _rungFrame = null;
+    }
+    return _rungFrame;
+  }
+  // §STOREY_RUNG_VOTE (2026-09-15, Fable's review of item 15) — a label's RUNG is not its aggregate
+  // mean-Z. MEASURED on LTU: "Plan 1" (mean-Z 5.26, physically level 1) sits closer to VÅNING 2's
+  // datum (6.35) than VÅNING 1's (3.04), so nearest-idx-on-the-mean books 105k of LTU's 122k elements
+  // (the Plan 1-4 label family alone) one rung high — a federated label's mean drifts across a rung
+  // boundary whenever its own members are unevenly distributed above the floor line, which is the
+  // common case, not the exception. Fix: vote PER ELEMENT instead of testing the aggregate once.
+  // `_ladderBandIndex` is the SAME "last rung at or below" verb schedule_author.js already uses to
+  // decide which rungs are populated (own function, not re-derived — §STOREY_RUNG_LADDER's own
+  // comment above); apply it to every element's own base-Z and let the label's rung be whichever
+  // index most of its members actually stand on — one label can never be split by this, and a handful
+  // of boundary-straddling members no longer outvotes the rest.
+  function _labelRungVotes(rf) {
+    var votes = {};
+    try {
+      (A.dbQuery(
+        "SELECT m.storey, t.center_z - t.bbox_z/2 FROM elements_meta m " +
+        "JOIN element_transforms t ON t.guid = m.guid " +
+        "WHERE m.storey IS NOT NULL AND m.storey NOT IN ('','Unknown')") || []).forEach(function (r) {
+        var name = String(r[0]), bz = +r[1];
+        if (!isFinite(bz)) return;
+        var idx = rf.ladderBandIndex(rf.ladder, bz);
+        var v = votes[name] || (votes[name] = {});
+        v[idx] = (v[idx] || 0) + 1;
+      });
+    } catch (e) { votes = {}; }
+    return votes;
+  }
+  // Regroup a per-label list (§STOREY_REVEAL_LIST's `all`, before §103's pseudo/roof pass) into one
+  // entry PER PHYSICAL RUNG. `tapForceLabelLadder` (control, §STOREY_RUNG_CONTROL) skips regrouping
+  // so the pre-fix behaviour can be reproduced on demand — the falsifiability control this fix needs.
+  function _regroupByRung(all) {
+    if (window.__srForceLabelLadder) {
+      console.log('§STOREY_RUNG_CONTROL tap=__srForceLabelLadder active — regrouping SKIPPED, per-label list forced');
+      return all;
+    }
+    var rf = _chooseRungFrame();
+    if (!rf) return all;
+    var byRung = {};
+    // §125.1 — a label whose name literally IS the ladder's own declared name is force-matched to
+    // that rung FIRST, bypassing the vote: it is the authoritative source of the rung's OWN datum
+    // (_storeyDatumCandidates read this exact row), so it must never be voted away from its own rung.
+    // Every OTHER label (no exact name match anywhere in the ladder) goes by the per-element vote;
+    // `__srMeanNearestRung` (control) forces the pre-review nearest-idx-on-mean test instead, so
+    // Fable's exact finding (Plan 1/Plan 2 one rung high on LTU) can be reproduced on demand.
+    var ladderNameToIdx = {};
+    rf.ladder.forEach(function (r, i) { ladderNameToIdx[r.name] = i; });
+    var votes = window.__srMeanNearestRung ? {} : _labelRungVotes(rf);
+    var corrected = 0, voteMisses = 0;
+    all.forEach(function (s) {
+      var idx;
+      if (ladderNameToIdx[s.name] !== undefined) {
+        idx = ladderNameToIdx[s.name];
+      } else if (!window.__srMeanNearestRung && votes[s.name]) {
+        var v = votes[s.name], bestIdx = 0, bestCt = -1;
+        Object.keys(v).forEach(function (k) { if (v[k] > bestCt) { bestCt = v[k]; bestIdx = +k; } });
+        idx = bestIdx;
+        if (idx !== rf.nearestIdx(rf.ladderZs, s.z)) corrected++;
+      } else {
+        if (!window.__srMeanNearestRung) voteMisses++;   // no element rows recovered — degrade, never silent
+        idx = rf.nearestIdx(rf.ladderZs, s.z);
+      }
+      (byRung[idx] = byRung[idx] || []).push(s);
+    });
+    console.log('§STOREY_RUNG_VOTE mode=' + (window.__srMeanNearestRung ? 'CONTROL(meanNearest)' : 'perElementVote') +
+      ' labels=' + all.length + ' correctedVsMeanNearest=' + corrected + ' voteMisses=' + voteMisses +
+      ' (correctedVsMeanNearest is 0 only when the mean-Z test already agreed with every element vote —' +
+      ' nonzero is the fix doing real work, same falsifiability shape as naiveInversions below)');
+    var out = [];
+    Object.keys(byRung).map(Number).sort(function (a, b) { return a - b; }).forEach(function (idx) {
+      var members = byRung[idx], rung = rf.ladder[idx];
+      var n = members.reduce(function (a, s) { return a + s.n; }, 0);
+      var doors = members.reduce(function (a, s) { return a + s.doors; }, 0);
+      // The rung's own declared name is the caption when one of the grouped labels actually IS it
+      // (forced above, so this always finds it when such a label exists at all); otherwise the label
+      // nearest the rung's z stands in, so a caption is never invented. Every other grouped label is
+      // an alias, riding the SAME `.absorbs` mechanism §103 already uses (_storeyGroupIndex maps
+      // every alias to this group with zero further changes).
+      var primary = members.filter(function (s) { return s.name === rung.name; })[0] ||
+        members.slice().sort(function (a, b) { return Math.abs(a.z - rung.z) - Math.abs(b.z - rung.z); })[0];
+      var aliases = members.filter(function (s) { return s !== primary; }).map(function (s) { return s.name; });
+      out.push({ name: primary.name, z: rung.z, n: n, doors: doors, absorbs: aliases.length ? aliases : undefined,
+                 rungAliasCount: aliases.length });
+      if (n === 0) console.log('§STOREY_REVEAL_RUNG_EMPTY rung="' + rung.name + '" aliases=[' + aliases.join(',') +
+        '] => FAIL (a rung with zero members is not a reveal group; check the ladder/grouping)');
+    });
+    console.log('§STOREY_RUNG_GROUPED labels=' + all.length + '->' + 'rungs=' + out.length +
+      ' groups=[' + out.map(function (g) { return g.name + (g.absorbs ? '+{' + g.absorbs.join(',') + '}' : ''); }).join(',') + ']');
+    return out;
+  }
+
   var _list = null, _listKey = null;
   A.storeyRevealList = function () {
     var key = (A.activeBuilding || A.currentBuilding || 'bld') + '|' + (A._metaGen || 0);
@@ -132,6 +288,12 @@ function setupCpeStoreyReveal(A) {
       _list = all;
       note = ' (spatial_structure declares no IfcBuildingStorey — no cross-check, pre-§60.1 behaviour)';
     }
+    // §STOREY_RUNG_LADDER (item 14) — regroup the cross-checked LABEL list into PHYSICAL RUNGS before
+    // §103's pseudo/roof pass runs, so that pass (and every consumer of `_list` after it: _cutBounds,
+    // _storeyGroupIndex, the stat card) sees one entry per real level with a monotone Z, aliases
+    // riding the existing `.absorbs` mechanism. No-op (returns `_list` unchanged) when the building has
+    // no usable datum frame — degrade, don't disable.
+    _list = _regroupByRung(_list);
     // §103 (user, 2026-09-13): "Group pseudo storeys into real storeys to reduce passes." A plant
     // deck / partial roof level is a declared IfcBuildingStorey, so §60.1's cross-check keeps it and
     // it buys a whole 2.0s pass to reveal ~100 elements. DERIVED, not a name list: a band carrying
@@ -270,14 +432,9 @@ function setupCpeStoreyReveal(A) {
     if (!full.length) return full;
     var winSec = (plan && plan.durationSec > 0) ? sr.windowFrac * plan.durationSec : 0;
     if (!(winSec > 0)) return full;
-    // §104 (user, 2026-09-13): "Too fast, mandatory 1.5s to reveal each storey." The fit used to pack
-    // storeys in at MIN_SLOT_SEC=1.0, so Hospital's 12.04s window split 8 ways into 1.51s slots whose
-    // SWEEP was only 0.75 x 1.51 = 1.13s. The slot budget is now the real one — CUT_SWEEP_SEC +
-    // CUT_PAUSE_SEC = 2.0s — so a storey that is shown is shown at full speed or not at all.
-    // EPSILON, not decoration: effects.js sizes the window as groups x 2.0s, but it arrives here as
-    // windowFrac x durationSec and comes back 11.99987 for a 12.00s window — a bare floor() then says
-    // 5 slots and truncates the top group off a window that was sized precisely to hold it.
-    var room = Math.max(1, Math.floor(winSec / (CUT_SWEEP_SEC + CUT_PAUSE_SEC) + 1e-6));
+    // §104 (user, 2026-09-13) set the 1.5s sweep as the target per storey; §128.8 (user, 2026-09-14)
+    // then ruled that a window too short for it compresses the sweeps rather than dropping storeys, so
+    // there is no slot count here any more — every storey is in the list, and the fit below scales.
     // §106 (user, 2026-09-13): "Floor slabs after the ground one goes along with its storey it's
     // supporting. 1. Ground floor slab. 2. 1st storey. 3. Floor slab together with its 2nd storey..."
     // A slab supports the storey ABOVE it, and §99.2 already bands from real slab bottoms, so every
@@ -291,8 +448,7 @@ function setupCpeStoreyReveal(A) {
     // The fit depends only on (list, window), so compute it once per key and hand back the same array.
     var _memoKey = full.length + '|' + winSec.toFixed(4) + '|' + (full[0] && full[0].name);
     if (_fitMemo && _fitMemoKey === _memoKey) return _fitMemo;
-    var storeyRoom = Math.max(1, room - 1);
-    var out = (full.length > storeyRoom) ? full.slice(0, storeyRoom) : full;
+    var out = full;                                  // §128.8 — no storey is ever dropped; a short window compresses the sweeps
     out = [{ name: full[0].name, z: full[0].z, n: full[0].n, doors: full[0].doors, isGroundSlab: true }].concat(out);
     // §107 (user, 2026-09-13: "This gives more time slots to each storey not to rush, is needs > 2s
     // due to its qty") — the slots are no longer equal. A storey's sweep is scaled by HOW MUCH
@@ -346,9 +502,20 @@ function setupCpeStoreyReveal(A) {
     // §120 — the residual scale only ever SHRINKS, and only when the floor fit is still too long for
     // the window the plan handed back. It is reported, never silent.
     var _scale = _wantSec > 0 ? Math.min(1, winSec / _wantSec) : 1;
+    // §128.8 (user, 2026-09-14): a short runway speeds up the SWEEPS; the pause that signals each
+    // storey keeps its full length for as long as the window can hold the pauses alone. Only when it
+    // cannot does everything scale together. Never a dropped storey.
+    var _pauseAll = out.length * CUT_PAUSE_SEC;
+    var _sweepAll = out.reduce(function (a, e) { return a + e.sweepSec; }, 0);
+    var _sweepScale = 1, _pauseScale = 1;
+    if (_scale < 1) {
+      if (winSec > _pauseAll && _sweepAll > 0) _sweepScale = Math.min(1, (winSec - _pauseAll) / _sweepAll);
+      else { _sweepScale = _scale; _pauseScale = _scale; }
+    }
     _slotBounds = []; var _acc = 0;
     out.forEach(function (e) {
-      e.slotSec *= _scale; e.sweepSec = Math.min(e.sweepSec * _scale, e.slotSec);
+      e.sweepSec = e.sweepSec * _sweepScale;
+      e.slotSec = e.sweepSec + CUT_PAUSE_SEC * _pauseScale;
       _acc += e.slotSec; _slotBounds.push(_acc / winSec);
     });
     _slotBounds[_slotBounds.length - 1] = 1;
@@ -359,7 +526,7 @@ function setupCpeStoreyReveal(A) {
     _drawn = out.map(function () { return false; });
     _drawnOrder = [];
     console.log('§STOREY_REVEAL_SLOTS medianCount=' + _cMed + ' wantSec=' + _wantSec.toFixed(2) +
-      ' windowSec=' + winSec.toFixed(2) + ' scale=' + _scale.toFixed(3) +
+      ' windowSec=' + winSec.toFixed(2) + ' scale=' + _scale.toFixed(3) + ' sweepScale=' + _sweepScale.toFixed(3) + ' pauseScale=' + _pauseScale.toFixed(3) +
       (_scale < 0.999 ? ' SHORT — the window could not hold the weighted slots, every sweep is below its target'
                       : ' (weights fit)') +
       ' baseSweepSec=' + _base.toFixed(2) + '(floor ' + CUT_SWEEP_SEC + ', ceiling ' + CUT_SWEEP_MAX +
@@ -399,11 +566,35 @@ function setupCpeStoreyReveal(A) {
   // Null everywhere outside that narrow window or when the flag/list is absent — DEGRADE, DON'T
   // DISABLE: an older cached plan with no `storeyReveal` field simply never enters this branch, same
   // contract §CPE_GHOST_GROUND/§CPE_DISCIPLINE_REVEAL already hold themselves to.
+  // §128.10 — the Time Machine is a visibility OWNER during a buildup film: an element whose op has
+  // not ended at the cursor, or that has no op at all, is legitimately hidden by it. Both witnesses
+  // consult this so a row the owner holds is counted as held, never as a defect.
+  function _tmHeld() {
+    try {
+      if (typeof window.tmGetState !== 'function' || typeof window.tmGuidEndTs !== 'function') return null;
+      var st = window.tmGetState(); if (!st || !st.active) return null;
+      var end = window.tmGuidEndTs(); var cur = st.cursor;
+      return function (guid) { if (guid == null) return false; var e = end[String(guid)]; return (e == null) || !(e <= cur); };
+    } catch (eT) { return null; }
+  }
+  var _paradeWaitLogged = false, _paradeWaitFrames = 0;   // first firing is logged; every firing is counted (§STOREY_CUT_CLEAR paradeWaitFrames=)
   A.storeyRevealVisualAt = function (plan, tNorm) {
     var b = plan && plan.beats, sr = plan && plan.storeyReveal;
     if (!plan || !sr || !sr.on || !(sr.windowFrac > 0) || !b || !(b.rise > 0) || !(b.rise < 1)) return null;
     var winStart = b.rise - sr.windowFrac;
     if (tNorm == null || tNorm <= winStart || tNorm > b.rise) return null;
+    // §128.8 — the reveal does not open while the discipline parade still holds the scene. The plan
+    // lays the window after the parade's tail (effects.js §STOREY_REVEAL_RUNWAY); this is the leg's
+    // own guard for the boundary frame and for any future plan that overlaps them again. Logged
+    // once if it ever fires. `window.__srIgnoreRunway` bypasses it for the falsifiability control.
+    if (!window.__srIgnoreRunway && typeof A.cpeRevealVisualAt === 'function') {
+      var _par = null; try { _par = A.cpeRevealVisualAt(plan, tNorm); } catch (eP) { _par = null; }
+      if (_par) {
+        _paradeWaitFrames++;
+        if (!_paradeWaitLogged) { _paradeWaitLogged = true; console.log('§STOREY_REVEAL_WAIT_PARADE tNorm=' + tNorm.toFixed(4) + ' winStart=' + winStart.toFixed(4) + ' paradePhase=' + _par.phase + ' — the window opened while the discipline parade was still applied; the reveal waits for its restore'); }
+        return null;
+      }
+    }
     var list = _fitList(plan, sr);
     if (!list.length) return null;
     var span = sr.windowFrac;
@@ -815,6 +1006,19 @@ function setupCpeStoreyReveal(A) {
         sb.forEach(function (r) { if (r[1] != null) slabBottom[String(r[0])] = +r[1]; });
       }
     } catch (eSB) { slabBottom = {}; }
+    // §STOREY_RUNG_LADDER (item 14) — a rung's slab-bottom is the MIN across its own name AND every
+    // aliased label riding it (`.absorbs`, set by _regroupByRung): only SOME of a federated model's
+    // naming systems own slab rows (LTU: VÅN/VÅNING and TAKPLAN do, Plan 1-4/Storey 1-3 do not), so
+    // checking the rung's primary name alone would miss a real slab bottom booked under an alias.
+    function _rungSlabBottom(entry) {
+      var names = [entry.name].concat(entry.absorbs || []);
+      var best = null;
+      for (var k = 0; k < names.length; k++) {
+        var v = slabBottom[names[k]];
+        if (v != null && (best == null || v < best)) best = v;
+      }
+      return best;
+    }
     // The LAST top must clear the real model, not an extrapolation. Measured on Hospital: the top
     // storey's mean is 200.40 while the model reaches 203.65, so `z + med/2` = 202.66 would leave the
     // final ~1 m of parapet and roof plant permanently sliced off at the window's end — the beat would
@@ -831,28 +1035,69 @@ function setupCpeStoreyReveal(A) {
       var hr = A.dbQuery('SELECT MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y) FROM element_transforms');
       if (hr && hr.length && hr[0][0] != null) plan = { x0: +hr[0][0], x1: +hr[0][1], y0: +hr[0][2], y1: +hr[0][3] };
     } catch (eH) { plan = null; }
-    var tops = [], usedSlab = 0, usedMid = 0;
-    for (var j = 0; j < list.length; j++) {
-      if (j + 1 < list.length) {
-        var nb = slabBottom[list[j + 1].name];
-        if (nb != null) { tops.push(nb); usedSlab++; }
-        else { tops.push((list[j].z + list[j + 1].z) / 2); usedMid++; }   // fallback: no slab on that storey
-      } else {
-        tops.push(Math.max(list[j].z + med / 2, top == null ? -Infinity : top));
-      }
-    }
     // The base is this storey's OWN slab bottom where we know it, so the first band opens on its plate.
-    var base0 = slabBottom[list[0].name];
+    var base0 = _rungSlabBottom(list[0]);
     if (base0 == null) base0 = list[0].z - med / 2;
+    // §STOREY_CUT_BOUNDS_MONOTONE (item 14) — MONOTONE BY CONSTRUCTION, not just detected: a real
+    // slab-bottom row can itself be bad data (measured on LTU: TAKPLAN's own slab-bottom reads 2.99m,
+    // a slab-on-grade the groundwork rule reclassified onto the roof's label — the RUNG GROUPING
+    // above is correct, the one DB row is not). §122's premise is that the ceiling always ascends, so
+    // a slab candidate that would violate it is REJECTED the same way "no slab found" already is —
+    // degrade to the midpoint, which is guaranteed to ascend because the ladder itself does.
+    // `naive*` tracks what §99.4's ORIGINAL formula alone would have produced (slab-if-present-else-
+    // midpoint, no rejection) — kept ONLY so the witness stays falsifiable (§STATUS standing
+    // instrument rule: a check that cannot fail is not a check). The RENDERED `tops` below always
+    // applies the rejection guard; `naiveInversions` is what proves the guard is doing real work
+    // (measured on the pre-fix per-label list via the `__srForceLabelLadder` control: naiveInversions
+    // is nonzero there) rather than silently no-op'ing on data that was already fine.
+    var tops = [], naiveTops = [], usedSlab = 0, usedMid = 0, rejectedBad = 0, prior = base0, naivePrior = base0;
+    for (var j = 0; j < list.length; j++) {
+      var t, naiveT;
+      if (j + 1 < list.length) {
+        var nb = _rungSlabBottom(list[j + 1]);
+        var mid = (list[j].z + list[j + 1].z) / 2;
+        naiveT = (nb != null) ? nb : mid;
+        // `__srDisableRejectGuard` (control, Fable's review) — take the slab bottom even when it
+        // would break monotonicity, so `inversions` (computed from the RENDERED tops below, not
+        // `naiveInversions`) can actually go nonzero. Without this the guard could never be shown
+        // doing anything: `naiveInversions` alone proves the OLD formula was capable of failing, not
+        // that today's rejection is the reason it no longer does.
+        if (nb != null && (nb > prior || window.__srDisableRejectGuard)) { t = nb; usedSlab++; }
+        else {
+          if (nb != null) {
+            rejectedBad++;
+            if (!_boundsLogged) console.log('§STOREY_CUT_BOUNDS_REJECT rung="' + list[j + 1].name + '" slabBottom=' + nb.toFixed(2) +
+              ' <= prior=' + prior.toFixed(2) + ' — rejected (would break monotonicity), using midpoint=' + mid.toFixed(2));
+          }
+          t = Math.max(mid, prior + 1e-6); usedMid++;
+        }
+      } else {
+        naiveT = Math.max(list[j].z + med / 2, top == null ? -Infinity : top);
+        t = Math.max(naiveT, prior + 1e-6);
+      }
+      tops.push(t); prior = t;
+      naiveTops.push(naiveT); naivePrior = naiveT;
+    }
+    var inversions = 0; prior = base0;
+    for (var iv = 0; iv < tops.length; iv++) { if (tops[iv] <= prior) inversions++; prior = tops[iv]; }
+    var naiveInversions = 0; naivePrior = base0;
+    for (var niv = 0; niv < naiveTops.length; niv++) { if (naiveTops[niv] <= naivePrior) naiveInversions++; naivePrior = naiveTops[niv]; }
     if (!_boundsLogged) {
       _boundsLogged = true;
-      console.log('§STOREY_CUT_BOUNDS base=' + base0.toFixed(2) + ' tops=[' +
+      console.log('§STOREY_CUT_BOUNDS' + (window.__srDisableRejectGuard ? ' CONTROL(__srDisableRejectGuard)' : '') +
+        ' base=' + base0.toFixed(2) + ' tops=[' +
         tops.map(function (t) { return t.toFixed(2); }).join(',') + '] fromSlab=' + usedSlab +
-        ' fromMidpointFallback=' + usedMid +
+        ' fromMidpointFallback=' + usedMid + ' rejectedBadSlab=' + rejectedBad +
         ' slabClasses=[' + _slabClasses.join(',') + ']' +
-        ' (§99.4 — real slab bottoms, not storey-mean midpoints; classes derived from this DB, §99.8)');
+        ' inversions=' + inversions + ' naiveInversions=' + naiveInversions +
+        ' => ' + (inversions === 0 ? 'PASS' : 'FAIL') +
+        ' (§99.4 — real slab bottoms, not storey-mean midpoints; classes derived from this DB, §99.8;' +
+        ' §122 — the ceiling must strictly ascend, base < tops[0] < tops[1] < ...; naiveInversions is' +
+        ' what §99.4\'s formula alone would produce with no rejection guard — nonzero there is the' +
+        ' guard doing real work, zero there means this building never needed it)');
     }
-    return { list: list, tops: tops, base: base0, med: med, modelTop: top, plan: plan };
+    return { list: list, tops: tops, base: base0, med: med, modelTop: top, plan: plan,
+             inversions: inversions, naiveInversions: naiveInversions };
   }
 
   // PURE (§ the file's own one-function/two-callers rule) — the cut state for a film fraction.
@@ -1208,8 +1453,15 @@ function setupCpeStoreyReveal(A) {
     var _meta = (A._batchMeta && A._batchMeta[o.id]) || (A._mergedMeta && A._mergedMeta[o.id]) ||
                 (A._instanceMeta && A._instanceMeta[o.id]) || null;
     if (_meta && _meta.length) {
-      var _zmap = _elevationByGuid(), _hit = 0;
+      // §128.9 (user, 2026-09-14): the storey LABEL is the ruler — a member whose label names a reveal
+      // pass is booked into that pass, so the picture matches the storey the caption describes.
+      // Elevation is the fallback for a member with no usable label (Unknown, or a label that is not
+      // a declared storey), banded by its own centre against the slab-bottom tops so a floor slab
+      // still travels with the storey it carries. `window.__srElevationOnly` is the control only.
+      var _zmap = _elevationByGuid(), _hit = 0, _gm = _storeyGroupIndex(b);
       for (var _k = 0; _k < _meta.length; _k++) {
+        var _lg = (_meta[_k] && _meta[_k].storey != null && !window.__srElevationOnly) ? _gm[String(_meta[_k].storey)] : undefined;
+        if (_lg != null) { _hit++; _bandFromLabel++; out.push(_lg); continue; }
         var _z = _meta[_k] && _meta[_k].guid != null ? _zmap[String(_meta[_k].guid)] : undefined;
         if (_z == null) { out.push(-1); continue; }
         _hit++; out.push(bandOfZ(_z));
@@ -1343,16 +1595,33 @@ function setupCpeStoreyReveal(A) {
     var seen = (typeof Set !== 'undefined') ? new Set() : null;
     var b = _cutBounds();
     var gmap = b ? _storeyGroupIndex(b) : {};
+    // §128.9 label witness tallies — the pass each labelled element is booked into, against the pass
+    // its own storey label names; plus every element the arm loop never books anywhere.
+    var _lw = { den: 0, other: 0, up: 0, down: 0, byDisc: {}, skipObjs: 0, skipEls: 0, ctxLabelled: 0, route: {}, mixed: 0, mixedType: {}, mixedEls: 0, ctxByDisc: {}, ctxObjs: 0 };
     var nSlab = 0, nRest = 0, nSubj = 0, nCtx = 0, noStorey = 0, byHeight = 0, _spanners = 0, _spanEx = [], _perInstObjs = 0, _spanUnhandled = 0;
-    _armedDisc = []; _perInstBadBands = 0;
+    _armedDisc = []; _perInstBadBands = 0; _elevFromDb = 0; _bandFromLabel = 0;
     var _attrPerEl = 0, _attrByObj = 0, _arcPerEl = 0, _arcByObj = 0, _arcTop = [], _bigARC = {};
     var subjMats = (typeof Set !== 'undefined') ? new Set() : null;
     var ctxObjs = [];
     A.collectMeshes(function (o) { return o.isMesh || o.isBatchedMesh || o.isInstancedMesh; }).forEach(function (o) {
       var m = o.material;
-      if (!m || Array.isArray(m)) return;
+      if (!m || Array.isArray(m)) {
+        _lw.skipObjs++;
+        var _sm = (A._batchMeta && A._batchMeta[o.id]) || (A._instanceMeta && A._instanceMeta[o.id]) || (A._mergedMeta && A._mergedMeta[o.id]) || null;
+        _lw.skipEls += (_sm && _sm.length) ? _sm.length : 1;
+        return;
+      }
       var st = _objStorey(o);
-      if (st == null) { nCtx++; ctxObjs.push(o); return; }   // context city / ground / markers: untouched
+      if (st == null) {                                        // context city / ground / markers: untouched
+        nCtx++; ctxObjs.push(o);
+        var _cm = (A._batchMeta && A._batchMeta[o.id]) || (A._instanceMeta && A._instanceMeta[o.id]) || (A._mergedMeta && A._mergedMeta[o.id]) || null;
+        if (_cm) for (var _ck = 0; _ck < _cm.length; _ck++) {
+          if (_cm[_ck] && _cm[_ck].storey != null && gmap[String(_cm[_ck].storey)] != null) _lw.ctxLabelled++;
+          var _cd = (_cm[_ck] && _cm[_ck].disc) || '?'; _lw.ctxByDisc[_cd] = (_lw.ctxByDisc[_cd] || 0) + 1;
+        }
+        if (_cm && _cm.length) _lw.ctxObjs++;
+        return;
+      }
       nSubj++;
       var gi = gmap[st];
       var _byHeightThisObj = false;
@@ -1374,7 +1643,14 @@ function setupCpeStoreyReveal(A) {
       // elements are storey='Unknown' (94%), so that one decision moved essentially all of the
       // building's architecture into a single pass — the "storeys missing ARCH" report. Whenever the
       // label is missing, band each element by its OWN elevation, whatever the container's span.
-      if (_span > 1 || _byHeightThisObj) {
+      // §128.9 — every container with a member list goes per member. The span test measured an
+      // InstancedMesh by its base geometry at the container's own transform (never where the
+      // instances are), so instanced containers always read as one band and were booked wholesale
+      // to their first member's storey: 672 of HHS's 762 mis-booked elements. `window.__srContainerRoute`
+      // restores the old gate for the falsifiability control only.
+      var _metaEarly = (A._batchMeta && A._batchMeta[o.id]) || (A._mergedMeta && A._mergedMeta[o.id]) || (A._instanceMeta && A._instanceMeta[o.id]) || null;
+      var _perMember = !!(_metaEarly && _metaEarly.length && !window.__srContainerRoute);
+      if (_perMember || _span > 1 || _byHeightThisObj) {
         if (_span > 1) _spanners++;
         if (o.isInstancedMesh && o.instanceMatrix && o.instanceMatrix.array) {
           _rec.imat0 = o.instanceMatrix.array.slice(0);     // §111 zero-scale restore (NOT mat0 — that is the material)
@@ -1396,11 +1672,22 @@ function setupCpeStoreyReveal(A) {
         var _meta = (A._batchMeta && A._batchMeta[o.id]) || (A._mergedMeta && A._mergedMeta[o.id]) ||
                     (A._instanceMeta && A._instanceMeta[o.id]) || null;
         if (_meta && _meta.length) {
+          var _mixedHere = 0;
           for (var _mi = 0; _mi < _meta.length; _mi++) {
             var _gi2 = gi;
             if (_rec.perInst && _rec.perInst[_mi] != null && _rec.perInst[_mi] >= 0) {
               _gi2 = _rec.perInst[_mi]; _attrPerEl++;
             } else _attrByObj++;
+            var _lbl = (_meta[_mi] && _meta[_mi].storey != null) ? gmap[String(_meta[_mi].storey)] : null;
+            if (_lbl != null) {
+              _lw.den++;
+              if (_gi2 !== _lbl) {
+                _lw.other++; if (_gi2 > _lbl) _lw.up++; else _lw.down++;
+                var _ld = (_meta[_mi].disc || '?'); _lw.byDisc[_ld] = (_lw.byDisc[_ld] || 0) + 1;
+                var _rt = (_rec.perInst && _rec.perInst[_mi] != null && _rec.perInst[_mi] >= 0) ? 'perElementZ' : (_byHeightThisObj ? 'containerHeight' : 'containerLabel');
+                _lw.route[_rt] = (_lw.route[_rt] || 0) + 1;
+              }
+            }
             if (_meta[_mi] && _meta[_mi].disc === 'ARC' && _meta.length > 2000) {
               if (!_bigARC[o.id]) _bigARC[o.id] = {
                 type: (o.isBatchedMesh ? 'Batched' : o.isInstancedMesh ? 'Instanced' : 'Mesh'),
@@ -1418,11 +1705,18 @@ function setupCpeStoreyReveal(A) {
             var _d = (_meta[_mi] && _meta[_mi].disc) || '?';
             if (!_armedDisc[_gi2]) _armedDisc[_gi2] = {};
             _armedDisc[_gi2][_d] = (_armedDisc[_gi2][_d] || 0) + 1;
+            if (!_rec.perInst && _meta[_mi] && _meta[_mi].storey != null && String(_meta[_mi].storey) !== st) _mixedHere++;
           }
+          if (_mixedHere) { _lw.mixed++; _lw.mixedEls += _mixedHere; var _ty = o.isInstancedMesh ? 'I' : o.isBatchedMesh ? 'B' : 'M'; _lw.mixedType[_ty] = (_lw.mixedType[_ty] || 0) + 1; }
         } else {
           var _d1 = (o.userData && o.userData.disc) || '?';
           if (!_armedDisc[gi]) _armedDisc[gi] = {};
           _armedDisc[gi][_d1] = (_armedDisc[gi][_d1] || 0) + 1;
+          var _lbl1 = (o.userData && o.userData.storey != null) ? gmap[String(o.userData.storey)] : null;
+          if (_lbl1 != null) {
+            _lw.den++;
+            if (gi !== _lbl1) { _lw.other++; if (gi > _lbl1) _lw.up++; else _lw.down++; _lw.byDisc[_d1] = (_lw.byDisc[_d1] || 0) + 1; }
+          }
         }
       } catch (eD) {}
       _cutObjs.push(_rec);
@@ -1486,7 +1780,7 @@ function setupCpeStoreyReveal(A) {
       }
       console.log('§STOREY_ARCH_WITNESS ' + _lines.join(' ') + ' => ' +
         (_anyShort === 0 ? 'PASS (every element the DB places on a storey is armed into that storey\'s pass)'
-                         : 'FAIL — ' + _anyShort + ' element(s) are on a storey but in no pass, so they' +
+                         : 'FAIL — ' + _anyShort + ' element(s) are on a storey but in another pass or in none (§STOREY_LABEL_WITNESS says which), so they' +
                            ' never appear during the reveal'));
     } catch (eAW) { console.log('§STOREY_ARCH_WITNESS unavailable: ' + (eAW && eAW.message)); }
     console.log('§STOREY_CUT_ARM materials=' + _cutMats.length + ' slab=' + nSlab + ' rest=' + nRest +
@@ -1494,7 +1788,7 @@ function setupCpeStoreyReveal(A) {
       ' storeyByHeight=' + byHeight + ' unresolved=' + noStorey + ' contextClonesForSharedMat=' + leaked +
       ' multiBandObjs=' + _spanners + ' perInstanceCeiling=' + _perInstObjs +
       ' perElementBandLookupFailures=' + _perInstBadBands +
-      ' elementsBandedFromDbElevation=' + _elevFromDb +
+      ' elementsBandedFromLabel=' + _bandFromLabel + ' elementsBandedFromDbElevation=' + _elevFromDb +
       ' attribution{perElement=' + _attrPerEl + ' byContainer=' + _attrByObj +
       ' ARC:perElement=' + _arcPerEl + ' byContainer=' + _arcByObj +
       ' biggestARCbyContainer=[' + _arcTop.join(' ') + ']}' +
@@ -1502,6 +1796,64 @@ function setupCpeStoreyReveal(A) {
       ' spanUnhandled>0 would mean some container can still show two storeys at once)' +
       ' globalPlanes=0 (§105 — the cut is scoped to the building that carries storeys; the renderer' +
       ' global array is empty, so nothing in the background is clipped)');
+    // §128.9 WITNESS — every element whose storey label names a reveal pass must be booked into THAT
+    // pass; and every element the building carries must be booked somewhere. Label side from the
+    // member's own label, pass side from the assignment the loop above just made; both over their
+    // denominators. Elements the loop never books (no material, array material, context container)
+    // are counted separately, since the discipline census cannot tell 'in another pass' from 'in none'.
+    var _lwNoPass = _lw.skipEls + _lw.ctxLabelled;
+    console.log('§STOREY_LABEL_WITNESS labelledElements=' + _lw.den + ' bookedToOwnStorey=' + (_lw.den - _lw.other) + '/' + _lw.den +
+      ' bookedElsewhere=' + _lw.other + ' (storeyAbove=' + _lw.up + ' storeyBelow=' + _lw.down + ')' +
+      ' byDisc={' + Object.keys(_lw.byDisc).sort().map(function (d) { return d + ':' + _lw.byDisc[d]; }).join(' ') + '}' +
+      ' bookedNowhere=' + _lwNoPass + ' (skippedContainers=' + _lw.skipObjs + ' holding ' + _lw.skipEls + ' elements, labelledInsideContext=' + _lw.ctxLabelled + ')' +
+      ' contextContainersWithElements=' + _lw.ctxObjs + ' contextElementsByDisc={' + Object.keys(_lw.ctxByDisc).sort().map(function (k) { return k + ':' + _lw.ctxByDisc[k]; }).join(' ') + '}' +
+      ' byRoute={' + Object.keys(_lw.route).sort().map(function (k) { return k + ':' + _lw.route[k]; }).join(' ') + '}' +
+      ' singleBandContainersWithMixedLabels=' + _lw.mixed + '{' + Object.keys(_lw.mixedType).sort().map(function (k) { return k + ':' + _lw.mixedType[k]; }).join(' ') + '} holding ' + _lw.mixedEls + ' off-label elements' +
+      ' => ' + ((_lw.other === 0 && _lwNoPass === 0) ? 'PASS (every labelled element is revealed with its own storey)'
+        : 'DISAGREE — ' + _lw.other + ' labelled element(s) are revealed in a different storey\'s pass and ' + _lwNoPass + ' in none'));
+    _armBaselineWitness();
+  }
+
+  // §128.1c WITNESS A — the baseline this module snapshots at arm is what its restore writes back,
+  // so it must be the RESTING scene, not another system's transient. Two counts that must be zero:
+  // armed objects captured OFF, and instance rows captured at zero scale. Read from the scene, not
+  // from any variable the reveal derives; printed over their denominators; the discipline-reveal
+  // key and the discipline filter set are printed alongside so the log names the foreign owner.
+  function _armBaselineWitness() {
+    try {
+      var offObjs = 0, byDisc = {}, rows = 0, zeroRows = 0, instObjs = 0, tmHeldRows = 0, guids = [], held = _tmHeld();
+      _cutObjs.forEach(function (e) {
+        var o = e.o;
+        if (e.vis0 === false) {
+          offObjs++;
+          var meta = (A._instanceMeta && A._instanceMeta[o.id]) || (A._batchMeta && A._batchMeta[o.id]) || null;
+          var d = (o.userData && o.userData.disc) || (meta && meta[0] && meta[0].disc) || '?';
+          byDisc[d] = (byDisc[d] || 0) + 1;
+        }
+        if (o.isInstancedMesh && o.instanceMatrix && o.instanceMatrix.array) {
+          instObjs++;
+          var a = o.instanceMatrix.array, n = o.count != null ? o.count : (a.length / 16);
+          for (var i = 0; i < n; i++) {
+            rows++;
+            if (a[i * 16] === 0 && a[i * 16 + 5] === 0 && a[i * 16 + 10] === 0) {
+              var _mA = A._instanceMeta && A._instanceMeta[o.id] && A._instanceMeta[o.id][i];
+              var _gA = _mA && _mA.guid;
+              if (held && held(_gA)) { tmHeldRows++; continue; }
+              zeroRows++; if (guids.length < 12) guids.push(String(_gA) + ':' + ((_mA && _mA.disc) || '?') + ':' + ((_mA && _mA.storey) || '?'));
+            }
+          }
+        }
+      });
+      var hid = (A.hiddenDiscs && typeof A.hiddenDiscs.forEach === 'function') ? [] : null;
+      if (hid) A.hiddenDiscs.forEach(function (d) { hid.push(d); });
+      console.log('§STOREY_ARM_BASELINE armedObjsOff=' + offObjs + '/' + _cutObjs.length +
+        ' byDisc={' + Object.keys(byDisc).sort().map(function (d) { return d + ':' + byDisc[d]; }).join(' ') + '}' +
+        ' zeroScaleRows=' + zeroRows + '/' + rows + ' (over ' + instObjs + ' instanced containers) heldByTimeMachine=' + tmHeldRows + (held ? '' : ' (TM inactive)') +
+        (guids.length ? ' foreignRows=[' + guids.join(' ') + ']' : '') +
+        ' discRevealKey="' + (A._cpeRevealVisualKey || '') + '" hiddenDiscs=[' + (hid ? hid.join(',') : '?') + ']' +
+        ' => ' + ((offObjs === 0 && zeroRows === 0) ? 'PASS (the baseline is the resting scene)'
+          : 'FAIL — the reveal armed inside another system\'s transient state; that state is what its restore will write back'));
+    } catch (eB) { console.log('§STOREY_ARM_BASELINE unavailable: ' + (eB && eB.message)); }
   }
 
   // §105 — the ceiling half of the predicate, as visibility. Storeys ABOVE the group being revealed
@@ -1509,7 +1861,7 @@ function setupCpeStoreyReveal(A) {
   // decide. Only objects this module armed are touched, and every one is restored in _clearCut.
   // §121 — the per-(group, discipline) CENSUS straight from the DB, so "this storey is missing its
   // ARCH" is answerable against a number the reveal did not produce. Queried once per building.
-  var _discCensus = null, _discCensusKey = null, _armedDisc = [], _perInstBadBands = 0, _instDbg = [], _elevFromDb = 0;
+  var _discCensus = null, _discCensusKey = null, _armedDisc = [], _perInstBadBands = 0, _instDbg = [], _elevFromDb = 0, _bandFromLabel = 0;
   function _discCensusFor(b) {
     var key = (A.activeBuilding || A.currentBuilding || 'bld') + '|' + (b.list || []).length;
     if (_discCensus && _discCensusKey === key) return _discCensus;
@@ -1730,6 +2082,19 @@ function setupCpeStoreyReveal(A) {
       if (e.mat0 && e.o.material !== e.mat0) { e.o.material = e.mat0; nMat++; }   // §112
       if (e.o.visible !== e.vis0) { e.o.visible = e.vis0; nVis++; }
     });
+    // §128.8 EXIT HAND-BACK — the snapshot above undoes only what this module wrote; the scene's
+    // visibility then goes back to its OWNERS rather than to whatever this module found at arm time:
+    // the discipline/storey filter re-applies its own state to every mesh, instance row and batch
+    // slot, and the Time Machine is asked for one full pass on its next tick so the schedule's placed
+    // state is re-asserted instead of skipped by its incremental mode. `window.__srReplaySnapshot`
+    // keeps the snapshot-only restore for the falsifiability control.
+    var _handed = 'snapshotOnly';
+    if (!window.__srReplaySnapshot) {
+      try {
+        if (typeof A._applyDiscVisibility === 'function') { A._applyDiscVisibility(); _handed = 'discFilter'; }
+        if (typeof window.tmSetCursor === 'function') { window.__forceFull = true; _handed += '+tmFullPassNextTick'; }
+      } catch (eH) { _handed = 'failed:' + (eH && eH.message); }
+    }
     A._storeyCutCeilY = null;                                  // §115 — lights unrestricted again
     if (_matVariants) _matVariants.forEach(function (v) {
       try { v.revealed.dispose(); } catch (e1) {}
@@ -1739,9 +2104,63 @@ function setupCpeStoreyReveal(A) {
     _cutClones.forEach(function (c) { if (c.o.material && c.o.material !== c.m0) { try { c.o.material.dispose(); } catch (eD) {} c.o.material = c.m0; } });
     console.log('§STOREY_CUT_CLEAR materials=' + _cutMats.length + ' visibilityRestored=' + nVis +
       ' perInstanceObjsRestored=' + nInst + ' materialsRestored=' + nMat +
-      ' contextClonesReverted=' + _cutClones.length + ' restored');
+      ' contextClonesReverted=' + _cutClones.length + ' handedBackTo=' + _handed +
+      ' paradeWaitFrames=' + _paradeWaitFrames + ' restored');
+    _paradeWaitFrames = 0; _paradeWaitLogged = false;
+    _restoreWitness();
     _cutMats = []; _cutObjs = []; _cutHidden = []; _cutClones = [];
     _cutSlab = null; _cutRest = null; _cutGlobal = []; _cutArmed = false; _cutAxisLogged = null; _axisLatch = null; _boundsLogged = false; _rakeLogged = null;
+  }
+
+  // §128.1c WITNESS B — after the restore, nothing this module armed may be left OFF that the scene's
+  // own visibility owners (the discipline filter and the storey filter) would show. Checked per
+  // object and per member from the live scene: a whole object off, an instance row at zero scale, a
+  // batch slot flagged invisible. Each count must be zero and is printed over its denominator.
+  function _restoreWitness() {
+    try {
+      var expects = function (disc, storey) {
+        if (A.hiddenDiscs && typeof A.hiddenDiscs.has === 'function' && disc != null && A.hiddenDiscs.has(disc)) return false;
+        if (typeof A._storeyVisible === 'function' && storey != null && !A._storeyVisible(storey)) return false;
+        return true;
+      };
+      var objOff = 0, objDen = 0, rowOff = 0, rowDen = 0, byDisc = {}, tmHeld = 0, guids = [], held = _tmHeld();
+      _cutObjs.forEach(function (e) {
+        var o = e.o; objDen++;
+        var meta = (A._instanceMeta && A._instanceMeta[o.id]) || (A._batchMeta && A._batchMeta[o.id]) || null;
+        var anyExpected = false;
+        if (o.isInstancedMesh && meta && o.instanceMatrix && o.instanceMatrix.array) {
+          var a = o.instanceMatrix.array;
+          for (var i = 0; i < meta.length; i++) {
+            if (!expects(meta[i].disc, meta[i].storey)) continue;
+            if (held && held(meta[i].guid)) { tmHeld++; continue; }
+            anyExpected = true; rowDen++;
+            if (a[i * 16] === 0 && a[i * 16 + 5] === 0 && a[i * 16 + 10] === 0) { rowOff++; byDisc[meta[i].disc || '?'] = (byDisc[meta[i].disc || '?'] || 0) + 1; if (guids.length < 12) guids.push(String(meta[i].guid) + ':' + (meta[i].disc || '?') + ':' + (meta[i].storey || '?')); }
+          }
+        } else if (o.isBatchedMesh && meta && typeof o.getVisibleAt === 'function') {
+          for (var j = 0; j < meta.length; j++) {
+            if (!expects(meta[j].disc, meta[j].storey)) continue;
+            if (held && held(meta[j].guid)) { tmHeld++; continue; }
+            anyExpected = true; rowDen++;
+            var sid = meta[j].slotId != null ? meta[j].slotId : j;
+            if (o.getVisibleAt(sid) === false) { rowOff++; byDisc[meta[j].disc || '?'] = (byDisc[meta[j].disc || '?'] || 0) + 1; }
+          }
+        } else {
+          anyExpected = expects(o.userData && o.userData.disc, o.userData && o.userData.storey);
+        }
+        if (anyExpected && o.visible === false) {
+          objOff++;
+          var d = (o.userData && o.userData.disc) || (meta && meta[0] && meta[0].disc) || '?';
+          byDisc[d] = (byDisc[d] || 0) + 1;
+        }
+      });
+      console.log('§STOREY_CUT_RESTORE_WITNESS objsLeftOff=' + objOff + '/' + objDen +
+        ' membersLeftOff=' + rowOff + '/' + rowDen + ' heldByTimeMachine=' + tmHeld + (held ? '' : ' (TM inactive)') +
+        (guids.length ? ' leftOff=[' + guids.join(' ') + ']' : '') +
+        ' byDisc={' + Object.keys(byDisc).sort().map(function (d) { return d + ':' + byDisc[d]; }).join(' ') + '}' +
+        ' discRevealKey="' + (A._cpeRevealVisualKey || '') + '"' +
+        ' => ' + ((objOff === 0 && rowOff === 0) ? 'PASS (the leg left the scene as its owners want it)'
+          : 'FAIL — the restore wrote back a state the scene\'s owners do not hold, and nothing downstream re-asserts it'));
+    } catch (eW) { console.log('§STOREY_CUT_RESTORE_WITNESS unavailable: ' + (eW && eW.message)); }
   }
 
   // EVERY FRAME (unlike storeyRevealApplyVisual, which is key-gated on the slot): the plane constant

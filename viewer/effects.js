@@ -8092,9 +8092,16 @@ async function setupEffects(A, renderer, scene, camera) {
         // growing the pull-back's share, which is the part that makes every other beat play faster.
         // Hospital has a real pullout+flyback and so pays little or nothing; HHS measures 0s for all
         // three, which is why it still has to grow.
-        var _lull = (_useSec.reveal || 0) + (_useSec.flyback || 0) + (_useSec.pullout || 0);
+        // §128.8 (user, 2026-09-14): the window may not reach back past the pull-back proper. The
+        // parade's tail and the round-2 lap are another system's time, so NOTHING is taken from the
+        // lull any more: the pull-back's own share grows (film length unchanged, the other beats play
+        // proportionally faster, capped), and whatever still does not fit is met by compressing the
+        // sweeps in _fitList — never by truncating storeys. `window.__srIgnoreRunway` restores the
+        // pre-ruling reach for the falsifiability control only.
+        var _lullAll = (_useSec.reveal || 0) + (_useSec.flyback || 0) + (_useSec.pullout || 0);
+        var _lull = window.__srIgnoreRunway ? _lullAll : 0;
         var _S0 = _useSec.dive + _useSec.spin + _useSec.out + _useSec.orbit +
-                  (_riseFolded - _useSec.rise);
+                  (_riseFolded - _useSec.rise) + (window.__srIgnoreRunway ? 0 : _lullAll);
         var _k = Math.min(RISE_GROW_MAX, _W / durationSec);
         var _extWant = _k * _S0 / (1 - _k);          // total extendable seconds the window needs
         var _riseWant = _extWant - _lull;            // what is left once the lull is spent
@@ -8206,8 +8213,17 @@ async function setupEffects(A, renderer, scene, camera) {
     // three. It still stops before the round-2 walk, which has its own captions and cues.
     // §107.2 — the window may reach back through the lull that feeds the orbit, on top of whatever
     // the pull-back itself holds. _riseFolded/_shapeTotal above have already settled by this point.
-    var _revealCap = _useSec.rise + (_useSec.reveal || 0) + (_useSec.flyback || 0) + (_useSec.pullout || 0);
+    var _revealCap = window.__srIgnoreRunway
+      ? _useSec.rise + (_useSec.reveal || 0) + (_useSec.flyback || 0) + (_useSec.pullout || 0)
+      : _useSec.rise;                                   // §128.8 — the pull-back proper, nothing behind it
     var _storeyRevealWindowSec = Math.min(_revealCap, _wantShapeSec);
+    console.log('§STOREY_REVEAL_RUNWAY pullbackShapeSec=' + _useSec.rise.toFixed(2) +
+      ' paradeTailShapeSec=' + (_useSec.tail || 0).toFixed(2) + ' wantShapeSec=' + _wantShapeSec.toFixed(2) +
+      ' usedShapeSec=' + _storeyRevealWindowSec.toFixed(2) +
+      ' startsAfterParadeTail=' + (_storeyRevealWindowSec <= _useSec.rise + 1e-9) +
+      ' compressBy=' + (_wantShapeSec > 0 ? Math.min(1, _storeyRevealWindowSec / _wantShapeSec).toFixed(3) : '1.000') +
+      (window.__srIgnoreRunway ? ' CONTROL(__srIgnoreRunway: pre-ruling reach into the parade)' : '') +
+      ' (§128.8 — the reveal opens only after the parade has restored; a short runway compresses the sweeps, it never lengthens the film)');
     if (_storeyRevealWindowSec > _useSec.rise) {
       console.log('§STOREY_REVEAL_PUSHBACK pullbackSec=' + _useSec.rise.toFixed(2) +
         '(shape) wantShapeSec=' + _wantShapeSec.toFixed(2) + ' capShapeSec=' + _revealCap.toFixed(2) +
@@ -8220,8 +8236,8 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§STOREY_REVEAL_WINDOW_FIT groups=' + _revealGroups + ' slotSec=' + _revealSlotSec +
       ' wantRealSec=' + _wantRealSec.toFixed(2) + ' wantShapeSec=' + _wantShapeSec.toFixed(2) +
       ' pullbackSec=' + _useSec.rise.toFixed(1) + ' usedShapeSec=' + _storeyRevealWindowSec.toFixed(2) +
-      (_wantShapeSec > _revealCap ? ' CLAMPED at the reveal beat — some top groups will still truncate'
-                                  : ' fits, no truncation') +
+      (_wantShapeSec > _revealCap ? ' CLAMPED at the pull-back — the sweeps compress to fit (§128.8), no storey is dropped'
+                                  : ' fits, no compression') +
       ' (§104 — the window is sized by the building, not a constant)');
     var _storeyRevealWindowFrac = _shapeTotal > 0 ? _storeyRevealWindowSec / _shapeTotal : 0;
     // §STOREY_REVEAL_WINDOW_REAL_SEC (2026-09-11, MEP_CLASH_REVEAL_MOVIE.md §60.2). `windowSec` above
