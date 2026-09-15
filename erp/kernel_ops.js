@@ -11,9 +11,13 @@
     '  id INTEGER PRIMARY KEY,' +       // local total-order — W-CHAIN seals/verifies in id order
     '  op_uuid TEXT,' +                 // G-IDENTITY (§0.21): edge-minted cross-device id; NOT the PK
     '  timestamp INTEGER NOT NULL,' +
-    '  op_type TEXT NOT NULL,' +       // GRID_MOVE | VIEW_FILTER | … | PLUGIN_INSTALL | PLUGIN_UNINSTALL | PLUGIN_START | PLUGIN_STOP
+    '  op_type TEXT NOT NULL,' +       // GRID_MOVE | VIEW_FILTER | … | PLUGIN_INSTALL | PLUGIN_UNINSTALL | PLUGIN_START | PLUGIN_STOP | MODELVAL_AUTOINSTALL
     //   PLUGIN_* (W-PLUGIN, prompts/PLUGIN_SYSTEM_LANE.md §Phase B): Fold-Engine bundle lifecycle audit ops.
     //   parameters = JSON { id, version, manifestUrl }. ADDITIVE — no schema change, op_type is free TEXT.
+    //   MODELVAL_AUTOINSTALL (prompts/PLUGIN_SYSTEM_LANE.md §Phase E, Q5): appended by ad_modelval_bridge.js
+    //   IN ADDITION TO (never instead of) the PLUGIN_INSTALL op above, so the audit log can tell "an admin
+    //   pasted a URL" apart from "the ad_modelvalidator AD table drove this." parameters = JSON
+    //   { adModelValidatorId, name, id, modelValidationClass }. ADDITIVE — no schema change.
     '  parameters TEXT NOT NULL,' +
     '  input_guids TEXT,' +
     '  output_guid TEXT,' +
