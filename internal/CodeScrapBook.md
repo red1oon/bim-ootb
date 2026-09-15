@@ -884,4 +884,39 @@ shape — a small, deliberate, named exception to "no business logic," not the
 server the whole architecture otherwise avoids. **Open question, not a
 spec — no config or enforcement checkpoint exists yet.**
 
+### AnAAS — "Anchor as a Service": naming + a premium bundle (2026-09-16)
+
+> red1: "AnAAS - Anchor as a service... I still think they can add a premium
+> to the anchor if the local first app they given is valuable ie for
+> updates, benchmarks, migration support etc."
+
+**Naming check, before it sticks:** not aware of an existing market term for
+this specific shape. Two collisions worth knowing about if the name is used
+externally — "AaaS" already means **Authentication as a Service** (Auth0/
+Okta/Firebase Auth), a different product: it authenticates users *into* a
+server-centric app you still have to run, not a thin trust boundary bolted
+onto an otherwise fully local-first one. And "AAAS" is the long-established
+American Association for the Advancement of Science (publisher of
+*Science*). Neither is this concept — just worth knowing before it's used
+as a public-facing name.
+
+**Why the premium bundle is stronger than revocation alone:** revocation by
+itself is a fire-extinguisher — rare-trigger, hard to price high. But
+updates, benchmarks, and migration support all route through the *same*
+trust boundary naturally, and each is worth more than the revocation
+function itself:
+- **Updates** — the anchor is already a periodic touchpoint; signed-update
+  distribution rides along nearly free.
+- **Benchmarks** — this is the aggregate/need-to-know enforcement boundary
+  above, doing double duty. The same checkpoint that only lets
+  redacted/aggregate data cross *is* the cross-customer benchmark dataset —
+  no new infrastructure, just a second use of the one boundary.
+- **Migration/support** — labor sold through the one trust relationship
+  that already exists, not a new channel.
+
+Real precedent for "core free/standalone, thin hosted layer sells
+updates/insights/support on top": GitLab, Sentry, HashiCorp Terraform (the
+open-core model). **Naming and business framing only — no anchor service,
+free or paid, exists yet.**
+
 ---
