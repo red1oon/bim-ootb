@@ -809,14 +809,33 @@ tree). `main.js` is where all of those meet at once, at boot.
 
 ### The one acknowledged gap — DistributedERP
 
-`erp/DistributedERP.md` §6 / §11.1 already specs the one piece this
-local-first shape cannot supply alone: cross-device/cross-branch sync, via a
-**"dumb post office" relay** — order + persist + relay only, no business
-logic (doctrine-only today, per `teams/ERP_CONTEXT.md` — not yet built).
-red1's framing, stated this session: plug that relay with a **"relay
-folder"** — a shared folder standing in for the relay process, so the one
-gap in the pattern gets closed without reintroducing a server just for it.
-**Not yet designed or built — recorded here as the stated direction, not as
-a spec.**
+`erp/DistributedERP.md` §6 / §11.1 specs the one piece this local-first
+shape cannot supply alone: cross-device/cross-branch sync, via a **"dumb
+post office" relay** — order + persist + relay only, no business logic.
+This bim-ootb doc reads doctrine-only (`teams/ERP_CONTEXT.md`), but that's
+this repo, not the whole story:
+
+**In the sibling `bim-compiler` repo, the mechanism is built and witnessed**
+— commit `9dcdadee8` ("§0.20 distributed substrate — sync FSM + dumb relay +
+signed 3-host replica + period-close fold"): `build/erp/erp_relay_{server,
+client}.js`, `erp_replica_client.js` (3-host read-replica), `erp_snapshot_
+sign.js` (ECDSA P-256, pinned key). Re-run 2026-09-16, `scripts/test_kernel_
+replica.js`, 7/7 green — signed-chain replay from 3 origins, tip
+convergence, tamper detection, forge detection (wrong key fails even when
+the tamper matches the tip), failover past a down host.
+
+**The real remaining gap is narrower than "not built": live endpoints.** The
+test's own header says it plainly — `"Serves the SAME snapshot from 3 local
+origins (stand-ins for GH / OCI / here)"`. The 3 hosts are local mock ports
+labelled GH/OCI/HERE, not `github.com` raw / a live OCI bucket. The
+signature/convergence/tamper/failover *mechanism* is proven; pointing it at
+real static-hosting endpoints has not been.
+
+red1's framing, stated this session: plug the relay with a **"relay
+folder"** — a shared folder (or any static host — GH Pages, an OCI bucket)
+standing in for the relay *process*, so the one gap in the pattern closes
+without reintroducing a server just for it. Given the above, that's not
+speculative — it's the last wiring step on top of a mechanism already
+witnessed 7/7, not a fresh design.
 
 ---
