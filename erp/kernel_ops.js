@@ -176,6 +176,15 @@
     }).catch(function(e) { console.warn('§KRN_SEAL_ERR', e); });
   }
   function _persistToIdb(db) {
+    // LARGE_DB_BAKE.md §2 L2 — same gate as viewer/kernel_ops.js's twin: a bake profile is
+    // disposable, never reopened from cache, so this export()+IDB-put buys nothing and only risks
+    // the write-loop race (CPE_4D_PERF_MEM_FINDINGS.md §8.6). Found firing on an LTU bake despite
+    // the viewer/kernel_ops.js gate — this is a SEPARATE duplicate implementation (erp/kernel_ops.js
+    // ships its own _persistToIdb, loaded via find_erp_push.js in the Find panel's module chain).
+    if (typeof window !== 'undefined' && window.APP && APP._bakeOwned) {
+      console.log('§KRN_PERSIST_SKIP reason=bake — bake profile is disposable, never reopened from cache');
+      return;
+    }
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
       var dbUrl = (typeof window !== 'undefined' && window.APP && APP.DB_URL) || null;

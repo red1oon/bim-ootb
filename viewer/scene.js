@@ -515,6 +515,15 @@ async function setupScene(A) {
   A.CACHE_DB_NAME = 'bim_ootb_cache';
   A.CACHE_STORE = 'dbs';
 
+  // LARGE_DB_BAKE.md §2 L2 — a CLI bake profile is disposable: nothing it renders is ever reopened
+  // from cache, so writing a 400-900MB blob into IndexedDB during a bake buys nothing and cost a
+  // real hang (§CACHE_WRITE_HANG) and a write-loop race (§8.6/§KRN_PERSIST) on LTU/Hospital.
+  // window.__MAXQ_SILENT is set by cli_silent_bake.js via evaluateOnNewDocument BEFORE this page's
+  // own scripts run (cli_silent_bake.js §CLI_BAKE_FLAG_OVERRIDE block), so it is already true here,
+  // long before Time Machine ever activates — the one signal early enough to gate the DB fetch's
+  // own cache write, not just later kernel_ops/gantt persistence.
+  A._bakeOwned = !!window.__MAXQ_SILENT;
+
   // §S260b: Log storage quota at init — diagnoses private browsing / low-quota environments
   if (navigator.storage && navigator.storage.estimate) {
     navigator.storage.estimate().then(function(e) {
@@ -1618,7 +1627,20 @@ async function setupScene(A) {
       buf = await resp.arrayBuffer();
     }
 
-    if (cacheDb && !A._cacheDisabled) {
+    if (A._CACHE_WRITE_TIMEOUT_MS == null) A._CACHE_WRITE_TIMEOUT_MS = 60000;   // §CACHE_WRITE_HANG
+    // §CACHE_WRITE_HANG_GATE (2026-09-14, found on LTU_AHouse's 761MB DB): the timeout above only
+    // helps a write that is genuinely pending on a free event loop. Measured live: on this size, the
+    // page's own event loop never ran again either — no setTimeout fired even 8 minutes later — so
+    // whatever IndexedDB is doing with a buffer this large (most likely structured-clone
+    // serialization of the ArrayBuffer for storage) is blocking the renderer itself, past the point
+    // any JS-level recovery can reach. Every building tried today up to 315MB (Hospital) completed
+    // its write normally; only LTU's 725.7MB one wedged. Never attempt the put() at all above this
+    // size — return the already-downloaded buffer uncached instead of risking the whole load.
+    if (A._CACHE_MAX_BLOB_BYTES == null) A._CACHE_MAX_BLOB_BYTES = 400 * 1024 * 1024;
+    if (cacheDb && !A._cacheDisabled && !A._bakeOwned && buf.byteLength > A._CACHE_MAX_BLOB_BYTES) {
+      console.warn(`[S203] §CACHE_WRITE_SKIP_TOO_LARGE url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB` +
+        ` max=${(A._CACHE_MAX_BLOB_BYTES/1024/1024).toFixed(0)}MB — put() itself risks wedging the renderer past any JS-level recovery (§CACHE_WRITE_HANG); proceeding uncached`);
+    } else if (cacheDb && !A._cacheDisabled && !A._bakeOwned) {
       try {
         // §S260b: LRU evict before write to keep under max entries
         await A._evictOldest(cacheDb);
@@ -1633,7 +1655,7 @@ async function setupScene(A) {
         // throwing other entries away. See §CACHE_EVICT_ONLY_ON_QUOTA below.
         var _attemptWrite = function() {
           return new Promise(function(resolve) {
-            var _writeOk = false;
+            var _writeOk = false, _settled = false;
             const stores = _hasRevalStore ? [A.CACHE_STORE, 'timestamps', 'revalidation'] : [A.CACHE_STORE, 'timestamps'];
             const tx = cacheDb.transaction(stores, 'readwrite');
             tx.objectStore('timestamps').put(Date.now(), key);
@@ -1645,16 +1667,33 @@ async function setupScene(A) {
             req.onerror = function() {
               console.warn(`[S203] §CACHE_WRITE_ERR url=${url.split('/').pop()} err=${req.error}`);
             };
+            function _settle(result) { if (_settled) return; _settled = true; clearTimeout(_hangGuard); resolve(result); }
             tx.oncomplete = function() {
               if (!_writeOk) console.warn('[S203] §CACHE_TX_COMPLETE_BUT_NO_WRITE — data NOT persisted');
-              resolve({ ok: _writeOk });
+              _settle({ ok: _writeOk });
             };
             // Read tx.error. The old handler discarded it and every caller then ASSUMED "quota" —
             // which is how a non-quota abort came to be reported as `quota too small` for months.
             tx.onabort = function() {
               var e = tx.error;
-              resolve({ ok: false, name: e ? e.name : '', err: e ? (e.name + ': ' + e.message) : '(tx.error was null)' });
+              _settle({ ok: false, name: e ? e.name : '', err: e ? (e.name + ': ' + e.message) : '(tx.error was null)' });
             };
+            // §CACHE_WRITE_HANG (2026-09-14, found on LTU_AHouse's 761MB single-file DB,
+            // MEP_CLASH_REVEAL_MOVIE.md §128 lane): req.onsuccess firing ("§CACHE_WRITE_OK") only
+            // means the individual put() succeeded — it is NOT the same as the transaction
+            // committing. Observed live: onsuccess fires, then neither oncomplete nor onabort ever
+            // fires again — 15+ minutes, near-zero CPU, no error surfaced. Every caller of
+            // cachedFetch awaits it before opening the DB, so a stuck transaction here used to hang
+            // the entire load pipeline forever with nothing to blame in the log. Bound the wait: on
+            // timeout, best-effort abort the stuck transaction and resolve not-ok so the existing
+            // §CACHE_WRITE_UNFIXABLE path below reports it and returns the already-downloaded buffer
+            // uncached — the load proceeds; only "instant reload from cache" is lost for this write.
+            var _hangGuard = setTimeout(function() {
+              console.warn(`[S203] §CACHE_WRITE_TIMEOUT url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB` +
+                ` after=${A._CACHE_WRITE_TIMEOUT_MS}ms — tx.oncomplete/onabort never fired; proceeding without caching this write`);
+              try { tx.abort(); } catch (eAb) {}   // best-effort release; onabort may still fire and no-ops via _settled
+              _settle({ ok: false, name: 'timeout', err: 'tx.oncomplete/onabort never fired within ' + A._CACHE_WRITE_TIMEOUT_MS + 'ms' });
+            }, A._CACHE_WRITE_TIMEOUT_MS);
           });
         };
         // §CACHE_EVICT_ONLY_ON_QUOTA (bim-compiler 4D_GANTT_TM_REFACTOR.md §5b) — THE DATA-LOSS FIX.
@@ -1694,8 +1733,8 @@ async function setupScene(A) {
       } catch(e) { console.log(`[S203] §CACHE_WRITE_ERR ${e.message}`); }
     }
 
-    if (!cacheDb || A._cacheDisabled) {
-      console.log(`[S203] §CACHE_SKIP url=${url.split('/').pop()} reason=${!cacheDb ? 'IDB_unavailable' : 'quota_low'}`);
+    if (!cacheDb || A._cacheDisabled || A._bakeOwned) {
+      console.log(`[S203] §CACHE_SKIP url=${url.split('/').pop()} reason=${A._bakeOwned ? 'bake' : (!cacheDb ? 'IDB_unavailable' : 'quota_low')}`);
     }
     return buf;
   };
@@ -1753,7 +1792,9 @@ async function setupScene(A) {
       var dir = url.slice(0, url.lastIndexOf('/') + 1);
       var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
       var patchUrl = dir + 'patches/' + dbFile + '.sql';
+      console.log('§DB_LOAD_STEP patch-fetch ' + patchUrl);
       var r = await fetch(patchUrl);
+      console.log('§DB_LOAD_STEP patch-response status=' + r.status);
       if (!r.ok) { console.log(`[S203] §PATCH_NONE ${dbFile} (${r.status})`); return buf; }
       var sql = await r.text();
       var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)

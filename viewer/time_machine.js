@@ -8675,6 +8675,9 @@
   function cachePut(prefix, data) {
     var app = A();
     if (!app || !app.openCacheDB) return;
+    // LARGE_DB_BAKE.md §2 L2 — a bake profile is disposable; nothing it writes here is ever read
+    // back by a later session, so skip it rather than pay an IDB round trip for no benefit.
+    if (app._bakeOwned) { console.log('§CACHE_SKIP key=' + _cacheKey(prefix) + ' reason=bake'); return; }
     app.openCacheDB().then(function(cacheDb) {
       if (!cacheDb) return;
       var key = _cacheKey(prefix);
