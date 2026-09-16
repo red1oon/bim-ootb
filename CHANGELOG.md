@@ -4,6 +4,19 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.68.0](https://github.com/red1oon/bim-ootb/compare/v1.67.0...v1.68.0) (2026-09-15)
+
+
+### ✨ Features
+
+* **erp:** bridge ad_modelvalidator AD table into the Fold-Engine plugin system ([#1739](https://github.com/red1oon/bim-ootb/issues/1739)) ([8bd2c6c](https://github.com/red1oon/bim-ootb/commit/8bd2c6cc3f19b672662c9acf1dcb88dd13a279da))
+
+
+### 🐛 Fixes
+
+* **ci:** §SW_AUDIT_QUOTE — strip comments before pairing quotes in the precache audit ([#1737](https://github.com/red1oon/bim-ootb/issues/1737)) ([3e8c6be](https://github.com/red1oon/bim-ootb/commit/3e8c6be2b23db92a0a375ac3a0866d63c9c3294c))
+* **modeller:** W-ARC-3AXIS closes row 28 + §MULTIRUN fixes the silently-single-run harness (row 24) ([#1738](https://github.com/red1oon/bim-ootb/issues/1738)) ([afa718e](https://github.com/red1oon/bim-ootb/commit/afa718e1c25da4374235d3e89d01011e574c94d0))
+
 ## [1.67.0](https://github.com/red1oon/bim-ootb/compare/v1.66.0...v1.67.0) (2026-09-13)
 
 
