@@ -13,6 +13,15 @@
  * same min-overlap, same touch-axis rule, same unordered de-dup. NON-INVENT: every edge is a MEASURED
  * shared-face contact (provenance 'derived:face-touch'); NO proximity radius, NO IFC class names (grep-clean).
  *
+ * §ABUTS-ATTRIBUTE-PRIOR (proposed 2026-09-18, not built — see bim-compiler prompts/
+ * SPATIAL_DEPENDENCY_GRAPH.md for the full reasoning): `abuts` is the one edge type with no classic ERP
+ * analogue (adjacency is cyclic, a BOM line can't express it) — but a Product ATTRIBUTE (componenttype /
+ * conn_points, both already real — see hr_bim_asset/ad_bom.js, real_placement_resolver.js) could supply a
+ * semantic PRIOR that cross-checks this file's purely-geometric face-touch test, not replace it. Motivated
+ * by a real, currently-open gap: `tests/witness_cross_edges_real_aabb.js` G4 measures 843/9,817 (8.6%) of
+ * SampleCastle's derived abuts edges disagreeing with the live render, re-checked 2026-09-18. Unverified
+ * hypothesis — next step is checking those 843 pairs' componenttype values before building anything.
+ *
  * AABB convention (scripts/backfill_bbox.py): element_transforms.bbox_k = FULL extent (maxK-minK),
  * center_k = (minK+maxK)/2 → minK = center_k - bbox_k/2, maxK = center_k + bbox_k/2. This is a FALLBACK
  * only (§REAL-AABB below) — measured to disagree with the actual rendered scene on 924/9817 (9.4%) of a
