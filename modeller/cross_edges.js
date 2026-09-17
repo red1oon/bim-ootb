@@ -13,14 +13,23 @@
  * same min-overlap, same touch-axis rule, same unordered de-dup. NON-INVENT: every edge is a MEASURED
  * shared-face contact (provenance 'derived:face-touch'); NO proximity radius, NO IFC class names (grep-clean).
  *
- * §ABUTS-ATTRIBUTE-PRIOR (proposed 2026-09-18, not built — see bim-compiler prompts/
- * SPATIAL_DEPENDENCY_GRAPH.md for the full reasoning): `abuts` is the one edge type with no classic ERP
- * analogue (adjacency is cyclic, a BOM line can't express it) — but a Product ATTRIBUTE (componenttype /
- * conn_points, both already real — see hr_bim_asset/ad_bom.js, real_placement_resolver.js) could supply a
- * semantic PRIOR that cross-checks this file's purely-geometric face-touch test, not replace it. Motivated
- * by a real, currently-open gap: `tests/witness_cross_edges_real_aabb.js` G4 measures 843/9,817 (8.6%) of
- * SampleCastle's derived abuts edges disagreeing with the live render, re-checked 2026-09-18. Unverified
- * hypothesis — next step is checking those 843 pairs' componenttype values before building anything.
+ * §ABUTS-ATTRIBUTE-PRIOR — SUPERSEDED same day (2026-09-18, see bim-compiler prompts/
+ * SPATIAL_DEPENDENCY_GRAPH.md for the full record, both the original proposal and this correction):
+ * `tests/witness_cross_edges_real_aabb.js` G4 measures 843/9,817 (8.6%) of SampleCastle's abuts edges
+ * disagreeing with the live render. The proposed fix (a Product Attribute — componenttype/conn_points —
+ * as a semantic prior cross-checking face-touch) was TESTED (ifc_class as proxy) and does NOT
+ * discriminate: IfcCovering<->IfcWall is both the #1 disagreeing pair and the #2 agreeing pair.
+ *
+ * §GEODB-WIRING-BUG (the actual cause, found scrutinizing the proposal above): `modeller/
+ * str_walker_outliner.js:179` calls `CrossEdges.deriveAll(db)` with no `geoDb` — so `opts.geoDb` is
+ * always undefined in production, `_buildRealVerts` resolves 0 elements, and EVERY element silently
+ * takes the coarse `[center_xyz +/- bbox/2]` fallback below, never the real per-vertex AABB the
+ * §REAL-AABB comment two paragraphs down describes. Verified directly (this call site + this file's
+ * own silent-null fallback path, both re-read, not assumed). That coarse box is anchor-centred, not
+ * volume-centred: median 78mm off on 798/934 elements — a pure translation error. Fix: pass `geoDb`
+ * through at the `str_walker_outliner.js:179` call site, re-run G4; the 843 should largely disappear.
+ * An attribute prior can only ever filter geometrically-wrong edges, never fix them — don't build it
+ * against this gap; re-evaluate only after the wiring fix lands.
  *
  * AABB convention (scripts/backfill_bbox.py): element_transforms.bbox_k = FULL extent (maxK-minK),
  * center_k = (minK+maxK)/2 → minK = center_k - bbox_k/2, maxK = center_k + bbox_k/2. This is a FALLBACK
