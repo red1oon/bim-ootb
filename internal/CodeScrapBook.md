@@ -919,4 +919,21 @@ updates/insights/support on top": GitLab, Sentry, HashiCorp Terraform (the
 open-core model). **Naming and business framing only — no anchor service,
 free or paid, exists yet.**
 
+### The `teams/` layer is the anchor's editable-Modeller half — already built (2026-09-18)
+
+`teams/README.md`: *"A signed-op-log collaboration layer shared by the BIM
+Modeller/Viewer and ERP... a deterministic fold of one signed log."*
+Real, not aspirational — Phases A-E complete, 22+ green node witnesses,
+`facilitator.js`/`transport.js` already implement the GH/OCI relay this §17
+speculated about. Gap, checked directly: `modeller/teams_embed.js` is
+presence/awareness only ("edits no op/verb, never writes"); the actual
+edit-capture bindings in `connectors.js` (`sign`/`verifyChain`/
+`subscribeOps`) default to `'stub'`. Its `goLive()` seam already expects
+`host.sdg_gate.evaluate` — i.e. the connector is wired to receive
+`modeller/sdg_gate.js`'s RED/ORANGE/GREEN gate the moment
+`SPATIAL_DEPENDENCY_GRAPH.md`'s Phase 3 backprop (still unbuilt) exists.
+One unbuilt piece closes two gaps: proves the MRP-graph model end-to-end,
+and gives Teams' Modeller-side connector a real live op source instead of
+a stub.
+
 ---
