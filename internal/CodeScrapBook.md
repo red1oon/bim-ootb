@@ -936,4 +936,37 @@ One unbuilt piece closes two gaps: proves the MRP-graph model end-to-end,
 and gives Teams' Modeller-side connector a real live op source instead of
 a stub.
 
+**Correction, same session, minutes later — the gap above is narrower than
+stated.** `modeller/bonsai_oplog.js` is live (loaded in `modeller.html`,
+wired into every drag/resize/rotate via `bonsai_itemdrag.js`, real
+witnesses) and its own header says it plainly: *"ONE signed op-log now
+backs BOTH ERP records and BIM geometry — the same git-for-data
+substrate."* A signer for geometry edits already exists and ships today —
+`connectors.js`'s stub isn't standing in for a missing signer, it's
+standing in for the wiring between Teams and the `KernelOps` instance
+`bonsai_oplog.js` already drives. What's real and worth flagging instead:
+`bonsai_oplog.js`'s signing key is `SECRET = 'bonsai-modeller-demo-signer'`
+— a hardcoded demo constant, not per-user/per-device identity. Same
+irreducible-anchor key-custody question as the DistributedERP discussion
+above, resurfacing in the Modeller's own local signing, not just
+cross-device ERP sync.
+
+### `room_graph.js` likely carries the same coarse-centre bug `cross_edges.js` just got fixed for (found 2026-09-18, unverified severity)
+
+Grepped directly, not assumed: `common/room_graph.js` reads room/door
+positions straight from `spatial_structure.center_x/y` and
+`element_transforms.center_x/y` — zero `real_geometry`/`buildGeometryIndex`
+calls anywhere in the file. That's the exact anchor-point (not volumetric
+centre) reading §GEODB-WIRING-BUG just proved wrong elsewhere: median 78mm
+off, up to ~425mm, on SampleCastle. room_graph.js's whole E1 door-to-room
+matching runs on a 200mm `DOOR_BUFFER_SLACK` — an error of that size is
+comparable to or larger than the tolerance the matching depends on. Not
+confirmed wrong in practice (room/door anchor offsets may be small on the
+buildings this file has been hardened against so far — unmeasured), and no
+witness in this file does a live-render cross-check the way
+`witness_cross_edges_real_aabb.js`'s G4 now does. **Found, not actioned —
+worth a G4-equivalent check before assuming this file's extensive
+real-building regression history means it's clean of this specific
+defect.**
+
 ---
