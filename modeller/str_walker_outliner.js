@@ -174,15 +174,7 @@
       // NOT baked (W-UX-6 Phase 2; user fork = JS-derive). Geometric edges abuts/anchored/spans are JS-derived
       // (witnessed == Python, W-SDG-JS-PARITY); fills/aggregates are RECOVERED IFC reads. Stashed on window for
       // the bom-graph adjacency lens (element↔element abuts/fills/aggregates highlight; anchored/spans annotate).
-      if (window.CrossEdges && window.CrossEdges.deriveAll) {
-        try {
-          window.swXEdges = window.CrossEdges.deriveAll(db);
-          var X = window.swXEdges;
-          console.log(TAG + ' §XEDGE-ALL abuts=' + X.abuts.length + ' anchored=' + X.anchored.length +
-            ' spans=' + X.spans.length + ' fills=' + X.fills.length + ' aggregates=' + X.aggregates.length +
-            ' datums=' + X.datums.length + ' (abuts/anchored/spans derived; fills/aggregates recovered)');
-        } catch (e) { console.warn(TAG + ' cross-edge derive failed', e && e.message); }
-      }
+      _deriveXEdges(db, null, 'seed');
       db.close();
       ready = !!st; lastEx = [];
       if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
@@ -506,6 +498,67 @@
     throw new Error('§GEO-SERVED-FAIL ' + res.key + ': ' + why);
   }
 
+
+  // §XEDGE-GEOWIRE (SPATIAL_DEPENDENCY_GRAPH.md §XEDGE-GEOWIRE) — derive the FULL typed cross-edge set.
+  // Extracted so it can run TWICE: once on the synchronous open (geoBuf null, today's behaviour, byte-for-byte)
+  // and again once the real geometry actually arrives.
+  //
+  // WHY TWICE. cross_edges.js's §REAL-AABB correction takes `opts.geoDb` and, without it, silently falls back
+  // to the coarse `[center_xyz ± bbox/2]` box for EVERY element. That box is centred on the placement ANCHOR,
+  // not the volumetric centre. Since §GEO-SERVED (#1090) moved geometry into separate `*_geo.db` files, this
+  // call site had no geoDb to give — and could not have had one: measured console order on a real open is
+  // §XEDGE-ALL → §STRWALK-MO → `geoDb cache-MISS → fetch` → §GEO-SERVED, i.e. the derivation ran BEFORE the
+  // geometry was even requested. So it was an ORDERING bug, not a missing argument, and the fix is to re-derive
+  // in the fetch continuation (_forkEditable below) — the same §LIVEWIRE convention that already threads
+  // __dwGeoBuf into dwWalk as opts.geoDb. Measured on SampleCastle: 0 resolved / 10,612 abuts / 843 of 9,817
+  // G4 pairs disagreeing with the live render → 1,924-of-3,225 resolved / 12,983 abuts / 11 disagreeing.
+  //
+  // SUBSTRATE PARITY IS LOAD-BEARING. The re-derive re-opens __dwBuf and MUST reproduce the same two
+  // preparation steps the synchronous path applies, or it silently derives over a different substrate:
+  //   composeGhostsFromAggregates  — geometry-less aggregate parents get a real transform
+  //   §ANCHOR-BLIND                — void_anchor rows hidden; skipping it leaked all 65 SampleCastle anchors
+  //                                  into the edge set (measured: 13,331 abuts instead of 12,983), which
+  //                                  breaks the user's binding condition that anchors are excluded from
+  //                                  EVERY count/pick/audit.
+  // Logs §XEDGE-GEO with resolved-vs-total: cross_edges.js has no logging of its own, which is exactly why a
+  // fix that stopped running left no trace for ~7 weeks. A regression here is now loud.
+  function _deriveXEdges(db, geoBuf, phase) {
+    if (!(window.CrossEdges && window.CrossEdges.deriveAll)) return;
+    var geo = null;
+    try {
+      if (geoBuf) geo = new window.SQL.Database(new Uint8Array(geoBuf));
+      var res = -1, tot = -1;
+      if (geo && window.RealGeometry && window.RealGeometry.buildGeometryIndex) {
+        try { var idx = window.RealGeometry.buildGeometryIndex(db, geo);
+          tot = Object.keys(idx.byGuid || {}).length; res = Object.keys(idx.resolved || {}).length; } catch (e) { }
+      }
+      window.swXEdges = window.CrossEdges.deriveAll(db, geo ? { geoDb: geo } : undefined);
+      var X = window.swXEdges;
+      console.log(TAG + ' §XEDGE-ALL abuts=' + X.abuts.length + ' anchored=' + X.anchored.length +
+        ' spans=' + X.spans.length + ' fills=' + X.fills.length + ' aggregates=' + X.aggregates.length +
+        ' datums=' + X.datums.length + ' (abuts/anchored/spans derived; fills/aggregates recovered)');
+      console.log(TAG + ' §XEDGE-GEO phase=' + phase + ' geoDb=' + (geo ? 'YES' : 'no') +
+        ' realGeomResolved=' + (geo ? res + '/' + tot : 'n/a — coarse anchor-centred bbox for EVERY element') +
+        ' abuts=' + X.abuts.length);
+    } catch (e) { console.warn(TAG + ' cross-edge derive failed (' + phase + ')', e && e.message); }
+    finally { if (geo) { try { geo.close(); } catch (e) { } } }
+  }
+
+  // §XEDGE-GEOWIRE — re-derive over the SAME substrate the synchronous open built, now that geometry exists.
+  // Re-opens __dwBuf (the sync path closed its own handle) and replays composeGhosts + §ANCHOR-BLIND so the
+  // two derivations differ in exactly ONE variable: whether geoDb is present.
+  function _reDeriveXEdgesWithGeo(geoBuf) {
+    if (!geoBuf || !window.__dwBuf || !window.SQL) return;
+    var db = null;
+    try {
+      db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+      composeGhostsFromAggregates(db);
+      try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }
+      _deriveXEdges(db, geoBuf, 'geo');
+    } catch (e) { console.warn(TAG + ' §XEDGE-GEO re-derive failed', e && e.message); }
+    finally { if (db) { try { db.close(); } catch (e) { } } }
+  }
+
   function _fetchGeoDb(res) {
     if (!res.geoDb) return Promise.resolve(null);
     // §GEO-SERVED: geometry files come from res.geoBase (object storage) when declared; resident METADATA
@@ -542,6 +595,9 @@
         // dwWalk as opts.geoDb (hostBind/_trueMidpoint midpoint correction + the LOD400 render seam
         // both resolve real meshes from it). Cleared/replaced on every open, same lifecycle as __dwBuf.
         window.__dwGeoBuf = geoBuf || null;
+        // §XEDGE-GEOWIRE: the cross-edge set derived synchronously at open had NO geometry (it ran before
+        // this fetch was even issued). Now that the real substrate is here, derive it again for real.
+        _reDeriveXEdgesWithGeo(geoBuf);
         _seedArcEditable(O, res.key, geoBuf);
       }).catch(function (e) {
         // §GEO-SERVED: console.error, NOT console.warn — DevTools' default filter hides warn, which is how the

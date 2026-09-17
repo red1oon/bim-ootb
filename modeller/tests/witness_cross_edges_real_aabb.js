@@ -61,6 +61,9 @@ const BOUNDARY_SLACK = 0.001;
     console.log('--- ' + building + ' ---');
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850 });
     const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
+    // §XEDGE-GEOWIRE: capture the derivation's own provenance line so G6 can assert the geo-wired
+    // re-derive ACTUALLY FIRED, not merely that the numbers look better.
+    const geoLines = []; pg.on('console', m => { const t = m.text(); if (t.indexOf('§XEDGE-GEO ') >= 0) geoLines.push(t); });
     await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
     await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai', { timeout: 30000 }).catch(() => {});
     await pg.click('#b-open'); await sleep(200);
@@ -100,7 +103,19 @@ const BOUNDARY_SLACK = 0.001;
       if (Math.abs(t.ov) > TOL + BOUNDARY_SLACK) { disagree++; disagreements.push('a=' + p.a + ' b=' + p.b + ' ov_mm=' + (t.ov * 1000).toFixed(1)); }
     });
     chk('G4 LIVE-AGREEMENT (' + building + ' — every corrected abuts pair confirmed touching on the LIVE render, 0 disagreement)',
-      disagree === 0 && checked > 0, 'checked=' + checked + ' disagree=' + disagree + (disagreements.length ? ' ' + disagreements.slice(0, 3).join(' | ') : ''));
+      disagree === 0 && checked > 0, 'checked=' + checked + ' disagree=' + disagree + (disagreements.length ? ' ' + disagreements.slice(0, 12).join(' | ') : ''));
+
+    // G6 §GEO-WIRED — the REGRESSION GUARD for §XEDGE-GEOWIRE. G4 alone cannot catch a re-break: if the
+    // geo-wired re-derive silently stops running, cross_edges falls back to the coarse anchor-centred box
+    // and G4 just drifts back up (843 on SampleCastle, 2 on SampleHouse) with nothing naming the cause —
+    // which is exactly how this hid for ~7 weeks. This asserts the re-derive FIRED and RESOLVED real
+    // geometry, by reading its own §XEDGE-GEO provenance line. Falsify by reverting the
+    // _reDeriveXEdgesWithGeo call in str_walker_outliner.js: phase=geo never appears and G6 goes RED.
+    const geoPhase = geoLines.filter(l => l.indexOf('phase=geo') >= 0).pop() || '';
+    const mres = geoPhase.match(/realGeomResolved=(\d+)\/(\d+)/);
+    chk('G6 GEO-WIRED (' + building + ' — the geo-wired re-derive fired and resolved real geometry)',
+      !!mres && Number(mres[1]) > 0,
+      geoPhase ? geoPhase.replace(/^.*§XEDGE-GEO /, '§XEDGE-GEO ') : 'NO §XEDGE-GEO phase=geo line — the re-derive never ran');
 
     chk('G5 NO-ERROR (' + building + ' — zero pageerror)', errs.length === 0, errs.slice(0, 2).join(' | '));
     await pg.close();

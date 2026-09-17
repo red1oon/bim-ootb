@@ -18,12 +18,21 @@
  * analogue (adjacency is cyclic, a BOM line can't express it) — but a Product ATTRIBUTE (componenttype /
  * conn_points, both already real — see hr_bim_asset/ad_bom.js, real_placement_resolver.js) could supply a
  * semantic PRIOR that cross-checks this file's purely-geometric face-touch test, not replace it. Motivated
- * by a real, currently-open gap: `tests/witness_cross_edges_real_aabb.js` G4 measures 843/9,817 (8.6%) of
- * SampleCastle's derived abuts edges disagreeing with the live render, re-checked 2026-09-18. Unverified
- * hypothesis — next step is checking those 843 pairs' componenttype values before building anything.
+ * by a real gap: G4 measured 843/9,817 (8.6%) of SampleCastle's derived abuts edges disagreeing with the
+ * live render. SUPERSEDED 2026-09-18 — that gap was a WIRING bug, not semantic ambiguity, and is now fixed
+ * (§XEDGE-GEOWIRE below): 843 -> 11. The attribute-prior hypothesis was TESTED against ifc_class and does
+ * NOT discriminate (`IfcCovering<->IfcWall` is both the #1 disagreeing pair and the #2 agreeing pair), so
+ * do not build it to explain those 843. It may still have value on whatever residual remains — but that is
+ * now 11 pairs, not 843, and unexamined.
  *
  * AABB convention (scripts/backfill_bbox.py): element_transforms.bbox_k = FULL extent (maxK-minK),
- * center_k = (minK+maxK)/2 → minK = center_k - bbox_k/2, maxK = center_k + bbox_k/2. This is a FALLBACK
+ * center_k = (minK+maxK)/2 → minK = center_k - bbox_k/2, maxK = center_k + bbox_k/2.
+ * ⚠ THAT SECOND HALF IS FALSE FOR REAL BUILDINGS, and it is the whole reason this fallback is wrong:
+ * `center_xyz` is the IFC local-placement ANCHOR, not the volumetric centre (arc_editable.js's §ARC-ANCHOR
+ * and real_geometry.js's `recenter()` both say so, and both correct for it with `anchorOffset`). Measured
+ * on SampleCastle 2026-09-18: of the 934 elements in disagreeing pairs the live AABB SIZE matches authored
+ * `bbox_*` 934/934, but the CENTRE differs on 798/934, median 78mm, up to ~425mm — so `[center ± bbox/2]`
+ * is the right-SIZED box in the WRONG PLACE. This is a FALLBACK
  * only (§REAL-AABB below) — measured to disagree with the actual rendered scene on 924/9817 (9.4%) of a
  * real building's abuts pairs (SampleCastle, RESUME_SESSION_2026-07-04_GATE_BACKPROP.md item 3 audit), not
  * a narrow edge case.
@@ -31,13 +40,19 @@
  * §REAL-AABB (2026-07-04 fix): `element_transforms.center_xyz`/`bbox_xyz` is a coarser measure than the
  * REAL per-element vertex blob (`component_geometries`/`base_geometries`, keyed by `element_instances.
  * geometry_hash`) `bonsai_library.js`'s `foldInsert` actually renders — the two disagree whenever a real
- * blob is resolvable (SampleCastle resolves 100% of its 3225 elements; most classes, not just furniture,
+ * blob is resolvable (SampleCastle: 1,924 of its 3,225 elements resolve — measured 2026-09-18; the older
+ * "100%" claim here was wrong; most classes, not just furniture,
  * show a real mismatch). Where a real blob IS resolvable, `_readBoxes()` now computes the TRUE world AABB
  * straight from it — `real_geometry.js`'s own documented ground truth: world = center_xyz + R(rotation_z)·
  * rawVert, for every raw vertex (envelope of the ROTATED+TRANSLATED mesh, not just a centre-shift) —
  * reusing `RealGeometry.buildGeometryIndex` (a sibling pure-DB module, same design as this file) rather
- * than re-deriving the same decode/dedup logic. Yaw-only (`rotation_z`): every building measured so far has
- * `rotation_x=rotation_y=0` (arc_editable.js's own recon, §ARC-3AXIS) — a genuinely 3-axis-rotated element
+ * than re-deriving the same decode/dedup logic. Yaw-only (`rotation_z`): its stated premise — "every
+ * building measured so far has `rotation_x=rotation_y=0`" — is FALSE, and was corrected at its source in
+ * bim-ootb #1738: the shipped `SampleCastle_ARC.db` carries 293 rows with `rotation_y = +/-pi/2` exactly.
+ * So this guard DOES fire on real data, and is a suspect for part of the residual 11 (see §XEDGE-GEOWIRE).
+ * The 3-axis render path it distrusts is now itself witnessed (W-ARC-3AXIS: 230 genuinely rotated, 0
+ * dropped), so lifting the guard is probably safe — but that is its own measured change, not assumed here.
+ * Today, a genuinely 3-axis-rotated element
  * falls back to the coarse bbox below rather than risk an under-tested quaternion port (same conservative
  * non-invent choice arc_editable.js made). Falls back to the coarse `element_transforms` bbox when no real
  * blob resolves (RealGeometry absent, no `geometry_hash`, missing blob, or degenerate <3 verts) — today's
@@ -45,6 +60,22 @@
  *
  * Scale: sweep-and-prune on X (sort by minX, active window pruned by maxX) → near-linear on the 48k
  * Terminal substrate, replacing the Python rtree candidate query. Pure over the DB (node-witnessable).
+ */
+
+/*
+ * §XEDGE-GEOWIRE (2026-09-18) — THE §REAL-AABB FIX ABOVE NEVER RAN IN PRODUCTION UNTIL NOW.
+ * `str_walker_outliner.js` called `deriveAll(db)` with ONE argument, so `opts.geoDb` was always undefined,
+ * `_buildRealVerts` resolved 0 elements, and EVERY element silently took the coarse fallback above. It was
+ * not a missing argument: measured console order on a real open is §XEDGE-ALL -> §STRWALK-MO -> `geoDb
+ * cache-MISS -> fetch` -> §GEO-SERVED, i.e. the derivation ran BEFORE the geometry was even requested. An
+ * ORDERING bug, caused in effect by §GEO-SERVED (#1090) moving geometry into separate `*_geo.db` files.
+ * Fixed by re-deriving in the geo-fetch continuation (`_reDeriveXEdgesWithGeo`). Measured, SampleCastle:
+ *     before   0 resolved      abuts 10,612   G4  9,817 checked,  843 disagree (8.6%)
+ *     after    1,924/3,225     abuts 13,841   G4 12,983 checked,   11 disagree (0.1%)
+ * SampleHouse G4 went 2 -> 0. The +2,371 editable abuts edges are real adjacency the mis-placed coarse box
+ * could not see. The residual 11 is HONESTLY LEFT RED in the witness — not relaxed to pass.
+ * This file still has NO console output of its own; that is why the regression stayed invisible ~7 weeks.
+ * The `§XEDGE-GEO` provenance line now lives at the call site, and W-XEDGE-REAL-AABB's G6 asserts on it.
  */
 (function (window) {
   'use strict';
