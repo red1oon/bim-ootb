@@ -3,9 +3,10 @@
  * (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7, bake-panel toggle).
  *
  * THE ISSUE IT PROVES OR DISPROVES — exactly one, and it is worth being precise about:
- *   The Alt+C bake panel's "Sun compass" checkbox has to spell the same field name in SIX places
- *   (the `_state` default, the stored-path reader, the panel census, the DOM sync list, the
- *   checkbox's own element id, and the change handler) and then match a SEVENTH in
+ *   The Alt+C bake panel's "Sun compass" toggle has to spell the same name in SIX places (the
+ *   `_state` default, the stored-path reader, the panel census, the DOM sync list, the id in the
+ *   §CPE_TOGGLE_ICONS table that renders the button, and the change handler) and then match a
+ *   SEVENTH in
  *   cinema_maxq.js's overlay-flag list and an EIGHTH in cli_silent_bake.js. If any one of them
  *   drifts, the box renders, ticks, saves, and does NOTHING — silently. That is this project's
  *   recurring defect class and the same shape as the `true_north_angle` stub this whole feature
@@ -61,8 +62,19 @@ var CHAIN = [
    function (f) { return new RegExp('\\b' + f + ':\\s*!!ov\\.' + f + '\\b').test(src.editor); }],
   ['editor: in the DOM sync list, by element id',
    function (f, id) { return src.editor.indexOf("['" + id + "', !!_state." + f + "]") >= 0; }],
-  ['editor: the checkbox element exists with that id',
-   function (f, id) { return src.editor.indexOf('id="' + id + '"') >= 0; }],
+  // ⚠ REWRITTEN 2026-09-19 for §CPE_TOGGLE_ICONS. The rows used to be seven hand-written
+  // `<input id="cpe-...">` literals; they are now generated from one TOGGLES table, so the literal
+  // `id="cpe-sun-compass"` no longer appears anywhere in the source. All three subjects failed
+  // this rule at once — including both CONTROLS, which is the signal that the RULE went stale
+  // rather than the feature breaking. Loosening it to something that passes would have thrown away
+  // the check; it is re-pointed at where the id actually lives now, and the generic renderer rule
+  // below proves the table reaches a real input.
+  ['editor: the id is declared in the toggle table',
+   function (f, id) { return new RegExp("\\{\\s*id:\\s*'" + id + "'").test(src.editor); }],
+  ['editor: the table is rendered into a real checkbox input',
+   function () {
+     return /'<input id="' \+ t\.id \+ '" type="checkbox"/.test(src.editor);
+   }],
   ['editor: a change handler writes _state back',
    function (f, id) {
      return src.editor.indexOf("getElementById('" + id + "')") >= 0 &&
@@ -105,11 +117,94 @@ link('cli_silent_bake: it is put on FLAGS under the same name',
 
 // ONE BOX, NOT THREE — the whole point of the directive this implements. If someone later splits
 // the bundle, this fails and they have to decide deliberately rather than by drift.
-var boxes = (src.editor.match(/id="cpe-sun-compass/g) || []).length;
+var boxes = (src.editor.match(/\{\s*id: 'cpe-sun-compass'/g) || []).length;
 link('exactly ONE checkbox governs the whole compass overlay', boxes === 1,
      'found ' + boxes + ' — the rose, the day-of-year and the sun-angle readout are one idea');
 link('no separate day-of-year or sun-angle checkbox was added',
      src.editor.indexOf('cpe-sun-day') < 0 && src.editor.indexOf('cpe-sun-angle') < 0);
+
+// ── §CPE_TOGGLE_ICONS — the strip's REAL rendered markup, not a grep of the source. ────────────
+// The IIFE that builds the strip needs only an optional `ICONS` global and returns a string, so it
+// can be sliced out and run — the same trick bim-compiler's scripts/witness_georef_extract.py uses
+// to reach two functions inside a CLI. That turns every check below from "the source mentions it"
+// into "the markup actually contains it", which is a different and much stronger claim, and it is
+// what catches a template typo that no amount of grepping the table would.
+(function () {
+  var a = src.editor.indexOf("(function () {\n          var I = (typeof ICONS !== 'undefined')");
+  var b = src.editor.indexOf("})() +", a);
+  if (a < 0 || b < 0) {
+    link('the toggle-strip builder can be located for a render check', false,
+         'slice markers not found — if the IIFE was refactored, re-point these markers');
+    return;
+  }
+  // Give the slice the REAL icon set. Without it `ICONS` is undefined, `I` falls back to {}, and
+  // the three panels.js icons resolve to null — so the render check would measure the stub's
+  // behaviour instead of the browser's and report 6 empty slots where production has 3. That is
+  // exactly the kind of assertion-about-the-harness this project's VACUOUS rule exists to stop, and
+  // the check below caught it on the first run. panels.js declares `var ICONS = {...}` at top level,
+  // so it slices out by brace-matching.
+  var ICONS;
+  (function () {
+    var pj = fs.readFileSync(path.join(__dirname, '..', 'panels.js'), 'utf8');
+    var i = pj.indexOf('var ICONS = {');
+    if (i < 0) return;
+    var depth = 0, j = pj.indexOf('{', i);
+    for (var k = j; k < pj.length; k++) {
+      if (pj[k] === '{') depth++;
+      else if (pj[k] === '}') { depth--; if (depth === 0) { j = k; break; } }
+    }
+    try { ICONS = eval('(' + pj.slice(pj.indexOf('{', i), j + 1) + ')'); }
+    catch (e) { /* leave undefined; the count check below reports the consequence */ }
+  })();
+  link('the real panels.js icon set is available to the render check',
+       !!ICONS && !!ICONS.ruler && !!ICONS.triangle && !!ICONS.disciplines,
+       ICONS ? Object.keys(ICONS).length + ' icons' : 'ICONS could not be sliced');
+
+  var html;
+  try {
+    html = eval(src.editor.slice(a, b + 4));
+  } catch (e) {
+    link('the toggle strip renders without throwing', false, e.message);
+    return;
+  }
+  link('the toggle strip renders without throwing', typeof html === 'string' && html.length > 0);
+
+  var inputs = html.match(/<input id="(cpe-[a-z-]+)"/g) || [];
+  link('the strip renders exactly 7 toggles', inputs.length === 7,
+       inputs.length + ': ' + inputs.join(' ').replace(/<input id="/g, ''));
+  SUBJECTS.forEach(function (s2) {
+    link('rendered markup contains ' + s2.id,
+         html.indexOf('<input id="' + s2.id + '" type="checkbox"') >= 0);
+  });
+  link('Buildup is the only one checked by default',
+       (html.match(/type="checkbox" checked/g) || []).length === 1);
+
+  // Every button carries its hint as a title — this is the regression the restyle could have
+  // caused: the prose rows became icons, and an icon that dropped its hint would look finished.
+  var titles = html.match(/title="[^"]+"/g) || [];
+  link('all 7 buttons carry a non-empty title (the hint text survived the restyle)',
+       titles.length === 7 && titles.every(function (t) { return t.length > 40; }),
+       titles.length + ' titles');
+  link('the Sun compass title still states it draws nothing without a site lat/long',
+       /silent on a model with no site lat\/long/.test(html));
+  link('the Reveal title still states its render mechanism is unbuilt',
+       /retraces the walk/.test(html));
+
+  // Icons: three stroked, one flat, three still awaiting artwork.
+  var flat = (html.match(/class="cpe-flat"/g) || []).length;
+  var noicon = (html.match(/class="cpe-noicon"/g) || []).length;
+  var svgs = (html.match(/<svg /g) || []).length;
+  link('the compass renders as a flat filled icon on its own viewBox', flat === 1 &&
+       html.indexOf('viewBox="0 0 100 100"') >= 0);
+  link('the compass artwork is inlined verbatim (needle + ring colours)',
+       html.indexOf('#ff485b') >= 0 && html.indexOf('#7e7e7e') >= 0);
+  link('icons + placeholders account for all 7 buttons', svgs + noicon === 7,
+       svgs + ' svg + ' + noicon + ' awaiting artwork');
+  link('the three honest reuses from panels.js resolved (ruler, triangle, disciplines)',
+       svgs === 4, svgs + ' icons rendered — 3 reused + 1 traced compass');
+  link('no placeholder art was invented for the slots still being sourced', noicon === 3,
+       noicon + ' caption-only buttons — buildup, room titles, storey highlight');
+})();
 
 var verdict = fails === 0 ? 'PASS' : 'FAIL';
 console.log('§SUN_COMPASS_WIRING ' + verdict + ' checks=' + checks + ' wrong=' + fails +

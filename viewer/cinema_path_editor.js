@@ -862,6 +862,9 @@
                   'the door it walks out through — drag it back inside to shape the interior leg',
                   'end of the WALK, not the film; its far end stretches the orbit'];
 
+  // §CPE_TOGGLE_ICONS — the strip's own table, kept so a census can report what is on screen
+  // rather than re-deriving it from the DOM.
+  var _toggleSpecs = [];
   function _buildPanel() {
     if (!document.getElementById('cpe-style')) {
       var st = document.createElement('style');
@@ -872,7 +875,46 @@
         '#cpe-panel button{transition:background .15s,color .15s,border-color .15s}' +
         '#cpe-panel button:disabled{opacity:.45;cursor:default}' +
         '#cpe-panel input{background:#15181c;border:1px solid #3a3f47;border-radius:3px;padding:2px 4px;' +
-        'font-size:11px;font-family:monospace;color:#ddd}';
+        'font-size:11px;font-family:monospace;color:#ddd}' +
+        // §CPE_TOGGLE_ICONS (red1, 2026-09-19) — the seven overlay toggles as icon buttons that
+        // LIGHT UP when checked, instead of seven stacked rows of checkbox-plus-prose.
+        //
+        // ⚠ COSMETIC ONLY, AND THAT IS LOAD-BEARING. Every <input type="checkbox"> keeps its exact
+        // id, its change handler, its _state field and its place in the panel census and the DOM
+        // sync list. Nothing in the wiring moved — W-SUN-COMPASS-WIRING still passes unchanged,
+        // which is the point: a restyle that quietly renamed an id would silently stop a toggle
+        // from reaching the bake, and that is this project's recurring defect shape.
+        // The input is hidden with opacity/position rather than display:none or visibility:hidden,
+        // so it stays focusable and keyboard-reachable — a checkbox you cannot tab to is not a
+        // checkbox, and an icon strip is exactly where that gets lost.
+        '#cpe-panel .cpe-tgls{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}' +
+        '#cpe-panel .cpe-tgl{position:relative;display:flex;flex-direction:column;align-items:center;' +
+        'justify-content:center;gap:3px;width:60px;padding:6px 2px;cursor:pointer;border-radius:5px;' +
+        'border:1px solid #3a3f47;background:#1b1f24;color:#8a9199;font-size:9px;line-height:1.15;' +
+        'text-align:center;transition:background .15s,color .15s,border-color .15s,box-shadow .15s}' +
+        '#cpe-panel .cpe-tgl input{position:absolute;opacity:0;width:100%;height:100%;top:0;left:0;' +
+        'margin:0;cursor:pointer}' +
+        '#cpe-panel .cpe-tgl svg{width:18px;height:18px;stroke:currentColor;fill:none;' +
+        'stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}' +
+        // The lit state. Amber to match the panel's own §CPE_LIVE breathe colour, so "this overlay
+        // is on" reads as the same language as the rest of this window rather than a new one.
+        '#cpe-panel .cpe-tgl:has(input:checked){background:#2e2410;color:#ffb74d;border-color:#ffb74d;' +
+        'box-shadow:0 0 6px rgba(255,183,77,0.35)}' +
+        '#cpe-panel .cpe-tgl:hover{border-color:#6a7280;color:#cfd6dd}' +
+        // Keyboard focus must be visible, and :has(:focus-visible) is the only thing that can show
+        // it once the real input is transparent.
+        '#cpe-panel .cpe-tgl:has(input:focus-visible){outline:2px solid #64b5f6;outline-offset:1px}' +
+        // A slot with no icon yet is NOT broken — it is a caption-only button, and it says so by
+        // reserving the same box height so the strip does not jump when real icons land.
+        '#cpe-panel .cpe-tgl .cpe-noicon{width:18px;height:18px;border-radius:3px;' +
+        'border:1px dashed #4a4f57;box-sizing:border-box}' +
+        // Flat filled artwork keeps its own colours and must NOT inherit the stroke the line icons
+        // rely on — a 1.8px currentColor stroke on a filled polygon outlines every shape.
+        // It dims when unchecked and comes to full strength when lit, so an off button still reads
+        // as off in a strip of coloured icons without the artwork being recoloured.
+        '#cpe-panel .cpe-tgl svg.cpe-flat{stroke:none;opacity:.55;transition:opacity .15s}' +
+        '#cpe-panel .cpe-tgl:hover svg.cpe-flat{opacity:.8}' +
+        '#cpe-panel .cpe-tgl:has(input:checked) svg.cpe-flat{opacity:1}';
       document.head.appendChild(st);
     }
     var d = document.createElement('div');
@@ -914,48 +956,106 @@
           '<button id="cpe-mark-in" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark in</button> ' +
           '<button id="cpe-mark-out" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark out</button> ' +
           '<button id="cpe-clip-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">whole film</button></div>' +
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox" checked> ' +
-          'build the model as the film plays</label> <span style="color:#666">(follows the Time Machine, not a programme)</span></div>' +
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-room-title" type="checkbox"> ' +
-          'room titles</label> <span style="color:#666">(name card as the camera enters each room)</span> ' +
-          // §CPE_DISCIPLINE_REVEAL (prompts/CINEMA_DISCIPLINE_REVEAL.md) — panel wiring only so far.
-          // Checkbox + state round-trip through save/restore, same as every sibling here; the actual
-          // ghost/pacing render mechanism is NOT built (spec Open Question 1, render approach, still
-          // unresolved) — the hint says so, so checking it does not silently do nothing unexplained.
-          '<label style="cursor:pointer;margin-left:10px"><input id="cpe-reveal" type="checkbox"> ' +
-          'Reveal</label> <span style="color:#666">(retraces the walk, hiding ARC/STR to show MEP, cycling each discipline before the finale)</span></div>' +
-        // §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md) — the mesh-true clash pairs as world content.
-        // The hint states the two things a user cannot see from the checkbox: the pairs are
-        // triangle-exact (not the bounding-box list, a third of which is false), and they stand from
-        // frame 0 rather than appearing when the buildup reaches them.
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-clash" type="checkbox"> ' +
-          'Clash pairs</label> <span style="color:#666">(mesh-true pairs, red/blue at each contact, ' +
-          'pulsing from frame 0 so you see where the trouble is before it is built)</span></div>' +
-        // §FLYTHRU_DATUM (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §24) — the setting-out
-        // drawing. The hint names the two things the checkbox cannot show: the grid is the REAL
-        // column grid out of the DB, not a decorative module, and the marks are laid in the model's
-        // own planes, so they foreshorten with the building instead of facing the camera.
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-measure" type="checkbox"> ' +
-          'Measure</label> <span style="color:#666">(setting-out drawing from the real column grid — ' +
-          'numbered and lettered bubbles, bay chains that sum to the overall, storey rules; ' +
-          'up at frame 0, drawn in the model\'s own planes, occluded by the build as it rises)</span></div>' +
-        // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06) — the
-        // final 5 real seconds of the pull-back beat, ending exactly where the closing orbit begins,
-        // fill with each storey tinting through in sequence instead of just cruising toward the orbit.
-        // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — ONE box for the whole
-        // overlay: the ground rose, the day-of-year and the sun-angle readout are one idea and
-        // three checkboxes would let a user ask for a compass with no date on it. The hint names
-        // the two things the box cannot show: the north it draws is TRUE north out of the IFC (not
-        // the model grid, which is what every building in this fleet silently used until now), and
-        // it draws NOTHING at all on a building whose DB carries no site lat/long rather than
-        // inventing a location — the bake log says §SUN_COMPASS INCONCLUSIVE with the reason.
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-sun-compass" type="checkbox"> ' +
-          'Sun compass</label> <span style="color:#666">(TRUE-north rose on the ground from the IFC\'s ' +
-          'own georeference, with the day of the year off the 4D cursor and the sun\'s angle of attack ' +
-          'on the building — silent on a model with no site lat/long, never a guessed one)</span></div>' +
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-storey-reveal" type="checkbox"> ' +
-          'Storey highlight</label> <span style="color:#666">(each storey glows blue/green/yellow/orange ' +
-          'in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card)</span></div>' +
+        // §CPE_TOGGLE_ICONS (red1, 2026-09-19): "all 7 Alt+C panel toggles as icon buttons that
+        // light up when checked". Built from ONE table rather than seven hand-written rows, so the
+        // eighth overlay is a table entry and cannot be added with a mismatched id, a missing
+        // title or a forgotten style.
+        //
+        // ⚠ THE IDS, THE HANDLERS AND THE STATE FIELDS ARE UNCHANGED. This is presentation only.
+        // W-SUN-COMPASS-WIRING asserts the whole chain by name and still passes untouched — which
+        // is exactly what a cosmetic change has to be able to say for itself.
+        //
+        // ⚠ THE HINTS ARE NOT LOST, and that was the one real risk in this change. Each row's
+        // prose moved into `hint`, which becomes the button's `title`. It is information the icon
+        // cannot carry — that Clash pairs are mesh-true and not the bounding-box list a third of
+        // which is false; that Measure's grid is the REAL column grid out of the DB; that Reveal's
+        // render mechanism is NOT built; that Sun compass draws NOTHING on a model with no site
+        // lat/long. Dropping those to make room for pictures would have been a downgrade wearing a
+        // restyle.
+        //
+        // ⚠ ICONS: only where an HONEST one already exists in this codebase's own set
+        // (panels.js `ICONS`, a global). Three of the seven have one, and each is the icon the
+        // SAME feature already uses elsewhere in this UI, so reusing it is consistency rather than
+        // a guess: `ruler` for Measure, `triangle` for Clash (panels.js's own Clash Matrix entry),
+        // `disciplines` for Reveal. The other four are `null` on purpose — red1 is sourcing
+        // artwork and a peer session is tracing the compass, and inventing four placeholder icons
+        // now would mean four things to un-pick later. A null slot renders a caption-only button
+        // at the same size, so the strip does not reflow when the real art lands. To add one:
+        // put the SVG inner markup on the entry, nothing else changes.
+        // ⚠ `I.draftingCompass` is NOT the right icon for the sun compass — checked, it is a pair
+        // of legs and a pivot (the drawing instrument), not a magnetic rose.
+        (function () {
+          var I = (typeof ICONS !== 'undefined') ? ICONS : {};
+          var TOGGLES = [
+            { id: 'cpe-buildup', label: 'Buildup', checked: true, icon: null,
+              hint: 'build the model as the film plays (follows the Time Machine, not a programme)' },
+            { id: 'cpe-room-title', label: 'Room titles', icon: null,
+              hint: 'name card as the camera enters each room' },
+            // §CPE_DISCIPLINE_REVEAL (prompts/CINEMA_DISCIPLINE_REVEAL.md) — panel wiring only so
+            // far. The checkbox + state round-trip through save/restore like every sibling here;
+            // the ghost/pacing render mechanism is NOT built (spec Open Question 1, render
+            // approach, unresolved). The hint says so, so ticking it does not silently do nothing
+            // unexplained.
+            { id: 'cpe-reveal', label: 'Reveal', icon: I.disciplines && I.disciplines.svg,
+              hint: 'retraces the walk, hiding ARC/STR to show MEP, cycling each discipline before the finale' },
+            // §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md) — the mesh-true clash pairs as world
+            // content. The hint states the two things a user cannot see from the button: the pairs
+            // are triangle-exact (not the bounding-box list, a third of which is false), and they
+            // stand from frame 0 rather than appearing when the buildup reaches them.
+            { id: 'cpe-clash', label: 'Clash pairs', icon: I.triangle && I.triangle.svg,
+              hint: 'mesh-true pairs, red/blue at each contact, pulsing from frame 0 so you see where the trouble is before it is built' },
+            // §FLYTHRU_DATUM (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §24) — the setting-out
+            // drawing. The hint names the two things the button cannot show: the grid is the REAL
+            // column grid out of the DB, not a decorative module, and the marks are laid in the
+            // model's own planes, so they foreshorten with the building instead of facing camera.
+            { id: 'cpe-measure', label: 'Measure', icon: I.ruler && I.ruler.svg,
+              hint: 'setting-out drawing from the real column grid — numbered and lettered bubbles, bay chains that sum to the overall, storey rules; up at frame 0, drawn in the model\'s own planes, occluded by the build as it rises' },
+            // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — ONE button for the
+            // whole overlay: the ground rose, the day-of-year and the sun-angle readout are one
+            // idea, and three buttons would let a user ask for a compass with no date on it.
+            // The artwork is red1's own, traced from his Flaticon source into flat SVG by a peer
+            // session (~300 bytes inline, against a 202 KB source PNG) and inlined here verbatim —
+            // colours and vertices unaltered. It is a magnetic rose, which is what this feature
+            // needs; `I.draftingCompass` is a pair of legs and a pivot and would have been wrong.
+            // ⚠ Its red needle points NORTH-EAST as drawn, not up. That is the artwork, not a bug
+            // to "correct" here — it is a button icon, not the rose the bake draws, and the rose
+            // that matters is the world-space one whose bearing W-SUN-COMPASS pins to -5.000000°
+            // on Hospital. Do not rotate the icon to "agree" with it; they are different objects.
+            // The lit state is the BUTTON's frame (amber border, glow), not a recolour of the
+            // artwork — repainting someone's traced icon per-state is how it stops matching source.
+            { id: 'cpe-sun-compass', label: 'Sun compass', viewBox: '0 0 100 100', flat: true,
+              icon: '<circle cx="50" cy="49" r="49.5" fill="#7e7e7e"/>' +
+                    '<circle cx="50" cy="49" r="39.5" fill="#aaaaaa"/>' +
+                    '<polygon points="67.5,13.9 54.0,50.7 43.8,45.1" fill="#ff485b"/>' +
+                    '<polygon points="30.3,81.9 43.8,45.1 54.0,50.7" fill="#ffffff"/>',
+              hint: 'TRUE-north rose on the ground from the IFC\'s own georeference, with the day of the year off the 4D cursor and the sun\'s angle of attack on the building — silent on a model with no site lat/long, never a guessed one' },
+            // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06)
+            // — the final 5 real seconds of the pull-back beat, ending exactly where the closing
+            // orbit begins, fill with each storey tinting through in sequence.
+            { id: 'cpe-storey-reveal', label: 'Storey highlight', icon: null,
+              hint: 'each storey glows blue/green/yellow/orange in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card' }
+          ];
+          _toggleSpecs = TOGGLES;
+          function esc(t) {
+            return String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                            .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+          // TWO KINDS OF ICON, and they cannot share one rule. panels.js's set is STROKED line
+          // art on a 24-box that inherits `stroke:currentColor` and so takes the button's lit
+          // colour for free. red1's artwork is FLAT FILLED shapes on a 100-box carrying its own
+          // colours. Inheriting `stroke-width:1.8` onto a filled polygon outlines every shape in
+          // the button's text colour, which is why `flat` gets its own class and its own viewBox
+          // rather than everything being forced into one.
+          return '<div class="cpe-tgls">' + TOGGLES.map(function (t) {
+            var svg = t.icon
+              ? '<svg viewBox="' + (t.viewBox || '0 0 24 24') + '"' +
+                (t.flat ? ' class="cpe-flat"' : '') + ' aria-hidden="true">' + t.icon + '</svg>'
+              : '<span class="cpe-noicon"></span>';
+            return '<label class="cpe-tgl" title="' + esc(t.label + ' — ' + t.hint) + '">' +
+              '<input id="' + t.id + '" type="checkbox"' + (t.checked ? ' checked' : '') + '>' +
+              svg + '<span>' + esc(t.label) + '</span></label>';
+          }).join('') + '</div>';
+        })() +
         // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+C bake always
         // renders at this window's canvas (cinema_maxq.js:1120 reads renderer.domElement), so this
         // select does not resize anything here; it is stored on the path and cli_silent_bake.js

@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1178';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1179';   // bump on each deploy; per-change detail is the git commit message.
 // v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
 //   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
 //   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
@@ -198,6 +198,13 @@ const CACHE_VERSION = 'v1178';   // bump on each deploy; per-change detail is th
 //   cinema_path_editor.js gains ONE Alt+C checkbox ("Sun compass") governing the whole overlay —
 //   rose + day-of-year + sun-angle readout together, off by default so every saved path re-bakes
 //   byte-identically. cli_silent_bake.js gains --sun-compass/--no-sun-compass.
+// v1179 (2026-09-19) §CPE_TOGGLE_ICONS: the Alt+C panel's seven overlay toggles are icon buttons
+//   that light amber when checked, built from ONE table instead of seven hand-written rows.
+//   COSMETIC ONLY — every checkbox id, handler, _state field, census entry and DOM-sync row is
+//   unchanged, and W-SUN-COMPASS-WIRING asserts the whole chain by name. The row hints moved into
+//   each button's title rather than being dropped. Icons: red1's traced compass (flat, inlined
+//   ~300 bytes) plus three honest reuses from panels.js's own set (ruler/triangle/disciplines);
+//   three slots stay caption-only until artwork lands rather than carrying invented placeholders.
 // v1177 (2026-09-14) TM_4D5D_VARIANCE_LANE §S7-INJECT: new viewer/schedule_inject.js ("Generate
 //   programme" — materializeZones+persistDb on the fly, best-effort save, honest saved/session-only
 //   message); panels.js 'sched4d' pill gate changed from "has a schedule" to "engine capable" so the
