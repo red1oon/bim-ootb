@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1180';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1181';   // bump on each deploy; per-change detail is the git commit message.
 // v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
 //   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
 //   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
@@ -198,6 +198,11 @@ const CACHE_VERSION = 'v1180';   // bump on each deploy; per-change detail is th
 //   cinema_path_editor.js gains ONE Alt+C checkbox ("Sun compass") governing the whole overlay —
 //   rose + day-of-year + sun-angle readout together, off by default so every saved path re-bakes
 //   byte-identically. cli_silent_bake.js gains --sun-compass/--no-sun-compass.
+// v1181 (2026-09-19) §SUN_COMPASS readout regrouped (red1, after seeing a real frame): the date,
+//   the sun angles and the facade angle-of-attack are ONE fixed block bottom-left; the rose keeps
+//   only its "N". The date used to be pinned under the rose in world space, and Hospital frame 5/8
+//   — camera inside a washroom, ground not in view — had the sun line present and the date GONE.
+//   A film must not stop saying what day it is because of where the camera is.
 // v1180 (2026-09-19) §SUN_COMPASS two real fixes to cpe_sun_compass.js + cinema_maxq.js since
 //   v1179, so the version MUST move or a client keeps serving the old module: (1) the per-frame
 //   sunCompassAt call was inside `if (_buildup && _bkState)` and never ran on a buildup-off bake —

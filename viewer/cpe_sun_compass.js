@@ -476,17 +476,29 @@ function setupCpeSunCompass(A) {
         ctx.fillText('N', nTip.x, nTip.y);
         ctx.font = font;
       }
-      var c = proj(info.anchorThree);
-      if (c.z < 1) plate(c.x, c.y + fontPx * 2.2, labels.day, 'center');
     }
 
-    // The fixed readout. Always drawn while the compass is live, rose on screen or not — the
-    // peer-review call on §7 was that the sun angle is a readout, not a 3D placement.
+    // ── THE READOUT: date, sun, angle of attack, TOGETHER, bottom left. ─────────────────────────
+    // ⚠ The date used to be a plate pinned UNDER THE ROSE in world space, and that was wrong for a
+    // reason a still frame makes obvious. MEASURED on a real Hospital bake, frame 5 of 8: the
+    // camera is inside a washroom, the ground is not in view, the rose is off-screen — and the
+    // "Sun below the horizon" line was still there while the DATE had vanished. Two halves of one
+    // readout, one of them disappearing whenever the film goes indoors or close-in, which is most
+    // of a walkthrough. The film must not stop saying what day it is because of where the camera
+    // happens to be.
+    // So all three lines live in ONE fixed block now, and the rose keeps only its "N" — the graphic
+    // is the graphic, the words are the words. The compass may be hidden, occluded by the building
+    // during the closing orbit, or out of frame entirely; the readout is unaffected.
+    // Bottom LEFT, per red1: it is the one corner nothing else uses — cpe_day_counter.js owns a
+    // corner of the caller's choosing and stacks the path box and resource panel under it, and
+    // cpe_room_title.js's caption is a CENTRED plate in the lower band.
+    // Order is date, sun, facade — read top-down, drawn bottom-up.
     var mx = Math.round(w * 0.016), my = Math.round(h * 0.026);
     var lineH = Math.round(fontPx * 2.1);
     var y0 = h - my - lineH / 2;
     if (labels.attack) { plate(mx, y0, labels.attack, 'left'); y0 -= lineH; }
-    plate(mx, y0, labels.sun, 'left');
+    plate(mx, y0, labels.sun, 'left'); y0 -= lineH;
+    plate(mx, y0, labels.day, 'left');
     ctx.restore();
   };
 

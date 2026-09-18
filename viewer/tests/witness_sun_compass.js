@@ -269,6 +269,28 @@ if (built.facade) {
   truth('the sun angles reach the exported frame', /Sun \d+° az/.test(joined) && /° alt/.test(joined), joined);
   truth('the angle of attack reaches the exported frame', /° onto the \w+ facade/.test(joined), joined);
   truth('the true-north letter N is drawn', drawn.indexOf('N') >= 0, joined);
+  // ⚠ THE READOUT MUST NOT DEPEND ON THE ROSE BEING ON SCREEN. A real Hospital frame (camera
+  // inside a washroom, ground not in view) showed the sun line present and the DATE gone, because
+  // the date was pinned under the rose in world space. All three lines are fixed now. Driven here
+  // with NO camera at all, which is the strongest form of "the rose cannot be projected".
+  (function () {
+    var noCam = [], savedCam = A.camera;
+    A.camera = null;
+    var ctx2 = {
+      save: function () {}, restore: function () {}, beginPath: function () {},
+      fill: function () {}, fillRect: function () {}, roundRect: function () {},
+      measureText: function (t) { return { width: t.length * 7 }; },
+      fillText: function (t) { noCam.push(t); },
+      globalAlpha: 1, fillStyle: '', font: '', textAlign: '', textBaseline: ''
+    };
+    A.sunCompassCompositeOntoCanvas(ctx2, 1920, 1080, info, 1);
+    A.camera = savedCam;
+    var j2 = noCam.join(' | ');
+    truth('with the rose unprojectable, the DATE still draws', /day 172 of the year/.test(j2), j2);
+    truth('with the rose unprojectable, the SUN line still draws', /Sun \d+° az/.test(j2), j2);
+    truth('with the rose unprojectable, the FACADE line still draws', /onto the \w+ facade/.test(j2), j2);
+    truth('and the world-anchored N is correctly skipped', noCam.indexOf('N') < 0, j2);
+  })();
 
   // A night frame must say so rather than print a below-horizon altitude that reads as nonsense.
   var nightInfo = A.sunCompassAt(Date.UTC(2026, 5, 21, 5, 30));
