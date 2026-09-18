@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1184';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1185';   // bump on each deploy; per-change detail is the git commit message.
 // v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
 //   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
 //   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
@@ -198,6 +198,10 @@ const CACHE_VERSION = 'v1184';   // bump on each deploy; per-change detail is th
 //   cinema_path_editor.js gains ONE Alt+C checkbox ("Sun compass") governing the whole overlay —
 //   rose + day-of-year + sun-angle readout together, off by default so every saved path re-bakes
 //   byte-identically. cli_silent_bake.js gains --sun-compass/--no-sun-compass.
+// v1185 (2026-09-19) §SUN_CLOCK (red1): an analogue face with hour/minute hands showing the SOLAR
+//   hour each frame is lit at, in the day counter's own corner directly under it (bottom-left was
+//   already taken by the date/sun/facade lines). Ties to the compass toggle — no compass, no clock.
+//   It returns its drawn height so the path box and pie stack below it without overlap.
 // v1184 (2026-09-19) §SUN_ONE film clock SWEEPS (red1: the film runs all the days but samples
 //   different times of day "to give a perception of a single half day"). The solar hour now moves
 //   9:00 -> 17:00 with the film fraction while the DATE advances underneath, so the sun rises,

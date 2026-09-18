@@ -533,6 +533,91 @@ function setupCpeSunCompass(A) {
     ctx.restore();
   };
 
+  // ── §SUN_CLOCK — an analogue face showing the hour this frame is lit at. ────────────────────
+  // red1, 2026-09-19: "another 'clock' showing its hr/min hands... make it perhaps stay with a
+  // corner together with the Day counter".
+  //
+  // WHAT IT SHOWS, precisely: the SOLAR hour the sun was computed at, not a wall clock. Those are
+  // different — solar noon is when the sun actually crosses the meridian here, which is why the
+  // film's light is the same height in Boston and in Penang at the same reading. Labelled
+  // "solar" under the dial so it is never mistaken for local time.
+  //
+  // It joins the day counter's COLUMN rather than the bottom-left readout, per red1: that corner
+  // is already a stack (cpe_day_counter, then §CPE_PATH_OVERVIEW, then §CPE_RESOURCE_PANEL) and
+  // the caller owns the order — this function owns only its own drawing, exactly as
+  // cpe_path_overview.js's header states the contract. Bottom-left would have collided with the
+  // date/sun/facade lines that already live there.
+  var CLOCK_POS = { tr: 1, tl: 1, br: 1, bl: 1 };
+  A.sunClockBoxSize = function (h) { return Math.round(h * 0.105); };
+  A.sunClockCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
+    if (!ctx || !info || info.noCursor || info.solarHour == null) return 0;
+    var op = (opacity == null) ? 1 : Math.min(1, opacity);
+    if (!(op > 0)) return 0;
+    var d = A.sunClockBoxSize(h), r = d / 2;
+    var margin = Math.round(h * 0.028);
+    var at = (pos && CLOCK_POS[pos]) ? pos : 'tr';
+    var sy = stackY || 0;
+    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - d;
+    var y = (at === 'bl' || at === 'br') ? h - margin - d - sy : margin + sy;
+    var cx = x + r, cy = y + r;
+
+    var hour = Math.floor(info.solarHour);
+    var mins = Math.round((info.solarHour - hour) * 60);
+    if (mins === 60) { mins = 0; hour += 1; }
+
+    ctx.save();
+    ctx.globalAlpha = op;
+    // Same plate language as the counter above it: 0.45 black, no invented second style.
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(232,238,246,0.55)';
+    ctx.lineWidth = Math.max(1, r * 0.035);
+    ctx.stroke();
+
+    // Twelve ticks; the quarters run longer so the dial reads at a glance on a 1280-wide frame.
+    for (var t = 0; t < 12; t++) {
+      var a = t * Math.PI / 6;
+      var inner = r * ((t % 3 === 0) ? 0.72 : 0.84);
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.sin(a) * inner, cy - Math.cos(a) * inner);
+      ctx.lineTo(cx + Math.sin(a) * r * 0.92, cy - Math.cos(a) * r * 0.92);
+      ctx.strokeStyle = 'rgba(232,238,246,' + ((t % 3 === 0) ? '0.85' : '0.45') + ')';
+      ctx.lineWidth = Math.max(1, r * ((t % 3 === 0) ? 0.06 : 0.035));
+      ctx.stroke();
+    }
+    // Hands. The hour hand carries the minutes too, or it would jump on the hour like a cheap
+    // prop clock instead of creeping the way a real one does.
+    function hand(angle, len, width, colour) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.sin(angle) * len, cy - Math.cos(angle) * len);
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = Math.max(1, width);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+    hand(((hour % 12) + mins / 60) * Math.PI / 6, r * 0.50, r * 0.11, '#e8eef6');
+    hand((mins / 60) * Math.PI * 2, r * 0.76, r * 0.07, '#ffb74d');
+    ctx.beginPath();
+    ctx.arc(cx, cy, Math.max(1, r * 0.07), 0, Math.PI * 2);
+    ctx.fillStyle = '#ffb74d';
+    ctx.fill();
+
+    // The reading in words, because hands at this size are an impression, not a measurement — and
+    // "solar" is the part a viewer cannot infer from a dial.
+    var fontPx = Math.max(9, Math.round(h * 0.014));
+    ctx.font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+    ctx.fillStyle = '#e8eef6';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText((hour < 10 ? '0' : '') + hour + ':' + (mins < 10 ? '0' : '') + mins + ' solar',
+                 cx, y + d + Math.round(fontPx * 0.25));
+    ctx.restore();
+    return d + Math.round(fontPx * 1.4);
+  };
+
   A.sunCompassInfo = function () { return _last; };
 
   // ── Was the whole film dark? Called once after the frames, by cinema_maxq.js. ────────────────

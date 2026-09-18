@@ -481,6 +481,75 @@ if (built.facade) {
   A.sunCompassAt(Date.UTC(2026, 5, 21, 17, 30), 0.5);
 })();
 
+// ── CASE §SUN_CLOCK: the analogue face in the day-counter column. ──────────────────────────────
+// red1 asked for hour/minute hands showing the time the frame is lit at, in the counter's corner,
+// and confirmed it "ties in with the compass toggled ON". So: it must read the SAME solar hour the
+// sun was computed from (a clock that disagrees with its own sun is worse than no clock), it must
+// report its drawn height so the boxes stacked below cannot land on top of it, and it must draw
+// nothing at all when there is no cursor.
+(function () {
+  function recorder() {
+    var rec = { text: [], lines: [], arcs: [] };
+    var cx = 0, cy = 0;
+    rec.ctx = {
+      save: function () {}, restore: function () {}, beginPath: function () {},
+      fill: function () {}, fillRect: function () {}, stroke: function () {},
+      arc: function (x, y, r) { rec.arcs.push({ x: x, y: y, r: r }); },
+      moveTo: function (x, y) { cx = x; cy = y; },
+      lineTo: function (x, y) { rec.lines.push({ x0: cx, y0: cy, x1: x, y1: y }); },
+      measureText: function (t) { return { width: t.length * 7 }; },
+      fillText: function (t) { rec.text.push(t); },
+      globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: '',
+      font: '', textAlign: '', textBaseline: ''
+    };
+    return rec;
+  }
+  function draw(info, pos, stackY) {
+    var r = recorder();
+    r.h = A.sunClockCompositeOntoCanvas(r.ctx, 1280, 720, info, 1, pos || 'tr', stackY || 0);
+    return r;
+  }
+
+  var morning = A.sunCompassAt(Date.UTC(2026, 5, 21), 0.0);     // 09:00 solar
+  var evening = A.sunCompassAt(Date.UTC(2026, 5, 21), 1.0);     // 17:00 solar
+  var rm = draw(morning), re = draw(evening);
+
+  truth('the clock draws a dial', rm.arcs.length >= 1 && rm.lines.length >= 12,
+        rm.arcs.length + ' arcs, ' + rm.lines.length + ' lines');
+  truth('it reads the SAME hour the sun was computed at, and says it is solar',
+        rm.text.join(' ') === '09:00 solar', rm.text.join(' ') + ' vs solarHour=' + morning.solarHour);
+  truth('and it moves with the film', re.text.join(' ') === '17:00 solar', re.text.join(' '));
+  truth('it reports its drawn height so the stack below cannot overlap it', rm.h > 0, 'h=' + rm.h);
+
+  // The HANDS must actually move, not just the caption — a dial with static hands beside a moving
+  // caption is the kind of thing that ships and reads as broken.
+  function handEnds(r) {
+    // the last two lines drawn are the hour and minute hands (ticks come first)
+    return r.lines.slice(-2).map(function (L) {
+      return Math.round(Math.atan2(L.x1 - L.x0, L.y0 - L.y1) * 180 / Math.PI);
+    });
+  }
+  var hm = handEnds(rm), he = handEnds(re);
+  truth('the hour hand moves between morning and evening', hm[0] !== he[0],
+        'hour hand ' + hm[0] + '° -> ' + he[0] + '°');
+  // 09:00 -> hour hand at 270°(=-90), 17:00 -> 150°. Checked as a real bearing, not just "differs".
+  truth('the hour hand points where 09:00 belongs on a dial', Math.abs(hm[0]) === 90,
+        String(hm[0]));
+
+  // Corner + stack offset must be honoured, or it lands on the counter.
+  var top = draw(morning, 'tr', 0), lower = draw(morning, 'tr', 200);
+  truth('a stack offset moves it down the column',
+        lower.arcs[0].y - top.arcs[0].y === 200,
+        'dy=' + (lower.arcs[0].y - top.arcs[0].y));
+  var left = draw(morning, 'tl', 0);
+  truth('the left corner really is a different corner', left.arcs[0].x < top.arcs[0].x,
+        'tl x=' + left.arcs[0].x.toFixed(0) + '  tr x=' + top.arcs[0].x.toFixed(0));
+
+  // No cursor -> no clock. There is no time to show, and a dial reading 13:00 would be invented.
+  truth('no 4D cursor -> no clock at all', draw(A.sunCompassAt(null)).h === 0);
+  A.sunCompassAt(Date.UTC(2026, 5, 21, 17, 30), 0.5);
+})();
+
 // ── CASE NO-CURSOR: a film with no buildup has no 4D date. Fixed 2026-09-19. ────────────────────
 // THE DEFECT THIS EXISTS FOR, found by looking at a real baked frame and not by any witness:
 // cinema_maxq.js called sunCompassAt from INSIDE `if (_buildup && _bkState)`, so a bake with the

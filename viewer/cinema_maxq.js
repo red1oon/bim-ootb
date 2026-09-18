@@ -837,6 +837,20 @@
     var _gapY = Math.round(h * 0.012);
     var _stackY = 0;
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _stackY = A.dayCounterBoxSize(h).h + _gapY;
+    // §SUN_CLOCK — the analogue face for the hour this frame is lit at, directly under the day
+    // counter in the SAME column (red1's placement: "stay with a corner together with the Day
+    // counter"). It returns its own drawn height so the boxes below cannot overlap it — the caller
+    // owns the order, the overlay owns its drawing, same contract as the path box and the pie.
+    // Corner follows the counter's, since §CPE_HUD_STACK's ruling is one preference for the whole
+    // column rather than a corner per overlay.
+    if (A._sunCompassOn && A.sunClockCompositeOntoCanvas && A.sunCompassInfo) {
+      try {
+        var _clkH = A.sunClockCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), 1,
+                                                  (dayInfo && dayInfo.pos) || 'tr', _stackY);
+        if (_clkH > 0) _stackY += _clkH + _gapY;
+      } catch (eClk) { if (!A._sunClockWarned) { A._sunClockWarned = true;
+        console.warn('§SUN_CLOCK_DRAW failed: ' + (eClk && eClk.message) + ' — clock skipped, frames continue'); } }
+    }
     if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
       A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stackY);
       _stackY += Math.round(h * 0.20) + _gapY;   // the box's own bh, from cpe_path_overview.js
