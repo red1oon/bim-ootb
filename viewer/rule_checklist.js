@@ -740,7 +740,9 @@ function setupRuleChecklist(A) {
           categories: [
             { label: 'Isolated Room', ruleNames: ['isolated_room'] },
             { label: 'Circulation Distance', ruleNames: ['circulation_distance'] },
-            { label: 'Door Width', ruleNames: ['door_clear_width'] }
+            { label: 'Door Width', ruleNames: ['door_clear_width'] },
+            { label: 'Space Coverage', ruleNames: ['space_coverage'] },
+            { label: 'Door Occupant Capacity', ruleNames: ['door_occupant_capacity'] }
           ],
           rows: rows
         });
