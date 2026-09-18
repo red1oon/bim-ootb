@@ -323,13 +323,15 @@
       };
     }
 
-    // §EGRESS_HARDENING item 3 — OPT-IN (opts.protectedExitStair, default false/unset): every
-    // existing caller (rule_checklist.js's showEgressSanity, the Sanity report's own "Longest path
-    // to exit" headline stat) is UNCHANGED unless it explicitly passes this. Verified never worse,
-    // often meaningfully shorter for upper-storey rooms (see common/room_graph.js's own header and
-    // witness_egress_hardening.js) — left opt-in rather than the new default because it changes a
-    // number the report already shows on screen; flipping the default is a decision for whoever
-    // reviews this PR, not something to silently ship.
+    // §EGRESS_HARDENING item 3 — this function's own default stays OPT-IN (opts.protectedExitStair
+    // false/unset = today's coarse-to-exterior-door behaviour) for defense in depth, but
+    // rule_checklist.js's showEgressSanity (the Sanity report's "Longest path to exit" headline
+    // stat, both the live panel and its witness export re-run) now explicitly passes true — user
+    // decision, 2026-09-18: "since it is cheap you should know the answer" (0.87ms/room worst case,
+    // 0 rooms ever regress, 12/30 Hospital + 68/77 HHS rooms measurably improve, see
+    // common/room_graph.js's own header and witness_egress_hardening.js). Hospital's displayed
+    // "Longest path to exit" now reads 131 steps, not 143 — the more code-accurate number, not a
+    // different claim.
     var escapeFn = (opts.protectedExitStair && RoomGraph.escapeRouteViaProtectedStair)
       ? RoomGraph.escapeRouteViaProtectedStair : RoomGraph.escapeRoute;
     graph.nodes.forEach(function (r) {

@@ -287,7 +287,7 @@ function setupRuleChecklist(A) {
           rows = StructuralSanity.evaluate(A.dbQuery, config.rulesUsed, { log: function () {}, witness: true }) || rows;
           witnessed = true;
         } else if (config.checkId === 'egress' && typeof EgressSanity !== 'undefined') {
-          rows = EgressSanity.evaluate(A.dbQuery, config.rulesUsed, { log: function () {}, witness: true }) || rows;
+          rows = EgressSanity.evaluate(A.dbQuery, config.rulesUsed, { log: function () {}, witness: true, protectedExitStair: true }) || rows;
           witnessed = true;
         }
       }
@@ -717,7 +717,7 @@ function setupRuleChecklist(A) {
           try { doorRealXY = window.DoorRealPosition.resolveDoorRealXY(A.db, A.libDb || A.db); }
           catch (e) { console.warn('§DOOR_REAL_AABB_ERR ' + (e && e.message)); doorRealXY = null; }
         }
-        var rows = EgressSanity.evaluate(A.dbQuery, rules, { log: console.log, doorRealXY: doorRealXY });
+        var rows = EgressSanity.evaluate(A.dbQuery, rules, { log: console.log, doorRealXY: doorRealXY, protectedExitStair: true });
         // T8.4 — §ROOM_GRAPH_EXITS's own numbers (exits / noRaster / doors). The evaluator calls
         // RoomGraph.buildGraph with its log SILENCED, so that line never reaches console here;
         // build it once more with a CAPTURING log purely to read the facts. buildGraph is
