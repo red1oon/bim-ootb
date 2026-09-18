@@ -804,6 +804,120 @@ self.onmessage = async function(e) {
     } catch (siteErr) {
       console.log('[S220] §SITE_IDENTITY_ERROR ' + siteErr.message);
     }
+
+    // ── §GEOREF (prompts/GEOREF_SUNPATH_COMPASS.md §2/§3.2) — Witness: W-GEOREF-ANGLE ─────────
+    // Implementing GEOREF_SUNPATH_COMPASS.md §3.2. This path wrote NO georef at all: before this,
+    // import_db_builder.js's project_metadata INSERT carried only project_name/import_date/
+    // building_name/source_uri, so a browser-imported building had no `true_north_angle` row and
+    // streaming.js's §TRUE_NORTH read fell through to its 0 default — the CLI path at least wrote
+    // a (stubbed) key; this one did not exist.
+    //
+    // ⚠ NOT the same mechanism as §GEOREF_REBASE above. That one subtracts a large coordinate
+    // magnitude to bring geometry back to a local origin and carries no lat/long at all. These
+    // are the site's real map coordinates and the model's real rotation. Both can be present,
+    // neither substitutes for the other.
+    //
+    // ⚠ SIGN — the one thing in here that a plausible-looking implementation gets backwards.
+    // TrueNorth points at true north IN MODEL COORDINATES, so true north sits at model-bearing
+    // atan2(tx, ty). The two consumers want the OPPOSITE angle: the bearing of MODEL north
+    // measured from TRUE north, because sitecam.js:81 does `heading - trueNorthAngle` on a true
+    // bearing and walk.js:275 rotates an east/north displacement into model X/Y. So the stored
+    // value is atan2(-tx, ty) in DEGREES. Cross-checked against the Python extractor
+    // (DAGCompiler/python/extractIFCtoDB.py `extract_georef`, same formula, same units) so the
+    // two import paths can never disagree about which way a building faces.
+    var georef = {
+      trueNorthAngle: 0, trueNorthSource: 'default_zero',
+      latitude: null, longitude: null, elevationM: null, latLongSource: 'unknown'
+    };
+    // IfcCompoundPlaneAngleMeasure -> decimal degrees. Components are [deg, min, sec,
+    // millionths-of-sec] and web-ifc hands each one back wrapped, so unwrap before arithmetic.
+    // Per the IFC spec every component carries the SAME sign, but exporters disagree:
+    // SampleHouse_ARC.ifc writes RefLongitude = (0, -7, -34, -450321) with an UNSIGNED zero
+    // degrees component. Take the sign from ANY negative component, then sum magnitudes — summing
+    // signed parts is right there by luck and wrong for a (-3, 30, 0)-style export.
+    function _cpaToDegrees(parts) {
+      if (!parts || !parts.length) return null;
+      var v = [], i, p;
+      for (i = 0; i < 4; i++) {
+        p = parts[i];
+        if (p == null) { v.push(0); continue; }
+        if (typeof p === 'number') v.push(p);
+        else if (typeof p.value === 'number') v.push(p.value);
+        else if (typeof p._representationValue === 'number') v.push(p._representationValue);
+        else return null;
+      }
+      var sign = (v[0] < 0 || v[1] < 0 || v[2] < 0 || v[3] < 0) ? -1 : 1;
+      return sign * (Math.abs(v[0]) + Math.abs(v[1]) / 60 + Math.abs(v[2]) / 3600 +
+                     Math.abs(v[3]) / 3600000000);
+    }
+    function _num(x) {
+      if (x == null) return null;
+      if (typeof x === 'number') return x;
+      if (typeof x.value === 'number') return x.value;
+      if (typeof x._representationValue === 'number') return x._representationValue;
+      return null;
+    }
+    try {
+      var ctxIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCGEOMETRICREPRESENTATIONCONTEXT);
+      for (var gci = 0; gci < ctxIds.size(); gci++) {
+        var _ctx = ifcApi.GetLine(modelID, ctxIds.get(gci));
+        if (!_ctx || !_ctx.TrueNorth || _ctx.TrueNorth.value == null) continue;
+        var _dir = ifcApi.GetLine(modelID, _ctx.TrueNorth.value);
+        var _dr = _dir && _dir.DirectionRatios;
+        if (!_dr || _dr.length < 2) continue;
+        // ⚠ TRUE NORTH MUST LIE IN THE GROUND PLANE, and some exporters write something that does
+        // not. FOUND IN THIS FLEET 2026-09-18 in four shipped source files (Clinic_Electrical_
+        // IFC2x3.ifc #11050, Clinic_HVAC_IFC2x3.ifc #76172, Ifc2x3_Duplex_Plumbing.ifc #40,
+        // LTU_AHouse_STR.ifc #66): TrueNorth = IFCDIRECTION((2.0, 6.12303176911189E-17, 1.0)) —
+        // a THREE-component direction with z = 1.0 and an XY part of length 2. Not a bearing, and
+        // not conformant (IFC defines TrueNorth in a 3D context as a 2D direction in the XY plane).
+        // Its first two ratios give atan2(-2, 0) = -90 deg exactly: precise, confident, and a
+        // quarter turn wrong on every site-camera and walk-mode fix. REFUSE it; say that it was
+        // refused, which is a different fact from "the file had none".
+        // Mirrors DAGCompiler/python/extractIFCtoDB.py `extract_georef` so the two import paths
+        // cannot disagree about which files are trustworthy.
+        var _tz = _dr.length > 2 ? _num(_dr[2]) : 0;
+        if (_tz != null && Math.abs(_tz) > 1e-6) {
+          georef.trueNorthSource = 'malformed_truenorth_ignored';
+          continue;
+        }
+        var _tx = _num(_dr[0]), _ty = _num(_dr[1]);
+        if (_tx == null || _ty == null || (!_tx && !_ty)) continue;
+        var _ang = Math.atan2(-_tx, _ty) * 180 / Math.PI;
+        // Revit writes cos(90 deg) as 6.123e-17 rather than 0, so "true north IS model north"
+        // arrives as ~-3.5e-15 deg. Snap that float noise; 1e-9 deg is 0.1 mm of arc.
+        georef.trueNorthAngle = Math.abs(_ang) < 1e-9 ? 0 : _ang;
+        georef.trueNorthSource = 'ifc_truenorth';   // a REAL authored 0 — not the old stub 0
+        break;
+      }
+    } catch (tnErr) {
+      console.log('[S220] §GEOREF_TRUENORTH_ERROR ' + tnErr.message);
+    }
+    try {
+      var _gsIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSITE);
+      for (var gsi = 0; gsi < _gsIds.size(); gsi++) {
+        var _gs = ifcApi.GetLine(modelID, _gsIds.get(gsi));
+        var _lat = _cpaToDegrees(_gs && _gs.RefLatitude);
+        var _lon = _cpaToDegrees(_gs && _gs.RefLongitude);
+        if (_lat == null || _lon == null) continue;  // a federated drop can carry a bare IfcSite
+        georef.latitude = _lat;
+        georef.longitude = _lon;
+        georef.latLongSource = 'ifc_site';
+        // RefElevation is an IfcLengthMeasure in the FILE's own length unit, not metres —
+        // _lengthUnitScale is the declared LENGTHUNIT read above, the SAME reason §SITE_IDENTITY
+        // could not use `autoScale` here (raw GetLine values are never auto-normalised).
+        var _re = _num(_gs && _gs.RefElevation);
+        if (_re != null) georef.elevationM = _re * _lengthUnitScale;
+        break;
+      }
+    } catch (geoErr) {
+      console.log('[S220] §GEOREF_SITE_ERROR ' + geoErr.message);
+    }
+    console.log('[S220] §GEOREF true_north=' + georef.trueNorthAngle.toFixed(6) + 'deg src=' +
+      georef.trueNorthSource + ' lat=' + (georef.latitude == null ? 'n/a' : georef.latitude.toFixed(8)) +
+      ' lon=' + (georef.longitude == null ? 'n/a' : georef.longitude.toFixed(8)) +
+      ' elev=' + (georef.elevationM == null ? 'n/a' : georef.elevationM.toFixed(4) + 'm') +
+      ' src=' + georef.latLongSource);
     console.log('[S220] §GEOM_DONE elements=' + elements.length + ' withGeometry=' + geometries.length + ' skipped=' + (elements.length - geometries.length) + ' withMaterial=' + matCount);
     post('progress', 95, 'Packaging results...');
 
@@ -1007,6 +1121,7 @@ self.onmessage = async function(e) {
         appliedGeorefOffset: georefOffset, // alias, explicit name for §SITE_IDENTITY correction math
         siteGuid: siteGuid,          // §SITE_IDENTITY — this file's own IfcSite GlobalId, if any
         siteLocation: siteLocation,  // §SITE_IDENTITY — that site's raw placement, scaled to metres
+        georef: georef,              // §GEOREF — real lat/long/elevation + true-north rotation
       },
       elements: renderableElements,
       geometries: geometries,

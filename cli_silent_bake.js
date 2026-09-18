@@ -18,6 +18,10 @@
 //                                                       16 rates packs). Absent file = no override, not an error.
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
+//     [--sun-compass] [--no-sun-compass]              true-north ground compass + sun path + day of
+//                                                       the year (§SUN_COMPASS, GEOREF_SUNPATH_COMPASS.md
+//                                                       §7). OFF by default; needs a site lat/long in
+//                                                       project_metadata or it draws nothing and says so.
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
 //   With no flag given, the path's OWN saved settings are used (§CPE_FLAGS_PORTABLE) — a path saved
 //   in the viewer bakes exactly as it was authored, with no arguments at all.
@@ -109,12 +113,20 @@ const _fClash = triState('clash', 'no-clash');
 const _fMeasure = triState('measure', 'no-measure');
 // §STOREY_HIGHLIGHT_REVEAL — each storey tints in sequence during the closing orbit (same file).
 const _fStoreyReveal = triState('storey-reveal', 'no-storey-reveal');
+// §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — the true-north ground rose
+// with the 4D day-of-year and the sun's angle of attack. Its OWN flag, not folded into --measure:
+// the datum draws the model's own setting-out grid, this draws the model's relationship to the
+// planet. OFF unless asked for, so every existing saved path re-bakes byte-identically.
+// It draws nothing at all on a building whose DB has no site latitude/longitude, and the bake log
+// says §SUN_COMPASS INCONCLUSIVE with the reason — read the log, do not infer from the video.
+const _fSunCompass = triState('sun-compass', 'no-sun-compass');
 if (_fBuildup !== undefined) FLAGS.buildup = _fBuildup;
 if (_fLabel !== undefined) FLAGS.roomTitle = _fLabel;
 if (_fReveal !== undefined) FLAGS.reveal = _fReveal;
 if (_fClash !== undefined) FLAGS.clash = _fClash;
 if (_fMeasure !== undefined) FLAGS.measure = _fMeasure;
 if (_fStoreyReveal !== undefined) FLAGS.storeyReveal = _fStoreyReveal;
+if (_fSunCompass !== undefined) FLAGS.sunCompass = _fSunCompass;
 // `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');
 

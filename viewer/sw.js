@@ -186,7 +186,15 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1177';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1178';   // bump on each deploy; per-change detail is the git commit message.
+// v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
+//   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
+//   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
+//   project_metadata — this path wrote NO georef at all before, so every browser-imported building
+//   had no true_north_angle row and sitecam.js/walk.js silently rotated by 0. New viewer/sun_path.js
+//   (NOAA solar position + §8 angle of attack, offline, no network) and viewer/cpe_sun_compass.js
+//   (a true-north rose on the ground with the 4D day-of-year, OFF unless the bake asks for it);
+//   both precached and script-tagged; cinema_maxq.js gains the sunCompass flag.
 // v1177 (2026-09-14) TM_4D5D_VARIANCE_LANE §S7-INJECT: new viewer/schedule_inject.js ("Generate
 //   programme" — materializeZones+persistDb on the fly, best-effort save, honest saved/session-only
 //   message); panels.js 'sched4d' pill gate changed from "has a schedule" to "engine capable" so the
@@ -649,7 +657,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','../common/flythru_maths.js','../common/storey_raster.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','../common/flythru_maths.js','../common/storey_raster.js',
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',
