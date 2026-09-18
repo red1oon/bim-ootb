@@ -1170,6 +1170,11 @@
     // HUD_FADE witness now reads, instead of re-deriving one from the formula alone.
     if (A2) { if (!A2._hudCompositeAlphaSample) A2._hudCompositeAlphaSample = {}; A2._hudCompositeAlphaSample[name] = alpha; }
   }
+  // §129.1 FREEZE bridge, published for OTHER lanes (georef/sun-compass, bim-ootb#1751/#1752):
+  // main's own `_hudHold` reads this off window and falls back to drawing at full opacity when it
+  // is absent, so the compass/clock overlays respect the load-path freeze the moment this branch
+  // merges — no edit needed on their side. One line, beside the definition, as they asked.
+  if (typeof window !== 'undefined') window.__drawUnlessHold = _drawUnlessHold;
   async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
