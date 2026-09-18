@@ -1013,9 +1013,13 @@
             // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — ONE button for the
             // whole overlay: the ground rose, the day-of-year and the sun-angle readout are one
             // idea, and three buttons would let a user ask for a compass with no date on it.
-            // The artwork is red1's own, traced from his Flaticon source into flat SVG by a peer
-            // session (~300 bytes inline, against a 202 KB source PNG) and inlined here verbatim —
-            // colours and vertices unaltered. It is a magnetic rose, which is what this feature
+            // The artwork is traced from a Flaticon download (clipart4585220.png) into flat SVG by
+            // a peer session (~300 bytes inline, against a 202 KB source PNG) and inlined here
+            // verbatim — colours and vertices unaltered.
+            // ⚠ THIRD-PARTY ASSET, ATTRIBUTION REQUIRED AND NOT YET COMPLETE — see NOTICE.md.
+            // Flaticon's Free License needs the icon's author and source page named, and neither is
+            // recoverable from anything in this repo. NOTICE.md carries the row as PENDING rather
+            // than a guessed name. Do not fill it in from memory. It is a magnetic rose, which is what this feature
             // needs; `I.draftingCompass` is a pair of legs and a pivot and would have been wrong.
             // ⚠ Its red needle points NORTH-EAST as drawn, not up. That is the artwork, not a bug
             // to "correct" here — it is a button icon, not the rose the bake draws, and the rose

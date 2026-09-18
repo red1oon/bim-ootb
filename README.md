@@ -216,3 +216,7 @@ The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and buildi
 ## License
 
 MIT. Copyright (c) 2025–2026 Redhuan D. Oon.
+
+Bundled third-party **assets** (icons and the like) are listed in [`NOTICE.md`](NOTICE.md) with
+their own licences and attribution. Third-party **libraries** are in *Built with* above — they load
+at runtime and are not bundled.
