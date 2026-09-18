@@ -35,6 +35,32 @@ function setupCpeFlythruDatum(A) {
   // YELLOW against grey ground lines — hierarchy signalled by hue. They are the same ink now,
   // separated by weight: the rules read stronger because they are fewer, not because they differ.
   var INK = 0x8899aa, INK_STOREY = 0xb9c6d6, MIN_SEP = 6.0;
+  // §129.34 (2026-09-19, red1: "the 2D grids stand out as they are contrasted against the dark
+  // earth [a bug's accidental side effect] ... apply dynamic contrast ie dark when ground earth is
+  // light first sec and light whenever it is dark ie end of film") — this is the SAME ink-for-both
+  // spirit as §24.1.2 above (ground/storey still differ by weight only, never by hue), just no
+  // longer a single fixed colour: it tracks the film's own 0->1 progress, the same axis the sun arc
+  // uses to go from elevation 55 (bright, first sec) to elevation 6 (dusk, last sec) — dark ink
+  // against the bright early ground, easing to the original light ink by the end, so the grid stays
+  // legible the whole way through instead of only reading well on the dark half. `tNorm` is always
+  // `filmSec/filmSecFull`, which every caller here already has.
+  function _datumInk(tNorm) {
+    var t = Math.max(0, Math.min(1, tNorm == null ? 1 : tNorm));
+    function lerp3(a, b) { return [0, 1, 2].map(function (i) { return Math.round(a[i] + (b[i] - a[i]) * t); }); }
+    function toHex(rgb) { return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2]; }
+    function toCss(rgb) { return '#' + rgb.map(function (c) { var s = c.toString(16); return s.length < 2 ? '0' + s : s; }).join(''); }
+    // t=0 (first sec, bright ground) -> dark ink; t=1 (dusk, dark ground) -> the original light ink.
+    var ink = lerp3([0x2a, 0x33, 0x3d], [0x89, 0x99, 0xaa]);
+    var inkStorey = lerp3([0x14, 0x1a, 0x21], [0xb9, 0xc6, 0xd6]);   // bolder = further from the bg either way
+    // The halo is the OPPOSITE polarity of ink at all times — a light outline behind dark ink, a
+    // dark one behind light ink — same legibility technique the fixed version always used.
+    var halo = lerp3([245, 247, 250], [8, 11, 16]);
+    return {
+      hex: toHex(ink), storeyHex: toHex(inkStorey),
+      css: toCss(ink), storeyCss: toCss(inkStorey),
+      haloCss: 'rgba(' + halo[0] + ',' + halo[1] + ',' + halo[2] + ',0.92)'
+    };
+  }
   var _grp = null, _built = false, _info = null, _faces = null, _lines = null;
   var _sides = null, _camNear = null, _lastDrawn = null;   // §36 W1 — decided once per datum life, reset on dispose
   var _enteredAt = null, _envBox = null;                    // §20.8 — the drawing ends when the camera enters the envelope
@@ -414,11 +440,16 @@ function setupCpeFlythruDatum(A) {
     // 2D bubbles/text (those are computed for only the expected side), which is exactly the
     // reported symptom. Logged once per occurrence rather than assumed — not yet confirmed.
     if (!camNear) console.log('§ROGUE_UPRIGHT_DIAG camNear UNSET at filmSec=' + filmSec.toFixed(2) + ' — both uprights fall through to visible=true this frame');
+    // §129.34 — dynamic ink, computed once per frame here and applied to every 3D line/plane; the
+    // 2D bubbles/text (flythruDatumCompositeOntoCanvas) compute the SAME tNorm independently, since
+    // it already gets its own filmSec/filmSecFull every call.
+    var ink = _datumInk(filmSecFull > 0 ? filmSec / filmSecFull : 1);
     _grp.children.forEach(function (o) {
       var isLvl = o.name === 'levelsYmax' || o.name === 'levelsYmin';
       var vis = !isLvl || !camNear || o.name === camNear;
       o.visible = vis;
       o.material.opacity = (isLvl ? 0.75 : 0.5) * op;
+      o.material.color.setHex(isLvl ? ink.storeyHex : ink.hex);
     });
     return op;
   };
@@ -599,7 +630,10 @@ function setupCpeFlythruDatum(A) {
       if (_mag > _maxScale) _maxScale = _mag;
       return _m;
     }
-    var INK = '#c9d3df', HALO = 'rgba(8,11,16,0.92)';
+    // §129.34 — was a fixed '#c9d3df'/dark halo; now the same dynamic ink `flythruDatumAt` applies
+    // to the 3D lines, computed from this call's own filmSec/filmSecFull so both stay in lockstep.
+    var _dynInk = _datumInk(filmSecFull > 0 ? filmSec / filmSecFull : 1);
+    var INK = _dynInk.css, HALO = _dynInk.haloCss;
     var UNIT = 100;   // canvas cannot set a sub-pixel font, so text is drawn at UNIT x and scaled back
     function withPlane(m, fn) {
       if (!m) return false;

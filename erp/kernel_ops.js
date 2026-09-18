@@ -346,24 +346,38 @@
     if (!r.length || !r[0].values.length) return { id: 0, hash: GENESIS };
     return { id: r[0].values[0][0], hash: r[0].values[0][1] };
   }
-  async function sealFrom(db, fromTip) {
+  // ROUND 4 item 4 (2026-09-16, real Terminal bake, no tap): a real, on-disk defect — id=48431
+  // (BUILDING_OPEN) was ALREADY SEALED, carrying an op_hash/prev_hash chained to a tip from an OLD
+  // seal pass, with unsealed rows appended after it by the page's own re-injection. Incremental
+  // `sealFrom`'s own `_lastSealedTip` found that stale sealed row and chained the NEW rows onto it —
+  // but 48431's own prev_hash still pointed at a hash that no longer exists once the page re-wrote
+  // the rows before it, so `verifyChain` broke exactly at id=48431 (`brokenAt=48431`), even though
+  // nothing was tampered — the DB just carried a genuinely stale partial seal from a previous run.
+  // `full` (bake mode ONLY — see cpe_ledger_ticker.js's own `A._bakeOwned` gate): re-seals EVERY row
+  // from id 1, in id order, overwriting every existing op_hash/prev_hash unconditionally — the DB's
+  // own prior sealed state (however it got there) is never trusted as a starting point during a
+  // bake. Non-bake callers (compact()'s own post-compaction reseal, the CLI preflight script, the
+  // live editor's incremental per-group seal) are UNCHANGED — `full` defaults falsy.
+  async function sealFrom(db, fromTip, full) {
     ensureTable(db);
-    var tip = fromTip || _lastSealedTip(db);
-    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig,op_uuid,user_tag FROM kernel_ops WHERE id > ' + tip.id + ' ORDER BY id');
-    if (!r.length) { return { sealed: 0, tip: tip.hash, fromId: tip.id }; }
+    var tip = full ? { id: 0, hash: GENESIS } : (fromTip || _lastSealedTip(db));
+    var where = full ? '1=1' : ('id > ' + tip.id);
+    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig,op_uuid,user_tag FROM kernel_ops WHERE ' + where + ' ORDER BY id');
+    if (!r.length) { return { sealed: 0, tip: tip.hash, fromId: full ? 1 : tip.id, mode: full ? 'full' : 'incremental' }; }
     var rows = r[0].values, prev = tip.hash, sealed = 0;
     for (var i = 0; i < rows.length; i++) {
       var op = { id: rows[i][0], timestamp: rows[i][1], op_type: rows[i][2],
                  parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5],
                  op_uuid: rows[i][7], user_tag: rows[i][8] };
-      var sig = rows[i][6];
+      var sig = full ? null : rows[i][6];   // full re-seal never trusts a stale existing sig either
       var h = await _sha256(prev + '|' + _canonical(op));
       if (_signer && !sig) { try { sig = await _signer.sign(await _sigBase(op, h)); } catch (e) { sig = null; } }
       db.run('UPDATE kernel_ops SET prev_hash=?, op_hash=?, sig=? WHERE id=?', [prev, h, sig || null, op.id]);
       prev = h; sealed++;
     }
-    console.log('§KRN_SEAL_FROM fromId=' + tip.id + ' sealed=' + sealed + ' tip=' + prev.slice(0, 12) + '…' + (_signer ? ' signed' : ''));
-    return { sealed: sealed, tip: prev, fromId: tip.id };
+    console.log('§KRN_SEAL_FROM mode=' + (full ? 'full' : 'incremental') + ' fromId=' + (full ? 1 : tip.id) +
+      ' sealed=' + sealed + ' tip=' + prev.slice(0, 12) + '…' + (_signer ? ' signed' : ''));
+    return { sealed: sealed, tip: prev, fromId: full ? 1 : tip.id, mode: full ? 'full' : 'incremental' };
   }
 
   // ════════════════════════════════════════════════════════════════════════

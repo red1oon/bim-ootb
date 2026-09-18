@@ -306,14 +306,21 @@ function setupClashLabels(A) {
     // entry here is guaranteed IN-FRUSTUM by update()'s selection step (§P2.1 amended again) — an
     // out-of-frustum contact never reaches `placed` at all, so there is no "behind the camera, clamp
     // to the edge, skip the leader" special case here any more (that was the sticky-lingering bug).
-    A.clashLabelsCompositeOntoCanvas = function (ctx, w, h, placed) {
+    // §129 FIX 5 (2026-09-17) — `ambientAlpha` (new, optional, defaults to 1 — every existing caller
+    // keeps working unchanged) is the load-path hold's own HUD fade, passed through from
+    // `cinema_maxq.js`'s `_drawUnlessHold`. `ctx.globalAlpha = Math.min(1, q.alpha)` below is this
+    // function's OWN per-label fade (`q.alpha`), an ABSOLUTE assignment that silently clobbered the
+    // ambient fade every hold frame (found via a real bake's `§LOADPATH_FOCUS alphaClobber=
+    // [clash.labels:3x@maxAlpha=1.00,...]`, not guessed).
+    A.clashLabelsCompositeOntoCanvas = function (ctx, w, h, placed, ambientAlpha) {
       if (!ctx || !placed || !placed.length) return 0;
+      var _ambA = (ambientAlpha == null) ? 1 : ambientAlpha;
       var M = metrics(h), n = 0;
       ctx.save();
       for (var k = 0; k < placed.length; k++) {
         var q = placed[k];
         if (!(q.alpha > 0)) continue;
-        ctx.globalAlpha = Math.min(1, q.alpha);
+        ctx.globalAlpha = Math.min(1, q.alpha) * _ambA;
         // leader: from the panel's nearest edge point to the projected contact, plus a dot on it
         var ax = clamp(q.sx, q.x, q.x + q.w), ay = clamp(q.sy, q.y, q.y + q.h);
         // §CLASH_LABEL_HUD_FAMILY: halo first, core on top — line and dot alike.

@@ -406,7 +406,15 @@ function setupRuleFindingsFilm(A) {
   // rest rejecting screen-space overlaps, fade each over FADE_S. No window, no storey slot, no cap at 2.
   function overlaps(a, b) { return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h; }
 
-  A.ruleFindingsFilmCompositeOntoCanvas = function (ctx, w, h, filmSec) {
+  // §129 FIX 5 (2026-09-17) — `ambientAlpha` (new, optional, defaults to 1 so every existing caller
+  // keeps working unchanged) is the load-path hold's own HUD fade, passed through from
+  // `cinema_maxq.js`'s `_drawUnlessHold`. This compositor sets `ctx.globalAlpha = op` from its OWN
+  // box-handover fade (`b.alpha`) further down — an ABSOLUTE assignment that silently clobbered the
+  // ambient fade every hold frame (found via a real bake's `§LOADPATH_FOCUS alphaClobber=
+  // [measure.rulefindings:3x@maxAlpha=1.00,...]`, not guessed). Multiplying it in at the one spot
+  // `op` is computed fixes every draw this function makes, not just one call site.
+  A.ruleFindingsFilmCompositeOntoCanvas = function (ctx, w, h, filmSec, ambientAlpha) {
+    var _ambA = (ambientAlpha == null) ? 1 : ambientAlpha;
     var cam = A.camera, at = A._ruleTintAt;
     if (!ctx || !_sets.length || !cam || !at || !(w > 0) || !(h > 0)) return 0;
     var fs = filmSec || 0;
@@ -626,7 +634,8 @@ function setupRuleFindingsFilm(A) {
       placed.push({ x: bx, y: by, w: bw, h: bh });
       var op = (b.alpha == null) ? 1 : b.alpha;   // §78 held at full while the set holds the scene; §82 fades it on handover
       ctx.save();
-      ctx.globalAlpha = op;
+      ctx.globalAlpha = op * _ambA;
+      if (window.__lpDebugAlphaLog) console.log('§RULE_FILM_ALPHA_DEBUG set=' + set.rule + ' op=' + op + ' ambA=' + _ambA + ' final=' + (op * _ambA));
       ctx.fillStyle = LABEL_PLATE;
       if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, Math.round(px * 0.4)); ctx.fill(); }
       else ctx.fillRect(bx, by, bw, bh);

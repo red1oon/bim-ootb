@@ -746,6 +746,7 @@
       clash: !!s.clash,                    // §CLASH_FILM_P1
       measure: !!s.measure,                // §FLYTHRU_DATUM
       storeyReveal: !!s.storeyReveal,       // §STOREY_HIGHLIGHT_REVEAL
+      loadPath: !!s.loadPath,               // §129.31 — own checkbox now, was folded under Measure
       bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
       dayCounter: s.dayCounter || 'tr',
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
@@ -916,7 +917,11 @@
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox" checked> ' +
           'build the model as the film plays</label> <span style="color:#666">(follows the Time Machine, not a programme)</span></div>' +
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-room-title" type="checkbox"> ' +
-          'room titles</label> <span style="color:#666">(name card as the camera enters each room)</span> ' +
+          // §129.6 item 6b (2026-09-15): renamed from "room titles" — this SAME toggle (still
+          // FLAGS.roomTitle / --label under the hood, --4d5d accepted as an alias so no bake command
+          // breaks) now also gates the pie-chart HUD's Cost/Ledger rows and the day counter, so its
+          // on-screen text says what it actually carries.
+          '4D/5D</label> <span style="color:#666">(room name card, day counter, cost + ledger rows)</span> ' +
           // §CPE_DISCIPLINE_REVEAL (prompts/CINEMA_DISCIPLINE_REVEAL.md) — panel wiring only so far.
           // Checkbox + state round-trip through save/restore, same as every sibling here; the actual
           // ghost/pacing render mechanism is NOT built (spec Open Question 1, render approach, still
@@ -944,6 +949,14 @@
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-storey-reveal" type="checkbox"> ' +
           'Storey highlight</label> <span style="color:#666">(each storey glows blue/green/yellow/orange ' +
           'in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card)</span></div>' +
+        // §129.31 (2026-09-18, red1) — un-folds §129 GATING (2026-09-15)'s "load path rides the
+        // Measure checkbox" decision: that fold made an unrelated checkbox ("setting-out drawing")
+        // silently gate a completely different feature (the structural load-path freeze-frame, cost/
+        // schedule HUD, section cut). Its own checkbox now, decoupled from Measure — see
+        // cinema_maxq.js's own `_loadPath` line for the runtime side of this same change.
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-load-path" type="checkbox"> ' +
+          'Load path freeze</label> <span style="color:#666">(camera holds on the structural chain from ' +
+          'topout to ground — section-cut, cost + schedule per member, ladder HUD)</span></div>' +
         // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+C bake always
         // renders at this window's canvas (cinema_maxq.js:1120 reads renderer.domElement), so this
         // select does not resize anything here; it is stored on the path and cli_silent_bake.js
@@ -2285,7 +2298,7 @@
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
       checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash, measure: !!ov.measure,
-                    storeyReveal: !!ov.storeyReveal },
+                    storeyReveal: !!ov.storeyReveal, loadPath: !!ov.loadPath },
       bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
       tmActive: tm ? !!tm.active : false,
@@ -2336,7 +2349,7 @@
   function _syncPanelControls() {
     [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
      ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash], ['cpe-measure', !!_state.measure],
-     ['cpe-storey-reveal', !!_state.storeyReveal]].forEach(function(p) {
+     ['cpe-storey-reveal', !!_state.storeyReveal], ['cpe-load-path', !!_state.loadPath]].forEach(function(p) {
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
     });
@@ -2358,6 +2371,9 @@
       // in _isEdited()'s dirty-check, both are read live by their own draw code with no beat-boundary
       // side effect that a stale plan could get wrong).
       _state.storeyReveal = !!ps.checkboxes.storeyReveal;
+      // §129.31: restored the same lightweight way as storeyReveal just above — no origX baseline,
+      // read live by cinema_maxq.js's own `_loadPath` line with no beat-boundary side effect.
+      _state.loadPath = !!ps.checkboxes.loadPath;
       // §CPE_EDIT_BASELINE: a restored plan's own checkbox values are the new "unedited" baseline —
       // reopening a saved buildup=on plan and touching nothing else must not read as edited.
       _state.origBuildup = _state.buildup;
@@ -3520,6 +3536,9 @@
         clash: false,          // §CLASH_FILM_P1
         measure: false,        // §FLYTHRU_DATUM — same off-by-default reasoning as clash/reveal
         storeyReveal: false,   // §STOREY_HIGHLIGHT_REVEAL — off by default, same reasoning as reveal/clash
+        loadPath: false,       // §129.31 — off by default for a BRAND NEW path, same reasoning; an
+                                // existing saved path with no loadPath key falls back to Measure instead
+                                // of this default (cinema_maxq.js's own `_loadPath` line), never this
         bakeRes: '',           // §CPE_BAKE_RES — '' = the window; else '<w>x<h>@<fps>'
         origReveal: false,
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
@@ -3688,6 +3707,15 @@
         _markPreviewStale();
         console.log('§STOREY_REVEAL checkbox=' + (_state.storeyReveal ? 'on' : 'off') +
           ' — each storey tints in sequence for the last 5s of pull-back, ending at the orbit start');
+      });
+      // §129.31 — like clash/measure above, a pure overlay flag off the existing topout hold point;
+      // no beat boundary moves, so _markPreviewStale() is the whole handler.
+      var _loadPathEl = document.getElementById('cpe-load-path');
+      if (_loadPathEl) _loadPathEl.addEventListener('change', function(e) {
+        _state.loadPath = !!e.target.checked;
+        _markPreviewStale();
+        console.log('§CPE_LOAD_PATH checkbox=' + (_state.loadPath ? 'on' : 'off') +
+          ' — structural chain freeze-frame (section-cut, cost/schedule HUD) in the bake');
       });
       // §CPE_BAKE_RES — stored on the path for the silent baker; changes nothing in this window.
       // §S274 FIX (2026-09-06, live crash reported from production, red1oon.github.io/bim-ootb):

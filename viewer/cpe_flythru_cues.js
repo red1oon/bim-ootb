@@ -476,10 +476,15 @@ function setupCpeFlythruCues(A) {
     return (_cues || []).map(function (c) { return { key: c.key, from: c.at, to: c.at + SPAN + (c.key === 'envelope' ? PANEL_HOLD : 0) }; });
   };
 
-  // Called by cinema_maxq's _captureFrame chain and by scripts/snap_timeline.js.
-  A.flythruCuesCompositeOntoCanvas = function (ctx, w, h, filmSec) {
+  // Called by cinema_maxq's _captureFrame chain and by scripts/snap_timeline.js. `extAlpha` (ROUND
+  // 13 item C, NEW, optional, default 1) — an external multiplier cinema_maxq's own `_drawUnlessHold`
+  // now passes through (the hold-fade alpha): this function's own `a.opacity` (its cue fade-in/out)
+  // is an ABSOLUTE `ctx.globalAlpha` assignment below, which would otherwise silently clobber
+  // whatever ambient alpha the caller had set before this call.
+  A.flythruCuesCompositeOntoCanvas = function (ctx, w, h, filmSec, extAlpha) {
     var T = window.THREE, cam = A.camera;
     if (!T || !cam || !ctx) return 0;
+    if (extAlpha != null && !(extAlpha > 0)) return 0;   // fully faded — never invent partial cue geometry at alpha 0
     var a = activeAt(filmSec);
     // §32 — the envelope PANEL persists PANEL_HOLD past its slot; the arrowed lines do not.
     if (!a && _cues) {
@@ -494,7 +499,7 @@ function setupCpeFlythruCues(A) {
       ' cues=' + ((_cues && _cues.length) || 0) +
       ' windows=[' + ((_cues || []).map(function (c) { return c.key + ':' + c.at.toFixed(1) + '-' + (c.at + SPAN).toFixed(1); }).join(' ')) + ']'); return 0; }
     var k = h / 720, ink = '#ffd600', cue = a.cue, drawn = 0, _diag = [], posted = false;
-    ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a.opacity));
+    ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a.opacity)) * (extAlpha != null ? extAlpha : 1);
     var spans = edgeSpans(cue.box, cam);
     if (cue.dims && cue.dims.length) {                    // a SET of numbers -> panel (§20.11)
       var c3 = cue.box.getCenter(new T.Vector3()), c2 = proj(c3, cam, w, h);

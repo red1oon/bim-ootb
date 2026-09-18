@@ -69,7 +69,19 @@ async function setupEffects(A, renderer, scene, camera) {
       import('./lib/BloomPass.js')
     ]);
 
-    var _composer = new _ecMod.EffectComposer(renderer);
+    // §129 OPEN ITEM (2026-09-17) — the load-path section-cut's solid cap needs a stencil buffer on
+    // whatever render target the SCENE GEOMETRY actually rasterizes into. That is NOT the canvas
+    // (renderer.getContext() has one, `stencilBuffer:true` since `viewer/scene.js`'s WebGLRenderer
+    // constructor — but that context is never where the geometry pass writes): TAARenderPass below
+    // renders into EffectComposer's OWN internal WebGLRenderTarget, and EffectComposer.js's own
+    // default-target branch creates it with only `{type: HalfFloatType}` — stencilBuffer defaults to
+    // false on a WebGLRenderTarget, same as any other. Real bake proof this mattered: `§LOADPATH_CUT_CAP`
+    // read `stencilBuffer=true` (the canvas) and reported PASS while the cap never actually rendered —
+    // a witness that checked the wrong buffer. Pass an explicit stencil-enabled target so
+    // EffectComposer uses IT (and clones it for its second buffer) instead of its own stencil-less default.
+    var _composerRT = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight,
+      { type: THREE.HalfFloatType, stencilBuffer: true });
+    var _composer = new _ecMod.EffectComposer(renderer, _composerRT);
     _composer.setSize(window.innerWidth, window.innerHeight);
     _composer.setPixelRatio(renderer.getPixelRatio());
 

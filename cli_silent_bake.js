@@ -9,7 +9,10 @@
 //     [--plan NAME | --override file.json]            path source (default: DB cinema_path table)
 //     [--buildup] [--label] [--reveal] [--day tr|tl|br|bl|off]   flags composed onto the path
 //     [--clash] [--no-clash]                          mesh-true clash pairs as world content (§CLASH_FILM_P1)
-//     [--measure] [--no-measure]                      setting-out datum drawing (§FLYTHRU_DATUM, MEP_CLASH_REVEAL_MOVIE.md §28.1)
+//     [--measure] [--no-measure]                      setting-out datum drawing (§FLYTHRU_DATUM, MEP_CLASH_REVEAL_MOVIE.md §28.1);
+//                                                       since §129 GATING (2026-09-15) this ALSO gates the load path 3D
+//                                                       effect (§129.1). Cost/Ledger moved OFF this gate — §129.6 item 6b
+//                                                       (2026-09-15) puts them under --label/--4d5d instead (below)
 //     [--nohome] [--opening-only]                     §33 §CLI_BAKE_OPENING: skip the datum-legibility gate / judge the opening and exit
 //     [--findings-only]                               §RULE_REPORT (STRUCTURAL_SANITY.md T8): run the Sanity + Egress
 //                                                       evaluators, write <out>.json, exit before ANY cinema work
@@ -18,6 +21,17 @@
 //                                                       16 rates packs). Absent file = no override, not an error.
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
+//     [--load-path] [--no-load-path]                    a geological section cut through the deepest
+//                                                       support stack, held at topout (§129.1); FOLDED under
+//                                                       --measure since §129 GATING — a bare --load-path with
+//                                                       --measure off does nothing new, --no-load-path stays as
+//                                                       a control-only override (forces it off even with --measure)
+//     [--ledger] [--no-ledger]                          §129.2 kernel-ops verification HUD row, DIRECTLY BELOW
+//                                                       Cost, both inside the pie-chart HUD (§129.6 item 6b,
+//                                                       2026-09-15) — folded under --label/--4d5d, NOT --measure
+//     [--cost] [--no-cost]                              §129.5 running cost/hours figure, a row of the SAME
+//                                                       pie-chart HUD, directly above Ledger — same --label/--4d5d
+//                                                       fold as Ledger, not --measure (§129.6 item 6b)
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
 //   With no flag given, the path's OWN saved settings are used (§CPE_FLAGS_PORTABLE) — a path saved
 //   in the viewer bakes exactly as it was authored, with no arguments at all.
@@ -100,6 +114,11 @@ function triState(on, off) {
 const FLAGS = {};
 const _fBuildup = triState('buildup', 'no-buildup');
 const _fLabel = triState('label', 'no-label');
+// §129.6 item 6b (2026-09-15): the "Label" toggle's on-screen text becomes "4D/5D" (it now also
+// carries the day counter/cost/ledger rows) — `--4d5d`/`--no-4d5d` is an ALIAS for the same
+// FLAGS.roomTitle so no existing bake command using --label breaks. `--label` wins if BOTH are
+// somehow given (first-parsed-wins via `??`, matching triState's own "absent = undefined" contract).
+const _f4d5d = triState('4d5d', 'no-4d5d');
 const _fReveal = triState('reveal', 'no-reveal');
 // §CLASH_FILM_P1 — the mesh-true clash pairs as persistent world content (MEP_CLASH_REVEAL_MOVIE.md).
 const _fClash = triState('clash', 'no-clash');
@@ -107,12 +126,25 @@ const _fClash = triState('clash', 'no-clash');
 const _fMeasure = triState('measure', 'no-measure');
 // §STOREY_HIGHLIGHT_REVEAL — each storey tints in sequence during the closing orbit (same file).
 const _fStoreyReveal = triState('storey-reveal', 'no-storey-reveal');
+// §129.1 LOAD PATH (MEP_CLASH_REVEAL_MOVIE.md §129.1/§129.4) — the geological-section beat held at
+// topout. Same three-state contract as every other flag here: absent = the stored path decides.
+const _fLoadPath = triState('load-path', 'no-load-path');
+// §129.2 LEDGER TICKER / §129.5 COST ODOMETER — placement ruling §129.6 item 6b (2026-09-15)
+// SUPERSEDES the original §129 GATING fold-under-measure: both are now rows of the pie-chart HUD,
+// gated by the SAME toggle as --label/--4d5d, NOT --measure (the load path 3D effect stays under
+// --measure, untouched). --no-ledger/--no-cost remain as control-only overrides.
+const _fLedger = triState('ledger', 'no-ledger');
+const _fCost = triState('cost', 'no-cost');
 if (_fBuildup !== undefined) FLAGS.buildup = _fBuildup;
 if (_fLabel !== undefined) FLAGS.roomTitle = _fLabel;
+else if (_f4d5d !== undefined) FLAGS.roomTitle = _f4d5d;
 if (_fReveal !== undefined) FLAGS.reveal = _fReveal;
 if (_fClash !== undefined) FLAGS.clash = _fClash;
 if (_fMeasure !== undefined) FLAGS.measure = _fMeasure;
 if (_fStoreyReveal !== undefined) FLAGS.storeyReveal = _fStoreyReveal;
+if (_fLoadPath !== undefined) FLAGS.loadPath = _fLoadPath;
+if (_fLedger !== undefined) FLAGS.ledger = _fLedger;
+if (_fCost !== undefined) FLAGS.cost = _fCost;
 // `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');
 // LARGE_DB_BAKE.md §2 L3 — `--still-budget taa,ao` overrides cinema_maxq.js's hardcoded 8/12 bake

@@ -41,7 +41,12 @@ async function setupScene(A) {
   renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: !_isMobileRenderer,
-    preserveDrawingBuffer: true
+    preserveDrawingBuffer: true,
+    // §129 OPEN ITEM (2026-09-17) — the load-path section-cut's solid cap face needs a real stencil
+    // buffer for the standard clip-plane-cap technique (mark stencil on the clipped solid's back/
+    // front faces, draw the cap only where it's non-zero). A real bake (`§LOADPATH_CUT_CAP
+    // stencilBuffer=false`) proved the context did not have one without this flag — never assumed.
+    stencil: true
   });
   console.log('§S277b_RENDERER WebGLRenderer r184 (WebGPU deferred)');
   // §S281b: report multi_draw fast-path + GPU at startup. BatchedMesh collapses a bucket to ONE draw

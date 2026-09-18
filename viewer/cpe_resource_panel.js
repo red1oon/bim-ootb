@@ -49,6 +49,11 @@ function setupCpeResourcePanel(A) {
   // drawing a confident empty ring.
   A.resourcePanelAt = function(cursorMs, ops, projectStartMs, projectEndMs) {
     if (!ops || !ops.length || !(projectEndMs > projectStartMs)) return null;
+    // §129.5 COST ODOMETER — stash the same real ops/window this call already validated, so the
+    // odometer (drawn from resourcePanelCompositeOntoCanvas, which only ever receives `info`, never
+    // these raw args) can compute "placed n/N" and derive a cursor from `info.progress` without a
+    // second query and without changing this function's or the composite function's own signature.
+    A._resPanelOps = ops; A._resPanelProjectStart = projectStartMs; A._resPanelProjectEnd = projectEndMs;
     var LR = _rates();
     var dayStart = projectStartMs + Math.floor((cursorMs - projectStartMs) / MS_PER_DAY) * MS_PER_DAY;
     var dayEnd = dayStart + MS_PER_DAY;
@@ -101,6 +106,235 @@ function setupCpeResourcePanel(A) {
              dayKey: Math.floor((cursorMs - projectStartMs) / MS_PER_DAY),
              ratesPresent: !!LR };
   };
+
+  // §129.7 item 8c (2026-09-16, user on the Terminal clip: cost/ledger rows must be PINNED to the
+  // panel's bottom edge, never appended after the resource list — "the running new line should also
+  // stay absolute bottom row as appending to the resource changing height makes it jumps up and
+  // down") — the panel's HEIGHT must therefore be sized ONCE, at build, for the LONGEST resource
+  // list the whole schedule can ever show (the distinct-trade count `info.rows.length`), never
+  // per-frame off whatever happens to be active. `A.resourcePanelAt` already receives no other
+  // caller than cinema_maxq.js's own per-frame call, so this file has no independent "the whole
+  // schedule" hook of its own — but `A.resourcePanelAt` already stashes the real `ops`/window on
+  // `A._resPanelOps`/`A._resPanelProjectStart`/`A._resPanelProjectEnd` on every call (§129.5 COST
+  // ODOMETER's own comment above), so the FIRST real frame call is enough to scan the rest. Sampled
+  // at the SAME cadence `bigStatsBuild`'s own peak-workforce scan uses (a handful of samples across
+  // the whole programme, never per-frame) and memoized for the life of the page/bake — one scan,
+  // however many frames follow.
+  var _maxResourceRows = null;
+  function _scanMaxResourceRows() {
+    if (_maxResourceRows != null) return _maxResourceRows;
+    var ops = A._resPanelOps, ps = A._resPanelProjectStart, pe = A._resPanelProjectEnd;
+    var maxN = 0;
+    if (ops && ops.length && pe > ps) {
+      var totalDays = Math.ceil((pe - ps) / MS_PER_DAY);
+      var step = Math.max(1, Math.floor(totalDays / 60));
+      for (var d = 0; d < totalDays; d += step) {
+        var info = A.resourcePanelAt(ps + d * MS_PER_DAY, ops, ps, pe);
+        if (info && info.rows && info.rows.length > maxN) maxN = info.rows.length;
+      }
+    }
+    _maxResourceRows = maxN;
+    return _maxResourceRows;
+  }
+  // Exposed for a direct node dry run (no THREE/DOM/Chrome needed — a plain {rows:[...]} stub for
+  // A.resourcePanelAt is enough), and so a fresh bake/test can force a re-scan.
+  A._resourcePanelScanMaxRows = _scanMaxResourceRows;
+  A._resourcePanelResetMaxRowsCache = function () { _maxResourceRows = null; };
+
+  // ══ §129.5 COST ODOMETER (MEP_CLASH_REVEAL_MOVIE.md §129.5) ═══════════════════════════════════
+  // "just adding a small figure next to the resource chart HUD" — cost to date + crew-hours to
+  // date, fed by the schedule's OWN rate model. NON-INVENT: T=A._hrCost.total / H=A._hrCost.personDays
+  // (§HR_COST, time_machine.js — crew-days x crew_size x rate_per_day, the schedule's own labour
+  // content) are taken VERBATIM, never re-summed here — a day-by-day re-derivation via this file's own
+  // capped-crew arithmetic (resourcePanelAt) is a DIFFERENT quantity (deployed-crews-per-calendar-day,
+  // capped) from _hrTotal's (total work content, uncapped) and would not reconcile with it, which is
+  // exactly the "second opinion about the schedule's own labour content" cpe_resource_panel.js's own
+  // header already forbids for the client-facing 5D cards. Instead the RUNNING "to date" value is
+  // that SAME total, time-phased by the elapsed-programme fraction resourcePanelAt() already computes
+  // (`progress` — the identical fraction the progress ring already draws) — reconciling with T/H
+  // EXACTLY at progress=1 BY CONSTRUCTION, with no second cost model that could ever disagree.
+  // "placed n/N" is a real, separate, non-invented count: schedule ops with a start time at or before
+  // the cursor, out of the whole ops array, tracked with a FORWARD-ONLY pointer (ops are sorted by
+  // start_ts — the same assumption resourcePanelAt's own early-break already relies on) so a full
+  // bake's cost is O(ops.length) total, never O(ops.length x days).
+  var _coPtr = 0, _coPtrOps = null;
+  function _placedCount(cursorMs, ops) {
+    if (!ops || !ops.length) return { n: 0, N: 0 };
+    if (ops !== _coPtrOps) { _coPtrOps = ops; _coPtr = 0; }   // a different ops array (new bake) resets the pointer
+    while (_coPtr < ops.length && ops[_coPtr].s <= cursorMs) _coPtr++;
+    return { n: _coPtr, N: ops.length };
+  }
+  // Pure — same discipline as resourcePanelAt. `progress` (0..1) is normally the caller's own
+  // already-computed elapsed-programme fraction (never re-derived from cursorMs when supplied).
+  A.costOdometerAt = function (cursorMs, ops, projectStartMs, projectEndMs, progress) {
+    var HC = A._hrCost;
+    if (!HC || !(HC.total > 0)) return null;   // §129.5 DO NOT: show a figure with no costs
+    var LR = _rates();
+    var basisHrs = (LR && LR._productivity_basis_secs) ? LR._productivity_basis_secs / 3600 : 8;
+    var T = HC.total, H = +(HC.personDays * basisHrs).toFixed(1);
+    var p = (progress != null) ? Math.max(0, Math.min(1, progress))
+      : (projectEndMs > projectStartMs ? Math.max(0, Math.min(1, (cursorMs - projectStartMs) / (projectEndMs - projectStartMs))) : 1);
+    var pc = _placedCount(cursorMs, ops);
+    return { day: (projectStartMs != null && cursorMs != null) ? Math.floor((cursorMs - projectStartMs) / MS_PER_DAY) + 1 : null,
+             placed: pc.n, total: pc.N, costToDate: Math.round(T * p), hoursToDate: +(H * p).toFixed(1),
+             grandCost: T, grandHours: H, progress: p };
+  };
+  // §129.6 item 6b (2026-09-15) SUPERSEDES the earlier free-floating placement: Cost sits DIRECTLY
+  // ABOVE Ledger, BOTH as rows of THIS panel (drawn by _pieCostLedgerRows below, called from
+  // A.resourcePanelCompositeOntoCanvas right after the trade list, same column/font/row cadence),
+  // gated by A._costOdometerOn/A._pieLedgerOn (the "4D/5D" toggle, not Measure). Space-grouped
+  // thousands ("801 577", not "801,577") per the ruling's own row examples.
+  function _spaceThousands(n) {
+    var s = String(Math.round(n)), neg = s.charAt(0) === '-';
+    if (neg) s = s.slice(1);
+    s = s.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return (neg ? '-' : '') + s;
+  }
+  var _coLoggedInconclusive = false, _coLastLoggedDay = null, _coFinalFired = false, _coLastOd = null;
+  // §HUD FIX (2026-09-15, after a real HHS bake showed 8 §COST_ODOMETER day= lines but NO
+  // §COST_ODOMETER_FINAL at all): this logic used to run ONLY from inside the DRAW path
+  // (_costRowText, called from _pieCostLedgerRows, called from resourcePanelCompositeOntoCanvas) —
+  // but that function STOPS being called once the film enters the Reveal/stats round (§CPE_STATS_TAIL:
+  // `_resInfo` is only set in the `!_inReveal` branch), which can happen at/around the SAME moment
+  // `info.progress` crosses 1.0 — a race that left "the last buildup frame" landing on a frame the
+  // panel never drew. Split: A.costOdometerTick(info) is the LOGIC+LOGGING half, called EVERY FRAME
+  // from cinema_maxq.js's own resourcePanelHoldAt site — which already runs unconditionally,
+  // regardless of `_inReveal` — so the witness fires whether or not the panel is on screen this
+  // frame. `_costRowText()` (below) is now PURE DRAWING: it only ever reads the cached `_coLastOd`,
+  // never recomputes or re-triggers a witness.
+  A.costOdometerTick = function (info) {
+    var HC = A._hrCost;
+    if (!HC || !(HC.total > 0)) {
+      if (!_coLoggedInconclusive) { _coLoggedInconclusive = true; console.log('§COST_ODOMETER INCONCLUSIVE reason=norates'); }
+      return;
+    }
+    var projectStartMs = A._resPanelProjectStart, projectEndMs = A._resPanelProjectEnd, ops = A._resPanelOps;
+    var trueP = (info && info.progress != null) ? info.progress : 0;   // the REAL, unfrozen elapsed fraction
+    var atEnd = trueP >= 0.999999;
+    var frozen = !!window.__coFreeze;
+    // Control window.__coFreeze=1 (§129.5): the ODOMETER stops updating at day 1 while the REAL
+    // film keeps going — `atEnd` below still fires at the true topout (driving the FINAL check at
+    // the right moment), but the value it checks stays wrong, which is the intended FAIL.
+    var displayP = frozen
+      ? (projectEndMs > projectStartMs ? Math.max(0, Math.min(1, MS_PER_DAY / (projectEndMs - projectStartMs))) : 0)
+      : (atEnd ? 1 : trueP);   // force exact reconciliation at the true final frame, never a near-1 gap
+    var cursorMs = (projectStartMs != null && projectEndMs != null)
+      ? projectStartMs + displayP * (projectEndMs - projectStartMs) : null;
+    var od = A.costOdometerAt(cursorMs, ops, projectStartMs, projectEndMs, displayP);
+    if (!od) return;
+    _coLastOd = od;
+    if (od.day !== _coLastLoggedDay) {
+      _coLastLoggedDay = od.day;
+      console.log('§COST_ODOMETER day=' + od.day + ' placed=' + od.placed + '/' + od.total +
+        ' costToDate=' + od.costToDate + ' hoursToDate=' + od.hoursToDate);
+    }
+    if (atEnd && !_coFinalFired) {
+      _coFinalFired = true;
+      A._costOdometerFinalFired = true;   // cinema_maxq.js's own post-loop "did FINAL ever fire" check
+      var ok = (od.costToDate === od.grandCost) && (od.hoursToDate === od.grandHours);
+      console.log('§COST_ODOMETER_FINAL cost=' + od.costToDate + ' total=' + od.grandCost +
+        ' hours=' + od.hoursToDate + ' totalHours=' + od.grandHours + ' => ' + (ok ? 'PASS' : 'FAIL'));
+    }
+  };
+  // Pure draw-time formatter — reads the CACHED _coLastOd only, never recomputes, never logs.
+  function _costRowText() {
+    if (!_coLastOd) return null;
+    // Example row (spec, §129.6 6b): "Cost   801 577 · 13 038 h"
+    return 'Cost   ' + _spaceThousands(_coLastOd.costToDate) + ' · ' + _spaceThousands(_coLastOd.hoursToDate) + ' h';
+  }
+  // ROUND 20 (2026-09-16, red1 direct ruling, OVERRIDING Round 16 item 1's own invented split — "one
+  // combined HUD panel again"): Cost/Ledger are BACK inside the resource panel's own box/plate/clip,
+  // drawn right after the trade list, in the SAME `_box()` (never a second, independently-positioned
+  // `hud.fiveD`/`_fiveDBox()` — both are gone). The panel's own height formula (`_box`, below) grows
+  // to include these rows — but STILL content-driven (never a fixed worst-case reservation): Round
+  // 16's real fix — "the panel's height is pie band + the rows actually shown" — is preserved, just
+  // widened to cover the cost/ledger rows too, not undone.
+  // `rows` is now a PARAMETER (built once by the caller via `_costLedgerRowsData()`, passed to BOTH
+  // `_box()` for sizing and here for drawing) so the height formula and the actual draw can never
+  // disagree about which rows exist this frame — the exact bug class `panelHOk` (cinema_maxq.js)
+  // exists to catch. `listEnd` (the trade list's own real end Y, LOCAL to the panel's translated
+  // origin — see `_drawList`'s own return) is where these rows now start: content-driven sizing means
+  // "right after the list" and "the panel's own bottom" are the SAME point, by construction, since
+  // nothing is reserved beyond what is actually drawn.
+  // Both rows span the panel's FULL INNER WIDTH (item 8d, unchanged) — the REGISTERED rect width is
+  // the ALLOCATED column width (`fullAvailW`), not the rendered text's own (usually narrower)
+  // measured width, so §HUD_LAYOUT's `rowsFullWidth` can check the real layout fact, not an accident
+  // of how long today's numbers happen to be. Truncation (ellipsis via `_fit()`) stays allowed.
+  function _costLedgerRowsData() {
+    var rows = [];
+    if (A._costOdometerOn) { var ct = _costRowText(); if (ct) rows.push({ name: 'pie.cost', text: ct }); }
+    if (A._pieLedgerOn && typeof A.ledgerTickerRowText === 'function') {
+      var lt = A.ledgerTickerRowText(false);
+      if (lt) rows.push({ name: 'pie.ledger', text: lt });
+    }
+    return rows;
+  }
+  A._resourcePanelCostLedgerRowsData = _costLedgerRowsData;
+  // Draws INSIDE the caller's own already-translated/clipped panel space (called right after
+  // `_drawList`, before that block's own `ctx.restore()`) — local coordinates match `_drawList`'s own
+  // convention (`lx`, not `B.x+lx`); registration converts back to ABSOLUTE coordinates (`B.x+lx`),
+  // matching every other rect this file registers. Because this now shares that block, the row TEXT
+  // inherits the SAME `ctx.globalAlpha = opacity` the caller already set around it (§129.9 REAL BUG —
+  // see this file's own git history: the old hud.fiveD box drew these rows AFTER that alpha scope had
+  // already been ctx.restore()'d back to 1, so held/faded frames drew the text at full opacity
+  // regardless — gone now, verified by inspection, not assumed: no `ctx.globalAlpha` write exists
+  // anywhere in this function).
+  function _pieCostLedgerRows(ctx, bw, B, rows, listEnd) {
+    if (!rows || !rows.length) return listEnd;
+    var pad = B.pad, lx = pad, fullAvailW = bw - 2 * pad;
+    var fs = B.fs0, rowH = B.rowH0;
+    // CONTROL `window.__hudRowsFloat=1` (§129.7 item 8 / ROUND 10, kept working — never deleted —
+    // against the NEW merged structure): the DEFAULT (0) position is content-driven — right after
+    // the list's own real end (`listEnd.ry`, plus a small separator gap matching `_box()`'s own
+    // `clRowsH` reservation below) — which the height formula assumes. The control deliberately
+    // draws at a WRONG, list-blind position instead (as if the list were always empty, ignoring
+    // `listEnd` entirely) so that on a clip whose trade-list row count is ever > 0, the rows land on
+    // TOP of the list — a real, detectable overlap `§HUD_LAYOUT`'s generic overlap count catches
+    // (`pie.cost`/`pie.ledger` are siblings of `pie.list` under `resource-panel`, never declared
+    // parent/child of each other, so an overlap between them is never exempted).
+    // Fix (2026-09-17, real bake caught it: §HUD_LAYOUT_ARM overlaps=1, pie.cost 2px into pie.list) —
+    // `ry` is a text-baseline CENTER (textBaseline='middle'), but registration below reports the rect's
+    // TOP as `ry - rowH/2`. Adding only `pad*0.5` after the list's own bottom edge doesn't account for
+    // that half-row-height the rect extends upward from its center, so the registered top edge landed
+    // `rowH/2 - pad/2` pixels above the list's bottom whenever `rowH > pad` (it does here) — a real,
+    // measured overlap, not a hypothetical one. `+ rowH * 0.5` restores the intended `pad*0.5` gap
+    // between the list's bottom edge and the row's own top edge.
+    var afterListY = (listEnd ? listEnd.ry : (B.pieBandH + pad)) + pad * 0.5 + rowH * 0.5;
+    var wrongY = (B.pieBandH || 0) + pad;
+    var start = window.__hudRowsFloat ? wrongY : afterListY;
+    var ry = start;
+    ctx.save();
+    ctx.font = '600 ' + fs + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    rows.forEach(function (r) {
+      var text = r.text, tw = ctx.measureText(text).width;
+      var truncated = tw > fullAvailW;   // read BEFORE any fitting — §HUD_LAYOUT's own honest flag
+      if (truncated && r.name === 'pie.ledger') {
+        var short = A.ledgerTickerRowText(true);   // the nicer, still-legible intermediate form
+        var shortW = ctx.measureText(short).width;
+        if (shortW <= fullAvailW) { text = short; tw = shortW; }
+      }
+      if (tw > fullAvailW) { text = _fit(ctx, text, fullAvailW); tw = ctx.measureText(text).width; }
+      ctx.fillText(text, lx, ry);
+      // §129.7 item 8d — registered width is the ALLOCATED full-inner-width column (fullAvailW),
+      // never the variable measured/post-fit text width `tw`. ROUND 20 — parent is `resource-panel`
+      // (the merged panel itself), never a separate `hud.fiveD`. Coordinates are ABSOLUTE (caller's
+      // `B.x`/`B.y` added back), matching `pie.band`/`pie.list`'s own registration convention.
+      if (A._hudLayoutRegister) A._hudLayoutRegister(r.name, B.x + lx, B.y + ry - rowH / 2, fullAvailW, rowH, 'resource-panel', truncated);
+      ry += rowH;
+    });
+    ctx.restore();
+    return { ry: ry };
+  }
+  // Exposed for a direct node dry run of the row-fit chain (full -> short, shortened by design, no
+  // ellipsis), same convention cpe_load_path.js uses for its own pure layout functions (A._loadPathLadderLayout
+  // etc.) — no THREE.js/DOM needed, only a ctx with measureText/fillText.
+  A._resourcePanelPieCostLedgerRows = _pieCostLedgerRows;
+  A._resourcePanelFit = _fit;
+  // §129.7 item 4 — exposed so a dry run can drive the REAL box-growth formula (never a re-typed
+  // copy of it) against A._costOdometerOn/A._pieLedgerOn.
+  A._resourcePanelBox = _box;
 
   // ══ §CPE_PIE_HOLD (2026-08-30, user ruling) ══════════════════════════════════════════════════
   // User: "make the pie part not to disappear but hold when there is silent info."
@@ -516,12 +750,59 @@ function setupCpeResourcePanel(A) {
 
   // ── The panel BOX. §CPE_PIE_HOLD: both modes call this, so the slot cannot change size, corner or
   // stack position when the content inside it swaps from the trade list to a revolving stat card.
-  function _box(w, h, pos, stackY) {
-    var bw = Math.round(h * 0.36), bh = Math.round(h * 0.24);
+  // ROUND 4 item 2, REVISED RULING (2026-09-16, red1): the panel does NOT widen — "users can see the
+  // ravelling when it is shorter, gives a glimpse of the common end tail; this is just for idea
+  // rather than empirical record." Superseded a same-day attempt that widened `bw` to the widest
+  // measured row (see git history/prior §129.4 entries) — reverted outright, `bw` is fixed again.
+  // §129.7 item 8 (2026-09-16, real Terminal clip sighting) — STACKED layout: (a) the pie gets an
+  // EXCLUSIVE band at the panel's top, nothing beside it; (b) the resource list follows below, at
+  // the FULL panel width (never the old 56%-squeezed side column — the actual cause of the heavy
+  // truncation the user pointed at).
+  // ROUND 16 item 1 (§129.9 item 1, 2026-09-16, red1: registry showed resource-panel 173x272 vs
+  // 173x115 pre-Round-10 — "that is what red1 calls gigantic") — SUPERSEDES (c)'s own "worst case
+  // the whole schedule will ever need": the list band is now sized for the ROWS ACTUALLY SHOWN this
+  // frame (`shownRows`, the caller's own live `info.rows.length`, clamped [0,8] — the SAME ceiling
+  // the old worst-case scan used, now applied to real content instead of a hypothetical), never
+  // `_scanMaxResourceRows()`'s pre-reserved allocation — "the panel's height is pie band + the rows
+  // actually shown" (red1's own ruling).
+  // ROUND 20 (2026-09-16, red1, OVERRIDING Round 16 item 1's own separate `hud.fiveD` box — "one
+  // combined HUD panel again"): Cost/Ledger are BACK in this SAME formula, via `clRows` (the caller's
+  // own live `_costLedgerRowsData().length`, mirroring `shownRows`'s exact discipline — content-
+  // driven, never a fixed worst-case reservation). `clRows` OMITTED falls back to the STATIC on/off
+  // toggle count (never used by the real resource-panel caller, which always passes the live number;
+  // kept only so an old/other caller that never knew about this param still gets a sane, non-zero
+  // reservation instead of silently clipping rows it didn't know to size for).
+  function _box(w, h, pos, stackY, shownRows, clRows) {
+    var bw = Math.round(h * 0.36);
+    // bh0 stays a FIXED, frame-height-anchored reference for font sizing ONLY (fs0/rowH0) — never
+    // fed back from the live/grown bh (see the old circular-growth note this replaces): the panel's
+    // ACTUAL height (bh, below) is now built up from real content bands, not derived from bh0 by
+    // itself, so this anchor keeps text a constant, predictable size regardless of how tall the
+    // panel ends up (a longer schedule's resource list must not also grow the font).
+    var bh0 = Math.round(h * 0.24);
+    var fs0 = Math.max(9, Math.round(bh0 * 0.085));
+    var rowH0 = Math.round(fs0 * 1.55);
+    var pad = Math.round(bh0 * 0.10);
+    // (a) the pie's own EXCLUSIVE band — full bw, sized off bw now (not squeezed into a column
+    // beside the list), so it no longer competes with the list for width OR height. UNCHANGED size
+    // (red1: "retain the single row pie bigger size as it is now").
+    var pieBandH = Math.round(bw * 0.66);
+    var listHeaderH = Math.round(fs0 * 0.7 + rowH0 * 0.95);
+    var rows = (shownRows != null) ? Math.max(0, Math.min(8, shownRows)) : Math.min(8, Math.max(2, _scanMaxResourceRows()));
+    var listRowsH = rows > 0 ? (listHeaderH + rows * rowH0) : 0;
+    // ROUND 20 — Cost/Ledger rows, appended AFTER the trade list, content-driven exactly like it: a
+    // small separator gap (`pad*0.5`, matching `_pieCostLedgerRows`'s own `afterListY` start) then
+    // one `rowH0` per row actually shown. Zero rows -> zero height, no reserved gap either.
+    var clN = (clRows != null) ? Math.max(0, clRows) : ((A._costOdometerOn ? 1 : 0) + (A._pieLedgerOn ? 1 : 0));
+    var clRowsH = clN > 0 ? Math.round(pad * 0.5 + clN * rowH0) : 0;
+    var bh = Math.round(pieBandH + pad + listRowsH + clRowsH + pad * 0.4);
     var margin = Math.round(h * 0.028);
     var at = (pos && POS[pos]) ? pos : 'tr';
     var sy = stackY || 0;
-    return { bw: bw, bh: bh, rad: Math.round(bh * 0.09),
+    // `bwBase` kept, equal to `bw` — the pie no longer has a narrower "own column" width distinct
+    // from the list (both now span the full panel width), but older callers still read the field.
+    return { bw: bw, bwBase: bw, bh: bh, bh0: bh0, fs0: fs0, rowH0: rowH0, pad: pad,
+             pieBandH: pieBandH, rows: rows, clRows: clN, rad: Math.round(bh * 0.09),
              x: (at === 'tl' || at === 'bl') ? margin : w - margin - bw,
              y: (at === 'bl' || at === 'br') ? h - margin - bh - sy : margin + sy };
   }
@@ -558,17 +839,23 @@ function setupCpeResourcePanel(A) {
   // Cached across BOTH modes, so a held pie costs nothing extra for the whole reveal.
   var _pieKey = null, _pieCanvas = null;
   function _pie(ctx, B, info) {
+    // §129.7 item 8a — the pie's own EXCLUSIVE band: full panel width now (`B.bw`, never a narrower
+    // side column), height `B.pieBandH` (falls back to `B.bh` for a bare {bw,bh,x,y,rad} object a
+    // future caller might build by hand instead of via _box()).
+    var pieBw = B.bw;
+    var pieBandH = (B.pieBandH != null) ? B.pieBandH : B.bh;
     var lit = A.resourcePanelLightDir();
     var key = (info.held ? 'H' : 'L') +
               (info.heldDayKey == null ? info.dayKey : info.heldDayKey) +
-              '|' + B.bw + 'x' + B.bh + '|' + info.rows.length + '|' + info.totalHeads +
+              '|' + pieBw + 'x' + pieBandH + '|' + info.rows.length + '|' + info.totalHeads +
               '|' + info.progress.toFixed(3) + '|' + lit.x.toFixed(2) + ',' + lit.y.toFixed(2);
-    if (_pieKey !== key || !_pieCanvas) { _pieCanvas = _pieBitmap(B.bw, B.bh, info, lit); _pieKey = key; }
+    if (_pieKey !== key || !_pieCanvas) { _pieCanvas = _pieBitmap(pieBw, pieBandH, info, lit); _pieKey = key; }
     if (!_pieCanvas) return;
     ctx.save();
     _round(ctx, B.x, B.y, B.bw, B.bh, B.rad); ctx.clip();
     ctx.drawImage(_pieCanvas, B.x, B.y);
     ctx.restore();
+    if (A._hudLayoutRegister) A._hudLayoutRegister('pie.band', B.x, B.y, B.bw, pieBandH, 'resource-panel');
   }
 
   // §CPE_BIG_STATS + §CPE_PIE_HOLD. `heldInfo` (optional) is the composition the pie holds while the
@@ -593,7 +880,27 @@ function setupCpeResourcePanel(A) {
   A.bigStatsCompositeOntoCanvas = function (ctx, w, h, shown, opacity, pos, stackY, heldInfo) {
     if (!ctx || !shown || !(shown.card || shown.roster) || !(opacity > 0)) return;
     var c = shown.card;
-    var B = _box(w, h, pos, stackY);
+    // `clRows=0` EXPLICIT — this stat-card/roster display never draws Cost/Ledger rows itself (see
+    // this function's body below: pie + card-or-roster only), so it must not reserve height for them
+    // either — leaving `clRows` omitted would fall back to the STATIC on/off toggle count (`_box()`'s
+    // own back-compat default for a caller that never knew about this param) and needlessly grow this
+    // panel past what it actually draws.
+    // Fix (2026-09-17, red1: "the rolling ending cards... got inflated, did not restore back its
+    // original size") — `shownRows` was `undefined` here, which `_box()`'s own fallback (line ~791)
+    // sends to `_scanMaxResourceRows()`, the OLD pre-Round-16 worst-case reservation the main
+    // resource panel stopped using months ago. This panel never got that same fix, so it was sized
+    // for a hypothetical worst-case list instead of what it actually draws (pie + one card/roster
+    // row, never a full trade list here). Pass the REAL row count, same content-driven discipline as
+    // `resourcePanelCompositeOntoCanvas`'s own `shownRows`: the roster slot draws `shown.roster.rows`
+    // via `_drawList` below, so that IS the real row count when a roster is showing; the card slot
+    // draws no list rows at all.
+    var shownRowsReal = (shown.roster && shown.roster.rows) ? Math.max(0, Math.min(8, shown.roster.rows.length)) : 0;
+    // Stash the SAME globals `resourcePanelCompositeOntoCanvas` stashes, so cinema_maxq.js's own
+    // change-detected panel-height check (§HUD_LAYOUT_STABLE) has FRESH, correct data regardless of
+    // which of the two panel functions drew this frame — without this, the check would silently read
+    // stale values left over from whichever panel drew last, during the OTHER panel's own phase.
+    A._resPanelShownRows = shownRowsReal; A._resPanelClRows = 0;
+    var B = _box(w, h, pos, stackY, shownRowsReal, 0);
     var bw = B.bw, bh = B.bh, x = B.x, y = B.y, rad = B.rad;
     ctx.save();
     ctx.globalAlpha = Math.min(1, opacity);
@@ -604,12 +911,14 @@ function setupCpeResourcePanel(A) {
     // §CPE_PIE_FLYOUT_DROP (2026-09-01): the Reveal round now passes heldInfo=null on purpose —
     // the pie is not drawn there at all and the content keeps this full-width column. The held-pie
     // path below still serves any caller that passes a composition (round 1 semantics unchanged).
-    var G = _geom(bw, bh);
+    // §129.7 item 8a (2026-09-16) — the held pie now draws in its own EXCLUSIVE top band too (same
+    // stacked layout the resource panel uses); the card/roster below it is FULL WIDTH always (never
+    // a narrower side column) and simply starts `B.pieBandH` further down when a pie is drawn.
     var colX = x + Math.round(bh * 0.13), colW = bw - Math.round(bh * 0.13) * 2;
-    var pieDrawn = false;
+    var pieDrawn = false, topY = 0;
     if (heldInfo && heldInfo.rows && heldInfo.rows.length && heldInfo.totalHeads > 0) {
       _pie(ctx, B, heldInfo);
-      colX = x + G.lx; colW = G.availW;
+      topY = B.pieBandH;
       pieDrawn = true;
     }
 
@@ -620,10 +929,10 @@ function setupCpeResourcePanel(A) {
     // §CPE_STATS_TAIL — the roster slot draws the real trade list, not a number, so the avatars and
     // the ×N counts stay in the rotation instead of being replaced by the cards.
     if (shown.roster) {
-      // §CPE_PIE_FLYOUT_DROP — with no pie drawn the roster list takes the full width too, and the
-      // slot dots move to the list's own left edge instead of the old right column.
-      ctx.save(); ctx.translate(x, y); _drawList(ctx, bw, bh, shown.roster, !pieDrawn); ctx.restore();
-      _dots(ctx, x + (pieDrawn ? G.lx : G.pad), y + bh - pad * 0.7, bh, shown);
+      // §129.7 item 8b — the roster list is full width regardless of pieDrawn now; only the START Y
+      // (below the pie's own band, when one is drawn) differs.
+      ctx.save(); ctx.translate(x, y); _drawList(ctx, bw, bh, shown.roster, topY, B); ctx.restore();
+      _dots(ctx, colX, y + bh - pad * 0.7, bh, shown);
       ctx.restore(); ctx.restore();
       return;
     }
@@ -634,7 +943,7 @@ function setupCpeResourcePanel(A) {
     while (big > 14);
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
     ctx.fillStyle = c.ink || '#fff';   // §59 — a category ink (Structural/Safety cards) overrides the default white; every pre-existing card never sets c.ink
-    var baseY = y + pad + big * 0.86;
+    var baseY = y + topY + pad + big * 0.86;
     ctx.fillText(c.big, colX, baseY);
     // §CPE_CARD_FIT (2026-09-01, found in the user's OWN Hospital bake, not by reading): once
     // §CPE_PIE_HOLD gave the pie its own permanent column, the card's text column narrowed from
@@ -735,7 +1044,20 @@ function setupCpeResourcePanel(A) {
   // Same box, same plate, same pie column as the stat-card mode — only the content column differs.
   A.resourcePanelCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
     if (!ctx || !info || !(opacity > 0)) return;
-    var B = _box(w, h, pos, stackY);
+    // ROUND 16 item 1 — the panel's own height is sized for the ROWS ACTUALLY SHOWN this frame
+    // (never a pre-scanned worst case); stashed on A for §HUD_LAYOUT's own independent recompute-
+    // and-compare check (cinema_maxq.js), so that witness never re-reads B.bh itself (a tautology)
+    // but recomputes the EXPECTED height fresh from h + this row count.
+    var shownRows = (info.rows && info.rows.length) ? Math.min(8, info.rows.length) : 0;
+    A._resPanelShownRows = shownRows;
+    // ROUND 20 — Cost/Ledger row data built ONCE here (never re-derived inside `_box()` or
+    // `_pieCostLedgerRows()`), so the height formula below and the actual draw further down can
+    // never disagree about which rows exist this frame. Stashed on A (mirrors `_resPanelShownRows`)
+    // for cinema_maxq.js's own independent `expectedPanelH` recompute to read — never read back from
+    // `panel.h` itself, which would be a tautology.
+    var clRows = _costLedgerRowsData();
+    A._resPanelClRows = clRows.length;
+    var B = _box(w, h, pos, stackY, shownRows, clRows.length);
     ctx.save();
     ctx.globalAlpha = Math.min(1, opacity);
     _plate(ctx, B);
@@ -743,28 +1065,38 @@ function setupCpeResourcePanel(A) {
     ctx.save();
     _round(ctx, B.x, B.y, B.bw, B.bh, B.rad); ctx.clip();
     ctx.translate(B.x, B.y);
-    _drawList(ctx, B.bw, B.bh, info);
+    // §129.7 item 8b — the list now spans the FULL panel width (B.bw, never the narrower B.bwBase
+    // side column), starting below the pie's own exclusive band (B.pieBandH).
+    var listEnd = _drawList(ctx, B.bw, B.bh, info, B.pieBandH, B);
+    // §129.7 item 8a — the list's own rect, registered so §HUD_LAYOUT's `pieExclusive` witness has
+    // a real sibling rect to check "nothing beside the pie" against (a band that starts exactly
+    // where the pie's own band ends can never overlap it by construction; this registration is what
+    // makes that a checked fact, not an assumption). Bounded by `listEnd.ry` (where the list's own
+    // drawn content actually stopped THIS frame), never `B.bh`.
+    if (A._hudLayoutRegister) A._hudLayoutRegister('pie.list', B.x, B.y + B.pieBandH, B.bw, Math.max(0, listEnd.ry - B.pieBandH), 'resource-panel');
+    // ROUND 20 (2026-09-16, red1 ruling — MERGES Round 16 item 1's separate `hud.fiveD` box back into
+    // this SAME clip/translate block, right after the trade list): the row TEXT now inherits the SAME
+    // `ctx.globalAlpha = opacity` set above (the real bug fixed this round — see `_pieCostLedgerRows`'s
+    // own comment), and `pie.cost`/`pie.ledger` register with `resource-panel` as their parent.
+    if (clRows.length) _pieCostLedgerRows(ctx, B.bw, B, clRows, listEnd);
     ctx.restore();
     ctx.restore();
+    if (A._hudLayoutRegister) A._hudLayoutRegister('resource-panel', B.x, B.y, B.bw, B.bh);
   };
 
-  // §CPE_PIE_HOLD — ONE panel, ONE geometry, in BOTH modes: [ pie + ring ] | [ content ].
-  // The pie's position is computed here and nowhere else, so the trade list and the revolving stat
-  // card sit in exactly the same column and the pie cannot move or vanish between them.
-  // §CPE_RESOURCE_PANEL_LAYOUT (2026-08-30, found by rendering a real frame, not by reading): the
-  // pie was sized from panel HEIGHT and the list took whatever was left over — which at 216x187 was
-  // 3.5 PIXELS. Trade names rendered as one letter each and "36 on site" was clipped mid-word. The
-  // content column's width is RESERVED FIRST and the pie fits into the remainder, so the text can
-  // never be squeezed out no matter how the panel is proportioned. Widened again after a real baked
-  // frame showed "Conc...", "Steel...", "Pipefit..." all truncating.
+  // §CPE_PIE_HOLD / §129.7 item 8a (2026-09-16, SUPERSEDES the side-by-side layout below) — the
+  // pie's OWN geometry only, now sized to its EXCLUSIVE band (full `bw`, band height `bh` — the
+  // list below has its OWN separate layout, see `_drawList`, never sharing this column math again).
+  // §CPE_RESOURCE_PANEL_LAYOUT (2026-08-30, found by rendering a real frame): the pie was sized from
+  // panel HEIGHT and the list took whatever was left over — which at 216x187 was 3.5 PIXELS. Trade
+  // names rendered as one letter each and "36 on site" was clipped mid-word. §129.7 item 8 (2026-09-
+  // 16, same failure mode recurring at a 56%-width list column): the side-by-side split itself was
+  // the problem — stacking the pie in its own band and giving the list the FULL width below it is
+  // the fix red1 asked for, not another split ratio.
   function _geom(bw, bh) {
-    var pad = Math.round(bh * 0.10);
-    var listW = Math.max(Math.round(bw * 0.56), 110);
-    var pieW = bw - listW - Math.round(pad * 1.4);
-    var R = Math.max(10, Math.min(pieW / 2 / 1.22, (bh - pad * 2) / 2 * 0.82));
-    return { pad: pad, listW: listW, pieW: pieW, cx: pad + pieW / 2, cy: bh / 2,
-             R: R, RY: R * 0.52, depth: Math.max(4, R * 0.30),
-             lx: bw - listW, availW: listW - pad };
+    var pad = Math.round(bh * 0.12);
+    var R = Math.max(10, Math.min((bw / 2 - pad) / 1.05, (bh - pad * 2) / 2 * 0.90));
+    return { pad: pad, cx: bw / 2, cy: bh / 2, R: R, RY: R * 0.52, depth: Math.max(4, R * 0.30) };
   }
 
   // The pie + ring ONLY, on a transparent bitmap — cached and shared by both panel modes.
@@ -850,24 +1182,37 @@ function setupCpeResourcePanel(A) {
   // The staffage PNGs already vendored are office/street people (sitting formal, walking with
   // shopping) — wrong for a trade, so the figure is drawn: a hard-hat silhouette tinted per trade.
   // Zero assets, crisp at any export size.
-  // §CPE_PIE_FLYOUT_DROP — `fullW` (optional, Reveal-round roster slot only): no pie is on the
-  // panel, so the list starts at the left pad and spans the whole plate instead of the 0.56 column
-  // §CPE_HUD_ORDER reserved beside the pie. Round-1 callers pass nothing and are unchanged.
-  function _drawList(g, bw, bh, info, fullW) {
-    var G = _geom(bw, bh), pad = G.pad, lx = fullW ? G.pad : G.lx,
-        availW = fullW ? bw - G.pad * 2 : G.availW;
-    var fs = Math.max(9, Math.round(bh * 0.085));
+  // §129.7 item 8b (2026-09-16, SUPERSEDES the side-by-side 0.56-column split) — the list now
+  // ALWAYS spans the panel's full inner width (nothing sits beside it any more — the pie moved to
+  // its own exclusive band, see `_geom`/`_pie`), starting at `topY` (the pie band's own height when
+  // one precedes it, 0 for a caller with no pie at all — e.g. the Reveal-round roster slot,
+  // §CPE_PIE_FLYOUT_DROP, unchanged in spirit, just no longer a width toggle).
+  // ROUND 13 item D (2026-09-16, user after sighting: "the other text lines are too large. Keep
+  // them same size as before, allow the pie only to grow") — `B` (the panel's OWN `_box()` result,
+  // NEW optional param) carries `fs0`/`pad` ANCHORED TO `bh0` (the fixed, pre-growth reference —
+  // see `_box`'s own comment); font/pad here now read THOSE instead of re-deriving from `bh`, which
+  // is the panel's GROWN total height since the pie band was added — the regression this fixes is
+  // exactly that re-derivation (`Math.round(bh*0.085)` off a `bh` that now includes the pie band,
+  // so the text grew right along with it, even though `_box()` had already computed a fixed `fs0`
+  // for this purpose and simply never wired it in here). `bh` is STILL used for `maxRows` (how many
+  // rows actually fit THIS frame's real, grown panel) — only the font/pad are pinned.
+  function _drawList(g, bw, bh, info, topY, B) {
+    var fs0 = (B && B.fs0) || Math.max(9, Math.round(bh * 0.085));   // fallback only for a caller with no B (none currently)
+    var pad = (B && B.pad) || Math.round(bh * 0.10);
+    var top = topY || 0, lx = pad, availW = bw - pad * 2;
+    var fs = fs0;
+    A._resPanelRowFontPx = fs;   // ROUND 13 item D — §HUD_LAYOUT's own `rowFontPx=` reads this, never a flag/formula
     var rowH = Math.round(fs * 1.55);
-    var maxRows = Math.max(1, Math.floor((bh - pad * 2 - fs * 1.4) / rowH));
+    var maxRows = Math.max(1, Math.floor((bh - top - pad * 2 - fs * 1.4) / rowH));
     var i, row, col;
     g.save();
     if (info.held) g.globalAlpha = HELD_DIM;
     g.textAlign = 'left'; g.textBaseline = 'middle';
     g.font = '700 ' + Math.round(fs * 1.15) + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
     g.fillStyle = '#fff';
-    g.fillText(info.totalHeads + ' on site', lx, pad + fs * 0.7);
+    g.fillText(info.totalHeads + ' on site', lx, top + pad + fs * 0.7);
     g.font = '600 ' + fs + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
-    var ry = pad + fs * 0.7 + rowH * 0.95;
+    var ry = top + pad + fs * 0.7 + rowH * 0.95;
     for (i = 0; i < Math.min(maxRows, info.rows.length); i++) {
       row = info.rows[i];
       col = TRADE_COLOR[row.trade] || FALLBACK[i % FALLBACK.length];
@@ -884,8 +1229,12 @@ function setupCpeResourcePanel(A) {
     if (info.rows.length > maxRows) {
       g.fillStyle = 'rgba(255,255,255,0.55)';
       g.fillText('+' + (info.rows.length - maxRows) + ' more', lx + fs * 1.05, ry);
+      ry += rowH;
     }
     g.restore();
+    // Kept for callers that still read where the list visually ended (informational only since
+    // item 8c: Cost/Ledger no longer append after this — see _pieCostLedgerRows's own pinned `ry`).
+    return { ry: ry, lx: lx, availW: availW, fs: fs, rowH: rowH };
   }
 
   // A hard-hat worker silhouette — helmet, head, shoulders. Deliberately simple: it must read at
