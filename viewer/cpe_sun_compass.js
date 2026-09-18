@@ -43,7 +43,7 @@ function setupCpeSunCompass(A) {
   var INK_SUN = 0xffcc66;      // the one warm colour in the frame; it is the sun
   var _grp = null, _built = false, _info = null, _geo = null, _site = null;
   var _sunRay = null, _sunLift = null, _sunDrop = null, _anchor = null, _radius = 0;
-  var _facade = null, _last = null, _disposed = false;
+  var _facade = null, _last = null, _disposed = false, _noCursorLogged = false;
 
   function q(sql) { try { return (A.dbQuery && A.dbQuery(sql)) || []; } catch (e) { return []; } }
 
@@ -302,8 +302,33 @@ function setupCpeSunCompass(A) {
     if (!_built || !_grp || !_geo || _geo.lat == null || _disposed) return null;
     var T = window.THREE;
     if (!T) return null;
-    var date = new Date(cursorMs);
-    if (isNaN(date.getTime())) return null;
+    // ⚠ NO CURSOR IS A REAL STATE, NOT A FAILURE. A film baked WITHOUT the buildup has no 4D
+    // timeline at all — cinema_maxq.js only populates `_bkState` inside the buildup arm — so there
+    // is no date, and §6 forbids inventing one. The rose still means something without a date (it
+    // is the building's true orientation), so it stays on screen; the SUN does not, because a sun
+    // drawn from a made-up date is a picture of a thing that is not happening. The sun lines hide
+    // and the readout says why, once, rather than the whole overlay vanishing with no explanation.
+    var date = (cursorMs == null) ? null : new Date(cursorMs);
+    if (date !== null && isNaN(date.getTime())) date = null;
+    if (date === null) {
+      if (!_noCursorLogged) {
+        _noCursorLogged = true;
+        console.log('§SUN_COMPASS_NO_CURSOR — the rose is drawn (true north is a property of the ' +
+          'building) but the sun and the day-of-year are NOT: this film has no 4D cursor, and a ' +
+          'sun position needs a real date. Bake with the buildup on to get them.');
+      }
+      if (_sunRay) _sunRay.visible = false;
+      if (_sunLift) _sunLift.visible = false;
+      if (_sunDrop) _sunDrop.visible = false;
+      var c0 = _site.centre;
+      var d0 = A.bearingDirectionThree(0, _geo.trueNorth);
+      _last = { cursorMs: null, date: null, dayOfYear: null, azimuth: null, elevation: null,
+                elevationApparent: null, isUp: false, attack: null, anchorThree: c0,
+                radius: _radius, noCursor: true,
+                trueNorthTip: new T.Vector3(c0.x + d0.x * _radius * 1.30, c0.y,
+                                            c0.z + d0.z * _radius * 1.30) };
+      return _last;
+    }
     var sun = A.sunPositionAt(_geo.lat, _geo.lon, date);
     if (!sun) return null;
 
@@ -369,6 +394,11 @@ function setupCpeSunCompass(A) {
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   A.sunCompassLabels = function (info) {
     if (!info) return null;
+    if (info.noCursor) {
+      // Says what IS true (the rose is real true north) and what is not being shown, rather than
+      // leaving a bare compass the viewer would read as a full sun overlay that failed silently.
+      return { day: 'True north', sun: 'No 4D date in this film — sun path not shown', attack: null };
+    }
     var d = info.date;
     var day = 'Day ' + info.dayOfYear + ' · ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
     // Below the horizon is a real state and says so, rather than printing an elevation that is
@@ -462,7 +492,7 @@ function setupCpeSunCompass(A) {
         if (o.material) o.material.dispose();
       });
     }
-    _grp = null; _built = false; _info = null; _last = null;
+    _grp = null; _built = false; _info = null; _last = null; _noCursorLogged = false;
     _sunRay = _sunLift = _sunDrop = null; _disposed = true;
   };
 }

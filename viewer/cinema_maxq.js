@@ -1144,6 +1144,9 @@
     var _clash = false;   // §CLASH_FILM_P1 — mesh-true clash pairs as persistent world content
     var _measure = false;      // §FLYTHRU_DATUM — Alt-C 'Measure' checkbox
     var _sunCompass = false;   // §SUN_COMPASS — the true-north ground rose; OFF unless requested
+    // §SUN_COMPASS — the cursor handed to the rose each frame. NULL when the film has no buildup,
+    // which is a real state the module handles; it is never defaulted to "now".
+    var _sunCompassMs = null;
     // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
     // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
     // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
@@ -1769,16 +1772,7 @@
             // cannot be handed a position that belongs to a different frame.
             if (_dayInfo) _dayInfo.pos = _dayPos;
           }
-          // §SUN_COMPASS — the SAME `_bkMs`. GEOREF_SUNPATH_COMPASS.md §6 is explicit that this
-          // feature must not introduce a second date source; the sun is a pure function of
-          // (lat, lon, cursor) and the cursor is the one the buildup is already showing.
-          // Closed-form trig, no loop — cheap enough to recompute every frame rather than cache,
-          // which is also the only way it cannot lag the model by a frame.
-          if (A._sunCompassOn && A.sunCompassAt) {
-            try { A.sunCompassAt(_bkMs); }
-            catch (eSCA) { if (!A._sunCompassAtWarned) { A._sunCompassAtWarned = true;
-              console.warn('§SUN_COMPASS_AT failed frame=' + i + ': ' + (eSCA && eSCA.message)); } }
-          }
+          _sunCompassMs = _bkMs;   // §SUN_COMPASS — see the hoisted call below
           var _ggO = _ghostGroundAt(_bkT, _filmSecFull, _bkState, _bkMs);   // §CPE_CLIP_BUILDUP_FILM_T — same class: the fade is in FILM seconds
           // ══ §CPE_BUILDUP_PLACED (MEP_CLASH_REVEAL_MOVIE.md §88.3/§88.6e) ═══════════════════════
           // The frame number lives HERE; what is actually on screen for a watched guid lives in the
@@ -1826,6 +1820,23 @@
               '/' + _bkState.ops +
               (_ggO == null ? '' : ' groundOpacity=' + _ggO.toFixed(3)));
           }
+        }
+        // §SUN_COMPASS — HOISTED OUT OF THE BUILDUP BLOCK ON PURPOSE (fixed 2026-09-19).
+        // ⚠ This call used to sit inside `if (_buildup && _bkState)`, next to the day counter,
+        // because it reads the same `_bkMs`. That was wrong and it failed SILENTLY: a film baked
+        // with the buildup off never called it, so `A.sunCompassInfo()` stayed null, `_captureFrame`
+        // composited nothing, and the sun ray never moved — while `§SUN_COMPASS built` still printed
+        // at arm time and every witness still passed. Found by looking at a real baked frame
+        // (Hospital, buildup=0): the log said the rose was built and the picture had no overlay on
+        // it. The wiring witnesses could not catch it because they call sunCompassAt directly.
+        // ⚠ §6 IS STILL KEPT. There is no second date source: `_sunCompassMs` is `_bkMs` when the
+        // buildup is driving, and NULL otherwise — because without a buildup cinema_maxq never
+        // populates `_bkState`, so no 4D cursor exists to read. The module draws the rose and
+        // suppresses the sun in that case rather than inventing a date; see §SUN_COMPASS_NO_CURSOR.
+        if (A._sunCompassOn && A.sunCompassAt) {
+          try { A.sunCompassAt(_sunCompassMs); }
+          catch (eSCA) { if (!A._sunCompassAtWarned) { A._sunCompassAtWarned = true;
+            console.warn('§SUN_COMPASS_AT failed frame=' + i + ': ' + (eSCA && eSCA.message)); } }
         }
         // §CPE_DISCIPLINE_REVEAL Mechanism C — pure function of (plan, tNorm), same call the preview
         // loop makes (cinema_path_editor.js's _previewFly) so bake and preview cannot diverge. No-op

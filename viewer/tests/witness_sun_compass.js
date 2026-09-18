@@ -366,6 +366,37 @@ if (built.facade) {
   A.sunCompassAt(cursor);   // leave the module on the cursor the later cases expect
 })();
 
+// ── CASE NO-CURSOR: a film with no buildup has no 4D date. Fixed 2026-09-19. ────────────────────
+// THE DEFECT THIS EXISTS FOR, found by looking at a real baked frame and not by any witness:
+// cinema_maxq.js called sunCompassAt from INSIDE `if (_buildup && _bkState)`, so a bake with the
+// buildup off never called it at all — `§SUN_COMPASS built` printed at arm time, every witness
+// passed, and the exported frames carried no overlay. The call is hoisted now, and it is handed
+// null when there is no cursor. These checks pin the behaviour at that end.
+(function () {
+  var info = A.sunCompassAt(null);
+  truth('no-cursor: the rose still reports (true north is a property of the building)', !!info);
+  if (!info) { fails++; return; }
+  truth('no-cursor: flagged as such rather than faked', info.noCursor === true);
+  truth('no-cursor: NO date is invented', info.date === null && info.dayOfYear === null);
+  truth('no-cursor: NO sun is invented', info.azimuth === null && info.elevation === null &&
+        info.isUp === false && info.attack === null);
+  truth('no-cursor: the needle is still positioned', !!info.trueNorthTip && !!info.anchorThree);
+
+  var labels = A.sunCompassLabels(info);
+  truth('no-cursor: the label says what IS true', labels.day === 'True north');
+  truth('no-cursor: and says the sun is not shown, rather than going blank',
+        /no 4d date/i.test(labels.sun) && labels.attack === null, labels.sun);
+
+  // It must go back to a real reading on the next cursor — a latched no-cursor state would kill
+  // the overlay for the rest of the film.
+  var back = A.sunCompassAt(Date.UTC(2026, 5, 21, 17, 30));
+  truth('no-cursor is not sticky — a real cursor restores the sun',
+        back && back.noCursor !== true && back.isUp === true && !!back.attack);
+  truth('an invalid date is treated as no-cursor, not as a crash',
+        A.sunCompassAt(NaN) !== null && A.sunCompassAt(NaN).noCursor === true);
+  A.sunCompassAt(Date.UTC(2026, 5, 21, 17, 30));   // leave it on a real cursor
+})();
+
 // ── CASE C: §4 — no known location means NOTHING is drawn (issue 2, the NO-OP guard). ───────────
 (function () {
   var dbC = prepDb({ true_north_angle: 0, true_north_source: 'default_zero',
