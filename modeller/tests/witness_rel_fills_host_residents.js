@@ -38,17 +38,52 @@ const { runE2E } = require('./e2e_harness');
 
 // rows = INSERTs in the shipped patch; rideable = the generator's own measured reach on that target.
 const EXPECT = {
-  HHS:            { rows: 218, rideable: 99,  settle: 6000 },
-  Clinic:         { rows: 403, rideable: 302, settle: 6000 },
+  HHS:            { rows: 218, rideable: 99,  settle: 6000 /* fallback only — settled() waits on the condition */ },
+  Clinic:         { rows: 403, rideable: 302, settle: 6000 /* fallback only — settled() waits on the condition */ },
   Hospital:       { rows: 665, rideable: 506, settle: 15000 },
-  HospitalGarage: { rows: 220, rideable: 36,  settle: 6000 },
+  HospitalGarage: { rows: 220, rideable: 36,  settle: 6000 /* fallback only — settled() waits on the condition */ },
   Duplex:         { rows: 50,  rideable: 36,  settle: 5000 },
   Terminal:       { rows: 0,   rideable: 0,   settle: 12000 }
 };
 
+// Wait on a CONDITION, never a duration. The first version of this witness slept a fixed per-building
+// time and, on a slower run, read Hospital while window.__arcFidByGuid was STILL CLINIC'S — bridge=1950
+// (Clinic's size) instead of 6929, so every Hospital guid missed and it reported rideable=0 against an
+// expected 506. The header below already said "a witness that races is a witness that lies"; a fixed
+// sleep IS that race. Settle on: the open has switched to THIS building, the guid bridge is non-empty,
+// and it has stopped growing — then read.
+// The condition must be tied to the NEW bridge, and nothing observable says "this bridge is fresh":
+// __dwName flips at the START of the open, while __arcFidByGuid is rebuilt LATER, in the geo-fetch
+// continuation (_seedArcEditable). Two earlier attempts failed on exactly that — a fixed sleep, then
+// "__dwName matches and the bridge stopped changing", which the PREVIOUS building's untouched bridge
+// satisfies trivially (observed: openName=Hospital, bridge=1950, which is Clinic's size).
+// So the witness removes the ambiguity instead of guessing at it: NULL both globals before opening,
+// then wait for them to be repopulated. Only the new open can do that, so a non-empty bridge is
+// necessarily this building's.
+async function settled(t, key) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < 180000) {
+    const st = await t.pg.evaluate(() => ({
+      name: window.__dwName,
+      bridge: window.__arcFidByGuid ? Object.keys(window.__arcFidByGuid).length : -1,
+      fills: window.swXEdges ? ((window.swXEdges.fills || []).length) : -1
+    }));
+    if (st.name === key && st.bridge > 0 && st.fills >= 0) return st;
+    await t.sleep(500);
+  }
+  const fin = await t.pg.evaluate(() => ({ name: window.__dwName,
+    bridge: window.__arcFidByGuid ? Object.keys(window.__arcFidByGuid).length : -1 }));
+  return { name: fin.name, bridge: fin.bridge, timedOut: true };
+}
+
 async function read(t, key) {
+  // Clear the globals the read depends on, so a stale value from the PREVIOUS building cannot be
+  // mistaken for this one's. The open path reassigns both; nulling them is safe and is what makes
+  // the wait below a real condition rather than a hope.
+  await t.pg.evaluate(() => { window.__arcFidByGuid = null; window.swXEdges = null; });
   await t.open(key);
-  await t.sleep(EXPECT[key].settle);
+  const st = await settled(t, key);
+  if (st.timedOut) console.log('  §RFH-SETTLE-TIMEOUT ' + key + ' name=' + st.name + ' bridge=' + st.bridge);
   return t.pg.evaluate(() => {
     const X = window.swXEdges || {}, fbg = window.__arcFidByGuid || {};
     const fills = X.fills || [];
@@ -61,7 +96,8 @@ async function read(t, key) {
       if (table) rows = db.exec("SELECT COUNT(*) FROM rel_fills_host")[0].values[0][0];
     } catch (e) { }
     db.close();
-    return { table, rows, fills: fills.length, rideable, bridge: Object.keys(fbg).length };
+    return { table, rows, fills: fills.length, rideable, bridge: Object.keys(fbg).length,
+             openName: window.__dwName };
   });
 }
 
@@ -72,6 +108,8 @@ runE2E('W-RFH-RESIDENTS', async (t) => {
     t.assert('F1 TABLE-REACHES-SCENE (' + key + ' — patch applied AND published as swXEdges.fills)',
       r.table && r.rows === e.rows && r.fills === e.rows,
       'table=' + r.table + ' rows=' + r.rows + '/' + e.rows + ' fills=' + r.fills);
+    t.assert('F1b RIGHT-BUILDING (' + key + ' — the guid bridge belongs to THIS open, not the previous one)',
+      r.openName === key && r.bridge > 0, 'openName=' + r.openName + ' expected=' + key + ' bridge=' + r.bridge);
     t.assert('F2 RIDEABLE-EXACT (' + key + ' — live reach == the generator\'s measured reach, exactly)',
       r.rideable === e.rideable,
       'rideable=' + r.rideable + ' expected=' + e.rideable + ' (bridge=' + r.bridge + ')');
