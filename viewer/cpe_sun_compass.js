@@ -400,7 +400,15 @@ function setupCpeSunCompass(A) {
       return { day: 'True north', sun: 'No 4D date in this film — sun path not shown', attack: null };
     }
     var d = info.date;
-    var day = 'Day ' + info.dayOfYear + ' · ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+    // ⚠ DOES NOT START WITH "Day", and that is the whole point of this wording.
+    // It used to read "Day 212 · 31 Jul". Seen in a real baked frame, that sat on screen beside
+    // cpe_day_counter.js's "Day 390 / 390" in the opposite corner — two different numbers, both
+    // labelled "Day", both correct, and together unreadable: the counter's is the PROJECT day
+    // (day N of the build), this one is the DAY OF THE YEAR (§7's "Day of the year, set by the 4D
+    // timeline"). They are different quantities and must not share a word. The date leads, and the
+    // ordinal is spelled out as "of the year" so it cannot be mistaken for the counter's.
+    var day = d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' · day ' + info.dayOfYear +
+              ' of the year';
     // Below the horizon is a real state and says so, rather than printing an elevation that is
     // technically correct and reads as nonsense on screen.
     var sun = info.isUp

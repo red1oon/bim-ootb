@@ -259,8 +259,13 @@ if (built.facade) {
   var joined = drawn.join(' | ');
   truth('the composite emitted text onto the 2D context (not a DOM badge)', drawn.length > 0,
         'drew: ' + joined);
-  truth('the day-of-year reaches the exported frame', /Day 172/.test(joined), joined);
+  truth('the day-of-year reaches the exported frame', /day 172 of the year/.test(joined), joined);
   truth('the date reaches the exported frame', /21 Jun/.test(joined), joined);
+  // THE COLLISION GUARD. cpe_day_counter.js owns "Day N" — the PROJECT day — in its own corner.
+  // This label is the DAY OF THE YEAR. Both were labelled "Day" and appeared in the same frame,
+  // which is unreadable. Asserted so the word cannot drift back.
+  truth('the compass label does NOT open with "Day" (that word is the project counter\'s)',
+        !/\|\s*Day \d/.test(' | ' + joined.replace(/Day \d+ \/ \d+/g, '')), joined);
   truth('the sun angles reach the exported frame', /Sun \d+° az/.test(joined) && /° alt/.test(joined), joined);
   truth('the angle of attack reaches the exported frame', /° onto the \w+ facade/.test(joined), joined);
   truth('the true-north letter N is drawn', drawn.indexOf('N') >= 0, joined);
@@ -341,7 +346,8 @@ if (built.facade) {
   var labels = A.sunCompassLabels(info);
   var direct = A.sunPositionAt(built.lat, built.lon, new Date(cursor));
   truth('T8.3 the day-of-year label is the cursor\'s own day',
-        labels.day.indexOf('Day ' + A.sunDayOfYear(new Date(cursor))) === 0, labels.day);
+        labels.day.indexOf('day ' + A.sunDayOfYear(new Date(cursor)) + ' of the year') > 0,
+        labels.day);
   check('T8.3 the rose\'s sun bearing is that same instant\'s azimuth', info.azimuth,
         direct.azimuth, 1e-12);
   // The angle of attack must be reproducible from the SAME sun direction the rose was drawn with
