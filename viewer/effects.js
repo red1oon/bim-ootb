@@ -2638,8 +2638,48 @@ async function setupEffects(A, renderer, scene, camera) {
   // while every shadow stayed frozen at whatever angle was last baked — worse than not animating at
   // all, since the mismatch reads as a bug rather than a static look. Called every frame the sun
   // moves, right after updateSky(), so no frame captures with a stale shadow angle.
+  // §SUN_ONE (red1, 2026-09-19: "to have one correct one, so everything is in synch").
+  // There were TWO suns in a frame. This one — the scripted 55°→6° arc at a fixed azimuth of 200 —
+  // lit the building and cast every shadow. The sun compass drew the REAL one from the site's
+  // lat/long and the 4D date. MEASURED on one Hospital frame: rendered 345° az / 55.0° elev,
+  // real 267.3° az / 30.4° elev — 77.7° and 24.6° apart, and diverging differently every frame
+  // because the scripted sun never moves in azimuth at all while a real one does.
+  //
+  // So when the compass is on, the REAL sun drives the light too, and there is one sun.
+  //
+  // ⚠ GATED ON THE COMPASS FLAG, and the default is untouched. §SUN_ARC_TOPOUT_SNAP REVERTED above
+  // records that the linear crawl "was already correct and was never to be touched". It still is,
+  // for every bake that does not ask for the compass — this cannot change a film nobody opted in.
+  //
+  // ⚠ AZIMUTH FRAMES DIFFER AND THE CONVERSION IS NOT OPTIONAL. updateSky takes a SCENE bearing
+  // (0 = model north, via setFromSphericalCoords where z = +cos θ); the compass reports a TRUE
+  // bearing (0 = true north, and the scene maps z = −cos). So θ = 180 − (trueAz − trueNorthAngle).
+  // Verified against the shipped constant: PHOTO_SUN_AZIMUTH 200 is model bearing −20°, and
+  // 180 − (−20) = 200. Feeding a true bearing straight in would be wrong by 180° plus true north.
+  //
+  // ⚠ A REAL SUN GOES DOWN. If the 4D cursor lands after sunset the elevation is negative and the
+  // film is dark — that is the correct answer, not a fault, and it is the price of one sun. The
+  // scripted arc could never do this, which is exactly why it never agreed with the compass.
+  function _realSunForRender() {
+    if (!A._sunCompassOn || typeof A.sunCompassInfo !== 'function') return null;
+    var info = A.sunCompassInfo();
+    if (!info || info.noCursor || info.azimuth == null || info.elevation == null) return null;
+    var tn = (typeof window !== 'undefined' && window._trueNorthAngle) || 0;
+    return { el: info.elevation, az: (180 - (info.azimuth - tn) % 360 + 360) % 360 };
+  }
   function _sunArcStep(tNorm) {
     if (!A.updateSky) return;
+    var _real = _realSunForRender();
+    if (_real) {
+      A.updateSky(_real.el, _real.az);
+      if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
+      A._sunArcElevationDeg = _real.el;
+      console.log('§SUN_ONE tNorm=' + tNorm.toFixed(3) + ' elevation=' + _real.el.toFixed(1) +
+        ' skyAzimuth=' + _real.az.toFixed(1) + ' — the REAL sun is lighting the scene, so the ' +
+        'shadows and the compass rose agree' + (_real.el <= 0 ? ' (below the horizon: the film is ' +
+        'dark here because it really is dark there)' : ''));
+      return _real.el;
+    }
     var _el = _sunElevationAt(tNorm);
     A.updateSky(_el, PHOTO_SUN_AZIMUTH);
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;

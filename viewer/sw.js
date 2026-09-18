@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1178';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1188';   // bump on each deploy; per-change detail is the git commit message.
 // v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
 //   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
 //   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
@@ -198,6 +198,84 @@ const CACHE_VERSION = 'v1178';   // bump on each deploy; per-change detail is th
 //   cinema_path_editor.js gains ONE Alt+C checkbox ("Sun compass") governing the whole overlay —
 //   rose + day-of-year + sun-angle readout together, off by default so every saved path re-bakes
 //   byte-identically. cli_silent_bake.js gains --sun-compass/--no-sun-compass.
+// v1188 (2026-09-19) §HUD_COLUMN + §129.1 FREEZE (red1, on a real 1852x960 frame): the sun
+//   readout moved OUT of bottom-left — the loadpath session's room box owns that corner now and
+//   mine was drawing underneath it — and into the day-counter column, under the clock. One owner
+//   of that corner's stacking, so collision is impossible by construction. Reserving against the
+//   centred caption (v1187) is retired: that caption is deleted by the same work.
+//   The §129.1 load-path FREEZE now clears this overlay like every other: both composites go
+//   through _drawUnlessHold, the ROSE is hidden explicitly (a scene object the HUD fade cannot
+//   reach), and the CLOCK is HELD rather than merely hidden — the film's fraction advances under
+//   a frozen frame, so the hands would have ticked invisibly and jumped on return. Resumes at the
+//   next proper frame. Frozen frames are excluded from the lit/dark tally.
+// v1187 (2026-09-19) §CPE_CAPTION_BAND: the §SUN_COMPASS bottom-left readout was landing ON the
+//   room-title caption — measured on an 854x480 HHS bake with EVERY overlay on, caption plate
+//   405.6..443.6 against the readout's middle line 418..443. cpe_room_title.js now publishes
+//   A.roomTitleBandSize (one owner of that arithmetic, like dayCounterBoxSize), cinema_maxq
+//   reserves it per frame when a caption is up, and the readout stacks above it. No caption, no
+//   reservation — it returns to the bottom.
+// v1186 (2026-09-19) §SUN_DAY (red1: "a new day film scheme — as it gives rightfully, a whole
+//   daylight sweep"): a date field beside the Sun compass, hover "enable geo-ref truth". Pin a date
+//   and the WHOLE film is lit on that one day with the hour sweeping 9:00-17:00 solar — one clean
+//   arc (21 Jun at Boston: 48 59 67 71 67 59 48 37 26) instead of the season fighting the clock
+//   (45 22 26 47 60 49 23 6). The BUILD still follows the 4D timeline; only the light is pinned,
+//   and the readout prints the LIT day so it and the Day counter cannot be confused.
+//   Empty = the shipped behaviour, so no saved path re-bakes differently. --sun-date on the CLI.
+// v1185 (2026-09-19) §SUN_CLOCK (red1): an analogue face with hour/minute hands showing the SOLAR
+//   hour each frame is lit at, in the day counter's own corner directly under it (bottom-left was
+//   already taken by the date/sun/facade lines). Ties to the compass toggle — no compass, no clock.
+//   It returns its drawn height so the path box and pie stack below it without overlap.
+// v1184 (2026-09-19) §SUN_ONE film clock SWEEPS (red1: the film runs all the days but samples
+//   different times of day "to give a perception of a single half day"). The solar hour now moves
+//   9:00 -> 17:00 with the film fraction while the DATE advances underneath, so the sun rises,
+//   peaks and sets across the film — what the old scripted 55->6 arc imitated, except real.
+//   Boston over 390 days: elevation 13 30 53 69 66 47 23 5 -2. Plus §SUN_ONE_ALL_DARK, judged over
+//   the whole run: a film dark in every frame is the truth inside the polar circle and a mistake
+//   anywhere else, and it says which.
+// v1183 (2026-09-19) §SUN_ONE film clock (sun_path.js + cpe_sun_compass.js): the DATE advances
+//   with the film, the TIME OF DAY is held at 10:00 SOLAR. Driving the light from the raw 4D
+//   cursor was astronomically perfect and a strobe — a real 8-frame Hospital bake gave elevation
+//   30.4, -33.7 (night), 18.2, 43.8 across four frames, because 390 days play in 80 seconds so
+//   each frame lands at an unrelated hour. Held hour: Boston runs 18.7..58.7 deg across the year,
+//   never below the horizon, largest month-to-month step 10.2 deg. Solar time, so it needs only
+//   the longitude — no timezone data, no DST.
+// v1182 (2026-09-19) §SUN_ONE (effects.js): there were TWO suns in a frame — the scripted 55->6
+//   arc at a fixed azimuth 200 lit the building, while the compass drew the real one. Measured
+//   77.7 deg apart in azimuth and 24.6 deg in elevation on one Hospital frame. With the compass
+//   ON, the REAL sun now drives updateSky too, so shadows and rose agree. Gated on the flag: every
+//   bake that does not ask for the compass keeps the scripted arc exactly as before.
+// v1181 (2026-09-19) §SUN_COMPASS readout regrouped (red1, after seeing a real frame): the date,
+//   the sun angles and the facade angle-of-attack are ONE fixed block bottom-left; the rose keeps
+//   only its "N". The date used to be pinned under the rose in world space, and Hospital frame 5/8
+//   — camera inside a washroom, ground not in view — had the sun line present and the date GONE.
+//   A film must not stop saying what day it is because of where the camera is.
+// v1180 (2026-09-19) §SUN_COMPASS two real fixes to cpe_sun_compass.js + cinema_maxq.js since
+//   v1179, so the version MUST move or a client keeps serving the old module: (1) the per-frame
+//   sunCompassAt call was inside `if (_buildup && _bkState)` and never ran on a buildup-off bake —
+//   the rose built, the log said so, and nothing was composited; (2) the day-of-year label said
+//   "Day 285 · 12 Oct" beside cpe_day_counter's "Day 390 / 390" — two different quantities sharing
+//   a word. Now "12 Oct · day 285 of the year".
+//   ⚠ A LOCAL PREVIEW BAKE CAN RENDER STALE JS, AND BUMPING THIS CONSTANT DOES NOT FIX IT.
+//   Measured 2026-09-19, three bakes: both fixes above were baked and the frames showed the OLD
+//   behaviour; bumping v1179 -> v1180 changed NOTHING. The cause is cli_silent_bake.js's
+//   `userDataDir: /tmp/silent-bake-profile-<port>`, which persists between runs and holds the
+//   service-worker registration and its Cache Storage. A CACHE_VERSION bump only takes effect when
+//   the NEW worker activates, and a new worker waits while the old one still controls the page — so
+//   the bump cannot evict anything on the next load. `rm -rf /tmp/silent-bake-profile-*` before the
+//   bake is what actually works; that run produced the correct frame on the first try.
+//   The bump below is still right for SHIPPING (two modules changed since v1179) — it just was not
+//   the fix, and reporting it as one would have been wrong.
+// v1179 (2026-09-19) §CPE_TOGGLE_ICONS: the Alt+C panel's seven overlay toggles are icon buttons
+//   that light amber when checked, built from ONE table instead of seven hand-written rows.
+//   COSMETIC ONLY — every checkbox id, handler, _state field, census entry and DOM-sync row is
+//   unchanged, and W-SUN-COMPASS-WIRING asserts the whole chain by name. The row hints moved into
+//   each button's title rather than being dropped. Icons: red1's traced compass (flat, inlined
+//   four icons from panels.js's own ISC-licensed Lucide set — ruler/triangle/disciplines plus a new
+//   ICONS.compass (the magnetic rose, NOT draftingCompass, which is the drawing instrument). Three
+//   slots stay caption-only rather than carrying invented placeholders.
+//   (A compass traced from clipart4585220.png was inlined and removed the same day —
+//   realclipart.com "Personal Use", not the Flaticon free tier it was believed to be. Lucide's own
+//   compass replaces it with no attribution obligation: viewer/icons/lucide/README.md, ISC.)
 // v1177 (2026-09-14) TM_4D5D_VARIANCE_LANE §S7-INJECT: new viewer/schedule_inject.js ("Generate
 //   programme" — materializeZones+persistDb on the fly, best-effort save, honest saved/session-only
 //   message); panels.js 'sched4d' pill gate changed from "has a schedule" to "engine capable" so the

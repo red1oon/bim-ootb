@@ -38,12 +38,58 @@ function setupCpeSunCompass(A) {
   if (!A) return;
 
   var RAD = Math.PI / 180;
-  var INK = 0x8899aa;          // same ink as cpe_flythru_datum.js's datum — one drawing language
+  // §SUN_ONE film clock (red1, 2026-09-19: "the whole film is showing actually all days running and
+  // capturing only a subset ie different times of the day to give a perception of a single half
+  // day"). The film sweeps the solar hour from morning to late afternoon as it plays, while the
+  // DATE advances with the 4D cursor underneath. So a viewer reads one half-day of sun arcing
+  // over the building — which is what the old scripted 55°→6° arc was imitating — except every
+  // frame is the real sun for this site, this date and that hour.
+  // SOLAR hours, so only the longitude is needed: no timezone table, no DST, nothing that is wrong
+  // in another country. Both numbers are a LOOK decision and live only here.
+  var FILM_SOLAR_START = 9;    // mid-morning: the sun is up at any inhabited latitude, any season
+  var FILM_SOLAR_END = 17;     // late afternoon, long shadows, still up in midwinter at Boston
+  function _filmSolarHour(filmT) {
+    var t = (typeof filmT === 'number' && isFinite(filmT)) ? Math.max(0, Math.min(1, filmT)) : 0.5;
+    return FILM_SOLAR_START + (FILM_SOLAR_END - FILM_SOLAR_START) * t;
+  }
+  // §SUN_ONE_ALL_DARK tally (red1: "if all does end up dark, then it is a 'buggy' case where we
+  // started too late in the day?"). Exactly right, and a film that is dark end to end must not
+  // pass as a real answer — it is nearly always a wrong hour or a site nobody meant. Counted here,
+  // reported by sunCompassDarkReport() once the frames are done.
+  var _framesLit = 0, _framesDark = 0;
+  // §SUN_DAY — the pinned day, or null to follow the 4D cursor. Set by the bake from the panel.
+  var _sunDate = null;
+  var _heldLogged = false;
+  A.sunCompassSetDate = function (iso) {
+    if (!iso) { _sunDate = null; console.log('§SUN_DAY following the 4D timeline (no date pinned)'); return null; }
+    // yyyy-mm-dd, parsed as UTC so a browser timezone cannot shift the day by one.
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso).trim());
+    if (!m) { _sunDate = null; console.log('§SUN_DAY IGNORED "' + iso + '" — not yyyy-mm-dd; following the 4D timeline'); return null; }
+    var y = +m[1], mo = +m[2] - 1, dd = +m[3];
+    var cand = new Date(Date.UTC(y, mo, dd));
+    // ⚠ ROUND-TRIP, because Date.UTC ROLLS OVER instead of failing. Caught by the witness:
+    // "2026-13-45" matches the pattern, is not a real date, and Date.UTC turns it into
+    // 14 Feb 2027 — a perfectly valid day that is not the one anybody typed. A silently wrong
+    // date is the worst possible outcome for a feature whose whole claim is geo-ref TRUTH.
+    if (isNaN(cand.getTime()) || cand.getUTCFullYear() !== y ||
+        cand.getUTCMonth() !== mo || cand.getUTCDate() !== dd) {
+      _sunDate = null;
+      console.log('§SUN_DAY IGNORED "' + iso + '" — not a real date (it would have rolled over to ' +
+        (isNaN(cand.getTime()) ? 'an invalid date' : cand.toISOString().slice(0, 10)) +
+        '); following the 4D timeline');
+      return null;
+    }
+    _sunDate = cand;
+    console.log('§SUN_DAY pinned to ' + iso + ' — every frame is lit on that day, hour sweeping ' +
+      FILM_SOLAR_START + ':00-' + FILM_SOLAR_END + ':00 solar. The BUILD still follows the 4D cursor.');
+    return _sunDate;
+  };
+  var INK = 0xdbe4ee;          // same ink as cpe_flythru_datum.js's datum — one drawing language
   var INK_N = 0xe8eef6;        // the true-north needle reads stronger by weight, not by hue
   var INK_SUN = 0xffcc66;      // the one warm colour in the frame; it is the sun
   var _grp = null, _built = false, _info = null, _geo = null, _site = null;
   var _sunRay = null, _sunLift = null, _sunDrop = null, _anchor = null, _radius = 0;
-  var _facade = null, _last = null, _disposed = false;
+  var _facade = null, _last = null, _disposed = false, _noCursorLogged = false;
 
   function q(sql) { try { return (A.dbQuery && A.dbQuery(sql)) || []; } catch (e) { return []; } }
 
@@ -227,7 +273,46 @@ function setupCpeSunCompass(A) {
     var matN = new T.LineBasicMaterial({ color: INK_N, transparent: true, opacity: 0.95 });
     var matSun = new T.LineBasicMaterial({ color: INK_SUN, transparent: true, opacity: 0.95 });
 
+    // ── DUAL-INK LINES (red1, 2026-09-19: "its lines are not clear enough, should make them dual
+    // margin color"). MEASURED on the orbit clip: the rose is 77 px across at that camera — big
+    // enough — but every line is a 1-DEVICE-PIXEL hairline, because THREE's LineBasicMaterial
+    // ignores linewidth on every desktop GL driver. A pale grey hairline over pale brown ground is
+    // invisible whatever its size.
+    // So each line is drawn TWICE: a DARK copy pushed radially outward, and the light copy on top.
+    // The offset reads as a dark margin under a light core, which holds up over pale ground and
+    // dark alike — the same reason a map's contour lines are haloed.
+    // ⚠ THE OFFSET IS DERIVED FROM THE CAMERA, NOT PICKED. cpe_flythru_datum.js hit this exact
+    // problem and solved it by sizing world-space width from the real camera distance to a stated
+    // pixel target (§FLYTHRU_DATUM_LINES widthM=1.1506 src=[camera d=287.0m fov=60 h=720px]
+    // px@287m=2.50). Same arithmetic here, same reason: a hardcoded metre value is right at one
+    // distance and wrong at every other. Decided ONCE at build time, as the datum also does —
+    // re-deriving per frame would make the halo breathe as the camera moves.
+    var _haloM = _radius * 0.05;   // fallback: no camera yet, never invent a distance
+    var _haloSrc = 'DEGRADED — no camera/viewport at build time';
+    (function () {
+      var cam = A.camera, rh = A.renderer && A.renderer.domElement && A.renderer.domElement.height;
+      if (!cam || !cam.fov || !(rh > 0)) return;
+      var dx = cam.position.x - centre.x, dy = cam.position.y - centre.y, dz = cam.position.z - centre.z;
+      var dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (!(dist > 0)) return;
+      var TARGET_PX = 1.6;   // the halo, each side of a 1 px core -> ~4 px of line in total
+      _haloM = TARGET_PX * (2 * dist * Math.tan(cam.fov * Math.PI / 360)) / rh;
+      _haloSrc = 'camera d=' + dist.toFixed(1) + 'm fov=' + cam.fov.toFixed(0) + ' h=' + rh +
+                 'px -> ' + TARGET_PX + 'px halo = ' + _haloM.toFixed(3) + 'm';
+    })();
+    var matHalo = new T.LineBasicMaterial({ color: 0x0d1117, transparent: true, opacity: 0.85 });
+    function _outset(p, by) {
+      var vx = p.x - centre.x, vz = p.z - centre.z;
+      var len = Math.sqrt(vx * vx + vz * vz);
+      if (!(len > 1e-6)) return p.clone();
+      return new T.Vector3(centre.x + vx * (1 + by / len), p.y, centre.z + vz * (1 + by / len));
+    }
     function addLine(mat, pts) {
+      // The halo first, so the light core always paints over it.
+      [_haloM, -_haloM].forEach(function (d) {
+        var hg = new T.BufferGeometry().setFromPoints(pts.map(function (q) { return _outset(q, d); }));
+        _grp.add(new T.Line(hg, matHalo));
+      });
       var g = new T.BufferGeometry().setFromPoints(pts);
       var l = new T.Line(g, mat);
       _grp.add(l);
@@ -272,6 +357,7 @@ function setupCpeSunCompass(A) {
     console.log('§SUN_COMPASS built lat=' + _geo.lat.toFixed(6) + ' lon=' + _geo.lon.toFixed(6) +
       ' (src=' + _geo.latLongSource + ') trueNorth=' + _geo.trueNorth.toFixed(4) + 'deg (src=' +
       _geo.trueNorthSource + ') elev=' + (_geo.elevM == null ? 'n/a' : _geo.elevM.toFixed(2) + 'm') +
+      ' halo=' + _haloM.toFixed(3) + 'm [' + _haloSrc + ']' +
       ' radius=' + _radius.toFixed(2) + 'm anchor=ifc(' + ax.toFixed(2) + ',' + ay.toFixed(2) +
       ',' + az.toFixed(2) + ') side=' + (faceBearing === 180 ? 'true-south' : 'true-north') +
       ' envelope=' + spanX.toFixed(1) + 'x' + spanY.toFixed(1) + 'm');
@@ -298,13 +384,85 @@ function setupCpeSunCompass(A) {
   // ── PER FRAME: move the sun, and report what to draw. ───────────────────────────────────────
   // `cursorMs` is the 4D cursor, handed in. Returns null when there is nothing honest to draw,
   // and the caller then draws nothing — no placeholder, no "Day ?" .
-  A.sunCompassAt = function (cursorMs) {
+  A.sunCompassAt = function (cursorMs, filmT) {
     if (!_built || !_grp || !_geo || _geo.lat == null || _disposed) return null;
     var T = window.THREE;
     if (!T) return null;
-    var date = new Date(cursorMs);
-    if (isNaN(date.getTime())) return null;
-    var sun = A.sunPositionAt(_geo.lat, _geo.lon, date);
+    // ⚠ NO CURSOR IS A REAL STATE, NOT A FAILURE. A film baked WITHOUT the buildup has no 4D
+    // timeline at all — cinema_maxq.js only populates `_bkState` inside the buildup arm — so there
+    // is no date, and §6 forbids inventing one. The rose still means something without a date (it
+    // is the building's true orientation), so it stays on screen; the SUN does not, because a sun
+    // drawn from a made-up date is a picture of a thing that is not happening. The sun lines hide
+    // and the readout says why, once, rather than the whole overlay vanishing with no explanation.
+    var date = (cursorMs == null) ? null : new Date(cursorMs);
+    if (date !== null && isNaN(date.getTime())) date = null;
+    if (date === null) {
+      if (!_noCursorLogged) {
+        _noCursorLogged = true;
+        console.log('§SUN_COMPASS_NO_CURSOR — the rose is drawn (true north is a property of the ' +
+          'building) but the sun and the day-of-year are NOT: this film has no 4D cursor, and a ' +
+          'sun position needs a real date. Bake with the buildup on to get them.');
+      }
+      if (_sunRay) _sunRay.visible = false;
+      if (_sunLift) _sunLift.visible = false;
+      if (_sunDrop) _sunDrop.visible = false;
+      var c0 = _site.centre;
+      var d0 = A.bearingDirectionThree(0, _geo.trueNorth);
+      _last = { cursorMs: null, date: null, dayOfYear: null, azimuth: null, elevation: null,
+                elevationApparent: null, isUp: false, attack: null, anchorThree: c0,
+                radius: _radius, noCursor: true,
+                trueNorthTip: new T.Vector3(c0.x + d0.x * _radius * 1.30, c0.y,
+                                            c0.z + d0.z * _radius * 1.30) };
+      return _last;
+    }
+    // ⚠ THE DATE ADVANCES WITH THE FILM; THE TIME OF DAY DOES NOT. See sun_path.js
+    // `sunInstantAtSolarHour`. A programme of 390 days played in 80 seconds puts consecutive
+    // frames at unrelated times of day — measured on a real bake: elevation 30.4, -33.7 (night),
+    // 18.2, 43.8 across four frames. Correct to the second, and a strobe. Holding the hour keeps
+    // the sun real for this site on this date while making the SEASON the thing that moves, which
+    // is the only part a construction film can actually show.
+    // FILM_SOLAR_HOUR is one number and it is a look decision, not a fact — 10:00 solar gives a
+    // sun that is up all year at any inhabited latitude (Boston: 18.7 deg midwinter to 58.7 deg
+    // midsummer) and a low enough angle to model the facades. Change it here, nowhere else.
+    // §SUN_DAY (red1, 2026-09-19: "a new day film scheme — as it gives rightfully, a whole daylight
+    // sweep", plus a settable date field). When a date is pinned, EVERY frame is lit on that one
+    // day and only the hour sweeps, so the film is one clean sunrise-to-late-afternoon arc.
+    // Without it the date advances with the 4D cursor and the season fights the hour — MEASURED on
+    // a real Hospital bake: 45 22 26 47 60 49 23 6, which climbs and dips because a winter morning
+    // sits lower than a summer afternoon whatever the clock says. One day, one arc.
+    // ⚠ The pinned day changes WHAT IS LIT, never what is BUILT. The 4D cursor still drives the
+    // model, so the counter keeps counting real project days while the light stays on the chosen
+    // date — which is the point ("show me this build as it would look on 21 June") and also why
+    // the readout prints the lit date rather than the cursor's.
+    var litDate = _sunDate || date;
+    var solarHour = _filmSolarHour(filmT);
+    var shown = A.sunInstantAtSolarHour(_geo.lon, litDate, solarHour) || litDate;
+    // ⚠ THE FREEZE STOPS THIS OVERLAY DEAD — hidden AND held (red1, 2026-09-19: "Freeze removes
+    // all other overlays including geo-ref", then "the clock is frozen too, and all resume as a
+    // next proper frame"). §129.1's load-path beat holds one frame on the structural chain while
+    // the film's own fraction keeps advancing underneath it.
+    // Two different things are needed, and only one of them is the HUD fade:
+    //   1. The ROSE is a scene object, so A._loadPathHudAlpha cannot reach it. Hidden here, or it
+    //      is the one thing left standing on a deliberately cleared frame.
+    //   2. The CLOCK must not keep ticking behind a frozen picture. Returning early leaves `_last`
+    //      exactly as the last live frame left it, so the hands, the date and the sun all hold
+    //      still — and the next unfrozen frame simply computes normally from the film's own
+    //      fraction, which is what "resume as a next proper frame" means.
+    // Frozen frames are also left OUT of the lit/dark tally: they are not evidence about the sun.
+    var _holdAlpha = (typeof A._loadPathHudAlpha === 'number') ? A._loadPathHudAlpha : 1;
+    if (_holdAlpha < 1) {
+      if (_grp) _grp.visible = false;
+      if (!_heldLogged) {
+        _heldLogged = true;
+        console.log('§SUN_COMPASS_HELD — the load-path freeze is up: rose hidden, clock and sun ' +
+          'held at the last live frame. They resume on the next unfrozen frame.');
+      }
+      return _last;
+    }
+    if (_grp) _grp.visible = true;
+    _heldLogged = false;
+
+    var sun = A.sunPositionAt(_geo.lat, _geo.lon, shown);
     if (!sun) return null;
 
     var centre = _site.centre;
@@ -321,6 +479,7 @@ function setupCpeSunCompass(A) {
                              centre.y + up.y * _radius * 1.35,
                              centre.z + up.z * _radius * 1.35);
     var visible = sun.elevation > 0;
+    if (visible) _framesLit++; else _framesDark++;
     _sunLift.visible = _sunDrop.visible = _sunRay.visible = visible;
     if (visible) {
       _sunLift.geometry.setFromPoints([centre.clone(), lift]);
@@ -351,8 +510,8 @@ function setupCpeSunCompass(A) {
     }
 
     _last = {
-      cursorMs: cursorMs, date: date,
-      dayOfYear: A.sunDayOfYear(date),
+      cursorMs: cursorMs, date: litDate, shownAt: shown, solarHour: solarHour,
+      pinnedDate: !!_sunDate, dayOfYear: A.sunDayOfYear(litDate),
       azimuth: sun.azimuth, elevation: sun.elevation,
       elevationApparent: sun.elevationApparent, isUp: sun.isUp,
       attack: att, anchorThree: centre, radius: _radius,
@@ -369,8 +528,21 @@ function setupCpeSunCompass(A) {
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   A.sunCompassLabels = function (info) {
     if (!info) return null;
+    if (info.noCursor) {
+      // Says what IS true (the rose is real true north) and what is not being shown, rather than
+      // leaving a bare compass the viewer would read as a full sun overlay that failed silently.
+      return { day: 'True north', sun: 'No 4D date in this film — sun path not shown', attack: null };
+    }
     var d = info.date;
-    var day = 'Day ' + info.dayOfYear + ' · ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+    // ⚠ DOES NOT START WITH "Day", and that is the whole point of this wording.
+    // It used to read "Day 212 · 31 Jul". Seen in a real baked frame, that sat on screen beside
+    // cpe_day_counter.js's "Day 390 / 390" in the opposite corner — two different numbers, both
+    // labelled "Day", both correct, and together unreadable: the counter's is the PROJECT day
+    // (day N of the build), this one is the DAY OF THE YEAR (§7's "Day of the year, set by the 4D
+    // timeline"). They are different quantities and must not share a word. The date leads, and the
+    // ordinal is spelled out as "of the year" so it cannot be mistaken for the counter's.
+    var day = d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' · day ' + info.dayOfYear +
+              ' of the year';
     // Below the horizon is a real state and says so, rather than printing an elevation that is
     // technically correct and reads as nonsense on screen.
     var sun = info.isUp
@@ -389,12 +561,12 @@ function setupCpeSunCompass(A) {
   // owns a corner of the caller's choosing and stacks the path box and resource panel under it,
   // and cpe_room_title.js's caption is a CENTRED plate in the lower band. A left-aligned pill
   // clears both. Same plate language as those two — 0.45 black, text-hugging, same font.
-  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity) {
-    if (!ctx || !info) return;
+  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
+    if (!ctx || !info) return 0;
     var op = (opacity == null) ? 1 : Math.min(1, opacity);
-    if (!(op > 0)) return;
+    if (!(op > 0)) return 0;
     var labels = A.sunCompassLabels(info);
-    if (!labels) return;
+    if (!labels) return 0;
     var cam = A.camera, T = window.THREE;
     ctx.save();
     ctx.globalAlpha = op;
@@ -403,56 +575,171 @@ function setupCpeSunCompass(A) {
     ctx.font = font;
     ctx.textBaseline = 'middle';
 
-    function plate(x, y, text, align) {
-      var tw = (typeof ctx.measureText === 'function') ? ctx.measureText(text).width
-                                                       : text.length * fontPx * 0.55;
-      var padX = Math.round(fontPx * 0.7), padY = Math.round(fontPx * 0.45);
-      var bw = tw + padX * 2, bh = fontPx + padY * 2;
-      var bx = align === 'center' ? x - bw / 2 : x;
+    // ⚠ THE READOUT LIVES IN THE DAY-COUNTER COLUMN (red1, 2026-09-19, after seeing it drawn
+    // UNDERNEATH the loadpath session's own bottom-left room box: "Put a guard to it or same line
+    // as the Day counter? Clock, the azimuth thing, and the 4D day counter.").
+    // It was bottom-left, and that corner now belongs to someone else's fixed panel. Chasing it
+    // with a reservation was the wrong shape — the caption I reserved against has since been
+    // deleted by that same work. Joining the column instead means ONE owner of that corner's
+    // stacking, which cannot collide by construction: every box asks for its offset and returns
+    // its height. Day counter -> clock -> THIS -> path box -> pie.
+    // It belongs here anyway: the date it prints is the SAME 4D cursor the counter counts.
+    var margin = Math.round(h * 0.028);
+    var at = (pos && CLOCK_POS[pos]) ? pos : 'tr';
+    var sy = stackY || 0;
+    var lineH = Math.round(fontPx * 2.1);
+    var lines = [labels.day, labels.sun].concat(labels.attack ? [labels.attack] : []);
+    var widest = 0;
+    if (typeof ctx.measureText === 'function') {
+      lines.forEach(function (t) { widest = Math.max(widest, ctx.measureText(t).width); });
+    } else { lines.forEach(function (t) { widest = Math.max(widest, t.length * fontPx * 0.55); }); }
+    var padX = Math.round(fontPx * 0.7), padY = Math.round(fontPx * 0.45);
+    var bw = widest + padX * 2, bh = fontPx + padY * 2;
+    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - bw;
+    var y0 = (at === 'bl' || at === 'br') ? h - margin - bh / 2 - sy - (lines.length - 1) * lineH
+                                          : margin + bh / 2 + sy;
+
+    lines.forEach(function (t, i) {
+      var y = y0 + i * lineH;
       ctx.fillStyle = 'rgba(0,0,0,0.45)';
       if (typeof ctx.roundRect === 'function') {
-        ctx.beginPath(); ctx.roundRect(bx, y - bh / 2, bw, bh, Math.round(bh * 0.22)); ctx.fill();
-      } else {
-        ctx.fillRect(bx, y - bh / 2, bw, bh);
-      }
+        ctx.beginPath(); ctx.roundRect(x, y - bh / 2, bw, bh, Math.round(bh * 0.22)); ctx.fill();
+      } else { ctx.fillRect(x, y - bh / 2, bw, bh); }
       ctx.fillStyle = '#e8eef6';
       ctx.textAlign = 'left';
-      ctx.fillText(text, bx + padX, y);
-      return bh;
-    }
+      ctx.fillText(t, x + padX, y);
+    });
 
-    // World-anchored text. `project` needs a live camera; without one the rose labels are simply
-    // skipped and the fixed readout still draws — degrade, never throw, same contract as every
-    // other overlay in the bake.
-    if (cam && T && info.anchorThree && typeof info.anchorThree.clone === 'function') {
-      var proj = function (v) {
-        var p = v.clone().project(cam);
-        return { x: (p.x * 0.5 + 0.5) * w, y: (-p.y * 0.5 + 0.5) * h, z: p.z };
-      };
-      var nTip = proj(info.trueNorthTip);
-      if (nTip.z < 1 && nTip.x > -w && nTip.x < w * 2) {
+    // The "N" stays pinned to the rose in world space — it is part of the drawing on the ground,
+    // not part of the readout.
+    if (cam && T && info.trueNorthTip && typeof info.trueNorthTip.clone === 'function') {
+      var p = info.trueNorthTip.clone().project(cam);
+      var sx = (p.x * 0.5 + 0.5) * w, syy = (-p.y * 0.5 + 0.5) * h;
+      if (p.z < 1 && sx > -w && sx < w * 2) {
         ctx.fillStyle = '#e8eef6';
         ctx.textAlign = 'center';
         ctx.font = '700 ' + Math.round(fontPx * 1.15) + 'px -apple-system,BlinkMacSystemFont,' +
                    '"Segoe UI",Roboto,sans-serif';
-        ctx.fillText('N', nTip.x, nTip.y);
-        ctx.font = font;
+        ctx.fillText('N', sx, syy);
       }
-      var c = proj(info.anchorThree);
-      if (c.z < 1) plate(c.x, c.y + fontPx * 2.2, labels.day, 'center');
     }
-
-    // The fixed readout. Always drawn while the compass is live, rose on screen or not — the
-    // peer-review call on §7 was that the sun angle is a readout, not a 3D placement.
-    var mx = Math.round(w * 0.016), my = Math.round(h * 0.026);
-    var lineH = Math.round(fontPx * 2.1);
-    var y0 = h - my - lineH / 2;
-    if (labels.attack) { plate(mx, y0, labels.attack, 'left'); y0 -= lineH; }
-    plate(mx, y0, labels.sun, 'left');
     ctx.restore();
+    return lines.length * lineH;
+  };
+
+  // ── §SUN_CLOCK — an analogue face showing the hour this frame is lit at. ────────────────────
+  // red1, 2026-09-19: "another 'clock' showing its hr/min hands... make it perhaps stay with a
+  // corner together with the Day counter".
+  //
+  // WHAT IT SHOWS, precisely: the SOLAR hour the sun was computed at, not a wall clock. Those are
+  // different — solar noon is when the sun actually crosses the meridian here, which is why the
+  // film's light is the same height in Boston and in Penang at the same reading. Labelled
+  // "solar" under the dial so it is never mistaken for local time.
+  //
+  // It joins the day counter's COLUMN rather than the bottom-left readout, per red1: that corner
+  // is already a stack (cpe_day_counter, then §CPE_PATH_OVERVIEW, then §CPE_RESOURCE_PANEL) and
+  // the caller owns the order — this function owns only its own drawing, exactly as
+  // cpe_path_overview.js's header states the contract. Bottom-left would have collided with the
+  // date/sun/facade lines that already live there.
+  var CLOCK_POS = { tr: 1, tl: 1, br: 1, bl: 1 };
+  A.sunClockBoxSize = function (h) { return Math.round(h * 0.105); };
+  A.sunClockCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
+    if (!ctx || !info || info.noCursor || info.solarHour == null) return 0;
+    var op = (opacity == null) ? 1 : Math.min(1, opacity);
+    if (!(op > 0)) return 0;
+    var d = A.sunClockBoxSize(h), r = d / 2;
+    var margin = Math.round(h * 0.028);
+    var at = (pos && CLOCK_POS[pos]) ? pos : 'tr';
+    var sy = stackY || 0;
+    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - d;
+    var y = (at === 'bl' || at === 'br') ? h - margin - d - sy : margin + sy;
+    var cx = x + r, cy = y + r;
+
+    var hour = Math.floor(info.solarHour);
+    var mins = Math.round((info.solarHour - hour) * 60);
+    if (mins === 60) { mins = 0; hour += 1; }
+
+    ctx.save();
+    ctx.globalAlpha = op;
+    // Same plate language as the counter above it: 0.45 black, no invented second style.
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(232,238,246,0.55)';
+    ctx.lineWidth = Math.max(1, r * 0.035);
+    ctx.stroke();
+
+    // Twelve ticks; the quarters run longer so the dial reads at a glance on a 1280-wide frame.
+    for (var t = 0; t < 12; t++) {
+      var a = t * Math.PI / 6;
+      var inner = r * ((t % 3 === 0) ? 0.72 : 0.84);
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.sin(a) * inner, cy - Math.cos(a) * inner);
+      ctx.lineTo(cx + Math.sin(a) * r * 0.92, cy - Math.cos(a) * r * 0.92);
+      ctx.strokeStyle = 'rgba(232,238,246,' + ((t % 3 === 0) ? '0.85' : '0.45') + ')';
+      ctx.lineWidth = Math.max(1, r * ((t % 3 === 0) ? 0.06 : 0.035));
+      ctx.stroke();
+    }
+    // Hands. The hour hand carries the minutes too, or it would jump on the hour like a cheap
+    // prop clock instead of creeping the way a real one does.
+    function hand(angle, len, width, colour) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.sin(angle) * len, cy - Math.cos(angle) * len);
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = Math.max(1, width);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+    hand(((hour % 12) + mins / 60) * Math.PI / 6, r * 0.50, r * 0.11, '#e8eef6');
+    hand((mins / 60) * Math.PI * 2, r * 0.76, r * 0.07, '#ffb74d');
+    ctx.beginPath();
+    ctx.arc(cx, cy, Math.max(1, r * 0.07), 0, Math.PI * 2);
+    ctx.fillStyle = '#ffb74d';
+    ctx.fill();
+
+    // The reading in words, because hands at this size are an impression, not a measurement — and
+    // "solar" is the part a viewer cannot infer from a dial.
+    var fontPx = Math.max(9, Math.round(h * 0.014));
+    ctx.font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+    ctx.fillStyle = '#e8eef6';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText((hour < 10 ? '0' : '') + hour + ':' + (mins < 10 ? '0' : '') + mins + ' solar',
+                 cx, y + d + Math.round(fontPx * 0.25));
+    ctx.restore();
+    return d + Math.round(fontPx * 1.4);
   };
 
   A.sunCompassInfo = function () { return _last; };
+
+  // ── Was the whole film dark? Called once after the frames, by cinema_maxq.js. ────────────────
+  // A film with the sun below the horizon in EVERY frame is legitimate in exactly one situation —
+  // polar winter, where the sun genuinely does not rise — and is otherwise a mistake worth saying
+  // out loud: the wrong hours, or a site nobody meant. It cannot be judged frame by frame, only
+  // over the whole run, which is why it is a separate report rather than a per-frame warning.
+  A.sunCompassDarkReport = function () {
+    var total = _framesLit + _framesDark;
+    if (!total) {
+      console.log('§SUN_ONE_ALL_DARK INCONCLUSIVE — no frame was judged (the compass never ran)');
+      return null;
+    }
+    var allDark = _framesDark === total;
+    var polar = _geo && _geo.lat != null && Math.abs(_geo.lat) > 66.5;
+    console.log('§SUN_ONE_LIGHT frames=' + total + ' lit=' + _framesLit + ' dark=' + _framesDark +
+      (allDark
+        ? ' — ⚠ EVERY FRAME IS DARK. The sun is below the horizon for the whole film. ' +
+          (polar
+            ? 'This site is inside the polar circle (lat ' + _geo.lat.toFixed(2) + '), so in ' +
+              'midwinter that is the truth and not a fault.'
+            : 'This site is NOT polar (lat ' + (_geo && _geo.lat != null ? _geo.lat.toFixed(2) : '?') +
+              '), so it almost certainly is NOT the truth — check the film hours (' +
+              FILM_SOLAR_START + ':00-' + FILM_SOLAR_END + ':00 solar, cpe_sun_compass.js) and the ' +
+              'site lat/long before believing this film.')
+        : ''));
+    return { total: total, lit: _framesLit, dark: _framesDark, allDark: allDark, polar: polar };
+  };
 
   A.sunCompassDispose = function () {
     if (_grp && A.scene) {
@@ -462,7 +749,8 @@ function setupCpeSunCompass(A) {
         if (o.material) o.material.dispose();
       });
     }
-    _grp = null; _built = false; _info = null; _last = null;
+    _grp = null; _built = false; _info = null; _last = null; _noCursorLogged = false;
+    _framesLit = 0; _framesDark = 0; _sunDate = null; _heldLogged = false;
     _sunRay = _sunLift = _sunDrop = null; _disposed = true;
   };
 }

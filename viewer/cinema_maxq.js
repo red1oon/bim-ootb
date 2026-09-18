@@ -764,6 +764,22 @@
   // §CPE_DAY_COUNTER: dayInfo ({day,totalDays} or null) rides the SAME 2D context for the SAME
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
+  // §129.1 FREEZE bridge. `_drawUnlessHold` is the loadpath lane's HUD-hold wrapper
+  // (feat/loadpath-ledger) — every overlay there goes through it so the load-path freeze-frame
+  // beat can fade them all out together. It does NOT exist on main yet, and this branch has to
+  // build against main, so the compass asks for it and falls back to drawing at full opacity.
+  // The fallback is not a stub that swallows the feature: on main there IS no freeze beat to
+  // respect, so "draw normally" is the correct behaviour there, and the moment the two branches
+  // merge the real wrapper takes over with no edit here.
+  // Published by the loadpath lane's own cinema_maxq when that work lands:
+  //     window.__drawUnlessHold = _drawUnlessHold;
+  // one line, beside its definition. Until then this reads undefined and the compass draws
+  // normally, which is correct on a main that has no freeze beat.
+  function _hudHold(name, fn) {
+    var f = (typeof window !== 'undefined' && window.__drawUnlessHold) || null;
+    if (typeof f === 'function') return f(name, fn);
+    return fn(1);
+  }
   function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
@@ -820,11 +836,6 @@
     // §FLYTHRU_DATUM note above gives: _captureFrame is its own function, not a closure over the
     // bake body. The bake loop already called A.sunCompassAt(_bkMs) for THIS frame, so the state
     // it reads is this frame's, not a neighbour's. Same never-kills-a-bake contract.
-    if (A._sunCompassOn && A.sunCompassCompositeOntoCanvas && A.sunCompassInfo) {
-      try { A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), 1); }
-      catch (eSCd) { if (!A._sunCompassDrawWarned) { A._sunCompassDrawWarned = true;
-        console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message) + ' — compass skipped, frames continue'); } }
-    }
     // §CPE_PATH_OVERVIEW — drawn LAST so its backdrop-blur samples the finished frame and never
     // smears the caption or the counter into its own glass. `ovInfo.pose` is the REAL pose this
     // frame was rendered with, captured by the caller immediately before this call.
@@ -837,6 +848,40 @@
     var _gapY = Math.round(h * 0.012);
     var _stackY = 0;
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _stackY = A.dayCounterBoxSize(h).h + _gapY;
+    // §SUN_CLOCK — the analogue face for the hour this frame is lit at, directly under the day
+    // counter in the SAME column (red1's placement: "stay with a corner together with the Day
+    // counter"). It returns its own drawn height so the boxes below cannot overlap it — the caller
+    // owns the order, the overlay owns its drawing, same contract as the path box and the pie.
+    // Corner follows the counter's, since §CPE_HUD_STACK's ruling is one preference for the whole
+    // column rather than a corner per overlay.
+    // §SUN_CLOCK — wrapped in _drawUnlessHold like every other HUD box, so the §129.1 load-path
+    // FREEZE clears it with the rest (red1: "Freeze removes all other overlays including
+    // geo-ref"). `a` is the hold alpha and is passed through as the compositor's own opacity,
+    // per ROUND 13 item C — a compositor that assigns globalAlpha absolutely would otherwise
+    // clobber the ambient fade set by the wrapper.
+    if (A._sunCompassOn && A.sunClockCompositeOntoCanvas && A.sunCompassInfo) {
+      _hudHold('suncompass.clock', function (a) {
+        try {
+          var _clkH = A.sunClockCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a,
+                                                    (dayInfo && dayInfo.pos) || 'tr', _stackY);
+          if (_clkH > 0) _stackY += _clkH + _gapY;
+        } catch (eClk) { if (!A._sunClockWarned) { A._sunClockWarned = true;
+          console.warn('§SUN_CLOCK_DRAW failed: ' + (eClk && eClk.message)); } }
+      });
+    }
+    // §SUN_COMPASS readout — date / sun angles / facade, in the SAME column under the clock
+    // (red1: "same line as the Day counter? Clock, the azimuth thing, and the 4D day counter").
+    // It was bottom-left and was drawing underneath the loadpath session's own room box there.
+    if (A._sunCompassOn && A.sunCompassCompositeOntoCanvas && A.sunCompassInfo) {
+      _hudHold('suncompass.readout', function (a) {
+        try {
+          var _scH = A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a,
+                                                     (dayInfo && dayInfo.pos) || 'tr', _stackY);
+          if (_scH > 0) _stackY += _scH + _gapY;
+        } catch (eSCd) { if (!A._sunCompassDrawWarned) { A._sunCompassDrawWarned = true;
+          console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message)); } }
+      });
+    }
     if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
       A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stackY);
       _stackY += Math.round(h * 0.20) + _gapY;   // the box's own bh, from cpe_path_overview.js
@@ -1144,6 +1189,10 @@
     var _clash = false;   // §CLASH_FILM_P1 — mesh-true clash pairs as persistent world content
     var _measure = false;      // §FLYTHRU_DATUM — Alt-C 'Measure' checkbox
     var _sunCompass = false;   // §SUN_COMPASS — the true-north ground rose; OFF unless requested
+    // §SUN_COMPASS — the cursor handed to the rose each frame. NULL when the film has no buildup,
+    // which is a real state the module handles; it is never defaulted to "now".
+    var _sunCompassMs = null;
+    var _sunDate = '';   // §SUN_DAY — yyyy-mm-dd to light the whole film on one day, or '' to follow
     // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
     // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
     // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
@@ -1337,6 +1386,9 @@
         // setting-out grid; this draws the model's relationship to the planet. They answer
         // different questions and a viewer may well want one without the other.
         _sunCompass = !!_ov.sunCompass;
+        // §SUN_DAY — '' (or absent) means follow the 4D timeline's own dates, which is what every
+        // saved path predating this field carries, so none of them re-bake differently.
+        _sunDate = _ov.sunDate || '';
         if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round + ARC/STR reveal are real ' +
           '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
@@ -1574,6 +1626,10 @@
       // rather than drawing a rose it cannot justify, and this flag follows that answer so
       // _captureFrame does not have to re-ask every frame.
       A._sunCompassOn = false;
+      // §SUN_DAY — set BEFORE the build so the very first frame is already on the pinned day.
+      if (_sunCompass && A.sunCompassSetDate) {
+        try { A.sunCompassSetDate(_sunDate); } catch (eSD2) {}
+      }
       if (_sunCompass && A.sunCompassBuild) {
         try { A._sunCompassOn = !!A.sunCompassBuild(); }
         catch (eSCB) { console.warn('§SUN_COMPASS_BUILD failed: ' + (eSCB && eSCB.message) + ' — the film bakes without the compass'); }
@@ -1769,16 +1825,7 @@
             // cannot be handed a position that belongs to a different frame.
             if (_dayInfo) _dayInfo.pos = _dayPos;
           }
-          // §SUN_COMPASS — the SAME `_bkMs`. GEOREF_SUNPATH_COMPASS.md §6 is explicit that this
-          // feature must not introduce a second date source; the sun is a pure function of
-          // (lat, lon, cursor) and the cursor is the one the buildup is already showing.
-          // Closed-form trig, no loop — cheap enough to recompute every frame rather than cache,
-          // which is also the only way it cannot lag the model by a frame.
-          if (A._sunCompassOn && A.sunCompassAt) {
-            try { A.sunCompassAt(_bkMs); }
-            catch (eSCA) { if (!A._sunCompassAtWarned) { A._sunCompassAtWarned = true;
-              console.warn('§SUN_COMPASS_AT failed frame=' + i + ': ' + (eSCA && eSCA.message)); } }
-          }
+          _sunCompassMs = _bkMs;   // §SUN_COMPASS — see the hoisted call below
           var _ggO = _ghostGroundAt(_bkT, _filmSecFull, _bkState, _bkMs);   // §CPE_CLIP_BUILDUP_FILM_T — same class: the fade is in FILM seconds
           // ══ §CPE_BUILDUP_PLACED (MEP_CLASH_REVEAL_MOVIE.md §88.3/§88.6e) ═══════════════════════
           // The frame number lives HERE; what is actually on screen for a watched guid lives in the
@@ -1826,6 +1873,29 @@
               '/' + _bkState.ops +
               (_ggO == null ? '' : ' groundOpacity=' + _ggO.toFixed(3)));
           }
+        }
+        // §SUN_COMPASS — HOISTED OUT OF THE BUILDUP BLOCK ON PURPOSE (fixed 2026-09-19).
+        // ⚠ This call used to sit inside `if (_buildup && _bkState)`, next to the day counter,
+        // because it reads the same `_bkMs`. That was wrong and it failed SILENTLY: a film baked
+        // with the buildup off never called it, so `A.sunCompassInfo()` stayed null, `_captureFrame`
+        // composited nothing, and the sun ray never moved — while `§SUN_COMPASS built` still printed
+        // at arm time and every witness still passed. Found by looking at a real baked frame
+        // (Hospital, buildup=0): the log said the rose was built and the picture had no overlay on
+        // it. The wiring witnesses could not catch it because they call sunCompassAt directly.
+        // ⚠ §6 IS STILL KEPT. There is no second date source: `_sunCompassMs` is `_bkMs` when the
+        // buildup is driving, and NULL otherwise — because without a buildup cinema_maxq never
+        // populates `_bkState`, so no 4D cursor exists to read. The module draws the rose and
+        // suppresses the sun in that case rather than inventing a date; see §SUN_COMPASS_NO_CURSOR.
+        // ⚠ THE FILM FRACTION IS A SECOND INPUT, not decoration. The compass sweeps the solar hour
+        // from morning to late afternoon across the film (§SUN_ONE film clock) so the sun arcs
+        // over the building the way the old scripted 55°→6° did — except real. `_tFilm(_tn)` and
+        // not `_tn`, for the reason §CPE_CLIP_REVEAL_FILM_T names: a clip is fewer frames of the
+        // SAME film, so a clipped bake must light its frames at the hours that stretch of film
+        // really has, not replay a whole day inside a 23-frame window.
+        if (A._sunCompassOn && A.sunCompassAt) {
+          try { A.sunCompassAt(_sunCompassMs, _tFilm(_tn)); }
+          catch (eSCA) { if (!A._sunCompassAtWarned) { A._sunCompassAtWarned = true;
+            console.warn('§SUN_COMPASS_AT failed frame=' + i + ': ' + (eSCA && eSCA.message)); } }
         }
         // §CPE_DISCIPLINE_REVEAL Mechanism C — pure function of (plan, tNorm), same call the preview
         // loop makes (cinema_path_editor.js's _previewFly) so bake and preview cannot diverge. No-op
@@ -2333,6 +2403,9 @@
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
       // §STOREY_HIGHLIGHT_REVEAL: same contract — a tinted storey left glowing after a bake would
       // follow the user into normal navigation. plan=null forces the restore.
+      // §SUN_ONE_ALL_DARK — judged over the WHOLE run, so it cannot be a per-frame warning.
+      // A film dark end to end is real in polar winter and a mistake everywhere else.
+      try { if (A._sunCompassOn && A.sunCompassDarkReport) A.sunCompassDarkReport(); } catch (eSD) {}
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD) {}   // §SLAB_BEAT — restores the tint, removes X + label
@@ -2515,7 +2588,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'sunCompass'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'sunCompass', 'sunDate'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
