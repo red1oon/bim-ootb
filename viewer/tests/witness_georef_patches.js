@@ -60,7 +60,18 @@ var EXPECT = {
   'Duplex_extracted.db': {
     true_north_angle: '0', true_north_source: 'default_zero',
     site_latitude: '41.87440000', site_longitude: '-87.63940000',
-    site_elevation_m: '0.0000', site_latlong_source: 'ifc_site' }
+    site_elevation_m: '0.0000', site_latlong_source: 'ifc_site' },
+  // THE ONE THAT IS A HUMAN RULING RATHER THAN AN EXTRACTION RESULT (spec §12.1). Hospital's 14
+  // discipline files give three different coordinates up to ~500 km apart; ARC was named
+  // authoritative on 2026-09-18 and STR/MEP/MECH treated as the errors. These are ARC's values,
+  // quoted from internal/UNMERGED/Hospital_IFC2x3_ARC.ifc (its IFC4 twin is byte-identical).
+  // It is also the FIRST non-zero true_north_angle in the fleet, so this row is the one that
+  // proves sitecam.js/walk.js stop rotating by a permanent 0. A regression to '0' here is not a
+  // cosmetic diff — it is the original defect coming back.
+  'Hospital_extracted.db': {
+    true_north_angle: '5.000000', true_north_source: 'ifc_truenorth',
+    site_latitude: '42.35842896', site_longitude: '-71.05977631',
+    site_elevation_m: '165.8112', site_latlong_source: 'ifc_site' }
 };
 
 function inconclusive(why) {
