@@ -110,6 +110,26 @@ SUBJECTS.forEach(function (s) {
 });
 
 // The CLI form, which is how a silent bake asks for it. Only sunCompass and measure have one.
+// §SUN_DAY — the date field's own chain. Same failure shape as the checkbox: spell it differently
+// in any one place and the field renders, accepts a date, saves it, and lights nothing.
+link('§SUN_DAY: the date input exists', src.editor.indexOf('id="cpe-sun-date"') >= 0);
+link('§SUN_DAY: its row hides when the compass is off',
+     /_sdRow\.style\.display = _state\.sunCompass \? '' : 'none'/.test(src.editor));
+link('§SUN_DAY: _state default is empty (= follow the 4D dates)', /sunDate: '',/.test(src.editor));
+link('§SUN_DAY: read back off a stored path', /sunDate: s\.sunDate \|\| ''/.test(src.editor));
+link('§SUN_DAY: in the panel census', /sunDate: ov\.sunDate \|\| ''/.test(src.editor));
+link('§SUN_DAY: a change handler writes _state back',
+     /_state\.sunDate = String\(e\.target\.value/.test(src.editor));
+link('§SUN_DAY: cinema_maxq merges it from the CLI flags', /'sunDate'/.test(src.maxq));
+link('§SUN_DAY: cinema_maxq reads it off the override', /_sunDate = _ov\.sunDate/.test(src.maxq));
+link('§SUN_DAY: and hands it to the module BEFORE the build',
+     src.maxq.indexOf('A.sunCompassSetDate(_sunDate)') <
+     src.maxq.indexOf('A._sunCompassOn = !!A.sunCompassBuild()'));
+link('§SUN_DAY: cli_silent_bake takes --sun-date', /FLAGS\.sunDate = String\(arg\('sun-date'\)\)/.test(src.cli));
+// red1 asked for this wording specifically.
+link('the compass hover says "enable geo-ref truth"',
+     src.editor.indexOf('enable geo-ref truth') >= 0);
+
 link('cli_silent_bake: --sun-compass tri-state exists',
      /triState\('sun-compass', 'no-sun-compass'\)/.test(src.cli));
 link('cli_silent_bake: it is put on FLAGS under the same name',

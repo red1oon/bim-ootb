@@ -550,6 +550,116 @@ if (built.facade) {
   A.sunCompassAt(Date.UTC(2026, 5, 21, 17, 30), 0.5);
 })();
 
+// ── CASE §CPE_CAPTION_BAND: the readout must not land on the room-title caption. ───────────────
+// FOUND IN A REAL FRAME, not by a test: an 854x480 HHS bake with every overlay on put the caption
+// plate at 405.6..443.6 and this readout's middle line at 418..443 — fully inside it. Two
+// overlays, one strip of pixels, neither aware of the other. The caller now reserves the caption's
+// band and the readout stacks above it. Asserted as REAL GEOMETRY against cpe_room_title.js's own
+// published band, not against a number copied here.
+(function () {
+  var rt = null;
+  try { rt = require(path.join(__dirname, '..', 'cpe_room_title.js')); } catch (e) { rt = null; }
+  // cpe_room_title.js is a browser script with no export; slice its band function out the same way
+  // the wiring witness slices the toggle strip.
+  var src = fs.readFileSync(path.join(__dirname, '..', 'cpe_room_title.js'), 'utf8');
+  var a = src.indexOf('A.roomTitleBandSize = function(h) {');
+  var b = src.indexOf('\n  };', a);
+  if (a < 0 || b < 0) {
+    truth('cpe_room_title publishes its caption band', false, 'A.roomTitleBandSize not found');
+    return;
+  }
+  var A3 = {};
+  eval('(function(A){' + src.slice(a, b + 5) + '})')(A3);
+  truth('cpe_room_title publishes its caption band', typeof A3.roomTitleBandSize === 'function');
+
+  [[854, 480], [1280, 720], [1852, 960]].forEach(function (size) {
+    var w = size[0], hh = size[1];
+    var band = A3.roomTitleBandSize(hh);
+    var ys = [];
+    var ctx3 = {
+      save: function () {}, restore: function () {}, beginPath: function () {},
+      fill: function () {}, fillRect: function (x, y, bw, bh) { ys.push({ y: y, h: bh }); },
+      roundRect: function (x, y, bw, bh) { ys.push({ y: y, h: bh }); },
+      measureText: function (t) { return { width: t.length * 7 }; },
+      fillText: function () {}, arc: function () {}, moveTo: function () {}, lineTo: function () {},
+      stroke: function () {}, globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 1,
+      font: '', textAlign: '', textBaseline: ''
+    };
+    var info = A.sunCompassAt(Date.UTC(2026, 5, 21, 12, 0), 0.5);
+    A.camera = null;   // no rose projection; only the fixed readout draws
+    A.sunCompassCompositeOntoCanvas(ctx3, w, hh, info, 1, band.fromBottom);
+    var lowest = ys.reduce(function (m, r) { return Math.max(m, r.y + r.h); }, 0);
+    truth('at ' + w + 'x' + hh + ' the readout clears the caption band',
+          lowest <= band.top + 0.5,
+          'readout reaches y=' + lowest.toFixed(1) + ', caption starts at ' + band.top.toFixed(1));
+  });
+
+  // And with NO caption up, it must go back to the bottom — the reservation is per frame, not a
+  // permanent margin that would leave a gap in every film without room titles.
+  var ys2 = [];
+  var ctx4 = {
+    save: function () {}, restore: function () {}, beginPath: function () {},
+    fill: function () {}, fillRect: function (x, y, bw, bh) { ys2.push(y + bh); },
+    roundRect: function (x, y, bw, bh) { ys2.push(y + bh); },
+    measureText: function (t) { return { width: t.length * 7 }; },
+    fillText: function () {}, arc: function () {}, moveTo: function () {}, lineTo: function () {},
+    stroke: function () {}, globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 1,
+    font: '', textAlign: '', textBaseline: ''
+  };
+  A.sunCompassCompositeOntoCanvas(ctx4, 854, 480, A.sunCompassAt(Date.UTC(2026, 5, 21, 12, 0), 0.5), 1, 0);
+  truth('with no caption the readout returns to the bottom of the frame',
+        Math.max.apply(null, ys2) > 460, 'lowest y=' + Math.max.apply(null, ys2).toFixed(1));
+})();
+
+// ── CASE §SUN_DAY: one pinned day, swept — red1's "new day film scheme". ───────────────────────
+// Pinning a date must change WHAT IS LIT and nothing else. The build still follows the 4D cursor,
+// so the counter keeps counting real project days while the light stays on the chosen day — and
+// the readout must then print the LIT day, or it and the counter describe different days with no
+// way to tell which is which.
+(function () {
+  A.sunCompassSetDate('2026-06-21');           // midsummer, northern hemisphere
+  var arc = [];
+  for (var f = 0; f <= 8; f++) {
+    // cursors spread across a whole year — every one of them must be ignored for LIGHTING
+    arc.push(A.sunCompassAt(Date.UTC(2026, 0, 1) + (f / 8) * 365 * 86400000, f / 8));
+  }
+  truth('a pinned date is reported as pinned', arc[0].pinnedDate === true);
+  truth('every frame is lit on the pinned day, whatever the cursor says',
+        arc.every(function (a) { return a.dayOfYear === 172; }),
+        'day-of-year values: ' + arc.map(function (a) { return a.dayOfYear; }).join(','));
+  truth('and the readout prints that day, not the cursor\'s',
+        A.sunCompassLabels(arc[0]).day.indexOf('21 Jun') === 0, A.sunCompassLabels(arc[0]).day);
+
+  // THE POINT OF PINNING: one clean arc instead of the season fighting the clock. Unpinned over a
+  // year the elevations climb and dip (measured on a real bake: 45 22 26 47 60 49 23 6); on one
+  // day they must rise to a single peak and fall.
+  var el = arc.map(function (a) { return a.elevation; });
+  var peak = el.indexOf(Math.max.apply(null, el));
+  var rises = el.slice(0, peak + 1).every(function (v, i, A2) { return i === 0 || v >= A2[i - 1]; });
+  var falls = el.slice(peak).every(function (v, i, A2) { return i === 0 || v <= A2[i - 1]; });
+  truth('one pinned day gives ONE clean arc — rises to a single peak, then falls',
+        rises && falls && peak > 0 && peak < el.length - 1,
+        el.map(function (e) { return e.toFixed(0); }).join(' ') + ', peak at ' + peak);
+
+  // Clearing it must restore the 4D-driven dates, or the field is a one-way door.
+  A.sunCompassSetDate('');
+  var back = A.sunCompassAt(Date.UTC(2026, 9, 12), 0.5);
+  truth('clearing the date follows the 4D timeline again',
+        back.pinnedDate === false && back.dayOfYear === A.sunDayOfYear(new Date(Date.UTC(2026, 9, 12))),
+        'day ' + back.dayOfYear);
+
+  // Junk must not become a silent wrong day. Parsed as UTC so a browser timezone cannot shift it.
+  truth('a malformed date is refused, not guessed', A.sunCompassSetDate('21 June') === null);
+  truth('and an impossible one too', A.sunCompassSetDate('2026-13-45') === null);
+  truth('after a refusal the film follows the 4D timeline rather than a half-set date',
+        A.sunCompassAt(Date.UTC(2026, 9, 12), 0.5).pinnedDate === false);
+  A.sunCompassSetDate('2026-01-01');
+  truth('the date is read as UTC, so no timezone can shift the day',
+        A.sunCompassAt(Date.UTC(2026, 6, 4), 0.5).dayOfYear === 1);
+  A.sunCompassSetDate('');
+  A.sunCompassAt(Date.UTC(2026, 5, 21, 17, 30), 0.5);
+})();
+
 // ── CASE NO-CURSOR: a film with no buildup has no 4D date. Fixed 2026-09-19. ────────────────────
 // THE DEFECT THIS EXISTS FOR, found by looking at a real baked frame and not by any witness:
 // cinema_maxq.js called sunCompassAt from INSIDE `if (_buildup && _bkState)`, so a bake with the

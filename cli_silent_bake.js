@@ -18,6 +18,9 @@
 //                                                       16 rates packs). Absent file = no override, not an error.
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
+//     [--sun-date YYYY-MM-DD]                         §SUN_DAY: light the WHOLE film on that one
+//                                                       day, sun rising to late afternoon across it.
+//                                                       The build still follows the 4D timeline.
 //     [--sun-compass] [--no-sun-compass]              true-north ground compass + sun path + day of
 //                                                       the year (§SUN_COMPASS, GEOREF_SUNPATH_COMPASS.md
 //                                                       §7). OFF by default; needs a site lat/long in
@@ -127,6 +130,9 @@ if (_fClash !== undefined) FLAGS.clash = _fClash;
 if (_fMeasure !== undefined) FLAGS.measure = _fMeasure;
 if (_fStoreyReveal !== undefined) FLAGS.storeyReveal = _fStoreyReveal;
 if (_fSunCompass !== undefined) FLAGS.sunCompass = _fSunCompass;
+// §SUN_DAY — light the whole film on one day (yyyy-mm-dd), hour sweeping morning to late
+// afternoon. Absent = the 4D timeline's own dates drive the light, which is the shipped behaviour.
+if (arg('sun-date', null)) FLAGS.sunDate = String(arg('sun-date'));
 // `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');
 

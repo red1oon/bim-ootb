@@ -747,6 +747,7 @@
       measure: !!s.measure,                // §FLYTHRU_DATUM
       storeyReveal: !!s.storeyReveal,       // §STOREY_HIGHLIGHT_REVEAL
       sunCompass: !!s.sunCompass,           // §SUN_COMPASS
+      sunDate: s.sunDate || '',             // §SUN_DAY
       bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
       dayCounter: s.dayCounter || 'tr',
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
@@ -1018,8 +1019,13 @@
             // restriction, not an attribution gap — no credit line makes it shippable, and a
             // redraw keeping its exact vertices would still be derived from it.
             // W-SUN-COMPASS-WIRING asserts its colours and viewBox stay absent.
+            // §SUN_DAY — red1's own words for the hover: "enable geo-ref truth". The longer
+            // sentence follows it, because the button still has to say the two things it cannot
+            // show: that this is TRUE north out of the IFC (not the model grid every building in
+            // this fleet silently used until now), and that it draws NOTHING on a model with no
+            // site lat/long rather than inventing a location.
             { id: 'cpe-sun-compass', label: 'Sun compass', icon: I.compass && I.compass.svg,
-              hint: 'TRUE-north rose on the ground from the IFC\'s own georeference, with the day of the year off the 4D cursor and the sun\'s angle of attack on the building — silent on a model with no site lat/long, never a guessed one' },            // — the final 5 real seconds of the pull-back beat, ending exactly where the closing
+              hint: 'enable geo-ref truth — TRUE-north rose on the ground from the IFC\'s own georeference, the sun\'s real path for the site and date, and its angle of attack on the building; silent on a model with no site lat/long, never a guessed one' },            // — the final 5 real seconds of the pull-back beat, ending exactly where the closing
             // orbit begins, fill with each storey tinting through in sequence.
             { id: 'cpe-storey-reveal', label: 'Storey highlight', icon: null,
               hint: 'each storey glows blue/green/yellow/orange in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card' }
@@ -1044,6 +1050,19 @@
               '<span>' + esc(t.label) + '</span></label>';
           }).join('') + '</div>';
         })() +
+        // §SUN_DAY (red1, 2026-09-19) — the date field that appears with the compass. Pinning a
+        // date makes the whole film one day's daylight: the hour sweeps 9:00→17:00 solar and the
+        // sun arcs once, instead of the date advancing underneath and the season fighting the
+        // clock. Leave it empty and the 4D timeline's own dates drive the light, as before.
+        // ⚠ It only does anything with the Sun compass on — the row hides itself otherwise, so
+        // there is no field sitting there that silently does nothing.
+        '<div id="cpe-sun-date-row" style="margin-top:4px;display:none">' +
+          '<label style="cursor:pointer">light the whole film on ' +
+          '<input id="cpe-sun-date" type="date" style="font-family:inherit"></label> ' +
+          '<button id="cpe-sun-date-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;' +
+          'color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">follow the 4D dates</button>' +
+          '<div style="color:#666">(one day, sun rising to late afternoon across the film — the ' +
+          'BUILD still follows the 4D timeline, only the light is pinned)</div></div>' +
         // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+C bake always
         // renders at this window's canvas (cinema_maxq.js:1120 reads renderer.domElement), so this
         // select does not resize anything here; it is stored on the path and cli_silent_bake.js
@@ -2386,6 +2405,7 @@
     return {
       checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash, measure: !!ov.measure,
                     storeyReveal: !!ov.storeyReveal, sunCompass: !!ov.sunCompass },
+      sunDate: ov.sunDate || '',
       bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
       tmActive: tm ? !!tm.active : false,
@@ -2441,6 +2461,11 @@
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
     });
+    // §SUN_DAY — the field mirrors state, and the row only exists while the compass is on.
+    var _sdEl = document.getElementById('cpe-sun-date');
+    if (_sdEl) _sdEl.value = _state.sunDate || '';
+    var _sdRow = document.getElementById('cpe-sun-date-row');
+    if (_sdRow) _sdRow.style.display = _state.sunCompass ? '' : 'none';
     var dayEl = document.getElementById('cpe-day-counter'), want = _state.dayCounter || 'tr';
     if (dayEl && dayEl.value !== want) { dayEl.value = want; dayEl.dispatchEvent(new Event('change')); }
   }
@@ -3623,6 +3648,8 @@
         // reasoning as the four above: a new overlay appearing in every saved path's re-bake would
         // silently change films the user has already signed off.
         sunCompass: false,
+        // §SUN_DAY — '' means follow the 4D timeline's own dates (the shipped behaviour).
+        sunDate: '',
         bakeRes: '',           // §CPE_BAKE_RES — '' = the window; else '<w>x<h>@<fps>'
         origReveal: false,
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
@@ -3788,11 +3815,31 @@
       var _sunCompassEl = document.getElementById('cpe-sun-compass');
       if (_sunCompassEl) _sunCompassEl.addEventListener('change', function(e) {
         _state.sunCompass = !!e.target.checked;
+        var _row = document.getElementById('cpe-sun-date-row');
+        if (_row) _row.style.display = _state.sunCompass ? '' : 'none';
         _markPreviewStale();
         console.log('§CPE_SUN_COMPASS checkbox=' + (_state.sunCompass ? 'on' : 'off') +
           ' — true-north ground rose + day-of-year + sun angle of attack, as ONE overlay. ' +
           'On a building with no site lat/long this draws nothing and the bake logs ' +
           '§SUN_COMPASS INCONCLUSIVE — the checkbox cannot promise a compass the DB cannot support.');
+      });
+      // §SUN_DAY — the date field and its clear button. Pure overlay state like the checkbox
+      // above: no beat boundary moves, so _markPreviewStale() is the whole handler.
+      var _sunDateEl = document.getElementById('cpe-sun-date');
+      if (_sunDateEl) _sunDateEl.addEventListener('change', function(e) {
+        _state.sunDate = String(e.target.value || '');
+        _markPreviewStale();
+        console.log('§CPE_SUN_DATE ' + (_state.sunDate
+          ? 'pinned to ' + _state.sunDate + ' — the whole film is lit on that one day, hour ' +
+            'sweeping morning to late afternoon; the BUILD still follows the 4D timeline'
+          : 'cleared — the light follows the 4D timeline\'s own dates again'));
+      });
+      var _sunDateClr = document.getElementById('cpe-sun-date-clear');
+      if (_sunDateClr) _sunDateClr.addEventListener('click', function() {
+        _state.sunDate = '';
+        if (_sunDateEl) _sunDateEl.value = '';
+        _markPreviewStale();
+        console.log('§CPE_SUN_DATE cleared — the light follows the 4D timeline\'s own dates again');
       });
       // §STOREY_HIGHLIGHT_REVEAL — like clash above, this does not move any beat boundary (it reads
       // the EXISTING plan.beats.rise), so a plain _markPreviewStale() is the whole handler; no

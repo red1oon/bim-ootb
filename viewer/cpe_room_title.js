@@ -813,6 +813,21 @@ function setupCpeRoomTitle(A) {
     }
     return text;
   };
+  // §CPE_CAPTION_BAND — how much of the bottom of the frame this caption occupies, so another
+  // overlay can keep out of it. Same shape as cpe_day_counter.js's A.dayCounterBoxSize: ONE owner
+  // of the arithmetic, callers ask rather than re-derive.
+  // Added 2026-09-19 because §SUN_COMPASS's bottom-left readout was measured landing INSIDE this
+  // band on an 854x480 bake with everything on — caption plate 405.6..443.6, the readout's sun
+  // line 418..443. Two overlays, one strip of pixels, and neither knew about the other.
+  A.roomTitleBandSize = function(h) {
+    var fontPx = Math.max(18, Math.round(h * 0.032));
+    var bandH = fontPx * 2.2;
+    var padY = Math.round(fontPx * 0.55);
+    var plateH = padY * 2 + fontPx;
+    var centreY = h - bandH * 1.4;
+    return { fontPx: fontPx, plateH: plateH, centreY: centreY, top: centreY - plateH / 2,
+             fromBottom: h - (centreY - plateH / 2) };
+  };
   A.roomTitleCompositeOntoCanvas = function(ctx, w, h, text, opacity) {
     if (!ctx || !text || !(opacity > 0)) return;
     text = A.roomTitleFinalText(text);

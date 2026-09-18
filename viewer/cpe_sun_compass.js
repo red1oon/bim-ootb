@@ -57,6 +57,32 @@ function setupCpeSunCompass(A) {
   // pass as a real answer — it is nearly always a wrong hour or a site nobody meant. Counted here,
   // reported by sunCompassDarkReport() once the frames are done.
   var _framesLit = 0, _framesDark = 0;
+  // §SUN_DAY — the pinned day, or null to follow the 4D cursor. Set by the bake from the panel.
+  var _sunDate = null;
+  A.sunCompassSetDate = function (iso) {
+    if (!iso) { _sunDate = null; console.log('§SUN_DAY following the 4D timeline (no date pinned)'); return null; }
+    // yyyy-mm-dd, parsed as UTC so a browser timezone cannot shift the day by one.
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso).trim());
+    if (!m) { _sunDate = null; console.log('§SUN_DAY IGNORED "' + iso + '" — not yyyy-mm-dd; following the 4D timeline'); return null; }
+    var y = +m[1], mo = +m[2] - 1, dd = +m[3];
+    var cand = new Date(Date.UTC(y, mo, dd));
+    // ⚠ ROUND-TRIP, because Date.UTC ROLLS OVER instead of failing. Caught by the witness:
+    // "2026-13-45" matches the pattern, is not a real date, and Date.UTC turns it into
+    // 14 Feb 2027 — a perfectly valid day that is not the one anybody typed. A silently wrong
+    // date is the worst possible outcome for a feature whose whole claim is geo-ref TRUTH.
+    if (isNaN(cand.getTime()) || cand.getUTCFullYear() !== y ||
+        cand.getUTCMonth() !== mo || cand.getUTCDate() !== dd) {
+      _sunDate = null;
+      console.log('§SUN_DAY IGNORED "' + iso + '" — not a real date (it would have rolled over to ' +
+        (isNaN(cand.getTime()) ? 'an invalid date' : cand.toISOString().slice(0, 10)) +
+        '); following the 4D timeline');
+      return null;
+    }
+    _sunDate = cand;
+    console.log('§SUN_DAY pinned to ' + iso + ' — every frame is lit on that day, hour sweeping ' +
+      FILM_SOLAR_START + ':00-' + FILM_SOLAR_END + ':00 solar. The BUILD still follows the 4D cursor.');
+    return _sunDate;
+  };
   var INK = 0x8899aa;          // same ink as cpe_flythru_datum.js's datum — one drawing language
   var INK_N = 0xe8eef6;        // the true-north needle reads stronger by weight, not by hue
   var INK_SUN = 0xffcc66;      // the one warm colour in the frame; it is the sun
@@ -357,8 +383,19 @@ function setupCpeSunCompass(A) {
     // FILM_SOLAR_HOUR is one number and it is a look decision, not a fact — 10:00 solar gives a
     // sun that is up all year at any inhabited latitude (Boston: 18.7 deg midwinter to 58.7 deg
     // midsummer) and a low enough angle to model the facades. Change it here, nowhere else.
+    // §SUN_DAY (red1, 2026-09-19: "a new day film scheme — as it gives rightfully, a whole daylight
+    // sweep", plus a settable date field). When a date is pinned, EVERY frame is lit on that one
+    // day and only the hour sweeps, so the film is one clean sunrise-to-late-afternoon arc.
+    // Without it the date advances with the 4D cursor and the season fights the hour — MEASURED on
+    // a real Hospital bake: 45 22 26 47 60 49 23 6, which climbs and dips because a winter morning
+    // sits lower than a summer afternoon whatever the clock says. One day, one arc.
+    // ⚠ The pinned day changes WHAT IS LIT, never what is BUILT. The 4D cursor still drives the
+    // model, so the counter keeps counting real project days while the light stays on the chosen
+    // date — which is the point ("show me this build as it would look on 21 June") and also why
+    // the readout prints the lit date rather than the cursor's.
+    var litDate = _sunDate || date;
     var solarHour = _filmSolarHour(filmT);
-    var shown = A.sunInstantAtSolarHour(_geo.lon, date, solarHour) || date;
+    var shown = A.sunInstantAtSolarHour(_geo.lon, litDate, solarHour) || litDate;
     var sun = A.sunPositionAt(_geo.lat, _geo.lon, shown);
     if (!sun) return null;
 
@@ -407,8 +444,8 @@ function setupCpeSunCompass(A) {
     }
 
     _last = {
-      cursorMs: cursorMs, date: date, shownAt: shown, solarHour: solarHour,
-      dayOfYear: A.sunDayOfYear(date),
+      cursorMs: cursorMs, date: litDate, shownAt: shown, solarHour: solarHour,
+      pinnedDate: !!_sunDate, dayOfYear: A.sunDayOfYear(litDate),
       azimuth: sun.azimuth, elevation: sun.elevation,
       elevationApparent: sun.elevationApparent, isUp: sun.isUp,
       attack: att, anchorThree: centre, radius: _radius,
@@ -458,7 +495,7 @@ function setupCpeSunCompass(A) {
   // owns a corner of the caller's choosing and stacks the path box and resource panel under it,
   // and cpe_room_title.js's caption is a CENTRED plate in the lower band. A left-aligned pill
   // clears both. Same plate language as those two — 0.45 black, text-hugging, same font.
-  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity) {
+  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity, bottomReserved) {
     if (!ctx || !info) return;
     var op = (opacity == null) ? 1 : Math.min(1, opacity);
     if (!(op > 0)) return;
@@ -524,9 +561,17 @@ function setupCpeSunCompass(A) {
     // corner of the caller's choosing and stacks the path box and resource panel under it, and
     // cpe_room_title.js's caption is a CENTRED plate in the lower band.
     // Order is date, sun, facade — read top-down, drawn bottom-up.
+    // ⚠ `bottomReserved` is how many pixels at the bottom of the frame are already spoken for —
+    // cpe_room_title.js's caption, when one is showing. MEASURED on an 854x480 HHS bake with every
+    // overlay on: the caption's plate occupies 405.6..443.6 and this readout's middle line sat at
+    // 418..443, fully inside it. Two overlays, one strip of pixels, neither aware of the other.
+    // The caller passes the reservation (it is the only thing that knows a caption is up this
+    // frame) and this block stacks above it — the same contract the HUD column already uses, where
+    // the caller owns the layout and each overlay owns only its own drawing.
     var mx = Math.round(w * 0.016), my = Math.round(h * 0.026);
     var lineH = Math.round(fontPx * 2.1);
-    var y0 = h - my - lineH / 2;
+    var reserved = (typeof bottomReserved === 'number' && bottomReserved > 0) ? bottomReserved : 0;
+    var y0 = h - my - lineH / 2 - reserved;
     if (labels.attack) { plate(mx, y0, labels.attack, 'left'); y0 -= lineH; }
     plate(mx, y0, labels.sun, 'left'); y0 -= lineH;
     plate(mx, y0, labels.day, 'left');
@@ -656,7 +701,7 @@ function setupCpeSunCompass(A) {
       });
     }
     _grp = null; _built = false; _info = null; _last = null; _noCursorLogged = false;
-    _framesLit = 0; _framesDark = 0;
+    _framesLit = 0; _framesDark = 0; _sunDate = null;
     _sunRay = _sunLift = _sunDrop = null; _disposed = true;
   };
 }

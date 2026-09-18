@@ -821,7 +821,14 @@
     // bake body. The bake loop already called A.sunCompassAt(_bkMs) for THIS frame, so the state
     // it reads is this frame's, not a neighbour's. Same never-kills-a-bake contract.
     if (A._sunCompassOn && A.sunCompassCompositeOntoCanvas && A.sunCompassInfo) {
-      try { A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), 1); }
+      // §CPE_CAPTION_BAND — reserve the room-title caption's strip when one is showing this frame,
+      // so the sun readout stacks ABOVE it instead of into it. Measured collision on an 854x480
+      // HHS bake with everything on; see cpe_room_title.js A.roomTitleBandSize.
+      var _capH = 0;
+      if (titleInfo && titleInfo.opacity > 0 && A.roomTitleBandSize) {
+        try { _capH = A.roomTitleBandSize(h).fromBottom; } catch (eCB) { _capH = 0; }
+      }
+      try { A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), 1, _capH); }
       catch (eSCd) { if (!A._sunCompassDrawWarned) { A._sunCompassDrawWarned = true;
         console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message) + ' — compass skipped, frames continue'); } }
     }
@@ -1161,6 +1168,7 @@
     // §SUN_COMPASS — the cursor handed to the rose each frame. NULL when the film has no buildup,
     // which is a real state the module handles; it is never defaulted to "now".
     var _sunCompassMs = null;
+    var _sunDate = '';   // §SUN_DAY — yyyy-mm-dd to light the whole film on one day, or '' to follow
     // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
     // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
     // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
@@ -1354,6 +1362,9 @@
         // setting-out grid; this draws the model's relationship to the planet. They answer
         // different questions and a viewer may well want one without the other.
         _sunCompass = !!_ov.sunCompass;
+        // §SUN_DAY — '' (or absent) means follow the 4D timeline's own dates, which is what every
+        // saved path predating this field carries, so none of them re-bake differently.
+        _sunDate = _ov.sunDate || '';
         if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round + ARC/STR reveal are real ' +
           '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
@@ -1591,6 +1602,10 @@
       // rather than drawing a rose it cannot justify, and this flag follows that answer so
       // _captureFrame does not have to re-ask every frame.
       A._sunCompassOn = false;
+      // §SUN_DAY — set BEFORE the build so the very first frame is already on the pinned day.
+      if (_sunCompass && A.sunCompassSetDate) {
+        try { A.sunCompassSetDate(_sunDate); } catch (eSD2) {}
+      }
       if (_sunCompass && A.sunCompassBuild) {
         try { A._sunCompassOn = !!A.sunCompassBuild(); }
         catch (eSCB) { console.warn('§SUN_COMPASS_BUILD failed: ' + (eSCB && eSCB.message) + ' — the film bakes without the compass'); }
@@ -2549,7 +2564,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'sunCompass'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'sunCompass', 'sunDate'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
