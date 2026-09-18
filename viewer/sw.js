@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1179';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1180';   // bump on each deploy; per-change detail is the git commit message.
 // v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
 //   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
 //   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
@@ -198,6 +198,22 @@ const CACHE_VERSION = 'v1179';   // bump on each deploy; per-change detail is th
 //   cinema_path_editor.js gains ONE Alt+C checkbox ("Sun compass") governing the whole overlay —
 //   rose + day-of-year + sun-angle readout together, off by default so every saved path re-bakes
 //   byte-identically. cli_silent_bake.js gains --sun-compass/--no-sun-compass.
+// v1180 (2026-09-19) §SUN_COMPASS two real fixes to cpe_sun_compass.js + cinema_maxq.js since
+//   v1179, so the version MUST move or a client keeps serving the old module: (1) the per-frame
+//   sunCompassAt call was inside `if (_buildup && _bkState)` and never ran on a buildup-off bake —
+//   the rose built, the log said so, and nothing was composited; (2) the day-of-year label said
+//   "Day 285 · 12 Oct" beside cpe_day_counter's "Day 390 / 390" — two different quantities sharing
+//   a word. Now "12 Oct · day 285 of the year".
+//   ⚠ A LOCAL PREVIEW BAKE CAN RENDER STALE JS, AND BUMPING THIS CONSTANT DOES NOT FIX IT.
+//   Measured 2026-09-19, three bakes: both fixes above were baked and the frames showed the OLD
+//   behaviour; bumping v1179 -> v1180 changed NOTHING. The cause is cli_silent_bake.js's
+//   `userDataDir: /tmp/silent-bake-profile-<port>`, which persists between runs and holds the
+//   service-worker registration and its Cache Storage. A CACHE_VERSION bump only takes effect when
+//   the NEW worker activates, and a new worker waits while the old one still controls the page — so
+//   the bump cannot evict anything on the next load. `rm -rf /tmp/silent-bake-profile-*` before the
+//   bake is what actually works; that run produced the correct frame on the first try.
+//   The bump below is still right for SHIPPING (two modules changed since v1179) — it just was not
+//   the fix, and reporting it as one would have been wrong.
 // v1179 (2026-09-19) §CPE_TOGGLE_ICONS: the Alt+C panel's seven overlay toggles are icon buttons
 //   that light amber when checked, built from ONE table instead of seven hand-written rows.
 //   COSMETIC ONLY — every checkbox id, handler, _state field, census entry and DOM-sync row is
