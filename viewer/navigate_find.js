@@ -1228,7 +1228,15 @@
       var RG = (typeof window !== 'undefined') && window.RoomGraph;
       if (!RG || !A.dbQuery) return null;
       if (_pathGraphCache && _pathGraphBld === A.activeBuilding) return _pathGraphCache;
-      var g = RG.buildGraph(A.dbQuery, { log: function(m) { console.log('[RP-PATH] ' + m); } });
+      // §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3): resolve real door positions when possible —
+      // graceful null (module not loaded, or A.db has no resolvable geometry) = today's coarse
+      // center_x/y behaviour, unchanged. See common/door_real_position.js for the fallback contract.
+      var doorRealXY = null;
+      if (window.DoorRealPosition && A.db) {
+        try { doorRealXY = window.DoorRealPosition.resolveDoorRealXY(A.db, A.libDb || A.db); }
+        catch (e) { console.warn('[RP-PATH] §DOOR_REAL_AABB_ERR ' + (e && e.message)); doorRealXY = null; }
+      }
+      var g = RG.buildGraph(A.dbQuery, { log: function(m) { console.log('[RP-PATH] ' + m); }, doorRealXY: doorRealXY });
       _pathGraphCache = g; _pathGraphBld = A.activeBuilding;
       return g;
     }

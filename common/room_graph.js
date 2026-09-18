@@ -72,6 +72,13 @@
  * `A.dbQuery` convention `common/room_habitability.js` already assumes) — this module is DB/file
  * I/O-free otherwise, so it runs identically in the browser (viewer/modeller) and in a node
  * witness script against sql.js/better-sqlite3.
+ *
+ * §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18) — OPTIONAL `opts.doorRealXY`:
+ * a pre-resolved `{ doorGuid: [x,y] }` map (built by the caller via common/door_real_position.js,
+ * which needs a live db/geoDb handle this file deliberately never touches — see contract above).
+ * When present, overrides a door's coarse center_x/y with its real world-AABB centre for E1/E2/E4/E9
+ * matching AND the doorwp waypoint the drawn polyline hugs. Omitted, or no entry for a given door →
+ * IDENTICAL behaviour to before this option existed.
  */
 (function () {
   'use strict';
@@ -490,9 +497,24 @@
       return best;
     }
 
+    // §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18): door E1/E2/E4/E9 matching below has
+    // always read the coarse element_transforms.center_x/y — the IFC local-placement ANCHOR, not the
+    // door's real volumetric AABB centre (the same convention bim-ootb #1744 measured+fixed for
+    // modeller/cross_edges.js's §REAL-AABB). Measured impact (§2/§2b of that doc): median offset 20mm
+    // (SampleCastle), and on Duplex 8/14 doors' matched edges actually changed, concentrated in the
+    // §AMBIGUOUS-RESIDUAL-RESCUE (E9) layer. `opts.doorRealXY` is an OPTIONAL, PRE-RESOLVED
+    // { doorGuid: [x,y] } map the caller builds via common/door_real_position.js (which needs a live
+    // db/geoDb handle — kept OUT of this file on purpose, see file header: this module stays DB/file
+    // I/O-free, dual-mode node+browser). Additive/gracefully-degrading: no map, or no entry for a
+    // given door, leaves dx/dy IDENTICAL to today's coarse read — never worse than current behaviour.
+    var doorRealResolved = 0;
     doorRows.forEach(function (d) {
       var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5], bx = d[6] || 0, by = d[7] || 0, bz = d[8];
       if (!isRoomDoor(name)) { nonRoomDoors++; return; }
+      if (opts.doorRealXY && opts.doorRealXY[guid]) {
+        dx = opts.doorRealXY[guid][0]; dy = opts.doorRealXY[guid][1];
+        doorRealResolved++;
+      }
       if (bz != null && bz > 0 && bz < SUB_HUMAN_DOOR_HEIGHT) {
         subHumanDoors++;
         log('§ROOM_GRAPH_SUB_HUMAN_DOOR "' + name + '" height=' + bz.toFixed(2) + 'm storey=' + storey + ' (< ' + SUB_HUMAN_DOOR_HEIGHT + 'm, not human-passable)');
@@ -585,6 +607,8 @@
         }
       }
     });
+    if (opts.doorRealXY) log('§DOOR_REAL_AABB resolved=' + doorRealResolved + '/' + doorRows.length +
+      ' (real world-AABB centre used in place of the coarse center_x/y for that many doors)');
 
     // ── E3: stair/ramp flights bridge two storeys' circulation nodes ──
     // §STAIR-GROUPS: extracted to getStairGroups() below (2026-07-14, §HALLWAY-BACKBONE) so a
@@ -1055,7 +1079,8 @@
         deadend: deadend, orphan: orphan, orphanRescued: orphanRescued, ambiguous: ambiguous,
         ambiguousResidualRescued: ambiguousResidualRescued,
         circ: circCount, stairs: e3, stairsSkipped: e3Skipped, exits: exits, e2: e2,
-        roomBridges: roomBridges, sealed: bridgeRejected }
+        roomBridges: roomBridges, sealed: bridgeRejected,
+        doorRealResolved: doorRealResolved } // §REAL-AABB: doors matched using a real (not coarse) position
     };
   }
 

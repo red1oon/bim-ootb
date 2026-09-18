@@ -708,17 +708,27 @@ function setupRuleChecklist(A) {
       // window.RoomGraph; reuse the SAME existing loader Find/Navigate already use rather than
       // adding a second script-loading path.
       var go = function () {
-        var rows = EgressSanity.evaluate(A.dbQuery, rules, { log: console.log });
+        // §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3): resolve ONCE, reuse for BOTH buildGraph
+        // calls below — the rgFacts capture below must observe the SAME graph the rules evaluated
+        // against (its own comment already asserts this determinism), so both need the identical
+        // doorRealXY input. Graceful: null (module/geometry unavailable) = today's coarse behaviour.
+        var doorRealXY = null;
+        if (window.DoorRealPosition && A.db) {
+          try { doorRealXY = window.DoorRealPosition.resolveDoorRealXY(A.db, A.libDb || A.db); }
+          catch (e) { console.warn('§DOOR_REAL_AABB_ERR ' + (e && e.message)); doorRealXY = null; }
+        }
+        var rows = EgressSanity.evaluate(A.dbQuery, rules, { log: console.log, doorRealXY: doorRealXY });
         // T8.4 — §ROOM_GRAPH_EXITS's own numbers (exits / noRaster / doors). The evaluator calls
         // RoomGraph.buildGraph with its log SILENCED, so that line never reaches console here;
         // build it once more with a CAPTURING log purely to read the facts. buildGraph is
-        // deterministic on the same dbQuery, so this observes the same graph the rules used — it
-        // does not change any count. Null (with a stated reason in the report) if it cannot run.
+        // deterministic on the same dbQuery (+ the same doorRealXY, see above), so this observes the
+        // same graph the rules used — it does not change any count. Null (with a stated reason in
+        // the report) if it cannot run.
         var rgFacts = null;
         try {
           if (window.RoomGraph && typeof RuleReport !== 'undefined') {
             var capt = [];
-            window.RoomGraph.buildGraph(A.dbQuery, { log: function (m) { capt.push(m); } });
+            window.RoomGraph.buildGraph(A.dbQuery, { log: function (m) { capt.push(m); }, doorRealXY: doorRealXY });
             rgFacts = RuleReport.parseRoomGraphExits(capt);
           }
         } catch (e) { console.warn('§RULE_REPORT_ROOMGRAPH_FACTS_FAIL ' + e.message); }
