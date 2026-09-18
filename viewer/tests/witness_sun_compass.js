@@ -304,6 +304,68 @@ if (built.facade) {
         'if this fails, true_north_angle is being ignored');
 })();
 
+// ── CASE T8: the end-to-end gate a peer session added to the spec as T8 (§10.8). ────────────────
+// Two of its three bullets were NOT covered by the checks above, and both gaps are real:
+//   T8.2 "extraction-to-render agreement" — the checks above prove the needle MOVES by the right
+//        DIFFERENCE between two twins. They never assert its ABSOLUTE bearing against Hospital's
+//        own extracted +5 deg. A renderer with a constant offset baked in would pass every one of
+//        them and still point the wrong way on every building.
+//   T8.3 "internal cross-consistency" — the day-of-year text, the angle-of-attack readout and the
+//        rose's own orientation must all trace to ONE (date, lat, lon) read for that frame, not to
+//        three reads that happen to agree today.
+// ⚠ T8.2 as the spec words it asks for `compassGroup.rotation.y`. THERE IS NO SUCH PROPERTY HERE,
+// and looking for one would read a permanent 0 and "pass". The rose is built from world-space
+// points — the bearing is baked into the vertex positions, not carried on a group transform. So
+// the assertion is made where the number actually lives: the needle tip's bearing relative to the
+// anchor, converted back to model space. Same fact, read off the thing that really carries it.
+(function () {
+  var cursor = Date.UTC(2026, 5, 21, 17, 30);
+  var info = A.sunCompassAt(cursor);
+  if (!info) { truth('T8: a frame is available to judge', false); return; }
+
+  // T8.2 — ABSOLUTE agreement between the extracted value and what was rendered.
+  var d = A.three2ifcDir(info.trueNorthTip.x - info.anchorThree.x,
+                         info.trueNorthTip.y - info.anchorThree.y,
+                         info.trueNorthTip.z - info.anchorThree.z);
+  var needleModelBearing = ((Math.atan2(d.ix, d.iy) * 180 / Math.PI) + 540) % 360 - 180;
+  // true_north_angle is the bearing of MODEL north from TRUE north, so TRUE north sits at model
+  // bearing -true_north_angle. Hospital's extracted value is +5 deg, so the needle must read -5.
+  check('T8.2 the rendered true-north needle equals the EXTRACTED true north, absolutely',
+        needleModelBearing, -REAL.tn, 1e-6,
+        'needle model bearing vs -true_north_angle; a constant renderer offset dies here');
+  truth('T8.2 the bearing is carried by geometry, not a group rotation that could read 0',
+        A.scene.objs[0].rotation === undefined,
+        'sunCompassRose has no .rotation — reading compassGroup.rotation.y would assert nothing');
+
+  // T8.3 — ONE (date, lat, lon) behind all three readouts, asserted in a single pass.
+  var labels = A.sunCompassLabels(info);
+  var direct = A.sunPositionAt(built.lat, built.lon, new Date(cursor));
+  truth('T8.3 the day-of-year label is the cursor\'s own day',
+        labels.day.indexOf('Day ' + A.sunDayOfYear(new Date(cursor))) === 0, labels.day);
+  check('T8.3 the rose\'s sun bearing is that same instant\'s azimuth', info.azimuth,
+        direct.azimuth, 1e-12);
+  // The angle of attack must be reproducible from the SAME sun direction the rose was drawn with
+  // and the SAME facade the build resolved — recomputed here from first principles rather than
+  // read back off the object that produced it.
+  if (info.attack) {
+    var sunDir = A.sunDirectionThree(direct.azimuth, direct.elevation, built.trueNorth);
+    var faces = A.wallFaceNormalsThree(built.facade.rz);
+    var r0 = A.sunIncidenceDeg(sunDir, faces[0]), r1 = A.sunIncidenceDeg(sunDir, faces[1]);
+    var lit = (r0.incidence <= r1.incidence) ? r0 : r1;
+    check('T8.3 the angle-of-attack readout recomputes from that same instant and facade',
+          info.attack.attack, lit.attack, 1e-12);
+    truth('T8.3 the readout text carries that same number',
+          labels.attack.indexOf(info.attack.attack.toFixed(0) + '°') === 0, labels.attack);
+  }
+  // And the whole frame must move together: a different cursor must change the day AND the sun.
+  var other = A.sunCompassAt(Date.UTC(2026, 11, 21, 17, 30));
+  truth('T8.3 a different cursor moves the day AND the sun together',
+        other.dayOfYear !== info.dayOfYear && Math.abs(other.elevation - info.elevation) > 1,
+        'day ' + info.dayOfYear + '->' + other.dayOfYear +
+        ', elevation ' + info.elevation.toFixed(1) + '->' + other.elevation.toFixed(1));
+  A.sunCompassAt(cursor);   // leave the module on the cursor the later cases expect
+})();
+
 // ── CASE C: §4 — no known location means NOTHING is drawn (issue 2, the NO-OP guard). ───────────
 (function () {
   var dbC = prepDb({ true_north_angle: 0, true_north_source: 'default_zero',
