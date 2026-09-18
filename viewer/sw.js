@@ -194,7 +194,10 @@ const CACHE_VERSION = 'v1178';   // bump on each deploy; per-change detail is th
 //   had no true_north_angle row and sitecam.js/walk.js silently rotated by 0. New viewer/sun_path.js
 //   (NOAA solar position + §8 angle of attack, offline, no network) and viewer/cpe_sun_compass.js
 //   (a true-north rose on the ground with the 4D day-of-year, OFF unless the bake asks for it);
-//   both precached and script-tagged; cinema_maxq.js gains the sunCompass flag.
+//   both precached and script-tagged; cinema_maxq.js gains the sunCompass flag, and
+//   cinema_path_editor.js gains ONE Alt+C checkbox ("Sun compass") governing the whole overlay —
+//   rose + day-of-year + sun-angle readout together, off by default so every saved path re-bakes
+//   byte-identically. cli_silent_bake.js gains --sun-compass/--no-sun-compass.
 // v1177 (2026-09-14) TM_4D5D_VARIANCE_LANE §S7-INJECT: new viewer/schedule_inject.js ("Generate
 //   programme" — materializeZones+persistDb on the fly, best-effort save, honest saved/session-only
 //   message); panels.js 'sched4d' pill gate changed from "has a schedule" to "engine capable" so the
