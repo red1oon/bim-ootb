@@ -214,9 +214,18 @@ if (built.facade) {
   var info = A.sunCompassAt(cursor);
   truth('the compass reports a frame at a real cursor', !!info);
   if (!info) { fails++; return; }
-  var direct = A.sunPositionAt(REAL.lat, REAL.lon, new Date(cursor));
-  check('azimuth is exactly sun_path.js answer for this cursor', info.azimuth, direct.azimuth, 1e-12);
-  check('elevation is exactly sun_path.js answer for this cursor', info.elevation, direct.elevation, 1e-12);
+  // ⚠ Compared against the LIT INSTANT, not the raw cursor. Since the film clock landed, the
+  // compass lights the cursor's DATE at a held solar hour (sun_path.js `sunInstantAtSolarHour`) —
+  // the fix for the day/night strobe. These two used to compare against the cursor instant and
+  // correctly failed the moment that changed; re-pointed at the contract, not loosened.
+  // Built from the hour the compass SAYS it lit (info.solarHour), not from a hardcoded 10 — the
+  // hour sweeps with the film fraction now, and hardcoding it made these fail the moment the sweep
+  // landed. This is not circular: the claim under test is "the reported sun IS sun_path's answer
+  // for the instant the compass reports lighting", and both halves are still checked.
+  var lit = A.sunInstantAtSolarHour(REAL.lon, new Date(cursor), info.solarHour);
+  var direct = A.sunPositionAt(REAL.lat, REAL.lon, lit);
+  check('azimuth is exactly sun_path.js answer for the lit instant', info.azimuth, direct.azimuth, 1e-12);
+  check('elevation is exactly sun_path.js answer for the lit instant', info.elevation, direct.elevation, 1e-12);
   check('day-of-year matches the cursor', info.dayOfYear, 172, 0, '21 June 2026');
   truth('the sun is up on a June afternoon in Boston', info.isUp === true,
         'elevation=' + info.elevation.toFixed(2));
@@ -229,12 +238,19 @@ if (built.facade) {
     check('attack and incidence are complements', info.attack.attack + info.attack.incidence, 90, 1e-9);
   }
 
-  // NIGHT. The sun must go down and the sun lines must be hidden — a rose with a sun on it at
-  // midnight is a picture of something that is not happening.
-  var night = A.sunCompassAt(Date.UTC(2026, 5, 21, 5, 30));
-  truth('at local night the sun is reported down', night && night.isUp === false,
-        night ? 'elevation=' + night.elevation.toFixed(2) : 'no info');
-  truth('at local night no angle of attack is claimed', night && !night.attack);
+  // BELOW THE HORIZON IS STILL REACHABLE AND MUST STILL BE HANDLED — but a held film hour means a
+  // late cursor no longer produces it, so the old "cursor at 05:30" case became vacuous the moment
+  // the film clock landed (it silently started asserting a sunlit frame). Retired and replaced by
+  // the case that is real at a held hour: POLAR WINTER. Tromso at 10:00 solar on 21 December is
+  // -5.5 deg — the sun genuinely does not rise. A rose with a sun ray on it there would be a
+  // picture of something that is not happening.
+  var down = A.sunPositionAt(69.65, 18.96, A.sunInstantAtSolarHour(18.96, new Date(Date.UTC(2026, 11, 21)), 10));
+  truth('polar winter at the film hour really is below the horizon',
+        down.isUp === false && down.elevation < 0, 'Tromso 21 Dec: ' + down.elevation.toFixed(2) + ' deg');
+  var labelsDown = A.sunCompassLabels({ date: new Date(Date.UTC(2026, 11, 21)), dayOfYear: 355,
+                                        isUp: false, attack: null });
+  truth('and the readout says so rather than printing an altitude below ground',
+        /below the horizon/.test(labelsDown.sun) && labelsDown.attack === null, labelsDown.sun);
 })();
 
 // ── CASE A check 3: the text really is composited onto the 2D context. ──────────────────────────
@@ -292,12 +308,16 @@ if (built.facade) {
     truth('and the world-anchored N is correctly skipped', noCam.indexOf('N') < 0, j2);
   })();
 
-  // A night frame must say so rather than print a below-horizon altitude that reads as nonsense.
-  var nightInfo = A.sunCompassAt(Date.UTC(2026, 5, 21, 5, 30));
+  // A below-horizon frame must SAY so rather than print an altitude that reads as nonsense. Driven
+  // through the real composite with a hand-built below-horizon info, because at a held film hour
+  // this building never sees one — the state is still reachable (polar winter, above) and the
+  // drawing path for it must not rot just because Boston cannot produce it.
   drawn.length = 0;
-  A.sunCompassCompositeOntoCanvas(ctx, 1920, 1080, nightInfo, 1);
-  truth('a night frame says the sun is below the horizon', /below the horizon/.test(drawn.join(' | ')),
-        drawn.join(' | '));
+  A.sunCompassCompositeOntoCanvas(ctx, 1920, 1080,
+    { date: new Date(Date.UTC(2026, 11, 21)), dayOfYear: 355, isUp: false, attack: null,
+      anchorThree: info.anchorThree, trueNorthTip: info.trueNorthTip, radius: info.radius }, 1);
+  truth('a below-horizon frame says the sun is below the horizon',
+        /below the horizon/.test(drawn.join(' | ')), drawn.join(' | '));
 })();
 
 // ── CASE B: TRUE NORTH ACTUALLY DRIVES THE ROSE (issue 1). ──────────────────────────────────────
@@ -366,11 +386,12 @@ if (built.facade) {
 
   // T8.3 — ONE (date, lat, lon) behind all three readouts, asserted in a single pass.
   var labels = A.sunCompassLabels(info);
-  var direct = A.sunPositionAt(built.lat, built.lon, new Date(cursor));
+  var direct = A.sunPositionAt(built.lat, built.lon,
+                               A.sunInstantAtSolarHour(built.lon, new Date(cursor), info.solarHour));
   truth('T8.3 the day-of-year label is the cursor\'s own day',
         labels.day.indexOf('day ' + A.sunDayOfYear(new Date(cursor)) + ' of the year') > 0,
         labels.day);
-  check('T8.3 the rose\'s sun bearing is that same instant\'s azimuth', info.azimuth,
+  check('T8.3 the rose\'s sun bearing is that same lit instant\'s azimuth', info.azimuth,
         direct.azimuth, 1e-12);
   // The angle of attack must be reproducible from the SAME sun direction the rose was drawn with
   // and the SAME facade the build resolved — recomputed here from first principles rather than
@@ -392,6 +413,72 @@ if (built.facade) {
         'day ' + info.dayOfYear + '->' + other.dayOfYear +
         ', elevation ' + info.elevation.toFixed(1) + '->' + other.elevation.toFixed(1));
   A.sunCompassAt(cursor);   // leave the module on the cursor the later cases expect
+})();
+
+// ── CASE FILM CLOCK: the season moves, the hour does not. ──────────────────────────────────────
+// THE DEFECT THIS EXISTS FOR, measured on a real 8-frame Hospital bake before the fix: feeding the
+// 4D cursor straight to the sun gave elevation 30.4, then -33.7 (night), then 18.2, then 43.8 —
+// day, night, day, day, in four consecutive frames. Astronomically perfect and a strobe, because
+// 390 days of programme are played in 80 seconds so each frame lands at an unrelated hour.
+(function () {
+  var els = [], azs = [], days = [];
+  for (var m = 0; m < 12; m++) {
+    var info = A.sunCompassAt(Date.UTC(2026, m, 15, (m * 7) % 24, (m * 13) % 60));
+    els.push(info.elevation); azs.push(info.azimuth); days.push(info.dayOfYear);
+  }
+  truth('every month of the film is lit with the sun UP — no day/night strobe',
+        els.every(function (e) { return e > 0; }),
+        'elevation range ' + Math.min.apply(null, els).toFixed(1) + '..' + Math.max.apply(null, els).toFixed(1));
+  // The hour is held even though the cursors above deliberately carry wildly different times.
+  var swing = Math.max.apply(null, els) - Math.min.apply(null, els);
+  truth('the SEASON still moves the sun (that is the whole point)', swing > 20,
+        'elevation swings ' + swing.toFixed(1) + ' deg across the year');
+  truth('and the azimuth drifts with it too',
+        Math.max.apply(null, azs) - Math.min.apply(null, azs) > 15,
+        'azimuth ' + Math.min.apply(null, azs).toFixed(1) + '..' + Math.max.apply(null, azs).toFixed(1));
+  // Frame-to-frame smoothness is the property the strobe violated: no two adjacent months may
+  // jump the way 30.4 -> -33.7 did.
+  var maxJump = 0;
+  for (var i = 1; i < els.length; i++) maxJump = Math.max(maxJump, Math.abs(els[i] - els[i - 1]));
+  truth('no frame-to-frame elevation jump anywhere near the 64 deg the strobe produced',
+        maxJump < 20, 'largest month-to-month step ' + maxJump.toFixed(1) + ' deg');
+
+  // The LABEL must still be the cursor's own calendar day — holding the hour must not move the date.
+  var cur = Date.UTC(2026, 9, 12, 23, 30);
+  var i2 = A.sunCompassAt(cur);
+  truth('the date shown is still the cursor\'s date, not the lit instant\'s',
+        i2.dayOfYear === A.sunDayOfYear(new Date(cur)) &&
+        A.sunCompassLabels(i2).day.indexOf('12 Oct') === 0, A.sunCompassLabels(i2).day);
+  truth('the instant actually lit is reported, so the log is not ambiguous',
+        !!i2.shownAt && i2.solarHour >= 9 && i2.solarHour <= 17,
+        String(i2.shownAt) + ' at ' + i2.solarHour + ':00 solar');
+
+  // THE SWEEP. red1: "capturing only a subset ie different times of the day to give a perception
+  // of a single half day". The film fraction moves the solar hour morning -> late afternoon, so
+  // the sun must RISE, PEAK and FALL across the film rather than sit at one height.
+  var arc = [];
+  for (var f = 0; f <= 8; f++) {
+    arc.push(A.sunCompassAt(Date.UTC(2026, 0, 1) + (f / 8) * 390 * 86400000, f / 8));
+  }
+  var elArc = arc.map(function (a) { return a.elevation; });
+  var peak = elArc.indexOf(Math.max.apply(null, elArc));
+  truth('the sun ARCS across the film — rises, peaks, falls', peak > 0 && peak < elArc.length - 1,
+        'peak at frame ' + peak + ' of ' + (elArc.length - 1) + ': ' +
+        elArc.map(function (e) { return e.toFixed(0); }).join(' '));
+  truth('the solar hour really does sweep with the film fraction',
+        arc[0].solarHour < arc[arc.length - 1].solarHour,
+        arc[0].solarHour.toFixed(1) + ':00 -> ' + arc[arc.length - 1].solarHour.toFixed(1) + ':00 solar');
+  truth('a bare call with no film fraction still works (mid-day, not a crash)',
+        A.sunCompassAt(Date.UTC(2026, 5, 21)).solarHour === 13);
+
+  // THE ALL-DARK GUARD. red1: "if all does end up dark, then it is a 'buggy' case". Boston is lit,
+  // so the report must NOT cry wolf here — a guard that fires on a good film is worse than none.
+  var rep = A.sunCompassDarkReport();
+  truth('the light report counts real frames and does not cry wolf on a lit film',
+        rep && rep.total > 0 && rep.lit > 0 && rep.allDark === false,
+        rep ? 'lit=' + rep.lit + ' dark=' + rep.dark : 'no report');
+
+  A.sunCompassAt(Date.UTC(2026, 5, 21, 17, 30), 0.5);
 })();
 
 // ── CASE NO-CURSOR: a film with no buildup has no 4D date. Fixed 2026-09-19. ────────────────────

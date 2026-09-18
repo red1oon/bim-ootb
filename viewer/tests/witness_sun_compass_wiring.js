@@ -217,6 +217,59 @@ link('no separate day-of-year or sun-angle checkbox was added',
        (html.match(/viewBox="0 0 24 24"/g) || []).length === svgs);
 })();
 
+// ── §SUN_ONE — the render sun and the compass sun must be ONE sun. ────────────────────────────
+// The conversion is the whole risk and it is invisible when wrong: updateSky takes a SCENE bearing
+// (0 = model north, z = +cos θ), the compass reports a TRUE bearing (0 = true north, scene maps
+// z = −cos), so θ = 180 − (trueAz − trueNorthAngle). Feed a true bearing straight in and the sun
+// is 180° plus true north out — the light comes from the wrong side and every shadow is backwards,
+// while everything still "works". Pinned here against the shipped constant.
+(function () {
+  var eff = fs.readFileSync(path.join(__dirname, '..', 'effects.js'), 'utf8');
+  var a = eff.indexOf('function _realSunForRender()');
+  var b = eff.indexOf('\n  }', a);
+  if (a < 0 || b < 0) {
+    link('§SUN_ONE: the render-sun hook can be located', false, 'slice markers not found');
+    return;
+  }
+  var A2 = { _sunCompassOn: true, sunCompassInfo: null };
+  var win = { _trueNorthAngle: 5 };
+  var fn;
+  try {
+    fn = eval('(function(A, window){' + eff.slice(a, b + 4) + '; return _realSunForRender;})')(A2, win);
+  } catch (e) {
+    link('§SUN_ONE: the render-sun hook evaluates', false, e.message);
+    return;
+  }
+  link('§SUN_ONE: the render-sun hook evaluates', typeof fn === 'function');
+
+  // THE ANCHOR. The shipped scripted sun is PHOTO_SUN_AZIMUTH = 200, which the bake's own
+  // §SUN_ARC_FILL_PIN sunPos proves is model bearing −20°. So a true bearing of −20 with true
+  // north 0 must convert to exactly 200, or the frames are not in the same convention.
+  A2.sunCompassInfo = function () { return { azimuth: -20, elevation: 55 }; };
+  win._trueNorthAngle = 0;
+  var r0 = fn();
+  link('§SUN_ONE: model bearing −20° converts to scene azimuth 200 (the shipped constant)',
+       r0 && Math.abs(r0.az - 200) < 1e-9, r0 ? 'az=' + r0.az : 'null');
+
+  // True north must shift it, or the building's own rotation is being ignored.
+  win._trueNorthAngle = 5;
+  A2.sunCompassInfo = function () { return { azimuth: 267.3, elevation: 30.4 }; };
+  var r5 = fn();
+  link('§SUN_ONE: true north shifts the render sun too', r5 && Math.abs(r5.az - 277.7) < 1e-9,
+       r5 ? 'az=' + r5.az.toFixed(1) : 'null');
+  link('§SUN_ONE: elevation is passed through unchanged', r5 && Math.abs(r5.el - 30.4) < 1e-12);
+
+  // And it must REFUSE to take over when there is nothing real to take over with — otherwise a
+  // film with no cursor or no compass silently loses its scripted lighting.
+  A2._sunCompassOn = false;
+  link('§SUN_ONE: compass off -> the scripted arc keeps the scene', fn() === null);
+  A2._sunCompassOn = true;
+  A2.sunCompassInfo = function () { return { noCursor: true, azimuth: null, elevation: null }; };
+  link('§SUN_ONE: no 4D cursor -> the scripted arc keeps the scene', fn() === null);
+  A2.sunCompassInfo = function () { return null; };
+  link('§SUN_ONE: no compass info -> the scripted arc keeps the scene', fn() === null);
+})();
+
 var verdict = fails === 0 ? 'PASS' : 'FAIL';
 console.log('§SUN_COMPASS_WIRING ' + verdict + ' checks=' + checks + ' wrong=' + fails +
             ' — wiring only; W-SUN-COMPASS is what proves a compass is actually drawn');

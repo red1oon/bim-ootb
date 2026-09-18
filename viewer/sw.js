@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1181';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1184';   // bump on each deploy; per-change detail is the git commit message.
 // v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
 //   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
 //   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
@@ -198,6 +198,25 @@ const CACHE_VERSION = 'v1181';   // bump on each deploy; per-change detail is th
 //   cinema_path_editor.js gains ONE Alt+C checkbox ("Sun compass") governing the whole overlay —
 //   rose + day-of-year + sun-angle readout together, off by default so every saved path re-bakes
 //   byte-identically. cli_silent_bake.js gains --sun-compass/--no-sun-compass.
+// v1184 (2026-09-19) §SUN_ONE film clock SWEEPS (red1: the film runs all the days but samples
+//   different times of day "to give a perception of a single half day"). The solar hour now moves
+//   9:00 -> 17:00 with the film fraction while the DATE advances underneath, so the sun rises,
+//   peaks and sets across the film — what the old scripted 55->6 arc imitated, except real.
+//   Boston over 390 days: elevation 13 30 53 69 66 47 23 5 -2. Plus §SUN_ONE_ALL_DARK, judged over
+//   the whole run: a film dark in every frame is the truth inside the polar circle and a mistake
+//   anywhere else, and it says which.
+// v1183 (2026-09-19) §SUN_ONE film clock (sun_path.js + cpe_sun_compass.js): the DATE advances
+//   with the film, the TIME OF DAY is held at 10:00 SOLAR. Driving the light from the raw 4D
+//   cursor was astronomically perfect and a strobe — a real 8-frame Hospital bake gave elevation
+//   30.4, -33.7 (night), 18.2, 43.8 across four frames, because 390 days play in 80 seconds so
+//   each frame lands at an unrelated hour. Held hour: Boston runs 18.7..58.7 deg across the year,
+//   never below the horizon, largest month-to-month step 10.2 deg. Solar time, so it needs only
+//   the longitude — no timezone data, no DST.
+// v1182 (2026-09-19) §SUN_ONE (effects.js): there were TWO suns in a frame — the scripted 55->6
+//   arc at a fixed azimuth 200 lit the building, while the compass drew the real one. Measured
+//   77.7 deg apart in azimuth and 24.6 deg in elevation on one Hospital frame. With the compass
+//   ON, the REAL sun now drives updateSky too, so shadows and rose agree. Gated on the flag: every
+//   bake that does not ask for the compass keeps the scripted arc exactly as before.
 // v1181 (2026-09-19) §SUN_COMPASS readout regrouped (red1, after seeing a real frame): the date,
 //   the sun angles and the facade angle-of-attack are ONE fixed block bottom-left; the rose keeps
 //   only its "N". The date used to be pinned under the rose in world space, and Hospital frame 5/8

@@ -153,6 +153,39 @@ function setupSunPath(A) {
     };
   };
 
+  // ── THE FILM CLOCK: same hour of the day, every day. ────────────────────────────────────────
+  // A construction film sweeps a whole programme — Hospital is 390 days — through about 80
+  // seconds. Feeding the 4D cursor straight to the sun is astronomically perfect and useless:
+  // consecutive frames land at unrelated times of day, so the sun strobes. MEASURED on a real
+  // 8-frame Hospital bake: elevation 30.4, then -33.7 (night), then 18.2, then 43.8. Day, night,
+  // day, day — in four frames.
+  //
+  // So the DATE advances with the film and the TIME OF DAY is held. The sun is still the real sun
+  // for this site on that date; it simply gets looked at from the same hour each day, which is
+  // what makes the seasonal drift visible instead of drowned in a day/night flicker.
+  //
+  // SOLAR time, not clock time, deliberately: it needs only the longitude this module already has,
+  // no timezone database, no DST rules, nothing that can be wrong in a different country. Solar
+  // noon is when the sun actually crosses the meridian here, so "10:00 solar" means the same sun
+  // height in Boston and in Penang, which is the property a film wants.
+  //
+  // UTC instant of solar hour H = H - longitude/15 - equationOfTime/60, in hours.
+  // The equation of time is itself a function of the date, so it is read once at noon on that date
+  // — it moves by seconds across a day, far below anything this is used for.
+  A.sunInstantAtSolarHour = function (lonDeg, date, solarHour) {
+    if (typeof lonDeg !== 'number' || !isFinite(lonDeg)) return null;
+    var d = (date instanceof Date) ? date : new Date(date);
+    if (isNaN(d.getTime())) return null;
+    var h = (typeof solarHour === 'number' && isFinite(solarHour)) ? solarHour : 10;
+    var noonUTC = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0);
+    var eot = 0;
+    var probe = A.sunPositionAt(0, lonDeg, new Date(noonUTC));
+    if (probe) eot = probe.eqOfTimeMin;
+    var utcHours = h - lonDeg / 15 - eot / 60;
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) +
+                    Math.round(utcHours * 3600000));
+  };
+
   // ── Sun as a direction IN THE SCENE, pointing FROM the ground TOWARD the sun. ────────────────
   // `trueNorthDeg` is project_metadata.true_north_angle: the bearing of MODEL north measured from
   // TRUE north. Subtracting it re-expresses a true bearing as a model bearing — the SAME relation

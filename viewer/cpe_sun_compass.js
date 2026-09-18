@@ -38,6 +38,25 @@ function setupCpeSunCompass(A) {
   if (!A) return;
 
   var RAD = Math.PI / 180;
+  // §SUN_ONE film clock (red1, 2026-09-19: "the whole film is showing actually all days running and
+  // capturing only a subset ie different times of the day to give a perception of a single half
+  // day"). The film sweeps the solar hour from morning to late afternoon as it plays, while the
+  // DATE advances with the 4D cursor underneath. So a viewer reads one half-day of sun arcing
+  // over the building — which is what the old scripted 55°→6° arc was imitating — except every
+  // frame is the real sun for this site, this date and that hour.
+  // SOLAR hours, so only the longitude is needed: no timezone table, no DST, nothing that is wrong
+  // in another country. Both numbers are a LOOK decision and live only here.
+  var FILM_SOLAR_START = 9;    // mid-morning: the sun is up at any inhabited latitude, any season
+  var FILM_SOLAR_END = 17;     // late afternoon, long shadows, still up in midwinter at Boston
+  function _filmSolarHour(filmT) {
+    var t = (typeof filmT === 'number' && isFinite(filmT)) ? Math.max(0, Math.min(1, filmT)) : 0.5;
+    return FILM_SOLAR_START + (FILM_SOLAR_END - FILM_SOLAR_START) * t;
+  }
+  // §SUN_ONE_ALL_DARK tally (red1: "if all does end up dark, then it is a 'buggy' case where we
+  // started too late in the day?"). Exactly right, and a film that is dark end to end must not
+  // pass as a real answer — it is nearly always a wrong hour or a site nobody meant. Counted here,
+  // reported by sunCompassDarkReport() once the frames are done.
+  var _framesLit = 0, _framesDark = 0;
   var INK = 0x8899aa;          // same ink as cpe_flythru_datum.js's datum — one drawing language
   var INK_N = 0xe8eef6;        // the true-north needle reads stronger by weight, not by hue
   var INK_SUN = 0xffcc66;      // the one warm colour in the frame; it is the sun
@@ -298,7 +317,7 @@ function setupCpeSunCompass(A) {
   // ── PER FRAME: move the sun, and report what to draw. ───────────────────────────────────────
   // `cursorMs` is the 4D cursor, handed in. Returns null when there is nothing honest to draw,
   // and the caller then draws nothing — no placeholder, no "Day ?" .
-  A.sunCompassAt = function (cursorMs) {
+  A.sunCompassAt = function (cursorMs, filmT) {
     if (!_built || !_grp || !_geo || _geo.lat == null || _disposed) return null;
     var T = window.THREE;
     if (!T) return null;
@@ -329,7 +348,18 @@ function setupCpeSunCompass(A) {
                                             c0.z + d0.z * _radius * 1.30) };
       return _last;
     }
-    var sun = A.sunPositionAt(_geo.lat, _geo.lon, date);
+    // ⚠ THE DATE ADVANCES WITH THE FILM; THE TIME OF DAY DOES NOT. See sun_path.js
+    // `sunInstantAtSolarHour`. A programme of 390 days played in 80 seconds puts consecutive
+    // frames at unrelated times of day — measured on a real bake: elevation 30.4, -33.7 (night),
+    // 18.2, 43.8 across four frames. Correct to the second, and a strobe. Holding the hour keeps
+    // the sun real for this site on this date while making the SEASON the thing that moves, which
+    // is the only part a construction film can actually show.
+    // FILM_SOLAR_HOUR is one number and it is a look decision, not a fact — 10:00 solar gives a
+    // sun that is up all year at any inhabited latitude (Boston: 18.7 deg midwinter to 58.7 deg
+    // midsummer) and a low enough angle to model the facades. Change it here, nowhere else.
+    var solarHour = _filmSolarHour(filmT);
+    var shown = A.sunInstantAtSolarHour(_geo.lon, date, solarHour) || date;
+    var sun = A.sunPositionAt(_geo.lat, _geo.lon, shown);
     if (!sun) return null;
 
     var centre = _site.centre;
@@ -346,6 +376,7 @@ function setupCpeSunCompass(A) {
                              centre.y + up.y * _radius * 1.35,
                              centre.z + up.z * _radius * 1.35);
     var visible = sun.elevation > 0;
+    if (visible) _framesLit++; else _framesDark++;
     _sunLift.visible = _sunDrop.visible = _sunRay.visible = visible;
     if (visible) {
       _sunLift.geometry.setFromPoints([centre.clone(), lift]);
@@ -376,7 +407,7 @@ function setupCpeSunCompass(A) {
     }
 
     _last = {
-      cursorMs: cursorMs, date: date,
+      cursorMs: cursorMs, date: date, shownAt: shown, solarHour: solarHour,
       dayOfYear: A.sunDayOfYear(date),
       azimuth: sun.azimuth, elevation: sun.elevation,
       elevationApparent: sun.elevationApparent, isUp: sun.isUp,
@@ -504,6 +535,33 @@ function setupCpeSunCompass(A) {
 
   A.sunCompassInfo = function () { return _last; };
 
+  // ── Was the whole film dark? Called once after the frames, by cinema_maxq.js. ────────────────
+  // A film with the sun below the horizon in EVERY frame is legitimate in exactly one situation —
+  // polar winter, where the sun genuinely does not rise — and is otherwise a mistake worth saying
+  // out loud: the wrong hours, or a site nobody meant. It cannot be judged frame by frame, only
+  // over the whole run, which is why it is a separate report rather than a per-frame warning.
+  A.sunCompassDarkReport = function () {
+    var total = _framesLit + _framesDark;
+    if (!total) {
+      console.log('§SUN_ONE_ALL_DARK INCONCLUSIVE — no frame was judged (the compass never ran)');
+      return null;
+    }
+    var allDark = _framesDark === total;
+    var polar = _geo && _geo.lat != null && Math.abs(_geo.lat) > 66.5;
+    console.log('§SUN_ONE_LIGHT frames=' + total + ' lit=' + _framesLit + ' dark=' + _framesDark +
+      (allDark
+        ? ' — ⚠ EVERY FRAME IS DARK. The sun is below the horizon for the whole film. ' +
+          (polar
+            ? 'This site is inside the polar circle (lat ' + _geo.lat.toFixed(2) + '), so in ' +
+              'midwinter that is the truth and not a fault.'
+            : 'This site is NOT polar (lat ' + (_geo && _geo.lat != null ? _geo.lat.toFixed(2) : '?') +
+              '), so it almost certainly is NOT the truth — check the film hours (' +
+              FILM_SOLAR_START + ':00-' + FILM_SOLAR_END + ':00 solar, cpe_sun_compass.js) and the ' +
+              'site lat/long before believing this film.')
+        : ''));
+    return { total: total, lit: _framesLit, dark: _framesDark, allDark: allDark, polar: polar };
+  };
+
   A.sunCompassDispose = function () {
     if (_grp && A.scene) {
       A.scene.remove(_grp);
@@ -513,6 +571,7 @@ function setupCpeSunCompass(A) {
       });
     }
     _grp = null; _built = false; _info = null; _last = null; _noCursorLogged = false;
+    _framesLit = 0; _framesDark = 0;
     _sunRay = _sunLift = _sunDrop = null; _disposed = true;
   };
 }

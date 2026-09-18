@@ -1833,8 +1833,14 @@
         // buildup is driving, and NULL otherwise — because without a buildup cinema_maxq never
         // populates `_bkState`, so no 4D cursor exists to read. The module draws the rose and
         // suppresses the sun in that case rather than inventing a date; see §SUN_COMPASS_NO_CURSOR.
+        // ⚠ THE FILM FRACTION IS A SECOND INPUT, not decoration. The compass sweeps the solar hour
+        // from morning to late afternoon across the film (§SUN_ONE film clock) so the sun arcs
+        // over the building the way the old scripted 55°→6° did — except real. `_tFilm(_tn)` and
+        // not `_tn`, for the reason §CPE_CLIP_REVEAL_FILM_T names: a clip is fewer frames of the
+        // SAME film, so a clipped bake must light its frames at the hours that stretch of film
+        // really has, not replay a whole day inside a 23-frame window.
         if (A._sunCompassOn && A.sunCompassAt) {
-          try { A.sunCompassAt(_sunCompassMs); }
+          try { A.sunCompassAt(_sunCompassMs, _tFilm(_tn)); }
           catch (eSCA) { if (!A._sunCompassAtWarned) { A._sunCompassAtWarned = true;
             console.warn('§SUN_COMPASS_AT failed frame=' + i + ': ' + (eSCA && eSCA.message)); } }
         }
@@ -2344,6 +2350,9 @@
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
       // §STOREY_HIGHLIGHT_REVEAL: same contract — a tinted storey left glowing after a bake would
       // follow the user into normal navigation. plan=null forces the restore.
+      // §SUN_ONE_ALL_DARK — judged over the WHOLE run, so it cannot be a per-frame warning.
+      // A film dark end to end is real in polar winter and a mistake everywhere else.
+      try { if (A._sunCompassOn && A.sunCompassDarkReport) A.sunCompassDarkReport(); } catch (eSD) {}
       try { if (A.storeyRevealApplyVisual) A.storeyRevealApplyVisual(null, 0); } catch (eSR) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD) {}   // §SLAB_BEAT — restores the tint, removes X + label
