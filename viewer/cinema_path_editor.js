@@ -1013,27 +1013,21 @@
             // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — ONE button for the
             // whole overlay: the ground rose, the day-of-year and the sun-angle readout are one
             // idea, and three buttons would let a user ask for a compass with no date on it.
-            // The artwork is traced from a Flaticon download (clipart4585220.png) into flat SVG by
-            // a peer session (~300 bytes inline, against a 202 KB source PNG) and inlined here
-            // verbatim — colours and vertices unaltered.
-            // ⚠ THIRD-PARTY ASSET, ATTRIBUTION REQUIRED AND NOT YET COMPLETE — see NOTICE.md.
-            // Flaticon's Free License needs the icon's author and source page named, and neither is
-            // recoverable from anything in this repo. NOTICE.md carries the row as PENDING rather
-            // than a guessed name. Do not fill it in from memory. It is a magnetic rose, which is what this feature
-            // needs; `I.draftingCompass` is a pair of legs and a pivot and would have been wrong.
-            // ⚠ Its red needle points NORTH-EAST as drawn, not up. That is the artwork, not a bug
-            // to "correct" here — it is a button icon, not the rose the bake draws, and the rose
-            // that matters is the world-space one whose bearing W-SUN-COMPASS pins to -5.000000°
-            // on Hospital. Do not rotate the icon to "agree" with it; they are different objects.
-            // The lit state is the BUTTON's frame (amber border, glow), not a recolour of the
-            // artwork — repainting someone's traced icon per-state is how it stops matching source.
-            { id: 'cpe-sun-compass', label: 'Sun compass', viewBox: '0 0 100 100', flat: true,
-              icon: '<circle cx="50" cy="49" r="49.5" fill="#7e7e7e"/>' +
-                    '<circle cx="50" cy="49" r="39.5" fill="#aaaaaa"/>' +
-                    '<polygon points="67.5,13.9 54.0,50.7 43.8,45.1" fill="#ff485b"/>' +
-                    '<polygon points="30.3,81.9 43.8,45.1 54.0,50.7" fill="#ffffff"/>',
-              hint: 'TRUE-north rose on the ground from the IFC\'s own georeference, with the day of the year off the 4D cursor and the sun\'s angle of attack on the building — silent on a model with no site lat/long, never a guessed one' },
-            // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06)
+            // ⚠ NO ICON HERE, AND THAT IS DELIBERATE — DO NOT RE-ADD THE TRACED ONE.
+            // A compass traced from `clipart4585220.png` was inlined here on 2026-09-19 and is
+            // REMOVED. The source was believed to be Flaticon (free tier, attribution required);
+            // checking the real URL showed it is realclipart.com, whose stated licence is
+            // "Personal Use". That is not an attribution gap a credit line closes — it is a
+            // use restriction, and bundling it into a publicly-deployed repo is outside it
+            // whatever this repo's own MIT licence says. Corroborated locally: the download is
+            // 3480x3405 RGBA, 202,028 bytes.
+            // ⚠ A "clean-room redraw from the trace's own colours and vertices" is NOT a fix.
+            // Copying the exact geometry of the original produces a derivative of it; the tracing
+            // step is not what creates the problem. An original rose has to be drawn from
+            // primitives without reference to that artwork, or a genuinely CC0/permissive one
+            // sourced with its licence page read.
+            { id: 'cpe-sun-compass', label: 'Sun compass', icon: null,
+              hint: 'TRUE-north rose on the ground from the IFC\'s own georeference, with the day of the year off the 4D cursor and the sun\'s angle of attack on the building — silent on a model with no site lat/long, never a guessed one' },            // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06)
             // — the final 5 real seconds of the pull-back beat, ending exactly where the closing
             // orbit begins, fill with each storey tinting through in sequence.
             { id: 'cpe-storey-reveal', label: 'Storey highlight', icon: null,

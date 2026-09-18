@@ -191,19 +191,24 @@ link('no separate day-of-year or sun-angle checkbox was added',
        /retraces the walk/.test(html));
 
   // Icons: three stroked, one flat, three still awaiting artwork.
-  var flat = (html.match(/class="cpe-flat"/g) || []).length;
   var noicon = (html.match(/class="cpe-noicon"/g) || []).length;
   var svgs = (html.match(/<svg /g) || []).length;
-  link('the compass renders as a flat filled icon on its own viewBox', flat === 1 &&
-       html.indexOf('viewBox="0 0 100 100"') >= 0);
-  link('the compass artwork is inlined verbatim (needle + ring colours)',
-       html.indexOf('#ff485b') >= 0 && html.indexOf('#7e7e7e') >= 0);
   link('icons + placeholders account for all 7 buttons', svgs + noicon === 7,
        svgs + ' svg + ' + noicon + ' awaiting artwork');
   link('the three honest reuses from panels.js resolved (ruler, triangle, disciplines)',
-       svgs === 4, svgs + ' icons rendered — 3 reused + 1 traced compass');
-  link('no placeholder art was invented for the slots still being sourced', noicon === 3,
-       noicon + ' caption-only buttons — buildup, room titles, storey highlight');
+       svgs === 3, svgs + ' icons rendered, all three from this repo\'s own set');
+  link('four slots are caption-only — no artwork invented for them', noicon === 4,
+       noicon + ' caption-only: buildup, room titles, sun compass, storey highlight');
+  // ⚠ THE LICENCE GUARD. A compass traced from `clipart4585220.png` was inlined on 2026-09-19 and
+  // removed the same day: the source is realclipart.com ("Personal Use"), not Flaticon's free tier
+  // as first believed, so no credit line makes it shippable. These two assert it has not come back
+  // — including via a "clean-room redraw" that keeps the original's exact vertices, which would
+  // still be a derivative of it.
+  link('the Personal-Use traced artwork is NOT in the panel',
+       html.indexOf('#ff485b') < 0 && html.indexOf('#7e7e7e') < 0 &&
+       html.indexOf('viewBox="0 0 100 100"') < 0);
+  link('no flat-artwork slot is populated while the licence question is open',
+       (html.match(/class="cpe-flat"/g) || []).length === 0);
 })();
 
 var verdict = fails === 0 ? 'PASS' : 'FAIL';
