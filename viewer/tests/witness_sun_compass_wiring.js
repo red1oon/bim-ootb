@@ -195,10 +195,15 @@ link('no separate day-of-year or sun-angle checkbox was added',
   var svgs = (html.match(/<svg /g) || []).length;
   link('icons + placeholders account for all 7 buttons', svgs + noicon === 7,
        svgs + ' svg + ' + noicon + ' awaiting artwork');
-  link('the three honest reuses from panels.js resolved (ruler, triangle, disciplines)',
-       svgs === 3, svgs + ' icons rendered, all three from this repo\'s own set');
-  link('four slots are caption-only — no artwork invented for them', noicon === 4,
-       noicon + ' caption-only: buildup, room titles, sun compass, storey highlight');
+  link('four icons resolved from panels.js\'s own ISC set (ruler, triangle, disciplines, compass)',
+       svgs === 4, svgs + ' icons rendered');
+  link('three slots are caption-only — no artwork invented for them', noicon === 3,
+       noicon + ' caption-only: buildup, room titles, storey highlight');
+  // The sun compass must use the ROSE, not the drawing instrument. `I.compass` and
+  // `I.draftingCompass` sit one entry apart in a 68-icon list and the wrong one looks plausible.
+  link('the sun compass uses the magnetic rose, not the drafting instrument',
+       html.indexOf('<circle cx="12" cy="12" r="10"/>') >= 0 &&
+       html.indexOf('m12.99 6.74 1.93 3.44') < 0);
   // ⚠ THE LICENCE GUARD. A compass traced from `clipart4585220.png` was inlined on 2026-09-19 and
   // removed the same day: the source is realclipart.com ("Personal Use"), not Flaticon's free tier
   // as first believed, so no credit line makes it shippable. These two assert it has not come back
@@ -207,8 +212,9 @@ link('no separate day-of-year or sun-angle checkbox was added',
   link('the Personal-Use traced artwork is NOT in the panel',
        html.indexOf('#ff485b') < 0 && html.indexOf('#7e7e7e') < 0 &&
        html.indexOf('viewBox="0 0 100 100"') < 0);
-  link('no flat-artwork slot is populated while the licence question is open',
-       (html.match(/class="cpe-flat"/g) || []).length === 0);
+  link('no flat-artwork slot is populated (the branch is gone; every icon is 24-box stroked)',
+       (html.match(/class="cpe-flat"/g) || []).length === 0 &&
+       (html.match(/viewBox="0 0 24 24"/g) || []).length === svgs);
 })();
 
 var verdict = fails === 0 ? 'PASS' : 'FAIL';

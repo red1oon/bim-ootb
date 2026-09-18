@@ -908,13 +908,7 @@
         // reserving the same box height so the strip does not jump when real icons land.
         '#cpe-panel .cpe-tgl .cpe-noicon{width:18px;height:18px;border-radius:3px;' +
         'border:1px dashed #4a4f57;box-sizing:border-box}' +
-        // Flat filled artwork keeps its own colours and must NOT inherit the stroke the line icons
-        // rely on — a 1.8px currentColor stroke on a filled polygon outlines every shape.
-        // It dims when unchecked and comes to full strength when lit, so an off button still reads
-        // as off in a strip of coloured icons without the artwork being recoloured.
-        '#cpe-panel .cpe-tgl svg.cpe-flat{stroke:none;opacity:.55;transition:opacity .15s}' +
-        '#cpe-panel .cpe-tgl:hover svg.cpe-flat{opacity:.8}' +
-        '#cpe-panel .cpe-tgl:has(input:checked) svg.cpe-flat{opacity:1}';
+        '';
       document.head.appendChild(st);
     }
     var d = document.createElement('div');
@@ -1013,22 +1007,19 @@
             // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — ONE button for the
             // whole overlay: the ground rose, the day-of-year and the sun-angle readout are one
             // idea, and three buttons would let a user ask for a compass with no date on it.
-            // ⚠ NO ICON HERE, AND THAT IS DELIBERATE — DO NOT RE-ADD THE TRACED ONE.
-            // A compass traced from `clipart4585220.png` was inlined here on 2026-09-19 and is
-            // REMOVED. The source was believed to be Flaticon (free tier, attribution required);
-            // checking the real URL showed it is realclipart.com, whose stated licence is
-            // "Personal Use". That is not an attribution gap a credit line closes — it is a
-            // use restriction, and bundling it into a publicly-deployed repo is outside it
-            // whatever this repo's own MIT licence says. Corroborated locally: the download is
-            // 3480x3405 RGBA, 202,028 bytes.
-            // ⚠ A "clean-room redraw from the trace's own colours and vertices" is NOT a fix.
-            // Copying the exact geometry of the original produces a derivative of it; the tracing
-            // step is not what creates the problem. An original rose has to be drawn from
-            // primitives without reference to that artwork, or a genuinely CC0/permissive one
-            // sourced with its licence page read.
-            { id: 'cpe-sun-compass', label: 'Sun compass', icon: null,
-              hint: 'TRUE-north rose on the ground from the IFC\'s own georeference, with the day of the year off the 4D cursor and the sun\'s angle of attack on the building — silent on a model with no site lat/long, never a guessed one' },            // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06)
-            // — the final 5 real seconds of the pull-back beat, ending exactly where the closing
+            // §SUN_COMPASS. `I.compass` is Lucide's own compass — a ring and a needle — added to
+            // panels.js's set for this. ISC, the same licence covering all 68 icons there
+            // (viewer/icons/lucide/README.md), so no attribution obligation and nothing pending.
+            // ⚠ NOT `I.draftingCompass`, one entry above it: that is the drawing instrument, legs
+            // and a pivot, not a rose.
+            // ⚠ AN EARLIER ICON HERE WAS REMOVED AND MUST NOT COME BACK. A compass traced from
+            // `clipart4585220.png` was inlined on 2026-09-19, believed to be Flaticon free-tier;
+            // the real source is realclipart.com, licensed "Personal Use". That is a use
+            // restriction, not an attribution gap — no credit line makes it shippable, and a
+            // redraw keeping its exact vertices would still be derived from it.
+            // W-SUN-COMPASS-WIRING asserts its colours and viewBox stay absent.
+            { id: 'cpe-sun-compass', label: 'Sun compass', icon: I.compass && I.compass.svg,
+              hint: 'TRUE-north rose on the ground from the IFC\'s own georeference, with the day of the year off the 4D cursor and the sun\'s angle of attack on the building — silent on a model with no site lat/long, never a guessed one' },            // — the final 5 real seconds of the pull-back beat, ending exactly where the closing
             // orbit begins, fill with each storey tinting through in sequence.
             { id: 'cpe-storey-reveal', label: 'Storey highlight', icon: null,
               hint: 'each storey glows blue/green/yellow/orange in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card' }
@@ -1038,20 +1029,19 @@
             return String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
                             .replace(/</g, '&lt;').replace(/>/g, '&gt;');
           }
-          // TWO KINDS OF ICON, and they cannot share one rule. panels.js's set is STROKED line
-          // art on a 24-box that inherits `stroke:currentColor` and so takes the button's lit
-          // colour for free. red1's artwork is FLAT FILLED shapes on a 100-box carrying its own
-          // colours. Inheriting `stroke-width:1.8` onto a filled polygon outlines every shape in
-          // the button's text colour, which is why `flat` gets its own class and its own viewBox
-          // rather than everything being forced into one.
+          // ONE KIND OF ICON: 24-box, stroked, `stroke:currentColor`, no fill — the contract every
+          // entry in panels.js's set keeps (viewer/icons/lucide/README.md states it). So the button
+          // inherits its lit colour for free and nothing needs a per-icon viewBox.
+          // A `flat`/viewBox branch existed briefly for a filled 100-box PNG trace, whose fills
+          // would have been outlined by the inherited stroke-width. That artwork is gone on licence
+          // grounds and the branch went with it rather than staying as dead configuration; re-add
+          // it only if a non-conforming icon is ever genuinely cleared for use.
           return '<div class="cpe-tgls">' + TOGGLES.map(function (t) {
-            var svg = t.icon
-              ? '<svg viewBox="' + (t.viewBox || '0 0 24 24') + '"' +
-                (t.flat ? ' class="cpe-flat"' : '') + ' aria-hidden="true">' + t.icon + '</svg>'
-              : '<span class="cpe-noicon"></span>';
             return '<label class="cpe-tgl" title="' + esc(t.label + ' — ' + t.hint) + '">' +
               '<input id="' + t.id + '" type="checkbox"' + (t.checked ? ' checked' : '') + '>' +
-              svg + '<span>' + esc(t.label) + '</span></label>';
+              (t.icon ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + t.icon + '</svg>'
+                      : '<span class="cpe-noicon"></span>') +
+              '<span>' + esc(t.label) + '</span></label>';
           }).join('') + '</div>';
         })() +
         // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+C bake always

@@ -203,10 +203,12 @@ const CACHE_VERSION = 'v1179';   // bump on each deploy; per-change detail is th
 //   COSMETIC ONLY — every checkbox id, handler, _state field, census entry and DOM-sync row is
 //   unchanged, and W-SUN-COMPASS-WIRING asserts the whole chain by name. The row hints moved into
 //   each button's title rather than being dropped. Icons: red1's traced compass (flat, inlined
-//   three honest reuses from panels.js's own set (ruler/triangle/disciplines); FOUR slots stay
-//   caption-only until licence-clean artwork exists, rather than carrying invented placeholders.
-//   (A traced compass was inlined and removed the same day — realclipart.com "Personal Use", not
-//   the Flaticon free tier it was believed to be. See cinema_path_editor.js's cpe-sun-compass entry.)
+//   four icons from panels.js's own ISC-licensed Lucide set — ruler/triangle/disciplines plus a new
+//   ICONS.compass (the magnetic rose, NOT draftingCompass, which is the drawing instrument). Three
+//   slots stay caption-only rather than carrying invented placeholders.
+//   (A compass traced from clipart4585220.png was inlined and removed the same day —
+//   realclipart.com "Personal Use", not the Flaticon free tier it was believed to be. Lucide's own
+//   compass replaces it with no attribution obligation: viewer/icons/lucide/README.md, ISC.)
 // v1177 (2026-09-14) TM_4D5D_VARIANCE_LANE §S7-INJECT: new viewer/schedule_inject.js ("Generate
 //   programme" — materializeZones+persistDb on the fly, best-effort save, honest saved/session-only
 //   message); panels.js 'sched4d' pill gate changed from "has a schedule" to "engine capable" so the

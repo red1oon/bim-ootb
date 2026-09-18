@@ -48,6 +48,11 @@ var ICONS = {
   bone:      { svg: '<path d="M17 10c.7-.7 1.69 0 2.5 0a2.5 2.5 0 1 0 0-5 .5.5 0 0 1-.5-.5 2.5 2.5 0 1 0-5 0c0 .81.7 1.8 0 2.5l-7 7c-.7.7-1.69 0-2.5 0a2.5 2.5 0 0 0 0 5c.28 0 .5.22.5.5a2.5 2.5 0 1 0 5 0c0-.81-.7-1.8 0-2.5Z" />', trl: 'ui_tt_xray', key: null, desc: 'X-Ray' },
   hardHat:   { svg: '<path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" /><path d="M14 6a6 6 0 0 1 6 6v3" /><path d="M4 15v-3a6 6 0 0 1 6-6" /><rect x="2" y="15" width="20" height="4" rx="1" />', trl: null, key: null, desc: 'Inspect (unused, replaced by draftingCompass)' },
   draftingCompass: { svg: '<path d="m12.99 6.74 1.93 3.44" /><path d="M19.136 12a10 10 0 0 1-14.271 0" /><path d="m21 21-2.16-3.84" /><path d="m3 21 8.02-14.26" /><circle cx="12" cy="5" r="2" />', trl: null, key: null, desc: 'Inspect' },
+  // ⚠ NOT the same thing as draftingCompass above, and the names are one letter apart in a list of
+  // 68. `draftingCompass` is the DRAWING INSTRUMENT — a pair of legs and a pivot. `compass` is the
+  // MAGNETIC ROSE — a ring and a needle. The sun-compass feature needs the rose; reusing the
+  // instrument for it was considered and rejected as the wrong shape.
+  compass:   { svg: '<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/>', trl: null, key: null, desc: 'Sun compass' },
   sailboat:  { svg: '<path d="M10 2v15" /><path d="M7 22a4 4 0 0 1-4-4 1 1 0 0 1 1-1h16a1 1 0 0 1 1 1 4 4 0 0 1-4 4z" /><path d="M9.159 2.46a1 1 0 0 1 1.521-.193l9.977 8.98A1 1 0 0 1 20 13H4a1 1 0 0 1-.824-1.567z" />', trl: null, key: null, desc: 'Navigate' },
   barChart:  { svg: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: 'ui_tt_export', key: null, desc: '4D/5D Export' },
   home:      { svg: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', trl: 'ui_tt_home', key: null, desc: 'Home' },
