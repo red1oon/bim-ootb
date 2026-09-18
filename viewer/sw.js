@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1187';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1188';   // bump on each deploy; per-change detail is the git commit message.
 // v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
 //   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
 //   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
@@ -198,6 +198,16 @@ const CACHE_VERSION = 'v1187';   // bump on each deploy; per-change detail is th
 //   cinema_path_editor.js gains ONE Alt+C checkbox ("Sun compass") governing the whole overlay —
 //   rose + day-of-year + sun-angle readout together, off by default so every saved path re-bakes
 //   byte-identically. cli_silent_bake.js gains --sun-compass/--no-sun-compass.
+// v1188 (2026-09-19) §HUD_COLUMN + §129.1 FREEZE (red1, on a real 1852x960 frame): the sun
+//   readout moved OUT of bottom-left — the loadpath session's room box owns that corner now and
+//   mine was drawing underneath it — and into the day-counter column, under the clock. One owner
+//   of that corner's stacking, so collision is impossible by construction. Reserving against the
+//   centred caption (v1187) is retired: that caption is deleted by the same work.
+//   The §129.1 load-path FREEZE now clears this overlay like every other: both composites go
+//   through _drawUnlessHold, the ROSE is hidden explicitly (a scene object the HUD fade cannot
+//   reach), and the CLOCK is HELD rather than merely hidden — the film's fraction advances under
+//   a frozen frame, so the hands would have ticked invisibly and jumped on return. Resumes at the
+//   next proper frame. Frozen frames are excluded from the lit/dark tally.
 // v1187 (2026-09-19) §CPE_CAPTION_BAND: the §SUN_COMPASS bottom-left readout was landing ON the
 //   room-title caption — measured on an 854x480 HHS bake with EVERY overlay on, caption plate
 //   405.6..443.6 against the readout's middle line 418..443. cpe_room_title.js now publishes

@@ -764,6 +764,22 @@
   // §CPE_DAY_COUNTER: dayInfo ({day,totalDays} or null) rides the SAME 2D context for the SAME
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
+  // §129.1 FREEZE bridge. `_drawUnlessHold` is the loadpath lane's HUD-hold wrapper
+  // (feat/loadpath-ledger) — every overlay there goes through it so the load-path freeze-frame
+  // beat can fade them all out together. It does NOT exist on main yet, and this branch has to
+  // build against main, so the compass asks for it and falls back to drawing at full opacity.
+  // The fallback is not a stub that swallows the feature: on main there IS no freeze beat to
+  // respect, so "draw normally" is the correct behaviour there, and the moment the two branches
+  // merge the real wrapper takes over with no edit here.
+  // Published by the loadpath lane's own cinema_maxq when that work lands:
+  //     window.__drawUnlessHold = _drawUnlessHold;
+  // one line, beside its definition. Until then this reads undefined and the compass draws
+  // normally, which is correct on a main that has no freeze beat.
+  function _hudHold(name, fn) {
+    var f = (typeof window !== 'undefined' && window.__drawUnlessHold) || null;
+    if (typeof f === 'function') return f(name, fn);
+    return fn(1);
+  }
   function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
@@ -820,18 +836,6 @@
     // §FLYTHRU_DATUM note above gives: _captureFrame is its own function, not a closure over the
     // bake body. The bake loop already called A.sunCompassAt(_bkMs) for THIS frame, so the state
     // it reads is this frame's, not a neighbour's. Same never-kills-a-bake contract.
-    if (A._sunCompassOn && A.sunCompassCompositeOntoCanvas && A.sunCompassInfo) {
-      // §CPE_CAPTION_BAND — reserve the room-title caption's strip when one is showing this frame,
-      // so the sun readout stacks ABOVE it instead of into it. Measured collision on an 854x480
-      // HHS bake with everything on; see cpe_room_title.js A.roomTitleBandSize.
-      var _capH = 0;
-      if (titleInfo && titleInfo.opacity > 0 && A.roomTitleBandSize) {
-        try { _capH = A.roomTitleBandSize(h).fromBottom; } catch (eCB) { _capH = 0; }
-      }
-      try { A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), 1, _capH); }
-      catch (eSCd) { if (!A._sunCompassDrawWarned) { A._sunCompassDrawWarned = true;
-        console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message) + ' — compass skipped, frames continue'); } }
-    }
     // §CPE_PATH_OVERVIEW — drawn LAST so its backdrop-blur samples the finished frame and never
     // smears the caption or the counter into its own glass. `ovInfo.pose` is the REAL pose this
     // frame was rendered with, captured by the caller immediately before this call.
@@ -850,13 +854,33 @@
     // owns the order, the overlay owns its drawing, same contract as the path box and the pie.
     // Corner follows the counter's, since §CPE_HUD_STACK's ruling is one preference for the whole
     // column rather than a corner per overlay.
+    // §SUN_CLOCK — wrapped in _drawUnlessHold like every other HUD box, so the §129.1 load-path
+    // FREEZE clears it with the rest (red1: "Freeze removes all other overlays including
+    // geo-ref"). `a` is the hold alpha and is passed through as the compositor's own opacity,
+    // per ROUND 13 item C — a compositor that assigns globalAlpha absolutely would otherwise
+    // clobber the ambient fade set by the wrapper.
     if (A._sunCompassOn && A.sunClockCompositeOntoCanvas && A.sunCompassInfo) {
-      try {
-        var _clkH = A.sunClockCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), 1,
-                                                  (dayInfo && dayInfo.pos) || 'tr', _stackY);
-        if (_clkH > 0) _stackY += _clkH + _gapY;
-      } catch (eClk) { if (!A._sunClockWarned) { A._sunClockWarned = true;
-        console.warn('§SUN_CLOCK_DRAW failed: ' + (eClk && eClk.message) + ' — clock skipped, frames continue'); } }
+      _hudHold('suncompass.clock', function (a) {
+        try {
+          var _clkH = A.sunClockCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a,
+                                                    (dayInfo && dayInfo.pos) || 'tr', _stackY);
+          if (_clkH > 0) _stackY += _clkH + _gapY;
+        } catch (eClk) { if (!A._sunClockWarned) { A._sunClockWarned = true;
+          console.warn('§SUN_CLOCK_DRAW failed: ' + (eClk && eClk.message)); } }
+      });
+    }
+    // §SUN_COMPASS readout — date / sun angles / facade, in the SAME column under the clock
+    // (red1: "same line as the Day counter? Clock, the azimuth thing, and the 4D day counter").
+    // It was bottom-left and was drawing underneath the loadpath session's own room box there.
+    if (A._sunCompassOn && A.sunCompassCompositeOntoCanvas && A.sunCompassInfo) {
+      _hudHold('suncompass.readout', function (a) {
+        try {
+          var _scH = A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a,
+                                                     (dayInfo && dayInfo.pos) || 'tr', _stackY);
+          if (_scH > 0) _stackY += _scH + _gapY;
+        } catch (eSCd) { if (!A._sunCompassDrawWarned) { A._sunCompassDrawWarned = true;
+          console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message)); } }
+      });
     }
     if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
       A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stackY);

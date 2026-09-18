@@ -550,65 +550,80 @@ if (built.facade) {
   A.sunCompassAt(Date.UTC(2026, 5, 21, 17, 30), 0.5);
 })();
 
-// ── CASE §CPE_CAPTION_BAND: the readout must not land on the room-title caption. ───────────────
-// FOUND IN A REAL FRAME, not by a test: an 854x480 HHS bake with every overlay on put the caption
-// plate at 405.6..443.6 and this readout's middle line at 418..443 — fully inside it. Two
-// overlays, one strip of pixels, neither aware of the other. The caller now reserves the caption's
-// band and the readout stacks above it. Asserted as REAL GEOMETRY against cpe_room_title.js's own
-// published band, not against a number copied here.
+// ── CASE §HUD_COLUMN: the readout lives in the day-counter column now. ───────────────────────
+// It used to be a fixed bottom-left block, and a real 1852x960 frame showed it drawn UNDERNEATH
+// the loadpath session's own room box in that same corner. Reserving space against the centred
+// caption was the wrong shape — that caption has since been deleted by that same work. Joining
+// the column instead makes collision impossible by construction: one owner of the corner, every
+// box asks for its offset and returns its height.
 (function () {
-  var rt = null;
-  try { rt = require(path.join(__dirname, '..', 'cpe_room_title.js')); } catch (e) { rt = null; }
-  // cpe_room_title.js is a browser script with no export; slice its band function out the same way
-  // the wiring witness slices the toggle strip.
-  var src = fs.readFileSync(path.join(__dirname, '..', 'cpe_room_title.js'), 'utf8');
-  var a = src.indexOf('A.roomTitleBandSize = function(h) {');
-  var b = src.indexOf('\n  };', a);
-  if (a < 0 || b < 0) {
-    truth('cpe_room_title publishes its caption band', false, 'A.roomTitleBandSize not found');
-    return;
+  function rec() {
+    var r={boxes:[],text:[]};
+    r.ctx={save:function(){},restore:function(){},beginPath:function(){},fill:function(){},
+      fillRect:function(x,y,w,h){r.boxes.push({x:x,y:y,w:w,h:h});},
+      roundRect:function(x,y,w,h){r.boxes.push({x:x,y:y,w:w,h:h});},
+      measureText:function(t){return {width:t.length*7};},fillText:function(t){r.text.push(t);},
+      arc:function(){},moveTo:function(){},lineTo:function(){},stroke:function(){},
+      globalAlpha:1,fillStyle:'',strokeStyle:'',lineWidth:1,font:'',textAlign:'',textBaseline:''};
+    return r;
   }
-  var A3 = {};
-  eval('(function(A){' + src.slice(a, b + 5) + '})')(A3);
-  truth('cpe_room_title publishes its caption band', typeof A3.roomTitleBandSize === 'function');
+  var info = A.sunCompassAt(Date.UTC(2026, 5, 21, 12, 0), 0.5);
+  A.camera = null;   // no rose projection; only the readout draws
 
-  [[854, 480], [1280, 720], [1852, 960]].forEach(function (size) {
-    var w = size[0], hh = size[1];
-    var band = A3.roomTitleBandSize(hh);
-    var ys = [];
-    var ctx3 = {
-      save: function () {}, restore: function () {}, beginPath: function () {},
-      fill: function () {}, fillRect: function (x, y, bw, bh) { ys.push({ y: y, h: bh }); },
-      roundRect: function (x, y, bw, bh) { ys.push({ y: y, h: bh }); },
-      measureText: function (t) { return { width: t.length * 7 }; },
-      fillText: function () {}, arc: function () {}, moveTo: function () {}, lineTo: function () {},
-      stroke: function () {}, globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 1,
-      font: '', textAlign: '', textBaseline: ''
-    };
-    var info = A.sunCompassAt(Date.UTC(2026, 5, 21, 12, 0), 0.5);
-    A.camera = null;   // no rose projection; only the fixed readout draws
-    A.sunCompassCompositeOntoCanvas(ctx3, w, hh, info, 1, band.fromBottom);
-    var lowest = ys.reduce(function (m, r) { return Math.max(m, r.y + r.h); }, 0);
-    truth('at ' + w + 'x' + hh + ' the readout clears the caption band',
-          lowest <= band.top + 0.5,
-          'readout reaches y=' + lowest.toFixed(1) + ', caption starts at ' + band.top.toFixed(1));
-  });
+  var top = rec(); var h1 = A.sunCompassCompositeOntoCanvas(top.ctx, 1852, 960, info, 1, 'tr', 0);
+  truth('the readout draws three plates', top.boxes.length === 3, top.boxes.length + ' plates');
+  truth('it reports its own height so the column can stack under it', h1 > 0, 'h=' + h1);
+  truth('it is in the TOP of the frame, not the bottom corner someone else owns',
+        Math.max.apply(null, top.boxes.map(function (b) { return b.y + b.h; })) < 960 * 0.35,
+        'lowest y=' + Math.max.apply(null, top.boxes.map(function (b) { return b.y + b.h; })).toFixed(0));
 
-  // And with NO caption up, it must go back to the bottom — the reservation is per frame, not a
-  // permanent margin that would leave a gap in every film without room titles.
-  var ys2 = [];
-  var ctx4 = {
-    save: function () {}, restore: function () {}, beginPath: function () {},
-    fill: function () {}, fillRect: function (x, y, bw, bh) { ys2.push(y + bh); },
-    roundRect: function (x, y, bw, bh) { ys2.push(y + bh); },
-    measureText: function (t) { return { width: t.length * 7 }; },
-    fillText: function () {}, arc: function () {}, moveTo: function () {}, lineTo: function () {},
-    stroke: function () {}, globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 1,
-    font: '', textAlign: '', textBaseline: ''
-  };
-  A.sunCompassCompositeOntoCanvas(ctx4, 854, 480, A.sunCompassAt(Date.UTC(2026, 5, 21, 12, 0), 0.5), 1, 0);
-  truth('with no caption the readout returns to the bottom of the frame',
-        Math.max.apply(null, ys2) > 460, 'lowest y=' + Math.max.apply(null, ys2).toFixed(1));
+  var off = rec(); A.sunCompassCompositeOntoCanvas(off.ctx, 1852, 960, info, 1, 'tr', 300);
+  truth('a stack offset moves it down the column by exactly that much',
+        Math.round(off.boxes[0].y - top.boxes[0].y) === 300,
+        'dy=' + Math.round(off.boxes[0].y - top.boxes[0].y));
+
+  var left = rec(); A.sunCompassCompositeOntoCanvas(left.ctx, 1852, 960, info, 1, 'tl', 0);
+  truth('it follows the counter to the other corner', left.boxes[0].x < top.boxes[0].x,
+        'tl x=' + left.boxes[0].x.toFixed(0) + '  tr x=' + top.boxes[0].x.toFixed(0));
+
+  // Right-aligned corners must not run off the edge — the plate is sized to the widest line.
+  truth('the right-corner plate stays inside the frame',
+        top.boxes[0].x > 0 && top.boxes[0].x + top.boxes[0].w <= 1852,
+        'x=' + top.boxes[0].x.toFixed(0) + ' w=' + top.boxes[0].w.toFixed(0));
+  A.camera = {};
+})();
+
+// ── CASE §129.1 FREEZE: the load-path hold clears this overlay too. ──────────────────────────
+// red1, 2026-09-19: "Freeze removes all other overlays including geo-ref". The HUD half is handled
+// by cinema_maxq wrapping both composites in _drawUnlessHold, like the other 15 overlays. The ROSE
+// is the half a HUD fade CANNOT reach — it is a scene object, so without this it would be the one
+// thing left standing on a deliberately cleared frame.
+(function () {
+  var saved = A._loadPathHudAlpha;
+  var grp = A.scene.objs[0];
+  A._loadPathHudAlpha = 1;
+  A.sunCompassAt(Date.UTC(2026, 5, 21, 12, 0), 0.5);
+  truth('outside the freeze the rose is visible', grp.visible === true);
+  var live = A.sunCompassAt(Date.UTC(2026, 5, 21, 12, 0), 0.30);
+  A._loadPathHudAlpha = 0;
+  // The film's own fraction marches on underneath a held frame — feed it a LATER one and a LATER
+  // cursor, which is exactly what the bake does during the freeze.
+  var held = A.sunCompassAt(Date.UTC(2026, 8, 1, 12, 0), 0.80);
+  truth('during the freeze the ROSE is hidden, not just the HUD', grp.visible === false);
+  truth('the CLOCK is frozen too — the hour does not advance behind a held frame',
+        held.solarHour === live.solarHour, live.solarHour + ' -> ' + held.solarHour);
+  truth('and neither does the sun or the date',
+        held.azimuth === live.azimuth && held.dayOfYear === live.dayOfYear,
+        'az ' + live.azimuth.toFixed(2) + ' -> ' + held.azimuth.toFixed(2));
+  A._loadPathHudAlpha = 0.4;
+  A.sunCompassAt(Date.UTC(2026, 8, 1, 12, 0), 0.85);
+  truth('mid-fade counts as the freeze — no half-drawn rose', grp.visible === false, 'alpha 0.4');
+  A._loadPathHudAlpha = saved;
+  var back = A.sunCompassAt(Date.UTC(2026, 8, 1, 12, 0), 0.90);
+  truth('and it comes BACK afterwards — the hold is not a one-way latch', grp.visible === true);
+  truth('resuming picks up the NEXT PROPER FRAME, not where it was held',
+        back.solarHour !== held.solarHour && Math.abs(back.solarHour - (9 + 8 * 0.90)) < 1e-9,
+        'resumed at ' + back.solarHour.toFixed(2) + ':00 solar for film t=0.90');
 })();
 
 // ── CASE §SUN_DAY: one pinned day, swept — red1's "new day film scheme". ───────────────────────

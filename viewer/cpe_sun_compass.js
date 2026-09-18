@@ -59,6 +59,7 @@ function setupCpeSunCompass(A) {
   var _framesLit = 0, _framesDark = 0;
   // §SUN_DAY — the pinned day, or null to follow the 4D cursor. Set by the bake from the panel.
   var _sunDate = null;
+  var _heldLogged = false;
   A.sunCompassSetDate = function (iso) {
     if (!iso) { _sunDate = null; console.log('§SUN_DAY following the 4D timeline (no date pinned)'); return null; }
     // yyyy-mm-dd, parsed as UTC so a browser timezone cannot shift the day by one.
@@ -83,7 +84,7 @@ function setupCpeSunCompass(A) {
       FILM_SOLAR_START + ':00-' + FILM_SOLAR_END + ':00 solar. The BUILD still follows the 4D cursor.');
     return _sunDate;
   };
-  var INK = 0x8899aa;          // same ink as cpe_flythru_datum.js's datum — one drawing language
+  var INK = 0xdbe4ee;          // same ink as cpe_flythru_datum.js's datum — one drawing language
   var INK_N = 0xe8eef6;        // the true-north needle reads stronger by weight, not by hue
   var INK_SUN = 0xffcc66;      // the one warm colour in the frame; it is the sun
   var _grp = null, _built = false, _info = null, _geo = null, _site = null;
@@ -272,7 +273,46 @@ function setupCpeSunCompass(A) {
     var matN = new T.LineBasicMaterial({ color: INK_N, transparent: true, opacity: 0.95 });
     var matSun = new T.LineBasicMaterial({ color: INK_SUN, transparent: true, opacity: 0.95 });
 
+    // ── DUAL-INK LINES (red1, 2026-09-19: "its lines are not clear enough, should make them dual
+    // margin color"). MEASURED on the orbit clip: the rose is 77 px across at that camera — big
+    // enough — but every line is a 1-DEVICE-PIXEL hairline, because THREE's LineBasicMaterial
+    // ignores linewidth on every desktop GL driver. A pale grey hairline over pale brown ground is
+    // invisible whatever its size.
+    // So each line is drawn TWICE: a DARK copy pushed radially outward, and the light copy on top.
+    // The offset reads as a dark margin under a light core, which holds up over pale ground and
+    // dark alike — the same reason a map's contour lines are haloed.
+    // ⚠ THE OFFSET IS DERIVED FROM THE CAMERA, NOT PICKED. cpe_flythru_datum.js hit this exact
+    // problem and solved it by sizing world-space width from the real camera distance to a stated
+    // pixel target (§FLYTHRU_DATUM_LINES widthM=1.1506 src=[camera d=287.0m fov=60 h=720px]
+    // px@287m=2.50). Same arithmetic here, same reason: a hardcoded metre value is right at one
+    // distance and wrong at every other. Decided ONCE at build time, as the datum also does —
+    // re-deriving per frame would make the halo breathe as the camera moves.
+    var _haloM = _radius * 0.05;   // fallback: no camera yet, never invent a distance
+    var _haloSrc = 'DEGRADED — no camera/viewport at build time';
+    (function () {
+      var cam = A.camera, rh = A.renderer && A.renderer.domElement && A.renderer.domElement.height;
+      if (!cam || !cam.fov || !(rh > 0)) return;
+      var dx = cam.position.x - centre.x, dy = cam.position.y - centre.y, dz = cam.position.z - centre.z;
+      var dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (!(dist > 0)) return;
+      var TARGET_PX = 1.6;   // the halo, each side of a 1 px core -> ~4 px of line in total
+      _haloM = TARGET_PX * (2 * dist * Math.tan(cam.fov * Math.PI / 360)) / rh;
+      _haloSrc = 'camera d=' + dist.toFixed(1) + 'm fov=' + cam.fov.toFixed(0) + ' h=' + rh +
+                 'px -> ' + TARGET_PX + 'px halo = ' + _haloM.toFixed(3) + 'm';
+    })();
+    var matHalo = new T.LineBasicMaterial({ color: 0x0d1117, transparent: true, opacity: 0.85 });
+    function _outset(p, by) {
+      var vx = p.x - centre.x, vz = p.z - centre.z;
+      var len = Math.sqrt(vx * vx + vz * vz);
+      if (!(len > 1e-6)) return p.clone();
+      return new T.Vector3(centre.x + vx * (1 + by / len), p.y, centre.z + vz * (1 + by / len));
+    }
     function addLine(mat, pts) {
+      // The halo first, so the light core always paints over it.
+      [_haloM, -_haloM].forEach(function (d) {
+        var hg = new T.BufferGeometry().setFromPoints(pts.map(function (q) { return _outset(q, d); }));
+        _grp.add(new T.Line(hg, matHalo));
+      });
       var g = new T.BufferGeometry().setFromPoints(pts);
       var l = new T.Line(g, mat);
       _grp.add(l);
@@ -317,6 +357,7 @@ function setupCpeSunCompass(A) {
     console.log('§SUN_COMPASS built lat=' + _geo.lat.toFixed(6) + ' lon=' + _geo.lon.toFixed(6) +
       ' (src=' + _geo.latLongSource + ') trueNorth=' + _geo.trueNorth.toFixed(4) + 'deg (src=' +
       _geo.trueNorthSource + ') elev=' + (_geo.elevM == null ? 'n/a' : _geo.elevM.toFixed(2) + 'm') +
+      ' halo=' + _haloM.toFixed(3) + 'm [' + _haloSrc + ']' +
       ' radius=' + _radius.toFixed(2) + 'm anchor=ifc(' + ax.toFixed(2) + ',' + ay.toFixed(2) +
       ',' + az.toFixed(2) + ') side=' + (faceBearing === 180 ? 'true-south' : 'true-north') +
       ' envelope=' + spanX.toFixed(1) + 'x' + spanY.toFixed(1) + 'm');
@@ -396,6 +437,31 @@ function setupCpeSunCompass(A) {
     var litDate = _sunDate || date;
     var solarHour = _filmSolarHour(filmT);
     var shown = A.sunInstantAtSolarHour(_geo.lon, litDate, solarHour) || litDate;
+    // ⚠ THE FREEZE STOPS THIS OVERLAY DEAD — hidden AND held (red1, 2026-09-19: "Freeze removes
+    // all other overlays including geo-ref", then "the clock is frozen too, and all resume as a
+    // next proper frame"). §129.1's load-path beat holds one frame on the structural chain while
+    // the film's own fraction keeps advancing underneath it.
+    // Two different things are needed, and only one of them is the HUD fade:
+    //   1. The ROSE is a scene object, so A._loadPathHudAlpha cannot reach it. Hidden here, or it
+    //      is the one thing left standing on a deliberately cleared frame.
+    //   2. The CLOCK must not keep ticking behind a frozen picture. Returning early leaves `_last`
+    //      exactly as the last live frame left it, so the hands, the date and the sun all hold
+    //      still — and the next unfrozen frame simply computes normally from the film's own
+    //      fraction, which is what "resume as a next proper frame" means.
+    // Frozen frames are also left OUT of the lit/dark tally: they are not evidence about the sun.
+    var _holdAlpha = (typeof A._loadPathHudAlpha === 'number') ? A._loadPathHudAlpha : 1;
+    if (_holdAlpha < 1) {
+      if (_grp) _grp.visible = false;
+      if (!_heldLogged) {
+        _heldLogged = true;
+        console.log('§SUN_COMPASS_HELD — the load-path freeze is up: rose hidden, clock and sun ' +
+          'held at the last live frame. They resume on the next unfrozen frame.');
+      }
+      return _last;
+    }
+    if (_grp) _grp.visible = true;
+    _heldLogged = false;
+
     var sun = A.sunPositionAt(_geo.lat, _geo.lon, shown);
     if (!sun) return null;
 
@@ -495,12 +561,12 @@ function setupCpeSunCompass(A) {
   // owns a corner of the caller's choosing and stacks the path box and resource panel under it,
   // and cpe_room_title.js's caption is a CENTRED plate in the lower band. A left-aligned pill
   // clears both. Same plate language as those two — 0.45 black, text-hugging, same font.
-  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity, bottomReserved) {
-    if (!ctx || !info) return;
+  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
+    if (!ctx || !info) return 0;
     var op = (opacity == null) ? 1 : Math.min(1, opacity);
-    if (!(op > 0)) return;
+    if (!(op > 0)) return 0;
     var labels = A.sunCompassLabels(info);
-    if (!labels) return;
+    if (!labels) return 0;
     var cam = A.camera, T = window.THREE;
     ctx.save();
     ctx.globalAlpha = op;
@@ -509,73 +575,56 @@ function setupCpeSunCompass(A) {
     ctx.font = font;
     ctx.textBaseline = 'middle';
 
-    function plate(x, y, text, align) {
-      var tw = (typeof ctx.measureText === 'function') ? ctx.measureText(text).width
-                                                       : text.length * fontPx * 0.55;
-      var padX = Math.round(fontPx * 0.7), padY = Math.round(fontPx * 0.45);
-      var bw = tw + padX * 2, bh = fontPx + padY * 2;
-      var bx = align === 'center' ? x - bw / 2 : x;
+    // ⚠ THE READOUT LIVES IN THE DAY-COUNTER COLUMN (red1, 2026-09-19, after seeing it drawn
+    // UNDERNEATH the loadpath session's own bottom-left room box: "Put a guard to it or same line
+    // as the Day counter? Clock, the azimuth thing, and the 4D day counter.").
+    // It was bottom-left, and that corner now belongs to someone else's fixed panel. Chasing it
+    // with a reservation was the wrong shape — the caption I reserved against has since been
+    // deleted by that same work. Joining the column instead means ONE owner of that corner's
+    // stacking, which cannot collide by construction: every box asks for its offset and returns
+    // its height. Day counter -> clock -> THIS -> path box -> pie.
+    // It belongs here anyway: the date it prints is the SAME 4D cursor the counter counts.
+    var margin = Math.round(h * 0.028);
+    var at = (pos && CLOCK_POS[pos]) ? pos : 'tr';
+    var sy = stackY || 0;
+    var lineH = Math.round(fontPx * 2.1);
+    var lines = [labels.day, labels.sun].concat(labels.attack ? [labels.attack] : []);
+    var widest = 0;
+    if (typeof ctx.measureText === 'function') {
+      lines.forEach(function (t) { widest = Math.max(widest, ctx.measureText(t).width); });
+    } else { lines.forEach(function (t) { widest = Math.max(widest, t.length * fontPx * 0.55); }); }
+    var padX = Math.round(fontPx * 0.7), padY = Math.round(fontPx * 0.45);
+    var bw = widest + padX * 2, bh = fontPx + padY * 2;
+    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - bw;
+    var y0 = (at === 'bl' || at === 'br') ? h - margin - bh / 2 - sy - (lines.length - 1) * lineH
+                                          : margin + bh / 2 + sy;
+
+    lines.forEach(function (t, i) {
+      var y = y0 + i * lineH;
       ctx.fillStyle = 'rgba(0,0,0,0.45)';
       if (typeof ctx.roundRect === 'function') {
-        ctx.beginPath(); ctx.roundRect(bx, y - bh / 2, bw, bh, Math.round(bh * 0.22)); ctx.fill();
-      } else {
-        ctx.fillRect(bx, y - bh / 2, bw, bh);
-      }
+        ctx.beginPath(); ctx.roundRect(x, y - bh / 2, bw, bh, Math.round(bh * 0.22)); ctx.fill();
+      } else { ctx.fillRect(x, y - bh / 2, bw, bh); }
       ctx.fillStyle = '#e8eef6';
       ctx.textAlign = 'left';
-      ctx.fillText(text, bx + padX, y);
-      return bh;
-    }
+      ctx.fillText(t, x + padX, y);
+    });
 
-    // World-anchored text. `project` needs a live camera; without one the rose labels are simply
-    // skipped and the fixed readout still draws — degrade, never throw, same contract as every
-    // other overlay in the bake.
-    if (cam && T && info.anchorThree && typeof info.anchorThree.clone === 'function') {
-      var proj = function (v) {
-        var p = v.clone().project(cam);
-        return { x: (p.x * 0.5 + 0.5) * w, y: (-p.y * 0.5 + 0.5) * h, z: p.z };
-      };
-      var nTip = proj(info.trueNorthTip);
-      if (nTip.z < 1 && nTip.x > -w && nTip.x < w * 2) {
+    // The "N" stays pinned to the rose in world space — it is part of the drawing on the ground,
+    // not part of the readout.
+    if (cam && T && info.trueNorthTip && typeof info.trueNorthTip.clone === 'function') {
+      var p = info.trueNorthTip.clone().project(cam);
+      var sx = (p.x * 0.5 + 0.5) * w, syy = (-p.y * 0.5 + 0.5) * h;
+      if (p.z < 1 && sx > -w && sx < w * 2) {
         ctx.fillStyle = '#e8eef6';
         ctx.textAlign = 'center';
         ctx.font = '700 ' + Math.round(fontPx * 1.15) + 'px -apple-system,BlinkMacSystemFont,' +
                    '"Segoe UI",Roboto,sans-serif';
-        ctx.fillText('N', nTip.x, nTip.y);
-        ctx.font = font;
+        ctx.fillText('N', sx, syy);
       }
     }
-
-    // ── THE READOUT: date, sun, angle of attack, TOGETHER, bottom left. ─────────────────────────
-    // ⚠ The date used to be a plate pinned UNDER THE ROSE in world space, and that was wrong for a
-    // reason a still frame makes obvious. MEASURED on a real Hospital bake, frame 5 of 8: the
-    // camera is inside a washroom, the ground is not in view, the rose is off-screen — and the
-    // "Sun below the horizon" line was still there while the DATE had vanished. Two halves of one
-    // readout, one of them disappearing whenever the film goes indoors or close-in, which is most
-    // of a walkthrough. The film must not stop saying what day it is because of where the camera
-    // happens to be.
-    // So all three lines live in ONE fixed block now, and the rose keeps only its "N" — the graphic
-    // is the graphic, the words are the words. The compass may be hidden, occluded by the building
-    // during the closing orbit, or out of frame entirely; the readout is unaffected.
-    // Bottom LEFT, per red1: it is the one corner nothing else uses — cpe_day_counter.js owns a
-    // corner of the caller's choosing and stacks the path box and resource panel under it, and
-    // cpe_room_title.js's caption is a CENTRED plate in the lower band.
-    // Order is date, sun, facade — read top-down, drawn bottom-up.
-    // ⚠ `bottomReserved` is how many pixels at the bottom of the frame are already spoken for —
-    // cpe_room_title.js's caption, when one is showing. MEASURED on an 854x480 HHS bake with every
-    // overlay on: the caption's plate occupies 405.6..443.6 and this readout's middle line sat at
-    // 418..443, fully inside it. Two overlays, one strip of pixels, neither aware of the other.
-    // The caller passes the reservation (it is the only thing that knows a caption is up this
-    // frame) and this block stacks above it — the same contract the HUD column already uses, where
-    // the caller owns the layout and each overlay owns only its own drawing.
-    var mx = Math.round(w * 0.016), my = Math.round(h * 0.026);
-    var lineH = Math.round(fontPx * 2.1);
-    var reserved = (typeof bottomReserved === 'number' && bottomReserved > 0) ? bottomReserved : 0;
-    var y0 = h - my - lineH / 2 - reserved;
-    if (labels.attack) { plate(mx, y0, labels.attack, 'left'); y0 -= lineH; }
-    plate(mx, y0, labels.sun, 'left'); y0 -= lineH;
-    plate(mx, y0, labels.day, 'left');
     ctx.restore();
+    return lines.length * lineH;
   };
 
   // ── §SUN_CLOCK — an analogue face showing the hour this frame is lit at. ────────────────────
@@ -701,7 +750,7 @@ function setupCpeSunCompass(A) {
       });
     }
     _grp = null; _built = false; _info = null; _last = null; _noCursorLogged = false;
-    _framesLit = 0; _framesDark = 0; _sunDate = null;
+    _framesLit = 0; _framesDark = 0; _sunDate = null; _heldLogged = false;
     _sunRay = _sunLift = _sunDrop = null; _disposed = true;
   };
 }
