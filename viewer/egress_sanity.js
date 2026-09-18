@@ -113,7 +113,7 @@
   /**
    * @param {function} dbQuery - (sql, params?) -> array of row arrays
    * @param {object} rules - parsed egress_rules.json ({ egress_rules: [...] })
-   * @param {object} [opts] - { log: fn(msg) }
+   * @param {object} [opts] - { log: fn(msg), doorRealXY: {guid:[x,y]} — see room_graph.js §REAL-AABB }
    * @returns {Array<{guid,ifc_class,name,storey,rule,severity,ratio}>}
    */
   function evaluate(dbQuery, rules, opts) {
@@ -159,7 +159,10 @@
       log('§EGRESS_NO_ROOMGRAPH RoomGraph module not available — rules 2/3 skipped');
       return rows;
     }
-    var graph = RoomGraph.buildGraph(dbQuery, { log: function () {} });
+    // §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3): pass through opts.doorRealXY unchanged (this
+    // file stays dbQuery-only/DB-io-free — see file header — the caller resolves it against a live
+    // db/geoDb handle via common/door_real_position.js). undefined here = today's coarse behaviour.
+    var graph = RoomGraph.buildGraph(dbQuery, { log: function () {}, doorRealXY: opts.doorRealXY });
     var circCount = { WARNING: 0, uncapped_critical: 0 }, isolatedCount = 0;
     var viaExit = 0, viaFallback = 0;
 

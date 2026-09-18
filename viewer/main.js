@@ -169,7 +169,19 @@ async function initViewer() {
         // (x8, never removes) any edge touching one so room→room routing prefers corridors.
         // v7 (same doc §10, 2026-07-22): pass ignoreDoorExemption:true so real door-carrying service
         // rooms are tagged too (the door-exempt display default missed them); exclude CORRIDOR_ROOM nodes.
-        '../common/room_graph.js?v=12',
+        // v8 (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18): buildGraph() gains an OPTIONAL
+        // opts.doorRealXY — no behaviour change unless a caller passes one (see below).
+        '../common/room_graph.js?v=13',
+        // ROOM_GRAPH_REAL_AABB.md §4 item 3 — real_geometry.js is the SAME module cross_edges.js
+        // (modeller) already uses; the Viewer never loaded it before this. Pure DB read, no THREE/DOM
+        // dep (see its own header) — safe alongside room_graph.js's lazy-load discipline. Must load
+        // BEFORE door_real_position.js (soft dependency, but load order avoids the first-call lazy-
+        // require race that file's own header explains).
+        '../modeller/real_geometry.js?v=1',
+        // door_real_position.js resolves a door's real world-AABB centre (yaw-only), feeding
+        // room_graph.js's new opts.doorRealXY above — kept OUT of room_graph.js itself so that file
+        // stays DB/file I/O-free (dual-mode node+browser, see its own header).
+        '../common/door_real_position.js?v=1',
         // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
         // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
         // in the browser, despite passing every Node-based witness, because this line never
