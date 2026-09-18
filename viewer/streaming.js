@@ -3393,13 +3393,50 @@ function setupStreaming(A) {
     A.controls.update();
     console.log(`[S203] §CAMERA envelope=${envW.toFixed(0)}x${envD.toFixed(0)}x${envH.toFixed(0)}m dist=${dist.toFixed(0)}m`);
 
+    // §GEOREF (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §1/§3) — the georef every consumer
+    // reads: sitecam.js:81 and walk.js:275 for true north, cpe_sun_compass.js for the sun path.
+    // ⚠ THE LOG LINE USED TO SAY "from grid Y" ON EVERY BUILDING, AND IT WAS NEVER TRUE. The
+    // extractor wrote the literal string "0" for true_north_angle from the day the key was added
+    // (§KUL001), and the browser import path wrote no such row at all — so this read has returned
+    // a stub or a default for every building in the fleet since it shipped, while two consumers
+    // applied a real rotation formula to it. It is a real value now, and the log says WHICH:
+    // `ifc_truenorth` is authored, `default_zero` is the honest default, `absent` means this DB
+    // predates the fix and needs a re-extract or a buildings/patches/*.sql row.
     window._trueNorthAngle = 0;
+    window._siteLatitude = null;
+    window._siteLongitude = null;
+    window._siteElevationM = null;
+    window._siteLatLongSource = 'absent';
+    window._trueNorthSource = 'absent';
     try {
-      const tnRows = A.dbQuery("SELECT value FROM project_metadata WHERE key = 'true_north_angle'");
-      if (tnRows.length > 0) {
-        window._trueNorthAngle = parseFloat(tnRows[0][0]) || 0;
-        console.log(`[S204] §TRUE_NORTH ${window._trueNorthAngle}° from grid Y`);
+      const geoRows = A.dbQuery("SELECT key,value FROM project_metadata WHERE key IN " +
+        "('true_north_angle','true_north_source','site_latitude','site_longitude'," +
+        "'site_elevation_m','site_latlong_source')");
+      const g = {};
+      (geoRows || []).forEach(r => { g[r[0]] = r[1]; });
+      if (g.true_north_angle != null && g.true_north_angle !== '') {
+        const tn = parseFloat(g.true_north_angle);
+        if (isFinite(tn)) window._trueNorthAngle = tn;
+        window._trueNorthSource = g.true_north_source || 'legacy_no_source_key';
       }
+      // A non-finite or out-of-range coordinate stays NULL — never a fallback 0, because 0/0 is a
+      // real place and a sun path drawn from it would be confidently wrong (spec §4).
+      const la = parseFloat(g.site_latitude), lo = parseFloat(g.site_longitude);
+      if (isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180) {
+        window._siteLatitude = la;
+        window._siteLongitude = lo;
+        window._siteLatLongSource = g.site_latlong_source || 'legacy_no_source_key';
+      } else if (g.site_latlong_source) {
+        window._siteLatLongSource = g.site_latlong_source;
+      }
+      const el = parseFloat(g.site_elevation_m);
+      if (isFinite(el)) window._siteElevationM = el;
+      console.log(`[S204] §TRUE_NORTH ${window._trueNorthAngle}° (source=${window._trueNorthSource})` +
+        ` — the bearing of MODEL north measured from TRUE north; sitecam/walk rotate by this`);
+      console.log(`[S204] §GEOREF_SITE lat=${window._siteLatitude == null ? 'unknown' : window._siteLatitude}` +
+        ` lon=${window._siteLongitude == null ? 'unknown' : window._siteLongitude}` +
+        ` elev=${window._siteElevationM == null ? 'unknown' : window._siteElevationM + 'm'}` +
+        ` (source=${window._siteLatLongSource})`);
     } catch(e) { /* no project_metadata table */ }
 
     // Deep-link camera restore

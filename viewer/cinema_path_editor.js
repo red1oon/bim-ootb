@@ -746,6 +746,7 @@
       clash: !!s.clash,                    // §CLASH_FILM_P1
       measure: !!s.measure,                // §FLYTHRU_DATUM
       storeyReveal: !!s.storeyReveal,       // §STOREY_HIGHLIGHT_REVEAL
+      sunCompass: !!s.sunCompass,           // §SUN_COMPASS
       bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
       dayCounter: s.dayCounter || 'tr',
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
@@ -941,6 +942,17 @@
         // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06) — the
         // final 5 real seconds of the pull-back beat, ending exactly where the closing orbit begins,
         // fill with each storey tinting through in sequence instead of just cruising toward the orbit.
+        // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — ONE box for the whole
+        // overlay: the ground rose, the day-of-year and the sun-angle readout are one idea and
+        // three checkboxes would let a user ask for a compass with no date on it. The hint names
+        // the two things the box cannot show: the north it draws is TRUE north out of the IFC (not
+        // the model grid, which is what every building in this fleet silently used until now), and
+        // it draws NOTHING at all on a building whose DB carries no site lat/long rather than
+        // inventing a location — the bake log says §SUN_COMPASS INCONCLUSIVE with the reason.
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-sun-compass" type="checkbox"> ' +
+          'Sun compass</label> <span style="color:#666">(TRUE-north rose on the ground from the IFC\'s ' +
+          'own georeference, with the day of the year off the 4D cursor and the sun\'s angle of attack ' +
+          'on the building — silent on a model with no site lat/long, never a guessed one)</span></div>' +
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-storey-reveal" type="checkbox"> ' +
           'Storey highlight</label> <span style="color:#666">(each storey glows blue/green/yellow/orange ' +
           'in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card)</span></div>' +
@@ -2285,7 +2297,7 @@
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
       checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash, measure: !!ov.measure,
-                    storeyReveal: !!ov.storeyReveal },
+                    storeyReveal: !!ov.storeyReveal, sunCompass: !!ov.sunCompass },
       bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
       tmActive: tm ? !!tm.active : false,
@@ -2336,7 +2348,8 @@
   function _syncPanelControls() {
     [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
      ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash], ['cpe-measure', !!_state.measure],
-     ['cpe-storey-reveal', !!_state.storeyReveal]].forEach(function(p) {
+     ['cpe-storey-reveal', !!_state.storeyReveal],
+     ['cpe-sun-compass', !!_state.sunCompass]].forEach(function(p) {
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
     });
@@ -3518,6 +3531,10 @@
         clash: false,          // §CLASH_FILM_P1
         measure: false,        // §FLYTHRU_DATUM — same off-by-default reasoning as clash/reveal
         storeyReveal: false,   // §STOREY_HIGHLIGHT_REVEAL — off by default, same reasoning as reveal/clash
+        // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — off by default, same
+        // reasoning as the four above: a new overlay appearing in every saved path's re-bake would
+        // silently change films the user has already signed off.
+        sunCompass: false,
         bakeRes: '',           // §CPE_BAKE_RES — '' = the window; else '<w>x<h>@<fps>'
         origReveal: false,
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
@@ -3676,6 +3693,18 @@
         _markPreviewStale();
         console.log('§CPE_MEASURE checkbox=' + (_state.measure ? 'on' : 'off') +
           ' — setting-out drawing (grid bubbles, bay chains, storey rules) in the bake');
+      });
+      // §SUN_COMPASS — a pure overlay flag like clash/measure: it moves no beat boundary, so
+      // _markPreviewStale() is the whole handler. The log line says what a re-bake will and will
+      // not contain, because whether anything is drawn depends on the BUILDING, not on this box.
+      var _sunCompassEl = document.getElementById('cpe-sun-compass');
+      if (_sunCompassEl) _sunCompassEl.addEventListener('change', function(e) {
+        _state.sunCompass = !!e.target.checked;
+        _markPreviewStale();
+        console.log('§CPE_SUN_COMPASS checkbox=' + (_state.sunCompass ? 'on' : 'off') +
+          ' — true-north ground rose + day-of-year + sun angle of attack, as ONE overlay. ' +
+          'On a building with no site lat/long this draws nothing and the bake logs ' +
+          '§SUN_COMPASS INCONCLUSIVE — the checkbox cannot promise a compass the DB cannot support.');
       });
       // §STOREY_HIGHLIGHT_REVEAL — like clash above, this does not move any beat boundary (it reads
       // the EXISTING plan.beats.rise), so a plain _markPreviewStale() is the whole handler; no

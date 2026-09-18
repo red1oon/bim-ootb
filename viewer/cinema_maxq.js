@@ -814,6 +814,17 @@
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
       A.dayCounterCompositeOntoCanvas(ctx, w, h, dayInfo, 1, dayInfo.pos);
     }
+    // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — the "N" and the day-of-
+    // year ride the ROSE in world space; the sun-angle readout is a fixed bottom-left pill.
+    // ⚠ Read off A.sunCompassInfo() rather than taken as a 9th parameter, for the reason the
+    // §FLYTHRU_DATUM note above gives: _captureFrame is its own function, not a closure over the
+    // bake body. The bake loop already called A.sunCompassAt(_bkMs) for THIS frame, so the state
+    // it reads is this frame's, not a neighbour's. Same never-kills-a-bake contract.
+    if (A._sunCompassOn && A.sunCompassCompositeOntoCanvas && A.sunCompassInfo) {
+      try { A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), 1); }
+      catch (eSCd) { if (!A._sunCompassDrawWarned) { A._sunCompassDrawWarned = true;
+        console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message) + ' — compass skipped, frames continue'); } }
+    }
     // §CPE_PATH_OVERVIEW — drawn LAST so its backdrop-blur samples the finished frame and never
     // smears the caption or the counter into its own glass. `ovInfo.pose` is the REAL pose this
     // frame was rendered with, captured by the caller immediately before this call.
@@ -1132,6 +1143,7 @@
     var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null, _reveal = false;
     var _clash = false;   // §CLASH_FILM_P1 — mesh-true clash pairs as persistent world content
     var _measure = false;      // §FLYTHRU_DATUM — Alt-C 'Measure' checkbox
+    var _sunCompass = false;   // §SUN_COMPASS — the true-north ground rose; OFF unless requested
     // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
     // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
     // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
@@ -1321,6 +1333,10 @@
         _clash = !!_ov.clash;
         // §FLYTHRU_DATUM — the Measure overlay, authored beside Clash in the Alt-C panel.
         _measure = !!_ov.measure;
+        // §SUN_COMPASS — its own flag, NOT folded into Measure. The datum draws the model's own
+        // setting-out grid; this draws the model's relationship to the planet. They answer
+        // different questions and a viewer may well want one without the other.
+        _sunCompass = !!_ov.sunCompass;
         if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round + ARC/STR reveal are real ' +
           '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
@@ -1551,6 +1567,19 @@
         // §37.2 — the datum's second life over the finished building, on the pull-out→flyback stretch.
         try { if (A.flythruDatumSetLife2 && plan && plan.beats) A.flythruDatumSetLife2(plan.beats.flyback * _filmSecFull, (plan.beats.rise - ((plan.storeyReveal && plan.storeyReveal.on && plan.storeyReveal.windowFrac > 0) ? plan.storeyReveal.windowFrac : 0)) * _filmSecFull); } catch (eL2) {}
       }
+      // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — the true-north rose on
+      // the ground, built once from the DB like the datum. OFF unless asked for: it is new, and an
+      // overlay that appears in every existing plan's re-bake would silently change films the user
+      // already signed off. `sunCompassBuild` returns null and SAYS why (no lat/long, no extent)
+      // rather than drawing a rose it cannot justify, and this flag follows that answer so
+      // _captureFrame does not have to re-ask every frame.
+      A._sunCompassOn = false;
+      if (_sunCompass && A.sunCompassBuild) {
+        try { A._sunCompassOn = !!A.sunCompassBuild(); }
+        catch (eSCB) { console.warn('§SUN_COMPASS_BUILD failed: ' + (eSCB && eSCB.message) + ' — the film bakes without the compass'); }
+      } else if (!_sunCompass) {
+        console.log('§SUN_COMPASS off — not requested for this bake');
+      }
       // §SLAB_BEAT (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §26) — ONE floor plate marked as it
       // is laid: depth-tested tint + X, shine-through label. Rides Measure with the datum. Needs the
       // buildup state (nothing pops without it) and the SAME cursor clock the loop below drives
@@ -1739,6 +1768,16 @@
             // The corner rides ON the info object so _captureFrame needs no second parameter and
             // cannot be handed a position that belongs to a different frame.
             if (_dayInfo) _dayInfo.pos = _dayPos;
+          }
+          // §SUN_COMPASS — the SAME `_bkMs`. GEOREF_SUNPATH_COMPASS.md §6 is explicit that this
+          // feature must not introduce a second date source; the sun is a pure function of
+          // (lat, lon, cursor) and the cursor is the one the buildup is already showing.
+          // Closed-form trig, no loop — cheap enough to recompute every frame rather than cache,
+          // which is also the only way it cannot lag the model by a frame.
+          if (A._sunCompassOn && A.sunCompassAt) {
+            try { A.sunCompassAt(_bkMs); }
+            catch (eSCA) { if (!A._sunCompassAtWarned) { A._sunCompassAtWarned = true;
+              console.warn('§SUN_COMPASS_AT failed frame=' + i + ': ' + (eSCA && eSCA.message)); } }
           }
           var _ggO = _ghostGroundAt(_bkT, _filmSecFull, _bkState, _bkMs);   // §CPE_CLIP_BUILDUP_FILM_T — same class: the fade is in FILM seconds
           // ══ §CPE_BUILDUP_PLACED (MEP_CLASH_REVEAL_MOVIE.md §88.3/§88.6e) ═══════════════════════
@@ -2476,7 +2515,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'sunCompass'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
@@ -2488,7 +2527,7 @@
           ' total=' + (ov._total != null ? (+ov._total).toFixed(1) : '?') + 's' +
           ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
           ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr') +
-          ' storeyReveal=' + (ov.storeyReveal ? 1 : 0));
+          ' storeyReveal=' + (ov.storeyReveal ? 1 : 0) + ' sunCompass=' + (ov.sunCompass ? 1 : 0));
         await start({ editor: false, preview: false, override: ov, overrideSource: src,
                       frames: o.frames, fps: o.fps, forceWebm: o.forceWebm });
         return { source: src, deliveredBytes: window.__maxqDeliveredBytes || 0 };
