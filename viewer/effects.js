@@ -6224,6 +6224,42 @@ async function setupEffects(A, renderer, scene, camera) {
     // overlap partner after CPE_REVEAL_FADE_SEC), and that drop must still re-trigger filterDiscs.
     var shown = (st && st.visDiscs) || (st && st.discs);
     var key = st ? (st.phase + ':' + shown.join(',')) : '';
+    // §CPE_REVEAL_LEAK (2026-09-19, red1: "Go look at Hospital after topout freeze ... refer WITNESS
+    // logging") — the slot-change key below is the right gate for RE-FILTERING, and the wrong one for
+    // WATCHING. A discipline that the round hid can be put back by something else without the slot
+    // ever changing, and the load-path freeze does exactly the kind of thing that would:
+    // §LOADPATH_BATCH_UNPACK unpacks 4,899 batched containers into 63,182 clones at topout and its
+    // restore shows all 4,899 again (Hospital's own numbers; HHS has 419 meshes total and never
+    // meets this). So while the round is up, re-count every ~2 s of film REGARDLESS of the key, and
+    // say so the moment a discipline is visible that was not asked for. Counting only, no filtering
+    // — if this fires, the round's own state was fine and something downstream re-showed it, which
+    // is the opposite fix from "filterDiscs never hid it" and cannot be told apart without this.
+    if (st && shown && shown.length) {
+      var _nowT = (typeof tNorm === 'number') ? tNorm : 0;
+      if (A._cpeRevealLeakAt == null || Math.abs(_nowT - A._cpeRevealLeakAt) > 0.008) {
+        A._cpeRevealLeakAt = _nowT;
+        try {
+          var _ask = {}, _leak = {};
+          shown.forEach(function (d) { _ask[d] = 1; });
+          if (typeof A.collectMeshes === 'function') {
+            A.collectMeshes(function (o) { return o.isMesh && o.userData && o.userData.disc; })
+              .forEach(function (o) {
+                if (!o.visible || _ask[o.userData.disc]) return;
+                _leak[o.userData.disc] = (_leak[o.userData.disc] || 0) + 1;
+              });
+          }
+          var _leakKeys = Object.keys(_leak);
+          if (_leakKeys.length) {
+            console.log('§CPE_REVEAL_LEAK tNorm=' + _nowT.toFixed(4) + ' slot=' + key +
+              ' asked=[' + shown.join(',') + '] LEAKED=' + JSON.stringify(_leak) +
+              ' hiddenDiscs=[' + Array.from(A.hiddenDiscs).join(',') + ']' +
+              ' => FAIL — a discipline the round did not ask for is visible. If hiddenDiscs STILL' +
+              ' names it, the hide was undone downstream (batch restore / TM full pass); if it does' +
+              ' not, the hide was lost from the filter state itself.');
+          }
+        } catch (eLk) { /* measurement only */ }
+      }
+    }
     if (A._cpeRevealVisualKey === key) return;
     if (!st) {
       if (A._cpeRevealSavedHidden) {
