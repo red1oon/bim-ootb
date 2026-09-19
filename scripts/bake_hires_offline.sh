@@ -53,6 +53,11 @@ run() {
       # --clash added 2026-09-19 (red1: "we shall ensure ON together for next bake"). The mesh-true
       # clash pairs stand from frame 0, so this is the one flag that changes the picture before
       # the buildup reaches anything — expect it in §CLI_BAKE_RESOLVED as clash=1.
+      # --dlod-proxy + --reveal added 2026-09-19 after §129.50: the proxy stands down for the
+      # reveal round, so it no longer puts ARC back a frame after the reveal hides it.
+      # Proven on a 2,068-frame Hospital low-res bake — ARC's 1,550 meshes stay hidden through
+      # the round, §CPE_REVEAL_LEAK silent, windows relight past topout (emissiveMats 8/8).
+      --dlod-proxy --reveal \
       --buildup --label --measure --clash --load-path --ledger --cost --storey-reveal --sun-compass --day tr
     echo "§BAKE_SCRIPT node exit=$?"
 
