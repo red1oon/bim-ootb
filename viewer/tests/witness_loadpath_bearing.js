@@ -87,4 +87,37 @@ truth('a member standing clear in PLAN is REJECTED even when z lines up', o.bear
       'offsets=' + o.offsets);
 
 console.log('§LOADPATH_BEARING_WITNESS ' + (wrong ? 'FAIL' : 'PASS') + ' checks=' + checks + ' wrong=' + wrong);
+const bearingWrong = wrong;
+
+// ── §129.42 STOREY SPAN, ranked ahead of visibility ─────────────────────────────────────────────
+// THE ISSUE: the bearing gate made every candidate possible without making the WINNER a load path
+// worth showing. On the 11:08 HHS bake the pick became four hops all on Level 1 while a chain
+// walking Level 3 -> Level 2 -> Level 1 -> ground sat in the field and lost, because the first rank
+// key was `visibleHopsMajority` and a floor plate is always more visible than a column.
+// NO-OP / WRONG guards: the losing candidate here is given MORE visible hops and MORE depth than
+// the winner, so a comparator that had not actually been re-keyed would still prefer it.
+const span = win.APP._loadPathChainStoreySpan, cmp = win.APP._loadPathStackCmp;
+if (typeof span !== 'function' || typeof cmp !== 'function') {
+  console.log('§LP_SPAN INCONCLUSIVE — the span metric or the comparator is not published; nothing judged.');
+  process.exit(2);
+}
+const it = [{ storey: 'Level 1' }, { storey: 'Level 1' }, { storey: 'Level 2' }, { storey: 'Level 3' }, { storey: '' }];
+truth('span counts DISTINCT storeys, not hops', span(it, [0, 1]) === 1, 'two hops both on Level 1 => 1');
+truth('span counts a chain that climbs', span(it, [0, 2, 3]) === 3, 'L1+L2+L3 => 3');
+truth('an unlabelled member adds nothing rather than a guess', span(it, [0, 4]) === 1,
+      'this fleet has unlabelled members; a chain must not win span by being badly tagged');
+
+const groundOnly = { storeySpan: 1, visibleHopsMajority: 4, depth: 4, score: 900, idx: 1 };
+const climbs     = { storeySpan: 3, visibleHopsMajority: 2, depth: 3, score: 100, idx: 2 };
+truth('the chain that CLIMBS wins, though it is less visible and shallower',
+      cmp(groundOnly, climbs, false, 'visibleHopsMajority') > 0,
+      'span 3 beats span 1 despite 2 visible hops against 4');
+truth('visibility still decides between chains of EQUAL span',
+      cmp(Object.assign({}, climbs, { visibleHopsMajority: 1 }), climbs, false, 'visibleHopsMajority') > 0,
+      'what visibility was always good for');
+truth('CONTROL: the inverted comparator still prefers the worse candidate by the SAME first key',
+      cmp(groundOnly, climbs, true, 'visibleHopsMajority') < 0,
+      'or the falsifiability control would rank by a metric the real path no longer leads with');
+
+console.log('§LOADPATH_SPAN_WITNESS ' + ((wrong - bearingWrong) ? 'FAIL' : 'PASS') + ' checks=' + (checks - 6) + ' wrong=' + (wrong - bearingWrong));
 process.exit(wrong ? 1 : 0);

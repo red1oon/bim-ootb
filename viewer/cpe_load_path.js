@@ -283,6 +283,30 @@ function setupCpeLoadPath(A) {
     return { gaps: gaps, offsets: offsets, bears: (gaps === 0 && offsets === 0),
              worstGapM: worstGapM, worstAt: worstAt };
   }
+  // ── §129.42 STOREY SPAN (2026-09-19, red1: "storey span ahead of visibility, go ahead") ──────
+  // The bearing gate (§129.40) made every candidate physically possible. It did not make the
+  // WINNER interesting: on the 11:08 HHS bake the pick became Wall L1 -> Slab L1 -> Column L1 ->
+  // Slab L1 -> ground — borne, honest, and entirely on the ground floor, while
+  // Column L3 -> L2 -> L1 -> L1 -> Slab sat in the field and lost. The ranker's first key is
+  // `visibleHopsMajority`: it asks what the CAMERA can see, and a floor plate is always more
+  // visible than a column, so a chain that never leaves Level 1 beats one that walks the building.
+  // A load path is a story about carrying load from the TOP of the structure to the ground, so the
+  // number of distinct storeys it crosses is the thing to rank on first; visibility decides between
+  // chains that tell the same story, which is what it was always good for.
+  // Counted as DISTINCT non-empty storey labels, not hop count: four hops all on Level 1 span one
+  // storey, and two hops on Level 3 and Level 1 span two. Unlabelled members (this fleet has them —
+  // §STOREY_ARCH_WITNESS counts 41 on HHS alone) contribute nothing rather than a guess, so a chain
+  // cannot win span by being badly tagged.
+  function _chainStoreySpan(items, chainIdx) {
+    var seen = {}, n = 0;
+    for (var k = 0; k < chainIdx.length; k++) {
+      var st = items[chainIdx[k]] && items[chainIdx[k]].storey;
+      if (!st) continue;
+      if (!seen[st]) { seen[st] = 1; n++; }
+    }
+    return n;
+  }
+  A._loadPathChainStoreySpan = _chainStoreySpan;
   // Published for W-LOADPATH-BEARING (viewer/tests/witness_loadpath_bearing.js): the gate is
   // the thing under test, so the witness must call the SHIPPED function, never a copy of it.
   A._loadPathChainBears = _chainBearsInfo;
@@ -1676,11 +1700,18 @@ function setupCpeLoadPath(A) {
   // re-derived for the fallback case.
   function _stackCmp(a, b, occludedMode, visKey) {
     visKey = visKey || 'visibleHopsMajority';
+    // §129.42 — STOREY SPAN IS THE FIRST KEY, in both directions. `occludedMode` is the
+    // falsifiability control: it must keep preferring the WORSE candidate by the SAME rule the real
+    // pick uses, so the new key has to lead there too (fewest storeys crossed), or the control
+    // would silently start ranking by a metric the real path no longer leads with.
+    var aSpan = a.storeySpan || 0, bSpan = b.storeySpan || 0;
     if (occludedMode) {
+      if (aSpan !== bSpan) return aSpan - bSpan;
       if (a[visKey] !== b[visKey]) return a[visKey] - b[visKey];
       if (a.depth !== b.depth) return a.depth - b.depth;
       return b.occludedScore - a.occludedScore;
     }
+    if (bSpan !== aSpan) return bSpan - aSpan;
     if (b[visKey] !== a[visKey]) return b[visKey] - a[visKey];
     if (b.depth !== a.depth) return b.depth - a.depth;
     if (b.score !== a.score) return b.score - a.score;
@@ -1796,6 +1827,7 @@ function setupCpeLoadPath(A) {
           });
           return { idx: rc.c.idx, chain: rc.c.chain, depth: rc.c.depth, score: 0, occludedScore: 0,
                    dist: rc.dist, perHop: perHop, visibleHopsMajority: rc.c.chain.length,
+                   storeySpan: _chainStoreySpan(items, rc.c.chain),
                    visibleHopsFrustum: rc.hopsInFrustum, raysCast: 0, hitsAny: 0, selfHits: 0 };
         };
         var fbNear = fbToStack(rankedCapped[0]);
@@ -1825,6 +1857,7 @@ function setupCpeLoadPath(A) {
       var s = _scoreChain(c.chain, items, camera, outW, outH, hudRects);
       return { idx: c.idx, chain: c.chain, depth: c.depth, score: s.score, occludedScore: s.occludedScore,
                dist: s.dist, perHop: s.perHop, visibleHopsMajority: s.visibleHopsMajority,
+               storeySpan: _chainStoreySpan(items, c.chain),
                visibleHopsFrustum: s.visibleHopsFrustum, raysCast: s.raysCast, hitsAny: s.hitsAny, selfHits: s.selfHits };
     });
     // ROUND 13 Fix 2 / ROUND 14 (broadened) — "never silently premised on a lie": sum raw ray/hit/
@@ -1884,11 +1917,15 @@ function setupCpeLoadPath(A) {
                farReason: 'no-candidate-with-2-' + (tier === 1 ? 'majority' : 'frustum') + '-visible-hops' };
     }
     qualified.sort(function (a, b) { return _stackCmp(a, b, occludedMode, visKey); });
+    // §129.42 — the best span ANY qualified candidate offered, recorded before the winner is taken.
+    // If the winner's own span is lower than this, storey span did not decide the pick and the log
+    // should be able to say so rather than leave it to be inferred.
+    var bestSpanAvail = qualified.reduce(function (m, c) { return Math.max(m, c.storeySpan || 0); }, 0);
     var near = qualified[0];
     // A stack IS drawn here (`near` is real), so `pickSource` must never read `none`.
     var pickSource = tier === 1 ? 'live' : (tier === 2 ? ('frustum-fallback reason=' + tierReason) : ('probe-fallback reason=' + tierReason));
     if (window.__lpOneStack) {
-      return { near: near, far: null, farReason: 'one-stack-control', pickSource: pickSource,
+      return { near: near, far: null, farReason: 'one-stack-control', pickSource: pickSource, bestSpanAvail: bestSpanAvail,
                raycastBlind: blind, blindReason: blind ? blindReason : null, tier: tier, visKey: visKey,
                raysCast: raysCastTotal, hitsTotal: hitsTotal, selfHits: selfHitsTotal, universe: universe,
                validTotal: validTotal, scored: scoredCount };
@@ -1900,7 +1937,7 @@ function setupCpeLoadPath(A) {
     var farPool = qualified.slice(1).filter(function (s) { return s.dist - near.dist >= extent; });
     farPool.sort(function (a, b) { return _stackCmp(a, b, occludedMode, visKey); });
     var far = farPool.length ? farPool[0] : null;
-    return { near: near, far: far, farReason: far ? null : 'none-beyond-depth', extent: extent,
+    return { near: near, far: far, farReason: far ? null : 'none-beyond-depth', extent: extent, bestSpanAvail: bestSpanAvail,
              pickSource: pickSource, raycastBlind: blind, blindReason: blind ? blindReason : null, tier: tier, visKey: visKey,
              raysCast: raysCastTotal, hitsTotal: hitsTotal, selfHits: selfHitsTotal, universe: universe,
              validTotal: validTotal, scored: scoredCount };
@@ -3148,7 +3185,11 @@ function setupCpeLoadPath(A) {
             ' near=' + fmtPick(picked.near) + (picked.far ? ' far=' + fmtPick(picked.far) : '') +
             (picked.farReason ? ' farReason=' + picked.farReason : '') +
             ' pickSource=' + picked.pickSource +
-            ' rankBy=' + (picked.visKey ? (picked.visKey + ',depth,' + (window.__lpPickOccluded ? 'occludedScore' : 'score')) : 'n/a') +
+            // §129.42 — the printed rule must name the key it actually leads with, or the log
+            // says one thing while the comparator does another.
+            ' rankBy=' + (picked.visKey ? ('storeySpan,' + picked.visKey + ',depth,' + (window.__lpPickOccluded ? 'occludedScore' : 'score')) : 'n/a') +
+            ' nearSpan=' + ((picked.near && picked.near.storeySpan) || 0) +
+            ' bestSpanAvail=' + (picked.bestSpanAvail || 0) +
             // ROUND 17 — `scored=`/`validTotal=` make the ARM-TIME cap visible on the SAME line as the
             // pick it produced: `scored` is how many candidates actually went through the expensive
             // _scoreChain/raycast pass (capped at SCORE_TOP_N), `validTotal` is _pick's own full,
