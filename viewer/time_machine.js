@@ -700,12 +700,19 @@
 
   // In-view = the S261 LOD0/LOD2 boundary: close AND actually in the camera's frustum. Fails open
   // (treats as in-view/real) for an unknown guid rather than risk hiding something real by mistake.
+  // §DLOD_ONSCREEN_FIX (2026-09-19, red1 on the Hospital bake: "DLOD occured when at a distance,
+  // which should not as it impairs the scenes"). The old test boxed anything more than
+  // DLOD_VIEW_DIST (50 m) from the camera, WITHOUT asking whether it was on screen — the frustum
+  // check only ran for things already inside 50 m. Hospital's envelope is far bigger than 50 m and
+  // its closing orbit pulls back well beyond it, so at the one shot that shows the finished
+  // building, every element was "out of view" and the whole model rendered as a wireframe cage.
+  // Boxing is now what the button always claimed: OFF SCREEN. Distance alone never boxes anything.
   function _dlodInView(g) {
     var b = _dlodBoxIndex && _dlodBoxIndex[g];
     if (!b || !_dlodCamPos) return true;
-    if (_dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ) return false;
     _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
-    return _dlodFrustum.intersectsSphere(_dlodSphere);
+    if (_dlodFrustum.intersectsSphere(_dlodSphere)) return true;   // on screen at ANY distance
+    return _dlodCamPos.distanceToSquared(b.pos) <= DLOD_VIEW_DIST_SQ;  // off screen but close: keep real
   }
 
   function _dlodDisposeBoxes() {
@@ -794,11 +801,12 @@
       if (engaged && placed[guid] && !frontier[guid] && recent[guid] === undefined) {
         // §DLOD_VIEW: same in-view test as the real-mesh branches, inlined against the position
         // already in hand (b.pos/b.radius) — avoids a second index lookup via _dlodInView(guid).
-        var outOfView = _dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ;
-        if (!outOfView) {
-          _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
-          outOfView = !_dlodFrustum.intersectsSphere(_dlodSphere);
-        }
+        // §DLOD_ONSCREEN_FIX — frustum FIRST, and distance can no longer box an on-screen element
+        // on its own (see _dlodInView above for the whole story). Off screen AND beyond 50 m boxes;
+        // anything else stays real.
+        _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
+        var outOfView = !_dlodFrustum.intersectsSphere(_dlodSphere) &&
+                        _dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ;
         wantVisible = outOfView;
       }
       if (!forceFull && b.visible === wantVisible) { if (wantVisible) boxed++; continue; }
