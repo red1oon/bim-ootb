@@ -3778,11 +3778,32 @@
               // is the pass. Same five families, same denominators, the expectation flips with the
               // beat. Leaving the old assertion in place would have meant a red line on every
               // future bake and a witness nobody trusts, which is worse than no witness.
+              // §129.49 (2026-09-19, red1: "get proper WITNESS logging in") — THE OLD BAR WAS TOO
+              // LOW AND IT HID A REAL BUG FOR A WHOLE DAY. "Something is emitting" passed while
+              // emissiveMatsLit was 0/4 on HHS and 0/8 on Hospital, because the pool lights were on
+              // and one lit family was enough to carry the verdict. §129.48's fault — the relight
+              // restoring PRE-GLOW DARK values — was printed in that field on every one of those
+              // frames and the verdict said PASS over the top of it.
+              // A family with members and none lit is now a FAIL on its own, named. Each family
+              // prints over its own denominator so a zero can still be told from an absent family:
+              // absent (denominator 0) is not judged, which is the VACUOUS case, not a pass.
               (A._ilPastTopout
-                ? ((_wPool + _wNav + _wGlow + _wLens + _wEmis > 0)
-                    ? 'PASS (past topout: the interior is lit again, which is the point of §129.41)'
-                    : 'FAIL — past topout and NOTHING interior is emitting. The relight did not' +
-                      ' happen: the windows are dark at dusk, which is what §129.41 exists to fix.')
+                ? ((function () {
+                    var fam = [['pool', _wPool, (A._nightBakePool && A._nightBakePool.length) || 0],
+                               ['nav', _wNav, (A._nightLightByPos && A._nightLightByPos.size) || 0],
+                               ['emissiveMats', _wEmis, (A._nightGlowMats && A._nightGlowMats.length) || 0]];
+                    var dark = fam.filter(function (f) { return f[2] > 0 && f[1] === 0; });
+                    var judged = fam.filter(function (f) { return f[2] > 0; });
+                    if (!judged.length) return 'INCONCLUSIVE — past topout and no interior emitter family' +
+                      ' exists on this building at all; nothing judged, not a pass.';
+                    if (dark.length) return 'FAIL — past topout and ' +
+                      dark.map(function (f) { return f[0] + ' is 0/' + f[2]; }).join(', ') +
+                      '. A family with members and none lit is the defect (§129.48: the relight used to' +
+                      ' restore the PRE-GLOW values, i.e. darkness, and say "restored"). Another family' +
+                      ' being lit does NOT cover for it — that is how this hid.';
+                    return 'PASS (past topout: every interior family that exists is lit — ' +
+                      judged.map(function (f) { return f[0] + ' ' + f[1] + '/' + f[2]; }).join(', ') + ')';
+                  })())
                 : ((_wPool + _wNav + _wGlow + _wLens + _wEmis === 0)
                     ? 'PASS (between the last stick and topout, no interior emitter of any family is on)'
                     : 'FAIL — something interior is still emitting. Each count prints over its own' +
