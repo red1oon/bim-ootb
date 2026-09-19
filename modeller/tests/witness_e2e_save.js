@@ -128,8 +128,12 @@ runE2E('W-SAVE-COMPLETEIT', async (t) => {
     const boxes = window.__gateBoxes(), rel = window.__gateRel();
     const fbg = window.__arcFidByGuid || {};
     const entangled = new Set();   // anything already a host/filling or a real abuts-partner — keep elC/elB OUT of this set
-    Object.keys(rel.hostOf).forEach(k => { entangled.add(+k); entangled.add(rel.hostOf[k]); });
-    ((window.swXEdges && window.swXEdges.abuts) || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null) entangled.add(a); if (b != null) entangled.add(b); });
+    const hostEntangled = new Set();   // §XEDGE-GEOWIRE: host/filling only — the exclusion that stays load-bearing
+    const abutsDeg = {};               // §XEDGE-GEOWIRE: real abuts degree, to prefer the least-connected candidates
+    Object.keys(rel.hostOf).forEach(k => { entangled.add(+k); entangled.add(rel.hostOf[k]); hostEntangled.add(+k); hostEntangled.add(rel.hostOf[k]); });
+    ((window.swXEdges && window.swXEdges.abuts) || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b];
+      if (a != null) { entangled.add(a); abutsDeg[a] = (abutsDeg[a] || 0) + 1; }
+      if (b != null) { entangled.add(b); abutsDeg[b] = (abutsDeg[b] || 0) + 1; } });
     const ids = Object.keys(boxes).map(Number);
     const ext = (id) => { const b = boxes[id]; return [b[1] - b[0], b[3] - b[2], b[5] - b[4]]; };
     // wA: a real full-height wall — thick-enough thinnest axis (typical wall thickness), long run (mx>3).
@@ -138,7 +142,19 @@ runE2E('W-SAVE-COMPLETEIT', async (t) => {
     const wA = wallish[0];
     // elC/elB: SMALL (furniture-scale, every dimension < 1.5m — this excludes doors/windows, which run ~2m+
     // tall), not already entangled in any real host/abuts relation, and not wA itself.
-    const small = ids.filter(id => id !== wA && !entangled.has(id) && Math.max(...ext(id)) < 1.5);
+    // §XEDGE-GEOWIRE (2026-09-18): this used to require elC/elB be free of EVERY relation, host AND abuts.
+    // That was only satisfiable while cross_edges.js derived its boxes from the mis-placed coarse bbox — the
+    // "known, separately-tracked data/frame gap" this comment block already admits to. With the geo-wired
+    // derivation the graph is correct and DENSER (Duplex abuts 739), and measured: of 61 small elements, 0 are
+    // free of both host and abuts, and the least-connected has abuts degree 2 — so the old premise is not
+    // merely unmet, it is unsatisfiable. HOST/filling entanglement is the one that actually matters to this
+    // fixture (healing wA must ride its doors/windows, the very thing S2 exists to prove), so that exclusion
+    // STAYS; the plain-abuts exclusion is dropped and the LEAST-connected candidates are preferred instead, to
+    // keep the synthetic pair as close to isolated as the real building now allows.
+    const smallFree = ids.filter(id => id !== wA && !entangled.has(id) && Math.max(...ext(id)) < 1.5);
+    const small = smallFree.length >= 2 ? smallFree
+      : ids.filter(id => id !== wA && !hostEntangled.has(id) && Math.max(...ext(id)) < 1.5)
+           .sort((p, q) => (abutsDeg[p] || 0) - (abutsDeg[q] || 0));
     if (small.length < 2) return { error: 'not enough small free elements (' + small.length + ')' };
     const [elC, elB] = small;
     const wBox = boxes[wA], wExt = ext(wA);

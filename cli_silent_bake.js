@@ -32,6 +32,13 @@
 //     [--cost] [--no-cost]                              §129.5 running cost/hours figure, a row of the SAME
 //                                                       pie-chart HUD, directly above Ledger — same --label/--4d5d
 //                                                       fold as Ledger, not --measure (§129.6 item 6b)
+//     [--sun-date YYYY-MM-DD]                         §SUN_DAY: light the WHOLE film on that one
+//                                                       day, sun rising to late afternoon across it.
+//                                                       The build still follows the 4D timeline.
+//     [--sun-compass] [--no-sun-compass]              true-north ground compass + sun path + day of
+//                                                       the year (§SUN_COMPASS, GEOREF_SUNPATH_COMPASS.md
+//                                                       §7). OFF by default; needs a site lat/long in
+//                                                       project_metadata or it draws nothing and says so.
 //     [--no-buildup] [--no-label] [--no-reveal]       turn a SAVED setting off for this run
 //   With no flag given, the path's OWN saved settings are used (§CPE_FLAGS_PORTABLE) — a path saved
 //   in the viewer bakes exactly as it was authored, with no arguments at all.
@@ -52,7 +59,28 @@
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http');
 const { execFileSync } = require('child_process');
-const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
+// ⚠ puppeteer is RESOLVED, not hardcoded. This line used to read
+//   require('/home/red1/bim-compiler/node_modules/puppeteer')
+// — an absolute path carrying one developer's username, in the very file the usage block above
+// tells every user to run. It failed for everyone else with a MODULE_NOT_FOUND naming a home
+// directory they do not have. puppeteer is a HEAVY optional dep (it ships a browser), so it is
+// deliberately NOT in package.json: resolve it, and if it is genuinely absent say what to install
+// instead of dying on someone else's path.
+const puppeteer = (function () {
+  const tried = [];
+  for (const id of [process.env.PUPPETEER_PATH,
+                    'puppeteer',
+                    path.join(process.env.HOME || '', 'bim-compiler', 'node_modules', 'puppeteer')]) {
+    if (!id) continue;
+    tried.push(id);
+    try { return require(id); } catch (e) { /* next */ }
+  }
+  console.error('§CLI_BAKE_NO_PUPPETEER could not load puppeteer. Tried: ' + tried.join(', '));
+  console.error('  This script drives a real headless browser, so puppeteer is required.');
+  console.error('  Fix: `npm install puppeteer` in the repo root, or set PUPPETEER_PATH=/abs/path.');
+  console.error('  (The in-BROWSER bake needs none of this — open index.html and bake from the viewer.)');
+  process.exit(1);
+})();
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -135,6 +163,13 @@ const _fLoadPath = triState('load-path', 'no-load-path');
 // --measure, untouched). --no-ledger/--no-cost remain as control-only overrides.
 const _fLedger = triState('ledger', 'no-ledger');
 const _fCost = triState('cost', 'no-cost');
+// §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — the true-north ground rose
+// with the 4D day-of-year and the sun's angle of attack. Its OWN flag, not folded into --measure:
+// the datum draws the model's own setting-out grid, this draws the model's relationship to the
+// planet. OFF unless asked for, so every existing saved path re-bakes byte-identically.
+// It draws nothing at all on a building whose DB has no site latitude/longitude, and the bake log
+// says §SUN_COMPASS INCONCLUSIVE with the reason — read the log, do not infer from the video.
+const _fSunCompass = triState('sun-compass', 'no-sun-compass');
 if (_fBuildup !== undefined) FLAGS.buildup = _fBuildup;
 if (_fLabel !== undefined) FLAGS.roomTitle = _fLabel;
 else if (_f4d5d !== undefined) FLAGS.roomTitle = _f4d5d;
@@ -145,6 +180,10 @@ if (_fStoreyReveal !== undefined) FLAGS.storeyReveal = _fStoreyReveal;
 if (_fLoadPath !== undefined) FLAGS.loadPath = _fLoadPath;
 if (_fLedger !== undefined) FLAGS.ledger = _fLedger;
 if (_fCost !== undefined) FLAGS.cost = _fCost;
+if (_fSunCompass !== undefined) FLAGS.sunCompass = _fSunCompass;
+// §SUN_DAY — light the whole film on one day (yyyy-mm-dd), hour sweeping morning to late
+// afternoon. Absent = the 4D timeline's own dates drive the light, which is the shipped behaviour.
+if (arg('sun-date', null)) FLAGS.sunDate = String(arg('sun-date'));
 // `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');
 // LARGE_DB_BAKE.md §2 L3 — `--still-budget taa,ao` overrides cinema_maxq.js's hardcoded 8/12 bake
@@ -453,7 +492,12 @@ const server = http.createServer((req, res) => {
           }
         }
         const pops = RuleReport.rulePopulations(A.dbQuery);
-        const suff = RuleReport.runSufficiencyProbes(A.dbQuery, { log: console.log });
+        // T12.6 — support_classes_present reads the evaluator's OWN lists; without them it
+        // reports 'unavailable' rather than fall back to a copy that can go stale.
+        const suff = RuleReport.runSufficiencyProbes(A.dbQuery, Object.assign({ log: console.log },
+          (typeof StructuralSanity !== 'undefined')
+            ? { supportClasses: StructuralSanity.SUPPORT_CLASSES, colSupportClasses: StructuralSanity.COL_SUPPORT_CLASSES }
+            : {}));
         out.report = RuleReport.buildRuleReport({
           rowsS: rowsS, rowsE: rowsE,
           ruleDefs: [sj.rules, ej.rules].filter(Boolean),

@@ -36,6 +36,12 @@
  * NOTHING HERE IS NEW. Every rule and every comment moved verbatim from navigate_find.js
  * (§FIND_COST / §PROJ_PUSH / §S2 / §GOVERNANCE-GATE blocks); the WHY stays attached to the rule
  * it explains, because in this lane the comments ARE the provenance.
+ *
+ * S7 ADDITION (TM_4D5D_VARIANCE_LANE §S7-DO item 2): _show4DWindow sits beside _showClassCost —
+ * both fold a persisted twin table into #info-panel on the SAME pick, so they belong next to each
+ * other rather than in a new module. It reads global.ScheduleRead4D and global.ScheduleAuthor (the
+ * schedule_read_4d.js/schedule_author.js engine — eager-loaded in viewer.html, unlike this lazy
+ * module) the same lazy-global way this file already reads ProjFold, tmJumpToElement and friends.
  */
 
 (function (global) {
@@ -167,7 +173,13 @@
         var html = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:3px">Cost variance <span style="font-size:9px;color:#888;font-weight:normal">· from records</span></div>';
         if (t.phase) {   // the committed actual lives at phase/control-account grain
           var phPct = _pct(t.phase.planned, t.phase.committed), over = t.phase.committed >= t.phase.planned;
-          html += '<div><span class="label">' + ifcClass + '</span>: <span class="value">' + _money(t.line ? t.line.planned : 0) + ' planned</span></div>';
+          // §S7-GRAIN (W-S7-GRAIN): this figure is the WHOLE CLASS's line, not the picked element's own
+          // cost — matchCount was already logged (§ZOOM-COST below) but never RENDERED, so a class figure
+          // sitting next to the element's own Name/GUID rows could be misread as "what this item costs".
+          // Naming the match count inline is what makes the grain visible on the panel itself.
+          html += '<div><span class="label">' + ifcClass + ' <span style="font-size:9px;color:#888;font-weight:normal">(' +
+            (matchCount || 0) + (matchCount === 1 ? ' match' : ' matches') + ')</span></span>: <span class="value">' +
+            _money(t.line ? t.line.planned : 0) + ' planned</span></div>';
           html += '<div><span class="label">Phase ' + t.phase.name + '</span>: <span class="value">' + _money(t.phase.planned) + ' → ' + _money(t.phase.committed) +
             ' <b style="color:' + (over ? '#ff6b6b' : '#26a69a') + '">(' + (phPct >= 0 ? '+' : '') + phPct + '%)</b></span></div>';
         }
@@ -193,6 +205,43 @@
           ' phase="' + (t.phase ? t.phase.name : '-') + '" phasePlanned=' + (t.phase ? t.phase.planned : '-') + ' phaseCommitted=' + (t.phase ? t.phase.committed : '-') +
           ' projPlanned=' + pj.planned + ' projCommitted=' + pj.committed + ' projPct=' + pjPct + '%');
       });
+    }
+
+    // ── S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 2) — the persisted 4D construction window ────────────────────
+    // Sibling of _showClassCost above: same #info-panel, same "read the twin, don't recompute" §3 doctrine,
+    // same hidden-by-default/own-top-border pattern. The engine surface (schedule_read_4d.js windowForGuid,
+    // §S7-DO item 1, PR #1732) already shipped; this is purely the render + wiring half, which is why it
+    // lives beside _showClassCost rather than in a new module — two "fold a twin table into #info-panel"
+    // blocks belong next to each other.
+    //
+    // §S7-GRAIN (load-bearing — read the spec section twice before touching this): the window is TASK
+    // grain, not element grain. `task_elements` maps a guid to a TASK and the element inherits that task's
+    // whole window — on Hospital that is 41 distinct windows over 63,415 elements, the biggest task ("MEP
+    // Rough-in — Level 3") covering 9,545 of them. So the task's own NAME is ALWAYS rendered beside its
+    // start->finish window; a bare date with no task name would misread as "this element is built on this
+    // day", exactly the misreading §S7-GRAIN was corrected to prevent (W-S7-TASK-GRAIN).
+    //
+    // §S7-DATA-REALITY: most published buildings carry no schedule at all — the COMMON case, not an edge
+    // case — so this function distinguishes two different misses (W-S7-GATE):
+    //   no active schedule at all           -> box stays HIDDEN, same as _showClassCost's "no twin" branch
+    //                                           above (nothing to say; matches the pill icon also being off)
+    //   schedule exists, but THIS element    -> box renders ONE line stating that, rather than a blank box
+    //   isn't in a dated task                   next to a pill that IS showing (blank-but-visible reads as
+    //                                           broken, not as absent)
+    function _show4DWindow(guid) {
+      // §S7-OPEN (2026-09-14): the renderer MOVED to viewer/info_4d_panel.js so the plain 3D-canvas
+      // click path (picking.js) can reach it too — find_erp_push.js lives inside APP.loadNavigate()'s
+      // LAZY bundle, so until Find had been opened once this function did not exist and the headline
+      // interaction rendered nothing. This is now a delegating seam, NOT a second copy: one renderer,
+      // two call sites. If Info4DPanel is absent the block simply stays hidden, same honest no-op the
+      // body used to perform itself.
+      var P = global.Info4DPanel;   // the module-scope global (browser: window; node: globalThis) — NOT `window`, which does not exist headlessly
+      if (!P || !P.render) {
+        var box = document.getElementById('info-4d'); if (box) box.style.display = 'none';
+        console.log('§4D_INFO_PANEL guid="' + guid + '" skip reason=info_4d_panel_absent');
+        return;
+      }
+      P.render(A, guid);
     }
 
     // BIM→Project: every › ERP push outcome gets audio + a clear status (user: "good practice — a status
@@ -271,7 +320,7 @@
     return { ensureErpDb: _ensureErpDb, persistErpDb: _persistErpDb, money: _money,
              foldClassTwin: _foldClassTwin, surfaceExistingOrder: _surfaceExistingOrder,
              surfaceConstructionLink: _surfaceConstructionLink, showClassCost: _showClassCost,
-             pushToErp: _pushToErp };
+             show4DWindow: _show4DWindow, pushToErp: _pushToErp };
   }
 
   var API = { create: create };

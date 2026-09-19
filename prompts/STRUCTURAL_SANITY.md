@@ -1042,6 +1042,44 @@ the defect column moved. It has to happen: `§BENCH_GATE_WORSE` fires on a rate 
 passed the gate in silence. Recorded: `tests/bench_baseline.json`, defect 0 of 2545,
 near-miss 545/113/339.
 
+## T12.6 §SUFFICIENCY_READS_THE_LIST — a probe that kept its own copy of the support classes
+Found while reporting the three `_silent` DBs' sanity results, not by a test. `Terminal_silent`
+came back `support_classes_present: degraded`, and the reason it gave was **untrue**:
+
+> IfcWall and IfcSlab are in neither support list; 1038 such elements cannot support a beam end or
+> a column here, while 600 elements can.
+
+Both classes have been in **both** lists since `§SUPPORT_CLASS_PARITY` (T9.1) added `IfcWall` and
+`§SLAB_BEARING` (T9.3) added `IfcSlab` — `structural_sanity.js:113-114`, two PRs before this one.
+The probe carried its own typed copy of the lists, in a comment **and** in its own SQL `IN` clause,
+and nothing made the copy answer to the original. It had been reporting a closed gap ever since,
+and its `degraded` verdict was the loudest line in Terminal_silent's report.
+
+**This is T11.5 trap 3 with a second signature.** The trap says a guard written from the buggy
+code's own output passes for the life of the bug. Here the guard was
+`tests/test_rule_report.js`'s R10: *"support_classes_present = degraded when IfcWall outnumbers the
+listed classes"*. Those 3 fixture walls could only outnumber the listed classes because the
+probe's private copy had never been told `IfcWall` was added. **The test asserted the copy, so the
+copy could not be caught by it.** Rewritten to assert what the probe now claims.
+
+**The fix is the same one T8.13 applied to the thresholds: one source, read not copied.**
+`StructuralSanity` exports `SUPPORT_CLASSES` / `COL_SUPPORT_CLASSES` (frozen — a consumer that
+mutated the array it was handed would corrupt it for the next caller), the probe takes them through
+`opts`, and **without them it reports `unavailable`**, never a guessed fallback and never an `ok` —
+the same rule this file already applies to a missing table. Both production call sites
+(`cli_silent_bake.js`, `viewer/rule_checklist.js`) pass them.
+
+The probe now states only what it was handed: elements per support class, which listed classes are
+absent entirely, and the **one-sided** classes derived from the difference between the two lists —
+today `IfcPlate`, which can hold a beam end but not a column (Hospital: **2,211** of them). Its
+verdict answers the one question that cannot go stale: is there bearing geometry BESIDES the beams
+and columns being checked? `absent` when there is not — a frame holding itself up.
+
+**R23b is the assertion that would have caught the original bug:** hand the probe a *different*
+list and its answer must change. A probe with a private copy cannot pass that. Measured after:
+`Terminal_silent` `degraded` → **`ok`**, Hospital_meta `ok` with 13,968 support elements, fleet
+gate unmoved (the bench calls `artifactRates`, not the probes).
+
 **T12.5 WHAT IS STILL OPEN.** None of this touched a rule, so nothing about the rules got better —
 what got better is the benchmark's ability to tell you so. Still open, in order:
 - **T11.3's slab-coverage rule** — unbuilt. No rule asks whether a storey's floor plate covers its

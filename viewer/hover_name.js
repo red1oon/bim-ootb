@@ -6,6 +6,12 @@
 // hover_name.js — §HOVER_NAME (prompts/Viewer/HOVER_NAME.md): a "hover name" checkbox in the
 // Find panel + the `'` shortcut. With it on, hovering the model shows the friendly name (and
 // containing room) of whatever is under the cursor — zero clicks. Click still SELECTS, untouched.
+// S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 3) added ONE more optional line — the element's persisted
+// construction window (task name + start->finish), via _4dLabelFor below. It piggybacks on this
+// file's own budget fix: the extra windowForGuid() lookup lives INSIDE the same `guid===_lastGuid`
+// early-return this header already describes, so it costs one query per TARGET CHANGE, never one
+// per frame — see W-S7-HOVER-BUDGET. §S7-NOT-DOING is explicit that this stays a LABEL, never a
+// pop-up panel that would have to chase the cursor.
 function setupHoverName(A) {
   var _on = false;
   var _raf = 0;
@@ -89,6 +95,24 @@ function setupHoverName(A) {
     } catch (e) { return null; }
   }
 
+  // ── S7 §S7-DO item 3 — ONE extra hover line, not a panel. windowForGuid (schedule_read_4d.js)
+  // is the SAME read #info-4d uses on click (§3 doctrine: read the twin, don't recompute) — no
+  // second reader, no derived date. §S7-GRAIN is load-bearing here: the persisted date is TASK
+  // grain (a task can hold thousands of elements, e.g. Hospital's "MEP Rough-in — Level 3" =
+  // 9,545), so the line ALWAYS carries the task's own name next to its start->finish window —
+  // never a bare date, which would read as "this element is built on this day". Returns null
+  // (no line) on any miss — no active schedule / guid in no task / undated task — exactly
+  // schedule_read_4d.js's own documented misses; §S7-DATA-REALITY says that is the COMMON case
+  // (most published buildings carry no schedule), so silence here is correct, not a bug.
+  function _4dLabelFor(guid) {
+    try {
+      if (!window.ScheduleRead4D || !window.ScheduleRead4D.windowForGuid || !A.db) return null;
+      var win = window.ScheduleRead4D.windowForGuid(A.db, guid);
+      if (!win) return null;
+      return String(win.name) + ' · ' + win.startDate + ' → ' + win.finishDate;
+    } catch (e) { return null; }
+  }
+
   // Event-driven, not a perpetual loop: a raycast only runs when the mouse actually moves, and at
   // most once per animation frame no matter how many pointermove events land in that frame
   // (HOVER_NAME.md's trap — "raycast per pointermove is not free at 63k elements"). A continuous
@@ -121,9 +145,11 @@ function setupHoverName(A) {
     if (!rows.length) { _hideLabel(); return; }
     var name = _name(rows[0][0], rows[0][1]);
     var room = _roomLabelFor(guid);
+    var win4d = _4dLabelFor(guid);   // S7 §S7-DO item 3 — one extra line, only on a real hit
     var lbl = _ensureLabel();
     lbl.innerHTML = '<div>' + String(name).replace(/</g, '&lt;') + '</div>' +
-      (room ? '<div style="opacity:0.65;font-size:10px;margin-top:2px">' + String(room).replace(/</g, '&lt;') + '</div>' : '');
+      (room ? '<div style="opacity:0.65;font-size:10px;margin-top:2px">' + String(room).replace(/</g, '&lt;') + '</div>' : '') +
+      (win4d ? '<div style="opacity:0.65;font-size:10px;margin-top:2px">' + String(win4d).replace(/</g, '&lt;') + '</div>' : '');
     lbl.style.display = 'block';
     _positionLabel();
     // §IDLE_GATE parks the rAF chain when nothing moves — force one frame so the label isn't

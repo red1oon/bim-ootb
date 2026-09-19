@@ -34,6 +34,29 @@ function buildImportDBs(SQL, data) {
        'georef_offset_z', String(data.meta.georefOffset[2]), 'unit_scale', String(data.meta.unitScale || 1)]);
   }
 
+  // §GEOREF (prompts/GEOREF_SUNPATH_COMPASS.md §3.2) — Witness: W-GEOREF-ANGLE.
+  // The real map position and the real true-north rotation, read by import_worker.js. Before
+  // this, THIS PATH WROTE NEITHER: streaming.js:3398 queries project_metadata for
+  // 'true_north_angle' on every load and a browser-imported building had no such row, so
+  // sitecam.js and walk.js silently rotated by 0 on every one of them.
+  //
+  // ⚠ ALWAYS WRITTEN, even when the source IFC carries nothing (§4). A MISSING key and a key
+  // valued "unknown" are different facts: missing means "this DB predates the feature", present-
+  // and-unknown means "the feature ran and the source file has no location". Only the second is
+  // safe for a consumer to act on, and only because `site_latlong_source` says so.
+  //
+  // ⚠ lat/long absent is written as an EMPTY STRING, never 0/0. 0,0 is a real place in the Gulf
+  // of Guinea; writing it would turn "we do not know" into "we know, and it is there" — a sun
+  // path drawn from it would be confidently, invisibly wrong.
+  var _gr = (data.meta && data.meta.georef) || {};
+  db.run('INSERT OR REPLACE INTO project_metadata VALUES (?,?),(?,?),(?,?),(?,?),(?,?),(?,?)',
+    ['true_north_angle', String(_gr.trueNorthAngle == null ? 0 : _gr.trueNorthAngle),
+     'true_north_source', String(_gr.trueNorthSource || 'default_zero'),
+     'site_latitude', _gr.latitude == null ? '' : String(_gr.latitude),
+     'site_longitude', _gr.longitude == null ? '' : String(_gr.longitude),
+     'site_elevation_m', _gr.elevationM == null ? '' : String(_gr.elevationM),
+     'site_latlong_source', String(_gr.latLongSource || 'unknown')]);
+
   // Elements
   db.run('CREATE TABLE IF NOT EXISTS elements_meta (guid TEXT PRIMARY KEY, ifc_class TEXT, element_name TEXT, storey TEXT, discipline TEXT, material_name TEXT, material_rgba TEXT, building TEXT)');
   db.run('CREATE TABLE IF NOT EXISTS element_transforms (guid TEXT PRIMARY KEY, center_x REAL, center_y REAL, center_z REAL, rotation_x REAL, rotation_y REAL, rotation_z REAL, bbox_x REAL, bbox_y REAL, bbox_z REAL)');

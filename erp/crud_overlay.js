@@ -1736,7 +1736,7 @@
   //   so ALL ~13 ported model validators apply (the old map wired only 4), and a table with no ported hook is a clean
   //   no-op. Install is pure registration (db is captured in hook closures, touched only when a hook fires) → safe.
   var _mvAllInstalled = false;
-  function _installAllModelVal(b) {
+  function _installAllModelVal(b, rawDb) {
     var MV = global.AdModelVal; if (!MV) return [];
     var installed = [];
     Object.keys(MV).forEach(function (m) {
@@ -1745,6 +1745,20 @@
       }
     });
     if (typeof MV.installDefaultHooks === 'function') { try { MV.installDefaultHooks(); installed.push('installDefaultHooks'); } catch (e) {} }
+    // PLUGIN_SYSTEM_LANE.md §Phase E — bridge the real ad_modelvalidator AD table into the live plugin
+    // host (install-only, never auto-start — Q1; the existing plugin_release.js/plugin_overlay.js
+    // enable/disable click is still the approval step). Fire-and-forget: this lazy pass already runs
+    // exactly once per page session (the _mvAllInstalled guard around this function's only call site).
+    if (global.AdModelValBridge && global.PluginEngine && rawDb) {
+      var glue = {
+        db: rawDb, KO: global.KernelOps,
+        engines: { modelval: MV, callout: global.AdCallout, process: global.AdProcess,
+                   postTokens: (global.PostResolver && global.PostResolver.TOKENS) || null }
+      };
+      global.AdModelValBridge.installFromAdModelValidator(b, glue)
+        .then(function (res) { console.log('§MODELVAL_AUTOINSTALL-PASS rows=' + res.length); })
+        .catch(function (e) { console.log('§MODELVAL_AUTOINSTALL-PASS error=' + (e && e.message)); });
+    }
     return installed;
   }
   function _mvB3(dbh) {   // better-sqlite3-shaped shim over sql.js; lowercase keys (engines proven on ad_full.db);
@@ -1811,7 +1825,7 @@
       var out = null;
       try {
         var b = _mvB3(db);
-        if (!_mvAllInstalled) { _mvAllInstalled = true; var ins = _installAllModelVal(b); console.log('§AD-MODELVAL-LIVE installed-all registry=' + ins.length + ' [' + ins.join(',') + ']'); }
+        if (!_mvAllInstalled) { _mvAllInstalled = true; var ins = _installAllModelVal(b, db); console.log('§AD-MODELVAL-LIVE installed-all registry=' + ins.length + ' [' + ins.join(',') + ']'); }
         // GAP (d): no ported hook for this table → fireHooks returns fired=0, ok=true (a clean no-op, not a gate).
         var rec = {}, k;
         if (orig) for (k in orig) rec[k.toLowerCase()] = orig[k];

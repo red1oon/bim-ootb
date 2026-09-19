@@ -85,6 +85,7 @@
       const real = v => api.CreateIfcType(mID, T.IFCREAL, v);
       const plm = v => api.CreateIfcType(mID, T.IFCPOSITIVELENGTHMEASURE, v);
       const label = v => api.CreateIfcType(mID, T.IFCLABEL, v);
+      const pos1 = v => api.CreateIfcType(mID, T.IFCPOSITIVEINTEGER, v);   // §IFC-EXPORT-SEED: 1-based tessellation index
       const z3 = () => api.CreateIfcEntity(mID, T.IFCDIRECTION, [real(0), real(0), real(1)]);
       const x3 = () => api.CreateIfcEntity(mID, T.IFCDIRECTION, [real(1), real(0), real(0)]);
       const place3 = (o) => api.CreateIfcEntity(mID, T.IFCAXIS2PLACEMENT3D,
@@ -108,7 +109,90 @@
       let walls = 0, openings = 0, rels = 0, gn = 0, arrays = 0, arrayMembers = 0;
       let firstWall = null, firstArray = null;
 
+      // ── §IFC-EXPORT-SEED (MODELLER_MASTER.md row 36 / §IFC-EXPORT-SEED) ───────────────────────────
+      // Until 2026-09-18 this loop handled GEOM_EXTRUDE_POLY / GEOM_CUT / GEOM_ARRAY only. EVERY
+      // ARC-seeded element is a GEOM_INSERT (arc_editable.js), so exporting an opened resident matched
+      // ZERO ops and produced an empty file — measured on Duplex: 196 meshes on screen, build() returned
+      // {walls:0, openings:0, arrays:0, bytes:592}. That is a header and nothing else.
+      //
+      // GEOMETRY SOURCE — the renderer's OWN vertices, deliberately NOT a re-derived transform.
+      // This is the direct lesson of §XEDGE-GEOWIRE (bim-ootb #1744), same day: cross_edges.js
+      // re-implemented "world = centre + R·vert", its header called that "the same final numbers, fewer
+      // steps", and it was wrong for 798 of 934 elements because center_xyz is the placement ANCHOR, not
+      // the volumetric centre. The folded meshes already hold WORLD-space positions baked into their
+      // geometry — measured: matrixWorld is identity on all 3,290 SampleCastle meshes and
+      // geometry.boundingBox equals Box3.setFromObject to 0.000e+0. So read those coordinates verbatim
+      // and parity with what the user sees is structural, not something a witness has to chase.
+      const _scene = (typeof window !== 'undefined' && window.Bonsai && window.Bonsai.group) ? window.Bonsai.group() : null;
+      const _meshByFid = new Map();
+      if (_scene) for (const m of _scene.children) if (m.isMesh && m.userData && m.userData.featureId != null) _meshByFid.set(m.userData.featureId, m);
+      const _fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
+      // ifc_class -> IFC4 entity. EXTRACTED from the residents, never invented; an unmapped real class
+      // becomes IfcBuildingElementProxy, which is IFC's own honest answer for "a real product whose
+      // specific type this exporter does not model" — counted and logged, never silently dropped.
+      // EXTRACTED, not invented: this is the complete `ifc_class` census of all EIGHT shipped residents
+      // (SampleHouse/Duplex/SampleCastle/HHS/Clinic/Hospital/Garage/Terminal) — 23 distinct classes,
+      // every one of which web-ifc's vendored build can create. Counts across the fleet, for scale:
+      //   IfcPlate 36,427 · IfcMember 9,534 · IfcWallStandardCase 3,105 · IfcBuildingElementProxy 2,404
+      //   IfcCovering 2,256 · IfcDoor 1,193 · IfcWall 1,163 · IfcSlab 1,121 · IfcWindow 740 · IfcColumn 489
+      //   IfcFurniture 391 · IfcBuildingElementPart 277 · IfcCurtainWall 263 · IfcRailing 244 · IfcBeam 203
+      //   IfcFurnishingElement 179 · IfcFlowTerminal 102 · IfcStair 74 · IfcStairFlight 40 · IfcRoof 28
+      //   IfcFooting 24 · IfcController 6 · IfcRampFlight 1
+      // Mapping the class the SOURCE declares is the PRIME RULE (extract, never invent) — proxying a real
+      // IfcStair would be throwing away information the DB already holds. Anything genuinely absent from
+      // this list still falls to IfcBuildingElementProxy, counted in §IFC-SEED's proxyTyped so a new class
+      // arriving in a future building is visible rather than silent.
+      const _CLASS_MAP = {
+        IfcWall: 'IFCWALL', IfcWallStandardCase: 'IFCWALL', IfcSlab: 'IFCSLAB', IfcDoor: 'IFCDOOR',
+        IfcWindow: 'IFCWINDOW', IfcColumn: 'IFCCOLUMN', IfcBeam: 'IFCBEAM', IfcCovering: 'IFCCOVERING',
+        IfcRailing: 'IFCRAILING', IfcFurnishingElement: 'IFCFURNISHINGELEMENT', IfcFurniture: 'IFCFURNISHINGELEMENT',
+        IfcStairFlight: 'IFCSTAIRFLIGHT', IfcRampFlight: 'IFCRAMPFLIGHT', IfcRoof: 'IFCROOF',
+        IfcPlate: 'IFCPLATE', IfcMember: 'IFCMEMBER', IfcBuildingElementProxy: 'IFCBUILDINGELEMENTPROXY',
+        IfcBuildingElementPart: 'IFCBUILDINGELEMENTPART', IfcCurtainWall: 'IFCCURTAINWALL',
+        IfcFlowTerminal: 'IFCFLOWTERMINAL', IfcStair: 'IFCSTAIR', IfcFooting: 'IFCFOOTING',
+        IfcController: 'IFCCONTROLLER'
+      };
+      let seeded = 0, seedAnchors = 0, seedNoMesh = 0, seedProxy = 0, seedTris = 0;
+      const seedByClass = {};
+
+      // One IfcTriangulatedFaceSet from a mesh's WORLD-space position/index buffers (IFC4 native
+      // triangle form — no tessellation, no approximation, no box standing in for authored geometry).
+      const triFaceSet = (mesh) => {
+        const pos = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
+        if (!pos || !pos.count) return null;
+        const coords = [];
+        for (let i = 0; i < pos.count; i++) coords.push([len(pos.getX(i)), len(pos.getY(i)), len(pos.getZ(i))]);
+        const ptList = api.CreateIfcEntity(mID, T.IFCCARTESIANPOINTLIST3D, coords, null);
+        const idx = mesh.geometry.index;
+        const tris = [];
+        if (idx) { for (let i = 0; i + 2 < idx.count; i += 3) tris.push([pos1(idx.getX(i) + 1), pos1(idx.getX(i + 1) + 1), pos1(idx.getX(i + 2) + 1)]); }
+        else { for (let i = 0; i + 2 < pos.count; i += 3) tris.push([pos1(i + 1), pos1(i + 2), pos1(i + 3)]); }
+        if (!tris.length) return null;
+        seedTris += tris.length;
+        return api.CreateIfcEntity(mID, T.IFCTRIANGULATEDFACESET, ptList, null, null, tris, null);
+      };
+
       for (const op of ops) {
+        if (op.op_type === 'GEOM_INSERT') {
+          const P = op.parameters;
+          // §ANCHOR — void-consumed hosts are invisible ride anchors. The user's binding condition is
+          // that they stay out of EVERY count, pick and audit; an export IS an audit. Duplex has 0 of
+          // these, SampleCastle has 65, so this is load-bearing, not theoretical.
+          if (P.anchorOnly) { seedAnchors++; continue; }
+          const fid = op.outputGuid != null && _fidByGuid[op.outputGuid] != null ? _fidByGuid[op.outputGuid] : op.id;
+          const mesh = _meshByFid.get(fid);
+          if (!mesh) { seedNoMesh++; continue; }   // NO SILENT BOX — counted and named in §IFC-SEED below
+          const fs = triFaceSet(mesh);
+          if (!fs) { seedNoMesh++; continue; }
+          const cls = P.ifc_class || 'IfcBuildingElementProxy';
+          const ent = _CLASS_MAP[cls] || 'IFCBUILDINGELEMENTPROXY';
+          if (!_CLASS_MAP[cls]) seedProxy++;
+          seedByClass[cls] = (seedByClass[cls] || 0) + 1;
+          const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('Tessellation'), [fs]);
+          productFromRep(rep, T[ent], (P.ifc_class || 'Element') + ' ' + op.id, gn++);
+          seeded++;
+          continue;
+        }
         if (op.op_type === 'GEOM_EXTRUDE_POLY') {
           const pts = op.parameters.profile.points, depth = op.parameters.depth;
           if (!pts) continue;   // HONEST SCOPE: circle profile (profile.circle) → IfcCircleProfileDef export is a scoped follow-up; arc/sector profile (profile.arc) IFC export likewise a follow-up (compound arc+line profile); skip, don't crash the export
@@ -202,7 +286,12 @@
       const bytes = api.SaveModel(mID);
       api.CloseModel(mID);
       console.log(TAG + ' build walls=' + walls + ' openings=' + openings + ' rels=' + rels + ' arrays=' + arrays + ' arrayMembers=' + arrayMembers + ' bytes=' + bytes.length);
-      return { bytes, walls, openings, rels, arrays, arrayMembers, firstWall, firstArray };
+      // §IFC-SEED — the seeded half, with its refusals NAMED. seedNoMesh > 0 means real elements were
+      // left out rather than exported as a fake box; that is deliberate (§PRIME LESSON) and must stay loud.
+      console.log(TAG + ' §IFC-SEED seeded=' + seeded + ' tris=' + seedTris + ' anchorsExcluded=' + seedAnchors +
+        ' noMeshSkipped=' + seedNoMesh + ' proxyTyped=' + seedProxy + ' byClass=' + JSON.stringify(seedByClass));
+      return { bytes, walls, openings, rels, arrays, arrayMembers, firstWall, firstArray,
+               seeded, seedTris, seedAnchors, seedNoMesh, seedProxy, seedByClass };
     },
 
     // Build + trigger a browser download of the .ifc file.

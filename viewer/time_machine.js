@@ -4328,6 +4328,15 @@
     }
     return _4dTemplate;
   }
+  // §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-GRAIN/§S7-INJECT-WHERE) — the "Generate programme" pill
+  // action needs the SAME template this function fetches, and §S7-INJECT is explicit: "reuse that,
+  // do not load a second copy". The pill can fire before Time Machine has ever been opened (that is
+  // the whole point — the user does not have to find ✎ Author first), so `window._4dTemplate` may
+  // still be unset at that moment; a second fetch()/loadJsonWithOverrides call in a new module would
+  // be exactly the duplicated loader this note forbids. Exposing THIS function (idempotent — its own
+  // `_4dTemplateTried` guard makes a second call a no-op after the first real fetch) is the smallest
+  // possible seam: one loader, two callers, both awaiting the one promise/cache.
+  window.tm4DTemplate = _load4DTemplate;
 
   // §FUTURE-5A A7 (attempted 2026-09-02, queue item B-3, REVERTED same day) — rates.js's
   // `var SHIFT_HOURS = 24` is hand-copied as a literal `24` fallback at 4 separate sites in this

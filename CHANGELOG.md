@@ -4,6 +4,37 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.68.0](https://github.com/red1oon/bim-ootb/compare/v1.67.0...v1.68.0) (2026-09-15)
+
+
+### ✨ Features
+
+* **erp:** bridge ad_modelvalidator AD table into the Fold-Engine plugin system ([#1739](https://github.com/red1oon/bim-ootb/issues/1739)) ([8bd2c6c](https://github.com/red1oon/bim-ootb/commit/8bd2c6cc3f19b672662c9acf1dcb88dd13a279da))
+
+
+### 🐛 Fixes
+
+* **ci:** §SW_AUDIT_QUOTE — strip comments before pairing quotes in the precache audit ([#1737](https://github.com/red1oon/bim-ootb/issues/1737)) ([3e8c6be](https://github.com/red1oon/bim-ootb/commit/3e8c6be2b23db92a0a375ac3a0866d63c9c3294c))
+* **modeller:** W-ARC-3AXIS closes row 28 + §MULTIRUN fixes the silently-single-run harness (row 24) ([#1738](https://github.com/red1oon/bim-ootb/issues/1738)) ([afa718e](https://github.com/red1oon/bim-ootb/commit/afa718e1c25da4374235d3e89d01011e574c94d0))
+
+## [1.67.0](https://github.com/red1oon/bim-ootb/compare/v1.66.0...v1.67.0) (2026-09-13)
+
+
+### ✨ Features
+
+* **4d:** §S7 legs 2-4 — the construction window on the element (panel + hover + pill) ([#1733](https://github.com/red1oon/bim-ootb/issues/1733)) ([5a494d2](https://github.com/red1oon/bim-ootb/commit/5a494d2f3eea525ec30a1d06e9a99ca126d5f7ca))
+* **4d:** §S7 windowForGuid — read an element's persisted construction window ([#1732](https://github.com/red1oon/bim-ootb/issues/1732)) ([833f8f2](https://github.com/red1oon/bim-ootb/commit/833f8f25eecf968cee09534a6d72dc09120eec53))
+
+
+### 🐛 Fixes
+
+* **4d:** re-derive a persisted schedule that no longer agrees with its own DB (§KERNEL_OPS_SCHED_AGREE) ([#1727](https://github.com/red1oon/bim-ootb/issues/1727)) ([e129bc2](https://github.com/red1oon/bim-ootb/commit/e129bc28caade90e97dcd4bf919c11f402863544))
+* **bake:** refuse a buildup film with no timeline, and report schedule coherence (§88.10e/§88.12) ([#1725](https://github.com/red1oon/bim-ootb/issues/1725)) ([c685aab](https://github.com/red1oon/bim-ootb/commit/c685aab7922fab76419eaf2fdb24967552b4b8ec))
+* **bake:** take the schedule audit back out of the bake, ship it as a witness ([#1726](https://github.com/red1oon/bim-ootb/issues/1726)) ([d993bc9](https://github.com/red1oon/bim-ootb/commit/d993bc94252a0c4f46e15e7c744f2fa0f3f99b6b))
+* **report:** §SUFFICIENCY_READS_THE_LIST — support_classes_present kept its own copy of the support classes (T12.6) ([#1728](https://github.com/red1oon/bim-ootb/issues/1728)) ([b7822d8](https://github.com/red1oon/bim-ootb/commit/b7822d8579af235b669894bf97ac1e3d38fadfc2))
+* **scripts:** §SQLJS_MISSING — the Node entry points required a sibling checkout under one developer's $HOME ([#1730](https://github.com/red1oon/bim-ootb/issues/1730)) ([fc7e4ac](https://github.com/red1oon/bim-ootb/commit/fc7e4ac61ec8ac4540459cd3e9ae210883f4a344))
+* **sw:** bump CACHE_VERSION v1170 -&gt; v1174 for T12.6 ([#1729](https://github.com/red1oon/bim-ootb/issues/1729)) ([90cd24e](https://github.com/red1oon/bim-ootb/commit/90cd24e4d0e50c64fd45ab064888c2d00ee54b6c))
+
 ## [1.66.0](https://github.com/red1oon/bim-ootb/compare/v1.65.0...v1.66.0) (2026-09-12)
 
 

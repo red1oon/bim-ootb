@@ -119,14 +119,31 @@ console.log('§TPL_ZERO_MINUTE n=' + zero.length + '/' + rows.filter(isSchedulab
 
 /**
  * The mirror must be byte-equal to the executed table on every FUNCTIONAL key. The JSON additionally
- * carries a `reason` string per override (documentation the JS literal omits) — that difference is
- * intentional and is excluded, so this invariant fails on real drift and not on prose.
+ * carries PROSE-ONLY keys the JS literal omits by design — that difference is intentional and is
+ * excluded, so this invariant fails on real drift and not on documentation.
+ *
+ * ⚠ WHICH KEYS ARE PROSE, AND WHY THE RULE IS BY NAME AND NOT BY LEADING UNDERSCORE. This gate was
+ * RED from 2026-09-02 to 2026-09-13 on prose alone, which is the exact failure its own canon()
+ * comment below warns about ("a gate that fires on it teaches people to ignore it"). Six keys had
+ * been added to the JSON and correctly NOT to rates.js:
+ *   LABOR_RATES._productivity_basis_secs_why / ._zero_minute_floor_secs_why /
+ *   ._default_max_crews_author_why           (#1616, 2026-09-02)
+ *   NAME_OVERRIDES[foundation_wall_substructure | stair_member_architecture |
+ *   finish_floor_finishes]._why              (#1551, 2026-09-02)
+ * and `strip` only ever deleted `reason`, the one prose key that existed when this was written.
+ * MEASURED at the time of this fix: with the six prose keys excluded, all four functional keys are
+ * byte-identical — the 11 days of red were zero value drift.
+ *
+ * A blanket "skip keys starting with _" would GUT the gate: LABOR_RATES._productivity_basis_secs,
+ * ._zero_minute_floor_secs and ._default_max_crews_author are FUNCTIONAL (schedule_author.js
+ * _installSecs/instantiateTemplate read all three) and must stay compared. So the rule is the naming
+ * convention the repo actually uses for prose: `reason`, `_why`, and any `<key>_why`.
  * @returns {boolean}
  */
 function mirrorMatchesExecuted() {
-  const strip = o => {
-    const c = Object.assign({}, o); delete c.reason; return c;
-  };
+  // Prose-only keys, at ANY depth — documentation the JSON carries and the JS literal deliberately
+  // does not. Anything else, underscore-prefixed or not, is compared.
+  const isProse = k => k === 'reason' || k === '_why' || /_why$/.test(k);
   // Canonical (key-sorted) serialisation, NOT plain JSON.stringify. A first cut used stringify
   // directly and reported drift the moment `default_productivity` was added before `productivity` in
   // one file and after it in the other — the two tables were identical in every value. Key ORDER in a
@@ -134,14 +151,14 @@ function mirrorMatchesExecuted() {
   const canon = v => {
     if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
     if (v && typeof v === 'object')
-      return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+      return '{' + Object.keys(v).sort().filter(k => !isProse(k))
+        .map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
     return JSON.stringify(v);
   };
   if (canon(T.rules) !== canon(M.SEQUENCE_RULES)) return false;
   if (canon(T.labor) !== canon(M.LABOR_RATES)) return false;
   if (canon(T.dflt) !== canon(M.SEQUENCE_DEFAULT)) return false;
-  const a = (T.overrides || []).map(strip), b = (M.NAME_OVERRIDES || []).map(strip);
-  return canon(a) === canon(b);
+  return canon(T.overrides || []) === canon(M.NAME_OVERRIDES || []);
 }
 
 Witness('sequence_template_lock')

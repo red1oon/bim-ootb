@@ -1228,7 +1228,15 @@
       var RG = (typeof window !== 'undefined') && window.RoomGraph;
       if (!RG || !A.dbQuery) return null;
       if (_pathGraphCache && _pathGraphBld === A.activeBuilding) return _pathGraphCache;
-      var g = RG.buildGraph(A.dbQuery, { log: function(m) { console.log('[RP-PATH] ' + m); } });
+      // §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3): resolve real door positions when possible —
+      // graceful null (module not loaded, or A.db has no resolvable geometry) = today's coarse
+      // center_x/y behaviour, unchanged. See common/door_real_position.js for the fallback contract.
+      var doorRealXY = null;
+      if (window.DoorRealPosition && A.db) {
+        try { doorRealXY = window.DoorRealPosition.resolveDoorRealXY(A.db, A.libDb || A.db); }
+        catch (e) { console.warn('[RP-PATH] §DOOR_REAL_AABB_ERR ' + (e && e.message)); doorRealXY = null; }
+      }
+      var g = RG.buildGraph(A.dbQuery, { log: function(m) { console.log('[RP-PATH] ' + m); }, doorRealXY: doorRealXY });
       _pathGraphCache = g; _pathGraphBld = A.activeBuilding;
       return g;
     }
@@ -1784,8 +1792,10 @@
     var _surfaceExistingOrder = _erpPush ? _erpPush.surfaceExistingOrder : function () {};
     var _surfaceConstructionLink = _erpPush ? _erpPush.surfaceConstructionLink : function () {};
     var _showClassCost = _erpPush ? _erpPush.showClassCost : function () {};
+    var _show4DWindow = _erpPush ? _erpPush.show4DWindow : function () {};   // S7 §S7-DO item 2, sibling of _showClassCost
     var _pushToErp = _erpPush ? _erpPush.pushToErp : function () { if (A.status) A.status.textContent = 'ERP push module not loaded'; };
     A._showClassCost = _showClassCost;   // exposed for applyFindScope + witnesses
+    A._show4DWindow = _show4DWindow;     // exposed for witnesses (S7)
 
     // solidOpacity (optional): for the kept-solid CONTEXT build (color==null), render it at this
     // opacity instead of fully opaque. Room lens passes 0.3 so the selected room shows THROUGH its
@@ -4863,6 +4873,9 @@
         // No twin (un-priced building) → _showClassCost hides the cost box gracefully. (TM_4D5D_VARIANCE_LANE)
         // Pass the guid so "⏱ View at this moment" freezes TM on THIS element (§360-IDENTITY), not just its phase.
         if (rows[0][0]) _showClassCost(rows[0][0], 1, guid);
+        // S7 §S7-DO item 2 — same pick, the persisted 4D window (task grain, sibling #info-4d block).
+        // guid-only (no class needed): windowForGuid reads task_elements straight off the guid.
+        _show4DWindow(guid);
       } catch(e) {
         console.log('[S275] §FIND_INFO_ERR ' + e.message);
       }

@@ -314,22 +314,65 @@
     {
       check: 'support_classes_present',
       rules: ['column_continuity', 'floating_member', 'span_depth_cantilever'],
-      run: function (dbQuery) {
-        // The evaluator's own lists: SUPPORT_CLASSES (beams) = IfcColumn, IfcWallStandardCase,
-        // IfcFooting, IfcMember; COL_SUPPORT_CLASSES (columns) drops IfcMember. IfcWall and
-        // IfcSlab are in NEITHER — a building that models its walls as IfcWall has no wall
-        // support at all as far as these two rules are concerned.
-        var rows = dbQuery("SELECT ifc_class, COUNT(*) FROM elements_meta " +
-          "WHERE ifc_class IN ('IfcColumn','IfcWallStandardCase','IfcFooting','IfcMember','IfcWall','IfcSlab') GROUP BY ifc_class");
+      // ══ T12.6 — THIS PROBE READS THE EVALUATOR'S LISTS. IT USED TO CARRY A COPY. ═══════════
+      // The copy said "SUPPORT_CLASSES (beams) = IfcColumn, IfcWallStandardCase, IfcFooting,
+      // IfcMember … IfcWall and IfcSlab are in NEITHER", and built its own SQL IN-list from that.
+      // §SUPPORT_CLASS_PARITY (T9.1) added IfcWall to both lists and §SLAB_BEARING (T9.3) added
+      // IfcSlab; IfcPlate and IfcBeam went in too. The probe never noticed. It went on reporting
+      // a gap that had been closed for two PRs, and flagged Terminal_silent `degraded` on the
+      // strength of 333 IfcWall + 705 IfcSlab that the rules had been counting all along.
+      //
+      // So it states nothing it has not been handed. `opts.supportClasses` /
+      // `opts.colSupportClasses` come from StructuralSanity's own exports; WITHOUT them the
+      // verdict is `unavailable`, never a guessed copy and never an `ok` — the same rule this
+      // file applies to a missing table. R23 fails if the two ever disagree again.
+      run: function (dbQuery, opts) {
+        var beamSup = (opts || {}).supportClasses, colSup = (opts || {}).colSupportClasses;
+        if (!beamSup || !colSup || !beamSup.length || !colSup.length) {
+          return {
+            measured: null,
+            verdict: _SUFF_UNAVAILABLE,
+            consequence: 'the evaluator\'s support-class lists were not supplied to this probe, so it cannot say what counts as support in this build. Pass StructuralSanity.SUPPORT_CLASSES and .COL_SUPPORT_CLASSES; a copy typed in here is what went stale before'
+          };
+        }
+        var union = beamSup.slice();
+        colSup.forEach(function (c) { if (union.indexOf(c) === -1) union.push(c); });
+        var q = "'" + union.join("','") + "'";
+        var rows = dbQuery("SELECT ifc_class, COUNT(*) FROM elements_meta WHERE ifc_class IN (" + q + ") GROUP BY ifc_class");
         var m = {};
         (rows || []).forEach(function (r) { m[r[0]] = +r[1]; });
-        var unlisted = (m.IfcWall || 0) + (m.IfcSlab || 0);
-        var listed = (m.IfcColumn || 0) + (m.IfcWallStandardCase || 0) + (m.IfcFooting || 0) + (m.IfcMember || 0);
+        var present = union.filter(function (c) { return (m[c] || 0) > 0; });
+        var absent = union.filter(function (c) { return !(m[c] || 0); });
+        var total = present.reduce(function (a, c) { return a + m[c]; }, 0);
+        var beams = _q1(dbQuery, "SELECT COUNT(*) FROM elements_meta WHERE ifc_class = 'IfcBeam'");
+        var cols = _q1(dbQuery, "SELECT COUNT(*) FROM elements_meta WHERE ifc_class = 'IfcColumn'");
+        // The SUBJECTS are IfcBeam and IfcColumn, and both are themselves in the union — a beam
+        // frames into a beam, a column lands on a transfer beam. So `total` alone can never
+        // reach 0 in a model that has anything to check, which would make the `absent` branch
+        // dead. What actually matters is whether there is bearing geometry BESIDES the members
+        // being checked: no walls, no slabs, no footings, no plates, no braces means the frame
+        // is holding itself up as far as these rules can see. The two subject class names are
+        // stable (they are this probe's whole subject); the SUPPORT list is what moves, and that
+        // is the part now read rather than copied.
+        var nonSubject = present.filter(function (c) { return c !== 'IfcBeam' && c !== 'IfcColumn'; })
+                                .reduce(function (a, c) { return a + m[c]; }, 0);
+        // Derived, not named: a class one list has and the other lacks is a real one-sided blind
+        // spot, and saying which way it runs is the whole value. Today that is IfcPlate (holds a
+        // beam end, cannot hold a column) and IfcBeam (holds a column, and holds a beam only
+        // through floating_member's separate §FRAMING_TOP_OF_STEEL path).
+        var beamOnly = beamSup.filter(function (c) { return colSup.indexOf(c) === -1 && (m[c] || 0) > 0; });
+        var colOnly = colSup.filter(function (c) { return beamSup.indexOf(c) === -1 && (m[c] || 0) > 0; });
+        var oneSided = beamOnly.map(function (c) { return m[c] + ' ' + c + ' can hold a beam end but not a column'; })
+          .concat(colOnly.map(function (c) { return m[c] + ' ' + c + ' can hold a column but reaches a beam only through the framing test'; }));
         return {
-          measured: m,
-          verdict: unlisted > listed ? 'degraded' : 'ok',
-          consequence: 'IfcWall and IfcSlab are in neither support list; ' + unlisted + ' such elements cannot support a beam end or a column here, while ' +
-            listed + ' elements can. A beam bearing on an IfcWall reads as having one support, which routes it to span_depth_cantilever (ratio 12/16) instead of its material rule (steel 24/30)'
+          measured: { byClass: m, supportElements: total, bearingBesidesSubjects: nonSubject,
+                       listedButAbsent: absent, IfcBeam: beams, IfcColumn: cols },
+          verdict: (beams + cols) === 0 ? 'ok' : (nonSubject === 0 ? 'absent' : 'ok'),
+          consequence: nonSubject === 0
+            ? 'nothing outside IfcBeam/IfcColumn exists here in any support class (' + union.join('/') + '): no wall, slab, footing, plate or brace for this model\'s ' + beams + ' beams and ' + cols + ' columns to bear on. Their findings describe the extraction, not the building'
+            : total + ' elements across ' + present.length + ' of the ' + union.length + ' support classes can hold something up here' +
+              (absent.length ? '; absent entirely: ' + absent.join(', ') : '') +
+              (oneSided.length ? '. One-sided: ' + oneSided.join('; ') : '')
         };
       }
     },
@@ -465,7 +508,9 @@
    * A probe whose table or column is missing reports 'unavailable' WITH the error — never a 0,
    * which a reader would mistake for a measured absence (T8.11).
    * @param {function} dbQuery - (sql, params?) -> array of row arrays
-   * @param {object} [opts] - { log: fn(msg) }
+   * @param {object} [opts] - { log: fn(msg) } plus, for support_classes_present,
+   *   { supportClasses, colSupportClasses } — pass StructuralSanity's own exports. Omitting them
+   *   makes that one probe report 'unavailable'; it will not fall back to a typed copy (T12.6).
    * @returns {Array<{check,rules,measured,verdict,consequence}>}
    */
   function runSufficiencyProbes(dbQuery, opts) {
@@ -474,7 +519,7 @@
     return SUFFICIENCY_PROBES.map(function (p) {
       var out;
       try {
-        out = p.run(dbQuery);
+        out = p.run(dbQuery, opts);
       } catch (e) {
         out = { measured: null, verdict: _SUFF_UNAVAILABLE, consequence: 'probe could not run: ' + e.message };
       }

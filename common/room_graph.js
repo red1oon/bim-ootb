@@ -72,6 +72,13 @@
  * `A.dbQuery` convention `common/room_habitability.js` already assumes) — this module is DB/file
  * I/O-free otherwise, so it runs identically in the browser (viewer/modeller) and in a node
  * witness script against sql.js/better-sqlite3.
+ *
+ * §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18) — OPTIONAL `opts.doorRealXY`:
+ * a pre-resolved `{ doorGuid: [x,y] }` map (built by the caller via common/door_real_position.js,
+ * which needs a live db/geoDb handle this file deliberately never touches — see contract above).
+ * When present, overrides a door's coarse center_x/y with its real world-AABB centre for E1/E2/E4/E9
+ * matching AND the doorwp waypoint the drawn polyline hugs. Omitted, or no entry for a given door →
+ * IDENTICAL behaviour to before this option existed.
  */
 (function () {
   'use strict';
@@ -490,9 +497,24 @@
       return best;
     }
 
+    // §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18): door E1/E2/E4/E9 matching below has
+    // always read the coarse element_transforms.center_x/y — the IFC local-placement ANCHOR, not the
+    // door's real volumetric AABB centre (the same convention bim-ootb #1744 measured+fixed for
+    // modeller/cross_edges.js's §REAL-AABB). Measured impact (§2/§2b of that doc): median offset 20mm
+    // (SampleCastle), and on Duplex 8/14 doors' matched edges actually changed, concentrated in the
+    // §AMBIGUOUS-RESIDUAL-RESCUE (E9) layer. `opts.doorRealXY` is an OPTIONAL, PRE-RESOLVED
+    // { doorGuid: [x,y] } map the caller builds via common/door_real_position.js (which needs a live
+    // db/geoDb handle — kept OUT of this file on purpose, see file header: this module stays DB/file
+    // I/O-free, dual-mode node+browser). Additive/gracefully-degrading: no map, or no entry for a
+    // given door, leaves dx/dy IDENTICAL to today's coarse read — never worse than current behaviour.
+    var doorRealResolved = 0;
     doorRows.forEach(function (d) {
       var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5], bx = d[6] || 0, by = d[7] || 0, bz = d[8];
       if (!isRoomDoor(name)) { nonRoomDoors++; return; }
+      if (opts.doorRealXY && opts.doorRealXY[guid]) {
+        dx = opts.doorRealXY[guid][0]; dy = opts.doorRealXY[guid][1];
+        doorRealResolved++;
+      }
       if (bz != null && bz > 0 && bz < SUB_HUMAN_DOOR_HEIGHT) {
         subHumanDoors++;
         log('§ROOM_GRAPH_SUB_HUMAN_DOOR "' + name + '" height=' + bz.toFixed(2) + 'm storey=' + storey + ' (< ' + SUB_HUMAN_DOOR_HEIGHT + 'm, not human-passable)');
@@ -585,6 +607,8 @@
         }
       }
     });
+    if (opts.doorRealXY) log('§DOOR_REAL_AABB resolved=' + doorRealResolved + '/' + doorRows.length +
+      ' (real world-AABB centre used in place of the coarse center_x/y for that many doors)');
 
     // ── E3: stair/ramp flights bridge two storeys' circulation nodes ──
     // §STAIR-GROUPS: extracted to getStairGroups() below (2026-07-14, §HALLWAY-BACKBONE) so a
@@ -1055,7 +1079,8 @@
         deadend: deadend, orphan: orphan, orphanRescued: orphanRescued, ambiguous: ambiguous,
         ambiguousResidualRescued: ambiguousResidualRescued,
         circ: circCount, stairs: e3, stairsSkipped: e3Skipped, exits: exits, e2: e2,
-        roomBridges: roomBridges, sealed: bridgeRejected }
+        roomBridges: roomBridges, sealed: bridgeRejected,
+        doorRealResolved: doorRealResolved } // §REAL-AABB: doors matched using a real (not coarse) position
     };
   }
 
@@ -1913,6 +1938,82 @@
     return result;
   }
 
+  // §PROTECTED-STAIR-TERMINUS (EGRESS_HARDENING.md item 3, 2026-09-18) — OPT-IN alternative to
+  // escapeRoute() above. Code intent (IBC Table 1017.2): travel distance is measured to the
+  // NEAREST EXIT, and a protected exit-stair enclosure counts as "reached" the moment you enter
+  // it — not the physical exterior door at grade the stair eventually leads to. escapeRoute()
+  // above measures the LATTER (walks the full E3 chain down through every intervening floor to a
+  // real EXIT:: node) because that is the only terminus this graph has ever had — egress_sanity.js's
+  // own header (THRESHOLD CITATIONS block) already discloses this as a conservative over-estimate
+  // for upper-storey rooms.
+  //
+  // WHAT THIS CANNOT CLAIM: this pipeline extracts no FireRating/enclosure property (checked
+  // directly, grep across common/*.js and DAGCompiler/python/extractIFCtoDB.py — nothing), so
+  // there is no way to confirm a given stairwell is actually a fire-rated PROTECTED enclosure vs.
+  // an open feature stair. This function does NOT claim that. What it DOES measure, as a real
+  // graph fact: whether the room's own storey's `CIRC::<storey>` node — the ONE per-storey node
+  // every E3 stair edge actually connects (circNode() above; a `stairwp` node is metadata for
+  // polyline rendering ONLY, §API-COMPAT-WAYPOINT above — never wired into `_buildAdjacency`'s own
+  // traversable edges, confirmed directly: escapeRoute() called FROM a stairwp guid returns
+  // NO_GRAPH_NODE on real Hospital data, so targeting stairwp was tried first and found to not
+  // work against this graph's real structure) — is confirmed, by actual E3-chain connectivity, to
+  // lead all the way down to a real measured EXIT:: node (§ROOM_GRAPH_EXITS's geometric
+  // raster+footprint test). That is a disclosed PROXY for "protected exit stair" — "this floor's
+  // circulation is confirmed to reach a real building exit via SOME stair" — coarser than the
+  // stair's own literal door position (a floor-wide blob, not a point), and not a fire-rating
+  // verification, but still strictly more accurate than escapeRoute()'s "walk the entire chain to
+  // grade" for any floor where CIRC::<storey> sits closer to the room than the real ground exit
+  // does. Same disclosure discipline as STAIR_SPEED_MPS/EXIT_SAMPLE_CLEARANCE_M above (uncited
+  // constants, labelled as such).
+  //
+  // Zero cost to every existing caller: this is a NEW function, escapeRoute()/buildGraph()'s own
+  // logic is untouched. graph._distToExitCache memoizes the one multi-source Dijkstra this needs
+  // per graph instance (not per room); the per-room lookup below reuses the ALREADY-EXPORTED
+  // shortestPath() rather than a second hand-rolled Dijkstra. See cost measurement in
+  // witness_egress_hardening.js.
+  function _distToNearestExit(graph) {
+    if (graph._distToExitCache) return graph._distToExitCache;
+    var adj = _buildAdjacency(graph);
+    var dist = {}, visited = {};
+    Object.keys(adj).forEach(function (g) { dist[g] = Infinity; });
+    var pq = [];
+    Object.keys(graph.nodesByGuid).forEach(function (g) {
+      if (graph.nodesByGuid[g].kind === 'exit') { dist[g] = 0; pq.push(g); }
+    });
+    while (pq.length) {
+      pq.sort(function (a, b) { return dist[a] - dist[b]; });
+      var u = pq.shift();
+      if (visited[u]) continue;
+      visited[u] = true;
+      (adj[u] || []).forEach(function (edge) {
+        var nd = dist[u] + edge.w;
+        if (nd < dist[edge.to]) { dist[edge.to] = nd; pq.push(edge.to); }
+      });
+    }
+    graph._distToExitCache = dist;
+    return dist;
+  }
+
+  function escapeRouteViaProtectedStair(graph, fromGuid, opts) {
+    opts = opts || {};
+    var log = opts.log || function () {};
+    var base = escapeRoute(graph, fromGuid, { log: function () {} }); // untouched, existing behaviour
+    var fromNode = graph.nodesByGuid[fromGuid];
+    if (!fromNode) return base;
+    var circGuid = 'CIRC::' + fromNode.storey;
+    if (!graph.nodesByGuid[circGuid]) return base; // this storey has no circulation node at all
+    var distToExit = _distToNearestExit(graph);
+    if (!(distToExit[circGuid] != null && distToExit[circGuid] < Infinity)) return base; // not confirmed exit-connected
+    if (circGuid === fromGuid) return base; // already the circ node itself — nothing to shorten
+    var sp = shortestPath(graph, fromGuid, circGuid);
+    if (sp && sp.distance != null && (!base || sp.distance < base.distance)) {
+      log('§ESCAPE_ROUTE_PROTECTED_STAIR from=' + fromGuid + ' circ=' + circGuid +
+        ' distance=' + sp.distance.toFixed(1) + (base ? ' (vs exterior-door distance=' + base.distance.toFixed(1) + ')' : ' (no exterior-door route existed)'));
+      return { distance: sp.distance, exitGuid: circGuid, viaProtectedStair: true, path: sp.path, doors: [] };
+    }
+    return base; // no shorter protected-stair route found — falls back unchanged, never worse than escapeRoute()
+  }
+
   // FLY_TOUR_DLOD_SCALE.md §16 — precomputed room-to-room Potentially-Visible-Set (portal
   // culling), built ONCE per graph build, never per frame (§15 already proved per-frame CPU
   // raycasting is 4 orders of magnitude too slow; §7 already flagged GPU occlusion-query
@@ -1973,7 +2074,8 @@
 
   var API = {
     buildGraph: buildGraph, degree: degree, components: components, fullConnectivity: fullConnectivity,
-    shortestPath: shortestPath, escapeRoute: escapeRoute, isRoomDoor: isRoomDoor,
+    shortestPath: shortestPath, escapeRoute: escapeRoute,
+    escapeRouteViaProtectedStair: escapeRouteViaProtectedStair, isRoomDoor: isRoomDoor,
     stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK, getStairGroups: getStairGroups,
     // FLY_TOUR_CORRIDOR_GRAPH.md §S4 — read-only witness helper: count of walkability-illegal
     // sample points on a same-storey chord (the same test _legalizePath uses internally).

@@ -4114,7 +4114,20 @@ function setupCpeLoadPath(A) {
   A.loadPathCompositeOntoCanvas = function (ctx, w, h, filmSec) {
     try {
       if (!_lp || !_lp.ok || !_lp.showLadder || !A.camera || typeof THREE === 'undefined') return;
-      var k = Math.max(0.6, Math.min(1.6, h / 900));
+      // §129.36 (2026-09-19, red1: "the label sizes are constant such that when hi res the freeze
+      // text does not look diminished ... that goes for the rest") — the 1.6 CEILING was the bug.
+      // `k` is the panel/ladder's own size scale (13px at the h=900 it was drawn against). Clamped
+      // to 1.6 it stopped growing above h=1440, so the text held a SHRINKING share of the frame as
+      // resolution rose: 1.48% of frame height at 1080, 0.97% at 2160, against the 2.6% the day
+      // counter and the info card hold at EVERY resolution (`Math.round(h * 0.026)`, no ceiling).
+      // Now a straight proportion, the convention every other bake overlay in this viewer already
+      // follows (day counter 0.026, sun readout 0.020, sun clock 0.014 — all direct `h` fractions,
+      // none capped). h=900 and h=1080 are unchanged to the pixel, so the look red1 has already
+      // signed off does not move; only hi-res stops shrinking and 4K gets 31px instead of 21px.
+      // The 0.6 FLOOR is gone with it — a floor is the same defect pointing the other way.
+      // (The per-font `Math.max(9, ...)` legibility floors below still hold under ~623px height,
+      // which is test-clip territory only; every delivered resolution is above it.)
+      var k = h / 900;
       // §129.8 item 4b — the ARM-frame HUD snapshot, never the live (now hold-suppressed) registry
       // — same source of truth the underHud test uses.
       var avoidRects = _lp.armHudRects || A._hudLayoutRects || [];

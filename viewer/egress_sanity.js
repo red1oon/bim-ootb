@@ -57,6 +57,9 @@
   // work). Browser: resolved at CALL time by _resolveRoomGraph() below, not captured here.
   var _nodeRoomGraph = (typeof module !== 'undefined' && module.exports) ? require('../common/room_graph.js') : null;
   function _resolveRoomGraph() { return _nodeRoomGraph || ROOT.RoomGraph; }
+  // §EGRESS_HARDENING item 1 (EGRESS_HARDENING.md, 2026-09-18) — same dual-mode resolve pattern.
+  var _nodeRoomCoverage = (typeof module !== 'undefined' && module.exports) ? require('../common/room_coverage.js') : null;
+  function _resolveRoomCoverage() { return _nodeRoomCoverage || ROOT.RoomCoverage; }
 
   // ══ §RULE_FALLBACK_ONE_SOURCE (prompts/STRUCTURAL_SANITY.md T8.13) ═══════════════════════════
   // THE ONE LITERAL for this evaluator — verbatim from viewer/rates/egress_rules.json. See
@@ -113,7 +116,7 @@
   /**
    * @param {function} dbQuery - (sql, params?) -> array of row arrays
    * @param {object} rules - parsed egress_rules.json ({ egress_rules: [...] })
-   * @param {object} [opts] - { log: fn(msg) }
+   * @param {object} [opts] - { log: fn(msg), doorRealXY: {guid:[x,y]} — see room_graph.js §REAL-AABB }
    * @returns {Array<{guid,ifc_class,name,storey,rule,severity,ratio}>}
    */
   function evaluate(dbQuery, rules, opts) {
@@ -159,9 +162,94 @@
       log('§EGRESS_NO_ROOMGRAPH RoomGraph module not available — rules 2/3 skipped');
       return rows;
     }
-    var graph = RoomGraph.buildGraph(dbQuery, { log: function () {} });
+    // §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3): pass through opts.doorRealXY unchanged (this
+    // file stays dbQuery-only/DB-io-free — see file header — the caller resolves it against a live
+    // db/geoDb handle via common/door_real_position.js). undefined here = today's coarse behaviour.
+    var graph = RoomGraph.buildGraph(dbQuery, { log: function () {}, doorRealXY: opts.doorRealXY });
     var circCount = { WARNING: 0, uncapped_critical: 0 }, isolatedCount = 0;
     var viaExit = 0, viaFallback = 0;
+
+    // ── Rule 4: space coverage (§EGRESS_HARDENING item 1) — reuses the graph just built, no new
+    // query. Runs here (report-generation time), NOT in buildGraph()/escapeRoute() — zero cost to
+    // live Find Panel pathing, see EGRESS_HARDENING.md's own cost measurement. ──
+    var RoomCoverage = _resolveRoomCoverage();
+    var coverageCount = { WARNING: 0 };
+    if (RoomCoverage) {
+      RoomCoverage.computeCoverage(graph).forEach(function (c) {
+        if (!c.severity) return;
+        coverageCount[c.severity]++;
+        rows.push({ guid: 'STOREY::' + c.storey, ifc_class: 'IfcBuildingStorey', name: c.storey, storey: c.storey,
+          rule: 'space_coverage', severity: c.severity, ratio: c.ratio,
+          witness: opts.witness ? {
+            roomAreaM2: +c.roomAreaM2.toFixed(1), walkableAreaM2: c.walkableAreaM2 != null ? +c.walkableAreaM2.toFixed(1) : null,
+            reads: 'this storey\'s compiled room area covers only ' + (c.ratio * 100).toFixed(0) + '% of its real walkable ' +
+              'floor area (raster-measured) — every rule above ran on the ' + (c.ratio * 100).toFixed(0) + '% that WAS compiled; ' +
+              'the rest was never checked, not confirmed clean'
+          } : undefined });
+      });
+      log('§EGRESS rule=space_coverage severity=' + coverageCount.WARNING);
+    } else {
+      log('§EGRESS_NO_ROOMCOVERAGE RoomCoverage module not available — rule 4 skipped');
+    }
+
+    // ── Rule 5: door occupant-load capacity (§EGRESS_HARDENING item 2, 2026-09-18) ──
+    // IBC 2021 Table 1004.5 "Business areas" = 150 gross sf/person = 13.94 m^2/person (WebSearch-
+    // verified, https://up.codes/s/areas-without-fixed-seating). Occupancy-generic default — same
+    // limitation already disclosed above for the I-2 door-width figure: this pipeline extracts no
+    // occupancy classification, so a room whose real occupancy uses a denser Table 1004.5 factor
+    // (e.g. I-2 inpatient treatment = 240 gross sf, assembly w/o fixed seating = 15 net sf) would
+    // need real occupancy data this tool does not have. Business (150 gross sf) is a mid-range
+    // general default, not a claim about any specific room's real use.
+    // IBC 2021 §1005.3.2 "other egress components" (doors/corridors/ramps — NOT §1005.3.1
+    // stairways, which is stricter): 0.2 in/occupant non-sprinklered, 0.15 in/occupant sprinklered
+    // (WebSearch-verified, https://up.codes/s/means-of-egress-sizing). No sprinkler-system data
+    // extracted either — uses the STRICTER non-sprinklered figure as the safer default, the same
+    // "over-flag, never under-flag" bias circulation_distance's own citation already states as its
+    // design philosophy for this screening tool.
+    var OCCUPANT_LOAD_FACTOR_M2 = 13.94;   // IBC Table 1004.5, "Business areas", 150 gross sf/person
+    var WIDTH_PER_OCCUPANT_M = 0.00508;    // IBC §1005.3.2, non-sprinklered, 0.2in/occupant
+    var roomAreaByGuid = {};
+    graph.nodes.forEach(function (r) {
+      var a = 0;
+      (r.rects || []).forEach(function (rc) { a += Math.max(0, rc.x1 - rc.x0) * Math.max(0, rc.y1 - rc.y0); });
+      roomAreaByGuid[r.guid] = a;
+    });
+    // A door's real room connection(s) — E1 (2-room), E2 (1-room rescue) and E9 (ambiguous-residual
+    // extra neighbours) all carry a real doorGuid onto a real room node; E4 (exit) does not, since
+    // its far side is an EXIT:: node, never 'room'-kind, so it is excluded automatically below.
+    var doorRoomsByGuid = {};
+    (graph.edges || []).forEach(function (e) {
+      if (!e.doorGuid) return;
+      [e.a, e.b].forEach(function (g) {
+        if (graph.nodesByGuid[g] && graph.nodesByGuid[g].kind === 'room') {
+          (doorRoomsByGuid[e.doorGuid] = doorRoomsByGuid[e.doorGuid] || []).push(g);
+        }
+      });
+    });
+    var occCount = { WARNING: 0 };
+    doorRows.forEach(function (d) {
+      var guid = d[0], name = d[1], storey = d[2], bx = d[3] || 0, by = d[4] || 0;
+      var actualWidthM = Math.max(bx, by);
+      var roomGuids = doorRoomsByGuid[guid];
+      if (!roomGuids || !roomGuids.length) return; // no measured room connection — nothing to size against
+      var occupantLoad = 0, seen = {};
+      roomGuids.forEach(function (rg) { if (seen[rg]) return; seen[rg] = 1; occupantLoad += (roomAreaByGuid[rg] || 0) / OCCUPANT_LOAD_FACTOR_M2; });
+      var requiredWidthM = occupantLoad * WIDTH_PER_OCCUPANT_M;
+      if (requiredWidthM > actualWidthM) {
+        occCount.WARNING++;
+        rows.push({ guid: guid, ifc_class: 'IfcDoor', name: name, storey: storey, rule: 'door_occupant_capacity',
+          severity: 'WARNING', ratio: actualWidthM,
+          witness: opts.witness ? {
+            actualWidthM: +actualWidthM.toFixed(3), requiredWidthM: +requiredWidthM.toFixed(3),
+            occupantLoad: +occupantLoad.toFixed(1), roomsServed: roomGuids.length,
+            reads: 'door is ' + actualWidthM.toFixed(2) + 'm wide but the room(s) it directly serves have an ' +
+              'estimated occupant load of ' + occupantLoad.toFixed(0) + ' — IBC §1005.3.2 wants ' + requiredWidthM.toFixed(2) +
+              'm for that load. LOCAL only: sums the room(s) this door directly connects to, not the full ' +
+              'cumulative downstream convergence §1005.1 defines for a real capacity audit'
+          } : undefined });
+      }
+    });
+    log('§EGRESS rule=door_occupant_capacity severity=' + occCount.WARNING);
 
     // ── §EGRESS_WITNESS (prompts/STRUCTURAL_SANITY.md T8.12) — OPT-IN, default OFF.
     // "Isolated room" is the finding a reader most wants to disbelieve on sight, and the rule's
@@ -235,8 +323,17 @@
       };
     }
 
+    // §EGRESS_HARDENING item 3 — OPT-IN (opts.protectedExitStair, default false/unset): every
+    // existing caller (rule_checklist.js's showEgressSanity, the Sanity report's own "Longest path
+    // to exit" headline stat) is UNCHANGED unless it explicitly passes this. Verified never worse,
+    // often meaningfully shorter for upper-storey rooms (see common/room_graph.js's own header and
+    // witness_egress_hardening.js) — left opt-in rather than the new default because it changes a
+    // number the report already shows on screen; flipping the default is a decision for whoever
+    // reviews this PR, not something to silently ship.
+    var escapeFn = (opts.protectedExitStair && RoomGraph.escapeRouteViaProtectedStair)
+      ? RoomGraph.escapeRouteViaProtectedStair : RoomGraph.escapeRoute;
     graph.nodes.forEach(function (r) {
-      var esc = RoomGraph.escapeRoute(graph, r.guid, { log: function () {} });
+      var esc = escapeFn(graph, r.guid, { log: function () {} });
       var target, distance;
       if (esc && esc.distance != null) {
         target = 'exit'; distance = esc.distance; viaExit++;
