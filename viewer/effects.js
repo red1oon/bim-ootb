@@ -3307,9 +3307,47 @@ async function setupEffects(A, renderer, scene, camera) {
     // the worst angle the film reaches, not just at the angle staging happened to see.
     var _shadowRange = A.sun.shadow.camera.far - A.sun.shadow.camera.near;
     var _texelWorld = (2 * _env) / A.sun.shadow.mapSize.width;
+    // ══ §129.45 (2026-09-19, red1: "all i want is that it is realistic, not cut off at the base of
+    // each column") — THE GRAZING TERM IS WHAT CUT THE SHADOWS OFF AT THE BASE. ══════════════════
+    // A depth bias is a push ALONG THE LIGHT RAY, so on the ground it moves the shadow away from
+    // its caster by worldBias / tan(elevation) — the peter-panning gap. The line below used to be
+    //     _worldBias = max(0.305, _texelWorld / tan(PHOTO_SUN_ELEVATION_END))
+    // i.e. one frozen value, sized so the GROUND would not self-shadow at the lowest angle the film
+    // was ever expected to reach. That is a real problem and the term solved it — but it pays for it
+    // in gap at every OTHER angle, and it is computed from PHOTO_SUN_ELEVATION_END, the SCRIPTED
+    // arc's 6 deg floor. §SUN_ONE retired that arc: with the compass on, the real sun runs
+    // 42.4 -> 1.4 deg (measured, 1969-frame HHS bake, 2026-09-19). MEASURED consequences on HHS
+    // (env 180, map 4096, texelWorld 0.0879 m, so the frozen bias is 0.836 m):
+    //     42.4 deg -> 0.9 m gap     9 deg -> 5.3 m gap     3 deg -> 16 m     1.4 deg -> 34 m
+    // Every column's shadow detached from its own base, by about a metre at the start and by tens
+    // of metres by the end. That is exactly what red1 described, and it gets worse through the film.
+    //
+    // WIDENING THE FRUSTUM WOULD HAVE MADE IT WORSE, which is worth recording because it was the
+    // obvious-looking fix: gap scales with texelWorld = 2*env/mapSize, so a bigger env means a
+    // bigger gap. The far-tip clipping is a separate fault and must not be paid for here.
+    //
+    // THE RIGHT TOOL IS normalBias, WHICH THIS VIEWER HAS NEVER USED. three.js offsets the shadow
+    // lookup along the SURFACE NORMAL rather than along the light ray, which is what acne actually
+    // needs — the ground stops self-shadowing without the shadow sliding away from anything
+    // standing on it. So the grazing term moves to normalBias, and the depth bias drops back to
+    // toggleShadow's own proven 0.305 m world-space value, the number the interactive path has
+    // always worked with (see the measurements above). Gap at 1.4 deg falls from 34 m to 12.5 m
+    // and at 42 deg from 0.9 m to 0.33 m, with the acne duty carried by a term that costs no gap.
+    // `__noNormalBias` restores the old single-bias behaviour for an A/B.
+    var _useNormalBias = !(typeof window !== 'undefined' && window.__noNormalBias);
     var _grazeRad = THREE.MathUtils.degToRad(Math.max(1, PHOTO_SUN_ELEVATION_END));
-    var _worldBias = Math.max(0.305, _texelWorld / Math.tan(_grazeRad));
+    var _worldBias = _useNormalBias ? 0.305 : Math.max(0.305, _texelWorld / Math.tan(_grazeRad));
+    // Sized off the real texel, not a taste constant: 2 texels is the usual working range for
+    // normalBias, and one texel is the distance over which the depth comparison is ambiguous.
+    A.sun.shadow.normalBias = _useNormalBias ? (2 * _texelWorld) : 0;
     A.sun.shadow.bias = -(_worldBias / _shadowRange);
+    console.log('§PHOTO_SHADOW_CONTACT normalBias=' + A.sun.shadow.normalBias.toFixed(3) + 'm' +
+      ' worldBias=' + _worldBias.toFixed(3) + 'm texelWorld=' + _texelWorld.toFixed(4) + 'm' +
+      ' predictedBaseGap[42deg=' + (_worldBias / Math.tan(THREE.MathUtils.degToRad(42))).toFixed(2) +
+      'm 9deg=' + (_worldBias / Math.tan(THREE.MathUtils.degToRad(9))).toFixed(2) +
+      'm 1.4deg=' + (_worldBias / Math.tan(THREE.MathUtils.degToRad(1.4))).toFixed(1) + 'm]' +
+      (_useNormalBias ? '' : ' (__noNormalBias control: old single-bias behaviour)') +
+      ' — §129.45, the gap is what red1 saw as a cut-off at each column base');
     console.log('§PHOTO_SHADOW_BIAS worldBias=' + _worldBias.toFixed(3) + 'm bias=' + A.sun.shadow.bias.toExponential(3) +
       ' range=' + _shadowRange.toFixed(0) + 'm texel=' + _texelWorld.toFixed(3) + 'm grazeElev=' + PHOTO_SUN_ELEVATION_END +
       ' (was -0.0005 = ' + (0.0005 * _shadowRange).toFixed(2) + 'm, which erased every caster under ' +
