@@ -322,7 +322,18 @@ const server = http.createServer((req, res) => {
       process.exit(130);
     }
   }));
-  const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL)\b/;
+  // §CLI_BAKE_OVERLAY_CLAIMS (2026-09-19) — the whitelist below decides what a READER of the bake
+  // log can ever learn, and until today it carried the film's machinery (frames, quality, path,
+  // buildup) and NOT ONE of the overlays those frames are judged on. A full HHS bake with
+  // --measure --load-path --ledger --cost --storey-reveal --sun-compass produced 869 log lines and
+  // zero §SUN_COMPASS, zero §LOADPATH_*, zero §STOREY_* — so "did the compass draw?" could only be
+  // answered by extracting frames from the mp4, which is exactly the check CLAUDE.md's Log Mandate
+  // says the log itself should answer. The sun lane's own hard-won warning applies here too: a
+  // witness calling a draw function proves nothing about whether the BAKE's call site ran, and the
+  // bake's own log was the one place that could have told them apart.
+  // Added below: each overlay's BUILD/hold/witness lines — the once-per-bake ones that say the
+  // feature ran, refused (INCONCLUSIVE, e.g. a DB with no site lat/long) or was held by the freeze.
+  const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL|SUN_COMPASS|SUN_COMPASS_HELD|SUN_PATH|SUN_CLOCK|SUN_ONE|SUN_ONE_ALL_DARK|SUN_DAY|LOADPATH_BUILD|LOADPATH_ARM|LOADPATH_HOLD|LOADPATH_FOCUS|LOADPATH_CARD|LOADPATH_INFOPANEL|LEDGER_TICKER_INIT|HUD_LAYOUT|HUD_LAYOUT_ARM|STOREY_ARCH_WITNESS|STOREY_LABEL_WITNESS|STOREY_CUT_RESTORE_WITNESS|STOREY_ARM_BASELINE|FLYTHRU_DATUM_BUILT)\b/;
   // §CLI_BAKE_LOAD_FATAL (2026-09-05) — a DB that cannot be fetched must abort NOW, not in 15 minutes.
   // MEASURED: a wrong/missing buildings/<name>.db logged `§INIT_ERROR … 404` at 2.7 s, then the load
   // predicate below (which can never become true without a DB) burned its full 900 s timeout and
@@ -869,8 +880,22 @@ const server = http.createServer((req, res) => {
     log(`§CLI_BAKE_FILE MISSING-OR-EMPTY path=${OUT} — the guarded failure mode`);
   }
 
-  // shipped-claim summary (the big-prize § lines, verbatim)
-  for (const k of Object.keys(S.claims)) for (const line of S.claims[k]) log('§CLAIM ' + line.slice(0, 300));
+  // shipped-claim summary (the big-prize § lines, verbatim).
+  // CAPPED per tag (2026-09-19). Some of these fire every frame — the HHS bake of this date printed
+  // §MAXQ_FRAME_BUDGET 822 times, 95% of an 869-line log, which buries every once-per-bake line the
+  // Log Mandate exists to make readable. Nothing is dropped silently: the first CLAIM_CAP and the
+  // LAST line of each tag are kept and the suppressed count is printed, so a per-frame tag still
+  // shows its first frames, its final state and how many it fired.
+  const CLAIM_CAP = 6;
+  for (const k of Object.keys(S.claims)) {
+    const lines = S.claims[k];
+    const head = lines.slice(0, CLAIM_CAP);
+    for (const line of head) log('§CLAIM ' + line.slice(0, 300));
+    if (lines.length > CLAIM_CAP) {
+      log(`§CLAIM_SUPPRESSED §${k} fired ${lines.length}x — ${lines.length - CLAIM_CAP - 1} identical-tag lines omitted, last one follows`);
+      log('§CLAIM ' + lines[lines.length - 1].slice(0, 300));
+    }
+  }
   log(`§CLI_BAKE_WALL totalSec=${((Date.now() - t0) / 1000).toFixed(0)} aborted=${aborted || 'no'} fileOk=${fileOk}`);
 
   await browser.close();

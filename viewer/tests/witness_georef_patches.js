@@ -34,8 +34,25 @@ var path = require('path');
 var cp = require('child_process');
 
 var SEP = '|~|';
-var DB_DIR = process.env.GEOREF_DB_DIR || '/home/red1/bim-compiler/deploy/buildings';
-var PATCH_DIR = path.join(__dirname, '..', 'buildings', 'patches');
+// TWO patch dirs and TWO db dirs, searched in order (2026-09-19). The georef patches of
+// 2026-09-18 went to viewer/buildings/patches/ and cover the *_extracted.db family. The FILM
+// bakes read neither: cli_silent_bake.js serves the repo ROOT, so a bake of
+// buildings/<name>_silent.db resolves its patch to buildings/patches/<name>_silent.db.sql.
+// That second pair is where the silent-DB georef migrations live, and a witness that only ever
+// looked at the first pair would have reported a green fleet while every film bake ran
+// un-georeferenced — which is exactly what happened on 2026-09-19's HHS bake.
+var ROOT = path.join(__dirname, '..', '..');
+var DB_DIRS = [process.env.GEOREF_DB_DIR || '/home/red1/bim-compiler/deploy/buildings',
+               path.join(ROOT, 'buildings')];
+var PATCH_DIRS = [path.join(__dirname, '..', 'buildings', 'patches'),
+                  path.join(ROOT, 'buildings', 'patches')];
+function findIn(dirs, name) {
+  for (var i = 0; i < dirs.length; i++) {
+    var c = path.join(dirs[i], name);
+    if (fs.existsSync(c)) return c;
+  }
+  return null;
+}
 
 // ── What each patch must produce. Quoted from the source IFC named in that patch's own header,
 // which is the same value DAGCompiler/python/extractIFCtoDB.py `extract_georef` returns for it
@@ -71,7 +88,42 @@ var EXPECT = {
   'Hospital_extracted.db': {
     true_north_angle: '5.000000', true_north_source: 'ifc_truenorth',
     site_latitude: '42.35842896', site_longitude: '-71.05977631',
-    site_elevation_m: '165.8112', site_latlong_source: 'ifc_site' }
+    site_elevation_m: '165.8112', site_latlong_source: 'ifc_site' },
+
+  // ── THE SILENT (FILM) DBs, added 2026-09-19 (MEP_CLASH_REVEAL_MOVIE.md §129.37).
+  // These are the DBs the film bakes actually open, and none of them had a georef patch: a full
+  // 821-frame HHS bake run with --sun-compass on this date drew no rose, no date and no sun
+  // readout, and said nothing about it, because project_metadata held building_name and
+  // import_date and nothing else. The rows below are what DAGCompiler/python/extractIFCtoDB.py
+  // `extract_georef` (BIMCompiler#117) returns for each building's source IFC — the function was
+  // RUN (ifcopenshell 0.8.4), not transcribed from a header.
+  'HHS_Office_Federated_silent.db': {
+    true_north_angle: '0', true_north_source: 'default_zero',
+    site_latitude: '48.13300000', site_longitude: '11.58300000',
+    site_elevation_m: '0.0000', site_latlong_source: 'ifc_site' },
+  // Same ARC ruling as Hospital_extracted.db above, same values — deliberately duplicated rather
+  // than cross-referenced, so a regression in EITHER file fails on its own row.
+  'Hospital_silent.db': {
+    true_north_angle: '5.000000', true_north_source: 'ifc_truenorth',
+    site_latitude: '42.35842896', site_longitude: '-71.05977631',
+    site_elevation_m: '165.8112', site_latlong_source: 'ifc_site' },
+  // merged_federation.ifc, GUID-matched. site_elevation_m 0.0030 is what the extractor's unit
+  // conversion returns (MILLI.METRE file, RefElevation 3.035) and is almost certainly a metres
+  // value in a millimetre file — asserted AS RETURNED, doubt recorded in the patch header, because
+  // no consumer reads the key and guessing the "sensible" 3.0351 would be an invented value.
+  'Terminal_silent.db': {
+    true_north_angle: '52.040036', true_north_source: 'ifc_truenorth',
+    site_latitude: '5.96277289', site_longitude: '100.63712571',
+    site_elevation_m: '0.0030', site_latlong_source: 'ifc_site' }
+  // ⚠ LTU_AHouse_silent.db IS DELIBERATELY ABSENT AND MUST STAY ABSENT UNTIL RULED ON.
+  // Its sources disagree: LTU_AHouse_ARC.ifc gives 59.33333333 / 18.05000000 (exactly
+  // 59 deg 20' 00" / 18 deg 03' 00" — a round placeholder, Stockholm city centre) and
+  // LTU_AHouse_STR.ifc gives 59.28110000 / 17.80680000, about 20 km south-west and far more
+  // specific. The other seven discipline files carry no lat/long at all. Hospital's precedent
+  // says ARC is authoritative, but there the ARC value was the precise one and here it is the
+  // round one, so the precedent does not obviously carry. That needs a human ruling (red1), not
+  // a majority vote and not a plausibility judgement. Until then LTU bakes stay un-georeferenced,
+  // which is honest, rather than georeferenced to a guess, which is not.
 };
 
 function inconclusive(why) {
@@ -142,13 +194,13 @@ function truth(name, cond, detail) {
   console.log('  §GP ' + (cond ? 'ok   ' : 'WRONG') + ' ' + name + (detail ? '   ' + detail : ''));
 }
 
-console.log('§GEOREF_PATCH_WITNESS dbDir=' + DB_DIR + ' patches=' + PATCH_DIR);
+console.log('§GEOREF_PATCH_WITNESS dbDirs=' + DB_DIRS.join(',') + ' patchDirs=' + PATCH_DIRS.join(','));
 
 Object.keys(EXPECT).forEach(function (dbName) {
-  var patch = path.join(PATCH_DIR, dbName + '.sql');
-  var db = path.join(DB_DIR, dbName);
-  if (!fs.existsSync(patch)) { truth(dbName + ': patch file exists', false, patch); return; }
-  if (!fs.existsSync(db)) {
+  var patch = findIn(PATCH_DIRS, dbName + '.sql');
+  var db = findIn(DB_DIRS, dbName);
+  if (!patch) { truth(dbName + ': patch file exists', false, PATCH_DIRS.join(' | ')); return; }
+  if (!db) {
     console.log('  §GP skip ' + dbName + ' — no local copy of the DB (binaries are not in git)');
     return;
   }
@@ -252,7 +304,7 @@ Object.keys(EXPECT).forEach(function (dbName) {
 });
 
 tmps.forEach(function (f) { try { fs.unlinkSync(f); } catch (e) {} });
-if (judged === 0) inconclusive('VACUOUS — no local copy of any patched DB under ' + DB_DIR);
+if (judged === 0) inconclusive('VACUOUS — no local copy of any patched DB under ' + DB_DIRS.join(' or '));
 var verdict = fails === 0 ? 'PASS' : 'FAIL';
 console.log('§GEOREF_PATCH_WITNESS ' + verdict + ' dbs=' + judged + '/' + Object.keys(EXPECT).length +
             ' checks=' + checks + ' wrong=' + fails);
