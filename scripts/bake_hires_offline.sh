@@ -47,16 +47,24 @@ run() {
     echo "§BAKE_SCRIPT commit=$(git -C "$ROOT" rev-parse --short HEAD) branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
     # --gpu real, never sw: measured 0.86 s/frame against 107 s/frame on this box (RTX 4060).
     # A 1,970-frame film at sw would be over two days.
+    #
+    # ⚠ NO COMMENTS BETWEEN THE CONTINUATION LINES BELOW. A `#` line inside a `\`-continued command
+    # ENDS the command: bash ran only the args above the comment and then tried to run the args
+    # below it as a command of their own ("--dlod-proxy: command not found", exit 127). Measured
+    # 2026-09-20 — every hi-res bake since the 09-19 20:12 edit of this file baked WITHOUT
+    # --clash/--dlod-proxy/--reveal/--buildup/--load-path/--ledger/--cost/--storey-reveal/--day,
+    # silently falling back to whatever the DB's stored cinema_path happened to hold.
+    #
+    # --clash added 2026-09-19 (red1: "we shall ensure ON together for next bake"). The mesh-true
+    # clash pairs stand from frame 0, so this is the one flag that changes the picture before
+    # the buildup reaches anything — expect it in §CLI_BAKE_RESOLVED as clash=1.
+    # --dlod-proxy + --reveal added 2026-09-19 after §129.50: the proxy stands down for the
+    # reveal round, so it no longer puts ARC back a frame after the reveal hides it.
+    # Proven on a 2,068-frame Hospital low-res bake — ARC's 1,550 meshes stay hidden through
+    # the round, §CPE_REVEAL_LEAK silent, windows relight past topout (emissiveMats 8/8).
     node "$ROOT/cli_silent_bake.js" \
       --db "$DB" --out "$SCRATCH" \
       --gpu real --width 1920 --height 1080 --fps 24 \
-      # --clash added 2026-09-19 (red1: "we shall ensure ON together for next bake"). The mesh-true
-      # clash pairs stand from frame 0, so this is the one flag that changes the picture before
-      # the buildup reaches anything — expect it in §CLI_BAKE_RESOLVED as clash=1.
-      # --dlod-proxy + --reveal added 2026-09-19 after §129.50: the proxy stands down for the
-      # reveal round, so it no longer puts ARC back a frame after the reveal hides it.
-      # Proven on a 2,068-frame Hospital low-res bake — ARC's 1,550 meshes stay hidden through
-      # the round, §CPE_REVEAL_LEAK silent, windows relight past topout (emissiveMats 8/8).
       --dlod-proxy --reveal \
       --buildup --label --measure --clash --load-path --ledger --cost --storey-reveal --sun-compass --day tr
     echo "§BAKE_SCRIPT node exit=$?"
