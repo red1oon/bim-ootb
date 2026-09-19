@@ -3192,12 +3192,29 @@
         // NOT a new number: it is _buildupTopoutU's own, the same fraction the buildup already
         // completes at and the same one §CPE_BUILDUP_TOPOUT prints. Nothing before the last stick
         // changes, which is the part of §116 that was never in question.
-        var _ilTop = (plan && plan.beats) ? _buildupTopoutU(plan) : null;
+        // §129.47 (2026-09-19, red1 on the Hospital film: "Lighting did not cease during Storeys
+        // reveal. It can only resume after all storeys returned.") — §129.41 tied the relight to
+        // _buildupTopoutU, and that is the WRONG CLOCK when the reveal round is on. MEASURED on
+        // Hospital: §INTERIOR_LIGHTS_BOUNDARY lastStickFrac=0.3530 topoutFrac=0.3607
+        // src=plan.beats.pullout — an off-window 0.77% of the film wide. The fixtures came back at
+        // 36% and stayed on for the remaining 64%, which is the whole reveal round AND the whole
+        // storey reveal. With the reveal round OFF, topout is the orbit boundary and §129.41 looked
+        // right; with it on, topout moves to the pull-out and the window collapses.
+        // The relight point is now the ORBIT START (plan.beats.rise), which is where the storey
+        // reveal's own window ends — cpe_storey_reveal.js windows itself to the last seconds of the
+        // pull-back "ending at plan.beats.rise, the orbit's own start". So the lights come back when
+        // the storeys have returned and the camera is circling the finished building, which is
+        // exactly red1's rule, and it no longer depends on where the buildup happens to complete.
+        var _ilTopU = (plan && plan.beats && typeof plan.beats.rise === 'number')
+          ? plan.beats.rise
+          : ((plan && plan.beats) ? _buildupTopoutU(plan).u : null);
+        var _ilTop = (_ilTopU != null) ? { u: _ilTopU, src: (plan && plan.beats && typeof plan.beats.rise === 'number') ? 'plan.beats.rise (orbit start = storey reveal end)' : 'topoutU-fallback' } : null;
         A._ilPastTopout = !!(_ilTop && _tnFilm >= _ilTop.u);
         if (plan && plan.beats && !A._ilBoundaryLogged) {
           A._ilBoundaryLogged = true;
           console.log('§INTERIOR_LIGHTS_BOUNDARY lastStickFrac=' + plan.beats.out.toFixed(4) +
-            ' topoutFrac=' + (_ilTop ? _ilTop.u.toFixed(4) : 'n/a') + ' src=' + (_ilTop ? _ilTop.src : 'n/a') +
+            ' relightFrac=' + (_ilTop ? _ilTop.u.toFixed(4) : 'n/a') + ' src=' + (_ilTop ? _ilTop.src : 'n/a') +
+            ' offWindowPctOfFilm=' + (_ilTop ? (100 * (_ilTop.u - plan.beats.out)).toFixed(1) : 'n/a') + '%' +
             ' (§129.41 — fixtures ON before the last stick, OFF through the pull-out while the' +
             ' building is still rising, and ON AGAIN from topout to the end so the windows are lit' +
             ' at dusk; a bake clipped entirely below the first boundary must show no' +

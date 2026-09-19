@@ -6235,6 +6235,29 @@ async function setupEffects(A, renderer, scene, camera) {
     } else {
       if (!A._cpeRevealSavedHidden) A._cpeRevealSavedHidden = new Set(A.hiddenDiscs);
       A.filterDiscs(shown);
+      // §CPE_REVEAL_HIDDEN (2026-09-19, red1: "Reveal round does not remove ARC to show only
+      // Disciplines") — the round asked for [PLB,FP,ELEC,MEP] on Hospital and ARC was still solid
+      // in the frame at 78 s. Nothing in any log said what filterDiscs actually hid, so the fault
+      // could not be placed: it may be that ARC was never added to hiddenDiscs (no userData.disc on
+      // its meshes), or that it WAS hidden and something re-showed it afterwards. Those need
+      // opposite fixes. This prints what was asked for, what ended up hidden, and how many meshes
+      // are still visible per discipline AFTER the filter — one line per slot change, so the next
+      // bake says which of the two it is instead of leaving it to be guessed.
+      try {
+        var _vis = {};
+        if (typeof A.collectMeshes === 'function') {
+          A.collectMeshes(function (o) { return o.isMesh && o.userData && o.userData.disc; })
+            .forEach(function (o) {
+              if (!o.visible) return;
+              var d = o.userData.disc; _vis[d] = (_vis[d] || 0) + 1;
+            });
+        }
+        console.log('§CPE_REVEAL_HIDDEN slot=' + key + ' asked=[' + shown.join(',') + ']' +
+          ' hiddenDiscs=[' + Array.from(A.hiddenDiscs).join(',') + ']' +
+          ' stillVisibleByDisc=' + JSON.stringify(_vis) +
+          ' — anything in stillVisibleByDisc that is NOT in `asked` is a discipline the round failed' +
+          ' to remove; an empty hiddenDiscs means filterDiscs never found it to hide.');
+      } catch (eRH) { /* measurement only, never breaks a bake */ }
     }
     A._cpeRevealVisualKey = key;
   };
