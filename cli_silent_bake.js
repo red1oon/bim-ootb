@@ -272,7 +272,17 @@ const server = http.createServer((req, res) => {
     userDataDir: PROFILE,
     protocolTimeout: 15 * 60 * 1000,
     env: Object.assign({}, process.env, gpuEnv),
-    args: ['--no-sandbox', '--hide-crash-restore-bubble', `--window-size=${W + 20},${H + 120}`]
+    // §CLI_BAKE_OFFLINE (2026-09-19) — the film needs NO network: every asset (three.js,
+    // sql-wasm, the HDRI, the fonts, the DB) is served from this checkout by the local server
+    // below, viewer/loader.js is local-first, and §SUN_PATH is NOAA arithmetic computed in
+    // process. But headless Chrome still opens its OWN background channels: MEASURED with `ss`
+    // during a 1080p bake on this date, the bake's browser held one connection to Google push
+    // (port 5228) for the whole run. Nothing the film reads, yet it is the difference between
+    // "needs no network" and "makes no connection", and only the second one is checkable.
+    // These three flags close it: no push/variations/safe-browsing fetches, no first-run ping.
+    args: ['--no-sandbox', '--hide-crash-restore-bubble',
+           '--disable-background-networking', '--disable-component-update', '--no-first-run',
+           `--window-size=${W + 20},${H + 120}`]
       .concat(gpuArgs, extra)
   });
   const page = await browser.newPage();
@@ -890,10 +900,10 @@ const server = http.createServer((req, res) => {
   for (const k of Object.keys(S.claims)) {
     const lines = S.claims[k];
     const head = lines.slice(0, CLAIM_CAP);
-    for (const line of head) log('§CLAIM ' + line.slice(0, 300));
+    for (const line of head) log('§CLAIM ' + line.slice(0, 1400));
     if (lines.length > CLAIM_CAP) {
       log(`§CLAIM_SUPPRESSED §${k} fired ${lines.length}x — ${lines.length - CLAIM_CAP - 1} identical-tag lines omitted, last one follows`);
-      log('§CLAIM ' + lines[lines.length - 1].slice(0, 300));
+      log('§CLAIM ' + lines[lines.length - 1].slice(0, 1400));
     }
   }
   log(`§CLI_BAKE_WALL totalSec=${((Date.now() - t0) / 1000).toFixed(0)} aborted=${aborted || 'no'} fileOk=${fileOk}`);
