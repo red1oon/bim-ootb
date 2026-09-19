@@ -35,6 +35,13 @@
 //     [--sun-date YYYY-MM-DD]                         §SUN_DAY: light the WHOLE film on that one
 //                                                       day, sun rising to late afternoon across it.
 //                                                       The build still follows the 4D timeline.
+//     [--dlod-proxy]                                  LARGE_DB_BAKE.md §8.3 L8c: render already-built
+//                                                       elements outside the view as instanced boxes.
+//                                                       Large buildings only (>=50k elements, the
+//                                                       tm-lod toggle's own gate). MEASURED on LTU:
+//                                                       -41% per frame, 1.72% of pixels changed.
+//                                                       OFF by default — verified on one 30s slice,
+//                                                       not yet on a full film. Read the film.
 //     [--sun-compass] [--no-sun-compass]              true-north ground compass + sun path + day of
 //                                                       the year (§SUN_COMPASS, GEOREF_SUNPATH_COMPASS.md
 //                                                       §7). OFF by default; needs a site lat/long in
@@ -117,6 +124,17 @@ const FRAME_RANGE = (() => { const v = arg('frame-range', null); if (!v) return 
   return (m.length === 2 && Number.isInteger(m[0]) && Number.isInteger(m[1]) && m[1] > m[0] && m[0] >= 0) ? { a: m[0], b: m[1] } : null; })();
 if (FRAME_RANGE && CLIP) { console.error('§CLI_BAKE_ARG_CONFLICT --frame-range and --clip are two different frame grids (§0) — pass only one'); process.exit(1); }
 const TAP_FILE = arg('tap', null) ? path.resolve(arg('tap')) : null;
+// §DLOD_PROXY (2026-09-19, LARGE_DB_BAKE.md §8.3 L8c) — `--dlod-proxy` swaps ALREADY-BUILT elements
+// outside the camera's view for instanced boxes during the bake. The mechanism is time_machine.js's
+// own `tm-lod` toggle, which has always existed and has always been unreachable from a headless run
+// because it needs a click; this only asks for it. It obeys that toggle's OWN large-building gate
+// (DLOD_TM_MIN_ELEMENTS, 50,000 elements), so asking for it on a small building does nothing.
+// MEASURED on a paired 150-frame LTU slice, same camera, one flag apart: 1212.5 -> 717.1 ms/frame
+// (-41%), visible meshes 3645 -> 1234, matched frames differing in 1.72% of pixels.
+// OFF BY DEFAULT and staying that way until a FULL film is compared, not one 30 s slice: the risk
+// case is a wide establishing shot where a distant wing becomes a box, and no such frame has been
+// looked at yet. Turn it on deliberately, per bake, and check the film.
+const DLOD_PROXY = !!arg('dlod-proxy', false);
 // §DATUM_DECOUPLE (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — dev-only bisect instrument:
 //   --burnin-datum-src clean.mp4   skip the GPU render + every other overlay; load clean.mp4's own
 //                                   frames instead and draw ONLY the datum layer on top. Use the SAME
@@ -419,6 +437,14 @@ const server = http.createServer((req, res) => {
   // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): --tap file.js is installed AFTER the pose
   // tap above so it can wrap window.__maxqPoseTap (frame boundaries) — dev-only, same family.
   if (TAP_FILE) await page.evaluateOnNewDocument(fs.readFileSync(TAP_FILE, 'utf8'));
+  // §DLOD_PROXY — set before any page script runs, so time_machine.js's own large-building gate
+  // sees it at activation. A separate evaluateOnNewDocument so it composes with --tap rather than
+  // competing for it.
+  if (DLOD_PROXY) {
+    await page.evaluateOnNewDocument('window.__dlodProxyBake = 1;');
+    log('§CLI_BAKE_DLOD_PROXY requested — distant already-built elements render as instanced boxes' +
+        ' (large buildings only; §DLOD_BAKE_PROXY in the page log confirms the gate passed)');
+  }
 
   const dbUrl = DB.includes('/') ? DB : `/buildings/${DB}.db`;
   const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=${dbUrl}`;
