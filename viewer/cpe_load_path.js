@@ -1830,24 +1830,39 @@ function setupCpeLoadPath(A) {
                    storeySpan: _chainStoreySpan(items, rc.c.chain),
                    visibleHopsFrustum: rc.hopsInFrustum, raysCast: 0, hitsAny: 0, selfHits: 0 };
         };
-        var fbNear = fbToStack(rankedCapped[0]);
+        // §129.42 FIX (2026-09-19, found on the Terminal bake, not by reading) — THIS PATH NEVER
+        // RANKED. `rankedCapped` carries the CHEAP pre-rank's order (hopsInFrustum, screen area,
+        // distance) and `rankedCapped[0]` was taken as the winner directly, so `_stackCmp` — and
+        // with it storey span — was never applied on the frustum fallback at all. Every large
+        // building takes this path (it is the raycast-universe-too-large escape), so §129.42 was
+        // inert on exactly the models it matters most for. The log made it worse by printing
+        // rankBy=storeySpan,... on this path regardless, and bestSpanAvail=0 because the field was
+        // never attached: MEASURED on Terminal, nearSpan=3 bestSpanAvail=0, a chain that happened
+        // to span three storeys by luck under a rule the log claimed had chosen it.
+        // Now the candidates become stacks FIRST and go through the same one comparator the scored
+        // path uses, with visKey 'visibleHopsFrustum' because that is the only visibility this path
+        // has honestly measured. `dist` rides along on each stack, so the FAR pick below reads it
+        // from the sorted list rather than from the pre-rank's own order.
+        var fbStacks = rankedCapped.map(fbToStack);
+        fbStacks.sort(function (a, b) { return _stackCmp(a, b, occludedMode, 'visibleHopsFrustum'); });
+        var fbBestSpanAvail = fbStacks.reduce(function (m, c) { return Math.max(m, c.storeySpan || 0); }, 0);
+        var fbNear = fbStacks[0];
         var fbPickSource = 'frustum-fallback reason=raycast-universe-too-large';
         if (window.__lpOneStack) {
           return { near: fbNear, far: null, farReason: 'one-stack-control', pickSource: fbPickSource,
                    raycastBlind: false, blindReason: null, tier: 2, visKey: 'visibleHopsFrustum',
                    raysCast: 0, hitsTotal: 0, selfHits: 0, universe: universe,
-                   validTotal: validTotal, scored: scoredCount };
+                   validTotal: validTotal, scored: scoredCount, bestSpanAvail: fbBestSpanAvail };
         }
         var fbCamPos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
         var fbCamDirV = (typeof camera.getWorldDirection === 'function' && typeof THREE !== 'undefined')
           ? camera.getWorldDirection(new THREE.Vector3()) : { x: 0, y: 0, z: -1 };
         var fbExtent = _extentAlongDir(buildingBox, fbCamPos, fbCamDirV);
-        var fbFarRc = null;
-        for (var fi = 1; fi < rankedCapped.length; fi++) {
-          if (rankedCapped[fi].dist - rankedCapped[0].dist >= fbExtent) { fbFarRc = rankedCapped[fi]; break; }
+        var fbFar = null;
+        for (var fi = 1; fi < fbStacks.length; fi++) {
+          if (fbStacks[fi].dist - fbStacks[0].dist >= fbExtent) { fbFar = fbStacks[fi]; break; }
         }
-        var fbFar = fbFarRc ? fbToStack(fbFarRc) : null;
-        return { near: fbNear, far: fbFar, farReason: fbFar ? null : 'none-beyond-depth', extent: fbExtent,
+        return { near: fbNear, far: fbFar, farReason: fbFar ? null : 'none-beyond-depth', extent: fbExtent, bestSpanAvail: fbBestSpanAvail,
                  pickSource: fbPickSource, raycastBlind: false, blindReason: null, tier: 2, visKey: 'visibleHopsFrustum',
                  raysCast: 0, hitsTotal: 0, selfHits: 0, universe: universe,
                  validTotal: validTotal, scored: scoredCount };
