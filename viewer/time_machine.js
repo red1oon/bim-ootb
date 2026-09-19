@@ -811,6 +811,14 @@
     console.log('§DLOD_TM_BUILD bld=' + app.activeBuilding + ' boxes=' + total + ' discs=' + discs.length + ' build_ms=' + ms.toFixed(0));
   }
 
+  // §129.56 — census throttle state. 2,000 ms is a compromise read off this project's own bake
+  // rates: at the measured 0.79-1.42 s/frame of a 1080p Hospital bake that is roughly one line per
+  // one-to-two frames, and at a 480p test-iteration rate it is one line per several — either way a
+  // few hundred lines across a full film, not thousands. `window.__dlodCensusMs` overrides it for a
+  // run that wants finer sampling, without a rebuild.
+  var _dlodCensusAt = 0, _dlodCensusPasses = 0;
+  var DLOD_CENSUS_MS = (typeof window !== 'undefined' && +window.__dlodCensusMs > 0) ? +window.__dlodCensusMs : 2000;
+
   function _dlodUpdateBoxes(app, engaged, placed, frontier, recent) {
     if (_dlodBoxIndex && _dlodBoxBld !== app.activeBuilding) _dlodDisposeBoxes(); // building switched — stale guids, drop
     if (!_dlodBoxIndex) {
@@ -821,10 +829,18 @@
     var forceFull = (_lastProxyEngaged !== engaged);
     _lastProxyEngaged = engaged;
     var touched = null, boxed = 0;
+    // §129.56 — counted in the loop that is already running, never a second traversal or an
+    // Object.keys() over the index. `indexed` is how many proxy boxes exist at all; `candidates`
+    // is how many the proxy was ALLOWED to box this pass (placed, not frontier, not recent).
+    // `boxed < candidates` means the frustum/distance test kept them real — a different fact from
+    // "nothing was eligible", and until now neither was visible in any log.
+    var indexed = 0, candidates = 0;
     for (var guid in _dlodBoxIndex) {
       var b = _dlodBoxIndex[guid];
+      indexed++;
       var wantVisible = false;
       if (engaged && placed[guid] && !frontier[guid] && recent[guid] === undefined) {
+        candidates++;
         // §DLOD_VIEW: same in-view test as the real-mesh branches, inlined against the position
         // already in hand (b.pos/b.radius) — avoids a second index lookup via _dlodInView(guid).
         // §DLOD_ONSCREEN_FIX — frustum FIRST, and distance can no longer box an on-screen element
@@ -845,6 +861,28 @@
     if (touched) for (var ti = 0; ti < touched.length; ti++) touched[ti].instanceMatrix.needsUpdate = true;
     if (forceFull) console.log('§DLOD_TM active=' + Object.keys(frontier).length + ' boxed=' + boxed +
       ' mode=' + (engaged ? 'on' : 'off'));
+    // §129.56 (2026-09-20, red1: "isn't DLOD engaged in this hi res bake?" — and no log could
+    // answer it) — the line ABOVE prints only on an engage/disengage EDGE, so on the 09-20 Hospital
+    // hi-res bake it fired exactly once, at frame 0 before the buildup had placed anything:
+    // `§DLOD_TM active=1 boxed=0 mode=on`. That reads as "the proxy is doing nothing" and means
+    // "the proxy had nothing to do YET". This is the standing census, wall-clock throttled so a
+    // 5,000-frame film costs a few dozen lines instead of 5,000. `passes`/`since` are printed
+    // BECAUSE it is throttled: a sampled census that hides its own sampling rate is the same lie
+    // in a smaller font — with them, the real per-frame rate is recoverable from one line.
+    _dlodCensusPasses++;
+    var _nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    // `_dlodCensusAt === 0` = the very first pass: emit IMMEDIATELY rather than after a full
+    // window. The question this tag exists to answer ("is the proxy engaged in this bake?") is
+    // asked at the start of a run, and a census that stays silent for its first 2,000 ms answers
+    // it late — at 1.4 s/frame on a 1080p Hospital that is the first frame or two, exactly the
+    // ones a reader checks. Caught by W-DLOD-CENSUS on its first run, before any bake used it.
+    if (_dlodCensusAt === 0 || _nowMs - _dlodCensusAt >= DLOD_CENSUS_MS) {
+      console.log('§DLOD_TM_CENSUS boxed=' + boxed + '/' + indexed + ' candidates=' + candidates +
+        ' frontier=' + Object.keys(frontier).length + ' passes=' + _dlodCensusPasses +
+        ' since=' + Math.round(_dlodCensusAt ? (_nowMs - _dlodCensusAt) : 0) + 'ms' +
+        ' mode=' + (engaged ? 'on' : 'off'));
+      _dlodCensusAt = _nowMs; _dlodCensusPasses = 0;
+    }
   }
 
   // §S260d: Audio removed — can't hear on most browsers anyway
