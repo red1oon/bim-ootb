@@ -221,7 +221,13 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   ck('W-ESC-6a the card is titled "Escape Route" — unambiguous, red1\'s own word',
      !!card && card.card.label === 'Escape Route', card ? JSON.stringify(card.card) : 'null');
   ck('W-ESC-6b the uncited number keeps its ~ and the cited one does not', !!card &&
-     /^~\d+ steps/.test(card.card.sub) && /^\d+:\d\d$/.test(card.card.big));
+     /^~\d+ steps/.test(card.card.sub) && /^(\d+ secs|\d+:\d\d mins)$/.test(card.card.big),
+     card ? card.card.big : '');
+  // red1, 2026-09-20: "It be good to indicate so with 'secs'". A bare mm:ss reads as a clock.
+  ck('W-ESC-6e the headline names its unit at both scales, and never shows a bare mm:ss',
+     A.escapeRouteFmtWalk(28) === '28 secs' && A.escapeRouteFmtWalk(59) === '59 secs' &&
+     A.escapeRouteFmtWalk(60) === '1:00 mins' && A.escapeRouteFmtWalk(263) === '4:23 mins',
+     [28, 59, 60, 263].map(A.escapeRouteFmtWalk).join(' | '));
   ck('W-ESC-6c the walking SPEED itself is on the card, with its source named', !!card &&
      card.card.sub.indexOf('1.19 m/s (SFPE)') >= 0 && card.card.sub.indexOf('0.75 m stride assumed') >= 0,
      card ? card.card.sub : '');

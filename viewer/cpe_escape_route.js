@@ -136,6 +136,16 @@ function setupCpeEscapeRoute(A) {
   }
   _stats = _freshStats();
 
+  // red1, 2026-09-20, after watching the first clip: "It be good to indicate so with 'secs'".
+  // A bare "0:28" reads as a clock, and a viewer has to decide whether it is minutes or seconds.
+  // Under a minute the unit is spelled out; over it, mm:ss with the unit still named. The panel's
+  // big-number slot auto-shrinks to fit (cpe_resource_panel.js), so the extra word costs nothing.
+  function _fmtWalk(sec) {
+    var s = Math.max(0, Math.round(sec));
+    if (s < 60) return s + ' secs';
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' mins';
+  }
+  // The log keeps the bare mm:ss — it is read by grep, not by a viewer.
   function _fmtMS(sec) {
     var s = Math.max(0, Math.round(sec));
     return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
@@ -260,6 +270,7 @@ function setupCpeEscapeRoute(A) {
   };
   A.escapeRouteRecord = function () { return _rec; };
   A.escapeRouteReset = function () { _rec = null; _builtFor = null; _buildTried = false; _stats = _freshStats(); };
+  A.escapeRouteFmtWalk = function (sec) { return _fmtWalk(sec); };   // exposed for the witness
   A.escapeRouteConstants = function () {
     return { strideM: STRIDE_M, walkMs: WALK_MS, walkCite: WALK_CITE, leadFrac: LEAD_FRAC,
              spanFrac: SPAN_FRAC, drawFrac: DRAW_FRAC, fadeFrac: FADE_FRAC, easeA: EASE_A,
@@ -323,7 +334,7 @@ function setupCpeEscapeRoute(A) {
   A.escapeRouteStatCardAt = function (plan, tNorm) {
     var vis = A.escapeRouteVisualAt(plan, tNorm);
     if (!vis) return null;
-    return { card: { big: _fmtMS(vis.walkSec), label: 'Escape Route',
+    return { card: { big: _fmtWalk(vis.walkSec), label: 'Escape Route',
                      sub: '~' + vis.steps + ' steps · ' + vis.drawnM.toFixed(0) + ' m walked · at ' +
                           WALK_MS + ' m/s (' + WALK_CITE + ') · ' + STRIDE_M + ' m stride assumed' },
              idx: 0, n: 1, opacity: vis.alpha };
