@@ -406,6 +406,23 @@ function setupCpeFlythruCues(A) {
   function drawDim(ctx, A2, B2, metres, ink, k, force) {
     var dx = B2.x - A2.x, dy = B2.y - A2.y, L = Math.hypot(dx, dy);
     if (!force && L < 24 * k) return false;              // too short to read — decline, don't scribble (§36 W1: decided once per cue window, see _spanLock)
+    // §129.43 (2026-09-19, found on a delivered Terminal frame, NOT in any log) — a dimension whose
+    // VALUE is not a real number was drawn anyway: witness lines, arrowheads, leader and all, with
+    // "NaN mm" where the measurement belongs. `Math.round(NaN * 1000).toLocaleString()` is the
+    // string "NaN", and nothing here ever asked whether `metres` was a number. 920 frames of Terminal
+    // output contained no trace of it — the only "nan" in the whole log was inside the word
+    // "dominant_rz" — so the film said it and the log did not, which is the worst of both.
+    // Same rule as the length test one line above, applied to the value instead of the geometry:
+    // decline, don't scribble. A cue that cannot say how long something is has nothing to draw.
+    if (typeof metres !== 'number' || !isFinite(metres)) {
+      if (!A._dimNaNLogged) {
+        A._dimNaNLogged = true;
+        console.log('§FLYTHRU_DIM_NAN declined — a span was handed metres=' + metres + ' (not a finite ' +
+          'number), so its dimension is NOT drawn. The cue upstream did not measure this axis; the ' +
+          'label used to read "NaN mm" on the delivered frame and appeared nowhere in this log.');
+      }
+      return false;
+    }
     var ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
     var ext = EXT * k, ar = AR * k, arw = ARW * k, fs = FS * k;
     ctx.save();
@@ -525,6 +542,9 @@ function setupCpeFlythruCues(A) {
       var lock = cue._spanLock.axes[ax];
       if (lock === undefined) { lock = _L >= 24 * k; cue._spanLock.axes[ax] = lock; }
       if (!lock) { _diag.push(ax + ':declined-at-lock(L=' + _L.toFixed(0) + 'px)'); return; }
+      // §129.43 — name the axis in the per-cue diag too. drawDim's own guard is the backstop that
+      // protects every caller; this one says WHICH span was unmeasured, which is what a reader needs.
+      if (typeof sp.m !== 'number' || !isFinite(sp.m)) { _diag.push(ax + ':nan-metres(' + sp.m + ')'); return; }
       if (drawDim(ctx, A2, B2, sp.m, ink, k, true)) { drawn++; _drawnAxes.push(ax); }
     });
     A._flythruCuesLast = { key: cue.key, filmSec: filmSec, marks: drawn, axes: _drawnAxes, panelOnly: !!a.panelOnly,
