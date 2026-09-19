@@ -17,7 +17,7 @@
 //   the path          common/room_graph.js escapeRoute()            READ-ONLY, not touched
 //   the drawn line    shortestPath(...).polyline (§RASTER-ASTAR)    the floor-hugging geometry
 //   which room        argmax of escapeRoute().distance              see §SELECTION below
-//   shine-through     cpe_storey_reveal.js's scoped-x-ray pattern   A.toggleXray + _xrayByUs
+//   room glow         navigate_find.js A.allRoomVolumes() box, depthTest:false (NO x-ray — §ESCAPE_ROUTE_NO_XRAY)
 //   room box geometry navigate_find.js A.allRoomVolumes()           three-space centers+sizes
 //   labels + leaders  clash_labels.js's plate/leader/halo language  same colours, same metrics
 //   panel chrome      cpe_resource_panel.js bigStatsCompositeOntoCanvas via {card,idx,n,opacity}
@@ -355,7 +355,7 @@ function setupCpeEscapeRoute(A) {
   A.escapeRouteConstants = function () {
     return { strideM: STRIDE_M, walkMs: WALK_MS, walkCite: WALK_CITE, leadFrac: LEAD_FRAC,
              spanFrac: SPAN_FRAC, drawFrac: DRAW_FRAC, fadeFrac: FADE_FRAC, easeA: EASE_A,
-             pathHex: PATH_HEX };
+             pathHex: PATH_HEX, usesXray: false };
   };
 
   // ══ THE WINDOW — a pure function of (plan, tNorm). Null everywhere outside it. ═══════════════
@@ -670,18 +670,15 @@ function setupCpeEscapeRoute(A) {
     return n;
   };
 
-  // ══ 3D SHINE-THROUGH + the overlay-suppression gate ═══════════════════════════════════════════
-  // cpe_storey_reveal.js's own scoped-x-ray pattern, verbatim in shape: engage x-ray only if it was
-  // off, remember that WE engaged it (`_xrayByUs`), and put it back. A storey tints its meshes by
-  // `userData.storey`; a ROOM has no equivalent per-mesh membership in this schema (checked), so
-  // the room's real geometry here is its A.allRoomVolumes() sub-rect box(es) — the same boxes the
-  // Room Lens draws — added as depthTest:false meshes so the room reads from an orbit distance
-  // through the building, and disposed on restore.
+  // ══ 3D — THE ROOM GLOW, AND NOTHING ELSE TOUCHES THE SCENE ═══════════════════════════════════
+  // A storey tints its meshes by `userData.storey`; a ROOM has no equivalent per-mesh membership in
+  // this schema (checked), so the room's real geometry here is its A.allRoomVolumes() sub-rect
+  // box(es) — the same boxes the Room Lens draws — added as depthTest:false meshes so the room
+  // reads from an orbit distance through the building, and disposed on exit.
   //
-  // §2 item 7 — "other overlay signage hidden for this window", through its OWN flag. NOT the
-  // §129.1 freeze flag: that one also stops tNorm, which item 3 rules out. cinema_maxq.js reads
-  // A._escRouteHudSuppress in its own gate beside _hudHold.
-  var _xrayByUs = false, _meshes = [], _on = false;
+  // This beat leaves the BUILDING'S OWN MATERIALS ALONE. Nothing is x-rayed, tinted, hidden or
+  // restored — see §ESCAPE_ROUTE_NO_XRAY below — so the only teardown it owes is its own meshes.
+  var _meshes = [], _on = false;
   function _tearDown() {
     _meshes.forEach(function (m) {
       if (m.parent) m.parent.remove(m);
@@ -689,26 +686,30 @@ function setupCpeEscapeRoute(A) {
       if (m.material) m.material.dispose();
     });
     _meshes = [];
-    if (_xrayByUs && A.xrayOn && typeof A.toggleXray === 'function') {
-      A.toggleXray();
-      console.log('§ESCAPE_ROUTE_XRAY off (restored)');
-    }
-    _xrayByUs = false;
     A._escRouteHudSuppress = false;
     _on = false;
   }
   function _build3D() {
     if (!THREE || !A.scene || !_rec) return;
-    // §ESCAPE_ROUTE_XRAY_COST — dev tap, undefined in every user session, same family as
-    // window.__maxqPoseTap. Set it and the x-ray is skipped while the room glow and the line stay,
-    // so the two can be A/B timed against each other instead of argued about. red1 asked whether
-    // the x-ray is what the reveal window costs; this is how that gets an answer rather than a view.
-    var _noXray = (typeof window !== 'undefined' && window.__escNoXray === true);
-    if (_noXray) console.log('§ESCAPE_ROUTE_XRAY SKIPPED by window.__escNoXray (dev tap) — glow and line unchanged');
-    if (!_noXray && !A.xrayOn && typeof A.toggleXray === 'function') {
-      A.toggleXray(); _xrayByUs = true;
-      console.log('§ESCAPE_ROUTE_XRAY on (scoped to this window; restored at its end and at every bake exit)');
-    }
+    // ══ §ESCAPE_ROUTE_NO_XRAY (red1, 2026-09-20, after watching a real bake) ═══════════════════
+    // VERDICT, his: "x-ray even be bad to judge 3D space from experience. So i go for no x-ray
+    // since it save time, and the info is already clear and intuitive enough — user would get the
+    // idea right away." Three reasons and all three hold up, so this beat engages NO x-ray at all.
+    //   LEGIBILITY — a uniformly translucent building destroys the depth cues the eye uses to read
+    //     3D, which is his experience talking, not a preference.
+    //   COST — MEASURED with a dev tap, two 88-frame 854x480 runs back to back, same box, same
+    //     clip, same DB, only the x-ray differing: 334 s / 4.24 s per frame WITH, 146 s / 1.40 s
+    //     WITHOUT. The scoped x-ray was 2.3x the wall clock and 3.0x per frame — essentially the
+    //     whole cost of the reveal window.
+    //   IT WAS NOT EVEN WORKING — his words on the first bake, "I dont see the x-ray giving any
+    //     effect as the whole building looks very solid". It fired (nothing else explains a 3x
+    //     frame cost), but Alt+Z's 0.3 is per SURFACE: the eye sees 0.7^n of the interior through
+    //     n of them, and DoubleSide makes every wall two. Through a hospital that is ~3%. Milk.
+    // NOTHING IS LOST FROM THE REVEAL ITSELF. The route line is composited in 2D onto the capture
+    // canvas and the room glow is depthTest:false, so both still read through the building — the
+    // x-ray was only ever adding interior CONTEXT around them, at 3x the frame cost.
+    // A briefly-added strength parameter on A.toggleXray was reverted with this: no caller wants
+    // it now, and a knob nothing turns is just a thing to explain later. Alt+Z is untouched.
     _rec.boxes.forEach(function (b) {
       var geo = new THREE.BoxGeometry(b.size.x, b.size.y, b.size.z);
       var mat = new THREE.MeshBasicMaterial({ color: PATH_HEX, transparent: true, opacity: 0.22,

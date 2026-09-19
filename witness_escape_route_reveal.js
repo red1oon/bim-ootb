@@ -399,6 +399,26 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
      typeof rec.roomsWithNoExit === 'number' && rec.roomsWithNoExit === (graph.nodes.length - corridorNodes.length - rec.roomsReachingAnExit),
      rec.roomsWithNoExit + ' room(s) reach no exit; egress_sanity.js calls those isolated_room CRITICAL');
 
+  // ══ W-ESC-11 — §ESCAPE_ROUTE_NO_XRAY. red1, 2026-09-20: "x-ray even be bad to judge 3D space
+  // from experience. So i go for no x-ray since it save time, and the info is already clear and
+  // intuitive enough." ISSUE: does this beat still touch the building's materials anywhere?
+  // Disproved by any path that reaches A.toggleXray or the shared material cache. Measured cost of
+  // the thing removed: 334 s vs 146 s wall over 88 identical frames, 4.24 vs 1.40 s per frame.
+  const tools = fs.readFileSync(path.join(__dirname, 'viewer/tools.js'), 'utf8');
+  ck('W-ESC-11a the beat never engages x-ray — no call, no flag, no restore path',
+     esrc.indexOf('toggleXray') < 0 && esrc.indexOf('_xrayByUs') < 0 && esrc.indexOf('xrayOn') < 0,
+     'cpe_escape_route.js is clean of it');
+  ck('W-ESC-11b it never touches the shared material cache either',
+     esrc.indexOf('_matCache') < 0 && esrc.indexOf('setColorAt') < 0 && esrc.indexOf('.emissive') < 0);
+  ck('W-ESC-11c Alt+Z is exactly as shipped — the strength parameter added for the A/B was reverted',
+     /m\.transparent = true; m\.opacity = 0\.3; m\.side = THREE\.DoubleSide;/.test(tools) &&
+     tools.indexOf('XRAY_OPACITY') < 0 && !/A\.toggleXray = function\(opts\)/.test(tools));
+  ck('W-ESC-11d the reveal still shines through without it — the line is 2D-composited and the glow is depthTest:false',
+     /depthTest: false/.test(esrc) && /escapeRouteCompositeOntoCanvas/.test(esrc) &&
+     A.escapeRouteConstants().usesXray === false);
+  ck('W-ESC-11e the storey-reveal beat keeps its OWN x-ray — this decision was not applied to someone else\'s lane',
+     fs.readFileSync(path.join(__dirname, 'viewer/cpe_storey_reveal.js'), 'utf8').indexOf('A.toggleXray()') >= 0);
+
   // ══ W-ESC-7 — no pixel-derived evidence, asserted about THIS file. ════════════════════════════
   // ⚠ The needles are ASSEMBLED, not written out. A literal list of forbidden words in a file that
   // then searches ITSELF for them always fails — the first cut of this check did exactly that, and
