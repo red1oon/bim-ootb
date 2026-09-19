@@ -1255,9 +1255,25 @@ function setupTools(A) {
       var isWindow = !isLight && A._nightWindowGlowClasses.some(function(c) { return mk.indexOf(c) >= 0; });
       if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
       if (!isLight && !isWindow) continue;
-      A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
+      // §129.48 (2026-09-19, red1: "the HHS lights does not return during orbit ... perhaps some
+      // custom code not meant to be was fixing") — origE/origEI are the material's values BEFORE
+      // night glow is applied, i.e. the DARK ones. §118's relight restores origE/origEI, so it
+      // faithfully restores DARKNESS and logs "emissive -> restored" while meaning it. The witness
+      // caught it in both films: emissiveMatsLit=0/4 on HHS and 0/8 on Hospital, on frames the same
+      // witness calls lit. Hospital only LOOKS lit because it stages 57 glow sprites; HHS stages 0,
+      // so on HHS there is nothing else and the windows stay dark — which is exactly the difference
+      // red1 saw between the two buildings.
+      // So record the GLOW values too, at the moment they are set, and let the relight put THOSE
+      // back. origE/origEI are kept: they are still the right thing to restore when night mode is
+      // switched off altogether, which is a different question from the film's own relight.
+      var _lp = A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity,
+                                        glowE: 0, glowEI: 0 }) - 1;
       if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.3; _glowCount++; } // reduced 0.8->0.65->0.45->0.3 2026-08-08
       else { m.emissive.setHex(0xfff8ec); m.emissiveIntensity = 0.55; _windowGlowCount++; }
+      // §129.48 — captured AFTER the set, so it is whatever night glow actually chose, not a second
+      // copy of those constants that could drift from them.
+      A._nightGlowMats[_lp].glowE = m.emissive.getHex();
+      A._nightGlowMats[_lp].glowEI = m.emissiveIntensity;
       m.needsUpdate = true;
     }
     if (_glowCount || _windowGlowCount) {
@@ -1901,12 +1917,21 @@ function setupTools(A) {
           !(_want === 1 && A._nightGlowMatsDimmed == null)) {
         A._nightGlowMatsDimmed = _want;
         A._nightGlowMats.forEach(function (g) {
-          if (_want) { g.mat.emissive.setHex(g.origE); g.mat.emissiveIntensity = g.origEI; }
+          // §129.48 — relight to the GLOW values when we have them. Falling back to origE/origEI
+          // keeps any entry recorded before this change working, and a fallback that restores dark
+          // is still better than throwing here mid-film.
+          if (_want) {
+            var _e = (g.glowE != null) ? g.glowE : g.origE;
+            var _i = (g.glowEI != null) ? g.glowEI : g.origEI;
+            g.mat.emissive.setHex(_e); g.mat.emissiveIntensity = _i;
+          }
           else { g.mat.emissive.setHex(0x000000); g.mat.emissiveIntensity = 0; }
           g.mat.needsUpdate = true;
         });
         console.log((_want ? '§INTERIOR_LIGHTS_ON' : '§INTERIOR_LIGHTS_OFF') +
-          ' glowMats=' + A._nightGlowMats.length + ' emissive -> ' + (_want ? 'restored' : '0') +
+          ' glowMats=' + A._nightGlowMats.length + ' emissive -> ' +
+          (_want ? ('glow(' + A._nightGlowMats.filter(function (g) { return g.glowEI > 0; }).length + '/' +
+                    A._nightGlowMats.length + ' have a glow value; the rest fall back to their pre-glow original)') : '0') +
           ' (§118 — the emissive fixture materials are a light source of their own)');
       }
     }
