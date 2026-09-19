@@ -1914,7 +1914,7 @@ function setupTools(A) {
       if (_ilOffLast !== needed.length) {
         _ilOffLast = needed.length;
         console.log('§INTERIOR_LIGHTS_OFF pointLights ' + needed.length + ' -> 0' +
-          ' (§116 — from beats.out to the end of the film; supersedes the §115 per-storey cap)');
+          ' (§116 — from beats.out to TOPOUT — §129.41 relights from there; supersedes the §115 per-storey cap)');
       }
       needed = [];
     }

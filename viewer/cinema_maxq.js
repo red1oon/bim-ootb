@@ -3698,10 +3698,23 @@
               ' glowSpritesStaged=' + _wGlow + ' lensQuadLive=' + _wLens +
               ' emissiveMatsLit=' + _wEmis + '/' + ((A._nightGlowMats && A._nightGlowMats.length) || 0) +
               ' => ' +
-              ((_wPool + _wNav + _wGlow + _wLens + _wEmis === 0)
-                ? 'PASS (no interior emitter of any family is on after the last stick)'
-                : 'FAIL — something interior is still emitting. Each count prints over its own' +
-                  ' DENOMINATOR so a zero can be told apart from an absent family (a vacuous pass).'));
+              // §129.41 (2026-09-19) — THE RULE THIS WITNESS CHECKS HAS CHANGED, so the verdict has
+              // to change with it or it fails on the very behaviour red1 asked for. Under §116 the
+              // bar was "nothing interior emits after the last stick", full stop; the relight makes
+              // that true only up to topout. Past topout the CORRECT answer is the opposite — the
+              // windows are meant to be lit at dusk — so a zero there is the failure and a non-zero
+              // is the pass. Same five families, same denominators, the expectation flips with the
+              // beat. Leaving the old assertion in place would have meant a red line on every
+              // future bake and a witness nobody trusts, which is worse than no witness.
+              (A._ilPastTopout
+                ? ((_wPool + _wNav + _wGlow + _wLens + _wEmis > 0)
+                    ? 'PASS (past topout: the interior is lit again, which is the point of §129.41)'
+                    : 'FAIL — past topout and NOTHING interior is emitting. The relight did not' +
+                      ' happen: the windows are dark at dusk, which is what §129.41 exists to fix.')
+                : ((_wPool + _wNav + _wGlow + _wLens + _wEmis === 0)
+                    ? 'PASS (between the last stick and topout, no interior emitter of any family is on)'
+                    : 'FAIL — something interior is still emitting. Each count prints over its own' +
+                      ' DENOMINATOR so a zero can be told apart from an absent family (a vacuous pass).')));
           }
         } else A._ilWitnessKey = null;
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc);
@@ -4055,6 +4068,11 @@
           ' total=' + (ov._total != null ? (+ov._total).toFixed(1) : '?') + 's' +
           ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
           ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr') +
+          // §CLI_BAKE_CLASH_CENSUS (2026-09-19, red1: "Is Clashes overlay on too?") — `clash` rode
+          // the override through _buildOverride and the flag list, and was the ONE overlay this
+          // census never printed. So no bake log could answer that question: you had to read the
+          // command line, or look at frames. Every other flag here is reported; this one is now too.
+          ' clash=' + (ov.clash ? 1 : 0) +
           ' storeyReveal=' + (ov.storeyReveal ? 1 : 0) + ' measure=' + (ov.measure ? 1 : 0) +
           ' loadPath=' + (ov.loadPath ? 1 : 0) + ' ledger=' + (ov.ledger ? 1 : 0) + ' cost=' + (ov.cost ? 1 : 0) +
           ' sunCompass=' + (ov.sunCompass ? 1 : 0) + ' sunDate=' + (ov.sunDate || '-'));

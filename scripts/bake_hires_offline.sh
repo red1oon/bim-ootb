@@ -50,7 +50,10 @@ run() {
     node "$ROOT/cli_silent_bake.js" \
       --db "$DB" --out "$SCRATCH" \
       --gpu real --width 1920 --height 1080 --fps 24 \
-      --buildup --label --measure --load-path --ledger --cost --storey-reveal --sun-compass --day tr
+      # --clash added 2026-09-19 (red1: "we shall ensure ON together for next bake"). The mesh-true
+      # clash pairs stand from frame 0, so this is the one flag that changes the picture before
+      # the buildup reaches anything — expect it in §CLI_BAKE_RESOLVED as clash=1.
+      --buildup --label --measure --clash --load-path --ledger --cost --storey-reveal --sun-compass --day tr
     echo "§BAKE_SCRIPT node exit=$?"
 
     # DELIVERY GATE — three independent checks, because any one of them alone has been fooled

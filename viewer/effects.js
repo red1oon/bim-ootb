@@ -4891,7 +4891,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (!A._glowOffLogged) {
         A._glowOffLogged = true;
         console.log('§INTERIOR_LIGHTS_OFF glowSprites staged=0 of ' + allPos.length +
-          ' (§116 — from beats.out to the end of the film)');
+          ' (§116 — from beats.out to TOPOUT — §129.41 relights from there)');
       }
       return;
     }
