@@ -4,6 +4,18 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.68.1](https://github.com/red1oon/bim-ootb/compare/v1.68.0...v1.68.1) (2026-09-18)
+
+
+### 🐛 Fixes
+
+* **modeller:** §XEDGE-GEOWIRE — the §REAL-AABB cross-edge fix never ran in production; wire it ([#1744](https://github.com/red1oon/bim-ootb/issues/1744)) ([cebd3a6](https://github.com/red1oon/bim-ootb/commit/cebd3a6d0337a57ce56d1bc57598239290997836))
+
+
+### 📝 Documentation
+
+* **modeller:** cross_edges.js — pointer to §ABUTS-ATTRIBUTE-PRIOR (proposed, not built) ([#1742](https://github.com/red1oon/bim-ootb/issues/1742)) ([4b2457c](https://github.com/red1oon/bim-ootb/commit/4b2457cc65a189301bc7af33861d85bfa9f4250b))
+
 ## [1.68.0](https://github.com/red1oon/bim-ootb/compare/v1.67.0...v1.68.0) (2026-09-15)
 
 
