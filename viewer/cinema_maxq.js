@@ -2962,6 +2962,11 @@
         console.log('§MEASURE_BUILDING_CARD INCONCLUSIVE reason=no-usable-rise-beat — closing cards skipped');
       }
       A._clashHudHighlightLast = null;   // per-bake reset — a prior bake's held highlight must not leak in
+      // §129.57 frame-reuse state — per bake, never module-level, so a second bake in the same
+      // page can never be handed the previous bake's last frame.
+      var _lastFrameKey = null, _lastFrameBlob = null, _frameReuseRun = 0, _frameReuseTotal = 0;
+      var _prevVisualRev = -1;   // §129.57 — last frame's A._loadPathVisualRev; see the key's own note
+      var _frameReuseRuns = 0;
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
@@ -3840,7 +3845,59 @@
                       ' DENOMINATOR so a zero can be told apart from an absent family (a vacuous pass).')));
           }
         } else A._ilWitnessKey = null;
-        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc);
+        // ══ §129.57 FRAME REUSE (2026-09-20) ══════════════════════════════════════════════════
+        // MEASURED on the 09-20 Hospital hi-res bake's own §FRAME_HASH sequence: 199 of the 265
+        // load-path freeze frames are BYTE-IDENTICAL to the frame before them, and 0 frames
+        // anywhere else in the film are. Each of those 199 cost 6,892 ms — 22.9 min of GPU time
+        // re-deriving bytes that already existed. Inside the hold the camera is pinned at armPose,
+        // the sun is frozen (§SUN_ONE elevation=26.5 on all 264 samples) and the scene moves by 8
+        // objects across the whole window.
+        //
+        // So: when nothing that drives the picture has moved, hand the encoder the PREVIOUS blob
+        // and skip _captureFrame entirely — base render, the 20-render still fold (taa=8 ao=12)
+        // and the HUD draw together, not a part of it.
+        //
+        // The key never GUESSES what the load path animates. `A._loadPathVisualRev` is a counter
+        // the load-path module bumps only where it genuinely mutated something (see its own note
+        // at _revealStackStep). If a future edit animates something every frame, the counter moves
+        // every frame and reuse turns itself off with no change here.
+        //
+        // GATED TO THE HOLD, matching the measurement exactly. window.__noFrameReuse=1 disables it
+        // — the control W-FRAME-REUSE's own FAIL leg depends on.
+        var _reuseKey = null;
+        if (!window.__noFrameReuse && _lpHoldCtl && _lpHoldCtl.inHold && _lastFrameBlob) {
+          var _rp = A.camera ? A.camera.position : null;
+          var _rt = (A.controls && A.controls.target) ? A.controls.target : null;
+          // `rev` AND `prevRev`. A load-path mutation lands in the picture ONE FRAME LATE — the
+          // visual is applied in this loop and the change shows up in the next frame's render.
+          // MEASURED: keying on `rev` alone reused at frames 1948, 1972, 1996, 2020 … each exactly
+          // one after a hop step, and the real bake's own hashes say every one of those frames
+          // DIFFERED from its predecessor. Caught by W-FRAME-REUSE's replay leg before any bake.
+          // Carrying the previous frame's rev forces a render on the step frame and the one after
+          // it, which is the same off-by-one §129.50 hit with the DLOD proxy ("ARC was coming back
+          // one frame later").
+          _reuseKey = 'h1|' + (A._loadPathHudAlpha == null ? 1 : +A._loadPathHudAlpha).toFixed(6) +
+            '|rev' + (A._loadPathVisualRev || 0) + '+' + _prevVisualRev +
+            '|p' + (_rp ? _rp.x.toFixed(4) + ',' + _rp.y.toFixed(4) + ',' + _rp.z.toFixed(4) : '-') +
+            '|t' + (_rt ? _rt.x.toFixed(4) + ',' + _rt.y.toFixed(4) + ',' + _rt.z.toFixed(4) : '-') +
+            '|s' + ((A.sunCompassInfo && A.sunCompassInfo()) ? (+A.sunCompassInfo().elevation).toFixed(3) : '-') +
+            '|d' + (_dayInfo && _dayInfo.text != null ? String(_dayInfo.text) : '-');
+        }
+        _prevVisualRev = (A._loadPathVisualRev || 0);
+        var blob;
+        if (_reuseKey !== null && _reuseKey === _lastFrameKey) {
+          blob = _lastFrameBlob;
+          _frameReuseRun++; _frameReuseTotal++;
+        } else {
+          if (_frameReuseRun > 0) {
+            _frameReuseRuns++;
+            console.log('§FRAME_REUSE run ended at i=' + i + ' reused=' + _frameReuseRun +
+              ' consecutive frame(s) — identical picture, encoder handed the same blob');
+            _frameReuseRun = 0;
+          }
+          blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc);
+          _lastFrameKey = _reuseKey; _lastFrameBlob = blob;
+        }
         // ROUND 13 item C — track whichever frame lands CLOSEST to the hold's own middle
         // (|elapsedSec - durSec/2|, never a re-derived "is this the middle" guess) and snapshot the
         // REAL per-layer composite alpha `_captureFrame`'s own `_drawUnlessHold` calls just recorded
@@ -3982,6 +4039,16 @@
       // §129.1 LOAD PATH: same contract — a lit stack / clip plane left behind after a bake would
       // follow the user into normal navigation. plan=null forces the restore.
       try { if (A.loadPathApplyVisual) A.loadPathApplyVisual(null, 0); } catch (eLP) {}
+      // §129.57 end-of-bake census. A saving nobody can read back out of the log is not a saving
+      // anybody can check — and a reuse count of 0 on a film that HAS a load-path freeze is the
+      // FAIL signal (the key is too fine, or the hold never armed), not a quiet non-event.
+      if (_frameReuseRun > 0) { _frameReuseRuns++; }
+      console.log('§FRAME_REUSE_TOTAL reused=' + _frameReuseTotal + '/' + framesDone +
+        ' runs=' + _frameReuseRuns + ' rendered=' + (framesDone - _frameReuseTotal) +
+        ' disabled=' + (window.__noFrameReuse ? 1 : 0) +
+        ' — ' + (window.__noFrameReuse ? 'reuse OFF by flag (control run)'
+          : (_frameReuseTotal > 0 ? 'each reused frame is the previous encoded blob, byte-identical by construction'
+             : 'INCONCLUSIVE: nothing was reused — no load-path hold in this film, or the key moved every frame')));
       try { if (A.loadPathDispose) A.loadPathDispose(); } catch (eLPd) {}
       try { if (A.ledgerTickerDispose) A.ledgerTickerDispose(); } catch (eLTd) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}

@@ -2595,6 +2595,18 @@ function setupCpeLoadPath(A) {
     var revealed = Math.max(0, Math.min(K, Math.floor(stackElapsed) + 1));
     if (revealed === stack.revealedHops) return;
     stack.revealedHops = revealed;
+    // §129.57 (2026-09-20) — bumped HERE, past the early return, so it counts only frames this
+    // function genuinely changed something on. cinema_maxq.js's frame-reuse key reads it and
+    // re-renders whenever it moves.
+    //
+    // ⚠ THE POINT OF A COUNTER RATHER THAN A LIST. The measured reason 199 freeze frames come out
+    // byte-identical is the early return one line above: the landing-glow lerp below
+    // (`1 - age / GLOW_SEC`, GLOW_SEC = 1.0) is only ever evaluated on a step frame, so the glow
+    // is a one-frame flash instead of the second-long fade it reads as. If that is ever fixed,
+    // this function will mutate every frame, bump this counter every frame, and frame reuse will
+    // switch ITSELF off — no edit to the bake loop, and no frozen animation. A hand-written list
+    // of "things that change during the hold" would have silently frozen it.
+    A._loadPathVisualRev = (A._loadPathVisualRev || 0) + 1;
     var solidSet = _solidSetFor(K, revealed);
     var landingIdx = window.__lpTopDown ? (K - revealed) : (revealed - 1);
     var ghostLook = _lookGhost();
@@ -3083,6 +3095,7 @@ function setupCpeLoadPath(A) {
       if (inWindow || _lp.armed) _backdropApply(inWindow ? 1 : 0);
       if (inWindow && !_lp.armed) {
         _lp.armed = true;
+        A._loadPathVisualRev = (A._loadPathVisualRev || 0) + 1;   // §129.57 — the arm changes everything on screen
         // §129.16/§129.27 — the ladder/card vanish EXACTLY at true release, same frame `_lp.armed`
         // itself goes false again now (§129.27 collapsed the old "stays armed past release to sweep
         // the cut/whiten back" delay to a single instant) — kept as its own flag anyway (not just
@@ -3643,6 +3656,7 @@ function setupCpeLoadPath(A) {
       ' planesLeft=0 clonesReverted=' + clonesReverted + '/' + clonesN + ' => ' + restoreVerdict);
   }
   function _forceRestore() {
+    A._loadPathVisualRev = (A._loadPathVisualRev || 0) + 1;   // §129.57 — the release changes everything back
     if (_lp && _lp.armed) { _restore(_lp.holdEndSec); return; }
     // Nothing armed — still clear any leftover touch state defensively (bake-abort safety).
     var hasClones = _lp && _lp.hopsUp && _lp.hopsUp.some(function (h) { return !!h._cloneMesh; });
