@@ -29,21 +29,31 @@
 // the room's only real geometry), and the info panel is the bigStats card, which is what the freeze
 // beat's own info card and the storey-reveal card both already use.
 //
-// ── §SELECTION — WHY argmax, AND WHY IT IS THE SAME ROOM THE PANEL MEANS ────────────────────────
-// rule_checklist.js `_rcLongestExitSteps(rows)` returns `round(max(row.ratio)/0.75)` over the
-// `circulation_distance` rows, and `row.ratio` IS `escapeRoute().distance` (egress_sanity.js:296).
-// Those rows are FILTERED to the rooms above the rule's warning threshold — but filtering by a
-// threshold cannot remove the maximum, so `max over rows == max over all rooms` whenever any row
-// exists at all. Picking `argmax over graph.nodes of escapeRoute().distance` therefore names
-// exactly the room behind that headline number, and additionally still names a room on a building
-// where no room crosses the threshold and the headline is null. It does not re-derive a selection
-// rule; it inverts the one already there. W-ESC-1 asserts the identity against the real evaluator.
+// ── §SELECTION — THE LONGEST REAL WALK, NOT THE HIGHEST COST ───────────────────────────────────
+// The spec's §1 table says to reuse `_rcLongestExitSteps()`'s own worst-case selection. That was
+// the right instinct and it is NOT what this does, because that selection is itself wrong for this
+// purpose — see §ESCAPE_ROUTE_COST_IS_NOT_A_DISTANCE below. MEASURED on the real Hospital DBs:
+//   HospitalAjaibPath — by cost the worst is "Level 1 R31" (cost 175.0), whose real walk is 33 m /
+//     28 secs. The genuinely longest walk is "Level 4 R2": 313 m / 263 secs, cost only 119.3.
+//   Hospital_meta     — by cost "Level 1 R18" (cost 253.0, walk 49 m / 41 secs); longest walk is
+//     "Level 4 R1" at 313 m / 263 secs.
+// A ground-floor room that happens to route past a plant room outranks a fourth-floor room that
+// genuinely walks 313 m. A film captioned "longest walk out" that shows the 28-second one is
+// simply wrong, so the ranking is the measured walk. RED1'S CALL, 2026-09-20, verbatim: "Get the
+// longest of course."
+//
+// COST: two passes per room — escapeRoute() to learn which exit it reaches, then shortestPath() to
+// that same exit for the §RASTER-ASTAR polyline whose 3D length is measured. The winning polyline
+// is CARRIED FORWARD, not re-derived, so the length that won the selection is byte-identically the
+// length drawn and counted. Runs ONCE per bake, before the frame loop; `scanMs` is in the § line.
+//
+// ⚠ THE FILM AND THE EGRESS PANEL NOW NAME DIFFERENT ROOMS, on purpose, and the build log says so
+// on every bake. The panel ranks by cost; this ranks by walk. Both figures are printed.
 //
 // ⚠ escapeRouteViaProtectedStair() is NOT used, deliberately. It is opt-in in egress_sanity.js
-// (`opts.protectedExitStair`, default off) precisely because it changes the number the report shows
-// — so the headline this film must agree with is the plain escapeRoute() one. Using the hardened
-// variant here would put a different number on screen from the one the panel prints for the same
-// building. If that default ever flips, flip this with it; the § line below prints which was used.
+// (`opts.protectedExitStair`, default off) and would change the exit a route terminates at without
+// changing how that route is measured. If that default ever flips, revisit this with it; the §
+// line below prints which was used.
 //
 // ── §3 — THE TWO NUMBERS ARE NOT EQUALLY RIGOROUS, AND THE PANEL SAYS SO ────────────────────────
 //   steps   = length / 0.75 m   UNCITED. rule_checklist.js's own comment already admits it: "a
@@ -178,20 +188,34 @@ function setupCpeEscapeRoute(A) {
     if (!graph || !graph.nodes || !graph.nodes.length) {
       console.log('§ESCAPE_ROUTE_BUILD INCONCLUSIVE — the room graph has no room nodes for this building'); return null;
     }
-    // §SELECTION (header) — argmax of the SAME distance the rule's row carries.
+    // §SELECTION (header) — argmax of the REAL WALKED LENGTH. TWO passes per room, deliberately:
+    // escapeRoute() to find which exit that room actually reaches, then shortestPath() to that same
+    // exit for its §RASTER-ASTAR floor-hugging polyline, whose 3D length is measured here. The cost
+    // is kept alongside (it is what the Egress panel ranks by) but it does NOT choose.
     var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
-    var best = null, reached = 0;
+    var best = null, reached = 0, worstByCost = null, noPoly = 0;
     graph.nodes.forEach(function (n) {
       var esc = RG.escapeRoute(graph, n.guid, { log: function () {} });
       if (!esc || esc.distance == null || !isFinite(esc.distance)) return;
       reached++;
-      if (!best || esc.distance > best.esc.distance) best = { node: n, esc: esc };
+      if (!worstByCost || esc.distance > worstByCost.esc.distance) worstByCost = { node: n, esc: esc };
+      var sp = null;
+      try { sp = RG.shortestPath(graph, n.guid, esc.exitGuid); } catch (eS) { sp = null; }
+      var poly = (sp && sp.polyline && sp.polyline.length > 1) ? sp.polyline : null;
+      if (!poly) { noPoly++; return; }
+      var L = 0;
+      for (var q = 1; q < poly.length; q++) {
+        L += Math.hypot(poly[q].x - poly[q - 1].x, poly[q].y - poly[q - 1].y, (poly[q].z || 0) - (poly[q - 1].z || 0));
+      }
+      if (!best || L > best.walkM) best = { node: n, esc: esc, poly: poly, walkM: L, spDist: sp.distance };
     });
     var scanMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
     if (!best) {
-      console.log('§ESCAPE_ROUTE_BUILD VACUOUS rooms=' + graph.nodes.length + ' reachedAnExit=0 — no room in this' +
-        ' building has a route to an EXIT node at all, so there is no worst case to show. Nothing is drawn' +
-        ' and nothing is claimed (the same state egress_sanity.js reports as isolated_room).');
+      console.log('§ESCAPE_ROUTE_BUILD VACUOUS rooms=' + graph.nodes.length + ' reachedAnExit=' + reached +
+        ' withDrawableRoute=0 noPolyline=' + noPoly + ' — ' + (reached === 0
+          ? 'no room in this building has a route to an EXIT node at all'
+          : reached + ' rooms reach an exit but none produced a drawable polyline') +
+        ', so there is no worst case to show. Nothing is drawn and nothing is claimed.');
       return null;
     }
     var esc = best.esc, node = best.node;
@@ -200,18 +224,10 @@ function setupCpeEscapeRoute(A) {
     // path/doors/distance/exitGuid only). Same graph, same weights, same target, so the distance
     // must agree; the delta is logged rather than assumed, and a disagreement falls back to the
     // route's own anchors instead of drawing a line that is not the measured walk.
-    var poly = null, polySrc = 'escapeRoute path anchors', delta = null;
-    try {
-      var sp = RG.shortestPath(graph, node.guid, esc.exitGuid);
-      if (sp && sp.distance != null) {
-        delta = Math.abs(sp.distance - esc.distance);
-        if (delta < 1e-6 && sp.polyline && sp.polyline.length > 1) { poly = sp.polyline; polySrc = 'shortestPath.polyline (§RASTER-ASTAR)'; }
-      }
-    } catch (eSP) { console.log('§ESCAPE_ROUTE_POLY shortestPath threw: ' + (eSP && eSP.message) + ' — falling back to the route anchors'); }
-    if (!poly) {
-      poly = [];
-      esc.path.forEach(function (g) { var nn = graph.nodesByGuid[g]; if (nn) poly.push({ x: nn.cx, y: nn.cy, z: nn.cz || 0 }); });
-    }
+    // The polyline the scan already measured — not re-derived, so the length that WON the selection
+    // is byte-identically the length that gets drawn and counted.
+    var poly = best.poly, polySrc = 'shortestPath.polyline (§RASTER-ASTAR)';
+    var delta = (best.spDist != null) ? Math.abs(best.spDist - esc.distance) : null;
     if (poly.length < 2) {
       console.log('§ESCAPE_ROUTE_BUILD VACUOUS room="' + (node.name || node.guid) + '" — the route resolved to ' +
         poly.length + ' drawable point(s); there is no line to trace');
@@ -240,7 +256,10 @@ function setupCpeEscapeRoute(A) {
       doors: (esc.doors || []).length, hops: (esc.path || []).length,
       steps: Math.round(polyLenM / STRIDE_M), walkSec: polyLenM / WALK_MS,
       pts3: pts3, cum: cum, polyLenM: polyLenM, polySrc: polySrc, boxes: boxes,
-      roomsScanned: graph.nodes.length, roomsReachingAnExit: reached
+      roomsScanned: graph.nodes.length, roomsReachingAnExit: reached, scanMs: scanMs,
+      costWorstName: worstByCost ? (worstByCost.node.name || worstByCost.node.guid) : null,
+      costWorstCost: worstByCost ? worstByCost.esc.distance : null,
+      isAlsoCostWorst: !!(worstByCost && worstByCost.node.guid === node.guid)
     };
     console.log('§ESCAPE_ROUTE_BUILD room="' + _rec.roomName + '" (' + _rec.roomGuid + ') storey="' + _rec.storey + '"' +
       ' exit=' + _rec.exitGuid +
@@ -251,8 +270,9 @@ function setupCpeEscapeRoute(A) {
       ' line=' + polySrc + ' pts=' + pts3.length +
       (delta != null ? ' spDelta=' + delta.toExponential(2) : ' spDelta=n/a') +
       ' roomBoxes=' + boxes.length +
-      ' | selection=argmax escapeRoute().distance over ' + graph.nodes.length + ' rooms (' + reached + ' reach an exit)' +
-      ' scanMs=' + scanMs.toFixed(0) + ' fn=escapeRoute (NOT escapeRouteViaProtectedStair — see file header)');
+      ' | selection=argmax MEASURED WALK over ' + graph.nodes.length + ' rooms (' + reached + ' reach an exit, ' +
+      noPoly + ' had no drawable polyline)' +
+      ' scanMs=' + scanMs.toFixed(0) + ' fn=escapeRoute+shortestPath (NOT escapeRouteViaProtectedStair — see file header)');
     // §ESCAPE_ROUTE_COST_IS_NOT_A_DISTANCE — printed EVERY build, not only when it looks bad, so the
     // ratio is on the record for whichever building was baked. >1 means §UTILITY-ROUTING-PENALTY
     // inflated the cost; <1 means the A*-refined drawn line is longer than the straight-chord edge
@@ -263,6 +283,10 @@ function setupCpeEscapeRoute(A) {
       ' headline: ~' + Math.round(_rec.graphCostM / STRIDE_M) + ' steps)' +
       ' vs drawnWalk=' + _rec.walkM.toFixed(2) + 'm (measured 3D length of the line on screen: ~' + _rec.steps + ' steps)' +
       ' ratio=' + (_rec.costRatio == null ? '-' : _rec.costRatio.toFixed(2)) +
+      ' | THE COST ALSO PICKS A DIFFERENT ROOM: by cost the worst is "' + _rec.costWorstName + '" at ' +
+      (_rec.costWorstCost == null ? '-' : _rec.costWorstCost.toFixed(2)) +
+      (_rec.isAlsoCostWorst ? ' — which is the SAME room, so the two rankings agree here' :
+        ' — a DIFFERENT room from the one shown. The film shows the longest real WALK (red1, 2026-09-20: "Get the longest of course")') +
       (_rec.costRatio != null && Math.abs(_rec.costRatio - 1) > 0.05
         ? ' — THEY DISAGREE BY MORE THAN 5%. The film prints the drawn walk. The Egress report prints the cost. That report figure is wrong and is NOT fixed here (see ESCAPE_ROUTE_REVEAL.md FINDINGS).'
         : ' — within 5%, this building has little or no utility-edge penalty on the worst route'));
@@ -372,8 +396,44 @@ function setupCpeEscapeRoute(A) {
     }
     return { pts: pts, wantM: want, lenM: _cum(pts)[pts.length - 1] };
   };
+  // ══ §ESCAPE_ROUTE_HUD_RESERVE (red1, 2026-09-20: "this added HUD panel also must find an empty
+  // spot to display to avoid overlapping the others") ═══════════════════════════════════════════
+  // TWO different problems, and only the second was real:
+  //   THE CARD does not need a spot. It takes the bigStats slot the tail/storey/measure cards
+  //   already share, so it REPLACES one card with another and cannot overlap anything by
+  //   construction — see cinema_maxq.js's own §-comment on that chain.
+  //   THE TWO PLATES do. "Start" and "Exit" are scene-anchored and wander with the orbit, so they
+  //   can land on each other and on the corner HUD. clash_labels.js solved exactly this with a
+  //   screen-space non-overlap walk; this is that walk, plus the corner column as a no-go area.
+  //
+  // The column during this beat is EXACTLY the day counter then the card — because
+  // A._escRouteHudSuppress has already cleared the sun clock, the compass readout, the path box and
+  // the pie out of the middle of it. That coupling is what makes this three lines instead of a
+  // second copy of _captureFrame's stack maths, and W-ESC-8d asserts it rather than trusting it.
+  A.escapeRouteReservedRects = function (w, h, pos, dayOn) {
+    var out = [], gap = Math.round(h * 0.012), stackY = 0;
+    if (!A.bigStatsBoxRect) return out;   // no card geometry to reserve against — place freely
+    var card = A.bigStatsBoxRect(w, h, pos, 0);
+    if (dayOn && A.dayCounterBoxSize) {
+      // ⚠ WIDTH: cpe_day_counter.js's dayCounterBoxSize() returns { h, margin } and NOTHING ELSE —
+      // its own comment says it exists so callers get the HEIGHT without re-deriving it, and the
+      // pill's width is a function of the text it is about to draw. So the counter row is reserved
+      // at the CARD's width instead, which is wider than the pill. Over-reserving is the safe
+      // direction: a plate is pushed a little further from a box it would not have touched, and
+      // nothing is ever placed on top of one it would have. Re-deriving the pill's text width here
+      // would be a second owner of that arithmetic, which that file explicitly forbids.
+      var d = A.dayCounterBoxSize(h);
+      out.push({ x: card.x, y: card.y, w: card.w, h: d.h });
+      stackY = d.h + gap;
+    }
+    out.push(A.bigStatsBoxRect(w, h, pos, stackY));
+    return out;
+  };
+  function _hits(a, b) {
+    return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+  }
   var _v = null;
-  A.escapeRouteFrameAt = function (plan, tNorm, camera, w, h) {
+  A.escapeRouteFrameAt = function (plan, tNorm, camera, w, h, reserved) {
     var vis = A.escapeRouteVisualAt(plan, tNorm);
     _stats.frames++;
     if (!vis || !_rec || !camera || !THREE) return null;
@@ -398,6 +458,9 @@ function setupCpeEscapeRoute(A) {
       var sEnd = proj(_rec.pts3[_rec.pts3.length - 1]);
       if (!sEnd.behind) labels.push({ key: 'Exit', rows: ['Exit', _rec.exitName], sx: sEnd.x, sy: sEnd.y });
     }
+    // Place them HERE, not in the draw pass, for clash_labels.js's own reason: a placement a Node
+    // witness can assert about is worth far more than one that only exists inside a canvas call.
+    _place(labels, w, h, reserved || []);
     var rec = { alpha: vis.alpha, progress: vis.progress, drawnM: vis.drawnM,
                 drawnPolyM: want, steps: vis.steps, walkSec: vis.walkSec,
                 screen: screen, labels: labels, w: w, h: h };
@@ -410,6 +473,56 @@ function setupCpeEscapeRoute(A) {
   // ══ DRAW — the 2D pass. `rec` is THIS frame's record; the caller hands it back so a stale
   // frame's geometry can never be drawn on a frame it was not projected for (clash_labels.js's
   // own contract, same reason). ═════════════════════════════════════════════════════════════════
+  // Metrics live here so placement and drawing cannot disagree about a plate's size.
+  function _metrics(h) {
+    var fontPx = Math.max(10, Math.round(h * 0.017));
+    return { fontPx: fontPx, padX: Math.round(fontPx * 0.7), padY: Math.round(fontPx * 0.55),
+             rowGap: Math.round(fontPx * 0.32), off: Math.round(h * 0.022),
+             margin: Math.round(h * 0.02), radius: Math.round(fontPx * 0.4) };
+  }
+  // A crude text width — no canvas here, and none needed: the plate only has to be placed, and a
+  // per-character estimate at this weight is within a few px of the measured width. The DRAW pass
+  // re-measures with the real ctx and uses the placed x/y, so a small estimate error moves nothing.
+  function _estW(txt, fontPx) { return Math.ceil(String(txt).length * fontPx * 0.56); }
+  // FOUR candidate corners around the anchor, then the one with the fewest collisions. Never drops
+  // a plate: "Start" and "Exit" are FIXED labels by the spec (§2 item 6), so a frame that cannot
+  // place one cleanly still shows it — overlapping beats vanishing for a two-label set.
+  function _place(labels, w, h, reserved) {
+    var M = _metrics(h), placed = [];
+    for (var i = 0; i < labels.length; i++) {
+      var L = labels[i];
+      var bw = M.padX * 2 + Math.max(_estW(L.rows[0], M.fontPx), _estW(L.rows[1], M.fontPx));
+      var bh = M.padY * 2 + M.fontPx * 2 + M.rowGap;
+      // FOUR corners at the base offset first — the default reading, tried in order — then the same
+      // four pushed progressively further out. Four alone was not enough and the witness proved it:
+      // with the two anchors a few px apart, every corner of the second plate landed on the first
+      // (W-ESC-8c), and an anchor inside the corner column could not escape a 389 px-wide reserve
+      // (W-ESC-8d, 3/15 clean). The ladder costs nothing — the loop breaks the moment a candidate
+      // is clean, so the common case is still the first try.
+      var cands = [];
+      for (var step = 1; step <= 5; step++) {
+        var ox = M.off * step, oy = M.off * step + (step - 1) * bh;
+        cands.push({ x: L.sx + ox, y: L.sy - oy - bh });        // up-right
+        cands.push({ x: L.sx - ox - bw, y: L.sy - oy - bh });   // up-left
+        cands.push({ x: L.sx + ox, y: L.sy + oy });             // down-right
+        cands.push({ x: L.sx - ox - bw, y: L.sy + oy });        // down-left
+      }
+      var bestRect = null, bestHits = Infinity;
+      for (var c = 0; c < cands.length; c++) {
+        var r = { x: Math.round(Math.max(M.margin, Math.min(cands[c].x, w - M.margin - bw))),
+                  y: Math.round(Math.max(M.margin, Math.min(cands[c].y, h - M.margin - bh))),
+                  w: bw, h: bh };
+        var n = 0, k;
+        for (k = 0; k < reserved.length; k++) if (_hits(r, reserved[k])) n++;
+        for (k = 0; k < placed.length; k++) if (_hits(r, placed[k])) n++;
+        if (n < bestHits) { bestHits = n; bestRect = r; if (n === 0) break; }
+      }
+      L.x = bestRect.x; L.y = bestRect.y; L.w = bestRect.w; L.h = bestRect.h;
+      L.collisions = bestHits;   // 0 on a clean placement; >0 means every corner was contested
+      placed.push(bestRect);
+    }
+    return labels;
+  }
   A.escapeRouteCompositeOntoCanvas = function (ctx, w, h, rec) {
     if (!ctx || !rec || !rec.screen || rec.screen.length < 2 || !(rec.alpha > 0)) return 0;
     var lw = Math.max(2, Math.round(h * 0.0035));
@@ -442,21 +555,15 @@ function setupCpeEscapeRoute(A) {
       ctx.fillStyle = LEADER_HALO; ctx.beginPath(); ctx.arc(head.x, head.y, lw * 1.9 + 2, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = PATH_RGB; ctx.beginPath(); ctx.arc(head.x, head.y, lw * 1.9, 0, Math.PI * 2); ctx.fill();
     }
-    // the two plates — clash_labels.js's own metrics/colours, two rows, leader + dot
-    var fontPx = Math.max(10, Math.round(h * 0.017)), padX = Math.round(fontPx * 0.7),
-        padY = Math.round(fontPx * 0.55), rowGap = Math.round(fontPx * 0.32),
-        off = Math.round(h * 0.022), margin = Math.round(h * 0.02);
-    var bh = padY * 2 + fontPx * 2 + rowGap;
-    var placed = [];
+    // the two plates — clash_labels.js's own metrics/colours, two rows, leader + dot. The RECTANGLE
+    // was decided in escapeRouteFrameAt (§ESCAPE_ROUTE_HUD_RESERVE): this pass only draws it, so a
+    // stale frame's placement can never be painted on a frame it was not placed for, and the Node
+    // witness can assert the layout without a canvas. Same update/draw split as clash_labels.js.
+    var M = _metrics(h), n = 0;
     for (var li = 0; li < rec.labels.length; li++) {
       var L = rec.labels[li];
-      ctx.font = '700 ' + fontPx + 'px ' + FONT;
-      var bw = padX * 2 + Math.ceil(Math.max(ctx.measureText(L.rows[0]).width, ctx.measureText(L.rows[1]).width));
-      var x = L.sx + off, y = L.sy - off - bh;
-      if (x + bw > w - margin) x = L.sx - off - bw;
-      if (y < margin) y = L.sy + off;
-      x = Math.round(Math.max(margin, Math.min(x, w - margin - bw)));
-      y = Math.round(Math.max(margin, Math.min(y, h - margin - bh)));
+      if (L.x == null) continue;
+      var x = L.x, y = L.y, bw = L.w, bh = L.h;
       var ax = Math.max(x, Math.min(L.sx, x + bw)), ay = Math.max(y, Math.min(L.sy, y + bh));
       ctx.strokeStyle = LEADER_HALO; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(L.sx, L.sy); ctx.stroke();
@@ -465,17 +572,18 @@ function setupCpeEscapeRoute(A) {
       ctx.fillStyle = LEADER_HALO; ctx.beginPath(); ctx.arc(L.sx, L.sy, 4.5, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = PATH_RGB; ctx.beginPath(); ctx.arc(L.sx, L.sy, 3, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = PLATE;
-      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, bw, bh, Math.round(fontPx * 0.4)); ctx.fill(); }
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, bw, bh, M.radius); ctx.fill(); }
       else ctx.fillRect(x, y, bw, bh);
       ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-      ctx.fillStyle = PATH_RGB; ctx.font = '700 ' + fontPx + 'px ' + FONT;
-      ctx.fillText(L.rows[0], x + padX, y + padY + fontPx / 2);
+      ctx.fillStyle = PATH_RGB; ctx.font = '700 ' + M.fontPx + 'px ' + FONT;
+      ctx.fillText(L.rows[0], x + M.padX, y + M.padY + M.fontPx / 2);
       ctx.fillStyle = 'rgba(255,255,255,0.88)';
-      ctx.fillText(L.rows[1], x + padX, y + padY + fontPx + rowGap + fontPx / 2);
-      placed.push({ key: L.key, x: x, y: y, w: bw, h: bh });
+      ctx.font = '700 ' + M.fontPx + 'px ' + FONT;
+      ctx.fillText(L.rows[1], x + M.padX, y + M.padY + M.fontPx + M.rowGap + M.fontPx / 2);
+      n++;
     }
     ctx.restore();
-    return placed.length;
+    return n;
   };
 
   // ══ 3D SHINE-THROUGH + the overlay-suppression gate ═══════════════════════════════════════════
@@ -542,6 +650,11 @@ function setupCpeEscapeRoute(A) {
     if (vis) _stats.suppressedFrames++;
   };
 
+  // Exposed so the §5 witness can assert the LAYOUT without a renderer or a fake camera — the same
+  // "slice the predicate out" rule the rest of this file follows. Returns the labels, mutated with
+  // x/y/w/h and a `collisions` count.
+  A.escapeRoutePlaceLabels = function (labels, w, h, reserved) { return _place(labels, w, h, reserved || []); };
+  A.escapeRouteRectsHit = function (a, b) { return _hits(a, b); };
   A.escapeRouteStats = function () {
     var s = {}; for (var k in _stats) s[k] = _stats[k];
     s.built = !!_rec;

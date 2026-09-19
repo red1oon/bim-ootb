@@ -2406,7 +2406,13 @@
           if (_ec) {
             _statInfo = { shown: _ec, pos: _ovPos, held: null };
             if (A.escapeRouteFrameAt) {
-              try { _escInfo = A.escapeRouteFrameAt(plan, _tnFilm, A.camera, w, h); }
+              // §ESCAPE_ROUTE_HUD_RESERVE — the corner column this frame, so the two scene-anchored
+              // plates keep out of it (red1: the panel "must find an empty spot"). Correct only
+              // because A._escRouteHudSuppress has already cleared the middle of that column —
+              // the gates a few lines up in _captureFrame. W-ESC-8d asserts that coupling.
+              var _escReserved = A.escapeRouteReservedRects
+                ? A.escapeRouteReservedRects(w, h, _ovPos, !!(_dayInfo && _dayInfo.pos !== 'off')) : [];
+              try { _escInfo = A.escapeRouteFrameAt(plan, _tnFilm, A.camera, w, h, _escReserved); }
               catch (eEF) { if (!A._escFrameWarned) { A._escFrameWarned = true;
                 console.warn('§ESCAPE_ROUTE_FRAME failed frame=' + i + ': ' + (eEF && eEF.message)); } }
             }

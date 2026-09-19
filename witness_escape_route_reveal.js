@@ -26,6 +26,18 @@ const near = (a, b, e) => Math.abs(a - b) <= (e === undefined ? 1e-9 : e);
 
 // ── the app stub. Only what cpe_escape_route.js actually touches. THREE stays absent on purpose:
 //    every claim below is reachable without a renderer, which is the point.
+// cpe_day_counter.js and cpe_resource_panel.js are browser modules with no module.exports, and the
+// layout claims below need their REAL box geometry — a re-typed copy would test the copy. Sliced
+// and evaluated, the same technique witness_sun_compass_wiring.js already uses on panels.js. If
+// either cannot be loaded, W-ESC-8a fails loudly rather than silently measuring an empty reserve.
+function loadHudGeometry(A) {
+  ['cpe_day_counter.js', 'cpe_resource_panel.js'].forEach(function (f) {
+    const src = fs.readFileSync(path.join(__dirname, 'viewer', f), 'utf8');
+    const name = 'setup' + f.replace(/\.js$/, '').replace(/(^|_)([a-z])/g, (m, a, b) => b.toUpperCase());
+    try { eval(src + '\n' + name + '(A);'); }
+    catch (e) { console.log('  §WER note ' + f + ' setup threw (' + e.message + ') — geometry may be partial'); }
+  });
+}
 function makeApp(graph, volumes) {
   const A = { activeBuilding: 'Hospital_meta' };
   A.getRoomGraph = () => graph;
@@ -33,6 +45,7 @@ function makeApp(graph, volumes) {
   // A pure rotation, so every arc length below is the real walked length in metres.
   A.ifc2three = (ix, iy, iz) => ({ x: ix, y: iz, z: -iy });
   A.allRoomVolumes = () => volumes;
+  loadHudGeometry(A);
   setupCpeEscapeRoute(A);
   return A;
 }
@@ -54,35 +67,52 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   console.log('§ESCAPE_ROUTE_WITNESS db=Hospital_meta.db rooms=' + graph.nodes.length +
     ' edges=' + graph.edges.length);
 
-  // ══ W-ESC-1 — §SELECTION. ISSUE: does this film point at the room the Egress panel's headline
-  // "Longest path to exit" number is actually about, or at a second, quietly different worst case?
-  // Disproved by any disagreement between the argmax this feature takes and the max the evaluator's
-  // own rows carry. ═══════════════════════════════════════════════════════════════════════════
+  // ══ W-ESC-1 — §SELECTION. ISSUE: a film captioned "longest walk out" must show the room that
+  // really walks furthest. The Egress panel ranks by escapeRoute().distance, a penalty-weighted
+  // COST — so "reuse the panel's selection" (the spec's §1 instinct) picks the wrong room. This
+  // block proves three separate things: that the panel's ranking IS the cost, that the cost and the
+  // walk name DIFFERENT rooms on real data, and that the film takes the walk.
+  // Disproved if the module ever picks the cost-ranked room while a longer real walk exists.
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
   const rules = JSON.parse(fs.readFileSync(path.join(__dirname, 'viewer/rates/egress_rules.json'), 'utf8'));
   const rows = EgressSanity.evaluate(q, rules, { log: () => {} });
   const circ = rows.filter(r => r.rule === 'circulation_distance' && r.ratio != null);
   const ruleMax = circ.reduce((m, r) => (m === null || r.ratio > m ? r.ratio : m), null);
   const ruleSteps = ruleMax === null ? null : Math.round(ruleMax / 0.75);   // _rcLongestExitSteps, verbatim
-  let argmax = null;
+  // Both rankings, computed here independently of the module.
+  let byCost = null, byWalk = null;
   graph.nodes.forEach(n => {
     const e = RoomGraph.escapeRoute(graph, n.guid, { log: () => {} });
-    if (e && e.distance != null && isFinite(e.distance) && (!argmax || e.distance > argmax.d))
-      argmax = { d: e.distance, guid: n.guid, name: n.name };
+    if (!e || e.distance == null || !isFinite(e.distance)) return;
+    if (!byCost || e.distance > byCost.cost) byCost = { cost: e.distance, guid: n.guid, name: n.name };
+    const sp = RoomGraph.shortestPath(graph, n.guid, e.exitGuid);
+    if (!sp || !sp.polyline || sp.polyline.length < 2) return;
+    let L = 0;
+    for (let i = 1; i < sp.polyline.length; i++) {
+      const a = sp.polyline[i - 1], b = sp.polyline[i];
+      L += Math.hypot(b.x - a.x, b.y - a.y, (b.z || 0) - (a.z || 0));
+    }
+    if (!byWalk || L > byWalk.walk) byWalk = { walk: L, cost: e.distance, guid: n.guid, name: n.name, storey: n.storey };
   });
-  ck('W-ESC-1a the evaluator produced a headline number to agree with', ruleMax !== null,
-     'rows=' + circ.length + ' max=' + (ruleMax === null ? 'null' : ruleMax.toFixed(3) + 'm'));
-  ck('W-ESC-1b argmax over every room == the max the rule rows carry (the threshold filter cannot remove a maximum)',
-     argmax !== null && near(argmax.d, ruleMax, 1e-9),
-     'argmax=' + (argmax ? argmax.d.toFixed(6) : '-') + 'm rule=' + (ruleMax === null ? '-' : ruleMax.toFixed(6)) + 'm');
-  ck('W-ESC-1c and therefore the SAME step count rule_checklist.js prints',
-     argmax !== null && Math.round(argmax.d / 0.75) === ruleSteps,
-     'film=~' + (argmax ? Math.round(argmax.d / 0.75) : '-') + ' panel=~' + ruleSteps);
+  ck('W-ESC-1a the evaluator produced a headline number at all', ruleMax !== null,
+     'rows=' + circ.length + ' max=' + (ruleMax === null ? 'null' : ruleMax.toFixed(3)));
+  ck('W-ESC-1b the Egress panel\'s headline IS the cost — max over its rows == argmax of escapeRoute().distance',
+     byCost !== null && near(byCost.cost, ruleMax, 1e-9) && Math.round(byCost.cost / 0.75) === ruleSteps,
+     'panel ranks "' + (byCost && byCost.name) + '" at ' + (byCost ? byCost.cost.toFixed(3) : '-') +
+     ' → ~' + ruleSteps + ' steps');
+  ck('W-ESC-1c the cost and the real walk name DIFFERENT rooms — this is why the panel\'s selection is not reused',
+     byCost !== null && byWalk !== null && byCost.guid !== byWalk.guid,
+     'cost→"' + (byCost && byCost.name) + '" (walk would be much shorter)  vs  walk→"' +
+     (byWalk && byWalk.name) + '" ' + (byWalk ? byWalk.walk.toFixed(1) : '-') + 'm on ' + (byWalk && byWalk.storey));
 
   // The record the rest of the claims run against, built by the real code path.
   const A = makeApp(graph, []);
   const rec = A.escapeRouteBuild();
-  ck('W-ESC-1d the module picks that exact room', !!rec && rec.roomGuid === (argmax && argmax.guid),
-     rec ? 'room="' + rec.roomName + '" cost=' + rec.graphCostM.toFixed(3) + ' walk=' + rec.walkM.toFixed(2) + 'm' : 'build returned null');
+  if (rec) console.log('  (selection scan over ' + rec.roomsScanned + ' rooms took ' +
+    rec.scanMs.toFixed(0) + ' ms — once per bake, before the frame loop)');
+  ck('W-ESC-1d the module picks the LONGEST REAL WALK, not the cost-ranked room (red1: "Get the longest of course")',
+     !!rec && byWalk !== null && rec.roomGuid === byWalk.guid && rec.roomGuid !== byCost.guid,
+     rec ? 'room="' + rec.roomName + '" walk=' + rec.walkM.toFixed(2) + 'm cost=' + rec.graphCostM.toFixed(2) : 'build returned null');
   if (!rec) { console.log('§ESCAPE_ROUTE_WITNESS ABORT — nothing built, the remaining claims would be vacuous'); process.exit(1); }
 
   // ══ W-ESC-1e — §ESCAPE_ROUTE_COST_IS_NOT_A_DISTANCE. ISSUE: escapeRoute().distance is a
@@ -98,6 +128,9 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
      rec.costRatio !== null && Math.abs(rec.costRatio - 1) > 0.05,
      'cost=' + rec.graphCostM.toFixed(2) + ' walk=' + rec.walkM.toFixed(2) + 'm ratio=' +
      rec.costRatio.toFixed(2) + ' utilityNodes=' + utilNodes);
+  ck('W-ESC-1f2 the drawn length is the one that WON the selection, not a re-derivation',
+     !!rec && byWalk !== null && near(rec.walkM, byWalk.walk, 1e-9),
+     'module=' + rec.walkM.toFixed(6) + 'm independent=' + byWalk.walk.toFixed(6) + 'm');
   ck('W-ESC-1f the counters read the DRAWN WALK, never the cost',
      rec.steps === Math.round(rec.walkM / 0.75) && rec.steps !== Math.round(rec.graphCostM / 0.75),
      'film=~' + rec.steps + ' steps · the Egress panel would print ~' + Math.round(rec.graphCostM / 0.75));
@@ -233,6 +266,53 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
      card ? card.card.sub : '');
   ck('W-ESC-6d the card also prints the metres, so neither derived number stands alone', !!card &&
      / \d+ m walked /.test(card.card.sub));
+
+  // ══ W-ESC-8 — §ESCAPE_ROUTE_HUD_RESERVE. red1, 2026-09-20: "this added HUD panel also must find
+  // an empty spot to display to avoid overlapping the others". ISSUE: the two scene-anchored plates
+  // wander with the orbit, so they can land on each other and on the corner HUD column. Disproved
+  // by any anchor position that leaves a plate overlapping when a free corner existed.
+  // No canvas, no camera: the placement predicate is exercised directly.
+  const W = 1920, H = 1080;
+  const reserved = A.escapeRouteReservedRects(W, H, 'tr', true);
+  ck('W-ESC-8a the reserved set is the day counter AND the card — the two boxes actually drawn in this beat',
+     reserved.length === 2 && reserved.every(r => r.w > 0 && r.h > 0 && r.x >= 0 && r.y >= 0),
+     reserved.map(r => r.x + ',' + r.y + ' ' + r.w + 'x' + r.h).join('  |  '));
+  ck('W-ESC-8b the card sits BELOW the day counter, not on it (the column stacks, it does not pile)',
+     !A.escapeRouteRectsHit(reserved[0], reserved[1]) && reserved[1].y >= reserved[0].y + reserved[0].h,
+     'counter bottom=' + (reserved[0].y + reserved[0].h) + ' card top=' + reserved[1].y);
+
+  // Sweep anchor pairs across the whole frame, including deliberately hostile ones: both anchors
+  // inside the corner column, and both on the same point.
+  let worst = 0, cases = 0, hostile = 0, hostileClean = 0;
+  for (let ax = 0.02; ax <= 0.98; ax += 0.04) {
+    for (let ay = 0.02; ay <= 0.98; ay += 0.08) {
+      const labels = [
+        { key: 'Start', rows: ['Start', '≈ Level 4 R1'], sx: ax * W, sy: ay * H },
+        { key: 'Exit', rows: ['Exit', 'M_Single-Flush:0915'], sx: ax * W + 24, sy: ay * H + 12 }
+      ];
+      A.escapeRoutePlaceLabels(labels, W, H, reserved);
+      cases++;
+      // the two plates must never overlap EACH OTHER — there is always room for two on a 1920x1080
+      const pairHit = A.escapeRouteRectsHit(labels[0], labels[1]) ? 1 : 0;
+      worst = Math.max(worst, pairHit);
+      const inColumn = reserved.some(r => A.escapeRouteRectsHit(
+        { x: ax * W - 4, y: ay * H - 4, w: 8, h: 8 }, r));
+      if (inColumn) { hostile++; if (!labels.some(l => reserved.some(r => A.escapeRouteRectsHit(l, r)))) hostileClean++; }
+      labels.forEach(l => { if (l.x < 0 || l.y < 0 || l.x + l.w > W || l.y + l.h > H) worst = 9; });
+    }
+  }
+  ck('W-ESC-8c across ' + cases + ' anchor positions the two plates never overlap each other, and never leave the frame',
+     worst === 0, 'worstCode=' + worst);
+  ck('W-ESC-8d anchors landing UNDER the corner column still place clear of it',
+     hostile > 0 && hostileClean === hostile,
+     hostileClean + '/' + hostile + ' hostile anchors placed clear');
+  ck('W-ESC-8e the card itself needs no spot — it REPLACES a bigStats card rather than adding a box',
+     /_statInfo = \{ shown: _ec, pos: _ovPos, held: null \};/.test(mq) &&
+     (mq.match(/escapeRouteStatCardAt/g) || []).length === 2);   // the guard and the call, nothing more
+  ck('W-ESC-8f the reserve is only correct because the suppression clears the middle of the column — that gate is real',
+     /!A\._escRouteHudSuppress && A\.pathOverviewCompositeOntoCanvas/.test(mq) &&
+     /!A\._escRouteHudSuppress && A\.resourcePanelCompositeOntoCanvas/.test(mq) &&
+     (mq.match(/_hudGate\('suncompass\.(clock|readout)'/g) || []).length === 2);
 
   // ══ W-ESC-7 — no pixel-derived evidence, asserted about THIS file. ════════════════════════════
   // ⚠ The needles are ASSEMBLED, not written out. A literal list of forbidden words in a file that
