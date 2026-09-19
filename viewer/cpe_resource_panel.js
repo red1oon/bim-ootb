@@ -1082,6 +1082,14 @@ function setupCpeResourcePanel(A) {
     ctx.restore();
     ctx.restore();
     if (A._hudLayoutRegister) A._hudLayoutRegister('resource-panel', B.x, B.y, B.bw, B.bh);
+    // §129.52 (2026-09-20, red1 on the LTU film: "the lower HUD is obsured by the main HUD. Check
+    // the code is is placing it self dynamically in the clear?") — it was not placing itself at
+    // all. cinema_maxq handed THIS panel and the big-stats card below it the SAME _stackY, because
+    // this panel never advanced the running offset the way every other member of that column does.
+    // The caller cannot compute the height either: it is built from real content bands, not a
+    // fraction of frame height, so only this function knows it. Published here, at the same point
+    // and from the same numbers the layout registration already uses, so the two can never drift.
+    A.resourcePanelLastBox = { x: B.x, y: B.y, w: B.bw, h: B.bh };
   };
 
   // §CPE_PIE_HOLD / §129.7 item 8a (2026-09-16, SUPERSEDES the side-by-side layout below) — the

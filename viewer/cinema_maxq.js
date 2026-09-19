@@ -1576,6 +1576,10 @@
     // not under a sum. An empty row (all four off) leaves _rowH at 0 and the column starts at the
     // margin exactly as it did before any of this existed.
     var _stackY = _rowH ? _rowH + _gapY : 0;
+    // §129.52 — cleared each frame for the same reason the row boxes are: a panel that draws
+    // nothing this frame must reserve nothing, and a stale rect would push the card below it down
+    // past a panel that is not on screen.
+    A.resourcePanelLastBox = null;
     if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) {
       _drawUnlessHold('hud.pie', function (a) {
         try { A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, a, resInfo.pos, _stackY); }
@@ -1584,6 +1588,11 @@
             console.warn('§CPE_RESOURCE_PANEL_ERR draw: ' + eRp.message + ' — panel skipped, frames continue'); }
         }
       });
+    }
+    // §129.52 — advance past the pie panel before the card below it. Without this both were
+    // drawn at the same _stackY and the card sat on top of the panel, which is what red1 saw.
+    if (A.resourcePanelLastBox && A.resourcePanelLastBox.h > 0) {
+      _stackY += A.resourcePanelLastBox.h + _gapY;
     }
     if (statInfo && statInfo.shown && A.bigStatsCompositeOntoCanvas) {
       _drawUnlessHold('roster', function (a) {
