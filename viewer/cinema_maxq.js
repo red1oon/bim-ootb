@@ -1206,6 +1206,61 @@
   // gone: `_hudHold` is the real wrapper, called directly. The window publish above stays for any
   // other lane still building against main.
   function _hudHold(name, fn) { return _drawUnlessHold(name, fn); }
+  // ══ §FRAME_COST (2026-09-19, LARGE_DB_BAKE.md §8.2 item 1) — is this frame paying for the
+  // MODEL or for ITSELF? ════════════════════════════════════════════════════════════════════════
+  // red1: "study how to reduce hi element DB as a frame is only a limited set". MEASURED at
+  // identical settings on 2026-09-19: HHS (6,880 elements) 0.54 s/frame, Terminal (48,428) 0.86,
+  // LTU (122,330) 2.55 — and within ONE LTU bake the rate went 0.64 -> 2.75 s/frame as the buildup
+  // filled the scene in. Cost tracks what the scene HOLDS. What no log has ever said is how much
+  // of that the renderer was ALREADY throwing away, and that single number decides whether culling
+  // work is worth anything at all: if `drawn` is already a small fraction of `held`, the cost is
+  // somewhere else and §8.3's levers are dead on arrival. So this is measured BEFORE anything is
+  // built, and it is allowed to kill the idea.
+  //
+  // Cheap by construction: it runs only on the frames §MAXQ_FRAME already logs (throttled to
+  // MAXQ_LOG_MS), never per frame, so the measurement cannot distort what it measures.
+  // `calls`/`triangles` are three.js's own per-render counters and describe the LAST render of the
+  // still-refine burst, not the sum of all 20 — the burst multiplies whatever this number is.
+  function _logFrameCost(i, nFrames, perFrameMs) {
+    try {
+      var A2 = window.APP;
+      if (!A2 || !A2.scene || !A2.camera || typeof THREE === 'undefined') return;
+      var held = 0, vis = 0, inFrustum = 0, instanced = 0, instancedCount = 0;
+      var cam = A2.camera;
+      cam.updateMatrixWorld();
+      var _m = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      var _fr = new THREE.Frustum().setFromProjectionMatrix(_m);
+      var _sph = new THREE.Sphere();
+      A2.scene.traverse(function (o) {
+        if (!o.isMesh && !o.isInstancedMesh) return;
+        held++;
+        if (o.isInstancedMesh) { instanced++; instancedCount += (o.count || 0); }
+        if (!o.visible) return;
+        // a hidden ancestor hides this too — `visible` alone would over-count
+        for (var p = o.parent; p; p = p.parent) { if (!p.visible) return; }
+        vis++;
+        var g = o.geometry;
+        if (!g) return;
+        if (!g.boundingSphere) { try { g.computeBoundingSphere(); } catch (e) { return; } }
+        if (!g.boundingSphere) return;
+        _sph.copy(g.boundingSphere).applyMatrix4(o.matrixWorld);
+        if (_fr.intersectsSphere(_sph)) inFrustum++;
+      });
+      var inf = (A2.renderer && A2.renderer.info && A2.renderer.info.render) || null;
+      var pct = function (a, b) { return b ? (100 * a / b).toFixed(1) : '0.0'; };
+      console.log('§FRAME_COST i=' + i + '/' + nFrames + ' perFrameMs=' + Math.round(perFrameMs) +
+        ' held=' + held + ' visible=' + vis + ' inFrustum=' + inFrustum +
+        ' frustumPct=' + pct(inFrustum, vis) + '%ofVisible' +
+        ' instancedMeshes=' + instanced + ' instances=' + instancedCount +
+        ' lastRenderCalls=' + (inf ? inf.calls : 'n/a') + ' lastRenderTris=' + (inf ? inf.triangles : 'n/a') +
+        ' — frustumPct is the number that decides LARGE_DB_BAKE.md §8: high means the renderer is' +
+        ' already submitting most of the model every frame and culling is worth building; low means' +
+        ' it is culling well already and the cost is elsewhere.');
+    } catch (e) {
+      if (!window.__frameCostWarned) { window.__frameCostWarned = true;
+        console.warn('§FRAME_COST unavailable: ' + (e && e.message) + ' — measurement only, bake unaffected'); }
+    }
+  }
   async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
@@ -3799,6 +3854,7 @@
           console.log('§MAXQ_FRAME i=' + i + '/' + nFrames + ' elapsedMs=' + Math.round(_el) +
             ' perFrameMs=' + Math.round(_per) + ' etaSec=' + _eta + ' (rolling-15, log every ' +
             (MAXQ_LOG_MS / 1000) + 's)');
+          _logFrameCost(i, nFrames, _per);
         }
       }
       // §129.6 item 1 WITNESS — §LOADPATH_RESUME: b==a (the film really did resume from the SAME

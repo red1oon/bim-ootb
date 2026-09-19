@@ -9137,6 +9137,16 @@
     // A building switch below threshold also resets the toggle (never silently carries proxy state
     // into a small building where DLOD_TM_MIN_ELEMENTS wouldn't gate it anyway).
     if (!_isLargeBuilding) _dlodProxyOn = false;
+    // §DLOD_BAKE_PROXY (2026-09-19, LARGE_DB_BAKE.md §8.3 L8c) — the draw-cost proxy already
+    // exists, already works, and is reachable only by clicking `tm-lod`, which a headless bake can
+    // never do. So the one thing most likely to cut large-building bake time has never been
+    // measured in a bake. This lets a bake ask for it (`--tap` sets window.__dlodProxyBake), and
+    // ONLY under the same large-building gate the button itself obeys — no new threshold, no new
+    // behaviour, nothing changed for any interactive user or any bake that does not ask.
+    if (_isLargeBuilding && typeof window !== 'undefined' && window.__dlodProxyBake) {
+      _dlodProxyOn = true;
+      console.log('§DLOD_BAKE_PROXY on — requested by the bake tap, large-building gate passed');
+    }
     var _lodBtnGate = document.getElementById('tm-lod');
     if (_lodBtnGate) {
       _lodBtnGate.style.display = _isLargeBuilding ? '' : 'none';
