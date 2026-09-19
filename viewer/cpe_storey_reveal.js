@@ -1856,7 +1856,9 @@ function setupCpeStoreyReveal(A) {
       // because the proxy never engages there, which is exactly why the animation survived on one
       // building and not the other. §129.50 stood the proxy down for the DISCIPLINE reveal; this
       // flag lets it stand down for the STOREY reveal too, from arm to restore.
-      A._storeyRevealArmed = true;
+      // §129.51b — the flag is now raised AHEAD of the window by storeyRevealApplyVisual, not here.
+      // Setting it at this point was the original mistake: this runs after the arm loop has already
+      // snapshotted the scene, so it stood the proxy down one moment too late to matter.
       console.log('§STOREY_ARM_BASELINE armedObjsOff=' + offObjs + '/' + _cutObjs.length +
         ' byDisc={' + Object.keys(byDisc).sort().map(function (d) { return d + ':' + byDisc[d]; }).join(' ') + '}' +
         ' zeroScaleRows=' + zeroRows + '/' + rows + ' (over ' + instObjs + ' instanced containers) heldByTimeMachine=' + tmHeldRows + (held ? '' : ' (TM inactive)') +
@@ -2256,6 +2258,28 @@ function setupCpeStoreyReveal(A) {
     // permanently stood down for the rest of the session. Failing that way is safe rather
     // than wrong — no proxy means the correct picture, just slower — but it is still a leak.
     if (!plan) { A._storeyRevealArmed = false; _restoreTint(); _curIdx = null; _restoreMarkers(); return; }
+    // §129.51b (2026-09-19) — SET THE STAND-DOWN FLAG AHEAD OF THE WINDOW, not at arm.
+    // red1: "your fix was in there?" It was, and it was too late. §129.51 raised the flag inside
+    // _armBaselineWitness(), which REPORTS the baseline after the arm loop has already walked the
+    // scene — so the proxy stood down only after the poisoned snapshot was taken. Worse, even the
+    // top of the arm would be too late: the rows are still zero-scaled at that instant, and the
+    // Time Machine needs a tick or more to write them back once the proxy lets go.
+    // So the flag goes up LEAD ahead of the window's own start (b.rise - windowFrac, the same
+    // arithmetic storeyRevealVisualAt uses), giving the TM many ticks to restore before the arm
+    // reads anything. 2% of the film is ~56 frames at 10fps on Hospital — generous on purpose,
+    // and it costs only the proxy's help over those frames, which is the pull-back's tail where
+    // the camera is already backing off.
+    // It is also self-healing: computed from (plan, tNorm) every frame, so it cannot be left
+    // stranded true by an exit path the way a set-once flag can.
+    try {
+      var _srB = plan.beats, _srS = plan.storeyReveal;
+      if (_srB && _srS && _srS.on && _srS.windowFrac > 0 && _srB.rise > 0 && _srB.rise < 1) {
+        var _srWin = _srB.rise - _srS.windowFrac, _srLead = 0.02;
+        A._storeyRevealArmed = (tNorm != null && tNorm >= _srWin - _srLead && tNorm <= _srB.rise);
+      } else {
+        A._storeyRevealArmed = false;
+      }
+    } catch (eSA) { A._storeyRevealArmed = false; }
     var vis = A.storeyRevealVisualAt(plan, tNorm);
     // A dark slot keeps its own key so the tint is actually taken DOWN between storeys (the "cease").
     // The last storey never reports dark (§STOREY_REVEAL_LAST_STAYS_LIT), so this key never flips to
