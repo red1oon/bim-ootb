@@ -3855,11 +3855,15 @@ function setupCpeLoadPath(A) {
   // or the bottom anchor it feeds shifts under the panel mid-hold.
   function _stackInfoPanelMaxH(h, stack) {
     if (!stack || !stack.hopsUp) return 0;
-    // §HUD_SCALE — 13px at the h=900 this panel was drawn against, i.e. a 0.01444 fraction,
-    // handed to the one law so it rises with resolution like every other overlay.
-    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.014444, 9) : Math.max(9, Math.round(h * 0.014444)));
-    var headerFontPx = Math.round(fontPx * 1.35);
-    var rowH = Math.round(fontPx * 2.0);
+    // §129.58 — the standard body (22 px at 1080, the same as a resource-panel row), title x1.15
+    // and rows x1.55, all from the shared freeze theme. Was k=0.014444 (16 px), x1.35 and x2.00 —
+    // the only overlay in the film using its own three numbers.
+    // ⚠ `_stackInfoPanelMaxH` (the height RESERVER) and `_drawStackInfoPanel` (the drawer) both
+    // carry this block and MUST stay identical, or the bottom anchor the reserver feeds shifts
+    // under the panel mid-hold — see the reserver's own note above.
+    var fontPx = _freezeBodyPx(h);
+    var headerFontPx = Math.round(fontPx * 1.15);
+    var rowH = Math.round(fontPx * 1.55);
     var headerH = Math.round(headerFontPx * 2.6);
     var pad = Math.round(fontPx * 0.6);
     return headerH + stack.hopsUp.length * rowH + pad;
@@ -3890,15 +3894,73 @@ function setupCpeLoadPath(A) {
     });
     return isFinite(bx0) ? { x0: bx0, x1: bx1, y0: by0, y1: by1 } : null;
   }
+  // ══ §129.58 FREEZE HUD THEME (2026-09-20, red1: "streamline the Freeze info panel box to be
+  // same theme (only reversed as it is on black) as the rest HUDs for consistency. The standard
+  // HUD font title, body sizing is more professional.") ════════════════════════════════════════
+  //
+  // WHAT WAS INCONSISTENT, measured against the rest of the overlays at h=1080:
+  //
+  //   box                     family                          body px   title px   rowH
+  //   resource panel rows     -apple-system,…,Roboto          22        25 (x1.15)  x1.55   <- the standard
+  //   sun-compass readout     (k 0.020)                       22        —           —
+  //   day counter             (k 0.026)                       28        —           —
+  //   freeze info CARD        Segoe UI, system-ui             28        —          x1.55
+  //   freeze info PANEL       Segoe UI, system-ui             16        21 (x1.35) x2.00   <- the outlier
+  //
+  // The panel's body was 16 px where every other overlay's is 22, its title ratio was 1.35 where
+  // the standard is 1.15, its rows were 2.00x where the standard is 1.55x, and both freeze boxes
+  // asked for a font family no other overlay uses. Nothing here is a new number: every value below
+  // is read off `cpe_resource_panel.js`'s own list (`fs`, `fs * 1.15`, `round(fs * 1.55)`) and the
+  // one §HUD_SCALE law in `cinema_maxq.js` (`window.__hudFontPx`).
+  //
+  // THE ONE DEVIATION, and red1 named it: the freeze runs on a BLACK backdrop
+  // (`§LOADPATH_BACKDROP allElseAtBlack=51/51`), where the standard dark-glass plate
+  // (`rgba(0,0,0,0.28)`) has no presence at all. So the freeze theme is the standard one REVERSED —
+  // light plate, dark ink — which is what the info card already did alone with its opaque white
+  // slab. The panel now shares that plate instead of carrying the dark one it could not be read
+  // against, so the two boxes in the same frozen frame finally match each other.
+  var FREEZE_F = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+  function _freezeBodyPx(h) {   // the standard body: 22 px at 1080, same as a resource-panel row
+    return (window.__hudFontPx ? window.__hudFontPx(h, 0.020, 9) : Math.max(9, Math.round(h * 0.020)));
+  }
+  // The reversed plate. `_freezePlate` is to the freeze what `A.cpePanelPlate` is to every other
+  // overlay — one function, so the card and the panel cannot drift apart again.
+  function _freezePlate(ctx, x, y, bw, bh, rad) {
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, bw, bh, rad); ctx.fill(); }
+    else ctx.fillRect(x, y, bw, bh);
+  }
+  function _freezePlateDraw(ctx, x, y, bw, bh, rad) {
+    ctx.fillStyle = 'rgba(255,255,255,0.96)';
+    _freezePlate(ctx, x, y, bw, bh, rad);
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 1;
+    _freezePlate(ctx, x, y, bw, bh, rad); ctx.stroke();
+  }
+  // Ink, mirrored from the SAME opacities `§HUD_LEGIBLE` already measured for white-on-dark-glass,
+  // so the contrast ladder (title strongest, body next, zebra and divider as faint structure) is
+  // the one the rest of the HUD already uses — only the polarity is flipped.
+  var FREEZE_INK_TITLE = 'rgba(0,0,0,0.92)';
+  var FREEZE_INK_BODY  = 'rgba(0,0,0,0.78)';
+  var FREEZE_INK_ZEBRA = 'rgba(0,0,0,0.05)';
+  var FREEZE_INK_RULE  = 'rgba(0,0,0,0.15)';
+  // §61 (MEP_CLASH_REVEAL_MOVIE.md, red1: "the yellow HUD coloring is not helping optics … Replace
+  // yellow with blue is better contrast") — the totals line was `rgba(255,215,0,0.95)` gold, the one
+  // place in the freeze still breaking that ruling. #0277bd is the project blue #4fc3f7 taken to a
+  // weight that clears contrast against a light plate rather than a dark one.
+  var FREEZE_INK_TOTALS = '#0277bd';
+
   function _drawStackInfoPanel(ctx, w, h, k, stack, stackName, yBottom, avoidRect) {
     if (!stack || !stack.hopsUp || !stack.hopsUp.length) return null;
     var revealed = Math.max(0, Math.min(stack.hopsUp.length, stack.revealedHops || 0));
     if (revealed <= 0) return null;
-    // §HUD_SCALE — 13px at the h=900 this panel was drawn against, i.e. a 0.01444 fraction,
-    // handed to the one law so it rises with resolution like every other overlay.
-    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.014444, 9) : Math.max(9, Math.round(h * 0.014444)));
-    var headerFontPx = Math.round(fontPx * 1.35);
-    var rowH = Math.round(fontPx * 2.0);
+    // §129.58 — the standard body (22 px at 1080, the same as a resource-panel row), title x1.15
+    // and rows x1.55, all from the shared freeze theme. Was k=0.014444 (16 px), x1.35 and x2.00 —
+    // the only overlay in the film using its own three numbers.
+    // ⚠ `_stackInfoPanelMaxH` (the height RESERVER) and `_drawStackInfoPanel` (the drawer) both
+    // carry this block and MUST stay identical, or the bottom anchor the reserver feeds shifts
+    // under the panel mid-hold — see the reserver's own note above.
+    var fontPx = _freezeBodyPx(h);
+    var headerFontPx = Math.round(fontPx * 1.15);
+    var rowH = Math.round(fontPx * 1.55);
     var headerH = Math.round(headerFontPx * 2.6);
     var pad = Math.round(fontPx * 0.6);
     var swatch = Math.round(fontPx * 0.75);
@@ -3911,7 +3973,7 @@ function setupCpeLoadPath(A) {
     // the header, summed straight (no dedup — see that section's own reasoning for why cost/days are
     // now the SAME kind of additive per-element figure). A thin divider under the header and a
     // slightly bolder header weight are the "professional" cues — same dark-glass plate, no new look.
-    ctx.font = '600 ' + fontPx + 'px Segoe UI, system-ui, sans-serif';
+    ctx.font = '600 ' + fontPx + 'px ' + FREEZE_F;
     var rowsText = [];
     var maxRowW = 0;
     for (var mi = 0; mi < revealed; mi++) {
@@ -3920,7 +3982,7 @@ function setupCpeLoadPath(A) {
       rowsText.push(lbl);
       maxRowW = Math.max(maxRowW, ctx.measureText(lbl).width);
     }
-    ctx.font = '700 ' + headerFontPx + 'px Segoe UI, system-ui, sans-serif';
+    ctx.font = '700 ' + headerFontPx + 'px ' + FREEZE_F;
     var totalCost = 0, totalDays = 0;
     for (var ci = 0; ci < revealed; ci++) {
       var ch = stack.hopsUp[ci];
@@ -3956,32 +4018,35 @@ function setupCpeLoadPath(A) {
     // was always a deliberate ONE-OFF for on-black freeze legibility, not the project's real
     // default). Ink matches too: white at the SAME opacities `_HUD_LEGIBLE` already measured
     // against this exact plate, rather than a new pair invented for this one panel.
-    if (typeof A.cpePanelPlate === 'function') A.cpePanelPlate(ctx, x, y, panelW, panelH, rr);
-    else { ctx.fillStyle = 'rgba(0,0,0,0.45)'; if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, panelW, panelH, rr); ctx.fill(); } else ctx.fillRect(x, y, panelW, panelH); }
+    // §129.58 — the freeze's own REVERSED plate, shared with the info card beside it.
+    // `A.cpePanelPlate`'s dark glass (rgba(0,0,0,0.28)) has no presence against this beat's black
+    // backdrop (§LOADPATH_BACKDROP allElseAtBlack=51/51), which is exactly why the card next to it
+    // was already carrying a white slab of its own. Now they share one.
+    _freezePlateDraw(ctx, x, y, panelW, panelH, rr);
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.font = '700 ' + headerFontPx + 'px Segoe UI, system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = '700 ' + headerFontPx + 'px ' + FREEZE_F;
+    ctx.fillStyle = FREEZE_INK_TITLE;
     ctx.fillText(headerText, x + pad, y + headerH * 0.34);
-    ctx.font = '700 ' + Math.round(headerFontPx * 0.86) + 'px Segoe UI, system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(255,215,0,0.95)';   // a warm gold pick-out for the totals line — reads as "the number that matters" against the plain white header above it
+    ctx.font = '700 ' + Math.round(headerFontPx * 0.86) + 'px ' + FREEZE_F;
+    ctx.fillStyle = FREEZE_INK_TOTALS;   // §61 — was rgba(255,215,0,0.95) gold; yellow is the one HUD ink red1 ruled out ("Replace yellow with blue is better contrast")
     ctx.fillText(totalsText, x + pad, y + headerH * 0.72);
     // Divider — a clean, professional break between the summary header and the itemised rows below.
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillStyle = FREEZE_INK_RULE;
     ctx.fillRect(x + pad, y + headerH - divider, panelW - pad * 2, divider);
-    ctx.font = '600 ' + fontPx + 'px Segoe UI, system-ui, sans-serif';
+    ctx.font = '600 ' + fontPx + 'px ' + FREEZE_F;
     // §129.23 — bottom-up: hop1 (ri=0) draws at the panel's OWN bottom-most row; each higher hop
     // stacks ABOVE it. `panelH` already reserves exactly `revealed` rows worth of space below the
     // header, so `ri` counted from the bottom lands every row flush, no gap.
     for (var ri = 0; ri < revealed; ri++) {
       var rowY = (y + panelH) - pad - (ri + 1) * rowH;
       if (ri % 2 === 1) {
-        ctx.fillStyle = 'rgba(255,255,255,0.06)';   // zebra band — a lift off the glass, not a light tint
+        ctx.fillStyle = FREEZE_INK_ZEBRA;   // zebra band — a lift off the plate, not a heavy tint
         ctx.fillRect(x, rowY, panelW, rowH);
       }
       var hop = stack.hopsUp[ri];
       ctx.fillStyle = '#' + ('000000' + (hop.hex >>> 0).toString(16)).slice(-6);
       ctx.fillRect(x + pad, rowY + (rowH - swatch) / 2, swatch, swatch);
-      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillStyle = FREEZE_INK_BODY;
       ctx.fillText(rowsText[ri], x + pad * 2 + swatch, rowY + rowH / 2);
     }
     ctx.restore();
@@ -4045,7 +4110,7 @@ function setupCpeLoadPath(A) {
     // regardless of which row ends up "current"), and size the plate to the WIDEST of them, so every
     // row's white background genuinely covers its own text, no exceptions.
     ctx.save();
-    ctx.font = '700 ' + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+    ctx.font = '700 ' + (13 * k).toFixed(0) + 'px ' + FREEZE_F;   // §129.58 family only — the 13*k SIZE is a remaining outlier, see the theme block
     var _measuredLabelW = 0;
     stack.hopsUp.forEach(function (h_, i) {
       if (i >= stack.revealedHops) return;
@@ -4079,7 +4144,7 @@ function setupCpeLoadPath(A) {
       ctx.beginPath(); ctx.moveTo(row.px, row.py);
       ctx.lineTo(row.x + (row.x > row.px ? 0 : row.w), row.y + row.h / 2); ctx.stroke();
       var label = h_.cls + ' · ' + h_.storey + ' · hop ' + (row.k + 1) + '/' + stack.hopsUp.length;
-      ctx.font = (isCurrent ? '700 ' : '600 ') + (13 * k).toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
+      ctx.font = (isCurrent ? '700 ' : '600 ') + (13 * k).toFixed(0) + 'px ' + FREEZE_F;   // §129.58 family only — see above
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       // FIX (2026-09-17, red1 direct correction — reversed from what shipped here, no written spec
       // entry existed to check it against): black text on a WHITE plate, not white text on a black
@@ -4232,7 +4297,7 @@ function setupCpeLoadPath(A) {
     var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.026, 9) : Math.max(9, Math.round(h * 0.026)));
     var pad = Math.round(fontPx * 0.6), margin = Math.round(h * 0.028), rowH = Math.round(fontPx * 1.55);
     ctx.save();
-    ctx.font = '600 ' + fontPx + 'px Segoe UI, system-ui, sans-serif';
+    ctx.font = '600 ' + fontPx + 'px ' + FREEZE_F;   // §129.58 — the card keeps k=0.026 (the day counter's own size); only the family was its own
     var maxLineWidthPx = 0;
     assembled.lines.forEach(function (l) { maxLineWidthPx = Math.max(maxLineWidthPx, ctx.measureText(l).width); });
     ctx.restore();
@@ -4258,9 +4323,9 @@ function setupCpeLoadPath(A) {
     // would affect unrelated panels) with near-white text, the same reversed scheme fixed once for
     // the ladder and missed here.
     var rr = Math.round(rect.h * 0.09);
-    ctx.fillStyle = 'rgba(255,255,255,1)';
-    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rect.x, rect.y, rect.w, rect.h, rr); ctx.fill(); }
-    else ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    // §129.58 — the same reversed plate the info panel now uses, so the two freeze boxes cannot
+    // drift apart again. Was a bare opaque `rgba(255,255,255,1)` slab with no border.
+    _freezePlateDraw(ctx, rect.x, rect.y, rect.w, rect.h, rr);
     // §129.39 (2026-09-19, red1 on a 1080p frame: "its text is still too small") — THIS FUNCTION
     // NEVER SET ctx.font. `_infoCardLayout` sets it, measures the lines with it, and then hands the
     // context back through its OWN ctx.restore() — so every fillText below ran at the canvas 2D
@@ -4271,11 +4336,11 @@ function setupCpeLoadPath(A) {
     // 1920x1080 film: a 913x163 plate — the right size for 28px — carrying ~10px glyphs.
     // One line. The size is `layout.fontPx`, the same number the plate was measured with, so the
     // two can no longer disagree.
-    ctx.font = '600 ' + layout.fontPx + 'px Segoe UI, system-ui, sans-serif';
+    ctx.font = '600 ' + layout.fontPx + 'px ' + FREEZE_F;   // §129.58 — must match _infoCardLayout's measuring font exactly (§129.39)
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     assembled.lines.forEach(function (l, i) {
       var ly = rect.y + pad + rowH * i + rowH / 2, lx = rect.x + pad;
-      ctx.fillStyle = '#14181d';
+      ctx.fillStyle = FREEZE_INK_BODY;   // §129.58 — was the one-off #14181d; the shared freeze ink now, same ladder as the panel
       ctx.fillText(l, lx, ly);
     });
     ctx.restore();

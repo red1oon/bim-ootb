@@ -32,7 +32,12 @@ const src=fs.readFileSync(process.argv[2] || '/tmp/wt-loadpath/viewer/cpe_load_p
 const seen=[];
 function mkCtx(){
   return { font:'10px sans-serif', fillStyle:'', textAlign:'', textBaseline:'', canvas:{width:1920,height:1080},
-    save(){}, restore(){}, beginPath(){}, fill(){}, fillRect(){}, roundRect(){},
+    // §129.58 — the card now draws the shared reversed plate, which STROKES its border. A stub
+    // missing `stroke` threw inside the draw and turned this witness INCONCLUSIVE (it stopped
+    // testing anything rather than failing loudly). Kept minimal: no-ops, same as the rest.
+    strokeStyle: '', lineWidth: 1,
+    save(){}, restore(){}, beginPath(){}, fill(){}, fillRect(){}, roundRect(){}, stroke(){},
+    closePath(){}, moveTo(){}, lineTo(){}, arc(){}, clip(){}, translate(){},
     measureText(t){ const px=parseInt((this.font.match(/(\d+)px/)||[0,10])[1],10); return {width:t.length*px*0.55}; },
     fillText(t,x,y){ seen.push({t:t.slice(0,28), font:this.font}); } };
 }
