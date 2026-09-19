@@ -257,9 +257,24 @@ function setupCpeSunCompass(A) {
       ? A.three2ifcDir(away.x, away.y, away.z)
       : { ix: away.x, iy: -away.z, iz: away.y };
     var ax = cx + awayIfc.ix * offset, ay = cy + awayIfc.iy * offset;
-    // Sit a few centimetres proud of the lowest structure so the rose is not z-fighting the slab
-    // or buried in the ground mesh.
-    var az = ext.z0 + 0.05;
+    // §129.44 (2026-09-19, red1 on the Terminal film: "the North compass seems to hit underground
+    // mistakenly, probably due to its substructure ... if u find back the ground that shadow could
+    // locate, it be corrected?") — yes, and the number was already published.
+    // This used to sit "a few centimetres proud of the LOWEST STRUCTURE" (ext.z0), which is the
+    // bottom of the model's bounding box. On a building with no basement that IS the ground, which
+    // is why HHS looked right (anchor z = -0.16). On one with a substructure it is the bottom of
+    // the deepest pile: MEASURED on Terminal, the rose was placed at z = -30.64 while that model's
+    // ground sits at z = +0.06 — thirty metres underground, exactly as red1 read it off the frame.
+    // tools.js's _calcGroundY already owns this question and publishes A.groundIfcZ, deriving it
+    // from the largest ground-floor slabs and only falling back to MIN(center_z) as a last resort
+    // (Terminal resolves it as §GROUND_Y src=gf-storey-slab(Aras Tanah) z=0.06). Its own comment
+    // says a second, independently-derived ground height "would be a way for the ghost to disagree
+    // with what it is ghosting" — the same applies here, so this reads that number rather than
+    // computing a rival one. ext.z0 stays as the fallback for a page where the ground plane has
+    // not been resolved yet, and the log says which was used and by how much they differ.
+    var _groundZ = (typeof A.groundIfcZ === 'number' && isFinite(A.groundIfcZ)) ? A.groundIfcZ : null;
+    var _azSrc = _groundZ != null ? 'groundIfcZ' : 'bboxMin(ext.z0)';
+    var az = (_groundZ != null ? _groundZ : ext.z0) + 0.05;
     _anchor = { ix: ax, iy: ay, iz: az };
     var c3 = A.ifc2three(ax, ay, az);
     var centre = new T.Vector3(c3.x, c3.y, c3.z);
@@ -358,6 +373,8 @@ function setupCpeSunCompass(A) {
       ' (src=' + _geo.latLongSource + ') trueNorth=' + _geo.trueNorth.toFixed(4) + 'deg (src=' +
       _geo.trueNorthSource + ') elev=' + (_geo.elevM == null ? 'n/a' : _geo.elevM.toFixed(2) + 'm') +
       ' halo=' + _haloM.toFixed(3) + 'm [' + _haloSrc + ']' +
+      ' groundSrc=' + _azSrc + ' groundZ=' + (_groundZ != null ? _groundZ.toFixed(2) : 'n/a') +
+      ' bboxMinZ=' + ext.z0.toFixed(2) + ' liftedBy=' + (_groundZ != null ? (_groundZ - ext.z0).toFixed(2) : '0.00') + 'm' +
       ' radius=' + _radius.toFixed(2) + 'm anchor=ifc(' + ax.toFixed(2) + ',' + ay.toFixed(2) +
       ',' + az.toFixed(2) + ') side=' + (faceBearing === 180 ? 'true-south' : 'true-north') +
       ' envelope=' + spanX.toFixed(1) + 'x' + spanY.toFixed(1) + 'm');
