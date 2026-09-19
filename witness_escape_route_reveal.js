@@ -238,15 +238,18 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // ISSUE: a hide flag left set past its beat silently strips the HUD off the rest of the film. ══
   const marks = [0.0, 0.5, plan.beats.rise, win.start - 1e-6, (win.start + win.end) / 2, win.end + 1e-6, 1.0];
   const got = marks.map(t => { A.escapeRouteApplyVisual(plan, t); return !!A._escRouteHudSuppress; });
-  ck('W-ESC-5a suppressed inside the window only', JSON.stringify(got) === JSON.stringify(
+  // The flag no longer hides anything (red1 retired that — see W-ESC-8f). It is still maintained
+  // as the module's own "the window is open" record, and these four still prove the window
+  // lifecycle: it opens where it should, and the forced restore really does close it.
+  ck('W-ESC-5a the window flag is true inside the window only', JSON.stringify(got) === JSON.stringify(
      [false, false, false, false, true, false, false]), JSON.stringify(got));
   A.escapeRouteApplyVisual(plan, (win.start + win.end) / 2);
   ck('W-ESC-5b it is genuinely engaged before the restore is tested', A._escRouteHudSuppress === true);
   A.escapeRouteApplyVisual(null, 0);                       // the forced restore every bake exit path makes
   ck('W-ESC-5c the forced restore clears it', A._escRouteHudSuppress === false);
-  ck('W-ESC-5d it is NOT the §129.1 freeze flag — this file never touches that mechanism',
+  ck('W-ESC-5d the §129.1 freeze mechanism is never touched — not then, and not now that the flag gates nothing',
      fs.readFileSync(path.join(__dirname, 'viewer/cpe_escape_route.js'), 'utf8').indexOf('__drawUnlessHold') < 0 &&
-     /_escRouteHudSuppress/.test(mq) && /function _hudGate/.test(mq));
+     /_escRouteHudSuppress/.test(mq));
 
   // ══ W-ESC-6 — the honesty asymmetry reaches the SCREEN, not just the comments (§3's own ruling:
   // the panel showing the speed itself is what keeps this honest). ═════════════════════════════
@@ -273,13 +276,20 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // by any anchor position that leaves a plate overlapping when a free corner existed.
   // No canvas, no camera: the placement predicate is exercised directly.
   const W = 1920, H = 1080;
-  const reserved = A.escapeRouteReservedRects(W, H, 'tr', true);
-  ck('W-ESC-8a the reserved set is the day counter AND the card — the two boxes actually drawn in this beat',
-     reserved.length === 2 && reserved.every(r => r.w > 0 && r.h > 0 && r.x >= 0 && r.y >= 0),
+  // The column's real measured depth, as cinema_maxq.js stashes it: day counter + sun clock +
+  // compass readout + path box + card. 620 px is a realistic full column at h=1080.
+  const reserved = A.escapeRouteReservedRects(W, H, 'tr', 620);
+  ck('W-ESC-8a the reserve is ONE strip covering the whole corner column, not a box or two',
+     reserved.length === 1 && reserved[0].h === 620 && reserved[0].w > 0,
      reserved.map(r => r.x + ',' + r.y + ' ' + r.w + 'x' + r.h).join('  |  '));
-  ck('W-ESC-8b the card sits BELOW the day counter, not on it (the column stacks, it does not pile)',
-     !A.escapeRouteRectsHit(reserved[0], reserved[1]) && reserved[1].y >= reserved[0].y + reserved[0].h,
-     'counter bottom=' + (reserved[0].y + reserved[0].h) + ' card top=' + reserved[1].y);
+  ck('W-ESC-8b with no measurement yet (frame 1) it still reserves the card, never nothing',
+     (() => { const r0 = A.escapeRouteReservedRects(W, H, 'tr', 0);
+              return r0.length === 1 && r0[0].h > 0; })(),
+     JSON.stringify(A.escapeRouteReservedRects(W, H, 'tr', 0)[0]));
+  ck('W-ESC-8b2 a bottom-anchored column reserves upward from the bottom margin, not downward',
+     (() => { const rb = A.escapeRouteReservedRects(W, H, 'br', 620)[0];
+              return rb.y + rb.h <= H && rb.y < H - 620 + 1; })(),
+     JSON.stringify(A.escapeRouteReservedRects(W, H, 'br', 620)[0]));
 
   // Sweep anchor pairs across the whole frame, including deliberately hostile ones: both anchors
   // inside the corner column, and both on the same point.
@@ -309,10 +319,18 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   ck('W-ESC-8e the card itself needs no spot — it REPLACES a bigStats card rather than adding a box',
      /_statInfo = \{ shown: _ec, pos: _ovPos, held: null \};/.test(mq) &&
      (mq.match(/escapeRouteStatCardAt/g) || []).length === 2);   // the guard and the call, nothing more
-  ck('W-ESC-8f the reserve is only correct because the suppression clears the middle of the column — that gate is real',
-     /!A\._escRouteHudSuppress && A\.pathOverviewCompositeOntoCanvas/.test(mq) &&
-     /!A\._escRouteHudSuppress && A\.resourcePanelCompositeOntoCanvas/.test(mq) &&
-     (mq.match(/_hudGate\('suncompass\.(clock|readout)'/g) || []).length === 2);
+  // red1, 2026-09-20, overriding the spec's own §2 item 7: "the new HUD should not make the other
+  // HUDs go away." ISSUE: the suppression is retired — is it really gone, or just defaulted off
+  // somewhere it could creep back? Disproved by ANY draw call still reading the flag.
+  ck('W-ESC-8f NOTHING is suppressed any more — no draw call reads the flag, and _hudGate is gone',
+     mq.indexOf('function _hudGate') < 0 &&
+     !/!A\._escRouteHudSuppress &&/.test(mq) &&
+     (mq.match(/_hudHold\('suncompass\.(clock|readout)'/g) || []).length === 2 &&
+     /if \(ovInfo && ovInfo\.ov && A\.pathOverviewCompositeOntoCanvas\)/.test(mq) &&
+     /if \(resInfo && resInfo\.info && A\.resourcePanelCompositeOntoCanvas\)/.test(mq));
+  ck('W-ESC-8g the column depth the reserve uses is MEASURED by the compositor, not guessed here',
+     /A\._hudStackBottom = _stackY \+/.test(mq) &&
+     /escapeRouteReservedRects\(w, h, _ovPos, A\._hudStackBottom\)/.test(mq));
 
   // ══ W-ESC-9 — §ESCAPE_ROUTE_NOT_A_CORRIDOR. red1's clip picked "Level 4 Hall/Corridor 3" on
   // Hospital_silent: a CORRIDOR_ROOM:: pseudo-room injected by §CORRIDOR-ROOM-BACKPROP. Nobody

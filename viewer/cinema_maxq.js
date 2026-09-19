@@ -780,19 +780,17 @@
     if (typeof f === 'function') return f(name, fn);
     return fn(1);
   }
-  // §ESCAPE_ROUTE_HUD_SUPPRESS (ESCAPE_ROUTE_REVEAL.md §2 item 7) — "other overlay signage hidden
-  // for this window", through its OWN gate. Deliberately NOT the §129.1 freeze flag above: that one
-  // also stops tNorm, and item 3 rules that out ("the clock does not slow of course"). Same SHAPE,
-  // different trigger. A.escapeRouteApplyVisual sets the flag from the window alone and clears it on
-  // the way out and on every forced restore, so a box can never be left hidden past the beat.
-  // WHAT IS SUPPRESSED: the sun clock, the sun-compass readout, the path-overview box and the
-  // resource pie — the signage a viewer consults. The DAY COUNTER IS NOT: it is the film's clock,
-  // and the whole point of this beat is that the clock keeps running while the camera eases.
-  function _hudGate(name, fn) {
-    var A = window.APP;
-    if (A && A._escRouteHudSuppress) return 0;
-    return _hudHold(name, fn);
-  }
+  // §ESCAPE_ROUTE_HUD_SUPPRESS — RETIRED 2026-09-20 by red1, overriding the spec's own §2 item 7
+  // ("other overlay signage: hidden for this window"). His words, after seeing it: "the new HUD
+  // should not make the other HUDs go away." The spec is his and so is the reversal; the later
+  // instruction wins and this is not re-litigated.
+  // Nothing is hidden any more. The sun clock, the sun-compass readout, the path-overview box and
+  // the resource pie all keep drawing through the reveal. `A._escRouteHudSuppress` still exists
+  // and is still maintained (it is how the escape module reports "the window is open"), but no
+  // draw call reads it — W-ESC-8f asserts exactly that, so it cannot creep back by accident.
+  // ⚠ ONE THING STILL CHANGES, and it is not suppression: the Escape Route card occupies the
+  // bigStats slot for its window, the same slot the tail/storey/measure cards already take turns
+  // in. One slot holds one card; that is the chain's existing behaviour, not a new hiding rule.
   function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, escInfo) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
@@ -882,7 +880,7 @@
     // per ROUND 13 item C — a compositor that assigns globalAlpha absolutely would otherwise
     // clobber the ambient fade set by the wrapper.
     if (A._sunCompassOn && A.sunClockCompositeOntoCanvas && A.sunCompassInfo) {
-      _hudGate('suncompass.clock', function (a) {
+      _hudHold('suncompass.clock', function (a) {
         try {
           var _clkH = A.sunClockCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a,
                                                     (dayInfo && dayInfo.pos) || 'tr', _stackY);
@@ -895,7 +893,7 @@
     // (red1: "same line as the Day counter? Clock, the azimuth thing, and the 4D day counter").
     // It was bottom-left and was drawing underneath the loadpath session's own room box there.
     if (A._sunCompassOn && A.sunCompassCompositeOntoCanvas && A.sunCompassInfo) {
-      _hudGate('suncompass.readout', function (a) {
+      _hudHold('suncompass.readout', function (a) {
         try {
           var _scH = A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a,
                                                      (dayInfo && dayInfo.pos) || 'tr', _stackY);
@@ -904,19 +902,26 @@
           console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message)); } }
       });
     }
-    if (ovInfo && ovInfo.ov && !A._escRouteHudSuppress && A.pathOverviewCompositeOntoCanvas) try {
+    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
       A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stackY);
       _stackY += Math.round(h * 0.20) + _gapY;   // the box's own bh, from cpe_path_overview.js
     } catch (eOvD) {
       if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
         console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
     }
-    if (resInfo && resInfo.info && !A._escRouteHudSuppress && A.resourcePanelCompositeOntoCanvas) try {
+    if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) try {
       A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, 1, resInfo.pos, _stackY);
     } catch (eRp) {
       if (!A._resDrawErrLogged) { A._resDrawErrLogged = true;
         console.warn('§CPE_RESOURCE_PANEL_ERR draw: ' + eRp.message + ' — panel skipped, frames continue'); }
     }
+    // §ESCAPE_ROUTE_HUD_RESERVE — the column's real bottom THIS frame, stashed for the next
+    // frame's plate placement. Measured here because this is the only place that knows it: the sun
+    // clock and the compass readout return their own drawn heights and nothing else can predict
+    // them. One frame stale by construction (placement runs just before this capture), which moves
+    // a plate by whatever the column grew in 1/24 s — in practice zero, since these boxes are fixed
+    // furniture. The first frame has no measurement and falls back to reserving the whole column.
+    A._hudStackBottom = _stackY + (statInfo && statInfo.shown ? Math.round(h * 0.24) : 0);
     if (statInfo && statInfo.shown && A.bigStatsCompositeOntoCanvas) try {
       // §CPE_PIE_HOLD — statInfo.held is the composition the pie holds beside the card.
       A.bigStatsCompositeOntoCanvas(ctx, w, h, statInfo.shown, 1, statInfo.pos, _stackY, statInfo.held);
@@ -2415,11 +2420,12 @@
             _statInfo = { shown: _ec, pos: _ovPos, held: null };
             if (A.escapeRouteFrameAt) {
               // §ESCAPE_ROUTE_HUD_RESERVE — the corner column this frame, so the two scene-anchored
-              // plates keep out of it (red1: the panel "must find an empty spot"). Correct only
-              // because A._escRouteHudSuppress has already cleared the middle of that column —
-              // the gates a few lines up in _captureFrame. W-ESC-8d asserts that coupling.
+              // plates keep out of it (red1: the panel "must find an empty spot"). Since the
+              // suppression was retired the column holds EVERY box again — day counter, sun clock,
+              // compass readout, path box, pie/card — so the reserve is the whole strip down to the
+              // bottom _captureFrame measured last frame (A._hudStackBottom), not two boxes.
               var _escReserved = A.escapeRouteReservedRects
-                ? A.escapeRouteReservedRects(w, h, _ovPos, !!(_dayInfo && _dayInfo.pos !== 'off')) : [];
+                ? A.escapeRouteReservedRects(w, h, _ovPos, A._hudStackBottom) : [];
               try { _escInfo = A.escapeRouteFrameAt(plan, _tnFilm, A.camera, w, h, _escReserved); }
               catch (eEF) { if (!A._escFrameWarned) { A._escFrameWarned = true;
                 console.warn('§ESCAPE_ROUTE_FRAME failed frame=' + i + ': ' + (eEF && eEF.message)); } }
@@ -2431,7 +2437,8 @@
                 ' drawn=' + _escInfo.drawnM.toFixed(2) + 'm of ' + _escRec.walkM.toFixed(2) + 'm' +
                 ' steps=~' + _escInfo.steps + ' walk=' + Math.round(_escInfo.walkSec) + 's' +
                 ' pts=' + _escInfo.screen.length + ' labels=' + _escInfo.labels.length +
-                ' alpha=' + _escInfo.alpha.toFixed(2) + ' hudSuppressed=' + (A._escRouteHudSuppress ? 1 : 0));
+                ' alpha=' + _escInfo.alpha.toFixed(2) + ' reserved=' + _escReserved.length +
+                ' plateCollisions=' + _escInfo.labels.map(function (L) { return L.collisions; }).join('/'));
             }
           }
         }

@@ -478,24 +478,27 @@ function setupCpeEscapeRoute(A) {
   // A._escRouteHudSuppress has already cleared the sun clock, the compass readout, the path box and
   // the pie out of the middle of it. That coupling is what makes this three lines instead of a
   // second copy of _captureFrame's stack maths, and W-ESC-8d asserts it rather than trusting it.
-  A.escapeRouteReservedRects = function (w, h, pos, dayOn) {
-    var out = [], gap = Math.round(h * 0.012), stackY = 0;
-    if (!A.bigStatsBoxRect) return out;   // no card geometry to reserve against — place freely
-    var card = A.bigStatsBoxRect(w, h, pos, 0);
-    if (dayOn && A.dayCounterBoxSize) {
-      // ⚠ WIDTH: cpe_day_counter.js's dayCounterBoxSize() returns { h, margin } and NOTHING ELSE —
-      // its own comment says it exists so callers get the HEIGHT without re-deriving it, and the
-      // pill's width is a function of the text it is about to draw. So the counter row is reserved
-      // at the CARD's width instead, which is wider than the pill. Over-reserving is the safe
-      // direction: a plate is pushed a little further from a box it would not have touched, and
-      // nothing is ever placed on top of one it would have. Re-deriving the pill's text width here
-      // would be a second owner of that arithmetic, which that file explicitly forbids.
-      var d = A.dayCounterBoxSize(h);
-      out.push({ x: card.x, y: card.y, w: card.w, h: d.h });
-      stackY = d.h + gap;
-    }
-    out.push(A.bigStatsBoxRect(w, h, pos, stackY));
-    return out;
+  // `stackBottom` is cinema_maxq.js's OWN measured column depth from the previous captured frame
+  // (A._hudStackBottom) — the only thing that knows it, because the sun clock and the compass
+  // readout each return their drawn height and nothing can predict them. ONE rectangle covering
+  // the whole strip, because since the suppression was retired every box in that column is drawn
+  // through the reveal and a plate must clear all of them, not just two.
+  // ⚠ WIDTH: cpe_day_counter.js's dayCounterBoxSize() returns { h, margin } and NOTHING ELSE — its
+  // own comment says it exists so callers get the HEIGHT without re-deriving it, and the pill's
+  // width depends on the text it is about to draw. So the strip takes the CARD's width, which is
+  // the widest box in the column. Over-reserving is the safe direction: a plate is pushed clear of
+  // space it might not have touched, and never placed on top of a box it would have.
+  A.escapeRouteReservedRects = function (w, h, pos, stackDepth) {
+    if (!A.bigStatsBoxRect) return [];   // no card geometry to reserve against — place freely
+    var margin = Math.round(h * 0.028);
+    var card = A.bigStatsBoxRect(w, h, pos, 0);   // the card at offset 0 gives the column's x and width
+    // `stackDepth` is cinema_maxq.js's A._hudStackBottom: the column's DEPTH from its anchor edge,
+    // measured on the last captured frame. Frame 1 has none, so fall back to the card's own depth —
+    // never to an empty reserve, which would drop a plate straight onto the HUD.
+    var depth = (stackDepth > 0) ? Math.max(stackDepth, card.h) : card.h;
+    var bottomAnchored = (pos === 'bl' || pos === 'br');
+    var y = bottomAnchored ? (h - margin - depth) : margin;
+    return [ { x: card.x, y: Math.max(0, y), w: card.w, h: Math.min(depth, h) } ];
   };
   function _hits(a, b) {
     return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
@@ -574,6 +577,19 @@ function setupCpeEscapeRoute(A) {
         cands.push({ x: L.sx - ox - bw, y: L.sy - oy - bh });   // up-left
         cands.push({ x: L.sx + ox, y: L.sy + oy });             // down-right
         cands.push({ x: L.sx - ox - bw, y: L.sy + oy });        // down-left
+      }
+      // …then candidates that deliberately CLEAR each obstacle, rather than nibbling past it.
+      // The diagonal ladder above cannot escape a tall strip from inside it: at step 5 it has moved
+      // ~350 px vertically against a 620 px column (W-ESC-8d caught this at 26/35 when the retired
+      // suppression turned the reserve from two boxes into the whole column). One candidate per
+      // side of each obstacle fixes it in a single try and costs nothing when nothing is contested.
+      var obstacles = reserved.concat(placed);
+      for (var oi = 0; oi < obstacles.length; oi++) {
+        var R = obstacles[oi];
+        cands.push({ x: R.x - M.off - bw, y: L.sy - bh / 2 });      // wholly left of it
+        cands.push({ x: R.x + R.w + M.off, y: L.sy - bh / 2 });     // wholly right of it
+        cands.push({ x: L.sx - bw / 2, y: R.y - M.off - bh });      // wholly above it
+        cands.push({ x: L.sx - bw / 2, y: R.y + R.h + M.off });     // wholly below it
       }
       var bestRect = null, bestHits = Infinity;
       for (var c = 0; c < cands.length; c++) {
