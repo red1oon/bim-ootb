@@ -193,9 +193,17 @@ function setupCpeEscapeRoute(A) {
     // exit for its §RASTER-ASTAR floor-hugging polyline, whose 3D length is measured here. The cost
     // is kept alongside (it is what the Egress panel ranks by) but it does NOT choose.
     var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
-    var best = null, reached = 0, worstByCost = null, noPoly = 0;
+    var best = null, reached = 0, worstByCost = null, noPoly = 0, corridors = 0, noExit = 0;
     graph.nodes.forEach(function (n) {
+      // §ESCAPE_ROUTE_NOT_A_CORRIDOR — a CORRIDOR_ROOM:: node is a pseudo-room injected by
+      // §CORRIDOR-ROOM-BACKPROP for the hallway backbone; nobody starts an escape there, the
+      // corridor IS the escape route. FOUND ON A REAL BAKE (Hospital_silent, 2026-09-20): the
+      // longest walk was "≈ Level 4 Hall/Corridor 3" — a corridor, with no room box, so the film
+      // also had nothing to light up (roomBoxes=0). The test is room_graph.js's OWN, line 379,
+      // verbatim, not a second way of spotting them.
+      if (String(n.guid).indexOf('CORRIDOR_ROOM::') === 0) { corridors++; return; }
       var esc = RG.escapeRoute(graph, n.guid, { log: function () {} });
+      if (!esc || esc.distance == null || !isFinite(esc.distance)) noExit++;
       if (!esc || esc.distance == null || !isFinite(esc.distance)) return;
       reached++;
       if (!worstByCost || esc.distance > worstByCost.esc.distance) worstByCost = { node: n, esc: esc };
@@ -257,6 +265,7 @@ function setupCpeEscapeRoute(A) {
       steps: Math.round(polyLenM / STRIDE_M), walkSec: polyLenM / WALK_MS,
       pts3: pts3, cum: cum, polyLenM: polyLenM, polySrc: polySrc, boxes: boxes,
       roomsScanned: graph.nodes.length, roomsReachingAnExit: reached, scanMs: scanMs,
+      corridorsSkipped: corridors, roomsWithNoExit: noExit,
       costWorstName: worstByCost ? (worstByCost.node.name || worstByCost.node.guid) : null,
       costWorstCost: worstByCost ? worstByCost.esc.distance : null,
       isAlsoCostWorst: !!(worstByCost && worstByCost.node.guid === node.guid)
@@ -273,6 +282,18 @@ function setupCpeEscapeRoute(A) {
       ' | selection=argmax MEASURED WALK over ' + graph.nodes.length + ' rooms (' + reached + ' reach an exit, ' +
       noPoly + ' had no drawable polyline)' +
       ' scanMs=' + scanMs.toFixed(0) + ' fn=escapeRoute+shortestPath (NOT escapeRouteViaProtectedStair — see file header)');
+    _rec.breach = A.escapeRouteBreach();
+    // §ESCAPE_ROUTE_NOT_THE_ONLY_FINDING — "the longest route" is not the worst egress fact in a
+    // building that has rooms with NO route at all. Those are egress_sanity.js's `isolated_room`
+    // CRITICAL rows: an infinite escape route, which no line can draw. Printed every build so the
+    // film's claim is never read as "and everything else is fine".
+    console.log('§ESCAPE_ROUTE_POPULATION roomNodes=' + graph.nodes.length +
+      ' corridorPseudoRoomsSkipped=' + corridors + ' (CORRIDOR_ROOM:: — nobody starts an escape in a corridor)' +
+      ' realRoomsConsidered=' + (graph.nodes.length - corridors) +
+      ' reachAnExit=' + reached + ' reachNOexit=' + noExit +
+      (noExit > 0 ? ' — ⚠ ' + noExit + ' room(s) have NO route to any exit at all. That is a WORSE finding than'
+        + ' any long route and this film cannot draw it (there is no line). egress_sanity.js reports them as'
+        + ' isolated_room CRITICAL.' : ' — every real room reaches an exit'));
     // §ESCAPE_ROUTE_COST_IS_NOT_A_DISTANCE — printed EVERY build, not only when it looks bad, so the
     // ratio is on the record for whichever building was baked. >1 means §UTILITY-ROUTING-PENALTY
     // inflated the cost; <1 means the A*-refined drawn line is longer than the straight-chord edge
@@ -291,6 +312,42 @@ function setupCpeEscapeRoute(A) {
         ? ' — THEY DISAGREE BY MORE THAN 5%. The film prints the drawn walk. The Egress report prints the cost. That report figure is wrong and is NOT fixed here (see ESCAPE_ROUTE_REVEAL.md FINDINGS).'
         : ' — within 5%, this building has little or no utility-edge penalty on the worst route'));
     return _rec;
+  };
+  // ══ §ESCAPE_ROUTE_BREACH (red1, 2026-09-20: "is that breaking any fire dept conditions? If so,
+  // it be good to flag in the HUD") ═══════════════════════════════════════════════════════════
+  // The thresholds are NEVER re-typed here. They come from the same rulebook the Egress panel
+  // reads — rates/egress_rules.json via A.loadRuleSet('egress'), which also applies whatever
+  // jurisdiction overlay (§RULE_OVERLAY T8.14) the user has selected — falling back to
+  // EgressSanity.FALLBACK_RULES, the §RULE_FALLBACK_ONE_SOURCE literal. Absent both, there is no
+  // flag at all rather than an invented limit.
+  //
+  // ⚠ WHAT THE FLAG DOES AND DOES NOT CLAIM. egress_sanity.js's own header states the mismatch and
+  // it is not softened here: critical_m 60.96 is IBC 2021 Table 1017.2 Group I-2 (200 ft), which
+  // limits travel to the NEAREST AVAILABLE EXIT — normally the protected exit-stair enclosure on
+  // the occupant's own floor. This route is measured all the way to a real EXTERIOR door, because
+  // that is what the graph's E4 exit nodes are. On an upper storey that OVERSTATES the regulated
+  // quantity, so an over-limit flag here is a possible FALSE POSITIVE, never a false negative.
+  // It also assumes I-2 occupancy, which this pipeline extracts nothing to confirm. So the HUD
+  // says the route is over the screening limit and names the rule; it does not say "violation".
+  var _rules = null, _rulesSrc = 'none';
+  A.escapeRouteSetRules = function (rules, source) {
+    _rules = null; _rulesSrc = source || 'unknown';
+    ((rules && rules.egress_rules) || []).forEach(function (r) {
+      if (r.name === 'circulation_distance') _rules = r;
+    });
+    console.log('§ESCAPE_ROUTE_RULES source=' + _rulesSrc + (_rules
+      ? ' circulation_distance warning=' + _rules.warning_m + 'm critical=' + _rules.critical_m + 'm'
+      : ' — NO circulation_distance rule found; the HUD will carry no breach flag rather than an invented limit'));
+    if (_rec) _rec.breach = A.escapeRouteBreach();
+  };
+  A.escapeRouteBreach = function () {
+    if (!_rec || !_rules) return null;
+    var m = _rec.walkM, crit = _rules.critical_m, warn = _rules.warning_m;
+    if (!(crit > 0)) return null;
+    var lvl = (m >= crit) ? 'critical' : (warn > 0 && m >= warn ? 'warning' : null);
+    if (!lvl) return { level: null, limitM: crit, warnM: warn, overBy: null, rule: 'circulation_distance' };
+    return { level: lvl, limitM: crit, warnM: warn, rule: 'circulation_distance',
+             overBy: m / (lvl === 'critical' ? crit : warn) };
   };
   A.escapeRouteRecord = function () { return _rec; };
   A.escapeRouteReset = function () { _rec = null; _builtFor = null; _buildTried = false; _stats = _freshStats(); };
@@ -358,9 +415,20 @@ function setupCpeEscapeRoute(A) {
   A.escapeRouteStatCardAt = function (plan, tNorm) {
     var vis = A.escapeRouteVisualAt(plan, tNorm);
     if (!vis) return null;
-    return { card: { big: _fmtWalk(vis.walkSec), label: 'Escape Route',
-                     sub: '~' + vis.steps + ' steps · ' + vis.drawnM.toFixed(0) + ' m walked · at ' +
-                          WALK_MS + ' m/s (' + WALK_CITE + ') · ' + STRIDE_M + ' m stride assumed' },
+    var b = _rec.breach, label = 'Escape Route', sub;
+    if (b && b.level === 'critical') label = 'Escape Route — OVER LIMIT';
+    else if (b && b.level === 'warning') label = 'Escape Route — over warning';
+    if (b && b.level) {
+      // The LIMIT and the rule are named, so the flag can be checked rather than believed. The
+      // stride disclosure moves off the card here to make room; it stays in the § log and in the
+      // sub whenever there is no flag. The speed stays on, always — that is §3's own rule.
+      sub = vis.drawnM.toFixed(0) + ' m vs ' + b.limitM + ' m ' + (b.level === 'critical' ? 'limit' : 'warning') +
+            ' (IBC 2021 T1017.2, I-2) · ~' + vis.steps + ' steps at ' + WALK_MS + ' m/s (' + WALK_CITE + ')';
+    } else {
+      sub = '~' + vis.steps + ' steps · ' + vis.drawnM.toFixed(0) + ' m walked · at ' +
+            WALK_MS + ' m/s (' + WALK_CITE + ') · ' + STRIDE_M + ' m stride assumed';
+    }
+    return { card: { big: _fmtWalk(vis.walkSec), label: label, sub: sub },
              idx: 0, n: 1, opacity: vis.alpha };
   };
   // The caption slot, same A.roomTitleCompositeOntoCanvas every other beat draws through.
@@ -615,7 +683,13 @@ function setupCpeEscapeRoute(A) {
   }
   function _build3D() {
     if (!THREE || !A.scene || !_rec) return;
-    if (!A.xrayOn && typeof A.toggleXray === 'function') {
+    // §ESCAPE_ROUTE_XRAY_COST — dev tap, undefined in every user session, same family as
+    // window.__maxqPoseTap. Set it and the x-ray is skipped while the room glow and the line stay,
+    // so the two can be A/B timed against each other instead of argued about. red1 asked whether
+    // the x-ray is what the reveal window costs; this is how that gets an answer rather than a view.
+    var _noXray = (typeof window !== 'undefined' && window.__escNoXray === true);
+    if (_noXray) console.log('§ESCAPE_ROUTE_XRAY SKIPPED by window.__escNoXray (dev tap) — glow and line unchanged');
+    if (!_noXray && !A.xrayOn && typeof A.toggleXray === 'function') {
       A.toggleXray(); _xrayByUs = true;
       console.log('§ESCAPE_ROUTE_XRAY on (scoped to this window; restored at its end and at every bake exit)');
     }

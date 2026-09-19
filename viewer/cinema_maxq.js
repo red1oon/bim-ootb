@@ -1796,6 +1796,14 @@
       // per-frame call below then no-ops: DEGRADE, DON'T DISABLE.
       var _escRec = null;
       if (_escapeRoute && A.escapeRouteBuild) {
+        // §ESCAPE_ROUTE_BREACH — the SAME rulebook the Egress panel reads (rates/egress_rules.json
+        // plus whatever jurisdiction overlay is selected), never a re-typed threshold. Loaded
+        // BEFORE the build so the record carries its flag from the first frame. A failure here
+        // leaves the film with no breach flag, which is the honest degrade — never a guessed limit.
+        if (A.loadRuleSet && A.escapeRouteSetRules) {
+          try { var _er = await A.loadRuleSet('egress'); A.escapeRouteSetRules(_er.rules, _er.source); }
+          catch (eRL) { console.warn('§ESCAPE_ROUTE_RULES load failed: ' + (eRL && eRL.message) + ' — no breach flag this bake'); }
+        }
         try { _escRec = A.escapeRouteBuild(); }
         catch (eER) { console.warn('§ESCAPE_ROUTE_BUILD failed: ' + eER.message + ' — the reveal is inert this bake'); }
         var _escWin = (A.escapeRouteWindow && plan) ? A.escapeRouteWindow(plan) : null;

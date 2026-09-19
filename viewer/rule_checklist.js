@@ -641,6 +641,9 @@ function setupRuleChecklist(A) {
     try { return localStorage.getItem('bim_5d_pack') || null; } catch (e) { return null; }
   }
 
+  // §ESCAPE_ROUTE_BREACH — read-only alias so a BAKE can read the same rulebook this panel reads,
+  // overlay and all, instead of re-typing thresholds. Same precedent as navigate_find.js's
+  // `A.getRoomGraph = _roomGraphFor`. Nothing about the panel changes.
   function _rcLoadRules(kind) {
     var cfg = RULE_SETS[kind];
     if (A[cfg.cache]) {
@@ -660,6 +663,7 @@ function setupRuleChecklist(A) {
       return r;
     });
   }
+  A.loadRuleSet = _rcLoadRules;   // §ESCAPE_ROUTE_BREACH — see the comment above the function
 
   A.showStructuralSanity = function () {
     // T8.4 — `fetched` vs `fallback` must reach the report. The §STRUCT_RULES_JSON line already

@@ -314,6 +314,73 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
      /!A\._escRouteHudSuppress && A\.resourcePanelCompositeOntoCanvas/.test(mq) &&
      (mq.match(/_hudGate\('suncompass\.(clock|readout)'/g) || []).length === 2);
 
+  // ══ W-ESC-9 — §ESCAPE_ROUTE_NOT_A_CORRIDOR. red1's clip picked "Level 4 Hall/Corridor 3" on
+  // Hospital_silent: a CORRIDOR_ROOM:: pseudo-room injected by §CORRIDOR-ROOM-BACKPROP. Nobody
+  // starts an escape in a corridor — the corridor IS the route — and it carries no room box, so
+  // the film had nothing to light either. ISSUE: does the candidate set exclude them?
+  const corridorNodes = graph.nodes.filter(n => String(n.guid).indexOf('CORRIDOR_ROOM::') === 0);
+  ck('W-ESC-9a this building actually has corridor pseudo-rooms to exclude (else the claim is vacuous)',
+     corridorNodes.length > 0, corridorNodes.length + ' of ' + graph.nodes.length + ' nodes');
+  ck('W-ESC-9b the chosen room is not one of them', String(rec.roomGuid).indexOf('CORRIDOR_ROOM::') !== 0,
+     '"' + rec.roomName + '" (' + rec.roomGuid + ')');
+  ck('W-ESC-9c and the count skipped is reported, not silently dropped',
+     rec.corridorsSkipped === corridorNodes.length,
+     'skipped=' + rec.corridorsSkipped + ' present=' + corridorNodes.length);
+  // A corridor DOES sometimes win on length — prove the exclusion is load-bearing, not decorative.
+  let corridorLonger = 0;
+  corridorNodes.forEach(n => {
+    const e = RoomGraph.escapeRoute(graph, n.guid, { log: () => {} });
+    if (!e || e.distance == null) return;
+    const sp = RoomGraph.shortestPath(graph, n.guid, e.exitGuid);
+    if (!sp || !sp.polyline || sp.polyline.length < 2) return;
+    let L = 0;
+    for (let i = 1; i < sp.polyline.length; i++) {
+      const a = sp.polyline[i - 1], b = sp.polyline[i];
+      L += Math.hypot(b.x - a.x, b.y - a.y, (b.z || 0) - (a.z || 0));
+    }
+    if (L > rec.walkM) corridorLonger++;
+  });
+  console.log('  (corridor pseudo-rooms whose route is LONGER than the chosen real room: ' +
+    corridorLonger + ' — each one would have been picked without the exclusion)');
+
+  // ══ W-ESC-10 — §ESCAPE_ROUTE_BREACH. red1: "is that breaking any fire dept conditions? If so,
+  // it be good to flag in the HUD". ISSUE: is the limit the rulebook's own, and does the flag
+  // reach the card? Disproved by a threshold typed into this feature instead of read from
+  // rates/egress_rules.json / EgressSanity.FALLBACK_RULES.
+  // COMMENTS STRIPPED FIRST. The file's own header explains the IBC limit and therefore contains
+  // the number; a raw grep flags that and says the threshold is hardcoded, which is false. The
+  // claim is about CODE, so the test must be about code. (First cut got this wrong — same
+  // self-referential trap as W-ESC-7.)
+  const esrc = fs.readFileSync(path.join(__dirname, 'viewer/cpe_escape_route.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
+  ck('W-ESC-10a no threshold is typed into this feature\'s CODE — the limits come from the rulebook alone',
+     esrc.indexOf('60.96') < 0 && esrc.indexOf('45.7') < 0 && /_rules\.critical_m/.test(esrc),
+     'reads _rules.critical_m from A.escapeRouteSetRules()');
+  ck('W-ESC-10b with no rulebook loaded there is NO flag rather than a guessed limit',
+     A.escapeRouteBreach() === null);
+  A.escapeRouteSetRules(rules, 'rates/egress_rules.json');
+  const br = A.escapeRouteBreach();
+  const critM = rules.egress_rules.filter(r => r.name === 'circulation_distance')[0].critical_m;
+  ck('W-ESC-10c the limit it uses IS the rulebook\'s own number', !!br && br.limitM === critM,
+     'rule=' + critM + 'm feature=' + (br ? br.limitM : '-') + 'm');
+  ck('W-ESC-10d a ' + rec.walkM.toFixed(0) + ' m route against a ' + critM + ' m limit reads CRITICAL',
+     !!br && br.level === 'critical' && br.overBy > 1,
+     br ? br.level + ' ' + br.overBy.toFixed(1) + 'x over' : 'null');
+  const bcard = A.escapeRouteStatCardAt(plan, (win.start + win.end) / 2);
+  ck('W-ESC-10e the flag reaches the CARD, names the limit and names the rule',
+     !!bcard && /OVER LIMIT/.test(bcard.card.label) &&
+     bcard.card.sub.indexOf(String(critM) + ' m limit') >= 0 &&
+     bcard.card.sub.indexOf('IBC 2021 T1017.2') >= 0,
+     bcard ? bcard.card.label + '  ||  ' + bcard.card.sub : 'null');
+  ck('W-ESC-10f the cited walking speed survives the flag (§3: the speed is always shown)',
+     !!bcard && bcard.card.sub.indexOf('1.19 m/s (SFPE)') >= 0);
+  ck('W-ESC-10g the flag does NOT claim a code violation — no "violation"/"illegal"/"fail" wording',
+     !!bcard && !/violat|illegal|non-?compl|fail/i.test(bcard.card.label + ' ' + bcard.card.sub),
+     'wording is "over limit", because the route is measured to an exterior door, not the protected stair T1017.2 regulates');
+  ck('W-ESC-10h rooms with NO route at all are counted and reported — a worse finding this film cannot draw',
+     typeof rec.roomsWithNoExit === 'number' && rec.roomsWithNoExit === (graph.nodes.length - corridorNodes.length - rec.roomsReachingAnExit),
+     rec.roomsWithNoExit + ' room(s) reach no exit; egress_sanity.js calls those isolated_room CRITICAL');
+
   // ══ W-ESC-7 — no pixel-derived evidence, asserted about THIS file. ════════════════════════════
   // ⚠ The needles are ASSEMBLED, not written out. A literal list of forbidden words in a file that
   // then searches ITSELF for them always fails — the first cut of this check did exactly that, and
