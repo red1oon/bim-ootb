@@ -55,7 +55,13 @@ function setupCpeDayCounter(A) {
   // of that column, so everything below it needs its height — and must NOT recompute it. This is
   // the one owner of that arithmetic; callers ask, they never re-derive.
   A.dayCounterBoxSize = function(h) {
-    var fontPx = Math.max(14, Math.round(h * 0.026));
+    // §HUD_SCALE (2026-09-19, red1: "too big in low res and too small in hi res") — the size
+    // now comes from the ONE law in cinema_maxq.js, which lets the FRACTION of frame height
+    // rise gently with resolution instead of holding constant. The 1080 anchor below is this
+    // overlay's own previous constant, so nothing moves at 1080 and every overlay keeps its
+    // tuned size RELATIVE to its neighbours. The fallback is the old formula verbatim, for a
+    // page that loads this module without cinema_maxq.
+    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.026, 9) : Math.max(9, Math.round(h * 0.026)));
     var padY = Math.round(fontPx * 0.55);
     return { h: padY * 2 + fontPx, margin: Math.round(h * 0.028) };
   };
@@ -77,7 +83,7 @@ function setupCpeDayCounter(A) {
     // Sized off frame HEIGHT, exactly as the room title is, so the two overlays stay in proportion
     // to each other at every export size (the bake runs 1852x960; the editor preview is whatever
     // the window happens to be).
-    var fontPx = Math.max(14, Math.round(h * 0.026));
+    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.026, 9) : Math.max(9, Math.round(h * 0.026)));
     var subPx = Math.max(11, Math.round(fontPx * 0.62));
     var padX = Math.round(fontPx * 0.85);
     var padY = Math.round(fontPx * 0.55);

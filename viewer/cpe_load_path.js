@@ -231,6 +231,61 @@ function setupCpeLoadPath(A) {
     }
     return { descents: descents, ascents: ascents, monotone: ascents === 0 };
   }
+  // ── §129.40 CHAIN MUST BEAR (2026-09-19, red1: "it was hopping with only one ground slab right
+  // to 3rd floor ... so you have to advice what is a Load Path") ────────────────────────────────
+  // A LOAD PATH IS THE ORDERED SET OF MEMBERS THAT CARRY A LOAD TO THE GROUND, EACH BEARING
+  // DIRECTLY ON THE NEXT. "Descending" is not enough, and the HHS bake of this date is the proof:
+  // the winning chain was
+  //     Slab L3 (z 7.425) -> Slab L3 (z 7.150) -> Slab L1 (z 0.169) -> Column L1 -> Slab L1
+  // which _chainDescendInfo passed as monotone=true descents=4 ascents=0, because it counts steps
+  // in the SUPPORT GRAPH and never looks at how far apart the members actually are. Between hop 2
+  // and hop 3 there is a 6.98 m fall with nothing in it. Nothing bears on anything; it is a stack
+  // of floor plates with a hole where Level 2 should be.
+  //
+  // The chain that SHOULD have won was built in the same bake and thrown away:
+  //     Column L3 (7.3-10.6) -> Column L2 (3.8-7.3) -> Column L1 (0.09-3.5) -> Column L1 (0-3.5)
+  //     -> Slab L1 -> ground
+  // every column's base meeting the one below's top, every storey present. The ranking is
+  // `visibleHopsMajority, depth, score` — it picks what the CAMERA can see, and a floor plate is
+  // always more visible than a column. So the fix is not a new ranking, it is a GATE applied
+  // before ranking: a chain that does not physically bear must never be a candidate at all.
+  //
+  // TWO CHECKS, both read straight off geometry already in `items` (bz/tz, x0/x1/y0/y1):
+  //   1. CONTACT — the lower member's top must reach the upper member's base. The allowance is
+  //      BEAR_GAP_TOL_M below: two stacked columns are legitimately separated by the floor
+  //      construction between them (measured 0.30 m on this very building's own column line), so
+  //      the tolerance has to clear a slab-and-topping, and nothing more. 0.75 m is generous for
+  //      that and still a fifth of the shortest storey here, so the 6.76 m hole above is rejected
+  //      with a 9x margin — it is not a number tuned until one chain passed.
+  //   2. PLAN OVERLAP — the two members must share footprint. Load travels down, not sideways: a
+  //      member that stands clear of the one above it in plan is not carrying it, however close in
+  //      z. Counted separately from the gap so the log says WHICH rule bit.
+  // Neither check invents structure. Both refuse chains the data cannot support, which is the
+  // Prime Directive's own direction of travel: say "this is not a load path" rather than draw one.
+  var BEAR_GAP_TOL_M = 0.75;
+  function _chainBearsInfo(items, chainIdx) {
+    var gaps = 0, offsets = 0, worstGapM = 0, worstAt = -1;
+    for (var k = 0; k < chainIdx.length - 1; k++) {
+      var up = items[chainIdx[k]], lo = items[chainIdx[k + 1]];
+      // CONTACT: how far the lower member's top falls short of the upper member's base. Negative
+      // (they interpenetrate, or the lower one rises past the base) is contact, not a gap.
+      var gapM = up.bz - lo.tz;
+      if (gapM > BEAR_GAP_TOL_M) {
+        gaps++;
+        if (gapM > worstGapM) { worstGapM = gapM; worstAt = k; }
+      }
+      // PLAN OVERLAP: any shared footprint at all. Zero-area touching counts — a column landing
+      // exactly on a slab edge is still bearing on it.
+      var ox = Math.min(up.x1, lo.x1) - Math.max(up.x0, lo.x0);
+      var oy = Math.min(up.y1, lo.y1) - Math.max(up.y0, lo.y0);
+      if (!(ox >= 0 && oy >= 0)) offsets++;
+    }
+    return { gaps: gaps, offsets: offsets, bears: (gaps === 0 && offsets === 0),
+             worstGapM: worstGapM, worstAt: worstAt };
+  }
+  // Published for W-LOADPATH-BEARING (viewer/tests/witness_loadpath_bearing.js): the gate is
+  // the thing under test, so the witness must call the SHIPPED function, never a copy of it.
+  A._loadPathChainBears = _chainBearsInfo;
   // ROUND 9 CHAIN-PRINT GAP (2026-09-16, real Terminal r9 bake: the live re-pick switched the
   // winner 7-hop probe chain -> 6-hop live chain, but the log still only ever carried the PROBE
   // pick's §LOADPATH_CHAIN) — the drawn-hop bookkeeping (the `__lpBreakSupport` control's "drop the
@@ -249,11 +304,16 @@ function setupCpeLoadPath(A) {
     var chainOk = (drawnInfo.hopsDrawn === drawnInfo.hopsSweep) &&
       drawnInfo.drawnIdx.every(function (i, k) { return i === chainIdx[k]; });
     var descInfo = _chainDescendInfo(items, chainIdx);
+    // §129.40 — monotone alone said PASS on a chain with a 6.98 m hole in it. The bearing verdict
+    // rides the same line so the printed chain can never look good while being impossible.
+    var bearInfo = _chainBearsInfo(items, chainIdx);
     console.log('§LOADPATH_CHAIN guid=' + pickItem.guid + ' hops=[' + chainStr + '] hopsDrawn=' + drawnInfo.hopsDrawn +
       ' hopsSweep=' + drawnInfo.hopsSweep + ' monotone=' + descInfo.monotone + ' descents=' + descInfo.descents +
-      ' ascents=' + descInfo.ascents + (pickSourceLabel ? ' pickSource=' + pickSourceLabel : '') +
-      ' => ' + (chainOk && descInfo.ascents === 0 ? 'PASS' : 'FAIL'));
-    return { chainOk: chainOk, descInfo: descInfo };
+      ' ascents=' + descInfo.ascents + ' bears=' + bearInfo.bears + ' gaps=' + bearInfo.gaps +
+      ' offsets=' + bearInfo.offsets + ' worstGapM=' + bearInfo.worstGapM.toFixed(2) +
+      (pickSourceLabel ? ' pickSource=' + pickSourceLabel : '') +
+      ' => ' + (chainOk && descInfo.ascents === 0 && bearInfo.bears ? 'PASS' : 'FAIL'));
+    return { chainOk: chainOk, descInfo: descInfo, bearInfo: bearInfo };
   }
   function _footprintOf(item) { return Math.max(0, item.x1 - item.x0) * Math.max(0, item.y1 - item.y0); }
   // ── v10 PICK — returns EVERY eligible (load-bearing+labelled, ground-ending) candidate whose OWN
@@ -265,6 +325,7 @@ function setupCpeLoadPath(A) {
   // the caller, which alone knows the searched hold pose. ───────────────────────────────────────
   function _pick(items, info, des) {
     var n = items.length, candidates = 0, rejectedAscending = 0, rejectedSingleHop = 0, valid = [];
+    var rejectedNoBearing = 0, rejectedOffset = 0, worstRejectedGapM = 0;
     for (var i = 0; i < n; i++) {
       if (!_isCountedHop(items[i]) || !info.rootOk[i]) continue;
       candidates++;
@@ -272,10 +333,33 @@ function setupCpeLoadPath(A) {
       var desc = _chainDescendInfo(items, chain);
       if (!desc.monotone) { rejectedAscending++; continue; }
       if (info.countedDepth[i] < 2) { rejectedSingleHop++; continue; }
+      // §129.40 — the gate, BEFORE any ranking. A chain that does not physically bear is not a
+      // load path at any visibility score, so it never reaches the ranker to win on being big.
+      var bear = _chainBearsInfo(items, chain);
+      if (bear.gaps) {
+        rejectedNoBearing++;
+        if (bear.worstGapM > worstRejectedGapM) worstRejectedGapM = bear.worstGapM;
+        continue;
+      }
+      if (bear.offsets) { rejectedOffset++; continue; }
       valid.push({ idx: i, depth: info.countedDepth[i], chain: chain, descents: desc.descents, ascents: desc.ascents });
     }
-    if (!valid.length) return null;
-    return { valid: valid, candidates: candidates, rejectedAscending: rejectedAscending, rejectedSingleHop: rejectedSingleHop };
+    // §129.40 — if the gate emptied the field, say so with the number that did it rather than
+    // falling back to an un-borne chain. An honest "no load path here" beats a drawn fiction.
+    if (!valid.length) {
+      console.log('§LOADPATH_BEARING INCONCLUSIVE candidates=' + candidates +
+        ' rejectedNoBearing=' + rejectedNoBearing + ' rejectedOffset=' + rejectedOffset +
+        ' worstGapM=' + worstRejectedGapM.toFixed(2) + ' tolM=' + BEAR_GAP_TOL_M +
+        ' — every chain either fails to descend, is a single hop, or has members that do not bear ' +
+        'on each other. Nothing drawn: a chain with a hole in it is not a load path.');
+      return null;
+    }
+    console.log('§LOADPATH_BEARING kept=' + valid.length + '/' + candidates +
+      ' rejectedNoBearing=' + rejectedNoBearing + ' rejectedOffset=' + rejectedOffset +
+      ' worstRejectedGapM=' + worstRejectedGapM.toFixed(2) + ' tolM=' + BEAR_GAP_TOL_M + ' => PASS');
+    return { valid: valid, candidates: candidates, rejectedAscending: rejectedAscending,
+             rejectedSingleHop: rejectedSingleHop, rejectedNoBearing: rejectedNoBearing,
+             rejectedOffset: rejectedOffset };
   }
   // ── ROUND 4 item 1a (2026-09-16, real Terminal bake: minMemberPx-first rewarded one giant
   // ground-floor slab) — RE-SUPERSEDES §129.7 item 3's minMemberPx-first ranking: visibleHops DESC
@@ -3696,9 +3780,14 @@ function setupCpeLoadPath(A) {
   // revealed hops only, each task's own real duration counted ONCE — several hops commonly share one
   // task (e.g. "Substructure" spanning many columns), so a naive per-hop sum would double-count real
   // calendar time that is not actually sequential.
-  function _stackInfoPanelMaxH(k, stack) {
+  // §HUD_SCALE — takes the frame HEIGHT now, not the old `k` scale: the one sizing law is a
+  // function of h, and this helper must reserve the height the panel will ACTUALLY draw at,
+  // or the bottom anchor it feeds shifts under the panel mid-hold.
+  function _stackInfoPanelMaxH(h, stack) {
     if (!stack || !stack.hopsUp) return 0;
-    var fontPx = Math.max(9, Math.round(13 * k));
+    // §HUD_SCALE — 13px at the h=900 this panel was drawn against, i.e. a 0.01444 fraction,
+    // handed to the one law so it rises with resolution like every other overlay.
+    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.014444, 9) : Math.max(9, Math.round(h * 0.014444)));
     var headerFontPx = Math.round(fontPx * 1.35);
     var rowH = Math.round(fontPx * 2.0);
     var headerH = Math.round(headerFontPx * 2.6);
@@ -3735,7 +3824,9 @@ function setupCpeLoadPath(A) {
     if (!stack || !stack.hopsUp || !stack.hopsUp.length) return null;
     var revealed = Math.max(0, Math.min(stack.hopsUp.length, stack.revealedHops || 0));
     if (revealed <= 0) return null;
-    var fontPx = Math.max(9, Math.round(13 * k));
+    // §HUD_SCALE — 13px at the h=900 this panel was drawn against, i.e. a 0.01444 fraction,
+    // handed to the one law so it rises with resolution like every other overlay.
+    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.014444, 9) : Math.max(9, Math.round(h * 0.014444)));
     var headerFontPx = Math.round(fontPx * 1.35);
     var rowH = Math.round(fontPx * 2.0);
     var headerH = Math.round(headerFontPx * 2.6);
@@ -4062,7 +4153,13 @@ function setupCpeLoadPath(A) {
     // own formula exactly, so this card scales at the SAME rate the rest of the HUD already does.
     // `pad`/`rowH`/the card's own rect (`_cardRect`, below) all derive from `fontPx`, so this one
     // number scales the whole plate proportionally, not just the text.
-    var fontPx = Math.max(12, Math.round(h * 0.026));
+    // §HUD_SCALE (2026-09-19, red1: "too big in low res and too small in hi res") — the size
+    // now comes from the ONE law in cinema_maxq.js, which lets the FRACTION of frame height
+    // rise gently with resolution instead of holding constant. The 1080 anchor below is this
+    // overlay's own previous constant, so nothing moves at 1080 and every overlay keeps its
+    // tuned size RELATIVE to its neighbours. The fallback is the old formula verbatim, for a
+    // page that loads this module without cinema_maxq.
+    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.026, 9) : Math.max(9, Math.round(h * 0.026)));
     var pad = Math.round(fontPx * 0.6), margin = Math.round(h * 0.028), rowH = Math.round(fontPx * 1.55);
     ctx.save();
     ctx.font = '600 ' + fontPx + 'px Segoe UI, system-ui, sans-serif';
@@ -4152,11 +4249,11 @@ function setupCpeLoadPath(A) {
       // §129.30 — computed BEFORE the stack panels so their own avoidance nudge can see it; reused
       // (never recomputed) by `_drawInfoCard` below, single source of truth for the card's rect.
       var cardLayout = _infoCardLayout(ctx, w, h, k);
-      var nearMaxH = _stackInfoPanelMaxH(k, _lp);
+      var nearMaxH = _stackInfoPanelMaxH(h, _lp);
       var nearBottomY = topMargin + nearMaxH;
       var farPanelBox = null;
       if (_lp.far) {
-        var farMaxH = _stackInfoPanelMaxH(k, _lp.far);
+        var farMaxH = _stackInfoPanelMaxH(h, _lp.far);
         var farBottomY = topMargin + farMaxH;
         farPanelBox = _drawStackInfoPanel(ctx, w, h, k, _lp.far, 'far', farBottomY, cardLayout.rect);
         nearBottomY = farBottomY + stackGap + nearMaxH;

@@ -1175,6 +1175,31 @@
   // is absent, so the compass/clock overlays respect the load-path freeze the moment this branch
   // merges — no edit needed on their side. One line, beside the definition, as they asked.
   if (typeof window !== 'undefined') window.__drawUnlessHold = _drawUnlessHold;
+
+  // ══ §HUD_SCALE (2026-09-19) — ONE sizing law for every bake overlay ═════════════════════════
+  // red1, after watching the same film at 854x480 and 1920x1080: "it's too big in low res and too
+  // small in hi res". Every overlay in this viewer sized itself as a CONSTANT FRACTION of frame
+  // height, which keeps text the same PROPORTION at every resolution — and proportion is not
+  // legibility. A 480-tall frame carries little scene detail, so a 2.6% caption dominates it; a
+  // 2160-tall frame is dense, and the same 2.6% vanishes into it. Constant pixels are worse in the
+  // other direction, which is the trap `13 * k` fell into with its 1.6 ceiling (§129.36).
+  // So the FRACTION ITSELF rises with resolution — gently, as h^0.35 about a 1080 anchor, and
+  // clamped at both ends so no resolution can run away:
+  //     480 -> 1.96% of frame height   720 -> 2.26%   1080 -> 2.60%   1440 -> 2.87%   2160 -> 3.17%
+  //   (for the 0.026 family; every caller keeps its own 1080 anchor, so their RELATIVE sizes —
+  //    counter against readout against clock caption — are exactly as they were tuned.)
+  // Published on `window` rather than `A` for the same reason `__drawUnlessHold` is: this IIFE runs
+  // at script load, when window.APP may not exist yet, and every caller reads it at DRAW time.
+  // Each caller falls back to its own old formula when this is absent, so a page that loads an
+  // overlay without cinema_maxq still draws.
+  function _hudFontPx(h, k1080, minPx) {
+    var hh = h || 1080;
+    var k = k1080 * Math.pow(hh / 1080, 0.35);
+    var lo = k1080 * 0.70, hi = k1080 * 1.22;
+    if (k < lo) k = lo; else if (k > hi) k = hi;
+    return Math.max(minPx || 9, Math.round(hh * k));
+  }
+  if (typeof window !== 'undefined') window.__hudFontPx = _hudFontPx;
   // §129.1 FREEZE bridge, RESOLVED SIDE (merge of origin/main, 2026-09-19). The sun-compass lane
   // built against a main with no freeze beat, so it called this through `window.__drawUnlessHold`
   // with a "draw at full opacity" fallback. Both lanes now live in THIS file, so the indirection is
@@ -1433,6 +1458,29 @@
       if (box.h > _rowH) _rowH = box.h;
     }
 
+    // ORDER ALONG THE ROW, from the anchored corner inward (red1, 2026-09-19: "I meant the cam
+    // path map to be edge most not centred so it's aligned to the pie 4D5D HUD as was before. It's
+    // the new compass clock stuff that is added on top to centre"):
+    //     [edge] path map -> day counter -> clock -> sun readout [toward centre]
+    // The path map keeps the corner it has always had, so it and the pie panel beneath it share one
+    // right edge exactly as they did when they were a column. Everything ADDED since — the counter
+    // and the two sun boxes — grows inward from it, so the newest overlays are the ones that move.
+    // §CPE_PATH_OVERVIEW — EDGE-MOST, so it stays column-aligned with the pie panel below it. Drawn LAST of the four so its
+    // backdrop blur samples a finished frame and never smears its neighbours into its own glass.
+    // §129.8 item 4b — it fades with everything else during the hold ("no path map/compass ... no
+    // pie panel"), same `_drawUnlessHold` mechanism; `a` is passed as its own opacity param for the
+    // absolute-assignment reason above.
+    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) {
+      _drawUnlessHold('hud.pathmap', function (a) {
+        try {
+          A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, a, ovInfo.pos, 0, _rowX);
+        } catch (eOvD) {
+          if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
+            console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
+        }
+      });
+      _rowAdvance(A.pathOverviewLastBox);
+    }
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
       // ROUND 13 item C — `a` passed as dayCounter's own `opacity` param (its `ctx.globalAlpha = op`
       // is an absolute assignment from that param, was clobbering the ambient hold-fade alpha).
@@ -1468,22 +1516,6 @@
           console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message)); } }
       });
       _rowAdvance(A.sunReadoutLastBox);
-    }
-    // §CPE_PATH_OVERVIEW — the widest member, so it trails the row. Drawn LAST of the four so its
-    // backdrop blur samples a finished frame and never smears its neighbours into its own glass.
-    // §129.8 item 4b — it fades with everything else during the hold ("no path map/compass ... no
-    // pie panel"), same `_drawUnlessHold` mechanism; `a` is passed as its own opacity param for the
-    // absolute-assignment reason above.
-    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) {
-      _drawUnlessHold('hud.pathmap', function (a) {
-        try {
-          A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, a, ovInfo.pos, 0, _rowX);
-        } catch (eOvD) {
-          if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
-            console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
-        }
-      });
-      _rowAdvance(A.pathOverviewLastBox);
     }
     // Everything below the row — the pie panel, the storey card — starts under the TALLEST member,
     // not under a sum. An empty row (all four off) leaves _rowH at 0 and the column starts at the
@@ -3093,13 +3125,34 @@
         // witness to the gate flag would make the falsifiability control silence the very check it
         // exists to trip, and a check that switches itself off with the fix is not a check.
         A._ilPastStick = !!(plan && plan.beats && _tnFilm >= plan.beats.out);
+        // §129.41 (2026-09-19, red1: "restore back night lighting only after storey build so when
+        // dusk or dark its windows are lighted") — §116's ruling is NARROWED, not undone. It said
+        // the fixtures are off "from the last stick to the END of the film", and its reason was
+        // that they read as clutter while the camera is outside and climbing away. That reason
+        // stops holding once the building tops out: from there the film is a closing orbit around a
+        // FINISHED building, and the sun this lane now drives is genuinely setting (§SUN_ONE on the
+        // HHS bake of this date: elevation 34.7 deg at tNorm 0 down to 1.4 deg at tNorm 1). A dark
+        // building at dusk is not restraint, it is an unlit model.
+        // So the off-window is now [beats.out, topoutU) instead of [beats.out, end]. `topoutU` is
+        // NOT a new number: it is _buildupTopoutU's own, the same fraction the buildup already
+        // completes at and the same one §CPE_BUILDUP_TOPOUT prints. Nothing before the last stick
+        // changes, which is the part of §116 that was never in question.
+        var _ilTop = (plan && plan.beats) ? _buildupTopoutU(plan) : null;
+        A._ilPastTopout = !!(_ilTop && _tnFilm >= _ilTop.u);
         if (plan && plan.beats && !A._ilBoundaryLogged) {
           A._ilBoundaryLogged = true;
           console.log('§INTERIOR_LIGHTS_BOUNDARY lastStickFrac=' + plan.beats.out.toFixed(4) +
-            ' (beats.out — interior fixtures are ON before this and OFF from here to the end; a bake' +
-            ' clipped entirely below it must show no §INTERIOR_LIGHTS_OFF line at all)');
+            ' topoutFrac=' + (_ilTop ? _ilTop.u.toFixed(4) : 'n/a') + ' src=' + (_ilTop ? _ilTop.src : 'n/a') +
+            ' (§129.41 — fixtures ON before the last stick, OFF through the pull-out while the' +
+            ' building is still rising, and ON AGAIN from topout to the end so the windows are lit' +
+            ' at dusk; a bake clipped entirely below the first boundary must show no' +
+            ' §INTERIOR_LIGHTS_OFF line at all)');
         }
+        // Two controls, both falsifiable: __ilForceOn defeats the gate outright (§118's own), and
+        // __ilNoRelight restores §116's original "off to the end" so the relight can be proved to be
+        // the thing that lit the windows, rather than assumed.
         A._interiorLightsOff = A._ilPastStick &&
+          !(A._ilPastTopout && !(typeof window !== 'undefined' && window.__ilNoRelight)) &&
           !(typeof window !== 'undefined' && window.__ilForceOn);
         // §117's witness runs just before capture (search §INTERIOR_LIGHTS_WITNESS), not here:
         // sampled at this point it would read the PREVIOUS frame's lighting and report a phantom

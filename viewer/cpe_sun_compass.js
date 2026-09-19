@@ -573,7 +573,13 @@ function setupCpeSunCompass(A) {
     var cam = A.camera, T = window.THREE;
     ctx.save();
     ctx.globalAlpha = op;
-    var fontPx = Math.max(12, Math.round(h * 0.020));
+    // §HUD_SCALE (2026-09-19, red1: "too big in low res and too small in hi res") — the size
+    // now comes from the ONE law in cinema_maxq.js, which lets the FRACTION of frame height
+    // rise gently with resolution instead of holding constant. The 1080 anchor below is this
+    // overlay's own previous constant, so nothing moves at 1080 and every overlay keeps its
+    // tuned size RELATIVE to its neighbours. The fallback is the old formula verbatim, for a
+    // page that loads this module without cinema_maxq.
+    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.020, 9) : Math.max(9, Math.round(h * 0.020)));
     var font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
     ctx.font = font;
     ctx.textBaseline = 'middle';
@@ -714,7 +720,8 @@ function setupCpeSunCompass(A) {
 
     // The reading in words, because hands at this size are an impression, not a measurement — and
     // "solar" is the part a viewer cannot infer from a dial.
-    var fontPx = Math.max(9, Math.round(h * 0.014));
+    // §HUD_SCALE — same one law; 0.014 is this caption's own 1080 anchor.
+    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.014, 8) : Math.max(8, Math.round(h * 0.014)));
     ctx.font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
     ctx.fillStyle = '#e8eef6';
     ctx.textAlign = 'center';
