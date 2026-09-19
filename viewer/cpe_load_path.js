@@ -4094,6 +4094,17 @@ function setupCpeLoadPath(A) {
     ctx.fillStyle = 'rgba(255,255,255,1)';
     if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rect.x, rect.y, rect.w, rect.h, rr); ctx.fill(); }
     else ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    // §129.39 (2026-09-19, red1 on a 1080p frame: "its text is still too small") — THIS FUNCTION
+    // NEVER SET ctx.font. `_infoCardLayout` sets it, measures the lines with it, and then hands the
+    // context back through its OWN ctx.restore() — so every fillText below ran at the canvas 2D
+    // default, `10px sans-serif`, on every frame this card has ever drawn.
+    // That is why §129.32 looked like it did nothing: it changed the formula from `17*k` to
+    // `h*0.026`, the PLATE grew with it (rect is derived from fontPx), and the TEXT did not move,
+    // because the text was never sized by that number in the first place. Measured on the delivered
+    // 1920x1080 film: a 913x163 plate — the right size for 28px — carrying ~10px glyphs.
+    // One line. The size is `layout.fontPx`, the same number the plate was measured with, so the
+    // two can no longer disagree.
+    ctx.font = '600 ' + layout.fontPx + 'px Segoe UI, system-ui, sans-serif';
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     assembled.lines.forEach(function (l, i) {
       var ly = rect.y + pad + rowH * i + rowH / 2, lx = rect.x + pad;

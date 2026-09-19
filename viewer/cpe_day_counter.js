@@ -59,7 +59,16 @@ function setupCpeDayCounter(A) {
     var padY = Math.round(fontPx * 0.55);
     return { h: padY * 2 + fontPx, margin: Math.round(h * 0.028) };
   };
-  A.dayCounterCompositeOntoCanvas = function(ctx, w, h, info, opacity, pos) {
+  // §HUD_ROW (2026-09-19, red1: "align the clock, data, day counter in a single row ... put the
+  // cam path map same row too, in that way it will always have room for its 4D5D HUD below it").
+  // `xOff` shifts this box INWARD from its own corner along X, so the caller can lay several
+  // overlays side by side instead of stacking them down one column. It is the X twin of the
+  // `stackY` the other overlays already take, and it is optional: every existing caller passes
+  // six arguments and lands exactly where it always did.
+  // The drawn rect is published on `A.dayCounterLastBox` because the caller cannot know this
+  // box's WIDTH without measuring the same text twice — same "one owner of that arithmetic"
+  // rule as dayCounterBoxSize, just for a number that needs a ctx to compute.
+  A.dayCounterCompositeOntoCanvas = function(ctx, w, h, info, opacity, pos, xOff) {
     if (!ctx || !info || !(opacity > 0)) return;
     var op = Math.min(1, opacity);
     ctx.save();
@@ -88,8 +97,10 @@ function setupCpeDayCounter(A) {
     var boxW = padX * 2 + wBig + gap + wSmall;
     var boxH = padY * 2 + fontPx;
     var at = (pos && POS[pos]) ? pos : 'tr';
-    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - boxW;
+    var xo = xOff || 0;
+    var x = (at === 'tl' || at === 'bl') ? margin + xo : w - margin - boxW - xo;
     var y = (at === 'bl' || at === 'br') ? h - margin - boxH : margin;
+    A.dayCounterLastBox = { x: x, y: y, w: boxW, h: boxH };
 
     // Plate. Same 0.45 black the caption band uses — one visual language across both overlays.
     ctx.fillStyle = 'rgba(0,0,0,0.45)';

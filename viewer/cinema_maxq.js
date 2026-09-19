@@ -1376,11 +1376,9 @@
     } else if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
       _drawUnlessHold('roomtitle.fallback', function () { A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity); });
     }
-    if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
-      // ROUND 13 item C — `a` passed as dayCounter's own `opacity` param (its `ctx.globalAlpha = op`
-      // is an absolute assignment from that param, was clobbering the ambient hold-fade alpha).
-      _drawUnlessHold('daycounter', function (a) { A.dayCounterCompositeOntoCanvas(ctx, w, h, dayInfo, a, dayInfo.pos); });
-    }
+    // §HUD_ROW — the day counter used to draw here, alone, before the column below it was even
+    // measured. It is now the first member of the top ROW assembled further down, so its width
+    // is known to the boxes beside it. Nothing else moved.
     // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — the "N" and the day-of-
     // year ride the ROSE in world space; the sun-angle readout is a fixed bottom-left pill.
     // ⚠ Read off A.sunCompassInfo() rather than taken as a 9th parameter, for the reason the
@@ -1396,65 +1394,101 @@
     // The path box answers "where am I", which a viewer tracks continuously, so it sits directly
     // under the clock; the pie is a readout you consult rather than follow, so it goes below.
     // ONE running offset builds the column so the three can never overlap or leave a gap.
+    // ══ §HUD_ROW (2026-09-19) — ONE TOP ROW, then everything else below it ══════════════════
+    // red1, after a 1080p frame: "align the clock, data, day counter in a single row ... put the
+    // cam path map same row too? in that way it will always have room for its 4D5D HUD below it".
+    //
+    // WHAT WAS WRONG: these four were ONE VERTICAL COLUMN (counter -> clock -> readout -> path
+    // map -> pie -> storey card). At 1920x1080 the column ran past the frame: measured on the
+    // delivered film, the path map's plate cut straight through the storey card's top row and the
+    // pie panel sat on what was left. Taller frames made it worse, not better, because every box
+    // is a fraction of frame HEIGHT and the column is their SUM — the one arrangement that cannot
+    // buy room by baking bigger.
+    //
+    // WHAT IT IS NOW: the four read-at-a-glance boxes run ACROSS the top in one row, and the
+    // column below starts under the tallest of them. The row spends width, which a 16:9 frame has
+    // in surplus, instead of height, which it does not.
+    //
+    // ORDER, from the anchored corner inward: day counter (the headline figure, so it keeps the
+    // corner it has always had), clock, sun readout, path map (widest, so it trails). `_rowX` is
+    // the running X offset each box is pushed inward by — the exact X twin of the `_stackY` this
+    // code already used, and each overlay applies it against its OWN corner, so a left-hand corner
+    // preference still builds the row left-to-right without a second code path.
+    //
+    // WIDTHS COME FROM THE DRAWERS, NOT FROM A SECOND OPINION HERE. Each compositor publishes the
+    // rect it actually painted (A.dayCounterLastBox and friends) because two of these four size
+    // themselves by MEASURING TEXT, which the caller cannot do without measuring it twice and
+    // drifting. Same "one owner of that arithmetic" rule as dayCounterBoxSize.
     var _gapY = Math.round(h * 0.012);
-    var _stackY = 0;
-    if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _stackY = A.dayCounterBoxSize(h).h + _gapY;
-    // §SUN_CLOCK — the analogue face for the hour this frame is lit at, directly under the day
-    // counter in the SAME column (red1's placement: "stay with a corner together with the Day
-    // counter"). It returns its own drawn height so the boxes below cannot overlap it — the caller
-    // owns the order, the overlay owns its drawing, same contract as the path box and the pie.
-    // Corner follows the counter's, since §CPE_HUD_STACK's ruling is one preference for the whole
-    // column rather than a corner per overlay.
-    // §SUN_CLOCK — wrapped in _drawUnlessHold like every other HUD box, so the §129.1 load-path
-    // FREEZE clears it with the rest (red1: "Freeze removes all other overlays including
-    // geo-ref"). `a` is the hold alpha and is passed through as the compositor's own opacity,
-    // per ROUND 13 item C — a compositor that assigns globalAlpha absolutely would otherwise
-    // clobber the ambient fade set by the wrapper.
+    var _gapX = Math.round(h * 0.014);
+    var _rowX = 0, _rowH = 0;
+    // Cleared every frame: a compositor that draws nothing (faded out mid-hold, or switched off)
+    // returns early and leaves its LastBox untouched, and a STALE rect would reserve row width for
+    // a box that is not on screen. Absent must read as absent.
+    A.dayCounterLastBox = A.sunClockLastBox = A.sunReadoutLastBox = A.pathOverviewLastBox = null;
+    var _rowPos = (dayInfo && dayInfo.pos) || 'tr';
+    function _rowAdvance(box) {
+      if (!box || !(box.w > 0)) return;          // drew nothing — reserve nothing
+      _rowX += box.w + _gapX;
+      if (box.h > _rowH) _rowH = box.h;
+    }
+
+    if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
+      // ROUND 13 item C — `a` passed as dayCounter's own `opacity` param (its `ctx.globalAlpha = op`
+      // is an absolute assignment from that param, was clobbering the ambient hold-fade alpha).
+      _drawUnlessHold('daycounter', function (a) {
+        A.dayCounterCompositeOntoCanvas(ctx, w, h, dayInfo, a, dayInfo.pos, _rowX);
+      });
+      _rowAdvance(A.dayCounterLastBox);
+    }
+    // §SUN_CLOCK — the analogue face for the hour this frame is lit at. It keeps the day counter's
+    // corner (§CPE_HUD_STACK: one preference for the whole group, not a corner per overlay) and now
+    // sits BESIDE the counter rather than under it. Wrapped in _drawUnlessHold like every other HUD
+    // box, so the §129.1 load-path FREEZE clears it with the rest (red1: "Freeze removes all other
+    // overlays including geo-ref"). `a` is the hold alpha, passed through as the compositor's own
+    // opacity per ROUND 13 item C — a compositor that assigns globalAlpha absolutely would
+    // otherwise clobber the ambient fade set by the wrapper.
     if (A._sunCompassOn && A.sunClockCompositeOntoCanvas && A.sunCompassInfo) {
       _hudHold('suncompass.clock', function (a) {
         try {
-          var _clkH = A.sunClockCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a,
-                                                    (dayInfo && dayInfo.pos) || 'tr', _stackY);
-          if (_clkH > 0) _stackY += _clkH + _gapY;
+          A.sunClockCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a, _rowPos, 0, _rowX);
         } catch (eClk) { if (!A._sunClockWarned) { A._sunClockWarned = true;
           console.warn('§SUN_CLOCK_DRAW failed: ' + (eClk && eClk.message)); } }
       });
+      _rowAdvance(A.sunClockLastBox);
     }
-    // §SUN_COMPASS readout — date / sun angles / facade, in the SAME column under the clock
-    // (red1: "same line as the Day counter? Clock, the azimuth thing, and the 4D day counter").
-    // It was bottom-left and was drawing underneath the loadpath session's own room box there.
+    // §SUN_COMPASS readout — date / sun angles / facade, next along the row (red1: "same line as
+    // the Day counter? Clock, the azimuth thing, and the 4D day counter"). It was bottom-left and
+    // was drawing underneath the loadpath session's own room box there.
     if (A._sunCompassOn && A.sunCompassCompositeOntoCanvas && A.sunCompassInfo) {
       _hudHold('suncompass.readout', function (a) {
         try {
-          var _scH = A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a,
-                                                     (dayInfo && dayInfo.pos) || 'tr', _stackY);
-          if (_scH > 0) _stackY += _scH + _gapY;
+          A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a, _rowPos, 0, _rowX);
         } catch (eSCd) { if (!A._sunCompassDrawWarned) { A._sunCompassDrawWarned = true;
           console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message)); } }
       });
+      _rowAdvance(A.sunReadoutLastBox);
     }
-    // MERGE 2026-09-19 — the two §SUN_* blocks above come from origin/main and already go through
-    // the hold wrapper (`_hudHold` -> `_drawUnlessHold`), so the §129.1 freeze now clears them with
-    // every other overlay. They stack ABOVE the path map in the same `_stackY` column, the order
-    // main established. The path map below keeps THIS lane`s wrapped form, not main`s bare `try`.
-    // §129.8 item 4b — the compass/path-map box and the pie panel now fade with everything else
-    // during the hold ("no path map/compass ... no pie panel"), same `_drawUnlessHold` mechanism.
-    // ROUND 13 item C — each of these three compositors takes its OWN `opacity` param and sets
-    // `ctx.globalAlpha` straight from it (an absolute assignment, not multiplicative with whatever
-    // ambient alpha `_drawUnlessHold` set before calling in); `a` (the ambient hold-fade alpha) is
-    // now passed through as that param instead of a hardcoded `1`, so the SAME number governs both
-    // the wrapper's own pre-multiply and the compositor's own internal assignment.
+    // §CPE_PATH_OVERVIEW — the widest member, so it trails the row. Drawn LAST of the four so its
+    // backdrop blur samples a finished frame and never smears its neighbours into its own glass.
+    // §129.8 item 4b — it fades with everything else during the hold ("no path map/compass ... no
+    // pie panel"), same `_drawUnlessHold` mechanism; `a` is passed as its own opacity param for the
+    // absolute-assignment reason above.
     if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) {
       _drawUnlessHold('hud.pathmap', function (a) {
         try {
-          A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, a, ovInfo.pos, _stackY);
-          _stackY += Math.round(h * 0.20) + _gapY;   // the box's own bh, from cpe_path_overview.js
+          A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, a, ovInfo.pos, 0, _rowX);
         } catch (eOvD) {
           if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
             console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
         }
       });
+      _rowAdvance(A.pathOverviewLastBox);
     }
+    // Everything below the row — the pie panel, the storey card — starts under the TALLEST member,
+    // not under a sum. An empty row (all four off) leaves _rowH at 0 and the column starts at the
+    // margin exactly as it did before any of this existed.
+    var _stackY = _rowH ? _rowH + _gapY : 0;
     if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) {
       _drawUnlessHold('hud.pie', function (a) {
         try { A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, a, resInfo.pos, _stackY); }

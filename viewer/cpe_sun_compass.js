@@ -561,7 +561,10 @@ function setupCpeSunCompass(A) {
   // owns a corner of the caller's choosing and stacks the path box and resource panel under it,
   // and cpe_room_title.js's caption is a CENTRED plate in the lower band. A left-aligned pill
   // clears both. Same plate language as those two — 0.45 black, text-hugging, same font.
-  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
+  // §HUD_ROW (2026-09-19) — `xOff`, as on the clock above: an X offset inward from the corner
+  // so this readout can sit BESIDE the clock rather than under it. Optional, so the six- and
+  // seven-argument callers in the witnesses are unaffected.
+  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY, xOff) {
     if (!ctx || !info) return 0;
     var op = (opacity == null) ? 1 : Math.min(1, opacity);
     if (!(op > 0)) return 0;
@@ -595,9 +598,11 @@ function setupCpeSunCompass(A) {
     } else { lines.forEach(function (t) { widest = Math.max(widest, t.length * fontPx * 0.55); }); }
     var padX = Math.round(fontPx * 0.7), padY = Math.round(fontPx * 0.45);
     var bw = widest + padX * 2, bh = fontPx + padY * 2;
-    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - bw;
+    var xo = xOff || 0;
+    var x = (at === 'tl' || at === 'bl') ? margin + xo : w - margin - bw - xo;
     var y0 = (at === 'bl' || at === 'br') ? h - margin - bh / 2 - sy - (lines.length - 1) * lineH
                                           : margin + bh / 2 + sy;
+    A.sunReadoutLastBox = { x: x, y: y0 - bh / 2, w: bw, h: bh + (lines.length - 1) * lineH };
 
     lines.forEach(function (t, i) {
       var y = y0 + i * lineH;
@@ -643,17 +648,25 @@ function setupCpeSunCompass(A) {
   // date/sun/facade lines that already live there.
   var CLOCK_POS = { tr: 1, tl: 1, br: 1, bl: 1 };
   A.sunClockBoxSize = function (h) { return Math.round(h * 0.105); };
-  A.sunClockCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
+  // §HUD_ROW (2026-09-19) — `xOff` shifts this dial INWARD from its corner along X so the caller
+  // can lay the clock, the readout, the day counter and the path map in ONE row instead of a
+  // column. Optional; every existing caller passes seven arguments and is unmoved. The drawn
+  // rect goes on A.sunClockLastBox — the return value stays the HEIGHT it has always been,
+  // because witness_sun_compass.js reads it as a number.
+  A.sunClockCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY, xOff) {
     if (!ctx || !info || info.noCursor || info.solarHour == null) return 0;
     var op = (opacity == null) ? 1 : Math.min(1, opacity);
     if (!(op > 0)) return 0;
     var d = A.sunClockBoxSize(h), r = d / 2;
     var margin = Math.round(h * 0.028);
     var at = (pos && CLOCK_POS[pos]) ? pos : 'tr';
-    var sy = stackY || 0;
-    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - d;
+    var sy = stackY || 0, xo = xOff || 0;
+    var x = (at === 'tl' || at === 'bl') ? margin + xo : w - margin - d - xo;
     var y = (at === 'bl' || at === 'br') ? h - margin - d - sy : margin + sy;
     var cx = x + r, cy = y + r;
+    // Width is the dial itself; the "HH:MM solar" caption is centred under it and can be wider, so
+    // the row must reserve the WIDER of the two or the next box along will sit on the text.
+    A.sunClockLastBox = { x: x, y: y, w: d, h: d };
 
     var hour = Math.floor(info.solarHour);
     var mins = Math.round((info.solarHour - hour) * 60);
@@ -706,10 +719,17 @@ function setupCpeSunCompass(A) {
     ctx.fillStyle = '#e8eef6';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText((hour < 10 ? '0' : '') + hour + ':' + (mins < 10 ? '0' : '') + mins + ' solar',
-                 cx, y + d + Math.round(fontPx * 0.25));
+    var capTxt = (hour < 10 ? '0' : '') + hour + ':' + (mins < 10 ? '0' : '') + mins + ' solar';
+    ctx.fillText(capTxt, cx, y + d + Math.round(fontPx * 0.25));
+    var capW = (typeof ctx.measureText === 'function') ? ctx.measureText(capTxt).width
+                                                       : capTxt.length * fontPx * 0.55;
+    var totH = d + Math.round(fontPx * 1.4);
+    // §HUD_ROW — the caption is centred on the dial, so it overhangs both sides when it is wider.
+    // Publish the box that actually covers ink, not just the dial, or a row neighbour lands on it.
+    if (capW > d) A.sunClockLastBox = { x: cx - capW / 2, y: y, w: capW, h: totH };
+    else A.sunClockLastBox = { x: x, y: y, w: d, h: totH };
     ctx.restore();
-    return d + Math.round(fontPx * 1.4);
+    return totH;
   };
 
   A.sunCompassInfo = function () { return _last; };
