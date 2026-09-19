@@ -680,6 +680,23 @@
 
   function _dlodEngaged(app) {
     // §5.4 Streaming interplay: refuse to engage until streaming drains (Fly Tour §FLY_STREAM_WAIT doctrine)
+    // §129.50 (2026-09-19, red1: "DLOD yes most likely.. so study how to disable during Reveal") —
+    // THE REVEAL ROUND OWNS INSTANCE VISIBILITY WHILE IT IS UP, so the proxy stands down.
+    // Both systems hide an instanced element the same way — by zero-scaling its row — and only one
+    // of them writes every tick. The reveal writes ONCE per slot (cpeRevealApplyVisual returns early
+    // on an unchanged key), the proxy writes continuously, so the proxy always wins and ARC comes
+    // back on the frame after it is hidden. MEASURED on the delivered Hospital film: ARC gone at
+    // exactly 102.0 s and solid again at 102.1 s, one frame.
+    // ⚠ THIS IS NOT THE OLD BUG IT LOOKS LIKE. time_machine.js has never consulted hiddenDiscs, and
+    // that is fine — those lines are from 2026-08-15, on main, and the reveal worked with them for
+    // a month. What changed is that --dlod-proxy made _dlodProxyOn reachable from a headless bake
+    // for the first time (2026-09-19), so a second writer started competing for those rows.
+    // red1's own logs are the proof: Hospital_groundfix_check3.log, 06:38 the same day, has
+    // reveal=1 AND the load-path batch unpack AND dlod=0, and its reveal was fine.
+    // Standing down is the honest fix rather than teaching the proxy about hiddenDiscs: during the
+    // round the camera is flying the model to SHOW one discipline at a time, which is the one moment
+    // a draw-cost proxy has nothing useful to say, and it costs only the round's own seconds.
+    if (app && app._cpeRevealVisualKey) return false;
     return _dlodProxyOn && _isLargeBuilding && !app.streaming;
   }
 
