@@ -321,7 +321,7 @@ function setupCpeResourcePanel(A) {
       // never the variable measured/post-fit text width `tw`. ROUND 20 — parent is `resource-panel`
       // (the merged panel itself), never a separate `hud.fiveD`. Coordinates are ABSOLUTE (caller's
       // `B.x`/`B.y` added back), matching `pie.band`/`pie.list`'s own registration convention.
-      if (A._hudLayoutRegister) A._hudLayoutRegister(r.name, B.x + lx, B.y + ry - rowH / 2, fullAvailW, rowH, 'resource-panel', truncated);
+      if (A._hudLayoutRegister) A._hudLayoutRegister(r.name, B.x + lx, B.y + ry - rowH / 2, fullAvailW, rowH, 'resource-panel', truncated);   // §129.55 E — stays hardcoded ON PURPOSE: _pieCostLedgerRows has ONE caller, resourcePanelCompositeOntoCanvas; the card never draws these rows
       ry += rowH;
     });
     ctx.restore();
@@ -838,7 +838,13 @@ function setupCpeResourcePanel(A) {
   // offscreen canvas and blitted. The user's own instruction: "yes reprint if no change".
   // Cached across BOTH modes, so a held pie costs nothing extra for the whole reveal.
   var _pieKey = null, _pieCanvas = null;
-  function _pie(ctx, B, info) {
+  // §129.55 E (2026-09-20) — `owner` (NEW, optional, default 'resource-panel' = the old hardcoded
+  // value, so every existing caller is byte-identical): the registry name of the panel that is
+  // ACTUALLY drawing. `_pie` is shared by BOTH composites — `resourcePanelCompositeOntoCanvas` and
+  // `bigStatsCompositeOntoCanvas`'s held pie — and both can draw in the same frame. Hardcoding the
+  // parent meant a card-owned band claimed a parent belonging to the other panel, or to nothing at
+  // all, and §HUD_LAYOUT's `overflow` check silently skipped it (`r.parent && byName[r.parent]`).
+  function _pie(ctx, B, info, owner) {
     // §129.7 item 8a — the pie's own EXCLUSIVE band: full panel width now (`B.bw`, never a narrower
     // side column), height `B.pieBandH` (falls back to `B.bh` for a bare {bw,bh,x,y,rad} object a
     // future caller might build by hand instead of via _box()).
@@ -855,7 +861,7 @@ function setupCpeResourcePanel(A) {
     _round(ctx, B.x, B.y, B.bw, B.bh, B.rad); ctx.clip();
     ctx.drawImage(_pieCanvas, B.x, B.y);
     ctx.restore();
-    if (A._hudLayoutRegister) A._hudLayoutRegister('pie.band', B.x, B.y, B.bw, pieBandH, 'resource-panel');
+    if (A._hudLayoutRegister) A._hudLayoutRegister('pie.band', B.x, B.y, B.bw, pieBandH, owner || 'resource-panel');
   }
 
   // §CPE_BIG_STATS + §CPE_PIE_HOLD. `heldInfo` (optional) is the composition the pie holds while the
@@ -878,6 +884,7 @@ function setupCpeResourcePanel(A) {
   };
 
   A.bigStatsCompositeOntoCanvas = function (ctx, w, h, shown, opacity, pos, stackY, heldInfo) {
+    A.bigStatsLastBox = null;   // §129.55 E — a frame this panel does not draw must publish nothing
     if (!ctx || !shown || !(shown.card || shown.roster) || !(opacity > 0)) return;
     var c = shown.card;
     // `clRows=0` EXPLICIT — this stat-card/roster display never draws Cost/Ledger rows itself (see
@@ -905,6 +912,14 @@ function setupCpeResourcePanel(A) {
     ctx.save();
     ctx.globalAlpha = Math.min(1, opacity);
     _plate(ctx, B);
+    // §129.55 E (2026-09-20) — the stat/storey card's own plate, registered as `stats-panel` and
+    // published as `A.bigStatsLastBox` for cinema_maxq.js's `roster` layer. Until now this panel
+    // was in §HUD_LAYOUT by NAME only (a 0,0,1,1 placeholder the witness skips by design), which is
+    // exactly how §129.52 — this card handed the SAME `_stackY` as the pie panel and drawn on top
+    // of it — sat under a green `overlaps=0` and had to be found by eye. `resource-panel` and
+    // `stats-panel` are unrelated rects, so that collision is now what `_hudRectsOverlap` counts.
+    A.bigStatsLastBox = { x: B.x, y: B.y, w: B.bw, h: B.bh };
+    if (A._hudLayoutRegister) A._hudLayoutRegister('stats-panel', B.x, B.y, B.bw, B.bh);
 
     // The pie does NOT leave when the trades do — it holds the last real composition in exactly the
     // place it occupied all through the build, dimmed and captioned with the day it is from.
@@ -917,7 +932,7 @@ function setupCpeResourcePanel(A) {
     var colX = x + Math.round(bh * 0.13), colW = bw - Math.round(bh * 0.13) * 2;
     var pieDrawn = false, topY = 0;
     if (heldInfo && heldInfo.rows && heldInfo.rows.length && heldInfo.totalHeads > 0) {
-      _pie(ctx, B, heldInfo);
+      _pie(ctx, B, heldInfo, 'stats-panel');   // §129.55 E — the held pie belongs to THIS card, not the resource panel
       topY = B.pieBandH;
       pieDrawn = true;
     }

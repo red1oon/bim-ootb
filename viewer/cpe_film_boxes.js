@@ -190,8 +190,14 @@ function setupCpeFilmBoxes(A) {
   A.filmBoxesDrawStatus = function (ctx, w, h, rows, armed) {
     var L = (armed ? A.filmBoxesLayout(w, h, armed) : _layout) || A.filmBoxesLayout(w, h, _armed || {});
     var b = L.status;
+    // §129.55 C (2026-09-20) — publish the rect on EVERY return path, including the ones that draw
+    // nothing, so a frame where the box did not paint can never leave last frame's rect standing for
+    // cinema_maxq.js's §HUD_LAYOUT registration to pick up. Same "a drawer that painted nothing must
+    // not register a rect" contract _drawUnlessHold's own alpha>0 guard already keeps.
+    A.filmBoxesStatusLastBox = null;
     if (!ctx || !b || b.h <= 0) return 0;
     rows = rows || A.filmBoxesStatusRows(null);
+    A.filmBoxesStatusLastBox = { x: b.x, y: b.y, w: b.w, h: b.h };
     ctx.save();
     plate(ctx, b);
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
@@ -309,6 +315,10 @@ function setupCpeFilmBoxes(A) {
   A.filmBoxesDrawMeasure = function (ctx, w, h, armed, filmSec) {
     var L = (armed ? A.filmBoxesLayout(w, h, armed) : _layout) || A.filmBoxesLayout(w, h, _armed || {});
     var b = L.measure;
+    // §129.55 C — same publish-or-clear contract as the status box above. This one has THREE
+    // no-draw returns (no ctx/box, linger expired, nothing queued) and a linger path that DOES
+    // draw, so it is set at each draw rather than once up front.
+    A.filmBoxesMeasureLastBox = null;
     var q = _queue; _queue = [];
     if (!ctx || !b) return 0;
     var hasFilmSec = typeof filmSec === 'number' && isFinite(filmSec);
@@ -331,6 +341,7 @@ function setupCpeFilmBoxes(A) {
       }
       _measIdleLogged = false;
       drawMeasureEntry(ctx, b, _lastEntry.head, _lastEntry.lines);
+      A.filmBoxesMeasureLastBox = { x: b.x, y: b.y, w: b.w, h: b.h };   // §129.55 C — the linger path draws, so it publishes
       return _lastEntry.lines.length;
     }
     _measIdleLogged = false; _lingering = false;
@@ -342,6 +353,7 @@ function setupCpeFilmBoxes(A) {
     _lastEntry = { head: head, lines: lines };
     if (hasFilmSec) _lastPostSec = filmSec;
     drawMeasureEntry(ctx, b, head, lines);
+    A.filmBoxesMeasureLastBox = { x: b.x, y: b.y, w: b.w, h: b.h };   // §129.55 C — the live-post path
     var key = head.title + '|' + lines.join('|') + '|' + extra;
     if (_measLogged !== key) {
       _measLogged = key;

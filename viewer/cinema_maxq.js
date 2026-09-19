@@ -1144,7 +1144,15 @@
   // exactly what both §HUD_LAYOUT's overlap count and §LOADPATH_FOCUS's own "painted" need.
   // window.__lpNoFocusHold=1 forces alpha=1 (full visibility, always registers) — the control
   // §LOADPATH_FOCUS's own FAIL depends on. `A._captureCtx` is set once per frame by _captureFrame.
-  function _drawUnlessHold(name, fn) {
+  // §129.55 A (2026-09-20) — `boxFn` (NEW, optional) returns THIS frame's real rect for this layer.
+  // Until now every layer wrapped here registered only the 0,0,1,1 placeholder below, which the
+  // §HUD_LAYOUT witness skips by design (w<=1 && h<=1) — so seven overlays were in the registry by
+  // NAME only and contributed nothing to `overlaps`/`overflow`. That is how §129.52 (the stat card
+  // drawn on top of the pie panel) sat under a green overlaps=0 and had to be found by eye.
+  // A `boxFn` returning a real box (w>1 && h>1) registers THAT instead. No boxFn, or a degenerate
+  // box, keeps the placeholder exactly as before — and the `alpha > 0` guard ("a drawer that painted
+  // nothing must not register a rect") still gates both cases, unchanged.
+  function _drawUnlessHold(name, fn, boxFn) {
     var A2 = window.APP;
     var forced = !!window.__lpNoFocusHold;
     var alpha = forced ? 1 : ((A2 && A2._loadPathHudAlpha != null) ? A2._loadPathHudAlpha : 1);
@@ -1164,7 +1172,15 @@
     fn(alpha);
     if (A2) { A2._inHudFadeWrapper = false; A2._drawUnlessHoldCurrentName = null; }
     if (faded) ctx2.restore();
-    if (alpha > 0 && A2 && A2._hudLayoutRegister) A2._hudLayoutRegister(name, 0, 0, 1, 1);
+    if (alpha > 0 && A2 && A2._hudLayoutRegister) {
+      // §129.55 A — the drawer's own published rect when it has one, read AFTER fn() so it is this
+      // frame's, never a neighbour's. try/catch for the same never-kills-a-bake contract every
+      // other optional HUD read here keeps.
+      var _rb = null;
+      if (boxFn) { try { _rb = boxFn(); } catch (eRB) { _rb = null; } }
+      if (_rb && _rb.w > 1 && _rb.h > 1) A2._hudLayoutRegister(name, _rb.x, _rb.y, _rb.w, _rb.h);
+      else A2._hudLayoutRegister(name, 0, 0, 1, 1);
+    }
     // ROUND 13 item C — record the alpha THIS call actually used, per layer name, per frame (reset
     // every frame in _captureFrame alongside A._hudLayoutRects) — the real number the §LOADPATH_
     // HUD_FADE witness now reads, instead of re-deriving one from the formula alone.
@@ -1205,7 +1221,7 @@
   // with a "draw at full opacity" fallback. Both lanes now live in THIS file, so the indirection is
   // gone: `_hudHold` is the real wrapper, called directly. The window publish above stays for any
   // other lane still building against main.
-  function _hudHold(name, fn) { return _drawUnlessHold(name, fn); }
+  function _hudHold(name, fn, boxFn) { return _drawUnlessHold(name, fn, boxFn); }   // §129.55 B — must forward boxFn; suncompass.clock/readout go through here
   // ══ §FRAME_COST (2026-09-19, LARGE_DB_BAKE.md §8.2 item 1) — is this frame paying for the
   // MODEL or for ITSELF? ════════════════════════════════════════════════════════════════════════
   // red1: "study how to reduce hi element DB as a frame is only a limited set". MEASURED at
@@ -1440,7 +1456,7 @@
       _drawUnlessHold('measure.box', function () {
         try { A.filmBoxesDrawMeasure(ctx, w, h, null, _fcFilmSec); }
         catch (eMB) { if (!A._measureBoxWarned) { A._measureBoxWarned = true; console.warn('§MEASURE_BOX draw failed: ' + (eMB && eMB.message)); } }
-      });
+      }, function () { return A.filmBoxesMeasureLastBox; });   // §129.55 C
     }
     // §STATUS_BOX (§38.1b, §40.1) — REPLACES the centred lower-third caption plate for the bake.
     // A.roomTitleCompositeOntoCanvas is untouched and still serves the live editor preview and its
@@ -1452,7 +1468,7 @@
       _drawUnlessHold('hud.status', function () {
         try { A.filmBoxesDrawStatus(ctx, w, h, A.filmBoxesStatusRows(statusSrc)); }
         catch (eSB) { if (!A._statusBoxWarned) { A._statusBoxWarned = true; console.warn('§STATUS_BOX draw failed: ' + (eSB && eSB.message)); } }
-      });
+      }, function () { return A.filmBoxesStatusLastBox; });   // §129.55 C
     } else if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
       _drawUnlessHold('roomtitle.fallback', function () { A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity); });
     }
@@ -1533,7 +1549,7 @@
           if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
             console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
         }
-      });
+      }, function () { return A.pathOverviewLastBox; });   // §129.55 B — the rect _rowAdvance already reads, now also registered
       _rowAdvance(A.pathOverviewLastBox);
     }
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
@@ -1541,7 +1557,7 @@
       // is an absolute assignment from that param, was clobbering the ambient hold-fade alpha).
       _drawUnlessHold('daycounter', function (a) {
         A.dayCounterCompositeOntoCanvas(ctx, w, h, dayInfo, a, dayInfo.pos, _rowX);
-      });
+      }, function () { return A.dayCounterLastBox; });   // §129.55 B
       _rowAdvance(A.dayCounterLastBox);
     }
     // §SUN_CLOCK — the analogue face for the hour this frame is lit at. It keeps the day counter's
@@ -1557,7 +1573,7 @@
           A.sunClockCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a, _rowPos, 0, _rowX);
         } catch (eClk) { if (!A._sunClockWarned) { A._sunClockWarned = true;
           console.warn('§SUN_CLOCK_DRAW failed: ' + (eClk && eClk.message)); } }
-      });
+      }, function () { return A.sunClockLastBox; });   // §129.55 B
       _rowAdvance(A.sunClockLastBox);
     }
     // §SUN_COMPASS readout — date / sun angles / facade, next along the row (red1: "same line as
@@ -1569,7 +1585,7 @@
           A.sunCompassCompositeOntoCanvas(ctx, w, h, A.sunCompassInfo(), a, _rowPos, 0, _rowX);
         } catch (eSCd) { if (!A._sunCompassDrawWarned) { A._sunCompassDrawWarned = true;
           console.warn('§SUN_COMPASS_DRAW failed: ' + (eSCd && eSCd.message)); } }
-      });
+      }, function () { return A.sunReadoutLastBox; });   // §129.55 B
       _rowAdvance(A.sunReadoutLastBox);
     }
     // Everything below the row — the pie panel, the storey card — starts under the TALLEST member,
@@ -1604,6 +1620,11 @@
         }
       });
     }
+    // §129.55 D/E — `roster` deliberately keeps its 0,0,1,1 placeholder, for the SAME reason
+    // `hud.pie` does: the card's real rect is already in the registry, registered by the drawer
+    // itself as `stats-panel` (cpe_resource_panel.js, beside its own `_plate` call) so its held pie
+    // can declare it as parent. Giving this wrapper a `boxFn` too would put the IDENTICAL rect in
+    // the registry under a second name — a rect overlapping itself, a permanent false FAIL.
     // §HUD FIX — load path/ledger composite draw LAST, so the label ladder's own column-placement
     // can read every OTHER HUD rect (status box, resource panel, pie.cost/ledger, roster) already
     // registered this frame and avoid them (item 5's own "avoid every registered HUD rect").
