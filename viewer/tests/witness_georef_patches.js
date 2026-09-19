@@ -114,16 +114,21 @@ var EXPECT = {
   'Terminal_silent.db': {
     true_north_angle: '52.040036', true_north_source: 'ifc_truenorth',
     site_latitude: '5.96277289', site_longitude: '100.63712571',
-    site_elevation_m: '0.0030', site_latlong_source: 'ifc_site' }
-  // ⚠ LTU_AHouse_silent.db IS DELIBERATELY ABSENT AND MUST STAY ABSENT UNTIL RULED ON.
-  // Its sources disagree: LTU_AHouse_ARC.ifc gives 59.33333333 / 18.05000000 (exactly
-  // 59 deg 20' 00" / 18 deg 03' 00" — a round placeholder, Stockholm city centre) and
-  // LTU_AHouse_STR.ifc gives 59.28110000 / 17.80680000, about 20 km south-west and far more
-  // specific. The other seven discipline files carry no lat/long at all. Hospital's precedent
-  // says ARC is authoritative, but there the ARC value was the precise one and here it is the
-  // round one, so the precedent does not obviously carry. That needs a human ruling (red1), not
-  // a majority vote and not a plausibility judgement. Until then LTU bakes stay un-georeferenced,
-  // which is honest, rather than georeferenced to a guess, which is not.
+    site_elevation_m: '0.0030', site_latlong_source: 'ifc_site' },
+  // The one whose sources disagree, settled by the SAME standing ruling as Hospital: of the nine
+  // LTU discipline files, seven carry no lat/long and the two that do sit ~20 km apart — ARC
+  // 59.33333333/18.05000000 against STR 59.28110000/17.80680000. red1's 2026-09-18 ruling names
+  // ARC the authoritative source of record, and that is a rule about which file speaks for the
+  // project, not about which number looks more surveyed: ARC's value being the rounder one is not
+  // grounds to reopen it. Corroborating and not a judgement — LTU_AHouse_STR.ifc is also one of
+  // the four fleet files whose TrueNorth the extractor refuses by name
+  // (malformed_truenorth_ignored), so the file the ruling sets aside is the one the code already
+  // declines to take a bearing from. The 0.000000 below is a REAL authored zero from ARC
+  // (ifc_truenorth), not the old stub — tidying it to default_zero would be the defect returning.
+  'LTU_AHouse_silent.db': {
+    true_north_angle: '0.000000', true_north_source: 'ifc_truenorth',
+    site_latitude: '59.33333333', site_longitude: '18.05000000',
+    site_elevation_m: '0.0000', site_latlong_source: 'ifc_site' }
 };
 
 function inconclusive(why) {
