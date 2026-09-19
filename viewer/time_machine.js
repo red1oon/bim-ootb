@@ -671,6 +671,10 @@
   var _dlodBoxMeshes = null;     // [InstancedMesh, ...] one per discipline
   var _dlodBoxBld = null;        // building the index was built for
   var _lastProxyEngaged = null;  // edge-detection (mirrors _lastShadowOn) for a forced full pass
+  // §129.51c (2026-09-19) — the REAL-MESH twin of _lastProxyEngaged. That one forces a full sync of
+  // the proxy's own BOXES on an engage/disengage edge; nothing did the same for the real instance
+  // rows, so disengaging stopped the proxy hiding MORE without ever un-hiding what it already hid.
+  var _dlodPrevOn = null;
   var _dlodFrustum = null, _dlodPSM = null, _dlodSphere = null; // per-tick scratch (built lazily, reused)
   var _dlodCamPos = null;
   // §DLOD_TM_CAMGUARD (2026-07-20): last camera pose-signature seen on a DLOD-engaged tick — see
@@ -1480,6 +1484,14 @@
     // (not lazily inside _dlodUpdateBoxes) — else the first engaged tick would see an empty index
     // and fail every element open to "real", one tick behind. Zero cost when the toggle is off.
     var _dlodOn = _dlodEngaged(app);
+    // §129.51c — did the proxy just engage or disengage? The incremental path below only revisits
+    // elements whose PLACED STATE changed in this cursor step, so on a disengage tick every row the
+    // proxy had zero-scaled would simply stay zero-scaled: nothing looks at it again. MEASURED, the
+    // §129.51b attempt: the stand-down flag rose 41 frames before the storey window and the arm
+    // STILL snapshotted 4,544 zero-scaled rows, handing back 2,981 members off. The flag was right
+    // and inert. This is the term that makes it act.
+    var _dlodJustToggled = (_dlodPrevOn !== null && _dlodPrevOn !== _dlodOn);
+    _dlodPrevOn = _dlodOn;
     if (_dlodOn) {
       _dlodBuildBoxes(app);
       if (_dlodBoxIndex && app.camera) {
@@ -1559,7 +1571,11 @@
     } else {
       _dlodLastCamSig = null; // reset: engaging DLOD later must not compare against a stale pose
     }
+    // §129.51c — !_dlodJustToggled joins !_shadowJustToggled and !_dlodCamMoved: all three are
+    // "something changed that the delta cannot see", and a proxy edge is exactly that. One full
+    // pass on the edge is enough; the tick after it goes back to the incremental path.
     var _incrOK = !!_evMesh && _prevCursor != null && !_shadowJustToggled && !_dlodCamMoved &&
+                  !_dlodJustToggled &&
                   (_dHi - _dLo) <= _INCR_MAX_SPAN_MS && _incrPrimed;
     // W-INCR-EQUIV hook: the verification harness sets window.__forceFull to re-render the SAME
     // cursor via the full path, so the two results can be diffed. Test-only; no production effect.
