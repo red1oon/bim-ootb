@@ -18,6 +18,13 @@
 //                                                       16 rates packs). Absent file = no override, not an error.
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
+//     [--escape-route] [--no-escape-route]            §ESCAPE_ROUTE_REVEAL: during the closing orbit the
+//                                                       worst-case room shines through and an orange dotted
+//                                                       line traces its REAL computed route to the exit,
+//                                                       counting up in walking time (1.19 m/s, SFPE) and in
+//                                                       steps (0.75 m stride, uncited). Draws nothing on a
+//                                                       building whose room graph reaches no exit — the log
+//                                                       says §ESCAPE_ROUTE_BUILD VACUOUS, read it.
 //     [--sun-date YYYY-MM-DD]                         §SUN_DAY: light the WHOLE film on that one
 //                                                       day, sun rising to late afternoon across it.
 //                                                       The build still follows the 4D timeline.
@@ -116,6 +123,8 @@ const _fClash = triState('clash', 'no-clash');
 const _fMeasure = triState('measure', 'no-measure');
 // §STOREY_HIGHLIGHT_REVEAL — each storey tints in sequence during the closing orbit (same file).
 const _fStoreyReveal = triState('storey-reveal', 'no-storey-reveal');
+// §ESCAPE_ROUTE_REVEAL (bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md) — same tri-state as the rest.
+const _fEscapeRoute = triState('escape-route', 'no-escape-route');
 // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — the true-north ground rose
 // with the 4D day-of-year and the sun's angle of attack. Its OWN flag, not folded into --measure:
 // the datum draws the model's own setting-out grid, this draws the model's relationship to the
@@ -129,6 +138,7 @@ if (_fReveal !== undefined) FLAGS.reveal = _fReveal;
 if (_fClash !== undefined) FLAGS.clash = _fClash;
 if (_fMeasure !== undefined) FLAGS.measure = _fMeasure;
 if (_fStoreyReveal !== undefined) FLAGS.storeyReveal = _fStoreyReveal;
+if (_fEscapeRoute !== undefined) FLAGS.escapeRoute = _fEscapeRoute;
 if (_fSunCompass !== undefined) FLAGS.sunCompass = _fSunCompass;
 // §SUN_DAY — light the whole film on one day (yyyy-mm-dd), hour sweeping morning to late
 // afternoon. Absent = the 4D timeline's own dates drive the light, which is the shipped behaviour.
