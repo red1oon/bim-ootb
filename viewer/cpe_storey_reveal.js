@@ -1846,6 +1846,17 @@ function setupCpeStoreyReveal(A) {
       });
       var hid = (A.hiddenDiscs && typeof A.hiddenDiscs.forEach === 'function') ? [] : null;
       if (hid) A.hiddenDiscs.forEach(function (d) { hid.push(d); });
+      // §129.51 (2026-09-19, red1: "the storey by storey stacking lost its animation reveal from
+      // afar to cam pov ... It was there before and is in HHS still") — PUBLISH THE ARMED WINDOW.
+      // This baseline exists because arming inside another system's transient state poisons the
+      // restore: whatever is hidden NOW is what this leg writes back when it ends. On Hospital it
+      // armed with 2,674 instance rows already zero-scaled by the DLOD proxy and duly handed back
+      // 2,981 members switched off (§STOREY_CUT_RESTORE_WITNESS membersLeftOff=2981/63182 => FAIL),
+      // so the storeys it was meant to stack were partly missing. HHS arms clean (0/411, 0/3135)
+      // because the proxy never engages there, which is exactly why the animation survived on one
+      // building and not the other. §129.50 stood the proxy down for the DISCIPLINE reveal; this
+      // flag lets it stand down for the STOREY reveal too, from arm to restore.
+      A._storeyRevealArmed = true;
       console.log('§STOREY_ARM_BASELINE armedObjsOff=' + offObjs + '/' + _cutObjs.length +
         ' byDisc={' + Object.keys(byDisc).sort().map(function (d) { return d + ':' + byDisc[d]; }).join(' ') + '}' +
         ' zeroScaleRows=' + zeroRows + '/' + rows + ' (over ' + instObjs + ' instanced containers) heldByTimeMachine=' + tmHeldRows + (held ? '' : ' (TM inactive)') +
@@ -2153,6 +2164,7 @@ function setupCpeStoreyReveal(A) {
           byDisc[d] = (byDisc[d] || 0) + 1;
         }
       });
+      A._storeyRevealArmed = false;   // §129.51 — armed window closed; the proxy may engage again
       console.log('§STOREY_CUT_RESTORE_WITNESS objsLeftOff=' + objOff + '/' + objDen +
         ' membersLeftOff=' + rowOff + '/' + rowDen + ' heldByTimeMachine=' + tmHeld + (held ? '' : ' (TM inactive)') +
         (guids.length ? ' leftOff=[' + guids.join(' ') + ']' : '') +
@@ -2239,7 +2251,11 @@ function setupCpeStoreyReveal(A) {
     // It must run unconditionally: by the time it arrives the film has normally already left the
     // window, so _curIdx is null and the key check below would return early — leaving the clash
     // markers hidden for the NEXT bake. Restore first, then fall through to the normal no-op.
-    if (!plan) { _restoreTint(); _curIdx = null; _restoreMarkers(); return; }
+    // §129.51 — the forced-restore path must clear the armed flag too, or a bake that exits
+    // through it (including the throw path this comment describes) leaves the DLOD proxy
+    // permanently stood down for the rest of the session. Failing that way is safe rather
+    // than wrong — no proxy means the correct picture, just slower — but it is still a leak.
+    if (!plan) { A._storeyRevealArmed = false; _restoreTint(); _curIdx = null; _restoreMarkers(); return; }
     var vis = A.storeyRevealVisualAt(plan, tNorm);
     // A dark slot keeps its own key so the tint is actually taken DOWN between storeys (the "cease").
     // The last storey never reports dark (§STOREY_REVEAL_LAST_STAYS_LIT), so this key never flips to

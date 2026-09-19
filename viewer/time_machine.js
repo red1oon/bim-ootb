@@ -697,6 +697,11 @@
     // round the camera is flying the model to SHOW one discipline at a time, which is the one moment
     // a draw-cost proxy has nothing useful to say, and it costs only the round's own seconds.
     if (app && app._cpeRevealVisualKey) return false;
+    // §129.51 — and the STOREY reveal, for the same reason plus a sharper one: that leg SNAPSHOTS
+    // the scene at arm and writes the snapshot back at restore, so anything the proxy is hiding at
+    // that instant becomes permanent. Measured on Hospital: armed with 2,674 rows zero-scaled,
+    // handed back 2,981 members off. Standing down covers arm-to-restore, not just the tint window.
+    if (app && app._storeyRevealArmed) return false;
     return _dlodProxyOn && _isLargeBuilding && !app.streaming;
   }
 
