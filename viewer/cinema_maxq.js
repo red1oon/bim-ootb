@@ -1299,6 +1299,42 @@
     if (!A2 || !A2.scene || !A2._findingsHudSuppress) return;
     var hidNow = 0, kept = 0, unreg = 0, fresh = [];
     A2._cease3DSeen = A2._cease3DSeen || {};
+    // ══ §RULE_TINT_CEASE — THE STRUCTURAL SANITY OVERLAY COMES DOWN ═════════════════════════════
+    // red1, repeatedly: "the overlay of Sanity Structural/Safety still lingering in the building",
+    // "those yellow beams were appearing during the Structural Sanity from first seconds".
+    // WHAT IT IS, read in the source, not guessed. rule_findings_film.js:367 calls
+    // A.showRuleModeTint(...{shineThrough:true}) while the Sanity beat runs. rule_checklist.js:518
+    // builds one InstancedMesh per colour of translucent boxes over every flagged element and
+    // A.scene.add()s them (:587) — `§RULE_TINT_ENTER elements=390 colors=2 shineThrough=true
+    // renderOrder=900 depthTest=false` in every bake log. Those are the yellow cages on the beams.
+    // WHY THEY NEVER LEFT. The only teardown is A.exitRuleModeTint (rule_checklist.js:649) and its
+    // ONLY caller in the whole viewer was showRuleModeTint itself (:520), replacing a previous
+    // tint. The film never called it. The single per-frame control it had was
+    // A.ruleTintShowOnly(show) — which does not hide anything, it zero-scales the instances NOT in
+    // `show` — and that call lives inside A.ruleFindingsFilmCompositeOntoCanvas, which is drawn
+    // through _drawUnlessHold('measure.rulefindings', ...). So when the cease switched that layer
+    // off, the one hand that was scaling the boxes each frame stopped, and they FROZE at full size
+    // on the building to the final frame. Ceasing the chip is what made the boxes permanent.
+    // ⚠ NOTHING HERE TOUCHES THE STOREY REVEAL'S TINT. That is a different mechanism in a
+    // different module (cpe_storey_reveal.js _applyTint/_restoreTint recolours the building's OWN
+    // materials) with its own restore, and it is not in scope.
+    // This teardown is DESTRUCTIVE where the rest of the gate only hides — on purpose: it is the
+    // module's own exit, it disposes its meshes and it puts the flagged elements' real geometry
+    // back, which is what the finale needs. One shot, guarded by _ruleTintActive.
+    if (A2._ruleTintActive && typeof A2.exitRuleModeTint === 'function') {
+      var _rtMeshes = (A2._ruleTintMeshes || []).length;
+      var _rtHidden = A2.collectMeshes
+        ? A2.collectMeshes(function (o) { return o.userData && o.userData._ruleTintHidden; }).length : -1;
+      try { A2.exitRuleModeTint(); } catch (eRT) { console.log('§RULE_TINT_CEASE threw: ' + eRT.message); }
+      var _rtLeft = (A2._ruleTintMeshes || []).length;
+      var _rtStill = A2.collectMeshes
+        ? A2.collectMeshes(function (o) { return o.userData && o.userData._ruleTintHidden; }).length : -1;
+      var _rtOk = (_rtLeft === 0 && _rtStill === 0 && !A2._ruleTintActive);
+      console.log('§RULE_TINT_CEASE removed=' + _rtMeshes + ' tint meshes, restored=' + _rtHidden +
+        ' flagged elements — left=' + _rtLeft + ' stillHidden=' + _rtStill +
+        ' active=' + (!!A2._ruleTintActive) + ' => ' + (_rtOk ? 'PASS' : 'FAIL') +
+        ' (the Structural Sanity boxes; NOT the storey reveal tint, which is cpe_storey_reveal.js)');
+    }
     // ARM 0 — §FILM_LAYER. Every layer that registered its geometry ceases on its OWN switch, the
     // same one that stops its chip. This is the mechanism; the two arms below are the safety net
     // for anything that has not been wired to it yet.

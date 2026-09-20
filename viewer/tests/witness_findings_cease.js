@@ -164,6 +164,50 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
        allReg.every((n) => RX.test(n)),
        allReg.filter((n) => !RX.test(n)).join(',') || 'all governed by /^(measure\\.|clash\\.)/');
   }
+  // ── §RULE_TINT_CEASE — THE STRUCTURAL SANITY OVERLAY. ISSUE: red1, repeatedly, "the overlay of
+  //    Sanity Structural/Safety still lingering in the building… those yellow beams were appearing
+  //    during the Structural Sanity from first seconds". showRuleModeTint adds instanced boxes to
+  //    the scene; its only teardown, exitRuleModeTint, was called from NOWHERE but showRuleModeTint
+  //    itself. Worse, the film's one per-frame control over those boxes lived inside the 2D layer
+  //    the cease switches OFF, so ceasing the chip is what froze the boxes on the building.
+  //    These claims prove the teardown is now reachable FROM THE FILM and that it is one-shot.
+  {
+    const rc = fs.readFileSync(path.join(ROOT, 'viewer/rule_checklist.js'), 'utf8');
+    const rf = fs.readFileSync(path.join(ROOT, 'viewer/rule_findings_film.js'), 'utf8');
+    ck('the Sanity tint IS added to the scene and IS the shine-through kind — the thing being judged exists',
+       /A\.showRuleModeTint = function/.test(rc) && /A\.scene\.add\(iMesh\)/.test(rc) &&
+       /A\.showRuleModeTint\(/.test(rf),
+       'rule_findings_film.js asks for it, rule_checklist.js builds and adds it');
+    // CODE ONLY. The explanation written beside the fix names every one of these symbols, so a
+    // test that reads the comments would report the comment instead of the code.
+    const strip = (t) => t.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    const mqCode = strip(mq), ceaseCode = strip(ceaseFn);
+    ck('its ONLY per-frame control still lives inside the 2D layer the cease switches off',
+       /A\.ruleTintShowOnly\(/.test(strip(rf)) && !/ruleTintShowOnly/.test(mqCode),
+       'which is exactly why the boxes froze — nothing outside that layer ever touched them');
+    ck('§RULE_TINT_CEASE — the cease now calls the module\'s OWN teardown',
+       /A2\._ruleTintActive && typeof A2\.exitRuleModeTint === 'function'/.test(ceaseFn) &&
+       /A2\.exitRuleModeTint\(\);/.test(ceaseFn),
+       'exitRuleModeTint is reachable from the film for the first time');
+    ck('…ONE SHOT — guarded by _ruleTintActive, which its own exit clears',
+       /_ruleTintActive = false/.test(rc) &&
+       /if \(A2\._ruleTintActive/.test(ceaseFn),
+       'a second frame finds the flag down and does nothing');
+    ck('…and it SAYS what it removed, with its own verdict, not just that it ran',
+       /§RULE_TINT_CEASE removed=/.test(mq) && /stillHidden=/.test(mq) &&
+       /' => ' \+ \(_rtOk \? 'PASS' : 'FAIL'\)/.test(mq) &&
+       /RULE_TINT_CEASE/.test(fs.readFileSync(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')),
+       'left=0 stillHidden=0 active=false is the post-condition, and the CLI relays the line');
+    // red1, 2026-09-20: "but not confuse with the Storeys reveal tint section … which is governed by
+    // its own feature check". It is: STOREY_REVEAL_MODE === 'tint' sets STOREY_REVEAL_TINT, and that
+    // flag alone decides whether _applyTint/_restoreTint run. This claim keeps the two apart.
+    const sr = fs.readFileSync(path.join(ROOT, 'viewer/cpe_storey_reveal.js'), 'utf8');
+    ck('…and it does NOT reach into the storey reveal\'s tint — that one has its OWN feature check',
+       !/storeyRevealTintRestore|_restoreTint|_applyTint/.test(ceaseCode) &&
+       /var STOREY_REVEAL_TINT = \(STOREY_REVEAL_MODE === 'tint'\);/.test(sr) &&
+       /if \(vis && STOREY_REVEAL_TINT\)/.test(sr),
+       'STOREY_REVEAL_TINT gates _applyTint/_restoreTint in cpe_storey_reveal.js — untouched by this cease');
+  }
   ck('an offender the NET catches is reported as UNREGISTERED, with enough to identify it',
      /UNREGISTERED/.test(mq) && /renderOrder=/.test(ceaseFn) && /unregistered=/.test(mq),
      'the sweep line carries the ancestor chain, renderOrder and material colour');
