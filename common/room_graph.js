@@ -198,9 +198,71 @@
     }
     flightRows = flightRows.concat(mergedAssemblyRows);
 
+    // ══ §STAIR-SHAFT-SPLIT (2026-09-20) — ONE NAME IS NOT ONE STAIR ═══════════════════════════
+    // stairBaseKey() strips a trailing /:\d+$/ on the assumption it is a flight index. On a model
+    // that names stairs by TYPE with an element-ID suffix — Revit's default export — that leaves
+    // the type name, which every stair in the building shares. The comment below already records
+    // the consequence for the footprint ("one 84.1 x 63.9m box ... the whole building"); this is
+    // the same defect reaching the GRAPH, where it is worse: the merged group becomes ONE vertical
+    // link, so a building with 62 stairs routes as if it had three.
+    //
+    // MEASURED (tools_poc_stair_grouping.js, calculation-only, the whole fleet — §GRAPH-FOUNDATION
+    // requires the POC gate before the engine):
+    //   Hospital      62 rows, 11 name keys, worst merge 26 rows spanning  78.1 m
+    //   LTU_AHouse    80 rows, 18 name keys, worst merge 24 rows spanning 128.6 m
+    //   HHS_Office    20 rows,  5 name keys, worst merge 12 rows spanning  54.6 m
+    //   Hospital 2.0, HospitalAuckland, Ifc4_Revit_ARC — same failure, 54-80 m
+    //   Clinic, Terminal, Duplex, jkr — worst merge 1.5-3.0 m, i.e. genuinely ONE shaft
+    //
+    // THE RULE IS SPLIT-ONLY, and that is the whole safety argument: the name key still decides
+    // what MAY group, and plan distance only SUBDIVIDES what it produced. No building can come out
+    // with fewer groups than it has today, so a model the old rule handled correctly is untouched
+    // — measured: Clinic 5->5, Terminal 17->17, Duplex 2->2, jkr 4->4, byte-identical. Only the
+    // broken ones move: Hospital 11->23, LTU_AHouse 18->37, HHS_Office 5->11.
+    // Clustering is single-link on PLAN position: flights of one shaft share an (x,y) footprint as
+    // they climb, separate shafts do not. Transitive, so a run that drifts across its own landings
+    // still forms one cluster (§STAIR-RUN-ENDS measured 3.4 m of real horizontal offset on HHS,
+    // comfortably inside the radius).
+    var STAIR_SHAFT_RADIUS_M = 4.0;
+    var _shaftKey = (function () {
+      var byBase = {};
+      flightRows.forEach(function (f, i) { var b = stairBaseKey(f[1]); (byBase[b] = byBase[b] || []).push(i); });
+      var out = {}, splitBases = 0, splitInto = 0;
+      Object.keys(byBase).forEach(function (b) {
+        var idxs = byBase[b];
+        var parent = idxs.map(function (_, k) { return k; });
+        function find(k) { while (parent[k] !== k) { parent[k] = parent[parent[k]]; k = parent[k]; } return k; }
+        function union(a, c) { a = find(a); c = find(c); if (a !== c) parent[c] = a; }
+        for (var a = 0; a < idxs.length; a++) {
+          for (var c = a + 1; c < idxs.length; c++) {
+            var ra = flightRows[idxs[a]], rc = flightRows[idxs[c]];
+            if (Math.hypot(ra[2] - rc[2], ra[3] - rc[3]) <= STAIR_SHAFT_RADIUS_M) union(a, c);
+          }
+        }
+        var seen = {}, n = 0;
+        idxs.forEach(function (rowIdx, k) {
+          var r = find(k);
+          if (seen[r] === undefined) seen[r] = n++;
+          out[rowIdx] = (n > 1 || seen[r] > 0) ? (b + '#' + seen[r]) : b;
+        });
+        // a base that produced more than one shaft has to be re-labelled consistently
+        if (n > 1) {
+          splitBases++; splitInto += n;
+          idxs.forEach(function (rowIdx, k) { out[rowIdx] = b + '#' + seen[find(k)]; });
+        }
+      });
+      if (splitBases) {
+        log('§ROOM_GRAPH_STAIR_SPLIT baseKeys=' + Object.keys(byBase).length + ' split=' + splitBases +
+          ' into=' + splitInto + ' radius=' + STAIR_SHAFT_RADIUS_M + 'm — one NAME covered several' +
+          ' physically separate shafts; plan distance subdivides it. Split-only: no group is ever' +
+          ' merged that the name key kept apart.');
+      }
+      return out;
+    })();
+
     var groups = {}, order = [], rowRects = [];
-    flightRows.forEach(function (f) {
-      var key = stairBaseKey(f[1]);
+    flightRows.forEach(function (f, _fi) {
+      var key = _shaftKey[_fi] || stairBaseKey(f[1]);
       if (!groups[key]) {
         groups[key] = { guids: [], cx: 0, cy: 0, n: 0, zlo: Infinity, zhi: -Infinity,
           xlo: Infinity, xhi: -Infinity, ylo: Infinity, yhi: -Infinity,
