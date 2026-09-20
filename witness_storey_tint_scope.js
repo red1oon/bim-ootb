@@ -252,6 +252,33 @@ console.log('\n\u2500\u2500 6 CHANNELS \u2014 what is WRITTEN, not just what is 
     !!cl && cl.color.getHex() === hex && inst._last === hex && batch._last === hex);
 }
 
+// ── §STOREY_REVEAL_TINT_SKIPS — ISSUE: red1, "keeps missing some parts of the facade or whole level
+//    see thru". Every `return` in _applyTint drops a mesh or a whole instanced bucket, and none of
+//    them was counted, so a storey that painted 8,810 meshes and dropped 3,000 printed exactly like
+//    a complete one. These claims prove the drops are now COUNTED and that the line says which kind.
+//    They do not claim the skips are gone — they are untouched on purpose, so this bake stays
+//    comparable with every bake before it.
+{
+  const src = fs.readFileSync(SRC, 'utf8');
+  const code = src.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  const REASONS = ['_skipNoMat', '_skipArrayMat', '_skipNoEmissive', '_skipNoClone',
+                   '_skipNoInstMeta', '_skipNoBatchMeta', '_skipNoSetColor'];
+  chk('every silent `return` in _applyTint now increments a named reason',
+    REASONS.every((r) => new RegExp(r + '\\+\\+').test(code)),
+    REASONS.filter((r) => !new RegExp(r + '\\+\\+').test(code)).join(',') || 'all seven counted');
+  chk('…and the drop conditions themselves are UNCHANGED — this bake stays comparable with the last',
+    /if \(!o\.material\)/.test(code) && /if \(Array\.isArray\(o\.material\)\)/.test(code) &&
+    /if \(!o\.material\.emissive\)/.test(code) && /if \(!o\.material\.clone\)/.test(code),
+    'counting only, no new skip and none removed');
+  chk('the log line carries every reason by name, not just a total',
+    /skippedMeshes=/.test(code) && /noMaterial=/.test(code) && /arrayMaterial=/.test(code) &&
+    /noEmissive=/.test(code) && /noClone=/.test(code) && /skippedBuckets=/.test(code) &&
+    /noInstanceMeta=/.test(code) && /noBatchMeta=/.test(code) && /noSetColorAt=/.test(code));
+  chk('…and it has a THIRD verdict — a storey can now report PARTIAL instead of passing as whole',
+    /=> PARTIAL/.test(src) && /=> WHOLE/.test(src) && /=> FAIL nothing marked/.test(src),
+    'FAIL at zero, PARTIAL when anything was dropped, WHOLE only when nothing was');
+}
+
 console.log('');
 console.log('§TINT_SCOPE ' + (fail ? 'FAIL' : 'PASS') + ' pass=' + pass + ' fail=' + fail +
   ' src=' + path.basename(SRC) +

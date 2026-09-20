@@ -915,10 +915,28 @@ function setupCpeStoreyReveal(A) {
     var _facadeOnly = (STOREY_REVEAL_TINT_SCOPE === 'facade');
     var inScope = function (guid) { return _facadeOnly ? !!facadeGuids[guid] : true; };
     var _facadeN = 0;   // counted alongside, so one log line states how much wider the new scope is
+    // ══ §STOREY_REVEAL_TINT_SKIPS (2026-09-20) — COUNT WHAT THIS DOES NOT PAINT ═════════════════
+    // red1: the beat "keeps missing some parts of the facade or whole level see thru".
+    // Every `return` below drops a mesh or a whole instanced bucket, and until now NONE of them was
+    // counted: the line at the foot reported meshesTouched and called FAIL only at zero, so a storey
+    // that painted 8,810 meshes and silently dropped 3,000 printed exactly like a complete one.
+    // That is §129.53's rule biting — a green line covering an unmeasured area.
+    // WHY IT READS AS SEE-THROUGH, not just as missing: the clone below sets transparent=false and
+    // opacity=1, so a mesh that IS tinted goes solid. A mesh skipped here keeps its original
+    // material, and if that is glazing it stays transparent. On a level whose facade is mostly glass
+    // or multi-material, the painted parts go solid and the skipped parts stay see-through, and the
+    // level reads as half-there.
+    // COUNTING ONLY. Nothing here changes what is painted — the skip conditions are untouched, so
+    // this bake is comparable with every bake before it.
+    var _skipNoMat = 0, _skipArrayMat = 0, _skipNoEmissive = 0, _skipNoClone = 0;
+    var _skipNoInstMeta = 0, _skipNoBatchMeta = 0, _skipNoSetColor = 0;
     var _matMap = (typeof Map !== 'undefined') ? new Map() : null;
     A.collectMeshes(function (o) { return o.isMesh && o.userData.storey === storeyName && inScope(o.userData.guid); }).forEach(function (o) {
       if (facadeGuids[o.userData.guid]) _facadeN++;
-      if (!o.material || Array.isArray(o.material) || !o.material.emissive || !o.material.clone) return;
+      if (!o.material) { _skipNoMat++; return; }
+      if (Array.isArray(o.material)) { _skipArrayMat++; return; }
+      if (!o.material.emissive) { _skipNoEmissive++; return; }
+      if (!o.material.clone) { _skipNoClone++; return; }
       var orig = o.material, cl = _matMap ? _matMap.get(orig) : null;
       if (!cl) {
         cl = orig.clone();
@@ -951,7 +969,8 @@ function setupCpeStoreyReveal(A) {
     });
     A.collectMeshes(function (o) { return o.isInstancedMesh; }).forEach(function (mesh) {
       var meta = A._instanceMeta && A._instanceMeta[mesh.id];
-      if (!meta || !mesh.setColorAt) return;
+      if (!meta) { _skipNoInstMeta++; return; }          // a whole bucket, silently, until now
+      if (!mesh.setColorAt) { _skipNoSetColor++; return; }
       var any = false;
       for (var i = 0; i < meta.length; i++) {
         if (meta[i].storey !== storeyName || !inScope(meta[i].guid)) continue;
@@ -965,7 +984,8 @@ function setupCpeStoreyReveal(A) {
     });
     A.collectMeshes(function (o) { return o.isBatchedMesh; }).forEach(function (mesh) {
       var meta = A._batchMeta && A._batchMeta[mesh.id];
-      if (!meta || !mesh.setColorAt) return;
+      if (!meta) { _skipNoBatchMeta++; return; }         // likewise
+      if (!mesh.setColorAt) { _skipNoSetColor++; return; }
       for (var i = 0; i < meta.length; i++) {
         if (meta[i].storey !== storeyName || !inScope(meta[i].guid)) continue;
         if (facadeGuids[meta[i].guid]) _facadeN++;
@@ -978,10 +998,21 @@ function setupCpeStoreyReveal(A) {
     // §129.59 — `scope` and `facadeMeshes` beside the existing count, so ONE bake line says directly
     // how much wider this is than the 2-51 facade set §93.4 measured as unreadable. meshesTouched=0
     // on a storey is the FAIL signal, not a quiet non-event.
+    var _skipMesh = _skipNoMat + _skipArrayMat + _skipNoEmissive + _skipNoClone;
+    var _skipBucket = _skipNoInstMeta + _skipNoBatchMeta + _skipNoSetColor;
     console.log('§STOREY_REVEAL_TINT storey="' + storeyName + '" color=#' + hex.toString(16).padStart(6, '0') +
       ' scope=' + STOREY_REVEAL_TINT_SCOPE + ' meshesTouched=' + n + ' facadeMeshes=' + _facadeN +
       ' clonedMaterials=' + _clones.length +
-      (n === 0 ? ' => FAIL nothing marked on this storey' : ''));
+      ' skippedMeshes=' + _skipMesh +
+      ' (noMaterial=' + _skipNoMat + ' arrayMaterial=' + _skipArrayMat +
+      ' noEmissive=' + _skipNoEmissive + ' noClone=' + _skipNoClone + ')' +
+      ' skippedBuckets=' + _skipBucket +
+      ' (noInstanceMeta=' + _skipNoInstMeta + ' noBatchMeta=' + _skipNoBatchMeta +
+      ' noSetColorAt=' + _skipNoSetColor + ')' +
+      (n === 0 ? ' => FAIL nothing marked on this storey' :
+       _skipMesh + _skipBucket > 0
+         ? ' => PARTIAL — these are the parts that stay unpainted, and a glazed one stays see-through'
+         : ' => WHOLE'));
     return n;
   }
 
