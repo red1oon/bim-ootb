@@ -1218,6 +1218,53 @@
   // overlay on the building." A predicate on the draw contract alone would leave them on.
   // ARM 2 — the CONTRACT. The names can only ever cover beats somebody remembered; arm 2 covers
   // every module that shines through, including the ones nobody has thought of yet.
+  // ══ §FILM_LAYER — ONE SWITCH PER LAYER, AND THE SAME SWITCH FOR ITS 2D AND ITS 3D ════════════
+  // red1, 2026-09-20: "it be good to control each layer thru a proper mechanism."
+  // THE DEFECT THIS REPLACES. A film layer had TWO unrelated controls. Its chip was drawn through
+  // `_drawUnlessHold(name, ...)` and gated by `_escSuppresses(name)`; its GEOMETRY was a group the
+  // module added to A.scene and drove from its own life curve, consulting nothing. So the gate
+  // could report `§FINDINGS_CEASE layer=measure.datum` truthfully while the datum's uprights went
+  // on shining through the building, and the master flag `A._flythruDatumOn` — which appears only
+  // in the 2D chain of this file — could not reach them either. Two halves of one layer, two
+  // switches, and only one of them wired to the rule.
+  // THE MECHANISM. A module registers whatever it puts in the scene under the SAME layer name its
+  // 2D half already uses:  A.filmLayer('measure.datum', _grp).  From then on one predicate governs
+  // both halves: `_escSuppresses(name)` decides the chip AND the geometry, on the same frame, for
+  // the same reason. A layer cannot half-cease any more, because there is no second switch left to
+  // forget.
+  // IT ONLY EVER SUPPRESSES. The gate writes `visible = false` and never `true`, so a beat's own
+  // life curve still owns when it appears — the registry takes nothing over, it only takes away.
+  // The name is the contract: anything not matching /^(measure\.|clash\.)/ is simply never gated,
+  // which is why the sun clock, the compass and the day counter need no exemption.
+  A._filmLayers = A._filmLayers || [];
+  A.filmLayer = function (name, obj) {
+    if (!name || !obj) return obj;
+    obj.userData = obj.userData || {};
+    obj.userData.filmLayer = name;            // the sweep reads this to NAME an offender
+    for (var i = 0; i < A._filmLayers.length; i++) if (A._filmLayers[i].obj === obj) return obj;
+    A._filmLayers.push({ name: name, obj: obj });
+    console.log('§FILM_LAYER registered layer="' + name + '" object="' + (obj.name || obj.type) +
+      '" — its 2D half and its geometry now cease on one rule');
+    return obj;
+  };
+  function _ceaseRegistered() {
+    var A2 = window.APP; if (!A2 || !A2._filmLayers) return 0;
+    var n = 0;
+    for (var i = 0; i < A2._filmLayers.length; i++) {
+      var e = A2._filmLayers[i];
+      if (!e.obj || !e.obj.visible) continue;
+      if (!_escSuppresses(e.name)) continue;
+      e.obj.visible = false; n++;
+      A2._cease3DSeen = A2._cease3DSeen || {};
+      if (!A2._cease3DSeen[e.name]) {
+        A2._cease3DSeen[e.name] = 0;
+        console.log('§FINDINGS_CEASE_3D layer="' + e.name + '" object="' + (e.obj.name || e.obj.type) +
+          '" hidden by its OWN layer switch — the same rule that stopped its chip, on the same frame');
+      }
+      A2._cease3DSeen[e.name]++;
+    }
+    return n;
+  }
   var CEASE_3D_GROUPS = ['flythruDatum', 'flythruCue', 'indoorBeats', 'slabBeat'];
   var CEASE_3D_EXEMPT_RX = /^escapeRouteGlow/;
   function _ceaseOwnerName(o) {
@@ -1226,6 +1273,13 @@
     var owner = '', p = o, hops = 0;
     while (p && hops++ < 32) { if (p.name) owner = p.name; p = p.parent; }
     return owner || ('(unnamed ' + (o.type || 'Object3D') + ')');
+  }
+  function _ceaseLayerTag(o) {
+    // A registered ancestor is what names this object. Walked upward, because a module registers
+    // its GROUP and the material that shines through is on a mesh several levels down.
+    var p = o, hops = 0;
+    while (p && hops++ < 32) { if (p.userData && p.userData.filmLayer) return p.userData.filmLayer; p = p.parent; }
+    return null;
   }
   function _ceaseShinesThrough(o) {
     var m = o.material; if (!m) return false;
@@ -1236,8 +1290,12 @@
   function _cease3D() {
     var A2 = window.APP;
     if (!A2 || !A2.scene || !A2._findingsHudSuppress) return;
-    var hidNow = 0, kept = 0, fresh = [];
+    var hidNow = 0, kept = 0, unreg = 0, fresh = [];
     A2._cease3DSeen = A2._cease3DSeen || {};
+    // ARM 0 — §FILM_LAYER. Every layer that registered its geometry ceases on its OWN switch, the
+    // same one that stops its chip. This is the mechanism; the two arms below are the safety net
+    // for anything that has not been wired to it yet.
+    hidNow += _ceaseRegistered();
     // ARM 1 — the named beat groups, whole, whatever their materials do.
     for (var g = 0; g < CEASE_3D_GROUPS.length; g++) {
       var go = A2.scene.getObjectByName ? A2.scene.getObjectByName(CEASE_3D_GROUPS[g]) : null;
@@ -1252,9 +1310,26 @@
         if (!_ceaseShinesThrough(o)) return;
         var owner = _ceaseOwnerName(o);
         if (CEASE_3D_EXEMPT_RX.test(owner) || CEASE_3D_EXEMPT_RX.test(o.name || '')) { kept++; return; }
+        // A registered object names itself. Anything the net catches WITHOUT a layer name is a
+        // layer nobody wired to the mechanism — the log says so in those words, so the next person
+        // reads a defect rather than "(unnamed Sprite)" and a mystery.
+        var tag = _ceaseLayerTag(o);
+        if (!tag) {
+          unreg++;
+          // FINGERPRINT, not a guess. An unregistered offender has no layer name by definition, so
+          // the line has to carry enough to identify the module that made it without a second bake:
+          // the ancestor chain, the renderOrder (clash_film uses 998/999, the escape glow 1004/1005,
+          // the flythru contract 900) and the material's own colour.
+          var chain = [], pc = o, ch = 0;
+          while (pc && ch++ < 6) { chain.push((pc.name || pc.type)); pc = pc.parent; }
+          var m0 = Array.isArray(o.material) ? o.material[0] : o.material;
+          tag = 'UNREGISTERED ' + owner + ' {' + chain.join('<') + ' renderOrder=' + (o.renderOrder || 0) +
+                ' mat=' + ((m0 && m0.type) || '?') +
+                ((m0 && m0.color && m0.color.getHexString) ? ' #' + m0.color.getHexString() : '') + '}';
+        }
         o.visible = false; hidNow++;
-        if (!A2._cease3DSeen[owner]) { A2._cease3DSeen[owner] = 0; fresh.push({ n: owner, by: 'depthTest:false draw contract' }); }
-        A2._cease3DSeen[owner]++;
+        if (!A2._cease3DSeen[tag]) { A2._cease3DSeen[tag] = 0; fresh.push({ n: tag, by: 'depthTest:false draw contract (the net, not a switch)' }); }
+        A2._cease3DSeen[tag]++;
       });
     } catch (eC3) { console.log('§FINDINGS_CEASE_3D sweep threw: ' + eC3.message); return; }
     for (var f = 0; f < fresh.length; f++) {
@@ -1268,7 +1343,9 @@
     if (keptFirst) A2._cease3DKeptSeen = 1;
     if (!fresh.length && !keptFirst) return;
     console.log('§FINDINGS_CEASE_3D sweep hid=' + hidNow + ' exempt=' + kept +
-      ' (exempt is the live beat\'s own glow) modules=[' + Object.keys(A2._cease3DSeen).join(' ') + ']');
+      ' unregistered=' + unreg + ' (exempt is the live beat\'s own glow; unregistered>0 means a' +
+      ' layer is still relying on the net instead of its own switch) layers=[' +
+      Object.keys(A2._cease3DSeen).join(' | ') + ']');
   }
   function _escSuppresses(name) {
     var A2 = window.APP;

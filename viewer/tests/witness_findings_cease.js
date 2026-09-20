@@ -119,6 +119,45 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
   ck('…and it does not log once per frame — one line per CHANGE, or a 193-frame run drowns',
      /if \(!fresh\.length && !keptFirst\) return;/.test(ceaseFn),
      'steady state is silent');
+  // ── §FILM_LAYER — THE MECHANISM ITSELF (red1: "it be good to control each layer thru a proper
+  //    mechanism"). ISSUE: a layer used to have two unrelated switches — `_drawUnlessHold(name)`
+  //    for its chip and its own life curve for its geometry — so it could half-cease and the log
+  //    would still read clean. These claims prove there is now ONE switch per layer, that the
+  //    beats are actually wired to it, and that the name it registers under is the SAME name its
+  //    2D half draws under (a different name would be a second switch wearing a disguise).
+  const drawNames = (mq.match(/_drawUnlessHold\('([a-z.]+)'/g) || []).map((x) => x.replace(/.*'([a-z.]+)'/, '$1'));
+  ck('§FILM_LAYER exists and only ever SUPPRESSES — a beat still owns when it APPEARS',
+     /A\.filmLayer = function \(name, obj\)/.test(mq) &&
+     /function _ceaseRegistered\(\)/.test(mq) &&
+     !/_ceaseRegistered[\s\S]{0,700}visible = true/.test(mq),
+     'the registry writes visible=false and never true');
+  ck('…and the gate consults the registry FIRST, before either safety net',
+     /hidNow \+= _ceaseRegistered\(\);[\s\S]{0,400}CEASE_3D_GROUPS\[g\]/.test(mq),
+     'arm 0 is the mechanism; arms 1 and 2 are the net');
+  {
+    const REG = {};
+    ['cpe_flythru_datum.js', 'cpe_flythru_cues.js', 'cpe_indoor_beats.js', 'cpe_slab_beat.js', 'clash_film.js']
+      .forEach((f) => {
+        const src = fs.readFileSync(path.join(ROOT, 'viewer', f), 'utf8');
+        const m = src.match(/A\.filmLayer\('([a-z.]+)'/g) || [];
+        REG[f] = m.map((x) => x.replace(/.*'([a-z.]+)'/, '$1'));
+      });
+    const files = Object.keys(REG);
+    ck('every beat that puts geometry in the scene is WIRED to its own layer switch',
+       files.every((f) => REG[f].length > 0),
+       files.map((f) => f.replace('.js', '') + '->' + (REG[f].join(',') || 'NOT WIRED')).join('  '));
+    const allReg = files.reduce((a, f) => a.concat(REG[f]), []);
+    ck('…under the SAME name its 2D half draws under — one name, one switch, both halves',
+       allReg.every((n) => drawNames.indexOf(n) >= 0),
+       'registered=[' + allReg.join(' ') + ']  unknown=' +
+       (allReg.filter((n) => drawNames.indexOf(n) < 0).join(',') || 'none'));
+    ck('…and every registered name is one the cease rule actually governs',
+       allReg.every((n) => RX.test(n)),
+       allReg.filter((n) => !RX.test(n)).join(',') || 'all governed by /^(measure\\.|clash\\.)/');
+  }
+  ck('an offender the NET catches is reported as UNREGISTERED, with enough to identify it',
+     /UNREGISTERED/.test(mq) && /renderOrder=/.test(ceaseFn) && /unregistered=/.test(mq),
+     'the sweep line carries the ancestor chain, renderOrder and material colour');
   ck('…and the bake SAYS which group it hid',
      /§FINDINGS_CEASE_3D group="/.test(mq) &&
      /FINDINGS_CEASE_3D/.test(fs.readFileSync(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')));

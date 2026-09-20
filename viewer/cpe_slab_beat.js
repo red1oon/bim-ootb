@@ -412,6 +412,7 @@ function setupCpeSlabBeat(A) {
     // ── DRAW: geometry prepared once; opacity is the only per-frame write ─────────────────────────
     _beat = picked;
     _grp = new T.Group(); _grp.name = 'slabBeat';
+    if (A.filmLayer) A.filmLayer('measure.slab', _grp);   // §FILM_LAYER — one switch, chip and geometry
     // §40.2 — OUTLINE, not an X. The X existed to discharge the bbox rectangle the label stated
     // (§26.3's honesty device: "here is the rectangle I measured"). The label no longer states a
     // rectangle — it states the plate's own surface area — so there is nothing for the diagonals to

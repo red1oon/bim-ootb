@@ -331,6 +331,10 @@ function setupClashFilm(A) {
           }
           _meshA.instanceMatrix.needsUpdate = true; _meshB.instanceMatrix.needsUpdate = true;
           A.scene.add(_meshA); A.scene.add(_meshB);
+          // §FILM_LAYER — the markers cease on the SAME switch as the clash.labels chips they
+          // belong to. setVisible stays as the storey reveal's own explicit call; this is the
+          // rule-driven half, so a marker can no longer outlive its own layer by accident.
+          if (A.filmLayer) { A.filmLayer('clash.labels', _meshA); A.filmLayer('clash.labels', _meshB); }
           _built = true; _lastPulse = -1; _updates = 0;
           A.clashFilm.update(0);                           // colours (and the first clamp) before the first render
           var ms = performance.now() - t0;

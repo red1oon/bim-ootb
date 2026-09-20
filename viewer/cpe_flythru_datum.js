@@ -261,6 +261,9 @@ function setupCpeFlythruDatum(A) {
     if (!st.levels.length) console.log('§FLYTHRU_DATUM_STOREY VACUOUS — no storey levels; upright drawn without rules');
 
     _grp = new T.Group(); _grp.name = 'flythruDatum';
+    // §FILM_LAYER — the SAME name its 2D chip draws under, so one rule governs both halves.
+    // Before this, the chip ceased and these depthTest:false uprights went on shining through.
+    if (A.filmLayer) A.filmLayer('measure.datum', _grp);
     // §34.3 (MEP_CLASH_REVEAL_MOVIE.md — user, 2026-09-08: "make the grid lines more pts thicker"):
     // LineBasicMaterial draws 1px regardless of `linewidth` (a WebGL limitation) and the bundle ships
     // no LineSegments2/LineMaterial (grep: 0 hits), so the lines are now flat ribbon quads — real

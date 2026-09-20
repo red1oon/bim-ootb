@@ -339,6 +339,7 @@ function setupCpeFlythruCues(A) {
     var T = window.THREE;
     if (_group || !T || !A.scene) return _group;
     _group = new T.Group(); _group.name = 'flythruCue'; _group.renderOrder = 950;
+    if (A.filmLayer) A.filmLayer('measure.cues', _group);   // §FILM_LAYER — one switch, chip and geometry
     var g = new T.BoxGeometry(1, 1, 1);
     var fill = new T.Mesh(g, new T.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0,
       depthTest: false, depthWrite: false, side: T.DoubleSide }));
