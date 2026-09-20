@@ -1180,6 +1180,36 @@
   // Nothing in the closing orbit carries NEW measurement — every beat feeding these layers runs
   // earlier — so ceasing the whole family costs no live information.
   var ESC_SUPPRESS_RX = /^(measure\.|clash\.)/;
+  // ══ THE OTHER HALF: WHAT THESE BEATS DRAW **ON THE BUILDING** ═══════════════════════════════
+  // red1, 2026-09-20, after watching the 12:25 clip: "Make the overlay shine thru of beams cease
+  // then. They are showing and disturbing the scene which now has other new stuff to do ie Storey
+  // Reveal and then EscRoute. Even if not, it can just go on for 2 secs and no more as user has
+  // seen enough and wana enjoy the finale of whole landed building."
+  // THE GATE ABOVE ONLY EVER COVERED THE 2D HALF. `measure.datum` stopped drawing its chip and
+  // §FINDINGS_CEASE said so — while `flythruDatumAt` kept setting `_grp.visible` from its OWN life
+  // curve every frame, so the datum's depthTest:false uprights and storey bands went on shining
+  // through the building to the final frame. The chips ceasing made that MORE obvious, not less:
+  // the geometry was left with nothing to explain it.
+  // Four modules add a named group to A.scene and none of them was reachable from the HUD chain.
+  // Hidden, never disposed — each beat's own `.visible` is restored the moment the gate lifts, and
+  // dispose stays the only thing that frees them, exactly as clashFilm.setVisible already does.
+  var CEASE_3D_GROUPS = ['flythruDatum', 'flythruCue', 'indoorBeats', 'slabBeat'];
+  function _cease3D() {
+    var A2 = window.APP;
+    if (!A2 || !A2.scene || !A2._findingsHudSuppress) return;
+    for (var g = 0; g < CEASE_3D_GROUPS.length; g++) {
+      var o = A2.scene.getObjectByName ? A2.scene.getObjectByName(CEASE_3D_GROUPS[g]) : null;
+      if (!o || !o.visible) continue;
+      o.visible = false;
+      A2._cease3DSeen = A2._cease3DSeen || {};
+      if (!A2._cease3DSeen[CEASE_3D_GROUPS[g]]) {
+        A2._cease3DSeen[CEASE_3D_GROUPS[g]] = 1;
+        console.log('§FINDINGS_CEASE_3D group="' + CEASE_3D_GROUPS[g] + '" hidden — it was drawing' +
+          ' ON the building, which the 2D gate never reached. Hidden, not disposed: the beat\'s own' +
+          ' visibility returns the moment the gate lifts.');
+      }
+    }
+  }
   function _escSuppresses(name) {
     var A2 = window.APP;
     if (!A2 || !ESC_SUPPRESS_RX.test(name)) return false;
@@ -4074,6 +4104,10 @@
         // §MEASURE_BUILDING_CARD roll above owns the whole orbit beat, and this window lies inside
         // it, so the escape card has to be the one that wins for its own span and hand the slot
         // straight back afterwards. Same _statInfo shape, so no new panel drawing exists.
+        // AFTER every beat's own per-frame update (the datum, the cues, the indoor beats and the
+        // slab all write `.visible` themselves) and BEFORE the capture, so the last word on what
+        // reaches the frame is the cease rule's.
+        _cease3D();
         var _escInfo = null, _escCardInfo = null;
         if (_escRec && A.escapeRouteStatCardAt) {
           var _ec = A.escapeRouteStatCardAt(plan, _tnFilm);

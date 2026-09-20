@@ -49,6 +49,46 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
    mustStay.every((n) => !RX.test(n)),
    mustStay.filter((n) => RX.test(n)).join(',') || mustStay.join(' '));
 
+// ── 1b. THE OTHER HALF — WHAT THE BEATS DRAW **ON THE BUILDING** ─────────────────────────────
+// red1 after the 12:25 clip: "Make the overlay shine thru of beams cease then. They are showing
+// and disturbing the scene which now has other new stuff to do."
+// The 2D gate above said §FINDINGS_CEASE layer=measure.datum and meant it — while flythruDatumAt
+// kept setting `_grp.visible` from its own life curve every frame, so the datum's depthTest:false
+// uprights and storey bands shone through the building to the final frame. The chips ceasing made
+// that MORE obvious, not less: the geometry was left with nothing on screen to explain it.
+// DISCOVERED, NOT LISTED. Every measure-family module is scanned for the group it adds to the
+// scene, and each one found must be in the cease set — so a fifth beat is caught the day it lands
+// rather than the next time somebody watches a clip.
+{
+  const MEASURE_MODULES = fs.readdirSync(path.join(ROOT, 'viewer'))
+    .filter((f) => /^cpe_(flythru_|indoor_beats|slab_beat|linear_beat)/.test(f) && f.endsWith('.js'));
+  const found = [];
+  MEASURE_MODULES.forEach((f) => {
+    const src = fs.readFileSync(path.join(ROOT, 'viewer', f), 'utf8');
+    if (!/A\.scene\.add\(/.test(src)) return;                      // no scene geometry, nothing to cease
+    const m = src.match(/_gr(?:p|oup)\.name = '([A-Za-z0-9_]+)'/);
+    found.push({ file: f, name: m ? m[1] : null });
+  });
+  const setM = /var CEASE_3D_GROUPS = \[([^\]]*)\]/.exec(mq);
+  const SET = setM ? setM[1].split(',').map((x) => x.trim().replace(/'/g, '')) : [];
+  ck('every measure beat that puts geometry in the SCENE was discovered, not typed here',
+     found.length >= 4, found.map((f) => f.file + '->' + f.name).join(' '));
+  ck('…and every one of them names its group, so the gate can find it',
+     found.every((f) => !!f.name), found.filter((f) => !f.name).map((f) => f.file).join(',') || 'all named');
+  ck('…and every one is in CEASE_3D_GROUPS — a fifth beat fails HERE, not in a clip',
+     found.every((f) => SET.indexOf(f.name) >= 0),
+     'set=[' + SET.join(' ') + ']  missing=' + (found.filter((f) => SET.indexOf(f.name) < 0).map((f) => f.name).join(',') || 'none'));
+  ck('the gate HIDES rather than disposes — the beat comes straight back if the rule ever lifts',
+     /o\.visible = false;/.test(mq) && !/CEASE_3D[\s\S]{0,600}dispose\(/.test(mq),
+     'same non-destructive shape clashFilm.setVisible already uses');
+  ck('…it runs AFTER every beat writes its own visibility, and before the capture',
+     /_cease3D\(\);\s*\n\s*var _escInfo = null/.test(mq),
+     'last word on what reaches the frame is the cease rule\'s');
+  ck('…and the bake SAYS which group it hid',
+     /§FINDINGS_CEASE_3D group="/.test(mq) &&
+     /FINDINGS_CEASE_3D/.test(fs.readFileSync(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')));
+}
+
 // ── 2. THE TRIGGER, DRIVEN FRAME BY FRAME ────────────────────────────────────────────────────
 global.THREE = { Color: class { constructor(h) { this.h = h >>> 0; } setHex(h) { this.h = h >>> 0; return this; } getHex() { return this.h; } } };
 global.window = global.window || {};
