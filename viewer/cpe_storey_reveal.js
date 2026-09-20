@@ -36,11 +36,38 @@ function setupCpeStoreyReveal(A) {
   // generalized past exactly 5 storeys since real buildings rarely have exactly 5 (Hospital has 8
   // countable levels once Ceiling/TOS pseudo-storeys are excluded — see storeyRevealList below).
   var COLORS = [0x2979ff, 0x00c853, 0xffd600, 0xff6d00];   // blue, green, yellow, orange
-  // §108 — the tint (and the clash-marker hide that travelled with it) is OFF. §93 measured why it
-  // could not carry this beat and §98 replaced it with the section cut; the locked verdict is "no
-  // tint ... clash/Sanity layers stay on". The code path is left intact behind this one flag so the
-  // §93 measurements stay reproducible, and so the restore path can never be orphaned.
-  var STOREY_REVEAL_TINT = false;
+  // ══ §129.59 (2026-09-20) — THE TINT IS BACK, WHOLE-STOREY, WITH NO X-RAY ═════════════════════
+  // red1, on ~/Downloads/allon_storeyreveal_to_end_1080p24.mp4: "Look at the more cool impact" —
+  // the tint-era beat lights a whole level and reads as an event; the section cut does not.
+  //
+  // TWO THINGS WERE RETIRED TOGETHER IN §108 AND THEY ARE NOT THE SAME THING:
+  //
+  //  1. §93.4, MEASURED and STILL TRUE — `_applyTint` only touched the FACADE SUBSET
+  //     (`_facadeGuidsFor`, gating all three branches). That set is 2-51 meshes per storey and its
+  //     legibility tracks PROJECTED AREA, which nothing computes: Level 4 (51) read as broad bands,
+  //     Level 5 (44) only as parapet lines, Levels 1/7A/7 (19/2/6) NOT AT ALL. That is the real
+  //     defect, and simply flipping the old flag back on would bring every bit of it with it.
+  //  2. THE X-RAY, which is what made the tint read as a whole glowing volume in the old films, and
+  //     which costs 2.6x-3.0x (storey window 4.13 s/frame with it, orbit 1.57 without; a dedicated
+  //     88-frame A/B 4.24 vs 1.40). It stays OFF. `A.toggleXray` sets opacity 0.3 PER SURFACE with
+  //     DoubleSide, so the eye gets ~0.7^n through n surfaces — about 3% through ten — which is why
+  //     red1's ruling on the A/B clips was "u can see x-ray has no effect". ⚠ Those A/B clips are
+  //     the ESCAPE ROUTE beat, not this one (red1 confirmed); they prove x-ray is dead weight in
+  //     the orbit, NOT that a facade-only tint reads without it.
+  //
+  // So the fix is the SCOPE, not the flag: tint every mesh on the level and it reads as a coloured
+  // mass from outside — floor plate edges, exposed structure and facade together — with no x-ray.
+  //
+  // ONE MODE, NOT TWO FLAGS. §108's own post-mortem is why: the tint "was still running underneath
+  // the section cut", and because the ground-slab pass and Level 1's pass are two slots on the SAME
+  // storey, that storey got painted twice — "one cause, two symptoms". A single mode makes that
+  // state unrepresentable instead of merely discouraged. The cut is NOT deleted: every §98/§102/
+  // §110 timing constant below is untouched and 'cut' restores it in one word.
+  var STOREY_REVEAL_MODE = 'tint';           // 'tint' | 'cut'
+  var STOREY_REVEAL_TINT = (STOREY_REVEAL_MODE === 'tint');
+  // 'storey' = every mesh on the level (§129.59). 'facade' = §93.4's original subset, kept so its
+  // measurements stay reproducible — the same reason §108 left the whole path intact behind a flag.
+  var STOREY_REVEAL_TINT_SCOPE = 'storey';   // 'storey' | 'facade'
   var EMOJI  = ['🔵', '🟢', '🟡', '🟠'];  // 🔵 🟢 🟡 🟠
   // Fade in/out fraction of each storey's own slot — same shape as cpe_resource_panel.js's
   // A.bigStatsAt fade (`min(u,1-u)/0.12`), slightly wider here because a slot can be sub-second
@@ -830,8 +857,14 @@ function setupCpeStoreyReveal(A) {
     // the rest of the building needs no special treatment at all (no x-ray, no dim); it is simply
     // left alone, already visible or occluded exactly like any other geometry in the film.
     var facadeGuids = _facadeGuidsFor(storeyName);
+    // §129.59 — `inScope` replaces the bare `facadeGuids[guid]` gate in all three branches below.
+    // Under the new default every mesh ON THIS STOREY qualifies; 'facade' reproduces §93.4 exactly.
+    var _facadeOnly = (STOREY_REVEAL_TINT_SCOPE === 'facade');
+    var inScope = function (guid) { return _facadeOnly ? !!facadeGuids[guid] : true; };
+    var _facadeN = 0;   // counted alongside, so one log line states how much wider the new scope is
     var _matMap = (typeof Map !== 'undefined') ? new Map() : null;
-    A.collectMeshes(function (o) { return o.isMesh && o.userData.storey === storeyName && facadeGuids[o.userData.guid]; }).forEach(function (o) {
+    A.collectMeshes(function (o) { return o.isMesh && o.userData.storey === storeyName && inScope(o.userData.guid); }).forEach(function (o) {
+      if (facadeGuids[o.userData.guid]) _facadeN++;
       if (!o.material || Array.isArray(o.material) || !o.material.emissive || !o.material.clone) return;
       var orig = o.material, cl = _matMap ? _matMap.get(orig) : null;
       if (!cl) {
@@ -849,7 +882,8 @@ function setupCpeStoreyReveal(A) {
       if (!meta || !mesh.setColorAt) return;
       var any = false;
       for (var i = 0; i < meta.length; i++) {
-        if (meta[i].storey !== storeyName || !facadeGuids[meta[i].guid]) continue;
+        if (meta[i].storey !== storeyName || !inScope(meta[i].guid)) continue;
+        if (facadeGuids[meta[i].guid]) _facadeN++;
         var had = !!mesh.instanceColor, prev = 0xffffff;
         if (had) { mesh.getColorAt(i, _C); prev = _C.getHex(); }
         _touched.push({ m: mesh, inst: i, c: prev });
@@ -861,15 +895,21 @@ function setupCpeStoreyReveal(A) {
       var meta = A._batchMeta && A._batchMeta[mesh.id];
       if (!meta || !mesh.setColorAt) return;
       for (var i = 0; i < meta.length; i++) {
-        if (meta[i].storey !== storeyName || !facadeGuids[meta[i].guid]) continue;
+        if (meta[i].storey !== storeyName || !inScope(meta[i].guid)) continue;
+        if (facadeGuids[meta[i].guid]) _facadeN++;
         var pb = 0xffffff;
         try { mesh.getColorAt(meta[i].slotId, _C); pb = _C.getHex(); } catch (e) {}
         _touched.push({ m: mesh, batch: meta[i].slotId, c: pb });
         try { mesh.setColorAt(meta[i].slotId, _C.setHex(hex)); n++; } catch (e2) {}
       }
     });
+    // §129.59 — `scope` and `facadeMeshes` beside the existing count, so ONE bake line says directly
+    // how much wider this is than the 2-51 facade set §93.4 measured as unreadable. meshesTouched=0
+    // on a storey is the FAIL signal, not a quiet non-event.
     console.log('§STOREY_REVEAL_TINT storey="' + storeyName + '" color=#' + hex.toString(16).padStart(6, '0') +
-      ' meshesTouched=' + n + ' clonedMaterials=' + _clones.length);
+      ' scope=' + STOREY_REVEAL_TINT_SCOPE + ' meshesTouched=' + n + ' facadeMeshes=' + _facadeN +
+      ' clonedMaterials=' + _clones.length +
+      (n === 0 ? ' => FAIL nothing marked on this storey' : ''));
     return n;
   }
 
@@ -929,6 +969,7 @@ function setupCpeStoreyReveal(A) {
                               // horizontal cut exposes floor plates. Shallower and it sees facades,
                               // where a horizontal cut shows nothing — take the camera-facing one.
   var _cutSlab = null, _cutRest = null, _cutGlobal = [], _cutMats = [], _cutArmed = false, _cutAxisLogged = null, _cutLogIdx = null;
+  var _modeLogged = false;   // §129.59 — say the mode ONCE per bake, not per frame
   var _cutObjs = [], _cutHidden = [], _cutClones = [];   // §105 — building-scoped arming bookkeeping
   var _planeCeil = null, _planeSweepSlab = null, _planeSweepRest = null, _matVariants = null;  // §112
   // §98.1 (user: "HHS was starting on one axis when it switched to another. Perhaps it just persist?
@@ -2180,6 +2221,20 @@ function setupCpeStoreyReveal(A) {
   // EVERY FRAME (unlike storeyRevealApplyVisual, which is key-gated on the slot): the plane constant
   // moves continuously, so this cannot ride the slot key.
   A.storeyRevealApplyCut = function (plan, tNorm) {
+    // §129.59 — ONE mode. §108's post-mortem is the reason this guard exists rather than a comment
+    // asking callers to be careful: the tint "was still running underneath the section cut" and
+    // painted the same storey twice. With the guard here, no caller can produce that state, and
+    // `A.storeyRevealApplyCut(null, 0)` still runs its restore path in either mode (below) so a
+    // mode flipped mid-session can never strand an armed cut.
+    if (STOREY_REVEAL_MODE !== 'cut') {
+      if (plan === null) { try { _applyCutInner(null, 0); } catch (eR) {} }   // restore only
+      if (!_modeLogged) {
+        _modeLogged = true;
+        console.log('§STOREY_REVEAL_MODE ' + STOREY_REVEAL_MODE + ' — the section cut stands down;' +
+          ' the beat is carried by the whole-storey tint (§129.59, scope=' + STOREY_REVEAL_TINT_SCOPE + ')');
+      }
+      return;
+    }
     try { _applyCutInner(plan, tNorm); } catch (e) {
       if (!_cutFailWarned) {
         _cutFailWarned = true;
@@ -2248,6 +2303,13 @@ function setupCpeStoreyReveal(A) {
     }
   }
 
+  // §129.59 — published so W-STOREY-TINT-SCOPE can judge the REAL selection predicate in node
+  // instead of re-implementing it in the test (the project's own witness rule: slice the predicate,
+  // do not restate it). Same read-only test-seam convention as A._loadPathStackWitness /
+  // A._loadPathRevealStackStep in cpe_load_path.js. Nothing in the film calls these.
+  A.storeyRevealTintFor = _applyTint;
+  A.storeyRevealTintRestore = _restoreTint;
+  A.storeyRevealMode = function () { return { mode: STOREY_REVEAL_MODE, scope: STOREY_REVEAL_TINT_SCOPE, tint: STOREY_REVEAL_TINT }; };
   A.storeyRevealApplyVisual = function (plan, tNorm) {
     // plan===null is the FORCED restore (every bake/preview exit path, including the throw path).
     // It must run unconditionally: by the time it arrives the film has normally already left the
