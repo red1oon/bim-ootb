@@ -1012,8 +1012,40 @@
     if (ledger) _hudStableLedgerY = widen(_hudStableLedgerY, ledger.y);
     if (cost) _hudStableCostY = widen(_hudStableCostY, cost.y);
     _hudPanelHCheckOnChange(A2, h, panel, pieBand ? pieBand.h : null);
+    // ══ §HUD_OVERLAP_WORST (2026-09-21) — OVERLAP IS A PER-FRAME FACT, SO CHECK EVERY FRAME ══════
+    // The pairwise check in _hudLayoutWitnessImpl is correct, but it runs on ONE sampled frame: the
+    // HHS 1080p bake printed `overlaps=0` from its single sample while resource-panel (y 259..715)
+    // covered hud.status (y 602..756) by 113 px for the whole crew window. A one-frame sample of a
+    // 3,275-frame film cannot see a panel whose height depends on the crew on site that day.
+    // This runs on EVERY frame — the rects are already built for the sampler above, so it costs a
+    // pairwise walk of ~15 boxes — and keeps only the WORST pair seen, printed once at the end.
+    // Same exclusions as the witness: placeholders (w<=1 && h<=1) and declared parent/child.
+    for (var oi = 0; oi < rects.length; oi++) for (var oj = oi + 1; oj < rects.length; oj++) {
+      var ra = rects[oi], rb = rects[oj];
+      if ((ra.w <= 1 && ra.h <= 1) || (rb.w <= 1 && rb.h <= 1)) continue;
+      if (ra.parent === rb.name || rb.parent === ra.name) continue;
+      var ox = Math.min(ra.x + ra.w, rb.x + rb.w) - Math.max(ra.x, rb.x);
+      var oy = Math.min(ra.y + ra.h, rb.y + rb.h) - Math.max(ra.y, rb.y);
+      if (ox <= 0 || oy <= 0) continue;
+      var area = ox * oy;
+      if (!_hudWorstOverlap || area > _hudWorstOverlap.area) {
+        _hudWorstOverlap = { a: ra.name, b: rb.name, ox: ox, oy: oy, area: area,
+                             ra: [ra.x, ra.y, ra.w, ra.h], rb: [rb.x, rb.y, rb.w, rb.h] };
+      }
+    }
   }
+  var _hudWorstOverlap = null;
   function _hudLayoutStablePrintImpl() {
+    // §HUD_OVERLAP_WORST — one line for the whole bake, naming the pair and the pixels. `none` here
+    // is real coverage; `overlaps=0` on a single sampled frame never was.
+    if (_hudWorstOverlap) {
+      var W = _hudWorstOverlap;
+      console.log('§HUD_OVERLAP_WORST "' + W.a + '" x "' + W.b + '" overlap=' + W.ox + 'x' + W.oy +
+        'px area=' + W.area + ' rects=[' + W.ra.join(',') + '] [' + W.rb.join(',') +
+        '] => FAIL — two HUD boxes shared pixels on at least one frame');
+    } else {
+      console.log('§HUD_OVERLAP_WORST none — checked EVERY frame, not a sample => PASS');
+    }
     function fmt(range) { return range ? '[' + range[0].toFixed(1) + ',' + range[1].toFixed(1) + ']' : '?'; }
     function stable(range) { return !range || range[0] === range[1]; }
     // ROUND 16 item 1 / ROUND 20 — `panelH`/`ledgerY`/`costY` are all now PRINTED but NO LONGER GATE
@@ -1774,14 +1806,9 @@
     // own text and re-centred every frame — the "status that flickers around" the user named.
     // §129.8 item 4b — SUPERSEDES §129.6 item 8's old "status box stays, frozen" exemption ("during
     // the freeze, completely remove any HUD"): the status box now fades with everything else.
-    if (A.filmBoxesDrawStatus) {
-      _drawUnlessHold('hud.status', function () {
-        try { A.filmBoxesDrawStatus(ctx, w, h, A.filmBoxesStatusRows(statusSrc)); }
-        catch (eSB) { if (!A._statusBoxWarned) { A._statusBoxWarned = true; console.warn('§STATUS_BOX draw failed: ' + (eSB && eSB.message)); } }
-      }, function () { return A.filmBoxesStatusLastBox; });   // §129.55 C
-    } else if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
-      _drawUnlessHold('roomtitle.fallback', function () { A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity); });
-    }
+    // §HUD_COLUMN_FLOOR — the status box is drawn AFTER the card/panel stack below, not here,
+    // because its slot sits in the SAME column and the panel above it is variable height. Moved
+    // 2026-09-21; see the note at the draw site.
     // §HUD_ROW — the day counter used to draw here, alone, before the column below it was even
     // measured. It is now the first member of the top ROW assembled further down, so its width
     // is known to the boxes beside it. Nothing else moved.
@@ -1947,6 +1974,29 @@
     }
     if (A.resourcePanelLastBox && A.resourcePanelLastBox.h > 0) {
       _stackY += A.resourcePanelLastBox.h + _gapY;
+    }
+
+    // ══ §HUD_COLUMN_FLOOR (2026-09-21) — THE STATUS BOX IS THE NEXT SLOT IN THIS COLUMN ═════════
+    // red1: "the 2nd HUD is obscured by the first." It was, and the pair was not the one I first
+    // swapped. MEASURED on the HHS 1080p bake: resource-panel 1501,259,389,456 spans y 259..715
+    // against hud.status at its computed 1501,602,389,154 — 113 px of overlap, same x, same width.
+    // TWO POSITIONING SYSTEMS SHARED ONE COLUMN. cpe_film_boxes.js stacks its own slots (hud ->
+    // status) off the layout grid, while this file stacks the stats card and the resource panel off
+    // `_stackY`, and neither knew the other existed. The panel's height is a function of the crew on
+    // site that day, so it cannot be made safe by choosing a better constant — it has to push.
+    // The draw MOVED here from ~line 1778 so `_stackY` is already past the card and the panel; the
+    // box takes max(its own slot, the running stack) via the new `yFloor` argument. A film without a
+    // panel is unchanged, because then _stackY never advances past the slot's own y.
+    if (A.filmBoxesDrawStatus) {
+      _drawUnlessHold('hud.status', function () {
+        try { A.filmBoxesDrawStatus(ctx, w, h, A.filmBoxesStatusRows(statusSrc), undefined, _stackY); }
+        catch (eSB) { if (!A._statusBoxWarned) { A._statusBoxWarned = true; console.warn('§STATUS_BOX draw failed: ' + (eSB && eSB.message)); } }
+      }, function () { return A.filmBoxesStatusLastBox; });   // §129.55 C
+      if (A.filmBoxesStatusLastBox && A.filmBoxesStatusLastBox.h > 0) {
+        _stackY = A.filmBoxesStatusLastBox.y + A.filmBoxesStatusLastBox.h + _gapY;
+      }
+    } else if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
+      _drawUnlessHold('roomtitle.fallback', function () { A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity); });
     }
     if (escCardInfo && escCardInfo.shown && A.bigStatsCompositeOntoCanvas) {
       _drawUnlessHold('escroute.card', function (a) {

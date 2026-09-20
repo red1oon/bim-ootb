@@ -190,9 +190,18 @@ function setupCpeFilmBoxes(A) {
   // ── STATUS BOX draw. ONE implementation, so a live preview and the exported bytes cannot disagree
   // (the same contract cpe_day_counter.js and cpe_room_title.js keep).
   var _statLogged = null;
-  A.filmBoxesDrawStatus = function (ctx, w, h, rows, armed) {
+  // §HUD_COLUMN_FLOOR (2026-09-21) — `yFloor` lets the caller say "not above this line".
+  // WHY IT EXISTS. This layout stacks its own two slots (hud -> status) and knows nothing about the
+  // resource panel and stats card that cinema_maxq.js inserts into the SAME column between them.
+  // MEASURED on the HHS 1080p bake: resource-panel 1501,259,389,456 spans y 259..715 while
+  // hud.status sits at its computed 1501,602,389,154 — a 113 px overlap, same x, same width, so the
+  // panel covered the status box outright. The panel's height is a function of the crew on site
+  // that day, so no fixed slot can be safe: it has to be pushed.
+  // Additive and defaulted — a caller that passes nothing gets the previous rect exactly.
+  A.filmBoxesDrawStatus = function (ctx, w, h, rows, armed, yFloor) {
     var L = (armed ? A.filmBoxesLayout(w, h, armed) : _layout) || A.filmBoxesLayout(w, h, _armed || {});
     var b = L.status;
+    if (b && yFloor != null && isFinite(yFloor) && yFloor > b.y) b = { x: b.x, y: yFloor, w: b.w, h: b.h, rowH: b.rowH, pad: b.pad };
     // §129.55 C (2026-09-20) — publish the rect on EVERY return path, including the ones that draw
     // nothing, so a frame where the box did not paint can never leave last frame's rect standing for
     // cinema_maxq.js's §HUD_LAYOUT registration to pick up. Same "a drawer that painted nothing must
