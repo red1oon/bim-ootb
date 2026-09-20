@@ -127,10 +127,19 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
   //    2D half draws under (a different name would be a second switch wearing a disguise).
   const drawNames = (mq.match(/_drawUnlessHold\('([a-z.]+)'/g) || []).map((x) => x.replace(/.*'([a-z.]+)'/, '$1'));
   ck('§FILM_LAYER exists and only ever SUPPRESSES — a beat still owns when it APPEARS',
-     /A\.filmLayer = function \(name, obj\)/.test(mq) &&
+     /function _filmLayerRegister\(name, obj\)/.test(mq) &&
+     /A\.filmLayer = _filmLayerRegister;/.test(mq) &&
      /function _ceaseRegistered\(\)/.test(mq) &&
      !/_ceaseRegistered[\s\S]{0,700}visible = true/.test(mq),
      'the registry writes visible=false and never true');
+  // ⚠ WHERE it is attached is load-bearing, not style. cinema_maxq.js is a bare IIFE with no `A`
+  // at its top level; `A.filmLayer = ...` written THERE throws at module load, the module never
+  // finishes, and the bake parks at §IDLE_GATE with no error naming the cause. It happened on
+  // 2026-09-20 and cost a bake. witness_module_loads.js is the general guard; this is the local one.
+  ck('…and it is attached where `A` actually exists, not at the module\'s IIFE scope',
+     /A\._flythruDatumOn = !!_measure;\s*\n\s*A\.filmLayer = _filmLayerRegister;/.test(mq) &&
+     !/^\s{2}A\.filmLayer\s*=/m.test(mq) && !/^\s{2}A\._filmLayers\s*=/m.test(mq),
+     'an undeclared read at IIFE scope is valid syntax — node --check cannot see it');
   ck('…and the gate consults the registry FIRST, before either safety net',
      /hidNow \+= _ceaseRegistered\(\);[\s\S]{0,400}CEASE_3D_GROUPS\[g\]/.test(mq),
      'arm 0 is the mechanism; arms 1 and 2 are the net');

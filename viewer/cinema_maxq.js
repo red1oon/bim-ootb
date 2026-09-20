@@ -1236,17 +1236,24 @@
   // life curve still owns when it appears — the registry takes nothing over, it only takes away.
   // The name is the contract: anything not matching /^(measure\.|clash\.)/ is simply never gated,
   // which is why the sun clock, the compass and the day counter need no exemption.
-  A._filmLayers = A._filmLayers || [];
-  A.filmLayer = function (name, obj) {
-    if (!name || !obj) return obj;
+  // ⚠ THIS SCOPE HAS NO `A`. cinema_maxq.js is a bare IIFE — every function inside it opens with
+  // its own `var A = window.APP`. An `A.filmLayer = ...` written here reads an undeclared `A` at
+  // MODULE LOAD, throws, and the module never finishes loading: the bake then sits at
+  // §IDLE_GATE park forever with no error that names the cause. `node --check` passes it, because
+  // an undeclared READ is valid syntax — the same trap that ate `var _tnFilm` in §129.61.
+  // So the registry is a local function here and is ATTACHED to APP below, where A exists.
+  function _filmLayerRegister(name, obj) {
+    var A2 = window.APP;
+    if (!A2 || !name || !obj) return obj;
+    A2._filmLayers = A2._filmLayers || [];
     obj.userData = obj.userData || {};
     obj.userData.filmLayer = name;            // the sweep reads this to NAME an offender
-    for (var i = 0; i < A._filmLayers.length; i++) if (A._filmLayers[i].obj === obj) return obj;
-    A._filmLayers.push({ name: name, obj: obj });
+    for (var i = 0; i < A2._filmLayers.length; i++) if (A2._filmLayers[i].obj === obj) return obj;
+    A2._filmLayers.push({ name: name, obj: obj });
     console.log('§FILM_LAYER registered layer="' + name + '" object="' + (obj.name || obj.type) +
       '" — its 2D half and its geometry now cease on one rule');
     return obj;
-  };
+  }
   function _ceaseRegistered() {
     var A2 = window.APP; if (!A2 || !A2._filmLayers) return 0;
     var n = 0;
@@ -3068,6 +3075,7 @@
       // reached. Only when Measure is on; a bake without it must cost nothing.
       A._flythruFilmSecFull = _filmSecFull;
       A._flythruDatumOn = !!_measure;
+      A.filmLayer = _filmLayerRegister;   // §FILM_LAYER — attached HERE, where A exists (see its note above)
       // §129.6 item 6b — Cost/Ledger pie-chart-HUD rows, gate only (the resource panel itself
       // always runs); the actual rows draw in cpe_resource_panel.js's own
       // resourcePanelCompositeOntoCanvas, reading these two flags (independently, so --no-cost/
