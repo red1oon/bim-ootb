@@ -4370,33 +4370,105 @@
   // touch computeSchedule's own body or the existing display-timeline reuse contract.
   var _rawScheduleRemember = null;   // { map: {guid:{start,end}}, n }
 
-  // ══ §HR_COST_UNREACHED — WHY A SAVED PROGRAMME SHOWS NO COST. DIAGNOSED, NOT FIXED ══════════
+  // ══ §HR_COST_PERSISTED (2026-09-21) — COST THE PROGRAMME THAT IS ALREADY SAVED ══════════════
   // red1: "isn't that injected and saved when user opens alt-c and save path and save in DB?" It
-  // is, and nothing is missing from the save: every DB has schedules=1 with every element mapped,
+  // is, and nothing was missing from the save: every DB has schedules=1 with every element mapped
   // and all 122,330 LTU place-ops carry {"resource":"CONCRETE_GANG",...}.
   //
-  // THE DEFECT. §CREW_DEMAND/§HR_COST are computed INSIDE injectGantt(), and injectGantt() is only
-  // reached from the `!_placeOps.length` branch below — the GENERATE path. MEASURED on three full
-  // 1080p bakes:
+  // THE DEFECT. §CREW_DEMAND/§HR_COST are computed INSIDE injectGantt(), which is only reached from
+  // the `!_placeOps.length` branch — the GENERATE path. MEASURED on three full 1080p bakes:
   //   Hospital  §GANTT injected=63415  §CREW_DEMAND x1   (ops judged STALE -> cleared -> regenerate)
   //   LTU       no §GANTT line          §CREW_DEMAND x0
   //   Terminal  no §GANTT line          §CREW_DEMAND x0
-  // So a building is penalised for HAVING a saved programme, and Hospital only shows a cost because
-  // its ops were thrown away. cpe_resource_panel.js:207 then abstains with reason=norates.
+  // So a building was penalised for HAVING a saved programme, and Hospital only shows a cost
+  // because its ops were thrown away.
   //
-  // NOT the 4D template (LABOR_RATES is hardcoded in viewer/rates.js:120, always present) and NOT a
-  // missing `resource` (matchRule supplies it). Purely an unreached code path.
+  // ⚠ I FIRST WITHDREW THIS FIX AND THAT WAS A MISTAKE. I checked ScheduleAuthor._installSecs,
+  // saw it needs realQty/lengthRatio, and concluded a faithful recompute was impossible outside
+  // injectGantt — without checking where those two come from. They come from
+  // ScheduleAuthor._classFragmentation(db, RATES) and ._linearWeighting(db, RATES), both PUBLIC and
+  // both taking nothing but the db. Every input is reachable, so the number is the same number.
   //
-  // ⚠ WHY THERE IS NO PATCH HERE. I wrote one — a read-only _hrCostFromDb() on the persisted path —
-  // and withdrew it. getInstallSecs() depends on `_frag.area[guid]` and `_lin.avgLength[cls]`, two
-  // tables built inside injectGantt; without them ScheduleAuthor._installSecs falls back to ONE UNIT
-  // per element and yields a DIFFERENT cost from the generate path. That is the same two-numbers
-  // defect recorded as P4 in OCCUPANT_PATHFINDER.md §PATHING-DEFECTS (the Egress report's ~143 steps
-  // against the film's ~329) and shipping it would have been the identical mistake.
-  // Calling injectGantt() on the persisted path is not the answer either: it WRITES ops (:5313) and
-  // would rewrite the very programme the user saved.
-  // THE REAL FIX is to extract the cost block together with _frag/_lin as a read-only pass both
-  // paths can call. That is a refactor with its own spec, not a hook — and it needs red1's go.
+  // IDENTICAL BY CONSTRUCTION, not by intent: same fragmentation table, same linear weighting, same
+  // matchNameOverride -> matchRule order, same _installSecs, same basis seconds, same LABOR_RATES.
+  // Nothing is re-derived here; every step calls the one implementation injectGantt calls.
+  //
+  // IT WRITES NOTHING — no op, no task, no row. A saved programme stays exactly as authored.
+  //
+  // AND IT CHECKS ITSELF. On a building that regenerates (Hospital, HHS) BOTH paths run, so the two
+  // numbers must agree; §HR_COST_AGREE reports the comparison and says WRONG if they differ by more
+  // than a rounding step. That is the guard against this ever becoming the second-number defect
+  // recorded as P4 in OCCUPANT_PATHFINDER.md §PATHING-DEFECTS.
+  function _hrCostFromDb(app) {
+    try {
+      var db = app && app.db; if (!db) return null;
+      var SA = window.ScheduleAuthor;
+      if (!SA || !SA._installSecs || !SA._classFragmentation || !SA._linearWeighting || !SA.matchRule) {
+        console.log('§HR_COST_PERSISTED INCONCLUSIVE — ScheduleAuthor helpers absent, so the only' +
+          ' honest options were a DIFFERENT number or none; none is chosen');
+        return null;
+      }
+      var RT = window.RATES || {}, LRx = window.LABOR_RATES || {};
+      var SR = window.SEQUENCE_RULES || {};
+      var SD = window.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
+      var NO = window.SEQUENCE_NAME_OVERRIDES || [];
+      var frag = SA._classFragmentation(db, RT) || { fragmented: {}, area: {} };
+      var lin = SA._linearWeighting(db, RT) || { avgLength: {} };
+      var rr = db.exec(
+        'SELECT m.guid, m.ifc_class, m.element_name, ' +
+        'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by, COALESCE(t.bbox_z, 0) as bz ' +
+        'FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+      if (!rr || !rr.length) return null;
+      var basis = SR._productivity_basis_secs || 28800;
+      var days = {}, n = 0, ovN = 0;
+      rr[0].values.forEach(function (row) {
+        var guid = row[0], cls = row[1], nm = row[2] || '';
+        if (!cls) return;
+        var ov = SA.matchNameOverride ? SA.matchNameOverride(cls, nm, NO) : null;
+        if (ov) ovN++;
+        var rule = ov || SA.matchRule(cls, SR, SD);
+        var bx = row[3] || 0, by = row[4] || 0, bz = row[5] || 0;
+        var realQty = (frag.fragmented[cls] && frag.area[guid] != null) ? frag.area[guid] : null;
+        var hasGeom = bx > 0 || by > 0 || bz > 0;
+        var avgLen = lin.avgLength[cls];
+        var lengthRatio = (realQty == null && hasGeom && avgLen > 0) ? Math.max(bx, by, bz) / avgLen : null;
+        var secs = SA._installSecs(cls, rule, LRx, realQty, lengthRatio) || 0;
+        var res = (rule && rule.resource) || '_DEFAULT';
+        days[res] = (days[res] || 0) + secs / basis; n++;
+      });
+      var total = 0, pd = 0, trades = 0, log = [];
+      for (var k in days) {
+        var rate = LRx[k]; if (!rate || !rate.rate_per_day) continue;
+        var p = days[k] * (rate.crew_size || 1), c = p * rate.rate_per_day;
+        total += c; pd += p; trades++;
+        log.push(k + ' personDays=' + p.toFixed(1) + ' @' + rate.rate_per_day + '/d = ' + Math.round(c));
+      }
+      var out = { total: Math.round(total), personDays: +pd.toFixed(1), trades: trades };
+      if (!(total > 0)) {
+        console.log('§HR_COST_PERSISTED INCONCLUSIVE elements=' + n + ' resources=[' +
+          Object.keys(days).join(' ') + '] — none matched a LABOR_RATES row, so no cost is claimed');
+        return null;
+      }
+      console.log('§HR_COST_PERSISTED total=' + out.total + ' personDays=' + out.personDays +
+        ' across ' + trades + ' trades over ' + n + ' elements (nameOverrides=' + ovN + ')' +
+        ' — recomputed from the SAVED programme with the SAME helpers injectGantt uses. ' + log.join(' | '));
+      return out;
+    } catch (e) { console.log('§HR_COST_PERSISTED threw: ' + e.message); return null; }
+  }
+  // Always compute, so a building that regenerates can CHECK the recompute against the real thing.
+  function _hrCostEnsure(app, placeOpsLen) {
+    var already = app && app._hrCost && app._hrCost.total > 0 ? app._hrCost.total : null;
+    var mine = _hrCostFromDb(app);
+    if (already != null && mine) {
+      var d = Math.abs(mine.total - already), pct = already ? (100 * d / already) : 0;
+      console.log('§HR_COST_AGREE generate=' + already + ' recompute=' + mine.total +
+        ' delta=' + d + ' (' + pct.toFixed(3) + '%) => ' + (pct <= 0.01 ? 'ok — the two paths agree' :
+        'WRONG — the recompute is NOT the same number, which is the P4 defect and must be fixed, not shipped'));
+      return;   // the generate path's own figure stands; the recompute was only the check
+    }
+    if (!already && mine && placeOpsLen) app._hrCost = mine;   // fill the gap a saved programme leaves
+  }
 
   // §TPL_WIRED (2026-08-26, bim-compiler prompts/4D_BAR_MODEL.md §19/§20) — the 4D programme
   // template, loaded ONCE and handed to every materializeZones call site in this file.
@@ -9199,6 +9271,13 @@
         console.log('§GANTT_CACHE_SAVE ops=' + _ops.length);
         viewerStatus('Time Machine: ' + _ops.length + ' elements scheduled');
       }
+
+      // §HR_COST_PERSISTED — runs after BOTH branches, on purpose. On a building that regenerated
+      // (a fresh IFC drop, or one whose ops were judged stale) injectGantt has already set _hrCost,
+      // and this call becomes a CHECK: §HR_COST_AGREE compares the two and says WRONG if they
+      // differ. On a building that kept its saved programme, injectGantt never ran and this is the
+      // only thing that can cost it. Read-only either way — it writes no op, task or row.
+      try { _hrCostEnsure(app, _placeOps.length); } catch (eHC) { console.log('§HR_COST_PERSISTED hook threw: ' + eHC.message); }
 
       _finishActivate(app, silent);
       resolve(true);
