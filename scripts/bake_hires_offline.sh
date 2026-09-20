@@ -98,6 +98,26 @@ run() {
     # The lines worth reading first, pulled to the end so they are the last thing on screen.
     echo "§BAKE_SCRIPT ---- verdicts ----"
     grep -E "=> (PASS|FAIL)|unconverged=|§SUN_COMPASS |§SUN_COMPASS_HELD|§LOADPATH_BUILD|INCONCLUSIVE|MISMATCH|§CLI_BAKE_WALL" "$LOG" | sed 's/^[0-9:.]* *+ *[0-9.]*s //' | cut -c1-200
+
+    # §129.62 EVIDENCE BLOCK (2026-09-20). The grep above reads "$LOG", which carries only what
+    # cli_silent_bake.js chose to relay, and it named NONE of the three things §129.62 tells the
+    # next session to read. Worse, it could not have: the tint/escape lines were not on CLAIM_RX
+    # either until today. So read them out of the bake's OWN firehose log, which has every page
+    # console line verbatim and is the only complete record. Uncapped on purpose — the tint prints
+    # once PER STOREY and a 6-line cap would hide the storeys that read meshesTouched=0, which is
+    # the exact failure the line exists to show.
+    RAW="${SCRATCH%.*}.log"
+    echo "§BAKE_SCRIPT ---- §129.62 evidence (from $RAW) ----"
+    if [ -s "$RAW" ]; then
+      grep -aE "§CLI_BAKE_RESOLVED|§FRAME_REUSE_TOTAL|§STOREY_REVEAL_MODE |§ESCAPE_ROUTE_BUILD |§ESCAPE_ROUTE_POPULATION |§ESCAPE_ROUTE_WINDOW " "$RAW" | sed 's/^[0-9:.]* *+ *[0-9.]*s *\[con\] //' | cut -c1-260
+      echo "§BAKE_SCRIPT §STOREY_REVEAL_TINT per storey:"
+      grep -aE "§STOREY_REVEAL_TINT " "$RAW" | sed 's/^[0-9:.]* *+ *[0-9.]*s *\[con\] //' | cut -c1-260
+      echo "§BAKE_SCRIPT §DLOD_TM_CENSUS first/last of $(grep -ac '§DLOD_TM_CENSUS' "$RAW"):"
+      grep -a '§DLOD_TM_CENSUS' "$RAW" | sed -n '1p;$p' | sed 's/^[0-9:.]* *+ *[0-9.]*s *\[con\] //' | cut -c1-260
+      echo "§BAKE_SCRIPT §FRAME_HASH rows=$(grep -ac '§FRAME_HASH' "$RAW") — feed this log to the §129.57 byte-exact gate"
+    else
+      echo "§BAKE_SCRIPT no firehose log at $RAW — the §129.62 evidence cannot be read from this run"
+    fi
     echo "§BAKE_SCRIPT end $(date -Is)"
   } >> "$LOG" 2>&1
 }
