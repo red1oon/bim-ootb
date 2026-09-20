@@ -58,6 +58,10 @@ run() {
     # --clash added 2026-09-19 (red1: "we shall ensure ON together for next bake"). The mesh-true
     # clash pairs stand from frame 0, so this is the one flag that changes the picture before
     # the buildup reaches anything — expect it in §CLI_BAKE_RESOLVED as clash=1.
+    # --escape-route added 2026-09-20 (§129.62). The flag did NOT exist in this list and the
+    # census proved it: a 09-20 09:24 Hospital hi-res bake logged `§CLI_BAKE_RESOLVED ...
+    # escapeRoute=0` while every other beat read 1. red1 asked for a clip carrying the escape
+    # route; without this flag the DB's stored cinema_path decides, and it holds it OFF.
     # --dlod-proxy + --reveal added 2026-09-19 after §129.50: the proxy stands down for the
     # reveal round, so it no longer puts ARC back a frame after the reveal hides it.
     # Proven on a 2,068-frame Hospital low-res bake — ARC's 1,550 meshes stay hidden through
@@ -66,7 +70,7 @@ run() {
       --db "$DB" --out "$SCRATCH" \
       --gpu real --width 1920 --height 1080 --fps 24 \
       --dlod-proxy --reveal \
-      --buildup --label --measure --clash --load-path --ledger --cost --storey-reveal --sun-compass --day tr
+      --buildup --label --measure --clash --load-path --ledger --cost --storey-reveal --escape-route --sun-compass --day tr
     echo "§BAKE_SCRIPT node exit=$?"
 
     # DELIVERY GATE — three independent checks, because any one of them alone has been fooled
