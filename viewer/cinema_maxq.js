@@ -1906,20 +1906,23 @@
     // nothing this frame must reserve nothing, and a stale rect would push the card below it down
     // past a panel that is not on screen.
     A.resourcePanelLastBox = null;
-    if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) {
-      _drawUnlessHold('hud.pie', function (a) {
-        try { A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, a, resInfo.pos, _stackY); }
-        catch (eRp) {
-          if (!A._resDrawErrLogged) { A._resDrawErrLogged = true;
-            console.warn('§CPE_RESOURCE_PANEL_ERR draw: ' + eRp.message + ' — panel skipped, frames continue'); }
-        }
-      });
-    }
-    // §129.52 — advance past the pie panel before the card below it. Without this both were
-    // drawn at the same _stackY and the card sat on top of the panel, which is what red1 saw.
-    if (A.resourcePanelLastBox && A.resourcePanelLastBox.h > 0) {
-      _stackY += A.resourcePanelLastBox.h + _gapY;
-    }
+    A.bigStatsLastBox = null;
+    // ══ §HUD_STACK_ORDER (2026-09-21) — THE FIXED-HEIGHT CARD GOES FIRST ════════════════════════
+    // red1: "the 2nd HUD is obscured by the first. Since the 1st HUD is dynamic height depending on
+    // Resource pax working on site, i suggest it be swapped with the 2nd HUD so it does not cover
+    // when taller in height."
+    // He is right, and for a reason the old order could not fix by measuring harder: the resource
+    // panel's height is a function of the CREW ON SITE that day, so it changes frame to frame. Put
+    // it first and every frame has to get the advance exactly right or it covers its neighbour; put
+    // it LAST and it grows into empty space, where being wrong costs nothing. A variable-height
+    // panel should never have a neighbour below it.
+    // §129.52's advance stays — it is still needed, it is just no longer load-bearing.
+    //
+    // ⚠ NO boxFn IS PASSED HERE, AND THAT IS DELIBERATE. `_drawUnlessHold(name, fn, boxFn)` can
+    // register a real rect, but these two drawers already register their own under `resource-panel`
+    // and `stats-panel` — witness_hud_layout_coverage.js:124 exempts `hud.pie`/`roster` for exactly
+    // that reason, and says a second registration would be "the same rect twice — a permanent false
+    // FAIL". I tried adding one and the witness's own comment is what caught it.
     if (statInfo && statInfo.shown && A.bigStatsCompositeOntoCanvas) {
       _drawUnlessHold('roster', function (a) {
         // §CPE_PIE_HOLD — statInfo.held is the composition the pie holds beside the card.
@@ -1930,11 +1933,21 @@
         }
       });
     }
-    // §ESCAPE_PANEL_SLOT — the Escape Route card in the corner diagonally opposite the HUD column,
-    // drawn through the SAME bigStats compositor (so the legend, the fit ladder and §CARDFIT's
-    // guarantees all come with it) at its own `pos` and `stackY=0`. Inside _drawUnlessHold like
-    // every other overlay, so it registers a rect for §HUD_LAYOUT and fades with the freeze — the
-    // two things the duplicated caption bar deleted in 1e2c53eb did NOT do.
+    if (A.bigStatsLastBox && A.bigStatsLastBox.h > 0) {
+      _stackY += A.bigStatsLastBox.h + _gapY;
+    }
+    if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) {
+      _drawUnlessHold('hud.pie', function (a) {
+        try { A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, a, resInfo.pos, _stackY); }
+        catch (eRp) {
+          if (!A._resDrawErrLogged) { A._resDrawErrLogged = true;
+            console.warn('§CPE_RESOURCE_PANEL_ERR draw: ' + eRp.message + ' — panel skipped, frames continue'); }
+        }
+      });
+    }
+    if (A.resourcePanelLastBox && A.resourcePanelLastBox.h > 0) {
+      _stackY += A.resourcePanelLastBox.h + _gapY;
+    }
     if (escCardInfo && escCardInfo.shown && A.bigStatsCompositeOntoCanvas) {
       _drawUnlessHold('escroute.card', function (a) {
         try { A.bigStatsCompositeOntoCanvas(ctx, w, h, escCardInfo.shown, a, escCardInfo.pos, 0, null); }
