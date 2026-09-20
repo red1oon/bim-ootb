@@ -15,6 +15,7 @@
 'use strict';
 const fs = require('fs'), path = require('path');
 const initSqlJs = require('./tests/_sqljs.js').requireSqlJs();
+const { resolveWitnessDb } = require('./tests/_witness_db.js');
 const RoomGraph = require('./common/room_graph.js');
 const EgressSanity = require('./viewer/egress_sanity.js');
 
@@ -46,13 +47,17 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
   ck('W-ALT-1d it never invents one from empty or missing input',
      D(null, ['r']) === null && D([], []) === null && D(['r'], []) === null);
 
-  const DBP = path.join(process.env.BIM_BUILDINGS || path.join(__dirname, 'buildings'), 'Hospital_meta.db');
-  if (!fs.existsSync(DBP)) {
-    console.log('§EGRESS_ALTERNATES_WITNESS INCONCLUSIVE — buildings/Hospital_meta.db absent. Every' +
-      ' claim below needs a REAL room graph; a synthetic one would prove the fixture, not the rule.');
+  // §WITNESS_DB — Hospital first because every measured number quoted in ESCAPE_ROUTE_REVEAL.md
+  // came off it, but ANY building with rooms + a raster proves the claims, and the resolver applies
+  // the buildings/patches/<db>.sql self-heal so the one TRACKED building works on a fresh clone.
+  const picked = resolveWitnessDb(SQL, { needRaster: true });
+  if (!picked) {
+    console.log('§EGRESS_ALTERNATES_WITNESS INCONCLUSIVE — no building with rooms AND a walkable' +
+      ' raster is reachable. Every claim below needs a REAL room graph; a synthetic one would' +
+      ' prove the fixture, not the rule.');
     process.exit(2);
   }
-  const db = new SQL.Database(new Uint8Array(fs.readFileSync(DBP)));
+  const db = picked.db;
   const q = (s, p) => { const r = p ? db.exec(s, p) : db.exec(s); return r.length ? r[0].values : []; };
   const graph = RoomGraph.buildGraph(q, { log: () => {} });
 

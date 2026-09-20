@@ -15,6 +15,7 @@
 'use strict';
 const fs = require('fs'), path = require('path');
 const initSqlJs = require('./tests/_sqljs.js').requireSqlJs();
+const { resolveWitnessDb } = require('./tests/_witness_db.js');
 const RoomGraph = require('./common/room_graph.js');
 const EgressSanity = require('./viewer/egress_sanity.js');
 const { setupCpeEscapeRoute } = require('./viewer/cpe_escape_route.js');
@@ -54,14 +55,17 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
 
 (async () => {
   const SQL = await initSqlJs();
-  const DBP = path.join(process.env.BIM_BUILDINGS || path.join(__dirname, 'buildings'), 'Hospital_meta.db');
-  if (!fs.existsSync(DBP)) {
-    console.log('§ESCAPE_ROUTE_WITNESS INCONCLUSIVE — buildings/Hospital_meta.db not present. Every claim' +
-      ' below needs a REAL room graph; a synthetic one would prove the fixture, not the feature.' +
-      ' Re-run with BIM_BUILDINGS pointing at a checkout that has it.');
+  // §WITNESS_DB — Hospital first because every measured number quoted in ESCAPE_ROUTE_REVEAL.md
+  // came off it, but ANY building with rooms + a raster proves the claims, and the resolver applies
+  // the buildings/patches/<db>.sql self-heal so the one TRACKED building works on a fresh clone.
+  const picked = resolveWitnessDb(SQL, { needRaster: true });
+  if (!picked) {
+    console.log('§ESCAPE_ROUTE_WITNESS INCONCLUSIVE — no building with rooms AND a walkable raster' +
+      ' is reachable. Every claim below needs a REAL room graph; a synthetic one would prove the' +
+      ' fixture, not the feature. Point BIM_BUILDINGS at a checkout that has one.');
     process.exit(2);
   }
-  const db = new SQL.Database(new Uint8Array(fs.readFileSync(DBP)));
+  const db = picked.db;
   const q = (sql, p) => { const r = p ? db.exec(sql, p) : db.exec(sql); return r.length ? r[0].values : []; };
   const graph = RoomGraph.buildGraph(q, { log: () => {} });
   console.log('§ESCAPE_ROUTE_WITNESS db=Hospital_meta.db rooms=' + graph.nodes.length +
@@ -336,17 +340,28 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // Hospital_silent: a CORRIDOR_ROOM:: pseudo-room injected by §CORRIDOR-ROOM-BACKPROP. Nobody
   // starts an escape in a corridor — the corridor IS the route — and it carries no room box, so
   // the film had nothing to light either. ISSUE: does the candidate set exclude them?
+  // ⚠ VACUITY, not failure. A building with no CORRIDOR_ROOM:: nodes has nothing for this rule to
+  // exclude, so asserting on it would judge an empty population — this project's own rule is that
+  // such a line says VACUOUS, never PASS and never WRONG. Hospital_meta has 14 of them;
+  // HHS_Office_Federated_extracted has none, and the first fresh-clone run of this witness
+  // reported that correct state as a failure. The guard is the fix, not the claim.
   const corridorNodes = graph.nodes.filter(n => String(n.guid).indexOf('CORRIDOR_ROOM::') === 0);
-  ck('W-ESC-9a this building actually has corridor pseudo-rooms to exclude (else the claim is vacuous)',
-     corridorNodes.length > 0, corridorNodes.length + ' of ' + graph.nodes.length + ' nodes');
-  ck('W-ESC-9b the chosen room is not one of them', String(rec.roomGuid).indexOf('CORRIDOR_ROOM::') !== 0,
-     '"' + rec.roomName + '" (' + rec.roomGuid + ')');
-  ck('W-ESC-9c and the count skipped is reported, not silently dropped',
-     rec.corridorsSkipped === corridorNodes.length,
-     'skipped=' + rec.corridorsSkipped + ' present=' + corridorNodes.length);
+  if (!corridorNodes.length) {
+    console.log('  §WER VACUOUS W-ESC-9 — "' + picked.name + '" has no CORRIDOR_ROOM:: pseudo-rooms,' +
+      ' so the exclusion has nothing to act on here and is NOT exercised. Run against a building' +
+      ' that has them (Hospital_meta has 14) to judge this claim.');
+  } else {
+    ck('W-ESC-9a this building has corridor pseudo-rooms, so the claim is judged on a real population',
+       true, corridorNodes.length + ' of ' + graph.nodes.length + ' nodes');
+    ck('W-ESC-9b the chosen room is not one of them', String(rec.roomGuid).indexOf('CORRIDOR_ROOM::') !== 0,
+       '"' + rec.roomName + '" (' + rec.roomGuid + ')');
+    ck('W-ESC-9c and the count skipped is reported, not silently dropped',
+       rec.corridorsSkipped === corridorNodes.length,
+       'skipped=' + rec.corridorsSkipped + ' present=' + corridorNodes.length);
+  }
   // A corridor DOES sometimes win on length — prove the exclusion is load-bearing, not decorative.
   let corridorLonger = 0;
-  corridorNodes.forEach(n => {
+  (corridorNodes.length ? corridorNodes : []).forEach(n => {
     const e = RoomGraph.escapeRoute(graph, n.guid, { log: () => {} });
     if (!e || e.distance == null) return;
     const sp = RoomGraph.shortestPath(graph, n.guid, e.exitGuid);
