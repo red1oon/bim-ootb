@@ -978,6 +978,10 @@ function setupCpeResourcePanel(A) {
       // §3's walk time is the one number a viewer grasps at a glance and the card has carried it
       // since the beat shipped. Drawn on the title band, right-aligned, so it costs one row rather
       // than the 0.42*bh the plain stat card spends on it.
+      // THE HEADLINE stays — reduced, not removed. The legend has first claim on the height, but
+      // §3's walk time is the one number a viewer grasps at a glance and the card has carried it
+      // since the beat shipped. Drawn on the title band, right-aligned, so it costs one row rather
+      // than the 0.42*bh the plain stat card spends on it.
       var headPx = Math.round(titlePx * 1.28);
       var yy = y + pad + headPx;
       ctx.textBaseline = 'alphabetic';
@@ -991,32 +995,104 @@ function setupCpeResourcePanel(A) {
       }
       ctx.textAlign = 'left';
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      _fitText(ctx, c.label, colX, yy, Math.max(20, colW - headW), titlePx, Math.max(10, Math.round(titlePx * 0.72)), '700', LF);
+      // At clip width the title band has ~61 px left after the headline, which is not enough for
+      // "Escape Route — OVER LIMIT" and produced "Escape Rou..." in the delivered clip. Drop back
+      // to the part before the em dash rather than ellipsis the words away: the room name is
+      // already on screen in the bottom caption ("Longest walk out — <room>"), so nothing is lost
+      // by shortening here, whereas a truncated title says nothing at all.
+      // ONE legibility floor for every piece of card ink, derived from the FRAME rather than from
+      // whichever element is being drawn: text under ~1.1% of frame height is not readable at
+      // viewing distance, and above that shrinking always beats dropping. The old per-element floor
+      // made a 21 px title stop at 15 px and drop "— OVER LIMIT" with 205 px of room to spare.
+      var inkFloor = Math.max(9, Math.round(h * 0.011));
+      var labelW = Math.max(20, colW - headW);
+      var labelTxt = c.label;
+      // SHRINK FIRST, DROP SECOND. The tail after the em dash is either the flag state
+      // ("— OVER LIMIT") or the room name. The flag is the one thing on this card a viewer must not
+      // miss and the room is already in the bottom caption, so the tail only goes when even the
+      // floor cannot fit it.
+      ctx.font = '700 ' + inkFloor + 'px ' + LF;
+      if (ctx.measureText(labelTxt).width > labelW && labelTxt.indexOf('—') > 0) {
+        labelTxt = labelTxt.split('—')[0].trim();
+      }
+      _fitText(ctx, labelTxt, colX, yy, labelW, titlePx, inkFloor, '700', LF);
       yy += Math.round(rowH * 0.95);
+      // ══ THE ROW BUDGET — measured, not hoped ═══════════════════════════════════════════════
+      // The first cut drew every row with a bare fillText and no budget at all. MEASURED by
+      // witness_escape_card_fit.js at the three real sizes: "7 alternates  from the choice point"
+      // overran the plate by 76 px at 1920x1080 and by 82 px at 854x480, and the RED row's
+      // right-aligned "limit 30.5 m¹" printed straight ON TOP of "183 m  no choice" at every size.
+      // Both shipped in a delivered clip.
+      // The ladder below DROPS content in a stated order rather than shrinking it into decoration —
+      // §13.5's own ruling for the footnotes, applied to the rows. Every key still draws: a legend
+      // row silently dropped to make room would be §13.6's thinning by another route.
+      //   1. key + value + descriptor + right column   (the full row)
+      //   2. …without the right column                 (its limit is still in the sub and footnote ¹)
+      //   3. …without the descriptor                   (the NUMBER and its colour are the row's job)
+      //   4. …value shrunk, then ellipsis              (last resort, never reached at these sizes)
       var keyW = 0, li2;
-      ctx.font = '700 ' + rowPx + 'px ' + LF;
+      ctx.font = '800 ' + rowPx + 'px ' + LF;
       for (li2 = 0; li2 < c.legend.length; li2++) keyW = Math.max(keyW, ctx.measureText(c.legend[li2].key).width);
-      var valX = colX + keyW + Math.round(rowPx * 0.8);
+      var gapW = Math.round(rowPx * 0.8);
+      var valX = colX + keyW + gapW;
+      var MK = '¹²³⁴';
+      // ONE SIZE FOR THE WHOLE LEGEND, decided before anything is drawn. Sizing each row on its own
+      // put 14, 18, 12 and 18 px rows in the same block — measured, and it reads as four unrelated
+      // lines rather than one legend. The block takes the largest size at which EVERY row fits, and
+      // the drop ladder below then applies uniformly at that size.
+      function _legendFits(px, keepText) {
+        var rp = Math.max(inkFloor, Math.round(px * 0.92));
+        for (var z = 0; z < c.legend.length; z++) {
+          var G = c.legend[z], m2 = G.marker ? MK.charAt(+G.marker - 1) : '';
+          ctx.font = '600 ' + rp + 'px ' + LF;
+          var rw = G.right ? ctx.measureText(G.right + m2).width + gapW : 0;
+          ctx.font = '700 ' + px + 'px ' + LF;
+          var t = keepText ? (G.value + (G.text ? '  ' + G.text : '')) : G.value;
+          if (ctx.measureText(t + (G.right ? '' : m2)).width + rw > colX + colW - valX) return false;
+        }
+        return true;
+      }
+      var rowPxFit = inkFloor, keepText = true, zpx;
+      for (zpx = rowPx; zpx >= inkFloor; zpx--) if (_legendFits(zpx, true)) { rowPxFit = zpx; break; }
+      if (zpx < inkFloor) {                              // step 2 — the descriptor goes, uniformly
+        keepText = false;
+        for (zpx = rowPx; zpx >= inkFloor; zpx--) if (_legendFits(zpx, false)) { rowPxFit = zpx; break; }
+      }
       for (li2 = 0; li2 < c.legend.length; li2++) {
         var LG = c.legend[li2];
-        // The word is drawn IN the colour it names — the legend is self-demonstrating, so a viewer
+        var mk = LG.marker ? MK.charAt(+LG.marker - 1) : '';
+        var avail = colX + colW - valX;
+        var full = keepText ? (LG.value + (LG.text ? '  ' + LG.text : '')) : LG.value;
+        var chosen = { px: rowPxFit, rPx: Math.max(inkFloor, Math.round(rowPxFit * 0.92)), rW: 0, text: full, right: !!LG.right };
+        if (chosen.right) {
+          ctx.font = '600 ' + chosen.rPx + 'px ' + LF;
+          chosen.rW = ctx.measureText(LG.right + mk).width + gapW;
+          // step 3 — the right column goes only if even the bare value cannot sit beside it. Its
+          // limit still reaches the reader through the sub and, at delivery height, footnote \u00b9.
+          ctx.font = '700 ' + chosen.px + 'px ' + LF;
+          if (ctx.measureText(LG.value).width + chosen.rW > avail) { chosen.right = false; chosen.rW = 0; }
+        }
+        var rtxt = chosen.right ? LG.right + mk : '';
+        var vmk = chosen.right ? '' : mk;                // the marker rides the value when there is no right column
+        // the word is drawn IN the colour it names — the legend demonstrates itself, so a viewer
         // never has to hold "red means common path" in their head separately from the picture.
-        ctx.fillStyle = LG.rgb; ctx.font = '800 ' + rowPx + 'px ' + LF;
+        ctx.fillStyle = LG.rgb; ctx.font = '800 ' + chosen.px + 'px ' + LF;
         ctx.fillText(LG.key, colX, yy);
-        ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = '700 ' + rowPx + 'px ' + LF;
-        var vtxt = LG.value + (LG.text ? '  ' + LG.text : '');
-        ctx.fillText(vtxt, valX, yy);
-        // the right column: the cited limit, with its marker glyph. Right-aligned so the numbers
-        // line up down the card rather than wandering with the length of each row's words.
-        if (LG.right) {
-          var rtxt = LG.right + (LG.marker ? '¹²³⁴'.charAt(+LG.marker - 1) : '');
-          ctx.font = '600 ' + Math.round(rowPx * 0.92) + 'px ' + LF;
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        // step 4 — _fitText is the last resort AND the guarantee: whatever a future string does,
+        // the row can never leave the plate. It returns the DRAWN width so the marker can hang off
+        // the end of the words rather than off a guess at their length.
+        var drawnW = _fitText(ctx, chosen.text, valX, yy, avail - chosen.rW, chosen.px, inkFloor, '700', LF);
+        if (vmk) {
+          ctx.font = '600 ' + chosen.rPx + 'px ' + LF;
+          ctx.fillStyle = 'rgba(255,255,255,0.72)';
+          var mx = valX + drawnW + Math.round(chosen.px * 0.18);
+          if (mx + ctx.measureText(vmk).width <= colX + colW) ctx.fillText(vmk, mx, yy);
+        }
+        if (rtxt) {
+          ctx.font = '600 ' + chosen.rPx + 'px ' + LF;
           ctx.fillStyle = 'rgba(255,255,255,0.72)';
           ctx.textAlign = 'right'; ctx.fillText(rtxt, colX + colW, yy); ctx.textAlign = 'left';
-        } else if (LG.marker) {
-          ctx.font = '600 ' + Math.round(rowPx * 0.92) + 'px ' + LF;
-          ctx.fillStyle = 'rgba(255,255,255,0.72)';
-          ctx.fillText('¹²³⁴'.charAt(+LG.marker - 1), valX + _measureAfter(ctx, vtxt, rowPx, LF), yy);
         }
         yy += rowH;
       }
@@ -1103,8 +1179,13 @@ function setupCpeResourcePanel(A) {
       px -= 1;
     }
     ctx.font = weight + ' ' + px + 'px ' + F;
-    ctx.fillText(_fit(ctx, text, maxW), x, y);
-    return px;
+    // Returns the DRAWN WIDTH, not the size it settled on — measured on the string that actually
+    // reached the canvas, ellipsis included. §13's legend hangs a marker glyph immediately after
+    // the row's words and cannot do that from a font size. No caller read the old `px` return
+    // (checked across viewer/*.js before changing it).
+    var shown = _fit(ctx, text, maxW);
+    ctx.fillText(shown, x, y);
+    return Math.min(maxW, ctx.measureText(shown).width);
   }
 
   // §CPE_CARD_FIT — shrink, then wrap across at most `maxLines`, then ellipsis on the last line.

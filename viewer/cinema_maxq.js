@@ -1152,8 +1152,41 @@
   // A `boxFn` returning a real box (w>1 && h>1) registers THAT instead. No boxFn, or a degenerate
   // box, keeps the placeholder exactly as before — and the `alpha > 0` guard ("a drawer that painted
   // nothing must not register a rect") still gates both cases, unchanged.
+  // ══ §ESCAPE_ROUTE_HUD_SUPPRESS — the overlays that CEASE while the escape route has the frame ══
+  // red1, 2026-09-20 after seeing the clip: "While Escape Route, the other overlays have to cease.
+  // Their work is sufficient and allowed full focus on EscRoute mgmt." — then, on being asked which:
+  // "I don't mean the clock Sun stuff as it's needed.. I meant the Sanity and clashes".
+  // WHAT CEASES: the Sanity / rule-findings chips ("Structural — span depth cantilever / 42
+  // flagged") and the clash labels with their counts ("81 FP vs MEP clashes"). Both are FINDINGS
+  // signage about other rules, and the escape route is itself a findings beat — two rulebooks
+  // arguing in one frame is the crowding he is reacting to.
+  // WHAT STAYS: the sun clock, the sun-compass readout, the day counter, the path box and the pie.
+  // ⚠ THIS IS NOT THE RETIRED GATE'S LIST — it is very nearly its inverse. The old `_hudGate()`
+  // cleared the sun clock, the compass readout, the path box and the pie, which are exactly the
+  // four red1 now says are needed. Only the SHAPE of that mechanism is reused.
+  // A._escRouteHudSuppress is set and maintained by cpe_escape_route.js — it is how the module
+  // reports "my window is open" — so this gate reads a flag that already exists rather than adding
+  // a second trigger. Gated in the one wrapper both layers already pass through, so there is a
+  // single place that decides and a witness can assert it by name.
+  var ESC_SUPPRESSED = { 'measure.rulefindings': 1, 'clash.labels': 1 };
+  function _escSuppresses(name) {
+    var A2 = window.APP;
+    return !!(A2 && A2._escRouteHudSuppress && ESC_SUPPRESSED[name]);
+  }
   function _drawUnlessHold(name, fn, boxFn) {
     var A2 = window.APP;
+    // Suppressed overlays register a 1x1 placeholder exactly as an absent box does, so §HUD_LAYOUT
+    // still has a row for them and _rowAdvance reads a zero-size box — the row collapses and the
+    // card below gets the space, which is the point of ceding the frame.
+    if (_escSuppresses(name)) {
+      if (A2) {
+        if (A2._hudLayoutRegister) A2._hudLayoutRegister(name, 0, 0, 1, 1);
+        if (!A2._hudCompositeAlphaSample) A2._hudCompositeAlphaSample = {};
+        A2._hudCompositeAlphaSample[name] = 0;
+        A2._escSuppressedThisFrame = (A2._escSuppressedThisFrame || 0) + 1;
+      }
+      return;
+    }
     var forced = !!window.__lpNoFocusHold;
     var alpha = forced ? 1 : ((A2 && A2._loadPathHudAlpha != null) ? A2._loadPathHudAlpha : 1);
     var ctx2 = A2 && A2._captureCtx;
@@ -1277,17 +1310,13 @@
         console.warn('§FRAME_COST unavailable: ' + (e && e.message) + ' — measurement only, bake unaffected'); }
     }
   }
-  // §ESCAPE_ROUTE_HUD_SUPPRESS — RETIRED 2026-09-20 by red1, overriding the spec's own §2 item 7
-  // ("other overlay signage: hidden for this window"). His words, after seeing it: "the new HUD
-  // should not make the other HUDs go away." The spec is his and so is the reversal; the later
-  // instruction wins and this is not re-litigated.
-  // Nothing is hidden any more. The sun clock, the sun-compass readout, the path-overview box and
-  // the resource pie all keep drawing through the reveal. `A._escRouteHudSuppress` still exists
-  // and is still maintained (it is how the escape module reports "the window is open"), but no
-  // draw call reads it — W-ESC-8f asserts exactly that, so it cannot creep back by accident.
-  // ⚠ ONE THING STILL CHANGES, and it is not suppression: the Escape Route card occupies the
-  // bigStats slot for its window, the same slot the tail/storey/measure cards already take turns
-  // in. One slot holds one card; that is the chain's existing behaviour, not a new hiding rule.
+  // §ESCAPE_ROUTE_HUD_SUPPRESS is WIRED — `_escSuppresses` above says what ceases (the Sanity
+  // rule-findings chips and the clash labels) and what keeps drawing (the sun clock, the compass
+  // readout, the day counter, the path box, the pie). These are working decisions red1 adjusts as
+  // he sees results; this comment states what the code does, not how it got here.
+  // ⚠ ONE THING THAT IS NOT SUPPRESSION: the Escape Route card occupies the bigStats slot for its
+  // window, the same slot the tail/storey/measure cards already take turns in. One slot holds one
+  // card; that is the chain's existing behaviour.
   async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc, escInfo) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;

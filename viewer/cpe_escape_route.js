@@ -807,8 +807,10 @@ function setupCpeEscapeRoute(A) {
   //   screen-space non-overlap walk; this is that walk, plus the corner column as a no-go area.
   //
   // The column during this beat is EXACTLY the day counter then the card — because
-  // A._escRouteHudSuppress has already cleared the sun clock, the compass readout, the path box and
-  // the pie out of the middle of it. That coupling is what makes this three lines instead of a
+  // A._escRouteHudSuppress clears the sun clock, the compass readout, the path box and the pie out
+  // of the middle of it (cinema_maxq.js `_escSuppresses`, re-wired 2026-09-20 on red1's current
+  // instruction; between the first retirement and that re-wiring this sentence was false, which is
+  // why it now names the function that makes it true). That coupling is what makes this three lines instead of a
   // second copy of _captureFrame's stack maths, and W-ESC-8d asserts it rather than trusting it.
   // `stackBottom` is cinema_maxq.js's OWN measured column depth from the previous captured frame
   // (A._hudStackBottom) — the only thing that knows it, because the sun clock and the compass

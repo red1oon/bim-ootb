@@ -333,12 +333,25 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // red1, 2026-09-20, overriding the spec's own §2 item 7: "the new HUD should not make the other
   // HUDs go away." ISSUE: the suppression is retired — is it really gone, or just defaulted off
   // somewhere it could creep back? Disproved by ANY draw call still reading the flag.
-  ck('W-ESC-8f NOTHING is suppressed any more — no draw call reads the flag, and _hudGate is gone',
-     mq.indexOf('function _hudGate') < 0 &&
-     !/!A\._escRouteHudSuppress &&/.test(mq) &&
+  // §ESCAPE_ROUTE_HUD_SUPPRESS is WIRED, and it suppresses the SANITY/CLASH findings signage — not
+  // the sun column (red1, 2026-09-20: "I don't mean the clock Sun stuff as it's needed.. I meant
+  // the Sanity and clashes"). These guard the CURRENT behaviour: the flag is read, in the one
+  // wrapper both layers pass through, and it names those two and nothing else. Disproved the moment
+  // someone un-wires it, which is what happened to the first implementation of this feature.
+  ck('W-ESC-8f the suppression is wired — the flag is READ, in one place, by name',
+     /A2\._escRouteHudSuppress && ESC_SUPPRESSED\[name\]/.test(mq) &&
+     /if \(_escSuppresses\(name\)\) \{/.test(mq) &&
+     /var ESC_SUPPRESSED = \{ 'measure\.rulefindings': 1, 'clash\.labels': 1 \}/.test(mq),
+     'gate lives in _drawUnlessHold; suppressed set is rulefindings + clash labels');
+  ck('W-ESC-8f2 the sun clock, the compass readout, the day counter and the pie are NOT suppressed',
+     !/ESC_SUPPRESSED = \{[^}]*(suncompass|daycounter|hud\.pie|hud\.pathmap)/.test(mq) &&
      (mq.match(/_hudHold\('suncompass\.(clock|readout)'/g) || []).length === 2 &&
-     /if \(ovInfo && ovInfo\.ov && A\.pathOverviewCompositeOntoCanvas\)/.test(mq) &&
-     /if \(resInfo && resInfo\.info && A\.resourcePanelCompositeOntoCanvas\)/.test(mq));
+     /_drawUnlessHold\('daycounter'/.test(mq) &&
+     /_drawUnlessHold\('hud\.pie'/.test(mq),
+     'red1: "the clock Sun stuff as it\'s needed"');
+  ck('W-ESC-8f3 a suppressed overlay still registers with §HUD_LAYOUT, so the layout witness keeps a row for it',
+     /if \(_escSuppresses\(name\)\) \{[\s\S]{0,400}_hudLayoutRegister\(name, 0, 0, 1, 1\)/.test(mq),
+     '1x1 placeholder, the same shape an absent box already registers');
   ck('W-ESC-8g the column depth the reserve uses is MEASURED by the compositor, not guessed here',
      /A\._hudStackBottom = _stackY \+/.test(mq) &&
      /escapeRouteReservedRects\(w, h, _ovPos, A\._hudStackBottom\)/.test(mq));
