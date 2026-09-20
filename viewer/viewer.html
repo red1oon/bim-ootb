@@ -907,6 +907,9 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      loaded on demand by APP.loadNavigate() (see rule_checklist.js's A.showEgressSanity) — this
      tag only needs to load before A.showEgressSanity() can run, same as structural_sanity.js. -->
 <script src="egress_sanity.js?v=3" onerror="console.warn('§LOAD_FAIL egress_sanity.js')"></script>
+<!-- §PLACE (GEOREF_SUNPATH_COMPASS.md §13) — offline place lookup. Pure + inert on load:
+     it defines window.PlaceLookup and does nothing until a caller hands it the table text. -->
+<script src="place_lookup.js?v=1" onerror="console.warn('§LOAD_FAIL place_lookup.js')"></script>
 <!-- STRUCTURAL_SANITY.md T8 — rule_report.js is portable/DOM-free like structural_sanity.js;
      rule_checklist.js's Report button (A._downloadRuleReport) needs it loaded first. -->
 <script src="rule_report.js?v=2" onerror="console.warn('§LOAD_FAIL rule_report.js')"></script>
