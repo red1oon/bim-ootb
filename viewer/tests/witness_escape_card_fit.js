@@ -60,11 +60,14 @@ const CARD = {
   label: 'Escape Route — OVER LIMIT',
   sub: '~329 steps*  ·  247 m walked  ·  247 m vs 60.96 m limit (IBC 2021 T1017.2, I-2)⁴  ·  at 1.19 m/s (SFPE)²  ·  0.75 m stride assumed',
   subAlts: ['~329 steps*  \u00b7  247 m walked  \u00b7  247 m vs 60.96 m limit\u2074', '~329 steps*  \u00b7  247 m\u00b2'],
+  // The REAL strings the card returns since red1's "the HUD color ie red '..' and grey need
+  // explanation such as 'sprinklered zone'" — longer than the terse fragments they replaced, which
+  // is the point of testing with them rather than with something convenient.
   legend: [
-    { key: 'RED', rgb: 'rgb(229,57,53)', value: '183 m', text: 'no choice', right: 'limit 30.5 m', marker: '1' },
-    { key: 'YELLOW', rgb: 'rgb(255,145,0)', value: '64 m', text: 'to nearest exit', right: '', marker: '' },
-    { key: 'BLUE', rgb: 'rgba(0,145,234,1)', value: '7 alternates', text: 'from the choice point', right: '', marker: '' },
-    { key: 'GREY', rgb: 'rgba(200,205,210,0.9)', value: '177 m', text: 'sprinkler cover', right: '', marker: '3' }
+    { key: 'RED', rgb: 'rgb(229,57,53)', value: '183 m', text: 'common path \u2014 no alternative', textShort: 'no alternative', right: 'limit 30.5 m', marker: '1' },
+    { key: 'YELLOW', rgb: 'rgb(255,145,0)', value: '64 m', text: 'onward to the nearest exit', textShort: 'to nearest exit', right: '', marker: '' },
+    { key: 'BLUE', rgb: 'rgba(0,145,234,1)', value: '7 alternates', text: 'other exits from that point', textShort: 'other exits', right: '', marker: '' },
+    { key: 'GREY', rgb: 'rgba(200,205,210,0.9)', value: '177 m', text: 'sprinklered zone', textShort: 'sprinklered', right: '', marker: '3' }
   ],
   footnotes: [
     '¹ IBC 2021 T1006.2.1 — sprinklered 30.5 m, from real heads on this route; I-2 assumed; from room centre',
@@ -139,6 +142,19 @@ SIZES.forEach(([w, h]) => {
   const keys = CARD.legend.map(g => g.key).filter(k => drawn.some(t => t.s === k));
   ck(w + 'x' + h + ' all four legend keys are drawn — a row dropped to make room is still a row lost',
      keys.length === CARD.legend.length, 'drawn=' + keys.join(',') );
+  // red1, 2026-09-20: "the HUD color ie red '..' and grey need explanation such as 'sprinklered
+  // zone'". The WORDS are the legend's job; a row reading "177 m" with no name for the grey has
+  // stopped being a legend. The drop ladder now sheds the cited limit BEFORE the descriptor,
+  // because the limit is also in the disclosure row and in footnote 1 while the descriptor is
+  // nowhere else on the card.
+  const named = CARD.legend.filter((g) => drawn.some((t) =>
+    t.s.indexOf(g.text) >= 0 || (g.textShort && t.s.indexOf(g.textShort) >= 0)));
+  ck(w + 'x' + h + ' every colour is EXPLAINED in words, not just numbered',
+     named.length === CARD.legend.length,
+     named.length + '/' + CARD.legend.length + ' explained' +
+     (named.length < CARD.legend.length
+       ? '  missing: ' + CARD.legend.filter((g) => named.indexOf(g) < 0).map((g) => g.key).join(',')
+       : ''));
 });
 
 console.log('§CARDFIT ' + pass + '/' + (pass + fail) + ' pass' + (fail ? '  FAIL=' + fail : ''));

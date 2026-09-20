@@ -119,7 +119,8 @@ const polyLen = (pts) => { let L = 0; for (let i = 1; i < pts.length; i++) L += 
        recB ? 'alts=' + recB.alternates.length + ' commonPath=' + recB.commonPathM.toFixed(2) +
               ' walk=' + recB.walkM.toFixed(2) : 'build returned null');
     ck('W-13-3b and the legend SAYS so rather than printing a number as if it were ordinary',
-       !!redRow && /no choice EXISTS/.test(redRow.text) && !!blueRow && /never diverge/.test(blueRow.text),
+       !!redRow && /NO alternative exists/i.test(redRow.text) &&
+       !!blueRow && /no other way out/i.test(blueRow.text),
        redRow ? 'RED="' + redRow.value + ' ' + redRow.text + '"  BLUE="' + blueRow.value + ' ' + blueRow.text + '"' : 'no card');
   }
 

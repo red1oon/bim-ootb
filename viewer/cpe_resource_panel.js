@@ -1058,24 +1058,40 @@ function setupCpeResourcePanel(A) {
       // put 14, 18, 12 and 18 px rows in the same block — measured, and it reads as four unrelated
       // lines rather than one legend. The block takes the largest size at which EVERY row fits, and
       // the drop ladder below then applies uniformly at that size.
-      function _legendFits(px, keepText) {
+      function _legendFits(px, keepText, keepRight) {
         var rp = Math.max(inkFloor, Math.round(px * 0.92));
         for (var z = 0; z < c.legend.length; z++) {
           var G = c.legend[z], m2 = G.marker ? MK.charAt(+G.marker - 1) : '';
+          var useRight = keepRight && !!G.right;
           ctx.font = '600 ' + rp + 'px ' + LF;
-          var rw = G.right ? ctx.measureText(G.right + m2).width + gapW : 0;
+          var rw = useRight ? ctx.measureText(G.right + m2).width + gapW : 0;
           ctx.font = '700 ' + px + 'px ' + LF;
-          var t = keepText ? (G.value + (G.text ? '  ' + G.text : '')) : G.value;
-          if (ctx.measureText(t + (G.right ? '' : m2)).width + rw > colX + colW - valX) return false;
+          var gw = (keepText === 2 ? (G.textShort || G.text) : (keepText ? G.text : ''));
+          var t = G.value + (gw ? '  ' + gw : '');
+          if (ctx.measureText(t + (useRight ? '' : m2)).width + rw > colX + colW - valX) return false;
         }
         return true;
       }
-      var rowPxFit = inkFloor, keepText = true, zpx;
-      for (zpx = rowPx; zpx >= inkFloor; zpx--) if (_legendFits(zpx, true)) { rowPxFit = zpx; break; }
-      if (zpx < inkFloor) {                              // step 2 — the descriptor goes, uniformly
-        keepText = false;
-        for (zpx = rowPx; zpx >= inkFloor; zpx--) if (_legendFits(zpx, false)) { rowPxFit = zpx; break; }
+      // THE DROP ORDER, AND RED1 CHANGED IT. It used to shed the descriptor before the cited limit.
+      // His instruction of 2026-09-20 — "the HUD color ie red '..' and grey need explanation such
+      // as 'sprinklered zone'" — makes the WORDS the legend's whole job: a row that says "177 m"
+      // with no name for what the grey is has stopped being a legend. So the limit goes first now;
+      // it is still on the card in the disclosure row and in footnote 1, whereas the descriptor
+      // exists nowhere else.
+      //   1. descriptor + cited limit    2. descriptor, limit dropped
+      //   3. limit, descriptor dropped   4. value only
+      var rowPxFit = inkFloor, keepText = true, keepRight = true, zpx;
+      // keepText: true = the full phrase, 2 = the row's own SHORT form, false = the number alone.
+      var LADDER = [[true, true], [true, false], [2, true], [2, false], [false, true], [false, false]];
+      var found = false;
+      for (var st = 0; st < LADDER.length && !found; st++) {
+        for (zpx = rowPx; zpx >= inkFloor; zpx--) {
+          if (_legendFits(zpx, LADDER[st][0], LADDER[st][1])) {
+            rowPxFit = zpx; keepText = LADDER[st][0]; keepRight = LADDER[st][1]; found = true; break;
+          }
+        }
       }
+      if (!found) { keepText = false; keepRight = false; }
       // RE-PITCH THE ROWS to the size they are actually drawn at. `rowPx` is the nominal size from
       // the plate height; the legend commonly settles well below it, and pitching 12 px rows at a
       // nominal-18 px stride wasted 36 px of a 293 px card at 1920x1080 — which was the whole
@@ -1085,8 +1101,9 @@ function setupCpeResourcePanel(A) {
         var LG = c.legend[li2];
         var mk = LG.marker ? MK.charAt(+LG.marker - 1) : '';
         var avail = colX + colW - valX;
-        var full = keepText ? (LG.value + (LG.text ? '  ' + LG.text : '')) : LG.value;
-        var chosen = { px: rowPxFit, rPx: Math.max(inkFloor, Math.round(rowPxFit * 0.92)), rW: 0, text: full, right: !!LG.right };
+        var gwd = (keepText === 2 ? (LG.textShort || LG.text) : (keepText ? LG.text : ''));
+        var full = LG.value + (gwd ? '  ' + gwd : '');
+        var chosen = { px: rowPxFit, rPx: Math.max(inkFloor, Math.round(rowPxFit * 0.92)), rW: 0, text: full, right: keepRight && !!LG.right };
         if (chosen.right) {
           ctx.font = '600 ' + chosen.rPx + 'px ' + LF;
           chosen.rW = ctx.measureText(LG.right + mk).width + gapW;

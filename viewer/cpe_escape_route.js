@@ -784,20 +784,35 @@ function setupCpeEscapeRoute(A) {
     // RED — the §1006.2.1 quantity, with its own limit and its own citation. When no divergence
     // exists the row does NOT print a number as if it were an ordinary one: §12.1/§13.6 say an
     // infinite common path is a different state, not a long one, and it reads as the verdict.
+    // ══ EACH ROW SAYS WHAT ITS COLOUR MEANS, IN WORDS ═══════════════════════════════════════
+    // red1, 2026-09-20: "the HUD color ie red '..' and grey need explanation such as 'sprinklered
+    // zone'". The first cut printed a colour, a number and a terse fragment — "177 m · sprinkler
+    // cover" reads as a measurement of something the viewer has not been told the name of. A legend
+    // whose rows do not name their own meaning is a colour swatch, not a legend.
+    // Each row carries a SHORT form too: at 854x480 the plate is 211 px and the full phrase cannot
+    // fit, and a bare number there would be the very thing red1 is objecting to. The ladder in
+    // cpe_resource_panel.js takes the longest form that fits, so the meaning survives every size
+    // even when the phrasing has to shrink.
+    // The words are the CODE QUANTITY each colour carries (§13.1), said plainly: the common path is
+    // the stretch with no alternative, the primary is the walk to the nearest exit, the alternates
+    // are the other ways out, and grey is the sprinklered stretch of the walk.
     legend.push(nAlt === 0
-      ? { key: 'RED', rgb: RED_RGB, value: 'whole route', text: 'no choice EXISTS',
+      ? { key: 'RED', rgb: RED_RGB, value: 'whole route', text: 'NO alternative exists', textShort: 'no alternative',
           right: cp ? 'limit ' + cp.limitM + ' m' : '', marker: cp ? '1' : '' }
-      : { key: 'RED', rgb: RED_RGB, value: (redM != null ? redM.toFixed(0) + ' m' : '—'), text: 'no choice',
+      : { key: 'RED', rgb: RED_RGB, value: (redM != null ? redM.toFixed(0) + ' m' : '\u2014'),
+          text: 'common path \u2014 no alternative', textShort: 'no alternative',
           right: cp ? 'limit ' + cp.limitM + ' m' : '', marker: cp ? '1' : '' });
-    legend.push({ key: 'YELLOW', rgb: PATH_RGB, value: (yellowM != null ? yellowM.toFixed(0) + ' m' : '—'),
-                  text: 'to nearest exit', right: '', marker: '' });
+    legend.push({ key: 'YELLOW', rgb: PATH_RGB, value: (yellowM != null ? yellowM.toFixed(0) + ' m' : '\u2014'),
+                  text: 'onward to the nearest exit', textShort: 'to nearest exit', right: '', marker: '' });
     legend.push(nAlt === 0
-      ? { key: 'BLUE', rgb: 'rgba(' + BLUE_RGB + ',1)', value: 'none', text: 'routes never diverge', right: '', marker: '' }
+      ? { key: 'BLUE', rgb: 'rgba(' + BLUE_RGB + ',1)', value: 'none', text: 'no other way out', textShort: 'no other way', right: '', marker: '' }
       : { key: 'BLUE', rgb: 'rgba(' + BLUE_RGB + ',1)', value: nAlt + (nAlt === 1 ? ' alternate' : ' alternates'),
-          text: 'from the choice point', right: '', marker: '' });
+          text: 'other exits from that point', textShort: 'other exits', right: '', marker: '' });
     legend.push(_rec.headsTotal > 0
-      ? { key: 'GREY', rgb: 'rgba(200,205,210,0.9)', value: casedM.toFixed(0) + ' m', text: 'sprinkler cover', right: '', marker: '3' }
-      : { key: 'GREY', rgb: 'rgba(200,205,210,0.9)', value: 'none', text: 'no heads extracted', right: '', marker: '3' });
+      ? { key: 'GREY', rgb: 'rgba(200,205,210,0.9)', value: casedM.toFixed(0) + ' m',
+          text: 'sprinklered zone', textShort: 'sprinklered', right: '', marker: '3' }
+      : { key: 'GREY', rgb: 'rgba(200,205,210,0.9)', value: 'none',
+          text: 'no sprinklers extracted', textShort: 'none found', right: '', marker: '3' });
     // ── the counters row. §3's disclosure rule, and §E of §13.7.
     // ⚠ THE DISCLOSURES STAY ON THE CARD, they do NOT move into the footnotes. Caught by
     // W-ESC-6c/6d/10e/10f on the first cut of §13, which had pushed the speed, the metres and the
