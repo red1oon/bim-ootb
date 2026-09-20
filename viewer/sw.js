@@ -186,7 +186,11 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1205';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1207';   // bump on each deploy; per-change detail is the git commit message.
+// v1207 (2026-09-20) MERGE — origin/feat/escape-route-reveal (§ESCAPE_ROUTE_REVEAL + §12 egress
+//   rules) folded into the §129.1 load-path freeze branch. Both lanes touch cinema_maxq's composite
+//   pass and both precache their own modules, so a client must never serve a half-and-half mix.
+//   Precache list is the UNION. Higher of the two versions taken, per this project's sw.js rule.
 // v1205 (2026-09-20) §129.52 the stat card no longer draws on top of the pie panel — the column offset was never advanced.
 // v1204 (2026-09-20) §129.51c a proxy engage/disengage edge forces one full TM pass — the flag was inert without it.
 // v1203 (2026-09-19) §129.51b the stand-down flag rises AHEAD of the storey window, not at arm (too late).
@@ -791,7 +795,9 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js','cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js','cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js',
+  'cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js',
+  'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js',
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',

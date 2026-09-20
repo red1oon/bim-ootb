@@ -747,6 +747,7 @@
       measure: !!s.measure,                // §FLYTHRU_DATUM
       storeyReveal: !!s.storeyReveal,       // §STOREY_HIGHLIGHT_REVEAL
       loadPath: !!s.loadPath,               // §129.31 — own checkbox now, was folded under Measure
+      escapeRoute: !!s.escapeRoute,         // §ESCAPE_ROUTE_REVEAL
       sunCompass: !!s.sunCompass,           // §SUN_COMPASS
       sunDate: s.sunDate || '',             // §SUN_DAY
       bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
@@ -1041,7 +1042,15 @@
             // entry now; cinema_maxq.js's `_loadPath` line is the runtime half of the same change.
             // Icon null on purpose, same rule as the four above: no honest one exists in the set yet.
             { id: 'cpe-load-path', label: 'Load path freeze', icon: null,
-              hint: 'camera holds on the structural chain from topout to ground — section-cut, cost + schedule per member, stack info panel' }
+              hint: 'camera holds on the structural chain from topout to ground — section-cut, cost + schedule per member, stack info panel' },
+            // §ESCAPE_ROUTE_REVEAL (bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md). `I.route` is the
+            // icon this UI ALREADY uses for a walked route (panels.js's Pick Walk entry), so reusing
+            // it is consistency rather than a guess — the same rule the three icons above follow.
+            // The hint carries the two things the button cannot: the route is the REAL computed one
+            // out of the room graph, and the walking time rests on a cited standard while the step
+            // count rests on an admitted placeholder.
+            { id: 'cpe-escape-route', label: 'Escape route', icon: I.route && I.route.svg,
+              hint: 'during the closing orbit, the worst-case room shines through and an orange dotted line traces its REAL computed route to the exit — the same distance the Egress report\'s "Longest path to exit" headline reads. Counts up live in walking time (1.19 m/s, SFPE) and in steps (0.75 m stride, uncited). The camera eases; the day counter and the sun do not.' }
           ];
           _toggleSpecs = TOGGLES;
           function esc(t) {
@@ -2417,7 +2426,8 @@
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
       checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash, measure: !!ov.measure,
-                    storeyReveal: !!ov.storeyReveal, loadPath: !!ov.loadPath, sunCompass: !!ov.sunCompass },
+                    storeyReveal: !!ov.storeyReveal, loadPath: !!ov.loadPath,
+                    escapeRoute: !!ov.escapeRoute, sunCompass: !!ov.sunCompass },
       sunDate: ov.sunDate || '',
       bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
@@ -2470,6 +2480,7 @@
     [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
      ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash], ['cpe-measure', !!_state.measure],
      ['cpe-storey-reveal', !!_state.storeyReveal], ['cpe-load-path', !!_state.loadPath],
+     ['cpe-escape-route', !!_state.escapeRoute],
      ['cpe-sun-compass', !!_state.sunCompass]].forEach(function(p) {
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
@@ -2500,6 +2511,7 @@
       // §129.31: restored the same lightweight way as storeyReveal just above — no origX baseline,
       // read live by cinema_maxq.js's own `_loadPath` line with no beat-boundary side effect.
       _state.loadPath = !!ps.checkboxes.loadPath;
+      _state.escapeRoute = !!ps.checkboxes.escapeRoute;
       // §CPE_EDIT_BASELINE: a restored plan's own checkbox values are the new "unedited" baseline —
       // reopening a saved buildup=on plan and touching nothing else must not read as edited.
       _state.origBuildup = _state.buildup;
@@ -2657,7 +2669,7 @@
     // sampling loop runs a single near-zero-width pass) purely to RESET the module's `_liveSegs` for
     // this run; without this a PRIOR run's real room-title segments could leak into this one's
     // rise-proper/round-2 stretches, showing stale captions the user just turned off.
-    var _titleOn = !!(s.roomTitle || s.reveal || s.storeyReveal);
+    var _titleOn = !!(s.roomTitle || s.reveal || s.storeyReveal || s.escapeRoute);
     var _titleTotalSec = s.roomTitle ? _buildOverride()._total : 0;
     if (_titleOn && a.roomTitleLiveStart) a.roomTitleLiveStart(s.plan, _titleTotalSec);
     // §CPE_DAY_COUNTER_POS — cpe_day_counter.js has carried dayCounterLiveStart/Tick/Stop since it
@@ -2735,6 +2747,18 @@
         // §STOREY_HIGHLIGHT_REVEAL — same "preview mirrors the bake exactly" call.
         if (s.storeyReveal && a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(s.plan, tn);
         if (s.storeyReveal && a.storeyRevealApplyCut) a.storeyRevealApplyCut(s.plan, tn);
+        // §ESCAPE_ROUTE_REVEAL — the preview builds lazily on first entry into the window, so a
+        // scrub that never reaches the closing orbit pays nothing for it.
+        // ⚠ THE PREVIEW SHOWS THE ROOM GLOW, NOT THE LINE OR THE CAMERA EASE, and that is stated
+        // rather than quietly true. The line and the card are composited onto the CAPTURE canvas
+        // (cinema_maxq.js _captureFrame), which the preview has no equivalent of — the same reason
+        // the clash labels and the day counter have never appeared in a preview either. The camera
+        // ease is deliberately not applied to _applyCameraPose: that function also serves the SCRUB
+        // drag, where a pose that does not match the playhead the user is holding would be a bug.
+        if (s.escapeRoute && a.escapeRouteApplyVisual) {
+          if (a.escapeRouteBuild && a.escapeRouteRecord && !a.escapeRouteRecord()) { try { a.escapeRouteBuild(); } catch (eERp) {} }
+          a.escapeRouteApplyVisual(s.plan, tn);
+        }
         // §CPE_BUILDUP_OWNS_TM: `bkPrev` alone is a snapshot taken once at flight-start — it never
         // saw a LIVE uncheck of #cpe-buildup mid-flight. Gate on `s.buildup` too so unchecking it
         // stops feeding the cursor on the very next frame, instead of racing the checkbox handler's
@@ -2796,6 +2820,7 @@
         // back into normal editing.
         if (a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(null, 0);
         if (a.storeyRevealApplyCut) a.storeyRevealApplyCut(null, 0);
+        if (a.escapeRouteApplyVisual) a.escapeRouteApplyVisual(null, 0);
         _state.flying = false;
         // §CPE_SCRUB_PLAY: natural completion — clear the pause hooks, this run is over, not paused.
         s._flyPauseAt = null; s._flyResume = null; s.flyPaused = false;
@@ -3665,6 +3690,7 @@
         loadPath: false,       // §129.31 — off by default for a BRAND NEW path, same reasoning; an
                                 // existing saved path with no loadPath key falls back to Measure instead
                                 // of this default (cinema_maxq.js's own `_loadPath` line), never this
+        escapeRoute: false,    // §ESCAPE_ROUTE_REVEAL — off by default, same reasoning again
         // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — off by default, same
         // reasoning as the four above: a new overlay appearing in every saved path's re-bake would
         // silently change films the user has already signed off.
@@ -3880,6 +3906,22 @@
         _markPreviewStale();
         console.log('§CPE_LOAD_PATH checkbox=' + (_state.loadPath ? 'on' : 'off') +
           ' — structural chain freeze-frame (section-cut, cost/schedule HUD) in the bake');
+      });
+      // §ESCAPE_ROUTE_REVEAL — a pure overlay flag like clash/measure/storey above: it moves no
+      // beat boundary (its window is carved out of the closing orbit that already exists), so
+      // _markPreviewStale() is the whole handler. The log says what a re-bake will and will not
+      // contain, because whether anything is drawn depends on the BUILDING — a model whose room
+      // graph reaches no exit at all has no worst case to show, and the bake says so as
+      // §ESCAPE_ROUTE_BUILD VACUOUS rather than drawing an invented line.
+      var _escapeRouteEl = document.getElementById('cpe-escape-route');
+      if (_escapeRouteEl) _escapeRouteEl.addEventListener('change', function(e) {
+        _state.escapeRoute = !!e.target.checked;
+        _markPreviewStale();
+        console.log('§ESCAPE_ROUTE checkbox=' + (_state.escapeRoute ? 'on' : 'off') +
+          ' — the worst-case room\'s REAL escape route traced during the closing orbit, with a live' +
+          ' walking-time (1.19 m/s, SFPE, cited) and step (0.75 m stride, uncited) count. On a' +
+          ' building whose room graph reaches no exit this draws nothing and the bake logs' +
+          ' §ESCAPE_ROUTE_BUILD VACUOUS — read the log, do not infer from the video.');
       });
       // §CPE_BAKE_RES — stored on the path for the silent baker; changes nothing in this window.
       // §S274 FIX (2026-09-06, live crash reported from production, red1oon.github.io/bim-ootb):

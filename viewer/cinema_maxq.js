@@ -1277,7 +1277,18 @@
         console.warn('§FRAME_COST unavailable: ' + (e && e.message) + ' — measurement only, bake unaffected'); }
     }
   }
-  async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc) {
+  // §ESCAPE_ROUTE_HUD_SUPPRESS — RETIRED 2026-09-20 by red1, overriding the spec's own §2 item 7
+  // ("other overlay signage: hidden for this window"). His words, after seeing it: "the new HUD
+  // should not make the other HUDs go away." The spec is his and so is the reversal; the later
+  // instruction wins and this is not re-litigated.
+  // Nothing is hidden any more. The sun clock, the sun-compass readout, the path-overview box and
+  // the resource pie all keep drawing through the reveal. `A._escRouteHudSuppress` still exists
+  // and is still maintained (it is how the escape module reports "the window is open"), but no
+  // draw call reads it — W-ESC-8f asserts exactly that, so it cannot creep back by accident.
+  // ⚠ ONE THING STILL CHANGES, and it is not suppression: the Escape Route card occupies the
+  // bigStats slot for its window, the same slot the tail/storey/measure cards already take turns
+  // in. One slot holds one card; that is the chain's existing behaviour, not a new hiding rule.
+  async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc, escInfo) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
     A._hudLayoutRects = [];   // §HUD_LAYOUT — fresh registry every frame, never carries a stale rect
@@ -1439,6 +1450,18 @@
         try { A.ruleFindingsFilmCompositeOntoCanvas(ctx, w, h, _fcFilmSec, a); }
         catch (eRFC) { if (!A._ruleFindingsFilmWarned) { A._ruleFindingsFilmWarned = true; console.warn('§RULE_FILM_DRAW failed: ' + (eRFC && eRFC.message)); } }
       });
+    }
+    // §ESCAPE_ROUTE_REVEAL — the dotted route and its two leader labels. Scene-anchored like the
+    // clash labels above it and drawn in the same 2D pass for the same reason (§P2.2): this is the
+    // only layer that reaches the exported bytes. Before the corner HUD, which is fixed furniture.
+    if (escInfo && A.escapeRouteCompositeOntoCanvas) try {
+      A.escapeRouteCompositeOntoCanvas(ctx, w, h, escInfo);
+    } catch (eERd) {
+      if (!A._escDrawErrLogged) { A._escDrawErrLogged = true;
+        console.warn('§ESCAPE_ROUTE_ERR draw: ' + eERd.message + ' — route skipped, frames continue'); }
+    }
+    if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
+      A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity);
     }
     if (lblInfo && lblInfo.placed && lblInfo.placed.length && A.clashLabelsCompositeOntoCanvas) {
       _drawUnlessHold('clash.labels', function (a) {
@@ -1712,6 +1735,17 @@
         }
       } catch (ePxD2) { console.warn('§LOADPATH_PIXEL_DIAG_FINAL_ERR ' + (ePxD2 && ePxD2.message)); }
     }
+    // §ESCAPE_ROUTE_HUD_RESERVE — the column's real bottom THIS frame, stashed for the next
+    // frame's plate placement. Measured here because this is the only place that knows it: the sun
+    // clock and the compass readout return their own drawn heights and nothing else can predict
+    // them. One frame stale by construction (placement runs just before this capture), which moves
+    // a plate by whatever the column grew in 1/24 s — in practice zero, since these boxes are fixed
+    // furniture. The first frame has no measurement and falls back to reserving the whole column.
+    A._hudStackBottom = _stackY + (statInfo && statInfo.shown ? Math.round(h * 0.24) : 0);
+    // §129.61 MERGE — their unconditional bigStats draw was DROPPED here, not kept: ours already
+    // draws the same card through _drawUnlessHold('roster', ...) above, which is hold-aware and
+    // registers `stats-panel` for §HUD_LAYOUT (§129.55). Keeping both would have composited the
+    // card TWICE per frame. Their A._hudStackBottom stash just above IS kept — it is the new thing.
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
   }
 
@@ -2046,6 +2080,10 @@
     var _frameRange = null;   // { a, b, total } once resolved below
     var _clash = false;   // §CLASH_FILM_P1 — mesh-true clash pairs as persistent world content
     var _measure = false;      // §FLYTHRU_DATUM — Alt-C 'Measure' checkbox
+    // §ESCAPE_ROUTE_REVEAL (bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md) — the worst-case room's
+    // real escape route, traced during the closing orbit. OFF unless asked for, so every saved
+    // path re-bakes byte-identically. cpe_escape_route.js owns every decision this flag arms.
+    var _escapeRoute = false;
     var _sunCompass = false;   // §SUN_COMPASS — the true-north ground rose; OFF unless requested
     // §SUN_COMPASS — the cursor handed to the rose each frame. NULL when the film has no buildup,
     // which is a real state the module handles; it is never defaulted to "now".
@@ -2184,13 +2222,16 @@
         ' alphaJustBeforeFadeIn=' + alphaJustBeforeFadeIn.toFixed(2) + ' alphaMidFadeIn=' + alphaMidFadeIn.toFixed(2) +
         ' compositeAlpha=' + compositeStr + ' => ' + (ok ? 'PASS' : 'FAIL'));
     }
-    function poseAt(tNorm) {
-      tNorm = _tFilm(tNorm);
-      if (plan) return plan.poseAt(tNorm);
-      var az = az0 + tNorm * Math.PI * 2;
+    // §ESCAPE_ROUTE_REVEAL (merged 2026-09-20) — the pose lookup is SPLIT so the escape beat can
+    // ease the camera in FILM time without disturbing anything that asks in tNorm. `poseAt` is
+    // byte-identical to what it was: the same body, with `_tFilm` applied first.
+    function poseAtFilm(tF) {
+      if (plan) return plan.poseAt(tF);
+      var az = az0 + tF * Math.PI * 2;
       return { x: tgt.x + radius * Math.cos(az), y: tgt.y + height, z: tgt.z + radius * Math.sin(az),
                tx: tgt.x, ty: tgt.y, tz: tgt.z };
     }
+    function poseAt(tNorm) { return poseAtFilm(_tFilm(tNorm)); }
 
     // §57.5 (2026-09-11, user: "go ahead with that frames spacing into a jump") — smooth the
     // camera's LOOK DIRECTION across a small tNorm window around each captured frame. Does NOT
@@ -2479,6 +2520,8 @@
         // overrides.
         _ledger = !!_roomTitle && (_ov.ledger !== false);
         _costOdo = !!_roomTitle && (_ov.cost !== false);
+        // §ESCAPE_ROUTE_REVEAL — its own flag, its own beat inside the closing orbit.
+        _escapeRoute = !!_ov.escapeRoute;
         // §SUN_COMPASS — its own flag, NOT folded into Measure. The datum draws the model's own
         // setting-out grid; this draws the model's relationship to the planet. They answer
         // different questions and a viewer may well want one without the other.
@@ -2967,6 +3010,34 @@
       var _lastFrameKey = null, _lastFrameBlob = null, _frameReuseRun = 0, _frameReuseTotal = 0;
       var _prevVisualRev = -1;   // §129.57 — last frame's A._loadPathVisualRev; see the key's own note
       var _frameReuseRuns = 0;
+      // ══ §ESCAPE_ROUTE_REVEAL — built ONCE, here, never per frame. It Dijkstras every room to its
+      // nearest exit to find the worst case (see cpe_escape_route.js §SELECTION), which is real work
+      // and must not land in the frame budget. A null return is a stated reason in the log, and every
+      // per-frame call below then no-ops: DEGRADE, DON'T DISABLE.
+      var _escRec = null;
+      if (_escapeRoute && A.escapeRouteBuild) {
+        // §ESCAPE_ROUTE_BREACH — the SAME rulebook the Egress panel reads (rates/egress_rules.json
+        // plus whatever jurisdiction overlay is selected), never a re-typed threshold. Loaded
+        // BEFORE the build so the record carries its flag from the first frame. A failure here
+        // leaves the film with no breach flag, which is the honest degrade — never a guessed limit.
+        if (A.loadRuleSet && A.escapeRouteSetRules) {
+          try { var _er = await A.loadRuleSet('egress'); A.escapeRouteSetRules(_er.rules, _er.source); }
+          catch (eRL) { console.warn('§ESCAPE_ROUTE_RULES load failed: ' + (eRL && eRL.message) + ' — no breach flag this bake'); }
+        }
+        try { _escRec = A.escapeRouteBuild(); }
+        catch (eER) { console.warn('§ESCAPE_ROUTE_BUILD failed: ' + eER.message + ' — the reveal is inert this bake'); }
+        var _escWin = (A.escapeRouteWindow && plan) ? A.escapeRouteWindow(plan) : null;
+        if (_escRec && _escWin && plan && plan.durationSec > 0) {
+          console.log('§ESCAPE_ROUTE_WINDOW film=[' + _escWin.start.toFixed(4) + ',' + _escWin.end.toFixed(4) + ']' +
+            ' = ' + (_escWin.start * plan.durationSec).toFixed(1) + 's..' + (_escWin.end * plan.durationSec).toFixed(1) + 's' +
+            ' of ' + plan.durationSec.toFixed(1) + 's (inside the closing orbit [' + plan.beats.rise.toFixed(4) +
+            ',1]; the storey reveal ends AT beats.rise and the §MEASURE_BUILDING_CARD roll keeps the tail, so' +
+            ' neither can collide with this)' +
+            (_escWin.capped ? ' — length CAPPED to the ' + ((_escWin.end - _escWin.start) * plan.durationSec).toFixed(1) + 's ceiling' : ''));
+        } else if (_escRec) {
+          console.log('§ESCAPE_ROUTE_WINDOW INCONCLUSIVE reason=no-usable-rise-beat — the reveal has nowhere to play');
+        }
+      }
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
@@ -3071,7 +3142,13 @@
               ? { inHold: true, elapsedSec: (i - _lpHoldFrameStart) / fps }
               : { inHold: false, elapsedSec: null })
           : null;
-        var pose = poseAt(_tn);  // tNorm hits 1.0 on the last frame so the pull-back completes
+        // §ESCAPE_ROUTE_REVEAL (merged) — their camera ease, on OUR `_tn`. Ours is the
+        // hold-aware clock (§129.57 / the inserted freeze frames depend on it); theirs was the
+        // plain i/(nFrames-1), which would have thrown the load-path freeze away. poseAt(_tn)
+        // was exactly poseAtFilm(_tFilm(_tn)), so routing through poseAtFilm changes nothing
+        // when the ease is off.
+        var _poseFilmT = (_escapeRoute && A.escapeRouteEaseFilmT) ? A.escapeRouteEaseFilmT(plan, _tnFilm) : _tnFilm;
+        var pose = poseAtFilm(_poseFilmT);  // tNorm hits 1.0 on the last frame so the pull-back completes
         var _gazeDist = Math.hypot(pose.tx - pose.x, pose.ty - pose.y, pose.tz - pose.z);
         var _gazeB = _blendedGazeTarget(_tn, pose, _gazeDist);   // §57.5 — direction only, position untouched
         pose.tx = _gazeB.tx; pose.ty = _gazeB.ty; pose.tz = _gazeB.tz;
@@ -3196,7 +3273,7 @@
         // fraction, and a clip is fewer frames of the SAME film (§CPE_CLIP). Feeding them the clip-
         // local _tn played the whole Reveal round inside a 23-frame window. A full bake is unchanged
         // (_tFilm(_tn) === _tn when no clip is set).
-        var _tnFilm = _tFilm(_tn);
+        // (_tnFilm is computed at the top of this iteration — see §ESCAPE_ROUTE_CAMERA_EASE there.)
         if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tnFilm);
         if (A.cpeArchFadeApplyVisual) A.cpeArchFadeApplyVisual(plan, _tnFilm);   // §57.4-REAL-FADE
         // §STOREY_HIGHLIGHT_REVEAL — the storey tint, windowed to the LAST 5s of `pullback` (ending
@@ -3319,6 +3396,12 @@
         // §129.2 LEDGER TICKER — per-frame: paints the count-up against its own build-time window,
         // never re-verifies (same no-op-outside-window contract as its neighbours).
         if (_ledger && A.ledgerTickerApplyVisual) A.ledgerTickerApplyVisual(plan, _tnFilm);
+        // §ESCAPE_ROUTE_REVEAL — the room shine-through, the scoped x-ray and the overlay-
+        // suppression flag (§2 item 7), all on the REAL film fraction. Same "one pure-ish function,
+        // two callers" contract as the storey reveal directly above. With the flag off it is never
+        // called at all; the forced restore on every bake exit path below is what guarantees the
+        // x-ray and the room meshes can never be left engaged.
+        if (_escapeRoute && A.escapeRouteApplyVisual) A.escapeRouteApplyVisual(plan, _tnFilm);
         // §FLYTHRU_DATUM — the 3D half: the grid and level rules fade on the same schedule the 2D
         // annotation uses, and depth-test normally so the rising build occludes them (§17.5).
         if (_measure && A.flythruDatumAt) {
@@ -3561,7 +3644,11 @@
         var _srRoomRow = (_srRoom && _srRoom.roomName)
           ? { name: _srRoom.roomName, opacity: _srRoom.opacity } : _srRoom;
         var _statusSrc = { storey: _srStoreyRow, room: _srRoomRow, buildup: A.tmFrontierPhase || '', reveal: _srReveal };
-        var _titleInfo = _srReveal || _srCue || _srRoom || null;
+        // §ESCAPE_ROUTE_REVEAL (merged) — the escape caption OUTRANKS reveal/storey while its
+        // window is open, which is the precedence their own chain had. Everything else keeps
+        // ours: _srReveal/_srCue/_srRoom and the _statusSrc rows above are untouched.
+        var _erCap = (_escRec && A.escapeRouteCaptionAt) ? A.escapeRouteCaptionAt(plan, _tnFilm) : null;
+        var _titleInfo = _erCap || _srReveal || _srCue || _srRoom || null;
         // §CPE_PATH_OVERVIEW — the pose is read HERE, after every camera write for this frame and
         // immediately before the capture, so the head marks the shot that was actually rendered.
         // §CPE_POV_MARKER's rule (cinema_path_editor.js:3789): read the REAL transform, never
@@ -3864,6 +3951,45 @@
         //
         // GATED TO THE HOLD, matching the measurement exactly. window.__noFrameReuse=1 disables it
         // — the control W-FRAME-REUSE's own FAIL leg depends on.
+        // §129.61 MERGE — their §ESCAPE_ROUTE card/frame computation was MOVED UP to here.
+        // On their branch it sat just above their own _captureFrame call; on ours that call is
+        // inside §129.57's reuse if/else, so leaving it there computed _escInfo AFTER the frame
+        // that needed it and duplicated the capture. It also has to run before the reuse key is
+        // built, since _statInfo is what it overrides.
+
+        // §ESCAPE_ROUTE_REVEAL — the titled card. LAST override in the chain on purpose: the
+        // §MEASURE_BUILDING_CARD roll above owns the whole orbit beat, and this window lies inside
+        // it, so the escape card has to be the one that wins for its own span and hand the slot
+        // straight back afterwards. Same _statInfo shape, so no new panel drawing exists.
+        var _escInfo = null;
+        if (_escRec && A.escapeRouteStatCardAt) {
+          var _ec = A.escapeRouteStatCardAt(plan, _tnFilm);
+          if (_ec) {
+            _statInfo = { shown: _ec, pos: _ovPos, held: null };
+            if (A.escapeRouteFrameAt) {
+              // §ESCAPE_ROUTE_HUD_RESERVE — the corner column this frame, so the two scene-anchored
+              // plates keep out of it (red1: the panel "must find an empty spot"). Since the
+              // suppression was retired the column holds EVERY box again — day counter, sun clock,
+              // compass readout, path box, pie/card — so the reserve is the whole strip down to the
+              // bottom _captureFrame measured last frame (A._hudStackBottom), not two boxes.
+              var _escReserved = A.escapeRouteReservedRects
+                ? A.escapeRouteReservedRects(w, h, _ovPos, A._hudStackBottom) : [];
+              try { _escInfo = A.escapeRouteFrameAt(plan, _tnFilm, A.camera, w, h, _escReserved); }
+              catch (eEF) { if (!A._escFrameWarned) { A._escFrameWarned = true;
+                console.warn('§ESCAPE_ROUTE_FRAME failed frame=' + i + ': ' + (eEF && eEF.message)); } }
+            }
+            if (_escInfo && (i % 10 === 0 || _escInfo.progress >= 1) && !A._escLoggedFull) {
+              if (_escInfo.progress >= 1) A._escLoggedFull = true;
+              console.log('§ESCAPE_ROUTE_DRAW frame=' + i + '/' + nFrames + ' tn=' + _tnFilm.toFixed(4) +
+                ' progress=' + _escInfo.progress.toFixed(4) +
+                ' drawn=' + _escInfo.drawnM.toFixed(2) + 'm of ' + _escRec.walkM.toFixed(2) + 'm' +
+                ' steps=~' + _escInfo.steps + ' walk=' + Math.round(_escInfo.walkSec) + 's' +
+                ' pts=' + _escInfo.screen.length + ' labels=' + _escInfo.labels.length +
+                ' alpha=' + _escInfo.alpha.toFixed(2) + ' reserved=' + _escReserved.length +
+                ' plateCollisions=' + _escInfo.labels.map(function (L) { return L.collisions; }).join('/'));
+            }
+          }
+        }
         var _reuseKey = null;
         if (!window.__noFrameReuse && _lpHoldCtl && _lpHoldCtl.inHold && _lastFrameBlob) {
           var _rp = A.camera ? A.camera.position : null;
@@ -3895,7 +4021,7 @@
               ' consecutive frame(s) — identical picture, encoder handed the same blob');
             _frameReuseRun = 0;
           }
-          blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc);
+          blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo);
           _lastFrameKey = _reuseKey; _lastFrameBlob = blob;
         }
         // ROUND 13 item C — track whichever frame lands CLOSEST to the hold's own middle
@@ -4051,6 +4177,11 @@
              : 'INCONCLUSIVE: nothing was reused — no load-path hold in this film, or the key moved every frame')));
       try { if (A.loadPathDispose) A.loadPathDispose(); } catch (eLPd) {}
       try { if (A.ledgerTickerDispose) A.ledgerTickerDispose(); } catch (eLTd) {}
+      // §ESCAPE_ROUTE_REVEAL — the forced restore. Runs unconditionally, NOT behind _escapeRoute:
+      // by the time it arrives the film has normally already left the window, and a flag read here
+      // could differ from the one that engaged the x-ray. Drops the room meshes, puts x-ray back if
+      // WE turned it on, and clears the HUD-suppression flag so the next bake starts clean.
+      try { if (A.escapeRouteApplyVisual) A.escapeRouteApplyVisual(null, 0); } catch (eER1) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD) {}   // §SLAB_BEAT — restores the tint, removes X + label
       try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD) {}
@@ -4060,6 +4191,10 @@
       // §CLASH_FILM_P2 — say what the labels did over the whole film (VACUOUS if the camera never
       // came within 4 m of a pair), then release the selector's state with the markers.
       if (_clash && A.clashLabels && A.clashLabels.summary) { try { A.clashLabels.summary(framesDone); A.clashLabels.reset(); } catch (eCLs) {} }
+      // §ESCAPE_ROUTE_SUMMARY — one line, and it says VACUOUS out loud when the window never opened
+      // on a captured frame (a clip that misses it), because a film that never drew the route proves
+      // nothing about it. Read the log, not the video.
+      if (_escapeRoute && A.escapeRouteSummary) { try { A.escapeRouteSummary(framesDone); } catch (eERs) {} }
       // §CLASH_FILM_P1 — the markers are bake content; never let them survive into the user's scene.
       if (_clash && A.clashFilm && A.clashFilm.dispose) { try { A.clashFilm.dispose(); } catch (eCFd) {} }
       // §CPE_PIE_HOLD — say how much of the film the pie HELD a past composition rather than
@@ -4141,6 +4276,7 @@
       try { if (A.loadPathApplyVisual) A.loadPathApplyVisual(null, 0); } catch (eLP2) {}
       try { if (A.loadPathDispose) A.loadPathDispose(); } catch (eLPd2) {}
       try { if (A.ledgerTickerDispose) A.ledgerTickerDispose(); } catch (eLTd2) {}
+      try { if (A.escapeRouteApplyVisual) A.escapeRouteApplyVisual(null, 0); } catch (eER2) {}
       try { if (A.flythruCuesDispose) A.flythruCuesDispose(); } catch (eFD2) {}
       try { if (A.slabBeatDispose) A.slabBeatDispose(); } catch (eSBD2) {}
       try { if (A.linearBeatDispose) A.linearBeatDispose(); } catch (eLBD2) {}
@@ -4247,7 +4383,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped; §129 GATING added 'ledger'/'cost' (2026-09-15)
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate', 'escapeRoute'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped; §129 GATING added 'ledger'/'cost' (2026-09-15)
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
@@ -4264,6 +4400,7 @@
           // census never printed. So no bake log could answer that question: you had to read the
           // command line, or look at frames. Every other flag here is reported; this one is now too.
           ' clash=' + (ov.clash ? 1 : 0) +
+          ' escapeRoute=' + (ov.escapeRoute ? 1 : 0) +
           ' storeyReveal=' + (ov.storeyReveal ? 1 : 0) + ' measure=' + (ov.measure ? 1 : 0) +
           ' loadPath=' + (ov.loadPath ? 1 : 0) + ' ledger=' + (ov.ledger ? 1 : 0) + ' cost=' + (ov.cost ? 1 : 0) +
           ' sunCompass=' + (ov.sunCompass ? 1 : 0) + ' sunDate=' + (ov.sunDate || '-'));

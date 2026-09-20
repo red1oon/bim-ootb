@@ -6,6 +6,16 @@
       "target": "exit_or_own_storey_circ", "warning_m": 45.7, "critical_m": 60.96,
       "max_severity": "WARNING" },
     { "name": "isolated_room", "applies_to": ["room_graph_node"],
-      "target": "own_storey_circ" }
+      "target": "own_storey_circ" },
+
+    { "_cite": "IBC 2021 §1006.2.1 / Table 1006.2.1 — distance from the most remote point in a space to where an occupant FIRST gains a choice of two paths. 100ft=30.5m sprinklered, 75ft=22.9m not. The evaluator uses the UNSPRINKLERED figure unless real sprinkler evidence is found, matching this file's own over-flag-never-under-flag bias.",
+      "name": "common_path_of_egress_travel", "applies_to": ["room_graph_node"],
+      "target": "first_choice_of_two_paths",
+      "critical_m": 22.9, "critical_m_sprinklered": 30.5, "max_severity": "WARNING" },
+
+    { "_cite": "IBC 2021 §1007.1.1 — where two exits are required they shall be placed not less than one-half the maximum overall diagonal dimension of the area served apart; one-third where sprinklered throughout per §903.3.1.1/§903.3.1.2. A RATIO of the diagonal, not a distance, so it carries no _m threshold.",
+      "name": "exit_remoteness", "applies_to": ["storey"],
+      "target": "max_overall_diagonal",
+      "ratio_unsprinklered": 0.5, "ratio_sprinklered": 0.3333, "max_severity": "WARNING" }
   ]
 }

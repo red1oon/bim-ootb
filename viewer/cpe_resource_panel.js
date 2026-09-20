@@ -883,6 +883,12 @@ function setupCpeResourcePanel(A) {
     return { card: cards[idx - (hasRoster ? 1 : 0)], idx: idx, n: n, opacity: fade };
   };
 
+  // §ESCAPE_ROUTE_HUD_RESERVE — read-only geometry, so another overlay can know where this card
+  // lands and keep out of it. Same shape as A.dayCounterBoxSize already exposed. No behaviour here.
+  A.bigStatsBoxRect = function (w, h, pos, stackY) {
+    var B = _box(w, h, pos, stackY);
+    return { x: B.x, y: B.y, w: B.bw, h: B.bh };
+  };
   A.bigStatsCompositeOntoCanvas = function (ctx, w, h, shown, opacity, pos, stackY, heldInfo) {
     A.bigStatsLastBox = null;   // §129.55 E — a frame this panel does not draw must publish nothing
     if (!ctx || !shown || !(shown.card || shown.roster) || !(opacity > 0)) return;

@@ -149,6 +149,7 @@
   "setupCpeStoreyReveal": "readonly",
   "setupCpeLoadPath": "readonly",
   "setupCpeLedgerTicker": "readonly",
+  "setupCpeEscapeRoute": "readonly",
   "setupDLOD": "readonly",
   "setupDiff": "readonly",
   "setupEffects": "readonly",

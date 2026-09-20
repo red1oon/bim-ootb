@@ -764,6 +764,9 @@ function setupRuleChecklist(A) {
     try { return localStorage.getItem('bim_5d_pack') || null; } catch (e) { return null; }
   }
 
+  // §ESCAPE_ROUTE_BREACH — read-only alias so a BAKE can read the same rulebook this panel reads,
+  // overlay and all, instead of re-typing thresholds. Same precedent as navigate_find.js's
+  // `A.getRoomGraph = _roomGraphFor`. Nothing about the panel changes.
   function _rcLoadRules(kind) {
     var cfg = RULE_SETS[kind];
     if (A[cfg.cache]) {
@@ -783,6 +786,7 @@ function setupRuleChecklist(A) {
       return r;
     });
   }
+  A.loadRuleSet = _rcLoadRules;   // §ESCAPE_ROUTE_BREACH — see the comment above the function
 
   A.showStructuralSanity = function () {
     // T8.4 — `fetched` vs `fallback` must reach the report. The §STRUCT_RULES_JSON line already
@@ -865,7 +869,12 @@ function setupRuleChecklist(A) {
             { label: 'Circulation Distance', ruleNames: ['circulation_distance'] },
             { label: 'Door Width', ruleNames: ['door_clear_width'] },
             { label: 'Space Coverage', ruleNames: ['space_coverage'] },
-            { label: 'Door Occupant Capacity', ruleNames: ['door_occupant_capacity'] }
+            { label: 'Door Occupant Capacity', ruleNames: ['door_occupant_capacity'] },
+            // §12 (ESCAPE_ROUTE_REVEAL.md) — the two rules about ALTERNATE routes. Without a
+            // category of their own their rows render only under "All", which is where the
+            // previous five each got one.
+            { label: 'Common Path', ruleNames: ['common_path_of_egress_travel'] },
+            { label: 'Exit Remoteness', ruleNames: ['exit_remoteness'] }
           ],
           rows: rows
         });
