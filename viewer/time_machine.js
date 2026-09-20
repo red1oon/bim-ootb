@@ -4370,65 +4370,33 @@
   // touch computeSchedule's own body or the existing display-timeline reuse contract.
   var _rawScheduleRemember = null;   // { map: {guid:{start,end}}, n }
 
-  // ══ §HR_COST_PERSISTED (2026-09-21) — COST THE PROGRAMME THAT IS ALREADY SAVED ══════════════
+  // ══ §HR_COST_UNREACHED — WHY A SAVED PROGRAMME SHOWS NO COST. DIAGNOSED, NOT FIXED ══════════
   // red1: "isn't that injected and saved when user opens alt-c and save path and save in DB?" It
-  // is. All 122,330 LTU ops carry {"resource":"CONCRETE_GANG",...} and every DB has schedules=1
-  // with every element mapped. The programme was never the problem.
+  // is, and nothing is missing from the save: every DB has schedules=1 with every element mapped,
+  // and all 122,330 LTU place-ops carry {"resource":"CONCRETE_GANG",...}.
   //
-  // WHAT WAS. §CREW_DEMAND/§HR_COST live INSIDE injectGantt(), and injectGantt() is only reached
-  // from the `!_placeOps.length` branch at :9134 — the GENERATE path. A building whose place-ops
-  // are persisted skips it, so the block never runs and A._hrCost is never set, and
-  // cpe_resource_panel.js:207 then abstains with `reason=norates`. MEASURED across three full
-  // bakes: Hospital §GANTT injected=63415 + §CREW_DEMAND x1 (its ops were judged STALE and
-  // cleared, forcing a regenerate); LTU and Terminal no §GANTT line at all, §CREW_DEMAND x0.
-  // So a building was penalised for HAVING a saved programme — the opposite of the intent.
+  // THE DEFECT. §CREW_DEMAND/§HR_COST are computed INSIDE injectGantt(), and injectGantt() is only
+  // reached from the `!_placeOps.length` branch below — the GENERATE path. MEASURED on three full
+  // 1080p bakes:
+  //   Hospital  §GANTT injected=63415  §CREW_DEMAND x1   (ops judged STALE -> cleared -> regenerate)
+  //   LTU       no §GANTT line          §CREW_DEMAND x0
+  //   Terminal  no §GANTT line          §CREW_DEMAND x0
+  // So a building is penalised for HAVING a saved programme, and Hospital only shows a cost because
+  // its ops were thrown away. cpe_resource_panel.js:207 then abstains with reason=norates.
   //
-  // Not the template (LABOR_RATES is hardcoded in viewer/rates.js:120 and always present), and not
-  // a missing `resource` (matchRule supplies it). Purely an unreached code path.
+  // NOT the 4D template (LABOR_RATES is hardcoded in viewer/rates.js:120, always present) and NOT a
+  // missing `resource` (matchRule supplies it). Purely an unreached code path.
   //
-  // This recomputes the labour content the same way injectGantt does — same query, same
-  // matchRule, same getInstallSecs — so the number is identical by construction rather than a
-  // second opinion about the schedule. It writes nothing: no op, no task, no persisted row. A
-  // saved programme stays exactly as authored.
-  function _hrCostFromDb(app) {
-    try {
-      var db = app && app.db; if (!db) return null;
-      var LRx = window.LABOR_RATES || {};
-      var rr = db.exec(
-        'SELECT m.guid, m.ifc_class, m.element_name, ' +
-        'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by, COALESCE(t.bbox_z, 0) as bz ' +
-        'FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
-      if (!rr || !rr.length) return null;
-      var basis = ((window.SEQUENCE_RULES || {})._productivity_basis_secs) || 28800;
-      var days = {}, n = 0;
-      rr[0].values.forEach(function (row) {
-        var cls = row[1], nm = row[2] || '';
-        var rule = matchRule(cls, nm); if (!rule) return;
-        var res = rule.resource || '_DEFAULT';
-        var secs = getInstallSecs(cls, rule, row[0], row[3] || 0, row[4] || 0, row[5] || 0) || 0;
-        days[res] = (days[res] || 0) + secs / basis; n++;
-      });
-      var total = 0, pd = 0, trades = 0, log = [];
-      for (var k in days) {
-        var rate = LRx[k]; if (!rate || !rate.rate_per_day) continue;
-        var p = days[k] * (rate.crew_size || 1), c = p * rate.rate_per_day;
-        total += c; pd += p; trades++;
-        log.push(k + ' personDays=' + p.toFixed(1) + ' @' + rate.rate_per_day + '/d');
-      }
-      if (!(total > 0)) {
-        console.log('§HR_COST_PERSISTED INCONCLUSIVE elements=' + n + ' resources=[' +
-          Object.keys(days).join(' ') + '] — none matched a LABOR_RATES row, so no cost is claimed');
-        return null;
-      }
-      app._hrCost = { total: Math.round(total), personDays: +pd.toFixed(1), trades: trades };
-      console.log('§HR_COST_PERSISTED total=' + Math.round(total) + ' personDays=' + pd.toFixed(1) +
-        ' across ' + trades + ' trades over ' + n + ' elements — computed from the SAVED programme,' +
-        ' which injectGantt() never gets to cost because it only runs on the generate path. ' +
-        log.join(' | '));
-      return app._hrCost;
-    } catch (e) { console.log('§HR_COST_PERSISTED threw: ' + e.message); return null; }
-  }
+  // ⚠ WHY THERE IS NO PATCH HERE. I wrote one — a read-only _hrCostFromDb() on the persisted path —
+  // and withdrew it. getInstallSecs() depends on `_frag.area[guid]` and `_lin.avgLength[cls]`, two
+  // tables built inside injectGantt; without them ScheduleAuthor._installSecs falls back to ONE UNIT
+  // per element and yields a DIFFERENT cost from the generate path. That is the same two-numbers
+  // defect recorded as P4 in OCCUPANT_PATHFINDER.md §PATHING-DEFECTS (the Egress report's ~143 steps
+  // against the film's ~329) and shipping it would have been the identical mistake.
+  // Calling injectGantt() on the persisted path is not the answer either: it WRITES ops (:5313) and
+  // would rewrite the very programme the user saved.
+  // THE REAL FIX is to extract the cost block together with _frag/_lin as a read-only pass both
+  // paths can call. That is a refactor with its own spec, not a hook — and it needs red1's go.
 
   // §TPL_WIRED (2026-08-26, bim-compiler prompts/4D_BAR_MODEL.md §19/§20) — the 4D programme
   // template, loaded ONCE and handed to every materializeZones call site in this file.
@@ -9190,14 +9158,6 @@
       }
       if (_placeOps.length) { _ops = _placeOps; _ganttDirty = true; }
       console.log('§TM_OPS_CHECK total=' + _ops.length + ' place=' + _placeOps.length);
-
-      // §HR_COST_PERSISTED — a SAVED programme still has to be costed. The generate branch below
-      // reaches injectGantt(), which computes §CREW_DEMAND/§HR_COST on its way past; a building
-      // whose ops are already persisted skips all of it and the Cost row then abstains. Measured
-      // on three full bakes: Hospital regenerated (stale ops) and costed; LTU and Terminal kept
-      // their ops and showed no Cost at all. Read-only, writes nothing, and only fills the gap —
-      // the generate path still sets _hrCost itself, so this never overwrites a fresher number.
-      if (_placeOps.length && !(A()._hrCost && A()._hrCost.total > 0)) _hrCostFromDb(A());
 
       if (!_placeOps.length) {
         if (st) st.textContent = 'Setting up 4D construction timeline...';
