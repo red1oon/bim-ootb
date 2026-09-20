@@ -215,16 +215,40 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
      A.escapeRouteEaseRate(1) > 0,
      A.escapeRouteEaseRate(0).toFixed(2) + 'x -> ' + A.escapeRouteEaseRate(0.5).toFixed(2) +
      'x -> ' + A.escapeRouteEaseRate(1).toFixed(2) + 'x');
-  let mono = true, minR = Infinity, maxR = -Infinity, prev = -1;
+  let mono = true, minR = Infinity, maxR = -Infinity, prev = -1, maxLead = 0, leadAt = 0;
   for (let k = 0; k <= 2000; k++) {
     const w = k / 2000, v = warp(w), r = A.escapeRouteEaseRate(w);
     if (v < prev - 1e-12) mono = false;
     prev = v; minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+    if (Math.abs(v - w) > maxLead) { maxLead = Math.abs(v - w); leadAt = w; }
   }
+  // The lead budget: the deviation the beat ALREADY had before any back-loading.
+  const LEAD_BUDGET = 0.0625;
   ck('W-ESC-4c monotone — the camera can never run backwards', mono);
-  ck('W-ESC-4d it genuinely SLOWS, and the slowest frames are the LAST ones (the feature, not a no-op)',
-     minR < 0.5 && Math.abs(A.escapeRouteEaseRate(1) - minR) < 1e-9,
-     'rate ' + maxR.toFixed(3) + 'x at the start .. ' + minR.toFixed(3) + 'x at the end, easeK=' + K.easeK);
+  // THE TWO CONSTRAINTS ARE COUPLED, so this is expressed against the same budget rather than
+  // against a number: for warp = w + k*w*(1-w), the end rate is 1-k and the lead is k/4, so
+  // rate_end = 1 - 4 * lead. Asking for the slowest end the lead budget ALLOWS is therefore the
+  // strongest test available — it fails if someone weakens the slowdown for no reason, and it
+  // cannot be passed by spending more lead, because W-ESC-4k guards that from the other side.
+  // The old `minR < 0.5` was the SYMMETRIC curve's mid-dip, not a requirement, and keeping it would
+  // have forced the very excursion red1 objected to.
+  ck('W-ESC-4d it slows as much as the path budget allows, and the slowest frames are the LAST ones',
+     minR <= 1 - 4 * LEAD_BUDGET + 1e-6 && Math.abs(A.escapeRouteEaseRate(1) - minR) < 1e-9,
+     'rate ' + maxR.toFixed(3) + 'x at the start .. ' + minR.toFixed(3) + 'x at the end (budget allows ' +
+     (1 - 4 * LEAD_BUDGET).toFixed(3) + 'x), easeK=' + K.easeK);
+  // ══ THE CONSTRAINT THAT WAS NEVER GUARDED, AND SO SHIPPED. red1 on a hi-res bake, 2026-09-20:
+  // "the scene path seems to veer a bit off during the EscRoute. Check the slowing down that time
+  // did not skew the cam face path."
+  // The tension is intrinsic, not a bug: warp(0)=0 and warp(1)=1, so a rate that ENDS below 1 must
+  // have RUN ABOVE 1 earlier, and the camera LEADS its nominal pose in between. The lead is the
+  // integral of (rate-1) and peaks at k/4 of the window. What matters is HOW FAR — the old
+  // symmetric curve led by 0.0620 of the window (0.36 s here) and nobody ever complained; the first
+  // back-loaded cut led by 0.1500 (0.87 s), 2.4x further, and red1 saw it immediately.
+  // The budget is therefore the deviation the beat ALREADY had, not a number picked to pass.
+  ck('W-ESC-4k the camera never leads its nominal pose by more than the beat already did',
+     maxLead <= LEAD_BUDGET + 1e-6,
+     'max lead ' + maxLead.toFixed(4) + ' of the window at w=' + leadAt.toFixed(2) +
+     ' (budget ' + LEAD_BUDGET + ' = the old symmetric curve\'s own 0.0620, rounded up)');
   ck('W-ESC-4e outside the window it is the identity, to the bit',
      A.escapeRouteEaseFilmT(plan, 0.5) === 0.5 && A.escapeRouteEaseFilmT(plan, win.start) === win.start &&
      A.escapeRouteEaseFilmT(plan, win.end) === win.end && A.escapeRouteEaseFilmT(plan, 1) === 1);

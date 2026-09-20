@@ -144,7 +144,22 @@ function setupCpeEscapeRoute(A) {
   // steps" property is given up on purpose — a beat that ends at full orbit speed is precisely what
   // red1 asked to change. It still starts and ends at the same POSE, which is the property that
   // keeps the rest of the film untouched.
-  var EASE_K = 0.6;
+  // ⚠ k IS BOUNDED BY HOW FAR THE CAMERA MAY LEAVE ITS NOMINAL PATH, not by how slow the end looks.
+  // red1, 2026-09-20 on the hi-res bake: "the scene path seems to veer a bit off during the
+  // EscRoute. Check the slowing down that time did not skew the cam face path." He is right, and
+  // the tension is intrinsic rather than a bug: warp(0)=0 and warp(1)=1, so a rate that ENDS below
+  // 1 must have RUN ABOVE 1 earlier, and the camera therefore LEADS its nominal pose in the middle.
+  // The lead is the integral of (rate - 1) and peaks at k/4 of the window.
+  // MEASURED over 10,001 samples of both curves, on this film's 5.8 s window:
+  //     old symmetric curve   max lead 0.0620 of the window = 0.36 s   (never complained about)
+  //     k = 0.60              max lead 0.1500              = 0.87 s   <- what red1 saw
+  //     k = 0.25              max lead 0.0625              = 0.36 s
+  // So k=0.25 holds the camera exactly as close to its path as the beat ALREADY was before any of
+  // this, and still falls monotonically — 1.25x entering, 0.75x leaving, slowest on the final
+  // frames, which is what he asked for. The end is less dramatic than 0.40x; the beat is also
+  // 1.4 s longer now and its last 30% is a hold at full progress (DRAW_FRAC=0.70), so the settling
+  // is carried by the hold rather than by an excursion the picture cannot afford.
+  var EASE_K = 0.25;
   var EASE_A = 1.2;   // kept for §ESCAPE_ROUTE_INIT's own log line and the constants witness
 
   var PATH_HEX = 0xff9100;                    // §PATH_ORANGE — navigate_find.js's own route colour

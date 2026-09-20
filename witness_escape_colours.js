@@ -230,11 +230,16 @@ const polyLen = (pts) => { let L = 0; for (let i = 1; i < pts.length; i++) L += 
     ck('W-13-10d …while the PANEL is still there on the very last frame',
        !!A.escapeRouteStatCardAt(plan, 1) && !!A.escapeRouteStatCardAt(plan, 0.99999),
        'red1: "The HUD may remain till the very end"');
+    // The end rate is NOT pinned to a number here. It is bounded by how far the camera may lead its
+    // nominal pose (W-ESC-4k) — red1 saw the first cut veer off path, and the two are the same knob.
+    // What this leg is for is that the slowdown lands on the FINISHED picture, which is a property
+    // of the window stretching with the finale, not of the constant.
     ck('W-13-10e the back-loaded ease stretches with the longer window, so the slowest frames land' +
        ' on the COMPLETED route',
        A.escapeRouteEaseRate(0.98) < A.escapeRouteEaseRate(0.5) &&
-       A.escapeRouteEaseRate(1) < 0.5 && K2.easeK > 0,
-       'rate at w=0.98 is ' + A.escapeRouteEaseRate(0.98).toFixed(2) + 'x');
+       A.escapeRouteEaseRate(1) < 1 && K2.easeK > 0,
+       'rate at w=0.98 is ' + A.escapeRouteEaseRate(0.98).toFixed(2) + 'x, at the end ' +
+       A.escapeRouteEaseRate(1).toFixed(2) + 'x — the bound is W-ESC-4k, not a number here');
   }
 
   // ══ W-13-9 — THE PANEL LINGERS PAST ITS OWN LINE. ISSUE (red1, 2026-09-20): "So that the
