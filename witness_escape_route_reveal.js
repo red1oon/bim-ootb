@@ -431,8 +431,20 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   ck('W-ESC-11d the reveal still shines through without it — the line is 2D-composited and the glow is depthTest:false',
      /depthTest: false/.test(esrc) && /escapeRouteCompositeOntoCanvas/.test(esrc) &&
      A.escapeRouteConstants().usesXray === false);
-  ck('W-ESC-11e the storey-reveal beat keeps its OWN x-ray — this decision was not applied to someone else\'s lane',
-     fs.readFileSync(path.join(__dirname, 'viewer/cpe_storey_reveal.js'), 'utf8').indexOf('A.toggleXray()') >= 0);
+  // §129.61 (2026-09-20) — REWRITTEN. This asserted that cpe_storey_reveal.js still contains
+  // `A.toggleXray()`, i.e. it judged the escape lane by a fact about the STOREY lane. That fact has
+  // since changed for reasons that have nothing to do with this beat: §98/§108 replaced the tint
+  // with a section cut, and §129.59 brought the tint back with the x-ray deliberately OFF on red1's
+  // explicit word ("Off as tint is shine thru, and we are not near inside building to appreciate
+  // any x-ray visual"). So the old form went red on a branch where nobody had touched the storey
+  // lane at all — a false alarm, and the kind that trains readers to ignore a witness.
+  //
+  // The property it is NAMED for is checkable from the escape module alone, which is also the only
+  // module this witness owns: the escape beat must not reach into the storey lane, whatever the
+  // storey lane happens to do about x-ray this month.
+  var _esrcStorey = /storeyReveal|cpe_storey_reveal|toggleXray/.test(esrc);
+  ck('W-ESC-11e the escape beat does not reach into the storey lane (no storeyReveal/toggleXray reference)',
+     !_esrcStorey, _esrcStorey ? 'cpe_escape_route.js references the storey lane' : 'clean');
 
   // ══ W-ESC-12 — §ESCAPE_ROUTE_METADATA_MISSING. red1, 2026-09-20: "Make the EscRoute option flag
   // in log a fail when such metadata is absent." ISSUE: without storey_walkable_raster there is no

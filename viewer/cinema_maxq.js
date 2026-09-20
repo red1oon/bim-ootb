@@ -3142,6 +3142,13 @@
               ? { inHold: true, elapsedSec: (i - _lpHoldFrameStart) / fps }
               : { inHold: false, elapsedSec: null })
           : null;
+        // §129.61 FIX — the film-fraction assignment below was DROPPED by the merge. It is the film
+        // fraction 40+ call sites below depend on, so every one of them would have thrown
+        // ReferenceError on frame 0 and killed the bake. node --check cannot see an undeclared
+        // read; W-ESC-4f ("_tnFilm is assigned exactly ONCE per frame") caught it — which is the
+        // argument for pulling a peer's witness fixes BEFORE consolidating, not after.
+        // It must be assigned here, above the pose ease, because the ease reads it.
+        var _tnFilm = _tFilm(_tn);
         // §ESCAPE_ROUTE_REVEAL (merged) — their camera ease, on OUR `_tn`. Ours is the
         // hold-aware clock (§129.57 / the inserted freeze frames depend on it); theirs was the
         // plain i/(nFrames-1), which would have thrown the load-path freeze away. poseAt(_tn)
