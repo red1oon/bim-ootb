@@ -802,6 +802,29 @@ async function setupScene(A) {
         ' tm=' + (A._tmOn ? 1 : 0));
     } catch (e) { console.warn('§SCENE_STATE_SAVE_FAIL ' + e.message); }
   }
+  // ⚠ §SAVE_CARRIES_BUT_NEVER_BUILDS_THE_RASTER (noted 2026-09-20 at red1's instruction, while
+  // speccing bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md §12) — READ THIS BEFORE ASSUMING A SAVED
+  // DB CAN PATHFIND.
+  // This function writes three tables of its own (staffage, cinema_path, scene_state) and exports
+  // everything else VERBATIM out of A.db. `storey_walkable_raster` is therefore CARRIED when the
+  // source already had it — which is exactly why the _silent DBs have one (Hospital_silent 7 rows,
+  // HHS_Office_Federated_silent 4): their source did, via the buildings/patches/<db>.sql self-heal
+  // that A._applyPendingPatch runs at load. It is NEVER BUILT here. Save a building whose source
+  // has no raster and the saved copy has none either, permanently.
+  // WHAT BREAKS WITHOUT IT: room_graph.js's §G3-REVISED chord-legality degrades to room rects, and
+  // EXIT DETECTION needs the raster outright — so escapeRoute() returns null for every room, and
+  // with it the whole escape-route beat plus §12's common_path_of_egress_travel and exit_remoteness
+  // rules go inert. Silently: they report zero findings, which reads like a clean building.
+  // COVERAGE, MEASURED 2026-09-20 (in-db OR via its patch): Hospital_meta/_extracted, Terminal_meta,
+  // HHS_Office_Federated_extracted and JKR_extracted are covered. NOT covered, and they have real
+  // rooms: Clinic (118 spaces), LTU_AHouse_extracted (369), Terminal_extracted (53), Duplex.
+  // THE FIX IS A PATCH, NOT CODE HERE. scripts/build_storey_walkable_raster.js already emits exactly
+  // the CREATE TABLE IF NOT EXISTS + INSERT OR REPLACE fragment those patch files carry, and
+  // Hospital_extracted.db.sql is 1.4 MB of precisely that. Generating it at SAVE time was considered
+  // and rejected: it needs component_geometries (the mesh), and it was MEASURED at 1.0-1.4 s for
+  // Terminal/JKR/Clinic but 166.8 s for LTU_AHouse_extracted — a three-minute stall inside Ctrl+S.
+  // Offline patch generation costs the user nothing and makes the raster a property of the building
+  // rather than of whoever last saved it.
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
