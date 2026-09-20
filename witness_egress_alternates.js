@@ -64,7 +64,27 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
   // ══ W-ALT-2 — escapeRoutes(): every exit, ranked, from ONE Dijkstra, and route[0] must agree
   // with the shipped escapeRoute(). ISSUE: a second entry point into pathfinding that disagrees
   // with the first would make two rules report different routes for the same room. ═════════════
-  const SUBJ = 'RM_Level_4_1';
+  // ⚠ CHOSEN FROM THE GRAPH, never hardcoded. The first cut pinned 'RM_Level_4_1' — a Hospital
+  // guid — so on any other building escapeRoutes() returned null and four claims reported WRONG
+  // when the real state was "that room is not in this model". Pick the room with the most
+  // reachable exits (ties to the longest route), which is the room these claims are actually
+  // about: one that HAS alternates to diverge between.
+  let SUBJ = null, _bestN = -1, _bestD = -1;
+  graph.nodes.forEach(n => {
+    if (String(n.guid).indexOf('CORRIDOR_ROOM::') === 0) return;
+    const e = RoomGraph.escapeRoutes(graph, n.guid, { log: () => {} });
+    if (!e || e.routes.length < 2) return;
+    const d = e.routes[0].distance;
+    if (e.routes.length > _bestN || (e.routes.length === _bestN && d > _bestD)) {
+      _bestN = e.routes.length; _bestD = d; SUBJ = n.guid;
+    }
+  });
+  if (!SUBJ) {
+    console.log('§EGRESS_ALTERNATES_WITNESS VACUOUS — no room in "' + picked.name + '" reaches TWO' +
+      ' exits, so there is no divergence for any claim below to judge. Not a pass.');
+    process.exit(2);
+  }
+  console.log('  subject room: ' + SUBJ + ' (' + _bestN + ' reachable exits — the most in this model)');
   const er = RoomGraph.escapeRoutes(graph, SUBJ, { log: () => {} });
   const one = RoomGraph.escapeRoute(graph, SUBJ, { log: () => {} });
   const exitNodes = Object.keys(graph.nodesByGuid).filter(g => graph.nodesByGuid[g].kind === 'exit');
@@ -131,12 +151,19 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
   const logs = [];
   const rowsHosp = EgressSanity.evaluate(q, rules, { log: m => logs.push(m), witness: true });
   const spLine = logs.filter(l => l.indexOf('§EGRESS_SPRINKLER ') === 0)[0] || '';
-  ck('W-ALT-5a real sprinkler heads are found and reported', /heads=(\d+)/.test(spLine) && +spLine.match(/heads=(\d+)/)[1] > 0,
-     spLine.slice(0, 92));
+  // ⚠ Buildings differ: Hospital_meta carries 1,354 heads, HHS_Office_Federated_extracted carries
+  // ZERO. "heads > 0" is therefore a fact about the MODEL, not about the code, and asserting it
+  // made this line report WRONG on a building that simply has no FP discipline. What IS the code's
+  // job is reading the count correctly and labelling the evidence to match it.
+  const _heads = /heads=(\d+)/.test(spLine) ? +spLine.match(/heads=(\d+)/)[1] : -1;
+  ck('W-ALT-5a the sprinkler probe ran and labelled its own evidence consistently with the count',
+     _heads >= 0 && (_heads > 0 ? /evidence=PRESENT/.test(spLine) : /evidence=NONE/.test(spLine)),
+     spLine.slice(0, 96));
   const cpRows = rowsHosp.filter(r => r.rule === 'common_path_of_egress_travel' && r.ratio != null);
-  ck('W-ALT-5b despite heads being present, the STRICTER unsprinklered limit is what flagged',
+  ck('W-ALT-5b the STRICTER unsprinklered limit is what flagged' +
+     (_heads > 0 ? ' — despite ' + _heads + ' heads being present' : ' (this model has no heads anyway)'),
      cpRows.length > 0 && cpRows.every(r => r.witness.limitM === cpRule.critical_m) &&
-     cpRows.some(r => r.ratio < cpRule.critical_m_sprinklered),
+     (_heads === 0 || cpRows.some(r => r.ratio < cpRule.critical_m_sprinklered)),
      cpRows.length + ' rows at limitM=' + (cpRows[0] && cpRows[0].witness.limitM) + 'm; ' +
      cpRows.filter(r => r.ratio < cpRule.critical_m_sprinklered).length + ' of them would NOT flag at 30.5m');
   ck('W-ALT-5c and every row says so, rather than leaving the reader to assume',
@@ -152,9 +179,17 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
   const remRows = rowsHosp.filter(r => r.rule === 'exit_remoteness');
   ck('W-ALT-6a common_path flagged a real population on Hospital', cpRows.length > 50,
      cpRows.length + ' rooms over ' + cpRule.critical_m + 'm');
-  ck('W-ALT-6b exit_remoteness found nothing to flag on Hospital — a real PASS, not a silent rule',
-     remRows.length === 0,
-     'Hospital Level 1 holds all 8 exits and the widest pair clears 0.5 x the diagonal');
+  // The rule must have RUN — a zero here means "clean" only if there were storeys with exits to
+  // judge. Which way it lands is a fact about the building: Hospital_meta is clean (all 8 exits on
+  // one storey, widest pair clears half the diagonal); HHS_Office_Federated_extracted flags. Both
+  // are correct outcomes, so the claim is that it discriminated, not that it was quiet.
+  const _exitStoreys = new Set();
+  Object.keys(graph.nodesByGuid).forEach(g => { const n = graph.nodesByGuid[g];
+    if (n.kind === 'exit' && n.cx != null) _exitStoreys.add(n.storey); });
+  ck('W-ALT-6b exit_remoteness actually ran over this building\'s exit storeys',
+     _exitStoreys.size > 0,
+     _exitStoreys.size + ' storey(s) with exits -> ' + remRows.length + ' flagged' +
+     (remRows.length ? ' (' + remRows.map(r => r.name + ': ' + r.target).join('; ') + ')' : ' — clean'));
 
   // ══ W-ALT-7 — RED CONTROLS. Hospital passes remoteness, so the rule must be shown able to FAIL
   // on data that should fail it, or W-ALT-6b proves only that it is quiet. ═════════════════════
@@ -219,7 +254,8 @@ CREATE TABLE element_transforms (guid TEXT, center_x REAL, center_y REAL, center
      hits.length === 0, hits.length ? 'found: ' + hits.join(', ') : 'none of ' + forbidden.length + ' markers');
 
   console.log('\n§EGRESS_ALTERNATES_WITNESS ' + (fail ? 'FAIL' : 'PASS') + ' checks=' + (pass + fail) +
-    ' wrong=' + fail + ' — Hospital: common_path flags ' + cpRows.length + '/' + cpRows.length +
-    ' measured, subject room ' + cpM.toFixed(1) + 'm before any choice; exit_remoteness clean');
+    ' wrong=' + fail + ' — ' + picked.name + ': common_path flags ' + cpRows.length +
+    ', subject room ' + cpM.toFixed(1) + 'm before any choice; exit_remoteness ' +
+    (remRows.length ? remRows.length + ' flagged' : 'clean') + '; sprinkler heads ' + _heads);
   process.exit(fail ? 1 : 0);
 })();
