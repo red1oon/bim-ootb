@@ -263,8 +263,23 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   ck('W-ESC-4g the eased value lands only in _poseFilmT',
      /var _poseFilmT = \(_escapeRoute && A\.escapeRouteEaseFilmT\) \? A\.escapeRouteEaseFilmT\(plan, _tnFilm\) : _tnFilm;/.test(loopBody) &&
      (loopBody.match(/escapeRouteEaseFilmT/g) || []).length === 2);
-  ck('W-ESC-4h and _poseFilmT is handed to nothing but the pose',
-     (loopBody.match(/_poseFilmT/g) || []).length === 2 && /poseAtFilm\(_poseFilmT\)/.test(loopBody));
+  // ══ REVERSED 2026-09-20 — §CAM_FACE_CLOCK, LOADPATH_FREEZE_POLISH_RESUME.md §131.1 ═══════════
+  // This claim used to read "handed to nothing but the pose", and containing the eased value THAT
+  // tightly is what caused the veer red1 reported twice. The pose came from the eased clock while
+  // `_blendedGazeTarget` still read the raw one, so the camera stood where the ease put it and
+  // faced where it would have looked without it. MEASURED off the 13:11 bake's own pose tap: the
+  // face ran 42.21° off the building centre at frame 775 and came back to 0.01° by frame 833.
+  // The eased value must therefore reach the POSE and the GAZE THAT POSE IS RENDERED WITH — those
+  // two and nothing else. W-ESC-4i below holds the other side unchanged: the sun arc, the sun
+  // compass, the day counter and the buildup cursor all still read the REAL film fraction.
+  // Counted over CODE only: the explanation above is itself full of the word.
+  const loopCode = loopBody.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  ck('W-ESC-4h the eased time reaches the pose and the gaze rendered from it, and nothing else',
+     (loopCode.match(/_poseFilmT/g) || []).length === 4 &&
+     /poseAtFilm\(_poseFilmT\)/.test(loopCode) &&
+     /var _poseTn = \(_clip && _clip\.out > _clip\.in\) \? \(_poseFilmT - _clip\.in\) \/ \(_clip\.out - _clip\.in\) : _poseFilmT;/.test(loopCode) &&
+     /_blendedGazeTarget\(_poseTn,/.test(loopCode) && !/_blendedGazeTarget\(_tn,/.test(loopCode),
+     'code-only _poseFilmT reads: ' + (loopCode.match(/_poseFilmT/g) || []).length + ' (declare, poseAtFilm, and the two in _poseTn)');
   ck('W-ESC-4i the day counter, the sun arc, the sun compass and the buildup cursor all still read the REAL film fraction',
      /_sunArcStep\(_tnFilm\)/.test(loopBody) && /_sunArcFillPin\(_tnFilm, _revealU\)/.test(loopBody) &&
      /sunCompassAt\(_sunCompassMs, _tFilm\(_tn\)\)/.test(loopBody) && /_buildupTAt\(_tFilm\(_tn\), plan\)/.test(loopBody));

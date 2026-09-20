@@ -81,9 +81,17 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
   ck('the gate HIDES rather than disposes — the beat comes straight back if the rule ever lifts',
      /o\.visible = false;/.test(mq) && !/CEASE_3D[\s\S]{0,600}dispose\(/.test(mq),
      'same non-destructive shape clashFilm.setVisible already uses');
+  // §GLOW_CENSUS (2026-09-20) may sit between the gate and the capture — it is a READ of what still
+  // reaches the frame, so it belongs after the cease and before the capture, and it must not be able
+  // to change the answer it is reporting. Both halves are asserted: the order, and that the census
+  // writes no visibility of its own.
   ck('…it runs AFTER every beat writes its own visibility, and before the capture',
-     /_cease3D\(\);\s*\n\s*var _escInfo = null/.test(mq),
+     /_cease3D\(\);\s*\n(\s*_glowCensus\([^)]*\);[^\n]*\n)?\s*var _escInfo = null/.test(mq),
      'last word on what reaches the frame is the cease rule\'s');
+  const censusFn = (mq.match(/function _glowCensus\(tn\) \{[\s\S]*?\n  \}/) || [''])[0];
+  ck('…and anything reading the frame between the two only READS — no visibility is written there',
+     !censusFn || !/\.visible\s*=/.test(censusFn),
+     censusFn ? '_glowCensus is ' + censusFn.split('\n').length + ' lines and assigns no .visible' : 'no census present');
   ck('…and the bake SAYS which group it hid',
      /§FINDINGS_CEASE_3D group="/.test(mq) &&
      /FINDINGS_CEASE_3D/.test(fs.readFileSync(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')));

@@ -744,6 +744,7 @@ function setupCpeStoreyReveal(A) {
   // spec asks for; a tint keeps the whole building visible while one storey glows the cycle color).
   var _C = (typeof THREE !== 'undefined' && THREE.Color) ? new THREE.Color() : null;
   var _touched = [], _curIdx = null, _clones = [];
+  var _lastTn = null;   // §STOREY_REVEAL_TINT_RESTORE — the film fraction the last applyVisual call carried, so the restore line can say WHEN
 
   // §FACADE_ONLY_TINT (2026-09-10, user: "Yes. My original request prior" — confirming: tint just
   // the storey's FACADE, no x-ray, no dimming, no see-through of the rest of the building). An
@@ -859,15 +860,35 @@ function setupCpeStoreyReveal(A) {
     return set;
   }
   function _restoreTint() {
+    // ══ §STOREY_REVEAL_TINT_RESTORE (2026-09-20) — SAY THAT THE TINT CAME OFF ════════════════
+    // §130 could not tell whether the yellow-olive wash on the building during the escape beat was
+    // the last storey deliberately staying lit or a restore that never ran, because NOTHING in the
+    // bake said the tint had come off. Reading the code said this path runs; a log line is what
+    // proves it FIRED. Counted by kind, because the three branches fail independently: a regular
+    // mesh gets its original material object back, an instanced and a batched entry get their
+    // colour written back, and only the regular branch has clones to dispose.
+    var _nMesh = 0, _nInst = 0, _nBatch = 0;
     _touched.forEach(function (s) {
-      if (s.inst != null && s.m.instanceColor && _C) { s.m.setColorAt(s.inst, _C.setHex(s.c)); s.m.instanceColor.needsUpdate = true; }
-      else if (s.batch != null && s.m.setColorAt && _C) { try { s.m.setColorAt(s.batch, _C.setHex(s.c)); } catch (e) {} }
-      else if (s.mat) s.m.material = s.mat;   // regular mesh: put the ORIGINAL material object back
+      if (s.inst != null && s.m.instanceColor && _C) { s.m.setColorAt(s.inst, _C.setHex(s.c)); s.m.instanceColor.needsUpdate = true; _nInst++; }
+      else if (s.batch != null && s.m.setColorAt && _C) { try { s.m.setColorAt(s.batch, _C.setHex(s.c)); _nBatch++; } catch (e) {} }
+      else if (s.mat) { s.m.material = s.mat; _nMesh++; }   // regular mesh: put the ORIGINAL material object back
     });
+    var _nWas = _touched.length, _nClones = _clones.length;
     _touched = [];
     _clones.forEach(function (c) { try { c.dispose(); } catch (e) {} });
     _clones = [];
+    if (_nWas > 0 || _lastTn != null) {
+      console.log('§STOREY_REVEAL_TINT_RESTORE tNorm=' + (_lastTn == null ? 'n/a' : _lastTn.toFixed(4)) +
+        ' touched=' + _nWas + ' restored=' + (_nMesh + _nInst + _nBatch) +
+        ' (mesh=' + _nMesh + ' instanced=' + _nInst + ' batched=' + _nBatch + ')' +
+        ' clonesDisposed=' + _nClones +
+        (_nWas === 0 ? ' — nothing was tinted at this call' :
+         (_nMesh + _nInst + _nBatch) < _nWas ? ' ⚠ FEWER RESTORED THAN TOUCHED — that difference is still wearing the tint' : ''));
+    }
   }
+  // Published for §GLOW_CENSUS, which asks every sample how many meshes are still wearing the tint.
+  // Read-only, same test-seam convention as storeyRevealTintFor/storeyRevealTintRestore below.
+  A.storeyRevealTintTouched = function () { return _touched.length; };
   function _applyTint(storeyName, hex) {
     if (!_C) return 0;   // node-without-THREE (witness harness) — visual is inert, pacing still testable
     var n = 0;
@@ -2362,6 +2383,7 @@ function setupCpeStoreyReveal(A) {
   A.storeyRevealTintRestore = _restoreTint;
   A.storeyRevealMode = function () { return { mode: STOREY_REVEAL_MODE, scope: STOREY_REVEAL_TINT_SCOPE, tint: STOREY_REVEAL_TINT }; };
   A.storeyRevealApplyVisual = function (plan, tNorm) {
+    if (typeof tNorm === 'number') _lastTn = tNorm;   // §STOREY_REVEAL_TINT_RESTORE — stamped before any early return below
     // plan===null is the FORCED restore (every bake/preview exit path, including the throw path).
     // It must run unconditionally: by the time it arrives the film has normally already left the
     // window, so _curIdx is null and the key check below would return early — leaving the clash

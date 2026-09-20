@@ -1210,6 +1210,49 @@
       }
     }
   }
+  // ══ §GLOW_CENSUS (2026-09-20) — WHAT IS STILL SHINING THROUGH THE BUILDING, BY NAME ═════════
+  // red1, watching the 13:11 clip which ALREADY contains f79f6316's 3D cease: "the glow thru beams
+  // still persists!" So the four groups _cease3D hides are not the cause, and two sessions had
+  // already burned real time reading pixels for it and reached three different answers.
+  // This is the standing rule applied instead: slice the predicate and let a run answer it.
+  // IT DISCOVERS, IT DOES NOT LIST (§130.1). CEASE_3D_GROUPS is a list of four and can never catch
+  // the fifth; this walks what the renderer will actually walk — scene.traverseVisible, which
+  // descends only through visible objects — and names every material that reaches the frame with
+  // depthTest:false, grouped by its OUTERMOST named ancestor, i.e. the module's own scene group.
+  // A module nobody thought of is named the first time it glows.
+  // COST: capped at 10 samples, one per 1% of the film, and only once _findingsHudSuppress is up.
+  // A traverse of this scene is ~ms against a 0.86 s frame.
+  var GLOW_CENSUS_MAX = 10;
+  var _glowSamples = 0, _glowBucket = -1;
+  function _glowCensus(tn) {
+    var A2 = window.APP;
+    if (!A2 || !A2.scene || tn == null || !A2._findingsHudSuppress) return;
+    if (_glowSamples >= GLOW_CENSUS_MAX) return;
+    var bucket = Math.floor(tn * 100);
+    if (bucket === _glowBucket) return;
+    _glowBucket = bucket; _glowSamples++;
+    var byOwner = {}, total = 0;
+    try {
+      A2.scene.traverseVisible(function (o) {
+        var m = o.material; if (!m) return;
+        var mats = Array.isArray(m) ? m : [m], off = false;
+        for (var i = 0; i < mats.length; i++) if (mats[i] && mats[i].depthTest === false) { off = true; break; }
+        if (!off) return;
+        // OUTERMOST named ancestor, not the nearest: the nearest is usually an anonymous mesh or a
+        // sub-group, and what the reader needs is which MODULE put this in the scene.
+        var owner = '', p = o, hops = 0;
+        while (p && hops++ < 32) { if (p.name) owner = p.name; p = p.parent; }
+        owner = owner || ('(unnamed ' + (o.type || 'Object3D') + ')');
+        byOwner[owner] = (byOwner[owner] || 0) + 1; total++;
+      });
+    } catch (eGC) { console.log('§GLOW_CENSUS traverse threw: ' + eGC.message); return; }
+    var names = Object.keys(byOwner).sort(function (a, b) { return byOwner[b] - byOwner[a]; });
+    var tintN = (typeof A2.storeyRevealTintTouched === 'function') ? A2.storeyRevealTintTouched() : -1;
+    console.log('§GLOW_CENSUS tn=' + tn.toFixed(4) + ' sample=' + _glowSamples + '/' + GLOW_CENSUS_MAX +
+      ' depthTestOffVisible=' + total +
+      (total ? ' [' + names.map(function (n) { return n + '=' + byOwner[n]; }).join(' ') + ']' : ' — nothing shines through') +
+      ' tintActive=' + tintN + (tintN > 0 ? ' meshes still carrying the storey tint' : (tintN === 0 ? ' (tint is off)' : ' (module absent)')));
+  }
   function _escSuppresses(name) {
     var A2 = window.APP;
     if (!A2 || !ESC_SUPPRESS_RX.test(name)) return false;
@@ -3278,7 +3321,30 @@
         var _poseFilmT = (_escapeRoute && A.escapeRouteEaseFilmT) ? A.escapeRouteEaseFilmT(plan, _tnFilm) : _tnFilm;
         var pose = poseAtFilm(_poseFilmT);  // tNorm hits 1.0 on the last frame so the pull-back completes
         var _gazeDist = Math.hypot(pose.tx - pose.x, pose.ty - pose.y, pose.tz - pose.z);
-        var _gazeB = _blendedGazeTarget(_tn, pose, _gazeDist);   // §57.5 — direction only, position untouched
+        // ══ §CAM_FACE_CLOCK (2026-09-20) — THE FACE RIDES THE SAME CLOCK AS THE BODY ═══════════
+        // red1, twice: "the scene path seems to veer a bit off during the EscRoute. Check the
+        // slowing down that time did not skew the cam face path." Then, after EASE_K was lowered:
+        // "the path still veers."
+        // MEASURED off the bake's own pose tap (`<out>_poses.json`, 81da0ca6, 846 frames — the bake
+        // saying what it rendered, not a pixel): the camera's face ran up to 42.21° off the building
+        // centre at frame 775, putting the look-at target 95.7 m off, and came back to 0.01° by
+        // frame 833. Zero at both ends of the window, 42° in the middle — the building slides out of
+        // frame and returns.
+        // CAUSE: this line passed `_tn`, the RAW clock, while `pose` above came from `_poseFilmT`,
+        // the EASED one. `_blendedGazeTarget` takes the yaw/pitch of poseAt(raw) and re-projects a
+        // target from the eased POSITION — so the camera stood where the ease put it and faced where
+        // it would have been looking had there been no ease. The closing orbit sweeps a full 360°
+        // across this window, so a lead of k/4 of the window IS a facing error of k/4 × 360°:
+        // 54° predicted at EASE_K=0.60 against 42° measured, and ~22° still left at 0.25. Lowering
+        // the constant could only ever have divided the veer by 2.4; it could not remove it.
+        // FIX: one clock. `_tFilm` is affine, so its inverse is exact, and with both ends on the
+        // eased time the warp becomes a PURE REPARAMETRISATION — the camera runs the same curve
+        // through space, faster then slower, and cannot leave it at any k. Pacing is untouched.
+        // ⚠ This reverses W-ESC-4h ("_poseFilmT is handed to nothing but the pose"), which is what
+        // held the two clocks apart. W-ESC-4i still holds the other side: the sun arc, the sun
+        // compass, the day counter and the buildup cursor all still read the REAL film fraction.
+        var _poseTn = (_clip && _clip.out > _clip.in) ? (_poseFilmT - _clip.in) / (_clip.out - _clip.in) : _poseFilmT;
+        var _gazeB = _blendedGazeTarget(_poseTn, pose, _gazeDist);   // §57.5 — direction only, position untouched
         pose.tx = _gazeB.tx; pose.ty = _gazeB.ty; pose.tz = _gazeB.tz;
         var _stickNow = stickApproachAt(_tn);  // §CPE_STICK_APPROACH — null unless the path has sticks
         A.camera.position.set(pose.x, pose.y, pose.z);
@@ -4108,6 +4174,7 @@
         // slab all write `.visible` themselves) and BEFORE the capture, so the last word on what
         // reaches the frame is the cease rule's.
         _cease3D();
+        _glowCensus(_tnFilm);   // §GLOW_CENSUS — after every beat has written its own .visible, before the capture
         var _escInfo = null, _escCardInfo = null;
         if (_escRec && A.escapeRouteStatCardAt) {
           var _ec = A.escapeRouteStatCardAt(plan, _tnFilm);
