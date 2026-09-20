@@ -2131,6 +2131,45 @@
     'avc1.640028',  // High 4.0
     'avc1.42001f'   // Baseline 3.1 — the universally-supported floor
   ];
+  // ══ §MAXQ_FRAME_DECODE — NAME THE BAD FRAME, AND NEVER LOSE THE RENDER OVER ONE ═════════════
+  // A full 1920x1080 HHS bake rendered all 3,275 frames, every one converged, and then delivered
+  // ZERO BYTES: `§MAXQ_MP4_FALLBACK reason=The source image could not be decoded.` then
+  // `§MAXQ_FAIL The source image could not be decoded.` then `deliveredBytes:0`. 38 minutes gone.
+  //
+  // Both stitchers read the same per-run IndexedDB store and both call createImageBitmap on what
+  // comes back, so the defect is in a STORED FRAME, not in either encoder — mp4 and webm failed
+  // identically, 12 s apart. Neither call site logged WHICH frame, its size or its type, so a very
+  // verbose log could not say which of 3,275 blobs was bad. That is what this fixes first.
+  //
+  // AND IT DEGRADES INSTEAD OF THROWING. _stitchMp4's own try/catch turned a decode error into a
+  // clean `return false`; _stitch had none, so the same error propagated and threw away a finished
+  // render. One unreadable frame out of thousands should cost one frame, not the film: the previous
+  // good bitmap is reused for that slot and the substitution is logged. A run that loses MANY is a
+  // different failure and says so through the count rather than quietly shipping a stutter.
+  // ⚠ The stand-in is the last good BLOB, re-decoded — never the last bitmap. Both loops call
+  // bmp.close() after drawing (:2240, :2326), so handing back a previous ImageBitmap would hand
+  // back a CLOSED one. Re-decoding costs one createImageBitmap on a frame that is already failing.
+  var _decodeFails = 0, _decodeFailFirst = null, _lastGoodBlob = null, _lastGoodBlob2 = null;
+  async function _frameBitmap(db, i, prevBlob) {
+    var blob = null;
+    try { blob = await _idbGet(db, i); } catch (eG) { blob = null; }
+    try {
+      if (!blob) throw new Error('no blob in the frame store');
+      return { bmp: await createImageBitmap(blob), blob: blob, reused: false };
+    } catch (e) {
+      _decodeFails++;
+      if (_decodeFailFirst == null) _decodeFailFirst = i;
+      console.log('§MAXQ_FRAME_DECODE_FAIL i=' + i + ' size=' + (blob ? blob.size : 'n/a') +
+        ' type=' + (blob ? (blob.type || '?') : 'n/a') + ' reason=' + (e && e.message ? e.message : String(e)) +
+        ' — standing in the previous frame for this slot; the render is NOT thrown away. fails=' + _decodeFails);
+      if (prevBlob) {
+        try { return { bmp: await createImageBitmap(prevBlob), blob: prevBlob, reused: true }; }
+        catch (e2) { console.log('§MAXQ_FRAME_DECODE_FAIL i=' + i + ' the stand-in failed too: ' + e2.message); }
+      }
+      return { bmp: null, blob: null, reused: true };
+    }
+  }
+
   async function _stitchMp4(db, framesDone, fps, w, h) {
     var A = window.APP;
     if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
@@ -2200,7 +2239,10 @@
         var cv = document.createElement('canvas');
         cv.width = ew; cv.height = eh;
         var cx = cv.getContext('2d');
-        var bmp = await createImageBitmap(await _idbGet(db, i));
+        var _fb = await _frameBitmap(db, i, _lastGoodBlob);
+        if (!_fb.bmp) throw new Error('frame ' + i + ' could not be decoded and there is no previous frame to stand in');
+        var bmp = _fb.bmp;
+        if (!_fb.reused) _lastGoodBlob = _fb.blob;
         cx.drawImage(bmp, 0, 0);
         bmp.close();
         // §129 FIX 7 (2026-09-17) — isolating whether the discrepancy (encoded output still showing
@@ -2262,7 +2304,22 @@
     }
   }
 
+  // §MAXQ_STITCH_GUARD (2026-09-21) — the webm fallback is the LAST chance a finished render has.
+  // _stitchMp4 wraps its whole body and degrades to `return false`; this one had no try/catch at
+  // all, so the same decode error propagated to the outer handler, printed §MAXQ_FAIL, and threw
+  // away a completed 3,275-frame, 38-minute HHS render with deliveredBytes:0. A fallback that can
+  // itself throw is not a fallback. Whatever it hits now, it says so and returns instead of taking
+  // the render with it — and _frameBitmap above already keeps a single bad frame from getting here.
   async function _stitch(db, framesDone, fps, w, h) {
+    try { return await _stitchInner(db, framesDone, fps, w, h); }
+    catch (eSt) {
+      console.log('§MAXQ_STITCH_FAILED reason=' + (eSt && eSt.message ? eSt.message : String(eSt)) +
+        ' decodeFails=' + _decodeFails + (_decodeFailFirst != null ? ' firstBadFrame=' + _decodeFailFirst : '') +
+        ' — the webm fallback threw; the render is lost, and THIS line is what names why');
+      return false;
+    }
+  }
+  async function _stitchInner(db, framesDone, fps, w, h) {
     var A = window.APP;
     console.log('§MAXQ_STITCH frames=' + framesDone + ' fps=' + fps);
     _status('🎬 MaxQ stitching ' + framesDone + ' frames (' + Math.round(framesDone / fps) + 's realtime)…');
@@ -2282,7 +2339,10 @@
     var interval = 1000 / fps;
     for (var i = 1; i < framesDone; i++) {
       var t = performance.now();
-      var bmp = await createImageBitmap(await _idbGet(db, i));
+      var _fb2 = await _frameBitmap(db, i, _lastGoodBlob2);
+      if (!_fb2.bmp) { console.log('§MAXQ_FRAME_DECODE_SKIP i=' + i + ' — no previous frame to stand in, slot dropped'); continue; }
+      var bmp = _fb2.bmp;
+      if (!_fb2.reused) _lastGoodBlob2 = _fb2.blob;
       var wait = interval - (performance.now() - t);
       if (wait > 0) await _sleep(wait);
       ctx.drawImage(bmp, 0, 0); bmp.close();
@@ -4481,7 +4541,13 @@
           var _fhBuf = await blob.arrayBuffer();
           var _fhDig = await crypto.subtle.digest('SHA-256', _fhBuf);
           var _fhHex = Array.prototype.map.call(new Uint8Array(_fhDig), function(b) { return ('0' + b.toString(16)).slice(-2); }).join('').slice(0, 16);
-          console.log('§FRAME_HASH i=' + (_frameRange ? _frameRange.a + i : i) + ' sha=' + _fhHex);
+          // §MAXQ_FRAME_DECODE — `bytes` added 2026-09-21. A 3,275-frame HHS bake died at stitch
+          // time on "The source image could not be decoded" and the log could not say whether the
+          // bad frame had ALREADY been anomalous at capture. arrayBuffer() proves a blob has bytes,
+          // never that they are a valid image, so the size is the one cheap thing that can be
+          // compared later against the frame the stitcher names.
+          console.log('§FRAME_HASH i=' + (_frameRange ? _frameRange.a + i : i) + ' sha=' + _fhHex +
+            ' bytes=' + (blob && blob.size != null ? blob.size : 'n/a'));
         } catch (eFh) { console.warn('§FRAME_HASH_ERR ' + eFh.message); }
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
