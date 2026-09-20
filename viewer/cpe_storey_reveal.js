@@ -32,6 +32,20 @@
 // (cinema_maxq.js) and the editor's live preview tick (cinema_path_editor.js's _previewFly step()),
 // so bake and preview can never disagree about which storey/color is active at a given film fraction.
 function setupCpeStoreyReveal(A) {
+  // §129.60 (2026-09-20) — THIS FILE IS DUAL-MODE ON PURPOSE (see its own `module.exports` at the
+  // bottom: "lets witness_storey_reveal_list.js exercise A.storeyRevealList against a real
+  // in-memory sql.js DB in Node"), but ~20 sites inside this function read `window.` bare while
+  // the top-level lines guard with `typeof window !== 'undefined'`. In Node the first such read —
+  // `window.__srForceLabelLadder` in _regroupByRung — threw ReferenceError before any assertion
+  // ran, so witness_storey_reveal_list.js AND witness_storey_cut.js have both been ABORTING, not
+  // passing. Neither has ever been able to go green.
+  //
+  // One shadowing declaration fixes all of them instead of twenty edits. In a browser this binds
+  // the REAL window (identical behaviour, same object, writes still land on it); in Node it binds
+  // an empty object, so every `window.__sr*` debug/control lever reads undefined, which is exactly
+  // what "no lever set" means. It is the first statement in the function so hoisting cannot leave
+  // it undefined at any use site.
+  var window = (typeof globalThis !== 'undefined' && globalThis.window) ? globalThis.window : {};
   // Blue -> green -> yellow -> orange -> blue (repeats every 4 storeys) — the user's own words,
   // generalized past exactly 5 storeys since real buildings rarely have exactly 5 (Hospital has 8
   // countable levels once Ceiling/TOS pseudo-storeys are excluded — see storeyRevealList below).

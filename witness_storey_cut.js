@@ -1,7 +1,11 @@
 // Witness for §STOREY_SECTION_CUT's pure half: does the cut Z rise monotonically across the window,
 // rest on the derived slab boundary during each hold, and cover the building exactly once?
 // Issue it proves or disproves: "the cut plane sweeps the storey ladder correctly" — no THREE, no DOM.
-const setup = require('/tmp/wt-storey-cut/viewer/cpe_storey_reveal.js');
+// §129.60 (2026-09-20) — WAS `require('/tmp/wt-storey-cut/viewer/cpe_storey_reveal.js')`, an
+// absolute path into a DIFFERENT SESSION'S WORKTREE. This witness has never tested the file in
+// its own repo: it read whatever another branch happened to have on disk, and crashed outright
+// once that worktree's copy diverged. Relative, like its sibling witness_storey_reveal_list.js.
+const setup = require('./viewer/cpe_storey_reveal.js');
 // Hospital's real storey means, QUERIED from Hospital_silent.db (md5 09e52e5d...), not estimated.
 const Z = {"Level 1": 168.78, "Level 2": 174.76, "Level 3": 179.78, "Level 4": 184.67, "Level 5": 189.18, "Level 6": 193.56, "Level 7A": 197.22, "Level 7": 200.4};
 const A = {
