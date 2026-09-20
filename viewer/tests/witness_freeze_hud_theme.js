@@ -54,7 +54,10 @@ const ok = (c, m) => { console.log((c ? '  ok    ' : '  FAIL  ') + m); if (!c) f
 // ── the standard, recomputed from the other modules' OWN formulas ────────────────────────────
 // cpe_resource_panel.js `_box`: bh0 = round(h*0.24); fs = max(9, round(bh0*0.085)); rowH0 = round(fs*1.55)
 // cpe_resource_panel.js `_drawList` header: '700 ' + round(fs*1.15)
-const mBh0 = rp.match(/var bh0 = Math\.round\(h \* ([0-9.]+)\);/);
+// `* scale` is §ESCAPE_PANEL_SLOT's optional multiplier, defaulted to 1 for every caller but the
+// escape card. Matched optionally so this witness reads the standard rather than going INCONCLUSIVE
+// the moment the line grows a term — an INCONCLUSIVE witness proves nothing and looks quiet doing it.
+const mBh0 = rp.match(/var bh0 = Math\.round\(h \* ([0-9.]+)(?: \* scale)?\);/);
 const mFs = rp.match(/var fs0 = Math\.max\(9, Math\.round\(bh0 \* ([0-9.]+)\)\);/);
 const mRowH = rp.match(/var rowH0 = Math\.round\(fs0 \* ([0-9.]+)\);/);
 const mHdr = rp.match(/'700 ' \+ Math\.round\(fs \* ([0-9.]+)\)/);

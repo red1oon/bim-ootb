@@ -205,6 +205,30 @@ const polyLen = (pts) => { let L = 0; for (let i = 1; i < pts.length; i++) L += 
        withFlag.card.footnotes.length + ' footnotes');
   }
 
+  // ══ W-13-9 — THE PANEL LINGERS PAST ITS OWN LINE. ISSUE (red1, 2026-09-20): "So that the
+  // EscRoute panel lingers rather than cuts off when its overlay goes off. This allows user to
+  // sense its work further." The card used to vanish the instant the window closed — the moment its
+  // numbers were finally complete. Disproved if the card returns null one frame past the window, or
+  // if it lingers on forever, or if it lingers showing a partial draw instead of the final figures.
+  {
+    const plan = planWith(0.95);
+    const win = A.escapeRouteWindow(plan);
+    const dwell = (A.filmBoxesMeasureLingerS > 0) ? A.filmBoxesMeasureLingerS : 2.2;
+    const at = (secPast) => A.escapeRouteStatCardAt(plan, win.end + secPast / plan.durationSec);
+    const justAfter = at(0.05), mid = at(dwell * 0.5), after = at(dwell + 0.5);
+    ck('W-13-9a the card still draws just after the window closes',
+       !!justAfter, justAfter ? 'opacity=' + justAfter.opacity.toFixed(2) : 'null');
+    ck('W-13-9b …showing the COMPLETED route, not a partial draw frozen mid-count',
+       !!justAfter && justAfter.card.legend[0].value !== '\u2014' &&
+       justAfter.card.big === A.escapeRouteFmtWalk(rec.walkSec),
+       justAfter ? justAfter.card.big + '  RED=' + justAfter.card.legend[0].value : '-');
+    ck('W-13-9c …fading as it goes, so it reads as settling rather than sticking',
+       !!justAfter && !!mid && mid.opacity < justAfter.opacity,
+       justAfter && mid ? justAfter.opacity.toFixed(2) + ' -> ' + mid.opacity.toFixed(2) : '-');
+    ck('W-13-9d …and it DOES end — a panel that lingers forever is the defect it was meant to fix',
+       after === null, 'dwell=' + dwell + 's (cpe_film_boxes LINGER_S, §56.1)');
+  }
+
   // ══ W-13-7 — THE FOOTNOTE BLOCK DROPS, THE MARKERS STAY. ISSUE: §13.5 measured the card at
   // 173x115 px at 854x480 and ruled that footnotes there fall below legibility — they must be
   // DROPPED, never shrunk into decoration, and the markers must survive so the § log is still

@@ -71,7 +71,28 @@ ck('…and it bounds on an EXISTING signal, not a new clock or an invented numbe
 ck('…and it says so in the log, so a reader can see the box stop',
    /A\.slabBeatLabelStaleCheck = function[\s\S]{0,700}§SLAB_BEAT_LABEL off/.test(slab));
 
-// ── 4. THE SERVICE WORKER VERSION MOVED WITH THE MODULES ─────────────────────────────────────
+// ── 4. ONE SLOT, ONE OCCUPANT ────────────────────────────────────────────────────────────────
+// red1: "EscRoute should be taking over the opposing bottom HUD ... This leaves the main HUD to
+// continue displaying its overall building info", then "And the old opposing HUD is replaced".
+// The old code overwrote `_statInfo`, which EVICTED the building card for the whole escape window.
+const esc = fs.readFileSync(path.join(ROOT, 'viewer/cpe_escape_route.js'), 'utf8');
+ck('the escape card no longer overwrites _statInfo — the building card keeps the HUD column',
+   !/_statInfo = \{ shown: _ec/.test(mq) && /_escCardInfo = \{ shown: _ec/.test(mq));
+ck('…it takes the corner diagonally opposite, from cpe_film_boxes\'s OWN map, not a second copy',
+   /A\.filmBoxesOppositeCorner \? A\.filmBoxesOppositeCorner\(_ovPos\)/.test(mq) &&
+   /A\.filmBoxesOppositeCorner = function/.test(fs.readFileSync(path.join(ROOT, 'viewer/cpe_film_boxes.js'), 'utf8')),
+   'a duplicated corner map is a thing that drifts');
+ck('…and it draws inside _drawUnlessHold, so it registers a rect and fades with the freeze',
+   /_drawUnlessHold\('escroute\.card', function \(a\) \{/.test(mq),
+   'the exact two things the duplicated caption bar did not do');
+ck('the Measure box REPLACED, not shared — it does not draw while the escape card holds the slot',
+   /if \(A\.filmBoxesDrawMeasure && !escCardInfo\) \{/.test(mq),
+   'two panels in one corner is the crowding the move exists to end');
+ck('the linger reuses cpe_film_boxes\'s published LINGER_S — red1 spec\'d that dwell himself (§56.1)',
+   /A\.filmBoxesMeasureLingerS > 0\) \? A\.filmBoxesMeasureLingerS : 2\.2/.test(esc),
+   'same box, same request, same constant — not a second dwell');
+
+// ── 5. THE SERVICE WORKER VERSION MOVED WITH THE MODULES ─────────────────────────────────────
 // Not a draw defect, but the same class of silent failure: a reused bake profile renders the OLD
 // modules and looks perfectly normal doing it. Four commits of viewer changes shipped on v1207.
 {

@@ -772,14 +772,20 @@ function setupCpeResourcePanel(A) {
   // toggle count (never used by the real resource-panel caller, which always passes the live number;
   // kept only so an old/other caller that never knew about this param still gets a sane, non-zero
   // reservation instead of silently clipping rows it didn't know to size for).
-  function _box(w, h, pos, stackY, shownRows, clRows) {
-    var bw = Math.round(h * 0.36);
+  function _box(w, h, pos, stackY, shownRows, clRows, scale) {
+    // §ESCAPE_PANEL_PROMINENCE (2026-09-20, red1: "make it bigger to fit and given more prominence
+    // as it has coloring"). ONE optional multiplier on the panel's own geometry, defaulted to 1 so
+    // every existing caller stays byte-identical. It scales the width AND the height reference the
+    // type ladder is derived from, so the card grows with its text rather than growing a box around
+    // unchanged type.
+    scale = (scale > 0) ? scale : 1;
+    var bw = Math.round(h * 0.36 * scale);
     // bh0 stays a FIXED, frame-height-anchored reference for font sizing ONLY (fs0/rowH0) — never
     // fed back from the live/grown bh (see the old circular-growth note this replaces): the panel's
     // ACTUAL height (bh, below) is now built up from real content bands, not derived from bh0 by
     // itself, so this anchor keeps text a constant, predictable size regardless of how tall the
     // panel ends up (a longer schedule's resource list must not also grow the font).
-    var bh0 = Math.round(h * 0.24);
+    var bh0 = Math.round(h * 0.24 * scale);
     var fs0 = Math.max(9, Math.round(bh0 * 0.085));
     var rowH0 = Math.round(fs0 * 1.55);
     var pad = Math.round(bh0 * 0.10);
@@ -913,7 +919,9 @@ function setupCpeResourcePanel(A) {
     // which of the two panel functions drew this frame — without this, the check would silently read
     // stale values left over from whichever panel drew last, during the OTHER panel's own phase.
     A._resPanelShownRows = shownRowsReal; A._resPanelClRows = 0;
-    var B = _box(w, h, pos, stackY, shownRowsReal, 0);
+    // §ESCAPE_PANEL_PROMINENCE — the escape card asks for a bigger slot; every other card
+    // passes nothing and gets exactly the geometry it always had.
+    var B = _box(w, h, pos, stackY, shownRowsReal, 0, (shown.boxScale > 0) ? shown.boxScale : 1);
     var bw = B.bw, bh = B.bh, x = B.x, y = B.y, rad = B.rad;
     ctx.save();
     ctx.globalAlpha = Math.min(1, opacity);

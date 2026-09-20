@@ -1324,7 +1324,7 @@
   // ⚠ ONE THING THAT IS NOT SUPPRESSION: the Escape Route card occupies the bigStats slot for its
   // window, the same slot the tail/storey/measure cards already take turns in. One slot holds one
   // card; that is the chain's existing behaviour.
-  async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc, escInfo) {
+  async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc, escInfo, escCardInfo) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
     A._hudLayoutRects = [];   // §HUD_LAYOUT — fresh registry every frame, never carries a stale rect
@@ -1522,7 +1522,15 @@
     // §MEASURE_BOX (§38.1a, §40.1) — every Measure beat above posted into the queue instead of
     // hanging a roaming plate off its subject; ONE fixed panel draws them, and draws NOTHING when
     // nothing posted. After the beats (so the queue is complete), before the HUD furniture.
-    if (A.filmBoxesDrawMeasure) {
+    // §ESCAPE_PANEL_SLOT — ONE SLOT, ONE OCCUPANT. red1: "And the old opposing HUD is replaced."
+    // While the Escape Route card holds this corner (its window plus its linger) the Measure box
+    // does not draw there at all — the same rotating-occupant model the bigStats slot already uses
+    // for the pie, the tail cards and the storey card. This is a REPLACEMENT, not a coexistence:
+    // two panels in one corner is the crowding the move exists to end.
+    // The Measure box takes the slot back by simply drawing again once escCardInfo is null. Whether
+    // it SHOULD come back during the closing orbit is red1's call; with §SLAB_LABEL_STALE in place
+    // the slab label has already stood down by then, so in practice the corner stays clear.
+    if (A.filmBoxesDrawMeasure && !escCardInfo) {
       _drawUnlessHold('measure.box', function () {
         try { A.filmBoxesDrawMeasure(ctx, w, h, null, _fcFilmSec); }
         catch (eMB) { if (!A._measureBoxWarned) { A._measureBoxWarned = true; console.warn('§MEASURE_BOX draw failed: ' + (eMB && eMB.message)); } }
@@ -1689,6 +1697,20 @@
             console.warn('§CPE_BIG_STATS_ERR draw: ' + eBs.message + ' — card skipped, frames continue'); }
         }
       });
+    }
+    // §ESCAPE_PANEL_SLOT — the Escape Route card in the corner diagonally opposite the HUD column,
+    // drawn through the SAME bigStats compositor (so the legend, the fit ladder and §CARDFIT's
+    // guarantees all come with it) at its own `pos` and `stackY=0`. Inside _drawUnlessHold like
+    // every other overlay, so it registers a rect for §HUD_LAYOUT and fades with the freeze — the
+    // two things the duplicated caption bar deleted in 1e2c53eb did NOT do.
+    if (escCardInfo && escCardInfo.shown && A.bigStatsCompositeOntoCanvas) {
+      _drawUnlessHold('escroute.card', function (a) {
+        try { A.bigStatsCompositeOntoCanvas(ctx, w, h, escCardInfo.shown, a, escCardInfo.pos, 0, null); }
+        catch (eEc) {
+          if (!A._escCardDrawErrLogged) { A._escCardDrawErrLogged = true;
+            console.warn('§ESCAPE_CARD_ERR draw: ' + eEc.message + ' — card skipped, frames continue'); }
+        }
+      }, function () { return A.bigStatsLastBox; });
     }
     // §129.55 D/E — `roster` deliberately keeps its 0,0,1,1 placeholder, for the SAME reason
     // `hud.pie` does: the card's real rect is already in the registry, registered by the drawer
@@ -4030,11 +4052,24 @@
         // §MEASURE_BUILDING_CARD roll above owns the whole orbit beat, and this window lies inside
         // it, so the escape card has to be the one that wins for its own span and hand the slot
         // straight back afterwards. Same _statInfo shape, so no new panel drawing exists.
-        var _escInfo = null;
+        var _escInfo = null, _escCardInfo = null;
         if (_escRec && A.escapeRouteStatCardAt) {
           var _ec = A.escapeRouteStatCardAt(plan, _tnFilm);
           if (_ec) {
-            _statInfo = { shown: _ec, pos: _ovPos, held: null };
+            // ══ §ESCAPE_PANEL_SLOT (2026-09-20) ═══════════════════════════════════════════════
+            // red1: "EscRoute should be taking over the opposing bottom HUD as it is no longer
+            // having any new content. This leaves the main HUD to continue displaying its overall
+            // building info." Then: "I mean, retain the same coloring. Just use that opposing HUD."
+            // It used to overwrite `_statInfo`, which EVICTED the building card from the HUD column
+            // for the whole escape window. Now it draws in the corner diagonally opposite — the one
+            // the Measure panel takes — and `_statInfo` is left alone, so the route runs on one side
+            // and 440 doors / 22,031,100 total cost on the other, which is what he asked for.
+            // The corner comes from cpe_film_boxes.js's own OPP map, not a second copy of it.
+            // ⚠ The prerequisite for sharing this corner was §SLAB_LABEL_STALE: the slab beat
+            // re-posted its label every frame to the end of the film, so the Measure box never
+            // yielded the slot and never could.
+            _escCardInfo = { shown: _ec,
+                             pos: (A.filmBoxesOppositeCorner ? A.filmBoxesOppositeCorner(_ovPos) : 'bl') };
             if (A.escapeRouteFrameAt) {
               // §ESCAPE_ROUTE_HUD_RESERVE — the corner column this frame, so the two scene-anchored
               // plates keep out of it (red1: the panel "must find an empty spot"). Since the
@@ -4090,7 +4125,7 @@
               ' consecutive frame(s) — identical picture, encoder handed the same blob');
             _frameReuseRun = 0;
           }
-          blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo);
+          blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo, _escCardInfo);
           _lastFrameKey = _reuseKey; _lastFrameBlob = blob;
         }
         // ROUND 13 item C — track whichever frame lands CLOSEST to the hold's own middle

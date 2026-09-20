@@ -24,6 +24,9 @@
 function setupCpeFilmBoxes(A) {
   var POS = { tr: 1, tl: 1, br: 1, bl: 1 };
   var OPP = { tr: 'bl', tl: 'br', br: 'tl', bl: 'tr' };
+  // Published so other lanes take the SAME corner the Measure panel takes rather than re-deriving
+  // it — §ESCAPE_PANEL_SLOT needs exactly this corner and a second copy of the map could drift.
+  A.filmBoxesOppositeCorner = function (pos) { return OPP[pos] || 'bl'; };
 
   // §STATUS_BOX — FOUR rows, fixed order, fixed height. A row with nothing to say is BLANK, never
   // removed: removing it would change the box's height, which is the exact defect being fixed.

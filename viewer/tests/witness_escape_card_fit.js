@@ -87,7 +87,10 @@ SIZES.forEach(([w, h]) => {
   // bottom edge in a delivered clip. The registered `stats-panel` rect is the drawn one.
   let box = null;
   A._hudLayoutRegister = (n, x, y, ww, hh) => { if (n === 'stats-panel') box = { x, y, w: ww, h: hh }; };
-  A.bigStatsCompositeOntoCanvas(ctx, w, h, { card: CARD, idx: 0, n: 1, opacity: 1 }, 1, 'tr', 0, null);
+  // §ESCAPE_PANEL_SLOT — the card asks for a bigger slot (boxScale) and now sits in the corner
+  // diagonally opposite the HUD column, so the fit is re-proved at the size and position it is
+  // ACTUALLY drawn at, not at the old ones.
+  A.bigStatsCompositeOntoCanvas(ctx, w, h, { card: CARD, boxScale: 1.22, idx: 0, n: 1, opacity: 1 }, 1, 'bl', 0, null);
   if (!box) { ck(w + 'x' + h + ' the card registered its plate', false, 'no stats-panel rect'); return; }
   const L = box.x, Rr = box.x + box.w, T = box.y, B = box.y + box.h;
   const drawn = ctx.texts;

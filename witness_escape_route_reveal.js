@@ -336,9 +336,18 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   ck('W-ESC-8d anchors landing UNDER the corner column still place clear of it',
      hostile > 0 && hostileClean === hostile,
      hostileClean + '/' + hostile + ' hostile anchors placed clear');
-  ck('W-ESC-8e the card itself needs no spot — it REPLACES a bigStats card rather than adding a box',
-     /_statInfo = \{ shown: _ec, pos: _ovPos, held: null \};/.test(mq) &&
-     (mq.match(/escapeRouteStatCardAt/g) || []).length === 2);   // the guard and the call, nothing more
+  // §ESCAPE_PANEL_SLOT (red1, 2026-09-20): "EscRoute should be taking over the opposing bottom HUD
+  // ... This leaves the main HUD to continue displaying its overall building info", and "the old
+  // opposing HUD is replaced". So the card no longer evicts a bigStats card from the HUD column —
+  // it takes the OPPOSITE corner and replaces the Measure box there instead. The old assertion
+  // pinned the eviction it was written to describe, so it is rewritten, not deleted: the property
+  // worth guarding is still "one slot, one occupant", now about the other corner.
+  ck('W-ESC-8e the card takes the OPPOSING corner and replaces the box there — it evicts no HUD card',
+     !/_statInfo = \{ shown: _ec/.test(mq) &&
+     /_escCardInfo = \{ shown: _ec/.test(mq) &&
+     /if \(A\.filmBoxesDrawMeasure && !escCardInfo\) \{/.test(mq) &&
+     (mq.match(/escapeRouteStatCardAt/g) || []).length === 2,   // the guard and the call, nothing more
+     'building info keeps the HUD column; the Measure box yields the opposite corner');
   // red1, 2026-09-20, overriding the spec's own §2 item 7: "the new HUD should not make the other
   // HUDs go away." ISSUE: the suppression is retired — is it really gone, or just defaulted off
   // somewhere it could creep back? Disproved by ANY draw call still reading the flag.

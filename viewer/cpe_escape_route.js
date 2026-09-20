@@ -709,8 +709,34 @@ function setupCpeEscapeRoute(A) {
   // ══ THE CARD — the existing bigStats {card,idx,n,opacity} shape, so no new panel is drawn ══════
   // TITLED (§2 item 8, red1: "unambiguous"). Both live numbers, and the walking speed ITSELF, so a
   // viewer can see which standard produced the time rather than only the time it produced.
-  A.escapeRouteStatCardAt = function (plan, tNorm) {
+  // ══ §ESCAPE_PANEL_LINGER — the panel outlives the line ══════════════════════════════════════
+  // red1, 2026-09-20: "So that the EscRoute panel lingers rather than cuts off when its overlay
+  // goes off. This allows user to sense its work further."
+  // THE DWELL IS NOT A NEW NUMBER. cpe_film_boxes.js's LINGER_S is published as
+  // A.filmBoxesMeasureLingerS and was spec'd by red1 himself (§56.1, on the Measure box in the very
+  // corner this panel now takes): "the marker line on canvas may disappear out of frame but the
+  // info box should linger on ... so that user can eyeball what just went past." Same request, same
+  // box, same reason — so the same constant, read from the module that owns it rather than copied.
+  // Falls back to 2.2 only if that module is absent, and says so nowhere else.
+  // The card holds its FINAL figures through the dwell and fades out over it, so the last thing on
+  // screen is the completed route's numbers rather than a partial draw frozen mid-count.
+  function _cardVisAt(plan, tNorm) {
     var vis = A.escapeRouteVisualAt(plan, tNorm);
+    if (vis) return vis;
+    if (!_rec || !plan || !(plan.durationSec > 0) || tNorm == null) return null;
+    var win = A.escapeRouteWindow(plan);
+    if (!win || tNorm <= win.end) return null;
+    var dwell = (A.filmBoxesMeasureLingerS > 0) ? A.filmBoxesMeasureLingerS : 2.2;
+    var overSec = (tNorm - win.end) * plan.durationSec;
+    if (overSec > dwell) return null;
+    var full = A.escapeRouteVisualAt(plan, win.end - 1e-9);
+    if (!full) return null;
+    return { w: 1, progress: 1, alpha: Math.max(0, 1 - overSec / dwell),
+             drawnM: _rec.walkM, steps: _rec.steps, walkSec: _rec.walkSec,
+             winStart: win.start, winEnd: win.end, lingering: true };
+  }
+  A.escapeRouteStatCardAt = function (plan, tNorm) {
+    var vis = _cardVisAt(plan, tNorm);
     if (!vis) return null;
     var b = _rec.breach, label = 'Escape Route — ' + _rec.roomName;
     if (b && b.level === 'critical') label = 'Escape Route — OVER LIMIT';
@@ -786,8 +812,14 @@ function setupCpeEscapeRoute(A) {
     if (b && b.level) subShort += '  \u00b7  ' + vis.drawnM.toFixed(0) + ' m vs ' + b.limitM + ' m ' +
       (b.level === 'critical' ? 'limit' : 'warning') + '\u2074';
     var subMin = '~' + vis.steps + ' steps*  \u00b7  ' + vis.drawnM.toFixed(0) + ' m\u00b2';
+    // §ESCAPE_PANEL_SLOT (red1: "make it bigger to fit", then "I mean, retain the same coloring.
+    // Just use that opposing HUD"). NOTHING about the card's look changes — same keys, same plate,
+    // same type ladder, all still guarded by §CARDFIT. The only ask is that the slot it now sits in
+    // is sized to the card rather than the card squeezed into the slot: the opposing Measure slot
+    // is 367x186 at 1920x1080 against the card's natural 389x293.
     return { card: { big: _fmtWalk(vis.walkSec), label: label, sub: sub, subAlts: [subShort, subMin],
                      legend: legend, footnotes: footnotes },
+             boxScale: 1.22, lingering: !!vis.lingering,
              idx: 0, n: 1, opacity: vis.alpha };
   };
   // The caption slot, same A.roomTitleCompositeOntoCanvas every other beat draws through.
