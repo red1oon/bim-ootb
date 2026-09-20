@@ -1881,6 +1881,83 @@
     return { path: path, doors: doors, distance: core.dist[toGuid], polyline: _buildPolyline(graph, path) };
   }
 
+  // §ESCAPE-ROUTES-ALL (ESCAPE_ROUTE_REVEAL.md §12.1, 2026-09-20) — EVERY reachable exit from a
+  // room, ranked, from ONE Dijkstra. escapeRoute() below already ran that Dijkstra and then threw
+  // away all but the winner; the common-path rule needs the runner-up too, and paying a second
+  // full search per room to get it would be absurd (MEASURED: 149 Hospital rooms x 8 exits via
+  // repeated shortestPath = ~90 s; this is one search per room, the same cost escapeRoute already
+  // pays).
+  //
+  // ⚠ THE DIVERGENCE NODE FALLS OUT FOR FREE, and that is the whole reason this shape is right.
+  // A Dijkstra from `fromGuid` produces a shortest-path TREE. Two exits' paths in that tree share
+  // a prefix by construction, and where they part IS their lowest common ancestor. So "the point
+  // at which the occupant first gains a choice of two paths" (IBC 2021 §1006.2.1's own words) is a
+  // tree walk, not a second search. `divergenceFrom()` below does it.
+  //
+  // Returns { routes: [{exitGuid, distance, path, doors}, ...] } ranked nearest-first, or null on
+  // the same conditions escapeRoute() returns null. NOT a change to escapeRoute(): that function
+  // is untouched below and every existing caller keeps its exact behaviour.
+  function escapeRoutes(graph, fromGuid, opts) {
+    opts = opts || {};
+    var log = opts.log || function () {};
+    var adj = _buildAdjacency(graph);
+    if (!adj[fromGuid]) { log('§ESCAPE_ROUTES from=' + fromGuid + ' NO_GRAPH_NODE'); return null; }
+    var dist = {}, prev = {}, visited = {};
+    Object.keys(adj).forEach(function (g) { dist[g] = Infinity; });
+    dist[fromGuid] = 0;
+    var pq = [fromGuid];
+    while (pq.length) {
+      pq.sort(function (a, b) { return dist[a] - dist[b]; });
+      var u = pq.shift();
+      if (visited[u]) continue;
+      visited[u] = true;
+      (adj[u] || []).forEach(function (edge) {
+        var nd = dist[u] + edge.w;
+        if (nd < dist[edge.to]) { dist[edge.to] = nd; prev[edge.to] = { from: u, edge: edge.e, arriveSide: edge.arriveSide }; pq.push(edge.to); }
+      });
+    }
+    // Reconstruct one exit's path out of the shared tree — the SAME walk escapeRoute() does.
+    function build(exitGuid) {
+      var path = [exitGuid], doors = [], cur = exitGuid, departEdge = null;
+      while (cur !== fromGuid) {
+        var p = prev[cur];
+        if (!p) return null;
+        if (p.edge.doorGuid) doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
+        path[0] = _publicHop(graph, cur, p.edge, p.arriveSide, departEdge);
+        path.unshift(p.from);
+        departEdge = p.edge;
+        cur = p.from;
+      }
+      return { exitGuid: exitGuid, distance: dist[exitGuid], path: path, doors: doors };
+    }
+    var routes = [];
+    Object.keys(graph.nodesByGuid).forEach(function (g) {
+      if (graph.nodesByGuid[g].kind !== 'exit') return;
+      if (!(dist[g] < Infinity)) return;
+      var r = build(g);
+      if (r) routes.push(r);
+    });
+    if (!routes.length) { log('§ESCAPE_ROUTES from=' + fromGuid + ' NO_EXIT_REACHABLE'); return null; }
+    routes.sort(function (a, b) { return a.distance - b.distance; });
+    log('§ESCAPE_ROUTES from=' + fromGuid + ' exits=' + routes.length +
+        ' nearest=' + routes[0].distance.toFixed(1) + (routes[1] ? ' next=' + routes[1].distance.toFixed(1) : ' (only one)'));
+    return { routes: routes };
+  }
+
+  // §COMMON-PATH (ESCAPE_ROUTE_REVEAL.md §12.1) — the last node two routes SHARE, walking from the
+  // room outward. Both `path` arrays start at fromGuid by construction (see build() above), so the
+  // divergence is simply the last index at which they agree. Returns { node, index } or null when
+  // one route is a prefix of the other (one exit lies ON the way to the other — a real state, and
+  // NOT a divergence: the occupant still has no choice until the first exit is reached).
+  function divergenceFrom(pathA, pathB) {
+    if (!pathA || !pathB || !pathA.length || !pathB.length) return null;
+    var i = 0;
+    while (i < pathA.length && i < pathB.length && pathA[i] === pathB[i]) i++;
+    if (i === 0) return null;                                   // not even the room in common — impossible here, guarded anyway
+    if (i >= pathA.length || i >= pathB.length) return null;    // prefix case: no choice point exists between them
+    return { node: pathA[i - 1], index: i - 1 };
+  }
+
   // §ESCAPE-ROUTE (OCCUPANT_PATHFINDER.md SPEC — "falls out" of shortestPath, not a separate
   // feature): nearest N-EXIT node from a room, by the same Dijkstra used for Room-Path.
   function escapeRoute(graph, fromGuid, opts) {
@@ -2064,6 +2141,9 @@
   var API = {
     buildGraph: buildGraph, degree: degree, components: components, fullConnectivity: fullConnectivity,
     shortestPath: shortestPath, escapeRoute: escapeRoute,
+    // §12.1 — every reachable exit ranked, from one Dijkstra, plus the tree walk that finds where
+    // two routes part. escapeRoute() above is unchanged and still the single-answer entry point.
+    escapeRoutes: escapeRoutes, divergenceFrom: divergenceFrom,
     escapeRouteViaProtectedStair: escapeRouteViaProtectedStair, isRoomDoor: isRoomDoor,
     stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK, getStairGroups: getStairGroups,
     // FLY_TOUR_CORRIDOR_GRAPH.md §S4 — read-only witness helper: count of walkability-illegal

@@ -746,7 +746,12 @@ function setupRuleChecklist(A) {
             { label: 'Circulation Distance', ruleNames: ['circulation_distance'] },
             { label: 'Door Width', ruleNames: ['door_clear_width'] },
             { label: 'Space Coverage', ruleNames: ['space_coverage'] },
-            { label: 'Door Occupant Capacity', ruleNames: ['door_occupant_capacity'] }
+            { label: 'Door Occupant Capacity', ruleNames: ['door_occupant_capacity'] },
+            // §12 (ESCAPE_ROUTE_REVEAL.md) — the two rules about ALTERNATE routes. Without a
+            // category of their own their rows render only under "All", which is where the
+            // previous five each got one.
+            { label: 'Common Path', ruleNames: ['common_path_of_egress_travel'] },
+            { label: 'Exit Remoteness', ruleNames: ['exit_remoteness'] }
           ],
           rows: rows
         });
