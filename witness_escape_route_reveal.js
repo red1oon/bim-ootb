@@ -419,6 +419,32 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   ck('W-ESC-11e the storey-reveal beat keeps its OWN x-ray — this decision was not applied to someone else\'s lane',
      fs.readFileSync(path.join(__dirname, 'viewer/cpe_storey_reveal.js'), 'utf8').indexOf('A.toggleXray()') >= 0);
 
+  // ══ W-ESC-12 — §ESCAPE_ROUTE_METADATA_MISSING. red1, 2026-09-20: "Make the EscRoute option flag
+  // in log a fail when such metadata is absent." ISSUE: without storey_walkable_raster there is no
+  // exit detection, so every room returns null and the beat reports VACUOUS — indistinguishable
+  // from a building that is genuinely clean. Disproved if a raster-less graph still comes back
+  // quiet. Red control: the SAME graph with and without rasters.
+  const bare = { nodes: graph.nodes, nodesByGuid: graph.nodesByGuid, edges: graph.edges, rasters: {} };
+  const A2 = makeApp(bare, []);
+  const errs = [];
+  const realErr = console.error; console.error = m => errs.push(String(m));
+  // strip every exit node so no room can reach one — the state a raster-less building is really in
+  Object.keys(bare.nodesByGuid).forEach(g => { if (bare.nodesByGuid[g].kind === 'exit') delete bare.nodesByGuid[g]; });
+  const bareRec = A2.escapeRouteBuild();
+  A2.escapeRouteSummary(100);
+  console.error = realErr;
+  ck('W-ESC-12a a raster-less building builds nothing', bareRec === null);
+  ck('W-ESC-12b and says FAIL, on console.error, not a quiet VACUOUS',
+     errs.some(m => /§ESCAPE_ROUTE_BUILD FAIL reason=metadata-absent/.test(m)),
+     errs.length ? errs[0].slice(0, 100) : 'nothing logged to console.error');
+  ck('W-ESC-12c the FAIL says it is NOT a clean building, and names the fix',
+     errs.some(m => /NOT a\s+clean building/.test(m) && /build_storey_walkable_raster/.test(m)));
+  ck('W-ESC-12d the SUMMARY carries the failure too — a log scan of either line catches it',
+     errs.some(m => /§ESCAPE_ROUTE_SUMMARY FAIL reason=metadata-absent/.test(m)));
+  ck('W-ESC-12e GREEN CONTROL — the real rastered graph still builds, so the gate discriminates',
+     Object.keys(graph.rasters || {}).length > 0 && !!rec,
+     Object.keys(graph.rasters || {}).length + ' rastered storeys, room "' + rec.roomName + '"');
+
   // ══ W-ESC-7 — no pixel-derived evidence, asserted about THIS file. ════════════════════════════
   // ⚠ The needles are ASSEMBLED, not written out. A literal list of forbidden words in a file that
   // then searches ITSELF for them always fails — the first cut of this check did exactly that, and

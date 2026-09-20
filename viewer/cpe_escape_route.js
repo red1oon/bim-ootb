@@ -138,7 +138,7 @@ function setupCpeEscapeRoute(A) {
   var FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
 
   // ══ BUILD — once per bake, before the frame loop. Never per frame. ═══════════════════════════
-  var _rec = null, _builtFor = null, _buildTried = false;
+  var _rec = null, _builtFor = null, _buildTried = false, _failReason = null;
   var _stats = null;
   function _freshStats() {
     return { frames: 0, drawnFrames: 0, maxProgress: 0, maxDrawnM: 0, easedFrames: 0,
@@ -175,7 +175,7 @@ function setupCpeEscapeRoute(A) {
     // retried once per frame: the scan is a Dijkstra per room and the reason it failed will not
     // change mid-bake. _buildTried is what makes "no worst case exists here" cost once.
     if (_builtFor === A.activeBuilding && _buildTried) return _rec;
-    _builtFor = A.activeBuilding; _buildTried = true; _rec = null;
+    _builtFor = A.activeBuilding; _buildTried = true; _rec = null; _failReason = null;
     var RG = _resolveRoomGraph();
     if (!RG || typeof A.getRoomGraph !== 'function') {
       console.log('§ESCAPE_ROUTE_BUILD INCONCLUSIVE — RoomGraph/A.getRoomGraph unavailable (the lazy Navigate bundle never loaded); the reveal is inert this bake');
@@ -218,6 +218,25 @@ function setupCpeEscapeRoute(A) {
       if (!best || L > best.walkM) best = { node: n, esc: esc, poly: poly, walkM: L, spDist: sp.distance };
     });
     var scanMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
+    // §ESCAPE_ROUTE_METADATA_MISSING (red1, 2026-09-20: "Make the EscRoute option flag in log a
+    // fail when such metadata is absent") — separate "this building genuinely has no worst case"
+    // from "this building was never given the data to compute one". Without storey_walkable_raster
+    // there is no EXIT DETECTION at all, so escapeRoute() returns null for EVERY room and a
+    // VACUOUS line reads exactly like a clean building. That is the silent failure. Now a FAIL,
+    // on console.error so a CLI log scan catches it. graph.rasters is {} when the table is absent
+    // (room_graph.js §G3-REVISED's own documented degrade).
+    var rasterStoreys = Object.keys(graph.rasters || {}).length;
+    if (!best && rasterStoreys === 0) {
+      _failReason = 'FAIL reason=metadata-absent (no storey_walkable_raster)';
+      console.error('§ESCAPE_ROUTE_BUILD FAIL reason=metadata-absent storey_walkable_raster=0' +
+        ' rooms=' + graph.nodes.length + ' exitsDetected=0 — this building carries no walkable' +
+        ' raster, so exit detection cannot run and no room can have an escape route. This is NOT a' +
+        ' clean building and NOT a feature no-op: the data was never built. Fix:' +
+        ' scripts/build_storey_walkable_raster.js -> buildings/patches/<db>.sql, which the' +
+        ' A._applyPendingPatch self-heal already applies at load. See' +
+        ' §SAVE_CARRIES_BUT_NEVER_BUILDS_THE_RASTER in viewer/scene.js.');
+      return null;
+    }
     if (!best) {
       console.log('§ESCAPE_ROUTE_BUILD VACUOUS rooms=' + graph.nodes.length + ' reachedAnExit=' + reached +
         ' withDrawableRoute=0 noPolyline=' + noPoly + ' — ' + (reached === 0
@@ -350,7 +369,7 @@ function setupCpeEscapeRoute(A) {
              overBy: m / (lvl === 'critical' ? crit : warn) };
   };
   A.escapeRouteRecord = function () { return _rec; };
-  A.escapeRouteReset = function () { _rec = null; _builtFor = null; _buildTried = false; _stats = _freshStats(); };
+  A.escapeRouteReset = function () { _rec = null; _builtFor = null; _buildTried = false; _failReason = null; _stats = _freshStats(); };
   A.escapeRouteFmtWalk = function (sec) { return _fmtWalk(sec); };   // exposed for the witness
   A.escapeRouteConstants = function () {
     return { strideM: STRIDE_M, walkMs: WALK_MS, walkCite: WALK_CITE, leadFrac: LEAD_FRAC,
@@ -748,7 +767,7 @@ function setupCpeEscapeRoute(A) {
   A.escapeRouteRectsHit = function (a, b) { return _hits(a, b); };
   A.escapeRouteStats = function () {
     var s = {}; for (var k in _stats) s[k] = _stats[k];
-    s.built = !!_rec;
+    s.built = !!_rec; s.failReason = _failReason;
     if (_rec) { s.roomName = _rec.roomName; s.walkM = _rec.walkM; s.graphCostM = _rec.graphCostM; s.steps = _rec.steps; s.walkSec = _rec.walkSec; }
     return s;
   };
@@ -756,7 +775,14 @@ function setupCpeEscapeRoute(A) {
   // nothing about this feature however clean the code is (the project's own summary convention).
   A.escapeRouteSummary = function (framesDone) {
     var s = _stats;
-    if (!_rec) { console.log('§ESCAPE_ROUTE_SUMMARY INCONCLUSIVE — nothing was built; see §ESCAPE_ROUTE_BUILD above for why'); return s; }
+    if (!_rec) {
+      // Missing metadata is a FAIL, not an INCONCLUSIVE — that distinction is the whole point of
+      // §ESCAPE_ROUTE_METADATA_MISSING above, and the summary must not soften it back.
+      if (_failReason) console.error('§ESCAPE_ROUTE_SUMMARY ' + _failReason +
+        ' — the beat drew nothing because the building lacks the data, NOT because it is clean');
+      else console.log('§ESCAPE_ROUTE_SUMMARY INCONCLUSIVE — nothing was built; see §ESCAPE_ROUTE_BUILD above for why');
+      return s;
+    }
     if (!s.drawnFrames) {
       console.log('§ESCAPE_ROUTE_SUMMARY VACUOUS frames=' + s.frames + ' drawnFrames=0 — the reveal window' +
         ' never opened on a captured frame (a clip that misses it, or a film with no orbit beat).' +
