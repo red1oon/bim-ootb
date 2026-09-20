@@ -1127,6 +1127,55 @@
     if (roomBridges || bridgeRejected)
       log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges + ' rejected=' + bridgeRejected + ' sealed=' + bridgeRejected);
 
+    // ══ §WALK-Z (2026-09-20) — ONE HEIGHT PER STOREY FOR THE DRAWN LINE ════════════════════════
+    // red1: "fix P2, the sawtooth." MEASURED on Hospital_silent, the DB the film bakes:
+    //   Level 1  room/spine 168.61   doorwp/exit 166.87   -> 1.74 m apart
+    //   Level 2  room/spine 174.16   doorwp      172.87   -> 1.29 m
+    //   Level 4  room/spine 183.82   doorwp      182.87   -> 0.95 m
+    // `storeyZ` is the average of each storey's ROOMS' centre z — room MID-HEIGHT — while a doorwp
+    // carries the DOOR's own centre. Neither is the floor, and they differ by roughly
+    // (roomHeight - doorHeight)/2. _buildPolyline pushes A* interior points at the FROM anchor's z
+    // and then the arrival anchor at its own, so every room->door->room hop stepped down and back
+    // up. On the escape route that was 11 vertical steps totalling 28.98 m, of which only 15.21 m
+    // was the real stair: 13.77 m of phantom climb in a walk that is measured in 3D, and a visibly
+    // bobbing line for half its length.
+    //
+    // AND A SECOND, WORSE ONE: Levels 3 and 5 have NO datum at all — every room and spine node
+    // there is NaN, because storeyZ averages room cz and those rooms have none, so one undefined
+    // room poisons its whole storey. `_polyPt` does `z: (n.cz || 0)`, and NaN || 0 is 0 — a route
+    // through those storeys would be DRAWN AT z=0, some 167 m below the building. Nothing had gone
+    // through them yet, so nothing had shown it.
+    //
+    // walkZ is therefore one height per storey, used by the DRAWN LINE only: finite storeyZ where
+    // there is one, otherwise the median door centre on that storey (a door sits within ~1 m of the
+    // walking level, so it is a far better answer than 0). `cz` is untouched — other consumers
+    // still read it — and stairwp keeps its own z, because that IS the genuine vertical move.
+    var _walkZ = {}, _doorZ = {};
+    Object.keys(nodes).forEach(function (k) {
+      var n = nodes[k];
+      if (n.storey == null || n.kind !== 'doorwp' || !isFinite(n.cz)) return;
+      (_doorZ[n.storey] = _doorZ[n.storey] || []).push(n.cz);
+    });
+    var _wzFilled = [];
+    Object.keys(storeyZ).concat(Object.keys(_doorZ)).forEach(function (sname) {
+      if (_walkZ[sname] !== undefined) return;
+      if (isFinite(storeyZ[sname])) { _walkZ[sname] = storeyZ[sname]; return; }
+      var ds = (_doorZ[sname] || []).slice().sort(function (a, b) { return a - b; });
+      if (ds.length) { _walkZ[sname] = ds[ds.length >> 1]; _wzFilled.push(sname + '=' + _walkZ[sname].toFixed(2)); }
+    });
+    var _wzSet = 0;
+    Object.keys(nodes).forEach(function (k) {
+      var n = nodes[k];
+      if (n.kind === 'stairwp') { n.walkZ = n.cz; return; }      // the real vertical transition
+      var z = (n.storey != null) ? _walkZ[n.storey] : undefined;
+      n.walkZ = isFinite(z) ? z : (isFinite(n.cz) ? n.cz : 0);
+      if (isFinite(z)) _wzSet++;
+    });
+    log('§ROOM_GRAPH_WALK_Z storeys=' + Object.keys(_walkZ).length + ' nodesPinned=' + _wzSet +
+      (_wzFilled.length ? ' filledFromDoors=[' + _wzFilled.join(' ') + '] (these storeys had NO room' +
+        ' datum at all — every room/spine cz was NaN, and the drawn line would have been placed at z=0)' : '') +
+      ' — the drawn route now holds ONE height per storey; only a stair changes it.');
+
     return {
       nodes: roomOrder.map(function (lg) { return nodes[lg]; }), // §API-COMPAT: room-only, see file header
       edges: edges,
@@ -1876,7 +1925,10 @@
   // §POLYLINE: the additive floor-hugging geometry for result.polyline — world {x,y,z} points. Rooms/
   // doors/circ anchors from `path` are kept as-is; A* interior points are spliced between same-storey
   // pairs; a cross-storey (stair) pair keeps its straight vertical segment (no raster spans floors).
-  function _polyPt(n) { return { x: n.cx, y: n.cy, z: (n.cz || 0) }; }
+  // §WALK-Z — the DRAWN line reads walkZ (one height per storey, see the note where it is
+  // assigned). Falls back to cz for any caller that builds a node without it.
+  function _polyPt(n) { return { x: n.cx, y: n.cy, z: (isFinite(n.walkZ) ? n.walkZ : (n.cz || 0)) }; }
+  function _walkZOf(n) { return isFinite(n.walkZ) ? n.walkZ : (n.cz || 0); }
   function _buildPolyline(graph, path) {
     if (!path || !path.length) return [];
     var anchors = [];
@@ -1906,12 +1958,12 @@
       if (anchors[i + 1].kind === 'circ' && i + 2 < anchors.length && a.storey != null && a.storey === anchors[i + 2].storey) {
         var c = anchors[i + 2];
         var bypass = _astarHop(graph, a, c);
-        if (bypass !== null) { pushInterior(bypass, (a.cz || 0)); pushPt(_polyPt(c)); i += 2; continue; }
+        if (bypass !== null) { pushInterior(bypass, _walkZOf(a)); pushPt(_polyPt(c)); i += 2; continue; }
       }
       var b = anchors[i + 1];
       if (a.storey != null && a.storey === b.storey) {
         var hop = _astarHop(graph, a, b);
-        if (hop && hop.length) pushInterior(hop, (a.cz || 0));
+        if (hop && hop.length) pushInterior(hop, _walkZOf(a));
       }
       pushPt(_polyPt(b));
       i += 1;
