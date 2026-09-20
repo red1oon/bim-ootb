@@ -356,12 +356,13 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // the Sanity and clashes"). These guard the CURRENT behaviour: the flag is read, in the one
   // wrapper both layers pass through, and it names those two and nothing else. Disproved the moment
   // someone un-wires it, which is what happened to the first implementation of this feature.
-  ck('W-ESC-8f the suppression is wired — both triggers READ, in one place, by name',
-     /if \(!A2 \|\| !ESC_SUPPRESSED\[name\]\) return false;/.test(mq) &&
+  ck('W-ESC-8f the suppression is wired — both triggers READ, in one place, through a PREDICATE',
+     /if \(!A2 \|\| !ESC_SUPPRESS_RX\.test\(name\)\) return false;/.test(mq) &&
      /A2\._escRouteHudSuppress \|\| A2\._findingsHudSuppress/.test(mq) &&
      /if \(_escSuppresses\(name\)\) \{/.test(mq) &&
-     /var ESC_SUPPRESSED = \{ 'measure\.rulefindings': 1, 'clash\.labels': 1 \}/.test(mq),
-     'gate lives in _drawUnlessHold; suppressed set is rulefindings + clash labels');
+     /var ESC_SUPPRESS_RX = \/\^\(measure\\\.\|clash\\\.\)\//.test(mq),
+     'a named list of two became a predicate over the whole measure/clash family — see' +
+     ' viewer/tests/witness_findings_cease.js, which discovers the layers and tests every one');
   // The two triggers must be ONE decision, not two gates: _storeyRevealArmed ends at beats.rise and
   // the escape window does not open until ~0.965, so gating them separately flashes every chip back
   // on for the ~1.2 s between the beats.

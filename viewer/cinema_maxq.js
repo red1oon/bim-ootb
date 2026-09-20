@@ -1156,10 +1156,10 @@
   // red1, 2026-09-20 after seeing the clip: "While Escape Route, the other overlays have to cease.
   // Their work is sufficient and allowed full focus on EscRoute mgmt." — then, on being asked which:
   // "I don't mean the clock Sun stuff as it's needed.. I meant the Sanity and clashes".
-  // WHAT CEASES: the Sanity / rule-findings chips ("Structural — span depth cantilever / 42
-  // flagged") and the clash labels with their counts ("81 FP vs MEP clashes"). Both are FINDINGS
-  // signage about other rules, and the escape route is itself a findings beat — two rulebooks
-  // arguing in one frame is the crowding he is reacting to.
+  // WHAT CEASES: every `measure.*` layer and every `clash.*` layer — datum, cues, linear, slab,
+  // indoor, flyout, rulefindings, box, and the clash labels with their counts. All of it is
+  // FINDINGS signage about other rules, and the escape route is itself a findings beat — two
+  // rulebooks arguing in one frame is the crowding he is reacting to.
   // WHEN: from two seconds before the STOREY REVEAL opens (red1: "off when the storey reveal
   // starts" plus "give 2 more secs back to see other overlays going off") through to the end of
   // the film, covering the escape beat with it. Both triggers feed the one decision below.
@@ -1171,10 +1171,18 @@
   // reports "my window is open" — so this gate reads a flag that already exists rather than adding
   // a second trigger. Gated in the one wrapper both layers already pass through, so there is a
   // single place that decides and a witness can assert it by name.
-  var ESC_SUPPRESSED = { 'measure.rulefindings': 1, 'clash.labels': 1 };
+  // A PREDICATE, NOT A LIST. red1: "cease those overlays during ending orbit, as user has seen
+  // enough" — Measure, Sanity and clashes, from the onset of the storey reveal.
+  // The first cut named two layers of nine and was correct only by luck: the stale "Floor area"
+  // box red1 chased all morning is `measure.box`, which was NOT in that list and went quiet only
+  // because §SLAB_LABEL_STALE cleared its source. A named list also invites the tenth layer to
+  // arrive by accident rather than by decision, which is exactly how §75 rotted into a half-fix.
+  // Nothing in the closing orbit carries NEW measurement — every beat feeding these layers runs
+  // earlier — so ceasing the whole family costs no live information.
+  var ESC_SUPPRESS_RX = /^(measure\.|clash\.)/;
   function _escSuppresses(name) {
     var A2 = window.APP;
-    if (!A2 || !ESC_SUPPRESSED[name]) return false;
+    if (!A2 || !ESC_SUPPRESS_RX.test(name)) return false;
     // TWO triggers, ONE decision. `_escRouteHudSuppress` is the escape route's own window;
     // `_findingsHudSuppress` opens two seconds before the storey reveal and does not close, so the
     // chips cannot flash back on in the ~1.2 s gap between beats.rise and the escape window.
@@ -1191,6 +1199,20 @@
         if (!A2._hudCompositeAlphaSample) A2._hudCompositeAlphaSample = {};
         A2._hudCompositeAlphaSample[name] = 0;
         A2._escSuppressedThisFrame = (A2._escSuppressedThisFrame || 0) + 1;
+        // §FINDINGS_CEASE — the bake SAYS this happened, once, naming the layers and the trigger.
+        // red1 asked for it in as many words: "WITNESS logging must be present for those big
+        // request ie ceasing of M/C/S overlays during storey reveal start." A gate that is only
+        // provable by a node witness is not provable from the film that shipped.
+        A2._ceaseSeen = A2._ceaseSeen || {};
+        if (!A2._ceaseSeen[name]) {
+          A2._ceaseSeen[name] = 1;
+          console.log('§FINDINGS_CEASE layer=' + name + ' ceased' +
+            ' trigger=' + (A2._escRouteHudSuppress && !A2._findingsHudSuppress ? 'escape-route-window'
+              : (A2._findingsHudSuppress ? 'storey-reveal-onset' : 'unknown')) +
+            ' — Measure/Sanity/clash signage stands down for the closing movement (red1: "cease' +
+            ' those overlays during ending orbit, as user has seen enough"). Layers ceased so far=' +
+            Object.keys(A2._ceaseSeen).length);
+        }
       }
       return;
     }

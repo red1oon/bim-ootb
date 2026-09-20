@@ -121,6 +121,9 @@ function setupCpeEscapeRoute(A) {
   // rise) would take ~17 s. Never a floor: a short orbit gets the short reveal it can afford, and
   // the §ESCAPE_ROUTE_WINDOW line prints the seconds either way so it is never a surprise.
   var WINDOW_MAX_SEC = 12;
+  // §ESCAPE_FINALE — seconds of clean building at the end of the film, with nothing drawn ON it.
+  // red1: "Its last second is like a finale. It should not have any overlay on the building."
+  var FINALE_SEC = 1;
 
   // ── §ESCAPE_ROUTE_CAMERA_EASE — a LOCAL time-warp on the pose argument, nothing else ──
   // BACK-LOADED as of 2026-09-20. red1: "It should then slow further towards the end, to let the
@@ -668,7 +671,27 @@ function setupCpeEscapeRoute(A) {
       span = WINDOW_MAX_SEC / plan.durationSec; capped = true;
     }
     var start = b.rise + LEAD_FRAC * L;
-    return { start: start, end: start + span, orbitLen: L, capped: capped };
+    var end = start + span;
+    // ══ §ESCAPE_FINALE — the route runs to one second before the film, and no further ══════════
+    // red1, 2026-09-20: "its a bit rich, so let it linger a sec more and shuts off only a sec
+    // before ... the info is rich and its too little time to let it sink in." Then, on what the
+    // last second is for: "Its last second is like a finale. It should not have any overlay on the
+    // building."
+    // MEASURED on the 1211 run: the window was [0.9651,0.9877] = 189.0s..193.4s of 195.8s — a 4.4 s
+    // beat that ended 2.4 s before the film did, so the route came off and then nothing happened.
+    // It now ends at 1 - FINALE_SEC/durationSec (194.8s here, +1.4 s of route) and the film's last
+    // second is a clean building shot.
+    // ⚠ THE 3D COMES OFF WITH IT, and that is already true rather than newly arranged:
+    // escapeRouteApplyVisual tears the scene meshes down the frame escapeRouteVisualAt returns
+    // null, which is this end. The room shine and the polyline both go at once. The CARD does not —
+    // see §ESCAPE_PANEL_LINGER, which red1 asked to run "till the very end".
+    // Stretching the window stretches the back-loaded ease with it, so the slowest camera frames
+    // now land on the completed route rather than partway through its draw.
+    if (plan.durationSec > 0) {
+      var finaleEnd = 1 - (FINALE_SEC / plan.durationSec);
+      if (finaleEnd > start) end = finaleEnd;
+    }
+    return { start: start, end: end, orbitLen: L, capped: capped, finaleSec: FINALE_SEC };
   };
   A.escapeRouteVisualAt = function (plan, tNorm) {
     if (!_rec) return null;
@@ -725,15 +748,18 @@ function setupCpeEscapeRoute(A) {
     if (vis) return vis;
     if (!_rec || !plan || !(plan.durationSec > 0) || tNorm == null) return null;
     var win = A.escapeRouteWindow(plan);
-    if (!win || tNorm <= win.end) return null;
-    var dwell = (A.filmBoxesMeasureLingerS > 0) ? A.filmBoxesMeasureLingerS : 2.2;
-    var overSec = (tNorm - win.end) * plan.durationSec;
-    if (overSec > dwell) return null;
+    if (!win || tNorm <= win.end || tNorm > 1) return null;
+    // TILL THE VERY END, BY INTENT — not by arithmetic. red1: "The HUD may remain till the very
+    // end ... So that when EscRoute overlay in building ends, that HUD remains as it is almost
+    // ended. What more to replace it?" The first cut used cpe_film_boxes' 2.2 s LINGER_S, which
+    // happened to outlast the 1.0 s finale on THIS film and would have cut the panel short on a
+    // film whose finale was longer. The panel now holds to the last frame at full opacity: the
+    // route comes off the building, the numbers stay readable, and nothing reclaims the corner.
+    // (§ESCAPE_PANEL_SLOT's own gate is what keeps the Measure box from taking it back.)
     var full = A.escapeRouteVisualAt(plan, win.end - 1e-9);
     if (!full) return null;
-    return { w: 1, progress: 1, alpha: Math.max(0, 1 - overSec / dwell),
-             drawnM: _rec.walkM, steps: _rec.steps, walkSec: _rec.walkSec,
-             winStart: win.start, winEnd: win.end, lingering: true };
+    return { w: 1, progress: 1, alpha: 1, drawnM: _rec.walkM, steps: _rec.steps,
+             walkSec: _rec.walkSec, winStart: win.start, winEnd: win.end, lingering: true };
   }
   A.escapeRouteStatCardAt = function (plan, tNorm) {
     var vis = _cardVisAt(plan, tNorm);

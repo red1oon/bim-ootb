@@ -57,6 +57,10 @@ function setupCpeStoreyReveal(A) {
   // §FINDINGS_HUD_CLEAR — seconds of visibly cleared frame before the storey reveal opens (red1:
   // "give 2 more secs back to see other overlays going off"). Seconds, never a film fraction.
   var FINDINGS_CLEAR_LEAD_SEC = 2;
+  // …and the tail they are allowed when there is NO storey reveal to cease at (red1: "IF the
+  // storey reveal check is not on, the M/C/S overlays may linger at most 2 s, no more for
+  // graceful ending"). Measured from the closing orbit's own start.
+  var FINDINGS_OFF_TAIL_SEC = 2;
   // ══ §129.59 (2026-09-20) — THE TINT IS BACK, WHOLE-STOREY, WITH NO X-RAY ═════════════════════
   // red1, on ~/Downloads/allon_storeyreveal_to_end_1080p24.mp4: "Look at the more cool impact" —
   // the tint-era beat lights a whole level and reads as an event; the section cut does not.
@@ -2404,7 +2408,16 @@ function setupCpeStoreyReveal(A) {
         A._findingsHudSuppress = (tNorm != null && tNorm >= _srWin - _clearLead);
       } else {
         A._storeyRevealArmed = false;
-        A._findingsHudSuppress = false;
+        // ── NO STOREY REVEAL, SO NO ONSET TO CEASE AT — a bounded tail instead ──
+        // red1: "IF the storey reveal check is not on, the M/C/S overlays may linger at most 2 s,
+        // no more for graceful ending."
+        // Without a reveal there is no beat whose start says "their work is sufficient", so the
+        // bound is the closing ORBIT's own start plus that tail. Same rule, same seconds-not-
+        // fractions reasoning as the lead above, and it exists in code rather than being true by
+        // accident on a film that happens to have the reveal switched on.
+        var _orbit = _srB && _srB.rise;
+        A._findingsHudSuppress = !!(_orbit > 0 && _orbit < 1 && tNorm != null && plan.durationSec > 0 &&
+          tNorm >= _orbit + (FINDINGS_OFF_TAIL_SEC / plan.durationSec));
       }
     } catch (eSA) { A._storeyRevealArmed = false; A._findingsHudSuppress = false; }
     var vis = A.storeyRevealVisualAt(plan, tNorm);

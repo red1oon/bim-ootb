@@ -88,9 +88,16 @@ ck('…and it draws inside _drawUnlessHold, so it registers a rect and fades wit
 ck('the Measure box REPLACED, not shared — it does not draw while the escape card holds the slot',
    /if \(A\.filmBoxesDrawMeasure && !escCardInfo\) \{/.test(mq),
    'two panels in one corner is the crowding the move exists to end');
-ck('the linger reuses cpe_film_boxes\'s published LINGER_S — red1 spec\'d that dwell himself (§56.1)',
-   /A\.filmBoxesMeasureLingerS > 0\) \? A\.filmBoxesMeasureLingerS : 2\.2/.test(esc),
-   'same box, same request, same constant — not a second dwell');
+// SUPERSEDED the same afternoon: the panel no longer rides cpe_film_boxes' 2.2 s dwell at all.
+// red1 refined it to "The HUD may remain till the very end", and that dwell only outlasted this
+// film's 1 s finale by arithmetic — it would have cut the panel short on a film with a longer one.
+ck('the panel holds to the last frame by INTENT, not by a dwell that happens to be long enough',
+   /tNorm <= win\.end \|\| tNorm > 1\) return null;/.test(esc) && /alpha: 1, drawnM: _rec\.walkM/.test(esc),
+   'bounded on tNorm > 1, full opacity across the finale');
+ck('nothing reclaims the corner when it ends — red1: "IF it ends, then just cease, and not have fresh stale info"',
+   /if \(A\.filmBoxesDrawMeasure && !escCardInfo\) \{/.test(mq) &&
+   /SLAB_LABEL_STALE/.test(fs.readFileSync(path.join(ROOT, 'viewer/cpe_slab_beat.js'), 'utf8')),
+   'the Measure box has already stood its label down by then, so the corner stays blank');
 
 // ── 5. THE SERVICE WORKER VERSION MOVED WITH THE MODULES ─────────────────────────────────────
 // Not a draw defect, but the same class of silent failure: a reused bake profile renders the OLD

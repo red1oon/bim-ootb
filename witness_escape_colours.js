@@ -205,6 +205,37 @@ const polyLen = (pts) => { let L = 0; for (let i = 1; i < pts.length; i++) L += 
        withFlag.card.footnotes.length + ' footnotes');
   }
 
+  // ══ W-13-10 — THE FINALE. ISSUE (red1, 2026-09-20): "Its last second is like a finale. It should
+  // not have any overlay on the building", and one message earlier "The HUD may remain till the
+  // very end". Two different lifetimes that used to be one: the 3D comes OFF the building while the
+  // panel stays. Disproved if the route still draws in the final second, or if the panel dies with
+  // it, or if the window stops ending where the finale starts.
+  {
+    const plan = planWith(0.95, 195.8);
+    const win = A.escapeRouteWindow(plan);
+    const K2 = A.escapeRouteConstants();
+    const endSec = win.end * plan.durationSec;
+    ck('W-13-10a the route window ends exactly FINALE_SEC before the film does',
+       Math.abs((plan.durationSec - endSec) - (win.finaleSec || 1)) < 1e-6,
+       'window ends ' + endSec.toFixed(2) + 's of ' + plan.durationSec + 's (finale=' + win.finaleSec + 's)');
+    ck('W-13-10b nothing is DRAWN on the building through the finale — every sample is null',
+       [0.05, 0.25, 0.5, 0.75, 0.95, 0.999].every((f) =>
+         A.escapeRouteVisualAt(plan, win.end + (1 - win.end) * f) === null),
+       'sampled across the last second');
+    ck('W-13-10c …and the 3D is torn down the frame that happens, not at end of bake',
+       /if \(vis && !_on\) \{ _on = true; _build3D\(\); \}\s*\n\s*else if \(!vis && _on\) \{ _tearDown\(\); \}/.test(
+         fs.readFileSync(path.join(__dirname, 'viewer/cpe_escape_route.js'), 'utf8')),
+       'escapeRouteApplyVisual removes the room shine and the polyline together');
+    ck('W-13-10d …while the PANEL is still there on the very last frame',
+       !!A.escapeRouteStatCardAt(plan, 1) && !!A.escapeRouteStatCardAt(plan, 0.99999),
+       'red1: "The HUD may remain till the very end"');
+    ck('W-13-10e the back-loaded ease stretches with the longer window, so the slowest frames land' +
+       ' on the COMPLETED route',
+       A.escapeRouteEaseRate(0.98) < A.escapeRouteEaseRate(0.5) &&
+       A.escapeRouteEaseRate(1) < 0.5 && K2.easeK > 0,
+       'rate at w=0.98 is ' + A.escapeRouteEaseRate(0.98).toFixed(2) + 'x');
+  }
+
   // ══ W-13-9 — THE PANEL LINGERS PAST ITS OWN LINE. ISSUE (red1, 2026-09-20): "So that the
   // EscRoute panel lingers rather than cuts off when its overlay goes off. This allows user to
   // sense its work further." The card used to vanish the instant the window closed — the moment its
@@ -213,20 +244,28 @@ const polyLen = (pts) => { let L = 0; for (let i = 1; i < pts.length; i++) L += 
   {
     const plan = planWith(0.95);
     const win = A.escapeRouteWindow(plan);
-    const dwell = (A.filmBoxesMeasureLingerS > 0) ? A.filmBoxesMeasureLingerS : 2.2;
+    // Sampled across the FINALE second — the span the panel now has to survive — rather than
+    // across cpe_film_boxes' dwell, which no longer governs it.
+    const finale = win.finaleSec || 1;
     const at = (secPast) => A.escapeRouteStatCardAt(plan, win.end + secPast / plan.durationSec);
-    const justAfter = at(0.05), mid = at(dwell * 0.5), after = at(dwell + 0.5);
+    const justAfter = at(finale * 0.05), mid = at(finale * 0.6), after = at(finale * 0.99);
     ck('W-13-9a the card still draws just after the window closes',
        !!justAfter, justAfter ? 'opacity=' + justAfter.opacity.toFixed(2) : 'null');
     ck('W-13-9b …showing the COMPLETED route, not a partial draw frozen mid-count',
        !!justAfter && justAfter.card.legend[0].value !== '\u2014' &&
        justAfter.card.big === A.escapeRouteFmtWalk(rec.walkSec),
        justAfter ? justAfter.card.big + '  RED=' + justAfter.card.legend[0].value : '-');
-    ck('W-13-9c …fading as it goes, so it reads as settling rather than sticking',
-       !!justAfter && !!mid && mid.opacity < justAfter.opacity,
-       justAfter && mid ? justAfter.opacity.toFixed(2) + ' -> ' + mid.opacity.toFixed(2) : '-');
-    ck('W-13-9d …and it DOES end — a panel that lingers forever is the defect it was meant to fix',
-       after === null, 'dwell=' + dwell + 's (cpe_film_boxes LINGER_S, §56.1)');
+    // REWRITTEN 2026-09-20 with red1's own refinement: "The HUD may remain till the very end ...
+    // the info is rich and its too little time to let it sink in." The first cut faded the panel
+    // across cpe_film_boxes' 2.2 s LINGER_S, which on THIS film happened to outlast the 1 s finale
+    // and would have cut the panel short on a film whose finale was longer — it held by arithmetic,
+    // not by intent. A fading panel is also the wrong answer to "let it sink in".
+    ck('W-13-9c …at FULL opacity, not fading — the numbers stay readable to the last frame',
+       !!justAfter && justAfter.opacity === 1 && !!mid && mid.opacity === 1,
+       justAfter && mid ? justAfter.opacity.toFixed(2) + ' then ' + mid.opacity.toFixed(2) : '-');
+    ck('W-13-9d …and it ends WITH THE FILM — not on a dwell, and never past the last frame',
+       A.escapeRouteStatCardAt(plan, 1) !== null && A.escapeRouteStatCardAt(plan, 1.0001) === null,
+       'holds to tNorm=1, nothing beyond it');
   }
 
   // ══ W-13-7 — THE FOOTNOTE BLOCK DROPS, THE MARKERS STAY. ISSUE: §13.5 measured the card at
