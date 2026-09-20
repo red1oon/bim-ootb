@@ -123,13 +123,26 @@ function setupCpeEscapeRoute(A) {
   var WINDOW_MAX_SEC = 12;
 
   // ── §ESCAPE_ROUTE_CAMERA_EASE — a LOCAL time-warp on the pose argument, nothing else ──
-  // warp(w) = w + (A/(16pi)) * (2 sin 2pi w - sin 4pi w)  on w in [0,1], identity outside.
-  //   warp(0)=0, warp(1)=1          — the camera is exactly where it would have been, at both ends
-  //   warp'(0)=warp'(1)=1           — and moving at exactly the speed it would have been: no step
-  //   warp'(w) = 1 + (A/4)(cos 2pi w - cos 4pi w),  min 1-A/2 at w=0.5,  max 1+0.28125A
-  // At EASE_A=1.2 the orbit's angular rate falls to 0.40x mid-reveal and peaks at 1.34x near the
-  // edges. Monotone for any A < 2, so the camera can never run backwards.
-  var EASE_A = 1.2;
+  // BACK-LOADED as of 2026-09-20. red1: "It should then slow further towards the end, to let the
+  // matured info sinks in."
+  // THE OLD CURVE DID THE OPPOSITE AT THE END, and no value of its constant could fix it:
+  //   warp = w + (A/16pi)(2 sin 2pi w - sin 4pi w),  rate = 1 + (A/4)(cos 2pi w - cos 4pi w)
+  // That rate is SYMMETRIC about w=0.5 for EVERY A — 1.00x, 1.30x, 0.40x, 1.30x, 1.00x. The camera
+  // lingered halfway through, while the line was still drawing and the counters still climbing, and
+  // was back to full orbit speed exactly when the route completed and the card showed its final
+  // figures. So this is a shape change, not a tuning change.
+  //   warp(w) = w + k*w*(1-w)        rate(w) = 1 + k*(1 - 2w)
+  //   warp(0)=0, warp(1)=1           the beat occupies the SAME span; nothing downstream moves
+  //   rate falls monotonically       1+k entering, 1-k leaving, no turning point
+  //   monotone for k <= 1            at k=1 the rate reaches 0, a dead stop; below that it drifts
+  // At EASE_K=0.6 the rate runs 1.60x -> 1.00x -> 0.40x: the camera arrives moving and settles onto
+  // the finished picture, which is where the matured information actually is.
+  // ⚠ THE RATE IS DELIBERATELY NO LONGER 1 AT THE EDGES. The old curve's "eases in and out, never
+  // steps" property is given up on purpose — a beat that ends at full orbit speed is precisely what
+  // red1 asked to change. It still starts and ends at the same POSE, which is the property that
+  // keeps the rest of the film untouched.
+  var EASE_K = 0.6;
+  var EASE_A = 1.2;   // kept for §ESCAPE_ROUTE_INIT's own log line and the constants witness
 
   var PATH_HEX = 0xff9100;                    // §PATH_ORANGE — navigate_find.js's own route colour
   var PATH_RGB = 'rgb(255,145,0)';
@@ -639,7 +652,7 @@ function setupCpeEscapeRoute(A) {
   A.escapeRouteConstants = function () {
     return { strideM: STRIDE_M, walkMs: WALK_MS, walkCite: WALK_CITE, leadFrac: LEAD_FRAC,
              spanFrac: SPAN_FRAC, drawFrac: DRAW_FRAC, fadeFrac: FADE_FRAC, easeA: EASE_A,
-             pathHex: PATH_HEX, usesXray: false };
+             easeK: EASE_K, pathHex: PATH_HEX, usesXray: false };
   };
 
   // ══ THE WINDOW — a pure function of (plan, tNorm). Null everywhere outside it. ═══════════════
@@ -683,15 +696,15 @@ function setupCpeEscapeRoute(A) {
     // whose minimum is 1 - A = -0.2 at A=1.2 — the camera ran BACKWARDS mid-reveal. W-ESC-4c
     // caught it; it is invisible in a picture and would have shipped. d/dw of (2 sin2pi w -
     // sin4pi w) is 4pi(cos2pi w - cos4pi w), so the 4pi has to cancel into the 16pi to leave A/4.
-    var warp = w + (EASE_A / (16 * Math.PI)) * (2 * Math.sin(2 * Math.PI * w) - Math.sin(4 * Math.PI * w));
-    var rate = 1 + (EASE_A / 4) * (Math.cos(2 * Math.PI * w) - Math.cos(4 * Math.PI * w));
+    var warp = w + EASE_K * w * (1 - w);
+    var rate = 1 + EASE_K * (1 - 2 * w);
     _stats.easedFrames++;
     if (_stats.minEaseRate === null || rate < _stats.minEaseRate) _stats.minEaseRate = rate;
     if (_stats.maxEaseRate === null || rate > _stats.maxEaseRate) _stats.maxEaseRate = rate;
     return win.start + (win.end - win.start) * warp;
   };
   // Exposed so the witness can measure the warp without re-implementing it.
-  A.escapeRouteEaseRate = function (w) { return 1 + (EASE_A / 4) * (Math.cos(2 * Math.PI * w) - Math.cos(4 * Math.PI * w)); };
+  A.escapeRouteEaseRate = function (w) { return 1 + EASE_K * (1 - 2 * w); };
 
   // ══ THE CARD — the existing bigStats {card,idx,n,opacity} shape, so no new panel is drawn ══════
   // TITLED (§2 item 8, red1: "unambiguous"). Both live numbers, and the walking speed ITSELF, so a
@@ -760,7 +773,21 @@ function setupCpeEscapeRoute(A) {
     footnotes.push('² ' + WALK_CITE + ' ' + WALK_MS + ' m/s    ³ ' + SPRINKLER_CITE + ' — proximity, not coverage');
     if (b && b.level) footnotes.push('⁴ ' + BREACH_CITE + ' — measured to an exterior door, so it may over-state');
     footnotes.push('* ' + STRIDE_M + ' m stride — no source; this project’s own convention');
-    return { card: { big: _fmtWalk(vis.walkSec), label: label, sub: sub, legend: legend, footnotes: footnotes },
+    // A FALLBACK CHAIN, longest first, and the card draws the first one that fits WHOLE.
+    // §13.5's mock has a SHORT counters row because the sources sit in the footnote block right
+    // below it; when that block is dropped — §13.5's ruling at clip height — the markers would
+    // point at nothing, so the LONG form carries the sources inline instead. And at 854x480 the
+    // plate leaves the sub about 13 px of height and one 8 px line, where even the short form is
+    // ellipsed: there the MINIMUM form keeps the one number that must never appear unmarked.
+    // An ellipsed long sub is strictly worse than a whole short one — it loses the disclosures it
+    // exists for AND keeps none of the room. Whichever form is drawn, no number ever appears
+    // without its evidence tier, which is the rule this chain exists to hold.
+    var subShort = '~' + vis.steps + ' steps*  \u00b7  ' + vis.drawnM.toFixed(0) + ' m walked';
+    if (b && b.level) subShort += '  \u00b7  ' + vis.drawnM.toFixed(0) + ' m vs ' + b.limitM + ' m ' +
+      (b.level === 'critical' ? 'limit' : 'warning') + '\u2074';
+    var subMin = '~' + vis.steps + ' steps*  \u00b7  ' + vis.drawnM.toFixed(0) + ' m\u00b2';
+    return { card: { big: _fmtWalk(vis.walkSec), label: label, sub: sub, subAlts: [subShort, subMin],
+                     legend: legend, footnotes: footnotes },
              idx: 0, n: 1, opacity: vis.alpha };
   };
   // The caption slot, same A.roomTitleCompositeOntoCanvas every other beat draws through.

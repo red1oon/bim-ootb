@@ -59,6 +59,7 @@ const CARD = {
   big: '3:28 mins',
   label: 'Escape Route — OVER LIMIT',
   sub: '~329 steps*  ·  247 m walked  ·  247 m vs 60.96 m limit (IBC 2021 T1017.2, I-2)⁴  ·  at 1.19 m/s (SFPE)²  ·  0.75 m stride assumed',
+  subAlts: ['~329 steps*  \u00b7  247 m walked  \u00b7  247 m vs 60.96 m limit\u2074', '~329 steps*  \u00b7  247 m\u00b2'],
   legend: [
     { key: 'RED', rgb: 'rgb(229,57,53)', value: '183 m', text: 'no choice', right: 'limit 30.5 m', marker: '1' },
     { key: 'YELLOW', rgb: 'rgb(255,145,0)', value: '64 m', text: 'to nearest exit', right: '', marker: '' },
@@ -78,12 +79,23 @@ const A = loadPanel();
 const SIZES = [[1920, 1080], [1280, 720], [854, 480]];
 SIZES.forEach(([w, h]) => {
   const ctx = recorder();
-  const box = A.bigStatsBoxRect(w, h, 'tr', 0);
+  // ⚠ MEASURE AGAINST THE RECT THAT IS DRAWN, not the one bigStatsBoxRect advertises. They are not
+  // the same: bigStatsBoxRect calls _box() with shownRows/clRows OMITTED, so it falls back to
+  // _scanMaxResourceRows()'s worst-case reservation and reports 173x185 at 854x480 where the
+  // compositor actually draws 173x131 — a 54 px lie. The first cut of this witness used the
+  // advertised rect, which is precisely why it passed a card whose sub was sliced by the plate's
+  // bottom edge in a delivered clip. The registered `stats-panel` rect is the drawn one.
+  let box = null;
+  A._hudLayoutRegister = (n, x, y, ww, hh) => { if (n === 'stats-panel') box = { x, y, w: ww, h: hh }; };
   A.bigStatsCompositeOntoCanvas(ctx, w, h, { card: CARD, idx: 0, n: 1, opacity: 1 }, 1, 'tr', 0, null);
+  if (!box) { ck(w + 'x' + h + ' the card registered its plate', false, 'no stats-panel rect'); return; }
   const L = box.x, Rr = box.x + box.w, T = box.y, B = box.y + box.h;
   const drawn = ctx.texts;
   const over = drawn.filter(t => t.right > Rr + 0.5 || t.left < L - 0.5);
-  const below = drawn.filter(t => t.y > B + 0.5);
+  // A baseline inside the plate is not enough: glyphs sit ABOVE the baseline and descenders hang
+  // below it. 0.78/0.22 of the font size is the usual split and is well inside what this estimate
+  // claims — the defect being caught is a line sliced in half, not a 1 px descender.
+  const below = drawn.filter(t => t.y + t.px * 0.22 > B + 0.5 || t.y - t.px * 0.78 < T - 0.5);
   ck(w + 'x' + h + ' every drawn string stays inside the plate horizontally',
      over.length === 0,
      'plate x=' + L.toFixed(0) + '..' + Rr.toFixed(0) + ' (' + box.w.toFixed(0) + 'px)  strings=' + drawn.length +
@@ -104,6 +116,16 @@ SIZES.forEach(([w, h]) => {
   ck(w + 'x' + h + ' no two strings on one baseline overlap',
      !clash, clash ? '"' + clash[0].s.slice(0, 20) + '" [' + clash[0].left.toFixed(0) + '..' + clash[0].right.toFixed(0) +
      '] vs "' + clash[1].s.slice(0, 20) + '" [' + clash[1].left.toFixed(0) + '..' + clash[1].right.toFixed(0) + ']' : '');
+  // NOTHING THE CARD DRAWS IS ELLIPSED. An ellipsis on this card is never cosmetic: every string
+  // on it is either a cited number, its source, or the disclosure that a number has no source, and
+  // a truncated one loses exactly the part that makes it checkable. The card carries a fallback
+  // CHAIN (card.subAlts) precisely so it can drop to a shorter whole form instead of cutting a
+  // longer one. MEASURED before this leg existed: at 854x480 the sub read
+  // "~329 steps* \u00b7 247 m walked \u00b7 \u2026" — the speed and the stride gone, with no footnote block
+  // to carry them either.
+  const cut = drawn.filter(t => /\u2026/.test(t.s) && !/^[\u00b9\u00b2\u00b3\u2074*] /.test(t.s));
+  ck(w + 'x' + h + ' no legend row, title or disclosure is ellipsed',
+     cut.length === 0, cut.length ? cut.map(t => '"' + t.s + '"').join(' | ') : 'footnote lines may ellipse — their marker still points somewhere');
   // §13.5's ruling, checked as behaviour rather than as a constant: the footnote block is gone at
   // clip height and present at delivery height, and the MARKERS survive either way.
   const hasFoot = drawn.some(t => /^[¹²³⁴*] /.test(t.s));

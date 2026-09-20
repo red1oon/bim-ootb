@@ -205,8 +205,16 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   };
   ck('W-ESC-4a warp(0)=0 and warp(1)=1 — the camera is exactly where it would have been at both ends',
      near(warp(1e-12), 0, 1e-9) && near(warp(1 - 1e-12), 1, 1e-9));
-  ck('W-ESC-4b the rate is 1 at both edges — it eases in and out, it does not step',
-     near(A.escapeRouteEaseRate(0), 1, 1e-12) && near(A.escapeRouteEaseRate(1), 1, 1e-12));
+  // BACK-LOADED (red1, 2026-09-20: "It should then slow further towards the end, to let the matured
+  // info sinks in"). These assert the SHAPE he asked for, not today's constants: the old curve was
+  // symmetric and slowest in the MIDDLE, and no value of its constant could change that, so a test
+  // pinned to 1.00x at the edges and 0.40x at w=0.5 was locking in the behaviour being replaced.
+  ck('W-ESC-4b the rate FALLS all the way through — no turning point, slowest at the very end',
+     A.escapeRouteEaseRate(0) > A.escapeRouteEaseRate(0.5) &&
+     A.escapeRouteEaseRate(0.5) > A.escapeRouteEaseRate(1) &&
+     A.escapeRouteEaseRate(1) > 0,
+     A.escapeRouteEaseRate(0).toFixed(2) + 'x -> ' + A.escapeRouteEaseRate(0.5).toFixed(2) +
+     'x -> ' + A.escapeRouteEaseRate(1).toFixed(2) + 'x');
   let mono = true, minR = Infinity, maxR = -Infinity, prev = -1;
   for (let k = 0; k <= 2000; k++) {
     const w = k / 2000, v = warp(w), r = A.escapeRouteEaseRate(w);
@@ -214,8 +222,9 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
     prev = v; minR = Math.min(minR, r); maxR = Math.max(maxR, r);
   }
   ck('W-ESC-4c monotone — the camera can never run backwards', mono);
-  ck('W-ESC-4d it genuinely SLOWS mid-reveal (this is the feature, not a no-op)', minR < 0.5,
-     'rate ' + minR.toFixed(3) + 'x .. ' + maxR.toFixed(3) + 'x, easeA=' + K.easeA);
+  ck('W-ESC-4d it genuinely SLOWS, and the slowest frames are the LAST ones (the feature, not a no-op)',
+     minR < 0.5 && Math.abs(A.escapeRouteEaseRate(1) - minR) < 1e-9,
+     'rate ' + maxR.toFixed(3) + 'x at the start .. ' + minR.toFixed(3) + 'x at the end, easeK=' + K.easeK);
   ck('W-ESC-4e outside the window it is the identity, to the bit',
      A.escapeRouteEaseFilmT(plan, 0.5) === 0.5 && A.escapeRouteEaseFilmT(plan, win.start) === win.start &&
      A.escapeRouteEaseFilmT(plan, win.end) === win.end && A.escapeRouteEaseFilmT(plan, 1) === 1);
@@ -338,11 +347,19 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // the Sanity and clashes"). These guard the CURRENT behaviour: the flag is read, in the one
   // wrapper both layers pass through, and it names those two and nothing else. Disproved the moment
   // someone un-wires it, which is what happened to the first implementation of this feature.
-  ck('W-ESC-8f the suppression is wired — the flag is READ, in one place, by name',
-     /A2\._escRouteHudSuppress && ESC_SUPPRESSED\[name\]/.test(mq) &&
+  ck('W-ESC-8f the suppression is wired — both triggers READ, in one place, by name',
+     /if \(!A2 \|\| !ESC_SUPPRESSED\[name\]\) return false;/.test(mq) &&
+     /A2\._escRouteHudSuppress \|\| A2\._findingsHudSuppress/.test(mq) &&
      /if \(_escSuppresses\(name\)\) \{/.test(mq) &&
      /var ESC_SUPPRESSED = \{ 'measure\.rulefindings': 1, 'clash\.labels': 1 \}/.test(mq),
      'gate lives in _drawUnlessHold; suppressed set is rulefindings + clash labels');
+  // The two triggers must be ONE decision, not two gates: _storeyRevealArmed ends at beats.rise and
+  // the escape window does not open until ~0.965, so gating them separately flashes every chip back
+  // on for the ~1.2 s between the beats.
+  ck('W-ESC-8f4 the storey-reveal trigger has NO upper bound, so the chips cannot flash back between beats',
+     /A\._findingsHudSuppress = \(tNorm != null && tNorm >= _srWin - _clearLead\);/.test(
+       fs.readFileSync(path.join(__dirname, 'viewer/cpe_storey_reveal.js'), 'utf8')),
+     'one-sided test from two seconds before the reveal opens');
   ck('W-ESC-8f2 the sun clock, the compass readout, the day counter and the pie are NOT suppressed',
      !/ESC_SUPPRESSED = \{[^}]*(suncompass|daycounter|hud\.pie|hud\.pathmap)/.test(mq) &&
      (mq.match(/_hudHold\('suncompass\.(clock|readout)'/g) || []).length === 2 &&

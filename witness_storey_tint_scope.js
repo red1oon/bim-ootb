@@ -202,6 +202,56 @@ console.log('\n── 5 CENSUS — one line, comparable with §93.4 ' + '─'.re
     (lines[0] || '').indexOf('=> FAIL') > 0, (lines[0] || '(no line)').slice(0, 100));
 }
 
+console.log('\n\u2500\u2500 6 CHANNELS \u2014 what is WRITTEN, not just what is reached ' + '\u2500'.repeat(12));
+{
+  // THE ISSUE THIS EXISTS FOR. red1, 2026-09-20 on a delivered clip: "It is not lighting thruout."
+  // Sections 1-5 above count meshes REACHED and they were 18/18 green while the picture was patchy,
+  // because reach was never the problem: _applyTint wrote `emissive` on regular meshes and DIFFUSE
+  // (setColorAt) on instanced and batched ones, so one storey was painted two different ways at
+  // once and the regular parts kept their original grey. `emissive.setHex` also leaves
+  // emissiveIntensity alone, so a source material at 0 showed nothing at all.
+  // Disproved the moment any path stops writing both channels, or the lift goes back to being
+  // whatever the source material happened to carry.
+  const hex = 0x2979ff;
+  const clones = [];
+  const mkMat = () => ({
+    color: new FakeColor(0x888888), emissive: new FakeColor(0), emissiveIntensity: 0,
+    clone() { const c = { color: new FakeColor(0x888888), emissive: new FakeColor(0),
+                          emissiveIntensity: 0, transparent: true, opacity: 0.5 };
+              clones.push(c); return c; }
+  });
+  const inst = { isInstancedMesh: true, id: 11, instanceColor: null, setColorAt(i, c) { this._last = c.getHex(); },
+                 count: 1 };
+  // batched meshes are indexed by A._batchMeta, NOT A._instanceMeta — a different map, and using
+  // the wrong one makes this leg silently vacuous (it did on the first run: "never called").
+  const batch = { isBatchedMesh: true, id: 22,
+                  getColorAt(slot, c) { return c; },
+                  setColorAt(slot, c) { this._last = c.getHex(); } };
+  const reg = { isMesh: true, userData: { storey: 'Level 4', guid: 'g-reg' }, material: mkMat() };
+  const meshes = [reg, inst, batch];
+  const A = { activeBuilding: 'W', _metaGen: 0, dbQuery: () => [],
+              _instanceMeta: { 11: [{ storey: 'Level 4', guid: 'g-inst' }] },
+              _batchMeta: { 22: [{ storey: 'Level 4', guid: 'g-batch', slotId: 0 }] },
+              collectMeshes: (pred) => meshes.filter((m) => { try { return !!pred(m); } catch (e) { return false; } }) };
+  setupCpeStoreyReveal(A);
+  capture(() => A.storeyRevealTintFor('Level 4', hex));
+  const cl = clones[0];
+  chk('regular mesh: DIFFUSE is set to the tint colour (was untouched \u2014 the patchiness)',
+    !!cl && cl.color.getHex() === hex, cl ? '#' + cl.color.getHex().toString(16) : '(no clone)');
+  chk('regular mesh: EMISSIVE is set to the same colour',
+    !!cl && cl.emissive.getHex() === hex, cl ? '#' + cl.emissive.getHex().toString(16) : '(no clone)');
+  chk('regular mesh: emissiveIntensity is LIFTED \u2014 a source material at 0 showed nothing',
+    !!cl && cl.emissiveIntensity > 0, cl ? String(cl.emissiveIntensity) : '(no clone)');
+  chk('the lift is the SAME number cpe_load_path.js already uses (0.35), not a second guess',
+    !!cl && Math.abs(cl.emissiveIntensity - 0.35) < 1e-9, cl ? String(cl.emissiveIntensity) : '-');
+  chk('instanced mesh: setColorAt got the tint colour', inst._last === hex,
+    inst._last == null ? '(never called)' : '#' + inst._last.toString(16));
+  chk('batched mesh: setColorAt got the tint colour', batch._last === hex,
+    batch._last == null ? '(never called)' : '#' + batch._last.toString(16));
+  chk('ALL THREE geometry paths now agree on the colour \u2014 one storey, one look',
+    !!cl && cl.color.getHex() === hex && inst._last === hex && batch._last === hex);
+}
+
 console.log('');
 console.log('§TINT_SCOPE ' + (fail ? 'FAIL' : 'PASS') + ' pass=' + pass + ' fail=' + fail +
   ' src=' + path.basename(SRC) +

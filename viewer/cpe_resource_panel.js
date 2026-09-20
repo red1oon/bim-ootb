@@ -966,14 +966,19 @@ function setupCpeResourcePanel(A) {
       var LF = 'BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
       var titlePx = Math.max(11, Math.round(bh * 0.072));
       var rowPx = Math.max(10, Math.round(bh * 0.062));
-      var rowH = Math.round(rowPx * 1.62);
+      var rowH = Math.round(rowPx * 1.62);   // provisional — re-pitched to rowPxFit once that is known
       // §13.5's own ruling for 854x480: the footnote block DROPS below a legibility threshold and
       // the markers STAY, rather than shrinking into decoration. The threshold is legibility, not
       // a chosen size — a footnote under 9 px is not a citation anybody can read, and the § log
       // carries the full sources either way, which is where a reader who wants to check them goes.
       var footPxWant = h * 0.012;
-      var showFoot = (c.footnotes && c.footnotes.length && footPxWant >= 9);
       var footPx = Math.max(9, Math.round(footPxWant));
+      // TWO SEPARATE TESTS, and only the first can be made here. LEGIBILITY is a property of the
+      // frame. Whether the block FITS depends on how tall the legend turned out, so that half is
+      // decided below, once yy is known. The first cut reserved a height and hoped: at 1920x1080
+      // footnotes 4 and * still landed 16 and 35 px past the plate.
+      var footLegible = !!(c.footnotes && c.footnotes.length && footPxWant >= 9);
+      var showFoot = footLegible;
       // THE HEADLINE stays — reduced, not removed. The legend has first claim on the height, but
       // §3's walk time is the one number a viewer grasps at a glance and the card has carried it
       // since the beat shipped. Drawn on the title band, right-aligned, so it costs one row rather
@@ -983,7 +988,12 @@ function setupCpeResourcePanel(A) {
       // since the beat shipped. Drawn on the title band, right-aligned, so it costs one row rather
       // than the 0.42*bh the plain stat card spends on it.
       var headPx = Math.round(titlePx * 1.28);
-      var yy = y + pad + headPx;
+      // The plain stat card's 0.13*bh top pad exists to give one huge number room to breathe. This
+      // card carries a title, four legend rows, a disclosure block and four citations, so it pays
+      // that pad back into content — 12 px of a 293 px card at 1920x1080, which is most of the
+      // margin the footnote block was missing.
+      var padTop = Math.round(bh * 0.09);
+      var yy = y + padTop + headPx;
       ctx.textBaseline = 'alphabetic';
       var headW = 0;
       if (c.big) {
@@ -1058,6 +1068,11 @@ function setupCpeResourcePanel(A) {
         keepText = false;
         for (zpx = rowPx; zpx >= inkFloor; zpx--) if (_legendFits(zpx, false)) { rowPxFit = zpx; break; }
       }
+      // RE-PITCH THE ROWS to the size they are actually drawn at. `rowPx` is the nominal size from
+      // the plate height; the legend commonly settles well below it, and pitching 12 px rows at a
+      // nominal-18 px stride wasted 36 px of a 293 px card at 1920x1080 — which was the whole
+      // reason the footnote block did not fit there, at the one resolution §13.5 measured it FOR.
+      rowH = Math.round(rowPxFit * 1.62);
       for (li2 = 0; li2 < c.legend.length; li2++) {
         var LG = c.legend[li2];
         var mk = LG.marker ? MK.charAt(+LG.marker - 1) : '';
@@ -1096,27 +1111,73 @@ function setupCpeResourcePanel(A) {
         }
         yy += rowH;
       }
+      // WHAT IS LEFT, AND WHO GETS IT. Height is the budget from here on, spent in a stated
+      // order: the sub keeps at least one line (3's disclosures are not optional), the footnote
+      // block takes its FULL height or none of it, and the sub takes the rest.
+      // ALL OR NOTHING ON THE FOOTNOTES. A partial block is worse than no block: the markers on
+      // the rows would point at citations that are not on screen, which is the very laundering
+      // 13.5 exists to prevent. A block that does not fit whole is dropped whole and the markers
+      // stay; the section log carries every source either way.
+      var padBottom = Math.round(pad * 0.7);
+      var contentBottom = y + bh - padBottom;
+      var footBlockH = footLegible
+        ? (Math.round(footPx * 0.7) + Math.round(footPx * 1.32) * c.footnotes.length + Math.round(footPx * 0.8))
+        : 0;
       if (c.sub) {
-        // WRAPPED, not fitted: the sub carries §3's disclosures in full (speed + source, metres,
-        // the rule name when flagged, the stride) and at 389 px even the floor size cannot hold
-        // that on one line. Shrinking it to fit would be the same defect §CPE_CARD_FIT already
-        // fixed once for the label — a disclosure nobody can read is a disclosure that is not there.
-        var subPx = Math.max(9, Math.round(rowPx * 0.86));
+        var subTop = yy + Math.round(rowPx * 0.25);
+        // The SHORT sub is what §13.5's mock puts above a footnote block; the LONG one carries the
+        // sources inline for when the block is dropped. So the fit test asks "do the footnotes fit
+        // above a SHORT sub", not "above the long one" — asking the wrong question dropped all four
+        // citations at 1920x1080, the one resolution §13.5 measured them to fit at.
+        var subShortH = Math.round(inkFloor * 1.35);
+        showFoot = footLegible && (contentBottom - subTop - footBlockH) >= subShortH;
+        var subAvail = contentBottom - subTop - (showFoot ? footBlockH : 0);
+        // WHICH SUB. `c.subAlts` is the card's own fallback chain, longest first; the first form
+        // that fits WHOLE is the one drawn. An ellipsed long sub is strictly worse than a whole
+        // short one — it loses the very disclosures it exists for and keeps none of the room the
+        // short one saves. MEASURED at 854x480: the 173 px plate gives the sub one 8 px line, and
+        // the long form came out as "~329 steps* \u00b7 247 m walked \u00b7 …" — the speed and the stride
+        // gone, with no footnote block to carry them either.
+        var subTxt = c.sub;
+        var probePx = Math.max(inkFloor, Math.round(rowPxFit * 0.86));
+        var probeLines = Math.max(1, Math.min(3, Math.floor(subAvail / Math.round(probePx * 1.35))));
+        ctx.font = '600 ' + probePx + 'px ' + LF;
+        // 0.92 of the column per line — _wrapText breaks on words, so a line rarely fills to the pixel
+        var budget = colW * probeLines * 0.92;
+        var alts = [c.sub].concat(c.subAlts || []);
+        if (showFoot && alts.length > 1) alts = alts.slice(1);   // §13.5: sources are in the block below
+        subTxt = alts[alts.length - 1];
+        for (var ai = 0; ai < alts.length; ai++) {
+          if (ctx.measureText(alts[ai]).width <= budget) { subTxt = alts[ai]; break; }
+        }
+        var subPx = Math.max(inkFloor, Math.round(rowPxFit * 0.86)), subLines = 3;
+        ctx.font = '600 ' + subPx + 'px ' + LF;
+        // one line is enough when the text actually fits on one — the short sub usually does
+        while (subLines > 1 && ctx.measureText(subTxt).width <= colW * (subLines - 1)) subLines--;
+        while (subPx > inkFloor && Math.round(subPx * 1.35) * subLines > subAvail) subPx--;
+        while (subLines > 1 && Math.round(subPx * 1.35) * subLines > subAvail) subLines--;
         ctx.fillStyle = 'rgba(255,255,255,0.80)';
-        _wrapText(ctx, c.sub, colX, yy + Math.round(rowPx * 0.25), colW, subPx, Math.max(8, subPx - 2), '600', LF, 3);
-        yy += Math.round(subPx * 1.35) * 2;
+        _wrapText(ctx, subTxt, colX, subTop + subPx, colW, subPx, Math.max(8, subPx - 2), '600', LF, subLines);
+        // The block occupies subLines * leading from subTop — the FIRST baseline sits subPx inside
+        // that span, it is not extra. Counting it twice pushed yy ~12 px past what showFoot had
+        // budgeted at 1920x1080, and the fourth citation was then cut by the guard below — a
+        // PARTIAL footnote block, which is the one outcome this card is not allowed to produce.
+        yy = subTop + Math.round(subPx * 1.35) * subLines;
+      } else {
+        showFoot = footLegible && (contentBottom - yy) >= footBlockH;
       }
       if (showFoot) {
         var ry = yy + Math.round(footPx * 0.7);
         ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(colX, ry); ctx.lineTo(colX + colW, ry); ctx.stroke();
-        // The day counter's own context register (§129.58's one-theme rule), the same weight
+        // The day counter's own context register (129.58's one-theme rule), the same weight
         // clash_labels.js uses for its fact row — a footnote must read as a footnote.
         ctx.fillStyle = 'rgba(255,255,255,0.62)';
         var fy = ry + Math.round(footPx * 1.5);
         for (var fi = 0; fi < c.footnotes.length; fi++) {
+          if (fy + footPx * 0.25 > contentBottom) break;   // the guarantee, not the plan
           _fitText(ctx, c.footnotes[fi], colX, fy, colW, footPx, Math.max(8, footPx - 2), '500', LF);
-          fy += Math.round(footPx * 1.45);
+          fy += Math.round(footPx * 1.32);
         }
       }
       _dots(ctx, colX, y + bh - pad * 0.7, bh, shown);

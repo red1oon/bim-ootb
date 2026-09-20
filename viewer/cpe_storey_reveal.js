@@ -50,6 +50,13 @@ function setupCpeStoreyReveal(A) {
   // generalized past exactly 5 storeys since real buildings rarely have exactly 5 (Hospital has 8
   // countable levels once Ceiling/TOS pseudo-storeys are excluded — see storeyRevealList below).
   var COLORS = [0x2979ff, 0x00c853, 0xffd600, 0xff6d00];   // blue, green, yellow, orange
+  // §13-adjacent: the SAME lift cpe_load_path.js:508 uses for its own coloured clones
+  // (SHINE_EMISSIVE_LIFT = 0.35, "solid rainbow with a slight emissive lift"). One number, taken
+  // from the lane that already solved this on the same kind of geometry, not a second guess at it.
+  var TINT_EMISSIVE_LIFT = 0.35;
+  // §FINDINGS_HUD_CLEAR — seconds of visibly cleared frame before the storey reveal opens (red1:
+  // "give 2 more secs back to see other overlays going off"). Seconds, never a film fraction.
+  var FINDINGS_CLEAR_LEAD_SEC = 2;
   // ══ §129.59 (2026-09-20) — THE TINT IS BACK, WHOLE-STOREY, WITH NO X-RAY ═════════════════════
   // red1, on ~/Downloads/allon_storeyreveal_to_end_1080p24.mp4: "Look at the more cool impact" —
   // the tint-era beat lights a whole level and reads as an event; the section cut does not.
@@ -715,6 +722,13 @@ function setupCpeStoreyReveal(A) {
           label: (st.bx != null ? 'm ground slab' : 'doors · ground slab') }
       : { big: String(st.doorCount), label: 'doors · ' + vis.storey };
     if (subParts.length) card.sub = subParts.join(' · ');
+    // ══ THE CARD WEARS THE STOREY'S OWN COLOUR ═══════════════════════════════════════════════
+    // red1, 2026-09-20: "it be good if the HUD storey info is same color as the tint."
+    // `vis.color` is the SAME value _applyTint is handed for this slot, read from the same visual
+    // record — not a parallel table keyed off the storey name, which could drift from the building
+    // the moment COLORS or the slot order changes. `ink` is bigStatsCompositeOntoCanvas's existing
+    // §59 category-ink hook, so this is a value on a card, not a new drawing path.
+    card.ink = '#' + vis.color.toString(16).padStart(6, '0');
     return { card: card, idx: vis.idx, n: vis.n, opacity: vis.opacity };
   };
 
@@ -883,7 +897,26 @@ function setupCpeStoreyReveal(A) {
       var orig = o.material, cl = _matMap ? _matMap.get(orig) : null;
       if (!cl) {
         cl = orig.clone();
+        // ══ BOTH CHANNELS, OR THE STOREY IS PAINTED TWO DIFFERENT WAYS AT ONCE ═══════════════
+        // red1, 2026-09-20 on the clip: "It is not lighting thruout."
+        // ROOT CAUSE, and it is not scope — §129.59's scope fix works, §TINT_SCOPE 18/18 and
+        // meshesTouched 1,551-11,737 per storey prove the geometry is reached. It is CHANNEL:
+        // this branch wrote `emissive` only, while the instanced and batched branches below write
+        // DIFFUSE via setColorAt. So within one storey the instanced and batched parts went fully
+        // coloured and the regular meshes kept their original grey diffuse with a faint emissive
+        // add on top — patchiness BY MESH TYPE, which is exactly what "not throughout" looks like.
+        // Worse, `emissive.setHex` does not touch emissiveIntensity, so any source material sitting
+        // at 0 showed NOTHING from the tint at all.
+        // The in-project precedent is cpe_load_path.js:507-508, whose own comment calls the result
+        // "solid rainbow with a slight emissive lift" — colour AND emissive AND the lift. Extracted
+        // here rather than invented.
+        // ⚠ This is also why main's version LOOKED better without being better: main runs with
+        // x-ray ON, so the emissive-only interior read as a glowing volume through the envelope.
+        // With x-ray off (red1's call, not reopened) you only ever see the outer surface, and on a
+        // regular mesh that surface was diffuse-unchanged.
+        if (cl.color) cl.color.setHex(hex);
         cl.emissive.setHex(hex);
+        cl.emissiveIntensity = TINT_EMISSIVE_LIFT;
         cl.transparent = false; cl.opacity = 1;
         if (_matMap) _matMap.set(orig, cl);
         _clones.push(cl);
@@ -2352,10 +2385,28 @@ function setupCpeStoreyReveal(A) {
       if (_srB && _srS && _srS.on && _srS.windowFrac > 0 && _srB.rise > 0 && _srB.rise < 1) {
         var _srWin = _srB.rise - _srS.windowFrac, _srLead = 0.02;
         A._storeyRevealArmed = (tNorm != null && tNorm >= _srWin - _srLead && tNorm <= _srB.rise);
+        // ══ §FINDINGS_HUD_CLEAR — the Sanity chips and clash labels stand down for the rest of
+        // the film, from two seconds before the storey reveal opens ══════════════════════════
+        // red1, 2026-09-20: "the other overlays have to cease. Their work is sufficient and allowed
+        // full focus" — then, naming them: "I meant the Sanity and clashes" — then "give 2 more
+        // secs back to see other overlays going off".
+        // THE LEAD IS IN SECONDS, NOT A FILM FRACTION, because what he asked for is a viewing
+        // moment: two seconds where the frame has visibly cleared BEFORE the beat's own content
+        // arrives, so the clearing reads as something that happened rather than as a cut. A
+        // fraction would be 2 s on this film and 6 s on a three-times-longer one.
+        // NO UPPER BOUND, on purpose. `_storeyRevealArmed` ends at beats.rise, and the escape
+        // route's own window does not open until 0.9651 — gating on the two flags separately would
+        // flash every chip back on for the ~1.2 s between them. From the reveal to the end of the
+        // film is one continuous beat as far as this signage is concerned.
+        // Computed from (plan, tNorm) every frame like the flag above, so it is self-healing and
+        // cannot be left stranded true by an exit path the way a latch can.
+        var _clearLead = (plan.durationSec > 0) ? (FINDINGS_CLEAR_LEAD_SEC / plan.durationSec) : 0.01;
+        A._findingsHudSuppress = (tNorm != null && tNorm >= _srWin - _clearLead);
       } else {
         A._storeyRevealArmed = false;
+        A._findingsHudSuppress = false;
       }
-    } catch (eSA) { A._storeyRevealArmed = false; }
+    } catch (eSA) { A._storeyRevealArmed = false; A._findingsHudSuppress = false; }
     var vis = A.storeyRevealVisualAt(plan, tNorm);
     // A dark slot keeps its own key so the tint is actually taken DOWN between storeys (the "cease").
     // The last storey never reports dark (§STOREY_REVEAL_LAST_STAYS_LIT), so this key never flips to

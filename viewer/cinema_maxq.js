@@ -1160,6 +1160,9 @@
   // flagged") and the clash labels with their counts ("81 FP vs MEP clashes"). Both are FINDINGS
   // signage about other rules, and the escape route is itself a findings beat — two rulebooks
   // arguing in one frame is the crowding he is reacting to.
+  // WHEN: from two seconds before the STOREY REVEAL opens (red1: "off when the storey reveal
+  // starts" plus "give 2 more secs back to see other overlays going off") through to the end of
+  // the film, covering the escape beat with it. Both triggers feed the one decision below.
   // WHAT STAYS: the sun clock, the sun-compass readout, the day counter, the path box and the pie.
   // ⚠ THIS IS NOT THE RETIRED GATE'S LIST — it is very nearly its inverse. The old `_hudGate()`
   // cleared the sun clock, the compass readout, the path box and the pie, which are exactly the
@@ -1171,7 +1174,11 @@
   var ESC_SUPPRESSED = { 'measure.rulefindings': 1, 'clash.labels': 1 };
   function _escSuppresses(name) {
     var A2 = window.APP;
-    return !!(A2 && A2._escRouteHudSuppress && ESC_SUPPRESSED[name]);
+    if (!A2 || !ESC_SUPPRESSED[name]) return false;
+    // TWO triggers, ONE decision. `_escRouteHudSuppress` is the escape route's own window;
+    // `_findingsHudSuppress` opens two seconds before the storey reveal and does not close, so the
+    // chips cannot flash back on in the ~1.2 s gap between beats.rise and the escape window.
+    return !!(A2._escRouteHudSuppress || A2._findingsHudSuppress);
   }
   function _drawUnlessHold(name, fn, boxFn) {
     var A2 = window.APP;

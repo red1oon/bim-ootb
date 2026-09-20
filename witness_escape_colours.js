@@ -211,9 +211,17 @@ const polyLen = (pts) => { let L = 0; for (let i = 1; i < pts.length; i++) L += 
   // findable. The threshold lives in the DRAW, so it is read out of the draw. ═══════════════
   {
     const src = fs.readFileSync(path.join(__dirname, 'viewer/cpe_resource_panel.js'), 'utf8');
-    const has = /showFoot\s*=\s*\(c\.footnotes[^;]*footPxWant\s*>=\s*9\)/.test(src);
-    ck('W-13-7a the card drops the footnote block below a LEGIBILITY threshold, not a chosen size',
-       has, has ? 'footPxWant = h*0.012, dropped under 9 px' : 'no legibility gate found in the draw');
+    // TWO gates now, and both must be there. LEGIBILITY is a property of the frame (h*0.012 under
+    // 9 px is not a citation anybody can read). FITS is a property of the layout, decided after the
+    // legend is sized — a reserved height that was merely hoped for still put footnotes 16 and 35 px
+    // past the plate at 1920x1080. The block is ALL-OR-NOTHING either way: a partial block leaves
+    // the row markers pointing at citations that are not on screen, which is the laundering §13.5
+    // exists to prevent.
+    const legible = /footLegible = !!\(c\.footnotes && c\.footnotes\.length && footPxWant >= 9\)/.test(src);
+    const fits = /showFoot = footLegible && \(contentBottom - subTop - footBlockH\) >= subShortH/.test(src);
+    ck('W-13-7a the footnote block is gated on LEGIBILITY and on actually FITTING, not on a chosen size',
+       legible && fits,
+       'legibility gate=' + legible + ' fit gate=' + fits + '  (h*0.012 under 9 px, and the block must fit whole)');
     // `h` in the draw is the FRAME HEIGHT, so 854x480 is h=480 — the first cut of this check fed it
     // 854 (the WIDTH) and failed itself, which is the whole reason to write the numbers out.
     ck('W-13-7b …which keeps them at 1080 (12.96 px) and drops them at the clip height 480 (5.76 px)',
