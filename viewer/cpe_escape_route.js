@@ -137,6 +137,35 @@ function setupCpeEscapeRoute(A) {
   var LEADER = 'rgba(255,255,255,0.92)', LEADER_HALO = 'rgba(0,0,0,0.55)';
   var FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
 
+  // ══ §13.1 THE COLOURS ARE THE RULE (ESCAPE_ROUTE_REVEAL.md §13.1, APPROVED by red1 2026-09-20:
+  // "Agree with your color code") ══════════════════════════════════════════════════════════════
+  // Each colour carries a code QUANTITY, not a decoration. Changing any one of these changes which
+  // rule the picture draws, so they are not to be re-assigned without re-opening §13.1.
+  //   RED    room -> divergence   the COMMON PATH. No choice exists here: one blockage takes
+  //                               everyone. Its length is exactly what §1006.2.1 caps.
+  //   YELLOW divergence -> nearest the primary route once a choice exists. Reuses §PATH_ORANGE,
+  //                               already this project's "this is the walk" colour.
+  //   BLUE   divergence -> others the alternates, ranked, dimmer with rank. NOT the warning family
+  //                               on purpose — an alternate existing is the GOOD news.
+  //   GREY   any cased segment    sprinkler coverage (§13.2). Its ABSENCE is the finding.
+  var RED_RGB = 'rgb(229,57,53)';             // the common-path alarm colour
+  var BLUE_RGB = '0,145,234';                 // alternates — alpha applied per rank, so kept as parts
+  var GREY_RGB = 'rgba(200,205,210,0.30)';    // the casing tube: wide, translucent, UNDER everything
+  var BLUE_MIN_ALPHA = 0.28;                  // rank N never fades to invisible — §13.6 forbids thinning
+
+  // ── §13.2 THE CASING RADIUS IS DERIVED, NOT CHOSEN ──
+  // NFPA 13 light hazard (which covers hospitals) caps coverage at 225 sq ft per sprinkler and
+  // 15 ft maximum spacing. On a compliant 15x15 ft grid the furthest any point can be from a head
+  // is the half-diagonal: 15*sqrt(2)/2 = 10.6 ft = 3.23 m.
+  // ⚠ A PROXIMITY TEST, NOT A HYDRAULIC CALCULATION. It cannot see obstructions, ceiling height,
+  // head type, or whether the system is charged. It answers "is there a head near this walk". It
+  // must never be captioned as "this route is protected" — §13.2's own ruling.
+  var SPRINKLER_R_M = 3.23;
+  var SPRINKLER_CLASS = 'IfcFireSuppressionTerminal';
+  var SPRINKLER_CITE = 'NFPA 13 light hazard, 3.23 m';
+  var COMMON_PATH_CITE = 'IBC 2021 T1006.2.1';
+  var BREACH_CITE = 'IBC 2021 T1017.2';
+
   // ══ BUILD — once per bake, before the frame loop. Never per frame. ═══════════════════════════
   var _rec = null, _builtFor = null, _buildTried = false, _failReason = null;
   var _stats = null;
@@ -168,6 +197,132 @@ function setupCpeEscapeRoute(A) {
       c.push(c[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z));
     }
     return c;
+  }
+
+  // ══ §13.1/§13.2 GEOMETRY HELPERS — all in MODEL space, all THREE-free ════════════════════════
+  // A.ifc2three is a pure axis swap plus a translation (scene.js:504), so it is an isometry: a
+  // cumulative METRE mark measured on the raw polyline is the SAME mark on the converted pts3, and
+  // the +0.05 lift is a constant offset that changes no segment length. That is why the split and
+  // the casing are computed once, here, in model coordinates, and never re-derived in three space.
+  function _len3(a, b) { return Math.hypot(b.x - a.x, b.y - a.y, (b.z || 0) - (a.z || 0)); }
+  function _cumOf(pts) { var c = [0], i; for (i = 1; i < pts.length; i++) c.push(c[i - 1] + _len3(pts[i - 1], pts[i])); return c; }
+  // The point at metre mark `m`, interpolated inside its segment — never quantised to a vertex.
+  function _atM(pts, cum, m) {
+    if (m <= 0) return { x: pts[0].x, y: pts[0].y, z: pts[0].z || 0 };
+    var last = pts.length - 1;
+    if (m >= cum[last]) return { x: pts[last].x, y: pts[last].y, z: pts[last].z || 0 };
+    for (var i = 1; i <= last; i++) {
+      if (cum[i] < m) continue;
+      var seg = cum[i] - cum[i - 1], f = seg > 1e-9 ? (m - cum[i - 1]) / seg : 0, a = pts[i - 1], b = pts[i];
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: (a.z || 0) + ((b.z || 0) - (a.z || 0)) * f };
+    }
+    return { x: pts[last].x, y: pts[last].y, z: pts[last].z || 0 };
+  }
+  // The sub-polyline between two metre marks, both ends interpolated. Returns [] when the range is
+  // empty, which is a real state (a zero-length common path) and not an error.
+  function _cutRange(pts, cum, aM, bM) {
+    var last = cum.length - 1;
+    aM = Math.max(0, Math.min(aM, cum[last])); bM = Math.max(aM, Math.min(bM, cum[last]));
+    if (bM - aM <= 1e-9) return [];
+    var out = [_atM(pts, cum, aM)];
+    for (var i = 0; i <= last; i++) if (cum[i] > aM && cum[i] < bM) out.push({ x: pts[i].x, y: pts[i].y, z: pts[i].z || 0 });
+    out.push(_atM(pts, cum, bM));
+    return out;
+  }
+  // Closest point on a polyline to p, as a metre mark plus the distance it had to snap. The SNAP IS
+  // LOGGED, never swallowed: the divergence is a graph NODE and the drawn line is a §RASTER-ASTAR
+  // polyline that carries no node identity per vertex, so a large snap means the cut is not where
+  // the graph says the choice appears — and a reader has to be able to see that.
+  function _nearestOnPoly(pts, cum, p) {
+    var bestM = 0, bestD = Infinity;
+    for (var i = 1; i < pts.length; i++) {
+      var a = pts[i - 1], b = pts[i];
+      var dx = b.x - a.x, dy = b.y - a.y, dz = (b.z || 0) - (a.z || 0);
+      var L2 = dx * dx + dy * dy + dz * dz;
+      var t = L2 > 1e-12 ? (((p.x - a.x) * dx + (p.y - a.y) * dy + ((p.z || 0) - (a.z || 0)) * dz) / L2) : 0;
+      t = Math.max(0, Math.min(1, t));
+      var qx = a.x + dx * t, qy = a.y + dy * t, qz = (a.z || 0) + dz * t;
+      var d = Math.hypot(p.x - qx, p.y - qy, (p.z || 0) - qz);
+      if (d < bestD) { bestD = d; bestM = cum[i - 1] + Math.sqrt(L2) * t; }
+    }
+    return { m: bestM, dist: bestD };
+  }
+  // Storey elevations derived from the GRAPH'S OWN nodes — the same mean-cz-per-storey the graph
+  // builds internally (room_graph.js:288-295) — rather than a second source that could disagree.
+  function _storeyElevations(graph) {
+    var sum = {}, n = {};
+    graph.nodes.forEach(function (g) {
+      if (!g.storey || g.cz == null || !isFinite(g.cz)) return;
+      sum[g.storey] = (sum[g.storey] || 0) + g.cz; n[g.storey] = (n[g.storey] || 0) + 1;
+    });
+    var z = {}; Object.keys(sum).forEach(function (k) { z[k] = sum[k] / n[k]; });
+    return z;
+  }
+  // ── §13.2 the heads, read ONCE from the dropped file ──
+  // Positions come from element_transforms, which every extracted element has; the class filter is
+  // elements_meta.ifc_class. No authoring step, no fire-engineering model — §13.6's load-bearing
+  // claim, kept true.
+  var _heads = null, _headsFor = null, _headsNote = '';
+  function _sprinklerHeads() {
+    if (_headsFor === A.activeBuilding) return _heads;
+    _headsFor = A.activeBuilding; _heads = []; _headsNote = '';
+    if (typeof A.dbQuery !== 'function') { _headsNote = 'A.dbQuery unavailable'; return _heads; }
+    var rows = [];
+    try {
+      rows = A.dbQuery('SELECT m.storey, t.center_x, t.center_y, t.center_z FROM elements_meta m' +
+        ' JOIN element_transforms t ON t.guid = m.guid WHERE m.ifc_class = ?', [SPRINKLER_CLASS]) || [];
+    } catch (eH) { _headsNote = 'query threw: ' + (eH && eH.message); return _heads; }
+    rows.forEach(function (r) {
+      var x = +(r.center_x != null ? r.center_x : r[1]), y = +(r.center_y != null ? r.center_y : r[2]),
+          z = +(r.center_z != null ? r.center_z : r[3]), st = (r.storey != null ? r.storey : r[0]);
+      if (isFinite(x) && isFinite(y)) _heads.push({ x: x, y: y, z: isFinite(z) ? z : 0, storey: st });
+    });
+    return _heads;
+  }
+  // A vertex is CASED when a head lies within SPRINKLER_R_M HORIZONTALLY and on the SAME STOREY.
+  // "Same storey" is decided by name: each head carries elements_meta.storey, and each vertex is
+  // assigned the storey whose mean elevation is nearest its own z. Both sides are extracted data —
+  // no invented vertical band, which is what a "within N metres above the walk" rule would be.
+  // Returns metre spans along the polyline, merged, plus the census the § line prints.
+  // ⚠ RESAMPLED, and it has to be. MEASURED on Hospital_silent: the drawn route is 247.0 m long and
+  // carries only 13 vertices, so a per-VERTEX test judges stretches of ~30 m by their two ends and
+  // would report a 30 m gap as cased because both ends happen to sit under a head. The walk is
+  // resampled at STEP_M before the proximity test; at 1 m against a 3.23 m radius no covered
+  // stretch can be missed by more than half a step, which is well inside what a proximity test
+  // claims in the first place.
+  var CASE_STEP_M = 1.0;
+  function _casedSpans(rawPts, rawCum, heads, storeyZ) {
+    var names = Object.keys(storeyZ);
+    if (!rawPts.length || !heads.length || !names.length) {
+      return { spans: [], vertsCased: 0, verts: rawPts.length, samples: 0, headsOnRoute: 0 };
+    }
+    var totalM = rawCum[rawCum.length - 1], pts = [], cum = [];
+    for (var sM = 0; sM < totalM; sM += CASE_STEP_M) { pts.push(_atM(rawPts, rawCum, sM)); cum.push(sM); }
+    pts.push(_atM(rawPts, rawCum, totalM)); cum.push(totalM);
+    var byStorey = {};
+    heads.forEach(function (hd) { (byStorey[hd.storey] = byStorey[hd.storey] || []).push(hd); });
+    function storeyOf(z) {
+      var best = null, bd = Infinity;
+      for (var i = 0; i < names.length; i++) { var d = Math.abs(storeyZ[names[i]] - z); if (d < bd) { bd = d; best = names[i]; } }
+      return best;
+    }
+    var flags = [], cased = 0, used = {};
+    for (var i = 0; i < pts.length; i++) {
+      var st = storeyOf(pts[i].z || 0), list = byStorey[st] || [], hit = false;
+      for (var k = 0; k < list.length; k++) {
+        if (Math.hypot(list[k].x - pts[i].x, list[k].y - pts[i].y) <= SPRINKLER_R_M) { hit = true; used[st + '|' + k] = 1; break; }
+      }
+      flags.push(hit); if (hit) cased++;
+    }
+    // A SEGMENT is cased when both its ends are — the honest reading of a per-vertex proximity test.
+    var spans = [], open = null;
+    for (var j = 1; j < pts.length; j++) {
+      if (flags[j - 1] && flags[j]) { if (open === null) open = cum[j - 1]; }
+      else if (open !== null) { spans.push([open, cum[j - 1]]); open = null; }
+    }
+    if (open !== null) spans.push([open, cum[cum.length - 1]]);
+    return { spans: spans, vertsCased: cased, verts: rawPts.length, samples: pts.length,
+             headsOnRoute: Object.keys(used).length };
   }
 
   A.escapeRouteBuild = function () {
@@ -289,6 +444,94 @@ function setupCpeEscapeRoute(A) {
       costWorstCost: worstByCost ? worstByCost.esc.distance : null,
       isAlsoCostWorst: !!(worstByCost && worstByCost.node.guid === node.guid)
     };
+    // ══ §13.1 THE COLOURS / §13.2 THE CASING — built here, ONCE, never per frame ════════════════
+    // Everything below rides ONE extra Dijkstra (escapeRoutes) for the chosen room. The per-ROOM
+    // scan above is untouched: the "~90 s over 149 rooms" rule is about growing a second search
+    // INSIDE that loop, and nothing here is inside it. MEASURED on this DB: the whole room scan is
+    // scanMs=8 over 7 real rooms, so one more search for the winner is not a cost worth shaping
+    // the design around.
+    _rec.alternates = []; _rec.redPts = null; _rec.yellowPts = null;
+    _rec.commonPathM = null; _rec.divergence = null; _rec.divSnapM = null;
+    _rec.exitsReachable = 1; _rec.cased = null;
+    var _allT0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var _all = null;
+    try { _all = RG.escapeRoutes ? RG.escapeRoutes(graph, node.guid, { log: function () {} }) : null; }
+    catch (eA) { console.log('§ESCAPE_ROUTE_ALTERNATES INCONCLUSIVE — escapeRoutes threw: ' + (eA && eA.message)); }
+    if (_all && _all.routes && _all.routes.length) {
+      _rec.exitsReachable = _all.routes.length;
+      // Route 0 is the nearest exit — the SAME exit escapeRoute() chose, so the drawn primary is
+      // the line the selection already measured. A disagreement is logged, never papered over.
+      var primaryAgrees = (_all.routes[0].exitGuid === esc.exitGuid);
+      // The divergence: where the occupant FIRST gains a choice. `null` is a REAL state, not a
+      // failure — one route is a prefix of the other, or there is only one exit — and it means the
+      // WHOLE walk is common path. That is §13.6's "red line with no heads", the worst reading
+      // available, and it is drawn as such rather than hidden behind a yellow line.
+      var div = (_all.routes.length > 1 && RG.divergenceFrom)
+        ? RG.divergenceFrom(_all.routes[0].path, _all.routes[1].path) : null;
+      var divNode = div ? (graph.nodesByGuid[div.node] || null) : null;
+      var splitM = null;
+      if (divNode && divNode.cx != null && divNode.cy != null) {
+        var snap = _nearestOnPoly(poly, _cum(poly), { x: divNode.cx, y: divNode.cy, z: divNode.cz || 0 });
+        splitM = snap.m; _rec.divSnapM = snap.dist;
+        _rec.divergence = { guid: div.node, name: divNode.name || div.node, index: div.index };
+      }
+      var cum0 = _cum(poly), total0 = cum0[cum0.length - 1];
+      if (splitM == null) splitM = total0;      // no divergence found -> the whole walk is common
+      _rec.commonPathM = splitM;
+      function toThree(list) {
+        return list.map(function (q) { var c = A.ifc2three(q.x, q.y, q.z || 0); return { x: c.x, y: c.y + 0.05, z: c.z }; });
+      }
+      _rec.redPts = toThree(_cutRange(poly, cum0, 0, splitM));
+      _rec.yellowPts = toThree(_cutRange(poly, cum0, splitM, total0));
+      // ── the BLUE fan. §13.6: NO CAP. Every reachable exit gets a head, because capping them
+      // would make a snake and a hydra look the same, which is the one reading this picture is for.
+      for (var ri = 1; ri < _all.routes.length; ri++) {
+        var rr = _all.routes[ri], spr = null;
+        try { spr = RG.shortestPath(graph, node.guid, rr.exitGuid); } catch (eP) { spr = null; }
+        var pl = (spr && spr.polyline && spr.polyline.length > 1) ? spr.polyline : null;
+        if (!pl) continue;
+        var cumR = _cum(pl), totR = cumR[cumR.length - 1], sM = totR;
+        if (divNode && divNode.cx != null) sM = _nearestOnPoly(pl, cumR, { x: divNode.cx, y: divNode.cy, z: divNode.cz || 0 }).m;
+        var tail = _cutRange(pl, cumR, sM, totR);
+        if (tail.length < 2) continue;
+        _rec.alternates.push({ exitGuid: rr.exitGuid,
+          exitName: (graph.nodesByGuid[rr.exitGuid] && graph.nodesByGuid[rr.exitGuid].name) || 'Exit',
+          rank: ri, pts3: toThree(tail), lenM: _cum(tail)[tail.length - 1], totalM: totR });
+      }
+      var _allMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - _allT0;
+      console.log('§ESCAPE_ROUTE_ALTERNATES exitsReachable=' + _all.routes.length +
+        ' primaryExitAgreesWithSelection=' + primaryAgrees +
+        ' divergence=' + (_rec.divergence ? '"' + _rec.divergence.name + '" (' + _rec.divergence.guid + ') atIndex=' + _rec.divergence.index : 'NONE') +
+        ' commonPathRED=' + splitM.toFixed(2) + 'm (§1006.2.1 quantity: no choice exists over this stretch)' +
+        ' primaryYELLOW=' + (total0 - splitM).toFixed(2) + 'm' +
+        ' blueAlternates=' + _rec.alternates.length + '/' + (_all.routes.length - 1) + ' drawn (NO CAP — §13.6)' +
+        ' altSpanM=[' + (_all.routes.length > 1 ? _all.routes[1].distance.toFixed(1) + '..' + _all.routes[_all.routes.length - 1].distance.toFixed(1) : '-') + ']' +
+        ' divSnapM=' + (_rec.divSnapM == null ? 'n/a' : _rec.divSnapM.toFixed(2)) +
+        ' (how far the graph\'s divergence NODE sat from the drawn polyline — a large snap means the' +
+        ' cut is not where the graph says the choice appears)' +
+        ' shape=' + (_rec.alternates.length === 0 ? 'NO-HEADS (routes never diverge — the worst case, §13.6)'
+          : (splitM / Math.max(1e-9, total0) > 0.5 ? 'SNAKE (long common spine, choice only at the end — BAD egress)'
+            : 'HYDRA (choice close to the room, many heads — GOOD egress)')) +
+        ' ms=' + _allMs.toFixed(0));
+    } else {
+      console.log('§ESCAPE_ROUTE_ALTERNATES NONE — escapeRoutes returned no routes for the chosen' +
+        ' room, so no divergence and no alternates can be drawn. The primary line is drawn alone.');
+    }
+    // ── §13.2 the grey casing, over the PRIMARY route (the one the numbers are about) ──
+    var _hd = _sprinklerHeads();
+    var _cov = _casedSpans(poly, _cum(poly), _hd, _storeyElevations(graph));
+    _rec.cased = _cov.spans; _rec.headsTotal = _hd.length;
+    console.log('§ESCAPE_ROUTE_CASING heads=' + _hd.length + ' (' + SPRINKLER_CLASS + ', real positions from' +
+      ' element_transforms — no authoring step)' +
+      (_headsNote ? ' note=' + _headsNote : '') +
+      ' radius=' + SPRINKLER_R_M + 'm (' + SPRINKLER_CITE + ', derived half-diagonal of a compliant 15x15ft grid)' +
+      ' routeVerts=' + _cov.verts + ' resampledAt=' + CASE_STEP_M + 'm samples=' + _cov.samples +
+      ' cased=' + _cov.vertsCased +
+      ' spans=' + _cov.spans.length +
+      ' casedM=' + _cov.spans.reduce(function (a, sp) { return a + (sp[1] - sp[0]); }, 0).toFixed(1) + 'm of ' + _rec.walkM.toFixed(1) + 'm' +
+      ' — ⚠ PROXIMITY ONLY. This cannot see obstructions, ceiling height, head type or whether the' +
+      ' system is charged. A GAP in the casing along the common path is the finding; presence is not' +
+      ' a claim that the route is protected.');
     console.log('§ESCAPE_ROUTE_BUILD room="' + _rec.roomName + '" (' + _rec.roomGuid + ') storey="' + _rec.storey + '"' +
       ' exit=' + _rec.exitGuid +
       ' walk=' + _rec.walkM.toFixed(2) + 'm (the DRAWN route, measured in 3D — what the counters read)' +
@@ -348,16 +591,38 @@ function setupCpeEscapeRoute(A) {
   // quantity, so an over-limit flag here is a possible FALSE POSITIVE, never a false negative.
   // It also assumes I-2 occupancy, which this pipeline extracts nothing to confirm. So the HUD
   // says the route is over the screening limit and names the rule; it does not say "violation".
-  var _rules = null, _rulesSrc = 'none';
+  var _rules = null, _cpRule = null, _rulesSrc = 'none';
   A.escapeRouteSetRules = function (rules, source) {
-    _rules = null; _rulesSrc = source || 'unknown';
+    _rules = null; _cpRule = null; _rulesSrc = source || 'unknown';
     ((rules && rules.egress_rules) || []).forEach(function (r) {
       if (r.name === 'circulation_distance') _rules = r;
+      // §13.1 RED — the COMMON PATH limit is a DIFFERENT rule from the travel-distance one above,
+      // with a different citation and a different number. Read from the same rulebook, never
+      // re-typed here, for the same reason the breach never re-types its own.
+      if (r.name === 'common_path_of_egress_travel') _cpRule = r;
     });
     console.log('§ESCAPE_ROUTE_RULES source=' + _rulesSrc + (_rules
       ? ' circulation_distance warning=' + _rules.warning_m + 'm critical=' + _rules.critical_m + 'm'
-      : ' — NO circulation_distance rule found; the HUD will carry no breach flag rather than an invented limit'));
+      : ' — NO circulation_distance rule found; the HUD will carry no breach flag rather than an invented limit') +
+      (_cpRule ? ' | common_path_of_egress_travel unsprinklered=' + _cpRule.critical_m + 'm sprinklered=' +
+        (_cpRule.critical_m_sprinklered != null ? _cpRule.critical_m_sprinklered + 'm' : 'n/a')
+        : ' | NO common_path_of_egress_travel rule — the RED row will carry no limit rather than an invented one'));
     if (_rec) _rec.breach = A.escapeRouteBreach();
+  };
+  // ── §13.1 RED's own limit, and WHICH of the two figures applies ──
+  // The rulebook's own note: "The evaluator uses the UNSPRINKLERED figure unless real sprinkler
+  // evidence is found, matching this file's own over-flag-never-under-flag bias." §13.2 now
+  // PRODUCES that evidence — real IfcFireSuppressionTerminal positions along this very route — so
+  // the sprinklered figure is used only when the route is actually cased, and the card says which
+  // one it used and on what basis. Occupancy class stays unextractable either way (§12.3), so the
+  // I-2 half of the citation remains an assumption and is marked as one.
+  A.escapeRouteCommonPathLimit = function () {
+    if (!_cpRule || !(_cpRule.critical_m > 0)) return null;
+    var casedM = (_rec && _rec.cased) ? _rec.cased.reduce(function (a, sp) { return a + (sp[1] - sp[0]); }, 0) : 0;
+    var evidence = !!(_rec && _rec.headsTotal > 0 && casedM > 0);
+    return { limitM: evidence && _cpRule.critical_m_sprinklered > 0 ? _cpRule.critical_m_sprinklered : _cpRule.critical_m,
+             sprinklered: evidence, unsprinkleredM: _cpRule.critical_m,
+             sprinkleredM: _cpRule.critical_m_sprinklered, casedM: casedM };
   };
   A.escapeRouteBreach = function () {
     if (!_rec || !_rules) return null;
@@ -434,20 +699,68 @@ function setupCpeEscapeRoute(A) {
   A.escapeRouteStatCardAt = function (plan, tNorm) {
     var vis = A.escapeRouteVisualAt(plan, tNorm);
     if (!vis) return null;
-    var b = _rec.breach, label = 'Escape Route', sub;
+    var b = _rec.breach, label = 'Escape Route — ' + _rec.roomName;
     if (b && b.level === 'critical') label = 'Escape Route — OVER LIMIT';
     else if (b && b.level === 'warning') label = 'Escape Route — over warning';
-    if (b && b.level) {
-      // The LIMIT and the rule are named, so the flag can be checked rather than believed. The
-      // stride disclosure moves off the card here to make room; it stays in the § log and in the
-      // sub whenever there is no flag. The speed stays on, always — that is §3's own rule.
-      sub = vis.drawnM.toFixed(0) + ' m vs ' + b.limitM + ' m ' + (b.level === 'critical' ? 'limit' : 'warning') +
-            ' (IBC 2021 T1017.2, I-2) · ~' + vis.steps + ' steps at ' + WALK_MS + ' m/s (' + WALK_CITE + ')';
-    } else {
-      sub = '~' + vis.steps + ' steps · ' + vis.drawnM.toFixed(0) + ' m walked · at ' +
-            WALK_MS + ' m/s (' + WALK_CITE + ') · ' + STRIDE_M + ' m stride assumed';
-    }
-    return { card: { big: _fmtWalk(vis.walkSec), label: label, sub: sub },
+    // ══ §13.5 THE EVIDENCE TIER IS A GLYPH, AND IT IS VISIBLE BEFORE THE SOURCE IS READ ═════════
+    // A citation on screen IS a credibility claim, and half of these are assumptions. A footnote
+    // block that let the 0.75 m stride sit in the same visual register as SFPE's 1.19 m/s would
+    // LAUNDER the weak number with the strong ones — and would do it more effectively than no
+    // footnotes at all, because the reader has been told to trust the block.
+    //   NUMBERED SUPERSCRIPT = CITED.   ASTERISK = UNCITED.
+    // A cited row whose MEASUREMENT is approximate says so in its own footnote's words, never in
+    // a symbol — a third glyph would just be a third thing to decode.
+    var cp = A.escapeRouteCommonPathLimit ? A.escapeRouteCommonPathLimit() : null;
+    var redM = (_rec.commonPathM != null) ? Math.min(vis.drawnM, _rec.commonPathM) : null;
+    var yellowM = (_rec.commonPathM != null) ? Math.max(0, vis.drawnM - _rec.commonPathM) : null;
+    var nAlt = _rec.alternates ? _rec.alternates.length : 0;
+    var casedM = (_rec.cased || []).reduce(function (a, sp) { return a + (sp[1] - sp[0]); }, 0);
+    var legend = [];
+    // RED — the §1006.2.1 quantity, with its own limit and its own citation. When no divergence
+    // exists the row does NOT print a number as if it were an ordinary one: §12.1/§13.6 say an
+    // infinite common path is a different state, not a long one, and it reads as the verdict.
+    legend.push(nAlt === 0
+      ? { key: 'RED', rgb: RED_RGB, value: 'whole route', text: 'no choice EXISTS',
+          right: cp ? 'limit ' + cp.limitM + ' m' : '', marker: cp ? '1' : '' }
+      : { key: 'RED', rgb: RED_RGB, value: (redM != null ? redM.toFixed(0) + ' m' : '—'), text: 'no choice',
+          right: cp ? 'limit ' + cp.limitM + ' m' : '', marker: cp ? '1' : '' });
+    legend.push({ key: 'YELLOW', rgb: PATH_RGB, value: (yellowM != null ? yellowM.toFixed(0) + ' m' : '—'),
+                  text: 'to nearest exit', right: '', marker: '' });
+    legend.push(nAlt === 0
+      ? { key: 'BLUE', rgb: 'rgba(' + BLUE_RGB + ',1)', value: 'none', text: 'routes never diverge', right: '', marker: '' }
+      : { key: 'BLUE', rgb: 'rgba(' + BLUE_RGB + ',1)', value: nAlt + (nAlt === 1 ? ' alternate' : ' alternates'),
+          text: 'from the choice point', right: '', marker: '' });
+    legend.push(_rec.headsTotal > 0
+      ? { key: 'GREY', rgb: 'rgba(200,205,210,0.9)', value: casedM.toFixed(0) + ' m', text: 'sprinkler cover', right: '', marker: '3' }
+      : { key: 'GREY', rgb: 'rgba(200,205,210,0.9)', value: 'none', text: 'no heads extracted', right: '', marker: '3' });
+    // ── the counters row. §3's disclosure rule, and §E of §13.7.
+    // ⚠ THE DISCLOSURES STAY ON THE CARD, they do NOT move into the footnotes. Caught by
+    // W-ESC-6c/6d/10e/10f on the first cut of §13, which had pushed the speed, the metres and the
+    // rule name into footnotes ² and ⁴ — and §13.5's own ruling DROPS the footnote block at clip
+    // height, so at 854x480 the card would have shown "~329 steps*" with the asterisk pointing at
+    // nothing. A marker whose footnote is gone is worse than no marker. So: the FACT lives on the
+    // row and survives every resolution; the footnote carries the fuller source text for the sizes
+    // that can read it.
+    // The stride's own mark now rides BOTH branches. It used to be dropped from the sub whenever a
+    // breach fired — so "~329 steps" showed with nothing saying it is the one number with no
+    // source, in exactly the frames where the card is read hardest.
+    var sub = '~' + vis.steps + ' steps*  ·  ' + vis.drawnM.toFixed(0) + ' m walked  ·  ';
+    if (b && b.level) sub += vis.drawnM.toFixed(0) + ' m vs ' + b.limitM + ' m ' +
+      (b.level === 'critical' ? 'limit' : 'warning') + ' (' + BREACH_CITE + ', I-2)⁴  ·  ';
+    sub += 'at ' + WALK_MS + ' m/s (' + WALK_CITE + ')²  ·  ' + STRIDE_M + ' m stride assumed';
+    // ── the footnotes. NEVER abbreviated past the point of being findable (§13.5): "IBC 2021
+    // T1006.2.1" is brief and lookupable; "IBC" alone is a logo, not a citation. Packed onto four
+    // lines at most, the way §13.5's own mock packs ² and ³ together, because the card has 259-293
+    // px of height and the legend has first claim on it.
+    var footnotes = [];
+    if (cp) footnotes.push('¹ ' + COMMON_PATH_CITE + ' — ' +
+      (cp.sprinklered ? 'sprinklered ' + cp.sprinkleredM + ' m, from real heads on this route'
+                      : 'unsprinklered ' + cp.unsprinkleredM + ' m, no cased span found') +
+      '; I-2 assumed; from room centre');
+    footnotes.push('² ' + WALK_CITE + ' ' + WALK_MS + ' m/s    ³ ' + SPRINKLER_CITE + ' — proximity, not coverage');
+    if (b && b.level) footnotes.push('⁴ ' + BREACH_CITE + ' — measured to an exterior door, so it may over-state');
+    footnotes.push('* ' + STRIDE_M + ' m stride — no source; this project’s own convention');
+    return { card: { big: _fmtWalk(vis.walkSec), label: label, sub: sub, legend: legend, footnotes: footnotes },
              idx: 0, n: 1, opacity: vis.alpha };
   };
   // The caption slot, same A.roomTitleCompositeOntoCanvas every other beat draws through.
@@ -551,9 +864,48 @@ function setupCpeEscapeRoute(A) {
     // Place them HERE, not in the draw pass, for clash_labels.js's own reason: a placement a Node
     // witness can assert about is worth far more than one that only exists inside a canvas call.
     _place(labels, w, h, reserved || []);
+    // ══ §13.1 THE COLOURED STROKES ══════════════════════════════════════════════════════════════
+    // One projected polyline per colour, cut by METRES WALKED exactly as the primary is, so every
+    // colour advances with the same walk rather than each running its own clock. The alternates
+    // open from the divergence: they share the red spine, so they cannot appear before the walk
+    // reaches the point where the choice exists. That IS the reading — the fan opening is the
+    // occupant gaining a choice.
+    var strokes = [];
+    function projList(list) { return list && list.length > 1 ? list.map(proj) : null; }
+    function cutBy(list, m) {
+      if (!list || list.length < 2) return null;
+      var c = _cumOf(list);
+      return _cutRange(list, c, 0, m);
+    }
+    var pastDiv = (_rec.commonPathM != null) ? Math.max(0, want - _rec.commonPathM) : 0;
+    // GREY first — it is a casing, so it must sit UNDER every coloured line it cases.
+    if (_rec.cased && _rec.cased.length) {
+      var cumFull = _cumOf(_rec.pts3);
+      for (var ci = 0; ci < _rec.cased.length; ci++) {
+        var sp = _rec.cased[ci];
+        if (sp[0] >= want) continue;                       // not walked yet
+        var seg = _cutRange(_rec.pts3, cumFull, sp[0], Math.min(sp[1], want));
+        var sc = projList(seg);
+        if (sc) strokes.push({ kind: 'grey', screen: sc });
+      }
+    }
+    // BLUE next, dimmest first, so a nearer alternate is never buried by a further one.
+    for (var ai = _rec.alternates.length - 1; ai >= 0; ai--) {
+      var alt = _rec.alternates[ai];
+      var bs = projList(cutBy(alt.pts3, pastDiv));
+      if (bs) strokes.push({ kind: 'blue', rank: alt.rank, of: _rec.alternates.length, screen: bs });
+    }
+    // RED then YELLOW on top — the two halves of the primary, in the order they are walked.
+    var redCut = projList(cutBy(_rec.redPts, want));
+    if (redCut) strokes.push({ kind: 'red', screen: redCut });
+    var yellowCut = projList(cutBy(_rec.yellowPts, pastDiv));
+    if (yellowCut) strokes.push({ kind: 'yellow', screen: yellowCut });
     var rec = { alpha: vis.alpha, progress: vis.progress, drawnM: vis.drawnM,
                 drawnPolyM: want, steps: vis.steps, walkSec: vis.walkSec,
-                screen: screen, labels: labels, w: w, h: h };
+                screen: screen, labels: labels, w: w, h: h,
+                strokes: strokes, commonPathM: _rec.commonPathM,
+                commonDrawnM: Math.min(want, _rec.commonPathM == null ? want : _rec.commonPathM),
+                altCount: _rec.alternates.length };
     _stats.drawnFrames++;
     if (vis.progress > _stats.maxProgress) _stats.maxProgress = vis.progress;
     if (vis.drawnM > _stats.maxDrawnM) _stats.maxDrawnM = vis.drawnM;
@@ -643,14 +995,57 @@ function setupCpeEscapeRoute(A) {
       }
       ctx.stroke();
     }
-    // halo first, orange core on top — the same two-pass contrast guarantee clash_labels.js's
+    // halo first, coloured core on top — the same two-pass contrast guarantee clash_labels.js's
     // leader uses, and for the same reason: one stroke vanishes against a lit facade or the sky.
-    if (ctx.setLineDash) ctx.setLineDash([dash, gap]);
-    ctx.strokeStyle = LEADER_HALO; ctx.lineWidth = lw + 4;
-    stroke();
-    ctx.strokeStyle = PATH_RGB; ctx.lineWidth = lw;
-    stroke();
-    if (ctx.setLineDash) ctx.setLineDash([]);
+    // ══ §13.1 — one pass per colour, back to front. `rec.strokes` is this frame's own projection
+    // (escapeRouteFrameAt), so a stale frame's geometry can never be painted here. A rec WITHOUT
+    // strokes falls back to the single orange line, byte-identically to before §13, so nothing
+    // that calls this with an older record changes.
+    function strokeList(pts) {
+      ctx.beginPath();
+      var started = false;
+      for (var k = 0; k < pts.length; k++) {
+        var p = pts[k];
+        if (p.behind) { started = false; continue; }
+        if (!started) { ctx.moveTo(p.x, p.y); started = true; } else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
+    if (rec.strokes && rec.strokes.length) {
+      for (var si = 0; si < rec.strokes.length; si++) {
+        var S = rec.strokes[si];
+        if (!S.screen || S.screen.length < 2) continue;
+        if (S.kind === 'grey') {
+          // THE CASING — a wide, soft, UNBROKEN tube under the route. Solid, not dashed: it is a
+          // volume around the walk, not a walk of its own, and dashing it would read as a third
+          // route. §13.2: its ABSENCE along the red spine is the finding worth seeing.
+          if (ctx.setLineDash) ctx.setLineDash([]);
+          ctx.strokeStyle = GREY_RGB; ctx.lineWidth = lw * 5;
+          strokeList(S.screen);
+          continue;
+        }
+        if (ctx.setLineDash) ctx.setLineDash([dash, gap]);
+        ctx.strokeStyle = LEADER_HALO; ctx.lineWidth = lw + 4;
+        strokeList(S.screen);
+        if (S.kind === 'red') { ctx.strokeStyle = RED_RGB; ctx.lineWidth = lw + 1; }
+        else if (S.kind === 'blue') {
+          // Dimmer with rank, never below BLUE_MIN_ALPHA — §13.6 forbids thinning the fan, and an
+          // alternate faded to nothing has been thinned whatever the draw loop says.
+          var a = S.of > 1 ? 1 - (S.rank - 1) / S.of * (1 - BLUE_MIN_ALPHA) : 1;
+          ctx.strokeStyle = 'rgba(' + BLUE_RGB + ',' + Math.max(BLUE_MIN_ALPHA, a).toFixed(3) + ')';
+          ctx.lineWidth = lw;
+        } else { ctx.strokeStyle = PATH_RGB; ctx.lineWidth = lw; }
+        strokeList(S.screen);
+      }
+      if (ctx.setLineDash) ctx.setLineDash([]);
+    } else {
+      if (ctx.setLineDash) ctx.setLineDash([dash, gap]);
+      ctx.strokeStyle = LEADER_HALO; ctx.lineWidth = lw + 4;
+      stroke();
+      ctx.strokeStyle = PATH_RGB; ctx.lineWidth = lw;
+      stroke();
+      if (ctx.setLineDash) ctx.setLineDash([]);
+    }
     // the moving head — a solid dot, so the eye has something to follow along the dashes
     var head = null;
     for (var q = rec.screen.length - 1; q >= 0; q--) if (!rec.screen[q].behind) { head = rec.screen[q]; break; }

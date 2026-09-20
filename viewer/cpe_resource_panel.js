@@ -957,6 +957,98 @@ function setupCpeResourcePanel(A) {
       ctx.restore(); ctx.restore();
       return;
     }
+    // ══ §13.3/§13.5 THE LEGEND CARD — a CONTENT change inside the slot this card already owns ═══
+    // Four visual channels carrying four different meanings is past what a viewer infers, so the
+    // Escape Route card trades its big number for a legend that demonstrates itself: each row is
+    // drawn in the colour it names. A card WITHOUT `legend` never enters this branch and draws
+    // byte-identically to before, which is why this is not a new panel and not a new box.
+    if (c.legend && c.legend.length) {
+      var LF = 'BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
+      var titlePx = Math.max(11, Math.round(bh * 0.072));
+      var rowPx = Math.max(10, Math.round(bh * 0.062));
+      var rowH = Math.round(rowPx * 1.62);
+      // §13.5's own ruling for 854x480: the footnote block DROPS below a legibility threshold and
+      // the markers STAY, rather than shrinking into decoration. The threshold is legibility, not
+      // a chosen size — a footnote under 9 px is not a citation anybody can read, and the § log
+      // carries the full sources either way, which is where a reader who wants to check them goes.
+      var footPxWant = h * 0.012;
+      var showFoot = (c.footnotes && c.footnotes.length && footPxWant >= 9);
+      var footPx = Math.max(9, Math.round(footPxWant));
+      // THE HEADLINE stays — reduced, not removed. The legend has first claim on the height, but
+      // §3's walk time is the one number a viewer grasps at a glance and the card has carried it
+      // since the beat shipped. Drawn on the title band, right-aligned, so it costs one row rather
+      // than the 0.42*bh the plain stat card spends on it.
+      var headPx = Math.round(titlePx * 1.28);
+      var yy = y + pad + headPx;
+      ctx.textBaseline = 'alphabetic';
+      var headW = 0;
+      if (c.big) {
+        ctx.font = '800 ' + headPx + 'px ' + LF;
+        headW = ctx.measureText(c.big).width + Math.round(headPx * 0.5);
+        ctx.textAlign = 'right'; ctx.fillStyle = c.ink || '#fff';
+        ctx.fillText(c.big, colX + colW, yy);
+        ctx.textAlign = 'left';
+      }
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      _fitText(ctx, c.label, colX, yy, Math.max(20, colW - headW), titlePx, Math.max(10, Math.round(titlePx * 0.72)), '700', LF);
+      yy += Math.round(rowH * 0.95);
+      var keyW = 0, li2;
+      ctx.font = '700 ' + rowPx + 'px ' + LF;
+      for (li2 = 0; li2 < c.legend.length; li2++) keyW = Math.max(keyW, ctx.measureText(c.legend[li2].key).width);
+      var valX = colX + keyW + Math.round(rowPx * 0.8);
+      for (li2 = 0; li2 < c.legend.length; li2++) {
+        var LG = c.legend[li2];
+        // The word is drawn IN the colour it names — the legend is self-demonstrating, so a viewer
+        // never has to hold "red means common path" in their head separately from the picture.
+        ctx.fillStyle = LG.rgb; ctx.font = '800 ' + rowPx + 'px ' + LF;
+        ctx.fillText(LG.key, colX, yy);
+        ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = '700 ' + rowPx + 'px ' + LF;
+        var vtxt = LG.value + (LG.text ? '  ' + LG.text : '');
+        ctx.fillText(vtxt, valX, yy);
+        // the right column: the cited limit, with its marker glyph. Right-aligned so the numbers
+        // line up down the card rather than wandering with the length of each row's words.
+        if (LG.right) {
+          var rtxt = LG.right + (LG.marker ? '¹²³⁴'.charAt(+LG.marker - 1) : '');
+          ctx.font = '600 ' + Math.round(rowPx * 0.92) + 'px ' + LF;
+          ctx.fillStyle = 'rgba(255,255,255,0.72)';
+          ctx.textAlign = 'right'; ctx.fillText(rtxt, colX + colW, yy); ctx.textAlign = 'left';
+        } else if (LG.marker) {
+          ctx.font = '600 ' + Math.round(rowPx * 0.92) + 'px ' + LF;
+          ctx.fillStyle = 'rgba(255,255,255,0.72)';
+          ctx.fillText('¹²³⁴'.charAt(+LG.marker - 1), valX + _measureAfter(ctx, vtxt, rowPx, LF), yy);
+        }
+        yy += rowH;
+      }
+      if (c.sub) {
+        // WRAPPED, not fitted: the sub carries §3's disclosures in full (speed + source, metres,
+        // the rule name when flagged, the stride) and at 389 px even the floor size cannot hold
+        // that on one line. Shrinking it to fit would be the same defect §CPE_CARD_FIT already
+        // fixed once for the label — a disclosure nobody can read is a disclosure that is not there.
+        var subPx = Math.max(9, Math.round(rowPx * 0.86));
+        ctx.fillStyle = 'rgba(255,255,255,0.80)';
+        _wrapText(ctx, c.sub, colX, yy + Math.round(rowPx * 0.25), colW, subPx, Math.max(8, subPx - 2), '600', LF, 3);
+        yy += Math.round(subPx * 1.35) * 2;
+      }
+      if (showFoot) {
+        var ry = yy + Math.round(footPx * 0.7);
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(colX, ry); ctx.lineTo(colX + colW, ry); ctx.stroke();
+        // The day counter's own context register (§129.58's one-theme rule), the same weight
+        // clash_labels.js uses for its fact row — a footnote must read as a footnote.
+        ctx.fillStyle = 'rgba(255,255,255,0.62)';
+        var fy = ry + Math.round(footPx * 1.5);
+        for (var fi = 0; fi < c.footnotes.length; fi++) {
+          _fitText(ctx, c.footnotes[fi], colX, fy, colW, footPx, Math.max(8, footPx - 2), '500', LF);
+          fy += Math.round(footPx * 1.45);
+        }
+      }
+      _dots(ctx, colX, y + bh - pad * 0.7, bh, shown);
+      ctx.restore();
+      ctx.restore();
+      return;
+    }
+
     var F = 'BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
     // THE NUMBER — as large as will fit, because the whole point is grasping it at a glance.
     var big = Math.round(bh * 0.42), tw;
@@ -992,6 +1084,15 @@ function setupCpeResourcePanel(A) {
     ctx.restore();
   };
 
+  // Width of `txt` at (rowPx, F) plus a hair of lead — used to hang a §13.5 marker glyph directly
+  // after a legend row's own words without re-measuring at the call site.
+  function _measureAfter(ctx, txt, px, F) {
+    var prev = ctx.font;
+    ctx.font = '700 ' + px + 'px ' + F;
+    var wpx = ctx.measureText(txt).width;
+    ctx.font = prev;
+    return wpx + Math.round(px * 0.18);
+  }
   // §CPE_CARD_FIT — shrink to fit, then ellipsis only if still over. `floor` is the smallest size
   // still worth printing; below that the text is decoration, so it gets the ellipsis instead.
   function _fitText(ctx, text, x, y, maxW, size, floor, weight, F) {

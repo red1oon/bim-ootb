@@ -258,8 +258,15 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // ══ W-ESC-6 — the honesty asymmetry reaches the SCREEN, not just the comments (§3's own ruling:
   // the panel showing the speed itself is what keeps this honest). ═════════════════════════════
   const card = A.escapeRouteStatCardAt(plan, (win.start + win.end) / 2);
-  ck('W-ESC-6a the card is titled "Escape Route" — unambiguous, red1\'s own word',
-     !!card && card.card.label === 'Escape Route', card ? JSON.stringify(card.card) : 'null');
+  // UPDATED 2026-09-20 with §13.3/§13.5: the approved mock titles the card
+  // `Escape Route — <room>`, so an exact-string test on 'Escape Route' was judging the card by a
+  // fact the spec had since changed — the same defect W-ESC-11e was rewritten for. It now checks
+  // the property it is named for: the card is TITLED, the title says Escape Route, and the title
+  // is unambiguous about WHICH room. A flag suffix ("— OVER LIMIT") is its own state, allowed.
+  ck('W-ESC-6a the card is titled "Escape Route" and names its room — unambiguous, red1\'s own word',
+     !!card && /^Escape Route\b/.test(card.card.label) &&
+     (card.card.label === 'Escape Route' || /—/.test(card.card.label)),
+     card ? card.card.label : 'null');
   ck('W-ESC-6b the uncited number keeps its ~ and the cited one does not', !!card &&
      /^~\d+ steps/.test(card.card.sub) && /^(\d+ secs|\d+:\d\d mins)$/.test(card.card.big),
      card ? card.card.big : '');
