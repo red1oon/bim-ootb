@@ -570,7 +570,13 @@ function setupCpeSunCompass(A) {
       : null;
     // §PLACE — appended as a fourth row of the same plate, null when there is no table,
     // no coordinate, or nothing inside the match bound.
-    var place = (A.placeLabelFor && info.lat != null) ? A.placeLabelFor(info.lat, info.lon) : null;
+    // ⚠ NOT `info.lat`. The object reaching the compositor is A.sunCompassInfo() -> `_last`, the
+    // PER-FRAME sun state, which carries no coordinate — guarding on info.lat silently skipped the
+    // row on every frame of a real 1080p bake (§PLACE_RESOLVED never printed, measured 2026-09-20).
+    // `_geo` is this module's own resolved site and is the thing the compass itself was built from.
+    var _plat = (_geo && _geo.lat != null) ? _geo.lat : info.lat;
+    var _plon = (_geo && _geo.lon != null) ? _geo.lon : info.lon;
+    var place = (A.placeLabelFor && _plat != null) ? A.placeLabelFor(_plat, _plon) : null;
     return { day: day, sun: sun, attack: att, place: place };
   };
 
