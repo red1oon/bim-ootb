@@ -1248,11 +1248,17 @@ function setupCpeEscapeRoute(A) {
       var mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(b.center.x, b.center.y, b.center.z);
       mesh.renderOrder = 1004;
+      // §FINDINGS_CEASE_3D reads this name. The cease is a PREDICATE — it hides everything in the
+      // scene that draws with depthTest:false once the closing beats open — and the room glow is
+      // depthTest:false by design, so the beat that is actually on screen has to say so by name or
+      // the gate would switch off its own content. Disposed at beat exit like the rest of _meshes.
+      mesh.name = 'escapeRouteGlow';
       A.scene.add(mesh); _meshes.push(mesh);
       var eg = new THREE.EdgesGeometry(geo.clone());
       var em = new THREE.LineBasicMaterial({ color: PATH_HEX, transparent: true, opacity: 0.85, depthTest: false });
       var edges = new THREE.LineSegments(eg, em);
       edges.position.copy(mesh.position); edges.renderOrder = 1005;
+      edges.name = 'escapeRouteGlowEdges';   // same exemption, see above
       A.scene.add(edges); _meshes.push(edges);
     });
     console.log('§ESCAPE_ROUTE_ROOMSHINE room="' + _rec.roomName + '" boxes=' + _rec.boxes.length +

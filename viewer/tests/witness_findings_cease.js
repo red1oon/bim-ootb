@@ -81,17 +81,44 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
   ck('the gate HIDES rather than disposes — the beat comes straight back if the rule ever lifts',
      /o\.visible = false;/.test(mq) && !/CEASE_3D[\s\S]{0,600}dispose\(/.test(mq),
      'same non-destructive shape clashFilm.setVisible already uses');
-  // §GLOW_CENSUS (2026-09-20) may sit between the gate and the capture — it is a READ of what still
-  // reaches the frame, so it belongs after the cease and before the capture, and it must not be able
-  // to change the answer it is reporting. Both halves are asserted: the order, and that the census
-  // writes no visibility of its own.
+  // ── ARM 2, added 2026-09-20. ISSUE: red1 watched a clip that CONTAINED the four-name gate and
+  // said "the glow thru beams still persists!". A list of four can never catch the fifth, and his
+  // ruling on going and measuring it instead was "why such measures? It is GIGO.. if u dont stop
+  // the code from emitting." So the second arm is the DRAW CONTRACT itself: anything in the scene
+  // still drawing with depthTest:false once the closing beats open is switched off, whoever added
+  // it. These claims prove the arm exists, that it is a predicate and not another list, and that
+  // it cannot switch off the beat that is actually on screen.
+  const ceaseFn = (mq.match(/function _cease3D\(\) \{[\s\S]*?\n  \}/) || [''])[0];
+  ck('ARM 2 exists: the gate also sweeps by the draw contract, not only by name',
+     /function _ceaseShinesThrough\(o\)/.test(mq) &&
+     /depthTest === false/.test(mq) &&
+     /traverseVisible/.test(ceaseFn) && /o\.visible = false;/.test(ceaseFn),
+     ceaseFn ? '_cease3D is ' + ceaseFn.split('\n').length + ' lines and sweeps scene.traverseVisible' : 'NOT FOUND');
+  const shinesFn = (mq.match(/function _ceaseShinesThrough\(o\) \{[\s\S]*?\n  \}/) || [''])[0];
+  ck('…and arm 2 judges by the MATERIAL alone — not one module name appears in its test',
+     /depthTest === false/.test(shinesFn) && !/'/.test(shinesFn) && !/indexOf\(/.test(shinesFn),
+     shinesFn ? '_ceaseShinesThrough is ' + shinesFn.split('\n').length + ' lines and carries no string literal' : 'NOT FOUND');
+  // The one exemption. A blind sweep would switch off the escape route's own room glow, which is
+  // depthTest:false BY DESIGN — cpe_escape_route.js §ESCAPE_ROUTE_NO_XRAY depends on it reading
+  // through the building. Exactly one exemption, and it must be that beat's.
+  const esc = fs.readFileSync(path.join(ROOT, 'viewer/cpe_escape_route.js'), 'utf8');
+  const exRx = /var CEASE_3D_EXEMPT_RX = \/\^([A-Za-z0-9_]+)\//.exec(mq);
+  const escNames = (esc.match(/\.name = '(escapeRoute[A-Za-z0-9_]*)'/g) || []);
+  ck('exactly ONE exemption exists, and it is the beat that is actually on screen',
+     !!exRx && (mq.match(/CEASE_3D_EXEMPT_RX = /g) || []).length === 1 &&
+     escNames.length >= 2 && escNames.every((n) => n.indexOf(exRx[1]) > 0),
+     'exempt=/^' + (exRx ? exRx[1] : '?') + '/  named in cpe_escape_route.js: ' +
+     (escNames.join(' ') || 'NONE — the sweep would switch the room glow off'));
+  ck('…and the glow it exempts really is drawn depthTest:false, so the exemption is load-bearing',
+     /depthTest: false[\s\S]{0,400}name = 'escapeRouteGlow'/.test(esc) ||
+     /name = 'escapeRouteGlow'[\s\S]{0,400}depthTest: false/.test(esc),
+     'without it the sweep would hide the escape beat\'s own room boxes');
   ck('…it runs AFTER every beat writes its own visibility, and before the capture',
-     /_cease3D\(\);\s*\n(\s*_glowCensus\([^)]*\);[^\n]*\n)?\s*var _escInfo = null/.test(mq),
+     /_cease3D\(\);\s*\n\s*var _escInfo = null/.test(mq),
      'last word on what reaches the frame is the cease rule\'s');
-  const censusFn = (mq.match(/function _glowCensus\(tn\) \{[\s\S]*?\n  \}/) || [''])[0];
-  ck('…and anything reading the frame between the two only READS — no visibility is written there',
-     !censusFn || !/\.visible\s*=/.test(censusFn),
-     censusFn ? '_glowCensus is ' + censusFn.split('\n').length + ' lines and assigns no .visible' : 'no census present');
+  ck('…and it does not log once per frame — one line per CHANGE, or a 193-frame run drowns',
+     /if \(!fresh\.length && !keptFirst\) return;/.test(ceaseFn),
+     'steady state is silent');
   ck('…and the bake SAYS which group it hid',
      /§FINDINGS_CEASE_3D group="/.test(mq) &&
      /FINDINGS_CEASE_3D/.test(fs.readFileSync(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')));

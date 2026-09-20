@@ -1190,68 +1190,85 @@
   // curve every frame, so the datum's depthTest:false uprights and storey bands went on shining
   // through the building to the final frame. The chips ceasing made that MORE obvious, not less:
   // the geometry was left with nothing to explain it.
-  // Four modules add a named group to A.scene and none of them was reachable from the HUD chain.
-  // Hidden, never disposed — each beat's own `.visible` is restored the moment the gate lifts, and
-  // dispose stays the only thing that frees them, exactly as clashFilm.setVisible already does.
+  // ⚠ THE GATE IS A PREDICATE, NOT A LIST (2026-09-20). It used to hide four names —
+  // flythruDatum, flythruCue, indoorBeats, slabBeat — and red1 watched a clip that CONTAINED that
+  // fix and said "the glow thru beams still persists!". A list of four can never catch the fifth,
+  // and the honest answer to "what else is still drawing?" is not to go and measure it: it is to
+  // stop the code emitting. red1: "why such measures? It is GIGO.. if u dont stop the code from
+  // emitting."
+  // So the rule is now the DRAW CONTRACT itself. Shining through the building is what
+  // `depthTest:false` MEANS in this viewer — cpe_flythru_dims.js states it as A.FLYTHRU_DRAW_CONTRACT
+  // and clash_film.js, cpe_slab_beat.js, cpe_flythru_cues.js, cpe_flythru_datum.js, ghostglass.js,
+  // grid_contours.js, grid_door_arcs.js, grid_dim_chains.js and hba_lens.js all use it. From the
+  // moment the closing beats open, ANY object in the scene drawing under that contract is switched
+  // off, whoever added it and whether or not anybody remembered it exists. A tenth module added
+  // next month is covered the day it lands.
+  // Building geometry is never depthTest:false, so nothing the film is ABOUT is reachable by this.
+  // ONE EXEMPTION, and it is the beat that is actually on screen: the escape route's own room glow
+  // is depthTest:false by design (cpe_escape_route.js §ESCAPE_ROUTE_NO_XRAY — "the room glow is
+  // depthTest:false, so [it] still read[s] through the building"), so a blind sweep would switch
+  // off the very thing the closing orbit exists to show. It is exempt BY NAME, it disposes itself
+  // at beat exit, and W-CEASE asserts there is exactly one exemption and that it is that beat's.
+  // HIDDEN, NEVER DISPOSED — each beat's own `.visible` returns the moment the gate lifts, the same
+  // non-destructive shape clashFilm.setVisible already uses.
+  // TWO ARMS, because they catch different things and the union is what red1 asked for.
+  // ARM 1 — the NAMES. A beat's group can hold parts that depth-test normally (cpe_indoor_beats'
+  // hall tint is painted ON the floor and shines through nothing), and those are still "an overlay
+  // on the building" under his rule — "Its last second is like a finale. It should not have any
+  // overlay on the building." A predicate on the draw contract alone would leave them on.
+  // ARM 2 — the CONTRACT. The names can only ever cover beats somebody remembered; arm 2 covers
+  // every module that shines through, including the ones nobody has thought of yet.
   var CEASE_3D_GROUPS = ['flythruDatum', 'flythruCue', 'indoorBeats', 'slabBeat'];
+  var CEASE_3D_EXEMPT_RX = /^escapeRouteGlow/;
+  function _ceaseOwnerName(o) {
+    // The OUTERMOST named ancestor: the nearest one is usually an anonymous mesh, and what the log
+    // has to name is the MODULE that put this in the scene.
+    var owner = '', p = o, hops = 0;
+    while (p && hops++ < 32) { if (p.name) owner = p.name; p = p.parent; }
+    return owner || ('(unnamed ' + (o.type || 'Object3D') + ')');
+  }
+  function _ceaseShinesThrough(o) {
+    var m = o.material; if (!m) return false;
+    var mats = Array.isArray(m) ? m : [m];
+    for (var i = 0; i < mats.length; i++) if (mats[i] && mats[i].depthTest === false) return true;
+    return false;
+  }
   function _cease3D() {
     var A2 = window.APP;
     if (!A2 || !A2.scene || !A2._findingsHudSuppress) return;
+    var hidNow = 0, kept = 0, fresh = [];
+    A2._cease3DSeen = A2._cease3DSeen || {};
+    // ARM 1 — the named beat groups, whole, whatever their materials do.
     for (var g = 0; g < CEASE_3D_GROUPS.length; g++) {
-      var o = A2.scene.getObjectByName ? A2.scene.getObjectByName(CEASE_3D_GROUPS[g]) : null;
-      if (!o || !o.visible) continue;
-      o.visible = false;
-      A2._cease3DSeen = A2._cease3DSeen || {};
-      if (!A2._cease3DSeen[CEASE_3D_GROUPS[g]]) {
-        A2._cease3DSeen[CEASE_3D_GROUPS[g]] = 1;
-        console.log('§FINDINGS_CEASE_3D group="' + CEASE_3D_GROUPS[g] + '" hidden — it was drawing' +
-          ' ON the building, which the 2D gate never reached. Hidden, not disposed: the beat\'s own' +
-          ' visibility returns the moment the gate lifts.');
-      }
+      var go = A2.scene.getObjectByName ? A2.scene.getObjectByName(CEASE_3D_GROUPS[g]) : null;
+      if (!go || !go.visible) continue;
+      go.visible = false; hidNow++;
+      if (!A2._cease3DSeen[CEASE_3D_GROUPS[g]]) { A2._cease3DSeen[CEASE_3D_GROUPS[g]] = 0; fresh.push({ n: CEASE_3D_GROUPS[g], by: 'named beat group' }); }
+      A2._cease3DSeen[CEASE_3D_GROUPS[g]]++;
     }
-  }
-  // ══ §GLOW_CENSUS (2026-09-20) — WHAT IS STILL SHINING THROUGH THE BUILDING, BY NAME ═════════
-  // red1, watching the 13:11 clip which ALREADY contains f79f6316's 3D cease: "the glow thru beams
-  // still persists!" So the four groups _cease3D hides are not the cause, and two sessions had
-  // already burned real time reading pixels for it and reached three different answers.
-  // This is the standing rule applied instead: slice the predicate and let a run answer it.
-  // IT DISCOVERS, IT DOES NOT LIST (§130.1). CEASE_3D_GROUPS is a list of four and can never catch
-  // the fifth; this walks what the renderer will actually walk — scene.traverseVisible, which
-  // descends only through visible objects — and names every material that reaches the frame with
-  // depthTest:false, grouped by its OUTERMOST named ancestor, i.e. the module's own scene group.
-  // A module nobody thought of is named the first time it glows.
-  // COST: capped at 10 samples, one per 1% of the film, and only once _findingsHudSuppress is up.
-  // A traverse of this scene is ~ms against a 0.86 s frame.
-  var GLOW_CENSUS_MAX = 10;
-  var _glowSamples = 0, _glowBucket = -1;
-  function _glowCensus(tn) {
-    var A2 = window.APP;
-    if (!A2 || !A2.scene || tn == null || !A2._findingsHudSuppress) return;
-    if (_glowSamples >= GLOW_CENSUS_MAX) return;
-    var bucket = Math.floor(tn * 100);
-    if (bucket === _glowBucket) return;
-    _glowBucket = bucket; _glowSamples++;
-    var byOwner = {}, total = 0;
+    // ARM 2 — everything else still drawing under the shine-through contract.
     try {
       A2.scene.traverseVisible(function (o) {
-        var m = o.material; if (!m) return;
-        var mats = Array.isArray(m) ? m : [m], off = false;
-        for (var i = 0; i < mats.length; i++) if (mats[i] && mats[i].depthTest === false) { off = true; break; }
-        if (!off) return;
-        // OUTERMOST named ancestor, not the nearest: the nearest is usually an anonymous mesh or a
-        // sub-group, and what the reader needs is which MODULE put this in the scene.
-        var owner = '', p = o, hops = 0;
-        while (p && hops++ < 32) { if (p.name) owner = p.name; p = p.parent; }
-        owner = owner || ('(unnamed ' + (o.type || 'Object3D') + ')');
-        byOwner[owner] = (byOwner[owner] || 0) + 1; total++;
+        if (!_ceaseShinesThrough(o)) return;
+        var owner = _ceaseOwnerName(o);
+        if (CEASE_3D_EXEMPT_RX.test(owner) || CEASE_3D_EXEMPT_RX.test(o.name || '')) { kept++; return; }
+        o.visible = false; hidNow++;
+        if (!A2._cease3DSeen[owner]) { A2._cease3DSeen[owner] = 0; fresh.push({ n: owner, by: 'depthTest:false draw contract' }); }
+        A2._cease3DSeen[owner]++;
       });
-    } catch (eGC) { console.log('§GLOW_CENSUS traverse threw: ' + eGC.message); return; }
-    var names = Object.keys(byOwner).sort(function (a, b) { return byOwner[b] - byOwner[a]; });
-    var tintN = (typeof A2.storeyRevealTintTouched === 'function') ? A2.storeyRevealTintTouched() : -1;
-    console.log('§GLOW_CENSUS tn=' + tn.toFixed(4) + ' sample=' + _glowSamples + '/' + GLOW_CENSUS_MAX +
-      ' depthTestOffVisible=' + total +
-      (total ? ' [' + names.map(function (n) { return n + '=' + byOwner[n]; }).join(' ') + ']' : ' — nothing shines through') +
-      ' tintActive=' + tintN + (tintN > 0 ? ' meshes still carrying the storey tint' : (tintN === 0 ? ' (tint is off)' : ' (module absent)')));
+    } catch (eC3) { console.log('§FINDINGS_CEASE_3D sweep threw: ' + eC3.message); return; }
+    for (var f = 0; f < fresh.length; f++) {
+      console.log('§FINDINGS_CEASE_3D group="' + fresh[f].n + '" hidden, found by the ' + fresh[f].by +
+        ' — it was drawing ON the building, which the 2D gate never reached. Hidden, not disposed:' +
+        ' the beat\'s own visibility returns the moment the gate lifts.');
+    }
+    // ONE line per CHANGE, never one per frame: in steady state the sweep finds the same objects
+    // every frame and a log that repeated 193 times would drown the run it is meant to explain.
+    var keptFirst = (kept > 0 && !A2._cease3DKeptSeen);
+    if (keptFirst) A2._cease3DKeptSeen = 1;
+    if (!fresh.length && !keptFirst) return;
+    console.log('§FINDINGS_CEASE_3D sweep hid=' + hidNow + ' exempt=' + kept +
+      ' (exempt is the live beat\'s own glow) modules=[' + Object.keys(A2._cease3DSeen).join(' ') + ']');
   }
   function _escSuppresses(name) {
     var A2 = window.APP;
@@ -4174,7 +4191,6 @@
         // slab all write `.visible` themselves) and BEFORE the capture, so the last word on what
         // reaches the frame is the cease rule's.
         _cease3D();
-        _glowCensus(_tnFilm);   // §GLOW_CENSUS — after every beat has written its own .visible, before the capture
         var _escInfo = null, _escCardInfo = null;
         if (_escRec && A.escapeRouteStatCardAt) {
           var _ec = A.escapeRouteStatCardAt(plan, _tnFilm);
