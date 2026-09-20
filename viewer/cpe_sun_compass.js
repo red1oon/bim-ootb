@@ -568,7 +568,61 @@ function setupCpeSunCompass(A) {
     var att = (info.isUp && info.attack)
       ? info.attack.attack.toFixed(0) + '° onto the ' + info.attack.compass + ' facade'
       : null;
-    return { day: day, sun: sun, attack: att };
+    // §PLACE — appended as a fourth row of the same plate, null when there is no table,
+    // no coordinate, or nothing inside the match bound.
+    var place = (A.placeLabelFor && info.lat != null) ? A.placeLabelFor(info.lat, info.lon) : null;
+    return { day: day, sun: sun, attack: att, place: place };
+  };
+
+  // ══ §PLACE — THE NEAREST REAL SETTLEMENT, AND HOW FAR THE BUILDING IS FROM IT ═══════════════
+  // red1, 2026-09-20: "Do a hi res snap ... with distance from nearest city positioned inwards
+  // where the geo-ref row is." It belongs in THIS plate because it is the same kind of fact as the
+  // day of the year and the sun angle — all three are what the site's coordinate implies.
+  // THE DISTANCE IS NOT DECORATION. "Boston 0.2 km" and "Pendang 17.9 km" are different claims:
+  // one is a city-centre site, the other is 18 km out. Printing the distance discloses the quality
+  // of the match, which is what makes a place NAME safe to put on screen at all.
+  // The fetch lives HERE, not in place_lookup.js — that module is asserted network-free by
+  // W-PL-5, and the whole reason §13 supersedes §9's Open-Meteo answer is that the bake stays
+  // offline. This reads a file the repo ships; it never leaves the machine.
+  A._placeTable = A._placeTable || null;
+  A.placeTableLoad = function (url) {
+    if (A._placeTable || A._placeTableLoading) return A._placeTableLoading || Promise.resolve(A._placeTable);
+    var src = url || 'rates/cities.tsv.gz';   // viewer.html's own folder
+    A._placeTableLoading = fetch(src).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      // The table ships gzipped (1.14 MB against 2.96 MB raw, measured). DecompressionStream is
+      // the browser's own; a page without it simply gets no place line rather than a broken one.
+      if (typeof DecompressionStream === 'undefined') throw new Error('no DecompressionStream');
+      return new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
+    }).then(function (txt) {
+      A._placeTable = (window.PlaceLookup && window.PlaceLookup.parse) ? window.PlaceLookup.parse(txt) : null;
+      console.log('§PLACE_TABLE rows=' + (A._placeTable ? A._placeTable.rows.length : 0) +
+        ' source="' + (A._placeTable ? A._placeTable.meta.source : '?') + '" licence="' +
+        (A._placeTable ? A._placeTable.meta.licence : '?') + '" — offline, no network beyond this repo file');
+      return A._placeTable;
+    }).catch(function (e) {
+      console.log('§PLACE_TABLE absent (' + e.message + ') — the place line is simply not drawn;' +
+        ' a missing table must never cost a frame');
+      A._placeTable = null; return null;
+    });
+    return A._placeTableLoading;
+  };
+  var _placeLogged = false;
+  A.placeLabelFor = function (lat, lon) {
+    if (!A._placeTable || !window.PlaceLookup || typeof lat !== 'number' || typeof lon !== 'number') return null;
+    var g = window.PlaceLookup.nearest(A._placeTable, lat, lon);
+    if (!g) return null;
+    if (!_placeLogged) {
+      _placeLogged = true;
+      console.log('§PLACE_RESOLVED ' + (g.match
+        ? 'name="' + g.name + '" cc=' + g.cc + ' km=' + g.km.toFixed(2) + ' elev=' + g.elevation_m +
+          'm(src=' + g.elevSrc + ') tz=' + g.tz + ' pop=' + g.population + ' bound=' + g.boundKm + 'km source="' + g.source + '"'
+        : 'NO MATCH — ' + g.reason) +
+        ' ⚠ §13.5s contested-coordinate gate is NOT built: this prints what the table says for the' +
+        ' coordinate it was given, and says nothing about whether that coordinate is agreed.');
+    }
+    if (!g.match) return null;
+    return g.name + ', ' + g.cc + ' · ' + (g.km < 1 ? (g.km * 1000).toFixed(0) + ' m' : g.km.toFixed(1) + ' km') + ' away';
   };
 
   // ── DRAW: the ONLY place any of this is drawn, so preview and export cannot diverge. ────────
@@ -614,7 +668,9 @@ function setupCpeSunCompass(A) {
     var at = (pos && CLOCK_POS[pos]) ? pos : 'tr';
     var sy = stackY || 0;
     var lineH = Math.round(fontPx * 2.1);
-    var lines = [labels.day, labels.sun].concat(labels.attack ? [labels.attack] : []);
+    var lines = [labels.day, labels.sun]
+      .concat(labels.attack ? [labels.attack] : [])
+      .concat(labels.place ? [labels.place] : []);   // §PLACE — innermost row of the geo-ref plate
     var widest = 0;
     if (typeof ctx.measureText === 'function') {
       lines.forEach(function (t) { widest = Math.max(widest, ctx.measureText(t).width); });

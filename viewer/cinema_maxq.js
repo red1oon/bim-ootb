@@ -3138,6 +3138,12 @@
         try { A.sunCompassSetDate(_sunDate); } catch (eSD2) {}
       }
       if (_sunCompass && A.sunCompassBuild) {
+        // §PLACE — start the city table loading BEFORE the frame loop, so the geo-ref plate has
+        // its innermost row from frame 0. Awaited, not fire-and-forget: a table that arrives on
+        // frame 200 would put a row on screen halfway through the film, which reads as a glitch.
+        // It never blocks for long (one local file, 1.14 MB gzipped) and a failure is silent by
+        // design — placeTableLoad resolves null and the row is simply absent.
+        if (A.placeTableLoad) { try { await A.placeTableLoad(); } catch (ePT) {} }
         try { A._sunCompassOn = !!A.sunCompassBuild(); }
         catch (eSCB) { console.warn('§SUN_COMPASS_BUILD failed: ' + (eSCB && eSCB.message) + ' — the film bakes without the compass'); }
       } else if (!_sunCompass) {
