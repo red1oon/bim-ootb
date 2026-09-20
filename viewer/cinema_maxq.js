@@ -1496,9 +1496,20 @@
       if (!A._escDrawErrLogged) { A._escDrawErrLogged = true;
         console.warn('§ESCAPE_ROUTE_ERR draw: ' + eERd.message + ' — route skipped, frames continue'); }
     }
-    if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
-      A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity);
-    }
+    // §STATUS_BOX — the centred lower-third caption plate is NOT drawn here. It was, from a
+    // keep-both merge resolution in d63c59d6, and the exported frame then carried BOTH the
+    // right-hand status box AND the bar that box replaced (§38.1b: "REPLACES the centred
+    // lower-third caption plate for the bake ... only the exported frame stops using it"). red1
+    // saw it: "there is an old Measure status bottom bar which we first moved to the HUD, but that
+    // copy still there in this clip."
+    // ⚠ WORSE THAN A DUPLICATE. That call sat OUTSIDE _drawUnlessHold, so it registered no rect
+    // (which is how §HUD_LAYOUT never saw two captions), it did not fade with the load-path freeze
+    // when every other overlay does, and it would have ignored the §FINDINGS_HUD_CLEAR gate, which
+    // lives inside that wrapper.
+    // The surviving draw is the `else` of `if (A.filmBoxesDrawStatus)` further down — the fallback
+    // for a build where the status box is absent. Deleting this one alone would have taken the
+    // escape-route caption off screen with it (checked: filmBoxesDrawStatus exists in a bake, so
+    // that else never runs), which is why `_erCap` now rides the status box's Reveal row.
     if (lblInfo && lblInfo.placed && lblInfo.placed.length && A.clashLabelsCompositeOntoCanvas) {
       _drawUnlessHold('clash.labels', function (a) {
         try { A.clashLabelsCompositeOntoCanvas(ctx, w, h, lblInfo.placed, a); }
@@ -3453,6 +3464,10 @@
         }
         // §SLAB_BEAT — envelope + label lifetime, same film clock as the datum above.
         if (_measure && A.slabBeatAt) {
+          // §SLAB_LABEL_STALE — asked BEFORE the beat's own update, so a frame in the closing
+          // movement never re-posts the build-up's slab figures. See cpe_slab_beat.js for why the
+          // bound is §FINDINGS_HUD_CLEAR and not a new clock.
+          try { if (A.slabBeatLabelStaleCheck) A.slabBeatLabelStaleCheck(_tnFilm * _filmSecFull); } catch (eSS) {}
           try { A.slabBeatAt(_tnFilm * _filmSecFull); }
           catch (eSBA) { if (!A._slabBeatAtWarned) { A._slabBeatAtWarned = true; console.warn('§SLAB_BEAT_AT failed frame=' + i + ': ' + (eSBA && eSBA.message)); } }
         }
@@ -3686,12 +3701,23 @@
           ? { name: _srRoom.storeyName, opacity: _srRoom.opacity } : _srStorey;
         var _srRoomRow = (_srRoom && _srRoom.roomName)
           ? { name: _srRoom.roomName, opacity: _srRoom.opacity } : _srRoom;
-        var _statusSrc = { storey: _srStoreyRow, room: _srRoomRow, buildup: A.tmFrontierPhase || '', reveal: _srReveal };
+        var _erCapRow = (_escRec && A.escapeRouteCaptionAt) ? A.escapeRouteCaptionAt(plan, _tnFilm) : null;
+        // §STATUS_BOX owns the captions in a bake, so the escape caption goes in the Reveal row —
+        // during its window the escape route IS the reveal, and it outranks the storey reveal for
+        // the same reason it outranks it in the _titleInfo chain below. Without this the caption
+        // would simply vanish with the duplicated lower-third bar deleted above.
+        var _statusSrc = { storey: _srStoreyRow, room: _srRoomRow, buildup: A.tmFrontierPhase || '',
+                           reveal: _erCapRow || _srReveal };
         // §ESCAPE_ROUTE_REVEAL (merged) — the escape caption OUTRANKS reveal/storey while its
         // window is open, which is the precedence their own chain had. Everything else keeps
         // ours: _srReveal/_srCue/_srRoom and the _statusSrc rows above are untouched.
-        var _erCap = (_escRec && A.escapeRouteCaptionAt) ? A.escapeRouteCaptionAt(plan, _tnFilm) : null;
-        var _titleInfo = _erCap || _srReveal || _srCue || _srRoom || null;
+        // §75 HALF-APPLIED (found 2026-09-20). §75 split the room title into its two halves and
+        // wired the split into the STATUS BOX above — then left this chain reading `_srRoom`, the
+        // pre-§75 COMBINED string. Evidence, from clip_1127.log and its frames: the status box got
+        // Storey="Level 4, Level 1" Room="≈ Hall/Corridor 2, …" while the caption read
+        // "Level 1 ≈ Hall/Corridor 4, ≈ Hall/Corridor 5 +3" — storey and rooms glued together,
+        // exactly the format §75 retired, running off the right edge at 854 px.
+        var _titleInfo = _erCapRow || _srReveal || _srCue || _srRoomRow || null;
         // §CPE_PATH_OVERVIEW — the pose is read HERE, after every camera write for this frame and
         // immediately before the capture, so the head marks the shot that was actually rendered.
         // §CPE_POV_MARKER's rule (cinema_path_editor.js:3789): read the REAL transform, never

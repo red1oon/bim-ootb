@@ -517,6 +517,26 @@ function setupCpeSlabBeat(A) {
     if (!_beat || !_labelOn || !A.filmBoxesMeasurePost) return 0;
     return A.filmBoxesMeasurePost(_labelTitle, _labelRows, INK) ? 1 : 0;
   };
+  // §SLAB_LABEL_STALE (2026-09-20) — red1 saw "Floor area 3,361 m² (mesh footprint) · 150mm
+  // Concrete With 75mm Metal Deck · Level 6" still in the corner of the closing night shot.
+  // §26.2's lifetime rule is "from the pop until the crossing leaves frame", and on this film the
+  // crossing never leaves frame — so `_labelOn` stayed true, the composite re-posted EVERY frame,
+  // and cpe_film_boxes.js's 2.2 s LINGER can only expire a box when nothing posts. Measured on
+  // clip_1127.log: one §SLAB_BEAT_LABEL on, zero off, zero §MEASURE_BOX rows=0 idle, zero
+  // §MEASURE_BOX_LINGER across 846 frames. A box that re-posts forever can never expire.
+  // THE BOUND IS NOT A NEW NUMBER. It is the signal red1 already defined for exactly this
+  // situation — `A._findingsHudSuppress`, which opens two seconds before the storey reveal on his
+  // own words "their work is sufficient". A build-up slab figure is stale from that moment by
+  // definition, and the code's own comment ("a later beat may claim it — none yet") is that claim
+  // arriving. Nothing is invented and no second clock is introduced.
+  A.slabBeatLabelStaleCheck = function (filmSec) {
+    if (!_labelOn || !A._findingsHudSuppress) return false;
+    _labelOn = false; _labelOffReason = 'the closing movement began (§FINDINGS_HUD_CLEAR)';
+    log('§SLAB_BEAT_LABEL off filmSec=' + (filmSec == null ? -1 : filmSec).toFixed(2) +
+        ' reason=' + _labelOffReason + ' — the box stops re-posting, so §MEASURE_BOX can go idle' +
+        ' and its LINGER can finally expire');
+    return true;
+  };
 
   A.slabBeatReport = function () { return _report; };
   A.slabBeatClock = makeClock;   // §27.5.1 — the ONE owner-clock inverter, shared with cpe_linear_beat.js
