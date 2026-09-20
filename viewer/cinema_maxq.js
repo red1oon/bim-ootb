@@ -1960,8 +1960,13 @@
         }
       });
     }
+    // ABSOLUTE, not `+=`. MEASURED on the HHS clip after the first attempt: the panel's own box
+    // came back at y=115 while the accumulator stood at 100 — a drawer may apply an offset of its
+    // own inside its slot, and advancing by height alone silently loses it. The HHS re-bake then
+    // still reported §HUD_OVERLAP_WORST resource-panel x hud.status 173x7px, exactly that 15 px
+    // of lost offset. Taking the real box's bottom cannot drift, whatever a drawer does inside.
     if (A.bigStatsLastBox && A.bigStatsLastBox.h > 0) {
-      _stackY += A.bigStatsLastBox.h + _gapY;
+      _stackY = Math.max(_stackY, A.bigStatsLastBox.y + A.bigStatsLastBox.h + _gapY);
     }
     if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) {
       _drawUnlessHold('hud.pie', function (a) {
@@ -1973,7 +1978,7 @@
       });
     }
     if (A.resourcePanelLastBox && A.resourcePanelLastBox.h > 0) {
-      _stackY += A.resourcePanelLastBox.h + _gapY;
+      _stackY = Math.max(_stackY, A.resourcePanelLastBox.y + A.resourcePanelLastBox.h + _gapY);
     }
 
     // ══ §HUD_COLUMN_FLOOR (2026-09-21) — THE STATUS BOX IS THE NEXT SLOT IN THIS COLUMN ═════════
