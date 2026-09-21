@@ -325,8 +325,11 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
      card ? card.card.big : '');
   // …and the finding that cannot be drawn is STATED, whenever there is one. A room with no route
   // out is the most serious thing this beat can find and the only one it cannot draw a line for.
-  ck('W-ESC-6b2 a room that reaches NO exit is named on the card, not only in the log',
-     !!card && (!(rec && rec.roomsWithNoExit > 0) || /reach NO exit/.test(card.card.sub)),
+  // EVERY FORM, not just the full one. A real 854x480 bake showed the card dropping to subAlts and
+  // losing the line entirely — a fact that vanishes at the size most people watch is not on the card.
+  ck('W-ESC-6b2 a room that reaches NO exit is named on the card AT EVERY SIZE, not only in the log',
+     !!card && (!(rec && rec.roomsWithNoExit > 0) ||
+       (/NO exit/.test(card.card.sub) && (card.card.subAlts || []).every(function (a) { return /NO exit/.test(a); }))),
      rec ? (rec.roomsWithNoExit + ' room(s) with no exit; sub="' + (card ? card.card.sub.slice(0, 60) : '') + '"') : '');
   // red1, 2026-09-20: "It be good to indicate so with 'secs'". A bare mm:ss reads as a clock.
   ck('W-ESC-6e the headline names its unit at both scales, and never shows a bare mm:ss',

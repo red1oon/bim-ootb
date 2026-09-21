@@ -883,10 +883,22 @@ function setupCpeEscapeRoute(A) {
     // An ellipsed long sub is strictly worse than a whole short one — it loses the disclosures it
     // exists for AND keeps none of the room. Whichever form is drawn, no number ever appears
     // without its evidence tier, which is the rule this chain exists to hold.
-    var subShort = '~' + vis.steps + ' steps*  \u00b7  ' + vis.drawnM.toFixed(0) + ' m walked';
+    // §ESCAPE_NO_EXIT — THE PREFIX GOES ON ALL THREE FORMS, and that is the whole point.
+    // Caught by a real 854x480 bake, not by reasoning: the first cut put it only on `sub`, and both
+    // the Hospital and Terminal clips came back with `~208 steps* · 156 m walked · …` and no sign
+    // of it, because the card drops to `subAlts` at clip height and draws subShort. A fact that
+    // vanishes at the size most people watch is not on the card at all. §13.5 settled this once
+    // already for the colour legend — "the meaning survives every size" — and it applies here with
+    // more force, because this is the most serious thing the beat can find.
+    // subMin is the last-ditch form, so it carries the count alone: the walk figures can go before
+    // this does.
+    var _noExitPre = (_rec.roomsWithNoExit > 0)
+      ? ('\u26a0 ' + _rec.roomsWithNoExit + ' room' + (_rec.roomsWithNoExit === 1 ? '' : 's') + ' NO exit  \u00b7  ')
+      : '';
+    var subShort = _noExitPre + '~' + vis.steps + ' steps*  \u00b7  ' + vis.drawnM.toFixed(0) + ' m walked';
     if (b && b.level) subShort += '  \u00b7  ' + vis.drawnM.toFixed(0) + ' m vs ' + b.limitM + ' m ' +
       (b.level === 'critical' ? 'limit' : 'warning') + '\u2074';
-    var subMin = '~' + vis.steps + ' steps*  \u00b7  ' + vis.drawnM.toFixed(0) + ' m\u00b2';
+    var subMin = _noExitPre + '~' + vis.steps + ' steps*  \u00b7  ' + vis.drawnM.toFixed(0) + ' m\u00b2';
     // §ESCAPE_PANEL_SLOT (red1: "make it bigger to fit", then "I mean, retain the same coloring.
     // Just use that opposing HUD"). NOTHING about the card's look changes — same keys, same plate,
     // same type ladder, all still guarded by §CARDFIT. The only ask is that the slot it now sits in
