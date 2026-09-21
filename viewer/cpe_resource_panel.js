@@ -1230,8 +1230,13 @@ function setupCpeResourcePanel(A) {
     // never did, because at 286 px they never had to. Ellipsis stays as the last resort so a
     // pathologically long sub still cannot overflow the panel.
     ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    // §ESCAPE_TITLE_BIG — a card may ask for the larger title ladder (`labelBig`). The escape
+    // beat does, because its title is the one line the viewer must read at a glance. Shrink-before-
+    // ellipsis still applies, so a long room name narrows rather than overflowing; the floor simply
+    // starts higher. Every other card is untouched — no flag, same numbers as before.
     _fitText(ctx, c.label, colX, baseY + Math.round(bh * 0.17), colW,
-             Math.round(bh * 0.105), Math.round(bh * 0.072), '600', F);
+             Math.round(bh * (c.labelBig ? 0.150 : 0.105)),
+             Math.round(bh * (c.labelBig ? 0.100 : 0.072)), c.labelBig ? '700' : '600', F);
     if (c.sub) {
       // The sub is a full sentence ("9 trades · time-phased, not a bill of quantities" = 48 chars).
       // At 171 px even the floor size cannot fit it on one line, and the real bake cut it mid-word

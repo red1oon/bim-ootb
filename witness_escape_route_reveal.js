@@ -323,6 +323,32 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   ck('W-ESC-6b the uncited number keeps its ~ and the cited one does not', !!card &&
      /(^|·\s+)~\d+ steps/.test(card.card.sub) && /^(\d+ secs|\d+:\d\d mins)$/.test(card.card.big),
      card ? card.card.big : '');
+  // §ESCAPE_PREROLL — the panel must be up BEFORE the route starts, and must pulse on the way in.
+  // ISSUE: red1 asked for it to fill the lull between the storey reveal ending and the escape
+  // window opening. A pre-roll that returned null (or full alpha) would leave the gap it exists to
+  // fill, and a monotonic fade would not read as "this is next".
+  {
+    var _w = A.escapeRouteWindow(plan);
+    var _lead = 2.0 / plan.durationSec;
+    var _at = function (f) { return A.escapeRouteStatCardAt(plan, _w.start - _lead * (1 - f)); };
+    var _mid = _at(0.5), _in = _at(0.02), _end = _at(0.995);
+    ck('W-ESC-13a the card is UP during the 2 s lead-in, before the route window opens',
+       !!_mid && !!_in && !!_end && !!_mid.card && /^Escape Route/.test(_mid.card.label) && _mid.opacity > 0,
+       _mid ? 'alpha at the midpoint ' + _mid.opacity.toFixed(2) + ', label "' + _mid.card.label + '"' : 'no card in the lead-in');
+    // two full cycles means the alpha must come back DOWN at least once on the way in — a fade does not
+    var _alphas = [];
+    for (var _k = 0; _k <= 40; _k++) { var _c = _at(_k / 40); _alphas.push(_c ? _c.opacity : 0); }
+    var _dips = 0;
+    for (var _j = 1; _j < _alphas.length - 1; _j++)
+      if (_alphas[_j] < _alphas[_j - 1] && _alphas[_j] <= _alphas[_j + 1]) _dips++;
+    ck('W-ESC-13b …and it PULSES rather than fading — the alpha falls back at least once',
+       _dips >= 1, 'troughs across the lead-in: ' + _dips);
+    ck('W-ESC-13c …and it arrives at full opacity, so the route opens on a settled panel',
+       !!_end && _end.opacity > 0.9, _end ? String(_end.opacity.toFixed(2)) : '-');
+    ck('W-ESC-13d the lead-in shows the WINDOW\'S OWN first values, never invented ones',
+       !!_mid && !!card && _mid.card.big === A.escapeRouteStatCardAt(plan, _w.start + 1e-9).card.big,
+       _mid ? _mid.card.big : '-');
+  }
   // …and the finding that cannot be drawn is STATED, whenever there is one. A room with no route
   // out is the most serious thing this beat can find and the only one it cannot draw a line for.
   // EVERY FORM, not just the full one. A real 854x480 bake showed the card dropping to subAlts and

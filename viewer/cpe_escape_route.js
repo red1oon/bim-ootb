@@ -758,11 +758,41 @@ function setupCpeEscapeRoute(A) {
   // Falls back to 2.2 only if that module is absent, and says so nowhere else.
   // The card holds its FINAL figures through the dwell and fades out over it, so the last thing on
   // screen is the completed route's numbers rather than a partial draw frozen mid-count.
+  // ══ §ESCAPE_PREROLL (2026-09-21) — THE PANEL ARRIVES BEFORE THE ROUTE DOES ══════════════════
+  // red1: "make that HUD pre-emptively appear 2 secs before to fill in the lull, if can make it
+  // strobe pulse 2 times before normal to bring the viewer attention that this is next."
+  // The lull is real: the storey reveal ends at beats.rise and the escape window does not open
+  // until ~1.2 s later, so the frame empties just as the last beat arrives. The panel now comes up
+  // during that gap and blinks TWICE — two full cycles over the first 80% of the lead, then a ramp
+  // to full — so the eye is already on the corner when the first dotted segment appears.
+  // ⚠ IT SHOWS THE WINDOW'S OWN FIRST INSTANT, never invented numbers: the values are exactly what
+  // frame one of the window would print, so nothing on the card changes meaning when the route
+  // starts. A teaser that showed the FINAL figures would have to count backwards afterwards.
+  var PREROLL_SEC = 2.0, PREROLL_PULSES = 2, PREROLL_PULSE_FRAC = 0.8;
   function _cardVisAt(plan, tNorm) {
     var vis = A.escapeRouteVisualAt(plan, tNorm);
     if (vis) return vis;
     if (!_rec || !plan || !(plan.durationSec > 0) || tNorm == null) return null;
     var win = A.escapeRouteWindow(plan);
+    if (win && tNorm != null) {
+      var lead = PREROLL_SEC / plan.durationSec;
+      if (lead > 0 && tNorm > win.start - lead && tNorm <= win.start) {
+        var first = A.escapeRouteVisualAt(plan, win.start + 1e-9);
+        if (first) {
+          var u = (tNorm - (win.start - lead)) / lead;   // 0..1 across the lead-in
+          var a;
+          if (u < PREROLL_PULSE_FRAC) {
+            // two full cycles, trough to crest — a blink the eye reads as "look here", not a fade
+            a = 0.12 + 0.88 * (0.5 - 0.5 * Math.cos(2 * Math.PI * PREROLL_PULSES * (u / PREROLL_PULSE_FRAC)));
+          } else {
+            a = 0.12 + 0.88 * ((u - PREROLL_PULSE_FRAC) / (1 - PREROLL_PULSE_FRAC));
+          }
+          first.alpha = Math.max(0, Math.min(1, a));
+          first.preroll = true;
+          return first;
+        }
+      }
+    }
     if (!win || tNorm <= win.end || tNorm > 1) return null;
     // TILL THE VERY END, BY INTENT — not by arithmetic. red1: "The HUD may remain till the very
     // end ... So that when EscRoute overlay in building ends, that HUD remains as it is almost
@@ -892,9 +922,23 @@ function setupCpeEscapeRoute(A) {
     // more force, because this is the most serious thing the beat can find.
     // subMin is the last-ditch form, so it carries the count alone: the walk figures can go before
     // this does.
-    var _noExitPre = (_rec.roomsWithNoExit > 0)
-      ? ('\u26a0 ' + _rec.roomsWithNoExit + ' room' + (_rec.roomsWithNoExit === 1 ? '' : 's') + ' NO exit  \u00b7  ')
-      : '';
+    // §ESCAPE_EXITS_REACHABLE — the other finding the route cannot draw. HHS_Office_Federated
+    // finds THREE exit doors and can reach ONE: the whole 156 m is common path because there is no
+    // second way out for the router to offer. Every other building in the fleet reaches every exit
+    // it finds (Hospital 8/8, Terminal 11/11, LTU 7/7), so this is a real discriminator and not a
+    // number that is always the same. It is stated, never explained — whether the cause is the
+    // model or our own graph is not something the card can know, and §PATHING-DEFECTS records how
+    // often that distinction has mattered.
+    var _exFound = null;
+    try { var _g = A.getRoomGraph && A.getRoomGraph(); _exFound = _g && _g.stats ? _g.stats.exits : null; } catch (eX) {}
+    var _pre = '';
+    if (_rec.roomsWithNoExit > 0) {
+      _pre += '\u26a0 ' + _rec.roomsWithNoExit + ' room' + (_rec.roomsWithNoExit === 1 ? '' : 's') + ' NO exit  \u00b7  ';
+    }
+    if (_exFound > 0 && _rec.exitsReachable != null && _rec.exitsReachable < _exFound) {
+      _pre += '\u26a0 ' + _rec.exitsReachable + ' of ' + _exFound + ' exits reachable  \u00b7  ';
+    }
+    var _noExitPre = _pre;
     var subShort = _noExitPre + '~' + vis.steps + ' steps*  \u00b7  ' + vis.drawnM.toFixed(0) + ' m walked';
     if (b && b.level) subShort += '  \u00b7  ' + vis.drawnM.toFixed(0) + ' m vs ' + b.limitM + ' m ' +
       (b.level === 'critical' ? 'limit' : 'warning') + '\u2074';
@@ -904,7 +948,10 @@ function setupCpeEscapeRoute(A) {
     // same type ladder, all still guarded by §CARDFIT. The only ask is that the slot it now sits in
     // is sized to the card rather than the card squeezed into the slot: the opposing Measure slot
     // is 367x186 at 1920x1080 against the card's natural 389x293.
-    return { card: { big: _fmtWalk(vis.walkSec), label: label, sub: sub, subAlts: [subShort, subMin],
+    // §ESCAPE_TITLE_BIG — red1: "make the Title 'Escape Route' large font". The card's own drawer
+    // sizes a label at bh*0.105; this beat's title is the one the viewer must read from across a
+    // room, so it asks for the larger ladder. Honoured by cpe_resource_panel.js's bigStats drawer.
+    return { card: { big: _fmtWalk(vis.walkSec), label: label, labelBig: true, sub: sub, subAlts: [subShort, subMin],
                      legend: legend, footnotes: footnotes },
              boxScale: 1.22, lingering: !!vis.lingering,
              idx: 0, n: 1, opacity: vis.alpha };
