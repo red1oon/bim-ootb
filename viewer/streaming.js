@@ -2192,7 +2192,22 @@ function setupStreaming(A) {
           // without this bit a mixed bucket would paint its non-MEP members an MEP trade hue.
           // Splitting the bucket keeps BOTH halves correct; it cannot fragment by more than the
           // 21 mixed buckets (160 -> at most 181 on the worst building).
-          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueClasses[el.ifcClass] ? 'M' : '-');
+          // §BATCH_BUCKET_CLASS_PAINT (2026-09-11, bim-compiler prompts/4D_MODEL_INTEGRITY.md §O) —
+          // the `M`/`-` bit above fixed ONE case of the general hazard the comment right above it
+          // names. The bucket's single material is built from `items[0].el.ifcClass` (~:2300 below),
+          // so ANY bucket holding two ifc_classes paints one of them with the other's material —
+          // and two NON-MEP classes still collided. MEASURED on the shipped set: 36,434 elements
+          // fleet-wide painted with a foreign class's material (LTU_AHouse 25,913, Hospital 5,998,
+          // JKR 1,493, Clinic 1,077, HHS 911, Duplex 250, Terminal/TermRooms 396 each).
+          // The user-visible instance that found it: HHS bucket "Level 3|ARC|_default|||-" leads with
+          // an IfcBuildingElementProxy, so its 18 IfcCovering + 16 IfcDoor + 3 IfcRailing members were
+          // painted PROXY TEAL — one of them (3XrBtx9eX7mQE6EqWHPeEe, a 5.89x7.33m suspended ceiling
+          // at z=9.78m) is the "floating blue piece" in the HHS_lingerfit2 bake, frames 3-36.
+          // With the class in the key, `items[0].el.ifcClass` IS every member's class by construction.
+          // Splits ONLY buckets that were already mixed: a class-pure bucket keys identically before
+          // and after, so its draw-call count is unchanged.
+          // Positional `key.split('|')` consumers read parts[0..2] — this stays a TRAILING field.
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueClasses[el.ifcClass] ? 'M' : '-') + '|' + (el.ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — §KERNEL_OPS_SCHED_AGREE (#1727) removed the staging hold that made the 1-slot batch fatal (staged 544->501, the slab is no longer in the map), so the class term is safe again and the foreign-class paint is fixed.
           // §MERGED_GUID: single target selection — merge bucket or batch bucket, never both.
           // Applies to §S280e's low-instance elements too: each is baked individually into the
           // merged buffer with its own index range, so identity survives exactly as for singles.
@@ -2831,7 +2846,7 @@ function setupStreaming(A) {
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
 
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-');   // §MEP_COLOR_SURVIVES_PHOTOREAL — see the same bit on the batch key above
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-') + '|' + (ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — see the batch key above
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
@@ -2991,15 +3006,35 @@ function setupStreaming(A) {
       // Bypass new URL() for import:// URLs (would throw)
       var _geoAbsUrl = geoUrl.startsWith('import://') ? geoUrl : new URL(geoUrl, location.href).href;
       var posUrl = A.DB_URL.replace('_extracted.db', '_positions.bin');
+      // §S260b pattern above (metaUrl/geoUrl): "hospital.db" → "hospital_positions.bin" when there
+      // is no `_extracted.db` suffix to strip. Missing here is what §8.7 found: for any `_silent.db`
+      // this replace was a no-op, so posUrl === A.DB_URL and the "sidecar" fetch below re-downloaded
+      // the WHOLE database and parsed its SQLite header bytes as a position count.
+      if (posUrl === A.DB_URL) posUrl = A.DB_URL.replace(/\.db$/, '_positions.bin');
 
       // Phase 0: Try positions.bin for instant bboxes (< 3MB, loads in <1s)
       // §S261: Skip if early bbox already drawn above
       var _posLoaded = false;
-      if (!_posLoaded) try {
+      // §POSITIONS_SIDECAR_LOOP_BOUND (2026-09-14, CPE_4D_PERF_MEM_FINDINGS.md §8.7): the sidecar
+      // must never equal A.DB_URL (a no-op derive means "no real sidecar can exist for this name"),
+      // and the header's row count must never be trusted past what the buffer can actually hold —
+      // on LTU_AHouse the misread count (31.7M) needed more heap than V8 had before a bounds check
+      // could ever fire, crashing the whole page (smaller buildings just threw and recovered
+      // 0.8-3.9s later, silently paying the cost every load). Both guards below are independent of
+      // each other on purpose: the first stops the wrong file from ever being fetched; the second
+      // is the backstop if a real sidecar is ever truncated or the header is wrong for any reason.
+      if (!_posLoaded && posUrl !== A.DB_URL) try {
         A.status.textContent = 'Loading positions...';
-        var posBuf = await A.cachedFetch(posUrl);
+        // §8.7b — plain quiet fetch, not A.cachedFetch; see the single-DB §S281 copy of this
+        // comment below for why (OCI-retry-on-404 logs trip cli_silent_bake.js's fatal-abort
+        // regex for what is meant to be a silently-optional sidecar).
+        var posResp = await fetch(posUrl);
+        if (!posResp.ok) throw new Error('sidecar not found: ' + posResp.status);
+        var posBuf = await posResp.arrayBuffer();
         var posView = new DataView(posBuf);
         var posCount = posView.getUint32(0, true);
+        var _posMaxRows = Math.floor((posBuf.byteLength - 4) / 24);
+        if (posCount > _posMaxRows) posCount = _posMaxRows;
         var posRows = [];
         for (var pi = 0; pi < posCount; pi++) {
           var off = 4 + pi * 24;
@@ -3201,12 +3236,35 @@ function setupStreaming(A) {
       // ── §S281: Single-DB instant bboxes — try the tiny positions.bin sidecar first (the same one
       // split builds use), so the wireframe preview paints before the full _extracted.db downloads.
       // Additive: a missing sidecar 404s → cachedFetch throws → caught → normal full download (unchanged).
+      // §8.7 (2026-09-14, CPE_4D_PERF_MEM_FINDINGS.md §8.7) — this whole try block used to have two
+      // gaps: '_extracted.db' → '_positions.bin' is a no-op for any `_silent.db`, so the "sidecar"
+      // fetch re-downloaded the WHOLE database, and the header's row count was never checked against
+      // the buffer it actually came from. On HHS/Terminal/Hospital the bogus count ran off the
+      // buffer and threw fast (0.8-3.9s, silently paying the cost every load) — on LTU_AHouse the
+      // misread count needed more heap than V8 had before that bounds check could ever fire, and the
+      // whole page crashed before reaching this catch (the CLI then waited its full 15-minute
+      // timeout on a page that no longer existed). Both fixed below: derive the sidecar the same
+      // way metaUrl/geoUrl already do a few lines up, refuse to fetch when it can't be distinguished
+      // from the real DB, and never trust the header count past what the buffer can hold.
       try {
         var _posUrl = A.DB_URL.replace('_extracted.db', '_positions.bin');
+        if (_posUrl === A.DB_URL) _posUrl = A.DB_URL.replace(/\.db$/, '_positions.bin');
+        if (_posUrl === A.DB_URL) throw new Error('no .db suffix to derive a sidecar name from');
         A.status.textContent = 'Loading positions...';
-        var _posBuf = await A.cachedFetch(_posUrl);
+        // §8.7b — a plain, quiet fetch, never A.cachedFetch: the sidecar is optional and tiny
+        // (<3MB), so caching it buys nothing, and cachedFetch's OCI-retry-on-404 logs
+        // §DB_404_OCI_FAIL / "Failed to fetch ... 404" — lines cli_silent_bake.js's FATAL_RX
+        // treats as "the building never loaded" (§CLI_BAKE_LOAD_FATAL), with no way to tell an
+        // optional sidecar's expected miss from the real DB failing. A missing sidecar must never
+        // abort the bake; it did, the moment this fetch stopped being a permanent no-op on
+        // _silent.db names (§8.7's own fix). Same-origin relative URL — no CORS concern.
+        var _posResp = await fetch(_posUrl);
+        if (!_posResp.ok) throw new Error('sidecar not found: ' + _posResp.status);
+        var _posBuf = await _posResp.arrayBuffer();
         var _posView = new DataView(_posBuf);
         var _posCount = _posView.getUint32(0, true);
+        var _posMaxRows = Math.floor((_posBuf.byteLength - 4) / 24);
+        if (_posCount > _posMaxRows) _posCount = _posMaxRows;
         var _posRows = [];
         for (var _spi = 0; _spi < _posCount; _spi++) {
           var _soff = 4 + _spi * 24;
@@ -3240,14 +3298,19 @@ function setupStreaming(A) {
       // ── Full download (single-DB path — use split_db.sh for large buildings) ──
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_status_fetching||'Fetching {url}...').replace('{url}',A.DB_URL);
       var dbBuf = await A.cachedFetch(A.DB_URL);
+      console.log('§DB_LOAD_STEP fetched bytes=' + (dbBuf && dbBuf.byteLength));   // §128.10 load-path step line
       if (A._applyPendingPatch) dbBuf = await A._applyPendingPatch(dbBuf, A.DB_URL);
+      console.log('§DB_LOAD_STEP patched bytes=' + (dbBuf && dbBuf.byteLength));
       // §SQLJS_CLOSE: same defensive close-before-reassign as the split path (see comment there).
       if (A.db && typeof A.db.close === 'function') {
         try { A.db.close(); } catch (e) {}
         if (A.libDb === A.db) A.libDb = null;
       }
+      console.log('§DB_LOAD_STEP opening');
       A.db = new SQL.Database(new Uint8Array(dbBuf));
+      console.log('§DB_LOAD_STEP opened');
       if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
+      console.log('§DB_LOAD_STEP ghosts composed');
       // §TM_SPLITMODE_PERSIST_KEY — whole-db path: A.db's content IS A.DB_URL's bytes, set
       // explicitly (not left unset) so this field is never stale from a prior split-mode load.
       A._dbPersistUrl = A.DB_URL;

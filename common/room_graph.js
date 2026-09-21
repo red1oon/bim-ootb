@@ -198,9 +198,71 @@
     }
     flightRows = flightRows.concat(mergedAssemblyRows);
 
+    // ══ §STAIR-SHAFT-SPLIT (2026-09-20) — ONE NAME IS NOT ONE STAIR ═══════════════════════════
+    // stairBaseKey() strips a trailing /:\d+$/ on the assumption it is a flight index. On a model
+    // that names stairs by TYPE with an element-ID suffix — Revit's default export — that leaves
+    // the type name, which every stair in the building shares. The comment below already records
+    // the consequence for the footprint ("one 84.1 x 63.9m box ... the whole building"); this is
+    // the same defect reaching the GRAPH, where it is worse: the merged group becomes ONE vertical
+    // link, so a building with 62 stairs routes as if it had three.
+    //
+    // MEASURED (tools_poc_stair_grouping.js, calculation-only, the whole fleet — §GRAPH-FOUNDATION
+    // requires the POC gate before the engine):
+    //   Hospital      62 rows, 11 name keys, worst merge 26 rows spanning  78.1 m
+    //   LTU_AHouse    80 rows, 18 name keys, worst merge 24 rows spanning 128.6 m
+    //   HHS_Office    20 rows,  5 name keys, worst merge 12 rows spanning  54.6 m
+    //   Hospital 2.0, HospitalAuckland, Ifc4_Revit_ARC — same failure, 54-80 m
+    //   Clinic, Terminal, Duplex, jkr — worst merge 1.5-3.0 m, i.e. genuinely ONE shaft
+    //
+    // THE RULE IS SPLIT-ONLY, and that is the whole safety argument: the name key still decides
+    // what MAY group, and plan distance only SUBDIVIDES what it produced. No building can come out
+    // with fewer groups than it has today, so a model the old rule handled correctly is untouched
+    // — measured: Clinic 5->5, Terminal 17->17, Duplex 2->2, jkr 4->4, byte-identical. Only the
+    // broken ones move: Hospital 11->23, LTU_AHouse 18->37, HHS_Office 5->11.
+    // Clustering is single-link on PLAN position: flights of one shaft share an (x,y) footprint as
+    // they climb, separate shafts do not. Transitive, so a run that drifts across its own landings
+    // still forms one cluster (§STAIR-RUN-ENDS measured 3.4 m of real horizontal offset on HHS,
+    // comfortably inside the radius).
+    var STAIR_SHAFT_RADIUS_M = 4.0;
+    var _shaftKey = (function () {
+      var byBase = {};
+      flightRows.forEach(function (f, i) { var b = stairBaseKey(f[1]); (byBase[b] = byBase[b] || []).push(i); });
+      var out = {}, splitBases = 0, splitInto = 0;
+      Object.keys(byBase).forEach(function (b) {
+        var idxs = byBase[b];
+        var parent = idxs.map(function (_, k) { return k; });
+        function find(k) { while (parent[k] !== k) { parent[k] = parent[parent[k]]; k = parent[k]; } return k; }
+        function union(a, c) { a = find(a); c = find(c); if (a !== c) parent[c] = a; }
+        for (var a = 0; a < idxs.length; a++) {
+          for (var c = a + 1; c < idxs.length; c++) {
+            var ra = flightRows[idxs[a]], rc = flightRows[idxs[c]];
+            if (Math.hypot(ra[2] - rc[2], ra[3] - rc[3]) <= STAIR_SHAFT_RADIUS_M) union(a, c);
+          }
+        }
+        var seen = {}, n = 0;
+        idxs.forEach(function (rowIdx, k) {
+          var r = find(k);
+          if (seen[r] === undefined) seen[r] = n++;
+          out[rowIdx] = (n > 1 || seen[r] > 0) ? (b + '#' + seen[r]) : b;
+        });
+        // a base that produced more than one shaft has to be re-labelled consistently
+        if (n > 1) {
+          splitBases++; splitInto += n;
+          idxs.forEach(function (rowIdx, k) { out[rowIdx] = b + '#' + seen[find(k)]; });
+        }
+      });
+      if (splitBases) {
+        log('§ROOM_GRAPH_STAIR_SPLIT baseKeys=' + Object.keys(byBase).length + ' split=' + splitBases +
+          ' into=' + splitInto + ' radius=' + STAIR_SHAFT_RADIUS_M + 'm — one NAME covered several' +
+          ' physically separate shafts; plan distance subdivides it. Split-only: no group is ever' +
+          ' merged that the name key kept apart.');
+      }
+      return out;
+    })();
+
     var groups = {}, order = [], rowRects = [];
-    flightRows.forEach(function (f) {
-      var key = stairBaseKey(f[1]);
+    flightRows.forEach(function (f, _fi) {
+      var key = _shaftKey[_fi] || stairBaseKey(f[1]);
       if (!groups[key]) {
         groups[key] = { guids: [], cx: 0, cy: 0, n: 0, zlo: Infinity, zhi: -Infinity,
           xlo: Infinity, xhi: -Infinity, ylo: Infinity, yhi: -Infinity,
@@ -1065,6 +1127,55 @@
     if (roomBridges || bridgeRejected)
       log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges + ' rejected=' + bridgeRejected + ' sealed=' + bridgeRejected);
 
+    // ══ §WALK-Z (2026-09-20) — ONE HEIGHT PER STOREY FOR THE DRAWN LINE ════════════════════════
+    // red1: "fix P2, the sawtooth." MEASURED on Hospital_silent, the DB the film bakes:
+    //   Level 1  room/spine 168.61   doorwp/exit 166.87   -> 1.74 m apart
+    //   Level 2  room/spine 174.16   doorwp      172.87   -> 1.29 m
+    //   Level 4  room/spine 183.82   doorwp      182.87   -> 0.95 m
+    // `storeyZ` is the average of each storey's ROOMS' centre z — room MID-HEIGHT — while a doorwp
+    // carries the DOOR's own centre. Neither is the floor, and they differ by roughly
+    // (roomHeight - doorHeight)/2. _buildPolyline pushes A* interior points at the FROM anchor's z
+    // and then the arrival anchor at its own, so every room->door->room hop stepped down and back
+    // up. On the escape route that was 11 vertical steps totalling 28.98 m, of which only 15.21 m
+    // was the real stair: 13.77 m of phantom climb in a walk that is measured in 3D, and a visibly
+    // bobbing line for half its length.
+    //
+    // AND A SECOND, WORSE ONE: Levels 3 and 5 have NO datum at all — every room and spine node
+    // there is NaN, because storeyZ averages room cz and those rooms have none, so one undefined
+    // room poisons its whole storey. `_polyPt` does `z: (n.cz || 0)`, and NaN || 0 is 0 — a route
+    // through those storeys would be DRAWN AT z=0, some 167 m below the building. Nothing had gone
+    // through them yet, so nothing had shown it.
+    //
+    // walkZ is therefore one height per storey, used by the DRAWN LINE only: finite storeyZ where
+    // there is one, otherwise the median door centre on that storey (a door sits within ~1 m of the
+    // walking level, so it is a far better answer than 0). `cz` is untouched — other consumers
+    // still read it — and stairwp keeps its own z, because that IS the genuine vertical move.
+    var _walkZ = {}, _doorZ = {};
+    Object.keys(nodes).forEach(function (k) {
+      var n = nodes[k];
+      if (n.storey == null || n.kind !== 'doorwp' || !isFinite(n.cz)) return;
+      (_doorZ[n.storey] = _doorZ[n.storey] || []).push(n.cz);
+    });
+    var _wzFilled = [];
+    Object.keys(storeyZ).concat(Object.keys(_doorZ)).forEach(function (sname) {
+      if (_walkZ[sname] !== undefined) return;
+      if (isFinite(storeyZ[sname])) { _walkZ[sname] = storeyZ[sname]; return; }
+      var ds = (_doorZ[sname] || []).slice().sort(function (a, b) { return a - b; });
+      if (ds.length) { _walkZ[sname] = ds[ds.length >> 1]; _wzFilled.push(sname + '=' + _walkZ[sname].toFixed(2)); }
+    });
+    var _wzSet = 0;
+    Object.keys(nodes).forEach(function (k) {
+      var n = nodes[k];
+      if (n.kind === 'stairwp') { n.walkZ = n.cz; return; }      // the real vertical transition
+      var z = (n.storey != null) ? _walkZ[n.storey] : undefined;
+      n.walkZ = isFinite(z) ? z : (isFinite(n.cz) ? n.cz : 0);
+      if (isFinite(z)) _wzSet++;
+    });
+    log('§ROOM_GRAPH_WALK_Z storeys=' + Object.keys(_walkZ).length + ' nodesPinned=' + _wzSet +
+      (_wzFilled.length ? ' filledFromDoors=[' + _wzFilled.join(' ') + '] (these storeys had NO room' +
+        ' datum at all — every room/spine cz was NaN, and the drawn line would have been placed at z=0)' : '') +
+      ' — the drawn route now holds ONE height per storey; only a stair changes it.');
+
     return {
       nodes: roomOrder.map(function (lg) { return nodes[lg]; }), // §API-COMPAT: room-only, see file header
       edges: edges,
@@ -1578,6 +1689,7 @@
   // wherever a chord fails. Never touches WHICH rooms/doors the route uses (`doors` list
   // untouched) — only the polyline's intermediate points, exactly per the spec's scope fence.
   function _legalizePath(graph, path) {
+    var _legT0 = (typeof Date !== 'undefined') ? Date.now() : 0;
     var legalized = 0, detoured = 0;
     var out = [path[0]];
     for (var i = 0; i + 1 < path.length; i++) {
@@ -1650,6 +1762,16 @@
       out.push(path[i + 1]);
     }
     if (legalized) _log('§PATH_LEGAL legalized=' + legalized + ' detoured=' + detoured);
+    // LARGE_DB_BAKE.md §2 L1 — accumulate on the graph itself so a whole-building sweep
+    // (egress_sanity.js's rule 2/3 loop, one shortestPath() per room) can print ONE summary line
+    // for the raster-absent case instead of the per-call §PATH_LEGAL noise above being the only
+    // trace anything was slow. Never gated on rasters here — the caller decides whether the
+    // absence is newsworthy; this just carries the numbers.
+    if (graph) {
+      var _legSt = graph._legalizeStats || (graph._legalizeStats = { calls: 0, legalized: 0, detoured: 0, ms: 0 });
+      _legSt.calls++; _legSt.legalized += legalized; _legSt.detoured += detoured;
+      _legSt.ms += (typeof Date !== 'undefined') ? (Date.now() - _legT0) : 0;
+    }
     return out;
   }
 
@@ -1803,7 +1925,10 @@
   // §POLYLINE: the additive floor-hugging geometry for result.polyline — world {x,y,z} points. Rooms/
   // doors/circ anchors from `path` are kept as-is; A* interior points are spliced between same-storey
   // pairs; a cross-storey (stair) pair keeps its straight vertical segment (no raster spans floors).
-  function _polyPt(n) { return { x: n.cx, y: n.cy, z: (n.cz || 0) }; }
+  // §WALK-Z — the DRAWN line reads walkZ (one height per storey, see the note where it is
+  // assigned). Falls back to cz for any caller that builds a node without it.
+  function _polyPt(n) { return { x: n.cx, y: n.cy, z: (isFinite(n.walkZ) ? n.walkZ : (n.cz || 0)) }; }
+  function _walkZOf(n) { return isFinite(n.walkZ) ? n.walkZ : (n.cz || 0); }
   function _buildPolyline(graph, path) {
     if (!path || !path.length) return [];
     var anchors = [];
@@ -1833,12 +1958,12 @@
       if (anchors[i + 1].kind === 'circ' && i + 2 < anchors.length && a.storey != null && a.storey === anchors[i + 2].storey) {
         var c = anchors[i + 2];
         var bypass = _astarHop(graph, a, c);
-        if (bypass !== null) { pushInterior(bypass, (a.cz || 0)); pushPt(_polyPt(c)); i += 2; continue; }
+        if (bypass !== null) { pushInterior(bypass, _walkZOf(a)); pushPt(_polyPt(c)); i += 2; continue; }
       }
       var b = anchors[i + 1];
       if (a.storey != null && a.storey === b.storey) {
         var hop = _astarHop(graph, a, b);
-        if (hop && hop.length) pushInterior(hop, (a.cz || 0));
+        if (hop && hop.length) pushInterior(hop, _walkZOf(a));
       }
       pushPt(_polyPt(b));
       i += 1;
@@ -1879,6 +2004,83 @@
     // §RASTER-ASTAR: additive floor-hugging geometry (see _buildPolyline). path/doors/distance are
     // unchanged — polyline is the ONLY new field, consumed by navigate_find.js for the drawn line.
     return { path: path, doors: doors, distance: core.dist[toGuid], polyline: _buildPolyline(graph, path) };
+  }
+
+  // §ESCAPE-ROUTES-ALL (ESCAPE_ROUTE_REVEAL.md §12.1, 2026-09-20) — EVERY reachable exit from a
+  // room, ranked, from ONE Dijkstra. escapeRoute() below already ran that Dijkstra and then threw
+  // away all but the winner; the common-path rule needs the runner-up too, and paying a second
+  // full search per room to get it would be absurd (MEASURED: 149 Hospital rooms x 8 exits via
+  // repeated shortestPath = ~90 s; this is one search per room, the same cost escapeRoute already
+  // pays).
+  //
+  // ⚠ THE DIVERGENCE NODE FALLS OUT FOR FREE, and that is the whole reason this shape is right.
+  // A Dijkstra from `fromGuid` produces a shortest-path TREE. Two exits' paths in that tree share
+  // a prefix by construction, and where they part IS their lowest common ancestor. So "the point
+  // at which the occupant first gains a choice of two paths" (IBC 2021 §1006.2.1's own words) is a
+  // tree walk, not a second search. `divergenceFrom()` below does it.
+  //
+  // Returns { routes: [{exitGuid, distance, path, doors}, ...] } ranked nearest-first, or null on
+  // the same conditions escapeRoute() returns null. NOT a change to escapeRoute(): that function
+  // is untouched below and every existing caller keeps its exact behaviour.
+  function escapeRoutes(graph, fromGuid, opts) {
+    opts = opts || {};
+    var log = opts.log || function () {};
+    var adj = _buildAdjacency(graph);
+    if (!adj[fromGuid]) { log('§ESCAPE_ROUTES from=' + fromGuid + ' NO_GRAPH_NODE'); return null; }
+    var dist = {}, prev = {}, visited = {};
+    Object.keys(adj).forEach(function (g) { dist[g] = Infinity; });
+    dist[fromGuid] = 0;
+    var pq = [fromGuid];
+    while (pq.length) {
+      pq.sort(function (a, b) { return dist[a] - dist[b]; });
+      var u = pq.shift();
+      if (visited[u]) continue;
+      visited[u] = true;
+      (adj[u] || []).forEach(function (edge) {
+        var nd = dist[u] + edge.w;
+        if (nd < dist[edge.to]) { dist[edge.to] = nd; prev[edge.to] = { from: u, edge: edge.e, arriveSide: edge.arriveSide }; pq.push(edge.to); }
+      });
+    }
+    // Reconstruct one exit's path out of the shared tree — the SAME walk escapeRoute() does.
+    function build(exitGuid) {
+      var path = [exitGuid], doors = [], cur = exitGuid, departEdge = null;
+      while (cur !== fromGuid) {
+        var p = prev[cur];
+        if (!p) return null;
+        if (p.edge.doorGuid) doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
+        path[0] = _publicHop(graph, cur, p.edge, p.arriveSide, departEdge);
+        path.unshift(p.from);
+        departEdge = p.edge;
+        cur = p.from;
+      }
+      return { exitGuid: exitGuid, distance: dist[exitGuid], path: path, doors: doors };
+    }
+    var routes = [];
+    Object.keys(graph.nodesByGuid).forEach(function (g) {
+      if (graph.nodesByGuid[g].kind !== 'exit') return;
+      if (!(dist[g] < Infinity)) return;
+      var r = build(g);
+      if (r) routes.push(r);
+    });
+    if (!routes.length) { log('§ESCAPE_ROUTES from=' + fromGuid + ' NO_EXIT_REACHABLE'); return null; }
+    routes.sort(function (a, b) { return a.distance - b.distance; });
+    log('§ESCAPE_ROUTES from=' + fromGuid + ' exits=' + routes.length +
+        ' nearest=' + routes[0].distance.toFixed(1) + (routes[1] ? ' next=' + routes[1].distance.toFixed(1) : ' (only one)'));
+    return { routes: routes };
+  }
+
+  // §COMMON-PATH (ESCAPE_ROUTE_REVEAL.md §12.1) — the last node two routes SHARE, walking from the
+  // room outward. Both `path` arrays start at fromGuid by construction (see build() above), so the
+  // divergence is simply the last index at which they agree. Returns { node, index } or null when
+  // one route is a prefix of the other (one exit lies ON the way to the other — a real state, and
+  // NOT a divergence: the occupant still has no choice until the first exit is reached).
+  function divergenceFrom(pathA, pathB) {
+    if (!pathA || !pathB || !pathA.length || !pathB.length) return null;
+    var i = 0;
+    while (i < pathA.length && i < pathB.length && pathA[i] === pathB[i]) i++;
+    if (i === 0) return null;                                   // not even the room in common — impossible here, guarded anyway
+    if (i >= pathA.length || i >= pathB.length) return null;    // prefix case: no choice point exists between them
+    return { node: pathA[i - 1], index: i - 1 };
   }
 
   // §ESCAPE-ROUTE (OCCUPANT_PATHFINDER.md SPEC — "falls out" of shortestPath, not a separate
@@ -2064,6 +2266,9 @@
   var API = {
     buildGraph: buildGraph, degree: degree, components: components, fullConnectivity: fullConnectivity,
     shortestPath: shortestPath, escapeRoute: escapeRoute,
+    // §12.1 — every reachable exit ranked, from one Dijkstra, plus the tree walk that finds where
+    // two routes part. escapeRoute() above is unchanged and still the single-answer entry point.
+    escapeRoutes: escapeRoutes, divergenceFrom: divergenceFrom,
     escapeRouteViaProtectedStair: escapeRouteViaProtectedStair, isRoomDoor: isRoomDoor,
     stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK, getStairGroups: getStairGroups,
     // FLY_TOUR_CORRIDOR_GRAPH.md §S4 — read-only witness helper: count of walkability-illegal

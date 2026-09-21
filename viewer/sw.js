@@ -186,7 +186,46 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1188';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1231';   // bump on each deploy; per-change detail is the git commit message.
+// v1208 (2026-09-20) §13 the escape route's visual language (RED/YELLOW/BLUE/GREY + legend and
+// footnotes), the storey tint painting BOTH channels, §FINDINGS_HUD_CLEAR, the back-loaded
+// escape ease, the §13 card fit, the duplicated lower-third caption bar deleted, §75 applied to
+// the caption chain, and §SLAB_LABEL_STALE. Four commits of viewer modules had shipped on v1207
+// (1a133982, 99c38a3a, 2c487820 and this one) — a reused /tmp/silent-bake-profile-<port> would
+// have rendered the old ones and looked perfectly normal doing it.
+// v1207 (2026-09-20) MERGE — origin/feat/escape-route-reveal (§ESCAPE_ROUTE_REVEAL + §12 egress
+//   rules) folded into the §129.1 load-path freeze branch. Both lanes touch cinema_maxq's composite
+//   pass and both precache their own modules, so a client must never serve a half-and-half mix.
+//   Precache list is the UNION. Higher of the two versions taken, per this project's sw.js rule.
+// v1205 (2026-09-20) §129.52 the stat card no longer draws on top of the pie panel — the column offset was never advanced.
+// v1204 (2026-09-20) §129.51c a proxy engage/disengage edge forces one full TM pass — the flag was inert without it.
+// v1203 (2026-09-19) §129.51b the stand-down flag rises AHEAD of the storey window, not at arm (too late).
+// v1202 (2026-09-19) §129.51 the proxy also stands down for the storey reveal, arm to restore.
+// v1201 (2026-09-19) §129.50 the DLOD proxy stands down during the discipline reveal.
+// v1200 (2026-09-19) §129.49 the lights witness fails per FAMILY — one lit family no longer covers a dark one.
+// v1199 (2026-09-19) §129.48 the relight restored the PRE-GLOW dark values; now it restores the glow.
+// v1198 (2026-09-19) §CPE_REVEAL_LEAK — watch for a hidden discipline coming back without a slot change.
+// v1197 (2026-09-19) §129.47 relight only after the storeys return + §CPE_REVEAL_HIDDEN witness.
+// v1196 (2026-09-19) §DLOD_ONSCREEN_FIX — distance alone no longer boxes an on-screen element.
+// v1195 (2026-09-19) §FRAME_COST measurement + §DLOD_BAKE_PROXY hook (LARGE_DB_BAKE §8).
+// v1194 (2026-09-19) §129.45 shadow contact — normalBias carries the acne duty, depth bias stops detaching shadows from column bases.
+// v1193 (2026-09-19) §129.44 compass rose anchors to A.groundIfcZ, not the model bbox floor.
+// v1192 (2026-09-19) §129.42 fallback ranking + §129.43 NaN dimension guard.
+// v1191 (2026-09-19) §129.42 storey span leads the load-path ranking, ahead of camera visibility.
+// v1190 (2026-09-19) §HUD_ROW + §HUD_SCALE + §129.39 + §129.40 + §129.41 — five overlay modules
+//   changed together and they read each other's numbers, so a client must never serve a mix:
+//   cinema_maxq publishes window.__hudFontPx (the one sizing law) and lays the top ROW; the four
+//   overlays read that law and take the row's xOff; cpe_load_path gates chains on BEARING and
+//   finally sets ctx.font on its own card. An old cached cinema_maxq with a new cpe_load_path
+//   would size the card by a law that is not there.
+// v1189 (2026-09-19) MERGE — origin/main's §GEOREF/§SUN_PATH/§SUN_COMPASS/§SUN_ONE/§SUN_DAY/§SUN_CLOCK
+//   work (v1177-v1188, bim-ootb#1751 + #1752) folded into the §129.1 load-path freeze branch. Both
+//   lanes touch cinema_maxq's composite pass and both precache their own modules, so a client must
+//   never serve a half-and-half mix: the sun overlays read the freeze through window.__drawUnlessHold
+//   (published by cpe_load_path's own cinema_maxq, 5125f0da) and the ROSE hides on A._loadPathHudAlpha,
+//   so an old cached copy of EITHER module leaves the freeze half-applied. Precache list is the union
+//   of both lanes. ⚠ Still true, and still the first thing to check: rm -rf /tmp/silent-bake-profile-*
+//   before any preview bake — see v1180 below, a CACHE_VERSION bump alone does NOT evict that profile.
 // v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
 //   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
 //   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
@@ -288,6 +327,30 @@ const CACHE_VERSION = 'v1188';   // bump on each deploy; per-change detail is th
 // v1175 (2026-09-13) TM_4D5D_VARIANCE_LANE §S7 legs 2-4: #info-4d block (viewer.html) + eager
 //   schedule_read_4d.js load; hover_name.js one-line 4D augmentation; panels.js data-gated
 //   'sched4d' pill; find_erp_push.js _show4DWindow + rendered cost matchCount (§S7-GRAIN).
+// v1169 (2026-09-08) §38.1a/§38.1b/§40: THREE FIXED FILM BOXES — new viewer/cpe_film_boxes.js (§HUD_BOX, §STATUS_BOX
+//   below it with four fixed rows, §MEASURE_BOX opposite, geometry a pure function of frame size + corner, never of the
+//   text); cinema_maxq.js retires the roaming lower-third caption plate for the bake and routes every Measure figure to
+//   the one panel; cpe_slab_beat.js posts the plate's MESH FOOTPRINT area there and draws a box outline instead of the X;
+//   new viewer/cpe_flyout_beats.js (wing spans + roof-edge-to-sill on the pull-out canvas, §38.2).
+// v1170 (2026-09-08) §42 FLICKER FOUND: cpe_flythru_datum.js's transparent ribbons had THREE's default
+//   depthWrite=true, so over a COMPLETE building the transparent queue's per-frame re-sort flipped large
+//   areas between building and sky — 42 frames of |dY|>15 (max 59.6), 100% inside §FLYTHRU_DATUM_LIFE2's
+//   148.70-169.10s window, 0 outside; three datum-free films show 0-2. depthWrite:false; depthTest stays
+//   TRUE (§17.5). New scripts/probe_film_flicker.py judges any baked mp4 for this.
+// v1171 (2026-09-08) §45 TINT DROPPED (user): cpe_slab_beat.js no longer repaints the model at all — the
+//   plate is named by a SHINE-THROUGH box outline (depthTest:false, renderOrder 951, the clash marks' own §7
+//   contract) plus its area in the fixed §MEASURE_BOX. MEASURED cause: all 23 |dY|>15 jumps of the 0-30s test
+//   bake sat on the tint's 9.38s pop + 2.2s envelope, and the tint wrote setColorAt into a SHARED instance/batch
+//   colour buffer every frame, so it could move pixels anywhere in the picture.
+// v1172 (2026-09-09) §46 §AO_EXCLUDE — THE FLICKER'S ROOT CAUSE. SSAOPass renders its depth/normal prepass
+//   with scene.overrideMaterial set, which IGNORES per-object depthWrite, so Measure's annotation geometry
+//   (datum ribbons, plate outline, hall tint) was written into the AO buffer as solid surface and occluded
+//   the whole picture. MEASURED: 42 frames of |dY|>15 inside LIFE2's window with Measure on vs 0 with
+//   --no-measure, and 39..104 swings against a flat 56 on the twin. effects.js now hides anything marked
+//   userData.excludeFromAO for that pass ONLY; the beauty pass and TAA fold are untouched.
+// v1173 (2026-09-13) MERGE — origin/main's hardened Sanity/Egress rules (#1715 #1718 #1720 #1724)
+//   folded into the rule-findings film branch, plus §88.7b's bucket-key revert. New cache version so
+//   no client serves a half-and-half mix of the two rule engines.
 // v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
 // (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
 // concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
@@ -738,7 +801,9 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','../common/flythru_maths.js','../common/storey_raster.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js',
+  'cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js',
+  'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js',
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',
@@ -746,8 +811,10 @@ const PRECACHE_ASSETS = [
   'clash_labels.js',
   'structural_sanity.js',
   'egress_sanity.js',
+  'place_lookup.js',
   'rule_report.js',
   'rule_checklist.js',
+  'rule_findings_film.js',
   'measure.js',
   'sitecam.js',
   'issues.js',

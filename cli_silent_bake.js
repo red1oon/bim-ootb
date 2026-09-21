@@ -9,7 +9,10 @@
 //     [--plan NAME | --override file.json]            path source (default: DB cinema_path table)
 //     [--buildup] [--label] [--reveal] [--day tr|tl|br|bl|off]   flags composed onto the path
 //     [--clash] [--no-clash]                          mesh-true clash pairs as world content (§CLASH_FILM_P1)
-//     [--measure] [--no-measure]                      setting-out datum drawing (§FLYTHRU_DATUM, MEP_CLASH_REVEAL_MOVIE.md §28.1)
+//     [--measure] [--no-measure]                      setting-out datum drawing (§FLYTHRU_DATUM, MEP_CLASH_REVEAL_MOVIE.md §28.1);
+//                                                       since §129 GATING (2026-09-15) this ALSO gates the load path 3D
+//                                                       effect (§129.1). Cost/Ledger moved OFF this gate — §129.6 item 6b
+//                                                       (2026-09-15) puts them under --label/--4d5d instead (below)
 //     [--nohome] [--opening-only]                     §33 §CLI_BAKE_OPENING: skip the datum-legibility gate / judge the opening and exit
 //     [--findings-only]                               §RULE_REPORT (STRUCTURAL_SANITY.md T8): run the Sanity + Egress
 //                                                       evaluators, write <out>.json, exit before ANY cinema work
@@ -18,9 +21,34 @@
 //                                                       16 rates packs). Absent file = no override, not an error.
 //     [--storey-reveal] [--no-storey-reveal]           each storey tints in sequence during the closing
 //                                                       orbit (§STOREY_HIGHLIGHT_REVEAL)
+//     [--load-path] [--no-load-path]                    a geological section cut through the deepest
+//                                                       support stack, held at topout (§129.1); FOLDED under
+//                                                       --measure since §129 GATING — a bare --load-path with
+//                                                       --measure off does nothing new, --no-load-path stays as
+//                                                       a control-only override (forces it off even with --measure)
+//     [--ledger] [--no-ledger]                          §129.2 kernel-ops verification HUD row, DIRECTLY BELOW
+//                                                       Cost, both inside the pie-chart HUD (§129.6 item 6b,
+//                                                       2026-09-15) — folded under --label/--4d5d, NOT --measure
+//     [--cost] [--no-cost]                              §129.5 running cost/hours figure, a row of the SAME
+//                                                       pie-chart HUD, directly above Ledger — same --label/--4d5d
+//                                                       fold as Ledger, not --measure (§129.6 item 6b)
+//     [--escape-route] [--no-escape-route]            §ESCAPE_ROUTE_REVEAL: during the closing orbit the
+//                                                       worst-case room shines through and an orange dotted
+//                                                       line traces its REAL computed route to the exit,
+//                                                       counting up in walking time (1.19 m/s, SFPE) and in
+//                                                       steps (0.75 m stride, uncited). Draws nothing on a
+//                                                       building whose room graph reaches no exit — the log
+//                                                       says §ESCAPE_ROUTE_BUILD VACUOUS, read it.
 //     [--sun-date YYYY-MM-DD]                         §SUN_DAY: light the WHOLE film on that one
 //                                                       day, sun rising to late afternoon across it.
 //                                                       The build still follows the 4D timeline.
+//     [--dlod-proxy]                                  LARGE_DB_BAKE.md §8.3 L8c: render already-built
+//                                                       elements outside the view as instanced boxes.
+//                                                       Large buildings only (>=50k elements, the
+//                                                       tm-lod toggle's own gate). MEASURED on LTU:
+//                                                       -41% per frame, 1.72% of pixels changed.
+//                                                       OFF by default — verified on one 30s slice,
+//                                                       not yet on a full film. Read the film.
 //     [--sun-compass] [--no-sun-compass]              true-north ground compass + sun path + day of
 //                                                       the year (§SUN_COMPASS, GEOREF_SUNPATH_COMPASS.md
 //                                                       §7). OFF by default; needs a site lat/long in
@@ -34,6 +62,11 @@
 //     [--stall-min N] [--max-frame-ms N]              health watchdog (abort early, not at the end)
 //     [--timeout-min N]                               hard wall-clock cap
 //     [--progress-every-sec N] [--abort-land-min N]   progress cadence (30) / abort landing cap (10)
+//     [--still-budget taa,ao]                          override the 8/12 bake fold (LARGE_DB_BAKE.md
+//                                                       §2 L3); absent = unchanged default quality
+//     [--frame-range a:b]                              render frames a..b-1 of the FULL film,
+//                                                       frame-exact (LARGE_DB_BAKE.md §2 L4) — NOT
+//                                                       the same grid as --clip (§0), mutually exclusive
 //
 //   PROGRESS + ETA print as §CLI_BAKE_PROGRESS while the bake runs. Ctrl-C (SIGINT) aborts CLEANLY:
 //   the frames baked so far are stitched and delivered to --out. Press it twice to give up on that.
@@ -90,7 +123,32 @@ const OV_FILE = arg('override', null);
 //                   §CLI_BAKE_TAP, the whole object is written to <out>_tap.json.
 const CLIP = (() => { const v = arg('clip', null); if (!v) return null; const m = v.split(':').map(Number);
   return (m.length === 2 && m[1] > m[0] && m[0] >= 0 && m[1] <= 1) ? { in: m[0], out: m[1] } : null; })();
+// LARGE_DB_BAKE.md §2 L4 — `--frame-range a:b` renders frames a..b-1 of the FULL film at that
+// film's own tn_i = i/(N-1) step (§0's Clip-to-frame mapping note: a --clip is NOT this — its n
+// frames re-derive tn_i = i/(n-1) across [in,out], a different grid). Lets K bakes on K ports split
+// one long film into disjoint, byte-identical-at-the-seam ranges (§FRAME_HASH proves it).
+const FRAME_RANGE = (() => { const v = arg('frame-range', null); if (!v) return null; const m = v.split(':').map(Number);
+  return (m.length === 2 && Number.isInteger(m[0]) && Number.isInteger(m[1]) && m[1] > m[0] && m[0] >= 0) ? { a: m[0], b: m[1] } : null; })();
+if (FRAME_RANGE && CLIP) { console.error('§CLI_BAKE_ARG_CONFLICT --frame-range and --clip are two different frame grids (§0) — pass only one'); process.exit(1); }
 const TAP_FILE = arg('tap', null) ? path.resolve(arg('tap')) : null;
+// §DLOD_PROXY (2026-09-19, LARGE_DB_BAKE.md §8.3 L8c) — `--dlod-proxy` swaps ALREADY-BUILT elements
+// outside the camera's view for instanced boxes during the bake. The mechanism is time_machine.js's
+// own `tm-lod` toggle, which has always existed and has always been unreachable from a headless run
+// because it needs a click; this only asks for it. It obeys that toggle's OWN large-building gate
+// (DLOD_TM_MIN_ELEMENTS, 50,000 elements), so asking for it on a small building does nothing.
+// MEASURED on a paired 150-frame LTU slice, same camera, one flag apart: 1212.5 -> 717.1 ms/frame
+// (-41%), visible meshes 3645 -> 1234, matched frames differing in 1.72% of pixels.
+// OFF BY DEFAULT and staying that way until a FULL film is compared, not one 30 s slice: the risk
+// case is a wide establishing shot where a distant wing becomes a box, and no such frame has been
+// looked at yet. Turn it on deliberately, per bake, and check the film.
+const DLOD_PROXY = !!arg('dlod-proxy', false);
+// §DATUM_DECOUPLE (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — dev-only bisect instrument:
+//   --burnin-datum-src clean.mp4   skip the GPU render + every other overlay; load clean.mp4's own
+//                                   frames instead and draw ONLY the datum layer on top. Use the SAME
+//                                   --clip/--fps/--width/--height the clean.mp4 was baked with, or the
+//                                   frame count will not line up (a mismatch fails loudly per-frame,
+//                                   §DATUM_DECOUPLE_ERR, not silently).
+const BURNIN_SRC = arg('burnin-datum-src', null) ? path.resolve(arg('burnin-datum-src')) : null;
 // ══ §CLI_BAKE_FLAG_OVERRIDE (2026-09-04, user) ═══════════════════════════════════════════════════
 // USER: "when user saves alt-c setting in path in the DB, during silent bake, user need not pass any
 // argument further and use the stored path settings. Of course user may still pass args to overwrite
@@ -109,6 +167,11 @@ function triState(on, off) {
 const FLAGS = {};
 const _fBuildup = triState('buildup', 'no-buildup');
 const _fLabel = triState('label', 'no-label');
+// §129.6 item 6b (2026-09-15): the "Label" toggle's on-screen text becomes "4D/5D" (it now also
+// carries the day counter/cost/ledger rows) — `--4d5d`/`--no-4d5d` is an ALIAS for the same
+// FLAGS.roomTitle so no existing bake command using --label breaks. `--label` wins if BOTH are
+// somehow given (first-parsed-wins via `??`, matching triState's own "absent = undefined" contract).
+const _f4d5d = triState('4d5d', 'no-4d5d');
 const _fReveal = triState('reveal', 'no-reveal');
 // §CLASH_FILM_P1 — the mesh-true clash pairs as persistent world content (MEP_CLASH_REVEAL_MOVIE.md).
 const _fClash = triState('clash', 'no-clash');
@@ -116,6 +179,17 @@ const _fClash = triState('clash', 'no-clash');
 const _fMeasure = triState('measure', 'no-measure');
 // §STOREY_HIGHLIGHT_REVEAL — each storey tints in sequence during the closing orbit (same file).
 const _fStoreyReveal = triState('storey-reveal', 'no-storey-reveal');
+// §129.1 LOAD PATH (MEP_CLASH_REVEAL_MOVIE.md §129.1/§129.4) — the geological-section beat held at
+// topout. Same three-state contract as every other flag here: absent = the stored path decides.
+const _fLoadPath = triState('load-path', 'no-load-path');
+// §129.2 LEDGER TICKER / §129.5 COST ODOMETER — placement ruling §129.6 item 6b (2026-09-15)
+// SUPERSEDES the original §129 GATING fold-under-measure: both are now rows of the pie-chart HUD,
+// gated by the SAME toggle as --label/--4d5d, NOT --measure (the load path 3D effect stays under
+// --measure, untouched). --no-ledger/--no-cost remain as control-only overrides.
+const _fLedger = triState('ledger', 'no-ledger');
+const _fCost = triState('cost', 'no-cost');
+// §ESCAPE_ROUTE_REVEAL (bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md) — same tri-state as the rest.
+const _fEscapeRoute = triState('escape-route', 'no-escape-route');
 // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — the true-north ground rose
 // with the 4D day-of-year and the sun's angle of attack. Its OWN flag, not folded into --measure:
 // the datum draws the model's own setting-out grid, this draws the model's relationship to the
@@ -125,16 +199,29 @@ const _fStoreyReveal = triState('storey-reveal', 'no-storey-reveal');
 const _fSunCompass = triState('sun-compass', 'no-sun-compass');
 if (_fBuildup !== undefined) FLAGS.buildup = _fBuildup;
 if (_fLabel !== undefined) FLAGS.roomTitle = _fLabel;
+else if (_f4d5d !== undefined) FLAGS.roomTitle = _f4d5d;
 if (_fReveal !== undefined) FLAGS.reveal = _fReveal;
 if (_fClash !== undefined) FLAGS.clash = _fClash;
 if (_fMeasure !== undefined) FLAGS.measure = _fMeasure;
 if (_fStoreyReveal !== undefined) FLAGS.storeyReveal = _fStoreyReveal;
+if (_fLoadPath !== undefined) FLAGS.loadPath = _fLoadPath;
+if (_fLedger !== undefined) FLAGS.ledger = _fLedger;
+if (_fCost !== undefined) FLAGS.cost = _fCost;
+if (_fEscapeRoute !== undefined) FLAGS.escapeRoute = _fEscapeRoute;
 if (_fSunCompass !== undefined) FLAGS.sunCompass = _fSunCompass;
 // §SUN_DAY — light the whole film on one day (yyyy-mm-dd), hour sweeping morning to late
 // afternoon. Absent = the 4D timeline's own dates drive the light, which is the shipped behaviour.
 if (arg('sun-date', null)) FLAGS.sunDate = String(arg('sun-date'));
 // `--day off` is already the documented way to turn the counter off, so it needs no --no- form.
 if (arg('day', null)) FLAGS.dayCounter = arg('day');
+// LARGE_DB_BAKE.md §2 L3 — `--still-budget taa,ao` overrides cinema_maxq.js's hardcoded 8/12 bake
+// fold (20 renders/frame — ~1.7s of every LTU/Hospital frame). Absent = byte-identical to before
+// this flag existed; the default delivery quality is unchanged unless the caller asks for less.
+const STILL_BUDGET = (() => {
+  const v = arg('still-budget', null); if (!v) return null;
+  const m = v.split(',').map(Number);
+  return (m.length === 2 && m[0] >= 0 && m[1] >= 0) ? { taa: m[0], ao: m[1] } : null;
+})();
 
 // §CLI_BAKE_PROGRESS / §CLI_BAKE_LAND_ON_ABORT — how often the progress line prints, and how long an
 // abort is allowed to spend landing the partial film before the runner gives up on it.
@@ -213,7 +300,17 @@ const server = http.createServer((req, res) => {
     userDataDir: PROFILE,
     protocolTimeout: 15 * 60 * 1000,
     env: Object.assign({}, process.env, gpuEnv),
-    args: ['--no-sandbox', '--hide-crash-restore-bubble', `--window-size=${W + 20},${H + 120}`]
+    // §CLI_BAKE_OFFLINE (2026-09-19) — the film needs NO network: every asset (three.js,
+    // sql-wasm, the HDRI, the fonts, the DB) is served from this checkout by the local server
+    // below, viewer/loader.js is local-first, and §SUN_PATH is NOAA arithmetic computed in
+    // process. But headless Chrome still opens its OWN background channels: MEASURED with `ss`
+    // during a 1080p bake on this date, the bake's browser held one connection to Google push
+    // (port 5228) for the whole run. Nothing the film reads, yet it is the difference between
+    // "needs no network" and "makes no connection", and only the second one is checkable.
+    // These three flags close it: no push/variations/safe-browsing fetches, no first-run ping.
+    args: ['--no-sandbox', '--hide-crash-restore-bubble',
+           '--disable-background-networking', '--disable-component-update', '--no-first-run',
+           `--window-size=${W + 20},${H + 120}`]
       .concat(gpuArgs, extra)
   });
   const page = await browser.newPage();
@@ -263,7 +360,28 @@ const server = http.createServer((req, res) => {
       process.exit(130);
     }
   }));
-  const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL)\b/;
+  // §CLI_BAKE_OVERLAY_CLAIMS (2026-09-19) — the whitelist below decides what a READER of the bake
+  // log can ever learn, and until today it carried the film's machinery (frames, quality, path,
+  // buildup) and NOT ONE of the overlays those frames are judged on. A full HHS bake with
+  // --measure --load-path --ledger --cost --storey-reveal --sun-compass produced 869 log lines and
+  // zero §SUN_COMPASS, zero §LOADPATH_*, zero §STOREY_* — so "did the compass draw?" could only be
+  // answered by extracting frames from the mp4, which is exactly the check CLAUDE.md's Log Mandate
+  // says the log itself should answer. The sun lane's own hard-won warning applies here too: a
+  // witness calling a draw function proves nothing about whether the BAKE's call site ran, and the
+  // bake's own log was the one place that could have told them apart.
+  // Added below: each overlay's BUILD/hold/witness lines — the once-per-bake ones that say the
+  // feature ran, refused (INCONCLUSIVE, e.g. a DB with no site lat/long) or was held by the freeze.
+  // §129.62 ADDITION (2026-09-20): the three lines §129.62 tells the next session to READ were
+  // NOT on this whitelist, so none of them could ever reach out/<db>_hires_<stamp>.log — only
+  // the 3.6 MB firehose in /tmp, which is the file the Log Mandate is trying to spare a reader.
+  // Measured on the 2026-09-20 09:36 Hospital run: §STOREY_REVEAL_TINT/_MODE and every
+  // §ESCAPE_ROUTE_* line were firehose-only. STOREY_REVEAL_TINT is the tint's ONLY evidence
+  // (scope=storey meshesTouched=N — whether §129.59's whole-storey scope reached the geometry),
+  // ESCAPE_ROUTE_BUILD is the only thing that separates a drawn route from a VACUOUS one, and
+  // bare FRAME_REUSE carries the per-run detail behind FRAME_REUSE_TOTAL's single number.
+  // `\b` keeps these distinct: STOREY_REVEAL_TINT does not swallow STOREY_REVEAL_TINT_SHARED_MATERIAL,
+  // and FRAME_REUSE does not swallow FRAME_REUSE_TOTAL, because `_` is a word character.
+  const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|FRAME_COST|CPE_REVEAL_HIDDEN|CPE_REVEAL_LEAK|INTERIOR_LIGHTS_BOUNDARY|INTERIOR_LIGHTS_WITNESS|INTERIOR_LIGHTS_ON|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL|SUN_COMPASS|SUN_COMPASS_HELD|SUN_PATH|SUN_CLOCK|SUN_ONE|SUN_ONE_ALL_DARK|SUN_DAY|LOADPATH_BUILD|LOADPATH_ARM|LOADPATH_HOLD|LOADPATH_FOCUS|LOADPATH_CARD|LOADPATH_INFOPANEL|LEDGER_TICKER_INIT|HUD_LAYOUT|HUD_LAYOUT_ARM|STOREY_ARCH_WITNESS|STOREY_LABEL_WITNESS|STOREY_CUT_RESTORE_WITNESS|STOREY_ARM_BASELINE|FLYTHRU_DATUM_BUILT|FRAME_REUSE_TOTAL|FRAME_REUSE|DLOD_TM_CENSUS|STOREY_REVEAL_TINT_RESTORE|STOREY_REVEAL_TINT|STOREY_REVEAL_MODE|HR_COST_PERSISTED|HR_COST_AGREE|HR_COST|CREW_DEMAND|MAXQ_FRAME_DECODE_FAIL|MAXQ_FRAME_DECODE_SKIP|MAXQ_STITCH_FAILED|HUD_OVERLAP_WORST|PLACE_TABLE|PLACE_RESOLVED|RULE_TINT_CEASE|RULE_TINT_ENTER|FILM_LAYER|FINDINGS_CEASE_3D|FINDINGS_CEASE|ESCAPE_ROUTE_CASING|ESCAPE_ROUTE_ALTERNATES|ESCAPE_ROUTE_BUILD|ESCAPE_ROUTE_WINDOW|ESCAPE_ROUTE_POPULATION|ESCAPE_ROUTE_BREACH)\b/;
   // §CLI_BAKE_LOAD_FATAL (2026-09-05) — a DB that cannot be fetched must abort NOW, not in 15 minutes.
   // MEASURED: a wrong/missing buildings/<name>.db logged `§INIT_ERROR … 404` at 2.7 s, then the load
   // predicate below (which can never become true without a DB) burned its full 900 s timeout and
@@ -339,11 +457,36 @@ const server = http.createServer((req, res) => {
   // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): --tap file.js is installed AFTER the pose
   // tap above so it can wrap window.__maxqPoseTap (frame boundaries) — dev-only, same family.
   if (TAP_FILE) await page.evaluateOnNewDocument(fs.readFileSync(TAP_FILE, 'utf8'));
+  // §DLOD_PROXY — set before any page script runs, so time_machine.js's own large-building gate
+  // sees it at activation. A separate evaluateOnNewDocument so it composes with --tap rather than
+  // competing for it.
+  if (DLOD_PROXY) {
+    await page.evaluateOnNewDocument('window.__dlodProxyBake = 1;');
+    log('§CLI_BAKE_DLOD_PROXY requested — distant already-built elements render as instanced boxes' +
+        ' (large buildings only; §DLOD_BAKE_PROXY in the page log confirms the gate passed)');
+  }
 
   const dbUrl = DB.includes('/') ? DB : `/buildings/${DB}.db`;
   const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=${dbUrl}`;
   log(`§CLI_BAKE_NAV ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  // ⚠ §CLI_BAKE_SW_PURGE (2026-09-08, MEP_CLASH_REVEAL_MOVIE.md §43) — THE BAKE MUST NOT RUN STALE JS.
+  // viewer.html and every module are precached by viewer/sw.js at a FIXED `?v=` query, so a profile
+  // that has ever loaded the viewer keeps serving the OLD viewer.html — which means a NEW <script>
+  // tag added this session is simply absent, and the bake silently exercises the previous build.
+  // MEASURED: the 0-30 s Hospital bake of 2026-09-08 printed the PREVIOUS build's
+  // `§SLAB_BEAT_INIT … depth-tested tint + X, shine-through label` and emitted no §HUD_BOX /
+  // §STATUS_BOX / §MEASURE_BOX / §SLAB_BEAT_AREA at all — 8 minutes of GPU spent testing code that
+  // was not in the film. Every witness_*.js already does exactly this; the bake runner never did.
+  const _swPurge = await page.evaluate(async () => {
+    let regs = 0, ks = 0;
+    try { if (navigator.serviceWorker) { const rs = await navigator.serviceWorker.getRegistrations();
+      regs = rs.length; for (const r of rs) await r.unregister(); } } catch (e) {}
+    try { if (window.caches) { const k = await caches.keys(); ks = k.length; for (const n of k) await caches.delete(n); } } catch (e) {}
+    return { regs, ks };
+  });
+  log(`§CLI_BAKE_SW_PURGE unregistered=${_swPurge.regs} cachesDeleted=${_swPurge.ks} — reloading so the bake runs THIS build, not the precached one`);
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.APP && window.APP.renderer && window.APP.camera &&
     typeof window.APP.startMaxQualityOrbit === 'function' && typeof window.__maxqBake === 'function',
     { timeout: 300000 });
@@ -615,6 +758,24 @@ const server = http.createServer((req, res) => {
   const bakeOpts = { name: PLAN_NAME || undefined, flags: FLAGS, frames: _frames, fps: _fps };
   if (OV_FILE) bakeOpts.override = JSON.parse(fs.readFileSync(OV_FILE, 'utf8'));
   if (CLIP) { bakeOpts.clip = CLIP; log(`§CLI_BAKE_CLIP in=${CLIP.in} out=${CLIP.out} (§SDC — a window of the same film)`); }
+  if (STILL_BUDGET) { bakeOpts.stillBudget = STILL_BUDGET; log(`§CLI_BAKE_STILL_BUDGET taa=${STILL_BUDGET.taa} ao=${STILL_BUDGET.ao} (default 8/12)`); }
+  if (FRAME_RANGE) { bakeOpts.frameRange = FRAME_RANGE; log(`§CLI_BAKE_FRAME_RANGE a=${FRAME_RANGE.a} b=${FRAME_RANGE.b} (frame-exact subset of the FULL film)`); }
+  if (BURNIN_SRC) {
+    const stem = path.basename(BURNIN_SRC).replace(/\.[a-z0-9]+$/i, '');
+    const frameDir = path.join(ROOT, 'out', stem + '_burninframes');
+    fs.mkdirSync(frameDir, { recursive: true });
+    let existing = fs.readdirSync(frameDir).filter(f => /^frame_\d{5}\.png$/.test(f));
+    if (!existing.length) {
+      log(`§DATUM_DECOUPLE_EXTRACT src=${BURNIN_SRC} dir=${frameDir} (ffmpeg, one-time)`);
+      execFileSync('ffmpeg', ['-y', '-i', BURNIN_SRC, '-start_number', '0', path.join(frameDir, 'frame_%05d.png')]);
+      existing = fs.readdirSync(frameDir).filter(f => /^frame_\d{5}\.png$/.test(f));
+    } else {
+      log(`§DATUM_DECOUPLE_EXTRACT dir=${frameDir} already has ${existing.length} frames — reusing`);
+    }
+    bakeOpts.burninDatumDir = '/' + path.relative(ROOT, frameDir) + '/';
+    log(`§DATUM_DECOUPLE_EXTRACT frames=${existing.length} urlDir=${bakeOpts.burninDatumDir} — ` +
+      `must match this bake's own nFrames or per-frame loads will fail loudly (§DATUM_DECOUPLE_ERR)`);
+  }
   // The plan reads the live camera basis (§CPE_PREVIEW_DIVERGENCE) — save the pre-bake camera so
   // the post-bake pose assertion can rebuild the SAME plan the bake built, not one based at the
   // film's final pose (the loop leaves the camera at the last frame).
@@ -775,8 +936,22 @@ const server = http.createServer((req, res) => {
     log(`§CLI_BAKE_FILE MISSING-OR-EMPTY path=${OUT} — the guarded failure mode`);
   }
 
-  // shipped-claim summary (the big-prize § lines, verbatim)
-  for (const k of Object.keys(S.claims)) for (const line of S.claims[k]) log('§CLAIM ' + line.slice(0, 300));
+  // shipped-claim summary (the big-prize § lines, verbatim).
+  // CAPPED per tag (2026-09-19). Some of these fire every frame — the HHS bake of this date printed
+  // §MAXQ_FRAME_BUDGET 822 times, 95% of an 869-line log, which buries every once-per-bake line the
+  // Log Mandate exists to make readable. Nothing is dropped silently: the first CLAIM_CAP and the
+  // LAST line of each tag are kept and the suppressed count is printed, so a per-frame tag still
+  // shows its first frames, its final state and how many it fired.
+  const CLAIM_CAP = 6;
+  for (const k of Object.keys(S.claims)) {
+    const lines = S.claims[k];
+    const head = lines.slice(0, CLAIM_CAP);
+    for (const line of head) log('§CLAIM ' + line.slice(0, 1400));
+    if (lines.length > CLAIM_CAP) {
+      log(`§CLAIM_SUPPRESSED §${k} fired ${lines.length}x — ${lines.length - CLAIM_CAP - 1} identical-tag lines omitted, last one follows`);
+      log('§CLAIM ' + lines[lines.length - 1].slice(0, 1400));
+    }
+  }
   log(`§CLI_BAKE_WALL totalSec=${((Date.now() - t0) / 1000).toFixed(0)} aborted=${aborted || 'no'} fileOk=${fileOk}`);
 
   await browser.close();

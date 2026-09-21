@@ -98,7 +98,8 @@ var CHAIN = [
 var SUBJECTS = [
   { flag: 'sunCompass', id: 'cpe-sun-compass', role: 'the new one' },
   { flag: 'measure', id: 'cpe-measure', role: 'CONTROL — shipped and working since §FLYTHRU_DATUM' },
-  { flag: 'storeyReveal', id: 'cpe-storey-reveal', role: 'CONTROL — §STOREY_HIGHLIGHT_REVEAL' }
+  { flag: 'storeyReveal', id: 'cpe-storey-reveal', role: 'CONTROL — §STOREY_HIGHLIGHT_REVEAL' },
+  { flag: 'escapeRoute', id: 'cpe-escape-route', role: 'CONTROL — §ESCAPE_ROUTE_REVEAL (added 2026-09-20)' }
 ];
 
 console.log('§SUN_COMPASS_WIRING — the bake-panel checkbox chain, name by name');
@@ -134,6 +135,11 @@ link('cli_silent_bake: --sun-compass tri-state exists',
      /triState\('sun-compass', 'no-sun-compass'\)/.test(src.cli));
 link('cli_silent_bake: it is put on FLAGS under the same name',
      /FLAGS\.sunCompass\s*=/.test(src.cli));
+// §ESCAPE_ROUTE_REVEAL — the same two links, so a silent bake can ask for it by name.
+link('cli_silent_bake: --escape-route tri-state exists',
+     /triState\('escape-route', 'no-escape-route'\)/.test(src.cli));
+link('cli_silent_bake: it is put on FLAGS under the same name',
+     /FLAGS\.escapeRoute\s*=/.test(src.cli));
 
 // ONE BOX, NOT THREE — the whole point of the directive this implements. If someone later splits
 // the bundle, this fails and they have to decide deliberately rather than by drift.
@@ -190,7 +196,7 @@ link('no separate day-of-year or sun-angle checkbox was added',
   link('the toggle strip renders without throwing', typeof html === 'string' && html.length > 0);
 
   var inputs = html.match(/<input id="(cpe-[a-z-]+)"/g) || [];
-  link('the strip renders exactly 7 toggles', inputs.length === 7,
+  link('the strip renders exactly 8 toggles', inputs.length === 8,
        inputs.length + ': ' + inputs.join(' ').replace(/<input id="/g, ''));
   SUBJECTS.forEach(function (s2) {
     link('rendered markup contains ' + s2.id,
@@ -202,8 +208,8 @@ link('no separate day-of-year or sun-angle checkbox was added',
   // Every button carries its hint as a title — this is the regression the restyle could have
   // caused: the prose rows became icons, and an icon that dropped its hint would look finished.
   var titles = html.match(/title="[^"]+"/g) || [];
-  link('all 7 buttons carry a non-empty title (the hint text survived the restyle)',
-       titles.length === 7 && titles.every(function (t) { return t.length > 40; }),
+  link('all 8 buttons carry a non-empty title (the hint text survived the restyle)',
+       titles.length === 8 && titles.every(function (t) { return t.length > 40; }),
        titles.length + ' titles');
   link('the Sun compass title still states it draws nothing without a site lat/long',
        /silent on a model with no site lat\/long/.test(html));
@@ -213,12 +219,18 @@ link('no separate day-of-year or sun-angle checkbox was added',
   // Icons: three stroked, one flat, three still awaiting artwork.
   var noicon = (html.match(/class="cpe-noicon"/g) || []).length;
   var svgs = (html.match(/<svg /g) || []).length;
-  link('icons + placeholders account for all 7 buttons', svgs + noicon === 7,
+  link('icons + placeholders account for all 8 buttons', svgs + noicon === 8,
        svgs + ' svg + ' + noicon + ' awaiting artwork');
-  link('four icons resolved from panels.js\'s own ISC set (ruler, triangle, disciplines, compass)',
-       svgs === 4, svgs + ' icons rendered');
+  link('five icons resolved from panels.js\'s own ISC set (ruler, triangle, disciplines, compass, route)',
+       svgs === 5, svgs + ' icons rendered');
+  // §ESCAPE_ROUTE_REVEAL — the same "reuse the icon the feature already has" rule as the four
+  // above: `route` is what panels.js's Pick Walk entry uses, not a new drawing.
+  link('the escape route reuses panels.js\'s own `route` icon (not a new one)',
+       !!(ICONS && ICONS.route) && html.indexOf(ICONS.route.svg) >= 0);
   link('three slots are caption-only — no artwork invented for them', noicon === 3,
        noicon + ' caption-only: buildup, room titles, storey highlight');
+  link('the escape-route hint discloses BOTH numbers and their evidence tiers',
+       /1\.19 m\/s, SFPE/.test(html) && /0\.75 m stride, uncited/.test(html));
   // The sun compass must use the ROSE, not the drawing instrument. `I.compass` and
   // `I.draftingCompass` sit one entry apart in a 68-icon list and the wrong one looks plausible.
   link('the sun compass uses the magnetic rose, not the drafting instrument',

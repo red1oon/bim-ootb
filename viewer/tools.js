@@ -1255,9 +1255,25 @@ function setupTools(A) {
       var isWindow = !isLight && A._nightWindowGlowClasses.some(function(c) { return mk.indexOf(c) >= 0; });
       if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
       if (!isLight && !isWindow) continue;
-      A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
+      // §129.48 (2026-09-19, red1: "the HHS lights does not return during orbit ... perhaps some
+      // custom code not meant to be was fixing") — origE/origEI are the material's values BEFORE
+      // night glow is applied, i.e. the DARK ones. §118's relight restores origE/origEI, so it
+      // faithfully restores DARKNESS and logs "emissive -> restored" while meaning it. The witness
+      // caught it in both films: emissiveMatsLit=0/4 on HHS and 0/8 on Hospital, on frames the same
+      // witness calls lit. Hospital only LOOKS lit because it stages 57 glow sprites; HHS stages 0,
+      // so on HHS there is nothing else and the windows stay dark — which is exactly the difference
+      // red1 saw between the two buildings.
+      // So record the GLOW values too, at the moment they are set, and let the relight put THOSE
+      // back. origE/origEI are kept: they are still the right thing to restore when night mode is
+      // switched off altogether, which is a different question from the film's own relight.
+      var _lp = A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity,
+                                        glowE: 0, glowEI: 0 }) - 1;
       if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.3; _glowCount++; } // reduced 0.8->0.65->0.45->0.3 2026-08-08
       else { m.emissive.setHex(0xfff8ec); m.emissiveIntensity = 0.55; _windowGlowCount++; }
+      // §129.48 — captured AFTER the set, so it is whatever night glow actually chose, not a second
+      // copy of those constants that could drift from them.
+      A._nightGlowMats[_lp].glowE = m.emissive.getHex();
+      A._nightGlowMats[_lp].glowEI = m.emissiveIntensity;
       m.needsUpdate = true;
     }
     if (_glowCount || _windowGlowCount) {
@@ -1578,7 +1594,26 @@ function setupTools(A) {
       // startStillRefine), this just stops staging it for navigation.
       if (A.controls && !A._nightControlsListener) {
         var _nightLastCamPos = A.camera.position.clone();
+        // §57.3 (2026-09-11) — PARTIAL MITIGATION ONLY, re-baked and MEASURED, do not re-claim
+        // this as the flicker's fix. Guarding this listener during a bake (A._maxqActive) reduced
+        // same-frame `§NIGHT_BUILDUP_GATE lit=X` disagreements from 1079 to 935 on a like-for-like
+        // HHS re-bake (out/HHS_lowres_storeyreveal_2026-09-10.log vs out/HHS_lowres_v2_2026-09-11.log,
+        // both 854x480@15fps) — a real but modest effect — and probe_film_flicker.py's own jump
+        // count on the cruise beat was UNCHANGED (24-25 jumps, same ~74-76s cluster, both runs).
+        // The DOMINANT source is NOT this listener: it is effects.js's OWN deliberate architecture —
+        // `_teardownStillRefine` (effects.js ~L4551) and `A.startStillRefine` (effects.js ~L5273)
+        // EACH call A._nightUpdateLights() once, back to back, every single baked frame (stop with
+        // the NAV light budget as the camera is about to move, restart with the STILL/bake budget
+        // once it lands) — by design, not a leak. The remaining ~935 disagreements are this
+        // intentional round-trip; whether the CAPTURED frame consistently lands on the settled
+        // "restarted" state (or sometimes catches the torn-down "nav" one) is the open question for
+        // whoever picks this back up — not yet traced against _captureFrame's own exact timing.
+        // Kept this guard anyway: same anti-pattern class as §19 (a per-frame markDirty stalling a
+        // bake), same fix shape (an interactive-only convenience must not fire during a deterministic
+        // bake that already drives this itself), real (if partial) measured improvement, zero
+        // regression on the verification bake (unconverged=0, fileOk=true).
         A._nightControlsListener = function() {
+          if (A._maxqActive) return;
           var d2 = A.camera.position.distanceToSquared(_nightLastCamPos);
           if (d2 < 25) return;
           _nightLastCamPos.copy(A.camera.position);
@@ -1599,6 +1634,7 @@ function setupTools(A) {
         });
         A._nightGlowMats = null;
         A._nightGlowMatKeys = null;
+        A._nightGlowMatsDimmed = null;   // §118 — or a later re-arm would think it had already run
       }
       // Restore day
       if (A._nightSaved) {
@@ -1772,6 +1808,7 @@ function setupTools(A) {
       }
       console.log('§NIGHT_BAKE_POOL disposed n=' + A._nightBakePool.length + ' — bake over, nav path restored');
       A._nightBakePool = null;
+      A._nightBakeSlotByPos = null;   // §57.3-FIX — stale slot assignments must not leak into the next bake
     }
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
@@ -1787,6 +1824,8 @@ function setupTools(A) {
     var visPos = allPos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
     var camPos = A.camera.position;
     var needed;
+    if (typeof _sclLast === 'undefined') var _sclLast = null;   // §115 dedupe
+    if (typeof _ilOffLast === 'undefined') var _ilOffLast = null;  // §116 dedupe
     // §NIGHT_STILL_BOOST_GATE_FIX (2026-08-08): A._nightStillBoost is set true ONCE at init and
     // never reset — it's a static "is the still-boost feature enabled" flag (effects.js reads it
     // the same way, correctly, to decide whether Alt+S is ALLOWED to raise the cap). Reading it
@@ -1853,6 +1892,69 @@ function setupTools(A) {
       // so the bake top-up and navigation cannot drift into two different selection rules.
       needed = _nightPickNearest(visPos, A._nightMaxLights, []).map(function(p) { return { pos: p }; });
     }
+    // ══ §115 STOREY-REVEAL LIGHT GATE (2026-09-13, user: "Lighting should not be on own, not grouped
+    // with storeys as their appearance clutters") ═══════════════════════════════════════════════
+    // The interior fixtures are gated by the BUILDUP schedule (§NIGHT_BUILDUP_GATE, right below) but
+    // never by the storey reveal, so through the whole closing beat every storey's lights burn at
+    // once — MEASURED `poolLit=200` on every frame of Hospital's window — while the cut has removed
+    // the geometry they belong to. The result is pools of light hanging in empty air above the cut,
+    // which is the clutter. A PointLight is not a mesh, so cpe_storey_reveal.js never sees it: its
+    // clipping planes and its per-object visibility both apply to meshes alone. Gate the SELECTION
+    // instead, on the one number the reveal already computes — the ceiling it is cutting at.
+    // A fixture lights with the storey it sits in, and not before.
+    // §116 — the absolute rule, ahead of §115's per-storey cap: from the last stick onward there are
+    // no interior fixture lights at all. The camera is outside and climbing by then.
+    // §118 — the fixture MESHES glow by emissive material (§NIGHT_MODE ... glowMats=N), which is a
+    // light source with no PointLight and no sprite behind it. Held at 0 while the interior lights
+    // are off, and put back to the stored original the moment they are not.
+    if (A._nightGlowMats && !(typeof window !== 'undefined' && window.__noEmisGate)) {
+      var _want = A._interiorLightsOff ? 0 : 1;
+      // Act only on a REAL transition. Without the `!= null` test the first frame of every film ran
+      // the restore branch, writing each material's original emissive back onto itself and setting
+      // needsUpdate — two pointless shader recompiles mid-film, logged under a tag that read OFF
+      // while the lights were on. Measured on a Hospital clip entirely BEFORE the last stick.
+      if (A._nightGlowMatsDimmed !== _want &&
+          !(_want === 1 && A._nightGlowMatsDimmed == null)) {
+        A._nightGlowMatsDimmed = _want;
+        A._nightGlowMats.forEach(function (g) {
+          // §129.48 — relight to the GLOW values when we have them. Falling back to origE/origEI
+          // keeps any entry recorded before this change working, and a fallback that restores dark
+          // is still better than throwing here mid-film.
+          if (_want) {
+            var _e = (g.glowE != null) ? g.glowE : g.origE;
+            var _i = (g.glowEI != null) ? g.glowEI : g.origEI;
+            g.mat.emissive.setHex(_e); g.mat.emissiveIntensity = _i;
+          }
+          else { g.mat.emissive.setHex(0x000000); g.mat.emissiveIntensity = 0; }
+          g.mat.needsUpdate = true;
+        });
+        console.log((_want ? '§INTERIOR_LIGHTS_ON' : '§INTERIOR_LIGHTS_OFF') +
+          ' glowMats=' + A._nightGlowMats.length + ' emissive -> ' +
+          (_want ? ('glow(' + A._nightGlowMats.filter(function (g) { return g.glowEI > 0; }).length + '/' +
+                    A._nightGlowMats.length + ' have a glow value; the rest fall back to their pre-glow original)') : '0') +
+          ' (§118 — the emissive fixture materials are a light source of their own)');
+      }
+    }
+    if (A._interiorLightsOff && needed && needed.length) {
+      if (_ilOffLast !== needed.length) {
+        _ilOffLast = needed.length;
+        console.log('§INTERIOR_LIGHTS_OFF pointLights ' + needed.length + ' -> 0' +
+          ' (§116 — from beats.out to TOPOUT — §129.41 relights from there; supersedes the §115 per-storey cap)');
+      }
+      needed = [];
+    }
+    if (needed && needed.length && A._storeyCutCeilY != null) {
+      var _preCut = needed.length;
+      needed = needed.filter(function (f) { return f.pos && f.pos.y <= A._storeyCutCeilY; });
+      if (_sclLast !== _preCut + '/' + needed.length) {
+        _sclLast = _preCut + '/' + needed.length;
+        console.log('§STOREY_CUT_LIGHT_GATE ceilY=' + A._storeyCutCeilY.toFixed(2) +
+          ' fixturesLitBefore=' + _preCut + ' after=' + needed.length +
+          ' droppedAboveCut=' + (_preCut - needed.length) +
+          ' (§115 — a fixture lights with the storey it belongs to; above the cut its geometry is' +
+          ' not there and neither is its light)');
+      }
+    }
     // §NIGHT_BUILDUP_GATE witness (2026-09-05) — deduped so navigation doesn't spam a line per
     // frame; logs whenever any of the three counts changes. Invariant asserted every time:
     // lit(needed) <= placed(visPos) <= total(allPos) — a fixture cannot light before it is placed,
@@ -1906,16 +2008,44 @@ function setupTools(A) {
           ' — point-light COUNT frozen for the bake; unused slots ride at intensity 0');
       }
       var _pool = A._nightBakePool;
+      // §57.3-FIX (2026-09-11) — STABLE SLOT ASSIGNMENT, the same technique §NIGHT_LIGHT_CHURN_FIX
+      // already ships below for the interactive/nav path (A._nightLightByPos), applied here for
+      // the bake-only frozen pool too. MEASURED root cause of the HHS cruise-beat flicker (§55.7/
+      // §57.3): `needed` is rebuilt fresh every frame — the frustum+topup SELECTION legitimately
+      // reshuffles as the camera pans (MEASURED: §BAKE_INTERIOR_TOPUP's own inFrustum count swept
+      // 49->21->44 smoothly over ~2s in the flagged window — real camera motion, not noise in the
+      // selection itself) — but it was being assigned to `_pool[_pi]` by RAW POSITIONAL INDEX. So
+      // even when the overall LIT SET barely changed frame to frame, individual PointLight objects
+      // teleported between physically different fixture positions every single frame, because
+      // `needed[3]` this frame is rarely the same fixture as `needed[3]` last frame — a real,
+      // visible light-position discontinuity, independent of the (correctly stable) total count.
+      // Fix: key each fixture's position object (stable references — A._nightFixtureWorldPositions
+      // memoizes them, the exact assumption A._nightLightByPos below already relies on) to a FIXED
+      // pool slot, reassigning a slot only once its previous fixture actually drops out of `needed`.
+      // Changes WHICH POOL SLOT holds a fixture's data, never which fixtures get lit or how many.
+      if (!A._nightBakeSlotByPos) A._nightBakeSlotByPos = new Map();   // fixture pos -> pool slot index
+      var _slotMap = A._nightBakeSlotByPos;
+      var _wantedPos = new Set(needed.map(function(f) { return f.pos; }));
+      _slotMap.forEach(function(slot, pos) { if (!_wantedPos.has(pos)) _slotMap.delete(pos); });
+      var _usedSlots = new Set(_slotMap.values());
+      var _freeSlots = [];
+      for (var _si = 0; _si < _pool.length; _si++) if (!_usedSlots.has(_si)) _freeSlots.push(_si);
+      var _freeI = 0;
+      needed.forEach(function(f) {
+        if (!_slotMap.has(f.pos) && _freeI < _freeSlots.length) _slotMap.set(f.pos, _freeSlots[_freeI++]);
+      });
+      var _slotToPos = new Array(_pool.length).fill(null);
+      _slotMap.forEach(function(slot, pos) { _slotToPos[slot] = pos; });
       for (var _pi = 0; _pi < _pool.length; _pi++) {
-        var _f = needed[_pi];
-        if (_f) {
-          var _dist = camPos.distanceTo(_f.pos);
+        var _posObj = _slotToPos[_pi];
+        if (_posObj) {
+          var _dist = camPos.distanceTo(_posObj);
           var _fade = Math.min(1.0, _dist / 15);
           var _floor = A._nightNearFadeFloor;
-          _pool[_pi].position.copy(_f.pos);
-          _pool[_pi].color.set(_f.pos.__color || 0xffe4b5);
+          _pool[_pi].position.copy(_posObj);
+          _pool[_pi].color.set(_posObj.__color || 0xffe4b5);
           _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._nightPLScale || 1) *
-            (_f.pos.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
+            (_posObj.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
         } else {
           _pool[_pi].intensity = 0;
         }
