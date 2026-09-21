@@ -1049,12 +1049,36 @@ function setupCpeEscapeRoute(A) {
     // The two fixed leader labels. "Start" rides the room end, "Exit" the exit end — and the Exit
     // plate only appears once the line has actually arrived, so the label never promises a walk the
     // picture has not yet made.
+    // ══ §ESCAPE_LABEL_SHORT (2026-09-21) — A DOOR'S NAME IS NOT A CAPTION ═══════════════════════
+    // Seen in a real 854x480 HHS frame: the Exit label drew
+    //   "Türelement 1-flg - Drehflügel - Glas:Türelement 1-flg - Drehflügel - Glas:Türelement 1-flg
+    //    - Drehflügel - Glas:577861"
+    // straight across the whole frame — the raw Revit family:type:id triple, the same words three
+    // times over, wider than the building. The room label never showed this because room names are
+    // already short ("≈ Level 1 R25"); nothing had ever put an element_name on screen unbounded.
+    // ⚠ DISPLAY ONLY. _rec.exitName keeps the full string, because §ESCAPE_ROUTE_BUILD logs it and
+    // that is how the engineer finds the actual door. Shortening the record would trade a readable
+    // frame for an unfindable defect.
+    function _shortLabel(n, max) {
+      var t = String(n || '').trim();
+      if (!t) return 'Exit';
+      // Revit exports family:type:id — the family and type are usually identical, so one is enough.
+      var parts = t.split(':').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (parts.length) {
+        if (/^\d+$/.test(parts[parts.length - 1])) parts.pop();   // drop the element id
+        var seen = {}, uniq = [];
+        parts.forEach(function (x) { if (!seen[x]) { seen[x] = 1; uniq.push(x); } });
+        t = uniq.join(' · ');
+      }
+      max = max || 28;
+      return t.length > max ? t.slice(0, max - 1).replace(/[\s\-·]+$/, '') + '\u2026' : t;
+    }
     var labels = [];
     var sStart = screen[0];
-    if (!sStart.behind) labels.push({ key: 'Start', rows: ['Start', _rec.roomName], sx: sStart.x, sy: sStart.y });
+    if (!sStart.behind) labels.push({ key: 'Start', rows: ['Start', _shortLabel(_rec.roomName, 28)], sx: sStart.x, sy: sStart.y });
     if (vis.progress >= 1) {
       var sEnd = proj(_rec.pts3[_rec.pts3.length - 1]);
-      if (!sEnd.behind) labels.push({ key: 'Exit', rows: ['Exit', _rec.exitName], sx: sEnd.x, sy: sEnd.y });
+      if (!sEnd.behind) labels.push({ key: 'Exit', rows: ['Exit', _shortLabel(_rec.exitName, 28)], sx: sEnd.x, sy: sEnd.y });
     }
     // Place them HERE, not in the draw pass, for clash_labels.js's own reason: a placement a Node
     // witness can assert about is worth far more than one that only exists inside a canvas call.
