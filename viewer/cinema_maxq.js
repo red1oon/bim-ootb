@@ -4108,9 +4108,10 @@
         // the HUB but in that extra right bottom side info panel consistent with other measures") —
         // _srStorey is still computed above (keeps its own §STOREY_REVEAL_TIMING logging alive) but
         // deliberately excluded from both the STATUS_BOX's four fixed rows and the single-winner
-        // caption fallback. storeyRevealStatCardAt's own card.label already carries the storey name
-        // ('doors · ' + vis.storey) through the SAME bottom-right bigStats panel every other measure
-        // card uses (§CPE_HUD_ORDER) — that is now the ONLY place storey info appears on screen.
+        // caption fallback. storeyRevealStatCardAt's own card already carries the storey name — since
+        // §STOREY_CARD_INK it is `card.big`, the slot the storey's own tint colour paints, not the
+        // plain `card.label` — through the SAME bottom-right bigStats panel every other measure card
+        // uses (§CPE_HUD_ORDER); that is the ONLY place storey info appears on screen.
         // §75 (2026-09-12, user: "Just the storey sub title is blank, take it from the long
         // truncating line"). The Room row was carrying the storey AND the rooms in one line —
         // "Level 1 ≈ Hall/Corridor 1, ≈ Hall/Corridor 2, Level 4 ≈ Hall/Corridor 4" — which

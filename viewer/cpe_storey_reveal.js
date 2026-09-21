@@ -721,10 +721,18 @@ function setupCpeStoreyReveal(A) {
     if (st.bx != null) subParts.push(st.bx.toFixed(1) + '×' + st.by.toFixed(1) + ' m footprint (estimate)');
     if (st.roomCount > 0) subParts.push(st.roomCount + ' room' + (st.roomCount === 1 ? '' : 's') + ' compiled');
     var entS = _fitted && _fitted[vis.idx];
+    // §STOREY_CARD_INK (2026-09-21, red1: "make the storey by storey reveal HUD box same coloring to
+    // fall on the 'Level 1' rather, or swap places with number of rooms, which is not the highlight
+    // but the storey value") — the STOREY takes `big` and the door count drops to `label`. `big` is
+    // the only string `ink` colours (cpe_resource_panel.js's plain-card branch sets the fill for it
+    // alone; the label below is a hard-coded white), so the swap is what puts the tint on the storey
+    // AND what makes the storey the emphatic slot — one change answering both halves of his sentence,
+    // with no new drawing path in a compositor four other cards share.
     var card = (entS && entS.isGroundSlab)
-      ? { big: (st.bx != null ? st.bx.toFixed(0) + '×' + st.by.toFixed(0) : String(st.doorCount)),
-          label: (st.bx != null ? 'm ground slab' : 'doors · ground slab') }
-      : { big: String(st.doorCount), label: 'doors · ' + vis.storey };
+      ? { big: 'Ground slab',
+          label: (st.bx != null ? st.bx.toFixed(0) + '×' + st.by.toFixed(0) + ' m footprint'
+                                : st.doorCount + ' door' + (st.doorCount === 1 ? '' : 's')) }
+      : { big: vis.storey, label: st.doorCount + ' door' + (st.doorCount === 1 ? '' : 's') };
     if (subParts.length) card.sub = subParts.join(' · ');
     // ══ THE CARD WEARS THE STOREY'S OWN COLOUR ═══════════════════════════════════════════════
     // red1, 2026-09-20: "it be good if the HUD storey info is same color as the tint."
