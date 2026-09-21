@@ -1,0 +1,617 @@
+#!/usr/bin/env node
+/**
+ * # ⚠ DO NOT REMOVE — §ESCAPE_ROUTE_REVEAL witness (bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md §5)
+ * SCOPE: the five claims §5 asks for, each named with the issue it proves or disproves. READ THE
+ * LOG — the exit code is not the evidence, the per-claim lines are.
+ *
+ * ⚠ NO PIXEL-DERIVED EVIDENCE anywhere in this file, and that is the project's FUNDAMENTAL LAW,
+ * not a stylistic preference: no frame is opened, no overlap ratio is computed off an image,
+ * nothing is compared visually. W-ESC-7 at the foot asserts that about this file's own bytes.
+ * Every claim is a slice of the real predicate, run against the real Hospital room graph.
+ *
+ * RUN:  BIM_BUILDINGS=/path/to/buildings node witness_escape_route_reveal.js
+ * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT
+ */
+'use strict';
+const fs = require('fs'), path = require('path');
+const initSqlJs = require('./tests/_sqljs.js').requireSqlJs();
+const { resolveWitnessDb } = require('./tests/_witness_db.js');
+const RoomGraph = require('./common/room_graph.js');
+const EgressSanity = require('./viewer/egress_sanity.js');
+const { setupCpeEscapeRoute } = require('./viewer/cpe_escape_route.js');
+
+let pass = 0, fail = 0;
+const ck = (n, c, x) => { if (c) { pass++; console.log('  §WER ok    ' + n + (x ? '   ' + x : '')); }
+                          else { fail++; console.log('  §WER WRONG ' + n + (x ? '   ' + x : '')); } };
+const near = (a, b, e) => Math.abs(a - b) <= (e === undefined ? 1e-9 : e);
+
+// ── the app stub. Only what cpe_escape_route.js actually touches. THREE stays absent on purpose:
+//    every claim below is reachable without a renderer, which is the point.
+// cpe_day_counter.js and cpe_resource_panel.js are browser modules with no module.exports, and the
+// layout claims below need their REAL box geometry — a re-typed copy would test the copy. Sliced
+// and evaluated, the same technique witness_sun_compass_wiring.js already uses on panels.js. If
+// either cannot be loaded, W-ESC-8a fails loudly rather than silently measuring an empty reserve.
+function loadHudGeometry(A) {
+  ['cpe_day_counter.js', 'cpe_resource_panel.js'].forEach(function (f) {
+    const src = fs.readFileSync(path.join(__dirname, 'viewer', f), 'utf8');
+    const name = 'setup' + f.replace(/\.js$/, '').replace(/(^|_)([a-z])/g, (m, a, b) => b.toUpperCase());
+    try { eval(src + '\n' + name + '(A);'); }
+    catch (e) { console.log('  §WER note ' + f + ' setup threw (' + e.message + ') — geometry may be partial'); }
+  });
+}
+function makeApp(graph, volumes) {
+  const A = { activeBuilding: 'Hospital_meta' };
+  A.getRoomGraph = () => graph;
+  // scene.js's own convention, verbatim (IFC X=east/Y=north/Z=up → three X=east/Y=up/Z=south).
+  // A pure rotation, so every arc length below is the real walked length in metres.
+  A.ifc2three = (ix, iy, iz) => ({ x: ix, y: iz, z: -iy });
+  A.allRoomVolumes = () => volumes;
+  loadHudGeometry(A);
+  setupCpeEscapeRoute(A);
+  return A;
+}
+// A plan shaped like effects.js's, carrying only the beat this feature reads.
+const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: durationSec || 200 });
+
+(async () => {
+  const SQL = await initSqlJs();
+  // §WITNESS_DB — Hospital first because every measured number quoted in ESCAPE_ROUTE_REVEAL.md
+  // came off it, but ANY building with rooms + a raster proves the claims, and the resolver applies
+  // the buildings/patches/<db>.sql self-heal so the one TRACKED building works on a fresh clone.
+  const picked = resolveWitnessDb(SQL, { needRaster: true });
+  if (!picked) {
+    console.log('§ESCAPE_ROUTE_WITNESS INCONCLUSIVE — no building with rooms AND a walkable raster' +
+      ' is reachable. Every claim below needs a REAL room graph; a synthetic one would prove the' +
+      ' fixture, not the feature. Point BIM_BUILDINGS at a checkout that has one.');
+    process.exit(2);
+  }
+  const db = picked.db;
+  const q = (sql, p) => { const r = p ? db.exec(sql, p) : db.exec(sql); return r.length ? r[0].values : []; };
+  const graph = RoomGraph.buildGraph(q, { log: () => {} });
+  console.log('§ESCAPE_ROUTE_WITNESS db=Hospital_meta.db rooms=' + graph.nodes.length +
+    ' edges=' + graph.edges.length);
+
+  // ══ W-ESC-1 — §SELECTION. ISSUE: a film captioned "longest walk out" must show the room that
+  // really walks furthest. The Egress panel ranks by escapeRoute().distance, a penalty-weighted
+  // COST — so "reuse the panel's selection" (the spec's §1 instinct) picks the wrong room. This
+  // block proves three separate things: that the panel's ranking IS the cost, that the cost and the
+  // walk name DIFFERENT rooms on real data, and that the film takes the walk.
+  // Disproved if the module ever picks the cost-ranked room while a longer real walk exists.
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  const rules = JSON.parse(fs.readFileSync(path.join(__dirname, 'viewer/rates/egress_rules.json'), 'utf8'));
+  const rows = EgressSanity.evaluate(q, rules, { log: () => {} });
+  const circ = rows.filter(r => r.rule === 'circulation_distance' && r.ratio != null);
+  const ruleMax = circ.reduce((m, r) => (m === null || r.ratio > m ? r.ratio : m), null);
+  const ruleSteps = ruleMax === null ? null : Math.round(ruleMax / 0.75);   // _rcLongestExitSteps, verbatim
+  // Both rankings, computed here independently of the module.
+  let byCost = null, byWalk = null;
+  graph.nodes.forEach(n => {
+    const e = RoomGraph.escapeRoute(graph, n.guid, { log: () => {} });
+    if (!e || e.distance == null || !isFinite(e.distance)) return;
+    if (!byCost || e.distance > byCost.cost) byCost = { cost: e.distance, guid: n.guid, name: n.name };
+    const sp = RoomGraph.shortestPath(graph, n.guid, e.exitGuid);
+    if (!sp || !sp.polyline || sp.polyline.length < 2) return;
+    let L = 0;
+    for (let i = 1; i < sp.polyline.length; i++) {
+      const a = sp.polyline[i - 1], b = sp.polyline[i];
+      L += Math.hypot(b.x - a.x, b.y - a.y, (b.z || 0) - (a.z || 0));
+    }
+    if (!byWalk || L > byWalk.walk) byWalk = { walk: L, cost: e.distance, guid: n.guid, name: n.name, storey: n.storey };
+  });
+  ck('W-ESC-1a the evaluator produced a headline number at all', ruleMax !== null,
+     'rows=' + circ.length + ' max=' + (ruleMax === null ? 'null' : ruleMax.toFixed(3)));
+  ck('W-ESC-1b the Egress panel\'s headline IS the cost — max over its rows == argmax of escapeRoute().distance',
+     byCost !== null && near(byCost.cost, ruleMax, 1e-9) && Math.round(byCost.cost / 0.75) === ruleSteps,
+     'panel ranks "' + (byCost && byCost.name) + '" at ' + (byCost ? byCost.cost.toFixed(3) : '-') +
+     ' → ~' + ruleSteps + ' steps');
+  ck('W-ESC-1c the cost and the real walk name DIFFERENT rooms — this is why the panel\'s selection is not reused',
+     byCost !== null && byWalk !== null && byCost.guid !== byWalk.guid,
+     'cost→"' + (byCost && byCost.name) + '" (walk would be much shorter)  vs  walk→"' +
+     (byWalk && byWalk.name) + '" ' + (byWalk ? byWalk.walk.toFixed(1) : '-') + 'm on ' + (byWalk && byWalk.storey));
+
+  // The record the rest of the claims run against, built by the real code path.
+  const A = makeApp(graph, []);
+  const rec = A.escapeRouteBuild();
+  if (rec) console.log('  (selection scan over ' + rec.roomsScanned + ' rooms took ' +
+    rec.scanMs.toFixed(0) + ' ms — once per bake, before the frame loop)');
+  ck('W-ESC-1d the module picks the LONGEST REAL WALK, not the cost-ranked room (red1: "Get the longest of course")',
+     !!rec && byWalk !== null && rec.roomGuid === byWalk.guid && rec.roomGuid !== byCost.guid,
+     rec ? 'room="' + rec.roomName + '" walk=' + rec.walkM.toFixed(2) + 'm cost=' + rec.graphCostM.toFixed(2) : 'build returned null');
+  if (!rec) { console.log('§ESCAPE_ROUTE_WITNESS ABORT — nothing built, the remaining claims would be vacuous'); process.exit(1); }
+
+  // ══ W-ESC-1e — §ESCAPE_ROUTE_COST_IS_NOT_A_DISTANCE. ISSUE: escapeRoute().distance is a
+  // PENALTY-WEIGHTED Dijkstra cost (§UTILITY-ROUTING-PENALTY, x8 on any edge touching a utility
+  // room), not a length — so the spec's §3 premise ("both numbers come from that distance") would
+  // print a wrong number over a right picture. Disproved if the card's figures ever trace back to
+  // the cost instead of to the drawn line. This ALSO documents a defect in shipped code that is
+  // deliberately NOT fixed here: rule_checklist.js divides that same cost by 0.75 m and calls the
+  // result steps.
+  let utilNodes = 0;
+  Object.keys(graph.nodesByGuid).forEach(k => { if (graph.nodesByGuid[k].isUtility) utilNodes++; });
+  ck('W-ESC-1e the cost and the drawn walk are genuinely different quantities on this building',
+     rec.costRatio !== null && Math.abs(rec.costRatio - 1) > 0.05,
+     'cost=' + rec.graphCostM.toFixed(2) + ' walk=' + rec.walkM.toFixed(2) + 'm ratio=' +
+     rec.costRatio.toFixed(2) + ' utilityNodes=' + utilNodes);
+  ck('W-ESC-1f2 the drawn length is the one that WON the selection, not a re-derivation',
+     !!rec && byWalk !== null && near(rec.walkM, byWalk.walk, 1e-9),
+     'module=' + rec.walkM.toFixed(6) + 'm independent=' + byWalk.walk.toFixed(6) + 'm');
+  ck('W-ESC-1f the counters read the DRAWN WALK, never the cost',
+     rec.steps === Math.round(rec.walkM / 0.75) && rec.steps !== Math.round(rec.graphCostM / 0.75),
+     'film=~' + rec.steps + ' steps · the Egress panel would print ~' + Math.round(rec.graphCostM / 0.75));
+
+  const K = A.escapeRouteConstants();
+  const plan = planWith(0.929, 229.8);            // Hospital's own measured orbit boundary
+  const win = A.escapeRouteWindow(plan);
+
+  // ══ W-ESC-2 — the window is INSIDE the closing orbit and cannot collide with the beat before it.
+  // ISSUE: does the reveal actually play where the spec says (after storey-highlight, inside the
+  // orbit), or does it overlap the storey tint that ends AT beats.rise? ═══════════════════════
+  ck('W-ESC-2a the window opens strictly after the orbit begins', win.start > plan.beats.rise,
+     'rise=' + plan.beats.rise + ' start=' + win.start.toFixed(4));
+  ck('W-ESC-2b and closes before the film does, leaving the tail to the closing Measure roll',
+     win.end < 1, 'end=' + win.end.toFixed(4) + ' tail=' + ((1 - win.end) * plan.durationSec).toFixed(1) + 's');
+  ck('W-ESC-2c nothing is drawn at or before beats.rise (no overlap with the storey reveal)',
+     A.escapeRouteVisualAt(plan, plan.beats.rise) === null &&
+     A.escapeRouteVisualAt(plan, plan.beats.rise - 1e-4) === null);
+  ck('W-ESC-2d a plan with no usable rise beat draws nothing rather than guessing a window',
+     A.escapeRouteWindow({ beats: { rise: 0 } }) === null && A.escapeRouteWindow({}) === null &&
+     A.escapeRouteVisualAt({ beats: {} }, 0.95) === null);
+
+  // ══ W-ESC-3 — §5 claim 1 + 2: the LINE's progressive length and BOTH counters, at EVERY sampled
+  // frame of the reveal, not only the last. ISSUE: does the picture's progress and the two printed
+  // numbers come from one fraction of one real distance, or can they drift apart? ══════════════
+  const N = 240, samples = [];
+  let worstLine = 0, worstSteps = 0, worstSec = 0, worstCut = 0, drawn = 0;
+  for (let k = 0; k <= N; k++) {
+    const tn = win.start + (win.end - win.start) * (k / N);
+    const vis = A.escapeRouteVisualAt(plan, tn);
+    if (!vis) continue;
+    drawn++;
+    const w = (tn - win.start) / (win.end - win.start);
+    const wantProg = Math.max(0, Math.min(1, w / K.drawFrac));
+    worstLine = Math.max(worstLine, Math.abs(vis.drawnM - wantProg * rec.walkM));
+    worstSteps = Math.max(worstSteps, Math.abs(vis.steps - Math.round(vis.drawnM / K.strideM)));
+    worstSec = Math.max(worstSec, Math.abs(vis.walkSec - vis.drawnM / K.walkMs));
+    const cut = A.escapeRouteCutAt(vis.progress);
+    // the DRAWN geometry's own arc length is the same fraction of the polyline as drawnM is of the
+    // measured distance — the two are cut by one number, which is what makes the picture honest
+    worstCut = Math.max(worstCut, Math.abs(cut.lenM / rec.walkM - vis.drawnM / rec.walkM));
+    samples.push(vis);
+  }
+  ck('W-ESC-3a the reveal really opened on the sampled frames', drawn > 100, 'drawnSamples=' + drawn + '/' + (N + 1));
+  ck('W-ESC-3b line progress == (frame fraction) x the measured drawn walk, every sampled frame',
+     worstLine < 1e-9, 'worst=' + worstLine.toExponential(2) + 'm');
+  ck('W-ESC-3c the DRAWN polyline is cut at that same fraction of the real walk',
+     worstCut < 1e-9, 'worst=' + worstCut.toExponential(2));
+  ck('W-ESC-3d steps == round(drawn / ' + K.strideM + ' m), every sampled frame', worstSteps === 0,
+     'worst=' + worstSteps + ' steps');
+  ck('W-ESC-3e walk seconds == drawn / ' + K.walkMs + ' m/s, every sampled frame', worstSec < 1e-9,
+     'worst=' + worstSec.toExponential(2) + 's');
+  const last = samples[samples.length - 1];
+  ck('W-ESC-3f the finished line carries the WHOLE measured distance, not a rounded-off share',
+     near(last.drawnM, rec.walkM, 1e-9) && last.steps === rec.steps,
+     'drawn=' + last.drawnM.toFixed(6) + 'm of ' + rec.walkM.toFixed(6) + 'm  steps=~' + last.steps);
+  ck('W-ESC-3g the two units are DIFFERENT derivations of the same distance (not one computed from the other)',
+     Math.abs(rec.steps - rec.walkSec) > 1e-6 && near(rec.steps, Math.round(rec.walkM / 0.75)) &&
+     near(rec.walkSec, rec.walkM / 1.19, 1e-12),
+     '~' + rec.steps + ' steps · ' + rec.walkSec.toFixed(1) + 's');
+
+  // ══ W-ESC-4 — §5 claim 4: the camera ease does NOT touch film time. ISSUE: the whole spec turns
+  // on this. Tested twice — the warp's own maths, and a STATIC read of the one place cinema_maxq
+  // uses it, because "it returns a separate value" is only true if the caller keeps them separate.
+  const warp = (w) => {
+    const t = A.escapeRouteEaseFilmT(plan, win.start + (win.end - win.start) * w);
+    return (t - win.start) / (win.end - win.start);
+  };
+  ck('W-ESC-4a warp(0)=0 and warp(1)=1 — the camera is exactly where it would have been at both ends',
+     near(warp(1e-12), 0, 1e-9) && near(warp(1 - 1e-12), 1, 1e-9));
+  // BACK-LOADED (red1, 2026-09-20: "It should then slow further towards the end, to let the matured
+  // info sinks in"). These assert the SHAPE he asked for, not today's constants: the old curve was
+  // symmetric and slowest in the MIDDLE, and no value of its constant could change that, so a test
+  // pinned to 1.00x at the edges and 0.40x at w=0.5 was locking in the behaviour being replaced.
+  ck('W-ESC-4b the rate FALLS all the way through — no turning point, slowest at the very end',
+     A.escapeRouteEaseRate(0) > A.escapeRouteEaseRate(0.5) &&
+     A.escapeRouteEaseRate(0.5) > A.escapeRouteEaseRate(1) &&
+     A.escapeRouteEaseRate(1) > 0,
+     A.escapeRouteEaseRate(0).toFixed(2) + 'x -> ' + A.escapeRouteEaseRate(0.5).toFixed(2) +
+     'x -> ' + A.escapeRouteEaseRate(1).toFixed(2) + 'x');
+  let mono = true, minR = Infinity, maxR = -Infinity, prev = -1, maxLead = 0, leadAt = 0;
+  for (let k = 0; k <= 2000; k++) {
+    const w = k / 2000, v = warp(w), r = A.escapeRouteEaseRate(w);
+    if (v < prev - 1e-12) mono = false;
+    prev = v; minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+    if (Math.abs(v - w) > maxLead) { maxLead = Math.abs(v - w); leadAt = w; }
+  }
+  // The lead budget: the deviation the beat ALREADY had before any back-loading.
+  const LEAD_BUDGET = 0.0625;
+  ck('W-ESC-4c monotone — the camera can never run backwards', mono);
+  // THE TWO CONSTRAINTS ARE COUPLED, so this is expressed against the same budget rather than
+  // against a number: for warp = w + k*w*(1-w), the end rate is 1-k and the lead is k/4, so
+  // rate_end = 1 - 4 * lead. Asking for the slowest end the lead budget ALLOWS is therefore the
+  // strongest test available — it fails if someone weakens the slowdown for no reason, and it
+  // cannot be passed by spending more lead, because W-ESC-4k guards that from the other side.
+  // The old `minR < 0.5` was the SYMMETRIC curve's mid-dip, not a requirement, and keeping it would
+  // have forced the very excursion red1 objected to.
+  ck('W-ESC-4d it slows as much as the path budget allows, and the slowest frames are the LAST ones',
+     minR <= 1 - 4 * LEAD_BUDGET + 1e-6 && Math.abs(A.escapeRouteEaseRate(1) - minR) < 1e-9,
+     'rate ' + maxR.toFixed(3) + 'x at the start .. ' + minR.toFixed(3) + 'x at the end (budget allows ' +
+     (1 - 4 * LEAD_BUDGET).toFixed(3) + 'x), easeK=' + K.easeK);
+  // ══ THE CONSTRAINT THAT WAS NEVER GUARDED, AND SO SHIPPED. red1 on a hi-res bake, 2026-09-20:
+  // "the scene path seems to veer a bit off during the EscRoute. Check the slowing down that time
+  // did not skew the cam face path."
+  // The tension is intrinsic, not a bug: warp(0)=0 and warp(1)=1, so a rate that ENDS below 1 must
+  // have RUN ABOVE 1 earlier, and the camera LEADS its nominal pose in between. The lead is the
+  // integral of (rate-1) and peaks at k/4 of the window. What matters is HOW FAR — the old
+  // symmetric curve led by 0.0620 of the window (0.36 s here) and nobody ever complained; the first
+  // back-loaded cut led by 0.1500 (0.87 s), 2.4x further, and red1 saw it immediately.
+  // The budget is therefore the deviation the beat ALREADY had, not a number picked to pass.
+  ck('W-ESC-4k the camera never leads its nominal pose by more than the beat already did',
+     maxLead <= LEAD_BUDGET + 1e-6,
+     'max lead ' + maxLead.toFixed(4) + ' of the window at w=' + leadAt.toFixed(2) +
+     ' (budget ' + LEAD_BUDGET + ' = the old symmetric curve\'s own 0.0620, rounded up)');
+  ck('W-ESC-4e outside the window it is the identity, to the bit',
+     A.escapeRouteEaseFilmT(plan, 0.5) === 0.5 && A.escapeRouteEaseFilmT(plan, win.start) === win.start &&
+     A.escapeRouteEaseFilmT(plan, win.end) === win.end && A.escapeRouteEaseFilmT(plan, 1) === 1);
+
+  // The static half. A grep is weak evidence in general — here it is the RIGHT evidence, because
+  // the claim IS about which variable the eased value is allowed to reach.
+  const mq = fs.readFileSync(path.join(__dirname, 'viewer/cinema_maxq.js'), 'utf8');
+  const loopBody = mq.slice(mq.indexOf('for (var i = 0; i < nFrames; i++) {'));
+  const tnAssigns = (loopBody.match(/_tnFilm\s*=/g) || []).length;
+  ck('W-ESC-4f _tnFilm is assigned exactly ONCE per frame and never re-written', tnAssigns === 1,
+     'assignments=' + tnAssigns);
+  ck('W-ESC-4g the eased value lands only in _poseFilmT',
+     /var _poseFilmT = \(_escapeRoute && A\.escapeRouteEaseFilmT\) \? A\.escapeRouteEaseFilmT\(plan, _tnFilm\) : _tnFilm;/.test(loopBody) &&
+     (loopBody.match(/escapeRouteEaseFilmT/g) || []).length === 2);
+  // ══ REVERSED 2026-09-20 — §CAM_FACE_CLOCK, LOADPATH_FREEZE_POLISH_RESUME.md §131.1 ═══════════
+  // This claim used to read "handed to nothing but the pose", and containing the eased value THAT
+  // tightly is what caused the veer red1 reported twice. The pose came from the eased clock while
+  // `_blendedGazeTarget` still read the raw one, so the camera stood where the ease put it and
+  // faced where it would have looked without it. MEASURED off the 13:11 bake's own pose tap: the
+  // face ran 42.21° off the building centre at frame 775 and came back to 0.01° by frame 833.
+  // The eased value must therefore reach the POSE and the GAZE THAT POSE IS RENDERED WITH — those
+  // two and nothing else. W-ESC-4i below holds the other side unchanged: the sun arc, the sun
+  // compass, the day counter and the buildup cursor all still read the REAL film fraction.
+  // Counted over CODE only: the explanation above is itself full of the word.
+  const loopCode = loopBody.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  ck('W-ESC-4h the eased time reaches the pose and the gaze rendered from it, and nothing else',
+     (loopCode.match(/_poseFilmT/g) || []).length === 4 &&
+     /poseAtFilm\(_poseFilmT\)/.test(loopCode) &&
+     /var _poseTn = \(_clip && _clip\.out > _clip\.in\) \? \(_poseFilmT - _clip\.in\) \/ \(_clip\.out - _clip\.in\) : _poseFilmT;/.test(loopCode) &&
+     /_blendedGazeTarget\(_poseTn,/.test(loopCode) && !/_blendedGazeTarget\(_tn,/.test(loopCode),
+     'code-only _poseFilmT reads: ' + (loopCode.match(/_poseFilmT/g) || []).length + ' (declare, poseAtFilm, and the two in _poseTn)');
+  ck('W-ESC-4i the day counter, the sun arc, the sun compass and the buildup cursor all still read the REAL film fraction',
+     /_sunArcStep\(_tnFilm\)/.test(loopBody) && /_sunArcFillPin\(_tnFilm, _revealU\)/.test(loopBody) &&
+     /sunCompassAt\(_sunCompassMs, _tFilm\(_tn\)\)/.test(loopBody) && /_buildupTAt\(_tFilm\(_tn\), plan\)/.test(loopBody));
+  ck('W-ESC-4j poseAt(tn) is still exactly poseAtFilm(_tFilm(tn)) — the split changed no path',
+     /function poseAt\(tNorm\) \{ return poseAtFilm\(_tFilm\(tNorm\)\); \}/.test(mq));
+
+  // ══ W-ESC-5 — §5 claim 3: the overlay-suppression flag is true ONLY in the window, and restores.
+  // ISSUE: a hide flag left set past its beat silently strips the HUD off the rest of the film. ══
+  const marks = [0.0, 0.5, plan.beats.rise, win.start - 1e-6, (win.start + win.end) / 2, win.end + 1e-6, 1.0];
+  const got = marks.map(t => { A.escapeRouteApplyVisual(plan, t); return !!A._escRouteHudSuppress; });
+  // The flag no longer hides anything (red1 retired that — see W-ESC-8f). It is still maintained
+  // as the module's own "the window is open" record, and these four still prove the window
+  // lifecycle: it opens where it should, and the forced restore really does close it.
+  ck('W-ESC-5a the window flag is true inside the window only', JSON.stringify(got) === JSON.stringify(
+     [false, false, false, false, true, false, false]), JSON.stringify(got));
+  A.escapeRouteApplyVisual(plan, (win.start + win.end) / 2);
+  ck('W-ESC-5b it is genuinely engaged before the restore is tested', A._escRouteHudSuppress === true);
+  A.escapeRouteApplyVisual(null, 0);                       // the forced restore every bake exit path makes
+  ck('W-ESC-5c the forced restore clears it', A._escRouteHudSuppress === false);
+  ck('W-ESC-5d the §129.1 freeze mechanism is never touched — not then, and not now that the flag gates nothing',
+     fs.readFileSync(path.join(__dirname, 'viewer/cpe_escape_route.js'), 'utf8').indexOf('__drawUnlessHold') < 0 &&
+     /_escRouteHudSuppress/.test(mq));
+
+  // ══ W-ESC-6 — the honesty asymmetry reaches the SCREEN, not just the comments (§3's own ruling:
+  // the panel showing the speed itself is what keeps this honest). ═════════════════════════════
+  const card = A.escapeRouteStatCardAt(plan, (win.start + win.end) / 2);
+  // UPDATED 2026-09-20 with §13.3/§13.5: the approved mock titles the card
+  // `Escape Route — <room>`, so an exact-string test on 'Escape Route' was judging the card by a
+  // fact the spec had since changed — the same defect W-ESC-11e was rewritten for. It now checks
+  // the property it is named for: the card is TITLED, the title says Escape Route, and the title
+  // is unambiguous about WHICH room. A flag suffix ("— OVER LIMIT") is its own state, allowed.
+  ck('W-ESC-6a the card is titled "Escape Route" and names its room — unambiguous, red1\'s own word',
+     !!card && /^Escape Route\b/.test(card.card.label) &&
+     (card.card.label === 'Escape Route' || /—/.test(card.card.label)),
+     card ? card.card.label : 'null');
+  // §ESCAPE_NO_EXIT (2026-09-21) — the anchor moved from ^ to "start OR after a separator".
+  // This claim is named for the ~, not for the position: the steps figure is the one number on the
+  // card with no source and it must keep its mark. §ESCAPE_NO_EXIT now leads the counters row when
+  // a room reaches no exit at all, which outranks how far the longest walk was, so "~N steps" is no
+  // longer always first. Testing ^ was testing a layout decision under the name of a citation rule.
+  ck('W-ESC-6b the uncited number keeps its ~ and the cited one does not', !!card &&
+     /(^|·\s+)~\d+ steps/.test(card.card.sub) && /^(\d+ secs|\d+:\d\d mins)$/.test(card.card.big),
+     card ? card.card.big : '');
+  // §ESCAPE_PREROLL — the panel must be up BEFORE the route starts, and must pulse on the way in.
+  // ISSUE: red1 asked for it to fill the lull between the storey reveal ending and the escape
+  // window opening. A pre-roll that returned null (or full alpha) would leave the gap it exists to
+  // fill, and a monotonic fade would not read as "this is next".
+  {
+    var _w = A.escapeRouteWindow(plan);
+    var _lead = 2.0 / plan.durationSec;
+    var _at = function (f) { return A.escapeRouteStatCardAt(plan, _w.start - _lead * (1 - f)); };
+    var _mid = _at(0.5), _in = _at(0.02), _end = _at(0.995);
+    ck('W-ESC-13a the card is UP during the 2 s lead-in, before the route window opens',
+       !!_mid && !!_in && !!_end && !!_mid.card && /^Escape Route/.test(_mid.card.label) && _mid.opacity > 0,
+       _mid ? 'alpha at the midpoint ' + _mid.opacity.toFixed(2) + ', label "' + _mid.card.label + '"' : 'no card in the lead-in');
+    // two full cycles means the alpha must come back DOWN at least once on the way in — a fade does not
+    var _alphas = [];
+    for (var _k = 0; _k <= 40; _k++) { var _c = _at(_k / 40); _alphas.push(_c ? _c.opacity : 0); }
+    var _dips = 0;
+    for (var _j = 1; _j < _alphas.length - 1; _j++)
+      if (_alphas[_j] < _alphas[_j - 1] && _alphas[_j] <= _alphas[_j + 1]) _dips++;
+    ck('W-ESC-13b …and it PULSES rather than fading — the alpha falls back at least once',
+       _dips >= 1, 'troughs across the lead-in: ' + _dips);
+    ck('W-ESC-13c …and it arrives at full opacity, so the route opens on a settled panel',
+       !!_end && _end.opacity > 0.9, _end ? String(_end.opacity.toFixed(2)) : '-');
+    ck('W-ESC-13d the lead-in shows the WINDOW\'S OWN first values, never invented ones',
+       !!_mid && !!card && _mid.card.big === A.escapeRouteStatCardAt(plan, _w.start + 1e-9).card.big,
+       _mid ? _mid.card.big : '-');
+  }
+  // …and the finding that cannot be drawn is STATED, whenever there is one. A room with no route
+  // out is the most serious thing this beat can find and the only one it cannot draw a line for.
+  // EVERY FORM, not just the full one. A real 854x480 bake showed the card dropping to subAlts and
+  // losing the line entirely — a fact that vanishes at the size most people watch is not on the card.
+  ck('W-ESC-6b2 a room that reaches NO exit is named on the card AT EVERY SIZE, not only in the log',
+     !!card && (!(rec && rec.roomsWithNoExit > 0) ||
+       (/NO exit/.test(card.card.sub) && (card.card.subAlts || []).every(function (a) { return /NO exit/.test(a); }))),
+     rec ? (rec.roomsWithNoExit + ' room(s) with no exit; sub="' + (card ? card.card.sub.slice(0, 60) : '') + '"') : '');
+  // red1, 2026-09-20: "It be good to indicate so with 'secs'". A bare mm:ss reads as a clock.
+  ck('W-ESC-6e the headline names its unit at both scales, and never shows a bare mm:ss',
+     A.escapeRouteFmtWalk(28) === '28 secs' && A.escapeRouteFmtWalk(59) === '59 secs' &&
+     A.escapeRouteFmtWalk(60) === '1:00 mins' && A.escapeRouteFmtWalk(263) === '4:23 mins',
+     [28, 59, 60, 263].map(A.escapeRouteFmtWalk).join(' | '));
+  ck('W-ESC-6c the walking SPEED itself is on the card, with its source named', !!card &&
+     card.card.sub.indexOf('1.19 m/s (SFPE)') >= 0 && card.card.sub.indexOf('0.75 m stride assumed') >= 0,
+     card ? card.card.sub : '');
+  ck('W-ESC-6d the card also prints the metres, so neither derived number stands alone', !!card &&
+     / \d+ m walked /.test(card.card.sub));
+
+  // ══ W-ESC-8 — §ESCAPE_ROUTE_HUD_RESERVE. red1, 2026-09-20: "this added HUD panel also must find
+  // an empty spot to display to avoid overlapping the others". ISSUE: the two scene-anchored plates
+  // wander with the orbit, so they can land on each other and on the corner HUD column. Disproved
+  // by any anchor position that leaves a plate overlapping when a free corner existed.
+  // No canvas, no camera: the placement predicate is exercised directly.
+  const W = 1920, H = 1080;
+  // The column's real measured depth, as cinema_maxq.js stashes it: day counter + sun clock +
+  // compass readout + path box + card. 620 px is a realistic full column at h=1080.
+  const reserved = A.escapeRouteReservedRects(W, H, 'tr', 620);
+  ck('W-ESC-8a the reserve is ONE strip covering the whole corner column, not a box or two',
+     reserved.length === 1 && reserved[0].h === 620 && reserved[0].w > 0,
+     reserved.map(r => r.x + ',' + r.y + ' ' + r.w + 'x' + r.h).join('  |  '));
+  ck('W-ESC-8b with no measurement yet (frame 1) it still reserves the card, never nothing',
+     (() => { const r0 = A.escapeRouteReservedRects(W, H, 'tr', 0);
+              return r0.length === 1 && r0[0].h > 0; })(),
+     JSON.stringify(A.escapeRouteReservedRects(W, H, 'tr', 0)[0]));
+  ck('W-ESC-8b2 a bottom-anchored column reserves upward from the bottom margin, not downward',
+     (() => { const rb = A.escapeRouteReservedRects(W, H, 'br', 620)[0];
+              return rb.y + rb.h <= H && rb.y < H - 620 + 1; })(),
+     JSON.stringify(A.escapeRouteReservedRects(W, H, 'br', 620)[0]));
+
+  // Sweep anchor pairs across the whole frame, including deliberately hostile ones: both anchors
+  // inside the corner column, and both on the same point.
+  let worst = 0, cases = 0, hostile = 0, hostileClean = 0;
+  for (let ax = 0.02; ax <= 0.98; ax += 0.04) {
+    for (let ay = 0.02; ay <= 0.98; ay += 0.08) {
+      const labels = [
+        { key: 'Start', rows: ['Start', '≈ Level 4 R1'], sx: ax * W, sy: ay * H },
+        { key: 'Exit', rows: ['Exit', 'M_Single-Flush:0915'], sx: ax * W + 24, sy: ay * H + 12 }
+      ];
+      A.escapeRoutePlaceLabels(labels, W, H, reserved);
+      cases++;
+      // the two plates must never overlap EACH OTHER — there is always room for two on a 1920x1080
+      const pairHit = A.escapeRouteRectsHit(labels[0], labels[1]) ? 1 : 0;
+      worst = Math.max(worst, pairHit);
+      const inColumn = reserved.some(r => A.escapeRouteRectsHit(
+        { x: ax * W - 4, y: ay * H - 4, w: 8, h: 8 }, r));
+      if (inColumn) { hostile++; if (!labels.some(l => reserved.some(r => A.escapeRouteRectsHit(l, r)))) hostileClean++; }
+      labels.forEach(l => { if (l.x < 0 || l.y < 0 || l.x + l.w > W || l.y + l.h > H) worst = 9; });
+    }
+  }
+  ck('W-ESC-8c across ' + cases + ' anchor positions the two plates never overlap each other, and never leave the frame',
+     worst === 0, 'worstCode=' + worst);
+  ck('W-ESC-8d anchors landing UNDER the corner column still place clear of it',
+     hostile > 0 && hostileClean === hostile,
+     hostileClean + '/' + hostile + ' hostile anchors placed clear');
+  // §ESCAPE_PANEL_SLOT (red1, 2026-09-20): "EscRoute should be taking over the opposing bottom HUD
+  // ... This leaves the main HUD to continue displaying its overall building info", and "the old
+  // opposing HUD is replaced". So the card no longer evicts a bigStats card from the HUD column —
+  // it takes the OPPOSITE corner and replaces the Measure box there instead. The old assertion
+  // pinned the eviction it was written to describe, so it is rewritten, not deleted: the property
+  // worth guarding is still "one slot, one occupant", now about the other corner.
+  ck('W-ESC-8e the card takes the OPPOSING corner and replaces the box there — it evicts no HUD card',
+     !/_statInfo = \{ shown: _ec/.test(mq) &&
+     /_escCardInfo = \{ shown: _ec/.test(mq) &&
+     /if \(A\.filmBoxesDrawMeasure && !escCardInfo\) \{/.test(mq) &&
+     (mq.match(/escapeRouteStatCardAt/g) || []).length === 2,   // the guard and the call, nothing more
+     'building info keeps the HUD column; the Measure box yields the opposite corner');
+  // red1, 2026-09-20, overriding the spec's own §2 item 7: "the new HUD should not make the other
+  // HUDs go away." ISSUE: the suppression is retired — is it really gone, or just defaulted off
+  // somewhere it could creep back? Disproved by ANY draw call still reading the flag.
+  // §ESCAPE_ROUTE_HUD_SUPPRESS is WIRED, and it suppresses the SANITY/CLASH findings signage — not
+  // the sun column (red1, 2026-09-20: "I don't mean the clock Sun stuff as it's needed.. I meant
+  // the Sanity and clashes"). These guard the CURRENT behaviour: the flag is read, in the one
+  // wrapper both layers pass through, and it names those two and nothing else. Disproved the moment
+  // someone un-wires it, which is what happened to the first implementation of this feature.
+  ck('W-ESC-8f the suppression is wired — both triggers READ, in one place, through a PREDICATE',
+     /if \(!A2 \|\| !ESC_SUPPRESS_RX\.test\(name\)\) return false;/.test(mq) &&
+     /A2\._escRouteHudSuppress \|\| A2\._findingsHudSuppress/.test(mq) &&
+     /if \(_escSuppresses\(name\)\) \{/.test(mq) &&
+     /var ESC_SUPPRESS_RX = \/\^\(measure\\\.\|clash\\\.\)\//.test(mq),
+     'a named list of two became a predicate over the whole measure/clash family — see' +
+     ' viewer/tests/witness_findings_cease.js, which discovers the layers and tests every one');
+  // The two triggers must be ONE decision, not two gates: _storeyRevealArmed ends at beats.rise and
+  // the escape window does not open until ~0.965, so gating them separately flashes every chip back
+  // on for the ~1.2 s between the beats.
+  ck('W-ESC-8f4 the storey-reveal trigger has NO upper bound, so the chips cannot flash back between beats',
+     /A\._findingsHudSuppress = \(tNorm != null && tNorm >= _srWin - _clearLead\);/.test(
+       fs.readFileSync(path.join(__dirname, 'viewer/cpe_storey_reveal.js'), 'utf8')),
+     'one-sided test from two seconds before the reveal opens');
+  ck('W-ESC-8f2 the sun clock, the compass readout, the day counter and the pie are NOT suppressed',
+     !/ESC_SUPPRESSED = \{[^}]*(suncompass|daycounter|hud\.pie|hud\.pathmap)/.test(mq) &&
+     (mq.match(/_hudHold\('suncompass\.(clock|readout)'/g) || []).length === 2 &&
+     /_drawUnlessHold\('daycounter'/.test(mq) &&
+     /_drawUnlessHold\('hud\.pie'/.test(mq),
+     'red1: "the clock Sun stuff as it\'s needed"');
+  ck('W-ESC-8f3 a suppressed overlay still registers with §HUD_LAYOUT, so the layout witness keeps a row for it',
+     /if \(_escSuppresses\(name\)\) \{[\s\S]{0,400}_hudLayoutRegister\(name, 0, 0, 1, 1\)/.test(mq),
+     '1x1 placeholder, the same shape an absent box already registers');
+  ck('W-ESC-8g the column depth the reserve uses is MEASURED by the compositor, not guessed here',
+     /A\._hudStackBottom = _stackY \+/.test(mq) &&
+     /escapeRouteReservedRects\(w, h, _ovPos, A\._hudStackBottom\)/.test(mq));
+
+  // ══ W-ESC-9 — §ESCAPE_ROUTE_NOT_A_CORRIDOR. red1's clip picked "Level 4 Hall/Corridor 3" on
+  // Hospital_silent: a CORRIDOR_ROOM:: pseudo-room injected by §CORRIDOR-ROOM-BACKPROP. Nobody
+  // starts an escape in a corridor — the corridor IS the route — and it carries no room box, so
+  // the film had nothing to light either. ISSUE: does the candidate set exclude them?
+  // ⚠ VACUITY, not failure. A building with no CORRIDOR_ROOM:: nodes has nothing for this rule to
+  // exclude, so asserting on it would judge an empty population — this project's own rule is that
+  // such a line says VACUOUS, never PASS and never WRONG. Hospital_meta has 14 of them;
+  // HHS_Office_Federated_extracted has none, and the first fresh-clone run of this witness
+  // reported that correct state as a failure. The guard is the fix, not the claim.
+  const corridorNodes = graph.nodes.filter(n => String(n.guid).indexOf('CORRIDOR_ROOM::') === 0);
+  if (!corridorNodes.length) {
+    console.log('  §WER VACUOUS W-ESC-9 — "' + picked.name + '" has no CORRIDOR_ROOM:: pseudo-rooms,' +
+      ' so the exclusion has nothing to act on here and is NOT exercised. Run against a building' +
+      ' that has them (Hospital_meta has 14) to judge this claim.');
+  } else {
+    ck('W-ESC-9a this building has corridor pseudo-rooms, so the claim is judged on a real population',
+       true, corridorNodes.length + ' of ' + graph.nodes.length + ' nodes');
+    ck('W-ESC-9b the chosen room is not one of them', String(rec.roomGuid).indexOf('CORRIDOR_ROOM::') !== 0,
+       '"' + rec.roomName + '" (' + rec.roomGuid + ')');
+    ck('W-ESC-9c and the count skipped is reported, not silently dropped',
+       rec.corridorsSkipped === corridorNodes.length,
+       'skipped=' + rec.corridorsSkipped + ' present=' + corridorNodes.length);
+  }
+  // A corridor DOES sometimes win on length — prove the exclusion is load-bearing, not decorative.
+  let corridorLonger = 0;
+  (corridorNodes.length ? corridorNodes : []).forEach(n => {
+    const e = RoomGraph.escapeRoute(graph, n.guid, { log: () => {} });
+    if (!e || e.distance == null) return;
+    const sp = RoomGraph.shortestPath(graph, n.guid, e.exitGuid);
+    if (!sp || !sp.polyline || sp.polyline.length < 2) return;
+    let L = 0;
+    for (let i = 1; i < sp.polyline.length; i++) {
+      const a = sp.polyline[i - 1], b = sp.polyline[i];
+      L += Math.hypot(b.x - a.x, b.y - a.y, (b.z || 0) - (a.z || 0));
+    }
+    if (L > rec.walkM) corridorLonger++;
+  });
+  console.log('  (corridor pseudo-rooms whose route is LONGER than the chosen real room: ' +
+    corridorLonger + ' — each one would have been picked without the exclusion)');
+
+  // ══ W-ESC-10 — §ESCAPE_ROUTE_BREACH. red1: "is that breaking any fire dept conditions? If so,
+  // it be good to flag in the HUD". ISSUE: is the limit the rulebook's own, and does the flag
+  // reach the card? Disproved by a threshold typed into this feature instead of read from
+  // rates/egress_rules.json / EgressSanity.FALLBACK_RULES.
+  // COMMENTS STRIPPED FIRST. The file's own header explains the IBC limit and therefore contains
+  // the number; a raw grep flags that and says the threshold is hardcoded, which is false. The
+  // claim is about CODE, so the test must be about code. (First cut got this wrong — same
+  // self-referential trap as W-ESC-7.)
+  const esrc = fs.readFileSync(path.join(__dirname, 'viewer/cpe_escape_route.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
+  ck('W-ESC-10a no threshold is typed into this feature\'s CODE — the limits come from the rulebook alone',
+     esrc.indexOf('60.96') < 0 && esrc.indexOf('45.7') < 0 && /_rules\.critical_m/.test(esrc),
+     'reads _rules.critical_m from A.escapeRouteSetRules()');
+  ck('W-ESC-10b with no rulebook loaded there is NO flag rather than a guessed limit',
+     A.escapeRouteBreach() === null);
+  A.escapeRouteSetRules(rules, 'rates/egress_rules.json');
+  const br = A.escapeRouteBreach();
+  const critM = rules.egress_rules.filter(r => r.name === 'circulation_distance')[0].critical_m;
+  ck('W-ESC-10c the limit it uses IS the rulebook\'s own number', !!br && br.limitM === critM,
+     'rule=' + critM + 'm feature=' + (br ? br.limitM : '-') + 'm');
+  ck('W-ESC-10d a ' + rec.walkM.toFixed(0) + ' m route against a ' + critM + ' m limit reads CRITICAL',
+     !!br && br.level === 'critical' && br.overBy > 1,
+     br ? br.level + ' ' + br.overBy.toFixed(1) + 'x over' : 'null');
+  const bcard = A.escapeRouteStatCardAt(plan, (win.start + win.end) / 2);
+  ck('W-ESC-10e the flag reaches the CARD, names the limit and names the rule',
+     !!bcard && /OVER LIMIT/.test(bcard.card.label) &&
+     bcard.card.sub.indexOf(String(critM) + ' m limit') >= 0 &&
+     bcard.card.sub.indexOf('IBC 2021 T1017.2') >= 0,
+     bcard ? bcard.card.label + '  ||  ' + bcard.card.sub : 'null');
+  ck('W-ESC-10f the cited walking speed survives the flag (§3: the speed is always shown)',
+     !!bcard && bcard.card.sub.indexOf('1.19 m/s (SFPE)') >= 0);
+  ck('W-ESC-10g the flag does NOT claim a code violation — no "violation"/"illegal"/"fail" wording',
+     !!bcard && !/violat|illegal|non-?compl|fail/i.test(bcard.card.label + ' ' + bcard.card.sub),
+     'wording is "over limit", because the route is measured to an exterior door, not the protected stair T1017.2 regulates');
+  ck('W-ESC-10h rooms with NO route at all are counted and reported — a worse finding this film cannot draw',
+     typeof rec.roomsWithNoExit === 'number' && rec.roomsWithNoExit === (graph.nodes.length - corridorNodes.length - rec.roomsReachingAnExit),
+     rec.roomsWithNoExit + ' room(s) reach no exit; egress_sanity.js calls those isolated_room CRITICAL');
+
+  // ══ W-ESC-11 — §ESCAPE_ROUTE_NO_XRAY. red1, 2026-09-20: "x-ray even be bad to judge 3D space
+  // from experience. So i go for no x-ray since it save time, and the info is already clear and
+  // intuitive enough." ISSUE: does this beat still touch the building's materials anywhere?
+  // Disproved by any path that reaches A.toggleXray or the shared material cache. Measured cost of
+  // the thing removed: 334 s vs 146 s wall over 88 identical frames, 4.24 vs 1.40 s per frame.
+  const tools = fs.readFileSync(path.join(__dirname, 'viewer/tools.js'), 'utf8');
+  ck('W-ESC-11a the beat never engages x-ray — no call, no flag, no restore path',
+     esrc.indexOf('toggleXray') < 0 && esrc.indexOf('_xrayByUs') < 0 && esrc.indexOf('xrayOn') < 0,
+     'cpe_escape_route.js is clean of it');
+  ck('W-ESC-11b it never touches the shared material cache either',
+     esrc.indexOf('_matCache') < 0 && esrc.indexOf('setColorAt') < 0 && esrc.indexOf('.emissive') < 0);
+  ck('W-ESC-11c Alt+Z is exactly as shipped — the strength parameter added for the A/B was reverted',
+     /m\.transparent = true; m\.opacity = 0\.3; m\.side = THREE\.DoubleSide;/.test(tools) &&
+     tools.indexOf('XRAY_OPACITY') < 0 && !/A\.toggleXray = function\(opts\)/.test(tools));
+  ck('W-ESC-11d the reveal still shines through without it — the line is 2D-composited and the glow is depthTest:false',
+     /depthTest: false/.test(esrc) && /escapeRouteCompositeOntoCanvas/.test(esrc) &&
+     A.escapeRouteConstants().usesXray === false);
+  // §129.61 (2026-09-20) — REWRITTEN. This asserted that cpe_storey_reveal.js still contains
+  // `A.toggleXray()`, i.e. it judged the escape lane by a fact about the STOREY lane. That fact has
+  // since changed for reasons that have nothing to do with this beat: §98/§108 replaced the tint
+  // with a section cut, and §129.59 brought the tint back with the x-ray deliberately OFF on red1's
+  // explicit word ("Off as tint is shine thru, and we are not near inside building to appreciate
+  // any x-ray visual"). So the old form went red on a branch where nobody had touched the storey
+  // lane at all — a false alarm, and the kind that trains readers to ignore a witness.
+  //
+  // The property it is NAMED for is checkable from the escape module alone, which is also the only
+  // module this witness owns: the escape beat must not reach into the storey lane, whatever the
+  // storey lane happens to do about x-ray this month.
+  var _esrcStorey = /storeyReveal|cpe_storey_reveal|toggleXray/.test(esrc);
+  ck('W-ESC-11e the escape beat does not reach into the storey lane (no storeyReveal/toggleXray reference)',
+     !_esrcStorey, _esrcStorey ? 'cpe_escape_route.js references the storey lane' : 'clean');
+
+  // ══ W-ESC-12 — §ESCAPE_ROUTE_METADATA_MISSING. red1, 2026-09-20: "Make the EscRoute option flag
+  // in log a fail when such metadata is absent." ISSUE: without storey_walkable_raster there is no
+  // exit detection, so every room returns null and the beat reports VACUOUS — indistinguishable
+  // from a building that is genuinely clean. Disproved if a raster-less graph still comes back
+  // quiet. Red control: the SAME graph with and without rasters.
+  const bare = { nodes: graph.nodes, nodesByGuid: graph.nodesByGuid, edges: graph.edges, rasters: {} };
+  const A2 = makeApp(bare, []);
+  const errs = [];
+  const realErr = console.error; console.error = m => errs.push(String(m));
+  // strip every exit node so no room can reach one — the state a raster-less building is really in
+  Object.keys(bare.nodesByGuid).forEach(g => { if (bare.nodesByGuid[g].kind === 'exit') delete bare.nodesByGuid[g]; });
+  const bareRec = A2.escapeRouteBuild();
+  A2.escapeRouteSummary(100);
+  console.error = realErr;
+  ck('W-ESC-12a a raster-less building builds nothing', bareRec === null);
+  ck('W-ESC-12b and says FAIL, on console.error, not a quiet VACUOUS',
+     errs.some(m => /§ESCAPE_ROUTE_BUILD FAIL reason=metadata-absent/.test(m)),
+     errs.length ? errs[0].slice(0, 100) : 'nothing logged to console.error');
+  ck('W-ESC-12c the FAIL says it is NOT a clean building, and names the fix',
+     errs.some(m => /NOT a\s+clean building/.test(m) && /build_storey_walkable_raster/.test(m)));
+  ck('W-ESC-12d the SUMMARY carries the failure too — a log scan of either line catches it',
+     errs.some(m => /§ESCAPE_ROUTE_SUMMARY FAIL reason=metadata-absent/.test(m)));
+  ck('W-ESC-12e GREEN CONTROL — the real rastered graph still builds, so the gate discriminates',
+     Object.keys(graph.rasters || {}).length > 0 && !!rec,
+     Object.keys(graph.rasters || {}).length + ' rastered storeys, room "' + rec.roomName + '"');
+
+  // ══ W-ESC-7 — no pixel-derived evidence, asserted about THIS file. ════════════════════════════
+  // ⚠ The needles are ASSEMBLED, not written out. A literal list of forbidden words in a file that
+  // then searches ITSELF for them always fails — the first cut of this check did exactly that, and
+  // reported a pixel dependency this witness does not have. Self-referential tests lie in both
+  // directions, so the needle must not be able to be its own match.
+  const self = fs.readFileSync(__filename, 'utf8');
+  const forbidden = ['createImage' + 'Bitmap', 'ff' + 'mpeg', 'Io' + 'U', '.pn' + 'g\'', '.mp' + '4\'', 'toBl' + 'ob'];
+  const hits = forbidden.filter(n => self.indexOf(n) >= 0);
+  ck('W-ESC-7 this witness opens no frame, no image and no video — every claim is a real predicate',
+     hits.length === 0, hits.length ? 'found: ' + hits.join(', ') : 'none of ' + forbidden.length + ' pixel-evidence markers present');
+
+  console.log('\n§ESCAPE_ROUTE_WITNESS ' + (fail ? 'FAIL' : 'PASS') + ' checks=' + (pass + fail) +
+    ' wrong=' + fail + ' — room="' + rec.roomName + '" drawnWalk=' + rec.walkM.toFixed(2) +
+    'm steps=~' + rec.steps + ' time=' + Math.round(rec.walkSec) + 's' +
+    '  (graphCost=' + rec.graphCostM.toFixed(2) + ', ratio ' + rec.costRatio.toFixed(2) +
+    ' — see W-ESC-1e)');
+  process.exit(fail ? 1 : 0);
+})();

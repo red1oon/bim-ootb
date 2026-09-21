@@ -122,6 +122,15 @@
       console.log('§KRN_PERSIST_SKIP foreign db (not APP.db) — building cache preserved');
       return;
     }
+    // LARGE_DB_BAKE.md §2 L2 — a bake profile is disposable, never reopened from cache, so this
+    // export()+IDB-put buys nothing; it only risked the write-loop race that killed the Hospital/LTU
+    // clash film (CPE_4D_PERF_MEM_FINDINGS.md §8.6: a `db.export()` here frees every prepared
+    // statement mid time_machine.js write loop). Skip outright rather than debounce-and-skip, so no
+    // timer is even armed to race against.
+    if (window.APP && APP._bakeOwned) {
+      console.log('§KRN_PERSIST_SKIP reason=bake — bake profile is disposable, never reopened from cache');
+      return;
+    }
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
       sealChain(db).then(function() {

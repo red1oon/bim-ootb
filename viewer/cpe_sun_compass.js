@@ -257,9 +257,24 @@ function setupCpeSunCompass(A) {
       ? A.three2ifcDir(away.x, away.y, away.z)
       : { ix: away.x, iy: -away.z, iz: away.y };
     var ax = cx + awayIfc.ix * offset, ay = cy + awayIfc.iy * offset;
-    // Sit a few centimetres proud of the lowest structure so the rose is not z-fighting the slab
-    // or buried in the ground mesh.
-    var az = ext.z0 + 0.05;
+    // §129.44 (2026-09-19, red1 on the Terminal film: "the North compass seems to hit underground
+    // mistakenly, probably due to its substructure ... if u find back the ground that shadow could
+    // locate, it be corrected?") — yes, and the number was already published.
+    // This used to sit "a few centimetres proud of the LOWEST STRUCTURE" (ext.z0), which is the
+    // bottom of the model's bounding box. On a building with no basement that IS the ground, which
+    // is why HHS looked right (anchor z = -0.16). On one with a substructure it is the bottom of
+    // the deepest pile: MEASURED on Terminal, the rose was placed at z = -30.64 while that model's
+    // ground sits at z = +0.06 — thirty metres underground, exactly as red1 read it off the frame.
+    // tools.js's _calcGroundY already owns this question and publishes A.groundIfcZ, deriving it
+    // from the largest ground-floor slabs and only falling back to MIN(center_z) as a last resort
+    // (Terminal resolves it as §GROUND_Y src=gf-storey-slab(Aras Tanah) z=0.06). Its own comment
+    // says a second, independently-derived ground height "would be a way for the ghost to disagree
+    // with what it is ghosting" — the same applies here, so this reads that number rather than
+    // computing a rival one. ext.z0 stays as the fallback for a page where the ground plane has
+    // not been resolved yet, and the log says which was used and by how much they differ.
+    var _groundZ = (typeof A.groundIfcZ === 'number' && isFinite(A.groundIfcZ)) ? A.groundIfcZ : null;
+    var _azSrc = _groundZ != null ? 'groundIfcZ' : 'bboxMin(ext.z0)';
+    var az = (_groundZ != null ? _groundZ : ext.z0) + 0.05;
     _anchor = { ix: ax, iy: ay, iz: az };
     var c3 = A.ifc2three(ax, ay, az);
     var centre = new T.Vector3(c3.x, c3.y, c3.z);
@@ -358,6 +373,8 @@ function setupCpeSunCompass(A) {
       ' (src=' + _geo.latLongSource + ') trueNorth=' + _geo.trueNorth.toFixed(4) + 'deg (src=' +
       _geo.trueNorthSource + ') elev=' + (_geo.elevM == null ? 'n/a' : _geo.elevM.toFixed(2) + 'm') +
       ' halo=' + _haloM.toFixed(3) + 'm [' + _haloSrc + ']' +
+      ' groundSrc=' + _azSrc + ' groundZ=' + (_groundZ != null ? _groundZ.toFixed(2) : 'n/a') +
+      ' bboxMinZ=' + ext.z0.toFixed(2) + ' liftedBy=' + (_groundZ != null ? (_groundZ - ext.z0).toFixed(2) : '0.00') + 'm' +
       ' radius=' + _radius.toFixed(2) + 'm anchor=ifc(' + ax.toFixed(2) + ',' + ay.toFixed(2) +
       ',' + az.toFixed(2) + ') side=' + (faceBearing === 180 ? 'true-south' : 'true-north') +
       ' envelope=' + spanX.toFixed(1) + 'x' + spanY.toFixed(1) + 'm');
@@ -551,7 +568,67 @@ function setupCpeSunCompass(A) {
     var att = (info.isUp && info.attack)
       ? info.attack.attack.toFixed(0) + '° onto the ' + info.attack.compass + ' facade'
       : null;
-    return { day: day, sun: sun, attack: att };
+    // §PLACE — appended as a fourth row of the same plate, null when there is no table,
+    // no coordinate, or nothing inside the match bound.
+    // ⚠ NOT `info.lat`. The object reaching the compositor is A.sunCompassInfo() -> `_last`, the
+    // PER-FRAME sun state, which carries no coordinate — guarding on info.lat silently skipped the
+    // row on every frame of a real 1080p bake (§PLACE_RESOLVED never printed, measured 2026-09-20).
+    // `_geo` is this module's own resolved site and is the thing the compass itself was built from.
+    var _plat = (_geo && _geo.lat != null) ? _geo.lat : info.lat;
+    var _plon = (_geo && _geo.lon != null) ? _geo.lon : info.lon;
+    var place = (A.placeLabelFor && _plat != null) ? A.placeLabelFor(_plat, _plon) : null;
+    return { day: day, sun: sun, attack: att, place: place };
+  };
+
+  // ══ §PLACE — THE NEAREST REAL SETTLEMENT, AND HOW FAR THE BUILDING IS FROM IT ═══════════════
+  // red1, 2026-09-20: "Do a hi res snap ... with distance from nearest city positioned inwards
+  // where the geo-ref row is." It belongs in THIS plate because it is the same kind of fact as the
+  // day of the year and the sun angle — all three are what the site's coordinate implies.
+  // THE DISTANCE IS NOT DECORATION. "Boston 0.2 km" and "Pendang 17.9 km" are different claims:
+  // one is a city-centre site, the other is 18 km out. Printing the distance discloses the quality
+  // of the match, which is what makes a place NAME safe to put on screen at all.
+  // The fetch lives HERE, not in place_lookup.js — that module is asserted network-free by
+  // W-PL-5, and the whole reason §13 supersedes §9's Open-Meteo answer is that the bake stays
+  // offline. This reads a file the repo ships; it never leaves the machine.
+  A._placeTable = A._placeTable || null;
+  A.placeTableLoad = function (url) {
+    if (A._placeTable || A._placeTableLoading) return A._placeTableLoading || Promise.resolve(A._placeTable);
+    var src = url || 'rates/cities.tsv.gz';   // viewer.html's own folder
+    A._placeTableLoading = fetch(src).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      // The table ships gzipped (1.14 MB against 2.96 MB raw, measured). DecompressionStream is
+      // the browser's own; a page without it simply gets no place line rather than a broken one.
+      if (typeof DecompressionStream === 'undefined') throw new Error('no DecompressionStream');
+      return new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
+    }).then(function (txt) {
+      A._placeTable = (window.PlaceLookup && window.PlaceLookup.parse) ? window.PlaceLookup.parse(txt) : null;
+      console.log('§PLACE_TABLE rows=' + (A._placeTable ? A._placeTable.rows.length : 0) +
+        ' source="' + (A._placeTable ? A._placeTable.meta.source : '?') + '" licence="' +
+        (A._placeTable ? A._placeTable.meta.licence : '?') + '" — offline, no network beyond this repo file');
+      return A._placeTable;
+    }).catch(function (e) {
+      console.log('§PLACE_TABLE absent (' + e.message + ') — the place line is simply not drawn;' +
+        ' a missing table must never cost a frame');
+      A._placeTable = null; return null;
+    });
+    return A._placeTableLoading;
+  };
+  var _placeLogged = false;
+  A.placeLabelFor = function (lat, lon) {
+    if (!A._placeTable || !window.PlaceLookup || typeof lat !== 'number' || typeof lon !== 'number') return null;
+    var g = window.PlaceLookup.nearest(A._placeTable, lat, lon);
+    if (!g) return null;
+    if (!_placeLogged) {
+      _placeLogged = true;
+      console.log('§PLACE_RESOLVED ' + (g.match
+        ? 'name="' + g.name + '" cc=' + g.cc + ' km=' + g.km.toFixed(2) + ' elev=' + g.elevation_m +
+          'm(src=' + g.elevSrc + ') tz=' + g.tz + ' pop=' + g.population + ' bound=' + g.boundKm + 'km source="' + g.source + '"'
+        : 'NO MATCH — ' + g.reason) +
+        ' ⚠ §13.5s contested-coordinate gate is NOT built: this prints what the table says for the' +
+        ' coordinate it was given, and says nothing about whether that coordinate is agreed.');
+    }
+    if (!g.match) return null;
+    return g.name + ', ' + g.cc + ' · ' + (g.km < 1 ? (g.km * 1000).toFixed(0) + ' m' : g.km.toFixed(1) + ' km') + ' away';
   };
 
   // ── DRAW: the ONLY place any of this is drawn, so preview and export cannot diverge. ────────
@@ -561,7 +638,10 @@ function setupCpeSunCompass(A) {
   // owns a corner of the caller's choosing and stacks the path box and resource panel under it,
   // and cpe_room_title.js's caption is a CENTRED plate in the lower band. A left-aligned pill
   // clears both. Same plate language as those two — 0.45 black, text-hugging, same font.
-  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
+  // §HUD_ROW (2026-09-19) — `xOff`, as on the clock above: an X offset inward from the corner
+  // so this readout can sit BESIDE the clock rather than under it. Optional, so the six- and
+  // seven-argument callers in the witnesses are unaffected.
+  A.sunCompassCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY, xOff) {
     if (!ctx || !info) return 0;
     var op = (opacity == null) ? 1 : Math.min(1, opacity);
     if (!(op > 0)) return 0;
@@ -570,7 +650,13 @@ function setupCpeSunCompass(A) {
     var cam = A.camera, T = window.THREE;
     ctx.save();
     ctx.globalAlpha = op;
-    var fontPx = Math.max(12, Math.round(h * 0.020));
+    // §HUD_SCALE (2026-09-19, red1: "too big in low res and too small in hi res") — the size
+    // now comes from the ONE law in cinema_maxq.js, which lets the FRACTION of frame height
+    // rise gently with resolution instead of holding constant. The 1080 anchor below is this
+    // overlay's own previous constant, so nothing moves at 1080 and every overlay keeps its
+    // tuned size RELATIVE to its neighbours. The fallback is the old formula verbatim, for a
+    // page that loads this module without cinema_maxq.
+    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.020, 9) : Math.max(9, Math.round(h * 0.020)));
     var font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
     ctx.font = font;
     ctx.textBaseline = 'middle';
@@ -588,16 +674,20 @@ function setupCpeSunCompass(A) {
     var at = (pos && CLOCK_POS[pos]) ? pos : 'tr';
     var sy = stackY || 0;
     var lineH = Math.round(fontPx * 2.1);
-    var lines = [labels.day, labels.sun].concat(labels.attack ? [labels.attack] : []);
+    var lines = [labels.day, labels.sun]
+      .concat(labels.attack ? [labels.attack] : [])
+      .concat(labels.place ? [labels.place] : []);   // §PLACE — innermost row of the geo-ref plate
     var widest = 0;
     if (typeof ctx.measureText === 'function') {
       lines.forEach(function (t) { widest = Math.max(widest, ctx.measureText(t).width); });
     } else { lines.forEach(function (t) { widest = Math.max(widest, t.length * fontPx * 0.55); }); }
     var padX = Math.round(fontPx * 0.7), padY = Math.round(fontPx * 0.45);
     var bw = widest + padX * 2, bh = fontPx + padY * 2;
-    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - bw;
+    var xo = xOff || 0;
+    var x = (at === 'tl' || at === 'bl') ? margin + xo : w - margin - bw - xo;
     var y0 = (at === 'bl' || at === 'br') ? h - margin - bh / 2 - sy - (lines.length - 1) * lineH
                                           : margin + bh / 2 + sy;
+    A.sunReadoutLastBox = { x: x, y: y0 - bh / 2, w: bw, h: bh + (lines.length - 1) * lineH };
 
     lines.forEach(function (t, i) {
       var y = y0 + i * lineH;
@@ -643,17 +733,25 @@ function setupCpeSunCompass(A) {
   // date/sun/facade lines that already live there.
   var CLOCK_POS = { tr: 1, tl: 1, br: 1, bl: 1 };
   A.sunClockBoxSize = function (h) { return Math.round(h * 0.105); };
-  A.sunClockCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
+  // §HUD_ROW (2026-09-19) — `xOff` shifts this dial INWARD from its corner along X so the caller
+  // can lay the clock, the readout, the day counter and the path map in ONE row instead of a
+  // column. Optional; every existing caller passes seven arguments and is unmoved. The drawn
+  // rect goes on A.sunClockLastBox — the return value stays the HEIGHT it has always been,
+  // because witness_sun_compass.js reads it as a number.
+  A.sunClockCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY, xOff) {
     if (!ctx || !info || info.noCursor || info.solarHour == null) return 0;
     var op = (opacity == null) ? 1 : Math.min(1, opacity);
     if (!(op > 0)) return 0;
     var d = A.sunClockBoxSize(h), r = d / 2;
     var margin = Math.round(h * 0.028);
     var at = (pos && CLOCK_POS[pos]) ? pos : 'tr';
-    var sy = stackY || 0;
-    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - d;
+    var sy = stackY || 0, xo = xOff || 0;
+    var x = (at === 'tl' || at === 'bl') ? margin + xo : w - margin - d - xo;
     var y = (at === 'bl' || at === 'br') ? h - margin - d - sy : margin + sy;
     var cx = x + r, cy = y + r;
+    // Width is the dial itself; the "HH:MM solar" caption is centred under it and can be wider, so
+    // the row must reserve the WIDER of the two or the next box along will sit on the text.
+    A.sunClockLastBox = { x: x, y: y, w: d, h: d };
 
     var hour = Math.floor(info.solarHour);
     var mins = Math.round((info.solarHour - hour) * 60);
@@ -701,15 +799,23 @@ function setupCpeSunCompass(A) {
 
     // The reading in words, because hands at this size are an impression, not a measurement — and
     // "solar" is the part a viewer cannot infer from a dial.
-    var fontPx = Math.max(9, Math.round(h * 0.014));
+    // §HUD_SCALE — same one law; 0.014 is this caption's own 1080 anchor.
+    var fontPx = (window.__hudFontPx ? window.__hudFontPx(h, 0.014, 8) : Math.max(8, Math.round(h * 0.014)));
     ctx.font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
     ctx.fillStyle = '#e8eef6';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText((hour < 10 ? '0' : '') + hour + ':' + (mins < 10 ? '0' : '') + mins + ' solar',
-                 cx, y + d + Math.round(fontPx * 0.25));
+    var capTxt = (hour < 10 ? '0' : '') + hour + ':' + (mins < 10 ? '0' : '') + mins + ' solar';
+    ctx.fillText(capTxt, cx, y + d + Math.round(fontPx * 0.25));
+    var capW = (typeof ctx.measureText === 'function') ? ctx.measureText(capTxt).width
+                                                       : capTxt.length * fontPx * 0.55;
+    var totH = d + Math.round(fontPx * 1.4);
+    // §HUD_ROW — the caption is centred on the dial, so it overhangs both sides when it is wider.
+    // Publish the box that actually covers ink, not just the dial, or a row neighbour lands on it.
+    if (capW > d) A.sunClockLastBox = { x: cx - capW / 2, y: y, w: capW, h: totH };
+    else A.sunClockLastBox = { x: x, y: y, w: d, h: totH };
     ctx.restore();
-    return d + Math.round(fontPx * 1.4);
+    return totH;
   };
 
   A.sunCompassInfo = function () { return _last; };

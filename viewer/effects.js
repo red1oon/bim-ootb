@@ -9,6 +9,42 @@
 async function setupEffects(A, renderer, scene, camera) {
   A._composer = null;
   A._ssaoPass = null;
+
+  // ══ §AO_EXCLUDE (2026-09-09, MEP_CLASH_REVEAL_MOVIE.md §46 — MEASURED, not guessed) ══════════════
+  // An AO pass renders its OWN depth/normal prepass of the scene. It does that with an override
+  // material (SSAOPass) or its own depth shader (N8AO), and BOTH ignore per-object material flags —
+  // `depthWrite:false` included. So annotation geometry added to the scene is written into the AO
+  // buffer as SOLID surface, and the whole picture's ambient occlusion is computed against it.
+  // MEASURED on the 1080p Hospital film: 42 frames of |ΔY|>15 inside §FLYTHRU_DATUM_LIFE2's
+  // 148.70-169.10 s window with Measure on, 0 with --no-measure; frame-for-frame against that twin
+  // the Measure film swings 39..104 around a steady 56 — whole-frame error in BOTH directions,
+  // which is what a polluted AO buffer looks like.
+  // ⚠ WHICH PASS: the bake's AO is §PHOTO_AO's **N8AOPass**, not SSAOPass (which ships
+  // `enabled = false`). Wrapping the wrong one is a no-op that LOOKS like a fix — so this helper is
+  // applied to every AO pass we construct, and each logs §AO_EXCLUDE the first time it hides anything.
+  // Opt-in: geometry that SHOULD occlude simply does not set `userData.excludeFromAO`.
+  A._aoExcludeWrap = function (pass, label, sceneRef) {
+    if (!pass || typeof pass.render !== 'function' || pass.__aoExcludeWrapped) return pass;
+    pass.__aoExcludeWrapped = true;
+    var orig = pass.render.bind(pass), hidden = [], logged = false;
+    pass.render = function (renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+      hidden.length = 0;
+      try {
+        sceneRef.traverse(function (o) {
+          if (o.visible && o.userData && o.userData.excludeFromAO) { o.visible = false; hidden.push(o); }
+        });
+      } catch (e) { /* the guard must never cost a frame */ }
+      if (hidden.length && !logged) {
+        logged = true;
+        console.log('§AO_EXCLUDE pass=' + label + ' objects=' + hidden.length + ' [' +
+          hidden.map(function (o) { return o.name || '(unnamed)'; }).join(' ') +
+          '] — hidden for the AO depth prepass only; the beauty pass and TAA fold still see them');
+      }
+      try { orig(renderer, writeBuffer, readBuffer, deltaTime, maskActive); }
+      finally { for (var i = 0; i < hidden.length; i++) hidden[i].visible = true; }
+    };
+    return pass;
+  };
   A._outlinePass = null;
   A._composerEnabled = false;
 
@@ -33,7 +69,19 @@ async function setupEffects(A, renderer, scene, camera) {
       import('./lib/BloomPass.js')
     ]);
 
-    var _composer = new _ecMod.EffectComposer(renderer);
+    // §129 OPEN ITEM (2026-09-17) — the load-path section-cut's solid cap needs a stencil buffer on
+    // whatever render target the SCENE GEOMETRY actually rasterizes into. That is NOT the canvas
+    // (renderer.getContext() has one, `stencilBuffer:true` since `viewer/scene.js`'s WebGLRenderer
+    // constructor — but that context is never where the geometry pass writes): TAARenderPass below
+    // renders into EffectComposer's OWN internal WebGLRenderTarget, and EffectComposer.js's own
+    // default-target branch creates it with only `{type: HalfFloatType}` — stencilBuffer defaults to
+    // false on a WebGLRenderTarget, same as any other. Real bake proof this mattered: `§LOADPATH_CUT_CAP`
+    // read `stencilBuffer=true` (the canvas) and reported PASS while the cap never actually rendered —
+    // a witness that checked the wrong buffer. Pass an explicit stencil-enabled target so
+    // EffectComposer uses IT (and clones it for its second buffer) instead of its own stencil-less default.
+    var _composerRT = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight,
+      { type: THREE.HalfFloatType, stencilBuffer: true });
+    var _composer = new _ecMod.EffectComposer(renderer, _composerRT);
     _composer.setSize(window.innerWidth, window.innerHeight);
     _composer.setPixelRatio(renderer.getPixelRatio());
 
@@ -51,6 +99,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _ssaoPass.minDistance = 0.001;
     _ssaoPass.maxDistance = 0.1;
     _ssaoPass.enabled = false;  // off by default — toggled with Shadow or UI
+    A._aoExcludeWrap(_ssaoPass, 'SSAOPass', scene);   // §AO_EXCLUDE — usually disabled, wrapped anyway
     _composer.addPass(_ssaoPass);
 
     // Pass 3: Outline — mesh silhouette on pick/clash/find
@@ -2930,6 +2979,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var changed = false, _visMeshes = 0, _flippedOn = 0;
     A.scene.traverse(function(o) {
       if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible) return;
+      if (o.userData && o.userData.excludeFromShadow) return;   // §DATUM_NO_SHADOW — annotation geometry, not a real caster
       _visMeshes++;
       if (!o.castShadow) {
         o.castShadow = true; o.receiveShadow = true; changed = true; _flippedOn++;
@@ -3257,9 +3307,47 @@ async function setupEffects(A, renderer, scene, camera) {
     // the worst angle the film reaches, not just at the angle staging happened to see.
     var _shadowRange = A.sun.shadow.camera.far - A.sun.shadow.camera.near;
     var _texelWorld = (2 * _env) / A.sun.shadow.mapSize.width;
+    // ══ §129.45 (2026-09-19, red1: "all i want is that it is realistic, not cut off at the base of
+    // each column") — THE GRAZING TERM IS WHAT CUT THE SHADOWS OFF AT THE BASE. ══════════════════
+    // A depth bias is a push ALONG THE LIGHT RAY, so on the ground it moves the shadow away from
+    // its caster by worldBias / tan(elevation) — the peter-panning gap. The line below used to be
+    //     _worldBias = max(0.305, _texelWorld / tan(PHOTO_SUN_ELEVATION_END))
+    // i.e. one frozen value, sized so the GROUND would not self-shadow at the lowest angle the film
+    // was ever expected to reach. That is a real problem and the term solved it — but it pays for it
+    // in gap at every OTHER angle, and it is computed from PHOTO_SUN_ELEVATION_END, the SCRIPTED
+    // arc's 6 deg floor. §SUN_ONE retired that arc: with the compass on, the real sun runs
+    // 42.4 -> 1.4 deg (measured, 1969-frame HHS bake, 2026-09-19). MEASURED consequences on HHS
+    // (env 180, map 4096, texelWorld 0.0879 m, so the frozen bias is 0.836 m):
+    //     42.4 deg -> 0.9 m gap     9 deg -> 5.3 m gap     3 deg -> 16 m     1.4 deg -> 34 m
+    // Every column's shadow detached from its own base, by about a metre at the start and by tens
+    // of metres by the end. That is exactly what red1 described, and it gets worse through the film.
+    //
+    // WIDENING THE FRUSTUM WOULD HAVE MADE IT WORSE, which is worth recording because it was the
+    // obvious-looking fix: gap scales with texelWorld = 2*env/mapSize, so a bigger env means a
+    // bigger gap. The far-tip clipping is a separate fault and must not be paid for here.
+    //
+    // THE RIGHT TOOL IS normalBias, WHICH THIS VIEWER HAS NEVER USED. three.js offsets the shadow
+    // lookup along the SURFACE NORMAL rather than along the light ray, which is what acne actually
+    // needs — the ground stops self-shadowing without the shadow sliding away from anything
+    // standing on it. So the grazing term moves to normalBias, and the depth bias drops back to
+    // toggleShadow's own proven 0.305 m world-space value, the number the interactive path has
+    // always worked with (see the measurements above). Gap at 1.4 deg falls from 34 m to 12.5 m
+    // and at 42 deg from 0.9 m to 0.33 m, with the acne duty carried by a term that costs no gap.
+    // `__noNormalBias` restores the old single-bias behaviour for an A/B.
+    var _useNormalBias = !(typeof window !== 'undefined' && window.__noNormalBias);
     var _grazeRad = THREE.MathUtils.degToRad(Math.max(1, PHOTO_SUN_ELEVATION_END));
-    var _worldBias = Math.max(0.305, _texelWorld / Math.tan(_grazeRad));
+    var _worldBias = _useNormalBias ? 0.305 : Math.max(0.305, _texelWorld / Math.tan(_grazeRad));
+    // Sized off the real texel, not a taste constant: 2 texels is the usual working range for
+    // normalBias, and one texel is the distance over which the depth comparison is ambiguous.
+    A.sun.shadow.normalBias = _useNormalBias ? (2 * _texelWorld) : 0;
     A.sun.shadow.bias = -(_worldBias / _shadowRange);
+    console.log('§PHOTO_SHADOW_CONTACT normalBias=' + A.sun.shadow.normalBias.toFixed(3) + 'm' +
+      ' worldBias=' + _worldBias.toFixed(3) + 'm texelWorld=' + _texelWorld.toFixed(4) + 'm' +
+      ' predictedBaseGap[42deg=' + (_worldBias / Math.tan(THREE.MathUtils.degToRad(42))).toFixed(2) +
+      'm 9deg=' + (_worldBias / Math.tan(THREE.MathUtils.degToRad(9))).toFixed(2) +
+      'm 1.4deg=' + (_worldBias / Math.tan(THREE.MathUtils.degToRad(1.4))).toFixed(1) + 'm]' +
+      (_useNormalBias ? '' : ' (__noNormalBias control: old single-bias behaviour)') +
+      ' — §129.45, the gap is what red1 saw as a cut-off at each column base');
     console.log('§PHOTO_SHADOW_BIAS worldBias=' + _worldBias.toFixed(3) + 'm bias=' + A.sun.shadow.bias.toExponential(3) +
       ' range=' + _shadowRange.toFixed(0) + 'm texel=' + _texelWorld.toFixed(3) + 'm grazeElev=' + PHOTO_SUN_ELEVATION_END +
       ' (was -0.0005 = ' + (0.0005 * _shadowRange).toFixed(2) + 'm, which erased every caster under ' +
@@ -3268,7 +3356,11 @@ async function setupEffects(A, renderer, scene, camera) {
     A.sun.shadow.camera.updateProjectionMatrix();
     if (A.ground) A.ground.receiveShadow = true;
     var _shadowList = [];
-    A.scene.traverse(function(o) { if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) _shadowList.push(o); });
+    A.scene.traverse(function(o) {
+      if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return;
+      if (o.userData && o.userData.excludeFromShadow) return;   // §DATUM_NO_SHADOW — annotation geometry, not a real caster
+      _shadowList.push(o);
+    });
     // §PHOTO_SHADOW_FRUSTUM_COVERAGE (2026-08-11, real user ask: "GIGO code witness logging must
     // reveal" -- not another video/frame-extraction round-trip): direct geometric proof of whether
     // the shadow camera can actually SEE the casting geometry, computed from live scene state, no
@@ -4170,6 +4262,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (!bundle.N8AOPass) { console.warn('§PHOTO_AO_INIT_FAIL bundle has no N8AOPass export'); return null; }
       var rt = A._composer.renderTarget1;  // composer buffer size INCLUDES pixelRatio — match it exactly
       var n8 = new bundle.N8AOPass(scene, camera, rt.width, rt.height);
+      A._aoExcludeWrap(n8, 'N8AOPass', scene);   // §AO_EXCLUDE — THIS is the pass the bake runs (§PHOTO_AO)
       n8.configuration.autoRenderBeauty = false;  // beauty = the frozen TAA image, injected by the adapter
       n8.autoDetectTransparency = false;          // transparency machinery only works with autoRenderBeauty;
                                                   // left on it would feed EMPTY transparency targets to the
@@ -4818,7 +4911,7 @@ async function setupEffects(A, renderer, scene, camera) {
         if (!_glowSkipLogged) { _glowSkipLogged = true;
           console.log('§GLOW_BUILDUP_EARLY_OUT skipping — cursor is before the first fixture placement; ' +
             'logged once, not once per frame'); }
-        _glowStagedCount = 0;
+        _glowStagedCount = 0; A._glowStagedCount = 0; A._glowStagedCount = 0;
         return;
       }
     }
@@ -4828,12 +4921,25 @@ async function setupEffects(A, renderer, scene, camera) {
     // a real fixture only glows once Time Machine has actually placed it. A._tmIsVisible defaults
     // to true when TM isn't driving the scene at all, so plain Night Mode (no buildup in progress)
     // is completely unchanged.
+    // §116 — from the last stick to the end of the film the interior fixtures are OFF, glow sprites
+    // included. They are a separate object family from the PointLights, which is why capping the
+    // lights alone (§115) still left fixture glow on screen.
+    if (A._interiorLightsOff) {
+      _glowStagedCount = 0; A._glowStagedCount = 0;
+      if (!A._glowOffLogged) {
+        A._glowOffLogged = true;
+        console.log('§INTERIOR_LIGHTS_OFF glowSprites staged=0 of ' + allPos.length +
+          ' (§116 — from beats.out to TOPOUT — §129.41 relights from there)');
+      }
+      return;
+    }
+    A._glowOffLogged = false;
     var pos = allPos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
     // §GLOW_LENS_QUAD (this session's own merge) — optional extra filter, e.g. the still stages
     // ONLY the exit-sign subset here (the quad handles everything else). Applied on TOP of the
     // buildup gate above, not instead of it.
     if (filterFn) pos = pos.filter(filterFn);
-    _glowStagedCount = pos.length;
+    _glowStagedCount = pos.length; A._glowStagedCount = pos.length;
     if (!pos.length) {
       console.log('§PHOTO_GLOW_SPRITE_GATE 0/' + allPos.length + ' fixtures placed yet — nothing to light');
       return;
@@ -5058,6 +5164,12 @@ async function setupEffects(A, renderer, scene, camera) {
   }
 
   function _glowLensOn() {
+    // §118 — the lens quad is a FOURTH emitter family, separate from the sprite cloud, the PointLights
+    // and the emissive fixture materials. §116 took down three of the four, which is why fixtures
+    // still read as lit after the last stick. Gated HERE, at its own staging site — an earlier
+    // attempt put the check in _teardownStillRefine and its `return` skipped the rest of that
+    // teardown, which corrupted frame capture (§MAXQ_FAIL createImageBitmap, fileOk=false).
+    if (A._interiorLightsOff && !(typeof window !== 'undefined' && window.__noLensGate)) { _glowLensOff(); return; }
     _glowLensRevealGate();   // §CPE_REVEAL_LENS_QUAD_OFF — before the early return, so a stage-kept frame is gated too
     if (_glowLensMeshRect || _glowLensMeshRound) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
@@ -5071,7 +5183,7 @@ async function setupEffects(A, renderer, scene, camera) {
     pos = pos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
     // §R10 — recorded BEFORE the zero-check, same placement _glowStagedCount uses above, so a
     // teardown-time comparison sees "0 visible" as a real, stable count rather than "unset".
-    _glowLensStagedCount = pos.length;
+    A._glowLensLive = 1; _glowLensStagedCount = pos.length;
     if (!pos.length) { console.log('§GLOW_LENS_QUAD_GATE 0 fixtures placed yet — nothing to light'); return; }
     var geo = new THREE.PlaneGeometry(1, 1);
     var matRect = new THREE.MeshBasicMaterial({
@@ -5156,6 +5268,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' draw call(s), 0 scene materials touched');
   }
   function _glowLensOff() {
+    A._glowLensLive = 0;          // §118 — read by §INTERIOR_LIGHTS_WITNESS
     _glowLensRevealScalar = -1;   // §CPE_REVEAL_LENS_QUAD_OFF — nothing staged owns a scalar any more
     if (!_glowLensMeshRect && !_glowLensMeshRound) return;
     // Both meshes share ONE PlaneGeometry instance (built fresh each _glowLensOn() call) —
@@ -5655,6 +5768,19 @@ async function setupEffects(A, renderer, scene, camera) {
   // TOGETHER at each tail-parade boundary before narrowing to just the incoming one. Not a literal
   // dissolve — documented as such in A.cpeRevealVisualAt so it's never mistaken for one later.
   var CPE_REVEAL_FADE_SEC = 0.4;
+  // §57.4 (2026-09-11, user: "the ARCH elements should fade off rather than cut off... 2 sec fade
+  // be good") — same "both visible together briefly" technique as CPE_REVEAL_FADE_SEC above, applied
+  // to the ARC/STR drop-out at ghost-phase onset instead of a parade slot boundary, at the length the
+  // user asked for. See A.cpeRevealVisualAt's ghost-phase branch.
+  var ARCH_DROP_FADE_SEC = 1.0;   // §57.4b (2026-09-11, user: "even 1 sec as it can be expensive")
+  // §57.4b — the instanced/batched majority (no alpha channel, still a boolean cut) fires at the
+  // MIDPOINT of the regular-mesh fade (opacity ~50%, inside the user's named 70%-30% band) instead
+  // of at the fade's own end, so the bulk pop lands WHILE the visible dissolve is already halfway
+  // through — the eye is already tracking a fade in progress, and that fade keeps visibly running
+  // for the second half of the window AFTER the bulk vanishes, carrying the transition forward
+  // rather than the pop reading as a separate, disconnected event. User: "make it go from 70% to
+  // 30% so the cutover gives impression of carry over fade."
+  var ARCH_BULK_CUT_FRAC = 0.5;
   // §CPE_NOISE_LAW — the user's ONE pacing dial ("have a speed range… don't overdo it"), and the
   // only knob the noise ratio is allowed to have. Declared here, at module scope, because the law
   // governs EVERY beat: the dive's cost table (built with the plan) and the walk's blended cost
@@ -5928,7 +6054,17 @@ async function setupEffects(A, renderer, scene, camera) {
     // previous behaviour — same rule cpeRevealDiscQtyCost above already follows.
     var tF = (b.flyback != null && b.flyback > tP) ? b.flyback : tP;
     if (tNorm <= tF) return null;                              // pull-out + fly-back: ARC/STR SOLID
-    if (tNorm <= b.reveal) return { phase: 'ghost', discs: rv.discs.slice() };  // round 2
+    if (tNorm <= b.reveal) {
+      // §57.4/§57.4b — ARC/STR stay in visDiscs (what A.cpeRevealApplyVisual actually shows,
+      // the boolean cut for Instanced/BatchedMesh) only through the MIDPOINT of the fade window —
+      // A.cpeArchFadeApplyVisual's regular-mesh opacity ramp keeps running past that point to the
+      // window's own end, so the visible dissolve carries on after the bulk cut instead of ending
+      // there. `discs` (the caption identity) is untouched — the caption never claimed ARC/STR.
+      var fadeFrac = (plan.durationSec > 0) ? ARCH_DROP_FADE_SEC / plan.durationSec : 0;
+      var inArchFade = tNorm <= tF + fadeFrac * ARCH_BULK_CUT_FRAC;
+      return { phase: 'ghost', discs: rv.discs.slice(),
+               visDiscs: inArchFade ? rv.discs.concat(['ARC', 'STR']) : rv.discs.slice() };
+    }  // round 2
     if (!(b.rise > b.reveal)) return null;
     var riseSpanSec = (rv.riseSec || 0) + (rv.tailSec || 0);
     if (!(riseSpanSec > 0)) return null;
@@ -6032,6 +6168,54 @@ async function setupEffects(A, renderer, scene, camera) {
     var st = (plan && A.cpeRevealVisualAt) ? A.cpeRevealVisualAt(plan, tNorm) : null;
     return !!(st && st.phase === 'tail-one');
   };
+  // §57.4-REAL-FADE / §57.4b (2026-09-11) — the visDiscs-overlap technique above only ever
+  // DELAYED the boolean cut (A._applyDiscVisibility has no opacity concept at all, confirmed by
+  // reading it — §CPE_DISCIPLINE_REVEAL_FADE's own comment already says so): ARC/STR stayed fully,
+  // normally visible for the whole window and then vanished instantly — not a dissolve, just a
+  // postponed cut. REGULAR (non-Instanced/BatchedMesh) meshes CAN take a real per-object opacity
+  // ramp; Instanced/BatchedMesh cannot (no alpha channel in instanceColor / the batched colours
+  // texture — verified against viewer/lib/three.core.min.js directly, same check §57.2 already
+  // did for a different reason). So: regular ARC/STR meshes get a genuine 1.0->0.0 fade over the
+  // WHOLE ARCH_DROP_FADE_SEC window (now 1.0s — user: "even 1 sec as it can be expensive");
+  // Instanced/BatchedMesh ARC/STR is cut via the existing visDiscs boolean path, but user-timed to
+  // fire at ARCH_BULK_CUT_FRAC (the window's own midpoint, ~50%, inside the user's named 70%-30%
+  // opacity band) rather than the window's end — the regular-mesh fade keeps visibly running for
+  // the SECOND half of the window after the bulk pop, carrying the transition forward instead of
+  // the pop reading as its own disconnected event. Materials are CLONED (per distinct original,
+  // deduped) before animating opacity — never written in place — because materials in this viewer
+  // are SHARED/cached (A._matCache), the exact bug §STOREY_REVEAL_TINT_SHARED_MATERIAL already
+  // found and fixed for the storey-reveal tint; this reuses that same discipline.
+  var _archFadeTouched = [], _archFadeMatMap = null;
+  function _archFadeRestore() {
+    _archFadeTouched.forEach(function(t) { t.mesh.material = t.orig; });
+    _archFadeTouched = [];
+    if (_archFadeMatMap) { _archFadeMatMap.forEach(function(cl) { try { cl.dispose(); } catch (e) {} }); _archFadeMatMap = null; }
+  }
+  A.cpeArchFadeApplyVisual = function(plan, tNorm) {
+    var b = plan && plan.beats;
+    if (!b || typeof A.collectMeshes !== 'function') { if (_archFadeTouched.length) _archFadeRestore(); return; }
+    var tP = (b.pullout != null && b.pullout > b.out) ? b.pullout : b.out;
+    var tF = (b.flyback != null && b.flyback > tP) ? b.flyback : tP;
+    var fadeFrac = (plan.durationSec > 0) ? ARCH_DROP_FADE_SEC / plan.durationSec : 0;
+    var inWindow = fadeFrac > 0 && b.reveal > tF && tNorm > tF && tNorm <= tF + fadeFrac;
+    if (!inWindow) { if (_archFadeTouched.length) _archFadeRestore(); return; }
+    if (!_archFadeTouched.length) {
+      _archFadeMatMap = (typeof Map !== 'undefined') ? new Map() : null;
+      A.collectMeshes(function(o) { return o.isMesh && (o.userData.disc === 'ARC' || o.userData.disc === 'STR'); }).forEach(function(o) {
+        if (!o.material || Array.isArray(o.material) || !o.material.clone) return;
+        var orig = o.material, cl = _archFadeMatMap ? _archFadeMatMap.get(orig) : null;
+        if (!cl) { cl = orig.clone(); cl.transparent = true; if (_archFadeMatMap) _archFadeMatMap.set(orig, cl); }
+        _archFadeTouched.push({ mesh: o, orig: orig });
+        o.material = cl;
+      });
+      console.log('§CPE_ARCH_FADE start meshesTouched=' + _archFadeTouched.length +
+        ' clonedMaterials=' + (_archFadeMatMap ? _archFadeMatMap.size : 0) +
+        ' — Instanced/BatchedMesh ARC/STR (no alpha channel) stay on the delayed-cut path');
+    }
+    var u = (tNorm - tF) / fadeFrac, op = Math.max(0, 1 - u);   // 1 at tF, 0 at tF+ARCH_DROP_FADE_SEC
+    if (_archFadeMatMap) _archFadeMatMap.forEach(function(cl) { cl.opacity = op; });
+  };
+
   A.cpeRevealApplyVisual = function(plan, tNorm) {
     if (typeof A.filterDiscs !== 'function' || !A.hiddenDiscs) return;
     var st = plan ? A.cpeRevealVisualAt(plan, tNorm) : null;
@@ -6040,6 +6224,42 @@ async function setupEffects(A, renderer, scene, camera) {
     // overlap partner after CPE_REVEAL_FADE_SEC), and that drop must still re-trigger filterDiscs.
     var shown = (st && st.visDiscs) || (st && st.discs);
     var key = st ? (st.phase + ':' + shown.join(',')) : '';
+    // §CPE_REVEAL_LEAK (2026-09-19, red1: "Go look at Hospital after topout freeze ... refer WITNESS
+    // logging") — the slot-change key below is the right gate for RE-FILTERING, and the wrong one for
+    // WATCHING. A discipline that the round hid can be put back by something else without the slot
+    // ever changing, and the load-path freeze does exactly the kind of thing that would:
+    // §LOADPATH_BATCH_UNPACK unpacks 4,899 batched containers into 63,182 clones at topout and its
+    // restore shows all 4,899 again (Hospital's own numbers; HHS has 419 meshes total and never
+    // meets this). So while the round is up, re-count every ~2 s of film REGARDLESS of the key, and
+    // say so the moment a discipline is visible that was not asked for. Counting only, no filtering
+    // — if this fires, the round's own state was fine and something downstream re-showed it, which
+    // is the opposite fix from "filterDiscs never hid it" and cannot be told apart without this.
+    if (st && shown && shown.length) {
+      var _nowT = (typeof tNorm === 'number') ? tNorm : 0;
+      if (A._cpeRevealLeakAt == null || Math.abs(_nowT - A._cpeRevealLeakAt) > 0.008) {
+        A._cpeRevealLeakAt = _nowT;
+        try {
+          var _ask = {}, _leak = {};
+          shown.forEach(function (d) { _ask[d] = 1; });
+          if (typeof A.collectMeshes === 'function') {
+            A.collectMeshes(function (o) { return o.isMesh && o.userData && o.userData.disc; })
+              .forEach(function (o) {
+                if (!o.visible || _ask[o.userData.disc]) return;
+                _leak[o.userData.disc] = (_leak[o.userData.disc] || 0) + 1;
+              });
+          }
+          var _leakKeys = Object.keys(_leak);
+          if (_leakKeys.length) {
+            console.log('§CPE_REVEAL_LEAK tNorm=' + _nowT.toFixed(4) + ' slot=' + key +
+              ' asked=[' + shown.join(',') + '] LEAKED=' + JSON.stringify(_leak) +
+              ' hiddenDiscs=[' + Array.from(A.hiddenDiscs).join(',') + ']' +
+              ' => FAIL — a discipline the round did not ask for is visible. If hiddenDiscs STILL' +
+              ' names it, the hide was undone downstream (batch restore / TM full pass); if it does' +
+              ' not, the hide was lost from the filter state itself.');
+          }
+        } catch (eLk) { /* measurement only */ }
+      }
+    }
     if (A._cpeRevealVisualKey === key) return;
     if (!st) {
       if (A._cpeRevealSavedHidden) {
@@ -6051,6 +6271,29 @@ async function setupEffects(A, renderer, scene, camera) {
     } else {
       if (!A._cpeRevealSavedHidden) A._cpeRevealSavedHidden = new Set(A.hiddenDiscs);
       A.filterDiscs(shown);
+      // §CPE_REVEAL_HIDDEN (2026-09-19, red1: "Reveal round does not remove ARC to show only
+      // Disciplines") — the round asked for [PLB,FP,ELEC,MEP] on Hospital and ARC was still solid
+      // in the frame at 78 s. Nothing in any log said what filterDiscs actually hid, so the fault
+      // could not be placed: it may be that ARC was never added to hiddenDiscs (no userData.disc on
+      // its meshes), or that it WAS hidden and something re-showed it afterwards. Those need
+      // opposite fixes. This prints what was asked for, what ended up hidden, and how many meshes
+      // are still visible per discipline AFTER the filter — one line per slot change, so the next
+      // bake says which of the two it is instead of leaving it to be guessed.
+      try {
+        var _vis = {};
+        if (typeof A.collectMeshes === 'function') {
+          A.collectMeshes(function (o) { return o.isMesh && o.userData && o.userData.disc; })
+            .forEach(function (o) {
+              if (!o.visible) return;
+              var d = o.userData.disc; _vis[d] = (_vis[d] || 0) + 1;
+            });
+        }
+        console.log('§CPE_REVEAL_HIDDEN slot=' + key + ' asked=[' + shown.join(',') + ']' +
+          ' hiddenDiscs=[' + Array.from(A.hiddenDiscs).join(',') + ']' +
+          ' stillVisibleByDisc=' + JSON.stringify(_vis) +
+          ' — anything in stillVisibleByDisc that is NOT in `asked` is a discipline the round failed' +
+          ' to remove; an empty hiddenDiscs means filterDiscs never found it to hide.');
+      } catch (eRH) { /* measurement only, never breaks a bake */ }
     }
     A._cpeRevealVisualKey = key;
   };
@@ -7966,8 +8209,80 @@ async function setupEffects(A, renderer, scene, camera) {
     // `_useSec.rise` (and therefore `sec.rise`/`naturalSec.rise`) stays the TRUE unfolded pull-back
     // budget always, safe to round-trip through the override channel any number of times.
     var _riseFolded = _useSec.rise + (_useSec.tail || 0);
+    // §107.1 (user, 2026-09-13: "Push back the path time range if not sufficient within the lull") —
+    // GROW THE PULL-BACK when the lull in front of the orbit cannot hold the weighted reveal slots.
+    // Stealing from the neighbouring beats was tried first and does not generalise: HHS's reveal,
+    // flyback and pullout budgets are ALL 0s, so there was nothing behind the pull-back to take.
+    // The pull-back's own share of the film is what has to grow. Solving
+    //     rise / (shapeWithoutRise + rise) = wantRealSec / durationSec
+    // for rise gives rise = k*S0/(1-k), which lands the window on exactly wantRealSec of film. The
+    // film's total length does not change — the other beats keep their shape seconds and therefore
+    // play proportionally faster, which is the trade this ruling accepts. Capped at RISE_GROW_MAX of
+    // the shape so a building with many storeys cannot swallow the film, and logged either way.
+    var RISE_GROW_MAX = 0.45;
+    var _riseGrown = null, _riseKept = null, _stealSec = 0;
+    try {
+      var _rl = (typeof A.storeyRevealList === 'function' && A.storeyRevealList()) || [];
+      if (_rl.length && durationSec > 0) {
+        var _cn = _rl.map(function (x) { return x.n || 0; }).filter(function (x) { return x > 0; }).sort(function (a, b) { return a - b; });
+        var _cm = _cn.length ? (_cn.length % 2 ? _cn[(_cn.length - 1) / 2] : (_cn[_cn.length / 2 - 1] + _cn[_cn.length / 2]) / 2) : 0;
+        // §110 — ask for the GENEROUS window: the base sweep at its ceiling (2 x the 1.5s floor),
+        // scaled by each storey's quantity weight. _fitList then solves the actual base down from
+        // this if the film could not afford all of it, so this is a request, not a promise.
+        var _SWEEP_MAX = 3.0;
+        var _W = _SWEEP_MAX + 0.5;                                 // the ground-slab pass
+        _rl.forEach(function (g) { _W += Math.max(1.5, _SWEEP_MAX * (_cm > 0 ? (g.n || 0) / _cm : 1)) + 0.5; });
+        // §107.2 (user, 2026-09-13: "if U can steal time from prior to the lull ie mid pull out, it
+        // be good effect for smoothness" + "Taking up path time as it is, not lengthening the movie
+        // duration") — STEAL BEFORE GROWING. The window may run back through the beats that feed the
+        // orbit (reveal, then flyback, then pullout) at no cost to anything: those seconds are
+        // already in the film and the camera is already drifting through them, so the reveal simply
+        // starts earlier inside the same pull-out. Only the SHORTFALL past that lull is taken by
+        // growing the pull-back's share, which is the part that makes every other beat play faster.
+        // Hospital has a real pullout+flyback and so pays little or nothing; HHS measures 0s for all
+        // three, which is why it still has to grow.
+        // §128.8 (user, 2026-09-14): the window may not reach back past the pull-back proper. The
+        // parade's tail and the round-2 lap are another system's time, so NOTHING is taken from the
+        // lull any more: the pull-back's own share grows (film length unchanged, the other beats play
+        // proportionally faster, capped), and whatever still does not fit is met by compressing the
+        // sweeps in _fitList — never by truncating storeys. `window.__srIgnoreRunway` restores the
+        // pre-ruling reach for the falsifiability control only.
+        var _lullAll = (_useSec.reveal || 0) + (_useSec.flyback || 0) + (_useSec.pullout || 0);
+        var _lull = window.__srIgnoreRunway ? _lullAll : 0;
+        var _S0 = _useSec.dive + _useSec.spin + _useSec.out + _useSec.orbit +
+                  (_riseFolded - _useSec.rise) + (window.__srIgnoreRunway ? 0 : _lullAll);
+        var _k = Math.min(RISE_GROW_MAX, _W / durationSec);
+        var _extWant = _k * _S0 / (1 - _k);          // total extendable seconds the window needs
+        var _riseWant = _extWant - _lull;            // what is left once the lull is spent
+        _stealSec = Math.min(_lull, Math.max(0, _extWant - _useSec.rise));
+        if (_riseWant > _useSec.rise) {
+          _riseGrown = { from: _useSec.rise, to: _riseWant, wantRealSec: _W, lull: _lull, steal: _stealSec };
+          _riseFolded += (_riseWant - _useSec.rise);
+          _useSec.rise = _riseWant;
+        } else if (_stealSec > 0) {
+          _riseKept = { rise: _useSec.rise, lull: _lull, steal: _stealSec, wantRealSec: _W };
+        }
+      }
+    } catch (eRG) { _riseGrown = null; }
     var _shapeTotal = _useSec.dive + _useSec.spin + _useSec.out + _useSec.pullout + _useSec.flyback +
                        _useSec.reveal + _riseFolded + _useSec.orbit;
+    if (_riseKept) {
+      console.log('§STOREY_REVEAL_STEAL pullbackShapeSec=' + _riseKept.rise.toFixed(2) +
+        ' lullBehindSec=' + _riseKept.lull.toFixed(2) + '(reveal+flyback+pullout)' +
+        ' stolenSec=' + _riseKept.steal.toFixed(2) + ' wantRealSec=' + _riseKept.wantRealSec.toFixed(2) +
+        ' pullbackGrewBy=0.00 (§107.2 — the window runs back into the pull-out; no other beat is' +
+        ' sped up, the film keeps its length and its pacing)');
+    }
+    if (_riseGrown) {
+      console.log('§STOREY_REVEAL_RISE_GROW lullBehindSec=' + _riseGrown.lull.toFixed(2) +
+        '(reveal+flyback+pullout, all spent first) stolenSec=' + _riseGrown.steal.toFixed(2) +
+        ' pullbackShapeSec=' + _riseGrown.from.toFixed(2) + '->' +
+        _riseGrown.to.toFixed(2) + ' wantRealSec=' + _riseGrown.wantRealSec.toFixed(2) +
+        ' durationSec=' + durationSec.toFixed(1) + ' shapeTotal=' + _shapeTotal.toFixed(2) +
+        ' newRiseFrac=' + (_useSec.rise / _shapeTotal).toFixed(4) + ' cap=' + RISE_GROW_MAX +
+        ' (§107.1 — the pull-back grows so the reveal gets its weighted slots; the film keeps its' +
+        ' length, the other beats play proportionally faster)');
+    }
     var tD = _useSec.dive / _shapeTotal;
     var tS = tD + _useSec.spin / _shapeTotal;
     var tO = tS + _useSec.out / _shapeTotal;
@@ -7994,14 +8309,104 @@ async function setupEffects(A, renderer, scene, camera) {
     // function ever needing `durationSec` again downstream. `Math.min(_useSec.rise, ...)` clamps to
     // the whole pullback beat on a building whose pullback is naturally shorter than 5s, so the
     // window can never bleed backward into the tail beat either.
-    var STOREY_REVEAL_WINDOW_SEC = 5;
-    var _storeyRevealWindowSec = Math.min(_useSec.rise, STOREY_REVEAL_WINDOW_SEC);
+    // §STOREY_REVEAL_WINDOW_SEC widened 5->10 (2026-09-10, user: "seems to wait too long...
+    // rather uneventful or redundant repeat" / "they enjoy a bit more stay rather than rush
+    // thru"). MEASURED on Hospital: the authored pullback beat is 30.8s, so a 5s window left
+    // ~25.8s of pullback playing before any highlight started, and truncated the 8 real storeys
+    // down to 5 (MIN_SLOT_SEC=1.0 in cpe_storey_reveal.js). 10s halves the dead lead-in and, at
+    // 1.0s/storey minimum, comfortably fits all 8 without truncation (1.25s each) — still clamped
+    // to the whole pullback beat below on a building whose pullback is naturally shorter.
+    var STOREY_REVEAL_WINDOW_SEC = 10;
+    // §104 (user, 2026-09-13: "Too fast, mandatory 1.5s to reveal each storey") — the window is now
+    // SIZED BY THE BUILDING rather than fixed. A storey's slot is 1.5s sweep + 0.5s pause = 2.0s, so
+    // the window it needs is groups x 2.0 REAL FILM seconds, and §103's grouping is what makes that
+    // affordable (Hospital 8 passes -> 6). Fixed 10s was the §92.4 defect twice over: at 8 storeys it
+    // gave 1.25s slots (1.13s sweeps, the "too fast"), and once the slot budget became a real 2.0s it
+    // TRUNCATED the top group away instead — dropping Level 6+{7A,7}, so the building never topped
+    // out. Converted back into SHAPE seconds via _shapeTotal/durationSec, the same two quantities
+    // §STOREY_REVEAL_WINDOW_REAL_SEC below already reconciles, and still clamped to the pullback beat
+    // so it can never bleed into the tail. Hospital: 6 x 2.0 = 12.0s real out of a 30.8s pullback.
+    var _revealSlotSec = 2.0;                       // CUT_SWEEP_SEC + CUT_PAUSE_SEC, cpe_storey_reveal.js
+    var _revealGroups = 0, _revealList = [];
+    try { _revealList = (typeof A.storeyRevealList === 'function' && A.storeyRevealList()) || []; _revealGroups = _revealList.length; } catch (eG) { _revealGroups = 0; }
+    // §106 — one extra slot at the front for the ground slab's own pass.
+    // §107 — and the slots are WEIGHTED by element quantity, so the window has to ask for the same
+    // sum cpe_storey_reveal.js's _fitList will compute: each storey's sweep is CUT_SWEEP_SEC scaled
+    // by its element count against the median, floored at CUT_SWEEP_SEC, plus a pause each. Asking
+    // for a flat (n+1) x 2.0 here would hand _fitList a window it then has to shrink every sweep to
+    // fit, which is exactly the "rushed" symptom the weights exist to remove.
+    var _revealSweepSec = 1.5, _revealPauseSec = 0.5;
+    var _cnts = _revealList.map(function (x) { return x.n || 0; }).filter(function (x) { return x > 0; }).sort(function (a, b) { return a - b; });
+    var _cMedE = _cnts.length ? (_cnts.length % 2 ? _cnts[(_cnts.length - 1) / 2] : (_cnts[_cnts.length / 2 - 1] + _cnts[_cnts.length / 2]) / 2) : 0;
+    // §110 — the SAME generous request the rise-grow block above solved for, or the window frac ends
+    // up sized off the old 1.5s-floor figure and the grown pull-back is wasted. One base, both places.
+    var _revealSweepMax = 2 * _revealSweepSec;
+    var _wantRealSec = STOREY_REVEAL_WINDOW_SEC;
+    if (_revealGroups > 0) {
+      _wantRealSec = _revealSweepMax + _revealPauseSec;                 // the ground-slab pass
+      _revealList.forEach(function (g) {
+        var r = _cMedE > 0 ? (g.n || 0) / _cMedE : 1;
+        _wantRealSec += Math.max(_revealSweepSec, _revealSweepMax * r) + _revealPauseSec;
+      });
+    }
+    var _wantShapeSec = (durationSec > 0 && _shapeTotal > 0) ? _wantRealSec * (_shapeTotal / durationSec) : _wantRealSec;
+    // §107.1 (user, 2026-09-13: "Push back the path time range if not sufficient within the lull") —
+    // the window may now extend EARLIER than the pull-back beat when the pull-back alone cannot hold
+    // the weighted slots, eating backward into the `reveal` beat rather than truncating storeys or
+    // rushing every sweep. HHS is the case that needs it: a 2.7s(shape) pull-back cannot hold four
+    // passes at any speed. Still bounded — it can reach back through `reveal` and no further, so the
+    // beats before it keep their own captions and visuals.
+    // HHS measured 2026-09-13: its `reveal` beat is 0s, so rise+reveal gave nothing to push back into
+    // and Level 3 truncated anyway. The lull in front of the orbit is the pull-back AND the beats
+    // that feed it — reveal, then flyback, then pullout — so the window may reach back through all
+    // three. It still stops before the round-2 walk, which has its own captions and cues.
+    // §107.2 — the window may reach back through the lull that feeds the orbit, on top of whatever
+    // the pull-back itself holds. _riseFolded/_shapeTotal above have already settled by this point.
+    var _revealCap = window.__srIgnoreRunway
+      ? _useSec.rise + (_useSec.reveal || 0) + (_useSec.flyback || 0) + (_useSec.pullout || 0)
+      : _useSec.rise;                                   // §128.8 — the pull-back proper, nothing behind it
+    var _storeyRevealWindowSec = Math.min(_revealCap, _wantShapeSec);
+    console.log('§STOREY_REVEAL_RUNWAY pullbackShapeSec=' + _useSec.rise.toFixed(2) +
+      ' paradeTailShapeSec=' + (_useSec.tail || 0).toFixed(2) + ' wantShapeSec=' + _wantShapeSec.toFixed(2) +
+      ' usedShapeSec=' + _storeyRevealWindowSec.toFixed(2) +
+      ' startsAfterParadeTail=' + (_storeyRevealWindowSec <= _useSec.rise + 1e-9) +
+      ' compressBy=' + (_wantShapeSec > 0 ? Math.min(1, _storeyRevealWindowSec / _wantShapeSec).toFixed(3) : '1.000') +
+      (window.__srIgnoreRunway ? ' CONTROL(__srIgnoreRunway: pre-ruling reach into the parade)' : '') +
+      ' (§128.8 — the reveal opens only after the parade has restored; a short runway compresses the sweeps, it never lengthens the film)');
+    if (_storeyRevealWindowSec > _useSec.rise) {
+      console.log('§STOREY_REVEAL_PUSHBACK pullbackSec=' + _useSec.rise.toFixed(2) +
+        '(shape) wantShapeSec=' + _wantShapeSec.toFixed(2) + ' capShapeSec=' + _revealCap.toFixed(2) +
+        ' usedShapeSec=' + _storeyRevealWindowSec.toFixed(2) +
+        ' extendsBackBy=' + (_storeyRevealWindowSec - _useSec.rise).toFixed(2) + 's(shape)' +
+        ' beatsBehind=reveal:' + (_useSec.reveal || 0).toFixed(2) + ' flyback:' + (_useSec.flyback || 0).toFixed(2) +
+        ' pullout:' + (_useSec.pullout || 0).toFixed(2) +
+        ' (§107.1 — the pull-back alone could not hold the weighted slots)');
+    }
+    console.log('§STOREY_REVEAL_WINDOW_FIT groups=' + _revealGroups + ' slotSec=' + _revealSlotSec +
+      ' wantRealSec=' + _wantRealSec.toFixed(2) + ' wantShapeSec=' + _wantShapeSec.toFixed(2) +
+      ' pullbackSec=' + _useSec.rise.toFixed(1) + ' usedShapeSec=' + _storeyRevealWindowSec.toFixed(2) +
+      (_wantShapeSec > _revealCap ? ' CLAMPED at the pull-back — the sweeps compress to fit (§128.8), no storey is dropped'
+                                  : ' fits, no compression') +
+      ' (§104 — the window is sized by the building, not a constant)');
     var _storeyRevealWindowFrac = _shapeTotal > 0 ? _storeyRevealWindowSec / _shapeTotal : 0;
+    // §STOREY_REVEAL_WINDOW_REAL_SEC (2026-09-11, MEP_CLASH_REVEAL_MOVIE.md §60.2). `windowSec` above
+    // is in SHAPE seconds (`_useSec.rise`, whose denominator is `_shapeTotal`) — it is NOT the number
+    // of film seconds the window occupies once the plan is re-paced to `durationSec`. On the real
+    // 2026-09-11 HHS bake those two disagreed by 49%: this line printed `windowSec=2.7` while
+    // cpe_storey_reveal.js's own `§STOREY_REVEAL_FIT windowSec=4.03` (windowFrac x durationSec) was
+    // the one the film actually played — confirmed frame-by-frame, 4 slots of 1.01s. Under this
+    // lane's Log Mandate that is a real defect: §STOREY_REVEAL_WINDOW is the FIRST line a session
+    // reads about this feature (§59.6c had to go find the FIT number instead). So print the real
+    // film seconds too, from the same `durationSec` the very next console.log already uses.
+    var _storeyRevealRealSec = _storeyRevealWindowFrac * durationSec;
     console.log('§STOREY_REVEAL_WINDOW pullbackSec=' + _useSec.rise.toFixed(1) +
-      ' windowSec=' + _storeyRevealWindowSec.toFixed(1) + ' windowFrac=' + _storeyRevealWindowFrac.toFixed(4) +
+      ' windowSec=' + _storeyRevealWindowSec.toFixed(1) + '(shape)' +
+      ' realWindowSec=' + _storeyRevealRealSec.toFixed(2) + '(film, =windowFrac*durationSec ' +
+      durationSec.toFixed(1) + 's — THIS is the one §STOREY_REVEAL_FIT slices into slots)' +
+      ' windowFrac=' + _storeyRevealWindowFrac.toFixed(4) +
       ' orbitStartFrac(rise)=' + tR.toFixed(4) +
       ' windowStartFrac=' + (tR - _storeyRevealWindowFrac).toFixed(4) +
-      ' — last ' + _storeyRevealWindowSec.toFixed(1) + 's of pullback, ending exactly where orbit begins');
+      ' — last ' + _storeyRevealWindowSec.toFixed(1) + 's(shape) of pullback, ending exactly where orbit begins');
     console.log('§CINEMA_PACING natural=' + _natTotal.toFixed(1) + 's = dive ' + _natSec.dive.toFixed(1) +
       ' + spin ' + _natSec.spin.toFixed(1) + ' + walk ' + _natSec.out.toFixed(1) +
       ' + pullout ' + _natSec.pullout.toFixed(1) + ' + flyback ' + _natSec.flyback.toFixed(1) +
@@ -9192,19 +9597,25 @@ async function setupEffects(A, renderer, scene, camera) {
       // hold_sec, so the same one-probe-per-optional-column rule applies — a .db written by any
       // earlier build simply has neither, and asking for them would take the WHOLE path down over
       // fields whose absence has a documented default (every flag off, dayCounter unset).
-      var _hasHold = false, _hasFlags = false;
+      // §CPE_FLAGS_PORTABLE_2 (2026-09-14): clash/measure/storey_reveal were appended after
+      // day_counter, so they get their own probe — a .db written between the two revisions has the
+      // first four flags and not these three, and must still open.
+      var _hasHold = false, _hasFlags = false, _hasFlags2 = false;
       try {
         var ti = A.dbQuery("PRAGMA table_info(cinema_path)");
         for (var _ti = 0; _ti < (ti || []).length; _ti++) {
           if (ti[_ti][1] === 'hold_sec') _hasHold = true;
           if (ti[_ti][1] === 'buildup') _hasFlags = true;
+          if (ti[_ti][1] === 'storey_reveal') _hasFlags2 = true;
         }
       } catch (eTi) {}
       var rows = A.dbQuery("SELECT seq,ifc_x,ifc_y,ifc_z,dir_x,dir_y,dir_z,len," +
         "total_sec,dive_sec,spin_sec,out_sec,rise_sec," +
         (_hasHold ? "hold_sec" : "0 AS hold_sec") + "," +
         (_hasFlags ? "buildup,room_title,reveal,day_counter"
-                   : "0 AS buildup,0 AS room_title,0 AS reveal,NULL AS day_counter") +
+                   : "0 AS buildup,0 AS room_title,0 AS reveal,NULL AS day_counter") + "," +
+        (_hasFlags2 ? "clash,measure,storey_reveal"
+                    : "NULL AS clash,NULL AS measure,NULL AS storey_reveal") +
         " FROM cinema_path ORDER BY seq");
       if (!rows || rows.length < 2) { console.log('§CINEMA_PATH_RESTORE none (0 rows) — derived path'); return; }
       // §CPE_BANDS: rebuilt as bands, so the rigid-straight invariant is restored with the data
@@ -9228,6 +9639,22 @@ async function setupEffects(A, renderer, scene, camera) {
         A._cinemaPathEdit.reveal = !!rows[0][16];
         if (rows[0][17] != null && rows[0][17] !== '') A._cinemaPathEdit.dayCounter = String(rows[0][17]);
       }
+      // §CPE_FLAGS_PORTABLE_2 — NULL means "this .db predates the columns", which is not the same as
+      // "off": leave them undefined so the consumer's existing default still applies, exactly as
+      // §CPE_FLAGS_PORTABLE does for an older file.
+      if (_hasFlags2) {
+        if (rows[0][18] != null) A._cinemaPathEdit.clash = !!rows[0][18];
+        if (rows[0][19] != null) A._cinemaPathEdit.measure = !!rows[0][19];
+        if (rows[0][20] != null) A._cinemaPathEdit.storeyReveal = !!rows[0][20];
+      }
+      console.log('§CPE_FLAGS_RESTORE hasFlags=' + (_hasFlags ? 1 : 0) + ' hasFlags2=' + (_hasFlags2 ? 1 : 0) +
+        ' buildup=' + (A._cinemaPathEdit.buildup === undefined ? '-' : (A._cinemaPathEdit.buildup ? 1 : 0)) +
+        ' roomTitle=' + (A._cinemaPathEdit.roomTitle === undefined ? '-' : (A._cinemaPathEdit.roomTitle ? 1 : 0)) +
+        ' reveal=' + (A._cinemaPathEdit.reveal === undefined ? '-' : (A._cinemaPathEdit.reveal ? 1 : 0)) +
+        ' clash=' + (A._cinemaPathEdit.clash === undefined ? '-' : (A._cinemaPathEdit.clash ? 1 : 0)) +
+        ' measure=' + (A._cinemaPathEdit.measure === undefined ? '-' : (A._cinemaPathEdit.measure ? 1 : 0)) +
+        ' storeyReveal=' + (A._cinemaPathEdit.storeyReveal === undefined ? '-' : (A._cinemaPathEdit.storeyReveal ? 1 : 0)) +
+        " (§CPE_FLAGS_PORTABLE_2 — '-' means the column is absent in this .db, so the consumer default applies)");
       console.log('§CINEMA_PATH_RESTORE bands=' + bands.length + ' total=' + rows[0][8].toFixed(1) +
         's holdCol=' + _hasHold + ' holds=' + bands.filter(function(b) { return b.hold > 0.01; }).length +
         ' flagCol=' + _hasFlags +

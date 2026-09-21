@@ -339,6 +339,7 @@ function setupCpeFlythruCues(A) {
     var T = window.THREE;
     if (_group || !T || !A.scene) return _group;
     _group = new T.Group(); _group.name = 'flythruCue'; _group.renderOrder = 950;
+    if (A.filmLayer) A.filmLayer('measure.cues', _group);   // §FILM_LAYER — one switch, chip and geometry
     var g = new T.BoxGeometry(1, 1, 1);
     var fill = new T.Mesh(g, new T.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0,
       depthTest: false, depthWrite: false, side: T.DoubleSide }));
@@ -406,6 +407,23 @@ function setupCpeFlythruCues(A) {
   function drawDim(ctx, A2, B2, metres, ink, k, force) {
     var dx = B2.x - A2.x, dy = B2.y - A2.y, L = Math.hypot(dx, dy);
     if (!force && L < 24 * k) return false;              // too short to read — decline, don't scribble (§36 W1: decided once per cue window, see _spanLock)
+    // §129.43 (2026-09-19, found on a delivered Terminal frame, NOT in any log) — a dimension whose
+    // VALUE is not a real number was drawn anyway: witness lines, arrowheads, leader and all, with
+    // "NaN mm" where the measurement belongs. `Math.round(NaN * 1000).toLocaleString()` is the
+    // string "NaN", and nothing here ever asked whether `metres` was a number. 920 frames of Terminal
+    // output contained no trace of it — the only "nan" in the whole log was inside the word
+    // "dominant_rz" — so the film said it and the log did not, which is the worst of both.
+    // Same rule as the length test one line above, applied to the value instead of the geometry:
+    // decline, don't scribble. A cue that cannot say how long something is has nothing to draw.
+    if (typeof metres !== 'number' || !isFinite(metres)) {
+      if (!A._dimNaNLogged) {
+        A._dimNaNLogged = true;
+        console.log('§FLYTHRU_DIM_NAN declined — a span was handed metres=' + metres + ' (not a finite ' +
+          'number), so its dimension is NOT drawn. The cue upstream did not measure this axis; the ' +
+          'label used to read "NaN mm" on the delivered frame and appeared nowhere in this log.');
+      }
+      return false;
+    }
     var ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
     var ext = EXT * k, ar = AR * k, arw = ARW * k, fs = FS * k;
     ctx.save();
@@ -440,6 +458,13 @@ function setupCpeFlythruCues(A) {
   }
 
   function drawPanel(ctx, anchor2, rows, title, ink, k, w, h) {
+    // §38.1a / §40.1 — the Measure figures now post to ONE fixed panel (§MEASURE_BOX) instead of a
+    // roaming plate hung off the subject with a leader. The leader dies with the roaming plate: a
+    // line from a fixed corner box to a subject 800 px away is a distraction, not a pointer, and the
+    // in-model dimension arrows already say WHERE. Every call site is unchanged — this function is
+    // the seam. When the boxes are not armed (live editor preview, scripts/snap_timeline.js) the
+    // original roaming plate below still draws, so nothing that worked before stops working.
+    if (A.filmBoxesMeasurePost && A.filmBoxesMeasurePost(title, rows, ink)) return;
     var fs = FS * k, pad = 9 * k, rowH = 20 * k;
     ctx.save();
     ctx.font = '700 ' + fs.toFixed(0) + 'px Segoe UI, system-ui, sans-serif';
@@ -469,10 +494,15 @@ function setupCpeFlythruCues(A) {
     return (_cues || []).map(function (c) { return { key: c.key, from: c.at, to: c.at + SPAN + (c.key === 'envelope' ? PANEL_HOLD : 0) }; });
   };
 
-  // Called by cinema_maxq's _captureFrame chain and by scripts/snap_timeline.js.
-  A.flythruCuesCompositeOntoCanvas = function (ctx, w, h, filmSec) {
+  // Called by cinema_maxq's _captureFrame chain and by scripts/snap_timeline.js. `extAlpha` (ROUND
+  // 13 item C, NEW, optional, default 1) — an external multiplier cinema_maxq's own `_drawUnlessHold`
+  // now passes through (the hold-fade alpha): this function's own `a.opacity` (its cue fade-in/out)
+  // is an ABSOLUTE `ctx.globalAlpha` assignment below, which would otherwise silently clobber
+  // whatever ambient alpha the caller had set before this call.
+  A.flythruCuesCompositeOntoCanvas = function (ctx, w, h, filmSec, extAlpha) {
     var T = window.THREE, cam = A.camera;
     if (!T || !cam || !ctx) return 0;
+    if (extAlpha != null && !(extAlpha > 0)) return 0;   // fully faded — never invent partial cue geometry at alpha 0
     var a = activeAt(filmSec);
     // §32 — the envelope PANEL persists PANEL_HOLD past its slot; the arrowed lines do not.
     if (!a && _cues) {
@@ -486,14 +516,18 @@ function setupCpeFlythruCues(A) {
     if (!a) { console.log('§FLYTHRU_DIM_DRAW INACTIVE filmSec=' + filmSec.toFixed(2) +
       ' cues=' + ((_cues && _cues.length) || 0) +
       ' windows=[' + ((_cues || []).map(function (c) { return c.key + ':' + c.at.toFixed(1) + '-' + (c.at + SPAN).toFixed(1); }).join(' ')) + ']'); return 0; }
-    var k = h / 720, ink = '#ffd600', cue = a.cue, drawn = 0, _diag = [];
-    ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a.opacity));
+    var k = h / 720, ink = '#ffd600', cue = a.cue, drawn = 0, _diag = [], posted = false;
+    ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a.opacity)) * (extAlpha != null ? extAlpha : 1);
     var spans = edgeSpans(cue.box, cam);
     if (cue.dims && cue.dims.length) {                    // a SET of numbers -> panel (§20.11)
       var c3 = cue.box.getCenter(new T.Vector3()), c2 = proj(c3, cam, w, h);
-      if (c2.z < 1) { drawPanel(ctx, c2, cue.dims, cue.title || cue.key, ink, k, w, h); drawn++; }
+      if (c2.z < 1) { drawPanel(ctx, c2, cue.dims, cue.title || cue.key, ink, k, w, h); drawn++; posted = true; }
       else _diag.push('panel:behind(z=' + c2.z.toFixed(2) + ')');
     }
+    // §40.1 — a cue with no dims panel still has a number to say. It used to say it through
+    // A.flythruCueCaptionAt and the ROOM-TITLE renderer, i.e. in the status band; it belongs in the
+    // Measure box with every other Measure figure.
+    if (!posted && cue.label && A.filmBoxesMeasurePost) A.filmBoxesMeasurePost(cue.title || cue.key, [cue.label], ink);
     // §36 W1 — WHICH spans a cue draws is decided ONCE, on its first frame, and held for its window. The
     // per-frame length test made a span flicker in and out as its projected length crossed 24 px (HHS full
     // bake: storey 1→2→1, corridor 1→0→1 inside single cues). A span admitted on frame one is drawn to the
@@ -509,6 +543,9 @@ function setupCpeFlythruCues(A) {
       var lock = cue._spanLock.axes[ax];
       if (lock === undefined) { lock = _L >= 24 * k; cue._spanLock.axes[ax] = lock; }
       if (!lock) { _diag.push(ax + ':declined-at-lock(L=' + _L.toFixed(0) + 'px)'); return; }
+      // §129.43 — name the axis in the per-cue diag too. drawDim's own guard is the backstop that
+      // protects every caller; this one says WHICH span was unmeasured, which is what a reader needs.
+      if (typeof sp.m !== 'number' || !isFinite(sp.m)) { _diag.push(ax + ':nan-metres(' + sp.m + ')'); return; }
       if (drawDim(ctx, A2, B2, sp.m, ink, k, true)) { drawn++; _drawnAxes.push(ax); }
     });
     A._flythruCuesLast = { key: cue.key, filmSec: filmSec, marks: drawn, axes: _drawnAxes, panelOnly: !!a.panelOnly,

@@ -39,6 +39,10 @@
   var RULE_UNITS = {
     door_clear_width: 'm',
     circulation_distance: 'm',
+    // §12 (ESCAPE_ROUTE_REVEAL.md) — the common path is a LENGTH; remoteness is a share of the
+    // storey diagonal, so it carries no metres, same as the span_depth_* family below.
+    common_path_of_egress_travel: 'm',
+    exit_remoteness: 'ratio',
     span_depth_steel: 'ratio',
     span_depth_concrete: 'ratio',
     span_depth_cantilever: 'ratio',

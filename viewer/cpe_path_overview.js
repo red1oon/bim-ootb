@@ -162,7 +162,12 @@ function setupCpePathOverview(A) {
   // `stackY` is the offset down (for a top corner) or up (for a bottom corner) from the corner
   // margin, so the counter, the resource panel and this box form ONE column in ONE chosen corner —
   // §CPE_HUD_STACK. The caller owns the stacking order; this function owns only its own drawing.
-  A.pathOverviewCompositeOntoCanvas = function(ctx, w, h, ov, pose, opacity, pos, stackY) {
+  // §HUD_ROW (2026-09-19, red1: "put the cam path map same row too ... in that way it will
+  // always have room for its 4D5D HUD below it"). `xOff` shifts this box INWARD from its
+  // corner along X. This is the widest member of the top row and the one that used to push
+  // the pie panel and the storey card down into each other. Optional: optics_overview.js and
+  // the witness call with eight arguments or fewer and land where they always did.
+  A.pathOverviewCompositeOntoCanvas = function(ctx, w, h, ov, pose, opacity, pos, stackY, xOff) {
     if (!ctx || !ov || !(opacity > 0)) return;
     var op = Math.min(1, opacity);
 
@@ -171,10 +176,11 @@ function setupCpePathOverview(A) {
     var bw = Math.round(h * 0.30), bh = Math.round(h * 0.20);
     var margin = Math.round(h * 0.028);
     var at = (pos && POS[pos]) ? pos : 'tr';
-    var sy = stackY || 0;
-    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - bw;
+    var sy = stackY || 0, xo = xOff || 0;
+    var x = (at === 'tl' || at === 'bl') ? margin + xo : w - margin - bw - xo;
     var y = (at === 'bl' || at === 'br') ? h - margin - bh - sy : margin + sy;
     var rad = Math.round(bh * 0.10);
+    A.pathOverviewLastBox = { x: x, y: y, w: bw, h: bh };
 
     ctx.save();
     ctx.globalAlpha = op;

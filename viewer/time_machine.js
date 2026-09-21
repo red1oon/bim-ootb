@@ -671,6 +671,10 @@
   var _dlodBoxMeshes = null;     // [InstancedMesh, ...] one per discipline
   var _dlodBoxBld = null;        // building the index was built for
   var _lastProxyEngaged = null;  // edge-detection (mirrors _lastShadowOn) for a forced full pass
+  // §129.51c (2026-09-19) — the REAL-MESH twin of _lastProxyEngaged. That one forces a full sync of
+  // the proxy's own BOXES on an engage/disengage edge; nothing did the same for the real instance
+  // rows, so disengaging stopped the proxy hiding MORE without ever un-hiding what it already hid.
+  var _dlodPrevOn = null;
   var _dlodFrustum = null, _dlodPSM = null, _dlodSphere = null; // per-tick scratch (built lazily, reused)
   var _dlodCamPos = null;
   // §DLOD_TM_CAMGUARD (2026-07-20): last camera pose-signature seen on a DLOD-engaged tick — see
@@ -680,6 +684,28 @@
 
   function _dlodEngaged(app) {
     // §5.4 Streaming interplay: refuse to engage until streaming drains (Fly Tour §FLY_STREAM_WAIT doctrine)
+    // §129.50 (2026-09-19, red1: "DLOD yes most likely.. so study how to disable during Reveal") —
+    // THE REVEAL ROUND OWNS INSTANCE VISIBILITY WHILE IT IS UP, so the proxy stands down.
+    // Both systems hide an instanced element the same way — by zero-scaling its row — and only one
+    // of them writes every tick. The reveal writes ONCE per slot (cpeRevealApplyVisual returns early
+    // on an unchanged key), the proxy writes continuously, so the proxy always wins and ARC comes
+    // back on the frame after it is hidden. MEASURED on the delivered Hospital film: ARC gone at
+    // exactly 102.0 s and solid again at 102.1 s, one frame.
+    // ⚠ THIS IS NOT THE OLD BUG IT LOOKS LIKE. time_machine.js has never consulted hiddenDiscs, and
+    // that is fine — those lines are from 2026-08-15, on main, and the reveal worked with them for
+    // a month. What changed is that --dlod-proxy made _dlodProxyOn reachable from a headless bake
+    // for the first time (2026-09-19), so a second writer started competing for those rows.
+    // red1's own logs are the proof: Hospital_groundfix_check3.log, 06:38 the same day, has
+    // reveal=1 AND the load-path batch unpack AND dlod=0, and its reveal was fine.
+    // Standing down is the honest fix rather than teaching the proxy about hiddenDiscs: during the
+    // round the camera is flying the model to SHOW one discipline at a time, which is the one moment
+    // a draw-cost proxy has nothing useful to say, and it costs only the round's own seconds.
+    if (app && app._cpeRevealVisualKey) return false;
+    // §129.51 — and the STOREY reveal, for the same reason plus a sharper one: that leg SNAPSHOTS
+    // the scene at arm and writes the snapshot back at restore, so anything the proxy is hiding at
+    // that instant becomes permanent. Measured on Hospital: armed with 2,674 rows zero-scaled,
+    // handed back 2,981 members off. Standing down covers arm-to-restore, not just the tint window.
+    if (app && app._storeyRevealArmed) return false;
     return _dlodProxyOn && _isLargeBuilding && !app.streaming;
   }
 
@@ -700,12 +726,19 @@
 
   // In-view = the S261 LOD0/LOD2 boundary: close AND actually in the camera's frustum. Fails open
   // (treats as in-view/real) for an unknown guid rather than risk hiding something real by mistake.
+  // §DLOD_ONSCREEN_FIX (2026-09-19, red1 on the Hospital bake: "DLOD occured when at a distance,
+  // which should not as it impairs the scenes"). The old test boxed anything more than
+  // DLOD_VIEW_DIST (50 m) from the camera, WITHOUT asking whether it was on screen — the frustum
+  // check only ran for things already inside 50 m. Hospital's envelope is far bigger than 50 m and
+  // its closing orbit pulls back well beyond it, so at the one shot that shows the finished
+  // building, every element was "out of view" and the whole model rendered as a wireframe cage.
+  // Boxing is now what the button always claimed: OFF SCREEN. Distance alone never boxes anything.
   function _dlodInView(g) {
     var b = _dlodBoxIndex && _dlodBoxIndex[g];
     if (!b || !_dlodCamPos) return true;
-    if (_dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ) return false;
     _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
-    return _dlodFrustum.intersectsSphere(_dlodSphere);
+    if (_dlodFrustum.intersectsSphere(_dlodSphere)) return true;   // on screen at ANY distance
+    return _dlodCamPos.distanceToSquared(b.pos) <= DLOD_VIEW_DIST_SQ;  // off screen but close: keep real
   }
 
   function _dlodDisposeBoxes() {
@@ -778,6 +811,14 @@
     console.log('§DLOD_TM_BUILD bld=' + app.activeBuilding + ' boxes=' + total + ' discs=' + discs.length + ' build_ms=' + ms.toFixed(0));
   }
 
+  // §129.56 — census throttle state. 2,000 ms is a compromise read off this project's own bake
+  // rates: at the measured 0.79-1.42 s/frame of a 1080p Hospital bake that is roughly one line per
+  // one-to-two frames, and at a 480p test-iteration rate it is one line per several — either way a
+  // few hundred lines across a full film, not thousands. `window.__dlodCensusMs` overrides it for a
+  // run that wants finer sampling, without a rebuild.
+  var _dlodCensusAt = 0, _dlodCensusPasses = 0;
+  var DLOD_CENSUS_MS = (typeof window !== 'undefined' && +window.__dlodCensusMs > 0) ? +window.__dlodCensusMs : 2000;
+
   function _dlodUpdateBoxes(app, engaged, placed, frontier, recent) {
     if (_dlodBoxIndex && _dlodBoxBld !== app.activeBuilding) _dlodDisposeBoxes(); // building switched — stale guids, drop
     if (!_dlodBoxIndex) {
@@ -788,17 +829,26 @@
     var forceFull = (_lastProxyEngaged !== engaged);
     _lastProxyEngaged = engaged;
     var touched = null, boxed = 0;
+    // §129.56 — counted in the loop that is already running, never a second traversal or an
+    // Object.keys() over the index. `indexed` is how many proxy boxes exist at all; `candidates`
+    // is how many the proxy was ALLOWED to box this pass (placed, not frontier, not recent).
+    // `boxed < candidates` means the frustum/distance test kept them real — a different fact from
+    // "nothing was eligible", and until now neither was visible in any log.
+    var indexed = 0, candidates = 0;
     for (var guid in _dlodBoxIndex) {
       var b = _dlodBoxIndex[guid];
+      indexed++;
       var wantVisible = false;
       if (engaged && placed[guid] && !frontier[guid] && recent[guid] === undefined) {
+        candidates++;
         // §DLOD_VIEW: same in-view test as the real-mesh branches, inlined against the position
         // already in hand (b.pos/b.radius) — avoids a second index lookup via _dlodInView(guid).
-        var outOfView = _dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ;
-        if (!outOfView) {
-          _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
-          outOfView = !_dlodFrustum.intersectsSphere(_dlodSphere);
-        }
+        // §DLOD_ONSCREEN_FIX — frustum FIRST, and distance can no longer box an on-screen element
+        // on its own (see _dlodInView above for the whole story). Off screen AND beyond 50 m boxes;
+        // anything else stays real.
+        _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
+        var outOfView = !_dlodFrustum.intersectsSphere(_dlodSphere) &&
+                        _dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ;
         wantVisible = outOfView;
       }
       if (!forceFull && b.visible === wantVisible) { if (wantVisible) boxed++; continue; }
@@ -811,6 +861,28 @@
     if (touched) for (var ti = 0; ti < touched.length; ti++) touched[ti].instanceMatrix.needsUpdate = true;
     if (forceFull) console.log('§DLOD_TM active=' + Object.keys(frontier).length + ' boxed=' + boxed +
       ' mode=' + (engaged ? 'on' : 'off'));
+    // §129.56 (2026-09-20, red1: "isn't DLOD engaged in this hi res bake?" — and no log could
+    // answer it) — the line ABOVE prints only on an engage/disengage EDGE, so on the 09-20 Hospital
+    // hi-res bake it fired exactly once, at frame 0 before the buildup had placed anything:
+    // `§DLOD_TM active=1 boxed=0 mode=on`. That reads as "the proxy is doing nothing" and means
+    // "the proxy had nothing to do YET". This is the standing census, wall-clock throttled so a
+    // 5,000-frame film costs a few dozen lines instead of 5,000. `passes`/`since` are printed
+    // BECAUSE it is throttled: a sampled census that hides its own sampling rate is the same lie
+    // in a smaller font — with them, the real per-frame rate is recoverable from one line.
+    _dlodCensusPasses++;
+    var _nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    // `_dlodCensusAt === 0` = the very first pass: emit IMMEDIATELY rather than after a full
+    // window. The question this tag exists to answer ("is the proxy engaged in this bake?") is
+    // asked at the start of a run, and a census that stays silent for its first 2,000 ms answers
+    // it late — at 1.4 s/frame on a 1080p Hospital that is the first frame or two, exactly the
+    // ones a reader checks. Caught by W-DLOD-CENSUS on its first run, before any bake used it.
+    if (_dlodCensusAt === 0 || _nowMs - _dlodCensusAt >= DLOD_CENSUS_MS) {
+      console.log('§DLOD_TM_CENSUS boxed=' + boxed + '/' + indexed + ' candidates=' + candidates +
+        ' frontier=' + Object.keys(frontier).length + ' passes=' + _dlodCensusPasses +
+        ' since=' + Math.round(_dlodCensusAt ? (_nowMs - _dlodCensusAt) : 0) + 'ms' +
+        ' mode=' + (engaged ? 'on' : 'off'));
+      _dlodCensusAt = _nowMs; _dlodCensusPasses = 0;
+    }
   }
 
   // §S260d: Audio removed — can't hear on most browsers anyway
@@ -1450,6 +1522,14 @@
     // (not lazily inside _dlodUpdateBoxes) — else the first engaged tick would see an empty index
     // and fail every element open to "real", one tick behind. Zero cost when the toggle is off.
     var _dlodOn = _dlodEngaged(app);
+    // §129.51c — did the proxy just engage or disengage? The incremental path below only revisits
+    // elements whose PLACED STATE changed in this cursor step, so on a disengage tick every row the
+    // proxy had zero-scaled would simply stay zero-scaled: nothing looks at it again. MEASURED, the
+    // §129.51b attempt: the stand-down flag rose 41 frames before the storey window and the arm
+    // STILL snapshotted 4,544 zero-scaled rows, handing back 2,981 members off. The flag was right
+    // and inert. This is the term that makes it act.
+    var _dlodJustToggled = (_dlodPrevOn !== null && _dlodPrevOn !== _dlodOn);
+    _dlodPrevOn = _dlodOn;
     if (_dlodOn) {
       _dlodBuildBoxes(app);
       if (_dlodBoxIndex && app.camera) {
@@ -1529,7 +1609,11 @@
     } else {
       _dlodLastCamSig = null; // reset: engaging DLOD later must not compare against a stale pose
     }
+    // §129.51c — !_dlodJustToggled joins !_shadowJustToggled and !_dlodCamMoved: all three are
+    // "something changed that the delta cannot see", and a proxy edge is exactly that. One full
+    // pass on the edge is enough; the tick after it goes back to the incremental path.
     var _incrOK = !!_evMesh && _prevCursor != null && !_shadowJustToggled && !_dlodCamMoved &&
+                  !_dlodJustToggled &&
                   (_dHi - _dLo) <= _INCR_MAX_SPAN_MS && _incrPrimed;
     // W-INCR-EQUIV hook: the verification harness sets window.__forceFull to re-render the SAME
     // cursor via the full path, so the two results can be diffed. Test-only; no production effect.
@@ -4285,6 +4369,106 @@
   // discipline as _displayTimeline._last so a rates/shift edit is never served stale) — does not
   // touch computeSchedule's own body or the existing display-timeline reuse contract.
   var _rawScheduleRemember = null;   // { map: {guid:{start,end}}, n }
+
+  // ══ §HR_COST_PERSISTED (2026-09-21) — COST THE PROGRAMME THAT IS ALREADY SAVED ══════════════
+  // red1: "isn't that injected and saved when user opens alt-c and save path and save in DB?" It
+  // is, and nothing was missing from the save: every DB has schedules=1 with every element mapped
+  // and all 122,330 LTU place-ops carry {"resource":"CONCRETE_GANG",...}.
+  //
+  // THE DEFECT. §CREW_DEMAND/§HR_COST are computed INSIDE injectGantt(), which is only reached from
+  // the `!_placeOps.length` branch — the GENERATE path. MEASURED on three full 1080p bakes:
+  //   Hospital  §GANTT injected=63415  §CREW_DEMAND x1   (ops judged STALE -> cleared -> regenerate)
+  //   LTU       no §GANTT line          §CREW_DEMAND x0
+  //   Terminal  no §GANTT line          §CREW_DEMAND x0
+  // So a building was penalised for HAVING a saved programme, and Hospital only shows a cost
+  // because its ops were thrown away.
+  //
+  // ⚠ I FIRST WITHDREW THIS FIX AND THAT WAS A MISTAKE. I checked ScheduleAuthor._installSecs,
+  // saw it needs realQty/lengthRatio, and concluded a faithful recompute was impossible outside
+  // injectGantt — without checking where those two come from. They come from
+  // ScheduleAuthor._classFragmentation(db, RATES) and ._linearWeighting(db, RATES), both PUBLIC and
+  // both taking nothing but the db. Every input is reachable, so the number is the same number.
+  //
+  // IDENTICAL BY CONSTRUCTION, not by intent: same fragmentation table, same linear weighting, same
+  // matchNameOverride -> matchRule order, same _installSecs, same basis seconds, same LABOR_RATES.
+  // Nothing is re-derived here; every step calls the one implementation injectGantt calls.
+  //
+  // IT WRITES NOTHING — no op, no task, no row. A saved programme stays exactly as authored.
+  //
+  // AND IT CHECKS ITSELF. On a building that regenerates (Hospital, HHS) BOTH paths run, so the two
+  // numbers must agree; §HR_COST_AGREE reports the comparison and says WRONG if they differ by more
+  // than a rounding step. That is the guard against this ever becoming the second-number defect
+  // recorded as P4 in OCCUPANT_PATHFINDER.md §PATHING-DEFECTS.
+  function _hrCostFromDb(app) {
+    try {
+      var db = app && app.db; if (!db) return null;
+      var SA = window.ScheduleAuthor;
+      if (!SA || !SA._installSecs || !SA._classFragmentation || !SA._linearWeighting || !SA.matchRule) {
+        console.log('§HR_COST_PERSISTED INCONCLUSIVE — ScheduleAuthor helpers absent, so the only' +
+          ' honest options were a DIFFERENT number or none; none is chosen');
+        return null;
+      }
+      var RT = window.RATES || {}, LRx = window.LABOR_RATES || {};
+      var SR = window.SEQUENCE_RULES || {};
+      var SD = window.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
+      var NO = window.SEQUENCE_NAME_OVERRIDES || [];
+      var frag = SA._classFragmentation(db, RT) || { fragmented: {}, area: {} };
+      var lin = SA._linearWeighting(db, RT) || { avgLength: {} };
+      var rr = db.exec(
+        'SELECT m.guid, m.ifc_class, m.element_name, ' +
+        'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by, COALESCE(t.bbox_z, 0) as bz ' +
+        'FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+      if (!rr || !rr.length) return null;
+      var basis = SR._productivity_basis_secs || 28800;
+      var days = {}, n = 0, ovN = 0;
+      rr[0].values.forEach(function (row) {
+        var guid = row[0], cls = row[1], nm = row[2] || '';
+        if (!cls) return;
+        var ov = SA.matchNameOverride ? SA.matchNameOverride(cls, nm, NO) : null;
+        if (ov) ovN++;
+        var rule = ov || SA.matchRule(cls, SR, SD);
+        var bx = row[3] || 0, by = row[4] || 0, bz = row[5] || 0;
+        var realQty = (frag.fragmented[cls] && frag.area[guid] != null) ? frag.area[guid] : null;
+        var hasGeom = bx > 0 || by > 0 || bz > 0;
+        var avgLen = lin.avgLength[cls];
+        var lengthRatio = (realQty == null && hasGeom && avgLen > 0) ? Math.max(bx, by, bz) / avgLen : null;
+        var secs = SA._installSecs(cls, rule, LRx, realQty, lengthRatio) || 0;
+        var res = (rule && rule.resource) || '_DEFAULT';
+        days[res] = (days[res] || 0) + secs / basis; n++;
+      });
+      var total = 0, pd = 0, trades = 0, log = [];
+      for (var k in days) {
+        var rate = LRx[k]; if (!rate || !rate.rate_per_day) continue;
+        var p = days[k] * (rate.crew_size || 1), c = p * rate.rate_per_day;
+        total += c; pd += p; trades++;
+        log.push(k + ' personDays=' + p.toFixed(1) + ' @' + rate.rate_per_day + '/d = ' + Math.round(c));
+      }
+      var out = { total: Math.round(total), personDays: +pd.toFixed(1), trades: trades };
+      if (!(total > 0)) {
+        console.log('§HR_COST_PERSISTED INCONCLUSIVE elements=' + n + ' resources=[' +
+          Object.keys(days).join(' ') + '] — none matched a LABOR_RATES row, so no cost is claimed');
+        return null;
+      }
+      console.log('§HR_COST_PERSISTED total=' + out.total + ' personDays=' + out.personDays +
+        ' across ' + trades + ' trades over ' + n + ' elements (nameOverrides=' + ovN + ')' +
+        ' — recomputed from the SAVED programme with the SAME helpers injectGantt uses. ' + log.join(' | '));
+      return out;
+    } catch (e) { console.log('§HR_COST_PERSISTED threw: ' + e.message); return null; }
+  }
+  // Always compute, so a building that regenerates can CHECK the recompute against the real thing.
+  function _hrCostEnsure(app, placeOpsLen) {
+    var already = app && app._hrCost && app._hrCost.total > 0 ? app._hrCost.total : null;
+    var mine = _hrCostFromDb(app);
+    if (already != null && mine) {
+      var d = Math.abs(mine.total - already), pct = already ? (100 * d / already) : 0;
+      console.log('§HR_COST_AGREE generate=' + already + ' recompute=' + mine.total +
+        ' delta=' + d + ' (' + pct.toFixed(3) + '%) => ' + (pct <= 0.01 ? 'ok — the two paths agree' :
+        'WRONG — the recompute is NOT the same number, which is the P4 defect and must be fixed, not shipped'));
+      return;   // the generate path's own figure stands; the recompute was only the check
+    }
+    if (!already && mine && placeOpsLen) app._hrCost = mine;   // fill the gap a saved programme leaves
+  }
 
   // §TPL_WIRED (2026-08-26, bim-compiler prompts/4D_BAR_MODEL.md §19/§20) — the 4D programme
   // template, loaded ONCE and handed to every materializeZones call site in this file.
@@ -8684,6 +8868,9 @@
   function cachePut(prefix, data) {
     var app = A();
     if (!app || !app.openCacheDB) return;
+    // LARGE_DB_BAKE.md §2 L2 — a bake profile is disposable; nothing it writes here is ever read
+    // back by a later session, so skip it rather than pay an IDB round trip for no benefit.
+    if (app._bakeOwned) { console.log('§CACHE_SKIP key=' + _cacheKey(prefix) + ' reason=bake'); return; }
     app.openCacheDB().then(function(cacheDb) {
       if (!cacheDb) return;
       var key = _cacheKey(prefix);
@@ -9085,6 +9272,13 @@
         viewerStatus('Time Machine: ' + _ops.length + ' elements scheduled');
       }
 
+      // §HR_COST_PERSISTED — runs after BOTH branches, on purpose. On a building that regenerated
+      // (a fresh IFC drop, or one whose ops were judged stale) injectGantt has already set _hrCost,
+      // and this call becomes a CHECK: §HR_COST_AGREE compares the two and says WRONG if they
+      // differ. On a building that kept its saved programme, injectGantt never ran and this is the
+      // only thing that can cost it. Read-only either way — it writes no op, task or row.
+      try { _hrCostEnsure(app, _placeOps.length); } catch (eHC) { console.log('§HR_COST_PERSISTED hook threw: ' + eHC.message); }
+
       _finishActivate(app, silent);
       resolve(true);
     }).catch(async function(e) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt in the fallback
@@ -9134,6 +9328,16 @@
     // A building switch below threshold also resets the toggle (never silently carries proxy state
     // into a small building where DLOD_TM_MIN_ELEMENTS wouldn't gate it anyway).
     if (!_isLargeBuilding) _dlodProxyOn = false;
+    // §DLOD_BAKE_PROXY (2026-09-19, LARGE_DB_BAKE.md §8.3 L8c) — the draw-cost proxy already
+    // exists, already works, and is reachable only by clicking `tm-lod`, which a headless bake can
+    // never do. So the one thing most likely to cut large-building bake time has never been
+    // measured in a bake. This lets a bake ask for it (`--tap` sets window.__dlodProxyBake), and
+    // ONLY under the same large-building gate the button itself obeys — no new threshold, no new
+    // behaviour, nothing changed for any interactive user or any bake that does not ask.
+    if (_isLargeBuilding && typeof window !== 'undefined' && window.__dlodProxyBake) {
+      _dlodProxyOn = true;
+      console.log('§DLOD_BAKE_PROXY on — requested by the bake tap, large-building gate passed');
+    }
     var _lodBtnGate = document.getElementById('tm-lod');
     if (_lodBtnGate) {
       _lodBtnGate.style.display = _isLargeBuilding ? '' : 'none';

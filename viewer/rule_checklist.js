@@ -29,6 +29,68 @@
 // caller (it varies; these four do not) — see A.showRuleModeTint below.
 var RULE_TINT_MATERIAL_OPTS = { wireframe: true, transparent: true, opacity: 0.2, depthWrite: false };
 
+// ── §RULE_TINT_SHINE_THROUGH (MEP_CLASH_REVEAL_MOVIE.md §62, 2026-09-11) ─────────────────────────
+// Pure: layer the film's opt-in shine-through onto the base opts WITHOUT editing the constant above.
+// The constant is T5's contract (tests/test_rule_mode_tint.js, 11/11) and must keep deep-equalling
+// Clash MODE's material — Clash Mode is interactive browsing, where z-testing is correct. Clash FILM
+// deliberately diverged (clash_film.js §CLASH_FILM_SHINE_THROUGH), and these are its exact values,
+// retained not reinvented, per measure.js:717-720's standing "the shine-through already exists".
+// Without opts the result is byte-identical to the base — interactive Rule Mode is unaffected.
+var ROOM_ANCHOR_M = 1.2;                    // §71 — a room is marked by a point, not by its extent
+var RULE_TINT_RENDER_ORDER = -1;            // unchanged default: draws before ordinary opaque geometry
+var RULE_TINT_SHINE_RENDER_ORDER = 900;     // clash_film.js's own value — after opaque geometry
+function ruleTintMaterialOpts(opts) {
+  var o = Object.assign({}, RULE_TINT_MATERIAL_OPTS);
+  // §78 (user: "I thought it be more filled bboxes see thru") — FILM-ONLY, opt-in, exactly like
+  // shineThrough. Editing the shared constant would also change interactive Rule Mode and break T5's
+  // "must equal Clash MODE's material" contract, which §62.2 ruled out of scope; a first attempt did
+  // exactly that and broke tests/test_rule_mode_tint.js. Costs nothing: same geometry, same instanced
+  // draw, one flag. opacity 0.22 keeps the scene fully readable through a solid box.
+  if (opts && opts.filled) { o.wireframe = false; o.opacity = 0.22; }
+  if (!opts || !opts.shineThrough) return o;
+  return Object.assign(o, { depthTest: false, toneMapped: false });
+}
+function ruleTintRenderOrder(opts) {
+  return (opts && opts.shineThrough) ? RULE_TINT_SHINE_RENDER_ORDER : RULE_TINT_RENDER_ORDER;
+}
+
+// ── §RULE_TINT_ROOM_GEOM (MEP_CLASH_REVEAL_MOVIE.md §67, 2026-09-11) ────────────────────────────
+// Resolve a bbox row per flagged guid. Chunked by ~900 per IN-clause, the same pattern
+// viewer/diff.js A._diffToVoRows (~L308) uses.
+// TWO TABLES, not one. element_transforms holds real IFC elements; INJECTED ROOMS (guid prefix RM_,
+// §ROOM_INJECTOR_NEEDLE) live only in spatial_structure and have NO element_transforms row —
+// measured on ~/Downloads/Hospital_silent.db: 8 RM_ rows in spatial_structure, 0 in
+// element_transforms. Both of egress's graph rules (isolated_room, circulation_distance) pick ROOMS,
+// so before this every room-based Safety finding was dropped from the 3-D tint IN SILENCE: Hospital's
+// real bake logged `§RULE_TINT_ENTER elements=1` against `§RULE_FILM picks=2` with nothing saying
+// which pick vanished. spatial_structure's center_x/y/z + size_x/y/z are the same shape as
+// element_transforms' center_* + bbox_*, so this geometry is real and extracted, never synthesised.
+// Anything resolving in NEITHER table is named in the log rather than dropped quietly.
+function ruleTintRowsFor(dbQuery, guids) {
+  var rowsByGuid = {};
+  function pull(sql, list) {
+    for (var i = 0; i < list.length; i += 900) {
+      var chunk = list.slice(i, i + 900);
+      var ph = chunk.map(function () { return '?'; }).join(',');
+      var rows;
+      try { rows = dbQuery(sql.replace('?PH?', ph), chunk); }
+      catch (e) { console.warn('\u00A7RULE_TINT query err ' + e.message); rows = []; }
+      (rows || []).forEach(function (r) { rowsByGuid[r[0]] = r; });
+    }
+  }
+  pull('SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid IN (?PH?)', guids);
+  var missing = guids.filter(function (g) { return !rowsByGuid[g]; });
+  if (missing.length) {
+    pull('SELECT guid, center_x, center_y, center_z, size_x, size_y, size_z FROM spatial_structure WHERE guid IN (?PH?)', missing);
+    missing.forEach(function (g) { if (rowsByGuid[g]) rowsByGuid[g]._isRoom = true; });   // §71
+    var found = missing.filter(function (g) { return !!rowsByGuid[g]; });
+    if (found.length) console.log('\u00A7RULE_TINT_ROOM_GEOM n=' + found.length + ' resolved from spatial_structure (injected rooms carry no element_transforms row)');
+    var still = missing.filter(function (g) { return !rowsByGuid[g]; });
+    if (still.length) console.log('\u00A7RULE_TINT_NO_GEOM n=' + still.length + ' guids=[' + still.join(',') + '] — in neither element_transforms nor spatial_structure, no marker drawn (never silent)');
+  }
+  return rowsByGuid;
+}
+
 // ── Pure: HTML-escape for a double-quoted HTML attribute / text node ──
 function _rcEscAttr(s) {
   return String(s == null ? '' : s)
@@ -453,7 +515,7 @@ function setupRuleChecklist(A) {
   A._ruleTintMeshes = A._ruleTintMeshes || [];
   A._ruleTintActive = false;
 
-  A.showRuleModeTint = function (guidSeverityMap, colorMap) {
+  A.showRuleModeTint = function (guidSeverityMap, colorMap, opts) {
     if (!A.scene || !A.dbQuery || typeof THREE === 'undefined') { console.warn('§RULE_TINT no scene/dbQuery/THREE'); return; }
     if (A._ruleTintActive) A.exitRuleModeTint();
     guidSeverityMap = guidSeverityMap || {};
@@ -463,26 +525,24 @@ function setupRuleChecklist(A) {
 
     var guidSet = {};
     guids.forEach(function (g) { guidSet[g] = true; });
-    A.collectMeshes(function (o) {
+    // §RULE_TINT_NO_COLLATERAL (MEP_CLASH_REVEAL_MOVIE.md §69, 2026-09-11, user: "are there any
+    // incidental element marked for the Sanity occurrence?"). The match is on a SINGLE
+    // userData.guid, which BatchedMesh/InstancedMesh never carry (time_machine.js:1439,
+    // hba_lens.js:604) — so a picked element sitting in a batch leaves its batch-mates alone and no
+    // neighbour is ever hidden. That was true but UNCOUNTED: nothing said how many meshes went
+    // invisible, so a batch that ever did carry a guid would take its whole bucket down in silence.
+    // Counted and logged now, one number a future bake can be checked against.
+    var _hidden = A.collectMeshes(function (o) {
       return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh || o.isLineSegments) &&
         o.userData && guidSet[o.userData.guid];
-    }).forEach(function (o) {
+    });
+    var _hiddenBatched = _hidden.filter(function (o) { return o.isInstancedMesh || o.isBatchedMesh; }).length;
+    _hidden.forEach(function (o) {
       o.userData._ruleTintHidden = true;
       o.visible = false;
     });
 
-    // Query bbox rows for just the flagged guids, chunked by ~900 per IN-clause (same pattern as
-    // viewer/diff.js A._diffToVoRows ~line 308).
-    var rowsByGuid = {};
-    for (var i = 0; i < guids.length; i += 900) {
-      var chunk = guids.slice(i, i + 900);
-      var ph = chunk.map(function () { return '?'; }).join(',');
-      var rows;
-      try {
-        rows = A.dbQuery('SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid IN (' + ph + ')', chunk);
-      } catch (e) { console.warn('§RULE_TINT query err ' + e.message); rows = []; }
-      rows.forEach(function (r) { rowsByGuid[r[0]] = r; });
-    }
+    var rowsByGuid = ruleTintRowsFor(A.dbQuery, guids);   // §67 — two tables, see the helper
 
     var byColor = {};
     guids.forEach(function (g) {
@@ -492,40 +552,103 @@ function setupRuleChecklist(A) {
       (byColor[color] = byColor[color] || []).push(row);
     });
 
+    var _tintAt = {};
     var geo = new THREE.BoxGeometry(1, 1, 1);
     var _m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _quat = new THREE.Quaternion();
     A._ruleTintMeshes = [];
     var total = 0;
     for (var color in byColor) {
       var crows = byColor[color];
-      var matOpts = Object.assign({ color: color }, RULE_TINT_MATERIAL_OPTS);
+      var matOpts = Object.assign({ color: color }, ruleTintMaterialOpts(opts));   // §62 — opt-in shine-through
       var mat = new THREE.MeshBasicMaterial(matOpts);
       var iMesh = new THREE.InstancedMesh(geo, mat, crows.length);
       iMesh.frustumCulled = false;
-      iMesh.renderOrder = -1;
+      iMesh.renderOrder = ruleTintRenderOrder(opts);   // §62 — 900 when shining through, else the original -1
       iMesh.userData.isRuleTintBbox = true;
       for (var j = 0; j < crows.length; j++) {
         var r = crows[j];
         var p = A.ifc2three(r[1], r[2], r[3]);
-        var bx = r[4] || 0.3, by = r[5] || 0.3, bz = r[6] || 0.3;
+        _tintAt[r[0]] = { x: p.x, y: p.y, z: p.z };   // §70
+        // §71 §RULE_TINT_ROOM_ANCHOR — a ROOM's bbox is a REGION, not a thing: metres across, so at
+        // close range its wireframe wraps the whole camera (real bake HHS_final_854x480.mp4 t=48s,
+        // camera inside a room). Mark a room with a small fixed anchor cube at its centre instead.
+        // Real ELEMENTS keep their true bbox — for those the outline IS the useful information.
+        var bx, by, bz;
+        if (r._isRoom) { bx = by = bz = ROOM_ANCHOR_M; }
+        else { bx = r[4] || 0.3; by = r[5] || 0.3; bz = r[6] || 0.3; }
         _pos.set(p.x, p.y, p.z);
         _scl.set(bx, bz, by);
         _m4.compose(_pos, _quat, _scl);
         iMesh.setMatrixAt(j, _m4);
       }
       iMesh.instanceMatrix.needsUpdate = true;
+      iMesh.userData.ruleTintGuids = crows.map(function (r) { return r[0]; });   // §70.6
+      iMesh.userData.ruleTintMats = crows.map(function (r, j) { var mm = new THREE.Matrix4(); iMesh.getMatrixAt(j, mm); return mm; });
       A.scene.add(iMesh);
       A._ruleTintMeshes.push(iMesh);
       total += crows.length;
     }
 
+    // §70 — record the world position of every marker so the film can rank/label them per frame
+    // without re-querying. One source of truth: these are the SAME points the boxes were placed at.
+    A._ruleTintAt = _tintAt;
     A._ruleTintActive = true;
-    console.log('§RULE_TINT_ENTER elements=' + total + ' colors=' + Object.keys(byColor).length);
+    console.log('§RULE_TINT_ENTER elements=' + total + ' colors=' + Object.keys(byColor).length +
+      ' guidsAsked=' + guids.length + ' meshesHidden=' + _hidden.length +
+      (_hiddenBatched ? ' ⚠ batchedHidden=' + _hiddenBatched + ' (a batch carried a single guid — its bucket-mates went with it)' : '') +
+      ' shineThrough=' + !!(opts && opts.shineThrough) + ' renderOrder=' + ruleTintRenderOrder(opts) +
+      ' depthTest=' + (ruleTintMaterialOpts(opts).depthTest !== false));
     if (A.markDirty) A.markDirty();
+  };
+
+  // §70.6 §RULE_TINT_SHOW_ONLY — markers follow the SAME nearest-N ranking the labels use, instead of
+  // all being visible at once. Clash can show every marker because a clash marker is a small contact
+  // box; a Sanity marker is a whole-element or whole-ROOM bbox, and 215 of those with depthTest off
+  // filled the frame with wireframe (real HHS bake out/HHS_clashmodel_854x480.mp4 at t=48s and 92s).
+  // Hidden instances are scaled to zero rather than removed, so the mesh, its material and its
+  // instance count never change — no rebuild, no reallocation, ~215 matrix writes a frame.
+  var _ZERO = null;
+  // §78 — the value per guid is an INTENSITY 0..1, not a boolean. §77's depth wave computes a glow
+  // per member and previously had nowhere to put it: this function only toggled visibility, so every
+  // member of a set appeared at once and the outward wave was invisible on screen (user: "don't
+  // notice the pulse outward effect"). Intensity now drives BOTH per-instance colour (instanceColor
+  // multiplies the shared material, so one material still serves the whole bucket) and a small scale
+  // pop, which is what makes the travelling front readable.
+  var _ZEROM = null;
+  A.ruleTintShowOnly = function (guidSet) {
+    if (!A._ruleTintMeshes || !A._ruleTintMeshes.length) return 0;
+    if (!_ZEROM) _ZEROM = new THREE.Matrix4().makeScale(0, 0, 0);
+    var shown = 0, _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+    A._ruleTintMeshes.forEach(function (mesh) {
+      var gs = mesh.userData.ruleTintGuids, ms = mesh.userData.ruleTintMats;
+      if (!gs || !ms) return;
+      if (!mesh.instanceColor && THREE.InstancedBufferAttribute) {
+        mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(gs.length * 3).fill(1), 3);
+      }
+      for (var i = 0; i < gs.length; i++) {
+        var v = guidSet ? guidSet[gs[i]] : 1;
+        var k = (typeof v === 'number') ? v : (v ? 1 : 0);
+        if (!k) { mesh.setMatrixAt(i, _ZEROM); continue; }
+        shown++;
+        // scale pop: 1.0 at rest, up to 1.35 at the crest of the wave
+        ms[i].decompose(_p, _q, _s);
+        var g = 1 + 0.35 * k;
+        _m.compose(_p, _q, _s.clone().multiplyScalar(g));
+        mesh.setMatrixAt(i, _m);
+        if (mesh.instanceColor) {
+          var b = 0.45 + 0.55 * k;            // dim at rest, full brightness at the crest
+          mesh.instanceColor.setXYZ(i, b, b, b);
+        }
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    });
+    return shown;
   };
 
   A.exitRuleModeTint = function () {
     if (!A._ruleTintActive) return;
+    A._ruleTintAt = null;   // §70
     (A._ruleTintMeshes || []).forEach(function (m) {
       A.scene.remove(m);
       if (m.material) m.material.dispose();
@@ -641,6 +764,9 @@ function setupRuleChecklist(A) {
     try { return localStorage.getItem('bim_5d_pack') || null; } catch (e) { return null; }
   }
 
+  // §ESCAPE_ROUTE_BREACH — read-only alias so a BAKE can read the same rulebook this panel reads,
+  // overlay and all, instead of re-typing thresholds. Same precedent as navigate_find.js's
+  // `A.getRoomGraph = _roomGraphFor`. Nothing about the panel changes.
   function _rcLoadRules(kind) {
     var cfg = RULE_SETS[kind];
     if (A[cfg.cache]) {
@@ -660,6 +786,7 @@ function setupRuleChecklist(A) {
       return r;
     });
   }
+  A.loadRuleSet = _rcLoadRules;   // §ESCAPE_ROUTE_BREACH — see the comment above the function
 
   A.showStructuralSanity = function () {
     // T8.4 — `fetched` vs `fallback` must reach the report. The §STRUCT_RULES_JSON line already
@@ -742,7 +869,12 @@ function setupRuleChecklist(A) {
             { label: 'Circulation Distance', ruleNames: ['circulation_distance'] },
             { label: 'Door Width', ruleNames: ['door_clear_width'] },
             { label: 'Space Coverage', ruleNames: ['space_coverage'] },
-            { label: 'Door Occupant Capacity', ruleNames: ['door_occupant_capacity'] }
+            { label: 'Door Occupant Capacity', ruleNames: ['door_occupant_capacity'] },
+            // §12 (ESCAPE_ROUTE_REVEAL.md) — the two rules about ALTERNATE routes. Without a
+            // category of their own their rows render only under "All", which is where the
+            // previous five each got one.
+            { label: 'Common Path', ruleNames: ['common_path_of_egress_travel'] },
+            { label: 'Exit Remoteness', ruleNames: ['exit_remoteness'] }
           ],
           rows: rows
         });
@@ -769,6 +901,9 @@ if (typeof module !== 'undefined' && module.exports) {
     buildRuleChecklistHtml: _buildRuleChecklistHtml,
     buildRuleDeepLinkUrl: _buildRuleDeepLinkUrl,
     RULE_TINT_MATERIAL_OPTS: RULE_TINT_MATERIAL_OPTS,
+    ruleTintMaterialOpts: ruleTintMaterialOpts,
+    ruleTintRenderOrder: ruleTintRenderOrder,
+    ruleTintRowsFor: ruleTintRowsFor,
     longestExitSteps: _rcLongestExitSteps
   };
 }

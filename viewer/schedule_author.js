@@ -3161,6 +3161,10 @@
     _storeyDatumCandidates: _storeyDatumCandidates,
     _chooseStoreyDatum: _chooseStoreyDatum,
     _storeyLadder: _storeyLadder,
+    // §STOREY_RUNG_VOTE (2026-09-15, Fable review of item 15) — exported so cpe_storey_reveal.js can
+    // band a per-element base-Z on the SAME ladder verb this file uses to decide which rungs are
+    // populated, instead of re-deriving a nearest-neighbour test of its own.
+    _ladderBandIndex: _ladderBandIndex,
     instantiateTemplate: instantiateTemplate,
     // §TPL_LEVEL_AXIS — exported so the axis and its disagreement measurement are testable on their
     // own, without having to drive a whole materializeZones write to see them.
