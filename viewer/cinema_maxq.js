@@ -1024,6 +1024,14 @@
       var ra = rects[oi], rb = rects[oj];
       if ((ra.w <= 1 && ra.h <= 1) || (rb.w <= 1 && rb.h <= 1)) continue;
       if (ra.parent === rb.name || rb.parent === ra.name) continue;
+      // §HUD_OVERLAP_SELF — an IDENTICAL rect under two names is ONE box registered twice, not two
+      // boxes sharing pixels. Found on the first Terminal run this tracker judged: it reported
+      // `"stats-panel" x "escroute.card" overlap=474x358px rects=[30,692,474,358] [30,692,474,358]`
+      // — byte-identical. The escape card is drawn through bigStatsCompositeOntoCanvas, so that
+      // drawer publishes its own `stats-panel` rect while _drawUnlessHold registers the same rect
+      // again under `escroute.card`. A box cannot obscure itself, and reporting it would have made
+      // this tracker cry wolf on every film that draws the escape card.
+      if (ra.x === rb.x && ra.y === rb.y && ra.w === rb.w && ra.h === rb.h) continue;
       var ox = Math.min(ra.x + ra.w, rb.x + rb.w) - Math.max(ra.x, rb.x);
       var oy = Math.min(ra.y + ra.h, rb.y + rb.h) - Math.max(ra.y, rb.y);
       if (ox <= 0 || oy <= 0) continue;
