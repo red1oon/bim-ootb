@@ -157,5 +157,18 @@ SIZES.forEach(([w, h]) => {
        : ''));
 });
 
+// §ESCAPE_TITLE_BIG — the title must actually be drawn larger, in the branch this card TAKES.
+// The first attempt raised the size in the plain-card path while the escape card goes through the
+// LEGEND path, which computes its own titlePx — so the change was real, tested green, and invisible
+// on screen. This claim reads the source of the branch that runs.
+{
+  const rp = fs.readFileSync(path.join(__dirname, '..', 'cpe_resource_panel.js'), 'utf8');
+  const legendBranch = rp.slice(rp.indexOf('if (c.legend && c.legend.length) {'));
+  const ok = /_lblStart = c\.labelBig \? Math\.round\(titlePx \* 1\.45\)/.test(legendBranch) &&
+             /_fitText\(ctx, labelTxt, colX, yy, labelW, _lblStart, _lblFloor/.test(legendBranch);
+  ck('the LEGEND card branch honours labelBig — the branch the escape card actually takes', ok,
+      ok ? 'title starts at titlePx*1.45 with a 1.30x floor' : 'labelBig is not read in the legend branch');
+}
+
 console.log('§CARDFIT ' + pass + '/' + (pass + fail) + ' pass' + (fail ? '  FAIL=' + fail : ''));
 process.exit(fail ? 1 : 0);

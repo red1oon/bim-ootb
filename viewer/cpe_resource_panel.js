@@ -1033,8 +1033,15 @@ function setupCpeResourcePanel(A) {
       if (ctx.measureText(labelTxt).width > labelW && labelTxt.indexOf('—') > 0) {
         labelTxt = labelTxt.split('—')[0].trim();
       }
-      _fitText(ctx, labelTxt, colX, yy, labelW, titlePx, inkFloor, '700', LF);
-      yy += Math.round(rowH * 0.95);
+      // §ESCAPE_TITLE_BIG — this LEGEND-card branch computes its own titlePx (bh*0.072, :975) and
+      // is the one the escape card actually takes; the plain-card path further down is a different
+      // branch entirely, which is why raising the size THERE changed nothing on screen. Only the
+      // title's start and floor move — titlePx still sizes the rows and headPx, so nothing else in
+      // the card shifts. §CARDFIT holds it at all three resolutions.
+      var _lblStart = c.labelBig ? Math.round(titlePx * 1.45) : titlePx;
+      var _lblFloor = c.labelBig ? Math.round(inkFloor * 1.30) : inkFloor;
+      _fitText(ctx, labelTxt, colX, yy, labelW, _lblStart, _lblFloor, '700', LF);
+      yy += Math.round(rowH * (c.labelBig ? 1.15 : 0.95));
       // ══ THE ROW BUDGET — measured, not hoped ═══════════════════════════════════════════════
       // The first cut drew every row with a bare fillText and no budget at all. MEASURED by
       // witness_escape_card_fit.js at the three real sizes: "7 alternates  from the choice point"
