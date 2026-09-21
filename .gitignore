@@ -85,3 +85,4 @@ IFC/KUL/*
 # switched to build_type "workflow" — a repo-settings decision, recorded in §PZ.3.
 # They cannot drift: erp/tools/build_agent_zips.js is deterministic and W-AGENT-ZIP-SYNC's A0 compares
 # the STORED zip against its source directory on every CI run.
+sandbox/spike_ssgi_webgpu/out/
