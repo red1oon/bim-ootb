@@ -315,9 +315,19 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
      !!card && /^Escape Route\b/.test(card.card.label) &&
      (card.card.label === 'Escape Route' || /—/.test(card.card.label)),
      card ? card.card.label : 'null');
+  // §ESCAPE_NO_EXIT (2026-09-21) — the anchor moved from ^ to "start OR after a separator".
+  // This claim is named for the ~, not for the position: the steps figure is the one number on the
+  // card with no source and it must keep its mark. §ESCAPE_NO_EXIT now leads the counters row when
+  // a room reaches no exit at all, which outranks how far the longest walk was, so "~N steps" is no
+  // longer always first. Testing ^ was testing a layout decision under the name of a citation rule.
   ck('W-ESC-6b the uncited number keeps its ~ and the cited one does not', !!card &&
-     /^~\d+ steps/.test(card.card.sub) && /^(\d+ secs|\d+:\d\d mins)$/.test(card.card.big),
+     /(^|·\s+)~\d+ steps/.test(card.card.sub) && /^(\d+ secs|\d+:\d\d mins)$/.test(card.card.big),
      card ? card.card.big : '');
+  // …and the finding that cannot be drawn is STATED, whenever there is one. A room with no route
+  // out is the most serious thing this beat can find and the only one it cannot draw a line for.
+  ck('W-ESC-6b2 a room that reaches NO exit is named on the card, not only in the log',
+     !!card && (!(rec && rec.roomsWithNoExit > 0) || /reach NO exit/.test(card.card.sub)),
+     rec ? (rec.roomsWithNoExit + ' room(s) with no exit; sub="' + (card ? card.card.sub.slice(0, 60) : '') + '"') : '');
   // red1, 2026-09-20: "It be good to indicate so with 'secs'". A bare mm:ss reads as a clock.
   ck('W-ESC-6e the headline names its unit at both scales, and never shows a bare mm:ss',
      A.escapeRouteFmtWalk(28) === '28 secs' && A.escapeRouteFmtWalk(59) === '59 secs' &&

@@ -839,7 +839,26 @@ function setupCpeEscapeRoute(A) {
     // The stride's own mark now rides BOTH branches. It used to be dropped from the sub whenever a
     // breach fired — so "~329 steps" showed with nothing saying it is the one number with no
     // source, in exactly the frames where the card is read hardest.
-    var sub = '~' + vis.steps + ' steps*  ·  ' + vis.drawnM.toFixed(0) + ' m walked  ·  ';
+    // ══ §ESCAPE_NO_EXIT (2026-09-21) — THE FINDING THIS FILM CANNOT DRAW ═══════════════════════
+    // red1: "noticed that it found a bad Escape Route no way out problem."
+    // §ESCAPE_ROUTE_POPULATION has been reporting it all along and saying, in its own words, that
+    // "this film cannot draw it (there is no line)". That is exactly the problem: the beat draws a
+    // LINE from the worst room to an exit, so a room with NO exit produces nothing to draw, and the
+    // single most serious egress finding is the one thing the film is structurally blind to.
+    // MEASURED across the fleet: Hospital 1 of 7 rooms, Terminal 3 of 47, LTU_AHouse 3 of 394,
+    // HHS 0 of 75. Note the rate falls as the room data improves — Hospital's 1-in-7 sits on seven
+    // SYNTHETIC rooms and is likely a graph artefact, while LTU's 3-in-394 sits on real room data
+    // and is the one worth believing. The card states the count; it does not interpret it.
+    // IT LEADS THE COUNTERS ROW on purpose: a room that cannot be escaped outranks how far the
+    // longest walk was. And it lives on the row rather than in a footnote for the reason §13.5
+    // already settled — the footnote block is dropped at clip height, and a marker whose footnote
+    // is gone is worse than no marker.
+    var sub = '';
+    if (_rec.roomsWithNoExit > 0) {
+      sub += '\u26a0 ' + _rec.roomsWithNoExit + ' room' + (_rec.roomsWithNoExit === 1 ? '' : 's') +
+             ' reach NO exit  ·  ';
+    }
+    sub += '~' + vis.steps + ' steps*  ·  ' + vis.drawnM.toFixed(0) + ' m walked  ·  ';
     if (b && b.level) sub += vis.drawnM.toFixed(0) + ' m vs ' + b.limitM + ' m ' +
       (b.level === 'critical' ? 'limit' : 'warning') + ' (' + BREACH_CITE + ', I-2)⁴  ·  ';
     sub += 'at ' + WALK_MS + ' m/s (' + WALK_CITE + ')²  ·  ' + STRIDE_M + ' m stride assumed';
