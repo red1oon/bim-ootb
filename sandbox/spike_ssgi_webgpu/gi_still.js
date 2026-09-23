@@ -102,22 +102,23 @@
   // Single readback point, so the orientation test and the accumulation passes cannot disagree.
   // __GI_STILL_INJECT_READBACK_FLIP is a TEST HOOK: it simulates a platform whose readback rows run
   // the other way, which is what the orientation search has to survive. Nothing sets it in normal use.
-  async function readRT(G) {
-    const b = await G.renderer.readRenderTargetPixelsAsync(G.rt, 0, 0, G.w, G.h);
+  async function readRT(G, rt, rw, rh) {
+    rt = rt || G.rt; rw = rw || G.w; rh = rh || G.h;
+    const b = await G.renderer.readRenderTargetPixelsAsync(rt, 0, 0, rw, rh);
     let fb = b instanceof Float32Array ? b : Float32Array.from(b);
     // §GI_READBACK_ROWPAD — WebGPU pads each readback row to 256 bytes (16 px of RGBA float), the last
     // row excepted. Any width that is not a multiple of 16 (red1's window gave 1666) came back with
     // every row sheared sideways — the "smearing". Unpad before anything reads it.
-    if (fb.length !== G.w * G.h * 4) {
-      const stride = (fb.length / 4 - G.w) / (G.h - 1);
-      if (!Number.isInteger(stride) || stride < G.w) throw new Error('readback length ' + fb.length + ' fits no row stride for ' + G.w + 'x' + G.h);
-      const out = new Float32Array(G.w * G.h * 4);
-      for (let y = 0; y < G.h; y++) out.set(fb.subarray(y * stride * 4, y * stride * 4 + G.w * 4), y * G.w * 4);
-      if (!G.padLogged) { G.padLogged = true; console.log('§GI_READBACK_ROWPAD w=' + G.w + ' stride=' + stride + ' px — rows unpadded'); }
+    if (fb.length !== rw * rh * 4) {
+      const stride = (fb.length / 4 - rw) / (rh - 1);
+      if (!Number.isInteger(stride) || stride < rw) throw new Error('readback length ' + fb.length + ' fits no row stride for ' + rw + 'x' + rh);
+      const out = new Float32Array(rw * rh * 4);
+      for (let y = 0; y < rh; y++) out.set(fb.subarray(y * stride * 4, y * stride * 4 + rw * 4), y * rw * 4);
+      if (!G.padLogged) { G.padLogged = true; console.log('§GI_READBACK_ROWPAD w=' + rw + ' stride=' + stride + ' px — rows unpadded'); }
       fb = out;
     }
     if (window.__GI_STILL_INJECT_READBACK_FLIP) {
-      const w = G.w, h = G.h, out = new Float32Array(fb.length);
+      const w = rw, h = rh, out = new Float32Array(fb.length);
       for (let y = 0; y < h; y++) out.set(fb.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
       fb = out;
     }
@@ -132,6 +133,27 @@
   // the pixels the geometry pass actually covered. The mask travels in the same buffer as the
   // colour, so a wrong flipTex misaligns colour against geometry and a wrong flipOut misaligns both
   // against the app: exactly one of the four scores is small. All four are logged.
+  // §GI_ROW_PROBE — a horizontal floor under a level camera, drawn with the SAME geometry material, the
+  // SAME renderer and read back through the SAME readRT (row unpadding + test-injection hook). A floor
+  // below the eye can only fill the BOTTOM half of the picture, so wherever its pixels land in the
+  // buffer as read says how the rows run on this machine. Decisive by construction, any view.
+  async function probeRowOrder(G) {
+    const THREE = G.THREE, W = 64, H = 64;
+    const sc = new THREE.Scene();
+    const pg = new THREE.PlaneGeometry(4000, 4000); pg.rotateX(-Math.PI / 2);
+    sc.add(new THREE.Mesh(pg, G.geoMat));
+    const pc = new THREE.PerspectiveCamera(60, 1, 0.1, 10000); pc.position.set(0, 10, 0); pc.lookAt(0, 10, -100); pc.updateMatrixWorld(true);
+    const prt = new THREE.RenderTarget(W, H, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true });
+    try {
+      G.renderer.setRenderTarget(prt); G.renderer.render(sc, pc); G.renderer.setRenderTarget(null);
+      const fb = await readRT(G, prt, W, H);
+      let top = 0, bottom = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (fb[(y * W + x) * 4 + 3] > 0.5) { if (y < H / 2) top++; else bottom++; }
+      const flipOut = top > bottom;
+      console.log('§GI_ROW_PROBE floor pixels as read: top=' + top + ' bottom=' + bottom + ' -> flipOut=' + flipOut + ' (a floor below the eye fills the bottom half)');
+      return { flipOut: flipOut, top: top, bottom: bottom };
+    } finally { prt.dispose(); pg.dispose(); }
+  }
   async function decideOrientation(G) {
     // 256x144, not 96x54: the two candidates a colour match cannot tell apart differ only in where
     // the AO lands, and AO's sharpest signal is the contact shading at wall/floor junctions, which a
@@ -213,7 +235,9 @@
       // absolute floor sized for indoor poses (21-32% vs 0.1-2%); at a low-contrast view (live site, HHS
       // default view) the signal was 0.02% vs 0.20% of ~90,000 samples — 10x, but under 1 point — so it
       // fell back to colour, which picked the upside-down pair.
-      if (hi >= 3 * lo && hi - lo >= 0.1) {
+      // __GI_STILL_FORCE_UNDECIDED is a TEST HOOK (like __GI_STILL_INJECT_READBACK_FLIP): it sends the
+      // decision down the undecided path so §GI_ROW_PROBE can be witnessed. Nothing sets it in normal use.
+      if (!window.__GI_STILL_FORCE_UNDECIDED && hi >= 3 * lo && hi - lo >= 0.1) {
         const fo = geo.reversed < geo.asRead;
         const pick = [false, true].map(ft => ({ ft: ft, s: scores['tex' + (ft ? 'Flip' : 'Same') + '_out' + (fo ? 'Flip' : 'Same')].composite }))
           .sort((a, b2) => a.s - b2.s)[0];
@@ -226,9 +250,17 @@
         // upside-down pair in every weak case measured. The row order is a property of the pipeline, not
         // of the view — every decisive reading on this platform (13 runs, 9 poses, 3 servers) gave
         // flipTex=false flipOut=false. Reuse the last decisive answer this session, else that measured one.
+        // §GI_ROW_PROBE — the row order is NOT the same on every machine: red1's desktop read flipOut=true
+        // (20.93% vs 0.01%, Clinic) where every headless run reads false. So when this view cannot decide,
+        // ask the pipeline itself with a scene whose answer is known.
         const prevGeo = window.__giOrientDecided;
-        best = { flipTex: prevGeo ? prevGeo.flipTex : false, flipOut: prevGeo ? prevGeo.flipOut : false, score: best.score, covered: best.covered, n: best.n };
-        decidedBy = prevGeo ? 'geometry UNDECIDED -> last decisive answer this session' : 'geometry UNDECIDED -> measured platform answer (no flips)';
+        let probe = null;
+        if (!prevGeo) probe = await probeRowOrder(G).catch(e => { console.warn('§GI_ROW_PROBE failed: ' + (e && e.message)); return null; });
+        const fo = prevGeo ? prevGeo.flipOut : (probe ? probe.flipOut : false);
+        best = { flipTex: prevGeo ? prevGeo.flipTex : false, flipOut: fo, score: best.score, covered: best.covered, n: best.n };
+        decidedBy = prevGeo ? 'geometry UNDECIDED -> last decisive answer this session'
+          : (probe ? 'geometry UNDECIDED -> row-order probe' : 'geometry UNDECIDED -> probe failed, no flips');
+        if (probe) window.__giOrientDecided = { flipTex: false, flipOut: probe.flipOut };
       }
     }
     if (/^geometry \(/.test(decidedBy)) window.__giOrientDecided = { flipTex: best.flipTex, flipOut: best.flipOut };
