@@ -3265,13 +3265,21 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_photoShadowMapSizeSaved === null) {
       _photoShadowMapSizeSaved = { w: A.sun.shadow.mapSize.width, h: A.sun.shadow.mapSize.height };
     }
-    A.sun.shadow.mapSize.width = 4096;
-    A.sun.shadow.mapSize.height = 4096;
+    // §SHADOW_SIZE_BY_ENVELOPE (2026-09-24, red1: jagged roof-edge shadows) — the texel budget follows
+    // the frustum instead of a fixed 4096. Hospital's env (362) is twice HHS's (180), so a fixed 4096
+    // gave it 0.177 m texels against HHS's 0.088 m (texelPerM 5.7 vs 11.4). Double per doubling of
+    // env past 180, capped at 8192 and at the GPU's limit; HHS and smaller keep 4096.
+    var _maxTex = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxTextureSize) || 4096;
+    var _shadowSize = Math.min(8192, _maxTex, 4096 * Math.pow(2, Math.max(0, Math.ceil(Math.log2(_env / 180)))));
+    _shadowSize = Math.max(Math.min(4096, _maxTex), _shadowSize);
+    A.sun.shadow.mapSize.width = _shadowSize;
+    A.sun.shadow.mapSize.height = _shadowSize;
+    console.log('§SHADOW_SIZE_BY_ENVELOPE env=' + _env + ' size=' + _shadowSize + ' maxTex=' + _maxTex + ' texel=' + (2 * _env / _shadowSize).toFixed(3) + 'm');
     // A map already allocated at the SMALLER nav size would not be reallocated by three.js on a
     // mapSize change (see _releaseSunShadowMap), so the raise would silently not happen and the
     // shadow render would target a 4096 viewport inside a 2048 framebuffer. Releasing here makes
     // the documented intent above true. No-op when no map exists yet, which is the usual case.
-    _releaseSunShadowMap('raise 4096 for still');
+    _releaseSunShadowMap('raise ' + _shadowSize + ' for still');
     A.sun.shadow.camera.near = Math.max(1, _sunDist * 0.05);
     A.sun.shadow.camera.far = _sunDist * 4;
     A.sun.shadow.camera.left = -_env;
