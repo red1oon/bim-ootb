@@ -3267,11 +3267,12 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     // §SHADOW_SIZE_BY_ENVELOPE (2026-09-24, red1: jagged roof-edge shadows) — the texel budget follows
     // the frustum instead of a fixed 4096. Hospital's env (362) is twice HHS's (180), so a fixed 4096
-    // gave it 0.177 m texels against HHS's 0.088 m (texelPerM 5.7 vs 11.4). Double per doubling of
-    // env past 180, capped at 8192 and at the GPU's limit; HHS and smaller keep 4096.
+    // gave it 0.177 m texels against HHS's 0.088 m (texelPerM 5.7 vs 11.4). Capped at the GPU's limit.
     var _maxTex = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxTextureSize) || 4096;
-    var _shadowSize = Math.min(8192, _maxTex, 4096 * Math.pow(2, Math.max(0, Math.ceil(Math.log2(_env / 180)))));
-    _shadowSize = Math.max(Math.min(4096, _maxTex), _shadowSize);
+    // 8192 only when 4096 would leave texels coarser than 0.12 m (env > ~245): Clinic's env 198 gives
+    // 0.097 m at 4096 — already about HHS's 0.088 m — and was being doubled to 512 MB for nothing.
+    var _shadowSize = (2 * _env / 4096 > 0.12) ? 8192 : 4096;
+    _shadowSize = Math.max(Math.min(4096, _maxTex), Math.min(_shadowSize, _maxTex));
     A.sun.shadow.mapSize.width = _shadowSize;
     A.sun.shadow.mapSize.height = _shadowSize;
     console.log('§SHADOW_SIZE_BY_ENVELOPE env=' + _env + ' size=' + _shadowSize + ' maxTex=' + _maxTex + ' texel=' + (2 * _env / _shadowSize).toFixed(3) + 'm');
