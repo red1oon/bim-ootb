@@ -210,15 +210,29 @@
     let decidedBy = 'colour';
     if (geo && geo.n > 2000 && !G.cam.isOrthographicCamera) {
       const lo = Math.min(geo.asRead, geo.reversed), hi = Math.max(geo.asRead, geo.reversed);
-      if (hi >= 2 * lo + 1) {
+      // §GI_ORIENT_RATIO — a RATIO test with a small floor. The old `hi >= 2*lo + 1` carried a 1-point
+      // absolute floor sized for indoor poses (21-32% vs 0.1-2%); at a low-contrast view (live site, HHS
+      // default view) the signal was 0.02% vs 0.20% of ~90,000 samples — 10x, but under 1 point — so it
+      // fell back to colour, which picked the upside-down pair.
+      if (hi >= 3 * lo && hi - lo >= 0.1) {
         const fo = geo.reversed < geo.asRead;
         const pick = [false, true].map(ft => ({ ft: ft, s: scores['tex' + (ft ? 'Flip' : 'Same') + '_out' + (fo ? 'Flip' : 'Same')].composite }))
           .sort((a, b2) => a.s - b2.s)[0];
         best = { flipTex: pick.ft, flipOut: fo, score: pick.s, covered: best.covered, n: best.n };
         decidedBy = (best.flipTex === colourPick.flipTex && best.flipOut === colourPick.flipOut) ? 'geometry (agrees with colour)'
           : 'geometry (OVERRULED colour pick flipTex=' + colourPick.flipTex + ' flipOut=' + colourPick.flipOut + ')';
-      } else decidedBy = 'colour (geometry UNDECIDED)';
+      } else {
+        // §GI_ORIENT_RATIO — undecided (a view of mostly camera-facing walls: flipping rows barely changes
+        // which surfaces face away, measured 0.02% vs 0.09-0.20%). NEVER fall back to colour: it picked the
+        // upside-down pair in every weak case measured. The row order is a property of the pipeline, not
+        // of the view — every decisive reading on this platform (13 runs, 9 poses, 3 servers) gave
+        // flipTex=false flipOut=false. Reuse the last decisive answer this session, else that measured one.
+        const prevGeo = window.__giOrientDecided;
+        best = { flipTex: prevGeo ? prevGeo.flipTex : false, flipOut: prevGeo ? prevGeo.flipOut : false, score: best.score, covered: best.covered, n: best.n };
+        decidedBy = prevGeo ? 'geometry UNDECIDED -> last decisive answer this session' : 'geometry UNDECIDED -> measured platform answer (no flips)';
+      }
     }
+    if (/^geometry \(/.test(decidedBy)) window.__giOrientDecided = { flipTex: best.flipTex, flipOut: best.flipOut };
     G.setTexFlip(best.flipTex); G.flipOut = best.flipOut;
     const sorted = Object.values(scores).map(v => v.composite).filter(v => v != null).sort((a, b2) => a - b2);
     G.orient = { scores: scores, flipTex: best.flipTex, flipOut: best.flipOut, score: +best.score.toFixed(2), samples: best.n,
