@@ -1653,7 +1653,26 @@
       try { A._loadPathDiagSample('pre-render'); } catch (eLPD2) { console.warn('§LOADPATH_DIAG_ERR ' + (eLPD2 && eLPD2.message)); }
     }
     if (A._composer) A._composer.render();
-    ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
+    // §GI_CAPTURE_HOOK (worktree only, 2026-09-22) — opt-in seam for an alternative renderer to
+    // supply THIS frame's 3D pixels. Absent hook = byte-identical to before (the else branch is the
+    // original line, unchanged). Present hook = it draws into the same ctx at the same point, before
+    // any HUD/overlay work, so the 2D overlays, storey reveal, build-up, clash and escape route all
+    // behave exactly as in a normal bake — they are driven by the bake loop, not by the renderer.
+    // WHY A HOOK AND NOT A CANVAS SWAP: this capture is synchronous, and a WebGPU frame must be read
+    // back asynchronously — presenting straight to a canvas was re-tested on this box and comes back
+    // black (headless Dawn swapchain, as §133 records: meanOnCanvas=0). _captureFrame is already
+    // async, so awaiting a hook is the one seam that keeps the pose and its pixels on the same frame.
+    if (typeof window.__giCaptureFrame === 'function') {
+      try { await window.__giCaptureFrame(ctx, w, h); }
+      catch (eGI) {
+        if (!A._giCaptureErrLogged) { A._giCaptureErrLogged = true;
+          console.warn('§GI_CAPTURE_ERR ' + (eGI && eGI.message) + ' — reverting to the app renderer for the rest of this bake'); }
+        window.__giCaptureFrame = null;
+        ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
+      }
+    } else {
+      ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
+    }
     // §129 DIAGNOSTIC (2026-09-17) — GROUND TRUTH pixel readback, right after the 3D scene lands in
     // the 2D capture canvas, before any HUD/overlay draws touch it. Every prior check (apply-side
     // witnesses, the live pre-render state sample above) proves JS OBJECT STATE, never proves a

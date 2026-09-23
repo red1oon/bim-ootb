@@ -13,9 +13,22 @@
   // page navigation outright (60s puppeteer timeout, real app never loaded). Switched to *.direct.js
   // patched copies (vendor/SSGINode.direct.js etc., see their own header comments) whose only change
   // is those two imports rewritten to direct relative paths — no import map needed at all.
-  const PROOF_W = 960, PROOF_H = 540;
+  // Resolution + output are now configurable (were hardcoded 960x540 with no save mechanism) — set
+  // window.__GI_TAP_CONFIG = {w,h,port} via an EARLIER evaluateOnNewDocument call before this script
+  // runs (see run_dual_gpu_test.js / run_full_overlay_test.js). Falls back to the old proof defaults.
+  const CFG = window.__GI_TAP_CONFIG || {};
+  const PROOF_W = CFG.w || 960, PROOF_H = CFG.h || 540;
+  const SAVE_PORT = CFG.port || null;   // null = no frame-save server (old proof-only behavior)
   function log(s) { console.log('§GI_WEBGPU_TAP ' + s); }
   window.__giWebgpuTapStatus = { phase: 'waiting-app' };
+  // Frame-save mechanism (was missing) — reuses spike.js/run_spike.js's own model: POST the PNG blob
+  // to a tiny local server the driver already runs (POST /__saveFrame/NNNN), same as the SEQ mode's
+  // proven pipeline. No-op (just leaves the canvas in place) when no port is configured.
+  async function saveFrame(canvas, idx) {
+    if (!SAVE_PORT) return;
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+    await fetch('http://127.0.0.1:' + SAVE_PORT + '/__saveFrame/' + String(idx).padStart(4, '0'), { method: 'POST', body: blob });
+  }
 
   async function boot() {
     const t0 = performance.now();
@@ -63,10 +76,10 @@
     }
     async function loadDb() {
       const SQL = await initSqlJs({ locateFile: f => '/viewer/lib/' + f });
-      // Proof-stage: hardcoded to match this test's own ?db= query param (A.activeBuilding is a
-      // building NAME parsed from metadata, not the db filename/path — using it here fetched the
-      // wrong, nonexistent file; see run_dual_gpu_test.js for the real URL this must match).
-      const dbName = '/buildings/HHS_Office_Federated_silent.db';
+      // Parameterized via CFG.dbFile (was hardcoded) — A.activeBuilding is a building NAME parsed
+      // from metadata, not the db filename/path, so it can't be used to derive this; the driver must
+      // pass the exact file it navigated to via ?db=.
+      const dbName = CFG.dbFile || '/buildings/HHS_Office_Federated_silent.db';
       const buf = await (await fetch(dbName)).arrayBuffer();
       const db = new SQL.Database(new Uint8Array(buf));
       log('db ' + dbName + ' ' + (buf.byteLength / 1048576).toFixed(1) + ' MB self-fetched');
@@ -169,12 +182,39 @@
     camera.near = 0.1; camera.far = Math.max(200, finiteFar || 500);
     camera.updateProjectionMatrix();
 
-    const sun = new THREE.DirectionalLight(0xfff2e0, 3.0);
-    sun.position.set(30, 60, 20); sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    const sb = 80; sun.shadow.camera.left = -sb; sun.shadow.camera.right = sb; sun.shadow.camera.top = sb; sun.shadow.camera.bottom = -sb; sun.shadow.camera.far = 300;
+    // §GI_LIGHT_PARITY (red1-84, 2026-09-22) — STEP 1 of the adoption plan. These lights were the
+    // harness's own invention and did NOT match the app, which is why bounce light measured 7-20x
+    // weaker on the big buildings than on Duplex: bounce can only bounce what is already lit, and
+    // this scene had one sun plus a weak sky fill with NO ambient, while the real viewer has a
+    // stronger sun, an ambient term and a tone-mapping exposure. Every value below is copied from
+    // viewer/scene.js (ambient :193, sun :197-199, hemi :203, exposure :122) — read from that file,
+    // not chosen. The old numbers are kept in this comment so the earlier measurements stay
+    // interpretable: sun 0xfff2e0/3.0 at (30,60,20) castShadow=true sb=80, hemi 0xbfd4ff/0x806a50/0.6.
+    const ambient = new THREE.AmbientLight(0xffffff, 0.386);
+    scene.add(ambient);
+    const sun = new THREE.DirectionalLight(0xfff0dd, 4.4);
+    sun.position.set(200, 400, 300);
+    sun.castShadow = false;   // scene.js:199 — the app casts no sun shadow; the old ±80m shadow
+    // camera could not cover Hospital (101x151x43m) anyway, so it was both wrong and a per-frame cost.
     scene.add(sun);
-    scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x806a50, 0.6));
+    scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 0.617));
+    // Environment map — the app builds one (scene.js:355-373: a vertex-colour gradient sky through
+    // PMREMGenerator) and this scene had none at all, so surfaces had no sky to reflect and the
+    // clip read as "without environment". Same gradient, same PMREM roughness, guarded.
+    try {
+      const envScene = new THREE.Scene();
+      const envGeo = new THREE.SphereGeometry(500, 32, 16);
+      const posAttr = envGeo.attributes.position;
+      const colors = new Float32Array(posAttr.count * 3);
+      for (let vi = 0; vi < posAttr.count; vi++) {
+        const t2 = (posAttr.getY(vi) / 500) * 0.5 + 0.5;
+        colors[vi * 3] = 0.7 - t2 * 0.3; colors[vi * 3 + 1] = 0.65 + t2 * 0.1; colors[vi * 3 + 2] = 0.55 + t2 * 0.35;
+      }
+      envGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      envScene.add(new THREE.Mesh(envGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+      envScene.add(new THREE.AmbientLight(0xffffff, 1));
+      scene.userData._envScene = envScene;   // PMREM needs the renderer, which exists below
+    } catch (e) { log('ENV_SCENE_BUILD_FAIL ' + e.message); }
 
     window.__giWebgpuTapStatus = { phase: 'creating-renderer' };
     let renderer;
@@ -189,6 +229,18 @@
       window.__giWebgpuTapStatus = { phase: 'renderer-init-failed', error: String(e && e.stack || e) };
       log('RENDERER_INIT_FAILED ' + (e && e.stack || e));
       return;
+    }
+    // scene.js:122 — the app renders at exposure 0.45; at the default 1.0 this harness was showing a
+    // brighter, flatter image than the film and any look comparison was meaningless.
+    renderer.toneMappingExposure = 0.45;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;   // scene.js:125
+    if (scene.userData._envScene) {
+      try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmrem.fromScene(scene.userData._envScene, 0.04).texture;
+        scene.background = scene.environment;
+        log('ENV_MAP applied (PMREM gradient sky, same as scene.js:373)');
+      } catch (e) { log('ENV_MAP_FAIL ' + e.message); }
     }
     const backend = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL(fallback)';
     let adapterInfo = 'n/a';
@@ -243,6 +295,114 @@
       frameCount++;
       window.__giWebgpuFrameCount = frameCount;
     };
+    // ══ FULL-BAKE OVERLAY DRIVER (2026-09-22, red1-84-reviewed plan) ═══════════════════════════════
+    // Reimplements the RELEVANT slice of cinema_maxq.js's start()/bake-loop/_captureFrame — traced
+    // line-by-line from the real file (viewer/cinema_maxq.js), not guessed — calling the SAME real
+    // window.APP functions in the SAME order, but drawing onto OUR GI canvas instead of A.renderer's.
+    // SCOPE (explicit, per instruction): 2D overlays only — room title captions, path-overview box,
+    // sun-compass (rose readout + clock), flythru cues (unconditional in the real code, no flag gate).
+    // OUT OF SCOPE this pass: buildup (Time Machine mutates the REAL A.scene's element visibility —
+    // our scene is a separate, once-built copy that can never see that, so the model looks fully
+    // built for the whole clip — expected/accepted), clash (clash_film.js:329 adds real meshes to
+    // A.scene — same reason), reveal/storey-reveal (tie into discipline filtering/tinting, same class
+    // as clash/buildup), measure/datum (verified via grep: flythru_datum.js adds NO meshes to
+    // A.scene — it is actually pure-2D and could be added later — excluded THIS pass only because it
+    // wasn't in the explicit go-ahead list, not because it's architecturally blocked).
+    // §OVERLAY_EVIDENCE (red1-84, 2026-09-22) — the overlay calls below were wrapped in EMPTY
+    // catches, so a clip could come back with no captions and the log would say nothing. CLAUDE.md's
+    // Log Mandate: a silent failure must appear in the log. Each failure is logged ONCE per tag
+    // (same one-shot pattern cinema_maxq.js:823 uses for clash labels), and every overlay that
+    // actually DRAWS is counted — "did not throw" is not evidence that it fired.
+    const _ovErrSeen = {};
+    function _ovWarn(tag, e) {
+      if (_ovErrSeen[tag]) return; _ovErrSeen[tag] = true;
+      log('OVERLAY_ERR ' + tag + ': ' + ((e && e.message) || e));
+    }
+    const _ovStats = { frames: 0, cues: 0, title: 0, clock: 0, compass: 0, ovpath: 0 };
+    window.__giOverlayStats = _ovStats;
+    window.__giOverlayErrors = _ovErrSeen;
+    let _fb = null;   // per-bake state, set by __giFullBakeSetup, read by __giFullBakeFrame
+    window.__giFullBakeSetup = async function (fps) {
+      // Real ov, exactly as effects.js:9203 _cpeLoadFromDb builds it — triggered the same way
+      // cinema_maxq.js/cli_silent_bake.js do (a throwaway cinemaPathPlan(60) call lazy-loads it).
+      try { A.cinemaPathPlan(60); } catch (e) {}
+      const staged = (A._getCinemaPathEdit && A._getCinemaPathEdit()) || null;
+      if (!staged) { log('FULLBAKE_SETUP_FAILED no staged cinema_path override'); return null; }
+      const ov = {}; for (const k in staged) ov[k] = staged[k];
+      // "All options" scope for THIS pass — see the header comment above for what's excluded and why.
+      ov.buildup = false; ov.roomTitle = true; ov.reveal = false; ov.storeyReveal = false;
+      ov.clash = false; ov.measure = false; ov.sunCompass = true;
+      const total = ov._total;
+      const nFrames = Math.max(1, Math.round(total * fps));
+      const plan = A.cinemaPathPlan(total, ov);
+      // ── one-time setup, mirrors cinema_maxq.js:1543-1638 (buildup/clash/measure blocks omitted —
+      // their flags are false above, so the real file's own gates would skip them too) ──
+      let titleSegs = null;
+      try { titleSegs = A.roomTitleBuildTimeline ? A.roomTitleBuildTimeline(plan, nFrames / fps) : null; }
+      catch (e) { log('roomTitleBuildTimeline failed: ' + e.message); }
+      let ovPath = null;
+      try { ovPath = A.pathOverviewPrepare ? A.pathOverviewPrepare(plan, null, null) : null; }
+      catch (e) { log('pathOverviewPrepare failed: ' + e.message); }
+      const filmSecFull = nFrames / fps;
+      if (A.flythruCuesBuild) { try { A.flythruCuesBuild(plan, filmSecFull); } catch (e) { log('flythruCuesBuild failed: ' + e.message); } }
+      A._sunCompassOn = false;
+      if (A.sunCompassBuild) { try { A._sunCompassOn = !!A.sunCompassBuild(); } catch (e) { log('sunCompassBuild failed: ' + e.message); } }
+      _fb = { plan, nFrames, fps, filmSecFull, titleSegs, ovPath, ovPos: 'tl' };
+      log('FULLBAKE_SETUP nFrames=' + nFrames + ' fps=' + fps + ' total=' + total.toFixed(2) + 's ' +
+        'titleSegs=' + (titleSegs ? titleSegs.length : 0) + ' ovPath=' + !!ovPath + ' sunCompassOn=' + A._sunCompassOn);
+      return { nFrames, fps, total };
+    };
+
+    // Mirrors _captureFrame's 2D compositing tail (cinema_maxq.js:783-905), scoped to the overlays
+    // enabled above. `srcCanvas` is our GI-rendered frame (window.__GI_WEBGPU_CANVAS after a
+    // __giWebgpuRenderFrame() call) — everything below draws ON TOP of a copy of it, same order.
+    const _ovCanvas = document.createElement('canvas'); _ovCanvas.width = PROOF_W; _ovCanvas.height = PROOF_H;
+    const _ovCtx = _ovCanvas.getContext('2d');
+    window.__giFullBakeFrame = async function (i) {
+      if (!_fb) throw new Error('__giFullBakeSetup was not called or failed');
+      const { plan, nFrames, fps, filmSecFull, titleSegs, ovPath, ovPos } = _fb;
+      const tn = nFrames > 1 ? i / (nFrames - 1) : 0;
+      const tnFilm = tn;   // no clip in this pass, so _tFilm(tn) === tn exactly as the real file notes
+      const pose = plan.poseAt(tn);
+      A.camera.position.set(pose.x, pose.y, pose.z);
+      A.controls.target.set(pose.tx, pose.ty, pose.tz);
+      A.controls.update();
+      // per-frame state advance — mirrors cinema_maxq.js:1908-1934 for the enabled overlays only
+      if (A.flythruCuesApplyVisual) { try { A._flythruFilmSec = tnFilm * filmSecFull; A.flythruCuesApplyVisual(A._flythruFilmSec); } catch (e) { _ovWarn('cuesApplyVisual', e); } }
+      if (A._sunCompassOn && A.sunCompassAt) { try { A.sunCompassAt(null, tnFilm); } catch (e) { _ovWarn('sunCompassAt', e); } }   // null cursor: no buildup, same degrade the real file documents (§SUN_COMPASS_NO_CURSOR)
+      // titleInfo — mirrors cinema_maxq.js:2108-2120 (reveal/storeyReveal/cue captions all return
+      // null with those features off; kept in the same order as the real file for fidelity)
+      let titleInfo = (A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, tnFilm) : null;
+      if (!titleInfo && A.storeyRevealCaptionAt) titleInfo = A.storeyRevealCaptionAt(plan, tnFilm);
+      if (!titleInfo && A.flythruCueCaptionAt) { try { titleInfo = A.flythruCueCaptionAt(tnFilm * filmSecFull); } catch (e) { _ovWarn('cueCaptionAt', e); } }
+      if (!titleInfo) titleInfo = (titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(titleSegs, i / fps) : null;
+      // ovInfo — mirrors cinema_maxq.js:2125-2130
+      let ovInfo = null;
+      if (ovPath && A.camera) {
+        ovInfo = { ov: ovPath, pos: ovPos, pose: { pos: { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z },
+          target: (A.controls && A.controls.target) ? { x: A.controls.target.x, y: A.controls.target.y, z: A.controls.target.z } : null } };
+      }
+      // render our GI frame, then composite the real overlays on top of a copy of it
+      await window.__giWebgpuRenderFrame();
+      _ovCtx.drawImage(window.__GI_WEBGPU_CANVAS, 0, 0, PROOF_W, PROOF_H);
+      const w = PROOF_W, h = PROOF_H;
+      if (A.flythruCuesCompositeOntoCanvas) { try { A.flythruCuesCompositeOntoCanvas(_ovCtx, w, h, A._flythruFilmSec || 0); _ovStats.cues++; } catch (e) { _ovWarn('cuesComposite', e); } }
+      if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) { try { A.roomTitleCompositeOntoCanvas(_ovCtx, w, h, titleInfo.name, titleInfo.opacity); _ovStats.title++; } catch (e) { _ovWarn('roomTitleComposite', e); } }
+      let stackY = 0;
+      const gapY = Math.round(h * 0.012);
+      if (A._sunCompassOn && A.sunClockCompositeOntoCanvas && A.sunCompassInfo) {
+        try { const ch = A.sunClockCompositeOntoCanvas(_ovCtx, w, h, A.sunCompassInfo(), 1, 'tr', stackY); if (ch > 0) { stackY += ch + gapY; _ovStats.clock++; } } catch (e) { _ovWarn('sunClockComposite', e); }
+      }
+      if (A._sunCompassOn && A.sunCompassCompositeOntoCanvas && A.sunCompassInfo) {
+        try { const sh = A.sunCompassCompositeOntoCanvas(_ovCtx, w, h, A.sunCompassInfo(), 1, 'tr', stackY); if (sh > 0) { stackY += sh + gapY; _ovStats.compass++; } } catch (e) { _ovWarn('sunCompassComposite', e); }
+      }
+      if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) { try { A.pathOverviewCompositeOntoCanvas(_ovCtx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, stackY); _ovStats.ovpath++; } catch (e) { _ovWarn('pathOverviewComposite', e); } }
+      _ovStats.frames++;
+      await saveFrame(_ovCanvas, i);
+      return { i, titleInfo: titleInfo && titleInfo.name, sunCompassOn: A._sunCompassOn };
+    };
+    window.__GI_FULL_BAKE_CANVAS = _ovCanvas;
+
     window.__giWebgpuTapStatus = { phase: 'ready', backend: backend, adapter: adapterInfo };
     log('READY — window.__giWebgpuRenderFrame armed, backend=' + backend + ' adapter=' + adapterInfo);
   }
