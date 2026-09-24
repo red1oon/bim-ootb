@@ -1193,6 +1193,13 @@ function setupTools(A) {
     var d = maxZ - minZ; if (!(w > 1e-4 && d > 1e-4)) return null;
     return { fill: area / (w * d), aspect: Math.max(w, d) / Math.min(w, d) };
   }
+  // Witness hook: the raw plan metrics behind a fixture's shape call (fill, aspect, plan w/d, height, verts).
+  A._lampShapeMetrics = function(p) {
+    var gh = p && p.__ghash, g = gh && A.meshCache && A.meshCache[gh]; if (!g) return null;
+    var f = _planHullFill(g); if (!g.boundingBox) g.computeBoundingBox(); var bb = g.boundingBox;
+    return f && { fill: f.fill, aspect: f.aspect, w: bb.max.x - bb.min.x, d: bb.max.z - bb.min.z, h: bb.max.y - bb.min.y,
+      verts: g.attributes.position.count, shape: A.nightFixtureShape(p) };
+  };
   // 'round' | 'rect' | 'ambiguous' | 'nomesh' — cached per geometry hash.
   A.nightFixtureShape = function(p) {
     var gh = p && p.__ghash; if (!gh || !A.meshCache || !A.meshCache[gh]) return 'nomesh';

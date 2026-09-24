@@ -428,6 +428,14 @@
     if (v == null) { const m = /[?&]bounce=([0-9.]+)/.exec(location.search); v = m ? parseFloat(m[1]) : GI_GAIN_DEFAULT; }
     return Math.max(0, Math.min(3, isFinite(v) ? v : GI_GAIN_DEFAULT));
   }
+  // §GI_STILL_AO_DIAL (red1 via watcher: AO darkening outweighed the bounce outdoors) — APP._stillAo, else
+  // window.__GI_STILL_AO, else &ao=<0..1>, else 0.55. 0 = no occlusion darkening, 1 = full.
+  function readAo() {
+    const A = window.APP || {};
+    let v = (typeof A._stillAo === 'number') ? A._stillAo : (typeof window.__GI_STILL_AO === 'number' ? window.__GI_STILL_AO : null);
+    if (v == null) { const m = /[?&]ao=([0-9.]+)/.exec(location.search); v = m ? parseFloat(m[1]) : GI_AO_DEFAULT; }
+    return Math.max(0, Math.min(1, isFinite(v) ? v : GI_AO_DEFAULT));
+  }
   function outputFor(G, mode, enc) {
     const T = G.TSL, C = G.colorNode.sample(G.TSL.uv()), gi = G.gi, mask = G.maskNode;
     let rgb;
@@ -607,7 +615,7 @@
       const enc = opts.encode || encodeMode();
       R.encode = enc;
       G.setMode(mode, enc);
-      G.gainU.value = readGain(); G.aoU.value = (typeof window.__GI_STILL_AO === 'number') ? window.__GI_STILL_AO : GI_AO_DEFAULT;
+      G.gainU.value = readGain(); G.aoU.value = readAo();
       R.gain = G.gainU.value; R.ao = G.aoU.value;
       console.log('§GI_STILL gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' applied (uniforms, read this press)');
       const N = (opts.passes != null) ? opts.passes : (window.__GI_ACCUM || ACCUM_DEFAULT);
