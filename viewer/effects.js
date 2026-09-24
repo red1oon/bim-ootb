@@ -4033,6 +4033,16 @@ async function setupEffects(A, renderer, scene, camera) {
     _glowFirstMs = null; _glowSkipLogged = false; A._glowQuadZeroLogged = false;
     _buildRoomProbe();
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
+    // §STILL_POSE (2026-09-24, watcher: red1's stills carry no pose) — one line per staging with everything
+    // needed to reproduce the frame headless: camera, target, fov, sun, DB, window size.
+    try {
+      var _c = A.camera, _t = A.controls ? A.controls.target : null, _s = A.sun;
+      var _f = function(v) { return v ? [v.x, v.y, v.z].map(function(n) { return +n.toFixed(3); }) : null; };
+      console.log('§STILL_POSE ' + JSON.stringify({ cam: _f(_c && _c.position), tgt: _f(_t), fov: _c && _c.fov,
+        aspect: _c && +_c.aspect.toFixed(4), sun: _f(_s && _s.position), sunTgt: _f(_s && _s.target && _s.target.position),
+        sunI: _s && +_s.intensity.toFixed(3), db: (location.search.match(/db=([^&]+)/) || [])[1] || null,
+        w: window.innerWidth, h: window.innerHeight, film: !!A._maxqActive }));
+    } catch (eP) { console.warn('§STILL_POSE failed: ' + eP.message); }
   }
   function _teardownPhotoStaging() {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
