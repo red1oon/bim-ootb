@@ -3938,8 +3938,8 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoStagingOn = true;
     A._photoStagingOn = true;
     // §FILM_PARITY (2026-09-24, red1: "the Alt+S to Alt+C ad verbatim is the objective") — a film stages the approved Alt+S
-    // look. Off switch for the control clip: &filmparity=0 / APP._filmParityOff (cli --film-parity 0). §FILM_FILL_RESTORE
-    // (ambient 0.785) is kept only with &filmfill=restore / APP._filmFillRestore (cli --film-fill restore), red1's pick pending.
+    // look. Off switch for the control clip: &filmparity=0 / APP._filmParityOff (cli --film-parity 0). Fill: see below
+    // (restore is the default; cli --film-fill alts / &filmfill=alts for ambient 0).
     A._filmParity = !!A._maxqActive && !(A._filmParityOff === true || /[?&]filmparity=0/.test(location.search));
     // Film fill default = RESTORE (watchdog for red1, 2026-09-25): in current films the interior lamps are off for most interior
     // shots (§116 window) while an Alt+S interior has them on; ambient 0 gives the gloomy film interiors red1 rejected
