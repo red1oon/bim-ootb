@@ -18,7 +18,7 @@ function say(s) { const t = '+' + ((Date.now() - T0) / 1000).toFixed(1) + 's ' +
   const p = await b.newPage(); await p.setViewport({ width: 1280, height: 720 });
   p.on('console', m => { const t = m.text(); if (/§GI_STILL|§STILL_BASE|§STILL_DIALS|PAGEERROR|§LOAD_FAIL/.test(t)) say('[page] ' + t.slice(0, 260)); });
   p.on('pageerror', e => say('PAGEERROR ' + e.message));
-  await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=' + DB + '&bounce=0.6', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=' + DB + '&bounce=0.6&ao=0.2', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await p.waitForFunction(() => window.APP && window.APP.guidMap, { timeout: 180000 });
   let n = 0; for (let i = 0; i < 90; i++) { n = await p.evaluate(() => Object.keys(window.APP.guidMap).length); if (n >= WANT) break; await sleep(2000); }
   say('loaded guids=' + n + '/' + WANT + (n >= WANT ? '' : ' VACUOUS — incomplete load, this run proves nothing'));

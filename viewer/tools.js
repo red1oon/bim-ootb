@@ -1175,11 +1175,11 @@ function setupTools(A) {
   // nav keep §NIGHT_LIGHT_MIX. Shape from the fixture's OWN mesh, never its name: plan = local X/Z (local Y is up,
   // same convention as §GLOW_TRUE_BOTTOM); fill = convex-hull area / bbox area (disc 0.785, rectangle 1.0).
   var LAMP_ROUND_FILL_MIN = 0.70, LAMP_ROUND_FILL_MAX = 0.86, LAMP_ROUND_ASPECT_MAX = 1.25, LAMP_RECT_FILL_MIN = 0.93;
+  var LAMP_BODY_SLICE = 0.25, LAMP_LINEAR_ASPECT = 2.0;   // §LAMP_SHAPE_FACE
   var _lampShapeByHash = {};
-  function _planHullFill(geo) {
-    var pos = geo.attributes && geo.attributes.position; if (!pos || pos.count < 3) return null;
-    var pts = [];
-    for (var i = 0; i < pos.count; i++) pts.push([pos.getX(i), pos.getZ(i)]);
+  // Convex-hull fill of a 2-D point set: hull area / bbox area, plus aspect and the hull area itself.
+  function _hullFill(pts) {
+    if (pts.length < 3) return null;
     pts.sort(function(a, b) { return a[0] - b[0] || a[1] - b[1]; });
     function cr(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
     var lo = [], up = [];
@@ -1188,26 +1188,72 @@ function setupTools(A) {
     var hull = lo.slice(0, -1).concat(up.slice(0, -1)); if (hull.length < 3) return null;
     var area = 0; for (var h = 0; h < hull.length; h++) { var q = hull[h], r = hull[(h + 1) % hull.length]; area += q[0] * r[1] - r[0] * q[1]; }
     area = Math.abs(area) / 2;
-    var w = pts[pts.length - 1][0] - pts[0][0], minZ = Infinity, maxZ = -Infinity;
-    for (var m = 0; m < pts.length; m++) { if (pts[m][1] < minZ) minZ = pts[m][1]; if (pts[m][1] > maxZ) maxZ = pts[m][1]; }
-    var d = maxZ - minZ; if (!(w > 1e-4 && d > 1e-4)) return null;
-    return { fill: area / (w * d), aspect: Math.max(w, d) / Math.min(w, d) };
+    // Tightest box at ANY angle (rotating calipers over the hull edges), not the axis-aligned one: Hospital's
+    // fixture meshes carry their yaw in the vertices, and a rotated rectangle in an axis box reads 0.5-0.9 fill,
+    // i.e. "round". A disc is 0.785 at every angle; a rectangle is 1.0 at every angle.
+    var best = null;
+    for (var e = 0; e < hull.length; e++) {
+      var p0 = hull[e], p1 = hull[(e + 1) % hull.length], ex = p1[0] - p0[0], ey = p1[1] - p0[1], L = Math.hypot(ex, ey);
+      if (L < 1e-9) continue; ex /= L; ey /= L;
+      var u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (var t = 0; t < hull.length; t++) { var u = hull[t][0] * ex + hull[t][1] * ey, v = -hull[t][0] * ey + hull[t][1] * ex;
+        if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v; }
+      var w = u1 - u0, d = v1 - v0;
+      if (w > 1e-4 && d > 1e-4 && (!best || w * d < best.w * best.d)) best = { w: w, d: d };
+    }
+    if (!best) return null;
+    return { fill: area / (best.w * best.d), aspect: Math.max(best.w, best.d) / Math.min(best.w, best.d), area: area };
+  }
+  // §LAMP_SHAPE_FACE (watcher go, 2026-09-24). Measured on HHS: "biggest face" picks the wrong face (a linear
+  // pendant's side, a round downlight's side), so the rule is PLAN FIRST, then the elevations:
+  //  1. plan (X/Z) of the lamp BODY only — vertices in the bottom LAMP_BODY_SLICE of the height, so a pendant's
+  //     rods and hangers drop out. Round / rect by the fill+aspect bands; a long body (aspect >= LAMP_LINEAR_ASPECT,
+  //     fill >= LAMP_ROUND_FILL_MIN) is a linear fitting = rect.
+  //  2. plan undecided -> the two elevations (X/Y, Z/Y), full mesh — a wall sconce's disc faces sideways. Round/rect
+  //     bands only; if they disagree, ambiguous.
+  function _fixtureFaceFill(geo) {
+    var pos = geo.attributes && geo.attributes.position; if (!pos || pos.count < 3) return null;
+    var minY = Infinity, maxY = -Infinity;
+    for (var i = 0; i < pos.count; i++) { var y = pos.getY(i); if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    var cut = minY + (maxY - minY) * LAMP_BODY_SLICE;
+    var plan = [], xy = [], zy = [];
+    for (var n = 0; n < pos.count; n++) {
+      var x = pos.getX(n), yy = pos.getY(n), z = pos.getZ(n);
+      if (yy <= cut + 1e-6) plan.push([x, z]);
+      xy.push([x, yy]); zy.push([z, yy]);
+    }
+    var faces = { plan: _hullFill(plan), xy: _hullFill(xy), zy: _hullFill(zy) };
+    function band(f, linear) {
+      if (!f) return null;
+      if (f.fill >= LAMP_RECT_FILL_MIN) return 'rect';
+      if (f.fill >= LAMP_ROUND_FILL_MIN && f.fill <= LAMP_ROUND_FILL_MAX && f.aspect <= LAMP_ROUND_ASPECT_MAX) return 'round';
+      if (linear && f.aspect >= LAMP_LINEAR_ASPECT && f.fill >= LAMP_ROUND_FILL_MIN) return 'rect';
+      return null;
+    }
+    var shape = band(faces.plan, true), face = 'plan';
+    // An elevation counts only when it is BIGGER than the plan (a wall sconce): a thin ceiling disc's side view is
+    // always a flat rectangle, so a smaller side face says nothing about its shape.
+    var planA = faces.plan ? faces.plan.area : 0;
+    if (!shape) {
+      var a = (faces.xy && faces.xy.area > planA) ? band(faces.xy, false) : null, b = (faces.zy && faces.zy.area > planA) ? band(faces.zy, false) : null;
+      shape = (a && b && a !== b) ? null : (a || b); face = a ? 'xy' : (b ? 'zy' : '-');
+    }
+    var pf = faces.plan || {};
+    return { shape: shape || 'ambiguous', face: face, fill: pf.fill, aspect: pf.aspect, faces: faces };
   }
   // Witness hook: the raw plan metrics behind a fixture's shape call (fill, aspect, plan w/d, height, verts).
   A._lampShapeMetrics = function(p) {
     var gh = p && p.__ghash, g = gh && A.meshCache && A.meshCache[gh]; if (!g) return null;
-    var f = _planHullFill(g); if (!g.boundingBox) g.computeBoundingBox(); var bb = g.boundingBox;
-    return f && { fill: f.fill, aspect: f.aspect, w: bb.max.x - bb.min.x, d: bb.max.z - bb.min.z, h: bb.max.y - bb.min.y,
+    var f = _fixtureFaceFill(g); if (!g.boundingBox) g.computeBoundingBox(); var bb = g.boundingBox;
+    return f && { fill: f.fill, aspect: f.aspect, face: f.face, faces: f.faces, w: bb.max.x - bb.min.x, d: bb.max.z - bb.min.z, h: bb.max.y - bb.min.y,
       verts: g.attributes.position.count, shape: A.nightFixtureShape(p) };
   };
   // 'round' | 'rect' | 'ambiguous' | 'nomesh' — cached per geometry hash.
   A.nightFixtureShape = function(p) {
     var gh = p && p.__ghash; if (!gh || !A.meshCache || !A.meshCache[gh]) return 'nomesh';
     if (_lampShapeByHash[gh]) return _lampShapeByHash[gh];
-    var f = _planHullFill(A.meshCache[gh]), sh = 'ambiguous';
-    if (f && f.fill >= LAMP_RECT_FILL_MIN) sh = 'rect';
-    else if (f && f.fill >= LAMP_ROUND_FILL_MIN && f.fill <= LAMP_ROUND_FILL_MAX && f.aspect <= LAMP_ROUND_ASPECT_MAX) sh = 'round';
-    return (_lampShapeByHash[gh] = sh);
+    var f = _fixtureFaceFill(A.meshCache[gh]);
+    return (_lampShapeByHash[gh] = f ? f.shape : 'ambiguous');
   };
   // The one colour for a fixture's light AND its glow sprite (they must agree, see _nightFixtureWorldPositions).
   A.nightFixtureColor = function(p) {
