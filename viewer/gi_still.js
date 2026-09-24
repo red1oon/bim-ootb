@@ -635,6 +635,7 @@
   async function shoot(opts) {
     if (busy) return null;
     busy = true;
+    if (window.APP) window.APP._sceneBorrowed = true;   // §GI_SCENE_BORROWED — app render loop holds its last frame
     opts = opts || {};
     const mode = opts.mode || 'composite';
     const t0 = performance.now();
@@ -758,7 +759,7 @@
       R.error = String(e && e.message || e);
       window.__giStillDebug = R;
       return R;
-    } finally { busy = false; }
+    } finally { busy = false; if (window.APP) { window.APP._sceneBorrowed = false; if (window.APP.markDirty) window.APP.markDirty(); } }
   }
   function show(canvas, secs, passes) {
     const old = document.getElementById('gi-still-overlay'); if (old) old.remove();

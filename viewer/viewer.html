@@ -866,7 +866,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="panel_nav.js?v=1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=6" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="silhouette_refine.js?v=1" onerror="console.warn('§LOAD_FAIL silhouette_refine.js')"></script>
-<script src="glass_fresnel.js?v=3" onerror="console.warn('§LOAD_FAIL glass_fresnel.js')"></script>
+<script src="glass_fresnel.js?v=6" onerror="console.warn('§LOAD_FAIL glass_fresnel.js')"></script>
 <script src="sky_portal.js?v=9" onerror="console.warn('§LOAD_FAIL sky_portal.js — §SKY_PORTAL disabled')"></script>
 <script src="surface_r10.js?v=1" onerror="console.warn('§LOAD_FAIL surface_r10.js — §SURFACE_R10 opening split disabled')"></script>
 <script src="streaming.js?v=75" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
@@ -1094,7 +1094,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): the viewer joins the shared cross-surface context
      as surface 'viewer' — selection/timeline/identity over the one signed op-log. Opt-in (toggle / ?connect=1). -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
-<script src="main.js?v=46"></script>
+<script src="main.js?v=47"></script>
 <!-- Styled tooltip bubbles for [data-trl-title] buttons — appended to body, not clipped by overflow:hidden -->
 <style>#ootb-tip{display:none;position:fixed;z-index:9990;background:rgba(10,10,30,0.92);color:#4fc3f7;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(79,195,247,0.35);pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.4)}</style>
 <script>
@@ -1208,6 +1208,6 @@ window.addEventListener('beforeinstallprompt', function(e) {
 });
 </script>
 <!-- §GI_LIVE (2026-09-23): Alt+S bounce still — desktop + WebGPU + three r186 only; elsewhere it logs §GI_STILL_OFF and Alt+S is unchanged -->
-<script src="gi_still.js?v=10" onerror="console.warn('§LOAD_FAIL gi_still.js — Alt+S bounce disabled')"></script>
+<script src="gi_still.js?v=11" onerror="console.warn('§LOAD_FAIL gi_still.js — Alt+S bounce disabled')"></script>
 </body>
 </html>

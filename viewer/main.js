@@ -932,6 +932,9 @@ async function initViewer() {
     }
     // §S277b: WebGL only — no pipeline compilation gate needed
     if (_pipelinesCompiling) return;
+    // §GI_SCENE_BORROWED (2026-09-24): the bounce still hides app meshes across awaits while it compiles/renders its own
+    // passes (gi_still.js). Drawing the app scene then shows a half-hidden building; hold the last frame instead.
+    if (APP._sceneBorrowed) return;
     if (window._isMobile) {
       // §S276b: Throttle continuous streaming renders — every 10th frame only.
       // But always honor explicit _needsRender (bbox chunks, user interaction).
