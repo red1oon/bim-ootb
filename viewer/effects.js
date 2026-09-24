@@ -3141,6 +3141,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // building envelope), NOT reinvented, just triggered from here instead of the 'h' Shadow pill.
   // If the user's OWN Shadow mode is already on, this leaves it alone entirely — never double-set.
   var _photoShadowSelfEnabled = false;
+  var _stillFitBox = null, _shadowRadiusSaved = null;   // §STILL_SHADOW_FIT — this still's fitted box; radius to hand back
   // §R17_SHADOWMAP_RELEASE (2026-09-05, bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R17) — the
   // shadow-map dimensions this staging cycle BORROWED from. Captured at raise time rather than
   // assumed: tools.js §S288 owns the nav number (2048) and the three.js default when shadows were
@@ -3325,8 +3326,59 @@ async function setupEffects(A, renderer, scene, camera) {
     // elevation is used because _enablePhotoShadows runs once at staging while _sunArcStep sweeps
     // the sun 55->6 deg afterwards without recomputing this camera — so the bias has to be safe at
     // the worst angle the film reaches, not just at the angle staging happened to see.
+    // §STILL_SHADOW_FIT (2026-09-24, red1: jagged shadow edges on Alt+S; PHOTOREAL_STILL_RENDER.md) — a still is ONE
+    // view, so the ±env box is shrunk to the light-space footprint of what the camera sees. Every caster survives: a caster
+    // that shades a visible point lies on the sun ray through it, and this ortho camera keeps the whole ray (near/far are
+    // untouched) inside that x/y footprint, wherever the caster is. Films keep the whole-envelope box (moving camera).
+    var _boxW = 2 * _env, _boxH = 2 * _env;
+    _stillFitBox = null;
+    var _fitOn = !A._maxqActive && A.camera && A.camera.isPerspectiveCamera &&
+      !(A._stillShadowFit === false || /[?&]shadowfit=0/.test(location.search));
+    if (_fitOn) {
+      try {
+        A.sun.updateMatrixWorld(); A.sun.shadow.updateMatrices(A.sun);
+        var _sc = A.sun.shadow.camera, _cam = A.camera;
+        _cam.updateMatrixWorld();
+        var _fwd = new THREE.Vector3(); _cam.getWorldDirection(_fwd);
+        var _dFar = 0, _q = new THREE.Vector3();
+        for (var _bi = 0; _bi < 8; _bi++) {   // farthest corner of the ±env world box, as view depth
+          _q.set(_ctr.x + (_bi & 1 ? _env : -_env), _ctr.y + (_bi & 2 ? _env : -_env), _ctr.z + (_bi & 4 ? _env : -_env));
+          _dFar = Math.max(_dFar, _q.sub(_cam.position).dot(_fwd));
+        }
+        var _k = Math.min(1, Math.max(0, _dFar) / _cam.far);
+        var _lx0 = Infinity, _lx1 = -Infinity, _ly0 = Infinity, _ly1 = -Infinity;
+        [-1, 1].forEach(function(nx) { [-1, 1].forEach(function(ny) {
+          var pN = new THREE.Vector3(nx, ny, -1).unproject(_cam), pF = new THREE.Vector3(nx, ny, 1).unproject(_cam);
+          pF.sub(_cam.position).multiplyScalar(_k).add(_cam.position);   // far corner at view depth _dFar
+          [pN, pF].forEach(function(pt) {
+            pt.applyMatrix4(_sc.matrixWorldInverse);
+            _lx0 = Math.min(_lx0, pt.x); _lx1 = Math.max(_lx1, pt.x); _ly0 = Math.min(_ly0, pt.y); _ly1 = Math.max(_ly1, pt.y);
+          });
+        }); });
+        var _M = 2;   // m — margin for PCF taps + TAA jitter
+        var _l = Math.max(-_env, _lx0 - _M), _r = Math.min(_env, _lx1 + _M), _b = Math.max(-_env, _ly0 - _M), _t = Math.min(_env, _ly1 + _M);
+        if (_r - _l > 1 && _t - _b > 1) {
+          _sc.left = _l; _sc.right = _r; _sc.bottom = _b; _sc.top = _t;
+          _boxW = _r - _l; _boxH = _t - _b;
+          _stillFitBox = { l: _l, r: _r, b: _b, t: _t };
+        }
+        var _mz = A.sun.shadow.mapSize.width, _t0 = 2 * _env / _mz;
+        console.log('§STILL_SHADOW_FIT env=' + _env + ' box=' + _boxW.toFixed(1) + 'x' + _boxH.toFixed(1) + 'm (was ' + (2 * _env) + ')' +
+          ' texelX=' + (_boxW / _mz).toFixed(4) + ' texelY=' + (_boxH / _mz).toFixed(4) + ' (was ' + _t0.toFixed(4) + ')' +
+          ' gain=' + (_t0 / (Math.max(_boxW, _boxH) / _mz)).toFixed(2) + 'x viewDepth=' + _dFar.toFixed(0) +
+          ' sunElev=' + THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)))).toFixed(1) + (_stillFitBox ? '' : ' (no overlap — box kept)'));
+      } catch (eFit) { console.warn('§STILL_SHADOW_FIT failed: ' + eFit.message + ' — whole-envelope box kept'); }
+    } else if (!A._maxqActive) console.log('§STILL_SHADOW_FIT off (&shadowfit=0 or APP._stillShadowFit=false) env=' + _env);
+    // Arm 2 — PCF disk radius (r186 samples a Vogel disk scaled by shadow.radius). Default 1 = three's own default.
+    if (_shadowRadiusSaved === null) _shadowRadiusSaved = A.sun.shadow.radius;
+    if (!A._maxqActive) {
+      var _rm = /[?&]shadowradius=([0-9.]+)/.exec(location.search);
+      var _rad = (typeof A._stillShadowRadius === 'number') ? A._stillShadowRadius : (_rm ? parseFloat(_rm[1]) : 1);
+      A.sun.shadow.radius = Math.max(0, Math.min(8, _rad));
+      console.log('§STILL_SHADOW_RADIUS radius=' + A.sun.shadow.radius);
+    }
     var _shadowRange = A.sun.shadow.camera.far - A.sun.shadow.camera.near;
-    var _texelWorld = (2 * _env) / A.sun.shadow.mapSize.width;
+    var _texelWorld = Math.max(_boxW, _boxH) / A.sun.shadow.mapSize.width;
     // ══ §129.45 (2026-09-19, red1: "all i want is that it is realistic, not cut off at the base of
     // each column") — THE GRAZING TERM IS WHAT CUT THE SHADOWS OFF AT THE BASE. ══════════════════
     // A depth bias is a push ALONG THE LIGHT RAY, so on the ground it moves the shadow away from
@@ -3409,6 +3461,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (_frustum.intersectsObject(o)) _inFrustum++; else _outFrustum++;
     });
     console.log('§PHOTO_SHADOW_FRUSTUM_COVERAGE inFrustum=' + _inFrustum + ' outsideFrustum=' + _outFrustum +
+      (_stillFitBox ? ' (§STILL_SHADOW_FIT box: meshes whose sun ray misses the view are outside by design)' : '') +
       ' (outsideFrustum = geometry the shadow camera cannot see right now, regardless of castShadow flags -- ' +
       'nonzero here is a real, unfixed frustum-coverage gap; zero here rules frustum coverage OUT as the cause)');
     var _si = 0;
@@ -3418,7 +3471,7 @@ async function setupEffects(A, renderer, scene, camera) {
       A.renderer.shadowMap.needsUpdate = true;
       if (_si < _shadowList.length) setTimeout(_chunk, 0);
       else console.log('§PHOTO_SHADOW enabled casters=' + _shadowList.length + ' sunDist=' + _sunDist.toFixed(0) +
-        ' env=' + _env + ' texelPerM=' + (A.sun.shadow.mapSize.width / (2 * _env)).toFixed(1));
+        ' env=' + _env + ' texelPerM=' + (A.sun.shadow.mapSize.width / Math.max(_boxW, _boxH)).toFixed(1) + (_stillFitBox ? ' (fitted box)' : ''));
     })();
   }
   // §R17_SHADOWMAP_RELEASE — three.js allocates `light.shadow.map` ONCE and reallocates it ONLY on a
@@ -3450,6 +3503,8 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!_photoShadowSelfEnabled) return;
     _photoShadowSelfEnabled = false;
     A.sun.castShadow = false;
+    if (_shadowRadiusSaved !== null) { A.sun.shadow.radius = _shadowRadiusSaved; _shadowRadiusSaved = null; }   // §STILL_SHADOW_RADIUS
+    _stillFitBox = null;
     // §R17_SHADOWMAP_RELEASE — hand the borrowed 4096 map back. Guarded on _photoShadowSelfEnabled
     // by the early return above, which is exactly the "we were the ones who raised it" condition:
     // when the user's own Shadow mode is on, _enablePhotoShadows returns before the raise and this
@@ -4199,6 +4254,60 @@ async function setupEffects(A, renderer, scene, camera) {
         sunI: _s && +_s.intensity.toFixed(3), db: (location.search.match(/db=([^&]+)/) || [])[1] || null,
         w: window.innerWidth, h: window.innerHeight, film: !!A._maxqActive }));
     } catch (eP) { console.warn('§STILL_POSE failed: ' + eP.message); }
+    _stillCullApply();
+    _stillShadowRendersArm();
+  }
+  // §STILL_CULL (2026-09-24, red1: "the non-DLOD flag may cost heavy") — staging pauses DLOD so off-screen roofs still cast
+  // (§DLOD_STILL_OWNERSHIP), which draws EVERY instance for every refine frame. Instead, once staging is complete (sky
+  // portals have run their side rays against the full model), zero-scale only instances outside all of: the view
+  // frustum, the fitted sun box at full depth (anything that can shade a visible point), and — when shadowed portal
+  // spots exist — an 80 m sphere round the camera (a portal sits within 40 m and shades up to 40 m from itself).
+  // Alt+S only; restored at teardown before DLOD comes back.
+  var PORTAL_REACH_M = 80;
+  function _stillCullApply() {
+    if (A._maxqActive || typeof A.dlodStillCull !== 'function') return;
+    if (A._stillCullOff === true || /[?&]stillcull=0/.test(location.search)) { console.log('§STILL_CULL off (&stillcull=0)'); return; }
+    var t0 = performance.now();
+    try {
+      var cam = A.camera; cam.updateMatrixWorld();
+      var fv = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+      var fs = null;
+      if (_photoShadowSelfEnabled && A.sun && A.sun.castShadow) {
+        var sc = A.sun.shadow.camera; A.sun.updateMatrixWorld(); A.sun.shadow.updateMatrices(A.sun);
+        fs = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(sc.projectionMatrix, sc.matrixWorldInverse));
+      }
+      var portals = 0; A.scene.traverse(function(o) { if (o.isSpotLight && o.userData && o.userData.skyPortal && !o.userData.pad && o.castShadow) portals++; });
+      var cp = cam.position, R2 = PORTAL_REACH_M * PORTAL_REACH_M, nV = 0, nS = 0, nP = 0;
+      var r = A.dlodStillCull(function(sph) {
+        if (fv.intersectsSphere(sph)) { nV++; return true; }
+        if (!fs) return true;   // no sun shadow staged (user's own Shadow mode owns it) — keep everything
+        if (fs.intersectsSphere(sph)) { nS++; return true; }
+        if (portals > 0) { var dx = sph.center.x - cp.x, dy = sph.center.y - cp.y, dz = sph.center.z - cp.z, rr = PORTAL_REACH_M + sph.radius; if (dx * dx + dy * dy + dz * dz <= rr * rr) { nP++; return true; } }
+        return false;
+      });
+      if (!r) { console.log('§STILL_CULL skipped (mobile, or below the DLOD element floor)'); return; }
+      console.log('§STILL_CULL kept=' + r.kept + ' culled=' + r.culled + ' of=' + r.total + ' (view=' + nV + ' sun=' + nS + ' portal=' + nP +
+        ') shadowedPortals=' + portals + ' sunBox=' + (fs ? (_stillFitBox ? 'fitted' : 'envelope') : 'none') + ' ms=' + (performance.now() - t0).toFixed(0));
+      if (r.culled && A.renderer) A.renderer.shadowMap.needsUpdate = true;
+      if (A.markDirty) A.markDirty();
+    } catch (eC) { console.warn('§STILL_CULL failed: ' + eC.message + ' — nothing culled'); if (A.dlodStillUncull) A.dlodStillUncull(); }
+  }
+  // §STILL_SHADOW_RENDERS — how many times the sun/portal shadow maps are really re-rendered during one still. three's
+  // WebGLShadowMap.render returns at once unless autoUpdate or needsUpdate is set; only those entries are counted.
+  var _shRenders = 0, _shCounting = false;
+  function _stillShadowRendersArm() {
+    var sm = A.renderer && A.renderer.shadowMap; if (!sm) return;
+    if (!sm._stillCountWrapped) {
+      var orig = sm.render;
+      sm.render = function() { if (_shCounting && this.enabled && (this.autoUpdate || this.needsUpdate)) _shRenders++; return orig.apply(this, arguments); };
+      sm._stillCountWrapped = true;
+    }
+    _shRenders = 0; _shCounting = !A._maxqActive;
+  }
+  function _stillShadowRendersReport(ms) {
+    if (!_shCounting) return;
+    console.log('§STILL_SHADOW_RENDERS n=' + _shRenders + ' refineMs=' + ms + ' autoUpdate=' + (A.renderer.shadowMap.autoUpdate ? 1 : 0));
+    _shCounting = false;
   }
   function _teardownPhotoStaging() {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
@@ -4216,6 +4325,9 @@ async function setupEffects(A, renderer, scene, camera) {
       });
       console.log('§STILL_GLOW restored glowMats=' + _gr + ' lampMats=' + _lr + ' (lamp intensity: _nightPLScale reset below)');
     }
+    // §STILL_CULL — every instance this still zero-scaled goes back first, before DLOD resumes its own culling.
+    if (typeof A.dlodStillUncull === 'function') A.dlodStillUncull();
+    _shCounting = false;
     // §DLOD_STILL_OWNERSHIP — release the hold; re-enable only if staging paused it, or if a re-enable
     // was asked for (and deferred) while the hold was on.
     A._dlodStillHold = false;
@@ -4409,6 +4521,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _reassertPhotoShadowCoverage(true);
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
     console.log('§STILL_REFINE done accumulateIndex=' + idx + ' elapsedMs=' + ms + ' (frozen — stays until interaction)');
+    _stillShadowRendersReport(ms);
     // §PHOTO_SSGI (2026-07-17): the frozen still now folds in real bounce-light GI (effects_gi_poc.js
     // §PHOTO_SSGI, still-quality knobs) — the AO-only fold stays as the fallback whenever the SSGI
     // bundle/effect is unavailable or disabled (A._stillSSGIEnabled=false), so Alt+S never regresses
@@ -4927,6 +5040,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // `_teardownPhotoStaging()` while selection/explicit-Alt+S-off callers still get the full
     // revert unchanged.
     if (!keepStaging) _teardownPhotoStaging();
+    else if (typeof A.dlodStillUncull === 'function') A.dlodStillUncull();   // §STILL_CULL — the camera may move now; the cull was for one view
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
     console.log('§STILL_REFINE ' + reason + ' elapsedMs=' + ms + (keepStaging ? ' (staging kept)' : ''));
     if (n > 0) console.log('§TRIPLANAR_PERF ms=' + ms + ' materials=' + n);
