@@ -418,6 +418,16 @@
   // explicitly with sRGBTransferOETF makes the round trip an identity, which mode 'coloronly'
   // checks every run. 'transform' keeps the old behaviour for comparison.
   function encodeMode() { return window.__GI_STILL_ENCODE || 'oetf'; }
+  // §GI_STILL_GAIN_DIAL (2026-09-24, red1: bounce "MORE", tuned per press). Read at EVERY Alt+S:
+  // APP._stillBounceGain, else window.__GI_STILL_GAIN, else &bounce=<0..3>, else 1.0 (was a fixed 0.6).
+  // AO keeps its 0.55 default; window.__GI_STILL_AO still overrides, now per press too.
+  const GI_GAIN_DEFAULT = 1.0, GI_AO_DEFAULT = 0.55;
+  function readGain() {
+    const A = window.APP || {};
+    let v = (typeof A._stillBounceGain === 'number') ? A._stillBounceGain : (typeof window.__GI_STILL_GAIN === 'number' ? window.__GI_STILL_GAIN : null);
+    if (v == null) { const m = /[?&]bounce=([0-9.]+)/.exec(location.search); v = m ? parseFloat(m[1]) : GI_GAIN_DEFAULT; }
+    return Math.max(0, Math.min(3, isFinite(v) ? v : GI_GAIN_DEFAULT));
+  }
   function outputFor(G, mode, enc) {
     const T = G.TSL, C = G.colorNode.sample(G.TSL.uv()), gi = G.gi, mask = G.maskNode;
     let rgb;
@@ -436,9 +446,10 @@
       // 0 leaves the app's picture alone. The bounce term keeps its own gain.
       // Terminal measured compositeMean=163.68 against appMean=159.81 — the bounce was ADDING light
       // in a white hall and washing it out. Default gain lowered; raise it with __GI_STILL_GAIN.
-      const gain = (window.__GI_STILL_GAIN != null) ? window.__GI_STILL_GAIN : 0.6;
-      const aoK = (window.__GI_STILL_AO != null) ? window.__GI_STILL_AO : 0.55;
-      const ao = T.float(1).sub(T.float(aoK)).add(T.float(aoK).mul(gi.getAONode()));
+      // §GI_STILL_GAIN_DIAL — gain and AO are UNIFORMS (G.gainU / G.aoU), set per press in shoot(), so the
+      // renderer kept across Alt+S presses picks up a new value without a shader rebuild (§GI_DIALS_FIRST_BUILD fix).
+      const gain = G.gainU, aoK = G.aoU;
+      const ao = T.float(1).sub(aoK).add(aoK.mul(gi.getAONode()));
       rgb = C.rgb.mul(ao).add(C.rgb.mul(gi.getGINode().rgb).mul(gain));
     }
     G.pipeline.outputColorTransform = (enc === 'transform');
@@ -526,6 +537,7 @@
     pipeline.outputColorTransform = true;
     const rt = new THREE.RenderTarget(w, h, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true });
     const G = { THREE, TSL, renderer, pipeline, rt, w, h, cam, geoMat, colorCanvas, colorCtx, colorTex, colorNode, geomTexNode, maskNode, gi, pipeStats, mode: null, flipTex: false, flipOut: false };
+    G.gainU = TSL.uniform(GI_GAIN_DEFAULT); G.aoU = TSL.uniform(GI_AO_DEFAULT);   // §GI_STILL_GAIN_DIAL
     G.setTexFlip = (f) => { G.flipTex = !!f; flipSign.value = f ? -1 : 1; flipOff.value = f ? 1 : 0; };
     G.setMode = (m, enc) => { const k = m + '|' + enc; if (G.mode !== k) { G.mode = k; pipeline.outputNode = outputFor(G, m, enc); pipeline.needsUpdate = true; } };
     G.setMode('composite', encodeMode());
@@ -595,6 +607,9 @@
       const enc = opts.encode || encodeMode();
       R.encode = enc;
       G.setMode(mode, enc);
+      G.gainU.value = readGain(); G.aoU.value = (typeof window.__GI_STILL_AO === 'number') ? window.__GI_STILL_AO : GI_AO_DEFAULT;
+      R.gain = G.gainU.value; R.ao = G.aoU.value;
+      console.log('§GI_STILL gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' applied (uniforms, read this press)');
       const N = (opts.passes != null) ? opts.passes : (window.__GI_ACCUM || ACCUM_DEFAULT);
       // The app's finished frame, taken ONCE: it is both the colour the bounce is computed from and
       // the picture the bounce is pasted onto, so they cannot drift apart.
