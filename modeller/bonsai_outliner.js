@@ -605,7 +605,7 @@
         // W-UX-4: a DISCIPLINE node (n.disc) is a WALKER entry point — render a ▶ walk affordance + carry data-disc.
         // MODELLER_MASTER.md row 17: the synthetic disc:'__ALL__' row (modeller.html §DISCWALK-ALL) walks EVERY
         // discipline — its tooltip must say so; ordinary disc rows keep the singular.
-        const walkGlyph = n.disc ? ' <span class="bn-walk" title="' + (n.disc === '__ALL__' ? 'Walk ALL disciplines' : 'Walk this discipline') + '" style="color:#4fc3f7">▶</span>' : '';
+        const walkGlyph = n.disc ? ' <span class="bn-walk" title="' + (n.disc === '__ALL__' ? 'Walk ALL services' : 'Walk this discipline') + '" style="color:#4fc3f7">▶</span>' : '';
         // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.1/§2.5 — the room node IS the grab target (IfcSpace carries no
         // rendered mesh, so there is nothing to pick in the 3D canvas; confirmed by grep — no GEOM_INSERT/
         // arc_editable seed ever runs for ifc_class='IfcSpace'). data-room carries the real guid the click

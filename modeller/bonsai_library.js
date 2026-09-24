@@ -558,5 +558,8 @@
 
   window.Bonsai = window.Bonsai || {};
   window.Bonsai.library = Library;
+  // §XEDGE-3AXIS: cross_edges.js boxes tilted elements with THIS placement, so its abuts test and the live mesh
+  // share one transform instead of two that can drift apart.
+  Library.place = place;
   console.log(TAG + ' module loaded legacy=' + CATALOG.length + ' (BOM catalog loads async)');
 })();

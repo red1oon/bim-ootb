@@ -234,7 +234,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      tree engine the Viewer runs (common/history_bar.js), reused — not a second branch mechanism. The
      adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
 <script src="../common/history_bar.js?v=1" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
-<script src="modeller_history.js?v=3" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
+<script src="modeller_history.js?v=4" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=3" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
@@ -245,12 +245,12 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
 <script src="bonsai_gridmove.js?v=3" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=13" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=14" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
 <script src="bom_tree.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
 <script src="bom_tree_outliner.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
 <!-- Cross-edges: the typed SDG lateral edges (abuts/...) derived on-the-fly from the bbox substrate. -->
-<script src="cross_edges.js?v=2" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
+<script src="cross_edges.js?v=3" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
 <!-- Real per-element geometry (component_geometries/base_geometries) — read+recentre, no THREE/DOM deps.
      Loaded BEFORE arc_editable.js (its factory takes window.RealGeometry as a dependency). -->
 <script src="real_geometry.js?v=1" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
@@ -274,9 +274,9 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
 <script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
 <script src="str_walker_bridge.js?v=5" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=14" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_outliner.js?v=15" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=18" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=19" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -293,11 +293,11 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="bonsai_itemdrag.js?v=3" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
-<script src="routewalker.js?v=6" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
+<script src="routewalker.js?v=8" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="disc_walker.js?v=6" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=8" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
@@ -585,7 +585,8 @@ async function xrayReveal(on) {
     // material, not deduped) — without this, a disc-walked fixture's individual fold-copy would come back
     // fully opaque/visible post-restore, un-doing the dedup and reintroducing the z-fight next redraw.
     // _redrawAllDiscWalks re-applies it (and rebuilds the InstancedMesh buckets) the same way every other
-    // refold path (undo/redo, commit) already does.
+    // refold path does (commit; and undo/redo since §WALK-GESTURE-DRAW 2026-09-24 — before that, doUndo/doRedo
+    // never called it and the generated layer vanished after one Ctrl+Z).
     _redrawAllDiscWalks();
     if (window.A && A.requestRender) A.requestRender();
     console.log('§MODELLER xray off');
@@ -3557,6 +3558,7 @@ async function doUndo() {
     MH.undo();                                    // sync: moves the tree cursor + fires the real oplog.undo()
     const r = await (MH.pending() || Promise.resolve({}));
     if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); }
+    _redrawAllDiscWalks();   // §WALK-GESTURE-DRAW: the fold rebuilt the group — restore (or hide) the walk layer
     syncHistory();
     return;
   }
@@ -3568,6 +3570,7 @@ async function doRedo() {
     MH.redo();
     const r = await (MH.pending() || Promise.resolve({}));
     if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); }
+    _redrawAllDiscWalks();   // §WALK-GESTURE-DRAW
     syncHistory();
     return;
   }
@@ -3714,7 +3717,10 @@ window.discWalk = function (disc, ctx) {
   if (disc === 'ARC') { setStat('ARC is the base layer — the disciplines fill it'); console.log('§DISC-WALK ARC is the base substrate (not a walked discipline)'); return; }
   // MEP family (MEP/PLB/ELEC/ACMV/FP/…) → DiscWalker: fire-and-forget, same as always (external contract
   // unchanged). _discWalkOne (below) holds the actual steps so window.discWalkAll can compose them too.
-  _discWalkOne(disc, ctx, {});
+  // §WALK-GESTURE: the whole walk (fixtures + routed runs + bend fittings) is ONE history node → one Ctrl+Z.
+  var MH = window.ModellerHistory;
+  if (MH && MH.beginWalk) MH.beginWalk(disc);
+  _discWalkOne(disc, ctx, {}).finally(function () { if (MH && MH.endWalk) { MH.endWalk(); syncHistory(); } if (window.__dwChains[disc] && window.__dwChains[disc].length) _dwStampRouteSig(disc); });
 };
 // §DISCWALK-ALL refactor: the single-discipline walk steps used to live inline as an anonymous async IIFE
 // inside window.discWalk. Extracted unchanged (same order, same § log lines, same honest-refuse returns) into
@@ -4139,6 +4145,14 @@ function _flashSettleDisc(disc) {
 window.discWalkAll = async function (ctx) {
   var t0 = Date.now();
   var ds = (window.DiscWalker && window.DiscWalker._ready()) ? window.DiscWalker.disciplines() : [];
+  // §WALKALL-MEP-ONLY (2026-09-24, MODELLER_MASTER §STRATEGY L7, red1's decision "MEP only in Walk ALL"): on the complex
+  // (terminal_rules) residents the roster also carries 'roof' (IfcPlate, n_measured 33,324) and 'STR'. Measured:
+  // HHS 42,960 / Hospital 47,526 / Terminal 10,584 roof plates, i.e. 46k–67k signed rows and 90–160 s walks, mostly
+  // not services. Walk ALL now walks the services only. Roof and STR stay walkable from their own Outliner rows
+  // (window.discWalk). The exclusion list is explicit, and a discipline that is excluded is logged.
+  var _nonMep = ['STR', 'roof'], _skipped = ds.filter(function (d) { return _nonMep.indexOf(d) >= 0; });
+  ds = ds.filter(function (d) { return _nonMep.indexOf(d) < 0; });
+  if (_skipped.length) console.log('§WALKALL-MEP-ONLY skipped=[' + _skipped.join(',') + '] (walk them from their own rows)');
   if (!ds.length) { setStat('Walk ALL — no disciplines available (open a building first)'); console.log('§DISCWALK-ALL abort — roster empty (open a building / rules not ready)'); window.__dwAllResult = { walked: [], refused: [], ms: 0 }; window.__dwAllDone = true; return window.__dwAllResult; }
   var sceneTotal = (window.Bonsai.group && window.Bonsai.group()) ? window.Bonsai.group().children.length : 0;
   var proxyMode = sceneTotal > window.DW_ALL_PROXY_THRESHOLD;
@@ -4152,6 +4166,8 @@ window.discWalkAll = async function (ctx) {
   var xr = await xrayReveal(true);
   console.log('§DISCWALK-ALL xray-on glass=' + xr.glass + ' glow=' + xr.glow + ' t=' + (Date.now() - t0) + 'ms');
   var walked = [], refused = [];
+  var MHw = window.ModellerHistory;
+  if (MHw && MHw.beginWalk) MHw.beginWalk('ALL');   // §WALK-GESTURE: Walk ALL is one click → one history node
   try {
     for (var i = 0; i < ds.length; i++) {
       var disc = ds[i];
@@ -4166,6 +4182,8 @@ window.discWalkAll = async function (ctx) {
       await xrayReveal(true);
     }
   } finally {
+    if (MHw && MHw.endWalk) { MHw.endWalk(); syncHistory(); }
+    ds.forEach(function (d) { if (window.__dwChains[d] && window.__dwChains[d].length) _dwStampRouteSig(d); });   // §MEP-REROUTE
     var xoff = await xrayReveal(false);
     // xrayReveal(false)'s scrubTo is a FULL authoritative re-fold — it re-authors every committed GEOM_INSERT
     // (incl. every _dw-tagged fixture) as a plain Mesh but does NOT know about the dwRoot decorative layer
@@ -4570,6 +4588,77 @@ function _redrawAllDiscWalks() {
   Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d], { instant: !window.__dwChainAnimating[d] }); });
   if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
   if (window.__dwTrunk) Object.keys(window.__dwTrunk).forEach(function (d) { if (window.__dwTrunk[d]) _renderSeedTrunk(d, window.__dwTrunk[d]); });   // seed→trunk
+  _hideUndoneWalkLayers();
+}
+// §WALK-GESTURE-DRAW (2026-09-24, §STRATEGY L4): the decorative walk layer (markers, run tubes, assembly parts,
+// trunk) is drawn from JS state (__dwWalks/__dwChains/…), not from the op-log. So after a walk is undone its
+// markers would redraw as if still there. A disc whose committed walk rows (window.__dwRowsByDisc, recorded by
+// modeller_history.js) are ALL undone has its layer removed from dwRoot. The stored JS state is kept, so Ctrl+Y
+// brings it back on the next redraw. A disc with no recorded rows (render-only) is left as it was.
+// §MEP-REROUTE (2026-09-24, MODELLER_MASTER §STRATEGY L5) — SPEC. The O15/O16 end-state for services: an edit that
+// MOVES generated fixtures must re-route their network. Before this, gridmove.commit moved generated fixtures as plain
+// riders (measured: gx0 +0.3 m on Duplex → 18 generated fids moved) while __dwChains stayed stale, so the drawn runs
+// no longer met the fixtures. FIX: each walked disc's fixture positions are rebuilt FROM THE SIGNED OP-LOG (its
+// active walk rows, window.__dwRowsByDisc, each at its committed placement + moveDeltaFor(id)), and when that
+// position signature differs from the one the drawn network was routed from, the network is re-routed with
+// DiscWalker.bridgeRoute (the SAME bridge the walk uses) and redrawn. Runs on every signed change ('bonsai:oplog':
+// grid drag, item drag, undo/redo), so undoing the move re-routes back. Scope, stated: only pattern-bridged networks (the ARC-only
+// generation path); the re-routed runs are UNSIGNED, exactly like the walk's own runs until §STRATEGY L3; bend
+// fittings committed by the original walk are NOT re-derived (recorded follow-up).
+window.__dwRouteSig = window.__dwRouteSig || {};
+function _dwOplogPlacements(disc) {
+  var rows = (window.__dwRowsByDisc || {})[disc], O = window.Bonsai && window.Bonsai.oplog;
+  if (!rows || !rows.walk || !rows.walk.length || !O || !O._geomOps) return null;
+  var want = {}; rows.walk.forEach(function (id) { want[id] = 1; });
+  var out = [];
+  O._geomOps().forEach(function (op) {
+    if (!want[op.id] || op.op_type !== 'GEOM_INSERT' || !op.parameters || !op.parameters.placement) return;
+    var pp = op.parameters.placement, dw = op.parameters._dw || {}, mv = O.moveDeltaFor(op.id);
+    out.push({ disc: disc, ifc_class: dw.ifc, storey: dw.storey, prov: dw.prov,
+      x: pp.x + (mv.dx || 0), y: pp.y + (mv.dy || 0), z: (dw.cz != null ? dw.cz : pp.z) + (mv.dz || 0) });
+  });
+  return out;
+}
+function _dwSig(pl) { return pl ? pl.map(function (p) { return p.x.toFixed(3) + ',' + p.y.toFixed(3) + ',' + p.z.toFixed(3); }).join(';') : ''; }
+function _dwStampRouteSig(disc) { var pl = _dwOplogPlacements(disc); if (pl) window.__dwRouteSig[disc] = _dwSig(pl); }
+function _reRouteMovedWalks() {
+  if (!window.DiscWalker || !window.DiscWalker.bridgeRoute || !window.__dwBuf || !window.SQL) return;
+  Object.keys(window.__dwRouteSig).forEach(function (d) {
+    var pl = _dwOplogPlacements(d); if (!pl || !pl.length) return;   // walk undone / nothing committed → leave
+    var sig = _dwSig(pl); if (sig === window.__dwRouteSig[d]) return;
+    var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+    try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }   // §ANCHOR-BLIND, as the walk
+    var r; try { r = window.DiscWalker.bridgeRoute(d, bdb, window.__dwName || '', pl); } finally { bdb.close(); }
+    var before = (window.__dwChains[d] || []).length;
+    window.__dwChains[d] = r.segs;
+    window.__dwRouteSig[d] = sig;
+    _renderDiscChains(d, r.segs, { instant: true });
+    console.log('§MEP-REROUTE disc=' + d + ' fixtures=' + pl.length + ' segs ' + before + '→' + r.segs.length + ' (from the signed op-log positions; unsigned runs, §STRATEGY L3)');
+  });
+}
+// Any signed change (grid drag, item drag, undo/redo) fires 'bonsai:oplog'. Debounced to one check per burst; the
+// signature test makes the common case (nothing generated moved) a no-op. Re-route → redraw the walk layer.
+var _mepRerouteTimer = null;
+window.addEventListener('bonsai:oplog', function () {
+  if (!Object.keys(window.__dwRouteSig).length) return;
+  clearTimeout(_mepRerouteTimer);
+  _mepRerouteTimer = setTimeout(function () {
+    var before = JSON.stringify(window.__dwRouteSig);
+    try { _reRouteMovedWalks(); } catch (e) { console.warn('§MEP-REROUTE failed', e && e.message); }
+    if (JSON.stringify(window.__dwRouteSig) !== before) _redrawAllDiscWalks();
+  }, 0);
+});
+function _hideUndoneWalkLayers() {
+  var rows = window.__dwRowsByDisc || {}, root = _dwRoot(); if (!root || !window.Bonsai || !window.Bonsai.oplog || !window.Bonsai.oplog._allGeom) return;
+  var discs = Object.keys(rows); if (!discs.length) return;
+  var undone = {}; window.Bonsai.oplog._allGeom().forEach(function (o) { if (o.undone) undone[o.id] = 1; });
+  discs.forEach(function (d) {
+    var w = rows[d].walk || []; if (!w.length) return;
+    if (w.some(function (id) { return !undone[id]; })) return;   // at least one fixture row active → keep
+    root.children.slice().forEach(function (o) { var u = o.userData || {};
+      if (u.dwDisc === d || u.dwChain === d || u.dwAsm === d || u.dwTrunk === d) root.remove(o); });
+  });
+  if (window.A && A.requestRender) A.requestRender();
 }
 
 // ── SEED → 3D CORRIDOR TRUNK (seed_trunk.js; W-SEED-TRUNK / -CORRIDOR / -RISER / -ENGINE, bim-compiler) ──────
@@ -4838,7 +4927,9 @@ function _registerDiscRoster() {
         var rf = (window.DiscWalker && window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'terminal_rules.db';
         // §DISCWALK-ALL: one synthetic "Walk ALL" row — disc:'__ALL__' is not a real discipline code
         // (DiscWalker.disciplines() never returns it) — onWalk below special-cases it.
-        var allNode = { id: 'dw-all', label: '▶▶ Walk ALL Disciplines', kind: 'disc', disc: '__ALL__', sub: absent.length + ' not extracted · x-ray reveal' };
+        // §WALKALL-MEP-ONLY: the row walks the SERVICES only; STR/roof keep their own rows below.
+        var absentMep = absent.filter(function (d) { return d !== 'STR' && d !== 'roof'; });
+        var allNode = { id: 'dw-all', label: '▶▶ Walk ALL Services', kind: 'disc', disc: '__ALL__', sub: absentMep.length + ' services not extracted · x-ray reveal' };
         var rosterNode = { id: 'dw-root', label: 'Not extracted — walk from ' + rf, kind: 'group', children: [allNode].concat(absent.map(function (d) {
           var n = (window.__dwWalks && window.__dwWalks[d]) ? window.__dwWalks[d].length : 0;
           return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: n ? (n + ' placed ▶') : '▶ walk' };
