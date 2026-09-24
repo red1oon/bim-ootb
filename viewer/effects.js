@@ -5927,9 +5927,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!_lockOn) return;
     if (e.key === 'Escape') {
       e.stopImmediatePropagation(); e.preventDefault();
-      var ov = document.getElementById('gi-still-overlay'); if (ov) ov.remove();
-      _stillLock(false);
-      if (A._stillRefineActive || _autoStageOn || _photoStagingOn) { _autoStageArm(false); _teardownStillRefine('cancelled (Esc)'); }
+      _stillExit('esc');
       return;
     }
     e.stopImmediatePropagation(); e.preventDefault(); _lockBlocked++;
@@ -5949,6 +5947,18 @@ async function setupEffects(A, renderer, scene, camera) {
     }
   }
   A._stillLockRelease = function() { _stillLock(false); };
+  // §STILL_EXIT_NAV: the ONE way out of a still. The Esc key, the bounce overlay's Close button and gi_still.js's own
+  // Esc listener all call this. The Close button used to remove the picture only, leaving §STILL_LOCK on and the still
+  // staged, so every click after it was swallowed and red1 had to refresh.
+  function _stillExit(via) {
+    var ov = document.getElementById('gi-still-overlay'); if (ov) ov.remove();
+    var wasLocked = _lockOn;
+    _stillLock(false);
+    var torn = !!(A._stillRefineActive || _autoStageOn || _photoStagingOn);
+    if (torn) { _autoStageArm(false); _teardownStillRefine('cancelled (Esc)'); }
+    console.log('§STILL_EXIT via=' + via + ' wasLocked=' + (wasLocked ? 1 : 0) + ' tornDown=' + (torn ? 1 : 0));
+  }
+  A.stillExit = _stillExit;
   A.toggleStillRefineUI = function() {
     if (A._stillRefineActive || _autoStageOn) { A.toggleStillRefine(); return; }
     if (_stillUIPending) return;

@@ -802,12 +802,14 @@
     const close = document.createElement('button');
     close.textContent = 'Close (Esc)';
     close.style.cssText = save.style.cssText + ';margin-left:8px';
-    close.onclick = () => wrap.remove();
+    // §STILL_EXIT_NAV: Close must end the still, not just hide the picture (it left §STILL_LOCK on -> viewer stuck)
+    const exit = (via) => { window.removeEventListener('keydown', esc, true); if (window.APP && typeof window.APP.stillExit === 'function') window.APP.stillExit(via); else wrap.remove(); };
+    close.onclick = () => exit('close');
     bar.appendChild(save); bar.appendChild(close);
     canvas.style.cssText = 'flex:1 1 auto;min-height:0;object-fit:contain;width:100%;height:100%';
     wrap.appendChild(bar); wrap.appendChild(canvas);
     document.body.appendChild(wrap);
-    const esc = (e) => { if (e.key === 'Escape') { wrap.remove(); window.removeEventListener('keydown', esc, true); } };
+    function esc(e) { if (e.key === 'Escape') exit('esc-overlay'); }
     window.addEventListener('keydown', esc, true);
     toast('Bounce still ready — ' + passes + ' passes in ' + secs + 's', 4000);
   }
