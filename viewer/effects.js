@@ -4059,6 +4059,8 @@ async function setupEffects(A, renderer, scene, camera) {
         ' lampsOn=' + (A._stillLampsOff ? '0 (daylight, outside)' : _lampOn + '/' + (A._nightLights || []).length) +
         ' lampSum=' + _lampSum.toFixed(3) + ' (at staging; §STILL_DIALS_LAMPS logs the refined set)');
     }
+    // §SKY_PORTAL — window panes as sky light sources (sky_portal.js), after the sky dial so it reads the staged hemi.
+    if (!A._maxqActive && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
     // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
     // nav/still wall-side contrast; in the bake that doubled the shadow contrast (sunFillRatio 4.387 vs
@@ -4179,6 +4181,7 @@ async function setupEffects(A, renderer, scene, camera) {
       (A._nightLights || []).forEach(function(l) { l.decay = A._nightLightDecayDefault; });
       if (A._nightLightByPos && A.nightFixtureColor) A._nightLightByPos.forEach(function(l, pos) { l.color.set(A.nightFixtureColor(pos)); });
     }
+    if (window.SkyPortal) { try { window.SkyPortal.unstage(A); } catch (eSU) {} }   // §SKY_PORTAL
     // §STILL_BASE — hand navigation its own base light back.
     if (_stillBaseSaved && A.ambient && A.hemi) {
       A.ambient.intensity = _stillBaseSaved.ambI; A.hemi.intensity = _stillBaseSaved.hemiI;
