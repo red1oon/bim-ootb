@@ -4059,6 +4059,9 @@ async function setupEffects(A, renderer, scene, camera) {
         ' lampsOn=' + (A._stillLampsOff ? '0 (daylight, outside)' : _lampOn + '/' + (A._nightLights || []).length) +
         ' lampSum=' + _lampSum.toFixed(3) + ' (at staging; §STILL_DIALS_LAMPS logs the refined set)');
     }
+    if (A._concreteStrength) { var _r3 = (A._triplanarMaterials || []).filter(function(m) { return m && m.userData && m.userData.triRow === 'R3'; }).length;
+      console.log('§CONCRETE_TONE strength=' + A._concreteStrength() + ' contrast=' + (1.1 * A._concreteStrength()).toFixed(3) + ' (R3 was 1.1)' +
+        ' normalScale=' + A._concreteStrength() + ' tile=' + A._concreteTile() + 'm (was 2.5) r3Mats=' + _r3); }
     // §SKY_PORTAL — window panes as sky light sources (sky_portal.js), after the sky dial so it reads the staged hemi.
     if (!A._maxqActive && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")

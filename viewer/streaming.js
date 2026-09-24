@@ -1384,6 +1384,13 @@ function setupStreaming(A) {
       normFactorRGB: [4.8763, 4.0250, 3.3988],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.9
     };
+    // §CONCRETE_TONE dials: APP._concrete (0..1) > &concrete= > 0.55 (strength; contrast 1.1 x 0.55 = 0.6, red1's
+    // start); APP._concreteTile (m) > &concretetile= > 4.0 (was _TRI_CONCRETE's 2.5 m — a larger tile, red1 "consider").
+    var R3_CONTRAST = 1.1;
+    var _concreteUrl = (function() { var m = /[?&]concrete=([0-9.]+)/.exec(location.search); return m ? parseFloat(m[1]) : null; })();
+    var _concreteTileUrl = (function() { var m = /[?&]concretetile=([0-9.]+)/.exec(location.search); return m ? parseFloat(m[1]) : null; })();
+    A._concreteStrength = function() { var v = (typeof A._concrete === 'number') ? A._concrete : (_concreteUrl != null ? _concreteUrl : 0.55); return Math.max(0, Math.min(1, isFinite(v) ? v : 0.55)); };
+    A._concreteTile = function() { var v = (typeof A._concreteTileM === 'number') ? A._concreteTileM : (_concreteTileUrl != null ? _concreteTileUrl : 4.0); return Math.max(0.5, Math.min(20, isFinite(v) ? v : 4.0)); };
     var TRIPLANAR_MAT = {
       // ── Concrete (STD_MAT: "concrete/plaster", "cast concrete", "reinforced concrete", ...) ──
       IfcWall: _TRI_CONCRETE,
@@ -1669,6 +1676,8 @@ function setupStreaming(A) {
       var _triUvScale = 1.0 / triMat.tileMeters;
       var _triNorm = new THREE.Vector3(triMat.normFactorRGB[0], triMat.normFactorRGB[1], triMat.normFactorRGB[2]);
       var _triContrast = triMat.contrastBoost || 1.0;
+      var _triIsR3 = (surfRow === 'R3');   // §CONCRETE_TONE — live strength/tile on the R3 concrete rows only
+      mat.userData.triRow = surfRow || null;
       mat.onBeforeCompile = function(shader) {
         shader.uniforms.uTriActive = { value: 0.0 };  // flipped by A.startStillRefine()/_teardownStillRefine()
         shader.uniforms.uTriDiffuse = { value: _diffuseTex };
@@ -1820,7 +1829,11 @@ function setupStreaming(A) {
           // (§TRIPLANAR_RECOMPILE_FIX): a silent program recompile resets uniforms to defaults.
           // APP._triNormalOff = true reverts to the shipped two-map look with no reload.
           if (sh.uniforms.uTriNormalMap && sh.uniforms.uTriNormalMap.value)
-            sh.uniforms.uTriNormalScale.value = A._triNormalOff ? 0.0 : 1.0;
+            sh.uniforms.uTriNormalScale.value = A._triNormalOff ? 0.0 : (_triIsR3 ? A._concreteStrength() : 1.0);
+          // §CONCRETE_TONE (red1 2026-09-24: "tone down the crinkled concrete on the upper walls") — R3 contrast =
+          // R3's 1.1 x strength (default 0.55 -> 0.6, red1's start value), normal map x strength, tile CONCRETE_TILE_M.
+          if (_triIsR3) { var _cs = A._concreteStrength(); sh.uniforms.uTriContrast.value = R3_CONTRAST * _cs;
+            sh.uniforms.uTriScale.value = 1.0 / A._concreteTile(); }
         }
       };
       A._triplanarMaterials = A._triplanarMaterials || [];
