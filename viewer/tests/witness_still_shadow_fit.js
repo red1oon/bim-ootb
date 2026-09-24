@@ -16,7 +16,7 @@ const [PORT, DB, WANT, POSES_J, SUN, OUT_ARG, RADIUS] = process.argv.slice(2);
 const POSES = JSON.parse(POSES_J), OUT = OUT_ARG || '.', W = 1666, H = 864;
 (async () => { const b = await puppeteer.launch({ headless: true, protocolTimeout: 900000, env: Object.assign({}, process.env, { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' }), args: ['--no-sandbox', '--use-angle=gl-egl', '--ignore-gpu-blocklist'] });
   const p = await b.newPage(); await p.setViewport({ width: W, height: H }); let errs = 0; const L = [];
-  p.on('console', m => { const t = m.text(); L.push(t); if (/§STILL_SHADOW|§STILL_CULL|§SHADOW_SIZE_BY_ENVELOPE|§PHOTO_SHADOW enabled|§STILL_REFINE done|§LIGHT_STACK|§DLOD_STILL_OWNERSHIP|Uncaught|Shader Error/.test(t)) say('[page] ' + t.slice(0, 260)); });
+  p.on('console', m => { const t = m.text(); L.push(t); if (/§STILL_SHADOW|§PHOTO_SHADOW_CONTACT|§SHADOW_SIZE_BY_ENVELOPE|§PHOTO_SHADOW enabled|§STILL_REFINE done|§LIGHT_STACK|§DLOD_STILL_OWNERSHIP|Uncaught|Shader Error/.test(t)) say('[page] ' + t.slice(0, 260)); });
   p.on('pageerror', e => { errs++; say('PAGEERROR ' + e.message); });
   await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=' + DB, { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => window.APP && window.APP.guidMap, { timeout: 240000 });
@@ -51,6 +51,11 @@ const POSES = JSON.parse(POSES_J), OUT = OUT_ARG || '.', W = 1666, H = 864;
     for (let i = 0; i < 180 && !L.slice(b1).some(t => /§STILL_REFINE done/.test(t)); i++) await sleep(1000);
     await sleep(1500);
     const png = await p.evaluate(() => { const A = window.APP; try { A._composer ? A._composer.render() : A.renderer.render(A.scene, A.camera); } catch (e) {} return A.renderer.domElement.toDataURL('image/png'); });
+    // BLANK check (watchdog): a capture that is one flat colour (sky only) is not a frame. Luma spread over a 64x32 sample.
+    const spread = await p.evaluate(async (u) => { const im = new Image(); im.src = u; await im.decode(); const c = document.createElement('canvas'); c.width = 64; c.height = 32;
+      const x = c.getContext('2d'); x.drawImage(im, 0, 0, 64, 32); const d = x.getImageData(0, 0, 64, 32).data; let lo = 255, hi = 0;
+      for (let i = 0; i < d.length; i += 4) { const l = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; lo = Math.min(lo, l); hi = Math.max(hi, l); } return +(hi - lo).toFixed(1); }, png);
+    say('FRAME ' + arm + ' lumaSpread=' + spread + (spread < 8 ? ' BLANK' : ' ok'));
     return { lines: L.slice(b1), png }; };
   const grab = (lines, re) => (lines.find(t => re.test(t)) || '').slice(0, 240);
   for (const ps of POSES) {
