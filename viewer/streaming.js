@@ -761,6 +761,97 @@ function setupStreaming(A) {
     if (!A._stillRefineActive) return 0.0;
     return (A._triBigOnly && mat && mat.userData && mat.userData._triSmallPart) ? 0.0 : 1.0;
   };
+  // ══ §SURFACE_RULES (2026-09-24, bim-compiler PHOTOREAL_STILL_RENDER.md §SURFACE_RULES + rev 1) ══
+  // red1: surfaces too rough, materials hard to tell apart; roof metal deck stays rough; floor slabs and
+  // small beams/members/doors/railings smooth ("marble-like OK, just not rough"). A row per element from
+  // role (geometry) + substance (authored material, a small lexicon) + class, first match wins; a batch
+  // takes its members' MAJORITY row (one material per batch). Rows change roughness / texture / envInt
+  // only — never colour. Switch at LOAD: `?surf=rules` (default = today's look).
+  try { if (A._surfRules == null) A._surfRules = /[?&]surf=rules\b/.test(location.search); } catch (e) {}
+  var _SURF_MEP = /^Ifc(Pipe|Duct|Flow|Cable|Valve|AirTerminal|FireSuppression|LightFixture|Sanitary|Alarm|ElectricAppliance|ElectricDistribution|Distribution|EnergyConversion|UnitaryEquipment|Pump|Fan|Tank|Boiler|Chiller|Coil|Damper|Filter|Outlet|SwitchingDevice|ProtectiveDevice|Controller|Sensor|Actuator|JunctionBox|CommunicationsAppliance|AudioVisual|Lamp)/;
+  var _SURF_ENVELOPE = { IfcSlab: 1, IfcPlate: 1, IfcRoof: 1, IfcCovering: 1 };
+  var _SURF_FLOOR = { IfcSlab: 1, IfcStair: 1, IfcStairFlight: 1, IfcRamp: 1, IfcRampFlight: 1 };
+  A._surfSubstance = function(n) {
+    n = (n || '').toLowerCase(); if (!n) return '';
+    if (/glass|glaz/.test(n)) return 'glass';
+    if (/metal|steel|alumin|copper|silver|brass|bronze|iron|zinc|galvani|chrome/.test(n)) return 'metal';
+    if (/plaster|gypsum|board|papan|skim|lepaan/.test(n)) return 'plaster';   // finished boards/renders before raw cement
+    if (/concrete|beton|cement|simen|mortar|screed/.test(n)) return 'concrete';
+    if (/wood|timber|oak|pine|plywood|veneer|kayu/.test(n)) return 'timber';
+    if (/stone|marble|granite|tile|ceramic|terrazzo|jubin/.test(n)) return 'stone';
+    return '';
+  };
+  // ROOF LAYER: a FLAT element (thinnest bbox axis vertical) with no OTHER surface's flat element above it
+  // over >= half of its 1 m grid cells; the same surface's own pieces (class + material) are not cover (a
+  // sloped deck is many overlapping strips). Measured: Terminal Metal Deck 33,225 / 33,324. Built once per
+  // DB from element_transforms (IFC coords, z up).
+  A._surfRoofGuids = null;
+  A._surfBuildRoof = function() {
+    var t0 = performance.now(), roof = new Set(), flat = [], grid = new Map(), rows = [];
+    try { rows = A.dbQuery('SELECT m.guid, m.ifc_class, m.material_name, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid') || []; }
+    catch (e) { console.warn('§SURFACE_ROOF_LAYER query failed: ' + e.message); }
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], bx = +r[6] || 0, by = +r[7] || 0, bz = +r[8] || 0;
+      if (!(bz < Math.min(bx, by) && Math.max(bx, by) >= 0.1)) continue;
+      flat.push({ g: r[0], id: (r[1] || '') + '|' + (r[2] || ''), x0: Math.floor(r[3] - bx / 2), x1: Math.floor(r[3] + bx / 2),
+        y0: Math.floor(r[4] - by / 2), y1: Math.floor(r[4] + by / 2), zb: r[5] - bz / 2, zt: r[5] + bz / 2 });
+    }
+    flat.forEach(function(e, k) { for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) { var c = x + ',' + y; var l = grid.get(c); if (!l) grid.set(c, l = []); l.push(k); } });
+    flat.forEach(function(e, k) {
+      var cells = 0, covered = 0;
+      for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) {
+        cells++; var l = grid.get(x + ',' + y);
+        for (var j = 0; j < l.length; j++) { var o = flat[l[j]]; if (l[j] !== k && o.id !== e.id && o.zb >= e.zt - 0.02) { covered++; break; } }
+      }
+      if (covered < 0.5 * cells) roof.add(e.g);
+    });
+    A._surfRoofGuids = roof;
+    console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size + ' ms=' + (performance.now() - t0).toFixed(0));
+  };
+  A._surfRowOf = function(el) {
+    if (A._alphaOf(el.rgba) < 1.0) return 'R9';
+    var c = el.ifcClass || '';
+    if (_SURF_MEP.test(c)) return 'R8';
+    var sub = A._surfSubstance(el.matName);
+    if (_SURF_ENVELOPE[c] && A._surfRoofGuids && A._surfRoofGuids.has(el.guid)) return sub === 'metal' ? 'R1' : (sub === 'plaster' ? 'R2p' : 'R2c');
+    if (_SURF_FLOOR[c]) return 'R4';            // a floor is a finished surface whatever it is cast from
+    if (sub === 'concrete') return 'R3';
+    if (sub === 'plaster') return 'R5';
+    if (sub === 'metal') return 'R6';
+    if (sub === 'timber' || sub === 'stone' || sub === 'glass') return 'R7';
+    if (c === 'IfcWall' || c === 'IfcColumn' || c === 'IfcFooting' || c === 'IfcPile') return 'R3';
+    if (c === 'IfcWallStandardCase' || c === 'IfcCovering') return 'R5';
+    if (c === 'IfcBeam' || c === 'IfcMember' || c === 'IfcPlate') return 'R6';
+    return 'R7';
+  };
+  A._surfTallyData = null;
+  A._surfRowFor = function(list, pick) {
+    if (!A._surfRules || !list || !list.length) return '';
+    if (!A._surfRoofGuids) A._surfBuildRoof();
+    var T = A._surfTallyData || (A._surfTallyData = { rows: {}, against: {}, cls: {}, authored: 0, classDefault: 0 });
+    var cnt = {}, own = [];
+    for (var i = 0; i < list.length; i++) {
+      var el = pick ? pick(list[i]) : list[i]; if (!el) continue;
+      var rw = A._surfRowOf(el); own.push(rw); cnt[rw] = (cnt[rw] || 0) + 1;
+      var ck = (el.ifcClass || '?'); var ce = T.cls[ck] || (T.cls[ck] = {}); ce[rw] = (ce[rw] || 0) + 1;
+      if (el.rgba) T.authored++; else T.classDefault++;
+    }
+    var best = '', bn = -1; for (var k in cnt) if (cnt[k] > bn) { bn = cnt[k]; best = k; }
+    T.rows[best] = (T.rows[best] || 0) + own.length;
+    T.against[best] = (T.against[best] || 0) + (own.length - bn);
+    return best;
+  };
+  A._surfTally = function() {
+    if (!A._surfRules) return;
+    var T = A._surfTallyData;
+    if (!T) { console.log('§SURFACE_RULES_TALLY VACUOUS bld=' + (A.activeBuilding || '?') + ' — no batch was judged'); return; }
+    var rk = Object.keys(T.rows).sort();
+    console.log('§SURFACE_RULES_TALLY bld=' + (A.activeBuilding || '?') + ' ' + rk.map(function(r) { return r + '=' + T.rows[r] + '(againstOwnRow=' + (T.against[r] || 0) + ')'; }).join(' ') +
+      ' textured=R1+R2+R3=' + ((T.rows.R1 || 0) + (T.rows.R2c || 0) + (T.rows.R2p || 0) + (T.rows.R3 || 0)));
+    console.log('§SURFACE_RULES_COLOUR bld=' + (A.activeBuilding || '?') + ' authored=' + T.authored + ' classDefault=' + T.classDefault + ' (colours unchanged by the rules)');
+    var ck = Object.keys(T.cls).sort(function(a, b) { var sa = 0, sb = 0, k; for (k in T.cls[a]) sa += T.cls[a][k]; for (k in T.cls[b]) sb += T.cls[b][k]; return sb - sa; });
+    console.log('§SURFACE_RULES_CLASS bld=' + (A.activeBuilding || '?') + ' ' + ck.slice(0, 30).map(function(c) { return c + ':' + Object.keys(T.cls[c]).map(function(r) { return r + '=' + T.cls[c][r]; }).join(','); }).join(' '));
+  };
   A._triResolve = function(alpha, ifcClass, matName) {
     var byName = A._TRIPLANAR_BY_NAME, byClass = A._TRIPLANAR_MAT;
     if (!byName || !byClass) return { mat: null, src: 'INCONCLUSIVE' };
@@ -929,7 +1020,7 @@ function setupStreaming(A) {
   // §MEP_COLOR_SURVIVES_PHOTOREAL: `noMepHue` suppresses the trade-hue tier for THIS material.
   // Its one caller is the InstancedMesh branch, which buckets by GEOMETRY HASH ALONE and can
   // therefore hand one material to a set that is not uniform on MEP-ness — see the guard there.
-  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName, noMepHue) {
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName, noMepHue, surfRow) {
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -1191,7 +1282,8 @@ function setupStreaming(A) {
     // material literally containing an Ifc class name would otherwise silently join the bloom set.
     // Case-only change: the key stays readable, and the real name lives in mat.userData._matName.
     var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (matName || '').replace(/Ifc/g, 'ifc')
-      + (noMepHue ? '|noMepHue' : '');   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
+      + (noMepHue ? '|noMepHue' : '')
+      + (surfRow ? '|surf=' + surfRow : '');   // §SURFACE_RULES — one material per row   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
@@ -1281,6 +1373,11 @@ function setupStreaming(A) {
       opts.envMapIntensity = (a < 1.0) ? 0.6
         : ((stdMat && stdMat.envInt != null) ? stdMat.envInt : 0.6);
     }
+    // §SURFACE_RULES — roughness / reflection per row (null = keep today's value). Colour is never touched.
+    if (surfRow && surfRow !== 'R9') {
+      var _SRP = { R1: [0.55, null], R2c: [0.8, null], R2p: [0.8, null], R3: [0.85, null], R4: [0.35, 0.3], R5: [0.75, null], R6: [0.45, null] }[surfRow];
+      if (_SRP) { opts.roughness = _SRP[0]; if (_SRP[1] != null) opts.envMapIntensity = _SRP[1]; }
+    }
     const mat = new THREE.MeshStandardMaterial(opts);
     // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): effects.js's _reassertPhotoMatBoost() blindly
     // multiplies envMapIntensity x3 and tightens roughness x0.4 on every metal/glossy material
@@ -1304,13 +1401,21 @@ function setupStreaming(A) {
     var _triR = A._triResolve(a, ifcClass, matName);
     var triMat = _triR.mat;
     var _triSrc = _triR.src;
+    // §SURFACE_RULES: texture only where the real surface is coarse at building scale (R1-R3), and softer
+    // than the shipped contrast (1.9 / 1.6 -> 1.2 / 1.1); every other row renders its own colour smooth.
+    if (surfRow === 'R9') { triMat = null; _triSrc = 'surf:R9'; }   // majority-glass batch: never a wear texture, whatever items[0] is
+    else if (surfRow) {
+      var _SR = { R1: [_TRI_METAL, 1.2], R2c: [_TRI_CONCRETE, 1.6 * 0.7], R2p: [_TRI_PLASTER, 1.5 * 0.7], R3: [_TRI_CONCRETE, 1.1] }[surfRow];
+      triMat = _SR ? Object.assign({}, _SR[0], { contrastBoost: _SR[1] }) : null;
+      _triSrc = 'surf:' + surfRow;
+    }
 
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
     // Rough surfaces (concrete, slabs, walls): coarse pebble texture.
     // Zero geometry cost. Reduces temporal aliasing shimmer on flat-color surfaces.
     var _perturbScale = 0;
-    if (!triMat) {
+    if (!triMat && !(surfRow && surfRow !== 'R9')) {   // §SURFACE_RULES: smooth rows get no fake grain either
       if (stdMat && stdMat.metal > 0.3) _perturbScale = 0.15;  // metal: subtle brushed grain
       else if (stdMat && stdMat.rough > 0.7) _perturbScale = 0.25;  // concrete: visible grain
     }
@@ -1522,6 +1627,7 @@ function setupStreaming(A) {
     // it without re-deriving. Plain strings only — see the §TRIPLANAR_CLONE_STALL note above about
     // never putting the shader object in userData.
     mat.userData._triSrc = _triSrc;
+    if (surfRow) mat.userData._surfRow = surfRow;   // §SURFACE_RULES
     mat.userData._triSmallPart = !!triMat && !A._TRI_BIG_CLASSES[ifcClass];   // §TRI_BIG_ONLY
     mat.userData._triTex = triMat ? triMat.diffuse : '';
     mat.userData._matName = matName || '';
@@ -1736,6 +1842,7 @@ function setupStreaming(A) {
         }
         A.streaming = false;
         if (A._triSrcTally) A._triSrcTally();   // §CPE_MATERIAL_KEY rollup — shipped §-log evidence
+        if (A._surfTally) A._surfTally();       // §SURFACE_RULES rollup (only when ?surf=rules)
         if (A._mepHueRollup) A._mepHueRollup();  // §MEP_COLOR_SURVIVES_PHOTOREAL rollup — same reason
         // §RED_GREY_MYSTERY: DISABLED for now — the repair itself is verified correct (patches the
         // broken normal data, confirmed by direct readback) but does NOT change the rendered
@@ -2255,7 +2362,7 @@ function setupStreaming(A) {
         }
         if (_mepU === null) A._instMepMixed = (A._instMepMixed || 0) + 1;
         else A._instMepUniform = (A._instMepUniform || 0) + 1;
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName, _mepU === null);
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName, _mepU === null, A._surfRowFor(elements));
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -2324,7 +2431,7 @@ function setupStreaming(A) {
         }
 
         var batchCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '');
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }));
         var bm;
         try {
           bm = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -2403,7 +2510,7 @@ function setupStreaming(A) {
       for (const [key, items] of Object.entries(batchBuckets)) {
         for (const item of items) {
           const el = item.el;
-          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint, el.matName);
+          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint, el.matName, undefined, A._surfRowFor([el]));
           const mesh = new THREE.Mesh(item.geo, mat);
           const pos = A.ifc2three(el.cx, el.cy, el.cz);
           mesh.position.set(pos.x, pos.y, pos.z);
@@ -2538,7 +2645,7 @@ function setupStreaming(A) {
         mergedGeo.setIndex(new THREE.BufferAttribute(_mIdx, 1));
 
         var mergedCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '');
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }));
         const mesh = new THREE.Mesh(mergedGeo, mat);
         mesh.userData.storey = storey === '_' ? '' : storey;
         mesh.userData.disc = disc === '_' ? '' : disc;
@@ -2698,7 +2805,7 @@ function setupStreaming(A) {
       // Fallback: individual meshes for oversized/over-budget elements
       if (fallbackItems.length > 0) {
         var batchCls = fallbackItems[0].el.ifcClass || '';
-        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint, fallbackItems[0].el.matName);
+        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint, fallbackItems[0].el.matName, undefined, A._surfRowFor(fallbackItems, function(it) { return it.el; }));
         for (var fi = 0; fi < fallbackItems.length; fi++) {
           var el = fallbackItems[fi].el;
           var m = new THREE.Mesh(fallbackItems[fi].geo, mat);
@@ -2720,7 +2827,7 @@ function setupStreaming(A) {
 
       // Create BatchedMesh with reserved capacity
       var batchCls = slotReservations[0].item.el.ifcClass || '';
-      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint, slotReservations[0].item.el.matName);
+      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint, slotReservations[0].item.el.matName, undefined, A._surfRowFor(slotReservations, function(it) { return it.item.el; }));
       var bm;
       try {
         bm = new THREE.BatchedMesh(slotReservations.length, bucketVerts, bucketIdx, mat);
@@ -2898,7 +3005,7 @@ function setupStreaming(A) {
       var parts = key.split('|');
       var rgbaKey = parts[2];
       var batchCls = items[0].ifcClass;
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint, items[0].matName);
+      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint, items[0].matName, undefined, A._surfRowFor(items));
       var newBM;
       try {
         newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
