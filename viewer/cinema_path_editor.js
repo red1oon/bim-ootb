@@ -1094,6 +1094,10 @@
         // onto own terminal") — the silent bake is a Node CLI tool with no server-side execution
         // possible from a static site (there is nothing to click that could run it FOR the user), so
         // the most honest thing this control can do is hand over the exact command, ready to paste.
+        // §FILM_PARITY (§GI_FILM) — the Alt+S bounce in the film: ON by default, a checkbox to switch it off; this window's
+        // Alt+C and the copy-bake-command line both follow it. No WebGPU -> the film stands down with §GI_FILM_OFF.
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input type="checkbox" id="cpe-film-bounce" checked style="vertical-align:middle"> ' +
+          'Bounce light (Alt+S look; needs WebGPU)</label></div>' +
         '<div style="margin-top:4px">Silent-bake size ' +
           '<select id="cpe-bake-res" style="background:#15181c;color:#ddd;border:1px solid #3a3f47;' +
             'border-radius:3px;font-size:10px;padding:1px 2px">' +
@@ -3940,6 +3944,10 @@
       // §CPE_BAKE_RES_COMMAND — there is no server behind this page, so nothing here can RUN a
       // bake; the honest control is handing over the exact command for the user's own terminal
       // (repo cloned, Node installed, the building's DB available locally).
+      var _fbEl = document.getElementById('cpe-film-bounce');
+      if (_fbEl) _fbEl.addEventListener('change', function(e) { var _app = A(); if (_app) _app._filmBounceOff = !e.target.checked;
+        console.log('§GI_FILM_TOGGLE bounce=' + (e.target.checked ? 'on' : 'off') + ' (this window\'s Alt+C and the bake command)');
+        if (_cmdText && _cmdBox && _cmdBox.style.display !== 'none') _cmdText.value = _buildBakeCommand(); });
       var _cmdLink = document.getElementById('cpe-bake-cmd-link');
       var _cmdBox = document.getElementById('cpe-bake-cmd-box');
       var _cmdText = document.getElementById('cpe-bake-cmd-text');
@@ -3952,6 +3960,8 @@
         var m = res.match(/^(\d+)x(\d+)@(\d+)$/);
         if (m) flags = ' --width ' + m[1] + ' --height ' + m[2] + ' --fps ' + m[3];
         // no selection = cli_silent_bake.js's own default (1280x720@15), not invented here
+        var _bEl = document.getElementById('cpe-film-bounce');
+        if (_bEl && !_bEl.checked) flags += ' --bounce 0';   // §GI_FILM — default on; only the off state needs saying
         return 'node cli_silent_bake.js --db ' + bld + flags + ' --gpu real --out /tmp/' + bld + '_bake.mp4';
       }
       if (_cmdLink) _cmdLink.addEventListener('click', function() {

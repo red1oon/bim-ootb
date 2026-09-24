@@ -3164,7 +3164,10 @@ async function setupEffects(A, renderer, scene, camera) {
     function add(R, x, y, z) { q.set(x, y, z).applyMatrix4(inv); R.x0 = Math.min(R.x0, q.x); R.x1 = Math.max(R.x1, q.x); R.y0 = Math.min(R.y0, q.y); R.y1 = Math.max(R.y1, q.y); }
     var B = rect(), dFar = 0;
     _fitState.corners.forEach(function(c) { dFar = Math.max(dFar, q.set(c.x, c.y, c.z).sub(cam.position).dot(fwd)); add(B, c.x, c.y, c.z); });
-    var props = [], sky = _photoSkyline && _photoSkyline.visible ? _photoSkyline : null, bb = new THREE.Box3();
+    // Props only when the camera is known to be OUTSIDE: indoors the frustum reaches them through walls it cannot see past,
+    // and the union blew the box up to the whole site (HHS interior: 334 m, gain 1.08x — measured).
+    var outside = A._stillCamInsideNow === false;
+    var props = [], sky = outside && _photoSkyline && _photoSkyline.visible ? _photoSkyline : null, bb = new THREE.Box3();
     if (sky) sky.traverse(function(o) { if (!(o.isMesh || o.isInstancedMesh) || !o.visible) return; bb.setFromObject(o); if (bb.isEmpty()) return;
       var R = rect(); for (var k = 0; k < 8; k++) add(R, k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z);
       var far = 0; for (var k2 = 0; k2 < 8; k2++) far = Math.max(far, q.set(k2 & 1 ? bb.max.x : bb.min.x, k2 & 2 ? bb.max.y : bb.min.y, k2 & 4 ? bb.max.z : bb.min.z).sub(cam.position).dot(fwd));
@@ -3204,7 +3207,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _stillFitBox = { l: l, r: r, b: b, t: t };
     var t0 = 2 * env / mz;
     var line = 'box=' + w.toFixed(1) + 'x' + h.toFixed(1) + 'm texelX=' + (w / mz).toFixed(4) + ' texelY=' + (h / mz).toFixed(4) +
-      ' normalBias=' + A.sun.shadow.normalBias.toFixed(3) + ' propsKept=' + kept + '/' + props.length + (film ? ' sizeChanges=' + _fitState.changes + (changed ? ' CHANGED' : '') : '');
+      ' normalBias=' + A.sun.shadow.normalBias.toFixed(3) + ' propsKept=' + kept + '/' + props.length + ' camOutside=' + (outside ? 1 : 0) + (film ? ' sizeChanges=' + _fitState.changes + (changed ? ' CHANGED' : '') : '');
     if (!film) console.log('§STILL_SHADOW_FIT env=' + env + ' ' + line + ' (was ' + (2 * env) + ', texel ' + t0.toFixed(4) + ') gain=' + (t0 / texel).toFixed(2) + 'x viewDepth=' + dFar.toFixed(0) +
       ' bldgFootprint=' + (B.x1 - B.x0).toFixed(0) + 'x' + (B.y1 - B.y0).toFixed(0) + ' sunElev=' + THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)))).toFixed(1));
     return line;
@@ -4127,6 +4130,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // red1 (refined): indoor lights are on by day. Lamps go OFF only for a daylight still whose camera is
       // OUTSIDE; inside, they stay on. Window glow is off in daylight either way.
       var _gIn = _gDay ? _stillCamInside() : { inside: null, src: 'not-needed (dusk)' };
+      A._stillCamInsideNow = _gIn.inside;   // §STILL_SHADOW_FIT reads it (props only when outside)
       if (_gDay) {
         A._stillWindowGlowOff = true;
         // §STILL_LAMPS_OUTSIDE (red1 2026-09-24: seen through the glass, interiors look drab — "no light source falls
@@ -4328,7 +4332,7 @@ async function setupEffects(A, renderer, scene, camera) {
       var gs = A.sun.position.clone(); if (A.sun.target) gs.sub(A.sun.target.position); gs.normalize();
       var el = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, gs.y))));
       var day = !_photoDuskMoodApplied && el > PHOTO_SUN_ELEVATION;
-      var inside = day ? _stillCamInside().inside : null;
+      var inside = _stillCamInside().inside; A._stillCamInsideNow = inside;
       var lampsOut = _stillDial('_stillLampsOut', 'lampsout', 0, 1) > 0;
       var lampsOff = day && inside === false && !lampsOut;
       A._stillWindowGlowOff = day; A._stillLampsOff = lampsOff;

@@ -46,7 +46,7 @@ function ruleTintMaterialOpts(opts) {
   // "must equal Clash MODE's material" contract, which §62.2 ruled out of scope; a first attempt did
   // exactly that and broke tests/test_rule_mode_tint.js. Costs nothing: same geometry, same instanced
   // draw, one flag. opacity 0.22 keeps the scene fully readable through a solid box.
-  if (opts && opts.filled) { o.wireframe = false; o.opacity = 0.22; }
+  if (opts && opts.filled) { o.wireframe = false; o.opacity = (typeof opts.opacity === 'number') ? opts.opacity : 0.22; }   // §131: the film passes its quieter opacity
   if (!opts || !opts.shineThrough) return o;
   return Object.assign(o, { depthTest: false, toneMapped: false });
 }
