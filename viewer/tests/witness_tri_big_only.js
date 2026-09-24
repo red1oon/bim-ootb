@@ -1,4 +1,5 @@
 // ⚠ DO NOT REMOVE — witness for §TRI_BIG_ONLY (bim-compiler PHOTOREAL_STILL_RENDER.md). Read the log after every run.
+/* global Buffer */   // node witness (puppeteer): Buffer is a Node global, not a browser one
 // Issue: rough triplanar maps land on small parts (doors, beams, plates). Proves the switch FIRES: with ?tri=big,
 // during Alt+S every non-BIG triplanar material has uTriActive=0 and every BIG one 1; without it, all 1.
 // Usage: node viewer/tests/witness_tri_big_only.js --port 8600 --tag on --url-extra '&tri=big'

@@ -1,4 +1,5 @@
 // ⚠ DO NOT REMOVE — witness for §DLOD_STILL_OWNERSHIP (bim-compiler PHOTOREAL_STILL_RENDER.md). Read the log after every run.
+/* global Buffer */   // node witness (puppeteer): Buffer is a Node global, not a browser one
 // Issue it proves/disproves: during Alt+S, DLOD zero-scales instances (incl. roof casters) outside the view, so
 // the sun shines through the roof. Counts zero-scaled InstancedMesh slots by IFC class in nav, during the app
 // still, right before the bounce pass, and after exit. Before-tree: DLOD stays on through the still (on 2026-09-24 it zeroed

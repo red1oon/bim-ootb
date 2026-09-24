@@ -1,4 +1,5 @@
 // ⚠ DO NOT REMOVE — witness for §SKY_OCCLUSION (bim-compiler PHOTOREAL_STILL_RENDER.md). Read the log after every run.
+/* global Buffer */   // node witness (puppeteer): Buffer is a Node global, not a browser one
 // Issue: red1 — "indoor floor too bright, not taking in shadows": the open-sky hemi + env light covered floors.
 // Proves: the map is built (finite span, coveredFrac logged), materials get uSkyOcc=1 during the still and 0 after exit,
 // and shoots each pose with occlusion ON (default) and OFF (&skyocc=1 equivalent, APP._stillSkyOcc=1) for red1's eye:

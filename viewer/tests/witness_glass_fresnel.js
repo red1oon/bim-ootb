@@ -1,4 +1,5 @@
 // ⚠ DO NOT REMOVE — witness for §GLASS_FRESNEL (bim-compiler PHOTOREAL_STILL_RENDER.md). Read the log after every run.
+/* global Buffer */   // node witness (puppeteer): Buffer is a Node global, not a browser one
 // Issue: red1 wants physically reflective windows; a first sheet was captured badly (a pose below ground, a frame with
 // the building missing, described unseen). Proves, per pose x (off, on): full load (63,182), THIS press's
 // §STILL_REFINE done seen before capture, visible-mesh count at capture, §GLASS_FRESNEL patched/skipped per class, no

@@ -1,4 +1,5 @@
 // ⚠ DO NOT REMOVE — witness for §SHADOW_EDGE_DIFF (bim-compiler PHOTOREAL_STILL_RENDER.md). Read the log after every run.
+/* global Buffer */   // node witness (puppeteer): Buffer is a Node global, not a browser one
 // Issue: red1 sees smooth shadow edges with nav Shadow but a stair-step in Alt+S, although nav's map is COARSER (2048
 // vs 8192). Logs, for nav Shadow and for Alt+S at the same Hospital pose: shadowMap.type, mapSize, frustum, bias,
 // normalBias, radius, sun elevation, and the texel footprint on flat ground = texel / sin(elev). Then Alt+S arms, one

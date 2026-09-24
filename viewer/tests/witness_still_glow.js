@@ -1,4 +1,5 @@
 // ⚠ DO NOT REMOVE — witness for §STILL_GLOW (bim-compiler PHOTOREAL_STILL_RENDER.md). Read the log after every run.
+/* global Buffer */   // node witness (puppeteer): Buffer is a Node global, not a browser one
 // Issue: night mode's window-glazing glow (not dimmed by shadow) hid the wing shadows on the Hospital courtyard
 // facades in daylight Alt+S stills. Proves: at a daylight sun the glazing emissive is 0 during the still, at a dusk
 // sun it is kept, fixtures are untouched, and after the still ends every glazing material is back where it was.

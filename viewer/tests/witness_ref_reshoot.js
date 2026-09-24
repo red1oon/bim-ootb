@@ -1,4 +1,5 @@
 // ⚠ DO NOT REMOVE — witness for the §RESUME reference-look re-shoots (bim-compiler PHOTOREAL_STILL_RENDER.md). Read the log.
+/* global Buffer */   // node witness (puppeteer): Buffer is a Node global, not a browser one
 // Issue: every lighting/glass change must not regress red1's two reference stills (ref 1 courtyard "quite good outside",
 // ref 2 aerial "see the bounce on the wall from the middle wing"). Shoots both poses at red1's window size with the
 // served defaults, saves the bounce COMPOSITE (the #gi-still-overlay canvas, what red1 saves), logs the §STILL_POSE /
