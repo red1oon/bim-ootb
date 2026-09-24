@@ -1969,7 +1969,18 @@ function setupTools(A) {
       // not a second mechanism. A frame whose frustum already fills the budget is unchanged.
       var _tuLimit = Math.max(0, A._nightMaxLights || 0);
       if (typeof A._stillLampCap === 'number') _tuLimit = Math.min(_tuLimit, A._stillLampCap);   // §LIGHT_UNIFORM_BUDGET
-      var _picked = inView.slice(0, (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200);   // §LIGHT_UNIFORM_BUDGET (sky_portal.js)
+      // §LAMP_CAP_NEAREST (2026-09-25, watchdog: the cap kept the first N in LIST order, so lamps in view near the camera
+      // could drop while far ones stayed). When more are in view than the cap, keep the NEAREST to the camera.
+      var _capN = (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200;
+      if (inView.length > _capN) {
+        var _cp = A.camera.position;
+        inView.sort(function(a, b) { return ((a.x - _cp.x) * (a.x - _cp.x) + (a.y - _cp.y) * (a.y - _cp.y) + (a.z - _cp.z) * (a.z - _cp.z)) -
+                                           ((b.x - _cp.x) * (b.x - _cp.x) + (b.y - _cp.y) * (b.y - _cp.y) + (b.z - _cp.z) * (b.z - _cp.z)); });
+        var _dK = Math.sqrt(Math.pow(inView[_capN - 1].x - _cp.x, 2) + Math.pow(inView[_capN - 1].y - _cp.y, 2) + Math.pow(inView[_capN - 1].z - _cp.z, 2));
+        var _capLine = '§LAMP_CAP_NEAREST inView=' + inView.length + ' kept=' + _capN + ' (nearest) farthestKeptM=' + _dK.toFixed(1);
+        if (_capLine.replace(/farthestKeptM=[0-9.]+/, '') !== (A._lampCapLast || '').replace(/farthestKeptM=[0-9.]+/, '')) { A._lampCapLast = _capLine; console.log(_capLine); }
+      }
+      var _picked = inView.slice(0, _capN);   // §LIGHT_UNIFORM_BUDGET (sky_portal.js)
       var _inViewN = _picked.length;
       if (_picked.length < _tuLimit) _picked = _nightPickNearest(visPos, _tuLimit, _picked);
       if (_picked.length !== _inViewN || _inViewN === 0) {
