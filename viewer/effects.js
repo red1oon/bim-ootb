@@ -4817,6 +4817,7 @@ async function setupEffects(A, renderer, scene, camera) {
     }
   }
   function _teardownStillRefine(reason, keepStaging) {
+    if (!keepStaging) _stillLock(false);   // §STILL_LOCK — released with the still
     A._stillRefineActive = false;
     A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY safety net — any exit path clears "processing"
     if (!keepStaging) _vacFlushStillTags();   // §VAC V2 — end of a real still, close any open run
@@ -5845,9 +5846,68 @@ async function setupEffects(A, renderer, scene, camera) {
     el.textContent = msg; el.style.display = 'block';
     return el;
   }
+  // §STILL_GUARD (red1, 2026-09-24): Alt+S starts only on a fully solid model. The flags checked are the app's own:
+  // bbox placeholders not cleared, streaming not finished, X-ray on. Ghost glass keeps its state private (n/a); DLOD
+  // has no bbox stand-ins (it only zero-scales and is paused by the still itself).
+  function _stillGuard() {
+    var reasons = [];
+    if (A._bboxPlaceholders && A._bboxPlaceholders.length) reasons.push('bbox-placeholders=' + A._bboxPlaceholders.length);
+    if (A.streaming) reasons.push('streaming (streamed=' + (A.guidMap ? Object.keys(A.guidMap).length : '?') + ' of ' + (A.totalElements || '?') + ')');
+    if (A.xrayOn) reasons.push('xray');
+    return reasons;
+  }
+  // §STILL_LOCK (red1): from a UI start until the still is released, only Esc does anything. A capture-phase window
+  // listener swallows pointer/touch/wheel/contextmenu/dblclick outside the bounce overlay (its Save PNG / Close stay
+  // live) and every key but Escape. Esc closes the overlay and tears the still down.
+  var _lockOn = false, _lockBlocked = 0;
+  var _LOCK_EVENTS = ['pointerdown', 'pointerup', 'pointermove', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'wheel', 'touchstart', 'touchmove', 'touchend'];
+  function _lockSwallow(e) {
+    if (!_lockOn) return;
+    var ov = document.getElementById('gi-still-overlay');
+    if (ov && ov.contains(e.target)) return;   // Save PNG / Close keep working
+    if (e.type === 'pointermove' || e.type === 'touchmove') { e.stopImmediatePropagation(); return; }   // not counted: too many
+    e.stopImmediatePropagation(); if (e.cancelable) e.preventDefault(); _lockBlocked++;
+  }
+  function _lockKey(e) {
+    if (!_lockOn) return;
+    if (e.key === 'Escape') {
+      e.stopImmediatePropagation(); e.preventDefault();
+      var ov = document.getElementById('gi-still-overlay'); if (ov) ov.remove();
+      _stillLock(false);
+      if (A._stillRefineActive || _autoStageOn || _photoStagingOn) { _autoStageArm(false); _teardownStillRefine('cancelled (Esc)'); }
+      return;
+    }
+    e.stopImmediatePropagation(); e.preventDefault(); _lockBlocked++;
+  }
+  function _stillLock(on) {
+    if (on === _lockOn) return;
+    _lockOn = on;
+    if (on) {
+      _lockBlocked = 0;
+      _LOCK_EVENTS.forEach(function(t) { window.addEventListener(t, _lockSwallow, { capture: true, passive: false }); });
+      window.addEventListener('keydown', _lockKey, true);
+      console.log('§STILL_LOCK on (only Esc exits)');
+    } else {
+      _LOCK_EVENTS.forEach(function(t) { window.removeEventListener(t, _lockSwallow, { capture: true }); });
+      window.removeEventListener('keydown', _lockKey, true);
+      console.log('§STILL_LOCK off blocked=' + _lockBlocked);
+    }
+  }
+  A._stillLockRelease = function() { _stillLock(false); };
+  A._stillGuardReasons = function() { return (A._stillRefineActive || _autoStageOn) ? [] : _stillGuard(); };   // gi_still.js asks too
   A.toggleStillRefineUI = function() {
     if (A._stillRefineActive || _autoStageOn) { A.toggleStillRefine(); return; }
     if (_stillUIPending) return;
+    var _gr = _stillGuard();
+    if (_gr.length) {
+      A._stillGuardRefusedAt = performance.now();
+      var _gm = _gr.some(function(r) { return /xray/.test(r); }) && _gr.length === 1 ? 'X-Ray is on — turn it off, then Alt+S' : 'Still loading — Alt+S when the model is solid';
+      var _ge = _stillToast(_gm); setTimeout(function() { if (_ge.textContent === _gm) _ge.style.display = 'none'; }, 3500);
+      console.log('§STILL_GUARD refused reason=' + _gr.join(',') + ' ghostGlass=n/a');
+      return;
+    }
+    console.log('§STILL_GUARD ok bbox=0 streaming=0 xray=0 ghostGlass=n/a');
+    _stillLock(true);
     _stillUIPending = true;
     var t0 = performance.now();
     var el = _stillToast('Alt+S still — preparing…');

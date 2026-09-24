@@ -849,6 +849,9 @@
     if (busy) return;
     if (!giSupported()) return;              // §GI_LIVE gate: phones / no WebGPU / not r186 keep today's Alt+S
     const A = window.APP;
+    // §STILL_GUARD — the app refuses this press (model not solid): no bounce, no second toast.
+    if ((A._stillGuardRefusedAt && performance.now() - A._stillGuardRefusedAt < 1000) ||
+        (typeof A._stillGuardReasons === 'function' && A._stillGuardReasons().length)) return;   // handler order is not guaranteed
     if (A._stillRefineActive) return;        // this press is the app's own toggle-OFF; leave it alone
     setTimeout(async () => {
       toast('Alt+S still — waiting for the app to finish refining, then adding bounce…');
