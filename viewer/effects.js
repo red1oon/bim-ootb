@@ -4022,7 +4022,11 @@ async function setupEffects(A, renderer, scene, camera) {
       var _gIn = _gDay ? _stillCamInside() : { inside: null, src: 'not-needed (dusk)' };
       if (_gDay) {
         A._stillWindowGlowOff = true;
-        A._stillLampsOff = (_gIn.inside === false);
+        // §STILL_LAMPS_OUTSIDE (red1 2026-09-24: seen through the glass, interiors look drab — "no light source falls
+        // thru and internal are not playing their role"). &lampsout=1 keeps the lamps on for an outside daylight still
+        // so interiors seen through windows are lit. Default 0 = the earlier ruling (lamps off outside) until red1 picks.
+        var _lampsOut = _stillDial('_stillLampsOut', 'lampsout', 0, 1) > 0;
+        A._stillLampsOff = (_gIn.inside === false) && !_lampsOut;
         A._nightGlowMats.forEach(function(g) {
           if (!g.mat) return;
           if (g.win) { g.mat.emissiveIntensity = 0; g.mat.needsUpdate = true; _gN++; }
@@ -4032,7 +4036,8 @@ async function setupEffects(A, renderer, scene, camera) {
       console.log('§STILL_GLOW daylight=' + (_gDay ? 1 : 0) + ' sunElev=' + _gElev.toFixed(1) + ' duskMood=' + (_duskMood ? 1 : 0) +
         ' threshold=' + PHOTO_SUN_ELEVATION + ' camInside=' + (_gIn.inside == null ? '-' : (_gIn.inside ? 1 : 0)) + ' (' + _gIn.src + ')' +
         ' glowMats=' + _gN + ' emissive->' + (_gDay ? '0' : 'kept') +
-        ' lamps=' + (A._stillLampsOff ? '0 (fixture emissive ' + _gLampMats + ' mats -> 0)' : ((A._nightLights || []).length + ' on')));
+        ' lamps=' + (A._stillLampsOff ? '0 (fixture emissive ' + _gLampMats + ' mats -> 0)' : ((A._nightLights || []).length + ' on')) +
+        (_gDay && _gIn.inside === false ? ' lampsout=' + (_lampsOut ? 1 : 0) : ''));
     }
     // §STILL_BASE (2026-09-24, red1: switch the EVEN base light off and let the real sources carry the picture —
     // sun + shadows, lamps indoors, bounce, sky reflections — then tune by eye). Alt+S stills only (films keep the
