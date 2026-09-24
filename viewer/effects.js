@@ -3141,7 +3141,75 @@ async function setupEffects(A, renderer, scene, camera) {
   // building envelope), NOT reinvented, just triggered from here instead of the 'h' Shadow pill.
   // If the user's OWN Shadow mode is already on, this leaves it alone entirely — never double-set.
   var _photoShadowSelfEnabled = false;
-  var _stillFitBox = null, _shadowRadiusSaved = null;   // §STILL_SHADOW_FIT — this still's fitted box; radius to hand back
+  var _stillFitBox = null, _shadowRadiusSaved = null;
+  var _fitState = null;   // §STILL_SHADOW_FIT — env, centre, building corners; film size hysteresis
+  function _fitOn() {
+    return !!(_fitState && _photoShadowSelfEnabled && A.sun && A.sun.castShadow && A.camera && A.camera.isPerspectiveCamera &&
+      (!A._maxqActive || A._filmParity) && !(A._stillShadowFit === false || /[?&]shadowfit=0/.test(location.search)));
+  }
+  // The fit. A caster that shades a visible point lies on the sun ray through it and this ortho camera keeps the whole ray
+  // (near/far untouched), so the x/y box only has to hold the light-space footprint of what can be SHADED in view:
+  //   view footprint (frustum, far clipped at the farthest building corner, or the farthest kept prop)
+  //   ∩ bound( building footprint  ∪  each skyline prop whose footprint meets the view footprint )   ∩ ±env.
+  // The building's own ground shadow projects inside its footprint; the props' union keeps the distant silhouettes'
+  // shadows on far ground (red1's old "silhouette buildings cannot cast shadows"; the #1766 exterior brightening).
+  // film=true: size quantised UP to 8 m steps with hysteresis (shrinks only by 2+ steps) and the centre snapped to whole
+  // texels, so edges do not crawl frame to frame; every size change is counted and logged.
+  function _stillFitApply(film) {
+    if (!_fitOn()) return null;
+    var env = _fitState.env, sc = A.sun.shadow.camera, cam = A.camera, mz = A.sun.shadow.mapSize.width;
+    A.sun.updateMatrixWorld(); A.sun.shadow.updateMatrices(A.sun); cam.updateMatrixWorld();
+    var inv = sc.matrixWorldInverse, q = new THREE.Vector3(), fwd = new THREE.Vector3(); cam.getWorldDirection(fwd);
+    function rect() { return { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity }; }
+    function add(R, x, y, z) { q.set(x, y, z).applyMatrix4(inv); R.x0 = Math.min(R.x0, q.x); R.x1 = Math.max(R.x1, q.x); R.y0 = Math.min(R.y0, q.y); R.y1 = Math.max(R.y1, q.y); }
+    var B = rect(), dFar = 0;
+    _fitState.corners.forEach(function(c) { dFar = Math.max(dFar, q.set(c.x, c.y, c.z).sub(cam.position).dot(fwd)); add(B, c.x, c.y, c.z); });
+    var props = [], sky = _photoSkyline && _photoSkyline.visible ? _photoSkyline : null, bb = new THREE.Box3();
+    if (sky) sky.traverse(function(o) { if (!(o.isMesh || o.isInstancedMesh) || !o.visible) return; bb.setFromObject(o); if (bb.isEmpty()) return;
+      var R = rect(); for (var k = 0; k < 8; k++) add(R, k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z);
+      var far = 0; for (var k2 = 0; k2 < 8; k2++) far = Math.max(far, q.set(k2 & 1 ? bb.max.x : bb.min.x, k2 & 2 ? bb.max.y : bb.min.y, k2 & 4 ? bb.max.z : bb.min.z).sub(cam.position).dot(fwd));
+      R.far = far; props.push(R); });
+    function viewRect(depth) {
+      var V = rect(), k = Math.min(1, Math.max(0, depth) / cam.far);
+      [-1, 1].forEach(function(nx) { [-1, 1].forEach(function(ny) {
+        var pN = new THREE.Vector3(nx, ny, -1).unproject(cam), pF = new THREE.Vector3(nx, ny, 1).unproject(cam);
+        pF.sub(cam.position).multiplyScalar(k).add(cam.position);
+        add(V, pN.x, pN.y, pN.z); add(V, pF.x, pF.y, pF.z); }); });
+      return V;
+    }
+    var V = viewRect(dFar), U = { x0: B.x0, x1: B.x1, y0: B.y0, y1: B.y1 }, kept = 0;
+    var meets = function(R, S) { return R.x0 < S.x1 && R.x1 > S.x0 && R.y0 < S.y1 && R.y1 > S.y0; };
+    var dMax = dFar; props.forEach(function(R) { if (R.far > 0) dMax = Math.max(dMax, R.far); });
+    var Vp = props.length ? viewRect(dMax) : V;   // the view out to the props, for the props' own test
+    props.forEach(function(R) { if (meets(R, Vp)) { kept++; U.x0 = Math.min(U.x0, R.x0); U.x1 = Math.max(U.x1, R.x1); U.y0 = Math.min(U.y0, R.y0); U.y1 = Math.max(U.y1, R.y1); } });
+    if (kept) V = Vp;
+    var M = 2;   // m — PCF taps + TAA jitter
+    var l = Math.max(-env, Math.max(V.x0, U.x0) - M), r = Math.min(env, Math.min(V.x1, U.x1) + M),
+        b = Math.max(-env, Math.max(V.y0, U.y0) - M), t = Math.min(env, Math.min(V.y1, U.y1) + M);
+    if (!(r - l > 1 && t - b > 1)) { l = -env; r = env; b = -env; t = env; }
+    var w = r - l, h = t - b, cx = (l + r) / 2, cy = (b + t) / 2, changed = false;
+    if (film) {
+      var STEP = 8, qw = Math.min(2 * env, Math.ceil(w / STEP) * STEP), qh = Math.min(2 * env, Math.ceil(h / STEP) * STEP);
+      if (qw > _fitState.sizeW || qw <= _fitState.sizeW - 2 * STEP) { if (_fitState.sizeW) changed = true; _fitState.sizeW = qw; }
+      if (qh > _fitState.sizeH || qh <= _fitState.sizeH - 2 * STEP) { if (_fitState.sizeH) changed = true; _fitState.sizeH = qh; }
+      w = _fitState.sizeW; h = _fitState.sizeH;
+      var tx = w / mz, ty = h / mz; cx = Math.round(cx / tx) * tx; cy = Math.round(cy / ty) * ty;   // whole-texel centre
+      if (changed) _fitState.changes++;
+      l = cx - w / 2; r = cx + w / 2; b = cy - h / 2; t = cy + h / 2;
+    }
+    sc.left = l; sc.right = r; sc.bottom = b; sc.top = t; sc.updateProjectionMatrix();
+    var texel = Math.max(w, h) / mz;
+    A.sun.shadow.normalBias = (window.__noNormalBias ? 0 : 2 * texel);
+    if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
+    _stillFitBox = { l: l, r: r, b: b, t: t };
+    var t0 = 2 * env / mz;
+    var line = 'box=' + w.toFixed(1) + 'x' + h.toFixed(1) + 'm texelX=' + (w / mz).toFixed(4) + ' texelY=' + (h / mz).toFixed(4) +
+      ' normalBias=' + A.sun.shadow.normalBias.toFixed(3) + ' propsKept=' + kept + '/' + props.length + (film ? ' sizeChanges=' + _fitState.changes + (changed ? ' CHANGED' : '') : '');
+    if (!film) console.log('§STILL_SHADOW_FIT env=' + env + ' ' + line + ' (was ' + (2 * env) + ', texel ' + t0.toFixed(4) + ') gain=' + (t0 / texel).toFixed(2) + 'x viewDepth=' + dFar.toFixed(0) +
+      ' bldgFootprint=' + (B.x1 - B.x0).toFixed(0) + 'x' + (B.y1 - B.y0).toFixed(0) + ' sunElev=' + THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)))).toFixed(1));
+    return line;
+  }
+  A._filmParityShadowFit = function() { return _stillFitApply(true); };   // §STILL_SHADOW_FIT — this still's fitted box; radius to hand back
   // §R17_SHADOWMAP_RELEASE (2026-09-05, bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R17) — the
   // shadow-map dimensions this staging cycle BORROWED from. Captured at raise time rather than
   // assumed: tools.js §S288 owns the nav number (2048) and the three.js default when shadows were
@@ -3326,62 +3394,19 @@ async function setupEffects(A, renderer, scene, camera) {
     // elevation is used because _enablePhotoShadows runs once at staging while _sunArcStep sweeps
     // the sun 55->6 deg afterwards without recomputing this camera — so the bias has to be safe at
     // the worst angle the film reaches, not just at the angle staging happened to see.
-    // §STILL_SHADOW_FIT (2026-09-24, red1: jagged shadow edges on Alt+S; PHOTOREAL_STILL_RENDER.md) — a still is ONE
-    // view, so the ±env box is shrunk to the light-space footprint of what the camera sees. Every caster survives: a caster
-    // that shades a visible point lies on the sun ray through it, and this ortho camera keeps the whole ray (near/far are
-    // untouched) inside that x/y footprint, wherever the caster is. Films keep the whole-envelope box (moving camera).
+    // §STILL_SHADOW_FIT — the fitted box is applied by _stillFitApply() at the END of staging (Alt+S: after the skyline
+    // props exist, so their shadows can be kept) and per frame in films (§FILM_PARITY). Here: the whole-envelope box,
+    // and the building's corners cached for the fit.
     var _boxW = 2 * _env, _boxH = 2 * _env;
-    _stillFitBox = null;
-    var _fitOn = !A._maxqActive && A.camera && A.camera.isPerspectiveCamera &&
-      !(A._stillShadowFit === false || /[?&]shadowfit=0/.test(location.search));
-    if (_fitOn) {
-      try {
-        A.sun.updateMatrixWorld(); A.sun.shadow.updateMatrices(A.sun);
-        var _sc = A.sun.shadow.camera, _cam = A.camera;
-        _cam.updateMatrixWorld();
-        var _fwd = new THREE.Vector3(); _cam.getWorldDirection(_fwd);
-        // The building's own box (every element, IFC -> scene). Its light-space footprint also covers its whole ground
-        // shadow (a shadow lies on the sun ray from its caster, so it projects to the same light-space x/y). Receivers
-        // outside it can only be shaded by the distant skyline props, which the fitted box gives up (logged).
-        var _bCorners = [];
-        if (_skyBbox && A.ifc2three) {
-          for (var _ci = 0; _ci < 8; _ci++) _bCorners.push(A.ifc2three(_ci & 1 ? _skyBbox.xMax : _skyBbox.xMin, _ci & 2 ? _skyBbox.yMax : _skyBbox.yMin, _ci & 4 ? _skyBbox.zMax : _skyBbox.zMin));
-        } else {
-          for (var _bi = 0; _bi < 8; _bi++) _bCorners.push({ x: _ctr.x + (_bi & 1 ? _env : -_env), y: _ctr.y + (_bi & 2 ? _env : -_env), z: _ctr.z + (_bi & 4 ? _env : -_env) });
-        }
-        var _dFar = 0, _q = new THREE.Vector3(), _bx0 = Infinity, _bx1 = -Infinity, _by0 = Infinity, _by1 = -Infinity;
-        _bCorners.forEach(function(c) {   // farthest building corner as view depth; building footprint in light space
-          _q.set(c.x, c.y, c.z); _dFar = Math.max(_dFar, _q.clone().sub(_cam.position).dot(_fwd));
-          _q.applyMatrix4(_sc.matrixWorldInverse); _bx0 = Math.min(_bx0, _q.x); _bx1 = Math.max(_bx1, _q.x); _by0 = Math.min(_by0, _q.y); _by1 = Math.max(_by1, _q.y);
-        });
-        var _k = Math.min(1, Math.max(0, _dFar) / _cam.far);
-        var _lx0 = Infinity, _lx1 = -Infinity, _ly0 = Infinity, _ly1 = -Infinity;
-        [-1, 1].forEach(function(nx) { [-1, 1].forEach(function(ny) {
-          var pN = new THREE.Vector3(nx, ny, -1).unproject(_cam), pF = new THREE.Vector3(nx, ny, 1).unproject(_cam);
-          pF.sub(_cam.position).multiplyScalar(_k).add(_cam.position);   // far corner at view depth _dFar
-          [pN, pF].forEach(function(pt) {
-            pt.applyMatrix4(_sc.matrixWorldInverse);
-            _lx0 = Math.min(_lx0, pt.x); _lx1 = Math.max(_lx1, pt.x); _ly0 = Math.min(_ly0, pt.y); _ly1 = Math.max(_ly1, pt.y);
-          });
-        }); });
-        var _M = 2;   // m — margin for PCF taps + TAA jitter
-        var _l = Math.max(-_env, Math.max(_lx0, _bx0) - _M), _r = Math.min(_env, Math.min(_lx1, _bx1) + _M),
-            _b = Math.max(-_env, Math.max(_ly0, _by0) - _M), _t = Math.min(_env, Math.min(_ly1, _by1) + _M);
-        if (_r - _l > 1 && _t - _b > 1) {
-          _sc.left = _l; _sc.right = _r; _sc.bottom = _b; _sc.top = _t;
-          _boxW = _r - _l; _boxH = _t - _b;
-          _stillFitBox = { l: _l, r: _r, b: _b, t: _t };
-        }
-        var _mz = A.sun.shadow.mapSize.width, _t0 = 2 * _env / _mz;
-        console.log('§STILL_SHADOW_FIT env=' + _env + ' box=' + _boxW.toFixed(1) + 'x' + _boxH.toFixed(1) + 'm (was ' + (2 * _env) + ')' +
-          ' texelX=' + (_boxW / _mz).toFixed(4) + ' texelY=' + (_boxH / _mz).toFixed(4) + ' (was ' + _t0.toFixed(4) + ')' +
-          ' gain=' + (_t0 / (Math.max(_boxW, _boxH) / _mz)).toFixed(2) + 'x viewDepth=' + _dFar.toFixed(0) + ' bldgFootprint=' + (_bx1 - _bx0).toFixed(0) + 'x' + (_by1 - _by0).toFixed(0) + ' (skyline-prop shadows outside it dropped)' +
-          ' sunElev=' + THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)))).toFixed(1) + (_stillFitBox ? '' : ' (no overlap — box kept)'));
-      } catch (eFit) { console.warn('§STILL_SHADOW_FIT failed: ' + eFit.message + ' — whole-envelope box kept'); }
-    } else if (!A._maxqActive) console.log('§STILL_SHADOW_FIT off (&shadowfit=0 or APP._stillShadowFit=false) env=' + _env);
+    _stillFitBox = null; _fitState = { env: _env, ctr: _ctr, corners: [], sizeW: 0, sizeH: 0, changes: 0 };
+    if (_skyBbox && A.ifc2three) {
+      for (var _ci = 0; _ci < 8; _ci++) _fitState.corners.push(A.ifc2three(_ci & 1 ? _skyBbox.xMax : _skyBbox.xMin, _ci & 2 ? _skyBbox.yMax : _skyBbox.yMin, _ci & 4 ? _skyBbox.zMax : _skyBbox.zMin));
+    } else {
+      for (var _bi = 0; _bi < 8; _bi++) _fitState.corners.push({ x: _ctr.x + (_bi & 1 ? _env : -_env), y: _ctr.y + (_bi & 2 ? _env : -_env), z: _ctr.z + (_bi & 4 ? _env : -_env) });
+    }
     // Arm 2 — PCF disk radius (r186 samples a Vogel disk scaled by shadow.radius). Default 1 = three's own default.
     if (_shadowRadiusSaved === null) _shadowRadiusSaved = A.sun.shadow.radius;
-    if (!A._maxqActive) {
+    if (!A._maxqActive || A._filmParity) {
       var _rm = /[?&]shadowradius=([0-9.]+)/.exec(location.search);
       var _rad = (typeof A._stillShadowRadius === 'number') ? A._stillShadowRadius : (_rm ? parseFloat(_rm[1]) : 1);
       A.sun.shadow.radius = Math.max(0, Math.min(8, _rad));
@@ -3879,6 +3904,12 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_photoStagingOn) { console.log('§PHOTO_STAGING already on — skip re-apply (Stage-2 refire)'); return; }
     _photoStagingOn = true;
     A._photoStagingOn = true;
+    // §FILM_PARITY (2026-09-24, red1: "the Alt+S to Alt+C ad verbatim is the objective") — a film stages the approved Alt+S
+    // look. Off switch for the control clip: &filmparity=0 / APP._filmParityOff (cli --film-parity 0). §FILM_FILL_RESTORE
+    // (ambient 0.785) is kept only with &filmfill=restore / APP._filmFillRestore (cli --film-fill restore), red1's pick pending.
+    A._filmParity = !!A._maxqActive && !(A._filmParityOff === true || /[?&]filmparity=0/.test(location.search));
+    A._filmFillRestore = A._filmFillRestore === true || /[?&]filmfill=restore/.test(location.search);
+    if (A._maxqActive) console.log('§FILM_PARITY ' + (A._filmParity ? 'on' : 'off (control)') + ' fill=' + (!A._filmParity || A._filmFillRestore ? 'restore 0.785/1.257' : 'alt-s (ambient 0)'));
     // §DLOD_STILL_OWNERSHIP (2026-09-24, red1: sun shafts through the Terminal roof on Alt+S) — dlod.js
     // zero-scales instances outside the view frustum, and a zero-scaled roof casts no shadow. Pause it
     // for the whole staging cycle, same ownership rule as §DLOD_TM_OWNERSHIP: only re-enable in
@@ -4037,7 +4068,7 @@ async function setupEffects(A, renderer, scene, camera) {
     A._nightPLScale = A._nightPLScaleStill || 1;
     A._nightPLScaleStaged = A._nightPLScale;   // §SUN_ARC_FILL — the staged base the bake scales FROM
     // §STILL_DIALS — Alt+S lamp strength + fall-off, read at every press, set BEFORE the lamps are born below.
-    if (!A._maxqActive) {
+    if (!A._maxqActive || A._filmParity) {
       A._stillLampMul = _stillDial('_stillLamps', 'lamps', 16, 20);   // §FLOOR_WASH pick (watcher/red1): 16 with finite reach   // red1 13:4x: "internal points of light should hit stronger"
       A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', 1.5, 2);   // §FLOOR_WASH pick: 1.5 (was 0.8)
       A._stillLampRangeNow = _stillDial('_stillLampRange', 'lamprange', 25, 100);   // §FLOOR_WASH pick: 25 m reach (0 = infinite, the old stack)
@@ -4088,7 +4119,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // facades. Daylight = the app's own dusk test: dusk mood off AND sun above PHOTO_SUN_ELEVATION (the dusk
     // elevation). Alt+S only: a film (A._maxqActive) passes through dusk on its sun arc and keeps its glow.
     // Glazing only; fixture point lights and their emissive are untouched. Teardown restores the glow values.
-    if (!A._maxqActive && A._nightGlowMats && A.sun) {
+    if ((!A._maxqActive || A._filmParity) && A._nightGlowMats && A.sun) {
       var _gs = A.sun.position.clone(); if (A.sun.target) _gs.sub(A.sun.target.position); _gs.normalize();
       var _gElev = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, _gs.y))));
       var _gDay = !_duskMood && _gElev > PHOTO_SUN_ELEVATION;
@@ -4105,8 +4136,8 @@ async function setupEffects(A, renderer, scene, camera) {
         A._stillLampsOff = (_gIn.inside === false) && !_lampsOut;
         A._nightGlowMats.forEach(function(g) {
           if (!g.mat) return;
-          if (g.win) { g.mat.emissiveIntensity = 0; g.mat.needsUpdate = true; _gN++; }
-          else if (A._stillLampsOff) { g.mat.emissiveIntensity = 0; g.mat.needsUpdate = true; _gLampMats++; }   // the lamp's own glowing fixture
+          if (g.win) { g.mat.emissiveIntensity = 0; if (!A._maxqActive) g.mat.needsUpdate = true; _gN++; }
+          else if (A._stillLampsOff) { g.mat.emissiveIntensity = 0; if (!A._maxqActive) g.mat.needsUpdate = true; _gLampMats++; }   // the lamp's own glowing fixture
         });
       }
       console.log('§STILL_GLOW daylight=' + (_gDay ? 1 : 0) + ' sunElev=' + _gElev.toFixed(1) + ' duskMood=' + (_duskMood ? 1 : 0) +
@@ -4121,7 +4152,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // into two dials, read at every press — &sky= scales the hemi (sky from above; default 2.0 x #1601's Alt+S hemi, red1)
     // and &base= scales the flat ambient only (default 0, red1). Console overrides APP._stillSky / APP._stillBaseScale.
     // Teardown restores.
-    if (!A._maxqActive && A.ambient && A.hemi) {
+    if ((!A._maxqActive || A._filmParity) && A.ambient && A.hemi) {
       var _bs = _stillDial('_stillBaseScale', 'base', 0, 2);   // red1 13:3x LOOK ruling: base as low as possible, 0
       var _sk = _stillDial('_stillSky', 'sky', 2.0, 3);   // red1 13:4x: "hit it now", sky 2.0, range 0..3
       _stillBaseSaved = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
@@ -4173,15 +4204,15 @@ async function setupEffects(A, renderer, scene, camera) {
         ' (x' + _eMul + ') lampRange=' + (A._stillLampRangeNow == null ? '0(inf)' : A._stillLampRangeNow) + ' lampDecay=' + A._stillLampDecayNow);
     }
     if (!A._maxqActive && window.SkyOcc) { try { window.SkyOcc.stage(A); } catch (eSO) { console.warn('§SKY_OCCLUSION failed: ' + eSO.message); } }   // §SKY_OCCLUSION
-    if (!A._maxqActive && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }   // after the lamps; budget set before them
-    if (!A._maxqActive && window.GlassFresnel) { try { window.GlassFresnel.stage(A); } catch (eGF) { console.warn('§GLASS_FRESNEL failed: ' + eGF.message); } }   // §GLASS_FRESNEL
+    if ((!A._maxqActive || A._filmParity) && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }   // after the lamps; budget set before them
+    if ((!A._maxqActive || A._filmParity) && window.GlassFresnel) { try { window.GlassFresnel.stage(A); } catch (eGF) { console.warn('§GLASS_FRESNEL failed: ' + eGF.message); } }   // §GLASS_FRESNEL
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
     // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
     // nav/still wall-side contrast; in the bake that doubled the shadow contrast (sunFillRatio 4.387 vs
     // Time Machine's 2.155) and made interiors gloomy. While a film records (A._maxqActive), stage the
     // pre-#1601 fill; Alt+S stills and navigation keep #1601's values. Set HERE, before the snapshot
     // below, so the per-frame §SUN_ARC_FILL_PIN holds it on every frame. Restored in teardown.
-    if (A._maxqActive && A.ambient && A.hemi) {
+    if (A._maxqActive && (!A._filmParity || A._filmFillRestore) && A.ambient && A.hemi) {
       if (!_filmFillSaved) _filmFillSaved = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
       A.ambient.intensity = FILM_FILL_AMBIENT; A.hemi.intensity = FILM_FILL_HEMI;
       console.log('§FILM_FILL_RESTORE ambient ' + _filmFillSaved.ambI + '->' + FILM_FILL_AMBIENT +
@@ -4253,6 +4284,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // should light.
     _glowFirstMs = null; _glowSkipLogged = false; A._glowQuadZeroLogged = false;
     _buildRoomProbe();
+    if (!A._maxqActive) { if (_fitOn()) _stillFitApply(false); else if (_fitState) console.log('§STILL_SHADOW_FIT off (&shadowfit=0, APP._stillShadowFit=false, or the user\'s own Shadow mode) env=' + _fitState.env); }
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
     // §STILL_POSE (2026-09-24, watcher: red1's stills carry no pose) — one line per staging with everything
     // needed to reproduce the frame headless: camera, target, fov, sun, DB, window size.
@@ -4283,6 +4315,39 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§STILL_SHADOW_RENDERS n=' + _shRenders + ' refineMs=' + ms + ' autoUpdate=' + (A.renderer.shadowMap.autoUpdate ? 1 : 0));
     _shCounting = false;
   }
+  // §FILM_PARITY per-frame step — called by cinema_maxq.js every frame after _sunArcStep (this frame's sun) and before
+  // the fill pin. Staging is kept for the whole film (§MAXQ_STAGE_KEEP), so what Alt+S decides once per press is
+  // re-decided here per frame, with uniforms only (no recompile, no light-count change):
+  //   §STILL_GLOW — daylight test on the moving sun; window glow off by day; lamps off only when the camera is outside
+  //   (the _stillLampsOff flag, which tools.js multiplies in, so the fill pin cannot write it back).
+  var _fpLast = null;
+  A._filmParityStep = function(frameIdx) {
+    if (!A._filmParity || !A._maxqActive) return null;
+    var t0 = performance.now(), out = { f: frameIdx };
+    if (A._nightGlowMats && A.sun) {
+      var gs = A.sun.position.clone(); if (A.sun.target) gs.sub(A.sun.target.position); gs.normalize();
+      var el = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, gs.y))));
+      var day = !_photoDuskMoodApplied && el > PHOTO_SUN_ELEVATION;
+      var inside = day ? _stillCamInside().inside : null;
+      var lampsOut = _stillDial('_stillLampsOut', 'lampsout', 0, 1) > 0;
+      var lampsOff = day && inside === false && !lampsOut;
+      A._stillWindowGlowOff = day; A._stillLampsOff = lampsOff;
+      A._nightGlowMats.forEach(function(g) {
+        if (!g.mat) return;
+        var want = g.win ? (day ? 0 : g.glowEI) : (lampsOff ? 0 : g.glowEI);
+        if (g.mat.emissiveIntensity !== want) g.mat.emissiveIntensity = want;   // a uniform: no needsUpdate
+      });
+      out.elev = +el.toFixed(1); out.day = day ? 1 : 0; out.inside = inside == null ? '-' : (inside ? 1 : 0); out.lampsOff = lampsOff ? 1 : 0;
+    }
+    if (typeof A._filmParityShadowFit === 'function') out.fit = A._filmParityShadowFit();
+    if (window.SkyPortal && typeof window.SkyPortal.frame === 'function') { try { out.portal = window.SkyPortal.frame(A); } catch (eP) { out.portal = 'err ' + eP.message; } }
+    out.ms = +(performance.now() - t0).toFixed(1);
+    var key = JSON.stringify([out.day, out.inside, out.lampsOff]);
+    if (key !== _fpLast || frameIdx % 24 === 0) { _fpLast = key;
+      console.log('§FILM_PARITY_FRAME f=' + frameIdx + ' sunElev=' + out.elev + ' daylight=' + out.day + ' camInside=' + out.inside + ' lampsOff=' + out.lampsOff +
+        (out.fit ? ' fit=' + out.fit : '') + (out.portal ? ' portal=' + out.portal : '') + ' ms=' + out.ms); }
+    return out;
+  };
   function _teardownPhotoStaging() {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
     _photoStagingOn = false;
@@ -5729,7 +5794,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // frame, measured), and an intensity is a uniform. Same reason the pool's own unused slots
       // ride at 0 instead of being removed.
       if (A._cpeRevealLightsOff) A._nightPLScale = 0;
-      if (A._stillLampsOff) A._nightPLScale = 0;   // §STILL_GLOW — daylight still, camera outside: lamps off (a uniform, no recompile)
+      if (A._stillLampsOff && !A._filmParity) A._nightPLScale = 0;   // §STILL_GLOW (films: the flag alone zeroes the lamps, tools.js — the staged scale must survive for when the camera goes back inside) — daylight still, camera outside: lamps off (a uniform, no recompile)
       // §SUN_ARC_FILL — this is the per-frame staged value (0.5 cut, or 0 in a lights-off slot) that
       // the bake's fill compensation scales from; stashed here, where the rule lives, not re-derived.
       A._nightPLScaleStaged = A._nightPLScale;

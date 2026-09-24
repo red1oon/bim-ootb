@@ -866,6 +866,84 @@
       else toast('Nothing to release', 2000);
     }
   }, true);
+  // ══ §FILM_PARITY bounce (§GI_FILM) — the approved Alt+S bounce in Alt+C films, from THIS file so the film uses the still's
+  // own build, dials and composite (gain 1.0, ao 0.55, receiver, radius 12 ...), not the sandbox tap's older ones. One pass
+  // per frame (a film cannot accumulate over a moving camera). Installed as cinema_maxq.js's __giCaptureFrame hook by
+  // window.GiFilm.arm() at film start, removed by disarm(). §GI_TAP_SYNC_GRAB: the app frame is copied at the hook's first
+  // line, before any await (a WebGL canvas does not keep its pixels past the task that drew it).
+  let film = null;   // { G, frames, ms, entry }
+  async function filmFrame(ctx, w, h) {
+    const A = window.APP, t0 = performance.now();
+    if (!film.entry || film.entry.width !== w || film.entry.height !== h) { film.entry = document.createElement('canvas'); film.entry.width = w; film.entry.height = h; }
+    const ectx = film.entry.getContext('2d'); ectx.clearRect(0, 0, w, h); ectx.drawImage(A.renderer.domElement, 0, 0, w, h);
+    A._sceneBorrowed = true;
+    try {
+      if (!film.G || film.G.w !== w || film.G.h !== h) {
+        const tb = performance.now();
+        if (film.G) { try { film.G.renderer.dispose(); } catch (e) {} }
+        film.G = await build(w, h);
+        film.buildMs = Math.round(performance.now() - tb);
+        console.log('§GI_FILM built ' + w + 'x' + h + ' ms=' + film.buildMs + ' (once per film)');
+      }
+      const G = film.G;
+      G.setMode('composite', encodeMode());
+      G.gainU.value = readGain(); G.aoU.value = readAo();
+      G.recvU.value = readNum('_stillGiRecv', 'girecv', GI_RECV_DEFAULT, 0, 1);
+      G.gi.radius.value = readNum('_stillGiRadius', 'girad', GI_RADIUS_DEFAULT, 0.5, 100);
+      G.gi.thickness.value = readNum('_stillGiThick', 'githick', GI_THICK_DEFAULT, 0.01, 50);
+      G.gi.stepCount.value = Math.round(readNum('_stillGiSteps', 'gisteps', window.__GI_STEPS || 16, 1, 32));
+      G.gi.giIntensity.value = readNum('_stillGiInt', 'giint', 10, 0, 100);
+      G.colorCtx.clearRect(0, 0, w, h); G.colorCtx.drawImage(film.entry, 0, 0, w, h); G.colorTex.needsUpdate = true;
+      if (!film.oriented) { film.oriented = true; await decideOrientation(G); console.log('§GI_FILM orientation on the first film frame flipTex=' + G.flipTex + ' flipOut=' + G.flipOut); }
+      await renderGeom(G);
+      const f = await readRT(G);
+      const img = film.img && film.img.width === w && film.img.height === h ? film.img : (film.img = new ImageData(w, h));
+      const d = img.data, fo = G.flipOut;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const s = ((fo ? (h - 1 - y) : y) * w + x) * 4, o = (y * w + x) * 4, a = f[s + 3];
+        d[o] = Math.max(0, Math.min(255, f[s] * 255)); d[o + 1] = Math.max(0, Math.min(255, f[s + 1] * 255)); d[o + 2] = Math.max(0, Math.min(255, f[s + 2] * 255));
+        d[o + 3] = (a >= GEOM_MASK_T) ? 255 : 0;   // the still's HARD mask
+      }
+      if (!film.layer || film.layer.width !== w || film.layer.height !== h) { film.layer = document.createElement('canvas'); film.layer.width = w; film.layer.height = h; }
+      film.layer.getContext('2d').putImageData(img, 0, 0);
+      ctx.drawImage(film.entry, 0, 0, w, h);
+      ctx.drawImage(film.layer, 0, 0, w, h);
+      const ms = performance.now() - t0; film.frames++; film.ms += ms;
+      if (film.frames <= 2 || film.frames % 24 === 0) {
+        let sa = 0, sc = 0, n = 0; const ap = ectx.getImageData(0, 0, w, h).data, cp = ctx.getImageData(0, 0, w, h).data;
+        for (let i = 0; i < ap.length; i += 4 * 97) { sa += (ap[i] + ap[i + 1] + ap[i + 2]) / 3; sc += (cp[i] + cp[i + 1] + cp[i + 2]) / 3; n++; }
+        console.log('§GI_FILM f=' + film.frames + ' ms=' + ms.toFixed(0) + ' meanMs=' + (film.ms / film.frames).toFixed(0) + ' appMean=' + (sa / n).toFixed(1) +
+          ' compositeMean=' + (sc / n).toFixed(1) + ' gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' recv=' + G.recvU.value + ' flipOut=' + fo);
+      }
+    } finally { A._sceneBorrowed = false; }
+  }
+  window.GiFilm = {
+    arm: function () {
+      const A = window.APP;
+      let reason = null;
+      if (A && A._filmBounceOff === true) reason = 'switched-off';
+      else if (/[?&]filmbounce=0/.test(location.search)) reason = 'switched-off (&filmbounce=0)';
+      else if (!giSupportedQuiet()) reason = giOffReason();
+      if (reason) { console.log('§GI_FILM_OFF reason=' + reason + ' — the film bakes without the bounce'); return false; }
+      film = { G: film && film.G, frames: 0, ms: 0 };
+      window.__giCaptureFrame = filmFrame;
+      console.log('§GI_FILM armed — one bounce pass per frame, Alt+S dials');
+      return true;
+    },
+    disarm: function () {
+      if (window.__giCaptureFrame === filmFrame) window.__giCaptureFrame = null;
+      if (film) { console.log('§GI_FILM done frames=' + film.frames + ' meanMs=' + (film.frames ? (film.ms / film.frames).toFixed(0) : 0) + ' buildMs=' + (film.buildMs || 0));
+        if (film.G) { try { film.G.rt.dispose(); film.G.renderer.dispose(); } catch (e) {} } film = null; }
+    }
+  };
+  function giOffReason() {
+    const T = window.THREE;
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return 'touch-device';
+    if (!navigator.gpu) return 'no-webgpu';
+    if (!(T && T.REVISION === '186' && T.WebGPURenderer)) return 'three-r' + (T && T.REVISION);
+    return null;
+  }
+  function giSupportedQuiet() { return !giOffReason(); }
   window.__giStillShoot = shoot;
   window.__giStillRelease = function () { if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (e) {} built = null; console.log('§GI_STILL released on request'); return true; } return false; };
   // §GI_STILL_DOUBLE WITNESS — renders the SAME geometry pass with only the partly-transparent

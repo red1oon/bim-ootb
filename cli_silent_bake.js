@@ -142,6 +142,13 @@ const TAP_FILE = arg('tap', null) ? path.resolve(arg('tap')) : null;
 // case is a wide establishing shot where a distant wing becomes a box, and no such frame has been
 // looked at yet. Turn it on deliberately, per bake, and check the film.
 const DLOD_PROXY = !!arg('dlod-proxy', false);
+// §FILM_PARITY (bim-compiler PHOTOREAL_STILL_RENDER.md) — the approved Alt+S look in the film. Page URL switches:
+//   --film-parity 0|1   (default 1)  0 = the pre-parity film, the CONTROL clip
+//   --film-fill alt-s|restore  (default alt-s) restore = keep §FILM_FILL_RESTORE's ambient 0.785 (red1's pick pending)
+//   --bounce 0|1        (default 1)  the Alt+S bounce per frame (needs WebGPU + r186; stands down with §GI_FILM_OFF)
+const FILM_PARITY = String(arg('film-parity', '1')) !== '0';
+const FILM_FILL = String(arg('film-fill', 'alt-s'));
+const FILM_BOUNCE = String(arg('bounce', '1')) !== '0';
 // §DATUM_DECOUPLE (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — dev-only bisect instrument:
 //   --burnin-datum-src clean.mp4   skip the GPU render + every other overlay; load clean.mp4's own
 //                                   frames instead and draw ONLY the datum layer on top. Use the SAME
@@ -289,6 +296,8 @@ const server = http.createServer((req, res) => {
     headful: ['--use-angle=gl-egl', '--ignore-gpu-blocklist',
               '--disable-backgrounding-occluded-windows']   // §MAXQ_HIDDEN_PAUSE parks hidden tabs
   }[GPU] || [];
+  // §GI_FILM — the film bounce is WebGPU; headless Chrome exposes navigator.gpu only with this flag. Real GPUs only.
+  if (FILM_BOUNCE && FILM_PARITY && GPU !== 'sw') gpuArgs.push('--enable-unsafe-webgpu');
   // The EGL VENDOR pin is the lever, not the ANGLE backend flag: with both 10_nvidia.json and
   // 50_mesa.json present, '--use-angle=gl-egl' alone resolves to Mesa/Intel. Naming the vendor file
   // is what reaches the discrete card. Same value for headful as for real — one selector, not two.
@@ -467,7 +476,9 @@ const server = http.createServer((req, res) => {
   }
 
   const dbUrl = DB.includes('/') ? DB : `/buildings/${DB}.db`;
-  const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=${dbUrl}`;
+  const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=${dbUrl}` +
+    (FILM_PARITY ? '' : '&filmparity=0') + (FILM_FILL === 'restore' ? '&filmfill=restore' : '') + (FILM_BOUNCE ? '' : '&filmbounce=0');
+  log('§CLI_BAKE_FILM_PARITY parity=' + (FILM_PARITY ? 1 : 0) + ' fill=' + FILM_FILL + ' bounce=' + (FILM_BOUNCE ? 1 : 0));
   log(`§CLI_BAKE_NAV ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
   // ⚠ §CLI_BAKE_SW_PURGE (2026-09-08, MEP_CLASH_REVEAL_MOVIE.md §43) — THE BAKE MUST NOT RUN STALE JS.

@@ -4013,6 +4013,10 @@
         // its elevation fallback/log label must read the film fraction under a --clip bake too.
         // §PL_TOPOUT_UNPIN — _revealU exactly as _sunArcStep gets it: past topout the fixtures ease to their
         // tuned night intensity; before it (or with no plan beats) the pin is byte-identical to before.
+        // §FILM_PARITY — this frame's Alt+S decisions (daylight glow, lamps-outside, shadow fit, portals) on this frame's sun
+        // and camera, BEFORE the pin, so the pin's lamp pool update sees the flag (effects.js A._filmParityStep).
+        if (A._maxqActive && A._filmParity && !A._giFilmArmed && window.GiFilm) { A._giFilmArmed = true; window.GiFilm.arm(); }   // §GI_FILM — staging decided parity
+        if (A._maxqActive && A._filmParity && A._filmParityStep) A._filmParityStep(i);
         if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tnFilm, _revealU);
         var ok = A._burninDatumDir ? true : await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         if (!A._burninDatumDir) await _raf2('frame ' + i + ' capture');
@@ -4824,6 +4828,7 @@
       // §40.1 — a second bake, or the live editor preview, must not inherit THIS bake's armed
       // rectangles: a different frame size or a different corner would then draw into stale boxes.
       try { if (A.filmBoxesDisarm) A.filmBoxesDisarm(); } catch (eFBd) {}
+      try { if (A._giFilmArmed && window.GiFilm) window.GiFilm.disarm(); } catch (eGF) {} A._giFilmArmed = false;   // §GI_FILM
       // Recoverability FIRST: clearing the store can itself block for seconds behind the very
       // zombie connection that failed this run, and until these flags reset the next Alt+C is
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.

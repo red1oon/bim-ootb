@@ -9,7 +9,7 @@
   var LIGHT_RESERVE = 320, PORTAL_SHARE = 0.25;   // §LIGHT_UNIFORM_BUDGET
   var PORTAL_EXPOSURE = 10;       // start value for red1's eye (see spec): the unoccluded hemi drowns a physical portal
   var PORTAL_ANGLE = 70 * Math.PI / 180, PORTAL_SHADOW_SIZE = 512, UPRAY_OFF = 0.5, UPRAY_MAX = 30;
-  var placed = [];
+  var placed = [], film = null;   // film: §FILM_PARITY per-frame state (cached panes + the fixed light set's assignments)
 
   function dial(A, key, name, def, lo, hi) {
     var v = (typeof A[key] === 'number') ? A[key] : null;
@@ -123,6 +123,7 @@
       var sa = skyCount(p.c.clone().addScaledVector(p.n, UPRAY_OFF), p.n, p.u), sb = skyCount(p.c.clone().addScaledVector(nNeg, UPRAY_OFF), nNeg, p.u);
       if (sa === sb) { skipped++; return; }
       var inward = sa < sb ? p.n.clone() : nNeg;   // fewer sky hits = inside
+      p._inward = inward;
       byCls[p.cls] = (byCls[p.cls] || 0) + 1;
       var I = H * p.area / Math.PI * PORTAL_EXPOSURE * gain;
       var col = sky.clone().multiply(p.hue);
@@ -139,6 +140,21 @@
       A.scene.add(L); A.scene.add(L.target); placed.push(L); iSum += I;
       placedInfo.push({ cls: p.cls, area: +p.area.toFixed(1), dist: +p._dist.toFixed(1), facing: +p._facing.toFixed(2), y: +p.c.y.toFixed(1) });
     });
+    // §FILM_PARITY (films): classify EVERY pane's inward side ONCE here (camera-independent), cache it; frame() then only
+    // re-ranks the cached panes from the moving camera and re-aims this same fixed light set (count, pads, shadowed count
+    // unchanged — a count change would recompile every material).
+    film = null;
+    if (A._maxqActive && A._filmParity) {
+      var tC = performance.now(), cached = [];
+      panes.forEach(function (p) {
+        if (p._inward) { cached.push(p); return; }
+        var nNeg = p.n.clone().negate();
+        var sa = skyCount(p.c.clone().addScaledVector(p.n, UPRAY_OFF), p.n, p.u), sb = skyCount(p.c.clone().addScaledVector(nNeg, UPRAY_OFF), nNeg, p.u);
+        if (sa === sb) return; p._inward = sa < sb ? p.n.clone() : nNeg; cached.push(p);
+      });
+      film = { panes: cached, H: H, sky: sky.clone(), gain: gain, byArea: byArea, nShadow: shadowed, assign: [] };
+      console.log('§SKY_PORTAL_FILM_CACHE panes=' + cached.length + ' of ' + panes.length + ' classified once ms=' + (performance.now() - tC).toFixed(0));
+    }
     // §STILL_LIGHT_PAD — pad to the budget's fixed counts (intensity 0) so every still has the same spot-light count
     // and the same shadowed-spot count: no recompile between presses.
     var pads = 0;
@@ -162,7 +178,32 @@
       ' meanI=' + (placed.length ? (iSum / placed.length).toFixed(3) : 0) + ' ms=' + (performance.now() - t0).toFixed(0));
   }
 
+  // §FILM_PARITY — per frame: rank the cached panes from THIS camera, re-aim the fixed lights (shadowed ones first, as in
+  // stage), park the rest at intensity 0. A shadowed light's map re-renders only when its pane changed.
+  function frame(A) {
+    if (!film || !placed.length) return null;
+    var t0 = performance.now(), cam = A.camera.position;
+    var near = film.panes.filter(function (p) { p._dist = p.c.distanceTo(cam); return p._dist <= PORTAL_RANGE; });
+    if (film.byArea) { near.forEach(function (p) { var to = cam.clone().sub(p.c).normalize(); p._score = p.area * Math.max(0.05, Math.abs(to.dot(p.n))); }); near.sort(function (a, b) { return b._score - a._score; }); }
+    else near.sort(function (a, b) { return a._dist - b._dist; });
+    var reaimed = 0, shadowRe = 0, lit = 0;
+    for (var i = 0; i < placed.length; i++) {
+      var L = placed[i], p = near[i] || null;
+      if (film.assign[i] === p) continue;
+      film.assign[i] = p; reaimed++;
+      if (p) {
+        L.position.copy(p.c).addScaledVector(p._inward, -0.05); L.target.position.copy(p.c).addScaledVector(p._inward, 5);
+        L.color.copy(film.sky).multiply(p.hue); L.intensity = film.H * p.area / Math.PI * PORTAL_EXPOSURE * film.gain; L.distance = 0;
+      } else { L.intensity = 0; L.position.copy(cam); L.target.position.copy(cam).add(new global.THREE.Vector3(0, -1, 0)); }
+      L.target.updateMatrixWorld();
+      if (L.castShadow) { L.shadow.needsUpdate = true; shadowRe++; }
+    }
+    for (var j = 0; j < placed.length; j++) if (placed[j].intensity > 0) lit++;
+    return 'lit' + lit + '/' + placed.length + ' reaimed' + reaimed + ' shadowRe' + shadowRe + ' ' + (performance.now() - t0).toFixed(1) + 'ms';
+  }
+
   function unstage(A, keepBudget) {
+    film = null;
     if (!keepBudget) { A._stillLampCap = undefined; budgetCap = null; budgetShadow = null; }   // §LIGHT_UNIFORM_BUDGET — nav/films keep their own caps
     if (!placed.length) return;
     var n = placed.length;
@@ -172,5 +213,5 @@
     console.log('§SKY_PORTAL removed=' + n);
   }
 
-  global.SkyPortal = { budget: budget, stage: stage, unstage: unstage, placedCount: function () { return placed.length; } };
+  global.SkyPortal = { budget: budget, stage: stage, unstage: unstage, frame: frame, placedCount: function () { return placed.length; } };
 })(typeof window !== 'undefined' ? window : this);
