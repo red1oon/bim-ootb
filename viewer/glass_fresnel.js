@@ -17,7 +17,7 @@
   function stage(A) {
     var THREE = global.THREE; if (!THREE || !A || !A.scene) return;
     unstage(A);
-    var m0 = /[?&]fresnel=([0-9.]+)/.exec(location.search), on = (typeof A._stillFresnel === 'number') ? A._stillFresnel > 0 : (m0 ? parseFloat(m0[1]) > 0 : true);
+    var m0 = /[?&]fresnel=([0-9.]+)/.exec(location.search), on = (typeof A._stillFresnel === 'number') ? A._stillFresnel > 0 : (m0 ? parseFloat(m0[1]) > 0 : false);   // default OFF pending the broken-sheet check (watcher)
     if (!on) { console.log('§GLASS_FRESNEL off (&fresnel=0)'); return; }
     var set = new Set();
     A.scene.traverse(function (o) { if (o.visible && o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (isGlass(m)) set.add(m); }); });
