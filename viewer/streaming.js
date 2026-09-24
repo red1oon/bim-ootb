@@ -1589,8 +1589,15 @@ function setupStreaming(A) {
     if (surfRow && surfRow !== 'R9') {
       var _SRP = { R1: [0.55, null], R2c: [0.8, null], R2p: [0.8, null], R3: [0.85, null], R4: [0.35, 0.3], R5: [0.75, null], R6: [0.45, null] }[surfRow];
       if (_SRP) { opts.roughness = _SRP[0]; if (_SRP[1] != null) opts.envMapIntensity = _SRP[1]; }
+      // §FLOOR_WASH dials (red1: "a bit of bright wash, particularly the floor"; look arms, read at load, defaults
+      // unchanged): &r4rough= overrides R4's 0.35.
+      if (surfRow === 'R4') { var _r4m = /[?&]r4rough=([0-9.]+)/.exec(location.search); if (_r4m) opts.roughness = Math.max(0.02, Math.min(1, parseFloat(_r4m[1]))); }
     }
     const mat = new THREE.MeshStandardMaterial(opts);
+    // §FLOOR_WASH: &r4envboost=0 exempts R4 floors from Alt+S's x2 env boost (roughness 0.35 <= PHOTO_GLOSSY_ROUGHNESS_MAX
+    // 0.5 makes them "glossy", so their sky reflection doubles 0.3 -> 0.6 in the still), via the existing exemption flag.
+    if (surfRow === 'R4' && /[?&]r4envboost=0/.test(location.search)) mat.userData._photoEnvExempt = true;
+    if (surfRow) mat.userData.surfRow = surfRow;
     // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): effects.js's _reassertPhotoMatBoost() blindly
     // multiplies envMapIntensity x3 and tightens roughness x0.4 on every metal/glossy material
     // during Alt+S/Alt+G, with no awareness of this per-class envInt tuning above — so the SAME

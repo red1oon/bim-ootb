@@ -2932,6 +2932,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var FILM_FILL_AMBIENT = 0.785, FILM_FILL_HEMI = 1.257;   // §FILM_FILL_RESTORE — pre-#1601 scene.js values (TM's balance)
   var _filmFillSaved = null;
   var _stillBaseSaved = null;   // §STILL_BASE
+  var _albedoSaved = [], _expSaved = null;   // §ALBEDO_SRGB
   // §STILL_DIALS — one Alt+S dial: APP[key] if a number, else &name=<num> in the URL, else def; clamped 0..max.
   function _stillDial(key, name, def, max) {
     var v = (typeof A[key] === 'number') ? A[key] : null;
@@ -3968,6 +3969,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!A._maxqActive) {
       A._stillLampMul = _stillDial('_stillLamps', 'lamps', 2.0, 4);   // red1 13:4x: "internal points of light should hit stronger"
       A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', 0.8, 2);
+      A._stillLampRangeNow = /[?&]lamprange=/.test(location.search) || typeof A._stillLampRange === 'number' ? _stillDial('_stillLampRange', 'lamprange', 0, 100) : null;   // §LIGHT_STACK arm (0 = infinite, today)
       // §LIGHT_UNIFORM_BUDGET — caps the lamps BEFORE toggleNightMode builds them; portals then fit in the rest. One light
       // count for the whole still = one shader compile.
       if (window.SkyPortal) { try { window.SkyPortal.budget(A); } catch (eB) { console.warn('§LIGHT_UNIFORM_BUDGET failed: ' + eB.message); } }   // red1: throw further (nav keeps NIGHT_LIGHT_DECAY)
@@ -4066,6 +4068,39 @@ async function setupEffects(A, renderer, scene, camera) {
       console.log('§CONCRETE_TONE strength=' + A._concreteStrength() + ' contrast=' + (1.1 * A._concreteStrength()).toFixed(3) + ' (R3 was 1.1)' +
         ' normalScale=' + A._concreteStrength() + ' tile=' + A._concreteTile() + 'm (was 2.5) r3Mats=' + _r3); }
     // §SKY_PORTAL — window panes as sky light sources (sky_portal.js), after the sky dial so it reads the staged hemi.
+    // §ALBEDO_SRGB (watcher/red1 wash investigation, 2026-09-24). FACT from source: THREE.ColorManagement.enabled=false
+    // (loader.js) and streaming.js builds colours with new THREE.Color(r,g,b) from the AUTHORED (sRGB) values, while
+    // renderer.outputColorSpace = SRGBColorSpace encodes the output: every albedo is used as if it were linear, i.e.
+    // brighter than authored (0.92 -> used 0.92 where 0.83 is right; a mid 0.5 used where 0.21 is right). Alt+S arms,
+    // restored at teardown (a colour is a uniform: no recompile): &srgbfix=1 converts each lit material's colour
+    // sRGB->linear; &albedocap=<v> then scales any colour whose max channel exceeds v (a PBR guard); &stillexp=<m>
+    // multiplies the still's tone-mapping exposure. Defaults: all off (red1/watcher pick from the sheet).
+    if (!A._maxqActive) {
+      _albedoSaved = [];
+      var _fix = /[?&]srgbfix=1/.test(location.search) || A._stillSrgbFix === true;
+      var _capM = /[?&]albedocap=([0-9.]+)/.exec(location.search), _cap = (typeof A._stillAlbedoCap === 'number') ? A._stillAlbedoCap : (_capM ? parseFloat(_capM[1]) : null);
+      var _nConv = 0, _nCap = 0, _wallBefore = null, _wallAfter = null;
+      if (_fix || _cap != null) {
+        var _seen = new Set();
+        A.scene.traverse(function(o) {
+          if (!o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return;
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach(function(m) {
+            if (!m || _seen.has(m) || !m.color || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
+            _seen.add(m); _albedoSaved.push([m, m.color.getHex(), m.color.r, m.color.g, m.color.b]);
+            var isWall = !_wallBefore && o.userData && o.userData.ifcClass === 'IfcWallStandardCase';
+            if (isWall) _wallBefore = m.color.r.toFixed(3) + ',' + m.color.g.toFixed(3) + ',' + m.color.b.toFixed(3);
+            if (_fix) { m.color.convertSRGBToLinear(); _nConv++; }
+            if (_cap != null) { var mx = Math.max(m.color.r, m.color.g, m.color.b); if (mx > _cap) { m.color.multiplyScalar(_cap / mx); _nCap++; } }
+            if (isWall) _wallAfter = m.color.r.toFixed(3) + ',' + m.color.g.toFixed(3) + ',' + m.color.b.toFixed(3);
+          });
+        });
+      }
+      var _em = /[?&]stillexp=([0-9.]+)/.exec(location.search), _eMul = (typeof A._stillExpMul === 'number') ? A._stillExpMul : (_em ? parseFloat(_em[1]) : 1);
+      _expSaved = A.renderer.toneMappingExposure; if (_eMul !== 1) A.renderer.toneMappingExposure = _expSaved * _eMul;
+      console.log('§ALBEDO_SRGB srgbfix=' + (_fix ? 1 : 0) + ' converted=' + _nConv + ' albedoCap=' + (_cap == null ? 'off' : _cap) + ' capped=' + _nCap +
+        ' wallColour(IfcWallStandardCase) before=' + _wallBefore + ' after=' + _wallAfter + ' exposure=' + A.renderer.toneMappingExposure.toFixed(3) +
+        ' (x' + _eMul + ') lampRange=' + (A._stillLampRangeNow == null ? '0(inf)' : A._stillLampRangeNow) + ' lampDecay=' + A._stillLampDecayNow);
+    }
     if (!A._maxqActive && window.SkyOcc) { try { window.SkyOcc.stage(A); } catch (eSO) { console.warn('§SKY_OCCLUSION failed: ' + eSO.message); } }   // §SKY_OCCLUSION
     if (!A._maxqActive && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }   // after the lamps; budget set before them
     if (!A._maxqActive && window.GlassFresnel) { try { window.GlassFresnel.stage(A); } catch (eGF) { console.warn('§GLASS_FRESNEL failed: ' + eGF.message); } }   // §GLASS_FRESNEL
@@ -4191,6 +4226,9 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     if (window.SkyPortal) { try { window.SkyPortal.unstage(A); } catch (eSU) {} }   // §SKY_PORTAL
     if (window.GlassFresnel) { try { window.GlassFresnel.unstage(A); } catch (eGU) {} }   // §GLASS_FRESNEL
+    if (_albedoSaved.length) { _albedoSaved.forEach(function(r) { r[0].color.setRGB(r[2], r[3], r[4]); }); console.log('§ALBEDO_SRGB restored mats=' + _albedoSaved.length); _albedoSaved = []; }
+    if (_expSaved != null && A.renderer) { A.renderer.toneMappingExposure = _expSaved; _expSaved = null; }
+    A._stillLampRangeNow = null;
     if (typeof A._nightSyncPads === 'function') { try { A._nightSyncPads(); } catch (ePad) {} }   // §STILL_LIGHT_PAD — pads go with the still
     if (window.SkyOcc) { try { window.SkyOcc.unstage(A); } catch (eSOU) {} }   // §SKY_OCCLUSION
     // §STILL_BASE — hand navigation its own base light back.
@@ -5604,6 +5642,25 @@ async function setupEffects(A, renderer, scene, camera) {
       A._nightPLScaleStaged = A._nightPLScale;
       A._nightUpdateLights();
       if (!A._maxqActive) {
+        // §LIGHT_STACK (red1: "or the points of light are added up?"): at the floor point under the view centre, how many
+        // lamps reach it above 5% of the strongest, and the summed lamp irradiance vs the single strongest (three's own
+        // point-light falloff, no angle term: an upper bound). 
+        try {
+          var _rc = new THREE.Raycaster(); _rc.setFromCamera(new THREE.Vector2(0, 0), A.camera);
+          var _tg = []; A.scene.traverse(function(o) { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A._sky) _tg.push(o); });
+          var _hit = _rc.intersectObjects(_tg, false)[0];
+          if (_hit) {
+            var P = _hit.point, vals = [];
+            A._nightLights.forEach(function(l) { if (!(l.intensity > 0)) return; var d = Math.max(0.01, l.position.distanceTo(P));
+              var att = 1 / Math.max(Math.pow(d, l.decay), 0.01); if (l.distance > 0) att *= Math.pow(Math.max(0, Math.min(1, 1 - Math.pow(d / l.distance, 4))), 2);
+              vals.push(l.intensity * att); });
+            vals.sort(function(a, b) { return b - a; });
+            var _pk = vals[0] || 0, _sum = vals.reduce(function(a, b) { return a + b; }, 0), _n5 = vals.filter(function(v) { return v > 0.05 * _pk; }).length;
+            console.log('§LIGHT_STACK point=(' + P.x.toFixed(1) + ',' + P.y.toFixed(1) + ',' + P.z.toFixed(1) + ') lampsLit=' + vals.length + ' reachingOver5pctOfPeak=' + _n5 +
+              ' sum=' + _sum.toFixed(3) + ' strongest=' + _pk.toFixed(3) + ' sum/strongest=' + (_pk ? (_sum / _pk).toFixed(1) : '-') + ' exposure=' + A.renderer.toneMappingExposure.toFixed(3) +
+              ' sky(hemi)=' + A.hemi.intensity.toFixed(3));
+          }
+        } catch (eLS) { console.warn('§LIGHT_STACK failed: ' + eLS.message); }
         console.log('§STILL_LIGHT_PAD lamps=' + A._nightLights.length + ' pads=' + (A._nightPadLights || []).length + ' total=' + (A._nightLights.length + (A._nightPadLights || []).length) + ' cap=' + A._stillLampCap);
         var _dlSum = 0, _dlOn = 0;
         A._nightLights.forEach(function(l) { _dlSum += l.intensity; if (l.intensity > 0) _dlOn++; });

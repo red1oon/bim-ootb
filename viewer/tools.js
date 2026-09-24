@@ -1322,6 +1322,7 @@ function setupTools(A) {
   A._nightLightDecayDefault = NIGHT_LIGHT_DECAY;
   function _stillLampMul() { return (typeof A._stillLampMul === 'number') ? A._stillLampMul : 1; }
   function _stillLampDecay() { return (typeof A._stillLampDecayNow === 'number') ? A._stillLampDecayNow : NIGHT_LIGHT_DECAY; }
+  function _stillLampRange() { return (typeof A._stillLampRangeNow === 'number') ? A._stillLampRangeNow : NIGHT_LIGHT_RANGE; }   // §LIGHT_STACK arm: &lamprange=
 
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
   // while night mode / photo-staging is active — see the comment at its call site below for why.
@@ -2190,9 +2191,10 @@ function setupTools(A) {
       if (light) {
         light.intensity = intensity;   // position/colour are fixed per fixture — only fade moves
         light.decay = _stillLampDecay();   // §STILL_DIALS — Alt+S &lampdecay=, else NIGHT_LIGHT_DECAY
+        light.distance = _stillLampRange();
         light.color.set(A.nightFixtureColor(f.pos));   // §LAMP_SHAPE_COLOUR — Alt+S shape colour, else the mix colour
       } else {
-        light = new THREE.PointLight(A.nightFixtureColor(f.pos), intensity, NIGHT_LIGHT_RANGE, _stillLampDecay());
+        light = new THREE.PointLight(A.nightFixtureColor(f.pos), intensity, _stillLampRange(), _stillLampDecay());
         light.position.copy(f.pos);
         A.scene.add(light);
         A._nightLightByPos.set(f.pos, light);
