@@ -875,7 +875,24 @@
   async function filmFrame(ctx, w, h) {
     const A = window.APP, t0 = performance.now();
     if (!film.entry || film.entry.width !== w || film.entry.height !== h) { film.entry = document.createElement('canvas'); film.entry.width = w; film.entry.height = h; }
-    const ectx = film.entry.getContext('2d'); ectx.clearRect(0, 0, w, h); ectx.drawImage(A.renderer.domElement, 0, 0, w, h);
+    const ectx = film.entry.getContext('2d', { willReadFrequently: true }); ectx.clearRect(0, 0, w, h); ectx.drawImage(A.renderer.domElement, 0, 0, w, h);
+    // §GI_FILM_BLANK_GRAB (ported from the sandbox tap's §GI_TAP_EMPTY_GRAB/BLANK_GRAB; measured on Hospital: 5-10 of 120
+    // frames came out as the bare clear colour). A grab that is empty (alpha 0) or a FLAT field of the renderer's clear
+    // colour is not a picture: re-render synchronously through the app's composer and grab again, and log it.
+    {
+      if (!film.probe) { film.probe = document.createElement('canvas'); film.probe.width = 32; film.probe.height = 18; film.pctx = film.probe.getContext('2d', { willReadFrequently: true }); }
+      const blankNow = () => { film.pctx.clearRect(0, 0, 32, 18); film.pctx.drawImage(film.entry, 0, 0, 32, 18); const q = film.pctx.getImageData(0, 0, 32, 18).data;
+        let any = false, flat = true; for (let i = 0; i < q.length; i += 4) { if (q[i + 3] > 0) any = true; if (i && (Math.abs(q[i] - q[0]) > 2 || Math.abs(q[i + 1] - q[1]) > 2 || Math.abs(q[i + 2] - q[2]) > 2)) flat = false; }
+        const cc = A.renderer.getClearColor ? A.renderer.getClearColor(new window.THREE.Color()) : null;
+        const isClear = cc && Math.abs(q[0] - Math.round(cc.r * 255)) <= 3 && Math.abs(q[1] - Math.round(cc.g * 255)) <= 3 && Math.abs(q[2] - Math.round(cc.b * 255)) <= 3;
+        return !any || (flat && isClear); };
+      for (let tries = 0; tries < 3 && blankNow(); tries++) {
+        try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); } catch (e) {}
+        ectx.clearRect(0, 0, w, h); ectx.drawImage(A.renderer.domElement, 0, 0, w, h);
+        film.blank = (film.blank || 0) + 1;
+        console.log('§GI_FILM_BLANK_GRAB at capture ' + (film.frames + 1) + ' try ' + (tries + 1) + ' -> re-rendered, picture now=' + !blankNow() + ' (total ' + film.blank + ')');
+      }
+    }
     A._sceneBorrowed = true;
     try {
       if (!film.G || film.G.w !== w || film.G.h !== h) {
@@ -933,7 +950,7 @@
     },
     disarm: function () {
       if (window.__giCaptureFrame === filmFrame) window.__giCaptureFrame = null;
-      if (film) { console.log('§GI_FILM done frames=' + film.frames + ' meanMs=' + (film.frames ? (film.ms / film.frames).toFixed(0) : 0) + ' buildMs=' + (film.buildMs || 0));
+      if (film) { console.log('§GI_FILM done frames=' + film.frames + ' meanMs=' + (film.frames ? (film.ms / film.frames).toFixed(0) : 0) + ' buildMs=' + (film.buildMs || 0) + ' blankGrabsRecovered=' + (film.blank || 0));
         if (film.G) { try { film.G.rt.dispose(); film.G.renderer.dispose(); } catch (e) {} } film = null; }
     }
   };
