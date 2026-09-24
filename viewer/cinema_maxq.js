@@ -3501,6 +3501,23 @@
           console.log('§ESCAPE_ROUTE_WINDOW INCONCLUSIVE reason=no-usable-rise-beat — the reveal has nowhere to play');
         }
       }
+      // §FILM_FIT_PER_SHOT sampler — shots are the plan's beat intervals (plan.beats values inside (0,1)), limited to this
+      // bake's film span; sample(t) poses the camera the way the loop does (poseAtFilm + §57.5 gaze blend) and sets t's sun.
+      var _filmFitSampler = null;
+      try {
+        var _bt = [0, 1]; if (plan && plan.beats) Object.keys(plan.beats).forEach(function(k) { var v = plan.beats[k]; if (typeof v === 'number' && v > 0 && v < 1) _bt.push(v); });
+        _bt = _bt.sort(function(a, b) { return a - b; }).filter(function(v, k, arr) { return k === 0 || v - arr[k - 1] > 1e-4; });
+        var _span = (_clip && _clip.out > _clip.in) ? [_clip.in, _clip.out] : [0, 1];
+        var _shots = []; for (var _si = 0; _si + 1 < _bt.length; _si++) { var _a = Math.max(_bt[_si], _span[0]), _b = Math.min(_bt[_si + 1], _span[1]); if (_b > _a) _shots.push([_a, _b]); }
+        var _saveCam = null;
+        _filmFitSampler = { shots: _shots,
+          sample: function(t) { if (!_saveCam) _saveCam = { p: A.camera.position.clone(), q: A.camera.quaternion.clone(), tg: A.controls.target.clone() };
+            var p = poseAtFilm(t), d = Math.hypot(p.tx - p.x, p.ty - p.y, p.tz - p.z), tc = (_clip && _clip.out > _clip.in) ? (t - _clip.in) / (_clip.out - _clip.in) : t;
+            var g = _blendedGazeTarget(tc, p, d); A.camera.position.set(p.x, p.y, p.z); A.controls.target.set(g.tx, g.ty, g.tz); A.controls.update(); A.camera.lookAt(A.controls.target); A.camera.updateMatrixWorld(true);
+            if (A._sunArcStep) A._sunArcStep(t); },
+          restore: function() { if (_saveCam) { A.camera.position.copy(_saveCam.p); A.controls.target.copy(_saveCam.tg); A.controls.update(); A.camera.quaternion.copy(_saveCam.q); A.camera.updateMatrixWorld(true); _saveCam = null; } } };
+        console.log('§FILM_FIT_SHOTS from plan.beats: ' + _shots.map(function(x) { return '[' + x[0].toFixed(3) + ',' + x[1].toFixed(3) + ']'; }).join(' ') + ' (span ' + _span.join('..') + ')');
+      } catch (eFS) { console.warn('§FILM_FIT_SHOTS failed: ' + eFS.message); _filmFitSampler = null; }
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
@@ -4016,7 +4033,7 @@
         // §FILM_PARITY — this frame's Alt+S decisions (daylight glow, lamps-outside, shadow fit, portals) on this frame's sun
         // and camera, BEFORE the pin, so the pin's lamp pool update sees the flag (effects.js A._filmParityStep).
         if (A._maxqActive && A._filmParity && !A._giFilmArmed && window.GiFilm) { A._giFilmArmed = true; window.GiFilm.arm(); }   // §GI_FILM — staging decided parity
-        if (A._maxqActive && A._filmParity && A._filmParityStep) A._filmParityStep(i);
+        if (A._maxqActive && A._filmParity && A._filmParityStep) A._filmParityStep(i, _tnFilm, _filmFitSampler);
         if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tnFilm, _revealU);
         var ok = A._burninDatumDir ? true : await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         if (!A._burninDatumDir) await _raf2('frame ' + i + ' capture');

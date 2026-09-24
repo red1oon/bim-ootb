@@ -3155,7 +3155,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // shadows on far ground (red1's old "silhouette buildings cannot cast shadows"; the #1766 exterior brightening).
   // film=true: size quantised UP to 8 m steps with hysteresis (shrinks only by 2+ steps) and the centre snapped to whole
   // texels, so edges do not crawl frame to frame; every size change is counted and logged.
-  function _stillFitApply(film) {
+  function _stillFitApply(film, measureOnly) {
     if (!_fitOn()) return null;
     var env = _fitState.env, sc = A.sun.shadow.camera, cam = A.camera, mz = A.sun.shadow.mapSize.width;
     A.sun.updateMatrixWorld(); A.sun.shadow.updateMatrices(A.sun); cam.updateMatrixWorld();
@@ -3191,7 +3191,19 @@ async function setupEffects(A, renderer, scene, camera) {
         b = Math.max(-env, Math.max(V.y0, U.y0) - M), t = Math.min(env, Math.min(V.y1, U.y1) + M);
     if (!(r - l > 1 && t - b > 1)) { l = -env; r = env; b = -env; t = env; }
     var w = r - l, h = t - b, cx = (l + r) / 2, cy = (b + t) / 2, changed = false;
-    if (film) {
+    if (measureOnly) return { w: w, h: h };
+    // §FILM_FIT_PER_SHOT (spec v2 item 2): the box size is fixed per SHOT (plan.beats intervals), precomputed from the plan's
+    // own poses + that shot's sun before the film; only the centre moves per frame (whole-texel snapped). A frame that
+    // still needs more than its shot box (pose approximation) grows that shot once and is counted (shotGrow).
+    var shot = film && _fitState.shots ? _fitState.shots.find(function(S) { return A._filmTnNow >= S.a && A._filmTnNow <= S.b; }) : null;
+    if (film && shot) {
+      if (w > shot.w || h > shot.h) { shot.w = Math.max(shot.w, Math.ceil(w / 8) * 8); shot.h = Math.max(shot.h, Math.ceil(h / 8) * 8); shot.grow = (shot.grow || 0) + 1; changed = true; }
+      if (_fitState.shotNow !== shot) { _fitState.shotNow = shot; console.log('§FILM_FIT_SHOT enter shot=' + shot.i + ' [' + shot.a.toFixed(3) + ',' + shot.b.toFixed(3) + '] box=' + shot.w + 'x' + shot.h + 'm texel=' + (Math.max(shot.w, shot.h) / mz).toFixed(4) + ' samples=' + shot.n); }
+      w = shot.w; h = shot.h;
+      var tx0 = w / mz, ty0 = h / mz; cx = Math.round(cx / tx0) * tx0; cy = Math.round(cy / ty0) * ty0;
+      if (changed) _fitState.changes++;
+      l = cx - w / 2; r = cx + w / 2; b = cy - h / 2; t = cy + h / 2;
+    } else if (film) {
       // §FILM_FIT_GROW_ONLY (2026-09-25, measured: 8 m steps with shrink hysteresis changed size 16x in a 120-frame Hospital
       // clip — the texel changes each time and edges would crawl). Films now GROW only, in 32 m steps, and never shrink
       // inside the film, so the texel can only coarsen a few times and never flickers back and forth.
@@ -3210,12 +3222,27 @@ async function setupEffects(A, renderer, scene, camera) {
     _stillFitBox = { l: l, r: r, b: b, t: t };
     var t0 = 2 * env / mz;
     var line = 'box=' + w.toFixed(1) + 'x' + h.toFixed(1) + 'm texelX=' + (w / mz).toFixed(4) + ' texelY=' + (h / mz).toFixed(4) +
-      ' normalBias=' + A.sun.shadow.normalBias.toFixed(3) + ' propsKept=' + kept + '/' + props.length + ' camOutside=' + (outside ? 1 : 0) + (film ? ' sizeChanges=' + _fitState.changes + (changed ? ' CHANGED' : '') : '');
+      ' normalBias=' + A.sun.shadow.normalBias.toFixed(3) + ' propsKept=' + kept + '/' + props.length + ' camOutside=' + (outside ? 1 : 0) + (film ? ' sizeChanges=' + _fitState.changes + (changed ? ' CHANGED' : '') + (shot ? ' shot=' + shot.i + ' shotGrow=' + (shot.grow || 0) : '') : '');
     if (!film) console.log('§STILL_SHADOW_FIT env=' + env + ' ' + line + ' (was ' + (2 * env) + ', texel ' + t0.toFixed(4) + ') gain=' + (t0 / texel).toFixed(2) + 'x viewDepth=' + dFar.toFixed(0) +
       ' bldgFootprint=' + (B.x1 - B.x0).toFixed(0) + 'x' + (B.y1 - B.y0).toFixed(0) + ' sunElev=' + THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)))).toFixed(1));
     return line;
   }
-  A._filmParityShadowFit = function() { return _stillFitApply(true); };   // §STILL_SHADOW_FIT — this still's fitted box; radius to hand back
+  A._filmParityShadowFit = function() { return _stillFitApply(true); };
+  // §FILM_FIT_PER_SHOT precompute — sampler from cinema_maxq.js: { shots: [[a,b],...], sample(t): sets camera + sun for film
+  // time t }. For each shot, K poses + the shot's own sun at each sample, measure the raw fitted box, keep the max, pad 10%
+  // and quantise up to 8 m. Runs once, at the first film frame (staging has set the sun camera up by then).
+  A._filmFitPrecompute = function(sampler) {
+    if (!_fitOn() || !sampler || !sampler.shots || !sampler.shots.length) { console.log('§FILM_FIT_PER_SHOT skipped (' + (!sampler ? 'no sampler' : 'fit off') + ')'); return; }
+    var t0 = performance.now(), K = 12, out = [];
+    sampler.shots.forEach(function(ab, i) {
+      var W = 0, H = 0, n = 0;
+      for (var k = 0; k <= K; k++) { var t = ab[0] + (ab[1] - ab[0]) * k / K; try { sampler.sample(t); A._stillCamInsideNow = _stillCamInside().inside; var m = _stillFitApply(true, true); if (m) { W = Math.max(W, m.w); H = Math.max(H, m.h); n++; } } catch (e) {} }
+      var env2 = 2 * _fitState.env;
+      out.push({ i: i, a: ab[0], b: ab[1], n: n, w: Math.min(env2, Math.ceil(W * 1.1 / 8) * 8), h: Math.min(env2, Math.ceil(H * 1.1 / 8) * 8) });
+    });
+    _fitState.shots = out;
+    console.log('§FILM_FIT_PER_SHOT shots=' + out.length + ' ' + out.map(function(S) { return S.i + ':[' + S.a.toFixed(3) + ',' + S.b.toFixed(3) + '] ' + S.w + 'x' + S.h + 'm texel ' + (Math.max(S.w, S.h) / A.sun.shadow.mapSize.width).toFixed(4); }).join(' · ') + ' ms=' + (performance.now() - t0).toFixed(0));
+  };   // §STILL_SHADOW_FIT — this still's fitted box; radius to hand back
   // §R17_SHADOWMAP_RELEASE (2026-09-05, bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R17) — the
   // shadow-map dimensions this staging cycle BORROWED from. Captured at raise time rather than
   // assumed: tools.js §S288 owns the nav number (2048) and the three.js default when shadows were
@@ -4328,8 +4355,10 @@ async function setupEffects(A, renderer, scene, camera) {
   //   §STILL_GLOW — daylight test on the moving sun; window glow off by day; lamps off only when the camera is outside
   //   (the _stillLampsOff flag, which tools.js multiplies in, so the fill pin cannot write it back).
   var _fpLast = null;
-  A._filmParityStep = function(frameIdx) {
+  A._filmParityStep = function(frameIdx, tnFilm, sampler) {
     if (!A._filmParity || !A._maxqActive) return null;
+    A._filmTnNow = tnFilm;
+    if (sampler && _fitState && !_fitState.shots && !_fitState.precomputeTried) { _fitState.precomputeTried = true; A._filmFitPrecompute(sampler); sampler.restore(); if (A._sunArcStep) A._sunArcStep(tnFilm); }   // this frame's sun back
     var t0 = performance.now(), out = { f: frameIdx };
     if (A._nightGlowMats && A.sun) {
       var gs = A.sun.position.clone(); if (A.sun.target) gs.sub(A.sun.target.position); gs.normalize();
