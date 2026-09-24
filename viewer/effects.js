@@ -4077,7 +4077,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // multiplies the still's tone-mapping exposure. Defaults: all off (red1/watcher pick from the sheet).
     if (!A._maxqActive) {
       _albedoSaved = [];
-      var _fix = (typeof A._stillSrgbFix === 'boolean') ? A._stillSrgbFix : !/[?&]srgbfix=0/.test(location.search);   // §FLOOR_WASH pick: ON by default; &srgbfix=0 = old colours
+      var _fix = (typeof A._stillSrgbFix === 'boolean') ? A._stillSrgbFix : /[?&]srgbfix=1/.test(location.search);   // default OFF again: it darkened the exterior refs (courtyard_a 73.2 -> 45.0); &srgbfix=1 to try
       var _capM = /[?&]albedocap=([0-9.]+)/.exec(location.search), _cap = (typeof A._stillAlbedoCap === 'number') ? A._stillAlbedoCap : (_capM ? parseFloat(_capM[1]) : null);
       var _nConv = 0, _nCap = 0, _wallBefore = null, _wallAfter = null;
       if (_fix || _cap != null) {
