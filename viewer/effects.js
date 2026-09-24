@@ -2931,6 +2931,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var PHOTO_HEMI_INTENSITY_SCALE = 1.0;    // was 1.25 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
   var FILM_FILL_AMBIENT = 0.785, FILM_FILL_HEMI = 1.257;   // §FILM_FILL_RESTORE — pre-#1601 scene.js values (TM's balance)
   var _filmFillSaved = null;
+  var _stillBaseSaved = null;   // §STILL_BASE
   var PHOTO_AMBIENT_INTENSITY_SCALE = 1.0;  // was 1.15 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
   // §GROUND_ALBEDO — the multiplicative lever the two paragraphs above never had. Everything they
   // describe is ADDITIVE (emissive add; hemi/ambient fill), which is exactly why both flattened the
@@ -4008,6 +4009,20 @@ async function setupEffects(A, renderer, scene, camera) {
         ' glowMats=' + _gN + ' emissive->' + (_gDay ? '0' : 'kept') +
         ' lamps=' + (A._stillLampsOff ? '0 (fixture emissive ' + _gLampMats + ' mats -> 0)' : ((A._nightLights || []).length + ' on')));
     }
+    // §STILL_BASE (2026-09-24, red1: switch the EVEN base light off and let the real sources carry the picture —
+    // sun + shadows, lamps indoors, bounce, sky reflections — then tune by eye). Alt+S stills only (films keep the
+    // restored fill; nav unchanged). A DIAL, read at every press: APP._stillBaseScale, else ?base=<0..1>, else 0.
+    // Scales ambient + hemi; deep interiors are EXPECTED to go dark at 0 — not compensated. Teardown restores.
+    if (!A._maxqActive && A.ambient && A.hemi) {
+      var _bs = (typeof A._stillBaseScale === 'number') ? A._stillBaseScale : null;
+      if (_bs == null) { var _bm = /[?&]base=([0-9.]+)/.exec(location.search); _bs = _bm ? parseFloat(_bm[1]) : 0; }
+      _bs = Math.max(0, Math.min(1, isFinite(_bs) ? _bs : 0));
+      _stillBaseSaved = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
+      A.ambient.intensity = _stillBaseSaved.ambI * _bs; A.hemi.intensity = _stillBaseSaved.hemiI * _bs;
+      console.log('§STILL_BASE scale=' + _bs + ' ambient=' + A.ambient.intensity.toFixed(3) + ' hemi=' + A.hemi.intensity.toFixed(3) +
+        ' (from ' + _stillBaseSaved.ambI.toFixed(3) + '/' + _stillBaseSaved.hemiI.toFixed(3) + ') camInside=' +
+        (typeof _gIn !== 'undefined' && _gIn && _gIn.inside != null ? (_gIn.inside ? 1 : 0) : '-') + ' lamps=' + (A._stillLampsOff ? 0 : 'on'));
+    }
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
     // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
     // nav/still wall-side contrast; in the bake that doubled the shadow contrast (sunFillRatio 4.387 vs
@@ -4122,6 +4137,12 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§DLOD_STILL_OWNERSHIP restored=' + (_dlodRestore ? 1 : 0) + ' pausedByStill=' + (_dlodPausedByStill ? 1 : 0) +
       ' deferredEnable=' + (A._dlodStillWanted ? 1 : 0) + ' dlodEnabledNow=' + (A._dlodEnabled ? 1 : 0));
     _dlodPausedByStill = false; A._dlodStillWanted = false;
+    // §STILL_BASE — hand navigation its own base light back.
+    if (_stillBaseSaved && A.ambient && A.hemi) {
+      A.ambient.intensity = _stillBaseSaved.ambI; A.hemi.intensity = _stillBaseSaved.hemiI;
+      console.log('§STILL_BASE restored ambient=' + _stillBaseSaved.ambI.toFixed(3) + ' hemi=' + _stillBaseSaved.hemiI.toFixed(3));
+      _stillBaseSaved = null;
+    }
     // §FILM_FILL_RESTORE — hand navigation its own fill back (the night-mode restore below only covers
     // the case where staging toggled night mode itself).
     if (_filmFillSaved && A.ambient && A.hemi) {
