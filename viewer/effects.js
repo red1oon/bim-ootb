@@ -2929,6 +2929,8 @@ async function setupEffects(A, renderer, scene, camera) {
   // discrete point-light addons depend on to read as distinct. Dialed back — some lift over the
   // raw sin(6 deg) ground darkness, not enough to wash out contrast.
   var PHOTO_HEMI_INTENSITY_SCALE = 1.0;    // was 1.25 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
+  var FILM_FILL_AMBIENT = 0.785, FILM_FILL_HEMI = 1.257;   // §FILM_FILL_RESTORE — pre-#1601 scene.js values (TM's balance)
+  var _filmFillSaved = null;
   var PHOTO_AMBIENT_INTENSITY_SCALE = 1.0;  // was 1.15 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
   // §GROUND_ALBEDO — the multiplicative lever the two paragraphs above never had. Everything they
   // describe is ADDITIVE (emissive add; hemi/ambient fill), which is exactly why both flattened the
@@ -3952,6 +3954,19 @@ async function setupEffects(A, renderer, scene, camera) {
     // with night mode already on, whatever the fill is at this point): the bake's per-frame
     // compensation multiplies THIS base every frame, so it can never compound frame over frame.
     // Cleared in _removePhotoStaging with the rest of the staging state.
+    // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
+    // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
+    // nav/still wall-side contrast; in the bake that doubled the shadow contrast (sunFillRatio 4.387 vs
+    // Time Machine's 2.155) and made interiors gloomy. While a film records (A._maxqActive), stage the
+    // pre-#1601 fill; Alt+S stills and navigation keep #1601's values. Set HERE, before the snapshot
+    // below, so the per-frame §SUN_ARC_FILL_PIN holds it on every frame. Restored in teardown.
+    if (A._maxqActive && A.ambient && A.hemi) {
+      if (!_filmFillSaved) _filmFillSaved = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
+      A.ambient.intensity = FILM_FILL_AMBIENT; A.hemi.intensity = FILM_FILL_HEMI;
+      console.log('§FILM_FILL_RESTORE ambient ' + _filmFillSaved.ambI + '->' + FILM_FILL_AMBIENT +
+        ' hemi ' + _filmFillSaved.hemiI + '->' + FILM_FILL_HEMI + ' sunFillRatio=' +
+        (A.sun ? (A.sun.intensity / (FILM_FILL_AMBIENT + FILM_FILL_HEMI)).toFixed(3) : '?') + ' (films only)');
+    }
     A._photoFillBase = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
     console.log('§SUN_ARC_FILL_BASE ambient=' + A._photoFillBase.ambI.toFixed(4) +
       ' hemi=' + A._photoFillBase.hemiI.toFixed(4) + ' plScaleStaged=' + A._nightPLScaleStaged +
@@ -4031,6 +4046,13 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§DLOD_STILL_OWNERSHIP restored=' + (_dlodRestore ? 1 : 0) + ' pausedByStill=' + (_dlodPausedByStill ? 1 : 0) +
       ' deferredEnable=' + (A._dlodStillWanted ? 1 : 0) + ' dlodEnabledNow=' + (A._dlodEnabled ? 1 : 0));
     _dlodPausedByStill = false; A._dlodStillWanted = false;
+    // §FILM_FILL_RESTORE — hand navigation its own fill back (the night-mode restore below only covers
+    // the case where staging toggled night mode itself).
+    if (_filmFillSaved && A.ambient && A.hemi) {
+      A.ambient.intensity = _filmFillSaved.ambI; A.hemi.intensity = _filmFillSaved.hemiI;
+      console.log('§FILM_FILL_RESTORE off — ambient ' + _filmFillSaved.ambI + ' hemi ' + _filmFillSaved.hemiI + ' restored');
+      _filmFillSaved = null;
+    }
     // §CAM_LIGHT: pull it back out of the scene — normal navigation never carries it.
     if (A._camLight) { A.scene.remove(A._camLight); console.log('§CAM_LIGHT off'); }
     // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
