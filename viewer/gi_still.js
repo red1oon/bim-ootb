@@ -913,7 +913,8 @@
         let sa = 0, sc = 0, n = 0; const ap = ectx.getImageData(0, 0, w, h).data, cp = ctx.getImageData(0, 0, w, h).data;
         for (let i = 0; i < ap.length; i += 4 * 97) { sa += (ap[i] + ap[i + 1] + ap[i + 2]) / 3; sc += (cp[i] + cp[i + 1] + cp[i + 2]) / 3; n++; }
         console.log('§GI_FILM f=' + film.frames + ' ms=' + ms.toFixed(0) + ' meanMs=' + (film.ms / film.frames).toFixed(0) + ' appMean=' + (sa / n).toFixed(1) +
-          ' compositeMean=' + (sc / n).toFixed(1) + ' gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' recv=' + G.recvU.value + ' flipOut=' + fo);
+          ' compositeMean=' + (sc / n).toFixed(1) + ' gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' recv=' + G.recvU.value + ' girad=' + G.gi.radius.value + ' githick=' + G.gi.thickness.value +
+          ' gisteps=' + G.gi.stepCount.value + ' giint=' + G.gi.giIntensity.value + ' slices=' + G.gi.sliceCount.value + ' flipOut=' + fo);
       }
     } finally { A._sceneBorrowed = false; }
   }

@@ -2120,7 +2120,7 @@ function setupTools(A) {
       // so the create branch above is skipped and the lamps were never re-added: films baked with NO interior lamps.
       // Re-attach on reuse (adding the same count back = the count the shaders were compiled for; no churn).
       var _re = 0;
-      for (var _ra = 0; _ra < _pool.length; _ra++) if (!_pool[_ra].parent) { A.scene.add(_pool[_ra]); _re++; }
+      if (!window.__noPoolReattach) for (var _ra = 0; _ra < _pool.length; _ra++) if (!_pool[_ra].parent) { A.scene.add(_pool[_ra]); _re++; }   // __noPoolReattach: dev A/B only (cost split)
       if (_re) console.log('§NIGHT_BAKE_POOL_REATTACH re-added=' + _re + ' of ' + _pool.length + ' (night mode had been toggled off mid-bake-prep)');
       // §FILM_PARITY — the Alt+S lamp reach/fall-off (§STILL_DIALS 25 m / 1.5) on the film's pool too; nav values otherwise.
       var _rng = A._filmParity ? _stillLampRange() : NIGHT_LIGHT_RANGE, _dec = A._filmParity ? _stillLampDecay() : NIGHT_LIGHT_DECAY;
