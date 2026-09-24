@@ -4947,7 +4947,45 @@ async function setupEffects(A, renderer, scene, camera) {
       st.last = null; st.n = 0;
     }
   }
+  // §STILL_RES (2026-09-24, red1: "The Alt-S, can we bump up its resolution?") — the still renders at a preset height
+  // independent of the window: renderer + composer pixelRatio raised for the still (the canvas keeps its CSS size, the
+  // browser shows it downscaled), restored on every exit (all funnel through _teardownStillRefine). The bounce reads the
+  // canvas's drawing buffer, so it follows. &stillres=window|1080p|1440p|4k / APP._stillRes; default `window` (= today)
+  // until the cost per preset is measured (watchdog). Never below the window. Alt+S only.
+  var STILL_RES_H = { '1080p': 1080, '1440p': 1440, '4k': 2160 };
+  var _stillResSavedPR = null;
+  function _stillResApply() {
+    if (A._maxqActive || !A.renderer || !A._composer) return;
+    var m = /[?&]stillres=([a-z0-9]+)/i.exec(location.search);
+    var preset = String((typeof A._stillRes === 'string') ? A._stillRes : (m ? m[1] : 'window')).toLowerCase();
+    var pr0 = A.renderer.getPixelRatio(), cssW = window.innerWidth, cssH = window.innerHeight;
+    var tH = STILL_RES_H[preset] || 0, pr = Math.max(pr0, tH ? tH / cssH : pr0);
+    A._stillResPreset = tH ? preset : 'window';   // gi_still.js keeps today's bounce cap for `window`
+    var gl = A.renderer.getContext(), maxRB = gl ? gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) : 16384;
+    pr = Math.min(pr, maxRB / Math.max(cssW, cssH));
+    if (pr !== pr0) {
+      _stillResSavedPR = pr0;
+      A.renderer.setPixelRatio(pr);
+      A._composer.setPixelRatio(pr); A._composer.setSize(cssW, cssH);
+      if (A._ssaoPass) { A._ssaoPass.width = cssW; A._ssaoPass.height = cssH; }
+    }
+    var bw = A.renderer.domElement.width, bh = A.renderer.domElement.height, px = bw * bh;
+    // Rough GPU estimate, formula stated, not measured: composer 2 half-float RGBA + depth/stencil (24 B/px), TAA
+    // accumulate + sample half-float (16 B/px), SSAO/normal targets (~16 B/px), canvas + preserved copy (8 B/px) = 64 B/px.
+    console.log('§STILL_RES preset=' + preset + ' target=' + bw + 'x' + bh + ' css=' + cssW + 'x' + cssH + ' pixelRatio=' + pr0.toFixed(3) + '->' + pr.toFixed(3) +
+      ' px=' + (px / 1e6).toFixed(2) + 'MP estGpuMB~' + Math.round(px * 64 / 1048576) + ' (64 B/px rough; excludes the 8192 sun map)' + (preset in STILL_RES_H || preset === 'window' ? '' : ' (unknown preset, window used)'));
+  }
+  function _stillResRestore() {
+    if (_stillResSavedPR === null || !A.renderer) return;
+    var pr = _stillResSavedPR; _stillResSavedPR = null;
+    A.renderer.setPixelRatio(pr);
+    if (A._composer) { A._composer.setPixelRatio(pr); A._composer.setSize(window.innerWidth, window.innerHeight); }
+    if (A._ssaoPass) { A._ssaoPass.width = window.innerWidth; A._ssaoPass.height = window.innerHeight; }
+    console.log('§STILL_RES restored pixelRatio=' + pr.toFixed(3) + ' buffer=' + A.renderer.domElement.width + 'x' + A.renderer.domElement.height);
+    if (A.markDirty) A.markDirty();
+  }
   function _teardownStillRefine(reason, keepStaging) {
+    _stillResRestore();
     if (!keepStaging) _stillLock(false);   // §STILL_LOCK — released with the still
     A._stillRefineActive = false;
     A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY safety net — any exit path clears "processing"
@@ -5693,6 +5731,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _stillSig = _camSig();
     _stillRestartLogged = false;
     var _triCount = _setTriplanarActive(true);
+    _stillResApply();   // §STILL_RES — before staging, so TAA/AO/composer targets allocate once at the still's size
     _applyPhotoStaging();
     // §NIGHT_STILL_LIGHTS_ORDER (2026-09-05, found by witness_sun_arc_fill.js on a Hospital CLI bake —
     // §SUN_ARC_FILL poolLit=30 on frame 0, 50 on every later frame): the block below used to sit

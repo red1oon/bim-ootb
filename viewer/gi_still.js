@@ -56,7 +56,8 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 (function () {
   const ACCUM_DEFAULT = 8;          // passes; a still has no motion, so it can average as long as it likes
-  const MAX_PIXELS = 1600 * 900;    // bounce-pass resolution cap, scaled up for display
+  const MAX_PIXELS = 3840 * 2160;   // bounce-pass resolution cap with a §STILL_RES preset (4k)
+  const MAX_PIXELS_WINDOW = 1600 * 900;   // today's cap, kept for preset `window` (a HiDPI buffer must not grow the bounce)
   const GEOM_MASK_T = 0.5;          // hard-mask threshold on the geometry mask (see §GI_STILL_DOUBLE)
   let busy = false, built = null;
   function toast(msg, ms) {
@@ -667,8 +668,11 @@
     const mode = opts.mode || 'composite';
     const t0 = performance.now();
     const A = window.APP;
-    let w = Math.min(2560, window.innerWidth), h = Math.min(1440, window.innerHeight);
-    const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (w * h)));
+    // §STILL_RES — the bounce is sized from the app's drawing buffer (the still's own size), not the window's CSS size.
+    const cv = A.renderer && A.renderer.domElement;
+    let w = (cv && cv.width) || window.innerWidth, h = (cv && cv.height) || window.innerHeight;
+    const cap = (A && A._stillResPreset && A._stillResPreset !== 'window') ? MAX_PIXELS : MAX_PIXELS_WINDOW;
+    const scale = Math.min(1, Math.sqrt(cap / (w * h)));
     w = Math.max(2, Math.round(w * scale) & ~1); h = Math.max(2, Math.round(h * scale) & ~1);
     const R = { mode: mode, w: w, h: h };
     try {
@@ -773,6 +777,7 @@
       R.pipelines = G.pipeStats ? { sync: G.pipeStats.sync, syncMs: +G.pipeStats.syncMs.toFixed(0), async: G.pipeStats.async, modules: G.pipeStats.modules, moduleMs: +G.pipeStats.moduleMs.toFixed(0) } : null;
       console.log('§GI_STILL result mode=' + mode + ' encode=' + enc + ' compositeMean=' + R.compositeMean + ' appMean=' + R.appMean +
                   ' meanAbsDiff=' + R.meanAbsDiff + ' passes=' + N + ' secs=' + R.secs);
+      console.log('§STILL_RES bounce=' + w + 'x' + h + ' bounceMs=' + Math.round(R.secs * 1000) + ' readbackMB=' + (w * h * 16 / 1048576).toFixed(0) + ' per float RGBA buffer (JS heap, up to 2 alive while unpadding)');
       console.log('§GI_STILL app state restored: overrideMaterial=' + String(A.scene.overrideMaterial) +
                   ' skyVisible=' + (A._sky ? A._sky.visible : 'no-sky') + ' background=' + String(A.scene.background));
       show(out, R.secs.toFixed(1), N);
