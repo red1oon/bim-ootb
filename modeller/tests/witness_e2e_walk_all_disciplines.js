@@ -22,7 +22,8 @@
  *   A7 VISIBLE           — the framebuffer changed after the walk (readPixels checksum differs).
  *   A8 NO-ERROR          — zero pageerror across the whole sequence.
  *   A9 TOOLTIP           — (MODELLER_MASTER.md row 17) the synthetic __ALL__ row's ▶ affordance reads
- *                          "Walk ALL disciplines" (plural/accurate); an ordinary disc row keeps the
+ *                          "Walk ALL services" (§WALKALL-MEP-ONLY, red1 2026-09-24: it walks the services only;
+ *                          was "Walk ALL disciplines"); an ordinary disc row keeps the
  *                          singular "Walk this discipline".
  *   A10 NO-PROXY-TOAST   — (row 18 negative control) Duplex (253 el.) < threshold (50000) ⇒ NO
  *                          "reveal animation simplified" toast may fire on the normal path.
@@ -80,7 +81,7 @@ async function openDuplex(pg) {
       return { all: allEl ? allEl.getAttribute('title') : null, disc: discEl ? discEl.getAttribute('title') : null };
     });
     console.log('  §TOOLTIP ' + JSON.stringify(titles));
-    chk('A9 TOOLTIP (__ALL__ row plural, disc row singular)', titles.all === 'Walk ALL disciplines' && titles.disc === 'Walk this discipline', JSON.stringify(titles));
+    chk('A9 TOOLTIP (__ALL__ row plural, disc row singular)', titles.all === 'Walk ALL services' && titles.disc === 'Walk this discipline', JSON.stringify(titles));
 
     const roster = await pg.evaluate(() => window.DiscWalker.disciplines());
     const before = await pg.evaluate(() => {

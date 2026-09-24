@@ -51,7 +51,31 @@ var RW_WALL_SNAP_MAX = 1.5;   // metres — a wall-host fixture snaps onto a rea
 // `IfcFlowSegment_Ifc2x3_Duplex_2f28520e`) actually measures a 48mm×70mm cross-section over a 4.43m run —
 // not round, not 250mm. That catalog's declared dims cannot be trusted as a "real cross-section" for this
 // hard-fail gate, so CW/SP/ACMV/ELEC stay REFUSED until component_library.db grows a verified product.
+// §RW-CW-SP-PRODUCT (2026-09-24, MODELLER_MASTER §STRATEGY L3) — SPEC. red1 decided (2026-09-24): "Use measured
+// Duplex pipes". CW and SP are each registered from ONE cited real pipe instance of the Duplex federated MEP model
+// (build/Duplex_mep_extracted.db, extracted from reference/residential/Ifc2x3_Duplex_Federated.ifc per
+// build/logs/extract_duplex_mep.log; the guids are also in internal/UNMERGED/Ifc2x3_Duplex_MEP.ifc). The discipline
+// comes from the SOURCE's own pipe type name, not inferred: 'Pipe Types:Cold Water' → CW, 'Pipe Types:Waste' → SP
+// (SP = gravity soil/waste, RW_DISC_TO_COORD). The cross-section is that instance's measured bbox across its run.
+// It is an axis-aligned straight run, so the two short extents ARE the pipe section. Measured over ALL straight
+// axis-aligned segments of each type (2026-09-24):
+//   Waste       43 straight → 48.3 mm on 41 (1½" OD) · 42.2 ×1 · 60.3 ×1          → 48.3 mm, a clear mode
+//   Cold Water  65 straight → 25.4 mm on 31 (1")  · 12.7 mm on 30 (½")  · 6.3/6.4 ×4 → 25.4 mm, CHOSEN AS THE
+//               MAINS SIZE; the ½" branch size is nearly as common. One product per discipline is a stated
+//               simplification: branches are drawn and signed at the mains section.
+// Effect: CW/SP runs now SIGN (GEOM_SWEEP) instead of refusing, and the clash margin uses the real section instead of
+// the invented RW_PIPE_CROSS (75 mm).
 var RW_REAL_CROSSSECTION = {
+  CW: {
+    w: 0.0254, h: 0.0254,               // measured bbox cross extents, metres (run length 4.514 m)
+    product: 'Duplex_CW_Pipe_25', ifc_class: 'IfcFlowSegment',
+    source: 'build/Duplex_mep_extracted.db guid 3mPE5k4Z1BMwNpizluRx2t "Pipe Types:Cold Water:583067" (Ifc2x3_Duplex_Federated.ifc), measured 2026-09-24'
+  },
+  SP: {
+    w: 0.04826, h: 0.048361,            // measured bbox cross extents, metres (run length 3.803 m)
+    product: 'Duplex_SP_Waste_Pipe_48', ifc_class: 'IfcFlowSegment',
+    source: 'build/Duplex_mep_extracted.db guid 0_dkc9hC11lA4ntVXLyrTT "Pipe Types:Waste:583332" (Ifc2x3_Duplex_Federated.ifc), measured 2026-09-24'
+  },
   FP: {
     w: 0.0213317871, h: 0.0213356018,   // measured local bbox X/Y extent, metres — component_library.db
     product: 'FP_Drop_Pipe', ifc_class: 'IfcPipeSegment',

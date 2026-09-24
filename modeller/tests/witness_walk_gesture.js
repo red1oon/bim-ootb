@@ -46,7 +46,14 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   await pg.waitForFunction(d => (window.__dwWalks || {})[d] && !Object.keys(window.__dwChainAnimating || {}).some(k => window.__dwChainAnimating[k]), { timeout: 120000, polling: 300 }, DISC);
   out.push(await snap('after-walk'));
   await pg.click('canvas').catch(() => {});
-  const waitOps = async (prev) => { for (let i = 0; i < 60; i++) { const n = await pg.evaluate(() => window.Bonsai.oplog._allGeom().filter(o => !o.undone).length); if (n !== prev) return; await new Promise(r => setTimeout(r, 250)); } };
+  // Wait on the CONDITION that the keypress finished: the row flip (sync), then ModellerHistory's pending restore
+  // (the async re-fold, which with signed GEOM_SWEEP rows includes the kernel's sweep solids), then two macrotasks
+  // so doUndo/doRedo's own continuation (the §WALK-GESTURE-DRAW redraw) has run. Snapshotting at the row flip
+  // alone read the layer BEFORE its redraw once sweeps made the fold slower (measured: fixtures 18→0 at redo).
+  const waitOps = async (prev) => {
+    for (let i = 0; i < 60; i++) { const n = await pg.evaluate(() => window.Bonsai.oplog._allGeom().filter(o => !o.undone).length); if (n !== prev) break; await new Promise(r => setTimeout(r, 250)); }
+    await pg.evaluate(async () => { const MH = window.ModellerHistory; await ((MH && MH.pending && MH.pending()) || Promise.resolve()); await new Promise(r => setTimeout(r, 0)); await new Promise(r => setTimeout(r, 0)); });
+  };
   let prev = out[out.length - 1].active;
   await pg.keyboard.down('Control'); await pg.keyboard.press('z'); await pg.keyboard.up('Control'); await waitOps(prev);
   out.push(await snap('after-ctrl-z'));
