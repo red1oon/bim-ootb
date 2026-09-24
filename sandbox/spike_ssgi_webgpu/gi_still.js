@@ -713,8 +713,12 @@
   // bounce is what i expect"). Let the key through, wait for the app's still to finish refining
   // (A._stillRefineActive true, A._stillRefineBusy false), then add the bounce on top of it.
   async function waitForStill(maxMs) {
-    const A = window.APP, t0 = performance.now();
+    // §STILL_STATUS_FIRST: the app now paints its status and starts staging a frame AFTER the keypress,
+    // so the synchronous staging (~5 s desktop, ~90 s headless) runs inside this wait. The budget counts
+    // from when the still is actually active, as it did when staging ran before this handler.
+    const A = window.APP; let t0 = performance.now(), seenActive = false;
     while (performance.now() - t0 < maxMs) {
+      if (!seenActive && A._stillRefineActive) { seenActive = true; t0 = performance.now(); }
       if (A._stillRefineActive && !A._stillRefineBusy) {
         await new Promise(r => setTimeout(r, 600));            // let the last refinement land
         if (A._stillRefineActive && !A._stillRefineBusy) return true;

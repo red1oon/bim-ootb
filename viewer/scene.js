@@ -3225,7 +3225,7 @@ async function setupScene(A) {
     if (e.altKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (typeof A.cycleXrayBboxMode === 'function') A.cycleXrayBboxMode(); console.log('§KBD_ROUTE Alt+Z → xray-cycle'); if (window.S) window.S('KBD_ROUTE', 'Alt+Z → xray-cycle', { xray: true }); return; }
     // Alt+S = still-refine — progressive TAA supersample of the current camera view (2026-07-15,
     // user ask). Cancels itself on any interaction via the A.markDirty() wrap in effects.js.
-    if (e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine(); console.log('§KBD_ROUTE Alt+S → still-refine'); return; }
+    if (e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (typeof A.toggleStillRefineUI === 'function') A.toggleStillRefineUI(); else if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine(); console.log('§KBD_ROUTE Alt+S → still-refine'); return; }
     // §GI_POC (sandbox spike, feat/ssgi-composer-poc, isolated branch — not a shipped feature)
     if (e.altKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); if (typeof A.toggleGIPreview === 'function') A.toggleGIPreview(); console.log('§KBD_ROUTE Alt+G → GI preview (N8AO POC)'); return; }
     if (e.altKey && (e.key === 'j' || e.key === 'J')) { e.preventDefault(); if (typeof A.toggleSSGIPreview === 'function') A.toggleSSGIPreview(); console.log('§KBD_ROUTE Alt+J → SSGI preview (realism-effects spike)'); return; }

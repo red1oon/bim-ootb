@@ -5662,6 +5662,48 @@ async function setupEffects(A, renderer, scene, camera) {
       A.startStillRefine();
     }
   };
+  // §STILL_STATUS_FIRST (2026-09-24, red1: the Alt+S status must appear at once) — startStillRefine()
+  // stages synchronously (~5 s on red1's desktop), so nothing could paint until it returned. The USER
+  // entry points (scene.js Alt+S, panels.js button) come here: show the status, let one frame commit,
+  // THEN start. Programmatic callers (bake, witnesses) keep the synchronous toggleStillRefine above.
+  var _stillUIPending = false;
+  function _stillToast(msg) {
+    var el = document.getElementById('gi-still-toast');   // same element/style as gi_still.js's toast
+    if (!el) {
+      el = document.createElement('div'); el.id = 'gi-still-toast';
+      el.style.cssText = 'position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:100000;' +
+        'background:rgba(20,22,28,.92);color:#e8eaf0;padding:10px 16px;border-radius:8px;font:14px/1.4 system-ui;' +
+        'box-shadow:0 6px 24px rgba(0,0,0,.45)';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg; el.style.display = 'block';
+    return el;
+  }
+  A.toggleStillRefineUI = function() {
+    if (A._stillRefineActive || _autoStageOn) { A.toggleStillRefine(); return; }
+    if (_stillUIPending) return;
+    _stillUIPending = true;
+    var t0 = performance.now();
+    var el = _stillToast('Alt+S still — preparing…');
+    el.dataset.stillStatus = '1';   // gi_still.js overwrites the text when it takes over; we only hide our own
+    console.log('§STILL_STATUS painted t=' + t0.toFixed(1));
+    requestAnimationFrame(function() {
+      console.log('§STILL_STATUS frame t=' + performance.now().toFixed(1));
+      setTimeout(function() {
+        var t2 = performance.now();
+        console.log('§STILL_STATUS stagingStart t=' + t2.toFixed(1) + ' gap=' + (t2 - t0).toFixed(1) + 'ms');
+        _stillUIPending = false;
+        try { A.startStillRefine(); } finally {
+          var iv = setInterval(function() {
+            if (A._stillRefineActive && A._stillRefineBusy) return;
+            clearInterval(iv);
+            var e2 = document.getElementById('gi-still-toast');
+            if (e2 && e2.dataset.stillStatus === '1' && /preparing/.test(e2.textContent)) e2.style.display = 'none';
+          }, 250);
+        }
+      }, 0);
+    });
+  };
 
   // §CINEMA_ORBIT (2026-07-16, user spec): the "Cinema pill" 360 fly-around, wired to a real
   // button this time (Palette panel), not just a test script. Camera strategy per the user's own
