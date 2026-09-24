@@ -8,6 +8,10 @@
   var PORTAL_RANGE = 40;          // m — candidate panes near the camera
   var LIGHT_RESERVE = 320, PORTAL_SHARE = 0.25;   // §LIGHT_UNIFORM_BUDGET
   var PORTAL_EXPOSURE = 10;       // start value for red1's eye (see spec): the unoccluded hemi drowns a physical portal
+  // §SKY_PORTAL_INSIDE (2026-09-25): the spot sits INSIDE the glass. At pane-centre − 0.05 m (outside, aimed inward) the pane
+  // itself was 5 cm in front of the light, inside its cone: ~1/0.05² irradiance = a white disc on the glass (the "lamps lit
+  // from outside by day" dots). Inside by PORTAL_INSIDE_M the pane and its mullions are behind the light, out of the cone.
+  var PORTAL_INSIDE_M = 0.3;
   var PORTAL_ANGLE = 70 * Math.PI / 180, PORTAL_SHADOW_SIZE = 512, UPRAY_OFF = 0.5, UPRAY_MAX = 30;
   var placed = [], film = null;   // film: §FILM_PARITY per-frame state (cached panes + the fixed light set's assignments)
 
@@ -128,7 +132,7 @@
       var I = H * p.area / Math.PI * PORTAL_EXPOSURE * gain;
       var col = sky.clone().multiply(p.hue);
       var L = new THREE.SpotLight(col, I, 0, PORTAL_ANGLE, 1, 2);
-      L.position.copy(p.c).addScaledVector(inward, -0.05);
+      L.position.copy(p.c).addScaledVector(inward, PORTAL_INSIDE_M);
       L.target.position.copy(p.c).addScaledVector(inward, 5);
       if (shadowed < nShadow) {
         L.castShadow = true; L.shadow.mapSize.set(PORTAL_SHADOW_SIZE, PORTAL_SHADOW_SIZE);
@@ -170,6 +174,9 @@
     console.log('§SKY_PORTAL_PRIORITY sort=' + (byArea ? 'area x facing' : 'nearest') + ' candidates=' + near.length + ' candidateGlassM2=' + _allNearArea.toFixed(0) +
       ' placedGlassM2=' + _plArea.toFixed(0) + ' placedAreaMax=' + (placedInfo.length ? Math.max.apply(null, placedInfo.map(function (q) { return q.area; })) : 0) +
       ' placedDistMax=' + (placedInfo.length ? Math.max.apply(null, placedInfo.map(function (q) { return q.dist; })) : 0));
+    var _hot = 0; placed.forEach(function (L) { if (L.userData.pad || !(L.intensity > 0)) return; var dir = L.target.position.clone().sub(L.position).normalize();
+      panes.forEach(function (q) { var v = q.c.clone().sub(L.position), d = v.length(); if (d < 1 && d > 1e-6 && v.normalize().dot(dir) > Math.cos(PORTAL_ANGLE / 2)) _hot++; }); });
+    console.log('§SKY_PORTAL_INSIDE offset=' + PORTAL_INSIDE_M + ' hotspots=' + _hot + ' (spots whose cone holds a pane centre within 1 m)');
     console.log('§STILL_LIGHT_PAD portals padded=' + pads + ' to ' + placed.length + ' (shadowed ' + shadowed + ')');
     console.log('§SKY_PORTAL placed=' + (placed.length - pads) + ' (+' + pads + ' intensity-0 pads) shadowed=' + shadowed + ' unshadowed=' + unsh + ' (unshadowed can leak through walls)' +
       ' capped=' + capped + ' skipped=' + skipped + ' (5 rays per side, equal sky) sources=' + panes.length + ' in ' + col0.stats.planes + ' planes' +
@@ -192,7 +199,7 @@
       if (film.assign[i] === p) continue;
       film.assign[i] = p; reaimed++;
       if (p) {
-        L.position.copy(p.c).addScaledVector(p._inward, -0.05); L.target.position.copy(p.c).addScaledVector(p._inward, 5);
+        L.position.copy(p.c).addScaledVector(p._inward, PORTAL_INSIDE_M); L.target.position.copy(p.c).addScaledVector(p._inward, 5);
         L.color.copy(film.sky).multiply(p.hue); L.intensity = film.H * p.area / Math.PI * PORTAL_EXPOSURE * film.gain; L.distance = 0;
       } else { L.intensity = 0; L.position.copy(cam); L.target.position.copy(cam).add(new global.THREE.Vector3(0, -1, 0)); }
       L.target.updateMatrixWorld();
