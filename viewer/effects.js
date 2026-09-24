@@ -3464,6 +3464,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var _photoDuskMoodApplied = false;  // §PHOTO_SUN_SEPARATION: snapshot of A._photoDuskMood at
                                        // staging time, so teardown restores exactly what staging
                                        // actually did even if the flag changes mid-session.
+  var _dlodPausedByStill = false;  // §DLOD_STILL_OWNERSHIP — only re-enable dlod.js if photo staging paused it
   var _photoStagingOn = false;  // §PHOTO_DOUBLE_APPLY_GUARD — staging applied once per photo cycle
   A._photoStagingOn = false;    // public mirror — with Stage-2 auto-arm disabled (§AUTO_STAGE2_DISABLED)
                                 // soft-park is signalled by kept-alive staging alone, and main.js's
@@ -3770,6 +3771,15 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_photoStagingOn) { console.log('§PHOTO_STAGING already on — skip re-apply (Stage-2 refire)'); return; }
     _photoStagingOn = true;
     A._photoStagingOn = true;
+    // §DLOD_STILL_OWNERSHIP (2026-09-24, red1: sun shafts through the Terminal roof on Alt+S) — dlod.js
+    // zero-scales instances outside the view frustum, and a zero-scaled roof casts no shadow. Pause it
+    // for the whole staging cycle, same ownership rule as §DLOD_TM_OWNERSHIP: only re-enable in
+    // teardown if THIS paused it (a user's own DLOD-off, or TM's pause during a bake, is not ours).
+    _dlodPausedByStill = false;
+    A._dlodStillHold = true; A._dlodStillWanted = false;
+    if (typeof A.dlodDisable === 'function' && A._dlodEnabled) { A.dlodDisable('photo-still'); _dlodPausedByStill = true; }
+    console.log('§DLOD_STILL_OWNERSHIP paused=' + (_dlodPausedByStill ? 1 : 0) + ' dlodEnabledNow=' + (A._dlodEnabled ? 1 : 0) +
+      ' tmOn=' + (A._tmOn ? 1 : 0));
     // §PHOTO_VARIATION: roll (or keep locked) the shared seed before anything below reads it.
     if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
     _wireGroundPuddleShader();
@@ -4013,6 +4023,14 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
     _photoStagingOn = false;
     A._photoStagingOn = false;
+    // §DLOD_STILL_OWNERSHIP — release the hold; re-enable only if staging paused it, or if a re-enable
+    // was asked for (and deferred) while the hold was on.
+    A._dlodStillHold = false;
+    var _dlodRestore = (_dlodPausedByStill || A._dlodStillWanted) && typeof A.dlodEnable === 'function' && !A._dlodEnabled;
+    if (_dlodRestore) { try { A.dlodEnable(); } catch (eD) {} }
+    console.log('§DLOD_STILL_OWNERSHIP restored=' + (_dlodRestore ? 1 : 0) + ' pausedByStill=' + (_dlodPausedByStill ? 1 : 0) +
+      ' deferredEnable=' + (A._dlodStillWanted ? 1 : 0) + ' dlodEnabledNow=' + (A._dlodEnabled ? 1 : 0));
+    _dlodPausedByStill = false; A._dlodStillWanted = false;
     // §CAM_LIGHT: pull it back out of the scene — normal navigation never carries it.
     if (A._camLight) { A.scene.remove(A._camLight); console.log('§CAM_LIGHT off'); }
     // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
