@@ -1170,6 +1170,45 @@ function setupTools(A) {
         n.indexOf('surface mounted') >= 0) return NIGHT_WARM;
     return NIGHT_AMBER;
   };
+  // §LAMP_SHAPE_COLOUR (2026-09-24, red1 via watcher: "round lights soft amber, rectangular ones white; it gives
+  // good reflective play on the surfaces"). Alt+S only (A._stillShapeColour, set by effects.js staging); films and
+  // nav keep §NIGHT_LIGHT_MIX. Shape from the fixture's OWN mesh, never its name: plan = local X/Z (local Y is up,
+  // same convention as §GLOW_TRUE_BOTTOM); fill = convex-hull area / bbox area (disc 0.785, rectangle 1.0).
+  var LAMP_ROUND_FILL_MIN = 0.70, LAMP_ROUND_FILL_MAX = 0.86, LAMP_ROUND_ASPECT_MAX = 1.25, LAMP_RECT_FILL_MIN = 0.93;
+  var _lampShapeByHash = {};
+  function _planHullFill(geo) {
+    var pos = geo.attributes && geo.attributes.position; if (!pos || pos.count < 3) return null;
+    var pts = [];
+    for (var i = 0; i < pos.count; i++) pts.push([pos.getX(i), pos.getZ(i)]);
+    pts.sort(function(a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    function cr(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+    var lo = [], up = [];
+    for (var k = 0; k < pts.length; k++) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], pts[k]) <= 0) lo.pop(); lo.push(pts[k]); }
+    for (var j = pts.length - 1; j >= 0; j--) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], pts[j]) <= 0) up.pop(); up.push(pts[j]); }
+    var hull = lo.slice(0, -1).concat(up.slice(0, -1)); if (hull.length < 3) return null;
+    var area = 0; for (var h = 0; h < hull.length; h++) { var q = hull[h], r = hull[(h + 1) % hull.length]; area += q[0] * r[1] - r[0] * q[1]; }
+    area = Math.abs(area) / 2;
+    var w = pts[pts.length - 1][0] - pts[0][0], minZ = Infinity, maxZ = -Infinity;
+    for (var m = 0; m < pts.length; m++) { if (pts[m][1] < minZ) minZ = pts[m][1]; if (pts[m][1] > maxZ) maxZ = pts[m][1]; }
+    var d = maxZ - minZ; if (!(w > 1e-4 && d > 1e-4)) return null;
+    return { fill: area / (w * d), aspect: Math.max(w, d) / Math.min(w, d) };
+  }
+  // 'round' | 'rect' | 'ambiguous' | 'nomesh' — cached per geometry hash.
+  A.nightFixtureShape = function(p) {
+    var gh = p && p.__ghash; if (!gh || !A.meshCache || !A.meshCache[gh]) return 'nomesh';
+    if (_lampShapeByHash[gh]) return _lampShapeByHash[gh];
+    var f = _planHullFill(A.meshCache[gh]), sh = 'ambiguous';
+    if (f && f.fill >= LAMP_RECT_FILL_MIN) sh = 'rect';
+    else if (f && f.fill >= LAMP_ROUND_FILL_MIN && f.fill <= LAMP_ROUND_FILL_MAX && f.aspect <= LAMP_ROUND_ASPECT_MAX) sh = 'round';
+    return (_lampShapeByHash[gh] = sh);
+  };
+  // The one colour for a fixture's light AND its glow sprite (they must agree, see _nightFixtureWorldPositions).
+  A.nightFixtureColor = function(p) {
+    var base = (p && p.__color !== undefined) ? p.__color : NIGHT_AMBER;
+    if (!A._stillShapeColour || !p || p.__exit) return base;
+    var sh = A.nightFixtureShape(p);
+    return sh === 'round' ? NIGHT_WARM : sh === 'rect' ? NIGHT_MIX_WHITE : base;
+  };
   // §NIGHT_PL_INTENSITY_HEURISTIC (2026-09-05) — NOT extracted/real photometric data; a STYLE
   // CONVENTION, same shape and same rank as A.nightLightColor above. Do not mistake this for
   // "_MEASURED" wattage/lumen data — it is not, and must never be logged or documented as such.
@@ -1225,6 +1264,11 @@ function setupTools(A) {
   // afar" character this is deliberately NOT trading away. First-pass value, like every other
   // constant in this file — verify live, no pixel-level A/B run (would need a real close-up bake).
   var NIGHT_LIGHT_DECAY = 1.0; // was 1.5 — between linear (1) and quadratic (2), reaches further than physics
+  // §STILL_DIALS (2026-09-24, red1: "indoor lighting is not throwing enough, so it is a knob") — Alt+S-only lamp
+  // strength and fall-off, set by effects.js per press (null outside an Alt+S still). typeof, never ||: 0 means 0.
+  A._nightLightDecayDefault = NIGHT_LIGHT_DECAY;
+  function _stillLampMul() { return (typeof A._stillLampMul === 'number') ? A._stillLampMul : 1; }
+  function _stillLampDecay() { return (typeof A._stillLampDecayNow === 'number') ? A._stillLampDecayNow : NIGHT_LIGHT_DECAY; }
 
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
   // while night mode / photo-staging is active — see the comment at its call site below for why.
@@ -1748,6 +1792,7 @@ function setupTools(A) {
         // gate against); real IFC rows carry the guid so a buildup bake can withhold the glow until
         // Time Machine has actually placed that fixture (see effects.js A._tmIsVisible).
         p.__guid = f.guid || null;
+        p.__ghash = f.ghash || null;   // §LAMP_SHAPE_COLOUR — shape read from the fixture's own mesh
         // §NIGHT_CEILING_PLANT — true only for the last-resort synthetic tier; gates the
         // still-render lens quad IN alongside real named fixtures (guid set), while tier-2's
         // any-overhead-element pick (guid null, presentation unset) stays PL-only.
@@ -2049,7 +2094,7 @@ function setupTools(A) {
           var _floor = A._nightNearFadeFloor;
           _pool[_pi].position.copy(_posObj);
           _pool[_pi].color.set(_posObj.__color || 0xffe4b5);
-          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) *
+          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() *
             (_posObj.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
         } else {
           _pool[_pi].intensity = 0;
@@ -2084,14 +2129,16 @@ function setupTools(A) {
       // to protect and where the whole point is that the fixture you are standing under reads as
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
-      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) *
+      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() *
         (f.pos.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
       stillWanted.add(f.pos);
       var light = A._nightLightByPos.get(f.pos);
       if (light) {
         light.intensity = intensity;   // position/colour are fixed per fixture — only fade moves
+        light.decay = _stillLampDecay();   // §STILL_DIALS — Alt+S &lampdecay=, else NIGHT_LIGHT_DECAY
+        light.color.set(A.nightFixtureColor(f.pos));   // §LAMP_SHAPE_COLOUR — Alt+S shape colour, else the mix colour
       } else {
-        light = new THREE.PointLight(f.pos.__color || 0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+        light = new THREE.PointLight(A.nightFixtureColor(f.pos), intensity, NIGHT_LIGHT_RANGE, _stillLampDecay());
         light.position.copy(f.pos);
         A.scene.add(light);
         A._nightLightByPos.set(f.pos, light);

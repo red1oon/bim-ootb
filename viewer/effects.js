@@ -2932,6 +2932,12 @@ async function setupEffects(A, renderer, scene, camera) {
   var FILM_FILL_AMBIENT = 0.785, FILM_FILL_HEMI = 1.257;   // §FILM_FILL_RESTORE — pre-#1601 scene.js values (TM's balance)
   var _filmFillSaved = null;
   var _stillBaseSaved = null;   // §STILL_BASE
+  // §STILL_DIALS — one Alt+S dial: APP[key] if a number, else &name=<num> in the URL, else def; clamped 0..max.
+  function _stillDial(key, name, def, max) {
+    var v = (typeof A[key] === 'number') ? A[key] : null;
+    if (v == null) { var m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(location.search); v = m ? parseFloat(m[1]) : def; }
+    return Math.max(0, Math.min(max, isFinite(v) ? v : def));
+  }
   var PHOTO_AMBIENT_INTENSITY_SCALE = 1.0;  // was 1.15 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
   // §GROUND_ALBEDO — the multiplicative lever the two paragraphs above never had. Everything they
   // describe is ADDITIVE (emissive add; hemi/ambient fill), which is exactly why both flattened the
@@ -3953,6 +3959,20 @@ async function setupEffects(A, renderer, scene, camera) {
     // fire on this path — witness 2026-08-16). Reset unconditionally in _removePhotoStaging.
     A._nightPLScale = A._nightPLScaleStill || 1;
     A._nightPLScaleStaged = A._nightPLScale;   // §SUN_ARC_FILL — the staged base the bake scales FROM
+    // §STILL_DIALS — Alt+S lamp strength + fall-off, read at every press, set BEFORE the lamps are born below.
+    if (!A._maxqActive) {
+      A._stillLampMul = _stillDial('_stillLamps', 'lamps', 1, 4);
+      A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', A._nightLightDecayDefault, 2);
+      // §LAMP_SHAPE_COLOUR — round fixtures soft amber, rectangular white (red1). &lampshape=0 switches it off.
+      A._stillShapeColour = _stillDial('_stillLampShape', 'lampshape', 1, 1) > 0;
+      if (A._stillShapeColour && typeof A._nightFixtureWorldPositions === 'function' && A.nightFixtureShape) {
+        var _shN = { round: 0, rect: 0, ambiguous: 0, nomesh: 0, exit: 0 };
+        A._nightFixtureWorldPositions().forEach(function(p) { if (p.__exit) _shN.exit++; else _shN[A.nightFixtureShape(p)]++; });
+        var _bld = (/[?&]db=[^&]*\/([^\/&]+?)(_extracted)?\.db/.exec(location.search) || [])[1] || '?';
+        console.log('§LAMP_SHAPE_COLOUR bld=' + _bld + ' round=' + _shN.round + ' rect=' + _shN.rect + ' ambiguous=' + _shN.ambiguous +
+          ' noMesh=' + _shN.nomesh + ' exit=' + _shN.exit + ' (round -> NIGHT_WARM 0xffdca8, rect -> 0xffffff, rest keep the mix colour)');
+      }
+    }
     if (!_photoNightWasOn && A.toggleNightMode) {
       A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow — real light sources
       if (A._nightSaved) {  // always undo the moonlight override (dark intensities) — never mood
@@ -4011,17 +4031,23 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     // §STILL_BASE (2026-09-24, red1: switch the EVEN base light off and let the real sources carry the picture —
     // sun + shadows, lamps indoors, bounce, sky reflections — then tune by eye). Alt+S stills only (films keep the
-    // restored fill; nav unchanged). A DIAL, read at every press: APP._stillBaseScale, else ?base=<0..1>, else 0.
-    // Scales ambient + hemi; deep interiors are EXPECTED to go dark at 0 — not compensated. Teardown restores.
+    // restored fill; nav unchanged). §STILL_DIALS (red1 13:1x: "too dark ... not enough sky ambient light"): split
+    // into two dials, read at every press — &sky= scales the hemi (sky from above; default 1 = #1601's Alt+S hemi)
+    // and &base= scales the flat ambient only (default 0.25, red1). Console overrides APP._stillSky / APP._stillBaseScale.
+    // Teardown restores.
     if (!A._maxqActive && A.ambient && A.hemi) {
-      var _bs = (typeof A._stillBaseScale === 'number') ? A._stillBaseScale : null;
-      if (_bs == null) { var _bm = /[?&]base=([0-9.]+)/.exec(location.search); _bs = _bm ? parseFloat(_bm[1]) : 0; }
-      _bs = Math.max(0, Math.min(1, isFinite(_bs) ? _bs : 0));
+      var _bs = _stillDial('_stillBaseScale', 'base', 0.25, 2);   // red1 via watcher: base starts low, 0.25
+      var _sk = _stillDial('_stillSky', 'sky', 1, 2);
       _stillBaseSaved = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
-      A.ambient.intensity = _stillBaseSaved.ambI * _bs; A.hemi.intensity = _stillBaseSaved.hemiI * _bs;
-      console.log('§STILL_BASE scale=' + _bs + ' ambient=' + A.ambient.intensity.toFixed(3) + ' hemi=' + A.hemi.intensity.toFixed(3) +
-        ' (from ' + _stillBaseSaved.ambI.toFixed(3) + '/' + _stillBaseSaved.hemiI.toFixed(3) + ') camInside=' +
-        (typeof _gIn !== 'undefined' && _gIn && _gIn.inside != null ? (_gIn.inside ? 1 : 0) : '-') + ' lamps=' + (A._stillLampsOff ? 0 : 'on'));
+      A.ambient.intensity = _stillBaseSaved.ambI * _bs; A.hemi.intensity = _stillBaseSaved.hemiI * _sk;
+      var _lampSum = 0, _lampOn = 0;
+      (A._nightLights || []).forEach(function(l) { _lampSum += l.intensity; if (l.intensity > 0) _lampOn++; });
+      console.log('§STILL_BASE sky=' + _sk + ' base=' + _bs + ' lamps=' + A._stillLampMul + ' decay=' + A._stillLampDecayNow +
+        ' range=0(inf) hemi=' + A.hemi.intensity.toFixed(3) + ' ambient=' + A.ambient.intensity.toFixed(3) +
+        ' (from ' + _stillBaseSaved.hemiI.toFixed(3) + '/' + _stillBaseSaved.ambI.toFixed(3) + ') camInside=' +
+        (typeof _gIn !== 'undefined' && _gIn && _gIn.inside != null ? (_gIn.inside ? 1 : 0) : '-') +
+        ' lampsOn=' + (A._stillLampsOff ? '0 (daylight, outside)' : _lampOn + '/' + (A._nightLights || []).length) +
+        ' lampSum=' + _lampSum.toFixed(3) + ' (at staging; §STILL_DIALS_LAMPS logs the refined set)');
     }
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
     // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
@@ -4137,6 +4163,12 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§DLOD_STILL_OWNERSHIP restored=' + (_dlodRestore ? 1 : 0) + ' pausedByStill=' + (_dlodPausedByStill ? 1 : 0) +
       ' deferredEnable=' + (A._dlodStillWanted ? 1 : 0) + ' dlodEnabledNow=' + (A._dlodEnabled ? 1 : 0));
     _dlodPausedByStill = false; A._dlodStillWanted = false;
+    // §STILL_DIALS — lamp strength/fall-off back to nav values.
+    if (typeof A._stillLampMul === 'number' || typeof A._stillLampDecayNow === 'number') {
+      A._stillLampMul = null; A._stillLampDecayNow = null; A._stillShapeColour = false;
+      (A._nightLights || []).forEach(function(l) { l.decay = A._nightLightDecayDefault; });
+      if (A._nightLightByPos && A.nightFixtureColor) A._nightLightByPos.forEach(function(l, pos) { l.color.set(A.nightFixtureColor(pos)); });
+    }
     // §STILL_BASE — hand navigation its own base light back.
     if (_stillBaseSaved && A.ambient && A.hemi) {
       A.ambient.intensity = _stillBaseSaved.ambI; A.hemi.intensity = _stillBaseSaved.hemiI;
@@ -5134,7 +5166,7 @@ async function setupEffects(A, renderer, scene, camera) {
       var gain = GLOW_GAIN;
       siz[i] = 1.0;
       if (p.__exit) { gain = GLOW_EXIT_GAIN; siz[i] = GLOW_EXIT_SIZE; exits++; }   // §GLOW_EXIT_SOFT
-      c.setHex(p.__color === undefined ? 0xffe4b5 : p.__color);
+      c.setHex(A.nightFixtureColor ? A.nightFixtureColor(p) : (p.__color === undefined ? 0xffe4b5 : p.__color));   // §LAMP_SHAPE_COLOUR
       col[i * 3] = c.r * gain; col[i * 3 + 1] = c.g * gain; col[i * 3 + 2] = c.b * gain;
     }
     var geo = new THREE.BufferGeometry();
@@ -5403,7 +5435,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // lit circle doesn't undershoot the fixture's actual footprint.
       if (isRound) { var d = Math.max(w, h); sVec.set(d, d, 1); } else { sVec.set(w, h, 1); }
       m4.compose(pVec, q, sVec);
-      col.setHex(p.__color === undefined ? 0xffe4b5 : p.__color);
+      col.setHex(A.nightFixtureColor ? A.nightFixtureColor(p) : (p.__color === undefined ? 0xffe4b5 : p.__color));   // §LAMP_SHAPE_COLOUR
       col.multiplyScalar(GLOW_GAIN);
       if (isRound) {
         meshRound.setMatrixAt(roundN, m4); meshRound.setColorAt(roundN, col); roundN++;
@@ -5546,6 +5578,12 @@ async function setupEffects(A, renderer, scene, camera) {
       // the bake's fill compensation scales from; stashed here, where the rule lives, not re-derived.
       A._nightPLScaleStaged = A._nightPLScale;
       A._nightUpdateLights();
+      if (!A._maxqActive) {
+        var _dlSum = 0, _dlOn = 0;
+        A._nightLights.forEach(function(l) { _dlSum += l.intensity; if (l.intensity > 0) _dlOn++; });
+        console.log('§STILL_DIALS_LAMPS lamps=' + A._stillLampMul + ' decay=' + A._stillLampDecayNow + ' plScale=' + A._nightPLScale +
+          ' lit=' + _dlOn + '/' + A._nightLights.length + ' sum=' + _dlSum.toFixed(3));
+      }
       // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 2,026 firings, ONE distinct line
       // (`raised to 200 lights, near-fade floor 1 …`). The re-raise itself is required every
       // frame (the still budget is handed back to nav on every teardown, just below), so the
