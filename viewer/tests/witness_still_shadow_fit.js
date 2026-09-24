@@ -2,9 +2,10 @@
 // Issues: (1) jagged sun-shadow edges on Alt+S (0.088 m texel over the whole 362 m Hospital box, stretched at a grazing
 // sun); (2) the still draws every instance (DLOD paused) — red1: "the non-DLOD flag may cost heavy".
 // Proves or disproves, per pose, arm BASE (APP._stillShadowFit=false, APP._stillCullOff=true = main's behaviour) vs
-// arm FIT (both on): the logged box/texel (fit must shrink it), culled count, shadow-map renders, refine ms, and the
+// arm FIT (fit on): the logged box/texel (fit must shrink it), shadow-map renders, refine ms, and the
 // SAFETY predicate: from a grid of visible surface points, a ray toward the sun hits something (= in shadow) in FIT
-// exactly when it does in BASE. Any mismatch = a culled caster that mattered (the roof-through-sky failure) -> FAIL.
+// exactly when it does in BASE (roof-through-sky guard), and RECEIVERS: no point the building shades falls outside the
+// fitted box. §STILL_CULL was built, measured (0 culled at 5 poses: the sun box must hold the building) and removed.
 // Gate: full element count (else VACUOUS). Frames saved for the eye sheet. Real GPU, clean profile.
 // Usage: node viewer/tests/witness_still_shadow_fit.js <port> <db> <want> '<poses json>' [sun "el,trueAz"] [outdir] [radius]
 /* global Buffer */
@@ -53,6 +54,14 @@ const POSES = JSON.parse(POSES_J), OUT = OUT_ARG || '.', W = 1666, H = 864;
     return { lines: L.slice(b1), png }; };
   const grab = (lines, re) => (lines.find(t => re.test(t)) || '').slice(0, 240);
   for (const ps of POSES) {
+    if (ps.auto === 'hall') Object.assign(ps, await p.evaluate(() => {   // witness_dlod_still_ownership.js's hall pose: from the building's own instances
+      const A = window.APP, m4 = new THREE.Matrix4(), v = new THREE.Vector3(), xs = [], ys = [], zs = [];
+      for (const id in A._instanceMeta) { const o = A.scene.getObjectById(+id); if (!o || !o.isInstancedMesh) continue;
+        for (const m of A._instanceMeta[id]) { if (m.instanceIndex == null) continue; o.getMatrixAt(m.instanceIndex, m4); o.updateMatrixWorld(); v.setFromMatrixPosition(m4).applyMatrix4(o.matrixWorld); xs.push(v.x); ys.push(v.y); zs.push(v.z); } }
+      const q = (a, f) => { a = a.slice().sort((x, y) => x - y); return a[Math.floor(f * (a.length - 1))]; };
+      const x0 = q(xs, .05), x1 = q(xs, .95), y0 = q(ys, .02), y1 = q(ys, .98), z0 = q(zs, .05), z1 = q(zs, .95), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+      return { pos: [cx - (x1 - x0) * 0.1, y0 + 2, cz], tgt: [cx + (x1 - x0) * 0.25, y1, cz] }; }));
+    say('POSE ' + ps.name + ' ' + JSON.stringify({ pos: ps.pos.map(v => +v.toFixed(2)), tgt: ps.tgt.map(v => +v.toFixed(2)) }));
     await setPose(ps); await sleep(3000); await setPose(ps); await sleep(1500);
     const pts = await GRID(); const res = {};
     for (const arm of ['base', 'fit']) {

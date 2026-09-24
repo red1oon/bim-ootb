@@ -270,48 +270,6 @@ function setupDLOD(A) {
     if ((imHid > 0 || imVis > 0) && A.markDirty) A.markDirty();
   };
 
-  // ── §STILL_CULL (effects.js, Alt+S only) — one-shot cull for a frozen still. keep(sphere) decides per instance. The
-  // instance's CURRENT matrix is saved and put back by dlodStillUncull (not _origMatrix, which may predate another
-  // module's edit). Separate flag from _dlodHid, so DLOD's own tick/restore never see these. ──
-  var _stillHidList = [];
-  A.dlodStillCull = function(keep) {
-    if (A._isMobile || A.streamedCount < MIN_ELEMENTS) return null;
-    if (_stillHidList.length) A.dlodStillUncull();
-    _buildRefs(); _stillCullRan = true;
-    var kept = 0, culled = 0, m4 = new THREE.Matrix4();
-    for (var ii = 0; ii < _instancedMeshes.length; ii++) {
-      var im = _instancedMeshes[ii], obj = im.obj, meta = im.meta, changed = false;
-      if (!obj.parent || !obj.visible) continue;
-      for (var i = 0; i < meta.length; i++) {
-        var m = meta[i];
-        if (m._dlodHid || m._stillHid) continue;
-        _sphere.center.set(m._wx, m._wy, m._wz); _sphere.radius = m._radius + 0.5;
-        if (keep(_sphere)) { kept++; continue; }
-        obj.getMatrixAt(m.instanceIndex, m4);
-        m._stillMatrix = m4.clone(); m._stillHid = true;
-        obj.setMatrixAt(m.instanceIndex, _zeroScale);
-        _stillHidList.push(m, obj); changed = true; culled++;
-      }
-      if (changed) obj.instanceMatrix.needsUpdate = true;
-    }
-    return { kept: kept, culled: culled, total: kept + culled };
-  };
-  var _stillCullRan = false;
-  A.dlodStillUncull = function() {
-    if (!_stillHidList.length) { if (_stillCullRan) { _stillCullRan = false; console.log('§STILL_CULL restored=0'); } return 0; }
-    _stillCullRan = false;
-    var n = 0, touched = new Set();
-    for (var i = 0; i < _stillHidList.length; i += 2) {
-      var m = _stillHidList[i], obj = _stillHidList[i + 1];
-      if (m._stillHid && m._stillMatrix) { obj.setMatrixAt(m.instanceIndex, m._stillMatrix); n++; touched.add(obj); }
-      m._stillHid = false; m._stillMatrix = null;
-    }
-    touched.forEach(function(o) { o.instanceMatrix.needsUpdate = true; });
-    _stillHidList = [];
-    console.log('§STILL_CULL restored=' + n);
-    return n;
-  };
-
   // ── Restore all hidden elements ──
   function _restoreAll() {
     // InstancedMesh

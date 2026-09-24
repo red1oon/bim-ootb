@@ -4264,43 +4264,7 @@ async function setupEffects(A, renderer, scene, camera) {
         sunI: _s && +_s.intensity.toFixed(3), db: (location.search.match(/db=([^&]+)/) || [])[1] || null,
         w: window.innerWidth, h: window.innerHeight, film: !!A._maxqActive }));
     } catch (eP) { console.warn('§STILL_POSE failed: ' + eP.message); }
-    _stillCullApply();
     _stillShadowRendersArm();
-  }
-  // §STILL_CULL (2026-09-24, red1: "the non-DLOD flag may cost heavy") — staging pauses DLOD so off-screen roofs still cast
-  // (§DLOD_STILL_OWNERSHIP), which draws EVERY instance for every refine frame. Instead, once staging is complete (sky
-  // portals have run their side rays against the full model), zero-scale only instances outside all of: the view
-  // frustum, the fitted sun box at full depth (anything that can shade a visible point), and — when shadowed portal
-  // spots exist — an 80 m sphere round the camera (a portal sits within 40 m and shades up to 40 m from itself).
-  // Alt+S only; restored at teardown before DLOD comes back.
-  var PORTAL_REACH_M = 80;
-  function _stillCullApply() {
-    if (A._maxqActive || typeof A.dlodStillCull !== 'function') return;
-    if (A._stillCullOff === true || /[?&]stillcull=0/.test(location.search)) { console.log('§STILL_CULL off (&stillcull=0)'); return; }
-    var t0 = performance.now();
-    try {
-      var cam = A.camera; cam.updateMatrixWorld();
-      var fv = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
-      var fs = null;
-      if (_photoShadowSelfEnabled && A.sun && A.sun.castShadow) {
-        var sc = A.sun.shadow.camera; A.sun.updateMatrixWorld(); A.sun.shadow.updateMatrices(A.sun);
-        fs = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(sc.projectionMatrix, sc.matrixWorldInverse));
-      }
-      var portals = 0; A.scene.traverse(function(o) { if (o.isSpotLight && o.userData && o.userData.skyPortal && !o.userData.pad && o.castShadow) portals++; });
-      var cp = cam.position, R2 = PORTAL_REACH_M * PORTAL_REACH_M, nV = 0, nS = 0, nP = 0;
-      var r = A.dlodStillCull(function(sph) {
-        if (fv.intersectsSphere(sph)) { nV++; return true; }
-        if (!fs) return true;   // no sun shadow staged (user's own Shadow mode owns it) — keep everything
-        if (fs.intersectsSphere(sph)) { nS++; return true; }
-        if (portals > 0) { var dx = sph.center.x - cp.x, dy = sph.center.y - cp.y, dz = sph.center.z - cp.z, rr = PORTAL_REACH_M + sph.radius; if (dx * dx + dy * dy + dz * dz <= rr * rr) { nP++; return true; } }
-        return false;
-      });
-      if (!r) { console.log('§STILL_CULL skipped (mobile, or below the DLOD element floor)'); return; }
-      console.log('§STILL_CULL kept=' + r.kept + ' culled=' + r.culled + ' of=' + r.total + ' (view=' + nV + ' sun=' + nS + ' portal=' + nP +
-        ') shadowedPortals=' + portals + ' sunBox=' + (fs ? (_stillFitBox ? 'fitted' : 'envelope') : 'none') + ' ms=' + (performance.now() - t0).toFixed(0));
-      if (r.culled && A.renderer) A.renderer.shadowMap.needsUpdate = true;
-      if (A.markDirty) A.markDirty();
-    } catch (eC) { console.warn('§STILL_CULL failed: ' + eC.message + ' — nothing culled'); if (A.dlodStillUncull) A.dlodStillUncull(); }
   }
   // §STILL_SHADOW_RENDERS — how many times the sun/portal shadow maps are really re-rendered during one still. three's
   // WebGLShadowMap.render returns at once unless autoUpdate or needsUpdate is set; only those entries are counted.
@@ -4335,8 +4299,6 @@ async function setupEffects(A, renderer, scene, camera) {
       });
       console.log('§STILL_GLOW restored glowMats=' + _gr + ' lampMats=' + _lr + ' (lamp intensity: _nightPLScale reset below)');
     }
-    // §STILL_CULL — every instance this still zero-scaled goes back first, before DLOD resumes its own culling.
-    if (typeof A.dlodStillUncull === 'function') A.dlodStillUncull();
     _shCounting = false;
     // §DLOD_STILL_OWNERSHIP — release the hold; re-enable only if staging paused it, or if a re-enable
     // was asked for (and deferred) while the hold was on.
@@ -5050,7 +5012,6 @@ async function setupEffects(A, renderer, scene, camera) {
     // `_teardownPhotoStaging()` while selection/explicit-Alt+S-off callers still get the full
     // revert unchanged.
     if (!keepStaging) _teardownPhotoStaging();
-    else if (typeof A.dlodStillUncull === 'function') A.dlodStillUncull();   // §STILL_CULL — the camera may move now; the cull was for one view
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
     console.log('§STILL_REFINE ' + reason + ' elapsedMs=' + ms + (keepStaging ? ' (staging kept)' : ''));
     if (n > 0) console.log('§TRIPLANAR_PERF ms=' + ms + ' materials=' + n);
