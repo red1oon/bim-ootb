@@ -5263,10 +5263,17 @@
       // MID-FLIGHT — the shell built under the running tour. Never build while a tour is active;
       // keep polling and build once the tour ends. Non-tour behavior unchanged.
       if (A.walkMode || A.flyActive || A._flyPreparing) return;
+      // §STILL_GHOST_OWNERSHIP (2026-09-24, red1 "Alt+S goes into bboxes"): Alt+S's §STILL_ROOMS lazy-loads this module too,
+      // which armed this trigger MID-STILL and swapped the model to ghost boxes under the photo. Same rule as the tour:
+      // wait while an Alt+S still is locked, staged or refining; build once it is released.
+      if (A._stillLockOn || A._stillRefineActive || A._photoStagingOn) { if (!A._ghostAutoHeldLogged) { A._ghostAutoHeldLogged = true; console.log('[MG] §STILL_GHOST_OWNERSHIP autoBuildHeld=1 (Alt+S still active)'); } return; }
       clearInterval(_mgPoll);
       console.log('[MG] §SHELL_GHOST_AUTO meshCacheKeys=' + Object.keys(A.meshCache).length + ' (deferred build)');
       // build AFTER the panel is interactive — never block open
-      var _go = function () { window._mergeGhost(); };
+      var _go = function () {
+        if (A._stillLockOn || A._stillRefineActive || A._photoStagingOn) { setTimeout(_go, 1000); return; }   // §STILL_GHOST_OWNERSHIP: a still began meanwhile
+        window._mergeGhost();
+      };
       if (window.requestIdleCallback) requestIdleCallback(_go, { timeout: 2000 }); else setTimeout(_go, 600);
     }, 400);
   }

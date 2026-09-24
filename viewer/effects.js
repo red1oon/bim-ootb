@@ -2932,6 +2932,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var FILM_FILL_AMBIENT = 0.785, FILM_FILL_HEMI = 1.257;   // §FILM_FILL_RESTORE — pre-#1601 scene.js values (TM's balance)
   var _filmFillSaved = null;
   var _stillBaseSaved = null;   // §STILL_BASE
+  var _ghostSuspendedByStill = false;   // §STILL_GHOST_OWNERSHIP
   var _albedoSaved = [], _expSaved = null;   // §ALBEDO_SRGB
   // §STILL_DIALS — one Alt+S dial: APP[key] if a number, else &name=<num> in the URL, else def; clamped 0..max.
   function _stillDial(key, name, def, max) {
@@ -3822,6 +3823,11 @@ async function setupEffects(A, renderer, scene, camera) {
     if (typeof A.dlodDisable === 'function' && A._dlodEnabled) { A.dlodDisable('photo-still'); _dlodPausedByStill = true; }
     console.log('§DLOD_STILL_OWNERSHIP paused=' + (_dlodPausedByStill ? 1 : 0) + ' dlodEnabledNow=' + (A._dlodEnabled ? 1 : 0) +
       ' tmOn=' + (A._tmOn ? 1 : 0));
+    // §STILL_GHOST_OWNERSHIP (2026-09-24): Alt+S owns the display mode the way it owns DLOD — a shown ghost/x-ray shell
+    // (navigate_find's merged ghost: boxes instead of the solid model) is switched off for the still and back on at teardown.
+    _ghostSuspendedByStill = false;
+    try { if (typeof window.ghostXrayOn === 'function' && window.ghostXrayOn() && typeof window.toggleGhostXray === 'function') { window.toggleGhostXray(); _ghostSuspendedByStill = true; } } catch (eG) {}
+    console.log('§STILL_GHOST_OWNERSHIP suspended=' + (_ghostSuspendedByStill ? 1 : 0) + ' ghostOnNow=' + (typeof window.ghostXrayOn === 'function' && window.ghostXrayOn() ? 1 : 0));
     // §PHOTO_VARIATION: roll (or keep locked) the shared seed before anything below reads it.
     if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
     _wireGroundPuddleShader();
@@ -4218,6 +4224,8 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§DLOD_STILL_OWNERSHIP restored=' + (_dlodRestore ? 1 : 0) + ' pausedByStill=' + (_dlodPausedByStill ? 1 : 0) +
       ' deferredEnable=' + (A._dlodStillWanted ? 1 : 0) + ' dlodEnabledNow=' + (A._dlodEnabled ? 1 : 0));
     _dlodPausedByStill = false; A._dlodStillWanted = false;
+    if (_ghostSuspendedByStill) { try { if (typeof window.ghostXrayOn === 'function' && !window.ghostXrayOn()) window.toggleGhostXray(); } catch (eG2) {}
+      console.log('§STILL_GHOST_OWNERSHIP restored=1 ghostOnNow=' + (window.ghostXrayOn && window.ghostXrayOn() ? 1 : 0)); _ghostSuspendedByStill = false; }
     // §STILL_DIALS — lamp strength/fall-off back to nav values.
     if (typeof A._stillLampMul === 'number' || typeof A._stillLampDecayNow === 'number') {
       A._stillLampMul = null; A._stillLampDecayNow = null; A._stillShapeColour = false;
