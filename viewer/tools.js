@@ -1978,7 +1978,11 @@ function setupTools(A) {
       // could drop while far ones stayed). When more are in view than the cap, keep the NEAREST to the camera.
       var _capN = (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200;
       A._lampCapFarM = null;   // §LAMP_CAP_FADE — set only while the cap is cutting the in-view set
-      if (inView.length > _capN) {
+      // Default OFF (watchdog for red1, 2026-09-25: the approved ref4 hall is the list-order look; nearest read brighter and
+      // harsher). &lampcap=nearest / APP._stillLampCapNearest=true turns it on for later comparison.
+      var _nearestOn = A._stillLampCapNearest === true || /[?&]lampcap=nearest/.test(location.search);
+      if (inView.length > _capN && !_nearestOn && !A._lampCapListLogged) { A._lampCapListLogged = true; console.log('§LAMP_CAP_NEAREST off (list order, the approved look) inView=' + inView.length + ' kept=' + _capN); }
+      if (inView.length > _capN && _nearestOn) {
         var _cp = A.camera.position;
         inView.sort(function(a, b) { return ((a.x - _cp.x) * (a.x - _cp.x) + (a.y - _cp.y) * (a.y - _cp.y) + (a.z - _cp.z) * (a.z - _cp.z)) -
                                            ((b.x - _cp.x) * (b.x - _cp.x) + (b.y - _cp.y) * (b.y - _cp.y) + (b.z - _cp.z) * (b.z - _cp.z)); });

@@ -3941,7 +3941,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // look. Off switch for the control clip: &filmparity=0 / APP._filmParityOff (cli --film-parity 0). §FILM_FILL_RESTORE
     // (ambient 0.785) is kept only with &filmfill=restore / APP._filmFillRestore (cli --film-fill restore), red1's pick pending.
     A._filmParity = !!A._maxqActive && !(A._filmParityOff === true || /[?&]filmparity=0/.test(location.search));
-    A._filmFillRestore = A._filmFillRestore === true || /[?&]filmfill=restore/.test(location.search);
+    // Film fill default = RESTORE (watchdog for red1, 2026-09-25): in current films the interior lamps are off for most interior
+    // shots (§116 window) while an Alt+S interior has them on; ambient 0 gives the gloomy film interiors red1 rejected
+    // ("restored is better"). Parity matches the LOOK, not the ambient number. &filmfill=alts / APP._filmFillRestore=false = ambient 0.
+    A._filmFillRestore = A._filmFillRestore !== false && !/[?&]filmfill=alts/.test(location.search);
     if (A._maxqActive) console.log('§FILM_PARITY ' + (A._filmParity ? 'on' : 'off (control)') + ' fill=' + (!A._filmParity || A._filmFillRestore ? 'restore 0.785/1.257' : 'alt-s (ambient 0)'));
     // §DLOD_STILL_OWNERSHIP (2026-09-24, red1: sun shafts through the Terminal roof on Alt+S) — dlod.js
     // zero-scales instances outside the view frustum, and a zero-scaled roof casts no shadow. Pause it
