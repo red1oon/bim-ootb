@@ -40,7 +40,8 @@
  * §REAL-AABB (2026-07-04 fix): `element_transforms.center_xyz`/`bbox_xyz` is a coarser measure than the
  * REAL per-element vertex blob (`component_geometries`/`base_geometries`, keyed by `element_instances.
  * geometry_hash`) `bonsai_library.js`'s `foldInsert` actually renders — the two disagree whenever a real
- * blob is resolvable (SampleCastle: 1,924 of its 3,225 elements resolve — measured 2026-09-18; the older
+ * blob is resolvable (SampleCastle: ALL 3,225 guids resolve, sharing 1,924 distinct meshes — the 2026-09-18
+ * "1,924 of 3,225 elements" read hashes as guids, see §XEDGE-3AXIS; the older
  * "100%" claim here was wrong; most classes, not just furniture,
  * show a real mismatch). Where a real blob IS resolvable, `_readBoxes()` now computes the TRUE world AABB
  * straight from it — `real_geometry.js`'s own documented ground truth: world = center_xyz + R(rotation_z)·
@@ -52,8 +53,8 @@
  * So this guard DOES fire on real data, and is a suspect for part of the residual 11 (see §XEDGE-GEOWIRE).
  * The 3-axis render path it distrusts is now itself witnessed (W-ARC-3AXIS: 230 genuinely rotated, 0
  * dropped), so lifting the guard is probably safe — but that is its own measured change, not assumed here.
- * Today, a genuinely 3-axis-rotated element
- * falls back to the coarse bbox below rather than risk an under-tested quaternion port (same conservative
+ * DONE 2026-09-24 in the browser — see §XEDGE-3AXIS. Outside the browser, a genuinely 3-axis-rotated element
+ * still falls back to the coarse bbox below rather than risk an under-tested quaternion port (same conservative
  * non-invent choice arc_editable.js made). Falls back to the coarse `element_transforms` bbox when no real
  * blob resolves (RealGeometry absent, no `geometry_hash`, missing blob, or degenerate <3 verts) — today's
  * behaviour, unchanged for that case.
@@ -76,6 +77,27 @@
  * could not see. The residual 11 is HONESTLY LEFT RED in the witness — not relaxed to pass.
  * This file still has NO console output of its own; that is why the regression stayed invisible ~7 weeks.
  * The `§XEDGE-GEO` provenance line now lives at the call site, and W-XEDGE-REAL-AABB's G6 asserts on it.
+ */
+
+/*
+ * §XEDGE-3AXIS (2026-09-24) — SPEC. THE RESIDUAL 11 IS THE rx/ry GUARD, 11 OF 11.
+ * Measured on SampleCastle (origin/main bd9089b8, headless open, instrument control first: on the yaw-only
+ * real path the derived box equals the live mesh box on 2,932/2,932 elements, max 0 mm):
+ *   - every one of the 11 G4 pairs contains a GUARD element — has a real blob, but rotation_y = ±π/2 or π,
+ *     so `_readBoxes` sent it to the coarse anchor-centred box — with a 35–394 mm face error;
+ *   - 0 of the 11 involve an element with no resolvable blob. The "1,301 of 3,225 with no blob" suspect was a
+ *     UNIT error: `buildGeometryIndex().resolved` is keyed by geometry HASH (1,924 distinct shared meshes),
+ *     not by guid. All 3,225 guids resolve; only 65 element_transforms rows have no blob.
+ *   - the guard covers the same 293 elements #1738 counted; 165 of them are off by more than 1 mm, worst 443 mm.
+ * FIX: a tilted element with a real blob gets its box from the renderer's OWN placement function,
+ * `Bonsai.library.place()` — its 3-axis branch is what draws the live mesh (world = center + q·rawVert, with
+ * q from THREE.Euler(rotX, rotZ, -rotY), W-ARC-3AXIS witnessed). Not re-derived here ("never re-derive a
+ * transform you can read"). When `place()` is absent (node, or bonsai_library.js not loaded) the guard stays:
+ * coarse box, exactly today's behaviour. Resolved lazily at call time, same reason as _getRealGeometry().
+ * Proof: W-XEDGE-REAL-AABB G4 on SampleCastle goes 11 -> 0; G7 asserts the tilted path actually FIRED.
+ * Measured side effect, SampleCastle, same boxes feed every derived family: abuts 13,841 -> 14,124,
+ * anchored 18,889 -> 18,880, spans 9,085 -> 9,102, datums 657 -> 643. The datum move bears on the OPEN
+ * "802 -> 657" question (MODELLER_MASTER next-list #4) and is RECORDED, not claimed as a correction.
  */
 (function (window) {
   'use strict';
@@ -160,6 +182,7 @@
   function _readBoxes(db, geoDb) {
     var boxes = [];
     var realVerts = _buildRealVerts(db, geoDb);
+    var place = _getPlace(), tiltedReal = 0;
     try {
       var r = db.exec("SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z, rotation_x, rotation_y, rotation_z " +
                       "FROM element_transforms WHERE bbox_x IS NOT NULL");
@@ -167,14 +190,35 @@
         var guid = v[0], cx = v[1], cy = v[2], cz = v[3], bx = v[4], by = v[5], bz = v[6];
         var rx = v[7], ry = v[8], rz = v[9];
         var raw = realVerts ? realVerts[guid] : null;
-        var aabb = (raw && Math.abs(rx || 0) < 1e-9 && Math.abs(ry || 0) < 1e-9)
-          ? _realAabb(raw, cx, cy, cz, rz || 0)
-          : [cx - bx / 2, cx + bx / 2, cy - by / 2, cy + by / 2, cz - bz / 2, cz + bz / 2];
+        var tilted = Math.abs(rx || 0) >= 1e-9 || Math.abs(ry || 0) >= 1e-9;
+        var aabb = null;
+        if (raw && !tilted) aabb = _realAabb(raw, cx, cy, cz, rz || 0);
+        else if (raw && place) aabb = _envelope(place(raw, { x: cx, y: cy, z: cz, rotX: rx || 0, rotY: ry || 0, rotZRad: rz || 0 }));
+        if (!aabb) aabb = [cx - bx / 2, cx + bx / 2, cy - by / 2, cy + by / 2, cz - bz / 2, cz + bz / 2];
+        else if (tilted) tiltedReal++;
         boxes.push({ guid: guid, aabb: aabb });
       });
     } catch (e) { /* no element_transforms / no bbox → no geometric edges (graceful) */ }
+    _lastTiltedReal = tiltedReal;
     return boxes;
   }
+
+  // §XEDGE-3AXIS — the renderer's own placement (bonsai_library.js place()), or null outside the browser.
+  function _getPlace() {
+    var L = (typeof window !== 'undefined' && window.Bonsai && window.Bonsai.library) || null;
+    // place()'s 3-axis branch needs window.THREE; without it place() silently takes the yaw-only branch, which
+    // would box a tilted element UNROTATED — worse than the guard. So no THREE, no place.
+    return (L && typeof L.place === 'function' && window.THREE) ? L.place : null;
+  }
+  function _envelope(p) {
+    var b = [Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity];
+    for (var i = 0; i < p.length; i += 3) for (var k = 0; k < 3; k++) {
+      if (p[i + k] < b[2 * k]) b[2 * k] = p[i + k];
+      if (p[i + k] > b[2 * k + 1]) b[2 * k + 1] = p[i + k];
+    }
+    return b;
+  }
+  var _lastTiltedReal = 0;   // how many tilted elements the LAST _readBoxes() boxed via place() — for §XEDGE-GEO
 
   // §ABUTS — derive the `abuts` edge set from MEASURED face-touch over the bbox substrate.
   // Returns sorted unique edges: {a, b (guids, a<b), axis, gap_mm, contact_m2, provenance}.
@@ -320,7 +364,8 @@
 
   var API = { deriveAdjacency: deriveAdjacency, faceTouch: faceTouch, TOL: TOL, MIN_OVERLAP: MIN_OVERLAP,
     deriveDatumsAnchored: deriveDatumsAnchored, deriveSpans: deriveSpans,
-    readFillsHost: readFillsHost, readAggregates: readAggregates, deriveAll: deriveAll };
+    readFillsHost: readFillsHost, readAggregates: readAggregates, deriveAll: deriveAll,
+    lastTiltedReal: function () { return _lastTiltedReal; } };
   window.CrossEdges = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : this);

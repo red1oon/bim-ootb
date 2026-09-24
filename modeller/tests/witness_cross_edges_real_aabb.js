@@ -69,7 +69,11 @@ const BOUNDARY_SLACK = 0.001;
     await pg.click('#b-open'); await sleep(200);
     await pg.click(`.mo-row[data-key="${building}"]`);
     await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => false);
-    await sleep(building === 'SampleCastle' ? 3500 : 2000);
+    // Wait on a CONDITION, not a duration (the old fixed 3.5 s sleep caught SampleCastle mid-open: meshes=0).
+    // Done = this building's geo-phase derive has logged AND the editable mesh count has stopped changing.
+    for (const t0 = Date.now(); !geoLines.some(l => l.indexOf('phase=geo') >= 0) && Date.now() - t0 < 180000; ) await sleep(250);
+    await pg.waitForFunction(b => window.__dwName === b, { timeout: 60000 }, building).catch(() => {});
+    for (let prev = -1, n; (n = await pg.evaluate(() => window.Bonsai.group().children.length)) !== prev; prev = n) await sleep(1000);
 
     const result = await pg.evaluate(() => {
       const g = window.Bonsai.group(); const boxes = {};
@@ -116,6 +120,15 @@ const BOUNDARY_SLACK = 0.001;
     chk('G6 GEO-WIRED (' + building + ' — the geo-wired re-derive fired and resolved real geometry)',
       !!mres && Number(mres[1]) > 0,
       geoPhase ? geoPhase.replace(/^.*§XEDGE-GEO /, '§XEDGE-GEO ') : 'NO §XEDGE-GEO phase=geo line — the re-derive never ran');
+
+    // G7 §XEDGE-3AXIS — the tilted path FIRED, not merely "G4 went green". SampleCastle carries 293 rotation_y≠0
+    // elements (#1738); they must be boxed by bonsai_library.js place(), not the coarse guard.
+    // Expected counts are the source rows (sqlite, 2026-09-24: element_transforms with bbox_x NOT NULL and
+    // rotation_x or rotation_y ≠ 0): SampleCastle_ARC.db 293, SampleHouse_ARC.db 3 — all with real blobs. Falsify: delete `Library.place = place;` in
+    // bonsai_library.js → tilted3axis=0 on SampleCastle, G7 RED (and G4 back to 11).
+    const mt = geoPhase.match(/tilted3axis=(\d+)/), tiltN = mt ? Number(mt[1]) : -1;
+    chk('G7 TILTED-3AXIS (' + building + ' — tilted elements boxed by the renderer\'s own place(), not the coarse guard)',
+      tiltN === ({ SampleCastle: 293, SampleHouse: 3 })[building], 'tilted3axis=' + (mt ? tiltN : 'MISSING'));
 
     chk('G5 NO-ERROR (' + building + ' — zero pageerror)', errs.length === 0, errs.slice(0, 2).join(' | '));
     await pg.close();
