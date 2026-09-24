@@ -3754,6 +3754,33 @@ async function setupEffects(A, renderer, scene, camera) {
     _roomProbeCam = null;
     _roomProbeBuilding = null;
   }
+  // §STILL_GLOW camera inside/outside — the EXISTING room index first (RoomWalker.buildCameraRoomIndex, the same
+  // point-in-room test dlod_nav.js uses for its room leg; IFC coords via the inverse of A.ifc2three). Rooms are
+  // compiled lazily, so when there are none yet a NEW fallback is used and named in the log: a ray straight up
+  // from the camera — building geometry within 80 m above = inside (under a roof or slab).
+  var _camRoomIdx = null, _camRoomIdxBld = null;
+  function _stillCamInside() {
+    var c = A.camera && A.camera.position; if (!c) return { inside: null, src: 'no camera' };
+    try {
+      if ((_camRoomIdxBld !== A.activeBuilding || !_camRoomIdx) && window.RoomWalker && window.RoomWalker.buildCameraRoomIndex && A.db) {
+        try { _camRoomIdx = window.RoomWalker.buildCameraRoomIndex(A.db); } catch (e) { _camRoomIdx = null; }
+        _camRoomIdxBld = (_camRoomIdx && _camRoomIdx.rects) ? A.activeBuilding : null;   // never cache "no rooms yet"
+      }
+      var off = A.modelOffset;
+      if (_camRoomIdx && _camRoomIdx.rects && off) {
+        var room = _camRoomIdx.roomAt(c.x + off.x, -c.z + off.y, c.y + off.z);
+        A._stillCamSrc = A._stillCamSrc || { rooms: 0, ray: 0 }; A._stillCamSrc.rooms++;
+        return { inside: room != null, src: 'rooms roomAt=' + (room || 'none') + ' rects=' + _camRoomIdx.rects + ' uses=' + JSON.stringify(A._stillCamSrc) };
+      }
+    } catch (e) {}
+    var rc = new THREE.Raycaster(c.clone(), new THREE.Vector3(0, 1, 0), 0.05, 80), hit = null;
+    try {
+      var targets = []; A.scene.traverse(function(o) { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && !(o.userData && o.userData.excludeFromShadow) && o !== A.ground && o !== A._sky) targets.push(o); });
+      var hits = rc.intersectObjects(targets, false); hit = hits.length ? hits[0] : null;
+    } catch (e) { return { inside: null, src: 'up-ray failed: ' + e.message }; }
+    A._stillCamSrc = A._stillCamSrc || { rooms: 0, ray: 0 }; A._stillCamSrc.ray++;
+    return { inside: !!hit, src: 'up-ray fallback (no rooms for this building; an overhang can fool it) hit=' + (hit ? hit.distance.toFixed(1) + 'm' : 'none') + ' uses=' + JSON.stringify(A._stillCamSrc) };
+  }
   function _applyPhotoStaging() {
     // §GROUND_WETNESS_REFIRE_FIX (2026-07-17, live user repro: worked once, then "cannot
     // replicate" on another building, back on the original — still couldn't, "but bit slightly"):
@@ -3954,6 +3981,33 @@ async function setupEffects(A, renderer, scene, camera) {
     // with night mode already on, whatever the fill is at this point): the bake's per-frame
     // compensation multiplies THIS base every frame, so it can never compound frame over frame.
     // Cleared in _removePhotoStaging with the rest of the staging state.
+    // §STILL_GLOW (2026-09-24, red1 ruling: "window glow OFF in daylight Alt+S stills") — the glazing emissive
+    // (night mode's 0xfff8ec x 0.55) is not dimmed by shadow, so it hid the wing shadows on the Hospital courtyard
+    // facades. Daylight = the app's own dusk test: dusk mood off AND sun above PHOTO_SUN_ELEVATION (the dusk
+    // elevation). Alt+S only: a film (A._maxqActive) passes through dusk on its sun arc and keeps its glow.
+    // Glazing only; fixture point lights and their emissive are untouched. Teardown restores the glow values.
+    if (!A._maxqActive && A._nightGlowMats && A.sun) {
+      var _gs = A.sun.position.clone(); if (A.sun.target) _gs.sub(A.sun.target.position); _gs.normalize();
+      var _gElev = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, _gs.y))));
+      var _gDay = !_duskMood && _gElev > PHOTO_SUN_ELEVATION;
+      var _gN = 0, _gLampMats = 0;
+      // red1 (refined): indoor lights are on by day. Lamps go OFF only for a daylight still whose camera is
+      // OUTSIDE; inside, they stay on. Window glow is off in daylight either way.
+      var _gIn = _gDay ? _stillCamInside() : { inside: null, src: 'not-needed (dusk)' };
+      if (_gDay) {
+        A._stillWindowGlowOff = true;
+        A._stillLampsOff = (_gIn.inside === false);
+        A._nightGlowMats.forEach(function(g) {
+          if (!g.mat) return;
+          if (g.win) { g.mat.emissiveIntensity = 0; g.mat.needsUpdate = true; _gN++; }
+          else if (A._stillLampsOff) { g.mat.emissiveIntensity = 0; g.mat.needsUpdate = true; _gLampMats++; }   // the lamp's own glowing fixture
+        });
+      }
+      console.log('§STILL_GLOW daylight=' + (_gDay ? 1 : 0) + ' sunElev=' + _gElev.toFixed(1) + ' duskMood=' + (_duskMood ? 1 : 0) +
+        ' threshold=' + PHOTO_SUN_ELEVATION + ' camInside=' + (_gIn.inside == null ? '-' : (_gIn.inside ? 1 : 0)) + ' (' + _gIn.src + ')' +
+        ' glowMats=' + _gN + ' emissive->' + (_gDay ? '0' : 'kept') +
+        ' lamps=' + (A._stillLampsOff ? '0 (fixture emissive ' + _gLampMats + ' mats -> 0)' : ((A._nightLights || []).length + ' on')));
+    }
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
     // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
     // nav/still wall-side contrast; in the bake that doubled the shadow contrast (sunFillRatio 4.387 vs
@@ -4048,6 +4102,18 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
     _photoStagingOn = false;
     A._photoStagingOn = false;
+    // §STILL_GLOW — give every glazing material its glow value back BEFORE night mode's own teardown runs (which
+    // then restores the pre-glow originals if staging had switched night mode on). Nothing stays changed.
+    if (A._stillWindowGlowOff) {
+      var _lampsWereOff = !!A._stillLampsOff;
+      A._stillWindowGlowOff = false; A._stillLampsOff = false;
+      var _gr = 0, _lr = 0;
+      (A._nightGlowMats || []).forEach(function(g) {
+        if (!g.mat) return;
+        if (g.win || _lampsWereOff) { g.mat.emissive.setHex(g.glowE); g.mat.emissiveIntensity = g.glowEI; g.mat.needsUpdate = true; if (g.win) _gr++; else _lr++; }
+      });
+      console.log('§STILL_GLOW restored glowMats=' + _gr + ' lampMats=' + _lr + ' (lamp intensity: _nightPLScale reset below)');
+    }
     // §DLOD_STILL_OWNERSHIP — release the hold; re-enable only if staging paused it, or if a re-enable
     // was asked for (and deferred) while the hold was on.
     A._dlodStillHold = false;
@@ -5454,6 +5520,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // frame, measured), and an intensity is a uniform. Same reason the pool's own unused slots
       // ride at 0 instead of being removed.
       if (A._cpeRevealLightsOff) A._nightPLScale = 0;
+      if (A._stillLampsOff) A._nightPLScale = 0;   // §STILL_GLOW — daylight still, camera outside: lamps off (a uniform, no recompile)
       // §SUN_ARC_FILL — this is the per-frame staged value (0.5 cut, or 0 in a lights-off slot) that
       // the bake's fill compensation scales from; stashed here, where the rule lives, not re-derived.
       A._nightPLScaleStaged = A._nightPLScale;
@@ -5704,9 +5771,18 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§STILL_STATUS painted t=' + t0.toFixed(1));
     requestAnimationFrame(function() {
       console.log('§STILL_STATUS frame t=' + performance.now().toFixed(1));
-      setTimeout(function() {
+      setTimeout(async function() {
+        // §STILL_GLOW (watcher): the inside/outside test should use the building's ROOMS, not the up-ray, whenever the
+        // building has rooms. They compile lazily (navigate bundle), so compile them here, after the status has
+        // painted and before staging, the same way the film path does (§CINEMA_ROOMS).
+        var tR = performance.now();
+        try {
+          if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) await A.loadNavigate();
+          if (typeof A.ensureRooms === 'function') await A.ensureRooms({});
+          console.log('§STILL_ROOMS ready ms=' + (performance.now() - tR).toFixed(0));
+        } catch (eR) { console.warn('§STILL_ROOMS ensureRooms failed: ' + eR.message + ' — the inside test falls back to the up-ray'); }
         var t2 = performance.now();
-        console.log('§STILL_STATUS stagingStart t=' + t2.toFixed(1) + ' gap=' + (t2 - t0).toFixed(1) + 'ms');
+        console.log('§STILL_STATUS stagingStart t=' + t2.toFixed(1) + ' gap=' + (t2 - t0).toFixed(1) + 'ms (rooms ' + (t2 - tR).toFixed(0) + 'ms)');
         _stillUIPending = false;
         try { A.startStillRefine(); } finally {
           var iv = setInterval(function() {

@@ -1274,6 +1274,11 @@ function setupTools(A) {
       // copy of those constants that could drift from them.
       A._nightGlowMats[_lp].glowE = m.emissive.getHex();
       A._nightGlowMats[_lp].glowEI = m.emissiveIntensity;
+      A._nightGlowMats[_lp].win = !isLight;   // §STILL_GLOW — window glazing, not a fixture
+      // §STILL_GLOW (2026-09-24, red1): a daylight Alt+S still carries no window glow; glazing streamed in
+      // during the still is held dark too. The glow values above are still recorded, so teardown restores them.
+      if (!isLight && A._stillWindowGlowOff) m.emissiveIntensity = 0;
+      if (isLight && A._stillLampsOff) m.emissiveIntensity = 0;   // §STILL_GLOW — lamps off (daylight, camera outside)
       m.needsUpdate = true;
     }
     if (_glowCount || _windowGlowCount) {
@@ -2044,7 +2049,7 @@ function setupTools(A) {
           var _floor = A._nightNearFadeFloor;
           _pool[_pi].position.copy(_posObj);
           _pool[_pi].color.set(_posObj.__color || 0xffe4b5);
-          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._nightPLScale || 1) *
+          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) *
             (_posObj.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
         } else {
           _pool[_pi].intensity = 0;
@@ -2079,7 +2084,7 @@ function setupTools(A) {
       // to protect and where the whole point is that the fixture you are standing under reads as
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
-      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._nightPLScale || 1) *
+      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) *
         (f.pos.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
       stillWanted.add(f.pos);
       var light = A._nightLightByPos.get(f.pos);
