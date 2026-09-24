@@ -749,6 +749,18 @@ function setupStreaming(A) {
   // name FIRST, ifc_class as fallback, alpha guard ahead of both. Returns src ∈
   // {name, class, alpha-none, none}. `INCONCLUSIVE` when the maps have not been published yet
   // (no material has ever been built) — so a caller can never read a 0 as a real answer.
+  // §TRI_BIG_ONLY (2026-09-24, PHOTOREAL_STILL_RENDER.md; red1: rugged surfacing "overdone" on doors
+  // and beams) — a SWITCH, not a change of the maps below. With it on, only these classes keep the
+  // rough triplanar maps during the still; every other class renders its flat colour. Per class, not
+  // per size: one material is shared per batch and built from the batch's first element.
+  // `?tri=big` on the URL or `APP._triBigOnly = true`; default OFF = the look is unchanged.
+  A._TRI_BIG_CLASSES = { IfcWall: 1, IfcWallStandardCase: 1, IfcSlab: 1, IfcColumn: 1, IfcFooting: 1,
+    IfcStair: 1, IfcStairFlight: 1, IfcCovering: 1, IfcRoof: 1 };
+  try { if (A._triBigOnly == null) A._triBigOnly = /[?&]tri=big\b/.test(location.search); } catch (e) {}
+  A._triActiveFor = function(mat) {
+    if (!A._stillRefineActive) return 0.0;
+    return (A._triBigOnly && mat && mat.userData && mat.userData._triSmallPart) ? 0.0 : 1.0;
+  };
   A._triResolve = function(alpha, ifcClass, matName) {
     var byName = A._TRIPLANAR_BY_NAME, byClass = A._TRIPLANAR_MAT;
     if (!byName || !byClass) return { mat: null, src: 'INCONCLUSIVE' };
@@ -794,6 +806,19 @@ function setupStreaming(A) {
       ' alpha_none=' + bySrc['alpha-none'] + ' none=' + bySrc.none +
       ' textured=' + textured + ' distinct_names_resolved=' + distinct.length +
       (bySrc.name === 0 ? ' NO-OP — no element resolved by material_name on this building' : ''));
+    // §TRI_BIG_ONLY_TALLY — per class: rows textured now vs rows textured with the switch on. Same resolver.
+    var _tb = {};
+    for (var ti = 0; ti < q.length; ti++) {
+      var trow = q[ti], tcls = trow[11] || '?';
+      var tres = A._triResolve(A._alphaOf(trow[2]), trow[11] || '', trow[16] || '');
+      if (!tres.mat) continue;
+      var te = _tb[tcls] || (_tb[tcls] = [0, 0]); te[0]++; if (A._TRI_BIG_CLASSES[tcls]) te[1]++;
+    }
+    var _tbK = Object.keys(_tb).sort(function(x, y) { return _tb[y][0] - _tb[x][0]; }), _tbNow = 0, _tbBig = 0;
+    for (var tk = 0; tk < _tbK.length; tk++) { _tbNow += _tb[_tbK[tk]][0]; _tbBig += _tb[_tbK[tk]][1]; }
+    console.log('§TRI_BIG_ONLY_TALLY bld=' + (A.activeBuilding || '?') + ' switch=' + (A._triBigOnly ? 'on' : 'off') +
+      ' texturedNow=' + _tbNow + ' texturedUnderSwitch=' + _tbBig + ' perClass(now/switch)=' +
+      _tbK.map(function(k) { return k + ':' + _tb[k][0] + '/' + _tb[k][1]; }).join(' '));
     distinct.sort(function(x, y) { return namesHit[y] - namesHit[x]; });
     for (var d = 0; d < distinct.length; d++)
       console.log('§TRI_SRC_NAME name="' + distinct[d] + '" n=' + namesHit[distinct[d]] +
@@ -1473,13 +1498,13 @@ function setupStreaming(A) {
         // the texture dark for the whole accumulation. onBeforeRender runs every frame per
         // object and re-asserts the CURRENT value from live state, so it self-heals across
         // any recompile instead of relying on a single push at start time.
-        shader.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+        shader.uniforms.uTriActive.value = A._triActiveFor(mat);   // §TRI_BIG_ONLY
         shader.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
       };
       mat.onBeforeRender = function() {
         var sh = mat._triplanarShader;
         if (sh) {
-          sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+          sh.uniforms.uTriActive.value = A._triActiveFor(mat);   // §TRI_BIG_ONLY
           sh.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
           // §TRIPLANAR_NORMAL A/B switch, re-asserted here for the same reason uTriActive is
           // (§TRIPLANAR_RECOMPILE_FIX): a silent program recompile resets uniforms to defaults.
@@ -1497,6 +1522,7 @@ function setupStreaming(A) {
     // it without re-deriving. Plain strings only — see the §TRIPLANAR_CLONE_STALL note above about
     // never putting the shader object in userData.
     mat.userData._triSrc = _triSrc;
+    mat.userData._triSmallPart = !!triMat && !A._TRI_BIG_CLASSES[ifcClass];   // §TRI_BIG_ONLY
     mat.userData._triTex = triMat ? triMat.diffuse : '';
     mat.userData._matName = matName || '';
     // §ENTOURAGE: real RPC people/tree/logo get a presentation material, but ONLY during the Alt+S
