@@ -3192,9 +3192,12 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!(r - l > 1 && t - b > 1)) { l = -env; r = env; b = -env; t = env; }
     var w = r - l, h = t - b, cx = (l + r) / 2, cy = (b + t) / 2, changed = false;
     if (film) {
-      var STEP = 8, qw = Math.min(2 * env, Math.ceil(w / STEP) * STEP), qh = Math.min(2 * env, Math.ceil(h / STEP) * STEP);
-      if (qw > _fitState.sizeW || qw <= _fitState.sizeW - 2 * STEP) { if (_fitState.sizeW) changed = true; _fitState.sizeW = qw; }
-      if (qh > _fitState.sizeH || qh <= _fitState.sizeH - 2 * STEP) { if (_fitState.sizeH) changed = true; _fitState.sizeH = qh; }
+      // §FILM_FIT_GROW_ONLY (2026-09-25, measured: 8 m steps with shrink hysteresis changed size 16x in a 120-frame Hospital
+      // clip — the texel changes each time and edges would crawl). Films now GROW only, in 32 m steps, and never shrink
+      // inside the film, so the texel can only coarsen a few times and never flickers back and forth.
+      var STEP = 32, qw = Math.min(2 * env, Math.ceil(w / STEP) * STEP), qh = Math.min(2 * env, Math.ceil(h / STEP) * STEP);
+      if (qw > _fitState.sizeW) { if (_fitState.sizeW) changed = true; _fitState.sizeW = qw; }
+      if (qh > _fitState.sizeH) { if (_fitState.sizeH) changed = true; _fitState.sizeH = qh; }
       w = _fitState.sizeW; h = _fitState.sizeH;
       var tx = w / mz, ty = h / mz; cx = Math.round(cx / tx) * tx; cy = Math.round(cy / ty) * ty;   // whole-texel centre
       if (changed) _fitState.changes++;
