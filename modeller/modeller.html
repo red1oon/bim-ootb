@@ -234,7 +234,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      tree engine the Viewer runs (common/history_bar.js), reused — not a second branch mechanism. The
      adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
 <script src="../common/history_bar.js?v=1" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
-<script src="modeller_history.js?v=3" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
+<script src="modeller_history.js?v=4" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=3" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
@@ -585,7 +585,8 @@ async function xrayReveal(on) {
     // material, not deduped) — without this, a disc-walked fixture's individual fold-copy would come back
     // fully opaque/visible post-restore, un-doing the dedup and reintroducing the z-fight next redraw.
     // _redrawAllDiscWalks re-applies it (and rebuilds the InstancedMesh buckets) the same way every other
-    // refold path (undo/redo, commit) already does.
+    // refold path does (commit; and undo/redo since §WALK-GESTURE-DRAW 2026-09-24 — before that, doUndo/doRedo
+    // never called it and the generated layer vanished after one Ctrl+Z).
     _redrawAllDiscWalks();
     if (window.A && A.requestRender) A.requestRender();
     console.log('§MODELLER xray off');
@@ -3557,6 +3558,7 @@ async function doUndo() {
     MH.undo();                                    // sync: moves the tree cursor + fires the real oplog.undo()
     const r = await (MH.pending() || Promise.resolve({}));
     if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); }
+    _redrawAllDiscWalks();   // §WALK-GESTURE-DRAW: the fold rebuilt the group — restore (or hide) the walk layer
     syncHistory();
     return;
   }
@@ -3568,6 +3570,7 @@ async function doRedo() {
     MH.redo();
     const r = await (MH.pending() || Promise.resolve({}));
     if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); }
+    _redrawAllDiscWalks();   // §WALK-GESTURE-DRAW
     syncHistory();
     return;
   }
@@ -3714,7 +3717,10 @@ window.discWalk = function (disc, ctx) {
   if (disc === 'ARC') { setStat('ARC is the base layer — the disciplines fill it'); console.log('§DISC-WALK ARC is the base substrate (not a walked discipline)'); return; }
   // MEP family (MEP/PLB/ELEC/ACMV/FP/…) → DiscWalker: fire-and-forget, same as always (external contract
   // unchanged). _discWalkOne (below) holds the actual steps so window.discWalkAll can compose them too.
-  _discWalkOne(disc, ctx, {});
+  // §WALK-GESTURE: the whole walk (fixtures + routed runs + bend fittings) is ONE history node → one Ctrl+Z.
+  var MH = window.ModellerHistory;
+  if (MH && MH.beginWalk) MH.beginWalk(disc);
+  _discWalkOne(disc, ctx, {}).finally(function () { if (MH && MH.endWalk) { MH.endWalk(); syncHistory(); } });
 };
 // §DISCWALK-ALL refactor: the single-discipline walk steps used to live inline as an anonymous async IIFE
 // inside window.discWalk. Extracted unchanged (same order, same § log lines, same honest-refuse returns) into
@@ -4152,6 +4158,8 @@ window.discWalkAll = async function (ctx) {
   var xr = await xrayReveal(true);
   console.log('§DISCWALK-ALL xray-on glass=' + xr.glass + ' glow=' + xr.glow + ' t=' + (Date.now() - t0) + 'ms');
   var walked = [], refused = [];
+  var MHw = window.ModellerHistory;
+  if (MHw && MHw.beginWalk) MHw.beginWalk('ALL');   // §WALK-GESTURE: Walk ALL is one click → one history node
   try {
     for (var i = 0; i < ds.length; i++) {
       var disc = ds[i];
@@ -4166,6 +4174,7 @@ window.discWalkAll = async function (ctx) {
       await xrayReveal(true);
     }
   } finally {
+    if (MHw && MHw.endWalk) { MHw.endWalk(); syncHistory(); }
     var xoff = await xrayReveal(false);
     // xrayReveal(false)'s scrubTo is a FULL authoritative re-fold — it re-authors every committed GEOM_INSERT
     // (incl. every _dw-tagged fixture) as a plain Mesh but does NOT know about the dwRoot decorative layer
@@ -4570,6 +4579,24 @@ function _redrawAllDiscWalks() {
   Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d], { instant: !window.__dwChainAnimating[d] }); });
   if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
   if (window.__dwTrunk) Object.keys(window.__dwTrunk).forEach(function (d) { if (window.__dwTrunk[d]) _renderSeedTrunk(d, window.__dwTrunk[d]); });   // seed→trunk
+  _hideUndoneWalkLayers();
+}
+// §WALK-GESTURE-DRAW (2026-09-24, §STRATEGY L4): the decorative walk layer (markers, run tubes, assembly parts,
+// trunk) is drawn from JS state (__dwWalks/__dwChains/…), not from the op-log. So after a walk is undone its
+// markers would redraw as if still there. A disc whose committed walk rows (window.__dwRowsByDisc, recorded by
+// modeller_history.js) are ALL undone has its layer removed from dwRoot. The stored JS state is kept, so Ctrl+Y
+// brings it back on the next redraw. A disc with no recorded rows (render-only) is left as it was.
+function _hideUndoneWalkLayers() {
+  var rows = window.__dwRowsByDisc || {}, root = _dwRoot(); if (!root || !window.Bonsai || !window.Bonsai.oplog || !window.Bonsai.oplog._allGeom) return;
+  var discs = Object.keys(rows); if (!discs.length) return;
+  var undone = {}; window.Bonsai.oplog._allGeom().forEach(function (o) { if (o.undone) undone[o.id] = 1; });
+  discs.forEach(function (d) {
+    var w = rows[d].walk || []; if (!w.length) return;
+    if (w.some(function (id) { return !undone[id]; })) return;   // at least one fixture row active → keep
+    root.children.slice().forEach(function (o) { var u = o.userData || {};
+      if (u.dwDisc === d || u.dwChain === d || u.dwAsm === d || u.dwTrunk === d) root.remove(o); });
+  });
+  if (window.A && A.requestRender) A.requestRender();
 }
 
 // ── SEED → 3D CORRIDOR TRUNK (seed_trunk.js; W-SEED-TRUNK / -CORRIDOR / -RISER / -ENGINE, bim-compiler) ──────
