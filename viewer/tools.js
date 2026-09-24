@@ -1967,7 +1967,8 @@ function setupTools(A) {
       // which is why Fly/handsfree always looked right while the bake did not. One selection rule,
       // not a second mechanism. A frame whose frustum already fills the budget is unchanged.
       var _tuLimit = Math.max(0, A._nightMaxLights || 0);
-      var _picked = inView.slice(0, 200);
+      if (typeof A._stillLampCap === 'number') _tuLimit = Math.min(_tuLimit, A._stillLampCap);   // §LIGHT_UNIFORM_BUDGET
+      var _picked = inView.slice(0, (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200);   // §LIGHT_UNIFORM_BUDGET (sky_portal.js)
       var _inViewN = _picked.length;
       if (_picked.length < _tuLimit) _picked = _nightPickNearest(visPos, _tuLimit, _picked);
       if (_picked.length !== _inViewN || _inViewN === 0) {
@@ -2205,7 +2206,22 @@ function setupTools(A) {
       A._nightLightByPos.delete(pos);
     });
     A._nightLights = Array.from(A._nightLightByPos.values());
+    // §STILL_LIGHT_PAD (§STILL_LAG, measured 2026-09-24: a still whose light COUNT differs from the last one recompiles
+    // every lit material — 40-108 s headless, 42-47 s on red1's desktop; the same count again costs ~3.4 s). During an
+    // Alt+S the lamp count is padded to A._stillLampCap with intensity-0 lights, so every still has one count.
+    A._nightSyncPads();
     if (A.markDirty) A.markDirty();
+  };
+  A._nightPadLights = [];
+  A._nightSyncPads = function() {
+    var want = (A._stillRefineActive && !A._maxqActive && typeof A._stillLampCap === 'number' && A._nightLightByPos)
+      ? Math.max(0, A._stillLampCap - A._nightLightByPos.size) : 0;
+    while (A._nightPadLights.length < want) {
+      var pl = new THREE.PointLight(0xffffff, 0, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY); pl.userData.lampPad = true;
+      A.scene.add(pl); A._nightPadLights.push(pl);
+    }
+    while (A._nightPadLights.length > want) { var r = A._nightPadLights.pop(); A.scene.remove(r); r.dispose(); }
+    return want;
   };
 
   // Hover highlight

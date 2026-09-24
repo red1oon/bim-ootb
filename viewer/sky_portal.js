@@ -6,6 +6,7 @@
 // itself casts nothing since R10, so frames throw mullion shadows); the rest are unshadowed and CAN leak through walls.
 (function (global) {
   var PORTAL_RANGE = 40;          // m — candidate panes near the camera
+  var LIGHT_RESERVE = 320, PORTAL_SHARE = 0.25;   // §LIGHT_UNIFORM_BUDGET
   var PORTAL_EXPOSURE = 10;       // start value for red1's eye (see spec): the unoccluded hemi drowns a physical portal
   var PORTAL_ANGLE = 70 * Math.PI / 180, PORTAL_SHADOW_SIZE = 512, UPRAY_OFF = 0.5, UPRAY_MAX = 30;
   var placed = [];
@@ -71,13 +72,31 @@
     return { panes: out, stats: stats };
   }
 
+  // §LIGHT_UNIFORM_BUDGET, part 1 — called at staging, BEFORE the still's lamp set is built, so tools.js caps the lamps.
+  var budgetCap = null, budgetShadow = null;
+  function budget(A) {
+    var gain = dial(A, '_stillPortal', 'portal', 1, 0, 3), cap = Math.round(dial(A, '_stillPortalCap', 'portalcap', 32, 0, 128));
+    var nShadow = Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
+    var maxFrag = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxFragmentUniforms) || 1024;
+    var avail = Math.max(0, maxFrag - LIGHT_RESERVE), portalVec = (gain > 0 && cap > 0) ? Math.floor(avail * PORTAL_SHARE) : 0;
+    var c = 0, sh = 0, used = 0;
+    while (c < cap) { var need = (sh < nShadow) ? 12 : 7; if (used + need > portalVec) break; used += need; c++; if (sh < nShadow) sh++; }
+    budgetCap = c; budgetShadow = sh;
+    A._stillLampCap = Math.min(200, Math.floor((avail - used) / 4), Math.round(dial(A, '_stillLampCapMax', 'lampcap', 200, 0, 200)));   // &lampcap= (§STILL_LAG)
+    console.log('§LIGHT_UNIFORM_BUDGET maxFragmentUniforms=' + maxFrag + ' reserve=' + LIGHT_RESERVE + ' portalCap=' + c + ' (shadowed ' + sh +
+      ', ' + used + ' vectors) lampCap=' + A._stillLampCap + ' (' + (A._stillLampCap * 4) + ' vectors) total=' + (used + A._stillLampCap * 4) + '/' + avail +
+      ' — set before the lamps are built; one light count per still');
+  }
+
   function stage(A) {
     var THREE = global.THREE; if (!THREE || !A || !A.scene || !A.hemi) return;
-    unstage(A);
+    unstage(A, true);
     var t0 = performance.now();
     var gain = dial(A, '_stillPortal', 'portal', 1, 0, 3), cap = Math.round(dial(A, '_stillPortalCap', 'portalcap', 32, 0, 128));
     var nShadow = Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
     if (gain <= 0 || cap <= 0) { console.log('§SKY_PORTAL off portal=' + gain + ' cap=' + cap); return; }
+    if (budgetCap == null) budget(A);
+    cap = budgetCap; nShadow = budgetShadow;
     var cam = A.camera.position, col0 = collectPanes(A, THREE), panes = col0.panes;
     var near = panes.filter(function (p) { return p.c.distanceTo(cam) <= PORTAL_RANGE; })
       .sort(function (a, b) { return a.c.distanceTo(cam) - b.c.distanceTo(cam); });
@@ -108,19 +127,32 @@
       if (shadowed < nShadow) {
         L.castShadow = true; L.shadow.mapSize.set(PORTAL_SHADOW_SIZE, PORTAL_SHADOW_SIZE);
         L.shadow.camera.near = 0.1; L.shadow.camera.far = PORTAL_RANGE; L.shadow.bias = -0.0005; shadowed++;
+        // §STILL_LAG: the scene is frozen for a still — render this shadow map ONCE, not on every accumulation frame.
+        L.shadow.autoUpdate = false; L.shadow.needsUpdate = true;
       } else unsh++;
       L.userData.skyPortal = true;
       A.scene.add(L); A.scene.add(L.target); placed.push(L); iSum += I;
     });
+    // §STILL_LIGHT_PAD — pad to the budget's fixed counts (intensity 0) so every still has the same spot-light count
+    // and the same shadowed-spot count: no recompile between presses.
+    var pads = 0;
+    while (placed.length < cap) {
+      var D = new THREE.SpotLight(0xffffff, 0, 1, PORTAL_ANGLE, 1, 2); D.userData.skyPortal = true; D.userData.pad = true;
+      D.position.copy(cam); D.target.position.copy(cam).add(new THREE.Vector3(0, -1, 0));
+      if (shadowed < nShadow) { D.castShadow = true; D.shadow.mapSize.set(PORTAL_SHADOW_SIZE, PORTAL_SHADOW_SIZE); D.shadow.autoUpdate = false; D.shadow.needsUpdate = true; shadowed++; }
+      A.scene.add(D); A.scene.add(D.target); placed.push(D); pads++;
+    }
     if (A.markDirty) A.markDirty();
-    console.log('§SKY_PORTAL placed=' + placed.length + ' shadowed=' + shadowed + ' unshadowed=' + unsh + ' (unshadowed can leak through walls)' +
+    console.log('§STILL_LIGHT_PAD portals padded=' + pads + ' to ' + placed.length + ' (shadowed ' + shadowed + ')');
+    console.log('§SKY_PORTAL placed=' + (placed.length - pads) + ' (+' + pads + ' intensity-0 pads) shadowed=' + shadowed + ' unshadowed=' + unsh + ' (unshadowed can leak through walls)' +
       ' capped=' + capped + ' skipped=' + skipped + ' (5 rays per side, equal sky) sources=' + panes.length + ' in ' + col0.stats.planes + ' planes' +
       ' placedByClass=' + JSON.stringify(byCls) + ' glassM2ByClass=' + JSON.stringify(col0.stats.byClass) + ' batchedGlassSkipped=' + col0.stats.batchedSkipped +
       ' portal=' + gain + ' exposure=' + PORTAL_EXPOSURE + ' hemi=' + H.toFixed(3) + ' intensitySum=' + iSum.toFixed(2) +
       ' meanI=' + (placed.length ? (iSum / placed.length).toFixed(3) : 0) + ' ms=' + (performance.now() - t0).toFixed(0));
   }
 
-  function unstage(A) {
+  function unstage(A, keepBudget) {
+    if (!keepBudget) { A._stillLampCap = undefined; budgetCap = null; budgetShadow = null; }   // §LIGHT_UNIFORM_BUDGET — nav/films keep their own caps
     if (!placed.length) return;
     var n = placed.length;
     placed.forEach(function (L) { A.scene.remove(L.target); A.scene.remove(L); if (L.shadow && L.shadow.map) { L.shadow.map.dispose(); L.shadow.map = null; } L.dispose(); });
@@ -129,5 +161,5 @@
     console.log('§SKY_PORTAL removed=' + n);
   }
 
-  global.SkyPortal = { stage: stage, unstage: unstage };
+  global.SkyPortal = { budget: budget, stage: stage, unstage: unstage, placedCount: function () { return placed.length; } };
 })(typeof window !== 'undefined' ? window : this);

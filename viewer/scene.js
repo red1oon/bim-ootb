@@ -38,6 +38,10 @@ async function setupScene(A) {
   // Load standard WebGL build — WebGPU build's PMREMGenerator/Scene expect WebGPURenderer internals
   var _std = await import('./lib/three.module.min.js');
   for (var _k of Object.keys(_std)) THREE[_k] = _std[_k];
+  // §SKY_OCCLUSION — patch the WebGL lighting chunks ONCE, here (ShaderChunk arrives with this build), before any
+  // material compiles. Inert until an Alt+S sets uSkyOcc.
+  if (window.SkyOcc) { try { window.SkyOcc.install(THREE); } catch (eSO) { console.warn('§SKY_OCCLUSION install failed: ' + eSO.message); } }
+  else console.warn('§SKY_OCCLUSION not loaded — Alt+S sky occlusion disabled');
   renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: !_isMobileRenderer,
