@@ -4032,12 +4032,12 @@ async function setupEffects(A, renderer, scene, camera) {
     // §STILL_BASE (2026-09-24, red1: switch the EVEN base light off and let the real sources carry the picture —
     // sun + shadows, lamps indoors, bounce, sky reflections — then tune by eye). Alt+S stills only (films keep the
     // restored fill; nav unchanged). §STILL_DIALS (red1 13:1x: "too dark ... not enough sky ambient light"): split
-    // into two dials, read at every press — &sky= scales the hemi (sky from above; default 1.5 x #1601's Alt+S hemi, red1)
+    // into two dials, read at every press — &sky= scales the hemi (sky from above; default 2.0 x #1601's Alt+S hemi, red1)
     // and &base= scales the flat ambient only (default 0, red1). Console overrides APP._stillSky / APP._stillBaseScale.
     // Teardown restores.
     if (!A._maxqActive && A.ambient && A.hemi) {
       var _bs = _stillDial('_stillBaseScale', 'base', 0, 2);   // red1 13:3x LOOK ruling: base as low as possible, 0
-      var _sk = _stillDial('_stillSky', 'sky', 1.5, 3);   // red1 13:3x: sky "drummed up", 1.5, range 0..3
+      var _sk = _stillDial('_stillSky', 'sky', 2.0, 3);   // red1 13:4x: "hit it now", sky 2.0, range 0..3
       _stillBaseSaved = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
       A.ambient.intensity = _stillBaseSaved.ambI * _bs; A.hemi.intensity = _stillBaseSaved.hemiI * _sk;
       var _lampSum = 0, _lampOn = 0;
