@@ -4058,7 +4058,7 @@ async function setupEffects(A, renderer, scene, camera) {
       var _lampSum = 0, _lampOn = 0;
       (A._nightLights || []).forEach(function(l) { _lampSum += l.intensity; if (l.intensity > 0) _lampOn++; });
       console.log('§STILL_BASE sky=' + _sk + ' base=' + _bs + ' lamps=' + A._stillLampMul + ' decay=' + A._stillLampDecayNow +
-        ' range=0(inf) hemi=' + A.hemi.intensity.toFixed(3) + ' ambient=' + A.ambient.intensity.toFixed(3) +
+        ' range=' + (A._stillLampRangeNow ? A._stillLampRangeNow + 'm' : '0(inf)') + ' hemi=' + A.hemi.intensity.toFixed(3) + ' ambient=' + A.ambient.intensity.toFixed(3) +
         ' (from ' + _stillBaseSaved.hemiI.toFixed(3) + '/' + _stillBaseSaved.ambI.toFixed(3) + ') camInside=' +
         (typeof _gIn !== 'undefined' && _gIn && _gIn.inside != null ? (_gIn.inside ? 1 : 0) : '-') +
         ' lampsOn=' + (A._stillLampsOff ? '0 (daylight, outside)' : _lampOn + '/' + (A._nightLights || []).length) +
@@ -5903,16 +5903,6 @@ async function setupEffects(A, renderer, scene, camera) {
     el.textContent = msg; el.style.display = 'block';
     return el;
   }
-  // §STILL_GUARD (red1, 2026-09-24): Alt+S starts only on a fully solid model. The flags checked are the app's own:
-  // bbox placeholders not cleared, streaming not finished, X-ray on. Ghost glass keeps its state private (n/a); DLOD
-  // has no bbox stand-ins (it only zero-scales and is paused by the still itself).
-  function _stillGuard() {
-    var reasons = [];
-    if (A._bboxPlaceholders && A._bboxPlaceholders.length) reasons.push('bbox-placeholders=' + A._bboxPlaceholders.length);
-    if (A.streaming) reasons.push('streaming (streamed=' + (A.guidMap ? Object.keys(A.guidMap).length : '?') + ' of ' + (A.totalElements || '?') + ')');
-    if (A.xrayOn) reasons.push('xray');
-    return reasons;
-  }
   // §STILL_LOCK (red1): from a UI start until the still is released, only Esc does anything. A capture-phase window
   // listener swallows pointer/touch/wheel/contextmenu/dblclick outside the bounce overlay (its Save PNG / Close stay
   // live) and every key but Escape. Esc closes the overlay and tears the still down.
@@ -5938,7 +5928,7 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   function _stillLock(on) {
     if (on === _lockOn) return;
-    _lockOn = on;
+    _lockOn = on; A._stillLockOn = on;   // main.js's interaction-cancel paths read this
     if (on) {
       _lockBlocked = 0;
       _LOCK_EVENTS.forEach(function(t) { window.addEventListener(t, _lockSwallow, { capture: true, passive: false }); });
@@ -5951,19 +5941,10 @@ async function setupEffects(A, renderer, scene, camera) {
     }
   }
   A._stillLockRelease = function() { _stillLock(false); };
-  A._stillGuardReasons = function() { return (A._stillRefineActive || _autoStageOn) ? [] : _stillGuard(); };   // gi_still.js asks too
   A.toggleStillRefineUI = function() {
     if (A._stillRefineActive || _autoStageOn) { A.toggleStillRefine(); return; }
     if (_stillUIPending) return;
-    var _gr = _stillGuard();
-    if (_gr.length) {
-      A._stillGuardRefusedAt = performance.now();
-      var _gm = _gr.some(function(r) { return /xray/.test(r); }) && _gr.length === 1 ? 'X-Ray is on — turn it off, then Alt+S' : 'Still loading — Alt+S when the model is solid';
-      var _ge = _stillToast(_gm); setTimeout(function() { if (_ge.textContent === _gm) _ge.style.display = 'none'; }, 3500);
-      console.log('§STILL_GUARD refused reason=' + _gr.join(',') + ' ghostGlass=n/a');
-      return;
-    }
-    console.log('§STILL_GUARD ok bbox=0 streaming=0 xray=0 ghostGlass=n/a');
+    // §STILL_GUARD REMOVED (red1, 2026-09-24: "let it load normally, it's a user learning curve"). The lock stays.
     _stillLock(true);
     _stillUIPending = true;
     var t0 = performance.now();
