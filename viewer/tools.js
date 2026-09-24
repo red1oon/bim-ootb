@@ -1320,6 +1320,11 @@ function setupTools(A) {
   // §STILL_DIALS (2026-09-24, red1: "indoor lighting is not throwing enough, so it is a knob") — Alt+S-only lamp
   // strength and fall-off, set by effects.js per press (null outside an Alt+S still). typeof, never ||: 0 means 0.
   A._nightLightDecayDefault = NIGHT_LIGHT_DECAY;
+  // §LAMP_CAP_FADE (watchdog: nearest-N changes as the camera moves, so a lamp at the boundary would pop on/off): while
+  // the cap cuts the set, a kept lamp fades out over the last LAMP_CAP_FADE_M before the farthest kept distance, so it
+  // is ~0 when it leaves the set and ramps in when it enters. 1 when not capping.
+  var LAMP_CAP_FADE_M = 6;
+  function _lampCapFade(d) { return (typeof A._lampCapFarM === 'number') ? Math.max(0, Math.min(1, (A._lampCapFarM - d) / LAMP_CAP_FADE_M)) : 1; }
   function _stillLampMul() { return (typeof A._stillLampMul === 'number') ? A._stillLampMul : 1; }
   function _stillLampDecay() { return (typeof A._stillLampDecayNow === 'number') ? A._stillLampDecayNow : NIGHT_LIGHT_DECAY; }
   function _stillLampRange() { return (typeof A._stillLampRangeNow === 'number') ? A._stillLampRangeNow : NIGHT_LIGHT_RANGE; }   // §LIGHT_STACK arm: &lamprange=
@@ -1972,11 +1977,13 @@ function setupTools(A) {
       // §LAMP_CAP_NEAREST (2026-09-25, watchdog: the cap kept the first N in LIST order, so lamps in view near the camera
       // could drop while far ones stayed). When more are in view than the cap, keep the NEAREST to the camera.
       var _capN = (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200;
+      A._lampCapFarM = null;   // §LAMP_CAP_FADE — set only while the cap is cutting the in-view set
       if (inView.length > _capN) {
         var _cp = A.camera.position;
         inView.sort(function(a, b) { return ((a.x - _cp.x) * (a.x - _cp.x) + (a.y - _cp.y) * (a.y - _cp.y) + (a.z - _cp.z) * (a.z - _cp.z)) -
                                            ((b.x - _cp.x) * (b.x - _cp.x) + (b.y - _cp.y) * (b.y - _cp.y) + (b.z - _cp.z) * (b.z - _cp.z)); });
         var _dK = Math.sqrt(Math.pow(inView[_capN - 1].x - _cp.x, 2) + Math.pow(inView[_capN - 1].y - _cp.y, 2) + Math.pow(inView[_capN - 1].z - _cp.z, 2));
+        A._lampCapFarM = _dK;
         var _capLine = '§LAMP_CAP_NEAREST inView=' + inView.length + ' kept=' + _capN + ' (nearest) farthestKeptM=' + _dK.toFixed(1);
         if (_capLine.replace(/farthestKeptM=[0-9.]+/, '') !== (A._lampCapLast || '').replace(/farthestKeptM=[0-9.]+/, '')) { A._lampCapLast = _capLine; console.log(_capLine); }
       }
@@ -2173,10 +2180,21 @@ function setupTools(A) {
           _pool[_pi].position.copy(_posObj);
           _pool[_pi].color.set(_posObj.__color || 0xffe4b5);
           _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() *
-            (_posObj.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
+            (_posObj.__intensityMult || 1) * _lampCapFade(_dist);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC · §LAMP_CAP_FADE
         } else {
           _pool[_pi].intensity = 0;
         }
+      }
+      // §LAMP_CAP_CHURN — per bake frame: fixtures that entered/left the lit set and the largest per-fixture intensity step
+      // (target: no lamp goes 0 -> full or full -> 0 in one frame). Logged every frame the cap is active or anything moved.
+      {
+        var _now = new Map(); for (var _ci = 0; _ci < _pool.length; _ci++) if (_slotToPos[_ci]) _now.set(_slotToPos[_ci], _pool[_ci].intensity);
+        var _prev = A._lampChurnPrev || new Map(), _ent = 0, _left = 0, _step = 0, _full = 0;
+        _now.forEach(function(v, k) { if (!_prev.has(k)) _ent++; var pv = _prev.has(k) ? _prev.get(k) : 0; _step = Math.max(_step, Math.abs(v - pv)); _full = Math.max(_full, v); });
+        _prev.forEach(function(v, k) { if (!_now.has(k)) { _left++; _step = Math.max(_step, v); } });
+        A._lampChurnPrev = _now;
+        if (typeof A._lampCapFarM === 'number' || _ent || _left) console.log('§LAMP_CAP_CHURN entered=' + _ent + ' left=' + _left + ' maxStep=' + _step.toFixed(2) +
+          ' maxLamp=' + _full.toFixed(2) + ' stepPctOfMax=' + (_full ? (100 * _step / _full).toFixed(0) : 0) + '% farthestKeptM=' + (typeof A._lampCapFarM === 'number' ? A._lampCapFarM.toFixed(1) : '-') + ' lit=' + _now.size);
       }
       A._nightLights = _pool.slice();
       if (A.markDirty) A.markDirty();
@@ -2208,7 +2226,7 @@ function setupTools(A) {
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
       var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() *
-        (f.pos.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
+        (f.pos.__intensityMult || 1) * _lampCapFade(dist);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC · §LAMP_CAP_FADE
       stillWanted.add(f.pos);
       var light = A._nightLightByPos.get(f.pos);
       if (light) {
