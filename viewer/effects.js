@@ -4358,13 +4358,17 @@ async function setupEffects(A, renderer, scene, camera) {
                                                  // bounds worst-case tap cost (8 taps * this factor)
                                                  // and keeps the mask from smearing across unrelated
                                                  // geometry at near-90 deg grazing incidence
-      var shadowRestoreMat = null, shadowRestoreQuad = null, aoScratchRT = null;
+      var shadowRestoreMat = null, shadowRestoreQuad = null, aoScratchRT = null, _srLoggedFor = null;
       if (STILL_SHADOW_RESTORE_ENABLED) {
         var _srFrag = [
           'uniform sampler2D tAO;',
           'uniform sampler2D tSharp;',
           'uniform sampler2D tDepth;',
-          'uniform sampler2D tShadowMap;',
+          // §SUN_SHADOW_RESTORE_DEPTH (2026-09-24): the DEPTH texture through a shadow sampler. It used to read
+          // map.texture — the RGBA8 colour attachment, not depth — so the step below never fired (measured:
+          // 0 of 1,439,424 px shadowed at a 10 deg sun) and the pass was inert. PCFShadowMap gives the depth
+          // texture a compareFunction, so it must be read the way three's own PCF shader reads it.
+          'uniform sampler2DShadow tShadowMap;',
           'uniform mat4 shadowMatrix;',
           'uniform mat4 projectionMatrixInv;',
           'uniform mat4 viewMatrixInv;',
@@ -4386,7 +4390,7 @@ async function setupEffects(A, renderer, scene, camera) {
           '  vec4 sc = shadowMatrix * worldPos; sc.xyz /= sc.w;',
           '  if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;',
           '  sc.z += shadowBias;',
-          '  return step(sc.z, texture2D(tShadowMap, sc.xy).r);',
+          '  return texture(tShadowMap, vec3(sc.xy, sc.z));',   // 1 = lit, 0 = shadowed (hardware compare)
           '}',
           'vec3 worldPosAt(vec2 uv) {',
           '  float d = texture2D(tDepth, uv).r;',
@@ -4491,13 +4495,22 @@ async function setupEffects(A, renderer, scene, camera) {
           // without needing two separate page loads / two separate builds.
           var canRestore = STILL_SHADOW_RESTORE_ENABLED && A._sunShadowRestoreEnabled !== false &&
             shadowRestoreMat && A.sun && A.sun.castShadow && A.sun.shadow && A.sun.shadow.map;
+          // §SUN_SHADOW_RESTORE_DEPTH: no depth texture = nothing honest to read; stand down, never fall back
+          // to the colour attachment. One line per shadow map, so a still says which source it used.
+          var _srDepth = canRestore ? A.sun.shadow.map.depthTexture : null;
+          if (canRestore && _srLoggedFor !== A.sun.shadow.map) {
+            _srLoggedFor = A.sun.shadow.map;
+            console.log('§SUN_SHADOW_RESTORE_SRC ' + (_srDepth ? 'depthTexture compare=' + _srDepth.compareFunction +
+              ' size=' + (_srDepth.image ? _srDepth.image.width + 'x' + _srDepth.image.height : '?') : 'none — pass stands down'));
+          }
+          if (!_srDepth) canRestore = false;
           if (canRestore) {
             n8.render(renderer2, aoScratchRT, readBuffer);
             var u = shadowRestoreMat.uniforms;
             u.tAO.value = aoScratchRT.texture;
             u.tSharp.value = readBuffer.texture;
             u.tDepth.value = n8.beautyRenderTarget.depthTexture;
-            u.tShadowMap.value = A.sun.shadow.map.texture;
+            u.tShadowMap.value = _srDepth;   // §SUN_SHADOW_RESTORE_DEPTH
             u.shadowMatrix.value.copy(A.sun.shadow.matrix);
             u.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
             u.viewMatrixInv.value.copy(camera.matrixWorld);
