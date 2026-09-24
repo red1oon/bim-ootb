@@ -421,7 +421,7 @@
   // §GI_STILL_GAIN_DIAL (2026-09-24, red1: bounce "MORE", tuned per press). Read at EVERY Alt+S:
   // APP._stillBounceGain, else window.__GI_STILL_GAIN, else &bounce=<0..3>, else 1.0 (was a fixed 0.6).
   // AO keeps its 0.55 default; window.__GI_STILL_AO still overrides, now per press too.
-  const GI_GAIN_DEFAULT = 1.0, GI_AO_DEFAULT = 0.55;
+  const GI_GAIN_DEFAULT = 1.0, GI_AO_DEFAULT = 0.55, GI_RECV_DEFAULT = 1, GI_RADIUS_DEFAULT = 12, GI_THICK_DEFAULT = 1;
   function readGain() {
     const A = window.APP || {};
     let v = (typeof A._stillBounceGain === 'number') ? A._stillBounceGain : (typeof window.__GI_STILL_GAIN === 'number' ? window.__GI_STILL_GAIN : null);
@@ -430,11 +430,32 @@
   }
   // §GI_STILL_AO_DIAL (red1 via watcher: AO darkening outweighed the bounce outdoors) — APP._stillAo, else
   // window.__GI_STILL_AO, else &ao=<0..1>, else 0.55. 0 = no occlusion darkening, 1 = full.
+  // §GI_BOUNCE_STRENGTH dials (red1: "outdoor bounce ... cannot have near-zero effect"). One reader for every SSGI
+  // knob: APP[key] (number) > &name= > default, clamped. Read at EVERY press; all are uniforms, no rebuild.
+  function readNum(key, name, def, lo, hi) {
+    const A = window.APP || {};
+    let v = (typeof A[key] === 'number') ? A[key] : null;
+    if (v == null) { const m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(location.search); v = m ? parseFloat(m[1]) : def; }
+    return Math.max(lo, Math.min(hi, isFinite(v) ? v : def));
+  }
   function readAo() {
     const A = window.APP || {};
     let v = (typeof A._stillAo === 'number') ? A._stillAo : (typeof window.__GI_STILL_AO === 'number' ? window.__GI_STILL_AO : null);
     if (v == null) { const m = /[?&]ao=([0-9.]+)/.exec(location.search); v = m ? parseFloat(m[1]) : GI_AO_DEFAULT; }
     return Math.max(0, Math.min(1, isFinite(v) ? v : GI_AO_DEFAULT));
+  }
+  // §GI_RECEIVER — what the bounce is multiplied by at the RECEIVING pixel. Physically that is the surface's
+  // albedo; the pipeline has no albedo buffer, only the app's finished (LIT) colour, so a shaded soffit — dark in
+  // the still — received ~no bounce: the bounce was scaled by the very shading it should fill. recv 0 = the lit
+  // colour (old). recv 1 = an albedo ESTIMATE, not measured data: the lit colour's hue at a fixed brightness
+  // GI_ALBEDO_EST (0.5 = mid grey), so shade no longer cancels the bounce. Blend in between. Uniform, per press.
+  // Default recv=1 (§GI_BOUNCE_STRENGTH sweep, Hospital real GPU): bounce added courtyard 0.8% -> 4.9%, L1 interior
+  // 13.0% -> 32.0% of the app frame (linear). Radius x2/x4 did not help (screen-space radius; x4 lowered it).
+  const GI_ALBEDO_EST = 0.5;
+  function receiver(G, C) {
+    const T = G.TSL, lum = T.max(T.dot(C.rgb, T.vec3(0.2126, 0.7152, 0.0722)), T.float(1e-3));
+    const est = T.min(C.rgb.div(lum).mul(GI_ALBEDO_EST), T.vec3(1));
+    return T.mix(C.rgb, est, G.recvU);
   }
   function outputFor(G, mode, enc) {
     const T = G.TSL, C = G.colorNode.sample(G.TSL.uv()), gi = G.gi, mask = G.maskNode;
@@ -448,7 +469,7 @@
     // §GI_STILL_TERM — the two parts of the composite alone, so a § line can say what the bounce ADDS and what the
     // occlusion TAKES, in the same units as compositeMean: 'giterm' = colour x bounce x gain, 'aoloss' = colour x
     // aoK x (1 - AO).
-    else if (mode === 'giterm') rgb = C.rgb.mul(gi.getGINode().rgb).mul(G.gainU);
+    else if (mode === 'giterm') rgb = receiver(G, C).mul(gi.getGINode().rgb).mul(G.gainU);
     else if (mode === 'aoloss') rgb = C.rgb.mul(G.aoU).mul(T.float(1).sub(gi.getAONode()));
     else {
       // §GI_AO_STRENGTH (red1, 2026-09-23: "there seems to be some eerie bouncing" — an aerial still
@@ -463,7 +484,7 @@
       // renderer kept across Alt+S presses picks up a new value without a shader rebuild (§GI_DIALS_FIRST_BUILD fix).
       const gain = G.gainU, aoK = G.aoU;
       const ao = T.float(1).sub(aoK).add(aoK.mul(gi.getAONode()));
-      rgb = C.rgb.mul(ao).add(C.rgb.mul(gi.getGINode().rgb).mul(gain));
+      rgb = C.rgb.mul(ao).add(receiver(G, C).mul(gi.getGINode().rgb).mul(gain));
     }
     // enc 'linear' (§GI_STILL_TERM): no transfer at all, so coloronly/giterm/aoloss means ADD up in linear light.
     if (enc === 'linear') { G.pipeline.outputColorTransform = false; return T.vec4(rgb, mask); }
@@ -553,6 +574,7 @@
     const rt = new THREE.RenderTarget(w, h, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true });
     const G = { THREE, TSL, renderer, pipeline, rt, w, h, cam, geoMat, colorCanvas, colorCtx, colorTex, colorNode, geomTexNode, maskNode, gi, pipeStats, mode: null, flipTex: false, flipOut: false };
     G.gainU = TSL.uniform(GI_GAIN_DEFAULT); G.aoU = TSL.uniform(GI_AO_DEFAULT);   // §GI_STILL_GAIN_DIAL
+    G.recvU = TSL.uniform(0);   // §GI_RECEIVER, set per press
     G.setTexFlip = (f) => { G.flipTex = !!f; flipSign.value = f ? -1 : 1; flipOff.value = f ? 1 : 0; };
     G.setMode = (m, enc) => { const k = m + '|' + enc; if (G.mode !== k) { G.mode = k; pipeline.outputNode = outputFor(G, m, enc); pipeline.needsUpdate = true; } };
     G.setMode('composite', encodeMode());
@@ -623,8 +645,17 @@
       R.encode = enc;
       G.setMode(mode, enc);
       G.gainU.value = readGain(); G.aoU.value = readAo();
-      R.gain = G.gainU.value; R.ao = G.aoU.value;
-      console.log('§GI_STILL gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' applied (uniforms, read this press)');
+      G.recvU.value = readNum('_stillGiRecv', 'girecv', GI_RECV_DEFAULT, 0, 1);
+      G.gi.radius.value = readNum('_stillGiRadius', 'girad', GI_RADIUS_DEFAULT, 0.5, 100);
+      G.gi.thickness.value = readNum('_stillGiThick', 'githick', GI_THICK_DEFAULT, 0.01, 50);
+      G.gi.stepCount.value = Math.round(readNum('_stillGiSteps', 'gisteps', window.__GI_STEPS || 16, 1, 32));
+      G.gi.giIntensity.value = readNum('_stillGiInt', 'giint', 10, 0, 100);
+      R.gain = G.gainU.value; R.ao = G.aoU.value; R.recv = G.recvU.value; R.girad = G.gi.radius.value; R.githick = G.gi.thickness.value;
+      R.gisteps = G.gi.stepCount.value; R.giint = G.gi.giIntensity.value;
+      console.log('§GI_STILL gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' recv=' + G.recvU.value + ' applied (uniforms, read this press)' +
+        ' ssgi: radius=' + G.gi.radius.value + ' (screen-space: ~' + Math.round(G.gi.radius.value * (w / 2) / 16) + 'px search at ' + w + 'px wide)' +
+        ' steps=' + G.gi.stepCount.value + ' slices=' + G.gi.sliceCount.value + ' thickness=' + G.gi.thickness.value + 'm' +
+        ' giIntensity=' + G.gi.giIntensity.value + ' expFactor=' + G.gi.expFactor.value + ' screenSpace=' + G.gi.useScreenSpaceSampling.value);
       const N = (opts.passes != null) ? opts.passes : (window.__GI_ACCUM || ACCUM_DEFAULT);
       // The app's finished frame, taken ONCE: it is both the colour the bounce is computed from and
       // the picture the bounce is pasted onto, so they cannot drift apart.
