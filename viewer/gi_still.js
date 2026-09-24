@@ -445,6 +445,11 @@
     if (mode === 'coloronly') rgb = C.rgb;                                      // alignment + transfer witness
     else if (mode === 'normals') rgb = G.geomTexNode.rgb;                       // packed view normal
     else if (mode === 'ao') rgb = T.vec3(gi.getAONode());
+    // §GI_STILL_TERM — the two parts of the composite alone, so a § line can say what the bounce ADDS and what the
+    // occlusion TAKES, in the same units as compositeMean: 'giterm' = colour x bounce x gain, 'aoloss' = colour x
+    // aoK x (1 - AO).
+    else if (mode === 'giterm') rgb = C.rgb.mul(gi.getGINode().rgb).mul(G.gainU);
+    else if (mode === 'aoloss') rgb = C.rgb.mul(G.aoU).mul(T.float(1).sub(gi.getAONode()));
     else {
       // §GI_AO_STRENGTH (red1, 2026-09-23: "there seems to be some eerie bouncing" — an aerial still
       // where the whole roof and facade went dark and flat). Cause is scale: the occlusion term is
@@ -460,6 +465,8 @@
       const ao = T.float(1).sub(aoK).add(aoK.mul(gi.getAONode()));
       rgb = C.rgb.mul(ao).add(C.rgb.mul(gi.getGINode().rgb).mul(gain));
     }
+    // enc 'linear' (§GI_STILL_TERM): no transfer at all, so coloronly/giterm/aoloss means ADD up in linear light.
+    if (enc === 'linear') { G.pipeline.outputColorTransform = false; return T.vec4(rgb, mask); }
     G.pipeline.outputColorTransform = (enc === 'transform');
     return (enc === 'transform') ? T.vec4(rgb, mask) : T.vec4(T.sRGBTransferOETF(rgb), mask);
   }

@@ -3768,6 +3768,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var _camRoomIdx = null, _camRoomIdxBld = null;
   function _stillCamInside() {
     var c = A.camera && A.camera.position; if (!c) return { inside: null, src: 'no camera' };
+    var _roomMiss = '';
     try {
       if ((_camRoomIdxBld !== A.activeBuilding || !_camRoomIdx) && window.RoomWalker && window.RoomWalker.buildCameraRoomIndex && A.db) {
         try { _camRoomIdx = window.RoomWalker.buildCameraRoomIndex(A.db); } catch (e) { _camRoomIdx = null; }
@@ -3777,7 +3778,11 @@ async function setupEffects(A, renderer, scene, camera) {
       if (_camRoomIdx && _camRoomIdx.rects && off) {
         var room = _camRoomIdx.roomAt(c.x + off.x, -c.z + off.y, c.y + off.z);
         A._stillCamSrc = A._stillCamSrc || { rooms: 0, ray: 0 }; A._stillCamSrc.rooms++;
-        return { inside: room != null, src: 'rooms roomAt=' + (room || 'none') + ' rects=' + _camRoomIdx.rects + ' uses=' + JSON.stringify(A._stillCamSrc) };
+        // §STILL_CAMINSIDE_SPARSE (watcher, 2026-09-24): a room HIT proves inside; a MISS proves nothing — Hospital's
+        // index holds 2 rects for the whole building, so a camera 6 m inside L1 read roomAt=none and the lamps went
+        // off indoors. A miss now falls through to the up-ray: a point under the building's own slab is inside.
+        if (room != null) return { inside: true, src: 'rooms roomAt=' + room + ' rects=' + _camRoomIdx.rects + ' uses=' + JSON.stringify(A._stillCamSrc) };
+        _roomMiss = 'rooms roomAt=none rects=' + _camRoomIdx.rects + ' -> ';
       }
     } catch (e) {}
     var rc = new THREE.Raycaster(c.clone(), new THREE.Vector3(0, 1, 0), 0.05, 80), hit = null;
@@ -3786,7 +3791,7 @@ async function setupEffects(A, renderer, scene, camera) {
       var hits = rc.intersectObjects(targets, false); hit = hits.length ? hits[0] : null;
     } catch (e) { return { inside: null, src: 'up-ray failed: ' + e.message }; }
     A._stillCamSrc = A._stillCamSrc || { rooms: 0, ray: 0 }; A._stillCamSrc.ray++;
-    return { inside: !!hit, src: 'up-ray fallback (no rooms for this building; an overhang can fool it) hit=' + (hit ? hit.distance.toFixed(1) + 'm' : 'none') + ' uses=' + JSON.stringify(A._stillCamSrc) };
+    return { inside: !!hit, src: _roomMiss + 'up-ray fallback (an overhang can fool it) hit=' + (hit ? hit.distance.toFixed(1) + 'm' : 'none') + ' uses=' + JSON.stringify(A._stillCamSrc) };
   }
   function _applyPhotoStaging() {
     // §GROUND_WETNESS_REFIRE_FIX (2026-07-17, live user repro: worked once, then "cannot
