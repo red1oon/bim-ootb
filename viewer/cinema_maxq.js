@@ -4551,6 +4551,7 @@
               ' consecutive frame(s) — identical picture, encoder handed the same blob');
             _frameReuseRun = 0;
           }
+          if (typeof window.__maxqPreCaptureTap === 'function') { try { window.__maxqPreCaptureTap(i); } catch (ePC) {} }   // dev-only witness seam (--tap), like __maxqPoseTap
           blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo, _escCardInfo);
           _lastFrameKey = _reuseKey; _lastFrameBlob = blob;
         }

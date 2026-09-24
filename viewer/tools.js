@@ -2103,6 +2103,7 @@ function setupTools(A) {
     if (A._maxqActive) {
       if (!A._nightBakePool) {
         var _poolN = Math.min(200, Math.max(1, allPos.length));
+        if (typeof A._stillLampCap === 'number') _poolN = Math.max(1, Math.min(_poolN, A._stillLampCap));   // §LIGHT_UNIFORM_BUDGET (parity films: lamps + portals fit the shader's uniforms)
         A._nightBakePool = [];
         for (var _bi = 0; _bi < _poolN; _bi++) {
           var _bl = new THREE.PointLight(0xffe4b5, 0, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
@@ -2113,6 +2114,17 @@ function setupTools(A) {
           ' — point-light COUNT frozen for the bake; unused slots ride at intensity 0');
       }
       var _pool = A._nightBakePool;
+      // §NIGHT_BAKE_POOL_REATTACH (2026-09-24, found by §FILM_PARITY's light dump: HHS film frame, pool 200 / lit 113 /
+      // IN SCENE 0 — parity on AND off). A bake stages, tears night mode down (toggleNightMode off removes every
+      // A._nightLights entry, which IS this pool, from the scene) and stages again; the pool survives in A._nightBakePool,
+      // so the create branch above is skipped and the lamps were never re-added: films baked with NO interior lamps.
+      // Re-attach on reuse (adding the same count back = the count the shaders were compiled for; no churn).
+      var _re = 0;
+      for (var _ra = 0; _ra < _pool.length; _ra++) if (!_pool[_ra].parent) { A.scene.add(_pool[_ra]); _re++; }
+      if (_re) console.log('§NIGHT_BAKE_POOL_REATTACH re-added=' + _re + ' of ' + _pool.length + ' (night mode had been toggled off mid-bake-prep)');
+      // §FILM_PARITY — the Alt+S lamp reach/fall-off (§STILL_DIALS 25 m / 1.5) on the film's pool too; nav values otherwise.
+      var _rng = A._filmParity ? _stillLampRange() : NIGHT_LIGHT_RANGE, _dec = A._filmParity ? _stillLampDecay() : NIGHT_LIGHT_DECAY;
+      for (var _rd = 0; _rd < _pool.length; _rd++) { _pool[_rd].distance = _rng; _pool[_rd].decay = _dec; }
       // §57.3-FIX (2026-09-11) — STABLE SLOT ASSIGNMENT, the same technique §NIGHT_LIGHT_CHURN_FIX
       // already ships below for the interactive/nav path (A._nightLightByPos), applied here for
       // the bake-only frozen pool too. MEASURED root cause of the HHS cruise-beat flicker (§55.7/
