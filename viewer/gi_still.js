@@ -499,6 +499,12 @@
     const { ssgi } = await import('./lib/gi/SSGINode.appbound.js');
     const renderer = new THREE.WebGPURenderer({ antialias: false, forceWebGL: false, trackTimestamp: false });
     renderer.setPixelRatio(1); renderer.setSize(w, h);
+    // §GI_PRESS_COST (measured 2026-09-24): with the app's lights visible to this renderer, every Alt+S after the first
+    // rebuilt 3,034 pipelines + 2,799 shader modules (35 s) — the lights are new objects each press (portals, pads, lamps)
+    // and the pipelines are keyed on the scene's light set. Nothing this renderer draws is lit (the geometry pass is an
+    // unlit NodeMaterial; SSGI reads the app's finished frame), so it sees NO lights: one fixed, empty light set.
+    // A property of this renderer only — the app's WebGL renderer and its lights are untouched.
+    if (renderer.lighting) renderer.lighting.enabled = false;
     // NO tone mapping and NO exposure lift here any more. The colour we feed in is the app's own
     // FINISHED still — already tone-mapped, already at the app's exposure. Sampling decodes sRGB to
     // linear (three.js gives an sRGB texture the hardware 'rgba8unorm-srgb' format) and the output
@@ -662,9 +668,12 @@
       R.underMean = await stage('reading the app’s finished still', async () => grabAppFrame(G));
       console.log('§GI_STILL underlay mean=' + R.underMean + ' (the app frame; it is also the colour fed to SSGI — ~0 means the app canvas handed back an empty buffer)');
       let acc = null;
+      const _ps0 = G.pipeStats ? Object.assign({}, G.pipeStats) : null, _passMs = [];
       await stage('bounce passes', async () => {
         for (let i = 0; i < N; i++) {
+          const _tp = performance.now();
           await renderGeom(G);
+          _passMs.push(Math.round(performance.now() - _tp));
           const fb = await readRT(G);
           if (!acc) acc = Float32Array.from(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k];
           toast('Bounce still — pass ' + (i + 1) + ' of ' + N + '…');
@@ -672,6 +681,9 @@
         }
         for (let k = 0; k < acc.length; k++) acc[k] /= N;
       });
+      // §GI_PRESS_COST — what the bounce passes created THIS press (a kept renderer should create ~0 new pipelines).
+      if (_ps0) console.log('§GI_PRESS_COST newPipelines=' + (G.pipeStats.sync - _ps0.sync) + ' (' + (G.pipeStats.syncMs - _ps0.syncMs).toFixed(0) + 'ms)' +
+        ' newShaderModules=' + (G.pipeStats.modules - _ps0.modules) + ' geomPassMs=' + JSON.stringify(_passMs) + ' sceneLights=' + (function () { let n = 0; window.APP.scene.traverse(o => { if (o.isLight) n++; }); return n; })());
 
       // ── COMPOSITE ────────────────────────────────────────────────────────────────────────────
       // The app's own frame first (it is already in colorCanvas), then the bounce layer over it

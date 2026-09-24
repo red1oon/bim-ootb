@@ -15,7 +15,7 @@ function say(s) { const t = '+' + ((Date.now() - T0) / 1000).toFixed(1) + 's ' +
     env: Object.assign({}, process.env, { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' }),
     args: ['--no-sandbox', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--enable-precise-memory-info'] });
   const p = await b.newPage(); await p.setViewport({ width: 1280, height: 720 });
-  p.on('console', m => { const t = m.text(); if (/§STILL_REFINE (done|start)|§SKY_PORTAL (placed|removed|off)|§GI_STILL stage|§GI_STILL result|§NIGHT_MEM_WITNESS|PAGEERROR/.test(t)) say('[page] ' + t.slice(0, 220)); });
+  p.on('console', m => { const t = m.text(); if (/§STILL_REFINE (done|start)|§SKY_PORTAL (placed|removed|off)|§GI_STILL stage|§GI_STILL result|§NIGHT_MEM_WITNESS|§GI_PRESS_COST|PAGEERROR/.test(t)) say('[page] ' + t.slice(0, 220)); });
   await p.goto('http://127.0.0.1:8600/viewer/viewer.html?db=/buildings/Hospital_extracted.db' + Q, { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => window.APP && window.APP.guidMap && window.APP.ifc2three, { timeout: 180000 });
   let n = 0; for (let i = 0; i < 150; i++) { n = await p.evaluate(() => Object.keys(window.APP.guidMap).length); if (n >= 63182) break; await sleep(2000); }
