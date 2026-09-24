@@ -17,7 +17,8 @@
  *   A5 REAL-COLORS       — after the walk, each walked disc's InstancedMesh base colour == DW_COLOR[disc]
  *                          (not stuck on the 0xffb347 flash colour, proven by reading material.color, not
  *                          instanceColor, since the post-commit re-fold rebuilds meshes fresh either way).
- *   A6 COMMITTED         — op-log grew by the total placed count, signed + verifyChain OK.
+ *   A6 COMMITTED         — op-log grew by the total placed count PLUS the routed network's own signed rows
+ *                          (bend fittings / sweeps, read from the op-log — §WALK-BRIDGE-ALL), verifyChain OK.
  *   A7 VISIBLE           — the framebuffer changed after the walk (readPixels checksum differs).
  *   A8 NO-ERROR          — zero pageerror across the whole sequence.
  *   A9 TOOLTIP           — (MODELLER_MASTER.md row 17) the synthetic __ALL__ row's ▶ affordance reads
@@ -132,7 +133,12 @@ async function openDuplex(pg) {
       const wd = gl.drawingBufferWidth, ht = gl.drawingBufferHeight, px = new Uint8Array(wd * ht * 4); gl.readPixels(0, 0, wd, ht, gl.RGBA, gl.UNSIGNED_BYTE, px);
       let s = 0; for (let i = 0; i < px.length; i += 257) s = (s + px[i]) >>> 0;
       const inserts = window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT').length;
-      return { result, glassStill, colorCheck, pix: s, oplogLen: window.Bonsai.oplog.length, inserts };
+      // §WALK-BRIDGE-ALL (MODELLER_MASTER §STRATEGY L1): once a walk ROUTES, it also signs the bend fittings at the
+      // routed runs' turns (dwfit, GEOM_INSERT with _dw.fit) and any GEOM_SWEEP runs with a real cross-section.
+      // Those are real committed rows of the walk, counted from the op-log itself, not assumed.
+      const routeRows = window.Bonsai.oplog._geomOps().filter(o => o.parameters && o.parameters._dw &&
+        (o.parameters._dw.fit || o.op_type === 'GEOM_SWEEP')).length;
+      return { result, glassStill, colorCheck, pix: s, oplogLen: window.Bonsai.oplog.length, inserts, routeRows };
     });
     const chain = await pg.evaluate(async () => { try { const db = await window.Bonsai.oplog._ensureDb(); const v = await window.KernelOps.verifyChain(db); return !!v.ok; } catch (e) { return 'ERR:' + e.message; } });
 
@@ -153,7 +159,7 @@ async function openDuplex(pg) {
     chk('A3 XRAY-APPLIED (mid-walk x-ray tinting present)', mid.tinted > 0 && mid.xrayed > 0, 'tinted=' + mid.tinted + ' xrayed=' + mid.xrayed + ' glass=' + mid.glass + ' glow=' + mid.glow + ' of total=' + mid.total);
     chk('A4 XRAY-CLEARED (no glass tint left after)', after.glassStill === 0, 'glassStill=' + after.glassStill);
     chk('A5 REAL-COLORS (settled to DW_COLOR, not stuck flash)', allColorsMatch, JSON.stringify(after.colorCheck));
-    chk('A6 COMMITTED (op-log grew by placedTotal, chain OK)', after.oplogLen === before.oplogLen + placedTotal && chain === true, 'oplog ' + before.oplogLen + '→' + after.oplogLen + ' (+' + placedTotal + ') chain=' + chain);
+    chk('A6 COMMITTED (op-log grew by placedTotal + routed-network rows, chain OK)', after.oplogLen === before.oplogLen + placedTotal + after.routeRows && chain === true, 'oplog ' + before.oplogLen + '→' + after.oplogLen + ' (+' + placedTotal + ' placed +' + after.routeRows + ' fittings/sweeps) chain=' + chain);
     chk('A7 VISIBLE (framebuffer changed)', before.pix !== after.pix, 'pix ' + before.pix + '→' + after.pix);
     chk('A8 NO-ERROR', errs.length === 0, errs.slice(0, 2).join(' | '));
     chk('A10 NO-PROXY-TOAST (row 18 negative control: below threshold ⇒ silent)', proxyToasts.length === 0, 'proxyToasts=' + proxyToasts.length);

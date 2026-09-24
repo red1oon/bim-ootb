@@ -530,15 +530,18 @@ function _rwPairSegments(discipline, steps, allAnchors, arcEnvelope, out) {
           dz = step.gradient * Math.sqrt(dx * dx + dy * dy);
         }
         var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        var midX = (from.x + nearest.x) / 2, midY = (from.y + nearest.y) / 2, midZ = (from.z + nearest.z) / 2;
         // Clash-margin box: the REAL cross-section when one is verified for this discipline (WalkerDoctrine.md
         // §8, rwCrossSectionFor), else RW_PIPE_CROSS — a disclosed, topology-level safety margin (candidate
         // pairing, not a rendered dimension). No real CW/SP product exists yet (see RW_REAL_CROSSSECTION).
+        // NEAREST-ONLY is deliberate. Measured 2026-09-24: "try the next-nearest on a clash" exploded PLB runs
+        // (Duplex 18 fixtures → 110 runs, Terminal 969 → 7,712) by reaching targets up to RW_MAX_PAIR_DIST away.
+        // Do not "improve" this without a plausibility bound on run length.
         var _xsPS = rwCrossSectionFor(discipline);
         var _crossPS = (_xsPS.real ? Math.max(_xsPS.w, _xsPS.h) : RW_PIPE_CROSS / 1000);
-        if (_rwClashesWithArc(midX, midY, midZ, _crossPS, _crossPS, len, arcEnvelope)) {
+        if (_rwRunClashes(from, dx, dy, dz, _crossPS, arcEnvelope)) {   // §RW-RUNBOX
           return; // clash — skip, same gate as the insert path
         }
+        if (!nearest) return;
         out.push({
           disc: discipline, storey: storey, axis: step.directionAxis,
           from: [from.x, from.y, from.z], to: [nearest.x, nearest.y, from.z + dz],
@@ -684,7 +687,7 @@ function _rwApplyPattern(buildingDb, discipline, steps, allAnchors, arcEnvelope,
         var midZ = (from.z + nearest.z) / 2;
 
         // ARC envelope clash check (real cross-section when verified, else the disclosed safety-margin default)
-        if (_rwClashesWithArc(midX, midY, midZ, _crossAP, _crossAP, pipeLen, arcEnvelope)) {
+        if (_rwRunClashes(from, dx, dy, dz, _crossAP, arcEnvelope)) {   // §RW-RUNBOX
           clashSkipped++;
           return;
         }
@@ -817,6 +820,26 @@ function _rwAabbOverlap(c1, s1, c2, s2, tol) {
 // Optional `tol` overrides RW_ARC_CLASH_TOL. Positive tol = a REQUIRED standoff (the candidate must stay
 // `tol` metres CLEAR of the box); the default -0.01 lets a pipe touch a wall but not penetrate. The
 // discipline-aware caller (_rwStructTol) passes the cited clearance for the relevant service.
+// §RW-RUNBOX (2026-09-24, MODELLER_MASTER §STRATEGY L2) — SPEC. The pairing/insert clash box used to be
+// [cross, cross, runLength] at the run's midpoint: the THIRD (Z) axis was always treated as the pipe's long axis.
+// A horizontal run of length L therefore became a thin vertical post L tall, poking L/2 through the slab above
+// and the slab below, so almost every horizontal run "clashed" and was skipped. Measured (2026-09-24, bridge
+// probe): Duplex 141 pairs with an empty envelope vs 6 with the ARC envelope; SampleCastle 316 vs 32; SampleHouse
+// 14 vs 0. disc_walker.js's _envelopeClash had already documented the mis-orientation (and post-filters with the
+// correct box) but left routewalker.js unfixed. FIX: the box is the run's own axis-aligned extent, inflated by
+// the cross-section on every axis (all THREE call sites: _rwPairSegments, the pattern insert path, _rwConnectFixtures): [|dx|+cross, |dy|+cross, |dz|+cross], centred on the EMITTED segment's
+// midpoint (to.z = from.z + dz, so a GRADIENT step is checked where it is actually drawn). Pattern steps are
+// axis-aligned by construction, so this box is exact, not an approximation. Proof: W-ROUTE-PATTERN-BRIDGE and
+// W-MEP-OPENPATH, compared against the unmodified baseline. MEASURED (PLB runs on the real walk, L1 alone →
+// L1+§RW-RUNBOX): Duplex 8 → 18, Terminal 2,781 → 2,893, SampleCastle 32 → 18. SampleCastle's drop is a greedy
+// PAIRING-ORDER effect, not lost correctness: both variants emit only runs that pass the correct box
+// (disc_walker.js _envelopeClash post-filters with it). The old box let clashing runs consume target anchors,
+// which changed which targets later fixtures saw.
+function _rwRunClashes(from, dx, dy, dz, cross, arcEnvelope) {
+  return _rwClashesWithArc(from.x + dx / 2, from.y + dy / 2, from.z + dz / 2,
+    Math.abs(dx) + cross, Math.abs(dy) + cross, Math.abs(dz) + cross, arcEnvelope);
+}
+
 function _rwClashesWithArc(px, py, pz, pw, pd, ph, arcs, tol) {
   if (tol === undefined) tol = RW_ARC_CLASH_TOL;
   for (var i = 0; i < arcs.length; i++) {
@@ -1304,7 +1327,7 @@ function _rwConnectFixtures(buildingDb, buildingName, arcEnvelope) {
       var _crossCF = (_xsCF.real ? Math.max(_xsCF.w, _xsCF.h) : RW_PIPE_CROSS / 1000);
 
       // Clash check (real cross-section when verified, else the disclosed safety-margin default)
-      if (_rwClashesWithArc(midX, midY, midZ, _crossCF, _crossCF, dist, arcEnvelope)) {
+      if (_rwRunClashes(from, dx, dy, dz, _crossCF, arcEnvelope)) {   // §RW-RUNBOX
         clashSkipped++;
         continue;
       }

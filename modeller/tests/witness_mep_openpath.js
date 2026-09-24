@@ -17,7 +17,9 @@
  *   M4 SIGNED (L3)  — ≥1 routed run lands in the signed op-log as GEOM_SWEEP. RED on main 2026-09-24: SampleCastle
  *                     refuses 32/32 (§ROUTER-CHAIN-REFUSE, no real cross-section product, WalkerDoctrine §8).
  * Residents: default Duplex,SampleCastle,Terminal (one of each path: schedule / legacy / measured-band);
- * pass a comma list as argv[2] for others. Baseline (main b8f844fb): M0 ✅ M1 ✅ M2 ❌ M3 ✅ M4 ❌.
+ * pass a comma list as argv[2] for others. Baseline (main b8f844fb): M0 ✅ M1 ✅ M2 ❌ M3 ✅ M4 ❌ (8/5).
+ * After §WALK-BRIDGE-ALL + §RW-RUNBOX (L1+L2): 10/3 — PLB runs Duplex 18 · SampleCastle 18 · Terminal 2,893, all drawn;
+ * run length median 2.2–3 m, max 24.9 m (Terminal). M4 stays red until L3 (a real CW/SP cross-section product).
  */
 'use strict';
 const http = require('http'), fs = require('fs'), path = require('path');
@@ -67,6 +69,8 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
           const tubes = root ? root.children.filter(o => o.userData && o.userData.dwChain === d) : [];
           out[d] = { placed: pl.length, bound: pl.filter(p => p.host).length, segs: segs.length,
             bridge: segs.filter(s => s.mode === 'pattern-bridge').length,
+            runLen: (() => { const L = segs.map(s => Math.hypot(s.to[0] - s.from[0], s.to[1] - s.from[1], s.to[2] - s.from[2])).sort((a, b) => a - b);
+              return L.length ? { median: +L[L.length >> 1].toFixed(2), p95: +L[Math.floor(L.length * 0.95)].toFixed(2), max: +L[L.length - 1].toFixed(2) } : null; })(),
             tubes: tubes.reduce((s, m) => s + (m.isInstancedMesh ? m.count : 1), 0),
             sweeps: geom.filter(o => o.op_type === 'GEOM_SWEEP' && o.parameters && o.parameters._dw && o.parameters._dw.disc === d).length };
         });
