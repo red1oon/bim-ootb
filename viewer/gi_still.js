@@ -623,7 +623,21 @@
       console.log('§GI_STILL progressive compile: ' + list.length + ' renderables in ' + chunks + ' chunks, worst chunk ' + worst.toFixed(0) + 'ms (budget ' + BUDGET_MS + 'ms)');
       await renderGeom(G);        // one full-size render so the final-size pipelines are hot too
     });
-    await stage('checking orientation', () => decideOrientation(G));
+    // §GI_ORIENT_CACHE — the orientation is a fact about THIS platform (GPU + browser readback), measured at 12.7 s
+    // (red1's desktop) to 52 s (headless) on every first build. Cached per adapter+browser in localStorage; a new
+    // key, a failed read, or &giorient=measure measures again. Wrapped in try/catch: storage can be blocked.
+    const orientKey = await (async () => { try { const d = renderer.backend && renderer.backend.device; const ai = (d && d.adapterInfo) || {};
+      return [ai.vendor, ai.architecture, ai.device, ai.description, navigator.userAgent].join('|'); } catch (e) { return navigator.userAgent; } })();
+    let orientHit = null;
+    try { const c = JSON.parse(localStorage.getItem('giOrientCache') || 'null'); if (c && c.key === orientKey && !/[?&]giorient=measure/.test(location.search)) orientHit = c; } catch (e) {}
+    if (orientHit) {
+      G.setTexFlip(orientHit.flipTex); G.flipOut = orientHit.flipOut;
+      console.log('§GI_ORIENT_CACHE hit flipTex=' + orientHit.flipTex + ' flipOut=' + orientHit.flipOut + ' measured=' + orientHit.when + ' (skipped the orientation check; &giorient=measure re-measures)');
+    } else {
+      await stage('checking orientation', () => decideOrientation(G));
+      try { localStorage.setItem('giOrientCache', JSON.stringify({ key: orientKey, flipTex: G.flipTex, flipOut: G.flipOut, when: new Date().toISOString() })); } catch (e) {}
+      console.log('§GI_ORIENT_CACHE stored flipTex=' + G.flipTex + ' flipOut=' + G.flipOut + ' key=' + orientKey.slice(0, 80));
+    }
     if (pipeStats) console.log('§GI_STILL pipelines sync=' + pipeStats.sync + ' syncMs=' + pipeStats.syncMs.toFixed(0) +
       ' async=' + pipeStats.async + ' shaderModules=' + pipeStats.modules + ' moduleMs=' + pipeStats.moduleMs.toFixed(0) +
       ' (sync = device.createRenderPipeline, three.webgpu.js:85690 — the call the old path made several hundred times)');
