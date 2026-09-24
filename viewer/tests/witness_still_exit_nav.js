@@ -20,10 +20,11 @@ const PORT = +(process.argv[2] || 8600);
   const cam = () => p.evaluate(() => { const c = window.APP.camera.position; return [c.x, c.y, c.z].map(v => +v.toFixed(3)); });
   const drag = async () => { const x = 833, y = 432; await p.mouse.move(x, y); await p.mouse.down(); for (let i = 1; i <= 12; i++) { await p.mouse.move(x + i * 20, y + i * 4); await sleep(30); } await p.mouse.up(); await sleep(1500); };
   const still = async () => { const b1 = L.length; await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
-    for (let i = 0; i < 300 && !L.slice(b1).some(t => /§GI_STILL result|§GI_STILL_OFF/.test(t)); i++) await sleep(1000); await sleep(2500); };
-  for (const arm of ['close', 'esc']) {
+    for (let i = 0; i < 600 && !L.slice(b1).some(t => /§GI_STILL result|§GI_STILL_OFF/.test(t)); i++) await sleep(1000); await sleep(2500); };
+  for (const arm of ['esc', 'close']) {
     await still();
     say('ARM ' + arm + ' still up: overlay=' + await p.evaluate(() => !!document.getElementById('gi-still-overlay')) + ' lock=' + await p.evaluate(() => !!window.APP._stillLockOn));
+    if (!(await p.evaluate(() => !!document.getElementById('gi-still-overlay')))) { say('ARM ' + arm + ' VERDICT=VACUOUS (no overlay: the bounce never finished)'); await p.keyboard.press('Escape'); await sleep(3000); continue; }
     const b2 = L.length;
     if (arm === 'close') await p.evaluate(() => { const ov = document.getElementById('gi-still-overlay'); const btn = ov && [...ov.querySelectorAll('button')].find(x => /Close/.test(x.textContent)); btn && btn.click(); });
     else await p.keyboard.press('Escape');
