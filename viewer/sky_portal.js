@@ -97,10 +97,15 @@
     if (gain <= 0 || cap <= 0) { console.log('§SKY_PORTAL off portal=' + gain + ' cap=' + cap); return; }
     if (budgetCap == null) budget(A);
     cap = budgetCap; nShadow = budgetShadow;
-    var cam = A.camera.position, col0 = collectPanes(A, THREE), panes = col0.panes;
-    var near = panes.filter(function (p) { return p.c.distanceTo(cam) <= PORTAL_RANGE; })
-      .sort(function (a, b) { return a.c.distanceTo(cam) - b.c.distanceTo(cam); });
-    var capped = 0, byCls = {};
+    var cam = A.camera.position, col0 = collectPanes(A, THREE), panes = col0.panes, near;
+    // §SKY_PORTAL_PRIORITY (watcher: are the atrium's tall panes lost to nearest-first?): &portalsort=area ranks by
+    // glass area x how squarely the pane faces the camera; default stays nearest-first.
+    var byArea = /[?&]portalsort=area/.test(location.search) || A._stillPortalSort === 'area';
+    near = panes.filter(function (p) { return p.c.distanceTo(cam) <= PORTAL_RANGE; });
+    near.forEach(function (p) { var to = cam.clone().sub(p.c).normalize(); p._facing = Math.abs(to.dot(p.n)); p._dist = p.c.distanceTo(cam); p._score = p.area * Math.max(0.05, p._facing); });
+    near.sort(byArea ? function (a, b) { return b._score - a._score; } : function (a, b) { return a._dist - b._dist; });
+    var _allNearArea = near.reduce(function (s, p) { return s + p.area; }, 0);
+    var capped = 0, byCls = {}, placedInfo = [];
     // Inward side: the up-ray from 0.5 m off the pane hits building geometry (under a slab = inside).
     var targets = []; A.scene.traverse(function (o) { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A.ground && o !== A._sky && !(o.userData && o.userData.excludeFromShadow)) targets.push(o); });
     var rc = new THREE.Raycaster(); rc.far = UPRAY_MAX; var up = new THREE.Vector3(0, 1, 0);
@@ -132,6 +137,7 @@
       } else unsh++;
       L.userData.skyPortal = true;
       A.scene.add(L); A.scene.add(L.target); placed.push(L); iSum += I;
+      placedInfo.push({ cls: p.cls, area: +p.area.toFixed(1), dist: +p._dist.toFixed(1), facing: +p._facing.toFixed(2), y: +p.c.y.toFixed(1) });
     });
     // §STILL_LIGHT_PAD — pad to the budget's fixed counts (intensity 0) so every still has the same spot-light count
     // and the same shadowed-spot count: no recompile between presses.
@@ -143,6 +149,11 @@
       A.scene.add(D); A.scene.add(D.target); placed.push(D); pads++;
     }
     if (A.markDirty) A.markDirty();
+    var _plArea = placedInfo.reduce(function (s, q) { return s + q.area; }, 0);
+    A._skyPortalLast = placedInfo;
+    console.log('§SKY_PORTAL_PRIORITY sort=' + (byArea ? 'area x facing' : 'nearest') + ' candidates=' + near.length + ' candidateGlassM2=' + _allNearArea.toFixed(0) +
+      ' placedGlassM2=' + _plArea.toFixed(0) + ' placedAreaMax=' + (placedInfo.length ? Math.max.apply(null, placedInfo.map(function (q) { return q.area; })) : 0) +
+      ' placedDistMax=' + (placedInfo.length ? Math.max.apply(null, placedInfo.map(function (q) { return q.dist; })) : 0));
     console.log('§STILL_LIGHT_PAD portals padded=' + pads + ' to ' + placed.length + ' (shadowed ' + shadowed + ')');
     console.log('§SKY_PORTAL placed=' + (placed.length - pads) + ' (+' + pads + ' intensity-0 pads) shadowed=' + shadowed + ' unshadowed=' + unsh + ' (unshadowed can leak through walls)' +
       ' capped=' + capped + ' skipped=' + skipped + ' (5 rays per side, equal sky) sources=' + panes.length + ' in ' + col0.stats.planes + ' planes' +
