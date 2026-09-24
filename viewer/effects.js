@@ -2931,6 +2931,14 @@ async function setupEffects(A, renderer, scene, camera) {
   var PHOTO_HEMI_INTENSITY_SCALE = 1.0;    // was 1.25 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
   var FILM_FILL_AMBIENT = 0.785, FILM_FILL_HEMI = 1.257;   // §FILM_FILL_RESTORE — pre-#1601 scene.js values (TM's balance)
   var _filmFillSaved = null;
+  var _stillBaseSaved = null;   // §STILL_BASE
+  var _albedoSaved = [], _expSaved = null;   // §ALBEDO_SRGB
+  // §STILL_DIALS — one Alt+S dial: APP[key] if a number, else &name=<num> in the URL, else def; clamped 0..max.
+  function _stillDial(key, name, def, max) {
+    var v = (typeof A[key] === 'number') ? A[key] : null;
+    if (v == null) { var m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(location.search); v = m ? parseFloat(m[1]) : def; }
+    return Math.max(0, Math.min(max, isFinite(v) ? v : def));
+  }
   var PHOTO_AMBIENT_INTENSITY_SCALE = 1.0;  // was 1.15 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
   // §GROUND_ALBEDO — the multiplicative lever the two paragraphs above never had. Everything they
   // describe is ADDITIVE (emissive add; hemi/ambient fill), which is exactly why both flattened the
@@ -3267,13 +3275,22 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_photoShadowMapSizeSaved === null) {
       _photoShadowMapSizeSaved = { w: A.sun.shadow.mapSize.width, h: A.sun.shadow.mapSize.height };
     }
-    A.sun.shadow.mapSize.width = 4096;
-    A.sun.shadow.mapSize.height = 4096;
+    // §SHADOW_SIZE_BY_ENVELOPE (2026-09-24, red1: jagged roof-edge shadows) — the texel budget follows
+    // the frustum instead of a fixed 4096. Hospital's env (362) is twice HHS's (180), so a fixed 4096
+    // gave it 0.177 m texels against HHS's 0.088 m (texelPerM 5.7 vs 11.4). Capped at the GPU's limit.
+    var _maxTex = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxTextureSize) || 4096;
+    // 8192 only when 4096 would leave texels coarser than 0.12 m (env > ~245): Clinic's env 198 gives
+    // 0.097 m at 4096 — already about HHS's 0.088 m — and was being doubled to 512 MB for nothing.
+    var _shadowSize = (2 * _env / 4096 > 0.12) ? 8192 : 4096;
+    _shadowSize = Math.max(Math.min(4096, _maxTex), Math.min(_shadowSize, _maxTex));
+    A.sun.shadow.mapSize.width = _shadowSize;
+    A.sun.shadow.mapSize.height = _shadowSize;
+    console.log('§SHADOW_SIZE_BY_ENVELOPE env=' + _env + ' size=' + _shadowSize + ' maxTex=' + _maxTex + ' texel=' + (2 * _env / _shadowSize).toFixed(3) + 'm');
     // A map already allocated at the SMALLER nav size would not be reallocated by three.js on a
     // mapSize change (see _releaseSunShadowMap), so the raise would silently not happen and the
     // shadow render would target a 4096 viewport inside a 2048 framebuffer. Releasing here makes
     // the documented intent above true. No-op when no map exists yet, which is the usual case.
-    _releaseSunShadowMap('raise 4096 for still');
+    _releaseSunShadowMap('raise ' + _shadowSize + ' for still');
     A.sun.shadow.camera.near = Math.max(1, _sunDist * 0.05);
     A.sun.shadow.camera.far = _sunDist * 4;
     A.sun.shadow.camera.left = -_env;
@@ -3457,6 +3474,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var _photoDuskMoodApplied = false;  // §PHOTO_SUN_SEPARATION: snapshot of A._photoDuskMood at
                                        // staging time, so teardown restores exactly what staging
                                        // actually did even if the flag changes mid-session.
+  var _dlodPausedByStill = false;  // §DLOD_STILL_OWNERSHIP — only re-enable dlod.js if photo staging paused it
   var _photoStagingOn = false;  // §PHOTO_DOUBLE_APPLY_GUARD — staging applied once per photo cycle
   A._photoStagingOn = false;    // public mirror — with Stage-2 auto-arm disabled (§AUTO_STAGE2_DISABLED)
                                 // soft-park is signalled by kept-alive staging alone, and main.js's
@@ -3744,6 +3762,38 @@ async function setupEffects(A, renderer, scene, camera) {
     _roomProbeCam = null;
     _roomProbeBuilding = null;
   }
+  // §STILL_GLOW camera inside/outside — the EXISTING room index first (RoomWalker.buildCameraRoomIndex, the same
+  // point-in-room test dlod_nav.js uses for its room leg; IFC coords via the inverse of A.ifc2three). Rooms are
+  // compiled lazily, so when there are none yet a NEW fallback is used and named in the log: a ray straight up
+  // from the camera — building geometry within 80 m above = inside (under a roof or slab).
+  var _camRoomIdx = null, _camRoomIdxBld = null;
+  function _stillCamInside() {
+    var c = A.camera && A.camera.position; if (!c) return { inside: null, src: 'no camera' };
+    var _roomMiss = '';
+    try {
+      if ((_camRoomIdxBld !== A.activeBuilding || !_camRoomIdx) && window.RoomWalker && window.RoomWalker.buildCameraRoomIndex && A.db) {
+        try { _camRoomIdx = window.RoomWalker.buildCameraRoomIndex(A.db); } catch (e) { _camRoomIdx = null; }
+        _camRoomIdxBld = (_camRoomIdx && _camRoomIdx.rects) ? A.activeBuilding : null;   // never cache "no rooms yet"
+      }
+      var off = A.modelOffset;
+      if (_camRoomIdx && _camRoomIdx.rects && off) {
+        var room = _camRoomIdx.roomAt(c.x + off.x, -c.z + off.y, c.y + off.z);
+        A._stillCamSrc = A._stillCamSrc || { rooms: 0, ray: 0 }; A._stillCamSrc.rooms++;
+        // §STILL_CAMINSIDE_SPARSE (watcher, 2026-09-24): a room HIT proves inside; a MISS proves nothing — Hospital's
+        // index holds 2 rects for the whole building, so a camera 6 m inside L1 read roomAt=none and the lamps went
+        // off indoors. A miss now falls through to the up-ray: a point under the building's own slab is inside.
+        if (room != null) return { inside: true, src: 'rooms roomAt=' + room + ' rects=' + _camRoomIdx.rects + ' uses=' + JSON.stringify(A._stillCamSrc) };
+        _roomMiss = 'rooms roomAt=none rects=' + _camRoomIdx.rects + ' -> ';
+      }
+    } catch (e) {}
+    var rc = new THREE.Raycaster(c.clone(), new THREE.Vector3(0, 1, 0), 0.05, 80), hit = null;
+    try {
+      var targets = []; A.scene.traverse(function(o) { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && !(o.userData && o.userData.excludeFromShadow) && o !== A.ground && o !== A._sky) targets.push(o); });
+      var hits = rc.intersectObjects(targets, false); hit = hits.length ? hits[0] : null;
+    } catch (e) { return { inside: null, src: 'up-ray failed: ' + e.message }; }
+    A._stillCamSrc = A._stillCamSrc || { rooms: 0, ray: 0 }; A._stillCamSrc.ray++;
+    return { inside: !!hit, src: _roomMiss + 'up-ray fallback (an overhang can fool it) hit=' + (hit ? hit.distance.toFixed(1) + 'm' : 'none') + ' uses=' + JSON.stringify(A._stillCamSrc) };
+  }
   function _applyPhotoStaging() {
     // §GROUND_WETNESS_REFIRE_FIX (2026-07-17, live user repro: worked once, then "cannot
     // replicate" on another building, back on the original — still couldn't, "but bit slightly"):
@@ -3763,6 +3813,15 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_photoStagingOn) { console.log('§PHOTO_STAGING already on — skip re-apply (Stage-2 refire)'); return; }
     _photoStagingOn = true;
     A._photoStagingOn = true;
+    // §DLOD_STILL_OWNERSHIP (2026-09-24, red1: sun shafts through the Terminal roof on Alt+S) — dlod.js
+    // zero-scales instances outside the view frustum, and a zero-scaled roof casts no shadow. Pause it
+    // for the whole staging cycle, same ownership rule as §DLOD_TM_OWNERSHIP: only re-enable in
+    // teardown if THIS paused it (a user's own DLOD-off, or TM's pause during a bake, is not ours).
+    _dlodPausedByStill = false;
+    A._dlodStillHold = true; A._dlodStillWanted = false;
+    if (typeof A.dlodDisable === 'function' && A._dlodEnabled) { A.dlodDisable('photo-still'); _dlodPausedByStill = true; }
+    console.log('§DLOD_STILL_OWNERSHIP paused=' + (_dlodPausedByStill ? 1 : 0) + ' dlodEnabledNow=' + (A._dlodEnabled ? 1 : 0) +
+      ' tmOn=' + (A._tmOn ? 1 : 0));
     // §PHOTO_VARIATION: roll (or keep locked) the shared seed before anything below reads it.
     if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
     _wireGroundPuddleShader();
@@ -3906,6 +3965,24 @@ async function setupEffects(A, renderer, scene, camera) {
     // fire on this path — witness 2026-08-16). Reset unconditionally in _removePhotoStaging.
     A._nightPLScale = A._nightPLScaleStill || 1;
     A._nightPLScaleStaged = A._nightPLScale;   // §SUN_ARC_FILL — the staged base the bake scales FROM
+    // §STILL_DIALS — Alt+S lamp strength + fall-off, read at every press, set BEFORE the lamps are born below.
+    if (!A._maxqActive) {
+      A._stillLampMul = _stillDial('_stillLamps', 'lamps', 16, 20);   // §FLOOR_WASH pick (watcher/red1): 16 with finite reach   // red1 13:4x: "internal points of light should hit stronger"
+      A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', 1.5, 2);   // §FLOOR_WASH pick: 1.5 (was 0.8)
+      A._stillLampRangeNow = _stillDial('_stillLampRange', 'lamprange', 25, 100);   // §FLOOR_WASH pick: 25 m reach (0 = infinite, the old stack)
+      // §LIGHT_UNIFORM_BUDGET — caps the lamps BEFORE toggleNightMode builds them; portals then fit in the rest. One light
+      // count for the whole still = one shader compile.
+      if (window.SkyPortal) { try { window.SkyPortal.budget(A); } catch (eB) { console.warn('§LIGHT_UNIFORM_BUDGET failed: ' + eB.message); } }   // red1: throw further (nav keeps NIGHT_LIGHT_DECAY)
+      // §LAMP_SHAPE_COLOUR — round fixtures soft amber, rectangular white (red1). &lampshape=0 switches it off.
+      A._stillShapeColour = _stillDial('_stillLampShape', 'lampshape', 1, 1) > 0;
+      if (A._stillShapeColour && typeof A._nightFixtureWorldPositions === 'function' && A.nightFixtureShape) {
+        var _shN = { round: 0, rect: 0, ambiguous: 0, nomesh: 0, exit: 0 };
+        A._nightFixtureWorldPositions().forEach(function(p) { if (p.__exit) _shN.exit++; else _shN[A.nightFixtureShape(p)]++; });
+        var _bld = (/[?&]db=[^&]*\/([^\/&]+?)(_extracted)?\.db/.exec(location.search) || [])[1] || '?';
+        console.log('§LAMP_SHAPE_COLOUR bld=' + _bld + ' round=' + _shN.round + ' rect=' + _shN.rect + ' ambiguous=' + _shN.ambiguous +
+          ' noMesh=' + _shN.nomesh + ' exit=' + _shN.exit + ' (round -> NIGHT_WARM 0xffdca8, rect -> 0xffffff, rest keep the mix colour)');
+      }
+    }
     if (!_photoNightWasOn && A.toggleNightMode) {
       A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow — real light sources
       if (A._nightSaved) {  // always undo the moonlight override (dark intensities) — never mood
@@ -3935,6 +4012,98 @@ async function setupEffects(A, renderer, scene, camera) {
     // with night mode already on, whatever the fill is at this point): the bake's per-frame
     // compensation multiplies THIS base every frame, so it can never compound frame over frame.
     // Cleared in _removePhotoStaging with the rest of the staging state.
+    // §STILL_GLOW (2026-09-24, red1 ruling: "window glow OFF in daylight Alt+S stills") — the glazing emissive
+    // (night mode's 0xfff8ec x 0.55) is not dimmed by shadow, so it hid the wing shadows on the Hospital courtyard
+    // facades. Daylight = the app's own dusk test: dusk mood off AND sun above PHOTO_SUN_ELEVATION (the dusk
+    // elevation). Alt+S only: a film (A._maxqActive) passes through dusk on its sun arc and keeps its glow.
+    // Glazing only; fixture point lights and their emissive are untouched. Teardown restores the glow values.
+    if (!A._maxqActive && A._nightGlowMats && A.sun) {
+      var _gs = A.sun.position.clone(); if (A.sun.target) _gs.sub(A.sun.target.position); _gs.normalize();
+      var _gElev = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, _gs.y))));
+      var _gDay = !_duskMood && _gElev > PHOTO_SUN_ELEVATION;
+      var _gN = 0, _gLampMats = 0;
+      // red1 (refined): indoor lights are on by day. Lamps go OFF only for a daylight still whose camera is
+      // OUTSIDE; inside, they stay on. Window glow is off in daylight either way.
+      var _gIn = _gDay ? _stillCamInside() : { inside: null, src: 'not-needed (dusk)' };
+      if (_gDay) {
+        A._stillWindowGlowOff = true;
+        // §STILL_LAMPS_OUTSIDE (red1 2026-09-24: seen through the glass, interiors look drab — "no light source falls
+        // thru and internal are not playing their role"). &lampsout=1 keeps the lamps on for an outside daylight still
+        // so interiors seen through windows are lit. Default 0 = the earlier ruling (lamps off outside) until red1 picks.
+        var _lampsOut = _stillDial('_stillLampsOut', 'lampsout', 0, 1) > 0;
+        A._stillLampsOff = (_gIn.inside === false) && !_lampsOut;
+        A._nightGlowMats.forEach(function(g) {
+          if (!g.mat) return;
+          if (g.win) { g.mat.emissiveIntensity = 0; g.mat.needsUpdate = true; _gN++; }
+          else if (A._stillLampsOff) { g.mat.emissiveIntensity = 0; g.mat.needsUpdate = true; _gLampMats++; }   // the lamp's own glowing fixture
+        });
+      }
+      console.log('§STILL_GLOW daylight=' + (_gDay ? 1 : 0) + ' sunElev=' + _gElev.toFixed(1) + ' duskMood=' + (_duskMood ? 1 : 0) +
+        ' threshold=' + PHOTO_SUN_ELEVATION + ' camInside=' + (_gIn.inside == null ? '-' : (_gIn.inside ? 1 : 0)) + ' (' + _gIn.src + ')' +
+        ' glowMats=' + _gN + ' emissive->' + (_gDay ? '0' : 'kept') +
+        ' lamps=' + (A._stillLampsOff ? '0 (fixture emissive ' + _gLampMats + ' mats -> 0)' : ((A._nightLights || []).length + ' on')) +
+        (_gDay && _gIn.inside === false ? ' lampsout=' + (_lampsOut ? 1 : 0) : ''));
+    }
+    // §STILL_BASE (2026-09-24, red1: switch the EVEN base light off and let the real sources carry the picture —
+    // sun + shadows, lamps indoors, bounce, sky reflections — then tune by eye). Alt+S stills only (films keep the
+    // restored fill; nav unchanged). §STILL_DIALS (red1 13:1x: "too dark ... not enough sky ambient light"): split
+    // into two dials, read at every press — &sky= scales the hemi (sky from above; default 2.0 x #1601's Alt+S hemi, red1)
+    // and &base= scales the flat ambient only (default 0, red1). Console overrides APP._stillSky / APP._stillBaseScale.
+    // Teardown restores.
+    if (!A._maxqActive && A.ambient && A.hemi) {
+      var _bs = _stillDial('_stillBaseScale', 'base', 0, 2);   // red1 13:3x LOOK ruling: base as low as possible, 0
+      var _sk = _stillDial('_stillSky', 'sky', 2.0, 3);   // red1 13:4x: "hit it now", sky 2.0, range 0..3
+      _stillBaseSaved = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
+      A.ambient.intensity = _stillBaseSaved.ambI * _bs; A.hemi.intensity = _stillBaseSaved.hemiI * _sk;
+      var _lampSum = 0, _lampOn = 0;
+      (A._nightLights || []).forEach(function(l) { _lampSum += l.intensity; if (l.intensity > 0) _lampOn++; });
+      console.log('§STILL_BASE sky=' + _sk + ' base=' + _bs + ' lamps=' + A._stillLampMul + ' decay=' + A._stillLampDecayNow +
+        ' range=' + (A._stillLampRangeNow ? A._stillLampRangeNow + 'm' : '0(inf)') + ' hemi=' + A.hemi.intensity.toFixed(3) + ' ambient=' + A.ambient.intensity.toFixed(3) +
+        ' (from ' + _stillBaseSaved.hemiI.toFixed(3) + '/' + _stillBaseSaved.ambI.toFixed(3) + ') camInside=' +
+        (typeof _gIn !== 'undefined' && _gIn && _gIn.inside != null ? (_gIn.inside ? 1 : 0) : '-') +
+        ' lampsOn=' + (A._stillLampsOff ? '0 (daylight, outside)' : _lampOn + '/' + (A._nightLights || []).length) +
+        ' lampSum=' + _lampSum.toFixed(3) + ' (at staging; §STILL_DIALS_LAMPS logs the refined set)');
+    }
+    if (A._concreteStrength) { var _r3 = (A._triplanarMaterials || []).filter(function(m) { return m && m.userData && m.userData.triRow === 'R3'; }).length;
+      console.log('§CONCRETE_TONE strength=' + A._concreteStrength() + ' contrast=' + (1.1 * A._concreteStrength()).toFixed(3) + ' (R3 was 1.1)' +
+        ' normalScale=' + A._concreteStrength() + ' tile=' + A._concreteTile() + 'm (was 2.5) r3Mats=' + _r3); }
+    // §SKY_PORTAL — window panes as sky light sources (sky_portal.js), after the sky dial so it reads the staged hemi.
+    // §ALBEDO_SRGB (watcher/red1 wash investigation, 2026-09-24). FACT from source: THREE.ColorManagement.enabled=false
+    // (loader.js) and streaming.js builds colours with new THREE.Color(r,g,b) from the AUTHORED (sRGB) values, while
+    // renderer.outputColorSpace = SRGBColorSpace encodes the output: every albedo is used as if it were linear, i.e.
+    // brighter than authored (0.92 -> used 0.92 where 0.83 is right; a mid 0.5 used where 0.21 is right). Alt+S arms,
+    // restored at teardown (a colour is a uniform: no recompile): &srgbfix=1 converts each lit material's colour
+    // sRGB->linear; &albedocap=<v> then scales any colour whose max channel exceeds v (a PBR guard); &stillexp=<m>
+    // multiplies the still's tone-mapping exposure. Defaults: all off (red1/watcher pick from the sheet).
+    if (!A._maxqActive) {
+      _albedoSaved = [];
+      var _fix = (typeof A._stillSrgbFix === 'boolean') ? A._stillSrgbFix : /[?&]srgbfix=1/.test(location.search);   // default OFF again: it darkened the exterior refs (courtyard_a 73.2 -> 45.0); &srgbfix=1 to try
+      var _capM = /[?&]albedocap=([0-9.]+)/.exec(location.search), _cap = (typeof A._stillAlbedoCap === 'number') ? A._stillAlbedoCap : (_capM ? parseFloat(_capM[1]) : null);
+      var _nConv = 0, _nCap = 0, _wallBefore = null, _wallAfter = null;
+      if (_fix || _cap != null) {
+        var _seen = new Set();
+        A.scene.traverse(function(o) {
+          if (!o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return;
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach(function(m) {
+            if (!m || _seen.has(m) || !m.color || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
+            _seen.add(m); _albedoSaved.push([m, m.color.getHex(), m.color.r, m.color.g, m.color.b]);
+            var isWall = !_wallBefore && o.userData && o.userData.ifcClass === 'IfcWallStandardCase';
+            if (isWall) _wallBefore = m.color.r.toFixed(3) + ',' + m.color.g.toFixed(3) + ',' + m.color.b.toFixed(3);
+            if (_fix) { m.color.convertSRGBToLinear(); _nConv++; }
+            if (_cap != null) { var mx = Math.max(m.color.r, m.color.g, m.color.b); if (mx > _cap) { m.color.multiplyScalar(_cap / mx); _nCap++; } }
+            if (isWall) _wallAfter = m.color.r.toFixed(3) + ',' + m.color.g.toFixed(3) + ',' + m.color.b.toFixed(3);
+          });
+        });
+      }
+      var _em = /[?&]stillexp=([0-9.]+)/.exec(location.search), _eMul = (typeof A._stillExpMul === 'number') ? A._stillExpMul : (_em ? parseFloat(_em[1]) : 1);
+      _expSaved = A.renderer.toneMappingExposure; if (_eMul !== 1) A.renderer.toneMappingExposure = _expSaved * _eMul;
+      console.log('§ALBEDO_SRGB srgbfix=' + (_fix ? 1 : 0) + ' converted=' + _nConv + ' albedoCap=' + (_cap == null ? 'off' : _cap) + ' capped=' + _nCap +
+        ' wallColour(IfcWallStandardCase) before=' + _wallBefore + ' after=' + _wallAfter + ' exposure=' + A.renderer.toneMappingExposure.toFixed(3) +
+        ' (x' + _eMul + ') lampRange=' + (A._stillLampRangeNow == null ? '0(inf)' : A._stillLampRangeNow) + ' lampDecay=' + A._stillLampDecayNow);
+    }
+    if (!A._maxqActive && window.SkyOcc) { try { window.SkyOcc.stage(A); } catch (eSO) { console.warn('§SKY_OCCLUSION failed: ' + eSO.message); } }   // §SKY_OCCLUSION
+    if (!A._maxqActive && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }   // after the lamps; budget set before them
+    if (!A._maxqActive && window.GlassFresnel) { try { window.GlassFresnel.stage(A); } catch (eGF) { console.warn('§GLASS_FRESNEL failed: ' + eGF.message); } }   // §GLASS_FRESNEL
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
     // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
     // nav/still wall-side contrast; in the bake that doubled the shadow contrast (sunFillRatio 4.387 vs
@@ -4014,11 +4183,60 @@ async function setupEffects(A, renderer, scene, camera) {
     _glowFirstMs = null; _glowSkipLogged = false; A._glowQuadZeroLogged = false;
     _buildRoomProbe();
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
+    // §STILL_POSE (2026-09-24, watcher: red1's stills carry no pose) — one line per staging with everything
+    // needed to reproduce the frame headless: camera, target, fov, sun, DB, window size.
+    try {
+      var _c = A.camera, _t = A.controls ? A.controls.target : null, _s = A.sun;
+      var _f = function(v) { return v ? [v.x, v.y, v.z].map(function(n) { return +n.toFixed(3); }) : null; };
+      console.log('§STILL_POSE ' + JSON.stringify({ cam: _f(_c && _c.position), tgt: _f(_t), fov: _c && _c.fov,
+        aspect: _c && +_c.aspect.toFixed(4), sun: _f(_s && _s.position), sunTgt: _f(_s && _s.target && _s.target.position),
+        sunI: _s && +_s.intensity.toFixed(3), db: (location.search.match(/db=([^&]+)/) || [])[1] || null,
+        w: window.innerWidth, h: window.innerHeight, film: !!A._maxqActive }));
+    } catch (eP) { console.warn('§STILL_POSE failed: ' + eP.message); }
   }
   function _teardownPhotoStaging() {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
     _photoStagingOn = false;
     A._photoStagingOn = false;
+    // §STILL_GLOW — give every glazing material its glow value back BEFORE night mode's own teardown runs (which
+    // then restores the pre-glow originals if staging had switched night mode on). Nothing stays changed.
+    if (A._stillWindowGlowOff) {
+      var _lampsWereOff = !!A._stillLampsOff;
+      A._stillWindowGlowOff = false; A._stillLampsOff = false;
+      var _gr = 0, _lr = 0;
+      (A._nightGlowMats || []).forEach(function(g) {
+        if (!g.mat) return;
+        if (g.win || _lampsWereOff) { g.mat.emissive.setHex(g.glowE); g.mat.emissiveIntensity = g.glowEI; g.mat.needsUpdate = true; if (g.win) _gr++; else _lr++; }
+      });
+      console.log('§STILL_GLOW restored glowMats=' + _gr + ' lampMats=' + _lr + ' (lamp intensity: _nightPLScale reset below)');
+    }
+    // §DLOD_STILL_OWNERSHIP — release the hold; re-enable only if staging paused it, or if a re-enable
+    // was asked for (and deferred) while the hold was on.
+    A._dlodStillHold = false;
+    var _dlodRestore = (_dlodPausedByStill || A._dlodStillWanted) && typeof A.dlodEnable === 'function' && !A._dlodEnabled;
+    if (_dlodRestore) { try { A.dlodEnable(); } catch (eD) {} }
+    console.log('§DLOD_STILL_OWNERSHIP restored=' + (_dlodRestore ? 1 : 0) + ' pausedByStill=' + (_dlodPausedByStill ? 1 : 0) +
+      ' deferredEnable=' + (A._dlodStillWanted ? 1 : 0) + ' dlodEnabledNow=' + (A._dlodEnabled ? 1 : 0));
+    _dlodPausedByStill = false; A._dlodStillWanted = false;
+    // §STILL_DIALS — lamp strength/fall-off back to nav values.
+    if (typeof A._stillLampMul === 'number' || typeof A._stillLampDecayNow === 'number') {
+      A._stillLampMul = null; A._stillLampDecayNow = null; A._stillShapeColour = false;
+      (A._nightLights || []).forEach(function(l) { l.decay = A._nightLightDecayDefault; });
+      if (A._nightLightByPos && A.nightFixtureColor) A._nightLightByPos.forEach(function(l, pos) { l.color.set(A.nightFixtureColor(pos)); });
+    }
+    if (window.SkyPortal) { try { window.SkyPortal.unstage(A); } catch (eSU) {} }   // §SKY_PORTAL
+    if (window.GlassFresnel) { try { window.GlassFresnel.unstage(A); } catch (eGU) {} }   // §GLASS_FRESNEL
+    if (_albedoSaved.length) { _albedoSaved.forEach(function(r) { r[0].color.setRGB(r[2], r[3], r[4]); }); console.log('§ALBEDO_SRGB restored mats=' + _albedoSaved.length); _albedoSaved = []; }
+    if (_expSaved != null && A.renderer) { A.renderer.toneMappingExposure = _expSaved; _expSaved = null; }
+    A._stillLampRangeNow = null;
+    if (typeof A._nightSyncPads === 'function') { try { A._nightSyncPads(); } catch (ePad) {} }   // §STILL_LIGHT_PAD — pads go with the still
+    if (window.SkyOcc) { try { window.SkyOcc.unstage(A); } catch (eSOU) {} }   // §SKY_OCCLUSION
+    // §STILL_BASE — hand navigation its own base light back.
+    if (_stillBaseSaved && A.ambient && A.hemi) {
+      A.ambient.intensity = _stillBaseSaved.ambI; A.hemi.intensity = _stillBaseSaved.hemiI;
+      console.log('§STILL_BASE restored ambient=' + _stillBaseSaved.ambI.toFixed(3) + ' hemi=' + _stillBaseSaved.hemiI.toFixed(3));
+      _stillBaseSaved = null;
+    }
     // §FILM_FILL_RESTORE — hand navigation its own fill back (the night-mode restore below only covers
     // the case where staging toggled night mode itself).
     if (_filmFillSaved && A.ambient && A.hemi) {
@@ -4353,13 +4571,17 @@ async function setupEffects(A, renderer, scene, camera) {
                                                  // bounds worst-case tap cost (8 taps * this factor)
                                                  // and keeps the mask from smearing across unrelated
                                                  // geometry at near-90 deg grazing incidence
-      var shadowRestoreMat = null, shadowRestoreQuad = null, aoScratchRT = null;
+      var shadowRestoreMat = null, shadowRestoreQuad = null, aoScratchRT = null, _srLoggedFor = null;
       if (STILL_SHADOW_RESTORE_ENABLED) {
         var _srFrag = [
           'uniform sampler2D tAO;',
           'uniform sampler2D tSharp;',
           'uniform sampler2D tDepth;',
-          'uniform sampler2D tShadowMap;',
+          // §SUN_SHADOW_RESTORE_DEPTH (2026-09-24): the DEPTH texture through a shadow sampler. It used to read
+          // map.texture — the RGBA8 colour attachment, not depth — so the step below never fired (measured:
+          // 0 of 1,439,424 px shadowed at a 10 deg sun) and the pass was inert. PCFShadowMap gives the depth
+          // texture a compareFunction, so it must be read the way three's own PCF shader reads it.
+          'uniform sampler2DShadow tShadowMap;',
           'uniform mat4 shadowMatrix;',
           'uniform mat4 projectionMatrixInv;',
           'uniform mat4 viewMatrixInv;',
@@ -4381,7 +4603,7 @@ async function setupEffects(A, renderer, scene, camera) {
           '  vec4 sc = shadowMatrix * worldPos; sc.xyz /= sc.w;',
           '  if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;',
           '  sc.z += shadowBias;',
-          '  return step(sc.z, texture2D(tShadowMap, sc.xy).r);',
+          '  return texture(tShadowMap, vec3(sc.xy, sc.z));',   // 1 = lit, 0 = shadowed (hardware compare)
           '}',
           'vec3 worldPosAt(vec2 uv) {',
           '  float d = texture2D(tDepth, uv).r;',
@@ -4480,19 +4702,28 @@ async function setupEffects(A, renderer, scene, camera) {
           // §SUN_SHADOW_RESTORE: only reroute N8AO's output into the scratch target (and pay for
           // the extra mask/blend pass) when a real sun shadow is actually available to restore —
           // otherwise this is byte-identical to the pre-existing n8.render(..., writeBuffer, ...).
-          // A._sunShadowRestoreEnabled is a live, runtime-toggleable override (default true) — same
+          // A._sunShadowRestoreEnabled is a live, runtime-toggleable override (default FALSE since 2026-09-24) — same
           // shape as A._shadowOn etc — so a same-session witness A/B can flip it after AO has
           // already converged (n8's own accumulation is untouched by this pass's output routing)
           // without needing two separate page loads / two separate builds.
           var canRestore = STILL_SHADOW_RESTORE_ENABLED && A._sunShadowRestoreEnabled !== false &&
             shadowRestoreMat && A.sun && A.sun.castShadow && A.sun.shadow && A.sun.shadow.map;
+          // §SUN_SHADOW_RESTORE_DEPTH: no depth texture = nothing honest to read; stand down, never fall back
+          // to the colour attachment. One line per shadow map, so a still says which source it used.
+          var _srDepth = canRestore ? A.sun.shadow.map.depthTexture : null;
+          if (canRestore && _srLoggedFor !== A.sun.shadow.map) {
+            _srLoggedFor = A.sun.shadow.map;
+            console.log('§SUN_SHADOW_RESTORE_SRC ' + (_srDepth ? 'depthTexture compare=' + _srDepth.compareFunction +
+              ' size=' + (_srDepth.image ? _srDepth.image.width + 'x' + _srDepth.image.height : '?') : 'none — pass stands down'));
+          }
+          if (!_srDepth) canRestore = false;
           if (canRestore) {
             n8.render(renderer2, aoScratchRT, readBuffer);
             var u = shadowRestoreMat.uniforms;
             u.tAO.value = aoScratchRT.texture;
             u.tSharp.value = readBuffer.texture;
             u.tDepth.value = n8.beautyRenderTarget.depthTexture;
-            u.tShadowMap.value = A.sun.shadow.map.texture;
+            u.tShadowMap.value = _srDepth;   // §SUN_SHADOW_RESTORE_DEPTH
             u.shadowMatrix.value.copy(A.sun.shadow.matrix);
             u.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
             u.viewMatrixInv.value.copy(camera.matrixWorld);
@@ -4516,7 +4747,12 @@ async function setupEffects(A, renderer, scene, camera) {
       A._stillAOPass = n8;                 // diagnostics/tests — closure state is otherwise invisible
       A._stillAOAdapter = adapter;
       A._shadowRestoreMat = shadowRestoreMat;  // §SUN_SHADOW_RESTORE diagnostics/witness
-      if (A._sunShadowRestoreEnabled === undefined) A._sunShadowRestoreEnabled = true;
+      // §SUN_SHADOW_RESTORE_OFF_DEFAULT (2026-09-24): with §SUN_SHADOW_RESTORE_DEPTH the pass finally fires,
+      // and it pastes blocky halos around shadows and makes the stair-step read MORE clearly (Hospital,
+      // 10 deg sun: edge band 36% of the frame). Default OFF = the look before today (the pass was inert
+      // since 2026-08-14). The fix stays; A._sunShadowRestoreEnabled = true turns it on. Tuning is red1's call.
+      if (A._sunShadowRestoreEnabled === undefined) A._sunShadowRestoreEnabled = false;
+      console.log('§SUN_SHADOW_RESTORE ' + (A._sunShadowRestoreEnabled ? 'ON' : 'OFF (default) — set APP._sunShadowRestoreEnabled=true to enable'));
       // §PHOTO_AO_STREAM re-assert (same landmine as §GI_POC_STALE_FIX): anything that changes the
       // scene while the still is frozen-with-AO (streaming, xray, selection) goes through
       // A.markDirty — chain onto it (effects_gi_poc.js wraps it the same way; the wraps compose)
@@ -4619,6 +4855,7 @@ async function setupEffects(A, renderer, scene, camera) {
     }
   }
   function _teardownStillRefine(reason, keepStaging) {
+    if (!keepStaging) _stillLock(false);   // §STILL_LOCK — released with the still
     A._stillRefineActive = false;
     A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY safety net — any exit path clears "processing"
     if (!keepStaging) _vacFlushStillTags();   // §VAC V2 — end of a real still, close any open run
@@ -4992,7 +5229,7 @@ async function setupEffects(A, renderer, scene, camera) {
       var gain = GLOW_GAIN;
       siz[i] = 1.0;
       if (p.__exit) { gain = GLOW_EXIT_GAIN; siz[i] = GLOW_EXIT_SIZE; exits++; }   // §GLOW_EXIT_SOFT
-      c.setHex(p.__color === undefined ? 0xffe4b5 : p.__color);
+      c.setHex(A.nightFixtureColor ? A.nightFixtureColor(p) : (p.__color === undefined ? 0xffe4b5 : p.__color));   // §LAMP_SHAPE_COLOUR
       col[i * 3] = c.r * gain; col[i * 3 + 1] = c.g * gain; col[i * 3 + 2] = c.b * gain;
     }
     var geo = new THREE.BufferGeometry();
@@ -5261,7 +5498,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // lit circle doesn't undershoot the fixture's actual footprint.
       if (isRound) { var d = Math.max(w, h); sVec.set(d, d, 1); } else { sVec.set(w, h, 1); }
       m4.compose(pVec, q, sVec);
-      col.setHex(p.__color === undefined ? 0xffe4b5 : p.__color);
+      col.setHex(A.nightFixtureColor ? A.nightFixtureColor(p) : (p.__color === undefined ? 0xffe4b5 : p.__color));   // §LAMP_SHAPE_COLOUR
       col.multiplyScalar(GLOW_GAIN);
       if (isRound) {
         meshRound.setMatrixAt(roundN, m4); meshRound.setColorAt(roundN, col); roundN++;
@@ -5399,10 +5636,37 @@ async function setupEffects(A, renderer, scene, camera) {
       // frame, measured), and an intensity is a uniform. Same reason the pool's own unused slots
       // ride at 0 instead of being removed.
       if (A._cpeRevealLightsOff) A._nightPLScale = 0;
+      if (A._stillLampsOff) A._nightPLScale = 0;   // §STILL_GLOW — daylight still, camera outside: lamps off (a uniform, no recompile)
       // §SUN_ARC_FILL — this is the per-frame staged value (0.5 cut, or 0 in a lights-off slot) that
       // the bake's fill compensation scales from; stashed here, where the rule lives, not re-derived.
       A._nightPLScaleStaged = A._nightPLScale;
       A._nightUpdateLights();
+      if (!A._maxqActive) {
+        // §LIGHT_STACK (red1: "or the points of light are added up?"): at the floor point under the view centre, how many
+        // lamps reach it above 5% of the strongest, and the summed lamp irradiance vs the single strongest (three's own
+        // point-light falloff, no angle term: an upper bound). 
+        try {
+          var _rc = new THREE.Raycaster(); _rc.setFromCamera(new THREE.Vector2(0, 0), A.camera);
+          var _tg = []; A.scene.traverse(function(o) { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A._sky) _tg.push(o); });
+          var _hit = _rc.intersectObjects(_tg, false)[0];
+          if (_hit) {
+            var P = _hit.point, vals = [];
+            A._nightLights.forEach(function(l) { if (!(l.intensity > 0)) return; var d = Math.max(0.01, l.position.distanceTo(P));
+              var att = 1 / Math.max(Math.pow(d, l.decay), 0.01); if (l.distance > 0) att *= Math.pow(Math.max(0, Math.min(1, 1 - Math.pow(d / l.distance, 4))), 2);
+              vals.push(l.intensity * att); });
+            vals.sort(function(a, b) { return b - a; });
+            var _pk = vals[0] || 0, _sum = vals.reduce(function(a, b) { return a + b; }, 0), _n5 = vals.filter(function(v) { return v > 0.05 * _pk; }).length;
+            console.log('§LIGHT_STACK point=(' + P.x.toFixed(1) + ',' + P.y.toFixed(1) + ',' + P.z.toFixed(1) + ') lampsLit=' + vals.length + ' reachingOver5pctOfPeak=' + _n5 +
+              ' sum=' + _sum.toFixed(3) + ' strongest=' + _pk.toFixed(3) + ' sum/strongest=' + (_pk ? (_sum / _pk).toFixed(1) : '-') + ' exposure=' + A.renderer.toneMappingExposure.toFixed(3) +
+              ' sky(hemi)=' + A.hemi.intensity.toFixed(3));
+          }
+        } catch (eLS) { console.warn('§LIGHT_STACK failed: ' + eLS.message); }
+        console.log('§STILL_LIGHT_PAD lamps=' + A._nightLights.length + ' pads=' + (A._nightPadLights || []).length + ' total=' + (A._nightLights.length + (A._nightPadLights || []).length) + ' cap=' + A._stillLampCap);
+        var _dlSum = 0, _dlOn = 0;
+        A._nightLights.forEach(function(l) { _dlSum += l.intensity; if (l.intensity > 0) _dlOn++; });
+        console.log('§STILL_DIALS_LAMPS lamps=' + A._stillLampMul + ' decay=' + A._stillLampDecayNow + ' plScale=' + A._nightPLScale +
+          ' lit=' + _dlOn + '/' + A._nightLights.length + ' sum=' + _dlSum.toFixed(3));
+      }
       // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 2,026 firings, ONE distinct line
       // (`raised to 200 lights, near-fade floor 1 …`). The re-raise itself is required every
       // frame (the still budget is handed back to nav on every teardown, just below), so the
@@ -5621,6 +5885,97 @@ async function setupEffects(A, renderer, scene, camera) {
     } else {
       A.startStillRefine();
     }
+  };
+  // §STILL_STATUS_FIRST (2026-09-24, red1: the Alt+S status must appear at once) — startStillRefine()
+  // stages synchronously (~5 s on red1's desktop), so nothing could paint until it returned. The USER
+  // entry points (scene.js Alt+S, panels.js button) come here: show the status, let one frame commit,
+  // THEN start. Programmatic callers (bake, witnesses) keep the synchronous toggleStillRefine above.
+  var _stillUIPending = false;
+  function _stillToast(msg) {
+    var el = document.getElementById('gi-still-toast');   // same element/style as gi_still.js's toast
+    if (!el) {
+      el = document.createElement('div'); el.id = 'gi-still-toast';
+      el.style.cssText = 'position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:100000;' +
+        'background:rgba(20,22,28,.92);color:#e8eaf0;padding:10px 16px;border-radius:8px;font:14px/1.4 system-ui;' +
+        'box-shadow:0 6px 24px rgba(0,0,0,.45)';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg; el.style.display = 'block';
+    return el;
+  }
+  // §STILL_LOCK (red1): from a UI start until the still is released, only Esc does anything. A capture-phase window
+  // listener swallows pointer/touch/wheel/contextmenu/dblclick outside the bounce overlay (its Save PNG / Close stay
+  // live) and every key but Escape. Esc closes the overlay and tears the still down.
+  var _lockOn = false, _lockBlocked = 0;
+  var _LOCK_EVENTS = ['pointerdown', 'pointerup', 'pointermove', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'wheel', 'touchstart', 'touchmove', 'touchend'];
+  function _lockSwallow(e) {
+    if (!_lockOn) return;
+    var ov = document.getElementById('gi-still-overlay');
+    if (ov && ov.contains(e.target)) return;   // Save PNG / Close keep working
+    if (e.type === 'pointermove' || e.type === 'touchmove') { e.stopImmediatePropagation(); return; }   // not counted: too many
+    e.stopImmediatePropagation(); if (e.cancelable) e.preventDefault(); _lockBlocked++;
+  }
+  function _lockKey(e) {
+    if (!_lockOn) return;
+    if (e.key === 'Escape') {
+      e.stopImmediatePropagation(); e.preventDefault();
+      var ov = document.getElementById('gi-still-overlay'); if (ov) ov.remove();
+      _stillLock(false);
+      if (A._stillRefineActive || _autoStageOn || _photoStagingOn) { _autoStageArm(false); _teardownStillRefine('cancelled (Esc)'); }
+      return;
+    }
+    e.stopImmediatePropagation(); e.preventDefault(); _lockBlocked++;
+  }
+  function _stillLock(on) {
+    if (on === _lockOn) return;
+    _lockOn = on; A._stillLockOn = on;   // main.js's interaction-cancel paths read this
+    if (on) {
+      _lockBlocked = 0;
+      _LOCK_EVENTS.forEach(function(t) { window.addEventListener(t, _lockSwallow, { capture: true, passive: false }); });
+      window.addEventListener('keydown', _lockKey, true);
+      console.log('§STILL_LOCK on (only Esc exits)');
+    } else {
+      _LOCK_EVENTS.forEach(function(t) { window.removeEventListener(t, _lockSwallow, { capture: true }); });
+      window.removeEventListener('keydown', _lockKey, true);
+      console.log('§STILL_LOCK off blocked=' + _lockBlocked);
+    }
+  }
+  A._stillLockRelease = function() { _stillLock(false); };
+  A.toggleStillRefineUI = function() {
+    if (A._stillRefineActive || _autoStageOn) { A.toggleStillRefine(); return; }
+    if (_stillUIPending) return;
+    // §STILL_GUARD REMOVED (red1, 2026-09-24: "let it load normally, it's a user learning curve"). The lock stays.
+    _stillLock(true);
+    _stillUIPending = true;
+    var t0 = performance.now();
+    var el = _stillToast('Alt+S still — preparing…');
+    el.dataset.stillStatus = '1';   // gi_still.js overwrites the text when it takes over; we only hide our own
+    console.log('§STILL_STATUS painted t=' + t0.toFixed(1));
+    requestAnimationFrame(function() {
+      console.log('§STILL_STATUS frame t=' + performance.now().toFixed(1));
+      setTimeout(async function() {
+        // §STILL_GLOW (watcher): the inside/outside test should use the building's ROOMS, not the up-ray, whenever the
+        // building has rooms. They compile lazily (navigate bundle), so compile them here, after the status has
+        // painted and before staging, the same way the film path does (§CINEMA_ROOMS).
+        var tR = performance.now();
+        try {
+          if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) await A.loadNavigate();
+          if (typeof A.ensureRooms === 'function') await A.ensureRooms({});
+          console.log('§STILL_ROOMS ready ms=' + (performance.now() - tR).toFixed(0));
+        } catch (eR) { console.warn('§STILL_ROOMS ensureRooms failed: ' + eR.message + ' — the inside test falls back to the up-ray'); }
+        var t2 = performance.now();
+        console.log('§STILL_STATUS stagingStart t=' + t2.toFixed(1) + ' gap=' + (t2 - t0).toFixed(1) + 'ms (rooms ' + (t2 - tR).toFixed(0) + 'ms)');
+        _stillUIPending = false;
+        try { A.startStillRefine(); } finally {
+          var iv = setInterval(function() {
+            if (A._stillRefineActive && A._stillRefineBusy) return;
+            clearInterval(iv);
+            var e2 = document.getElementById('gi-still-toast');
+            if (e2 && e2.dataset.stillStatus === '1' && /preparing/.test(e2.textContent)) e2.style.display = 'none';
+          }, 250);
+        }
+      }, 0);
+    });
   };
 
   // §CINEMA_ORBIT (2026-07-16, user spec): the "Cinema pill" 360 fly-around, wired to a real

@@ -749,6 +749,314 @@ function setupStreaming(A) {
   // name FIRST, ifc_class as fallback, alpha guard ahead of both. Returns src ∈
   // {name, class, alpha-none, none}. `INCONCLUSIVE` when the maps have not been published yet
   // (no material has ever been built) — so a caller can never read a 0 as a real answer.
+  // §TRI_BIG_ONLY (2026-09-24, PHOTOREAL_STILL_RENDER.md; red1: rugged surfacing "overdone" on doors
+  // and beams) — a SWITCH, not a change of the maps below. With it on, only these classes keep the
+  // rough triplanar maps during the still; every other class renders its flat colour. Per class, not
+  // per size: one material is shared per batch and built from the batch's first element.
+  // `?tri=big` on the URL or `APP._triBigOnly = true`; default OFF = the look is unchanged.
+  A._TRI_BIG_CLASSES = { IfcWall: 1, IfcWallStandardCase: 1, IfcSlab: 1, IfcColumn: 1, IfcFooting: 1,
+    IfcStair: 1, IfcStairFlight: 1, IfcCovering: 1, IfcRoof: 1 };
+  try { if (A._triBigOnly == null) A._triBigOnly = /[?&]tri=big\b/.test(location.search); } catch (e) {}
+  A._triActiveFor = function(mat) {
+    if (!A._stillRefineActive) return 0.0;
+    return (A._triBigOnly && mat && mat.userData && mat.userData._triSmallPart) ? 0.0 : 1.0;
+  };
+  // ══ §SURFACE_RULES (2026-09-24, bim-compiler PHOTOREAL_STILL_RENDER.md §SURFACE_RULES + rev 1) ══
+  // red1: surfaces too rough, materials hard to tell apart; roof metal deck stays rough; floor slabs and
+  // small beams/members/doors/railings smooth ("marble-like OK, just not rough"). A row per element from
+  // role (geometry) + substance (authored material, a small lexicon) + class, first match wins; a batch
+  // takes its members' MAJORITY row (one material per batch). Rows change roughness / texture / envInt
+  // only — never colour. DEFAULT ON since red1's look ruling (2026-09-24: "cleaner, no more drab surfacing");
+  // `?surf=off` at load (or APP._surfRules = false before streaming) gives the previous look.
+  try { if (A._surfRules == null) A._surfRules = !/[?&]surf=off\b/.test(location.search); } catch (e) { if (A._surfRules == null) A._surfRules = true; }
+  console.log('§SURFACE_RULES ' + (A._surfRules ? 'ON (default; ?surf=off for the previous look)' : 'OFF (?surf=off)'));
+  var _SURF_MEP = /^Ifc(Pipe|Duct|Flow|Cable|Valve|AirTerminal|FireSuppression|LightFixture|Sanitary|Alarm|ElectricAppliance|ElectricDistribution|Distribution|EnergyConversion|UnitaryEquipment|Pump|Fan|Tank|Boiler|Chiller|Coil|Damper|Filter|Outlet|SwitchingDevice|ProtectiveDevice|Controller|Sensor|Actuator|JunctionBox|CommunicationsAppliance|AudioVisual|Lamp)/;
+  var _SURF_ENVELOPE = { IfcSlab: 1, IfcPlate: 1, IfcRoof: 1, IfcCovering: 1 };
+  var _SURF_FLOOR = { IfcSlab: 1, IfcStair: 1, IfcStairFlight: 1, IfcRamp: 1, IfcRampFlight: 1 };
+  A._surfSubstance = function(n) {
+    n = (n || '').toLowerCase(); if (!n) return '';
+    if (/glass|glaz/.test(n)) return 'glass';
+    if (/metal|steel|alumin|copper|silver|brass|bronze|iron|zinc|galvani|chrome/.test(n)) return 'metal';
+    if (/plaster|gypsum|board|papan|skim|lepaan/.test(n)) return 'plaster';   // finished boards/renders before raw cement
+    if (/concrete|beton|cement|simen|mortar|screed/.test(n)) return 'concrete';
+    if (/wood|timber|oak|pine|plywood|veneer|kayu/.test(n)) return 'timber';
+    if (/stone|marble|granite|tile|ceramic|terrazzo|jubin/.test(n)) return 'stone';
+    return '';
+  };
+  // ROOF LAYER: a FLAT element (thinnest bbox axis vertical) with no OTHER surface's flat element above it
+  // over >= half of its 1 m grid cells; the same surface's own pieces (class + material) are not cover (a
+  // sloped deck is many overlapping strips). Measured: Terminal Metal Deck 33,225 / 33,324. Built once per
+  // DB from element_transforms (IFC coords, z up).
+  A._surfRoofGuids = null;
+  A._surfBuildRoof = function() {
+    var t0 = performance.now(), roof = new Set(), flat = [], grid = new Map(), rows = [];
+    try { rows = A.dbQuery('SELECT m.guid, m.ifc_class, m.material_name, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid') || []; }
+    catch (e) { console.warn('§SURFACE_ROOF_LAYER query failed: ' + e.message); }
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], bx = +r[6] || 0, by = +r[7] || 0, bz = +r[8] || 0;
+      if (!(bz < Math.min(bx, by) && Math.max(bx, by) >= 0.1)) continue;
+      flat.push({ g: r[0], id: (r[1] || '') + '|' + (r[2] || ''), x0: Math.floor(r[3] - bx / 2), x1: Math.floor(r[3] + bx / 2),
+        y0: Math.floor(r[4] - by / 2), y1: Math.floor(r[4] + by / 2), zb: r[5] - bz / 2, zt: r[5] + bz / 2 });
+    }
+    flat.forEach(function(e, k) { for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) { var c = x + ',' + y; var l = grid.get(c); if (!l) grid.set(c, l = []); l.push(k); } });
+    flat.forEach(function(e, k) {
+      var cells = 0, covered = 0;
+      for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) {
+        cells++; var l = grid.get(x + ',' + y);
+        for (var j = 0; j < l.length; j++) { var o = flat[l[j]]; if (l[j] !== k && o.id !== e.id && o.zb >= e.zt - 0.02) { covered++; break; } }
+      }
+      if (covered < 0.5 * cells) roof.add(e.g);
+    });
+    A._surfRoofGuids = roof;
+    console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size + ' ms=' + (performance.now() - t0).toFixed(0));
+  };
+  A._surfRowOf = function(el) {
+    if (A._alphaOf(el.rgba) < 1.0) return 'R9';
+    var c = el.ifcClass || '';
+    if (_SURF_MEP.test(c)) return 'R8';
+    var sub = A._surfSubstance(el.matName);
+    if (_SURF_ENVELOPE[c] && A._surfRoofGuids && A._surfRoofGuids.has(el.guid)) return sub === 'metal' ? 'R1' : (sub === 'plaster' ? 'R2p' : 'R2c');
+    if (_SURF_FLOOR[c]) return 'R4';            // a floor is a finished surface whatever it is cast from
+    if (sub === 'concrete') return 'R3';
+    if (sub === 'plaster') return 'R5';
+    if (sub === 'metal') return 'R6';
+    if (sub === 'timber' || sub === 'stone' || sub === 'glass') return 'R7';
+    if (c === 'IfcWall' || c === 'IfcColumn' || c === 'IfcFooting' || c === 'IfcPile') return 'R3';
+    if (c === 'IfcWallStandardCase' || c === 'IfcCovering') return 'R5';
+    if (c === 'IfcBeam' || c === 'IfcMember' || c === 'IfcPlate') return 'R6';
+    return 'R7';
+  };
+  A._surfTallyData = null;
+  A._surfRowFor = function(list, pick) {
+    if (!A._surfRules || !list || !list.length) return '';
+    if (!A._surfRoofGuids) A._surfBuildRoof();
+    var T = A._surfTallyData || (A._surfTallyData = { rows: {}, against: {}, cls: {}, authored: 0, classDefault: 0 });
+    var cnt = {}, own = [];
+    for (var i = 0; i < list.length; i++) {
+      var el = pick ? pick(list[i]) : list[i]; if (!el) continue;
+      var rw = A._surfRowOf(el); own.push(rw); cnt[rw] = (cnt[rw] || 0) + 1;
+      var ck = (el.ifcClass || '?'); var ce = T.cls[ck] || (T.cls[ck] = {}); ce[rw] = (ce[rw] || 0) + 1;
+      if (el.rgba) T.authored++; else T.classDefault++;
+    }
+    var best = '', bn = -1; for (var k in cnt) if (cnt[k] > bn) { bn = cnt[k]; best = k; }
+    T.rows[best] = (T.rows[best] || 0) + own.length;
+    T.against[best] = (T.against[best] || 0) + (own.length - bn);
+    return best;
+  };
+  A._surfTally = function() {
+    if (!A._surfRules) return;
+    var T = A._surfTallyData;
+    if (!T) { console.log('§SURFACE_RULES_TALLY VACUOUS bld=' + (A.activeBuilding || '?') + ' — no batch was judged'); return; }
+    var rk = Object.keys(T.rows).sort();
+    console.log('§SURFACE_RULES_TALLY bld=' + (A.activeBuilding || '?') + ' ' + rk.map(function(r) { return r + '=' + T.rows[r] + '(againstOwnRow=' + (T.against[r] || 0) + ')'; }).join(' ') +
+      ' textured=R1+R2+R3=' + ((T.rows.R1 || 0) + (T.rows.R2c || 0) + (T.rows.R2p || 0) + (T.rows.R3 || 0)));
+    console.log('§SURFACE_RULES_COLOUR bld=' + (A.activeBuilding || '?') + ' authored=' + T.authored + ' classDefault=' + T.classDefault + ' (colours unchanged by the rules)');
+    var ck = Object.keys(T.cls).sort(function(a, b) { var sa = 0, sb = 0, k; for (k in T.cls[a]) sa += T.cls[a][k]; for (k in T.cls[b]) sb += T.cls[b][k]; return sb - sa; });
+    console.log('§SURFACE_RULES_CLASS bld=' + (A.activeBuilding || '?') + ' ' + ck.slice(0, 30).map(function(c) { return c + ':' + Object.keys(T.cls[c]).map(function(r) { return r + '=' + T.cls[c][r]; }).join(','); }).join(' '));
+  };
+  // ══ §SURFACE_R10 (bim-compiler PHOTOREAL_STILL_RENDER.md "§SURFACE_R10 — SPEC" + "R10 additions") ══
+  // Single-style openings: an IfcWindow / IfcDoor whose whole mesh carries ONE style (alpha >= 1) — a data
+  // gap, logged, never silent. Rides the surface rules: ON with them, `?surf=off` disables all of it.
+  // WINDOW: panes split from the frame per TRIANGLE by geometry (viewer/surface_r10.js, a port of the
+  //   measurement r10/split_lib.py; decided once per mesh hash). Pane -> class-default glazing (IfcWindow
+  //   STD_MAT colour, transparent); frame keeps today's material. Not clean -> left as authored (a louvre
+  //   or a muntin grid is not a pane).
+  // DOOR: separable hardware keeps today's (authored handle) material; the rest gets the class-default door
+  //   finish, smooth (R7). No hardware found -> left as today.
+  // SHAPE: geometry groups [0 = today's material, 1 = the new one] + a material array per mesh. A split
+  //   element never enters a BatchedMesh (one material) or a merged bucket (one material over per-element
+  //   index ranges): it is drawn as an InstancedMesh (2+ in a flush) or a single Mesh. Glass must not block
+  //   the sun: three.js casts per MESH, so split windows carry a customDepthMaterial that discards `aPane`
+  //   triangles; frames still cast.
+  // PANE ALPHA (no invented value): the building's own most common authored IfcWindow glazing alpha
+  //   (Terminal 0.100, Hospital 0.300); else its most common authored glazing alpha of any class (LTU 0.600);
+  //   none at all -> windows are NOT split (logged src=none).
+  A._r10GeoCache = {};      // hash -> { kind, verdict, why, geo|null }
+  A._r10State = null;       // per building: tallies + paths
+  A._r10Guids = new Set();  // every element drawn split (consolidation must never put one back in a batch)
+  A._r10Eligible = function(el) {
+    if (!A._surfRules || !el) return false;
+    var c = el.ifcClass;
+    return (c === 'IfcWindow' || c === 'IfcDoor') && A._alphaOf(el.rgba) >= 1.0;
+  };
+  A._r10St = function() {
+    var b = A.activeBuilding || '?';
+    if (!A._r10State || A._r10State.bld !== b) {
+      A._r10State = { bld: b, win: { clean: 0, fallback: 0, why: {} }, door: { hardware: 0, leafOnly: 0, other: {} },
+        paths: { instanced: 0, merged: 0, batchedMoved: 0, single: 0, movedToInstanced: 0, movedToSingle: 0 }, paneAlpha: null, paneSrc: '' };
+    }
+    return A._r10State;
+  };
+  A._r10PaneAlpha = function() {
+    var S = A._r10St();
+    if (S.paneAlpha !== null) return S.paneAlpha;
+    var q = A.streamQueue || [], win = {}, any = {};
+    for (var i = 0; i < q.length; i++) {
+      var a = A._alphaOf(q[i][2]); if (!(a < 1.0)) continue;
+      any[a] = (any[a] || 0) + 1;
+      if (q[i][11] === 'IfcWindow') win[a] = (win[a] || 0) + 1;
+    }
+    var top = function(o) { var bk = null, bn = 0; for (var k in o) if (o[k] > bn) { bn = o[k]; bk = +k; } return bk; };
+    var w = top(win), y = top(any);
+    if (w !== null) { S.paneAlpha = w; S.paneSrc = 'authored IfcWindow glazing'; }
+    else if (y !== null) { S.paneAlpha = y; S.paneSrc = 'authored glazing, any class'; }
+    else { S.paneAlpha = 0; S.paneSrc = 'none'; }
+    return S.paneAlpha;
+  };
+  A._r10Split = function(hash, geo, cls) {
+    var ck = hash + '|' + cls;
+    if (A._r10GeoCache[ck]) return A._r10GeoCache[ck];
+    var out = { kind: cls === 'IfcWindow' ? 'window' : 'door', verdict: 'NO_GEOMETRY', why: '', geo: null };
+    try {
+      var pos = geo && geo.attributes.position && geo.attributes.position.array, idx = geo && geo.index && geo.index.array;
+      if (pos && idx && window.SurfaceR10) {
+        var r = out.kind === 'window' ? window.SurfaceR10.classifyWindow(pos, idx) : window.SurfaceR10.classifyDoor(pos, idx);
+        out.verdict = r.verdict; out.why = r.why || '';
+        if (r.flags && (out.kind === 'door' || A._r10PaneAlpha() > 0)) out.geo = A._r10BuildGeo(geo, r.flags, out.kind === 'window');
+        else if (r.flags) { out.verdict = 'NO_PANE_ALPHA'; out.why = 'building has no authored glazing to take an alpha from'; }
+      } else if (!window.SurfaceR10) { out.verdict = 'NO_MODULE'; out.why = 'surface_r10.js not loaded'; }
+    } catch (e) { out.verdict = 'ERROR'; out.why = e.message; console.warn('§SURFACE_R10_ERROR hash=' + hash + ' ' + e.message); }
+    A._r10GeoCache[ck] = out;
+    return out;
+  };
+  // A new geometry: a vertex used by triangles of BOTH groups is duplicated, so `aPane` is exact per triangle
+  // (JKR/LTU weld the glass to the frame). Index order = group 0 (today's material) then group 1 (new).
+  A._r10BuildGeo = function(geo, flags, isWindow) {
+    var idx = geo.index.array, m = Math.floor(idx.length / 3), names = Object.keys(geo.attributes);
+    var remap = new Map(), src = [], n1 = 0;
+    for (var t = 0; t < m; t++) if (flags[t]) n1++;
+    var nIdx = new Array(m * 3), w0 = 0, w1 = (m - n1) * 3;
+    for (var t2 = 0; t2 < m; t2++) {
+      var f = flags[t2] ? 1 : 0, at = f ? w1 : w0;
+      for (var c = 0; c < 3; c++) {
+        var ov = idx[t2 * 3 + c], key = ov * 2 + f, nv = remap.get(key);
+        if (nv === undefined) { nv = src.length; remap.set(key, nv); src.push(ov); }
+        nIdx[at + c] = nv;
+      }
+      if (f) w1 += 3; else w0 += 3;
+    }
+    // src[nv] = the old vertex it copies; its group flag is the low bit of its key
+    var nvCount = src.length, pane = new Float32Array(nvCount);
+    remap.forEach(function(nv, key) { pane[nv] = (isWindow && (key & 1)) ? 1 : 0; });
+    var out = new THREE.BufferGeometry();
+    for (var a = 0; a < names.length; a++) {
+      var at0 = geo.attributes[names[a]], isz = at0.itemSize, arr = new at0.array.constructor(nvCount * isz);
+      for (var v = 0; v < nvCount; v++) for (var k = 0; k < isz; k++) arr[v * isz + k] = at0.array[src[v] * isz + k];
+      out.setAttribute(names[a], new THREE.BufferAttribute(arr, isz, at0.normalized));
+    }
+    out.setAttribute('aPane', new THREE.BufferAttribute(pane, 1));
+    out.setIndex(new THREE.BufferAttribute(nvCount < 65536 ? new Uint16Array(nIdx) : new Uint32Array(nIdx), 1));
+    out.addGroup(0, (m - n1) * 3, 0);
+    out.addGroup((m - n1) * 3, n1 * 3, 1);
+    out.computeBoundingSphere(); out.computeBoundingBox();
+    out.userData.r10 = { kind: isWindow ? 'window' : 'door', tris0: m - n1, tris1: n1 };
+    return out;
+  };
+  // A material ARRAY that still answers the single-material questions the rest of the app asks of a
+  // streamed mesh (m.color, m.transparent, m.userData, m.clone(), m.dispose() ...). Reads and writes go to
+  // element 0 (today's material — what the mesh "is"); switches that must hold for the whole mesh
+  // (visible, wireframe, section clipping, depth test, needsUpdate) go to every element. Array.isArray is
+  // still true, so three.js draws it per group.
+  var _R10_FWD_FIRST = ['color', 'emissive', 'emissiveIntensity', 'opacity', 'transparent', 'side', 'userData', 'name', 'type',
+    'envMap', 'envMapIntensity', 'roughness', 'metalness', 'map', 'uuid', 'flatShading', 'vertexColors', 'alphaTest',
+    'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits', 'blending', 'toneMapped', 'fog'];
+  var _R10_FWD_ALL = ['visible', 'wireframe', 'needsUpdate', 'depthTest', 'depthWrite', 'colorWrite', 'clippingPlanes', 'clipShadows', 'clipIntersection'];
+  A._r10MatArray = function(list) {
+    var arr = list.slice();
+    _R10_FWD_FIRST.forEach(function(p) {
+      Object.defineProperty(arr, p, { configurable: true, enumerable: false,
+        get: function() { return arr[0][p]; }, set: function(v) { arr[0][p] = v; } });
+    });
+    _R10_FWD_ALL.forEach(function(p) {
+      Object.defineProperty(arr, p, { configurable: true, enumerable: false,
+        get: function() { return arr[0][p]; }, set: function(v) { for (var i = 0; i < arr.length; i++) arr[i][p] = v; } });
+    });
+    Object.defineProperty(arr, 'isR10MaterialArray', { value: true, enumerable: false });
+    Object.defineProperty(arr, 'clone', { enumerable: false, value: function() { return A._r10MatArray(arr.map(function(x) { return x.clone(); })); } });
+    Object.defineProperty(arr, 'dispose', { enumerable: false, value: function() { arr.forEach(function(x) { if (x.dispose) x.dispose(); }); } });
+    Object.defineProperty(arr, 'setValues', { enumerable: false, value: function(v) { return arr[0].setValues(v); } });
+    return arr;
+  };
+  A._r10MatCache = {};
+  A._r10Materials = function(frameMat, kind, el) {
+    var ck = frameMat.uuid + '|' + kind;
+    if (A._r10MatCache[ck]) return A._r10MatCache[ck];
+    var second;
+    if (kind === 'window') {
+      // class-default glazing: IfcWindow STD_MAT colour (0.70, 0.82, 0.88) with the building's own glazing alpha.
+      var al = A._r10PaneAlpha();
+      second = A._getMaterial('0.700,0.820,0.880,' + al.toFixed(3), 'IfcWindow', '', '', null, '', undefined, 'R9');
+    } else {
+      // class-default door finish (IfcDoor STD_MAT, rgba NULL), smooth: R7 = no texture, no grain.
+      second = A._getMaterial(null, 'IfcDoor', '', '', null, '', undefined, 'R7');
+    }
+    return (A._r10MatCache[ck] = A._r10MatArray([frameMat, second]));
+  };
+  A._r10DepthMaterial = function() {
+    if (A._r10DepthMat) return A._r10DepthMat;
+    var m = new THREE.MeshDepthMaterial();
+    m.onBeforeCompile = function(sh) {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aPane;\nvarying float vR10Pane;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvR10Pane = aPane;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vR10Pane;')
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vR10Pane > 0.5) discard;');
+      A._r10DepthCompiled = (A._r10DepthCompiled || 0) + 1;
+    };
+    m.customProgramCacheKey = function() { return 'surface_r10_pane_discard'; };
+    m.userData.r10Depth = true;
+    return (A._r10DepthMat = m);
+  };
+  // Stream-end rollup: the numbers the witness asserts are emitted by the running app.
+  A._r10Report = function() {
+    var bld = A.activeBuilding || '?';
+    if (!A._surfRules) { console.log('§SURFACE_R10 OFF bld=' + bld + ' (?surf=off — no opening is split)'); return; }
+    if (!A.streamedCount) { console.log('§SURFACE_R10 VACUOUS bld=' + bld + ' streamed=0 — nothing judged, no split counts printed'); return; }
+    var q = A.streamQueue || [], ss = { IfcWindow: 0, IfcDoor: 0 };
+    for (var i = 0; i < q.length; i++) { var c = q[i][11]; if ((c === 'IfcWindow' || c === 'IfcDoor') && A._alphaOf(q[i][2]) >= 1.0) ss[c]++; }
+    console.log('§SURFACE_OPENING_SINGLE_STYLE bld=' + bld + ' class=IfcWindow n=' + ss.IfcWindow);
+    console.log('§SURFACE_OPENING_SINGLE_STYLE bld=' + bld + ' class=IfcDoor n=' + ss.IfcDoor);
+    var S = A._r10St(), W = S.win, D = S.door, P = S.paths;
+    var wr = Object.keys(W.why).map(function(k) { return k + ':' + W.why[k]; }).join(',') || 'none';
+    var dr = Object.keys(D.other).map(function(k) { return k + ':' + D.other[k]; }).join(',') || 'none';
+    console.log('§SURFACE_R10_SPLIT bld=' + bld + ' windows clean=' + W.clean + ' fallback=' + W.fallback + ' (' + wr + ')' +
+      ' doors hardware=' + D.hardware + ' leafOnly=' + D.leafOnly + ' (untouched: ' + dr + ')' +
+      ' paneAlpha=' + (S.paneAlpha === null ? 'unused' : S.paneAlpha.toFixed(3)) + ' paneAlphaSrc=' + (S.paneSrc || 'unused'));
+    console.log('§SURFACE_R10_PATHS bld=' + bld + ' instanced=' + P.instanced + ' merged=' + P.merged + ' batchedMoved=' + P.batchedMoved +
+      ' single=' + P.single + ' (moved out of a batch/merge -> instanced ' + P.movedToInstanced + ', -> single ' + P.movedToSingle + ')');
+    A._r10ShadowReport();
+  };
+  // paneCasters = pane triangles (per drawn element) that WOULD reach the shadow map: on a mesh without the
+  // discard material, or with a vertex whose aPane is not 1. frameCasters = split window elements whose frame
+  // triangles cast (aPane 0 on every vertex, group material visible). Read from the scene, not from a counter.
+  A._r10ShadowReport = function() {
+    var pane = 0, frame = 0, meshes = 0, paneTris = 0;
+    A.scene.traverse(function(o) {
+      if (!o.userData || o.userData.r10 !== 'window' || !o.geometry || !o.geometry.userData.r10) return;
+      meshes++;
+      var g = o.geometry, ap = g.getAttribute('aPane').array, ix = g.index.array, gr = g.groups;
+      var inst = o.isInstancedMesh ? o.count : 1, discard = o.customDepthMaterial === A._r10DepthMat && !!A._r10DepthMat;
+      var badPane = 0, frameOk = 0;
+      for (var j = gr[1].start; j < gr[1].start + gr[1].count; j++) if (!discard || ap[ix[j]] !== 1) badPane++;
+      for (var j2 = gr[0].start; j2 < gr[0].start + gr[0].count; j2++) if (ap[ix[j2]] === 0) frameOk++;
+      paneTris += gr[1].count / 3 * inst;
+      if (badPane) pane += inst;
+      if (frameOk === gr[0].count && gr[0].count > 0) frame += inst;
+    });
+    console.log('§SURFACE_R10_SHADOW bld=' + (A.activeBuilding || '?') + ' paneCasters=' + pane + ' frameCasters=' + frame +
+      ' (split window meshes=' + meshes + ', pane triangles drawn=' + paneTris + ', all discarded in the depth pass by aPane)');
+  };
+  // Draw-call / transparent cost at the current pose (renderer.info of one plain render + the render list).
+  A._r10Cost = function() {
+    var r = A.renderer; if (!r || !A.scene || !A.camera) return null;
+    var auto = r.info.autoReset; r.info.autoReset = false; r.info.reset();
+    r.render(A.scene, A.camera);
+    var calls = r.info.render.calls, tris = r.info.render.triangles;
+    r.info.autoReset = auto;
+    var tr = 0; try { var rl = r.renderLists.get(A.scene, 0); tr = rl.transparent.length + (rl.transmissive ? rl.transmissive.length : 0); } catch (e) { tr = -1; }
+    return { calls: calls, transparent: tr, triangles: tris };
+  };
   A._triResolve = function(alpha, ifcClass, matName) {
     var byName = A._TRIPLANAR_BY_NAME, byClass = A._TRIPLANAR_MAT;
     if (!byName || !byClass) return { mat: null, src: 'INCONCLUSIVE' };
@@ -794,6 +1102,19 @@ function setupStreaming(A) {
       ' alpha_none=' + bySrc['alpha-none'] + ' none=' + bySrc.none +
       ' textured=' + textured + ' distinct_names_resolved=' + distinct.length +
       (bySrc.name === 0 ? ' NO-OP — no element resolved by material_name on this building' : ''));
+    // §TRI_BIG_ONLY_TALLY — per class: rows textured now vs rows textured with the switch on. Same resolver.
+    var _tb = {};
+    for (var ti = 0; ti < q.length; ti++) {
+      var trow = q[ti], tcls = trow[11] || '?';
+      var tres = A._triResolve(A._alphaOf(trow[2]), trow[11] || '', trow[16] || '');
+      if (!tres.mat) continue;
+      var te = _tb[tcls] || (_tb[tcls] = [0, 0]); te[0]++; if (A._TRI_BIG_CLASSES[tcls]) te[1]++;
+    }
+    var _tbK = Object.keys(_tb).sort(function(x, y) { return _tb[y][0] - _tb[x][0]; }), _tbNow = 0, _tbBig = 0;
+    for (var tk = 0; tk < _tbK.length; tk++) { _tbNow += _tb[_tbK[tk]][0]; _tbBig += _tb[_tbK[tk]][1]; }
+    console.log('§TRI_BIG_ONLY_TALLY bld=' + (A.activeBuilding || '?') + ' switch=' + (A._triBigOnly ? 'on' : 'off') +
+      ' texturedNow=' + _tbNow + ' texturedUnderSwitch=' + _tbBig + ' perClass(now/switch)=' +
+      _tbK.map(function(k) { return k + ':' + _tb[k][0] + '/' + _tb[k][1]; }).join(' '));
     distinct.sort(function(x, y) { return namesHit[y] - namesHit[x]; });
     for (var d = 0; d < distinct.length; d++)
       console.log('§TRI_SRC_NAME name="' + distinct[d] + '" n=' + namesHit[distinct[d]] +
@@ -904,7 +1225,7 @@ function setupStreaming(A) {
   // §MEP_COLOR_SURVIVES_PHOTOREAL: `noMepHue` suppresses the trade-hue tier for THIS material.
   // Its one caller is the InstancedMesh branch, which buckets by GEOMETRY HASH ALONE and can
   // therefore hand one material to a set that is not uniform on MEP-ness — see the guard there.
-  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName, noMepHue) {
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName, noMepHue, surfRow) {
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -1063,6 +1384,13 @@ function setupStreaming(A) {
       normFactorRGB: [4.8763, 4.0250, 3.3988],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.9
     };
+    // §CONCRETE_TONE dials: APP._concrete (0..1) > &concrete= > 0.55 (strength; contrast 1.1 x 0.55 = 0.6, red1's
+    // start); APP._concreteTile (m) > &concretetile= > 4.0 (was _TRI_CONCRETE's 2.5 m — a larger tile, red1 "consider").
+    var R3_CONTRAST = 1.1;
+    var _concreteUrl = (function() { var m = /[?&]concrete=([0-9.]+)/.exec(location.search); return m ? parseFloat(m[1]) : null; })();
+    var _concreteTileUrl = (function() { var m = /[?&]concretetile=([0-9.]+)/.exec(location.search); return m ? parseFloat(m[1]) : null; })();
+    A._concreteStrength = function() { var v = (typeof A._concrete === 'number') ? A._concrete : (_concreteUrl != null ? _concreteUrl : 0.55); return Math.max(0, Math.min(1, isFinite(v) ? v : 0.55)); };
+    A._concreteTile = function() { var v = (typeof A._concreteTileM === 'number') ? A._concreteTileM : (_concreteTileUrl != null ? _concreteTileUrl : 4.0); return Math.max(0.5, Math.min(20, isFinite(v) ? v : 4.0)); };
     var TRIPLANAR_MAT = {
       // ── Concrete (STD_MAT: "concrete/plaster", "cast concrete", "reinforced concrete", ...) ──
       IfcWall: _TRI_CONCRETE,
@@ -1166,7 +1494,8 @@ function setupStreaming(A) {
     // material literally containing an Ifc class name would otherwise silently join the bloom set.
     // Case-only change: the key stays readable, and the real name lives in mat.userData._matName.
     var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (matName || '').replace(/Ifc/g, 'ifc')
-      + (noMepHue ? '|noMepHue' : '');   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
+      + (noMepHue ? '|noMepHue' : '')
+      + (surfRow ? '|surf=' + surfRow : '');   // §SURFACE_RULES — one material per row   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
@@ -1256,7 +1585,19 @@ function setupStreaming(A) {
       opts.envMapIntensity = (a < 1.0) ? 0.6
         : ((stdMat && stdMat.envInt != null) ? stdMat.envInt : 0.6);
     }
+    // §SURFACE_RULES — roughness / reflection per row (null = keep today's value). Colour is never touched.
+    if (surfRow && surfRow !== 'R9') {
+      var _SRP = { R1: [0.55, null], R2c: [0.8, null], R2p: [0.8, null], R3: [0.85, null], R4: [0.35, 0.3], R5: [0.75, null], R6: [0.45, null] }[surfRow];
+      if (_SRP) { opts.roughness = _SRP[0]; if (_SRP[1] != null) opts.envMapIntensity = _SRP[1]; }
+      // §FLOOR_WASH dials (red1: "a bit of bright wash, particularly the floor"; look arms, read at load, defaults
+      // unchanged): &r4rough= overrides R4's 0.35.
+      if (surfRow === 'R4') { var _r4m = /[?&]r4rough=([0-9.]+)/.exec(location.search); if (_r4m) opts.roughness = Math.max(0.02, Math.min(1, parseFloat(_r4m[1]))); }
+    }
     const mat = new THREE.MeshStandardMaterial(opts);
+    // §FLOOR_WASH: &r4envboost=0 exempts R4 floors from Alt+S's x2 env boost (roughness 0.35 <= PHOTO_GLOSSY_ROUGHNESS_MAX
+    // 0.5 makes them "glossy", so their sky reflection doubles 0.3 -> 0.6 in the still), via the existing exemption flag.
+    if (surfRow === 'R4' && /[?&]r4envboost=0/.test(location.search)) mat.userData._photoEnvExempt = true;
+    if (surfRow) mat.userData.surfRow = surfRow;
     // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): effects.js's _reassertPhotoMatBoost() blindly
     // multiplies envMapIntensity x3 and tightens roughness x0.4 on every metal/glossy material
     // during Alt+S/Alt+G, with no awareness of this per-class envInt tuning above — so the SAME
@@ -1279,13 +1620,21 @@ function setupStreaming(A) {
     var _triR = A._triResolve(a, ifcClass, matName);
     var triMat = _triR.mat;
     var _triSrc = _triR.src;
+    // §SURFACE_RULES: texture only where the real surface is coarse at building scale (R1-R3), and softer
+    // than the shipped contrast (1.9 / 1.6 -> 1.2 / 1.1); every other row renders its own colour smooth.
+    if (surfRow === 'R9') { triMat = null; _triSrc = 'surf:R9'; }   // majority-glass batch: never a wear texture, whatever items[0] is
+    else if (surfRow) {
+      var _SR = { R1: [_TRI_METAL, 1.2], R2c: [_TRI_CONCRETE, 1.6 * 0.7], R2p: [_TRI_PLASTER, 1.5 * 0.7], R3: [_TRI_CONCRETE, 1.1] }[surfRow];
+      triMat = _SR ? Object.assign({}, _SR[0], { contrastBoost: _SR[1] }) : null;
+      _triSrc = 'surf:' + surfRow;
+    }
 
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
     // Rough surfaces (concrete, slabs, walls): coarse pebble texture.
     // Zero geometry cost. Reduces temporal aliasing shimmer on flat-color surfaces.
     var _perturbScale = 0;
-    if (!triMat) {
+    if (!triMat && !(surfRow && surfRow !== 'R9')) {   // §SURFACE_RULES: smooth rows get no fake grain either
       if (stdMat && stdMat.metal > 0.3) _perturbScale = 0.15;  // metal: subtle brushed grain
       else if (stdMat && stdMat.rough > 0.7) _perturbScale = 0.25;  // concrete: visible grain
     }
@@ -1334,6 +1683,8 @@ function setupStreaming(A) {
       var _triUvScale = 1.0 / triMat.tileMeters;
       var _triNorm = new THREE.Vector3(triMat.normFactorRGB[0], triMat.normFactorRGB[1], triMat.normFactorRGB[2]);
       var _triContrast = triMat.contrastBoost || 1.0;
+      var _triIsR3 = (surfRow === 'R3');   // §CONCRETE_TONE — live strength/tile on the R3 concrete rows only
+      mat.userData.triRow = surfRow || null;
       mat.onBeforeCompile = function(shader) {
         shader.uniforms.uTriActive = { value: 0.0 };  // flipped by A.startStillRefine()/_teardownStillRefine()
         shader.uniforms.uTriDiffuse = { value: _diffuseTex };
@@ -1473,19 +1824,23 @@ function setupStreaming(A) {
         // the texture dark for the whole accumulation. onBeforeRender runs every frame per
         // object and re-asserts the CURRENT value from live state, so it self-heals across
         // any recompile instead of relying on a single push at start time.
-        shader.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+        shader.uniforms.uTriActive.value = A._triActiveFor(mat);   // §TRI_BIG_ONLY
         shader.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
       };
       mat.onBeforeRender = function() {
         var sh = mat._triplanarShader;
         if (sh) {
-          sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+          sh.uniforms.uTriActive.value = A._triActiveFor(mat);   // §TRI_BIG_ONLY
           sh.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
           // §TRIPLANAR_NORMAL A/B switch, re-asserted here for the same reason uTriActive is
           // (§TRIPLANAR_RECOMPILE_FIX): a silent program recompile resets uniforms to defaults.
           // APP._triNormalOff = true reverts to the shipped two-map look with no reload.
           if (sh.uniforms.uTriNormalMap && sh.uniforms.uTriNormalMap.value)
-            sh.uniforms.uTriNormalScale.value = A._triNormalOff ? 0.0 : 1.0;
+            sh.uniforms.uTriNormalScale.value = A._triNormalOff ? 0.0 : (_triIsR3 ? A._concreteStrength() : 1.0);
+          // §CONCRETE_TONE (red1 2026-09-24: "tone down the crinkled concrete on the upper walls") — R3 contrast =
+          // R3's 1.1 x strength (default 0.55 -> 0.6, red1's start value), normal map x strength, tile CONCRETE_TILE_M.
+          if (_triIsR3) { var _cs = A._concreteStrength(); sh.uniforms.uTriContrast.value = R3_CONTRAST * _cs;
+            sh.uniforms.uTriScale.value = 1.0 / A._concreteTile(); }
         }
       };
       A._triplanarMaterials = A._triplanarMaterials || [];
@@ -1497,6 +1852,8 @@ function setupStreaming(A) {
     // it without re-deriving. Plain strings only — see the §TRIPLANAR_CLONE_STALL note above about
     // never putting the shader object in userData.
     mat.userData._triSrc = _triSrc;
+    if (surfRow) mat.userData._surfRow = surfRow;   // §SURFACE_RULES
+    mat.userData._triSmallPart = !!triMat && !A._TRI_BIG_CLASSES[ifcClass];   // §TRI_BIG_ONLY
     mat.userData._triTex = triMat ? triMat.diffuse : '';
     mat.userData._matName = matName || '';
     // §ENTOURAGE: real RPC people/tree/logo get a presentation material, but ONLY during the Alt+S
@@ -1710,6 +2067,8 @@ function setupStreaming(A) {
         }
         A.streaming = false;
         if (A._triSrcTally) A._triSrcTally();   // §CPE_MATERIAL_KEY rollup — shipped §-log evidence
+        if (A._surfTally) A._surfTally();       // §SURFACE_RULES rollup (only when ?surf=rules)
+        if (A._r10Report) A._r10Report();       // §SURFACE_R10 rollup (§SURFACE_OPENING_SINGLE_STYLE / _SPLIT / _PATHS / _SHADOW)
         if (A._mepHueRollup) A._mepHueRollup();  // §MEP_COLOR_SURVIVES_PHOTOREAL rollup — same reason
         // §RED_GREY_MYSTERY: DISABLED for now — the repair itself is verified correct (patches the
         // broken normal data, confirmed by direct readback) but does NOT change the rendered
@@ -2155,7 +2514,51 @@ function setupStreaming(A) {
         ' override=' + (_mergeOverride === null ? 'none' : _mergeOverride));
     }
 
-    for (const [hash, elements] of Object.entries(A._pendingInstances)) {
+    // §SURFACE_R10 — draw split openings: split geometry + [today's material, new material]. 2+ in this flush
+    // -> one InstancedMesh (same registration as the instanced branch below); 1 -> one Mesh (same registration
+    // as the §BATCHED_FAIL / §S261 fallback meshes: guidMap[mesh.id] + userData.guid).
+    var _r10Place = function(sp, els, origin) {
+      var S = A._r10St(), P = S.paths, e0 = els[0], n = els.length;
+      var frameMat = A._getMaterial(e0.rgba, e0.ifcClass, e0.matVariant, e0.disc, e0.mepHint, e0.matName, undefined, A._surfRowFor(els));
+      var mats = A._r10Materials(frameMat, sp.kind, e0), mesh;
+      if (origin === 'merged') P.merged += n; else if (origin === 'batched') P.batchedMoved += n;
+      for (var i = 0; i < n; i++) A._r10Guids.add(els[i].guid);
+      if (n >= 2) {
+        mesh = new THREE.InstancedMesh(sp.geo, mats, n);
+        mesh.frustumCulled = false;  // §S271b, as the instanced branch
+        var meta = [], dU = e0.disc || '';
+        for (var k = 0; k < n; k++) {
+          var el = els[k], p = A.ifc2three(el.cx, el.cy, el.cz);
+          _pos.set(p.x, p.y, p.z); _euler.set(el.rotX, el.rotZ, -el.rotY); _quat.setFromEuler(_euler);
+          _m4.compose(_pos, _quat, _scale); mesh.setMatrixAt(k, _m4);
+          meta.push(A._registerInstanceSlot(mesh, el, k));
+          if ((el.disc || '') !== dU) dU = null;
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.userData.isInstanced = true; mesh.userData.hash = e0.hash; mesh.userData.ifcClass = e0.ifcClass || '';
+        if (dU) mesh.userData.disc = dU;
+        A._instanceMeta[mesh.id] = meta;
+        P.instanced += n; if (origin !== 'instanced') P.movedToInstanced += n;
+      } else {
+        mesh = new THREE.Mesh(sp.geo, mats);
+        var q = A.ifc2three(e0.cx, e0.cy, e0.cz);
+        mesh.position.set(q.x, q.y, q.z);
+        if (e0.rotX || e0.rotY || e0.rotZ) mesh.rotation.set(e0.rotX, e0.rotZ, -e0.rotY);
+        mesh.updateMatrix();
+        mesh.userData.storey = e0.storey; mesh.userData.disc = e0.disc;
+        mesh.userData.guid = e0.guid; mesh.userData.ifcClass = e0.ifcClass || '';
+        A.guidMap[mesh.id] = e0.guid;
+        if (!A._storeyVisible(e0.storey)) mesh.visible = false;
+        if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(e0.disc)) mesh.visible = false;
+        P.single += 1; if (origin !== 'instanced') P.movedToSingle += 1;
+      }
+      mesh.userData.r10 = sp.kind;
+      if (sp.kind === 'window') mesh.customDepthMaterial = A._r10DepthMaterial();
+      A.scene.add(mesh);
+      return { instanced: n >= 2 ? n : 0, single: n >= 2 ? 0 : 1, draws: 1 };
+    };
+
+    for (let [hash, elements] of Object.entries(A._pendingInstances)) {   // `let`: §SURFACE_R10 may take split openings out of `elements`
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
@@ -2176,6 +2579,30 @@ function setupStreaming(A) {
       // (every element still lands in exactly one, via the same _registerBatchSlot call), which
       // is why this is expected to be safe, but expectation is not the same as verification.
       var LOW_INSTANCE_BATCH_MAX = 3;
+      // §SURFACE_R10 — split single-style openings leave the normal routing HERE, before any batch / merge
+      // bucket or InstancedMesh is built, so no path ever sees them with one material. `origin` is the path
+      // they would have taken (the same rule as below), for §SURFACE_R10_PATHS.
+      if (A._surfRules) {
+        var _r10In = [], _r10Rest = [];
+        for (var _ri = 0; _ri < elements.length; _ri++) (A._r10Eligible(elements[_ri]) ? _r10In : _r10Rest).push(elements[_ri]);
+        if (_r10In.length) {
+          var _r10Sp = A._r10Split(hash, geo, _r10In[0].ifcClass), _r10S = A._r10St();
+          for (var _rj = 0; _rj < _r10In.length; _rj++) {
+            var _rk = _r10Sp.verdict;
+            if (_r10Sp.kind === 'window') { if (_r10Sp.geo) _r10S.win.clean++; else { _r10S.win.fallback++; _r10S.win.why[_rk] = (_r10S.win.why[_rk] || 0) + 1; } }
+            else if (_r10Sp.geo) _r10S.door.hardware++;
+            else if (_rk === 'LEAF_NO_HW') _r10S.door.leafOnly++;
+            else _r10S.door.other[_rk] = (_r10S.door.other[_rk] || 0) + 1;
+          }
+          if (_r10Sp.geo) {
+            var _r10Origin = elements.length > LOW_INSTANCE_BATCH_MAX ? 'instanced' : (_useMerge ? 'merged' : 'batched');
+            var _r10Drawn = _r10Place(_r10Sp, _r10In, _r10Origin);
+            instancedCount += _r10Drawn.instanced; batchedCount += _r10Drawn.single; drawCalls += _r10Drawn.draws;
+            elements = _r10Rest;
+            if (!elements.length) continue;
+          }
+        }
+      }
       if (elements.length <= LOW_INSTANCE_BATCH_MAX) {
         // §S260/§S280e: Desktop — bucket for BatchedMesh (low-instance-count hashes)
         for (let li = 0; li < elements.length; li++) {
@@ -2229,7 +2656,7 @@ function setupStreaming(A) {
         }
         if (_mepU === null) A._instMepMixed = (A._instMepMixed || 0) + 1;
         else A._instMepUniform = (A._instMepUniform || 0) + 1;
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName, _mepU === null);
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName, _mepU === null, A._surfRowFor(elements));
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -2298,7 +2725,7 @@ function setupStreaming(A) {
         }
 
         var batchCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '');
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }));
         var bm;
         try {
           bm = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -2377,7 +2804,7 @@ function setupStreaming(A) {
       for (const [key, items] of Object.entries(batchBuckets)) {
         for (const item of items) {
           const el = item.el;
-          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint, el.matName);
+          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint, el.matName, undefined, A._surfRowFor([el]));
           const mesh = new THREE.Mesh(item.geo, mat);
           const pos = A.ifc2three(el.cx, el.cy, el.cz);
           mesh.position.set(pos.x, pos.y, pos.z);
@@ -2512,7 +2939,7 @@ function setupStreaming(A) {
         mergedGeo.setIndex(new THREE.BufferAttribute(_mIdx, 1));
 
         var mergedCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '');
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }));
         const mesh = new THREE.Mesh(mergedGeo, mat);
         mesh.userData.storey = storey === '_' ? '' : storey;
         mesh.userData.disc = disc === '_' ? '' : disc;
@@ -2672,7 +3099,7 @@ function setupStreaming(A) {
       // Fallback: individual meshes for oversized/over-budget elements
       if (fallbackItems.length > 0) {
         var batchCls = fallbackItems[0].el.ifcClass || '';
-        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint, fallbackItems[0].el.matName);
+        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint, fallbackItems[0].el.matName, undefined, A._surfRowFor(fallbackItems, function(it) { return it.el; }));
         for (var fi = 0; fi < fallbackItems.length; fi++) {
           var el = fallbackItems[fi].el;
           var m = new THREE.Mesh(fallbackItems[fi].geo, mat);
@@ -2694,7 +3121,7 @@ function setupStreaming(A) {
 
       // Create BatchedMesh with reserved capacity
       var batchCls = slotReservations[0].item.el.ifcClass || '';
-      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint, slotReservations[0].item.el.matName);
+      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint, slotReservations[0].item.el.matName, undefined, A._surfRowFor(slotReservations, function(it) { return it.item.el; }));
       var bm;
       try {
         bm = new THREE.BatchedMesh(slotReservations.length, bucketVerts, bucketIdx, mat);
@@ -2845,6 +3272,7 @@ function setupStreaming(A) {
       if (!hash || !A.meshCache[hash]) continue;
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
+      if (A._r10Guids && A._r10Guids.has(guid)) continue;   // §SURFACE_R10 — a split opening never goes back into a batch
 
       var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-') + '|' + (ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — see the batch key above
       if (!buckets[key]) buckets[key] = [];
@@ -2872,7 +3300,7 @@ function setupStreaming(A) {
       var parts = key.split('|');
       var rgbaKey = parts[2];
       var batchCls = items[0].ifcClass;
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint, items[0].matName);
+      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint, items[0].matName, undefined, A._surfRowFor(items));
       var newBM;
       try {
         newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -3581,6 +4009,7 @@ function setupStreaming(A) {
       if (geo && geo.dispose) geo.dispose();
     }
     A.meshCache = {};
+    A._r10GeoCache = {}; A._r10State = null; A._r10Guids = new Set(); A._r10MatCache = {};   // §SURFACE_R10 per-load state
     A.streamedCount = 0;
     A.streaming = false;
     A.streamQueue = [];

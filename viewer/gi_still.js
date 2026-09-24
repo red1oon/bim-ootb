@@ -280,17 +280,30 @@
   // Draw the app's OWN finished frame into our colour canvas. Render and copy in the SAME task: a
   // WebGL canvas is not guaranteed to hold its pixels afterwards, and the app parks its render loop
   // when idle (§IDLE_GATE park appears in the log right before Alt+S), so the buffer can be empty.
-  function grabAppFrame(G) {
+  // §GI_APP_FRAME (2026-09-24, measured: some presses fed the bounce a near-black app frame, appMean 13.3, while the
+  // still on screen was normal, mean 119). The old code RE-RENDERED the app scene before reading it — one raw render,
+  // not the finished accumulated still on screen, and on those presses that render came out dark. Now the displayed
+  // still (preserveDrawingBuffer) is read FIRST; only an empty read (mean < 2, the idle-park case the re-render was
+  // for) falls back to a re-render. Both means are logged.
+  function readCanvasInto(G) {
     const A = window.APP;
-    try { if (A.markDirty) A.markDirty(); } catch (e) {}
-    try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); }
-    catch (e) { console.warn('§GI_STILL app render failed: ' + (e && e.message)); }
     G.colorCtx.clearRect(0, 0, G.w, G.h);
     G.colorCtx.drawImage(A.renderer.domElement, 0, 0, G.w, G.h);
     G.colorTex.needsUpdate = true;
     const u = G.colorCtx.getImageData(0, 0, Math.min(128, G.w), Math.min(72, G.h)).data;   // 128x72 only
     let t = 0; for (let i = 0; i < u.length; i += 4) t += (u[i] + u[i + 1] + u[i + 2]) / 3;
     return +(t / (u.length / 4)).toFixed(1);
+  }
+  function grabAppFrame(G) {
+    const A = window.APP;
+    const first = readCanvasInto(G);
+    if (first >= 2) { console.log('§GI_APP_FRAME read=displayed mean=' + first + ' (no re-render)'); return first; }
+    try { if (A.markDirty) A.markDirty(); } catch (e) {}
+    try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); }
+    catch (e) { console.warn('§GI_STILL app render failed: ' + (e && e.message)); }
+    const second = readCanvasInto(G);
+    console.log('§GI_APP_FRAME read=rerender displayedMean=' + first + ' rerenderMean=' + second + ' (the displayed buffer was empty)');
+    return second;
   }
   // ONE render of the geometry pass, with the app's scene left exactly as found.
   //  • scene.overrideMaterial — the whole point; restored in `finally`.
@@ -418,6 +431,45 @@
   // explicitly with sRGBTransferOETF makes the round trip an identity, which mode 'coloronly'
   // checks every run. 'transform' keeps the old behaviour for comparison.
   function encodeMode() { return window.__GI_STILL_ENCODE || 'oetf'; }
+  // §GI_STILL_GAIN_DIAL (2026-09-24, red1: bounce "MORE", tuned per press). Read at EVERY Alt+S:
+  // APP._stillBounceGain, else window.__GI_STILL_GAIN, else &bounce=<0..3>, else 1.0 (was a fixed 0.6).
+  // AO keeps its 0.55 default; window.__GI_STILL_AO still overrides, now per press too.
+  const GI_GAIN_DEFAULT = 1.0, GI_AO_DEFAULT = 0.55, GI_RECV_DEFAULT = 1, GI_RADIUS_DEFAULT = 12, GI_THICK_DEFAULT = 1;
+  function readGain() {
+    const A = window.APP || {};
+    let v = (typeof A._stillBounceGain === 'number') ? A._stillBounceGain : (typeof window.__GI_STILL_GAIN === 'number' ? window.__GI_STILL_GAIN : null);
+    if (v == null) { const m = /[?&]bounce=([0-9.]+)/.exec(location.search); v = m ? parseFloat(m[1]) : GI_GAIN_DEFAULT; }
+    return Math.max(0, Math.min(3, isFinite(v) ? v : GI_GAIN_DEFAULT));
+  }
+  // §GI_STILL_AO_DIAL (red1 via watcher: AO darkening outweighed the bounce outdoors) — APP._stillAo, else
+  // window.__GI_STILL_AO, else &ao=<0..1>, else 0.55. 0 = no occlusion darkening, 1 = full.
+  // §GI_BOUNCE_STRENGTH dials (red1: "outdoor bounce ... cannot have near-zero effect"). One reader for every SSGI
+  // knob: APP[key] (number) > &name= > default, clamped. Read at EVERY press; all are uniforms, no rebuild.
+  function readNum(key, name, def, lo, hi) {
+    const A = window.APP || {};
+    let v = (typeof A[key] === 'number') ? A[key] : null;
+    if (v == null) { const m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(location.search); v = m ? parseFloat(m[1]) : def; }
+    return Math.max(lo, Math.min(hi, isFinite(v) ? v : def));
+  }
+  function readAo() {
+    const A = window.APP || {};
+    let v = (typeof A._stillAo === 'number') ? A._stillAo : (typeof window.__GI_STILL_AO === 'number' ? window.__GI_STILL_AO : null);
+    if (v == null) { const m = /[?&]ao=([0-9.]+)/.exec(location.search); v = m ? parseFloat(m[1]) : GI_AO_DEFAULT; }
+    return Math.max(0, Math.min(1, isFinite(v) ? v : GI_AO_DEFAULT));
+  }
+  // §GI_RECEIVER — what the bounce is multiplied by at the RECEIVING pixel. Physically that is the surface's
+  // albedo; the pipeline has no albedo buffer, only the app's finished (LIT) colour, so a shaded soffit — dark in
+  // the still — received ~no bounce: the bounce was scaled by the very shading it should fill. recv 0 = the lit
+  // colour (old). recv 1 = an albedo ESTIMATE, not measured data: the lit colour's hue at a fixed brightness
+  // GI_ALBEDO_EST (0.5 = mid grey), so shade no longer cancels the bounce. Blend in between. Uniform, per press.
+  // Default recv=1 (§GI_BOUNCE_STRENGTH sweep, Hospital real GPU): bounce added courtyard 0.8% -> 4.9%, L1 interior
+  // 13.0% -> 32.0% of the app frame (linear). Radius x2/x4 did not help (screen-space radius; x4 lowered it).
+  const GI_ALBEDO_EST = 0.5;
+  function receiver(G, C) {
+    const T = G.TSL, lum = T.max(T.dot(C.rgb, T.vec3(0.2126, 0.7152, 0.0722)), T.float(1e-3));
+    const est = T.min(C.rgb.div(lum).mul(GI_ALBEDO_EST), T.vec3(1));
+    return T.mix(C.rgb, est, G.recvU);
+  }
   function outputFor(G, mode, enc) {
     const T = G.TSL, C = G.colorNode.sample(G.TSL.uv()), gi = G.gi, mask = G.maskNode;
     let rgb;
@@ -427,6 +479,11 @@
     if (mode === 'coloronly') rgb = C.rgb;                                      // alignment + transfer witness
     else if (mode === 'normals') rgb = G.geomTexNode.rgb;                       // packed view normal
     else if (mode === 'ao') rgb = T.vec3(gi.getAONode());
+    // §GI_STILL_TERM — the two parts of the composite alone, so a § line can say what the bounce ADDS and what the
+    // occlusion TAKES, in the same units as compositeMean: 'giterm' = colour x bounce x gain, 'aoloss' = colour x
+    // aoK x (1 - AO).
+    else if (mode === 'giterm') rgb = receiver(G, C).mul(gi.getGINode().rgb).mul(G.gainU);
+    else if (mode === 'aoloss') rgb = C.rgb.mul(G.aoU).mul(T.float(1).sub(gi.getAONode()));
     else {
       // §GI_AO_STRENGTH (red1, 2026-09-23: "there seems to be some eerie bouncing" — an aerial still
       // where the whole roof and facade went dark and flat). Cause is scale: the occlusion term is
@@ -436,11 +493,14 @@
       // 0 leaves the app's picture alone. The bounce term keeps its own gain.
       // Terminal measured compositeMean=163.68 against appMean=159.81 — the bounce was ADDING light
       // in a white hall and washing it out. Default gain lowered; raise it with __GI_STILL_GAIN.
-      const gain = (window.__GI_STILL_GAIN != null) ? window.__GI_STILL_GAIN : 0.6;
-      const aoK = (window.__GI_STILL_AO != null) ? window.__GI_STILL_AO : 0.55;
-      const ao = T.float(1).sub(T.float(aoK)).add(T.float(aoK).mul(gi.getAONode()));
-      rgb = C.rgb.mul(ao).add(C.rgb.mul(gi.getGINode().rgb).mul(gain));
+      // §GI_STILL_GAIN_DIAL — gain and AO are UNIFORMS (G.gainU / G.aoU), set per press in shoot(), so the
+      // renderer kept across Alt+S presses picks up a new value without a shader rebuild (§GI_DIALS_FIRST_BUILD fix).
+      const gain = G.gainU, aoK = G.aoU;
+      const ao = T.float(1).sub(aoK).add(aoK.mul(gi.getAONode()));
+      rgb = C.rgb.mul(ao).add(receiver(G, C).mul(gi.getGINode().rgb).mul(gain));
     }
+    // enc 'linear' (§GI_STILL_TERM): no transfer at all, so coloronly/giterm/aoloss means ADD up in linear light.
+    if (enc === 'linear') { G.pipeline.outputColorTransform = false; return T.vec4(rgb, mask); }
     G.pipeline.outputColorTransform = (enc === 'transform');
     return (enc === 'transform') ? T.vec4(rgb, mask) : T.vec4(T.sRGBTransferOETF(rgb), mask);
   }
@@ -452,6 +512,12 @@
     const { ssgi } = await import('./lib/gi/SSGINode.appbound.js');
     const renderer = new THREE.WebGPURenderer({ antialias: false, forceWebGL: false, trackTimestamp: false });
     renderer.setPixelRatio(1); renderer.setSize(w, h);
+    // §GI_PRESS_COST (measured 2026-09-24): with the app's lights visible to this renderer, every Alt+S after the first
+    // rebuilt 3,034 pipelines + 2,799 shader modules (35 s) — the lights are new objects each press (portals, pads, lamps)
+    // and the pipelines are keyed on the scene's light set. Nothing this renderer draws is lit (the geometry pass is an
+    // unlit NodeMaterial; SSGI reads the app's finished frame), so it sees NO lights: one fixed, empty light set.
+    // A property of this renderer only — the app's WebGL renderer and its lights are untouched.
+    if (renderer.lighting) renderer.lighting.enabled = false;
     // NO tone mapping and NO exposure lift here any more. The colour we feed in is the app's own
     // FINISHED still — already tone-mapped, already at the app's exposure. Sampling decodes sRGB to
     // linear (three.js gives an sRGB texture the hardware 'rgba8unorm-srgb' format) and the output
@@ -526,6 +592,8 @@
     pipeline.outputColorTransform = true;
     const rt = new THREE.RenderTarget(w, h, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true });
     const G = { THREE, TSL, renderer, pipeline, rt, w, h, cam, geoMat, colorCanvas, colorCtx, colorTex, colorNode, geomTexNode, maskNode, gi, pipeStats, mode: null, flipTex: false, flipOut: false };
+    G.gainU = TSL.uniform(GI_GAIN_DEFAULT); G.aoU = TSL.uniform(GI_AO_DEFAULT);   // §GI_STILL_GAIN_DIAL
+    G.recvU = TSL.uniform(0);   // §GI_RECEIVER, set per press
     G.setTexFlip = (f) => { G.flipTex = !!f; flipSign.value = f ? -1 : 1; flipOff.value = f ? 1 : 0; };
     G.setMode = (m, enc) => { const k = m + '|' + enc; if (G.mode !== k) { G.mode = k; pipeline.outputNode = outputFor(G, m, enc); pipeline.needsUpdate = true; } };
     G.setMode('composite', encodeMode());
@@ -568,7 +636,21 @@
       console.log('§GI_STILL progressive compile: ' + list.length + ' renderables in ' + chunks + ' chunks, worst chunk ' + worst.toFixed(0) + 'ms (budget ' + BUDGET_MS + 'ms)');
       await renderGeom(G);        // one full-size render so the final-size pipelines are hot too
     });
-    await stage('checking orientation', () => decideOrientation(G));
+    // §GI_ORIENT_CACHE — the orientation is a fact about THIS platform (GPU + browser readback), measured at 12.7 s
+    // (red1's desktop) to 52 s (headless) on every first build. Cached per adapter+browser in localStorage; a new
+    // key, a failed read, or &giorient=measure measures again. Wrapped in try/catch: storage can be blocked.
+    const orientKey = await (async () => { try { const d = renderer.backend && renderer.backend.device; const ai = (d && d.adapterInfo) || {};
+      return [ai.vendor, ai.architecture, ai.device, ai.description, navigator.userAgent].join('|'); } catch (e) { return navigator.userAgent; } })();
+    let orientHit = null;
+    try { const c = JSON.parse(localStorage.getItem('giOrientCache') || 'null'); if (c && c.key === orientKey && !/[?&]giorient=measure/.test(location.search)) orientHit = c; } catch (e) {}
+    if (orientHit) {
+      G.setTexFlip(orientHit.flipTex); G.flipOut = orientHit.flipOut;
+      console.log('§GI_ORIENT_CACHE hit flipTex=' + orientHit.flipTex + ' flipOut=' + orientHit.flipOut + ' measured=' + orientHit.when + ' (skipped the orientation check; &giorient=measure re-measures)');
+    } else {
+      await stage('checking orientation', () => decideOrientation(G));
+      try { localStorage.setItem('giOrientCache', JSON.stringify({ key: orientKey, flipTex: G.flipTex, flipOut: G.flipOut, when: new Date().toISOString() })); } catch (e) {}
+      console.log('§GI_ORIENT_CACHE stored flipTex=' + G.flipTex + ' flipOut=' + G.flipOut + ' key=' + orientKey.slice(0, 80));
+    }
     if (pipeStats) console.log('§GI_STILL pipelines sync=' + pipeStats.sync + ' syncMs=' + pipeStats.syncMs.toFixed(0) +
       ' async=' + pipeStats.async + ' shaderModules=' + pipeStats.modules + ' moduleMs=' + pipeStats.moduleMs.toFixed(0) +
       ' (sync = device.createRenderPipeline, three.webgpu.js:85690 — the call the old path made several hundred times)');
@@ -580,6 +662,7 @@
   async function shoot(opts) {
     if (busy) return null;
     busy = true;
+    if (window.APP) window.APP._sceneBorrowed = true;   // §GI_SCENE_BORROWED — app render loop holds its last frame
     opts = opts || {};
     const mode = opts.mode || 'composite';
     const t0 = performance.now();
@@ -595,15 +678,30 @@
       const enc = opts.encode || encodeMode();
       R.encode = enc;
       G.setMode(mode, enc);
+      G.gainU.value = readGain(); G.aoU.value = readAo();
+      G.recvU.value = readNum('_stillGiRecv', 'girecv', GI_RECV_DEFAULT, 0, 1);
+      G.gi.radius.value = readNum('_stillGiRadius', 'girad', GI_RADIUS_DEFAULT, 0.5, 100);
+      G.gi.thickness.value = readNum('_stillGiThick', 'githick', GI_THICK_DEFAULT, 0.01, 50);
+      G.gi.stepCount.value = Math.round(readNum('_stillGiSteps', 'gisteps', window.__GI_STEPS || 16, 1, 32));
+      G.gi.giIntensity.value = readNum('_stillGiInt', 'giint', 10, 0, 100);
+      R.gain = G.gainU.value; R.ao = G.aoU.value; R.recv = G.recvU.value; R.girad = G.gi.radius.value; R.githick = G.gi.thickness.value;
+      R.gisteps = G.gi.stepCount.value; R.giint = G.gi.giIntensity.value;
+      console.log('§GI_STILL gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' recv=' + G.recvU.value + ' applied (uniforms, read this press)' +
+        ' ssgi: radius=' + G.gi.radius.value + ' (screen-space: ~' + Math.round(G.gi.radius.value * (w / 2) / 16) + 'px search at ' + w + 'px wide)' +
+        ' steps=' + G.gi.stepCount.value + ' slices=' + G.gi.sliceCount.value + ' thickness=' + G.gi.thickness.value + 'm' +
+        ' giIntensity=' + G.gi.giIntensity.value + ' expFactor=' + G.gi.expFactor.value + ' screenSpace=' + G.gi.useScreenSpaceSampling.value);
       const N = (opts.passes != null) ? opts.passes : (window.__GI_ACCUM || ACCUM_DEFAULT);
       // The app's finished frame, taken ONCE: it is both the colour the bounce is computed from and
       // the picture the bounce is pasted onto, so they cannot drift apart.
       R.underMean = await stage('reading the app’s finished still', async () => grabAppFrame(G));
       console.log('§GI_STILL underlay mean=' + R.underMean + ' (the app frame; it is also the colour fed to SSGI — ~0 means the app canvas handed back an empty buffer)');
       let acc = null;
+      const _ps0 = G.pipeStats ? Object.assign({}, G.pipeStats) : null, _passMs = [];
       await stage('bounce passes', async () => {
         for (let i = 0; i < N; i++) {
+          const _tp = performance.now();
           await renderGeom(G);
+          _passMs.push(Math.round(performance.now() - _tp));
           const fb = await readRT(G);
           if (!acc) acc = Float32Array.from(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k];
           toast('Bounce still — pass ' + (i + 1) + ' of ' + N + '…');
@@ -611,6 +709,9 @@
         }
         for (let k = 0; k < acc.length; k++) acc[k] /= N;
       });
+      // §GI_PRESS_COST — what the bounce passes created THIS press (a kept renderer should create ~0 new pipelines).
+      if (_ps0) console.log('§GI_PRESS_COST newPipelines=' + (G.pipeStats.sync - _ps0.sync) + ' (' + (G.pipeStats.syncMs - _ps0.syncMs).toFixed(0) + 'ms)' +
+        ' newShaderModules=' + (G.pipeStats.modules - _ps0.modules) + ' geomPassMs=' + JSON.stringify(_passMs) + ' sceneLights=' + (function () { let n = 0; window.APP.scene.traverse(o => { if (o.isLight) n++; }); return n; })());
 
       // ── COMPOSITE ────────────────────────────────────────────────────────────────────────────
       // The app's own frame first (it is already in colorCanvas), then the bounce layer over it
@@ -685,7 +786,7 @@
       R.error = String(e && e.message || e);
       window.__giStillDebug = R;
       return R;
-    } finally { busy = false; }
+    } finally { busy = false; if (window.APP) { window.APP._sceneBorrowed = false; if (window.APP.markDirty) window.APP.markDirty(); } }
   }
   function show(canvas, secs, passes) {
     const old = document.getElementById('gi-still-overlay'); if (old) old.remove();
@@ -714,8 +815,12 @@
   // bounce is what i expect"). Let the key through, wait for the app's still to finish refining
   // (A._stillRefineActive true, A._stillRefineBusy false), then add the bounce on top of it.
   async function waitForStill(maxMs) {
-    const A = window.APP, t0 = performance.now();
+    // §STILL_STATUS_FIRST: the app now paints its status and starts staging a frame AFTER the keypress,
+    // so the synchronous staging (~5 s desktop, ~90 s headless) runs inside this wait. The budget counts
+    // from when the still is actually active, as it did when staging ran before this handler.
+    const A = window.APP; let t0 = performance.now(), seenActive = false;
     while (performance.now() - t0 < maxMs) {
+      if (!seenActive && A._stillRefineActive) { seenActive = true; t0 = performance.now(); }
       if (A._stillRefineActive && !A._stillRefineBusy) {
         await new Promise(r => setTimeout(r, 600));            // let the last refinement land
         if (A._stillRefineActive && !A._stillRefineBusy) return true;

@@ -811,12 +811,14 @@ async function initViewer() {
   // effects.js) — _photoAutoStageOn is permanently false now, and without the staging term a
   // tap/UI-click during kept-staging would never reach the full teardown (dusk mood stuck on).
   function _photoCycleEngaged() { return !!(APP._stillRefineActive || APP._photoAutoStageOn || APP._photoStagingOn); }
-  function _cancelStillRefine() { if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
+  // §STILL_LOCK: while an Alt+S still is locked, only Esc exits — clicks on the bounce overlay (Save PNG, the picture)
+  // bubble here and must not cancel it.
+  function _cancelStillRefine() { if (APP._stillLockOn) return; if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
   // §STAGE1 (sandbox spike, feat/ssgi-composer-poc — NOT shipped): a pointerdown ON THE 3D CANVAS
   // is camera-orbit-drag-start territory (soft-cancel, keep staging) — a pointerdown ANYWHERE ELSE
   // (Find panel, toolbar, any UI chrome) is a real selection/action (full teardown, matches "when i
   // select an item it breaks to old nature" exactly, unchanged from today's behavior for UI clicks).
-  function _cancelStillRefineSoft() { if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  function _cancelStillRefineSoft() { if (APP._stillLockOn) return; if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
   // §PANEL_REGISTRY_SOFT_CANCEL (2026-07-17, user: "during flight we cannot disturb the panel as
   // closing it stops the Alt-S and it be recording onwards non S... Pill registry is an abstract
   // handling"): this was a blind binary check — canvas = soft, EVERYTHING else = full teardown —
@@ -932,6 +934,9 @@ async function initViewer() {
     }
     // §S277b: WebGL only — no pipeline compilation gate needed
     if (_pipelinesCompiling) return;
+    // §GI_SCENE_BORROWED (2026-09-24): the bounce still hides app meshes across awaits while it compiles/renders its own
+    // passes (gi_still.js). Drawing the app scene then shows a half-hidden building; hold the last frame instead.
+    if (APP._sceneBorrowed) return;
     if (window._isMobile) {
       // §S276b: Throttle continuous streaming renders — every 10th frame only.
       // But always honor explicit _needsRender (bbox chunks, user interaction).

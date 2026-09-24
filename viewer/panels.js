@@ -425,7 +425,8 @@ function setupPanels(A) {
     }
 
     var stillBtn = A.icon('aperture', { size: 18, title: 'Still Refine (Alt+S)', onClick: function() {
-      if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine();
+      if (typeof A.toggleStillRefineUI === 'function') A.toggleStillRefineUI();   // §STILL_STATUS_FIRST
+      else if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine();
       _refreshCinemaRowIcons();
     }});
     cinemaRow.appendChild(stillBtn);

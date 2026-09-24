@@ -1170,6 +1170,98 @@ function setupTools(A) {
         n.indexOf('surface mounted') >= 0) return NIGHT_WARM;
     return NIGHT_AMBER;
   };
+  // §LAMP_SHAPE_COLOUR (2026-09-24, red1 via watcher: "round lights soft amber, rectangular ones white; it gives
+  // good reflective play on the surfaces"). Alt+S only (A._stillShapeColour, set by effects.js staging); films and
+  // nav keep §NIGHT_LIGHT_MIX. Shape from the fixture's OWN mesh, never its name: plan = local X/Z (local Y is up,
+  // same convention as §GLOW_TRUE_BOTTOM); fill = convex-hull area / bbox area (disc 0.785, rectangle 1.0).
+  var LAMP_ROUND_FILL_MIN = 0.70, LAMP_ROUND_FILL_MAX = 0.86, LAMP_ROUND_ASPECT_MAX = 1.25, LAMP_RECT_FILL_MIN = 0.93;
+  var LAMP_BODY_SLICE = 0.25, LAMP_LINEAR_ASPECT = 2.0;   // §LAMP_SHAPE_FACE
+  var _lampShapeByHash = {};
+  // Convex-hull fill of a 2-D point set: hull area / bbox area, plus aspect and the hull area itself.
+  function _hullFill(pts) {
+    if (pts.length < 3) return null;
+    pts.sort(function(a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    function cr(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+    var lo = [], up = [];
+    for (var k = 0; k < pts.length; k++) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], pts[k]) <= 0) lo.pop(); lo.push(pts[k]); }
+    for (var j = pts.length - 1; j >= 0; j--) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], pts[j]) <= 0) up.pop(); up.push(pts[j]); }
+    var hull = lo.slice(0, -1).concat(up.slice(0, -1)); if (hull.length < 3) return null;
+    var area = 0; for (var h = 0; h < hull.length; h++) { var q = hull[h], r = hull[(h + 1) % hull.length]; area += q[0] * r[1] - r[0] * q[1]; }
+    area = Math.abs(area) / 2;
+    // Tightest box at ANY angle (rotating calipers over the hull edges), not the axis-aligned one: Hospital's
+    // fixture meshes carry their yaw in the vertices, and a rotated rectangle in an axis box reads 0.5-0.9 fill,
+    // i.e. "round". A disc is 0.785 at every angle; a rectangle is 1.0 at every angle.
+    var best = null;
+    for (var e = 0; e < hull.length; e++) {
+      var p0 = hull[e], p1 = hull[(e + 1) % hull.length], ex = p1[0] - p0[0], ey = p1[1] - p0[1], L = Math.hypot(ex, ey);
+      if (L < 1e-9) continue; ex /= L; ey /= L;
+      var u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (var t = 0; t < hull.length; t++) { var u = hull[t][0] * ex + hull[t][1] * ey, v = -hull[t][0] * ey + hull[t][1] * ex;
+        if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v; }
+      var w = u1 - u0, d = v1 - v0;
+      if (w > 1e-4 && d > 1e-4 && (!best || w * d < best.w * best.d)) best = { w: w, d: d };
+    }
+    if (!best) return null;
+    return { fill: area / (best.w * best.d), aspect: Math.max(best.w, best.d) / Math.min(best.w, best.d), area: area };
+  }
+  // §LAMP_SHAPE_FACE (watcher go, 2026-09-24). Measured on HHS: "biggest face" picks the wrong face (a linear
+  // pendant's side, a round downlight's side), so the rule is PLAN FIRST, then the elevations:
+  //  1. plan (X/Z) of the lamp BODY only — vertices in the bottom LAMP_BODY_SLICE of the height, so a pendant's
+  //     rods and hangers drop out. Round / rect by the fill+aspect bands; a long body (aspect >= LAMP_LINEAR_ASPECT,
+  //     fill >= LAMP_ROUND_FILL_MIN) is a linear fitting = rect.
+  //  2. plan undecided -> the two elevations (X/Y, Z/Y), full mesh — a wall sconce's disc faces sideways. Round/rect
+  //     bands only; if they disagree, ambiguous.
+  function _fixtureFaceFill(geo) {
+    var pos = geo.attributes && geo.attributes.position; if (!pos || pos.count < 3) return null;
+    var minY = Infinity, maxY = -Infinity;
+    for (var i = 0; i < pos.count; i++) { var y = pos.getY(i); if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    var cut = minY + (maxY - minY) * LAMP_BODY_SLICE;
+    var plan = [], xy = [], zy = [];
+    for (var n = 0; n < pos.count; n++) {
+      var x = pos.getX(n), yy = pos.getY(n), z = pos.getZ(n);
+      if (yy <= cut + 1e-6) plan.push([x, z]);
+      xy.push([x, yy]); zy.push([z, yy]);
+    }
+    var faces = { plan: _hullFill(plan), xy: _hullFill(xy), zy: _hullFill(zy) };
+    function band(f, linear) {
+      if (!f) return null;
+      if (f.fill >= LAMP_RECT_FILL_MIN) return 'rect';
+      if (f.fill >= LAMP_ROUND_FILL_MIN && f.fill <= LAMP_ROUND_FILL_MAX && f.aspect <= LAMP_ROUND_ASPECT_MAX) return 'round';
+      if (linear && f.aspect >= LAMP_LINEAR_ASPECT && f.fill >= LAMP_ROUND_FILL_MIN) return 'rect';
+      return null;
+    }
+    var shape = band(faces.plan, true), face = 'plan';
+    // An elevation counts only when it is BIGGER than the plan (a wall sconce): a thin ceiling disc's side view is
+    // always a flat rectangle, so a smaller side face says nothing about its shape.
+    var planA = faces.plan ? faces.plan.area : 0;
+    if (!shape) {
+      var a = (faces.xy && faces.xy.area > planA) ? band(faces.xy, false) : null, b = (faces.zy && faces.zy.area > planA) ? band(faces.zy, false) : null;
+      shape = (a && b && a !== b) ? null : (a || b); face = a ? 'xy' : (b ? 'zy' : '-');
+    }
+    var pf = faces.plan || {};
+    return { shape: shape || 'ambiguous', face: face, fill: pf.fill, aspect: pf.aspect, faces: faces };
+  }
+  // Witness hook: the raw plan metrics behind a fixture's shape call (fill, aspect, plan w/d, height, verts).
+  A._lampShapeMetrics = function(p) {
+    var gh = p && p.__ghash, g = gh && A.meshCache && A.meshCache[gh]; if (!g) return null;
+    var f = _fixtureFaceFill(g); if (!g.boundingBox) g.computeBoundingBox(); var bb = g.boundingBox;
+    return f && { fill: f.fill, aspect: f.aspect, face: f.face, faces: f.faces, w: bb.max.x - bb.min.x, d: bb.max.z - bb.min.z, h: bb.max.y - bb.min.y,
+      verts: g.attributes.position.count, shape: A.nightFixtureShape(p) };
+  };
+  // 'round' | 'rect' | 'ambiguous' | 'nomesh' — cached per geometry hash.
+  A.nightFixtureShape = function(p) {
+    var gh = p && p.__ghash; if (!gh || !A.meshCache || !A.meshCache[gh]) return 'nomesh';
+    if (_lampShapeByHash[gh]) return _lampShapeByHash[gh];
+    var f = _fixtureFaceFill(A.meshCache[gh]);
+    return (_lampShapeByHash[gh] = f ? f.shape : 'ambiguous');
+  };
+  // The one colour for a fixture's light AND its glow sprite (they must agree, see _nightFixtureWorldPositions).
+  A.nightFixtureColor = function(p) {
+    var base = (p && p.__color !== undefined) ? p.__color : NIGHT_AMBER;
+    if (!A._stillShapeColour || !p || p.__exit) return base;
+    var sh = A.nightFixtureShape(p);
+    return sh === 'round' ? NIGHT_WARM : sh === 'rect' ? NIGHT_MIX_WHITE : base;
+  };
   // §NIGHT_PL_INTENSITY_HEURISTIC (2026-09-05) — NOT extracted/real photometric data; a STYLE
   // CONVENTION, same shape and same rank as A.nightLightColor above. Do not mistake this for
   // "_MEASURED" wattage/lumen data — it is not, and must never be logged or documented as such.
@@ -1225,6 +1317,12 @@ function setupTools(A) {
   // afar" character this is deliberately NOT trading away. First-pass value, like every other
   // constant in this file — verify live, no pixel-level A/B run (would need a real close-up bake).
   var NIGHT_LIGHT_DECAY = 1.0; // was 1.5 — between linear (1) and quadratic (2), reaches further than physics
+  // §STILL_DIALS (2026-09-24, red1: "indoor lighting is not throwing enough, so it is a knob") — Alt+S-only lamp
+  // strength and fall-off, set by effects.js per press (null outside an Alt+S still). typeof, never ||: 0 means 0.
+  A._nightLightDecayDefault = NIGHT_LIGHT_DECAY;
+  function _stillLampMul() { return (typeof A._stillLampMul === 'number') ? A._stillLampMul : 1; }
+  function _stillLampDecay() { return (typeof A._stillLampDecayNow === 'number') ? A._stillLampDecayNow : NIGHT_LIGHT_DECAY; }
+  function _stillLampRange() { return (typeof A._stillLampRangeNow === 'number') ? A._stillLampRangeNow : NIGHT_LIGHT_RANGE; }   // §LIGHT_STACK arm: &lamprange=
 
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
   // while night mode / photo-staging is active — see the comment at its call site below for why.
@@ -1274,6 +1372,11 @@ function setupTools(A) {
       // copy of those constants that could drift from them.
       A._nightGlowMats[_lp].glowE = m.emissive.getHex();
       A._nightGlowMats[_lp].glowEI = m.emissiveIntensity;
+      A._nightGlowMats[_lp].win = !isLight;   // §STILL_GLOW — window glazing, not a fixture
+      // §STILL_GLOW (2026-09-24, red1): a daylight Alt+S still carries no window glow; glazing streamed in
+      // during the still is held dark too. The glow values above are still recorded, so teardown restores them.
+      if (!isLight && A._stillWindowGlowOff) m.emissiveIntensity = 0;
+      if (isLight && A._stillLampsOff) m.emissiveIntensity = 0;   // §STILL_GLOW — lamps off (daylight, camera outside)
       m.needsUpdate = true;
     }
     if (_glowCount || _windowGlowCount) {
@@ -1743,6 +1846,7 @@ function setupTools(A) {
         // gate against); real IFC rows carry the guid so a buildup bake can withhold the glow until
         // Time Machine has actually placed that fixture (see effects.js A._tmIsVisible).
         p.__guid = f.guid || null;
+        p.__ghash = f.ghash || null;   // §LAMP_SHAPE_COLOUR — shape read from the fixture's own mesh
         // §NIGHT_CEILING_PLANT — true only for the last-resort synthetic tier; gates the
         // still-render lens quad IN alongside real named fixtures (guid set), while tier-2's
         // any-overhead-element pick (guid null, presentation unset) stays PL-only.
@@ -1864,7 +1968,8 @@ function setupTools(A) {
       // which is why Fly/handsfree always looked right while the bake did not. One selection rule,
       // not a second mechanism. A frame whose frustum already fills the budget is unchanged.
       var _tuLimit = Math.max(0, A._nightMaxLights || 0);
-      var _picked = inView.slice(0, 200);
+      if (typeof A._stillLampCap === 'number') _tuLimit = Math.min(_tuLimit, A._stillLampCap);   // §LIGHT_UNIFORM_BUDGET
+      var _picked = inView.slice(0, (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200);   // §LIGHT_UNIFORM_BUDGET (sky_portal.js)
       var _inViewN = _picked.length;
       if (_picked.length < _tuLimit) _picked = _nightPickNearest(visPos, _tuLimit, _picked);
       if (_picked.length !== _inViewN || _inViewN === 0) {
@@ -2044,7 +2149,7 @@ function setupTools(A) {
           var _floor = A._nightNearFadeFloor;
           _pool[_pi].position.copy(_posObj);
           _pool[_pi].color.set(_posObj.__color || 0xffe4b5);
-          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._nightPLScale || 1) *
+          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() *
             (_posObj.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
         } else {
           _pool[_pi].intensity = 0;
@@ -2079,14 +2184,17 @@ function setupTools(A) {
       // to protect and where the whole point is that the fixture you are standing under reads as
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
-      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._nightPLScale || 1) *
+      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() *
         (f.pos.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
       stillWanted.add(f.pos);
       var light = A._nightLightByPos.get(f.pos);
       if (light) {
         light.intensity = intensity;   // position/colour are fixed per fixture — only fade moves
+        light.decay = _stillLampDecay();   // §STILL_DIALS — Alt+S &lampdecay=, else NIGHT_LIGHT_DECAY
+        light.distance = _stillLampRange();
+        light.color.set(A.nightFixtureColor(f.pos));   // §LAMP_SHAPE_COLOUR — Alt+S shape colour, else the mix colour
       } else {
-        light = new THREE.PointLight(f.pos.__color || 0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+        light = new THREE.PointLight(A.nightFixtureColor(f.pos), intensity, _stillLampRange(), _stillLampDecay());
         light.position.copy(f.pos);
         A.scene.add(light);
         A._nightLightByPos.set(f.pos, light);
@@ -2100,7 +2208,22 @@ function setupTools(A) {
       A._nightLightByPos.delete(pos);
     });
     A._nightLights = Array.from(A._nightLightByPos.values());
+    // §STILL_LIGHT_PAD (§STILL_LAG, measured 2026-09-24: a still whose light COUNT differs from the last one recompiles
+    // every lit material — 40-108 s headless, 42-47 s on red1's desktop; the same count again costs ~3.4 s). During an
+    // Alt+S the lamp count is padded to A._stillLampCap with intensity-0 lights, so every still has one count.
+    A._nightSyncPads();
     if (A.markDirty) A.markDirty();
+  };
+  A._nightPadLights = [];
+  A._nightSyncPads = function() {
+    var want = (A._stillRefineActive && !A._maxqActive && typeof A._stillLampCap === 'number' && A._nightLightByPos)
+      ? Math.max(0, A._stillLampCap - A._nightLightByPos.size) : 0;
+    while (A._nightPadLights.length < want) {
+      var pl = new THREE.PointLight(0xffffff, 0, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY); pl.userData.lampPad = true;
+      A.scene.add(pl); A._nightPadLights.push(pl);
+    }
+    while (A._nightPadLights.length > want) { var r = A._nightPadLights.pop(); A.scene.remove(r); r.dispose(); }
+    return want;
   };
 
   // Hover highlight
