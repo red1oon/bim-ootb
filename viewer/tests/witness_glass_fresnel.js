@@ -17,7 +17,7 @@ const POSES = { pose_p1: { pos: [-62, 38, -4], tgt: [-16, -2, -4] }, courtyard_a
     args: ['--no-sandbox', '--use-angle=gl-egl', '--ignore-gpu-blocklist'] });
   const p = await b.newPage(); await p.setViewport({ width: 1666, height: 864 });
   let errors = 0;
-  p.on('console', m => { const t = m.text(); if (/Shader Error|WebGLProgram/.test(t)) errors++; if (/§GLASS_FRESNEL|§STILL_REFINE done|§GI_STILL (stage|result)|§GI_STILL_OFF|Shader Error|PAGEERROR/.test(t)) say('[page] ' + t.slice(0, 300)); });
+  p.on('console', m => { const t = m.text(); if (/Shader Error|WebGLProgram/.test(t)) errors++; if (/§GLASS_FRESNEL|§STILL_REFINE done|§GI_STILL (stage|result)|§GI_STILL_OFF|§GI_APP_FRAME|Shader Error|PAGEERROR/.test(t)) say('[page] ' + t.slice(0, 300)); });
   p.on('pageerror', e => { errors++; say('PAGEERROR ' + e.message); });
   await p.goto('http://127.0.0.1:8600/viewer/viewer.html?db=/buildings/Hospital_extracted.db', { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => window.APP && window.APP.guidMap && window.APP.ifc2three, { timeout: 180000 });

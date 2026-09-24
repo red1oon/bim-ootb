@@ -280,17 +280,30 @@
   // Draw the app's OWN finished frame into our colour canvas. Render and copy in the SAME task: a
   // WebGL canvas is not guaranteed to hold its pixels afterwards, and the app parks its render loop
   // when idle (§IDLE_GATE park appears in the log right before Alt+S), so the buffer can be empty.
-  function grabAppFrame(G) {
+  // §GI_APP_FRAME (2026-09-24, measured: some presses fed the bounce a near-black app frame, appMean 13.3, while the
+  // still on screen was normal, mean 119). The old code RE-RENDERED the app scene before reading it — one raw render,
+  // not the finished accumulated still on screen, and on those presses that render came out dark. Now the displayed
+  // still (preserveDrawingBuffer) is read FIRST; only an empty read (mean < 2, the idle-park case the re-render was
+  // for) falls back to a re-render. Both means are logged.
+  function readCanvasInto(G) {
     const A = window.APP;
-    try { if (A.markDirty) A.markDirty(); } catch (e) {}
-    try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); }
-    catch (e) { console.warn('§GI_STILL app render failed: ' + (e && e.message)); }
     G.colorCtx.clearRect(0, 0, G.w, G.h);
     G.colorCtx.drawImage(A.renderer.domElement, 0, 0, G.w, G.h);
     G.colorTex.needsUpdate = true;
     const u = G.colorCtx.getImageData(0, 0, Math.min(128, G.w), Math.min(72, G.h)).data;   // 128x72 only
     let t = 0; for (let i = 0; i < u.length; i += 4) t += (u[i] + u[i + 1] + u[i + 2]) / 3;
     return +(t / (u.length / 4)).toFixed(1);
+  }
+  function grabAppFrame(G) {
+    const A = window.APP;
+    const first = readCanvasInto(G);
+    if (first >= 2) { console.log('§GI_APP_FRAME read=displayed mean=' + first + ' (no re-render)'); return first; }
+    try { if (A.markDirty) A.markDirty(); } catch (e) {}
+    try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); }
+    catch (e) { console.warn('§GI_STILL app render failed: ' + (e && e.message)); }
+    const second = readCanvasInto(G);
+    console.log('§GI_APP_FRAME read=rerender displayedMean=' + first + ' rerenderMean=' + second + ' (the displayed buffer was empty)');
+    return second;
   }
   // ONE render of the geometry pass, with the app's scene left exactly as found.
   //  • scene.overrideMaterial — the whole point; restored in `finally`.
