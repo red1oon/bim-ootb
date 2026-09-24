@@ -16,35 +16,59 @@
     return Math.max(lo, Math.min(hi, isFinite(v) ? v : def));
   }
 
-  // Every R10 window pane in the scene as { c: centre, n: unit normal, u, v: half-size axes (world), area, hue }.
+  // §SKY_PORTAL_SOURCES (watcher): portal sources are ANY planar transparent glazing (material transparent, opacity < 0.95,
+  // any class: R10 panes, IfcPlate, curtain-wall panels), per triangle via the material groups. Triangles are grouped by
+  // plane (normal quantised to ~5 deg, plane offset to 0.25 m), then cut into PORTAL_TILE_M cells on that plane, so a
+  // whole facade becomes a few facade-sized sources instead of many tiny panels. Each cell = { c: area-weighted centre,
+  // n, area: glass area in the cell, hue, cls }. BatchedMesh glazing is not read (logged).
+  var PORTAL_TILE_M = 6;
   function collectPanes(A, THREE) {
-    var out = [], box = new THREE.Box3(), inst = new THREE.Matrix4(), M = new THREE.Matrix4();
+    var planes = new Map(), stats = { byClass: {}, batchedSkipped: 0 };
+    var inst = new THREE.Matrix4(), M = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(),
+      ab = new THREE.Vector3(), ac = new THREE.Vector3(), nn = new THREE.Vector3();
+    function glassy(m) { return m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial'; }
     A.scene.traverse(function (o) {
-      if (!(o.isMesh || o.isInstancedMesh) || !o.geometry || !o.geometry.getAttribute('aPane')) return;
-      if (!A._r10DepthMat || o.customDepthMaterial !== A._r10DepthMat) return;       // windows only (doors split too)
-      var g = o.geometry, ap = g.getAttribute('aPane'), pos = g.getAttribute('position');
-      box.makeEmpty(); var p = new THREE.Vector3();
-      for (var i = 0; i < ap.count; i++) if (ap.getX(i) > 0.5) { p.fromBufferAttribute(pos, i); box.expandByPoint(p); }
-      if (box.isEmpty()) return;
-      var sz = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
-      var ax = ['x', 'y', 'z'].sort(function (a, b) { return sz[a] - sz[b]; });     // ax[0] = thin axis = normal
-      var mats = Array.isArray(o.material) ? o.material : [o.material], pm = mats[1] || mats[0];
-      var hue = pm && pm.color ? pm.color.clone() : new THREE.Color(1, 1, 1);
-      var mx = Math.max(hue.r, hue.g, hue.b) || 1; hue.multiplyScalar(1 / mx);         // HUE only, no alpha dimming
-      var n = o.isInstancedMesh ? o.count : 1;
+      if (!o.visible || !o.geometry || !o.material || (o.userData && o.userData.skyPortal)) return;
+      var mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (!mats.some(glassy)) return;
+      if (o.isBatchedMesh) { stats.batchedSkipped++; return; }
+      if (!(o.isMesh || o.isInstancedMesh)) return;
+      var g = o.geometry, pos = g.getAttribute('position'), idx = g.index; if (!pos) return;
+      var groups = (g.groups && g.groups.length) ? g.groups : [{ start: 0, count: idx ? idx.count : pos.count, materialIndex: 0 }];
+      var cls = (o.userData && o.userData.ifcClass) || '?';
       o.updateMatrixWorld();
+      var n = o.isInstancedMesh ? o.count : 1;
       for (var k = 0; k < n; k++) {
         if (o.isInstancedMesh) { o.getMatrixAt(k, inst); M.multiplyMatrices(o.matrixWorld, inst); } else M.copy(o.matrixWorld);
-        var e = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
-        var nrm = e[ax[0]].clone().transformDirection(M);
-        var u = e[ax[1]].clone().transformDirection(M).multiplyScalar(sz[ax[1]] / 2 * new THREE.Vector3().setFromMatrixColumn(M, 'xyz'.indexOf(ax[1])).length());
-        var v = e[ax[2]].clone().transformDirection(M).multiplyScalar(sz[ax[2]] / 2 * new THREE.Vector3().setFromMatrixColumn(M, 'xyz'.indexOf(ax[2])).length());
-        var c = ctr.clone().applyMatrix4(M);
-        if (!(u.lengthSq() > 0 && v.lengthSq() > 0)) continue;
-        out.push({ c: c, n: nrm, u: u, v: v, area: 4 * u.length() * v.length(), hue: hue });
+        groups.forEach(function (gr) {
+          var m = mats[gr.materialIndex || 0]; if (!glassy(m)) return;
+          var hue = m.color.clone(), mx = Math.max(hue.r, hue.g, hue.b) || 1; hue.multiplyScalar(1 / mx);   // HUE only
+          for (var t = gr.start; t + 2 < gr.start + gr.count; t += 3) {
+            var i0 = idx ? idx.getX(t) : t, i1 = idx ? idx.getX(t + 1) : t + 1, i2 = idx ? idx.getX(t + 2) : t + 2;
+            a.fromBufferAttribute(pos, i0).applyMatrix4(M); b.fromBufferAttribute(pos, i1).applyMatrix4(M); c.fromBufferAttribute(pos, i2).applyMatrix4(M);
+            nn.crossVectors(ab.subVectors(b, a), ac.subVectors(c, a)); var ar = nn.length() / 2; if (ar < 1e-4) continue;
+            nn.normalize(); if (nn.y < 0 || (nn.y === 0 && (nn.x < 0 || (nn.x === 0 && nn.z < 0)))) nn.negate();   // one orientation per plane
+            if (Math.abs(nn.y) > 0.7) continue;                                   // skylights/roof glass: not a window portal
+            var d = nn.dot(a), key = [Math.round(nn.x * 12), Math.round(nn.y * 12), Math.round(nn.z * 12), Math.round(d / 0.25)].join(',');
+            var P = planes.get(key);
+            if (!P) { var u = new THREE.Vector3(0, 1, 0).cross(nn).normalize(); if (u.lengthSq() < 0.5) u.set(1, 0, 0);
+              P = { n: nn.clone(), u: u, v: nn.clone().cross(u).normalize(), cells: new Map(), cls: cls, hue: hue }; planes.set(key, P); }
+            var cx = (a.x + b.x + c.x) / 3, cy = (a.y + b.y + c.y) / 3, cz = (a.z + b.z + c.z) / 3;
+            var pu = P.u.x * cx + P.u.y * cy + P.u.z * cz, pv = P.v.x * cx + P.v.y * cy + P.v.z * cz;
+            var ck = Math.floor(pu / PORTAL_TILE_M) + ':' + Math.floor(pv / PORTAL_TILE_M), C = P.cells.get(ck);
+            if (!C) { C = { x: 0, y: 0, z: 0, area: 0 }; P.cells.set(ck, C); }
+            C.x += cx * ar; C.y += cy * ar; C.z += cz * ar; C.area += ar;
+            stats.byClass[cls] = (stats.byClass[cls] || 0) + ar;
+          }
+        });
       }
     });
-    return out;
+    var out = [];
+    planes.forEach(function (P) { P.cells.forEach(function (C) { if (C.area < 0.5) return;   // < 0.5 m2 of glass in a cell: not a window
+      out.push({ c: new THREE.Vector3(C.x / C.area, C.y / C.area, C.z / C.area), n: P.n, u: P.u, area: C.area, hue: P.hue, cls: P.cls }); }); });
+    Object.keys(stats.byClass).forEach(function (k) { stats.byClass[k] = +stats.byClass[k].toFixed(1); });
+    stats.planes = planes.size;
+    return { panes: out, stats: stats };
   }
 
   function stage(A) {
@@ -54,19 +78,28 @@
     var gain = dial(A, '_stillPortal', 'portal', 1, 0, 3), cap = Math.round(dial(A, '_stillPortalCap', 'portalcap', 32, 0, 128));
     var nShadow = Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
     if (gain <= 0 || cap <= 0) { console.log('§SKY_PORTAL off portal=' + gain + ' cap=' + cap); return; }
-    var cam = A.camera.position, panes = collectPanes(A, THREE);
+    var cam = A.camera.position, col0 = collectPanes(A, THREE), panes = col0.panes;
     var near = panes.filter(function (p) { return p.c.distanceTo(cam) <= PORTAL_RANGE; })
       .sort(function (a, b) { return a.c.distanceTo(cam) - b.c.distanceTo(cam); });
-    var capped = Math.max(0, near.length - cap); near = near.slice(0, cap);
+    var capped = 0, byCls = {};
     // Inward side: the up-ray from 0.5 m off the pane hits building geometry (under a slab = inside).
     var targets = []; A.scene.traverse(function (o) { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A.ground && o !== A._sky && !(o.userData && o.userData.excludeFromShadow)) targets.push(o); });
     var rc = new THREE.Raycaster(); rc.far = UPRAY_MAX; var up = new THREE.Vector3(0, 1, 0);
-    function covered(pt) { rc.set(pt, up); return rc.intersectObjects(targets, false).length > 0; }
+    // §SKY_PORTAL_SIDE (watcher): 5 rays per side from 0.5 m off the glass — up, straight out, out+up, out+/-along
+    // the facade — and count SKY (no hit within UPRAY_MAX). The side with more sky is outside; a tie is skipped.
+    rc.far = 60;
+    function skyCount(pt, out, along) {
+      var dirs = [up, out, out.clone().add(up).normalize(), out.clone().add(along).normalize(), out.clone().sub(along).normalize()], k = 0;
+      dirs.forEach(function (d) { rc.set(pt, d); if (!rc.intersectObjects(targets, false).length) k++; }); return k;
+    }
     var skipped = 0, H = A.hemi.intensity, sky = A.hemi.color, shadowed = 0, unsh = 0, iSum = 0;
     near.forEach(function (p) {
-      var a = covered(p.c.clone().addScaledVector(p.n, UPRAY_OFF)), b = covered(p.c.clone().addScaledVector(p.n, -UPRAY_OFF));
-      if (a === b) { skipped++; return; }
-      var inward = a ? p.n.clone() : p.n.clone().negate();
+      if (placed.length >= cap) { capped++; return; }
+      var nNeg = p.n.clone().negate();
+      var sa = skyCount(p.c.clone().addScaledVector(p.n, UPRAY_OFF), p.n, p.u), sb = skyCount(p.c.clone().addScaledVector(nNeg, UPRAY_OFF), nNeg, p.u);
+      if (sa === sb) { skipped++; return; }
+      var inward = sa < sb ? p.n.clone() : nNeg;   // fewer sky hits = inside
+      byCls[p.cls] = (byCls[p.cls] || 0) + 1;
       var I = H * p.area / Math.PI * PORTAL_EXPOSURE * gain;
       var col = sky.clone().multiply(p.hue);
       var L = new THREE.SpotLight(col, I, 0, PORTAL_ANGLE, 1, 2);
@@ -81,7 +114,8 @@
     });
     if (A.markDirty) A.markDirty();
     console.log('§SKY_PORTAL placed=' + placed.length + ' shadowed=' + shadowed + ' unshadowed=' + unsh + ' (unshadowed can leak through walls)' +
-      ' capped=' + capped + ' skipped=' + skipped + ' (up-ray could not tell inside from outside) panesInScene=' + panes.length +
+      ' capped=' + capped + ' skipped=' + skipped + ' (5 rays per side, equal sky) sources=' + panes.length + ' in ' + col0.stats.planes + ' planes' +
+      ' placedByClass=' + JSON.stringify(byCls) + ' glassM2ByClass=' + JSON.stringify(col0.stats.byClass) + ' batchedGlassSkipped=' + col0.stats.batchedSkipped +
       ' portal=' + gain + ' exposure=' + PORTAL_EXPOSURE + ' hemi=' + H.toFixed(3) + ' intensitySum=' + iSum.toFixed(2) +
       ' meanI=' + (placed.length ? (iSum / placed.length).toFixed(3) : 0) + ' ms=' + (performance.now() - t0).toFixed(0));
   }
