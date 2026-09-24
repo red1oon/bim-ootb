@@ -17,7 +17,7 @@ function say(s) { const t = '+' + ((Date.now() - T0) / 1000).toFixed(1) + 's ' +
 (async () => {
   const b = await puppeteer.launch({ headless: 'new', protocolTimeout: 900000, args: ['--no-sandbox', '--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=gl-egl', '--window-size=1686,1044'] });
   const p = await b.newPage(); await p.setViewport({ width: 1666, height: 864 });
-  p.on('console', m => { const t = m.text(); if (/§STILL_GLOW|§STILL_POSE|§NIGHT_STILL_LIGHTS|§STILL_ROOMS|§STILL_STATUS stagingStart|§NIGHT_GLOW_REASSERT|PAGEERROR|§LOAD_FAIL/.test(t)) say('[page] ' + t.slice(0, 300)); });
+  p.on('console', m => { const t = m.text(); if (/§STILL_GLOW|§STILL_BASE|§STILL_POSE|§NIGHT_STILL_LIGHTS|§STILL_ROOMS|§STILL_STATUS stagingStart|§NIGHT_GLOW_REASSERT|PAGEERROR|§LOAD_FAIL/.test(t)) say('[page] ' + t.slice(0, 300)); });
   p.on('pageerror', e => say('PAGEERROR ' + e.message));
   await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=' + DB, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await p.waitForFunction(() => window.APP && window.APP.cinemaPathPlan, { timeout: 180000 });
