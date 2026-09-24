@@ -1,7 +1,7 @@
 // ⚠ DO NOT REMOVE — witness for §SURFACE_RULES (bim-compiler PHOTOREAL_STILL_RENDER.md). Read the log after every run.
 // Issue: rough triplanar maps on everything (floors, beams, doors, MEP). Proves the ?surf=rules switch FIRES:
 // the roof-layer test, per-row / per-class tallies, colour counts, and that the ONLY textured materials are
-// rows R1-R3 (roof, exposed concrete). Without the switch the rules must not run (no §SURFACE_ lines).
+// rows R1-R3 (roof, exposed concrete). With ?surf=off the rules must not run (no §SURFACE_ lines).
 // Usage: node viewer/tests/witness_surface_rules.js --port 8600 --db /buildings/Terminal_extracted.db [--off]
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const fs = require('fs'), path = require('path');
@@ -17,7 +17,7 @@ function say(s) { const t = '+' + ((Date.now() - T0) / 1000).toFixed(1) + 's ' +
   const p = await b.newPage(); await p.setViewport({ width: 1280, height: 720 });
   p.on('console', m => { const t = m.text(); if (/§SURFACE_|PAGEERROR|§LOAD_FAIL|§TRI_SRC_TALLY/.test(t)) say('[page] ' + t.slice(0, 2500)); });
   p.on('pageerror', e => say('PAGEERROR ' + e.message));
-  await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=' + DB + (OFF ? '' : '&surf=rules'), { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=' + DB + (OFF ? '&surf=off' : ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
   await p.waitForFunction(() => window.APP && window.APP.cinemaPathPlan, { timeout: 180000 });
   try { await p.waitForFunction(() => { try { const r = window.APP.dbQuery('SELECT COUNT(*) FROM element_transforms'); return r && r[0][0] > 0; } catch (e) { return false; } }, { timeout: 120000, polling: 2000 }); } catch (e) {}
   const blds = await p.evaluate(() => (window.APP.dbQuery('SELECT DISTINCT building FROM elements_meta') || []).map(r => r[0]));

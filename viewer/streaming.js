@@ -766,8 +766,10 @@ function setupStreaming(A) {
   // small beams/members/doors/railings smooth ("marble-like OK, just not rough"). A row per element from
   // role (geometry) + substance (authored material, a small lexicon) + class, first match wins; a batch
   // takes its members' MAJORITY row (one material per batch). Rows change roughness / texture / envInt
-  // only — never colour. Switch at LOAD: `?surf=rules` (default = today's look).
-  try { if (A._surfRules == null) A._surfRules = /[?&]surf=rules\b/.test(location.search); } catch (e) {}
+  // only — never colour. DEFAULT ON since red1's look ruling (2026-09-24: "cleaner, no more drab surfacing");
+  // `?surf=off` at load (or APP._surfRules = false before streaming) gives the previous look.
+  try { if (A._surfRules == null) A._surfRules = !/[?&]surf=off\b/.test(location.search); } catch (e) { if (A._surfRules == null) A._surfRules = true; }
+  console.log('§SURFACE_RULES ' + (A._surfRules ? 'ON (default; ?surf=off for the previous look)' : 'OFF (?surf=off)'));
   var _SURF_MEP = /^Ifc(Pipe|Duct|Flow|Cable|Valve|AirTerminal|FireSuppression|LightFixture|Sanitary|Alarm|ElectricAppliance|ElectricDistribution|Distribution|EnergyConversion|UnitaryEquipment|Pump|Fan|Tank|Boiler|Chiller|Coil|Damper|Filter|Outlet|SwitchingDevice|ProtectiveDevice|Controller|Sensor|Actuator|JunctionBox|CommunicationsAppliance|AudioVisual|Lamp)/;
   var _SURF_ENVELOPE = { IfcSlab: 1, IfcPlate: 1, IfcRoof: 1, IfcCovering: 1 };
   var _SURF_FLOOR = { IfcSlab: 1, IfcStair: 1, IfcStairFlight: 1, IfcRamp: 1, IfcRampFlight: 1 };
