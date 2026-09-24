@@ -4511,7 +4511,7 @@ async function setupEffects(A, renderer, scene, camera) {
           // §SUN_SHADOW_RESTORE: only reroute N8AO's output into the scratch target (and pay for
           // the extra mask/blend pass) when a real sun shadow is actually available to restore —
           // otherwise this is byte-identical to the pre-existing n8.render(..., writeBuffer, ...).
-          // A._sunShadowRestoreEnabled is a live, runtime-toggleable override (default true) — same
+          // A._sunShadowRestoreEnabled is a live, runtime-toggleable override (default FALSE since 2026-09-24) — same
           // shape as A._shadowOn etc — so a same-session witness A/B can flip it after AO has
           // already converged (n8's own accumulation is untouched by this pass's output routing)
           // without needing two separate page loads / two separate builds.
@@ -4556,7 +4556,12 @@ async function setupEffects(A, renderer, scene, camera) {
       A._stillAOPass = n8;                 // diagnostics/tests — closure state is otherwise invisible
       A._stillAOAdapter = adapter;
       A._shadowRestoreMat = shadowRestoreMat;  // §SUN_SHADOW_RESTORE diagnostics/witness
-      if (A._sunShadowRestoreEnabled === undefined) A._sunShadowRestoreEnabled = true;
+      // §SUN_SHADOW_RESTORE_OFF_DEFAULT (2026-09-24): with §SUN_SHADOW_RESTORE_DEPTH the pass finally fires,
+      // and it pastes blocky halos around shadows and makes the stair-step read MORE clearly (Hospital,
+      // 10 deg sun: edge band 36% of the frame). Default OFF = the look before today (the pass was inert
+      // since 2026-08-14). The fix stays; A._sunShadowRestoreEnabled = true turns it on. Tuning is red1's call.
+      if (A._sunShadowRestoreEnabled === undefined) A._sunShadowRestoreEnabled = false;
+      console.log('§SUN_SHADOW_RESTORE ' + (A._sunShadowRestoreEnabled ? 'ON' : 'OFF (default) — set APP._sunShadowRestoreEnabled=true to enable'));
       // §PHOTO_AO_STREAM re-assert (same landmine as §GI_POC_STALE_FIX): anything that changes the
       // scene while the still is frozen-with-AO (streaming, xray, selection) goes through
       // A.markDirty — chain onto it (effects_gi_poc.js wraps it the same way; the wraps compose)
