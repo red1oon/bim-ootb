@@ -3961,8 +3961,8 @@ async function setupEffects(A, renderer, scene, camera) {
     A._nightPLScaleStaged = A._nightPLScale;   // §SUN_ARC_FILL — the staged base the bake scales FROM
     // §STILL_DIALS — Alt+S lamp strength + fall-off, read at every press, set BEFORE the lamps are born below.
     if (!A._maxqActive) {
-      A._stillLampMul = _stillDial('_stillLamps', 'lamps', 1, 4);
-      A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', A._nightLightDecayDefault, 2);
+      A._stillLampMul = _stillDial('_stillLamps', 'lamps', 2.0, 4);   // red1 13:4x: "internal points of light should hit stronger"
+      A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', 0.8, 2);   // red1: throw further (nav keeps NIGHT_LIGHT_DECAY)
       // §LAMP_SHAPE_COLOUR — round fixtures soft amber, rectangular white (red1). &lampshape=0 switches it off.
       A._stillShapeColour = _stillDial('_stillLampShape', 'lampshape', 1, 1) > 0;
       if (A._stillShapeColour && typeof A._nightFixtureWorldPositions === 'function' && A.nightFixtureShape) {
