@@ -277,7 +277,7 @@ function setupDLOD(A) {
   A.dlodStillCull = function(keep) {
     if (A._isMobile || A.streamedCount < MIN_ELEMENTS) return null;
     if (_stillHidList.length) A.dlodStillUncull();
-    _buildRefs();
+    _buildRefs(); _stillCullRan = true;
     var kept = 0, culled = 0, m4 = new THREE.Matrix4();
     for (var ii = 0; ii < _instancedMeshes.length; ii++) {
       var im = _instancedMeshes[ii], obj = im.obj, meta = im.meta, changed = false;
@@ -296,8 +296,10 @@ function setupDLOD(A) {
     }
     return { kept: kept, culled: culled, total: kept + culled };
   };
+  var _stillCullRan = false;
   A.dlodStillUncull = function() {
-    if (!_stillHidList.length) return 0;
+    if (!_stillHidList.length) { if (_stillCullRan) { _stillCullRan = false; console.log('§STILL_CULL restored=0'); } return 0; }
+    _stillCullRan = false;
     var n = 0, touched = new Set();
     for (var i = 0; i < _stillHidList.length; i += 2) {
       var m = _stillHidList[i], obj = _stillHidList[i + 1];

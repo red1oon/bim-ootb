@@ -3340,11 +3340,20 @@ async function setupEffects(A, renderer, scene, camera) {
         var _sc = A.sun.shadow.camera, _cam = A.camera;
         _cam.updateMatrixWorld();
         var _fwd = new THREE.Vector3(); _cam.getWorldDirection(_fwd);
-        var _dFar = 0, _q = new THREE.Vector3();
-        for (var _bi = 0; _bi < 8; _bi++) {   // farthest corner of the ±env world box, as view depth
-          _q.set(_ctr.x + (_bi & 1 ? _env : -_env), _ctr.y + (_bi & 2 ? _env : -_env), _ctr.z + (_bi & 4 ? _env : -_env));
-          _dFar = Math.max(_dFar, _q.sub(_cam.position).dot(_fwd));
+        // The building's own box (every element, IFC -> scene). Its light-space footprint also covers its whole ground
+        // shadow (a shadow lies on the sun ray from its caster, so it projects to the same light-space x/y). Receivers
+        // outside it can only be shaded by the distant skyline props, which the fitted box gives up (logged).
+        var _bCorners = [];
+        if (_skyBbox && A.ifc2three) {
+          for (var _ci = 0; _ci < 8; _ci++) _bCorners.push(A.ifc2three(_ci & 1 ? _skyBbox.xMax : _skyBbox.xMin, _ci & 2 ? _skyBbox.yMax : _skyBbox.yMin, _ci & 4 ? _skyBbox.zMax : _skyBbox.zMin));
+        } else {
+          for (var _bi = 0; _bi < 8; _bi++) _bCorners.push({ x: _ctr.x + (_bi & 1 ? _env : -_env), y: _ctr.y + (_bi & 2 ? _env : -_env), z: _ctr.z + (_bi & 4 ? _env : -_env) });
         }
+        var _dFar = 0, _q = new THREE.Vector3(), _bx0 = Infinity, _bx1 = -Infinity, _by0 = Infinity, _by1 = -Infinity;
+        _bCorners.forEach(function(c) {   // farthest building corner as view depth; building footprint in light space
+          _q.set(c.x, c.y, c.z); _dFar = Math.max(_dFar, _q.clone().sub(_cam.position).dot(_fwd));
+          _q.applyMatrix4(_sc.matrixWorldInverse); _bx0 = Math.min(_bx0, _q.x); _bx1 = Math.max(_bx1, _q.x); _by0 = Math.min(_by0, _q.y); _by1 = Math.max(_by1, _q.y);
+        });
         var _k = Math.min(1, Math.max(0, _dFar) / _cam.far);
         var _lx0 = Infinity, _lx1 = -Infinity, _ly0 = Infinity, _ly1 = -Infinity;
         [-1, 1].forEach(function(nx) { [-1, 1].forEach(function(ny) {
@@ -3356,7 +3365,8 @@ async function setupEffects(A, renderer, scene, camera) {
           });
         }); });
         var _M = 2;   // m — margin for PCF taps + TAA jitter
-        var _l = Math.max(-_env, _lx0 - _M), _r = Math.min(_env, _lx1 + _M), _b = Math.max(-_env, _ly0 - _M), _t = Math.min(_env, _ly1 + _M);
+        var _l = Math.max(-_env, Math.max(_lx0, _bx0) - _M), _r = Math.min(_env, Math.min(_lx1, _bx1) + _M),
+            _b = Math.max(-_env, Math.max(_ly0, _by0) - _M), _t = Math.min(_env, Math.min(_ly1, _by1) + _M);
         if (_r - _l > 1 && _t - _b > 1) {
           _sc.left = _l; _sc.right = _r; _sc.bottom = _b; _sc.top = _t;
           _boxW = _r - _l; _boxH = _t - _b;
@@ -3365,7 +3375,7 @@ async function setupEffects(A, renderer, scene, camera) {
         var _mz = A.sun.shadow.mapSize.width, _t0 = 2 * _env / _mz;
         console.log('§STILL_SHADOW_FIT env=' + _env + ' box=' + _boxW.toFixed(1) + 'x' + _boxH.toFixed(1) + 'm (was ' + (2 * _env) + ')' +
           ' texelX=' + (_boxW / _mz).toFixed(4) + ' texelY=' + (_boxH / _mz).toFixed(4) + ' (was ' + _t0.toFixed(4) + ')' +
-          ' gain=' + (_t0 / (Math.max(_boxW, _boxH) / _mz)).toFixed(2) + 'x viewDepth=' + _dFar.toFixed(0) +
+          ' gain=' + (_t0 / (Math.max(_boxW, _boxH) / _mz)).toFixed(2) + 'x viewDepth=' + _dFar.toFixed(0) + ' bldgFootprint=' + (_bx1 - _bx0).toFixed(0) + 'x' + (_by1 - _by0).toFixed(0) + ' (skyline-prop shadows outside it dropped)' +
           ' sunElev=' + THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)))).toFixed(1) + (_stillFitBox ? '' : ' (no overlap — box kept)'));
       } catch (eFit) { console.warn('§STILL_SHADOW_FIT failed: ' + eFit.message + ' — whole-envelope box kept'); }
     } else if (!A._maxqActive) console.log('§STILL_SHADOW_FIT off (&shadowfit=0 or APP._stillShadowFit=false) env=' + _env);

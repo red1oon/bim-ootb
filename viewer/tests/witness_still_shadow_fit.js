@@ -32,7 +32,15 @@ const POSES = JSON.parse(POSES_J), OUT = OUT_ARG || '.', W = 1666, H = 864;
   const GRID = () => p.evaluate(() => { const A = window.APP, T = window.THREE, rc = new T.Raycaster(), tg = []; A.scene.traverse(o => { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A._sky && !(o.userData && o.userData.excludeFromShadow)) tg.push(o); });
     const pts = []; for (let gy = 0; gy < 25; gy++) for (let gx = 0; gx < 48; gx++) { rc.setFromCamera(new T.Vector2((gx + 0.5) / 48 * 2 - 1, -((gy + 0.5) / 25 * 2 - 1)), A.camera); const h = rc.intersectObjects(tg, false)[0];
       if (h && h.face) { const nrm = h.face.normal.clone().transformDirection(h.object.matrixWorld); pts.push([h.point.x, h.point.y, h.point.z, nrm.x, nrm.y, nrm.z]); } } return pts; });
-  const SUNRAYS = pts => p.evaluate(pts => { const A = window.APP, T = window.THREE, rc = new T.Raycaster(), tg = []; A.scene.traverse(o => { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A._sky && o !== A.ground && !(o.userData && o.userData.excludeFromShadow) && !(o.userData && o.userData.skyline)) tg.push(o); });
+  // Receiver check (during a still): is each visible point inside the sun camera's box? A point the building shades that
+  // falls outside = a LOST shadow. Skyline-prop shadows (dropped by design) are counted apart.
+  const RECV = pts => p.evaluate(pts => { const A = window.APP, T = window.THREE, sc = A.sun.shadow.camera; A.sun.updateMatrixWorld(); A.sun.shadow.updateMatrices(A.sun);
+    const rc = new T.Raycaster(), sky = []; const g = A._getPhotoSkyline && A._getPhotoSkyline(); if (g && g.visible) g.traverse(o => { if (o.isMesh || o.isInstancedMesh) sky.push(o); });
+    const d = A.sun.position.clone().sub(A.sun.target.position).normalize(); rc.far = 5000; const out = [];
+    for (const q of pts) { const v = new T.Vector3(q[0], q[1], q[2]).applyMatrix4(sc.matrixWorldInverse); const inside = v.x >= sc.left && v.x <= sc.right && v.y >= sc.bottom && v.y <= sc.top;
+      let skyHit = 0; if (sky.length) { rc.set(new T.Vector3(q[0] + q[3] * 0.05, q[1] + q[4] * 0.05, q[2] + q[5] * 0.05), d); skyHit = rc.intersectObjects(sky, true).length ? 1 : 0; }
+      out.push([inside ? 1 : 0, skyHit]); } return { out, box: [sc.left, sc.right, sc.bottom, sc.top].map(x => +x.toFixed(1)), skyMeshes: sky.length }; }, pts);
+  const SUNRAYS = pts => p.evaluate(pts => { const A = window.APP, T = window.THREE, rc = new T.Raycaster(), tg = []; const skySet = new Set(); const g = A._getPhotoSkyline && A._getPhotoSkyline(); if (g) g.traverse(o => skySet.add(o)); A.scene.traverse(o => { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A._sky && o !== A.ground && !(o.userData && o.userData.excludeFromShadow) && !skySet.has(o)) tg.push(o); });
     const d = A.sun.position.clone().sub(A.sun.target.position).normalize(); rc.far = 2000; const out = [];
     for (const q of pts) { const o = new T.Vector3(q[0] + q[3] * 0.05, q[1] + q[4] * 0.05, q[2] + q[5] * 0.05); if (new T.Vector3(q[3], q[4], q[5]).dot(d) <= 0) { out.push(2); continue; } rc.set(o, d); out.push(rc.intersectObjects(tg, false).length ? 1 : 0); } return out; }, pts);
   const still = async (arm) => { const b1 = L.length;
@@ -49,13 +57,15 @@ const POSES = JSON.parse(POSES_J), OUT = OUT_ARG || '.', W = 1666, H = 864;
     const pts = await GRID(); const res = {};
     for (const arm of ['base', 'fit']) {
       const r = await still(arm);
-      res[arm] = { rays: await SUNRAYS(pts), fit: grab(r.lines, /§STILL_SHADOW_FIT/), cull: grab(r.lines, /§STILL_CULL kept/), renders: grab(r.lines, /§STILL_SHADOW_RENDERS/), done: grab(r.lines, /§STILL_REFINE done/), stack: grab(r.lines, /§LIGHT_STACK/), size: grab(r.lines, /§SHADOW_SIZE_BY_ENVELOPE/) };
+      res[arm] = { recv: await RECV(pts), rays: await SUNRAYS(pts), fit: grab(r.lines, /§STILL_SHADOW_FIT/), cull: grab(r.lines, /§STILL_CULL kept/), renders: grab(r.lines, /§STILL_SHADOW_RENDERS/), done: grab(r.lines, /§STILL_REFINE done/), stack: grab(r.lines, /§LIGHT_STACK/), size: grab(r.lines, /§SHADOW_SIZE_BY_ENVELOPE/) };
       fs.writeFileSync(path.join(OUT, 'fit_' + ps.name + '_' + arm + '.png'), Buffer.from(r.png.split(',')[1], 'base64'));
       await p.evaluate(() => window.APP.toggleStillRefine()); await sleep(4000);
       if (arm === 'fit') say('POSE ' + ps.name + ' after exit: ' + grab(L.slice(-40), /§STILL_CULL restored/));
     }
     const a = res.base.rays, f = res.fit.rays; let lit = 0, sh = 0, back = 0, mism = 0; for (let i = 0; i < a.length; i++) { if (a[i] === 2) back++; else if (a[i]) sh++; else lit++; if (a[i] !== f[i]) mism++; }
     for (const arm of ['base', 'fit']) say('POSE ' + ps.name + ' ' + arm + ':\n   ' + [res[arm].size, res[arm].fit, res[arm].cull, res[arm].renders, res[arm].done, res[arm].stack].filter(Boolean).join('\n   '));
+    const rv = res.fit.recv; let lost = 0, skyLost = 0; for (let i = 0; i < a.length; i++) { const [ins, skyHit] = rv.out[i]; if (!ins && a[i] === 1) lost++; if (!ins && skyHit && a[i] !== 2) skyLost++; }
+    say('POSE ' + ps.name + ' RECEIVERS fitBox=' + JSON.stringify(rv.box) + ' outsideBox=' + rv.out.filter(x => !x[0]).length + ' buildingShadowLost=' + lost + ' skylineShadowDropped=' + skyLost + ' (skyline meshes ' + rv.skyMeshes + ') VERDICT=' + (lost ? 'FAIL' : 'PASS'));
     say('POSE ' + ps.name + ' SUNRAY points=' + a.length + ' lit=' + lit + ' shadowed=' + sh + ' facingAway=' + back + ' mismatchFitVsBase=' + mism + ' VERDICT=' + (a.length < 50 ? 'VACUOUS' : (mism ? 'FAIL' : 'PASS')));
   }
   say('pageErrors=' + errs); await b.close(); })().catch(e => { say('FATAL ' + e); process.exit(1); });
