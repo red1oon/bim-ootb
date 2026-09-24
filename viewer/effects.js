@@ -3967,9 +3967,9 @@ async function setupEffects(A, renderer, scene, camera) {
     A._nightPLScaleStaged = A._nightPLScale;   // §SUN_ARC_FILL — the staged base the bake scales FROM
     // §STILL_DIALS — Alt+S lamp strength + fall-off, read at every press, set BEFORE the lamps are born below.
     if (!A._maxqActive) {
-      A._stillLampMul = _stillDial('_stillLamps', 'lamps', 2.0, 20);   // red1 13:4x: "internal points of light should hit stronger"
-      A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', 0.8, 2);
-      A._stillLampRangeNow = /[?&]lamprange=/.test(location.search) || typeof A._stillLampRange === 'number' ? _stillDial('_stillLampRange', 'lamprange', 0, 100) : null;   // §LIGHT_STACK arm (0 = infinite, today)
+      A._stillLampMul = _stillDial('_stillLamps', 'lamps', 16, 20);   // §FLOOR_WASH pick (watcher/red1): 16 with finite reach   // red1 13:4x: "internal points of light should hit stronger"
+      A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', 1.5, 2);   // §FLOOR_WASH pick: 1.5 (was 0.8)
+      A._stillLampRangeNow = _stillDial('_stillLampRange', 'lamprange', 25, 100);   // §FLOOR_WASH pick: 25 m reach (0 = infinite, the old stack)
       // §LIGHT_UNIFORM_BUDGET — caps the lamps BEFORE toggleNightMode builds them; portals then fit in the rest. One light
       // count for the whole still = one shader compile.
       if (window.SkyPortal) { try { window.SkyPortal.budget(A); } catch (eB) { console.warn('§LIGHT_UNIFORM_BUDGET failed: ' + eB.message); } }   // red1: throw further (nav keeps NIGHT_LIGHT_DECAY)
@@ -4077,7 +4077,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // multiplies the still's tone-mapping exposure. Defaults: all off (red1/watcher pick from the sheet).
     if (!A._maxqActive) {
       _albedoSaved = [];
-      var _fix = /[?&]srgbfix=1/.test(location.search) || A._stillSrgbFix === true;
+      var _fix = (typeof A._stillSrgbFix === 'boolean') ? A._stillSrgbFix : !/[?&]srgbfix=0/.test(location.search);   // §FLOOR_WASH pick: ON by default; &srgbfix=0 = old colours
       var _capM = /[?&]albedocap=([0-9.]+)/.exec(location.search), _cap = (typeof A._stillAlbedoCap === 'number') ? A._stillAlbedoCap : (_capM ? parseFloat(_capM[1]) : null);
       var _nConv = 0, _nCap = 0, _wallBefore = null, _wallAfter = null;
       if (_fix || _cap != null) {
