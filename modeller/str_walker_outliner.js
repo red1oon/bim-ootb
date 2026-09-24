@@ -527,10 +527,13 @@
     var geo = null;
     try {
       if (geoBuf) geo = new window.SQL.Database(new Uint8Array(geoBuf));
-      var res = -1, tot = -1;
+      // §XEDGE-3AXIS: `resolved` is keyed by geometry HASH, `byGuid` by element — count ELEMENTS whose hash
+      // resolved (the old line printed distinct meshes over elements, 1924/3225, and read as 1,301 missing).
+      var res = -1, tot = -1, meshes = -1;
       if (geo && window.RealGeometry && window.RealGeometry.buildGeometryIndex) {
-        try { var idx = window.RealGeometry.buildGeometryIndex(db, geo);
-          tot = Object.keys(idx.byGuid || {}).length; res = Object.keys(idx.resolved || {}).length; } catch (e) { }
+        try { var idx = window.RealGeometry.buildGeometryIndex(db, geo), bg = idx.byGuid || {}, rs = idx.resolved || {};
+          tot = Object.keys(bg).length; meshes = Object.keys(rs).length;
+          res = Object.keys(bg).filter(function (g) { return bg[g] != null && rs[bg[g]]; }).length; } catch (e) { }
       }
       window.swXEdges = window.CrossEdges.deriveAll(db, geo ? { geoDb: geo } : undefined);
       var X = window.swXEdges;
@@ -538,7 +541,8 @@
         ' spans=' + X.spans.length + ' fills=' + X.fills.length + ' aggregates=' + X.aggregates.length +
         ' datums=' + X.datums.length + ' (abuts/anchored/spans derived; fills/aggregates recovered)');
       console.log(TAG + ' §XEDGE-GEO phase=' + phase + ' geoDb=' + (geo ? 'YES' : 'no') +
-        ' realGeomResolved=' + (geo ? res + '/' + tot : 'n/a — coarse anchor-centred bbox for EVERY element') +
+        ' realGeomResolved=' + (geo ? res + '/' + tot + ' elements (' + meshes + ' distinct meshes)' : 'n/a — coarse anchor-centred bbox for EVERY element') +
+        ' tilted3axis=' + (window.CrossEdges.lastTiltedReal ? window.CrossEdges.lastTiltedReal() : 'n/a') +
         ' abuts=' + X.abuts.length);
     } catch (e) { console.warn(TAG + ' cross-edge derive failed (' + phase + ')', e && e.message); }
     finally { if (geo) { try { geo.close(); } catch (e) { } } }

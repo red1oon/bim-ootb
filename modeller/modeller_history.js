@@ -18,7 +18,7 @@
   var OP_TYPES = { 'BUILDING_OPEN': true, 'GEOM_EXTRUDE': true, 'GEOM_EXTRUDE_POLY': true,
     'GEOM_SWEEP': true, 'GEOM_CUT': true, 'GEOM_FILLET': true, 'GEOM_GRID_MOVE': true,
     'GEOM_MOVE': true, 'GEOM_ROTATE': true, 'GEOM_SCALE': true, 'GEOM_INSERT': true,
-    'GEOM_OPENING': true, 'STR_WALK_EDIT': true, 'GEOM_DELETE': true, 'GEOM_CUT_MOVE': true, 'GEOM_CUT_RESIZE': true };
+    'GEOM_OPENING': true, 'STR_WALK_EDIT': true, 'DISC_WALK': true, 'GEOM_DELETE': true, 'GEOM_CUT_MOVE': true, 'GEOM_CUT_RESIZE': true };
   var PROFILES = { high: { op: OP_TYPES } };
   PROFILES.all = PROFILES.high; PROFILES.doc = PROFILES.high;   // legacy aliases HistoryBar falls back to
 
@@ -37,6 +37,7 @@
     if (opType === 'GEOM_OPENING') return 'Opening';
     if (opType === 'GEOM_SWEEP') return 'Sweep';
     if (opType === 'STR_WALK_EDIT') return 'STR re-walk';
+    if (opType === 'DISC_WALK') return 'Walk ' + (p.label || '') + ' (' + (p.n || 0) + ')';   // §WALK-GESTURE
     if (opType === 'GEOM_DELETE') return 'Delete #' + p.featureId + (p.rows && p.rows.length > 1 ? ' (+' + (p.rows.length - 1) + ')' : '');
     return opType.replace(/^GEOM_/, '').replace(/_/g, ' ').toLowerCase();
   }
@@ -142,12 +143,50 @@
       try { if (r && r.deleted && r.deleted.length) _push('GEOM_DELETE', { featureId: featureId, rows: r.deleted }, { opId: featureId, rows: r.deleted }); } catch (e) { console.warn('§MHIST_REC_ERR', e); }
       return r;
     };
+    // §WALK-GESTURE (2026-09-24, MODELLER_MASTER §STRATEGY L4) — SPEC. A disc walk commits through commitSeedGroup
+    // (gids 'dwwalk-<disc>-N', 'dwchain-…', 'dwfit-…'), which stays unwrapped above for the 'arcseed-*' reason. So a
+    // walk was NOT in the history tree at all. Measured on the real keypress (Duplex, Walk ELEC, 102 fixtures):
+    // Ctrl+Z left all 102 active and only un-applied the "Opened Duplex" milestone. FIX: rows from dw* groups are
+    // collected into an open WALK GESTURE (beginWalk/endWalk, called by modeller.html's discWalk/discWalkAll) and
+    // pushed as ONE 'DISC_WALK' node carrying those rows, so it takes _restore's id-targeted §MHIST-ROWS path:
+    // one Ctrl+Z = the whole walk (fixtures + runs + bend fittings), one Ctrl+Y = all of it back. A dw* commit
+    // with no open gesture (a caller that did not begin one) still gets its own node, so no walk row is unreachable.
+    // 'arcseed-*' and every other seed group are untouched. Per-disc rows are kept on window.__dwRowsByDisc so
+    // modeller.html can hide an undone walk's decorative layer (§WALK-GESTURE-DRAW).
+    var origSeed = O.commitSeedGroup, _walkGesture = null;
+    window.__dwRowsByDisc = window.__dwRowsByDisc || {};
+    O.commitSeedGroup = async function (ops, gid) {
+      var r = await origSeed.call(this, ops, gid);
+      try {
+        var m = typeof gid === 'string' && /^dw(walk|chain|fit)-(.+)-\d+$/.exec(gid);
+        var ids = (r && r.ids) || [];
+        if (m && ids.length) {
+          var kind = m[1], disc = m[2];
+          if (kind === 'walk') window.__dwRowsByDisc[disc] = { walk: [], chain: [], fit: [] };   // a new walk of this disc
+          var slot = window.__dwRowsByDisc[disc] = window.__dwRowsByDisc[disc] || { walk: [], chain: [], fit: [] };
+          slot[kind] = slot[kind].concat(ids);
+          if (_walkGesture) _walkGesture.rows = _walkGesture.rows.concat(ids);
+          else _push('DISC_WALK', { label: disc, n: ids.length }, { rows: ids.slice(), gid: gid });
+        }
+      } catch (e) { console.warn('§MHIST_REC_ERR', e); }
+      return r;
+    };
+    O.__mhistBeginWalk = function (label) { _walkGesture = { label: label, rows: [] }; };
+    O.__mhistEndWalk = function () {
+      var g = _walkGesture; _walkGesture = null;
+      if (g && g.rows.length) {
+        _push('DISC_WALK', { label: g.label, n: g.rows.length }, { rows: g.rows.slice(), gid: 'walkgesture-' + g.rows[0] });
+        console.log('§WALK-GESTURE recorded "' + g.label + '" rows=' + g.rows.length + ' (one Ctrl+Z undoes it all)');
+      }
+    };
     O.__mhistWrapped = true;
     console.log('§MHIST_WRAP commit/commitGesture wrapped +deleteFeature (§MHIST-ROWS)');
   })();
 
   window.ModellerHistory = {
     recordBuildingOpen: recordBuildingOpen,
+    beginWalk: function (label) { var O = window.Bonsai && window.Bonsai.oplog; if (O && O.__mhistBeginWalk) O.__mhistBeginWalk(label); },
+    endWalk: function () { var O = window.Bonsai && window.Bonsai.oplog; if (O && O.__mhistEndWalk) O.__mhistEndWalk(); },
     undo: HB.undo, redo: HB.redo, jumpTo: HB.jumpTo, pending: pending,
     switchToId: HB.switchToId, tips: HB.tips, dumpTree: HB.dumpTree, setTreeKey: HB.setTreeKey,
     open: HB.open, toggleOpen: HB.toggleOpen, list: HB.list

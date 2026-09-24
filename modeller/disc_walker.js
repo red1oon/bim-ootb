@@ -2140,6 +2140,42 @@
     }
     return _shimForDisc(shims, disc);
   }
+  // §WALK-BRIDGE-ALL (2026-09-24, MODELLER_MASTER §STRATEGY L1) — SPEC. The §CAMPAIGN M1 routePattern bridge used
+  // to run ONLY on the legacy walk (below). The live Walk calls dwWalk(…,{schedule:true}) first
+  // (modeller.html _discWalkOne), and its schedule and measured-band branches returned early with routeChains alone.
+  // So on an ARC-only building (routeChains = 0 by construction) 7 of 8 residents routed NOTHING (W-MEP-OPENPATH M2,
+  // baseline 2026-09-24: Duplex 0, Terminal 0; only SampleCastle routed, via §SCHED-FALLBACK to legacy). This helper
+  // is the ONE bridge call all three branches share. Two honest additions:
+  //   - measured-band placements carry the RULE's storey (`storey_scope`, a source-building name), not this
+  //     building's storey, and routePattern pairs per storey. So for the bridge's anchors only (placements are NOT
+  //     mutated), a placement whose storey is not one of this building's substrate storeys is keyed to the storey
+  //     whose substrate z (the MEDIAN element-centre z of that storey, i.e. roughly mid-storey, from this building's
+  //     own elements, not invented) is NEAREST its z. The count re-keyed is logged.
+  //   - an empty-but-not-refused bridge result is logged (§WALK-PATTERN EMPTY); it used to be silent.
+  function _bridgeIfEmpty(disc, bdb, buildingName, placements, rc, opts) {
+    if (rc.segs.length || (opts && opts.noPattern) || !placements || !placements.length) return { rc: rc, patternInfo: null };
+    var sub = substrate(bdb), names = {}, rekeyed = 0, pl = placements;
+    sub.forEach(function (st) { names[st.name] = 1; });
+    if (sub.length && placements.some(function (p) { return !names[p.storey]; })) {
+      pl = placements.map(function (p) {
+        if (names[p.storey]) return p;
+        var st = sub[0];
+        for (var i = 1; i < sub.length; i++) if (Math.abs(sub[i].z - p.z) < Math.abs(st.z - p.z)) st = sub[i];
+        rekeyed++;
+        return Object.assign({}, p, { storey: st.name });
+      });
+    }
+    var pat = routePattern(disc, bdb, { placements: pl, buildingType: buildingName, storeys: sub });
+    if (pat.refused) { console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + pat.reason); return { rc: rc, patternInfo: null }; }
+    if (!pat.segs.length) {
+      console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' EMPTY placements=' + pl.length + ' storeyRekeyed=' + rekeyed +
+        (pat.byRule && pat.byRule.length ? ' [' + pat.byRule.map(function (b) { return b.from + ':' + (b.skipped || (b.segs + '/' + (b.segs + (b.noNbr || 0)))); }).join(' ') + ']' : ''));
+      return { rc: rc, patternInfo: null };
+    }
+    console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' ROUTED segs=' + pat.segs.length + ' placements=' + pl.length + ' storeyRekeyed=' + rekeyed);
+    return { rc: { segs: pat.segs, byRule: pat.byRule }, patternInfo: pat };
+  }
+
   function dwWalk(disc, bdb, buildingName, opts) {
     if (!_ready) { console.warn(TAG + ' not initialised'); return { disc: disc, refused: true, reason: 'engine not initialised', placed: 0 }; }
     // §SCHED-WALK (Step 2 PLACE, opt-in): schedule-driven per-space placement — the transcribed
@@ -2177,16 +2213,16 @@
           });
           mPlaced = mOut;
         } else mFloat = mPlaced.length;
-        var mChains = route(disc, bdb), mSrc = routeChains(disc, bdb);
+        var mChains = route(disc, bdb), mBr = _bridgeIfEmpty(disc, bdb, buildingName, mPlaced, routeChains(disc, bdb), opts), mSrc = mBr.rc;
         var mRefN = Object.keys(pm.refused).reduce(function (a, k) { return a + pm.refused[k]; }, 0);
         console.log(TAG + ' §WALK-NOSPACES disc=' + disc + ' bldg=' + buildingName + ' placed=' + mPlaced.length +
           ' zones=' + pm.zones + ' hostBound=' + mBound + ' floats=' + mFloat + ' lod400Refused=' + mRefN +
           (Object.keys(pm.refused).length ? ' [' + Object.keys(pm.refused).map(function (k) { return k + '×' + pm.refused[k]; }).join(' ') + ']' : ''));
         return { disc: disc, refused: false, mode: 'measured-band', placed: mPlaced.length, placements: mPlaced,
           measured: { zones: pm.zones, hostBound: mBound, floats: mFloat, lod400Refused: pm.refused },
-          chains: mChains, chainSegs: mSrc.segs, chainByRule: mSrc.byRule, storeys: 0 };
+          chains: mChains, chainSegs: mSrc.segs, chainByRule: mSrc.byRule, storeys: 0, patternBridge: mBr.patternInfo };
       }
-      var schains = route(disc, bdb), src2 = routeChains(disc, bdb);
+      var schains = route(disc, bdb), sBr = _bridgeIfEmpty(disc, bdb, buildingName, ps.placements, routeChains(disc, bdb), opts), src2 = sBr.rc;
       var refusedN = Object.keys(ps.refused).reduce(function (a, k) { return a + ps.refused[k]; }, 0);
       console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' placed=' + ps.placements.length +
         ' spaces=' + ps.spacesUsed + '/' + ps.spaces + ' lod400Refused=' + refusedN +
@@ -2194,7 +2230,7 @@
         ' skippedSpaces=' + ps.skippedSpaces.length);
       return { disc: disc, refused: false, placed: ps.placements.length, placements: ps.placements,
         schedule: { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused },
-        chains: schains, chainSegs: src2.segs, chainByRule: src2.byRule, storeys: 0 };
+        chains: schains, chainSegs: src2.segs, chainByRule: src2.byRule, storeys: 0, patternBridge: sBr.patternInfo };
     }
     var reps = repRules(disc);
     // §SPACE-SCOPED piece 2: opts.spaceGuid narrows the walk to ONE real IfcSpace's own boundary instead
@@ -2283,12 +2319,8 @@
     // ARC-derived-anchors → routewalker.js pattern-topology bridge (routePattern, PLB-only per its own measured
     // ad_mep_pattern coverage) before falling back to an honest 0. opts.noPattern=true restores the old
     // byte-identical behaviour (used by generalization/regression checks that want routeChains in isolation).
-    var patternInfo = null;
-    if (!rc.segs.length && !(opts && opts.noPattern)) {
-      var pat = routePattern(disc, bdb, { placements: placements, buildingType: buildingName });
-      if (!pat.refused && pat.segs.length) { rc = { segs: pat.segs, byRule: pat.byRule }; patternInfo = pat; }
-      else if (pat.refused) console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + pat.reason);
-    }
+    var br = _bridgeIfEmpty(disc, bdb, buildingName, placements, rc, opts), patternInfo = br.patternInfo;
+    rc = br.rc;
     console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' placed=' + placements.length +
       ' chains=' + chains.length + ' chainSegs=' + rc.segs.length + ' storeys=' + sub.length +
       (rc.byRule.length ? ' [' + rc.byRule.map(function (b) { return b.from.replace('Ifc', '') + '→' + b.to.replace('Ifc', '') + ':' + (b.skipped || (b.segs + '/' + (b.segs + b.noNbr))); }).join(' ') + ']' : ''));
@@ -2344,7 +2376,10 @@
   }
 
   var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
-    route: route, routeChains: routeChains, routePattern: routePattern, gate: gate, repRules: repRules, order: order, clearance: clearance,
+    route: route, routeChains: routeChains, routePattern: routePattern,
+    // §MEP-REROUTE: the walk's own bridge, callable on op-log placements (modeller.html _reRouteMovedWalks)
+    bridgeRoute: function (disc, bdb, buildingName, placements) { var b = _bridgeIfEmpty(disc, bdb, buildingName, placements, { segs: [], byRule: [] }, {}); return { segs: b.rc.segs, patternBridge: b.patternInfo }; },
+    gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
     _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,
