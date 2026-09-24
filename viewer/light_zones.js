@@ -207,5 +207,17 @@
     while (lo > 0 && Z.zone[base + (lo - 1) * Z.nx] !== SOLID) lo--; while (hi < Z.ny - 1 && Z.zone[base + (hi + 1) * Z.nx] !== SOLID) hi++;
     return { floorY: Z.org.y + lo * Z.cell, ceilY: Z.org.y + (hi + 1) * Z.cell, open: lo === 0 || hi === Z.ny - 1 }; }
 
-  global.LightZones = { band: band, leakPath: leakPath, build: build, at: at, atSurface: atSurface, atLamp: atLamp, SOLID: SOLID, get: function () { return cache; }, CELL: CELL };
+  // §LIGHT_ZONE_BAND v2 (red1-4b, 2026-09-25): a lamp's band comes from its BOUND empty cell (below the ceiling panel), not
+  // the fixture's own cell: { zone, floorY, topY } = that cell's empty column run. A fragment is lit by the lamp only if it
+  // is in the lamp's zone AND (its y is inside [floorY - CELL, topY + CELL], OR it is at/below the lamp's floor inside a
+  // column that is empty from the fragment up to that floor — the atrium void). fragCeilY = top of the fragment's own run.
+  function lampInfo(p) { var z = atLamp(p); if (!(z > 0) || z === SOLID) return { zone: 0 };
+    for (var d = 0; d <= 1.51; d += 0.25) { var q = { x: p.x, y: p.y - d, z: p.z }; if (at(q) === z) { var bd = band(q); if (bd) return { zone: z, floorY: bd.floorY, topY: bd.ceilY }; } }
+    var offs = [[0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5]]; for (var i = 0; i < offs.length; i++) { var w = { x: p.x + offs[i][0], y: p.y - 0.5, z: p.z + offs[i][1] }; if (at(w) === z) { var b2 = band(w); if (b2) return { zone: z, floorY: b2.floorY, topY: b2.ceilY }; } }
+    return { zone: z }; }
+  function bandPass(li, fragY, fragCeilY) { var c = cache ? cache.cell : CELL; if (li.floorY == null) return true;
+    if (fragY >= li.floorY - c && fragY <= li.topY + c) return true;
+    return fragY <= li.floorY && fragCeilY != null && fragCeilY >= li.floorY - c; }
+
+  global.LightZones = { lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atSurface: atSurface, atLamp: atLamp, SOLID: SOLID, get: function () { return cache; }, CELL: CELL };
 })(typeof window !== 'undefined' ? window : this);

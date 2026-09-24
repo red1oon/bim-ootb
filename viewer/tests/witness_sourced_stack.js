@@ -50,7 +50,7 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY) : null;
         if (process.env.INNER_R) await p.evaluate((r) => { window.APP._lightZoneInnerR = r; }, +process.env.INNER_R);
         const hasLZ = await p.evaluate(() => !!window.LightZones); if (!hasLZ) await p.addScriptTag({ url: '/viewer/light_zones.js?probe=' + Date.now() });
         const zs = await p.evaluate(() => { const A = window.APP, LZ = window.LightZones; const Z = LZ.build(A); if (!Z) return null;
-          let bound = 0, solid = 0, out0 = 0, off = 0, lit = 0; (A._nightLights || []).forEach(l => { if (!(l.intensity > 0)) return; lit++; const v = LZ.atLamp(l.position); l.userData.sourcedZone = (v > 0 && v !== LZ.SOLID) ? v : 0;
+          let bound = 0, solid = 0, out0 = 0, off = 0, lit = 0; (A._nightLights || []).forEach(l => { if (!(l.intensity > 0)) return; lit++; const v = LZ.atLamp(l.position); l.userData.sourcedZone = (v > 0 && v !== LZ.SOLID) ? v : 0; l.userData.sourcedInfo = LZ.lampInfo ? LZ.lampInfo(l.position) : null;
             if (v > 0 && v !== LZ.SOLID) bound++; else if (v === LZ.SOLID) solid++; else if (v === 0) out0++; else off++; });
           A._sourcedZoneAt = (P) => { const v = LZ.atSurface(P, { x: 0, y: 1, z: 0 }); return (v > 0 && v !== LZ.SOLID) ? v : 0; };
           return { stats: Z.stats, lamps: { lit, bound, inSolid: solid, inOutside: out0, offGrid: off } }; });
@@ -85,6 +85,9 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY) : null;
           let bd = null; if (LZ && LZ.band) { for (let up = 0.3; up < 1.6 && !bd; up += 0.25) bd = LZ.band({ x: P.x, y: P.y + up, z: P.z }); }
           const inBand = q => !bd || (q.l.position.y <= bd.ceilY + 0.3 && q.l.position.y >= bd.floorY - 0.3);
           const reachB = reach.filter(inBand), bsum = reachB.reduce((t, q) => t + q.c, 0);
+          // band v2: lamp band from its bound cell; void column rule via the fragment's own run top
+          const reach2 = (LZ && LZ.bandPass) ? reach.filter(q => { const li = q.l.userData.sourcedInfo; return !li || LZ.bandPass(li, P.y, bd ? bd.ceilY : null); }) : reach;
+          const b2sum = reach2.reduce((t, q) => t + q.c, 0), viaVoid = reach2.filter(q => { const li = q.l.userData.sourcedInfo; return li && li.floorY != null && P.y < li.floorY - 0.5; });
           const dbg = (window.__SL_DEBUG && LZ) ? { up: Array.from({ length: 14 }, (_, k) => LZ.at({ x: P.x, y: P.y - 0.5 + k * 0.25, z: P.z })),
             clearLamps: rows.filter(q => !q.blocked).slice(0, 6).map(q => ({ pos: [q.l.position.x, q.l.position.y, q.l.position.z].map(v => +v.toFixed(2)), lz: q.lz, c: +q.c.toFixed(2),
               col: Array.from({ length: 12 }, (_, k) => LZ.at({ x: q.l.position.x, y: q.l.position.y + 0.25 - k * 0.25, z: q.l.position.z })) })) } : undefined;
@@ -94,7 +97,11 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY) : null;
               blockedButReaching: reach.filter(q => q.blocked).length, blockedButReachingPct: sum ? +(100 * reach.filter(q => q.blocked).reduce((t, q) => t + q.c, 0) / sum).toFixed(1) : 0,
               upStoreyOwnZone: reach.filter(q => q.other === 'up' && q.lz === zP && zP > 0).length,
               band: bd ? { floorY: +bd.floorY.toFixed(2), ceilY: +bd.ceilY.toFixed(2), reaching: reachB.length, keptPct: sum ? +(100 * bsum / sum).toFixed(1) : 0,
-                blockedButReachingPct: sum ? +(100 * reachB.filter(q => q.blocked).reduce((t, q) => t + q.c, 0) / sum).toFixed(1) : 0, clearLostPct: sum ? +(100 * reach.filter(q => !q.blocked && !inBand(q)).reduce((t, q) => t + q.c, 0) / sum).toFixed(1) : 0 } : null } : null };
+                blockedButReachingPct: sum ? +(100 * reachB.filter(q => q.blocked).reduce((t, q) => t + q.c, 0) / sum).toFixed(1) : 0, clearLostPct: sum ? +(100 * reach.filter(q => !q.blocked && !inBand(q)).reduce((t, q) => t + q.c, 0) / sum).toFixed(1) : 0 } : null,
+              band2: { fragCeilY: bd ? +bd.ceilY.toFixed(2) : null, reaching: reach2.length, keptPct: sum ? +(100 * b2sum / sum).toFixed(1) : 0,
+                leakKeptPct: sum ? +(100 * reach2.filter(q => q.blocked).reduce((t, q) => t + q.c, 0) / sum).toFixed(1) : 0,
+                clearKeptPct: (() => { const cl = reach.filter(q => !q.blocked), cs = cl.reduce((t, q) => t + q.c, 0), c2 = reach2.filter(q => !q.blocked).reduce((t, q) => t + q.c, 0); return cs ? +(100 * c2 / cs).toFixed(1) : null; })(),
+                viaVoid: viaVoid.length, viaVoidUpLamps: viaVoid.filter(q => q.other === 'up').length } } : null };
         }
         const floorHit = (sx, sy) => { rc.near = 0; rc.far = Infinity; rc.setFromCamera(new THREE.Vector2(sx, sy), A.camera); const h = rc.intersectObjects(tg, false)[0]; if (!h || !h.face) return null;
           const o = h.object, M = new THREE.Matrix4().copy(o.matrixWorld), mi = new THREE.Matrix4();
@@ -107,6 +114,9 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY) : null;
           solid: grid.filter(q => q.zone === 'SOLID').length, offGrid: grid.filter(q => q.zone === -1).length,
           meanLeakPct: grid.length ? +(grid.reduce((t, q) => t + q.wall + q.slab, 0) / grid.length).toFixed(1) : 0,
           meanKeptPct: (LZ && grid.length) ? +(grid.reduce((t, q) => t + q.after.keptPct, 0) / grid.length).toFixed(1) : null,
+          meanBand2KeptPct: (LZ && grid.length) ? +(grid.reduce((t, q) => t + q.after.band2.keptPct, 0) / grid.length).toFixed(1) : null,
+          meanBand2LeakKeptPct: (LZ && grid.length) ? +(grid.reduce((t, q) => t + q.after.band2.leakKeptPct, 0) / grid.length).toFixed(1) : null,
+          band2ViaVoidSamples: (LZ && grid.length) ? grid.filter(q => q.after.band2.viaVoidUpLamps > 0).length : null,
           meanBandKeptPct: (LZ && grid.length) ? +(grid.reduce((t, q) => t + (q.after.band ? q.after.band.keptPct : q.after.keptPct), 0) / grid.length).toFixed(1) : null,
           meanBandLeakKeptPct: (LZ && grid.length) ? +(grid.reduce((t, q) => t + (q.after.band ? q.after.band.blockedButReachingPct : q.after.blockedButReachingPct), 0) / grid.length).toFixed(1) : null,
           meanBlockedButReachingPct: (LZ && grid.length) ? +(grid.reduce((t, q) => t + q.after.blockedButReachingPct, 0) / grid.length).toFixed(1) : null,
