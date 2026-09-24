@@ -3967,7 +3967,7 @@ async function setupEffects(A, renderer, scene, camera) {
     A._nightPLScaleStaged = A._nightPLScale;   // §SUN_ARC_FILL — the staged base the bake scales FROM
     // §STILL_DIALS — Alt+S lamp strength + fall-off, read at every press, set BEFORE the lamps are born below.
     if (!A._maxqActive) {
-      A._stillLampMul = _stillDial('_stillLamps', 'lamps', 2.0, 4);   // red1 13:4x: "internal points of light should hit stronger"
+      A._stillLampMul = _stillDial('_stillLamps', 'lamps', 2.0, 20);   // red1 13:4x: "internal points of light should hit stronger"
       A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', 0.8, 2);
       A._stillLampRangeNow = /[?&]lamprange=/.test(location.search) || typeof A._stillLampRange === 'number' ? _stillDial('_stillLampRange', 'lamprange', 0, 100) : null;   // §LIGHT_STACK arm (0 = infinite, today)
       // §LIGHT_UNIFORM_BUDGET — caps the lamps BEFORE toggleNightMode builds them; portals then fit in the rest. One light
