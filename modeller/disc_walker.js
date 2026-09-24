@@ -2376,7 +2376,10 @@
   }
 
   var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
-    route: route, routeChains: routeChains, routePattern: routePattern, gate: gate, repRules: repRules, order: order, clearance: clearance,
+    route: route, routeChains: routeChains, routePattern: routePattern,
+    // §MEP-REROUTE: the walk's own bridge, callable on op-log placements (modeller.html _reRouteMovedWalks)
+    bridgeRoute: function (disc, bdb, buildingName, placements) { var b = _bridgeIfEmpty(disc, bdb, buildingName, placements, { segs: [], byRule: [] }, {}); return { segs: b.rc.segs, patternBridge: b.patternInfo }; },
+    gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
     _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,

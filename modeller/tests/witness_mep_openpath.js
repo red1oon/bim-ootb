@@ -41,7 +41,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850 });
     const errs = [], lines = [];
     pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
-    pg.on('console', m => { const t = m.text(); if (/§WALK |§WALK-PATTERN|§WALK-SCHED|§WALK-NOSPACES|§SCHED-FALLBACK|§ROUTER-CHAIN/.test(t)) lines.push(t); });
+    pg.on('console', m => { const t = m.text(); if (/§WALK |§WALK-PATTERN|§WALK-SCHED|§WALK-NOSPACES|§SCHED-FALLBACK|§ROUTER-CHAIN|§MEP-REROUTE/.test(t)) lines.push(t); });
     await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
     await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalkAll==="function" && !!window.SQL', { timeout: 60000 });
     await pg.click('#b-open');
@@ -81,7 +81,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     R[key] = { opened, walked, D, chain, errs };
     console.log('--- ' + key + ' open=' + openMs + 'ms walk=' + walkMs + 'ms verifyChain=' + chain);
     Object.keys(D).forEach(d => console.log('    ' + d + ' ' + JSON.stringify(D[d])));
-    lines.filter(l => /§WALK-PATTERN|§ROUTER-CHAIN|§WALK disc=PLB|§WALK-SCHED disc=PLB|§WALK-NOSPACES disc=PLB/.test(l)).forEach(l => console.log('    ' + l.slice(0, 300)));
+    lines.filter(l => /§WALK-PATTERN|§ROUTER-CHAIN|§WALK disc=PLB|§WALK-SCHED disc=PLB|§WALK-NOSPACES disc=PLB|§MEP-REROUTE/.test(l)).forEach(l => console.log('    ' + l.slice(0, 300)));
     await pg.close();
   }
   console.log('--- gates ---');
