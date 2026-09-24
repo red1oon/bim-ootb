@@ -854,6 +854,209 @@ function setupStreaming(A) {
     var ck = Object.keys(T.cls).sort(function(a, b) { var sa = 0, sb = 0, k; for (k in T.cls[a]) sa += T.cls[a][k]; for (k in T.cls[b]) sb += T.cls[b][k]; return sb - sa; });
     console.log('§SURFACE_RULES_CLASS bld=' + (A.activeBuilding || '?') + ' ' + ck.slice(0, 30).map(function(c) { return c + ':' + Object.keys(T.cls[c]).map(function(r) { return r + '=' + T.cls[c][r]; }).join(','); }).join(' '));
   };
+  // ══ §SURFACE_R10 (bim-compiler PHOTOREAL_STILL_RENDER.md "§SURFACE_R10 — SPEC" + "R10 additions") ══
+  // Single-style openings: an IfcWindow / IfcDoor whose whole mesh carries ONE style (alpha >= 1) — a data
+  // gap, logged, never silent. Rides the surface rules: ON with them, `?surf=off` disables all of it.
+  // WINDOW: panes split from the frame per TRIANGLE by geometry (viewer/surface_r10.js, a port of the
+  //   measurement r10/split_lib.py; decided once per mesh hash). Pane -> class-default glazing (IfcWindow
+  //   STD_MAT colour, transparent); frame keeps today's material. Not clean -> left as authored (a louvre
+  //   or a muntin grid is not a pane).
+  // DOOR: separable hardware keeps today's (authored handle) material; the rest gets the class-default door
+  //   finish, smooth (R7). No hardware found -> left as today.
+  // SHAPE: geometry groups [0 = today's material, 1 = the new one] + a material array per mesh. A split
+  //   element never enters a BatchedMesh (one material) or a merged bucket (one material over per-element
+  //   index ranges): it is drawn as an InstancedMesh (2+ in a flush) or a single Mesh. Glass must not block
+  //   the sun: three.js casts per MESH, so split windows carry a customDepthMaterial that discards `aPane`
+  //   triangles; frames still cast.
+  // PANE ALPHA (no invented value): the building's own most common authored IfcWindow glazing alpha
+  //   (Terminal 0.100, Hospital 0.300); else its most common authored glazing alpha of any class (LTU 0.600);
+  //   none at all -> windows are NOT split (logged src=none).
+  A._r10GeoCache = {};      // hash -> { kind, verdict, why, geo|null }
+  A._r10State = null;       // per building: tallies + paths
+  A._r10Guids = new Set();  // every element drawn split (consolidation must never put one back in a batch)
+  A._r10Eligible = function(el) {
+    if (!A._surfRules || !el) return false;
+    var c = el.ifcClass;
+    return (c === 'IfcWindow' || c === 'IfcDoor') && A._alphaOf(el.rgba) >= 1.0;
+  };
+  A._r10St = function() {
+    var b = A.activeBuilding || '?';
+    if (!A._r10State || A._r10State.bld !== b) {
+      A._r10State = { bld: b, win: { clean: 0, fallback: 0, why: {} }, door: { hardware: 0, leafOnly: 0, other: {} },
+        paths: { instanced: 0, merged: 0, batchedMoved: 0, single: 0, movedToInstanced: 0, movedToSingle: 0 }, paneAlpha: null, paneSrc: '' };
+    }
+    return A._r10State;
+  };
+  A._r10PaneAlpha = function() {
+    var S = A._r10St();
+    if (S.paneAlpha !== null) return S.paneAlpha;
+    var q = A.streamQueue || [], win = {}, any = {};
+    for (var i = 0; i < q.length; i++) {
+      var a = A._alphaOf(q[i][2]); if (!(a < 1.0)) continue;
+      any[a] = (any[a] || 0) + 1;
+      if (q[i][11] === 'IfcWindow') win[a] = (win[a] || 0) + 1;
+    }
+    var top = function(o) { var bk = null, bn = 0; for (var k in o) if (o[k] > bn) { bn = o[k]; bk = +k; } return bk; };
+    var w = top(win), y = top(any);
+    if (w !== null) { S.paneAlpha = w; S.paneSrc = 'authored IfcWindow glazing'; }
+    else if (y !== null) { S.paneAlpha = y; S.paneSrc = 'authored glazing, any class'; }
+    else { S.paneAlpha = 0; S.paneSrc = 'none'; }
+    return S.paneAlpha;
+  };
+  A._r10Split = function(hash, geo, cls) {
+    var ck = hash + '|' + cls;
+    if (A._r10GeoCache[ck]) return A._r10GeoCache[ck];
+    var out = { kind: cls === 'IfcWindow' ? 'window' : 'door', verdict: 'NO_GEOMETRY', why: '', geo: null };
+    try {
+      var pos = geo && geo.attributes.position && geo.attributes.position.array, idx = geo && geo.index && geo.index.array;
+      if (pos && idx && window.SurfaceR10) {
+        var r = out.kind === 'window' ? window.SurfaceR10.classifyWindow(pos, idx) : window.SurfaceR10.classifyDoor(pos, idx);
+        out.verdict = r.verdict; out.why = r.why || '';
+        if (r.flags && (out.kind === 'door' || A._r10PaneAlpha() > 0)) out.geo = A._r10BuildGeo(geo, r.flags, out.kind === 'window');
+        else if (r.flags) { out.verdict = 'NO_PANE_ALPHA'; out.why = 'building has no authored glazing to take an alpha from'; }
+      } else if (!window.SurfaceR10) { out.verdict = 'NO_MODULE'; out.why = 'surface_r10.js not loaded'; }
+    } catch (e) { out.verdict = 'ERROR'; out.why = e.message; console.warn('§SURFACE_R10_ERROR hash=' + hash + ' ' + e.message); }
+    A._r10GeoCache[ck] = out;
+    return out;
+  };
+  // A new geometry: a vertex used by triangles of BOTH groups is duplicated, so `aPane` is exact per triangle
+  // (JKR/LTU weld the glass to the frame). Index order = group 0 (today's material) then group 1 (new).
+  A._r10BuildGeo = function(geo, flags, isWindow) {
+    var idx = geo.index.array, m = Math.floor(idx.length / 3), names = Object.keys(geo.attributes);
+    var remap = new Map(), src = [], n1 = 0;
+    for (var t = 0; t < m; t++) if (flags[t]) n1++;
+    var nIdx = new Array(m * 3), w0 = 0, w1 = (m - n1) * 3;
+    for (var t2 = 0; t2 < m; t2++) {
+      var f = flags[t2] ? 1 : 0, at = f ? w1 : w0;
+      for (var c = 0; c < 3; c++) {
+        var ov = idx[t2 * 3 + c], key = ov * 2 + f, nv = remap.get(key);
+        if (nv === undefined) { nv = src.length; remap.set(key, nv); src.push(ov); }
+        nIdx[at + c] = nv;
+      }
+      if (f) w1 += 3; else w0 += 3;
+    }
+    // src[nv] = the old vertex it copies; its group flag is the low bit of its key
+    var nvCount = src.length, pane = new Float32Array(nvCount);
+    remap.forEach(function(nv, key) { pane[nv] = (isWindow && (key & 1)) ? 1 : 0; });
+    var out = new THREE.BufferGeometry();
+    for (var a = 0; a < names.length; a++) {
+      var at0 = geo.attributes[names[a]], isz = at0.itemSize, arr = new at0.array.constructor(nvCount * isz);
+      for (var v = 0; v < nvCount; v++) for (var k = 0; k < isz; k++) arr[v * isz + k] = at0.array[src[v] * isz + k];
+      out.setAttribute(names[a], new THREE.BufferAttribute(arr, isz, at0.normalized));
+    }
+    out.setAttribute('aPane', new THREE.BufferAttribute(pane, 1));
+    out.setIndex(new THREE.BufferAttribute(nvCount < 65536 ? new Uint16Array(nIdx) : new Uint32Array(nIdx), 1));
+    out.addGroup(0, (m - n1) * 3, 0);
+    out.addGroup((m - n1) * 3, n1 * 3, 1);
+    out.computeBoundingSphere(); out.computeBoundingBox();
+    out.userData.r10 = { kind: isWindow ? 'window' : 'door', tris0: m - n1, tris1: n1 };
+    return out;
+  };
+  // A material ARRAY that still answers the single-material questions the rest of the app asks of a
+  // streamed mesh (m.color, m.transparent, m.userData, m.clone(), m.dispose() ...). Reads and writes go to
+  // element 0 (today's material — what the mesh "is"); switches that must hold for the whole mesh
+  // (visible, wireframe, section clipping, depth test, needsUpdate) go to every element. Array.isArray is
+  // still true, so three.js draws it per group.
+  var _R10_FWD_FIRST = ['color', 'emissive', 'emissiveIntensity', 'opacity', 'transparent', 'side', 'userData', 'name', 'type',
+    'envMap', 'envMapIntensity', 'roughness', 'metalness', 'map', 'uuid', 'flatShading', 'vertexColors', 'alphaTest',
+    'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits', 'blending', 'toneMapped', 'fog'];
+  var _R10_FWD_ALL = ['visible', 'wireframe', 'needsUpdate', 'depthTest', 'depthWrite', 'colorWrite', 'clippingPlanes', 'clipShadows', 'clipIntersection'];
+  A._r10MatArray = function(list) {
+    var arr = list.slice();
+    _R10_FWD_FIRST.forEach(function(p) {
+      Object.defineProperty(arr, p, { configurable: true, enumerable: false,
+        get: function() { return arr[0][p]; }, set: function(v) { arr[0][p] = v; } });
+    });
+    _R10_FWD_ALL.forEach(function(p) {
+      Object.defineProperty(arr, p, { configurable: true, enumerable: false,
+        get: function() { return arr[0][p]; }, set: function(v) { for (var i = 0; i < arr.length; i++) arr[i][p] = v; } });
+    });
+    Object.defineProperty(arr, 'isR10MaterialArray', { value: true, enumerable: false });
+    Object.defineProperty(arr, 'clone', { enumerable: false, value: function() { return A._r10MatArray(arr.map(function(x) { return x.clone(); })); } });
+    Object.defineProperty(arr, 'dispose', { enumerable: false, value: function() { arr.forEach(function(x) { if (x.dispose) x.dispose(); }); } });
+    Object.defineProperty(arr, 'setValues', { enumerable: false, value: function(v) { return arr[0].setValues(v); } });
+    return arr;
+  };
+  A._r10MatCache = {};
+  A._r10Materials = function(frameMat, kind, el) {
+    var ck = frameMat.uuid + '|' + kind;
+    if (A._r10MatCache[ck]) return A._r10MatCache[ck];
+    var second;
+    if (kind === 'window') {
+      // class-default glazing: IfcWindow STD_MAT colour (0.70, 0.82, 0.88) with the building's own glazing alpha.
+      var al = A._r10PaneAlpha();
+      second = A._getMaterial('0.700,0.820,0.880,' + al.toFixed(3), 'IfcWindow', '', '', null, '', undefined, 'R9');
+    } else {
+      // class-default door finish (IfcDoor STD_MAT, rgba NULL), smooth: R7 = no texture, no grain.
+      second = A._getMaterial(null, 'IfcDoor', '', '', null, '', undefined, 'R7');
+    }
+    return (A._r10MatCache[ck] = A._r10MatArray([frameMat, second]));
+  };
+  A._r10DepthMaterial = function() {
+    if (A._r10DepthMat) return A._r10DepthMat;
+    var m = new THREE.MeshDepthMaterial();
+    m.onBeforeCompile = function(sh) {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aPane;\nvarying float vR10Pane;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvR10Pane = aPane;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vR10Pane;')
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vR10Pane > 0.5) discard;');
+      A._r10DepthCompiled = (A._r10DepthCompiled || 0) + 1;
+    };
+    m.customProgramCacheKey = function() { return 'surface_r10_pane_discard'; };
+    m.userData.r10Depth = true;
+    return (A._r10DepthMat = m);
+  };
+  // Stream-end rollup: the numbers the witness asserts are emitted by the running app.
+  A._r10Report = function() {
+    var bld = A.activeBuilding || '?';
+    if (!A._surfRules) { console.log('§SURFACE_R10 OFF bld=' + bld + ' (?surf=off — no opening is split)'); return; }
+    if (!A.streamedCount) { console.log('§SURFACE_R10 VACUOUS bld=' + bld + ' streamed=0 — nothing judged, no split counts printed'); return; }
+    var q = A.streamQueue || [], ss = { IfcWindow: 0, IfcDoor: 0 };
+    for (var i = 0; i < q.length; i++) { var c = q[i][11]; if ((c === 'IfcWindow' || c === 'IfcDoor') && A._alphaOf(q[i][2]) >= 1.0) ss[c]++; }
+    console.log('§SURFACE_OPENING_SINGLE_STYLE bld=' + bld + ' class=IfcWindow n=' + ss.IfcWindow);
+    console.log('§SURFACE_OPENING_SINGLE_STYLE bld=' + bld + ' class=IfcDoor n=' + ss.IfcDoor);
+    var S = A._r10St(), W = S.win, D = S.door, P = S.paths;
+    var wr = Object.keys(W.why).map(function(k) { return k + ':' + W.why[k]; }).join(',') || 'none';
+    var dr = Object.keys(D.other).map(function(k) { return k + ':' + D.other[k]; }).join(',') || 'none';
+    console.log('§SURFACE_R10_SPLIT bld=' + bld + ' windows clean=' + W.clean + ' fallback=' + W.fallback + ' (' + wr + ')' +
+      ' doors hardware=' + D.hardware + ' leafOnly=' + D.leafOnly + ' (untouched: ' + dr + ')' +
+      ' paneAlpha=' + (S.paneAlpha === null ? 'unused' : S.paneAlpha.toFixed(3)) + ' paneAlphaSrc=' + (S.paneSrc || 'unused'));
+    console.log('§SURFACE_R10_PATHS bld=' + bld + ' instanced=' + P.instanced + ' merged=' + P.merged + ' batchedMoved=' + P.batchedMoved +
+      ' single=' + P.single + ' (moved out of a batch/merge -> instanced ' + P.movedToInstanced + ', -> single ' + P.movedToSingle + ')');
+    A._r10ShadowReport();
+  };
+  // paneCasters = pane triangles (per drawn element) that WOULD reach the shadow map: on a mesh without the
+  // discard material, or with a vertex whose aPane is not 1. frameCasters = split window elements whose frame
+  // triangles cast (aPane 0 on every vertex, group material visible). Read from the scene, not from a counter.
+  A._r10ShadowReport = function() {
+    var pane = 0, frame = 0, meshes = 0, paneTris = 0;
+    A.scene.traverse(function(o) {
+      if (!o.userData || o.userData.r10 !== 'window' || !o.geometry || !o.geometry.userData.r10) return;
+      meshes++;
+      var g = o.geometry, ap = g.getAttribute('aPane').array, ix = g.index.array, gr = g.groups;
+      var inst = o.isInstancedMesh ? o.count : 1, discard = o.customDepthMaterial === A._r10DepthMat && !!A._r10DepthMat;
+      var badPane = 0, frameOk = 0;
+      for (var j = gr[1].start; j < gr[1].start + gr[1].count; j++) if (!discard || ap[ix[j]] !== 1) badPane++;
+      for (var j2 = gr[0].start; j2 < gr[0].start + gr[0].count; j2++) if (ap[ix[j2]] === 0) frameOk++;
+      paneTris += gr[1].count / 3 * inst;
+      if (badPane) pane += inst;
+      if (frameOk === gr[0].count && gr[0].count > 0) frame += inst;
+    });
+    console.log('§SURFACE_R10_SHADOW bld=' + (A.activeBuilding || '?') + ' paneCasters=' + pane + ' frameCasters=' + frame +
+      ' (split window meshes=' + meshes + ', pane triangles drawn=' + paneTris + ', all discarded in the depth pass by aPane)');
+  };
+  // Draw-call / transparent cost at the current pose (renderer.info of one plain render + the render list).
+  A._r10Cost = function() {
+    var r = A.renderer; if (!r || !A.scene || !A.camera) return null;
+    var auto = r.info.autoReset; r.info.autoReset = false; r.info.reset();
+    r.render(A.scene, A.camera);
+    var calls = r.info.render.calls, tris = r.info.render.triangles;
+    r.info.autoReset = auto;
+    var tr = 0; try { var rl = r.renderLists.get(A.scene, 0); tr = rl.transparent.length + (rl.transmissive ? rl.transmissive.length : 0); } catch (e) { tr = -1; }
+    return { calls: calls, transparent: tr, triangles: tris };
+  };
   A._triResolve = function(alpha, ifcClass, matName) {
     var byName = A._TRIPLANAR_BY_NAME, byClass = A._TRIPLANAR_MAT;
     if (!byName || !byClass) return { mat: null, src: 'INCONCLUSIVE' };
@@ -1845,6 +2048,7 @@ function setupStreaming(A) {
         A.streaming = false;
         if (A._triSrcTally) A._triSrcTally();   // §CPE_MATERIAL_KEY rollup — shipped §-log evidence
         if (A._surfTally) A._surfTally();       // §SURFACE_RULES rollup (only when ?surf=rules)
+        if (A._r10Report) A._r10Report();       // §SURFACE_R10 rollup (§SURFACE_OPENING_SINGLE_STYLE / _SPLIT / _PATHS / _SHADOW)
         if (A._mepHueRollup) A._mepHueRollup();  // §MEP_COLOR_SURVIVES_PHOTOREAL rollup — same reason
         // §RED_GREY_MYSTERY: DISABLED for now — the repair itself is verified correct (patches the
         // broken normal data, confirmed by direct readback) but does NOT change the rendered
@@ -2290,7 +2494,51 @@ function setupStreaming(A) {
         ' override=' + (_mergeOverride === null ? 'none' : _mergeOverride));
     }
 
-    for (const [hash, elements] of Object.entries(A._pendingInstances)) {
+    // §SURFACE_R10 — draw split openings: split geometry + [today's material, new material]. 2+ in this flush
+    // -> one InstancedMesh (same registration as the instanced branch below); 1 -> one Mesh (same registration
+    // as the §BATCHED_FAIL / §S261 fallback meshes: guidMap[mesh.id] + userData.guid).
+    var _r10Place = function(sp, els, origin) {
+      var S = A._r10St(), P = S.paths, e0 = els[0], n = els.length;
+      var frameMat = A._getMaterial(e0.rgba, e0.ifcClass, e0.matVariant, e0.disc, e0.mepHint, e0.matName, undefined, A._surfRowFor(els));
+      var mats = A._r10Materials(frameMat, sp.kind, e0), mesh;
+      if (origin === 'merged') P.merged += n; else if (origin === 'batched') P.batchedMoved += n;
+      for (var i = 0; i < n; i++) A._r10Guids.add(els[i].guid);
+      if (n >= 2) {
+        mesh = new THREE.InstancedMesh(sp.geo, mats, n);
+        mesh.frustumCulled = false;  // §S271b, as the instanced branch
+        var meta = [], dU = e0.disc || '';
+        for (var k = 0; k < n; k++) {
+          var el = els[k], p = A.ifc2three(el.cx, el.cy, el.cz);
+          _pos.set(p.x, p.y, p.z); _euler.set(el.rotX, el.rotZ, -el.rotY); _quat.setFromEuler(_euler);
+          _m4.compose(_pos, _quat, _scale); mesh.setMatrixAt(k, _m4);
+          meta.push(A._registerInstanceSlot(mesh, el, k));
+          if ((el.disc || '') !== dU) dU = null;
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.userData.isInstanced = true; mesh.userData.hash = e0.hash; mesh.userData.ifcClass = e0.ifcClass || '';
+        if (dU) mesh.userData.disc = dU;
+        A._instanceMeta[mesh.id] = meta;
+        P.instanced += n; if (origin !== 'instanced') P.movedToInstanced += n;
+      } else {
+        mesh = new THREE.Mesh(sp.geo, mats);
+        var q = A.ifc2three(e0.cx, e0.cy, e0.cz);
+        mesh.position.set(q.x, q.y, q.z);
+        if (e0.rotX || e0.rotY || e0.rotZ) mesh.rotation.set(e0.rotX, e0.rotZ, -e0.rotY);
+        mesh.updateMatrix();
+        mesh.userData.storey = e0.storey; mesh.userData.disc = e0.disc;
+        mesh.userData.guid = e0.guid; mesh.userData.ifcClass = e0.ifcClass || '';
+        A.guidMap[mesh.id] = e0.guid;
+        if (!A._storeyVisible(e0.storey)) mesh.visible = false;
+        if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(e0.disc)) mesh.visible = false;
+        P.single += 1; if (origin !== 'instanced') P.movedToSingle += 1;
+      }
+      mesh.userData.r10 = sp.kind;
+      if (sp.kind === 'window') mesh.customDepthMaterial = A._r10DepthMaterial();
+      A.scene.add(mesh);
+      return { instanced: n >= 2 ? n : 0, single: n >= 2 ? 0 : 1, draws: 1 };
+    };
+
+    for (let [hash, elements] of Object.entries(A._pendingInstances)) {   // `let`: §SURFACE_R10 may take split openings out of `elements`
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
@@ -2311,6 +2559,30 @@ function setupStreaming(A) {
       // (every element still lands in exactly one, via the same _registerBatchSlot call), which
       // is why this is expected to be safe, but expectation is not the same as verification.
       var LOW_INSTANCE_BATCH_MAX = 3;
+      // §SURFACE_R10 — split single-style openings leave the normal routing HERE, before any batch / merge
+      // bucket or InstancedMesh is built, so no path ever sees them with one material. `origin` is the path
+      // they would have taken (the same rule as below), for §SURFACE_R10_PATHS.
+      if (A._surfRules) {
+        var _r10In = [], _r10Rest = [];
+        for (var _ri = 0; _ri < elements.length; _ri++) (A._r10Eligible(elements[_ri]) ? _r10In : _r10Rest).push(elements[_ri]);
+        if (_r10In.length) {
+          var _r10Sp = A._r10Split(hash, geo, _r10In[0].ifcClass), _r10S = A._r10St();
+          for (var _rj = 0; _rj < _r10In.length; _rj++) {
+            var _rk = _r10Sp.verdict;
+            if (_r10Sp.kind === 'window') { if (_r10Sp.geo) _r10S.win.clean++; else { _r10S.win.fallback++; _r10S.win.why[_rk] = (_r10S.win.why[_rk] || 0) + 1; } }
+            else if (_r10Sp.geo) _r10S.door.hardware++;
+            else if (_rk === 'LEAF_NO_HW') _r10S.door.leafOnly++;
+            else _r10S.door.other[_rk] = (_r10S.door.other[_rk] || 0) + 1;
+          }
+          if (_r10Sp.geo) {
+            var _r10Origin = elements.length > LOW_INSTANCE_BATCH_MAX ? 'instanced' : (_useMerge ? 'merged' : 'batched');
+            var _r10Drawn = _r10Place(_r10Sp, _r10In, _r10Origin);
+            instancedCount += _r10Drawn.instanced; batchedCount += _r10Drawn.single; drawCalls += _r10Drawn.draws;
+            elements = _r10Rest;
+            if (!elements.length) continue;
+          }
+        }
+      }
       if (elements.length <= LOW_INSTANCE_BATCH_MAX) {
         // §S260/§S280e: Desktop — bucket for BatchedMesh (low-instance-count hashes)
         for (let li = 0; li < elements.length; li++) {
@@ -2980,6 +3252,7 @@ function setupStreaming(A) {
       if (!hash || !A.meshCache[hash]) continue;
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
+      if (A._r10Guids && A._r10Guids.has(guid)) continue;   // §SURFACE_R10 — a split opening never goes back into a batch
 
       var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-') + '|' + (ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — see the batch key above
       if (!buckets[key]) buckets[key] = [];
@@ -3716,6 +3989,7 @@ function setupStreaming(A) {
       if (geo && geo.dispose) geo.dispose();
     }
     A.meshCache = {};
+    A._r10GeoCache = {}; A._r10State = null; A._r10Guids = new Set(); A._r10MatCache = {};   // §SURFACE_R10 per-load state
     A.streamedCount = 0;
     A.streaming = false;
     A.streamQueue = [];
