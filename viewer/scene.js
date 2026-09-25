@@ -45,6 +45,9 @@ async function setupScene(A) {
   // §SOURCED_LIGHT — zone-bound lamps/portals + no sourceless sky indoors; same once-only chunk patch, inert until an Alt+S.
   if (window.SourcedLight) { try { window.SourcedLight.install(THREE); } catch (eSL) { console.warn('§SOURCED_LIGHT install failed: ' + eSL.message); } }
   else console.warn('§SOURCED_LIGHT not loaded — Alt+S sourced light disabled');
+  // §STILL_SHADOW_CASCADE — the sun's shadow line + the once-per-fragment cascade pick; inert until an Alt+S sets uCsm.
+  if (window.ShadowCascade) { try { window.ShadowCascade.install(THREE); } catch (eSC) { console.warn('§STILL_SHADOW_CASCADE install failed: ' + eSC.message); } }
+  else console.warn('§STILL_SHADOW_CASCADE not loaded — Alt+S keeps one sun shadow map');
   renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: !_isMobileRenderer,

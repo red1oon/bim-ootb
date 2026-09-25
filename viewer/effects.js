@@ -3219,6 +3219,11 @@ async function setupEffects(A, renderer, scene, camera) {
     var texel = Math.max(w, h) / mz;
     A.sun.shadow.normalBias = (window.__noNormalBias ? 0 : 2 * texel);
     var edgeLine = (!film && _edgeOn()) ? _stillEdgeDepth(sc, inv, l, r, b, t, props, texel) : '';
+    // §STILL_SHADOW_CASCADE: the union, kept props and this single box are the cascades' inputs (_cascadeFit); with cascades
+    // on this single-map edge line is superseded — printed as _SINGLE so one §STILL_SHADOW_EDGE answer exists per cascade
+    var csmRun = !film && _csmLights.length && _cascadeOn();
+    _fitState.last = { U: U, props: props, kept: kept, inv: inv.clone(), env: env, outside: outside, box: { l: l, r: r, b: b, t: t } };
+    if (csmRun && edgeLine) edgeLine = edgeLine.replace(/^§STILL_SHADOW_EDGE /, '§STILL_SHADOW_EDGE_SINGLE (superseded by §STILL_SHADOW_CASCADE) ');
     sc.updateProjectionMatrix();
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
     _stillFitBox = { l: l, r: r, b: b, t: t };
@@ -3229,6 +3234,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' bldgFootprint=' + (B.x1 - B.x0).toFixed(0) + 'x' + (B.y1 - B.y0).toFixed(0) + ' sunElev=' + THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)))).toFixed(1) +
       ' view=' + (V.x1 - V.x0).toFixed(0) + 'x' + (V.y1 - V.y0).toFixed(0) + ' union=' + (U.x1 - U.x0).toFixed(0) + 'x' + (U.y1 - U.y0).toFixed(0));
     if (edgeLine) console.log(edgeLine);
+    if (csmRun) { try { _stillCascadeApply(); } catch (eC) { console.warn('§STILL_SHADOW_CASCADE failed: ' + eC.message + ' — single map kept'); if (window.ShadowCascade) window.ShadowCascade.off(); } }
     return line;
   }
   // ══ §STILL_SHADOW_EDGE (bim-compiler PHOTOREAL_STILL_RENDER.md "§STILL_SHADOW_EDGE — SPEC"; watchdog red1-4b/red1-c6) ══
@@ -3245,7 +3251,8 @@ async function setupEffects(A, renderer, scene, camera) {
   //     cos e <= 1). The depth bias is then only the depth format's step, sized for a 16-bit worst case: range / 65536.
   //     Lifting a ground lookup makes no base gap: its sun ray still meets the caster standing on that ground.
   function _edgeOn() { return !(A._stillShadowEdge === false || /[?&]shadowedge=0/.test(location.search)); }
-  function _stillEdgeDepth(sc, inv, l, r, b, t, props, texel) {
+  function _stillEdgeDepth(sc, inv, l, r, b, t, props, texel, sh) {
+    sh = sh || A.sun.shadow; _stillEdgeDepth.last = null;
     var q = new THREE.Vector3(), dmin = Infinity, dmax = -Infinity, n = 0;
     function dep(x, y, z) { q.set(x, y, z).applyMatrix4(inv); var d = -q.z; if (isFinite(d)) { dmin = Math.min(dmin, d); dmax = Math.max(dmax, d); n++; } }
     _fitState.corners.forEach(function(c) { dep(c.x, c.y, c.z); });
@@ -3261,16 +3268,240 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!(dmax > dmin)) return '§STILL_SHADOW_EDGE VACUOUS depth extent (points=' + n + ') — range kept ' + (farWas - nearWas).toFixed(0) + 'm';
     var pad = Math.max(2, 0.02 * (dmax - dmin));
     sc.near = Math.max(0.1, dmin - pad); sc.far = dmax + pad;
-    var range = sc.far - sc.near, R = A.sun.shadow.radius;
+    var range = sc.far - sc.near, R = sh.radius;
     var worldBias = range / 65536, nb = (R + 1.5) * texel;
-    A.sun.shadow.bias = -(worldBias / range); A.sun.shadow.normalBias = window.__noNormalBias ? 0 : nb;
+    sh.bias = -(worldBias / range); sh.normalBias = window.__noNormalBias ? 0 : nb;
     var gap = function(deg) { return (worldBias / Math.tan(THREE.MathUtils.degToRad(deg))).toFixed(4); };
+    _stillEdgeDepth.last = { range: range, worldBias: worldBias, nb: nb, bias: sh.bias, g45: +gap(45), g20: +gap(20), near: sc.near, far: sc.far };
     var el = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.clone().normalize().y))));
     return '§STILL_SHADOW_EDGE range ' + (farWas - nearWas).toFixed(0) + 'm -> ' + range.toFixed(1) + 'm (near ' + nearWas.toFixed(0) + '->' + sc.near.toFixed(1) +
       ' far ' + farWas.toFixed(0) + '->' + sc.far.toFixed(1) + ', points=' + n + ' propsKept=' + kept + ' slabPts=' + slab + ' groundY=' + (gy == null ? 'n/a' : gy.toFixed(2)) + ' topY=' + yTop.toFixed(1) + ' pad=' + pad.toFixed(1) + ')' +
-      ' texel=' + texel.toFixed(4) + ' R=' + R + ' normalBias=' + nb.toFixed(4) + 'm ((R+1.5) texels) worldBias=' + worldBias.toFixed(5) + 'm (range/65536) bias=' + A.sun.shadow.bias.toExponential(3) +
+      ' texel=' + texel.toFixed(4) + ' R=' + R + ' normalBias=' + nb.toFixed(4) + 'm ((R+1.5) texels) worldBias=' + worldBias.toFixed(5) + 'm (range/65536) bias=' + sh.bias.toExponential(3) +
       ' predictedBaseGap45=' + gap(45) + 'm 20deg=' + gap(20) + 'm here(' + el.toFixed(1) + 'deg)=' + gap(Math.max(0.5, el)) + 'm (was 0.305/tan: 45deg=0.305m)' +
       ' thinCasterRisk=' + nb.toFixed(3) + 'm (= normalBias: a caster thinner or lower than this next to its receiver can lose its shadow)';
+  }
+  // ══ §STILL_SHADOW_CASCADE (bim-compiler PHOTOREAL_STILL_RENDER.md "§STILL_SHADOW_CASCADE — SPEC" + WATCHDOG GATE CONDITIONS
+  // C1-C5 + BUILD DECISIONS D1-D7) — Alt+S only (`!A._maxqActive`); films unchanged. &shadowcascade=0 or
+  // APP._stillShadowCascade=false = the single §STILL_SHADOW_FIT map (A/B). ══
+  // One 8192 map gave texel 0.074-0.085 m on the Hospital exterior (3edd28a8 gate), so thinCasterRisk = 3 texels = 0.22-0.26 m.
+  // The fix is smaller texels where the eye looks: split the VISIBLE depth range (SDSM: Lauritzen, Salvi, Lefohn, I3D 2011 —
+  // one 160x90 depth readback, the §METER size) by PSSM's practical scheme C_i = 0.5 C_log + 0.5 C_uni (Zhang et al., VRCIA
+  // 2006; three's CSM addon default lambda) and fit one map per slice. The sun is cascade 0 (D2); cascades 1..m-1 are
+  // shadow-only lights (colour 0). m is FIXED for the session (C1 / ALTC_FOUNDATION F8: a light-count change recompiles
+  // every material) — unused cascades keep their light, get no render, and the shader never picks them.
+  var CSM_M = 4, CSM_BLEND = 0.1, CSM_LAMBDA = 0.5, CSM_RB_W = 160, CSM_RB_H = 90, CSM_MEM_CAP = 512, CSM_THIN = 0.0167;
+  var _csmLights = [], _csmRT = null, _csmDM = null, _csmSingleSize = 0;
+  function _cascadeOn() {
+    return !A._maxqActive && !!(window.ShadowCascade && window.ShadowCascade.installed()) && _edgeOn() &&
+      !(A._stillShadowCascade === false || /[?&]shadowcascade=0/.test(location.search)) && !(A._stillShadowFit === false || /[?&]shadowfit=0/.test(location.search));
+  }
+  function _csmSizeMB(sz) { return sz * sz * 8 / 1048576; }   // D1: RGBA8 colour plane + 32-bit depth texture (the §R17 unit)
+  function _releaseShadowMapOf(sh) {   // §R17_SHADOWMAP_RELEASE for any light (same steps as _releaseSunShadowMap)
+    if (!sh || !sh.map) return 0;
+    var mb = (sh.map.width * sh.map.height * 4 * (sh.map.depthTexture ? 2 : 1)) / 1048576;
+    try { if (sh.map.depthTexture) { sh.map.depthTexture.dispose(); sh.map.depthTexture = null; } sh.map.dispose(); sh.map = null; if (sh.mapPass) { sh.mapPass.dispose(); sh.mapPass = null; } }
+    catch (e) { console.warn('§SHADOWMAP_RELEASE cascade failed ' + e.message); return 0; }
+    return mb;
+  }
+  // C2: added in the staging step, right after _enablePhotoShadows and BEFORE the first staged render compiles anything, so
+  // the still's programs link once with the fixed m directional shadows.
+  function _stillCascadeLightsAdd() {
+    if (!_cascadeOn() || !A.sun || !A.scene || !_photoShadowSelfEnabled) return;
+    var sz = A.sun.shadow.mapSize.width;
+    for (var i = _csmLights.length; i < CSM_M - 1; i++) {
+      var L = new THREE.DirectionalLight(0x000000, 0); L.name = 'stillShadowCascade' + (i + 1); L.userData.stillCascade = i + 1; _csmLights.push(L);
+    }
+    _csmLights.forEach(function(L) {
+      L.castShadow = true; L.color.setHex(0x000000); L.intensity = 0; L.layers.mask = A.sun.layers.mask; L.userData.csmUsed = false;
+      if (L.shadow.map && L.shadow.map.width !== sz) _releaseShadowMapOf(L.shadow);
+      L.shadow.mapSize.set(sz, sz); L.shadow.autoUpdate = false; L.shadow.needsUpdate = false;
+      L.position.copy(A.sun.position); L.target.position.copy(A.sun.target.position); L.updateMatrixWorld(); L.target.updateMatrixWorld();
+      if (L.parent !== A.scene) A.scene.add(L);
+    });
+    A._stillCascadeExtraUnits = _csmLights.length;
+    console.log('§STILL_SHADOW_CASCADE lights m=' + CSM_M + ' (sun + ' + _csmLights.length + ' shadow-only, colour 0, same direction) mapSize=' + sz +
+      ' added before the first staged compile (C2) programs=' + ((A.renderer.info.programs || []).length));
+  }
+  function _stillCascadeLightsRemove() {
+    if (window.ShadowCascade) window.ShadowCascade.off();
+    A._stillCascadeExtraUnits = 0;
+    if (!_csmLights.length) return;
+    var freed = 0, n = 0;
+    _csmLights.forEach(function(L) { freed += _releaseShadowMapOf(L.shadow); if (L.parent) { L.parent.remove(L); n++; } L.castShadow = false; L.userData.csmUsed = false; });
+    console.log('§STILL_SHADOW_CASCADE teardown removed=' + n + ' freedMB=' + freed.toFixed(1) + ' (§R17; the sun\'s map is released by §SHADOWMAP_RELEASE)');
+  }
+  // the directional-shadow slot three gives each light: WebGLRenderer.projectObject walks the scene depth-first (visible,
+  // camera layers), WebGLLights sorts castShadow first with a stable sort — so a caster's slot is its index among the
+  // shadow-casting directional lights in that walk (D2: the shader is told the slot by uniform, never assumes an order)
+  function _csmSlots() {
+    var out = [], cam = A.camera;
+    (function walk(o) { if (o.visible === false) return; if (o.isDirectionalLight && o.castShadow && o.layers.test(cam.layers)) out.push(o); for (var i = 0; i < o.children.length; i++) walk(o.children[i]); })(A.scene);
+    return out;
+  }
+  // D4: one 160x90 depth render of the staged frame (MeshDepthMaterial, RGBA-packed, both faces); sky, glass, basic/shader
+  // materials, sprites/lines/points and sky portals hidden; the shadow maps are NOT rendered by it (autoUpdate/needsUpdate
+  // held false for the call). Returns the drawn pixels as world points in light space + view depth.
+  function _csmReadback(cam, inv) {
+    var R = A.renderer, W = CSM_RB_W, H = CSM_RB_H;
+    if (!_csmRT) { _csmRT = new THREE.WebGLRenderTarget(W, H); _csmDM = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide }); }
+    var hidden = [];
+    A.scene.traverse(function(o) {
+      if (!o.visible || !(o.isMesh || o.isSprite || o.isPoints || o.isLine)) return;
+      var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      var skip = o === A._sky || o.isSprite || o.isPoints || o.isLine || (o.userData && o.userData.skyPortal) ||
+        ms.every(function(m) { return !m || m.visible === false || m.isMeshBasicMaterial || m.isShaderMaterial || m.isRawShaderMaterial || (m.transparent && m.opacity < 0.95); });
+      if (skip) { o.visible = false; hidden.push(o); }
+    });
+    var sm = R.shadowMap, smA = sm.autoUpdate, smN = sm.needsUpdate, prevRT = R.getRenderTarget(), prevOv = A.scene.overrideMaterial,
+        prevBg = A.scene.background, prevFog = A.scene.fog, cc = R.getClearColor(new THREE.Color()), ca = R.getClearAlpha(), buf = new Uint8Array(W * H * 4);
+    try {
+      sm.autoUpdate = false; sm.needsUpdate = false; A.scene.overrideMaterial = _csmDM; A.scene.background = null; A.scene.fog = null;
+      R.setRenderTarget(_csmRT); R.setClearColor(0xffffff, 1); R.clear(); R.render(A.scene, cam); R.readRenderTargetPixels(_csmRT, 0, 0, W, H, buf);
+    } finally {
+      sm.autoUpdate = smA; sm.needsUpdate = smN; R.setRenderTarget(prevRT); A.scene.overrideMaterial = prevOv; A.scene.background = prevBg; A.scene.fog = prevFog;
+      R.setClearColor(cc, ca); hidden.forEach(function(o) { o.visible = true; });
+    }
+    // three r186 unpackRGBAToDepth: dot(rgba, (255/256, 255/256/256, 255/256/65536, 1/16777216)); all-255 = cleared (packDepthToRGBA(>=1))
+    var k0 = 255 / 256 / 255, k1 = k0 / 256, k2 = k1 / 256, k3 = 1 / 16777216 / 255, fwd = cam.getWorldDirection(new THREE.Vector3());
+    var v = new THREE.Vector3(), pts = [], zMin = Infinity, zMax = -Infinity, n = 0;
+    for (var py = 0; py < H; py++) for (var px = 0; px < W; px++) {
+      var i = (py * W + px) * 4; if (buf[i] === 255 && buf[i + 1] === 255 && buf[i + 2] === 255 && buf[i + 3] === 255) continue;
+      var d = buf[i] * k0 + buf[i + 1] * k1 + buf[i + 2] * k2 + buf[i + 3] * k3;
+      v.set((px + 0.5) / W * 2 - 1, (py + 0.5) / H * 2 - 1, d * 2 - 1).unproject(cam);
+      var z = (v.x - cam.position.x) * fwd.x + (v.y - cam.position.y) * fwd.y + (v.z - cam.position.z) * fwd.z;
+      if (!(z > 0) || !isFinite(z)) continue;
+      v.applyMatrix4(inv); pts.push(v.x, v.y, z); n++; zMin = Math.min(zMin, z); zMax = Math.max(zMax, z);
+    }
+    return { pts: pts, n: n, zMin: zMin, zMax: zMax, hidden: hidden.length };
+  }
+  // PSSM practical split over [zMin, zMax] (Zhang et al. 2006): C_i = lambda zMin (zMax/zMin)^(i/m) + (1-lambda)(zMin + (zMax-zMin) i/m)
+  function _csmSplits(zMin, zMax, m) {
+    var C = []; for (var i = 0; i <= m; i++) C.push(CSM_LAMBDA * zMin * Math.pow(zMax / zMin, i / m) + (1 - CSM_LAMBDA) * (zMin + (zMax - zMin) * i / m));
+    return C;
+  }
+  // THE per-cascade fit (D5) — one function for the still and, later, the film (ALTC_FOUNDATION F2). slice = { a, b (view
+  // depth), size (map texels), R (PCF radius), pts (readback), light (null = measure only) }. Box = the frustum slice's
+  // light-space rect ∩ the §STILL_SHADOW_FIT union (building ∪ kept props) ∩ ±env ∩ the rect of the readback points in the
+  // slice padded by 2 readback-pixel footprints at b; + (R+1) texels; centre snapped to whole texels. Depth, bias and
+  // normalBias: the §STILL_SHADOW_EDGE rule (_stillEdgeDepth) on that box.
+  function _cascadeFit(slice, film) {
+    if (film) return null;   // §FILM_PARITY F2 (bounding-sphere box per shot + per-shot depth union, Valient 2008): not built; films keep §STILL_SHADOW_FIT
+    var F = _fitState.last, cam = A.camera, inv = F.inv, env = F.env, U = F.U, q = new THREE.Vector3();
+    var S = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+    [-1, 1].forEach(function(nx) { [-1, 1].forEach(function(ny) {
+      var pF = new THREE.Vector3(nx, ny, 1).unproject(cam).sub(cam.position);   // view depth of the far-plane corner = cam.far
+      [slice.a, slice.b].forEach(function(dd) { q.copy(pF).multiplyScalar(dd / cam.far).add(cam.position).applyMatrix4(inv);
+        S.x0 = Math.min(S.x0, q.x); S.x1 = Math.max(S.x1, q.x); S.y0 = Math.min(S.y0, q.y); S.y1 = Math.max(S.y1, q.y); }); }); });
+    var l = Math.max(S.x0, U.x0, -env), r = Math.min(S.x1, U.x1, env), b = Math.max(S.y0, U.y0, -env), t = Math.min(S.y1, U.y1, env);
+    var T = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity }, nIn = 0, P = slice.pts;
+    for (var i = 0; i < P.length; i += 3) { var z = P[i + 2]; if (z < slice.a || z > slice.b) continue; nIn++;
+      if (P[i] < T.x0) T.x0 = P[i]; if (P[i] > T.x1) T.x1 = P[i]; if (P[i + 1] < T.y0) T.y0 = P[i + 1]; if (P[i + 1] > T.y1) T.y1 = P[i + 1]; }
+    var th = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2), rbPix = Math.max(slice.b * 2 * th / CSM_RB_H, slice.b * 2 * th * cam.aspect / CSM_RB_W), pad = 2 * rbPix;
+    if (nIn) { l = Math.max(l, T.x0 - pad); r = Math.min(r, T.x1 + pad); b = Math.max(b, T.y0 - pad); t = Math.min(t, T.y1 + pad); }
+    var out = { used: r > l && t > b, sa: slice.a, sb: slice.b, nIn: nIn, sdsmPad: pad };
+    if (!out.used) return out;
+    var sz = slice.size, kx = (slice.R + 1) * (r - l) / sz, ky = (slice.R + 1) * (t - b) / sz;
+    l -= kx; r += kx; b -= ky; t += ky;
+    var w = r - l, h = t - b, tx = w / sz, ty = h / sz, cx = Math.round((l + r) / 2 / tx) * tx, cy = Math.round((b + t) / 2 / ty) * ty;
+    l = cx - w / 2; r = cx + w / 2; b = cy - h / 2; t = cy + h / 2;
+    out.l = l; out.r = r; out.b = b; out.t = t; out.w = w; out.h = h; out.texel = Math.max(tx, ty);
+    if (!slice.light) return out;
+    var L = slice.light, sc = L.shadow.camera;
+    L.updateMatrixWorld(); L.shadow.updateMatrices(L);
+    sc.left = l; sc.right = r; sc.bottom = b; sc.top = t; L.shadow.radius = slice.R;
+    out.line = _stillEdgeDepth(sc, inv, l, r, b, t, F.props, out.texel, L.shadow);
+    out.edge = _stillEdgeDepth.last;
+    sc.updateProjectionMatrix();
+    return out;
+  }
+  function _stillCascadeSingle(cs, C, sSize, sTexel, worst, zMin, zMax, rb, zEdge, pix, t0) {
+    var F = _fitState.last, sun = A.sun, sc = sun.shadow.camera, freed = 0;
+    window.ShadowCascade.off();
+    _csmLights.forEach(function(L) { L.userData.csmUsed = false; L.shadow.needsUpdate = false; var c = L.shadow.camera; c.left = c.bottom = 0; c.right = c.top = 1e-3; c.updateProjectionMatrix(); });
+    if (sun.shadow.mapSize.width !== sSize) { sun.shadow.mapSize.set(sSize, sSize); freed = _releaseShadowMapOf(sun.shadow); }
+    sun.updateMatrixWorld(); sun.shadow.updateMatrices(sun);
+    sc.left = F.box.l; sc.right = F.box.r; sc.bottom = F.box.b; sc.top = F.box.t;
+    var line = _stillEdgeDepth(sc, F.inv, F.box.l, F.box.r, F.box.b, F.box.t, F.props, sTexel), e = _stillEdgeDepth.last || {};
+    sc.updateProjectionMatrix(); if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
+    var f = function(a, k, d) { return '[' + a.map(function(o) { var v = o[k]; return (v == null || !isFinite(v)) ? 'NaN' : (+v).toFixed(d); }).join(',') + ']'; };
+    if (line) console.log(line + ' cascade=single (D8)');
+    console.log('§STILL_SHADOW_CASCADE m=' + CSM_M + ' used=1 mode=single(cascade worst texel ' + worst.toFixed(4) + ' > single ' + sTexel.toFixed(4) + ' at ' + sSize + ': D8)' +
+      ' splits=[' + zMin.toFixed(2) + ',' + zMax.toFixed(2) + '] texel=[' + sTexel.toFixed(4) + '] normalBias=[' + (+e.nb).toFixed(4) + '] thinCasterRisk=[' + (+e.nb).toFixed(4) + '] bias=[' + (+e.bias).toFixed(7) + ']' +
+      ' range=[' + (+e.range).toFixed(1) + '] gap45=[' + (+e.g45).toFixed(4) + '] gap20=[' + (+e.g20).toFixed(4) + '] texelPerPixel=[' + (sTexel / pix(zMin)).toFixed(2) + ']' +
+      ' memMB=' + _csmSizeMB(sSize).toFixed(0) + ' size=' + sSize + ' (sun map re-sized, 4096 map freed ' + freed.toFixed(0) + 'MB) textureUnits=+' + _csmLights.length + ' dirShadows=' + _csmSlots().length +
+      ' declinedSplits=[' + C.map(function(x) { return x.toFixed(2); }).join(',') + '] declinedTexel=' + f(cs, 'texel', 4) + ' declinedTexelPerPixel=' + f(cs, 'tpp', 2) +
+      ' zMin=' + zMin.toFixed(2) + ' zMax=' + zMax.toFixed(1) + ' (readback ' + rb.zMax.toFixed(1) + ', edge clamp ' + zEdge.toFixed(1) + ', points ' + rb.n + ')' +
+      ' programs=' + ((A.renderer.info.programs || []).length) + ' ms=' + (performance.now() - t0).toFixed(1));
+  }
+  function _stillCascadeApply() {
+    var t0 = performance.now(), F = _fitState && _fitState.last, cam = A.camera, sun = A.sun;
+    if (!F || !_csmLights.length) return;
+    cam.updateMatrixWorld();
+    var rb = _csmReadback(cam, F.inv);
+    // C4: zMax clamped to the VIEW depth of the §STILL_SHADOW_EDGE point set (building corners + kept props + the single box's slab)
+    var fwd = cam.getWorldDirection(new THREE.Vector3()), zEdge = -Infinity, w0 = new THREE.Vector3(), w1 = new THREE.Vector3(), sc0 = sun.shadow.camera;
+    var vd = function(x, y, z) { zEdge = Math.max(zEdge, (x - cam.position.x) * fwd.x + (y - cam.position.y) * fwd.y + (z - cam.position.z) * fwd.z); };
+    _fitState.corners.forEach(function(c) { vd(c.x, c.y, c.z); });
+    F.props.forEach(function(Rp) { if (Rp.kept && Rp.bb) for (var k = 0; k < 8; k++) vd(k & 1 ? Rp.bb.max.x : Rp.bb.min.x, k & 2 ? Rp.bb.max.y : Rp.bb.min.y, k & 4 ? Rp.bb.max.z : Rp.bb.min.z); });
+    var yTop = -Infinity; _fitState.corners.forEach(function(c) { yTop = Math.max(yTop, c.y); });
+    var gy = (A.ground && isFinite(A.ground.position.y)) ? A.ground.position.y : null;
+    sun.updateMatrixWorld(); sun.shadow.updateMatrices(sun);
+    [[F.box.l, F.box.b], [F.box.l, F.box.t], [F.box.r, F.box.b], [F.box.r, F.box.t]].forEach(function(xy) {
+      w0.set(xy[0], xy[1], 0).applyMatrix4(sc0.matrixWorld); w1.set(xy[0], xy[1], -1).applyMatrix4(sc0.matrixWorld);
+      var dy = w1.y - w0.y; if (Math.abs(dy) < 1e-9) return;
+      [gy, yTop].forEach(function(yy) { if (yy == null || !isFinite(yy)) return; var s = (yy - w0.y) / dy; vd(w0.x + (w1.x - w0.x) * s, yy, w0.z + (w1.z - w0.z) * s); }); });
+    var zMin = Math.max(cam.near, rb.zMin), zMax = Math.min(rb.zMax, zEdge);
+    var Hpx = A.renderer.domElement.height, th = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2), pix = function(d) { return d * 2 * th / Hpx; };
+    if (!(rb.n > 0 && zMax > zMin * 1.001)) {
+      window.ShadowCascade.off();
+      console.log('§STILL_SHADOW_CASCADE VACUOUS readback points=' + rb.n + ' zMin=' + zMin + ' zMax=' + zMax + ' (edge clamp ' + zEdge.toFixed(1) + ') — single map kept');
+      return;
+    }
+    var size = sun.shadow.mapSize.width, R = sun.shadow.radius, C = _csmSplits(zMin, zMax, CSM_M);
+    _csmLights.forEach(function(L) { L.position.copy(sun.position); L.target.position.copy(sun.target.position); L.target.updateMatrixWorld(); L.shadow.mapSize.set(size, size); L.userData.csmUsed = false; });
+    var fitsFor = function(m, light) {
+      var CC = m === CSM_M ? C : _csmSplits(zMin, zMax, m), outs = [];
+      for (var c = 0; c < m; c++) outs.push(_cascadeFit({ a: c ? CC[c] - CSM_BLEND * (CC[c] - CC[c - 1]) : CC[0], b: CC[c + 1], size: size, R: R, pts: rb.pts, light: light ? (c ? _csmLights[c - 1] : sun) : null }, false));
+      outs.forEach(function(o, c) { o.near = CC[c]; o.tpp = o.used ? o.texel / pix(CC[c]) : NaN; });
+      return outs;
+    };
+    var ifM = [2, 3].map(function(m) { return fitsFor(m, false); });
+    var cs = fitsFor(CSM_M, true);
+    // C3 memory: every used cascade at the sun's size (4096 under cascades); cascade 0 at 8192 only if its fit needs it AND it fits
+    var used = cs.filter(function(o) { return o.used; }).length, memMB = used * _csmSizeMB(size), fallback = '';
+    while (memMB > CSM_MEM_CAP && used > 1) { cs[used - 1].used = false; used--; memMB = used * _csmSizeMB(size); fallback = ' FALLBACK used=' + used + ' (memMB cap ' + CSM_MEM_CAP + ')'; }
+    var c0need = cs[0].used && cs[0].texel > CSM_THIN, c0fits = _csmSizeMB(Math.min(8192, A.renderer.capabilities.maxTextureSize || 4096)) + (used - 1) * _csmSizeMB(size) <= CSM_MEM_CAP;
+    var c0at8192 = !c0need ? 'no(not needed)' : (c0fits ? 'no(fits, not applied: D1)' : 'no(budget: ' + (_csmSizeMB(8192) + (used - 1) * _csmSizeMB(size)).toFixed(0) + 'MB > ' + CSM_MEM_CAP + ')');
+    // D8: never coarser than the single map — the cascades are used only if every used cascade's texel <= the single map's
+    // texel at its own §SHADOW_SIZE_BY_ENVELOPE size (same memory); else the single map is re-applied at that size
+    var sSize = _csmSingleSize || size, sTexel = Math.max(F.box.r - F.box.l, F.box.t - F.box.b) / sSize, worst = 0;
+    cs.forEach(function(o) { if (o.used) worst = Math.max(worst, o.texel); });
+    if (worst > sTexel) { _stillCascadeSingle(cs, C, sSize, sTexel, worst, zMin, zMax, rb, zEdge, pix, t0); return; }
+    var slots = _csmSlots(), slotOf = function(L) { return slots.indexOf(L); }, idx = [], nearA = [], farA = [], lastUsed = 0;
+    cs.forEach(function(o, c) {
+      var L = c ? _csmLights[c - 1] : sun;
+      nearA.push(C[c]); farA.push(C[c + 1]);   // splits kept for an unused cascade too: the shader's depth pick walks them in order
+      if (!o.used) { if (c) { var sc = L.shadow.camera; sc.left = sc.bottom = 0; sc.right = sc.top = 1e-3; sc.updateProjectionMatrix(); L.shadow.needsUpdate = false; } idx.push(null); return; }
+      if (c) { L.userData.csmUsed = true; L.shadow.needsUpdate = true; }
+      idx.push(slotOf(L)); lastUsed = c + 1;
+    });
+    for (var c2 = cs.length; c2 < 4; c2++) { idx.push(null); nearA.push(0); farA.push(0); }
+    window.ShadowCascade.set(true, lastUsed, slotOf(sun), idx, nearA, farA, CSM_BLEND);
+    if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
+    var f = function(a, k, d) { return '[' + a.map(function(o) { var v = typeof k === 'function' ? k(o) : o[k]; return (v == null || !isFinite(v)) ? 'NaN' : (+v).toFixed(d); }).join(',') + ']'; };
+    var E = function(k) { return function(o) { return o.edge ? o.edge[k] : NaN; }; };
+    cs.forEach(function(o, c) { if (o.line) console.log(o.line + ' cascade=' + c + ' slice=[' + o.sa.toFixed(2) + ',' + o.sb.toFixed(2) + ']m box=' + o.w.toFixed(1) + 'x' + o.h.toFixed(1) + 'm'); });
+    console.log('§STILL_SHADOW_CASCADE m=' + CSM_M + ' used=' + used + ' mode=cascades(worst ' + worst.toFixed(4) + ' <= single ' + sTexel.toFixed(4) + ' at ' + sSize + ') splits=[' + C.map(function(x) { return x.toFixed(2); }).join(',') + ']' +
+      ' texel=' + f(cs, 'texel', 4) + ' normalBias=' + f(cs, E('nb'), 4) + ' thinCasterRisk=' + f(cs, E('nb'), 4) + ' bias=' + f(cs, E('bias'), 7) +
+      ' range=' + f(cs, E('range'), 1) + ' gap45=' + f(cs, E('g45'), 4) + ' gap20=' + f(cs, E('g20'), 4) + ' texelPerPixel=' + f(cs, 'tpp', 2) +
+      ' box=[' + cs.map(function(o) { return o.used ? o.w.toFixed(1) + 'x' + o.h.toFixed(1) : '-'; }).join(',') + '] ptsInSlice=' + f(cs, 'nIn', 0) +
+      ' memMB=' + memMB.toFixed(0) + ' size=' + size + ' c0at8192=' + c0at8192 + fallback +
+      ' textureUnits=+' + _csmLights.length + ' dirShadows=' + slots.length + ' sunSlot=' + slotOf(sun) + ' slots=[' + idx.map(function(x) { return x == null ? '-' : x; }).join(',') + ']' +
+      ' zMin=' + zMin.toFixed(2) + ' zMax=' + zMax.toFixed(1) + ' (readback ' + rb.zMax.toFixed(1) + ', edge clamp ' + zEdge.toFixed(1) + ', points ' + rb.n + '/' + (CSM_RB_W * CSM_RB_H) + ', hidden ' + rb.hidden + ')' +
+      ' pixelAtSplit=' + f(cs, function(o) { return pix(o.near); }, 4) + ' H=' + Hpx + ' fov=' + cam.fov +
+      ' c0texelIf[m2,m3,m4]=[' + ifM.map(function(o) { return o[0].used ? o[0].texel.toFixed(4) : 'NaN'; }).concat([cs[0].texel.toFixed(4)]).join(',') + ']' +
+      ' tppIfM2=' + f(ifM[0], 'tpp', 2) + ' tppIfM3=' + f(ifM[1], 'tpp', 2) + ' texelIfM3=' + f(ifM[1], 'texel', 4) +
+      ' lambda=' + CSM_LAMBDA + ' blend=' + CSM_BLEND + ' R=' + R + ' programs=' + ((A.renderer.info.programs || []).length) + ' ms=' + (performance.now() - t0).toFixed(1));
   }
   A._filmParityShadowFit = function() { return _stillFitApply(true); };
   // §FILM_FIT_PER_SHOT precompute — sampler from cinema_maxq.js: { shots: [[a,b],...], sample(t): sets camera + sun for film
@@ -3431,6 +3662,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // 0.097 m at 4096 — already about HHS's 0.088 m — and was being doubled to 512 MB for nothing.
     var _shadowSize = (2 * _env / 4096 > 0.12) ? 8192 : 4096;
     _shadowSize = Math.max(Math.min(4096, _maxTex), Math.min(_shadowSize, _maxTex));
+    // §STILL_SHADOW_CASCADE C3/D1: every cascade (the sun = cascade 0) at 4096 = 128 MB, 4 x 128 = 512 MB = today's one 8192 map
+    var _csmSize = _cascadeOn() ? Math.min(4096, _maxTex) : 0;
+    _csmSingleSize = _shadowSize;   // D8: the single map's size, kept for the never-coarser test
+    if (_csmSize) { console.log('§SHADOW_SIZE_BY_ENVELOPE cascades on: per-cascade size ' + _csmSize + ' (was ' + _shadowSize + ' for one map) — §STILL_SHADOW_CASCADE C3'); _shadowSize = _csmSize; }
     A.sun.shadow.mapSize.width = _shadowSize;
     A.sun.shadow.mapSize.height = _shadowSize;
     console.log('§SHADOW_SIZE_BY_ENVELOPE env=' + _env + ' size=' + _shadowSize + ' maxTex=' + _maxTex + ' texel=' + (2 * _env / _shadowSize).toFixed(3) + 'm');
@@ -3624,6 +3859,7 @@ async function setupEffects(A, renderer, scene, camera) {
     A.sun.castShadow = false;
     if (_shadowRadiusSaved !== null) { A.sun.shadow.radius = _shadowRadiusSaved; _shadowRadiusSaved = null; }   // §STILL_SHADOW_RADIUS
     _stillFitBox = null;
+    _stillCascadeLightsRemove();   // §STILL_SHADOW_CASCADE: lights out of the scene, their maps released (§R17)
     // §R17_SHADOWMAP_RELEASE — hand the borrowed 4096 map back. Guarded on _photoShadowSelfEnabled
     // by the early return above, which is exactly the "we were the ones who raised it" condition:
     // when the user's own Shadow mode is on, _enablePhotoShadows returns before the raise and this
@@ -4138,6 +4374,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoMatBoostActive = true;
     _reassertPhotoMatBoost();
     _enablePhotoShadows();  // real/current sun position (unless _duskMood) — see §PHOTO_SUN_SEPARATION
+    _stillCascadeLightsAdd();   // §STILL_SHADOW_CASCADE C2: before the first staged compile (boxes are fitted at the end of staging)
     // §PHOTO_SUN_SEPARATION_FIX (2026-08-16, user: beam/railing went dark/no-sheen after the
     // separation shipped — "we switched something else off?"). Root cause: toggleNightMode()
     // isn't only a colour toggle, it also loads ~200 supplementary point lights (fixture glow) —
@@ -4422,7 +4659,14 @@ async function setupEffects(A, renderer, scene, camera) {
     var sm = A.renderer && A.renderer.shadowMap; if (!sm) return;
     if (!sm._stillCountWrapped) {
       var orig = sm.render;
-      sm.render = function() { if (_shCounting && this.enabled && (this.autoUpdate || this.needsUpdate)) _shRenders++; return orig.apply(this, arguments); };
+      sm.render = function() {
+        if (this.enabled && (this.autoUpdate || this.needsUpdate)) {
+          if (_shCounting) _shRenders++;
+          // §STILL_SHADOW_CASCADE: a used cascade re-renders exactly when the sun's map does (the §PHOTO_SHADOW caster chunks
+          // switch castShadow on after staging and re-arm needsUpdate), never on its own
+          for (var i = 0; i < _csmLights.length; i++) if (_csmLights[i].userData.csmUsed && _csmLights[i].parent) _csmLights[i].shadow.needsUpdate = true;
+        }
+        return orig.apply(this, arguments); };
       sm._stillCountWrapped = true;
     }
     _shRenders = 0; _shCounting = !A._maxqActive;
