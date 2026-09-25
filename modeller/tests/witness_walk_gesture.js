@@ -43,7 +43,11 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   const out = [];
   out.push(await snap('before-walk'));
   await pg.evaluate((d, b) => window.discWalk(d, { building: b }), DISC, BLD);
-  await pg.waitForFunction(d => (window.__dwWalks || {})[d] && !Object.keys(window.__dwChainAnimating || {}).some(k => window.__dwChainAnimating[k]), { timeout: 120000, polling: 300 }, DISC);
+  // Wait until the walk's rows are recorded (its history node exists), then for ModellerHistory's pending restore —
+  // with every routed run signed (§MEP-SIGN-ALL) the commit finishes later, and under load a snapshot taken at
+  // __dwWalks alone read 'Opened Duplex' as the last node (G1-G3 red, green on rerun).
+  await pg.waitForFunction(d => (window.__dwWalks || {})[d] && ((window.__dwRowsByDisc || {})[d] || {}).walk && !Object.keys(window.__dwChainAnimating || {}).some(k => window.__dwChainAnimating[k]), { timeout: 120000, polling: 300 }, DISC);
+  await pg.evaluate(async () => { const MH = window.ModellerHistory; await ((MH && MH.pending && MH.pending()) || Promise.resolve()); await new Promise(r => setTimeout(r, 0)); await new Promise(r => setTimeout(r, 0)); });
   out.push(await snap('after-walk'));
   await pg.click('canvas').catch(() => {});
   // Wait on the CONDITION that the keypress finished: the row flip (sync), then ModellerHistory's pending restore
