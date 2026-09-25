@@ -4401,10 +4401,11 @@ async function setupEffects(A, renderer, scene, camera) {
     try {
       var _c = A.camera, _t = A.controls ? A.controls.target : null, _s = A.sun;
       var _f = function(v) { return v ? [v.x, v.y, v.z].map(function(n) { return +n.toFixed(3); }) : null; };
-      console.log('§STILL_POSE ' + JSON.stringify({ cam: _f(_c && _c.position), tgt: _f(_t), fov: _c && _c.fov,
+      A._stillPoseLast = { cam: _f(_c && _c.position), tgt: _f(_t), fov: _c && _c.fov,
         aspect: _c && +_c.aspect.toFixed(4), sun: _f(_s && _s.position), sunTgt: _f(_s && _s.target && _s.target.position),
         sunI: _s && +_s.intensity.toFixed(3), db: (location.search.match(/db=([^&]+)/) || [])[1] || null,
-        w: window.innerWidth, h: window.innerHeight, film: !!A._maxqActive }));
+        w: window.innerWidth, h: window.innerHeight, film: !!A._maxqActive, url: location.search };   // §STILL_POSE_PNG: gi_still.js writes it into the saved PNG
+      console.log('§STILL_POSE ' + JSON.stringify(A._stillPoseLast));
     } catch (eP) { console.warn('§STILL_POSE failed: ' + eP.message); }
     _stillShadowRendersArm();
   }

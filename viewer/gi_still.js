@@ -788,6 +788,16 @@
       return R;
     } finally { busy = false; if (window.APP) { window.APP._sceneBorrowed = false; if (window.APP.markDirty) window.APP.markDirty(); } }
   }
+  // PNG tEXt chunk: length(4) 'tEXt' keyword NUL text crc32(type+data); inserted before the IEND chunk (last 12 bytes)
+  let _crcT = null;
+  function crc32(bytes) { if (!_crcT) { _crcT = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; _crcT[n] = c >>> 0; } }
+    let c = 0xffffffff; for (let i = 0; i < bytes.length; i++) c = _crcT[(c ^ bytes[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+  function pngWithText(png, key, text) {
+    const enc = s => Uint8Array.from(Array.from(s, ch => ch.charCodeAt(0) & 0xff));
+    const body = new Uint8Array([...enc('tEXt'), ...enc(key), 0, ...enc(text)]), len = body.length - 4, crc = crc32(body);
+    const chunk = new Uint8Array(12 + len), dv = new DataView(chunk.buffer); dv.setUint32(0, len); chunk.set(body, 4); dv.setUint32(8 + len, crc);
+    const iend = png.length - 12; const out = new Uint8Array(png.length + chunk.length); out.set(png.subarray(0, iend), 0); out.set(chunk, iend); out.set(png.subarray(iend), iend + chunk.length); return out;
+  }
   function show(canvas, secs, passes) {
     const old = document.getElementById('gi-still-overlay'); if (old) old.remove();
     const wrap = document.createElement('div'); wrap.id = 'gi-still-overlay';
@@ -798,7 +808,13 @@
     const save = document.createElement('button');
     save.textContent = 'Save PNG';
     save.style.cssText = 'margin-left:auto;padding:6px 14px;border-radius:6px;border:1px solid #3a4150;background:#1d2230;color:#e8eaf0;cursor:pointer';
-    save.onclick = () => canvas.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'bounce_still_' + Date.now() + '.png'; a.click(); });
+    // §STILL_POSE_PNG (watchdog red1-c6, 2026-09-25): every saved still carries its pose — the §STILL_POSE JSON as a PNG
+    // tEXt chunk (keyword "bim-still-pose", PNG spec 11.3.4.3), inserted before IEND. Read back with e.g. `exiftool` or
+    // python PIL (Image.open(f).text). No pixel changes.
+    save.onclick = () => canvas.toBlob(async b => { let out = b;
+      try { const pose = (window.APP && window.APP._stillPoseLast) || null; if (pose) { out = new Blob([pngWithText(new Uint8Array(await b.arrayBuffer()), 'bim-still-pose', JSON.stringify(pose))], { type: 'image/png' }); console.log('§STILL_POSE_PNG written bytes=' + JSON.stringify(pose).length); }
+        else console.log('§STILL_POSE_PNG none (no §STILL_POSE this session)'); } catch (e) { console.warn('§STILL_POSE_PNG failed: ' + e.message); out = b; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(out); a.download = 'bounce_still_' + Date.now() + '.png'; a.click(); });
     const close = document.createElement('button');
     close.textContent = 'Close (Esc)';
     close.style.cssText = save.style.cssText + ';margin-left:8px';
