@@ -8,6 +8,8 @@
 // same x the cone smoothstep (their shadow maps are NOT evaluated: an upper bound). Reports per pose: shares % of the summed
 // irradiance by source, and absolute levels vs the sunlit ground (sun x sin(elevation) + hemi on an up-facing surface).
 // GUARD (every run): FAIL on any console "Shader Error", "Context Lost" or pageerror.
+// §GLARE (watchdog red1-c6 rule, every run): black_direct_samples=N — direct (not through glass) samples that NO source reaches
+// at all (sun shadowed, sky withheld, no lamp / portal / fill: summed irradiance 0 = renders pure black); FAIL (exit 3) when > 0.
 // RUN: node viewer/tests/witness_wash_sources.js <port> [outdir]
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer'); const fs = require('fs'), path = require('path');
 const sleep = ms => new Promise(r => setTimeout(r, ms)); const T0 = Date.now();
@@ -24,7 +26,7 @@ const RUNS = [
 (async () => {
   const b = await puppeteer.launch({ headless: true, protocolTimeout: 1800000, env: Object.assign({}, process.env, { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' }),
     args: ['--no-sandbox', '--use-angle=' + (process.env.ANGLE || 'gl-egl'), '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--window-size=1686,1044'] });
-  const guard = { shaderError: 0, contextLost: 0, pageError: 0 };
+  const guard = { shaderError: 0, contextLost: 0, pageError: 0 }; let glareTot = 0;
   for (const R of RUNS) { if (process.env.ONLY && !new RegExp(process.env.ONLY).test(R.db)) continue;
     const p = await b.newPage(); await p.setViewport({ width: 1666, height: 864 }); const L = [];
     p.on('console', m => { const t = m.text(); L.push(t); if (/Shader Error/.test(t)) guard.shaderError++; if (/Context Lost|CONTEXT_LOST/i.test(t)) guard.contextLost++; });
@@ -74,8 +76,11 @@ const RUNS = [
           M.copy(h.object.matrixWorld); if (h.object.isInstancedMesh && h.instanceId != null) { h.object.getMatrixAt(h.instanceId, mi); M.multiply(mi); } else if (h.object.isBatchedMesh && h.batchId != null) { h.object.getMatrixAt(h.batchId, mi); M.multiply(mi); }
           const nn = h.face.normal.clone().transformDirection(M); if (nn.dot(rc.ray.direction) > 0) nn.negate();
           const LZ = window.LightZones, SLon = !!(window.SourcedLight && window.SourcedLight.isActive && window.SourcedLight.isActive() && LZ && LZ.get());
-          let fz = null; if (SLon) { const v = LZ.atSurface(h.point, nn); fz = (v === LZ.SOLID || v < 0) ? -1 : (v === 0 ? 65534 : v); }
-          const skyKeep = (SLon && (fz === -1 || (fz > 0 && fz < 65534))) ? 0 : 1;   // the shader's slSkyKeep (indoorSky=0 default)
+          // the shader's fragment zone + slSkyKeep (indoorSky=0 default): SOLID = unknown -1; 0 or OFF-GRID (-1 raw) = OUTSIDE 65534 (§ZONE_OPEN_SKY fix:
+          // off-grid was mapped to unknown here); the sky class from LightZones.surfaceInfo (open / sky-lit cells keep it)
+          let fz = null, fsky = 1; if (SLon) { const si = LZ.surfaceInfo ? LZ.surfaceInfo(h.point, nn) : null; const v = si ? si.zone : LZ.atSurface(h.point, nn);
+            fz = (v === LZ.SOLID) ? -1 : (v <= 0 ? 65534 : v); fsky = si ? si.sky : ((fz === -1 || (fz > 0 && fz < 65534)) ? 0 : 1); }
+          const skyKeep = SLon ? fsky : 1;
           const reaches = l => { if (!SLon) return true; const lz = (l.userData && l.userData.sourcedZone) || 0; if (l.isSpotLight && l.userData && l.userData.skyPortal) { const v2 = LZ.at(l.position); const pz = (v2 > 0 && v2 !== LZ.SOLID) ? v2 : 0; return !pz || fz === -1 || pz === fz; } return !lz || fz === -1 || lz === fz; };
           const P = h.point, E = { sun: 0, hemi: 0, ambient: 0, lamps: 0, portals: 0, camlight: 0, otherPoints: 0, otherSpots: 0 };
           lights.forEach(l => { const k = cls(l), I = lum(l.color) * l.intensity;
@@ -89,7 +94,7 @@ const RUNS = [
               E[k === 'sun' || k === 'hemi' ? 'otherPoints' : k] += I * a * nl; } });
           const hm = Array.isArray(h.object.material) ? h.object.material[h.face.materialIndex] : h.object.material;
           const alb = hm && hm.color ? lum(hm.color) : 0.5, textured = !!(hm && (hm.map || (hm.userData && hm.userData.triplanar)));
-          S.push({ through, floor: nn.y > 0.7, wall: Math.abs(nn.y) < 0.3, E, alb, textured });
+          S.push({ through, floor: nn.y > 0.7, wall: Math.abs(nn.y) < 0.3, E, alb, textured, black: !through && Object.values(E).every(v => !(v > 0)) });
         }
         const sd = A.sun ? A.sun.position.clone().sub(A.sun.target.position).normalize() : new THREE.Vector3(0, 1, 0);
         const hemiUp = A.hemi ? lum(A.hemi.color) * A.hemi.intensity : 0, Eground = (A.sun ? lum(A.sun.color) * A.sun.intensity * Math.max(0, sd.y) : 0) + hemiUp;
@@ -107,15 +112,17 @@ const RUNS = [
             samples: set.length, sharesPct: share, outsideSourcesPct: outside, insideSourcesPct: inside, ambientPct: share.ambient,
             vsSunlitGround: { median: per.length ? +per[Math.floor(per.length / 2)].toFixed(3) : null, p95: per.length ? +per[Math.floor(per.length * 0.95)].toFixed(3) : null, mean: set.length ? +(per.reduce((a, b) => a + b, 0) / per.length).toFixed(3) : null } }; };
         const SLonNow = !!(window.SourcedLight && window.SourcedLight.isActive && window.SourcedLight.isActive());
-        return { sourcedLight: SLonNow, sunElevDeg: +(Math.asin(sd.y) * 180 / Math.PI).toFixed(1), Eground: +Eground.toFixed(3), exposure: +A.renderer.toneMappingExposure.toFixed(3), lights: lights.length, camPos: A.camera.position.toArray().map(v => +v.toFixed(2)),
+        return { blackDirectSamples: S.filter(s => s.black).length, sourcedLight: SLonNow, sunElevDeg: +(Math.asin(sd.y) * 180 / Math.PI).toFixed(1), Eground: +Eground.toFixed(3), exposure: +A.renderer.toneMappingExposure.toFixed(3), lights: lights.length, camPos: A.camera.position.toArray().map(v => +v.toFixed(2)),
           all: summarise(S), floor: summarise(S.filter(s => s.floor)), walls: summarise(S.filter(s => s.wall)), throughGlass: summarise(S.filter(s => s.through)), direct: summarise(S.filter(s => !s.through)), glassRays: glassHits };
       });
       const g = re => (L.slice(b1).find(t => re.test(t)) || '-').slice(0, 220);
       say('§WASH_SOURCES pose=' + ps.name + ' ' + JSON.stringify(r) + '\n   ' + [g(/§STILL_BASE sky/), g(/§STILL_POSE/), g(/§GI_STILL result/)].join('\n   '));
+      say('§GLARE bld=' + R.db + ' pose=' + ps.name + ' ' + (r.blackDirectSamples > 0 ? 'FAIL' : 'PASS') + ' black_direct_samples=' + r.blackDirectSamples + ' of ' + r.all.samples); glareTot += r.blackDirectSamples;
       await p.keyboard.press('Escape'); await sleep(3000);
     }
     await p.close();
   }
   const fail = guard.shaderError || guard.contextLost || guard.pageError;
-  say('GUARD ' + (fail ? 'FAIL' : 'PASS') + ' ' + JSON.stringify(guard)); await b.close(); if (fail) process.exitCode = 2;
+  say('§GLARE total ' + (glareTot > 0 ? 'FAIL' : 'PASS') + ' black_direct_samples=' + glareTot);
+  say('GUARD ' + (fail ? 'FAIL' : 'PASS') + ' ' + JSON.stringify(guard)); await b.close(); if (fail) process.exitCode = 2; else if (glareTot > 0) process.exitCode = 3;
 })().catch(e => { say('FATAL ' + (e && e.stack || e)); process.exit(1); });
