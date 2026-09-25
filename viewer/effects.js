@@ -4117,7 +4117,8 @@ async function setupEffects(A, renderer, scene, camera) {
       var _calibSunI = (A._nightMode && A._nightSaved) ? A._nightSaved.sunI * PHOTO_SUN_INTENSITY_SCALE : (A.sun ? A.sun.intensity * PHOTO_SUN_INTENSITY_SCALE : 0);
       // PAUSED (watchdog red1-4b, 2026-09-25: step 1 first — zone binding + no sourceless sky may be all the washout is):
       // calibration, the camera-fill cut, physical portals and the §METER run only with &calib=1 / APP._stillCalib=true.
-      A._stillCalibOn = A._stillCalib === true || /[?&]calib=1/.test(location.search);
+      // RESUMED (watchdog, 2026-09-25: Clinic's washout is its own lamps, 99.8% at 3.4x sunlit ground): on by default, &calib=0 off.
+      A._stillCalibOn = A._stillCalib !== false && !/[?&]calib=0/.test(location.search);
       var _calibOn = A._stillCalibOn && !!(window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed()) && _calibSunI > 0;
       if (!A._stillCalibOn) A._stillMeter = false; else if (A._stillMeter === false) A._stillMeter = undefined;
       var _calibMul = _calibOn ? (CALIB_LAMP_LUX / CALIB_SUN_LUX) * _calibSunI * Math.pow(CALIB_H, A._stillLampDecayNow) / (A.NIGHT_LIGHT_INTENSITY_BASE || 2) : 16;

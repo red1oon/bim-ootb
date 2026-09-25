@@ -16,7 +16,10 @@ const lines = []; const say = s => { const t = '+' + ((Date.now() - T0) / 1000).
 const RUNS = [
   { db: 'Hospital', full: 63182, poses: [{ name: 'hospital_cafe (reference stand-in)', pos: [-11.15, 2.92, 4.08], tgt: [0.75, -13.08, -7.82] }] },
   { db: 'Clinic', full: 16071, poses: [{ name: 'clinic_corridor (stand-in)', pos: [-13.5, -1.4, -18.3], tgt: [4, -2.2, -18.3] }] },
-  { db: 'Terminal', full: 48428, poses: [{ name: 'terminal_exterior (default load pose)', default: true }, { name: 'terminal_hall (stand-in, witness_dlod_still_ownership pose)', hall: true }] },
+  { db: 'Terminal', full: 48428, poses: [{ name: 'terminal_exterior (default load pose)', default: true }, { name: 'terminal_hall (stand-in, witness_dlod_still_ownership pose)', hall: true },
+    // red1-4b: red1's Terminal hall still = on the hall floor, looking across the seating to the tall glazed end wall. Stand-in:
+    // 1.6 m above the hall floor (2nd-percentile element height), along the building's long axis from 10% to 90%.
+    { name: 'terminal_hall_floor (stand-in: long-axis view, 1.6 m)', hallFloor: true }] },
 ];
 (async () => {
   const b = await puppeteer.launch({ headless: true, protocolTimeout: 1800000, env: Object.assign({}, process.env, { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' }),
@@ -39,6 +42,13 @@ const RUNS = [
         const q = (a, f) => { a = a.slice().sort((x, y) => x - y); return a[Math.floor(f * (a.length - 1))]; };
         const x0 = q(xs, .05), x1 = q(xs, .95), y0 = q(ys, .02), y1 = q(ys, .98), z0 = q(zs, .05), z1 = q(zs, .95), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
         A.camera.position.set(cx - (x1 - x0) * 0.1, y0 + 2, cz); A.controls.target.set(cx + (x1 - x0) * 0.25, y1, cz); A.controls.update(); });
+      else if (ps.hallFloor) await p.evaluate(() => { const A = window.APP, m4 = new THREE.Matrix4(), v = new THREE.Vector3(), xs = [], ys = [], zs = [];
+        for (const id in A._instanceMeta) { const o = A.scene.getObjectById(+id); if (!o || !o.isInstancedMesh) continue;
+          for (const m of A._instanceMeta[id]) { if (m.instanceIndex == null) continue; o.getMatrixAt(m.instanceIndex, m4); o.updateMatrixWorld(); v.setFromMatrixPosition(m4).applyMatrix4(o.matrixWorld); xs.push(v.x); ys.push(v.y); zs.push(v.z); } }
+        const q = (a, f) => { a = a.slice().sort((x, y) => x - y); return a[Math.floor(f * (a.length - 1))]; };
+        const x0 = q(xs, .05), x1 = q(xs, .95), y0 = q(ys, .02), z0 = q(zs, .05), z1 = q(zs, .95), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, h = y0 + 1.6;
+        if (x1 - x0 >= z1 - z0) { A.camera.position.set(x0 + 0.1 * (x1 - x0), h, cz); A.controls.target.set(x0 + 0.9 * (x1 - x0), h, cz); }
+        else { A.camera.position.set(cx, h, z0 + 0.1 * (z1 - z0)); A.controls.target.set(cx, h, z0 + 0.9 * (z1 - z0)); } A.controls.update(); });
       else if (!ps.default) await p.evaluate(ps => { const A = window.APP; A.camera.position.fromArray(ps.pos); A.controls.target.fromArray(ps.tgt); A.controls.update(); }, ps);
       const o0 = await p.evaluate(() => { const o = document.getElementById('gi-still-overlay'); if (o) o.remove(); return 1; });
       await sleep(1500); const b1 = L.length; await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
@@ -77,7 +87,9 @@ const RUNS = [
               let a = dAtt(d, l.distance, l.decay); if (l.isSpotLight) { const sd = l.position.clone().sub(l.target.position).normalize(), ac = v.dot(sd), cc = Math.cos(l.angle), pc = Math.cos(l.angle * (1 - l.penumbra));
                 const t = Math.max(0, Math.min(1, (ac - cc) / Math.max(1e-6, pc - cc))); a *= t * t * (3 - 2 * t); }
               E[k === 'sun' || k === 'hemi' ? 'otherPoints' : k] += I * a * nl; } });
-          S.push({ through, floor: nn.y > 0.7, wall: Math.abs(nn.y) < 0.3, E });
+          const hm = Array.isArray(h.object.material) ? h.object.material[h.face.materialIndex] : h.object.material;
+          const alb = hm && hm.color ? lum(hm.color) : 0.5, textured = !!(hm && (hm.map || (hm.userData && hm.userData.triplanar)));
+          S.push({ through, floor: nn.y > 0.7, wall: Math.abs(nn.y) < 0.3, E, alb, textured });
         }
         const sd = A.sun ? A.sun.position.clone().sub(A.sun.target.position).normalize() : new THREE.Vector3(0, 1, 0);
         const hemiUp = A.hemi ? lum(A.hemi.color) * A.hemi.intensity : 0, Eground = (A.sun ? lum(A.sun.color) * A.sun.intensity * Math.max(0, sd.y) : 0) + hemiUp;
@@ -85,7 +97,14 @@ const RUNS = [
           const per = set.map(s => { let t = 0; keys.forEach(k => { tot[k] += s.E[k]; t += s.E[k]; }); all += t; return t / Math.max(1e-9, Eground); }).sort((a, b) => a - b);
           const share = {}; keys.forEach(k => { share[k] = all ? +(100 * tot[k] / all).toFixed(1) : 0; });
           const outside = all ? +(100 * (tot.sun + tot.hemi + tot.portals) / all).toFixed(1) : 0, inside = all ? +(100 * (tot.lamps + tot.camlight + tot.otherPoints + tot.otherSpots) / all).toFixed(1) : 0;
-          return { samples: set.length, sharesPct: share, outsideSourcesPct: outside, insideSourcesPct: inside, ambientPct: share.ambient,
+          // §WASH_FRACTION: three's Lambert L = albedo x E / pi, x exposure, three's ACESFilmicToneMapping (grey: its input and
+          // output matrices' rows sum to 1, so the curve is RRTAndODTFit(x * exposure / 0.6)), then the sRGB OETF (display value)
+          const expo = A.renderer.toneMappingExposure, rrt = v => (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081);
+          const srgb = c => c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+          const tm = set.map(s => { let t = 0; keys.forEach(k => { t += s.E[k]; }); return srgb(Math.max(0, Math.min(1, rrt(s.alb * t / Math.PI * expo / 0.6)))); }).sort((a, b) => a - b);
+          const wash = tm.length ? +(tm.filter(v => v > 0.90).length / tm.length).toFixed(3) : null;
+          return { toneMapped: { median: tm.length ? +tm[Math.floor(tm.length / 2)].toFixed(3) : null, p95: tm.length ? +tm[Math.floor(tm.length * 0.95)].toFixed(3) : null, wash, texturedSamples: set.filter(s => s.textured).length },
+            samples: set.length, sharesPct: share, outsideSourcesPct: outside, insideSourcesPct: inside, ambientPct: share.ambient,
             vsSunlitGround: { median: per.length ? +per[Math.floor(per.length / 2)].toFixed(3) : null, p95: per.length ? +per[Math.floor(per.length * 0.95)].toFixed(3) : null, mean: set.length ? +(per.reduce((a, b) => a + b, 0) / per.length).toFixed(3) : null } }; };
         const SLonNow = !!(window.SourcedLight && window.SourcedLight.isActive && window.SourcedLight.isActive());
         return { sourcedLight: SLonNow, sunElevDeg: +(Math.asin(sd.y) * 180 / Math.PI).toFixed(1), Eground: +Eground.toFixed(3), exposure: +A.renderer.toneMappingExposure.toFixed(3), lights: lights.length, camPos: A.camera.position.toArray().map(v => +v.toFixed(2)),
