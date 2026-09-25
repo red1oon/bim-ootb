@@ -1906,6 +1906,35 @@ function setupTools(A) {
     }
     return picked;
   }
+  // ══ §LAMP_ZONE_PICK (2026-09-25, spec PHOTOREAL_STILL_RENDER.md §LAMP_ZONE_PICK; zero-list FLYIN_DARK) ═══════════
+  // ONE pick function of (camera, visible zones) — the still calls it now, a film calls it per frame later (the film
+  // adds only continuity: fade a lamp entering/leaving the kept set, no 0<->full step). Lamps are picked by the ZONES
+  // THEY LIGHT (§SOURCED_LIGHT binds a lamp to its zone, so a lamp reaches nothing outside it), not by whether the
+  // fixture's centre sits in the frustum: a troffer behind the eye lights the wall in front. Candidates = every lamp
+  // in the camera zone, then lamps in the zones the frame shows (visZones: zone -> hits of the 12x7 §SOURCED_LIGHT_CAP
+  // ray grid), ordered camera zone first, then by the zone's share of the frame, within a zone nearest-to-camera first.
+  // Cap = the uniform budget. No frustum test, no zone-blind top-up: a lamp in a zone the frame never shows is not
+  // a candidate at all (red1's pose 5: 20 zone-1 lamps + ~50 lamps of 23 unseen zones left the left wall at 0).
+  // Returns { picked, zoneLamps (camera-zone lamps available), perZone: [[zone, kept, available]...], dropped }.
+  A._lampZonePick = function(camPos, camZone, visZones, fixtures, cap) {
+    var LZ = window.LightZones, cand = [], avail = {}, kept = {};
+    for (var i = 0; i < fixtures.length; i++) {
+      var p = fixtures[i];
+      if (p.__slz === undefined) { var v = LZ.atLamp(p); p.__slz = (v > 0 && v !== LZ.SOLID) ? v : 0; }
+      if (!p.__slz) continue;
+      var share = (p.__slz === camZone) ? 1e9 : (visZones && visZones.get(p.__slz)) || 0;   // camera zone outranks any frame share
+      if (!(share > 0)) continue;
+      p.__slshare = share;
+      p.__sld2 = (p.x - camPos.x) * (p.x - camPos.x) + (p.y - camPos.y) * (p.y - camPos.y) + (p.z - camPos.z) * (p.z - camPos.z);
+      cand.push(p); avail[p.__slz] = (avail[p.__slz] || 0) + 1;
+    }
+    cand.sort(function(a, b) { return (b.__slshare - a.__slshare) || (a.__sld2 - b.__sld2); });
+    var picked = cand.slice(0, Math.max(0, cap | 0)), order = [];
+    picked.forEach(function(p) { if (!kept[p.__slz]) { kept[p.__slz] = 0; order.push(p.__slz); } kept[p.__slz]++; });
+    Object.keys(avail).forEach(function(z) { if (!kept[+z]) order.push(+z); });
+    return { picked: picked, zoneLamps: avail[camZone] || 0, dropped: cand.length - picked.length,
+             perZone: order.map(function(z) { return [z, kept[z] || 0, avail[z]]; }) };
+  };
   var _ntuLastLine = null;   // §BAKE_INTERIOR_TOPUP — run-length guard, this runs once per baked frame
   var _nbgLastTotal = -1, _nbgLastPlaced = -1, _nbgLastLit = -1;   // §NIGHT_BUILDUP_GATE dedup
 
@@ -1955,6 +1984,19 @@ function setupTools(A) {
       // new pose and calls startStillRefine() BEFORE any render of that pose, so an unrefreshed
       // matrixWorldInverse culls this frame's fixtures against the PREVIOUS frame's view.
       A.camera.updateMatrixWorld();
+      // §LAMP_ZONE_PICK — with light zones (Alt+S: SourcedLight.prepare ran, camera inside a zone) the pick is by the
+      // zones the lamps light; the frustum test and the zone-blind top-up below are NOT run. Without zones (LightZones
+      // missing, &sourced=0, camera outside every zone, or a film: A._sourcedCap is null there — the film path needs
+      // A._sourcedCap per frame + fade, next step) today's behaviour is kept exactly.
+      var _zpOn = A._sourcedCap && A._sourcedCap.camZone > 0 && window.LightZones && window.LightZones.get() && !/[?&]lampcap=list/.test(location.search);
+      if (_zpOn) {
+        var _zpCap = (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200;
+        A._lampCapFarM = null;
+        var _zp = A._lampZonePick(A.camera.position, A._sourcedCap.camZone, A._sourcedCap.vis, visPos, _zpCap);
+        console.log('§LAMP_ZONE_PICK camZone=' + A._sourcedCap.camZone + ' zoneLamps=' + _zp.zoneLamps + ' kept=' + _zp.picked.length + ' cap=' + _zpCap +
+          ' perZone=[' + _zp.perZone.map(function(e) { return e[0] + ':' + e[1] + '/' + e[2]; }).join(',') + '] dropped=' + _zp.dropped + ' (= §LAMP_CAP_DROPPED) eligible(placed)=' + visPos.length);
+        needed = _zp.picked.map(function(p) { return { pos: p }; });
+      } else {
       var frustum = new THREE.Frustum();
       var vpMatrix = new THREE.Matrix4().multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(vpMatrix);
@@ -2017,6 +2059,7 @@ function setupTools(A) {
         if (_tuLine !== _ntuLastLine) { _ntuLastLine = _tuLine; console.log(_tuLine); }
       }
       needed = _picked.map(function(p) { return { pos: p }; });
+      }   // end of the frustum + top-up path (§LAMP_ZONE_PICK replaces it when zones exist)
     } else if (visPos.length <= A._nightMaxLights) {
       // Small building (or few fixtures placed so far) — place ALL currently-eligible fixtures, no culling
       needed = visPos.map(function(p) { return { pos: p }; });
