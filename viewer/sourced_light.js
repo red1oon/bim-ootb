@@ -128,6 +128,21 @@
     if (fb.indexOf(d0) >= 0) { fb = fb.replace(d0, d0 + ONCE); ok++; } else console.warn('§SOURCED_LIGHT_LINK anchor "IncidentLight directLight;" missing: zones inert');
     var p0 = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
     if (fb.indexOf(p0) >= 0) { fb = fb.replace(p0, p0 + '\n\t\tdirectLight.color *= slPass( uSLPZ[ UNROLLED_LOOP_INDEX / 4 ][ UNROLLED_LOOP_INDEX - ( UNROLLED_LOOP_INDEX / 4 ) * 4 ], geometryPosition, geometryNormal );'); ok++; }
+    // §LAMP_LOOP (red1 2026-09-26: Alt+S "hangs each time"; measured Hospital over Vulkan: the first staged frame took 157 s with
+    // 200 lamps, 6.5 s with &lampcap=0). three.js UNROLLS the point-light loop, so every lit program carried 200 copies of the
+    // lamp body and the compile blocked Chrome. When no point light casts a shadow (the lamps never do), the loop is now a real
+    // GLSL loop — one body, the same per-lamp maths (dynamic uniform indexing, WebGL2). &lamploop=0 keeps the unrolled loop.
+    if (!/[?&]lamploop=0/.test(location.search)) {
+      var la = fb.indexOf('PointLight pointLight;'), ls = la >= 0 ? fb.indexOf('#pragma unroll_loop_start', la) : -1, le = ls >= 0 ? fb.indexOf('#pragma unroll_loop_end', ls) : -1;
+      var reDirect = ls >= 0 && le > ls ? (/RE_Direct\( directLight,[^;]*;/.exec(fb.slice(ls, le)) || [])[0] : null;
+      if (reDirect) {
+        var blockEnd = le + '#pragma unroll_loop_end'.length;
+        fb = fb.slice(0, ls) + '#if defined( USE_SHADOWMAP ) && NUM_POINT_LIGHT_SHADOWS > 0\n\t' + fb.slice(ls, blockEnd) + '\n\t#else\n' +
+          '\tfor ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {\n\t\tpointLight = pointLights[ i ];\n\t\tgetPointLightInfo( pointLight, geometryPosition, directLight );\n' +
+          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
+        console.log('§LAMP_LOOP dynamic (point lights: one loop body per program, not one per lamp; &lamploop=0 = unrolled)');
+      } else console.warn('§LAMP_LOOP anchor missing — point-light loop stays unrolled');
+    }
     var s0 = 'getSpotLightInfo( spotLight, geometryPosition, directLight );';
     if (fb.indexOf(s0) >= 0) { fb = fb.replace(s0, s0 + '\n\t\tdirectLight.color *= slPass( uSLSZ[ UNROLLED_LOOP_INDEX / 4 ][ UNROLLED_LOOP_INDEX - ( UNROLLED_LOOP_INDEX / 4 ) * 4 ], geometryPosition, geometryNormal );'); ok++; }
     var a0 = 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );';
