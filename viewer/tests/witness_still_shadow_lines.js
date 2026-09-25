@@ -10,7 +10,9 @@
 // line (the before arm / &shadowcascade=0) it FAILs on the single map's texel and reports it. programs= is counted by
 // the witness itself from renderer.info.programs (before the press, after the staged frames).
 // C2 (link time): LINK=1 runs ONLY Hospital default_exterior with the driver + Chrome shader caches off, and sums the
-// wall time of compileShader/linkProgram/getProgramParameter(LINK_STATUS)/getShaderParameter over the press (linkMs=).
+// wall time of compileShader/linkProgram/getProgramParameter(LINK_STATUS)/getShaderParameter over the press (linkMs=; measured
+// 116 ms for 62 links: Chrome's GL calls return before the GPU process links, so linkMs is NOT the link time) and the press
+// wall time from Alt+S to the 4th staged frame (pressMs= — the compile burst blocks those frames; this is the C2 number).
 // RUN: node viewer/tests/witness_still_shadow_lines.js <port> [outdir]      (QUERY='&shadowcascade=0' for the A arm)
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer'); const fs = require('fs'), path = require('path');
 const sleep = ms => new Promise(r => setTimeout(r, ms)); const T0 = Date.now();
@@ -21,7 +23,7 @@ const RUNS0 = [
   { db: 'Hospital', full: 63182, poses: [{ name: 'default_exterior', default: true }, { name: 'aerial_centre', aerial: true }, { name: 'hospital_cafe', pos: [-11.15, 2.92, 4.08], tgt: [0.75, -13.08, -7.82] }] },
   { db: 'Terminal', full: 48428, poses: [{ name: 'terminal_hall_floor', hallFloor: true }] },
 ];
-const RUNS = LINK ? [{ db: 'Hospital', full: 63182, poses: [{ name: 'default_exterior', default: true }] }] : RUNS0;
+const RUNS = LINK ? [{ db: 'Hospital', full: 63182, poses: [{ name: 'default_exterior', default: true }] }] : (process.env.ONLY ? RUNS0.filter(r => r.db === process.env.ONLY) : RUNS0);   // ONLY=Terminal: one building
 const num = (re, t) => { const m = re.exec(t || ''); return m ? +m[1] : NaN; };
 const arr = (key, t) => { const m = new RegExp(' ' + key + '=\\[([^\\]]*)\\]').exec(t || ''); return m ? m[1].split(',').filter(x => x.trim() !== '').map(Number) : []; };
 (async () => {
@@ -55,16 +57,16 @@ const arr = (key, t) => { const m = new RegExp(' ' + key + '=\\[([^\\]]*)\\]').e
       for (let i = 0; i < 20 && await p.evaluate(() => !!window.APP._stillRefineActive); i++) { if (i === 0) await p.evaluate(() => window.APP.toggleStillRefine()); await sleep(1000); }
       await sleep(1000); const b1 = L.length; press++;
       const pre = await p.evaluate(() => { const I = window.APP.renderer.info; return { n: (I.programs || []).length, ids: (I.programs || []).map(q => q.id), link: window.__linkMs || 0, linkN: window.__linkN || 0 }; });
-      await p.evaluate(() => window.APP.toggleStillRefine());
+      const tPress = Date.now(); await p.evaluate(() => window.APP.toggleStillRefine());
       for (let i = 0; i < 120 && !(L.slice(b1).some(t => /^§STILL_SHADOW_EDGE (range|VACUOUS)/.test(t)) && L.slice(b1).some(t => /§SKY_PORTAL placed|§SKY_PORTAL off/.test(t))); i++) await sleep(500);
       // the staged frames: wait for 4 rendered frames after the staging lines (programs compile on first draw)
       const f0 = await p.evaluate(() => window.APP.renderer.info.render.frame);
       for (let i = 0; i < 240 && (await p.evaluate(() => window.APP.renderer.info.render.frame)) < f0 + 4; i++) await sleep(250);
-      await sleep(500);
+      const pressMs = Date.now() - tPress; await sleep(500);
       const post = await p.evaluate(() => { const I = window.APP.renderer.info; return { n: (I.programs || []).length, progs: (I.programs || []).map(q => ({ id: q.id, key: q.cacheKey })), link: window.__linkMs || 0, linkN: window.__linkN || 0 }; });
       const created = post.progs.filter(q => pre.ids.indexOf(q.id) < 0), newKeys = created.filter(q => !seenKeys.has(q.key)).length;
       created.forEach(q => seenKeys.add(q.key));
-      const progLine = 'programs=' + pre.n + '->' + post.n + ' created=' + created.length + ' newKeys=' + newKeys + ' press=' + press + (LINK ? ' linkMs=' + (post.link - pre.link).toFixed(0) + ' links=' + (post.linkN - pre.linkN) : '');
+      const progLine = 'programs=' + pre.n + '->' + post.n + ' created=' + created.length + ' newKeys=' + newKeys + ' press=' + press + ' pressMs=' + pressMs + (LINK ? ' linkMs=' + (post.link - pre.link).toFixed(0) + ' links=' + (post.linkN - pre.linkN) : '');
       const fit = L.slice(b1).find(t => /§STILL_SHADOW_FIT env/.test(t)) || '(no §STILL_SHADOW_FIT line)', edge = L.slice(b1).find(t => /^§STILL_SHADOW_EDGE (range|VACUOUS)/.test(t)) || '';
       const g45 = +((/predictedBaseGap45=([0-9.]+)/.exec(edge) || [])[1]), g20 = +((/ 20deg=([0-9.]+)/.exec(edge) || [])[1]);
       const cas = L.slice(b1).find(t => /^§STILL_SHADOW_CASCADE m=/.test(t)) || '';
