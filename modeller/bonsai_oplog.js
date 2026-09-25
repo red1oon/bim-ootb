@@ -474,7 +474,10 @@
     // a grid-stretch's induced rider moves revert with the stretch, never a half-reverted gesture).
     async undo() {
       if (!this.db) return { undone: null };
-      const active = this._allGeom().filter(o => !o.undone);
+      // §MEP-REROUTE-SIGN: rows a re-route added or superseded are owned by the history node they ride (id-targeted
+      // setUndone) — the boundary walk must never pop or resurrect them. Empty set (no re-route yet) = unchanged pick.
+      const own = this._treeOwned;
+      const active = this._allGeom().filter(o => !o.undone && !(own && own.has(o.id)));
       if (!active.length) return { undone: null };
       const topRow = active[active.length - 1], top = topRow.id;
       const ids = this._isGestureGid(topRow.gid) ? active.filter(o => o.gid === topRow.gid).map(o => o.id) : [top];
@@ -496,7 +499,8 @@
     // diverged edit once a tree layer is added on top (see file header WHY #3/#4).
     async redo() {
       if (!this.db) return { redone: null };
-      const all = this._allGeom(); const undoneRows = all.filter(o => o.undone);
+      const own = this._treeOwned;   // §MEP-REROUTE-SIGN: see undo()
+      const all = this._allGeom(); const undoneRows = all.filter(o => o.undone && !(own && own.has(o.id)));
       if (!undoneRows.length) return { redone: null };
       const byId = new Map(all.map(o => [o.id, o]));
       const topRow = undoneRows[0], top = topRow.id;

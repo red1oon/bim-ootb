@@ -16,6 +16,8 @@
  *   M3 RENDERED     — every routed run is drawn as a tube (userData.dwChain instances == chainSegs).
  *   M4 SIGNED (L3)  — ≥1 routed run lands in the signed op-log as GEOM_SWEEP. RED on main 2026-09-24: SampleCastle
  *                     refuses 32/32 (§ROUTER-CHAIN-REFUSE, no real cross-section product, WalkerDoctrine §8).
+ *   M5 ALL-SIGNED (NEXT #3) — signed GEOM_SWEEP == routed runs. RED on main 2026-09-26: Terminal 60/2,915
+ *                     (DW_CHAIN_COMMIT_CAP=60, a signed sample from the per-sweep-commit era).
  * Residents: default Duplex,SampleCastle,Terminal (one of each path: schedule / legacy / measured-band);
  * pass a comma list as argv[2] for others ("ALL" = the 8 residents). Prints §PRODUCTIVITY per resident (measured, no gate). Baseline (main b8f844fb): M0 ✅ M1 ✅ M2 ❌ M3 ✅ M4 ❌ (8/5).
  * After §WALK-BRIDGE-ALL + §RW-RUNBOX (L1+L2): 10/3 — PLB runs Duplex 18 · SampleCastle 18 · Terminal 2,893, all drawn;
@@ -107,6 +109,8 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     chk('M3 RENDERED ' + k + ' (every routed run drawn: tubes == segs)', allTubes === allSegs, 'segs=' + allSegs + ' tubes=' + allTubes);
     const allSw = Object.values(r.D).reduce((s, x) => s + x.sweeps, 0);
     chk('M4 SIGNED ' + k + ' (≥1 routed run is a GEOM_SWEEP in the signed op-log)', allSw > 0, 'sweeps=' + allSw);
+    const allSeg = Object.values(r.D).reduce((s, x) => s + (x.segs || 0), 0);
+    chk('M5 ALL-SIGNED ' + k + ' (every routed run is a signed GEOM_SWEEP, not a capped sample)', allSeg > 0 && allSw === allSeg, 'sweeps=' + allSw + '/' + allSeg + ' runs');
   }
   console.log('W-MEP-OPENPATH: ' + pass + ' PASS / ' + fail + ' FAIL');
   await br.close(); server.close();
