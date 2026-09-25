@@ -4498,7 +4498,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!A._maxqActive) { if (_fitOn()) _stillFitApply(false); else if (_fitState) console.log('§STILL_SHADOW_FIT off (&shadowfit=0, APP._stillShadowFit=false, or the user\'s own Shadow mode) env=' + _fitState.env); }
     _stMs.shadowFit = performance.now() - _stS;
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
-    try { var _stTot = performance.now() - _stT0, _stR = A.renderer, _stProg0 = (_stR && _stR.info && _stR.info.programs) ? _stR.info.programs.length : -1, _stRender = _stR && _stR.render;
+    try { var _stTot = performance.now() - _stT0; A._stillStageMsLast = _stTot; var _stR = A.renderer, _stProg0 = (_stR && _stR.info && _stR.info.programs) ? _stR.info.programs.length : -1, _stRender = _stR && _stR.render;
       var _stLine = '§STILL_STAGE_MS zoneBuild=' + Math.round(_stMs.zoneBuild) + ' skySweep=' + Math.round(_stMs.skySweep) + ' audit=' + Math.round(_stMs.audit) + ' zoneCap=' + Math.round(_stMs.zoneCap) +
         ' portals=' + Math.round(_stMs.portals) + ' sourcedStage=' + Math.round(_stMs.sourcedStage) + ' shadowFit=' + Math.round(_stMs.shadowFit) + ' other=' + Math.round(_stTot - _stMs.zoneBuild - _stMs.zoneCap - _stMs.portals - _stMs.sourcedStage - _stMs.shadowFit) + ' (staging steps not named above) stagingTotal=' + Math.round(_stTot);
       if (_stRender && !_stR.__stageMsWrap) { _stR.__stageMsWrap = true;   // link = the first render after staging (programs compile + link synchronously inside it)
@@ -5209,6 +5209,7 @@ async function setupEffects(A, renderer, scene, camera) {
         A._composer.render();
         renderMs += performance.now() - r0;
         f++;
+        if (f === 1) _stillSay('shading corners (ambient occlusion)…');   // §STILL_STATUS_STEPS
         if (f >= _aoFrames) {
           console.log('§PHOTO_AO done frames=' + f + ' totalMs=' + Math.round(performance.now() - t0) +
             ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' (frozen with AO — stays until interaction)');
@@ -5688,6 +5689,7 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       A._composer.render();
       var idx = A._taaPass.accumulateIndex;
+      if (idx === 1) _stillSay('compiling shaders done — smoothing edges…');   // §STILL_STATUS_STEPS
       if (idx >= _taaFrames) { _finishStillRefine(idx); return; }   // §MAXQ_FRAME_BUDGET
       _stillRefineRAF = requestAnimationFrame(step);
     }
@@ -5846,6 +5848,12 @@ async function setupEffects(A, renderer, scene, camera) {
   // entry points (scene.js Alt+S, panels.js button) come here: show the status, let one frame commit,
   // THEN start. Programmatic callers (bake, witnesses) keep the synchronous toggleStillRefine above.
   var _stillUIPending = false;
+  // §STILL_STATUS_STEPS: update our own status line only while it is ours (gi_still.js takes the same element over later)
+  function _stillSay(what) {
+    if (A._maxqActive) return;
+    var el = document.getElementById('gi-still-toast');
+    if (el && el.dataset.stillStatus === '1' && el.style.display !== 'none' && /preparing/.test(el.textContent)) el.textContent = 'Alt+S still — preparing: ' + what;
+  }
   function _stillToast(msg) {
     var el = document.getElementById('gi-still-toast');   // same element/style as gi_still.js's toast
     if (!el) {
@@ -5925,6 +5933,7 @@ async function setupEffects(A, renderer, scene, camera) {
         // painted and before staging, the same way the film path does (§CINEMA_ROOMS).
         var tR = performance.now();
         try {
+          if (!A._navigateLoaded) _stillSay('loading the room data (once per page)…');
           if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) await A.loadNavigate();
           if (typeof A.ensureRooms === 'function') await A.ensureRooms({});
           console.log('§STILL_ROOMS ready ms=' + (performance.now() - tR).toFixed(0));
@@ -5932,6 +5941,14 @@ async function setupEffects(A, renderer, scene, camera) {
         var t2 = performance.now();
         console.log('§STILL_STATUS stagingStart t=' + t2.toFixed(1) + ' gap=' + (t2 - t0).toFixed(1) + 'ms (rooms ' + (t2 - tR).toFixed(0) + 'ms)');
         _stillUIPending = false;
+        // §STILL_STATUS_STEPS (red1 2026-09-26: "the long wait ... should be more descriptive"): name the step, say when it is
+        // the one-time build for this building (light zones + sky field are cached per building), and let it paint first —
+        // staging itself is one blocking call, so the text cannot change during it.
+        var _LZ = window.LightZones, _cached = !!(_LZ && _LZ.get && _LZ.get() && _LZ.get().bld === A.activeBuilding);
+        var _last = A._stillStageMsLast ? ' — last time ' + Math.max(1, Math.round(A._stillStageMsLast / 1000)) + ' s' : '';
+        _stillSay(_cached ? 'lights, sky and shadows' + _last + '…'
+                          : 'first time for this building: mapping rooms into light zones and measuring how much sky each spot sees (cached after this)…');
+        await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });
         try { A.startStillRefine(); } finally {
           var iv = setInterval(function() {
             if (A._stillRefineActive && A._stillRefineBusy) return;

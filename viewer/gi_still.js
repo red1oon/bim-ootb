@@ -516,7 +516,7 @@
     const A = window.APP, THREE = window.THREE;
     if (!(THREE && THREE.REVISION === '186' && THREE.WebGPURenderer)) throw new Error('this page is three.js r' + (THREE && THREE.REVISION) + ' — the bounce still needs r186');
     if (!navigator.gpu) throw new Error('this browser exposes no WebGPU (navigator.gpu missing)');
-    const TSL = await stage('loading modules', () => import('./lib/gi/three.tsl.appbound.js'));
+    const TSL = await stage('loading the bounce-light code (once per page)', () => import('./lib/gi/three.tsl.appbound.js'));
     const { ssgi } = await import('./lib/gi/SSGINode.appbound.js');
     const renderer = new THREE.WebGPURenderer({ antialias: false, forceWebGL: false, trackTimestamp: false });
     renderer.setPixelRatio(1); renderer.setSize(w, h);
@@ -537,7 +537,7 @@
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x000000, 0);             // untouched pixels stay empty; the app's sky shows through
     if (renderer.setClearAlpha) renderer.setClearAlpha(0);
-    await stage('starting the graphics device', () => renderer.init());
+    await stage('starting the bounce-light graphics engine (once per page)', () => renderer.init());
     const pipeStats = instrumentPipelines(renderer);
     const cam = A.camera;
     const Pipeline = THREE.RenderPipeline || THREE.PostProcessing;
@@ -615,7 +615,7 @@
     // (a pipeline is keyed on formats, not on size, so these same pipelines serve the full-size
     // render), with the chunk size steered by a wall-clock budget and a yield between chunks.
     const BUDGET_MS = 40;
-    await stage('compiling the geometry pass (1 shared material, ' + A.scene.children.length + ' scene objects)', async () => {
+    await stage('copying the building to the bounce-light engine (once per page, ' + A.scene.children.length + ' objects)', async () => {
       grabAppFrame(G);
       const list = [];
       A.scene.traverse(o => { if (o.visible && (o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) list.push(o); });
@@ -655,7 +655,7 @@
       G.setTexFlip(orientHit.flipTex); G.flipOut = orientHit.flipOut;
       console.log('§GI_ORIENT_CACHE hit flipTex=' + orientHit.flipTex + ' flipOut=' + orientHit.flipOut + ' measured=' + orientHit.when + ' (skipped the orientation check; &giorient=measure re-measures)');
     } else {
-      await stage('checking orientation', () => decideOrientation(G));
+      await stage('checking picture orientation (once)', () => decideOrientation(G));
       try { localStorage.setItem('giOrientCache', JSON.stringify({ key: orientKey, flipTex: G.flipTex, flipOut: G.flipOut, when: new Date().toISOString() })); } catch (e) {}
       console.log('§GI_ORIENT_CACHE stored flipTex=' + G.flipTex + ' flipOut=' + G.flipOut + ' key=' + orientKey.slice(0, 80));
     }
@@ -701,18 +701,18 @@
       const N = (opts.passes != null) ? opts.passes : (window.__GI_ACCUM || ACCUM_DEFAULT);
       // The app's finished frame, taken ONCE: it is both the colour the bounce is computed from and
       // the picture the bounce is pasted onto, so they cannot drift apart.
-      R.underMean = await stage('reading the app’s finished still', async () => grabAppFrame(G));
+      R.underMean = await stage('taking the finished picture', async () => grabAppFrame(G));
       console.log('§GI_STILL underlay mean=' + R.underMean + ' (the app frame; it is also the colour fed to SSGI — ~0 means the app canvas handed back an empty buffer)');
       let acc = null;
       const _ps0 = G.pipeStats ? Object.assign({}, G.pipeStats) : null, _passMs = [];
-      await stage('bounce passes', async () => {
+      await stage('adding bounce light', async () => {
         for (let i = 0; i < N; i++) {
           const _tp = performance.now();
           await renderGeom(G);
           _passMs.push(Math.round(performance.now() - _tp));
           const fb = await readRT(G);
           if (!acc) acc = Float32Array.from(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k];
-          toast('Bounce still — pass ' + (i + 1) + ' of ' + N + '…');
+          toast('Bounce still — adding bounce light, pass ' + (i + 1) + ' of ' + N + '…');
           await new Promise(r => requestAnimationFrame(() => r()));   // hand the main thread back between passes
         }
         for (let k = 0; k < acc.length; k++) acc[k] /= N;
