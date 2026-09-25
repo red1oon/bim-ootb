@@ -103,13 +103,13 @@ chk('G1 INSTRUMENT (decoded mesh extent == authored bbox_* — if this fails, be
   resolved === cols.length && ok === cols.length,
   'columns=' + cols.length + ' geoResolved=' + resolved + ' extentMatch=' + ok + '/' + resolved + ' worstDelta=' + (worst * 1000).toFixed(2) + 'mm');
 
-const skA = SW.swWalkSkeleton(cols);
+const skA = SW.swWalkSkeleton(cols, { lineFit: 'mean' });   // the 2026-09-21 measurement was on the mean fit; the default is median since 2026-09-26 (W-ROW7-TRUE-CENTRE pins both)
 const rmsA = rms(skA.walked.map(w => w.residual));
 const disp = [];
 const colsTrue = cols.map(c => { const g = geo[hashes[c.guid]]; if (!g) return null;
   disp.push(Math.hypot(g.c[0], g.c[1]));
   return { guid: c.guid, x: c.x + g.c[0], y: c.y + g.c[1], z: c.z + g.c[2] }; }).filter(Boolean);
-const skB = SW.swWalkSkeleton(colsTrue);
+const skB = SW.swWalkSkeleton(colsTrue, { lineFit: 'mean' });
 const rmsB = rms(skB.walked.map(w => w.residual));
 const s = disp.slice().sort((a, b2) => a - b2);
 console.log('  §ROW7 offset(plan) p50=' + (s[Math.floor(s.length * .5)] * 1000).toFixed(1) +

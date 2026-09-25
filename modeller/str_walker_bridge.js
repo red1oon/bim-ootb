@@ -18,13 +18,46 @@
 
   var _state = null;  // { base: {grid,walked,girders}, columnCount }
 
-  function _readColumns(db) {
+  // §ROW7-TRUE-CENTRE (MODELLER_MASTER row 7, re-measured in #1753): `element_transforms.center_x/y/z` is the IFC
+  // placement ANCHOR, not the volumetric centre (arc_editable.js §ARC-ANCHOR; real_geometry.js recenter()). The
+  // offset VARIES per column (Terminal: p50 19.7 mm, p90 148.1 mm, max 225.6 mm in plan; up to 3.944 m in z), so it
+  // does not cancel even though the grid is derived from the same centres it measures — the shipped path
+  // under-reported the residual (0.0939 m on anchors vs 0.1039 m on true centres). The true centre is READ from
+  // the renderer-parity box reader cross_edges.js already uses (§REAL-AABB, wired by #1744) — never re-derived
+  // here. An element with no resolvable blob keeps the anchor (today's behaviour) and is COUNTED, never silent.
+  function _getCrossEdges() {
+    if (typeof window !== 'undefined' && window.CrossEdges && window.CrossEdges.readBoxes) return window.CrossEdges;
+    if (typeof require === 'function') { try { var C = require('./cross_edges.js'); if (C && C.readBoxes) return C; } catch (e) { } }
+    return null;
+  }
+  // guid → { x, y, z, lx, ly, lz } true world AABB centre + extents for every REAL box; {} when unavailable.
+  function _trueCentres(db, opts) {
+    var C = _getCrossEdges(), out = {};
+    if (!C) return out;
+    var boxes;
+    try { boxes = C.readBoxes(db, opts && opts.geoDb); } catch (e) { return out; }
+    boxes.forEach(function (b) {
+      if (!b.real) return;
+      var a = b.aabb;
+      out[b.guid] = { x: (a[0] + a[1]) / 2, y: (a[2] + a[3]) / 2, z: (a[4] + a[5]) / 2, lx: a[1] - a[0], ly: a[3] - a[2], lz: a[5] - a[4] };
+    });
+    return out;
+  }
+  var _lastCentres = { real: 0, anchor: 0 };   // how the LAST swbInit sourced its centres — for the §STRWALK-INIT line
+
+  function _readColumns(db, opts) {
     var res = db.exec("SELECT m.guid,t.center_x,t.center_y,t.center_z,t.bbox_x,t.bbox_y,t.bbox_z FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid=m.guid WHERE m.discipline='STR' AND m.ifc_class='IfcColumn'");
     if (!res.length) return [];
-    return res[0].values.map(function (r) {
-      return { guid: r[0], x: r[1], y: r[2], z: r[3], bx: r[4], by: r[5], bz: r[6] };
+    var tc = _trueCentres(db, opts), real = 0, anchor = 0;
+    var cols = res[0].values.map(function (r) {
+      var t = tc[r[0]];
+      if (t) real++; else anchor++;
+      return { guid: r[0], x: t ? t.x : r[1], y: t ? t.y : r[2], z: t ? t.z : r[3], bx: r[4], by: r[5], bz: r[6],
+               centreSource: t ? 'mesh' : 'anchor' };
     });
+    _lastCentres = { real: real, anchor: anchor };
+    return cols;
   }
 
   // MEASURED median helper (non-invent — never a hand-picked constant).
@@ -46,12 +79,22 @@
 
   // ARC walls = the dropped substrate for a wall-bearing (ARC-only) building. cx/cy + bbox extents
   // (lx/ly) feed swDeriveSemiGrid; the long axis is the wall's run direction (non-invent, measured).
-  function _readArcWalls(db) {
-    var res = db.exec("SELECT t.center_x,t.center_y,t.bbox_x,t.bbox_y FROM elements_meta m " +
+  function _readArcWalls(db, opts) {
+    var res = db.exec("SELECT t.center_x,t.center_y,t.bbox_x,t.bbox_y,m.guid FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid=m.guid WHERE m.discipline='ARC' AND " +
       "m.ifc_class IN ('IfcWall','IfcWallStandardCase')");
     if (!res.length) return [];
-    return res[0].values.map(function (r) { return { cx: r[0], cy: r[1], lx: r[2], ly: r[3] }; });
+    // §ROW7-TRUE-CENTRE: a wall's anchor sits at one END of its axis (measured SampleHouse/Duplex: offset p50
+    // 1.8–2.9 m ALONG the wall), so the true centre is read the same way as columns. The semi-grid uses the
+    // perpendicular coordinate, which moves ≤ 5 mm — the read is for parity; wall centres were never the residual.
+    var tc = _trueCentres(db, opts), real = 0, anchor = 0;
+    var walls = res[0].values.map(function (r) {
+      var t = tc[r[4]];
+      if (t) real++; else anchor++;
+      return t ? { cx: t.x, cy: t.y, lx: t.lx, ly: t.ly } : { cx: r[0], cy: r[1], lx: r[2], ly: r[3] };
+    });
+    _lastCentres = { real: real, anchor: anchor };
+    return walls;
   }
 
   // Init the walker state from the opened building. AUTO-PICK the grid source (the noted follow-up):
@@ -59,29 +102,39 @@
   //   • no STR columns       → wall-bearing (ARC-only drop): swDeriveSemiGrid from ARC walls = the
   //                            editing datum/handle; impose NO column frame (W-STR-GENERAL-SC: the walk
   //                            fabricates nothing). This is the user case — drop an ARC-only job, walk it.
+  //   opts.geoDb — §ROW7-TRUE-CENTRE: the SEPARATE geometry db (§GEO-SPLIT residents) so true centres resolve;
+  //                omitted ⇒ the meta db itself (single-file fixtures/residents resolve, split residents fall
+  //                back to anchors — counted in the §STRWALK-INIT line as centres=mesh:N anchor:M).
   function swbInit(db, opts) {
     opts = opts || {};
-    var cols = _readColumns(db);
+    var cols = _readColumns(db, opts);
     if (cols.length) {
       var base = SW.swWalkSkeleton(cols, opts);
       var colBbox = {}; cols.forEach(function (c) { colBbox[c.guid] = { bx: c.bx, by: c.by, bz: c.bz }; });
       var section = _readBeamSection(db);   // measured girder cross-section (null = no source beams)
       var colDz = _median(cols.map(function (c) { return c.bz; })) || 0;  // representative column height
+      var rr = base.walked.map(function (w) { return w.residual; });
+      var colRMS = Math.sqrt(rr.reduce(function (s, r) { return s + r * r; }, 0) / (rr.length || 1));
       _state = { base: base, columnCount: cols.length, system: 'column-framed',
-                 colBbox: colBbox, section: section, colDz: colDz };
+                 colBbox: colBbox, section: section, colDz: colDz,
+                 centres: { mesh: _lastCentres.real, anchor: _lastCentres.anchor }, colRMS: colRMS };
       console.log('§STRWALK-INIT column-framed: columns=' + cols.length + ' grid=' + base.grid.xLines.length +
         '×' + base.grid.yLines.length + ' girders=' + base.girders.length +
-        ' beamSection=' + (section ? section.width.toFixed(3) + '×' + section.depth.toFixed(3) + 'm (n=' + section.n + ')' : 'none'));
+        ' beamSection=' + (section ? section.width.toFixed(3) + '×' + section.depth.toFixed(3) + 'm (n=' + section.n + ')' : 'none') +
+        ' centres=mesh:' + _lastCentres.real + ' anchor:' + _lastCentres.anchor + ' colRMS=' + colRMS.toFixed(4) + 'm' +
+        (base.grid.lineFit && base.grid.lineFit !== 'mean' ? ' lineFit=' + base.grid.lineFit : ''));
       return _state;
     }
     // ARC-only / wall-bearing: derive the SEMI-GRID from ARC walls, fabricate no column skeleton.
-    var walls = _readArcWalls(db);
+    var walls = _readArcWalls(db, opts);
     if (!walls.length) { console.warn('§STRWALK-INIT no STR columns AND no ARC walls — nothing to walk'); _state = null; return null; }
     var grid = SW.swDeriveSemiGrid(walls, opts);
     _state = { base: { grid: { xLines: grid.xLines, yLines: grid.yLines }, walked: [], girders: [] },
-               columnCount: 0, wallCount: walls.length, system: 'wall-bearing', gridSource: grid.source };
+               columnCount: 0, wallCount: walls.length, system: 'wall-bearing', gridSource: grid.source,
+               centres: { mesh: _lastCentres.real, anchor: _lastCentres.anchor } };
     console.log('§STRWALK-INIT wall-bearing: 0 STR columns, ' + walls.length + ' ARC walls → semi-grid ' +
-      grid.xLines.length + '×' + grid.yLines.length + ' (' + grid.source + '; no column frame imposed)');
+      grid.xLines.length + '×' + grid.yLines.length + ' (' + grid.source + '; no column frame imposed)' +
+      ' centres=mesh:' + _lastCentres.real + ' anchor:' + _lastCentres.anchor);
     return _state;
   }
 

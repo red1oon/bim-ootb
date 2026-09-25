@@ -54,13 +54,13 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
       registerGeometry: function (assets) { window.Bonsai.library.registerRealGeometry(assets); }, building: 'green' });
 
     // ── STR skeleton ──
-    var cres = db.exec("SELECT m.guid,t.center_x,t.center_y,t.center_z FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid WHERE m.discipline='STR' AND m.ifc_class='IfcColumn'");
-    var cols = cres.length ? cres[0].values.map(function (v) { return { guid: v[0], x: v[1], y: v[2], z: v[3] }; }) : [];
-    var sk = window.swWalkSkeleton(cols);
-    var resid = sk.walked.map(function (w) { return w.residual; });
-    var colRMS = Math.sqrt(resid.reduce(function (s, r) { return s + r * r; }, 0) / (resid.length || 1));
+    // §ROW7-TRUE-CENTRE: the residual is the PRODUCTION bridge's own number (swbInit reads true mesh centres via
+    // cross_edges.readBoxes; this fixture is single-file so they resolve). The inline anchor read that used to live
+    // here (center_x/y → swWalkSkeleton) published 0.094 m — the anchor-flattered figure, 10 mm under the truth.
+    var st = window.swbInit(db); var sk = st.base;
+    var colRMS = st.colRMS;
     var girRED = sk.girders.filter(function (g) { return window.swCheckGirder(g.span, {}).signal === 'RED'; }).length;
-    window.swbInit(db); var rr = window.swbRenderOps();
+    var rr = window.swbRenderOps();
     await O.commitSeedGroup(rr.ops, 'green-str');
 
     // ── canopy ──
@@ -134,7 +134,7 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     db.close();
     return {
       arc: { committed: ar.committed, mesh: ar.realResolved },
-      str: { columns: cols.length, colRMS: colRMS, girders: sk.girders.length, girRED: girRED, grid: sk.grid.xLines.length + '×' + sk.grid.yLines.length },
+      str: { columns: sk.walked.length, colRMS: colRMS, girders: sk.girders.length, girRED: girRED, grid: sk.grid.xLines.length + '×' + sk.grid.yLines.length },
       canopy: { predictedN: tess.predictedN, extractedN: tess.extractedN, countErr: Math.abs(tess.predictedN - tess.extractedN) / tess.extractedN, unit: tess.unit, rendered: canopy.renderedN },
       mep: mepRows, clash: { before: clashesBefore, residual: g.residual, yields: g.yields, iterations: g.iterations, total: all.length, floor: g.floor },
       redOnTheirs: { realN: real.length, hard10: hc10.n, hard05: hc05.n, examples: hc10.ex },

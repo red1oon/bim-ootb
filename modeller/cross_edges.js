@@ -194,9 +194,13 @@
         var aabb = null;
         if (raw && !tilted) aabb = _realAabb(raw, cx, cy, cz, rz || 0);
         else if (raw && place) aabb = _envelope(place(raw, { x: cx, y: cy, z: cz, rotX: rx || 0, rotY: ry || 0, rotZRad: rz || 0 }));
+        // §ROW7-TRUE-CENTRE: `real` says whether this box came from the element's own vertex blob (true) or
+        // from the coarse anchor-centred fallback (false). Additive — no derive* consumer reads it; it lets
+        // str_walker_bridge.js tell a true centre from an anchor and COUNT the fallbacks instead of hiding them.
+        var real = !!aabb;
         if (!aabb) aabb = [cx - bx / 2, cx + bx / 2, cy - by / 2, cy + by / 2, cz - bz / 2, cz + bz / 2];
         else if (tilted) tiltedReal++;
-        boxes.push({ guid: guid, aabb: aabb });
+        boxes.push({ guid: guid, aabb: aabb, real: real });
       });
     } catch (e) { /* no element_transforms / no bbox → no geometric edges (graceful) */ }
     _lastTiltedReal = tiltedReal;
@@ -365,6 +369,10 @@
   var API = { deriveAdjacency: deriveAdjacency, faceTouch: faceTouch, TOL: TOL, MIN_OVERLAP: MIN_OVERLAP,
     deriveDatumsAnchored: deriveDatumsAnchored, deriveSpans: deriveSpans,
     readFillsHost: readFillsHost, readAggregates: readAggregates, deriveAll: deriveAll,
+    // §ROW7-TRUE-CENTRE — the ONE box reader every derived family already uses, exported so the STR walker
+    // bridge reads the same true world boxes instead of re-deriving a transform ("never re-derive a transform
+    // you can read", MODELLER_MASTER §RESUME 2026-09-21). Returns [{ guid, aabb:[minX,maxX,minY,maxY,minZ,maxZ], real }].
+    readBoxes: _readBoxes,
     lastTiltedReal: function () { return _lastTiltedReal; } };
   window.CrossEdges = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

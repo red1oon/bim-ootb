@@ -32,7 +32,16 @@ var SW_GRID_SPAN_MAX = 2.0;
 // ─── 1D clustering → gridlines (the emergent datum) ──────────
 // Greedy by consecutive gap; gridline value = MEAN of the cluster it owns (non-invent).
 // Returns [{ value, members:[v...], span }]. Members trace each line to real coordinates.
-function swClusterAxis(values, gapTol, spanMax) {
+//   lineFit (§ROW7-LINE-FIT; DEFAULT 'median' since red1's 2026-09-26 call "on the beams"; 'mean' = the pre-09-26 behaviour):
+//     'mean'   — least-squares value; MINIMISES the residual RMS for a fixed membership, but on a facade line
+//                whose members mix on-line columns with face-flush eccentric ones it lands where NOTHING is
+//                (Terminal south facade: mean −40.050 vs the 34 facade beams and 12 columns at −40.157).
+//     'median' — a REAL member coordinate (zero new constants, traceable to a column); lands the line on the
+//                structural line the beams prove, so the residual then measures ONLY design eccentricity.
+//                Measured Terminal (true centres): RMS 0.1039 → 0.1323 (UP — the mean was optimal by construction),
+//                exact(<5 mm) 92 → 131 of 158, Y0/Y9 → −40.157/−0.157 (0 mm from the beam line). A handle
+//                decision red1 made 2026-09-26 (median), pinned both ways by W-ROW7-TRUE-CENTRE T5.
+function swClusterAxis(values, gapTol, spanMax, lineFit) {
   if (!values.length) return [];
   var sorted = values.slice().sort(function (a, b) { return a - b; });
   var lines = [];
@@ -48,22 +57,24 @@ function swClusterAxis(values, gapTol, spanMax) {
   return lines.map(function (members) {
     var sum = members.reduce(function (s, v) { return s + v; }, 0);
     var span = members[members.length - 1] - members[0];
-    return { value: sum / members.length, members: members, span: span, spanOk: span <= spanMax };
+    var value = lineFit === 'median' ? members[(members.length - 1) >> 1] : sum / members.length;   // members are sorted
+    return { value: value, members: members, span: span, spanOk: span <= spanMax };
   });
 }
 
 // ─── Derive the emergent structural grid from columns ────────
-// columns: [{ guid, x, y, z }]. Returns { xLines:[..], yLines:[..], xMeta, yMeta, gapTol }.
+// columns: [{ guid, x, y, z }]. Returns { xLines:[..], yLines:[..], xMeta, yMeta, gapTol, lineFit }.
 function swDeriveGrid(columns, opts) {
   opts = opts || {};
   var gapTol = opts.gapTol != null ? opts.gapTol : SW_GRID_GAP_TOL;
   var spanMax = opts.spanMax != null ? opts.spanMax : SW_GRID_SPAN_MAX;
-  var xMeta = swClusterAxis(columns.map(function (c) { return c.x; }), gapTol, spanMax);
-  var yMeta = swClusterAxis(columns.map(function (c) { return c.y; }), gapTol, spanMax);
+  var lineFit = opts.lineFit === 'mean' ? 'mean' : 'median';   // red1 2026-09-26: gridlines sit ON the structure (median); 'mean' = pre-09-26
+  var xMeta = swClusterAxis(columns.map(function (c) { return c.x; }), gapTol, spanMax, lineFit);
+  var yMeta = swClusterAxis(columns.map(function (c) { return c.y; }), gapTol, spanMax, lineFit);
   return {
     xLines: xMeta.map(function (m) { return m.value; }),
     yLines: yMeta.map(function (m) { return m.value; }),
-    xMeta: xMeta, yMeta: yMeta, gapTol: gapTol, spanMax: spanMax
+    xMeta: xMeta, yMeta: yMeta, gapTol: gapTol, spanMax: spanMax, lineFit: lineFit
   };
 }
 
