@@ -199,7 +199,21 @@
         L.shadow.bias = -1 / 65536; L.shadow.normalBias = (L.shadow.radius + 1.5) * tx; L.shadow.needsUpdate = true;
         pb.d.push(+dRef.toFixed(1)); pb.tx.push(+tx.toFixed(3)); pb.nb.push(+L.shadow.normalBias.toFixed(3)); pb.gap.push(+gw(L, dRef, L.shadow.bias).toFixed(4)); });
       console.log('§PORTAL_SHADOW_BIAS shadowed=' + pb.d.length + ' dRef=' + JSON.stringify(pb.d) + ' texel=' + JSON.stringify(pb.tx) + ' normalBias=' + JSON.stringify(pb.nb) +
-        ' gapAtDref=' + JSON.stringify(pb.gap) + ' (was bias -0.0005 = world gapAtDref ' + JSON.stringify(pb.gapWas) + ', normalBias 0) bias=-1/65536 R=' + (placed[0] ? placed[0].shadow.radius : '?'));
+        ' gapAtDref=' + JSON.stringify(pb.gap) + ' (was bias -0.0005 = world gapAtDref ' + JSON.stringify(pb.gapWas) + ', normalBias 0) bias=-1/65536 R=' + (placed[0] ? placed[0].shadow.radius : '?') +
+        ' thinCasterRisk=' + (pb.nb.length ? Math.max.apply(null, pb.nb) : 0) + 'm (max normalBias: a mullion, sill or blind thinner than this can lose its portal shadow)');
+      // §SKY_PORTAL_BLOCKED (watchdog red1-c6, 2026-09-25: 2 of 8 café portals 95-99% dark with the shadow on; one has a mesh
+      // 0.28 m in front on 18/25 rays): per shadowed portal, 25 rays into its cone against the opaque shadow casters; blocked =
+      // first hit within 1 m of the light (a caster that close hides the room from the portal). Logged, not acted on.
+      var occ = []; A.scene.traverse(function (o) { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible || !o.castShadow || (o.userData && o.userData.skyPortal)) return;
+        var ms = Array.isArray(o.material) ? o.material : [o.material]; if (ms.every(function (m) { return m && m.transparent && m.opacity < 0.95; })) return; occ.push(o); });
+      var rb = new THREE.Raycaster(), rows = [];
+      placed.forEach(function (L, idx) { if (L.userData.pad || !L.castShadow) return;
+        var ld = L.target.position.clone().sub(L.position).normalize(), u = new THREE.Vector3().crossVectors(ld, new THREE.Vector3(0, 1, 0)); if (u.lengthSq() < 1e-6) u.set(1, 0, 0); u.normalize();
+        var v = new THREE.Vector3().crossVectors(u, ld).normalize(), blocked = 0, nRay = 0, near = Infinity, nearName = '';
+        for (var a = -2; a <= 2; a++) for (var c = -2; c <= 2; c++) { rb.set(L.position, ld.clone().addScaledVector(u, a * 0.5).addScaledVector(v, c * 0.5).normalize()); rb.near = 0; rb.far = 1; nRay++;
+          var h = rb.intersectObjects(occ, false)[0]; if (h) { blocked++; if (h.distance < near) { near = h.distance; nearName = (h.object.userData && h.object.userData.ifcClass) || h.object.name || h.object.type; } } }
+        if (blocked) rows.push('#' + idx + ' z=' + L.position.z.toFixed(1) + ' blockedFrac=' + (blocked / nRay).toFixed(2) + ' nearest=' + near.toFixed(2) + 'm ' + nearName); });
+      console.log('§SKY_PORTAL_BLOCKED ' + rows.length + '/' + pb.d.length + ' shadowed portals have a caster within 1 m in their cone' + (rows.length ? ': ' + rows.join(' · ') : ''));
     }
     if (A.markDirty) A.markDirty();
     var _plArea = placedInfo.reduce(function (s, q) { return s + q.area; }, 0);

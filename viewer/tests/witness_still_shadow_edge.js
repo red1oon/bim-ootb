@@ -71,7 +71,7 @@ const POSES = [
     await p.evaluate(() => window.APP.toggleStillRefine());
     for (let i = 0; i < 300 && !L.slice(b1).some(t => /§STILL_REFINE done/.test(t)); i++) await sleep(1000);
     await sleep(1500);
-    const doPortals = el === SUNS[0];   // portal lights do not depend on the sun: once per pose
+    const doPortals = false;   // RETIRED 2026-09-25: the white-override LOOKUP breaks spot-light shadows (every portal sample dark with the shadow on) — portal numbers from this witness are invalid
     const r = await p.evaluate((doPortals) => {
       const A = window.APP, T = window.THREE, R = A.renderer, gl = R.getContext(), lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
       const glassy = m => m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial';

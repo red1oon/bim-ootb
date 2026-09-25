@@ -38,13 +38,14 @@ const RUNS = [
       for (let i = 0; i < 20 && await p.evaluate(() => !!window.APP._stillRefineActive); i++) { if (i === 0) await p.evaluate(() => window.APP.toggleStillRefine()); await sleep(1000); }
       await sleep(1000); const b1 = L.length;
       await p.evaluate(() => window.APP.toggleStillRefine());
-      for (let i = 0; i < 120 && !L.slice(b1).some(t => /^§STILL_SHADOW_EDGE (range|VACUOUS)/.test(t)); i++) await sleep(500);
+      for (let i = 0; i < 120 && !(L.slice(b1).some(t => /^§STILL_SHADOW_EDGE (range|VACUOUS)/.test(t)) && L.slice(b1).some(t => /§SKY_PORTAL placed|§SKY_PORTAL off/.test(t))); i++) await sleep(500);
       await sleep(500);
       const fit = L.slice(b1).find(t => /§STILL_SHADOW_FIT env/.test(t)) || '(no §STILL_SHADOW_FIT line)', edge = L.slice(b1).find(t => /^§STILL_SHADOW_EDGE (range|VACUOUS)/.test(t)) || '';
       const g45 = +((/predictedBaseGap45=([0-9.]+)/.exec(edge) || [])[1]), g20 = +((/ 20deg=([0-9.]+)/.exec(edge) || [])[1]);
       const ok = edge && g45 < 0.05 && g20 < 0.05; if (!ok) fails++;
       say('§STILL_SHADOW_GATE ' + (ok ? 'PASS' : 'FAIL') + ' ' + R.db + ' pose=' + ps.name + ' gap45=' + g45 + ' gap20=' + g20);
       say('   [page] ' + fit.slice(0, 420)); say('   [page] ' + (edge || '(no §STILL_SHADOW_EDGE line)').slice(0, 700));
+      L.slice(b1).filter(t => /§PORTAL_SHADOW_BIAS|§SKY_PORTAL_BLOCKED/.test(t)).forEach(t => say('   [page] ' + t.slice(0, 700)));
       await p.evaluate(() => { if (window.APP._stillRefineActive) window.APP.toggleStillRefine(); }); await sleep(2000);
     }
     await p.close();
