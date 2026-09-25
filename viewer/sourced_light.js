@@ -153,7 +153,7 @@
   function glassy(m) { return m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial'; }
   function glassOn(A) {
     var THREE = global.THREE; glassOff(A, true);
-    if (!glassDepth) { glassDepth = new THREE.ShaderMaterial({ vertexShader: 'void main() { gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 ); }', fragmentShader: 'void main() { discard; }' }); glassDepth.userData.slGlassDiscard = true; }
+    if (!glassDepth) { glassDepth = new THREE.ShaderMaterial({ vertexShader: 'void main() { gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 ); }', fragmentShader: 'void main() { gl_FragColor = vec4( 1.0 ); }' }); glassDepth.userData.slGlassDiscard = true; }   // the fragment must write an output: ANGLE rejects a draw with none (GL_INVALID_OPERATION)
     var n = 0; A.scene.traverse(function (o) {
       if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.material || (o.userData && o.userData.skyPortal)) return;
       if (A._r10DepthMat && o.customDepthMaterial === A._r10DepthMat) return;
