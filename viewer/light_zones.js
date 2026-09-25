@@ -346,7 +346,7 @@
   // ══ §SOURCED_DAYLIGHT v2 (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "§SOURCED_DAYLIGHT v2 — SPEC UPDATE", watchdog
   // gate G1-G3, build decisions D1-D6) — per-zone BRE average daylight factor (Littlefair, BRE Digest 309/310):
   //   DF_z = sum(T A theta) / (A_z (1 - R^2))  [%],  R = 0.5 (BRE's typical area-weighted reflectance, light room; stated),
-  //   A_z = zoneInfo.surfaceM2 (faces to SOLID cells). Sources: every glazing tile incl. roof glass (T = 1 - opacity; theta =
+  //   A_z = zoneInfo.surfaceM2 (faces to SOLID cells, glass included) + apertureM2 (D7: BRE's A includes the openings). Sources: every glazing tile incl. roof glass (T = 1 - opacity; theta =
   //   90 x sky fraction of the 5 §SKY_PORTAL_SIDE rays marched on the grid from the outward cell's centre, roof 180 x), except tiles carrying a live portal this still; and the
   //   zone's open apertures (T = 1; up theta 180, side 90 x the mean sky fraction of <= 64 sampled faces).
   //   Per cell: DF_z/100 x f(d)/mean_z f, f(d) = 1/(1+(d/D_z)^2), d = BFS distance through zone cells from the source cells,
@@ -422,7 +422,10 @@
       r.hA += a.hA; r.A += a.upM2 + a.sideM2; r.dir[0] += a.dir[0]; r.dir[1] += a.dir[1]; r.dir[2] += a.dir[2]; r.sideTheta = ts;
       for (var i = 0; i < a.upCells.length; i++) r.src.push(a.upCells[i]); if (ts > 0) for (var j = 0; j < a.sideCells.length; j++) r.src.push(a.sideCells[j]); });
     var zones = Z.zones, DF = new Float32Array(zones + 1), Dz = new Float32Array(zones + 1), lit = [];
-    zs.forEach(function (r, z) { var surf = Z.zoneInfo[z - 1].surfaceM2; r.surf = surf; r.DF = surf > 0 ? r.num / (surf * (1 - R_BRE * R_BRE)) : 0; r.D = r.A > 0 ? r.hA / r.A : cl / 2;
+    // D7: BRE's A = total area of the room surfaces INCLUDING the windows. Glass is SOLID, so the panes are already in
+    // surfaceM2; the open apertures (faces to open-sky cells) are not, so they are added (a zone with open sides otherwise
+    // divided its aperture light by its solid surface only).
+    zs.forEach(function (r, z) { var zi = Z.zoneInfo[z - 1], surf = zi.surfaceM2 + zi.apertureM2; r.surf = surf; r.DF = surf > 0 ? r.num / (surf * (1 - R_BRE * R_BRE)) : 0; r.D = r.A > 0 ? r.hA / r.A : cl / 2;
       DF[z] = r.DF; Dz[z] = r.D; if (r.DF > 0) lit.push(z); });
     // multi-source BFS through zone cells (6-connected: a zone cell's non-solid neighbours are its own zone or open cells)
     if (!Z.dayBuf) Z.dayBuf = { dist: new Uint16Array(N), q: new Int32Array(N), G: new Uint16Array(N) };

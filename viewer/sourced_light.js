@@ -312,22 +312,26 @@
     var src = function (q) { return q.vert + q.roof + q.apUp + q.apSide; };
     rows.sort(function (a, b) { return b[1].DF - a[1].DF; });
     var top = rows.slice(0, 8).map(function (e) { return e[0] + ':' + e[1].DF.toFixed(2) + ':' + src(e[1]).toFixed(1) + ':' + e[1].surf.toFixed(0); });
-    var over10 = rows.filter(function (e) { return e[1].DF > 10; }).map(function (e) { var q = e[1], zi = Z.zoneInfo[e[0] - 1];
-      return e[0] + ':' + q.DF.toFixed(1) + '%:vert' + q.vert.toFixed(1) + '/roof' + q.roof.toFixed(1) + '/apUp' + q.apUp.toFixed(1) + '/apSide' + q.apSide.toFixed(1) + ':surf' + q.surf.toFixed(0) + ':cells' + zi.cells + ':skyLit' + zi.skyLitCells; });
+    // G1 FAIL-to-explain: zones over 10%. Split: every cell sky-lit (the DF is never read: G is written only to non-sky-lit
+    // cells) vs zones that RECEIVE it (listed with their glazing ratio, the BRE driver; <= 25 shown, by cells)
+    var o10 = rows.filter(function (e) { return e[1].DF > 10; }), o10sky = o10.filter(function (e) { var zi = Z.zoneInfo[e[0] - 1]; return zi.skyLitCells >= zi.cells; });
+    var o10recv = o10.filter(function (e) { var zi = Z.zoneInfo[e[0] - 1]; return zi.skyLitCells < zi.cells; }).sort(function (a, b) { return Z.zoneInfo[b[0] - 1].cells - Z.zoneInfo[a[0] - 1].cells; });
+    var over10 = o10recv.slice(0, 25).map(function (e) { var q = e[1], zi = Z.zoneInfo[e[0] - 1];
+      return e[0] + ':' + q.DF.toFixed(1) + '%:vert' + q.vert.toFixed(1) + '/roof' + q.roof.toFixed(1) + '/apUp' + q.apUp.toFixed(1) + '/apSide' + q.apSide.toFixed(1) + ':surf' + q.surf.toFixed(0) + ':glazRatio' + ((q.vert + q.roof) / (q.surf || 1)).toFixed(2) + ':cells' + zi.cells + ':skyLit' + zi.skyLitCells; });
     // G1 FAIL-to-explain: a glazed zone at 0% (its panes counted, theta 0 on every one)
     var glazedZero = []; r.zs.forEach(function (q, z) { if (q.panes > 0 && !(q.DF > 0)) glazedZero.push(z + ':panes' + q.panes + ':vert' + q.vert.toFixed(1) + ':roof' + q.roof.toFixed(1)); });
     var portalOnly = 0; var zoneWithPane = new Set(B.panes.map(function (p) { return p.zone; })); zoneWithPane.forEach(function (z) { if (!r.zs.has(z)) portalOnly++; });
     console.log('§SOURCED_DAYLIGHT zones=' + r.zones + ' litZones=' + r.litZones + ' panes=' + B.panes.length + ' (roof=' + B.cnt.roof + ' portaled=' + r.portaled + ' portaledKept=' + r.portaledKept +
       ' skipped=' + B.cnt.skipped + ' sidesOpen=' + B.cnt.sidesOpen + ' sidesEave=' + B.cnt.sidesEave + ' theta0=' + B.cnt.theta0 + ' of tiles=' + B.cnt.tiles + ') apertures(up/side m2)=' + apUp.toFixed(1) + '/' + apSide.toFixed(1) +
       ' T=' + r.T.toFixed(3) + ' R=' + r.R + ' DFmedian=' + r.DFmedian.toFixed(2) + ' DFmax=' + r.DFmax.toFixed(2) + ' bandsLG10(<2%/2-5%/>5% zones)=' + r.bands.join('/') +
-      ' topZones=[' + top.join(',') + '] over10=[' + over10.join(',') + '] glazedZero=[' + glazedZero.join(',') + '] glazedAllPortaled=' + portalOnly +
+      ' topZones=[' + top.join(',') + '] over10=' + o10.length + ' (allSkyLit=' + o10sky.length + ' maxCells=' + o10sky.reduce(function (m, e) { return Math.max(m, Z.zoneInfo[e[0] - 1].cells); }, 0) + ', receiving=' + o10recv.length + ') over10receiving=[' + over10.join(',') + '] glazedZero=[' + glazedZero.join(',') + '] glazedAllPortaled=' + portalOnly +
       ' droppedBlockedPortals=' + dropped.length + (dropped.length ? ' (blockedFrac ' + dropped.join(',') + ')' : '') + ' gCells=' + r.gCells + ' gCapped=' + r.gCapped +
       ' dial=' + dl + ' uSLSky=' + [SKY[0], SKY[1], SKY[2]].map(function (v) { return v.toFixed(3); }).join(',') + ' baseMs=' + r.baseMs + (B.ms ? ' (base cache built ' + B.ms + ' ms)' : '') + ' buildMs=' + r.buildMs +
       ' texFillMs=' + (tU - t1).toFixed(0) + ' uploadMs=' + uploadMs.toFixed(0) + ' glErr=' + e0 + '/' + e1 + ' MB=' + (rg.length * 2 / 1e6).toFixed(1) + ' ms=' + (performance.now() - t0).toFixed(0));
     // the camera zone (G1 table row)
     var cz = (A._sourcedCap && A._sourcedCap.camZone) || 0, cq = cz ? r.zs.get(cz) : null, czi = cz ? Z.zoneInfo[cz - 1] : null;
     console.log('§SOURCED_DAYLIGHT_CAM camZone=' + cz + (czi ? ' DF=' + (cq ? cq.DF.toFixed(2) : '0.00') + '% band=' + band(cq ? cq.DF : 0) + ' srcM2(vertGlass/roofGlass/apUp/apSide)=' + (cq ? [cq.vert, cq.roof, cq.apUp, cq.apSide].map(function (v) { return v.toFixed(1); }).join('/') : '0/0/0/0') +
-      ' sumTAtheta=' + (cq ? cq.num.toFixed(1) : 0) + ' surfaceM2=' + czi.surfaceM2 + ' D_z=' + (cq ? cq.D.toFixed(2) : '-') + 'm sideTheta=' + (cq && cq.sideTheta != null ? cq.sideTheta.toFixed(1) : '-') + ' panes=' + (cq ? cq.panes : 0) +
+      ' sumTAtheta=' + (cq ? cq.num.toFixed(1) : 0) + ' A_z(surface+aperture)=' + (czi.surfaceM2 + czi.apertureM2).toFixed(1) + ' surfaceM2=' + czi.surfaceM2 + ' D_z=' + (cq ? cq.D.toFixed(2) : '-') + 'm sideTheta=' + (cq && cq.sideTheta != null ? cq.sideTheta.toFixed(1) : '-') + ' panes=' + (cq ? cq.panes : 0) +
       ' cells=' + czi.cells + ' skyLitCells=' + czi.skyLitCells + ' m3=' + czi.m3 : ' (camera not in a light zone)'));
     // G2: area-weighted mean source direction per lit zone (LOG ONLY: no directional weight in the shader this build)
     var dirs = rows.slice().sort(function (a, b) { return src(b[1]) - src(a[1]); }), shown = dirs.slice(0, 60).map(function (e) { var q = e[1], a = src(e[1]) || 1, d = [q.dir[0] / a, q.dir[1] / a, q.dir[2] / a], m = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
