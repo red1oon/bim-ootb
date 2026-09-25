@@ -4492,6 +4492,17 @@ function _renderDiscChains(disc, segs, opts) {
     }
   })(nowTs0);
 }
+// One routed run → its signed GEOM_SWEEP op, or {refused} (no real cross-section, WalkerDoctrine §8). Shared by the walk's
+// _commitDiscChains and the §MEP-REROUTE re-sign, so a re-routed run is signed with the identical payload.
+function _dwChainOp(s) {
+  var xsDisc = (s.from_kind && s.from_kind.indexOf('RW_') === 0) ? s.from_kind.slice(3) : s.disc;
+  var xs = (typeof rwCrossSectionFor === 'function') ? rwCrossSectionFor(xsDisc) : { refused: true, reason: 'rwCrossSectionFor not loaded' };
+  if (xs.refused) return { refused: { disc: xsDisc, reason: xs.reason } };
+  return { op: { op_type: 'GEOM_SWEEP',
+    params: { profile: { w: xs.w, h: xs.h }, path: [s.from.slice(), s.to.slice()],
+              _dw: { disc: s.disc, rule: s.rule, from_kind: s.from_kind, to_kind: s.to_kind,
+                     from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap, crossSection: xs.product } } } };
+}
 async function _commitDiscChains(disc, segs) {
   var O = window.Bonsai && window.Bonsai.oplog; if (!O) return 0;
   var capMax = window.DW_CHAIN_COMMIT_CAP || 120;
@@ -4512,14 +4523,9 @@ async function _commitDiscChains(disc, segs) {
   // narrows correctly; routeChains()' own nn-network segs carry the real discipline directly in s.disc.
   var ops = [], refusedChain = [];
   for (var i = 0; i < cap; i++) {
-    var s = segs[i];
-    var xsDisc = (s.from_kind && s.from_kind.indexOf('RW_') === 0) ? s.from_kind.slice(3) : s.disc;
-    var xs = (typeof rwCrossSectionFor === 'function') ? rwCrossSectionFor(xsDisc) : { refused: true, reason: 'rwCrossSectionFor not loaded' };
-    if (xs.refused) { refusedChain.push({ disc: xsDisc, reason: xs.reason }); continue; }
-    ops.push({ op_type: 'GEOM_SWEEP',
-      params: { profile: { w: xs.w, h: xs.h }, path: [s.from.slice(), s.to.slice()],
-                _dw: { disc: s.disc, rule: s.rule, from_kind: s.from_kind, to_kind: s.to_kind,
-                       from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap, crossSection: xs.product } } });
+    var c = _dwChainOp(segs[i]);
+    if (c.refused) { refusedChain.push(c.refused); continue; }
+    ops.push(c.op);
   }
   var committed = 0;
   if (ops.length) {
@@ -4553,17 +4559,37 @@ async function _commitDiscChains(disc, segs) {
 window.__dwFittings = window.__dwFittings || {};   // disc -> fitting placements (introspection/witness only; redraw
                                                     // doesn't need to replay these — they are committed rows, folded
                                                     // by the normal GEOM_INSERT path like any other insert)
+// One bend fitting → its signed GEOM_INSERT op (shared by the walk and the §MEP-REROUTE re-derive).
+function _dwFitOp(disc, f) {
+  return { op_type: 'GEOM_INSERT', params: { hash: f.hash, placement: f.placement, lod: '200', color: DW_COLOR[disc] || 0xc0c0c0,
+    // landed/prov: M6 mini-BOM RosettaStone lookup provenance (WalkerDoctrine.md §7) — true when this
+    // fitting's rotation was REPLAYED from a real extracted mep_rosettastone_miniset.db fragment, false when
+    // no real match existed and it fell back to fittingOrientation's bisector (flagged low-confidence).
+    _dw: { disc: disc, fit: f.kind, network: f.network, n: f.n, landed: !!f.landed, prov: f.prov } } };
+}
+// LOD-200 → real LOD-300 catalog mesh for freshly committed fittings ({id, hash}[]), the assembly-drop retry idiom.
+function _dwUpgradeFitMeshes(disc, placed) {
+  var O = window.Bonsai && window.Bonsai.oplog, L = window.Bonsai && window.Bonsai.library;
+  if (!O || !L || !placed.length) return;
+  var needs = placed.filter(function (p) { var c = L.get(p.hash); return c && c.gh; });
+  if (!needs.length) return;
+  var upgrade = function (tries) {
+    L.ensureMesh(needs[0].hash).then(function () {
+      needs.forEach(function (p) { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
+      return O.scrubTo(O.length);
+    }).then(function () {
+      if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+      var boxed = needs.filter(function (p) { return L.lodFor(p.id, '200') !== '300'; }).length;
+      console.log('§DW-FIT-MESH disc=' + disc + ' upgraded=' + (needs.length - boxed) + '/' + needs.length);
+      if (boxed && tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300);
+    }).catch(function () { if (tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300); });
+  };
+  upgrade(2);
+}
 async function _commitDiscFittings(disc, fittings) {
   var O = window.Bonsai && window.Bonsai.oplog, L = window.Bonsai && window.Bonsai.library;
   if (!O || !L || !fittings || !fittings.length) return 0;
-  var color = DW_COLOR[disc] || 0xc0c0c0;
-  var ops = fittings.map(function (f) {
-    return { op_type: 'GEOM_INSERT', params: { hash: f.hash, placement: f.placement, lod: '200', color: color,
-      // landed/prov: M6 mini-BOM RosettaStone lookup provenance (WalkerDoctrine.md §7) — true when this
-      // fitting's rotation was REPLAYED from a real extracted mep_rosettastone_miniset.db fragment, false when
-      // no real match existed and it fell back to fittingOrientation's bisector (flagged low-confidence).
-      _dw: { disc: disc, fit: f.kind, network: f.network, n: f.n, landed: !!f.landed, prov: f.prov } } };
-  });
+  var ops = fittings.map(function (f) { return _dwFitOp(disc, f); });
   var committed = 0, ids = [];
   try { var res = await O.commitSeedGroup(ops, 'dwfit-' + disc + '-' + O.length); ids = res.ids || []; committed = ids.length; }
   catch (e) { console.warn('§DW-FIT-COMMIT batch fail ' + (e && e.message)); }
@@ -4571,22 +4597,7 @@ async function _commitDiscFittings(disc, fittings) {
     _redrawAllDiscWalks();
     if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     syncHistory(); audioCue('rollout');
-    var placed = ids.map(function (id, i) { return { id: id, hash: fittings[i].hash }; });
-    var needs = placed.filter(function (p) { var c = L.get(p.hash); return c && c.gh; });
-    if (needs.length) {
-      var upgrade = function (tries) {
-        L.ensureMesh(needs[0].hash).then(function () {
-          needs.forEach(function (p) { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
-          return O.scrubTo(O.length);
-        }).then(function () {
-          if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
-          var boxed = needs.filter(function (p) { return L.lodFor(p.id, '200') !== '300'; }).length;
-          console.log('§DW-FIT-MESH disc=' + disc + ' upgraded=' + (needs.length - boxed) + '/' + needs.length);
-          if (boxed && tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300);
-        }).catch(function () { if (tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300); });
-      };
-      upgrade(2);
-    }
+    _dwUpgradeFitMeshes(disc, ids.map(function (id, i) { return { id: id, hash: fittings[i].hash }; }));
   }
   console.log('§DW-FIT-COMMIT disc=' + disc + ' fittings=' + fittings.length + ' committed=' + committed + ' (1 signed group)');
   window.__dwLastFitDisc = disc;                      // sentinel for witnesses
@@ -4620,8 +4631,15 @@ function _redrawAllDiscWalks() {
 // position signature differs from the one the drawn network was routed from, the network is re-routed with
 // DiscWalker.bridgeRoute (the SAME bridge the walk uses) and redrawn. Runs on every signed change ('bonsai:oplog':
 // grid drag, item drag, undo/redo), so undoing the move re-routes back. Scope, stated: only pattern-bridged networks (the ARC-only
-// generation path); the re-routed runs are UNSIGNED, exactly like the walk's own runs until §STRATEGY L3; bend
-// fittings committed by the original walk are NOT re-derived (recorded follow-up).
+// generation path).
+// §MEP-REROUTE-SIGN (2026-09-26, MODELLER_MASTER NEXT #2) — SPEC: the re-routed network is now SIGNED and its bend
+// fittings RE-DERIVED. Before: the drawn runs moved but the op-log kept the walk's sweeps + fittings at the OLD route
+// (0 new rows). Now the new route (+ DiscWalker.bendFittings of it, the walk's own call) is DIFFED against the disc's
+// active route rows, matched within 1 mm (op-log placements are rounded to 4 dp, so exact keys would re-sign the whole
+// network on undo): unchanged rows stay, new runs/fittings are committed as ONE signed group ('dwrr-<disc>-<n>', same
+// payload builders as the walk), rows no longer in the route are superseded (undone=1; soft, the chain stays valid).
+// Those rows ride the history node of the edit that caused the re-route (ModellerHistory.attachDerived), so one
+// Ctrl+Z restores the move AND the old signed network, one Ctrl+Y the new one; the diff then finds nothing to commit.
 window.__dwRouteSig = window.__dwRouteSig || {};
 function _dwOplogPlacements(disc) {
   var rows = (window.__dwRowsByDisc || {})[disc], O = window.Bonsai && window.Bonsai.oplog;
@@ -4637,12 +4655,97 @@ function _dwOplogPlacements(disc) {
   return out;
 }
 function _dwSig(pl) { return pl ? pl.map(function (p) { return p.x.toFixed(3) + ',' + p.y.toFixed(3) + ',' + p.z.toFixed(3); }).join(';') : ''; }
-function _dwStampRouteSig(disc) { var pl = _dwOplogPlacements(disc); if (pl) window.__dwRouteSig[disc] = _dwSig(pl); }
-function _reRouteMovedWalks() {
+window.__dwRouteRowIds = window.__dwRouteRowIds || {};   // disc -> {id:1} every chain/fit row of this disc's route (walk + re-routes)
+function _dwStampRouteSig(disc) {
+  var pl = _dwOplogPlacements(disc); if (!pl) return;
+  window.__dwRouteSig[disc] = _dwSig(pl);
+  var rows = (window.__dwRowsByDisc || {})[disc] || {}, ids = {};
+  (rows.chain || []).concat(rows.fit || []).forEach(function (id) { ids[id] = 1; });
+  window.__dwRouteRowIds[disc] = ids;                    // a (re-)walk starts a fresh route row set
+}
+// Active route rows of a disc, read from the signed op-log: sweeps {id, a, b} and fittings {id, hash, pl}.
+function _dwActiveRoute(disc) {
+  var want = window.__dwRouteRowIds[disc] || {}, sw = [], ft = [];
+  window.Bonsai.oplog._geomOps().forEach(function (op) {
+    if (!want[op.id]) return; var P = op.parameters || {};
+    if (op.op_type === 'GEOM_SWEEP' && P.path && P.path.length === 2) sw.push({ id: op.id, a: P.path[0], b: P.path[1] });
+    else if (op.op_type === 'GEOM_INSERT' && P.placement) ft.push({ id: op.id, hash: P.hash, pl: P.placement });
+  });
+  return { sweeps: sw, fits: ft };
+}
+var DW_RR_TOL = 0.001;   // 1 mm: the walk routes from in-memory placements, the re-route from 4-dp op-log ones (≤0.05 mm apart, measured)
+function _dwNear(p, q) { return Math.abs(p[0] - q[0]) <= DW_RR_TOL && Math.abs(p[1] - q[1]) <= DW_RR_TOL && Math.abs(p[2] - q[2]) <= DW_RR_TOL; }
+function _dwSameRun(r, s) { return (_dwNear(r.a, s.from) && _dwNear(r.b, s.to)) || (_dwNear(r.a, s.to) && _dwNear(r.b, s.from)); }
+function _dwSameFit(r, f) {
+  var a = r.pl, b = f.placement; if (r.hash !== f.hash) return false;
+  if (!_dwNear([a.x, a.y, a.z], [b.x, b.y, b.z])) return false;
+  return ['rot', 'rotX', 'rotY', 'rotZRad'].every(function (k) { return Math.abs((a[k] || 0) - (b[k] || 0)) <= 1e-3; });
+}
+// Pair each wanted item with one unused active row (cell-bucketed so Terminal/Hospital stay O(n)). Returns
+// { keep:[ids], add:[wanted items], off:[ids] }.
+function _dwDiff(rows, wanted, keyOf, keyOfW, same) {
+  var cell = {}, used = {};
+  rows.forEach(function (r) { var k = keyOf(r); (cell[k] = cell[k] || []).push(r); });
+  var keep = [], add = [];
+  wanted.forEach(function (w) {
+    var k0 = keyOfW(w), hit = null;
+    for (var i = 0; i < k0.length && !hit; i++) { var c = cell[k0[i]] || []; for (var j = 0; j < c.length; j++) { if (!used[c[j].id] && same(c[j], w)) { hit = c[j]; break; } } }
+    if (hit) { used[hit.id] = 1; keep.push(hit.id); } else add.push(w);
+  });
+  return { keep: keep, add: add, off: rows.filter(function (r) { return !used[r.id]; }).map(function (r) { return r.id; }) };
+}
+// Cell key = midpoint on a 1 cm grid; a wanted item probes its own cell and the 26 neighbours (tolerance ≪ cell).
+function _dwCell(x, y, z) { return Math.round(x * 100) + ',' + Math.round(y * 100) + ',' + Math.round(z * 100); }
+function _dwCells(x, y, z) {
+  var cx = Math.round(x * 100), cy = Math.round(y * 100), cz = Math.round(z * 100), out = [];
+  for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) for (var k = -1; k <= 1; k++) out.push((cx + i) + ',' + (cy + j) + ',' + (cz + k));
+  return out;
+}
+async function _dwResignRoute(d, segs) {
+  var O = window.Bonsai.oplog, cap = Math.min(segs.length, window.DW_CHAIN_COMMIT_CAP || 120);
+  var target = segs.slice(0, cap);                      // the same run set the walk signs
+  var fits = [];
+  if (window.DiscWalker.bendFittings) { try { fits = window.DiscWalker.bendFittings(d, segs, {}); } catch (e) { console.warn('§DW-FIT ' + d + ' failed ' + (e && e.message)); } }
+  window.__dwFittings[d] = fits;
+  var act = _dwActiveRoute(d);
+  var mid = function (a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]; };
+  var ds = _dwDiff(act.sweeps, target,
+    function (r) { var m = mid(r.a, r.b); return _dwCell(m[0], m[1], m[2]); },
+    function (s) { var m = mid(s.from, s.to); return _dwCells(m[0], m[1], m[2]); }, _dwSameRun);
+  var df = _dwDiff(act.fits, fits,
+    function (r) { return _dwCell(r.pl.x, r.pl.y, r.pl.z); },
+    function (f) { return _dwCells(f.placement.x, f.placement.y, f.placement.z); }, _dwSameFit);
+  var ops = [], refused = 0, nSweep = 0;
+  ds.add.forEach(function (s) { var c = _dwChainOp(s); if (c.refused) refused++; else { ops.push(c.op); nSweep++; } });
+  df.add.forEach(function (f) { ops.push(_dwFitOp(d, f)); });
+  var off = ds.off.concat(df.off), on = [];
+  if (!ops.length && !off.length) return { changed: false, keep: ds.keep.length + df.keep.length };
+  O._treeOwned = O._treeOwned || new Set();
+  O._setUndone(off, 1);                                 // supersede first → commitSeedGroup's single fold shows the new route only
+  if (ops.length) {
+    var maxR = O.db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'), n = maxR.length ? maxR[0].values[0][0] : 0;
+    try { on = (await O.commitSeedGroup(ops, 'dwrr-' + d + '-' + n)).ids || []; }
+    catch (e) { O._setUndone(off, 0); console.warn('§MEP-REROUTE-SIGN commit failed, old route restored — ' + (e && e.message)); await O.scrubTo(O.length); return { changed: false, failed: true }; }
+  } else { await O.scrubTo(O.length); O._emit(); }
+  on.forEach(function (id) { window.__dwRouteRowIds[d][id] = 1; O._treeOwned.add(id); });
+  off.forEach(function (id) { O._treeOwned.add(id); });
+  var MH = window.ModellerHistory, att = (MH && MH.attachDerived) ? MH.attachDerived(on, off, d) : { attached: null };
+  var fitIds = on.slice(nSweep);
+  _dwUpgradeFitMeshes(d, fitIds.map(function (id, i) { return { id: id, hash: df.add[i].hash }; }));
+  console.log('§MEP-REROUTE-SIGN disc=' + d + ' runs keep=' + ds.keep.length + ' new=' + nSweep + ' superseded=' + ds.off.length +
+    (refused ? ' refused=' + refused : '') + ' · fittings keep=' + df.keep.length + ' new=' + df.add.length + ' superseded=' + df.off.length +
+    ' (bendFittings re-derived, 1 signed group) · history=' + (att.attached ? '"' + att.attached + '"' : 'own node'));
+  return { changed: true, on: on, off: off };
+}
+var _mepRerouteBusy = false, _mepRerouteAgain = false;
+async function _reRouteMovedWalks() {
   if (!window.DiscWalker || !window.DiscWalker.bridgeRoute || !window.__dwBuf || !window.SQL) return;
-  Object.keys(window.__dwRouteSig).forEach(function (d) {
-    var pl = _dwOplogPlacements(d); if (!pl || !pl.length) return;   // walk undone / nothing committed → leave
-    var sig = _dwSig(pl); if (sig === window.__dwRouteSig[d]) return;
+  var MH = window.ModellerHistory; if (MH && MH.inWalk && MH.inWalk()) return;   // a walk in flight owns its rows
+  var discs = Object.keys(window.__dwRouteSig);
+  for (var i = 0; i < discs.length; i++) {
+    var d = discs[i];
+    var pl = _dwOplogPlacements(d); if (!pl || !pl.length) continue;   // walk undone / nothing committed → leave
+    var sig = _dwSig(pl); if (sig === window.__dwRouteSig[d]) continue;
     var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
     try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }   // §ANCHOR-BLIND, as the walk
     var r; try { r = window.DiscWalker.bridgeRoute(d, bdb, window.__dwName || '', pl); } finally { bdb.close(); }
@@ -4650,19 +4753,26 @@ function _reRouteMovedWalks() {
     window.__dwChains[d] = r.segs;
     window.__dwRouteSig[d] = sig;
     _renderDiscChains(d, r.segs, { instant: true });
-    console.log('§MEP-REROUTE disc=' + d + ' fixtures=' + pl.length + ' segs ' + before + '→' + r.segs.length + ' (from the signed op-log positions; unsigned runs, §STRATEGY L3)');
-  });
+    console.log('§MEP-REROUTE disc=' + d + ' fixtures=' + pl.length + ' segs ' + before + '→' + r.segs.length + ' (from the signed op-log positions)');
+    await _dwResignRoute(d, r.segs);
+  }
 }
 // Any signed change (grid drag, item drag, undo/redo) fires 'bonsai:oplog'. Debounced to one check per burst; the
-// signature test makes the common case (nothing generated moved) a no-op. Re-route → redraw the walk layer.
+// signature test makes the common case (nothing generated moved) a no-op. Re-route → redraw the walk layer. Serialized:
+// the re-sign commits (async), and an event that lands meanwhile re-runs the check once it is done.
 var _mepRerouteTimer = null;
 window.addEventListener('bonsai:oplog', function () {
   if (!Object.keys(window.__dwRouteSig).length) return;
+  if (_mepRerouteBusy) { _mepRerouteAgain = true; return; }
   clearTimeout(_mepRerouteTimer);
-  _mepRerouteTimer = setTimeout(function () {
+  _mepRerouteTimer = setTimeout(async function run() {
+    _mepRerouteBusy = true; _mepRerouteAgain = false;
     var before = JSON.stringify(window.__dwRouteSig);
-    try { _reRouteMovedWalks(); } catch (e) { console.warn('§MEP-REROUTE failed', e && e.message); }
-    if (JSON.stringify(window.__dwRouteSig) !== before) _redrawAllDiscWalks();
+    try { await _reRouteMovedWalks(); } catch (e) { console.warn('§MEP-REROUTE failed', e && e.message); }
+    if (JSON.stringify(window.__dwRouteSig) !== before) { _redrawAllDiscWalks(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); syncHistory(); }
+    _mepRerouteBusy = false;
+    if (_mepRerouteAgain) { _mepRerouteAgain = false; run(); }
+    else window.__dwRerouteIdle = (window.__dwRerouteIdle || 0) + 1;   // sentinel for witnesses: a check finished
   }, 0);
 });
 function _hideUndoneWalkLayers() {

@@ -18,7 +18,7 @@
   var OP_TYPES = { 'BUILDING_OPEN': true, 'GEOM_EXTRUDE': true, 'GEOM_EXTRUDE_POLY': true,
     'GEOM_SWEEP': true, 'GEOM_CUT': true, 'GEOM_FILLET': true, 'GEOM_GRID_MOVE': true,
     'GEOM_MOVE': true, 'GEOM_ROTATE': true, 'GEOM_SCALE': true, 'GEOM_INSERT': true,
-    'GEOM_OPENING': true, 'STR_WALK_EDIT': true, 'DISC_WALK': true, 'GEOM_DELETE': true, 'GEOM_CUT_MOVE': true, 'GEOM_CUT_RESIZE': true };
+    'GEOM_OPENING': true, 'STR_WALK_EDIT': true, 'DISC_WALK': true, 'GEOM_DELETE': true, 'GEOM_CUT_MOVE': true, 'GEOM_CUT_RESIZE': true, 'MEP_REROUTE': true };
   var PROFILES = { high: { op: OP_TYPES } };
   PROFILES.all = PROFILES.high; PROFILES.doc = PROFILES.high;   // legacy aliases HistoryBar falls back to
 
@@ -37,6 +37,7 @@
     if (opType === 'GEOM_OPENING') return 'Opening';
     if (opType === 'GEOM_SWEEP') return 'Sweep';
     if (opType === 'STR_WALK_EDIT') return 'STR re-walk';
+    if (opType === 'MEP_REROUTE') return 'Re-route ' + (p.label || '');   // §MEP-REROUTE-SIGN (no edit node at the tip to ride)
     if (opType === 'DISC_WALK') return 'Walk ' + (p.label || '') + ' (' + (p.n || 0) + ')';   // §WALK-GESTURE
     if (opType === 'GEOM_DELETE') return 'Delete #' + p.featureId + (p.rows && p.rows.length > 1 ? ' (+' + (p.rows.length - 1) + ')' : '');
     return opType.replace(/^GEOM_/, '').replace(/_/g, ' ').toLowerCase();
@@ -45,12 +46,37 @@
   // Push ONE node per commit-worth-of-rows (a single commit() row, or a whole commitGesture() group —
   // exactly the unit Bonsai.oplog.undo()/redo() already treats as one atomic LIFO step, Phase 1 fixed).
   // §MHIST-ROWS: opts.rows = the kernel_ops ids this node owns (persisted with the node) — _restore flips exactly those.
+  // §MEP-REROUTE-SIGN: opts.ids = the rows a commit/commitGesture wrote (kept OFF `rows`, so the node stays on the legacy
+  // boundary path until a re-route attaches to it); _lastOp = the newest real edit node, for attachDerived.
+  var _lastOp = null;
   function _push(opType, params, opts) {
     opts = opts || {};
-    HB.push({ bucket: 'op', kind: 'op', type: opType, label: _humanLabel(opType, params),
+    var entry = { bucket: 'op', kind: 'op', type: opType, label: _humanLabel(opType, params),
       readonly: !!opts.readonly, opId: opts.opId, gid: opts.gid, rows: opts.rows || null, params: params || {},
+      ids: opts.ids || null, onRows: opts.onRows || null, offRows: opts.offRows || null,
       ref: (opType === 'BUILDING_OPEN' && params && params.building) ? { building: params.building, db: params.db } : null,
-      sigKey: 'op:' + opType + ':' + (opts.gid || opts.opId || '') });
+      sigKey: 'op:' + opType + ':' + (opts.gid || opts.opId || '') };
+    HB.push(entry);
+    if (!opts.readonly) _lastOp = entry;
+  }
+  // §MEP-REROUTE-SIGN (MODELLER_MASTER NEXT #2) — SPEC. A move of a generated fixture re-routes its network AFTER the move
+  // node is pushed; the re-route commits new signed runs/fittings (`on`) and supersedes old ones (`off`). They ride the
+  // move's node so one Ctrl+Z / Ctrl+Y restores both: the node becomes id-targeted (rows = its own ids) and carries
+  // onRows (active on forward) + offRows (undone on forward). If the tip is not that edit's node (none, or the user
+  // moved the cursor), the re-route gets its OWN node, still one step. Returns { attached: label|null }.
+  function attachDerived(on, off, label) {
+    var e = _lastOp, tip = HB.tipInfo ? HB.tipInfo() : null;
+    var ok = !!(e && tip && tip.sigKey === e.sigKey && e.type !== 'BUILDING_OPEN' && e.type !== 'GEOM_DELETE' &&
+      ((e.rows && e.rows.length) || (e.ids && e.ids.length)));
+    if (ok) {
+      if (!e.rows || !e.rows.length) e.rows = e.ids.slice();
+      e.onRows = (e.onRows || []).concat(on); e.offRows = (e.offRows || []).concat(off);
+      console.log('§MHIST_ATTACH "' + e.label + '" +on=' + on.length + ' +off=' + off.length + ' (one Ctrl+Z restores the edit and its re-route)');
+      return { attached: e.label };
+    }
+    _push('MEP_REROUTE', { label: label }, { onRows: on.slice(), offRows: off.slice(), gid: 'reroute-' + (on[0] || off[0]) });
+    console.log('§MHIST_ATTACH own node "Re-route ' + label + '" on=' + on.length + ' off=' + off.length);
+    return { attached: null };
   }
 
   // Building-open milestone — called from str_walker_outliner.js's _openBuffer on success (the single
@@ -88,6 +114,12 @@
     // deleted rows are `undone` too, so redo()'s lowest-id pick returns a deleted row instead of the node's own
     // (delete D, commit K, Ctrl+Z, Ctrl+Y resurrected D's row) — hence every node with rows is id-targeted.
     var rows = entry.rows, del = entry.type === 'GEOM_DELETE';
+    // §MEP-REROUTE-SIGN: a re-route that rode this node — flip its rows first (sync), the node's own setUndone folds once.
+    var on = entry.onRows || [], off = entry.offRows || [];
+    if ((on.length || off.length) && O._setUndone) {
+      O._setUndone(on, forward ? 0 : 1); O._setUndone(off, forward ? 1 : 0);
+      if (!rows || !rows.length) { rows = on.length ? on : off; del = !on.length; }   // own node: re-apply one flip through setUndone so it folds + emits
+    }
     _pending = (rows && rows.length && O.setUndone) ? O.setUndone(rows, forward ? del : !del) : (forward ? O.redo() : O.undo());
     _pending.catch(function (e) { console.warn('§MHIST_RESTORE_ERR', e); });
   }
@@ -125,7 +157,7 @@
     // Only GEOM_DELETE (below) needs id-targeting, because it flags EXISTING rows instead of pushing a new one.
     O.commit = async function (op, opts) {
       var r = await origCommit.call(this, op, opts);
-      try { _push(op.op_type, op.parameters, { opId: r && r.id }); } catch (e) { console.warn('§MHIST_REC_ERR', e); }
+      try { _push(op.op_type, op.parameters, { opId: r && r.id, ids: r && r.id != null ? [r.id] : null }); } catch (e) { console.warn('§MHIST_REC_ERR', e); }
       return r;
     };
     O.commitGesture = async function (opsArray) {
@@ -134,7 +166,7 @@
         // one node for the WHOLE gesture — label off its first op, gid carries the group for restore's
         // undo()/redo() (which already treats a gesture-grp gid as one atomic LIFO step, §P8).
         var first = (opsArray && opsArray[0]) || {};
-        _push(first.op_type || 'GEOM_MOVE', first.params, { gid: r && r.gid, opId: r && r.id });
+        _push(first.op_type || 'GEOM_MOVE', first.params, { gid: r && r.gid, opId: r && r.id, ids: (r && r.ids) || null });
       } catch (e) { console.warn('§MHIST_REC_ERR', e); }
       return r;
     };
@@ -171,6 +203,7 @@
       } catch (e) { console.warn('§MHIST_REC_ERR', e); }
       return r;
     };
+    O.__mhistInWalk = function () { return !!_walkGesture; };
     O.__mhistBeginWalk = function (label) { _walkGesture = { label: label, rows: [] }; };
     O.__mhistEndWalk = function () {
       var g = _walkGesture; _walkGesture = null;
@@ -187,6 +220,8 @@
     recordBuildingOpen: recordBuildingOpen,
     beginWalk: function (label) { var O = window.Bonsai && window.Bonsai.oplog; if (O && O.__mhistBeginWalk) O.__mhistBeginWalk(label); },
     endWalk: function () { var O = window.Bonsai && window.Bonsai.oplog; if (O && O.__mhistEndWalk) O.__mhistEndWalk(); },
+    inWalk: function () { var O = window.Bonsai && window.Bonsai.oplog; return !!(O && O.__mhistInWalk && O.__mhistInWalk()); },
+    attachDerived: attachDerived,
     undo: HB.undo, redo: HB.redo, jumpTo: HB.jumpTo, pending: pending,
     switchToId: HB.switchToId, tips: HB.tips, dumpTree: HB.dumpTree, setTreeKey: HB.setTreeKey,
     open: HB.open, toggleOpen: HB.toggleOpen, list: HB.list
