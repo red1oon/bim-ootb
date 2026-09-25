@@ -138,7 +138,7 @@
     // §SOURCED_LIGHT_CALIB: a window of area A seen from inside is a Lambertian emitter of the sky's radiance E_sky/pi, so
     // its intensity is E_sky * A / pi — exposure 1. The x10 start value was an eye pick against the unoccluded hemi, which
     // §SOURCED_LIGHT removes indoors; with the lamps in physical units the portals are too.
-    var PORTAL_EXPOSURE = (window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed()) ? 1 : PORTAL_EXPOSURE_EYE;
+    var PORTAL_EXPOSURE = (A._stillCalibOn && window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed()) ? 1 : PORTAL_EXPOSURE_EYE;   // physical only with &calib=1 (paused)
     near.forEach(function (p) {
       if (placed.length >= cap) { capped++; return; }
       var nNeg = p.n.clone().negate();

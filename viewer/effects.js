@@ -4115,7 +4115,11 @@ async function setupEffects(A, renderer, scene, camera) {
       // is on; &lamps= / APP._stillLamps still override (red1's live dial). &sourced=0 keeps 16 (today's look).
       var CALIB_LAMP_LUX = 500, CALIB_SUN_LUX = 100000, CALIB_H = 2.5;
       var _calibSunI = (A._nightMode && A._nightSaved) ? A._nightSaved.sunI * PHOTO_SUN_INTENSITY_SCALE : (A.sun ? A.sun.intensity * PHOTO_SUN_INTENSITY_SCALE : 0);
-      var _calibOn = !!(window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed()) && _calibSunI > 0;
+      // PAUSED (watchdog red1-4b, 2026-09-25: step 1 first — zone binding + no sourceless sky may be all the washout is):
+      // calibration, the camera-fill cut, physical portals and the §METER run only with &calib=1 / APP._stillCalib=true.
+      A._stillCalibOn = A._stillCalib === true || /[?&]calib=1/.test(location.search);
+      var _calibOn = A._stillCalibOn && !!(window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed()) && _calibSunI > 0;
+      if (!A._stillCalibOn) A._stillMeter = false; else if (A._stillMeter === false) A._stillMeter = undefined;
       var _calibMul = _calibOn ? (CALIB_LAMP_LUX / CALIB_SUN_LUX) * _calibSunI * Math.pow(CALIB_H, A._stillLampDecayNow) / (A.NIGHT_LIGHT_INTENSITY_BASE || 2) : 16;
       A._stillLampMul = _stillDial('_stillLamps', 'lamps', _calibMul, 20);   // §FLOOR_WASH was 16 (red1 13:4x "internal points of light should hit stronger")
       console.log('§SOURCED_LIGHT_CALIB ' + (_calibOn ? 'on' : 'off (§SOURCED_LIGHT not installed or no sun)') + ' lampLux=' + CALIB_LAMP_LUX + ' sunLux=' + CALIB_SUN_LUX +
@@ -4323,7 +4327,7 @@ async function setupEffects(A, renderer, scene, camera) {
     A.scene.add(A._camLight);
     // §SOURCED_LIGHT principle 1 (only real sources): the eye-riding fill is not a source. Off for Alt+S when §SOURCED_LIGHT
     // is installed (Clinic corridor, 2026-09-25: at 2 m it gave ~0.75 of the 0.73 metered incident light, the lamps ~0.02).
-    var _camSourcedOff = !A._maxqActive && !!(window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed());
+    var _camSourcedOff = !A._maxqActive && !!A._stillCalibOn && !!(window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed());
     A._camLight.intensity = _camSourcedOff ? 0 : CAM_LIGHT_INTENSITY;
     console.log('§CAM_LIGHT ' + (_camSourcedOff ? 'off (§SOURCED_LIGHT: not a real source)' : 'on') + ' intensity=' + A._camLight.intensity + ' distance=' + CAM_LIGHT_DISTANCE +
       ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
