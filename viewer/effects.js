@@ -3269,7 +3269,8 @@ async function setupEffects(A, renderer, scene, camera) {
     return '§STILL_SHADOW_EDGE range ' + (farWas - nearWas).toFixed(0) + 'm -> ' + range.toFixed(1) + 'm (near ' + nearWas.toFixed(0) + '->' + sc.near.toFixed(1) +
       ' far ' + farWas.toFixed(0) + '->' + sc.far.toFixed(1) + ', points=' + n + ' propsKept=' + kept + ' slabPts=' + slab + ' groundY=' + (gy == null ? 'n/a' : gy.toFixed(2)) + ' topY=' + yTop.toFixed(1) + ' pad=' + pad.toFixed(1) + ')' +
       ' texel=' + texel.toFixed(4) + ' R=' + R + ' normalBias=' + nb.toFixed(4) + 'm ((R+1.5) texels) worldBias=' + worldBias.toFixed(5) + 'm (range/65536) bias=' + A.sun.shadow.bias.toExponential(3) +
-      ' predictedBaseGap45=' + gap(45) + 'm 20deg=' + gap(20) + 'm here(' + el.toFixed(1) + 'deg)=' + gap(Math.max(0.5, el)) + 'm (was 0.305/tan: 45deg=0.305m)';
+      ' predictedBaseGap45=' + gap(45) + 'm 20deg=' + gap(20) + 'm here(' + el.toFixed(1) + 'deg)=' + gap(Math.max(0.5, el)) + 'm (was 0.305/tan: 45deg=0.305m)' +
+      ' thinCasterRisk=' + nb.toFixed(3) + 'm (= normalBias: a caster thinner or lower than this next to its receiver can lose its shadow)';
   }
   A._filmParityShadowFit = function() { return _stillFitApply(true); };
   // §FILM_FIT_PER_SHOT precompute — sampler from cinema_maxq.js: { shots: [[a,b],...], sample(t): sets camera + sun for film
@@ -3526,6 +3527,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // normalBias, and one texel is the distance over which the depth comparison is ambiguous.
     A.sun.shadow.normalBias = _useNormalBias ? (2 * _texelWorld) : 0;
     A.sun.shadow.bias = -(_worldBias / _shadowRange);
+    // §STILL_SHADOW_EDGE: on an Alt+S with the fit on, these staging values are replaced at the end of staging — print that,
+    // not a stale predicted gap (watchdog red1-c6: two lines gave two answers)
+    if (!A._maxqActive && _edgeOn() && _fitOn()) console.log('§PHOTO_SHADOW_CONTACT staging values (worldBias ' + _worldBias.toFixed(3) + 'm, range ' + _shadowRange.toFixed(0) + 'm) are superseded by §STILL_SHADOW_EDGE — the fitted range, bias, normalBias and predictedBaseGap are printed there');
+    else {
     console.log('§PHOTO_SHADOW_CONTACT normalBias=' + A.sun.shadow.normalBias.toFixed(3) + 'm' +
       ' worldBias=' + _worldBias.toFixed(3) + 'm texelWorld=' + _texelWorld.toFixed(4) + 'm' +
       ' predictedBaseGap[42deg=' + (_worldBias / Math.tan(THREE.MathUtils.degToRad(42))).toFixed(2) +
@@ -3538,6 +3543,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' (was -0.0005 = ' + (0.0005 * _shadowRange).toFixed(2) + 'm, which erased every caster under ' +
       (0.0005 * _shadowRange * Math.sin(THREE.MathUtils.degToRad(PHOTO_SUN_ELEVATION_START))).toFixed(1) +
       'm tall at the arc start)');
+    }
     A.sun.shadow.camera.updateProjectionMatrix();
     if (A.ground) A.ground.receiveShadow = true;
     var _shadowList = [];

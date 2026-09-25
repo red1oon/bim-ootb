@@ -21,6 +21,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms)); const T0 = Date.now();
 const [PORT = '8615', OUT = '/tmp/witness_still_shadow_edge'] = process.argv.slice(2); fs.mkdirSync(OUT, { recursive: true });
 const DB = process.env.DB || '/buildings/Hospital_extracted.db', WANT = +(process.env.WANT || 63182), AZ = +(process.env.AZ || 200);
 const SUNS = (process.env.SUNS || '45,20').split(',').map(Number), ARM = process.env.ARM || 'run';
+// PREV=<before-arm log>: its §GLARE lines give sun_gap_thin per pose@sun for the thin-caster increase check
+const PREV_THIN = process.env.PREV ? Object.fromEntries(fs.readFileSync(process.env.PREV, 'utf8').split('\n').map(l => /§GLARE (?:FAIL|PASS) arm=\S+ pose=(\S+) sun=(\S+) .*?sun_gap_thin=(\d+)/.exec(l)).filter(Boolean).map(m => [m[1] + '@' + m[2], +m[3]])) : null;
 const lines = []; const say = s => { const t = '+' + ((Date.now() - T0) / 1000).toFixed(1) + 's ' + s; lines.push(t); console.log(t); fs.writeFileSync(path.join(OUT, 'log_' + ARM + '.txt'), lines.join('\n')); };
 const POSES = [
   { name: 'default_exterior', default: true },
@@ -43,7 +45,7 @@ const POSES = [
   say('arm=' + ARM + ' ' + DB + ' loaded ' + n + '/' + WANT + (n >= WANT ? '' : ' VACUOUS') + ' sw=' + sw);
   if (n < WANT) { await b.close(); process.exitCode = 3; return; }
   await sleep(3000);
-  let glareFail = 0;
+  let glareFail = 0; const posesRun = [];
   const home = await p.evaluate(() => { const A = window.APP; return { pos: A.camera.position.toArray(), tgt: A.controls.target.toArray() }; });
   for (const ps of POSES) for (const el of SUNS) {
     await p.evaluate(() => { const o = document.getElementById('gi-still-overlay'); if (o) o.remove(); });
@@ -69,7 +71,8 @@ const POSES = [
     await p.evaluate(() => window.APP.toggleStillRefine());
     for (let i = 0; i < 300 && !L.slice(b1).some(t => /§STILL_REFINE done/.test(t)); i++) await sleep(1000);
     await sleep(1500);
-    const r = await p.evaluate(() => {
+    const doPortals = el === SUNS[0];   // portal lights do not depend on the sun: once per pose
+    const r = await p.evaluate((doPortals) => {
       const A = window.APP, T = window.THREE, R = A.renderer, gl = R.getContext(), lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
       const glassy = m => m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial';
       const skip = m => !m || m.isMeshBasicMaterial || m.isShaderMaterial || m.isSpriteMaterial || m.isPointsMaterial || m.visible === false || m.colorWrite === false;
@@ -80,24 +83,27 @@ const POSES = [
         // occluders = every drawn shadow caster, whatever its material (the skyline props are MeshBasic and cast: 2026-09-25,
         // their ground shadows were first counted as acne)
         if (o.castShadow && !glassCast && !ms.every(glassy) && o !== A.ground) occ.push(o);
-        if (ms.every(skip)) return; tg.push(o); });
+        // raycast targets = every DRAWN mesh (MeshBasic props too: a sample must be the surface the frame shows, 2026-09-25)
+        if (ms.every(m => !m || m.visible === false || m.colorWrite === false)) return; tg.push(o); });
+      const unlit = m => !m || m.isMeshBasicMaterial || m.isShaderMaterial || m.isSpriteMaterial || m.isPointsMaterial;
       const sc = A.sun.shadow.camera, mz = A.sun.shadow.mapSize.width, texel = Math.max(sc.right - sc.left, sc.top - sc.bottom) / mz;
       const Rr = A.sun.shadow.radius, sd = A.sun.position.clone().sub(A.sun.target.position).normalize(), elev = Math.asin(sd.y) * 180 / Math.PI;
       const W = 48, H = 25, cw = R.domElement.width, ch = R.domElement.height, rc = new T.Raycaster(), M = new T.Matrix4(), mi = new T.Matrix4();
       // light-space axes (for the EDGE offsets)
       const lx = new T.Vector3().setFromMatrixColumn(sc.matrixWorld, 0).normalize(), ly = new T.Vector3().setFromMatrixColumn(sc.matrixWorld, 1).normalize();
-      const pts = []; let skipFar = 0, skipBox = 0;
+      const pts = []; let skipFar = 0, skipBox = 0, skipUnlit = 0;
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const ndc = new T.Vector2((x + 0.5) / W * 2 - 1, 1 - (y + 0.5) / H * 2); rc.setFromCamera(ndc, A.camera); rc.far = Infinity;
         const hs = rc.intersectObjects(tg, false); let h = null;
-        for (const hh of hs) { const m = Array.isArray(hh.object.material) ? hh.object.material[hh.face ? hh.face.materialIndex : 0] : hh.object.material; if (glassy(m) || skip(m)) continue; h = hh; break; }
+        for (const hh of hs) { const m = Array.isArray(hh.object.material) ? hh.object.material[hh.face ? hh.face.materialIndex : 0] : hh.object.material; if (glassy(m) || !m || m.visible === false || m.colorWrite === false) continue; h = hh; break; }
         if (!h || !h.face) continue;
+        { const m = Array.isArray(h.object.material) ? h.object.material[h.face.materialIndex] : h.object.material; if (unlit(m)) { skipUnlit++; continue; } }   // basic/shader: receives no sun shadow
         M.copy(h.object.matrixWorld); if (h.object.isInstancedMesh && h.instanceId != null) { h.object.getMatrixAt(h.instanceId, mi); M.multiply(mi); } else if (h.object.isBatchedMesh && h.batchId != null) { h.object.getMatrixAt(h.batchId, mi); M.multiply(mi); }
         const nn = h.face.normal.clone().transformDirection(M); if (nn.dot(rc.ray.direction) > 0) nn.negate();
         // not drawn / not shadow-mapped: beyond the camera's far plane, or outside the fitted sun box (three returns lit there)
         if (h.distance > A.camera.far * 0.98) { skipFar++; continue; }
         { const v = h.point.clone().applyMatrix4(A.sun.shadow.camera.matrixWorldInverse), c = A.sun.shadow.camera; if (v.x < c.left || v.x > c.right || v.y < c.bottom || v.y > c.top) { skipBox++; continue; } }
-        pts.push({ x, y, px: Math.floor((ndc.x + 1) / 2 * cw), py: Math.floor((ndc.y + 1) / 2 * ch), P: h.point.clone(), n: nn, ground: h.object === A.ground, cls: (h.object.userData && h.object.userData.ifcClass) || '' });
+        pts.push({ x, y, px: Math.floor((ndc.x + 1) / 2 * cw), py: Math.floor((ndc.y + 1) / 2 * ch), P: h.point.clone(), n: nn, ground: h.object === A.ground, cls: (h.object.userData && h.object.userData.ifcClass) || (h.object === A.ground ? 'ground' : (h.object.name || h.object.type)) });
       }
       const sunRay = new T.Raycaster(); sunRay.far = 3000;
       const extent = hh => { try { const o = hh.object, bb = new T.Box3(); let m4 = o.matrixWorld.clone();
@@ -106,10 +112,10 @@ const POSES = [
         else { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); bb.copy(o.geometry.boundingBox); }
         const s = bb.applyMatrix4(m4).getSize(new T.Vector3()); return Math.min(s.x, s.y, s.z); } catch (e) { return null; } };
       const castAt = (P, nrm) => { sunRay.set(P.clone().addScaledVector(nrm, 0.05), sd); const h = sunRay.intersectObjects(occ, false)[0]; return h || null; };
-      pts.forEach(q => { q.nl = q.n.dot(sd); if (q.nl <= 0.1) return; const h = castAt(q.P, q.n); q.ray = h ? 1 : 0; q.thin = h ? (extent(h) != null && extent(h) < 0.3) : false;
-        const off = (Rr + 1) * texel; let flip = false;
-        for (const v of [lx, ly]) for (const sg of [-1, 1]) { const P2 = q.P.clone().addScaledVector(v, sg * off); if ((castAt(P2, q.n) ? 1 : 0) !== q.ray) { flip = true; break; } }
-        q.edge = flip; });
+      const casterName = h => (h.object.userData && h.object.userData.ifcClass) || h.object.name || h.object.type;
+      pts.forEach(q => { q.nl = q.n.dot(sd); if (q.nl <= 0.1) return; const h = castAt(q.P, q.n); q.ray = h ? 1 : 0; q.thin = h ? (extent(h) != null && extent(h) < 0.3) : false; q.caster = h ? casterName(h) : ''; });
+      // EDGE is tested only where RAY and LOOKUP disagree (after the lookup): 5x fewer rays, same verdicts
+      const edgeTest = q => { const off = (Rr + 1) * texel; for (const v of [lx, ly]) for (const sg of [-1, 1]) { const P2 = q.P.clone().addScaledVector(v, sg * off); if ((castAt(P2, q.n) ? 1 : 0) !== q.ray) return true; } return false; };
       // LOOKUP: sun-only white Lambert, float target, no tone mapping (render target)
       const saved = []; A.scene.traverse(l => { if (l.isLight && l !== A.sun) { saved.push([l, l.intensity]); l.intensity = 0; } });
       const prevEnv = A.scene.environment, prevBg = A.scene.background, prevOv = A.scene.overrideMaterial, prevRT = R.getRenderTarget(), vo = A.camera.view ? Object.assign({}, A.camera.view) : null;
@@ -129,21 +135,29 @@ const POSES = [
       // render with ONLY this light on / three's analytic term (I x 1/max(d^decay,0.01) x cone smoothstep x N.L / pi); EDGE =
       // the ray flips for the point moved (R+1) of that map's texels (at the sample's distance) across the ray, 4 directions.
       function T0s() { return { n: 0, litOk: 0, shOk: 0, acne: 0, gap: 0, gapThin: 0, edge: 0, edgeMismatch: 0 }; }
-      const spotRes = { lights: 0, shadowedLamps: 0, byLight: [], all: T0s(), ceilings: T0s(), columns: T0s(), walls: T0s(), floors: T0s() };
+      const kindOf = q => q.ground ? 'ground' : (q.n.y > 0.7 ? 'floor' : (q.n.y < -0.7 ? 'ceiling' : (Math.abs(q.n.y) < 0.3 ? 'wall' : 'slope')));
+      const spotRes = { why: {}, lights: 0, shadowedLamps: 0, byLight: [], all: T0s(), ceilings: T0s(), columns: T0s(), walls: T0s(), floors: T0s() };
       const locals = []; A.scene.traverse(l => { if ((l.isSpotLight || l.isPointLight) && l.visible && l.castShadow && l.intensity > 0) locals.push(l); });
       spotRes.lights = locals.length; spotRes.shadowedLamps = locals.filter(l => l.isPointLight).length;
       const lightRay = new T.Raycaster();
-      for (const Lt of locals.filter(l => l.isSpotLight)) {
+      const LZ = window.LightZones, SLon = !!(window.SourcedLight && window.SourcedLight.isActive && window.SourcedLight.isActive() && LZ && LZ.get());
+      // §SOURCED_LIGHT binds each portal to its zone (sourced_light.js bindLights/slPass): a sample in another zone gets NO light
+      // from it by design — not a shadow. Mirror: fragment zone = LZ.atSurface (off-grid / 0 -> OUTSIDE 65534, SOLID -> -1 unknown).
+      const fragZone = q => { if (!SLon) return -1; const v = LZ.atSurface(q.P, q.n); return v === LZ.SOLID ? -1 : ((v <= 0) ? 65534 : v); };
+      const portalZone = l => { if (!SLon) return 0; let v = LZ.at(l.position); if (v === LZ.SOLID) v = LZ.atLamp(l.position); return (v > 0 && v !== LZ.SOLID) ? v : 0; };
+      spotRes.zoneCulled = 0; spotRes.run = doPortals;
+      for (const Lt of (doPortals ? locals.filter(l => l.isSpotLight) : [])) { const pz = portalZone(Lt);
         const lp = Lt.getWorldPosition(new T.Vector3()), ld = Lt.target.getWorldPosition(new T.Vector3()).sub(lp).normalize();
         const coneCos = Math.cos(Lt.angle), penCos = Math.cos(Lt.angle * (1 - Lt.penumbra)), I = lum(Lt.color) * Lt.intensity, ms2 = Lt.shadow.mapSize.width, Rs = Lt.shadow.radius;
         const cand = [];
         pts.forEach(q => { const v = lp.clone().sub(q.P), d = v.length(); v.normalize(); const nl = q.n.dot(v); if (nl <= 0.1) return;
+          if (pz > 0) { const fz = fragZone(q); if (fz !== -1 && fz !== pz) { spotRes.zoneCulled++; return; } }
           const ac = -v.dot(ld); const tt = Math.max(0, Math.min(1, (ac - coneCos) / Math.max(1e-6, penCos - coneCos))), cone = tt * tt * (3 - 2 * tt); if (cone < 0.05) return;
           const exp = I / Math.max(Math.pow(d, Lt.decay), 0.01) * cone * nl / Math.PI; if (!(exp > 1e-6)) return;
           lightRay.set(q.P.clone().addScaledVector(q.n, 0.05), v); lightRay.far = Math.max(0, d - 0.1); const hh = lightRay.intersectObjects(occ, false)[0];
           const tx = 2 * d * Math.tan(Lt.angle) / ms2, off = (Rs + 1) * tx, a1 = new T.Vector3().crossVectors(v, Math.abs(v.y) < 0.9 ? new T.Vector3(0, 1, 0) : new T.Vector3(1, 0, 0)).normalize(), a2 = new T.Vector3().crossVectors(v, a1).normalize();
-          let flip = false; for (const ax of [a1, a2]) for (const sg of [-1, 1]) { const P2 = q.P.clone().addScaledVector(ax, sg * off), v2 = lp.clone().sub(P2), d2 = v2.length(); lightRay.set(P2.addScaledVector(q.n, 0.05), v2.normalize()); lightRay.far = Math.max(0, d2 - 0.1); if ((lightRay.intersectObjects(occ, false).length ? 1 : 0) !== (hh ? 1 : 0)) { flip = true; break; } }
-          cand.push({ q, exp, ray: hh ? 1 : 0, thin: hh ? (extent(hh) != null && extent(hh) < 0.3) : false, edge: flip }); });
+          const flipF = () => { for (const ax of [a1, a2]) for (const sg of [-1, 1]) { const P2 = q.P.clone().addScaledVector(ax, sg * off), v2 = lp.clone().sub(P2), d2 = v2.length(); lightRay.set(P2.addScaledVector(q.n, 0.05), v2.normalize()); lightRay.far = Math.max(0, d2 - 0.1); if ((lightRay.intersectObjects(occ, false).length ? 1 : 0) !== (hh ? 1 : 0)) return true; } return false; };
+          cand.push({ q, exp, ray: hh ? 1 : 0, thin: hh ? (extent(hh) != null && extent(hh) < 0.3) : false, caster: hh ? casterName(hh) : '', flipF }); });
         if (!cand.length) continue;
         const keep = []; A.scene.traverse(l => { if (l.isLight && l !== Lt) { keep.push([l, l.intensity]); l.intensity = 0; } });
         const rt2 = new T.WebGLRenderTarget(cw, ch, { type: T.FloatType, depthBuffer: true }), white2 = new T.MeshLambertMaterial({ color: 0xffffff }), vo2 = A.camera.view ? Object.assign({}, A.camera.view) : null;
@@ -151,6 +165,8 @@ const POSES = [
         const rec = { pos: lp.toArray().map(v => +v.toFixed(1)), samples: cand.length, acne: 0, gap: 0, edge: 0, bias: Lt.shadow.bias, normalBias: Lt.shadow.normalBias, mapSize: ms2, radius: Rs };
         try { A.scene.environment = null; A.scene.background = null; A.scene.overrideMaterial = white2; R.setRenderTarget(rt2); R.setClearColor(0x000000, 0); R.clear(true, true, true); R.render(A.scene, A.camera);
           cand.forEach(c => { R.readRenderTargetPixels(rt2, c.q.px, c.q.py, 1, 1, buf); const look = (0.2126 * buf[0] + 0.7152 * buf[1] + 0.0722 * buf[2]) / c.exp, lk = look > 0.5 ? 1 : 0;
+            c.edge = (lk !== 1 - c.ray) ? c.flipF() : false; c.look = look;
+            if (!c.edge && lk !== 1 - c.ray) { const k = (c.ray ? 'gap ' : 'acne ') + (c.q.cls || '?') + ' ' + kindOf(c.q) + (c.ray ? ' by ' + c.caster : ''); spotRes.why[k] = (spotRes.why[k] || 0) + 1; }
             const bks = [spotRes.all]; if (c.q.cls === 'IfcColumn') bks.push(spotRes.columns); if (c.q.n.y < -0.7) bks.push(spotRes.ceilings); else if (c.q.n.y > 0.7) bks.push(spotRes.floors); else if (Math.abs(c.q.n.y) < 0.3) bks.push(spotRes.walls);
             bks.forEach(t => { t.n++; if (c.edge) { t.edge++; if (lk === c.ray) t.edgeMismatch++; return; } if (c.ray === 0 && lk === 1) t.litOk++; else if (c.ray === 1 && lk === 0) t.shOk++; else if (c.ray === 0) t.acne++; else { t.gap++; if (c.thin) t.gapThin++; } });
             if (!c.edge && lk !== 1 - c.ray) { if (c.ray === 0) rec.acne++; else rec.gap++; } if (c.edge) rec.edge++; }); }
@@ -167,7 +183,11 @@ const POSES = [
       const all = T0(), ground = T0(), floors = T0(), ceilings = T0(), columns = T0(), walls = {}, wallTexel = {}, mism = [];
       const add = (t, q) => { t.n++; const lk = q.look > thr ? 1 : 0; if (q.edge) { t.edge++; if (lk === q.ray) t.edgeMismatch++; return; }
         if (q.ray === 0 && lk === 1) t.litOk++; else if (q.ray === 1 && lk === 0) t.shOk++; else if (q.ray === 0) t.acne++; else { t.gap++; if (q.thin) t.gapThin++; } };
-      pts.forEach(q => { if (q.ray == null || q.look == null) return; add(all, q);
+      const why = {};
+      pts.forEach(q => { if (q.ray == null || q.look == null) return; const lk0 = q.look > thr ? 1 : 0; q.edge = (lk0 === q.ray) ? edgeTest(q) : false;
+        if (!q.edge && lk0 === q.ray) { const hn = new T.Vector3(q.n.x, 0, q.n.z), hs = new T.Vector3(sd.x, 0, sd.z).normalize(); const ang = hn.lengthSq() > 1e-6 ? Math.round(Math.acos(Math.max(-1, Math.min(1, hn.normalize().dot(hs)))) * 180 / Math.PI / 15) * 15 : '-';
+          const k = (q.ray ? 'gap ' : 'acne ') + q.cls + ' ' + kindOf(q) + ' nrm-sun' + ang + (q.ray ? ' by ' + q.caster + (q.thin ? ' (thin)' : '') : ''); why[k] = (why[k] || 0) + 1; }
+        add(all, q);
         if (q.cls === 'IfcColumn') add(columns, q);
         if (q.ground) add(ground, q); else if (q.n.y > 0.7) add(floors, q); else if (q.n.y < -0.7) add(ceilings, q);
         else if (Math.abs(q.n.y) < 0.3) { const hn = new T.Vector3(q.n.x, 0, q.n.z).normalize(), hs = new T.Vector3(sd.x, 0, sd.z).normalize(); const ang = Math.round(Math.acos(Math.max(-1, Math.min(1, hn.dot(hs)))) * 180 / Math.PI / 15) * 15;
@@ -178,19 +198,28 @@ const POSES = [
       return { lookupOk, sunElevDeg: +elev.toFixed(2), texel: +texel.toFixed(4), box: [+(sc.right - sc.left).toFixed(1), +(sc.top - sc.bottom).toFixed(1)], mapSize: mz, near: +sc.near.toFixed(1), far: +sc.far.toFixed(1), range: +(sc.far - sc.near).toFixed(1),
         radius: Rr, normalBias: +A.sun.shadow.normalBias.toFixed(4), bias: A.sun.shadow.bias, worldBias: +(-A.sun.shadow.bias * (sc.far - sc.near)).toFixed(4), shadowIntensity: shInt,
         predictedBaseGap45: +((-A.sun.shadow.bias * (sc.far - sc.near)) / Math.tan(Math.PI / 4)).toFixed(4), predictedBaseGapHere: +((-A.sun.shadow.bias * (sc.far - sc.near)) / Math.tan(elev * Math.PI / 180)).toFixed(4),
-        shadowPassMs: +ms[1].toFixed(1), samples: pts.length, skippedBeyondCameraFar: skipFar, skippedOutsideSunBox: skipBox, cameraFar: A.camera.far, all, ground, floors, ceilings, columns, walls, spots: spotRes, wallProjectedTexelMedian: wt, mismatches: mism, cam: A.camera.position.toArray().map(v => +v.toFixed(1)) };
-    });
+        shadowPassMs: +ms[1].toFixed(1), samples: pts.length, skippedBeyondCameraFar: skipFar, skippedOutsideSunBox: skipBox, cameraFar: A.camera.far, skippedUnlitSurface: skipUnlit, why: Object.entries(why).sort((a, b) => b[1] - a[1]).slice(0, 5), portalWhy: Object.entries(spotRes.why).sort((a, b) => b[1] - a[1]).slice(0, 5), all, ground, floors, ceilings, columns, walls, spots: spotRes, wallProjectedTexelMedian: wt, mismatches: mism, cam: A.camera.position.toArray().map(v => +v.toFixed(1)) };
+    }, doPortals);
     const G = { sun_acne: r.all.acne, sun_gap: r.all.gap, sun_gap_thin: r.all.gapThin, sun_ceiling_acne: r.ceilings.acne, sun_column_acne: r.columns.acne,
       portal_acne: r.spots.all.acne, portal_gap: r.spots.all.gap, portal_ceiling_acne: r.spots.ceilings.acne, portal_column_acne: r.spots.columns.acne, portal_ceiling_gap: r.spots.ceilings.gap };
-    const bad = Object.values(G).some(v => v > 0) || r.lookupOk !== true; if (bad) glareFail++;
-    say('§GLARE ' + (bad ? 'FAIL' : 'PASS') + ' arm=' + ARM + ' pose=' + ps.name + ' sun=' + el + ' ' + Object.entries(G).map(e => e[0] + '=' + e[1]).join(' ') + ' (outside EDGE; target 0 each) sunSamples=' + r.all.n + ' portalSamples=' + r.spots.all.n + ' shadowedLocalLights=' + r.spots.lights + ' (lamps ' + r.spots.shadowedLamps + ')');
+    // THIN (watchdog): sun_gap_thin in this arm vs the same pose x sun in the kept before-arm log (PREV=<log path>); any increase FAILs
+    let thinUp = 0, thinPrev = null; if (PREV_THIN) { thinPrev = PREV_THIN[ps.name + '@' + el]; if (thinPrev != null && r.all.gapThin > thinPrev) thinUp = r.all.gapThin - thinPrev; }
+    G.sun_gap_thin_increase = thinUp;
+    const bad = Object.values(G).some(v => v > 0) || r.lookupOk !== true; if (bad) glareFail++; posesRun.push(ps.name);
+    say('§GLARE ' + (bad ? 'FAIL' : 'PASS') + ' arm=' + ARM + ' pose=' + ps.name + ' sun=' + el + ' ' + Object.entries(G).map(e => e[0] + '=' + e[1]).join(' ') + ' (outside EDGE; target 0 each) sunSamples=' + r.all.n + ' portalSamples=' + r.spots.all.n + ' shadowedLocalLights=' + r.spots.lights + ' (lamps ' + r.spots.shadowedLamps + ')' + (r.spots.run ? ' portalZoneCulled=' + r.spots.zoneCulled : ' portals=once-per-pose(skipped)') +
+      ' thinPrev=' + thinPrev + ' skippedUnlit=' + r.skippedUnlitSurface + ' skippedOutsideSunBox=' + r.skippedOutsideSunBox);
+    say('   §GLARE_WHY sun top5 ' + JSON.stringify(r.why) + ' | portal top5 ' + JSON.stringify(r.portalWhy));
     const g = re => L.slice(b1).filter(t => re.test(t)).map(t => t.slice(0, 400));
     say('§STILL_SHADOW_EDGE_WITNESS arm=' + ARM + ' pose=' + ps.name + ' sunSet=' + sunSet + ' ' + JSON.stringify(r));
     [/§STILL_SHADOW_FIT env/, /§STILL_SHADOW_EDGE /, /§PHOTO_SHADOW_CONTACT/, /§PHOTO_SHADOW_BIAS/, /§STILL_SHADOW_RADIUS/].forEach(re => g(re).forEach(t => say('   [page] ' + t)));
     const act = await p.evaluate(() => !!window.APP._stillRefineActive); say('   stillActiveAtSample=' + act);
     if (act) await p.evaluate(() => window.APP.toggleStillRefine()); await sleep(2500);
   }
-  say('§GLARE_SUMMARY ' + (glareFail ? 'FAIL' : 'PASS') + ' arm=' + ARM + ' failingPoseSuns=' + glareFail);
+  // PENDING = red1's reported v1337 defects this witness does not measure in THIS run: a green summary must not hide them
+  const pending = ['black_exterior (zone witness)', 'junction_zone_flip (zone witness)', 'covered_open_side_black (zone witness)'];
+  if (!posesRun.some(n => /^terminal_hall/.test(n))) pending.push('terminal_hall ceiling halos / column-top band / mid-ceiling smear (no Terminal pose in this run)');
+  if (!posesRun.some(n => /stair/.test(n))) pending.push('hospital atrium stair-tower wall sawtooth (red1 pose not yet known)');
+  say('§GLARE_SUMMARY ' + (glareFail ? 'FAIL' : (pending.length ? 'PASS-WITH-PENDING' : 'PASS')) + ' arm=' + ARM + ' failingPoseSuns=' + glareFail + ' PENDING=' + JSON.stringify(pending));
   if (glareFail) process.exitCode = 4;
   const fail = guard.shaderError || guard.contextLost || guard.pageError;
   say('GUARD ' + (fail ? 'FAIL' : 'PASS') + ' ' + JSON.stringify(guard)); await b.close(); if (fail) process.exitCode = 2;
