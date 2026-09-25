@@ -125,6 +125,21 @@
     }
     return fb;
   }
+  // §GI_READBACK_CHURN (red1 2026-09-26: Alt+S "stalls and hangs the chrome browser badly"; leak audit: ~370 MB of
+  // short-lived float arrays per press). The accumulation passes add the padded readback straight into one kept
+  // accumulator (G.acc) — no unpadded copy and no Float32Array.from per pass. Same rows, same sums as readRT + add.
+  async function readRTAdd(G, acc, first) {
+    if (window.__GI_STILL_INJECT_READBACK_FLIP) { const fb = await readRT(G); if (first) acc.set(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k]; return; }
+    const rw = G.w, rh = G.h, b = await G.renderer.readRenderTargetPixelsAsync(G.rt, 0, 0, rw, rh);
+    const stride = (b.length === rw * rh * 4) ? rw : (b.length / 4 - rw) / (rh - 1);
+    if (!Number.isInteger(stride) || stride < rw) throw new Error('readback length ' + b.length + ' fits no row stride for ' + rw + 'x' + rh);
+    const row = rw * 4;
+    for (let y = 0; y < rh; y++) {
+      const s0 = y * stride * 4, d0 = y * row;
+      if (first) { for (let x = 0; x < row; x++) acc[d0 + x] = b[s0 + x]; }
+      else { for (let x = 0; x < row; x++) acc[d0 + x] += b[s0 + x]; }
+    }
+  }
   // §GI_STILL_ORIENT — DECIDE THE ORIENTATION BY MATCHING, NEVER BY ASSUMPTION.
   // There are two independent unknowns and a brightness test cannot separate them: whether the
   // colour texture's v runs the same way as the pass's own render targets (flipTex — get this wrong
@@ -710,8 +725,8 @@
           const _tp = performance.now();
           await renderGeom(G);
           _passMs.push(Math.round(performance.now() - _tp));
-          const fb = await readRT(G);
-          if (!acc) acc = Float32Array.from(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k];
+          if (!G.acc || G.acc.length !== G.w * G.h * 4) G.acc = new Float32Array(G.w * G.h * 4);   // §GI_READBACK_CHURN: kept across presses
+          await readRTAdd(G, G.acc, i === 0); acc = G.acc;
           toast('Bounce still — adding bounce light, pass ' + (i + 1) + ' of ' + N + '…');
           await new Promise(r => requestAnimationFrame(() => r()));   // hand the main thread back between passes
         }
