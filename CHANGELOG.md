@@ -4,6 +4,24 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.69.0](https://github.com/red1oon/bim-ootb/compare/v1.68.1...v1.69.0) (2026-09-24)
+
+
+### ✨ Features
+
+* **gi:** bounce light on Alt+S and in the film bake, checked frame-by-frame against a no-bounce control ([#1756](https://github.com/red1oon/bim-ootb/issues/1756)) ([c79120c](https://github.com/red1oon/bim-ootb/commit/c79120cb7f691e6e9e3ec3875417dc3689aef509))
+* **viewer:** Alt+S bounce light live — three r186 core, desktop + WebGPU only (§GI_LIVE) ([#1757](https://github.com/red1oon/bim-ootb/issues/1757)) ([02216f9](https://github.com/red1oon/bim-ootb/commit/02216f9368c79ae5527bdeef2d4755f1f5abf9be))
+
+
+### 🐛 Fixes
+
+* **film:** no frame reuse while a Sanity set is live inside a load-path hold (§FRAME_REUSE_SANITY, sw v1303) ([#1767](https://github.com/red1oon/bim-ootb/issues/1767)) ([247cb9a](https://github.com/red1oon/bim-ootb/commit/247cb9ae6e22fedd33e4a142040639bb4fd713fb))
+* **viewer:** Alt+S bounce orientation at low-contrast views never falls back to colour (§GI_ORIENT_RATIO) ([#1758](https://github.com/red1oon/bim-ootb/issues/1758)) ([25f6f97](https://github.com/red1oon/bim-ootb/commit/25f6f97dc6af1c2a1da333c3bc01e7b65e6958a9))
+* **viewer:** Alt+S Close button ends the still — viewer no longer stuck (§STILL_EXIT_NAV, sw v1295) ([#1765](https://github.com/red1oon/bim-ootb/issues/1765)) ([2fe6360](https://github.com/red1oon/bim-ootb/commit/2fe6360acb486462fbf71dbae4f0f1c8bbf6c599))
+* **viewer:** Alt+S owns the ghost view — no ghost-box shell during a still (§STILL_GHOST_OWNERSHIP) ([#1764](https://github.com/red1oon/bim-ootb/issues/1764)) ([f410933](https://github.com/red1oon/bim-ootb/commit/f41093319b4808d4e3ec63a2fa8f48e0e8721d86))
+* **viewer:** Alt+S row-order probe for views the geometry test can't decide (§GI_ROW_PROBE) ([#1759](https://github.com/red1oon/bim-ootb/issues/1759)) ([bd9089b](https://github.com/red1oon/bim-ootb/commit/bd9089b8981e05e7a459e2a5bc41e8fefedac68e))
+* **viewer:** films use the pre-[#1601](https://github.com/red1oon/bim-ootb/issues/1601) fill light — interiors no longer gloomy (§FILM_FILL_RESTORE) ([#1760](https://github.com/red1oon/bim-ootb/issues/1760)) ([b8f844f](https://github.com/red1oon/bim-ootb/commit/b8f844fb017f2c6b38252515eb7c957b690c3140))
+
 ## [1.68.1](https://github.com/red1oon/bim-ootb/compare/v1.68.0...v1.68.1) (2026-09-18)
 
 
