@@ -186,6 +186,21 @@
       if (shadowed < nShadow) { D.castShadow = true; D.shadow.mapSize.set(PORTAL_SHADOW_SIZE, PORTAL_SHADOW_SIZE); D.shadow.autoUpdate = false; D.shadow.needsUpdate = true; shadowed++; }
       A.scene.add(D); A.scene.add(D.target); placed.push(D); pads++;
     }
+    // §PORTAL_SHADOW_BIAS (bim-compiler PHOTOREAL_STILL_RENDER.md spec, 2026-09-25): same rule as §STILL_SHADOW_EDGE. A
+    // perspective map's texel grows with distance, texel(d) = 2 d tan(angle) / mapSize; the still is seen from one camera, so
+    // each shadowed portal sizes its normal offset at d_ref = its distance to the camera (1..PORTAL_RANGE): normalBias =
+    // (R + 1.5) texels. Depth bias = the 16-bit format step, 1/65536 (world size at d: d^2 (f - n) / (f n) / 65536).
+    // Alt+S only; films keep -0.0005 / 0 (§FILM_PARITY list).
+    if (!A._maxqActive) {
+      var pb = { d: [], tx: [], nb: [], gap: [], gapWas: [] }, gw = function (Lx, d, b) { var c = Lx.shadow.camera; return Math.abs(b) * d * d * (c.far - c.near) / (c.far * c.near); };
+      placed.forEach(function (L) { if (L.userData.pad || !L.castShadow) return;
+        var dRef = Math.max(1, Math.min(PORTAL_RANGE, L.position.distanceTo(cam))), tx = 2 * dRef * Math.tan(L.angle) / L.shadow.mapSize.width;
+        pb.gapWas.push(+gw(L, dRef, L.shadow.bias).toFixed(3));
+        L.shadow.bias = -1 / 65536; L.shadow.normalBias = (L.shadow.radius + 1.5) * tx; L.shadow.needsUpdate = true;
+        pb.d.push(+dRef.toFixed(1)); pb.tx.push(+tx.toFixed(3)); pb.nb.push(+L.shadow.normalBias.toFixed(3)); pb.gap.push(+gw(L, dRef, L.shadow.bias).toFixed(4)); });
+      console.log('§PORTAL_SHADOW_BIAS shadowed=' + pb.d.length + ' dRef=' + JSON.stringify(pb.d) + ' texel=' + JSON.stringify(pb.tx) + ' normalBias=' + JSON.stringify(pb.nb) +
+        ' gapAtDref=' + JSON.stringify(pb.gap) + ' (was bias -0.0005 = world gapAtDref ' + JSON.stringify(pb.gapWas) + ', normalBias 0) bias=-1/65536 R=' + (placed[0] ? placed[0].shadow.radius : '?'));
+    }
     if (A.markDirty) A.markDirty();
     var _plArea = placedInfo.reduce(function (s, q) { return s + q.area; }, 0);
     A._skyPortalLast = placedInfo;
