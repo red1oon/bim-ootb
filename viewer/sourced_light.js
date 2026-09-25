@@ -192,7 +192,11 @@
       if (l === A._camLight) z = 0;   // the camera fill travels with the eye: unbound (its own 4 m reach)
       PZ[i] = z; if (z > 0) { bp++; if (z === OUTSIDE && l.intensity > 0) bo++; } else if (l.intensity > 0) ub++; });
     ord.spots.forEach(function (l, i) { if (i >= MAX_SL) return; var z = 0;
-      if (l.userData && l.userData.skyPortal && l.intensity > 0) { var v = LZ.at(l.position); if (v === SOLID) v = LZ.atLamp(l.position); z = (v > 0 && v !== SOLID) ? v : 0; }   // a portal outside the zones stays unbound
+      // §ZONE_OPEN_SKY: a portal whose cell is open to the sky or off the grid binds to OUTSIDE like a lamp (Clinic corridor
+      // 2026-09-25: 4 of 19 portals sat in courtyard cells that the old rule sealed as a zone; unbound they lit the corridor
+      // through its walls, the §METER read the leak and the corridor median moved 0.537 -> 0.457). Only a portal whose every
+      // lookup is solid stays unbound.
+      if (l.userData && l.userData.skyPortal && l.intensity > 0) { var v = LZ.at(l.position); if (v === SOLID) v = LZ.atLamp(l.position); z = (v > 0 && v !== SOLID) ? v : ((v === 0 || v === -1) ? OUTSIDE : 0); }
       SZ[i] = z; if (z > 0) bs++; });
     if (typeof A._slForcePZ === 'number') PZ.fill(A._slForcePZ);   // witness only: force every point light's zone
     A._slLastOrder = ord;

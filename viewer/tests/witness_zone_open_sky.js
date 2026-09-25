@@ -4,7 +4,8 @@
 //              closing OUTSIDE rule seals them as indoor zones (no hemi / ambient / IBL). 48x25 grid of camera-visible surface
 //              points (glass / basic / shader / invisible materials, sky, portals skipped) at the default pose and an aerial
 //              pose over the building centre: open = a straight-up ray from point + 0.05 m x normal hits nothing; denied = the
-//              zone rule withholds sky (CPU mirror of slSkyKeep: LightZones.surfaceInfo / atSurface with the eye-facing normal,
+//              zone rule withholds sky (glass counts as a blocker for the up ray and the sideways rays: glazing is SOLID in the
+//              grid, a glazed atrium is covered by spec) (CPU mirror of slSkyKeep: LightZones.surfaceInfo / atSurface with the eye-facing normal,
 //              off-grid = OUTSIDE, every probe solid = unknown = denied). openDenied must be 0. gpu*: the same grid read back
 //              from the SHADER (SourcedLight.debugZones(1): R = zone mod 256, G = zone / 256, B = 1 unknown / 0.5 sky kept /
 //              0 sky off; non-lit materials hidden for that render; samples beyond camera.far skipped): gpuAgree / gpuDiffer
@@ -115,11 +116,15 @@ const AERIAL = { Hospital: 1, Clinic: 1, Terminal: 1 };   // the aerial pose on 
         const sunDir = A.sun ? A.sun.position.clone().sub(A.sun.target.position).normalize() : null;   // §GLARE: sun shadow ray
         // sees the sky sideways: 16 world rays (8 azimuths x elevations 26.6 / 45 deg) from point + 0.05 m x normal, none blocked
         const SIDE_RAYS = []; [Math.atan(0.5), Math.atan(1)].forEach(el => { for (let a = 0; a < 8; a++) { const az = a * Math.PI / 4; SIDE_RAYS.push(new T.Vector3(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az))); } });
-        const seesSkySideways = (pt, nn) => { const o = pt.clone().addScaledVector(nn, 0.05); for (const d of SIDE_RAYS) { rc.set(o, d); rc.far = 500; if (!rc.intersectObjects(tg, false).length) return true; } return false; };
+        const seesSkySideways = (pt, nn) => { const o = pt.clone().addScaledVector(nn, 0.05); for (const d of SIDE_RAYS) { rc.set(o, d); rc.far = 500; if (!rc.intersectObjects(occ, false).length) return true; } return false; };
         const glassy = m => m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial';
         const skip = m => !m || m.isMeshBasicMaterial || m.isShaderMaterial || m.isSpriteMaterial || m.isPointsMaterial || m.visible === false || m.colorWrite === false || (m.transparent && m.opacity < 0.95);
+        // occ = tg + pure-glass meshes: glazing is SOLID in the zone grid (a glazed atrium is covered; its daylight is the
+        // §SOURCED_DAYLIGHT panes' term, not the sky), so the zenith and sideways sky rays treat glass as opaque too
+        const occ = [];
         A.scene.traverse(o => { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh || o.isSprite || o.isPoints || o.isLine) || !o.visible) return; const ms = Array.isArray(o.material) ? o.material : [o.material];
-          if (o === A._sky || (o.userData && o.userData.skyPortal) || ms.every(skip)) { hide.push(o); return; } tg.push(o); });
+          if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o !== A._sky && !(o.userData && o.userData.skyPortal) && ms.some(glassy)) occ.push(o);
+          if (o === A._sky || (o.userData && o.userData.skyPortal) || ms.every(skip)) { hide.push(o); return; } tg.push(o); occ.push(o); });
         const M = new T.Matrix4(), mi = new T.Matrix4(), W = 48, H = 25;
         // the shader's fragment zone + sky at the grid pixels (zone-debug colour), non-lit materials hidden, read once
         let px = null; if (SL && SL.debugZones && SLon) { const rt = new T.WebGLRenderTarget(W, H); SL.debugZones(1); const prevRT = A.renderer.getRenderTarget(); hide.forEach(o => { o.visible = false; });
@@ -141,7 +146,7 @@ const AERIAL = { Hospital: 1, Clinic: 1, Terminal: 1 };   // the aerial pose on 
           if (!h || !h.face) continue; c.samples++; if (through) c.through++;
           M.copy(h.object.matrixWorld); if (h.object.isInstancedMesh && h.instanceId != null) { h.object.getMatrixAt(h.instanceId, mi); M.multiply(mi); } else if (h.object.isBatchedMesh && h.batchId != null) { h.object.getMatrixAt(h.batchId, mi); M.multiply(mi); }
           const nn = h.face.normal.clone().transformDirection(M); if (nn.dot(rc.ray.direction) > 0) nn.negate();
-          rc.set(h.point.clone().addScaledVector(nn, 0.05), up); rc.far = 500; const upHit = rc.intersectObjects(tg, false)[0]; const open = !upHit;
+          rc.set(h.point.clone().addScaledVector(nn, 0.05), up); rc.far = 500; const upHit = rc.intersectObjects(occ, false)[0]; const open = !upHit;
           const mr = mirror(h.point, nn), denied = !mr.sky, cls = clsOf(h);
           let shaded = false; if (sunDir) { if (nn.dot(sunDir) <= 0) shaded = true; else { rc.set(h.point.clone().addScaledVector(nn, 0.05), sunDir); rc.far = 800; shaded = rc.intersectObjects(tg, false).length > 0; } } if (shaded) G.shaded++;
           if (open) { c.open++; if (denied) { c.openDenied++; if (mr.z === -1) c.deniedUnknown++; else { c.deniedZone++; zones[mr.z] = (zones[mr.z] || 0) + 1; }
