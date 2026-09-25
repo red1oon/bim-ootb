@@ -4665,6 +4665,7 @@ async function setupEffects(A, renderer, scene, camera) {
         sunI: _s && +_s.intensity.toFixed(3), db: (location.search.match(/db=([^&]+)/) || [])[1] || null,
         w: window.innerWidth, h: window.innerHeight, film: !!A._maxqActive, url: location.search };   // §STILL_POSE_PNG: gi_still.js writes it into the saved PNG
       console.log('§STILL_POSE ' + JSON.stringify(A._stillPoseLast));
+      if (window.StillFault) { try { window.StillFault.report(A); } catch (eF) { console.warn('§FAULT report failed: ' + eF.message); } }   // §FAULT: one self-check line per press
     } catch (eP) { console.warn('§STILL_POSE failed: ' + eP.message); }
     _stillShadowRendersArm();
   }
