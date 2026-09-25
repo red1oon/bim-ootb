@@ -2031,13 +2031,37 @@
   function _d3(p, q) {
     return Math.sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) + (p.z - q.z) * (p.z - q.z));
   }
-  function gate(placements) {
+  // §GATE-STOREY-FLOOR (2026-09-25) — SPEC. The yield rule pushes a lower-priority fixture DOWN by min_clear, never
+  // below `floor`. The floor was ONE global value: the lowest ORIGINAL z of ANY walked fixture of ANY discipline.
+  // Measured on Duplex Walk ALL (2026-09-25): after ELEC+PLB, 20 fixtures were honestly flagged (residual 20, floor
+  // 0.229). Then FP (borrowed from terminal_rules) added sprinklers at z0 = -1.257 (Duplex's T/FDN foundation storey),
+  // the floor dropped to -1.257, and all 20 flagged fixtures were "resolved" by sinking them 1.0–3.5 m (e.g. an ELEC
+  // at 2.46 m → -1.05 m), about 1 m below ground. Residual read 0, and the sunk fixtures were drawn and signed there.
+  // FIX: when the caller passes opts.storeyFloors (sorted real storey floor z's, each = the lowest element bottom of that
+  // storey in THIS building, derived from its own elements by storeyFloors(bdb) below), each fixture's floor is the
+  // highest storey floor at or below its own ORIGINAL z. So a fixture can yield down within its own storey, never
+  // into the one below. Whatever still clashes is FLAGGED (the honest residual pass below). Without opts.storeyFloors
+  // the old global floor is kept (back-compat for callers without a building).
+  function storeyFloors(bdb) {
+    return _rows(bdb, "SELECT MIN(t.center_z - t.bbox_z / 2.0) f FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE m.storey IS NOT NULL AND m.storey <> 'Unknown' AND t.bbox_z IS NOT NULL GROUP BY m.storey")
+      .map(function (r) { return r.f; }).filter(function (f) { return f != null && isFinite(f); }).sort(function (a, b) { return a - b; });
+  }
+  function gate(placements, opts) {
     var ord = order(), clr = clearance(), yields = 0;
+    var floors = opts && opts.storeyFloors && opts.storeyFloors.length ? opts.storeyFloors : null;
     // remember each placement's ORIGINAL z once (idempotent across repeated gate() calls
     // as the modeller re-gates the cumulative set after each new walk).
     placements.forEach(function (p) { if (p._z0 == null) p._z0 = p.z; });
     // floor = lowest measured band across the walked set — the bottom of real, measured space.
     var floor = Infinity; placements.forEach(function (p) { if (p._z0 < floor) floor = p._z0; });
+    // §GATE-STOREY-FLOOR: per-fixture floor = highest real storey floor ≤ its original z (else the global floor).
+    function _floorOf(p) {
+      if (!floors) return floor;
+      var f = floors[0];
+      for (var i = 0; i < floors.length; i++) if (floors[i] <= p._z0 + 1e-6) f = floors[i];
+      return f;
+    }
     var byDisc = {}; placements.forEach(function (p) { (byDisc[p.disc] = byDisc[p.disc] || []).push(p); });
     var discs = Object.keys(byDisc);
     var MAXIT = 16, it = 0, changed = true;
@@ -2048,7 +2072,7 @@
           for (var i = 0; i < hi.length; i++) {
             if (_d3(pl, hi[i]) < mc) {
               var nz = pl.z - mc;
-              if (nz >= floor - 1e-6) { pl.z = nz; if (!pl.gated) yields++; pl.gated = true; changed = true; }
+              if (nz >= _floorOf(pl) - 1e-6) { pl.z = nz; if (!pl.gated) yields++; pl.gated = true; changed = true; }
               break;                                          // re-checked next iteration
             }
           }
@@ -2379,7 +2403,7 @@
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-REROUTE: the walk's own bridge, callable on op-log placements (modeller.html _reRouteMovedWalks)
     bridgeRoute: function (disc, bdb, buildingName, placements) { var b = _bridgeIfEmpty(disc, bdb, buildingName, placements, { segs: [], byRule: [] }, {}); return { segs: b.rc.segs, patternBridge: b.patternInfo }; },
-    gate: gate, repRules: repRules, order: order, clearance: clearance,
+    gate: gate, storeyFloors: storeyFloors, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
     _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,
