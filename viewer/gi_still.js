@@ -465,9 +465,17 @@
   // Default recv=1 (§GI_BOUNCE_STRENGTH sweep, Hospital real GPU): bounce added courtyard 0.8% -> 4.9%, L1 interior
   // 13.0% -> 32.0% of the app frame (linear). Radius x2/x4 did not help (screen-space radius; x4 lowered it).
   const GI_ALBEDO_EST = 0.5;
+  // §GI_RECEIVER_QUANT (red1's rainbow voxel edge, bounce_still_1790353472343): the app frame is 8-bit sRGB, so a near-black
+  // pixel's hue is rounding noise — app [1,1,0] became a pure-yellow receiver and the composite painted [95,94,0], app [1,0,0]
+  // pure red. Each channel carries up to 0.5 code of rounding, two equal channels can differ by 1 code: the chroma (each
+  // channel's offset from the channel mean, in sRGB codes) is shrunk by 1 code before the hue is read. A pixel whose channels
+  // lie within 1 code reads grey; a bright pixel's hue moves by < 1 code (no change to lit surfaces).
   function receiver(G, C) {
-    const T = G.TSL, lum = T.max(T.dot(C.rgb, T.vec3(0.2126, 0.7152, 0.0722)), T.float(1e-3));
-    const est = T.min(C.rgb.div(lum).mul(GI_ALBEDO_EST), T.vec3(1));
+    const T = G.TSL, code = T.sRGBTransferOETF(C.rgb).mul(255), m = code.x.add(code.y).add(code.z).div(3);
+    const dev = code.sub(T.vec3(m)), q = T.sign(dev).mul(T.max(T.abs(dev).sub(1), T.vec3(0)));
+    const Cq = T.sRGBTransferEOTF(T.clamp(T.vec3(m).add(q).div(255), 0, 1));
+    const lum = T.max(T.dot(Cq, T.vec3(0.2126, 0.7152, 0.0722)), T.float(1e-3));
+    const est = T.min(Cq.div(lum).mul(GI_ALBEDO_EST), T.vec3(1));
     return T.mix(C.rgb, est, G.recvU);
   }
   function outputFor(G, mode, enc) {
