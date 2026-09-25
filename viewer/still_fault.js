@@ -36,13 +36,15 @@
     var camZ = Z ? LZ.at(cp) : -1, camOutside = !Z || camZ === 0 || camZ === -1;
     if (Z && camZ === LZ.SOLID) camOutside = !(A._stillCamInsideNow === true);
     // lights on
-    var lamps = [], nLamp = 0, nSpot = 0, nSprite = 0;
+    var lamps = [], nLamp = 0, nLampAll = 0, nSpot = 0, nSprite = 0;
     A.scene.traverse(function (o) {
       if (!o.visible) return;
+      if (o.isPointLight && o !== A._camLight) nLampAll++;   // §FAULT lamps: loaded (the shader cost), lit below
       if ((o.isPointLight || o.isSpotLight) && o.intensity > 0 && o !== A._camLight) { if (o.isPointLight) { nLamp++; lamps.push(o); } else nSpot++; }   // the camera fill travels with the eye: not a lamp
       if ((o.isSprite || o.isPoints) && o.material && o.material.blending === THREE.AdditiveBlending) nSprite++;
     });
     if (camOutside && sunUp) out.extLightsDay = nLamp + nSpot + nSprite;
+    out.lampsLoaded = nLampAll; out.lampsLit = nLamp; out.lampCap = (typeof A._stillLampCap === 'number') ? A._stillLampCap : null;
     // glass
     var seenMat = new Set();
     A.scene.traverse(function (o) {
@@ -108,7 +110,7 @@
     }
     // expStep is LOGGED, not a fault: every press moves the exposure some amount, and no cited limit exists for a step
     var fault = out.unlit > 0 || out.fieldBad > 0 || out.glassOpaque > 0 || out.glassStock > 0 || out.capDropNear > 0 || out.extLightsDay > 0 || out.glassLow > 0 || out.guard > 0;
-    var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' fieldBad=' + out.fieldBad + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay +
+    var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay +
       (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassStock=' + out.glassStock + ' portalsRetired=' + out.portalsRetired +
       ' expStep=' + out.expStep + ' guard=' + out.guard + ' ms=' + (performance.now() - t0).toFixed(1);
     if (fault) console.warn(line); else console.log(line);
