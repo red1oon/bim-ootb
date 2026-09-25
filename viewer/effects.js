@@ -691,91 +691,11 @@ async function setupEffects(A, renderer, scene, camera) {
     var w = bbox.xMax - bbox.xMin, d = bbox.yMax - bbox.yMin;
     var groundZ = bbox.zMin, roofZ = bbox.zMax;
 
-    // Ground uplight + roof downlight per FOOTPRINT EDGE (4 edges of the bbox rectangle — same
-    // approximation the removed edge-lining used, general to any building/any angle since it's
-    // derived fresh from this building's own real bbox, not hardcoded). Pair sits at the edge
-    // midpoint, inset inward so it reads as washing that specific wall face, not floating past it.
-    var inset = Math.min(3, w * 0.1, d * 0.1);
-    var corners = [[bbox.xMin, bbox.yMin], [bbox.xMax, bbox.yMin], [bbox.xMax, bbox.yMax], [bbox.xMin, bbox.yMax]];
-    var normalsIfc = [[0, -1], [1, 0], [0, 1], [-1, 0]];  // outward normal per edge, IFC XY
-    for (var ei = 0; ei < 4; ei++) {
-      var c1 = corners[ei], c2 = corners[(ei + 1) % 4];
-      var midIfcX = (c1[0] + c2[0]) / 2, midIfcY = (c1[1] + c2[1]) / 2;
-      var n = normalsIfc[ei];
-      // Pull the fixture position inward along the inward normal so it sits against the wall.
-      var fx = midIfcX - n[0] * inset, fy = midIfcY - n[1] * inset;
-      var pg = A.ifc2three(fx, fy, groundZ);
-      var up = new THREE.PointLight(0xffaa55, PHOTO_FACADE_UP_BASE, 14, 2);
-      up.position.set(pg.x, pg.y + 0.3, pg.z);
-      A.scene.add(up);
-      _photoUplights.push(up);
-
-      var pr = A.ifc2three(fx, fy, roofZ);
-      var down = new THREE.PointLight(0xffcf9a, PHOTO_FACADE_DOWN_BASE, 16, 2);
-      down.position.set(pr.x, pr.y - 0.3, pr.z);
-      A.scene.add(down);
-      _photoUplights.push(down);
-
-      var midThree = A.ifc2three(midIfcX, midIfcY, groundZ);
-      _photoFacadeLights.push({
-        mid: { x: midThree.x, z: midThree.z },
-        normalThree: { x: n[0], z: -n[1] },  // ifc2three: three.z = -(ifc.y - offset)
-        up: up, down: down
-      });
-    }
-
-    // §PHOTO_ADDONS (user ask, from RealistHospital.jpeg reference analysis): three discrete,
-    // real-data-driven fixtures the reference image relies on, instead of another broad wash —
-    // roof-corner twin spotlight, entry-door sconces, tree uplighting. All derived from REAL
-    // element positions (doors/vegetation queried fresh), not fabricated placement, addressing
-    // the same bbox-approximation weakness Hospital exposed in the facade-wash lights above.
-    // Roof-corner twin spotlight: two tiny bright points at ONE roof corner (picked per-trigger,
-    // nearest the camera — see _updateRoofCornerSpotlight), matching the reference's single
-    // hero highlight rather than uniform coverage.
-    _photoRoofCorners = corners.map(function(c) { return A.ifc2three(c[0], c[1], roofZ); });
-    var _rc = new THREE.PointLight(0xfff2d0, 10, 10, 1.8);
-    var _rc2 = new THREE.PointLight(0xfff2d0, 8, 8, 1.8);
-    A.scene.add(_rc); A.scene.add(_rc2);
-    _photoRoofSpotA = _rc; _photoRoofSpotB = _rc2;
-    _photoUplights.push(_rc, _rc2);  // reuse existing show/hide + dispose list
-
-    // Entry-door sconces: real IfcDoor positions, lowest storeys first (proxy for ground-floor
-    // entries — good enough without a full exterior-perimeter check), capped to avoid clutter.
-    if (A.dbQuery) {
-      var _doors = A.dbQuery(
-        "SELECT et.center_x, et.center_y, et.center_z FROM element_transforms et " +
-        "JOIN elements_meta em ON et.guid = em.guid WHERE em.ifc_class = 'IfcDoor' " +
-        "ORDER BY et.center_z ASC LIMIT 6"
-      );
-      for (var di = 0; di < _doors.length; di++) {
-        var dp = A.ifc2three(_doors[di][0], _doors[di][1], _doors[di][2]);
-        var sconce = new THREE.PointLight(0xffcf9a, 4, 6, 1.6);
-        sconce.position.set(dp.x, dp.y + 2.1, dp.z);
-        A.scene.add(sconce);
-        _photoUplights.push(sconce);
-      }
-    }
-
-    // Tree uplighting: real vegetation elements (name-keyword match — same technique already
-    // used to confirm Hospital's 589 real trees exist), capped to a modest sample for perf —
-    // reads as "the trees are lit" without a per-tree light-count explosion.
-    if (A.dbQuery) {
-      var _trees = A.dbQuery(
-        "SELECT et.center_x, et.center_y, et.center_z FROM element_transforms et " +
-        "JOIN elements_meta em ON et.guid = em.guid " +
-        "WHERE lower(em.element_name) LIKE '%tree%' OR lower(em.element_name) LIKE '%plant%' " +
-        "LIMIT 15"
-      );
-      for (var ti = 0; ti < _trees.length; ti++) {
-        var tp = A.ifc2three(_trees[ti][0], _trees[ti][1], _trees[ti][2]);
-        var treeLight = new THREE.PointLight(0xffddaa, 2.5, 4, 1.8);
-        treeLight.position.set(tp.x, tp.y + 0.3, tp.z);
-        A.scene.add(treeLight);
-        _photoUplights.push(treeLight);
-      }
-      console.log('§PHOTO_ADDONS doors=' + Math.min(_doors ? _doors.length : 0, 6) + ' trees=' + _trees.length);
-    }
-
+    // §NO_PHOTO_PROPS (red1 2026-09-26: "glow bulb ... can't we do away with it?"; ruling PHOTO PROPS: REMOVE COMPLETELY): the
+    // fabricated staging lights that stood here are gone — facade up/downlights, roof-corner twin spots, door sconces, tree
+    // uplights, the skyline's window-light points and the sun sparkle sprites. Only real sources light a still. The skyline
+    // boxes below stay (unlit backdrop geometry, not a source). _photoFacadeLights / _photoRoofSpot* / _photoSparkles stay
+    // empty, so their per-press updaters are no-ops.
     // Distant skyline silhouette (full ring — robust to any orbit angle, per user's own
     // "different angle later" expectation) + sparkled window-lights, dusk-city look.
     // §PHOTO_SKYLINE_DENSER (user ask, "we need more building silhouette" — the original radius
@@ -784,7 +704,6 @@ async function setupEffects(A, renderer, scene, camera) {
     var envelope = Math.max(w, d, 50);
     var radius = envelope * PHOTO_SKYLINE_RADIUS_MULT;
     var group = new THREE.Group();
-    var winPos = [], winCol = [];
     var N = 40;
     // §PHOTO_SKYLINE_SUN_GAP (user ask, "silhouette buildings too close, obscure the Sun"):
     // computed via real vectors, not a hand-derived angle offset between the skyline loop's
@@ -827,80 +746,11 @@ async function setupEffects(A, renderer, scene, camera) {
         ) }));
       box.position.set(base.x, base.y + bh / 2, base.z);
       group.add(box);
-      // §PHOTO_SKYLINE_WINDOW_OCCLUSION (2026-07-16, real bug — "lights not visible on the
-      // silhouette buildings"): window-light points used to be scattered randomly through the
-      // box's HORIZONTAL FOOTPRINT (both X and Z randomized within bw), which places most of them
-      // INSIDE the box's own solid volume — depth-occluded by the box's own nearest opaque wall
-      // from any outside viewing angle. Confirmed via screenshot: the Points object existed,
-      // visible=true, 4308 points, yet zero were actually visible on any skyline box. Fix: place
-      // each point on one of the box's 4 vertical FACE planes (a small outward epsilon so it
-      // isn't z-fighting the box's own surface), like a real building's window grid — not
-      // scattered through the interior.
-      var winCount = Math.floor((bw * bh) / 14);
-      for (var wi = 0; wi < winCount; wi++) {
-        var face = Math.floor(Math.random() * 4);
-        var along = (Math.random() - 0.5) * bw * 0.9;
-        var wy = base.y + Math.random() * bh * 0.9 + 2;
-        var wx, wz, eps = 0.15;
-        if (face === 0) { wx = base.x + bw / 2 + eps; wz = base.z + along; }
-        else if (face === 1) { wx = base.x - bw / 2 - eps; wz = base.z + along; }
-        else if (face === 2) { wx = base.x + along; wz = base.z + bw / 2 + eps; }
-        else { wx = base.x + along; wz = base.z - bw / 2 - eps; }
-        winPos.push(wx, wy, wz);
-        if (Math.random() > 0.25) winCol.push(1.0, 0.8 + Math.random() * 0.2, 0.5 + Math.random() * 0.3); // warm window
-        else winCol.push(0.6, 0.75, 1.0); // occasional cool/blue window
-      }
     }
     A.scene.add(group);
     _photoSkyline = group;
-    var winGeo = new THREE.BufferGeometry();
-    winGeo.setAttribute('position', new THREE.Float32BufferAttribute(winPos, 3));
-    winGeo.setAttribute('color', new THREE.Float32BufferAttribute(winCol, 3));
-    _photoSkylineLights = new THREE.Points(winGeo, new THREE.PointsMaterial({
-      size: 2.4, map: _getSkylineWindowTexture(), alphaTest: 0.02, vertexColors: true,
-      sizeAttenuation: true, transparent: true, opacity: 0.95, depthWrite: false
-    }));
-    A.scene.add(_photoSkylineLights);
-    console.log('§PHOTO_PROPS built uplights=' + _photoUplights.length + ' skylineBoxes=' + group.children.length + ' windowLights=' + (winPos.length / 3));
+    console.log('§PHOTO_PROPS built skylineBoxes=' + group.children.length + ' (no staging lights: §NO_PHOTO_PROPS)');
 
-    // §PHOTO_SPARKLE (user ask: "some sparkle where it hits right angle from Sun to surface" —
-    // reference `relfectsunlight.jpg`: a soft warm glow, not a hard geometric shape). One sprite
-    // per facade-wash edge (reuses the SAME mid/normal already computed above, no new geometry
-    // query), reusing the sun's own lensflare technique (canvas radial gradient, additive sprite —
-    // scene.js §S277f) rather than a new shader. Visibility/size/opacity driven every reassert
-    // tick by the Blinn-Phong half-vector test (dot(normalize(toSun+toCam), facadeNormal)) — the
-    // same physically-standard "specular highlight" condition, just applied to a real facade point
-    // instead of a per-pixel shader term. A thin cross-streak is layered on top of the glow per
-    // "we can have sharp spikes too" — kept subtle so the soft glow (the actual reference) still
-    // dominates. (_photoSparkles already cleared by _disposePhotoProps, always called right
-    // before this function — see line ~445.)
-    var _sparkTex = _getSparkleTexture();
-    var sparklePts = _buildSparklePoints(cx, cy);
-    var _sparkFlatN = 0, _sparkRoundN = 0;
-    if (!sparklePts.length) {
-      // Fallback only — a building with no matching IfcWall/CurtainWall/Plate/Member rows at all
-      // (rare). Keeps the old invented bbox-rectangle points so sparkle never goes fully empty,
-      // same discipline as the door-sconce/tree-uplight addons falling back gracefully above.
-      for (var si = 0; si < corners.length; si++) {
-        var c1s = corners[si], c2s = corners[(si + 1) % 4];
-        var midIfcXs = (c1s[0] + c2s[0]) / 2, midIfcYs = (c1s[1] + c2s[1]) / 2;
-        var midHeightThree = A.ifc2three(midIfcXs, midIfcYs, (groundZ + roofZ) / 2);
-        var ns = normalsIfc[si];
-        sparklePts.push({ mid3: midHeightThree, normalThree: { x: ns[0], z: -ns[1] }, dotMin: PHOTO_SPARKLE_DOT_MIN_FLAT });
-      }
-    }
-    sparklePts.forEach(function(sp) {
-      var sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: _sparkTex, transparent: true, depthWrite: false, depthTest: true,
-        blending: THREE.AdditiveBlending, opacity: 0
-      }));
-      sprite.visible = false;
-      sprite.renderOrder = 997;
-      A.scene.add(sprite);
-      if (sp.dotMin === PHOTO_SPARKLE_DOT_MIN_ROUND) _sparkRoundN++; else _sparkFlatN++;
-      _photoSparkles.push({ sprite: sprite, mid3: sp.mid3, normalThree: sp.normalThree, dotMin: sp.dotMin });
-    });
-    console.log('§PHOTO_SPARKLE_REBUILD points=' + _photoSparkles.length + ' flat=' + _sparkFlatN + ' round=' + _sparkRoundN);
   }
   // §PHOTO_FACING: recomputed FRESH every call from A.camera's CURRENT position/orientation —
   // deliberately NOT cached alongside the building-level fixture cache above. This is the exact
@@ -2577,7 +2427,7 @@ async function setupEffects(A, renderer, scene, camera) {
   };
 
   function _showPhotoProps(show) {
-    if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
+    if (show && (!_photoSkyline || _photoPropsBuilding !== A.activeBuilding)) {   // §NO_PHOTO_PROPS: no uplights any more; key on the skyline
       _disposePhotoProps();
       _buildPhotoProps();
     }
