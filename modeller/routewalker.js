@@ -18,7 +18,7 @@
 
 // ─── Constants ───────────────────────────────────────────────
 var RW_PREFIX = 'RW2D-';
-var MEP_RW_DB_URL = 'mep_rw.db?v=4';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room; v3/v4 add the FP_TERMINAL_01 / ACMV_TERMINAL_01 ad_mep_pattern rows, §MEP-ROUTE-DISC D1/D2)
+var MEP_RW_DB_URL = 'mep_rw.db?v=5';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room; v3/v4/v5 add the FP_TERMINAL_01 / ACMV_TERMINAL_01 / ELEC_DUPLEX_01 ad_mep_pattern rows, §MEP-ROUTE-DISC D1/D2/D3)
 // §RW-CROSSSECTION (WalkerDoctrine.md §8, 2026-07-07): RW_PIPE_NOMINAL_MM/RW_PIPE_CROSS below are BARE
 // INVENTED LITERALS with no product/BOM-line/IFC element behind them — confirmed making every pipe/duct
 // segment (every discipline) render as an identical 50mm SQUARE prism, ~2.3x oversized vs the one real
@@ -92,6 +92,16 @@ var RW_REAL_CROSSSECTION = {
     w: 0.15, h: 0.15,                   // measured bbox cross extents, metres (run length 2.9935 m)
     product: 'Terminal_Rect_Duct_150x150', ifc_class: 'IfcDuctSegment',
     source: 'buildings/Terminal_extracted.db guid T0_Terminal_2xYwS5_$XEdxC3K5YP8DZ9 "Rectangular Duct:jkrME_duct_Radius Elbows / Taps:2502617" Aras 02 (SJTII_Terminal), measured 2026-09-26'
+  },
+  // §MEP-ROUTE-DISC D3 (2026-09-26): ELEC conduit, ONE cited real instance of the Duplex federated MEP model (the same
+  // source L3 used for CW/SP: bim-compiler build/Duplex_mep_extracted.db ← reference/residential/Ifc2x3_Duplex_Federated.ifc).
+  // The Terminal has NO cable containment at all (ELEC = 814 IfcLightFixture + 19 appliances), so the Duplex is the only
+  // real source. Its 10 straight 'Conduit with Fittings:Electrical Metallic Tubing (EMT)' IfcFlowSegment ALL measure
+  // 29.5 × 29.5 mm (10/10 — 1" EMT OD); 8 'Conduit Elbow - Steel' are the fittings. n = 10, small, disclosed.
+  ELEC: {
+    w: 0.0295, h: 0.0295,               // measured bbox cross extents, metres (run length 9.0962 m)
+    product: 'Duplex_EMT_Conduit_29', ifc_class: 'IfcFlowSegment',
+    source: 'build/Duplex_mep_extracted.db guid 3qI03Xhmj12QySDYgBoGRD "Conduit with Fittings:Electrical Metallic Tubing (EMT):575511" (Ifc2x3_Duplex_Federated.ifc), measured 2026-09-26'
   }
 };
 // rwCrossSectionFor(disc) -> the REAL cross-section for a RouteWalker discipline code (CW/SP/FP/ACMV/ELEC),

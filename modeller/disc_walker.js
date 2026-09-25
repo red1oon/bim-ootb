@@ -1451,7 +1451,10 @@
   //   ACMV → ACMV_TERMINAL_01 (D2): 420 'Rectangular Duct:jkrME_duct_Radius Elbows / Taps' IfcDuctSegment of SJTII_Terminal,
   //         X 204 / Y 156 / Z 60; 713 IfcDuctFitting junctions; 289 IfcAirTerminal fed by flex (157) or a tap (132). No
   //         METER step: the Terminal models no AHU/plant. Product = the section mode 150×150 mm (RW_REAL_CROSSSECTION.ACMV).
-  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'], FP: ['FP'], ACMV: ['ACMV'] };   // disc_walker disc -> routewalker pattern discipline(s)
+  //   ELEC → ELEC_DUPLEX_01 (D3): the Duplex federated MEP's 10 'Conduit with Fittings:Electrical Metallic Tubing (EMT)'
+  //         IfcFlowSegment + 8 elbows + 2 IfcFlowTerminal '400 A' panels = a FEEDER (panel rise Z, ceiling mains Y/X); no
+  //         source anywhere wires a branch to a fixture, so ELEC routes MAINS ONLY (no JUNCTION→FIXTURE step — SPEC Q4).
+  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'], FP: ['FP'], ACMV: ['ACMV'], ELEC: ['ELEC'] };   // disc_walker disc -> routewalker pattern discipline(s)
   // real IfcStair columns, deduped by XY (mirrors modeller.html's own _seedRisers) — the riser/STACK candidates
   // SeedTrunk climbs and this bridge treats as the SP discipline's STACK proxy.
   function _risers(bdb) {

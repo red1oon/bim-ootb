@@ -20,6 +20,9 @@
  *                     non-PLB discipline (NEW_DISCS below) through the bridge. RED on main 2026-09-26: `§WALK-PATTERN
  *                     REFUSE no ad_mep_pattern coverage` / `pattern table not loaded` for ACMV/ELEC/FP on all 3 residents.
  *   M6 SIGNED-<disc>  — ≥1 of that discipline's runs is a GEOM_SWEEP in the signed op-log (its cited real product).
+ *                     Products: FP FP_Drop_Pipe 21.3 mm · ACMV Terminal_Rect_Duct_150x150 · ELEC Duplex_EMT_Conduit_29 (mains only).
+ *                     EXPECT_ZERO (below) holds the residents where the engine is MEASURED to keep 0 — those gates assert
+ *                     the bridge ran with anchors and flip RED if the engine starts routing there (re-measure, never assume).
  *   M7 PLB-HELD       — PLB runs/signed equal the 2026-09-26 baseline (18/18 · 18/18 · 2,915/60): the new disciplines
  *                     did not move PLB (the 09-26 "no next-nearest" trap; the bridge half-width max() guard).
  * Residents: default Duplex,SampleCastle,Terminal (one of each path: schedule / legacy / measured-band);
@@ -31,13 +34,18 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const ROOT = path.join(__dirname, '..', '..');
-const NEW_DISCS = ['FP', 'ACMV'];               // §MEP-ROUTE-DISC: pattern-covered non-PLB disciplines under M5/M6 (D1 FP, D2 ACMV)
+const NEW_DISCS = ['FP', 'ACMV', 'ELEC'];       // §MEP-ROUTE-DISC: pattern-covered non-PLB disciplines under M5/M6 (D1 FP, D2 ACMV, D3 ELEC mains-only)
 // Residents where the engine is MEASURED to route 0 for a discipline (recorded, not fixed — the 09-26 "no next-nearest"
 // trap): the gate then asserts the bridge RAN with anchors and kept 0 (`0/N@anchors`, anchors>0; N = engine survivors),
 // and flips RED if it ever starts routing there, so a change of engine behaviour is re-measured, never assumed.
 //   FP/SampleCastle 2026-09-26: 381 pair attempts, 373 killed by routewalker's own clash-skip, the survivors post-filtered.
 const EXPECT_ZERO = { FP: { SampleCastle: 'routewalker clash-skip leaves ~2 survivors, all post-filtered (probe 2026-09-26)' },
-  ACMV: { SampleCastle: '12 window-bound diffusers + 36 corridor junctions, 0 survivors of routewalker clash-skip at the 150 mm duct section (2026-09-26)' } };
+  ACMV: { SampleCastle: '12 window-bound diffusers + 36 corridor junctions, 0 survivors of routewalker clash-skip at the 150 mm duct section (2026-09-26)' },
+  // ELEC's pattern is MAINS ONLY (ELEC_DUPLEX_01: panel rise + ceiling mains; no real source wires a branch to a fixture — SPEC Q4),
+  // so it routes only where routewalker lets junction→junction hops survive its clash-skip: SampleCastle 7, Duplex/Terminal 0 (the
+  // same JUNCTION→JUNCTION steps give CW 2/2 on Duplex). Measured 2026-09-26.
+  ELEC: { Duplex: 'mains-only pattern, 0/0@283 — no junction hop survives routewalker clash-skip (2026-09-26)',
+          Terminal: 'mains-only pattern, 0/0@4231 — no junction hop survives routewalker clash-skip (2026-09-26)' } };
 const PLB_BASE = { Duplex: [18, 18], SampleCastle: [18, 18], Terminal: [2915, 60] };   // M7: runs / signed, main 1069c70c 2026-09-26
 const RESIDENTS = process.argv[2] === 'ALL' ? ['SampleHouse', 'Duplex', 'SampleCastle', 'HHS', 'Clinic', 'Hospital', 'HospitalGarage', 'Terminal'] : process.argv[2] ? process.argv[2].split(',') : ['Duplex', 'SampleCastle', 'Terminal'];
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.sql': 'text/plain' };
