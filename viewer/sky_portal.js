@@ -85,12 +85,16 @@
     // sun shadow map (8) + §SOURCED_LIGHT's zone texture (1) + one map per shadowed portal — 17 on Hospital with 8 portals.
     // A backend capping fragment texture units at 16 fails to link it; fit the shadowed portals into what is left.
     var maxTex = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxTextures) || 16;
-    var slTex = (global.SourcedLight && global.SourcedLight.installed && global.SourcedLight.installed()) ? 1 : 0, texReserve = 8 + slTex;
+    var slTex = (global.SourcedLight && global.SourcedLight.installed && global.SourcedLight.installed()) ? 1 : 0;
+    // §STILL_SHADOW_CASCADE: + (m-1) sampler2DShadow units for the shadow-only cascade lights (added before this runs)
+    var csmTex = (A._stillCascadeExtraUnits | 0), texReserve = 8 + slTex + csmTex;
     var nShadowTex = Math.max(0, Math.min(nShadow, maxTex - texReserve));
-    if (nShadowTex !== nShadow) console.log('§LIGHT_TEXTURE_BUDGET maxTextures=' + maxTex + ' reserve=' + texReserve + ' (batching 2, triplanar 3, env, dfgLUT, sun' + (slTex ? ', zone' : '') + ') shadowedPortals ' + nShadow + ' -> ' + nShadowTex);
+    if (nShadowTex !== nShadow) console.log('§LIGHT_TEXTURE_BUDGET maxTextures=' + maxTex + ' reserve=' + texReserve + ' (batching 2, triplanar 3, env, dfgLUT, sun' + (slTex ? ', zone' : '') + (csmTex ? ', cascades +' + csmTex : '') + ') shadowedPortals ' + nShadow + ' -> ' + nShadowTex);
     nShadow = nShadowTex;
     var maxFrag = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxFragmentUniforms) || 1024;
-    var avail = Math.max(0, maxFrag - LIGHT_RESERVE), portalVec = (gain > 0 && cap > 0) ? Math.floor(avail * PORTAL_SHARE) : 0;
+    // §STILL_SHADOW_CASCADE: per cascade light DirectionalLight (2 vec4) + DirectionalLightShadow (2 vec4); + uCsm* (4 vec4)
+    var csmVec = csmTex ? 4 * csmTex + 4 : 0;
+    var avail = Math.max(0, maxFrag - LIGHT_RESERVE - csmVec), portalVec = (gain > 0 && cap > 0) ? Math.floor(avail * PORTAL_SHARE) : 0;
     var c = 0, sh = 0, used = 0;
     while (c < cap) { var need = (sh < nShadow) ? 12 : 7; if (used + need > portalVec) break; used += need; c++; if (sh < nShadow) sh++; }
     budgetCap = c; budgetShadow = sh;
@@ -100,7 +104,7 @@
     var slOn = !!(global.SourcedLight && global.SourcedLight.installed && global.SourcedLight.installed());
     var slFixed = slOn ? 3 + Math.ceil(c / 4) : 0, perLamp = slOn ? 4.25 : 4;
     A._stillLampCap = Math.min(200, Math.floor((avail - used - slFixed) / perLamp), Math.round(dial(A, '_stillLampCapMax', 'lampcap', 200, 0, 200)));   // &lampcap= (§STILL_LAG)
-    console.log('§LIGHT_UNIFORM_BUDGET maxFragmentUniforms=' + maxFrag + ' reserve=' + LIGHT_RESERVE + ' maxTextures=' + maxTex + ' texReserve=' + texReserve + ' portalCap=' + c + ' (shadowed ' + sh +
+    console.log('§LIGHT_UNIFORM_BUDGET maxFragmentUniforms=' + maxFrag + ' reserve=' + LIGHT_RESERVE + ' maxTextures=' + maxTex + ' texReserve=' + texReserve + (csmTex ? ' (cascades +' + csmTex + ' units, +' + csmVec + ' vectors)' : '') + ' portalCap=' + c + ' (shadowed ' + sh +
       ', ' + used + ' vectors) lampCap=' + A._stillLampCap + ' (' + Math.ceil(A._stillLampCap * perLamp) + ' vectors) sourcedLight=' + (slOn ? slFixed + '+' + Math.ceil(A._stillLampCap / 4) + ' vectors' : 'off') +
       ' total=' + Math.ceil(used + slFixed + A._stillLampCap * perLamp) + '/' + avail +
       ' — set before the lamps are built; one light count per still');
