@@ -82,9 +82,13 @@
 
   // §LIGHT_UNIFORM_BUDGET, part 1 — called at staging, BEFORE the still's lamp set is built, so tools.js caps the lamps.
   var budgetCap = null, budgetShadow = null;
+  // §SKY_VIEW_FIELD V6: with the sky-view field on (Alt+S), sky through glass is the field's F — portals are retired (cap 0,
+  // no shadow maps); &portals=1 keeps them for A/B. Films never run the field, so they keep their portals.
+  function retired(A) { return !!(A && !A._maxqActive && global.SourcedLight && global.SourcedLight.fieldOn && global.SourcedLight.fieldOn(A) && !/[?&]portals=1/.test(location.search) && A._stillPortalsKeep !== true); }
   function budget(A) {
     var gain = dial(A, '_stillPortal', 'portal', 1, 0, 3), cap = Math.round(dial(A, '_stillPortalCap', 'portalcap', 32, 0, 128));
-    var nShadow = Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
+    if (retired(A)) { cap = 0; console.log('§SKY_PORTAL_RETIRED budget portalCap=0 shadowed=0 (§SKY_VIEW_FIELD on; &portals=1 keeps them) — frees the portal vectors + up to 8 shadow-map units'); }
+    var nShadow = retired(A) ? 0 : Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
     // TEXTURE-UNIT budget (2026-09-25): the heaviest Alt+S program binds batching x2 + triplanar x3 + envMap + dfgLUT + the
     // sun shadow map (8) + §SOURCED_LIGHT's zone texture (1) + one map per shadowed portal — 17 on Hospital with 8 portals.
     // A backend capping fragment texture units at 16 fails to link it; fit the shadowed portals into what is left.
@@ -120,6 +124,7 @@
     var t0 = performance.now();
     var gain = dial(A, '_stillPortal', 'portal', 1, 0, 3), cap = Math.round(dial(A, '_stillPortalCap', 'portalcap', 32, 0, 128));
     var nShadow = Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
+    if (retired(A)) { A._skyPortalLast = []; console.log('§SKY_PORTAL off retired=1 (§SKY_VIEW_FIELD carries the sky through glass; &portals=1 for A/B)'); return; }
     if (gain <= 0 || cap <= 0) { console.log('§SKY_PORTAL off portal=' + gain + ' cap=' + cap); return; }
     if (budgetCap == null) budget(A);
     cap = budgetCap; nShadow = budgetShadow;

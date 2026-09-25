@@ -86,7 +86,9 @@ const RUNS = [
           // off-grid was mapped to unknown here); the sky class from LightZones.surfaceInfo (open / sky-lit cells keep it)
           let fz = null, fsky = 1, si = null; if (SLon) { si = LZ.surfaceInfo ? LZ.surfaceInfo(h.point, nn) : null; const v = si ? si.zone : LZ.atSurface(h.point, nn);
             fz = (v === LZ.SOLID) ? -1 : (v <= 0 ? 65534 : v); fsky = si ? si.sky : ((fz === -1 || (fz > 0 && fz < 65534)) ? 0 : 1); }
-          const skyKeep = SLon ? fsky : 1;
+          // §SKY_VIEW_FIELD: with the field on, the sky terms of a zone sample are x F_filtered (LightZones.skyField, the shader's mirror)
+          const SF = SLon && window.SourcedLight.field && window.SourcedLight.field() && LZ.skyField ? LZ.skyField(h.point, nn) : null;
+          const skyKeep = SLon ? (SF && SF.F != null ? SF.F : (SF ? 0 : fsky)) : 1;
           const reaches = l => { if (!SLon) return true; const lz = (l.userData && l.userData.sourcedZone) || 0; if (l.isSpotLight && l.userData && l.userData.skyPortal) { const v2 = LZ.at(l.position); const pz = (v2 > 0 && v2 !== LZ.SOLID) ? v2 : 0; return !pz || fz === -1 || pz === fz; } return !lz || fz === -1 || lz === fz; };
           const P = h.point, E = { sun: 0, hemi: 0, ambient: 0, lamps: 0, portals: 0, camlight: 0, otherPoints: 0, otherSpots: 0, daylight: 0 };
           const C = { sky: [0, 0, 0], lamp: [0, 0, 0], sun: [0, 0, 0] }, grp = k => (k === 'sun' ? 'sun' : (k === 'hemi' || k === 'ambient' || k === 'portals' || k === 'daylight' ? 'sky' : 'lamp'));
@@ -133,7 +135,7 @@ const RUNS = [
           all: summarise(S), indoor: summarise(S.filter(s => s.indoor)), indoorColour: colour(S.filter(s => s.indoor)), daylight: (window.SourcedLight && window.SourcedLight.daylight) ? window.SourcedLight.daylight() : null, floor: summarise(S.filter(s => s.floor)), walls: summarise(S.filter(s => s.wall)), throughGlass: summarise(S.filter(s => s.through)), direct: summarise(S.filter(s => !s.through)), glassRays: glassHits };
       });
       const g = (re, n) => (L.slice(b1).find(t => re.test(t)) || '-').slice(0, n || 220);
-      say('§WASH_SOURCES pose=' + ps.name + ' ' + JSON.stringify(r) + '\n   ' + [g(/§STILL_BASE sky/), g(/§STILL_POSE/), g(/§GI_STILL result/), g(/§SOURCED_DAYLIGHT /, 4000), g(/§SOURCED_DAYLIGHT_CAM/, 2000), g(/§METER camera/, 600)].join('\n   '));
+      say('§WASH_SOURCES pose=' + ps.name + ' ' + JSON.stringify(r) + '\n   ' + [g(/§STILL_BASE sky/), g(/§STILL_POSE/), g(/§GI_STILL result/), g(/§SKY_VIEW_FIELD on/, 1500), g(/§LUX_CHECK_CAM/, 600), g(/§METER camera/, 600)].join('\n   '));
       say('§GLARE bld=' + R.db + ' pose=' + ps.name + ' ' + (r.blackDirectSamples > 0 ? 'FAIL' : 'PASS') + ' black_direct_samples=' + r.blackDirectSamples + ' of ' + r.all.samples); glareTot += r.blackDirectSamples;
       await p.keyboard.press('Escape'); await sleep(3000);
     }

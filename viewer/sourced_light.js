@@ -12,8 +12,8 @@
   var MAX_PL = 256, MAX_SL = 64, SOLID = 65535, OUTSIDE = 65534;   // OUTSIDE: a light (or fragment) off the building's zones
   var orig = null, linkFailed = false, glErrFirstFrame = false;
   var installed = false, active = false, prevOBR = null, tex = null, dummy = null, texKey = null, lastLog = '';
-  var P = new Float32Array(4), ORG = new Float32Array(4), DIM = new Float32Array(4), SKY = new Float32Array(4);   // SKY: §SOURCED_DAYLIGHT uSLSky
-  var rg = null, rgKey = null, dayLast = null;   // §SOURCED_DAYLIGHT: the RG16UI texel array (R = zone | SKY_BIT, G = daylight x 10000)
+  var P = new Float32Array(4), ORG = new Float32Array(4), DIM = new Float32Array(4), SKY = new Float32Array(4);   // uSLSky: x = §SKY_VIEW_FIELD on (1) / off (0)
+  var rg = null, rgKey = null, fieldLast = null, luxLast = null;   // §SKY_VIEW_FIELD: the RG16UI texel array (R = zone | SKY_BIT, G = sky-view F x 10000)
   var PZ = new Float32Array(MAX_PL), SZ = new Float32Array(MAX_SL);   // zone per point / spot light, in three's light order
 
   // ══ §SOURCED_LIGHT_LINK — SPEC (2026-09-25, fix/sl-gl-link) ══
@@ -44,8 +44,8 @@
     'float _slFZ = -1.0;',
     // the fragment's sky class, set with _slFZ: 1 = sees the sky (open cell / sky-lit covered cell / off grid), 0 = covered or unknown
     'float _slSky = 1.0;',
-    // §SOURCED_DAYLIGHT: the daylight fraction (G / 10000) of the SAME texel slFragZone picked; read once with _slFZ
-    'float _slDay = 0.0;',
+    // §SKY_VIEW_FIELD: the fragment's filtered sky-view F (trilinear over same-zone / open cells, once per fragment with _slFZ)
+    'float _slF = 1.0;',
     // raw cell: -1 off grid, 65535 solid, 0 outside, 1.. zone
     'float slZoneAt( vec3 w ) {',
     '  ivec3 c = ivec3( floor( ( w - uSLOrg.xyz ) / uSLParams.y ) );',
@@ -75,9 +75,19 @@
     '  } } }',
     '  if ( bt == 65535u ) { bt = 0u; bg = 0u; for ( int j = 1; j < 4096; j ++ ) { ivec3 c = c0 + ivec3( 0, j, 0 ); if ( c.y >= dim.y ) break;',
     '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u ) { bt = t2.r; bg = t2.g; break; } if ( c.y == dim.y - 1 ) bt = 65535u; } }',
-    '  if ( bt == 65535u ) { _slSky = 0.0; _slDay = 0.0; return -1.0; }',
-    '  _slDay = float( bg ) / 10000.0;',
+    '  if ( bt == 65535u ) { _slSky = 0.0; _slF = 0.0; return -1.0; }',
     '  uint z = bt & 0x3FFFu; _slSky = ( z == 0u || ( bt & 0x4000u ) != 0u ) ? 1.0 : 0.0;',
+    // §SKY_VIEW_FIELD V5 — irradiance-volume filter (Greger et al. 1998): 8 texels around wp + 0.5 cell along the eye-facing
+    // normal, trilinear weights, kept only when not SOLID and in the fragment's zone or open; renormalised; none -> picked cell
+    '  _slF = 1.0;',
+    '  if ( z != 0u && uSLSky.x > 0.5 ) {',
+    '    vec3 g = ( wp + wn * 0.5 * uSLParams.y - uSLOrg.xyz ) / uSLParams.y - 0.5; ivec3 b = ivec3( floor( g ) ); vec3 f = g - vec3( b ); float sw = 0.0, sf = 0.0;',
+    '    for ( int o = 0; o < 8; o ++ ) { ivec3 d = ivec3( o & 1, ( o >> 1 ) & 1, ( o >> 2 ) & 1 ); ivec3 c = b + d;',
+    '      if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
+    '      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r == 65535u ) continue; uint tz = t2.r & 0x3FFFu; if ( tz != z && tz != 0u ) continue;',
+    '      vec3 wv = mix( vec3( 1.0 ) - f, f, vec3( d ) ); float w = wv.x * wv.y * wv.z; sw += w; sf += w * float( t2.g ) / 10000.0; }',
+    '    _slF = ( sw > 0.0 ) ? sf / sw : float( bg ) / 10000.0;',
+    '  }',
     '  return ( z == 0u ) ? 65534.0 : float( z );',
     '}',
     // a bound light (lz >= 1, OUTSIDE included) reaches only fragments of its own zone; unbound (0) and unknown: as today.
@@ -86,23 +96,18 @@
     '  if ( uSLParams.x < 0.5 || lz < 0.5 ) return 1.0;',
     '  return ( _slFZ < -0.5 || abs( _slFZ - lz ) < 0.5 ) ? 1.0 : 0.0;',
     '}',
-    // §SOURCED_DAYLIGHT: covered, non-sky-lit zone fragments get G/10000 x uSLSky (hemi sky colour x intensity x &daylight) as
-    // indirect irradiance — the BRE daylight factor of their zone, distributed by distance to its windows / openings
-    'vec3 slDaylight() {',
-    '  if ( uSLParams.x < 0.5 || _slSky > 0.5 || _slFZ < 0.5 || _slFZ > 65533.5 ) return vec3( 0.0 );',
-    '  return _slDay * uSLSky.rgb;',
-    '}',
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
     // sky only where the sampled cell sees it (_slSky, §ZONE_OPEN_SKY). Unknown (-1: a fully solid column above) is a building
     // surface too (wall foot, ceiling-panel strip): it loses the sky like a covered one. Left at 1 it took the full hemi, and
     // the §METER's +4-6 stops turned it purple (Clinic/Hospital 2026-09-25)
+    // §SKY_VIEW_FIELD on: a zone fragment's sky terms x F_filtered (outside 1; unknown -1 keeps indoorSky as before)
+    '  if ( uSLSky.x > 0.5 ) return ( _slFZ < -0.5 ) ? uSLParams.z : _slF;',
     '  return ( _slSky > 0.5 ) ? 1.0 : uSLParams.z;',
     '}',
     '#else',
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
     'float slSkyKeep( vec3 posView, vec3 nView ) { return 1.0; }',
-    'vec3 slDaylight() { return vec3( 0.0 ); }',
     '#endif', ''].join('\n');
   // §SOURCED_LIGHT_LINK: the one slFragZone call per fragment, before three's light loops (geometryPosition/geometryNormal
   // are declared at the top of lights_fragment_begin). Staged (x) or zone-debug (w) only: nav pays nothing.
@@ -123,7 +128,7 @@
     var s0 = 'getSpotLightInfo( spotLight, geometryPosition, directLight );';
     if (fb.indexOf(s0) >= 0) { fb = fb.replace(s0, s0 + '\n\t\tdirectLight.color *= slPass( uSLSZ[ UNROLLED_LOOP_INDEX / 4 ][ UNROLLED_LOOP_INDEX - ( UNROLLED_LOOP_INDEX / 4 ) * 4 ], geometryPosition, geometryNormal );'); ok++; }
     var a0 = 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );';
-    if (fb.indexOf(a0) >= 0) { fb = fb.replace(a0, 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor ) * slSkyKeep( geometryPosition, geometryNormal ) + slDaylight();'); ok++; }   // + §SOURCED_DAYLIGHT (once, no per-light code)
+    if (fb.indexOf(a0) >= 0) { fb = fb.replace(a0, 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor ) * slSkyKeep( geometryPosition, geometryNormal );'); ok++; }
     var h0 = 'irradiance += getHemisphereLightIrradiance(';   // also matches the §SKY_OCCLUSION-patched line
     if (fb.indexOf(h0) >= 0) { fb = fb.replace(h0, 'irradiance += slSkyKeep( geometryPosition, geometryNormal ) * getHemisphereLightIrradiance('); ok++; }
     C.lights_fragment_begin = fb;
@@ -140,7 +145,8 @@
     if (C.dithering_fragment && C.dithering_fragment.indexOf('uSLParams') < 0) {
       C.dithering_fragment = C.dithering_fragment + '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
         'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : ( _slSky > 0.5 ? 0.5 : 0.0 ), 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
-        'if ( uSLParams.w > 1.5 ) { mat4 _vi = inverse( viewMatrix ); vec3 _wp = ( _vi * vec4( - vViewPosition, 1.0 ) ).xyz; vec3 _wn = normalize( ( _vi * vec4( normal, 0.0 ) ).xyz ); vec3 _q = _wp + _wn * 0.2;\n' +
+        'if ( uSLParams.w > 5.5 && uSLParams.w < 6.5 ) { gl_FragColor = vec4( _slF, ( _slFZ > 0.5 && _slFZ < 65533.5 ) ? 1.0 : 0.0, _slSky, 1.0 ); }\n' +   // §SKY_VIEW_FIELD SKY_STEP readback: F_filtered
+        'else if ( uSLParams.w > 1.5 ) { mat4 _vi = inverse( viewMatrix ); vec3 _wp = ( _vi * vec4( - vViewPosition, 1.0 ) ).xyz; vec3 _wn = normalize( ( _vi * vec4( normal, 0.0 ) ).xyz ); vec3 _q = _wp + _wn * 0.2;\n' +
         '  if ( uSLParams.w < 2.5 ) { float _r = slZoneAt( _q ); float _ur = _r < 0.0 ? 0.0 : _r; gl_FragColor = vec4( mod( _ur, 256.0 ) / 255.0, floor( _ur / 256.0 ) / 255.0, _r < 0.0 ? 1.0 : 0.0, 1.0 ); }\n' +
         '  else if ( uSLParams.w < 3.5 ) { vec3 _g = ( _q - uSLOrg.xyz ) / ( uSLParams.y * uSLDim.xyz ); gl_FragColor = vec4( clamp( _g, 0.0, 1.0 ), 1.0 ); }\n' +
         '  else if ( uSLParams.w > 4.5 ) { gl_FragColor = vec4( clamp( ( - vViewPosition ) / 40.0 + 0.5, 0.0, 1.0 ), 1.0 ); }\n' +
@@ -286,60 +292,106 @@
   }
 
 
-  // ══ §SOURCED_DAYLIGHT v2 — per still: portal exclusion (G3), DF + G (LightZones.daylight), G into the RG16UI texel array,
-  // re-upload, uSLSky, logs. Alt+S only: stage() never runs for films (A._maxqActive) — there is no film path.
-  function skyNow(A) { var d = dayLast ? dayLast.dial : 0, h = A.hemi;
-    if (!h || !d) { SKY[0] = SKY[1] = SKY[2] = 0; SKY[3] = 0; return; }
-    SKY[0] = h.color.r * h.intensity * d; SKY[1] = h.color.g * h.intensity * d; SKY[2] = h.color.b * h.intensity * d; SKY[3] = d; }
-  function stageDaylight(A, Z) {
-    var LZ = global.LightZones, SP = global.SkyPortal, dl = dial(A, '_stillDaylight', 'daylight', 1, 0, 3), t0 = performance.now();
-    if (!LZ || !LZ.daylight) return null;
-    // G3: portals placed this still — a live portal's pane is excluded (its light already delivers it); a blocked portal
-    // (§SKY_PORTAL_BLOCKED blockedFrac >= 0.5) keeps its pane in the DF and its light is dropped (intensity 0, pad kept)
-    var lights = (SP && SP.placedLights) ? SP.placedLights() : [], ex = new Set(), kept = new Set(), byKey = new Map();
-    lights.forEach(function (L) { var u = L.userData || {}; if (u.pad || !u.paneKey || !(L.intensity > 0)) return;
-      if (u.blockedFrac >= 0.5) { kept.add(u.paneKey); byKey.set(u.paneKey, L); } else ex.add(u.paneKey); });
-    var r = LZ.daylight(A, ex, kept); if (!r) return null;
-    var dropped = []; r.keptKeys.forEach(function (k) { var L = byKey.get(k); if (L) { dropped.push((L.userData.blockedFrac).toFixed(2)); L.intensity = 0; } });
-    // G into the texel array, re-upload
-    var G = Z.dayG, n = Z.zone.length, t1 = performance.now(); for (var i = 0; i < n; i++) rg[i * 2 + 1] = G[i];
-    var tU = performance.now(), gl = A.renderer.getContext(), e0 = gl.getError(); tex.needsUpdate = true; A.renderer.initTexture(tex); var e1 = gl.getError(), uploadMs = performance.now() - tU;
-    var out = { dial: dl, r: r, droppedBlockedPortals: dropped.length };
-    SKY[0] = SKY[1] = SKY[2] = 0; SKY[3] = dl; if (A.hemi) { SKY[0] = A.hemi.color.r * A.hemi.intensity * dl; SKY[1] = A.hemi.color.g * A.hemi.intensity * dl; SKY[2] = A.hemi.color.b * A.hemi.intensity * dl; }
-    var B = r.B, apUp = 0, apSide = 0; B.ap.forEach(function (a) { apUp += a.upM2; apSide += a.sideM2; });
-    var band = function (v) { return v <= 0 ? '0' : (v < 2 ? '<2%' : (v <= 5 ? '2-5%' : '>5%')); };
-    var rows = []; r.zs.forEach(function (q, z) { if (q.DF > 0) rows.push([z, q]); });
-    var src = function (q) { return q.vert + q.roof + q.apUp + q.apSide; };
-    rows.sort(function (a, b) { return b[1].DF - a[1].DF; });
-    var top = rows.slice(0, 8).map(function (e) { return e[0] + ':' + e[1].DF.toFixed(2) + ':' + src(e[1]).toFixed(1) + ':' + e[1].surf.toFixed(0); });
-    // G1 FAIL-to-explain: zones over 10%. Split: every cell sky-lit (the DF is never read: G is written only to non-sky-lit
-    // cells) vs zones that RECEIVE it (listed with their glazing ratio, the BRE driver; <= 25 shown, by cells)
-    var o10 = rows.filter(function (e) { return e[1].DF > 10; }), o10sky = o10.filter(function (e) { var zi = Z.zoneInfo[e[0] - 1]; return zi.skyLitCells >= zi.cells; });
-    var o10recv = o10.filter(function (e) { var zi = Z.zoneInfo[e[0] - 1]; return zi.skyLitCells < zi.cells; }).sort(function (a, b) { return Z.zoneInfo[b[0] - 1].cells - Z.zoneInfo[a[0] - 1].cells; });
-    var over10 = o10recv.slice(0, 25).map(function (e) { var q = e[1], zi = Z.zoneInfo[e[0] - 1];
-      return e[0] + ':' + q.DF.toFixed(1) + '%:vert' + q.vert.toFixed(1) + '/roof' + q.roof.toFixed(1) + '/apUp' + q.apUp.toFixed(1) + '/apSide' + q.apSide.toFixed(1) + ':surf' + q.surf.toFixed(0) + ':glazRatio' + ((q.vert + q.roof) / (q.surf || 1)).toFixed(2) + ':cells' + zi.cells + ':skyLit' + zi.skyLitCells; });
-    // G1 FAIL-to-explain: a glazed zone at 0% (its panes counted, theta 0 on every one)
-    var glazedZero = []; r.zs.forEach(function (q, z) { if (q.panes > 0 && !(q.DF > 0)) glazedZero.push(z + ':panes' + q.panes + ':vert' + q.vert.toFixed(1) + ':roof' + q.roof.toFixed(1)); });
-    var portalOnly = 0; var zoneWithPane = new Set(B.panes.map(function (p) { return p.zone; })); zoneWithPane.forEach(function (z) { if (!r.zs.has(z)) portalOnly++; });
-    console.log('§SOURCED_DAYLIGHT zones=' + r.zones + ' litZones=' + r.litZones + ' panes=' + B.panes.length + ' (roof=' + B.cnt.roof + ' portaled=' + r.portaled + ' portaledKept=' + r.portaledKept +
-      ' skipped=' + B.cnt.skipped + ' sidesOpen=' + B.cnt.sidesOpen + ' sidesEave=' + B.cnt.sidesEave + ' theta0=' + B.cnt.theta0 + ' of tiles=' + B.cnt.tiles + ') apertures(up/side m2)=' + apUp.toFixed(1) + '/' + apSide.toFixed(1) +
-      ' T=' + r.T.toFixed(3) + ' R=' + r.R + ' DFmedian=' + r.DFmedian.toFixed(2) + ' DFmax=' + r.DFmax.toFixed(2) + ' bandsLG10(<2%/2-5%/>5% zones)=' + r.bands.join('/') +
-      ' topZones=[' + top.join(',') + '] over10=' + o10.length + ' (allSkyLit=' + o10sky.length + ' maxCells=' + o10sky.reduce(function (m, e) { return Math.max(m, Z.zoneInfo[e[0] - 1].cells); }, 0) + ', receiving=' + o10recv.length + ') glazedZero=' + glazedZero.length + ' glazedAllPortaled=' + portalOnly +
-      ' droppedBlockedPortals=' + dropped.length + (dropped.length ? ' (blockedFrac ' + dropped.join(',') + ')' : '') + ' gCells=' + r.gCells + ' gCapped=' + r.gCapped +
-      ' dial=' + dl + ' uSLSky=' + [SKY[0], SKY[1], SKY[2]].map(function (v) { return v.toFixed(3); }).join(',') + ' baseMs=' + r.baseMs + (B.ms ? ' (base cache built ' + B.ms + ' ms)' : '') + ' buildMs=' + r.buildMs +
-      ' texFillMs=' + (tU - t1).toFixed(0) + ' uploadMs=' + uploadMs.toFixed(0) + ' glErr(standing/afterUpload)=' + e0 + '/' + e1 + ' MB=' + (rg.length * 2 / 1e6).toFixed(1) + ' ms=' + (performance.now() - t0).toFixed(0) +
-      ' glazedZeroList=[' + glazedZero.join(',') + '] over10receiving=[' + over10.join(',') + ']');   // long lists last
-    // the camera zone (G1 table row)
-    var cz = (A._sourcedCap && A._sourcedCap.camZone) || 0, cq = cz ? r.zs.get(cz) : null, czi = cz ? Z.zoneInfo[cz - 1] : null;
-    console.log('§SOURCED_DAYLIGHT_CAM camZone=' + cz + (czi ? ' DF=' + (cq ? cq.DF.toFixed(2) : '0.00') + '% band=' + band(cq ? cq.DF : 0) + ' srcM2(vertGlass/roofGlass/apUp/apSide)=' + (cq ? [cq.vert, cq.roof, cq.apUp, cq.apSide].map(function (v) { return v.toFixed(1); }).join('/') : '0/0/0/0') +
-      ' sumTAtheta=' + (cq ? cq.num.toFixed(1) : 0) + ' A_z(surface+aperture)=' + (czi.surfaceM2 + czi.apertureM2).toFixed(1) + ' surfaceM2=' + czi.surfaceM2 + ' D_z=' + (cq ? cq.D.toFixed(2) : '-') + 'm sideTheta=' + (cq && cq.sideTheta != null ? cq.sideTheta.toFixed(1) : '-') + ' panes=' + (cq ? cq.panes : 0) +
-      ' cells=' + czi.cells + ' skyLitCells=' + czi.skyLitCells + ' m3=' + czi.m3 : ' (camera not in a light zone)'));
-    // G2: area-weighted mean source direction per lit zone (LOG ONLY: no directional weight in the shader this build)
-    var dirs = rows.slice().sort(function (a, b) { return src(b[1]) - src(a[1]); }), shown = dirs.slice(0, 60).map(function (e) { var q = e[1], a = src(e[1]) || 1, d = [q.dir[0] / a, q.dir[1] / a, q.dir[2] / a], m = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-      return e[0] + ':' + d.map(function (v) { return (m ? v / m : 0).toFixed(2); }).join(',') + ':|' + m.toFixed(2) + '|'; });
-    console.log('§SOURCED_DAYLIGHT_DIR (log only, G2) zones=' + rows.length + ' shown=' + shown.length + ' [id:unit dir (outward, toward the sky):|mean resultant length|] ' + shown.join(' '));
-    return out;
+  // ══ §SKY_VIEW_FIELD + §LUX_CHECK (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_VIEW_FIELD — SPEC", "§LUX_CHECK", build
+  // decisions V1-V10). The field is camera-free and cached per building (LightZones.field); G = F x 10000 is uploaded once per
+  // building. Alt+S only: stage() never runs for films (A._maxqActive) — there is no film path.
+  function fieldOn(A) { return !!(installed && A && !A._maxqActive && A._stillSkyField !== false && !/[?&]skyfield=0/.test(location.search)); }
+  var rgFieldKey = null, statsKey = null, fieldStats = null;
+  function lum3(c) { return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; }
+  function pct(arr, q) { if (!arr.length) return 0; var tot = arr.reduce(function (s, e) { return s + e[1]; }, 0), acc = 0; for (var i = 0; i < arr.length; i++) { acc += arr[i][1]; if (acc >= q * tot) return arr[i][0]; } return arr[arr.length - 1][0]; }
+  // V9: EN 12464-1 Em,r rows quoted from the CEN enquiry draft prEN 12464-1 (July 2019); the 2021 final is not verified
+  var EN_ROWS = [
+    [/TOILET|\bWC\b|WASH|BATH|SHOWER|LOCKER|CLOAK|DRESS/i, '6.2.4 Cloakroom (area), washrooms, bathrooms, ... toilet areas', 200],
+    [/CORRIDOR|CIRCULATION|HALLWAY|PASSAGE/i, '6.1.1 Corridors and circulation', 100],
+    [/STAIR/i, '6.1.2 Stairs, escalators', 100],
+    [/CANTEEN|CAFE|CAFÉ|BREAK|PANTRY|DINING/i, '6.2.1 Canteens and break areas', 200],
+    [/WAITING|\bWAIT\b/i, '6.37.1 Waiting rooms (health care)', 200],
+    [/LOUNGE/i, '6.28.3 Lounges', 200],
+    [/ENTRANCE|LOBBY|FOYER|VEST/i, '6.28.1 Entrance halls (places of public assembly)', 100],
+    [/STAFF OFFICE/i, '6.38.1 Staff office', 500],
+    [/OFFICE/i, '6.26.2 Writing, typing, reading, data processing', 500],
+    [/MECH|ELEC|PLANT|SWITCH/i, '6.3.1 Plant rooms, switch gear rooms', 200],
+    [/ATRIUM/i, 'atrium (no row found)', null]];
+  function spaceUses(A, Z) {
+    var LZ = global.LightZones, rows = [], byZone = new Map(), src = 'none';
+    try { rows = A.dbQuery("SELECT m.element_name, t.center_x, t.center_y, t.center_z FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid WHERE m.ifc_class = 'IfcSpace'") || []; if (rows.length) src = 'elements_meta'; } catch (e) {}
+    if (!rows.length) { try { rows = A.dbQuery("SELECT name, center_x, center_y, center_z FROM spatial_structure WHERE type = 'IfcSpace' AND center_x IS NOT NULL") || []; if (rows.length) src = 'spatial_structure'; } catch (e2) {} }
+    var mapped = 0; rows.forEach(function (r) { if (!A.ifc2three) return; var c = A.ifc2three(r[1], r[2], r[3]), z = LZ.at(c); if (!(z > 0) || z === LZ.SOLID) return;
+      var row = null; for (var i = 0; i < EN_ROWS.length; i++) if (EN_ROWS[i][0].test(r[0] || '')) { row = EN_ROWS[i]; break; }
+      var e = byZone.get(z); if (!e) { e = { names: {}, uses: {} }; byZone.set(z, e); } e.names[r[0]] = (e.names[r[0]] || 0) + 1; if (row) { e.uses[row[1]] = (e.uses[row[1]] || 0) + 1; mapped++; } });
+    byZone.forEach(function (e) { var best = null, bn = 0; Object.keys(e.uses).forEach(function (k) { if (e.uses[k] > bn) { bn = e.uses[k]; best = k; } });
+      e.use = best; e.en = null; if (best) EN_ROWS.forEach(function (r) { if (r[1] === best) e.en = r[2]; }); });
+    return { byZone: byZone, spaces: rows.length, mapped: mapped, src: src };
   }
+  function computeStats(A, Z, F) {
+    var LZ = global.LightZones, nx = Z.nx, ny = Z.ny, nxy = nx * ny, N = Z.zone.length, zone = Z.zone, G = F.G, cl = Z.cell, up = Math.floor(0.8 / cl) * nx, nzn = Z.zones;
+    var floorN = new Int32Array(nzn + 1), wpN = new Int32Array(nzn + 1), wpF = new Float64Array(nzn + 1), allF = new Float64Array(nzn + 1), allN = new Int32Array(nzn + 1), samp = [];
+    for (var z0 = 0; z0 <= nzn; z0++) samp.push([]);
+    for (var c = nx; c < N; c++) { var v = zone[c]; if (v === LZ.SOLID || v === 0) continue; var z = v & LZ.ZONE_MASK; allF[z] += G[c]; allN[z]++;
+      if (zone[c - nx] !== LZ.SOLID) continue; floorN[z]++; var w = c + up; if (w < N && zone[w] !== LZ.SOLID && (zone[w] & LZ.ZONE_MASK) === z) { wpN[z]++; wpF[z] += G[w]; samp[z].push(w); } }
+    var zones = [];
+    for (var zi = 1; zi <= nzn; zi++) { var info = Z.zoneInfo[zi - 1], s = samp[zi], st = Math.max(1, Math.ceil(s.length / 64)), pick = [];
+      for (var q = 0; q < s.length; q += st) pick.push(s[q]);
+      zones[zi] = { z: zi, floorM2: floorN[zi] * cl * cl, wpCells: wpN[zi], Fwp: wpN[zi] ? wpF[zi] / wpN[zi] / 10000 : 0, Fmean: allN[zi] ? allF[zi] / allN[zi] / 10000 : 0, enclosed: info.apertureM2 === 0, samples: pick }; }
+    return { zones: zones, uses: spaceUses(A, Z) };
+  }
+  function stageField(A, Z) {
+    var LZ = global.LightZones, SP = global.SkyPortal, t0 = performance.now();
+    if (!fieldOn(A) || !LZ.field) { SKY[0] = 0; console.log('§SKY_VIEW_FIELD off (' + (A._maxqActive ? 'film' : '&skyfield=0 / APP._stillSkyField=false') + ') — binary SKY_BIT path'); return null; }
+    var hit = !!Z.field, F = LZ.field(A), key = texKey, uploadMs = 0;
+    if (rgFieldKey !== key) { for (var i = 0; i < F.G.length; i++) rg[i * 2 + 1] = F.G[i]; var tU = performance.now(); tex.needsUpdate = true; A.renderer.initTexture(tex); uploadMs = performance.now() - tU; rgFieldKey = key; }
+    SKY[0] = 1;
+    if (statsKey !== key) { fieldStats = computeStats(A, Z, F); statsKey = key; }
+    var S = fieldStats, lit = [], enc = [], maxWp = 0;
+    S.zones.forEach(function (r) { if (!r || !(r.Fwp > 0) || !r.floorM2) return; lit.push([r.Fwp, r.floorM2]); if (r.enclosed) enc.push([r.Fwp, r.floorM2]); if (r.Fwp > maxWp) maxWp = r.Fwp; });
+    lit.sort(function (a, b) { return a[0] - b[0]; }); enc.sort(function (a, b) { return a[0] - b[0]; });
+    var dist = function (a) { return a.length ? 'n=' + a.length + ' p10/p50/p90/max=' + [pct(a, 0.1), pct(a, 0.5), pct(a, 0.9), a[a.length - 1][0]].map(function (v) { return (100 * v).toFixed(2); }).join('/') + '%' : 'n=0'; };
+    var gm = (Z.glassMats || []).map(function (g) { return g.name + ':op' + g.opacity + ':T' + g.T + ':' + g.m2.toFixed(0) + 'm2'; });
+    console.log('§SKY_VIEW_FIELD on cache=' + (hit ? 'hit' : 'built') + ' dirs=' + F.dirs + ' minElevDeg=' + F.minElevDeg.toFixed(2) + ' (CIE overcast weights, cos x (1+2 sin elev) x dOmega; lowest-weight dir ' + Math.min.apply(null, F.weights) + ') sweepMs=' + F.ms +
+      ' activeCells=' + F.active + ' coveredCells=' + F.covered + ' glassCells=' + Z.glassCells + ' maxF=' + F.maxF.toFixed(4) + ' ' + (F.maxF <= 1 ? 'ASSERT_MAXF_LE_1 PASS' : 'ASSERT_MAXF_LE_1 FAIL') +
+      ' uploadMs=' + uploadMs.toFixed(0) + ' glassT=[' + gm.join(',') + '] ERC=ground term scaled by F only (externally reflected component not modelled) ms=' + (performance.now() - t0).toFixed(0));
+    console.log('§SKY_VIEW_FIELD_DIST (working-plane mean F per lit zone, floor-m2 weighted) all: ' + dist(lit) + ' · enclosed rooms (no open aperture): ' + dist(enc) + ' · maxZoneWpF=' + (100 * maxWp).toFixed(2) + '%');
+    // G2 / spec 6: F-weighted mean unoccluded direction per zone (bent normal), LOG ONLY — the largest zones by floor m2 + camera zone
+    var cz = (A._sourcedCap && A._sourcedCap.camZone) || 0, order = S.zones.filter(function (r) { return r && r.floorM2 > 0; }).sort(function (a, b) { return b.floorM2 - a.floorM2; }).slice(0, 12);
+    if (cz && S.zones[cz] && order.indexOf(S.zones[cz]) < 0) order.push(S.zones[cz]);
+    console.log('§SKY_VIEW_FIELD_BENT (log only) [zone:unit dir x,y,z:floorM2] ' + order.map(function (r) { var b = F.bent, x = b[r.z * 3], y = b[r.z * 3 + 1], zz = b[r.z * 3 + 2], m = Math.sqrt(x * x + y * y + zz * zz) || 1;
+      return r.z + ':' + [x / m, y / m, zz / m].map(function (v) { return v.toFixed(2); }).join(',') + ':' + r.floorM2.toFixed(0); }).join(' '));
+    // spec 8: ADF only as a cross-check per enclosed glazed zone
+    try { var D = LZ.daylight(A, new Set(), new Set(), true), rowsA = [];
+      D.zs.forEach(function (q, z) { var r = S.zones[z], zi = Z.zoneInfo[z - 1]; if (!r || zi.apertureM2 !== 0 || !(q.vert + q.roof > 0)) return; rowsA.push([z, 100 * r.Fwp, q.DF, r.floorM2]); });
+      rowsA.sort(function (a, b) { return b[3] - a[3]; }); var rat = rowsA.filter(function (r) { return r[2] > 0; }).map(function (r) { return r[1] / r[2]; }).sort(function (a, b) { return a - b; });
+      console.log('§SKY_VIEW_ADF_CHECK enclosedGlazedZones=' + rowsA.length + ' median(Fwp%/ADF%)=' + (rat.length ? rat[Math.floor(rat.length / 2)].toFixed(3) : '-') + ' (ADF logged only, not used) top [zone:Fwp%:ADF%:floorM2] ' +
+        rowsA.slice(0, 10).map(function (r) { return r[0] + ':' + r[1].toFixed(2) + ':' + r[2].toFixed(2) + ':' + r[3].toFixed(0); }).join(' ')); } catch (eA) { console.warn('§SKY_VIEW_ADF_CHECK failed: ' + eA.message); }
+    return { F: F, stats: S };
+  }
+  // §LUX_CHECK — per zone, lux on the working plane: sky (F_wp x the scene's horizontal sky illuminance) + zone-bound lamps (V9)
+  function luxCheck(A, Z) {
+    if (!fieldLast) return null;
+    var S = fieldLast.stats, LZ = global.LightZones, sunI = A._stillCalibSunI, sunLux = A._stillCalibSunLux || 100000;
+    if (!(sunI > 0)) { console.log('§LUX_CHECK VACUOUS no calibrated sun (calibSunI=' + sunI + ')'); return null; }
+    var luxPer = sunLux / sunI, h = A.hemi, am = A.ambient, EskyU = (h ? lum3(h.color) * h.intensity : 0) + (am ? lum3(am.color) * am.intensity : 0), EskyLux = EskyU * luxPer;
+    var lamps = new Map(); A.scene.traverse(function (l) { if (!l.isPointLight || !l.visible || !(l.intensity > 0) || l === A._camLight) return; var z = l.userData && l.userData.sourcedZone; if (!(z > 0)) return; var a = lamps.get(z); if (!a) { a = []; lamps.set(z, a); } a.push(l); });
+    var nx = Z.nx, nxy = nx * Z.ny, cl = Z.cell, rows = [], fails = [], counts = { withEN: 0, fail: 0, unknown: 0, unverified: 0 };
+    var att = function (d, cut, decay) { var f = 1 / Math.max(Math.pow(d, decay), 0.01); if (cut > 0) { var x = Math.max(0, Math.min(1, 1 - Math.pow(d / cut, 4))); f *= x * x; } return f; };
+    S.zones.forEach(function (r) { if (!r || !r.wpCells) return; var L = lamps.get(r.z) || [], El = 0;
+      if (L.length && r.samples.length) { r.samples.forEach(function (c) { var px = Z.org.x + (c % nx + 0.5) * cl, py = Z.org.y + ((((c / nx) | 0) % Z.ny) + 0.5) * cl, pz = Z.org.z + (((c / nxy) | 0) + 0.5) * cl;
+          L.forEach(function (l) { var dx = l.position.x - px, dy = l.position.y - py, dz = l.position.z - pz, d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-3; if (dy <= 0) return; El += lum3(l.color) * l.intensity * att(d, l.distance, l.decay) * dy / d; }); });
+        El = El / r.samples.length * luxPer; }
+      var u = S.uses.byZone.get(r.z), Es = r.Fwp * EskyLux, Et = Es + El, en = u ? u.en : null, verdict = !u || !u.use ? 'unknown' : (en == null ? 'unverified' : (Et < 0.5 * en ? 'FAIL' : 'PASS'));
+      if (verdict === 'unknown') counts.unknown++; else if (verdict === 'unverified') counts.unverified++; else { counts.withEN++; if (verdict === 'FAIL') counts.fail++; }
+      var row = { z: r.z, floorM2: r.floorM2, Fwp: r.Fwp, Esky: Es, Elamps: El, Etotal: Et, lamps: L.length, use: u ? u.use : null, en: en, verdict: verdict, why: verdict === 'FAIL' ? (Es < 0.5 * en && El < 0.5 * en ? (L.length ? 'lamps under EN and sky share low' : 'no zone lamps, sky share low') : '') : '' };
+      rows.push(row); if (verdict === 'FAIL') fails.push(row); });
+    var fmt = function (r) { return r.z + ':' + (r.use || 'unknown') + ':EN' + (r.en == null ? '-' : r.en) + (r.en != null ? '(prEN2019)' : '') + ':sky' + r.Esky.toFixed(0) + '+lamps' + r.Elamps.toFixed(0) + '=' + r.Etotal.toFixed(0) + 'lx:F' + (100 * r.Fwp).toFixed(2) + '%:lamps' + r.lamps + ':' + r.floorM2.toFixed(0) + 'm2:' + r.verdict + (r.why ? '(' + r.why + ')' : ''); };
+    var byM2 = rows.slice().sort(function (a, b) { return b.floorM2 - a.floorM2; });
+    console.log('§LUX_CHECK zones=' + rows.length + ' spaces=' + S.uses.spaces + ' (' + S.uses.src + ', mapped ' + S.uses.mapped + ') withEN=' + counts.withEN + ' FAIL=' + counts.fail + ' unverified=' + counts.unverified + ' unknown=' + counts.unknown +
+      ' EskyH=' + EskyLux.toFixed(0) + 'lx (hemi+ambient up, luxPerUnit=' + luxPer.toFixed(1) + ' = ' + sunLux + ' lx / calibSunI ' + sunI.toFixed(3) + ') exposure=' + A.renderer.toneMappingExposure.toFixed(3) +
+      (A._meterLast ? ' stops=' + A._meterLast.stops.toFixed(2) : ' stops=0 (meter: outside/off)') + ' largest [' + byM2.slice(0, 8).map(fmt).join(' ') + '] FAILrows [' + fails.slice(0, 20).map(fmt).join(' ') + ']');
+    var cz = (A._sourcedCap && A._sourcedCap.camZone) || 0, cr = rows.filter(function (r) { return r.z === cz; })[0];
+    console.log('§LUX_CHECK_CAM camZone=' + cz + ' ' + (cr ? fmt(cr) : '(no working-plane cells / camera not in a zone)') + ' exposure=' + A.renderer.toneMappingExposure.toFixed(3) + (A._meterLast ? ' stops=' + A._meterLast.stops.toFixed(2) : ''));
+    luxLast = { rows: rows, EskyLux: EskyLux, luxPer: luxPer };
+    return luxLast;
+  }
+
 
   function stage(A) {
     var THREE = global.THREE, LZ = global.LightZones;
@@ -349,7 +401,7 @@
     var Z = LZ.build(A); if (!Z) { console.log('§SOURCED_LIGHT skipped (no light zones)'); return; }
     var key = Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + Z.zones;
     if (texKey !== key) {
-      if (tex) tex.dispose();
+      if (tex) tex.dispose(); rgFieldKey = null;
       // §SOURCED_DAYLIGHT: RG16UI — R = zone | SKY_BIT (as before), G = the still's daylight fraction x 10000 (0 until daylight())
       if (rgKey !== key) { rg = new Uint16Array(Z.zone.length * 2); for (var ri = 0; ri < Z.zone.length; ri++) rg[ri * 2] = Z.zone[ri]; rgKey = key; }
       tex = new THREE.Data3DTexture(rg, Z.nx, Z.ny, Z.nz);
@@ -360,9 +412,9 @@
         console.log('§SOURCED_LIGHT_GLERR upload before=' + e0 + ' after=' + e1 + ' (0 = none; 1282 = INVALID_OPERATION) RG16UI ' + Z.nx + 'x' + Z.ny + 'x' + Z.nz); } catch (eG) { console.warn('§SOURCED_LIGHT_GLERR upload probe failed: ' + eG.message); }
       glErrFirstFrame = true;
     }
-    try { dayLast = stageDaylight(A, Z); } catch (eD) { dayLast = null; console.warn('§SOURCED_DAYLIGHT failed: ' + eD.message); }
+    try { fieldLast = stageField(A, Z); } catch (eD) { fieldLast = null; SKY[0] = 0; console.warn('§SKY_VIEW_FIELD failed: ' + eD.message); }
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
-    console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' daylight=' + (dayLast ? dayLast.dial : 'off') + ' (&daylight= / A._stillDaylight, 0..3, default 1)');
+    console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (&skyfield=0 = the binary SKY_BIT path)');
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;
     ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
     active = true;
@@ -374,7 +426,6 @@
     prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0; ordCache = null;
     var own = function (renderer, scene, camera) {
       if (active) {
-        skyNow(A);   // §SOURCED_DAYLIGHT: uSLSky follows the live hemi
         var bb = bindLights(A, camera);
         // re-push only when a program was built (a recompile clones fresh uniforms from ShaderLib; typed arrays stay shared)
         var np = (renderer && renderer.info && renderer.info.programs) ? renderer.info.programs.length : -1;
@@ -392,6 +443,7 @@
     var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow;
     if (!/[?&]meter=0/.test(location.search) && A._stillMeter !== false) { try { A._meterLast = meter(A, inside); } catch (eM) { console.warn('§METER failed: ' + eM.message); } }
     else console.log('§METER off (&meter=0) exposure=' + A.renderer.toneMappingExposure.toFixed(3));
+    try { luxCheck(A, Z); } catch (eL) { console.warn('§LUX_CHECK failed: ' + eL.message); }
     if (A.markDirty) A.markDirty();
     console.log('§SOURCED_LIGHT on zonesCache=' + (hit ? 'hit' : 'built') + ' zones=' + Z.zones + ' grid=' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ' cell=' + Z.cell +
       ' texMB=' + (Z.zone.length * 2 / 1e6).toFixed(1) + ' indoorSky=' + keep + ' mats=' + set.size + ' pushed=' + pushed + ' points=' + b.points + ' bound=' + b.pointsBound + ' (litOutside=' + b.litOutside + ')' +
@@ -503,5 +555,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { daylight: function () { return { on: !!(active && dayLast), dial: dayLast ? dayLast.dial : 0, sky: [SKY[0], SKY[1], SKY[2]], droppedBlockedPortals: dayLast ? dayLast.droppedBlockedPortals : 0 }; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

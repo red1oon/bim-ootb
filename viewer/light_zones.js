@@ -36,6 +36,9 @@
 
   // Every boundary draw: { geo, matrix, start, count } in world space. Instanced/plain meshes carry ifcClass per mesh;
   // a BatchedMesh carries one element per instance (guidMap[bm.id + '_' + i]).
+  // §SKY_VIEW_FIELD V3: glassy = sky_portal.js's glazing test; a draw carries its material(s) + groups so the rasteriser can
+  // mark GLASS cells (hit only by glassy triangles) with their T = 1 - opacity
+  function glassyMat(m) { return !!(m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial'); }
   function boundaryDraws(A, THREE, guids) {
     var out = [], cls = new Set(BOUNDARY), stats = { mesh: 0, inst: 0, batched: 0, skippedHidden: 0 };
     A.scene.traverse(function (o) {
@@ -43,6 +46,7 @@
       if (o === A.ground || o === A._sky || (o.userData && (o.userData.skyPortal || o.userData.excludeFromShadow))) return;
       o.updateMatrixWorld();
       var g = o.geometry, idx = g.index, full = idx ? idx.count : (g.attributes.position ? g.attributes.position.count : 0);
+      var mats = Array.isArray(o.material) ? o.material : [o.material], groups = (g.groups && g.groups.length && mats.length > 1) ? g.groups : null;
       if (o.isBatchedMesh) {
         var n = (typeof o.instanceCount === 'number') ? o.instanceCount : (o._instanceInfo ? o._instanceInfo.length : 0);
         for (var i = 0; i < n; i++) {
@@ -50,15 +54,15 @@
           var gid, rng; try { gid = o.getGeometryIdAt(i); rng = o.getGeometryRangeAt(gid); } catch (e) { continue; }
           if (!rng) continue;
           var m = new THREE.Matrix4(); o.getMatrixAt(i, m); m.premultiply(o.matrixWorld);
-          out.push({ geo: g, matrix: m, start: idx ? rng.indexStart : rng.vertexStart, count: idx ? rng.indexCount : rng.vertexCount }); stats.batched++;
+          out.push({ geo: g, matrix: m, start: idx ? rng.indexStart : rng.vertexStart, count: idx ? rng.indexCount : rng.vertexCount, mats: mats, groups: null }); stats.batched++;
         }
         return;
       }
       if (!cls.has(o.userData && o.userData.ifcClass)) return;
       if (o.isInstancedMesh) {
         for (var k = 0; k < o.count; k++) { var mi = new THREE.Matrix4(); o.getMatrixAt(k, mi); if (mi.elements[0] === 0 && mi.elements[5] === 0 && mi.elements[10] === 0) continue;
-          mi.premultiply(o.matrixWorld); out.push({ geo: g, matrix: mi, start: 0, count: full }); stats.inst++; }
-      } else { out.push({ geo: g, matrix: o.matrixWorld.clone(), start: 0, count: full }); stats.mesh++; }
+          mi.premultiply(o.matrixWorld); out.push({ geo: g, matrix: mi, start: 0, count: full, mats: mats, groups: groups }); stats.inst++; }
+      } else { out.push({ geo: g, matrix: o.matrixWorld.clone(), start: 0, count: full, mats: mats, groups: groups }); stats.mesh++; }
     });
     return { draws: out, stats: stats };
   }
@@ -135,20 +139,27 @@
       if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return -1; return i + j * nx + k * nxy; }
     // rasterise: sample each triangle on a barycentric grid no coarser than CELL/2 (conservative enough for 0.1 m walls)
     var a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), tris = 0, samples = 0, step = CELL / 2;
-    var tRas = performance.now();
+    var tRas = performance.now(), glassT = new Uint8Array(N), opaque = new Uint8Array(N), glassMat = new Map();
     draws.forEach(function (d) {
-      var pos = d.geo.attributes.position, ix = d.geo.index, e = d.matrix.elements;
+      var pos = d.geo.attributes.position, ix = d.geo.index, e = d.matrix.elements, gi = 0;
       for (var t = d.start; t + 2 < d.start + d.count; t += 3) {
+        var mat = d.mats[0];
+        if (d.groups) { while (gi < d.groups.length - 1 && t >= d.groups[gi].start + d.groups[gi].count) gi++; mat = d.mats[d.groups[gi].materialIndex || 0]; }
+        var isG = glassyMat(mat), tq = isG ? Math.max(1, Math.round((1 - mat.opacity) * 255)) : 0;
         var i0 = ix ? ix.getX(t) : t, i1 = ix ? ix.getX(t + 1) : t + 1, i2 = ix ? ix.getX(t + 2) : t + 2;
         a.fromBufferAttribute(pos, i0).applyMatrix4(d.matrix); b.fromBufferAttribute(pos, i1).applyMatrix4(d.matrix); c.fromBufferAttribute(pos, i2).applyMatrix4(d.matrix);
         var L = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)), n = Math.max(1, Math.ceil(L / step)); tris++;
+        if (isG) { var gm = glassMat.get(mat); if (!gm) { gm = { name: mat.name || mat.uuid.slice(0, 8), opacity: mat.opacity, T: +(1 - mat.opacity).toFixed(3), m2: 0 }; glassMat.set(mat, gm); }
+          var cr = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)); gm.m2 += cr.length() / 2; }
         for (var u = 0; u <= n; u++) for (var v = 0; v <= n - u; v++) {
           var w = n - u - v, x = (a.x * u + b.x * v + c.x * w) / n, y = (a.y * u + b.y * v + c.y * w) / n, z = (a.z * u + b.z * v + c.z * w) / n;
-          var ci = cellIdx(x, y, z); if (ci >= 0) zone[ci] = SOLID; samples++;
+          var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; } else opaque[ci] = 1; } samples++;
         }
       }
     });
-    var rasMs = performance.now() - tRas, solid = 0;
+    var rasMs = performance.now() - tRas, solid = 0, glassCells = 0;
+    for (var gc = 0; gc < N; gc++) { if (opaque[gc]) glassT[gc] = 0; else if (glassT[gc]) glassCells++; }   // V3: any opaque triangle wins
+    opaque = null;
     for (var s0 = 0; s0 < N; s0++) if (zone[s0] === SOLID) solid++;
     // §ZONE_OPEN_SKY — one top-down scan per column: an empty cell with no SOLID above it is OPEN-TO-SKY (label 1 here,
     // written as 0 at the end); every other empty cell is COVERED (stays 0, labelled below). No closing radius, no
@@ -237,7 +248,8 @@
     var indoor = zsizes.reduce(function (x, y) { return x + y; }, 0), largest = zsizes.reduce(function (m, v) { return Math.max(m, v); }, 0);
     var hist = { lt2m3: 0, lt50m3: 0, lt500m3: 0, lt5000m3: 0, ge5000m3: 0 };
     zsizes.forEach(function (n) { var m3 = n * cv; if (m3 < 2) hist.lt2m3++; else if (m3 < 50) hist.lt50m3++; else if (m3 < 500) hist.lt500m3++; else if (m3 < 5000) hist.lt5000m3++; else hist.ge5000m3++; });
-    cache = { dd: null, bld: A.activeBuilding, n: Object.keys(A.guidMap || {}).length, org: org, nx: nx, ny: ny, nz: nz, cell: CELL, zone: zone, zones: nzones, sizes: zsizes, zoneInfo: zoneInfo, aperture: aperture, groundJ: jg };
+    cache = { dd: null, bld: A.activeBuilding, n: Object.keys(A.guidMap || {}).length, org: org, nx: nx, ny: ny, nz: nz, cell: CELL, zone: zone, zones: nzones, sizes: zsizes, zoneInfo: zoneInfo, aperture: aperture, groundJ: jg,
+      glassT: glassT, glassCells: glassCells, glassMats: Array.from(glassMat.values()) };
     cache.stats = { cells: N, MB: +(N * 2 / 1e6).toFixed(1), solid: solid, outsideCells: openN, openSkyCells: openN, soilCells: earth, indoorCells: indoor, zones: nzones, largestZoneM3: Math.round(largest * cv),
       largestShareOfIndoor: indoor ? +(largest / indoor).toFixed(3) : 0, hist: hist, zonesWithAperture: zonesWithAp, apertureM2: +(apTotUp + apTotSide).toFixed(1), apertureUpM2: +apTotUp.toFixed(1), apertureSideM2: +apTotSide.toFixed(1),
       apertureDownFaces: apDown, skyLitCells: skyLitN, skyRayCells: skyRay, skyDirs: SKY_DIRS.length, topApertureZones: topAp, tris: tris, samples: samples, draws: bd.stats, rasMs: Math.round(rasMs), skyMs: Math.round(skyMs), ms: Math.round(performance.now() - t0),
@@ -407,7 +419,7 @@
   }
   // per still. exclude = Set of pane keys carrying a live portal; kept = Set of keys of blocked portals (count in the DF).
   // Returns stats; writes Z.dayG (Uint16Array per cell: round(fraction x 10000), cap 65535) and Z.dayZones.
-  function daylight(A, exclude, kept) {
+  function daylight(A, exclude, kept, dfOnly) {
     var Z = cache; if (!Z) return null;
     var t0 = performance.now(), B = dayBase(A, Z), tb = performance.now(), N = Z.zone.length, nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, cl = Z.cell;
     var zs = new Map(), portaled = 0, portaledKept = 0, keptKeys = [];
@@ -427,6 +439,7 @@
     // divided its aperture light by its solid surface only).
     zs.forEach(function (r, z) { var zi = Z.zoneInfo[z - 1], surf = zi.surfaceM2 + zi.apertureM2; r.surf = surf; r.DF = surf > 0 ? r.num / (surf * (1 - R_BRE * R_BRE)) : 0; r.D = r.A > 0 ? r.hA / r.A : cl / 2;
       DF[z] = r.DF; Dz[z] = r.D; if (r.DF > 0) lit.push(z); });
+    if (dfOnly) return { zones: zones, litZones: lit.length, B: B, zs: zs, DF: DF, R: R_BRE, buildMs: Math.round(performance.now() - t0) };   // §SKY_VIEW_FIELD V7: ADF cross-check only
     // multi-source BFS through zone cells (6-connected: a zone cell's non-solid neighbours are its own zone or open cells)
     if (!Z.dayBuf) Z.dayBuf = { dist: new Uint16Array(N), q: new Int32Array(N), G: new Uint16Array(N) };
     var dist = Z.dayBuf.dist, q = Z.dayBuf.q, G = Z.dayBuf.G, zone = Z.zone, h = 0, t = 0; dist.fill(65535); G.fill(0);
@@ -454,6 +467,72 @@
       bfsReached: t, baseMs: Math.round(tb - t0), buildMs: Math.round(performance.now() - t0) };
   }
 
-  global.LightZones = { daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
+  // ══ §SKY_VIEW_FIELD (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_VIEW_FIELD — SPEC" + build decisions V1-V10) ══
+  // ONE camera-independent field per covered cell: F = sum_d w_d v_d / sum_d w_d, v_d = 1 at an open-to-sky cell, carried
+  // through empty cells, x T through a GLASS layer (once per pane: entering glass from air), 0 at any other solid (V2). CIE standard overcast sky (CIE S 011/E:2003
+  // type 1): L ~ (1 + 2 sin(elev)); w_d = integral of cos(zenith) (1 + 2 sin(elev)) dOmega over the direction's nearest-
+  // direction cell of the plane y = 1 square |x|,|z| <= 6 (V1). Cached per building (lazy: first Alt+S).
+  var FIELD_DIRS = (function () {
+    var D = [[0, 0]]; for (var dx = -2; dx <= 2; dx++) for (var dz = -2; dz <= 2; dz++) if (dx || dz) D.push([dx, dz]);
+    [4, 6].forEach(function (k) { [[k, 0], [-k, 0], [0, k], [0, -k], [k, k], [k, -k], [-k, k], [-k, -k]].forEach(function (q) { D.push(q); }); });
+    var U = D.map(function (q) { var l = Math.sqrt(q[0] * q[0] + 1 + q[1] * q[1]); return [q[0] / l, 1 / l, q[1] / l]; }), W = new Float64Array(D.length), st = 0.05, tot = 0;
+    for (var x = -6 + st / 2; x < 6; x += st) for (var z = -6 + st / 2; z < 6; z += st) {
+      var r = Math.sqrt(x * x + 1 + z * z), ux = x / r, uy = 1 / r, uz = z / r, best = -2, bi = 0;
+      for (var i = 0; i < U.length; i++) { var dd = ux * U[i][0] + uy * U[i][1] + uz * U[i][2]; if (dd > best) { best = dd; bi = i; } }
+      var w = uy * (1 + 2 * uy) * st * st / (r * r * r); W[bi] += w; tot += w; }   // cos(zenith) = sin(elev) = 1/r; dOmega = dA/r^3
+    var out = D.map(function (q, i) { var mids = {}, EPS = 1e-6;   // cells the centre-to-centre segment crosses (as SKY_DIRS)
+      for (var s2 = 1; s2 < 256; s2++) { var t = s2 / 256, px = 0.5 + q[0] * t, py = 0.5 + t, pz = 0.5 + q[1] * t, ax = [], ay = [], az = [];
+        [[px, ax], [py, ay], [pz, az]].forEach(function (p) { var v = p[0]; if (Math.abs(v - Math.round(v)) < EPS) p[1].push(Math.round(v) - 1, Math.round(v)); else p[1].push(Math.floor(v)); });
+        ax.forEach(function (a) { ay.forEach(function (b) { az.forEach(function (c) { if ((a || b || c) && !(a === q[0] && b === 1 && c === q[1])) mids[a + ',' + b + ',' + c] = [a, b, c]; }); }); }); }
+      return { dx: q[0], dz: q[1], u: U[i], w: W[i] / tot, elev: Math.asin(U[i][1]) * 180 / Math.PI, mids: Object.keys(mids).map(function (k) { return mids[k]; }) }; });
+    return out; })();
+  function field(A) {
+    var Z = cache; if (!Z) return null; if (Z.field) return Z.field;
+    var t0 = performance.now(), nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, N = nx * ny * nz, zone = Z.zone, gT = Z.glassT;
+    // active = covered cells + glass cells, top layer first
+    var nAct = 0; for (var c0 = 0; c0 < N; c0++) { var v0 = zone[c0]; if ((v0 !== SOLID && v0 !== 0) || (v0 === SOLID && gT[c0])) nAct++; }
+    var act = new Int32Array(nAct), ai = 0;
+    for (var j = ny - 1; j >= 0; j--) for (var k = 0; k < nz; k++) for (var i = 0; i < nx; i++) { var c = i + j * nx + k * nxy, v = zone[c]; if ((v !== SOLID && v !== 0) || (v === SOLID && gT[c])) act[ai++] = c; }
+    var val = new Float32Array(N), acc = new Float32Array(N), zb = new Float64Array((Z.zones + 1) * 3), T = new Float32Array(256);
+    for (var q = 0; q < 256; q++) T[q] = q / 255;
+    for (var c1 = 0; c1 < N; c1++) if (zone[c1] === 0) val[c1] = 1;
+    FIELD_DIRS.forEach(function (d) {
+      var dx = d.dx, dz = d.dz, off = dx + nx + dz * nxy, M = d.mids, nm = M.length, mo = new Int32Array(nm), mx = new Int32Array(nm), my = new Int32Array(nm), mz = new Int32Array(nm), w = d.w, ux = d.u[0], uy = d.u[1], uz = d.u[2];
+      for (var m = 0; m < nm; m++) { mx[m] = M[m][0]; my[m] = M[m][1]; mz[m] = M[m][2]; mo[m] = M[m][0] + M[m][1] * nx + M[m][2] * nxy; }
+      for (var a = 0; a < nAct; a++) { var c = act[a], i = c % nx, j = ((c / nx) | 0) % ny, k = (c / nxy) | 0, ti = i + dx, tk = k + dz, vt;
+        if (j + 1 >= ny || ti < 0 || tk < 0 || ti >= nx || tk >= nz) vt = 1; else vt = val[c + off];   // off the grid = sky
+        var zc = zone[c], inG = zc === SOLID, gmin = 256;   // inG: c is a glass cell (its value is "seen from inside the glass")
+        if (vt > 0) { if (!inG && j + 1 < ny && ti >= 0 && tk >= 0 && ti < nx && tk < nz && gT[c + off]) gmin = gT[c + off];
+          for (var m2 = 0; m2 < nm; m2++) { var ii = i + mx[m2], jj = j + my[m2], kk = k + mz[m2]; if (ii < 0 || kk < 0 || ii >= nx || kk >= nz || jj >= ny) continue;
+            var cm = c + mo[m2]; if (zone[cm] === SOLID) { var gq = gT[cm]; if (gq) { if (gq < gmin) gmin = gq; } else { vt = 0; break; } } }
+          // one pane = one T: the fattened glass layer spans 1-3 cells, so T is applied ONCE when a ray enters glass from air
+          // (a segment that touches glass: target or mid cells), never between glass cells; a second pane after air counts again
+          if (!inG && gmin < 256) vt *= T[gmin]; }
+        val[c] = vt; if (zc !== SOLID && vt > 0) { acc[c] += w * vt; var zz = (zc & ZONE_MASK) * 3; zb[zz] += w * vt * ux; zb[zz + 1] += w * vt * uy; zb[zz + 2] += w * vt * uz; } } });
+    // G: F x 10000 in every non-solid cell (open = 10000)
+    var G = new Uint16Array(N), maxF = 0, covered = 0;
+    for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { G[c2] = 10000; continue; } covered++; var f = acc[c2]; if (f > maxF) maxF = f; G[c2] = Math.round(Math.min(1, f) * 10000); }
+    val = acc = null;
+    var minElev = FIELD_DIRS.reduce(function (m, d) { return Math.min(m, d.elev); }, 90);
+    Z.field = { G: G, maxF: maxF, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
+      weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }) };
+    return Z.field;
+  }
+  // CPU mirror of the shader's filtered read (V5): p = surface point, nrm = eye-facing normal; returns { zone, F } where zone
+  // is surfaceInfo's; outside (0 / off grid) F = 1; unknown (SOLID) F = null (the shader uses indoorSky there)
+  function skyField(p, nrm) {
+    var Z = cache, si = surfaceInfo(p, nrm); if (!Z || !Z.field) return { zone: si.zone, F: null, si: si };
+    if (si.zone === 0 || si.zone === -1) return { zone: si.zone, F: 1, si: si };
+    if (si.zone === SOLID) return { zone: si.zone, F: null, si: si };
+    var cl = Z.cell, G = Z.field.G, nxy = Z.nx * Z.ny, gx = (p.x + nrm.x * 0.5 * cl - Z.org.x) / cl - 0.5, gy = (p.y + nrm.y * 0.5 * cl - Z.org.y) / cl - 0.5, gz = (p.z + nrm.z * 0.5 * cl - Z.org.z) / cl - 0.5;
+    var bx = Math.floor(gx), by = Math.floor(gy), bz = Math.floor(gz), fx = gx - bx, fy = gy - by, fz = gz - bz, sw = 0, sf = 0;
+    for (var o = 0; o < 8; o++) { var ox = o & 1, oy = (o >> 1) & 1, oz = (o >> 2) & 1, i = bx + ox, j = by + oy, k = bz + oz;
+      if (i < 0 || j < 0 || k < 0 || i >= Z.nx || j >= Z.ny || k >= Z.nz) continue; var c = i + j * Z.nx + k * nxy, t = Z.zone[c]; if (t === SOLID) continue;
+      var tz = t & ZONE_MASK; if (tz !== si.zone && tz !== 0) continue;
+      var w = (ox ? fx : 1 - fx) * (oy ? fy : 1 - fy) * (oz ? fz : 1 - fz); sw += w; sf += w * G[c] / 10000; }
+    return { zone: si.zone, F: sw > 0 ? sf / sw : (si.cell >= 0 ? G[si.cell] / 10000 : 0), si: si };
+  }
+
+  global.LightZones = { field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
     SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL };
 })(typeof window !== 'undefined' ? window : this);
