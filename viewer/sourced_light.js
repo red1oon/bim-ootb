@@ -79,12 +79,15 @@
     '  uint z = bt & 0x3FFFu; _slSky = ( z == 0u || ( bt & 0x4000u ) != 0u ) ? 1.0 : 0.0;',
     // §SKY_VIEW_FIELD V5 — irradiance-volume filter (Greger et al. 1998): 8 texels around wp + 0.5 cell along the eye-facing
     // normal, trilinear weights, kept only when not SOLID and in the fragment's zone or open; renormalised; none -> picked cell
+    // outside fragments are filtered too (their stencil accepts every non-solid cell), so a surface running from open air
+    // under a roof edge has no step where its nearest cell flips from open to covered (SKY_STEP out-zone pairs, 2026-09-25);
+    // one solid cell still separates: the stencil reaches at most half a cell past the surface
     '  _slF = 1.0;',
-    '  if ( z != 0u && uSLSky.x > 0.5 ) {',
+    '  if ( uSLSky.x > 0.5 ) {',
     '    vec3 g = ( wp + wn * 0.5 * uSLParams.y - uSLOrg.xyz ) / uSLParams.y - 0.5; ivec3 b = ivec3( floor( g ) ); vec3 f = g - vec3( b ); float sw = 0.0, sf = 0.0;',
     '    for ( int o = 0; o < 8; o ++ ) { ivec3 d = ivec3( o & 1, ( o >> 1 ) & 1, ( o >> 2 ) & 1 ); ivec3 c = b + d;',
     '      if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
-    '      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r == 65535u ) continue; uint tz = t2.r & 0x3FFFu; if ( tz != z && tz != 0u ) continue;',
+    '      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r == 65535u ) continue; uint tz = t2.r & 0x3FFFu; if ( z != 0u && tz != z && tz != 0u ) continue;',
     '      vec3 wv = mix( vec3( 1.0 ) - f, f, vec3( d ) ); float w = wv.x * wv.y * wv.z; sw += w; sf += w * float( t2.g ) / 10000.0; }',
     '    _slF = ( sw > 0.0 ) ? sf / sw : float( bg ) / 10000.0;',
     '  }',
@@ -102,7 +105,7 @@
     // surface too (wall foot, ceiling-panel strip): it loses the sky like a covered one. Left at 1 it took the full hemi, and
     // the §METER's +4-6 stops turned it purple (Clinic/Hospital 2026-09-25)
     // §SKY_VIEW_FIELD on: a zone fragment's sky terms x F_filtered (outside 1; unknown -1 keeps indoorSky as before)
-    '  if ( uSLSky.x > 0.5 ) return ( _slFZ < -0.5 ) ? uSLParams.z : _slF;',
+    '  if ( uSLSky.x > 0.5 ) return ( _slFZ < -0.5 ) ? uSLParams.z : _slF;',   // outside: filtered too (1 away from any roof)
     '  return ( _slSky > 0.5 ) ? 1.0 : uSLParams.z;',
     '}',
     '#else',

@@ -139,7 +139,7 @@
       if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return -1; return i + j * nx + k * nxy; }
     // rasterise: sample each triangle on a barycentric grid no coarser than CELL/2 (conservative enough for 0.1 m walls)
     var a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), tris = 0, samples = 0, step = CELL / 2;
-    var tRas = performance.now(), glassT = new Uint8Array(N), opaque = new Uint8Array(N), glassMat = new Map();
+    var tRas = performance.now(), glassT = new Uint8Array(N), gHits = new Uint8Array(N), oHits = new Uint8Array(N), glassMat = new Map();
     draws.forEach(function (d) {
       var pos = d.geo.attributes.position, ix = d.geo.index, e = d.matrix.elements, gi = 0;
       for (var t = d.start; t + 2 < d.start + d.count; t += 3) {
@@ -153,13 +153,16 @@
           var cr = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)); gm.m2 += cr.length() / 2; }
         for (var u = 0; u <= n; u++) for (var v = 0; v <= n - u; v++) {
           var w = n - u - v, x = (a.x * u + b.x * v + c.x * w) / n, y = (a.y * u + b.y * v + c.y * w) / n, z = (a.z * u + b.z * v + c.z * w) / n;
-          var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; } else opaque[ci] = 1; } samples++;
+          var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; if (gHits[ci] < 255) gHits[ci]++; } else if (oHits[ci] < 255) oHits[ci]++; } samples++;
         }
       }
     });
     var rasMs = performance.now() - tRas, solid = 0, glassCells = 0;
-    for (var gc = 0; gc < N; gc++) { if (opaque[gc]) glassT[gc] = 0; else if (glassT[gc]) glassCells++; }   // V3: any opaque triangle wins
-    opaque = null;
+    // V3 (rev. after the Hospital smoke, see spec): the cell's MAJORITY surface decides — glass when its glassy samples
+    // (the rasteriser's uniform barycentric samples ~ area) are at least its opaque ones. "Any opaque wins" shrank every
+    // window opening by up to a cell per side (the fattened wall reveal around the pane): ADF cross-check Fwp/ADF 0.044.
+    for (var gc = 0; gc < N; gc++) { if (glassT[gc] && oHits[gc] > gHits[gc]) glassT[gc] = 0; if (glassT[gc]) glassCells++; }
+    gHits = oHits = null;
     for (var s0 = 0; s0 < N; s0++) if (zone[s0] === SOLID) solid++;
     // §ZONE_OPEN_SKY — one top-down scan per column: an empty cell with no SOLID above it is OPEN-TO-SKY (label 1 here,
     // written as 0 at the end); every other empty cell is COVERED (stays 0, labelled below). No closing radius, no
@@ -522,13 +525,13 @@
   // is surfaceInfo's; outside (0 / off grid) F = 1; unknown (SOLID) F = null (the shader uses indoorSky there)
   function skyField(p, nrm) {
     var Z = cache, si = surfaceInfo(p, nrm); if (!Z || !Z.field) return { zone: si.zone, F: null, si: si };
-    if (si.zone === 0 || si.zone === -1) return { zone: si.zone, F: 1, si: si };
+    if (si.zone === -1) return { zone: si.zone, F: 1, si: si };   // off grid; open (0): filtered, every non-solid cell accepted
     if (si.zone === SOLID) return { zone: si.zone, F: null, si: si };
     var cl = Z.cell, G = Z.field.G, nxy = Z.nx * Z.ny, gx = (p.x + nrm.x * 0.5 * cl - Z.org.x) / cl - 0.5, gy = (p.y + nrm.y * 0.5 * cl - Z.org.y) / cl - 0.5, gz = (p.z + nrm.z * 0.5 * cl - Z.org.z) / cl - 0.5;
     var bx = Math.floor(gx), by = Math.floor(gy), bz = Math.floor(gz), fx = gx - bx, fy = gy - by, fz = gz - bz, sw = 0, sf = 0;
     for (var o = 0; o < 8; o++) { var ox = o & 1, oy = (o >> 1) & 1, oz = (o >> 2) & 1, i = bx + ox, j = by + oy, k = bz + oz;
       if (i < 0 || j < 0 || k < 0 || i >= Z.nx || j >= Z.ny || k >= Z.nz) continue; var c = i + j * Z.nx + k * nxy, t = Z.zone[c]; if (t === SOLID) continue;
-      var tz = t & ZONE_MASK; if (tz !== si.zone && tz !== 0) continue;
+      var tz = t & ZONE_MASK; if (si.zone !== 0 && tz !== si.zone && tz !== 0) continue;
       var w = (ox ? fx : 1 - fx) * (oy ? fy : 1 - fy) * (oz ? fz : 1 - fz); sw += w; sf += w * G[c] / 10000; }
     return { zone: si.zone, F: sw > 0 ? sf / sw : (si.cell >= 0 ? G[si.cell] / 10000 : 0), si: si };
   }

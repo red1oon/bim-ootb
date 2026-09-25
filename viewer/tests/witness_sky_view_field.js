@@ -6,6 +6,8 @@
 //                from the world-position readback) whose sky factor differs by > 0.25 — count + metres of edge (pixel footprint).
 //                Sky factor per pixel: AFTER (field on) = zone-debug w=6 (F_filtered); BEFORE (a tree without the field) =
 //                zone-debug w=1's sky class (kept 1 / withheld 0: slSkyKeep with indoorSky 0). Target: FAIL before, 0 after.
+//                V11: a pair on either side of a SOLID grid cell (a wall/glass line the readback does not draw — glass is
+//                hidden) is a physical boundary: reported apart as acrossSolid, not counted in skyStep.
 //   SKY_STEP_GRID face-adjacent same-zone cells with |dF| > 0.5 (before: SKY_BIT 1/0; after: G/10000).
 //   EXPOSURE     toneMappingExposure + §METER stops per pose (a > 2x drop between arms FAILs unless explained).
 //   §SKY_VIEW_FIELD / _DIST / _ADF_CHECK / §LUX_CHECK / _CAM / §STILL_STAGE_MS lines are relayed from the page per press.
@@ -20,7 +22,10 @@ const [PORT = '8621', OUT = '/tmp/witness_sky_view_field'] = process.argv.slice(
 const lines = []; const say = s => { const t = '+' + ((Date.now() - T0) / 1000).toFixed(1) + 's ' + s; lines.push(t); console.log(t); fs.writeFileSync(path.join(OUT, 'log.txt'), lines.join('\n')); };
 const RED1 = { atrium_stair: [-10.95, -2.91, 5.42], inner_room: [9.95, -7.70, 0.10], toilet: [8.34, -8.65, -3.58] };
 const RUNS = [
-  { db: 'Hospital', full: 63182, poses: [{ name: 'hospital_cafe', pos: [-11.15, 2.92, 4.08], tgt: [0.75, -13.08, -7.82] }, { name: 'atrium_stair (red1)', pos: RED1.atrium_stair, auto: true }] },
+  { db: 'Hospital', full: 63182, poses: [{ name: 'hospital_cafe', pos: [-11.15, 2.92, 4.08], tgt: [0.75, -13.08, -7.82] },
+    // NO-REGRESSION (coordinator, red1 approved on 8619 e61c116b): outside looking in through the curtain wall — camera side
+    // must stay outside, exposure 0.383 (no interior lift), interior sky factor seen through the glass logged
+    { name: 'hospital_exterior_curtainwall (red1 approved)', pos: [-5.529, -0.544, -42.321], tgt: [4.014, -6.761, 2.325] }, { name: 'atrium_stair (red1)', pos: RED1.atrium_stair, auto: true }] },
   { db: 'Clinic', full: 16071, poses: [{ name: 'clinic_corridor', pos: [-13.5, -1.4, -18.3], tgt: [4, -2.2, -18.3] }] },
   { db: 'Terminal', full: 48428, poses: [{ name: 'terminal_hall_floor', hallFloor: true }, { name: 'terminal_canteen (red1)', pos: [-20.06, -16.13, -1.00], auto: true, step: true },
     { name: 'terminal_waiting_hall (red1)', pos: [0.45, -12.80, 11.90], auto: true, step: true }] },
@@ -75,7 +80,8 @@ const RUNS = [
           sh.vertexShader = 'varying vec3 vW;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n\tvec4 _w = vec4( transformed, 1.0 );\n#ifdef USE_BATCHING\n\t_w = batchingMatrix * _w;\n#endif\n#ifdef USE_INSTANCING\n\t_w = instanceMatrix * _w;\n#endif\n\tvW = ( modelMatrix * _w ).xyz;');
           sh.fragmentShader = 'varying vec3 vW;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\n\tgl_FragColor = vec4( vW, 1.0 );'); };
         wm.customProgramCacheKey = () => 'skyStepWorld';
-        let zb, fb, pb; try { zb = read(1); fb = after ? read(6) : null; pb = read(null, wm); } finally { hidden.forEach(o => { o.visible = true; }); }
+        // each read twice: a program built during the first draw gets its uniforms pushed only on the next (onBeforeRender)
+        let zb, fb, pb; try { read(1); zb = read(1); if (after) read(6); fb = after ? read(6) : null; read(null, wm); pb = read(null, wm); } finally { hidden.forEach(o => { o.visible = true; }); }
         const cam = A.camera.position, fwd = new THREE.Vector3(); A.camera.getWorldDirection(fwd); const px = 2 * Math.tan(A.camera.fov * Math.PI / 360) / H;
         const idx = (x, y) => y * W + x, ok = i => pb[i * 4 + 3] >= 0.5 && zb[i * 4 + 3] >= 0.5;
         const F = new Float32Array(W * H), zid = new Int32Array(W * H), dep = new Float32Array(W * H), nrm = new Float32Array(W * H * 3);
@@ -85,30 +91,44 @@ const RUNS = [
         for (let y = 0; y < H - 1; y++) for (let x = 0; x < W - 1; x++) { const i = idx(x, y), a = idx(x + 1, y), c = idx(x, y + 1); if (!ok(i) || !ok(a) || !ok(c)) continue;
           const ux = pb[a * 4] - pb[i * 4], uy = pb[a * 4 + 1] - pb[i * 4 + 1], uz = pb[a * 4 + 2] - pb[i * 4 + 2], vx = pb[c * 4] - pb[i * 4], vy = pb[c * 4 + 1] - pb[i * 4 + 1], vz = pb[c * 4 + 2] - pb[i * 4 + 2];
           let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz); if (!(l > 0)) continue; nrm[i * 3] = nx / l; nrm[i * 3 + 1] = ny / l; nrm[i * 3 + 2] = nz / l; }
-        const cos5 = Math.cos(5 * Math.PI / 180); let pairs = 0, steps = 0, stepsZone = 0, metres = 0, metresZone = 0;
+        // pixel class from w=1: zid 1..65533 = a light zone, 65534 = outside (open / off grid), 0 = unknown (fully solid column)
+        const cls = i => zid[i] === 65534 ? 'out' : (zid[i] === 0 ? 'unk' : 'zone'); const byPair = {};
+        const cellAt = (x, y, z) => { const a = Math.floor((x - Z.org.x) / Z.cell), b2 = Math.floor((y - Z.org.y) / Z.cell), c = Math.floor((z - Z.org.z) / Z.cell);
+          return (a < 0 || b2 < 0 || c < 0 || a >= Z.nx || b2 >= Z.ny || c >= Z.nz) ? -1 : a + b2 * Z.nx + c * Z.nx * Z.ny; };
+        const acrossSolid = (i, j) => { const n0 = [nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]], eye = (cam.x - pb[i * 4]) * n0[0] + (cam.y - pb[i * 4 + 1]) * n0[1] + (cam.z - pb[i * 4 + 2]) * n0[2] < 0 ? -0.25 : 0.25;
+          const a = [pb[i * 4] + n0[0] * eye, pb[i * 4 + 1] + n0[1] * eye, pb[i * 4 + 2] + n0[2] * eye], b3 = [pb[j * 4] + n0[0] * eye, pb[j * 4 + 1] + n0[1] * eye, pb[j * 4 + 2] + n0[2] * eye];
+          for (let t = 0; t <= 1.0001; t += 0.125) { const c = cellAt(a[0] + (b3[0] - a[0]) * t, a[1] + (b3[1] - a[1]) * t, a[2] + (b3[2] - a[2]) * t); if (c >= 0 && Z.zone[c] === LZ.SOLID) return true; } return false; };
+        let across = 0; const ex = []; const cos5 = Math.cos(5 * Math.PI / 180); let pairs = 0, steps = 0, stepsZone = 0, metres = 0, metresZone = 0;
         const test = (i, j) => { if (!ok(i) || !ok(j) || !dep[i] || !dep[j]) return; const ni = nrm[i * 3] || nrm[i * 3 + 1] || nrm[i * 3 + 2], nj = nrm[j * 3] || nrm[j * 3 + 1] || nrm[j * 3 + 2]; if (!ni || !nj) return;
           if (Math.abs(dep[i] - dep[j]) > 0.01 * Math.min(dep[i], dep[j])) return; if (nrm[i * 3] * nrm[j * 3] + nrm[i * 3 + 1] * nrm[j * 3 + 1] + nrm[i * 3 + 2] * nrm[j * 3 + 2] < cos5) return;
-          pairs++; if (Math.abs(F[i] - F[j]) > 0.25) { steps++; const m = dep[i] * px; metres += m; if (zid[i] > 0 && zid[j] > 0) { stepsZone++; metresZone += m; } } };
+          pairs++; if (Math.abs(F[i] - F[j]) > 0.25) {
+            // V11: a step whose two pixels sit on either side of a SOLID grid cell (a wall / glass partition line the readback
+            // does not draw: glass is hidden) is a physical boundary, reported apart (acrossSolid), not a grid staircase
+            if (Z && acrossSolid(i, j)) { across++; return; }
+            steps++; const m = dep[i] * px; metres += m; const k = [cls(i), cls(j)].sort().join('-'); byPair[k] = (byPair[k] || 0) + 1;
+            if (k === 'zone-zone') { stepsZone++; metresZone += m; }
+            if (ex.length < 12 && (steps % 25) === 1) ex.push({ k, zi: zid[i], zj: zid[j], Fi: +F[i].toFixed(3), Fj: +F[j].toFixed(3), P: [pb[i * 4], pb[i * 4 + 1], pb[i * 4 + 2]].map(v => +v.toFixed(2)), n: [nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]].map(v => +v.toFixed(2)) }); } };
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = idx(x, y); if (x + 1 < W) test(i, idx(x + 1, y)); if (y + 1 < H) test(i, idx(x, y + 1)); }
         // grid-only raw count
         let grid = 0, gridPairs = 0; if (Z) { const nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, G = after && Z.field ? Z.field.G : null;
           const fc = c => G ? G[c] / 10000 : ((zone[c] & LZ.SKY_BIT) ? 1 : 0);
           for (let c = 0; c < nx * ny * nz; c++) { const v = zone[c]; if (v === LZ.SOLID || v === 0) continue; const i = c % nx, j = ((c / nx) | 0) % ny, k = (c / nxy) | 0, zc = v & LZ.ZONE_MASK, f0 = fc(c);
             for (const [ok2, d] of [[i + 1 < nx, 1], [j + 1 < ny, nx], [k + 1 < nz, nxy]]) { if (!ok2) continue; const w = zone[c + d]; if (w === LZ.SOLID || w === 0 || (w & LZ.ZONE_MASK) !== zc) continue; gridPairs++; if (Math.abs(fc(c + d) - f0) > 0.5) grid++; } } }
-        let lit = 0; for (let i = 0; i < W * H; i++) if (ok(i)) lit++;
-        return { arm: after ? 'after(field w=6)' : 'before(SKY_BIT w=1)', W, H, litPixels: lit, surfacePairs: pairs, skyStep: steps, skyStepM: +metres.toFixed(2), skyStepZone: stepsZone, skyStepZoneM: +metresZone.toFixed(2), gridStep: grid, gridPairs,
-          exposure: +Rn.toneMappingExposure.toFixed(3), meterStops: A._meterLast ? +A._meterLast.stops.toFixed(2) : 0, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 };
+        let lit = 0; const fsum = { zone: [0, 0], out: [0, 0], unk: [0, 0] }; for (let i = 0; i < W * H; i++) if (ok(i)) { lit++; const c = cls(i); fsum[c][0] += F[i]; fsum[c][1]++; }
+        const meanF = {}; for (const k in fsum) meanF[k] = fsum[k][1] ? +(fsum[k][0] / fsum[k][1]).toFixed(4) + '@' + fsum[k][1] + 'px' : '-';
+        return { arm: after ? 'after(field w=6)' : 'before(SKY_BIT w=1)', W, H, litPixels: lit, surfacePairs: pairs, skyStep: steps, skyStepM: +metres.toFixed(2), skyStepZone: stepsZone, skyStepZoneM: +metresZone.toFixed(2), stepsByClassPair: byPair, acrossSolid: across, stepSamples: ex, meanSkyFactorByClass: meanF, gridStep: grid, gridPairs,
+          exposure: +Rn.toneMappingExposure.toFixed(3), cameraSide: (A._sourcedCap && A._sourcedCap.camZone > 0) ? 'inside' : (A._stillCamInsideNow ? 'inside(effects)' : 'outside'), meterStops: A._meterLast ? +A._meterLast.stops.toFixed(2) : 0, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 };
       });
       const g = (re, n) => (L.slice(b1).find(t => re.test(t)) || '-').slice(0, n || 400);
       say('§SKY_STEP pose=' + ps.name + ' cam=' + JSON.stringify(pose.pos) + ' tgt=' + JSON.stringify(pose.tgt) + (ps.auto ? ' (V10 longest free ray)' : '') + ' ' + JSON.stringify(r));
-      say('   ' + [g(/§METER camera/), g(/§SKY_VIEW_FIELD on|§SKY_VIEW_FIELD off/, 900), g(/§SKY_VIEW_FIELD_DIST/, 500), g(/§SKY_VIEW_ADF_CHECK/, 700), g(/§LUX_CHECK_CAM/, 500), g(/§STILL_STAGE_MS/, 500), g(/§SKY_PORTAL off|§SKY_PORTAL placed/, 200), g(/§LIGHT_UNIFORM_BUDGET/, 400)].join('\n   '));
+      say('   ' + [g(/§METER camera/), g(/^§SKY_VIEW_FIELD (on|off)/, 900), g(/§SKY_VIEW_FIELD_DIST/, 500), g(/§SKY_VIEW_ADF_CHECK/, 700), g(/§LUX_CHECK_CAM/, 500), g(/§STILL_STAGE_MS/, 500), g(/§SKY_PORTAL off|§SKY_PORTAL placed/, 200), g(/§LIGHT_UNIFORM_BUDGET/, 400)].join('\n   '));
       if (first) { say('   ' + [g(/§SKY_VIEW_FIELD_BENT/, 1200), g(/§LUX_CHECK zones/, 4000)].join('\n   ')); first = false;
         const red = await p.evaluate(RED1 => { const LZ = window.LightZones, SL = window.SourcedLight, lx = SL.lux ? SL.lux() : null, out = {};
           for (const k in RED1) { const q = RED1[k], z = LZ.at({ x: q[0], y: q[1], z: q[2] }); const row = lx && z > 0 && z !== LZ.SOLID ? lx.rows.find(r => r.z === z) : null;
             out[k] = { zone: z === LZ.SOLID ? 'SOLID' : z, lux: row ? { use: row.use, en: row.en, sky: +row.Esky.toFixed(0), lamps: +row.Elamps.toFixed(0), total: +row.Etotal.toFixed(0), Fwp: +(100 * row.Fwp).toFixed(2), verdict: row.verdict } : null }; }
           return out; }, RED1);
         say('§RED1_POSES bld=' + R.db + ' ' + JSON.stringify(red)); }
-      summary.push(R.db + ' ' + ps.name + ': exposure=' + r.exposure + ' stops=' + r.meterStops + ' skyStep=' + r.skyStep + ' (' + r.skyStepM + ' m; zone ' + r.skyStepZone + ') grid=' + r.gridStep);
+      summary.push(R.db + ' ' + ps.name + ': exposure=' + r.exposure + ' stops=' + r.meterStops + ' side=' + r.cameraSide + ' skyStep=' + r.skyStep + ' (+acrossSolid ' + r.acrossSolid + ') (' + r.skyStepM + ' m; zone-zone ' + r.skyStepZone + ' ' + JSON.stringify(r.stepsByClassPair) + ') grid=' + r.gridStep + ' meanF=' + JSON.stringify(r.meanSkyFactorByClass));
       await p.keyboard.press('Escape'); await sleep(3000);
     }
     await p.close();
