@@ -12,7 +12,8 @@
   var MAX_PL = 256, MAX_SL = 64, SOLID = 65535, OUTSIDE = 65534;   // OUTSIDE: a light (or fragment) off the building's zones
   var orig = null, linkFailed = false, glErrFirstFrame = false;
   var installed = false, active = false, prevOBR = null, tex = null, dummy = null, texKey = null, lastLog = '';
-  var P = new Float32Array(4), ORG = new Float32Array(4), DIM = new Float32Array(4);
+  var P = new Float32Array(4), ORG = new Float32Array(4), DIM = new Float32Array(4), SKY = new Float32Array(4);   // SKY: §SOURCED_DAYLIGHT uSLSky
+  var rg = null, rgKey = null, dayLast = null;   // §SOURCED_DAYLIGHT: the RG16UI texel array (R = zone | SKY_BIT, G = daylight x 10000)
   var PZ = new Float32Array(MAX_PL), SZ = new Float32Array(MAX_SL);   // zone per point / spot light, in three's light order
 
   // ══ §SOURCED_LIGHT_LINK — SPEC (2026-09-25, fix/sl-gl-link) ══
@@ -36,13 +37,15 @@
   // After: 46.4 s total, 1.7 s max (default pose, same probe) — the single-link maximum is back at today's shaders'.
   var PARS = [
     '#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )',
-    'uniform vec4 uSLParams; uniform vec4 uSLOrg; uniform vec4 uSLDim; uniform highp usampler3D uSLZone;',
+    'uniform vec4 uSLParams; uniform vec4 uSLOrg; uniform vec4 uSLDim; uniform vec4 uSLSky; uniform highp usampler3D uSLZone;',
     '#if NUM_POINT_LIGHTS > 0', 'uniform vec4 uSLPZ[ ( NUM_POINT_LIGHTS + 3 ) / 4 ];', '#endif',
     '#if NUM_SPOT_LIGHTS > 0', 'uniform vec4 uSLSZ[ ( NUM_SPOT_LIGHTS + 3 ) / 4 ];', '#endif',
     // the fragment's zone, set ONCE by the line §SOURCED_LIGHT_LINK inserts into lights_fragment_begin; -1 = unknown (lit as today)
     'float _slFZ = -1.0;',
     // the fragment's sky class, set with _slFZ: 1 = sees the sky (open cell / sky-lit covered cell / off grid), 0 = covered or unknown
     'float _slSky = 1.0;',
+    // §SOURCED_DAYLIGHT: the daylight fraction (G / 10000) of the SAME texel slFragZone picked; read once with _slFZ
+    'float _slDay = 0.0;',
     // raw cell: -1 off grid, 65535 solid, 0 outside, 1.. zone
     'float slZoneAt( vec3 w ) {',
     '  ivec3 c = ivec3( floor( ( w - uSLOrg.xyz ) / uSLParams.y ) );',
@@ -62,17 +65,18 @@
     '  vec3 wp = ( vi * vec4( posView, 1.0 ) ).xyz; vec3 wn = normalize( ( vi * vec4( nf, 0.0 ) ).xyz );',
     '  ivec3 c0 = ivec3( floor( ( wp + wn * 0.25 - uSLOrg.xyz ) / uSLParams.y ) ); ivec3 dim = ivec3( uSLDim.xyz );',
     '  if ( any( lessThan( c0, ivec3( 0 ) ) ) || any( greaterThanEqual( c0, dim ) ) ) { _slSky = 1.0; return 65534.0; }',
-    '  float best = 1e30; uint bt = 65535u;',
+    '  float best = 1e30; uint bt = 65535u; uint bg = 0u;',
     '  for ( int dz = -1; dz <= 1; dz ++ ) { for ( int dy = -1; dy <= 1; dy ++ ) { for ( int dx = -1; dx <= 1; dx ++ ) {',
     '    ivec3 c = c0 + ivec3( dx, dy, dz );',
     '    if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
-    '    uint t = texelFetch( uSLZone, c, 0 ).r; if ( t == 65535u ) continue;',
+    '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; uint t = t2.r; if ( t == 65535u ) continue;',
     '    vec3 e = uSLOrg.xyz + ( vec3( c ) + 0.5 ) * uSLParams.y - wp; if ( dot( e, wn ) <= 0.0 ) continue;',
-    '    float l = dot( e, e ); if ( l < best ) { best = l; bt = t; }',
+    '    float l = dot( e, e ); if ( l < best ) { best = l; bt = t; bg = t2.g; }',
     '  } } }',
-    '  if ( bt == 65535u ) { bt = 0u; for ( int j = 1; j < 4096; j ++ ) { ivec3 c = c0 + ivec3( 0, j, 0 ); if ( c.y >= dim.y ) break;',
-    '    uint t = texelFetch( uSLZone, c, 0 ).r; if ( t != 65535u ) { bt = t; break; } if ( c.y == dim.y - 1 ) bt = 65535u; } }',
-    '  if ( bt == 65535u ) { _slSky = 0.0; return -1.0; }',
+    '  if ( bt == 65535u ) { bt = 0u; bg = 0u; for ( int j = 1; j < 4096; j ++ ) { ivec3 c = c0 + ivec3( 0, j, 0 ); if ( c.y >= dim.y ) break;',
+    '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u ) { bt = t2.r; bg = t2.g; break; } if ( c.y == dim.y - 1 ) bt = 65535u; } }',
+    '  if ( bt == 65535u ) { _slSky = 0.0; _slDay = 0.0; return -1.0; }',
+    '  _slDay = float( bg ) / 10000.0;',
     '  uint z = bt & 0x3FFFu; _slSky = ( z == 0u || ( bt & 0x4000u ) != 0u ) ? 1.0 : 0.0;',
     '  return ( z == 0u ) ? 65534.0 : float( z );',
     '}',
@@ -81,6 +85,12 @@
     'float slPass( float lz, vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 || lz < 0.5 ) return 1.0;',
     '  return ( _slFZ < -0.5 || abs( _slFZ - lz ) < 0.5 ) ? 1.0 : 0.0;',
+    '}',
+    // §SOURCED_DAYLIGHT: covered, non-sky-lit zone fragments get G/10000 x uSLSky (hemi sky colour x intensity x &daylight) as
+    // indirect irradiance — the BRE daylight factor of their zone, distributed by distance to its windows / openings
+    'vec3 slDaylight() {',
+    '  if ( uSLParams.x < 0.5 || _slSky > 0.5 || _slFZ < 0.5 || _slFZ > 65533.5 ) return vec3( 0.0 );',
+    '  return _slDay * uSLSky.rgb;',
     '}',
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
@@ -92,6 +102,7 @@
     '#else',
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
     'float slSkyKeep( vec3 posView, vec3 nView ) { return 1.0; }',
+    'vec3 slDaylight() { return vec3( 0.0 ); }',
     '#endif', ''].join('\n');
   // §SOURCED_LIGHT_LINK: the one slFragZone call per fragment, before three's light loops (geometryPosition/geometryNormal
   // are declared at the top of lights_fragment_begin). Staged (x) or zone-debug (w) only: nav pays nothing.
@@ -112,7 +123,7 @@
     var s0 = 'getSpotLightInfo( spotLight, geometryPosition, directLight );';
     if (fb.indexOf(s0) >= 0) { fb = fb.replace(s0, s0 + '\n\t\tdirectLight.color *= slPass( uSLSZ[ UNROLLED_LOOP_INDEX / 4 ][ UNROLLED_LOOP_INDEX - ( UNROLLED_LOOP_INDEX / 4 ) * 4 ], geometryPosition, geometryNormal );'); ok++; }
     var a0 = 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );';
-    if (fb.indexOf(a0) >= 0) { fb = fb.replace(a0, 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor ) * slSkyKeep( geometryPosition, geometryNormal );'); ok++; }
+    if (fb.indexOf(a0) >= 0) { fb = fb.replace(a0, 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor ) * slSkyKeep( geometryPosition, geometryNormal ) + slDaylight();'); ok++; }   // + §SOURCED_DAYLIGHT (once, no per-light code)
     var h0 = 'irradiance += getHemisphereLightIrradiance(';   // also matches the §SKY_OCCLUSION-patched line
     if (fb.indexOf(h0) >= 0) { fb = fb.replace(h0, 'irradiance += slSkyKeep( geometryPosition, geometryNormal ) * getHemisphereLightIrradiance('); ok++; }
     C.lights_fragment_begin = fb;
@@ -135,13 +146,13 @@
         '  else if ( uSLParams.w > 4.5 ) { gl_FragColor = vec4( clamp( ( - vViewPosition ) / 40.0 + 0.5, 0.0, 1.0 ), 1.0 ); }\n' +
         '  else { gl_FragColor = vec4( length( vViewPosition ) / 10.0, length( _wp - cameraPosition ) / 10.0, clamp( ( _wp.y - uSLOrg.y ) / 20.0, 0.0, 1.0 ), 1.0 ); } }\n#endif\n'; ok++; }
     C.lights_pars_begin = PARS + C.lights_pars_begin;
-    dummy = new THREE.Data3DTexture(new Uint16Array(1), 1, 1, 1);
-    dummy.format = THREE.RedIntegerFormat; dummy.type = THREE.UnsignedShortType; dummy.internalFormat = 'R16UI';
+    dummy = new THREE.Data3DTexture(new Uint16Array(2), 1, 1, 1);
+    dummy.format = THREE.RGIntegerFormat; dummy.type = THREE.UnsignedShortType; dummy.internalFormat = 'RG16UI';   // §SOURCED_DAYLIGHT: RG16UI
     dummy.minFilter = dummy.magFilter = THREE.NearestFilter; dummy.generateMipmaps = false; dummy.unpackAlignment = 1; dummy.needsUpdate = true;
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
-      U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLZone = { value: dummy };
+      U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
     });
     installed = true;
@@ -234,7 +245,7 @@
 
   function push(A, m) {
     var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLParams) return false;
-    U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
+    U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; if (U.uSLSky) U.uSLSky.value = SKY; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
     return true;
   }
 
@@ -274,6 +285,57 @@
     console.log('§SOURCED_LIGHT_CAP zonesCache=' + (hit ? 'hit' : 'built') + ' camZone=' + A._sourcedCap.camZone + ' visibleZones=' + vis.size + ' (' + top + ') rays=' + rays + ' hits=' + hits + ' ms=' + (performance.now() - t0).toFixed(0));
   }
 
+
+  // ══ §SOURCED_DAYLIGHT v2 — per still: portal exclusion (G3), DF + G (LightZones.daylight), G into the RG16UI texel array,
+  // re-upload, uSLSky, logs. Alt+S only: stage() never runs for films (A._maxqActive) — there is no film path.
+  function skyNow(A) { var d = dayLast ? dayLast.dial : 0, h = A.hemi;
+    if (!h || !d) { SKY[0] = SKY[1] = SKY[2] = 0; SKY[3] = 0; return; }
+    SKY[0] = h.color.r * h.intensity * d; SKY[1] = h.color.g * h.intensity * d; SKY[2] = h.color.b * h.intensity * d; SKY[3] = d; }
+  function stageDaylight(A, Z) {
+    var LZ = global.LightZones, SP = global.SkyPortal, dl = dial(A, '_stillDaylight', 'daylight', 1, 0, 3), t0 = performance.now();
+    if (!LZ || !LZ.daylight) return null;
+    // G3: portals placed this still — a live portal's pane is excluded (its light already delivers it); a blocked portal
+    // (§SKY_PORTAL_BLOCKED blockedFrac >= 0.5) keeps its pane in the DF and its light is dropped (intensity 0, pad kept)
+    var lights = (SP && SP.placedLights) ? SP.placedLights() : [], ex = new Set(), kept = new Set(), byKey = new Map();
+    lights.forEach(function (L) { var u = L.userData || {}; if (u.pad || !u.paneKey || !(L.intensity > 0)) return;
+      if (u.blockedFrac >= 0.5) { kept.add(u.paneKey); byKey.set(u.paneKey, L); } else ex.add(u.paneKey); });
+    var r = LZ.daylight(A, ex, kept); if (!r) return null;
+    var dropped = []; r.keptKeys.forEach(function (k) { var L = byKey.get(k); if (L) { dropped.push((L.userData.blockedFrac).toFixed(2)); L.intensity = 0; } });
+    // G into the texel array, re-upload
+    var G = Z.dayG, n = Z.zone.length, t1 = performance.now(); for (var i = 0; i < n; i++) rg[i * 2 + 1] = G[i];
+    var tU = performance.now(), gl = A.renderer.getContext(), e0 = gl.getError(); tex.needsUpdate = true; A.renderer.initTexture(tex); var e1 = gl.getError(), uploadMs = performance.now() - tU;
+    var out = { dial: dl, r: r, droppedBlockedPortals: dropped.length };
+    SKY[0] = SKY[1] = SKY[2] = 0; SKY[3] = dl; if (A.hemi) { SKY[0] = A.hemi.color.r * A.hemi.intensity * dl; SKY[1] = A.hemi.color.g * A.hemi.intensity * dl; SKY[2] = A.hemi.color.b * A.hemi.intensity * dl; }
+    var B = r.B, apUp = 0, apSide = 0; B.ap.forEach(function (a) { apUp += a.upM2; apSide += a.sideM2; });
+    var band = function (v) { return v <= 0 ? '0' : (v < 2 ? '<2%' : (v <= 5 ? '2-5%' : '>5%')); };
+    var rows = []; r.zs.forEach(function (q, z) { if (q.DF > 0) rows.push([z, q]); });
+    var src = function (q) { return q.vert + q.roof + q.apUp + q.apSide; };
+    rows.sort(function (a, b) { return b[1].DF - a[1].DF; });
+    var top = rows.slice(0, 8).map(function (e) { return e[0] + ':' + e[1].DF.toFixed(2) + ':' + src(e[1]).toFixed(1) + ':' + e[1].surf.toFixed(0); });
+    var over10 = rows.filter(function (e) { return e[1].DF > 10; }).map(function (e) { var q = e[1], zi = Z.zoneInfo[e[0] - 1];
+      return e[0] + ':' + q.DF.toFixed(1) + '%:vert' + q.vert.toFixed(1) + '/roof' + q.roof.toFixed(1) + '/apUp' + q.apUp.toFixed(1) + '/apSide' + q.apSide.toFixed(1) + ':surf' + q.surf.toFixed(0) + ':cells' + zi.cells + ':skyLit' + zi.skyLitCells; });
+    // G1 FAIL-to-explain: a glazed zone at 0% (its panes counted, theta 0 on every one)
+    var glazedZero = []; r.zs.forEach(function (q, z) { if (q.panes > 0 && !(q.DF > 0)) glazedZero.push(z + ':panes' + q.panes + ':vert' + q.vert.toFixed(1) + ':roof' + q.roof.toFixed(1)); });
+    var portalOnly = 0; var zoneWithPane = new Set(B.panes.map(function (p) { return p.zone; })); zoneWithPane.forEach(function (z) { if (!r.zs.has(z)) portalOnly++; });
+    console.log('§SOURCED_DAYLIGHT zones=' + r.zones + ' litZones=' + r.litZones + ' panes=' + B.panes.length + ' (roof=' + B.cnt.roof + ' portaled=' + r.portaled + ' portaledKept=' + r.portaledKept +
+      ' skipped=' + B.cnt.skipped + ' sidesOpen=' + B.cnt.sidesOpen + ' sidesEave=' + B.cnt.sidesEave + ' theta0=' + B.cnt.theta0 + ' of tiles=' + B.cnt.tiles + ') apertures(up/side m2)=' + apUp.toFixed(1) + '/' + apSide.toFixed(1) +
+      ' T=' + r.T.toFixed(3) + ' R=' + r.R + ' DFmedian=' + r.DFmedian.toFixed(2) + ' DFmax=' + r.DFmax.toFixed(2) + ' bandsLG10(<2%/2-5%/>5% zones)=' + r.bands.join('/') +
+      ' topZones=[' + top.join(',') + '] over10=[' + over10.join(',') + '] glazedZero=[' + glazedZero.join(',') + '] glazedAllPortaled=' + portalOnly +
+      ' droppedBlockedPortals=' + dropped.length + (dropped.length ? ' (blockedFrac ' + dropped.join(',') + ')' : '') + ' gCells=' + r.gCells + ' gCapped=' + r.gCapped +
+      ' dial=' + dl + ' uSLSky=' + [SKY[0], SKY[1], SKY[2]].map(function (v) { return v.toFixed(3); }).join(',') + ' baseMs=' + r.baseMs + (B.ms ? ' (base cache built ' + B.ms + ' ms)' : '') + ' buildMs=' + r.buildMs +
+      ' texFillMs=' + (tU - t1).toFixed(0) + ' uploadMs=' + uploadMs.toFixed(0) + ' glErr=' + e0 + '/' + e1 + ' MB=' + (rg.length * 2 / 1e6).toFixed(1) + ' ms=' + (performance.now() - t0).toFixed(0));
+    // the camera zone (G1 table row)
+    var cz = (A._sourcedCap && A._sourcedCap.camZone) || 0, cq = cz ? r.zs.get(cz) : null, czi = cz ? Z.zoneInfo[cz - 1] : null;
+    console.log('§SOURCED_DAYLIGHT_CAM camZone=' + cz + (czi ? ' DF=' + (cq ? cq.DF.toFixed(2) : '0.00') + '% band=' + band(cq ? cq.DF : 0) + ' srcM2(vertGlass/roofGlass/apUp/apSide)=' + (cq ? [cq.vert, cq.roof, cq.apUp, cq.apSide].map(function (v) { return v.toFixed(1); }).join('/') : '0/0/0/0') +
+      ' sumTAtheta=' + (cq ? cq.num.toFixed(1) : 0) + ' surfaceM2=' + czi.surfaceM2 + ' D_z=' + (cq ? cq.D.toFixed(2) : '-') + 'm sideTheta=' + (cq && cq.sideTheta != null ? cq.sideTheta.toFixed(1) : '-') + ' panes=' + (cq ? cq.panes : 0) +
+      ' cells=' + czi.cells + ' skyLitCells=' + czi.skyLitCells + ' m3=' + czi.m3 : ' (camera not in a light zone)'));
+    // G2: area-weighted mean source direction per lit zone (LOG ONLY: no directional weight in the shader this build)
+    var dirs = rows.slice().sort(function (a, b) { return src(b[1]) - src(a[1]); }), shown = dirs.slice(0, 60).map(function (e) { var q = e[1], a = src(e[1]) || 1, d = [q.dir[0] / a, q.dir[1] / a, q.dir[2] / a], m = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+      return e[0] + ':' + d.map(function (v) { return (m ? v / m : 0).toFixed(2); }).join(',') + ':|' + m.toFixed(2) + '|'; });
+    console.log('§SOURCED_DAYLIGHT_DIR (log only, G2) zones=' + rows.length + ' shown=' + shown.length + ' [id:unit dir (outward, toward the sky):|mean resultant length|] ' + shown.join(' '));
+    return out;
+  }
+
   function stage(A) {
     var THREE = global.THREE, LZ = global.LightZones;
     if (!installed || !THREE || !LZ || !A || !A.scene || !A.renderer) { console.log('§SOURCED_LIGHT skipped installed=' + installed + ' zones=' + !!LZ); return; }
@@ -283,15 +345,19 @@
     var key = Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + Z.zones;
     if (texKey !== key) {
       if (tex) tex.dispose();
-      tex = new THREE.Data3DTexture(Z.zone, Z.nx, Z.ny, Z.nz);
-      tex.format = THREE.RedIntegerFormat; tex.type = THREE.UnsignedShortType; tex.internalFormat = 'R16UI';
+      // §SOURCED_DAYLIGHT: RG16UI — R = zone | SKY_BIT (as before), G = the still's daylight fraction x 10000 (0 until daylight())
+      if (rgKey !== key) { rg = new Uint16Array(Z.zone.length * 2); for (var ri = 0; ri < Z.zone.length; ri++) rg[ri * 2] = Z.zone[ri]; rgKey = key; }
+      tex = new THREE.Data3DTexture(rg, Z.nx, Z.ny, Z.nz);
+      tex.format = THREE.RGIntegerFormat; tex.type = THREE.UnsignedShortType; tex.internalFormat = 'RG16UI';
       tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.unpackAlignment = 1; tex.needsUpdate = true; texKey = key;
       // §SOURCED_LIGHT_GLERR — any GL error standing before the upload, raised by the upload, and after the first patched frame
       try { var gl = A.renderer.getContext(), e0 = gl.getError(); A.renderer.initTexture(tex); var e1 = gl.getError();
-        console.log('§SOURCED_LIGHT_GLERR upload before=' + e0 + ' after=' + e1 + ' (0 = none; 1282 = INVALID_OPERATION) R16UI ' + Z.nx + 'x' + Z.ny + 'x' + Z.nz); } catch (eG) { console.warn('§SOURCED_LIGHT_GLERR upload probe failed: ' + eG.message); }
+        console.log('§SOURCED_LIGHT_GLERR upload before=' + e0 + ' after=' + e1 + ' (0 = none; 1282 = INVALID_OPERATION) RG16UI ' + Z.nx + 'x' + Z.ny + 'x' + Z.nz); } catch (eG) { console.warn('§SOURCED_LIGHT_GLERR upload probe failed: ' + eG.message); }
       glErrFirstFrame = true;
     }
+    try { dayLast = stageDaylight(A, Z); } catch (eD) { dayLast = null; console.warn('§SOURCED_DAYLIGHT failed: ' + eD.message); }
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
+    console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' daylight=' + (dayLast ? dayLast.dial : 'off') + ' (&daylight= / A._stillDaylight, 0..3, default 1)');
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;
     ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
     active = true;
@@ -303,6 +369,7 @@
     prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0; ordCache = null;
     var own = function (renderer, scene, camera) {
       if (active) {
+        skyNow(A);   // §SOURCED_DAYLIGHT: uSLSky follows the live hemi
         var bb = bindLights(A, camera);
         // re-push only when a program was built (a recompile clones fresh uniforms from ShaderLib; typed arrays stay shared)
         var np = (renderer && renderer.info && renderer.info.programs) ? renderer.info.programs.length : -1;
@@ -431,5 +498,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { daylight: function () { return { on: !!(active && dayLast), dial: dayLast ? dayLast.dial : 0, sky: [SKY[0], SKY[1], SKY[2]], droppedBlockedPortals: dayLast ? dayLast.droppedBlockedPortals : 0 }; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

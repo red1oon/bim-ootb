@@ -27,7 +27,11 @@
   // whole facade becomes a few facade-sized sources instead of many tiny panels. Each cell = { c: area-weighted centre,
   // n, area: glass area in the cell, hue, cls }. BatchedMesh glazing is not read (logged).
   var PORTAL_TILE_M = 6;
-  function collectPanes(A, THREE) {
+  // §SOURCED_DAYLIGHT (v2 spec, D3): opts.roof = true also keeps |n.y| > 0.7 roof glazing (the daylight factor counts it; the
+  // portal path never passes it, so portals are unchanged). Every tile carries key (plane + tile: a placed portal names its
+  // pane), T = glass-area-weighted (1 - opacity), roof flag.
+  function collectPanes(A, THREE, opts) {
+    var roofToo = !!(opts && opts.roof);
     var planes = new Map(), stats = { byClass: {}, batchedSkipped: 0 };
     var inst = new THREE.Matrix4(), M = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(),
       ab = new THREE.Vector3(), ac = new THREE.Vector3(), nn = new THREE.Vector3();
@@ -53,24 +57,24 @@
             a.fromBufferAttribute(pos, i0).applyMatrix4(M); b.fromBufferAttribute(pos, i1).applyMatrix4(M); c.fromBufferAttribute(pos, i2).applyMatrix4(M);
             nn.crossVectors(ab.subVectors(b, a), ac.subVectors(c, a)); var ar = nn.length() / 2; if (ar < 1e-4) continue;
             nn.normalize(); if (nn.y < 0 || (nn.y === 0 && (nn.x < 0 || (nn.x === 0 && nn.z < 0)))) nn.negate();   // one orientation per plane
-            if (Math.abs(nn.y) > 0.7) continue;                                   // skylights/roof glass: not a window portal
+            if (Math.abs(nn.y) > 0.7 && !roofToo) continue;                       // skylights/roof glass: not a window portal
             var d = nn.dot(a), key = [Math.round(nn.x * 12), Math.round(nn.y * 12), Math.round(nn.z * 12), Math.round(d / 0.25)].join(',');
             var P = planes.get(key);
             if (!P) { var u = new THREE.Vector3(0, 1, 0).cross(nn).normalize(); if (u.lengthSq() < 0.5) u.set(1, 0, 0);
-              P = { n: nn.clone(), u: u, v: nn.clone().cross(u).normalize(), cells: new Map(), cls: cls, hue: hue }; planes.set(key, P); }
+              P = { key: key, n: nn.clone(), u: u, v: nn.clone().cross(u).normalize(), cells: new Map(), cls: cls, hue: hue }; planes.set(key, P); }
             var cx = (a.x + b.x + c.x) / 3, cy = (a.y + b.y + c.y) / 3, cz = (a.z + b.z + c.z) / 3;
             var pu = P.u.x * cx + P.u.y * cy + P.u.z * cz, pv = P.v.x * cx + P.v.y * cy + P.v.z * cz;
             var ck = Math.floor(pu / PORTAL_TILE_M) + ':' + Math.floor(pv / PORTAL_TILE_M), C = P.cells.get(ck);
-            if (!C) { C = { x: 0, y: 0, z: 0, area: 0 }; P.cells.set(ck, C); }
-            C.x += cx * ar; C.y += cy * ar; C.z += cz * ar; C.area += ar;
+            if (!C) { C = { x: 0, y: 0, z: 0, area: 0, ta: 0 }; P.cells.set(ck, C); }
+            C.x += cx * ar; C.y += cy * ar; C.z += cz * ar; C.area += ar; C.ta += (1 - m.opacity) * ar;
             stats.byClass[cls] = (stats.byClass[cls] || 0) + ar;
           }
         });
       }
     });
     var out = [];
-    planes.forEach(function (P) { P.cells.forEach(function (C) { if (C.area < 0.5) return;   // < 0.5 m2 of glass in a cell: not a window
-      out.push({ c: new THREE.Vector3(C.x / C.area, C.y / C.area, C.z / C.area), n: P.n, u: P.u, area: C.area, hue: P.hue, cls: P.cls }); }); });
+    planes.forEach(function (P) { P.cells.forEach(function (C, ck) { if (C.area < 0.5) return;   // < 0.5 m2 of glass in a cell: not a window
+      out.push({ c: new THREE.Vector3(C.x / C.area, C.y / C.area, C.z / C.area), n: P.n, u: P.u, area: C.area, hue: P.hue, cls: P.cls, key: P.key + '|' + ck, T: C.ta / C.area, roof: Math.abs(P.n.y) > 0.7 }); }); });
     Object.keys(stats.byClass).forEach(function (k) { stats.byClass[k] = +stats.byClass[k].toFixed(1); });
     stats.planes = planes.size;
     return { panes: out, stats: stats };
@@ -98,11 +102,11 @@
     var c = 0, sh = 0, used = 0;
     while (c < cap) { var need = (sh < nShadow) ? 12 : 7; if (used + need > portalVec) break; used += need; c++; if (sh < nShadow) sh++; }
     budgetCap = c; budgetShadow = sh;
-    // §SOURCED_LIGHT adds fragment uniforms to every lit material: uSLParams/uSLOrg/uSLDim (3 vec4), one vec4 per 4 spots
+    // §SOURCED_LIGHT adds fragment uniforms to every lit material: uSLParams/uSLOrg/uSLDim/uSLSky (4 vec4), one vec4 per 4 spots
     // (uSLSZ) and one per 4 point lights (uSLPZ) — so a lamp costs 4.25 vectors, not 4. Uncounted, a backend with a lower
     // maxFragmentUniformVectors would fail to link at the first Alt+S.
     var slOn = !!(global.SourcedLight && global.SourcedLight.installed && global.SourcedLight.installed());
-    var slFixed = slOn ? 3 + Math.ceil(c / 4) : 0, perLamp = slOn ? 4.25 : 4;
+    var slFixed = slOn ? 4 + Math.ceil(c / 4) : 0, perLamp = slOn ? 4.25 : 4;   // 4 = uSLParams/uSLOrg/uSLDim + uSLSky (§SOURCED_DAYLIGHT)
     A._stillLampCap = Math.min(200, Math.floor((avail - used - slFixed) / perLamp), Math.round(dial(A, '_stillLampCapMax', 'lampcap', 200, 0, 200)));   // &lampcap= (§STILL_LAG)
     console.log('§LIGHT_UNIFORM_BUDGET maxFragmentUniforms=' + maxFrag + ' reserve=' + LIGHT_RESERVE + ' maxTextures=' + maxTex + ' texReserve=' + texReserve + (csmTex ? ' (cascades +' + csmTex + ' units, +' + csmVec + ' vectors)' : '') + ' portalCap=' + c + ' (shadowed ' + sh +
       ', ' + used + ' vectors) lampCap=' + A._stillLampCap + ' (' + Math.ceil(A._stillLampCap * perLamp) + ' vectors) sourcedLight=' + (slOn ? slFixed + '+' + Math.ceil(A._stillLampCap / 4) + ' vectors' : 'off') +
@@ -162,7 +166,7 @@
         // §STILL_LAG: the scene is frozen for a still — render this shadow map ONCE, not on every accumulation frame.
         L.shadow.autoUpdate = false; L.shadow.needsUpdate = true;
       } else unsh++;
-      L.userData.skyPortal = true;
+      L.userData.skyPortal = true; L.userData.paneKey = p.key; L.userData.paneArea = p.area;   // §SOURCED_DAYLIGHT: which DF pane this portal carries
       A.scene.add(L); A.scene.add(L.target); placed.push(L); iSum += I;
       placedInfo.push({ cls: p.cls, area: +p.area.toFixed(1), dist: +p._dist.toFixed(1), facing: +p._facing.toFixed(2), y: +p.c.y.toFixed(1) });
     });
@@ -216,6 +220,7 @@
         var v = new THREE.Vector3().crossVectors(u, ld).normalize(), blocked = 0, nRay = 0, near = Infinity, nearName = '';
         for (var a = -2; a <= 2; a++) for (var c = -2; c <= 2; c++) { rb.set(L.position, ld.clone().addScaledVector(u, a * 0.5).addScaledVector(v, c * 0.5).normalize()); rb.near = 0; rb.far = 1; nRay++;
           var h = rb.intersectObjects(occ, false)[0]; if (h) { blocked++; if (h.distance < near) { near = h.distance; nearName = (h.object.userData && h.object.userData.ifcClass) || h.object.name || h.object.type; } } }
+        L.userData.blockedFrac = blocked / nRay;   // §SOURCED_DAYLIGHT G3 reads it (>= 0.5: pane counts in the DF, light dropped)
         if (blocked) rows.push('#' + idx + ' z=' + L.position.z.toFixed(1) + ' blockedFrac=' + (blocked / nRay).toFixed(2) + ' nearest=' + near.toFixed(2) + 'm ' + nearName); });
       console.log('§SKY_PORTAL_BLOCKED ' + rows.length + '/' + pb.d.length + ' shadowed portals have a caster within 1 m in their cone' + (rows.length ? ': ' + rows.join(' · ') : ''));
     }
@@ -271,5 +276,5 @@
     console.log('§SKY_PORTAL removed=' + n);
   }
 
-  global.SkyPortal = { budget: budget, stage: stage, unstage: unstage, frame: frame, placedCount: function () { return placed.length; } };
+  global.SkyPortal = { collectPanes: collectPanes, placedLights: function () { return placed.slice(); }, budget: budget, stage: stage, unstage: unstage, frame: frame, placedCount: function () { return placed.length; } };
 })(typeof window !== 'undefined' ? window : this);

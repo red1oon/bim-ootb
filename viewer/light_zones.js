@@ -268,17 +268,18 @@
     var cl = Z.cell, qx = p.x + nrm.x * 0.25, qy = p.y + nrm.y * 0.25, qz = p.z + nrm.z * 0.25;
     var i0 = Math.floor((qx - Z.org.x) / cl), j0 = Math.floor((qy - Z.org.y) / cl), k0 = Math.floor((qz - Z.org.z) / cl);
     if (i0 < 0 || j0 < 0 || k0 < 0 || i0 >= Z.nx || j0 >= Z.ny || k0 >= Z.nz) return { zone: -1, sky: 1 };
-    var best = Infinity, bt = SOLID, nxy = Z.nx * Z.ny;
+    var best = Infinity, bt = SOLID, bc = -1, nxy = Z.nx * Z.ny;
     for (var dz = -1; dz <= 1; dz++) for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
       var i = i0 + dx, j = j0 + dy, k = k0 + dz; if (i < 0 || j < 0 || k < 0 || i >= Z.nx || j >= Z.ny || k >= Z.nz) continue;
       var t = Z.zone[i + j * Z.nx + k * nxy]; if (t === SOLID) continue;
       var ex = Z.org.x + (i + 0.5) * cl - p.x, ey = Z.org.y + (j + 0.5) * cl - p.y, ez = Z.org.z + (k + 0.5) * cl - p.z;
       if (ex * nrm.x + ey * nrm.y + ez * nrm.z <= 0) continue;
-      var l = ex * ex + ey * ey + ez * ez; if (l < best) { best = l; bt = t; } }
-    if (bt === SOLID) { var base = i0 + k0 * nxy; bt = 0;
-      for (var jj = j0 + 1; jj < Z.ny; jj++) { var tt = Z.zone[base + jj * Z.nx]; if (tt !== SOLID) { bt = tt; break; } if (jj === Z.ny - 1) bt = SOLID; } }
-    if (bt === SOLID) return { zone: SOLID, sky: 0 };
-    var z = bt & ZONE_MASK; return { zone: z, sky: (z === 0 || (bt & SKY_BIT)) ? 1 : 0 }; }
+      var l = ex * ex + ey * ey + ez * ez; if (l < best) { best = l; bt = t; bc = i + j * Z.nx + k * nxy; } }
+    if (bt === SOLID) { var base = i0 + k0 * nxy; bt = 0; bc = -1;
+      for (var jj = j0 + 1; jj < Z.ny; jj++) { var tt = Z.zone[base + jj * Z.nx]; if (tt !== SOLID) { bt = tt; bc = base + jj * Z.nx; break; } if (jj === Z.ny - 1) bt = SOLID; } }
+    if (bt === SOLID) return { zone: SOLID, sky: 0, cell: -1 };
+    // cell = the texel index the shader reads (its .g = §SOURCED_DAYLIGHT); -1 = none (a column walk that ran off the top)
+    var z = bt & ZONE_MASK; return { zone: z, sky: (z === 0 || (bt & SKY_BIT)) ? 1 : 0, cell: bc }; }
   // a surface point's raw zone (-1 off grid, 0 open, 1.. zone, SOLID unknown)
   function atSurface(p, nrm) { return surfaceInfo(p, nrm).zone; }
   // a lamp: walk down from it in 0.25 m steps to 1.5 m. A fixture sits in the ceiling plane, sometimes a hair above the
@@ -341,6 +342,115 @@
   var OVER_VOID_M = 5;
   function bandPass3(li, fragY) { var c = cache ? cache.cell : CELL; if (li.floorY == null) return true; return fragY >= li.floorY - c && fragY <= li.topY + c; }
 
-  global.LightZones = { audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
+
+  // ══ §SOURCED_DAYLIGHT v2 (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "§SOURCED_DAYLIGHT v2 — SPEC UPDATE", watchdog
+  // gate G1-G3, build decisions D1-D6) — per-zone BRE average daylight factor (Littlefair, BRE Digest 309/310):
+  //   DF_z = sum(T A theta) / (A_z (1 - R^2))  [%],  R = 0.5 (BRE's typical area-weighted reflectance, light room; stated),
+  //   A_z = zoneInfo.surfaceM2 (faces to SOLID cells). Sources: every glazing tile incl. roof glass (T = 1 - opacity; theta =
+  //   90 x sky fraction of the 5 §SKY_PORTAL_SIDE rays marched on the grid from the outward cell's centre, roof 180 x), except tiles carrying a live portal this still; and the
+  //   zone's open apertures (T = 1; up theta 180, side 90 x the mean sky fraction of <= 64 sampled faces).
+  //   Per cell: DF_z/100 x f(d)/mean_z f, f(d) = 1/(1+(d/D_z)^2), d = BFS distance through zone cells from the source cells,
+  //   D_z = source-m2-weighted source-centre height above the floor below it. Only covered, non-sky-lit cells carry it (the
+  //   sky-lit ones already take the full hemi). The camera-independent part (tiles, sides, theta, heights, apertures) is
+  //   cached on the zone cache; the per-still part (portal exclusion, DF, BFS, G) runs per press.
+  var R_BRE = 0.5, RAY_MAX = 60, SIDE_SAMPLES = 64;
+  function cCentre(Z, c) { var nx = Z.nx, i = c % nx, j = ((c / nx) | 0) % Z.ny, k = (c / (nx * Z.ny)) | 0; return [Z.org.x + (i + 0.5) * Z.cell, Z.org.y + (j + 0.5) * Z.cell, Z.org.z + (k + 0.5) * Z.cell]; }
+  function cIdx(Z, x, y, z) { var i = Math.floor((x - Z.org.x) / Z.cell), j = Math.floor((y - Z.org.y) / Z.cell), k = Math.floor((z - Z.org.z) / Z.cell);
+    if (i < 0 || j < 0 || k < 0 || i >= Z.nx || j >= Z.ny || k >= Z.nz) return -1; return i + j * Z.nx + k * Z.nx * Z.ny; }
+  // D1: one ray through the grid, step CELL/4 from p; SOLID = blocked (0), off grid or RAY_MAX reached = sky (1)
+  function march(Z, px, py, pz, dx, dy, dz) { var st = Z.cell / 4;
+    for (var t = 0; t <= RAY_MAX; t += st) { var c = cIdx(Z, px + dx * t, py + dy * t, pz + dz * t); if (c < 0) return 1; if (Z.zone[c] === SOLID) return 0; }
+    return 1; }
+  function nrm3(x, y, z) { var l = Math.sqrt(x * x + y * y + z * z) || 1; return [x / l, y / l, z / l]; }
+  // the 5 §SKY_PORTAL_SIDE directions from p (the outward non-solid cell centre): up, out, out+up, out+along, out-along
+  function skyFrac(Z, p, o, a) { var D = [[0, 1, 0], o, nrm3(o[0], o[1] + 1, o[2]), nrm3(o[0] + a[0], o[1] + a[1], o[2] + a[2]), nrm3(o[0] - a[0], o[1] - a[1], o[2] - a[2])], k = 0;
+    for (var i = 0; i < 5; i++) k += march(Z, p[0], p[1], p[2], D[i][0], D[i][1], D[i][2]); return k / 5; }
+  // top of the first SOLID cell below cell c (the floor under it); the grid floor when none
+  function floorTop(Z, c) { var nx = Z.nx, j = ((c / nx) | 0) % Z.ny, base = c - j * nx;
+    for (var jj = j - 1; jj >= 0; jj--) if (Z.zone[base + jj * nx] === SOLID) return Z.org.y + (jj + 1) * Z.cell;
+    return Z.org.y; }
+  function dayBase(A, Z) {
+    if (Z.day0) return Z.day0;
+    var THREE = global.THREE, t0 = performance.now(), SP = global.SkyPortal, cl = Z.cell, cf = cl * cl, nx = Z.nx, nxy = nx * Z.ny;
+    var col = (SP && SP.collectPanes) ? SP.collectPanes(A, THREE, { roof: true }) : { panes: [], stats: {} }, panes = [], cnt = { tiles: col.panes.length, roof: 0, sidesOpen: 0, sidesEave: 0, skipped: 0, theta0: 0 };
+    col.panes.forEach(function (p) {
+      var n = p.n, sd = [1, -1].map(function (s) { var q = { x: p.c.x + s * 0.3 * n.x, y: p.c.y + s * 0.3 * n.y, z: p.c.z + s * 0.3 * n.z }; return surfaceInfo(q, { x: s * n.x, y: s * n.y, z: s * n.z }); });
+      var cov = sd.map(function (r) { return r.zone > 0 && r.zone !== SOLID && r.cell >= 0; }), opn = sd.map(function (r) { return r.zone === 0 || r.zone === -1; }), inward = -1, kind = '';
+      if (cov[0] && opn[1]) { inward = 0; kind = 'open'; } else if (cov[1] && opn[0]) { inward = 1; kind = 'open'; }
+      else if (cov[0] && cov[1] && sd[0].sky !== sd[1].sky) { inward = sd[0].sky ? 1 : 0; kind = 'eave'; }   // D2: the sky-lit side (under an eave) is outward
+      if (inward < 0) { cnt.skipped++; return; }
+      if (kind === 'open') cnt.sidesOpen++; else cnt.sidesEave++;
+      var s = inward === 0 ? -1 : 1, o = [s * n.x, s * n.y, s * n.z], oc = sd[1 - inward].cell;   // outward = away from the inward side
+      // rays start at the CENTRE of the outward side's non-solid cell (the grid's own "air outside the pane": a fixed 0.5 m
+      // offset landed inside the wall face's rasterised cell — unit test, 2026-09-25); off grid (no cell) = all sky
+      var fr = oc < 0 ? 1 : skyFrac(Z, cCentre(Z, oc), o, [p.u.x, p.u.y, p.u.z]);
+      var theta = (p.roof ? 180 : 90) * fr, cell = sd[inward].cell; if (p.roof) cnt.roof++; if (!(theta > 0)) cnt.theta0++;
+      panes.push({ key: p.key, zone: sd[inward].zone, cell: cell, area: p.area, T: p.T, roof: p.roof, theta: theta, h: Math.max(cl / 2, p.c.y - floorTop(Z, cell)), dir: o });
+    });
+    // apertures per zone (§ZONE_OPEN_SKY faces to open cells): up faces theta 180; side faces 90 x mean sky fraction (D5)
+    var ap = new Map(), SIDE = [[2, -1, 0, 0], [4, 1, 0, 0], [8, 0, 0, -1], [16, 0, 0, 1]];
+    Z.zoneInfo.forEach(function (zi, i0) { var z = i0 + 1, cells = zi.apertureCells; if (!cells || !cells.length) return;
+      var r = { upM2: 0, sideM2: 0, hA: 0, dir: [0, 0, 0], upCells: [], sideCells: [], sideFrac: 0, sideSamples: 0 }, faces = [];
+      for (var q = 0; q < cells.length; q++) { var c = cells[q], b = Z.aperture[c], i = c % nx, j = ((c / nx) | 0) % Z.ny, k = (c / nxy) | 0, fl = floorTop(Z, c);
+        if (b & 1) { r.upM2 += cf; r.hA += cf * Math.max(cl / 2, Z.org.y + (j + 1) * cl - fl); r.dir[1] += cf; r.upCells.push(c); }
+        var side = false; for (var sI = 0; sI < 4; sI++) { var S = SIDE[sI]; if (!(b & S[0])) continue; side = true;
+          r.sideM2 += cf; r.hA += cf * Math.max(cl / 2, Z.org.y + (j + 0.5) * cl - fl); r.dir[0] += cf * S[1]; r.dir[2] += cf * S[3];
+          faces.push([Z.org.x + (i + 0.5 + 0.5 * S[1]) * cl, Z.org.y + (j + 0.5) * cl, Z.org.z + (k + 0.5 + 0.5 * S[3]) * cl, S[1], S[3]]); }
+        if (side) r.sideCells.push(c); }
+      if (faces.length) { var stride = Math.max(1, Math.ceil(faces.length / SIDE_SAMPLES)), sum = 0, m = 0;
+        for (var f = 0; f < faces.length; f += stride) { var F = faces[f], o2 = [F[3], 0, F[4]];
+          sum += skyFrac(Z, [F[0] + o2[0] * cl / 2, F[1], F[2] + o2[2] * cl / 2], o2, [o2[2], 0, -o2[0]]); m++; }   // from the open cell's centre
+        r.sideFrac = sum / m; r.sideSamples = m; }
+      ap.set(z, r); });
+    Z.day0 = { panes: panes, ap: ap, cnt: cnt, byClass: col.stats.byClass, ms: Math.round(performance.now() - t0) };
+    return Z.day0;
+  }
+  // per still. exclude = Set of pane keys carrying a live portal; kept = Set of keys of blocked portals (count in the DF).
+  // Returns stats; writes Z.dayG (Uint16Array per cell: round(fraction x 10000), cap 65535) and Z.dayZones.
+  function daylight(A, exclude, kept) {
+    var Z = cache; if (!Z) return null;
+    var t0 = performance.now(), B = dayBase(A, Z), tb = performance.now(), N = Z.zone.length, nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, cl = Z.cell;
+    var zs = new Map(), portaled = 0, portaledKept = 0, keptKeys = [];
+    function zrec(z) { var r = zs.get(z); if (!r) { r = { num: 0, vert: 0, roof: 0, apUp: 0, apSide: 0, hA: 0, A: 0, dir: [0, 0, 0], src: [], panes: 0 }; zs.set(z, r); } return r; }
+    B.panes.forEach(function (p) {
+      if (exclude && exclude.has(p.key)) { portaled++; return; }
+      if (kept && kept.has(p.key)) { portaledKept++; keptKeys.push(p.key); }
+      var r = zrec(p.zone); r.panes++; var w = p.T * p.area * p.theta; r.num += w; if (p.roof) r.roof += p.area; else r.vert += p.area;
+      r.hA += p.area * p.h; r.A += p.area; r.dir[0] += p.area * p.dir[0]; r.dir[1] += p.area * p.dir[1]; r.dir[2] += p.area * p.dir[2];
+      if (w > 0) r.src.push(p.cell); });
+    B.ap.forEach(function (a, z) { var r = zrec(z), ts = 90 * a.sideFrac; r.num += a.upM2 * 180 + a.sideM2 * ts; r.apUp += a.upM2; r.apSide += a.sideM2;
+      r.hA += a.hA; r.A += a.upM2 + a.sideM2; r.dir[0] += a.dir[0]; r.dir[1] += a.dir[1]; r.dir[2] += a.dir[2]; r.sideTheta = ts;
+      for (var i = 0; i < a.upCells.length; i++) r.src.push(a.upCells[i]); if (ts > 0) for (var j = 0; j < a.sideCells.length; j++) r.src.push(a.sideCells[j]); });
+    var zones = Z.zones, DF = new Float32Array(zones + 1), Dz = new Float32Array(zones + 1), lit = [];
+    zs.forEach(function (r, z) { var surf = Z.zoneInfo[z - 1].surfaceM2; r.surf = surf; r.DF = surf > 0 ? r.num / (surf * (1 - R_BRE * R_BRE)) : 0; r.D = r.A > 0 ? r.hA / r.A : cl / 2;
+      DF[z] = r.DF; Dz[z] = r.D; if (r.DF > 0) lit.push(z); });
+    // multi-source BFS through zone cells (6-connected: a zone cell's non-solid neighbours are its own zone or open cells)
+    if (!Z.dayBuf) Z.dayBuf = { dist: new Uint16Array(N), q: new Int32Array(N), G: new Uint16Array(N) };
+    var dist = Z.dayBuf.dist, q = Z.dayBuf.q, G = Z.dayBuf.G, zone = Z.zone, h = 0, t = 0; dist.fill(65535); G.fill(0);
+    zs.forEach(function (r) { if (!(r.DF > 0)) return; for (var i = 0; i < r.src.length; i++) { var c = r.src[i]; if (dist[c] !== 0) { dist[c] = 0; q[t++] = c; } } });
+    while (h < t) { var c = q[h++], d1 = dist[c] + 1, i = c % nx, j = ((c / nx) | 0) % ny, k = (c / nxy) | 0, v;
+      if (d1 > 65534) continue;
+      if (i > 0) { v = zone[c - 1]; if (v !== SOLID && v !== 0 && dist[c - 1] === 65535) { dist[c - 1] = d1; q[t++] = c - 1; } }
+      if (i < nx - 1) { v = zone[c + 1]; if (v !== SOLID && v !== 0 && dist[c + 1] === 65535) { dist[c + 1] = d1; q[t++] = c + 1; } }
+      if (j > 0) { v = zone[c - nx]; if (v !== SOLID && v !== 0 && dist[c - nx] === 65535) { dist[c - nx] = d1; q[t++] = c - nx; } }
+      if (j < ny - 1) { v = zone[c + nx]; if (v !== SOLID && v !== 0 && dist[c + nx] === 65535) { dist[c + nx] = d1; q[t++] = c + nx; } }
+      if (k > 0) { v = zone[c - nxy]; if (v !== SOLID && v !== 0 && dist[c - nxy] === 65535) { dist[c - nxy] = d1; q[t++] = c - nxy; } }
+      if (k < nz - 1) { v = zone[c + nxy]; if (v !== SOLID && v !== 0 && dist[c + nxy] === 65535) { dist[c + nxy] = d1; q[t++] = c + nxy; } } }
+    // mean f per zone over ALL its cells (D4), then G on the covered non-sky-lit cells
+    var fs = new Float64Array(zones + 1), fn = new Int32Array(zones + 1), cells = 0, capped = 0;
+    for (var a = 0; a < N; a++) { var va = zone[a]; if (va === SOLID || va === 0) continue; var za = va & ZONE_MASK; if (!(DF[za] > 0) || dist[a] === 65535) continue;
+      var x = dist[a] * cl / Dz[za]; fs[za] += 1 / (1 + x * x); fn[za]++; }
+    for (var b = 0; b < N; b++) { var vb = zone[b]; if (vb === SOLID || vb === 0 || (vb & SKY_BIT)) continue; var zb = vb & ZONE_MASK; if (!(DF[zb] > 0) || dist[b] === 65535 || !fn[zb]) continue;
+      var y = dist[b] * cl / Dz[zb], g = Math.round(DF[zb] / 100 * (1 / (1 + y * y)) / (fs[zb] / fn[zb]) * 10000); if (g > 65535) { g = 65535; capped++; } G[b] = g; if (g) cells++; }
+    Z.dayG = G; Z.dayZones = zs;
+    var dfs = lit.map(function (z) { return DF[z]; }).sort(function (x, y2) { return x - y2; }), bands = [0, 0, 0];
+    dfs.forEach(function (v2) { if (v2 < 2) bands[0]++; else if (v2 <= 5) bands[1]++; else bands[2]++; });
+    var Tw = 0, Ta = 0; B.panes.forEach(function (p) { Tw += p.T * p.area; Ta += p.area; });
+    return { zones: zones, litZones: lit.length, B: B, portaled: portaled, portaledKept: portaledKept, keptKeys: keptKeys, DF: DF, Dz: Dz, zs: zs, R: R_BRE,
+      T: Ta ? Tw / Ta : 0, DFmedian: dfs.length ? dfs[Math.floor(dfs.length / 2)] : 0, DFmax: dfs.length ? dfs[dfs.length - 1] : 0, bands: bands, gCells: cells, gCapped: capped,
+      bfsReached: t, baseMs: Math.round(tb - t0), buildMs: Math.round(performance.now() - t0) };
+  }
+
+  global.LightZones = { daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
     SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL };
 })(typeof window !== 'undefined' ? window : this);
