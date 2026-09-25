@@ -11,7 +11,7 @@
 // SKY_BIT in the texture; at() strips it, skyAt()/surfaceInfo() read it.
 // A doorless opening, an atrium or a stairwell is connected empty space, so it is one zone with no room data at all.
 // Grid space = the THREE scene (the same space as the lamps and portals). Built once per building and cached.
-(function (global) {
+(function LZMOD(global) {
   var CELL = 0.5, SOLID = 65535, SKY_BIT = 0x4000, ZONE_MASK = 0x3FFF;
   var BOUNDARY = ['IfcWall', 'IfcWallStandardCase', 'IfcSlab', 'IfcRoof', 'IfcCovering', 'IfcDoor', 'IfcWindow', 'IfcCurtainWall', 'IfcPlate'];
   // the 24 upward lattice directions (dx, dz in -2..2, dy = +1) besides the zenith: elevations 45 / 35.3 / 26.6 / 19.5 deg.
@@ -124,14 +124,74 @@
     return r;
   }
 
+  // ══ §ZONE_IDB_CACHE (red1 2026-09-26: "cache the 1-time work"): the zone grid (build) and the sky-view field (field) are
+  // camera-free BUILD data (~6.5 s on Hospital's first Alt+S). They are kept per building in IndexedDB — not in the .db file.
+  // A record is used only when ALL of its key matches: SRC = a hash of this file's code (any edit here rebuilds), fp = the
+  // boundary geometry's fingerprint (guid count, boundary guids, draws, index count, bounds, per-draw bounds sum, glass
+  // opacities), and for the field part the IRC switch. prime(A) is awaited before staging; build()/field() stay synchronous.
+  // &zonecache=0 skips it (no read, no write).
+  var IDB_NAME = 'bim_ootb_lightzones', IDB_STORE = 'z', primed = null, saveTimer = 0;
+  var KEYS = ['bld', 'n', 'nx', 'ny', 'nz', 'cell', 'zone', 'zones', 'sizes', 'zoneInfo', 'aperture', 'groundJ', 'glassT', 'glassCells', 'glassMats', 'stats'];
+  var SRC = (function () { var s = String(LZMOD), h = 0x811c9dc5; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + s.length; })();
+  function cacheOff() { return typeof indexedDB === 'undefined' || (typeof location !== 'undefined' && /[?&]zonecache=0/.test(location.search)); }
+  function ircFlag(A) { return A._stillIrc === true || (typeof location !== 'undefined' && /[?&]irc=1/.test(location.search)); }
+  function idb() { return new Promise(function (res, rej) { var rq; try { rq = indexedDB.open(IDB_NAME, 1); } catch (e) { return rej(e); }
+    rq.onupgradeneeded = function () { rq.result.createObjectStore(IDB_STORE); }; rq.onsuccess = function () { res(rq.result); }; rq.onerror = function () { rej(rq.error); }; rq.onblocked = function () { rej(new Error('blocked')); }; }); }
+  function prime(A) {
+    if (cacheOff() || !A || !A.activeBuilding || (cache && cache.bld === A.activeBuilding) || (primed && primed.bld === A.activeBuilding)) return Promise.resolve(primed);
+    var bld = A.activeBuilding, t0 = performance.now();
+    var rd = idb().then(function (db) { return new Promise(function (res) { var tx = db.transaction(IDB_STORE, 'readonly'), g = tx.objectStore(IDB_STORE).get(bld);
+      g.onsuccess = function () { res(g.result || null); }; g.onerror = function () { res(null); }; tx.oncomplete = tx.onabort = function () { db.close(); }; }); })
+      .then(function (r) { primed = r && r.src === SRC ? r : null;
+        console.log('§ZONE_IDB_CACHE prime bld=' + bld + ' ' + (r ? (primed ? 'loaded' : 'stale-code (will rebuild; stored ' + r.src + ' now ' + SRC + ')') : 'none') + ' readMs=' + Math.round(performance.now() - t0) + (r ? ' MB=' + r.mb + ' field=' + (r.field ? 1 : 0) + ' saved=' + r.when : ''));
+        return primed; })
+      .catch(function (e) { console.warn('§ZONE_IDB_CACHE prime failed: ' + (e && e.message)); return null; });
+    // never hold Alt+S on a slow or blocked store: after 3 s staging builds as before
+    return Promise.race([rd, new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })]);
+  }
+  function scheduleSave() {
+    if (cacheOff() || !cache || !cache.fp) return; clearTimeout(saveTimer); var Z = cache;
+    saveTimer = setTimeout(function () { if (cache !== Z) return;
+      var t0 = performance.now(), rec = { src: SRC, fp: Z.fp, org: [Z.org.x, Z.org.y, Z.org.z], field: Z.field || null, when: new Date().toISOString() };
+      KEYS.forEach(function (k) { rec[k] = Z[k]; });
+      rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.aperture ? Z.aperture.byteLength : 0) + (Z.field ? Z.field.G.byteLength : 0)) / 1e6).toFixed(1);
+      idb().then(function (db) { var tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).put(rec, Z.bld);
+        tx.oncomplete = function () { db.close(); console.log('§ZONE_IDB_CACHE saved bld=' + Z.bld + ' MB=' + rec.mb + ' field=' + (rec.field ? 1 : 0) + ' ms=' + Math.round(performance.now() - t0)); };
+        tx.onerror = tx.onabort = function () { db.close(); console.warn('§ZONE_IDB_CACHE save failed: ' + (tx.error && tx.error.message)); }; })
+        .catch(function (e) { console.warn('§ZONE_IDB_CACHE save failed: ' + (e && e.message)); }); }, 0);
+  }
+  function logBuilt(A) {
+    console.log('§LIGHT_ZONE bld=' + A.activeBuilding + ' ' + JSON.stringify(cache.stats));
+    var gl = cache.stats.glare, gfail = gl.blackExteriorFaces > 0 || gl.junctionFlips > 0 || gl.canopyCells > 0;
+    console.log('§GLARE bld=' + A.activeBuilding + ' ' + (gfail ? 'FAIL' : 'PASS') + ' black_exterior=' + gl.blackExteriorFaces + ' junction_zone_flip=' + gl.junctionFlips + ' covered_open_side_black=' + gl.canopyCells +
+      ' (exteriorFaces=' + gl.exteriorFaces + ' junctionTested=' + gl.junctionTested + ' rayLitCoveredCells=' + gl.rayLitCoveredCells + ' auditMs=' + gl.ms + ')');
+  }
+  function restore(A, r, THREE, t0) {
+    cache = { dd: null, org: new THREE.Vector3(r.org[0], r.org[1], r.org[2]), fp: r.fp }; KEYS.forEach(function (k) { cache[k] = r[k]; });
+    var ms = Math.round(performance.now() - t0);
+    cache.stats = Object.assign({}, r.stats, { ms: ms, rasMs: 0, skyMs: 0, cached: 1, glare: Object.assign({}, r.stats.glare, { ms: 0 }) });
+    var fOk = !!(r.field && r.field.irc && r.field.irc.on === ircFlag(A)), fMs = r.field ? r.field.ms : 0;
+    if (fOk) cache.field = Object.assign(r.field, { ms: 0, cached: 1 });
+    console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none'));
+    logBuilt(A);
+    return cache;
+  }
+
   function build(A, opts) {
     var THREE = global.THREE; opts = opts || {};
     if (cache && cache.bld === A.activeBuilding && cache.n === Object.keys(A.guidMap || {}).length && !opts.force) return cache;
     var t0 = performance.now(), guids = boundaryGuids(A), bd = boundaryDraws(A, THREE, guids), draws = bd.draws;
     // bounds from the boundary geometry (skyline props / ground excluded by construction)
     var box = new THREE.Box3(), tb = new THREE.Box3();
-    draws.forEach(function (d) { if (!d.geo.boundingBox) d.geo.computeBoundingBox(); tb.copy(d.geo.boundingBox).applyMatrix4(d.matrix); box.union(tb); });
+    var bsum = 0, idxN = 0, glN = 0, glO = 0;   // §ZONE_IDB_CACHE fingerprint parts (per-draw bounds sum catches a moved element)
+    draws.forEach(function (d) { if (!d.geo.boundingBox) d.geo.computeBoundingBox(); tb.copy(d.geo.boundingBox).applyMatrix4(d.matrix); box.union(tb);
+      bsum += tb.min.x + tb.min.y + tb.min.z + tb.max.x + tb.max.y + tb.max.z; idxN += d.count; d.mats.forEach(function (m) { if (glassyMat(m)) { glN++; glO += m.opacity; } }); });
     if (box.isEmpty()) { console.log('§LIGHT_ZONE bld=' + A.activeBuilding + ' VACUOUS no boundary geometry (guids=' + guids.size + ')'); return null; }
+    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO]
+      .map(function (v) { return typeof v === 'number' ? +v.toFixed(3) : v; }).join('|');
+    if (primed && primed.bld === A.activeBuilding && !opts.force) { var pr = primed; primed = null;
+      if (pr.fp === fp) return restore(A, pr, THREE, t0);
+      console.log('§ZONE_IDB_CACHE miss bld=' + A.activeBuilding + ' geometry changed (stored ' + pr.fp + ' now ' + fp + ') — rebuilding'); }
     var org = box.min.clone().subScalar(CELL * 2), size = box.getSize(new THREE.Vector3()).addScalar(CELL * 4);
     var nx = Math.ceil(size.x / CELL), ny = Math.ceil(size.y / CELL), nz = Math.ceil(size.z / CELL), N = nx * ny * nz;
     var zone = new Uint16Array(N), nxy = nx * ny;
@@ -258,10 +318,7 @@
       apertureDownFaces: apDown, skyLitCells: skyLitN, skyRayCells: skyRay, skyDirs: SKY_DIRS.length, topApertureZones: topAp, tris: tris, samples: samples, draws: bd.stats, rasMs: Math.round(rasMs), skyMs: Math.round(skyMs), ms: Math.round(performance.now() - t0),
       innerR: INNER_R, groundY: gy == null ? null : +gy.toFixed(2), earthCells: earth, grid: [nx, ny, nz], org: [org.x, org.y, org.z].map(function (v) { return +v.toFixed(1); }) };
     cache.stats.glare = audit(cache, surfaceInfo, cellSkyNew);
-    console.log('§LIGHT_ZONE bld=' + A.activeBuilding + ' ' + JSON.stringify(cache.stats));
-    var gl = cache.stats.glare, gfail = gl.blackExteriorFaces > 0 || gl.junctionFlips > 0 || gl.canopyCells > 0;
-    console.log('§GLARE bld=' + A.activeBuilding + ' ' + (gfail ? 'FAIL' : 'PASS') + ' black_exterior=' + gl.blackExteriorFaces + ' junction_zone_flip=' + gl.junctionFlips + ' covered_open_side_black=' + gl.canopyCells +
-      ' (exteriorFaces=' + gl.exteriorFaces + ' junctionTested=' + gl.junctionTested + ' rayLitCoveredCells=' + gl.rayLitCoveredCells + ' auditMs=' + gl.ms + ')');
+    cache.fp = fp; logBuilt(A); scheduleSave();
     return cache;
   }
   function cellSkyNew(v) { return (v === 0 || (v !== SOLID && (v & SKY_BIT))) ? 1 : 0; }
@@ -520,7 +577,7 @@
     var irc = new Float32Array(nzn + 1), ircL = [];
     // IRC OFF by default (watchdog, 2026-09-25): the still's GI bounce pass (gi_still.js) already carries interreflection, so
     // V12 would count it twice and is a flat per-zone fill; &irc=1 / APP._stillIrc = true keeps it for A/B (logged)
-    var ircOn = A._stillIrc === true || (typeof location !== 'undefined' && /[?&]irc=1/.test(location.search));
+    var ircOn = ircFlag(A);
     for (var z4 = 1; z4 <= nzn; z4++) { var zi4 = Z.zoneInfo[z4 - 1], Az = zi4.surfaceM2 + zi4.apertureM2; if (!wpN[z4] || !(Az > 0)) continue;
       var ir = R_BRE * (wpS[z4] / wpN[z4]) * fl[z4] / (Az * (1 - R_BRE)); if (ir > 0) ircL.push(ir); if (ircOn) irc[z4] = ir; }
     ircL.sort(function (x, y) { return x - y; });
@@ -532,6 +589,7 @@
     var minElev = FIELD_DIRS.reduce(function (m, d) { return Math.min(m, d.elev); }, 90);
     Z.field = { G: G, maxF: maxF, maxSC: maxSC, ircZ: irc, irc: { on: ircOn, zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
       weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }) };
+    scheduleSave();
     return Z.field;
   }
   // CPU mirror of the shader's filtered read (V5): p = surface point, nrm = eye-facing normal; returns { zone, F } where zone
@@ -549,6 +607,6 @@
     return { zone: si.zone, F: sw > 0 ? sf / sw : (si.cell >= 0 ? G[si.cell] / 10000 : 0), si: si };
   }
 
-  global.LightZones = { field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
+  global.LightZones = { prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
     SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL };
 })(typeof window !== 'undefined' ? window : this);

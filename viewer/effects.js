@@ -5944,7 +5944,10 @@ async function setupEffects(A, renderer, scene, camera) {
         // §STILL_STATUS_STEPS (red1 2026-09-26: "the long wait ... should be more descriptive"): name the step, say when it is
         // the one-time build for this building (light zones + sky field are cached per building), and let it paint first —
         // staging itself is one blocking call, so the text cannot change during it.
-        var _LZ = window.LightZones, _cached = !!(_LZ && _LZ.get && _LZ.get() && _LZ.get().bld === A.activeBuilding);
+        var _LZ = window.LightZones;
+        // §ZONE_IDB_CACHE: read this building's stored zone grid + sky field (IndexedDB) before the blocking staging call
+        if (_LZ && _LZ.prime) { try { await _LZ.prime(A); } catch (eZP) { console.warn('§ZONE_IDB_CACHE prime failed: ' + eZP.message); } }
+        var _cached = !!(_LZ && _LZ.get && ((_LZ.get() && _LZ.get().bld === A.activeBuilding) || (_LZ.primed && _LZ.primed(A))));
         var _last = A._stillStageMsLast ? ' — last time ' + Math.max(1, Math.round(A._stillStageMsLast / 1000)) + ' s' : '';
         _stillSay(_cached ? 'lights, sky and shadows' + _last + '…'
                           : 'first time for this building: mapping rooms into light zones and measuring how much sky each spot sees (cached after this)…');
