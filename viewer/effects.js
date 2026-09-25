@@ -3169,7 +3169,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var outside = A._stillCamInsideNow === false;
     var props = [], sky = outside && _photoSkyline && _photoSkyline.visible ? _photoSkyline : null, bb = new THREE.Box3();
     if (sky) sky.traverse(function(o) { if (!(o.isMesh || o.isInstancedMesh) || !o.visible) return; bb.setFromObject(o); if (bb.isEmpty()) return;
-      var R = rect(); for (var k = 0; k < 8; k++) add(R, k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z);
+      var R = rect(); R.bb = bb.clone(); for (var k = 0; k < 8; k++) add(R, k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z);
       var far = 0; for (var k2 = 0; k2 < 8; k2++) far = Math.max(far, q.set(k2 & 1 ? bb.max.x : bb.min.x, k2 & 2 ? bb.max.y : bb.min.y, k2 & 4 ? bb.max.z : bb.min.z).sub(cam.position).dot(fwd));
       R.far = far; props.push(R); });
     function viewRect(depth) {
@@ -3184,7 +3184,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var meets = function(R, S) { return R.x0 < S.x1 && R.x1 > S.x0 && R.y0 < S.y1 && R.y1 > S.y0; };
     var dMax = dFar; props.forEach(function(R) { if (R.far > 0) dMax = Math.max(dMax, R.far); });
     var Vp = props.length ? viewRect(dMax) : V;   // the view out to the props, for the props' own test
-    props.forEach(function(R) { if (meets(R, Vp)) { kept++; U.x0 = Math.min(U.x0, R.x0); U.x1 = Math.max(U.x1, R.x1); U.y0 = Math.min(U.y0, R.y0); U.y1 = Math.max(U.y1, R.y1); } });
+    props.forEach(function(R) { if (meets(R, Vp)) { kept++; R.kept = true; U.x0 = Math.min(U.x0, R.x0); U.x1 = Math.max(U.x1, R.x1); U.y0 = Math.min(U.y0, R.y0); U.y1 = Math.max(U.y1, R.y1); } });
     if (kept) V = Vp;
     var M = 2;   // m — PCF taps + TAA jitter
     var l = Math.max(-env, Math.max(V.x0, U.x0) - M), r = Math.min(env, Math.min(V.x1, U.x1) + M),
@@ -3215,17 +3215,61 @@ async function setupEffects(A, renderer, scene, camera) {
       if (changed) _fitState.changes++;
       l = cx - w / 2; r = cx + w / 2; b = cy - h / 2; t = cy + h / 2;
     }
-    sc.left = l; sc.right = r; sc.bottom = b; sc.top = t; sc.updateProjectionMatrix();
+    sc.left = l; sc.right = r; sc.bottom = b; sc.top = t;
     var texel = Math.max(w, h) / mz;
     A.sun.shadow.normalBias = (window.__noNormalBias ? 0 : 2 * texel);
+    var edgeLine = (!film && _edgeOn()) ? _stillEdgeDepth(sc, inv, l, r, b, t, props, texel) : '';
+    sc.updateProjectionMatrix();
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
     _stillFitBox = { l: l, r: r, b: b, t: t };
     var t0 = 2 * env / mz;
     var line = 'box=' + w.toFixed(1) + 'x' + h.toFixed(1) + 'm texelX=' + (w / mz).toFixed(4) + ' texelY=' + (h / mz).toFixed(4) +
       ' normalBias=' + A.sun.shadow.normalBias.toFixed(3) + ' propsKept=' + kept + '/' + props.length + ' camOutside=' + (outside ? 1 : 0) + (film ? ' sizeChanges=' + _fitState.changes + (changed ? ' CHANGED' : '') + (shot ? ' shot=' + shot.i + ' shotGrow=' + (shot.grow || 0) : '') : '');
     if (!film) console.log('§STILL_SHADOW_FIT env=' + env + ' ' + line + ' (was ' + (2 * env) + ', texel ' + t0.toFixed(4) + ') gain=' + (t0 / texel).toFixed(2) + 'x viewDepth=' + dFar.toFixed(0) +
-      ' bldgFootprint=' + (B.x1 - B.x0).toFixed(0) + 'x' + (B.y1 - B.y0).toFixed(0) + ' sunElev=' + THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)))).toFixed(1));
+      ' bldgFootprint=' + (B.x1 - B.x0).toFixed(0) + 'x' + (B.y1 - B.y0).toFixed(0) + ' sunElev=' + THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)))).toFixed(1) +
+      ' view=' + (V.x1 - V.x0).toFixed(0) + 'x' + (V.y1 - V.y0).toFixed(0) + ' union=' + (U.x1 - U.x0).toFixed(0) + 'x' + (U.y1 - U.y0).toFixed(0));
+    if (edgeLine) console.log(edgeLine);
     return line;
+  }
+  // ══ §STILL_SHADOW_EDGE (bim-compiler PHOTOREAL_STILL_RENDER.md "§STILL_SHADOW_EDGE — SPEC"; watchdog red1-4b/red1-c6) ══
+  // red1 on v1337: shadows "jagged and with a base gap". Alt+S only; films keep §STILL_SHADOW_FIT as is. &shadowedge=0 or
+  // APP._stillShadowEdge=false = the v1337 values (A/B).
+  // (1) DEPTH RANGE: the sun sits at 5000 m and near/far were sunDist x 0.05 .. x 4 = a 19,748 m range for a ~150 m
+  //     building. Fitted here to the light-space depth of what can cast or receive inside the fitted x/y box: the building
+  //     corners, the kept skyline props, and a slab = the box's 4 corner rays between the ground plane and the building
+  //     top (anything up to the building's height inside the box). Pad max(2 m, 2% of the range).
+  // (2) BIAS: the base gap is worldBias / tan(elevation). The acne the depth bias used to carry is carried by the normal
+  //     offset instead: a PCF tap s texels off, on a surface at elevation e to the light, reads a depth s.texel.cot(e) away,
+  //     and a lookup lifted nb along the normal clears nb / sin(e) along the ray — so nb = (R + 1.5) texels (kernel R,
+  //     bilinear 1, rasterised texel centre 0.5) clears every tap at every e (nb/sin e >= (R+1.5).texel.cot e since
+  //     cos e <= 1). The depth bias is then only the depth format's step, sized for a 16-bit worst case: range / 65536.
+  //     Lifting a ground lookup makes no base gap: its sun ray still meets the caster standing on that ground.
+  function _edgeOn() { return !(A._stillShadowEdge === false || /[?&]shadowedge=0/.test(location.search)); }
+  function _stillEdgeDepth(sc, inv, l, r, b, t, props, texel) {
+    var q = new THREE.Vector3(), dmin = Infinity, dmax = -Infinity, n = 0;
+    function dep(x, y, z) { q.set(x, y, z).applyMatrix4(inv); var d = -q.z; if (isFinite(d)) { dmin = Math.min(dmin, d); dmax = Math.max(dmax, d); n++; } }
+    _fitState.corners.forEach(function(c) { dep(c.x, c.y, c.z); });
+    var kept = 0; props.forEach(function(R) { if (!R.kept || !R.bb) return; kept++; for (var k = 0; k < 8; k++) dep(k & 1 ? R.bb.max.x : R.bb.min.x, k & 2 ? R.bb.max.y : R.bb.min.y, k & 4 ? R.bb.max.z : R.bb.min.z); });
+    var yTop = -Infinity; _fitState.corners.forEach(function(c) { yTop = Math.max(yTop, c.y); });
+    var gy = (A.ground && isFinite(A.ground.position.y)) ? A.ground.position.y : null;
+    var w0 = new THREE.Vector3(), w1 = new THREE.Vector3(), slab = 0;
+    [[l, b], [l, t], [r, b], [r, t]].forEach(function(xy) {
+      w0.set(xy[0], xy[1], 0).applyMatrix4(sc.matrixWorld); w1.set(xy[0], xy[1], -1).applyMatrix4(sc.matrixWorld);
+      var dy = w1.y - w0.y; if (Math.abs(dy) < 1e-9) return;
+      [gy, yTop].forEach(function(yy) { if (yy == null || !isFinite(yy)) return; var s = (yy - w0.y) / dy; if (isFinite(s)) { dmin = Math.min(dmin, s); dmax = Math.max(dmax, s); slab++; } }); });
+    var nearWas = sc.near, farWas = sc.far;
+    if (!(dmax > dmin)) return '§STILL_SHADOW_EDGE VACUOUS depth extent (points=' + n + ') — range kept ' + (farWas - nearWas).toFixed(0) + 'm';
+    var pad = Math.max(2, 0.02 * (dmax - dmin));
+    sc.near = Math.max(0.1, dmin - pad); sc.far = dmax + pad;
+    var range = sc.far - sc.near, R = A.sun.shadow.radius;
+    var worldBias = range / 65536, nb = (R + 1.5) * texel;
+    A.sun.shadow.bias = -(worldBias / range); A.sun.shadow.normalBias = window.__noNormalBias ? 0 : nb;
+    var gap = function(deg) { return (worldBias / Math.tan(THREE.MathUtils.degToRad(deg))).toFixed(4); };
+    var el = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, A.sun.position.clone().normalize().y))));
+    return '§STILL_SHADOW_EDGE range ' + (farWas - nearWas).toFixed(0) + 'm -> ' + range.toFixed(1) + 'm (near ' + nearWas.toFixed(0) + '->' + sc.near.toFixed(1) +
+      ' far ' + farWas.toFixed(0) + '->' + sc.far.toFixed(1) + ', points=' + n + ' propsKept=' + kept + ' slabPts=' + slab + ' groundY=' + (gy == null ? 'n/a' : gy.toFixed(2)) + ' topY=' + yTop.toFixed(1) + ' pad=' + pad.toFixed(1) + ')' +
+      ' texel=' + texel.toFixed(4) + ' R=' + R + ' normalBias=' + nb.toFixed(4) + 'm ((R+1.5) texels) worldBias=' + worldBias.toFixed(5) + 'm (range/65536) bias=' + A.sun.shadow.bias.toExponential(3) +
+      ' predictedBaseGap45=' + gap(45) + 'm 20deg=' + gap(20) + 'm here(' + el.toFixed(1) + 'deg)=' + gap(Math.max(0.5, el)) + 'm (was 0.305/tan: 45deg=0.305m)';
   }
   A._filmParityShadowFit = function() { return _stillFitApply(true); };
   // §FILM_FIT_PER_SHOT precompute — sampler from cinema_maxq.js: { shots: [[a,b],...], sample(t): sets camera + sun for film
@@ -3441,7 +3485,8 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_shadowRadiusSaved === null) _shadowRadiusSaved = A.sun.shadow.radius;
     if (!A._maxqActive || A._filmParity) {
       var _rm = /[?&]shadowradius=([0-9.]+)/.exec(location.search);
-      var _rad = (typeof A._stillShadowRadius === 'number') ? A._stillShadowRadius : (_rm ? parseFloat(_rm[1]) : 1);
+      // §STILL_SHADOW_EDGE: Alt+S default 1.5 texels (edge filtered over 2R = 3 texels + the bilinear 1); films keep 1
+      var _rad = (typeof A._stillShadowRadius === 'number') ? A._stillShadowRadius : (_rm ? parseFloat(_rm[1]) : (!A._maxqActive && _edgeOn() ? 1.5 : 1));
       A.sun.shadow.radius = Math.max(0, Math.min(8, _rad));
       console.log('§STILL_SHADOW_RADIUS radius=' + A.sun.shadow.radius);
     }
