@@ -302,6 +302,9 @@
   // per fragment); the only gate is the staging call site (effects.js runs SourcedLight.stage for !A._maxqActive)
   function fieldOn(A) { return !!(installed && A && A._stillSkyField !== false && !/[?&]skyfield=0/.test(location.search)); }
   var rgFieldKey = null, statsKey = null, fieldStats = null;
+  var ctxHooked = false;
+  // the RG16UI texel array: R = zone | SKY_BIT, G = 0 (stageField fills the sky-view F)
+  function zoneRG(Z) { var a = new Uint16Array(Z.zone.length * 2); for (var ri = 0; ri < Z.zone.length; ri++) a[ri * 2] = Z.zone[ri]; return a; }
   function lum3(c) { return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; }
   function pct(arr, q) { if (!arr.length) return 0; var tot = arr.reduce(function (s, e) { return s + e[1]; }, 0), acc = 0; for (var i = 0; i < arr.length; i++) { acc += arr[i][1]; if (acc >= q * tot) return arr[i][0]; } return arr[arr.length - 1][0]; }
   // V9: EN 12464-1 Em,r rows quoted from the CEN enquiry draft prEN 12464-1 (July 2019); the 2021 final is not verified
@@ -344,7 +347,7 @@
     var LZ = global.LightZones, SP = global.SkyPortal, t0 = performance.now();
     if (!fieldOn(A) || !LZ.field) { SKY[0] = 0; console.log('§SKY_VIEW_FIELD off (' + (A._maxqActive ? 'film' : '&skyfield=0 / APP._stillSkyField=false') + ') — binary SKY_BIT path'); return null; }
     var hit = !!Z.field, F = LZ.field(A), key = texKey, uploadMs = 0;
-    if (rgFieldKey !== key) { for (var i = 0; i < F.G.length; i++) rg[i * 2 + 1] = F.G[i]; var tU = performance.now(); tex.needsUpdate = true; A.renderer.initTexture(tex); uploadMs = performance.now() - tU; rgFieldKey = key; }
+    if (rgFieldKey !== key) { if (!rg) { rg = zoneRG(Z); tex.image.data = rg; } for (var i = 0; i < F.G.length; i++) rg[i * 2 + 1] = F.G[i]; var tU = performance.now(); tex.needsUpdate = true; A.renderer.initTexture(tex); uploadMs = performance.now() - tU; rgFieldKey = key; }
     SKY[0] = 1;
     if (statsKey !== key) { fieldStats = computeStats(A, Z, F); statsKey = key; }
     var S = fieldStats, lit = [], enc = [], maxWp = 0;
@@ -409,7 +412,7 @@
     if (texKey !== key) {
       if (tex) tex.dispose(); rgFieldKey = null;
       // §SOURCED_DAYLIGHT: RG16UI — R = zone | SKY_BIT (as before), G = the still's daylight fraction x 10000 (0 until daylight())
-      if (rgKey !== key) { rg = new Uint16Array(Z.zone.length * 2); for (var ri = 0; ri < Z.zone.length; ri++) rg[ri * 2] = Z.zone[ri]; rgKey = key; }
+      rg = zoneRG(Z); rgKey = key;
       tex = new THREE.Data3DTexture(rg, Z.nx, Z.ny, Z.nz);
       tex.format = THREE.RGIntegerFormat; tex.type = THREE.UnsignedShortType; tex.internalFormat = 'RG16UI';
       tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.unpackAlignment = 1; tex.needsUpdate = true; texKey = key;
@@ -419,6 +422,11 @@
       glErrFirstFrame = true;
     }
     try { fieldLast = stageField(A, Z); } catch (eD) { fieldLast = null; SKY[0] = 0; console.warn('§SKY_VIEW_FIELD failed: ' + eD.message); }
+    // §ZONE_TEX_CPU_DROP (leak audit 2026-09-26): once the GPU has the texture, the CPU copy is only Z.zone + F.G interleaved
+    // (Hospital 41 MB). Drop it; stageField rebuilds it from those two when the field must be written again, and a restored
+    // WebGL context re-stages from scratch (texKey cleared below).
+    if (rg && tex && (rgFieldKey === texKey || !SKY[0])) { rg = null; rgKey = null; tex.image.data = null; }
+    if (!ctxHooked && A.renderer.domElement) { ctxHooked = true; A.renderer.domElement.addEventListener('webglcontextrestored', function () { texKey = null; rgFieldKey = null; }); }
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
     console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (&skyfield=0 = the binary SKY_BIT path)');
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;

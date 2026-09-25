@@ -335,7 +335,7 @@
   // WebGPU also reads the index format off the array at draw time (:89025), so it must SEE 32-bit
   // while it draws: swap in a 32-bit copy we own before the render, put the app's array back after,
   // and make every BatchedMesh rebuild its draw list at the right width on the app's next frame.
-  const WIDE = new WeakMap();
+  let WIDE = new WeakMap();   // §WIDE_RELEASE: replaced (so dropped) whenever the bounce renderer is released
   function widenShared(scene) {
     const out = [], seen = new Set();
     const one = (a, isIndex) => {
@@ -902,7 +902,7 @@
   window.addEventListener('keydown', function (e) {
     if (e.altKey && e.shiftKey && (e.key === 'S' || e.key === 's')) {
       e.preventDefault();
-      if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (err) {} built = null; toast('Bounce renderer released', 2500); console.log('§GI_STILL released on request'); }
+      if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (err) {} built = null; WIDE = new WeakMap(); toast('Bounce renderer released', 2500); console.log('§GI_STILL released on request'); }
       else toast('Nothing to release', 2000);
     }
   }, true);
@@ -1003,7 +1003,7 @@
   }
   function giSupportedQuiet() { return !giOffReason(); }
   window.__giStillShoot = shoot;
-  window.__giStillRelease = function () { if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (e) {} built = null; console.log('§GI_STILL released on request'); return true; } return false; };
+  window.__giStillRelease = function () { if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (e) {} built = null; WIDE = new WeakMap(); console.log('§GI_STILL released on request'); return true; } return false; };
   // §GI_STILL_DOUBLE WITNESS — renders the SAME geometry pass with only the partly-transparent
   // (glazed) meshes left visible, so the glazing gets a real measured mask instead of a rectangle
   // drawn by eye. Returns per-region means for the app frame, the bounce layer and the finished
