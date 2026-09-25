@@ -219,5 +219,11 @@
     if (fragY >= li.floorY - c && fragY <= li.topY + c) return true;
     return fragY <= li.floorY && fragCeilY != null && fragCeilY >= li.floorY - c; }
 
-  global.LightZones = { lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atSurface: atSurface, atLamp: atLamp, SOLID: SOLID, get: function () { return cache; }, CELL: CELL };
+  // v3 (red1-4b): the LAMP's column decides. A lamp lights fragments inside its own empty column run [floorY - CELL,
+  // topY + CELL] only — a lamp hanging over the atrium void has a run reaching the void's floor, a balcony lamp with its own
+  // slab under it lights its storey band only. No fragment-side test. overVoid = run taller than OVER_VOID_M.
+  var OVER_VOID_M = 5;
+  function bandPass3(li, fragY) { var c = cache ? cache.cell : CELL; if (li.floorY == null) return true; return fragY >= li.floorY - c && fragY <= li.topY + c; }
+
+  global.LightZones = { bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atSurface: atSurface, atLamp: atLamp, SOLID: SOLID, get: function () { return cache; }, CELL: CELL };
 })(typeof window !== 'undefined' ? window : this);

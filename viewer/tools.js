@@ -1981,7 +1981,22 @@ function setupTools(A) {
       // Default OFF (watchdog for red1, 2026-09-25: the approved ref4 hall is the list-order look; nearest read brighter and
       // harsher). &lampcap=nearest / APP._stillLampCapNearest=true turns it on for later comparison.
       var _nearestOn = A._stillLampCapNearest === true || /[?&]lampcap=nearest/.test(location.search);
-      if (inView.length > _capN && !_nearestOn && !A._lampCapListLogged) { A._lampCapListLogged = true; console.log('§LAMP_CAP_NEAREST off (list order, the approved look) inView=' + inView.length + ' kept=' + _capN); }
+      // §SOURCED_LIGHT_CAP — with light zones (Alt+S), keep camera-zone lamps first, then lamps in zones the frame shows,
+      // then the nearest. &lampcap=list keeps the old list order for red1's A/B.
+      var _zoneCap = inView.length > _capN && A._sourcedCap && window.LightZones && window.LightZones.get() && !/[?&]lampcap=list/.test(location.search);
+      if (_zoneCap) {
+        var _LZ = window.LightZones, _cz = A._sourcedCap.camZone, _vz = A._sourcedCap.vis, _cp2 = A.camera.position, _rk = [0, 0, 0];
+        inView.forEach(function(p) { if (p.__slz === undefined) { var v = _LZ.atLamp(p); p.__slz = (v > 0 && v !== _LZ.SOLID) ? v : 0; }
+          p.__slrank = (p.__slz && p.__slz === _cz) ? 0 : (p.__slz && _vz.has(p.__slz) ? 1 : 2);
+          p.__sld2 = (p.x - _cp2.x) * (p.x - _cp2.x) + (p.y - _cp2.y) * (p.y - _cp2.y) + (p.z - _cp2.z) * (p.z - _cp2.z); });
+        inView.sort(function(a, b) { return (a.__slrank - b.__slrank) || (a.__sld2 - b.__sld2); });
+        inView.forEach(function(p) { _rk[p.__slrank]++; });
+        var _kept = [0, 0, 0]; for (var _ki = 0; _ki < Math.min(_capN, inView.length); _ki++) _kept[inView[_ki].__slrank]++;
+        console.log('§LAMP_CAP_ZONE inView=' + inView.length + ' cap=' + _capN + ' camZone=' + _cz + ' inCamZone=' + _rk[0] + ' inVisibleZones=' + _rk[1] + ' other=' + _rk[2] +
+          ' kept camZone/visible/nearest=' + _kept.join('/'));
+        _nearestOn = false;
+      }
+      if (inView.length > _capN && !_nearestOn && !_zoneCap && !A._lampCapListLogged) { A._lampCapListLogged = true; console.log('§LAMP_CAP_NEAREST off (list order, the approved look) inView=' + inView.length + ' kept=' + _capN); }
       if (inView.length > _capN && _nearestOn) {
         var _cp = A.camera.position;
         inView.sort(function(a, b) { return ((a.x - _cp.x) * (a.x - _cp.x) + (a.y - _cp.y) * (a.y - _cp.y) + (a.z - _cp.z) * (a.z - _cp.z)) -

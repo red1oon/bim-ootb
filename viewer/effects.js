@@ -4111,6 +4111,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // §LIGHT_UNIFORM_BUDGET — caps the lamps BEFORE toggleNightMode builds them; portals then fit in the rest. One light
       // count for the whole still = one shader compile.
       if (window.SkyPortal) { try { window.SkyPortal.budget(A); } catch (eB) { console.warn('§LIGHT_UNIFORM_BUDGET failed: ' + eB.message); } }   // red1: throw further (nav keeps NIGHT_LIGHT_DECAY)
+      if (!A._maxqActive && window.SourcedLight) { try { window.SourcedLight.prepare(A); } catch (eSLP) { console.warn('§SOURCED_LIGHT_CAP failed: ' + eSLP.message); } }   // zones + camera/visible zones before the lamps are born
       // §LAMP_SHAPE_COLOUR — round fixtures soft amber, rectangular white (red1). &lampshape=0 switches it off.
       A._stillShapeColour = _stillDial('_stillLampShape', 'lampshape', 1, 1) > 0;
       if (A._stillShapeColour && typeof A._nightFixtureWorldPositions === 'function' && A.nightFixtureShape) {
@@ -4243,6 +4244,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!A._maxqActive && window.SkyOcc) { try { window.SkyOcc.stage(A); } catch (eSO) { console.warn('§SKY_OCCLUSION failed: ' + eSO.message); } }   // §SKY_OCCLUSION
     if ((!A._maxqActive || A._filmParity) && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }   // after the lamps; budget set before them
     if ((!A._maxqActive || A._filmParity) && window.GlassFresnel) { try { window.GlassFresnel.stage(A); } catch (eGF) { console.warn('§GLASS_FRESNEL failed: ' + eGF.message); } }   // §GLASS_FRESNEL
+    if (!A._maxqActive && window.SourcedLight) { try { window.SourcedLight.stage(A); } catch (eSL) { console.warn('§SOURCED_LIGHT failed: ' + eSL.message); } }   // §SOURCED_LIGHT — after lamps + portals
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
     // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
     // nav/still wall-side contrast; in the bake that doubled the shadow contrast (sunFillRatio 4.387 vs
@@ -4427,6 +4429,7 @@ async function setupEffects(A, renderer, scene, camera) {
     A._stillLampRangeNow = null;
     if (typeof A._nightSyncPads === 'function') { try { A._nightSyncPads(); } catch (ePad) {} }   // §STILL_LIGHT_PAD — pads go with the still
     if (window.SkyOcc) { try { window.SkyOcc.unstage(A); } catch (eSOU) {} }   // §SKY_OCCLUSION
+    if (window.SourcedLight) { try { window.SourcedLight.unstage(A); } catch (eSLU) {} }   // §SOURCED_LIGHT
     // §STILL_BASE — hand navigation its own base light back.
     if (_stillBaseSaved && A.ambient && A.hemi) {
       A.ambient.intensity = _stillBaseSaved.ambI; A.hemi.intensity = _stillBaseSaved.hemiI;
