@@ -1868,6 +1868,101 @@ function setupTools(A) {
     }
     return picked;
   }
+  // ══ §LAMP_ZONE_PICK (2026-09-25, spec PHOTOREAL_STILL_RENDER.md §LAMP_ZONE_PICK; zero-list FLYIN_DARK; ALTC_SHOWSTOPPERS S5:
+  // every lighting function = BUILD per building, cached + DECIDE per camera/frame, ray-free, ms-scale) ════════════════════
+  // BUILD — A._lampZoneTable(): every fixture's light zone (LightZones.atLamp, the §SOURCED_LIGHT binding rule) stored on the
+  // fixture position object (p.__slz; A._nightFixturePositions is persistent) plus zone -> fixture count. Rebuilt only when the
+  // building, the zone grid or the fixture count changes.
+  A._lampZoneTable = function() {
+    var LZ = window.LightZones, Z = LZ && LZ.get(); if (!Z) return null;
+    var all = A._nightFixtureWorldPositions(), key = Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + Z.zones + ':' + all.length;
+    var T = A._lampZoneTableCache; if (T && T.key === key && T.ref === all) return T;   // ref: A._nightFixturePositions is rebuilt (new objects, no __slz) when night mode toggles
+    var t0 = performance.now(), byZone = {};
+    for (var i = 0; i < all.length; i++) { var p = all[i], v = LZ.atLamp(p); p.__slz = (v > 0 && v !== LZ.SOLID) ? v : 0; if (p.__slz) byZone[p.__slz] = (byZone[p.__slz] || 0) + 1; }
+    // zone bounding boxes (world) from ONE pass over the zone grid — DECIDE tests them against the frustum, no rays, no GPU
+    var boxes = (T && T.gridKey === Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + Z.zones) ? T.boxes : null, bMs = 0;
+    if (!boxes) { var t1 = performance.now(), g = Z.zone, nx = Z.nx, ny = Z.ny, nxy = Z.nx * Z.ny, MASK = LZ.ZONE_MASK, SOL = LZ.SOLID, mn = {}, mx = {};
+      for (var c = 0, n = g.length; c < n; c++) { var v = g[c]; if (v === 0 || v === SOL) continue; v &= MASK; if (!v) continue;
+        var k = (c / nxy) | 0, r = c - k * nxy, j = (r / nx) | 0, ii = r - j * nx, a = mn[v], b = mx[v];
+        if (!a) { mn[v] = [ii, j, k]; mx[v] = [ii, j, k]; continue; }
+        if (ii < a[0]) a[0] = ii; if (j < a[1]) a[1] = j; if (k < a[2]) a[2] = k; if (ii > b[0]) b[0] = ii; if (j > b[1]) b[1] = j; if (k > b[2]) b[2] = k; }
+      boxes = {}; Object.keys(mn).forEach(function(z) { var a = mn[z], b = mx[z]; boxes[z] = new THREE.Box3(new THREE.Vector3(Z.org.x + a[0] * Z.cell, Z.org.y + a[1] * Z.cell, Z.org.z + a[2] * Z.cell),
+        new THREE.Vector3(Z.org.x + (b[0] + 1) * Z.cell, Z.org.y + (b[1] + 1) * Z.cell, Z.org.z + (b[2] + 1) * Z.cell)); });
+      bMs = performance.now() - t1; }
+    T = A._lampZoneTableCache = { key: key, ref: all, gridKey: Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + Z.zones, byZone: byZone, boxes: boxes, fixtures: all.length, zones: Object.keys(byZone).length, ms: performance.now() - t0 };
+    console.log('§LAMP_ZONE_PICK BUILD fixtures=' + all.length + ' zonesWithLamps=' + T.zones + ' unzoned=' + all.filter(function(q) { return !q.__slz; }).length + ' zoneBoxes=' + Object.keys(boxes).length + ' boxMs=' + bMs.toFixed(0) + ' ms=' + T.ms.toFixed(0));
+    return T;
+  };
+  // DECIDE input, ray-free — A._lampZoneView(camera[, mode]): camera zone = ONE zone lookup at the camera (LightZones.at, a
+  // solid cell falls back to atSurface as SourcedLight.prepare does); visible zones per mode below. Mode 'depth' = a 64x36
+  // depth readback (MeshDepthMaterial, RGBADepthPacking) -> world point 0.3 m toward the eye -> LightZones.at; share = pixels
+  // per zone; renderer target and scene.overrideMaterial are restored.
+  // DEFAULT mode 'box' (S5's "zone bboxes vs the frustum"): visible zones = zones WITH LAMPS whose bounding box (BUILD table)
+  // intersects the camera frustum; share = 1 / (1 + distance from the eye to the box), a nearer zone fills more of the frame.
+  // Measured on Hospital: the depth readback costs 220-650 ms per press (a full-scene draw at 64x36 + the GPU sync of
+  // readRenderTargetPixels), far over the 50 ms target; the box test is < 5 ms. mode 'depth' stays callable for a comparison.
+  var _lzvRT = null, _lzvMat = null, _lzvBuf = null, _LZV_W = 64, _LZV_H = 36;
+  A._lampZoneView = function(camera, mode) {
+    var LZ = window.LightZones, Z = LZ && LZ.get(); if (!Z || !A.renderer || !A.scene) return null;
+    var t0 = performance.now(), cam = camera.position, cz = LZ.at(cam); if (cz === LZ.SOLID) cz = LZ.atSurface(cam, { x: 0, y: 1, z: 0 });
+    var camZone = (cz > 0 && cz !== LZ.SOLID) ? cz : 0, vis = new Map(), hits = 0, solid = 0, r = A.renderer;
+    if (mode !== 'depth') {
+      var T = A._lampZoneTable(); if (!T) return null;
+      camera.updateMatrixWorld(); var fr = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)), tested = 0;
+      Object.keys(T.byZone).forEach(function(z) { var bx = T.boxes[z]; if (!bx) return; tested++; if (!fr.intersectsBox(bx)) return; hits++; vis.set(+z, 1 / (1 + bx.distanceToPoint(cam))); });
+      return { camZone: camZone, vis: vis, px: tested, hits: hits, solid: 0, ms: performance.now() - t0, mode: 'box' };
+    }
+    if (!_lzvRT) { _lzvRT = new THREE.WebGLRenderTarget(_LZV_W, _LZV_H, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
+      _lzvMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide }); _lzvBuf = new Uint8Array(_LZV_W * _LZV_H * 4); }
+    var prevRT = r.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background, prevAuto = r.autoClear, prevXR = r.xr && r.xr.enabled;
+    var prevSky = A._sky ? A._sky.visible : null; if (A._sky) A._sky.visible = false;
+    try {
+      camera.updateMatrixWorld(); A.scene.overrideMaterial = _lzvMat; A.scene.background = null; r.autoClear = true; if (r.xr) r.xr.enabled = false;
+      r.setRenderTarget(_lzvRT); r.setClearColor(0x000000, 1); r.clear(); r.render(A.scene, camera);
+      r.readRenderTargetPixels(_lzvRT, 0, 0, _LZV_W, _LZV_H, _lzvBuf);
+    } finally { r.setRenderTarget(prevRT); A.scene.overrideMaterial = prevOv || null; A.scene.background = prevBg; r.autoClear = prevAuto; if (r.xr) r.xr.enabled = !!prevXR; if (A._sky) A._sky.visible = prevSky; }
+    var w = new THREE.Vector3(), d = new THREE.Vector3();
+    for (var j = 0; j < _LZV_H; j++) for (var i = 0; i < _LZV_W; i++) {
+      var o = (j * _LZV_W + i) * 4, depth = (_lzvBuf[o] * 65536 + _lzvBuf[o + 1] * 256 + _lzvBuf[o + 2] + _lzvBuf[o + 3] / 255) / 16777216;   // three r16x packDepthToRGBA: R = MSB byte (floor(v*256)), G, B, A = sub-byte fraction
+      if (depth <= 0 || depth >= 0.9999) continue;   // cleared / far plane = nothing drawn
+      w.set(((i + 0.5) / _LZV_W) * 2 - 1, ((j + 0.5) / _LZV_H) * 2 - 1, depth * 2 - 1).unproject(camera);
+      d.copy(w).sub(cam); var L = d.length(); if (!(L > 0.31)) continue; d.multiplyScalar(0.3 / L); w.sub(d); hits++;
+      var v = LZ.at(w); if (v === LZ.SOLID) { w.sub(d); v = LZ.at(w); }   // 0.6 m: a fragment on a rasterised wall column
+      if (v === LZ.SOLID) { solid++; continue; }
+      if (v > 0) vis.set(v, (vis.get(v) || 0) + 1);
+    }
+    return { camZone: camZone, vis: vis, px: _LZV_W * _LZV_H, hits: hits, solid: solid, ms: performance.now() - t0, mode: 'depth' };
+  };
+  // DECIDE — A._lampZonePick(camPos, camZone, visZones[, fixtures, cap]): ONE pick function of (camera, visible zones); the still
+  // calls it now, a film calls it per frame (the film adds only continuity: fade a lamp entering/leaving the kept set, no
+  // 0<->full step). Lamps are picked by the ZONES THEY LIGHT (§SOURCED_LIGHT binds a lamp to its zone, so a lamp reaches
+  // nothing outside it), not by whether the fixture's centre sits in the frustum: a troffer behind the eye lights the wall in
+  // front. Candidates = every lamp in the camera zone, then lamps in the zones the frame shows (visZones: zone -> pixels of
+  // A._lampZoneView), ordered camera zone first, then by the zone's share of the frame, within a zone nearest-to-camera first.
+  // Cap = the uniform budget. No frustum test, no zone-blind top-up: a lamp in a zone the frame never shows is not a candidate
+  // at all (red1's pose 5: 20 zone-1 lamps + ~50 lamps of 23 unseen zones left the left wall at 0). fixtures defaults to the
+  // placed fixtures (§NIGHT_BUILDUP_GATE), cap to A._stillLampCap. Zones come from the BUILD table (no lookup per press).
+  // Returns { picked, zoneLamps (camera-zone lamps available), perZone: [[zone, kept, available]...], dropped }.
+  A._lampZonePick = function(camPos, camZone, visZones, fixtures, cap) {
+    var T = A._lampZoneTable(); if (!T) return null;
+    if (!fixtures) fixtures = A._nightFixtureWorldPositions().filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
+    if (typeof cap !== 'number') cap = (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200;
+    var cand = [], avail = {}, kept = {};
+    for (var i = 0; i < fixtures.length; i++) {
+      var p = fixtures[i]; if (!p.__slz) continue;
+      var share = (p.__slz === camZone) ? 1e9 : (visZones && visZones.get(p.__slz)) || 0;   // camera zone outranks any frame share
+      if (!(share > 0)) continue;
+      p.__slshare = share;
+      p.__sld2 = (p.x - camPos.x) * (p.x - camPos.x) + (p.y - camPos.y) * (p.y - camPos.y) + (p.z - camPos.z) * (p.z - camPos.z);
+      cand.push(p); avail[p.__slz] = (avail[p.__slz] || 0) + 1;
+    }
+    cand.sort(function(a, b) { return (b.__slshare - a.__slshare) || (a.__sld2 - b.__sld2); });
+    var picked = cand.slice(0, Math.max(0, cap | 0)), order = [];
+    picked.forEach(function(p) { if (!kept[p.__slz]) { kept[p.__slz] = 0; order.push(p.__slz); } kept[p.__slz]++; });
+    Object.keys(avail).forEach(function(z) { if (!kept[+z]) order.push(+z); });
+    return { picked: picked, zoneLamps: avail[camZone] || 0, dropped: cand.length - picked.length, cap: cap,
+             perZone: order.map(function(z) { return [z, kept[z] || 0, avail[z]]; }) };
+  };
   var _ntuLastLine = null;   // §BAKE_INTERIOR_TOPUP — run-length guard, this runs once per baked frame
   var _nbgLastTotal = -1, _nbgLastPlaced = -1, _nbgLastLit = -1;   // §NIGHT_BUILDUP_GATE dedup
 
@@ -1916,6 +2011,25 @@ function setupTools(A) {
       // new pose and calls startStillRefine() BEFORE any render of that pose, so an unrefreshed
       // matrixWorldInverse culls this frame's fixtures against the PREVIOUS frame's view.
       A.camera.updateMatrixWorld();
+      // §LAMP_ZONE_PICK — with light zones and the camera inside one, the pick is by the zones the lamps light; the frustum
+      // test and the zone-blind top-up below are NOT run. Without zones (LightZones missing, &sourced=0, camera outside every
+      // zone) today's behaviour is kept exactly. Film path: calls DECIDE per frame + needs fade (next step).
+      // Ray-free (S5): camera zone + visible zones from A._lampZoneView (one zone lookup + a 64x36 depth readback), never
+      // from prepare's 84-ray grid; A._sourcedCap is only compared in the log. Zones must exist (LightZones built by
+      // SourcedLight.prepare/stage; a film builds them once via LightZones.build, cached per building).
+      var _zpZ = window.LightZones && window.LightZones.get() && !/[?&]lampcap=list/.test(location.search) ? A._lampZoneView(A.camera) : null;
+      var _zpOn = _zpZ && _zpZ.camZone > 0;
+      if (_zpOn) {
+        A._lampCapFarM = null;
+        var _zp = A._lampZonePick(A.camera.position, _zpZ.camZone, _zpZ.vis, visPos);
+        var _zpTop = Array.from(_zpZ.vis.entries()).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 6).map(function(e) { return e[0] + ':' + (+e[1]).toFixed(3); }).join(',');
+        console.log('§LAMP_ZONE_PICK camZone=' + _zpZ.camZone + ' zoneLamps=' + _zp.zoneLamps + ' kept=' + _zp.picked.length + ' cap=' + _zp.cap +
+          ' perZone=[' + _zp.perZone.map(function(e) { return e[0] + ':' + e[1] + '/' + e[2]; }).join(',') + '] dropped=' + _zp.dropped + ' (= §LAMP_CAP_DROPPED) eligible(placed)=' + visPos.length +
+          ' decideMs=' + (_zpZ.ms).toFixed(1) + ' mode=' + _zpZ.mode + ' visibleZones=' + _zpZ.vis.size + ' (' + _zpTop + ') ' + (_zpZ.mode === 'box' ? 'boxesInFrustum=' + _zpZ.hits + '/' + _zpZ.px : 'px=' + _zpZ.hits + '/' + _zpZ.px + ' solid=' + _zpZ.solid) +
+          ' prepareCamZone=' + (A._sourcedCap ? A._sourcedCap.camZone : 'n/a'));
+        needed = _zp.picked.map(function(p) { return { pos: p }; });
+      } else {
+        if (_zpZ) console.log('§LAMP_ZONE_PICK camera outside every zone (camZone=0, decideMs=' + _zpZ.ms.toFixed(1) + ') — frustum path kept');
       var frustum = new THREE.Frustum();
       var vpMatrix = new THREE.Matrix4().multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(vpMatrix);
@@ -1978,6 +2092,7 @@ function setupTools(A) {
         if (_tuLine !== _ntuLastLine) { _ntuLastLine = _tuLine; console.log(_tuLine); }
       }
       needed = _picked.map(function(p) { return { pos: p }; });
+      }   // end of the frustum + top-up path (§LAMP_ZONE_PICK replaces it when zones exist)
     } else if (visPos.length <= A._nightMaxLights) {
       // Small building (or few fixtures placed so far) — place ALL currently-eligible fixtures, no culling
       needed = visPos.map(function(p) { return { pos: p }; });
