@@ -819,6 +819,10 @@
     const iend = png.length - 12; const out = new Uint8Array(png.length + chunk.length); out.set(png.subarray(0, iend), 0); out.set(chunk, iend); out.set(png.subarray(iend), iend + chunk.length); return out;
   }
   function show(canvas, secs, passes) {
+    // §STILL_ESC_LEAK: effects.js's still lock eats Esc first (stopImmediatePropagation) and removes the overlay itself, so this
+    // module's own Esc listener never ran exit() and was never removed: each press stranded one listener holding its overlay
+    // and the finished 1666x864 canvas (5.8 MB). The live listener is kept here and dropped before the next one is added.
+    if (window.__giStillEsc) { window.removeEventListener('keydown', window.__giStillEsc, true); window.__giStillEsc = null; }
     const old = document.getElementById('gi-still-overlay'); if (old) old.remove();
     const wrap = document.createElement('div'); wrap.id = 'gi-still-overlay';
     wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#000;display:flex;flex-direction:column';
@@ -834,7 +838,7 @@
     save.onclick = () => canvas.toBlob(async b => { let out = b;
       try { const P0 = window.APP && window.APP._stillPoseLast, pose = P0 ? Object.assign({}, P0, { fault: window.APP._stillFaultLast || null, faultGi: window.APP._stillFaultGiLast || null }) : null; if (pose) { out = new Blob([pngWithText(new Uint8Array(await b.arrayBuffer()), 'bim-still-pose', JSON.stringify(pose))], { type: 'image/png' }); console.log('§STILL_POSE_PNG written bytes=' + JSON.stringify(pose).length); }
         else console.log('§STILL_POSE_PNG none (no §STILL_POSE this session)'); } catch (e) { console.warn('§STILL_POSE_PNG failed: ' + e.message); out = b; }
-      const a = document.createElement('a'); a.href = URL.createObjectURL(out); a.download = 'bounce_still_' + Date.now() + '.png'; a.click(); });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(out); a.download = 'bounce_still_' + Date.now() + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); });   // free the PNG blob once the download has it
     const close = document.createElement('button');
     close.textContent = 'Close (Esc)';
     close.style.cssText = save.style.cssText + ';margin-left:8px';
@@ -846,7 +850,7 @@
     wrap.appendChild(bar); wrap.appendChild(canvas);
     document.body.appendChild(wrap);
     function esc(e) { if (e.key === 'Escape') exit('esc-overlay'); }
-    window.addEventListener('keydown', esc, true);
+    window.addEventListener('keydown', esc, true); window.__giStillEsc = esc;
     toast('Bounce still ready — ' + passes + ' passes in ' + secs + 's', 4000);
   }
   // ALT+S IS NOT INTERCEPTED (red1: "alt-s must be like original, not impacted.. just with the new

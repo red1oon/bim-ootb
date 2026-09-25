@@ -5899,6 +5899,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // staged, so every click after it was swallowed and red1 had to refresh.
   function _stillExit(via) {
     var ov = document.getElementById('gi-still-overlay'); if (ov) ov.remove();
+    if (window.__giStillEsc) { window.removeEventListener('keydown', window.__giStillEsc, true); window.__giStillEsc = null; }   // §STILL_ESC_LEAK (gi_still.js)
     var wasLocked = _lockOn;
     _stillLock(false);
     var torn = !!(A._stillRefineActive || _autoStageOn || _photoStagingOn);
