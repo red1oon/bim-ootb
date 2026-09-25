@@ -3970,6 +3970,9 @@ async function setupEffects(A, renderer, scene, camera) {
     return { inside: !!hit, src: _roomMiss + 'up-ray fallback (an overhang can fool it) hit=' + (hit ? hit.distance.toFixed(1) + 'm' : 'none') + ' uses=' + JSON.stringify(A._stillCamSrc) };
   }
   function _applyPhotoStaging() {
+    // §STILL_STAGE_MS (watchdog red1-c6, 2026-09-25: a Terminal press took ~120 s vs ~13 s, cause not guessed) — where the
+    // staging time goes, one line per press; the first frame after staging (program link) is timed by a one-shot render wrap.
+    var _stT0 = performance.now(), _stMs = { zoneBuild: 0, skySweep: 0, audit: 0, zoneCap: 0, portals: 0, sourcedStage: 0, shadowFit: 0 };
     // §GROUND_WETNESS_REFIRE_FIX (2026-07-17, live user repro: worked once, then "cannot
     // replicate" on another building, back on the original — still couldn't, "but bit slightly"):
     // this MUST run on every Alt+S press, including a refire — unlike the fog/sun/night-glow
@@ -4183,7 +4186,10 @@ async function setupEffects(A, renderer, scene, camera) {
       // §LIGHT_UNIFORM_BUDGET — caps the lamps BEFORE toggleNightMode builds them; portals then fit in the rest. One light
       // count for the whole still = one shader compile.
       if (window.SkyPortal) { try { window.SkyPortal.budget(A); } catch (eB) { console.warn('§LIGHT_UNIFORM_BUDGET failed: ' + eB.message); } }   // red1: throw further (nav keeps NIGHT_LIGHT_DECAY)
-      if (!A._maxqActive && window.SourcedLight) { try { window.SourcedLight.prepare(A); } catch (eSLP) { console.warn('§SOURCED_LIGHT_CAP failed: ' + eSLP.message); } }   // zones + camera/visible zones before the lamps are born
+      if (!A._maxqActive && window.SourcedLight) { var _stZ0 = window.LightZones && window.LightZones.get(), _stP = performance.now(); try { window.SourcedLight.prepare(A); } catch (eSLP) { console.warn('§SOURCED_LIGHT_CAP failed: ' + eSLP.message); }
+        var _stZ1 = window.LightZones && window.LightZones.get(), _stPms = performance.now() - _stP;
+        if (_stZ1 && _stZ1 !== _stZ0 && _stZ1.stats) { _stMs.zoneBuild = (_stZ1.stats.ms || 0) + ((_stZ1.stats.glare && _stZ1.stats.glare.ms) || 0); _stMs.skySweep = _stZ1.stats.skyMs || 0; _stMs.audit = (_stZ1.stats.glare && _stZ1.stats.glare.ms) || 0; }
+        _stMs.zoneCap = Math.max(0, _stPms - _stMs.zoneBuild); }   // zones + camera/visible zones before the lamps are born
       // §LAMP_SHAPE_COLOUR — round fixtures soft amber, rectangular white (red1). &lampshape=0 switches it off.
       A._stillShapeColour = _stillDial('_stillLampShape', 'lampshape', 1, 1) > 0;
       if (A._stillShapeColour && typeof A._nightFixtureWorldPositions === 'function' && A.nightFixtureShape) {
@@ -4315,9 +4321,12 @@ async function setupEffects(A, renderer, scene, camera) {
         ' (x' + _eMul + ') lampRange=' + (A._stillLampRangeNow == null ? '0(inf)' : A._stillLampRangeNow) + ' lampDecay=' + A._stillLampDecayNow);
     }
     if (!A._maxqActive && window.SkyOcc) { try { window.SkyOcc.stage(A); } catch (eSO) { console.warn('§SKY_OCCLUSION failed: ' + eSO.message); } }   // §SKY_OCCLUSION
-    if ((!A._maxqActive || A._filmParity) && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }   // after the lamps; budget set before them
+    var _stS = performance.now();
+    if ((!A._maxqActive || A._filmParity) && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }
+    _stMs.portals = performance.now() - _stS; _stS = performance.now();   // after the lamps; budget set before them
     if ((!A._maxqActive || A._filmParity) && window.GlassFresnel) { try { window.GlassFresnel.stage(A); } catch (eGF) { console.warn('§GLASS_FRESNEL failed: ' + eGF.message); } }   // §GLASS_FRESNEL
-    if (!A._maxqActive && window.SourcedLight) { try { window.SourcedLight.stage(A); } catch (eSL) { console.warn('§SOURCED_LIGHT failed: ' + eSL.message); } }   // §SOURCED_LIGHT — after lamps + portals
+    if (!A._maxqActive && window.SourcedLight) { try { window.SourcedLight.stage(A); } catch (eSL) { console.warn('§SOURCED_LIGHT failed: ' + eSL.message); } }
+    _stMs.sourcedStage = performance.now() - _stS;   // §SOURCED_LIGHT — after lamps + portals
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
     // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
     // nav/still wall-side contrast; in the bake that doubled the shadow contrast (sunFillRatio 4.387 vs
@@ -4400,8 +4409,17 @@ async function setupEffects(A, renderer, scene, camera) {
     // should light.
     _glowFirstMs = null; _glowSkipLogged = false; A._glowQuadZeroLogged = false;
     _buildRoomProbe();
+    _stS = performance.now();
     if (!A._maxqActive) { if (_fitOn()) _stillFitApply(false); else if (_fitState) console.log('§STILL_SHADOW_FIT off (&shadowfit=0, APP._stillShadowFit=false, or the user\'s own Shadow mode) env=' + _fitState.env); }
+    _stMs.shadowFit = performance.now() - _stS;
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
+    try { var _stTot = performance.now() - _stT0, _stR = A.renderer, _stProg0 = (_stR && _stR.info && _stR.info.programs) ? _stR.info.programs.length : -1, _stRender = _stR && _stR.render;
+      var _stLine = '§STILL_STAGE_MS zoneBuild=' + Math.round(_stMs.zoneBuild) + ' skySweep=' + Math.round(_stMs.skySweep) + ' audit=' + Math.round(_stMs.audit) + ' zoneCap=' + Math.round(_stMs.zoneCap) +
+        ' portals=' + Math.round(_stMs.portals) + ' sourcedStage=' + Math.round(_stMs.sourcedStage) + ' shadowFit=' + Math.round(_stMs.shadowFit) + ' other=' + Math.round(_stTot - _stMs.zoneBuild - _stMs.zoneCap - _stMs.portals - _stMs.sourcedStage - _stMs.shadowFit) + ' (staging steps not named above) stagingTotal=' + Math.round(_stTot);
+      if (_stRender && !_stR.__stageMsWrap) { _stR.__stageMsWrap = true;   // link = the first render after staging (programs compile + link synchronously inside it)
+        _stR.render = function() { _stR.render = _stRender; _stR.__stageMsWrap = false; var t = performance.now(); var ret = _stRender.apply(this, arguments); var n1 = (_stR.info && _stR.info.programs) ? _stR.info.programs.length : -1;
+          console.log(_stLine + ' link=' + Math.round(performance.now() - t) + ' (first frame, newPrograms=' + (n1 - _stProg0) + ') total=' + Math.round(_stTot + performance.now() - t)); return ret; }; }
+      else console.log(_stLine + ' link=? total=' + Math.round(_stTot)); } catch (eSt) { console.warn('§STILL_STAGE_MS failed: ' + eSt.message); }
     // §STILL_POSE (2026-09-24, watcher: red1's stills carry no pose) — one line per staging with everything
     // needed to reproduce the frame headless: camera, target, fov, sun, DB, window size.
     try {
