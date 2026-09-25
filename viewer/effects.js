@@ -4657,13 +4657,17 @@ async function setupEffects(A, renderer, scene, camera) {
       else console.log(_stLine + ' link=? total=' + Math.round(_stTot)); } catch (eSt) { console.warn('§STILL_STAGE_MS failed: ' + eSt.message); }
     // §STILL_POSE (2026-09-24, watcher: red1's stills carry no pose) — one line per staging with everything
     // needed to reproduce the frame headless: camera, target, fov, sun, DB, window size.
+    // §STILL_POSE_HOST (watchdog red1-c6, 2026-09-26: red1's PNGs did not say which tree/port they came from): the served
+    // sw.js CACHE_VERSION, read once per page (async; the first press may log null if it has not arrived yet)
+    if (A._swVersion === undefined) { A._swVersion = null; try { fetch('sw.js', { cache: 'no-store' }).then(function(r) { return r.text(); }).then(function(t) { var m = /CACHE_VERSION = '([^']+)'/.exec(t); A._swVersion = m ? m[1] : null; }).catch(function() {}); } catch (eSw) {} }
     try {
       var _c = A.camera, _t = A.controls ? A.controls.target : null, _s = A.sun;
       var _f = function(v) { return v ? [v.x, v.y, v.z].map(function(n) { return +n.toFixed(3); }) : null; };
       A._stillPoseLast = { cam: _f(_c && _c.position), tgt: _f(_t), fov: _c && _c.fov,
         aspect: _c && +_c.aspect.toFixed(4), sun: _f(_s && _s.position), sunTgt: _f(_s && _s.target && _s.target.position),
         sunI: _s && +_s.intensity.toFixed(3), db: (location.search.match(/db=([^&]+)/) || [])[1] || null,
-        w: window.innerWidth, h: window.innerHeight, film: !!A._maxqActive, url: location.search };   // §STILL_POSE_PNG: gi_still.js writes it into the saved PNG
+        w: window.innerWidth, h: window.innerHeight, film: !!A._maxqActive, url: location.search,
+        host: location.host, sw: A._swVersion || null };   // §STILL_POSE_PNG writes it into the saved PNG; §STILL_POSE_HOST: host + sw name the tree
       console.log('§STILL_POSE ' + JSON.stringify(A._stillPoseLast));
     } catch (eP) { console.warn('§STILL_POSE failed: ' + eP.message); }
     _stillShadowRendersArm();
