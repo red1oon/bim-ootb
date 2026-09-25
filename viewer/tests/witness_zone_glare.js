@@ -9,7 +9,10 @@
 // §LIGHT_ZONE + §GLARE lines), then the 3395ae42 builder injected as LightZonesOld builds the BEFORE grid from the same scene
 // and LightZones.audit runs on it with the old fragment rule (atSurface: 0 / off-grid = sky, zone > 0 or solid = no sky).
 // The before arm must FAIL where red1 saw the defects (Clinic canopy, Hospital junctions); the after arm must read 0.
-// GUARD (every run): FAIL on any console "Shader Error", "Context Lost" or pageerror. Exit 3 when any AFTER count > 0.
+// Terminal: §HALL_ZONE — the zone at witness_wash_sources' terminal_hall_floor stand-in camera (1.6 m over the hall floor,
+// long axis) must be != 0 (the hall is covered), with its aperture m2 (up / side) — the ~174 m2 roof-edge band the old rule
+// leaked through. GUARD (every run): FAIL on any console "Shader Error", "Context Lost" or pageerror. Exit 3 when any AFTER
+// count > 0 or the Terminal hall reads zone 0.
 // RUN: node viewer/tests/witness_zone_glare.js <port> [outdir] [Hospital,Clinic,Terminal]   (OLD_BUILDER=<light_zones.js of 3395ae42>)
 /* global Buffer */
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer'); const fs = require('fs'), path = require('path'), cp = require('child_process');
@@ -54,6 +57,17 @@ const OLD = process.env.OLD_BUILDER ? fs.readFileSync(process.env.OLD_BUILDER, '
     say(line('_BEFORE(3395ae42)', r.before) + ' ' + JSON.stringify(r.beforeStats));
     say(line('_AFTER', r.after) + ' ' + JSON.stringify(r.afterStats));
     if (r.after.blackExteriorFaces > 0 || r.after.junctionFlips > 0 || r.after.canopyCells > 0) afterFail++;
+    if (db === 'Terminal') { const hz = await p.evaluate(() => { const A = window.APP, THREE = window.THREE, LZ = window.LightZones, LO = window.LightZonesOld, Z = LZ.get();
+        const m4 = new THREE.Matrix4(), v = new THREE.Vector3(), xs = [], ys = [], zs = [];
+        for (const id in A._instanceMeta) { const o = A.scene.getObjectById(+id); if (!o || !o.isInstancedMesh) continue;
+          for (const m of A._instanceMeta[id]) { if (m.instanceIndex == null) continue; o.getMatrixAt(m.instanceIndex, m4); o.updateMatrixWorld(); v.setFromMatrixPosition(m4).applyMatrix4(o.matrixWorld); xs.push(v.x); ys.push(v.y); zs.push(v.z); } }
+        const q = (a, f) => { a = a.slice().sort((x, y) => x - y); return a[Math.floor(f * (a.length - 1))]; };
+        const x0 = q(xs, .05), x1 = q(xs, .95), y0 = q(ys, .02), z0 = q(zs, .05), z1 = q(zs, .95), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, h = y0 + 1.6;
+        const cam = (x1 - x0 >= z1 - z0) ? { x: x0 + 0.1 * (x1 - x0), y: h, z: cz } : { x: cx, y: h, z: z0 + 0.1 * (z1 - z0) };
+        let z = LZ.at(cam); if (z === LZ.SOLID) z = LZ.atSurface(cam, { x: 0, y: 1, z: 0 }); const zi = (z > 0 && z !== LZ.SOLID) ? Z.zoneInfo[z - 1] : null;
+        let zo = LO.at(cam); if (zo === LO.SOLID) zo = LO.atSurface(cam, { x: 0, y: 1, z: 0 });
+        return { cam: [cam.x, cam.y, cam.z].map(t => +t.toFixed(2)), beforeZone: zo, afterZone: z, cells: zi && zi.cells, m3: zi && zi.m3, apertureM2: zi && zi.apertureM2, upM2: zi && zi.upM2, sideM2: zi && zi.sideM2, surfaceM2: zi && zi.surfaceM2, skyLitCells: zi && zi.skyLitCells }; });
+      say('§HALL_ZONE bld=Terminal ' + (hz.afterZone > 0 ? 'PASS' : 'FAIL') + ' ' + JSON.stringify(hz)); if (!(hz.afterZone > 0)) afterFail++; }
     await p.close();
   }
   const fail = guard.shaderError || guard.contextLost || guard.pageError;
