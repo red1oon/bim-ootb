@@ -301,7 +301,7 @@
   // ratio to outdoors: exposure = base * (Ein / Eout)^(0.33 - 1). Camera outside: base exactly. (A first cut compared
   // albedo-weighted luminance with a 0.18 middle grey: white rooms metered 4x high and got no boost — replaced.)
   var METER_W = 160, METER_H = 90, STEVENS = 0.33, METER_MAX_STOPS = 10, meterSaved = null, meterMat = null;
-  function meterRead(A) {
+  function meterRead(A, opts) {
     var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [];
     A.scene.traverse(function (o) { if (!o.visible) return;
       var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
@@ -318,9 +318,46 @@
       R.clear(true, true, true); R.render(A.scene, A.camera); push(A, meterMat);
       R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); }
     finally { R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; A.scene.overrideMaterial = prevOv; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
-    var n = 0, sl = 0, delta = 1e-4;
-    for (var i = 0; i < METER_W * METER_H; i++) { if (buf[i * 4 + 3] < 0.5) continue; var L = 0.2126 * buf[i * 4] + 0.7152 * buf[i * 4 + 1] + 0.0722 * buf[i * 4 + 2]; if (!isFinite(L)) continue; sl += Math.log(delta + Math.max(0, L)); n++; }
-    return { Ein: n ? Math.PI * Math.exp(sl / n) : null, pixels: n, hidden: hidden.length, ms: performance.now() - t0 };   // white Lambert: E = pi * L
+    // weights per pixel. 'avg' = every lit pixel alike. 'centre' = CENTRE-WEIGHTED, the default metering mode of real
+    // cameras: 75% of the weight inside the centre circle, 25% over the rest; circle 8 mm (default) on a 36 x 24 mm frame
+    // (Nikonians Wiki, "C-W (Center-Weighted) Metering"; Wikipedia "Nikon D3500": "75% of the 8mm circle in the center"),
+    // i.e. a circle one third of the frame height across. 'zone' = only pixels whose surface is in the
+    // camera's own light zone (world position from a second override render -> LightZones.at).
+    var mode = opts && opts.mode || 'avg', wz = null;
+    if (mode === 'zone' && global.LightZones && global.LightZones.get()) wz = zoneMask(A, hidden, opts.camZone);
+    var n = 0, sw = 0, sl = 0, delta = 1e-4, inC = 0, cx = METER_W / 2, cy = METER_H / 2, rC = METER_H / 6;
+    for (var i2 = 0; i2 < METER_W * METER_H; i2++) { if (buf[i2 * 4 + 3] >= 0.5) { var px = i2 % METER_W, py = (i2 / METER_W) | 0; if ((px + 0.5 - cx) * (px + 0.5 - cx) + (py + 0.5 - cy) * (py + 0.5 - cy) <= rC * rC) inC++; } }
+    var nLit = 0; for (var i3 = 0; i3 < METER_W * METER_H; i3++) if (buf[i3 * 4 + 3] >= 0.5) nLit++;
+    for (var i = 0; i < METER_W * METER_H; i++) {
+      if (buf[i * 4 + 3] < 0.5) continue; var L = 0.2126 * buf[i * 4] + 0.7152 * buf[i * 4 + 1] + 0.0722 * buf[i * 4 + 2]; if (!isFinite(L)) continue;
+      var w = 1;
+      if (mode === 'centre') { var qx = i % METER_W, qy = (i / METER_W) | 0, inside = (qx + 0.5 - cx) * (qx + 0.5 - cx) + (qy + 0.5 - cy) * (qy + 0.5 - cy) <= rC * rC;
+        w = inside ? 0.75 / Math.max(1, inC) : 0.25 / Math.max(1, nLit - inC); }
+      else if (mode === 'zone') { w = wz ? (wz[i] ? 1 : 0) : 1; }
+      if (!w) continue; sl += w * Math.log(delta + Math.max(0, L)); sw += w; n++; }
+    return { Ein: sw ? Math.PI * Math.exp(sl / sw) : null, pixels: n, mode: mode, hidden: hidden.length, ms: performance.now() - t0 };   // white Lambert: E = pi * L
+  }
+  // world position per meter pixel (override MeshBasicMaterial writing its world position into the float target), then the
+  // light zone at 0.3 m toward the camera; returns a 0/1 mask of pixels in camZone.
+  var worldMat = null;
+  function zoneMask(A, hidden, camZone) {
+    var THREE = global.THREE, R = A.renderer, LZ = global.LightZones;
+    if (!worldMat) { worldMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      worldMat.onBeforeCompile = function (sh) {
+        sh.vertexShader = 'varying vec3 vSLW;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n\tvec4 _slw = vec4( transformed, 1.0 );\n#ifdef USE_BATCHING\n\t_slw = batchingMatrix * _slw;\n#endif\n#ifdef USE_INSTANCING\n\t_slw = instanceMatrix * _slw;\n#endif\n\tvSLW = ( modelMatrix * _slw ).xyz;');
+        sh.fragmentShader = 'varying vec3 vSLW;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\n\tgl_FragColor = vec4( vSLW, 1.0 );'); };
+      worldMat.customProgramCacheKey = function () { return 'slWorldPos'; }; }
+    var rt = new THREE.WebGLRenderTarget(METER_W, METER_H, { type: THREE.FloatType, depthBuffer: true }), buf = new Float32Array(METER_W * METER_H * 4);
+    var prevRT = R.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background, prevTM = R.toneMapping, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
+    hidden.forEach(function (o) { o.visible = false; });
+    try { A.scene.overrideMaterial = worldMat; A.scene.background = null; R.toneMapping = THREE.NoToneMapping; R.setClearColor(0x000000, 0); R.setRenderTarget(rt); R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); }
+    finally { R.setRenderTarget(prevRT); A.scene.overrideMaterial = prevOv; A.scene.background = prevBg; R.toneMapping = prevTM; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
+    var cam = A.camera.position, mask = new Uint8Array(METER_W * METER_H), hit = 0;
+    for (var i = 0; i < METER_W * METER_H; i++) { if (buf[i * 4 + 3] < 0.5) continue;
+      var x = buf[i * 4], y = buf[i * 4 + 1], z = buf[i * 4 + 2], dx = cam.x - x, dy = cam.y - y, dz = cam.z - z, dl = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      var v = LZ.at({ x: x + dx / dl * 0.3, y: y + dy / dl * 0.3, z: z + dz / dl * 0.3 }); if (v === camZone) { mask[i] = 1; hit++; } }
+    console.log('§METER zoneMask camZone=' + camZone + ' pixelsInZone=' + hit);
+    return mask;
   }
   function outdoorE(A) {
     var sd = A.sun ? A.sun.position.clone().normalize() : null, sinE = sd ? Math.max(0, sd.y) : 0, sunI = A.sun ? A.sun.intensity : 0;
@@ -332,14 +369,15 @@
   function meter(A, inside) {
     var R = A.renderer, base = R.toneMappingExposure;
     if (!inside) { console.log('§METER camera=outside exposure=' + base.toFixed(3) + ' stops=0 (base ' + base.toFixed(3) + ', unchanged outside)'); return null; }
-    var m = meterRead(A);
+    var mode = (/[?&]metermode=(avg|centre|zone)/.exec(location.search) || [])[1] || A._stillMeterMode || 'centre';
+    var m = meterRead(A, { mode: mode, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 });
     if (!m.Ein) { console.log('§METER camera=inside VACUOUS no lit surface pixels — exposure unchanged ' + base.toFixed(3)); return null; }
     var o = outdoorE(A), ratio = m.Ein / o.E;
     var exp = base * Math.pow(ratio, STEVENS - 1), stops = Math.log2(exp / base);
     if (stops < 0) { exp = base; stops = 0; } if (stops > METER_MAX_STOPS) { exp = base * Math.pow(2, METER_MAX_STOPS); stops = METER_MAX_STOPS; }
     meterSaved = { exp: base }; R.toneMappingExposure = exp;
     console.log('§METER camera=inside logAvgEin=' + m.Ein.toExponential(3) + ' Eout=' + o.E.toFixed(3) + ' (sun ' + o.sunI.toFixed(2) + ' x sinElev ' + o.sinE.toFixed(3) + ' + sky ' + o.skyL.toFixed(3) + ')' + o.note +
-      ' indoor/outdoor=' + ratio.toExponential(3) + ' stevens=' + STEVENS + ' exposure=' + exp.toFixed(3) + ' stops=' + stops.toFixed(2) + ' (base ' + base.toFixed(3) + ') pixels=' + m.pixels + '/' + (METER_W * METER_H) + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
+      ' mode=' + m.mode + ' indoor/outdoor=' + ratio.toExponential(3) + ' stevens=' + STEVENS + ' exposure=' + exp.toFixed(3) + ' stops=' + stops.toFixed(2) + ' (base ' + base.toFixed(3) + ') pixels=' + m.pixels + '/' + (METER_W * METER_H) + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
     return { exposure: exp, stops: stops, Ein: m.Ein, Eout: o.E };
   }
   function meterOff(A) { if (meterSaved && A.renderer) { A.renderer.toneMappingExposure = meterSaved.exp; console.log('§METER off exposure=' + meterSaved.exp.toFixed(3)); } meterSaved = null; }
