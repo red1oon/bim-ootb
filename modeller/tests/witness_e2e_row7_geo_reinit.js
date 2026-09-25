@@ -15,7 +15,7 @@
  *   R3 REINIT-BEFORE-RENDER  — §STRWALK-GEO precedes §STRWALK-RENDER-WIRE, so the rendered skeleton is the
  *                              true-centre walk, not the anchor one.
  *   R4 FIXTURE-NUMBERS       — after #b-clear, _openBuffer(Terminal_arcstr_proof.db) + the same continuation with the
- *                              fixture's own bytes as geoBuf logs centres=mesh:158 colRMS=0.1039 and the tab reads 18×10:
+ *                              fixture's own bytes as geoBuf logs centres=mesh:158 colRMS=0.1323 (median fit, red1 2026-09-26) and the tab reads 18×10:
  *                              the browser reproduces the node witness's number on the identical substrate.
  *   R5 CLEAN                 — no pageerror.
  * Needs network for R2/R3 (SampleCastle_geo.db from OCI); without it those two print as INCONCLUSIVE, not PASS.
@@ -66,8 +66,8 @@ runE2E('W-E2E-ROW7-GEO-REINIT', async (t) => {
                colRMS: st ? st.colRMS : null, grid: td ? td.grid : null, columns: td ? td.columns : -1, girders: td ? td.girders : -1 };
     }, bytes.toString('base64'));
     const geo2 = t.slog.slice(before).find(l => /§STRWALK-GEO re-init/.test(l)) || '';
-    t.assert('R4 FIXTURE-NUMBERS (browser continuation on Terminal_arcstr_proof.db: centres=mesh:158 anchor:0, colRMS 0.1039, tab 18×10, 108 girders)',
-      r4.ok && r4.mesh === 158 && r4.anchor === 0 && Math.abs(r4.colRMS - 0.1039) <= 0.002 && r4.grid === '18×10' && r4.columns === 158 && r4.girders === 108 && /centres=mesh:158/.test(geo2),
+    t.assert('R4 FIXTURE-NUMBERS (browser continuation on Terminal_arcstr_proof.db: centres=mesh:158 anchor:0, colRMS 0.1323 (median fit), tab 18×10, 108 girders)',
+      r4.ok && r4.mesh === 158 && r4.anchor === 0 && Math.abs(r4.colRMS - 0.1323) <= 0.002 && r4.grid === '18×10' && r4.columns === 158 && r4.girders === 108 && /centres=mesh:158/.test(geo2),
       JSON.stringify(r4) + ' line="' + geo2.slice(0, 160) + '"');
   } else {
     console.log('  ⚠ INCONCLUSIVE R4 — fixture absent (gitignored): ' + FIX);

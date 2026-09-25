@@ -32,7 +32,7 @@ var SW_GRID_SPAN_MAX = 2.0;
 // ─── 1D clustering → gridlines (the emergent datum) ──────────
 // Greedy by consecutive gap; gridline value = MEAN of the cluster it owns (non-invent).
 // Returns [{ value, members:[v...], span }]. Members trace each line to real coordinates.
-//   lineFit (§ROW7-LINE-FIT, opt-in, default 'mean' = shipped behaviour byte-identical):
+//   lineFit (§ROW7-LINE-FIT; DEFAULT 'median' since red1's 2026-09-26 call "on the beams"; 'mean' = the pre-09-26 behaviour):
 //     'mean'   — least-squares value; MINIMISES the residual RMS for a fixed membership, but on a facade line
 //                whose members mix on-line columns with face-flush eccentric ones it lands where NOTHING is
 //                (Terminal south facade: mean −40.050 vs the 34 facade beams and 12 columns at −40.157).
@@ -40,7 +40,7 @@ var SW_GRID_SPAN_MAX = 2.0;
 //                structural line the beams prove, so the residual then measures ONLY design eccentricity.
 //                Measured Terminal (true centres): RMS 0.1039 → 0.1323 (UP — the mean was optimal by construction),
 //                exact(<5 mm) 92 → 131 of 158, Y0/Y9 → −40.157/−0.157 (0 mm from the beam line). A handle
-//                decision (red1), pinned both ways by W-ROW7-TRUE-CENTRE T5 — not a default flip.
+//                decision red1 made 2026-09-26 (median), pinned both ways by W-ROW7-TRUE-CENTRE T5.
 function swClusterAxis(values, gapTol, spanMax, lineFit) {
   if (!values.length) return [];
   var sorted = values.slice().sort(function (a, b) { return a - b; });
@@ -68,7 +68,7 @@ function swDeriveGrid(columns, opts) {
   opts = opts || {};
   var gapTol = opts.gapTol != null ? opts.gapTol : SW_GRID_GAP_TOL;
   var spanMax = opts.spanMax != null ? opts.spanMax : SW_GRID_SPAN_MAX;
-  var lineFit = opts.lineFit === 'median' ? 'median' : 'mean';
+  var lineFit = opts.lineFit === 'mean' ? 'mean' : 'median';   // red1 2026-09-26: gridlines sit ON the structure (median); 'mean' = pre-09-26
   var xMeta = swClusterAxis(columns.map(function (c) { return c.x; }), gapTol, spanMax, lineFit);
   var yMeta = swClusterAxis(columns.map(function (c) { return c.y; }), gapTol, spanMax, lineFit);
   return {

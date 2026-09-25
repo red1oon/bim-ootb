@@ -14,18 +14,20 @@
  *   T0 INSTRUMENT     — CrossEdges.readBoxes' real box centre == an INDEPENDENT decode (sqlite3 CLI + hex, anchor +
  *                       raw-blob AABB centre; rotation is 0 on every column here) on 158/158, ≤ 1 mm. If this fails the
  *                       reader is wrong and nothing below may be believed.
- *   T1 BRIDGE-FIRES   — swbInit(db) on the fixture: centres=mesh:158 anchor:0, grid 18×10, colRMS 0.1039 ± 2 mm. The
- *                       honest number is now what ships through the bridge; the flattered 0.0939 is gone from this path.
- *   T2 FALLBACK-LOUD  — the same db with its geometry table dropped: centres=mesh:0 anchor:158, colRMS 0.0939. The
+ *   T1 BRIDGE-FIRES   — swbInit(db) on the fixture: centres=mesh:158 anchor:0, grid 18×10, colRMS 0.1323 ± 2 mm and both
+ *                       facade lines ON the beam line. Ships: true centres + red1's 2026-09-26 median fit ("on the beams");
+ *                       the flattered 0.0939 is gone from this path.
+ *   T2 FALLBACK-LOUD  — the same db with its geometry table dropped: centres=mesh:0 anchor:158, colRMS 0.1039 (anchors,
+ *                       median fit; it was 0.0939 on anchors + the old mean fit). The
  *                       anchor path is today's behaviour, kept for substrates with no blob, and COUNTED — never silent.
  *   T3 RENDER-Z       — swbRenderOps() column boxes are centred on the real mesh z for 158/158 (issue: the orange
  *                       skeleton column was centred on the anchor z — 63 columns off, max 3.944 m).
  *   T4 TOPOLOGY-HELD  — 18×10, 108 girders, and NO column changes its (xLine,yLine) membership anchor→true. The line
  *                       VALUES move (≤ 153 mm) — that movement IS the correction, not a topology change.
- *   T5 LINE-ON-BEAMS  — Step B's finding, pinned both ways. On the shipped 'mean' fit the two facade lines sit at
+ *   T5 LINE-ON-BEAMS  — Step B's finding, pinned both ways. On the pre-09-26 'mean' fit the two facade lines sit at
  *                       −40.050 / −0.318, i.e. 107 / 161 mm off the line every facade IfcBeam actually occupies
- *                       (34 south at −40.157, 33 north at −0.157, none elsewhere within 1 m). The opt-in
- *                       lineFit:'median' lands both lines ON the beam line (≤ 1 mm) and makes 131/158 columns exact,
+ *                       (34 south at −40.157, 33 north at −0.157, none elsewhere within 1 m). The shipped
+ *                       (default since 2026-09-26) lineFit:'median' lands both lines ON the beam line (≤ 1 mm) and makes 131/158 columns exact,
  *                       while the headline RMS RISES to 0.1323 (the mean is the least-squares optimum by
  *                       construction). Both numbers are asserted so the decision is reproducible, not argued.
  */
@@ -46,7 +48,7 @@ var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js'));
 var wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var DB = path.join(ROOT, 'Terminal_arcstr_proof.db');
 
-var EXPECT_ANCHOR = 0.0939, EXPECT_TRUE = 0.1039, EXPECT_MEDIAN = 0.1323, TOL = 0.002;
+var EXPECT_ANCHOR = 0.0939, EXPECT_TRUE = 0.1039, EXPECT_MEDIAN = 0.1323, EXPECT_ANCHOR_MEDIAN = 0.1039, TOL = 0.002;
 var BEAM_S = -40.157, BEAM_N = -0.157;   // the facade lines the beams occupy (measured, see T5)
 
 var pass = 0, fail = 0;
@@ -99,9 +101,11 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   // T1 — the bridge itself, on the real path (geoDb defaults to db: single-file fixture)
   var st = Bridge.swbInit(db);
   var colRMS = rms(st.base.walked.map(function (w) { return w.residual; }));
-  chk('T1 BRIDGE-FIRES (swbInit reads mesh centres: 158 mesh / 0 anchor, 18×10, colRMS == the honest 0.1039)',
-    st.centres.mesh === 158 && st.centres.anchor === 0 && st.base.grid.xLines.length === 18 && st.base.grid.yLines.length === 10 && Math.abs(colRMS - EXPECT_TRUE) <= TOL,
-    'centres=mesh:' + st.centres.mesh + ' anchor:' + st.centres.anchor + ' grid=' + st.base.grid.xLines.length + 'x' + st.base.grid.yLines.length + ' colRMS=' + colRMS.toFixed(4) + ' expected=' + EXPECT_TRUE);
+  var y0s = st.base.grid.yLines[0], y9s = st.base.grid.yLines[st.base.grid.yLines.length - 1];
+  chk('T1 BRIDGE-FIRES (swbInit reads mesh centres: 158 mesh / 0 anchor, 18×10, median fit: colRMS 0.1323, facade lines ON the beams)',
+    st.centres.mesh === 158 && st.centres.anchor === 0 && st.base.grid.xLines.length === 18 && st.base.grid.yLines.length === 10 && Math.abs(colRMS - EXPECT_MEDIAN) <= TOL &&
+      st.base.grid.lineFit === 'median' && Math.abs(y0s - BEAM_S) <= 0.001 && Math.abs(y9s - BEAM_N) <= 0.001,
+    'centres=mesh:' + st.centres.mesh + ' anchor:' + st.centres.anchor + ' grid=' + st.base.grid.xLines.length + 'x' + st.base.grid.yLines.length + ' lineFit=' + st.base.grid.lineFit + ' Y0=' + y0s.toFixed(3) + ' Y9=' + y9s.toFixed(3) + ' colRMS=' + colRMS.toFixed(4) + ' expected=' + EXPECT_MEDIAN);
 
   // T3 — rendered column boxes centred on the real mesh z (place() ground-seats bbox[4] at placement.z ⇒ centre = z + bz/2)
   var rr = Bridge.swbRenderOps();
@@ -132,6 +136,8 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   boxes.forEach(function (b) { if (!b.real || !beamGuids[b.guid]) return; var y = (b.aabb[2] + b.aabb[3]) / 2;
     if (Math.abs(y - BEAM_S) < 1.0) { sNear++; if (Math.abs(y - BEAM_S) <= 0.001) sOn++; }
     if (Math.abs(y - BEAM_N) < 1.0) { nNear++; if (Math.abs(y - BEAM_N) <= 0.001) nOn++; } });
+  var skT = SW.swWalkSkeleton(colsT, { lineFit: 'mean' });   // the pre-09-26 fit, measured explicitly
+  var rmsMean = rms(skT.walked.map(function (w) { return w.residual; }));
   var yMean = skT.grid.yLines, y0m = yMean[0], y9m = yMean[yMean.length - 1];
   var skM = SW.swWalkSkeleton(colsT, { lineFit: 'median' }), yMed = skM.grid.yLines, y0d = yMed[0], y9d = yMed[yMed.length - 1];
   var rmsM = rms(skM.walked.map(function (w) { return w.residual; }));
@@ -141,18 +147,19 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
     sNear === 34 && sOn === 34 && nNear === 33 && nOn === 33 &&
     Math.abs(y0m - BEAM_S) > 0.1 && Math.abs(y9m - BEAM_N) > 0.15 &&
     Math.abs(y0d - BEAM_S) <= 0.001 && Math.abs(y9d - BEAM_N) <= 0.001 &&
-    skM.grid.xLines.length === 18 && skM.grid.yLines.length === 10 && Math.abs(rmsM - EXPECT_MEDIAN) <= TOL && exactMed > exactMean,
+    skM.grid.xLines.length === 18 && skM.grid.yLines.length === 10 && Math.abs(rmsM - EXPECT_MEDIAN) <= TOL && Math.abs(rmsMean - EXPECT_TRUE) <= TOL && exactMed > exactMean,
     'beams S=' + sOn + '/' + sNear + '@' + BEAM_S + ' N=' + nOn + '/' + nNear + '@' + BEAM_N +
-    ' | mean Y0=' + y0m.toFixed(3) + ' Y9=' + y9m.toFixed(3) + ' (off ' + ((y0m - BEAM_S) * 1000).toFixed(0) + '/' + ((y9m - BEAM_N) * 1000).toFixed(0) + 'mm) exact=' + exactMean + '/158 RMS=' + colRMS.toFixed(4) + ' (dx ' + rx.toFixed(4) + ' dy ' + ry.toFixed(4) + ')' +
+    ' | mean Y0=' + y0m.toFixed(3) + ' Y9=' + y9m.toFixed(3) + ' (off ' + ((y0m - BEAM_S) * 1000).toFixed(0) + '/' + ((y9m - BEAM_N) * 1000).toFixed(0) + 'mm) exact=' + exactMean + '/158 RMS=' + rmsMean.toFixed(4) + ' (dx ' + rx.toFixed(4) + ' dy ' + ry.toFixed(4) + ')' +
     ' | median Y0=' + y0d.toFixed(3) + ' Y9=' + y9d.toFixed(3) + ' exact=' + exactMed + '/158 RMS=' + rmsM.toFixed(4));
 
   // T2 — fallback: same bytes, geometry table dropped ⇒ anchors, counted, 0.0939
   var db2 = new SQL.Database(bytes); db2.run('DROP TABLE component_geometries');
   var st2 = Bridge.swbInit(db2);
   var rms2 = rms(st2.base.walked.map(function (w) { return w.residual; }));
-  chk('T2 FALLBACK-LOUD (no geometry table ⇒ anchors: 0 mesh / 158 anchor, colRMS 0.0939 — today\'s path, counted in the log)',
-    st2.centres.mesh === 0 && st2.centres.anchor === 158 && Math.abs(rms2 - EXPECT_ANCHOR) <= TOL,
-    'centres=mesh:' + st2.centres.mesh + ' anchor:' + st2.centres.anchor + ' colRMS=' + rms2.toFixed(4) + ' expected=' + EXPECT_ANCHOR);
+  var st2m = Bridge.swbInit(db2, { lineFit: 'mean' }), rms2m = rms(st2m.base.walked.map(function (w) { return w.residual; }));
+  chk('T2 FALLBACK-LOUD (no geometry table ⇒ anchors: 0 mesh / 158 anchor, colRMS 0.1039 median / 0.0939 old mean — counted in the log)',
+    st2.centres.mesh === 0 && st2.centres.anchor === 158 && Math.abs(rms2 - EXPECT_ANCHOR_MEDIAN) <= TOL && Math.abs(rms2m - EXPECT_ANCHOR) <= TOL,
+    'centres=mesh:' + st2.centres.mesh + ' anchor:' + st2.centres.anchor + ' colRMS=' + rms2.toFixed(4) + ' expected=' + EXPECT_ANCHOR_MEDIAN + ' (mean ' + rms2m.toFixed(4) + ' expected=' + EXPECT_ANCHOR + ')');
   db.close(); db2.close();
 
   console.log('W-ROW7-TRUE-CENTRE: ' + pass + ' PASS / ' + fail + ' FAIL');
