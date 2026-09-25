@@ -776,6 +776,18 @@
         sc += lc; sa += la; sd += Math.abs(lc - la); n++;
       }
       R.compositeMean = +(sc / n).toFixed(2); R.appMean = +(sa / n).toFixed(2); R.meanAbsDiff = +(sd / n).toFixed(2);
+      // §FAULT_GI — picture-level counters on the finished still, every pixel (still_fault.js prints the state-level §FAULT line):
+      // blown = all three channels 255 (clipped white), dark = all three 0 (pure black), hueNoise = red1's rainbow edge class:
+      // the app pixel is near-black (max channel <= 3, hue unreadable at 8 bit) yet the composite shows a saturated hue
+      // (saturation > 0.25, value > 40; the thresholds of the 2026-09-26 band probe). hueNoise > 0 is the FAULT; blown/dark are
+      // logged in % (no cited limit).
+      { let nb = 0, nd = 0, nh = 0; const np = fin.length / 4;
+        for (let i = 0; i < fin.length; i += 4) { const r = fin[i], g = fin[i + 1], b = fin[i + 2];
+          if (r === 255 && g === 255 && b === 255) nb++; else if (r === 0 && g === 0 && b === 0) nd++;
+          if (Math.max(appPix[i], appPix[i + 1], appPix[i + 2]) <= 3) { const mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx > 40 && (mx - mn) / mx > 0.25) nh++; } }
+        R.fault = { blownPct: +(100 * nb / np).toFixed(2), darkPct: +(100 * nd / np).toFixed(2), hueNoise: nh };
+        const fl = '§FAULT_GI ' + (nh > 0 ? 'FAULT' : 'OK') + ' hueNoise=' + nh + ' blown=' + R.fault.blownPct + '% dark=' + R.fault.darkPct + '% (' + w + 'x' + h + ')';
+        if (nh > 0) console.warn(fl); else console.log(fl); A._stillFaultGiLast = R.fault; }
       R.secs = +((performance.now() - t0) / 1000).toFixed(1);
       R.orient = G.orient || null;
       R.pipelines = G.pipeStats ? { sync: G.pipeStats.sync, syncMs: +G.pipeStats.syncMs.toFixed(0), async: G.pipeStats.async, modules: G.pipeStats.modules, moduleMs: +G.pipeStats.moduleMs.toFixed(0) } : null;
@@ -820,7 +832,7 @@
     // tEXt chunk (keyword "bim-still-pose", PNG spec 11.3.4.3), inserted before IEND. Read back with e.g. `exiftool` or
     // python PIL (Image.open(f).text). No pixel changes.
     save.onclick = () => canvas.toBlob(async b => { let out = b;
-      try { const pose = (window.APP && window.APP._stillPoseLast) || null; if (pose) { out = new Blob([pngWithText(new Uint8Array(await b.arrayBuffer()), 'bim-still-pose', JSON.stringify(pose))], { type: 'image/png' }); console.log('§STILL_POSE_PNG written bytes=' + JSON.stringify(pose).length); }
+      try { const P0 = window.APP && window.APP._stillPoseLast, pose = P0 ? Object.assign({}, P0, { fault: window.APP._stillFaultLast || null, faultGi: window.APP._stillFaultGiLast || null }) : null; if (pose) { out = new Blob([pngWithText(new Uint8Array(await b.arrayBuffer()), 'bim-still-pose', JSON.stringify(pose))], { type: 'image/png' }); console.log('§STILL_POSE_PNG written bytes=' + JSON.stringify(pose).length); }
         else console.log('§STILL_POSE_PNG none (no §STILL_POSE this session)'); } catch (e) { console.warn('§STILL_POSE_PNG failed: ' + e.message); out = b; }
       const a = document.createElement('a'); a.href = URL.createObjectURL(out); a.download = 'bounce_still_' + Date.now() + '.png'; a.click(); });
     const close = document.createElement('button');

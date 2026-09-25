@@ -4938,6 +4938,9 @@ async function setupEffects(A, renderer, scene, camera) {
     _reassertPhotoShadowCoverage(true);
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
     console.log('§STILL_REFINE done accumulateIndex=' + idx + ' elapsedMs=' + ms + ' (frozen — stays until interaction)');
+    // §FAULT: one self-check line per press, at the FINISHED still (at staging end the lamps that later switch off were still on:
+    // extLightsDay=191 there against 31 after the press)
+    if (!A._maxqActive && window.StillFault) { try { window.StillFault.report(A); } catch (eF) { console.warn('§FAULT report failed: ' + eF.message); } }
     if (!A._maxqActive) { try { _fixtureEmissiveCount(); } catch (eFE) { console.warn('§FIXTURE_EMISSIVE failed: ' + eFE.message); } }   // once per Alt+S, at the staged still
     _stillShadowRendersReport(ms);
     // §PHOTO_SSGI (2026-07-17): the frozen still now folds in real bounce-light GI (effects_gi_poc.js
