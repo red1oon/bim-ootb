@@ -4362,7 +4362,12 @@ window.__dwChains = window.__dwChains || {};   // disc -> chain segments (for th
 window.__dwChainMeta = window.__dwChainMeta || {};   // disc -> { seed, riser } from routePattern's patternBridge (M4 reveal order only; redraw-after-scrub reuses it instant)
 window.__dwChainAnimating = window.__dwChainAnimating || {};   // disc -> true while an M4 reveal rAF loop is in flight
 window.__dwChainRevealMeta = window.__dwChainRevealMeta || {};   // disc -> { start, gen } — wall-clock reveal timeline, so a fold-triggered rebuild RESUMES it (see _renderDiscChains)
-window.DW_CHAIN_COMMIT_CAP = 60;               // op-log GEOM_SWEEP cap (occt is per-sweep, so this is a signed sample); the full network always renders (window-scoped so a witness can shrink it)
+// §MEP-SIGN-ALL (2026-09-26, MODELLER_MASTER NEXT #3): was 60, a signed SAMPLE, set when each sweep was its own commit
+// (~1.6-2 s each). _commitDiscChains has since become ONE signed group, so measured per phase (Terminal PLB, 2,915 runs):
+// cap 60 → walk 16.5 s, cap none → 24.0 s (occt builds 2,915 sweeps once, ~3.4 s; later folds hit the op_hash cache).
+// Every run is now signed the same way the 60 were: per-row hash + signature + verifyChain, nothing skipped.
+// Knob kept (window-scoped) so a witness can still shrink it.
+window.DW_CHAIN_COMMIT_CAP = Infinity;
 // LANDED routed network → LOD MESH: cylinder TUBES between the REAL element endpoints, not flat lines.
 // This is the PROVEN-EXACT layer (witness_disc_route_nnchain R2: every segment joins two real
 // elements_meta rows at their real element_transforms position, ≤1e-6), so it renders as solid 3D
