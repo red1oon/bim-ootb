@@ -3314,11 +3314,16 @@ async function setupEffects(A, renderer, scene, camera) {
     _csmLights.forEach(function(L) {
       L.castShadow = true; L.color.setHex(0x000000); L.intensity = 0; L.layers.mask = A.sun.layers.mask; L.userData.csmUsed = false;
       if (L.shadow.map && L.shadow.map.width !== sz) _releaseShadowMapOf(L.shadow);
-      L.shadow.mapSize.set(sz, sz); L.shadow.autoUpdate = false; L.shadow.needsUpdate = false;
+      // §STILL_SHADOW_CASCADE_MAPS_EXIST (2026-09-25): three creates a light's shadow map only on its first update; a shadow
+      // sampler with no map made every staged draw before the fit write nothing (the §METER read 0 lit pixels -> VACUOUS on
+      // every indoor press, 0a9950a3). So every cascade map is rendered once here (its default box), before the first staged
+      // render; the fit re-renders the used ones.
+      L.shadow.mapSize.set(sz, sz); L.shadow.autoUpdate = false; L.shadow.needsUpdate = true;
       L.position.copy(A.sun.position); L.target.position.copy(A.sun.target.position); L.updateMatrixWorld(); L.target.updateMatrixWorld();
       if (L.parent !== A.scene) A.scene.add(L);
     });
     A._stillCascadeExtraUnits = _csmLights.length;
+    if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
     console.log('§STILL_SHADOW_CASCADE lights m=' + CSM_M + ' (sun + ' + _csmLights.length + ' shadow-only, colour 0, same direction) mapSize=' + sz +
       ' added before the first staged compile (C2) programs=' + ((A.renderer.info.programs || []).length));
   }

@@ -89,12 +89,14 @@ const arr = (key, t) => { const m = new RegExp(' ' + key + '=\\[([^\\]]*)\\]').e
       // part of every lit program's key) is the same on every press. newKeys is printed, not failed: the base 3edd28a8
       // already compiles 1 (aerial) and 4 (café) new keys on presses 2/3 (portal shadow count 0 vs 8), before any cascade.
       const ds = num(/ dirShadows=([0-9]+)/, cas); if (cas) { if (R.dirShadows == null) R.dirShadows = ds; else if (ds !== R.dirShadows) why.push('C1 dirShadows ' + ds + ' != first press ' + R.dirShadows); }
+      // §METER must read lit pixels on an indoor press (2026-09-25: the cascades left every indoor §METER VACUOUS and no gate saw it)
+      if (L.slice(b1).some(t => /§METER camera=inside VACUOUS/.test(t))) why.push('§METER VACUOUS (no lit surface pixels)');
       const ok = !why.length; if (!ok) fails++;
       say('§STILL_SHADOW_GATE ' + (ok ? 'PASS' : 'FAIL') + ' ' + R.db + ' pose=' + ps.name + ' gap45=' + g45 + ' gap20=' + g20 + ' ' + progLine + (why.length ? ' why=[' + why.join('; ') + ']' : ''));
       say('   [page] ' + (cas || '(no §STILL_SHADOW_CASCADE line)').slice(0, 1400));
       L.slice(b1).filter(t => /^§STILL_SHADOW_CASCADE_(DEPTH|BOX|FALLBACK|OFF)|§LIGHT_TEXTURE_BUDGET|§SHADOW_SIZE_BY_ENVELOPE/.test(t)).forEach(t => say('   [page] ' + t.slice(0, 900)));
       say('   [page] ' + fit.slice(0, 420)); say('   [page] ' + (edge || '(no §STILL_SHADOW_EDGE line)').slice(0, 700));
-      L.slice(b1).filter(t => /§PORTAL_SHADOW_BIAS|§SKY_PORTAL_BLOCKED/.test(t)).forEach(t => say('   [page] ' + t.slice(0, 700)));
+      L.slice(b1).filter(t => /§PORTAL_SHADOW_BIAS|§SKY_PORTAL_BLOCKED|§METER camera/.test(t)).forEach(t => say('   [page] ' + t.slice(0, 700)));
       await p.evaluate(() => { if (window.APP._stillRefineActive) window.APP.toggleStillRefine(); }); await sleep(2000);
     }
     await p.close();
