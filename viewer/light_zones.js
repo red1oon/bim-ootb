@@ -512,12 +512,22 @@
           // (a segment that touches glass: target or mid cells), never between glass cells; a second pane after air counts again
           if (!inG && gmin < 256) vt *= T[gmin]; }
         val[c] = vt; if (zc !== SOLID && vt > 0) { acc[c] += w * vt; var zz = (zc & ZONE_MASK) * 3; zb[zz] += w * vt * ux; zb[zz + 1] += w * vt * uy; zb[zz + 2] += w * vt * uz; } } });
+    // V12 interreflected component per zone (flux balance, Sumpner; the relation BRE's ADF is derived from):
+    // F_ir = R (mean working-plane F x floor m2) / (A_z (1 - R)), R = R_BRE, A_z = surfaceM2 + apertureM2; uniform over the zone
+    var nzn = Z.zones, up = Math.floor(0.8 / Z.cell) * nx, fl = new Float64Array(nzn + 1), wpS = new Float64Array(nzn + 1), wpN = new Int32Array(nzn + 1), cf = Z.cell * Z.cell;
+    for (var c3 = nx; c3 < N; c3++) { var v3 = zone[c3]; if (v3 === SOLID || v3 === 0 || zone[c3 - nx] !== SOLID) continue; var z3 = v3 & ZONE_MASK; fl[z3] += cf;
+      var w3 = c3 + up; if (w3 < N && zone[w3] !== SOLID && (zone[w3] & ZONE_MASK) === z3) { wpS[z3] += acc[w3]; wpN[z3]++; } }
+    var irc = new Float32Array(nzn + 1), ircL = [];
+    for (var z4 = 1; z4 <= nzn; z4++) { var zi4 = Z.zoneInfo[z4 - 1], Az = zi4.surfaceM2 + zi4.apertureM2; if (!wpN[z4] || !(Az > 0)) continue;
+      irc[z4] = R_BRE * (wpS[z4] / wpN[z4]) * fl[z4] / (Az * (1 - R_BRE)); if (irc[z4] > 0) ircL.push(irc[z4]); }
+    ircL.sort(function (x, y) { return x - y; });
     // G: F x 10000 in every non-solid cell (open = 10000)
-    var G = new Uint16Array(N), maxF = 0, covered = 0;
-    for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { G[c2] = 10000; continue; } covered++; var f = acc[c2]; if (f > maxF) maxF = f; G[c2] = Math.round(Math.min(1, f) * 10000); }
+    var G = new Uint16Array(N), maxF = 0, covered = 0, maxSC = 0;
+    for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { G[c2] = 10000; continue; } covered++; var sc = acc[c2]; if (sc > maxSC) maxSC = sc;
+      var f = Math.min(1, sc + irc[v2 & ZONE_MASK]); if (f > maxF) maxF = f; G[c2] = Math.round(f * 10000); }
     val = acc = null;
     var minElev = FIELD_DIRS.reduce(function (m, d) { return Math.min(m, d.elev); }, 90);
-    Z.field = { G: G, maxF: maxF, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
+    Z.field = { G: G, maxF: maxF, maxSC: maxSC, irc: { zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
       weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }) };
     return Z.field;
   }
