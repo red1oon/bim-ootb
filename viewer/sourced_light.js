@@ -324,10 +324,11 @@
     console.log('§SOURCED_DAYLIGHT zones=' + r.zones + ' litZones=' + r.litZones + ' panes=' + B.panes.length + ' (roof=' + B.cnt.roof + ' portaled=' + r.portaled + ' portaledKept=' + r.portaledKept +
       ' skipped=' + B.cnt.skipped + ' sidesOpen=' + B.cnt.sidesOpen + ' sidesEave=' + B.cnt.sidesEave + ' theta0=' + B.cnt.theta0 + ' of tiles=' + B.cnt.tiles + ') apertures(up/side m2)=' + apUp.toFixed(1) + '/' + apSide.toFixed(1) +
       ' T=' + r.T.toFixed(3) + ' R=' + r.R + ' DFmedian=' + r.DFmedian.toFixed(2) + ' DFmax=' + r.DFmax.toFixed(2) + ' bandsLG10(<2%/2-5%/>5% zones)=' + r.bands.join('/') +
-      ' topZones=[' + top.join(',') + '] over10=' + o10.length + ' (allSkyLit=' + o10sky.length + ' maxCells=' + o10sky.reduce(function (m, e) { return Math.max(m, Z.zoneInfo[e[0] - 1].cells); }, 0) + ', receiving=' + o10recv.length + ') over10receiving=[' + over10.join(',') + '] glazedZero=[' + glazedZero.join(',') + '] glazedAllPortaled=' + portalOnly +
+      ' topZones=[' + top.join(',') + '] over10=' + o10.length + ' (allSkyLit=' + o10sky.length + ' maxCells=' + o10sky.reduce(function (m, e) { return Math.max(m, Z.zoneInfo[e[0] - 1].cells); }, 0) + ', receiving=' + o10recv.length + ') glazedZero=' + glazedZero.length + ' glazedAllPortaled=' + portalOnly +
       ' droppedBlockedPortals=' + dropped.length + (dropped.length ? ' (blockedFrac ' + dropped.join(',') + ')' : '') + ' gCells=' + r.gCells + ' gCapped=' + r.gCapped +
       ' dial=' + dl + ' uSLSky=' + [SKY[0], SKY[1], SKY[2]].map(function (v) { return v.toFixed(3); }).join(',') + ' baseMs=' + r.baseMs + (B.ms ? ' (base cache built ' + B.ms + ' ms)' : '') + ' buildMs=' + r.buildMs +
-      ' texFillMs=' + (tU - t1).toFixed(0) + ' uploadMs=' + uploadMs.toFixed(0) + ' glErr=' + e0 + '/' + e1 + ' MB=' + (rg.length * 2 / 1e6).toFixed(1) + ' ms=' + (performance.now() - t0).toFixed(0));
+      ' texFillMs=' + (tU - t1).toFixed(0) + ' uploadMs=' + uploadMs.toFixed(0) + ' glErr(standing/afterUpload)=' + e0 + '/' + e1 + ' MB=' + (rg.length * 2 / 1e6).toFixed(1) + ' ms=' + (performance.now() - t0).toFixed(0) +
+      ' glazedZeroList=[' + glazedZero.join(',') + '] over10receiving=[' + over10.join(',') + ']');   // long lists last
     // the camera zone (G1 table row)
     var cz = (A._sourcedCap && A._sourcedCap.camZone) || 0, cq = cz ? r.zs.get(cz) : null, czi = cz ? Z.zoneInfo[cz - 1] : null;
     console.log('§SOURCED_DAYLIGHT_CAM camZone=' + cz + (czi ? ' DF=' + (cq ? cq.DF.toFixed(2) : '0.00') + '% band=' + band(cq ? cq.DF : 0) + ' srcM2(vertGlass/roofGlass/apUp/apSide)=' + (cq ? [cq.vert, cq.roof, cq.apUp, cq.apSide].map(function (v) { return v.toFixed(1); }).join('/') : '0/0/0/0') +
