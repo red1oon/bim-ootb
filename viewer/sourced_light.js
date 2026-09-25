@@ -2,8 +2,9 @@
 // "§SOURCED_LIGHT — SPEC" + "GATE ADDITIONS" + "BUILD LOG + SPEC CHANGE"; watchdog red1-4b gates) ══
 // red1: "light cannot leak through walls in real life except through glass." Every lamp (PointLight) and sky portal
 // (SpotLight) is bound to the LIGHT ZONE it sits in (light_zones.js: connected empty space of the voxelised building);
-// a fragment is lit by a light only when both are in the same zone. Indoors (fragment in a zone > 0) the flat ambient
-// and the hemi sky are scaled to uSLParams.z (0 = only real sources). Outside and unknown cells: unchanged.
+// a fragment is lit by a light only when both are in the same zone. A fragment that does not see the sky (a covered zone
+// cell without SKY_BIT, or unknown) has its flat ambient / hemi / IBL sky scaled to uSLParams.z (0 = only real sources);
+// open-to-sky and sky-lit cells keep it (§ZONE_OPEN_SKY, light_zones.js).
 // install() patches THREE.ShaderChunk ONCE (scene.js, next to §SKY_OCCLUSION), before any material compiles. With
 // uSLParams.x = 0 (nav, and every page until an Alt+S stages it) slPass() returns 1: the picture is unchanged.
 // &sourced=0 skips the install entirely (today's shaders, for red1's A/B).
@@ -40,34 +41,40 @@
     '#if NUM_SPOT_LIGHTS > 0', 'uniform vec4 uSLSZ[ ( NUM_SPOT_LIGHTS + 3 ) / 4 ];', '#endif',
     // the fragment's zone, set ONCE by the line §SOURCED_LIGHT_LINK inserts into lights_fragment_begin; -1 = unknown (lit as today)
     'float _slFZ = -1.0;',
+    // the fragment's sky class, set with _slFZ: 1 = sees the sky (open cell / sky-lit covered cell / off grid), 0 = covered or unknown
+    'float _slSky = 1.0;',
     // raw cell: -1 off grid, 65535 solid, 0 outside, 1.. zone
     'float slZoneAt( vec3 w ) {',
     '  ivec3 c = ivec3( floor( ( w - uSLOrg.xyz ) / uSLParams.y ) );',
     '  if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, ivec3( uSLDim.xyz ) ) ) ) return -1.0;',
     '  return float( texelFetch( uSLZone, c, 0 ).r );',
     '}',
-    // fragment zone: step +0.2/+0.5/+0.8 m along the normal, first non-solid cell. Outside (0) and off the grid -> OUTSIDE
-    // (65534); all three solid -> -1 = unknown (lit as today). Called exactly once per fragment (§SOURCED_LIGHT_LINK).
+    // §ZONE_OPEN_SKY fragment zone (CPU mirror: LightZones.surfaceInfo, same order): C0 = the cell of wp + 0.25 m along the
+    // eye-facing normal; the nearest non-solid cell CENTRE (from wp) among C0's 27 cells on the eye side of the surface wins
+    // (a floor inside a wall's rasterised column takes the room cell beside it, never the void under the slab: red1's bright
+    // junction strips, 2026-09-25); none -> walk up C0's column to the first non-solid cell (open above = sky); a fully solid
+    // column = -1 unknown (sky off, lamps as today). Open (0) and off-grid -> OUTSIDE 65534 with sky; a zone keeps the sky
+    // only with SKY_BIT (0x4000) set by light_zones.js. Called exactly once per fragment (§SOURCED_LIGHT_LINK); sets _slSky.
     'float slFragZone( vec3 posView, vec3 nView ) {',
     '  mat4 vi = inverse( viewMatrix );',
-    // IFC meshes often wind inward: face the normal toward the eye first (the side the viewer sees), then try the far side
+    // IFC meshes often wind inward: face the normal toward the eye first (the side the viewer sees)
     '  vec3 nf = ( dot( nView, - posView ) < 0.0 ) ? - nView : nView;',
     '  vec3 wp = ( vi * vec4( posView, 1.0 ) ).xyz; vec3 wn = normalize( ( vi * vec4( nf, 0.0 ) ).xyz );',
-    '  float z = 65535.0;',
-    '  for ( int s = 0; s < 3; s ++ ) { z = slZoneAt( wp + wn * ( 0.2 + 0.3 * float( s ) ) ); if ( z != 65535.0 ) break; }',
-    '  if ( z == 65535.0 ) { for ( int s = 0; s < 3; s ++ ) { z = slZoneAt( wp - wn * ( 0.2 + 0.3 * float( s ) ) ); if ( z != 65535.0 ) break; } }',
-    // same fallback as LightZones.atSurface: 0.5 m / 1 m along the surface's two tangents at +0.5 m along the normal (a wall
-    // strip under a ceiling panel sits in the panel's solid 0.5 m cell layer: Clinic corridor, 2026-09-25, 70 of 71 leaks)
-    '  if ( z == 65535.0 ) {',
-    '    vec3 t1 = ( abs( wn.y ) > 0.7 ) ? vec3( 1.0, 0.0, 0.0 ) : vec3( 0.0, 1.0, 0.0 );',
-    '    vec3 t2 = ( abs( wn.y ) > 0.7 ) ? vec3( 0.0, 0.0, 1.0 ) : normalize( vec3( - wn.z, 0.0, wn.x ) );',
-    '    for ( int k = 0; k < 8; k ++ ) {',
-    '      float r = ( k < 4 ) ? 0.5 : 1.0; int a = k - ( k / 4 ) * 4;',
-    '      vec3 e = ( a == 0 ) ? t1 : ( ( a == 1 ) ? - t1 : ( ( a == 2 ) ? t2 : - t2 ) );',
-    '      z = slZoneAt( wp + wn * 0.5 + e * r ); if ( z != 65535.0 ) break;',
-    '    }',
-    '  }',
-    '  return ( z == 65535.0 ) ? -1.0 : ( ( z < 0.5 ) ? 65534.0 : z );',
+    '  ivec3 c0 = ivec3( floor( ( wp + wn * 0.25 - uSLOrg.xyz ) / uSLParams.y ) ); ivec3 dim = ivec3( uSLDim.xyz );',
+    '  if ( any( lessThan( c0, ivec3( 0 ) ) ) || any( greaterThanEqual( c0, dim ) ) ) { _slSky = 1.0; return 65534.0; }',
+    '  float best = 1e30; uint bt = 65535u;',
+    '  for ( int dz = -1; dz <= 1; dz ++ ) { for ( int dy = -1; dy <= 1; dy ++ ) { for ( int dx = -1; dx <= 1; dx ++ ) {',
+    '    ivec3 c = c0 + ivec3( dx, dy, dz );',
+    '    if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
+    '    uint t = texelFetch( uSLZone, c, 0 ).r; if ( t == 65535u ) continue;',
+    '    vec3 e = uSLOrg.xyz + ( vec3( c ) + 0.5 ) * uSLParams.y - wp; if ( dot( e, wn ) <= 0.0 ) continue;',
+    '    float l = dot( e, e ); if ( l < best ) { best = l; bt = t; }',
+    '  } } }',
+    '  if ( bt == 65535u ) { bt = 0u; for ( int j = 1; j < 4096; j ++ ) { ivec3 c = c0 + ivec3( 0, j, 0 ); if ( c.y >= dim.y ) break;',
+    '    uint t = texelFetch( uSLZone, c, 0 ).r; if ( t != 65535u ) { bt = t; break; } if ( c.y == dim.y - 1 ) bt = 65535u; } }',
+    '  if ( bt == 65535u ) { _slSky = 0.0; return -1.0; }',
+    '  uint z = bt & 0x3FFFu; _slSky = ( z == 0u || ( bt & 0x4000u ) != 0u ) ? 1.0 : 0.0;',
+    '  return ( z == 0u ) ? 65534.0 : float( z );',
     '}',
     // a bound light (lz >= 1, OUTSIDE included) reaches only fragments of its own zone; unbound (0) and unknown: as today.
     // posView/nView are kept for the call sites' sake; the zone is the once-computed _slFZ (§SOURCED_LIGHT_LINK)
@@ -77,9 +84,10 @@
     '}',
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
-    // unknown (-1: every lookup solid) is a building surface too (wall foot, ceiling-panel strip): it loses the sky like an
-    // indoor one. Left at 1 it took the full hemi, and the §METER's +4-6 stops turned it purple (Clinic/Hospital 2026-09-25)
-    '  return ( _slFZ < -0.5 || ( _slFZ > 0.5 && _slFZ < 65533.5 ) ) ? uSLParams.z : 1.0;',
+    // sky only where the sampled cell sees it (_slSky, §ZONE_OPEN_SKY). Unknown (-1: a fully solid column above) is a building
+    // surface too (wall foot, ceiling-panel strip): it loses the sky like a covered one. Left at 1 it took the full hemi, and
+    // the §METER's +4-6 stops turned it purple (Clinic/Hospital 2026-09-25)
+    '  return ( _slSky > 0.5 ) ? 1.0 : uSLParams.z;',
     '}',
     '#else',
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
@@ -116,10 +124,11 @@
     if (fm.indexOf(r0) >= 0) { fm = fm.replace(r0, 'radiance += slSkyKeep( geometryPosition, geometryNormal ) * getIBLRadiance('); ok++; }
     C.lights_fragment_maps = fm;
     // §SOURCED_LIGHT_ZONE_DEBUG (witness only): uSLParams.w = 1 writes the fragment's zone as the colour, after every other
-    // output chunk (R = zone mod 256, G = zone / 256, B = 1 when unknown), so a readback compares shader zones with the CPU.
+    // output chunk (R = zone mod 256, G = zone / 256, B = 1 when unknown / 0.5 when the sky is kept / 0 sky off), so a
+    // readback compares shader zones AND sky class with the CPU mirror.
     if (C.dithering_fragment && C.dithering_fragment.indexOf('uSLParams') < 0) {
       C.dithering_fragment = C.dithering_fragment + '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
-        'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : 0.0, 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
+        'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : ( _slSky > 0.5 ? 0.5 : 0.0 ), 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
         'if ( uSLParams.w > 1.5 ) { mat4 _vi = inverse( viewMatrix ); vec3 _wp = ( _vi * vec4( - vViewPosition, 1.0 ) ).xyz; vec3 _wn = normalize( ( _vi * vec4( normal, 0.0 ) ).xyz ); vec3 _q = _wp + _wn * 0.2;\n' +
         '  if ( uSLParams.w < 2.5 ) { float _r = slZoneAt( _q ); float _ur = _r < 0.0 ? 0.0 : _r; gl_FragColor = vec4( mod( _ur, 256.0 ) / 255.0, floor( _ur / 256.0 ) / 255.0, _r < 0.0 ? 1.0 : 0.0, 1.0 ); }\n' +
         '  else if ( uSLParams.w < 3.5 ) { vec3 _g = ( _q - uSLOrg.xyz ) / ( uSLParams.y * uSLDim.xyz ); gl_FragColor = vec4( clamp( _g, 0.0, 1.0 ), 1.0 ); }\n' +

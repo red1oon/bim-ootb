@@ -5,6 +5,7 @@
 // (raycast + LightZones.atSurface, the same lookup the shader makes) and the 8-bit luminance delta L-on minus L-off.
 // crossWall = grid points in a KNOWN zone other than L's that L still brightens (delta > 2). Pass: crossWall = 0 with
 // §SOURCED_LIGHT on; the &sourced=0 arm must show crossWall > 0 (proves the witness can see a leak).
+// §GLARE (watchdog red1-c6 rule, every run): crossWall=N — FAIL (exit 3) when > 0, or when no candidate lamp exists (VACUOUS).
 /* global Buffer */
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer'); const sleep = ms => new Promise(r => setTimeout(r, ms));
 const [PORT = '8611', DB = 'Clinic', POSE = '{"pos":[-13.5,-1.4,-18.3],"tgt":[4,-2.2,-18.3]}', QUERY = ''] = process.argv.slice(2);
@@ -48,8 +49,8 @@ const [PORT = '8611', DB = 'Clinic', POSE = '{"pos":[-13.5,-1.4,-18.3],"tgt":[4,
       rc.setFromCamera(new THREE.Vector2((x + 0.5) / W * 2 - 1, 1 - (y + 0.5) / H * 2), A.camera); const h = rc.intersectObjects(tg, false)[0]; if (!h || !h.face) continue;
       M.copy(h.object.matrixWorld); if (h.object.isInstancedMesh && h.instanceId != null) { h.object.getMatrixAt(h.instanceId, mi); M.multiply(mi); } else if (h.object.isBatchedMesh && h.batchId != null) { h.object.getMatrixAt(h.batchId, mi); M.multiply(mi); }
       const nn = h.face.normal.clone().transformDirection(M); if (nn.dot(rc.ray.direction) > 0) nn.negate();
-      const z = LZ.atSurface(h.point, nn);
-      if (z === SOL || z < 0) { unknown++; continue; }
+      let z = LZ.atSurface(h.point, nn);
+      if (z === SOL) { unknown++; continue; } if (z < 0) z = 0;   // off grid = outside (§ZONE_OPEN_SKY fix: was counted unknown)
       known++;
       if (z === LzOf) { if (dl > 2) own++; continue; }
       if (onF[i] - off[i] > 2) crossF++; if (onX[i] - off[i] > 2) crossX++;
@@ -73,7 +74,7 @@ const [PORT = '8611', DB = 'Clinic', POSE = '{"pos":[-13.5,-1.4,-18.3],"tgt":[4,
         const hm = Array.isArray(h.object.material) ? h.object.material[h.face.materialIndex] : h.object.material, hU = hm && A.renderer.properties.get(hm).uniforms;
         if (!(hU && hU.uSLParams)) { zSkip++; continue; }   // unlit / unpatched surface (MeshBasic glow, sky): no zone colour written
         const zc = LZ.atSurface(h.point, nn), j = ((H - 1 - y) * W + x) * 4, zs = px[j + 2] > 127 ? -1 : px[j] + 256 * px[j + 1];
-        const zcN = (zc === SOL || zc < 0) ? -1 : zc;
+        const zcN = (zc === SOL) ? -1 : (zc <= 0 ? 65534 : zc);   // the shader's convention: 0 / off grid = OUTSIDE 65534 (§ZONE_OPEN_SKY fix)
         if (zs === zcN) zAgree++; else { zDiff++; if (zDiffPts.length < 10) { const ob = h.object, chain = []; for (let q = ob; q && chain.length < 5; q = q.parent) chain.push((q.name || q.type) + (q.visible ? '' : '(hid)'));
           zDiffPts.push({ x, y, cpu: zcN, gpu: zs, d: +h.distance.toFixed(1), ny: +nn.y.toFixed(2), obj: ob.type, name: ob.name, chain, ud: Object.keys(ob.userData || {}).slice(0, 8), layers: ob.layers.mask,
             prog: (() => { const pp = A.renderer.properties.get(hm), cp = pp && pp.currentProgram; if (!cp) return 'none'; const um = cp.getUniforms().map; const gl = A.renderer.getContext(), sh = gl.getAttachedShaders(cp.program).map(x => gl.getShaderSource(x)), fs = sh.find(t => t.indexOf('gl_FragColor') >= 0 || t.indexOf('pc_fragColor') >= 0) || '';
@@ -103,5 +104,7 @@ const [PORT = '8611', DB = 'Clinic', POSE = '{"pos":[-13.5,-1.4,-18.3],"tgt":[4,
   });
   console.log('§SOURCED_LIGHT_CROSSWALL bld=' + DB + ' query=' + (QUERY || '-') + ' ' + JSON.stringify(r));
   console.log((L.slice(b1).find(t => /§SOURCED_LIGHT on/.test(t)) || '§SOURCED_LIGHT on: (none)').slice(0, 300));
-  console.log('pageErrors=' + errs); await b.close();
+  const gl = r && r.err ? null : (r ? r.crossWall : null), gfail = gl == null || gl > 0;
+  console.log('§GLARE bld=' + DB + ' ' + (gfail ? 'FAIL' : 'PASS') + ' crossWall=' + (gl == null ? 'VACUOUS(' + (r && r.err) + ')' : gl) + ' pageErrors=' + errs);
+  console.log('pageErrors=' + errs); await b.close(); if (errs) process.exitCode = 2; else if (gfail) process.exitCode = 3;
 })().catch(e => { console.log('FATAL ' + (e && e.stack || e)); process.exit(1); });
