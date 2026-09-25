@@ -563,6 +563,36 @@
     finally { if (db) { try { db.close(); } catch (e) { } } }
   }
 
+  // §ROW7-TRUE-CENTRE — re-init the STR walk over the SAME substrate the synchronous open built, now that the
+  // geometry exists. Same shape and reason as _reDeriveXEdgesWithGeo above: swbInit ran at _openBuffer BEFORE
+  // the *_geo.db fetch was even issued, so its columns were placement ANCHORS, not centres (MODELLER_MASTER row 7:
+  // 0.0939 m reported vs 0.1039 m true on Terminal; column z off by up to 3.944 m in the rendered skeleton).
+  // Replays composeGhosts + §ANCHOR-BLIND so the two inits differ in exactly ONE variable (geoDb), then re-folds
+  // the instance's recorded STR_WALK_EDIT ops onto the re-inited base (they are already signed in the mo_ log —
+  // swbReplay never re-commits). Runs BEFORE _seedArcEditable so _seedStrWalk renders the true-centre walk.
+  // Logs §STRWALK-GEO with the centre census; a re-init that resolved 0 meshes is visible, not silent.
+  function _reinitStrWalkWithGeo(geoBuf) {
+    if (!geoBuf || !window.__dwBuf || !window.SQL || !window.swbInit) return null;
+    var db = null, geo = null, st = null;
+    try {
+      db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+      geo = new window.SQL.Database(new Uint8Array(geoBuf));
+      composeGhostsFromAggregates(db);
+      try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }
+      st = window.swbInit(db, { geoDb: geo });
+      ready = !!st; lastEx = [];
+      if (st) _replayEdits();
+      var c = (st && st.centres) || { mesh: 0, anchor: 0 };
+      console.log(TAG + ' §STRWALK-GEO re-init with real geometry: system=' + (st ? st.system : 'none') +
+        ' centres=mesh:' + c.mesh + ' anchor:' + c.anchor +
+        (st && st.colRMS != null ? ' colRMS=' + st.colRMS.toFixed(4) + 'm' : '') +
+        (c.mesh === 0 ? ' — 0 meshes resolved: the walk is still on ANCHORS' : ''));
+      if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    } catch (e) { console.warn(TAG + ' §STRWALK-GEO re-init failed', e && e.message); }
+    finally { if (geo) { try { geo.close(); } catch (e) { } } if (db) { try { db.close(); } catch (e) { } } }
+    return st;
+  }
+
   function _fetchGeoDb(res) {
     if (!res.geoDb) return Promise.resolve(null);
     // §GEO-SERVED: geometry files come from res.geoBase (object storage) when declared; resident METADATA
@@ -602,6 +632,8 @@
         // §XEDGE-GEOWIRE: the cross-edge set derived synchronously at open had NO geometry (it ran before
         // this fetch was even issued). Now that the real substrate is here, derive it again for real.
         _reDeriveXEdgesWithGeo(geoBuf);
+        // §ROW7-TRUE-CENTRE: the STR walk, too, was initialised before this fetch — re-init it on true centres.
+        _reinitStrWalkWithGeo(geoBuf);
         _seedArcEditable(O, res.key, geoBuf);
       }).catch(function (e) {
         // §GEO-SERVED: console.error, NOT console.warn — DevTools' default filter hides warn, which is how the
@@ -1008,6 +1040,7 @@
     },
     onClear: onClear,
     _openStrDb: openStrDb, _openIfcFile: openIfcFile, _category: category,
-    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase
+    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase,
+    _reinitStrWalkWithGeo: _reinitStrWalkWithGeo   // §ROW7-TRUE-CENTRE — witness hook (W-ROW7-TRUE-CENTRE browser leg)
   };
 })();
