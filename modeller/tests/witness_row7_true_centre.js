@@ -22,6 +22,12 @@
  *                       skeleton column was centred on the anchor z — 63 columns off, max 3.944 m).
  *   T4 TOPOLOGY-HELD  — 18×10, 108 girders, and NO column changes its (xLine,yLine) membership anchor→true. The line
  *                       VALUES move (≤ 153 mm) — that movement IS the correction, not a topology change.
+ *   T5 LINE-ON-BEAMS  — Step B's finding, pinned both ways. On the shipped 'mean' fit the two facade lines sit at
+ *                       −40.050 / −0.318, i.e. 107 / 161 mm off the line every facade IfcBeam actually occupies
+ *                       (34 south at −40.157, 33 north at −0.157, none elsewhere within 1 m). The opt-in
+ *                       lineFit:'median' lands both lines ON the beam line (≤ 1 mm) and makes 131/158 columns exact,
+ *                       while the headline RMS RISES to 0.1323 (the mean is the least-squares optimum by
+ *                       construction). Both numbers are asserted so the decision is reproducible, not argued.
  */
 'use strict';
 var fs = require('fs'), path = require('path');
@@ -40,7 +46,8 @@ var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js'));
 var wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var DB = path.join(ROOT, 'Terminal_arcstr_proof.db');
 
-var EXPECT_ANCHOR = 0.0939, EXPECT_TRUE = 0.1039, TOL = 0.002;
+var EXPECT_ANCHOR = 0.0939, EXPECT_TRUE = 0.1039, EXPECT_MEDIAN = 0.1323, TOL = 0.002;
+var BEAM_S = -40.157, BEAM_N = -0.157;   // the facade lines the beams occupy (measured, see T5)
 
 var pass = 0, fail = 0;
 function chk(name, ok, detail) { console.log('  ' + (ok ? '✅' : '❌') + ' ' + name + '  ' + (detail || '')); ok ? pass++ : fail++; }
@@ -118,6 +125,26 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   chk('T4 TOPOLOGY-HELD (18×10, 108 girders, 0 columns change line membership; the line VALUES move — that is the correction)',
     skA.grid.xLines.length === skT.grid.xLines.length && skA.grid.yLines.length === skT.grid.yLines.length && skA.girders.length === skT.girders.length && skT.girders.length === 108 && moved === 0,
     'anchorGrid=' + skA.grid.xLines.length + 'x' + skA.grid.yLines.length + ' girders=' + skA.girders.length + '/' + skT.girders.length + ' membershipChanged=' + moved + ' maxLineShift=' + (maxShift * 1000).toFixed(0) + 'mm');
+
+  // T5 — Step B pinned: the beams prove the facade line; mean misses it, median lands on it; RMS goes UP
+  var beamGuids = {}; q("SELECT guid FROM elements_meta WHERE discipline='STR' AND ifc_class='IfcBeam'").forEach(function (g) { beamGuids[g] = 1; });
+  var sOn = 0, sNear = 0, nOn = 0, nNear = 0;
+  boxes.forEach(function (b) { if (!b.real || !beamGuids[b.guid]) return; var y = (b.aabb[2] + b.aabb[3]) / 2;
+    if (Math.abs(y - BEAM_S) < 1.0) { sNear++; if (Math.abs(y - BEAM_S) <= 0.001) sOn++; }
+    if (Math.abs(y - BEAM_N) < 1.0) { nNear++; if (Math.abs(y - BEAM_N) <= 0.001) nOn++; } });
+  var yMean = skT.grid.yLines, y0m = yMean[0], y9m = yMean[yMean.length - 1];
+  var skM = SW.swWalkSkeleton(colsT, { lineFit: 'median' }), yMed = skM.grid.yLines, y0d = yMed[0], y9d = yMed[yMed.length - 1];
+  var rmsM = rms(skM.walked.map(function (w) { return w.residual; }));
+  var exactMean = skT.walked.filter(function (w) { return w.residual < 0.005; }).length, exactMed = skM.walked.filter(function (w) { return w.residual < 0.005; }).length;
+  var rx = rms(colsT.map(function (c) { return c.x - SW.swNearest(c.x, skT.grid.xLines).line; })), ry = rms(colsT.map(function (c) { return c.y - SW.swNearest(c.y, skT.grid.yLines).line; }));
+  chk('T5 LINE-ON-BEAMS (all facade beams sit on one line each; mean fit misses it by 107/161 mm, median lands on it; RMS rises 0.1039→0.1323 — a decision, not a metric)',
+    sNear === 34 && sOn === 34 && nNear === 33 && nOn === 33 &&
+    Math.abs(y0m - BEAM_S) > 0.1 && Math.abs(y9m - BEAM_N) > 0.15 &&
+    Math.abs(y0d - BEAM_S) <= 0.001 && Math.abs(y9d - BEAM_N) <= 0.001 &&
+    skM.grid.xLines.length === 18 && skM.grid.yLines.length === 10 && Math.abs(rmsM - EXPECT_MEDIAN) <= TOL && exactMed > exactMean,
+    'beams S=' + sOn + '/' + sNear + '@' + BEAM_S + ' N=' + nOn + '/' + nNear + '@' + BEAM_N +
+    ' | mean Y0=' + y0m.toFixed(3) + ' Y9=' + y9m.toFixed(3) + ' (off ' + ((y0m - BEAM_S) * 1000).toFixed(0) + '/' + ((y9m - BEAM_N) * 1000).toFixed(0) + 'mm) exact=' + exactMean + '/158 RMS=' + colRMS.toFixed(4) + ' (dx ' + rx.toFixed(4) + ' dy ' + ry.toFixed(4) + ')' +
+    ' | median Y0=' + y0d.toFixed(3) + ' Y9=' + y9d.toFixed(3) + ' exact=' + exactMed + '/158 RMS=' + rmsM.toFixed(4));
 
   // T2 — fallback: same bytes, geometry table dropped ⇒ anchors, counted, 0.0939
   var db2 = new SQL.Database(bytes); db2.run('DROP TABLE component_geometries');
