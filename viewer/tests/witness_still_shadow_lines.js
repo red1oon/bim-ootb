@@ -4,8 +4,8 @@
 // normalBias = (R+1.5) x texel, thinCasterRisk (m); §STILL_SHADOW_FIT texel per pose. FAILs (exit 4) when a gap >= 0.05 m
 // or the line is missing. GUARD: FAIL on "Shader Error" / "Context Lost" / pageerror.
 // §STILL_SHADOW_CASCADE gate (bim-compiler PHOTOREAL_STILL_RENDER.md "§STILL_SHADOW_CASCADE — SPEC" + WATCHDOG GATE
-// CONDITIONS C1-C5): prints the page's §STILL_SHADOW_CASCADE line per pose and FAILs when cascade-0 texel > 0.0167 m
-// (thinCasterRisk >= 0.05 m), any cascade gap45/gap20 >= 0.05 m, any texelPerPixel > 2 (C5), memMB > 512 (C3), or a
+// CONDITIONS C1-C5): prints the page's §STILL_SHADOW_CASCADE line per pose and FAILs when any used cascade's thinCasterRisk >
+// max(0.05 m, 1.5 px at its near split) (§THIN_PX, watchdog ruling 2026-09-25; was cascade-0 texel > 0.0167 m), any cascade gap45/gap20 >= 0.05 m, any texelPerPixel > 2 (C5), memMB > 512 (C3), or a
 // press after the first creates a program whose cacheKey this page never compiled before (C1: newKeys > 0). Without the
 // line (the before arm / &shadowcascade=0) it FAILs on the single map's texel and reports it. programs= is counted by
 // the witness itself from renderer.info.programs (before the press, after the staged frames).
@@ -74,7 +74,10 @@ const arr = (key, t) => { const m = new RegExp(' ' + key + '=\\[([^\\]]*)\\]').e
       if (!edge) why.push('no §STILL_SHADOW_EDGE line');
       if (cas) {
         const tx = arr('texel', cas), tpp = arr('texelPerPixel', cas), c45 = arr('gap45', cas), c20 = arr('gap20', cas), mem = num(/ memMB=([0-9.]+)/, cas), mUsed = num(/ used=([0-9]+)/, cas);
-        if (!(tx[0] <= 0.0167)) why.push('cascade0 texel ' + tx[0] + ' > 0.0167');
+        // §THIN_PX (watchdog red1-c6, 2026-09-25): thinCasterRisk <= max(0.05 m, 1.5 px at the cascade's near split), per used cascade
+        const thin = arr('thinCasterRisk', cas), lim = arr('thinCasterLimit', cas), tpx = arr('thinCasterPx', cas), nUsed = isFinite(mUsed) ? mUsed : thin.length;
+        thin.forEach((v, i) => { if (i < nUsed && !(v <= lim[i])) why.push('thinCasterRisk[' + i + ']=' + v + ' > limit ' + lim[i] + ' (' + tpx[i] + ' px)'); });
+        if (!lim.length) why.push('no thinCasterLimit in the cascade line');
         c45.concat(c20).forEach((g, i) => { if (!(g < 0.05)) why.push('gap ' + g + ' >= 0.05'); });
         tpp.forEach((v, i) => { if (i < (isFinite(mUsed) ? mUsed : tpp.length) && !(v <= 2)) why.push('texelPerPixel[' + i + ']=' + v + ' > 2'); });
         if (!(mem <= 512)) why.push('memMB ' + mem + ' > 512');

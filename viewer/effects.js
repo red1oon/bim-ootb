@@ -3427,7 +3427,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (line) console.log(line + ' cascade=single (D8)');
     console.log('§STILL_SHADOW_CASCADE m=' + CSM_M + ' used=1 mode=single(cascade worst texel ' + worst.toFixed(4) + ' > single ' + sTexel.toFixed(4) + ' at ' + sSize + ': D8)' +
       ' splits=[' + zMin.toFixed(2) + ',' + zMax.toFixed(2) + '] texel=[' + sTexel.toFixed(4) + '] normalBias=[' + (+e.nb).toFixed(4) + '] thinCasterRisk=[' + (+e.nb).toFixed(4) + '] bias=[' + (+e.bias).toFixed(7) + ']' +
-      ' range=[' + (+e.range).toFixed(1) + '] gap45=[' + (+e.g45).toFixed(4) + '] gap20=[' + (+e.g20).toFixed(4) + '] texelPerPixel=[' + (sTexel / pix(zMin)).toFixed(2) + ']' +
+      ' range=[' + (+e.range).toFixed(1) + '] gap45=[' + (+e.g45).toFixed(4) + '] gap20=[' + (+e.g20).toFixed(4) + '] texelPerPixel=[' + (sTexel / pix(zMin)).toFixed(2) + ']' + ' thinCasterPx=[' + ((+e.nb) / pix(zMin)).toFixed(2) + '] thinCasterLimit=[' + Math.max(0.05, 1.5 * pix(zMin)).toFixed(4) + ']' +
       ' memMB=' + _csmSizeMB(sSize).toFixed(0) + ' size=' + sSize + ' (sun map re-sized, 4096 map freed ' + freed.toFixed(0) + 'MB) textureUnits=+' + _csmLights.length + ' dirShadows=' + _csmSlots().length +
       ' declinedSplits=[' + C.map(function(x) { return x.toFixed(2); }).join(',') + '] declinedTexel=' + f(cs, 'texel', 4) + ' declinedTexelPerPixel=' + f(cs, 'tpp', 2) +
       ' zMin=' + zMin.toFixed(2) + ' zMax=' + zMax.toFixed(1) + ' (readback ' + rb.zMax.toFixed(1) + ', edge clamp ' + zEdge.toFixed(1) + ', points ' + rb.n + ')' +
@@ -3450,7 +3450,8 @@ async function setupEffects(A, renderer, scene, camera) {
       w0.set(xy[0], xy[1], 0).applyMatrix4(sc0.matrixWorld); w1.set(xy[0], xy[1], -1).applyMatrix4(sc0.matrixWorld);
       var dy = w1.y - w0.y; if (Math.abs(dy) < 1e-9) return;
       [gy, yTop].forEach(function(yy) { if (yy == null || !isFinite(yy)) return; var s = (yy - w0.y) / dy; vd(w0.x + (w1.x - w0.x) * s, yy, w0.z + (w1.z - w0.z) * s); }); });
-    var zMin = Math.max(cam.near, rb.zMin), zMax = Math.min(rb.zMax, zEdge);
+    // zMin floor 1 m (watchdog red1-c6: the Terminal cascade 0 spanned 0.35-3.19 m, a wasted slice)
+    var zMin = Math.max(cam.near, 1, rb.zMin), zMax = Math.min(rb.zMax, zEdge);
     var Hpx = A.renderer.domElement.height, th = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2), pix = function(d) { return d * 2 * th / Hpx; };
     if (!(rb.n > 0 && zMax > zMin * 1.001)) {
       window.ShadowCascade.off();
@@ -3494,6 +3495,8 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§STILL_SHADOW_CASCADE m=' + CSM_M + ' used=' + used + ' mode=cascades(worst ' + worst.toFixed(4) + ' <= single ' + sTexel.toFixed(4) + ' at ' + sSize + ') splits=[' + C.map(function(x) { return x.toFixed(2); }).join(',') + ']' +
       ' texel=' + f(cs, 'texel', 4) + ' normalBias=' + f(cs, E('nb'), 4) + ' thinCasterRisk=' + f(cs, E('nb'), 4) + ' bias=' + f(cs, E('bias'), 7) +
       ' range=' + f(cs, E('range'), 1) + ' gap45=' + f(cs, E('g45'), 4) + ' gap20=' + f(cs, E('g20'), 4) + ' texelPerPixel=' + f(cs, 'tpp', 2) +
+      // §THIN_PX rule (watchdog red1-c6): thinCasterRisk <= max(0.05 m, 1.5 x the pixel footprint at the cascade's near split)
+      ' thinCasterPx=' + f(cs, function(o) { return o.edge ? o.edge.nb / pix(o.near) : NaN; }, 2) + ' thinCasterLimit=' + f(cs, function(o) { return Math.max(0.05, 1.5 * pix(o.near)); }, 4) +
       ' box=[' + cs.map(function(o) { return o.used ? o.w.toFixed(1) + 'x' + o.h.toFixed(1) : '-'; }).join(',') + '] ptsInSlice=' + f(cs, 'nIn', 0) +
       ' memMB=' + memMB.toFixed(0) + ' size=' + size + ' c0at8192=' + c0at8192 + fallback +
       ' textureUnits=+' + _csmLights.length + ' dirShadows=' + slots.length + ' sunSlot=' + slotOf(sun) + ' slots=[' + idx.map(function(x) { return x == null ? '-' : x; }).join(',') + ']' +
