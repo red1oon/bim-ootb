@@ -9,6 +9,7 @@
 // &sourced=0 skips the install entirely (today's shaders, for red1's A/B).
 (function (global) {
   var MAX_PL = 256, MAX_SL = 64, SOLID = 65535, OUTSIDE = 65534;   // OUTSIDE: a light (or fragment) off the building's zones
+  var orig = null, linkFailed = false, glErrFirstFrame = false;
   var installed = false, active = false, prevOBR = null, tex = null, dummy = null, texKey = null, lastLog = '';
   var P = new Float32Array(4), ORG = new Float32Array(4), DIM = new Float32Array(4);
   var PZ = new Float32Array(MAX_PL), SZ = new Float32Array(MAX_SL);   // zone per point / spot light, in three's light order
@@ -59,7 +60,9 @@
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
     '  float fz = slFragZone( posView, nView );',
-    '  return ( fz > 0.5 && fz < 65533.5 ) ? uSLParams.z : 1.0;',
+    // unknown (-1: every lookup solid) is a building surface too (wall foot, ceiling-panel strip): it loses the sky like an
+    // indoor one. Left at 1 it took the full hemi, and the §METER's +4-6 stops turned it purple (Clinic/Hospital 2026-09-25)
+    '  return ( fz < -0.5 || ( fz > 0.5 && fz < 65533.5 ) ) ? uSLParams.z : 1.0;',
     '}',
     '#else',
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
@@ -71,6 +74,7 @@
     if (/[?&]sourced=0/.test(location.search)) { console.log('§SOURCED_LIGHT not installed (&sourced=0 — today\'s shaders)'); return; }
     if (!THREE || !THREE.ShaderChunk) { console.warn('§SOURCED_LIGHT install skipped: THREE.ShaderChunk missing'); return; }
     var C = THREE.ShaderChunk, ok = 0, fb = C.lights_fragment_begin;
+    orig = { lights_fragment_begin: C.lights_fragment_begin, lights_fragment_maps: C.lights_fragment_maps, lights_pars_begin: C.lights_pars_begin, dithering_fragment: C.dithering_fragment };
     var p0 = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
     if (fb.indexOf(p0) >= 0) { fb = fb.replace(p0, p0 + '\n\t\tdirectLight.color *= slPass( uSLPZ[ UNROLLED_LOOP_INDEX / 4 ][ UNROLLED_LOOP_INDEX - ( UNROLLED_LOOP_INDEX / 4 ) * 4 ], geometryPosition, geometryNormal );'); ok++; }
     var s0 = 'getSpotLightInfo( spotLight, geometryPosition, directLight );';
@@ -80,6 +84,13 @@
     var h0 = 'irradiance += getHemisphereLightIrradiance(';   // also matches the §SKY_OCCLUSION-patched line
     if (fb.indexOf(h0) >= 0) { fb = fb.replace(h0, 'irradiance += slSkyKeep( geometryPosition, geometryNormal ) * getHemisphereLightIrradiance('); ok++; }
     C.lights_fragment_begin = fb;
+    // IBL (scene.environment) is sky light too: its diffuse irradiance and its reflections are gated indoors like the hemi.
+    // The white-Lambert §METER cannot see IBL, so ungated it was amplified by the meter's +4-6 stops into a purple cast on
+    // every weakly lamp-lit surface (Clinic corridor / Hospital café, 2026-09-25).
+    var fm = C.lights_fragment_maps, e0 = 'iblIrradiance += getIBLIrradiance(', r0 = 'radiance += getIBLRadiance(';
+    if (fm.indexOf(e0) >= 0) { fm = fm.replace(e0, 'iblIrradiance += slSkyKeep( geometryPosition, geometryNormal ) * getIBLIrradiance('); ok++; }
+    if (fm.indexOf(r0) >= 0) { fm = fm.replace(r0, 'radiance += slSkyKeep( geometryPosition, geometryNormal ) * getIBLRadiance('); ok++; }
+    C.lights_fragment_maps = fm;
     // §SOURCED_LIGHT_ZONE_DEBUG (witness only): uSLParams.w = 1 writes the fragment's zone as the colour, after every other
     // output chunk (R = zone mod 256, G = zone / 256, B = 1 when unknown), so a readback compares shader zones with the CPU.
     if (C.dithering_fragment && C.dithering_fragment.indexOf('uSLParams') < 0) {
@@ -101,7 +112,21 @@
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
     });
     installed = true;
-    console.log('§SOURCED_LIGHT installed patchedLines=' + ok + '/5 (point, spot, ambient, hemi, zone-debug) — inert until an Alt+S stages it');
+    // §SOURCED_LIGHT_LINK_FAIL — a patched program that fails to compile/link (e.g. a backend with fewer fragment uniform
+    // vectors than §LIGHT_UNIFORM_BUDGET assumed) must not leave a broken scene: restore today's chunks, recompile every
+    // material once, and stay off for the rest of the session (logged). Chained to any existing handler.
+    global.__slLinkGuard = function (A) {
+      if (!A || !A.renderer || !A.renderer.debug || A.renderer.debug.__slGuard) return;
+      var prev = A.renderer.debug.onShaderError;
+      A.renderer.debug.onShaderError = function (gl, program, vs, fs) {
+        var info = ''; try { info = (gl.getProgramInfoLog(program) || '') + ' | ' + (gl.getShaderInfoLog(fs) || '').slice(0, 300); } catch (e) {}
+        console.error('§SOURCED_LIGHT_LINK_FAIL ' + info.slice(0, 500) + ' — falling back to today\'s shaders (&sourced=0) for this session');
+        fallback(A);
+        if (prev) try { prev.apply(this, arguments); } catch (e2) {}
+      };
+      A.renderer.debug.__slGuard = true;
+    };
+    console.log('§SOURCED_LIGHT installed patchedLines=' + ok + '/7 (point, spot, ambient, hemi, env irradiance, env radiance, zone-debug) — inert until an Alt+S stages it');
   }
 
   function dial(A, key, name, def, lo, hi) {
@@ -183,7 +208,17 @@
   // a mesh the GPU draws: some material visible, writing colour, not a fully transparent proxy (raycasts must skip pick
   // proxies / invisible helpers — they are never shaded; Clinic 2026-09-25: a 1.4 m hit where the frame shows a wall at 5.6 m)
   function drawnBy(o) { var ms = Array.isArray(o.material) ? o.material : [o.material]; return ms.some(function (m) { return m && m.visible !== false && m.colorWrite !== false && !(m.opacity === 0 && m.transparent); }); }
+  function fallback(A) {
+    if (linkFailed || !orig) return; linkFailed = true;
+    var C = global.THREE.ShaderChunk; Object.keys(orig).forEach(function (k) { C[k] = orig[k]; });
+    try { unstage(A, true); } catch (e) {}
+    installed = false; P[0] = 0;
+    var n = 0; A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !m.__slRe) { m.__slRe = true; m.needsUpdate = true; n++; } }); });
+    if (A.markDirty) A.markDirty();
+    console.log('§SOURCED_LIGHT_LINK_FAIL fallback: chunks restored, materials recompiling=' + n + ' (sourced off for this session)');
+  }
   function prepare(A) {
+    if (global.__slLinkGuard) global.__slLinkGuard(A);
     var THREE = global.THREE, LZ = global.LightZones; A._sourcedCap = null;
     if (!installed || !THREE || !LZ || !A || !A.scene || !A.camera) return;
     var t0 = performance.now(), hit = !!(LZ.get() && LZ.get().bld === A.activeBuilding), Z = LZ.build(A); if (!Z) return;
@@ -214,6 +249,10 @@
       tex = new THREE.Data3DTexture(Z.zone, Z.nx, Z.ny, Z.nz);
       tex.format = THREE.RedIntegerFormat; tex.type = THREE.UnsignedShortType; tex.internalFormat = 'R16UI';
       tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.unpackAlignment = 1; tex.needsUpdate = true; texKey = key;
+      // §SOURCED_LIGHT_GLERR — any GL error standing before the upload, raised by the upload, and after the first patched frame
+      try { var gl = A.renderer.getContext(), e0 = gl.getError(); A.renderer.initTexture(tex); var e1 = gl.getError();
+        console.log('§SOURCED_LIGHT_GLERR upload before=' + e0 + ' after=' + e1 + ' (0 = none; 1282 = INVALID_OPERATION) R16UI ' + Z.nx + 'x' + Z.ny + 'x' + Z.nz); } catch (eG) { console.warn('§SOURCED_LIGHT_GLERR upload probe failed: ' + eG.message); }
+      glErrFirstFrame = true;
     }
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;
@@ -237,15 +276,77 @@
       if (prevOBR) prevOBR.apply(this, arguments);
     };
     own._sourced = true; A.scene.onBeforeRender = own;
+    var prevOAR = A.scene.onAfterRender;
+    A.scene.onAfterRender = function () { if (glErrFirstFrame) { glErrFirstFrame = false; try { console.log('§SOURCED_LIGHT_GLERR firstFrame=' + A.renderer.getContext().getError()); } catch (e) {} }
+      A.scene.onAfterRender = prevOAR || function () {}; if (prevOAR) prevOAR.apply(this, arguments); };
+    // §METER — inside = the camera stands in a light zone (else effects.js's _stillCamInside answer, passed in A._stillCamInsideNow)
+    var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow;
+    if (!/[?&]meter=0/.test(location.search) && A._stillMeter !== false) { try { A._meterLast = meter(A, inside); } catch (eM) { console.warn('§METER failed: ' + eM.message); } }
+    else console.log('§METER off (&meter=0) exposure=' + A.renderer.toneMappingExposure.toFixed(3));
     if (A.markDirty) A.markDirty();
     console.log('§SOURCED_LIGHT on zonesCache=' + (hit ? 'hit' : 'built') + ' zones=' + Z.zones + ' grid=' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ' cell=' + Z.cell +
       ' texMB=' + (Z.zone.length * 2 / 1e6).toFixed(1) + ' indoorSky=' + keep + ' mats=' + set.size + ' pushed=' + pushed + ' points=' + b.points + ' bound=' + b.pointsBound + ' (litOutside=' + b.litOutside + ')' +
       ' litUnbound=' + b.litUnbound + ' spots=' + b.spots + ' portalsBound=' + b.spotsBound + ' ms=' + (performance.now() - t0).toFixed(0));
   }
 
+  // ══ §METER — exposure follows the scene's own metered light indoors (watchdog ruling (A), 2026-09-25) ══
+  // Physically calibrated lamps (§SOURCED_LIGHT_CALIB) put an interior at 0.5-2% of the sunlit ground; a camera meters and
+  // opens up. The meter reads the SOURCED frame's INCIDENT light: one small float render with a white Lambert override
+  // (albedo 1, so L = E / pi — three's Lambert), sky / lamp glows / sprites / points / glass hidden; the log-average over
+  // the lit surfaces (Reinhard et al. 2002, "Photographic Tone Reproduction for Digital Images", eq. 1: exp(mean(log(delta
+  // + x)))) gives Ein. Reference Eout = the scene's own outdoor light on a horizontal surface (sun x sin(elevation) + sky).
+  // Albedo cancels: a surface of albedo rho displays ~ exposure * rho * E. PARTIAL adaptation (red1: "you won't see a
+  // washed room, just more lighted"): perceived brightness follows Stevens' power law B ~ L^0.33 (S. S. Stevens, "On the
+  // psychophysical law", Psychol. Rev. 64, 1957; brightness exponent 0.33), so an interior keeps (Ein/Eout)^0.33 of its
+  // ratio to outdoors: exposure = base * (Ein / Eout)^(0.33 - 1). Camera outside: base exactly. (A first cut compared
+  // albedo-weighted luminance with a 0.18 middle grey: white rooms metered 4x high and got no boost — replaced.)
+  var METER_W = 160, METER_H = 90, STEVENS = 0.33, METER_MAX_STOPS = 10, meterSaved = null, meterMat = null;
+  function meterRead(A) {
+    var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [];
+    A.scene.traverse(function (o) { if (!o.visible) return;
+      var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
+      var glow = o.isSprite || o.isPoints || o.isLine || o === A._sky || (ms && ms.every(function (m) { return !m || m.isMeshBasicMaterial || m.isShaderMaterial || (m.transparent && m.opacity < 0.95); }));
+      if (glow && (o.isMesh || o.isSprite || o.isPoints || o.isLine || o.isInstancedMesh || o.isBatchedMesh)) { o.visible = false; hidden.push(o); } });
+    var rt = new THREE.WebGLRenderTarget(METER_W, METER_H, { type: THREE.FloatType, depthBuffer: true });
+    if (!meterMat) meterMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevOv = A.scene.overrideMaterial, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
+    var buf = new Float32Array(METER_W * METER_H * 4);
+    try { A.scene.background = null; A.scene.fog = null; A.scene.overrideMaterial = meterMat; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
+      // the override material is not in the scene, so the per-render push never reaches it: render once (builds its programs),
+      // push the zone texture + uniforms into each built program, render again (Clinic 2026-09-25: unpushed, the meter saw every
+      // fragment as OUTSIDE — hemi 0.728 of 0.728, lamps ~0)
+      R.clear(true, true, true); R.render(A.scene, A.camera); push(A, meterMat);
+      R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); }
+    finally { R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; A.scene.overrideMaterial = prevOv; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
+    var n = 0, sl = 0, delta = 1e-4;
+    for (var i = 0; i < METER_W * METER_H; i++) { if (buf[i * 4 + 3] < 0.5) continue; var L = 0.2126 * buf[i * 4] + 0.7152 * buf[i * 4 + 1] + 0.0722 * buf[i * 4 + 2]; if (!isFinite(L)) continue; sl += Math.log(delta + Math.max(0, L)); n++; }
+    return { Ein: n ? Math.PI * Math.exp(sl / n) : null, pixels: n, hidden: hidden.length, ms: performance.now() - t0 };   // white Lambert: E = pi * L
+  }
+  function outdoorE(A) {
+    var sd = A.sun ? A.sun.position.clone().normalize() : null, sinE = sd ? Math.max(0, sd.y) : 0, sunI = A.sun ? A.sun.intensity : 0;
+    var skyL = A.hemi ? (0.2126 * A.hemi.color.r + 0.7152 * A.hemi.color.g + 0.0722 * A.hemi.color.b) * A.hemi.intensity : 0;
+    var E = sunI * sinE + skyL, note = '';
+    if (sinE <= 0.02) { E = sunI * Math.SQRT1_2 + skyL; note = ' (sun below horizon: reference = the same sun at 45 deg)'; }
+    return { E: E, sunI: sunI, sinE: sinE, skyL: skyL, note: note };
+  }
+  function meter(A, inside) {
+    var R = A.renderer, base = R.toneMappingExposure;
+    if (!inside) { console.log('§METER camera=outside exposure=' + base.toFixed(3) + ' stops=0 (base ' + base.toFixed(3) + ', unchanged outside)'); return null; }
+    var m = meterRead(A);
+    if (!m.Ein) { console.log('§METER camera=inside VACUOUS no lit surface pixels — exposure unchanged ' + base.toFixed(3)); return null; }
+    var o = outdoorE(A), ratio = m.Ein / o.E;
+    var exp = base * Math.pow(ratio, STEVENS - 1), stops = Math.log2(exp / base);
+    if (stops < 0) { exp = base; stops = 0; } if (stops > METER_MAX_STOPS) { exp = base * Math.pow(2, METER_MAX_STOPS); stops = METER_MAX_STOPS; }
+    meterSaved = { exp: base }; R.toneMappingExposure = exp;
+    console.log('§METER camera=inside logAvgEin=' + m.Ein.toExponential(3) + ' Eout=' + o.E.toFixed(3) + ' (sun ' + o.sunI.toFixed(2) + ' x sinElev ' + o.sinE.toFixed(3) + ' + sky ' + o.skyL.toFixed(3) + ')' + o.note +
+      ' indoor/outdoor=' + ratio.toExponential(3) + ' stevens=' + STEVENS + ' exposure=' + exp.toFixed(3) + ' stops=' + stops.toFixed(2) + ' (base ' + base.toFixed(3) + ') pixels=' + m.pixels + '/' + (METER_W * METER_H) + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
+    return { exposure: exp, stops: stops, Ein: m.Ein, Eout: o.E };
+  }
+  function meterOff(A) { if (meterSaved && A.renderer) { A.renderer.toneMappingExposure = meterSaved.exp; console.log('§METER off exposure=' + meterSaved.exp.toFixed(3)); } meterSaved = null; }
+
   function unstage(A, quiet) {
     if (!quiet) A._sourcedCap = null;
-    glassOff(A, quiet);
+    glassOff(A, quiet); meterOff(A);
     if (!active) return;
     active = false; P[0] = 0;
     if (A.scene.onBeforeRender && A.scene.onBeforeRender._sourced) A.scene.onBeforeRender = prevOBR || function () {};
@@ -255,5 +356,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

@@ -4105,8 +4105,24 @@ async function setupEffects(A, renderer, scene, camera) {
     A._nightPLScaleStaged = A._nightPLScale;   // §SUN_ARC_FILL — the staged base the bake scales FROM
     // §STILL_DIALS — Alt+S lamp strength + fall-off, read at every press, set BEFORE the lamps are born below.
     if (!A._maxqActive || A._filmParity) {
-      A._stillLampMul = _stillDial('_stillLamps', 'lamps', 16, 20);   // §FLOOR_WASH pick (watcher/red1): 16 with finite reach   // red1 13:4x: "internal points of light should hit stronger"
       A._stillLampDecayNow = _stillDial('_stillLampDecay', 'lampdecay', 1.5, 2);   // §FLOOR_WASH pick: 1.5 (was 0.8)
+      // §SOURCED_LIGHT_CALIB (red1 2026-09-25 via red1-4b: "it is simply very bright indoors" -> indoor sources in the SAME
+      // units as the sun). Real ratio: a lamp's floor illuminance under one fixture vs the sun on a surface facing it —
+      // office lighting 500 lx (EN 12464-1 office value; Wikipedia "Lux" table 320-500 lx) vs direct sunlight 100,000 lx
+      // (Wikipedia "Lux", after Schlyter, upper bound = clear sky) = 0.005. The day sun here is A.sun.intensity (normal
+      // incidence); one fixture at CALIB_H m directly above a floor point gives base * mul / CALIB_H^decay (no angle term,
+      // straight down). Solve mul so that equals 0.005 * sun. Replaces the §FLOOR_WASH lamps=16 for Alt+S when §SOURCED_LIGHT
+      // is on; &lamps= / APP._stillLamps still override (red1's live dial). &sourced=0 keeps 16 (today's look).
+      var CALIB_LAMP_LUX = 500, CALIB_SUN_LUX = 100000, CALIB_H = 2.5;
+      var _calibSunI = (A._nightMode && A._nightSaved) ? A._nightSaved.sunI * PHOTO_SUN_INTENSITY_SCALE : (A.sun ? A.sun.intensity * PHOTO_SUN_INTENSITY_SCALE : 0);
+      var _calibOn = !!(window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed()) && _calibSunI > 0;
+      var _calibMul = _calibOn ? (CALIB_LAMP_LUX / CALIB_SUN_LUX) * _calibSunI * Math.pow(CALIB_H, A._stillLampDecayNow) / (A.NIGHT_LIGHT_INTENSITY_BASE || 2) : 16;
+      A._stillLampMul = _stillDial('_stillLamps', 'lamps', _calibMul, 20);   // §FLOOR_WASH was 16 (red1 13:4x "internal points of light should hit stronger")
+      console.log('§SOURCED_LIGHT_CALIB ' + (_calibOn ? 'on' : 'off (§SOURCED_LIGHT not installed or no sun)') + ' lampLux=' + CALIB_LAMP_LUX + ' sunLux=' + CALIB_SUN_LUX +
+        ' ratio=' + (CALIB_LAMP_LUX / CALIB_SUN_LUX) + ' sunI=' + _calibSunI.toFixed(3) + ' refH=' + CALIB_H + 'm decay=' + A._stillLampDecayNow + ' base=' + (A.NIGHT_LIGHT_INTENSITY_BASE || 2) +
+        ' lampMul old 16 -> new ' + _calibMul.toFixed(4) + ' (fixture intensity ' + ((A.NIGHT_LIGHT_INTENSITY_BASE || 2) * _calibMul).toFixed(4) + ', floor E at ' + CALIB_H + ' m = ' +
+        ((A.NIGHT_LIGHT_INTENSITY_BASE || 2) * _calibMul / Math.pow(CALIB_H, A._stillLampDecayNow)).toFixed(4) + ' vs sun ' + _calibSunI.toFixed(3) + ') applied=' + A._stillLampMul.toFixed(4) +
+        (A._stillLampMul !== _calibMul ? ' (&lamps= override)' : ''));
       A._stillLampRangeNow = _stillDial('_stillLampRange', 'lamprange', 25, 100);   // §FLOOR_WASH pick: 25 m reach (0 = infinite, the old stack)
       // §LIGHT_UNIFORM_BUDGET — caps the lamps BEFORE toggleNightMode builds them; portals then fit in the rest. One light
       // count for the whole still = one shader compile.
@@ -4164,6 +4180,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // red1 (refined): indoor lights are on by day. Lamps go OFF only for a daylight still whose camera is
       // OUTSIDE; inside, they stay on. Window glow is off in daylight either way.
       var _gIn = _gDay ? _stillCamInside() : { inside: null, src: 'not-needed (dusk)' };
+      if (_gIn.inside != null) A._stillCamInsideNow = _gIn.inside;   // §METER's fallback inside test when the camera is in no light zone
       A._stillCamInsideNow = _gIn.inside;   // §STILL_SHADOW_FIT reads it (props only when outside)
       if (_gDay) {
         A._stillWindowGlowOff = true;
@@ -4304,7 +4321,11 @@ async function setupEffects(A, renderer, scene, camera) {
       A._camLight.castShadow = false;
     }
     A.scene.add(A._camLight);
-    console.log('§CAM_LIGHT on intensity=' + CAM_LIGHT_INTENSITY + ' distance=' + CAM_LIGHT_DISTANCE +
+    // §SOURCED_LIGHT principle 1 (only real sources): the eye-riding fill is not a source. Off for Alt+S when §SOURCED_LIGHT
+    // is installed (Clinic corridor, 2026-09-25: at 2 m it gave ~0.75 of the 0.73 metered incident light, the lamps ~0.02).
+    var _camSourcedOff = !A._maxqActive && !!(window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed());
+    A._camLight.intensity = _camSourcedOff ? 0 : CAM_LIGHT_INTENSITY;
+    console.log('§CAM_LIGHT ' + (_camSourcedOff ? 'off (§SOURCED_LIGHT: not a real source)' : 'on') + ' intensity=' + A._camLight.intensity + ' distance=' + CAM_LIGHT_DISTANCE +
       ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
     _showPhotoProps(true);
     // §MIRROR_ROOM_PROBE: built LAST, after ground/lights/props are all in their staged state, so

@@ -7,7 +7,7 @@
 (function (global) {
   var PORTAL_RANGE = 40;          // m — candidate panes near the camera
   var LIGHT_RESERVE = 320, PORTAL_SHARE = 0.25;   // §LIGHT_UNIFORM_BUDGET
-  var PORTAL_EXPOSURE = 10;       // start value for red1's eye (see spec): the unoccluded hemi drowns a physical portal
+  var PORTAL_EXPOSURE_EYE = 10;   // start value for red1's eye (see spec): the unoccluded hemi drowns a physical portal (1 under §SOURCED_LIGHT, stage())
   // §SKY_PORTAL_INSIDE (2026-09-25): the spot sits INSIDE the glass. At pane-centre − 0.05 m (outside, aimed inward) the pane
   // itself was 5 cm in front of the light, inside its cone: ~1/0.05² irradiance = a white disc on the glass (the "lamps lit
   // from outside by day" dots). Inside by PORTAL_INSIDE_M the pane and its mullions are behind the light, out of the cone.
@@ -81,14 +81,28 @@
   function budget(A) {
     var gain = dial(A, '_stillPortal', 'portal', 1, 0, 3), cap = Math.round(dial(A, '_stillPortalCap', 'portalcap', 32, 0, 128));
     var nShadow = Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
+    // TEXTURE-UNIT budget (2026-09-25): the heaviest Alt+S program binds batching x2 + triplanar x3 + envMap + dfgLUT + the
+    // sun shadow map (8) + §SOURCED_LIGHT's zone texture (1) + one map per shadowed portal — 17 on Hospital with 8 portals.
+    // A backend capping fragment texture units at 16 fails to link it; fit the shadowed portals into what is left.
+    var maxTex = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxTextures) || 16;
+    var slTex = (global.SourcedLight && global.SourcedLight.installed && global.SourcedLight.installed()) ? 1 : 0, texReserve = 8 + slTex;
+    var nShadowTex = Math.max(0, Math.min(nShadow, maxTex - texReserve));
+    if (nShadowTex !== nShadow) console.log('§LIGHT_TEXTURE_BUDGET maxTextures=' + maxTex + ' reserve=' + texReserve + ' (batching 2, triplanar 3, env, dfgLUT, sun' + (slTex ? ', zone' : '') + ') shadowedPortals ' + nShadow + ' -> ' + nShadowTex);
+    nShadow = nShadowTex;
     var maxFrag = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxFragmentUniforms) || 1024;
     var avail = Math.max(0, maxFrag - LIGHT_RESERVE), portalVec = (gain > 0 && cap > 0) ? Math.floor(avail * PORTAL_SHARE) : 0;
     var c = 0, sh = 0, used = 0;
     while (c < cap) { var need = (sh < nShadow) ? 12 : 7; if (used + need > portalVec) break; used += need; c++; if (sh < nShadow) sh++; }
     budgetCap = c; budgetShadow = sh;
-    A._stillLampCap = Math.min(200, Math.floor((avail - used) / 4), Math.round(dial(A, '_stillLampCapMax', 'lampcap', 200, 0, 200)));   // &lampcap= (§STILL_LAG)
-    console.log('§LIGHT_UNIFORM_BUDGET maxFragmentUniforms=' + maxFrag + ' reserve=' + LIGHT_RESERVE + ' portalCap=' + c + ' (shadowed ' + sh +
-      ', ' + used + ' vectors) lampCap=' + A._stillLampCap + ' (' + (A._stillLampCap * 4) + ' vectors) total=' + (used + A._stillLampCap * 4) + '/' + avail +
+    // §SOURCED_LIGHT adds fragment uniforms to every lit material: uSLParams/uSLOrg/uSLDim (3 vec4), one vec4 per 4 spots
+    // (uSLSZ) and one per 4 point lights (uSLPZ) — so a lamp costs 4.25 vectors, not 4. Uncounted, a backend with a lower
+    // maxFragmentUniformVectors would fail to link at the first Alt+S.
+    var slOn = !!(global.SourcedLight && global.SourcedLight.installed && global.SourcedLight.installed());
+    var slFixed = slOn ? 3 + Math.ceil(c / 4) : 0, perLamp = slOn ? 4.25 : 4;
+    A._stillLampCap = Math.min(200, Math.floor((avail - used - slFixed) / perLamp), Math.round(dial(A, '_stillLampCapMax', 'lampcap', 200, 0, 200)));   // &lampcap= (§STILL_LAG)
+    console.log('§LIGHT_UNIFORM_BUDGET maxFragmentUniforms=' + maxFrag + ' reserve=' + LIGHT_RESERVE + ' maxTextures=' + maxTex + ' texReserve=' + texReserve + ' portalCap=' + c + ' (shadowed ' + sh +
+      ', ' + used + ' vectors) lampCap=' + A._stillLampCap + ' (' + Math.ceil(A._stillLampCap * perLamp) + ' vectors) sourcedLight=' + (slOn ? slFixed + '+' + Math.ceil(A._stillLampCap / 4) + ' vectors' : 'off') +
+      ' total=' + Math.ceil(used + slFixed + A._stillLampCap * perLamp) + '/' + avail +
       ' — set before the lamps are built; one light count per still');
   }
 
@@ -121,6 +135,10 @@
       dirs.forEach(function (d) { rc.set(pt, d); if (!rc.intersectObjects(targets, false).length) k++; }); return k;
     }
     var skipped = 0, H = A.hemi.intensity, sky = A.hemi.color, shadowed = 0, unsh = 0, iSum = 0;
+    // §SOURCED_LIGHT_CALIB: a window of area A seen from inside is a Lambertian emitter of the sky's radiance E_sky/pi, so
+    // its intensity is E_sky * A / pi — exposure 1. The x10 start value was an eye pick against the unoccluded hemi, which
+    // §SOURCED_LIGHT removes indoors; with the lamps in physical units the portals are too.
+    var PORTAL_EXPOSURE = (window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed()) ? 1 : PORTAL_EXPOSURE_EYE;
     near.forEach(function (p) {
       if (placed.length >= cap) { capped++; return; }
       var nNeg = p.n.clone().negate();
@@ -156,7 +174,7 @@
         var sa = skyCount(p.c.clone().addScaledVector(p.n, UPRAY_OFF), p.n, p.u), sb = skyCount(p.c.clone().addScaledVector(nNeg, UPRAY_OFF), nNeg, p.u);
         if (sa === sb) return; p._inward = sa < sb ? p.n.clone() : nNeg; cached.push(p);
       });
-      film = { panes: cached, H: H, sky: sky.clone(), gain: gain, byArea: byArea, nShadow: shadowed, assign: [] };
+      film = { panes: cached, H: H, sky: sky.clone(), gain: gain, exposure: PORTAL_EXPOSURE, byArea: byArea, nShadow: shadowed, assign: [] };
       console.log('§SKY_PORTAL_FILM_CACHE panes=' + cached.length + ' of ' + panes.length + ' classified once ms=' + (performance.now() - tC).toFixed(0));
     }
     // §STILL_LIGHT_PAD — pad to the budget's fixed counts (intensity 0) so every still has the same spot-light count
@@ -200,7 +218,7 @@
       film.assign[i] = p; reaimed++;
       if (p) {
         L.position.copy(p.c).addScaledVector(p._inward, PORTAL_INSIDE_M); L.target.position.copy(p.c).addScaledVector(p._inward, 5);
-        L.color.copy(film.sky).multiply(p.hue); L.intensity = film.H * p.area / Math.PI * PORTAL_EXPOSURE * film.gain; L.distance = 0;
+        L.color.copy(film.sky).multiply(p.hue); L.intensity = film.H * p.area / Math.PI * film.exposure * film.gain; L.distance = 0;
       } else { L.intensity = 0; L.position.copy(cam); L.target.position.copy(cam).add(new global.THREE.Vector3(0, -1, 0)); }
       L.target.updateMatrixWorld();
       if (L.castShadow) { L.shadow.needsUpdate = true; shadowRe++; }
