@@ -518,8 +518,11 @@
     for (var c3 = nx; c3 < N; c3++) { var v3 = zone[c3]; if (v3 === SOLID || v3 === 0 || zone[c3 - nx] !== SOLID) continue; var z3 = v3 & ZONE_MASK; fl[z3] += cf;
       var w3 = c3 + up; if (w3 < N && zone[w3] !== SOLID && (zone[w3] & ZONE_MASK) === z3) { wpS[z3] += acc[w3]; wpN[z3]++; } }
     var irc = new Float32Array(nzn + 1), ircL = [];
+    // IRC OFF by default (watchdog, 2026-09-25): the still's GI bounce pass (gi_still.js) already carries interreflection, so
+    // V12 would count it twice and is a flat per-zone fill; &irc=1 / APP._stillIrc = true keeps it for A/B (logged)
+    var ircOn = A._stillIrc === true || (typeof location !== 'undefined' && /[?&]irc=1/.test(location.search));
     for (var z4 = 1; z4 <= nzn; z4++) { var zi4 = Z.zoneInfo[z4 - 1], Az = zi4.surfaceM2 + zi4.apertureM2; if (!wpN[z4] || !(Az > 0)) continue;
-      irc[z4] = R_BRE * (wpS[z4] / wpN[z4]) * fl[z4] / (Az * (1 - R_BRE)); if (irc[z4] > 0) ircL.push(irc[z4]); }
+      var ir = R_BRE * (wpS[z4] / wpN[z4]) * fl[z4] / (Az * (1 - R_BRE)); if (ir > 0) ircL.push(ir); if (ircOn) irc[z4] = ir; }
     ircL.sort(function (x, y) { return x - y; });
     // G: F x 10000 in every non-solid cell (open = 10000)
     var G = new Uint16Array(N), maxF = 0, covered = 0, maxSC = 0;
@@ -527,7 +530,7 @@
       var f = Math.min(1, sc + irc[v2 & ZONE_MASK]); if (f > maxF) maxF = f; G[c2] = Math.round(f * 10000); }
     val = acc = null;
     var minElev = FIELD_DIRS.reduce(function (m, d) { return Math.min(m, d.elev); }, 90);
-    Z.field = { G: G, maxF: maxF, maxSC: maxSC, irc: { zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
+    Z.field = { G: G, maxF: maxF, maxSC: maxSC, ircZ: irc, irc: { on: ircOn, zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
       weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }) };
     return Z.field;
   }

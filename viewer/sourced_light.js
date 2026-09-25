@@ -354,7 +354,7 @@
     var gm = (Z.glassMats || []).map(function (g) { return g.name + ':op' + g.opacity + ':T' + g.T + ':' + g.m2.toFixed(0) + 'm2'; });
     console.log('§SKY_VIEW_FIELD on cache=' + (hit ? 'hit' : 'built') + ' dirs=' + F.dirs + ' minElevDeg=' + F.minElevDeg.toFixed(2) + ' (CIE overcast weights, cos x (1+2 sin elev) x dOmega; lowest-weight dir ' + Math.min.apply(null, F.weights) + ') sweepMs=' + F.ms +
       ' activeCells=' + F.active + ' coveredCells=' + F.covered + ' glassCells=' + Z.glassCells + ' maxF=' + F.maxF.toFixed(4) + ' (sky component max ' + F.maxSC.toFixed(4) + ') ' + (F.maxF <= 1 ? 'ASSERT_MAXF_LE_1 PASS' : 'ASSERT_MAXF_LE_1 FAIL') +
-      ' irc(zones/median/max)=' + F.irc.zones + '/' + (100 * F.irc.median).toFixed(3) + '%/' + (100 * F.irc.max).toFixed(2) + '% (V12, R 0.5)' +
+      ' irc=' + (F.irc.on ? 'ON (&irc=1, A/B)' : 'off (default: the GI bounce carries it)') + ' irc(zones/median/max)=' + F.irc.zones + '/' + (100 * F.irc.median).toFixed(3) + '%/' + (100 * F.irc.max).toFixed(2) + '% (V12, R 0.5)' +
       ' uploadMs=' + uploadMs.toFixed(0) + ' glassT=[' + gm.join(',') + '] ERC=ground term scaled by F only (externally reflected component not modelled) ms=' + (performance.now() - t0).toFixed(0));
     console.log('§SKY_VIEW_FIELD_DIST (working-plane mean F per lit zone, floor-m2 weighted) all: ' + dist(lit) + ' · enclosed rooms (no open aperture): ' + dist(enc) + ' · maxZoneWpF=' + (100 * maxWp).toFixed(2) + '%');
     // G2 / spec 6: F-weighted mean unoccluded direction per zone (bent normal), LOG ONLY — the largest zones by floor m2 + camera zone

@@ -107,7 +107,9 @@ const RUNS = [
               const kk = k === 'sun' || k === 'hemi' ? 'otherPoints' : k; E[kk] += I * a * nl; addC(kk, I * a * nl, l.color); } });
           const hm = Array.isArray(h.object.material) ? h.object.material[h.face.materialIndex] : h.object.material;
           const alb = hm && hm.color ? lum(hm.color) : 0.5, textured = !!(hm && (hm.map || (hm.userData && hm.userData.triplanar)));
-          S.push({ through, indoor, C, floor: nn.y > 0.7, wall: Math.abs(nn.y) < 0.3, E, alb, textured, black: !through && Object.values(E).every(v => !(v > 0)) });
+          const ircZ = SF && SF.F != null && fz > 0 && fz < 65534 && LZ.get().field && LZ.get().field.ircZ ? LZ.get().field.ircZ[fz] || 0 : 0;
+          const skyPart = E.hemi + E.ambient;   // the sky terms F scales; the IRC share of them = irc / F
+          S.push({ px: (x + 0.5) / W, py: (y + 0.5) / H, ircE: SF && SF.F > 0 ? skyPart * Math.min(1, ircZ / SF.F) : 0, through, indoor, C, floor: nn.y > 0.7, wall: Math.abs(nn.y) < 0.3, E, alb, textured, black: !through && Object.values(E).every(v => !(v > 0)) });
         }
         const sd = A.sun ? A.sun.position.clone().sub(A.sun.target.position).normalize() : new THREE.Vector3(0, 1, 0);
         const hemiUp = A.hemi ? lum(A.hemi.color) * A.hemi.intensity : 0, Eground = (A.sun ? lum(A.sun.color) * A.sun.intensity * Math.max(0, sd.y) : 0) + hemiUp;
@@ -130,12 +132,27 @@ const RUNS = [
           const tot = L3(g.sky) + L3(g.lamp) + L3(g.sun), mix = [0, 1, 2].map(i => g.sky[i] + g.lamp[i] + g.sun[i]);
           return { samples: set.length, skyCoolPct: tot ? +(100 * L3(g.sky) / tot).toFixed(1) : 0, lampWarmPct: tot ? +(100 * L3(g.lamp) / tot).toFixed(1) : 0, sunPct: tot ? +(100 * L3(g.sun) / tot).toFixed(1) : 0,
             skyRGB: n3(g.sky), lampRGB: n3(g.lamp), mixRGB: n3(mix) }; };
+        // §GI_AWARE (watchdog, 2026-09-25): the REAL still with the GI bounce — numeric readback of the finished composite and
+        // the app frame gi_still.js keeps (window.__giStillDebugCanvas: bounce = composite, under = app frame), 8-bit sRGB, at each
+        // sample's pixel. blackFinal = a direct (not through-glass) sample whose composite pixel is pure black at display
+        // precision (max channel <= 1 of 255). giShare = (composite - app) / composite luminance: the bounce's share of the
+        // finished pixel. ircShare = the analytic IRC part of the sample's irradiance / its total (0 unless &irc=1).
+        const gc = window.__giStillDebugCanvas; let gi = null;
+        if (gc && gc.bounce && gc.under) { const w2 = gc.bounce.width, h2 = gc.bounce.height, fd = gc.bounce.getContext('2d').getImageData(0, 0, w2, h2).data, ad = gc.under.getContext('2d').getImageData(0, 0, w2, h2).data;
+          const at = (d, s) => { const i = (Math.min(h2 - 1, Math.floor(s.py * h2)) * w2 + Math.min(w2 - 1, Math.floor(s.px * w2))) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+          const L8 = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+          let blackFinal = 0, blackApp = 0, direct = 0; const gs = [], is = [];
+          S.forEach(s => { const f = at(fd, s), a = at(ad, s); if (!s.through) { direct++; if (Math.max(f[0], f[1], f[2]) <= 1) blackFinal++; if (Math.max(a[0], a[1], a[2]) <= 1) blackApp++; }
+            if (s.indoor) { const lf = L8(f), la = L8(a); if (lf > 0) gs.push((lf - la) / lf); let t = 0; for (const k in s.E) t += s.E[k]; if (t > 0) is.push(s.ircE / t); } });
+          const med = a => { a.sort((x, y) => x - y); return a.length ? +a[a.length >> 1].toFixed(3) : null; };
+          gi = { canvas: w2 + 'x' + h2, directSamples: direct, blackFinal, blackApp, indoorGiShareMedian: med(gs), indoorGiShareP90: gs.length ? +gs[Math.floor(gs.length * 0.9)].toFixed(3) : null, indoorIrcShareMedian: med(is), indoorIrcShareP90: is.length ? +is.sort((x, y) => x - y)[Math.floor(is.length * 0.9)].toFixed(3) : null }; }
         const SLonNow = !!(window.SourcedLight && window.SourcedLight.isActive && window.SourcedLight.isActive());
-        return { blackDirectSamples: S.filter(s => s.black).length, sourcedLight: SLonNow, sunElevDeg: +(Math.asin(sd.y) * 180 / Math.PI).toFixed(1), Eground: +Eground.toFixed(3), exposure: +A.renderer.toneMappingExposure.toFixed(3), lights: lights.length, camPos: A.camera.position.toArray().map(v => +v.toFixed(2)),
+        return { giAware: gi, blackDirectSamples: S.filter(s => s.black).length, sourcedLight: SLonNow, sunElevDeg: +(Math.asin(sd.y) * 180 / Math.PI).toFixed(1), Eground: +Eground.toFixed(3), exposure: +A.renderer.toneMappingExposure.toFixed(3), lights: lights.length, camPos: A.camera.position.toArray().map(v => +v.toFixed(2)),
           all: summarise(S), indoor: summarise(S.filter(s => s.indoor)), indoorColour: colour(S.filter(s => s.indoor)), daylight: (window.SourcedLight && window.SourcedLight.daylight) ? window.SourcedLight.daylight() : null, floor: summarise(S.filter(s => s.floor)), walls: summarise(S.filter(s => s.wall)), throughGlass: summarise(S.filter(s => s.through)), direct: summarise(S.filter(s => !s.through)), glassRays: glassHits };
       });
       const g = (re, n) => (L.slice(b1).find(t => re.test(t)) || '-').slice(0, n || 220);
       say('§WASH_SOURCES pose=' + ps.name + ' ' + JSON.stringify(r) + '\n   ' + [g(/§STILL_BASE sky/), g(/§STILL_POSE/), g(/§GI_STILL result/), g(/§SKY_VIEW_FIELD on/, 1500), g(/§LUX_CHECK_CAM/, 600), g(/§METER camera/, 600)].join('\n   '));
+      say('§GI_AWARE bld=' + R.db + ' pose=' + ps.name + ' ' + (r.giAware ? ((r.giAware.blackFinal > 0 ? 'FAIL' : 'PASS') + ' ' + JSON.stringify(r.giAware)) : 'VACUOUS (no __giStillDebugCanvas)') + ' analyticBlack=' + r.blackDirectSamples);
       say('§GLARE bld=' + R.db + ' pose=' + ps.name + ' ' + (r.blackDirectSamples > 0 ? 'FAIL' : 'PASS') + ' black_direct_samples=' + r.blackDirectSamples + ' of ' + r.all.samples); glareTot += r.blackDirectSamples;
       await p.keyboard.press('Escape'); await sleep(3000);
     }
