@@ -4403,23 +4403,19 @@
           if (A._nightLightByPos && A._nightLightByPos.forEach) {
             A._nightLightByPos.forEach(function (l) { if (l && l.intensity > 0) _wNav++; });
           }
-          var _wGlow = A._glowStagedCount || 0;
-          // §118 — FOUR families, not three. The first version counted pool lights, nav lights and
-          // the sprite cloud, reported PASS, and fixtures were still visibly lit: the lens quad and
-          // the emissive fixture materials were never in the count. A witness that cannot see a
-          // family cannot fail on it.
-          var _wLens = A._glowLensLive ? 1 : 0;
+          // §118 — every family, not a subset: a witness that cannot see a family cannot fail on it.
+          // §GLOW_LAYERS_OFF (2026-09-25): the sprite cloud and the lens quad were two of the families;
+          // both were deleted from the viewer, so the families left are pool, nav, emissive materials.
           var _wEmis = 0;
           if (A._nightGlowMats) for (var _ge = 0; _ge < A._nightGlowMats.length; _ge++) {
             var _gm = A._nightGlowMats[_ge].mat;
             if (_gm && _gm.emissiveIntensity > 0 && _gm.emissive && _gm.emissive.getHex() !== 0) _wEmis++;
           }
-          var _wKey = _wPool + '/' + _wNav + '/' + _wGlow + '/' + _wLens + '/' + _wEmis;
+          var _wKey = _wPool + '/' + _wNav + '/' + _wEmis;
           if (A._ilWitnessKey !== _wKey) {
             A._ilWitnessKey = _wKey;
             console.log('§INTERIOR_LIGHTS_WITNESS poolLit=' + _wPool + '/' +
               ((A._nightBakePool && A._nightBakePool.length) || 0) + ' navLit=' + _wNav +
-              ' glowSpritesStaged=' + _wGlow + ' lensQuadLive=' + _wLens +
               ' emissiveMatsLit=' + _wEmis + '/' + ((A._nightGlowMats && A._nightGlowMats.length) || 0) +
               ' => ' +
               // §129.41 (2026-09-19) — THE RULE THIS WITNESS CHECKS HAS CHANGED, so the verdict has
@@ -4456,7 +4452,7 @@
                     return 'PASS (past topout: every interior family that exists is lit — ' +
                       judged.map(function (f) { return f[0] + ' ' + f[1] + '/' + f[2]; }).join(', ') + ')';
                   })())
-                : ((_wPool + _wNav + _wGlow + _wLens + _wEmis === 0)
+                : ((_wPool + _wNav + _wEmis === 0)
                     ? 'PASS (between the last stick and topout, no interior emitter of any family is on)'
                     : 'FAIL — something interior is still emitting. Each count prints over its own' +
                       ' DENOMINATOR so a zero can be told apart from an absent family (a vacuous pass).')));

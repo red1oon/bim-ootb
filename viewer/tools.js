@@ -1142,8 +1142,8 @@ function setupTools(A) {
     for (var i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
     return ((h >>> 0) % 100000) / 100000;
   }
-  // ONE test for "is this an exit sign", shared by the colour rule and by §PHOTO_GLOW_SPRITE's
-  // brightness rule — they must never disagree about which fittings are signage.
+  // ONE test for "is this an exit sign", shared by every rule that treats signage differently
+  // (colour, §LAMP_SHAPE_COLOUR's exit count) — they must never disagree about which fittings are signage.
   A.nightIsExitSign = function(name) {
     var n = String(name || '').toLowerCase();
     return n.indexOf('exit') >= 0 || n.indexOf('keluar') >= 0 || n.indexOf('signage') >= 0;
@@ -1255,7 +1255,7 @@ function setupTools(A) {
     var f = _fixtureFaceFill(A.meshCache[gh]);
     return (_lampShapeByHash[gh] = f ? f.shape : 'ambiguous');
   };
-  // The one colour for a fixture's light AND its glow sprite (they must agree, see _nightFixtureWorldPositions).
+  // The one colour for a fixture's light (see _nightFixtureWorldPositions).
   A.nightFixtureColor = function(p) {
     var base = (p && p.__color !== undefined) ? p.__color : NIGHT_AMBER;
     if (!A._stillShapeColour || !p || p.__exit) return base;
@@ -1390,15 +1390,15 @@ function setupTools(A) {
         ' totalGlowMats=' + A._nightGlowMats.length);
     }
   };
-  // §NIGHT_FIXTURE_VOCAB / §PHOTO_GLOW_SPRITE — the ONE place luminaire POSITIONS are extracted.
-  // Extracted out of toggleNightMode (2026-07-27) because a second consumer now needs the same
-  // positions: the still's glow sprites. The spec's standing rule is that every path selecting
+  // §NIGHT_FIXTURE_VOCAB — the ONE place luminaire POSITIONS are extracted.
+  // Extracted out of toggleNightMode (2026-07-27) so every consumer (point lights, the still's
+  // §LAMP_SHAPE_COLOUR / §FIXTURE_EMISSIVE) reads the same positions. The spec's standing rule is that every path selecting
   // luminaires must share one vocabulary — two copies of this SQL is exactly how the '%light%'
   // filter ended up living in one query as a test and never as the selector. Returns the source
   // string ('IFC' | 'synthetic (N storeys)' | 'none') that §NIGHT_MODE reports.
   // force=true re-queries even when a list is already cached — what toggleNightMode does, because
-  // more models may have streamed in since the last toggle. The sprite path passes nothing and
-  // reuses whatever night mode already extracted.
+  // more models may have streamed in since the last toggle. Other readers pass nothing and
+  // reuse whatever night mode already extracted.
   A._loadNightFixtures = function(force) {
     if (!force && A._nightFixtures && A._nightFixtures.length) return A._nightFixtureSource || 'IFC';
     A._nightFixtures = [];
@@ -1415,13 +1415,10 @@ function setupTools(A) {
         // vocabulary §PHOTO_EMBER uses, and the "filter for 'light'" the user asked for. Measured
         // on the Clinic: 1105 naive name matches -> 841 real luminaires, 264 rejected.
         var r = A.db.exec(
-          // §GLOW_LENS_QUAD (2026-08-07): bbox_x/bbox_y/rotation_z added so the still-render lens
-          // quad (effects.js) can size and orient itself to the REAL fixture instead of a generic
-          // round halo. Still-only consumer — the live round sprite ignores these three columns.
-          // m.guid (glow-buildup-gate, merged in) kept alongside for that feature's own consumer.
-          // §GLOW_TRUE_BOTTOM (2026-08-07): i.geometry_hash lets the drop calc below use the
-          // fixture's REAL mesh bounding box instead of assuming center_z sits at the bbox
-          // midpoint — see the drop comment further down for why that assumption was wrong.
+          // bbox_x/bbox_y/rotation_z (2026-08-07): the REAL fixture footprint + yaw — MODEL data,
+          // kept for the follow-up emissive shapes of lamps with no emissive mesh (§FIXTURE_EMISSIVE K).
+          // m.guid feeds the buildup gate (§NIGHT_BUILDUP_GATE) and §FIXTURE_EMISSIVE.
+          // i.geometry_hash: the fixture's own mesh (§LAMP_SHAPE_COLOUR reads its shape from it).
           "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z, t.bbox_x, t.bbox_y, t.rotation_z, m.guid, i.geometry_hash FROM elements_meta m " +
           "JOIN element_transforms t ON m.guid=t.guid " +
           "LEFT JOIN element_instances i ON m.guid=i.guid " +
@@ -1561,9 +1558,8 @@ function setupTools(A) {
       // (or a building with rooms but somehow zero elements in any of them, which tier 2 above
       // already can't produce given rel_contained_in_space's construction). One point per STOREY —
       // its centroid + near-top Z, not the old removed 15m grid — explicitly tagged
-      // `presentation: true` so it's the ONLY tier besides real named fixtures that also gets a
-      // still-render lens quad (effects.js checks this flag) — tier 2 above stays PL-only, per
-      // user's own tiering ("take any overhead fixture... as source of lite" — light only, no quad).
+      // `presentation: true` (§GLOW_LAYERS_OFF 2026-09-25: its only reader, the still-render glow
+      // quad, was deleted; the flag stays on the row as tier data).
       if (A._nightFixtures.length === 0) {
         try {
           var sr2 = A.db.exec(
@@ -1627,8 +1623,8 @@ function setupTools(A) {
       document.getElementById('sl-exposure').value = 0.8;
       document.getElementById('sl-exposure-val').textContent = '0.8';
       // Load IFC light fixtures from DB — fallback to storey centroids if none.
-      // The extraction itself lives in A._loadNightFixtures() (above) so the still's glow sprites
-      // read the same list from the same vocabulary.
+      // The extraction itself lives in A._loadNightFixtures() (above) so every still-staging reader
+      // reads the same list from the same vocabulary.
       var source = A._loadNightFixtures(true);
       // §S277d: Make light fixture materials emissive — glow at any distance, zero cost.
       // Uses matCache keys (rgba|ifcClass) — catches ALL material surfaces per fixture.
@@ -1699,8 +1695,7 @@ function setupTools(A) {
       // §GLOW_SPRITE_NAV_OFF (2026-08-07, user: "remove the others, no more those flimsy night
       // lights" — the round decorative sprite, not A._nightLights). Live nav now runs on the real
       // point lights ONLY (A._nightLights, bumped to 24 below) — no more static round dots. The
-      // sprite mechanism itself stays (still-render exit-sign glow still uses it, see effects.js
-      // startStillRefine), this just stops staging it for navigation.
+      // sprite mechanism itself was later deleted outright (§GLOW_LAYERS_OFF, 2026-09-25).
       if (A.controls && !A._nightControlsListener) {
         var _nightLastCamPos = A.camera.position.clone();
         // §57.3 (2026-09-11) — PARTIAL MITIGATION ONLY, re-baked and MEASURED, do not re-claim
@@ -1776,8 +1771,6 @@ function setupTools(A) {
       A._nightLights = [];
       A._nightLightByPos = null;   // stale pos-object keys otherwise survive the next toggle-on
       A._nightFixturePositions = null;
-      // §PHOTO_GLOW_SPRITE: night's sprites must not survive night mode
-      if (typeof A._glowUnstage === 'function') A._glowUnstage();
       // Unhook
       if (A.controls && A._nightControlsListener) {
         A.controls.removeEventListener('change', A._nightControlsListener);
@@ -1802,9 +1795,8 @@ function setupTools(A) {
   };
 
   // Fixture positions in WORLD space, with their §NIGHT_LIGHT_MIX colour attached. Cached after the
-  // first call and invalidated by A._loadNightFixtures(true). Two consumers: the point lights below
-  // and §PHOTO_GLOW_SPRITE in effects.js — the sprite at a fixture and the light at that fixture
-  // must be the same position and the same colour, so both read this one list.
+  // first call and invalidated by A._loadNightFixtures(true). Consumers: the point lights below and
+  // effects.js's still staging (§LAMP_SHAPE_COLOUR, §FIXTURE_EMISSIVE) — one list, one position per lamp.
   // A.ifc2three is the ONLY DB->world mapping; three attempts to reinvent it put a probe camera
   // inside walls (see NIGHT_AND_FIXTURE_LIGHTING.md).
   A._nightFixtureWorldPositions = function() {
@@ -1819,44 +1811,14 @@ function setupTools(A) {
         // §NIGHT_PL_INTENSITY_HEURISTIC — style-convention multiplier by name-pattern, NOT real
         // photometric data (see A.nightLightIntensityMult for the full investigation/framing).
         p.__intensityMult = A.nightLightIntensityMult(f.name);
-        // §GLOW_TRUE_BOTTOM (2026-08-07, replaces §GLOW_EMIT_DOWN's half-bbox-height guess — see
-        // NIGHT_AND_FIXTURE_LIGHTING.md §GLOW_TRUE_BOTTOM for the numeric witness). The OLD formula
-        // `bbox_z/2 + 0.12` assumed center_z sits at the bbox MIDPOINT. It doesn't: extractIFCtoDB.py
-        // stores center_z as the IFC PLACEMENT ORIGIN translation, and bbox_z as the full world AABB
-        // height — the two only coincide when a fixture's mesh happens to be symmetric about its own
-        // origin. Measured on Hospital: a recessed troffer (symmetric mesh) was off by 4mm — noise.
-        // A suspended linear pendant (origin at the ceiling attach point, mesh mostly BELOW it) was
-        // off by 196mm — the pendant hangs from the origin, so almost none of its height is above it.
-        // Real fix: read the ACTUAL local bounding box of the fixture's own mesh (already loaded for
-        // rendering, same Y-axis convention as A.blobToGeometry — local Y === IFC Z, no extra math)
-        // instead of guessing from a symmetric assumption. GLOW_LENS_CLEARANCE below is the same
-        // small physical clearance effects.js already uses to clear the fixture's own depth-test —
-        // reused here, not reinvented, for the same reason.
-        var GLOW_LENS_CLEARANCE = 0.03;
-        p.__drop = null;
-        if (f.ghash && A.meshCache && A.meshCache[f.ghash]) {
-          var _geo = A.meshCache[f.ghash];
-          if (!_geo.boundingBox) _geo.computeBoundingBox();
-          if (_geo.boundingBox && isFinite(_geo.boundingBox.min.y)) {
-            p.__drop = -_geo.boundingBox.min.y + GLOW_LENS_CLEARANCE;
-          }
-        }
-        if (p.__drop === null) {
-          // Fallback only — mesh not streamed in yet, or a synthetic/room-fallback fixture with no
-          // geometry_hash. Old heuristic, kept as a documented approximation, not a silent guess.
-          p.__drop = (f.h || 0) / 2 + 0.12;
-        }
-        // §GLOW_LENS_QUAD — real fixture footprint + yaw, still-render lens only (see effects.js).
+        // Real fixture footprint + yaw (MODEL data bbox_x/bbox_y/rotation_z) — kept for the
+        // §FIXTURE_EMISSIVE follow-up (emissive shapes for lamps with no emissive mesh).
         p.__bw = f.bw || 0; p.__bd = f.bd || 0; p.__rz = f.rz || 0;
-        // §GLOW_BUILDUP_GATE — null for synthetic per-storey fallback fixtures (no real element to
-        // gate against); real IFC rows carry the guid so a buildup bake can withhold the glow until
+        // §NIGHT_BUILDUP_GATE — null for synthetic per-storey fallback fixtures (no real element to
+        // gate against); real IFC rows carry the guid so a buildup bake can withhold the light until
         // Time Machine has actually placed that fixture (see effects.js A._tmIsVisible).
         p.__guid = f.guid || null;
         p.__ghash = f.ghash || null;   // §LAMP_SHAPE_COLOUR — shape read from the fixture's own mesh
-        // §NIGHT_CEILING_PLANT — true only for the last-resort synthetic tier; gates the
-        // still-render lens quad IN alongside real named fixtures (guid set), while tier-2's
-        // any-overhead-element pick (guid null, presentation unset) stays PL-only.
-        p.__presentation = !!f.presentation;
         return p;
       });
     }
@@ -1922,12 +1884,11 @@ function setupTools(A) {
     }
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
-    // §NIGHT_BUILDUP_GATE (2026-09-05) — mirrors §GLOW_BUILDUP_GATE (effects.js ~L4630): a fixture
+    // §NIGHT_BUILDUP_GATE (2026-09-05): a fixture
     // with no guid (synthetic per-storey fallback, no real element to gate against) is always
     // eligible; a real fixture is only eligible to contribute a PointLight once Time Machine has
-    // actually placed it — the SAME predicate the decorative glow sprite already applies to this
-    // exact same position list, so a PointLight and its glow sprite can never disagree about
-    // buildup state. A._tmIsVisible defaults to true when TM is not driving the scene at all, so
+    // actually placed it (the decorative glow sprite that once shared this predicate was deleted by
+    // §GLOW_LAYERS_OFF, 2026-09-25). A._tmIsVisible defaults to true when TM is not driving the scene at all, so
     // plain Night Mode/navigation with no buildup active is unaffected (visPos === allPos).
     // `allPos` itself stays UNFILTERED below — it also sizes the frozen §NIGHT_BAKE_POOL, which
     // must have enough slots for fixtures placed LATER in the buildup, not just those placed now.
@@ -2101,8 +2062,7 @@ function setupTools(A) {
     // §NIGHT_BUILDUP_GATE witness (2026-09-05) — deduped so navigation doesn't spam a line per
     // frame; logs whenever any of the three counts changes. Invariant asserted every time:
     // lit(needed) <= placed(visPos) <= total(allPos) — a fixture cannot light before it is placed,
-    // and cannot be placed if it doesn't exist. Cross-check against effects.js's own
-    // §GLOW_LENS_QUAD/§PHOTO_GLOW_SPRITE_GATE staged-count lines nearby — same predicate, same list.
+    // and cannot be placed if it doesn't exist.
     if (allPos.length !== _nbgLastTotal || visPos.length !== _nbgLastPlaced || needed.length !== _nbgLastLit) {
       _nbgLastTotal = allPos.length; _nbgLastPlaced = visPos.length; _nbgLastLit = needed.length;
       console.log('§NIGHT_BUILDUP_GATE total=' + allPos.length + ' placed=' + visPos.length +

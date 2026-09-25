@@ -87,7 +87,7 @@
 // its _origMatrix refs after TM had zero-scaled them and "restored" zero. Also §CPE_CLIP_REVEAL_FILM_T
 // (cinema_maxq.js: the Reveal reads film time, not clip-local time) + dev-only --clip/--tap in
 // cli_silent_bake.js. dlod.js?v, time_machine.js?v, cinema_maxq.js?v bumped in viewer.html.
-// v1142 (2026-09-04) §CPE_REVEAL_LENS_QUAD_OFF: the §GLOW_LENS_QUAD path never honoured
+// v1142 (2026-09-04) §CPE_REVEAL_LENS_QUAD_OFF: the still-render glow quad path (deleted v1410) never honoured
 // A._cpeRevealLightsOff — §CPE_TAIL_LIGHTS_ALL_ONLY turned off the round sprite and the point
 // lights for a one-discipline Reveal slot, but the additive lens quads kept drawing over the trade
 // being revealed. Gated by zeroing the material colour (not by teardown, so §R10's stage-keep guard
@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1397';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1420';   // bump on each deploy; per-change detail is the git commit message.
 // v1248 (2026-09-24) §SURFACE_R10: new viewer/surface_r10.js (single-style window pane/frame + door hardware/leaf split,
 //   a port of the r10 measurement); streaming.js draws split openings with geometry groups + a material array and a
 //   pane-discarding shadow depth material. viewer.html streaming.js?v=73->74 + surface_r10.js?v=1 in the SAME commit.
@@ -448,7 +448,7 @@ const CACHE_VERSION = 'v1397';   // bump on each deploy; per-change detail is th
 // (material-injection affordance). tools.js?v=42->43, viewer.html CSS — both in PRECACHE_ASSETS.
 // Witness: witness_sunglass_grouping_rules.js.
 // v1092 (2026-08-27) §R10 (bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §7, extends R1's
-// §MAXQ_STAGE_KEEP contract): the MaxQ bake's per-frame §GLOW_LENS_QUAD rebuild (viewer/effects.js)
+// §MAXQ_STAGE_KEEP contract): the MaxQ bake's per-frame glow quad rebuild (deleted v1410; viewer/effects.js)
 // now skips the dispose+rebuild when the TM-visible fixture count is unchanged since the last
 // stage — its geometry never reads A.camera, unlike the round glow sprite and §NIGHT_STILL_LIGHTS
 // (both untouched, both correctly camera-dependent). effects.js?v=26->27, both in PRECACHE_ASSETS.
@@ -656,8 +656,8 @@ const CACHE_VERSION = 'v1397';   // bump on each deploy; per-change detail is th
 // regenerate the 1,105-element-wider repair instead of replaying a cached pre-fix schedule.
 // Collided with #1337's independent same-day v1020 bump (glow-lens soft-edge/shape-fit, kept below)
 // — took one past it, per this file's own KEEP-BOTH/take-the-higher merge convention.
-// v1020 (2026-08-13) §GLOW_LENS_SOFT_EDGE + §GLOW_LENS_SHAPE_FIT: still-render fixture glow quads
-// (effects.js _glowLensOn) now use a feathered-rectangle canvas texture instead of a flat
+// v1020 (2026-08-13) soft-edge + shape-fit: still-render fixture glow quads (deleted v1410)
+// now use a feathered-rectangle canvas texture instead of a flat
 // untextured plane, and split round-ish fixtures (bbox aspect < 1.25) onto the round soft texture
 // instead of forcing every fixture into a rectangle — bump so returning browsers get the softened/
 // shape-fit look instead of the old hard-edged one.
