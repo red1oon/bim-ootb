@@ -14,12 +14,32 @@
   var P = new Float32Array(4), ORG = new Float32Array(4), DIM = new Float32Array(4);
   var PZ = new Float32Array(MAX_PL), SZ = new Float32Array(MAX_SL);   // zone per point / spot light, in three's light order
 
+  // ══ §SOURCED_LIGHT_LINK — SPEC (2026-09-25, fix/sl-gl-link) ══
+  // CAUSE (measured, not guessed): GLSL ES has no real calls — the compiler inlines every function at each call site.
+  // slPass() called slFragZone() (14 texelFetch, two 3-step + one 8-step loop, a mat4 inverse) and three's
+  // #pragma unroll_loop pastes the point/spot loop bodies once per light, so a Hospital still (155 point + 19 spot lights)
+  // compiled 176 copies of that body per lit program (+4 in slSkyKeep, +1 in the zone-debug override), 93 programs per
+  // Alt+S. Measured with the NVIDIA GL driver shader cache off (slprobe, sync LINK_STATUS, default pose): link total
+  // 129.8 s, single links up to 23.9 s; today's shaders (&sourced=0): 28.9 s total, 1.9 s max. Mesa Intel (the headless
+  // errprobe GPU) never finished: Chrome killed the GPU process ("GPU process exited unexpectedly: exit_code=133" =
+  // RESULT_CODE_HUNG, the GPU watchdog) ~2 min after "§SOURCED_LIGHT on"; from then every getProgramParameter(LINK_STATUS)
+  // is false with EMPTY info logs on every program, patched or not (MeshDepth, Points, Sky, Output...) — the
+  // "VALIDATE_STATUS false" + 1282 storm — and 660 ms later "Context Lost". The RTX 4060 + ANGLE/Vulkan Chrome dies the
+  // same way (a slower compiler than NVIDIA GL). The GLSL was never invalid (a fresh context compiles fine after the
+  // storm; every captured program links). Texture units (17 of 32), uniform vectors and the R16UI upload were ruled out
+  // (upload before=0 after=0). The default pose only differs by how many programs one cube-face render compiles in one
+  // blocking burst while the whole building is being drawn (café pose, same shaders: 59.2 s total, 1.95 s max).
+  // FIX: the fragment's zone is computed ONCE per fragment (_slFZ, right after `IncidentLight directLight;` in
+  // lights_fragment_begin, before the light loops) and slPass()/slSkyKeep()/the debug override read that value: one copy
+  // of slFragZone per shader instead of 181. Per-light cost is now two compares. Same call-site text, same semantics.
+  // After: 46.4 s total, 1.7 s max (default pose, same probe) — the single-link maximum is back at today's shaders'.
   var PARS = [
     '#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )',
     'uniform vec4 uSLParams; uniform vec4 uSLOrg; uniform vec4 uSLDim; uniform highp usampler3D uSLZone;',
     '#if NUM_POINT_LIGHTS > 0', 'uniform vec4 uSLPZ[ ( NUM_POINT_LIGHTS + 3 ) / 4 ];', '#endif',
     '#if NUM_SPOT_LIGHTS > 0', 'uniform vec4 uSLSZ[ ( NUM_SPOT_LIGHTS + 3 ) / 4 ];', '#endif',
-    'float _slFZ = -2.0;',
+    // the fragment's zone, set ONCE by the line §SOURCED_LIGHT_LINK inserts into lights_fragment_begin; -1 = unknown (lit as today)
+    'float _slFZ = -1.0;',
     // raw cell: -1 off grid, 65535 solid, 0 outside, 1.. zone
     'float slZoneAt( vec3 w ) {',
     '  ivec3 c = ivec3( floor( ( w - uSLOrg.xyz ) / uSLParams.y ) );',
@@ -27,9 +47,8 @@
     '  return float( texelFetch( uSLZone, c, 0 ).r );',
     '}',
     // fragment zone: step +0.2/+0.5/+0.8 m along the normal, first non-solid cell. Outside (0) and off the grid -> OUTSIDE
-    // (65534); all three solid -> -1 = unknown (lit as today)
+    // (65534); all three solid -> -1 = unknown (lit as today). Called exactly once per fragment (§SOURCED_LIGHT_LINK).
     'float slFragZone( vec3 posView, vec3 nView ) {',
-    '  if ( _slFZ > -1.5 ) return _slFZ;',
     '  mat4 vi = inverse( viewMatrix );',
     // IFC meshes often wind inward: face the normal toward the eye first (the side the viewer sees), then try the far side
     '  vec3 nf = ( dot( nView, - posView ) < 0.0 ) ? - nView : nView;',
@@ -48,26 +67,28 @@
     '      z = slZoneAt( wp + wn * 0.5 + e * r ); if ( z != 65535.0 ) break;',
     '    }',
     '  }',
-    '  _slFZ = ( z == 65535.0 ) ? -1.0 : ( ( z < 0.5 ) ? 65534.0 : z );',
-    '  return _slFZ;',
+    '  return ( z == 65535.0 ) ? -1.0 : ( ( z < 0.5 ) ? 65534.0 : z );',
     '}',
-    // a bound light (lz >= 1, OUTSIDE included) reaches only fragments of its own zone; unbound (0) and unknown: as today
+    // a bound light (lz >= 1, OUTSIDE included) reaches only fragments of its own zone; unbound (0) and unknown: as today.
+    // posView/nView are kept for the call sites' sake; the zone is the once-computed _slFZ (§SOURCED_LIGHT_LINK)
     'float slPass( float lz, vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 || lz < 0.5 ) return 1.0;',
-    '  float fz = slFragZone( posView, nView );',
-    '  return ( fz < -0.5 || abs( fz - lz ) < 0.5 ) ? 1.0 : 0.0;',
+    '  return ( _slFZ < -0.5 || abs( _slFZ - lz ) < 0.5 ) ? 1.0 : 0.0;',
     '}',
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
-    '  float fz = slFragZone( posView, nView );',
     // unknown (-1: every lookup solid) is a building surface too (wall foot, ceiling-panel strip): it loses the sky like an
     // indoor one. Left at 1 it took the full hemi, and the §METER's +4-6 stops turned it purple (Clinic/Hospital 2026-09-25)
-    '  return ( fz < -0.5 || ( fz > 0.5 && fz < 65533.5 ) ) ? uSLParams.z : 1.0;',
+    '  return ( _slFZ < -0.5 || ( _slFZ > 0.5 && _slFZ < 65533.5 ) ) ? uSLParams.z : 1.0;',
     '}',
     '#else',
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
     'float slSkyKeep( vec3 posView, vec3 nView ) { return 1.0; }',
     '#endif', ''].join('\n');
+  // §SOURCED_LIGHT_LINK: the one slFragZone call per fragment, before three's light loops (geometryPosition/geometryNormal
+  // are declared at the top of lights_fragment_begin). Staged (x) or zone-debug (w) only: nav pays nothing.
+  var ONCE = '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
+    '_slFZ = ( uSLParams.x > 0.5 || uSLParams.w > 0.5 ) ? slFragZone( geometryPosition, geometryNormal ) : -1.0;\n#endif\n';
 
   function install(THREE) {
     if (installed) return;
@@ -75,6 +96,9 @@
     if (!THREE || !THREE.ShaderChunk) { console.warn('§SOURCED_LIGHT install skipped: THREE.ShaderChunk missing'); return; }
     var C = THREE.ShaderChunk, ok = 0, fb = C.lights_fragment_begin;
     orig = { lights_fragment_begin: C.lights_fragment_begin, lights_fragment_maps: C.lights_fragment_maps, lights_pars_begin: C.lights_pars_begin, dithering_fragment: C.dithering_fragment };
+    // §SOURCED_LIGHT_LINK: the once-per-fragment zone, before the point loop (must land, or slPass/slSkyKeep see -1 = as today)
+    var d0 = 'IncidentLight directLight;';
+    if (fb.indexOf(d0) >= 0) { fb = fb.replace(d0, d0 + ONCE); ok++; } else console.warn('§SOURCED_LIGHT_LINK anchor "IncidentLight directLight;" missing: zones inert');
     var p0 = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
     if (fb.indexOf(p0) >= 0) { fb = fb.replace(p0, p0 + '\n\t\tdirectLight.color *= slPass( uSLPZ[ UNROLLED_LOOP_INDEX / 4 ][ UNROLLED_LOOP_INDEX - ( UNROLLED_LOOP_INDEX / 4 ) * 4 ], geometryPosition, geometryNormal );'); ok++; }
     var s0 = 'getSpotLightInfo( spotLight, geometryPosition, directLight );';
@@ -95,7 +119,7 @@
     // output chunk (R = zone mod 256, G = zone / 256, B = 1 when unknown), so a readback compares shader zones with the CPU.
     if (C.dithering_fragment && C.dithering_fragment.indexOf('uSLParams') < 0) {
       C.dithering_fragment = C.dithering_fragment + '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
-        'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = slFragZone( - vViewPosition, normal ); float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : 0.0, 1.0 ); }\n' +
+        'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : 0.0, 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
         'if ( uSLParams.w > 1.5 ) { mat4 _vi = inverse( viewMatrix ); vec3 _wp = ( _vi * vec4( - vViewPosition, 1.0 ) ).xyz; vec3 _wn = normalize( ( _vi * vec4( normal, 0.0 ) ).xyz ); vec3 _q = _wp + _wn * 0.2;\n' +
         '  if ( uSLParams.w < 2.5 ) { float _r = slZoneAt( _q ); float _ur = _r < 0.0 ? 0.0 : _r; gl_FragColor = vec4( mod( _ur, 256.0 ) / 255.0, floor( _ur / 256.0 ) / 255.0, _r < 0.0 ? 1.0 : 0.0, 1.0 ); }\n' +
         '  else if ( uSLParams.w < 3.5 ) { vec3 _g = ( _q - uSLOrg.xyz ) / ( uSLParams.y * uSLDim.xyz ); gl_FragColor = vec4( clamp( _g, 0.0, 1.0 ), 1.0 ); }\n' +
@@ -126,7 +150,7 @@
       };
       A.renderer.debug.__slGuard = true;
     };
-    console.log('§SOURCED_LIGHT installed patchedLines=' + ok + '/7 (point, spot, ambient, hemi, env irradiance, env radiance, zone-debug) — inert until an Alt+S stages it');
+    console.log('§SOURCED_LIGHT installed patchedLines=' + ok + '/8 (zone-once, point, spot, ambient, hemi, env irradiance, env radiance, zone-debug) — inert until an Alt+S stages it');
   }
 
   function dial(A, key, name, def, lo, hi) {
