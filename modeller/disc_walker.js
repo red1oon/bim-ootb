@@ -1439,13 +1439,16 @@
   // SCOPE, MEASURED not assumed: `ad_mep_pattern` carries rows for exactly two disciplines, 'CW' (pressurised
   // cold-water supply) and 'SP' (gravity soil/waste drain) — both PLUMBING sub-networks (routewalker.js's own
   // RW_DISC_TO_COORD: CW/SP→DWATER/DRAIN, same table PLB→DWATER). So this bridges disc_walker's 'PLB' discipline
-  // to a CW pass + an SP pass. ELEC/ACMV/FP have ZERO ad_mep_pattern rows (checked directly against ERP.db) —
-  // they honestly REFUSE via this bridge (no pattern to walk), which is the correct refuse-beats-fabricate
-  // answer, not a bug: covering them would need someone to MINE+author their own pattern rows first (a data
-  // task), not a code generalization this bridge can manufacture. NON-INVENT: every anchor is a real element
+  // to a CW pass + an SP pass. ELEC/ACMV/FP had ZERO ad_mep_pattern rows until §MEP-ROUTE-DISC (2026-09-26,
+  // MODELLER_MASTER NEXT #4) MINED and authored them the same way CW/SP were (IFCtoERP.java seedMepPatterns:
+  // axis-dominance counts of the discipline's real straight segments + measured nearest-element node roles; every
+  // row's `notes` cites its counts and example guids, `source_building` the IFC). A discipline absent from the
+  // map below still honestly REFUSES (no pattern to walk) — refuse-beats-fabricate. NON-INVENT: every anchor is a real element
   // position (door/stair/measured-generated-fixture) or a real wall-avoiding corridor waypoint; the pairing/
   // gradient/clash logic is routewalker.js's own proven code, called, never re-implemented.
-  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'] };                 // disc_walker disc -> routewalker pattern discipline(s)
+  //   FP  → FP_TERMINAL_01 (D1): 2,672 'jkrME_pipe_Poly Steel' IfcPipeSegment of SJTII_Terminal — the nearest pipe of
+  //         909/909 IfcFireSuppressionTerminal (median 0.053 m); X 1,092 / Y 380 / Z 1,205 drops; product FP_Drop_Pipe.
+  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'], FP: ['FP'] };     // disc_walker disc -> routewalker pattern discipline(s)
   // real IfcStair columns, deduped by XY (mirrors modeller.html's own _seedRisers) — the riser/STACK candidates
   // SeedTrunk climbs and this bridge treats as the SP discipline's STACK proxy.
   function _risers(bdb) {
@@ -1541,7 +1544,7 @@
       return { segs: [], refused: true, reason: 'routewalker.js mep_rw.db pattern table not loaded (call rwInit first)' };
     }
     var rwDiscs = (opts.rwPatternDisc || _RW_PATTERN_DISC)[disc];
-    if (!rwDiscs) return { segs: [], refused: true, reason: 'no ad_mep_pattern coverage for ' + disc + ' (CW/SP only, PLB-mapped)' };
+    if (!rwDiscs) return { segs: [], refused: true, reason: 'no ad_mep_pattern coverage for ' + disc + ' (pattern-mapped: ' + Object.keys(opts.rwPatternDisc || _RW_PATTERN_DISC).join('/') + ')' };
     var sub = opts.storeys || substrate(bdb);
     if (!sub.length) return { segs: [], refused: true, reason: 'no habitable storeys' };
     var placements = opts.placements || place(disc, sub, bdb);
@@ -1584,8 +1587,12 @@
         // Authoritative post-filter (see _envelopeClash above) — routewalker.js's own internal clash-skip
         // mis-orients its box for horizontal runs, so re-check every emitted segment properly before accepting
         // it. halfWidth mirrors routewalker.js's OWN measured pipe cross-section (RW_PIPE_CROSS/1000/2), not an
-        // invented constant; opts.pipeHalfWidth lets a caller override for a witness.
-        var halfW = (opts.pipeHalfWidth > 0) ? opts.pipeHalfWidth : (ROOT.RW_PIPE_CROSS ? ROOT.RW_PIPE_CROSS / 1000 / 2 : 0.0375);
+        // invented constant; opts.pipeHalfWidth lets a caller override for a witness. §MEP-ROUTE-DISC: a bulky
+        // discipline (a duct) is checked at ITS real half-section (rwCrossSectionFor, WalkerDoctrine §8) when that is
+        // larger — max(), so CW/SP (25.4 / 48.3 mm, both under 75 mm) keep the exact half-width they had (PLB runs unchanged).
+        var _xsB = (typeof ROOT.rwCrossSectionFor === 'function') ? ROOT.rwCrossSectionFor(rwd) : null;
+        var _realHalf = (_xsB && _xsB.real) ? Math.max(_xsB.w, _xsB.h) / 2 : 0;
+        var halfW = (opts.pipeHalfWidth > 0) ? opts.pipeHalfWidth : Math.max(ROOT.RW_PIPE_CROSS ? ROOT.RW_PIPE_CROSS / 1000 / 2 : 0.0375, _realHalf);
         var envClashed = 0;
         out.forEach(function (s) {
           if (_envelopeClash(s.from, s.to, arcEnv, halfW)) { envClashed++; return; }
@@ -2191,12 +2198,16 @@
     }
     var pat = routePattern(disc, bdb, { placements: pl, buildingType: buildingName, storeys: sub });
     if (pat.refused) { console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + pat.reason); return { rc: rc, patternInfo: null }; }
+    // Per-rule detail (§MEP-ROUTE-DISC): kept/survivors@anchors — "survivors" = pairs routewalker's OWN clash-skip let
+    // through, "kept" = those that also pass this bridge's post-filter. A 0/2@501 is the engine refusing (recorded,
+    // SampleCastle FP 2026-09-26), a 0/0@0 is no anchors at all — different causes, now told apart in the log.
+    var _byRule = function () { return (pat.byRule && pat.byRule.length ? ' [' + pat.byRule.map(function (b) {
+      return b.from + ':' + (b.skipped || (b.segs + '/' + (b.segs + (b.noNbr || 0)) + '@' + (b.anchors || 0))); }).join(' ') + ']' : ''); };
     if (!pat.segs.length) {
-      console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' EMPTY placements=' + pl.length + ' storeyRekeyed=' + rekeyed +
-        (pat.byRule && pat.byRule.length ? ' [' + pat.byRule.map(function (b) { return b.from + ':' + (b.skipped || (b.segs + '/' + (b.segs + (b.noNbr || 0)))); }).join(' ') + ']' : ''));
+      console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' EMPTY placements=' + pl.length + ' storeyRekeyed=' + rekeyed + _byRule());
       return { rc: rc, patternInfo: null };
     }
-    console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' ROUTED segs=' + pat.segs.length + ' placements=' + pl.length + ' storeyRekeyed=' + rekeyed);
+    console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' ROUTED segs=' + pat.segs.length + ' placements=' + pl.length + ' storeyRekeyed=' + rekeyed + _byRule());
     return { rc: { segs: pat.segs, byRule: pat.byRule }, patternInfo: pat };
   }
 
@@ -2401,6 +2412,8 @@
 
   var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
+    // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
+    patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },
     // §MEP-REROUTE: the walk's own bridge, callable on op-log placements (modeller.html _reRouteMovedWalks)
     bridgeRoute: function (disc, bdb, buildingName, placements) { var b = _bridgeIfEmpty(disc, bdb, buildingName, placements, { segs: [], byRule: [] }, {}); return { segs: b.rc.segs, patternBridge: b.patternInfo }; },
     gate: gate, storeyFloors: storeyFloors, repRules: repRules, order: order, clearance: clearance,

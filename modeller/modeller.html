@@ -3745,11 +3745,14 @@ async function _discWalkOne(disc, ctx, opts) {
     // §CAMPAIGN M1: lazy-load mep_rw.db's ad_mep_pattern table (SAME _rwReadyOnce the BOM-drop flow already
     // uses) so DiscWalker.dwWalk's routeChains-0 → routePattern bridge (disc_walker.js) can pair ARC-derived
     // anchors through routewalker.js's proven pattern engine instead of refusing for "not loaded yet". Gated
-    // on disc==='PLB' — the ONLY discipline routePattern's _RW_PATTERN_DISC map covers today (ad_mep_pattern
-    // has CW/SP rows only) — so ELEC/ACMV/FP/STR walks never pay this fetch+parse cost for a bridge they can't
-    // use (W-E2E-WALK's own timing gate caught the unconditional version adding latency to every discipline).
+    // on the disciplines routePattern's _RW_PATTERN_DISC map covers (DiscWalker.patternDiscs(); was a literal
+    // 'PLB' while ad_mep_pattern had CW/SP rows only — §MEP-ROUTE-DISC 2026-09-26 mined FP/ACMV/ELEC patterns, and
+    // Walk-ALL walks ACMV/ELEC BEFORE PLB, so the literal left them refusing "not loaded") — so STR/roof walks
+    // never pay this fetch+parse cost for a bridge they can't use (W-E2E-WALK's own timing gate caught the
+    // unconditional version adding latency to every discipline).
     // Best-effort: a failed/slow fetch does NOT block the walk — routePattern's own guard refuses honestly.
-    if (disc === 'PLB') { try { await _rwReadyOnce(); } catch (e) { /* routePattern refuses cleanly if this never resolves */ } }
+    var _patDiscs = (window.DiscWalker && window.DiscWalker.patternDiscs) ? window.DiscWalker.patternDiscs() : ['PLB'];
+    if (_patDiscs.indexOf(disc) >= 0) { try { await _rwReadyOnce(); } catch (e) { /* routePattern refuses cleanly if this never resolves */ } }
     if (!window.__dwBuf) { setStat(disc + ' — open a building first'); console.log('§DISC-WALK ' + disc + ' no-building (open a resident first)'); return { refused: true, reason: 'no building open', placed: 0 }; }
     var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));   // read-only re-open of the open building
     // §ANCHOR-BLIND (W-E2E-VOID-ANCHOR): the disc-walkers must see the PRE-ANCHOR substrate — a void-anchor

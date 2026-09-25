@@ -18,7 +18,7 @@
 
 // ─── Constants ───────────────────────────────────────────────
 var RW_PREFIX = 'RW2D-';
-var MEP_RW_DB_URL = 'mep_rw.db?v=2';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room)
+var MEP_RW_DB_URL = 'mep_rw.db?v=3';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room; v3 adds the FP_TERMINAL_01 ad_mep_pattern rows, §MEP-ROUTE-DISC D1)
 // §RW-CROSSSECTION (WalkerDoctrine.md §8, 2026-07-07): RW_PIPE_NOMINAL_MM/RW_PIPE_CROSS below are BARE
 // INVENTED LITERALS with no product/BOM-line/IFC element behind them — confirmed making every pipe/duct
 // segment (every discipline) render as an identical 50mm SQUARE prism, ~2.3x oversized vs the one real
