@@ -18,7 +18,7 @@
 
 // ─── Constants ───────────────────────────────────────────────
 var RW_PREFIX = 'RW2D-';
-var MEP_RW_DB_URL = 'mep_rw.db?v=3';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room; v3 adds the FP_TERMINAL_01 ad_mep_pattern rows, §MEP-ROUTE-DISC D1)
+var MEP_RW_DB_URL = 'mep_rw.db?v=4';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room; v3/v4 add the FP_TERMINAL_01 / ACMV_TERMINAL_01 ad_mep_pattern rows, §MEP-ROUTE-DISC D1/D2)
 // §RW-CROSSSECTION (WalkerDoctrine.md §8, 2026-07-07): RW_PIPE_NOMINAL_MM/RW_PIPE_CROSS below are BARE
 // INVENTED LITERALS with no product/BOM-line/IFC element behind them — confirmed making every pipe/duct
 // segment (every discipline) render as an identical 50mm SQUARE prism, ~2.3x oversized vs the one real
@@ -80,6 +80,18 @@ var RW_REAL_CROSSSECTION = {
     w: 0.0213317871, h: 0.0213356018,   // measured local bbox X/Y extent, metres — component_library.db
     product: 'FP_Drop_Pipe', ifc_class: 'IfcPipeSegment',
     source: 'library/component_library.db component_definitions (name=FP_Drop_Pipe), verified 2026-07-07'
+  },
+  // §MEP-ROUTE-DISC D2 (2026-09-26): ACMV duct, ONE cited real instance of SJTII_Terminal's own ductwork (bim-ootb
+  // buildings/Terminal_extracted.db; all 568 IfcDuctSegment have rotation_z = 0, so the two short AABB extents ARE the
+  // section). Type 'Rectangular Duct:jkrME_duct_Radius Elbows / Taps' (420 straight segments; Flex Duct Round 129,
+  // Mitered 18, Round 1 are the others). Section MODE over the 420: 150×150 mm on 53 (then 300×200 = 29, 300×250 = 21,
+  // 400×300 = 21 … up to 1500×550 for the mains). 150×150 is the branch/tap size (of the 53: X 19 / Y 4 / Z 30). ONE
+  // product per discipline is the stated simplification (L3 precedent: CW at the mains size) — a mains size is red1's
+  // call (SPEC_MEP_ROUTE_DISC Q2), not this file's.
+  ACMV: {
+    w: 0.15, h: 0.15,                   // measured bbox cross extents, metres (run length 2.9935 m)
+    product: 'Terminal_Rect_Duct_150x150', ifc_class: 'IfcDuctSegment',
+    source: 'buildings/Terminal_extracted.db guid T0_Terminal_2xYwS5_$XEdxC3K5YP8DZ9 "Rectangular Duct:jkrME_duct_Radius Elbows / Taps:2502617" Aras 02 (SJTII_Terminal), measured 2026-09-26'
   }
 };
 // rwCrossSectionFor(disc) -> the REAL cross-section for a RouteWalker discipline code (CW/SP/FP/ACMV/ELEC),

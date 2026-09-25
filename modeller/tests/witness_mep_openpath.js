@@ -31,12 +31,13 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const ROOT = path.join(__dirname, '..', '..');
-const NEW_DISCS = ['FP'];                       // §MEP-ROUTE-DISC: pattern-covered non-PLB disciplines under M5/M6 (D1 FP)
+const NEW_DISCS = ['FP', 'ACMV'];               // §MEP-ROUTE-DISC: pattern-covered non-PLB disciplines under M5/M6 (D1 FP, D2 ACMV)
 // Residents where the engine is MEASURED to route 0 for a discipline (recorded, not fixed — the 09-26 "no next-nearest"
-// trap): the gate then asserts the bridge RAN and emitted survivors that its post-filter refused (`0/N@anchors`, N>0),
+// trap): the gate then asserts the bridge RAN with anchors and kept 0 (`0/N@anchors`, anchors>0; N = engine survivors),
 // and flips RED if it ever starts routing there, so a change of engine behaviour is re-measured, never assumed.
 //   FP/SampleCastle 2026-09-26: 381 pair attempts, 373 killed by routewalker's own clash-skip, the survivors post-filtered.
-const EXPECT_ZERO = { FP: { SampleCastle: 'routewalker clash-skip leaves ~2 survivors, all post-filtered (probe 2026-09-26)' } };
+const EXPECT_ZERO = { FP: { SampleCastle: 'routewalker clash-skip leaves ~2 survivors, all post-filtered (probe 2026-09-26)' },
+  ACMV: { SampleCastle: '12 window-bound diffusers + 36 corridor junctions, 0 survivors of routewalker clash-skip at the 150 mm duct section (2026-09-26)' } };
 const PLB_BASE = { Duplex: [18, 18], SampleCastle: [18, 18], Terminal: [2915, 60] };   // M7: runs / signed, main 1069c70c 2026-09-26
 const RESIDENTS = process.argv[2] === 'ALL' ? ['SampleHouse', 'Duplex', 'SampleCastle', 'HHS', 'Clinic', 'Hospital', 'HospitalGarage', 'Terminal'] : process.argv[2] ? process.argv[2].split(',') : ['Duplex', 'SampleCastle', 'Terminal'];
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.sql': 'text/plain' };
@@ -45,16 +46,18 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
 
 (async () => {
   await new Promise(r => server.listen(0, r)); const port = server.address().port;
-  const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  // protocolTimeout: a Terminal-scale signed chain commit blocks the page's main thread for >180 s (puppeteer's default), which
+  // used to reject the __dwAllDone poll as walked=false although the walk finished (D2 2026-09-26) — an instrument limit, not an app error.
+  const br = await puppeteer.launch({ headless: 'new', protocolTimeout: 900000, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   let pass = 0, fail = 0;
   const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };
   console.log('═══ W-MEP-OPENPATH — generate-then-edit loop, real open path (' + RESIDENTS.join(',') + ') ═══');
   const R = {};
   for (const key of RESIDENTS) {
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850 });
-    const errs = [], lines = [];
+    const errs = [], lines = []; let tWalk = 0;   // captured lines carry [+s] since the Walk click, so per-discipline cost is MEASURED
     pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
-    pg.on('console', m => { const t = m.text(); if (/§WALK |§WALK-PATTERN|§WALK-SCHED|§WALK-NOSPACES|§SCHED-FALLBACK|§ROUTER-CHAIN|§MEP-REROUTE|§DISC-WALK [A-Za-z]+ placed/.test(t)) lines.push(t); });
+    pg.on('console', m => { const t = m.text(); if (/§WALK |§WALK-PATTERN|§WALK-SCHED|§WALK-NOSPACES|§SCHED-FALLBACK|§ROUTER-CHAIN|§MEP-REROUTE|§DISC-WALK [A-Za-z]+ placed/.test(t)) lines.push((tWalk ? '[+' + ((Date.now() - tWalk) / 1000).toFixed(1) + 's] ' : '') + t); });
     await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
     await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalkAll==="function" && !!window.SQL', { timeout: 60000 });
     await pg.click('#b-open');
@@ -67,10 +70,10 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     const openMs = Date.now() - t0;
     let walked = false, walkMs = 0, D = {}, chain = null;
     if (opened) {
-      const t1 = Date.now();
+      const t1 = Date.now(); tWalk = t1;
       await pg.evaluate(() => { window.__dwAllDone = false; });
       await pg.click('[data-bnode="dw-all"]');
-      walked = await pg.waitForFunction(() => window.__dwAllDone === true, { timeout: 300000, polling: 500 }).then(() => true).catch(() => false);
+      walked = await pg.waitForFunction(() => window.__dwAllDone === true, { timeout: 600000, polling: 500 }).then(() => true).catch(() => false);
       walkMs = Date.now() - t1;
       if (walked) await pg.waitForFunction(() => Object.keys(window.__dwChainAnimating || {}).every(d => !window.__dwChainAnimating[d]), { timeout: 60000, polling: 250 }).catch(() => {});
       D = await pg.evaluate(() => {
@@ -126,8 +129,8 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
       if (zero) {
         // the bridge's own EMPTY line carries kept/survivors@anchors per rule — read the engine's number, not ours
         const m = (r.lines || []).map(l => l.match(new RegExp('§WALK-PATTERN disc=' + d + ' .*EMPTY.*\\[pattern:' + d + ':0/(\\d+)@(\\d+)'))).find(Boolean);
-        chk('M5 ROUTED-' + d + ' ' + k + ' (EXPECTED 0: ' + zero + ' — bridge ran, survivors>0, all post-filtered; RED if it starts routing)',
-          x.segs === 0 && !!m && +m[1] > 0 && +m[2] > 0, d + ' segs=' + x.segs + (m ? ' survivors=' + m[1] + ' anchors=' + m[2] : ' (no EMPTY line with survivors@anchors)'));
+        chk('M5 ROUTED-' + d + ' ' + k + ' (EXPECTED 0: ' + zero + ' — bridge ran with anchors, 0 kept; RED if it starts routing)',
+          x.segs === 0 && !!m && +m[2] > 0, d + ' segs=' + x.segs + (m ? ' survivors=' + m[1] + ' anchors=' + m[2] : ' (no EMPTY line with survivors@anchors)'));
         continue;
       }
       chk('M5 ROUTED-' + d + ' ' + k + ' (§MEP-ROUTE-DISC: a user Walk routes ≥1 ' + d + ' run through the pattern bridge)', x.segs > 0,

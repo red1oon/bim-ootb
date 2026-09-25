@@ -1448,7 +1448,10 @@
   // gradient/clash logic is routewalker.js's own proven code, called, never re-implemented.
   //   FP  → FP_TERMINAL_01 (D1): 2,672 'jkrME_pipe_Poly Steel' IfcPipeSegment of SJTII_Terminal — the nearest pipe of
   //         909/909 IfcFireSuppressionTerminal (median 0.053 m); X 1,092 / Y 380 / Z 1,205 drops; product FP_Drop_Pipe.
-  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'], FP: ['FP'] };     // disc_walker disc -> routewalker pattern discipline(s)
+  //   ACMV → ACMV_TERMINAL_01 (D2): 420 'Rectangular Duct:jkrME_duct_Radius Elbows / Taps' IfcDuctSegment of SJTII_Terminal,
+  //         X 204 / Y 156 / Z 60; 713 IfcDuctFitting junctions; 289 IfcAirTerminal fed by flex (157) or a tap (132). No
+  //         METER step: the Terminal models no AHU/plant. Product = the section mode 150×150 mm (RW_REAL_CROSSSECTION.ACMV).
+  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'], FP: ['FP'], ACMV: ['ACMV'] };   // disc_walker disc -> routewalker pattern discipline(s)
   // real IfcStair columns, deduped by XY (mirrors modeller.html's own _seedRisers) — the riser/STACK candidates
   // SeedTrunk climbs and this bridge treats as the SP discipline's STACK proxy.
   function _risers(bdb) {
