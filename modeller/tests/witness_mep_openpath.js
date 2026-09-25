@@ -17,7 +17,7 @@
  *   M4 SIGNED (L3)  — ≥1 routed run lands in the signed op-log as GEOM_SWEEP. RED on main 2026-09-24: SampleCastle
  *                     refuses 32/32 (§ROUTER-CHAIN-REFUSE, no real cross-section product, WalkerDoctrine §8).
  * Residents: default Duplex,SampleCastle,Terminal (one of each path: schedule / legacy / measured-band);
- * pass a comma list as argv[2] for others. Baseline (main b8f844fb): M0 ✅ M1 ✅ M2 ❌ M3 ✅ M4 ❌ (8/5).
+ * pass a comma list as argv[2] for others ("ALL" = the 8 residents). Prints §PRODUCTIVITY per resident (measured, no gate). Baseline (main b8f844fb): M0 ✅ M1 ✅ M2 ❌ M3 ✅ M4 ❌ (8/5).
  * After §WALK-BRIDGE-ALL + §RW-RUNBOX (L1+L2): 10/3 — PLB runs Duplex 18 · SampleCastle 18 · Terminal 2,893, all drawn;
  * run length median 2.2–3 m, max 24.9 m (Terminal). M4 stays red until L3 (a real CW/SP cross-section product).
  */
@@ -25,7 +25,7 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const ROOT = path.join(__dirname, '..', '..');
-const RESIDENTS = process.argv[2] ? process.argv[2].split(',') : ['Duplex', 'SampleCastle', 'Terminal'];
+const RESIDENTS = process.argv[2] === 'ALL' ? ['SampleHouse', 'Duplex', 'SampleCastle', 'HHS', 'Clinic', 'Hospital', 'HospitalGarage', 'Terminal'] : process.argv[2] ? process.argv[2].split(',') : ['Duplex', 'SampleCastle', 'Terminal'];
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.sql': 'text/plain' };
 const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/modeller/modeller.html';
   fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { r.writeHead(404); r.end('404'); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream', 'Accept-Ranges': 'bytes' }); r.end(b); }); });
@@ -41,7 +41,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850 });
     const errs = [], lines = [];
     pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
-    pg.on('console', m => { const t = m.text(); if (/§WALK |§WALK-PATTERN|§WALK-SCHED|§WALK-NOSPACES|§SCHED-FALLBACK|§ROUTER-CHAIN|§MEP-REROUTE/.test(t)) lines.push(t); });
+    pg.on('console', m => { const t = m.text(); if (/§WALK |§WALK-PATTERN|§WALK-SCHED|§WALK-NOSPACES|§SCHED-FALLBACK|§ROUTER-CHAIN|§MEP-REROUTE|§DISC-WALK [A-Za-z]+ placed/.test(t)) lines.push(t); });
     await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
     await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalkAll==="function" && !!window.SQL', { timeout: 60000 });
     await pg.click('#b-open');
@@ -67,21 +67,29 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
         roster.forEach(d => {
           const pl = (window.__dwWalks && window.__dwWalks[d]) || [], segs = (window.__dwChains && window.__dwChains[d]) || [];
           const tubes = root ? root.children.filter(o => o.userData && o.userData.dwChain === d) : [];
-          out[d] = { placed: pl.length, bound: pl.filter(p => p.host).length, segs: segs.length,
+          out[d] = { placed: pl.length, bound: pl.filter(p => p.host).length, clash: pl.filter(p => p.clash).length, gated: pl.filter(p => p.gated && !p.clash).length, segs: segs.length,
             bridge: segs.filter(s => s.mode === 'pattern-bridge').length,
             runLen: (() => { const L = segs.map(s => Math.hypot(s.to[0] - s.from[0], s.to[1] - s.from[1], s.to[2] - s.from[2])).sort((a, b) => a - b);
               return L.length ? { median: +L[L.length >> 1].toFixed(2), p95: +L[Math.floor(L.length * 0.95)].toFixed(2), max: +L[L.length - 1].toFixed(2) } : null; })(),
             tubes: tubes.reduce((s, m) => s + (m.isInstancedMesh ? m.count : 1), 0),
-            sweeps: geom.filter(o => o.op_type === 'GEOM_SWEEP' && o.parameters && o.parameters._dw && o.parameters._dw.disc === d).length };
+            sweeps: geom.filter(o => o.op_type === 'GEOM_SWEEP' && o.parameters && o.parameters._dw && o.parameters._dw.disc === d).length,
+            fits: geom.filter(o => o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters._dw && o.parameters._dw.disc === d && o.parameters._dw.fit).length };
         });
         return out;
       });
       chain = await pg.evaluate(async () => { try { const db = await window.Bonsai.oplog._ensureDb(); return !!(await window.KernelOps.verifyChain(db)).ok; } catch (e) { return 'ERR:' + e.message; } });
     }
     R[key] = { opened, walked, D, chain, errs };
+    // §PRODUCTIVITY (MODELLER_MASTER §STRATEGY): what one Walk ALL Services generated vs what the gate flags for a human
+    // (p.clash = an unresolved clash, i.e. ≤1 edit each). Measured, not a claim about hand-modelling time (no baseline).
+    { const v = Object.values(D), F = v.reduce((s, x) => s + x.placed, 0), Rn = v.reduce((s, x) => s + x.segs, 0),
+        Sg = v.reduce((s, x) => s + x.sweeps, 0), Bf = v.reduce((s, x) => s + (x.fits || 0), 0), K = v.reduce((s, x) => s + (x.clash || 0), 0),
+        G = v.reduce((s, x) => s + (x.gated || 0), 0);
+      console.log('    §PRODUCTIVITY ' + key + ' generated=' + (F + Rn + Bf) + ' (fixtures ' + F + ' + runs drawn ' + Rn + ' [signed ' + Sg + '] + bend fittings ' + Bf + ')' +
+        ' autoResolved=' + G + ' flaggedForReview=' + K + ' (' + (F ? (100 * K / F).toFixed(1) : '0') + '% of fixtures) walk=' + walkMs + 'ms'); }
     console.log('--- ' + key + ' open=' + openMs + 'ms walk=' + walkMs + 'ms verifyChain=' + chain);
     Object.keys(D).forEach(d => console.log('    ' + d + ' ' + JSON.stringify(D[d])));
-    lines.filter(l => /§WALK-PATTERN|§ROUTER-CHAIN|§WALK disc=PLB|§WALK-SCHED disc=PLB|§WALK-NOSPACES disc=PLB|§MEP-REROUTE/.test(l)).forEach(l => console.log('    ' + l.slice(0, 300)));
+    lines.filter(l => /§WALK-PATTERN|§ROUTER-CHAIN|§WALK disc=PLB|§WALK-SCHED disc=PLB|§WALK-NOSPACES disc=PLB|§MEP-REROUTE|§DISC-WALK [A-Za-z]+ placed/.test(l)).forEach(l => console.log('    ' + l.slice(0, 300)));
     await pg.close();
   }
   console.log('--- gates ---');
