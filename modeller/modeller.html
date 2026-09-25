@@ -213,7 +213,7 @@
 <script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
 <script src="kernel_ops.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<script src="bonsai_oplog.js?v=10" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 <!-- §WORLD-HIST-MODELLER (RESUME_WORLD_HISTORY_DEDUP_RESTORE.md 4-step handoff): the SAME cross-page
      "W" log (common/whole_history.js) the Viewer/iDempiere/Gravity already write to. Loaded BEFORE
      history_bar.js so its internal WholeHistory.record mirror (the BUILDING_OPEN doc-type) has a live
@@ -234,7 +234,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      tree engine the Viewer runs (common/history_bar.js), reused — not a second branch mechanism. The
      adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
 <script src="../common/history_bar.js?v=1" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
-<script src="modeller_history.js?v=4" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
+<script src="modeller_history.js?v=5" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=3" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
@@ -293,11 +293,11 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="bonsai_itemdrag.js?v=3" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
-<script src="routewalker.js?v=8" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
+<script src="routewalker.js?v=9" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="disc_walker.js?v=9" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=10" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
