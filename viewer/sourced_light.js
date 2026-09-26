@@ -321,6 +321,7 @@
     var THREE = global.THREE, LZ = global.LightZones, Z = LZ && LZ.get(), D = A._lampData;
     if (!Z || !D || !A._lampDataOn) { LAMP[0] = 0; return null; }
     if (D.ver === lampVer && lampTex) return lampLast;
+    if (!D.enDone) { D.enDone = true; if (enOn(A)) { try { D.en = enApply(A, Z, D); } catch (eEN) { console.warn('§LAMP_EN failed: ' + eEN.message + ' — lamps unscaled'); } } else console.log('§LAMP_EN off (&lampen=0)'); }
     var t0 = performance.now(), L = D.lamps, n = L.length, R = D.range > 0 ? D.range : Z.cell * Math.max(Z.nx, Z.ny, Z.nz);
     if (n >= 65535) { console.warn('§LAMP_UNCAPPED FAIL lamps=' + n + ' >= 65535 (R16UI index) — pool path kept'); return lampFail(A, 'too many lamps'); }
     var ld = new Float32Array(Math.max(1, n) * 8), lz = new Uint16Array(n), ph = 0, lit = 0, sumI = 0, byZ = [0, 0, 0];
@@ -402,6 +403,7 @@
   // Lamps: three's point-light term att(d, range, decay) x cos from the zone's lamps (+ unbound) over zone-grid surface faces
   // (zone cell faces against SOLID, <= IR_FACES per zone, even stride). Daylight: V12 irc_z (LightZones.field ircAll) x the hemi
   // sky irradiance. One RGBA32F texel per zone. &ir=0 = off.
+  var irLampZ = null;   // per zone lamp-IR luminance (three units), §LUX_CHECK / §LAMP_EN
   var IRP = new Float32Array(4), irTex = null, dIr = null, irKey = null, irFaces = null, irLast = null, IR_FACES = 4000, IR_R = 0.5;
   function irOn(A) { return !(A._stillIr === false || /[?&]ir=0/.test(location.search)); }
   function irFacesOf(Z) {   // camera-free, per zone grid: sampled surface faces [x, y, z, nx, ny, nz] per zone
@@ -424,7 +426,7 @@
     var key = (Z.bld + ':' + Z.zones) + '|' + (D ? D.ver + ':' + D.lamps.length : 'nolamps') + '|' + hc.map(function (v) { return v.toFixed(5); }).join(',') + '|' + (F ? 1 : 0);
     if (key === irKey && irTex) { IRP[0] = 1; return irLast; }   // IRP[1] (scale) is left alone: the meter zeroes it for its own render
     var t0 = performance.now(), fc = irFacesOf(Z), nzn = Z.zones, W = 4096, H = Math.ceil((nzn + 1) / W), buf = new Float32Array(W * H * 4), k2 = IR_R / (1 - IR_R);
-    var byZ = new Map(), unb = [], lampN = 0, zl = 0, zd = 0, maxL = 0, maxD = 0;
+    var byZ = new Map(), unb = [], lampN = 0, zl = 0, zd = 0, maxL = 0, maxD = 0; irLampZ = new Float32Array(nzn + 1);   // §LAMP_EN reads the lamp part
     if (D) D.lamps.forEach(function (q) { if (!(q.I > 0)) return; lampN++; var z = lampZone(LZ, q); if (z === 0) unb.push(q); else if (z !== OUTSIDE) { var a = byZ.get(z); if (!a) byZ.set(z, a = []); a.push(q); } });
     var dec = D ? D.decay : 2;
     for (var z = 1; z <= nzn; z++) {
@@ -433,7 +435,7 @@
           for (var li = 0; li < Ls.length; li++) { var q = Ls[li], lx = q.x - px, ly = q.y - py, lzz = q.z - pz, d = Math.sqrt(lx * lx + ly * ly + lzz * lzz); if (!(d > 1e-4)) continue;
             var cs = (lx * nx2 + ly * ny2 + lzz * nz2) / d; if (cs <= 0) continue; var R2 = q.range, att = 1 / Math.max(Math.pow(d, dec), 0.01);
             if (R2 > 0) { if (d >= R2) continue; var w = 1 - Math.pow(d / R2, 4); att *= w * w; } er += q.r * att * cs; eg += q.g * att * cs; eb += q.b * att * cs; } }
-        er = k2 * er / nf; eg = k2 * eg / nf; eb = k2 * eb / nf; if (er + eg + eb > 0) zl++; maxL = Math.max(maxL, (er + eg + eb) / 3); }
+        er = k2 * er / nf; eg = k2 * eg / nf; eb = k2 * eb / nf; if (er + eg + eb > 0) zl++; irLampZ[z] = 0.2126 * er + 0.7152 * eg + 0.0722 * eb; maxL = Math.max(maxL, (er + eg + eb) / 3); }
       var ic = F && F.ircAll ? F.ircAll[z] : 0;
       if (ic > 0) { zd++; maxD = Math.max(maxD, ic * (hc[0] + hc[1] + hc[2]) / 3); er += ic * hc[0]; eg += ic * hc[1]; eb += ic * hc[2]; }
       buf[z * 4] = er; buf[z * 4 + 1] = eg; buf[z * 4 + 2] = eb; buf[z * 4 + 3] = 1;
@@ -460,6 +462,58 @@
     var r = { data: out, pixels: n, meanShare: n ? +(sum / n).toFixed(3) : 0, shareOver50: over, ms: Math.round(performance.now() - t0) };
     console.log('§IRC_MAX share ' + w + 'x' + h + ' pixelsWithIR=' + n + ' meanShare=' + r.meanShare + ' pixelsIRover50%=' + over + ' ms=' + r.ms + ' (share = IR radiance / total, linear; applied to the tone-mapped app colour = approximation)');
     return r;
+  }
+  // ══ §LAMP_EN (red1 2026-09-26: "lamp strength should be commensurate with indoor space, a standard governs it"; "Set a standard
+  // table for them") — each ROOM's lamps are scaled so its 0.8 m working plane (lamp direct + zone interreflection, as EN's
+  // maintained illuminance includes reflected light) meets the EN 12464-1 Em,r row of its category. Rooms and categories are the
+  // viewer's own (A.allRoomVolumes: the Find-panel room injection — corridor/utilities from geometry, restroom/kitchen/bedroom from
+  // the room name, else habitable). Rows quoted from prEN 12464-1 (July 2019, as EN_ROWS above; 2021 final not verified).
+  // A lamp in no room keeps scale 1 (logged). &lampen=0 = off.
+  var EN_TABLE = {
+    corridor: ['6.1.1 Corridors and circulation', 100], restroom: ['6.2.4 Toilets / washrooms', 200], kitchen: ['6.2.1 Canteens, pantries', 200],
+    utilities: ['6.3.1 Plant rooms, switch gear rooms', 200], bedroom: ['6.37.1 Waiting rooms (health care) — default', 200], habitable: ['6.37.1 Waiting rooms (health care) — default', 200] };
+  function enOn(A) { return !(A._stillLampEn === false || /[?&]lampen=0/.test(location.search)); }
+  function enApply(A, Z, D) {
+    var LZ = global.LightZones, t0 = performance.now(), vols = [];
+    try { vols = A.allRoomVolumes ? (A.allRoomVolumes() || []) : []; } catch (eV) { vols = []; }
+    var sunI = A._stillCalibSunI, luxPer = sunI > 0 ? (A._stillCalibSunLux || 100000) / sunI : 0;
+    if (!vols.length || !(luxPer > 0)) { console.log('§LAMP_EN VACUOUS rooms=' + vols.length + ' luxPerUnit=' + luxPer + ' — lamps unscaled'); return null; }
+    var L = D.lamps, n = L.length, room = new Int32Array(n).fill(-1), lzs = new Int32Array(n), dec = D.decay;
+    for (var i = 0; i < n; i++) { lzs[i] = lampZone(LZ, L[i]); L[i].__r0 = L[i].r; L[i].__g0 = L[i].g; L[i].__b0 = L[i].b; L[i].__I0 = L[i].I; }
+    var R = vols.map(function (v, k) { var c = v.center, sz = v.size, x0 = c.x - sz.x / 2, x1 = c.x + sz.x / 2, y0 = c.y - sz.y / 2, y1 = c.y + sz.y / 2, z0 = c.z - sz.z / 2, z1 = c.z + sz.z / 2;
+      var row = EN_TABLE[v.category] || EN_TABLE.habitable, samp = [], nxs = Math.max(1, Math.min(8, Math.round(sz.x))), nzs = Math.max(1, Math.min(8, Math.round(sz.z)));
+      for (var a = 0; a < nxs; a++) for (var b = 0; b < nzs; b++) { var p = { x: x0 + (a + 0.5) * sz.x / nxs, y: y0 + 0.8, z: z0 + (b + 0.5) * sz.z / nzs }, zz = LZ.at(p); if (zz > 0 && zz !== LZ.SOLID) samp.push([p, zz]); }
+      return { k: k, cat: v.category, row: row, box: [x0, x1, y0, y1 + 0.6, z0, z1], samp: samp, s: 1, lamps: [] }; });
+    for (var li = 0; li < n; li++) { var q = L[li]; for (var ri = 0; ri < R.length; ri++) { var bx = R[ri].box; if (q.x >= bx[0] && q.x <= bx[1] && q.y >= bx[2] && q.y <= bx[3] && q.z >= bx[4] && q.z <= bx[5]) { room[li] = ri; R[ri].lamps.push(li); break; } } }
+    var byZ = new Map(); for (var l2 = 0; l2 < n; l2++) { var z2 = lzs[l2]; if (z2 === OUTSIDE) continue; var a2 = byZ.get(z2); if (!a2) byZ.set(z2, a2 = []); a2.push(l2); }
+    var unb = byZ.get(0) || [], k2 = IR_R / (1 - IR_R), fc = irFacesOf(Z), scale = new Float32Array(n).fill(1);
+    function Edir(p, zz) { var Ls = (byZ.get(zz) || []).concat(unb), e = 0; for (var j = 0; j < Ls.length; j++) { var q2 = L[Ls[j]], dx = q2.x - p.x, dy = q2.y - p.y, dz = q2.z - p.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-3; if (dy <= 0) continue;
+      var at = 1 / Math.max(Math.pow(d, dec), 0.01); if (q2.range > 0) { if (d >= q2.range) continue; var w = 1 - Math.pow(d / q2.range, 4); at *= w * w; } e += (0.2126 * q2.__r0 + 0.7152 * q2.__g0 + 0.0722 * q2.__b0) * scale[Ls[j]] * at * dy / d; } return e; }
+    function irZ(zz) { var f = fc.faces[zz], Ls = (byZ.get(zz) || []).concat(unb); if (!f || !f.length || !Ls.length) return 0; var e = 0, nf = f.length / 6, st = Math.max(1, Math.floor(nf / 400)), cnt = 0;
+      for (var fi = 0; fi < nf; fi += st) { var o = fi * 6; cnt++; for (var j = 0; j < Ls.length; j++) { var q3 = L[Ls[j]], lx = q3.x - f[o], ly = q3.y - f[o + 1], lz2 = q3.z - f[o + 2], d = Math.sqrt(lx * lx + ly * ly + lz2 * lz2); if (!(d > 1e-4)) continue;
+        var cs = (lx * f[o + 3] + ly * f[o + 4] + lz2 * f[o + 5]) / d; if (cs <= 0) continue; var at = 1 / Math.max(Math.pow(d, dec), 0.01); if (q3.range > 0) { if (d >= q3.range) continue; var w = 1 - Math.pow(d / q3.range, 4); at *= w * w; }
+        e += (0.2126 * q3.__r0 + 0.7152 * q3.__g0 + 0.0722 * q3.__b0) * scale[Ls[j]] * at * cs; } } return k2 * e / Math.max(1, cnt); }
+    var judged = R.filter(function (r) { return r.lamps.length && r.samp.length; }), achieved = [];
+    for (var it = 0; it < 3; it++) {
+      var irc = new Map(); judged.forEach(function (r) { var e = 0; r.samp.forEach(function (sp) { if (!irc.has(sp[1])) irc.set(sp[1], irZ(sp[1])); e += Edir(sp[0], sp[1]) + irc.get(sp[1]); }); r.E = e / r.samp.length * luxPer; });
+      judged.forEach(function (r) { if (r.E > 0) { var f2 = r.row[1] / r.E; r.s *= f2; r.lamps.forEach(function (li2) { scale[li2] = r.s; }); } });
+    }
+    // "fairly lit by size" (red1): a room whose lamps barely reach it asks for an absurd boost (Clinic max x75,798) — its scale is
+    // capped at the building's p90 room scale; a lamp in no room box takes the building's median room scale (both data-derived)
+    var s0 = judged.map(function (r) { return r.s; }).sort(function (a, b) { return a - b; }), sMed = s0.length ? s0[s0.length >> 1] : 1, sP90 = s0.length ? s0[Math.floor(s0.length * 0.9)] : 1, capped = 0;
+    judged.forEach(function (r) { if (r.s > sP90) { r.s = sP90; capped++; r.lamps.forEach(function (li2) { scale[li2] = sP90; }); } });
+    for (var l5 = 0; l5 < n; l5++) if (room[l5] < 0) scale[l5] = sMed;
+    { var irc2 = new Map(); judged.forEach(function (r) { var e = 0; r.samp.forEach(function (sp) { if (!irc2.has(sp[1])) irc2.set(sp[1], irZ(sp[1])); e += Edir(sp[0], sp[1]) + irc2.get(sp[1]); }); r.E = e / r.samp.length * luxPer; }); }
+    judged.forEach(function (r) { achieved.push(r.E / r.row[1]); });
+    for (var l3 = 0; l3 < n; l3++) { var q4 = L[l3], sc = scale[l3]; q4.r = q4.__r0 * sc; q4.g = q4.__g0 * sc; q4.b = q4.__b0 * sc; q4.I = q4.__I0 * sc; q4.en = sc; }
+    var ss = judged.map(function (r) { return r.s; }).sort(function (a, b) { return a - b; }), ac = achieved.sort(function (a, b) { return a - b; }), pq = function (a, f) { return a.length ? a[Math.min(a.length - 1, Math.floor(a.length * f))].toFixed(2) : '-'; };
+    var cats = {}; judged.forEach(function (r) { cats[r.cat] = (cats[r.cat] || 0) + 1; });
+    var unassigned = 0; for (var l4 = 0; l4 < n; l4++) if (room[l4] < 0) unassigned++;
+    var out = { rooms: R.length, judged: judged.length, lampsInRooms: n - unassigned, unassigned: unassigned, s: [pq(ss, 0.1), pq(ss, 0.5), pq(ss, 0.9), ss.length ? ss[0].toFixed(2) : '-', ss.length ? ss[ss.length - 1].toFixed(2) : '-'], achieved: [pq(ac, 0.1), pq(ac, 0.5), pq(ac, 0.9)], ms: Math.round(performance.now() - t0) };
+    console.log('§LAMP_EN applied rooms=' + out.rooms + ' judged(lamps+wp)=' + out.judged + ' ' + JSON.stringify(cats) + ' lampsInRooms=' + out.lampsInRooms + ' unassigned(-> median ' + sMed.toFixed(3) + ')=' + unassigned + ' cappedAtP90(' + sP90.toFixed(3) + ')=' + capped +
+      ' scale p10/p50/p90/min/max=' + out.s.join('/') + ' achieved E/EN p10/p50/p90=' + out.achieved.join('/') + ' (3 passes; direct + zone IR on the 0.8 m plane) table=' +
+      Object.keys(EN_TABLE).map(function (k) { return k + ':' + EN_TABLE[k][1]; }).join(',') + ' ms=' + out.ms);
+    return out;
   }
   // a data path that cannot run must not leave the still without lamps: back to the capped pool, logged
   function lampFail(A, why) {
@@ -672,13 +726,19 @@
     var S = fieldLast.stats, LZ = global.LightZones, sunI = A._stillCalibSunI, sunLux = A._stillCalibSunLux || 100000;
     if (!(sunI > 0)) { console.log('§LUX_CHECK VACUOUS no calibrated sun (calibSunI=' + sunI + ')'); return null; }
     var luxPer = sunLux / sunI, h = A.hemi, am = A.ambient, EskyU = (h ? lum3(h.color) * h.intensity : 0) + (am ? lum3(am.color) * am.intensity : 0), EskyLux = EskyU * luxPer;
-    var lamps = new Map(); A.scene.traverse(function (l) { if (!l.isPointLight || !l.visible || !(l.intensity > 0) || l === A._camLight) return; var z = l.userData && l.userData.sourcedZone; if (!(z > 0)) return; var a = lamps.get(z); if (!a) { a = []; lamps.set(z, a); } a.push(l); });
+    var lamps = new Map(), lampSrc = 'point lights';
+    // §LAMP_UNCAPPED data path: the still has no lamp point lights — read A._lampData (colour already x intensity) so this check
+    // is not silently lamp-blind (it read lamps=0 in every zone after 524c3db1)
+    if (A._lampDataOn && A._lampData && LAMP[0] > 0.5) { lampSrc = 'lamp data'; A._lampData.lamps.forEach(function (q) { if (!(q.I > 0)) return; var z = lampZone(LZ, q); if (!(z > 0) || z === OUTSIDE) return;
+        var a = lamps.get(z); if (!a) { a = []; lamps.set(z, a); } a.push({ position: { x: q.x, y: q.y, z: q.z }, color: { r: q.r, g: q.g, b: q.b }, intensity: 1, distance: q.range, decay: A._lampData.decay }); }); }
+    else A.scene.traverse(function (l) { if (!l.isPointLight || !l.visible || !(l.intensity > 0) || l === A._camLight) return; var z = l.userData && l.userData.sourcedZone; if (!(z > 0)) return; var a = lamps.get(z); if (!a) { a = []; lamps.set(z, a); } a.push(l); });
     var nx = Z.nx, nxy = nx * Z.ny, cl = Z.cell, rows = [], fails = [], counts = { withEN: 0, fail: 0, unknown: 0, unverified: 0 };
     var att = function (d, cut, decay) { var f = 1 / Math.max(Math.pow(d, decay), 0.01); if (cut > 0) { var x = Math.max(0, Math.min(1, 1 - Math.pow(d / cut, 4))); f *= x * x; } return f; };
     S.zones.forEach(function (r) { if (!r || !r.wpCells) return; var L = lamps.get(r.z) || [], El = 0;
       if (L.length && r.samples.length) { r.samples.forEach(function (c) { var px = Z.org.x + (c % nx + 0.5) * cl, py = Z.org.y + ((((c / nx) | 0) % Z.ny) + 0.5) * cl, pz = Z.org.z + (((c / nxy) | 0) + 0.5) * cl;
           L.forEach(function (l) { var dx = l.position.x - px, dy = l.position.y - py, dz = l.position.z - pz, d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-3; if (dy <= 0) return; El += lum3(l.color) * l.intensity * att(d, l.distance, l.decay) * dy / d; }); });
         El = El / r.samples.length * luxPer; }
+      var Eir = (irLampZ && IRP[0] > 0.5 && L.length) ? irLampZ[r.z] * luxPer : 0; El += Eir;   // EN maintained illuminance includes interreflection
       var u = S.uses.byZone.get(r.z), Es = r.Fwp * EskyLux, Et = Es + El, en = u ? u.en : null, verdict = !u || !u.use ? 'unknown' : (en == null ? 'unverified' : (Et < 0.5 * en ? 'FAIL' : 'PASS'));
       if (verdict === 'unknown') counts.unknown++; else if (verdict === 'unverified') counts.unverified++; else { counts.withEN++; if (verdict === 'FAIL') counts.fail++; }
       var row = { z: r.z, floorM2: r.floorM2, Fwp: r.Fwp, Esky: Es, Elamps: El, Etotal: Et, lamps: L.length, use: u ? u.use : null, en: en, verdict: verdict, why: verdict === 'FAIL' ? (Es < 0.5 * en && El < 0.5 * en ? (L.length ? 'lamps under EN and sky share low' : 'no zone lamps, sky share low') : '') : '' };
@@ -688,6 +748,18 @@
     console.log('§LUX_CHECK zones=' + rows.length + ' spaces=' + S.uses.spaces + ' (' + S.uses.src + ', mapped ' + S.uses.mapped + ') withEN=' + counts.withEN + ' FAIL=' + counts.fail + ' unverified=' + counts.unverified + ' unknown=' + counts.unknown +
       ' EskyH=' + EskyLux.toFixed(0) + 'lx (hemi+ambient up, luxPerUnit=' + luxPer.toFixed(1) + ' = ' + sunLux + ' lx / calibSunI ' + sunI.toFixed(3) + ') exposure=' + A.renderer.toneMappingExposure.toFixed(3) +
       (A._meterLast ? ' stops=' + A._meterLast.stops.toFixed(2) : ' stops=0 (meter: outside/off)') + ' largest [' + byM2.slice(0, 8).map(fmt).join(' ') + '] FAILrows [' + fails.slice(0, 20).map(fmt).join(' ') + ']');
+    // §LAMP_EN (dry run, red1 2026-09-26: "lamp strength should be commensurate with indoor space, a standard governs it"): per zone
+    // with an EN 12464-1 row, the scale s = Em / (lamp direct + lamp interreflection on the 0.8 m working plane) that would make
+    // its lamps meet the row; nothing is applied yet
+    (function () { var sc = [], noLamp = 0, noLampM2 = 0, enM2 = 0, unkM2 = 0, totM2 = 0, byUse = {};
+      rows.forEach(function (r) { totM2 += r.floorM2; if (r.en == null) { unkM2 += r.floorM2; return; } enM2 += r.floorM2; var El2 = r.Elamps; if (!(El2 > 0)) { noLamp++; noLampM2 += r.floorM2; return; }
+        var sv = r.en / El2; sc.push([sv, r.floorM2]); var k = r.use.split(' ')[0]; (byUse[k] = byUse[k] || []).push(sv); });
+      sc.sort(function (a, b) { return a[0] - b[0]; });
+      var q = function (f) { return sc.length ? pct(sc, f).toFixed(2) : '-'; };
+      console.log('§LAMP_EN dry-run lampSource=' + lampSrc + ' zonesWithEN=' + (sc.length + noLamp) + ' (' + enM2.toFixed(0) + ' m2 of ' + totM2.toFixed(0) + ' floor; unknown use ' + unkM2.toFixed(0) + ' m2)' +
+        ' scale s=EN/Elamps floor-m2 p10/p50/p90=' + q(0.1) + '/' + q(0.5) + '/' + q(0.9) + ' min/max=' + (sc.length ? sc[0][0].toFixed(2) + '/' + sc[sc.length - 1][0].toFixed(2) : '-') +
+        ' EN-zones with no lamp=' + noLamp + ' (' + noLampM2.toFixed(0) + ' m2) byUse median s ' + Object.keys(byUse).map(function (k) { var a = byUse[k].sort(function (x, y) { return x - y; }); return k + ':' + a[a.length >> 1].toFixed(2) + '(n' + a.length + ')'; }).join(' '));
+    })();
     var cz = (A._sourcedCap && A._sourcedCap.camZone) || 0, cr = rows.filter(function (r) { return r.z === cz; })[0];
     console.log('§LUX_CHECK_CAM camZone=' + cz + ' ' + (cr ? fmt(cr) : '(no working-plane cells / camera not in a zone)') + ' exposure=' + A.renderer.toneMappingExposure.toFixed(3) + (A._meterLast ? ' stops=' + A._meterLast.stops.toFixed(2) : ''));
     luxLast = { rows: rows, EskyLux: EskyLux, luxPer: luxPer };
