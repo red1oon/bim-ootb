@@ -89,6 +89,32 @@
       ' newClones=' + fresh + ' f0=' + F0 + ' body=' + GLASS_BODY + ' (glazing meshes only; alpha = Schlick F; reflection = full-strength specular, premultiplied add)');
   }
 
+  // ══ §GLASS_ENV (red1 2026-09-26: "can the glass reflects?" -> "Agree"). The clones reflected the sky HDRI only, so a facade
+  // pane showed ~4% of sky (F0 0.04 face-on) and none of the sunlit ground or facades opposite — what real daytime windows mostly
+  // mirror. Once per still, after staging (lights final), one cube capture of the STAGED scene from the camera position (6 renders,
+  // HalfFloat, linear radiance, glass meshes hidden so a pane never reflects itself) becomes the clones' envMap (three's PMREM
+  // prefilters it for roughness). Fresnel, the §GLASS_SPEC_GATE and the premultiplied blend are unchanged: it only changes WHAT is
+  // reflected. Alt+S only; &glassenv=0 = the sky HDRI as before.
+  var capRT = null, capCam = null, CAP_SIZE = 256;
+  function liveClones() { var set = new Set(); swaps.forEach(function (s) { var m = s[0].material, ms = Array.isArray(m) ? m : [m]; ms.forEach(function (x) { if (x && x.userData && x.userData.gfOf) set.add(x); }); }); return set; }
+  function capture(A) {
+    var THREE = global.THREE; if (!THREE || !A || !A.renderer || !A.scene || !A.camera || !swaps.length) return null;
+    if (A._stillGlassEnv === false || /[?&]glassenv=0/.test(location.search)) { console.log('§GLASS_ENV off (&glassenv=0) — panes reflect the sky HDRI'); return null; }
+    var t0 = performance.now(), R = A.renderer;
+    if (!capRT) { capRT = new THREE.WebGLCubeRenderTarget(CAP_SIZE, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter }); capCam = new THREE.CubeCamera(0.05, 5000, capRT); }
+    var hidden = [];
+    A.scene.traverse(function (o) { if (!o.visible || !o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return; var ms = Array.isArray(o.material) ? o.material : [o.material];
+      if (ms.some(function (m) { return m && ((m.userData && m.userData.gfOf) || isGlass(m)); })) { o.visible = false; hidden.push(o); } });
+    capCam.position.copy(A.camera.position); capCam.layers.mask = A.camera.layers.mask; A.scene.add(capCam); capCam.updateMatrixWorld(true);
+    var prevRT = R.getRenderTarget();
+    try { capCam.update(R, A.scene); } finally { R.setRenderTarget(prevRT); A.scene.remove(capCam); hidden.forEach(function (o) { o.visible = true; }); }
+    capRT.texture.needsPMREMUpdate = true;
+    var n = 0; liveClones().forEach(function (c) { if (c.envMap !== capRT.texture) { c.envMap = capRT.texture; c.needsUpdate = true; } n++; });
+    if (A.markDirty) A.markDirty();
+    var line = '§GLASS_ENV captured ' + CAP_SIZE + 'x6 at camera [' + A.camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + '] glassMeshesHidden=' + hidden.length + ' clonesReflecting=' + n + ' ms=' + Math.round(performance.now() - t0);
+    console.log(line); return { clones: n, hidden: hidden.length, ms: Math.round(performance.now() - t0) };
+  }
+
   function unstage(A) {
     if (!swaps.length) return;
     swaps.forEach(function (s) { s[0].material = s[1]; });
@@ -97,5 +123,5 @@
     if (A.markDirty) A.markDirty();
   }
 
-  global.GlassFresnel = { stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
+  global.GlassFresnel = { capture: capture, stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
 })(typeof window !== 'undefined' ? window : this);
