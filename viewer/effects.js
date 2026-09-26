@@ -4529,8 +4529,9 @@ async function setupEffects(A, renderer, scene, camera) {
     // §STILL_POSE (2026-09-24, watcher: red1's stills carry no pose) — one line per staging with everything
     // needed to reproduce the frame headless: camera, target, fov, sun, DB, window size.
     // §STILL_POSE_HOST (watchdog red1-c6, 2026-09-26: red1's PNGs did not say which tree/port they came from): the served
-    // sw.js CACHE_VERSION, read once per page (async; the first press may log null if it has not arrived yet)
-    if (A._swVersion === undefined) { A._swVersion = null; try { fetch('sw.js', { cache: 'no-store' }).then(function(r) { return r.text(); }).then(function(t) { var m = /CACHE_VERSION = '([^']+)'/.exec(t); A._swVersion = m ? m[1] : null; }).catch(function() {}); } catch (eSw) {} }
+    // sw.js CACHE_VERSION, read once per page (async; S5 2026-09-26: it lands after the first press's pose is built, so it patches that pose — the PNG is
+    // written at save time and reads the patched object; only the §STILL_POSE console line of the first press can still say null)
+    if (A._swVersion === undefined) { A._swVersion = null; try { fetch('sw.js', { cache: 'no-store' }).then(function(r) { return r.text(); }).then(function(t) { var m = /CACHE_VERSION = '([^']+)'/.exec(t); A._swVersion = m ? m[1] : null; if (A._stillPoseLast && !A._stillPoseLast.sw) A._stillPoseLast.sw = A._swVersion; }).catch(function() {}); } catch (eSw) {} }
     try {
       var _c = A.camera, _t = A.controls ? A.controls.target : null, _s = A.sun;
       var _f = function(v) { return v ? [v.x, v.y, v.z].map(function(n) { return +n.toFixed(3); }) : null; };
