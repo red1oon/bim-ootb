@@ -9,7 +9,7 @@
  *   C3 CHAIN-OK   — verifyChain passes after the cut.
  *   C4 VISIBLE    — the framebuffer changed (the void shows).
  *   C5 REVERSIBLE — undo via the history slider restores the pre-cut cursor.
- *   C6 GEOMETRY-REVERSIBLE — after undo the framebuffer returns EXACTLY to the pre-cut frame (the void closed).
+ *   C6 GEOMETRY-REVERSIBLE — the cut changes the element's own mesh and the undo restores it exactly (was a pixel compare).
  *
  * §CUT-ON-ARC ROOT-CAUSE (this session): the resume flagged a C5 "undo→0" anomaly. The real bug was deeper — a
  * seeded ARC wall is a BAKED GEOM_INSERT mesh, not a worker B-rep, so the occt fold of GEOM_CUT threw "parent not
@@ -39,9 +39,13 @@ runE2E('W-E2E-CUT', async (t) => {
   await t.frameElement(sel.fid, 0.42);            // §F2-FRAMING: real close-up BEFORE any pixsum baseline (camera then stays fixed)
   await t.shot('02-selected');
   await t.shotClip('cut-select', sel.fid, 80);   // guide frame (§F2 G4 element-clip): the wall, selected
-  const before = await t.oplog(); const pix0 = await t.pixsum();
+const fpOf = (fid) => t.pg.evaluate((fid) => { const m = window.Bonsai.group().children.find(o => o.userData && o.userData.featureId === fid);
+    if (!m) return null; const a = m.geometry.attributes.position.array; let sx = 0, sy = 0, sz = 0;
+    for (let i = 0; i < a.length; i += 3) { sx += a[i]; sy += a[i + 1]; sz += a[i + 2]; }
+    return { n: a.length / 3, idx: m.geometry.index ? m.geometry.index.count : 0, s: [sx, sy, sz].map(v => +v.toFixed(4)) }; }, fid);
+    const before = await t.oplog(); const pix0 = await t.pixsum(); const geo0 = await fpOf(sel.fid);
   await t.clickSel('#b-cut'); await t.sleep(900);
-  const after = await t.oplog(); const last = await t.lastOp(); const pix1 = await t.pixsum();
+  const after = await t.oplog(); const last = await t.lastOp(); const pix1 = await t.pixsum(); const geo1 = await fpOf(sel.fid);
   const chain = await t.verifyChain();
   await t.shot('03-cut');
   await t.shotClip('cut-open', sel.fid, 80);   // guide frame (§F2 G4 element-clip): the opening, cut
@@ -50,6 +54,7 @@ runE2E('W-E2E-CUT', async (t) => {
   t.assert('C4 VISIBLE (framebuffer changed)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
   await t.undoToCursor(before.cur);
   const undo = await t.oplog();
+  const geo2 = await fpOf(sel.fid);   // §C6-GEOMETRY: the element's own mesh, read straight after the undo
   // C6 re-select, MEASURED PRECISION (2026-07-30, §SEL-TINT-REFOLD fix session): the old comment here blamed
   // lost selection TINT — wrong attribution. bCut.onclick ends in an explicit highlight(null) (deselect by
   // design), so pix0's selection visuals (emissive + §V5 outline) are legitimately absent post-undo; the
@@ -65,5 +70,11 @@ runE2E('W-E2E-CUT', async (t) => {
   const pix2 = await t.pixsum();
   await t.shot('04-undone');
   t.assert('C5 REVERSIBLE (undo restores cursor)', undo.cur === before.cur, 'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ')');
-  t.assert('C6 GEOMETRY-REVERSIBLE (void closed, frame == pre-cut)', pix2 === pix0, 'pix0=' + pix0 + ' postCut=' + pix1 + ' postUndo=' + pix2);
+  // §C6-GEOMETRY (2026-09-26): the old C6 compared whole-frame pixel checksums after a re-select click + re-frame. Measured on
+  // main: the geometry WAS back (same bbox, 196 visible meshes) but the re-click selected a different element (sel=[124] vs [81])
+  // and framed it, so the frames could never match — the witness, not the app. Primal Law: numbers, not pixels. C6 now reads
+  // the cut element's own mesh: the cut CHANGED it and the undo RESTORED it exactly (vertex/index counts + position sums).
+  const same = (a, b) => !!a && !!b && a.n === b.n && a.idx === b.idx && a.s.every((v, i) => Math.abs(v - b.s[i]) < 1e-3);
+  t.assert('C6 GEOMETRY-REVERSIBLE (cut changed the element mesh; undo restored it exactly)', !same(geo0, geo1) && same(geo0, geo2),
+    'pre=' + JSON.stringify(geo0) + ' cut=' + JSON.stringify(geo1) + ' undo=' + JSON.stringify(geo2) + ' (frames, not judged: ' + pix0 + '/' + pix1 + '/' + pix2 + ')');
 }, { width: 1200, height: 850, dpr: 2 });
