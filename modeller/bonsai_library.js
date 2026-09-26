@@ -31,7 +31,13 @@
   const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src
     : (typeof location !== 'undefined' ? location.href : '');
   const ready = (typeof fetch === 'function')
-    ? fetch(new URL('dagevu_catalog.json?v=11', _base).href).then(function (r) { return r.json(); }).then(function (j) {
+    // §CATALOG-PATH: the catalog lives in viewer/ (shared, one owner). #550 moved this file to modeller/ but not the
+    // catalog, so a same-folder fetch 404'd and the catalog stayed EMPTY (every catalog GEOM_INSERT, incl. bend fittings,
+    // failed its fold). A non-OK response is a load failure, never a parsed body.
+    ? fetch(new URL('../viewer/dagevu_catalog.json?v=11', _base).href).then(function (r) {
+        if (!r.ok) throw new Error('http=' + r.status);
+        return r.json();
+      }).then(function (j) {
         GROUPS = j.groups || []; CHEAT = j.cheatsheet || [];
         DB_PRODUCTS = (j.products || []).map(function (p) {
           return { hash: p.id, id: p.id, name: p.name, ifc_class: p.ifc_class, category: p.catLabel || p.cat,
@@ -349,7 +355,7 @@
       // retries cleanly, and we check r.ok (a 404/empty service-worker response must not flow into r.json()).
       if (!this._geomP) {
         this._geomP = (typeof fetch === 'function')
-          ? fetch(new URL('dagevu_geometries.json?v=7', _base).href)
+          ? fetch(new URL('../viewer/dagevu_geometries.json?v=7', _base).href)   // §CATALOG-PATH: shared with the Viewer
               .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
               .then(j => { this._geom = j; console.log(TAG + ' geometries lazy-loaded meshes=' + Object.keys(j).length); return j; })
               .catch(e => { console.warn(TAG + ' geometries load failed (will retry next insert) ' + e); this._geomP = null; return null; })

@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v50';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v51';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -70,6 +70,7 @@ const PRECACHE_ASSETS = [
   'routewalker.js',
   // Cross-surface broker — lives in viewer/ (shared), precache for offline Connect.
   '../viewer/connect_scene.js',
+  '../viewer/dagevu_catalog.json',  // §CATALOG-PATH — bonsai_library.js catalog (shared with the Viewer)
   // §GEOMAP-WIRE — IFC→BOM classifier + bridge + mined artifacts (audit channel; offline parity with online).
   '../geomapping/classify_geom.js',
   '../geomapping/geomap_bridge.js',

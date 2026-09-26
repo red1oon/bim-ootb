@@ -91,6 +91,15 @@ const server = http.createServer((q, r) => {
   chk('T4 FLASH-BUDGET (every per-instance flash ≤ budget+4s; baseline was 39.3s over a 1.2s budget)', flashParsed.length > 0 && flashOk, flashParsed.map(f => f.n + '→' + f.ms + 'ms/≤' + f.budget).join(' '));
   chk('T5 CHAIN-BATCH (every §ROUTER-CHAIN-COMMIT is 1 signed group)', chainOk, chainLines.length + ' chain line(s): ' + chainLines.map(l => l.slice(0, 90)).join(' ‖ '));
   chk('T6 NO-ERROR', errs.length === 0, errs.slice(0, 3).join(' | '));
+  // T7 FOLD-CLEAN (SPEC_CATALOG_PATH.md): T6 only sees pageerror, so a catalog that never loaded let every bend
+  // fitting fail its fold unseen (1,194 × 'GEOM_INSERT unknown component' on 2026-09-26). No §BEND joints → INCONCLUSIVE.
+  const unknownLines = slog.filter(l => /GEOM_INSERT unknown component/.test(l));
+  const catLine = slog.find(l => /§LIBRARY catalog (loaded|load failed)/.test(l)) || '(no §LIBRARY catalog line)';
+  const catN = +((catLine.match(/products=(\d+)/) || [])[1] || 0);
+  const bendJoints = slog.map(l => +((l.match(/§BEND disc=\w+ joints=(\d+)/) || [])[1] || 0)).reduce((a, b) => a + b, 0);
+  const t7x = 'unknownComponent=' + unknownLines.length + ' bendJoints=' + bendJoints + ' catalogProducts=' + catN + ' ‖ ' + catLine.slice(0, 90);
+  if (bendJoints === 0 && unknownLines.length === 0) console.log('  ⚪ T7 FOLD-CLEAN INCONCLUSIVE (no §BEND joints to fold)  ' + t7x);
+  else chk('T7 FOLD-CLEAN (catalog loaded, every GEOM_INSERT hash resolves)', unknownLines.length === 0 && catN > 0, t7x);
 
   await br.close(); server.close();
   console.log('W-TERMINAL-WALKALL-PERF: ' + pass + ' PASS / ' + fail + ' FAIL');
