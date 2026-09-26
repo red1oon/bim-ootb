@@ -76,7 +76,13 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
     if (sel.length === 1 && sel[0] === c.fid) { fidA = c.fid; break; }
   }
-  for (const c of cands) {
+  // §NET-AUDIT RACE (2026-09-26): selecting A auto-flies the camera (§ZOOM-SEL), so every candidate pixel computed
+  // BEFORE the fly is stale (red on main: B never hit, set=[175]). Settle the fly and re-project the candidates.
+  const flySettle = async () => { const t0 = Date.now(); while (Date.now() - t0 < 20000 && await pg.evaluate(() => !!window.__flyLive)) await sleep(150);
+    if (await pg.evaluate(() => !!window.__flyLive)) await pg.evaluate(() => window.A.controls.dispatchEvent({ type: 'start' })); await sleep(300); };
+  await flySettle();
+  const cands2 = await pg.evaluate(() => window.__e2e.candidates());
+  for (const c of cands2) {
     if (c.fid === fidA) continue;
     await pg.keyboard.down('Shift'); await pg.mouse.click(c.sx, c.sy); await pg.keyboard.up('Shift'); await sleep(150);
     const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
@@ -84,6 +90,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     if (sel.length !== 1 || sel[0] !== fidA) {   // toggled something odd off/on — reset to A and try the next
       await pg.evaluate(f => window.Bonsai.select(f), fidA); await sleep(80);
     }
+    await flySettle();   // a shift-click that selected nothing new may still have started a fly
   }
   const sel2 = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
 

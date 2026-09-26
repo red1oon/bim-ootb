@@ -707,6 +707,11 @@
         console.log(TAG + ' §ARC-SEED-WIRE ' + key + ' editable ARC elements=' + r.committed + ' skipped=' + r.skipped +
           ' realGeom=' + (r.realResolved || 0) + ' hardfail=' + (r.hardfail || 0) +
           ' (featureId↔guid bridge ready)');
+        // §NET-AUDIT / W-E2E-OLEYE (2026-09-26): the Outliner painted its bom-graph BEFORE this bridge existed, and an
+        // element row only gets its eye when its guid resolves in __arcFidByGuid at paint time (bonsai_outliner.js
+        // §V1 honesty). Nothing repainted after the bridge landed → 0 leaf eyes on an opened Duplex (198 after a
+        // refresh). Repaint once, now that rows can act on the scene.
+        if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
         // §GEOMAP-WIRE: surface the audit for the Outliner (read-only; null when the bridge wasn't ready)
         if (r.geomap) {
           window.__gmSeedAudit = window.__gmSeedAudit || {};
