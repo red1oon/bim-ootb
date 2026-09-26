@@ -81,6 +81,42 @@ async function runE2E(NAME, body, opts) {
           // height. Pure camera maths off the real mesh bbox; no scene mutation.
           , frame(fid, fill) { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return false; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) return false; const c = new window.THREE.Vector3(); b.getCenter(c); const s = new window.THREE.Vector3(); b.getSize(s); const rad = Math.max(s.x, s.y, s.z) * 0.5 || 1; const cam = window.A.camera, ctl = window.A.controls; const dir = new window.THREE.Vector3().subVectors(cam.position, ctl.target).normalize(); const dist = Math.max(rad / Math.tan(cam.fov * Math.PI / 360) / fill, rad * 1.5); ctl.target.copy(c); cam.position.copy(c).addScaledVector(dir, dist); ctl.update(); if (window.A.requestRender) window.A.requestRender(); return true; }
           , dolly(f) { const cam = window.A.camera, ctl = window.A.controls; const d = new window.THREE.Vector3().subVectors(cam.position, ctl.target); cam.position.copy(ctl.target).addScaledVector(d, f); ctl.update(); if (window.A.requestRender) window.A.requestRender(); return true; }
+          // §L3-AIM (W-E2E-CUT-LAYERS L3 fix, 2026-09-25): place the camera where this element's OWN face is
+          // the FIRST raycast hit (clickPointFor's oracle — the same visible/non-anchor mesh list pickAt uses)
+          // AND that pixel is on the canvas (document.elementFromPoint — a real user cannot click through the
+          // Outliner/toolbar). Why: frame(fid, fill) keeps the CURRENT view direction; from the open view's
+          // iso direction a low interior wall sits behind upper-storey slabs/walls, so clickPointFor() was
+          // null and clickOn()'s bbox-centre fallback selected the OCCLUDER instead. Measured on origin/main
+          // 39673dd7 (Duplex, 27 wallish layered walls): frame(fid,0.5) → 0/27 have a verified point (8
+          // candidates × 2 attempts, 0 selections, the click picked fid 55/22 — the page's own pickAt was
+          // right, the aim was wrong). With this placement search → 26/27; the one left, fid 87 (the 7-layer
+          // party-wall core), is enclosed on every side by walls 5/14/13/6/90 (0.06 m interpenetration), a
+          // data fact of the resident, not a pick defect. Pure camera maths off the real mesh bbox: face-on to
+          // the thin axis from either side at 4 stand-offs, then 8 yaws × 2 distances. Returns the verified
+          // CSS-px click point (null = genuinely unreachable) and leaves the camera at that placement.
+          , framePickable(fid) {
+            const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null;
+            const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) return null;
+            const c = b.getCenter(new window.THREE.Vector3()), s = b.getSize(new window.THREE.Vector3());
+            const cam = window.A.camera, ctl = window.A.controls, cv = window.A.renderer.domElement;
+            const thin = s.x <= s.y ? 'x' : 'y', half = (thin === 'x' ? s.x : s.y) / 2;
+            const ps = [];
+            for (const gap of [1.0, 1.8, 2.6, 3.4]) for (const side of [1, -1]) { const p = c.clone(); p[thin] += side * (half + gap); ps.push({ tag: 'face-' + thin + (side > 0 ? '+' : '-') + '-' + gap, pos: p }); }
+            for (const dist of [2.0, 3.5]) for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; ps.push({ tag: 'yaw' + (k * 45) + '-' + dist, pos: c.clone().add(new window.THREE.Vector3(Math.cos(a) * Math.cos(0.35), Math.sin(a) * Math.cos(0.35), Math.sin(0.35)).multiplyScalar(dist)) }); }
+            // The on-canvas test is applied PER SAMPLE POINT (clickPointFor's `ok`), not per placement: after a
+            // selection the page shows UI over part of the canvas, and the first face point of an otherwise
+            // good placement can sit under it (measured: face-y+-1.8 on fid 88 → (935,648) blocked after
+            // select, every other sample of the same placement fine). `blocked` names the last blocker for the log.
+            let blocked = null;
+            const onCanvas = (p) => { const el = document.elementFromPoint(p[0], p[1]); if (el === cv) return true; blocked = el ? (el.tagName + '#' + el.id) : 'null'; return false; };
+            for (const p of ps) {
+              cam.position.copy(p.pos); ctl.target.copy(c); ctl.update(); cam.updateMatrixWorld(true);
+              const pt = this.clickPointFor(fid, onCanvas); if (!pt) continue;
+              if (window.A.requestRender) window.A.requestRender();
+              return { tag: p.tag, pt: pt, cam: cam.position.toArray().map(v => +v.toFixed(2)) };
+            }
+            return { unreachable: true, blocked: blocked };
+          }
           // §F2-FRAMING: deterministic overhead plan view over (cx,cy) at height h — the exact camera pattern
           // the app itself uses for its own top-down moments (modeller.html §deep-link: up=(0,1,0), position
           // above, target below). Saved/restored so tool state after the shot is untouched.
@@ -140,7 +176,9 @@ async function runE2E(NAME, body, opts) {
           // run. Return a VERIFIED click point instead: sample the mesh's own triangle centroids, project each,
           // and keep the first whose raycast FIRST HIT (same raycast the app's pick uses) is this very mesh.
           // Deterministic given the camera; null = genuinely not visible from here (caller skips the candidate).
-          , clickPointFor(fid) {
+          // `ok` (optional, §L3-AIM): an extra per-point predicate (CSS px → bool) — e.g. "this pixel is on the
+          // canvas, not under a panel". Absent ⇒ byte-identical to before (every existing caller passes none).
+          , clickPointFor(fid, ok) {
             const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null;
             const cam = window.A.camera, rc = new window.THREE.Raycaster();
             const meshes = g.children.filter(o => o.isMesh);
@@ -157,7 +195,7 @@ async function runE2E(NAME, body, opts) {
               if (sp[0] < r.left + 8 || sp[0] > r.right - 8 || sp[1] < r.top + 8 || sp[1] > r.bottom - 8 || sp[2] > 1) continue;
               rc.setFromCamera(new window.THREE.Vector2(((sp[0] - r.left) / r.width) * 2 - 1, -(((sp[1] - r.top) / r.height) * 2 - 1)), cam);
               const hits = rc.intersectObjects(meshes, false);
-              if (hits.length && hits[0].object === m) return [sp[0], sp[1]];
+              if (hits.length && hits[0].object === m && (!ok || ok([sp[0], sp[1]]))) return [sp[0], sp[1]];
             }
             return null;
           }
@@ -193,6 +231,20 @@ async function runE2E(NAME, body, opts) {
       await sleep(350);
       console.log('  §SHOTFRAME fid=' + fid + ' fill=' + (fill == null ? 0.4 : fill) + ' ok=' + ok);
       return ok;
+    },
+    // §L3-AIM: camera to a placement from which `fid`'s own face is the first raycast hit and on the canvas
+    // (see __e2e.framePickable). No sleep and no rAF wait: the placement is synchronous and pickAt raycasts
+    // with the live camera object whose matrices __e2e.framePickable already updated — a rendered frame is
+    // not a precondition for the pick (an earlier draft waited two rAF frames; at the ~0.15 fps measured here
+    // that was a multi-second window in which a still-live §ZOOM-SEL fly moved the camera off the placement
+    // and the re-verify failed — the caller must settle/yield the fly BEFORE aiming, see the witness).
+    // Returns {tag, pt:[sx,sy], cam} or null (unreachable). Logged.
+    async framePickable(fid) {
+      let r = await pg.evaluate(f => window.__e2e.framePickable(f), fid);
+      const blocked = r && r.unreachable ? r.blocked : null;
+      if (r && r.unreachable) r = null;
+      console.log('  §L3-AIM fid=' + fid + (r ? ' via=' + r.tag + ' pt=[' + r.pt.map(v => v.toFixed(1)).join(',') + '] cam=[' + r.cam.join(',') + ']' : ' UNREACHABLE (no placement puts its own face first in the ray on the canvas' + (blocked ? '; last on-canvas blocker=' + blocked : '') + ')'));
+      return r;
     },
     async dolly(f) { await pg.evaluate(x => window.__e2e.dolly(x), f); await sleep(250); },
     async clearGround(size) { const r = await pg.evaluate(s => window.__e2e.clearGround(s), size); console.log('  §CLEARGROUND size=' + size + ' -> ' + JSON.stringify(r)); return r; },

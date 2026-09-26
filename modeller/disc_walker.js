@@ -571,6 +571,80 @@
   // the caller hands it a full extraction. LOD400 law (WalkerDoctrine §11): each class carries its
   // MINED dominant real mesh hash (rule_mesh_binding, projected by build/project_rule_mesh_binding.py)
   // or the whole class REFUSEs — never a fallback shape.
+  // ── §ROOF-PATTERN (row 8, bim-compiler prompts/Modeller/NEXT_0926/SPEC_ROW8_ROOF_PERELEMENT.md, 2026-09-26):
+  // a TESSELLATING class is one whose mined unit tiles its source area contiguously —
+  //   fill = bbox_dx · bbox_dy · n_measured / src_storey_area_m2 ≥ TESS_FILL   (roof/IfcPlate 0.90; every MEP row ≪ 0.5)
+  // — derived from the row's own measured numbers, never a class whitelist. Such a class has NO measured surface in
+  // the substrate other than its own element array: MEASURED on Terminal, the canopy is z=f(x,y) (1-D strip profile
+  // residual 1.16 m, quadric 1.29 m, the two IfcRoof rows sit 14 m below it), so the band fill below put 10,584 boxes
+  // at the flat band-mid z — RMS 2.63 m to the real plates, −68 % count, and 331 fabricated plates on Clinic's glazing.
+  // A tessellating row therefore walks PER ELEMENT on the building's OWN measured array (the same input
+  // swDeriveTessellation(plates) has always taken) — after MEASURING that it IS an array: modal-unit share, 3-D
+  // nearest-neighbour cadence + cv, checked against the rule's mined unit/spacing. Not arrayed (HHS/Clinic glazing
+  // panels, cv 0.32/1.25) or absent → REFUSE, never the fill: "represent as one surface, never fabricate a fake array"
+  // (red1 2026-06-27). Returns null for a non-tessellating row (caller keeps its byte-identical path).
+  var TESS_FILL = 0.5;
+  function _arrayMeasure(els, cell) {
+    var hist = {}; els.forEach(function (e) { var k = (+e.bx).toFixed(2) + 'x' + (+e.by_).toFixed(2) + 'x' + (+e.bz).toFixed(2); hist[k] = (hist[k] || 0) + 1; });
+    var mk = Object.keys(hist).sort(function (a, b) { return hist[b] - hist[a]; })[0], mu = mk.split('x').map(Number);
+    var grid = {}; els.forEach(function (e, i) { var k = Math.floor(e.x / cell) + ',' + Math.floor(e.y / cell) + ',' + Math.floor(e.z / cell); (grid[k] = grid[k] || []).push(i); });
+    var ds = [], found = 0;
+    els.forEach(function (e, i) {
+      var cx = Math.floor(e.x / cell), cy = Math.floor(e.y / cell), cz = Math.floor(e.z / cell), best = Infinity;
+      for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++) {
+        var b = grid[(cx + dx) + ',' + (cy + dy) + ',' + (cz + dz)]; if (!b) continue;
+        for (var j = 0; j < b.length; j++) { if (b[j] === i) continue; var o = els[b[j]];
+          var d = Math.sqrt((o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) + (o.z - e.z) * (o.z - e.z)); if (d < best) best = d; }
+      }
+      if (isFinite(best)) { ds.push(best); found++; }
+    });
+    var nn = _med(ds), mean = ds.length ? ds.reduce(function (s, v) { return s + v; }, 0) / ds.length : NaN;
+    var sd = ds.length ? Math.sqrt(ds.reduce(function (s, v) { return s + (v - mean) * (v - mean); }, 0) / ds.length) : NaN;
+    var ux = {}; els.forEach(function (e) { ux[(+e.x).toFixed(3)] = 1; });
+    var xs = Object.keys(ux).map(Number).sort(function (a, b) { return a - b; }), dh = {};
+    for (var i = 1; i < xs.length; i++) { var dk = (xs[i] - xs[i - 1]).toFixed(3); dh[dk] = (dh[dk] || 0) + 1; }
+    var sx = xs.length > 1 ? Number(Object.keys(dh).sort(function (a, b) { return dh[b] - dh[a]; })[0]) : 0;
+    return { unit: { bx: mu[0], by: mu[1], bz: mu[2] }, share: hist[mk] / els.length, nn: nn, cv: (mean > 0 ? sd / mean : NaN),
+             nnFound: found / els.length, sx: sx, uniqueX: xs.length };
+  }
+  function _tessellatingWalk(disc, r, bdb, ghash) {
+    if (!(r.bbox_dx > 0 && r.bbox_dy > 0 && r.n_measured > 0 && r.src_storey_area_m2 > 0)) return null;
+    var fill = r.bbox_dx * r.bbox_dy * r.n_measured / r.src_storey_area_m2;
+    if (fill < TESS_FILL) return null;
+    var tag = disc + '/' + r.ifc_class, pad = r.bbox_dz > 0 ? r.bbox_dz : 0;
+    var bandTxt = '[' + r.z_band_lo.toFixed(2) + ',' + r.z_band_hi.toFixed(2) + ']';
+    var hasInst = _rows(bdb, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='element_instances'").length > 0;
+    var els = _rows(bdb, 'SELECT m.guid guid, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz' +
+      (hasInst ? ', ei.geometry_hash gh' : ', NULL gh') + ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid' +
+      (hasInst ? ' LEFT JOIN element_instances ei ON ei.guid = m.guid' : '') +
+      " WHERE m.ifc_class='" + _esc(r.ifc_class) + "' AND t.center_z >= " + (r.z_band_lo - pad) + ' AND t.center_z <= ' + (r.z_band_hi + pad));
+    console.log(TAG + ' §DW-TESSELLATE ' + tag + ' fill=' + fill.toFixed(2) + ' (unit ' + r.bbox_dx.toFixed(2) + '×' + r.bbox_dy.toFixed(2) +
+      ' × n ' + r.n_measured + ' / ' + r.src_storey_area_m2.toFixed(0) + ' m² ≥ ' + TESS_FILL + ') → per-element on the measured array; rows of ' +
+      r.ifc_class + ' in band' + bandTxt + '=' + els.length);
+    if (!els.length) {
+      console.log(TAG + ' §ROOF-PATTERN-NOPLATES ' + tag + ' band=' + bandTxt + ' 0 rows → REFUSE (a tessellating class has no other measured surface; never the band fill)');
+      return { placements: [], refused: 'no ' + r.ifc_class + ' rows in band' };
+    }
+    var m = _arrayMeasure(els, 1.0);
+    var fine = Math.min(r.spacing_x_m > 0 ? r.spacing_x_m : Infinity, r.spacing_y_m > 0 ? r.spacing_y_m : Infinity);
+    function within(a, b, tol) { return b > 0 && a > 0 && Math.abs(a - b) / b <= tol; }
+    var ok = m.share >= 0.5 && m.nnFound >= 0.5 && within(m.unit.bx, r.bbox_dx, 0.2) && within(m.unit.by, r.bbox_dy, 0.2) &&
+      (!(r.bbox_dz > 0) || within(m.unit.bz, r.bbox_dz, 0.2)) && (!isFinite(fine) || within(m.nn, fine, 0.2)) && m.cv <= 0.10;
+    var desc = 'n=' + els.length + ' unit=' + m.unit.bx.toFixed(2) + '×' + m.unit.by.toFixed(2) + '×' + m.unit.bz.toFixed(2) +
+      ' share=' + (m.share * 100).toFixed(1) + '% nn=' + (isFinite(m.nn) ? m.nn.toFixed(3) : 'NaN') + ' cv=' + (isFinite(m.cv) ? m.cv.toFixed(3) : 'NaN') +
+      ' nnFound=' + (m.nnFound * 100).toFixed(0) + '% sx=' + m.sx.toFixed(3) + ' uniqueX=' + m.uniqueX;
+    var ruleTxt = 'rule unit ' + r.bbox_dx.toFixed(2) + '×' + r.bbox_dy.toFixed(2) + '×' + (r.bbox_dz || 0).toFixed(2) + ' spacing ' + (isFinite(fine) ? fine : '-');
+    if (!ok) {
+      console.log(TAG + ' §ROOF-PATTERN-REFUSE ' + tag + ' ' + desc + ' vs ' + ruleTxt + ' — irregular/non-arrayed: represent as one surface, never a fake array');
+      return { placements: [], refused: 'not an array of the rule unit' };
+    }
+    // §ROOF-PATTERN-PRESENT (review 2026-09-26): the measured array IS the building's own IfcPlate rows, which the ARC seed has
+    // already committed (seedArc seeds discipline='ARC' — all 33,324 on Terminal). Re-placing them would sign an exact second
+    // copy (RMS 0 by identity, 33k duplicate rows) — not generation. Nothing to generate: report it, place nothing.
+    console.log(TAG + ' §ROOF-PATTERN-PRESENT ' + tag + ' ' + desc + ' vs ' + ruleTxt + ' → the building already carries this array (' +
+      els.length + ' real ' + r.ifc_class + ', seeded with the ARC) — nothing to generate, 0 placed');
+    return { placements: [], refused: 'already present: ' + els.length + ' real ' + r.ifc_class + ' form the measured array — nothing to generate', present: els.length };
+  }
   function placeMeasured(disc, bdb, opts) {
     var db = _dbFor(disc);
     if (!_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_placement'").length)
@@ -578,7 +652,7 @@
     var rows = _rows(db, "SELECT * FROM rule_placement WHERE disc='" + _esc(disc) +
       "' AND n_measured>0 AND z_band_lo IS NOT NULL AND z_band_hi IS NOT NULL AND src_storey_area_m2>0");
     if (!rows.length) return { noRules: 'no measured z-band rule_placement rows for ' + disc };
-    var bind = {};
+    var bind = {}, verdicts = [];
     if (_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_mesh_binding'").length)
       _rows(db, "SELECT ifc_class, geometry_hash FROM rule_mesh_binding WHERE disc='" + _esc(disc) + "'")
         .forEach(function (b) { bind[b.ifc_class] = b.geometry_hash; });
@@ -626,6 +700,14 @@
         console.log(TAG + ' §LOD400-REFUSE ' + disc + '/' + r.ifc_class + ' ×' + r.n_measured +
           ' band=[' + r.z_band_lo + ',' + r.z_band_hi + '] (no rule_mesh_binding row — no real mesh, never a fallback shape)');
         return;
+      }
+      // §ROOF-PATTERN: a tessellating row (fill ≥ TESS_FILL) walks per element on the measured array or REFUSES —
+      // it never reaches the ARC-cell/top-up fill below. Every other row: null → unchanged path.
+      var tess = _tessellatingWalk(disc, r, bdb, ghash);
+      if (tess) {
+        if (tess.placements.length) { tess.placements.forEach(function (p) { out.push(p); }); zones++; }
+        if (tess.refused) verdicts.push(tess.refused);        // a DELIBERATE 0 (present / refused) — the caller must not fall back
+        return;                                               // refused → 0 placements (§ROOF-PATTERN-* line carries why)
       }
       var pitch = Math.max(0.5, Math.sqrt(r.src_storey_area_m2 / r.n_measured));
       var els = _rows(bdb,
@@ -684,7 +766,7 @@
       console.log(TAG + ' §NOSPACES-ZONE ' + disc + '/' + r.ifc_class + ' band=[' + r.z_band_lo + ',' + r.z_band_hi +
         '] n_measured=' + r.n_measured + ' ratio=' + (bandArea / r.src_storey_area_m2).toFixed(2) + ' placed=' + placeN);
     });
-    return { placements: out, zones: zones, refused: refused };
+    return { placements: out, zones: zones, refused: refused, verdicts: verdicts };
   }
 
   // Reduce a discipline's rule_placement rows to ONE representative per ifc_class
@@ -1439,13 +1521,22 @@
   // SCOPE, MEASURED not assumed: `ad_mep_pattern` carries rows for exactly two disciplines, 'CW' (pressurised
   // cold-water supply) and 'SP' (gravity soil/waste drain) — both PLUMBING sub-networks (routewalker.js's own
   // RW_DISC_TO_COORD: CW/SP→DWATER/DRAIN, same table PLB→DWATER). So this bridges disc_walker's 'PLB' discipline
-  // to a CW pass + an SP pass. ELEC/ACMV/FP have ZERO ad_mep_pattern rows (checked directly against ERP.db) —
-  // they honestly REFUSE via this bridge (no pattern to walk), which is the correct refuse-beats-fabricate
-  // answer, not a bug: covering them would need someone to MINE+author their own pattern rows first (a data
-  // task), not a code generalization this bridge can manufacture. NON-INVENT: every anchor is a real element
+  // to a CW pass + an SP pass. ELEC/ACMV/FP had ZERO ad_mep_pattern rows until §MEP-ROUTE-DISC (2026-09-26,
+  // MODELLER_MASTER NEXT #4) MINED and authored them the same way CW/SP were (IFCtoERP.java seedMepPatterns:
+  // axis-dominance counts of the discipline's real straight segments + measured nearest-element node roles; every
+  // row's `notes` cites its counts and example guids, `source_building` the IFC). A discipline absent from the
+  // map below still honestly REFUSES (no pattern to walk) — refuse-beats-fabricate. NON-INVENT: every anchor is a real element
   // position (door/stair/measured-generated-fixture) or a real wall-avoiding corridor waypoint; the pairing/
   // gradient/clash logic is routewalker.js's own proven code, called, never re-implemented.
-  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'] };                 // disc_walker disc -> routewalker pattern discipline(s)
+  //   FP  → FP_TERMINAL_01 (D1): 2,672 'jkrME_pipe_Poly Steel' IfcPipeSegment of SJTII_Terminal — the nearest pipe of
+  //         909/909 IfcFireSuppressionTerminal (median 0.053 m); X 1,092 / Y 380 / Z 1,205 drops; product FP_Drop_Pipe.
+  //   ACMV → ACMV_TERMINAL_01 (D2): 420 'Rectangular Duct:jkrME_duct_Radius Elbows / Taps' IfcDuctSegment of SJTII_Terminal,
+  //         X 204 / Y 156 / Z 60; 713 IfcDuctFitting junctions; 289 IfcAirTerminal fed by flex (157) or a tap (132). No
+  //         METER step: the Terminal models no AHU/plant. Product = the section mode 150×150 mm (RW_REAL_CROSSSECTION.ACMV).
+  //   ELEC → ELEC_DUPLEX_01 (D3): the Duplex federated MEP's 10 'Conduit with Fittings:Electrical Metallic Tubing (EMT)'
+  //         IfcFlowSegment + 8 elbows + 2 IfcFlowTerminal '400 A' panels = a FEEDER (panel rise Z, ceiling mains Y/X); no
+  //         source anywhere wires a branch to a fixture, so ELEC routes MAINS ONLY (no JUNCTION→FIXTURE step — SPEC Q4).
+  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'], FP: ['FP'], ACMV: ['ACMV'], ELEC: ['ELEC'] };   // disc_walker disc -> routewalker pattern discipline(s)
   // real IfcStair columns, deduped by XY (mirrors modeller.html's own _seedRisers) — the riser/STACK candidates
   // SeedTrunk climbs and this bridge treats as the SP discipline's STACK proxy.
   function _risers(bdb) {
@@ -1541,7 +1632,7 @@
       return { segs: [], refused: true, reason: 'routewalker.js mep_rw.db pattern table not loaded (call rwInit first)' };
     }
     var rwDiscs = (opts.rwPatternDisc || _RW_PATTERN_DISC)[disc];
-    if (!rwDiscs) return { segs: [], refused: true, reason: 'no ad_mep_pattern coverage for ' + disc + ' (CW/SP only, PLB-mapped)' };
+    if (!rwDiscs) return { segs: [], refused: true, reason: 'no ad_mep_pattern coverage for ' + disc + ' (pattern-mapped: ' + Object.keys(opts.rwPatternDisc || _RW_PATTERN_DISC).join('/') + ')' };
     var sub = opts.storeys || substrate(bdb);
     if (!sub.length) return { segs: [], refused: true, reason: 'no habitable storeys' };
     var placements = opts.placements || place(disc, sub, bdb);
@@ -1584,8 +1675,12 @@
         // Authoritative post-filter (see _envelopeClash above) — routewalker.js's own internal clash-skip
         // mis-orients its box for horizontal runs, so re-check every emitted segment properly before accepting
         // it. halfWidth mirrors routewalker.js's OWN measured pipe cross-section (RW_PIPE_CROSS/1000/2), not an
-        // invented constant; opts.pipeHalfWidth lets a caller override for a witness.
-        var halfW = (opts.pipeHalfWidth > 0) ? opts.pipeHalfWidth : (ROOT.RW_PIPE_CROSS ? ROOT.RW_PIPE_CROSS / 1000 / 2 : 0.0375);
+        // invented constant; opts.pipeHalfWidth lets a caller override for a witness. §MEP-ROUTE-DISC: a bulky
+        // discipline (a duct) is checked at ITS real half-section (rwCrossSectionFor, WalkerDoctrine §8) when that is
+        // larger — max(), so CW/SP (25.4 / 48.3 mm, both under 75 mm) keep the exact half-width they had (PLB runs unchanged).
+        var _xsB = (typeof ROOT.rwCrossSectionFor === 'function') ? ROOT.rwCrossSectionFor(rwd) : null;
+        var _realHalf = (_xsB && _xsB.real) ? Math.max(_xsB.w, _xsB.h) / 2 : 0;
+        var halfW = (opts.pipeHalfWidth > 0) ? opts.pipeHalfWidth : Math.max(ROOT.RW_PIPE_CROSS ? ROOT.RW_PIPE_CROSS / 1000 / 2 : 0.0375, _realHalf);
         var envClashed = 0;
         out.forEach(function (s) {
           if (_envelopeClash(s.from, s.to, arcEnv, halfW)) { envClashed++; return; }
@@ -2031,13 +2126,37 @@
   function _d3(p, q) {
     return Math.sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) + (p.z - q.z) * (p.z - q.z));
   }
-  function gate(placements) {
+  // §GATE-STOREY-FLOOR (2026-09-25) — SPEC. The yield rule pushes a lower-priority fixture DOWN by min_clear, never
+  // below `floor`. The floor was ONE global value: the lowest ORIGINAL z of ANY walked fixture of ANY discipline.
+  // Measured on Duplex Walk ALL (2026-09-25): after ELEC+PLB, 20 fixtures were honestly flagged (residual 20, floor
+  // 0.229). Then FP (borrowed from terminal_rules) added sprinklers at z0 = -1.257 (Duplex's T/FDN foundation storey),
+  // the floor dropped to -1.257, and all 20 flagged fixtures were "resolved" by sinking them 1.0–3.5 m (e.g. an ELEC
+  // at 2.46 m → -1.05 m), about 1 m below ground. Residual read 0, and the sunk fixtures were drawn and signed there.
+  // FIX: when the caller passes opts.storeyFloors (sorted real storey floor z's, each = the lowest element bottom of that
+  // storey in THIS building, derived from its own elements by storeyFloors(bdb) below), each fixture's floor is the
+  // highest storey floor at or below its own ORIGINAL z. So a fixture can yield down within its own storey, never
+  // into the one below. Whatever still clashes is FLAGGED (the honest residual pass below). Without opts.storeyFloors
+  // the old global floor is kept (back-compat for callers without a building).
+  function storeyFloors(bdb) {
+    return _rows(bdb, "SELECT MIN(t.center_z - t.bbox_z / 2.0) f FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE m.storey IS NOT NULL AND m.storey <> 'Unknown' AND t.bbox_z IS NOT NULL GROUP BY m.storey")
+      .map(function (r) { return r.f; }).filter(function (f) { return f != null && isFinite(f); }).sort(function (a, b) { return a - b; });
+  }
+  function gate(placements, opts) {
     var ord = order(), clr = clearance(), yields = 0;
+    var floors = opts && opts.storeyFloors && opts.storeyFloors.length ? opts.storeyFloors : null;
     // remember each placement's ORIGINAL z once (idempotent across repeated gate() calls
     // as the modeller re-gates the cumulative set after each new walk).
     placements.forEach(function (p) { if (p._z0 == null) p._z0 = p.z; });
     // floor = lowest measured band across the walked set — the bottom of real, measured space.
     var floor = Infinity; placements.forEach(function (p) { if (p._z0 < floor) floor = p._z0; });
+    // §GATE-STOREY-FLOOR: per-fixture floor = highest real storey floor ≤ its original z (else the global floor).
+    function _floorOf(p) {
+      if (!floors) return floor;
+      var f = floors[0];
+      for (var i = 0; i < floors.length; i++) if (floors[i] <= p._z0 + 1e-6) f = floors[i];
+      return f;
+    }
     var byDisc = {}; placements.forEach(function (p) { (byDisc[p.disc] = byDisc[p.disc] || []).push(p); });
     var discs = Object.keys(byDisc);
     var MAXIT = 16, it = 0, changed = true;
@@ -2048,7 +2167,7 @@
           for (var i = 0; i < hi.length; i++) {
             if (_d3(pl, hi[i]) < mc) {
               var nz = pl.z - mc;
-              if (nz >= floor - 1e-6) { pl.z = nz; if (!pl.gated) yields++; pl.gated = true; changed = true; }
+              if (nz >= _floorOf(pl) - 1e-6) { pl.z = nz; if (!pl.gated) yields++; pl.gated = true; changed = true; }
               break;                                          // re-checked next iteration
             }
           }
@@ -2167,12 +2286,16 @@
     }
     var pat = routePattern(disc, bdb, { placements: pl, buildingType: buildingName, storeys: sub });
     if (pat.refused) { console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + pat.reason); return { rc: rc, patternInfo: null }; }
+    // Per-rule detail (§MEP-ROUTE-DISC): kept/survivors@anchors — "survivors" = pairs routewalker's OWN clash-skip let
+    // through, "kept" = those that also pass this bridge's post-filter. A 0/2@501 is the engine refusing (recorded,
+    // SampleCastle FP 2026-09-26), a 0/0@0 is no anchors at all — different causes, now told apart in the log.
+    var _byRule = function () { return (pat.byRule && pat.byRule.length ? ' [' + pat.byRule.map(function (b) {
+      return b.from + ':' + (b.skipped || (b.segs + '/' + (b.segs + (b.noNbr || 0)) + '@' + (b.anchors || 0))); }).join(' ') + ']' : ''); };
     if (!pat.segs.length) {
-      console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' EMPTY placements=' + pl.length + ' storeyRekeyed=' + rekeyed +
-        (pat.byRule && pat.byRule.length ? ' [' + pat.byRule.map(function (b) { return b.from + ':' + (b.skipped || (b.segs + '/' + (b.segs + (b.noNbr || 0)))); }).join(' ') + ']' : ''));
+      console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' EMPTY placements=' + pl.length + ' storeyRekeyed=' + rekeyed + _byRule());
       return { rc: rc, patternInfo: null };
     }
-    console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' ROUTED segs=' + pat.segs.length + ' placements=' + pl.length + ' storeyRekeyed=' + rekeyed);
+    console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' ROUTED segs=' + pat.segs.length + ' placements=' + pl.length + ' storeyRekeyed=' + rekeyed + _byRule());
     return { rc: { segs: pat.segs, byRule: pat.byRule }, patternInfo: pat };
   }
 
@@ -2191,6 +2314,12 @@
       // byte-identical to before (this branch is unreachable there).
       if (ps.noRules || !ps.spaces) {
         var pm = placeMeasured(disc, bdb, opts);
+        if (!pm.noRules && !pm.placements.length && pm.verdicts && pm.verdicts.length) {
+          // §ROOF-PATTERN: a deliberate verdict (the array is already present / not an array) — report it as the walk's
+          // outcome with verdict:true so the Modeller does NOT fall back to the legacy fill (§SCHED-FALLBACK).
+          console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' VERDICT ' + pm.verdicts.join('; '));
+          return { disc: disc, refused: true, verdict: true, reason: pm.verdicts.join('; '), placed: 0 };
+        }
         if (pm.noRules) {
           var why = (ps.noRules || 'no real spaces for schedule walk') + '; measured-band: ' + pm.noRules;
           console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + why);
@@ -2377,9 +2506,11 @@
 
   var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
+    // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
+    patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },
     // §MEP-REROUTE: the walk's own bridge, callable on op-log placements (modeller.html _reRouteMovedWalks)
     bridgeRoute: function (disc, bdb, buildingName, placements) { var b = _bridgeIfEmpty(disc, bdb, buildingName, placements, { segs: [], byRule: [] }, {}); return { segs: b.rc.segs, patternBridge: b.patternInfo }; },
-    gate: gate, repRules: repRules, order: order, clearance: clearance,
+    gate: gate, storeyFloors: storeyFloors, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
     _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,

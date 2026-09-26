@@ -22,7 +22,19 @@
     IfcDoor: 0xc8a06a, IfcWindow: 0x7fb0c8, IfcCovering: 0xcdd6dd, IfcOpeningElement: 0xff8c42,
     IfcFurniture: 0xa9b8a0, IfcStair: 0x9aa6b0, IfcRailing: 0x9aa6b0, IfcColumn: 0x8f9aa6, IfcBeam: 0x8f9aa6
   };
-  function colorFor(cls) { return PALETTE[cls] != null ? PALETTE[cls] : 0xb9c4cf; }
+  // §COLOR-PARITY (SPEC_COLOR_PARITY.md): the element's REAL IFC colour when elements_meta.material_rgba carries one —
+  // the Viewer's rule (streaming.js §S265c "Trust IFC data": rgba present → its r,g,b; NULL → class fallback). Both apps run
+  // with THREE.ColorManagement disabled, so the packed hex equals the Viewer's new THREE.Color(r,g,b). PALETTE = fallback.
+  function realRgb(rgba) {                  // packed hex of an authored "r,g,b[,a]" (0–1 floats), else null
+    if (!rgba || rgba.indexOf(',') < 0) return null;
+    var p = rgba.split(',').map(Number);
+    if (p.length < 3 || !p.slice(0, 3).every(function (c) { return isFinite(c) && c >= 0 && c <= 1; })) return null;
+    return (Math.round(p[0] * 255) << 16) | (Math.round(p[1] * 255) << 8) | Math.round(p[2] * 255);
+  }
+  function colorFor(cls, rgba) {
+    var real = realRgb(rgba);
+    return real != null ? real : (PALETTE[cls] != null ? PALETTE[cls] : 0xb9c4cf);
+  }
 
   // §MAT-PARITY (MODELLER_RENDER_MATERIAL_PARITY.md Task 1): elements_meta.material_rgba is the SAME real
   // per-element "r,g,b,a" string viewer/streaming.js reads (A._getMaterial(el.rgba, ...) at ~L739/865/963) —
@@ -198,7 +210,7 @@
       "t.bbox_x, t.bbox_y, t.bbox_z, t.rotation_x, t.rotation_y, t.rotation_z, m.material_rgba, " +
       (hasAnchor ? "m.is_anchor" : "0") + " FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid = m.guid WHERE " + where + " ORDER BY " + (hasId ? 'm.id' : 'm.guid');
-    var r = db.exec(sql), ops = [], skipped = [], matched = 0, unmatched = 0, tilted = 0;
+    var r = db.exec(sql), ops = [], skipped = [], matched = 0, unmatched = 0, tilted = 0, colorN = { real: 0, palette: 0 };
     var geomIdx = RealGeometry ? RealGeometry.buildGeometryIndex(db, geoDb || db) : { table: null, byGuid: {}, resolved: {} };
     var geomAssets = [], geomSeen = {}, realResolved = 0, hardfail = 0;
     // §LAYER-GATE: arm only where the ARC db ships multi-layer edges AND a geometry substrate exists
@@ -289,7 +301,8 @@
       // on every op regardless of match — audit trail: what was actually measured, vs what mesh got stamped).
       var seatHalfZ = bz / 2;                                          // §LOD-300: seat half-height defaults to MEASURED
       var m = _matchLod300(cls, bx, by, bz);                           // Bug-2 partial fix: try the 3-item real-mesh catalog
-      var params = { bbox: bbox, color: colorFor(cls), provenance: 'recovered:extracted', ifc_class: cls, opacity: alphaFor(rgba) };
+      colorN[realRgb(rgba) != null ? 'real' : 'palette']++;
+      var params = { bbox: bbox, color: colorFor(cls, rgba), provenance: 'recovered:extracted', ifc_class: cls, opacity: alphaFor(rgba) };
       if (m) {
         matched++;
         params.hash = m.hash;
@@ -372,7 +385,7 @@
     if (layerGate.armed) _log(TAG + ' §LAYER-GATE armed multiLayer=' + layerGate.nMulti +
       ' layeredHashes=' + layerGate.nHashes + ' refused=' + layerRefused +
       ' (authored multi-layer elements must resolve per-layer slabs — §LOD400-ENVELOPE)');
-    return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted,
+    return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted, colorN: colorN,
       geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, geomTable: geomIdx.table, geomap: gmAudit,
       anchorN: anchorOps.length, layerGate: layerGate.armed ? { multiLayer: layerGate.nMulti, layeredHashes: layerGate.nHashes } : null,
       layerRefused: layerRefused };
@@ -447,6 +460,8 @@
     // §GEOM-HARDFAIL summary — the "no silent box" honesty line: total elements refused (broken geometry link)
     // vs the whole seedable set. 0/N is the expected/measured case for SampleCastle/SampleCastle_ARC/SampleHouse/
     // Duplex (every element_instances.geometry_hash resolves) — a nonzero count is real data-integrity signal.
+    if (built.colorN) _log(TAG + ' §COLOR-PARITY building=' + name + ' real=' + built.colorN.real + ' palette=' + built.colorN.palette +
+      ' (real = elements_meta.material_rgba r,g,b as authored, the Viewer\'s rule; palette = NULL rgba → class fallback)');
     _log(TAG + ' §GEOM-HARDFAIL total=' + built.hardfail + ' of ' + (normalN + built.hardfail) +
       ' (geomTable=' + (built.geomTable || 'none') + ' realResolved=' + built.realResolved + '/' + normalN + ')');
     return { committed: committedNormal, skipped: built.skipped.length, ids: ids, bridge: bridge, ops: built.ops,
@@ -456,6 +471,6 @@
 
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }
 
-  return { buildSeedOps: buildSeedOps, buildBridge: buildBridge, seedArc: seedArc, colorFor: colorFor, alphaFor: alphaFor, ARC_CLASSES: ARC_CLASSES,
+  return { buildSeedOps: buildSeedOps, buildBridge: buildBridge, seedArc: seedArc, colorFor: colorFor, realRgb: realRgb, alphaFor: alphaFor, ARC_CLASSES: ARC_CLASSES,
     TAG: TAG, LOD300_CATALOG: LOD300_CATALOG, LOD300_TOL: LOD300_TOL, matchLod300: _matchLod300 };
 });

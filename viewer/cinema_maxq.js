@@ -3470,7 +3470,7 @@
       A._clashHudHighlightLast = null;   // per-bake reset — a prior bake's held highlight must not leak in
       // §129.57 frame-reuse state — per bake, never module-level, so a second bake in the same
       // page can never be handed the previous bake's last frame.
-      var _lastFrameKey = null, _lastFrameBlob = null, _frameReuseRun = 0, _frameReuseTotal = 0;
+      var _lastFrameKey = null, _lastFrameBlob = null, _frameReuseRun = 0, _frameReuseTotal = 0, _reuseSanityDenied = 0;
       var _prevVisualRev = -1;   // §129.57 — last frame's A._loadPathVisualRev; see the key's own note
       var _frameReuseRuns = 0;
       // ══ §ESCAPE_ROUTE_REVEAL — built ONCE, here, never per frame. It Dijkstras every room to its
@@ -4534,7 +4534,11 @@
           }
         }
         var _reuseKey = null;
-        if (!window.__noFrameReuse && _lpHoldCtl && _lpHoldCtl.inHold && _lastFrameBlob) {
+        // §FRAME_REUSE_SANITY — never reuse while the last composited frame had a live Sanity box/wave (it moves with film
+        // time, which the key below does not see). Counted and logged at the end with §FRAME_REUSE_TOTAL.
+        if (!window.__noFrameReuse && _lpHoldCtl && _lpHoldCtl.inHold && _lastFrameBlob && A._ruleFilmLive) { _reuseSanityDenied = (_reuseSanityDenied || 0) + 1;
+          if (_reuseSanityDenied === 1) console.log('§FRAME_REUSE_SANITY no reuse at i=' + i + ' — a Sanity set is live inside the hold'); }
+        if (!window.__noFrameReuse && _lpHoldCtl && _lpHoldCtl.inHold && _lastFrameBlob && !A._ruleFilmLive) {
           var _rp = A.camera ? A.camera.position : null;
           var _rt = (A.controls && A.controls.target) ? A.controls.target : null;
           // `rev` AND `prevRev`. A load-path mutation lands in the picture ONE FRAME LATE — the
@@ -4719,6 +4723,7 @@
       // anybody can check — and a reuse count of 0 on a film that HAS a load-path freeze is the
       // FAIL signal (the key is too fine, or the hold never armed), not a quiet non-event.
       if (_frameReuseRun > 0) { _frameReuseRuns++; }
+      console.log('§FRAME_REUSE_SANITY denied=' + _reuseSanityDenied + ' (hold frames rendered because a Sanity set was live)');
       console.log('§FRAME_REUSE_TOTAL reused=' + _frameReuseTotal + '/' + framesDone +
         ' runs=' + _frameReuseRuns + ' rendered=' + (framesDone - _frameReuseTotal) +
         ' disabled=' + (window.__noFrameReuse ? 1 : 0) +

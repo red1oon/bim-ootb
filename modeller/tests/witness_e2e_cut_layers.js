@@ -9,7 +9,9 @@
  *   L1 POPULATION   — the live Duplex fold has ZERO refused wallish candidates left (57 wallish = 7 box + 50 layer).
  *   L2 SEED         — the richest layered wall (per CUT_GATE_CSG_SPEC.md §8 item 1, the 7-layer party wall)
  *                      resolves a real _insertCutLayerSeed (not null) — box path refuses it (not axis-aligned single box).
- *   L3 SELECT       — a real click selects that wall.
+ *   L3 SELECT       — a real click selects a reachable layered wall (§L3-AIM: camera placed face-on by the
+ *                      wall's own mesh bbox so its face is the first raycast hit; the 7-layer party-wall
+ *                      core fid 87 is enclosed by other walls on every side and is logged UNREACHABLE).
  *   L4 CUT-COMMIT   — clicking Cut commits exactly one GEOM_CUT parented to the wall.
  *   L5 CHAIN-OK     — verifyChain passes after the cut.
  *   L6 VISIBLE      — the framebuffer ACTUALLY CHANGED (§LAYER-CUT-EXACT: the void really subtracted from
@@ -38,6 +40,24 @@ const tris = (t, fid) => t.pg.evaluate((f) => {
 runE2E('W-E2E-CUT-LAYERS', async (t) => {
   await t.open('Duplex');
   await t.shot('01-open');
+  // §L3-AIM: a selection starts the §ZOOM-SEL camera fly (25 rAF frames). Wait for it to END (condition:
+  // window.__flyLive falsy, cap 20 s — on a normal box it is <1 s). Measured here (headless swiftshader,
+  // load ~29): rAF fires at ~0.15 fps, the fly was STILL LIVE after 60 s, and every later camera placement
+  // got overwritten by its next frame (that is what made the post-select re-aim and L6 fail in runs 1-2).
+  // If the cap expires, yield the fly exactly as a user does — a RIGHT-button pan grab on the canvas
+  // (OrbitControls dispatches 'start' → _flyId++, the app's own documented "fly cancelled by user grab"
+  // path; the pick handler only acts on button 0, so the selection is untouched). __flyLive resets on the
+  // fly's next rAF tick; poll for it, but the camera stops moving at the grab either way. All logged.
+  const settle = async (tag) => {
+    const t0 = Date.now(); await t.flySettle(20000);
+    let live = await t.pg.evaluate(() => window.__flyLive || 0), yielded = false;
+    if (live) {
+      yielded = true;
+      await t.pg.mouse.move(600, 425); await t.pg.mouse.down({ button: 'right' }); await t.pg.mouse.move(610, 433, { steps: 3 }); await t.pg.mouse.up({ button: 'right' });
+      const t1 = Date.now(); while (Date.now() - t1 < 20000) { live = await t.pg.evaluate(() => window.__flyLive || 0); if (!live) break; await t.sleep(200); }
+    }
+    console.log('  §SETTLE ' + tag + ' waitedMs=' + (Date.now() - t0) + ' yieldedByGrab=' + yielded + ' flyLive=' + live);
+  };
 
   // L1/L2: enumerate every wallish GEOM_INSERT, classify box/layer/refused via the PRODUCTION gate itself
   // (Bonsai._insertCutBox / _insertCutLayerSeed — same functions canCut()/the UI/the harness's `cuttable`
@@ -76,27 +96,45 @@ runE2E('W-E2E-CUT-LAYERS', async (t) => {
   t.assert('L2b WALLISH (at least one layer-seeded candidate is genuinely wall-shaped)', wallishLayers.length > 0, 'wallishLayer=' + wallishLayers.length + '/' + report.layer.length);
   const pool = wallishLayers.length ? wallishLayers : report.layer;
 
-  // L3 select A REACHABLE layered wall by a real, raycast-verified click — frame each candidate first (a
-  // closer camera reduces occlusion), preferring the richest but trying the next-richest if the current
-  // isometric default view happens to occlude it (a real click-reachability fact, not a heuristic dodge —
-  // same reasoning e2e_harness.js's own candidates()/clickPointFor already apply).
+  // L3 select A REACHABLE layered wall by a real click at a point on the wall's OWN face.
+  // §L3-AIM (2026-09-25, diagnosis of the reproducible 4/1 fail): the old loop framed each candidate with
+  // frameElement(fid, 0.5) — a dolly along the CURRENT (iso) view direction — then clickOn(). Measured on
+  // origin/main 39673dd7: from that placement clickPointFor() was null for 27/27 wallish layered walls (a
+  // low interior wall is behind upper-storey slabs/walls from the iso direction), so clickOn() fell back to
+  // the projected bbox centre and the page's own pickAt correctly selected the OCCLUDER (fid 55, 22, 195…)
+  // — 8 candidates × 2 attempts, 0 selections, deterministic, not flake (CUT_GATE_CSG_SPEC.md §11 called
+  // it "flaky"; it never passes from that aim). The pick path is fine: a layered wall is ONE mesh
+  // (bonsai_library.js foldInsert, one buffer with per-layer face ranges) with userData.featureId, and a
+  // real click on its face selects it (measured: fid 88/107/15 → selSet=[fid] via pickAt). So the fix is
+  // the AIM: t.framePickable(fid) puts the camera face-on to the wall (first raycast hit = its own mesh,
+  // pixel on the canvas) using its real mesh bbox, and the click goes to that verified point. The
+  // richest candidate, fid 87 (7-layer party-wall core), is enclosed by walls 5/14/13/6/90 on every side
+  // — a user cannot click it either; the loop logs that and takes the next-richest reachable wall.
+  // Selection is awaited as a CONDITION (poll _selSet), not a fixed sleep.
   let target = null, sel = false;
   for (const cand of pool.slice(0, 8)) {
-    await t.frameElement(cand.fid, 0.5);
-    await t.flySettle();
-    // 2 real attempts per candidate (a loaded machine can cost a click to swiftshader/CPU contention, per
-    // RESUME_MODELLER_GUIDE_SCREENSHOT_FIX.md's documented environment note) before moving to the next fid.
-    for (let attempt = 0; attempt < 2 && !sel; attempt++) {
-      await t.clickOn(cand.fid);
-      await t.sleep(300);
+    const aim = await t.framePickable(cand.fid);
+    if (!aim) continue;
+    await t.pg.mouse.click(aim.pt[0], aim.pt[1]);
+    const t0 = Date.now();
+    while (Date.now() - t0 < 3000) {
       sel = await t.pg.evaluate((f) => Array.from(window.Bonsai._selSet || []).includes(f), cand.fid);
+      if (sel) break; await t.sleep(100);
     }
+    console.log('  §L3-CLICK fid=' + cand.fid + ' selected=' + sel + ' waitedMs=' + (Date.now() - t0) + ' selSet=' + JSON.stringify(await t.pg.evaluate(() => Array.from(window.Bonsai._selSet || []))));
     if (sel) { target = cand; break; }
   }
   t.assert('L3 SELECT (real click selects a real layered wall)', sel, 'fid=' + (target && target.fid) + ' nLayers=' + (target && target.nLayers) + ' selected=' + sel);
   if (!sel) return;
-  await t.flySettle();
-  await t.frameElement(target.fid, 0.42);
+  // §L3-AIM: a selection starts the §ZOOM-SEL camera fly (25 rAF frames). Measured here: headless
+  // swiftshader on a loaded box runs rAF at ~1 fps, so the fly lasts >20 s and flySettle's default 15 s cap
+  // returned with it STILL LIVE (window.__flyLive=2) — every later camera placement was then overwritten by
+  // the next fly frame. Wait on the real condition (fly ended) with a cap that fits the measured rate.
+  await settle('post-L3-select');
+  // §L3-AIM: after the selection's own §ZOOM-SEL fly, go BACK to the face-on placement — L6's framebuffer
+  // compare must look at the face the void is cut into; from the iso direction that face is the occluded
+  // one (the very reason the old aim missed), so a real cut could read as "no visible change" there.
+  await t.framePickable(target.fid);
   await t.shot('02-selected');
 
   const before = await t.oplog(); const pix0 = await t.pixsum(); const tw0 = await tris(t, target.fid);
@@ -112,7 +150,26 @@ runE2E('W-E2E-CUT-LAYERS', async (t) => {
     pix0 !== pix1 && tw0 !== tw1, 'pix ' + pix0 + '→' + pix1 + ' tris ' + tw0 + '→' + tw1);
 
   // L7: Fillet-edge PREREQUISITE (§CHAIN-SURVIVES-LAYER-CUT) — real edges must resolve off the layer-cut solid.
-  await t.clickSel('#b-fillet'); await t.sleep(700);
+  // §L3-AIM: bCut.onclick ends in highlight(null) (deselect by design, see witness_e2e_cut.js C6 note) and
+  // enterFillet() refuses with no selection ("select a solid first, then Fillet") — so the cut wall must be
+  // RE-SELECTED by a real click first (never reached on origin/main: L3 failed before this line). The
+  // rebuilt (worker B-rep, void subtracted) mesh carries the same featureId, so the same aim applies. Then
+  // wait on the CONDITION enterFillet itself reports in #stat ("fillet: click edges (N available)…" or
+  // "FAIL …"), not a fixed sleep — queryEdges is a worker round-trip whose latency depends on load.
+  {
+    const aim = await t.framePickable(target.fid);
+    if (aim) { await t.pg.mouse.click(aim.pt[0], aim.pt[1]); }
+    const t0 = Date.now(); let resel = false;
+    while (Date.now() - t0 < 3000) { resel = await t.pg.evaluate((f) => Array.from(window.Bonsai._selSet || []).includes(f), target.fid); if (resel) break; await t.sleep(100); }
+    console.log('  §L7-RESELECT fid=' + target.fid + ' selected=' + resel + ' waitedMs=' + (Date.now() - t0));
+    await settle('post-L7-reselect');
+  }
+  await t.clickSel('#b-fillet');
+  {
+    const t0 = Date.now(); let stat = '';
+    while (Date.now() - t0 < 15000) { stat = await t.pg.evaluate(() => (document.getElementById('stat') || {}).textContent || ''); if (/^fillet: click edges|^FAIL|^select a solid first/.test(stat)) break; await t.sleep(100); }
+    console.log('  §L7-STAT "' + stat + '" waitedMs=' + (Date.now() - t0));
+  }
   const edges = await t.pg.evaluate(() => (window._edgeList || []).map(e => ({ i: e.i, mid: e.mid })));
   t.assert('L7 FILLET-EDGES (real, non-empty edge list off the layer-cut solid)', edges.length >= 1, 'edges=' + edges.length);
   // L8: INFORMATIONAL — try to actually apply one; log the real outcome, don't gate the suite on it (see

@@ -12,9 +12,19 @@
  *   N1 walk PLB on Terminal → w.chainSegs > 0 (§DISC-WALK ... chainSegs=N)
  *   N2 chains rendered as 3D lines in the DiscWalker root (THREE.LineSegments)
  *   N3 §ROUTER-CHAIN-COMMIT folded>0 logged
- *   N4 op-log contains GEOM_SWEEP ops carrying parameters._dw.from_guid + _dw.to_guid (real chain identity)
+ *   N4 [RETARGETED, see SPEC_NNCHAIN.md] op-log GEOM_SWEEP ops for a routed run carry real routing identity
+ *      from the routePattern bridge (_dw.rule='pattern:*', real RW_ from_kind/to_kind, a real crossSection
+ *      product, non-degenerate path) — NOT the old from_guid/to_guid (routeChains()'s real-element nn-network),
+ *      which the current ARC-only + routePattern-bridge strategy never produces (L6: PLB host-binds 0 on all
+ *      8 residents, so there are no real host-bound elements to chain between; Terminal's own chain segs carry
+ *      mode:'pattern-bridge', not real element guids). W-MEP-ROUTE-RENDER (12/12) already covers the render seam.
  *   N5 folded count == min(segs, cap) and honestly logged when capped
- *   N6 undo() removes the last sweep; redo() restores it
+ *   N6 [RETARGETED, see SPEC_NNCHAIN.md] a routed run's signed sweep row is individually undoable/redoable via
+ *      the signed-toggle primitive (oplog.setUndone, §MHIST-ROWS) that undo()/redo() themselves call — targeted
+ *      at a real committed sweep id, not assumed positionally last. Plain undo() does NOT hit the sweep here:
+ *      Terminal's PLB walk auto-commits ~597 bend/tee fitting GEOM_INSERT ops (§CAMPAIGN M5) AFTER the chain
+ *      sweeps, and undo() is row-granular LIFO (bonsai_oplog.js:472-484) — that is real, correct app behaviour,
+ *      not the thing under test.
  *   N7 no script LOAD_FAIL / pageerror
  */
 'use strict';
@@ -112,30 +122,56 @@ async function openResident(page, key) {
     (nSeg <= cap || /cap=\d+, occt-bounded; full \d+ rendered live/.test(commitLog)),
     'folded=' + folded + ' expect=' + expectFolded + ' cap=' + cap);
 
-  // N4 op-log GEOM_SWEEP ops with _dw.from_guid/to_guid
+  // N4 [RETARGETED — SPEC_NNCHAIN.md] op-log GEOM_SWEEP ops for a routed run carry real routing identity from
+  // the routePattern bridge: _dw.rule='pattern:*', real RW_ from_kind/to_kind, a real (non-invented) crossSection
+  // product, and non-degenerate path coords — measured from the real walk, not from_guid/to_guid (routeChains()'s
+  // real-element nn-network field, which the bridge path never sets; see SPEC_NNCHAIN.md).
   var sweeps = await page.evaluate(function () {
-    if (!window.Bonsai.oplog || !window.Bonsai.oplog.db) return { total: 0, withDw: 0, sample: null };
+    if (!window.Bonsai.oplog || !window.Bonsai.oplog.db) return { total: 0, withId: 0, sample: null, ids: [] };
     var ops = window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP'; });
-    var withDw = ops.filter(function (o) { return o.parameters && o.parameters._dw && o.parameters._dw.from_guid && o.parameters._dw.to_guid; });
-    return { total: ops.length, withDw: withDw.length, sample: withDw[0] ? { f: withDw[0].parameters._dw.from_guid, t: withDw[0].parameters._dw.to_guid, gap: withDw[0].parameters._dw.gap } : null };
+    function finite3(p) { return Array.isArray(p) && p.length === 3 && p.every(function (n) { return typeof n === 'number' && isFinite(n); }); }
+    function nonDegenerate(path) { return Array.isArray(path) && path.length === 2 && finite3(path[0]) && finite3(path[1]) &&
+      (path[0][0] !== path[1][0] || path[0][1] !== path[1][1] || path[0][2] !== path[1][2]); }
+    var withId = ops.filter(function (o) {
+      var d = o.parameters && o.parameters._dw;
+      return d && d.disc === 'PLB' && typeof d.rule === 'string' && d.rule.indexOf('pattern:') === 0 &&
+        typeof d.from_kind === 'string' && d.from_kind.indexOf('RW_') === 0 &&
+        typeof d.to_kind === 'string' && d.to_kind.indexOf('RW_') === 0 &&
+        typeof d.crossSection === 'string' && d.crossSection.length > 0 &&
+        nonDegenerate(o.parameters.path);
+    });
+    return { total: ops.length, withId: withId.length, ids: ops.map(function (o) { return o.id; }),
+      sample: withId[0] ? { id: withId[0].id, rule: withId[0].parameters._dw.rule, fk: withId[0].parameters._dw.from_kind,
+        tk: withId[0].parameters._dw.to_kind, xs: withId[0].parameters._dw.crossSection } : null };
   });
-  chk('N4 op-log GEOM_SWEEP ops carry _dw.from_guid + _dw.to_guid', sweeps.withDw === folded && sweeps.withDw > 0,
-    'sweeps=' + sweeps.total + ' withDw=' + sweeps.withDw + (sweeps.sample ? ' eg ' + sweeps.sample.f.slice(0, 8) + '→' + sweeps.sample.t.slice(0, 8) + ' gap=' + sweeps.sample.gap : ''));
+  chk('N4 op-log GEOM_SWEEP ops carry real routing identity (_dw.rule/from_kind/to_kind/crossSection + real path) from the routePattern bridge',
+    sweeps.withId === folded && sweeps.withId > 0,
+    'sweeps=' + sweeps.total + ' withId=' + sweeps.withId + (sweeps.sample ? ' eg id=' + sweeps.sample.id + ' rule=' + sweeps.sample.rule +
+      ' ' + sweeps.sample.fk + '→' + sweeps.sample.tk + ' xs=' + sweeps.sample.xs : ''));
 
-  // N6 undo/redo a sweep
-  var sweepBefore = sweeps.withDw;
-  await page.evaluate(function () { return window.Bonsai.oplog.undo(); });
+  // N6 [RETARGETED — SPEC_NNCHAIN.md] a routed run's signed sweep row is individually undo/redo-able via the
+  // signed-toggle primitive setUndone (§MHIST-ROWS) that undo()/redo() themselves call — targeted at a real
+  // committed sweep id (Terminal's PLB walk auto-commits ~597 bend/tee fittings AFTER the chain sweeps, so a
+  // plain undo() hits the newest fitting row, not the sweep; that is correct row-granular LIFO behaviour, not
+  // the thing under test here).
+  var targetId = sweeps.ids.length ? sweeps.ids[0] : null;
+  var totalBefore = await page.evaluate(function () { return window.Bonsai.oplog.length; });
+  var undoRes = targetId != null ? await page.evaluate(function (id) { return window.Bonsai.oplog.setUndone([id], true); }, targetId) : null;
   await page.waitForTimeout(300);
-  var sweepAfterUndo = await page.evaluate(function () {
-    return window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP' && o.parameters && o.parameters._dw && o.parameters._dw.from_guid; }).length;
-  });
-  await page.evaluate(function () { return window.Bonsai.oplog.redo(); });
+  var afterUndo = await page.evaluate(function (id) {
+    var sweeps2 = window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP'; });
+    return { total: window.Bonsai.oplog.length, present: sweeps2.some(function (o) { return o.id === id; }), sweepCount: sweeps2.length };
+  }, targetId);
+  var redoRes = targetId != null ? await page.evaluate(function (id) { return window.Bonsai.oplog.setUndone([id], false); }, targetId) : null;
   await page.waitForTimeout(300);
-  var sweepAfterRedo = await page.evaluate(function () {
-    return window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP' && o.parameters && o.parameters._dw && o.parameters._dw.from_guid; }).length;
-  });
-  chk('N6 undo() removes a chain sweep; redo() restores it', sweepAfterUndo === sweepBefore - 1 && sweepAfterRedo === sweepBefore,
-    'before=' + sweepBefore + ' undo=' + sweepAfterUndo + ' redo=' + sweepAfterRedo);
+  var afterRedo = await page.evaluate(function (id) {
+    var sweeps2 = window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP'; });
+    return { total: window.Bonsai.oplog.length, present: sweeps2.some(function (o) { return o.id === id; }), sweepCount: sweeps2.length };
+  }, targetId);
+  chk('N6 setUndone([sweepId], true/false) removes then restores a routed run\'s signed sweep row',
+    targetId != null && afterUndo.total === totalBefore - 1 && afterUndo.present === false && afterUndo.sweepCount === folded - 1 &&
+      afterRedo.total === totalBefore && afterRedo.present === true && afterRedo.sweepCount === folded,
+    'id=' + targetId + ' before=' + totalBefore + ' afterUndo=' + JSON.stringify(afterUndo) + ' afterRedo=' + JSON.stringify(afterRedo));
 
   // N7 no script load failure / pageerror
   var loadFail = logs.filter(function (l) { return /LOAD_FAIL|PAGEERROR/.test(l); });

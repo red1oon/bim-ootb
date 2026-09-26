@@ -79,7 +79,7 @@ for (const [name, rx] of Object.entries(TERMS)) {
 }
 const ok = (c, m) => { console.log((c ? '  ok    ' : '  FAIL  ') + m); if (!c) process.exitCode = 1; };
 function keyOf(st, noReuse) {
-  if (noReuse || !st.inHold) return null;
+  if (noReuse || !st.inHold || st.sanityLive) return null;   // §FRAME_REUSE_SANITY
   return ['h1', st.hudAlpha.toFixed(6), 'rev' + st.rev + '+' + st.prevRev,
     st.pose.map((v) => v.toFixed(4)).join(','), st.target.map((v) => v.toFixed(4)).join(','),
     st.sun.toFixed(3), String(st.day)].join('|');
@@ -166,6 +166,29 @@ ok(d.reused === 0 && d.rendered === 265, 'reuse disabled -> rendered=' + d.rende
 
 console.log('');
 const verdict = process.exitCode ? 'FAIL' : 'PASS';
-console.log('§FRAME_REUSE_W ' + verdict + ' src=' + path.basename(SRC) +
+// ── PART F — §FRAME_REUSE_SANITY (2026-09-25) ───────────────────────────────────────────────────
+// ISSUE: a Sanity box/wave animates with FILM TIME, which the key does not carry, so a wave live inside the hold would
+// freeze on reused frames. PROVES: (1) the source gates reuse on A._ruleFilmLive and rule_findings_film.js sets it from
+// its on-screen boxes; (2) with a Sanity set live over a stretch of the hold, 0 frames are reused in that stretch, and
+// reuse outside it is unchanged against the same run with no Sanity.
+console.log('\n── PART F — SANITY LIVE INSIDE THE HOLD ─────────────────────────────');
+{
+  const gateSrc = src.slice(src.indexOf('§FRAME_REUSE_SANITY'), src.indexOf("var _reuseKey = null;") + 400);
+  ok(/inHold && _lastFrameBlob && !A\._ruleFilmLive\)/.test(src), 'cinema_maxq.js reuse branch is gated on !A._ruleFilmLive');
+  const rff = fs.readFileSync(path.resolve(path.dirname(SRC), 'rule_findings_film.js'), 'utf8');
+  ok(/A\._ruleFilmLive = boxes\.length > 0/.test(rff) && /A\._ruleFilmLive = false/.test(rff), 'rule_findings_film.js sets A._ruleFilmLive from its on-screen boxes (reset each composite)');
+  const N = HOLD[1] - HOLD[0] + 1, LIVE = [60, 160];   // a 100-frame Sanity window inside the hold
+  const base = [], withS = [];
+  for (let e = 0; e < N; e++) { const st = stateAt(HOLD[0] + e); base.push(st); withS.push(Object.assign({}, st, { sanityLive: e >= LIVE[0] && e < LIVE[1] })); }
+  const perFrame = (frames) => { let lastKey = null, lastBlob = null; return frames.map((st) => { const k = keyOf(st, false); const re = (k !== null && k === lastKey && !!lastBlob); if (!re) { lastBlob = 'b'; lastKey = k; } return re; }); };
+  const a = perFrame(base), b = perFrame(withS);
+  const reusedInLive = b.slice(LIVE[0], LIVE[1]).filter(Boolean).length, baseInLive = a.slice(LIVE[0], LIVE[1]).filter(Boolean).length;
+  const outsideSame = a.every((v, k) => (k >= LIVE[0] && k < LIVE[1] + 1) ? true : v === b[k]);
+  ok(baseInLive > 0, 'the window is a real test: without Sanity the same stretch reuses ' + baseInLive + ' frames');
+  ok(reusedInLive === 0, 'with a Sanity set live, reused inside the window = ' + reusedInLive + ' (expect 0)');
+  ok(outsideSame, 'reuse outside the window unchanged (the frame right after the window may render once: it re-keys)');
+}
+
+console.log('§FRAME_REUSE_W ' + (process.exitCode ? 'FAIL' : verdict) + ' src=' + path.basename(SRC) +
   ' (SCOPE: the decision logic only — the delivered film is proven by diffing a real bake\'s §FRAME_HASH against ' + path.basename(FIX) + ')');
 process.exit(process.exitCode ? 1 : 0);

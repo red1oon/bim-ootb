@@ -72,7 +72,7 @@
     var d = window.swbTabData && window.swbTabData();
     if (!d) return [{ id: 'sw-empty', label: 'Open a resident (▾) or local .db (🏗) to walk', sub: '' }];
     var rows = [
-      { id: 'sw-grid', label: 'Grid ' + d.grid, sub: d.columns + ' columns' },
+      { id: 'sw-grid', label: 'Grid ' + d.grid + (d.rotationDeg ? ' ∠' + d.rotationDeg.toFixed(2) + '°' : ''), sub: d.columns + ' columns' },   // §ROW7-ROT
       { id: 'sw-gird', label: d.girders + ' girders', sub: 'RED ' + d.signals.RED + ' · ORANGE ' + d.signals.ORANGE + ' · GREEN ' + d.signals.GREEN }
     ];
     // CALIBRATED confidence (the EARNED gauge — fitted on the Terminal RosettaStone, never the raw
@@ -278,7 +278,9 @@
             var openIt = function () {
               var ok = _openBuffer(dbs.extractedDb, name);
               if (ok && O) { _replayEdits(); _seedArcEditable(O, name, null); }
+              else if (window.__arcSeedDone) window.__arcSeedDone('ifc-open-not-seeded');
             };
+            _seedPending(name);
             if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
             else openIt();
           } catch (err) { console.warn(TAG + ' §IFC-OPEN-BUILD-FAIL ' + (err && err.message)); }
@@ -563,6 +565,38 @@
     finally { if (db) { try { db.close(); } catch (e) { } } }
   }
 
+  // §ROW7-TRUE-CENTRE — re-init the STR walk over the SAME substrate the synchronous open built, now that the
+  // geometry exists. Same shape and reason as _reDeriveXEdgesWithGeo above: swbInit ran at _openBuffer BEFORE
+  // the *_geo.db fetch was even issued, so its columns were placement ANCHORS, not centres (MODELLER_MASTER row 7:
+  // 0.0939 m reported vs 0.1039 m true on Terminal; column z off by up to 3.944 m in the rendered skeleton).
+  // Replays composeGhosts + §ANCHOR-BLIND so the two inits differ in exactly ONE variable (geoDb), then re-folds
+  // the instance's recorded STR_WALK_EDIT ops onto the re-inited base (they are already signed in the mo_ log —
+  // swbReplay never re-commits). Runs BEFORE _seedArcEditable so _seedStrWalk renders the true-centre walk.
+  // Logs §STRWALK-GEO with the centre census; a re-init that resolved 0 meshes is visible, not silent.
+  function _reinitStrWalkWithGeo(geoBuf) {
+    if (!geoBuf || !window.__dwBuf || !window.SQL || !window.swbInit) return null;
+    var db = null, geo = null, st = null;
+    try {
+      db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+      geo = new window.SQL.Database(new Uint8Array(geoBuf));
+      composeGhostsFromAggregates(db);
+      try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }
+      st = window.swbInit(db, { geoDb: geo });
+      ready = !!st; lastEx = [];
+      if (st) _replayEdits();
+      var c = (st && st.centres) || { mesh: 0, anchor: 0 };
+      var gg = st && st.base && st.base.grid;
+      console.log(TAG + ' §STRWALK-GEO re-init with real geometry: system=' + (st ? st.system : 'none') +
+        ' centres=mesh:' + c.mesh + ' anchor:' + c.anchor +
+        (st && st.colRMS != null ? ' colRMS=' + st.colRMS.toFixed(4) + 'm' : '') +
+        (gg ? ' grid=' + gg.xLines.length + '×' + gg.yLines.length + (gg.theta ? ' rot=' + gg.thetaDeg.toFixed(3) + '°' : '') : '') +   // §ROW7-ROT
+        (c.mesh === 0 ? ' — 0 meshes resolved: the walk is still on ANCHORS' : ''));
+      if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    } catch (e) { console.warn(TAG + ' §STRWALK-GEO re-init failed', e && e.message); }
+    finally { if (geo) { try { geo.close(); } catch (e) { } } if (db) { try { db.close(); } catch (e) { } } }
+    return st;
+  }
+
   function _fetchGeoDb(res) {
     if (!res.geoDb) return Promise.resolve(null);
     // §GEO-SERVED: geometry files come from res.geoBase (object storage) when declared; resident METADATA
@@ -589,8 +623,16 @@
   // Fork the per-building EDITABLE INSTANCE (op-log key 'mo_<building>') so this resident's signed edits
   // fold into its own instance while the loaded meta.db REFERENCE (the IDB cache entry) stays pristine.
   // Once the instance's op-log is loaded, replay its recorded edits back into the fresh walk.
+  // §WALK-AFTER-SEED (SPEC_WALK_AFTER_SEED.md): an Open makes the building's ARC seed PENDING; discWalk/discWalkAll await it,
+  // so a Walk clicked early (Duplex 4.4 s, Terminal 24 s window measured) never signs its rows before the seed's.
+  function _seedPending(key) {
+    var done; window.__arcSeedReady = new Promise(function (r) { done = r; });
+    window.__arcSeedDone = function (why) { if (done) { console.log(TAG + ' §WALK-AFTER-SEED seed settled building=' + key + ' (' + why + ')'); done(why); done = null; } };
+  }
   function _forkEditable(res) {
+    _seedPending(res.key);
     var O = window.Bonsai && window.Bonsai.oplog;
+    if (!(O && O.setModelKey)) window.__arcSeedDone('no-oplog');
     if (O && O.setModelKey) O.setModelKey('mo_' + res.key).then(function (n) {
       console.log(TAG + ' §STRWALK-MO editable instance mo_' + res.key + ' active ops=' + n + ' (reference meta.db stays pristine)');
       _replayEdits();
@@ -602,6 +644,8 @@
         // §XEDGE-GEOWIRE: the cross-edge set derived synchronously at open had NO geometry (it ran before
         // this fetch was even issued). Now that the real substrate is here, derive it again for real.
         _reDeriveXEdgesWithGeo(geoBuf);
+        // §ROW7-TRUE-CENTRE: the STR walk, too, was initialised before this fetch — re-init it on true centres.
+        _reinitStrWalkWithGeo(geoBuf);
         _seedArcEditable(O, res.key, geoBuf);
       }).catch(function (e) {
         // §GEO-SERVED: console.error, NOT console.warn — DevTools' default filter hides warn, which is how the
@@ -625,7 +669,8 @@
   // Absent/null (every other resident) → io.geoDb stays undefined, buildSeedOps falls back to `bdb` itself —
   // byte-identical to pre-existing behaviour.
   function _seedArcEditable(O, key, geoBuf) {
-    if (!(window.ArcEditable && window.__dwBuf && window.SQL && window.KernelOps && O && O.commitSeedGroup)) return;
+    var settle = function (why) { if (window.__arcSeedDone) window.__arcSeedDone(why); };
+    if (!(window.ArcEditable && window.__dwBuf && window.SQL && window.KernelOps && O && O.commitSeedGroup)) { settle('not-seedable'); return; }
     var bdb = null, gdb = null;
     try {
       bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
@@ -672,8 +717,8 @@
       // hint) and the exact way Terminal silently never loaded any geometry. console.error makes it a loud,
       // impossible-to-miss line in devtools/CI logs (still just a log line — no new UI surface, per scope).
       }).catch(function (e) { console.error(TAG + ' §ARC-SEED-WIRE failed ' + (e && e.message) + ' — building=' + key + ' seeded ZERO ops (no geometry will render)'); })
-        .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } try { if (gdb) gdb.close(); } catch (e) { } });
-    } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } if (gdb) { try { gdb.close(); } catch (e3) { } } }
+        .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } try { if (gdb) gdb.close(); } catch (e) { } settle('seeded'); });
+    } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } if (gdb) { try { gdb.close(); } catch (e3) { } } settle('open-failed'); }
   }
 
   // §8E-1b — render the walked STR SKELETON (columns + girders) into the laid ARC as signed GEOM_INSERT op-rows
@@ -1008,6 +1053,7 @@
     },
     onClear: onClear,
     _openStrDb: openStrDb, _openIfcFile: openIfcFile, _category: category,
-    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase
+    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase,
+    _reinitStrWalkWithGeo: _reinitStrWalkWithGeo   // §ROW7-TRUE-CENTRE — witness hook (W-ROW7-TRUE-CENTRE browser leg)
   };
 })();

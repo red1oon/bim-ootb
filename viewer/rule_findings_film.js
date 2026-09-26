@@ -434,6 +434,7 @@ function setupRuleFindingsFilm(A) {
   // [measure.rulefindings:3x@maxAlpha=1.00,...]`, not guessed). Multiplying it in at the one spot
   // `op` is computed fixes every draw this function makes, not just one call site.
   A.ruleFindingsFilmCompositeOntoCanvas = function (ctx, w, h, filmSec, ambientAlpha) {
+    A._ruleFilmLive = false;   // §FRAME_REUSE_SANITY — set true below when a set box/wave is on screen this frame
     var _ambA = (ambientAlpha == null) ? 1 : ambientAlpha;
     var cam = A.camera, at = A._ruleTintAt;
     if (!ctx || !_sets.length || !cam || !at || !(w > 0) || !(h > 0)) return 0;
@@ -581,6 +582,10 @@ function setupRuleFindingsFilm(A) {
                    anchor: pf.vis.reduce(function (a, b) { return a.depth < b.depth ? a : b; }) });
     }
 
+    // §FRAME_REUSE_SANITY (2026-09-25) — a box/wave animates with FILM TIME, which the bake's frame-reuse key (built only
+    // inside a load-path hold) does not carry: a reused frame would freeze it. The bake reads this flag and does not reuse
+    // the next frame while a Sanity set is on screen.
+    A._ruleFilmLive = boxes.length > 0;
     // §77.2 — only the set that holds the scene keeps its markers lit; everything else is off.
     if (typeof A.ruleTintShowOnly === 'function') {
       // §78 — hand the WAVE's per-member glow through, not a boolean. This is what makes the outward
