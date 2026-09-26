@@ -677,13 +677,17 @@
   // world position per meter pixel (override MeshBasicMaterial writing its world position into the float target), then the
   // light zone at 0.3 m toward the camera; returns a 0/1 mask of pixels in camZone.
   var worldMat = null;
-  function zoneMask(A, hidden, camZone) {
-    var THREE = global.THREE, R = A.renderer, LZ = global.LightZones;
+  function worldMatGet(THREE) {
     if (!worldMat) { worldMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
       worldMat.onBeforeCompile = function (sh) {
         sh.vertexShader = 'varying vec3 vSLW;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n\tvec4 _slw = vec4( transformed, 1.0 );\n#ifdef USE_BATCHING\n\t_slw = batchingMatrix * _slw;\n#endif\n#ifdef USE_INSTANCING\n\t_slw = instanceMatrix * _slw;\n#endif\n\tvSLW = ( modelMatrix * _slw ).xyz;');
         sh.fragmentShader = 'varying vec3 vSLW;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\n\tgl_FragColor = vec4( vSLW, 1.0 );'); };
       worldMat.customProgramCacheKey = function () { return 'slWorldPos'; }; }
+    return worldMat;
+  }
+  function zoneMask(A, hidden, camZone) {
+    var THREE = global.THREE, R = A.renderer, LZ = global.LightZones;
+    worldMatGet(THREE);
     var rt = new THREE.WebGLRenderTarget(METER_W, METER_H, { type: THREE.FloatType, depthBuffer: true }), buf = new Float32Array(METER_W * METER_H * 4);
     var prevRT = R.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background, prevTM = R.toneMapping, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
     hidden.forEach(function (o) { o.visible = false; });
@@ -695,6 +699,81 @@
       var v = LZ.at({ x: x + dx / dl * 0.3, y: y + dy / dl * 0.3, z: z + dz / dl * 0.3 }); if (v === camZone) { mask[i] = 1; hit++; } }
     console.log('§METER zoneMask camZone=' + camZone + ' pixelsInZone=' + hit);
     return mask;
+  }
+  // ══ §FAULT_BLOCK (red1 2026-09-26: Hospital "blocky diagonal stair-step shading on a tall teal wall" — still
+  // bounce_still_1790378763574 — and "Terminal, Hospital indoor rather botchy shadows"; §FAULT read clean on both, so the
+  // class had no counter). Is the LIGHTING stepped on a grid? One float render of the scene's incident light (the §METER's
+  // white Lambert override: no albedo, no texture edges) + one of each pixel's world position. For every pair of neighbour
+  // pixels on one smooth surface (positions continuous, normals within 8 deg) the log step g = |ln E_i - ln E_j|. Pairs whose
+  // segment crosses a light-zone cell plane (CELL grid) vs pairs crossing nothing: ratioZone = mean g crossing / mean g not.
+  // Same for the sun shadow-map texel grid (ratioShadow). A smooth field reads ~1 (crossings are just a spatial sample);
+  // lighting that steps at the grid reads >> 1. Not a fault by itself until calibrated on red1's references (logged).
+  var BLOCK_W = 480;
+  function blockRead(A) {
+    var THREE = global.THREE, R = A.renderer, LZ = global.LightZones, Z = LZ && LZ.get(); if (!THREE || !R || !Z || !A.camera) return null;
+    var t0 = performance.now(), W = BLOCK_W, H = Math.max(2, Math.round(W / (A.camera.aspect || 16 / 9))), N = W * H, hidden = [];
+    A.scene.traverse(function (o) { if (!o.visible) return;
+      var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
+      var glow = o.isSprite || o.isPoints || o.isLine || o === A._sky || (ms && ms.every(function (m) { return !m || m.isMeshBasicMaterial || m.isShaderMaterial || (m.transparent && m.opacity < 0.95); }));
+      if (glow && (o.isMesh || o.isSprite || o.isPoints || o.isLine || o.isInstancedMesh || o.isBatchedMesh)) { o.visible = false; hidden.push(o); } });
+    if (!meterMat) meterMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    worldMatGet(THREE);
+    var rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType, depthBuffer: true }), E = new Float32Array(N * 4), Pw = new Float32Array(N * 4);
+    var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevOv = A.scene.overrideMaterial, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
+    try { A.scene.background = null; A.scene.fog = null; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
+      A.scene.overrideMaterial = meterMat; R.clear(true, true, true); R.render(A.scene, A.camera); push(A, meterMat); R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, W, H, E);
+      A.scene.overrideMaterial = worldMat; R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, W, H, Pw); }
+    finally { R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; A.scene.overrideMaterial = prevOv; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
+    var cp = A.camera.position, fpk = 2 * Math.tan((A.camera.fov || 50) * Math.PI / 360) / H, cl = Z.cell, ox = Z.org.x, oy = Z.org.y, oz = Z.org.z;
+    var sh = A.sun && A.sun.castShadow && A.sun.shadow && A.sun.shadow.map ? A.sun.shadow : null, SM = sh ? sh.matrix.elements : null, ms = sh ? sh.mapSize : null;
+    var L = new Float32Array(N), ok = new Uint8Array(N), nrm = new Float32Array(N * 3);
+    for (var i = 0; i < N; i++) { if (Pw[i * 4 + 3] < 0.5 || E[i * 4 + 3] < 0.5) continue; var l = 0.2126 * E[i * 4] + 0.7152 * E[i * 4 + 1] + 0.0722 * E[i * 4 + 2]; if (!isFinite(l)) continue; L[i] = Math.log(1e-4 + Math.max(0, l)); ok[i] = 1; }
+    function P(i, k) { return Pw[i * 4 + k]; }
+    function cont(i, j) { if (!ok[i] || !ok[j]) return false; var dx = P(i, 0) - P(j, 0), dy = P(i, 1) - P(j, 1), dz = P(i, 2) - P(j, 2), d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      var dc = Math.sqrt((P(i, 0) - cp.x) * (P(i, 0) - cp.x) + (P(i, 1) - cp.y) * (P(i, 1) - cp.y) + (P(i, 2) - cp.z) * (P(i, 2) - cp.z)); return d < 4 * dc * fpk; }
+    // per-pixel normal from the position differences (right, down), only where both neighbours are continuous
+    for (var y = 0; y < H - 1; y++) for (var x = 0; x < W - 1; x++) { var a = y * W + x, r = a + 1, u = a + W; if (!cont(a, r) || !cont(a, u)) continue;
+      var ax = P(r, 0) - P(a, 0), ay = P(r, 1) - P(a, 1), az = P(r, 2) - P(a, 2), bx = P(u, 0) - P(a, 0), by = P(u, 1) - P(a, 1), bz = P(u, 2) - P(a, 2);
+      var nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx, nl = Math.sqrt(nx * nx + ny * ny + nz * nz); if (!(nl > 0)) continue; nrm[a * 3] = nx / nl; nrm[a * 3 + 1] = ny / nl; nrm[a * 3 + 2] = nz / nl; }
+    function smooth(i, j) { var d = nrm[i * 3] * nrm[j * 3] + nrm[i * 3 + 1] * nrm[j * 3 + 1] + nrm[i * 3 + 2] * nrm[j * 3 + 2]; return d > 0.99 && cont(i, j); }
+    function cell(i, k, o) { return Math.floor((P(i, k) - o) / cl); }
+    function stex(i) { if (!SM) return null; var x = P(i, 0), y = P(i, 1), z = P(i, 2), w = SM[3] * x + SM[7] * y + SM[11] * z + SM[15];
+      return [Math.floor((SM[0] * x + SM[4] * y + SM[8] * z + SM[12]) / w * ms.x), Math.floor((SM[1] * x + SM[5] * y + SM[9] * z + SM[13]) / w * ms.y)]; }
+    var s = { zone: [0, 0], shadow: [0, 0], none: [0, 0], flat: [0, 0], gz: [], gn: [] };
+    function pair(i, j) { if (!smooth(i, j)) return; var g = Math.abs(L[i] - L[j]);
+      // a crossing counts only along an axis the surface RUNS along (|n_axis| < 0.5): a wall lying ON a cell plane would
+      // otherwise "cross" it on float noise alone and bias the sample toward walls
+      var zx = (Math.abs(nrm[i * 3]) < 0.5 && cell(i, 0, ox) !== cell(j, 0, ox)) || (Math.abs(nrm[i * 3 + 1]) < 0.5 && cell(i, 1, oy) !== cell(j, 1, oy)) || (Math.abs(nrm[i * 3 + 2]) < 0.5 && cell(i, 2, oz) !== cell(j, 2, oz)), ti = stex(i), tj = stex(j), sx = !!(ti && tj && (ti[0] !== tj[0] || ti[1] !== tj[1]));
+      // zone vs not (shadow ignored); among the non-zone pairs, shadow-texel crossing vs not (s.flat)
+      if (zx) { s.zone[0] += g; s.zone[1]++; s.gz.push(g); return; } s.none[0] += g; s.none[1]++; s.gn.push(g);
+      if (sx) { s.shadow[0] += g; s.shadow[1]++; } else { s.flat[0] += g; s.flat[1]++; } }
+    for (var y2 = 0; y2 < H - 1; y2++) for (var x2 = 0; x2 < W - 1; x2++) { var b = y2 * W + x2; pair(b, b + 1); pair(b, b + W); }
+    function mean(q) { return q[1] ? q[0] / q[1] : 0; }
+    s.gn.sort(function (p1, p2) { return p1 - p2; }); var p95 = s.gn.length ? s.gn[Math.floor(s.gn.length * 0.95)] : 0, steps = 0; s.gz.forEach(function (g) { if (g > p95) steps++; });
+    var mn = mean(s.none), out = { pairs: s.zone[1] + s.shadow[1] + s.none[1], zonePairs: s.zone[1], shadowPairs: s.shadow[1], nonePairs: s.none[1],
+      ratioZone: mn > 0 ? +(mean(s.zone) / mn).toFixed(2) : null, ratioShadow: mean(s.flat) > 0 && s.shadow[1] && s.flat[1] ? +(mean(s.shadow) / mean(s.flat)).toFixed(2) : null,
+      zoneStepsOverP95: steps, zoneStepsExpected: Math.round(s.zone[1] * 0.05), shadowTexelM: sh ? +((sh.camera.right - sh.camera.left) / ms.x).toFixed(4) : null, W: W, H: H, ms: Math.round(performance.now() - t0) };
+    out.zoneStepExcess = Math.max(0, out.zoneStepsOverP95 - out.zoneStepsExpected);
+    console.log('§FAULT_BLOCK ' + (out.pairs ? '' : 'VACUOUS ') + 'ratioZone=' + out.ratioZone + ' ratioShadow=' + out.ratioShadow + ' zoneSteps>p95=' + steps + ' (expected ' + out.zoneStepsExpected + ', excess ' + out.zoneStepExcess + ')' +
+      ' pairs zone/nonZone=' + s.zone[1] + '/' + s.none[1] + ' (nonZone: shadowTexelCross/flat=' + s.shadow[1] + '/' + s.flat[1] + (s.flat[1] ? '' : ' — shadow texel finer than a pixel step: ratioShadow not judged') + ')' + ' meanLogStep none=' + mn.toFixed(4) + ' cell=' + cl + 'm shadowTexel=' + out.shadowTexelM + 'm ' + W + 'x' + H + ' ms=' + out.ms);
+    return out;
+  }
+  // §FAULT_BLOCK per term: the same measurement with only one source class on — 'lamps' (lamp data), 'sky' (hemi + ambient +
+  // environment, i.e. the sky-view-field-gated terms), 'sun' (directional lights incl. cascades). Restored after each read.
+  function blockTerms(A) {
+    var out = {}, lights = []; A.scene.traverse(function (o) { if (o.isLight) lights.push([o, o.intensity]); });
+    var env = A.scene.environment, lamp0 = LAMP[0];
+    ['all', 'lamps', 'sky', 'sun'].forEach(function (t) {
+      try {
+        if (t !== 'all') {
+          lights.forEach(function (e) { var o = e[0], keep = (t === 'sun' && o.isDirectionalLight) || (t === 'sky' && (o.isHemisphereLight || o.isAmbientLight || o.isLightProbe)); o.intensity = keep ? e[1] : 0; });
+          A.scene.environment = t === 'sky' ? env : null; LAMP[0] = t === 'lamps' ? lamp0 : 0;
+        }
+        var r = blockRead(A); out[t] = r ? r.ratioZone : null;
+      } finally { lights.forEach(function (e) { e[0].intensity = e[1]; }); A.scene.environment = env; LAMP[0] = lamp0; }
+    });
+    console.log('§FAULT_BLOCK_TERMS ratioZone all/lamps/sky/sun=' + out.all + '/' + out.lamps + '/' + out.sky + '/' + out.sun);
+    return out;
   }
   function outdoorE(A) {
     var sd = A.sun ? A.sun.position.clone().normalize() : null, sinE = sd ? Math.max(0, sd.y) : 0, sunI = A.sun ? A.sun.intensity : 0;
@@ -732,5 +811,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { blockTerms: blockTerms, blockRead: blockRead, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);
