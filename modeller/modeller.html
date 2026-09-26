@@ -5138,7 +5138,10 @@ function _registerDiscRoster() {
         // §WALKALL-MEP-ONLY: the row walks the SERVICES only; STR/roof keep their own rows below.
         var absentMep = absent.filter(function (d) { return d !== 'STR' && d !== 'roof'; });
         var allNode = { id: 'dw-all', label: '▶▶ Walk ALL Services', kind: 'disc', disc: '__ALL__', sub: absentMep.length + ' services not extracted · x-ray reveal' };
-        var rosterNode = { id: 'dw-root', label: 'Not extracted — walk from ' + rf, kind: 'group', children: [allNode].concat(absent.map(function (d) {
+        // §ROOF-PREFAB (red1 2026-09-26): the tiled roof is prefab ARC/STR the user reshapes along its axis like any other
+        // element (grid drag — W-E2E-GRIDMOVE-ROOF); walkers FILL IN services. So no roof walk row (it could only ever say
+        // "already present" or refuse — §ROOF-PATTERN). The engine keeps that verdict; only the Outliner button goes.
+        var rosterNode = { id: 'dw-root', label: 'Not extracted — walk from ' + rf, kind: 'group', children: [allNode].concat(absent.filter(function (d) { return d !== 'roof'; }).map(function (d) {
           var n = (window.__dwWalks && window.__dwWalks[d]) ? window.__dwWalks[d].length : 0;
           return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: n ? (n + ' placed ▶') : '▶ walk' };
         })) };
