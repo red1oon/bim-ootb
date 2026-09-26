@@ -104,6 +104,7 @@
     '  if ( uSLParams.x < 0.5 || lz < 0.5 ) return 1.0;',
     '  return ( _slFZ < -0.5 || abs( _slFZ - lz ) < 0.5 ) ? 1.0 : 0.0;',
     '}',
+    'float _slSpec = -1.0;',   // §GLASS_SPEC_GATE readback: the reflection gate slSpecKeep returned
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
     // sky only where the sampled cell sees it (_slSky, §ZONE_OPEN_SKY). Unknown (-1: a fully solid column above) is a building
@@ -113,7 +114,31 @@
     '  if ( uSLSky.x > 0.5 ) return ( _slFZ < -0.5 ) ? uSLParams.z : _slF;',   // outside: filtered too (1 away from any roof)
     '  return ( _slSky > 0.5 ) ? 1.0 : uSLParams.z;',
     '}',
+    // §GLASS_SPEC_GATE (red1 2026-09-26: "Clinic from outside glasses still black"; state at …385774229: 73 of 80 glass hits have
+    // a COVERED eye-side cell — the window reveal under the lintel — and F < 0.3 on 65, so slSkyKeep scaled the pane's sky
+    // REFLECTION to ~0). F is a diffuse, cosine-weighted sky fraction; a mirror reflection sees the sky only along its mirror
+    // direction. So the IBL radiance gets its own gate: march the mirror ray through the zone grid (0.25 m steps, 8 m) from the
+    // surface; leaving the grid or reaching an OPEN cell = it sees the sky (1); a SOLID cell first = as before (slSkyKeep). The
+    // first 1 m may cross the surface's own solid cells (a pane rasterises 1-3 cells thick). Indoors the mirror ray meets the
+    // room's walls: unchanged. CPU mirror: LightZones.specVis.
+    'float slSpecKeep( vec3 posView, vec3 nView, vec3 viewDir ) {',
+    '  float base = slSkyKeep( posView, nView ); _slSpec = base;',
+    '  if ( uSLParams.x < 0.5 || uSLSky.x < 0.5 || base >= 0.999 || _slFZ < -0.5 ) return base;',
+    '  vec3 nf = ( dot( nView, viewDir ) < 0.0 ) ? - nView : nView;',
+    '  vec3 rw = normalize( ( vec4( reflect( - viewDir, nf ), 0.0 ) * viewMatrix ).xyz ); vec3 nw = normalize( ( vec4( nf, 0.0 ) * viewMatrix ).xyz );',
+    '  float st = 0.5 * uSLParams.y; vec3 q = _slWP + nw * st; ivec3 dim = ivec3( uSLDim.xyz );',
+    '  for ( int k = 0; k < 32; k ++ ) {',
+    '    ivec3 c = ivec3( floor( ( q - uSLOrg.xyz ) / uSLParams.y ) );',
+    '    if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) { _slSpec = 1.0; return 1.0; }',
+    '    uint t = texelFetch( uSLZone, c, 0 ).r;',
+    '    if ( t == 65535u ) { if ( k >= 4 ) return base; }',
+    '    else if ( ( t & 0x3FFFu ) == 0u ) { _slSpec = 1.0; return 1.0; }',
+    '    q += rw * st;',
+    '  }',
+    '  return base;',
+    '}',
     '#else',
+    'float slSpecKeep( vec3 posView, vec3 nView, vec3 viewDir ) { return 1.0; }',
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
     'float slSkyKeep( vec3 posView, vec3 nView ) { return 1.0; }',
     '#endif', ''].join('\n');
@@ -181,7 +206,7 @@
     // every weakly lamp-lit surface (Clinic corridor / Hospital café, 2026-09-25).
     var fm = C.lights_fragment_maps, e0 = 'iblIrradiance += getIBLIrradiance(', r0 = 'radiance += getIBLRadiance(';
     if (fm.indexOf(e0) >= 0) { fm = fm.replace(e0, 'iblIrradiance += slSkyKeep( geometryPosition, geometryNormal ) * getIBLIrradiance('); ok++; }
-    if (fm.indexOf(r0) >= 0) { fm = fm.replace(r0, 'radiance += slSkyKeep( geometryPosition, geometryNormal ) * getIBLRadiance('); ok++; }
+    if (fm.indexOf(r0) >= 0) { fm = fm.replace(r0, 'radiance += slSpecKeep( geometryPosition, geometryNormal, geometryViewDir ) * getIBLRadiance('); ok++; }   // §GLASS_SPEC_GATE
     C.lights_fragment_maps = fm;
     // §SOURCED_LIGHT_ZONE_DEBUG (witness only): uSLParams.w = 1 writes the fragment's zone as the colour, after every other
     // output chunk (R = zone mod 256, G = zone / 256, B = 1 when unknown / 0.5 when the sky is kept / 0 sky off), so a
@@ -189,7 +214,8 @@
     if (C.dithering_fragment && C.dithering_fragment.indexOf('uSLParams') < 0) {
       C.dithering_fragment = C.dithering_fragment + '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
         'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : ( _slSky > 0.5 ? 0.5 : 0.0 ), 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
-        'if ( uSLParams.w > 6.5 && uSLParams.w < 7.5 ) { gl_FragColor = vec4( _slLN, _slLNP, 0.5, 1.0 ); }\n' +   // §LAMP_UNCAPPED_COST readback (float target)
+        'if ( uSLParams.w > 7.5 && uSLParams.w < 8.5 ) { gl_FragColor = vec4( _slSpec, _slF, 0.25, 1.0 ); }\n' +   // §GLASS_SPEC_GATE readback
+        'else if ( uSLParams.w > 6.5 && uSLParams.w < 7.5 ) { gl_FragColor = vec4( _slLN, _slLNP, 0.5, 1.0 ); }\n' +   // §LAMP_UNCAPPED_COST readback (float target)
         'else if ( uSLParams.w > 5.5 && uSLParams.w < 6.5 ) { gl_FragColor = vec4( _slF, ( _slFZ > 0.5 && _slFZ < 65533.5 ) ? 1.0 : 0.0, _slSky, 1.0 ); }\n' +   // §SKY_VIEW_FIELD SKY_STEP readback: F_filtered
         'else if ( uSLParams.w > 1.5 ) { mat4 _vi = inverse( viewMatrix ); vec3 _wp = ( _vi * vec4( - vViewPosition, 1.0 ) ).xyz; vec3 _wn = normalize( ( _vi * vec4( normal, 0.0 ) ).xyz ); vec3 _q = _wp + _wn * 0.2;\n' +
         '  if ( uSLParams.w < 2.5 ) { float _r = slZoneAt( _q ); float _ur = _r < 0.0 ? 0.0 : _r; gl_FragColor = vec4( mod( _ur, 256.0 ) / 255.0, floor( _ur / 256.0 ) / 255.0, _r < 0.0 ? 1.0 : 0.0, 1.0 ); }\n' +

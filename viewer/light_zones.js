@@ -607,6 +607,20 @@
     return { zone: si.zone, F: sw > 0 ? sf / sw : (si.cell >= 0 ? G[si.cell] / 10000 : 0), si: si };
   }
 
-  global.LightZones = { prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
+  // §GLASS_SPEC_GATE CPU mirror (sourced_light.js slSpecKeep, same order): the reflection gate at surface point p seen from eye.
+  // base = what slSkyKeep gives (sky-view F; unknown/solid 0 = indoorSky default); the mirror ray marched 0.25 m x 32 from
+  // p + 0.25 n: off grid / OPEN -> 1, SOLID (after the first 1 m) -> base.
+  function specVis(p, nrm, eye) {
+    var Z = cache; if (!Z || !Z.field) return null;
+    var vx = p.x - eye.x, vy = p.y - eye.y, vz = p.z - eye.z, vl = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1; vx /= vl; vy /= vl; vz /= vl;
+    var nx = nrm.x, ny = nrm.y, nz = nrm.z; if (nx * vx + ny * vy + nz * vz > 0) { nx = -nx; ny = -ny; nz = -nz; }
+    var sf = skyField(p, { x: nx, y: ny, z: nz }), base = sf.F == null ? 0 : sf.F; if (base >= 0.999) return { base: base, spec: base };
+    var d = vx * nx + vy * ny + vz * nz, rx = vx - 2 * d * nx, ry = vy - 2 * d * ny, rz = vz - 2 * d * nz, st = 0.5 * Z.cell, qx = p.x + nx * st, qy = p.y + ny * st, qz = p.z + nz * st;
+    for (var k = 0; k < 32; k++) { var c = cellOf(Z, qx, qy, qz); if (c < 0) return { base: base, spec: 1 }; var t = Z.zone[c];
+      if (t === SOLID) { if (k >= 4) return { base: base, spec: base }; } else if ((t & ZONE_MASK) === 0) return { base: base, spec: 1 };
+      qx += rx * st; qy += ry * st; qz += rz * st; }
+    return { base: base, spec: base };
+  }
+  global.LightZones = { specVis: specVis, prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
     SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL };
 })(typeof window !== 'undefined' ? window : this);
