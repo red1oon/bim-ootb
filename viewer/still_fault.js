@@ -9,7 +9,12 @@
 //   extLightsDay lamps (only when &lampsout=0) / spots / additive sprites on while the camera is OUTSIDE and the sun is up
 //   glassLow     visible glazing materials with T_eff < 0.7 at normal incidence (stock: 1 - opacity; §GLASS_FRESNEL clone:
 //                1 - its 0.08 body)
-//   glassOpaque  visible IfcWindow / IfcPlate meshes (not R10-split) whose materials are ALL opaque: the pane hides the room
+//   glassOpaque  visible IfcWindow meshes (not R10-split) whose materials are ALL opaque: the pane hides the room. IfcPlate is
+//                NOT counted here (2026-09-26): an opaque plate is what the IFC says — Hospital's 1,276 "Glazed Spandrel" panels are
+//                IfcMaterial "Spandrel Glass" Transparency 0.0, Terminal's plates "Metal Deck" (Hospital_IFC4_ARC.ifc /
+//                TerminalMerged.ifc, read with ifcopenshell); it made every §FAULT line FAULT (glassOpaque 90 / 46).
+//   glassPlateLost  IfcPlate elements the DB says are see-through (material_rgba alpha < 1) minus the plate instances drawn
+//                with a glass material — a see-through plate drawn opaque (the plate half of the old glassOpaque, now source-checked)
 //                (red1's Clinic windows seen from outside, 2026-09-26)
 //   glassStock   visible glazing meshes with a glass material that §GLASS_FRESNEL did not swap (batched / shared)
 //   unlitCeil    the unlit samples on down-facing surfaces (ceilings / soffits: red1's black ceilings)
@@ -59,14 +64,30 @@
       if (!ms.every(function (m) { return m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial'; })) return;
       ms.forEach(function (m) { if (seenMat.has(m)) return; seenMat.add(m); var T = (m.userData && m.userData.gfOf) ? 0.92 : 1 - m.opacity; if (T < 0.7) out.glassLow++; });
     });
+    // element level (A.guidMap: "<object id>[_<instance>]" -> guid): which DB-see-through plates are drawn with a glass material
+    var plateGlassDb = null, glassGuids = null, byObj = new Map(), drawnGlass = new Set(), drawnOpaque = new Set(), plateGlassMeshes = 0, plateOpaqueMeshes = 0;
+    try { var pr = A.dbQuery ? A.dbQuery("SELECT guid FROM elements_meta WHERE ifc_class = 'IfcPlate' AND CAST(substr(material_rgba, length(material_rgba) - 4) AS REAL) < 1") : null;
+      if (pr) { glassGuids = new Set(pr.map(function (r) { return r[0]; })); plateGlassDb = glassGuids.size; } } catch (eP) {}
+    if (glassGuids && glassGuids.size) for (var gk in A.guidMap) { var oid = parseInt(String(gk).split('_')[0], 10), gg = A.guidMap[gk]; if (!glassGuids.has(gg)) continue; var lst = byObj.get(oid); if (!lst) byObj.set(oid, lst = []); lst.push(gg); }
     A.scene.traverse(function (o) {
       if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible || !o.material) return;
       var cls = o.userData && o.userData.ifcClass, r10 = !!o.material.isR10MaterialArray; if (!(cls === 'IfcWindow' || cls === 'IfcPlate' || r10)) return;
       var ms = Array.isArray(o.material) ? o.material : [o.material];
       var glassy = ms.filter(function (m) { return m && m.transparent && m.opacity < 0.95; });
-      if (!glassy.length) { if (!r10) out.glassOpaque++; return; }
+      if (cls === 'IfcPlate' && !r10) { var gl2 = byObj.get(o.id) || []; if (glassy.length) { plateGlassMeshes++; gl2.forEach(function (g) { drawnGlass.add(g); }); } else { plateOpaqueMeshes++; gl2.forEach(function (g) { drawnOpaque.add(g); }); } }
+      if (!glassy.length) { if (!r10 && cls !== 'IfcPlate') out.glassOpaque++; return; }
       if (!glassy.some(function (m) { return m.userData && m.userData.gfOf; })) out.glassStock++;
     });
+    // plates drawn by meshes WITHOUT an ifcClass tag (merged / batched buckets): follow the guid, whatever the tag
+    A.scene.traverse(function (o) { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible || !o.material) return; if (o.userData && o.userData.ifcClass === 'IfcPlate') return;
+      var gl4 = byObj.get(o.id); if (!gl4) return; var ms4 = Array.isArray(o.material) ? o.material : [o.material], g4 = !!o.material.isR10MaterialArray || ms4.some(function (m) { return m && m.transparent && m.opacity < 0.95; });
+      gl4.forEach(function (g) { (g4 ? drawnGlass : drawnOpaque).add(g); }); });
+    // lost = a see-through plate drawn by an OPAQUE mesh (exact, per guid); plates the viewer does not draw right now (4D / DLOD /
+    // hidden) are neither, and counted as notDrawn
+    drawnOpaque.forEach(function (g) { if (drawnGlass.has(g)) drawnOpaque.delete(g); });
+    out.glassPlateLost = drawnOpaque.size;
+    out.plates = { glassDb: plateGlassDb, glassDrawn: drawnGlass.size, lost: drawnOpaque.size, notDrawn: plateGlassDb == null ? null : plateGlassDb - drawnGlass.size - drawnOpaque.size, glassMeshes: plateGlassMeshes, opaqueMeshes: plateOpaqueMeshes };
+    if (drawnOpaque.size) out.plates.lostSample = Array.from(drawnOpaque).slice(0, 3);
     // portals
     out.portalsRetired = (global.SkyPortal && global.SkyPortal.placedCount && global.SkyPortal.placedCount() === 0) ? 1 : 0;
     // exposure step
@@ -117,9 +138,9 @@
     // expStep is LOGGED, not a fault: every press moves the exposure some amount, and no cited limit exists for a step
     // §LAMP_UNCAPPED_COST: the lamps the shader loops per fragment at this pose (information, not a fault)
     if (dataOn) { try { var lc = global.SourcedLight.lampCost(A); if (lc) { out.lampListMean = lc.meanList; out.lampListMax = lc.maxList; out.lampPassMean = lc.meanLit; } } catch (eLC) { console.warn('§LAMP_UNCAPPED_COST failed: ' + eLC.message); } }
-    var fault = out.unlit > 0 || out.fieldBad > 0 || out.glassOpaque > 0 || out.glassStock > 0 || out.capDropNear > 0 || out.extLightsDay > 0 || out.glassLow > 0 || out.guard > 0;
+    var fault = out.unlit > 0 || out.fieldBad > 0 || out.glassOpaque > 0 || out.glassPlateLost > 0 || out.glassStock > 0 || out.capDropNear > 0 || out.extLightsDay > 0 || out.glassLow > 0 || out.guard > 0;
     var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay +
-      (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassStock=' + out.glassStock + ' portalsRetired=' + out.portalsRetired +
+      (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassPlateLost=' + out.glassPlateLost + ' (see-through plates db=' + out.plates.glassDb + ' drawnGlass=' + out.plates.glassDrawn + ' drawnOpaque=' + out.plates.lost + ' notDrawn=' + out.plates.notDrawn + (out.plates.lostSample ? ' e.g. ' + out.plates.lostSample.join(',') : '') + ')' + ' glassStock=' + out.glassStock + ' portalsRetired=' + out.portalsRetired +
       ' expStep=' + out.expStep + ' guard=' + out.guard + (out.lampListMean != null ? ' lampList mean/max=' + out.lampListMean + '/' + out.lampListMax + ' zonePass=' + out.lampPassMean : '') + ' ms=' + (performance.now() - t0).toFixed(1);
     if (fault) console.warn(line); else console.log(line);
     out.fault = fault; A._stillFaultLast = out;   // §STILL_POSE_PNG copies it into the saved still
