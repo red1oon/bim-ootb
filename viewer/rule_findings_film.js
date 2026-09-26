@@ -94,6 +94,26 @@ function setupRuleFindingsFilm(A) {
   // shown. The camera is never bent and no shot is held to fit a set in, and nothing is hidden by the
   // omission: the closing cards (cpe_resource_panel.js:342) carry every set's total from the build-time
   // evaluation, so the film under-SHOWS without ever under-REPORTING.
+  // ── §131 §RULE_FILM_QUIET (2026-09-24, red1: "As of now, they are too loud ... let a pause before firings. There
+  // may be misses") ─ films only; rules, counts and the §77-§85 box/queue model untouched. Dials, read at film start:
+  //   floor  &rulefloor=  / APP._ruleFilmFloor   (default 0;   0.15 = before) — a member at rest is OFF, not dim
+  //   pause  &rulepause=  / APP._ruleFilmPause   (default 8 s; 0 = before)    — after a set's pulse ENDS, no re-pulse
+  //                                                                              for this long (a miss, logged)
+  //   peak   &rulepeak=   / APP._ruleFilmPeak    (default 0.6; 1 = before)    — crest brightness/scale pop scaled
+  //   opacity &ruleopacity= / APP._ruleFilmOpacity (default 0.14; 0.22 = before) — the film's filled box material
+  var Q = null;
+  function _qDial(A, key, name, def, lo, hi) {
+    var v = (A && typeof A[key] === 'number') ? A[key] : null;
+    if (v == null && typeof location !== 'undefined') { var m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(location.search); if (m) v = parseFloat(m[1]); }
+    if (v == null || !isFinite(v)) v = def; return Math.max(lo, Math.min(hi, v));
+  }
+  function _quiet(A) {
+    if (Q) return Q;
+    Q = { floor: _qDial(A, '_ruleFilmFloor', 'rulefloor', 0, 0, 1), pause: _qDial(A, '_ruleFilmPause', 'rulepause', 8, 0, 120),
+          peak: _qDial(A, '_ruleFilmPeak', 'rulepeak', 0.6, 0.05, 1), opacity: _qDial(A, '_ruleFilmOpacity', 'ruleopacity', 0.14, 0.02, 1), skips: 0, skipLog: {} };
+    console.log('§RULE_FILM_QUIET floor=' + Q.floor + ' pause=' + Q.pause + 's peak=' + Q.peak + ' opacity=' + Q.opacity + ' (control = 0.15 / 0 / 1 / 0.22)');
+    return Q;
+  }
   var SET_SLOT_S = 5.0;        // §82.1 the user's own number; §82.2 — one 4.1s pulse with room to breathe
   var DWELL_SAMPLE_S = 0.25;   // §77.3 — pose sampling step for the exact dwell precompute
   var FOV_DEG = 60;            // viewer/scene.js:139 — the bake's own fov, read not guessed
@@ -365,7 +385,7 @@ function setupRuleFindingsFilm(A) {
       if (_sets.length && typeof A.showRuleModeTint === 'function') {
         var guidCat = {};
         _sets.forEach(function (st) { st.guids.forEach(function (g) { guidCat[g] = st.category; }); });
-        try { A.showRuleModeTint(guidCat, CATEGORY_COLOR, { shineThrough: true, filled: true }); }   // §62
+        try { Q = null; A.showRuleModeTint(guidCat, CATEGORY_COLOR, { shineThrough: true, filled: true, opacity: _quiet(A).opacity }); }   // §62 · §131 opacity
         catch (e) { log('§RULE_FILM_TINT_ERR ' + e.message); }
         // §77.3 — precompute every member's visible intervals from the plan's own camera path.
         var _at = A._ruleTintAt || {};
@@ -526,7 +546,16 @@ function setupRuleFindingsFilm(A) {
       // held for as long as the set holds the scene, so it never blinks out and back while the viewer
       // is still reading it.
       var waveRunning = (fs - ps.pulseStart) < PULSE_S;
-      if (pf.gained > 0 && !waveRunning) { ps.pulseStart = fs; waveRunning = true; }
+      if (pf.gained > 0 && !waveRunning) {
+        // §131 pause — a set that has pulsed waits Q.pause after its pulse ENDED before it may fire again; a trigger inside
+        // the pause is a miss (red1 accepts misses), logged at most once per second per set.
+        var _q = _quiet(A), _since = fs - (ps.pulseStart + PULSE_S);
+        if (ps.pulseStart > -Infinity && _q.pause > 0 && _since < _q.pause) {
+          _q.skips++;
+          if (!_q.skipLog[ps.rule] || fs - _q.skipLog[ps.rule] >= 1) { _q.skipLog[ps.rule] = fs;
+            log('§RULE_FILM_REPULSE_SKIP set=' + ps.rule + ' reason=cooldown t=' + fs.toFixed(2) + ' leftS=' + (_q.pause - _since).toFixed(2) + ' skipsSoFar=' + _q.skips); }
+        } else { ps.pulseStart = fs; waveRunning = true; }
+      }
       if (ps.pulseStart === -Infinity) continue;         // never pulsed: no box yet
       pulsing++;
       var since = fs - ps.pulseStart;
@@ -564,7 +593,10 @@ function setupRuleFindingsFilm(A) {
       // to the one active set: a queued set is not lit either, or the 3D would crowd where the HUD no
       // longer does.
       var show = {};
-      (activeWave || []).forEach(function (v) { show[v.g] = Math.max(show[v.g] || 0, 0.15 + 0.85 * (v.glow || 0)); });
+      // §131 floor + peak: at rest a member is floor (0 = off), lit members floor + (1-floor)*glow, all scaled by peak.
+      var _qq = _quiet(A);
+      (activeWave || []).forEach(function (v) { var gl = v.glow || 0, k = (gl > 0 ? _qq.floor + (1 - _qq.floor) * gl : _qq.floor) * _qq.peak;
+        show[v.g] = Math.max(show[v.g] || 0, k); });
       A.ruleTintShowOnly(show);
     }
 

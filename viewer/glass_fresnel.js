@@ -18,6 +18,21 @@
   // mesh (GLAZE_CLASSES, plus R10 window panes) gets a CLONE of its glass material, created and patched ONCE per
   // original (kept across presses, so its program compiles once); everything else keeps the stock material.
   var GLAZE_CLASSES = { IfcWindow: 1, IfcPlate: 1 };
+  // §GLASS_BATCHED (2026-09-26, red1 "Clinic from outside glasses still black"; state at …385774229: 40 of 80 glass hits were
+  // STOCK glass — untagged batched buckets, skipped here as '?'). Batch buckets are class-pure since §BATCH_BUCKET_CLASS_PAINT,
+  // so an untagged mesh's class is read from its members (A.guidMap "<id>[_<i>]" -> guid -> elements_meta.ifc_class): all
+  // glazing -> it is glazing. Mixed or unknown members stay skipped (the mullion rule above).
+  var memberCls = new Map();
+  function classOfMembers(A, o) {
+    if (memberCls.has(o.id)) return memberCls.get(o.id);
+    var g = [], pre = o.id + '_'; for (var k in A.guidMap) { if (k === String(o.id) || k.indexOf(pre) === 0) g.push(A.guidMap[k]); }
+    var cls = null;
+    if (g.length && A.dbQuery) { var set = {}, n = 0;
+      for (var i = 0; i < g.length; i += 400) { var part = g.slice(i, i + 400).map(function (x) { return "'" + String(x).replace(/'/g, "''") + "'"; }).join(',');
+        A.dbQuery('SELECT DISTINCT ifc_class FROM elements_meta WHERE guid IN (' + part + ')').forEach(function (r) { if (!set[r[0]]) { set[r[0]] = 1; n++; } }); }
+      var ks = Object.keys(set); cls = (ks.length === 1) ? ks[0] : (ks.length ? 'mixed:' + ks.join('+') : null); }
+    memberCls.set(o.id, cls); return cls;
+  }
   var swaps = [], r10Arr = new Map();
   function patchedClone(THREE, orig) {
     if (orig.userData.gfClone) return orig.userData.gfClone;
@@ -51,7 +66,9 @@
       var mats = Array.isArray(o.material) ? o.material : [o.material];
       if (!mats.some(isGlass)) return;
       var r10 = !!(o.material && o.material.isR10MaterialArray);
-      if (!(GLAZE_CLASSES[cls] || r10) || o.isBatchedMesh) { skipped[cls] = (skipped[cls] || 0) + 1; return; }
+      if (cls === '?') { var mc = classOfMembers(A, o); if (mc && GLAZE_CLASSES[mc] && !Array.isArray(o.material)) cls = mc + '(members)'; }
+      var glazing = GLAZE_CLASSES[cls] || /\(members\)$/.test(cls) || r10;
+      if (!glazing || (o.isBatchedMesh && !/\(members\)$/.test(cls))) { skipped[cls] = (skipped[cls] || 0) + 1; return; }
       var before = clones.size;
       if (Array.isArray(o.material)) {
         var arr = o.material, rep = r10Arr.get(arr);
@@ -72,6 +89,32 @@
       ' newClones=' + fresh + ' f0=' + F0 + ' body=' + GLASS_BODY + ' (glazing meshes only; alpha = Schlick F; reflection = full-strength specular, premultiplied add)');
   }
 
+  // ══ §GLASS_ENV (red1 2026-09-26: "can the glass reflects?" -> "Agree"). The clones reflected the sky HDRI only, so a facade
+  // pane showed ~4% of sky (F0 0.04 face-on) and none of the sunlit ground or facades opposite — what real daytime windows mostly
+  // mirror. Once per still, after staging (lights final), one cube capture of the STAGED scene from the camera position (6 renders,
+  // HalfFloat, linear radiance, glass meshes hidden so a pane never reflects itself) becomes the clones' envMap (three's PMREM
+  // prefilters it for roughness). Fresnel, the §GLASS_SPEC_GATE and the premultiplied blend are unchanged: it only changes WHAT is
+  // reflected. Alt+S only; &glassenv=0 = the sky HDRI as before.
+  var capRT = null, capCam = null, CAP_SIZE = 256;
+  function liveClones() { var set = new Set(); swaps.forEach(function (s) { var m = s[0].material, ms = Array.isArray(m) ? m : [m]; ms.forEach(function (x) { if (x && x.userData && x.userData.gfOf) set.add(x); }); }); return set; }
+  function capture(A) {
+    var THREE = global.THREE; if (!THREE || !A || !A.renderer || !A.scene || !A.camera || !swaps.length) return null;
+    if (A._stillGlassEnv === false || /[?&]glassenv=0/.test(location.search)) { console.log('§GLASS_ENV off (&glassenv=0) — panes reflect the sky HDRI'); return null; }
+    var t0 = performance.now(), R = A.renderer;
+    if (!capRT) { capRT = new THREE.WebGLCubeRenderTarget(CAP_SIZE, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter }); capCam = new THREE.CubeCamera(0.05, 5000, capRT); }
+    var hidden = [];
+    A.scene.traverse(function (o) { if (!o.visible || !o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return; var ms = Array.isArray(o.material) ? o.material : [o.material];
+      if (ms.some(function (m) { return m && ((m.userData && m.userData.gfOf) || isGlass(m)); })) { o.visible = false; hidden.push(o); } });
+    capCam.position.copy(A.camera.position); capCam.layers.mask = A.camera.layers.mask; A.scene.add(capCam); capCam.updateMatrixWorld(true);
+    var prevRT = R.getRenderTarget();
+    try { capCam.update(R, A.scene); } finally { R.setRenderTarget(prevRT); A.scene.remove(capCam); hidden.forEach(function (o) { o.visible = true; }); }
+    capRT.texture.needsPMREMUpdate = true;
+    var n = 0; liveClones().forEach(function (c) { if (c.envMap !== capRT.texture) { c.envMap = capRT.texture; c.needsUpdate = true; } n++; });
+    if (A.markDirty) A.markDirty();
+    var line = '§GLASS_ENV captured ' + CAP_SIZE + 'x6 at camera [' + A.camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + '] glassMeshesHidden=' + hidden.length + ' clonesReflecting=' + n + ' ms=' + Math.round(performance.now() - t0);
+    console.log(line); return { clones: n, hidden: hidden.length, ms: Math.round(performance.now() - t0) };
+  }
+
   function unstage(A) {
     if (!swaps.length) return;
     swaps.forEach(function (s) { s[0].material = s[1]; });
@@ -80,5 +123,5 @@
     if (A.markDirty) A.markDirty();
   }
 
-  global.GlassFresnel = { stage: stage, unstage: unstage };
+  global.GlassFresnel = { capture: capture, stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
 })(typeof window !== 'undefined' ? window : this);

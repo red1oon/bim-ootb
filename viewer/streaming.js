@@ -2558,7 +2558,24 @@ function setupStreaming(A) {
       return { instanced: n >= 2 ? n : 0, single: n >= 2 ? 0 : 1, draws: 1 };
     };
 
-    for (let [hash, elements] of Object.entries(A._pendingInstances)) {   // `let`: §SURFACE_R10 may take split openings out of `elements`
+    // §INST_RGBA_SPLIT (2026-09-26, found by §FAULT glassPlateLost — Hospital: 57 IfcPlate the IFC gives Glass Transparency 0.7
+    // (DB alpha 0.3) drawn by an OPAQUE InstancedMesh). The instanced branch below keys on the GEOMETRY HASH ALONE and builds the
+    // one material from elements[0] — Hospital's glazed and spandrel curtain panels share shapes AND rgb (0.451,0.447,0.471),
+    // only alpha differs (Hospital_IFC4_ARC.ifc: "Glass" T 0.7 vs "Spandrel Glass" T 0.0), so a mixed hash painted every
+    // member with whichever came first (160 glass plates share a hash with opaque ones). Same hazard §BATCH_BUCKET_CLASS_PAINT
+    // fixed for the batch buckets. A hash whose members differ in rgba / ifc_class / matVariant is split into one group per
+    // combination (same geometry); a uniform hash is untouched (same draw calls). Each group then takes the usual path.
+    var _instEntries = [], _instSplitH = 0, _instSplitExtra = 0, _instSplitEls = 0;
+    Object.entries(A._pendingInstances).forEach(function (e) {
+      var els = e[1], k0 = els.length ? (els[0].rgba || '') + '|' + (els[0].ifcClass || '') + '|' + (els[0].matVariant || '') : '', mixed = false;
+      for (var q = 1; q < els.length; q++) if ((els[q].rgba || '') + '|' + (els[q].ifcClass || '') + '|' + (els[q].matVariant || '') !== k0) { mixed = true; break; }
+      if (!mixed) { _instEntries.push(e); return; }
+      var by = new Map(); els.forEach(function (el) { var k = (el.rgba || '') + '|' + (el.ifcClass || '') + '|' + (el.matVariant || ''); if (!by.has(k)) by.set(k, []); by.get(k).push(el); });
+      _instSplitH++; _instSplitExtra += by.size - 1; _instSplitEls += els.length; by.forEach(function (arr) { _instEntries.push([e[0], arr]); });
+    });
+    A._instRgbaSplit = { hashes: (A._instRgbaSplit ? A._instRgbaSplit.hashes : 0) + _instSplitH, extraGroups: (A._instRgbaSplit ? A._instRgbaSplit.extraGroups : 0) + _instSplitExtra, elements: (A._instRgbaSplit ? A._instRgbaSplit.elements : 0) + _instSplitEls };
+    if (_instSplitH) console.log('§INST_RGBA_SPLIT this flush hashes=' + _instSplitH + ' extraGroups=' + _instSplitExtra + ' elements=' + _instSplitEls + ' (building total ' + JSON.stringify(A._instRgbaSplit) + ')');
+    for (let [hash, elements] of _instEntries) {   // `let`: §SURFACE_R10 may take split openings out of `elements`
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
@@ -4017,7 +4034,7 @@ function setupStreaming(A) {
     A.activeBuilding = null;
     A.activeBuildingTotal = 0;
     A.buildingsRendered.clear();
-    A._pendingInstances = {};
+    A._pendingInstances = {};  A._instRgbaSplit = null;   // §INST_RGBA_SPLIT per-building total
     A._instanceMeta = {};
     A._instanceGuids = {};
     A._matCache = {};

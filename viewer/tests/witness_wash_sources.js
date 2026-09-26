@@ -1,0 +1,164 @@
+// ⚠ DO NOT REMOVE — §WASH_SOURCES witness (bim-compiler PHOTOREAL_STILL_RENDER.md §SOURCED_LIGHT). Read the log after every run.
+// Issue (red1 via red1-4b, 2026-09-25): "it's not too much sun/sky seeping through; outside looks darker" — is the interior
+// washout sourceless sky / leaking lamps? After a real Alt+S, over a 32x18 screen grid of surface samples (emitters, sprites,
+// sky and glass excluded; a ray that passes glass first is a THROUGH-GLASS sample), the irradiance each source puts on the
+// sample, computed analytically with three's own formulas (luminance-weighted colour x intensity): sun = N.L x a shadow
+// RAY to the sun (the scene's drawn meshes, glass included when it casts); hemi = mix(ground, sky, 0.5 N.y + 0.5); ambient;
+// lamps / other points / camera fill = I x getDistanceAttenuation(d, distance, decay) x N.L; sky portals (spots) = the
+// same x the cone smoothstep (their shadow maps are NOT evaluated: an upper bound). Reports per pose: shares % of the summed
+// irradiance by source, and absolute levels vs the sunlit ground (sun x sin(elevation) + hemi on an up-facing surface).
+// GUARD (every run): FAIL on any console "Shader Error", "Context Lost" or pageerror.
+// §GLARE (watchdog red1-c6 rule, every run): black_direct_samples=N — direct (not through glass) samples that NO source reaches
+// at all (sun shadowed, sky withheld, no lamp / portal / fill: summed irradiance 0 = renders pure black); FAIL (exit 3) when > 0.
+// §SOURCED_DAYLIGHT (v2 spec + watchdog G1, 2026-09-25): a `daylight` source = G/10000 x the daylight sky colour (uSLSky: hemi sky
+// colour x intensity x the &daylight dial, SourcedLight.daylight()) on covered, non-sky-lit zone samples — the texel the CPU
+// mirror (LightZones.surfaceInfo(...).cell) picks, the same one the shader's slFragZone reads .g from. Direction-free, like
+// the shader term (G2: direction is log-only). §INDOOR_COLOUR: over the indoor samples (zone cell, sky withheld), the share
+// of irradiance from SKY-COOL sources (hemi, ambient, portals, daylight), LAMP-WARM sources (lamps, camera fill, other
+// points/spots) and the sun, plus each group's irradiance-weighted colour (rgb, max = 1) — the watchdog: carry colour.
+// RUN: node viewer/tests/witness_wash_sources.js <port> [outdir]
+const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer'); const fs = require('fs'), path = require('path');
+const sleep = ms => new Promise(r => setTimeout(r, ms)); const T0 = Date.now();
+const [PORT = '8612', OUT = '/tmp/witness_wash_sources'] = process.argv.slice(2); fs.mkdirSync(OUT, { recursive: true });
+const lines = []; const say = s => { const t = '+' + ((Date.now() - T0) / 1000).toFixed(1) + 's ' + s; lines.push(t); console.log(t); fs.writeFileSync(path.join(OUT, 'log.txt'), lines.join('\n')); };
+const RUNS = [
+  { db: 'Hospital', full: 63182, poses: [{ name: 'hospital_cafe (reference stand-in)', pos: [-11.15, 2.92, 4.08], tgt: [0.75, -13.08, -7.82] }] },
+  { db: 'Clinic', full: 16071, poses: [{ name: 'clinic_corridor (stand-in)', pos: [-13.5, -1.4, -18.3], tgt: [4, -2.2, -18.3] }] },
+  { db: 'Terminal', full: 48428, poses: [{ name: 'terminal_exterior (default load pose)', default: true }, { name: 'terminal_hall (stand-in, witness_dlod_still_ownership pose)', hall: true },
+    // red1-4b: red1's Terminal hall still = on the hall floor, looking across the seating to the tall glazed end wall. Stand-in:
+    // 1.6 m above the hall floor (2nd-percentile element height), along the building's long axis from 10% to 90%.
+    { name: 'terminal_hall_floor (stand-in: long-axis view, 1.6 m)', hallFloor: true }] },
+];
+(async () => {
+  const b = await puppeteer.launch({ headless: true, protocolTimeout: 1800000, env: Object.assign({}, process.env, { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' }),
+    args: ['--no-sandbox', '--use-angle=' + (process.env.ANGLE || 'gl-egl'), '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--window-size=1686,1044'] });
+  const guard = { shaderError: 0, contextLost: 0, pageError: 0 }; let glareTot = 0;
+  for (const R of RUNS) { if (process.env.ONLY && !new RegExp(process.env.ONLY).test(R.db)) continue;
+    const p = await b.newPage(); await p.setViewport({ width: 1666, height: 864 }); const L = [];
+    p.on('console', m => { const t = m.text(); L.push(t); if (/Shader Error/.test(t)) guard.shaderError++; if (/Context Lost|CONTEXT_LOST/i.test(t)) guard.contextLost++; });
+    p.on('pageerror', e => { guard.pageError++; say('PAGEERROR ' + e.message.slice(0, 200)); });
+    await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=/buildings/' + R.db + '_extracted.db' + (process.env.QUERY || ''), { waitUntil: 'domcontentloaded' });
+    await p.waitForFunction(() => window.APP && window.APP.guidMap && window.APP.db, { timeout: 240000 });
+    let n = 0; for (let i = 0; i < 200; i++) { n = await p.evaluate(() => Object.keys(window.APP.guidMap).length); if (n >= R.full) break; await sleep(2000); }
+    const sw = await p.evaluate(async () => { try { return (await (await fetch('/viewer/sw.js')).text()).match(/CACHE_VERSION = '([^']+)'/)[1]; } catch (e) { return '?'; } });
+    say(R.db + ' loaded guids=' + n + '/' + R.full + (n >= R.full ? '' : ' VACUOUS') + ' sw=' + sw);
+    if (n < R.full) { await p.close(); continue; }
+    for (const ps of R.poses.filter(q => !(process.env.SKIP_EXT && q.default))) {
+      if (ps.hall) await p.evaluate(() => { const A = window.APP, m4 = new THREE.Matrix4(), v = new THREE.Vector3(), xs = [], ys = [], zs = [];
+        for (const id in A._instanceMeta) { const o = A.scene.getObjectById(+id); if (!o || !o.isInstancedMesh) continue;
+          for (const m of A._instanceMeta[id]) { if (m.instanceIndex == null) continue; o.getMatrixAt(m.instanceIndex, m4); o.updateMatrixWorld(); v.setFromMatrixPosition(m4).applyMatrix4(o.matrixWorld); xs.push(v.x); ys.push(v.y); zs.push(v.z); } }
+        const q = (a, f) => { a = a.slice().sort((x, y) => x - y); return a[Math.floor(f * (a.length - 1))]; };
+        const x0 = q(xs, .05), x1 = q(xs, .95), y0 = q(ys, .02), y1 = q(ys, .98), z0 = q(zs, .05), z1 = q(zs, .95), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+        A.camera.position.set(cx - (x1 - x0) * 0.1, y0 + 2, cz); A.controls.target.set(cx + (x1 - x0) * 0.25, y1, cz); A.controls.update(); });
+      else if (ps.hallFloor) await p.evaluate(() => { const A = window.APP, m4 = new THREE.Matrix4(), v = new THREE.Vector3(), xs = [], ys = [], zs = [];
+        for (const id in A._instanceMeta) { const o = A.scene.getObjectById(+id); if (!o || !o.isInstancedMesh) continue;
+          for (const m of A._instanceMeta[id]) { if (m.instanceIndex == null) continue; o.getMatrixAt(m.instanceIndex, m4); o.updateMatrixWorld(); v.setFromMatrixPosition(m4).applyMatrix4(o.matrixWorld); xs.push(v.x); ys.push(v.y); zs.push(v.z); } }
+        const q = (a, f) => { a = a.slice().sort((x, y) => x - y); return a[Math.floor(f * (a.length - 1))]; };
+        const x0 = q(xs, .05), x1 = q(xs, .95), y0 = q(ys, .02), z0 = q(zs, .05), z1 = q(zs, .95), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, h = y0 + 1.6;
+        if (x1 - x0 >= z1 - z0) { A.camera.position.set(x0 + 0.1 * (x1 - x0), h, cz); A.controls.target.set(x0 + 0.9 * (x1 - x0), h, cz); }
+        else { A.camera.position.set(cx, h, z0 + 0.1 * (z1 - z0)); A.controls.target.set(cx, h, z0 + 0.9 * (z1 - z0)); } A.controls.update(); });
+      else if (!ps.default) await p.evaluate(ps => { const A = window.APP; A.camera.position.fromArray(ps.pos); A.controls.target.fromArray(ps.tgt); A.controls.update(); }, ps);
+      const o0 = await p.evaluate(() => { const o = document.getElementById('gi-still-overlay'); if (o) o.remove(); return 1; });
+      await sleep(1500); const b1 = L.length; await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
+      for (let i = 0; i < 400 && !L.slice(b1).some(t => /§GI_STILL result|§GI_STILL_OFF|§GI_STILL_FAIL/.test(t)); i++) await sleep(1000);
+      await sleep(1000);
+      const r = await p.evaluate(() => {
+        const A = window.APP, THREE = window.THREE, lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+        const glassy = m => m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial';
+        const skip = m => !m || m.isMeshBasicMaterial || m.isShaderMaterial || m.isSpriteMaterial || m.isPointsMaterial || m.visible === false || m.colorWrite === false;
+        const tg = [], occ = []; A.scene.traverse(o => { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible || o === A._sky || o === A.ground && false) return;
+          const ms = Array.isArray(o.material) ? o.material : [o.material]; if (ms.every(skip)) return; tg.push(o); if (o.castShadow !== false && !(o.userData && o.userData.excludeFromShadow)) occ.push(o); });
+        // lights, classified
+        const cls = l => (A._nightLights || []).includes(l) ? 'lamps' : (l === A._camLight ? 'camlight' : (l.isSpotLight && l.userData && l.userData.skyPortal ? 'portals' : (l.isPointLight ? 'otherPoints' : (l.isSpotLight ? 'otherSpots' : (l.isDirectionalLight ? 'sun' : (l.isHemisphereLight ? 'hemi' : (l.isAmbientLight ? 'ambient' : 'other')))))));
+        const lights = []; A.scene.traverse(l => { if (l.isLight && l.visible && l.intensity > 0) lights.push(l); });
+        const dAtt = (d, cutoff, decay) => { let f = 1 / Math.max(Math.pow(d, decay), 0.01); if (cutoff > 0) f *= Math.pow(Math.max(0, Math.min(1, 1 - Math.pow(d / cutoff, 4))), 2); return f; };
+        const rc = new THREE.Raycaster(), M = new THREE.Matrix4(), mi = new THREE.Matrix4(), sunRc = new THREE.Raycaster();
+        const W = 32, H = 18, S = []; let glassHits = 0;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          rc.setFromCamera(new THREE.Vector2((x + 0.5) / W * 2 - 1, 1 - (y + 0.5) / H * 2), A.camera);
+          const hs = rc.intersectObjects(tg, false); let through = false, h = null;
+          for (const hh of hs) { const m = Array.isArray(hh.object.material) ? hh.object.material[hh.face ? hh.face.materialIndex : 0] : hh.object.material; if (glassy(m)) { through = true; continue; } if (skip(m)) continue; h = hh; break; }
+          if (!h || !h.face) continue; if (through) glassHits++;
+          M.copy(h.object.matrixWorld); if (h.object.isInstancedMesh && h.instanceId != null) { h.object.getMatrixAt(h.instanceId, mi); M.multiply(mi); } else if (h.object.isBatchedMesh && h.batchId != null) { h.object.getMatrixAt(h.batchId, mi); M.multiply(mi); }
+          const nn = h.face.normal.clone().transformDirection(M); if (nn.dot(rc.ray.direction) > 0) nn.negate();
+          const LZ = window.LightZones, SLon = !!(window.SourcedLight && window.SourcedLight.isActive && window.SourcedLight.isActive() && LZ && LZ.get());
+          // the shader's fragment zone + slSkyKeep (indoorSky=0 default): SOLID = unknown -1; 0 or OFF-GRID (-1 raw) = OUTSIDE 65534 (§ZONE_OPEN_SKY fix:
+          // off-grid was mapped to unknown here); the sky class from LightZones.surfaceInfo (open / sky-lit cells keep it)
+          let fz = null, fsky = 1, si = null; if (SLon) { si = LZ.surfaceInfo ? LZ.surfaceInfo(h.point, nn) : null; const v = si ? si.zone : LZ.atSurface(h.point, nn);
+            fz = (v === LZ.SOLID) ? -1 : (v <= 0 ? 65534 : v); fsky = si ? si.sky : ((fz === -1 || (fz > 0 && fz < 65534)) ? 0 : 1); }
+          // §SKY_VIEW_FIELD: with the field on, the sky terms of a zone sample are x F_filtered (LightZones.skyField, the shader's mirror)
+          const SF = SLon && window.SourcedLight.field && window.SourcedLight.field() && LZ.skyField ? LZ.skyField(h.point, nn) : null;
+          const skyKeep = SLon ? (SF && SF.F != null ? SF.F : (SF ? 0 : fsky)) : 1;
+          const reaches = l => { if (!SLon) return true; const lz = (l.userData && l.userData.sourcedZone) || 0; if (l.isSpotLight && l.userData && l.userData.skyPortal) { const v2 = LZ.at(l.position); const pz = (v2 > 0 && v2 !== LZ.SOLID) ? v2 : 0; return !pz || fz === -1 || pz === fz; } return !lz || fz === -1 || lz === fz; };
+          const P = h.point, E = { sun: 0, hemi: 0, ambient: 0, lamps: 0, portals: 0, camlight: 0, otherPoints: 0, otherSpots: 0, daylight: 0 };
+          const C = { sky: [0, 0, 0], lamp: [0, 0, 0], sun: [0, 0, 0] }, grp = k => (k === 'sun' ? 'sun' : (k === 'hemi' || k === 'ambient' || k === 'portals' || k === 'daylight' ? 'sky' : 'lamp'));
+          const addC = (k, e, col) => { const l0 = lum(col); if (!(e > 0) || !(l0 > 0)) return; const g = C[grp(k)]; g[0] += e * col.r / l0; g[1] += e * col.g / l0; g[2] += e * col.b / l0; };
+          const Zc = SLon ? LZ.get() : null, dG = Zc && Zc.dayG, dS = (window.SourcedLight && window.SourcedLight.daylight) ? window.SourcedLight.daylight() : null;
+          const indoor = SLon && fsky === 0 && fz > 0 && fz < 65534;
+          if (indoor && dG && dS && dS.on && si && si.cell >= 0) { const col = new THREE.Color(dS.sky[0], dS.sky[1], dS.sky[2]); E.daylight = dG[si.cell] / 10000 * lum(col); addC('daylight', E.daylight, col); }
+          lights.forEach(l => { const k = cls(l), I = lum(l.color) * l.intensity;
+            if (l.isDirectionalLight) { const dir = l.position.clone().sub(l.target.position).normalize(), nl = Math.max(0, nn.dot(dir)); if (!nl) return;
+              sunRc.set(P.clone().addScaledVector(nn, 0.05), dir); sunRc.far = 800; const vis = sunRc.intersectObjects(occ, false).length ? 0 : 1; E.sun += I * nl * vis; addC('sun', lum(l.color) * l.intensity * nl * vis, l.color); }
+            else if (l.isHemisphereLight) { const w = 0.5 * nn.y + 0.5, hc = l.groundColor.clone().lerp(l.color, w), e = skyKeep * (lum(l.groundColor) * (1 - w) + lum(l.color) * w) * l.intensity; E.hemi += e; addC('hemi', e, hc); }
+            else if (l.isAmbientLight) { E.ambient += skyKeep * I; addC('ambient', skyKeep * I, l.color); }
+            else if (l.isPointLight || l.isSpotLight) { if (!reaches(l)) return; const v = l.position.clone().sub(P), d = v.length(); v.normalize(); const nl = Math.max(0, nn.dot(v)); if (!nl) return;
+              let a = dAtt(d, l.distance, l.decay); if (l.isSpotLight) { const sd = l.position.clone().sub(l.target.position).normalize(), ac = v.dot(sd), cc = Math.cos(l.angle), pc = Math.cos(l.angle * (1 - l.penumbra));
+                const t = Math.max(0, Math.min(1, (ac - cc) / Math.max(1e-6, pc - cc))); a *= t * t * (3 - 2 * t); }
+              const kk = k === 'sun' || k === 'hemi' ? 'otherPoints' : k; E[kk] += I * a * nl; addC(kk, I * a * nl, l.color); } });
+          const hm = Array.isArray(h.object.material) ? h.object.material[h.face.materialIndex] : h.object.material;
+          const alb = hm && hm.color ? lum(hm.color) : 0.5, textured = !!(hm && (hm.map || (hm.userData && hm.userData.triplanar)));
+          const ircZ = SF && SF.F != null && fz > 0 && fz < 65534 && LZ.get().field && LZ.get().field.ircZ ? LZ.get().field.ircZ[fz] || 0 : 0;
+          const skyPart = E.hemi + E.ambient;   // the sky terms F scales; the IRC share of them = irc / F
+          S.push({ px: (x + 0.5) / W, py: (y + 0.5) / H, ircE: SF && SF.F > 0 ? skyPart * Math.min(1, ircZ / SF.F) : 0, through, indoor, C, floor: nn.y > 0.7, wall: Math.abs(nn.y) < 0.3, E, alb, textured, black: !through && Object.values(E).every(v => !(v > 0)) });
+        }
+        const sd = A.sun ? A.sun.position.clone().sub(A.sun.target.position).normalize() : new THREE.Vector3(0, 1, 0);
+        const hemiUp = A.hemi ? lum(A.hemi.color) * A.hemi.intensity : 0, Eground = (A.sun ? lum(A.sun.color) * A.sun.intensity * Math.max(0, sd.y) : 0) + hemiUp;
+        const summarise = set => { const keys = ['sun', 'hemi', 'ambient', 'portals', 'daylight', 'lamps', 'camlight', 'otherPoints', 'otherSpots'], tot = {}; let all = 0; keys.forEach(k => { tot[k] = 0; });
+          const per = set.map(s => { let t = 0; keys.forEach(k => { tot[k] += s.E[k]; t += s.E[k]; }); all += t; return t / Math.max(1e-9, Eground); }).sort((a, b) => a - b);
+          const share = {}; keys.forEach(k => { share[k] = all ? +(100 * tot[k] / all).toFixed(1) : 0; });
+          const outside = all ? +(100 * (tot.sun + tot.hemi + tot.portals + tot.daylight) / all).toFixed(1) : 0, inside = all ? +(100 * (tot.lamps + tot.camlight + tot.otherPoints + tot.otherSpots) / all).toFixed(1) : 0;
+          // §WASH_FRACTION: three's Lambert L = albedo x E / pi, x exposure, three's ACESFilmicToneMapping (grey: its input and
+          // output matrices' rows sum to 1, so the curve is RRTAndODTFit(x * exposure / 0.6)), then the sRGB OETF (display value)
+          const expo = A.renderer.toneMappingExposure, rrt = v => (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081);
+          const srgb = c => c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+          const tm = set.map(s => { let t = 0; keys.forEach(k => { t += s.E[k]; }); return srgb(Math.max(0, Math.min(1, rrt(s.alb * t / Math.PI * expo / 0.6)))); }).sort((a, b) => a - b);
+          const wash = tm.length ? +(tm.filter(v => v > 0.90).length / tm.length).toFixed(3) : null;
+          return { toneMapped: { median: tm.length ? +tm[Math.floor(tm.length / 2)].toFixed(3) : null, p95: tm.length ? +tm[Math.floor(tm.length * 0.95)].toFixed(3) : null, wash, texturedSamples: set.filter(s => s.textured).length },
+            samples: set.length, sharesPct: share, outsideSourcesPct: outside, insideSourcesPct: inside, ambientPct: share.ambient,
+            vsSunlitGround: { median: per.length ? +per[Math.floor(per.length / 2)].toFixed(3) : null, p95: per.length ? +per[Math.floor(per.length * 0.95)].toFixed(3) : null, mean: set.length ? +(per.reduce((a, b) => a + b, 0) / per.length).toFixed(3) : null } }; };
+        // §INDOOR_COLOUR — sky-cool vs lamp-warm share of the indoor irradiance + each group's weighted colour (max 1)
+        const colour = set => { const g = { sky: [0, 0, 0], lamp: [0, 0, 0], sun: [0, 0, 0] }; set.forEach(s => { ['sky', 'lamp', 'sun'].forEach(k => { for (let i = 0; i < 3; i++) g[k][i] += s.C[k][i]; }); });
+          const L3 = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2], n3 = c => { const m = Math.max(c[0], c[1], c[2]); return m > 0 ? c.map(v => +(v / m).toFixed(3)) : [0, 0, 0]; };
+          const tot = L3(g.sky) + L3(g.lamp) + L3(g.sun), mix = [0, 1, 2].map(i => g.sky[i] + g.lamp[i] + g.sun[i]);
+          return { samples: set.length, skyCoolPct: tot ? +(100 * L3(g.sky) / tot).toFixed(1) : 0, lampWarmPct: tot ? +(100 * L3(g.lamp) / tot).toFixed(1) : 0, sunPct: tot ? +(100 * L3(g.sun) / tot).toFixed(1) : 0,
+            skyRGB: n3(g.sky), lampRGB: n3(g.lamp), mixRGB: n3(mix) }; };
+        // §GI_AWARE (watchdog, 2026-09-25): the REAL still with the GI bounce — numeric readback of the finished composite and
+        // the app frame gi_still.js keeps (window.__giStillDebugCanvas: bounce = composite, under = app frame), 8-bit sRGB, at each
+        // sample's pixel. blackFinal = a direct (not through-glass) sample whose composite pixel is pure black at display
+        // precision (max channel <= 1 of 255). giShare = (composite - app) / composite luminance: the bounce's share of the
+        // finished pixel. ircShare = the analytic IRC part of the sample's irradiance / its total (0 unless &irc=1).
+        const gc = window.__giStillDebugCanvas; let gi = null;
+        if (gc && gc.bounce && gc.under) { const w2 = gc.bounce.width, h2 = gc.bounce.height, fd = gc.bounce.getContext('2d').getImageData(0, 0, w2, h2).data, ad = gc.under.getContext('2d').getImageData(0, 0, w2, h2).data;
+          const at = (d, s) => { const i = (Math.min(h2 - 1, Math.floor(s.py * h2)) * w2 + Math.min(w2 - 1, Math.floor(s.px * w2))) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+          const L8 = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+          let blackFinal = 0, blackApp = 0, direct = 0; const gs = [], is = [];
+          S.forEach(s => { const f = at(fd, s), a = at(ad, s); if (!s.through) { direct++; if (Math.max(f[0], f[1], f[2]) <= 1) blackFinal++; if (Math.max(a[0], a[1], a[2]) <= 1) blackApp++; }
+            if (s.indoor) { const lf = L8(f), la = L8(a); if (lf > 0) gs.push((lf - la) / lf); let t = 0; for (const k in s.E) t += s.E[k]; if (t > 0) is.push(s.ircE / t); } });
+          const med = a => { a.sort((x, y) => x - y); return a.length ? +a[a.length >> 1].toFixed(3) : null; };
+          gi = { canvas: w2 + 'x' + h2, directSamples: direct, blackFinal, blackApp, indoorGiShareMedian: med(gs), indoorGiShareP90: gs.length ? +gs[Math.floor(gs.length * 0.9)].toFixed(3) : null, indoorIrcShareMedian: med(is), indoorIrcShareP90: is.length ? +is.sort((x, y) => x - y)[Math.floor(is.length * 0.9)].toFixed(3) : null }; }
+        const SLonNow = !!(window.SourcedLight && window.SourcedLight.isActive && window.SourcedLight.isActive());
+        return { giAware: gi, blackDirectSamples: S.filter(s => s.black).length, sourcedLight: SLonNow, sunElevDeg: +(Math.asin(sd.y) * 180 / Math.PI).toFixed(1), Eground: +Eground.toFixed(3), exposure: +A.renderer.toneMappingExposure.toFixed(3), lights: lights.length, camPos: A.camera.position.toArray().map(v => +v.toFixed(2)),
+          all: summarise(S), indoor: summarise(S.filter(s => s.indoor)), indoorColour: colour(S.filter(s => s.indoor)), daylight: (window.SourcedLight && window.SourcedLight.daylight) ? window.SourcedLight.daylight() : null, floor: summarise(S.filter(s => s.floor)), walls: summarise(S.filter(s => s.wall)), throughGlass: summarise(S.filter(s => s.through)), direct: summarise(S.filter(s => !s.through)), glassRays: glassHits };
+      });
+      const g = (re, n) => (L.slice(b1).find(t => re.test(t)) || '-').slice(0, n || 220);
+      say('§WASH_SOURCES pose=' + ps.name + ' ' + JSON.stringify(r) + '\n   ' + [g(/§STILL_BASE sky/), g(/§STILL_POSE/), g(/§GI_STILL result/), g(/§SKY_VIEW_FIELD on/, 1500), g(/§LUX_CHECK_CAM/, 600), g(/§METER camera/, 600)].join('\n   '));
+      say('§GI_AWARE bld=' + R.db + ' pose=' + ps.name + ' ' + (r.giAware ? ((r.giAware.blackFinal > 0 ? 'FAIL' : 'PASS') + ' ' + JSON.stringify(r.giAware)) : 'VACUOUS (no __giStillDebugCanvas)') + ' analyticBlack=' + r.blackDirectSamples);
+      say('§GLARE bld=' + R.db + ' pose=' + ps.name + ' ' + (r.blackDirectSamples > 0 ? 'FAIL' : 'PASS') + ' black_direct_samples=' + r.blackDirectSamples + ' of ' + r.all.samples); glareTot += r.blackDirectSamples;
+      await p.keyboard.press('Escape'); await sleep(3000);
+    }
+    await p.close();
+  }
+  const fail = guard.shaderError || guard.contextLost || guard.pageError;
+  say('§GLARE total ' + (glareTot > 0 ? 'FAIL' : 'PASS') + ' black_direct_samples=' + glareTot);
+  say('GUARD ' + (fail ? 'FAIL' : 'PASS') + ' ' + JSON.stringify(guard)); await b.close(); if (fail) process.exitCode = 2; else if (glareTot > 0) process.exitCode = 3;
+})().catch(e => { say('FATAL ' + (e && e.stack || e)); process.exit(1); });

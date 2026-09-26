@@ -3501,6 +3501,23 @@
           console.log('§ESCAPE_ROUTE_WINDOW INCONCLUSIVE reason=no-usable-rise-beat — the reveal has nowhere to play');
         }
       }
+      // §FILM_FIT_PER_SHOT sampler — shots are the plan's beat intervals (plan.beats values inside (0,1)), limited to this
+      // bake's film span; sample(t) poses the camera the way the loop does (poseAtFilm + §57.5 gaze blend) and sets t's sun.
+      var _filmFitSampler = null;
+      try {
+        var _bt = [0, 1]; if (plan && plan.beats) Object.keys(plan.beats).forEach(function(k) { var v = plan.beats[k]; if (typeof v === 'number' && v > 0 && v < 1) _bt.push(v); });
+        _bt = _bt.sort(function(a, b) { return a - b; }).filter(function(v, k, arr) { return k === 0 || v - arr[k - 1] > 1e-4; });
+        var _span = (_clip && _clip.out > _clip.in) ? [_clip.in, _clip.out] : [0, 1];
+        var _shots = []; for (var _si = 0; _si + 1 < _bt.length; _si++) { var _a = Math.max(_bt[_si], _span[0]), _b = Math.min(_bt[_si + 1], _span[1]); if (_b > _a) _shots.push([_a, _b]); }
+        var _saveCam = null;
+        _filmFitSampler = { shots: _shots,
+          sample: function(t) { if (!_saveCam) _saveCam = { p: A.camera.position.clone(), q: A.camera.quaternion.clone(), tg: A.controls.target.clone() };
+            var p = poseAtFilm(t), d = Math.hypot(p.tx - p.x, p.ty - p.y, p.tz - p.z), tc = (_clip && _clip.out > _clip.in) ? (t - _clip.in) / (_clip.out - _clip.in) : t;
+            var g = _blendedGazeTarget(tc, p, d); A.camera.position.set(p.x, p.y, p.z); A.controls.target.set(g.tx, g.ty, g.tz); A.controls.update(); A.camera.lookAt(A.controls.target); A.camera.updateMatrixWorld(true);
+            if (A._sunArcStep) A._sunArcStep(t); },
+          restore: function() { if (_saveCam) { A.camera.position.copy(_saveCam.p); A.controls.target.copy(_saveCam.tg); A.controls.update(); A.camera.quaternion.copy(_saveCam.q); A.camera.updateMatrixWorld(true); _saveCam = null; } } };
+        console.log('§FILM_FIT_SHOTS from plan.beats: ' + _shots.map(function(x) { return '[' + x[0].toFixed(3) + ',' + x[1].toFixed(3) + ']'; }).join(' ') + ' (span ' + _span.join('..') + ')');
+      } catch (eFS) { console.warn('§FILM_FIT_SHOTS failed: ' + eFS.message); _filmFitSampler = null; }
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
@@ -4013,6 +4030,10 @@
         // its elevation fallback/log label must read the film fraction under a --clip bake too.
         // §PL_TOPOUT_UNPIN — _revealU exactly as _sunArcStep gets it: past topout the fixtures ease to their
         // tuned night intensity; before it (or with no plan beats) the pin is byte-identical to before.
+        // §FILM_PARITY — this frame's Alt+S decisions (daylight glow, lamps-outside, shadow fit, portals) on this frame's sun
+        // and camera, BEFORE the pin, so the pin's lamp pool update sees the flag (effects.js A._filmParityStep).
+        if (A._maxqActive && A._filmParity && !A._giFilmArmed && window.GiFilm) { A._giFilmArmed = true; window.GiFilm.arm(); }   // §GI_FILM — staging decided parity
+        if (A._maxqActive && A._filmParity && A._filmParityStep) A._filmParityStep(i, _tnFilm, _filmFitSampler);
         if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tnFilm, _revealU);
         var ok = A._burninDatumDir ? true : await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         if (!A._burninDatumDir) await _raf2('frame ' + i + ' capture');
@@ -4382,23 +4403,19 @@
           if (A._nightLightByPos && A._nightLightByPos.forEach) {
             A._nightLightByPos.forEach(function (l) { if (l && l.intensity > 0) _wNav++; });
           }
-          var _wGlow = A._glowStagedCount || 0;
-          // §118 — FOUR families, not three. The first version counted pool lights, nav lights and
-          // the sprite cloud, reported PASS, and fixtures were still visibly lit: the lens quad and
-          // the emissive fixture materials were never in the count. A witness that cannot see a
-          // family cannot fail on it.
-          var _wLens = A._glowLensLive ? 1 : 0;
+          // §118 — every family, not a subset: a witness that cannot see a family cannot fail on it.
+          // §GLOW_LAYERS_OFF (2026-09-25): the sprite cloud and the lens quad were two of the families;
+          // both were deleted from the viewer, so the families left are pool, nav, emissive materials.
           var _wEmis = 0;
           if (A._nightGlowMats) for (var _ge = 0; _ge < A._nightGlowMats.length; _ge++) {
             var _gm = A._nightGlowMats[_ge].mat;
             if (_gm && _gm.emissiveIntensity > 0 && _gm.emissive && _gm.emissive.getHex() !== 0) _wEmis++;
           }
-          var _wKey = _wPool + '/' + _wNav + '/' + _wGlow + '/' + _wLens + '/' + _wEmis;
+          var _wKey = _wPool + '/' + _wNav + '/' + _wEmis;
           if (A._ilWitnessKey !== _wKey) {
             A._ilWitnessKey = _wKey;
             console.log('§INTERIOR_LIGHTS_WITNESS poolLit=' + _wPool + '/' +
               ((A._nightBakePool && A._nightBakePool.length) || 0) + ' navLit=' + _wNav +
-              ' glowSpritesStaged=' + _wGlow + ' lensQuadLive=' + _wLens +
               ' emissiveMatsLit=' + _wEmis + '/' + ((A._nightGlowMats && A._nightGlowMats.length) || 0) +
               ' => ' +
               // §129.41 (2026-09-19) — THE RULE THIS WITNESS CHECKS HAS CHANGED, so the verdict has
@@ -4435,7 +4452,7 @@
                     return 'PASS (past topout: every interior family that exists is lit — ' +
                       judged.map(function (f) { return f[0] + ' ' + f[1] + '/' + f[2]; }).join(', ') + ')';
                   })())
-                : ((_wPool + _wNav + _wGlow + _wLens + _wEmis === 0)
+                : ((_wPool + _wNav + _wEmis === 0)
                     ? 'PASS (between the last stick and topout, no interior emitter of any family is on)'
                     : 'FAIL — something interior is still emitting. Each count prints over its own' +
                       ' DENOMINATOR so a zero can be told apart from an absent family (a vacuous pass).')));
@@ -4551,6 +4568,7 @@
               ' consecutive frame(s) — identical picture, encoder handed the same blob');
             _frameReuseRun = 0;
           }
+          if (typeof window.__maxqPreCaptureTap === 'function') { try { window.__maxqPreCaptureTap(i); } catch (ePC) {} }   // dev-only witness seam (--tap), like __maxqPoseTap
           blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo, _escCardInfo);
           _lastFrameKey = _reuseKey; _lastFrameBlob = blob;
         }
@@ -4829,6 +4847,7 @@
       // §40.1 — a second bake, or the live editor preview, must not inherit THIS bake's armed
       // rectangles: a different frame size or a different corner would then draw into stale boxes.
       try { if (A.filmBoxesDisarm) A.filmBoxesDisarm(); } catch (eFBd) {}
+      try { if (A._giFilmArmed && window.GiFilm) window.GiFilm.disarm(); } catch (eGF) {} A._giFilmArmed = false;   // §GI_FILM
       // Recoverability FIRST: clearing the store can itself block for seconds behind the very
       // zombie connection that failed this run, and until these flags reset the next Alt+C is
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.

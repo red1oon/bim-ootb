@@ -1142,8 +1142,8 @@ function setupTools(A) {
     for (var i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
     return ((h >>> 0) % 100000) / 100000;
   }
-  // ONE test for "is this an exit sign", shared by the colour rule and by §PHOTO_GLOW_SPRITE's
-  // brightness rule — they must never disagree about which fittings are signage.
+  // ONE test for "is this an exit sign", shared by every rule that treats signage differently
+  // (colour, §LAMP_SHAPE_COLOUR's exit count) — they must never disagree about which fittings are signage.
   A.nightIsExitSign = function(name) {
     var n = String(name || '').toLowerCase();
     return n.indexOf('exit') >= 0 || n.indexOf('keluar') >= 0 || n.indexOf('signage') >= 0;
@@ -1255,7 +1255,7 @@ function setupTools(A) {
     var f = _fixtureFaceFill(A.meshCache[gh]);
     return (_lampShapeByHash[gh] = f ? f.shape : 'ambiguous');
   };
-  // The one colour for a fixture's light AND its glow sprite (they must agree, see _nightFixtureWorldPositions).
+  // The one colour for a fixture's light (see _nightFixtureWorldPositions).
   A.nightFixtureColor = function(p) {
     var base = (p && p.__color !== undefined) ? p.__color : NIGHT_AMBER;
     if (!A._stillShapeColour || !p || p.__exit) return base;
@@ -1304,6 +1304,7 @@ function setupTools(A) {
     return 1;   // everything else (including exit signage) — unchanged flat baseline
   };
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
+  A.NIGHT_LIGHT_INTENSITY_BASE = 2.0;   // §SOURCED_LIGHT_CALIB reads the lamp base (kept equal to NIGHT_LIGHT_INTENSITY below)
   var NIGHT_LIGHT_INTENSITY = 2.0; // §S277d, reduced 8.0->6.5->4.5->2.5 2026-08-08, ->2.0 2026-08-14 (user: -20%, indoor MEP-reveal bake still reads too bright)
   // §NIGHT_LIGHT_NEARFIELD (2026-08-13, user: "bright lighting up surrounding when afar, but when
   // near not evident"). Confirmed against three.module.min.js's own shader (not guessed):
@@ -1320,6 +1321,11 @@ function setupTools(A) {
   // §STILL_DIALS (2026-09-24, red1: "indoor lighting is not throwing enough, so it is a knob") — Alt+S-only lamp
   // strength and fall-off, set by effects.js per press (null outside an Alt+S still). typeof, never ||: 0 means 0.
   A._nightLightDecayDefault = NIGHT_LIGHT_DECAY;
+  // §LAMP_CAP_FADE (watchdog: nearest-N changes as the camera moves, so a lamp at the boundary would pop on/off): while
+  // the cap cuts the set, a kept lamp fades out over the last LAMP_CAP_FADE_M before the farthest kept distance, so it
+  // is ~0 when it leaves the set and ramps in when it enters. 1 when not capping.
+  var LAMP_CAP_FADE_M = 6;
+  function _lampCapFade(d) { return (typeof A._lampCapFarM === 'number') ? Math.max(0, Math.min(1, (A._lampCapFarM - d) / LAMP_CAP_FADE_M)) : 1; }
   function _stillLampMul() { return (typeof A._stillLampMul === 'number') ? A._stillLampMul : 1; }
   function _stillLampDecay() { return (typeof A._stillLampDecayNow === 'number') ? A._stillLampDecayNow : NIGHT_LIGHT_DECAY; }
   function _stillLampRange() { return (typeof A._stillLampRangeNow === 'number') ? A._stillLampRangeNow : NIGHT_LIGHT_RANGE; }   // §LIGHT_STACK arm: &lamprange=
@@ -1384,15 +1390,15 @@ function setupTools(A) {
         ' totalGlowMats=' + A._nightGlowMats.length);
     }
   };
-  // §NIGHT_FIXTURE_VOCAB / §PHOTO_GLOW_SPRITE — the ONE place luminaire POSITIONS are extracted.
-  // Extracted out of toggleNightMode (2026-07-27) because a second consumer now needs the same
-  // positions: the still's glow sprites. The spec's standing rule is that every path selecting
+  // §NIGHT_FIXTURE_VOCAB — the ONE place luminaire POSITIONS are extracted.
+  // Extracted out of toggleNightMode (2026-07-27) so every consumer (point lights, the still's
+  // §LAMP_SHAPE_COLOUR / §FIXTURE_EMISSIVE) reads the same positions. The spec's standing rule is that every path selecting
   // luminaires must share one vocabulary — two copies of this SQL is exactly how the '%light%'
   // filter ended up living in one query as a test and never as the selector. Returns the source
   // string ('IFC' | 'synthetic (N storeys)' | 'none') that §NIGHT_MODE reports.
   // force=true re-queries even when a list is already cached — what toggleNightMode does, because
-  // more models may have streamed in since the last toggle. The sprite path passes nothing and
-  // reuses whatever night mode already extracted.
+  // more models may have streamed in since the last toggle. Other readers pass nothing and
+  // reuse whatever night mode already extracted.
   A._loadNightFixtures = function(force) {
     if (!force && A._nightFixtures && A._nightFixtures.length) return A._nightFixtureSource || 'IFC';
     A._nightFixtures = [];
@@ -1409,13 +1415,10 @@ function setupTools(A) {
         // vocabulary §PHOTO_EMBER uses, and the "filter for 'light'" the user asked for. Measured
         // on the Clinic: 1105 naive name matches -> 841 real luminaires, 264 rejected.
         var r = A.db.exec(
-          // §GLOW_LENS_QUAD (2026-08-07): bbox_x/bbox_y/rotation_z added so the still-render lens
-          // quad (effects.js) can size and orient itself to the REAL fixture instead of a generic
-          // round halo. Still-only consumer — the live round sprite ignores these three columns.
-          // m.guid (glow-buildup-gate, merged in) kept alongside for that feature's own consumer.
-          // §GLOW_TRUE_BOTTOM (2026-08-07): i.geometry_hash lets the drop calc below use the
-          // fixture's REAL mesh bounding box instead of assuming center_z sits at the bbox
-          // midpoint — see the drop comment further down for why that assumption was wrong.
+          // bbox_x/bbox_y/rotation_z (2026-08-07): the REAL fixture footprint + yaw — MODEL data,
+          // kept for the follow-up emissive shapes of lamps with no emissive mesh (§FIXTURE_EMISSIVE K).
+          // m.guid feeds the buildup gate (§NIGHT_BUILDUP_GATE) and §FIXTURE_EMISSIVE.
+          // i.geometry_hash: the fixture's own mesh (§LAMP_SHAPE_COLOUR reads its shape from it).
           "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z, t.bbox_x, t.bbox_y, t.rotation_z, m.guid, i.geometry_hash FROM elements_meta m " +
           "JOIN element_transforms t ON m.guid=t.guid " +
           "LEFT JOIN element_instances i ON m.guid=i.guid " +
@@ -1555,9 +1558,8 @@ function setupTools(A) {
       // (or a building with rooms but somehow zero elements in any of them, which tier 2 above
       // already can't produce given rel_contained_in_space's construction). One point per STOREY —
       // its centroid + near-top Z, not the old removed 15m grid — explicitly tagged
-      // `presentation: true` so it's the ONLY tier besides real named fixtures that also gets a
-      // still-render lens quad (effects.js checks this flag) — tier 2 above stays PL-only, per
-      // user's own tiering ("take any overhead fixture... as source of lite" — light only, no quad).
+      // `presentation: true` (§GLOW_LAYERS_OFF 2026-09-25: its only reader, the still-render glow
+      // quad, was deleted; the flag stays on the row as tier data).
       if (A._nightFixtures.length === 0) {
         try {
           var sr2 = A.db.exec(
@@ -1621,8 +1623,8 @@ function setupTools(A) {
       document.getElementById('sl-exposure').value = 0.8;
       document.getElementById('sl-exposure-val').textContent = '0.8';
       // Load IFC light fixtures from DB — fallback to storey centroids if none.
-      // The extraction itself lives in A._loadNightFixtures() (above) so the still's glow sprites
-      // read the same list from the same vocabulary.
+      // The extraction itself lives in A._loadNightFixtures() (above) so every still-staging reader
+      // reads the same list from the same vocabulary.
       var source = A._loadNightFixtures(true);
       // §S277d: Make light fixture materials emissive — glow at any distance, zero cost.
       // Uses matCache keys (rgba|ifcClass) — catches ALL material surfaces per fixture.
@@ -1693,8 +1695,7 @@ function setupTools(A) {
       // §GLOW_SPRITE_NAV_OFF (2026-08-07, user: "remove the others, no more those flimsy night
       // lights" — the round decorative sprite, not A._nightLights). Live nav now runs on the real
       // point lights ONLY (A._nightLights, bumped to 24 below) — no more static round dots. The
-      // sprite mechanism itself stays (still-render exit-sign glow still uses it, see effects.js
-      // startStillRefine), this just stops staging it for navigation.
+      // sprite mechanism itself was later deleted outright (§GLOW_LAYERS_OFF, 2026-09-25).
       if (A.controls && !A._nightControlsListener) {
         var _nightLastCamPos = A.camera.position.clone();
         // §57.3 (2026-09-11) — PARTIAL MITIGATION ONLY, re-baked and MEASURED, do not re-claim
@@ -1770,8 +1771,6 @@ function setupTools(A) {
       A._nightLights = [];
       A._nightLightByPos = null;   // stale pos-object keys otherwise survive the next toggle-on
       A._nightFixturePositions = null;
-      // §PHOTO_GLOW_SPRITE: night's sprites must not survive night mode
-      if (typeof A._glowUnstage === 'function') A._glowUnstage();
       // Unhook
       if (A.controls && A._nightControlsListener) {
         A.controls.removeEventListener('change', A._nightControlsListener);
@@ -1796,9 +1795,8 @@ function setupTools(A) {
   };
 
   // Fixture positions in WORLD space, with their §NIGHT_LIGHT_MIX colour attached. Cached after the
-  // first call and invalidated by A._loadNightFixtures(true). Two consumers: the point lights below
-  // and §PHOTO_GLOW_SPRITE in effects.js — the sprite at a fixture and the light at that fixture
-  // must be the same position and the same colour, so both read this one list.
+  // first call and invalidated by A._loadNightFixtures(true). Consumers: the point lights below and
+  // effects.js's still staging (§LAMP_SHAPE_COLOUR, §FIXTURE_EMISSIVE) — one list, one position per lamp.
   // A.ifc2three is the ONLY DB->world mapping; three attempts to reinvent it put a probe camera
   // inside walls (see NIGHT_AND_FIXTURE_LIGHTING.md).
   A._nightFixtureWorldPositions = function() {
@@ -1813,44 +1811,14 @@ function setupTools(A) {
         // §NIGHT_PL_INTENSITY_HEURISTIC — style-convention multiplier by name-pattern, NOT real
         // photometric data (see A.nightLightIntensityMult for the full investigation/framing).
         p.__intensityMult = A.nightLightIntensityMult(f.name);
-        // §GLOW_TRUE_BOTTOM (2026-08-07, replaces §GLOW_EMIT_DOWN's half-bbox-height guess — see
-        // NIGHT_AND_FIXTURE_LIGHTING.md §GLOW_TRUE_BOTTOM for the numeric witness). The OLD formula
-        // `bbox_z/2 + 0.12` assumed center_z sits at the bbox MIDPOINT. It doesn't: extractIFCtoDB.py
-        // stores center_z as the IFC PLACEMENT ORIGIN translation, and bbox_z as the full world AABB
-        // height — the two only coincide when a fixture's mesh happens to be symmetric about its own
-        // origin. Measured on Hospital: a recessed troffer (symmetric mesh) was off by 4mm — noise.
-        // A suspended linear pendant (origin at the ceiling attach point, mesh mostly BELOW it) was
-        // off by 196mm — the pendant hangs from the origin, so almost none of its height is above it.
-        // Real fix: read the ACTUAL local bounding box of the fixture's own mesh (already loaded for
-        // rendering, same Y-axis convention as A.blobToGeometry — local Y === IFC Z, no extra math)
-        // instead of guessing from a symmetric assumption. GLOW_LENS_CLEARANCE below is the same
-        // small physical clearance effects.js already uses to clear the fixture's own depth-test —
-        // reused here, not reinvented, for the same reason.
-        var GLOW_LENS_CLEARANCE = 0.03;
-        p.__drop = null;
-        if (f.ghash && A.meshCache && A.meshCache[f.ghash]) {
-          var _geo = A.meshCache[f.ghash];
-          if (!_geo.boundingBox) _geo.computeBoundingBox();
-          if (_geo.boundingBox && isFinite(_geo.boundingBox.min.y)) {
-            p.__drop = -_geo.boundingBox.min.y + GLOW_LENS_CLEARANCE;
-          }
-        }
-        if (p.__drop === null) {
-          // Fallback only — mesh not streamed in yet, or a synthetic/room-fallback fixture with no
-          // geometry_hash. Old heuristic, kept as a documented approximation, not a silent guess.
-          p.__drop = (f.h || 0) / 2 + 0.12;
-        }
-        // §GLOW_LENS_QUAD — real fixture footprint + yaw, still-render lens only (see effects.js).
+        // Real fixture footprint + yaw (MODEL data bbox_x/bbox_y/rotation_z) — kept for the
+        // §FIXTURE_EMISSIVE follow-up (emissive shapes for lamps with no emissive mesh).
         p.__bw = f.bw || 0; p.__bd = f.bd || 0; p.__rz = f.rz || 0;
-        // §GLOW_BUILDUP_GATE — null for synthetic per-storey fallback fixtures (no real element to
-        // gate against); real IFC rows carry the guid so a buildup bake can withhold the glow until
+        // §NIGHT_BUILDUP_GATE — null for synthetic per-storey fallback fixtures (no real element to
+        // gate against); real IFC rows carry the guid so a buildup bake can withhold the light until
         // Time Machine has actually placed that fixture (see effects.js A._tmIsVisible).
         p.__guid = f.guid || null;
         p.__ghash = f.ghash || null;   // §LAMP_SHAPE_COLOUR — shape read from the fixture's own mesh
-        // §NIGHT_CEILING_PLANT — true only for the last-resort synthetic tier; gates the
-        // still-render lens quad IN alongside real named fixtures (guid set), while tier-2's
-        // any-overhead-element pick (guid null, presentation unset) stays PL-only.
-        p.__presentation = !!f.presentation;
         return p;
       });
     }
@@ -1900,6 +1868,101 @@ function setupTools(A) {
     }
     return picked;
   }
+  // ══ §LAMP_ZONE_PICK (2026-09-25, spec PHOTOREAL_STILL_RENDER.md §LAMP_ZONE_PICK; zero-list FLYIN_DARK; ALTC_SHOWSTOPPERS S5:
+  // every lighting function = BUILD per building, cached + DECIDE per camera/frame, ray-free, ms-scale) ════════════════════
+  // BUILD — A._lampZoneTable(): every fixture's light zone (LightZones.atLamp, the §SOURCED_LIGHT binding rule) stored on the
+  // fixture position object (p.__slz; A._nightFixturePositions is persistent) plus zone -> fixture count. Rebuilt only when the
+  // building, the zone grid or the fixture count changes.
+  A._lampZoneTable = function() {
+    var LZ = window.LightZones, Z = LZ && LZ.get(); if (!Z) return null;
+    var all = A._nightFixtureWorldPositions(), key = Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + Z.zones + ':' + all.length;
+    var T = A._lampZoneTableCache; if (T && T.key === key && T.ref === all) return T;   // ref: A._nightFixturePositions is rebuilt (new objects, no __slz) when night mode toggles
+    var t0 = performance.now(), byZone = {};
+    for (var i = 0; i < all.length; i++) { var p = all[i], v = LZ.atLamp(p); p.__slz = (v > 0 && v !== LZ.SOLID) ? v : 0; if (p.__slz) byZone[p.__slz] = (byZone[p.__slz] || 0) + 1; }
+    // zone bounding boxes (world) from ONE pass over the zone grid — DECIDE tests them against the frustum, no rays, no GPU
+    var boxes = (T && T.gridKey === Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + Z.zones) ? T.boxes : null, bMs = 0;
+    if (!boxes) { var t1 = performance.now(), g = Z.zone, nx = Z.nx, ny = Z.ny, nxy = Z.nx * Z.ny, MASK = LZ.ZONE_MASK, SOL = LZ.SOLID, mn = {}, mx = {};
+      for (var c = 0, n = g.length; c < n; c++) { var v = g[c]; if (v === 0 || v === SOL) continue; v &= MASK; if (!v) continue;
+        var k = (c / nxy) | 0, r = c - k * nxy, j = (r / nx) | 0, ii = r - j * nx, a = mn[v], b = mx[v];
+        if (!a) { mn[v] = [ii, j, k]; mx[v] = [ii, j, k]; continue; }
+        if (ii < a[0]) a[0] = ii; if (j < a[1]) a[1] = j; if (k < a[2]) a[2] = k; if (ii > b[0]) b[0] = ii; if (j > b[1]) b[1] = j; if (k > b[2]) b[2] = k; }
+      boxes = {}; Object.keys(mn).forEach(function(z) { var a = mn[z], b = mx[z]; boxes[z] = new THREE.Box3(new THREE.Vector3(Z.org.x + a[0] * Z.cell, Z.org.y + a[1] * Z.cell, Z.org.z + a[2] * Z.cell),
+        new THREE.Vector3(Z.org.x + (b[0] + 1) * Z.cell, Z.org.y + (b[1] + 1) * Z.cell, Z.org.z + (b[2] + 1) * Z.cell)); });
+      bMs = performance.now() - t1; }
+    T = A._lampZoneTableCache = { key: key, ref: all, gridKey: Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + Z.zones, byZone: byZone, boxes: boxes, fixtures: all.length, zones: Object.keys(byZone).length, ms: performance.now() - t0 };
+    console.log('§LAMP_ZONE_PICK BUILD fixtures=' + all.length + ' zonesWithLamps=' + T.zones + ' unzoned=' + all.filter(function(q) { return !q.__slz; }).length + ' zoneBoxes=' + Object.keys(boxes).length + ' boxMs=' + bMs.toFixed(0) + ' ms=' + T.ms.toFixed(0));
+    return T;
+  };
+  // DECIDE input, ray-free — A._lampZoneView(camera[, mode]): camera zone = ONE zone lookup at the camera (LightZones.at, a
+  // solid cell falls back to atSurface as SourcedLight.prepare does); visible zones per mode below. Mode 'depth' = a 64x36
+  // depth readback (MeshDepthMaterial, RGBADepthPacking) -> world point 0.3 m toward the eye -> LightZones.at; share = pixels
+  // per zone; renderer target and scene.overrideMaterial are restored.
+  // DEFAULT mode 'box' (S5's "zone bboxes vs the frustum"): visible zones = zones WITH LAMPS whose bounding box (BUILD table)
+  // intersects the camera frustum; share = 1 / (1 + distance from the eye to the box), a nearer zone fills more of the frame.
+  // Measured on Hospital: the depth readback costs 220-650 ms per press (a full-scene draw at 64x36 + the GPU sync of
+  // readRenderTargetPixels), far over the 50 ms target; the box test is < 5 ms. mode 'depth' stays callable for a comparison.
+  var _lzvRT = null, _lzvMat = null, _lzvBuf = null, _LZV_W = 64, _LZV_H = 36;
+  A._lampZoneView = function(camera, mode) {
+    var LZ = window.LightZones, Z = LZ && LZ.get(); if (!Z || !A.renderer || !A.scene) return null;
+    var t0 = performance.now(), cam = camera.position, cz = LZ.at(cam); if (cz === LZ.SOLID) cz = LZ.atSurface(cam, { x: 0, y: 1, z: 0 });
+    var camZone = (cz > 0 && cz !== LZ.SOLID) ? cz : 0, vis = new Map(), hits = 0, solid = 0, r = A.renderer;
+    if (mode !== 'depth') {
+      var T = A._lampZoneTable(); if (!T) return null;
+      camera.updateMatrixWorld(); var fr = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)), tested = 0;
+      Object.keys(T.byZone).forEach(function(z) { var bx = T.boxes[z]; if (!bx) return; tested++; if (!fr.intersectsBox(bx)) return; hits++; vis.set(+z, 1 / (1 + bx.distanceToPoint(cam))); });
+      return { camZone: camZone, vis: vis, px: tested, hits: hits, solid: 0, ms: performance.now() - t0, mode: 'box' };
+    }
+    if (!_lzvRT) { _lzvRT = new THREE.WebGLRenderTarget(_LZV_W, _LZV_H, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
+      _lzvMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide }); _lzvBuf = new Uint8Array(_LZV_W * _LZV_H * 4); }
+    var prevRT = r.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background, prevAuto = r.autoClear, prevXR = r.xr && r.xr.enabled;
+    var prevSky = A._sky ? A._sky.visible : null; if (A._sky) A._sky.visible = false;
+    try {
+      camera.updateMatrixWorld(); A.scene.overrideMaterial = _lzvMat; A.scene.background = null; r.autoClear = true; if (r.xr) r.xr.enabled = false;
+      r.setRenderTarget(_lzvRT); r.setClearColor(0x000000, 1); r.clear(); r.render(A.scene, camera);
+      r.readRenderTargetPixels(_lzvRT, 0, 0, _LZV_W, _LZV_H, _lzvBuf);
+    } finally { r.setRenderTarget(prevRT); A.scene.overrideMaterial = prevOv || null; A.scene.background = prevBg; r.autoClear = prevAuto; if (r.xr) r.xr.enabled = !!prevXR; if (A._sky) A._sky.visible = prevSky; }
+    var w = new THREE.Vector3(), d = new THREE.Vector3();
+    for (var j = 0; j < _LZV_H; j++) for (var i = 0; i < _LZV_W; i++) {
+      var o = (j * _LZV_W + i) * 4, depth = (_lzvBuf[o] * 65536 + _lzvBuf[o + 1] * 256 + _lzvBuf[o + 2] + _lzvBuf[o + 3] / 255) / 16777216;   // three r16x packDepthToRGBA: R = MSB byte (floor(v*256)), G, B, A = sub-byte fraction
+      if (depth <= 0 || depth >= 0.9999) continue;   // cleared / far plane = nothing drawn
+      w.set(((i + 0.5) / _LZV_W) * 2 - 1, ((j + 0.5) / _LZV_H) * 2 - 1, depth * 2 - 1).unproject(camera);
+      d.copy(w).sub(cam); var L = d.length(); if (!(L > 0.31)) continue; d.multiplyScalar(0.3 / L); w.sub(d); hits++;
+      var v = LZ.at(w); if (v === LZ.SOLID) { w.sub(d); v = LZ.at(w); }   // 0.6 m: a fragment on a rasterised wall column
+      if (v === LZ.SOLID) { solid++; continue; }
+      if (v > 0) vis.set(v, (vis.get(v) || 0) + 1);
+    }
+    return { camZone: camZone, vis: vis, px: _LZV_W * _LZV_H, hits: hits, solid: solid, ms: performance.now() - t0, mode: 'depth' };
+  };
+  // DECIDE — A._lampZonePick(camPos, camZone, visZones[, fixtures, cap]): ONE pick function of (camera, visible zones); the still
+  // calls it now, a film calls it per frame (the film adds only continuity: fade a lamp entering/leaving the kept set, no
+  // 0<->full step). Lamps are picked by the ZONES THEY LIGHT (§SOURCED_LIGHT binds a lamp to its zone, so a lamp reaches
+  // nothing outside it), not by whether the fixture's centre sits in the frustum: a troffer behind the eye lights the wall in
+  // front. Candidates = every lamp in the camera zone, then lamps in the zones the frame shows (visZones: zone -> pixels of
+  // A._lampZoneView), ordered camera zone first, then by the zone's share of the frame, within a zone nearest-to-camera first.
+  // Cap = the uniform budget. No frustum test, no zone-blind top-up: a lamp in a zone the frame never shows is not a candidate
+  // at all (red1's pose 5: 20 zone-1 lamps + ~50 lamps of 23 unseen zones left the left wall at 0). fixtures defaults to the
+  // placed fixtures (§NIGHT_BUILDUP_GATE), cap to A._stillLampCap. Zones come from the BUILD table (no lookup per press).
+  // Returns { picked, zoneLamps (camera-zone lamps available), perZone: [[zone, kept, available]...], dropped }.
+  A._lampZonePick = function(camPos, camZone, visZones, fixtures, cap) {
+    var T = A._lampZoneTable(); if (!T) return null;
+    if (!fixtures) fixtures = A._nightFixtureWorldPositions().filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
+    if (typeof cap !== 'number') cap = (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200;
+    var cand = [], avail = {}, kept = {};
+    for (var i = 0; i < fixtures.length; i++) {
+      var p = fixtures[i]; if (!p.__slz) continue;
+      var share = (p.__slz === camZone) ? 1e9 : (visZones && visZones.get(p.__slz)) || 0;   // camera zone outranks any frame share
+      if (!(share > 0)) continue;
+      p.__slshare = share;
+      p.__sld2 = (p.x - camPos.x) * (p.x - camPos.x) + (p.y - camPos.y) * (p.y - camPos.y) + (p.z - camPos.z) * (p.z - camPos.z);
+      cand.push(p); avail[p.__slz] = (avail[p.__slz] || 0) + 1;
+    }
+    cand.sort(function(a, b) { return (b.__slshare - a.__slshare) || (a.__sld2 - b.__sld2); });
+    var picked = cand.slice(0, Math.max(0, cap | 0)), order = [];
+    picked.forEach(function(p) { if (!kept[p.__slz]) { kept[p.__slz] = 0; order.push(p.__slz); } kept[p.__slz]++; });
+    Object.keys(avail).forEach(function(z) { if (!kept[+z]) order.push(+z); });
+    return { picked: picked, zoneLamps: avail[camZone] || 0, dropped: cand.length - picked.length, cap: cap,
+             perZone: order.map(function(z) { return [z, kept[z] || 0, avail[z]]; }) };
+  };
   var _ntuLastLine = null;   // §BAKE_INTERIOR_TOPUP — run-length guard, this runs once per baked frame
   var _nbgLastTotal = -1, _nbgLastPlaced = -1, _nbgLastLit = -1;   // §NIGHT_BUILDUP_GATE dedup
 
@@ -1916,12 +1979,11 @@ function setupTools(A) {
     }
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
-    // §NIGHT_BUILDUP_GATE (2026-09-05) — mirrors §GLOW_BUILDUP_GATE (effects.js ~L4630): a fixture
+    // §NIGHT_BUILDUP_GATE (2026-09-05): a fixture
     // with no guid (synthetic per-storey fallback, no real element to gate against) is always
     // eligible; a real fixture is only eligible to contribute a PointLight once Time Machine has
-    // actually placed it — the SAME predicate the decorative glow sprite already applies to this
-    // exact same position list, so a PointLight and its glow sprite can never disagree about
-    // buildup state. A._tmIsVisible defaults to true when TM is not driving the scene at all, so
+    // actually placed it (the decorative glow sprite that once shared this predicate was deleted by
+    // §GLOW_LAYERS_OFF, 2026-09-25). A._tmIsVisible defaults to true when TM is not driving the scene at all, so
     // plain Night Mode/navigation with no buildup active is unaffected (visPos === allPos).
     // `allPos` itself stays UNFILTERED below — it also sizes the frozen §NIGHT_BAKE_POOL, which
     // must have enough slots for fixtures placed LATER in the buildup, not just those placed now.
@@ -1938,7 +2000,11 @@ function setupTools(A) {
     // live witness data: a bare 'n' toggle (no Alt+S) logged nightLights=200. A._stillRefineActive
     // (effects.js, true only between startStillRefine/stopStillRefine) is the actual per-session
     // state — AND it in alongside the feature flag.
-    if (A._nightStillBoost && A._stillRefineActive) {
+    if (A._nightStillBoost && A._stillRefineActive && A._lampDataOn && !A._maxqActive) {
+      // §LAMP_UNCAPPED — every placed fixture is lit (as DATA, sourced_light.js): no frustum, no zone pick, no cap
+      A._lampCapFarM = null;
+      needed = visPos.map(function(p) { return { pos: p }; });
+    } else if (A._nightStillBoost && A._stillRefineActive) {
       // §NIGHT_STILL_FRUSTUM (2026-08-07, user: "during Alt-S and movie baking, place quads and
       // PLs on every noticeable source in the frame") — frustum-cull to what's actually in view
       // rather than a flat count cap; a still pays this cost once, not every frame. 200 is a
@@ -1949,6 +2015,25 @@ function setupTools(A) {
       // new pose and calls startStillRefine() BEFORE any render of that pose, so an unrefreshed
       // matrixWorldInverse culls this frame's fixtures against the PREVIOUS frame's view.
       A.camera.updateMatrixWorld();
+      // §LAMP_ZONE_PICK — with light zones and the camera inside one, the pick is by the zones the lamps light; the frustum
+      // test and the zone-blind top-up below are NOT run. Without zones (LightZones missing, &sourced=0, camera outside every
+      // zone) today's behaviour is kept exactly. Film path: calls DECIDE per frame + needs fade (next step).
+      // Ray-free (S5): camera zone + visible zones from A._lampZoneView (one zone lookup + a 64x36 depth readback), never
+      // from prepare's 84-ray grid; A._sourcedCap is only compared in the log. Zones must exist (LightZones built by
+      // SourcedLight.prepare/stage; a film builds them once via LightZones.build, cached per building).
+      var _zpZ = window.LightZones && window.LightZones.get() && !/[?&]lampcap=list/.test(location.search) ? A._lampZoneView(A.camera) : null;
+      var _zpOn = _zpZ && _zpZ.camZone > 0;
+      if (_zpOn) {
+        A._lampCapFarM = null;
+        var _zp = A._lampZonePick(A.camera.position, _zpZ.camZone, _zpZ.vis, visPos);
+        var _zpTop = Array.from(_zpZ.vis.entries()).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 6).map(function(e) { return e[0] + ':' + (+e[1]).toFixed(3); }).join(',');
+        console.log('§LAMP_ZONE_PICK camZone=' + _zpZ.camZone + ' zoneLamps=' + _zp.zoneLamps + ' kept=' + _zp.picked.length + ' cap=' + _zp.cap +
+          ' perZone=[' + _zp.perZone.map(function(e) { return e[0] + ':' + e[1] + '/' + e[2]; }).join(',') + '] dropped=' + _zp.dropped + ' (= §LAMP_CAP_DROPPED) eligible(placed)=' + visPos.length +
+          ' decideMs=' + (_zpZ.ms).toFixed(1) + ' mode=' + _zpZ.mode + ' visibleZones=' + _zpZ.vis.size + ' (' + _zpTop + ') ' + (_zpZ.mode === 'box' ? 'boxesInFrustum=' + _zpZ.hits + '/' + _zpZ.px : 'px=' + _zpZ.hits + '/' + _zpZ.px + ' solid=' + _zpZ.solid) +
+          ' prepareCamZone=' + (A._sourcedCap ? A._sourcedCap.camZone : 'n/a'));
+        needed = _zp.picked.map(function(p) { return { pos: p }; });
+      } else {
+        if (_zpZ) console.log('§LAMP_ZONE_PICK camera outside every zone (camZone=0, decideMs=' + _zpZ.ms.toFixed(1) + ') — frustum path kept');
       var frustum = new THREE.Frustum();
       var vpMatrix = new THREE.Matrix4().multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(vpMatrix);
@@ -1969,7 +2054,39 @@ function setupTools(A) {
       // not a second mechanism. A frame whose frustum already fills the budget is unchanged.
       var _tuLimit = Math.max(0, A._nightMaxLights || 0);
       if (typeof A._stillLampCap === 'number') _tuLimit = Math.min(_tuLimit, A._stillLampCap);   // §LIGHT_UNIFORM_BUDGET
-      var _picked = inView.slice(0, (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200);   // §LIGHT_UNIFORM_BUDGET (sky_portal.js)
+      // §LAMP_CAP_NEAREST (2026-09-25, watchdog: the cap kept the first N in LIST order, so lamps in view near the camera
+      // could drop while far ones stayed). When more are in view than the cap, keep the NEAREST to the camera.
+      var _capN = (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200;
+      A._lampCapFarM = null;   // §LAMP_CAP_FADE — set only while the cap is cutting the in-view set
+      // Default OFF (watchdog for red1, 2026-09-25: the approved ref4 hall is the list-order look; nearest read brighter and
+      // harsher). &lampcap=nearest / APP._stillLampCapNearest=true turns it on for later comparison.
+      var _nearestOn = A._stillLampCapNearest === true || /[?&]lampcap=nearest/.test(location.search);
+      // §SOURCED_LIGHT_CAP — with light zones (Alt+S), keep camera-zone lamps first, then lamps in zones the frame shows,
+      // then the nearest. &lampcap=list keeps the old list order for red1's A/B.
+      var _zoneCap = inView.length > _capN && A._sourcedCap && window.LightZones && window.LightZones.get() && !/[?&]lampcap=list/.test(location.search);
+      if (_zoneCap) {
+        var _LZ = window.LightZones, _cz = A._sourcedCap.camZone, _vz = A._sourcedCap.vis, _cp2 = A.camera.position, _rk = [0, 0, 0];
+        inView.forEach(function(p) { if (p.__slz === undefined) { var v = _LZ.atLamp(p); p.__slz = (v > 0 && v !== _LZ.SOLID) ? v : 0; }
+          p.__slrank = (p.__slz && p.__slz === _cz) ? 0 : (p.__slz && _vz.has(p.__slz) ? 1 : 2);
+          p.__sld2 = (p.x - _cp2.x) * (p.x - _cp2.x) + (p.y - _cp2.y) * (p.y - _cp2.y) + (p.z - _cp2.z) * (p.z - _cp2.z); });
+        inView.sort(function(a, b) { return (a.__slrank - b.__slrank) || (a.__sld2 - b.__sld2); });
+        inView.forEach(function(p) { _rk[p.__slrank]++; });
+        var _kept = [0, 0, 0]; for (var _ki = 0; _ki < Math.min(_capN, inView.length); _ki++) _kept[inView[_ki].__slrank]++;
+        console.log('§LAMP_CAP_ZONE inView=' + inView.length + ' cap=' + _capN + ' camZone=' + _cz + ' inCamZone=' + _rk[0] + ' inVisibleZones=' + _rk[1] + ' other=' + _rk[2] +
+          ' kept camZone/visible/nearest=' + _kept.join('/'));
+        _nearestOn = false;
+      }
+      if (inView.length > _capN && !_nearestOn && !_zoneCap && !A._lampCapListLogged) { A._lampCapListLogged = true; console.log('§LAMP_CAP_NEAREST off (list order, the approved look) inView=' + inView.length + ' kept=' + _capN); }
+      if (inView.length > _capN && _nearestOn) {
+        var _cp = A.camera.position;
+        inView.sort(function(a, b) { return ((a.x - _cp.x) * (a.x - _cp.x) + (a.y - _cp.y) * (a.y - _cp.y) + (a.z - _cp.z) * (a.z - _cp.z)) -
+                                           ((b.x - _cp.x) * (b.x - _cp.x) + (b.y - _cp.y) * (b.y - _cp.y) + (b.z - _cp.z) * (b.z - _cp.z)); });
+        var _dK = Math.sqrt(Math.pow(inView[_capN - 1].x - _cp.x, 2) + Math.pow(inView[_capN - 1].y - _cp.y, 2) + Math.pow(inView[_capN - 1].z - _cp.z, 2));
+        A._lampCapFarM = _dK;
+        var _capLine = '§LAMP_CAP_NEAREST inView=' + inView.length + ' kept=' + _capN + ' (nearest) farthestKeptM=' + _dK.toFixed(1);
+        if (_capLine.replace(/farthestKeptM=[0-9.]+/, '') !== (A._lampCapLast || '').replace(/farthestKeptM=[0-9.]+/, '')) { A._lampCapLast = _capLine; console.log(_capLine); }
+      }
+      var _picked = inView.slice(0, _capN);   // §LIGHT_UNIFORM_BUDGET (sky_portal.js)
       var _inViewN = _picked.length;
       if (_picked.length < _tuLimit) _picked = _nightPickNearest(visPos, _tuLimit, _picked);
       if (_picked.length !== _inViewN || _inViewN === 0) {
@@ -1979,6 +2096,7 @@ function setupTools(A) {
         if (_tuLine !== _ntuLastLine) { _ntuLastLine = _tuLine; console.log(_tuLine); }
       }
       needed = _picked.map(function(p) { return { pos: p }; });
+      }   // end of the frustum + top-up path (§LAMP_ZONE_PICK replaces it when zones exist)
     } else if (visPos.length <= A._nightMaxLights) {
       // Small building (or few fixtures placed so far) — place ALL currently-eligible fixtures, no culling
       needed = visPos.map(function(p) { return { pos: p }; });
@@ -2063,8 +2181,7 @@ function setupTools(A) {
     // §NIGHT_BUILDUP_GATE witness (2026-09-05) — deduped so navigation doesn't spam a line per
     // frame; logs whenever any of the three counts changes. Invariant asserted every time:
     // lit(needed) <= placed(visPos) <= total(allPos) — a fixture cannot light before it is placed,
-    // and cannot be placed if it doesn't exist. Cross-check against effects.js's own
-    // §GLOW_LENS_QUAD/§PHOTO_GLOW_SPRITE_GATE staged-count lines nearby — same predicate, same list.
+    // and cannot be placed if it doesn't exist.
     if (allPos.length !== _nbgLastTotal || visPos.length !== _nbgLastPlaced || needed.length !== _nbgLastLit) {
       _nbgLastTotal = allPos.length; _nbgLastPlaced = visPos.length; _nbgLastLit = needed.length;
       console.log('§NIGHT_BUILDUP_GATE total=' + allPos.length + ' placed=' + visPos.length +
@@ -2100,9 +2217,27 @@ function setupTools(A) {
     // bake — created once, assigned per frame by slot (position/color/intensity are uniform
     // updates, no recompile), unused slots dim to intensity 0 (contributes nothing — quality-
     // identical). Interactive navigation and Alt+S keep the churn-fix path below, untouched.
+    // §LAMP_UNCAPPED — the still's lamps become data (colour x intensity with the pool's own formula below, range, decay); the
+    // point-light path then runs with nothing needed, so every pool light is removed (no pads either: A._nightSyncPads)
+    if (A._lampDataOn && A._stillRefineActive && !A._maxqActive) {
+      var _ldL = [], _ldC = new THREE.Color();
+      needed.forEach(function(f) {
+        var _d = camPos.distanceTo(f.pos), _fl = A._nightNearFadeFloor, _fd = Math.min(1.0, _d / 15);
+        var _I = NIGHT_LIGHT_INTENSITY * (_fl + (1 - _fl) * _fd) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() * (f.pos.__intensityMult || 1) * _lampCapFade(_d);
+        _ldC.set(A.nightFixtureColor(f.pos));   // same Color path as PointLight.color (sRGB hex -> working space)
+        _ldL.push({ guid: f.pos.__guid || null, x: f.pos.x, y: f.pos.y, z: f.pos.z, r: _ldC.r * _I, g: _ldC.g * _I, b: _ldC.b * _I, I: _I, range: _stillLampRange() });
+      });
+      A._lampDataUsed = true;
+      A._lampData = { lamps: _ldL, decay: _stillLampDecay(), range: _stillLampRange(), ver: (A._lampData ? A._lampData.ver : 0) + 1 };
+      var _ldLine = '§LAMP_DATA lamps=' + _ldL.length + ' lit=' + _ldL.filter(function(q) { return q.I > 0; }).length + ' placed=' + visPos.length + ' total=' + allPos.length + ' range=' + _stillLampRange() + ' decay=' + _stillLampDecay() +
+        ' plScale=' + (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) + ' lampMul=' + _stillLampMul();
+      if (_ldLine !== A._lampDataLastLine) { A._lampDataLastLine = _ldLine; console.log(_ldLine + ' ver=' + A._lampData.ver); }
+      needed = [];
+    }
     if (A._maxqActive) {
       if (!A._nightBakePool) {
         var _poolN = Math.min(200, Math.max(1, allPos.length));
+        if (typeof A._stillLampCap === 'number') _poolN = Math.max(1, Math.min(_poolN, A._stillLampCap));   // §LIGHT_UNIFORM_BUDGET (parity films: lamps + portals fit the shader's uniforms)
         A._nightBakePool = [];
         for (var _bi = 0; _bi < _poolN; _bi++) {
           var _bl = new THREE.PointLight(0xffe4b5, 0, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
@@ -2113,6 +2248,17 @@ function setupTools(A) {
           ' — point-light COUNT frozen for the bake; unused slots ride at intensity 0');
       }
       var _pool = A._nightBakePool;
+      // §NIGHT_BAKE_POOL_REATTACH (2026-09-24, found by §FILM_PARITY's light dump: HHS film frame, pool 200 / lit 113 /
+      // IN SCENE 0 — parity on AND off). A bake stages, tears night mode down (toggleNightMode off removes every
+      // A._nightLights entry, which IS this pool, from the scene) and stages again; the pool survives in A._nightBakePool,
+      // so the create branch above is skipped and the lamps were never re-added: films baked with NO interior lamps.
+      // Re-attach on reuse (adding the same count back = the count the shaders were compiled for; no churn).
+      var _re = 0;
+      if (!window.__noPoolReattach) for (var _ra = 0; _ra < _pool.length; _ra++) if (!_pool[_ra].parent) { A.scene.add(_pool[_ra]); _re++; }   // __noPoolReattach: dev A/B only (cost split)
+      if (_re) console.log('§NIGHT_BAKE_POOL_REATTACH re-added=' + _re + ' of ' + _pool.length + ' (night mode had been toggled off mid-bake-prep)');
+      // §FILM_PARITY — the Alt+S lamp reach/fall-off (§STILL_DIALS 25 m / 1.5) on the film's pool too; nav values otherwise.
+      var _rng = A._filmParity ? _stillLampRange() : NIGHT_LIGHT_RANGE, _dec = A._filmParity ? _stillLampDecay() : NIGHT_LIGHT_DECAY;
+      for (var _rd = 0; _rd < _pool.length; _rd++) { _pool[_rd].distance = _rng; _pool[_rd].decay = _dec; }
       // §57.3-FIX (2026-09-11) — STABLE SLOT ASSIGNMENT, the same technique §NIGHT_LIGHT_CHURN_FIX
       // already ships below for the interactive/nav path (A._nightLightByPos), applied here for
       // the bake-only frozen pool too. MEASURED root cause of the HHS cruise-beat flicker (§55.7/
@@ -2150,10 +2296,21 @@ function setupTools(A) {
           _pool[_pi].position.copy(_posObj);
           _pool[_pi].color.set(_posObj.__color || 0xffe4b5);
           _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() *
-            (_posObj.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
+            (_posObj.__intensityMult || 1) * _lampCapFade(_dist);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC · §LAMP_CAP_FADE
         } else {
           _pool[_pi].intensity = 0;
         }
+      }
+      // §LAMP_CAP_CHURN — per bake frame: fixtures that entered/left the lit set and the largest per-fixture intensity step
+      // (target: no lamp goes 0 -> full or full -> 0 in one frame). Logged every frame the cap is active or anything moved.
+      {
+        var _now = new Map(); for (var _ci = 0; _ci < _pool.length; _ci++) if (_slotToPos[_ci]) _now.set(_slotToPos[_ci], _pool[_ci].intensity);
+        var _prev = A._lampChurnPrev || new Map(), _ent = 0, _left = 0, _step = 0, _full = 0;
+        _now.forEach(function(v, k) { if (!_prev.has(k)) _ent++; var pv = _prev.has(k) ? _prev.get(k) : 0; _step = Math.max(_step, Math.abs(v - pv)); _full = Math.max(_full, v); });
+        _prev.forEach(function(v, k) { if (!_now.has(k)) { _left++; _step = Math.max(_step, v); } });
+        A._lampChurnPrev = _now;
+        if (typeof A._lampCapFarM === 'number' || _ent || _left) console.log('§LAMP_CAP_CHURN entered=' + _ent + ' left=' + _left + ' maxStep=' + _step.toFixed(2) +
+          ' maxLamp=' + _full.toFixed(2) + ' stepPctOfMax=' + (_full ? (100 * _step / _full).toFixed(0) : 0) + '% farthestKeptM=' + (typeof A._lampCapFarM === 'number' ? A._lampCapFarM.toFixed(1) : '-') + ' lit=' + _now.size);
       }
       A._nightLights = _pool.slice();
       if (A.markDirty) A.markDirty();
@@ -2185,7 +2342,7 @@ function setupTools(A) {
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
       var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() *
-        (f.pos.__intensityMult || 1);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC
+        (f.pos.__intensityMult || 1) * _lampCapFade(dist);   // §STAGED_PL_CUT · §NIGHT_PL_INTENSITY_HEURISTIC · §LAMP_CAP_FADE
       stillWanted.add(f.pos);
       var light = A._nightLightByPos.get(f.pos);
       if (light) {
@@ -2216,7 +2373,7 @@ function setupTools(A) {
   };
   A._nightPadLights = [];
   A._nightSyncPads = function() {
-    var want = (A._stillRefineActive && !A._maxqActive && typeof A._stillLampCap === 'number' && A._nightLightByPos)
+    var want = (A._stillRefineActive && !A._maxqActive && !A._lampDataOn && typeof A._stillLampCap === 'number' && A._nightLightByPos)
       ? Math.max(0, A._stillLampCap - A._nightLightByPos.size) : 0;
     while (A._nightPadLights.length < want) {
       var pl = new THREE.PointLight(0xffffff, 0, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY); pl.userData.lampPad = true;

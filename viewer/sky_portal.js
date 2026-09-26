@@ -7,9 +7,13 @@
 (function (global) {
   var PORTAL_RANGE = 40;          // m — candidate panes near the camera
   var LIGHT_RESERVE = 320, PORTAL_SHARE = 0.25;   // §LIGHT_UNIFORM_BUDGET
-  var PORTAL_EXPOSURE = 10;       // start value for red1's eye (see spec): the unoccluded hemi drowns a physical portal
+  var PORTAL_EXPOSURE_EYE = 10;   // start value for red1's eye (see spec): the unoccluded hemi drowns a physical portal (1 under §SOURCED_LIGHT, stage())
+  // §SKY_PORTAL_INSIDE (2026-09-25): the spot sits INSIDE the glass. At pane-centre − 0.05 m (outside, aimed inward) the pane
+  // itself was 5 cm in front of the light, inside its cone: ~1/0.05² irradiance = a white disc on the glass (the "lamps lit
+  // from outside by day" dots). Inside by PORTAL_INSIDE_M the pane and its mullions are behind the light, out of the cone.
+  var PORTAL_INSIDE_M = 0.3;
   var PORTAL_ANGLE = 70 * Math.PI / 180, PORTAL_SHADOW_SIZE = 512, UPRAY_OFF = 0.5, UPRAY_MAX = 30;
-  var placed = [];
+  var placed = [], film = null;   // film: §FILM_PARITY per-frame state (cached panes + the fixed light set's assignments)
 
   function dial(A, key, name, def, lo, hi) {
     var v = (typeof A[key] === 'number') ? A[key] : null;
@@ -23,7 +27,11 @@
   // whole facade becomes a few facade-sized sources instead of many tiny panels. Each cell = { c: area-weighted centre,
   // n, area: glass area in the cell, hue, cls }. BatchedMesh glazing is not read (logged).
   var PORTAL_TILE_M = 6;
-  function collectPanes(A, THREE) {
+  // §SOURCED_DAYLIGHT (v2 spec, D3): opts.roof = true also keeps |n.y| > 0.7 roof glazing (the daylight factor counts it; the
+  // portal path never passes it, so portals are unchanged). Every tile carries key (plane + tile: a placed portal names its
+  // pane), T = glass-area-weighted (1 - opacity), roof flag.
+  function collectPanes(A, THREE, opts) {
+    var roofToo = !!(opts && opts.roof);
     var planes = new Map(), stats = { byClass: {}, batchedSkipped: 0 };
     var inst = new THREE.Matrix4(), M = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(),
       ab = new THREE.Vector3(), ac = new THREE.Vector3(), nn = new THREE.Vector3();
@@ -49,24 +57,24 @@
             a.fromBufferAttribute(pos, i0).applyMatrix4(M); b.fromBufferAttribute(pos, i1).applyMatrix4(M); c.fromBufferAttribute(pos, i2).applyMatrix4(M);
             nn.crossVectors(ab.subVectors(b, a), ac.subVectors(c, a)); var ar = nn.length() / 2; if (ar < 1e-4) continue;
             nn.normalize(); if (nn.y < 0 || (nn.y === 0 && (nn.x < 0 || (nn.x === 0 && nn.z < 0)))) nn.negate();   // one orientation per plane
-            if (Math.abs(nn.y) > 0.7) continue;                                   // skylights/roof glass: not a window portal
+            if (Math.abs(nn.y) > 0.7 && !roofToo) continue;                       // skylights/roof glass: not a window portal
             var d = nn.dot(a), key = [Math.round(nn.x * 12), Math.round(nn.y * 12), Math.round(nn.z * 12), Math.round(d / 0.25)].join(',');
             var P = planes.get(key);
             if (!P) { var u = new THREE.Vector3(0, 1, 0).cross(nn).normalize(); if (u.lengthSq() < 0.5) u.set(1, 0, 0);
-              P = { n: nn.clone(), u: u, v: nn.clone().cross(u).normalize(), cells: new Map(), cls: cls, hue: hue }; planes.set(key, P); }
+              P = { key: key, n: nn.clone(), u: u, v: nn.clone().cross(u).normalize(), cells: new Map(), cls: cls, hue: hue }; planes.set(key, P); }
             var cx = (a.x + b.x + c.x) / 3, cy = (a.y + b.y + c.y) / 3, cz = (a.z + b.z + c.z) / 3;
             var pu = P.u.x * cx + P.u.y * cy + P.u.z * cz, pv = P.v.x * cx + P.v.y * cy + P.v.z * cz;
             var ck = Math.floor(pu / PORTAL_TILE_M) + ':' + Math.floor(pv / PORTAL_TILE_M), C = P.cells.get(ck);
-            if (!C) { C = { x: 0, y: 0, z: 0, area: 0 }; P.cells.set(ck, C); }
-            C.x += cx * ar; C.y += cy * ar; C.z += cz * ar; C.area += ar;
+            if (!C) { C = { x: 0, y: 0, z: 0, area: 0, ta: 0 }; P.cells.set(ck, C); }
+            C.x += cx * ar; C.y += cy * ar; C.z += cz * ar; C.area += ar; C.ta += (1 - m.opacity) * ar;
             stats.byClass[cls] = (stats.byClass[cls] || 0) + ar;
           }
         });
       }
     });
     var out = [];
-    planes.forEach(function (P) { P.cells.forEach(function (C) { if (C.area < 0.5) return;   // < 0.5 m2 of glass in a cell: not a window
-      out.push({ c: new THREE.Vector3(C.x / C.area, C.y / C.area, C.z / C.area), n: P.n, u: P.u, area: C.area, hue: P.hue, cls: P.cls }); }); });
+    planes.forEach(function (P) { P.cells.forEach(function (C, ck) { if (C.area < 0.5) return;   // < 0.5 m2 of glass in a cell: not a window
+      out.push({ c: new THREE.Vector3(C.x / C.area, C.y / C.area, C.z / C.area), n: P.n, u: P.u, area: C.area, hue: P.hue, cls: P.cls, key: P.key + '|' + ck, T: C.ta / C.area, roof: Math.abs(P.n.y) > 0.7 }); }); });
     Object.keys(stats.byClass).forEach(function (k) { stats.byClass[k] = +stats.byClass[k].toFixed(1); });
     stats.planes = planes.size;
     return { panes: out, stats: stats };
@@ -74,17 +82,39 @@
 
   // §LIGHT_UNIFORM_BUDGET, part 1 — called at staging, BEFORE the still's lamp set is built, so tools.js caps the lamps.
   var budgetCap = null, budgetShadow = null;
+  // §SKY_VIEW_FIELD V6: with the sky-view field on (Alt+S), sky through glass is the field's F — portals are retired (cap 0,
+  // no shadow maps); &portals=1 keeps them for A/B. Films never run the field, so they keep their portals.
+  function retired(A) { return !!(A && !A._maxqActive && global.SourcedLight && global.SourcedLight.fieldOn && global.SourcedLight.fieldOn(A) && !/[?&]portals=1/.test(location.search) && A._stillPortalsKeep !== true); }
   function budget(A) {
     var gain = dial(A, '_stillPortal', 'portal', 1, 0, 3), cap = Math.round(dial(A, '_stillPortalCap', 'portalcap', 32, 0, 128));
-    var nShadow = Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
+    if (retired(A)) { cap = 0; console.log('§SKY_PORTAL_RETIRED budget portalCap=0 shadowed=0 (§SKY_VIEW_FIELD on; &portals=1 keeps them) — frees the portal vectors + up to 8 shadow-map units'); }
+    var nShadow = retired(A) ? 0 : Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
+    // TEXTURE-UNIT budget (2026-09-25): the heaviest Alt+S program binds batching x2 + triplanar x3 + envMap + dfgLUT + the
+    // sun shadow map (8) + §SOURCED_LIGHT's zone texture (1) + one map per shadowed portal — 17 on Hospital with 8 portals.
+    // A backend capping fragment texture units at 16 fails to link it; fit the shadowed portals into what is left.
+    var maxTex = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxTextures) || 16;
+    var slTex = (global.SourcedLight && global.SourcedLight.installed && global.SourcedLight.installed()) ? 1 : 0;
+    // §STILL_SHADOW_CASCADE: + (m-1) sampler2DShadow units for the shadow-only cascade lights (added before this runs)
+    var csmTex = (A._stillCascadeExtraUnits | 0), texReserve = 8 + slTex + csmTex;
+    var nShadowTex = Math.max(0, Math.min(nShadow, maxTex - texReserve));
+    if (nShadowTex !== nShadow) console.log('§LIGHT_TEXTURE_BUDGET maxTextures=' + maxTex + ' reserve=' + texReserve + ' (batching 2, triplanar 3, env, dfgLUT, sun' + (slTex ? ', zone' : '') + (csmTex ? ', cascades +' + csmTex : '') + ') shadowedPortals ' + nShadow + ' -> ' + nShadowTex);
+    nShadow = nShadowTex;
     var maxFrag = (A.renderer && A.renderer.capabilities && A.renderer.capabilities.maxFragmentUniforms) || 1024;
-    var avail = Math.max(0, maxFrag - LIGHT_RESERVE), portalVec = (gain > 0 && cap > 0) ? Math.floor(avail * PORTAL_SHARE) : 0;
+    // §STILL_SHADOW_CASCADE: per cascade light DirectionalLight (2 vec4) + DirectionalLightShadow (2 vec4); + uCsm* (4 vec4)
+    var csmVec = csmTex ? 4 * csmTex + 4 : 0;
+    var avail = Math.max(0, maxFrag - LIGHT_RESERVE - csmVec), portalVec = (gain > 0 && cap > 0) ? Math.floor(avail * PORTAL_SHARE) : 0;
     var c = 0, sh = 0, used = 0;
     while (c < cap) { var need = (sh < nShadow) ? 12 : 7; if (used + need > portalVec) break; used += need; c++; if (sh < nShadow) sh++; }
     budgetCap = c; budgetShadow = sh;
-    A._stillLampCap = Math.min(200, Math.floor((avail - used) / 4), Math.round(dial(A, '_stillLampCapMax', 'lampcap', 200, 0, 200)));   // &lampcap= (§STILL_LAG)
-    console.log('§LIGHT_UNIFORM_BUDGET maxFragmentUniforms=' + maxFrag + ' reserve=' + LIGHT_RESERVE + ' portalCap=' + c + ' (shadowed ' + sh +
-      ', ' + used + ' vectors) lampCap=' + A._stillLampCap + ' (' + (A._stillLampCap * 4) + ' vectors) total=' + (used + A._stillLampCap * 4) + '/' + avail +
+    // §SOURCED_LIGHT adds fragment uniforms to every lit material: uSLParams/uSLOrg/uSLDim/uSLSky (4 vec4), one vec4 per 4 spots
+    // (uSLSZ) and one per 4 point lights (uSLPZ) — so a lamp costs 4.25 vectors, not 4. Uncounted, a backend with a lower
+    // maxFragmentUniformVectors would fail to link at the first Alt+S.
+    var slOn = !!(global.SourcedLight && global.SourcedLight.installed && global.SourcedLight.installed());
+    var slFixed = slOn ? 4 + Math.ceil(c / 4) : 0, perLamp = slOn ? 4.25 : 4;   // 4 = uSLParams/uSLOrg/uSLDim + uSLSky (§SOURCED_DAYLIGHT)
+    A._stillLampCap = Math.min(200, Math.floor((avail - used - slFixed) / perLamp), Math.round(dial(A, '_stillLampCapMax', 'lampcap', 200, 0, 200)));   // &lampcap= (§STILL_LAG)
+    console.log('§LIGHT_UNIFORM_BUDGET maxFragmentUniforms=' + maxFrag + ' reserve=' + LIGHT_RESERVE + ' maxTextures=' + maxTex + ' texReserve=' + texReserve + (csmTex ? ' (cascades +' + csmTex + ' units, +' + csmVec + ' vectors)' : '') + ' portalCap=' + c + ' (shadowed ' + sh +
+      ', ' + used + ' vectors) lampCap=' + A._stillLampCap + ' (' + Math.ceil(A._stillLampCap * perLamp) + ' vectors) sourcedLight=' + (slOn ? slFixed + '+' + Math.ceil(A._stillLampCap / 4) + ' vectors' : 'off') +
+      ' total=' + Math.ceil(used + slFixed + A._stillLampCap * perLamp) + '/' + avail +
       ' — set before the lamps are built; one light count per still');
   }
 
@@ -94,6 +124,7 @@
     var t0 = performance.now();
     var gain = dial(A, '_stillPortal', 'portal', 1, 0, 3), cap = Math.round(dial(A, '_stillPortalCap', 'portalcap', 32, 0, 128));
     var nShadow = Math.round(dial(A, '_stillPortalShadow', 'portalshadow', 8, 0, 32));
+    if (retired(A)) { A._skyPortalLast = []; console.log('§SKY_PORTAL off retired=1 (§SKY_VIEW_FIELD carries the sky through glass; &portals=1 for A/B)'); return; }
     if (gain <= 0 || cap <= 0) { console.log('§SKY_PORTAL off portal=' + gain + ' cap=' + cap); return; }
     if (budgetCap == null) budget(A);
     cap = budgetCap; nShadow = budgetShadow;
@@ -117,17 +148,22 @@
       dirs.forEach(function (d) { rc.set(pt, d); if (!rc.intersectObjects(targets, false).length) k++; }); return k;
     }
     var skipped = 0, H = A.hemi.intensity, sky = A.hemi.color, shadowed = 0, unsh = 0, iSum = 0;
+    // §SOURCED_LIGHT_CALIB: a window of area A seen from inside is a Lambertian emitter of the sky's radiance E_sky/pi, so
+    // its intensity is E_sky * A / pi — exposure 1. The x10 start value was an eye pick against the unoccluded hemi, which
+    // §SOURCED_LIGHT removes indoors; with the lamps in physical units the portals are too.
+    var PORTAL_EXPOSURE = (A._stillCalibOn && window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed()) ? 1 : PORTAL_EXPOSURE_EYE;   // physical only with &calib=1 (paused)
     near.forEach(function (p) {
       if (placed.length >= cap) { capped++; return; }
       var nNeg = p.n.clone().negate();
       var sa = skyCount(p.c.clone().addScaledVector(p.n, UPRAY_OFF), p.n, p.u), sb = skyCount(p.c.clone().addScaledVector(nNeg, UPRAY_OFF), nNeg, p.u);
       if (sa === sb) { skipped++; return; }
       var inward = sa < sb ? p.n.clone() : nNeg;   // fewer sky hits = inside
+      p._inward = inward;
       byCls[p.cls] = (byCls[p.cls] || 0) + 1;
       var I = H * p.area / Math.PI * PORTAL_EXPOSURE * gain;
       var col = sky.clone().multiply(p.hue);
       var L = new THREE.SpotLight(col, I, 0, PORTAL_ANGLE, 1, 2);
-      L.position.copy(p.c).addScaledVector(inward, -0.05);
+      L.position.copy(p.c).addScaledVector(inward, PORTAL_INSIDE_M);
       L.target.position.copy(p.c).addScaledVector(inward, 5);
       if (shadowed < nShadow) {
         L.castShadow = true; L.shadow.mapSize.set(PORTAL_SHADOW_SIZE, PORTAL_SHADOW_SIZE);
@@ -135,10 +171,25 @@
         // §STILL_LAG: the scene is frozen for a still — render this shadow map ONCE, not on every accumulation frame.
         L.shadow.autoUpdate = false; L.shadow.needsUpdate = true;
       } else unsh++;
-      L.userData.skyPortal = true;
+      L.userData.skyPortal = true; L.userData.paneKey = p.key; L.userData.paneArea = p.area;   // §SOURCED_DAYLIGHT: which DF pane this portal carries
       A.scene.add(L); A.scene.add(L.target); placed.push(L); iSum += I;
       placedInfo.push({ cls: p.cls, area: +p.area.toFixed(1), dist: +p._dist.toFixed(1), facing: +p._facing.toFixed(2), y: +p.c.y.toFixed(1) });
     });
+    // §FILM_PARITY (films): classify EVERY pane's inward side ONCE here (camera-independent), cache it; frame() then only
+    // re-ranks the cached panes from the moving camera and re-aims this same fixed light set (count, pads, shadowed count
+    // unchanged — a count change would recompile every material).
+    film = null;
+    if (A._maxqActive && A._filmParity) {
+      var tC = performance.now(), cached = [];
+      panes.forEach(function (p) {
+        if (p._inward) { cached.push(p); return; }
+        var nNeg = p.n.clone().negate();
+        var sa = skyCount(p.c.clone().addScaledVector(p.n, UPRAY_OFF), p.n, p.u), sb = skyCount(p.c.clone().addScaledVector(nNeg, UPRAY_OFF), nNeg, p.u);
+        if (sa === sb) return; p._inward = sa < sb ? p.n.clone() : nNeg; cached.push(p);
+      });
+      film = { panes: cached, H: H, sky: sky.clone(), gain: gain, exposure: PORTAL_EXPOSURE, byArea: byArea, nShadow: shadowed, assign: [] };
+      console.log('§SKY_PORTAL_FILM_CACHE panes=' + cached.length + ' of ' + panes.length + ' classified once ms=' + (performance.now() - tC).toFixed(0));
+    }
     // §STILL_LIGHT_PAD — pad to the budget's fixed counts (intensity 0) so every still has the same spot-light count
     // and the same shadowed-spot count: no recompile between presses.
     var pads = 0;
@@ -148,12 +199,45 @@
       if (shadowed < nShadow) { D.castShadow = true; D.shadow.mapSize.set(PORTAL_SHADOW_SIZE, PORTAL_SHADOW_SIZE); D.shadow.autoUpdate = false; D.shadow.needsUpdate = true; shadowed++; }
       A.scene.add(D); A.scene.add(D.target); placed.push(D); pads++;
     }
+    // §PORTAL_SHADOW_BIAS (bim-compiler PHOTOREAL_STILL_RENDER.md spec, 2026-09-25): same rule as §STILL_SHADOW_EDGE. A
+    // perspective map's texel grows with distance, texel(d) = 2 d tan(angle) / mapSize; the still is seen from one camera, so
+    // each shadowed portal sizes its normal offset at d_ref = its distance to the camera (1..PORTAL_RANGE): normalBias =
+    // (R + 1.5) texels. Depth bias = the 16-bit format step, 1/65536 (world size at d: d^2 (f - n) / (f n) / 65536).
+    // Alt+S only; films keep -0.0005 / 0 (§FILM_PARITY list).
+    if (!A._maxqActive) {
+      var pb = { d: [], tx: [], nb: [], gap: [], gapWas: [] }, gw = function (Lx, d, b) { var c = Lx.shadow.camera; return Math.abs(b) * d * d * (c.far - c.near) / (c.far * c.near); };
+      placed.forEach(function (L) { if (L.userData.pad || !L.castShadow) return;
+        var dRef = Math.max(1, Math.min(PORTAL_RANGE, L.position.distanceTo(cam))), tx = 2 * dRef * Math.tan(L.angle) / L.shadow.mapSize.width;
+        pb.gapWas.push(+gw(L, dRef, L.shadow.bias).toFixed(3));
+        L.shadow.bias = -1 / 65536; L.shadow.normalBias = (L.shadow.radius + 1.5) * tx; L.shadow.needsUpdate = true;
+        pb.d.push(+dRef.toFixed(1)); pb.tx.push(+tx.toFixed(3)); pb.nb.push(+L.shadow.normalBias.toFixed(3)); pb.gap.push(+gw(L, dRef, L.shadow.bias).toFixed(4)); });
+      console.log('§PORTAL_SHADOW_BIAS shadowed=' + pb.d.length + ' dRef=' + JSON.stringify(pb.d) + ' texel=' + JSON.stringify(pb.tx) + ' normalBias=' + JSON.stringify(pb.nb) +
+        ' gapAtDref=' + JSON.stringify(pb.gap) + ' (was bias -0.0005 = world gapAtDref ' + JSON.stringify(pb.gapWas) + ', normalBias 0) bias=-1/65536 R=' + (placed[0] ? placed[0].shadow.radius : '?') +
+        ' thinCasterRisk=' + (pb.nb.length ? Math.max.apply(null, pb.nb) : 0) + 'm (max normalBias: a mullion, sill or blind thinner than this can lose its portal shadow)');
+      // §SKY_PORTAL_BLOCKED (watchdog red1-c6, 2026-09-25: 2 of 8 café portals 95-99% dark with the shadow on; one has a mesh
+      // 0.28 m in front on 18/25 rays): per shadowed portal, 25 rays into its cone against the opaque shadow casters; blocked =
+      // first hit within 1 m of the light (a caster that close hides the room from the portal). Logged, not acted on.
+      var occ = []; A.scene.traverse(function (o) { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible || !o.castShadow || (o.userData && o.userData.skyPortal)) return;
+        var ms = Array.isArray(o.material) ? o.material : [o.material]; if (ms.every(function (m) { return m && m.transparent && m.opacity < 0.95; })) return; occ.push(o); });
+      var rb = new THREE.Raycaster(), rows = [];
+      placed.forEach(function (L, idx) { if (L.userData.pad || !L.castShadow) return;
+        var ld = L.target.position.clone().sub(L.position).normalize(), u = new THREE.Vector3().crossVectors(ld, new THREE.Vector3(0, 1, 0)); if (u.lengthSq() < 1e-6) u.set(1, 0, 0); u.normalize();
+        var v = new THREE.Vector3().crossVectors(u, ld).normalize(), blocked = 0, nRay = 0, near = Infinity, nearName = '';
+        for (var a = -2; a <= 2; a++) for (var c = -2; c <= 2; c++) { rb.set(L.position, ld.clone().addScaledVector(u, a * 0.5).addScaledVector(v, c * 0.5).normalize()); rb.near = 0; rb.far = 1; nRay++;
+          var h = rb.intersectObjects(occ, false)[0]; if (h) { blocked++; if (h.distance < near) { near = h.distance; nearName = (h.object.userData && h.object.userData.ifcClass) || h.object.name || h.object.type; } } }
+        L.userData.blockedFrac = blocked / nRay;   // §SOURCED_DAYLIGHT G3 reads it (>= 0.5: pane counts in the DF, light dropped)
+        if (blocked) rows.push('#' + idx + ' z=' + L.position.z.toFixed(1) + ' blockedFrac=' + (blocked / nRay).toFixed(2) + ' nearest=' + near.toFixed(2) + 'm ' + nearName); });
+      console.log('§SKY_PORTAL_BLOCKED ' + rows.length + '/' + pb.d.length + ' shadowed portals have a caster within 1 m in their cone' + (rows.length ? ': ' + rows.join(' · ') : ''));
+    }
     if (A.markDirty) A.markDirty();
     var _plArea = placedInfo.reduce(function (s, q) { return s + q.area; }, 0);
     A._skyPortalLast = placedInfo;
     console.log('§SKY_PORTAL_PRIORITY sort=' + (byArea ? 'area x facing' : 'nearest') + ' candidates=' + near.length + ' candidateGlassM2=' + _allNearArea.toFixed(0) +
       ' placedGlassM2=' + _plArea.toFixed(0) + ' placedAreaMax=' + (placedInfo.length ? Math.max.apply(null, placedInfo.map(function (q) { return q.area; })) : 0) +
       ' placedDistMax=' + (placedInfo.length ? Math.max.apply(null, placedInfo.map(function (q) { return q.dist; })) : 0));
+    var _hot = 0; placed.forEach(function (L) { if (L.userData.pad || !(L.intensity > 0)) return; var dir = L.target.position.clone().sub(L.position).normalize();
+      panes.forEach(function (q) { var v = q.c.clone().sub(L.position), d = v.length(); if (d < 1 && d > 1e-6 && v.normalize().dot(dir) > Math.cos(PORTAL_ANGLE / 2)) _hot++; }); });
+    console.log('§SKY_PORTAL_INSIDE offset=' + PORTAL_INSIDE_M + ' hotspots=' + _hot + ' (spots whose cone holds a pane centre within 1 m)');
     console.log('§STILL_LIGHT_PAD portals padded=' + pads + ' to ' + placed.length + ' (shadowed ' + shadowed + ')');
     console.log('§SKY_PORTAL placed=' + (placed.length - pads) + ' (+' + pads + ' intensity-0 pads) shadowed=' + shadowed + ' unshadowed=' + unsh + ' (unshadowed can leak through walls)' +
       ' capped=' + capped + ' skipped=' + skipped + ' (5 rays per side, equal sky) sources=' + panes.length + ' in ' + col0.stats.planes + ' planes' +
@@ -162,7 +246,32 @@
       ' meanI=' + (placed.length ? (iSum / placed.length).toFixed(3) : 0) + ' ms=' + (performance.now() - t0).toFixed(0));
   }
 
+  // §FILM_PARITY — per frame: rank the cached panes from THIS camera, re-aim the fixed lights (shadowed ones first, as in
+  // stage), park the rest at intensity 0. A shadowed light's map re-renders only when its pane changed.
+  function frame(A) {
+    if (!film || !placed.length) return null;
+    var t0 = performance.now(), cam = A.camera.position;
+    var near = film.panes.filter(function (p) { p._dist = p.c.distanceTo(cam); return p._dist <= PORTAL_RANGE; });
+    if (film.byArea) { near.forEach(function (p) { var to = cam.clone().sub(p.c).normalize(); p._score = p.area * Math.max(0.05, Math.abs(to.dot(p.n))); }); near.sort(function (a, b) { return b._score - a._score; }); }
+    else near.sort(function (a, b) { return a._dist - b._dist; });
+    var reaimed = 0, shadowRe = 0, lit = 0;
+    for (var i = 0; i < placed.length; i++) {
+      var L = placed[i], p = near[i] || null;
+      if (film.assign[i] === p) continue;
+      film.assign[i] = p; reaimed++;
+      if (p) {
+        L.position.copy(p.c).addScaledVector(p._inward, PORTAL_INSIDE_M); L.target.position.copy(p.c).addScaledVector(p._inward, 5);
+        L.color.copy(film.sky).multiply(p.hue); L.intensity = film.H * p.area / Math.PI * film.exposure * film.gain; L.distance = 0;
+      } else { L.intensity = 0; L.position.copy(cam); L.target.position.copy(cam).add(new global.THREE.Vector3(0, -1, 0)); }
+      L.target.updateMatrixWorld();
+      if (L.castShadow) { L.shadow.needsUpdate = true; shadowRe++; }
+    }
+    for (var j = 0; j < placed.length; j++) if (placed[j].intensity > 0) lit++;
+    return 'lit' + lit + '/' + placed.length + ' reaimed' + reaimed + ' shadowRe' + shadowRe + ' ' + (performance.now() - t0).toFixed(1) + 'ms';
+  }
+
   function unstage(A, keepBudget) {
+    film = null;
     if (!keepBudget) { A._stillLampCap = undefined; budgetCap = null; budgetShadow = null; }   // §LIGHT_UNIFORM_BUDGET — nav/films keep their own caps
     if (!placed.length) return;
     var n = placed.length;
@@ -172,5 +281,5 @@
     console.log('§SKY_PORTAL removed=' + n);
   }
 
-  global.SkyPortal = { budget: budget, stage: stage, unstage: unstage, placedCount: function () { return placed.length; } };
+  global.SkyPortal = { collectPanes: collectPanes, placedLights: function () { return placed.slice(); }, budget: budget, stage: stage, unstage: unstage, frame: frame, placedCount: function () { return placed.length; } };
 })(typeof window !== 'undefined' ? window : this);

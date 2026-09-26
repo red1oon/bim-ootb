@@ -125,6 +125,21 @@
     }
     return fb;
   }
+  // §GI_READBACK_CHURN (red1 2026-09-26: Alt+S "stalls and hangs the chrome browser badly"; leak audit: ~370 MB of
+  // short-lived float arrays per press). The accumulation passes add the padded readback straight into one kept
+  // accumulator (G.acc) — no unpadded copy and no Float32Array.from per pass. Same rows, same sums as readRT + add.
+  async function readRTAdd(G, acc, first) {
+    if (window.__GI_STILL_INJECT_READBACK_FLIP) { const fb = await readRT(G); if (first) acc.set(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k]; return; }
+    const rw = G.w, rh = G.h, b = await G.renderer.readRenderTargetPixelsAsync(G.rt, 0, 0, rw, rh);
+    const stride = (b.length === rw * rh * 4) ? rw : (b.length / 4 - rw) / (rh - 1);
+    if (!Number.isInteger(stride) || stride < rw) throw new Error('readback length ' + b.length + ' fits no row stride for ' + rw + 'x' + rh);
+    const row = rw * 4;
+    for (let y = 0; y < rh; y++) {
+      const s0 = y * stride * 4, d0 = y * row;
+      if (first) { for (let x = 0; x < row; x++) acc[d0 + x] = b[s0 + x]; }
+      else { for (let x = 0; x < row; x++) acc[d0 + x] += b[s0 + x]; }
+    }
+  }
   // §GI_STILL_ORIENT — DECIDE THE ORIENTATION BY MATCHING, NEVER BY ASSUMPTION.
   // There are two independent unknowns and a brightness test cannot separate them: whether the
   // colour texture's v runs the same way as the pass's own render targets (flipTex — get this wrong
@@ -335,7 +350,7 @@
   // WebGPU also reads the index format off the array at draw time (:89025), so it must SEE 32-bit
   // while it draws: swap in a 32-bit copy we own before the render, put the app's array back after,
   // and make every BatchedMesh rebuild its draw list at the right width on the app's next frame.
-  const WIDE = new WeakMap();
+  let WIDE = new WeakMap();   // §WIDE_RELEASE: replaced (so dropped) whenever the bounce renderer is released
   function widenShared(scene) {
     const out = [], seen = new Set();
     const one = (a, isIndex) => {
@@ -465,9 +480,17 @@
   // Default recv=1 (§GI_BOUNCE_STRENGTH sweep, Hospital real GPU): bounce added courtyard 0.8% -> 4.9%, L1 interior
   // 13.0% -> 32.0% of the app frame (linear). Radius x2/x4 did not help (screen-space radius; x4 lowered it).
   const GI_ALBEDO_EST = 0.5;
+  // §GI_RECEIVER_QUANT (red1's rainbow voxel edge, bounce_still_1790353472343): the app frame is 8-bit sRGB, so a near-black
+  // pixel's hue is rounding noise — app [1,1,0] became a pure-yellow receiver and the composite painted [95,94,0], app [1,0,0]
+  // pure red. Each channel carries up to 0.5 code of rounding, two equal channels can differ by 1 code: the chroma (each
+  // channel's offset from the channel mean, in sRGB codes) is shrunk by 1 code before the hue is read. A pixel whose channels
+  // lie within 1 code reads grey; a bright pixel's hue moves by < 1 code (no change to lit surfaces).
   function receiver(G, C) {
-    const T = G.TSL, lum = T.max(T.dot(C.rgb, T.vec3(0.2126, 0.7152, 0.0722)), T.float(1e-3));
-    const est = T.min(C.rgb.div(lum).mul(GI_ALBEDO_EST), T.vec3(1));
+    const T = G.TSL, code = T.sRGBTransferOETF(C.rgb).mul(255), m = code.x.add(code.y).add(code.z).div(3);
+    const dev = code.sub(T.vec3(m)), q = T.sign(dev).mul(T.max(T.abs(dev).sub(1), T.vec3(0)));
+    const Cq = T.sRGBTransferEOTF(T.clamp(T.vec3(m).add(q).div(255), 0, 1));
+    const lum = T.max(T.dot(Cq, T.vec3(0.2126, 0.7152, 0.0722)), T.float(1e-3));
+    const est = T.min(Cq.div(lum).mul(GI_ALBEDO_EST), T.vec3(1));
     return T.mix(C.rgb, est, G.recvU);
   }
   function outputFor(G, mode, enc) {
@@ -497,7 +520,10 @@
       // renderer kept across Alt+S presses picks up a new value without a shader rebuild (§GI_DIALS_FIRST_BUILD fix).
       const gain = G.gainU, aoK = G.aoU;
       const ao = T.float(1).sub(aoK).add(aoK.mul(gi.getAONode()));
-      rgb = C.rgb.mul(ao).add(receiver(G, C).mul(gi.getGINode().rgb).mul(gain));
+      // §IRC_MAX v2: the app colour already carries the zone interreflection (IR); the bounce adds only what exceeds it:
+      // added = max(0, bounce - IR_px), IR_px = colour x share (share = the IR part of the pixel's linear radiance)
+      const giT = receiver(G, C).mul(gi.getGINode().rgb).mul(gain), irPx = C.rgb.mul(G.shareNode.sample(T.uv()).r);
+      rgb = C.rgb.mul(ao).add(T.mix(giT, T.max(giT.sub(irPx), T.vec3(0)), G.irMaxU));
     }
     // enc 'linear' (§GI_STILL_TERM): no transfer at all, so coloronly/giterm/aoloss means ADD up in linear light.
     if (enc === 'linear') { G.pipeline.outputColorTransform = false; return T.vec4(rgb, mask); }
@@ -508,7 +534,7 @@
     const A = window.APP, THREE = window.THREE;
     if (!(THREE && THREE.REVISION === '186' && THREE.WebGPURenderer)) throw new Error('this page is three.js r' + (THREE && THREE.REVISION) + ' — the bounce still needs r186');
     if (!navigator.gpu) throw new Error('this browser exposes no WebGPU (navigator.gpu missing)');
-    const TSL = await stage('loading modules', () => import('./lib/gi/three.tsl.appbound.js'));
+    const TSL = await stage('loading the bounce-light code (once per page)', () => import('./lib/gi/three.tsl.appbound.js'));
     const { ssgi } = await import('./lib/gi/SSGINode.appbound.js');
     const renderer = new THREE.WebGPURenderer({ antialias: false, forceWebGL: false, trackTimestamp: false });
     renderer.setPixelRatio(1); renderer.setSize(w, h);
@@ -529,7 +555,7 @@
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x000000, 0);             // untouched pixels stay empty; the app's sky shows through
     if (renderer.setClearAlpha) renderer.setClearAlpha(0);
-    await stage('starting the graphics device', () => renderer.init());
+    await stage('starting the bounce-light graphics engine (once per page)', () => renderer.init());
     const pipeStats = instrumentPipelines(renderer);
     const cam = A.camera;
     const Pipeline = THREE.RenderPipeline || THREE.PostProcessing;
@@ -592,6 +618,16 @@
     pipeline.outputColorTransform = true;
     const rt = new THREE.RenderTarget(w, h, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true });
     const G = { THREE, TSL, renderer, pipeline, rt, w, h, cam, geoMat, colorCanvas, colorCtx, colorTex, colorNode, geomTexNode, maskNode, gi, pipeStats, mode: null, flipTex: false, flipOut: false };
+    // §IRC_MAX v2 — the app's per-pixel IR share (SourcedLight.irShare: IR radiance / total, linear), same canvas row order as the
+    // app frame and read through the SAME flip uniforms as colorNode, so share and colour cannot disagree about orientation
+    const shareCanvas = document.createElement('canvas'); shareCanvas.width = w; shareCanvas.height = h;
+    const shareCtx = shareCanvas.getContext('2d', { willReadFrequently: true });
+    const shareTex = new THREE.CanvasTexture(shareCanvas); shareTex.flipY = false; shareTex.colorSpace = THREE.NoColorSpace; shareTex.generateMipmaps = false;
+    shareTex.minFilter = THREE.NearestFilter; shareTex.magFilter = THREE.NearestFilter; shareTex.wrapS = shareTex.wrapT = THREE.ClampToEdgeWrapping;
+    const shareTexNode = TSL.texture(shareTex);
+    G.shareCanvas = shareCanvas; G.shareCtx = shareCtx; G.shareTex = shareTex;
+    G.shareNode = TSL.sample((uv) => shareTexNode.sample(TSL.vec2(uv.x, uv.y.mul(flipSign).add(flipOff))));
+    G.irMaxU = TSL.uniform(1);   // 1 = max(IR, SSGI) (watchdog rule); 0 = the old sum (&ircmax=0, A/B only)
     G.gainU = TSL.uniform(GI_GAIN_DEFAULT); G.aoU = TSL.uniform(GI_AO_DEFAULT);   // §GI_STILL_GAIN_DIAL
     G.recvU = TSL.uniform(0);   // §GI_RECEIVER, set per press
     G.setTexFlip = (f) => { G.flipTex = !!f; flipSign.value = f ? -1 : 1; flipOff.value = f ? 1 : 0; };
@@ -607,7 +643,7 @@
     // (a pipeline is keyed on formats, not on size, so these same pipelines serve the full-size
     // render), with the chunk size steered by a wall-clock budget and a yield between chunks.
     const BUDGET_MS = 40;
-    await stage('compiling the geometry pass (1 shared material, ' + A.scene.children.length + ' scene objects)', async () => {
+    await stage('copying the building to the bounce-light engine (once per page, ' + A.scene.children.length + ' objects)', async () => {
       grabAppFrame(G);
       const list = [];
       A.scene.traverse(o => { if (o.visible && (o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) list.push(o); });
@@ -647,7 +683,7 @@
       G.setTexFlip(orientHit.flipTex); G.flipOut = orientHit.flipOut;
       console.log('§GI_ORIENT_CACHE hit flipTex=' + orientHit.flipTex + ' flipOut=' + orientHit.flipOut + ' measured=' + orientHit.when + ' (skipped the orientation check; &giorient=measure re-measures)');
     } else {
-      await stage('checking orientation', () => decideOrientation(G));
+      await stage('checking picture orientation (once)', () => decideOrientation(G));
       try { localStorage.setItem('giOrientCache', JSON.stringify({ key: orientKey, flipTex: G.flipTex, flipOut: G.flipOut, when: new Date().toISOString() })); } catch (e) {}
       console.log('§GI_ORIENT_CACHE stored flipTex=' + G.flipTex + ' flipOut=' + G.flipOut + ' key=' + orientKey.slice(0, 80));
     }
@@ -693,18 +729,24 @@
       const N = (opts.passes != null) ? opts.passes : (window.__GI_ACCUM || ACCUM_DEFAULT);
       // The app's finished frame, taken ONCE: it is both the colour the bounce is computed from and
       // the picture the bounce is pasted onto, so they cannot drift apart.
-      R.underMean = await stage('reading the app’s finished still', async () => grabAppFrame(G));
+      R.underMean = await stage('taking the finished picture', async () => grabAppFrame(G));
+      // §IRC_MAX v2 — the IR share of every pixel (two small linear renders by the app); none = all 0 (the old composite)
+      { let sh = null; try { sh = window.SourcedLight && window.SourcedLight.irShare ? window.SourcedLight.irShare(A, w, h) : null; } catch (eS) { console.warn('§IRC_MAX share failed: ' + eS.message); }
+        if (sh) G.shareCtx.putImageData(new ImageData(sh.data, w, h), 0, 0); else { G.shareCtx.fillStyle = '#000'; G.shareCtx.fillRect(0, 0, w, h); }
+        G.shareTex.needsUpdate = true; G.irMaxU.value = /[?&]ircmax=0/.test(location.search) ? 0 : 1;
+        R.irShare = sh ? { pixels: sh.pixels, meanShare: sh.meanShare, over50: sh.shareOver50 } : null;
+        console.log('§IRC_MAX composite rule=' + (G.irMaxU.value ? 'max(IR, SSGI)' : 'SUM (&ircmax=0)') + ' share=' + (sh ? 'pixelsWithIR ' + sh.pixels + ' mean ' + sh.meanShare : 'none (IR off or not staged)')); }
       console.log('§GI_STILL underlay mean=' + R.underMean + ' (the app frame; it is also the colour fed to SSGI — ~0 means the app canvas handed back an empty buffer)');
       let acc = null;
       const _ps0 = G.pipeStats ? Object.assign({}, G.pipeStats) : null, _passMs = [];
-      await stage('bounce passes', async () => {
+      await stage('adding bounce light', async () => {
         for (let i = 0; i < N; i++) {
           const _tp = performance.now();
           await renderGeom(G);
           _passMs.push(Math.round(performance.now() - _tp));
-          const fb = await readRT(G);
-          if (!acc) acc = Float32Array.from(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k];
-          toast('Bounce still — pass ' + (i + 1) + ' of ' + N + '…');
+          if (!G.acc || G.acc.length !== G.w * G.h * 4) G.acc = new Float32Array(G.w * G.h * 4);   // §GI_READBACK_CHURN: kept across presses
+          await readRTAdd(G, G.acc, i === 0); acc = G.acc;
+          toast('Bounce still — adding bounce light, pass ' + (i + 1) + ' of ' + N + '…');
           await new Promise(r => requestAnimationFrame(() => r()));   // hand the main thread back between passes
         }
         for (let k = 0; k < acc.length; k++) acc[k] /= N;
@@ -768,6 +810,18 @@
         sc += lc; sa += la; sd += Math.abs(lc - la); n++;
       }
       R.compositeMean = +(sc / n).toFixed(2); R.appMean = +(sa / n).toFixed(2); R.meanAbsDiff = +(sd / n).toFixed(2);
+      // §FAULT_GI — picture-level counters on the finished still, every pixel (still_fault.js prints the state-level §FAULT line):
+      // blown = all three channels 255 (clipped white), dark = all three 0 (pure black), hueNoise = red1's rainbow edge class:
+      // the app pixel is near-black (max channel <= 3, hue unreadable at 8 bit) yet the composite shows a saturated hue
+      // (saturation > 0.25, value > 40; the thresholds of the 2026-09-26 band probe). hueNoise > 0 is the FAULT; blown/dark are
+      // logged in % (no cited limit).
+      { let nb = 0, nd = 0, nh = 0; const np = fin.length / 4;
+        for (let i = 0; i < fin.length; i += 4) { const r = fin[i], g = fin[i + 1], b = fin[i + 2];
+          if (r === 255 && g === 255 && b === 255) nb++; else if (r === 0 && g === 0 && b === 0) nd++;
+          if (Math.max(appPix[i], appPix[i + 1], appPix[i + 2]) <= 3) { const mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx > 40 && (mx - mn) / mx > 0.25) nh++; } }
+        R.fault = { blownPct: +(100 * nb / np).toFixed(2), darkPct: +(100 * nd / np).toFixed(2), hueNoise: nh };
+        const fl = '§FAULT_GI ' + (nh > 0 ? 'FAULT' : 'OK') + ' hueNoise=' + nh + ' blown=' + R.fault.blownPct + '% dark=' + R.fault.darkPct + '% (' + w + 'x' + h + ')';
+        if (nh > 0) console.warn(fl); else console.log(fl); A._stillFaultGiLast = R.fault; }
       R.secs = +((performance.now() - t0) / 1000).toFixed(1);
       R.orient = G.orient || null;
       R.pipelines = G.pipeStats ? { sync: G.pipeStats.sync, syncMs: +G.pipeStats.syncMs.toFixed(0), async: G.pipeStats.async, modules: G.pipeStats.modules, moduleMs: +G.pipeStats.moduleMs.toFixed(0) } : null;
@@ -788,7 +842,21 @@
       return R;
     } finally { busy = false; if (window.APP) { window.APP._sceneBorrowed = false; if (window.APP.markDirty) window.APP.markDirty(); } }
   }
+  // PNG tEXt chunk: length(4) 'tEXt' keyword NUL text crc32(type+data); inserted before the IEND chunk (last 12 bytes)
+  let _crcT = null;
+  function crc32(bytes) { if (!_crcT) { _crcT = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; _crcT[n] = c >>> 0; } }
+    let c = 0xffffffff; for (let i = 0; i < bytes.length; i++) c = _crcT[(c ^ bytes[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+  function pngWithText(png, key, text) {
+    const enc = s => Uint8Array.from(Array.from(s, ch => ch.charCodeAt(0) & 0xff));
+    const body = new Uint8Array([...enc('tEXt'), ...enc(key), 0, ...enc(text)]), len = body.length - 4, crc = crc32(body);
+    const chunk = new Uint8Array(12 + len), dv = new DataView(chunk.buffer); dv.setUint32(0, len); chunk.set(body, 4); dv.setUint32(8 + len, crc);
+    const iend = png.length - 12; const out = new Uint8Array(png.length + chunk.length); out.set(png.subarray(0, iend), 0); out.set(chunk, iend); out.set(png.subarray(iend), iend + chunk.length); return out;
+  }
   function show(canvas, secs, passes) {
+    // §STILL_ESC_LEAK: effects.js's still lock eats Esc first (stopImmediatePropagation) and removes the overlay itself, so this
+    // module's own Esc listener never ran exit() and was never removed: each press stranded one listener holding its overlay
+    // and the finished 1666x864 canvas (5.8 MB). The live listener is kept here and dropped before the next one is added.
+    if (window.__giStillEsc) { window.removeEventListener('keydown', window.__giStillEsc, true); window.__giStillEsc = null; }
     const old = document.getElementById('gi-still-overlay'); if (old) old.remove();
     const wrap = document.createElement('div'); wrap.id = 'gi-still-overlay';
     wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#000;display:flex;flex-direction:column';
@@ -798,7 +866,13 @@
     const save = document.createElement('button');
     save.textContent = 'Save PNG';
     save.style.cssText = 'margin-left:auto;padding:6px 14px;border-radius:6px;border:1px solid #3a4150;background:#1d2230;color:#e8eaf0;cursor:pointer';
-    save.onclick = () => canvas.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'bounce_still_' + Date.now() + '.png'; a.click(); });
+    // §STILL_POSE_PNG (watchdog red1-c6, 2026-09-25): every saved still carries its pose — the §STILL_POSE JSON as a PNG
+    // tEXt chunk (keyword "bim-still-pose", PNG spec 11.3.4.3), inserted before IEND. Read back with e.g. `exiftool` or
+    // python PIL (Image.open(f).text). No pixel changes.
+    save.onclick = () => canvas.toBlob(async b => { let out = b;
+      try { const P0 = window.APP && window.APP._stillPoseLast, pose = P0 ? Object.assign({}, P0, { fault: window.APP._stillFaultLast || null, faultGi: window.APP._stillFaultGiLast || null }) : null; if (pose) { out = new Blob([pngWithText(new Uint8Array(await b.arrayBuffer()), 'bim-still-pose', JSON.stringify(pose))], { type: 'image/png' }); console.log('§STILL_POSE_PNG written bytes=' + JSON.stringify(pose).length); }
+        else console.log('§STILL_POSE_PNG none (no §STILL_POSE this session)'); } catch (e) { console.warn('§STILL_POSE_PNG failed: ' + e.message); out = b; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(out); a.download = 'bounce_still_' + Date.now() + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); });   // free the PNG blob once the download has it
     const close = document.createElement('button');
     close.textContent = 'Close (Esc)';
     close.style.cssText = save.style.cssText + ';margin-left:8px';
@@ -810,7 +884,7 @@
     wrap.appendChild(bar); wrap.appendChild(canvas);
     document.body.appendChild(wrap);
     function esc(e) { if (e.key === 'Escape') exit('esc-overlay'); }
-    window.addEventListener('keydown', esc, true);
+    window.addEventListener('keydown', esc, true); window.__giStillEsc = esc;
     toast('Bounce still ready — ' + passes + ' passes in ' + secs + 's', 4000);
   }
   // ALT+S IS NOT INTERCEPTED (red1: "alt-s must be like original, not impacted.. just with the new
@@ -862,12 +936,108 @@
   window.addEventListener('keydown', function (e) {
     if (e.altKey && e.shiftKey && (e.key === 'S' || e.key === 's')) {
       e.preventDefault();
-      if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (err) {} built = null; toast('Bounce renderer released', 2500); console.log('§GI_STILL released on request'); }
+      if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (err) {} built = null; WIDE = new WeakMap(); toast('Bounce renderer released', 2500); console.log('§GI_STILL released on request'); }
       else toast('Nothing to release', 2000);
     }
   }, true);
+  // ══ §FILM_PARITY bounce (§GI_FILM) — the approved Alt+S bounce in Alt+C films, from THIS file so the film uses the still's
+  // own build, dials and composite (gain 1.0, ao 0.55, receiver, radius 12 ...), not the sandbox tap's older ones. One pass
+  // per frame (a film cannot accumulate over a moving camera). Installed as cinema_maxq.js's __giCaptureFrame hook by
+  // window.GiFilm.arm() at film start, removed by disarm(). §GI_TAP_SYNC_GRAB: the app frame is copied at the hook's first
+  // line, before any await (a WebGL canvas does not keep its pixels past the task that drew it).
+  let film = null;   // { G, frames, ms, entry }
+  async function filmFrame(ctx, w, h) {
+    const A = window.APP, t0 = performance.now();
+    if (!film.entry || film.entry.width !== w || film.entry.height !== h) { film.entry = document.createElement('canvas'); film.entry.width = w; film.entry.height = h; }
+    const ectx = film.entry.getContext('2d', { willReadFrequently: true }); ectx.clearRect(0, 0, w, h); ectx.drawImage(A.renderer.domElement, 0, 0, w, h);
+    // §GI_FILM_BLANK_GRAB (ported from the sandbox tap's §GI_TAP_EMPTY_GRAB/BLANK_GRAB; measured on Hospital: 5-10 of 120
+    // frames came out as the bare clear colour). A grab that is empty (alpha 0) or a FLAT field of the renderer's clear
+    // colour is not a picture: re-render synchronously through the app's composer and grab again, and log it.
+    {
+      if (!film.probe) { film.probe = document.createElement('canvas'); film.probe.width = 32; film.probe.height = 18; film.pctx = film.probe.getContext('2d', { willReadFrequently: true }); }
+      const blankNow = () => { film.pctx.clearRect(0, 0, 32, 18); film.pctx.drawImage(film.entry, 0, 0, 32, 18); const q = film.pctx.getImageData(0, 0, 32, 18).data;
+        let any = false, flat = true; for (let i = 0; i < q.length; i += 4) { if (q[i + 3] > 0) any = true; if (i && (Math.abs(q[i] - q[0]) > 2 || Math.abs(q[i + 1] - q[1]) > 2 || Math.abs(q[i + 2] - q[2]) > 2)) flat = false; }
+        const cc = A.renderer.getClearColor ? A.renderer.getClearColor(new window.THREE.Color()) : null;
+        const isClear = cc && Math.abs(q[0] - Math.round(cc.r * 255)) <= 3 && Math.abs(q[1] - Math.round(cc.g * 255)) <= 3 && Math.abs(q[2] - Math.round(cc.b * 255)) <= 3;
+        return !any || (flat && isClear); };
+      for (let tries = 0; tries < 3 && blankNow(); tries++) {
+        try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); } catch (e) {}
+        ectx.clearRect(0, 0, w, h); ectx.drawImage(A.renderer.domElement, 0, 0, w, h);
+        film.blank = (film.blank || 0) + 1;
+        console.log('§GI_FILM_BLANK_GRAB at capture ' + (film.frames + 1) + ' try ' + (tries + 1) + ' -> re-rendered, picture now=' + !blankNow() + ' (total ' + film.blank + ')');
+      }
+    }
+    A._sceneBorrowed = true;
+    try {
+      if (!film.G || film.G.w !== w || film.G.h !== h) {
+        const tb = performance.now();
+        if (film.G) { try { film.G.renderer.dispose(); } catch (e) {} }
+        film.G = await build(w, h);
+        film.buildMs = Math.round(performance.now() - tb);
+        console.log('§GI_FILM built ' + w + 'x' + h + ' ms=' + film.buildMs + ' (once per film)');
+      }
+      const G = film.G;
+      G.setMode('composite', encodeMode());
+      G.gainU.value = readGain(); G.aoU.value = readAo();
+      G.recvU.value = readNum('_stillGiRecv', 'girecv', GI_RECV_DEFAULT, 0, 1);
+      G.gi.radius.value = readNum('_stillGiRadius', 'girad', GI_RADIUS_DEFAULT, 0.5, 100);
+      G.gi.thickness.value = readNum('_stillGiThick', 'githick', GI_THICK_DEFAULT, 0.01, 50);
+      G.gi.stepCount.value = Math.round(readNum('_stillGiSteps', 'gisteps', window.__GI_STEPS || 16, 1, 32));
+      G.gi.giIntensity.value = readNum('_stillGiInt', 'giint', 10, 0, 100);
+      G.colorCtx.clearRect(0, 0, w, h); G.colorCtx.drawImage(film.entry, 0, 0, w, h); G.colorTex.needsUpdate = true;
+      if (!film.oriented) { film.oriented = true; await decideOrientation(G); console.log('§GI_FILM orientation on the first film frame flipTex=' + G.flipTex + ' flipOut=' + G.flipOut); }
+      await renderGeom(G);
+      const f = await readRT(G);
+      const img = film.img && film.img.width === w && film.img.height === h ? film.img : (film.img = new ImageData(w, h));
+      const d = img.data, fo = G.flipOut;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const s = ((fo ? (h - 1 - y) : y) * w + x) * 4, o = (y * w + x) * 4, a = f[s + 3];
+        d[o] = Math.max(0, Math.min(255, f[s] * 255)); d[o + 1] = Math.max(0, Math.min(255, f[s + 1] * 255)); d[o + 2] = Math.max(0, Math.min(255, f[s + 2] * 255));
+        d[o + 3] = (a >= GEOM_MASK_T) ? 255 : 0;   // the still's HARD mask
+      }
+      if (!film.layer || film.layer.width !== w || film.layer.height !== h) { film.layer = document.createElement('canvas'); film.layer.width = w; film.layer.height = h; }
+      film.layer.getContext('2d').putImageData(img, 0, 0);
+      ctx.drawImage(film.entry, 0, 0, w, h);
+      ctx.drawImage(film.layer, 0, 0, w, h);
+      const ms = performance.now() - t0; film.frames++; film.ms += ms;
+      if (film.frames <= 2 || film.frames % 24 === 0) {
+        let sa = 0, sc = 0, n = 0; const ap = ectx.getImageData(0, 0, w, h).data, cp = ctx.getImageData(0, 0, w, h).data;
+        for (let i = 0; i < ap.length; i += 4 * 97) { sa += (ap[i] + ap[i + 1] + ap[i + 2]) / 3; sc += (cp[i] + cp[i + 1] + cp[i + 2]) / 3; n++; }
+        console.log('§GI_FILM f=' + film.frames + ' ms=' + ms.toFixed(0) + ' meanMs=' + (film.ms / film.frames).toFixed(0) + ' appMean=' + (sa / n).toFixed(1) +
+          ' compositeMean=' + (sc / n).toFixed(1) + ' gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' recv=' + G.recvU.value + ' girad=' + G.gi.radius.value + ' githick=' + G.gi.thickness.value +
+          ' gisteps=' + G.gi.stepCount.value + ' giint=' + G.gi.giIntensity.value + ' slices=' + G.gi.sliceCount.value + ' flipOut=' + fo);
+      }
+    } finally { A._sceneBorrowed = false; }
+  }
+  window.GiFilm = {
+    arm: function () {
+      const A = window.APP;
+      let reason = null;
+      if (A && A._filmBounceOff === true) reason = 'switched-off';
+      else if (/[?&]filmbounce=0/.test(location.search)) reason = 'switched-off (&filmbounce=0)';
+      else if (!giSupportedQuiet()) reason = giOffReason();
+      if (reason) { console.log('§GI_FILM_OFF reason=' + reason + ' — the film bakes without the bounce'); return false; }
+      film = { G: film && film.G, frames: 0, ms: 0 };
+      window.__giCaptureFrame = filmFrame;
+      console.log('§GI_FILM armed — one bounce pass per frame, Alt+S dials');
+      return true;
+    },
+    disarm: function () {
+      if (window.__giCaptureFrame === filmFrame) window.__giCaptureFrame = null;
+      if (film) { console.log('§GI_FILM done frames=' + film.frames + ' meanMs=' + (film.frames ? (film.ms / film.frames).toFixed(0) : 0) + ' buildMs=' + (film.buildMs || 0) + ' blankGrabsRecovered=' + (film.blank || 0));
+        if (film.G) { try { film.G.rt.dispose(); film.G.renderer.dispose(); } catch (e) {} } film = null; }
+    }
+  };
+  function giOffReason() {
+    const T = window.THREE;
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return 'touch-device';
+    if (!navigator.gpu) return 'no-webgpu';
+    if (!(T && T.REVISION === '186' && T.WebGPURenderer)) return 'three-r' + (T && T.REVISION);
+    return null;
+  }
+  function giSupportedQuiet() { return !giOffReason(); }
   window.__giStillShoot = shoot;
-  window.__giStillRelease = function () { if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (e) {} built = null; console.log('§GI_STILL released on request'); return true; } return false; };
+  window.__giStillRelease = function () { if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (e) {} built = null; WIDE = new WeakMap(); console.log('§GI_STILL released on request'); return true; } return false; };
   // §GI_STILL_DOUBLE WITNESS — renders the SAME geometry pass with only the partly-transparent
   // (glazed) meshes left visible, so the glazing gets a real measured mask instead of a rectangle
   // drawn by eye. Returns per-region means for the app frame, the bounce layer and the finished

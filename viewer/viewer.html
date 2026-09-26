@@ -845,34 +845,38 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 } }
 </script>
 <script src="sky_occlusion.js?v=3" onerror="console.warn('§LOAD_FAIL sky_occlusion.js')"></script>
+<script src="light_zones.js?v=14" onerror="console.warn('§LOAD_FAIL light_zones.js')"></script>
+<script src="still_fault.js?v=7" onerror="console.warn('§LOAD_FAIL still_fault.js')"></script>
+<script src="sourced_light.js?v=46" onerror="console.warn('§LOAD_FAIL sourced_light.js')"></script>
+<script src="shadow_cascade.js?v=1" onerror="console.warn('§LOAD_FAIL shadow_cascade.js')"></script>
 <script src="loader.js?v=12"></script>
 <script src="lib/httpvfs.js?v=1" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="db_resolve.js?v=2" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
-<script src="effects.js?v=75" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
+<script src="effects.js?v=104" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
 <script src="effects_gi_poc.js?v=3" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
 <script src="lib/mp4_mux.js?v=1" onerror="console.warn('§LOAD_FAIL mp4_mux.js — MaxQ falls back to webm')"></script>
-<script src="cinema_path_editor.js?v=17" onerror="console.warn('§LOAD_FAIL cinema_path_editor.js — Alt+C path editing disabled')"></script>
+<script src="cinema_path_editor.js?v=18" onerror="console.warn('§LOAD_FAIL cinema_path_editor.js — Alt+C path editing disabled')"></script>
 <script src="cpe_walk.js?v=6" onerror="console.warn('§LOAD_FAIL cpe_walk.js — CPE walk-mode disabled')"></script>
 <script src="cpe_xr.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_xr.js — VR entry disabled')"></script>
-<script src="cinema_maxq.js?v=6" onerror="console.warn('§LOAD_FAIL cinema_maxq.js — Alt+M MaxQ export disabled')"></script>
+<script src="cinema_maxq.js?v=9" onerror="console.warn('§LOAD_FAIL cinema_maxq.js — Alt+M MaxQ export disabled')"></script>
 <script src="input_registry.js?v=1" onerror="console.warn('§LOAD_FAIL input_registry.js')"></script>
 <script src="../common/pill_builder.js?v=1" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
 <script src="list_builder.js?v=1" onerror="console.warn('§LOAD_FAIL list_builder.js')"></script>
 <script src="settings_editor.js?v=1" onerror="console.warn('§LOAD_FAIL settings_editor.js')"></script>
 <script src="../common/history_tap.js?v=7" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
-<script src="scene.js?v=62" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=64" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=6" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="silhouette_refine.js?v=1" onerror="console.warn('§LOAD_FAIL silhouette_refine.js')"></script>
-<script src="glass_fresnel.js?v=6" onerror="console.warn('§LOAD_FAIL glass_fresnel.js')"></script>
-<script src="sky_portal.js?v=10" onerror="console.warn('§LOAD_FAIL sky_portal.js — §SKY_PORTAL disabled')"></script>
+<script src="glass_fresnel.js?v=8" onerror="console.warn('§LOAD_FAIL glass_fresnel.js')"></script>
+<script src="sky_portal.js?v=21" onerror="console.warn('§LOAD_FAIL sky_portal.js — §SKY_PORTAL disabled')"></script>
 <script src="surface_r10.js?v=1" onerror="console.warn('§LOAD_FAIL surface_r10.js — §SURFACE_R10 opening split disabled')"></script>
-<script src="streaming.js?v=76" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
+<script src="streaming.js?v=77" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=10" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
 <script src="panels.js?v=47" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
-<script src="tools.js?v=54" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
+<script src="tools.js?v=66" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=30" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="hover_name.js?v=2" onerror="console.warn('§LOAD_FAIL hover_name.js — hover-name disabled')"></script>
 <script src="cpe_room_title.js?v=11" onerror="console.warn('§LOAD_FAIL cpe_room_title.js — room titles disabled')"></script>
@@ -917,12 +921,12 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- STRUCTURAL_SANITY.md T8 — rule_report.js is portable/DOM-free like structural_sanity.js;
      rule_checklist.js's Report button (A._downloadRuleReport) needs it loaded first. -->
 <script src="rule_report.js?v=2" onerror="console.warn('§LOAD_FAIL rule_report.js')"></script>
-<script src="rule_checklist.js?v=7" onerror="console.warn('§LOAD_FAIL rule_checklist.js')"></script>
+<script src="rule_checklist.js?v=8" onerror="console.warn('§LOAD_FAIL rule_checklist.js')"></script>
 <!-- MEP_CLASH_REVEAL_MOVIE.md §59 — rule_findings_film.js only CALLS StructuralSanity/EgressSanity/
      A.storeyRevealList/A.filmBoxesMeasurePost/A.showRuleModeTint at bake time (A.ruleFindingsFilmBuild),
      never at parse time, so load order relative to those tags doesn't matter; placed here for
      readability, right after the evaluators/panel it rides on. -->
-<script src="rule_findings_film.js?v=14" onerror="console.warn('§LOAD_FAIL rule_findings_film.js')"></script>
+<script src="rule_findings_film.js?v=15" onerror="console.warn('§LOAD_FAIL rule_findings_film.js')"></script>
 <script src="measure.js?v=52" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
 <script src="sitecam.js?v=7" onerror="console.warn('§LOAD_FAIL sitecam.js')"></script>
 <script src="share.js?v=2" onerror="console.warn('§LOAD_FAIL share.js')"></script>
@@ -1208,6 +1212,6 @@ window.addEventListener('beforeinstallprompt', function(e) {
 });
 </script>
 <!-- §GI_LIVE (2026-09-23): Alt+S bounce still — desktop + WebGPU + three r186 only; elsewhere it logs §GI_STILL_OFF and Alt+S is unchanged -->
-<script src="gi_still.js?v=16" onerror="console.warn('§LOAD_FAIL gi_still.js — Alt+S bounce disabled')"></script>
+<script src="gi_still.js?v=27" onerror="console.warn('§LOAD_FAIL gi_still.js — Alt+S bounce disabled')"></script>
 </body>
 </html>

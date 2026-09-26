@@ -57,5 +57,13 @@ if (clashMatLine) {
   chk('measure.js literal still contains transparent: true', /transparent:\s*true/.test(lit));
 }
 
+// §131 §RULE_FILM_QUIET — issue: the Sanity film glow is "too loud"; the film passes a quieter opacity. Proves the dial
+// reaches ONLY the film's filled material and never the interactive Rule Mode / Clash MODE base material.
+if (typeof RC.ruleTintMaterialOpts === 'function') {
+  const film = RC.ruleTintMaterialOpts({ shineThrough: true, filled: true, opacity: 0.14 });
+  chk('§131 film filled opacity dial applies (0.14)', film.opacity === 0.14, 'got ' + film.opacity);
+  chk('§131 filled without the dial keeps 0.22 (control)', RC.ruleTintMaterialOpts({ shineThrough: true, filled: true }).opacity === 0.22);
+  chk('§131 base Rule Mode opts ignore the dial (opacity 0.2, wireframe)', RC.ruleTintMaterialOpts({ opacity: 0.14 }).opacity === 0.2 && RC.ruleTintMaterialOpts({ opacity: 0.14 }).wireframe === true);
+} else chk('§131 ruleTintMaterialOpts exported', false, 'not exported by rule_checklist.js');
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
