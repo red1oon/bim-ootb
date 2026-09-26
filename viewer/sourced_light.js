@@ -965,11 +965,18 @@
     var m = meterRead(A, { mode: mode, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 });
     if (!m.Ein) { console.log('§METER camera=inside VACUOUS no lit surface pixels — exposure unchanged ' + base.toFixed(3)); return null; }
     var o = outdoorE(A), ratio = m.Ein / o.E;
-    var exp = base * Math.pow(ratio, STEVENS - 1), stops = Math.log2(exp / base);
+    // §METER_ADAPT (red1 2026-09-26: "Make it a dynamic lever derived from such data"): the degree of adaptation is no longer the
+    // fixed Stevens 0.33 but CIECAM02's D (CIE 159:2004, eq. 7.4; F = 1.0 average surround): D = F [1 - (1/3.6) e^((-LA - 42) / 92)],
+    // LA = adapting luminance = 20% of the white luminance of the metered scene (CIECAM02 convention), white L = E / pi for the
+    // metered incident light E in lux (the §SOURCED_LIGHT_CALIB scale: calibSunLux / calibSunI lux per unit). exposure =
+    // base x ratio^(-D): D -> 1 full adaptation (bright interiors, EN-lit rooms), smaller in dim spaces. &adapt=stevens = old rule.
+    var sunIc = A._stillCalibSunI, luxPerU = sunIc > 0 ? (A._stillCalibSunLux || 100000) / sunIc : null, adapt = 'stevens', Dd = 1 - STEVENS, Elx = null, LA = null;
+    if (luxPerU && !/[?&]adapt=stevens/.test(location.search)) { Elx = m.Ein * luxPerU; LA = 0.2 * Elx / Math.PI; Dd = Math.max(0, Math.min(1, 1 - (1 / 3.6) * Math.exp((-LA - 42) / 92))); adapt = 'ciecam02'; }
+    var exp = base * Math.pow(ratio, -Dd), stops = Math.log2(exp / base);
     if (stops < 0) { exp = base; stops = 0; } if (stops > METER_MAX_STOPS) { exp = base * Math.pow(2, METER_MAX_STOPS); stops = METER_MAX_STOPS; }
     meterSaved = { exp: base }; R.toneMappingExposure = exp;
     console.log('§METER camera=inside logAvgEin=' + m.Ein.toExponential(3) + ' Eout=' + o.E.toFixed(3) + ' (sun ' + o.sunI.toFixed(2) + ' x sinElev ' + o.sinE.toFixed(3) + ' + sky ' + o.skyL.toFixed(3) + ')' + o.note +
-      ' mode=' + m.mode + ' indoor/outdoor=' + ratio.toExponential(3) + ' stevens=' + STEVENS + ' exposure=' + exp.toFixed(3) + ' stops=' + stops.toFixed(2) + ' (base ' + base.toFixed(3) + ') pixels=' + m.pixels + '/' + (METER_W * METER_H) + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
+      ' mode=' + m.mode + ' indoor/outdoor=' + ratio.toExponential(3) + ' adapt=' + adapt + ' D=' + Dd.toFixed(3) + (Elx != null ? ' Ein=' + Elx.toFixed(1) + 'lx LA=' + LA.toFixed(2) + 'cd/m2' : '') + ' exposure=' + exp.toFixed(3) + ' stops=' + stops.toFixed(2) + ' (base ' + base.toFixed(3) + ') pixels=' + m.pixels + '/' + (METER_W * METER_H) + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
     return { exposure: exp, stops: stops, Ein: m.Ein, Eout: o.E };
   }
   function meterOff(A) { if (meterSaved && A.renderer) { A.renderer.toneMappingExposure = meterSaved.exp; console.log('§METER off exposure=' + meterSaved.exp.toFixed(3)); } meterSaved = null; }
