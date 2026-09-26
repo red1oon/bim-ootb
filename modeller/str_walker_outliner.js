@@ -130,6 +130,21 @@
 
   // Open core (shared by local-file + resident fetch): init the walker from a DB's bytes. The bridge
   // swbInit AUTO-PICKS column-framed (STR columns) vs wall-bearing (ARC-only → semi-grid) — §STRWALK-INIT.
+  function _injectRoomsIfNone(db, buf, name) {
+    var n = 0;
+    try { n = db.exec("SELECT COUNT(*) FROM spatial_structure WHERE type='IfcSpace'")[0].values[0][0]; } catch (e) { n = 0; }   // no table = zero
+    if (n > 0) { console.log(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" source=present ifcSpace=' + n + ' (left untouched)'); return buf; }
+    if (!window.RoomWalker || !window.RoomWalker.walk) { console.warn(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" RoomWalker not loaded — no rooms (never invented)'); return buf; }
+    try {
+      var t0 = Date.now();
+      db.run('CREATE TABLE IF NOT EXISTS rel_contained_in_space (space_guid TEXT, element_guid TEXT)');
+      var r = window.RoomWalker.walk(db, { write: true });
+      console.log(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" source=walker rooms=' + (r.roomsWritten || 0) + ' rel=' + (r.relWritten || 0) +
+        ' suspect=' + (r.suspectTotal || 0) + ' ms=' + (Date.now() - t0) + ' (compiled RM_ rooms, approximate — never presented as real)');
+      return (r.roomsWritten > 0) ? db.export().buffer : buf;
+    } catch (e) { console.warn(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" walker failed ' + (e && e.message) + ' — no rooms'); return buf; }
+  }
+
   function _openBuffer(buf, name) {
     if (!window.SQL) { console.warn(TAG + ' sql.js not ready'); return false; }
     try {
@@ -149,6 +164,11 @@
       }
       // Stash the open buffer + name so the disc-walker (DiscWalker.dwWalk) can re-open this building
       // read-only on a discipline click (this db is closed below after seeding). NON-INVENT substrate.
+      // §MODELLER-ROOM-INJECT (ROOM_INJECTION_HYBRID.md, 2026-09-27): WalkerDoctrine §14 — every building gets rooms. The
+      // Viewer infuses them (A.ensureRooms → RoomWalker.walk); the Modeller never did, so 6 of 8 residents opened with 0 rooms.
+      // Same rule as ensureRooms' 'zero' state: only when the db has NO IfcSpace at all (real or curated RM_ are never
+      // touched), compile from walls/doors with the SAME shared walker, into this handle AND the stashed buffer below.
+      buf = _injectRoomsIfNone(db, buf, name);
       window.__dwBuf = buf; window.__dwName = name;
       // §NOGEO_COMPOSE (Modeller trigger — see the function's own doc above): compose geometry-less
       // aggregate-parents from their real IfcRelAggregates children NOW, so swbInit, the BOM-graph

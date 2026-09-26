@@ -107,9 +107,17 @@ async function dedupState(pg, disc) {
   // placements (measured: 7 sweeps meshed ~2.2 s later in a second refold, total 277→281). D3 sampled mid-commit and
   // counted them 'missing'. Wait for the op-log to stay unchanged 3 s (cap 60 s) — the check itself is unchanged.
   { const t0 = Date.now(); let last = -1, since = Date.now();
-    while (Date.now() - t0 < 60000) { const n = await pg.evaluate(() => window.Bonsai.oplog.length); if (n !== last) { last = n; since = Date.now(); }
+    // + no walk chain still animating: the routed-run commit follows the chain reveal, which can idle the op-log >3 s under
+    // load (measured 2026-09-27: settled at 3567, then 4 more rows landed → missing 7). Same condition W-WALK-GESTURE uses.
+    while (Date.now() - t0 < 90000) { const st = await pg.evaluate(() => ({ n: window.Bonsai.oplog.length, anim: Object.keys(window.__dwChainAnimating || {}).some(k => window.__dwChainAnimating[k]) }));
+      if (st.n !== last || st.anim) { last = st.n; since = Date.now(); }
       else if (Date.now() - since >= 3000) break; await new Promise(r => setTimeout(r, 250)); }
-    console.log('  §DEDUP-SETTLE SampleCastle oplog=' + last + ' stable after ' + (Date.now() - t0) + 'ms'); }
+    // then the REFOLD: under 2-parallel load the rows were all in (oplog stable) while 4 meshes were still being folded
+    // (missing=4 in both runs). Wait for every signed ELEC walk op to have its mesh — cap 60 s, so an op that NEVER
+    // renders still fails D3 below.
+    const t1 = Date.now(); let miss = -1;
+    while (Date.now() - t1 < 60000) { miss = (await dedupState(pg, 'ELEC')).missing; if (miss === 0) break; await new Promise(r => setTimeout(r, 300)); }
+    console.log('  §DEDUP-SETTLE SampleCastle oplog=' + last + ' stable after ' + (Date.now() - t0) + 'ms; meshes complete after +' + (Date.now() - t1) + 'ms (missing=' + miss + ')'); }
   const s3 = await dedupState(pg, 'ELEC');
   chk('D3 SampleCastle fresh-walk: every disc-walked feature deduped', s3.total > 0 && s3.deduped === s3.total && s3.missing === 0,
     JSON.stringify(s3));

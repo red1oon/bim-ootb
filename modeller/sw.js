@@ -70,6 +70,7 @@ const PRECACHE_ASSETS = [
   'routewalker.js',
   // Cross-surface broker — lives in viewer/ (shared), precache for offline Connect.
   '../viewer/connect_scene.js',
+  '../viewer/lib/room_walker.js',  // §MODELLER-ROOM-INJECT — shared RoomWalker (same file the Viewer's ensureRooms uses)
   '../viewer/dagevu_catalog.json',  // §CATALOG-PATH — bonsai_library.js catalog (shared with the Viewer)
   // §GEOMAP-WIRE — IFC→BOM classifier + bridge + mined artifacts (audit channel; offline parity with online).
   '../geomapping/classify_geom.js',
