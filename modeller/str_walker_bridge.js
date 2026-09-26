@@ -63,6 +63,33 @@
   // MEASURED median helper (non-invent — never a hand-picked constant).
   function _median(a) { if (!a.length) return null; var s = a.slice().sort(function (x, y) { return x - y; }); return s[(s.length - 1) >> 1]; }
 
+  // §ROW7-ROT (SPEC_ROW7_HGARAGE.md §C.2): the walk lives in the lattice FRAME (grid.theta, measured by
+  // str_walker.js swDetectRotation); world = swToWorld. θ = 0 ⇒ identity, byte-identical to the pre-rotation path.
+  function _theta() { return (_state && _state.base && _state.base.grid && _state.base.grid.theta) || 0; }
+  function _thetaDeg() { return _theta() * 180 / Math.PI; }
+  function _toWorld(x, y) { var t = _theta(); return t ? SW.swToWorld(x, y, t) : [x, y]; }
+  // The authoring grid (bonsai_grid.js) drags WORLD-axis lines; on a rotated lattice a world datum is projected into
+  // the frame through the building's column centroid before the snap (logged). Δ then moves along the STRUCTURAL axis.
+  function _frameDatum(edit) {
+    var t = _theta();
+    if (!t) return edit.datum;
+    var c0 = _state.centroid || { x: 0, y: 0 };
+    var p = edit.axis === 'x' ? SW.swToFrame(edit.datum, c0.y, t) : SW.swToFrame(c0.x, edit.datum, t);
+    var fd = edit.axis === 'x' ? p[0] : p[1];
+    console.log('§STRWALK-SNAP world ' + edit.axis + '=' + edit.datum + ' → frame ' + fd.toFixed(3) + ' (lattice rot ' + _thetaDeg().toFixed(3) + '°, projected through the column centroid)');
+    return fd;
+  }
+  // One §STRWALK-ROT line per init: the detector census + the gate verdict — a walk that rotated, refused, or saw
+  // nothing is visible in the log, never silent.
+  function _logRotation(r, n) {
+    if (!r) return;
+    var head = '§STRWALK-ROT columns=' + n + ' pairs=' + r.pairs + ' mode=' + r.modeDeg.toFixed(2) + '° share=' + (r.modeShare * 100).toFixed(1) + '% measured=' + r.thetaDeg.toFixed(4) + '°';
+    if (r.reason === 'opts.theta') console.log(head + ' → ' + (r.applied ? 'APPLIED' : 'NONE') + ' (opts.theta override)');
+    else if (r.applied) console.log(head + ' → APPLIED (' + r.reason + '): grid ' + r.grid0 + ' → ' + r.gridRot + ', exact(<5mm) ' + r.exact0 + ' → ' + r.exactRot + ' of ' + n);
+    else if (r.reason === 'fewer-exact') console.log(head + ' → REFUSED (exact(<5mm) ' + r.exact0 + ' → ' + r.exactRot + ' of ' + n + ', grid ' + r.grid0 + ' → ' + r.gridRot + ' — the columns do not support one rotated lattice; walked axis-aligned)');
+    else console.log(head + ' → NONE (' + r.reason + '; dead-band ' + SW.SW_GRID_ROT_MIN_DEG + '°)');
+  }
+
   // §8E-1b — the girder cross-section = the MEASURED median of REAL source IfcBeam (the W-DW-PRIM doctrine: measure the
   // size, never invent it). A beam's bbox = (length, width, depth); length VARIES per beam (we use the derived span),
   // so the cross-section = the TWO SMALLER medians (Terminal: 0.500 × 0.750). null when the building carries no beams.
@@ -115,14 +142,18 @@
       var colDz = _median(cols.map(function (c) { return c.bz; })) || 0;  // representative column height
       var rr = base.walked.map(function (w) { return w.residual; });
       var colRMS = Math.sqrt(rr.reduce(function (s, r) { return s + r * r; }, 0) / (rr.length || 1));
+      var cx0 = 0, cy0 = 0; cols.forEach(function (c) { cx0 += c.x; cy0 += c.y; }); cx0 /= cols.length; cy0 /= cols.length;
       _state = { base: base, columnCount: cols.length, system: 'column-framed',
                  colBbox: colBbox, section: section, colDz: colDz,
-                 centres: { mesh: _lastCentres.real, anchor: _lastCentres.anchor }, colRMS: colRMS };
+                 centres: { mesh: _lastCentres.real, anchor: _lastCentres.anchor }, colRMS: colRMS,
+                 centroid: { x: cx0, y: cy0 }, rotation: base.grid.rotation || null };   // §ROW7-ROT
       console.log('§STRWALK-INIT column-framed: columns=' + cols.length + ' grid=' + base.grid.xLines.length +
         '×' + base.grid.yLines.length + ' girders=' + base.girders.length +
         ' beamSection=' + (section ? section.width.toFixed(3) + '×' + section.depth.toFixed(3) + 'm (n=' + section.n + ')' : 'none') +
         ' centres=mesh:' + _lastCentres.real + ' anchor:' + _lastCentres.anchor + ' colRMS=' + colRMS.toFixed(4) + 'm' +
-        (base.grid.lineFit && base.grid.lineFit !== 'mean' ? ' lineFit=' + base.grid.lineFit : ''));
+        (base.grid.lineFit && base.grid.lineFit !== 'mean' ? ' lineFit=' + base.grid.lineFit : '') +
+        (base.grid.theta ? ' rot=' + base.grid.thetaDeg.toFixed(3) + '°' : ''));
+      _logRotation(base.grid.rotation, cols.length);
       return _state;
     }
     // ARC-only / wall-bearing: derive the SEMI-GRID from ARC walls, fabricate no column skeleton.
@@ -144,7 +175,7 @@
   function swbOnGridMove(gridMoveParams, commit, opts) {
     opts = opts || {};
     if (!_state) { console.warn('§STRWALK-REWALK no state — call swbInit first'); return null; }
-    var edit = { axis: gridMoveParams.axis, datum: gridMoveParams.datum, delta: gridMoveParams.delta,
+    var edit = { axis: gridMoveParams.axis, datum: _frameDatum(gridMoveParams), delta: gridMoveParams.delta,
                  material: opts.material || 'STEEL' };
     // The live authoring-grid line position is not bit-identical to the walker's emergent datum →
     // snap it to the nearest walker gridline so the re-walk targets the right structural bay.
@@ -155,12 +186,17 @@
       edit.datum = snapped;
     }
     var rw = SW.swReWalk(_state.base, edit, opts);
-    var committed = 0;
+    var committed = 0, theta = _theta();
     rw.ops.forEach(function (op) {
       if (op.opType === 'GEOM_GRID_MOVE') return;          // the grid edit already committed by the modeller
       var inputGuids = op.params.srcGuid ? [op.params.srcGuid] : (op.params.guid ? [op.params.guid] : null);
       var params = Object.assign({}, op.params,            // fold provenance/source INTO params so the row keeps it
         { provenance: op.provenance }, op.source ? { source: op.source } : {});
+      if (theta && op.opType === 'STR_REANCHOR') {        // §ROW7-ROT: the persisted row is WORLD, like every other op
+        params.from = _toWorld(op.params.from[0], op.params.from[1]);
+        params.to = _toWorld(op.params.to[0], op.params.to[1]);
+        params.latticeRotDeg = _thetaDeg();
+      }
       commit(op.opType, params, inputGuids, null);
       committed++;
     });
@@ -184,7 +220,7 @@
     if (!edits || !edits.length) return { applied: 0, exceptions: [] };
     var applied = 0, allEx = [];
     edits.forEach(function (e) {
-      var edit = { axis: e.axis, datum: e.datum, delta: e.delta, material: opts.material || 'STEEL' };
+      var edit = { axis: e.axis, datum: _frameDatum(e), delta: e.delta, material: opts.material || 'STEEL' };   // same projection as live
       var lines = edit.axis === 'x' ? _state.base.grid.xLines : _state.base.grid.yLines;
       if (lines && lines.length) edit.datum = SW.swNearest(edit.datum, lines).line;   // same snap as live
       var rw = SW.swReWalk(_state.base, edit, opts);
@@ -208,13 +244,15 @@
     opts = opts || {};
     if (!_state) { console.warn('§STRWALK-RENDER no state — call swbInit first'); return null; }
     var w = _state.base.walked, gird = _state.base.girders, ops = [];
+    var rotDeg = _thetaDeg();   // §ROW7-ROT: walked x/y are lattice-frame; placements are WORLD; place() yaw is DEGREES
     // 1) columns — measured bbox, seated so its centre lands on the walked grid point (z − bz/2, as the witness proved)
     var colN = 0;
     w.forEach(function (c) {
       var bb = (_state.colBbox && _state.colBbox[c.srcGuid]) || { bx: 0.4, by: 0.4, bz: 3 };
+      var wp = _toWorld(c.x, c.y);
       ops.push({ op_type: 'GEOM_INSERT', outputGuid: c.guid, params: {
         bbox: [-bb.bx / 2, bb.bx / 2, -bb.by / 2, bb.by / 2, -bb.bz / 2, bb.bz / 2],
-        placement: { x: c.x, y: c.y, z: c.z - bb.bz / 2, rot: 0 },
+        placement: { x: wp[0], y: wp[1], z: c.z - bb.bz / 2, rot: rotDeg },
         color: STR_COLUMN_COLOR, ifc_class: 'IfcColumn', provenance: 'derived:grid' } });
       colN++;
     });
@@ -235,14 +273,15 @@
       } else {                               // 'Yline@' — runs in X at y = onDatum
         cx = mid; cy = g.onDatum; bbox = [-hs, hs, -hw, hw, -hd, hd];
       }
+      var wc = _toWorld(cx, cy);
       ops.push({ op_type: 'GEOM_INSERT', outputGuid: g.guid, params: {
-        bbox: bbox, placement: { x: cx, y: cy, z: gz, rot: 0 },
+        bbox: bbox, placement: { x: wc[0], y: wc[1], z: gz, rot: rotDeg },
         color: STR_GIRDER_COLOR, ifc_class: 'IfcBeam', provenance: 'derived:str-walk' } });
       girN++;
     });
     console.log('§STRWALK-RENDER columns=' + colN + ' girders=' + girN +
       ' section=' + sec.width.toFixed(3) + '×' + sec.depth.toFixed(3) + 'm' + (proxied ? ' (proxy)' : ' (measured)') +
-      ' girderZ=' + gz.toFixed(2));
+      ' girderZ=' + gz.toFixed(2) + (rotDeg ? ' rot=' + rotDeg.toFixed(3) + '°' : ''));
     return { ops: ops, columnN: colN, girderN: girN, section: sec, proxied: proxied, girderZ: gz };
   }
 
@@ -302,6 +341,7 @@
     var lowConf = elements.filter(function (e) { return e.lowConfidence; }).length;
     return { columns: g.walked.length, girders: g.girders.length, system: _state.system || 'column-framed',
              grid: g.grid.xLines.length + '×' + g.grid.yLines.length, signals: sig,
+             rotationDeg: g.grid.thetaDeg || 0,                  // §ROW7-ROT (the `grid` string stays as witnesses parse it)
              elements: elements, lowConfidence: lowConf, lowConfThreshold: STRWALK_LOW_CONF };
   }
 

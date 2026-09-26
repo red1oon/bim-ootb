@@ -72,7 +72,7 @@
     var d = window.swbTabData && window.swbTabData();
     if (!d) return [{ id: 'sw-empty', label: 'Open a resident (▾) or local .db (🏗) to walk', sub: '' }];
     var rows = [
-      { id: 'sw-grid', label: 'Grid ' + d.grid, sub: d.columns + ' columns' },
+      { id: 'sw-grid', label: 'Grid ' + d.grid + (d.rotationDeg ? ' ∠' + d.rotationDeg.toFixed(2) + '°' : ''), sub: d.columns + ' columns' },   // §ROW7-ROT
       { id: 'sw-gird', label: d.girders + ' girders', sub: 'RED ' + d.signals.RED + ' · ORANGE ' + d.signals.ORANGE + ' · GREEN ' + d.signals.GREEN }
     ];
     // CALIBRATED confidence (the EARNED gauge — fitted on the Terminal RosettaStone, never the raw
@@ -583,9 +583,11 @@
       ready = !!st; lastEx = [];
       if (st) _replayEdits();
       var c = (st && st.centres) || { mesh: 0, anchor: 0 };
+      var gg = st && st.base && st.base.grid;
       console.log(TAG + ' §STRWALK-GEO re-init with real geometry: system=' + (st ? st.system : 'none') +
         ' centres=mesh:' + c.mesh + ' anchor:' + c.anchor +
         (st && st.colRMS != null ? ' colRMS=' + st.colRMS.toFixed(4) + 'm' : '') +
+        (gg ? ' grid=' + gg.xLines.length + '×' + gg.yLines.length + (gg.theta ? ' rot=' + gg.thetaDeg.toFixed(3) + '°' : '') : '') +   // §ROW7-ROT
         (c.mesh === 0 ? ' — 0 meshes resolved: the walk is still on ANCHORS' : ''));
       if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     } catch (e) { console.warn(TAG + ' §STRWALK-GEO re-init failed', e && e.message); }
