@@ -42,6 +42,7 @@ runE2E('W-E2E-FLOATDIM', async (t) => {
   if (hw) {
     const down = await t.proj(hw[0], hw[1], hw[2]);
     const up = await t.proj(hw[0] + 1.0, hw[1], hw[2]);
+    const len0 = (await t.oplog()).len;
     await t.pg.mouse.move(down[0], down[1]); await t.sleep(40);
     await t.pg.mouse.down(); await t.sleep(40);
     await t.pg.mouse.move(up[0], up[1], { steps: 8 }); await t.sleep(200);
@@ -56,6 +57,12 @@ runE2E('W-E2E-FLOATDIM', async (t) => {
       const sp = window.A.scene.children.find(x => x.userData && x.userData.dimLabel);
       return { oracle: window.__dimLabel || null, visible: !!(sp && sp.visible) };
     });
+    // §NET-AUDIT RACE (2026-09-26): the release commits a GEOM_MOVE, re-selects, and so starts a §ZOOM-SEL fly; D4
+    // read the ring and pressed while that fly still moved the camera, so the press missed (D4 null, 3/3 under load).
+    // Measured: the commit lands in ~10 ms — the fly is what must settle. The commit wait just makes the order explicit.
+    const tc = Date.now(); while (Date.now() - tc < 60000 && (await t.oplog()).len <= len0) await t.sleep(200);
+    console.log('  §FLOATDIM-D1-COMMIT len ' + len0 + '→' + (await t.oplog()).len + ' after ' + (Date.now() - tc) + 'ms');
+    await t.flySettle();
   }
   const labelNum = mid && mid.oracle && /Δ?X ([+-]\d+\.\d\d)m/.test(mid.oracle.text) ? +RegExp.$1 : null;
   const statNum = mid && /Δ\((-?\d+\.\d\d),/.test(mid.stat) ? +RegExp.$1 : null;
@@ -81,8 +88,11 @@ runE2E('W-E2E-FLOATDIM', async (t) => {
   let rot = null;
   if (giz) {
     const th = 30 * Math.PI / 180;
-    const down = await t.proj(giz.c[0] + giz.R, giz.c[1], giz.c[2]);
-    const up = await t.proj(giz.c[0] + giz.R * Math.cos(th), giz.c[1] + giz.R * Math.sin(th), giz.c[2]);
+    // §NET-AUDIT RACE (2026-09-26): grab the ring at 45°, not 0° — at 0° it crosses the X arrow (hit rotZ@4.16 vs x@4.18,
+    // measured), so a slightly different camera grabbed the arrow instead. The drag is still exactly 30°.
+    const th0 = 45 * Math.PI / 180;
+    const down = await t.proj(giz.c[0] + giz.R * Math.cos(th0), giz.c[1] + giz.R * Math.sin(th0), giz.c[2]);
+    const up = await t.proj(giz.c[0] + giz.R * Math.cos(th0 + th), giz.c[1] + giz.R * Math.sin(th0 + th), giz.c[2]);
     await t.pg.mouse.move(down[0], down[1]); await t.sleep(40);
     await t.pg.mouse.down(); await t.sleep(40);
     await t.pg.mouse.move(up[0], up[1], { steps: 10 }); await t.sleep(200);

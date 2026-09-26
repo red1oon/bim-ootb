@@ -176,12 +176,17 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
   chk('D2 §READPIXELS — MEP layer rasterizes over the laid ARC (A/B-isolated > 2000px)', paintOk,
     DISCS.map(function (d) { return d + ':' + probes[d].dwPainted + 'px'; }).join(' '));
   // D3 envelope — every placement inside the recomputed ARC occupancy envelope
-  var envOk = DISCS.every(function (d) { var x = R.discs[d]; return x.envChecked === 0 || x.inEnv / x.envChecked >= 0.99; });
+  // §NET-AUDIT VACUOUS (2026-09-26): envChecked===0 used to count as a pass, so a disc that placed fixtures but had
+  // none graded (or an empty run) passed D3 on nothing. Now: a disc may skip grading ONLY if it placed nothing,
+  // and at least one placement across all discs must actually be graded.
+  var envTotal = DISCS.reduce(function (a, d) { return a + R.discs[d].envChecked; }, 0);
+  var envOk = envTotal > 0 && DISCS.every(function (d) { var x = R.discs[d]; return x.envChecked === 0 ? x.walked === 0 : x.inEnv / x.envChecked >= 0.99; });
   chk('D3 ENVELOPE — placements land inside the ARC occupancy envelope (≥99%, no void fixtures)', envOk,
     DISCS.map(function (d) { var x = R.discs[d]; return d + ':' + x.inEnv + '/' + x.envChecked; }).join(' '));
   // D4 count — area-distributed discs same-order bounded; ACMV+FP tight
   var areaDiscs = DISCS.filter(function (d) { return R.discs[d].arrayN > 0; });
-  var bounded = areaDiscs.every(function (d) { var x = R.discs[d]; var r = x.walked / x.real; return r >= 0.3 && r <= 3; });
+  // §NET-AUDIT VACUOUS (2026-09-26): [].every() passed when no disc was area-distributed.
+  var bounded = areaDiscs.length > 0 && areaDiscs.every(function (d) { var x = R.discs[d]; var r = x.walked / x.real; return r >= 0.3 && r <= 3; });
   chk('D4 COUNT — area-distributed discs same-order vs oracle [0.3×–3×] (generative tolerance)', bounded,
     areaDiscs.map(function (d) { var x = R.discs[d]; return d + ' ' + x.walked + '/' + x.real + '=' + (x.walked / x.real).toFixed(2) + '×'; }).join('  '));
   var acmv = R.discs.ACMV, fp = R.discs.FP;

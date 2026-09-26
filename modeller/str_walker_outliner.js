@@ -1054,6 +1054,7 @@
     onClear: onClear,
     _openStrDb: openStrDb, _openIfcFile: openIfcFile, _category: category,
     _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase,
-    _reinitStrWalkWithGeo: _reinitStrWalkWithGeo   // §ROW7-TRUE-CENTRE — witness hook (W-ROW7-TRUE-CENTRE browser leg)
+    _reinitStrWalkWithGeo: _reinitStrWalkWithGeo,   // §ROW7-TRUE-CENTRE — witness hook (W-ROW7-TRUE-CENTRE browser leg)
+    _composeGhosts: composeGhostsFromAggregates     // W-E2E-VOID-ANCHOR G6 same-run control (read-only use on a copy)
   };
 })();

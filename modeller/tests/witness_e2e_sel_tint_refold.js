@@ -62,6 +62,12 @@ runE2E('W-E2E-SEL-TINT-REFOLD', async (t) => {
 
   const before = await t.oplog();
   await t.clickSel('#b-cut'); await t.sleep(900);
+  // §NET-AUDIT RACE (2026-09-26): bCut.onclick awaits the commit, THEN runs highlight(null). The op row lands before
+  // that, so a fixed 900 ms re-clicked while #stat still read 'cutting…' and the cut's own deselect wiped the new
+  // selection (T2/T3/T4 red since ≤2026-09-25, selN=0). Wait for the handler to finish: #stat leaves 'cutting…'.
+  { const tc = Date.now(); let st = '';
+    while (Date.now() - tc < 60000 && /^cutting/.test(st = await t.pg.evaluate(() => (document.getElementById('stat') || {}).textContent || ''))) await t.sleep(200);
+    console.log('  §SEL-TINT cut-settled after ' + (Date.now() - tc) + 'ms stat="' + st.slice(0, 60) + '"'); }
   const after = await t.oplog(); const last = await t.lastOp();
   t.assert('T2a CUT-COMMIT (one GEOM_CUT parented to the selection)', after.len === before.len + 1 && last && last.op_type === 'GEOM_CUT' && last.parameters && last.parameters.parent === sel.fid, 'len ' + before.len + '→' + after.len + ' op=' + (last && last.op_type));
 

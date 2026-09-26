@@ -58,6 +58,15 @@ async function runE2E(NAME, body, opts) {
   const pg = await br.newPage(); await pg.setViewport({ width: opts.width || 1280, height: opts.height || 860, deviceScaleFactor: opts.dpr || 1 });
   const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 180)));
   const slog = []; pg.on('console', m => { const t = m.text(); if (/^§/.test(t)) slog.push(t); });
+  // §NET-FAILLOG (MODELLER_MASTER §MODELLER-NET-AUDIT class 2 SCOPE-BLIND, 2026-09-26): the app reports most failures as
+  // console lines, not pageerrors (the catalog was empty 3 months behind 1,194 'insert fold fail' warnings no check read).
+  // Capture every warning/error line and every line naming a failure, so the run log shows what NO-ERROR never saw.
+  const FAILRE = /§[\w-]*(FAIL|REFUSE|ERR)\b|fold fail|\bREFUSED?\b|\bunknown (product|op|class)\b/i;
+  // Noise measured on the 58-witness baseline and excluded: summary lines whose only fail-word carries a zero count
+  // ('§GEOM-HARDFAIL total=0 of 196', '§LAYER-GATE … refused=0'), and the browser's own favicon probe (+ its console twin).
+  const NOISE = /§GEOM-HARDFAIL total=0 |§LAYER-GATE armed .* refused=0 |favicon\.ico|^Failed to load resource: the server responded with a status of 404/;
+  const flog = []; pg.on('console', m => { const ty = m.type(), x = m.text(); if (NOISE.test(x)) return; if (ty === 'error' || ty === 'warn' || ty === 'warning' || FAILRE.test(x)) flog.push(ty + ': ' + x.slice(0, 200)); });
+  pg.on('response', r => { const u = r.url().replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, ''); if (r.status() >= 400 && !NOISE.test(u)) flog.push('http' + r.status() + ': ' + u); });
 
   let pass = 0, fail = 0;
   const t = {
@@ -211,7 +220,10 @@ async function runE2E(NAME, body, opts) {
         while (Date.now() - t0 < 6000) { n = await pg.evaluate(() => window.__e2e.candidates().length); if (n > 0) break; await sleep(200); }
         console.log('  §OPEN-SETTLE candidates=' + n + ' waitedMs=' + (Date.now() - t0)); }
     },
-    proj(x, y, z) { return pg.evaluate((a, b, c) => window.__e2e.proj(a, b, c), x, y, z); },
+    // §NET-AUDIT RACE (2026-09-26, W-E2E-RSARM A5 root cause): pixels are only valid on a settled camera. A commit
+    // that re-selects (commitScale → selectMany) starts a fresh §ZOOM-SEL fly, so projecting right after it gave the
+    // ring drag stale pixels (committed GEOM_MOVE instead of GEOM_ROTATE). Settle a LIVE fly before projecting.
+    async proj(x, y, z) { if (await pg.evaluate(() => !!window.__flyLive)) await this.flySettle(); return pg.evaluate((a, b, c) => window.__e2e.proj(a, b, c), x, y, z); },
     centre(fid) { return pg.evaluate(f => window.__e2e.centre(f), fid); },
     // real mouse click ON the mesh with this featureId, at a raycast-verified point (anti-flake — see
     // __e2e.clickPointFor); falls back to the projected bbox centre if no verified point is visible.
@@ -227,6 +239,11 @@ async function runE2E(NAME, body, opts) {
     // shotClip so the clip region is a legible close-up, not a sliver of a wide shot. fill≈0.4 → the element
     // spans ~40% of the frame height. Logged so a silent no-op (mesh not found) can't hide again.
     async frameElement(fid, fill) {
+      // §NET-AUDIT RACE (2026-09-26, W-E2E-SCALE root cause): a §ZOOM-SEL fly started AFTER pick() settled (e.g. by
+      // #b-move re-selecting) keeps lerping the camera and overwrites this placement a few frames later; the
+      // witness then drags from stale pixels (measured: the scaleX-cube press became a 'move X' GEOM_MOVE and
+      // logged '§ZOOM-SEL yield'). Settle any in-flight fly BEFORE placing the camera.
+      await this.flySettle();
       const ok = await pg.evaluate((f, fl) => window.__e2e.frame(f, fl), fid, fill == null ? 0.4 : fill);
       await sleep(350);
       console.log('  §SHOTFRAME fid=' + fid + ' fill=' + (fill == null ? 0.4 : fill) + ' ok=' + ok);
@@ -374,9 +391,19 @@ async function runE2E(NAME, body, opts) {
     },
     // §ZOOM-SEL: wait for an in-flight zoom-to-selection camera fly (plus OrbitControls damping tail) to
     // finish — headless-swiftshader rAF runs ~14fps so the 25-frame fly takes ~2s wall-clock.
+    // §NET-AUDIT RACE (2026-09-26): under CPU load swiftshader rAF drops far enough that the fly outlives maxMs; the
+    // old loop then returned SILENTLY with the fly still live, and it overwrote the witness's camera a few frames
+    // later (measured: W-E2E-SCALE, 3 runs in parallel, camera ended on the fly's own dist=4.92 endpoint and the
+    // drag press landed off-viewport at (1251,866) of 1200x850). On timeout, yield the fly exactly as a user's grab
+    // does (OrbitControls 'start' → modeller.html §FLY-YIELD) so the camera stops where it is, and say so.
     async flySettle(maxMs) {
       const t0 = Date.now(); maxMs = maxMs || 15000;
       while (Date.now() - t0 < maxMs && await pg.evaluate(() => !!window.__flyLive)) await sleep(120);
+      if (await pg.evaluate(() => !!window.__flyLive)) {
+        await pg.evaluate(() => window.A.controls.dispatchEvent({ type: 'start' }));
+        const t1 = Date.now(); while (Date.now() - t1 < 30000 && await pg.evaluate(() => !!window.__flyLive)) await sleep(120);
+        console.log('  §E2E-FLYSETTLE timeout=' + maxMs + 'ms → yielded (user-grab path); stopped=' + !(await pg.evaluate(() => !!window.__flyLive)) + ' after ' + (Date.now() - t1) + 'ms');
+      }
       await sleep(300);
     },
     clickSel(sel) { return pg.click(sel); },
@@ -395,6 +422,10 @@ async function runE2E(NAME, body, opts) {
   let fatal = null;
   try { await body(t); } catch (e) { fatal = String(e && e.message) + ' | ' + ((e.stack || '').split('\n')[1] || ''); }
   t.assert('NO-ERROR (no pageerror / no fatal)', errs.length === 0 && !fatal, (fatal || '') + ' ' + errs.slice(0, 2).join(' | '));
+  { const keys = {}, first = {}; for (const l of flog) { const k = l.replace(/[0-9.]+/g, '#').slice(0, 90); keys[k] = (keys[k] || 0) + 1; if (!first[k]) first[k] = l; }
+    const all = Object.entries(keys).sort((a, b) => b[1] - a[1]), top = all.slice(0, 8);
+    console.log('§NET-FAILLOG ' + NAME + ' n=' + flog.length + ' kinds=' + all.length);
+    for (const [k, c] of top) console.log('§NET-FAILLOG-KIND ' + NAME + ' x' + c + ' ' + first[k].slice(0, 220)); }
 
   await br.close(); server.close();
   console.log(NAME + ': ' + pass + ' PASS / ' + fail + ' FAIL');

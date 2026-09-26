@@ -55,7 +55,9 @@ runE2E('W-E2E-INSTPICK', async (t) => {
     if (!im) return null;
     const r = im.userData.dwSub[4];
     const c = window.A.camera, ct = window.A.controls;
-    c.position.set(r.x + 1.2, r.y - 1.2, r.z + 0.6); ct.target.set(r.x, r.y, r.z); ct.update();
+    // §NET-AUDIT (2026-09-26): look UP at the fixture from inside the room. It is a ceiling IfcFlowTerminal (z=5.56);
+    // from 0.6 m ABOVE it the slab (fid 175) is the first hit at 0.48 m, so the click selected the slab (red ≤09-25).
+    c.position.set(r.x + 1.2, r.y - 1.2, r.z - 0.8); ct.target.set(r.x, r.y, r.z); ct.update();
     window.A.renderer.render(window.A.scene, window.A.camera);
     return { x: r.x, y: r.y, z: r.z };
   });
@@ -80,6 +82,8 @@ runE2E('W-E2E-INSTPICK', async (t) => {
   // P2b — the instanced branch itself, on an InstancedMesh with NO folded twin: assembly parts are
   // render-only (never committed). Render 3 parts through the PRODUCTION seam (__dwRender.assembly — the
   // same function _redrawAllDiscWalks uses), in clear air away from the building, then a REAL mouse click.
+  // §NET-AUDIT RACE (2026-09-26): P2's click selected something → §ZOOM-SEL fly; settle it or it overwrites the camera below.
+  await t.flySettle();
   const part = await t.pg.evaluate(() => {
     const parts = [0, 1, 2].map(i => ({ disc: 'ASMW', guid: 'ASMW_PART_' + i, ifc_class: 'IfcDuctSegment',
       piece_type: 'run', pos: [30 + i * 1.5, -30, 1.2], dir: [0, 0, 1], diameter_mm: 300, length_mm: 600 }));
