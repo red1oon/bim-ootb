@@ -48,6 +48,11 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   // __dwWalks alone read 'Opened Duplex' as the last node (G1-G3 red, green on rerun).
   await pg.waitForFunction(d => (window.__dwWalks || {})[d] && ((window.__dwRowsByDisc || {})[d] || {}).walk && !Object.keys(window.__dwChainAnimating || {}).some(k => window.__dwChainAnimating[k]), { timeout: 120000, polling: 300 }, DISC);
   await pg.evaluate(async () => { const MH = window.ModellerHistory; await ((MH && MH.pending && MH.pending()) || Promise.resolve()); await new Promise(r => setTimeout(r, 0)); await new Promise(r => setTimeout(r, 0)); });
+  // §NET-AUDIT (2026-09-27): under 3-parallel load the snapshot still caught the walk mid-commit (rows=40 of 45, last node
+  // 'Opened Duplex'; 4/4 green alone). Also wait for the op-log to stay unchanged 3 s (cap 60 s) — condition, not a sleep.
+  { const t0 = Date.now(); let last = -1, since = Date.now();
+    while (Date.now() - t0 < 60000) { const n = await pg.evaluate(() => window.Bonsai.oplog.length); if (n !== last) { last = n; since = Date.now(); } else if (Date.now() - since >= 3000) break; await new Promise(r => setTimeout(r, 250)); }
+    console.log('  §WALK-GESTURE settle oplog=' + last + ' after ' + (Date.now() - t0) + 'ms'); }
   out.push(await snap('after-walk'));
   await pg.click('canvas').catch(() => {});
   // Wait on the CONDITION that the keypress finished: the row flip (sync), then ModellerHistory's pending restore

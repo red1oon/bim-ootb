@@ -63,7 +63,10 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   // STR itself surfaces via swbTabData()/its own render, not __dwWalks, so drive the generated-disc walk
   // instead, same entry point witness_e2e_walk_ifcopen.js already uses).
   const rowUp = await pg.waitForFunction(() => !!document.querySelector('[data-bnode="dw-all"]'), { timeout: 15000 }).then(() => true).catch(() => false);
-  if (rowUp) { await pg.click('[data-bnode="dw-all"]'); await pg.waitForFunction(() => window.__dwAllDone === true, { timeout: 60000, polling: 250 }).catch(() => {}); }
+  // §NET-AUDIT (2026-09-27): the Outliner can re-render between the query and the click (it now also repaints once the
+  // ARC bridge lands) → 'Node is detached' crashed the run after G1. Re-query and retry, as a user's click would land.
+  const clickRow = async (sel) => { for (let i = 0; i < 5; i++) { try { await pg.click(sel); return true; } catch (e) { if (!/detached|not clickable/i.test(String(e && e.message))) throw e; await sleep(300); } } return false; };
+  if (rowUp) { await clickRow('[data-bnode="dw-all"]'); await pg.waitForFunction(() => window.__dwAllDone === true, { timeout: 60000, polling: 250 }).catch(() => {}); }
   await sleep(400);
 
   const g2 = await pg.evaluate(() => ({

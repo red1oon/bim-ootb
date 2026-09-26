@@ -651,6 +651,19 @@ async function xrayReveal(on) {
   return { on: true, glass: glass, glow: glow, stackDepth: stackDepth, glassOpacity: glassOpacity };
 }
 window.__xrayReveal = xrayReveal;
+// §XRAY-REFOLD (§NET-AUDIT 2026-09-27, W-XRAY-SC-LIVE root cause): a re-fold rebuilds every mesh with its default
+// material and the walked buckets are rebuilt by _redrawAllDiscWalks — nothing re-applied x-ray, so any commit/undo
+// (or a walk's late GEOM_SWEEP commits) while x-ray was ON left the building opaque with the button still lit.
+// Measured on SampleCastle: 4 ops + 3 refolds landed mid-x-ray → structureLeaked=3144, fixtures glowing 0/274.
+// Same choke point the selection tint and shadows use; deferred one tick so the bucket redraw has run too.
+let _xrayReapplyPending = false;
+function _xrayReapply(src) {
+  if (!_xrayOn || _xrayReapplyPending) return;
+  _xrayReapplyPending = true;
+  setTimeout(() => { _xrayReapplyPending = false; if (!_xrayOn) return;
+    xrayReveal(true).then(r => console.log('§XRAY-REFOLD reapplied src=' + src + ' glass=' + r.glass + ' glow=' + r.glow)); }, 0);
+}
+window.addEventListener('bonsai:refold', () => _xrayReapply('refold'));
 const bXray = document.getElementById('b-xray');
 function paintXray() { if (bXray) bXray.classList.toggle('on', _xrayOn); }
 if (bXray) bXray.onclick = async () => {
@@ -3311,8 +3324,9 @@ async function autoRouteMEP(asm, leaves) {
     if (xs.refused) { refusedMEP.push({ disc: s.disc, reason: xs.reason }); return; }
     ops.push({
       op_type: 'GEOM_SWEEP',
-      parameters: { profile: { w: xs.w, h: xs.h }, path: [toWorld(s.from), toWorld(s.to)] },
-      _rw: { disc: s.disc, storey: s.storey, crossSection: xs.product }
+      // §RW-TAG-SIGNED (§NET-AUDIT 2026-09-27): oplog.commit signs ONLY {op_type, parameters} — a top-level _rw was dropped
+      // before it reached the log, so nothing downstream could ever read it. Carry it inside parameters, like DiscWalker's _dw.
+      parameters: { profile: { w: xs.w, h: xs.h }, path: [toWorld(s.from), toWorld(s.to)], _rw: { disc: s.disc, storey: s.storey, crossSection: xs.product } }
     });
   });
   const _refByDisc = {}; refusedMEP.forEach(r => { _refByDisc[r.disc] = (_refByDisc[r.disc] || 0) + 1; });
@@ -3355,8 +3369,10 @@ async function autoRouteMEP(asm, leaves) {
     const c = L.get(hash); const ch = c ? c.h : 0.4;
     const w = toWorld([f.x, f.y, f.z]);
     const op = { op_type:'GEOM_INSERT',
-      parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200', color: rgbaHex(f.rgba) },
-      _rw: { fixture: true, disc: f.disc, product: f.product, ifc: f.ifcClass, room: f.room } };
+      // §RW-TAG-SIGNED: _rw inside parameters so it is SIGNED (a top-level _rw never reached the log) — x-ray's
+      // _fixtureColorMap reads parameters._rw.fixture; before this every route-walk fixture read as structure (glow=0/21).
+      parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200', color: rgbaHex(f.rgba),
+        _rw: { fixture: true, disc: f.disc, product: f.product, ifc: f.ifcClass, room: f.room } } };
     try { const res = await window.Bonsai.oplog.commit(op); if (res) placedFx++; }
     catch (e) { console.warn('§MODELLER fixture commit fail ' + (e && e.message || e)); }
     setStat('placing fixtures… ' + placedFx + '/' + fixtures.length);
@@ -3373,6 +3389,9 @@ async function autoRouteMEP(asm, leaves) {
   // Step E: the placed fixtures POP in room-by-room over ~1.5s (whoosh → ticks → chord) — the "all systems go" reveal.
   // (__suppressWalk lets the colour/x-ray self-tests inspect the static placed scene without the animation racing them.)
   if (placedFx > 0 && typeof revealWalk === 'function' && !window.__suppressWalk) revealWalk();
+  // §NET-AUDIT (2026-09-27): the routewalk self-tests hardcoded 23 fixtures, but §WALKERDOCTRINE-11 refuses products with no
+  // real catalog box (SampleHouse: AIRCON_POINT ×2 → 21 placed). Expose the plan so a self-test checks placed == planned − refused.
+  window.__rwLastRoute = { planned: fixtures.length, placed: placedFx, refused: refusedFx.length };
   return { found: segs.length, routed: routed, emitted: ops.length, fixtures: placedFx, fxDisc: fxDisc, bmin: bmin.map(v => +v.toFixed(3)) };
 }
 async function placeAssembly(x, y) {
@@ -4698,6 +4717,7 @@ function _redrawAllDiscWalks() {
   if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
   if (window.__dwTrunk) Object.keys(window.__dwTrunk).forEach(function (d) { if (window.__dwTrunk[d]) _renderSeedTrunk(d, window.__dwTrunk[d]); });   // seed→trunk
   _hideUndoneWalkLayers();
+  _xrayReapply('dw-redraw');   // §XRAY-REFOLD: fresh buckets come back without the x-ray glow
 }
 // §WALK-GESTURE-DRAW (2026-09-24, §STRATEGY L4): the decorative walk layer (markers, run tubes, assembly parts,
 // trunk) is drawn from JS state (__dwWalks/__dwChains/…), not from the op-log. So after a walk is undone its
@@ -6034,8 +6054,10 @@ if (qs.get('routewalk') === 'sh') {
       out.colouredFixtures = coloured; out.miscolouredFixtures = miscoloured; out.distinctColours = Object.keys(hexSet).length;
       console.log('§MODELLER routewalk-sh-colour coloured=' + coloured + '/' + fxOps.length + ' miscoloured=' + miscoloured +
         ' distinct=' + out.distinctColours + ' hex=' + Object.keys(hexSet).map(h => (+h).toString(16)).join(','));
-      out.pass = out.fixtures === 23 && out.fixtureOps === 23 && out.hasELEC && out.hasACMV && out.noWetRoom && out.verify &&
-        out.colouredFixtures === 23 && out.miscolouredFixtures === 0 && out.distinctColours >= 3;
+      const _rwN = window.__rwLastRoute ? window.__rwLastRoute.planned - window.__rwLastRoute.refused : -1;   // §NET-AUDIT: was a literal 23
+      out.expectedFixtures = _rwN;
+      out.pass = _rwN > 0 && out.fixtures === _rwN && out.fixtureOps === _rwN && out.hasELEC && out.hasACMV && out.noWetRoom && out.verify &&
+        out.colouredFixtures === _rwN && out.miscolouredFixtures === 0 && out.distinctColours >= 3;
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk sh fail ' + e); }
     window.__routewalkShResult = out;
     window.__routewalkShDone = true;
@@ -6088,9 +6110,11 @@ if (qs.get('routewalk') === 'xray') {
       });
       out.structureRestored = restored; out.stillGlowing = stillGlowing; out.fixturesColouredAfter = fixturesColoured;
       out.verify = (await O.verify()).ok;
-      out.pass = out.fixtures === 23 && out.glow === 23 && out.glass >= 50 &&
-        out.glassOK === out.glass && out.glowOK === 23 && out.glowColourOK === 23 && out.shineThrough === 23 &&
-        out.structureRestored === out.glass && out.stillGlowing === 0 && out.fixturesColouredAfter === 23 && out.verify;
+      const _rwN = window.__rwLastRoute ? window.__rwLastRoute.planned - window.__rwLastRoute.refused : -1;   // §NET-AUDIT: was a literal 23
+      out.expectedFixtures = _rwN;
+      out.pass = _rwN > 0 && out.fixtures === _rwN && out.glow === _rwN && out.glass >= 50 &&
+        out.glassOK === out.glass && out.glowOK === _rwN && out.glowColourOK === _rwN && out.shineThrough === _rwN &&
+        out.structureRestored === out.glass && out.stillGlowing === 0 && out.fixturesColouredAfter === _rwN && out.verify;
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk xray fail ' + e); }
     window.__xrayResult = out;
     window.__xrayDone = true;

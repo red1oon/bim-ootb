@@ -32,6 +32,11 @@ async function runOne(pg, key, shots) {
   // snapshot material state BEFORE xray touches anything — real buildings legitimately have transparent
   // glass/windows (arc_editable.js §MAT-PARITY), so "restored" must mean "matches its own pre-xray state",
   // not "universally opaque"
+  // §NET-AUDIT RACE (2026-09-27): the walk keeps committing routed GEOM_SWEEP runs after __dwLastCommitDisc flips (SampleCastle:
+  // 3567→3571 mid-x-ray, 3 refolds) — the 'before' snapshot then lacked those fids (restore 3560/3571). Settle first.
+  { const t0 = Date.now(); let last = -1, since = Date.now();
+    while (Date.now() - t0 < 60000) { const n = await pg.evaluate(() => window.Bonsai.oplog.length); if (n !== last) { last = n; since = Date.now(); } else if (Date.now() - since >= 3000) break; await sleep(250); }
+    console.log(`  §XRAY-SETTLE ${key} oplog=${last} after ${Date.now() - t0}ms`); }
   const before = await pg.evaluate(() => {
     const g = window.Bonsai.group();
     const dwRoot = g.children.find(o => o.userData && o.userData.dwRoot);
@@ -65,19 +70,38 @@ async function runOne(pg, key, shots) {
       else { if (op <= 0.5) structureGlassOK++; else structureLeaked.push(o.userData.featureId); }
     });
     let bucketGlow = 0, bucketTotal = 0, bucketBad = [];
+    let chainMeshes = 0;
     if (dwRoot) dwRoot.children.forEach(o => {
       if (!o.isMesh) return;
+      // §NET-AUDIT (2026-09-27): x-ray's contract lights walked-FIXTURE buckets (userData.dwDisc). A routed-run mesh
+      // (userData.dwChain, new on SampleCastle since walks route) is not in that contract — counted as info only.
+      if (o.userData.dwDisc == null) { chainMeshes++; return; }
       bucketTotal++;
       const op = o.material.opacity, dt = o.material.depthTest;
       if (op > 0.9 && dt === false) bucketGlow++; else bucketBad.push({ dwDisc: o.userData.dwDisc, opacity: op, depthTest: dt });
     });
-    return { structureGlassOK, structureLeaked, fixtureGlowOK, fixtureGlowBad, fixtureOpCount: fixtureOpIds.size, bucketGlow, bucketTotal, bucketBad, dwRootFound: !!dwRoot };
+    return { structureGlassOK, structureLeaked, fixtureGlowOK, fixtureGlowBad, fixtureOpCount: fixtureOpIds.size, bucketGlow, bucketTotal, bucketBad, chainMeshes, dwRootFound: !!dwRoot };
   });
-  console.log(`  §XRAY-ASSERT ${key} structureGlassOK=${scene.structureGlassOK} structureLeaked=${scene.structureLeaked.length} fixtureGlowOK=${scene.fixtureGlowOK}/${scene.fixtureOpCount} bucketGlow=${scene.bucketGlow}/${scene.bucketTotal} dwRootFound=${scene.dwRootFound}`);
+  console.log(`  §XRAY-ASSERT ${key} structureGlassOK=${scene.structureGlassOK} structureLeaked=${scene.structureLeaked.length} fixtureGlowOK=${scene.fixtureGlowOK}/${scene.fixtureOpCount} bucketGlow=${scene.bucketGlow}/${scene.bucketTotal} chainMeshes(info)=${scene.chainMeshes} dwRootFound=${scene.dwRootFound}`);
   if (scene.structureLeaked.length) console.log('  ✗ leaked structure fids: ' + JSON.stringify(scene.structureLeaked.slice(0, 20)));
   if (scene.fixtureGlowBad.length) console.log('  ✗ fixtures not glowing: ' + JSON.stringify(scene.fixtureGlowBad.slice(0, 20)));
   if (scene.bucketBad.length) console.log('  ✗ non-glowing buckets: ' + JSON.stringify(scene.bucketBad));
 
+  // X-REFOLD (§XRAY-REFOLD, 2026-09-27): x-ray must SURVIVE a real re-fold — the history slider's own scrubTo at the tip
+  // rebuilds every mesh. Proven a real refold by mesh uuids changing; then the same glass/glow counts must hold.
+  const rf = await pg.evaluate(async () => {
+    const g = window.Bonsai.group(), O = window.Bonsai.oplog;
+    const u0 = new Set(g.children.filter(o => o.isMesh).map(o => o.uuid));
+    await O.scrubTo(O.length);
+    for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 100)); const k = g.children.filter(o => o.isMesh && !o.userData.dwRoot); if (k.length && k.every(o => o._xrayOwn)) break; }
+    const fx = new Set(); O._geomOps().forEach(o => { if (o.op_type === 'GEOM_INSERT' && o.parameters && (o.parameters._dw != null || (o.parameters._rw && o.parameters._rw.fixture === true))) fx.add(o.id); });
+    let rebuilt = 0, leaked = 0, glowBad = 0, n = 0;
+    g.children.forEach(o => { if (!o.isMesh || !o.material || (o.userData && o.userData.dwRoot)) return; n++; if (!u0.has(o.uuid)) rebuilt++;
+      const op = o.material.opacity; if (fx.has(o.userData.featureId)) { if (!(op > 0.5)) glowBad++; } else if (op > 0.5) leaked++; });
+    return { n, rebuilt, leaked, glowBad };
+  });
+  console.log(`  §XRAY-REFOLD-CHECK ${key} meshes=${rf.n} rebuilt=${rf.rebuilt} structureLeaked=${rf.leaked} fixturesNotGlowing=${rf.glowBad}`);
+  const refoldOk = rf.rebuilt > 0 && rf.leaked === 0 && rf.glowBad === 0;
   const offR = await pg.evaluate(() => window.__xrayReveal(false));
   await sleep(500);
   const restored = await pg.evaluate((beforeSnap) => {
@@ -95,7 +119,7 @@ async function runOne(pg, key, shots) {
   console.log(`  §XRAY-RESTORE ${key} matchedPreXrayState=${restored.matched}/${restored.total}`);
   if (restored.mismatched.length) console.log('  ✗ restore mismatch fids: ' + JSON.stringify(restored.mismatched.slice(0, 20)));
 
-  const pass = walked && scene.structureLeaked.length === 0 && scene.fixtureGlowBad.length === 0 && scene.fixtureOpCount > 0 &&
+  const pass = walked && refoldOk && scene.structureLeaked.length === 0 && scene.fixtureGlowBad.length === 0 && scene.fixtureOpCount > 0 &&
     scene.bucketGlow === scene.bucketTotal && scene.bucketTotal > 0 && restored.matched === restored.total;
   console.log(`  §XRAY-VERDICT ${key} ${pass ? 'PASS' : 'FAIL'} walked=${walked} onR.glass=${onR.glass} onR.glow=${onR.glow}`);
   return pass;

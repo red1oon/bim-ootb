@@ -172,6 +172,8 @@ async function partA() {
   }
   fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module"}');
   fs.copyFileSync(path.join(MOD, 'bonsai_kernel_worker.js'), path.join(tmp, 'worker.mjs'));
+  // §NET-AUDIT (2026-09-27): the worker imports ./cut_move.js since #1711 — without it this leg died ERR_MODULE_NOT_FOUND.
+  fs.copyFileSync(path.join(MOD, 'cut_move.js'), path.join(tmp, 'cut_move.js'));
   globalThis.self = globalThis.self || {};
   self.postMessage = () => { };
   await import(path.join(tmp, 'worker.mjs'));
