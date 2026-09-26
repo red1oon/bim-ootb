@@ -154,7 +154,7 @@
     saveTimer = setTimeout(function () { if (cache !== Z) return;
       var t0 = performance.now(), rec = { src: SRC, fp: Z.fp, org: [Z.org.x, Z.org.y, Z.org.z], field: Z.field || null, when: new Date().toISOString() };
       KEYS.forEach(function (k) { rec[k] = Z[k]; });
-      rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.aperture ? Z.aperture.byteLength : 0) + (Z.field ? Z.field.G.byteLength : 0)) / 1e6).toFixed(1);
+      rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.aperture ? Z.aperture.byteLength : 0) + (Z.field ? Z.field.G.byteLength : 0) + (Z.field && Z.field.Gd ? Z.field.Gd.byteLength : 0)) / 1e6).toFixed(1);
       idb().then(function (db) { var tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).put(rec, Z.bld);
         tx.oncomplete = function () { db.close(); console.log('§ZONE_IDB_CACHE saved bld=' + Z.bld + ' MB=' + rec.mb + ' field=' + (rec.field ? 1 : 0) + ' ms=' + Math.round(performance.now() - t0)); };
         tx.onerror = tx.onabort = function () { db.close(); console.warn('§ZONE_IDB_CACHE save failed: ' + (tx.error && tx.error.message)); }; })
@@ -172,7 +172,8 @@
     cache.stats = Object.assign({}, r.stats, { ms: ms, rasMs: 0, skyMs: 0, cached: 1, glare: Object.assign({}, r.stats.glare, { ms: 0 }) });
     var fOk = !!(r.field && r.field.irc && r.field.irc.on === ircFlag(A)), fMs = r.field ? r.field.ms : 0;
     if (fOk) cache.field = Object.assign(r.field, { ms: 0, cached: 1 });
-    console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none'));
+    console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none') +
+      ' ground=' + (fOk && r.field.Gd ? 'hit (was ' + (r.field.ground ? r.field.ground.ms : '?') + ' ms)' : 'none (built on demand)'));
     logBuilt(A);
     return cache;
   }
@@ -546,8 +547,90 @@
         ax.forEach(function (a) { ay.forEach(function (b) { az.forEach(function (c) { if ((a || b || c) && !(a === q[0] && b === 1 && c === q[1])) mids[a + ',' + b + ',' + c] = [a, b, c]; }); }); }); }
       return { dx: q[0], dz: q[1], u: U[i], w: W[i] / tot, elev: Math.asin(U[i][1]) * 180 / Math.PI, mids: Object.keys(mids).map(function (k) { return mids[k]; }) }; });
     return out; })();
+  // ══ §GROUND_VIEW_FIELD — the downward counterpart of §SKY_VIEW_FIELD (red1 2026-09-26: "certain parts cast very black
+  // shadows", Hospital aerial …387480591: 6101 near-black app pixels, 4,100 of them ZONE F<.2 — exterior surfaces whose
+  // eye-side cell is COVERED (under eaves / overhangs / recesses), in sun shadow, low sky-view F) ══
+  // CAUSE: sourced_light.js slSkyKeep scaled the WHOLE hemisphere light (three's getHemisphereLightIrradiance = sky AND ground
+  // halves) by F, the visibility of the UPPER hemisphere. F says nothing about the LOWER hemisphere, so the ground-reflected
+  // light a shaded facade receives outdoors was thrown away with the sky.
+  // BUILD (camera-free, per building, the same lattice sweep as field()): per non-solid cell, Gd = the cosine-weighted
+  // sum over the LOWER hemisphere of what each lattice ray sees: 1 where it ESCAPES the building = reaches an OPEN cell
+  // (zone 0: no solid above, outdoors) or leaves the grid; where it ends on an opaque solid, the sky-view F of the last empty
+  // cell before it (mode 'bounce', default — the surface it meets is lit by the sky that cell sees; the spec's literal
+  // 'escape' mode counts 0 there, see groundMode); through glass the same one-pane-one-T rule as field(). GROUND_DIRS mirrors
+  // FIELD_DIRS with dy = -1. WEIGHTS: cosine only — w_d = integral of cos(nadir angle) dOmega over the direction's
+  // nearest-direction cell of the plane y = -1, square |x|,|z| <= 6 — a UNIFORM ground (no luminance distribution is
+  // invented; the ground's brightness is the app's own hemi groundColor x intensity). Open cells Gd = 1. Indoors a ray that
+  // meets the floor meets a SOLID cell: the floor's own F (~ today's F x ground half: little change), 0 in 'escape'.
+  // Stored as Gd x 10000 (Z.field.Gd, R16UI uSLGround), kept in the §ZONE_IDB_CACHE record with the field (SRC rebuilds it;
+  // a record built in the other mode rebuilds Gd on demand). &groundview=0 / APP._stillGroundView=false = today.
+  // MEASURED (Hospital aerial cam [13,19,-18] tgt [0,0,0], near-black app px = max channel <= 3, every 2nd px): today 5846
+  // (parent's runs 6101/6170) -> 'escape' 5097/5282 -> 'bounce' 4148; class ZONE F<.2: 4497 -> 3298 -> 2870; class ZONE F>=.2
+  // vert (the wall feet, y -4..-2): 804 -> 1162 (escape: Gd 0.19 < F 0.32 there, the ground half went DARKER) -> 776 (bounce).
+  var GROUND_DIRS = (function () {
+    var D = [[0, 0]]; for (var dx = -2; dx <= 2; dx++) for (var dz = -2; dz <= 2; dz++) if (dx || dz) D.push([dx, dz]);
+    [4, 6].forEach(function (k) { [[k, 0], [-k, 0], [0, k], [0, -k], [k, k], [k, -k], [-k, k], [-k, -k]].forEach(function (q) { D.push(q); }); });
+    var U = D.map(function (q) { var l = Math.sqrt(q[0] * q[0] + 1 + q[1] * q[1]); return [q[0] / l, -1 / l, q[1] / l]; }), W = new Float64Array(D.length), st = 0.05, tot = 0;
+    for (var x = -6 + st / 2; x < 6; x += st) for (var z = -6 + st / 2; z < 6; z += st) {
+      var r = Math.sqrt(x * x + 1 + z * z), ux = x / r, uy = -1 / r, uz = z / r, best = -2, bi = 0;
+      for (var i = 0; i < U.length; i++) { var dd = ux * U[i][0] + uy * U[i][1] + uz * U[i][2]; if (dd > best) { best = dd; bi = i; } }
+      var w = (1 / r) * st * st / (r * r * r); W[bi] += w; tot += w; }   // cos(nadir) = 1/r; dOmega = dA/r^3; uniform ground: no (1 + 2 sin) term
+    var out = D.map(function (q, i) { var mids = {}, EPS = 1e-6;   // cells the centre-to-centre segment crosses, going DOWN
+      for (var s2 = 1; s2 < 256; s2++) { var t = s2 / 256, px = 0.5 + q[0] * t, py = 0.5 - t, pz = 0.5 + q[1] * t, ax = [], ay = [], az = [];
+        [[px, ax], [py, ay], [pz, az]].forEach(function (p) { var v = p[0]; if (Math.abs(v - Math.round(v)) < EPS) p[1].push(Math.round(v) - 1, Math.round(v)); else p[1].push(Math.floor(v)); });
+        ax.forEach(function (a) { ay.forEach(function (b) { az.forEach(function (c) { if ((a || b || c) && !(a === q[0] && b === -1 && c === q[1])) mids[a + ',' + b + ',' + c] = [a, b, c]; }); }); }); }
+      return { dx: q[0], dz: q[1], u: U[i], w: W[i] / tot, dep: Math.asin(-U[i][1]) * 180 / Math.PI, mids: Object.keys(mids).map(function (k) { return mids[k]; }) }; });
+    return out; })();
+  function groundOn(A) { return !!(A && A._stillGroundView !== false && !(typeof location !== 'undefined' && /[?&]groundview=0/.test(location.search))); }
+  // MODE (measured A/B, Hospital aerial 2026-09-26): 'escape' = the spec above (a ray ending on a solid contributes 0);
+  // 'bounce' = a ray ending on a solid contributes the sky-view F of the last empty cell before it (the surface it hits is lit
+  // by its own sky view: BRE's externally reflected component with the obstruction's brightness taken from the app's own
+  // field, not an assumed obstruction luminance). With 'escape' an exterior wall foot under an eave sees SOLID earth within
+  // a cell in every steep direction: Gd ~ 0 < F, so its ground half got DARKER than today's F x ground (477 more near-black
+  // px in the class ZONE F>=.2 vert). &groundmode=escape|bounce; APP._stillGroundMode.
+  function groundMode(A) { var m = (A && A._stillGroundMode) || (typeof location !== 'undefined' && (/[?&]groundmode=(escape|bounce)/.exec(location.search) || [])[1]) || 'bounce'; return m === 'escape' ? 'escape' : 'bounce'; }
+  function groundBuild(A, Z) {
+    var t0 = performance.now(), nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, N = nx * ny * nz, zone = Z.zone, gT = Z.glassT, mode = groundMode(A), bounce = mode === 'bounce', FG = Z.field.G;
+    // active = covered cells + glass cells, BOTTOM layer first (every target lies one layer below its cell)
+    var nAct = 0; for (var c0 = 0; c0 < N; c0++) { var v0 = zone[c0]; if ((v0 !== SOLID && v0 !== 0) || (v0 === SOLID && gT[c0])) nAct++; }
+    var act = new Int32Array(nAct), ai = 0;
+    for (var j = 0; j < ny; j++) for (var k = 0; k < nz; k++) for (var i = 0; i < nx; i++) { var c = i + j * nx + k * nxy, v = zone[c]; if ((v !== SOLID && v !== 0) || (v === SOLID && gT[c])) act[ai++] = c; }
+    var val = new Float32Array(N), acc = new Float32Array(N), T = new Float32Array(256);
+    for (var q = 0; q < 256; q++) T[q] = q / 255;
+    for (var c1 = 0; c1 < N; c1++) if (zone[c1] === 0) val[c1] = 1;
+    GROUND_DIRS.forEach(function (d) {
+      var dx = d.dx, dz = d.dz, off = dx - nx + dz * nxy, M = d.mids, nm = M.length, mo = new Int32Array(nm), mx = new Int32Array(nm), my = new Int32Array(nm), mz = new Int32Array(nm), w = d.w;
+      for (var m = 0; m < nm; m++) { mx[m] = M[m][0]; my[m] = M[m][1]; mz[m] = M[m][2]; mo[m] = M[m][0] + M[m][1] * nx + M[m][2] * nxy; }
+      for (var a = 0; a < nAct; a++) { var c = act[a], i = c % nx, j = ((c / nx) | 0) % ny, k = (c / nxy) | 0, ti = i + dx, tk = k + dz, vt;
+        var inR = j - 1 >= 0 && ti >= 0 && tk >= 0 && ti < nx && tk < nz;
+        if (!inR) vt = 1; else vt = val[c + off];   // off the grid = escaped
+        var zc = zone[c], inG = zc === SOLID, gmin = 256, hit = false;
+        if (inR && zone[c + off] === SOLID && !gT[c + off]) hit = true;   // the target itself is opaque solid: the ray ends here
+        if (vt > 0 && !hit) { if (!inG && inR && gT[c + off]) gmin = gT[c + off];
+          for (var m2 = 0; m2 < nm; m2++) { var ii = i + mx[m2], jj = j + my[m2], kk = k + mz[m2]; if (ii < 0 || kk < 0 || ii >= nx || kk >= nz || jj < 0) continue;
+            var cm = c + mo[m2]; if (zone[cm] === SOLID) { var gq = gT[cm]; if (gq) { if (gq < gmin) gmin = gq; } else { hit = true; break; } } }
+          if (!inG && !hit && gmin < 256) vt *= T[gmin]; }
+        // 'escape': a ray ending on a solid is 0. 'bounce': it is the sky-view F of this cell — the surface it meets is lit by the
+        // sky this cell sees (glass cells carry no F: 0)
+        if (hit) vt = (bounce && !inG) ? FG[c] / 10000 : 0;
+        val[c] = vt; if (zc !== SOLID && vt > 0) acc[c] += w * vt; } });
+    var Gd = new Uint16Array(N), covered = 0, nonZero = 0, maxG = 0;
+    for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { Gd[c2] = 10000; continue; } covered++; var g = Math.min(1, acc[c2]); if (g > maxG) maxG = g; if (g > 0) nonZero++; Gd[c2] = Math.round(g * 10000); }
+    var vals = new Float32Array(covered), vi = 0;
+    for (var c3 = 0; c3 < N; c3++) { var v3 = zone[c3]; if (v3 === SOLID || v3 === 0) continue; vals[vi++] = acc[c3]; }
+    vals.sort(); val = acc = null;
+    var pc = function (p) { return covered ? +Math.min(1, vals[Math.min(covered - 1, Math.floor(covered * p))]).toFixed(4) : 0; };
+    var minDep = GROUND_DIRS.reduce(function (m, d) { return Math.min(m, d.dep); }, 90);
+    Z.field.Gd = Gd; Z.field.ground = { mode: mode, ms: Math.round(performance.now() - t0), covered: covered, nonZero: nonZero, active: nAct, p10: pc(0.1), p50: pc(0.5), p90: pc(0.9), max: +maxG.toFixed(4), dirs: GROUND_DIRS.length, minDepDeg: +minDep.toFixed(2),
+      weights: GROUND_DIRS.map(function (d) { return +d.w.toFixed(4); }) };
+    var gs = Z.field.ground;
+    console.log('§GROUND_VIEW_FIELD ' + (covered ? 'built' : 'VACUOUS (no covered cells judged)') + ' bld=' + Z.bld + ' mode=' + mode + ' ms=' + gs.ms + ' dirs=' + gs.dirs + ' minDepressionDeg=' + gs.minDepDeg + ' (cosine weights only, uniform ground; lowest-weight dir ' + Math.min.apply(null, gs.weights) + ')' +
+      ' activeCells=' + nAct + ' coveredCells=' + covered + ' nonZero=' + nonZero + ' Gd p10/p50/p90/max=' + gs.p10 + '/' + gs.p50 + '/' + gs.p90 + '/' + gs.max + ' (open cells 1; a floor is SOLID, not ground)');
+    return Z.field;
+  }
   function field(A) {
-    var Z = cache; if (!Z) return null; if (Z.field) return Z.field;
+    var Z = cache; if (!Z) return null;
+    if (Z.field) { if (groundOn(A) && (!Z.field.Gd || !Z.field.ground || Z.field.ground.mode !== groundMode(A))) { groundBuild(A, Z); scheduleSave(); } return Z.field; }
     var t0 = performance.now(), nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, N = nx * ny * nz, zone = Z.zone, gT = Z.glassT;
     // active = covered cells + glass cells, top layer first
     var nAct = 0; for (var c0 = 0; c0 < N; c0++) { var v0 = zone[c0]; if ((v0 !== SOLID && v0 !== 0) || (v0 === SOLID && gT[c0])) nAct++; }
@@ -589,16 +672,21 @@
     var minElev = FIELD_DIRS.reduce(function (m, d) { return Math.min(m, d.elev); }, 90);
     Z.field = { G: G, maxF: maxF, maxSC: maxSC, ircZ: irc, irc: { on: ircOn, zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
       weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }) };
+    if (groundOn(A)) groundBuild(A, Z);   // §GROUND_VIEW_FIELD: Gd beside G, same cache record
     scheduleSave();
     return Z.field;
   }
   // CPU mirror of the shader's filtered read (V5): p = surface point, nrm = eye-facing normal; returns { zone, F } where zone
   // is surfaceInfo's; outside (0 / off grid) F = 1; unknown (SOLID) F = null (the shader uses indoorSky there)
-  function skyField(p, nrm) {
-    var Z = cache, si = surfaceInfo(p, nrm); if (!Z || !Z.field) return { zone: si.zone, F: null, si: si };
+  function skyField(p, nrm) { return fieldRead(p, nrm, cache && cache.field ? cache.field.G : null); }
+  // §GROUND_VIEW_FIELD CPU mirror of _slGd (same 8-texel filter, same zone rule, same order as the shader); F = null when
+  // the ground field was not built (&groundview=0)
+  function groundField(p, nrm) { return fieldRead(p, nrm, cache && cache.field ? cache.field.Gd : null); }
+  function fieldRead(p, nrm, G) {
+    var Z = cache, si = surfaceInfo(p, nrm); if (!Z || !G) return { zone: si.zone, F: null, si: si };
     if (si.zone === -1) return { zone: si.zone, F: 1, si: si };   // off grid; open (0): filtered, every non-solid cell accepted
     if (si.zone === SOLID) return { zone: si.zone, F: null, si: si };
-    var cl = Z.cell, G = Z.field.G, nxy = Z.nx * Z.ny, gx = (p.x + nrm.x * 0.5 * cl - Z.org.x) / cl - 0.5, gy = (p.y + nrm.y * 0.5 * cl - Z.org.y) / cl - 0.5, gz = (p.z + nrm.z * 0.5 * cl - Z.org.z) / cl - 0.5;
+    var cl = Z.cell, nxy = Z.nx * Z.ny, gx = (p.x + nrm.x * 0.5 * cl - Z.org.x) / cl - 0.5, gy = (p.y + nrm.y * 0.5 * cl - Z.org.y) / cl - 0.5, gz = (p.z + nrm.z * 0.5 * cl - Z.org.z) / cl - 0.5;
     var bx = Math.floor(gx), by = Math.floor(gy), bz = Math.floor(gz), fx = gx - bx, fy = gy - by, fz = gz - bz, sw = 0, sf = 0;
     for (var o = 0; o < 8; o++) { var ox = o & 1, oy = (o >> 1) & 1, oz = (o >> 2) & 1, i = bx + ox, j = by + oy, k = bz + oz;
       if (i < 0 || j < 0 || k < 0 || i >= Z.nx || j >= Z.ny || k >= Z.nz) continue; var c = i + j * Z.nx + k * nxy, t = Z.zone[c]; if (t === SOLID) continue;
@@ -621,6 +709,6 @@
       qx += rx * st; qy += ry * st; qz += rz * st; }
     return { base: base, spec: base };
   }
-  global.LightZones = { specVis: specVis, prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
+  global.LightZones = { groundField: groundField, groundOn: groundOn, groundMode: groundMode, GROUND_DIRS: GROUND_DIRS, specVis: specVis, prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
     SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL };
 })(typeof window !== 'undefined' ? window : this);

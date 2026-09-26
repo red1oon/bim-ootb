@@ -14,6 +14,9 @@
   var installed = false, active = false, prevOBR = null, tex = null, dummy = null, texKey = null, lastLog = '';
   var P = new Float32Array(4), ORG = new Float32Array(4), DIM = new Float32Array(4), SKY = new Float32Array(4);   // uSLSky: x = §SKY_VIEW_FIELD on (1) / off (0)
   var rg = null, rgKey = null, fieldLast = null, luxLast = null;   // §SKY_VIEW_FIELD: the RG16UI texel array (R = zone | SKY_BIT, G = sky-view F x 10000)
+  // §GROUND_VIEW_FIELD: a second 3D texture, R16UI over light_zones' own Gd array (no interleaved copy: nothing to drop, §ZONE_TEX_CPU_DROP)
+  var gtex = null, gKey = null, dGround = null;
+  function groundTex3D(THREE, data, w, h, d) { var t = new THREE.Data3DTexture(data, w, h, d); t.format = THREE.RedIntegerFormat; t.type = THREE.UnsignedShortType; t.internalFormat = 'R16UI'; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
   var PZ = new Float32Array(MAX_PL), SZ = new Float32Array(MAX_SL);   // zone per point / spot light, in three's light order
 
   // ══ §SOURCED_LIGHT_LINK — SPEC (2026-09-25, fix/sl-gl-link) ══
@@ -38,6 +41,8 @@
   var PARS = [
     '#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )',
     'uniform vec4 uSLParams; uniform vec4 uSLOrg; uniform vec4 uSLDim; uniform vec4 uSLSky; uniform highp usampler3D uSLZone;',
+    // §GROUND_VIEW_FIELD: R16UI, Gd x 10000 per cell (light_zones.js groundBuild); uSLSky.y = 1 when staged with the ground field
+    'uniform highp usampler3D uSLGround;',
     '#if NUM_POINT_LIGHTS > 0', 'uniform vec4 uSLPZ[ ( NUM_POINT_LIGHTS + 3 ) / 4 ];', '#endif',
     '#if NUM_SPOT_LIGHTS > 0', 'uniform vec4 uSLSZ[ ( NUM_SPOT_LIGHTS + 3 ) / 4 ];', '#endif',
     // the fragment's zone, set ONCE by the line §SOURCED_LIGHT_LINK inserts into lights_fragment_begin; -1 = unknown (lit as today)
@@ -46,6 +51,8 @@
     'float _slSky = 1.0;',
     // §SKY_VIEW_FIELD: the fragment's filtered sky-view F (trilinear over same-zone / open cells, once per fragment with _slFZ)
     'float _slF = 1.0;',
+    // §GROUND_VIEW_FIELD: the fragment's filtered ground-view Gd (the same 8-texel filter and zone rule as _slF, once per fragment)
+    'float _slGd = 1.0;',
     // §LAMP_UNCAPPED: every lamp as data (uSLLampT: 2 texels per lamp), clustered over the zone grid (uSLClu: offset/count per
     // cluster, uSLLIdx: the flat lamp index list); _slWP = the fragment's world position, set by slFragZone
     'uniform vec4 uSLLamp; uniform vec4 uSLCluDim; uniform highp sampler2D uSLLampT; uniform highp usampler2D uSLLIdx; uniform highp usampler3D uSLClu;',
@@ -70,17 +77,17 @@
     '  vec3 wp = ( vi * vec4( posView, 1.0 ) ).xyz; vec3 wn = normalize( ( vi * vec4( nf, 0.0 ) ).xyz ); _slWP = wp;',
     '  ivec3 c0 = ivec3( floor( ( wp + wn * 0.25 - uSLOrg.xyz ) / uSLParams.y ) ); ivec3 dim = ivec3( uSLDim.xyz );',
     '  if ( any( lessThan( c0, ivec3( 0 ) ) ) || any( greaterThanEqual( c0, dim ) ) ) { _slSky = 1.0; return 65534.0; }',
-    '  float best = 1e30; uint bt = 65535u; uint bg = 0u;',
+    '  float best = 1e30; uint bt = 65535u; uint bg = 0u; ivec3 bcc = c0;',
     '  for ( int dz = -1; dz <= 1; dz ++ ) { for ( int dy = -1; dy <= 1; dy ++ ) { for ( int dx = -1; dx <= 1; dx ++ ) {',
     '    ivec3 c = c0 + ivec3( dx, dy, dz );',
     '    if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
     '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; uint t = t2.r; if ( t == 65535u ) continue;',
     '    vec3 e = uSLOrg.xyz + ( vec3( c ) + 0.5 ) * uSLParams.y - wp; if ( dot( e, wn ) <= 0.0 ) continue;',
-    '    float l = dot( e, e ); if ( l < best ) { best = l; bt = t; bg = t2.g; }',
+    '    float l = dot( e, e ); if ( l < best ) { best = l; bt = t; bg = t2.g; bcc = c; }',
     '  } } }',
     '  if ( bt == 65535u ) { bt = 0u; bg = 0u; for ( int j = 1; j < 4096; j ++ ) { ivec3 c = c0 + ivec3( 0, j, 0 ); if ( c.y >= dim.y ) break;',
-    '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u ) { bt = t2.r; bg = t2.g; break; } if ( c.y == dim.y - 1 ) bt = 65535u; } }',
-    '  if ( bt == 65535u ) { _slSky = 0.0; _slF = 0.0; return -1.0; }',
+    '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u ) { bt = t2.r; bg = t2.g; bcc = c; break; } if ( c.y == dim.y - 1 ) bt = 65535u; } }',
+    '  if ( bt == 65535u ) { _slSky = 0.0; _slF = 0.0; _slGd = 0.0; return -1.0; }',
     '  uint z = bt & 0x3FFFu; _slSky = ( z == 0u || ( bt & 0x4000u ) != 0u ) ? 1.0 : 0.0;',
     // §SKY_VIEW_FIELD V5 — irradiance-volume filter (Greger et al. 1998): 8 texels around wp + 0.5 cell along the eye-facing
     // normal, trilinear weights, kept only when not SOLID and in the fragment's zone or open; renormalised; none -> picked cell
@@ -89,12 +96,14 @@
     // one solid cell still separates: the stencil reaches at most half a cell past the surface
     '  _slF = 1.0;',
     '  if ( uSLSky.x > 0.5 ) {',
-    '    vec3 g = ( wp + wn * 0.5 * uSLParams.y - uSLOrg.xyz ) / uSLParams.y - 0.5; ivec3 b = ivec3( floor( g ) ); vec3 f = g - vec3( b ); float sw = 0.0, sf = 0.0;',
+    '    vec3 g = ( wp + wn * 0.5 * uSLParams.y - uSLOrg.xyz ) / uSLParams.y - 0.5; ivec3 b = ivec3( floor( g ) ); vec3 f = g - vec3( b ); float sw = 0.0, sf = 0.0, sg = 0.0; bool gv = uSLSky.y > 0.5;',
     '    for ( int o = 0; o < 8; o ++ ) { ivec3 d = ivec3( o & 1, ( o >> 1 ) & 1, ( o >> 2 ) & 1 ); ivec3 c = b + d;',
     '      if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
     '      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r == 65535u ) continue; uint tz = t2.r & 0x3FFFu; if ( z != 0u && tz != z && tz != 0u ) continue;',
-    '      vec3 wv = mix( vec3( 1.0 ) - f, f, vec3( d ) ); float w = wv.x * wv.y * wv.z; sw += w; sf += w * float( t2.g ) / 10000.0; }',
+    '      vec3 wv = mix( vec3( 1.0 ) - f, f, vec3( d ) ); float w = wv.x * wv.y * wv.z; sw += w; sf += w * float( t2.g ) / 10000.0;',
+    '      if ( gv ) sg += w * float( texelFetch( uSLGround, c, 0 ).r ) / 10000.0; }',   // §GROUND_VIEW_FIELD: the same stencil, same weights
     '    _slF = ( sw > 0.0 ) ? sf / sw : float( bg ) / 10000.0;',
+    '    if ( gv ) _slGd = ( sw > 0.0 ) ? sg / sw : float( texelFetch( uSLGround, bcc, 0 ).r ) / 10000.0;',
     '  }',
     '  return ( z == 0u ) ? 65534.0 : float( z );',
     '}',
@@ -113,6 +122,16 @@
     // §SKY_VIEW_FIELD on: a zone fragment's sky terms x F_filtered (outside 1; unknown -1 keeps indoorSky as before)
     '  if ( uSLSky.x > 0.5 ) return ( _slFZ < -0.5 ) ? uSLParams.z : _slF;',   // outside: filtered too (1 away from any roof)
     '  return ( _slSky > 0.5 ) ? 1.0 : uSLParams.z;',
+    '}',
+    // §GROUND_VIEW_FIELD — the hemisphere light, split the way three itself splits it (getHemisphereLightIrradiance:
+    // mix( groundColor, skyColor, 0.5 * dot( n, dir ) + 0.5 ) = skyColor * w + groundColor * ( 1 - w )): the sky part x F
+    // (slSkyKeep, as before), the ground part x Gd (the lower-hemisphere escape). Unknown-zone fragments (_slFZ < -0.5),
+    // nav (uSLParams.x = 0), the binary path (uSLSky.x = 0) and &groundview=0 (uSLSky.y = 0) keep today's whole-hemi x
+    // slSkyKeep. Ambient and IBL keep F as today (the call sites below are unchanged).
+    'vec3 slHemi( vec3 sky, vec3 ground, vec3 dir, vec3 posView, vec3 nView ) {',
+    '  float w = 0.5 * dot( nView, dir ) + 0.5; float k = slSkyKeep( posView, nView );',
+    '  float kg = ( uSLParams.x < 0.5 || uSLSky.x < 0.5 || uSLSky.y < 0.5 || _slFZ < -0.5 ) ? k : _slGd;',
+    '  return k * sky * w + kg * ground * ( 1.0 - w );',
     '}',
     // §GLASS_SPEC_GATE (red1 2026-09-26: "Clinic from outside glasses still black"; state at …385774229: 73 of 80 glass hits have
     // a COVERED eye-side cell — the window reveal under the lintel — and F < 0.3 on 65, so slSkyKeep scaled the pane's sky
@@ -141,6 +160,7 @@
     'float slSpecKeep( vec3 posView, vec3 nView, vec3 viewDir ) { return 1.0; }',
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
     'float slSkyKeep( vec3 posView, vec3 nView ) { return 1.0; }',
+    'vec3 slHemi( vec3 sky, vec3 ground, vec3 dir, vec3 posView, vec3 nView ) { return mix( ground, sky, 0.5 * dot( nView, dir ) + 0.5 ); }',   // three's own formula
     '#endif', ''].join('\n');
   // §SOURCED_LIGHT_LINK: the one slFragZone call per fragment, before three's light loops (geometryPosition/geometryNormal
   // are declared at the top of lights_fragment_begin). Staged (x) or zone-debug (w) only: nav pays nothing.
@@ -198,8 +218,11 @@
     if (fb.indexOf(s0) >= 0) { fb = fb.replace(s0, s0 + '\n\t\tdirectLight.color *= slPass( uSLSZ[ UNROLLED_LOOP_INDEX / 4 ][ UNROLLED_LOOP_INDEX - ( UNROLLED_LOOP_INDEX / 4 ) * 4 ], geometryPosition, geometryNormal );'); ok++; }
     var a0 = 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );';
     if (fb.indexOf(a0) >= 0) { fb = fb.replace(a0, 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor ) * slSkyKeep( geometryPosition, geometryNormal );'); ok++; }
-    var h0 = 'irradiance += getHemisphereLightIrradiance(';   // also matches the §SKY_OCCLUSION-patched line
-    if (fb.indexOf(h0) >= 0) { fb = fb.replace(h0, 'irradiance += slSkyKeep( geometryPosition, geometryNormal ) * getHemisphereLightIrradiance('); ok++; }
+    // §GROUND_VIEW_FIELD: the whole call is replaced by slHemi (sky half x F, ground half x Gd); a §SKY_OCCLUSION-patched line keeps
+    // its trailing `* skyOccVis( geometryNormal )`
+    var h0 = 'irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal )';
+    if (fb.indexOf(h0) >= 0) { fb = fb.replace(h0, 'irradiance += slHemi( hemisphereLights[ i ].skyColor, hemisphereLights[ i ].groundColor, hemisphereLights[ i ].direction, geometryPosition, geometryNormal )'); ok++; }
+    else console.warn('§GROUND_VIEW_FIELD anchor "getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal )" missing: hemi ungated');
     C.lights_fragment_begin = fb;
     // IBL (scene.environment) is sky light too: its diffuse irradiance and its reflections are gated indoors like the hemi.
     // The white-Lambert §METER cannot see IBL, so ungated it was amplified by the meter's +4-6 stops into a purple cast on
@@ -214,7 +237,8 @@
     if (C.dithering_fragment && C.dithering_fragment.indexOf('uSLParams') < 0) {
       C.dithering_fragment = C.dithering_fragment + '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
         'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : ( _slSky > 0.5 ? 0.5 : 0.0 ), 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
-        'if ( uSLParams.w > 7.5 && uSLParams.w < 8.5 ) { gl_FragColor = vec4( _slSpec, _slF, 0.25, 1.0 ); }\n' +   // §GLASS_SPEC_GATE readback
+        'if ( uSLParams.w > 9.5 && uSLParams.w < 10.5 ) { gl_FragColor = vec4( _slGd, _slF, 0.75, 1.0 ); }\n' +   // §GROUND_VIEW_FIELD readback (float target): R = _slGd, G = _slF, B = 0.75 marker
+        'else if ( uSLParams.w > 7.5 && uSLParams.w < 8.5 ) { gl_FragColor = vec4( _slSpec, _slF, 0.25, 1.0 ); }\n' +   // §GLASS_SPEC_GATE readback
         'else if ( uSLParams.w > 6.5 && uSLParams.w < 7.5 ) { gl_FragColor = vec4( _slLN, _slLNP, 0.5, 1.0 ); }\n' +   // §LAMP_UNCAPPED_COST readback (float target)
         'else if ( uSLParams.w > 5.5 && uSLParams.w < 6.5 ) { gl_FragColor = vec4( _slF, ( _slFZ > 0.5 && _slFZ < 65533.5 ) ? 1.0 : 0.0, _slSky, 1.0 ); }\n' +   // §SKY_VIEW_FIELD SKY_STEP readback: F_filtered
         'else if ( uSLParams.w > 1.5 ) { mat4 _vi = inverse( viewMatrix ); vec3 _wp = ( _vi * vec4( - vViewPosition, 1.0 ) ).xyz; vec3 _wn = normalize( ( _vi * vec4( normal, 0.0 ) ).xyz ); vec3 _q = _wp + _wn * 0.2;\n' +
@@ -226,13 +250,14 @@
     dummy = new THREE.Data3DTexture(new Uint16Array(2), 1, 1, 1);
     dummy.format = THREE.RGIntegerFormat; dummy.type = THREE.UnsignedShortType; dummy.internalFormat = 'RG16UI';   // §SOURCED_DAYLIGHT: RG16UI
     dummy.minFilter = dummy.magFilter = THREE.NearestFilter; dummy.generateMipmaps = false; dummy.unpackAlignment = 1; dummy.needsUpdate = true;
+    dGround = groundTex3D(THREE, new Uint16Array(1), 1, 1, 1);   // §GROUND_VIEW_FIELD dummy (an integer sampler needs an integer texture on its unit)
     // §LAMP_UNCAPPED dummies: every declared sampler must see a texture of its own kind (an integer sampler on a float unit is
     // GL_INVALID_OPERATION at draw time), same reason as `dummy` above
     dLamp = lampTex2D(THREE, new Float32Array(8), 2, 1); dIdx = idxTex2D(THREE, new Uint16Array(1), 1, 1); dClu = cluTex3D(THREE, new Uint32Array(2), 1, 1, 1);
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
-      U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy };
+      U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy }; U.uSLGround = { value: dGround };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
       U.uSLLamp = { value: LAMP }; U.uSLCluDim = { value: CDIM }; U.uSLLampT = { value: dLamp }; U.uSLLIdx = { value: dIdx }; U.uSLClu = { value: dClu };
     });
@@ -437,6 +462,7 @@
   function push(A, m) {
     var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLParams) return false;
     U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; if (U.uSLSky) U.uSLSky.value = SKY; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
+    if (U.uSLGround) U.uSLGround.value = (active && gtex && SKY[1] > 0.5) ? gtex : dGround;
     if (U.uSLLamp) { var lo = active && LAMP[0] > 0.5 && lampTex; U.uSLLamp.value = LAMP; U.uSLCluDim.value = CDIM; U.uSLLampT.value = lo ? lampTex : dLamp; U.uSLLIdx.value = lo ? idxTex : dIdx; U.uSLClu.value = lo ? cluTex : dClu; }
     return true;
   }
@@ -529,10 +555,18 @@
   }
   function stageField(A, Z) {
     var LZ = global.LightZones, SP = global.SkyPortal, t0 = performance.now();
-    if (!fieldOn(A) || !LZ.field) { SKY[0] = 0; console.log('§SKY_VIEW_FIELD off (' + (A._maxqActive ? 'film' : '&skyfield=0 / APP._stillSkyField=false') + ') — binary SKY_BIT path'); return null; }
-    var hit = !!Z.field, F = LZ.field(A), key = texKey, uploadMs = 0;
+    if (!fieldOn(A) || !LZ.field) { SKY[0] = 0; SKY[1] = 0; console.log('§SKY_VIEW_FIELD off (' + (A._maxqActive ? 'film' : '&skyfield=0 / APP._stillSkyField=false') + ') — binary SKY_BIT path'); return null; }
+    var hit = !!Z.field, ghit = !!(Z.field && Z.field.Gd && Z.field.ground && Z.field.ground.mode === LZ.groundMode(A)), F = LZ.field(A), key = texKey, uploadMs = 0;
     if (rgFieldKey !== key) { if (!rg) { rg = zoneRG(Z); tex.image.data = rg; } for (var i = 0; i < F.G.length; i++) rg[i * 2 + 1] = F.G[i]; var tU = performance.now(); tex.needsUpdate = true; A.renderer.initTexture(tex); uploadMs = performance.now() - tU; rgFieldKey = key; }
     SKY[0] = 1;
+    // §GROUND_VIEW_FIELD: Gd uploaded as its own R16UI texture (the array is light_zones' Gd itself: the CPU mirror + the IDB
+    // record read the same bytes, no copy to drop); uSLSky.y tells the shader to split the hemi
+    var gOn = !!(LZ.groundOn(A) && F.Gd), gUp = 0, gs = F.ground;
+    if (gOn) { if (gKey !== key || !gtex) { if (gtex) gtex.dispose(); gtex = groundTex3D(global.THREE, F.Gd, Z.nx, Z.ny, Z.nz); var tG = performance.now(); A.renderer.initTexture(gtex); gUp = performance.now() - tG; gKey = key; } SKY[1] = 1; }
+    else SKY[1] = 0;
+    console.log('§GROUND_VIEW_FIELD ' + (gOn ? 'on' : 'off (' + (F.Gd ? 'APP._stillGroundView=false / &groundview=0' : 'no ground field built') + ' — hemi ground half x F as before)') +
+      (gs ? ' mode=' + gs.mode + ' cache=' + (ghit ? 'hit' : 'built') + ' buildMs=' + gs.ms + ' dirs=' + gs.dirs + ' coveredCells=' + gs.covered + ' nonZero=' + gs.nonZero + ' Gd p10/p50/p90/max=' + gs.p10 + '/' + gs.p50 + '/' + gs.p90 + '/' + gs.max + ' uploadMs=' + gUp.toFixed(0) + ' texMB=' + (F.Gd.byteLength / 1e6).toFixed(1) : '') +
+      ' (hemi = F x sky half + Gd x ground half; ambient + IBL x F as before)');
     if (statsKey !== key) { fieldStats = computeStats(A, Z, F); statsKey = key; }
     var S = fieldStats, lit = [], enc = [], maxWp = 0;
     S.zones.forEach(function (r) { if (!r || !(r.Fwp > 0) || !r.floorM2) return; lit.push([r.Fwp, r.floorM2]); if (r.enclosed) enc.push([r.Fwp, r.floorM2]); if (r.Fwp > maxWp) maxWp = r.Fwp; });
@@ -595,6 +629,7 @@
     var key = Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + Z.zones;
     if (texKey !== key) {
       if (tex) tex.dispose(); rgFieldKey = null;
+      if (gtex) { gtex.dispose(); gtex = null; } gKey = null;   // §GROUND_VIEW_FIELD: its texture follows the zone texture's key
       // §SOURCED_DAYLIGHT: RG16UI — R = zone | SKY_BIT (as before), G = the still's daylight fraction x 10000 (0 until daylight())
       rg = zoneRG(Z); rgKey = key;
       tex = new THREE.Data3DTexture(rg, Z.nx, Z.ny, Z.nz);
@@ -610,7 +645,7 @@
     // (Hospital 41 MB). Drop it; stageField rebuilds it from those two when the field must be written again, and a restored
     // WebGL context re-stages from scratch (texKey cleared below).
     if (rg && tex && (rgFieldKey === texKey || !SKY[0])) { rg = null; rgKey = null; tex.image.data = null; }
-    if (!ctxHooked && A.renderer.domElement) { ctxHooked = true; A.renderer.domElement.addEventListener('webglcontextrestored', function () { texKey = null; rgFieldKey = null; }); }
+    if (!ctxHooked && A.renderer.domElement) { ctxHooked = true; A.renderer.domElement.addEventListener('webglcontextrestored', function () { texKey = null; rgFieldKey = null; gKey = null; }); }
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
     console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (&skyfield=0 = the binary SKY_BIT path)');
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;
@@ -648,7 +683,7 @@
     try { luxCheck(A, Z); } catch (eL) { console.warn('§LUX_CHECK failed: ' + eL.message); }
     if (A.markDirty) A.markDirty();
     console.log('§SOURCED_LIGHT on zonesCache=' + (hit ? 'hit' : 'built') + ' zones=' + Z.zones + ' grid=' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ' cell=' + Z.cell +
-      ' texMB=' + (Z.zone.length * 2 / 1e6).toFixed(1) + ' indoorSky=' + keep + ' mats=' + set.size + ' pushed=' + pushed + ' points=' + b.points + ' bound=' + b.pointsBound + ' (litOutside=' + b.litOutside + ')' +
+      ' texMB=' + (Z.zone.length * 2 / 1e6).toFixed(1) + ' indoorSky=' + keep + ' groundView=' + (SKY[1] > 0.5 ? 'on' : 'off') + ' mats=' + set.size + ' pushed=' + pushed + ' points=' + b.points + ' bound=' + b.pointsBound + ' (litOutside=' + b.litOutside + ')' +
       ' litUnbound=' + b.litUnbound + ' spots=' + b.spots + ' portalsBound=' + b.spotsBound + ' ms=' + (performance.now() - t0).toFixed(0));
   }
 
