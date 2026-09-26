@@ -34,6 +34,38 @@
     return pt[0] >= box[0] - tol && pt[0] <= box[1] + tol && pt[1] >= box[2] - tol && pt[1] <= box[3] + tol;
   }
 
+  // §GATE-SCALE: uniform XY grid over the AFTER boxes. near(box) → indices (into keys) of every box whose AABB intersects
+  // `box` grown by `pad` on all three axes, ascending. Boxes spanning > BIG_CELLS cells (slabs, roofs) go to a list that
+  // every query scans, so no cell holds thousands of copies. Exact: a superset filter followed by the true AABB test.
+  var GRID_CELL = 4, BIG_CELLS = 256;
+  function spatialIndex(boxes, keys, pad) {
+    var cells = new Map(), big = [], stamp = new Int32Array(keys.length), q = 0;
+    for (var j = 0; j < keys.length; j++) {
+      var b = boxes[keys[j]];
+      var i0 = Math.floor(b[0] / GRID_CELL), i1 = Math.floor(b[1] / GRID_CELL), j0 = Math.floor(b[2] / GRID_CELL), j1 = Math.floor(b[3] / GRID_CELL);
+      if ((i1 - i0 + 1) * (j1 - j0 + 1) > BIG_CELLS) { big.push(j); continue; }
+      for (var a = i0; a <= i1; a++) for (var c = j0; c <= j1; c++) {
+        var ck = a + ',' + c, arr = cells.get(ck); if (!arr) cells.set(ck, arr = []); arr.push(j);
+      }
+    }
+    function hit(b, g) {
+      return b[0] <= g[1] && b[1] >= g[0] && b[2] <= g[3] && b[3] >= g[2] && b[4] <= g[5] && b[5] >= g[4];
+    }
+    return {
+      near: function (box) {
+        var g = [box[0] - pad, box[1] + pad, box[2] - pad, box[3] + pad, box[4] - pad, box[5] + pad], out = [];
+        q++;
+        var i0 = Math.floor(g[0] / GRID_CELL), i1 = Math.floor(g[1] / GRID_CELL), j0 = Math.floor(g[2] / GRID_CELL), j1 = Math.floor(g[3] / GRID_CELL);
+        for (var a = i0; a <= i1; a++) for (var c = j0; c <= j1; c++) {
+          var arr = cells.get(a + ',' + c); if (!arr) continue;
+          for (var t = 0; t < arr.length; t++) { var j = arr[t]; if (stamp[j] !== q) { stamp[j] = q; if (hit(boxes[keys[j]], g)) out.push(j); } }
+        }
+        for (var u = 0; u < big.length; u++) { var jb = big[u]; if (stamp[jb] !== q) { stamp[jb] = q; if (hit(boxes[keys[jb]], g)) out.push(jb); } }
+        return out.sort(function (x, y) { return x - y; });
+      }
+    };
+  }
+
   // evaluate(before, after, moved, rel, opts) → {red:[{kind,a,b,depth?}], orange:[{kind,a,b,gap}]}. PURE.
   //   before/after = {fid: aabb}      moved = [fid,…] (host + cascade riders)
   //   rel = { related(a,b)->bool  (hosted-by/abuts/anchored = EXPECTED contact, never a clash),
@@ -50,25 +82,47 @@
     var red = [], orange = [], seen = {};
 
     // (1) CLASH + (3) CLEARANCE — each moved element vs every other (deduped by unordered pair)
-    moved.forEach(function (m) {
-      if (!after[m]) return;
-      allFids.forEach(function (o) {
-        if (+o === +m) return;
-        var key = Math.min(+m, +o) + '|' + Math.max(+m, +o);
-        if (seen[key]) return; seen[key] = 1;
-        if (related(+m, +o)) return;                          // expected contact (door-in-wall, abuts) → never a clash
-        var penA = penetration(after[m], after[o]);
-        var penB = (before[m] && before[o]) ? penetration(before[m], before[o]) : 0;
-        if (penA > clashTol && penA > penB + clashTol) {       // NEW or WORSENED interpenetration
-          red.push({ kind: 'clash', a: +m, b: +o, depth: +penA.toFixed(4) }); return;
-        }
-        var gapA = faceGap(after[m], after[o]);
-        var gapB = (before[m] && before[o]) ? faceGap(before[m], before[o]) : null;
-        if (gapA != null && gapA >= 0 && gapA < clearance && (gapB == null || gapA < gapB - 1e-9)) {
-          orange.push({ kind: 'clearance', a: +m, b: +o, gap: +gapA.toFixed(4) });
-        }
+    function pairCheck(m, o) {
+      if (related(+m, +o)) return;                            // expected contact (door-in-wall, abuts) → never a clash
+      var penA = penetration(after[m], after[o]);
+      var penB = (before[m] && before[o]) ? penetration(before[m], before[o]) : 0;
+      if (penA > clashTol && penA > penB + clashTol) {         // NEW or WORSENED interpenetration
+        red.push({ kind: 'clash', a: +m, b: +o, depth: +penA.toFixed(4) }); return;
+      }
+      var gapA = faceGap(after[m], after[o]);
+      var gapB = (before[m] && before[o]) ? faceGap(before[m], before[o]) : null;
+      if (gapA != null && gapA >= 0 && gapA < clearance && (gapB == null || gapA < gapB - 1e-9)) {
+        orange.push({ kind: 'clearance', a: +m, b: +o, gap: +gapA.toFixed(4) });
+      }
+    }
+    if (opts.bruteForce) {                                    // the pre-§GATE-SCALE loop — kept for the parity witness only
+      moved.forEach(function (m) {
+        if (!after[m]) return;
+        allFids.forEach(function (o) {
+          if (+o === +m) return;
+          var key = Math.min(+m, +o) + '|' + Math.max(+m, +o);
+          if (seen[key]) return; seen[key] = 1;
+          pairCheck(m, o);
+        });
       });
-    });
+    } else {
+      // §GATE-SCALE (SPEC_GATE_SCALE.md): a RED needs the AFTER boxes to interpenetrate and an ORANGE clearance needs them
+      // within `clearance` on the one separated axis — so only boxes intersecting after[m] grown by `pad` can report.
+      // A uniform XY grid over `after` finds them; candidates run in allFids order, so red[]/orange[] keep the old order.
+      // Pair dedup replaces the old `seen` map (moved × all string keys: RangeError past ~300 moved on Terminal):
+      // a moved–moved pair is checked only from the one that comes first in `moved`.
+      var pad = Math.max(clearance, clashTol), idx = spatialIndex(after, allFids, pad);
+      var firstPos = {}; moved.forEach(function (m, i) { if (firstPos[m] == null) firstPos[m] = i; });
+      moved.forEach(function (m, i) {
+        if (!after[m] || firstPos[m] !== i) return;
+        idx.near(after[m]).forEach(function (j) {
+          var o = allFids[j];
+          if (+o === +m) return;
+          if (movedSet[o] && after[o] && firstPos[o] < i) return;   // already checked from o's side
+          pairCheck(m, o);
+        });
+      });
+    }
 
     // (2) DOOR OUT OF HOST — a moved filling whose centre left its host footprint (catches sliding a door off its wall)
     Object.keys(hostOf).forEach(function (fStr) {
