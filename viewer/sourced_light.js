@@ -888,14 +888,14 @@
   //    separate from the RG16UI zone texture so its reads and §ZONE_TEX_CPU_DROP stay untouched (the §GROUND_VIEW_FIELD pattern).
   //    Read through the same 8-texel stencil as _slF; the term is directional, varies cell to cell, is exactly 0 outside cove
   //    zones. Zero lights, zero program keys, two vec4 uniforms (colour + on, log range).
-  // 6. STRIP (spec: "a VISIBLE thin emissive strip"): one merged MeshBasicMaterial mesh per building, 0.04 m bars along the
-  //    emitter lines, colour 0xffe4b5 (tools.js NIGHT_AMBER), excludeFromShadow, Alt+S only (added in stage, removed in unstage;
+  // 6. NO STRIP (§COVE_NO_STRIP, red1 2026-09-27: "need not have the actual lighting element. That be inventing objects"):
+  //    only the glow along the wall-ceiling edges (the field above) is drawn, no fixture mesh. Alt+S only (set in stage, off in unstage;
   //    films never call stage). &cove=0 / APP._stillCove=false = off. Budget: a zone whose cells x emitters x steps exceed
   //    COVE_BUDGET is computed on a cell stride (2..4) and filled from the nearest computed cell (logged).
-  var COVEP = new Float32Array(4), COVEQ = new Float32Array(4), coveTex = null, dCove = null, coveKey = null, coveLast = null, coveMesh = null;
+  var COVEP = new Float32Array(4), COVEQ = new Float32Array(4), coveTex = null, dCove = null, coveKey = null, coveLast = null;
   var TRIM_LUX_VOID = 100, COVE_UNKNOWN_LUX = 100, COVE_R = 15, COVE_MAX_EMIT = 512, COVE_BUDGET = 30e6, COVE_COLOUR = 0xffe4b5, COVE_TYPES = ['', 'room', 'void', 'crevice', 'shaft'];
-  // COVE_LEDGE: the UP lobe's strip height below the ceiling for the FIELD = one cell (0.5 m). The visible strip sits at the
-  // spec's 0.1 m, but a source 0.1 m under the ceiling lies ABOVE every cell centre of the 0.5 m lattice (the top layer's centres
+  // COVE_LEDGE: the UP lobe's strip height below the ceiling for the FIELD = one cell (0.5 m). The spec's 0.1 m
+  // does not resolve: a source 0.1 m under the ceiling lies ABOVE every cell centre of the 0.5 m lattice (the top layer's centres
   // are 0.25 m down), so its upward Lambert lobe reached no cell and every ceiling stayed black (measured: Hospital plenum pose
   // 22 % black with the down lobe alone). One cell is the smallest offset the grid resolves; stated, not tuned.
   var COVE_LEDGE = 0.5, COVE_LOG_RANGE = 12;   // log-8 codes span 2^12 = 4096:1 below the building's maximum
@@ -924,14 +924,14 @@
     Z.coveT = { type: type, by: by, bb: bb, cells: cells, off: off, walk: walk, hmax: hmax, floorN: floorN, ms: Math.round(performance.now() - t0) };
     return Z.coveT;
   }
-  // emitters of one zone: e = [sx, sy(ceiling plane), sz, weight] x n (the field's sources), strip = [x, y, z, axis(0 along x, 1 along z)] (the visible bars)
+  // emitters of one zone: e = [sx, sy(ceiling plane), sz, weight] x n (the field's sources)
   function coveEmitters(Z, T, z) {
-    var nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, cl = Z.cell, o = z * 6, bb = T.bb, cells = T.cells, thin = (bb[o + 4] - bb[o + 1] + 1) < 2, shaft = T.type[z] === 4, out = [], strip = [];
+    var nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, cl = Z.cell, o = z * 6, bb = T.bb, cells = T.cells, thin = (bb[o + 4] - bb[o + 1] + 1) < 2, shaft = T.type[z] === 4, out = [];
     if (thin) {   // amendment d: one line along the long axis, mid-height — per long-axis slice the middle cell of the slice
       var alongX = (bb[o + 3] - bb[o]) >= (bb[o + 5] - bb[o + 2]), sl = new Map();
       for (var q = T.off[z]; q < T.off[z + 1]; q++) { var c = cells[q], i = c % nx, k = (c / nxy) | 0, a = alongX ? i : k, b = alongX ? k : i; var arr = sl.get(a); if (!arr) sl.set(a, arr = []); arr.push([b, c]); }
       sl.forEach(function (arr) { arr.sort(function (p, q2) { return p[0] - q2[0]; }); var c = arr[arr.length >> 1][1], i = c % nx, j = ((c / nx) | 0) % ny, k = (c / nxy) | 0;
-        var x = Z.org.x + (i + 0.5) * cl, zz = Z.org.z + (k + 0.5) * cl; out.push(x, Z.org.y + (j + 1) * cl, zz, 1); strip.push(x, Z.org.y + (j + 0.5) * cl, zz, alongX ? 0 : 1); });
+        var x = Z.org.x + (i + 0.5) * cl, zz = Z.org.z + (k + 0.5) * cl; out.push(x, Z.org.y + (j + 1) * cl, zz, 1); });
     } else {
       var jTop = bb[o + 4];
       for (var q2 = T.off[z]; q2 < T.off[z + 1]; q2++) { var c2 = cells[q2], i2 = c2 % nx, j2 = ((c2 / nx) | 0) % ny, k2 = (c2 / nxy) | 0;
@@ -939,12 +939,11 @@
         var sxm = i2 === 0 || zone[c2 - 1] === SOLID, sxp = i2 === nx - 1 || zone[c2 + 1] === SOLID, szm = k2 === 0 || zone[c2 - nxy] === SOLID, szp = k2 === nz - 1 || zone[c2 + nxy] === SOLID;
         if (!(sxm || sxp || szm || szp)) continue;
         var x2 = Z.org.x + (i2 + 0.5) * cl + (sxm ? 0.15 : 0) - (sxp ? 0.15 : 0), z2 = Z.org.z + (k2 + 0.5) * cl + (szm ? 0.15 : 0) - (szp ? 0.15 : 0), yc = Z.org.y + (j2 + 1) * cl;
-        out.push(x2, yc, z2, 1);
-        if (sxm || sxp) strip.push(x2, yc - 0.1, z2, 1); if (szm || szp) strip.push(x2, yc - 0.1, z2, 0); }
+        out.push(x2, yc, z2, 1); }
     }
     var n = out.length / 4, s = 1;
     if (n > COVE_MAX_EMIT) { s = Math.ceil(n / COVE_MAX_EMIT); var o2 = []; for (var e = 0; e < n; e += s) o2.push(out[e * 4], out[e * 4 + 1], out[e * 4 + 2], s); out = o2; }
-    return { e: Float32Array.from(out), strip: strip, perimM: n * cl, n: n, stride: s };
+    return { e: Float32Array.from(out), perimM: n * cl, n: n, stride: s };
   }
   // per zone cell for unit output (weights in e): V = the down lobe's irradiance vector (ceiling patches at e), U = the up lobe
   // (the strip COVE_LEDGE under the ceiling emitting up, onto a downward-facing receiver at the cell centre); cells whose grid
@@ -989,10 +988,9 @@
     var X = luxRows(A, Z);
     if (!X) { console.log('§COVE_LIGHT VACUOUS no lux calibration (calibSunI=' + A._stillCalibSunI + ') — no zone judged'); coveLast = null; return null; }
     var D = A._lampDataOn ? A._lampData : null, key = texKey + '|' + (D ? D.ver : 'nolamps') + '|' + X.EskyLux.toFixed(3) + '|' + X.luxPer.toFixed(3) + '|' + (IRP[0] > 0.5 ? irKey : 'noir');
-    if (key === coveKey && coveTex) { COVEP[3] = 1; coveStrip(A); return coveLast; }
-    coveStripOff(A); if (coveLast && coveLast.geom) coveLast.geom.dispose();   // a rebuild (lamp set / level changed) replaces the strip too
+    if (key === coveKey && coveTex) { COVEP[3] = 1; return coveLast; }
     var t0 = performance.now(), T = coveTypes(Z), nzn = Z.zones, S = X.S, nx = Z.nx, nxy = nx * Z.ny, N = Z.zone.length, luxPer = X.luxPer;
-    var zones = new Array(nzn + 1), irAdd = new Float32Array(nzn + 1), wpE = new Float32Array(nzn + 1), qual = [], byQ = { room: 0, void: 0, crevice: 0, shaft: 0 }, defs = [], noEmit = 0, emitters = 0, perimM = 0, cellsN = 0, work = 0, strided = 0, strip = [], vs = [], fieldBuilt = 0;
+    var zones = new Array(nzn + 1), irAdd = new Float32Array(nzn + 1), wpE = new Float32Array(nzn + 1), qual = [], byQ = { room: 0, void: 0, crevice: 0, shaft: 0 }, defs = [], noEmit = 0, emitters = 0, perimM = 0, cellsN = 0, work = 0, strided = 0, vs = [], fieldBuilt = 0;
     var CF = Z.coveF || (Z.coveF = new Map());
     for (var z = 1; z <= nzn; z++) { var t = T.type[z], lv = t === 1 ? (X.en[z] != null ? X.en[z] : COVE_UNKNOWN_LUX) : TRIM_LUX_VOID, ex = X.existing[z], df = Math.max(0, lv - ex);
       if (!(df > 0.5)) continue;
@@ -1016,7 +1014,7 @@
       for (var q2 = 0; q2 < n; q2++) { var mv = scale * Math.sqrt(V[q2 * 3] * V[q2 * 3] + V[q2 * 3 + 1] * V[q2 * 3 + 1] + V[q2 * 3 + 2] * V[q2 * 3 + 2]); sum += mv; sq += mv * mv; if (mv > 0) nz0++; if (mv > mx) mx = mv; var uv = scale * U[q2]; if (uv > 0) upN++; if (uv > upMx) upMx = uv; }
       var mean = sum / n, cvv = mean > 0 ? Math.sqrt(Math.max(0, sq / n - mean * mean)) / mean : 0;
       wpE[z] = calib === 'wp' ? df : 0;   // the working-plane cove E (lux) the §LUX_CHECK rows add; zones without a plane report 0 there
-      qual.push(z); byQ[COVE_TYPES[t]]++; defs.push(df); emitters += E.e.length / 4; perimM += E.perimM; cellsN += n; for (var s0 = 0; s0 < E.strip.length; s0++) strip.push(E.strip[s0]);
+      qual.push(z); byQ[COVE_TYPES[t]]++; defs.push(df); emitters += E.e.length / 4; perimM += E.perimM; cellsN += n;
       zones[z] = { z: z, type: COVE_TYPES[t], existingE: +ex.toFixed(1), level: lv, deficit: +df.toFixed(1), coveE: +(calib === 'wp' ? df : mean * luxPer + irAdd[z] * luxPer).toFixed(1), coveIR: +(irAdd[z] * luxPer).toFixed(1), calib: calib, emitters: E.e.length / 4, perimeterM: +E.perimM.toFixed(1), cells: n, litCells: nz0, upCells: upN, cv: +cvv.toFixed(3), maxE: +(mx * luxPer).toFixed(1), maxUpE: +(upMx * luxPer).toFixed(1), stride: st, m3: Z.zoneInfo[z - 1].m3 };
       vs.push([z, V, scale, Math.max(mx, upMx), U]); }
     var tf = performance.now(), maxAll = 0; vs.forEach(function (v) { if (v[3] > maxAll) maxAll = v[3]; });
@@ -1039,32 +1037,15 @@
     var col = new THREE.Color(COVE_COLOUR), lum = 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b;
     COVEP[0] = col.r / lum; COVEP[1] = col.g / lum; COVEP[2] = col.b / lum; COVEP[3] = 1; COVEQ[0] = lnMin; COVEQ[1] = lnR; coveKey = key; lampPushAll = true;
     defs.sort(function (a, b) { return a - b; }); var pq = function (f) { return defs[Math.min(defs.length - 1, Math.floor(defs.length * f))].toFixed(0); };
-    coveLast = { key: key, zones: zones, irAdd: irAdd, wpE: wpE, qualified: qual.length, byType: byQ, strip: strip, geom: null, stats: { emitters: emitters, perimeterM: +perimM.toFixed(1), cells: cellsN, strided: strided, noEdge: noEmit, work: work, memMB: +(arr.byteLength / 1e6).toFixed(1), QC: QC, maxE: +(maxAll * luxPer).toFixed(1), buildMs: Math.round(tf - t0), texMs: Math.round(performance.now() - tf), typesMs: T.ms } };
+    coveLast = { key: key, zones: zones, irAdd: irAdd, wpE: wpE, qualified: qual.length, byType: byQ, stats: { emitters: emitters, perimeterM: +perimM.toFixed(1), cells: cellsN, strided: strided, noEdge: noEmit, work: work, memMB: +(arr.byteLength / 1e6).toFixed(1), QC: QC, maxE: +(maxAll * luxPer).toFixed(1), buildMs: Math.round(tf - t0), texMs: Math.round(performance.now() - tf), typesMs: T.ms } };
     console.log('§COVE_LIGHT build bld=' + Z.bld + ' zones=' + nzn + ' types ' + JSON.stringify(T.by) + ' qualified=' + qual.length + ' byType ' + JSON.stringify(byQ) + ' deficit lx p10/p50/p90/max=' + pq(0.1) + '/' + pq(0.5) + '/' + pq(0.9) + '/' + defs[defs.length - 1].toFixed(0) +
       ' emitters=' + emitters + ' perimeterM=' + perimM.toFixed(1) + ' cells=' + cellsN + ' (strided zones ' + strided + ', below level but no ceiling edge ' + noEmit + ') fieldsMarched=' + fieldBuilt + ' (cached ' + (qual.length - fieldBuilt) + ') marchSteps=' + work + ' memMB=' + coveLast.stats.memMB + ' (RGBA8UI log-8, range 2^' + COVE_LOG_RANGE + ', maxE=' + coveLast.stats.maxE + ' lx) buildMs=' + coveLast.stats.buildMs + ' (types ' + T.ms + ') texMs=' + coveLast.stats.texMs + ' uploadMs=' + upMs.toFixed(0) +
       ' level: room=EN row | unknown use ' + COVE_UNKNOWN_LUX + ' lx (6.1.1 circulation) | void/crevice/shaft TRIM_LUX_VOID=' + TRIM_LUX_VOID + ' lx (EN 12464-1 circulation row via secondary summaries, primary not consulted) colour=0x' + COVE_COLOUR.toString(16) + ' R=' + COVE_R + 'm');
     console.log('§COVE_LIGHT NOFLAT ' + (outsideNZ === 0 && cvZero === 0 ? 'PASS' : 'FAIL') + ' texelsOutsideCoveZones=' + outsideNZ + ' coveZonesWithCv0=' + cvZero + '/' + (qual.length - cvVac) + ' judged (' + cvVac + ' zones of 1-2 cells not judged)' + (cvZero ? ' cv0 zones [' + cvZeroZ.slice(0, 5).map(function (z) { var r = zones[z]; return z + ':' + r.type + ':' + r.cells + 'cells:' + r.emitters + 'em'; }).join(' ') + ']' : '') + ' (cell-to-cell coefficient of variation of |V| per zone; directional term, never a flat fill)');
     var top = qual.slice().sort(function (a, b) { return zones[b].cells * zones[b].deficit - zones[a].cells * zones[a].deficit; }).slice(0, 8), cz = (A._sourcedCap && A._sourcedCap.camZone) || 0; if (cz && zones[cz] && top.indexOf(cz) < 0) top.push(cz);
     console.log('§COVE_LIGHT_ZONE [z:type:existingE+cove=level lx:emitters:perimM:cells:litCells/upCells:cv:calib:stride:m3] ' + top.map(function (z) { var r = zones[z]; return z + ':' + r.type + ':' + r.existingE + '+' + r.coveE + '=' + r.level + ':' + r.emitters + ':' + r.perimeterM + ':' + r.cells + ':' + r.litCells + '/' + r.upCells + ':' + r.cv + ':' + r.calib + ':' + r.stride + ':' + r.m3; }).join(' ') + (cz ? ' camZone=' + cz + (zones[cz] ? '' : ' (no cove: existingE=' + X.existing[cz].toFixed(1) + ' lx >= level)') : ''));
-    coveStrip(A);
     return coveLast;
   }
-  // the visible strip: one merged mesh of 0.04 m bars, half a cell long, along the emitter lines (built once per cove key)
-  function coveStrip(A) {
-    var THREE = global.THREE; if (!coveLast || !coveLast.strip || !coveLast.strip.length || coveMesh) return;
-    if (!coveLast.geom) { var s = coveLast.strip, nb = s.length / 4, pos = new Float32Array(nb * 8 * 3), idx = new Uint32Array(nb * 36), cl = (global.LightZones.get() || { cell: 0.5 }).cell, hl = cl / 2, hw = 0.02;
-      var BI = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0];
-      for (var b = 0; b < nb; b++) { var x = s[b * 4], y = s[b * 4 + 1], z = s[b * 4 + 2], ax = s[b * 4 + 3], dx = ax === 0 ? hl : hw, dz = ax === 1 ? hl : hw, o = b * 24;
-        var P8 = [[-dx, -hw, -dz], [dx, -hw, -dz], [dx, -hw, dz], [-dx, -hw, dz], [-dx, hw, -dz], [dx, hw, -dz], [dx, hw, dz], [-dx, hw, dz]];
-        for (var v = 0; v < 8; v++) { pos[o + v * 3] = x + P8[v][0]; pos[o + v * 3 + 1] = y + P8[v][1]; pos[o + v * 3 + 2] = z + P8[v][2]; }
-        for (var i = 0; i < 36; i++) idx[b * 36 + i] = b * 8 + BI[i]; }
-      var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeBoundingSphere(); coveLast.geom = g; coveLast.strip = null; }
-    coveMesh = new THREE.Mesh(coveLast.geom, new THREE.MeshBasicMaterial({ color: COVE_COLOUR, side: THREE.DoubleSide }));
-    coveMesh.name = 'cove_strip'; coveMesh.userData.excludeFromShadow = true; coveMesh.userData.coveStrip = true; coveMesh.castShadow = false; coveMesh.receiveShadow = false; coveMesh.frustumCulled = true; coveMesh.renderOrder = 1;
-    A.scene.add(coveMesh);
-    console.log('§COVE_LIGHT strip mesh bars=' + (coveLast.geom.index.count / 36) + ' tris=' + (coveLast.geom.index.count / 3) + ' colour=0x' + COVE_COLOUR.toString(16) + ' (MeshBasicMaterial, excludeFromShadow, Alt+S only)');
-  }
-  function coveStripOff(A) { if (!coveMesh) return; A.scene.remove(coveMesh); coveMesh.material.dispose(); coveMesh = null; }
   function stage(A) {
     var THREE = global.THREE, LZ = global.LightZones;
     if (!installed || !THREE || !LZ || !A || !A.scene || !A.renderer) { console.log('§SOURCED_LIGHT skipped installed=' + installed + ' zones=' + !!LZ); return; }
@@ -1258,7 +1239,7 @@
     glassOff(A, quiet); meterOff(A);
     if (!active) return;
     active = false; P[0] = 0; LAMP[0] = 0; lampVer = -1; IRP[0] = 0; irKey = null;
-    COVEP[3] = 0; coveStripOff(A);   // §COVE_LIGHT: the texture is kept for the next press (key compare), the strip leaves with the still
+    COVEP[3] = 0;   // §COVE_LIGHT: the texture is kept for the next press (key compare)
     if (!quiet) { A._lampDataOn = false; A._lampData = null; }
     if (A.scene.onBeforeRender && A.scene.onBeforeRender._sourced) A.scene.onBeforeRender = prevOBR || function () {};
     prevOBR = null; lastLog = '';
