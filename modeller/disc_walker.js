@@ -652,7 +652,7 @@
     var rows = _rows(db, "SELECT * FROM rule_placement WHERE disc='" + _esc(disc) +
       "' AND n_measured>0 AND z_band_lo IS NOT NULL AND z_band_hi IS NOT NULL AND src_storey_area_m2>0");
     if (!rows.length) return { noRules: 'no measured z-band rule_placement rows for ' + disc };
-    var bind = {};
+    var bind = {}, verdicts = [];
     if (_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_mesh_binding'").length)
       _rows(db, "SELECT ifc_class, geometry_hash FROM rule_mesh_binding WHERE disc='" + _esc(disc) + "'")
         .forEach(function (b) { bind[b.ifc_class] = b.geometry_hash; });
@@ -706,6 +706,7 @@
       var tess = _tessellatingWalk(disc, r, bdb, ghash);
       if (tess) {
         if (tess.placements.length) { tess.placements.forEach(function (p) { out.push(p); }); zones++; }
+        if (tess.refused) verdicts.push(tess.refused);        // a DELIBERATE 0 (present / refused) — the caller must not fall back
         return;                                               // refused → 0 placements (§ROOF-PATTERN-* line carries why)
       }
       var pitch = Math.max(0.5, Math.sqrt(r.src_storey_area_m2 / r.n_measured));
@@ -765,7 +766,7 @@
       console.log(TAG + ' §NOSPACES-ZONE ' + disc + '/' + r.ifc_class + ' band=[' + r.z_band_lo + ',' + r.z_band_hi +
         '] n_measured=' + r.n_measured + ' ratio=' + (bandArea / r.src_storey_area_m2).toFixed(2) + ' placed=' + placeN);
     });
-    return { placements: out, zones: zones, refused: refused };
+    return { placements: out, zones: zones, refused: refused, verdicts: verdicts };
   }
 
   // Reduce a discipline's rule_placement rows to ONE representative per ifc_class
@@ -2313,6 +2314,12 @@
       // byte-identical to before (this branch is unreachable there).
       if (ps.noRules || !ps.spaces) {
         var pm = placeMeasured(disc, bdb, opts);
+        if (!pm.noRules && !pm.placements.length && pm.verdicts && pm.verdicts.length) {
+          // §ROOF-PATTERN: a deliberate verdict (the array is already present / not an array) — report it as the walk's
+          // outcome with verdict:true so the Modeller does NOT fall back to the legacy fill (§SCHED-FALLBACK).
+          console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' VERDICT ' + pm.verdicts.join('; '));
+          return { disc: disc, refused: true, verdict: true, reason: pm.verdicts.join('; '), placed: 0 };
+        }
         if (pm.noRules) {
           var why = (ps.noRules || 'no real spaces for schedule walk') + '; measured-band: ' + pm.noRules;
           console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + why);

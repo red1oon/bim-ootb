@@ -69,7 +69,7 @@ const inc = (n, x) => { inconclusive++; console.log('  ⚪ ' + n + ' INCONCLUSIV
       return { newRows: rows.length, roofRows: rows.filter(o => o.parameters && o.parameters._dw && o.parameters._dw.disc === 'roof').length, walkN: ((window.__dwWalks || {}).roof || []).length }; }, oplogBefore);
     const present = slog.find(l => /§ROOF-PATTERN-PRESENT roof\/IfcPlate/.test(l)) || '';
     console.log('  §E-WALK said=' + said + ' walkMs=' + walkMs + ' ' + JSON.stringify(after) + ' seededPlates=' + seededPlates);
-    chk('E1 PRESENT (the roof walk reports the building\'s own ' + real.length + ' plates and places NOTHING; base: 10,584 boxes at RMS 2.627 m)',
+    chk('E1 PRESENT (the roof walk reports the building\'s own ' + real.length + ' plates and places NOTHING; main: the Outliner row refused ROOF and never walked; the engine path filled 10,584 boxes at RMS 2.627 m)',
       /n=\d+/.test(present) && +((present.match(/ n=(\d+)/) || [])[1]) === real.length && after.roofRows === 0 && after.newRows === 0,
       present.slice(0, 120) + ' newRows=' + after.newRows + ' roofRows=' + after.roofRows);
     chk('E2 ON-SCREEN (every real plate is a seeded GEOM_INSERT — the roof is already there)', seededPlates === real.length, 'seeded IfcPlate rows=' + seededPlates + ' real=' + real.length);
