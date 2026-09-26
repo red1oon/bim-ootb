@@ -4581,6 +4581,9 @@ function _dwUpgradeFitMeshes(disc, placed) {
       needs.forEach(function (p) { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
       return O.scrubTo(O.length);
     }).then(function () {
+      // §CATALOG-PATH: scrubTo re-folds the editable group and drops the dwRoot layer (run tubes, markers) — restore it
+      // like every other re-fold path. Unreachable while the catalog was empty (#550 → 2026-09-26), so never seen.
+      _redrawAllDiscWalks();
       if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
       var boxed = needs.filter(function (p) { return L.lodFor(p.id, '200') !== '300'; }).length;
       console.log('§DW-FIT-MESH disc=' + disc + ' upgraded=' + (needs.length - boxed) + '/' + needs.length);
