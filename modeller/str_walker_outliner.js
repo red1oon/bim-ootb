@@ -278,7 +278,9 @@
             var openIt = function () {
               var ok = _openBuffer(dbs.extractedDb, name);
               if (ok && O) { _replayEdits(); _seedArcEditable(O, name, null); }
+              else if (window.__arcSeedDone) window.__arcSeedDone('ifc-open-not-seeded');
             };
+            _seedPending(name);
             if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
             else openIt();
           } catch (err) { console.warn(TAG + ' §IFC-OPEN-BUILD-FAIL ' + (err && err.message)); }
@@ -621,8 +623,16 @@
   // Fork the per-building EDITABLE INSTANCE (op-log key 'mo_<building>') so this resident's signed edits
   // fold into its own instance while the loaded meta.db REFERENCE (the IDB cache entry) stays pristine.
   // Once the instance's op-log is loaded, replay its recorded edits back into the fresh walk.
+  // §WALK-AFTER-SEED (SPEC_WALK_AFTER_SEED.md): an Open makes the building's ARC seed PENDING; discWalk/discWalkAll await it,
+  // so a Walk clicked early (Duplex 4.4 s, Terminal 24 s window measured) never signs its rows before the seed's.
+  function _seedPending(key) {
+    var done; window.__arcSeedReady = new Promise(function (r) { done = r; });
+    window.__arcSeedDone = function (why) { if (done) { console.log(TAG + ' §WALK-AFTER-SEED seed settled building=' + key + ' (' + why + ')'); done(why); done = null; } };
+  }
   function _forkEditable(res) {
+    _seedPending(res.key);
     var O = window.Bonsai && window.Bonsai.oplog;
+    if (!(O && O.setModelKey)) window.__arcSeedDone('no-oplog');
     if (O && O.setModelKey) O.setModelKey('mo_' + res.key).then(function (n) {
       console.log(TAG + ' §STRWALK-MO editable instance mo_' + res.key + ' active ops=' + n + ' (reference meta.db stays pristine)');
       _replayEdits();
@@ -659,7 +669,8 @@
   // Absent/null (every other resident) → io.geoDb stays undefined, buildSeedOps falls back to `bdb` itself —
   // byte-identical to pre-existing behaviour.
   function _seedArcEditable(O, key, geoBuf) {
-    if (!(window.ArcEditable && window.__dwBuf && window.SQL && window.KernelOps && O && O.commitSeedGroup)) return;
+    var settle = function (why) { if (window.__arcSeedDone) window.__arcSeedDone(why); };
+    if (!(window.ArcEditable && window.__dwBuf && window.SQL && window.KernelOps && O && O.commitSeedGroup)) { settle('not-seedable'); return; }
     var bdb = null, gdb = null;
     try {
       bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
@@ -706,8 +717,8 @@
       // hint) and the exact way Terminal silently never loaded any geometry. console.error makes it a loud,
       // impossible-to-miss line in devtools/CI logs (still just a log line — no new UI surface, per scope).
       }).catch(function (e) { console.error(TAG + ' §ARC-SEED-WIRE failed ' + (e && e.message) + ' — building=' + key + ' seeded ZERO ops (no geometry will render)'); })
-        .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } try { if (gdb) gdb.close(); } catch (e) { } });
-    } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } if (gdb) { try { gdb.close(); } catch (e3) { } } }
+        .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } try { if (gdb) gdb.close(); } catch (e) { } settle('seeded'); });
+    } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } if (gdb) { try { gdb.close(); } catch (e3) { } } settle('open-failed'); }
   }
 
   // §8E-1b — render the walked STR SKELETON (columns + girders) into the laid ARC as signed GEOM_INSERT op-rows

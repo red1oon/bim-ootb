@@ -276,7 +276,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
 <script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
 <script src="str_walker_bridge.js?v=7" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=17" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_outliner.js?v=18" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=20" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
@@ -3753,7 +3753,25 @@ console.log('§MODELLER outliner ready — ARC (bom-graph) leads + STR Walker ta
 // say MEP routed via RouteWalker; it doesn't, see :2130 below). A disc with no rule/substrate REFUSES honestly
 // (no fabricated run, non-invent). ARC is the base substrate the others fill, not a walked layer.
 // RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-4.
+// §WALK-AFTER-SEED (SPEC_WALK_AFTER_SEED.md): resolves once the open building's ARC seed has committed (str_walker_outliner.js
+// sets it pending on every Open). A Walk clicked earlier waits — its rows must never be signed before the seed's, and the
+// seed's re-fold would drop the walk layer. Capped at 300 s so a stuck seed can never hang a walk forever (logged).
+async function _awaitArcSeed(what) {
+  var p = window.__arcSeedReady; if (!p) return 0;
+  var t0 = Date.now(), pending = true;
+  p.then(function () { pending = false; });
+  await Promise.resolve();
+  if (!pending) return 0;
+  setStat('waiting for ' + (window.__dwName || 'the building') + ' to finish loading before ' + what + '…');
+  var why = await Promise.race([p, new Promise(function (r) { setTimeout(function () { r('timeout-300s'); }, 300000); })]);
+  var ms = Date.now() - t0;
+  console.log('§WALK-AFTER-SEED waited=' + ms + 'ms for=' + what + ' settled=' + why);
+  return ms;
+}
 window.discWalk = function (disc, ctx) {
+  return _awaitArcSeed('Walk ' + String(disc || '').toUpperCase()).then(function () { return _discWalkNow(disc, ctx); });
+};
+function _discWalkNow(disc, ctx) {
   disc = String(disc || '').toUpperCase();
   var name = (ctx && ctx.building) || '';
   if (disc === 'STR') {
@@ -4197,6 +4215,7 @@ function _flashSettleDisc(disc) {
 // there is ONE walk implementation, not two. Honest-refuse per discipline is preserved and logged, never
 // swallowed. X-ray brackets the whole loop (on before, off after — try/finally so an error still restores).
 window.discWalkAll = async function (ctx) {
+  await _awaitArcSeed('Walk ALL Services');
   var t0 = Date.now();
   var ds = (window.DiscWalker && window.DiscWalker._ready()) ? window.DiscWalker.disciplines() : [];
   // §WALKALL-MEP-ONLY (2026-09-24, MODELLER_MASTER §STRATEGY L7, red1's decision "MEP only in Walk ALL"): on the complex
