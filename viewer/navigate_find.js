@@ -5266,6 +5266,11 @@
       // §STILL_GHOST_OWNERSHIP (2026-09-24, red1 "Alt+S goes into bboxes"): Alt+S's §STILL_ROOMS lazy-loads this module too,
       // which armed this trigger MID-STILL and swapped the model to ghost boxes under the photo. Same rule as the tour:
       // wait while an Alt+S still is locked, staged or refining; build once it is released.
+      // M2 (2026-09-26, red1 "after alt-s escape ... rooftop solar panels and cafeteria tables goes missing"): holding was not
+      // enough — the trigger fired on Esc and swapped the model for 4,518 ARC/STR boxes (0 solid triangles drawn). ghost=1 is
+      // the landing's default link format, so a module load made by Alt+S / Alt+C for its rooms is not a request for the ghost:
+      // skip the auto-shell for good on this page (Alt+X still toggles it by hand).
+      if (A._navLoadedBy === 'still' || A._navLoadedBy === 'cinema') { clearInterval(_mgPoll); console.log('[MG] §SHELL_GHOST_AUTO skipped (navigate module loaded by ' + A._navLoadedBy + ', not a ghost request)'); return; }
       if (A._stillLockOn || A._stillRefineActive || A._photoStagingOn) { if (!A._ghostAutoHeldLogged) { A._ghostAutoHeldLogged = true; console.log('[MG] §STILL_GHOST_OWNERSHIP autoBuildHeld=1 (Alt+S still active)'); } return; }
       clearInterval(_mgPoll);
       console.log('[MG] §SHELL_GHOST_AUTO meshCacheKeys=' + Object.keys(A.meshCache).length + ' (deferred build)');

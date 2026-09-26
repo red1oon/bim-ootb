@@ -5958,7 +5958,7 @@ async function setupEffects(A, renderer, scene, camera) {
         var tR = performance.now();
         try {
           if (!A._navigateLoaded) _stillSay('loading the room data (once per page)…');
-          if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) await A.loadNavigate();
+          if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) { A._navLoadedBy = 'still'; await A.loadNavigate(); }   // M2: the ghost=1 auto-shell must not arm from this load
           if (typeof A.ensureRooms === 'function') await A.ensureRooms({});
           console.log('§STILL_ROOMS ready ms=' + (performance.now() - tR).toFixed(0));
         } catch (eR) { console.warn('§STILL_ROOMS ensureRooms failed: ' + eR.message + ' — the inside test falls back to the up-ray'); }
@@ -10229,6 +10229,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // falling back to the bbox centre and the facade. Failure is non-fatal — the plan's fallbacks
     // (DB IfcDoor query, then nearest facade) still produce a film.
     if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) {
+      A._navLoadedBy = 'cinema';   // M2: the ghost=1 auto-shell must not arm from this load
       try { await A.loadNavigate(); } catch (eN) { console.warn('§CINEMA_ROOMS loadNavigate failed: ' + eN.message); }
     }
     if (typeof A.ensureRooms === 'function') {
