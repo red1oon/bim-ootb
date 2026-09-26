@@ -6,7 +6,7 @@
 //                reaches them (zone binding, N.L > 0, inside the lamp's range), no sky-view field F / sky bit, no sun
 //                (N.L > 0 and either outside the fitted sun box — the renderer lights it — or a clear voxel march to the sky)
 //   capDropNear  distinct fixtures of those points' zones, in range and facing them, that the lamp cap left out
-//   extLightsDay lamps / spots / additive sprites on while the camera is OUTSIDE and the sun is up
+//   extLightsDay lamps (only when &lampsout=0) / spots / additive sprites on while the camera is OUTSIDE and the sun is up
 //   glassLow     visible glazing materials with T_eff < 0.7 at normal incidence (stock: 1 - opacity; §GLASS_FRESNEL clone:
 //                1 - its 0.08 body)
 //   glassOpaque  visible IfcWindow / IfcPlate meshes (not R10-split) whose materials are ALL opaque: the pane hides the room
@@ -43,7 +43,8 @@
       if ((o.isPointLight || o.isSpotLight) && o.intensity > 0 && o !== A._camLight) { if (o.isPointLight) { nLamp++; lamps.push(o); } else nSpot++; }   // the camera fill travels with the eye: not a lamp
       if ((o.isSprite || o.isPoints) && o.material && o.material.blending === THREE.AdditiveBlending) nSprite++;
     });
-    if (camOutside && sunUp) out.extLightsDay = nLamp + nSpot + nSprite;
+    // indoor lamps stay on outside by day since red1 2026-09-26 (&lampsout default 1): they count here only when that switch says off
+    if (camOutside && sunUp) out.extLightsDay = (A._stillLampsOff ? nLamp : 0) + nSpot + nSprite;
     out.lampsLoaded = nLampAll; out.lampsLit = nLamp; out.lampCap = (typeof A._stillLampCap === 'number') ? A._stillLampCap : null;
     // glass
     var seenMat = new Set();

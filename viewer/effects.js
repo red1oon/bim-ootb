@@ -4337,8 +4337,9 @@ async function setupEffects(A, renderer, scene, camera) {
         A._stillWindowGlowOff = true;
         // §STILL_LAMPS_OUTSIDE (red1 2026-09-24: seen through the glass, interiors look drab — "no light source falls
         // thru and internal are not playing their role"). &lampsout=1 keeps the lamps on for an outside daylight still
-        // so interiors seen through windows are lit. Default 0 = the earlier ruling (lamps off outside) until red1 picks.
-        var _lampsOut = _stillDial('_stillLampsOut', 'lampsout', 0, 1) > 0;
+        // so interiors seen through windows are lit. Default 1 since red1 picked it 2026-09-26 ("good to have them on and bright
+        // so outside view can be impressive"; lamps keep their calibrated intensity, no boost). &lampsout=0 = the old ruling.
+        var _lampsOut = _stillDial('_stillLampsOut', 'lampsout', 1, 1) > 0;
         A._stillLampsOff = (_gIn.inside === false) && !_lampsOut;
         A._nightGlowMats.forEach(function(g) {
           if (!g.mat) return;
@@ -4562,7 +4563,7 @@ async function setupEffects(A, renderer, scene, camera) {
       var el = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, gs.y))));
       var day = !_photoDuskMoodApplied && el > PHOTO_SUN_ELEVATION;
       var inside = _stillCamInside().inside; A._stillCamInsideNow = inside;
-      var lampsOut = _stillDial('_stillLampsOut', 'lampsout', 0, 1) > 0;
+      var lampsOut = _stillDial('_stillLampsOut', 'lampsout', 1, 1) > 0;   // §STILL_LAMPS_OUTSIDE default 1 (red1 2026-09-26), same as the still
       var lampsOff = day && inside === false && !lampsOut;
       A._stillWindowGlowOff = day; A._stillLampsOff = lampsOff;
       A._nightGlowMats.forEach(function(g) {
