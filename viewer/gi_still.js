@@ -676,6 +676,7 @@
     // (red1's desktop) to 52 s (headless) on every first build. Cached per adapter+browser in localStorage; a new
     // key, a failed read, or &giorient=measure measures again. Wrapped in try/catch: storage can be blocked.
     const orientKey = await (async () => { try { const d = renderer.backend && renderer.backend.device; const ai = (d && d.adapterInfo) || {};
+      G.adapter = [ai.vendor, ai.architecture, ai.device, ai.description].join('|');   // §FAULT_GI S4: which GPU drew the bounce
       return [ai.vendor, ai.architecture, ai.device, ai.description, navigator.userAgent].join('|'); } catch (e) { return navigator.userAgent; } })();
     let orientHit = null;
     try { const c = JSON.parse(localStorage.getItem('giOrientCache') || 'null'); if (c && c.key === orientKey && !/[?&]giorient=measure/.test(location.search)) orientHit = c; } catch (e) {}
@@ -815,12 +816,23 @@
       // the app pixel is near-black (max channel <= 3, hue unreadable at 8 bit) yet the composite shows a saturated hue
       // (saturation > 0.25, value > 40; the thresholds of the 2026-09-26 band probe). hueNoise > 0 is the FAULT; blown/dark are
       // logged in % (no cited limit).
-      { let nb = 0, nd = 0, nh = 0; const np = fin.length / 4;
+      { let nb = 0, nd = 0, nh = 0; const np = fin.length / 4, hueAt = [];
         for (let i = 0; i < fin.length; i += 4) { const r = fin[i], g = fin[i + 1], b = fin[i + 2];
           if (r === 255 && g === 255 && b === 255) nb++; else if (r === 0 && g === 0 && b === 0) nd++;
-          if (Math.max(appPix[i], appPix[i + 1], appPix[i + 2]) <= 3) { const mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx > 40 && (mx - mn) / mx > 0.25) nh++; } }
+          if (Math.max(appPix[i], appPix[i + 1], appPix[i + 2]) <= 3) { const mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx > 40 && (mx - mn) / mx > 0.25) { nh++; if (hueAt.length < 64) hueAt.push(i / 4); else if (Math.random() < 64 / nh) hueAt[Math.floor(Math.random() * 64)] = i / 4; } } }
         R.fault = { blownPct: +(100 * nb / np).toFixed(2), darkPct: +(100 * nd / np).toFixed(2), hueNoise: nh };
-        const fl = '§FAULT_GI ' + (nh > 0 ? 'FAULT' : 'OK') + ' hueNoise=' + nh + ' blown=' + R.fault.blownPct + '% dark=' + R.fault.darkPct + '% (' + w + 'x' + h + ')';
+        // S4 (2026-09-26): red1's exterior stills carried hueNoise 178-1785 that the headless GPU does not reproduce (3-6 at the
+        // same poses). Classify up to 64 flagged pixels by the first surface hit so the saved PNG says what they are: behindGlass
+        // (a see-through pane is hit first), blackMat (material colour 000000, e.g. IfcWindow frames), other; + the GI adapter.
+        if (nh > 0) { try { const A2 = window.APP, T3 = window.THREE, tg = [], rc = new T3.Raycaster(), cls = { behindGlass: 0, blackMat: 0, other: 0, miss: 0 };
+          A2.scene.traverse(o => { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A2._sky) tg.push(o); });
+          hueAt.forEach(pi => { const x = pi % w, y = Math.floor(pi / w); rc.setFromCamera(new T3.Vector2((x + 0.5) / w * 2 - 1, 1 - (y + 0.5) / h * 2), A2.camera);
+            const hs = rc.intersectObjects(tg, false).filter(q => { const m = Array.isArray(q.object.material) ? q.object.material[0] : q.object.material; return m && !m.isMeshBasicMaterial; });
+            if (!hs.length) { cls.miss++; return; } const m0 = Array.isArray(hs[0].object.material) ? hs[0].object.material[0] : hs[0].object.material;
+            if (m0.transparent && m0.opacity < 0.95) cls.behindGlass++; else if (m0.color && m0.color.getHex() === 0) cls.blackMat++; else cls.other++; });
+          R.fault.hueCls = cls; } catch (eHC) { R.fault.hueCls = { error: String(eHC && eHC.message || eHC) }; } }
+        R.fault.giAdapter = G.adapter || null;
+        const fl = '§FAULT_GI ' + (nh > 0 ? 'FAULT' : 'OK') + ' hueNoise=' + nh + (R.fault.hueCls ? ' hueCls=' + JSON.stringify(R.fault.hueCls) : '') + ' giAdapter=' + (R.fault.giAdapter || 'n/a') + ' blown=' + R.fault.blownPct + '% dark=' + R.fault.darkPct + '% (' + w + 'x' + h + ')';
         if (nh > 0) console.warn(fl); else console.log(fl); A._stillFaultGiLast = R.fault; }
       R.secs = +((performance.now() - t0) / 1000).toFixed(1);
       R.orient = G.orient || null;
