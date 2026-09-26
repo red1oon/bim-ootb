@@ -120,6 +120,13 @@
       O._setUndone(on, forward ? 0 : 1); O._setUndone(off, forward ? 1 : 0);
       if (!rows || !rows.length) { rows = on.length ? on : off; del = !on.length; }   // own node: re-apply one flip through setUndone so it folds + emits
     }
+    // §UNDO-RESURRECT (SPEC_UNDO_RESURRECT.md): rows this node leaves UNDONE are its own until it re-applies them —
+    // O.redo()'s lowest-id pick (a later plain edit's Ctrl+Y) must not reactivate them (it brought back an undone
+    // walk's first row, or a deleted row, instead of the edit). Rows it makes active are released.
+    if (rows && rows.length && O.setUndone) {
+      var leaveUndone = forward ? del : !del, TU = O._treeUndone = O._treeUndone || new Set();
+      rows.forEach(function (id) { if (leaveUndone) TU.add(id); else TU.delete(id); });
+    }
     _pending = (rows && rows.length && O.setUndone) ? O.setUndone(rows, forward ? del : !del) : (forward ? O.redo() : O.undo());
     _pending.catch(function (e) { console.warn('§MHIST_RESTORE_ERR', e); });
   }
@@ -172,7 +179,10 @@
     };
     O.deleteFeature = async function (featureId) {
       var r = await origDelete.call(this, featureId);
-      try { if (r && r.deleted && r.deleted.length) _push('GEOM_DELETE', { featureId: featureId, rows: r.deleted }, { opId: featureId, rows: r.deleted }); } catch (e) { console.warn('§MHIST_REC_ERR', e); }
+      try { if (r && r.deleted && r.deleted.length) {
+        _push('GEOM_DELETE', { featureId: featureId, rows: r.deleted }, { opId: featureId, rows: r.deleted });
+        var TU = this._treeUndone = this._treeUndone || new Set(); r.deleted.forEach(function (id) { TU.add(id); });   // §UNDO-RESURRECT: the delete node owns them
+      } } catch (e) { console.warn('§MHIST_REC_ERR', e); }
       return r;
     };
     // §WALK-GESTURE (2026-09-24, MODELLER_MASTER §STRATEGY L4) — SPEC. A disc walk commits through commitSeedGroup
