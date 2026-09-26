@@ -78,6 +78,14 @@
       if (!glassy.length) { if (!r10 && cls !== 'IfcPlate') out.glassOpaque++; return; }
       if (!glassy.some(function (m) { return m.userData && m.userData.gfOf; })) out.glassStock++;
     });
+    // §GLASS_BATCHED: untagged (batched) meshes whose members are ALL glazing (GlassFresnel.classOfMembers) count too — the Clinic's
+    // 40-of-80 stock glass hits sat in such buckets and this counter read 0
+    out.glassStockUntagged = 0;
+    if (global.GlassFresnel && global.GlassFresnel.classOfMembers) A.scene.traverse(function (o) {
+      if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible || !o.material || (o.userData && o.userData.ifcClass)) return;
+      var ms = Array.isArray(o.material) ? o.material : [o.material], glassy = ms.filter(function (m) { return m && m.transparent && m.opacity < 0.95; }); if (!glassy.length) return;
+      var mc = global.GlassFresnel.classOfMembers(A, o); if (mc !== 'IfcWindow' && mc !== 'IfcPlate') return;
+      if (!glassy.some(function (m) { return m.userData && m.userData.gfOf; })) { out.glassStock++; out.glassStockUntagged++; } });
     // plates drawn by meshes WITHOUT an ifcClass tag (merged / batched buckets): follow the guid, whatever the tag
     A.scene.traverse(function (o) { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible || !o.material) return; if (o.userData && o.userData.ifcClass === 'IfcPlate') return;
       var gl4 = byObj.get(o.id); if (!gl4) return; var ms4 = Array.isArray(o.material) ? o.material : [o.material], g4 = !!o.material.isR10MaterialArray || ms4.some(function (m) { return m && m.transparent && m.opacity < 0.95; });
@@ -150,7 +158,7 @@
     if (dataOn) { try { var lc = global.SourcedLight.lampCost(A); if (lc) { out.lampListMean = lc.meanList; out.lampListMax = lc.maxList; out.lampPassMean = lc.meanLit; } } catch (eLC) { console.warn('§LAMP_UNCAPPED_COST failed: ' + eLC.message); } }
     var fault = out.unlit > 0 || out.fieldBad > 0 || out.glassOpaque > 0 || out.glassPlateLost > 0 || out.glassReflDark > 0 || out.glassStock > 0 || out.capDropNear > 0 || out.extLightsDay > 0 || out.glassLow > 0 || out.guard > 0;
     var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay +
-      (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassPlateLost=' + out.glassPlateLost + ' (see-through plates db=' + out.plates.glassDb + ' drawnGlass=' + out.plates.glassDrawn + ' drawnOpaque=' + out.plates.lost + ' notDrawn=' + out.plates.notDrawn + (out.plates.lostSample ? ' e.g. ' + out.plates.lostSample.join(',') : '') + ')' + ' glassReflDark=' + out.glassReflDark + '/' + out.glassReflSamples + ' (old sky-view gate: ' + out.glassReflDarkOldGate + ')' + ' glassStock=' + out.glassStock + ' portalsRetired=' + out.portalsRetired +
+      (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassPlateLost=' + out.glassPlateLost + ' (see-through plates db=' + out.plates.glassDb + ' drawnGlass=' + out.plates.glassDrawn + ' drawnOpaque=' + out.plates.lost + ' notDrawn=' + out.plates.notDrawn + (out.plates.lostSample ? ' e.g. ' + out.plates.lostSample.join(',') : '') + ')' + ' glassReflDark=' + out.glassReflDark + '/' + out.glassReflSamples + ' (old sky-view gate: ' + out.glassReflDarkOldGate + ')' + ' glassStock=' + out.glassStock + ' (untagged ' + out.glassStockUntagged + ')' + ' portalsRetired=' + out.portalsRetired +
       ' expStep=' + out.expStep + ' guard=' + out.guard + (out.lampListMean != null ? ' lampList mean/max=' + out.lampListMean + '/' + out.lampListMax + ' zonePass=' + out.lampPassMean : '') + ' ms=' + (performance.now() - t0).toFixed(1);
     if (fault) console.warn(line); else console.log(line);
     out.fault = fault; A._stillFaultLast = out;   // §STILL_POSE_PNG copies it into the saved still

@@ -657,12 +657,12 @@
     var nzn = Z.zones, up = Math.floor(0.8 / Z.cell) * nx, fl = new Float64Array(nzn + 1), wpS = new Float64Array(nzn + 1), wpN = new Int32Array(nzn + 1), cf = Z.cell * Z.cell;
     for (var c3 = nx; c3 < N; c3++) { var v3 = zone[c3]; if (v3 === SOLID || v3 === 0 || zone[c3 - nx] !== SOLID) continue; var z3 = v3 & ZONE_MASK; fl[z3] += cf;
       var w3 = c3 + up; if (w3 < N && zone[w3] !== SOLID && (zone[w3] & ZONE_MASK) === z3) { wpS[z3] += acc[w3]; wpN[z3]++; } }
-    var irc = new Float32Array(nzn + 1), ircL = [];
+    var irc = new Float32Array(nzn + 1), ircAll = new Float32Array(nzn + 1), ircL = [];   // ircAll: V12 per zone whether or not IRC is in F (§IRC_MAX v2 reads it)
     // IRC OFF by default (watchdog, 2026-09-25): the still's GI bounce pass (gi_still.js) already carries interreflection, so
     // V12 would count it twice and is a flat per-zone fill; &irc=1 / APP._stillIrc = true keeps it for A/B (logged)
     var ircOn = ircFlag(A);
     for (var z4 = 1; z4 <= nzn; z4++) { var zi4 = Z.zoneInfo[z4 - 1], Az = zi4.surfaceM2 + zi4.apertureM2; if (!wpN[z4] || !(Az > 0)) continue;
-      var ir = R_BRE * (wpS[z4] / wpN[z4]) * fl[z4] / (Az * (1 - R_BRE)); if (ir > 0) ircL.push(ir); if (ircOn) irc[z4] = ir; }
+      var ir = R_BRE * (wpS[z4] / wpN[z4]) * fl[z4] / (Az * (1 - R_BRE)); if (ir > 0) ircL.push(ir); ircAll[z4] = ir; if (ircOn) irc[z4] = ir; }
     ircL.sort(function (x, y) { return x - y; });
     // G: F x 10000 in every non-solid cell (open = 10000)
     var G = new Uint16Array(N), maxF = 0, covered = 0, maxSC = 0;
@@ -670,7 +670,7 @@
       var f = Math.min(1, sc + irc[v2 & ZONE_MASK]); if (f > maxF) maxF = f; G[c2] = Math.round(f * 10000); }
     val = acc = null;
     var minElev = FIELD_DIRS.reduce(function (m, d) { return Math.min(m, d.elev); }, 90);
-    Z.field = { G: G, maxF: maxF, maxSC: maxSC, ircZ: irc, irc: { on: ircOn, zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
+    Z.field = { G: G, maxF: maxF, maxSC: maxSC, ircZ: irc, ircAll: ircAll, irc: { on: ircOn, zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
       weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }) };
     if (groundOn(A)) groundBuild(A, Z);   // §GROUND_VIEW_FIELD: Gd beside G, same cache record
     scheduleSave();
