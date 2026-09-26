@@ -500,7 +500,8 @@
     async redo() {
       if (!this.db) return { redone: null };
       const own = this._treeOwned;   // §MEP-REROUTE-SIGN: see undo()
-      const all = this._allGeom(); const undoneRows = all.filter(o => o.undone && !(own && own.has(o.id)));
+      const tu = this._treeUndone;   // §UNDO-RESURRECT: rows a history node left undone — only that node re-applies them
+      const all = this._allGeom(); const undoneRows = all.filter(o => o.undone && !(own && own.has(o.id)) && !(tu && tu.has(o.id)));
       if (!undoneRows.length) return { redone: null };
       const byId = new Map(all.map(o => [o.id, o]));
       const topRow = undoneRows[0], top = topRow.id;
