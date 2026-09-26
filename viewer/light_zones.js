@@ -201,6 +201,10 @@
     // rasterise: sample each triangle on a barycentric grid no coarser than CELL/2 (conservative enough for 0.1 m walls)
     var a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), tris = 0, samples = 0, step = CELL / 2;
     var tRas = performance.now(), glassT = new Uint8Array(N), gHits = new Uint8Array(N), oHits = new Uint8Array(N), glassMat = new Map();
+    // §ZONE_CAP_CENTRE (2026-09-27, red1 "black blotches" on the Hospital facade): capC[cell] = some triangle crosses the vertical line
+    // through the cell's column centre inside the cell. Only such a cell is a ROOF for the open-sky scan below; a cell made SOLID by a
+    // lip that only clips the column's edge (coping, fascia, window head) no longer covers the whole 0.5 m column under it.
+    var capC = new Uint8Array(N), capTris = 0;
     draws.forEach(function (d) {
       var pos = d.geo.attributes.position, ix = d.geo.index, e = d.matrix.elements, gi = 0;
       for (var t = d.start; t + 2 < d.start + d.count; t += 3) {
@@ -212,6 +216,15 @@
         var L = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)), n = Math.max(1, Math.ceil(L / step)); tris++;
         if (isG) { var gm = glassMat.get(mat); if (!gm) { gm = { name: mat.name || mat.uuid.slice(0, 8), opacity: mat.opacity, T: +(1 - mat.opacity).toFixed(3), m2: 0 }; glassMat.set(mat, gm); }
           var cr = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)); gm.m2 += cr.length() / 2; }
+        // plan-view point-in-triangle over the column centres inside the triangle's XZ box (the test a mesh up-ray from the centre makes)
+        var d2 = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+        if (Math.abs(d2) > 1e-9) { capTris++;
+          var i0c = Math.ceil((Math.min(a.x, b.x, c.x) - org.x) / CELL - 0.5), i1c = Math.floor((Math.max(a.x, b.x, c.x) - org.x) / CELL - 0.5),
+              k0c = Math.ceil((Math.min(a.z, b.z, c.z) - org.z) / CELL - 0.5), k1c = Math.floor((Math.max(a.z, b.z, c.z) - org.z) / CELL - 0.5);
+          for (var ic = Math.max(0, i0c); ic <= Math.min(nx - 1, i1c); ic++) for (var kc = Math.max(0, k0c); kc <= Math.min(nz - 1, k1c); kc++) {
+            var xc = org.x + (ic + 0.5) * CELL, zc = org.z + (kc + 0.5) * CELL, l1 = ((b.z - c.z) * (xc - c.x) + (c.x - b.x) * (zc - c.z)) / d2, l2 = ((c.z - a.z) * (xc - c.x) + (a.x - c.x) * (zc - c.z)) / d2, l3 = 1 - l1 - l2;
+            if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue; var yc = l1 * a.y + l2 * b.y + l3 * c.y, jc = Math.floor((yc - org.y) / CELL);
+            if (jc >= 0 && jc < ny) capC[ic + jc * nx + kc * nxy] = 1; } }
         for (var u = 0; u <= n; u++) for (var v = 0; v <= n - u; v++) {
           var w = n - u - v, x = (a.x * u + b.x * v + c.x * w) / n, y = (a.y * u + b.y * v + c.y * w) / n, z = (a.z * u + b.z * v + c.z * w) / n;
           var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; if (gHits[ci] < 255) gHits[ci]++; } else if (oHits[ci] < 255) oHits[ci]++; } samples++;
@@ -234,10 +247,10 @@
     // the bottom two layers below ground are solid so a basement zone keeps a floor.
     var gy = (A.ground && isFinite(A.ground.position.y)) ? A.ground.position.y : null, earth = 0, openN = 0;
     var jg = (gy == null) ? 0 : Math.min(ny, Math.max(0, Math.floor((gy - org.y) / CELL)));   // cells with j < jg lie below the ground plane
-    var tSky = performance.now();
+    var tSky = performance.now(), capSkip = 0, capCells = 0; for (var cc0 = 0; cc0 < N; cc0++) if (capC[cc0]) capCells++;
     for (var kk = 0; kk < nz; kk++) for (var ii = 0; ii < nx; ii++) { var covered = false;
       for (var jj = ny - 1; jj >= 0; jj--) { var ce = ii + jj * nx + kk * nxy, cv0 = zone[ce];
-        if (cv0 === SOLID) { covered = true; continue; }
+        if (cv0 === SOLID) { if (capC[ce]) covered = true; else capSkip++; continue; }
         if (!covered) { if (jj < jg) { zone[ce] = SOLID; earth++; } else { zone[ce] = 1; openN++; } } } }
     if (jg > 0) for (var kb = 0; kb < nz; kb++) for (var jb = 0; jb < Math.min(2, jg); jb++) for (var ib = 0; ib < nx; ib++) { var cb = ib + jb * nx + kb * nxy; if (zone[cb] !== SOLID) { zone[cb] = SOLID; earth++; } }
     // flood fill, 6-connected, over the covered empty cells (0); label 1 = open-to-sky is written as 0 at the end
@@ -314,7 +327,7 @@
     zsizes.forEach(function (n) { var m3 = n * cv; if (m3 < 2) hist.lt2m3++; else if (m3 < 50) hist.lt50m3++; else if (m3 < 500) hist.lt500m3++; else if (m3 < 5000) hist.lt5000m3++; else hist.ge5000m3++; });
     cache = { dd: null, bld: A.activeBuilding, n: Object.keys(A.guidMap || {}).length, org: org, nx: nx, ny: ny, nz: nz, cell: CELL, zone: zone, zones: nzones, sizes: zsizes, zoneInfo: zoneInfo, aperture: aperture, groundJ: jg,
       glassT: glassT, glassCells: glassCells, glassMats: Array.from(glassMat.values()) };
-    cache.stats = { cells: N, MB: +(N * 2 / 1e6).toFixed(1), solid: solid, outsideCells: openN, openSkyCells: openN, soilCells: earth, indoorCells: indoor, zones: nzones, largestZoneM3: Math.round(largest * cv),
+    cache.stats = { cells: N, MB: +(N * 2 / 1e6).toFixed(1), solid: solid, outsideCells: openN, openSkyCells: openN, capCells: capCells, capSkipped: capSkip, capTris: capTris, soilCells: earth, indoorCells: indoor, zones: nzones, largestZoneM3: Math.round(largest * cv),
       largestShareOfIndoor: indoor ? +(largest / indoor).toFixed(3) : 0, hist: hist, zonesWithAperture: zonesWithAp, apertureM2: +(apTotUp + apTotSide).toFixed(1), apertureUpM2: +apTotUp.toFixed(1), apertureSideM2: +apTotSide.toFixed(1),
       apertureDownFaces: apDown, skyLitCells: skyLitN, skyRayCells: skyRay, skyDirs: SKY_DIRS.length, topApertureZones: topAp, tris: tris, samples: samples, draws: bd.stats, rasMs: Math.round(rasMs), skyMs: Math.round(skyMs), ms: Math.round(performance.now() - t0),
       innerR: INNER_R, groundY: gy == null ? null : +gy.toFixed(2), earthCells: earth, grid: [nx, ny, nz], org: [org.x, org.y, org.z].map(function (v) { return +v.toFixed(1); }) };
