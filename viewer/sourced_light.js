@@ -502,7 +502,26 @@
     // capped at the building's p90 room scale; a lamp in no room box takes the building's median room scale (both data-derived)
     var s0 = judged.map(function (r) { return r.s; }).sort(function (a, b) { return a - b; }), sMed = s0.length ? s0[s0.length >> 1] : 1, sP90 = s0.length ? s0[Math.floor(s0.length * 0.9)] : 1, capped = 0;
     judged.forEach(function (r) { if (r.s > sP90) { r.s = sP90; capped++; r.lamps.forEach(function (li2) { scale[li2] = sP90; }); } });
-    for (var l5 = 0; l5 < n; l5++) if (room[l5] < 0) scale[l5] = sMed;
+    // §LAMP_EN_ZONE (red1 "Go", 2026-09-26): a lamp in no room box (Hospital: 1270 of 1274 — only 8 rooms injected) is scaled per
+    // LIGHT ZONE instead of taking the median: the zone's own 0.8 m working-plane cells (the §SKY_VIEW_FIELD stats samples) meet
+    // the default row (habitable, EN_TABLE) from all its lamps + its IR, 3 passes, same p90 cap over the zone scales; a zone with
+    // no working-plane cells keeps the median room scale
+    var zU = new Map(); for (var l5 = 0; l5 < n; l5++) if (room[l5] < 0) { scale[l5] = sMed; var zz5 = lzs[l5]; if (zz5 > 0 && zz5 !== OUTSIDE) { var a5 = zU.get(zz5); if (!a5) zU.set(zz5, a5 = []); a5.push(l5); } }
+    var FS = fieldLast && fieldLast.stats, zj = [], nxz = Z.nx, nxyz = Z.nx * Z.ny, clz = Z.cell, tgt = EN_TABLE.habitable[1];
+    zU.forEach(function (ls, zz6) { var zr = FS && FS.zones[zz6]; if (!zr || !zr.samples || !zr.samples.length) return;
+      var sp = zr.samples.map(function (c) { return [{ x: Z.org.x + (c % nxz + 0.5) * clz, y: Z.org.y + ((((c / nxz) | 0) % Z.ny) + 0.5) * clz, z: Z.org.z + (((c / nxyz) | 0) + 0.5) * clz }, zz6]; });
+      zj.push({ z: zz6, lamps: ls, samp: sp, s: sMed }); });
+    for (var it2 = 0; it2 < 3; it2++) { var irz = new Map();
+      zj.forEach(function (r) { var e = 0; r.samp.forEach(function (sp2) { if (!irz.has(sp2[1])) irz.set(sp2[1], irZ(sp2[1])); e += Edir(sp2[0], sp2[1]) + irz.get(sp2[1]); }); r.E = e / r.samp.length * luxPer; });
+      zj.forEach(function (r) { if (r.E > 0) { r.s *= tgt / r.E; r.lamps.forEach(function (li3) { scale[li3] = r.s; }); } }); }
+    var zs0 = zj.map(function (r) { return r.s; }).sort(function (a, b) { return a - b; }), zP90 = zs0.length ? zs0[Math.floor(zs0.length * 0.9)] : sMed, zCapped = 0;
+    zj.forEach(function (r) { if (r.s > zP90) { r.s = zP90; zCapped++; r.lamps.forEach(function (li4) { scale[li4] = zP90; }); } });
+    var zAch = []; { var irz2 = new Map(); zj.forEach(function (r) { var e = 0; r.samp.forEach(function (sp3) { if (!irz2.has(sp3[1])) irz2.set(sp3[1], irZ(sp3[1])); e += Edir(sp3[0], sp3[1]) + irz2.get(sp3[1]); }); zAch.push(e / r.samp.length * luxPer / tgt); }); }
+    zAch.sort(function (a, b) { return a - b; });
+    var zLamps = zj.reduce(function (t, r) { return t + r.lamps.length; }, 0);
+    console.log('§LAMP_EN_ZONE zones=' + zj.length + ' lamps=' + zLamps + ' (of ' + unassignedCount() + ' in no room) target=' + tgt + 'lx scale p10/p50/p90=' + (zs0.length ? [zs0[Math.floor(zs0.length * 0.1)], zs0[zs0.length >> 1], zP90].map(function (v) { return v.toFixed(3); }).join('/') : '-') +
+      ' cappedAtP90=' + zCapped + ' achieved E/EN p10/p50/p90=' + (zAch.length ? [zAch[Math.floor(zAch.length * 0.1)], zAch[zAch.length >> 1], zAch[Math.floor(zAch.length * 0.9)]].map(function (v) { return v.toFixed(2); }).join('/') : '-'));
+    function unassignedCount() { var u = 0; for (var q6 = 0; q6 < n; q6++) if (room[q6] < 0) u++; return u; }
     { var irc2 = new Map(); judged.forEach(function (r) { var e = 0; r.samp.forEach(function (sp) { if (!irc2.has(sp[1])) irc2.set(sp[1], irZ(sp[1])); e += Edir(sp[0], sp[1]) + irc2.get(sp[1]); }); r.E = e / r.samp.length * luxPer; }); }
     judged.forEach(function (r) { achieved.push(r.E / r.row[1]); });
     for (var l3 = 0; l3 < n; l3++) { var q4 = L[l3], sc = scale[l3]; q4.r = q4.__r0 * sc; q4.g = q4.__g0 * sc; q4.b = q4.__b0 * sc; q4.I = q4.__I0 * sc; q4.en = sc; }
