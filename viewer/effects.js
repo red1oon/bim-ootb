@@ -3288,6 +3288,7 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   function _stillCascadeApply() {
     var t0 = performance.now(), F = _fitState && _fitState.last, cam = A.camera, sun = A.sun;
+    A._csmUncovered = null;   // §CSM_NEAR_LEAK: set only on the cascades path below (single / VACUOUS: not judged)
     if (!F || !_csmLights.length) return;
     cam.updateMatrixWorld();
     var rb = _csmReadback(cam, F.inv);
@@ -3303,7 +3304,10 @@ async function setupEffects(A, renderer, scene, camera) {
       w0.set(xy[0], xy[1], 0).applyMatrix4(sc0.matrixWorld); w1.set(xy[0], xy[1], -1).applyMatrix4(sc0.matrixWorld);
       var dy = w1.y - w0.y; if (Math.abs(dy) < 1e-9) return;
       [gy, yTop].forEach(function(yy) { if (yy == null || !isFinite(yy)) return; var s = (yy - w0.y) / dy; vd(w0.x + (w1.x - w0.x) * s, yy, w0.z + (w1.z - w0.z) * s); }); });
-    // zMin floor 1 m (watchdog red1-c6: the Terminal cascade 0 spanned 0.35-3.19 m, a wasted slice)
+    // zMin floor 1 m (watchdog red1-c6: the Terminal cascade 0 spanned 0.35-3.19 m, a wasted slice) — the floor places the SPLITS only.
+    // §CSM_NEAR_LEAK (2026-09-26, S1): cascade 0's BOX is fitted from cam.near (fitsFor below). Fitted from the 1 m floor, every
+    // surface nearer than 1 m sat in no cascade box, the shader's D3 fallback lit it, and a wall 0.9 m away took full sun through
+    // the roof (Clinic S1 pose: 249/249 sun-facing clipped samples ray-blocked; blown 9.5% -> 0.04% with cascades off).
     var zMin = Math.max(cam.near, 1, rb.zMin), zMax = Math.min(rb.zMax, zEdge);
     var Hpx = A.renderer.domElement.height, th = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2), pix = function(d) { return d * 2 * th / Hpx; };
     if (!(rb.n > 0 && zMax > zMin * 1.001)) {
@@ -3315,7 +3319,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _csmLights.forEach(function(L) { L.position.copy(sun.position); L.target.position.copy(sun.target.position); L.target.updateMatrixWorld(); L.shadow.mapSize.set(size, size); L.userData.csmUsed = false; });
     var fitsFor = function(m, light) {
       var CC = m === CSM_M ? C : _csmSplits(zMin, zMax, m), outs = [];
-      for (var c = 0; c < m; c++) outs.push(_cascadeFit({ a: c ? CC[c] - CSM_BLEND * (CC[c] - CC[c - 1]) : CC[0], b: CC[c + 1], size: size, R: R, pts: rb.pts, light: light ? (c ? _csmLights[c - 1] : sun) : null }, false));
+      for (var c = 0; c < m; c++) outs.push(_cascadeFit({ a: c ? CC[c] - CSM_BLEND * (CC[c] - CC[c - 1]) : (A._csmNearFix === false ? CC[0] : Math.min(CC[0], cam.near)), b: CC[c + 1], size: size, R: R, pts: rb.pts, light: light ? (c ? _csmLights[c - 1] : sun) : null }, false));
       outs.forEach(function(o, c) { o.near = CC[c]; o.tpp = o.used ? o.texel / pix(CC[c]) : NaN; });
       return outs;
     };
@@ -3340,12 +3344,19 @@ async function setupEffects(A, renderer, scene, camera) {
       idx.push(slotOf(L)); lastUsed = c + 1;
     });
     for (var c2 = cs.length; c2 < 4; c2++) { idx.push(null); nearA.push(0); farA.push(0); }
+    // §CSM_NEAR_LEAK witness: readback points the shader would light for want of a box — depth cascade D (splits), then the first
+    // used cascade k >= D whose box holds the point (shadow_cascade.js D3); none = uncovered = sun leaks. Points outside the §STILL_SHADOW_FIT
+    // union (building ∪ kept props = every caster) are skipped. Target 0.
+    var unc = 0, P2 = rb.pts, UU = F.U; for (var ip = 0; ip < P2.length; ip += 3) { var pz = P2[ip + 2], D0 = 0; for (var kd = 0; kd < 3; kd++) if (kd + 1 < lastUsed && pz > farA[kd]) D0 = kd + 1;
+      var cov = P2[ip] < UU.x0 || P2[ip] > UU.x1 || P2[ip + 1] < UU.y0 || P2[ip + 1] > UU.y1;   // outside the casters' light-space rect: nothing can shadow it, lit is right
+      for (var kc = D0; kc < lastUsed && !cov; kc++) { var o2 = cs[kc]; if (o2.used && P2[ip] >= o2.l && P2[ip] <= o2.r && P2[ip + 1] >= o2.b && P2[ip + 1] <= o2.t) cov = true; } if (!cov) unc++; }
+    A._csmUncovered = unc;
     window.ShadowCascade.set(true, lastUsed, slotOf(sun), idx, nearA, farA, CSM_BLEND);
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
     var f = function(a, k, d) { return '[' + a.map(function(o) { var v = typeof k === 'function' ? k(o) : o[k]; return (v == null || !isFinite(v)) ? 'NaN' : (+v).toFixed(d); }).join(',') + ']'; };
     var E = function(k) { return function(o) { return o.edge ? o.edge[k] : NaN; }; };
     cs.forEach(function(o, c) { if (o.line) console.log(o.line + ' cascade=' + c + ' slice=[' + o.sa.toFixed(2) + ',' + o.sb.toFixed(2) + ']m box=' + o.w.toFixed(1) + 'x' + o.h.toFixed(1) + 'm'); });
-    console.log('§STILL_SHADOW_CASCADE m=' + CSM_M + ' used=' + used + ' mode=cascades(worst ' + worst.toFixed(4) + ' <= single ' + sTexel.toFixed(4) + ' at ' + sSize + ') splits=[' + C.map(function(x) { return x.toFixed(2); }).join(',') + ']' +
+    console.log('§STILL_SHADOW_CASCADE uncovered=' + unc + '/' + (P2.length / 3) + ' m=' + CSM_M + ' used=' + used + ' mode=cascades(worst ' + worst.toFixed(4) + ' <= single ' + sTexel.toFixed(4) + ' at ' + sSize + ') splits=[' + C.map(function(x) { return x.toFixed(2); }).join(',') + ']' +
       ' texel=' + f(cs, 'texel', 4) + ' normalBias=' + f(cs, E('nb'), 4) + ' thinCasterRisk=' + f(cs, E('nb'), 4) + ' bias=' + f(cs, E('bias'), 7) +
       ' range=' + f(cs, E('range'), 1) + ' gap45=' + f(cs, E('g45'), 4) + ' gap20=' + f(cs, E('g20'), 4) + ' texelPerPixel=' + f(cs, 'tpp', 2) +
       // §THIN_PX rule (watchdog red1-c6): thinCasterRisk <= max(0.05 m, 1.5 x the pixel footprint at the cascade's near split)
