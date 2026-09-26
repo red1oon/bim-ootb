@@ -35,7 +35,7 @@
     var t0 = performance.now(), THREE = global.THREE, LZ = global.LightZones, Z = LZ && LZ.get ? LZ.get() : null;
     hook();
     if (!THREE || !A || !A.camera || !A.scene) return null;
-    var cam = A.camera, cp = cam.position, out = { unlit: 0, unlitCeil: 0, glassOpaque: 0, glassStock: 0, fieldBad: 0, samples: 0, capDropNear: 0, extLightsDay: 0, glassLow: 0, portalsRetired: 0, expStep: 0, guard: guard.shaderError + guard.contextLost };
+    var cam = A.camera, cp = cam.position, out = { unlit: 0, unlitCeil: 0, irOnly: 0, irOnlyCeil: 0, glassOpaque: 0, glassStock: 0, fieldBad: 0, samples: 0, capDropNear: 0, extLightsDay: 0, glassLow: 0, portalsRetired: 0, expStep: 0, guard: guard.shaderError + guard.contextLost };
     var sd = A.sun ? A.sun.position.clone().sub(A.sun.target.position).normalize() : new THREE.Vector3(0, 1, 0), sunUp = sd.y > 0 && A.sun && A.sun.intensity > 0;
     // camera side
     var camZ = Z ? LZ.at(cp) : -1, camOutside = !Z || camZ === 0 || camZ === -1;
@@ -112,6 +112,7 @@
     var ex = A.renderer ? A.renderer.toneMappingExposure : null;
     if (ex && prevExp) out.expStep = +(Math.log2(ex / prevExp)).toFixed(2); prevExp = ex;
     // unlit samples: voxel march through the zone grid
+    var unlitPts = [];   // §FAULT unlit sample detail (grid cell of 16x9 + world point) for probes; not in the PNG
     if (Z) {
       var org = Z.org, cs = Z.cell, nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, gT = Z.glassT, G = Z.field && Z.field.G;
       var SOLID = LZ.SOLID, SKY_BIT = LZ.SKY_BIT || 0x4000, ZM = LZ.ZONE_MASK || 0x3FFF;
@@ -146,8 +147,12 @@
         if (!lit) for (var li = 0; li < lamps.length && !lit; li++) { var l = lamps[li], lz = (l.userData && l.userData.sourcedZone) || 0; if (lz && lz < 65534 && lz !== zid) continue;
           q.copy(l.position).sub(P); var d2 = q.length(); if (l.distance > 0 && d2 >= l.distance) continue; q.divideScalar(d2 || 1); if (N.dot(q) > 0) lit = true; }
         if (lit) continue;
+        // S2 (2026-09-26): §IRC_MAX lights every zone with interreflection; a sample whose zone has IR > 0 is lit (flat, zone-mean),
+        // not unlit — Hospital S2 pose: the 21 'unlit' ceiling samples displayed 70/255 (frame p10) with IR, 0 with &ir=0.
+        if (global.SourcedLight && global.SourcedLight.irZone && global.SourcedLight.irZone(zid) > 0) { out.irOnly++; if (N.y < -0.5) out.irOnlyCeil++; continue; }
         out.unlit++;
         if (N.y < -0.5) out.unlitCeil++;
+        unlitPts.push({ gx: gx, gy: gy, p: [+P.x.toFixed(2), +P.y.toFixed(2), +P.z.toFixed(2)], n: [N.x, N.y, N.z], zone: zid });
         fx.forEach(function (f) { if (f.__slz !== undefined && f.__slz !== zid) return; var dx = f.x - P.x, dy = f.y - P.y, dz = f.z - P.z, dd = Math.sqrt(dx * dx + dy * dy + dz * dz); if (dd >= range || (dx * N.x + dy * N.y + dz * N.z) <= 0) return;
           var key = Math.round(f.x * 20) + ',' + Math.round(f.y * 20) + ',' + Math.round(f.z * 20); if (!kept.has(key)) dropped.add(key); });
       }
@@ -158,11 +163,11 @@
     if (dataOn) { try { var lc = global.SourcedLight.lampCost(A); if (lc) { out.lampListMean = lc.meanList; out.lampListMax = lc.maxList; out.lampPassMean = lc.meanLit; } } catch (eLC) { console.warn('§LAMP_UNCAPPED_COST failed: ' + eLC.message); } }
     out.csmUncovered = (global.ShadowCascade && global.ShadowCascade.state().csm[0] > 0.5 && A._csmUncovered != null) ? A._csmUncovered : null;   // §CSM_NEAR_LEAK (null = not judged: cascades off / single / VACUOUS)
     var fault = out.csmUncovered > 0 || out.unlit > 0 || out.fieldBad > 0 || out.glassOpaque > 0 || out.glassPlateLost > 0 || out.glassReflDark > 0 || out.glassStock > 0 || out.capDropNear > 0 || out.extLightsDay > 0 || out.glassLow > 0 || out.guard > 0;
-    var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay +
+    var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' irOnly=' + out.irOnly + ' (ceil ' + out.irOnlyCeil + ') fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay +
       (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassPlateLost=' + out.glassPlateLost + ' (see-through plates db=' + out.plates.glassDb + ' drawnGlass=' + out.plates.glassDrawn + ' drawnOpaque=' + out.plates.lost + ' notDrawn=' + out.plates.notDrawn + (out.plates.lostSample ? ' e.g. ' + out.plates.lostSample.join(',') : '') + ')' + ' glassReflDark=' + out.glassReflDark + '/' + out.glassReflSamples + ' (old sky-view gate: ' + out.glassReflDarkOldGate + ')' + ' glassStock=' + out.glassStock + ' (untagged ' + out.glassStockUntagged + ')' + ' portalsRetired=' + out.portalsRetired +
       ' expStep=' + out.expStep + ' csmUncovered=' + (out.csmUncovered == null ? 'n/a' : out.csmUncovered) + ' guard=' + out.guard + (out.lampListMean != null ? ' lampList mean/max=' + out.lampListMean + '/' + out.lampListMax + ' zonePass=' + out.lampPassMean : '') + ' ms=' + (performance.now() - t0).toFixed(1);
     if (fault) console.warn(line); else console.log(line);
-    out.fault = fault; A._stillFaultLast = out;   // §STILL_POSE_PNG copies it into the saved still
+    out.fault = fault; A._stillFaultLast = out; A._stillUnlitPts = unlitPts;   // §STILL_POSE_PNG copies it into the saved still
     return out;
   }
   global.StillFault = { report: report, hook: hook, guard: function () { return guard; } };
