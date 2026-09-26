@@ -751,9 +751,10 @@
     if (!meterMat) meterMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevOv = A.scene.overrideMaterial, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
     var buf = new Float32Array(METER_W * METER_H * 4);
-    // §IRC_MAX v2: the meter reads DIRECT light, as the approved references were metered (the SSGI bounce is added after the
-    // meter and was never metered); the zone interreflection is indirect light too, so it is left out of the meter's render
-    var irs = IRP[1]; IRP[1] = 0;
+    // §IRC_MAX v2: the meter reads ALL the light a camera would see, the zone interreflection included (decided 2026-09-26: the
+    // physically consistent meter; red1 delegated: "darker is realistic"). Refs: Clinic corridor 77.7 -> 72.2, Hospital indoor
+    // 83.5 -> 72.3 composite mean. (Direct-only metering read 97.7 / 107.4.)
+    var irs = IRP[1];
     try { A.scene.background = null; A.scene.fog = null; A.scene.overrideMaterial = meterMat; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
       // the override material is not in the scene, so the per-render push never reaches it: render once (builds its programs),
       // push the zone texture + uniforms into each built program, render again (Clinic 2026-09-25: unpushed, the meter saw every
