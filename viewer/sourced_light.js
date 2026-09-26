@@ -424,7 +424,12 @@
   // (zone cell faces against SOLID, <= IR_FACES per zone, even stride). Daylight: V12 irc_z (LightZones.field ircAll) x the hemi
   // sky irradiance. One RGBA32F texel per zone. &ir=0 = off.
   var irLampZ = null;   // per zone lamp-IR luminance (three units), §LUX_CHECK / §LAMP_EN
-  var irTotZ = null;    // per zone TOTAL IR luminance (lamp + day), §FAULT irOnly (S2: the unlit counter was IR-blind)
+  var irTotZ = null;    // per zone TOTAL IR luminance (lamp + day [+ cove]), §FAULT irOnly (S2: the unlit counter was IR-blind)
+  // §COVE_IR (red1 2026-09-26: "Yes as long it's not left in the dark"): the cove is direct light in its zone, so it enters the
+  // zone's interreflection like the lamps do: E_ir = R/(1-R) x the cove's direct E. The cove is sized so direct + IR = the
+  // zone's deficit (direct = deficit x (1-R), IR = deficit x R), so the level holds and floor-facing undersides / shaft bottoms,
+  // which no perimeter lobe reaches, get the bounced part. irBase = the lamp+day IR; irCoveApply adds coveLast.irAdd on top.
+  var irBase = null, irBaseTot = null, irW = 0, irH = 0, irCoveKey = null;
   var IRP = new Float32Array(4), irTex = null, dIr = null, irKey = null, irFaces = null, irLast = null, IR_FACES = 4000, IR_R = 0.5;
   function irOn(A) { return !(A._stillIr === false || /[?&]ir=0/.test(location.search)); }
   function irFacesOf(Z) {   // camera-free, per zone grid: sampled surface faces [x, y, z, nx, ny, nz] per zone
@@ -461,6 +466,7 @@
       if (ic > 0) { zd++; maxD = Math.max(maxD, ic * (hc[0] + hc[1] + hc[2]) / 3); er += ic * hc[0]; eg += ic * hc[1]; eb += ic * hc[2]; }
       buf[z * 4] = er; buf[z * 4 + 1] = eg; buf[z * 4 + 2] = eb; buf[z * 4 + 3] = 1; irTotZ[z] = 0.2126 * er + 0.7152 * eg + 0.0722 * eb;
     }
+    irBase = buf.slice(); irBaseTot = irTotZ.slice(); irW = W; irH = H; irCoveKey = null;   // §COVE_IR: irCoveApply re-adds the cove
     if (irTex) irTex.dispose(); irTex = lampTex2D(THREE, buf, W, H);
     try { A.renderer.initTexture(irTex); } catch (eI) { console.warn('§IRC_MAX upload failed: ' + eI.message); return null; }
     IRP[0] = 1; IRP[1] = 1; irKey = key; lampPushAll = true;
@@ -965,6 +971,18 @@
         if (f >= 0) { V[q3 * 3] = V[f * 3]; V[q3 * 3 + 1] = V[f * 3 + 1]; V[q3 * 3 + 2] = V[f * 3 + 2]; U[q3] = U[f]; } } }
     return work;
   }
+  function irCoveApply(A) {
+    if (!(IRP[0] > 0.5) || !irBase) return;
+    var add = (COVEP[3] > 0.5 && coveLast && coveLast.irAdd) ? coveLast.irAdd : null, k = irKey + '|' + (add ? coveKey : 'nocove');
+    if (k === irCoveKey) return;
+    var THREE = global.THREE, buf = irBase.slice(), tot = irBaseTot.slice(), nz = 0, mx = 0;
+    if (add) for (var z = 1; z < add.length && z < tot.length; z++) { var a = add[z]; if (!(a > 0)) continue; nz++; if (a > mx) mx = a;
+      buf[z * 4] += a * COVEP[0]; buf[z * 4 + 1] += a * COVEP[1]; buf[z * 4 + 2] += a * COVEP[2]; tot[z] += a; }
+    var t = lampTex2D(THREE, buf, irW, irH);
+    try { A.renderer.initTexture(t); } catch (eI) { t.dispose(); console.warn('§COVE_IR upload failed: ' + eI.message + ' — IR without the cove'); return; }
+    if (irTex) irTex.dispose(); irTex = t; irTotZ = tot; irCoveKey = k; lampPushAll = true;
+    console.log('§COVE_IR ' + (add ? 'on zones=' + nz + ' maxE=' + mx.toFixed(5) + ' (E_ir = R/(1-R) x cove direct, R=' + IR_R + '; direct = deficit x (1-R))' : 'off (IR = lamps + day only)'));
+  }
   function coveBuild(A, Z) {
     var THREE = global.THREE; COVEP[3] = 0;
     if (!coveOn(A)) { console.log('§COVE_LIGHT off (&cove=0 / APP._stillCove=false)'); coveLast = null; return null; }
@@ -974,7 +992,7 @@
     if (key === coveKey && coveTex) { COVEP[3] = 1; coveStrip(A); return coveLast; }
     coveStripOff(A); if (coveLast && coveLast.geom) coveLast.geom.dispose();   // a rebuild (lamp set / level changed) replaces the strip too
     var t0 = performance.now(), T = coveTypes(Z), nzn = Z.zones, S = X.S, nx = Z.nx, nxy = nx * Z.ny, N = Z.zone.length, luxPer = X.luxPer;
-    var zones = new Array(nzn + 1), wpE = new Float32Array(nzn + 1), qual = [], byQ = { room: 0, void: 0, crevice: 0, shaft: 0 }, defs = [], noEmit = 0, emitters = 0, perimM = 0, cellsN = 0, work = 0, strided = 0, strip = [], vs = [], fieldBuilt = 0;
+    var zones = new Array(nzn + 1), irAdd = new Float32Array(nzn + 1), wpE = new Float32Array(nzn + 1), qual = [], byQ = { room: 0, void: 0, crevice: 0, shaft: 0 }, defs = [], noEmit = 0, emitters = 0, perimM = 0, cellsN = 0, work = 0, strided = 0, strip = [], vs = [], fieldBuilt = 0;
     var CF = Z.coveF || (Z.coveF = new Map());
     for (var z = 1; z <= nzn; z++) { var t = T.type[z], lv = t === 1 ? (X.en[z] != null ? X.en[z] : COVE_UNKNOWN_LUX) : TRIM_LUX_VOID, ex = X.existing[z], df = Math.max(0, lv - ex);
       if (!(df > 0.5)) continue;
@@ -992,12 +1010,14 @@
       else if (F0 === null) { noEmit++; continue; }
       var E = F0.E, n = F0.n, st = F0.st, V = F0.V, U = F0.U, e1 = F0.e1, ns = F0.ns, calib = F0.calib; if (st > 1) strided++;
       if (!(ns > 0 && e1 > 0)) { noEmit++; continue; }
-      var scale = (df / luxPer) / (e1 / ns), sum = 0, sq = 0, nz0 = 0, mx = 0, upN = 0, upMx = 0;
+      var dfDir = irOn(A) && IRP[0] > 0.5 ? df * (1 - IR_R) : df;   // §COVE_IR: the rest arrives as the zone's IR (irAdd below)
+      irAdd[z] = df - dfDir > 0 ? (df - dfDir) / luxPer : 0;
+      var scale = (dfDir / luxPer) / (e1 / ns), sum = 0, sq = 0, nz0 = 0, mx = 0, upN = 0, upMx = 0;
       for (var q2 = 0; q2 < n; q2++) { var mv = scale * Math.sqrt(V[q2 * 3] * V[q2 * 3] + V[q2 * 3 + 1] * V[q2 * 3 + 1] + V[q2 * 3 + 2] * V[q2 * 3 + 2]); sum += mv; sq += mv * mv; if (mv > 0) nz0++; if (mv > mx) mx = mv; var uv = scale * U[q2]; if (uv > 0) upN++; if (uv > upMx) upMx = uv; }
       var mean = sum / n, cvv = mean > 0 ? Math.sqrt(Math.max(0, sq / n - mean * mean)) / mean : 0;
       wpE[z] = calib === 'wp' ? df : 0;   // the working-plane cove E (lux) the §LUX_CHECK rows add; zones without a plane report 0 there
       qual.push(z); byQ[COVE_TYPES[t]]++; defs.push(df); emitters += E.e.length / 4; perimM += E.perimM; cellsN += n; for (var s0 = 0; s0 < E.strip.length; s0++) strip.push(E.strip[s0]);
-      zones[z] = { z: z, type: COVE_TYPES[t], existingE: +ex.toFixed(1), level: lv, deficit: +df.toFixed(1), coveE: +(calib === 'wp' ? df : mean * luxPer).toFixed(1), calib: calib, emitters: E.e.length / 4, perimeterM: +E.perimM.toFixed(1), cells: n, litCells: nz0, upCells: upN, cv: +cvv.toFixed(3), maxE: +(mx * luxPer).toFixed(1), maxUpE: +(upMx * luxPer).toFixed(1), stride: st, m3: Z.zoneInfo[z - 1].m3 };
+      zones[z] = { z: z, type: COVE_TYPES[t], existingE: +ex.toFixed(1), level: lv, deficit: +df.toFixed(1), coveE: +(calib === 'wp' ? df : mean * luxPer + irAdd[z] * luxPer).toFixed(1), coveIR: +(irAdd[z] * luxPer).toFixed(1), calib: calib, emitters: E.e.length / 4, perimeterM: +E.perimM.toFixed(1), cells: n, litCells: nz0, upCells: upN, cv: +cvv.toFixed(3), maxE: +(mx * luxPer).toFixed(1), maxUpE: +(upMx * luxPer).toFixed(1), stride: st, m3: Z.zoneInfo[z - 1].m3 };
       vs.push([z, V, scale, Math.max(mx, upMx), U]); }
     var tf = performance.now(), maxAll = 0; vs.forEach(function (v) { if (v[3] > maxAll) maxAll = v[3]; });
     if (!qual.length || !(maxAll > 0)) { coveLast = { key: key, zones: null, wpE: wpE, qualified: 0 }; coveKey = key;
@@ -1019,7 +1039,7 @@
     var col = new THREE.Color(COVE_COLOUR), lum = 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b;
     COVEP[0] = col.r / lum; COVEP[1] = col.g / lum; COVEP[2] = col.b / lum; COVEP[3] = 1; COVEQ[0] = lnMin; COVEQ[1] = lnR; coveKey = key; lampPushAll = true;
     defs.sort(function (a, b) { return a - b; }); var pq = function (f) { return defs[Math.min(defs.length - 1, Math.floor(defs.length * f))].toFixed(0); };
-    coveLast = { key: key, zones: zones, wpE: wpE, qualified: qual.length, byType: byQ, strip: strip, geom: null, stats: { emitters: emitters, perimeterM: +perimM.toFixed(1), cells: cellsN, strided: strided, noEdge: noEmit, work: work, memMB: +(arr.byteLength / 1e6).toFixed(1), QC: QC, maxE: +(maxAll * luxPer).toFixed(1), buildMs: Math.round(tf - t0), texMs: Math.round(performance.now() - tf), typesMs: T.ms } };
+    coveLast = { key: key, zones: zones, irAdd: irAdd, wpE: wpE, qualified: qual.length, byType: byQ, strip: strip, geom: null, stats: { emitters: emitters, perimeterM: +perimM.toFixed(1), cells: cellsN, strided: strided, noEdge: noEmit, work: work, memMB: +(arr.byteLength / 1e6).toFixed(1), QC: QC, maxE: +(maxAll * luxPer).toFixed(1), buildMs: Math.round(tf - t0), texMs: Math.round(performance.now() - tf), typesMs: T.ms } };
     console.log('§COVE_LIGHT build bld=' + Z.bld + ' zones=' + nzn + ' types ' + JSON.stringify(T.by) + ' qualified=' + qual.length + ' byType ' + JSON.stringify(byQ) + ' deficit lx p10/p50/p90/max=' + pq(0.1) + '/' + pq(0.5) + '/' + pq(0.9) + '/' + defs[defs.length - 1].toFixed(0) +
       ' emitters=' + emitters + ' perimeterM=' + perimM.toFixed(1) + ' cells=' + cellsN + ' (strided zones ' + strided + ', below level but no ceiling edge ' + noEmit + ') fieldsMarched=' + fieldBuilt + ' (cached ' + (qual.length - fieldBuilt) + ') marchSteps=' + work + ' memMB=' + coveLast.stats.memMB + ' (RGBA8UI log-8, range 2^' + COVE_LOG_RANGE + ', maxE=' + coveLast.stats.maxE + ' lx) buildMs=' + coveLast.stats.buildMs + ' (types ' + T.ms + ') texMs=' + coveLast.stats.texMs + ' uploadMs=' + upMs.toFixed(0) +
       ' level: room=EN row | unknown use ' + COVE_UNKNOWN_LUX + ' lx (6.1.1 circulation) | void/crevice/shaft TRIM_LUX_VOID=' + TRIM_LUX_VOID + ' lx (EN 12464-1 circulation row via secondary summaries, primary not consulted) colour=0x' + COVE_COLOUR.toString(16) + ' R=' + COVE_R + 'm');
@@ -1078,7 +1098,8 @@
     active = true;
     try { lampBuild(A); } catch (eLB) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB.message); lampFail(A, 'build threw'); }
     try { irBuild(A); } catch (eIR) { IRP[0] = 0; console.warn('§IRC_MAX build failed: ' + eIR.message); }
-    try { coveBuild(A, Z); } catch (eCV) { COVEP[3] = 0; coveLast = null; console.warn('§COVE_LIGHT build failed: ' + eCV.message + ' — cove off'); }   // §COVE_LIGHT: after lamps + IR (the deficit reads them), before the meter (it must see the cove)
+    try { coveBuild(A, Z); } catch (eCV) { COVEP[3] = 0; coveLast = null; console.warn('§COVE_LIGHT build failed: ' + eCV.message + ' — cove off'); }
+    try { irCoveApply(A); } catch (eCI) { console.warn('§COVE_IR failed: ' + eCI.message); }   // §COVE_LIGHT: after lamps + IR (the deficit reads them), before the meter (it must see the cove)
     var set = new Set(); A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) set.add(m); }); });
     var pushed = 0; set.forEach(function (m) { if (push(A, m)) pushed++; });
     var b = bindLights(A, A.camera);
@@ -1088,7 +1109,7 @@
     var own = function (renderer, scene, camera) {
       if (active) {
         if (A._lampDataOn && A._lampData && A._lampData.ver !== lampVer) { try { lampBuild(A); } catch (eLB2) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB2.message); lampFail(A, 'build threw'); }
-          try { irBuild(A); coveBuild(A, LZ.get()); } catch (eCV2) { COVEP[3] = 0; console.warn('§COVE_LIGHT rebuild failed: ' + eCV2.message); } }   // §COVE_LIGHT: a lamp change moves the deficit
+          try { irBuild(A); coveBuild(A, LZ.get()); } catch (eCV2) { COVEP[3] = 0; console.warn('§COVE_LIGHT rebuild failed: ' + eCV2.message); } try { irCoveApply(A); } catch (eCI2) { console.warn('§COVE_IR failed: ' + eCI2.message); } }   // §COVE_LIGHT: a lamp change moves the deficit
         else if (!A._lampDataOn && LAMP[0] > 0.5) { LAMP[0] = 0; lampPushAll = true; }
         try { irBuild(A); } catch (eIR2) { IRP[0] = 0; }   // cheap when nothing changed (key compare)
         var bb = bindLights(A, camera);
