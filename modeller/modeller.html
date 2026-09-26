@@ -31,6 +31,8 @@
   .toast.error { border-color: #7a2e2e; background: rgba(40,20,22,0.96); color: #f3c9c9; }
   .toast.ok { border-color: #2e6a3a; color: #c7e8cf; }
   .toast .ti { font-weight: 700; flex: 0 0 auto; }
+  .toast .toast-act { flex: 0 0 auto; margin-left: 4px; padding: 2px 10px; border-radius: 6px; border: 1px solid #8a6a2a;
+    background: #3a2c12; color: #f0d9a8; font: inherit; cursor: pointer; }
   #title { position: fixed; top: 12px; right: 14px; color: #4a5163; font-size: 11px; z-index: 10; letter-spacing: .08em; }
 
   /* ── Toolbar as a bottom-right WRAPPING pill rail (a new style): icon-only glass pills stack UP from the ⋯
@@ -360,7 +362,8 @@ const stat = document.getElementById('stat');
 // ~7s, click to dismiss, stack capped) that the status bar can't clobber. setStat auto-toasts any 'FAIL …' so all
 // 11 catch-block error paths surface without touching each one; the status bar still shows the terse line.
 let _toastStack = null;
-function toast(msg, kind) {
+function toast(msg, kind, opts) {
+  opts = opts || {};
   if (!_toastStack) { _toastStack = document.createElement('div'); _toastStack.id = 'toast-stack'; document.body.appendChild(_toastStack); }
   const t = document.createElement('div'); t.className = 'toast' + (kind ? ' ' + kind : '');
   const icon = kind === 'error' ? '⚠' : kind === 'ok' ? '✓' : 'ℹ';
@@ -371,7 +374,13 @@ function toast(msg, kind) {
   let done = false;
   const dismiss = () => { if (done) return; done = true; t.classList.remove('show'); setTimeout(() => t.remove(), 220); };
   t.addEventListener('click', dismiss);
-  setTimeout(dismiss, kind === 'error' ? 7000 : 4000);   // errors linger longer than info
+  // §ORANGE-ACCEPT: optional one-click action (e.g. Accept a suggestion); clicking the rest of the toast still dismisses (= ignore).
+  if (opts.action) {
+    const btn = document.createElement('button'); btn.className = 'toast-act'; btn.textContent = opts.action.label;
+    btn.addEventListener('click', (e) => { e.stopPropagation(); dismiss(); opts.action.fn(); });
+    t.appendChild(btn);
+  }
+  setTimeout(dismiss, opts.ms || (kind === 'error' ? 7000 : 4000));   // errors linger longer than info
   while (_toastStack.children.length > 4) _toastStack.removeChild(_toastStack.firstChild);   // cap the stack
   console.log('§TOAST kind=' + (kind || 'info') + ' ' + msg);
   return t;
@@ -2717,16 +2726,59 @@ function _gateRel() {
 // evaluate conformity on the just-committed edit; toast + emissive-highlight the offending pairs; return a status tag.
 window.__gateBoxes = _gateBoxes;   // test hook (mirrors window.__commitMove) — read live world AABBs, W-SAVE-COMPLETEIT E2E fixture engineering
 window.__gateRel = _gateRel;       // test hook — read the live abuts/hostOf relation (same)
+// Heal ops for healable ORANGE findings (SdgSave.healOp) PLUS a cascade ride for any REAL hosted fillings of the healed
+// target — mirrors commitMove()'s own SdgCascade.ridersFor block (a moved HOST drags its door/window riders). Without the
+// ride, healing a wall by translating it would silently manufacture a BRAND NEW door-out RED (the wall's real door left
+// behind). Shared by runSave's auto-heal and the edit-time Accept (§ORANGE-ACCEPT).
+function _healOps(healable) {
+  const healTargets = new Set(healable.map(f => f.a)), movedFids = new Set(healTargets), riderSeen = new Set(), ops = [];
+  healable.forEach(function (f) {
+    const op = window.SdgSave.healOp(f);
+    ops.push(op);
+    if (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid) {
+      const riders = window.SdgCascade.ridersFor([f.a], window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, healTargets);
+      riders.forEach(function (rfid) {
+        if (riderSeen.has(rfid)) return; riderSeen.add(rfid); movedFids.add(rfid);
+        ops.push({ op_type: 'GEOM_MOVE', params: { parent: rfid, dx: op.params.dx, dy: op.params.dy, dz: op.params.dz, induced: 'sdg-autoheal-ride' } });
+      });
+    }
+  });
+  return { ops, riderSeen, movedFids };
+}
+// §ORANGE-ACCEPT (SPEC_ORANGE_ACCEPT.md): apply the last edit's healable ORANGE suggestions as ONE signed gesture (one
+// Ctrl+Z), re-verify each pair, re-check the scene ONCE. One hop: anything new is reported, never applied. RED never.
+async function acceptOrange() {
+  const healable = (window.__gateOrange || []).slice();
+  window.__gateOrange = [];
+  if (!healable.length || !window.SdgSave) return { accepted: 0 };
+  const before = _gateBoxes();
+  const { ops, riderSeen, movedFids } = _healOps(healable);
+  await window.Bonsai.oplog.commitGesture(ops);
+  const after = _gateBoxes();
+  const closed = healable.map(f => window.SdgSave.reverifyGap(f, after, window.SdgGate.overlaps).closed);
+  const res = window.SdgGate.evaluate(before, after, Array.from(movedFids), _gateRel(), {});
+  console.log('§ORANGE-ACCEPT fixed=' + healable.length + ' riders=' + riderSeen.size + ' targets=' + healable.map(f => f.a).join(',') +
+    ' closed=' + JSON.stringify(closed) + ' red=' + res.red.length + ' orange=' + res.orange.length);
+  syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  if (res.red.length) toast('⛔ accepted ' + healable.length + ', but it caused ' + res.red.length + ' RED: ' + res.red.map(r => r.kind).join(', ') + ' — Ctrl+Z to take it back', 'error');
+  else toast('✓ accepted ' + healable.length + ' suggestion' + (healable.length > 1 ? 's' : '') + (res.orange.length ? ' (' + res.orange.length + ' new, not applied)' : ''), 'ok');
+  audioCue('commit');
+  return { accepted: healable.length, closed, red: res.red.length, orange: res.orange.length };
+}
+window.__acceptOrange = acceptOrange;   // test hook (mirrors window.__commitMove)
 function _runGate(before, moved) {
+  window.__gateOrange = [];                                   // §ORANGE-ACCEPT: suggestions belong to the edit just made only
   if (!(window.SdgGate && window.__arcFidByGuid)) return '';
   const res = window.SdgGate.evaluate(before, _gateBoxes(), moved, _gateRel(), {});
   if (!res.red.length && !res.orange.length) return '';
+  if (window.SdgSave) window.__gateOrange = window.SdgSave.planHeal(res.orange).healable;
   console.log('§GATE red=' + res.red.length + ' orange=' + res.orange.length + ' ' + JSON.stringify(res.red.slice(0, 3)) + ' ' + JSON.stringify(res.orange.slice(0, 3)));
   const hot = new Set(); res.red.forEach(r => { hot.add(r.a); hot.add(r.b); }); res.orange.forEach(o => { hot.add(o.a); hot.add(o.b); });
   const hex = res.red.length ? 0x661010 : 0x5a3a10;          // RED vs ORANGE emissive flash on the offending meshes
   const g = window.Bonsai.group(); if (g) g.children.forEach(m => { if (m.isMesh && m.userData && hot.has(m.userData.featureId)) _emis(m, hex); });
   if (res.red.length) toast('⛔ ' + res.red.length + ' conformity violation' + (res.red.length > 1 ? 's' : '') + ': ' + res.red.map(r => r.kind).join(', '), 'error');
-  else toast('⚠ ' + res.orange.length + ' suggestion' + (res.orange.length > 1 ? 's' : '') + ': ' + res.orange.map(o => o.kind).join(', ') + ' — accept or ignore', 'info');
+  else toast('⚠ ' + res.orange.length + ' suggestion' + (res.orange.length > 1 ? 's' : '') + ': ' + res.orange.map(o => o.kind).join(', ') + ' — accept or ignore', 'info',
+    window.__gateOrange.length ? { action: { label: 'Accept', fn: () => { acceptOrange(); } }, ms: 10000 } : {});
   return res.red.length ? ('⛔ ' + res.red.length + ' RED') : ('⚠ ' + res.orange.length + ' ORANGE');
 }
 async function commitMove(dx, dy, dz) {
@@ -2830,21 +2882,8 @@ async function runSave() {
     // commitMove()'s own SdgCascade.ridersFor block (a moved HOST drags its door/window riders). Without this,
     // healing a wall by translating it would silently manufacture a BRAND NEW door-out RED (the wall's real
     // door left behind), which would then re-block the very Save the heal was trying to unblock.
-    const healTargets = new Set(plan.healable.map(f => f.a));
-    healTargets.forEach(fid => healMovedFids.add(fid));
-    const riderSeen = new Set();
-    const ops = [];
-    plan.healable.forEach(function (f) {
-      const op = window.SdgSave.healOp(f);
-      ops.push(op);
-      if (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid) {
-        const riders = window.SdgCascade.ridersFor([f.a], window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, healTargets);
-        riders.forEach(function (rfid) {
-          if (riderSeen.has(rfid)) return; riderSeen.add(rfid); healMovedFids.add(rfid);
-          ops.push({ op_type: 'GEOM_MOVE', params: { parent: rfid, dx: op.params.dx, dy: op.params.dy, dz: op.params.dz, induced: 'sdg-autoheal-ride' } });
-        });
-      }
-    });
+    const { ops, riderSeen, movedFids } = _healOps(plan.healable);
+    movedFids.forEach(fid => healMovedFids.add(fid));
     await window.Bonsai.oplog.commitGesture(ops);               // ONE undo step for the whole auto-heal pass
     healedLog = plan.healable.map(function (f) { return { kind: f.kind, target: f.a, against: f.b, delta: f.proposedDelta }; });
     console.log('§SAVE_AUTOHEAL fixed=' + plan.healable.length + ' riders=' + riderSeen.size + ' targets=' + plan.healable.map(f => f.a).join(',') +
