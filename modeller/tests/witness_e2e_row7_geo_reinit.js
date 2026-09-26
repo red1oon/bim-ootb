@@ -18,7 +18,11 @@
  *                              fixture's own bytes as geoBuf logs centres=mesh:158 colRMS=0.1323 (median fit, red1 2026-09-26) and the tab reads 18×10:
  *                              the browser reproduces the node witness's number on the identical substrate.
  *   R5 CLEAN                 — no pageerror.
- * Needs network for R2/R3 (SampleCastle_geo.db from OCI); without it those two print as INCONCLUSIVE, not PASS.
+ *   R6 HGARAGE-ROTATED-GRID  — §ROW7-ROT (SPEC_ROW7_HGARAGE.md): the real HospitalGarage Open's §STRWALK-GEO line carries
+ *                              grid=17×29 rot=-2.000° and colRMS ≤ 0.07 m, and swbTabData().grid reads 17×29 — the lattice
+ *                              rotated −2° (its IfcSite RefDirection, 88°) is walked in its own frame on the REAL path.
+ *                              Red on the pre-fix base (15×103, colRMS 1.19 m, 102 one-column lines).
+ * Needs network for R2/R3/R6 (HospitalGarage_geo.db from OCI); without it those print as INCONCLUSIVE, not PASS.
  */
 'use strict';
 const path = require('path'), fs = require('fs');
@@ -48,6 +52,14 @@ runE2E('W-E2E-ROW7-GEO-REINIT', async (t) => {
       geoIdx >= 0 && geoMesh > 0 && /system=column-framed/.test(geoLine), 'line="' + geoLine.slice(0, 200) + '" anchorFallback=' + geoAnchor);
     t.assert('R3 REINIT-BEFORE-RENDER (§STRWALK-GEO precedes §STRWALK-RENDER-WIRE — the rendered skeleton is the true-centre walk)',
       geoIdx >= 0 && renderIdx > geoIdx, 'geoIdx=' + geoIdx + ' renderIdx=' + renderIdx);
+    // R6 — §ROW7-ROT: the rotated lattice is walked in its own frame on the real Open path (browser, real OCI geometry)
+    const geoRMS = parseFloat((geoLine.match(/colRMS=([\d.]+)m/) || [])[1]);
+    const geoGrid = (geoLine.match(/grid=(\d+×\d+)/) || [])[1] || '';
+    const geoRot = parseFloat((geoLine.match(/rot=(-?[\d.]+)°/) || [])[1]);
+    const tab = await t.pg.evaluate(() => { const d = window.swbTabData && window.swbTabData(); return d ? { grid: d.grid, rot: d.rotationDeg, columns: d.columns } : null; });
+    t.assert('R6 HGARAGE-ROTATED-GRID (' + RES + ' §STRWALK-GEO: grid=17×29 rot=-2.000° colRMS ≤ 0.07 m, tab 17×29 — was 15×103 / 1.19 m with 102 one-column lines)',
+      geoGrid === '17×29' && Math.abs(geoRot + 2.0) <= 0.01 && geoRMS <= 0.07 && !!tab && tab.grid === '17×29' && tab.columns === 140,
+      'grid=' + geoGrid + ' rot=' + geoRot + ' colRMS=' + geoRMS + ' tab=' + JSON.stringify(tab));
   }
   await t.shot('01-' + RES.toLowerCase() + '-reinit');
 
