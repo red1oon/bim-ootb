@@ -571,6 +571,80 @@
   // the caller hands it a full extraction. LOD400 law (WalkerDoctrine §11): each class carries its
   // MINED dominant real mesh hash (rule_mesh_binding, projected by build/project_rule_mesh_binding.py)
   // or the whole class REFUSEs — never a fallback shape.
+  // ── §ROOF-PATTERN (row 8, bim-compiler prompts/Modeller/NEXT_0926/SPEC_ROW8_ROOF_PERELEMENT.md, 2026-09-26):
+  // a TESSELLATING class is one whose mined unit tiles its source area contiguously —
+  //   fill = bbox_dx · bbox_dy · n_measured / src_storey_area_m2 ≥ TESS_FILL   (roof/IfcPlate 0.90; every MEP row ≪ 0.5)
+  // — derived from the row's own measured numbers, never a class whitelist. Such a class has NO measured surface in
+  // the substrate other than its own element array: MEASURED on Terminal, the canopy is z=f(x,y) (1-D strip profile
+  // residual 1.16 m, quadric 1.29 m, the two IfcRoof rows sit 14 m below it), so the band fill below put 10,584 boxes
+  // at the flat band-mid z — RMS 2.63 m to the real plates, −68 % count, and 331 fabricated plates on Clinic's glazing.
+  // A tessellating row therefore walks PER ELEMENT on the building's OWN measured array (the same input
+  // swDeriveTessellation(plates) has always taken) — after MEASURING that it IS an array: modal-unit share, 3-D
+  // nearest-neighbour cadence + cv, checked against the rule's mined unit/spacing. Not arrayed (HHS/Clinic glazing
+  // panels, cv 0.32/1.25) or absent → REFUSE, never the fill: "represent as one surface, never fabricate a fake array"
+  // (red1 2026-06-27). Returns null for a non-tessellating row (caller keeps its byte-identical path).
+  var TESS_FILL = 0.5;
+  function _arrayMeasure(els, cell) {
+    var hist = {}; els.forEach(function (e) { var k = (+e.bx).toFixed(2) + 'x' + (+e.by_).toFixed(2) + 'x' + (+e.bz).toFixed(2); hist[k] = (hist[k] || 0) + 1; });
+    var mk = Object.keys(hist).sort(function (a, b) { return hist[b] - hist[a]; })[0], mu = mk.split('x').map(Number);
+    var grid = {}; els.forEach(function (e, i) { var k = Math.floor(e.x / cell) + ',' + Math.floor(e.y / cell) + ',' + Math.floor(e.z / cell); (grid[k] = grid[k] || []).push(i); });
+    var ds = [], found = 0;
+    els.forEach(function (e, i) {
+      var cx = Math.floor(e.x / cell), cy = Math.floor(e.y / cell), cz = Math.floor(e.z / cell), best = Infinity;
+      for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++) {
+        var b = grid[(cx + dx) + ',' + (cy + dy) + ',' + (cz + dz)]; if (!b) continue;
+        for (var j = 0; j < b.length; j++) { if (b[j] === i) continue; var o = els[b[j]];
+          var d = Math.sqrt((o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) + (o.z - e.z) * (o.z - e.z)); if (d < best) best = d; }
+      }
+      if (isFinite(best)) { ds.push(best); found++; }
+    });
+    var nn = _med(ds), mean = ds.length ? ds.reduce(function (s, v) { return s + v; }, 0) / ds.length : NaN;
+    var sd = ds.length ? Math.sqrt(ds.reduce(function (s, v) { return s + (v - mean) * (v - mean); }, 0) / ds.length) : NaN;
+    var ux = {}; els.forEach(function (e) { ux[(+e.x).toFixed(3)] = 1; });
+    var xs = Object.keys(ux).map(Number).sort(function (a, b) { return a - b; }), dh = {};
+    for (var i = 1; i < xs.length; i++) { var dk = (xs[i] - xs[i - 1]).toFixed(3); dh[dk] = (dh[dk] || 0) + 1; }
+    var sx = xs.length > 1 ? Number(Object.keys(dh).sort(function (a, b) { return dh[b] - dh[a]; })[0]) : 0;
+    return { unit: { bx: mu[0], by: mu[1], bz: mu[2] }, share: hist[mk] / els.length, nn: nn, cv: (mean > 0 ? sd / mean : NaN),
+             nnFound: found / els.length, sx: sx, uniqueX: xs.length };
+  }
+  function _tessellatingWalk(disc, r, bdb, ghash) {
+    if (!(r.bbox_dx > 0 && r.bbox_dy > 0 && r.n_measured > 0 && r.src_storey_area_m2 > 0)) return null;
+    var fill = r.bbox_dx * r.bbox_dy * r.n_measured / r.src_storey_area_m2;
+    if (fill < TESS_FILL) return null;
+    var tag = disc + '/' + r.ifc_class, pad = r.bbox_dz > 0 ? r.bbox_dz : 0;
+    var bandTxt = '[' + r.z_band_lo.toFixed(2) + ',' + r.z_band_hi.toFixed(2) + ']';
+    var hasInst = _rows(bdb, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='element_instances'").length > 0;
+    var els = _rows(bdb, 'SELECT m.guid guid, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz' +
+      (hasInst ? ', ei.geometry_hash gh' : ', NULL gh') + ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid' +
+      (hasInst ? ' LEFT JOIN element_instances ei ON ei.guid = m.guid' : '') +
+      " WHERE m.ifc_class='" + _esc(r.ifc_class) + "' AND t.center_z >= " + (r.z_band_lo - pad) + ' AND t.center_z <= ' + (r.z_band_hi + pad));
+    console.log(TAG + ' §DW-TESSELLATE ' + tag + ' fill=' + fill.toFixed(2) + ' (unit ' + r.bbox_dx.toFixed(2) + '×' + r.bbox_dy.toFixed(2) +
+      ' × n ' + r.n_measured + ' / ' + r.src_storey_area_m2.toFixed(0) + ' m² ≥ ' + TESS_FILL + ') → per-element on the measured array; rows of ' +
+      r.ifc_class + ' in band' + bandTxt + '=' + els.length);
+    if (!els.length) {
+      console.log(TAG + ' §ROOF-PATTERN-NOPLATES ' + tag + ' band=' + bandTxt + ' 0 rows → REFUSE (a tessellating class has no other measured surface; never the band fill)');
+      return { placements: [], refused: 'no ' + r.ifc_class + ' rows in band' };
+    }
+    var m = _arrayMeasure(els, 1.0);
+    var fine = Math.min(r.spacing_x_m > 0 ? r.spacing_x_m : Infinity, r.spacing_y_m > 0 ? r.spacing_y_m : Infinity);
+    function within(a, b, tol) { return b > 0 && a > 0 && Math.abs(a - b) / b <= tol; }
+    var ok = m.share >= 0.5 && m.nnFound >= 0.5 && within(m.unit.bx, r.bbox_dx, 0.2) && within(m.unit.by, r.bbox_dy, 0.2) &&
+      (!(r.bbox_dz > 0) || within(m.unit.bz, r.bbox_dz, 0.2)) && (!isFinite(fine) || within(m.nn, fine, 0.2)) && m.cv <= 0.10;
+    var desc = 'n=' + els.length + ' unit=' + m.unit.bx.toFixed(2) + '×' + m.unit.by.toFixed(2) + '×' + m.unit.bz.toFixed(2) +
+      ' share=' + (m.share * 100).toFixed(1) + '% nn=' + (isFinite(m.nn) ? m.nn.toFixed(3) : 'NaN') + ' cv=' + (isFinite(m.cv) ? m.cv.toFixed(3) : 'NaN') +
+      ' nnFound=' + (m.nnFound * 100).toFixed(0) + '% sx=' + m.sx.toFixed(3) + ' uniqueX=' + m.uniqueX;
+    var ruleTxt = 'rule unit ' + r.bbox_dx.toFixed(2) + '×' + r.bbox_dy.toFixed(2) + '×' + (r.bbox_dz || 0).toFixed(2) + ' spacing ' + (isFinite(fine) ? fine : '-');
+    if (!ok) {
+      console.log(TAG + ' §ROOF-PATTERN-REFUSE ' + tag + ' ' + desc + ' vs ' + ruleTxt + ' — irregular/non-arrayed: represent as one surface, never a fake array');
+      return { placements: [], refused: 'not an array of the rule unit' };
+    }
+    // §ROOF-PATTERN-PRESENT (review 2026-09-26): the measured array IS the building's own IfcPlate rows, which the ARC seed has
+    // already committed (seedArc seeds discipline='ARC' — all 33,324 on Terminal). Re-placing them would sign an exact second
+    // copy (RMS 0 by identity, 33k duplicate rows) — not generation. Nothing to generate: report it, place nothing.
+    console.log(TAG + ' §ROOF-PATTERN-PRESENT ' + tag + ' ' + desc + ' vs ' + ruleTxt + ' → the building already carries this array (' +
+      els.length + ' real ' + r.ifc_class + ', seeded with the ARC) — nothing to generate, 0 placed');
+    return { placements: [], refused: 'already present: ' + els.length + ' real ' + r.ifc_class + ' form the measured array — nothing to generate', present: els.length };
+  }
   function placeMeasured(disc, bdb, opts) {
     var db = _dbFor(disc);
     if (!_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_placement'").length)
@@ -578,7 +652,7 @@
     var rows = _rows(db, "SELECT * FROM rule_placement WHERE disc='" + _esc(disc) +
       "' AND n_measured>0 AND z_band_lo IS NOT NULL AND z_band_hi IS NOT NULL AND src_storey_area_m2>0");
     if (!rows.length) return { noRules: 'no measured z-band rule_placement rows for ' + disc };
-    var bind = {};
+    var bind = {}, verdicts = [];
     if (_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_mesh_binding'").length)
       _rows(db, "SELECT ifc_class, geometry_hash FROM rule_mesh_binding WHERE disc='" + _esc(disc) + "'")
         .forEach(function (b) { bind[b.ifc_class] = b.geometry_hash; });
@@ -626,6 +700,14 @@
         console.log(TAG + ' §LOD400-REFUSE ' + disc + '/' + r.ifc_class + ' ×' + r.n_measured +
           ' band=[' + r.z_band_lo + ',' + r.z_band_hi + '] (no rule_mesh_binding row — no real mesh, never a fallback shape)');
         return;
+      }
+      // §ROOF-PATTERN: a tessellating row (fill ≥ TESS_FILL) walks per element on the measured array or REFUSES —
+      // it never reaches the ARC-cell/top-up fill below. Every other row: null → unchanged path.
+      var tess = _tessellatingWalk(disc, r, bdb, ghash);
+      if (tess) {
+        if (tess.placements.length) { tess.placements.forEach(function (p) { out.push(p); }); zones++; }
+        if (tess.refused) verdicts.push(tess.refused);        // a DELIBERATE 0 (present / refused) — the caller must not fall back
+        return;                                               // refused → 0 placements (§ROOF-PATTERN-* line carries why)
       }
       var pitch = Math.max(0.5, Math.sqrt(r.src_storey_area_m2 / r.n_measured));
       var els = _rows(bdb,
@@ -684,7 +766,7 @@
       console.log(TAG + ' §NOSPACES-ZONE ' + disc + '/' + r.ifc_class + ' band=[' + r.z_band_lo + ',' + r.z_band_hi +
         '] n_measured=' + r.n_measured + ' ratio=' + (bandArea / r.src_storey_area_m2).toFixed(2) + ' placed=' + placeN);
     });
-    return { placements: out, zones: zones, refused: refused };
+    return { placements: out, zones: zones, refused: refused, verdicts: verdicts };
   }
 
   // Reduce a discipline's rule_placement rows to ONE representative per ifc_class
@@ -2232,6 +2314,12 @@
       // byte-identical to before (this branch is unreachable there).
       if (ps.noRules || !ps.spaces) {
         var pm = placeMeasured(disc, bdb, opts);
+        if (!pm.noRules && !pm.placements.length && pm.verdicts && pm.verdicts.length) {
+          // §ROOF-PATTERN: a deliberate verdict (the array is already present / not an array) — report it as the walk's
+          // outcome with verdict:true so the Modeller does NOT fall back to the legacy fill (§SCHED-FALLBACK).
+          console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' VERDICT ' + pm.verdicts.join('; '));
+          return { disc: disc, refused: true, verdict: true, reason: pm.verdicts.join('; '), placed: 0 };
+        }
         if (pm.noRules) {
           var why = (ps.noRules || 'no real spaces for schedule walk') + '; measured-band: ' + pm.noRules;
           console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + why);
