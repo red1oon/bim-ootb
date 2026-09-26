@@ -7,11 +7,10 @@
  * Waits on CONDITIONS (the walk's rows + no pending history), never a duration. A Terminal-scale commit blocks the page
  * for minutes (§RESUME 2026-09-26b trap) → protocolTimeout 1200 s.
  *
- * ISSUE THIS PROVES/DISPROVES: "on the real open path the roof walk places 10,584 boxes at a flat z 2.6 m off the
- * canopy (base) — a second, wrong copy of a roof the ARC seed already put on screen." (§REVIEW 2026-09-26: the measured
- * array IS the building's own seeded plates, so the correct walk places nothing and says so.)
- *   E1 PRESENT      — §ROOF-PATTERN-PRESENT n == real IfcPlate count; 0 new signed rows, 0 roof rows. Base: 10,584 placed.
- *   E2 ON-SCREEN    — the seeded op-log holds one GEOM_INSERT per real IfcPlate (the roof really is already there).
+ * ISSUE THIS PROVES/DISPROVES (§ROOF-PREFAB, red1 2026-09-26): the tiled roof is prefab ARC/STR the user reshapes like any other
+ * element; walkers fill in services. main offered an Outliner roof walk row that could only ever refuse or report "present".
+ *   E1 NO-ROOF-WALK-ROW — the Walk ALL row exists and there is no roof walk row.        (RED on main)
+ *   E2 ON-SCREEN        — the seeded op-log holds one GEOM_INSERT per real IfcPlate (the roof is there and editable).
  *   E4 NO-ERROR     — zero pageerror; wall time of open / walk / commit logged (not gated — reported, never hidden).
  * INCONCLUSIVE (never PASS) when the resident does not open or carries 0 IfcPlate rows.
  * Run: NODE_PATH=~/bim-ootb/tests/node_modules:~/bim-compiler/node_modules node modeller/tests/witness_e2e_roof_pattern.js
@@ -56,23 +55,14 @@ const inc = (n, x) => { inconclusive++; console.log('  ⚪ ' + n + ' INCONCLUSIV
   console.log('  §E-OPEN Terminal open+seeded in ' + (openMs / 1000).toFixed(1) + 's realIfcPlate=' + real.length + ' rowExists=' + await pg.evaluate(() => !!document.querySelector('[data-bnode="dw-roof"]')));
   if (!real.length) { inc('E1-E3', '0 IfcPlate rows in the open resident'); }
   else {
-    // §REVIEW 2026-09-26: the measured array IS the seeded ARC plates — the walk reports it present and places nothing.
-    await pg.waitForFunction(() => window.Bonsai.oplog.length > 30000, { timeout: 600000, polling: 1000 }).catch(() => {});
-    const seededPlates = await pg.evaluate(() => window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.ifc_class === 'IfcPlate').length);
-    const oplogBefore = await pg.evaluate(() => window.Bonsai.oplog._geomOps().length);
-    const tWalk = Date.now();
-    await pg.click('[data-bnode="dw-roof"]');
-    const said = await pg.waitForFunction(() => window.__roofSaid === true, { timeout: 600000, polling: 500 }).then(() => true).catch(() => false);
-    await sleep(1500);
-    const walkMs = Date.now() - tWalk;
-    const after = await pg.evaluate((n0) => { const g = window.Bonsai.oplog._geomOps(); const rows = g.slice(n0);
-      return { newRows: rows.length, roofRows: rows.filter(o => o.parameters && o.parameters._dw && o.parameters._dw.disc === 'roof').length, walkN: ((window.__dwWalks || {}).roof || []).length }; }, oplogBefore);
-    const present = slog.find(l => /§ROOF-PATTERN-PRESENT roof\/IfcPlate/.test(l)) || '';
-    console.log('  §E-WALK said=' + said + ' walkMs=' + walkMs + ' ' + JSON.stringify(after) + ' seededPlates=' + seededPlates);
-    chk('E1 PRESENT (the roof walk reports the building\'s own ' + real.length + ' plates and places NOTHING; main: the Outliner row refused ROOF and never walked; the engine path filled 10,584 boxes at RMS 2.627 m)',
-      /n=\d+/.test(present) && +((present.match(/ n=(\d+)/) || [])[1]) === real.length && after.roofRows === 0 && after.newRows === 0,
-      present.slice(0, 120) + ' newRows=' + after.newRows + ' roofRows=' + after.roofRows);
-    chk('E2 ON-SCREEN (every real plate is a seeded GEOM_INSERT — the roof is already there)', seededPlates === real.length, 'seeded IfcPlate rows=' + seededPlates + ' real=' + real.length);
+    // §ROOF-PREFAB (red1 2026-09-26): the roof is prefab ARC/STR the user edits like any element; walkers fill services.
+    await pg.waitForFunction(() => window.Bonsai.oplog.length > 30000 && !!document.querySelector('[data-bnode="dw-all"]'), { timeout: 600000, polling: 1000 }).catch(() => {});
+    const st = await pg.evaluate(() => ({ roofRow: !!document.querySelector('[data-bnode="dw-roof"]'), allRow: !!document.querySelector('[data-bnode="dw-all"]'),
+      seeded: window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.ifc_class === 'IfcPlate').length }));
+    console.log('  §E-ROWS ' + JSON.stringify(st));
+    chk('E1 NO-ROOF-WALK-ROW (Outliner offers no roof walk — the roof is prefab, walkers fill services; main: a row that only ever refused)',
+      st.allRow && !st.roofRow, JSON.stringify(st));
+    chk('E2 ON-SCREEN (every real plate is a seeded, editable GEOM_INSERT)', st.seeded === real.length, 'seeded IfcPlate rows=' + st.seeded + ' real=' + real.length);
   }
   chk('E4 NO-ERROR (zero pageerror across open + walk + commit)', errs.length === 0, errs.slice(0, 3).join(' | '));
   await br.close(); server.close();
