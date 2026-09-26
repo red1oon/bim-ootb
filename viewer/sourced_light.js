@@ -1126,7 +1126,7 @@
   // psychophysical law", Psychol. Rev. 64, 1957; brightness exponent 0.33), so an interior keeps (Ein/Eout)^0.33 of its
   // ratio to outdoors: exposure = base * (Ein / Eout)^(0.33 - 1). Camera outside: base exactly. (A first cut compared
   // albedo-weighted luminance with a 0.18 middle grey: white rooms metered 4x high and got no boost — replaced.)
-  var METER_W = 160, METER_H = 90, STEVENS = 0.33, METER_MAX_STOPS = 10, meterSaved = null, meterMat = null;
+  var METER_W = 160, METER_H = 90, STEVENS = 0.33, HIST_LO = 0.70, HIST_HI = 0.95, METER_MAX_STOPS = 10, meterSaved = null, meterMat = null;
   function meterRead(A, opts) {
     var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [];
     A.scene.traverse(function (o) { if (!o.visible) return;
@@ -1158,13 +1158,25 @@
     var n = 0, sw = 0, sl = 0, delta = 1e-4, inC = 0, cx = METER_W / 2, cy = METER_H / 2, rC = METER_H / 6;
     for (var i2 = 0; i2 < METER_W * METER_H; i2++) { if (buf[i2 * 4 + 3] >= 0.5) { var px = i2 % METER_W, py = (i2 / METER_W) | 0; if ((px + 0.5 - cx) * (px + 0.5 - cx) + (py + 0.5 - cy) * (py + 0.5 - cy) <= rC * rC) inC++; } }
     var nLit = 0; for (var i3 = 0; i3 < METER_W * METER_H; i3++) if (buf[i3 * 4 + 3] >= 0.5) nLit++;
+    // §METER_HIST (spec PHOTOREAL_STILL_RENDER §METER_HIST; watchdog ruling 70/95): 'hist' = the log-average over the pixels whose
+    // luminance lies between the LOW and HIGH percentiles of the frame (Unreal Engine PostProcessSettings auto_exposure_low_percent
+    // "good values 70 .. 80", auto_exposure_high_percent "80 .. 95"; widest endorsed band). Excludes the dark floor of the frame
+    // that drags the plain log-average down (bimodal sun-patch frames: Clinic S1 pose, 31% sunlit / 69% dark).
+    var hLo = -Infinity, hHi = Infinity, hAll = null;
+    if (mode === 'hist') { var ls = []; for (var i4 = 0; i4 < METER_W * METER_H; i4++) { if (buf[i4 * 4 + 3] < 0.5) continue;
+        var L4 = 0.2126 * buf[i4 * 4] + 0.7152 * buf[i4 * 4 + 1] + 0.0722 * buf[i4 * 4 + 2]; if (isFinite(L4)) ls.push(Math.max(0, L4)); }
+      if (ls.length) { ls.sort(function (a, b) { return a - b; }); hLo = ls[Math.min(ls.length - 1, Math.floor(ls.length * HIST_LO))]; hHi = ls[Math.min(ls.length - 1, Math.floor(ls.length * HIST_HI))];
+        var sa = 0; for (var i5 = 0; i5 < ls.length; i5++) sa += Math.log(delta + ls[i5]); hAll = Math.PI * Math.exp(sa / ls.length); } }
     for (var i = 0; i < METER_W * METER_H; i++) {
       if (buf[i * 4 + 3] < 0.5) continue; var L = 0.2126 * buf[i * 4] + 0.7152 * buf[i * 4 + 1] + 0.0722 * buf[i * 4 + 2]; if (!isFinite(L)) continue;
       var w = 1;
       if (mode === 'centre') { var qx = i % METER_W, qy = (i / METER_W) | 0, inside = (qx + 0.5 - cx) * (qx + 0.5 - cx) + (qy + 0.5 - cy) * (qy + 0.5 - cy) <= rC * rC;
         w = inside ? 0.75 / Math.max(1, inC) : 0.25 / Math.max(1, nLit - inC); }
       else if (mode === 'zone') { w = wz ? (wz[i] ? 1 : 0) : 1; }
+      else if (mode === 'hist') { w = (L >= hLo && L <= hHi) ? 1 : 0; }
       if (!w) continue; sl += w * Math.log(delta + Math.max(0, L)); sw += w; n++; }
+    if (mode === 'hist') console.log('§METER_HIST low%=' + (HIST_LO * 100) + ' high%=' + (HIST_HI * 100) + ' bandEin=' + (sw ? (Math.PI * Math.exp(sl / sw)).toExponential(3) : 'none') +
+      ' bandPixels=' + n + '/' + nLit + ' allLogAvg=' + (hAll != null ? hAll.toExponential(3) : 'none') + ' bandL=' + (+hLo).toExponential(2) + '..' + (+hHi).toExponential(2));
     return { Ein: sw ? Math.PI * Math.exp(sl / sw) : null, pixels: n, mode: mode, hidden: hidden.length, ms: performance.now() - t0 };   // white Lambert: E = pi * L
   }
   // world position per meter pixel (override MeshBasicMaterial writing its world position into the float target), then the
@@ -1199,7 +1211,7 @@
   function meter(A, inside) {
     var R = A.renderer, base = R.toneMappingExposure;
     if (!inside) { console.log('§METER camera=outside exposure=' + base.toFixed(3) + ' stops=0 (base ' + base.toFixed(3) + ', unchanged outside)'); return null; }
-    var mode = (/[?&]metermode=(avg|centre|zone)/.exec(location.search) || [])[1] || A._stillMeterMode || 'avg';   // watchdog 2026-09-25: frame average by default (centre and zone each worse on one reference)
+    var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'avg';   // watchdog 2026-09-25: frame average by default (centre and zone each worse on one reference)
     var m = meterRead(A, { mode: mode, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 });
     if (!m.Ein) { console.log('§METER camera=inside VACUOUS no lit surface pixels — exposure unchanged ' + base.toFixed(3)); return null; }
     var o = outdoorE(A), ratio = m.Ein / o.E;
