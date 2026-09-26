@@ -203,39 +203,51 @@
   // inventing a type mapping to unlock them would violate PRIME RULE. Demo/mockup scope only
   // (user decision 2026-07-05): every output carries UBBL_DEMO_LABEL verbatim — it is an indicator,
   // NOT a compliance verdict, and the label is the guardrail against it silently becoming one.
-  var UBBL_MIN_AREA = 6.5;      // m² — By-Law 42 "all other rooms" minimum (verified, spec §1b)
-  var UBBL_MIN_HEADROOM = 2.5;  // m  — By-Law 42 minimum headroom height (verified, spec §1b)
-  var UBBL_DEMO_LABEL = "UBBL-style demo indicator (By-Law 42, 'all other rooms' minimum only) — not a compliance verdict";
+  // §UBBL-TIERS (UBBL_RULES_GATE.md §SOURCED + §MISCITE, 2026-09-26): the gazetted text splits room minimums by room TYPE, and
+  // the extracted IfcSpace rows carry no type (§1c). So two tiers, each citing its clause:
+  //   ANY-ROOM floor — true whatever the room is (smallest minimum of any type): a breach is a real violation (`flagged`).
+  //     area ≥ 0.9375 m² (By-law 43(b): WC 1.25 × 0.75 m) · width ≥ 0.75 m (43) · height ≥ 2.0 m (44 proviso: "not part of any
+  //     room shall be less than 2 metres").
+  //   HABITABLE tier — living rooms/bedrooms only: area ≥ 6.5 m² (42(1), the smallest habitable figure) · width ≥ 2 m (42(2)) ·
+  //     height ≥ 2.5 m (44(1)(a)). Without a type label this is reported as `check` ("would fail if habitable"), never a verdict.
+  // (Before: 6.5 m² and 2.5 m were applied to EVERY room and 2.5 m was cited as By-law 42 — it is 44(1)(a).)
+  var UBBL_ANY = { area: 0.9375, width: 0.75, height: 2.0, cite: { area: '43(b)', width: '43', height: '44 proviso' } };
+  var UBBL_HAB = { area: 6.5, width: 2.0, height: 2.5, cite: { area: '42(1)', width: '42(2)', height: '44(1)(a)' } };
+  var UBBL_MIN_AREA = UBBL_HAB.area, UBBL_MIN_HEADROOM = UBBL_HAB.height;   // kept exports (habitable tier values)
+  var UBBL_DEMO_LABEL = "UBBL-style demo indicator — not a compliance verdict";
+  var UBBL_CHECK_LABEL = "would fail IF this is a living room/bedroom — room type not in the model";
 
-  // ubblRoomSizeDemo(spaces, opts) → {kind:'ubbl-room-size', checked, flagged:[…], label}. PURE.
-  //   spaces = [{guid, name, size_x, size_y, size_z}, …]  (spatial_structure rows, type='IfcSpace' —
-  //            Duplex-extractor schema; SampleHouse predates it and has no such table: caller's concern)
-  //   opts   = {minArea, minHeadroom} — explicit params like CLEARANCE, defaults are the §1b numbers
-  // Rooms with NULL/missing dims are reported under `unmeasured`, never guessed at (non-invent).
+  // ubblRoomSizeDemo(spaces, opts) → {kind:'ubbl-room-size', checked, flagged:[…], check:[…], unmeasured:[…], label}. PURE.
+  //   spaces = [{guid, name, size_x, size_y, size_z}, …]  (spatial_structure IfcSpace rows)
+  //   opts   = {any:{area,width,height}, habitable:{…}} — explicit params; defaults are the gazetted numbers above.
+  // `flagged` = breaches of the any-room floor (real). `check` = habitable-tier misses that pass the floor. NULL dims →
+  // `unmeasured`, never guessed.
   function ubblRoomSizeDemo(spaces, opts) {
     opts = opts || {};
-    var minArea = opts.minArea != null ? opts.minArea : UBBL_MIN_AREA;
-    var minHeadroom = opts.minHeadroom != null ? opts.minHeadroom : UBBL_MIN_HEADROOM;
-    var flagged = [], unmeasured = [], checked = 0;
+    var A = Object.assign({}, UBBL_ANY, opts.any || {}), H = Object.assign({}, UBBL_HAB, opts.habitable || {});
+    var flagged = [], check = [], unmeasured = [], checked = 0;
+    function misses(s, T) {
+      var area = s.size_x * s.size_y, width = Math.min(s.size_x, s.size_y), out = [];
+      if (area < T.area) out.push('area ' + area.toFixed(3) + ' m² < ' + T.area + ' (By-law ' + T.cite.area + ')');
+      if (width < T.width) out.push('width ' + width.toFixed(3) + ' m < ' + T.width + ' (By-law ' + T.cite.width + ')');
+      if (s.size_z < T.height) out.push('height ' + (+s.size_z).toFixed(3) + ' m < ' + T.height + ' (By-law ' + T.cite.height + ')');
+      return out;
+    }
     (spaces || []).forEach(function (s) {
       if (s == null || s.size_x == null || s.size_y == null || s.size_z == null) {
         unmeasured.push({ kind: 'ubbl-room-size', guid: s && s.guid, name: s && s.name, label: UBBL_DEMO_LABEL });
         return;
       }
       checked++;
-      var area = s.size_x * s.size_y;
-      var belowArea = area < minArea, belowHeadroom = s.size_z < minHeadroom;
-      if (belowArea || belowHeadroom) {
-        flagged.push({
-          kind: 'ubbl-room-size', guid: s.guid, name: s.name,
-          size_x: +s.size_x.toFixed(3), size_y: +s.size_y.toFixed(3), size_z: +s.size_z.toFixed(3),
-          area: +area.toFixed(3), belowArea: belowArea, belowHeadroom: belowHeadroom,
-          minArea: minArea, minHeadroom: minHeadroom, label: UBBL_DEMO_LABEL
-        });
-      }
+      var row = { kind: 'ubbl-room-size', guid: s.guid, name: s.name, size_x: +s.size_x.toFixed(3), size_y: +s.size_y.toFixed(3),
+        size_z: +s.size_z.toFixed(3), area: +(s.size_x * s.size_y).toFixed(3) };
+      var hard = misses(s, A);
+      if (hard.length) { flagged.push(Object.assign(row, { tier: 'any-room', why: hard, label: UBBL_DEMO_LABEL })); return; }
+      var soft = misses(s, H);
+      if (soft.length) check.push(Object.assign(row, { tier: 'habitable', why: soft, label: UBBL_CHECK_LABEL }));
     });
-    return { kind: 'ubbl-room-size', checked: checked, flagged: flagged, unmeasured: unmeasured, label: UBBL_DEMO_LABEL };
+    return { kind: 'ubbl-room-size', checked: checked, flagged: flagged, check: check, unmeasured: unmeasured, label: UBBL_DEMO_LABEL };
   }
 
-  return { evaluate: evaluate, ubblRoomSizeDemo: ubblRoomSizeDemo, penetration: penetration, faceGap: faceGap, overlaps: overlaps, CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE, UBBL_MIN_AREA: UBBL_MIN_AREA, UBBL_MIN_HEADROOM: UBBL_MIN_HEADROOM, UBBL_DEMO_LABEL: UBBL_DEMO_LABEL };
+  return { evaluate: evaluate, ubblRoomSizeDemo: ubblRoomSizeDemo, penetration: penetration, faceGap: faceGap, overlaps: overlaps, CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE, UBBL_MIN_AREA: UBBL_MIN_AREA, UBBL_MIN_HEADROOM: UBBL_MIN_HEADROOM, UBBL_DEMO_LABEL: UBBL_DEMO_LABEL, UBBL_CHECK_LABEL: UBBL_CHECK_LABEL, UBBL_ANY: UBBL_ANY, UBBL_HAB: UBBL_HAB };
 });
