@@ -46,6 +46,11 @@
     'float _slSky = 1.0;',
     // §SKY_VIEW_FIELD: the fragment's filtered sky-view F (trilinear over same-zone / open cells, once per fragment with _slFZ)
     'float _slF = 1.0;',
+    // §LAMP_UNCAPPED: every lamp as data (uSLLampT: 2 texels per lamp), clustered over the zone grid (uSLClu: offset/count per
+    // cluster, uSLLIdx: the flat lamp index list); _slWP = the fragment's world position, set by slFragZone
+    'uniform vec4 uSLLamp; uniform vec4 uSLCluDim; uniform highp sampler2D uSLLampT; uniform highp usampler2D uSLLIdx; uniform highp usampler3D uSLClu;',
+    'vec3 _slWP = vec3( 0.0 );',
+    'float _slLN = -1.0; float _slLNP = 0.0;',   // §LAMP_UNCAPPED_COST readback: the fragment's list length / lamps passing the zone test
     // raw cell: -1 off grid, 65535 solid, 0 outside, 1.. zone
     'float slZoneAt( vec3 w ) {',
     '  ivec3 c = ivec3( floor( ( w - uSLOrg.xyz ) / uSLParams.y ) );',
@@ -62,7 +67,7 @@
     '  mat4 vi = inverse( viewMatrix );',
     // IFC meshes often wind inward: face the normal toward the eye first (the side the viewer sees)
     '  vec3 nf = ( dot( nView, - posView ) < 0.0 ) ? - nView : nView;',
-    '  vec3 wp = ( vi * vec4( posView, 1.0 ) ).xyz; vec3 wn = normalize( ( vi * vec4( nf, 0.0 ) ).xyz );',
+    '  vec3 wp = ( vi * vec4( posView, 1.0 ) ).xyz; vec3 wn = normalize( ( vi * vec4( nf, 0.0 ) ).xyz ); _slWP = wp;',
     '  ivec3 c0 = ivec3( floor( ( wp + wn * 0.25 - uSLOrg.xyz ) / uSLParams.y ) ); ivec3 dim = ivec3( uSLDim.xyz );',
     '  if ( any( lessThan( c0, ivec3( 0 ) ) ) || any( greaterThanEqual( c0, dim ) ) ) { _slSky = 1.0; return 65534.0; }',
     '  float best = 1e30; uint bt = 65535u; uint bg = 0u;',
@@ -143,6 +148,27 @@
         console.log('§LAMP_LOOP dynamic (point lights: one loop body per program, not one per lamp; &lamploop=0 = unrolled)');
       } else console.warn('§LAMP_LOOP anchor missing — point-light loop stays unrolled');
     }
+    // §LAMP_UNCAPPED — the lamp loop over the fragment's cluster list, before the spot section. Same maths as three's point
+    // light (getPointLightInfo: direction, getDistanceAttenuation(d, range, decay); RE_Direct: the material's own BRDF) and
+    // the same zone rule as slPass (unbound 0 / unknown fragment pass; else lamp zone == fragment zone). The lists are built
+    // on the CPU per zone, so a lamp behind a wall is not even in the list. uSLLamp.x = 0 (nav, films, &lampdata=0): skipped.
+    var sp = '#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )';
+    if (fb.indexOf(sp) >= 0) {
+      fb = fb.replace(sp, '#if defined( RE_Direct ) && ( defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON ) )\n' +
+        'if ( uSLLamp.x > 0.5 && uSLParams.x > 0.5 ) {\n' +
+        '\tivec3 _cc = ivec3( floor( ( _slWP - uSLOrg.xyz ) / ( uSLParams.y * uSLLamp.z ) ) );\n' +
+        '\tif ( all( greaterThanEqual( _cc, ivec3( 0 ) ) ) && all( lessThan( _cc, ivec3( uSLCluDim.xyz ) ) ) ) {\n' +
+        '\t\tuvec2 _oc = texelFetch( uSLClu, _cc, 0 ).rg; uint _iw = uint( uSLLamp.w ); _slLN = float( _oc.y );\n' +
+        '\t\tfor ( uint _k = 0u; _k < _oc.y; _k ++ ) {\n' +
+        '\t\t\tuint _g = _oc.x + _k; int _li = int( texelFetch( uSLLIdx, ivec2( int( _g % _iw ), int( _g / _iw ) ), 0 ).r );\n' +
+        '\t\t\tvec4 _la = texelFetch( uSLLampT, ivec2( 0, _li ), 0 ); vec4 _lb = texelFetch( uSLLampT, ivec2( 1, _li ), 0 );\n' +
+        '\t\t\tif ( !( _slFZ < -0.5 || _la.w < 0.5 || abs( _slFZ - _la.w ) < 0.5 ) ) continue; _slLNP += 1.0;\n' +
+        '\t\t\tvec3 _lv = ( viewMatrix * vec4( _la.xyz, 1.0 ) ).xyz - geometryPosition; float _ld = length( _lv );\n' +
+        '\t\t\tdirectLight.direction = _lv / max( _ld, 1e-6 ); directLight.color = _lb.rgb * getDistanceAttenuation( _ld, _lb.w, uSLLamp.y ); directLight.visible = true;\n' +
+        '\t\t\tRE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );\n' +
+        '\t\t}\n\t}\n}\n#endif\n' + sp);
+      ok++;
+    } else console.warn('§LAMP_UNCAPPED anchor missing (spot section) — lamp data path inert, the pool path stays');
     var s0 = 'getSpotLightInfo( spotLight, geometryPosition, directLight );';
     if (fb.indexOf(s0) >= 0) { fb = fb.replace(s0, s0 + '\n\t\tdirectLight.color *= slPass( uSLSZ[ UNROLLED_LOOP_INDEX / 4 ][ UNROLLED_LOOP_INDEX - ( UNROLLED_LOOP_INDEX / 4 ) * 4 ], geometryPosition, geometryNormal );'); ok++; }
     var a0 = 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );';
@@ -163,7 +189,8 @@
     if (C.dithering_fragment && C.dithering_fragment.indexOf('uSLParams') < 0) {
       C.dithering_fragment = C.dithering_fragment + '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
         'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : ( _slSky > 0.5 ? 0.5 : 0.0 ), 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
-        'if ( uSLParams.w > 5.5 && uSLParams.w < 6.5 ) { gl_FragColor = vec4( _slF, ( _slFZ > 0.5 && _slFZ < 65533.5 ) ? 1.0 : 0.0, _slSky, 1.0 ); }\n' +   // §SKY_VIEW_FIELD SKY_STEP readback: F_filtered
+        'if ( uSLParams.w > 6.5 && uSLParams.w < 7.5 ) { gl_FragColor = vec4( _slLN, _slLNP, 0.5, 1.0 ); }\n' +   // §LAMP_UNCAPPED_COST readback (float target)
+        'else if ( uSLParams.w > 5.5 && uSLParams.w < 6.5 ) { gl_FragColor = vec4( _slF, ( _slFZ > 0.5 && _slFZ < 65533.5 ) ? 1.0 : 0.0, _slSky, 1.0 ); }\n' +   // §SKY_VIEW_FIELD SKY_STEP readback: F_filtered
         'else if ( uSLParams.w > 1.5 ) { mat4 _vi = inverse( viewMatrix ); vec3 _wp = ( _vi * vec4( - vViewPosition, 1.0 ) ).xyz; vec3 _wn = normalize( ( _vi * vec4( normal, 0.0 ) ).xyz ); vec3 _q = _wp + _wn * 0.2;\n' +
         '  if ( uSLParams.w < 2.5 ) { float _r = slZoneAt( _q ); float _ur = _r < 0.0 ? 0.0 : _r; gl_FragColor = vec4( mod( _ur, 256.0 ) / 255.0, floor( _ur / 256.0 ) / 255.0, _r < 0.0 ? 1.0 : 0.0, 1.0 ); }\n' +
         '  else if ( uSLParams.w < 3.5 ) { vec3 _g = ( _q - uSLOrg.xyz ) / ( uSLParams.y * uSLDim.xyz ); gl_FragColor = vec4( clamp( _g, 0.0, 1.0 ), 1.0 ); }\n' +
@@ -173,11 +200,15 @@
     dummy = new THREE.Data3DTexture(new Uint16Array(2), 1, 1, 1);
     dummy.format = THREE.RGIntegerFormat; dummy.type = THREE.UnsignedShortType; dummy.internalFormat = 'RG16UI';   // §SOURCED_DAYLIGHT: RG16UI
     dummy.minFilter = dummy.magFilter = THREE.NearestFilter; dummy.generateMipmaps = false; dummy.unpackAlignment = 1; dummy.needsUpdate = true;
+    // §LAMP_UNCAPPED dummies: every declared sampler must see a texture of its own kind (an integer sampler on a float unit is
+    // GL_INVALID_OPERATION at draw time), same reason as `dummy` above
+    dLamp = lampTex2D(THREE, new Float32Array(8), 2, 1); dIdx = idxTex2D(THREE, new Uint16Array(1), 1, 1); dClu = cluTex3D(THREE, new Uint32Array(2), 1, 1, 1);
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
       U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
+      U.uSLLamp = { value: LAMP }; U.uSLCluDim = { value: CDIM }; U.uSLLampT = { value: dLamp }; U.uSLLIdx = { value: dIdx }; U.uSLClu = { value: dClu };
     });
     installed = true;
     // §SOURCED_LIGHT_LINK_FAIL — a patched program that fails to compile/link (e.g. a backend with fewer fragment uniform
@@ -194,13 +225,123 @@
       };
       A.renderer.debug.__slGuard = true;
     };
-    console.log('§SOURCED_LIGHT installed patchedLines=' + ok + '/8 (zone-once, point, spot, ambient, hemi, env irradiance, env radiance, zone-debug) — inert until an Alt+S stages it');
+    console.log('§SOURCED_LIGHT installed patchedLines=' + ok + '/9 (zone-once, point, lamp-data, spot, ambient, hemi, env irradiance, env radiance, zone-debug) — inert until an Alt+S stages it');
   }
 
   function dial(A, key, name, def, lo, hi) {
     var v = (typeof A[key] === 'number') ? A[key] : null;
     if (v == null) { var m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(location.search); v = m ? parseFloat(m[1]) : def; }
     return Math.max(lo, Math.min(hi, isFinite(v) ? v : def));
+  }
+
+  // ══ §LAMP_UNCAPPED (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "§LAMP_UNCAPPED — SPEC", b00ea663e; red1 2026-09-26:
+  // "the far off corner looks dark but when near lites up" / "one angle lited, the other dark") ══
+  // The uniform budget capped a still at 160-200 point lights picked around the CAMERA (Terminal: 861 fixtures; at red1's two
+  // poses on one target the 421 lamps within 25 m of it were lit 132 vs 91). Clustered forward shading (Olsson, Billeter,
+  // Assarsson, "Clustered Deferred and Forward Shading", HPG 2012) over our own zone grid: every placed lamp is DATA (tools.js
+  // fills A._lampData with the pool's own colour x intensity, range, decay); BUILD (per lamp set, camera-free): per 2 m
+  // cluster (zone grid / CLU) the lamps whose range sphere reaches it AND whose zone is in it (cells dilated by 1: the
+  // fragment's zone comes from its 27 neighbours); SHADER: one loop over the fragment's cluster list. No point lights, no cap,
+  // no camera in the pick. Stills only (films keep the pool: A._maxqActive); &lampdata=0 = the capped pool.
+  var LAMP = new Float32Array(4), CDIM = new Float32Array(4), CLU = 4, IDX_W = 4096, lampTex = null, idxTex = null, cluTex = null, dLamp = null, dIdx = null, dClu = null;
+  var lampVer = -1, lampListKey = null, lampLast = null, lampPushAll = false;
+  function lampTex2D(THREE, data, w, h) { var t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType); t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t; }
+  function idxTex2D(THREE, data, w, h) { var t = new THREE.DataTexture(data, w, h, THREE.RedIntegerFormat, THREE.UnsignedShortType); t.internalFormat = 'R16UI'; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
+  function cluTex3D(THREE, data, w, h, d) { var t = new THREE.Data3DTexture(data, w, h, d); t.format = THREE.RGIntegerFormat; t.type = THREE.UnsignedIntType; t.internalFormat = 'RG32UI'; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
+  // effects.js asks before the lamps are born: the data path needs the patched chunks, this building's zones, and a still
+  function lampWanted(A) {
+    var LZ = global.LightZones, Z = LZ && LZ.get();
+    return !!(installed && !linkFailed && orig && Z && Z.bld === A.activeBuilding && !A._maxqActive && A._stillLampData !== false && !/[?&]lampdata=0/.test(location.search));
+  }
+  function lampZone(LZ, p) { var v = LZ.atLamp(p); return (v > 0 && v !== SOLID) ? v : ((v === 0 || v === -1) ? OUTSIDE : 0); }
+  // BUILD — returns the stats (logged §LAMP_UNCAPPED); lists rebuilt only when the lamp SET changes, the lamp texture on every
+  // new A._lampData version (an intensity change: §STAGED_PL_CUT, §STILL_GLOW's lamps-off scale)
+  function lampBuild(A) {
+    var THREE = global.THREE, LZ = global.LightZones, Z = LZ && LZ.get(), D = A._lampData;
+    if (!Z || !D || !A._lampDataOn) { LAMP[0] = 0; return null; }
+    if (D.ver === lampVer && lampTex) return lampLast;
+    var t0 = performance.now(), L = D.lamps, n = L.length, R = D.range > 0 ? D.range : Z.cell * Math.max(Z.nx, Z.ny, Z.nz);
+    if (n >= 65535) { console.warn('§LAMP_UNCAPPED FAIL lamps=' + n + ' >= 65535 (R16UI index) — pool path kept'); return lampFail(A, 'too many lamps'); }
+    var ld = new Float32Array(Math.max(1, n) * 8), lz = new Uint16Array(n), ph = 0, lit = 0, sumI = 0, byZ = [0, 0, 0];
+    for (var i = 0; i < n; i++) { var q = L[i], z = lampZone(LZ, q); lz[i] = z;
+      ld.set([q.x, q.y, q.z, z, q.r, q.g, q.b, q.range > 0 ? q.range : 0], i * 8); ph += q.x * 1.3 + q.y * 1.7 + q.z * 1.9;
+      if (q.I > 0) { lit++; sumI += q.I; } byZ[z === 0 ? 0 : (z === OUTSIDE ? 2 : 1)]++; }
+    if (lampTex) lampTex.dispose(); lampTex = lampTex2D(THREE, ld, 2, Math.max(1, n));
+    var key = Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + n + ':' + R + ':' + ph.toFixed(3), tl = performance.now(), S = lampLast && lampLast.lists;
+    if (key !== lampListKey || !idxTex) {
+      var nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, C = CLU, cx = Math.ceil(nx / C), cy = Math.ceil(ny / C), cz = Math.ceil(nz / C), NC = cx * cy * cz, cs = Z.cell * C;
+      // zones per cluster (CSR): the cluster's cells dilated by one cell; zone 0 (open to the sky) -> the open flag
+      var zS = new Int32Array(NC + 1), zA = [], open = new Uint8Array(NC), tmp = [];
+      for (var ck = 0; ck < cz; ck++) for (var cj = 0; cj < cy; cj++) for (var ci = 0; ci < cx; ci++) { var c = ci + cj * cx + ck * cx * cy; tmp.length = 0;
+        var i0 = Math.max(0, ci * C - 1), i1 = Math.min(nx - 1, ci * C + C), j0 = Math.max(0, cj * C - 1), j1 = Math.min(ny - 1, cj * C + C), k0 = Math.max(0, ck * C - 1), k1 = Math.min(nz - 1, ck * C + C);
+        for (var k = k0; k <= k1; k++) for (var j = j0; j <= j1; j++) { var b = j * nx + k * nxy; for (var ii = i0; ii <= i1; ii++) { var v = zone[b + ii]; if (v === SOLID) continue; var zz = v & 0x3FFF;
+          if (zz === 0) { open[c] = 1; continue; } if (tmp.indexOf(zz) < 0) tmp.push(zz); } }
+        zS[c] = zA.length; for (var t = 0; t < tmp.length; t++) zA.push(tmp[t]); }
+      zS[NC] = zA.length;
+      var zArr = Int32Array.from(zA); zA = null;
+      var R2 = R * R, ox = Z.org.x, oy = Z.org.y, oz = Z.org.z, cnt = new Uint32Array(NC);
+      function each(li, f) { var p = L[li], z = lz[li];
+        var a0 = Math.max(0, Math.floor((p.x - R - ox) / cs)), a1 = Math.min(cx - 1, Math.floor((p.x + R - ox) / cs)), b0 = Math.max(0, Math.floor((p.y - R - oy) / cs)), b1 = Math.min(cy - 1, Math.floor((p.y + R - oy) / cs)),
+            e0 = Math.max(0, Math.floor((p.z - R - oz) / cs)), e1 = Math.min(cz - 1, Math.floor((p.z + R - oz) / cs));
+        for (var kk = e0; kk <= e1; kk++) { var mz = oz + kk * cs, dz = p.z < mz ? mz - p.z : (p.z > mz + cs ? p.z - mz - cs : 0);
+          for (var jj = b0; jj <= b1; jj++) { var my = oy + jj * cs, dy = p.y < my ? my - p.y : (p.y > my + cs ? p.y - my - cs : 0), dyz = dy * dy + dz * dz; if (dyz > R2) continue;
+            for (var i2 = a0; i2 <= a1; i2++) { var mx = ox + i2 * cs, dx = p.x < mx ? mx - p.x : (p.x > mx + cs ? p.x - mx - cs : 0); if (dx * dx + dyz > R2) continue;
+              var cc = i2 + jj * cx + kk * cx * cy, okz = z === 0 || (z === OUTSIDE ? open[cc] === 1 : false);
+              if (!okz && z !== OUTSIDE) for (var w = zS[cc]; w < zS[cc + 1]; w++) if (zArr[w] === z) { okz = true; break; }
+              if (okz) f(cc); } } } }
+      for (var l1 = 0; l1 < n; l1++) each(l1, function (cc) { cnt[cc]++; });
+      var off = new Uint32Array(NC), tot = 0, nonEmpty = 0, maxL = 0;
+      for (var c2 = 0; c2 < NC; c2++) { off[c2] = tot; tot += cnt[c2]; if (cnt[c2]) { nonEmpty++; if (cnt[c2] > maxL) maxL = cnt[c2]; } }
+      var H = Math.max(1, Math.ceil(tot / IDX_W)), maxTex = A.renderer.capabilities.maxTextureSize || 4096;
+      if (H > maxTex) { console.warn('§LAMP_UNCAPPED FAIL index list ' + tot + ' entries needs ' + H + ' rows > maxTextureSize ' + maxTex + ' — pool path kept'); return lampFail(A, 'index list too long'); }
+      var idx = new Uint16Array(H * IDX_W), fill = new Uint32Array(NC);
+      for (var l2 = 0; l2 < n; l2++) each(l2, function (cc) { idx[off[cc] + fill[cc]++] = l2; });
+      var cl = new Uint32Array(NC * 2); for (var c3 = 0; c3 < NC; c3++) { cl[c3 * 2] = off[c3]; cl[c3 * 2 + 1] = cnt[c3]; }
+      if (idxTex) idxTex.dispose(); if (cluTex) cluTex.dispose();
+      idxTex = idxTex2D(THREE, idx, IDX_W, H); cluTex = cluTex3D(THREE, cl, cx, cy, cz);
+      CDIM[0] = cx; CDIM[1] = cy; CDIM[2] = cz; CDIM[3] = 0; lampListKey = key;
+      S = { clusters: NC, grid: cx + 'x' + cy + 'x' + cz, clusterM: cs, nonEmpty: nonEmpty, entries: tot, maxPerCluster: maxL, meanPerNonEmpty: nonEmpty ? +(tot / nonEmpty).toFixed(1) : 0,
+        MB: +((idx.byteLength + cl.byteLength + ld.byteLength) / 1e6).toFixed(1), zoneEntries: zArr.length, openClusters: open.reduce(function (s2, v2) { return s2 + v2; }, 0), ms: Math.round(performance.now() - tl) };
+    }
+    try { A.renderer.initTexture(lampTex); A.renderer.initTexture(idxTex); A.renderer.initTexture(cluTex); } catch (eU) { console.warn('§LAMP_UNCAPPED upload failed: ' + eU.message); return lampFail(A, 'upload'); }
+    LAMP[0] = 1; LAMP[1] = D.decay; LAMP[2] = CLU; LAMP[3] = IDX_W; lampVer = D.ver; lampPushAll = true;
+    lampLast = { lamps: n, lit: lit, sumI: +sumI.toFixed(3), unbound: byZ[0], zoned: byZ[1], outside: byZ[2], range: R, decay: D.decay, lists: S, ms: Math.round(performance.now() - t0) };
+    console.log('§LAMP_UNCAPPED on lamps=' + n + ' lit=' + lit + ' sumI=' + lampLast.sumI + ' (zoned ' + byZ[1] + ', outside ' + byZ[2] + ', unbound ' + byZ[0] + ') range=' + R + 'm decay=' + D.decay +
+      ' clusters=' + S.grid + ' (' + S.clusterM + ' m) nonEmpty=' + S.nonEmpty + '/' + S.clusters + ' entries=' + S.entries + ' perCluster max/mean=' + S.maxPerCluster + '/' + S.meanPerNonEmpty +
+      ' MB=' + S.MB + ' listMs=' + S.ms + ' ms=' + lampLast.ms + ' ver=' + D.ver + ' (no point lights, no cap, camera-free)');
+    return lampLast;
+  }
+  // §LAMP_UNCAPPED_COST — the per-fragment loop the shader really ran: one float render of the scene's own materials in the
+  // readback mode (w = 7: R = list length, G = lamps passing the zone test, B = 0.5 marker), METER_W x METER_H.
+  function lampCost(A) {
+    var THREE = global.THREE, R = A.renderer; if (!(LAMP[0] > 0.5) || !R) return null;
+    var t0 = performance.now(), W = 160, H = 90, rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType, depthBuffer: true }), buf = new Float32Array(W * H * 4);
+    var prevRT = R.getRenderTarget(), prevBg = A.scene.background, w0 = P[3], cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
+    try { P[3] = 7; A.scene.background = null; R.setClearColor(0x000000, 0); R.setRenderTarget(rt); R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, W, H, buf); }
+    finally { P[3] = w0; R.setRenderTarget(prevRT); A.scene.background = prevBg; R.setClearColor(cc, ca); rt.dispose(); }
+    var n = 0, noList = 0, sum = 0, sumP = 0, max = 0, maxP = 0, vals = [];
+    for (var i = 0; i < W * H; i++) { if (Math.abs(buf[i * 4 + 2] - 0.5) > 1e-6) continue; var ln = buf[i * 4], lp = buf[i * 4 + 1]; if (ln < 0) { noList++; continue; }
+      n++; sum += ln; sumP += lp; vals.push(ln); if (ln > max) max = ln; if (lp > maxP) maxP = lp; }
+    vals.sort(function (a, b) { return a - b; });
+    var r = { pixels: n, noCluster: noList, meanList: n ? +(sum / n).toFixed(1) : 0, p95List: vals.length ? vals[Math.floor(vals.length * 0.95)] : 0, maxList: max, meanLit: n ? +(sumP / n).toFixed(1) : 0, maxLit: maxP, ms: Math.round(performance.now() - t0) };
+    console.log('§LAMP_UNCAPPED_COST ' + (n ? '' : 'VACUOUS ') + 'pixels=' + n + ' offClusterGrid=' + noList + ' list mean/p95/max=' + r.meanList + '/' + r.p95List + '/' + r.maxList + ' zonePass mean/max=' + r.meanLit + '/' + r.maxLit + ' (lamps evaluated per fragment) ms=' + r.ms);
+    return r;
+  }
+  // witness accessor: the lamp indices in the cluster holding world point p (the CPU copy the textures were made from)
+  function lampsAt(p) {
+    var Z = global.LightZones && global.LightZones.get(); if (!(LAMP[0] > 0.5) || !Z || !cluTex || !idxTex) return null;
+    var cs = Z.cell * CLU, i = Math.floor((p.x - Z.org.x) / cs), j = Math.floor((p.y - Z.org.y) / cs), k = Math.floor((p.z - Z.org.z) / cs);
+    if (i < 0 || j < 0 || k < 0 || i >= CDIM[0] || j >= CDIM[1] || k >= CDIM[2]) return [];
+    var c = i + j * CDIM[0] + k * CDIM[0] * CDIM[1], cl = cluTex.image.data, ix = idxTex.image.data, o = cl[c * 2], n = cl[c * 2 + 1], out = [];
+    for (var q = 0; q < n; q++) out.push(ix[o + q]);
+    return out;
+  }
+  // a data path that cannot run must not leave the still without lamps: back to the capped pool, logged
+  function lampFail(A, why) {
+    LAMP[0] = 0; A._lampDataOn = false; A._lampData = null; lampVer = -1;
+    console.warn('§LAMP_UNCAPPED fallback (' + why + '): A._lampDataOn=false, the capped point-light pool rebuilds');
+    try { if (typeof A._nightUpdateLights === 'function') A._nightUpdateLights(); } catch (e) {}
+    return null;
   }
 
   // three's light order (WebGLLights.setup): the render list collects visible lights in scene traversal order, then a
@@ -270,6 +411,7 @@
   function push(A, m) {
     var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLParams) return false;
     U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; if (U.uSLSky) U.uSLSky.value = SKY; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
+    if (U.uSLLamp) { var lo = active && LAMP[0] > 0.5 && lampTex; U.uSLLamp.value = LAMP; U.uSLCluDim.value = CDIM; U.uSLLampT.value = lo ? lampTex : dLamp; U.uSLLIdx.value = lo ? idxTex : dIdx; U.uSLClu.value = lo ? cluTex : dClu; }
     return true;
   }
 
@@ -284,7 +426,8 @@
     if (linkFailed || !orig) return; linkFailed = true;
     var C = global.THREE.ShaderChunk; Object.keys(orig).forEach(function (k) { C[k] = orig[k]; });
     try { unstage(A, true); } catch (e) {}
-    installed = false; P[0] = 0;
+    installed = false; P[0] = 0; LAMP[0] = 0;
+    if (A._lampDataOn) { A._lampDataOn = false; A._lampData = null; try { if (typeof A._nightUpdateLights === 'function') A._nightUpdateLights(); } catch (eF) {} }
     var n = 0; A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !m.__slRe) { m.__slRe = true; m.needsUpdate = true; n++; } }); });
     if (A.markDirty) A.markDirty();
     console.log('§SOURCED_LIGHT_LINK_FAIL fallback: chunks restored, materials recompiling=' + n + ' (sourced off for this session)');
@@ -447,6 +590,7 @@
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;
     ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
     active = true;
+    try { lampBuild(A); } catch (eLB) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB.message); lampFail(A, 'build threw'); }
     var set = new Set(); A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) set.add(m); }); });
     var pushed = 0; set.forEach(function (m) { if (push(A, m)) pushed++; });
     var b = bindLights(A, A.camera);
@@ -455,7 +599,10 @@
     prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0; ordCache = null;
     var own = function (renderer, scene, camera) {
       if (active) {
+        if (A._lampDataOn && A._lampData && A._lampData.ver !== lampVer) { try { lampBuild(A); } catch (eLB2) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB2.message); lampFail(A, 'build threw'); } }
+        else if (!A._lampDataOn && LAMP[0] > 0.5) { LAMP[0] = 0; lampPushAll = true; }
         var bb = bindLights(A, camera);
+        if (lampPushAll) { lampPushAll = false; progN = -3; }
         // re-push only when a program was built (a recompile clones fresh uniforms from ShaderLib; typed arrays stay shared)
         var np = (renderer && renderer.info && renderer.info.programs) ? renderer.info.programs.length : -1;
         if (np !== progN) { progN = np; var seen = new Set(); A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !seen.has(m)) { seen.add(m); push(A, m); } }); }); pushes++; }
@@ -576,7 +723,8 @@
     if (!quiet) A._sourcedCap = null;
     glassOff(A, quiet); meterOff(A);
     if (!active) return;
-    active = false; P[0] = 0;
+    active = false; P[0] = 0; LAMP[0] = 0; lampVer = -1;
+    if (!quiet) { A._lampDataOn = false; A._lampData = null; }
     if (A.scene.onBeforeRender && A.scene.onBeforeRender._sourced) A.scene.onBeforeRender = prevOBR || function () {};
     prevOBR = null; lastLog = '';
     A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) push(A, m); }); });
@@ -584,5 +732,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

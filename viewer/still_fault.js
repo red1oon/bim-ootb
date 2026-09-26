@@ -43,9 +43,14 @@
       if ((o.isPointLight || o.isSpotLight) && o.intensity > 0 && o !== A._camLight) { if (o.isPointLight) { nLamp++; lamps.push(o); } else nSpot++; }   // the camera fill travels with the eye: not a lamp
       if ((o.isSprite || o.isPoints) && o.material && o.material.blending === THREE.AdditiveBlending) nSprite++;
     });
+    // §LAMP_UNCAPPED: on the data path the still has no lamp point lights; its lamps are A._lampData (every placed fixture)
+    var dataOn = !!(A._lampDataOn && A._lampData && global.SourcedLight && global.SourcedLight.lampStats && global.SourcedLight.lampStats());
+    if (dataOn) { nLamp = 0; nLampAll = 0; lamps = [];
+      A._lampData.lamps.forEach(function (q) { nLampAll++; if (!(q.I > 0)) return; nLamp++; var v = LZ.atLamp({ x: q.x, y: q.y, z: q.z });
+        lamps.push({ position: new THREE.Vector3(q.x, q.y, q.z), distance: q.range, intensity: q.I, userData: { sourcedZone: (v > 0 && v !== LZ.SOLID) ? v : ((v === 0 || v === -1) ? 65534 : 0) } }); }); }
     // indoor lamps stay on outside by day since red1 2026-09-26 (&lampsout default 1): they count here only when that switch says off
     if (camOutside && sunUp) out.extLightsDay = (A._stillLampsOff ? nLamp : 0) + nSpot + nSprite;
-    out.lampsLoaded = nLampAll; out.lampsLit = nLamp; out.lampCap = (typeof A._stillLampCap === 'number') ? A._stillLampCap : null;
+    out.lampsLoaded = nLampAll; out.lampsLit = nLamp; out.lampCap = dataOn ? 'none (lamp data)' : (typeof A._stillLampCap === 'number') ? A._stillLampCap : null;
     // glass
     var seenMat = new Set();
     A.scene.traverse(function (o) {
@@ -110,10 +115,12 @@
       out.capDropNear = dropped.size;
     }
     // expStep is LOGGED, not a fault: every press moves the exposure some amount, and no cited limit exists for a step
+    // §LAMP_UNCAPPED_COST: the lamps the shader loops per fragment at this pose (information, not a fault)
+    if (dataOn) { try { var lc = global.SourcedLight.lampCost(A); if (lc) { out.lampListMean = lc.meanList; out.lampListMax = lc.maxList; out.lampPassMean = lc.meanLit; } } catch (eLC) { console.warn('§LAMP_UNCAPPED_COST failed: ' + eLC.message); } }
     var fault = out.unlit > 0 || out.fieldBad > 0 || out.glassOpaque > 0 || out.glassStock > 0 || out.capDropNear > 0 || out.extLightsDay > 0 || out.glassLow > 0 || out.guard > 0;
     var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay +
       (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassStock=' + out.glassStock + ' portalsRetired=' + out.portalsRetired +
-      ' expStep=' + out.expStep + ' guard=' + out.guard + ' ms=' + (performance.now() - t0).toFixed(1);
+      ' expStep=' + out.expStep + ' guard=' + out.guard + (out.lampListMean != null ? ' lampList mean/max=' + out.lampListMean + '/' + out.lampListMax + ' zonePass=' + out.lampPassMean : '') + ' ms=' + (performance.now() - t0).toFixed(1);
     if (fault) console.warn(line); else console.log(line);
     out.fault = fault; A._stillFaultLast = out;   // §STILL_POSE_PNG copies it into the saved still
     return out;

@@ -2778,6 +2778,11 @@ async function setupEffects(A, renderer, scene, camera) {
   var _ghostSuspendedByStill = false;   // §STILL_GHOST_OWNERSHIP
   var _albedoSaved = [], _expSaved = null;   // §ALBEDO_SRGB
   // §STILL_DIALS — one Alt+S dial: APP[key] if a number, else &name=<num> in the URL, else def; clamped 0..max.
+  // §LAMP_UNCAPPED — the still's lamps as the logs need them: the data path's list when it is on, else the pool's point lights
+  function _stillLampList() {
+    if (A._lampDataOn && A._lampData) return A._lampData.lamps.map(function(q) { return { intensity: q.I, position: new THREE.Vector3(q.x, q.y, q.z), decay: A._lampData.decay, distance: q.range }; });
+    return A._nightLights || [];
+  }
   function _stillDial(key, name, def, max) {
     var v = (typeof A[key] === 'number') ? A[key] : null;
     if (v == null) { var m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(location.search); v = m ? parseFloat(m[1]) : def; }
@@ -4279,6 +4284,10 @@ async function setupEffects(A, renderer, scene, camera) {
         var _stZ1 = window.LightZones && window.LightZones.get(), _stPms = performance.now() - _stP;
         if (_stZ1 && _stZ1 !== _stZ0 && _stZ1.stats) { _stMs.zoneBuild = (_stZ1.stats.ms || 0) + ((_stZ1.stats.glare && _stZ1.stats.glare.ms) || 0); _stMs.skySweep = _stZ1.stats.skyMs || 0; _stMs.audit = (_stZ1.stats.glare && _stZ1.stats.glare.ms) || 0; }
         _stMs.zoneCap = Math.max(0, _stPms - _stMs.zoneBuild); }   // zones + camera/visible zones before the lamps are born
+      // §LAMP_UNCAPPED — decided before the lamps are born (toggleNightMode below, startStillRefine's update): every placed
+      // fixture as DATA (sourced_light.js), no point lights, no cap. Needs this building's zones (prepare just built/restored them).
+      A._lampDataOn = !!(window.SourcedLight && window.SourcedLight.lampWanted && window.SourcedLight.lampWanted(A));
+      console.log('§LAMP_UNCAPPED decide dataPath=' + (A._lampDataOn ? 1 : 0) + (A._lampDataOn ? '' : ' (capped pool: &lampdata=0 / film / no zones / sourced off)'));
       // §LAMP_SHAPE_COLOUR — round fixtures soft amber, rectangular white (red1). &lampshape=0 switches it off.
       A._stillShapeColour = _stillDial('_stillLampShape', 'lampshape', 1, 1) > 0;
       if (A._stillShapeColour && typeof A._nightFixtureWorldPositions === 'function' && A.nightFixtureShape) {
@@ -4350,7 +4359,7 @@ async function setupEffects(A, renderer, scene, camera) {
       console.log('§STILL_GLOW daylight=' + (_gDay ? 1 : 0) + ' sunElev=' + _gElev.toFixed(1) + ' duskMood=' + (_duskMood ? 1 : 0) +
         ' threshold=' + PHOTO_SUN_ELEVATION + ' camInside=' + (_gIn.inside == null ? '-' : (_gIn.inside ? 1 : 0)) + ' (' + _gIn.src + ')' +
         ' glowMats=' + _gN + ' emissive->' + (_gDay ? '0' : 'kept') +
-        ' lamps=' + (A._stillLampsOff ? '0 (fixture emissive ' + _gLampMats + ' mats -> 0)' : ((A._nightLights || []).length + ' on')) +
+        ' lamps=' + (A._stillLampsOff ? '0 (fixture emissive ' + _gLampMats + ' mats -> 0)' : (_stillLampList().length + ' on' + (A._lampDataOn ? ' (lamp data)' : ''))) +
         (_gDay && _gIn.inside === false ? ' lampsout=' + (_lampsOut ? 1 : 0) : ''));
     }
     // §STILL_BASE (2026-09-24, red1: switch the EVEN base light off and let the real sources carry the picture —
@@ -4365,12 +4374,12 @@ async function setupEffects(A, renderer, scene, camera) {
       _stillBaseSaved = { ambI: A.ambient.intensity, hemiI: A.hemi.intensity };
       A.ambient.intensity = _stillBaseSaved.ambI * _bs; A.hemi.intensity = _stillBaseSaved.hemiI * _sk;
       var _lampSum = 0, _lampOn = 0;
-      (A._nightLights || []).forEach(function(l) { _lampSum += l.intensity; if (l.intensity > 0) _lampOn++; });
+      var _sll = _stillLampList(); _sll.forEach(function(l) { _lampSum += l.intensity; if (l.intensity > 0) _lampOn++; });
       console.log('§STILL_BASE sky=' + _sk + ' base=' + _bs + ' lamps=' + A._stillLampMul + ' decay=' + A._stillLampDecayNow +
         ' range=' + (A._stillLampRangeNow ? A._stillLampRangeNow + 'm' : '0(inf)') + ' hemi=' + A.hemi.intensity.toFixed(3) + ' ambient=' + A.ambient.intensity.toFixed(3) +
         ' (from ' + _stillBaseSaved.hemiI.toFixed(3) + '/' + _stillBaseSaved.ambI.toFixed(3) + ') camInside=' +
         (typeof _gIn !== 'undefined' && _gIn && _gIn.inside != null ? (_gIn.inside ? 1 : 0) : '-') +
-        ' lampsOn=' + (A._stillLampsOff ? '0 (daylight, outside)' : _lampOn + '/' + (A._nightLights || []).length) +
+        ' lampsOn=' + (A._stillLampsOff ? '0 (daylight, outside)' : _lampOn + '/' + _sll.length) + (A._lampDataOn ? ' (lamp data)' : '') +
         ' lampSum=' + _lampSum.toFixed(3) + ' (at staging; §STILL_DIALS_LAMPS logs the refined set)');
     }
     if (A._concreteStrength) { var _r3 = (A._triplanarMaterials || []).filter(function(m) { return m && m.userData && m.userData.triRow === 'R3'; }).length;
@@ -4669,7 +4678,8 @@ async function setupEffects(A, renderer, scene, camera) {
     A._nightPLScale = 1.0;
     A._nightPLScaleStaged = null;   // §SUN_ARC_FILL — staging base gone with the staging
     A._photoFillBase = null;
-    if (_photoNightWasOn && typeof A._nightUpdateLights === 'function' && A._nightLights && A._nightLights.length) A._nightUpdateLights();
+    if (_photoNightWasOn && typeof A._nightUpdateLights === 'function' && ((A._nightLights && A._nightLights.length) || A._lampDataUsed)) A._nightUpdateLights();   // §LAMP_UNCAPPED: the still left no point lights; nav rebuilds its pool
+    A._lampDataUsed = false;
     _photoDuskMoodApplied = false;
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     if (A.sun && _photoSunPosSaved) {
@@ -5271,7 +5281,7 @@ async function setupEffects(A, renderer, scene, camera) {
       A._nightMaxLights = A._nightMaxLightsNav;
       A._nightNearFadeFloor = 0.3;
       A._nightPLScale = 1.0;   // §STAGED_PL_CUT — nav Night Mode back to full tuned intensity
-      if (A._nightLights && A._nightLights.length) A._nightUpdateLights();
+      if ((A._nightLights && A._nightLights.length) || (A._lampDataUsed && A._nightMode)) A._nightUpdateLights();   // §LAMP_UNCAPPED: data path left no point lights
     }
     // §PHOTO_SSGI: same rule — a fold-engaged SSGI must not outlive the still (a pre-existing
     // Alt+J preview survives, only dropped back to nav-quality knobs; see effects_gi_poc.js).
@@ -5583,7 +5593,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // §NIGHT_LIGHT_BUDGET_UP (2026-08-07): RE-ARMED — user directive explicitly accepts this cost
     // ("we got speed... throw all in, up to 50 as it is baking"), see tools.js A._nightStillBoost.
     if (A._nightStillBoost &&
-        A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
+        ((A._nightLights && A._nightLights.length) || A._lampDataOn) && typeof A._nightUpdateLights === 'function') {   // §LAMP_UNCAPPED: no point lights on the data path
       A._nightMaxLights = A._nightMaxLightsStill;
       A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
       A._nightPLScale = A._nightPLScaleStill || 1;          // §STAGED_PL_CUT — staging-only intensity cut
@@ -5608,7 +5618,7 @@ async function setupEffects(A, renderer, scene, camera) {
           var _hit = _rc.intersectObjects(_tg, false)[0];
           if (_hit) {
             var P = _hit.point, vals = [];
-            A._nightLights.forEach(function(l) { if (!(l.intensity > 0)) return; var d = Math.max(0.01, l.position.distanceTo(P));
+            _stillLampList().forEach(function(l) { if (!(l.intensity > 0)) return; var d = Math.max(0.01, l.position.distanceTo(P));
               var att = 1 / Math.max(Math.pow(d, l.decay), 0.01); if (l.distance > 0) att *= Math.pow(Math.max(0, Math.min(1, 1 - Math.pow(d / l.distance, 4))), 2);
               vals.push(l.intensity * att); });
             vals.sort(function(a, b) { return b - a; });
@@ -5620,9 +5630,9 @@ async function setupEffects(A, renderer, scene, camera) {
         } catch (eLS) { console.warn('§LIGHT_STACK failed: ' + eLS.message); }
         console.log('§STILL_LIGHT_PAD lamps=' + A._nightLights.length + ' pads=' + (A._nightPadLights || []).length + ' total=' + (A._nightLights.length + (A._nightPadLights || []).length) + ' cap=' + A._stillLampCap);
         var _dlSum = 0, _dlOn = 0;
-        A._nightLights.forEach(function(l) { _dlSum += l.intensity; if (l.intensity > 0) _dlOn++; });
+        var _dll = _stillLampList(); _dll.forEach(function(l) { _dlSum += l.intensity; if (l.intensity > 0) _dlOn++; });
         console.log('§STILL_DIALS_LAMPS lamps=' + A._stillLampMul + ' decay=' + A._stillLampDecayNow + ' plScale=' + A._nightPLScale +
-          ' lit=' + _dlOn + '/' + A._nightLights.length + ' sum=' + _dlSum.toFixed(3));
+          ' lit=' + _dlOn + '/' + _dll.length + ' sum=' + _dlSum.toFixed(3) + (A._lampDataOn ? ' (lamp data, uncapped)' : ''));
       }
       // §VAC V2 / §R14.1: MEASURED s5_hospital.log — 2,026 firings, ONE distinct line
       // (`raised to 200 lights, near-fade floor 1 …`). The re-raise itself is required every

@@ -2000,7 +2000,11 @@ function setupTools(A) {
     // live witness data: a bare 'n' toggle (no Alt+S) logged nightLights=200. A._stillRefineActive
     // (effects.js, true only between startStillRefine/stopStillRefine) is the actual per-session
     // state — AND it in alongside the feature flag.
-    if (A._nightStillBoost && A._stillRefineActive) {
+    if (A._nightStillBoost && A._stillRefineActive && A._lampDataOn && !A._maxqActive) {
+      // §LAMP_UNCAPPED — every placed fixture is lit (as DATA, sourced_light.js): no frustum, no zone pick, no cap
+      A._lampCapFarM = null;
+      needed = visPos.map(function(p) { return { pos: p }; });
+    } else if (A._nightStillBoost && A._stillRefineActive) {
       // §NIGHT_STILL_FRUSTUM (2026-08-07, user: "during Alt-S and movie baking, place quads and
       // PLs on every noticeable source in the frame") — frustum-cull to what's actually in view
       // rather than a flat count cap; a still pays this cost once, not every frame. 200 is a
@@ -2213,6 +2217,23 @@ function setupTools(A) {
     // bake — created once, assigned per frame by slot (position/color/intensity are uniform
     // updates, no recompile), unused slots dim to intensity 0 (contributes nothing — quality-
     // identical). Interactive navigation and Alt+S keep the churn-fix path below, untouched.
+    // §LAMP_UNCAPPED — the still's lamps become data (colour x intensity with the pool's own formula below, range, decay); the
+    // point-light path then runs with nothing needed, so every pool light is removed (no pads either: A._nightSyncPads)
+    if (A._lampDataOn && A._stillRefineActive && !A._maxqActive) {
+      var _ldL = [], _ldC = new THREE.Color();
+      needed.forEach(function(f) {
+        var _d = camPos.distanceTo(f.pos), _fl = A._nightNearFadeFloor, _fd = Math.min(1.0, _d / 15);
+        var _I = NIGHT_LIGHT_INTENSITY * (_fl + (1 - _fl) * _fd) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() * (f.pos.__intensityMult || 1) * _lampCapFade(_d);
+        _ldC.set(A.nightFixtureColor(f.pos));   // same Color path as PointLight.color (sRGB hex -> working space)
+        _ldL.push({ x: f.pos.x, y: f.pos.y, z: f.pos.z, r: _ldC.r * _I, g: _ldC.g * _I, b: _ldC.b * _I, I: _I, range: _stillLampRange() });
+      });
+      A._lampDataUsed = true;
+      A._lampData = { lamps: _ldL, decay: _stillLampDecay(), range: _stillLampRange(), ver: (A._lampData ? A._lampData.ver : 0) + 1 };
+      var _ldLine = '§LAMP_DATA lamps=' + _ldL.length + ' lit=' + _ldL.filter(function(q) { return q.I > 0; }).length + ' placed=' + visPos.length + ' total=' + allPos.length + ' range=' + _stillLampRange() + ' decay=' + _stillLampDecay() +
+        ' plScale=' + (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) + ' lampMul=' + _stillLampMul();
+      if (_ldLine !== A._lampDataLastLine) { A._lampDataLastLine = _ldLine; console.log(_ldLine + ' ver=' + A._lampData.ver); }
+      needed = [];
+    }
     if (A._maxqActive) {
       if (!A._nightBakePool) {
         var _poolN = Math.min(200, Math.max(1, allPos.length));
@@ -2352,7 +2373,7 @@ function setupTools(A) {
   };
   A._nightPadLights = [];
   A._nightSyncPads = function() {
-    var want = (A._stillRefineActive && !A._maxqActive && typeof A._stillLampCap === 'number' && A._nightLightByPos)
+    var want = (A._stillRefineActive && !A._maxqActive && !A._lampDataOn && typeof A._stillLampCap === 'number' && A._nightLightByPos)
       ? Math.max(0, A._stillLampCap - A._nightLightByPos.size) : 0;
     while (A._nightPadLights.length < want) {
       var pl = new THREE.PointLight(0xffffff, 0, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY); pl.userData.lampPad = true;
