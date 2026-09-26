@@ -18,6 +18,21 @@
   // mesh (GLAZE_CLASSES, plus R10 window panes) gets a CLONE of its glass material, created and patched ONCE per
   // original (kept across presses, so its program compiles once); everything else keeps the stock material.
   var GLAZE_CLASSES = { IfcWindow: 1, IfcPlate: 1 };
+  // §GLASS_BATCHED (2026-09-26, red1 "Clinic from outside glasses still black"; state at …385774229: 40 of 80 glass hits were
+  // STOCK glass — untagged batched buckets, skipped here as '?'). Batch buckets are class-pure since §BATCH_BUCKET_CLASS_PAINT,
+  // so an untagged mesh's class is read from its members (A.guidMap "<id>[_<i>]" -> guid -> elements_meta.ifc_class): all
+  // glazing -> it is glazing. Mixed or unknown members stay skipped (the mullion rule above).
+  var memberCls = new Map();
+  function classOfMembers(A, o) {
+    if (memberCls.has(o.id)) return memberCls.get(o.id);
+    var g = [], pre = o.id + '_'; for (var k in A.guidMap) { if (k === String(o.id) || k.indexOf(pre) === 0) g.push(A.guidMap[k]); }
+    var cls = null;
+    if (g.length && A.dbQuery) { var set = {}, n = 0;
+      for (var i = 0; i < g.length; i += 400) { var part = g.slice(i, i + 400).map(function (x) { return "'" + String(x).replace(/'/g, "''") + "'"; }).join(',');
+        A.dbQuery('SELECT DISTINCT ifc_class FROM elements_meta WHERE guid IN (' + part + ')').forEach(function (r) { if (!set[r[0]]) { set[r[0]] = 1; n++; } }); }
+      var ks = Object.keys(set); cls = (ks.length === 1) ? ks[0] : (ks.length ? 'mixed:' + ks.join('+') : null); }
+    memberCls.set(o.id, cls); return cls;
+  }
   var swaps = [], r10Arr = new Map();
   function patchedClone(THREE, orig) {
     if (orig.userData.gfClone) return orig.userData.gfClone;
@@ -51,7 +66,9 @@
       var mats = Array.isArray(o.material) ? o.material : [o.material];
       if (!mats.some(isGlass)) return;
       var r10 = !!(o.material && o.material.isR10MaterialArray);
-      if (!(GLAZE_CLASSES[cls] || r10) || o.isBatchedMesh) { skipped[cls] = (skipped[cls] || 0) + 1; return; }
+      if (cls === '?') { var mc = classOfMembers(A, o); if (mc && GLAZE_CLASSES[mc] && !Array.isArray(o.material)) cls = mc + '(members)'; }
+      var glazing = GLAZE_CLASSES[cls] || /\(members\)$/.test(cls) || r10;
+      if (!glazing || (o.isBatchedMesh && !/\(members\)$/.test(cls))) { skipped[cls] = (skipped[cls] || 0) + 1; return; }
       var before = clones.size;
       if (Array.isArray(o.material)) {
         var arr = o.material, rep = r10Arr.get(arr);
@@ -80,5 +97,5 @@
     if (A.markDirty) A.markDirty();
   }
 
-  global.GlassFresnel = { stage: stage, unstage: unstage };
+  global.GlassFresnel = { stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
 })(typeof window !== 'undefined' ? window : this);
