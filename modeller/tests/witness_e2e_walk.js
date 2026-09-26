@@ -48,6 +48,9 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   await pg.click('#b-open'); await sleep(200);
   await pg.click('#m-open-panel .mo-row[data-key="Duplex"]');
   await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => {});
+  // Snapshot AFTER the ARC seed has committed (MODELLER_MASTER trap "witnesses that read the op-log length early race the
+  // seed"): reading it at 0 made W4 count the 196 seed rows as walk rows (0→298). §WALK-AFTER-SEED makes the walk itself wait.
+  await pg.waitForFunction(() => window.Bonsai && window.Bonsai.oplog && window.Bonsai.oplog.length > 0, { timeout: 60000, polling: 250 }).catch(() => {});
   await sleep(2000);
 
   const before = await pg.evaluate(() => {
