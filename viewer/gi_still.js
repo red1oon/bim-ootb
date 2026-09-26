@@ -520,7 +520,10 @@
       // renderer kept across Alt+S presses picks up a new value without a shader rebuild (§GI_DIALS_FIRST_BUILD fix).
       const gain = G.gainU, aoK = G.aoU;
       const ao = T.float(1).sub(aoK).add(aoK.mul(gi.getAONode()));
-      rgb = C.rgb.mul(ao).add(receiver(G, C).mul(gi.getGINode().rgb).mul(gain));
+      // §IRC_MAX v2: the app colour already carries the zone interreflection (IR); the bounce adds only what exceeds it:
+      // added = max(0, bounce - IR_px), IR_px = colour x share (share = the IR part of the pixel's linear radiance)
+      const giT = receiver(G, C).mul(gi.getGINode().rgb).mul(gain), irPx = C.rgb.mul(G.shareNode.sample(T.uv()).r);
+      rgb = C.rgb.mul(ao).add(T.mix(giT, T.max(giT.sub(irPx), T.vec3(0)), G.irMaxU));
     }
     // enc 'linear' (§GI_STILL_TERM): no transfer at all, so coloronly/giterm/aoloss means ADD up in linear light.
     if (enc === 'linear') { G.pipeline.outputColorTransform = false; return T.vec4(rgb, mask); }
@@ -615,6 +618,16 @@
     pipeline.outputColorTransform = true;
     const rt = new THREE.RenderTarget(w, h, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true });
     const G = { THREE, TSL, renderer, pipeline, rt, w, h, cam, geoMat, colorCanvas, colorCtx, colorTex, colorNode, geomTexNode, maskNode, gi, pipeStats, mode: null, flipTex: false, flipOut: false };
+    // §IRC_MAX v2 — the app's per-pixel IR share (SourcedLight.irShare: IR radiance / total, linear), same canvas row order as the
+    // app frame and read through the SAME flip uniforms as colorNode, so share and colour cannot disagree about orientation
+    const shareCanvas = document.createElement('canvas'); shareCanvas.width = w; shareCanvas.height = h;
+    const shareCtx = shareCanvas.getContext('2d', { willReadFrequently: true });
+    const shareTex = new THREE.CanvasTexture(shareCanvas); shareTex.flipY = false; shareTex.colorSpace = THREE.NoColorSpace; shareTex.generateMipmaps = false;
+    shareTex.minFilter = THREE.NearestFilter; shareTex.magFilter = THREE.NearestFilter; shareTex.wrapS = shareTex.wrapT = THREE.ClampToEdgeWrapping;
+    const shareTexNode = TSL.texture(shareTex);
+    G.shareCanvas = shareCanvas; G.shareCtx = shareCtx; G.shareTex = shareTex;
+    G.shareNode = TSL.sample((uv) => shareTexNode.sample(TSL.vec2(uv.x, uv.y.mul(flipSign).add(flipOff))));
+    G.irMaxU = TSL.uniform(1);   // 1 = max(IR, SSGI) (watchdog rule); 0 = the old sum (&ircmax=0, A/B only)
     G.gainU = TSL.uniform(GI_GAIN_DEFAULT); G.aoU = TSL.uniform(GI_AO_DEFAULT);   // §GI_STILL_GAIN_DIAL
     G.recvU = TSL.uniform(0);   // §GI_RECEIVER, set per press
     G.setTexFlip = (f) => { G.flipTex = !!f; flipSign.value = f ? -1 : 1; flipOff.value = f ? 1 : 0; };
@@ -717,6 +730,12 @@
       // The app's finished frame, taken ONCE: it is both the colour the bounce is computed from and
       // the picture the bounce is pasted onto, so they cannot drift apart.
       R.underMean = await stage('taking the finished picture', async () => grabAppFrame(G));
+      // §IRC_MAX v2 — the IR share of every pixel (two small linear renders by the app); none = all 0 (the old composite)
+      { let sh = null; try { sh = window.SourcedLight && window.SourcedLight.irShare ? window.SourcedLight.irShare(A, w, h) : null; } catch (eS) { console.warn('§IRC_MAX share failed: ' + eS.message); }
+        if (sh) G.shareCtx.putImageData(new ImageData(sh.data, w, h), 0, 0); else { G.shareCtx.fillStyle = '#000'; G.shareCtx.fillRect(0, 0, w, h); }
+        G.shareTex.needsUpdate = true; G.irMaxU.value = /[?&]ircmax=0/.test(location.search) ? 0 : 1;
+        R.irShare = sh ? { pixels: sh.pixels, meanShare: sh.meanShare, over50: sh.shareOver50 } : null;
+        console.log('§IRC_MAX composite rule=' + (G.irMaxU.value ? 'max(IR, SSGI)' : 'SUM (&ircmax=0)') + ' share=' + (sh ? 'pixelsWithIR ' + sh.pixels + ' mean ' + sh.meanShare : 'none (IR off or not staged)')); }
       console.log('§GI_STILL underlay mean=' + R.underMean + ' (the app frame; it is also the colour fed to SSGI — ~0 means the app canvas handed back an empty buffer)');
       let acc = null;
       const _ps0 = G.pipeStats ? Object.assign({}, G.pipeStats) : null, _passMs = [];

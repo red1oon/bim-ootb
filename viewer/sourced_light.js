@@ -104,7 +104,8 @@
     '  if ( uSLParams.x < 0.5 || lz < 0.5 ) return 1.0;',
     '  return ( _slFZ < -0.5 || abs( _slFZ - lz ) < 0.5 ) ? 1.0 : 0.0;',
     '}',
-    'float _slSpec = -1.0;',   // §GLASS_SPEC_GATE readback: the reflection gate slSpecKeep returned
+    'float _slSpec = -1.0;',
+    'uniform vec4 uSLIrP; uniform highp sampler2D uSLIr;',   // §IRC_MAX v2: per-zone interreflected irradiance (lamps + daylight), x = on, y = scale   // §GLASS_SPEC_GATE readback: the reflection gate slSpecKeep returned
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
     // sky only where the sampled cell sees it (_slSky, §ZONE_OPEN_SKY). Unknown (-1: a fully solid column above) is a building
@@ -137,7 +138,13 @@
     '  }',
     '  return base;',
     '}',
+    // §IRC_MAX v2: the fragment's zone interreflected irradiance (4096 zones per texture row); staged zone fragments only
+    'vec3 slIr() {',
+    '  if ( uSLIrP.x < 0.5 || uSLParams.x < 0.5 || _slFZ < 0.5 || _slFZ > 65533.5 ) return vec3( 0.0 );',
+    '  int z = int( _slFZ + 0.5 ); return texelFetch( uSLIr, ivec2( z - ( z / 4096 ) * 4096, z / 4096 ), 0 ).rgb * uSLIrP.y;',
+    '}',
     '#else',
+    'vec3 slIr() { return vec3( 0.0 ); }',
     'float slSpecKeep( vec3 posView, vec3 nView, vec3 viewDir ) { return 1.0; }',
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
     'float slSkyKeep( vec3 posView, vec3 nView ) { return 1.0; }',
@@ -197,7 +204,7 @@
     var s0 = 'getSpotLightInfo( spotLight, geometryPosition, directLight );';
     if (fb.indexOf(s0) >= 0) { fb = fb.replace(s0, s0 + '\n\t\tdirectLight.color *= slPass( uSLSZ[ UNROLLED_LOOP_INDEX / 4 ][ UNROLLED_LOOP_INDEX - ( UNROLLED_LOOP_INDEX / 4 ) * 4 ], geometryPosition, geometryNormal );'); ok++; }
     var a0 = 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );';
-    if (fb.indexOf(a0) >= 0) { fb = fb.replace(a0, 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor ) * slSkyKeep( geometryPosition, geometryNormal );'); ok++; }
+    if (fb.indexOf(a0) >= 0) { fb = fb.replace(a0, 'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor ) * slSkyKeep( geometryPosition, geometryNormal ); irradiance += slIr();'); ok++; }   // §IRC_MAX v2
     var h0 = 'irradiance += getHemisphereLightIrradiance(';   // also matches the §SKY_OCCLUSION-patched line
     if (fb.indexOf(h0) >= 0) { fb = fb.replace(h0, 'irradiance += slSkyKeep( geometryPosition, geometryNormal ) * getHemisphereLightIrradiance('); ok++; }
     C.lights_fragment_begin = fb;
@@ -214,7 +221,8 @@
     if (C.dithering_fragment && C.dithering_fragment.indexOf('uSLParams') < 0) {
       C.dithering_fragment = C.dithering_fragment + '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
         'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : ( _slSky > 0.5 ? 0.5 : 0.0 ), 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
-        'if ( uSLParams.w > 7.5 && uSLParams.w < 8.5 ) { gl_FragColor = vec4( _slSpec, _slF, 0.25, 1.0 ); }\n' +   // §GLASS_SPEC_GATE readback
+        'if ( uSLParams.w > 8.5 && uSLParams.w < 9.5 ) { gl_FragColor = vec4( slIr() * BRDF_Lambert( material.diffuseColor ), 0.75 ); }\n' +   // §IRC_MAX v2 readback: IR radiance (linear)
+        'else if ( uSLParams.w > 7.5 && uSLParams.w < 8.5 ) { gl_FragColor = vec4( _slSpec, _slF, 0.25, 1.0 ); }\n' +   // §GLASS_SPEC_GATE readback
         'else if ( uSLParams.w > 6.5 && uSLParams.w < 7.5 ) { gl_FragColor = vec4( _slLN, _slLNP, 0.5, 1.0 ); }\n' +   // §LAMP_UNCAPPED_COST readback (float target)
         'else if ( uSLParams.w > 5.5 && uSLParams.w < 6.5 ) { gl_FragColor = vec4( _slF, ( _slFZ > 0.5 && _slFZ < 65533.5 ) ? 1.0 : 0.0, _slSky, 1.0 ); }\n' +   // §SKY_VIEW_FIELD SKY_STEP readback: F_filtered
         'else if ( uSLParams.w > 1.5 ) { mat4 _vi = inverse( viewMatrix ); vec3 _wp = ( _vi * vec4( - vViewPosition, 1.0 ) ).xyz; vec3 _wn = normalize( ( _vi * vec4( normal, 0.0 ) ).xyz ); vec3 _q = _wp + _wn * 0.2;\n' +
@@ -228,12 +236,14 @@
     dummy.minFilter = dummy.magFilter = THREE.NearestFilter; dummy.generateMipmaps = false; dummy.unpackAlignment = 1; dummy.needsUpdate = true;
     // §LAMP_UNCAPPED dummies: every declared sampler must see a texture of its own kind (an integer sampler on a float unit is
     // GL_INVALID_OPERATION at draw time), same reason as `dummy` above
+    dIr = lampTex2D(THREE, new Float32Array(4), 1, 1);   // §IRC_MAX v2 dummy
     dLamp = lampTex2D(THREE, new Float32Array(8), 2, 1); dIdx = idxTex2D(THREE, new Uint16Array(1), 1, 1); dClu = cluTex3D(THREE, new Uint32Array(2), 1, 1, 1);
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
       U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
+      U.uSLIrP = { value: IRP }; U.uSLIr = { value: dIr };
       U.uSLLamp = { value: LAMP }; U.uSLCluDim = { value: CDIM }; U.uSLLampT = { value: dLamp }; U.uSLLIdx = { value: dIdx }; U.uSLClu = { value: dClu };
     });
     installed = true;
@@ -362,6 +372,70 @@
     for (var q = 0; q < n; q++) out.push(ix[o + q]);
     return out;
   }
+  // ══ §IRC_MAX v2 (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "§IRC_MAX v2 (lamps + daylight) — SPEC") ══
+  // Per zone E_ir = R/(1-R) x mean DIRECT irradiance over the zone's own surfaces (Sumpner flux balance, the V12 relation).
+  // Lamps: three's point-light term att(d, range, decay) x cos from the zone's lamps (+ unbound) over zone-grid surface faces
+  // (zone cell faces against SOLID, <= IR_FACES per zone, even stride). Daylight: V12 irc_z (LightZones.field ircAll) x the hemi
+  // sky irradiance. One RGBA32F texel per zone. &ir=0 = off.
+  var IRP = new Float32Array(4), irTex = null, dIr = null, irKey = null, irFaces = null, irLast = null, IR_FACES = 4000, IR_R = 0.5;
+  function irOn(A) { return !(A._stillIr === false || /[?&]ir=0/.test(location.search)); }
+  function irFacesOf(Z) {   // camera-free, per zone grid: sampled surface faces [x, y, z, nx, ny, nz] per zone
+    if (irFaces && irFaces.Z === Z) return irFaces;
+    var t0 = performance.now(), nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, N = nx * ny * nz, zone = Z.zone, cnt = new Int32Array(Z.zones + 1), D6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    function each(f) { for (var c = 0; c < N; c++) { var v = zone[c]; if (v === SOLID) continue; var z = v & 0x3FFF; if (!z) continue; var i = c % nx, j = ((c / nx) | 0) % ny, k = (c / nxy) | 0;
+      for (var d = 0; d < 6; d++) { var ii = i + D6[d][0], jj = j + D6[d][1], kk = k + D6[d][2]; if (ii < 0 || jj < 0 || kk < 0 || ii >= nx || jj >= ny || kk >= nz) continue; if (zone[ii + jj * nx + kk * nxy] !== SOLID) continue; f(z, i, j, k, d); } } }
+    each(function (z) { cnt[z]++; });
+    var stride = new Int32Array(Z.zones + 1), seen = new Int32Array(Z.zones + 1), out = new Array(Z.zones + 1), cl = Z.cell;
+    for (var z0 = 1; z0 <= Z.zones; z0++) { stride[z0] = Math.max(1, Math.ceil(cnt[z0] / IR_FACES)); out[z0] = []; }
+    each(function (z, i, j, k, d) { if ((seen[z]++ % stride[z]) !== 0) return; var D = D6[d];
+      out[z].push(Z.org.x + (i + 0.5 + D[0] * 0.49) * cl, Z.org.y + (j + 0.5 + D[1] * 0.49) * cl, Z.org.z + (k + 0.5 + D[2] * 0.49) * cl, -D[0], -D[1], -D[2]); });
+    irFaces = { Z: Z, faces: out, count: cnt, ms: Math.round(performance.now() - t0) };
+    return irFaces;
+  }
+  function irBuild(A) {
+    var THREE = global.THREE, LZ = global.LightZones, Z = LZ && LZ.get(); IRP[0] = 0;
+    if (!Z || !irOn(A)) return null;
+    var D = A._lampDataOn ? A._lampData : null, F = Z.field, hemi = A.hemi, hc = hemi ? [hemi.color.r * hemi.intensity, hemi.color.g * hemi.intensity, hemi.color.b * hemi.intensity] : [0, 0, 0];
+    var key = (Z.bld + ':' + Z.zones) + '|' + (D ? D.ver + ':' + D.lamps.length : 'nolamps') + '|' + hc.map(function (v) { return v.toFixed(5); }).join(',') + '|' + (F ? 1 : 0);
+    if (key === irKey && irTex) { IRP[0] = 1; return irLast; }   // IRP[1] (scale) is left alone: the meter zeroes it for its own render
+    var t0 = performance.now(), fc = irFacesOf(Z), nzn = Z.zones, W = 4096, H = Math.ceil((nzn + 1) / W), buf = new Float32Array(W * H * 4), k2 = IR_R / (1 - IR_R);
+    var byZ = new Map(), unb = [], lampN = 0, zl = 0, zd = 0, maxL = 0, maxD = 0;
+    if (D) D.lamps.forEach(function (q) { if (!(q.I > 0)) return; lampN++; var z = lampZone(LZ, q); if (z === 0) unb.push(q); else if (z !== OUTSIDE) { var a = byZ.get(z); if (!a) byZ.set(z, a = []); a.push(q); } });
+    var dec = D ? D.decay : 2;
+    for (var z = 1; z <= nzn; z++) {
+      var er = 0, eg = 0, eb = 0, f = fc.faces[z], nf = f ? f.length / 6 : 0, Ls = (byZ.get(z) || []).concat(unb);
+      if (nf && Ls.length) { for (var fi = 0; fi < f.length; fi += 6) { var px = f[fi], py = f[fi + 1], pz = f[fi + 2], nx2 = f[fi + 3], ny2 = f[fi + 4], nz2 = f[fi + 5];
+          for (var li = 0; li < Ls.length; li++) { var q = Ls[li], lx = q.x - px, ly = q.y - py, lzz = q.z - pz, d = Math.sqrt(lx * lx + ly * ly + lzz * lzz); if (!(d > 1e-4)) continue;
+            var cs = (lx * nx2 + ly * ny2 + lzz * nz2) / d; if (cs <= 0) continue; var R2 = q.range, att = 1 / Math.max(Math.pow(d, dec), 0.01);
+            if (R2 > 0) { if (d >= R2) continue; var w = 1 - Math.pow(d / R2, 4); att *= w * w; } er += q.r * att * cs; eg += q.g * att * cs; eb += q.b * att * cs; } }
+        er = k2 * er / nf; eg = k2 * eg / nf; eb = k2 * eb / nf; if (er + eg + eb > 0) zl++; maxL = Math.max(maxL, (er + eg + eb) / 3); }
+      var ic = F && F.ircAll ? F.ircAll[z] : 0;
+      if (ic > 0) { zd++; maxD = Math.max(maxD, ic * (hc[0] + hc[1] + hc[2]) / 3); er += ic * hc[0]; eg += ic * hc[1]; eb += ic * hc[2]; }
+      buf[z * 4] = er; buf[z * 4 + 1] = eg; buf[z * 4 + 2] = eb; buf[z * 4 + 3] = 1;
+    }
+    if (irTex) irTex.dispose(); irTex = lampTex2D(THREE, buf, W, H);
+    try { A.renderer.initTexture(irTex); } catch (eI) { console.warn('§IRC_MAX upload failed: ' + eI.message); return null; }
+    IRP[0] = 1; IRP[1] = 1; irKey = key; lampPushAll = true;
+    irLast = { zones: nzn, zonesLamp: zl, zonesDay: zd, lamps: lampN, unbound: unb.length, maxLampE: +maxL.toFixed(5), maxDayE: +maxD.toFixed(5), hemi: hc.map(function (v) { return +v.toFixed(3); }), facesMs: fc.ms, ms: Math.round(performance.now() - t0) };
+    console.log('§IRC_MAX build zones=' + nzn + ' withLampIR=' + zl + ' withDayIR=' + zd + ' lamps=' + lampN + ' (unbound ' + unb.length + ') maxE lamp/day=' + irLast.maxLampE + '/' + irLast.maxDayE +
+      ' R=' + IR_R + ' facesPerZone<=' + IR_FACES + ' facesMs=' + fc.ms + ' ms=' + irLast.ms + ' (E_ir = R/(1-R) x mean direct E over the zone surfaces; day = V12 irc x hemi)');
+    return irLast;
+  }
+  // share of each pixel's linear radiance that is the IR term (for gi_still's max rule): two linear renders at w x h, rows top-down
+  function irShare(A, w, h) {
+    var THREE = global.THREE, R = A.renderer; if (!(IRP[0] > 0.5) || !active || !R) return null;
+    var t0 = performance.now(), rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: true }), L = new Float32Array(w * h * 4), I = new Float32Array(w * h * 4), w0 = P[3], prev = R.getRenderTarget(), bg = A.scene.background;
+    try { A.scene.background = null; R.setRenderTarget(rt); R.clear(); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, w, h, L);
+      P[3] = 9; R.clear(); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, w, h, I); }
+    finally { P[3] = w0; R.setRenderTarget(prev); A.scene.background = bg; rt.dispose(); }
+    var out = new Uint8ClampedArray(w * h * 4), n = 0, sum = 0, over = 0;
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) { var s = (y * w + x) * 4, d = ((h - 1 - y) * w + x) * 4, sh = 0;
+      if (Math.abs(I[s + 3] - 0.75) < 1e-4) { var li = 0.2126 * I[s] + 0.7152 * I[s + 1] + 0.0722 * I[s + 2], lt = 0.2126 * L[s] + 0.7152 * L[s + 1] + 0.0722 * L[s + 2]; sh = lt > 1e-9 ? Math.min(1, Math.max(0, li / lt)) : 0; }
+      var v = Math.round(sh * 255); out[d] = v; out[d + 1] = v; out[d + 2] = v; out[d + 3] = 255; if (sh > 0) { n++; sum += sh; if (sh > 0.5) over++; } }
+    var r = { data: out, pixels: n, meanShare: n ? +(sum / n).toFixed(3) : 0, shareOver50: over, ms: Math.round(performance.now() - t0) };
+    console.log('§IRC_MAX share ' + w + 'x' + h + ' pixelsWithIR=' + n + ' meanShare=' + r.meanShare + ' pixelsIRover50%=' + over + ' ms=' + r.ms + ' (share = IR radiance / total, linear; applied to the tone-mapped app colour = approximation)');
+    return r;
+  }
   // a data path that cannot run must not leave the still without lamps: back to the capped pool, logged
   function lampFail(A, why) {
     LAMP[0] = 0; A._lampDataOn = false; A._lampData = null; lampVer = -1;
@@ -437,6 +511,7 @@
   function push(A, m) {
     var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLParams) return false;
     U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; if (U.uSLSky) U.uSLSky.value = SKY; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
+    if (U.uSLIrP) { U.uSLIrP.value = IRP; U.uSLIr.value = (active && IRP[0] > 0.5 && irTex) ? irTex : dIr; }
     if (U.uSLLamp) { var lo = active && LAMP[0] > 0.5 && lampTex; U.uSLLamp.value = LAMP; U.uSLCluDim.value = CDIM; U.uSLLampT.value = lo ? lampTex : dLamp; U.uSLLIdx.value = lo ? idxTex : dIdx; U.uSLClu.value = lo ? cluTex : dClu; }
     return true;
   }
@@ -617,6 +692,7 @@
     ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
     active = true;
     try { lampBuild(A); } catch (eLB) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB.message); lampFail(A, 'build threw'); }
+    try { irBuild(A); } catch (eIR) { IRP[0] = 0; console.warn('§IRC_MAX build failed: ' + eIR.message); }
     var set = new Set(); A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) set.add(m); }); });
     var pushed = 0; set.forEach(function (m) { if (push(A, m)) pushed++; });
     var b = bindLights(A, A.camera);
@@ -627,6 +703,7 @@
       if (active) {
         if (A._lampDataOn && A._lampData && A._lampData.ver !== lampVer) { try { lampBuild(A); } catch (eLB2) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB2.message); lampFail(A, 'build threw'); } }
         else if (!A._lampDataOn && LAMP[0] > 0.5) { LAMP[0] = 0; lampPushAll = true; }
+        try { irBuild(A); } catch (eIR2) { IRP[0] = 0; }   // cheap when nothing changed (key compare)
         var bb = bindLights(A, camera);
         if (lampPushAll) { lampPushAll = false; progN = -3; }
         // re-push only when a program was built (a recompile clones fresh uniforms from ShaderLib; typed arrays stay shared)
@@ -674,13 +751,17 @@
     if (!meterMat) meterMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevOv = A.scene.overrideMaterial, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
     var buf = new Float32Array(METER_W * METER_H * 4);
+    // §IRC_MAX v2: the meter reads ALL the light a camera would see, the zone interreflection included (decided 2026-09-26: the
+    // physically consistent meter; red1 delegated: "darker is realistic"). Refs: Clinic corridor 77.7 -> 72.2, Hospital indoor
+    // 83.5 -> 72.3 composite mean. (Direct-only metering read 97.7 / 107.4.)
+    var irs = IRP[1];
     try { A.scene.background = null; A.scene.fog = null; A.scene.overrideMaterial = meterMat; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
       // the override material is not in the scene, so the per-render push never reaches it: render once (builds its programs),
       // push the zone texture + uniforms into each built program, render again (Clinic 2026-09-25: unpushed, the meter saw every
       // fragment as OUTSIDE — hemi 0.728 of 0.728, lamps ~0)
       R.clear(true, true, true); R.render(A.scene, A.camera); push(A, meterMat);
       R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); }
-    finally { R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; A.scene.overrideMaterial = prevOv; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
+    finally { IRP[1] = irs; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; A.scene.overrideMaterial = prevOv; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
     // weights per pixel. 'avg' = every lit pixel alike. 'centre' = CENTRE-WEIGHTED, the default metering mode of real
     // cameras: 75% of the weight inside the centre circle, 25% over the rest; circle 8 mm (default) on a 36 x 24 mm frame
     // (Nikonians Wiki, "C-W (Center-Weighted) Metering"; Wikipedia "Nikon D3500": "75% of the 8mm circle in the center"),
@@ -749,7 +830,7 @@
     if (!quiet) A._sourcedCap = null;
     glassOff(A, quiet); meterOff(A);
     if (!active) return;
-    active = false; P[0] = 0; LAMP[0] = 0; lampVer = -1;
+    active = false; P[0] = 0; LAMP[0] = 0; lampVer = -1; IRP[0] = 0; irKey = null;
     if (!quiet) { A._lampDataOn = false; A._lampData = null; }
     if (A.scene.onBeforeRender && A.scene.onBeforeRender._sourced) A.scene.onBeforeRender = prevOBR || function () {};
     prevOBR = null; lastLog = '';
@@ -758,5 +839,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);
