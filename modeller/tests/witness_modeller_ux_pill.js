@@ -77,11 +77,13 @@ function serve() {
     var p = document.getElementById('m-open-panel');
     if (!p || p.style.display !== 'block') return { open: false };
     var rows = [].slice.call(p.querySelectorAll('.mo-row'));
-    return { open: true, rows: rows.length, local: rows.some(function (d) { return d.getAttribute('data-key') === '__local'; }),
+    // §NET-AUDIT (2026-09-26): resident rows (data-key, not __local; IFC rows are data-ifc) == the app's own registry, not a
+    // hardcoded 4 — the registry grew with the 07-10 ARC-only embed and A5 had been red on 'rows=11' since.
+    return { open: true, rows: rows.filter(function (d) { var k = d.getAttribute('data-key'); return k && k !== '__local'; }).length, want: window.STRWalkerOutliner._residents.length, local: rows.some(function (d) { return d.getAttribute('data-key') === '__local'; }),
       sh: rows.some(function (d) { return d.getAttribute('data-key') === 'SampleHouse'; }) };
   });
-  chk('A5 Open chooser opens with the 4 residents + local door', panel.open && panel.rows === 5 && panel.local && panel.sh,
-    'rows=' + panel.rows + ' local=' + panel.local + ' SampleHouse=' + panel.sh);
+  chk('A5 Open chooser opens with every registered resident + local door', panel.open && panel.want > 0 && panel.rows === panel.want && panel.local && panel.sh,
+    'residentRows=' + panel.rows + ' registry=' + panel.want + ' local=' + panel.local + ' SampleHouse=' + panel.sh);
 
   // click the SampleHouse row → the SHIPPED openResident() walks + seeds the bom-graph
   await page.click('#m-open-panel .mo-row[data-key="SampleHouse"]');

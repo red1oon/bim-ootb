@@ -7,7 +7,7 @@
  *   C1 SELECT     — a real click selects an element.
  *   C2 CUT-COMMIT — clicking Cut commits exactly one GEOM_CUT op parented to the selection (op-log +1).
  *   C3 CHAIN-OK   — verifyChain passes after the cut.
- *   C4 VISIBLE    — the framebuffer changed (the void shows).
+ *   C4 VISIBLE    — RETIRED as a verdict 2026-09-26 (pixel sum flipped with no code change); C6 is the numeric proof. Logged as info.
  *   C5 REVERSIBLE — undo via the history slider restores the pre-cut cursor.
  *   C6 GEOMETRY-REVERSIBLE — the cut changes the element's own mesh and the undo restores it exactly (was a pixel compare).
  *
@@ -51,7 +51,10 @@ const fpOf = (fid) => t.pg.evaluate((fid) => { const m = window.Bonsai.group().c
   await t.shotClip('cut-open', sel.fid, 80);   // guide frame (§F2 G4 element-clip): the opening, cut
   t.assert('C2 CUT-COMMIT (one GEOM_CUT on selection)', after.len === before.len + 1 && last && last.op_type === 'GEOM_CUT' && last.parameters && last.parameters.parent === sel.fid, 'len ' + before.len + '→' + after.len + ' op=' + (last && last.op_type) + ' parent=' + (last && last.parameters && last.parameters.parent));
   t.assert('C3 CHAIN-OK (verifyChain)', chain === true, 'verifyChain=' + chain);
-  t.assert('C4 VISIBLE (framebuffer changed)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
+  // §NET-AUDIT PIXEL-AS-PROOF (2026-09-26): a whole-frame pixel sum is not a verdict (Primal Law). Measured flipping with no code change
+  // — 09-26 serial runs: cut C4 red on main / green on the branch, cut_layers L6 the reverse, sketch K5b red only under load.
+  // C4 is retired as a verdict: C6 already proves the void numerically (the element's own mesh changed, undo restores it).
+  console.log('  §E2E-CUT C4-PIX info (retired verdict, see C6) pix ' + pix0 + '→' + pix1);
   await t.undoToCursor(before.cur);
   const undo = await t.oplog();
   const geo2 = await fpOf(sel.fid);   // §C6-GEOMETRY: the element's own mesh, read straight after the undo

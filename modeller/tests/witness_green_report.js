@@ -75,7 +75,10 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
 
     // ── MEP density + gate ──
     await window.DiscWalker.dwInit(window.SQL, './', 'terminal_rules.db');
-    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_ARC.db')).arrayBuffer();
+    // §NET-AUDIT (2026-09-26): the as-built MEP oracle must come from Terminal_meta.db. c63939a3 (07-10) repointed this at
+    // Terminal_ARC.db, which is ARC-only (35,552 ARC, 0 MEP) — since then realCount() and GR3's 'real MEP' set were EMPTY
+    // (GR3 '0 pairs … of 0 real MEP'). Terminal_meta.db: ACMV 1570 · ELEC 833 · FP 989 · PLB 8175, with transforms.
+    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_meta.db')).arrayBuffer();
     var mdb = new window.SQL.Database(new Uint8Array(mbuf));
     function realCount(disc) { var r = mdb.exec("SELECT count(*) FROM elements_meta WHERE discipline='" + disc + "'"); return r.length ? r[0].values[0][0] : 0; }
     var byDisc = {}, all = [], mepRows = {};
