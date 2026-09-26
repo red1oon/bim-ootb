@@ -472,6 +472,17 @@
   var EN_TABLE = {
     corridor: ['6.1.1 Corridors and circulation', 100], restroom: ['6.2.4 Toilets / washrooms', 200], kitchen: ['6.2.1 Canteens, pantries', 200],
     utilities: ['6.3.1 Plant rooms, switch gear rooms', 200], bedroom: ['6.37.1 Waiting rooms (health care) — default', 200], habitable: ['6.37.1 Waiting rooms (health care) — default', 200] };
+  // §SPACE_USES — the building's lamp -> room USE sidecar (buildings/space_uses/<Building>.json, viewer/tests/extract_space_uses.py:
+  // IFC IfcRelContainedInSpatialStructure lamp -> IfcSpace LongName, by GUID). Fetched once per building before staging.
+  var spaceUsesCache = {};
+  function primeSpaceUses(A) {
+    var bld = A && A.activeBuilding; if (!bld || Object.prototype.hasOwnProperty.call(spaceUsesCache, bld)) return Promise.resolve(spaceUsesCache[bld] || null);
+    var url = new URL('../buildings/space_uses/' + encodeURIComponent(bld) + '.json', location.href).href;
+    return fetch(url).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { spaceUsesCache[bld] = j && j.lamps ? j : null;
+      console.log('§SPACE_USES bld=' + bld + ' ' + (j && j.lamps ? 'loaded lamps=' + Object.keys(j.lamps).length + ' from ' + (j.sources || []).map(function (q) { return q.ifc; }).join('+') : 'none (' + url + ')')); return spaceUsesCache[bld]; })
+      .catch(function () { spaceUsesCache[bld] = null; console.log('§SPACE_USES bld=' + bld + ' none (fetch failed)'); return null; });
+  }
+  function enRowForUse(name) { for (var i = 0; i < EN_ROWS.length; i++) if (EN_ROWS[i][2] != null && EN_ROWS[i][0].test(name || '')) return [EN_ROWS[i][1], EN_ROWS[i][2]]; return null; }
   function enOn(A) { return !(A._stillLampEn === false || /[?&]lampen=0/.test(location.search)); }
   function enApply(A, Z, D) {
     var LZ = global.LightZones, t0 = performance.now(), vols = [];
@@ -484,7 +495,17 @@
       var row = EN_TABLE[v.category] || EN_TABLE.habitable, samp = [], nxs = Math.max(1, Math.min(8, Math.round(sz.x))), nzs = Math.max(1, Math.min(8, Math.round(sz.z)));
       for (var a = 0; a < nxs; a++) for (var b = 0; b < nzs; b++) { var p = { x: x0 + (a + 0.5) * sz.x / nxs, y: y0 + 0.8, z: z0 + (b + 0.5) * sz.z / nzs }, zz = LZ.at(p); if (zz > 0 && zz !== LZ.SOLID) samp.push([p, zz]); }
       return { k: k, cat: v.category, row: row, box: [x0, x1, y0, y1 + 0.6, z0, z1], samp: samp, s: 1, lamps: [] }; });
-    for (var li = 0; li < n; li++) { var q = L[li]; for (var ri = 0; ri < R.length; ri++) { var bx = R[ri].box; if (q.x >= bx[0] && q.x <= bx[1] && q.y >= bx[2] && q.y <= bx[3] && q.z >= bx[4] && q.z <= bx[5]) { room[li] = ri; R[ri].lamps.push(li); break; } } }
+    // §SPACE_USES first: lamps with a real room use are grouped by (zone, use); the group's working plane = its zone's 0.8 m cells
+    // (§SKY_VIEW_FIELD stats samples) within 2 m (horizontal) of any of its lamps; row = EN_ROWS by the use name, else the default
+    var SU = spaceUsesCache[A.activeBuilding], suN = 0, suRows = {}, suUnmatched = {}, FS0 = fieldLast && fieldLast.stats;
+    if (SU && FS0) { var grp = new Map();
+      for (var ls = 0; ls < n; ls++) { var use = L[ls].guid && SU.lamps[L[ls].guid]; if (!use || !(lzs[ls] > 0) || lzs[ls] === OUTSIDE) continue; var key = lzs[ls] + '|' + use, g = grp.get(key); if (!g) grp.set(key, g = { z: lzs[ls], use: use, lamps: [] }); g.lamps.push(ls); }
+      grp.forEach(function (g) { var zr = FS0.zones[g.z]; if (!zr || !zr.samples || !zr.samples.length) return; var samp = [];
+        zr.samples.forEach(function (c) { var p = { x: Z.org.x + (c % Z.nx + 0.5) * Z.cell, y: Z.org.y + ((((c / Z.nx) | 0) % Z.ny) + 0.5) * Z.cell, z: Z.org.z + (((c / (Z.nx * Z.ny)) | 0) + 0.5) * Z.cell };
+          for (var gi = 0; gi < g.lamps.length; gi++) { var q0 = L[g.lamps[gi]]; if ((q0.x - p.x) * (q0.x - p.x) + (q0.z - p.z) * (q0.z - p.z) <= 4) { samp.push([p, g.z]); break; } } });
+        if (!samp.length) return; var row = enRowForUse(g.use); if (row) suRows[row[0].split(' ')[0]] = (suRows[row[0].split(' ')[0]] || 0) + g.lamps.length; else suUnmatched[g.use] = (suUnmatched[g.use] || 0) + g.lamps.length;
+        var idx = R.length; R.push({ k: idx, cat: 'use:' + g.use, row: row || EN_TABLE.habitable, box: null, samp: samp, s: 1, lamps: g.lamps.slice() }); g.lamps.forEach(function (li0) { room[li0] = idx; suN++; }); }); }
+    for (var li = 0; li < n; li++) { var q = L[li]; if (room[li] >= 0) continue; for (var ri = 0; ri < R.length; ri++) { if (!R[ri].box) continue; var bx = R[ri].box; if (q.x >= bx[0] && q.x <= bx[1] && q.y >= bx[2] && q.y <= bx[3] && q.z >= bx[4] && q.z <= bx[5]) { room[li] = ri; R[ri].lamps.push(li); break; } } }
     var byZ = new Map(); for (var l2 = 0; l2 < n; l2++) { var z2 = lzs[l2]; if (z2 === OUTSIDE) continue; var a2 = byZ.get(z2); if (!a2) byZ.set(z2, a2 = []); a2.push(l2); }
     var unb = byZ.get(0) || [], k2 = IR_R / (1 - IR_R), fc = irFacesOf(Z), scale = new Float32Array(n).fill(1);
     function Edir(p, zz) { var Ls = (byZ.get(zz) || []).concat(unb), e = 0; for (var j = 0; j < Ls.length; j++) { var q2 = L[Ls[j]], dx = q2.x - p.x, dy = q2.y - p.y, dz = q2.z - p.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-3; if (dy <= 0) continue;
@@ -526,7 +547,8 @@
     judged.forEach(function (r) { achieved.push(r.E / r.row[1]); });
     for (var l3 = 0; l3 < n; l3++) { var q4 = L[l3], sc = scale[l3]; q4.r = q4.__r0 * sc; q4.g = q4.__g0 * sc; q4.b = q4.__b0 * sc; q4.I = q4.__I0 * sc; q4.en = sc; }
     var ss = judged.map(function (r) { return r.s; }).sort(function (a, b) { return a - b; }), ac = achieved.sort(function (a, b) { return a - b; }), pq = function (a, f) { return a.length ? a[Math.min(a.length - 1, Math.floor(a.length * f))].toFixed(2) : '-'; };
-    var cats = {}; judged.forEach(function (r) { cats[r.cat] = (cats[r.cat] || 0) + 1; });
+    var cats = {}; judged.forEach(function (r) { var ck = r.cat.indexOf('use:') === 0 ? 'realUse' : r.cat; cats[ck] = (cats[ck] || 0) + 1; });
+    if (SU) console.log('§SPACE_USES applied lampsByRealUse=' + suN + ' byEnRow ' + JSON.stringify(suRows) + ' default(200 lx, no EN row for the name) ' + JSON.stringify(suUnmatched));
     var unassigned = 0; for (var l4 = 0; l4 < n; l4++) if (room[l4] < 0) unassigned++;
     var out = { rooms: R.length, judged: judged.length, lampsInRooms: n - unassigned, unassigned: unassigned, s: [pq(ss, 0.1), pq(ss, 0.5), pq(ss, 0.9), ss.length ? ss[0].toFixed(2) : '-', ss.length ? ss[ss.length - 1].toFixed(2) : '-'], achieved: [pq(ac, 0.1), pq(ac, 0.5), pq(ac, 0.9)], ms: Math.round(performance.now() - t0) };
     console.log('§LAMP_EN applied rooms=' + out.rooms + ' judged(lamps+wp)=' + out.judged + ' ' + JSON.stringify(cats) + ' lampsInRooms=' + out.lampsInRooms + ' unassigned(-> median ' + sMed.toFixed(3) + ')=' + unassigned + ' cappedAtP90(' + sP90.toFixed(3) + ')=' + capped +
@@ -965,5 +987,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { primeSpaceUses: primeSpaceUses, irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

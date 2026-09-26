@@ -5958,6 +5958,7 @@ async function setupEffects(A, renderer, scene, camera) {
         var _LZ = window.LightZones;
         // §ZONE_IDB_CACHE: read this building's stored zone grid + sky field (IndexedDB) before the blocking staging call
         if (_LZ && _LZ.prime) { try { await _LZ.prime(A); } catch (eZP) { console.warn('§ZONE_IDB_CACHE prime failed: ' + eZP.message); } }
+        if (window.SourcedLight && window.SourcedLight.primeSpaceUses) { try { await window.SourcedLight.primeSpaceUses(A); } catch (eSU) { console.warn('§SPACE_USES failed: ' + eSU.message); } }   // §LAMP_EN by real room use
         var _cached = !!(_LZ && _LZ.get && ((_LZ.get() && _LZ.get().bld === A.activeBuilding) || (_LZ.primed && _LZ.primed(A))));
         var _last = A._stillStageMsLast ? ' — last time ' + Math.max(1, Math.round(A._stillStageMsLast / 1000)) + ' s' : '';
         _stillSay(_cached ? 'lights, sky and shadows' + _last + '…'

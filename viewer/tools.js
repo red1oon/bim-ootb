@@ -2225,7 +2225,7 @@ function setupTools(A) {
         var _d = camPos.distanceTo(f.pos), _fl = A._nightNearFadeFloor, _fd = Math.min(1.0, _d / 15);
         var _I = NIGHT_LIGHT_INTENSITY * (_fl + (1 - _fl) * _fd) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() * (f.pos.__intensityMult || 1) * _lampCapFade(_d);
         _ldC.set(A.nightFixtureColor(f.pos));   // same Color path as PointLight.color (sRGB hex -> working space)
-        _ldL.push({ x: f.pos.x, y: f.pos.y, z: f.pos.z, r: _ldC.r * _I, g: _ldC.g * _I, b: _ldC.b * _I, I: _I, range: _stillLampRange() });
+        _ldL.push({ guid: f.pos.__guid || null, x: f.pos.x, y: f.pos.y, z: f.pos.z, r: _ldC.r * _I, g: _ldC.g * _I, b: _ldC.b * _I, I: _I, range: _stillLampRange() });
       });
       A._lampDataUsed = true;
       A._lampData = { lamps: _ldL, decay: _stillLampDecay(), range: _stillLampRange(), ver: (A._lampData ? A._lampData.ver : 0) + 1 };
