@@ -1137,39 +1137,29 @@
       ' litUnbound=' + b.litUnbound + ' spots=' + b.spots + ' portalsBound=' + b.spotsBound + ' ms=' + (performance.now() - t0).toFixed(0));
   }
 
-  // ══ §METER — exposure follows the scene's own metered light indoors (watchdog ruling (A), 2026-09-25) ══
-  // Physically calibrated lamps (§SOURCED_LIGHT_CALIB) put an interior at 0.5-2% of the sunlit ground; a camera meters and
-  // opens up. The meter reads the SOURCED frame's INCIDENT light: one small float render with a white Lambert override
-  // (albedo 1, so L = E / pi — three's Lambert), sky / lamp glows / sprites / points / glass hidden; the log-average over
-  // the lit surfaces (Reinhard et al. 2002, "Photographic Tone Reproduction for Digital Images", eq. 1: exp(mean(log(delta
-  // + x)))) gives Ein. Reference Eout = the scene's own outdoor light on a horizontal surface (sun x sin(elevation) + sky).
-  // Albedo cancels: a surface of albedo rho displays ~ exposure * rho * E. PARTIAL adaptation (red1: "you won't see a
-  // washed room, just more lighted"): perceived brightness follows Stevens' power law B ~ L^0.33 (S. S. Stevens, "On the
-  // psychophysical law", Psychol. Rev. 64, 1957; brightness exponent 0.33), so an interior keeps (Ein/Eout)^0.33 of its
-  // ratio to outdoors: exposure = base * (Ein / Eout)^(0.33 - 1). Camera outside: base exactly. (A first cut compared
-  // albedo-weighted luminance with a 0.18 middle grey: white rooms metered 4x high and got no boost — replaced.)
-  var METER_W = 160, METER_H = 90, STEVENS = 0.33, HIST_LO = 0.70, HIST_HI = 0.95, METER_MAX_STOPS = 10, meterSaved = null, meterMat = null;
+  // ══ §METER — one exposure law for every camera (§METER_EV below; §LIGHT_ONE_SCALE L3, red1 2026-09-27) ══
+  // One small float render of the frame as the eye receives it (real materials, glass, emitters; sky pixels = the lighting's
+  // sky luminance), log-average luminance (Reinhard et al. 2002 eq. 1) over the histogram band -> EV100 -> exposure.
+  // (History: the Stevens 0.33 / CIECAM02-D incident-light rules and the inside-only branch are retired — audit top-1/2.)
+  var METER_W = 160, METER_H = 90, HIST_LO = 0.70, HIST_HI = 0.95, meterSaved = null;
   function meterRead(A, opts) {
     var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [];
     A.scene.traverse(function (o) { if (!o.visible) return;
-      var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
-      var glow = o.isSprite || o.isPoints || o.isLine || o === A._sky || (ms && ms.every(function (m) { return !m || m.isMeshBasicMaterial || m.isShaderMaterial || (m.transparent && m.opacity < 0.95); }));
+      // the meter reads what reaches the eye: real materials, glass and emitters stay; only screen sprites/points/lines (flare,
+      // markers) and the sky dome mesh (its shader is outside the lux calibration; its pixels take the lighting's sky luminance)
+      var glow = o.isSprite || o.isPoints || o.isLine || o === A._sky;
       if (glow && (o.isMesh || o.isSprite || o.isPoints || o.isLine || o.isInstancedMesh || o.isBatchedMesh)) { o.visible = false; hidden.push(o); } });
     var rt = new THREE.WebGLRenderTarget(METER_W, METER_H, { type: THREE.FloatType, depthBuffer: true });
-    if (!meterMat) meterMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevOv = A.scene.overrideMaterial, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
+    var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevTM = R.toneMapping, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
     var buf = new Float32Array(METER_W * METER_H * 4);
-    // §IRC_MAX v2: the meter reads ALL the light a camera would see, the zone interreflection included (decided 2026-09-26: the
-    // physically consistent meter; red1 delegated: "darker is realistic"). Refs: Clinic corridor 77.7 -> 72.2, Hospital indoor
-    // 83.5 -> 72.3 composite mean. (Direct-only metering read 97.7 / 107.4.)
     var irs = IRP[1];
-    try { A.scene.background = null; A.scene.fog = null; A.scene.overrideMaterial = meterMat; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
-      // the override material is not in the scene, so the per-render push never reaches it: render once (builds its programs),
-      // push the zone texture + uniforms into each built program, render again (Clinic 2026-09-25: unpushed, the meter saw every
-      // fragment as OUTSIDE — hemi 0.728 of 0.728, lamps ~0)
-      R.clear(true, true, true); R.render(A.scene, A.camera); push(A, meterMat);
+    try { A.scene.background = null; A.scene.fog = null; R.toneMapping = THREE.NoToneMapping; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
       R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); }
-    finally { IRP[1] = irs; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; A.scene.overrideMaterial = prevOv; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
+    finally { IRP[1] = irs; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; R.toneMapping = prevTM; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
+    // sky pixels (nothing drawn, alpha < 0.5): the sky luminance the lighting itself uses — hemi sky irradiance E = pi L, so
+    // L = luminance(hemi.color) x hemi.intensity / pi (scene units; x luxPer = cd/m2). One sky, lit and seen alike (L1).
+    var skyPx = 0, Lsky = A.hemi ? (0.2126 * A.hemi.color.r + 0.7152 * A.hemi.color.g + 0.0722 * A.hemi.color.b) * A.hemi.intensity / Math.PI : 0;
+    for (var i1 = 0; i1 < METER_W * METER_H; i1++) if (buf[i1 * 4 + 3] < 0.5) { buf[i1 * 4] = buf[i1 * 4 + 1] = buf[i1 * 4 + 2] = Lsky; buf[i1 * 4 + 3] = 1; skyPx++; }
     // weights per pixel. 'avg' = every lit pixel alike. 'centre' = CENTRE-WEIGHTED, the default metering mode of real
     // cameras: 75% of the weight inside the centre circle, 25% over the rest; circle 8 mm (default) on a 36 x 24 mm frame
     // (Nikonians Wiki, "C-W (Center-Weighted) Metering"; Wikipedia "Nikon D3500": "75% of the 8mm circle in the center"),
@@ -1188,7 +1178,7 @@
     if (mode === 'hist') { var ls = []; for (var i4 = 0; i4 < METER_W * METER_H; i4++) { if (buf[i4 * 4 + 3] < 0.5) continue;
         var L4 = 0.2126 * buf[i4 * 4] + 0.7152 * buf[i4 * 4 + 1] + 0.0722 * buf[i4 * 4 + 2]; if (isFinite(L4)) ls.push(Math.max(0, L4)); }
       if (ls.length) { ls.sort(function (a, b) { return a - b; }); hLo = ls[Math.min(ls.length - 1, Math.floor(ls.length * HIST_LO))]; hHi = ls[Math.min(ls.length - 1, Math.floor(ls.length * HIST_HI))];
-        var sa = 0; for (var i5 = 0; i5 < ls.length; i5++) sa += Math.log(delta + ls[i5]); hAll = Math.PI * Math.exp(sa / ls.length); } }
+        var sa = 0; for (var i5 = 0; i5 < ls.length; i5++) sa += Math.log(delta + ls[i5]); hAll = Math.exp(sa / ls.length); } }
     for (var i = 0; i < METER_W * METER_H; i++) {
       if (buf[i * 4 + 3] < 0.5) continue; var L = 0.2126 * buf[i * 4] + 0.7152 * buf[i * 4 + 1] + 0.0722 * buf[i * 4 + 2]; if (!isFinite(L)) continue;
       var w = 1;
@@ -1197,9 +1187,9 @@
       else if (mode === 'zone') { w = wz ? (wz[i] ? 1 : 0) : 1; }
       else if (mode === 'hist') { w = (L >= hLo && L <= hHi) ? 1 : 0; }
       if (!w) continue; sl += w * Math.log(delta + Math.max(0, L)); sw += w; n++; }
-    if (mode === 'hist') console.log('§METER_HIST low%=' + (HIST_LO * 100) + ' high%=' + (HIST_HI * 100) + ' bandEin=' + (sw ? (Math.PI * Math.exp(sl / sw)).toExponential(3) : 'none') +
+    if (mode === 'hist') console.log('§METER_HIST low%=' + (HIST_LO * 100) + ' high%=' + (HIST_HI * 100) + ' bandL=' + (sw ? Math.exp(sl / sw).toExponential(3) : 'none') +
       ' bandPixels=' + n + '/' + nLit + ' allLogAvg=' + (hAll != null ? hAll.toExponential(3) : 'none') + ' bandL=' + (+hLo).toExponential(2) + '..' + (+hHi).toExponential(2));
-    return { Ein: sw ? Math.PI * Math.exp(sl / sw) : null, pixels: n, mode: mode, hidden: hidden.length, ms: performance.now() - t0 };   // white Lambert: E = pi * L
+    return { L: sw ? Math.exp(sl / sw) : null, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, ms: performance.now() - t0 };   // log-average luminance, scene units
   }
   // world position per meter pixel (override MeshBasicMaterial writing its world position into the float target), then the
   // light zone at 0.3 m toward the camera; returns a 0/1 mask of pixels in camZone.
@@ -1223,36 +1213,25 @@
     console.log('§METER zoneMask camZone=' + camZone + ' pixelsInZone=' + hit);
     return mask;
   }
-  function outdoorE(A) {
-    var sd = A.sun ? A.sun.position.clone().normalize() : null, sinE = sd ? Math.max(0, sd.y) : 0, sunI = A.sun ? A.sun.intensity : 0;
-    var skyL = A.hemi ? (0.2126 * A.hemi.color.r + 0.7152 * A.hemi.color.g + 0.0722 * A.hemi.color.b) * A.hemi.intensity : 0;
-    var E = sunI * sinE + skyL, note = '';
-    if (sinE <= 0.02) { E = sunI * Math.SQRT1_2 + skyL; note = ' (sun below horizon: reference = the same sun at 45 deg)'; }
-    return { E: E, sunI: sunI, sinE: sinE, skyL: skyL, note: note };
-  }
+  // §METER_EV (§LIGHT_ONE_SCALE L3; engine chain): EV100 = log2(Lavg x 100 / K), K = 12.5 (ISO 2720 reflected-light constant;
+  // Frostbite 2014, Filament, HDRP ColorUtils), Lavg = the histogram-trimmed log-average luminance in cd/m2; exposure =
+  // 1 / (1.2 x 2^EV100) (saturation-based, S = 100, q = 0.65; Frostbite Listing 28 / Filament / HDRP). Same rule for every
+  // camera, inside or out. Scene units -> cd/m2 by the one calibration luxPer = calibSunLux / calibSunI; three.js ACESFilmic
+  // multiplies exposure by 1/0.6, so that factor is taken back out. No base exposure, no compensation, no clamp.
+  // Replaces the CIECAM02-D rule (D is chromatic adaptation: §LIGHT_TRUTH_AUDIT top-1).
   function meter(A, inside) {
-    var R = A.renderer, base = R.toneMappingExposure;
-    // §METER_ONE_RULE (red1 2026-09-27: "for outside or in, the exposure rule must be consistent based on condition of light reaching
-    // the eye"): one meter for every camera — no outside branch (it kept the base exposure, so a shade-side view read as night);
-    // inside is only logged. Clamp symmetric at METER_MAX_STOPS.
-    var cam = inside ? 'inside' : 'outside';
-    var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'avg';   // watchdog 2026-09-25: frame average by default (centre and zone each worse on one reference)
+    var THREE = global.THREE, R = A.renderer, base = R.toneMappingExposure, cam = inside ? 'inside' : 'outside';
+    var sunIc = A._stillCalibSunI, luxPer = sunIc > 0 ? (A._stillCalibSunLux || 100000) / sunIc : null;
+    if (!luxPer) { console.log('§METER VACUOUS camera=' + cam + ' no lux calibration (calibSunI=' + sunIc + ') — exposure unchanged ' + base.toFixed(3)); return null; }
+    var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'hist';   // engines meter by histogram
     var m = meterRead(A, { mode: mode, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 });
-    if (!m.Ein) { console.log('§METER camera=' + cam + ' VACUOUS no lit surface pixels — exposure unchanged ' + base.toFixed(3)); return null; }
-    var o = outdoorE(A), ratio = m.Ein / o.E;
-    // §METER_ADAPT (red1 2026-09-26: "Make it a dynamic lever derived from such data"): the degree of adaptation is no longer the
-    // fixed Stevens 0.33 but CIECAM02's D (CIE 159:2004, eq. 7.4; F = 1.0 average surround): D = F [1 - (1/3.6) e^((-LA - 42) / 92)],
-    // LA = adapting luminance = 20% of the white luminance of the metered scene (CIECAM02 convention), white L = E / pi for the
-    // metered incident light E in lux (the §SOURCED_LIGHT_CALIB scale: calibSunLux / calibSunI lux per unit). exposure =
-    // base x ratio^(-D): D -> 1 full adaptation (bright interiors, EN-lit rooms), smaller in dim spaces. &adapt=stevens = old rule.
-    var sunIc = A._stillCalibSunI, luxPerU = sunIc > 0 ? (A._stillCalibSunLux || 100000) / sunIc : null, adapt = 'stevens', Dd = 1 - STEVENS, Elx = null, LA = null;
-    if (luxPerU && !/[?&]adapt=stevens/.test(location.search)) { Elx = m.Ein * luxPerU; LA = 0.2 * Elx / Math.PI; Dd = Math.max(0, Math.min(1, 1 - (1 / 3.6) * Math.exp((-LA - 42) / 92))); adapt = 'ciecam02'; }
-    var exp = base * Math.pow(ratio, -Dd), stops = Math.log2(exp / base);
-    if (Math.abs(stops) > METER_MAX_STOPS) { stops = Math.sign(stops) * METER_MAX_STOPS; exp = base * Math.pow(2, stops); }
+    if (!(m.L > 0)) { console.log('§METER VACUOUS camera=' + cam + ' no luminance read — exposure unchanged ' + base.toFixed(3)); return null; }
+    var Lcd = m.L * luxPer, ev = Math.log2(Lcd * 100 / 12.5), aces = R.toneMapping === THREE.ACESFilmicToneMapping ? 0.6 : 1;
+    var exp = luxPer * aces / (1.2 * Math.pow(2, ev)), stops = Math.log2(exp / base);
     meterSaved = { exp: base }; R.toneMappingExposure = exp;
-    console.log('§METER camera=' + cam + ' logAvgEin=' + m.Ein.toExponential(3) + ' Eout=' + o.E.toFixed(3) + ' (sun ' + o.sunI.toFixed(2) + ' x sinElev ' + o.sinE.toFixed(3) + ' + sky ' + o.skyL.toFixed(3) + ')' + o.note +
-      ' mode=' + m.mode + ' indoor/outdoor=' + ratio.toExponential(3) + ' adapt=' + adapt + ' D=' + Dd.toFixed(3) + (Elx != null ? ' Ein=' + Elx.toFixed(1) + 'lx LA=' + LA.toFixed(2) + 'cd/m2' : '') + ' exposure=' + exp.toFixed(3) + ' stops=' + stops.toFixed(2) + ' (base ' + base.toFixed(3) + ') pixels=' + m.pixels + '/' + (METER_W * METER_H) + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
-    return { exposure: exp, stops: stops, Ein: m.Ein, Eout: o.E };
+    console.log('§METER camera=' + cam + ' mode=' + m.mode + ' Lavg=' + Lcd.toFixed(1) + 'cd/m2 EV100=' + ev.toFixed(2) + ' exposure=' + exp.toFixed(4) +
+      ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES 0.6' : '') + ' / (1.2 x 2^EV)) vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
+    return { exposure: exp, stops: stops, ev100: ev, Lcd: Lcd };
   }
   function meterOff(A) { if (meterSaved && A.renderer) { A.renderer.toneMappingExposure = meterSaved.exp; console.log('§METER off exposure=' + meterSaved.exp.toFixed(3)); } meterSaved = null; }
 
