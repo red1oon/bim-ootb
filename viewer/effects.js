@@ -4655,7 +4655,11 @@ async function setupEffects(A, renderer, scene, camera) {
     _fe.ev = a.ev; _fe.n++; R.toneMappingExposure = exp;
     A._meterLast = { exposure: exp, stops: Math.log2(exp / _fe.base), ev100: a.ev, Lcd: Lcd, targetEv100: tEv, film: true };
     console.log('§FILM_EXPOSURE f=' + frameIdx + ' targetEV=' + tEv.toFixed(3) + ' EV=' + a.ev.toFixed(3) + ' exposure=' + exp.toFixed(5) + ' Lcd=' + Lcd.toFixed(1) +
-      ' first=' + (a.first ? 1 : 0) + ' capped=' + (a.capped || '-') + ' dt=' + dt.toFixed(4) + ' mode=' + m.mode + ' skyPx=' + m.skyPx + ' ms=' + (performance.now() - t0).toFixed(1));
+      ' first=' + (a.first ? 1 : 0) + ' capped=' + (a.capped || '-') + ' dt=' + dt.toFixed(4) + ' mode=' + m.mode + ' skyPx=' + m.skyPx +
+      ' cam=[' + (A.camera ? [A.camera.position.x, A.camera.position.y, A.camera.position.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']' +
+      ' tgt=[' + (A.controls && A.controls.target ? [A.controls.target.x, A.controls.target.y, A.controls.target.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']' +
+      ' sunI=' + (A.sun ? A.sun.intensity.toFixed(3) : '-') + ' ambient=' + (A.ambient ? A.ambient.intensity.toFixed(3) : '-') + ' hemi=' + (A.hemi ? A.hemi.intensity.toFixed(3) : '-') +
+      ' camLight=' + (A._camLight ? A._camLight.intensity : '-') + ' ms=' + (performance.now() - t0).toFixed(1));
     if (a.first || frameIdx % 24 === 0) { try { LL.log(A, a.first ? 'film-first' : 'film'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); } }
     return { f: frameIdx, targetEv: tEv, ev: a.ev, exposure: exp, first: a.first, capped: a.capped };
   };
