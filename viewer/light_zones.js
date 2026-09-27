@@ -180,7 +180,10 @@
       ' usPerRay=' + sh.usPerRay + ' boundaryTris=' + sh.boundaryTris + ' occluderTris=' + sh.occluderTris + ' cull=' + sh.cull + ' occluderCulled=' + sh.occluderCulled + (sh.occluderSkipped ? ' occluderSkipped=' + sh.occluderSkipped : '') + ' glassTris=' + sh.glassTris +
       ' soupMs=' + sh.soupMs + ' bvhMs=' + sh.bvhMs + ' selectMs=' + sh.selMs + ' passMs=' + sh.passMs + ' F mean=' + (sh.recomputed ? (sh.fSum / sh.recomputed).toFixed(4) : 0) + ' dF mean=' + sh.dMean + ' meanAbs=' + sh.dMeanAbs + ' lifted(>0.05)=' + sh.lifted + ' lowered(<-0.05)=' + sh.lowered +
       ' maxLift=' + sh.maxLift + ' maxDrop=' + sh.maxDrop + (sh.on && !sh.recomputed ? ' INCONCLUSIVE (no shell cell recomputed)' : '') +
-      ' (shell = covered cells beside a wall within 2 cells of open air; F = ' + sh.mc + ' CIE-cos rays vs boundary + occluder triangles; deeper cells keep the lattice)');
+      ' reach=' + (sh.reach || 'r2(pre-Z8 record)') + ' candidates=' + (sh.candidates != null ? sh.candidates : '?') + ' near2=' + (sh.near2 != null ? sh.near2 : '?') + ' airOnly=' + (sh.airOnly != null ? sh.airOnly : '?') +
+      ' recomputedAirOnly=' + (sh.recomputedAirOnly != null ? sh.recomputedAirOnly : '?') + ' airOnlyDMean=' + (sh.airOnlyDMean != null ? sh.airOnlyDMean : '?') + ' airOnlyLifted=' + (sh.airOnlyLifted != null ? sh.airOnlyLifted : '?') + (sh.airOnlySample && sh.airOnlySample.length ? ' airOnlySample=[' + sh.airOnlySample.join(',') + ']' : '') +
+      (sh.reach === 'air' && sh.on && !sh.airOnly ? ' Z8_NOOP (the air rule added no cell beyond the B1 radius)' : '') +
+      ' (shell = covered wall-side cells within 2 cells of open air' + (sh.reach === 'air' ? ' OR with an air-only lattice sky direction (§ZERO Z8, radius-free)' : ' (B1 rule, &shellreach=2)') + '; F = ' + sh.mc + ' CIE-cos rays vs boundary + occluder triangles; other cells keep the lattice)');
   }
   function restore(A, r, THREE, t0) {
     cache = { dd: null, org: new THREE.Vector3(r.org[0], r.org[1], r.org[2]), fp: r.fp }; KEYS.forEach(function (k) { cache[k] = r[k]; });
@@ -207,7 +210,7 @@
     // &capcentre=0 / APP._stillCapCentre=false = the pre-attempt-1 rule (every SOLID cell roofs its column): B1 SPEC W3 A/B switch.
     // capOn + shellOn enter the §ZONE_IDB_CACHE fingerprint so flipping either switch rebuilds rather than reusing the other arm.
     var capOn = !(typeof location !== 'undefined' && /[?&]capcentre=0/.test(location.search)) && A._stillCapCentre !== false;
-    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0)]
+    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A)]
       .map(function (v) { return typeof v === 'number' ? +v.toFixed(3) : v; }).join('|');
     if (primed && primed.bld === A.activeBuilding && !opts.force) { var pr = primed; primed = null;
       if (pr.fp === fp) return restore(A, pr, THREE, t0);
@@ -615,6 +618,8 @@
     return out; })();
   // §SKY_SHELL_RAYS switch (B1 SPEC): &skyshell=0 / APP._stillSkyShell=false = the pure lattice field
   function shellOn(A) { return !!(A && A._stillSkyShell !== false && !(typeof location !== 'undefined' && /[?&]skyshell=0/.test(location.search))); }
+  // §ZERO Z8 switch: 'air' (default, radius-free rule) | 'r2' (&shellreach=2 / APP._stillShellReach = 2: the B1 rule exactly)
+  function shellReach(A) { return (A && (A._stillShellReach === 2 || A._stillShellReach === 'r2')) || (typeof location !== 'undefined' && /[?&]shellreach=2(?!\d)/.test(location.search)) ? 'r2' : 'air'; }
   function groundOn(A) { return !!(A && A._stillGroundView !== false && !(typeof location !== 'undefined' && /[?&]groundview=0/.test(location.search))); }
   // MODE (measured A/B, Hospital aerial 2026-09-26): 'escape' = the spec above (a ray ending on a solid contributes 0);
   // 'bounce' = a ray ending on a solid contributes the sky-view F of the last empty cell before it (the surface it hits is lit
@@ -716,16 +721,29 @@
     // Deeper cells keep the lattice value (no re-propagation). Labels untouched. &skyshell=0 / APP._stillSkyShell=false = today.
     var nd = FIELD_DIRS.length, THREE3 = global.THREE, shellWhy = shellOn(A) ? '' : 'off (&skyshell=0 / APP._stillSkyShell=false)';
     if (!shellWhy && !(global._bvhReady && THREE3 && THREE3.BufferGeometry.prototype.computeBoundsTree)) shellWhy = 'no BVH (§BVH_INIT not applied)';
-    var nShell = 0, shellCells = null, isShell = null, shellSlot = null, latV = null, tSel = performance.now(), jg0 = Z.groundJ || 0, SHELL_R = 2;
-    if (!shellWhy) {
-      isShell = new Uint8Array(N); var sl = [];
+    // §ZERO Z8 (bim-compiler PHOTOREAL_STILL_RENDER.md "### Z8 SPEC"): the B1 radius (open cell within SHELL_R = 2) is kept as ONE
+    // arm of the rule, not its limit. MEASURED (reach_r2_*_dist.log, look 808f578f): exterior cells under-read by > 0.1 at EVERY
+    // reach r = 3..8 and beyond (Hospital est. 3,340 cells, Terminal 5,752), so no radius is the right one. RULE (radius-free):
+    // a wall-side covered cell is SHELL when it is within 2 cells of open air (B1: catches the BLIND cells whose every lattice
+    // direction is fattened shut) OR the lattice's own sweep found at least one of the 41 directions reaching the sky through
+    // AIR only (vt === 1: no solid, no glass on the lattice path) — the cell is exterior-exposed however far the open column is.
+    // Cells that see sky only through glass (rooms behind windows) or not at all keep the lattice value. &shellreach=2 /
+    // APP._stillShellReach = 2 = the B1 rule exactly (A/B; enters the §ZONE_IDB_CACHE fingerprint).
+    var reachRule = shellReach(A), nCand = 0, candCells = null, isCand = null, candSlot = null, near2 = null, latS = null, latP = null, airV = null;
+    var nShell = 0, shellCells = null, shellOf = null, tSel = performance.now(), jg0 = Z.groundJ || 0, SHELL_R = 2, selStats = { rule: reachRule, candidates: 0, near2: 0, airOnly: 0 };
+    var fiD = function (x, z) { return FIELD_DIRS.findIndex(function (d) { return d.dx === x && d.dz === z; }); }, PRE = [fiD(0, 0), fiD(1, 0), fiD(-1, 0), fiD(0, 1), fiD(0, -1)], preOf = new Int8Array(nd).fill(-1);
+    PRE.forEach(function (d, q) { preOf[d] = q; });
+    if (shellOn(A)) {   // selection runs whenever the switch is on (logged even without a BVH, so a node witness can judge the rule)
+      isCand = new Uint8Array(N); var sl = [], nl = [];
       for (var cs = 0; cs < N; cs++) { var vs0 = zone[cs]; if (vs0 === SOLID || (vs0 & ZONE_MASK) === 0) continue; var is = cs % nx, js = ((cs / nx) | 0) % ny, ks = (cs / nxy) | 0; if (js < jg0 || js + 1 >= ny) continue;
         if (!((is > 0 && zone[cs - 1] === SOLID) || (is < nx - 1 && zone[cs + 1] === SOLID) || (ks > 0 && zone[cs - nxy] === SOLID) || (ks < nz - 1 && zone[cs + nxy] === SOLID))) continue;
         var near = false; for (var dy = 0; dy <= SHELL_R && !near; dy++) for (var dxs = -SHELL_R; dxs <= SHELL_R && !near; dxs++) for (var dzs = -SHELL_R; dzs <= SHELL_R && !near; dzs++) {
           var i2s = is + dxs, j2s = js + dy, k2s = ks + dzs; if (i2s < 0 || k2s < 0 || i2s >= nx || k2s >= nz || j2s >= ny) continue; var ts = zone[i2s + j2s * nx + k2s * nxy]; if (ts !== SOLID && (ts & ZONE_MASK) === 0) near = true; }
-        if (near) { isShell[cs] = 1; sl.push(cs); } }
-      nShell = sl.length; shellCells = Int32Array.from(sl); sl = null; shellSlot = new Map(); for (var q2 = 0; q2 < nShell; q2++) shellSlot.set(shellCells[q2], q2); latV = new Float32Array(nShell * nd);
-      if (!nShell) shellWhy = 'VACUOUS (no shell cells: no covered cell beside a wall near open air)'; }
+        if (near || reachRule === 'air') { isCand[cs] = 1; sl.push(cs); nl.push(near ? 1 : 0); } }
+      nCand = sl.length; candCells = Int32Array.from(sl); near2 = Uint8Array.from(nl); sl = nl = null; candSlot = new Map(); for (var q2 = 0; q2 < nCand; q2++) candSlot.set(candCells[q2], q2);
+      latS = new Float64Array(nCand * 3); latP = new Float32Array(nCand * 5); airV = new Uint8Array(nCand);   // per candidate: lattice bent sum, the 5 pre-test dirs, the air flag
+      selStats.candidates = nCand; for (var q3 = 0; q3 < nCand; q3++) if (near2[q3]) selStats.near2++; }
+    if (!shellWhy && !nCand) shellWhy = 'VACUOUS (no shell cells: no covered cell beside a wall near open air)';
     var shellSelMs = Math.round(performance.now() - tSel);
     FIELD_DIRS.forEach(function (d, di) {
       var dx = d.dx, dz = d.dz, off = dx + nx + dz * nxy, M = d.mids, nm = M.length, mo = new Int32Array(nm), mx = new Int32Array(nm), my = new Int32Array(nm), mz = new Int32Array(nm), w = d.w, ux = d.u[0], uy = d.u[1], uz = d.u[2];
@@ -740,8 +758,16 @@
           // (a segment that touches glass: target or mid cells), never between glass cells; a second pane after air counts again
           if (!inG && gmin < 256) vt *= T[gmin]; }
         val[c] = vt; if (zc !== SOLID && vt > 0) { acc[c] += w * vt; var zz = (zc & ZONE_MASK) * 3; zb[zz] += w * vt * ux; zb[zz + 1] += w * vt * uy; zb[zz + 2] += w * vt * uz; }
-        if (latV && isShell[c]) latV[shellSlot.get(c) * nd + di] = vt; } });
-    var SHELL_MC = 64, shell = { on: !shellWhy, why: shellWhy, cells: nShell, pretestSkipped: 0, recomputed: 0, rays: 0, lifted: 0, lowered: 0, dSum: 0, dAbsSum: 0, maxLift: 0, maxDrop: 0,
+        if (isCand && isCand[c]) { var sq = candSlot.get(c); if (vt > 0 && zc !== SOLID) { latS[sq * 3] += w * vt * ux; latS[sq * 3 + 1] += w * vt * uy; latS[sq * 3 + 2] += w * vt * uz; }
+          if (preOf[di] >= 0) latP[sq * 5 + preOf[di]] = vt; if (vt === 1) airV[sq] = 1; } } });
+    // §ZERO Z8: the final shell = near2 OR (rule 'air' AND an air-only lattice direction)
+    if (nCand) { var fl2 = []; shellOf = []; for (var q4 = 0; q4 < nCand; q4++) { var inS = near2[q4] || (reachRule === 'air' && airV[q4]); if (inS) { fl2.push(candCells[q4]); shellOf.push(q4); if (!near2[q4]) selStats.airOnly++; } }
+      nShell = fl2.length; shellCells = Int32Array.from(fl2); shellOf = Int32Array.from(shellOf);
+      selStats.airOnlySample = []; for (var q6 = 0; q6 < nShell && selStats.airOnlySample.length < 6; q6++) if (!near2[shellOf[q6]]) selStats.airOnlySample.push(shellCells[q6]);
+      if (A && A._shellTrace) selStats.trace = { shell: Array.from(shellCells), airOnly: Array.from(shellCells).filter(function (c, q) { return !near2[shellOf[q]]; }) };   // node witness only
+      fl2 = null;
+      if (!shellWhy && !nShell) shellWhy = 'VACUOUS (no shell cells: no covered cell beside a wall near open air)'; }
+    var SHELL_MC = 64, shell = { on: !shellWhy, why: shellWhy, cells: nShell, reach: selStats.rule, candidates: selStats.candidates, near2: selStats.near2, airOnly: selStats.airOnly, airOnlySample: selStats.airOnlySample || [], trace: selStats.trace || null, recomputedAirOnly: 0, airOnlyDSum: 0, airOnlyLifted: 0, pretestSkipped: 0, recomputed: 0, rays: 0, lifted: 0, lowered: 0, dSum: 0, dAbsSum: 0, maxLift: 0, maxDrop: 0,
       boundaryTris: 0, occluderTris: 0, occluderSkipped: 0, glassTris: 0, soupMs: 0, bvhMs: 0, passMs: 0, selMs: shellSelMs, mc: SHELL_MC, usPerRay: 0 };
     if (!shellWhy) { var geoO = null, geoG = null; try {
       var cullOn = A._stillShellCull !== false && !(typeof location !== 'undefined' && /[?&]shellcull=0/.test(location.search)), ogx = Z.org.x, ogy = Z.org.y, ogz = Z.org.z, icl = 1 / Z.cell;
@@ -761,23 +787,24 @@
         var v = 1, last = -1; for (var h = 0; h < hs.length; h++) { if (last < 0 || hs[h].distance - last > 0.3) v *= GT[hs[h].faceIndex] / 255; last = hs[h].distance + 0.01; } return v; };
       // mu = sin(elevation) from a uniform u: pdf(mu) ~ mu (1 + 2 mu) (CIE overcast x cos zenith), CDF = (mu^2/2 + 2 mu^3/3) / (7/6), Newton
       var muOf = function (u) { var m = Math.sqrt(u); for (var i8 = 0; i8 < 12; i8++) { var f = (m * m / 2 + 2 * m * m * m / 3) * 6 / 7 - u, df = (m + 2 * m * m) * 6 / 7; m -= f / (df || 1e-6); if (m < 0) m = 0; if (m > 1) m = 1; } return m; };
-      var fi = function (x, z) { return FIELD_DIRS.findIndex(function (d) { return d.dx === x && d.dz === z; }); }, PRE = [fi(0, 0), fi(1, 0), fi(-1, 0), fi(0, 1), fi(0, -1)];
       var S = Math.round(Math.sqrt(SHELL_MC)), nMC = S * S, tP = performance.now(), cl = Z.cell, ox = Z.org.x, oy = Z.org.y, oz = Z.org.z;
-      for (var s5 = 0; s5 < nShell; s5++) { var c5 = shellCells[s5], i5 = c5 % nx, j5 = ((c5 / nx) | 0) % ny, k5 = (c5 / nxy) | 0, x5 = ox + (i5 + 0.5) * cl, y5 = oy + (j5 + 0.5) * cl, z5 = oz + (k5 + 0.5) * cl, base5 = s5 * nd;
-        var any = false; for (var p5 = 0; p5 < PRE.length && !any; p5++) { var pd = PRE[p5]; if (latV[base5 + pd] > 1e-6) any = true; else { shell.rays++; if (exact(x5, y5, z5, FIELD_DIRS[pd].u[0], FIELD_DIRS[pd].u[1], FIELD_DIRS[pd].u[2]) > 1e-6) any = true; } }
+      for (var s5 = 0; s5 < nShell; s5++) { var c5 = shellCells[s5], i5 = c5 % nx, j5 = ((c5 / nx) | 0) % ny, k5 = (c5 / nxy) | 0, x5 = ox + (i5 + 0.5) * cl, y5 = oy + (j5 + 0.5) * cl, z5 = oz + (k5 + 0.5) * cl, q5 = shellOf[s5], airOnly5 = !near2[q5];
+        var any = false; for (var p5 = 0; p5 < PRE.length && !any; p5++) { var pd = PRE[p5]; if (latP[q5 * 5 + p5] > 1e-6) any = true; else { shell.rays++; if (exact(x5, y5, z5, FIELD_DIRS[pd].u[0], FIELD_DIRS[pd].u[1], FIELD_DIRS[pd].u[2]) > 1e-6) any = true; } }
         if (!any) { shell.pretestSkipped++; continue; }
         var seed = ((Math.imul(c5, -1640531535) >>> 0) % 2147483646) + 1, rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
         var sum = 0, sx = 0, sy = 0, sz = 0;
         for (var a5 = 0; a5 < S; a5++) for (var b5 = 0; b5 < S; b5++) { var mu = muOf((a5 + rnd()) / S), ph = 2 * Math.PI * (b5 + rnd()) / S, r5 = Math.sqrt(Math.max(0, 1 - mu * mu)), dx5 = r5 * Math.cos(ph), dz5 = r5 * Math.sin(ph);
           var v5 = exact(x5, y5, z5, dx5, mu, dz5); shell.rays++; if (v5 > 0) { sum += v5; sx += v5 * dx5; sy += v5 * mu; sz += v5 * dz5; } }
         var fNew = sum / nMC, fOld = acc[c5], zz5 = (zone[c5] & ZONE_MASK) * 3;
-        for (var d5 = 0; d5 < nd; d5++) { var lv = latV[base5 + d5]; if (lv > 0) { var D5 = FIELD_DIRS[d5], wl = D5.w * lv; zb[zz5] -= wl * D5.u[0]; zb[zz5 + 1] -= wl * D5.u[1]; zb[zz5 + 2] -= wl * D5.u[2]; } }
+        zb[zz5] -= latS[q5 * 3]; zb[zz5 + 1] -= latS[q5 * 3 + 1]; zb[zz5 + 2] -= latS[q5 * 3 + 2];   // the lattice's bent-normal share of this cell, summed during the sweep
         zb[zz5] += sx / nMC; zb[zz5 + 1] += sy / nMC; zb[zz5 + 2] += sz / nMC; acc[c5] = fNew; shell.recomputed++;
-        shell.fSum = (shell.fSum || 0) + fNew; var dF = fNew - fOld; shell.dSum += dF; shell.dAbsSum += Math.abs(dF); if (dF > 0.05) shell.lifted++; if (dF < -0.05) shell.lowered++; if (dF > shell.maxLift) shell.maxLift = dF; if (dF < shell.maxDrop) shell.maxDrop = dF; }
+        shell.fSum = (shell.fSum || 0) + fNew; var dF = fNew - fOld; shell.dSum += dF; shell.dAbsSum += Math.abs(dF); if (dF > 0.05) shell.lifted++; if (dF < -0.05) shell.lowered++; if (dF > shell.maxLift) shell.maxLift = dF; if (dF < shell.maxDrop) shell.maxDrop = dF;
+        if (airOnly5) { shell.recomputedAirOnly++; shell.airOnlyDSum += dF; if (dF > 0.05) shell.airOnlyLifted++; } }
       shell.passMs = Math.round(performance.now() - tP); shell.usPerRay = shell.rays ? +(shell.passMs * 1000 / shell.rays).toFixed(2) : 0;
     } catch (eSh) { shell.on = false; shell.why = 'failed: ' + (eSh && eSh.message); console.warn('§SKY_SHELL_RAYS failed: ' + (eSh && eSh.stack)); }
       try { if (geoO) { geoO.disposeBoundsTree(); geoO.dispose(); } if (geoG) { geoG.disposeBoundsTree(); geoG.dispose(); } } catch (eD) {} }
-    isShell = shellSlot = latV = shellCells = null;
+    isCand = candSlot = candCells = near2 = latS = latP = airV = shellCells = shellOf = null;
+    shell.airOnlyDMean = shell.recomputedAirOnly ? +(shell.airOnlyDSum / shell.recomputedAirOnly).toFixed(4) : 0;
     shell.dMean = shell.recomputed ? +(shell.dSum / shell.recomputed).toFixed(4) : 0; shell.dMeanAbs = shell.recomputed ? +(shell.dAbsSum / shell.recomputed).toFixed(4) : 0; shell.maxLift = +shell.maxLift.toFixed(3); shell.maxDrop = +shell.maxDrop.toFixed(3);
     logShell(Z.bld, shell, 'built');
     // V12 interreflected component per zone (flux balance, Sumpner; the relation BRE's ADF is derived from):
@@ -806,11 +833,11 @@
   }
   // CPU mirror of the shader's filtered read (V5): p = surface point, nrm = eye-facing normal; returns { zone, F } where zone
   // is surfaceInfo's; outside (0 / off grid) F = 1; unknown (SOLID) F = null (the shader uses indoorSky there)
-  function skyField(p, nrm) { return fieldRead(p, nrm, cache && cache.field ? cache.field.G : null); }
+  function skyField(p, nrm, blend) { return fieldRead(p, nrm, cache && cache.field ? cache.field.G : null, blend); }   // blend = §ZERO Z18 &gridblend=1 mirror
   // §GROUND_VIEW_FIELD CPU mirror of _slGd (same 8-texel filter, same zone rule, same order as the shader); F = null when
   // the ground field was not built (&groundview=0)
-  function groundField(p, nrm) { return fieldRead(p, nrm, cache && cache.field ? cache.field.Gd : null); }
-  function fieldRead(p, nrm, G) {
+  function groundField(p, nrm, blend) { return fieldRead(p, nrm, cache && cache.field ? cache.field.Gd : null, blend); }
+  function fieldRead(p, nrm, G, blend) {
     var Z = cache, si = surfaceInfo(p, nrm); if (!Z || !G) return { zone: si.zone, F: null, si: si };
     if (si.zone === -1) return { zone: si.zone, F: 1, si: si };   // off grid; open (0): filtered, every non-solid cell accepted
     if (si.zone === SOLID) return { zone: si.zone, F: null, si: si };
@@ -818,7 +845,7 @@
     var bx = Math.floor(gx), by = Math.floor(gy), bz = Math.floor(gz), fx = gx - bx, fy = gy - by, fz = gz - bz, sw = 0, sf = 0;
     for (var o = 0; o < 8; o++) { var ox = o & 1, oy = (o >> 1) & 1, oz = (o >> 2) & 1, i = bx + ox, j = by + oy, k = bz + oz;
       if (i < 0 || j < 0 || k < 0 || i >= Z.nx || j >= Z.ny || k >= Z.nz) continue; var c = i + j * Z.nx + k * nxy, t = Z.zone[c]; if (t === SOLID) continue;
-      var tz = t & ZONE_MASK; if (si.zone !== 0 && tz !== si.zone && tz !== 0) continue;
+      var tz = t & ZONE_MASK; if (!blend && si.zone !== 0 && tz !== si.zone && tz !== 0) continue;   // §ZERO Z18: blend keeps other-zone texels (shader uSLSky.z)
       var w = (ox ? fx : 1 - fx) * (oy ? fy : 1 - fy) * (oz ? fz : 1 - fz); sw += w; sf += w * G[c] / 10000; }
     return { zone: si.zone, F: sw > 0 ? sf / sw : (si.cell >= 0 ? G[si.cell] / 10000 : 0), si: si };
   }
@@ -838,5 +865,7 @@
     return { base: base, spec: base };
   }
   global.LightZones = { shellOn: shellOn, groundField: groundField, groundOn: groundOn, groundMode: groundMode, GROUND_DIRS: GROUND_DIRS, specVis: specVis, prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
-    SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL };
+    SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL, shellReach: shellReach,
+    // §ZERO Z8 node witness hook: run the REAL field() over a caller-built zone grid (no THREE / no BVH: selection is judged, the ray pass is skipped)
+    _testField: function (A, Z) { cache = Z; Z.field = null; return field(A); } };
 })(typeof window !== 'undefined' ? window : this);
