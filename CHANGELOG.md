@@ -4,6 +4,26 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.70.0](https://github.com/red1oon/bim-ootb/compare/v1.69.0...v1.70.0) (2026-09-26)
+
+
+### ✨ Features
+
+* **§GLOW_LAYERS_OFF:** delete the two decorative glow layers from Alt+S completely; §FIXTURE_EMISSIVE count; §ITEM_C check; sw v1410 ([92b36bd](https://github.com/red1oon/bim-ootb/commit/92b36bdbd45ae889b7bd50b94d8dfac861e9f294))
+* **§SKY_VIEW_FIELD + §LUX_CHECK:** one camera-free CIE-overcast sky-view field F per covered cell (41 dirs to 6.7 deg, glass T once per pane), trilinear irradiance-volume read in G (RG16UI) scaling hemi/ambient/IBL of zone fragments; ADF add removed (logged cross-check only); portals retired (&portals=1); §LUX_CHECK vs prEN 12464-1:2019 rows; §STILL_STAGE_MS (88c90251 effects.js); sw v1394 ([901d75a](https://github.com/red1oon/bim-ootb/commit/901d75a5e064280a6d6a2fa9f11aae1cebe36d7b))
+
+
+### 🐛 Fixes
+
+* **§LAMP_ZONE_PICK:** DECIDE by zone boxes vs the frustum (S5) — decideMs 0.9-2 ms per press on Hospital (first press 40 ms = the one-time BUILD box pass); sw v1402 ([996d204](https://github.com/red1oon/bim-ootb/commit/996d20492803486feb5b594d32c954861da838a3))
+* **§LAMP_ZONE_PICK:** pick Alt+S lamps by the zones they light — A._lampZonePick(camPos, camZone, visZones, fixtures, cap) replaces the frustum test + zone-blind top-up when the camera is in a light zone; sw v1400 ([34ab1e3](https://github.com/red1oon/bim-ootb/commit/34ab1e3801319b568f2e73bb4f06aaab0a57453a))
+* **§LAMP_ZONE_PICK:** ray-free DECIDE (ALTC_SHOWSTOPPERS S5) — BUILD: A._lampZoneTable (fixture -&gt; zone via atLamp, cached per building+zone grid+fixture count); DECIDE: _lampZonePick(camPos, camZone, visZones) with camZone = LightZones.at(camera) and visZones = 64x36 depth readback -&gt; world -&gt; LightZones.at (A._lampZoneView), no raycast, decideMs logged; sw v1401 ([973de0e](https://github.com/red1oon/bim-ootb/commit/973de0e5a40855576117e701950fe4cc2addcf5c))
+* **§SKY_VIEW_FIELD V12/V13:** interreflected component per zone (flux balance, R 0.5) so ceilings/soffits under an opaque roof are not sourceless; fieldOn carries no film gate; sw v1396 ([ad1314f](https://github.com/red1oon/bim-ootb/commit/ad1314fbe474b163c3fb25042767f6b698db0258))
+* **§SKY_VIEW_FIELD:** glass cell = majority surface (V3'), outside fragments filtered (V5'); witness: warm-up double read, class pairs, acrossSolid (V11), exterior no-regression pose; sw v1395 ([5bae708](https://github.com/red1oon/bim-ootb/commit/5bae708a97f7ddfb253703081db923e4be619aec))
+* **§SKY_VIEW_FIELD:** IRC OFF by default (watchdog ruling: the GI bounce pass already carries interreflection; V12 double-counts and is a flat fill); &irc=1 / APP._stillIrc keeps it for A/B, logged; wash witness §GI_AWARE (composite/app readback: blackFinal, GI share, IRC share); sw v1397 ([59e0b22](https://github.com/red1oon/bim-ootb/commit/59e0b22d307716277ad739137e4176b1b03028bf))
+* **§SOURCED_DAYLIGHT D7:** A_z = surfaceM2 + apertureM2 (BRE's A includes the openings); over10 split all-sky-lit vs receiving with glazing ratio; sw v1391 ([62b7ea9](https://github.com/red1oon/bim-ootb/commit/62b7ea92ff539919d1b097272707c6c103860974))
+* **§STILL_SHADOW_CASCADE_MAPS_EXIST:** render every cascade map once when the lights are added — with no map, staged draws before the fit wrote nothing and every indoor §METER was VACUOUS (0a9950a3); gate witness FAILs on §METER VACUOUS; sw v1382 ([c56769b](https://github.com/red1oon/bim-ootb/commit/c56769bfa60cf25e7552317db1b803dd785859cc))
+
 ## [1.69.0](https://github.com/red1oon/bim-ootb/compare/v1.68.1...v1.69.0) (2026-09-24)
 
 
