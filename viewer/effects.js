@@ -4684,6 +4684,26 @@ async function setupEffects(A, renderer, scene, camera) {
         host: location.host, sw: A._swVersion || null };   // §STILL_POSE_PNG writes it into the saved PNG; §STILL_POSE_HOST: host + sw name the tree
       console.log('§STILL_POSE ' + JSON.stringify(A._stillPoseLast));
     } catch (eP) { console.warn('§STILL_POSE failed: ' + eP.message); }
+    // §BAKE_PRECOMPILE (Z22-2, ALTC_SHOWSTOPPERS.md "### Z22 SPEC") — bakes only. Everything that
+    // changes the light COUNT or adds scene content for this staging has already run above (lamps,
+    // portals, normal repair, glass fresnel, the torch, SourcedLight.stage, cam light, ground,
+    // the room probe, shadow fit) — this is the "everything is staged" point. Compile every program
+    // the film will need NOW, synchronously, so frame 0 never pays a live shader-link cost.
+    // renderer.compile() traverses the WHOLE scene graph (no camera-frustum culling) — "compile
+    // against the whole scene, not the view frustum" needs no bespoke traversal to satisfy.
+    // compileAsync() exists on this three build too, but _applyPhotoStaging() is called
+    // synchronously (startStillRefine effects.js:5900, Alt+M effects.js:10600) with nothing
+    // awaited after it — awaiting compileAsync's Promise here would need restructuring the staging
+    // call chain (out of scope, unverified without a GPU run), and calling it WITHOUT awaiting
+    // would make the "programsAfter equals f=0's count" claim below false on any driver lacking
+    // KHR_parallel_shader_compile. The synchronous call is the correct, verifiable choice.
+    if (A._maxqActive && A.renderer && A.scene && A.camera) {
+      var _pcT0 = performance.now();
+      var _pcBefore = (A.renderer.info && A.renderer.info.programs) ? A.renderer.info.programs.length : -1;
+      try { A.renderer.compile(A.scene, A.camera); } catch (ePc) { console.warn('§BAKE_PRECOMPILE failed: ' + ePc.message); }
+      var _pcAfter = (A.renderer.info && A.renderer.info.programs) ? A.renderer.info.programs.length : -1;
+      console.log('§BAKE_PRECOMPILE programsBefore=' + _pcBefore + ' programsAfter=' + _pcAfter + ' ms=' + (performance.now() - _pcT0).toFixed(1));
+    }
     _stillShadowRendersArm();
   }
   // §STILL_SHADOW_RENDERS — how many times the sun/portal shadow maps are really re-rendered during one still. three's

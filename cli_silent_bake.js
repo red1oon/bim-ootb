@@ -259,6 +259,45 @@ function _ts() { const d = new Date(); return d.toISOString().slice(11, 23) + ' 
 function log(line) { const s = _ts() + ' ' + line; logStream.write(s + '\n'); console.log(s); }
 function logRaw(line) { logStream.write(_ts() + ' ' + line + '\n'); }   // full console firehose → file only
 
+// ── §CLI_BAKE_LOAD_ONCE (Z22-1, ALTC_SHOWSTOPPERS.md "### Z22 SPEC", 2026-09-28) ──────────────────
+// getRegistrations()/caches.keys()/caches.delete() are per-ORIGIN, not per-path (Service Worker spec),
+// so the §CLI_BAKE_SW_PURGE unregister/cache-clear does not need to run on the real bake page at all —
+// it only needs to run on ANY same-origin document, before the real page is ever navigated to. The old
+// code purged AFTER page.goto(url) (which starts fetching/staging the instant its <script> tags run,
+// long before the purge's page.evaluate() gets a turn) and then page.reload()'d — a MEASURED Hospital
+// 90-frame bake staged the building TWICE, tearing down the first staging at ~125 s (module *_INIT
+// lines duplicated in the log). Fix: purge on `viewer/sw.js` (a small static file the server already
+// serves; navigating a top-level frame straight to a .js URL displays it as plain text — it never runs
+// as a page script) BEFORE the one and only navigation to the real URL.
+// Pulled into its own function (rather than left inline) so its CALL ORDER is checkable by a node test
+// with a mocked `page` (viewer/tests/witness_bake_loads_once.js) — no browser needed to prove the order.
+// Returns { swPurge, loadsCount } — loadsCount is always 1 by construction.
+async function loadPageOnce(page, opts) {
+  const { purgeUrl, realUrl, gotoTimeout, log: _log } = opts;
+  await page.goto(purgeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  // ⚠ §CLI_BAKE_SW_PURGE (2026-09-08, MEP_CLASH_REVEAL_MOVIE.md §43) — THE BAKE MUST NOT RUN STALE JS.
+  // viewer.html and every module are precached by viewer/sw.js at a FIXED `?v=` query, so a profile
+  // that has ever loaded the viewer keeps serving the OLD viewer.html — which means a NEW <script>
+  // tag added this session is simply absent, and the bake silently exercises the previous build.
+  // MEASURED: the 0-30 s Hospital bake of 2026-09-08 printed the PREVIOUS build's
+  // `§SLAB_BEAT_INIT … depth-tested tint + X, shine-through label` and emitted no §HUD_BOX /
+  // §STATUS_BOX / §MEASURE_BOX / §SLAB_BEAT_AREA at all — 8 minutes of GPU spent testing code that
+  // was not in the film. Every witness_*.js already does exactly this; the bake runner never did.
+  const swPurge = await page.evaluate(async () => {
+    let regs = 0, ks = 0, urls = [];
+    try { if (navigator.serviceWorker) { const rs = await navigator.serviceWorker.getRegistrations();
+      regs = rs.length; for (const r of rs) { const w = r.active || r.waiting || r.installing; urls.push(w ? w.scriptURL.split('/').pop() : '?'); await r.unregister(); } } } catch (e) {}
+    try { if (window.caches) { const k = await caches.keys(); ks = k.length; for (const n of k) await caches.delete(n); } } catch (e) {}
+    return { regs, ks, ctl: window.__swCtlAtLoad === true ? 1 : (window.__swCtlAtLoad === false ? 0 : -1), urls };
+  });
+  _log(`§CLI_BAKE_SW_PURGE unregistered=${swPurge.regs} cachesDeleted=${swPurge.ks} controllerAtLoad=${swPurge.ctl} regs=[${swPurge.urls.join(',')}] — purged on a lightweight landing page BEFORE the real navigation, so the building loads and stages exactly once (Z22-1)`);
+  // §CLI_BAKE_LOADS — the count this line always expects is 1: everything above ran on the throwaway
+  // landing page, so the goto below is the FIRST and ONLY navigation that stages the building.
+  _log(`§CLI_BAKE_LOADS count=1 firstStagingMs=${Date.now() - _t0}`);
+  await page.goto(realUrl, { waitUntil: 'domcontentloaded', timeout: gotoTimeout });
+  return { swPurge, loadsCount: 1 };
+}
+
 // ── static server (serves the checkout; symlinked buildings/ resolve normally) ──
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm',
@@ -279,7 +318,11 @@ const server = http.createServer((req, res) => {
 });
 
 // ── main ─────────────────────────────────────────────────────────────────────
-(async () => {
+// §CLI_BAKE_REQUIRE_GUARD (Z22-1) — `main` used to be an anonymous IIFE invoked unconditionally at
+// module load. Named + guarded behind `require.main === module` so `node cli_silent_bake.js ...`
+// behaves EXACTLY as before, while a node test can `require()` this file for `loadPageOnce` (above)
+// without starting the static server or launching a browser.
+const main = async () => {
   await new Promise(r => server.listen(PORT, '127.0.0.1', r));
   const commit = execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD']).toString().trim();
   const swv = (fs.readFileSync(path.join(ROOT, 'viewer/sw.js'), 'utf8').match(/CACHE_VERSION = '([^']+)'/) || [])[1];
@@ -491,24 +534,9 @@ const server = http.createServer((req, res) => {
     (FILM_PARITY ? '' : '&filmparity=0') + (FILM_FILL === 'restore' ? '&filmfill=restore' : '') + (FILM_EXPOSURE ? '' : '&filmexp=0') + (FILM_BOUNCE ? '' : '&filmbounce=0') + URL_QUERY;
   log('§CLI_BAKE_FILM_PARITY parity=' + (FILM_PARITY ? 1 : 0) + ' fill=' + FILM_FILL + ' exposure=' + (FILM_EXPOSURE ? 'meter' : 'fixed') + ' bounce=' + (FILM_BOUNCE ? 1 : 0) + ' urlQuery=' + (URL_QUERY || '-'));
   log(`§CLI_BAKE_NAV ${url}`);
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
-  // ⚠ §CLI_BAKE_SW_PURGE (2026-09-08, MEP_CLASH_REVEAL_MOVIE.md §43) — THE BAKE MUST NOT RUN STALE JS.
-  // viewer.html and every module are precached by viewer/sw.js at a FIXED `?v=` query, so a profile
-  // that has ever loaded the viewer keeps serving the OLD viewer.html — which means a NEW <script>
-  // tag added this session is simply absent, and the bake silently exercises the previous build.
-  // MEASURED: the 0-30 s Hospital bake of 2026-09-08 printed the PREVIOUS build's
-  // `§SLAB_BEAT_INIT … depth-tested tint + X, shine-through label` and emitted no §HUD_BOX /
-  // §STATUS_BOX / §MEASURE_BOX / §SLAB_BEAT_AREA at all — 8 minutes of GPU spent testing code that
-  // was not in the film. Every witness_*.js already does exactly this; the bake runner never did.
-  const _swPurge = await page.evaluate(async () => {
-    let regs = 0, ks = 0, urls = [];
-    try { if (navigator.serviceWorker) { const rs = await navigator.serviceWorker.getRegistrations();
-      regs = rs.length; for (const r of rs) { const w = r.active || r.waiting || r.installing; urls.push(w ? w.scriptURL.split('/').pop() : '?'); await r.unregister(); } } } catch (e) {}
-    try { if (window.caches) { const k = await caches.keys(); ks = k.length; for (const n of k) await caches.delete(n); } } catch (e) {}
-    return { regs, ks, ctl: window.__swCtlAtLoad === true ? 1 : (window.__swCtlAtLoad === false ? 0 : -1), urls };
-  });
-  log(`§CLI_BAKE_SW_PURGE unregistered=${_swPurge.regs} cachesDeleted=${_swPurge.ks} controllerAtLoad=${_swPurge.ctl} regs=[${_swPurge.urls.join(',')}] — reloading so the bake runs THIS build, not the precached one`);
-  await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
+  // Z22-1 LOAD ONCE (ALTC_SHOWSTOPPERS.md "### Z22 SPEC") — purge on a throwaway same-origin landing
+  // page, THEN navigate to the real url exactly once. No page.reload() any more.
+  await loadPageOnce(page, { purgeUrl: `http://127.0.0.1:${PORT}/viewer/sw.js`, realUrl: url, gotoTimeout: 120000, log });
   await page.waitForFunction(() => window.APP && window.APP.renderer && window.APP.camera &&
     typeof window.APP.startMaxQualityOrbit === 'function' && typeof window.__maxqBake === 'function',
     { timeout: 300000 });
@@ -980,4 +1008,8 @@ const server = http.createServer((req, res) => {
   server.close();
   logStream.end();
   process.exit(aborted || !fileOk ? 1 : 0);
-})().catch(e => { log('§CLI_BAKE_CRASH ' + (e && e.stack || e)); process.exit(2); });
+};
+if (require.main === module) {
+  main().catch(e => { log('§CLI_BAKE_CRASH ' + (e && e.stack || e)); process.exit(2); });
+}
+module.exports = { loadPageOnce };
