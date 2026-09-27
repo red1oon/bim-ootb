@@ -146,7 +146,15 @@ async function runAltc(puppeteer, N) {
     await p.waitForFunction(() => window.APP && typeof window.APP.startMaxQualityOrbit === 'function' && window.APP.guidMap && Object.keys(window.APP.guidMap).length > 0 && !window.APP.streaming, { timeout: 600000, polling: 2000 });
     await new Promise(r => setTimeout(r, 5000)); L.push('§ALTC_ENTRY APP.startMaxQualityOrbit({frames:' + N + ', fps:15}) — the function scene.js Alt+C calls, frames capped');
     await p.evaluate(n => { window.APP.startMaxQualityOrbit({ frames: n, fps: 15 }); }, N);
-    for (let i = 0; i < 14400 && !L.some(t => /§MAXQ_DONE|§MAXQ_FAIL|§MAXQ_CANCEL/.test(t)); i++) await new Promise(r => setTimeout(r, 500));
+    // instrument (GPU run 2026-09-27): start() opens the Cinema Path Editor (cinema_maxq.js §CINEMA_PATH_EDITOR, opts.editor !== false)
+    // and awaits its OK — the harness waited 25 min on §CPE_OPEN with no frame. The real Alt+C flow is ONE click: "OK — record this"
+    // (#cpe-ok; OK with no edit = the derived plan, guardrail 2). Click it when the editor opens; end on every terminal §MAXQ tag; stall
+    // guard: 15 min with no new console line => stop and record the stall (INCONCLUSIVE via the PAGEERROR harness line).
+    let okClicked = false, lastN = L.length, lastT = Date.now();
+    for (let i = 0; i < 14400 && !L.some(t => /§MAXQ_DONE|§MAXQ_FAIL|§MAXQ_CANCEL|§MAXQ_DELIVER_FAIL|§MAXQ_STITCH_FAILED|§MAXQ_GL_LOST/.test(t)); i++) {
+      if (!okClicked && L.some(t => /§CPE_OPEN/.test(t))) { okClicked = await p.evaluate(() => { const b = document.getElementById('cpe-ok'); if (b) { b.click(); return true; } return false; }); if (okClicked) L.push('§ALTC_CPE_OK clicked #cpe-ok (the Alt+C one-click OK, no edit)'); }
+      if (L.length !== lastN) { lastN = L.length; lastT = Date.now(); } else if (Date.now() - lastT > 900e3) { L.push('PAGEERROR harness: altc stalled 15 min with no console line (last: ' + (L[L.length - 1] || '').slice(0, 100) + ')'); break; }
+      await new Promise(r => setTimeout(r, 500)); }
     await new Promise(r => setTimeout(r, 5000)); const tap = await p.evaluate(new Function(TAP + ' return window.__maxqTapReport();')); fs.writeFileSync(path.join(dir, 'altc_tap.json'), JSON.stringify(tap));
     const f = fs.readdirSync(dir).filter(x => /\.(mp4|webm)$/.test(x) && !/^[ACETB]\.mp4$/.test(x)).map(x => path.join(dir, x)).sort((a, c) => fs.statSync(c).mtimeMs - fs.statSync(a).mtimeMs)[0];
     if (f) fs.renameSync(f, path.join(dir, 'altc.mp4'));
