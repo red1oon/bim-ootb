@@ -110,13 +110,21 @@ async function arm(port, label, posesIn) {   // posesIn: the AFTER arm's poses, 
       const still = await p.evaluate(pageMeasure, 'still', 48, 27);
       out.poses[name] = { pose, canvas, still, tags: L.slice(n0).filter(t => TAGS.test(t)) };
       await p.keyboard.press('Escape'); await sleep(1500);
-      // ### ALTS-ALL FIX 18 (b): the toilet still again with the meter OFF in both arms (A._stillMeter = false, which both builds honour:
-      // exposure stays the base, logged '§METER off (&meter=0) exposure=') — the finish comparison at ONE exposure
-      if (name === 'toilet') { await p.evaluate(() => { window.APP._stillMeter = false; }); const n1 = L.length; await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
-        for (let i = 0; i < 400 && !L.slice(n1).some(t => /§GI_STILL result|§GI_STILL_FAIL/.test(t)); i++) await sleep(1000);
-        out.poses[name].stillFixed = await p.evaluate(pageMeasure, 'still', 48, 27); out.poses[name].fixedTags = L.slice(n1).filter(t => /§METER off|§METER camera=/.test(t));
-        await p.keyboard.press('Escape'); await sleep(1500); await p.evaluate(() => { delete window.APP._stillMeter; }); }
+
     }
+    // ### ALTS-ALL FIX 18 (b): the toilet still again with the meter OFF, both arms (&meter=0 in the URL — honoured by both builds'
+    // sourced_light.js; APP._stillMeter is reset by staging, so a page flag cannot do it): the finish comparison at ONE exposure
+    if (poses.toilet && out.poses.toilet && !out.poses.toilet.error) { const q = poses.toilet;
+      await p.goto('http://127.0.0.1:' + port + '/viewer/viewer.html?db=/buildings/Hospital_extracted.db&photoseed=0.5&meter=0', { waitUntil: 'domcontentloaded' });
+      await p.waitForFunction(w => window.APP && window.APP.guidMap && Object.keys(window.APP.guidMap).length >= w, { timeout: 600000, polling: 2000 }, +WANT); await sleep(3000);
+      await p.evaluate(() => { window.__ctMeta = window.__ctMeta || null; });
+      await p.evaluate(() => { const A = window.APP, rs = A.dbQuery("SELECT m.guid, m.ifc_class, coalesce(m.material_rgba,''), coalesce(m.material_name,''), coalesce(m.element_name,''), coalesce(m.discipline,'') FROM elements_meta m") || [];
+        const meta = {}; rs.forEach(r0 => { const r = Array.isArray(r0) ? r0 : Object.values(r0); meta[r[0]] = { c: r[1], ph: A._isExporterPlaceholder ? A._isExporterPlaceholder(r[2], r[3]) : false, p: A._porcelainKey ? !!A._porcelainKey(r[1], r[4], r[3]) : false, d: r[5] }; }); window.__ctMeta = meta; });
+      await p.evaluate(qq => { const A = window.APP; A.camera.position.fromArray(qq.cam); A.controls.target.fromArray(qq.tgt); A.controls.update(); window.__ctAnchor = qq; }, q); await sleep(1500);
+      const n1 = L.length; await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
+      for (let i = 0; i < 400 && !L.slice(n1).some(t => /§GI_STILL result|§GI_STILL_FAIL/.test(t)); i++) await sleep(1000);
+      out.poses.toilet.stillFixed = await p.evaluate(pageMeasure, 'still', 48, 27); out.poses.toilet.fixedTags = L.slice(n1).filter(t => /§METER off|§METER camera=|§METER final/.test(t));
+      S('   (' + label + ' toilet fixed-exposure press (&meter=0): lines=' + (L.length - n1) + ' meterTags=' + JSON.stringify(out.poses.toilet.fixedTags).slice(0, 300) + ')'); }
   } catch (e) { out.error = e.message; }
   out.pageErrors = pe; await b.close(); return out;
 }
@@ -196,7 +204,8 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
         // ### ALTS-ALL FIX 12 (3): FIX 11 moves pipes by design — FP/PLB pipe MATERIAL hue == its discipline's DISC_COLORS hue (±6°)
         const DC = { FP: 0xcc8844, PLB: 0x8844cc, MEP: 0x44cc44 }, hueOf = c => { const mx = Math.max(...c), mn = Math.min(...c), dd = mx - mn; if (!dd) return null; let hh = mx === c[0] ? ((c[1] - c[2]) / dd) % 6 : mx === c[1] ? (c[2] - c[0]) / dd + 2 : (c[0] - c[1]) / dd + 4; return (hh * 60 + 360) % 360; };
         // pipes: FP/PLB (a specific trade decides); ducts: FP/PLB/MEP (the DUCT name hint is achromatic, so the discipline decides)
-        const pq = fa.samples.filter(q => ((/^IfcPipe/.test(q.cls) && (q.d === 'FP' || q.d === 'PLB')) || (/^IfcDuct/.test(q.cls) && DC[q.d])) && q.mat), pbad = pq.filter(q => { const h0 = hueOf(q.mat), hd = hueOf([(DC[q.d] >> 16 & 255) / 255, (DC[q.d] >> 8 & 255) / 255, (DC[q.d] & 255) / 255]); return h0 == null || Math.min(Math.abs(h0 - hd), 360 - Math.abs(h0 - hd)) > 6; });
+        // tier 2 only (placeholder rows): an element with its own chromatic colour keeps it (tier 1b, e.g. red FP fittings)
+        const pq = fa.samples.filter(q => q.ph && ((/^IfcPipe/.test(q.cls) && (q.d === 'FP' || q.d === 'PLB')) || (/^IfcDuct/.test(q.cls) && DC[q.d])) && q.mat), pbad = pq.filter(q => { const h0 = hueOf(q.mat), hd = hueOf([(DC[q.d] >> 16 & 255) / 255, (DC[q.d] >> 8 & 255) / 255, (DC[q.d] & 255) / 255]); return h0 == null || Math.min(Math.abs(h0 - hd), 360 - Math.abs(h0 - hd)) > 6; });
         if (pq.length >= 5 || name === 'plenum') V(pq.length >= 5 ? pbad.length === 0 : null, 'FIX 11 ' + name + ' canvas: pipe/duct material hue == its discipline hue (±6°)', 'n=' + pq.length + ' (FP ' + pq.filter(q => q.d === 'FP').length + ', PLB ' + pq.filter(q => q.d === 'PLB').length + ', MEP duct ' + pq.filter(q => q.d === 'MEP').length + ') off ' + pbad.length + (pbad[0] ? ' e.g. ' + pbad[0].d + ' ' + pbad[0].mat.map(v => v.toFixed(3)).join(',') : '') + ' metal ' + [...new Set(pq.map(q => q.metal))].join(','));
         V(diffs.length >= 20 ? mean(diffs) <= 2 : null, 'REFS ' + name + ' canvas: untouched-element pixels unchanged (mean abs <= 2 codes, same grid cell + same guid; FIX 11 classes excluded)', 'n=' + diffs.length + ' meanAbs=' + (diffs.length ? mean(diffs).toFixed(2) : '-')); }
       // Z19: Alt+S saturation rises (canvas does not carry IR)
