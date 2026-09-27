@@ -4603,8 +4603,11 @@ async function setupEffects(A, renderer, scene, camera) {
     // §SOURCED_LIGHT principle 1 (only real sources): the eye-riding fill is not a source. Off for Alt+S when §SOURCED_LIGHT
     // is installed (Clinic corridor, 2026-09-25: at 2 m it gave ~0.75 of the 0.73 metered incident light, the lamps ~0.02).
     var _camSourcedOff = !A._maxqActive && !!A._stillCalibOn && !!(window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed());
-    A._camLight.intensity = _camSourcedOff ? 0 : CAM_LIGHT_INTENSITY;
-    console.log('§CAM_LIGHT ' + (_camSourcedOff ? 'off (§SOURCED_LIGHT: not a real source)' : 'on') + ' intensity=' + A._camLight.intensity + ' distance=' + CAM_LIGHT_DISTANCE +
+    // §FILM_LAW S3 (bim-compiler ALTC_SHOWSTOPPERS.md §FILM_LAW; stopper S-LAW-6, D4; §LIGHT_ONE_SCALE L1a — the cove is the only
+    // added source): a parity film turns the eye-riding fill off as Alt+S does, on the film's own calibration switch (&calib=0 keeps it).
+    var _camFilmOff = !!A._maxqActive && !!A._filmParity && !!A._stillCalibOn;
+    A._camLight.intensity = (_camSourcedOff || _camFilmOff) ? 0 : CAM_LIGHT_INTENSITY;
+    console.log('§CAM_LIGHT ' + (_camSourcedOff ? 'off (§SOURCED_LIGHT: not a real source)' : _camFilmOff ? 'off (film, L1a: not a real source)' : 'on') + ' intensity=' + A._camLight.intensity + ' distance=' + CAM_LIGHT_DISTANCE +
       ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
     // §CAM_TORCH — Alt+S only for now (films: Z17 film part); &torch=0 / APP._stillTorch=false = off.
     if (!A._maxqActive && window.LightLaw && window.LightLaw.TORCH && A._stillTorch !== false && !/[?&]torch=0/.test(location.search)) {
