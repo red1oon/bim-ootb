@@ -4539,6 +4539,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if ((!A._maxqActive || A._filmParity) && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }
     _stMs.portals = performance.now() - _stS; _stS = performance.now();   // after the lamps; budget set before them
     if ((!A._maxqActive || A._filmParity) && window.GlassFresnel) { try { window.GlassFresnel.stage(A); } catch (eGF) { console.warn('§GLASS_FRESNEL failed: ' + eGF.message); } }   // §GLASS_FRESNEL
+    if (!A._maxqActive) { try { _camTorchStage(false); } catch (eT) { console.warn('§CAM_TORCH failed: ' + eT.message); } }   // §ALTS_ALL: torch in the scene before the stage meter
     if (!A._maxqActive && window.SourcedLight) { try { window.SourcedLight.stage(A); } catch (eSL) { console.warn('§SOURCED_LIGHT failed: ' + eSL.message); } }
     _stMs.sourcedStage = performance.now() - _stS;   // §SOURCED_LIGHT — after lamps + portals
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
@@ -4613,24 +4614,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // the Alt+S torch instead of a plain CAM_LIGHT off. Created once, added once per staging (constant light count => no program
     // recompiles across frames); cinema_maxq.js moves it per frame via A._updateCamTorch. Control clip unchanged. &torch=0 = off.
     var _torchFilm = !!A._maxqActive && _camFilmOff;
-    if ((!A._maxqActive || _torchFilm) && window.LightLaw && window.LightLaw.TORCH && A._stillTorch !== false && !/[?&]torch=0/.test(location.search)) {
-      var _TL = window.LightLaw.TORCH, _lp = window.LightLaw.luxPer(A._stillCalibSunLux, A._stillCalibSunI);
-      if (_lp) {
-        if (!A._camTorch) { A._camTorch = new THREE.SpotLight(_TL.color, 0, 0, _TL.halfAngleDeg * Math.PI / 180, 0, 2);
-          A._camTorch.castShadow = true; A._camTorch.shadow.mapSize.set(_TL.shadowMap, _TL.shadowMap); A._camTorch.shadow.camera.near = 0.05; A._camTorch.shadow.camera.far = 60;
-          A._camTorch.name = 'cam_torch'; }
-        A._camTorch.intensity = _TL.peakCd / _lp;
-        A.scene.add(A._camTorch); A.scene.add(A._camTorch.target);
-        var _tg = A.controls && A.controls.target ? A.controls.target : new THREE.Vector3().copy(A.camera.position).add(A.camera.getWorldDirection(new THREE.Vector3()));
-        _updateCamTorch(_tg.x, _tg.y, _tg.z);
-        console.log('§CAM_TORCH on peakCd=' + _TL.peakCd + ' (' + _TL.lm + ' lm, FL1 ' + _TL.beamDistM + ' m) halfAngle=' + _TL.halfAngleDeg + ' offset R' + _TL.offsetRightM + '/U' + _TL.offsetUpM +
-          ' m intensityUnits=' + A._camTorch.intensity.toExponential(3) + ' (cd / luxPer ' + _lp.toFixed(1) + ') shadow=' + _TL.shadowMap);
-        if (_torchFilm) console.log('§CAM_TORCH film on intensityUnits=' + A._camTorch.intensity.toExponential(6) + ' peakCd=' + _TL.peakCd + ' lawHash=' + window.LightLaw.hash(window.LightLaw.LAW) +
-          ' (once per bake; moved per frame by A._updateCamTorch; the film meter S1 reads it every frame)');
-        // Alt+S re-meters with the torch (L3); a film's exposure is owned by §FILM_EXPOSURE (S1), which meters every frame with it.
-        else if (window.SourcedLight && window.SourcedLight.remeter) window.SourcedLight.remeter(A);
-      } else console.log('§CAM_TORCH VACUOUS no lux calibration — off');
-    }
+    if (_torchFilm) _camTorchStage(true);   // stills staged it before SourcedLight.stage (see _camTorchStage)
     _showPhotoProps(true);
     // §MIRROR_ROOM_PROBE: built LAST, after ground/lights/props are all in their staged state, so
     // the capture reflects the real staged look. The FIRST _reassertPhotoMatBoost() call above (at
@@ -4775,6 +4759,27 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_fe && restore && _fe.base != null && A.renderer) { A.renderer.toneMappingExposure = _fe.base; console.log('§FILM_EXPOSURE end frames=' + _fe.n + ' exposure restored ' + _fe.base.toFixed(4)); }
     if (restore && A._meterLast && A._meterLast.film) A._meterLast = null;   // a later still must not read the film's meter
     _fe = null; _bakeFillCheckLogged = false;   // §FILM_FILL_CHECK logs the first frame of each film
+  }
+  // §CAM_TORCH staging (moved into a function by §ALTS_ALL: stills call it before SourcedLight.stage so ONE meter sees the torch)
+  function _camTorchStage(_torchFilm) {
+    if ((!A._maxqActive || _torchFilm) && window.LightLaw && window.LightLaw.TORCH && A._stillTorch !== false && !/[?&]torch=0/.test(location.search)) {
+    var _TL = window.LightLaw.TORCH, _lp = window.LightLaw.luxPer(A._stillCalibSunLux, A._stillCalibSunI);
+    if (_lp) {
+      if (!A._camTorch) { A._camTorch = new THREE.SpotLight(_TL.color, 0, 0, _TL.halfAngleDeg * Math.PI / 180, 0, 2);
+        A._camTorch.castShadow = true; A._camTorch.shadow.mapSize.set(_TL.shadowMap, _TL.shadowMap); A._camTorch.shadow.camera.near = 0.05; A._camTorch.shadow.camera.far = 60;
+        A._camTorch.name = 'cam_torch'; }
+      A._camTorch.intensity = _TL.peakCd / _lp;
+      A.scene.add(A._camTorch); A.scene.add(A._camTorch.target);
+      var _tg = A.controls && A.controls.target ? A.controls.target : new THREE.Vector3().copy(A.camera.position).add(A.camera.getWorldDirection(new THREE.Vector3()));
+      _updateCamTorch(_tg.x, _tg.y, _tg.z);
+      console.log('§CAM_TORCH on peakCd=' + _TL.peakCd + ' (' + _TL.lm + ' lm, FL1 ' + _TL.beamDistM + ' m) halfAngle=' + _TL.halfAngleDeg + ' offset R' + _TL.offsetRightM + '/U' + _TL.offsetUpM +
+        ' m intensityUnits=' + A._camTorch.intensity.toExponential(3) + ' (cd / luxPer ' + _lp.toFixed(1) + ') shadow=' + _TL.shadowMap);
+      if (_torchFilm) console.log('§CAM_TORCH film on intensityUnits=' + A._camTorch.intensity.toExponential(6) + ' peakCd=' + _TL.peakCd + ' lawHash=' + window.LightLaw.hash(window.LightLaw.LAW) +
+        ' (once per bake; moved per frame by A._updateCamTorch; the film meter S1 reads it every frame)');
+      // §ALTS_ALL (torch remeter VACUOUS, §ALTS_COMBINED RESULT: it read skyPx=pixels at every pose): a still stages the torch BEFORE
+      // SourcedLight.stage, so the stage meter (and the lamp remeter) already see it — no separate torch remeter. Films: §FILM_EXPOSURE (S1).
+    } else console.log('§CAM_TORCH VACUOUS no lux calibration — off');
+  }
   }
   function _teardownPhotoStaging() {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert

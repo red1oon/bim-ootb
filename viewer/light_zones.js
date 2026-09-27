@@ -853,12 +853,19 @@
   // §GLASS_SPEC_GATE CPU mirror (sourced_light.js slSpecKeep, same order): the reflection gate at surface point p seen from eye.
   // base = what slSkyKeep gives (sky-view F; unknown/solid 0 = indoorSky default); the mirror ray marched 0.25 m x 32 from
   // p + 0.25 n: off grid / OPEN -> 1, SOLID (after the first 1 m) -> base.
-  function specVis(p, nrm, eye) {
+  function specVis(p, nrm, eye, smooth) {   // smooth = §ZERO Z18 §SPEC_SMOOTH mirror (shader uSLSky.w)
     var Z = cache; if (!Z || !Z.field) return null;
     var vx = p.x - eye.x, vy = p.y - eye.y, vz = p.z - eye.z, vl = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1; vx /= vl; vy /= vl; vz /= vl;
     var nx = nrm.x, ny = nrm.y, nz = nrm.z; if (nx * vx + ny * vy + nz * vz > 0) { nx = -nx; ny = -ny; nz = -nz; }
     var sf = skyField(p, { x: nx, y: ny, z: nz }), base = sf.F == null ? 0 : sf.F; if (base >= 0.999) return { base: base, spec: base };
     var d = vx * nx + vy * ny + vz * nz, rx = vx - 2 * d * nx, ry = vy - 2 * d * ny, rz = vz - 2 * d * nz, st = 0.5 * Z.cell, qx = p.x + nx * st, qy = p.y + ny * st, qz = p.z + nz * st;
+    if (smooth) { var P = 0, Tr = 1, cl2 = Z.cell, nxy2 = Z.nx * Z.ny;
+      for (var k2 = 0; k2 < 32; k2++) { var gx = (qx - Z.org.x) / cl2 - 0.5, gy = (qy - Z.org.y) / cl2 - 0.5, gz = (qz - Z.org.z) / cl2 - 0.5, bx = Math.floor(gx), by = Math.floor(gy), bz = Math.floor(gz), fx = gx - bx, fy = gy - by, fz = gz - bz, o = 0, so = 0;
+        for (var n = 0; n < 8; n++) { var dx = n & 1, dy = (n >> 1) & 1, dz = (n >> 2) & 1, i = bx + dx, j = by + dy, kk = bz + dz, w = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * (dz ? fz : 1 - fz);
+          if (i < 0 || j < 0 || kk < 0 || i >= Z.nx || j >= Z.ny || kk >= Z.nz) { o += w; continue; } var tt = Z.zone[i + j * Z.nx + kk * nxy2];
+          if (tt === SOLID) { if (k2 >= 4) so += w; } else if ((tt & ZONE_MASK) === 0) o += w; }
+        P += Tr * o; Tr *= Math.max(0, 1 - o - so); if (Tr < 0.004) break; qx += rx * st; qy += ry * st; qz += rz * st; }
+      return { base: base, spec: base + (1 - base) * Math.min(1, P) }; }
     for (var k = 0; k < 32; k++) { var c = cellOf(Z, qx, qy, qz); if (c < 0) return { base: base, spec: 1 }; var t = Z.zone[c];
       if (t === SOLID) { if (k >= 4) return { base: base, spec: base }; } else if ((t & ZONE_MASK) === 0) return { base: base, spec: 1 };
       qx += rx * st; qy += ry * st; qz += rz * st; }

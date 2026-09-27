@@ -2142,6 +2142,14 @@
     // draws the same card through _drawUnlessHold('roster', ...) above, which is hold-aware and
     // registers `stats-panel` for §HUD_LAYOUT (§129.55). Keeping both would have composited the
     // card TWICE per frame. Their A._hudStackBottom stash just above IS kept — it is the new thing.
+    // §FRAME_QA (§ALTS_ALL G6 / §BAKE_RELEASE_GATE, bim-compiler PHOTOREAL_STILL_RENDER.md "### ALTS-ALL BUILD"): the luma of the
+    // EXACT canvas about to be encoded (scene + overlays), 64x36 box-downsampled — a black / white / NaN frame is visible in the log,
+    // not only by eye. Logged by the capture loop beside §FRAME_HASH (same global index). ~1 ms per frame.
+    try { var _qc = A.__frameQaCv || (A.__frameQaCv = document.createElement('canvas')); _qc.width = 64; _qc.height = 36;
+      var _qx = _qc.getContext('2d', { willReadFrequently: true }); _qx.drawImage(c, 0, 0, 64, 36); var _qd = _qx.getImageData(0, 0, 64, 36).data, _qs = 0, _qmn = 255, _qmx = 0, _qdk = 0, _qcl = 0;
+      for (var _qi = 0; _qi < _qd.length; _qi += 4) { var _ql = 0.2126 * _qd[_qi] + 0.7152 * _qd[_qi + 1] + 0.0722 * _qd[_qi + 2]; _qs += _ql; if (_ql < _qmn) _qmn = _ql; if (_ql > _qmx) _qmx = _ql; if (_ql <= 15) _qdk++; if (_ql >= 250) _qcl++; }
+      var _qn = _qd.length / 4; A._frameQa = { mean: _qs / _qn, min: _qmn, max: _qmx, dark: 100 * _qdk / _qn, clip: 100 * _qcl / _qn };
+    } catch (eQa) { A._frameQa = { err: eQa.message }; }
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
   }
 
@@ -4598,6 +4606,11 @@
           // compared later against the frame the stitcher names.
           console.log('§FRAME_HASH i=' + (_frameRange ? _frameRange.a + i : i) + ' sha=' + _fhHex +
             ' bytes=' + (blob && blob.size != null ? blob.size : 'n/a'));
+          // §FRAME_QA (every frame, qaEvery=1): the encoded canvas's luma; reused=1 = the §FRAME_REUSE path handed the previous blob
+          var _fq = A._frameQa || {}, _fqR = (_reuseKey !== null && _reuseKey === _lastFrameKey && blob === _lastFrameBlob && _frameReuseRun > 0);
+          console.log('§FRAME_QA i=' + (_frameRange ? _frameRange.a + i : i) + ' qaEvery=1 ' + (_fq.err ? 'ERR ' + _fq.err : 'lumaMean=' + (+_fq.mean).toFixed(2) + ' lumaMin=' + (+_fq.min).toFixed(1) +
+            ' lumaMax=' + (+_fq.max).toFixed(1) + ' darkPct=' + (+_fq.dark).toFixed(2) + ' clipPct=' + (+_fq.clip).toFixed(2)) + ' reused=' + (_fqR ? 1 : 0) +
+            ' cam=[' + (A.camera ? [A.camera.position.x, A.camera.position.y, A.camera.position.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']');
         } catch (eFh) { console.warn('§FRAME_HASH_ERR ' + eFh.message); }
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB

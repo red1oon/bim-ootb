@@ -64,6 +64,7 @@
 //     [--progress-every-sec N] [--abort-land-min N]   progress cadence (30) / abort landing cap (10)
 //     [--still-budget taa,ao]                          override the 8/12 bake fold (LARGE_DB_BAKE.md
 //                                                       §2 L3); absent = unchanged default quality
+//     [--url-query '&torch=0']                         raw viewer URL switches appended (off-switch arms)
 //     [--frame-range a:b]                              render frames a..b-1 of the FULL film,
 //                                                       frame-exact (LARGE_DB_BAKE.md §2 L4) — NOT
 //                                                       the same grid as --clip (§0), mutually exclusive
@@ -152,6 +153,10 @@ const FILM_PARITY = String(arg('film-parity', '1')) !== '0';
 const FILM_FILL = String(arg('film-fill', 'law'));
 const FILM_EXPOSURE = String(arg('film-exposure', '1')) !== '0';
 const FILM_BOUNCE = String(arg('bounce', '1')) !== '0';
+// §ALTS_ALL G6 (bim-compiler PHOTOREAL_STILL_RENDER.md "### ALTS-ALL BUILD"): --url-query '&torch=0' appends raw viewer URL switches
+// (the Alt+S/film off-switch arms: &torch=0, &srgbfix=0, &groundlaw=0, &gridblend=1 ...) so the bake release gate can A/B a film fix
+// against its off arm. Logged on §CLI_BAKE_FILM_PARITY; empty by default (no change to any existing bake).
+const URL_QUERY = String(arg('url-query', '') || '').replace(/^\?/, '').replace(/^([^&])/, '&$1');
 // §DATUM_DECOUPLE (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — dev-only bisect instrument:
 //   --burnin-datum-src clean.mp4   skip the GPU render + every other overlay; load clean.mp4's own
 //                                   frames instead and draw ONLY the datum layer on top. Use the SAME
@@ -480,8 +485,8 @@ const server = http.createServer((req, res) => {
 
   const dbUrl = DB.includes('/') ? DB : `/buildings/${DB}.db`;
   const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=${dbUrl}` +
-    (FILM_PARITY ? '' : '&filmparity=0') + (FILM_FILL === 'restore' ? '&filmfill=restore' : '') + (FILM_EXPOSURE ? '' : '&filmexp=0') + (FILM_BOUNCE ? '' : '&filmbounce=0');
-  log('§CLI_BAKE_FILM_PARITY parity=' + (FILM_PARITY ? 1 : 0) + ' fill=' + FILM_FILL + ' exposure=' + (FILM_EXPOSURE ? 'meter' : 'fixed') + ' bounce=' + (FILM_BOUNCE ? 1 : 0));
+    (FILM_PARITY ? '' : '&filmparity=0') + (FILM_FILL === 'restore' ? '&filmfill=restore' : '') + (FILM_EXPOSURE ? '' : '&filmexp=0') + (FILM_BOUNCE ? '' : '&filmbounce=0') + URL_QUERY;
+  log('§CLI_BAKE_FILM_PARITY parity=' + (FILM_PARITY ? 1 : 0) + ' fill=' + FILM_FILL + ' exposure=' + (FILM_EXPOSURE ? 'meter' : 'fixed') + ' bounce=' + (FILM_BOUNCE ? 1 : 0) + ' urlQuery=' + (URL_QUERY || '-'));
   log(`§CLI_BAKE_NAV ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
   // ⚠ §CLI_BAKE_SW_PURGE (2026-09-08, MEP_CLASH_REVEAL_MOVIE.md §43) — THE BAKE MUST NOT RUN STALE JS.

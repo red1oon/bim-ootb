@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // WITNESS — z18_gridblend: §ZERO Z18 switch (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md Z18 + §LIGHT_TRUTH_AUDIT C causes 3/4).
 //
+// ISSUE (updated by ### Z18 DIAGNOSIS): the teeth are the §GLASS_SPEC_GATE binary mirror march -> Z18-5 §SPEC_SMOOTH (default ON).
+// &gridblend (Z18-1..4) is the earlier hypothesis (ruled out as the cause); kept default OFF, harmless, witnessed.
 // ISSUE THIS PROVES OR DISPROVES: red1's HHS still shows two-tier stair-stepped shadow edges. Suspected cause: the zone-grid terms step
 // on the 0.5 m cell outline — the field stencil (sourced_light.js slFragZone, 8 texels) DROPS texels of another zone, and IR is ONE
 // value per zone, so where two zones of one visible space meet the sky-view F / Gd / IR jump at the boundary. &gridblend=1
@@ -59,6 +61,19 @@ row('Z18-2 OFF arm reproduces the zone-boundary step', open0.maxJ.toFixed(4), '>
 row('Z18-2 ON arm continuous across the zone boundary', open1.maxJ.toFixed(4), '< 0.02', open1.maxJ < 0.02);
 const wallSame = wall0.vals.every((v, i) => (v == null && wall1.vals[i] == null) || Math.abs(v - wall1.vals[i]) < 1e-12);
 row('Z18-3 across a SOLID wall the blend changes nothing', wallSame, 'true', wallSame);
+// ── Z18-5 §SPEC_SMOOTH (### Z18 DIAGNOSIS: the stepped tier is the §GLASS_SPEC_GATE binary march): a roof hole (j = 7, i >= 14) and
+// a floor point whose mirror ray (eye 3 m back, 2.5 m up) climbs toward the hole edge; sweep the point along x (1 cm) and compare
+// the binary gate (today) with the smooth transmittance gate (LightZones.specVis(p, n, eye, true) = the shader's uSLSky.w path)
+for (let i = 14; i < nx; i++) for (let k = 0; k < nz; k++) zone[at(i, 7, k)] = 0;
+function specLine(smooth) { let prev = null, maxJ = 0, n = 0, lo = 1, hi = 0; for (let x = 2.0; x <= 9.0 + 1e-9; x += 0.01) { const r = LZ.specVis({ x, y: 0.5, z: 2.25 }, { x: 0, y: 1, z: 0 }, { x: x - 3, y: 3.0, z: 2.25 }, smooth); if (!r) continue; n++; lo = Math.min(lo, r.spec); hi = Math.max(hi, r.spec); if (prev != null) maxJ = Math.max(maxJ, Math.abs(r.spec - prev)); prev = r.spec; } return { maxJ, n, lo, hi }; }
+const sp0 = specLine(false), sp1 = specLine(true);
+console.log('    mirror gate along the floor: binary max jump/cm ' + sp0.maxJ.toFixed(4) + ' (range ' + sp0.lo.toFixed(3) + '..' + sp0.hi.toFixed(3) + ') | smooth ' + sp1.maxJ.toFixed(4) + ' (range ' + sp1.lo.toFixed(3) + '..' + sp1.hi.toFixed(3) + ') samples ' + sp1.n);
+if (!(sp0.maxJ > 0.3)) { console.log('§WITNESS_Z18_GRIDBLEND INCONCLUSIVE the binary gate did not reproduce the teeth (max jump ' + sp0.maxJ.toFixed(4) + ')'); process.exitCode = 2; return; }
+row('Z18-5 binary mirror gate reproduces the teeth (jump F -> 1)', sp0.maxJ.toFixed(4), '> 0.3', sp0.maxJ > 0.3);
+row('Z18-5 smooth gate continuous (max jump per cm < 0.05)', sp1.maxJ.toFixed(4), '< 0.05', sp1.maxJ < 0.05);
+row('Z18-5 smooth gate spans the same range (not flattened)', sp1.lo.toFixed(3) + '..' + sp1.hi.toFixed(3), 'lo <= 0.3, hi >= 0.9', sp1.lo <= 0.3 && sp1.hi >= 0.9);
+row('Z18-5 shader: smooth march present, gated by uSLSky.w, binary kept for &specsmooth=0', /if \( uSLSky\.w > 0\.5 \) \{ float P = 0\.0, Tr = 1\.0;/.test(PARS) && /if \( t == 65535u \) \{ if \( k >= 4 \) return base; \}/.test(PARS), 'true', /if \( uSLSky\.w > 0\.5 \) \{ float P = 0\.0, Tr = 1\.0;/.test(PARS) && /if \( t == 65535u \) \{ if \( k >= 4 \) return base; \}/.test(PARS));
+row('Z18-5 switch: default ON, &specsmooth=0 / APP._stillSpecSmooth=false OFF', SL.specSmoothOn({}) + '/' + SL.specSmoothOn({ _stillSpecSmooth: false }), 'true/false', SL.specSmoothOn({}) === true && SL.specSmoothOn({ _stillSpecSmooth: false }) === false);
 // ── Z18-4 switch
 row('Z18-4 default OFF', SL.gridBlendOn({}), 'false', SL.gridBlendOn({}) === false);
 row('Z18-4 APP._stillGridBlend = true -> ON', SL.gridBlendOn({ _stillGridBlend: true }), 'true', SL.gridBlendOn({ _stillGridBlend: true }) === true);
@@ -68,6 +83,6 @@ const { Witness } = require('../../witness_kit/contract');
 Witness('Z18_GRIDBLEND')
   .population(() => rows)
   .schema({ type: 'object', required: ['name', 'got', 'want', 'ok'], properties: { name: { type: 'string' }, got: { type: 'string' }, want: { type: 'string' }, ok: { type: 'boolean' } } })
-  .invariant('every Z18 row holds', rs => rs.length >= 10 && rs.every(r => r.ok))
-  .redControl(rs => rs.map(r => /ON arm continuous/.test(r.name) ? Object.assign({}, r, { got: open0.maxJ.toFixed(4), ok: open0.maxJ < 0.02 }) : r))
+  .invariant('every Z18 row holds', rs => rs.length >= 15 && rs.every(r => r.ok))
+  .redControl(rs => rs.map(r => /ON arm continuous/.test(r.name) ? Object.assign({}, r, { got: open0.maxJ.toFixed(4), ok: open0.maxJ < 0.02 }) : /smooth gate continuous/.test(r.name) ? Object.assign({}, r, { got: sp0.maxJ.toFixed(4), ok: sp0.maxJ < 0.05 }) : r))
   .run();

@@ -189,7 +189,10 @@
 const CACHE_VERSION = 'v1474';   // bump on each deploy; per-change detail is the git commit message.
 // v1474 (2026-09-27) §ALTS_ALL: fix/film-law-v2 + Z10 AO indirect + Z11 bounce albedo merged; Z8 radius-free shell rule
 //   (light_zones.js, &shellreach=2 = B1); Z18 &gridblend=1 (sourced_light.js, default off); remeter all-sky VACUOUS guard.
-//   viewer.html light_law.js?v=6, sourced_light.js?v=59, effects.js?v=115, gi_still.js?v=30, light_zones.js?v=17 in the SAME commit.
+//   §FRAME_QA per-frame luma line in cinema_maxq.js (bake release gate). Z18 §SPEC_SMOOTH (default on, &specsmooth=0): continuous
+//   §GLASS_SPEC_GATE mirror march. Still torch staged before the stage meter (no VACUOUS torch remeter). §METER_STATE isolation line.
+//   cli_silent_bake.js --url-query.
+//   viewer.html light_law.js?v=6, sourced_light.js?v=59, effects.js?v=115, gi_still.js?v=30, light_zones.js?v=17, cinema_maxq.js?v=11 in the SAME commit.
 // v1473 (2026-09-27) §FILM_LAW v2 on the Alt+S torch build: S1 film meter/adapt (LightLaw.ADAPT/adaptEv, acesDiv=1), S2 no film fill,
 //   S3 CAM_LIGHT off -> §CAM_TORCH in parity films (Z17 film part, L1b). viewer.html light_law.js?v=5, sourced_light.js?v=58,
 //   effects.js?v=114, cinema_maxq.js?v=10 in the SAME commit.
