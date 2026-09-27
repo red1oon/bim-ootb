@@ -181,8 +181,8 @@
   // HARD-FAIL (no silent box): only fires when THIS db actually carries a geometry substrate (geomTable != null)
   // — i.e. only for a genuinely broken per-element link, never for a resident/fixture that has no geometry
   // tables at all (e.g. Terminal_meta.db's ARC-seed buffer, whose geometry lives in a SEPARATE Terminal_geo.db
-  // file — out of scope for this single-db reader; that resident keeps its existing raw-bbox behaviour,
-  // unregressed). Measured 2026-07-02: SampleCastle_ARC/SampleHouse/SampleCastle/Duplex extracted.db all have
+  // file — passed in as geoDb since §GEO-SPLIT). §GEO-SERVED-DEGRADED (2026-09-27): with NO substrate at all, every
+  // element is now REFUSED (never seeded as its raw bbox) — see the else-branch in buildSeedOps. Measured 2026-07-02: SampleCastle_ARC/SampleHouse/SampleCastle/Duplex extracted.db all have
   // 0 unresolved hashes — this path is a safety net, not the common case.
   // geoDb (optional) — a SEPARATE sql.js Database that carries component_geometries/base_geometries when the
   // building's mesh substrate lives in its own file (§GEO-SPLIT, Terminal_geo.db vs Terminal_meta.db). Defaults
@@ -213,7 +213,7 @@
     var r = db.exec(sql), ops = [], skipped = [], matched = 0, unmatched = 0, tilted = 0, colorN = { real: 0, palette: 0 };
     // §B1-ROW3: reuse the Open's index for this same (building, geometry) pair when the caller hands it in.
     var geomIdx = (opts && opts.geoIndex) || (RealGeometry ? RealGeometry.buildGeometryIndex(db, geoDb || db) : { table: null, byGuid: {}, resolved: {} });
-    var geomAssets = [], geomSeen = {}, realResolved = 0, hardfail = 0;
+    var geomAssets = [], geomSeen = {}, realResolved = 0, hardfail = 0, noSubstrate = 0;
     // §LAYER-GATE: arm only where the ARC db ships multi-layer edges AND a geometry substrate exists
     // (a meta-only seed renders honest raw boxes and already logs that degradation loudly upstream).
     var layerGate = geomIdx.table ? _layerGate(db, geoDb || db) : { armed: false, multiLayer: {}, layeredHashes: {}, nMulti: 0, nHashes: 0 };
@@ -280,6 +280,13 @@
             "' — authored multi-layer element resolved an envelope-only mesh (no component_geometry_layers rows) — skipped, not rendered (§LOD400-ENVELOPE)");
           skipped.push({ guid: guid, ifc_class: cls, reason: 'envelope-no-layers' }); return;
         }
+      } else {
+        // §GEO-SERVED-DEGRADED / §WALK-LOD400-ONLY (red1 2026-09-27: "no BBoxes or cubes, or LOD200 fallback. All must be
+        // LOD400 or fail hard"): NO geometry substrate at all (the building's _geo.db fetch failed, or a local file carries no
+        // mesh tables) used to seed every element as its measured bounding box — the whole building drawn as boxes. Refuse
+        // instead: nothing is seeded, each refusal is counted, and the §GEOM-HARDFAIL summary names the missing substrate.
+        hardfail++; noSubstrate++;
+        skipped.push({ guid: guid, ifc_class: cls, reason: 'no-geometry-substrate' }); return;
       }
       // §GEOMAP-VALIDATE (audit-only — see opts.classify contract above): own-class measured-band check on the
       // MEASURED dims. tier 2 ⇒ counted (in-band or flagged with z + why); tier 0 ⇒ noBand (class has no
@@ -387,7 +394,7 @@
       ' layeredHashes=' + layerGate.nHashes + ' refused=' + layerRefused +
       ' (authored multi-layer elements must resolve per-layer slabs — §LOD400-ENVELOPE)');
     return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted, colorN: colorN,
-      geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, geomTable: geomIdx.table, geomap: gmAudit,
+      geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, noSubstrate: noSubstrate, geomTable: geomIdx.table, geomap: gmAudit,
       anchorN: anchorOps.length, layerGate: layerGate.armed ? { multiLayer: layerGate.nMulti, layeredHashes: layerGate.nHashes } : null,
       layerRefused: layerRefused };
   }
@@ -467,9 +474,11 @@
       ' (real = elements_meta.material_rgba r,g,b as authored, the Viewer\'s rule; palette = NULL rgba → class fallback)');
     _log(TAG + ' §GEOM-HARDFAIL total=' + built.hardfail + ' of ' + (normalN + built.hardfail) +
       ' (geomTable=' + (built.geomTable || 'none') + ' realResolved=' + built.realResolved + '/' + normalN + ')');
+    if (built.noSubstrate) console.error(TAG + ' §GEOM-HARDFAIL building=' + name + ' NO geometry substrate — ' + built.noSubstrate +
+      ' element(s) refused, NOTHING seeded as a box (§GEO-SERVED-DEGRADED / §WALK-LOD400-ONLY: LOD400 or fail hard)');
     return { committed: committedNormal, skipped: built.skipped.length, ids: ids, bridge: bridge, ops: built.ops,
       matched: built.matched, unmatched: built.unmatched, tilted: built.tilted, realResolved: built.realResolved, hardfail: built.hardfail,
-      geomap: built.geomap, anchorN: anchorN, layerGate: built.layerGate, layerRefused: built.layerRefused };
+      geomap: built.geomap, anchorN: anchorN, layerGate: built.layerGate, layerRefused: built.layerRefused, noSubstrate: built.noSubstrate };
   }
 
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }
