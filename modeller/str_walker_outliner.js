@@ -130,9 +130,12 @@
 
   // Open core (shared by local-file + resident fetch): init the walker from a DB's bytes. The bridge
   // swbInit AUTO-PICKS column-framed (STR columns) vs wall-bearing (ARC-only → semi-grid) — §STRWALK-INIT.
-  function _injectRoomsIfNone(db, buf, name) {
+  function _injectRoomsIfNone(db, buf, name, from) {
     var n = 0;
     try { n = db.exec("SELECT COUNT(*) FROM spatial_structure WHERE type='IfcSpace'")[0].values[0][0]; } catch (e) { n = 0; }   // no table = zero
+    // §B1-ROW8: this buffer IS a previous Open's walker output (IDB compiled-rooms cache, keyed on the patched bytes' sha
+    // + ROOM_WALKER_V) — nothing to walk; say where the rooms came from instead of claiming they were 'present'.
+    if (from === 'cache' && n > 0) { console.log(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" source=cache ifcSpace=' + n + ' (compiled RM_ rooms restored — same walker output as the Open that compiled them, no re-walk)'); return buf; }
     if (n > 0) { console.log(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" source=present ifcSpace=' + n + ' (left untouched)'); return buf; }
     if (!window.RoomWalker || !window.RoomWalker.walk) { console.warn(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" RoomWalker not loaded — no rooms (never invented)'); return buf; }
     try {
@@ -148,7 +151,7 @@
     } catch (e) { console.warn(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" walker failed ' + (e && e.message) + ' — no rooms'); return buf; }
   }
 
-  function _openBuffer(buf, name) {
+  function _openBuffer(buf, name, opts) {
     if (!window.SQL) { console.warn(TAG + ' sql.js not ready'); return false; }
     try {
       var db = new window.SQL.Database(new Uint8Array(buf));
@@ -171,7 +174,7 @@
       // Viewer infuses them (A.ensureRooms → RoomWalker.walk); the Modeller never did, so 6 of 8 residents opened with 0 rooms.
       // Same rule as ensureRooms' 'zero' state: only when the db has NO IfcSpace at all (real or curated RM_ are never
       // touched), compile from walls/doors with the SAME shared walker, into this handle AND the stashed buffer below.
-      buf = _injectRoomsIfNone(db, buf, name);
+      buf = _injectRoomsIfNone(db, buf, name, opts && opts.roomsFrom);
       window.__dwBuf = buf; window.__dwName = name;
       // §NOGEO_COMPOSE (Modeller trigger — see the function's own doc above): compose geometry-less
       // aggregate-parents from their real IfcRelAggregates children NOW, so swbInit, the BOM-graph
@@ -979,6 +982,64 @@
     }
   }
 
+  // §B1-ROW8 (pattern review row 8) — the room compile is a pure function of (patched bytes, ROOM_WALKER_V), so its
+  // output is persisted once and re-opened, instead of RoomWalker.walk + db.export() on every Open. The RAW bytes
+  // stay cached under the url exactly as before (the patch must keep re-applying over raw); the compiled buffer
+  // lives beside them under 'mrooms_<url>|<ROOM_WALKER_V>|<sha256(patched)>' (the 'rw_<url>' prefix precedent,
+  // routewalker.js). A new ROOM_WALKER_V, a new raw ?v= or a changed patch changes the key; writing a new entry
+  // deletes every other 'mrooms_<url>|' entry, so a stale compile is never served and never accumulates.
+  function _sha256Hex(buf) {
+    try {
+      if (!(window.crypto && window.crypto.subtle && window.crypto.subtle.digest)) return Promise.resolve(null);
+      return window.crypto.subtle.digest('SHA-256', new Uint8Array(buf)).then(function (h) {
+        return Array.prototype.map.call(new Uint8Array(h), function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+      }).catch(function () { return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+  function _idbDropStale(prefix, keepKey) {
+    return _idbEnsureStore().then(function () { return new Promise(function (resolve) {
+      try {
+        var rq = indexedDB.open('bim_ootb_cache');
+        rq.onsuccess = function () {
+          var idb = rq.result, dropped = 0;
+          try {
+            var tx = idb.transaction('dbs', 'readwrite'), st = tx.objectStore('dbs');
+            var kr = st.getAllKeys(IDBKeyRange.bound(prefix, prefix + '\uffff'));
+            kr.onsuccess = function () { (kr.result || []).forEach(function (k) { if (k !== keepKey) { st.delete(k); dropped++; } }); };
+            tx.oncomplete = function () { idb.close(); resolve(dropped); };
+            tx.onerror = function () { idb.close(); resolve(-1); };
+          } catch (e) { idb.close(); resolve(-1); }
+        };
+        rq.onerror = function () { resolve(-1); };
+      } catch (e) { resolve(-1); }
+    }); });
+  }
+  function _openResidentBuffer(patched, res, url) {
+    var V = window.RoomWalker && window.RoomWalker.ROOM_WALKER_V;
+    if (!V) return Promise.resolve(_openBuffer(patched, res.key));
+    var t0 = Date.now();
+    return _sha256Hex(patched).then(function (sha) {
+      if (!sha) return _openBuffer(patched, res.key);
+      var prefix = 'mrooms_' + url + '|', key = prefix + V + '|' + sha;
+      return _idbGetDb(key).then(function (hit) {
+        if (hit) {
+          console.log(TAG + ' §MODELLER-ROOM-CACHE "' + res.key + '" HIT lookupMs=' + (Date.now() - t0) + ' bytes=' + hit.byteLength + ' sha=' + sha.slice(0, 12) + ' V=' + V);
+          return _openBuffer(hit, res.key, { roomsFrom: 'cache' });
+        }
+        var ok = _openBuffer(patched, res.key);
+        var compiled = window.__dwBuf;
+        if (ok && compiled && compiled !== patched) {
+          _idbPutDb(key, compiled).then(function (p) { return _idbDropStale(prefix, key).then(function (d) {
+            console.log(TAG + ' §MODELLER-ROOM-CACHE "' + res.key + '" MISS persisted=' + p + ' staleDropped=' + d + ' bytes=' + compiled.byteLength + ' sha=' + sha.slice(0, 12) + ' V=' + V);
+          }); });
+        } else {
+          console.log(TAG + ' §MODELLER-ROOM-CACHE "' + res.key + '" MISS nothing-compiled (rooms present or walker wrote 0) — not cached');
+        }
+        return ok;
+      });
+    });
+  }
+
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH
   // playground (../modeller/<db>) and cache it. GH Pages serves Range requests + gzip → fetch() auto-inflates.
   function openResident(res) {
@@ -986,15 +1047,14 @@
     _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-HIT (local) ' + (cached.byteLength / 1024).toFixed(0) + 'KB');
-        _applyPendingPatch(cached, res.db).then(function (patched) {
-          if (_openBuffer(patched, res.key)) _forkEditable(res);
+        _applyPendingPatch(cached, res.db).then(function (patched) { return _openResidentBuffer(patched, res, url); }).then(function (ok) {
+          if (ok) _forkEditable(res);
         });
         return;
       }
       console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-MISS → fetch ' + url);
       fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
-        .then(function (buf) { return _applyPendingPatch(buf, res.db).then(function (patched) {
-          var ok = _openBuffer(patched, res.key);
+        .then(function (buf) { return _applyPendingPatch(buf, res.db).then(function (patched) { return _openResidentBuffer(patched, res, url); }).then(function (ok) {
           if (ok) {
             _forkEditable(res);
             _idbPutDb(url, buf).then(function (p) {   // cache RAW server bytes, not the patched buffer

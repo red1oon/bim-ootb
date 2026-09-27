@@ -15,6 +15,8 @@
  *   C4 SAME-SUBSTRATE  (row 8, no-drift) — Open 2's __dwBuf is byte-identical (sha-256) to Open 1's (on base this is RED
  *                      only because rooms_meta.built_at is a wall-clock stamp — roomsDigest, the room CONTENT, is the
  *                      base-vs-fix no-drift number), same room content digest, IfcSpace/RM_ counts and Outliner room nodes.
+ *   C6 STALE-DROPPED   (row 8, invalidation) — a compiled entry planted for the same url under an OLD version key is deleted
+ *                      by open1's persist. RED on base (base never touches mrooms_ keys).
  *   C5 NOT-VACUOUS     — Open 1 compiled rooms (source=walker, rooms>0) and resolved real geometry (§XEDGE-GEO geoDb=YES);
  *                      otherwise C1-C4 judged nothing.
  * Every run prints §OPEN-COST-DIGEST lines — compare them across base vs branch (behaviour-unchanged evidence).
@@ -67,8 +69,32 @@ async function openOnce(t, label) {
   return { geoidx: geoidx.length, ms, inj, xall, xgeo, s };
 }
 
+// C6 STALE-DROPPED: plant a compiled entry for the SAME url under an OLD version key before the first Open. A correct
+// miss-persist must delete it (a new ROOM_WALKER_V / raw ?v= / patch changes the key; the old compile must not linger).
+const plantStale = (t) => t.pg.evaluate((key) => new Promise((resolve) => {
+  const S = window.STRWalkerOutliner; const R = S._residents.find(r => r.key === key);
+  const url = S._modellerBase() + R.db + (R.v ? '?v=' + R.v : ''), stale = 'mrooms_' + url + '|OLD-VERSION|deadbeef';
+  const rq = indexedDB.open('bim_ootb_cache');
+  rq.onsuccess = () => { const idb = rq.result; if (!idb.objectStoreNames.contains('dbs')) { idb.close(); resolve({ stale, planted: false }); return; }
+    const tx = idb.transaction('dbs', 'readwrite'); tx.objectStore('dbs').put(new ArrayBuffer(8), stale);
+    tx.oncomplete = () => { idb.close(); resolve({ stale, planted: true }); }; tx.onerror = () => { idb.close(); resolve({ stale, planted: false }); }; };
+  rq.onerror = () => resolve({ stale, planted: false });
+}), KEY);
+const hasKey = (t, k) => t.pg.evaluate((k) => new Promise((resolve) => {
+  const rq = indexedDB.open('bim_ootb_cache');
+  rq.onsuccess = () => { const idb = rq.result; const g = idb.transaction('dbs', 'readonly').objectStore('dbs').getKey(k);
+    g.onsuccess = () => { idb.close(); resolve(g.result !== undefined); }; g.onerror = () => { idb.close(); resolve(null); }; };
+  rq.onerror = () => resolve(null);
+}), k);
+
 runE2E('W-PATTERN-OPEN-COST ' + KEY, async (t) => {
+  await t.pg.waitForFunction(() => !!(window.STRWalkerOutliner && window.STRWalkerOutliner._residents), { timeout: 30000 }).catch(() => {});
+  await t.sleep(500);   // _idbEnsureStore (module init) creates the 'dbs' store
+  const st = await plantStale(t);
   const a = await openOnce(t, 'open1');
+  await t.sleep(500);
+  const staleLeft = await hasKey(t, st.stale);
+  console.log('  §OPEN-COST stale-plant ' + JSON.stringify(st) + ' stillPresentAfterOpen1=' + staleLeft);
   const b = await openOnce(t, 'open2');
   const src = x => x.inj.length ? ((x.inj[0].match(/source=(\w+)/) || [])[1]) : null;
   t.assert('C5 NOT-VACUOUS (open1 compiled rooms + real geometry resolved)', src(a) === 'walker' && a.s.rooms > 0 && a.xgeo.some(l => /geoDb=YES/.test(l)),
@@ -76,6 +102,7 @@ runE2E('W-PATTERN-OPEN-COST ' + KEY, async (t) => {
   t.assert('C1 GEOIDX-BUDGET (≤2 index builds per Open)', a.geoidx <= 2 && b.geoidx <= 2, 'open1=' + a.geoidx + ' open2=' + b.geoidx);
   t.assert('C2 XEDGE-STABLE (same digest + counts both Opens)', a.s.xd === b.s.xd && JSON.stringify(a.xall) === JSON.stringify(b.xall), a.s.xd + ' vs ' + b.s.xd);
   t.assert('C3 ROOM-CACHE (open2 source=cache, no re-walk)', src(b) === 'cache', 'open2 source=' + src(b));
+  t.assert('C6 STALE-DROPPED (an old-version compiled entry for this url is deleted when open1 persists)', st.planted === true && staleLeft === false, 'planted=' + st.planted + ' stillPresent=' + staleLeft);
   t.assert('C4 SAME-SUBSTRATE (open2 __dwBuf sha + IfcSpace/RM_ + room nodes == open1)', a.s.bufSha === b.s.bufSha && a.s.roomsDigest === b.s.roomsDigest && a.s.sp === b.s.sp && a.s.rooms === b.s.rooms,
     a.s.bufSha + '/' + a.s.sp + '/' + a.s.rooms + ' vs ' + b.s.bufSha + '/' + b.s.sp + '/' + b.s.rooms);
 });
