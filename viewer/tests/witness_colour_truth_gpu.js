@@ -44,7 +44,7 @@ function pageMeasure(mode, GX, GY) {
     if (!h) continue; const o = h.object, id = h.batchId != null ? o.id + '_' + h.batchId : h.instanceId != null ? o.id + '_' + h.instanceId : o.id;
     const guid = A.guidMap[id] || A.guidMap[o.id]; const m = guid && meta[guid]; if (!m) continue;
     const x = Math.min(src.width - 1, Math.floor(u * src.width)), y = Math.min(src.height - 1, Math.floor(v * src.height)), k = (y * src.width + x) * 4;
-    samples.push({ i: gy * GX + gx, g: guid, cls: m.c, ph: m.ph, porc: m.p, rgb: [px[k], px[k + 1], px[k + 2]] });
+    samples.push({ i: gy * GX + gx, g: guid, cls: m.c, d: m.d, ph: m.ph, porc: m.p, rgb: [px[k], px[k + 1], px[k + 2]] });
   }
   return { mode, w: src.width, h: src.height, meanSat: +(ss / n).toFixed(4), samples };
 }
@@ -83,9 +83,9 @@ async function arm(port, label, posesIn) {   // posesIn: the AFTER arm's poses, 
     out.sw = await p.evaluate(async () => (await (await fetch('/viewer/sw.js')).text()).match(/CACHE_VERSION = '([^']+)'/)[1]);
     out.v = await p.evaluate(() => [...document.scripts].map(s => s.src).filter(s => /streaming\.js|sourced_light\.js|light_zones\.js/.test(s)).map(s => s.split('/').pop()).join(' '));
     // element facts from the building's own DB, through the running app (the same rows it streamed)
-    await p.evaluate(() => { const A = window.APP, rs = A.dbQuery("SELECT m.guid, m.ifc_class, coalesce(m.material_rgba,''), coalesce(m.material_name,''), coalesce(m.element_name,''), t.center_x, t.center_y, t.center_z FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid") || [];
+    await p.evaluate(() => { const A = window.APP, rs = A.dbQuery("SELECT m.guid, m.ifc_class, coalesce(m.material_rgba,''), coalesce(m.material_name,''), coalesce(m.element_name,''), t.center_x, t.center_y, t.center_z, coalesce(m.discipline,'') FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid") || [];
       const meta = {}, rows = []; rs.forEach(r0 => { const r = Array.isArray(r0) ? r0 : Object.values(r0), ph = A._isExporterPlaceholder ? A._isExporterPlaceholder(r[2], r[3]) : /^0\.920,0\.900,0\.850(,1\.000)?$/.test(r[2]) && !r[3];
-        const po = A._porcelainKey ? !!A._porcelainKey(r[1], r[4], r[3]) : false; meta[r[0]] = { c: r[1], ph, p: po }; rows.push({ g: r[0], c: r[1], n: r[4], x: r[5], y: r[6], z: r[7] }); });
+        const po = A._porcelainKey ? !!A._porcelainKey(r[1], r[4], r[3]) : false; meta[r[0]] = { c: r[1], ph, p: po, d: r[8] }; rows.push({ g: r[0], c: r[1], n: r[4], x: r[5], y: r[6], z: r[7] }); });
       window.__ctMeta = meta; window.__ctRows = rows; });
     out.materials = await p.evaluate(pageMaterials);
     const poses = posesIn || { plenum: PLENUM, toilet: await p.evaluate(pageAnchor, 'toilet'), beams: await p.evaluate(pageAnchor, 'beams') };
@@ -121,6 +121,8 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
   const phLine = A.L.find(t => /^§PLACEHOLDER_COLOUR bld=Hospital/.test(t)) || '', porcLine = A.L.find(t => /^§PORCELAIN bld=Hospital/.test(t)) || '';
   const rep = +((/replaced=(\d+)/.exec(phLine) || [])[1] || NaN), pm = +((/matched=(\d+)/.exec(porcLine) || [])[1] || NaN);
   V(phLine ? rep === 10947 : null, 'Z21 §PLACEHOLDER_COLOUR replaced = 10947 (node census: Member 6635, Beam 1970, WallStd 1226, Column 506, Footing 444, Covering 152, Door 5, Railing 4, Wall 3, Slab 2)', phLine.slice(0, 200));
+  const mt = +((/mepTier2=(\d+)/.exec(phLine) || [])[1] || NaN), pk = +((/proxyKept=(\d+)/.exec(phLine) || [])[1] || NaN);
+  V(phLine ? mt === 44246 && pk === 1293 : null, 'Z21 §MEP_PROXY_HUE: mepTier2 = 44246 (40563 MEP-class + 3683 MEP-trade proxies) and proxyKept = 1293 (ARC proxies)', 'mepTier2=' + mt + ' proxyKept=' + pk);
   V(porcLine ? pm === 554 : null, 'Z20 §PORCELAIN matched = 554 on Hospital (node census)', porcLine.slice(0, 200));
   V(B.L.some(t => /§PLACEHOLDER_COLOUR/.test(t)) ? false : true, 'BEFORE arm has no §PLACEHOLDER_COLOUR line (it is the true baseline)');
   for (const name of ['plenum', 'toilet', 'beams']) {
@@ -136,6 +138,9 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
       // Z21: steel classes flip from cream (r > b) to steel (b >= r) at placeholder pixels
       const sb = byClass(fb.samples, q => q.ph && (q.cls === 'IfcBeam' || q.cls === 'IfcMember')), sa = byClass(fa.samples, q => q.ph && (q.cls === 'IfcBeam' || q.cls === 'IfcMember'));
       if (name === 'beams' || sa.n >= 5) V(sa.n >= 5 && sb.n >= 5 ? (sb.rgb[0] > sb.rgb[2] && sa.rgb[2] >= sa.rgb[0]) : null, 'Z21 ' + name + ' ' + mode + ': placeholder beam/member pixels cream (r>b) -> steel (b>=r)', 'before ' + f3(sb) + ' after ' + f3(sa) + ' n ' + sb.n + '/' + sa.n);
+      // Z21 §MEP_PROXY_HUE: MEP-trade proxy placeholder pixels gain saturation (cream -> trade hue); judged where >= 5 pixels exist
+      const MPD = /^(MEP|FP|PLB|ELEC|ACMV|HVAC|SAN|VENT|HEAT)$/, xb = byClass(fb.samples, q => q.cls === 'IfcBuildingElementProxy' && q.ph && !q.porc && MPD.test(q.d)), xa = byClass(fa.samples, q => q.cls === 'IfcBuildingElementProxy' && q.ph && !q.porc && MPD.test(q.d));
+      if (xa.n || xb.n) V(xa.n >= 5 && xb.n >= 5 ? xa.sat > xb.sat + 0.1 : null, 'Z21 ' + name + ' ' + mode + ': MEP-trade proxy placeholder pixels take a trade hue (sat +0.1)', 'before ' + f3(xb) + ' sat ' + xb.sat.toFixed(3) + ' after ' + f3(xa) + ' sat ' + xa.sat.toFixed(3) + ' n ' + xb.n + '/' + xa.n);
       // Z20: porcelain pixels keep their white (mean channel within 8 % of before, low saturation)
       const pb = byClass(fb.samples, q => q.porc), pa = byClass(fa.samples, q => q.porc);
       if (name === 'toilet') V(pa.n >= 5 && pb.n >= 5 ? (pa.sat < 0.12 && Math.abs(mean(pa.rgb) - mean(pb.rgb)) / Math.max(1, mean(pb.rgb)) < 0.08) : null, 'Z20 toilet ' + mode + ': porcelain pixels stay white (sat < 0.12, mean within 8 %)', 'before ' + f3(pb) + ' sat ' + pb.sat.toFixed(3) + ' after ' + f3(pa) + ' sat ' + pa.sat.toFixed(3) + ' n ' + pb.n + '/' + pa.n);

@@ -22,7 +22,7 @@ const C = [
   ['IfcFlowTerminal', 'M_Lavatory - Oval:535 mmx485 mm - Public:535 mmx48', '', true],
   ['IfcFlowTerminal', 'M_Water Closet - Flush Valve - Wall Mounted:Public', '', true],
   ['IfcFlowTerminal', 'jkr13AR_plm_(TD2)-3 WC:(TD2) tandas duduk:1205413', '', true],
-  ['IfcFurnishingElement', 'WC', 'tomt mönster', false],   // LTU: authored name that is not porcelain decides
+  ['IfcFurnishingElement', 'WC', 'tomt mönster', true],   // LTU: 'tomt mönster' = exporter placeholder name (A.EXPORTER_PLACEHOLDER_MAT_NAMES) -> the element name decides
   ['IfcFlowTerminal', 'WC Toilet:Toilet-Domestic-3D:2565467', 'Porcelain - Linen', true],
   ['IfcFlowTerminal', 'Urinal_-_Floor_Mounted_3934:Floor Mount:2744502', 'Fixtures - Porcelain - Ivory', true],
   ['IfcFlowTerminal', '005_915x535_single_end_bowl_sink:36" x 21":2559630', 'Metal - Steel, Polished', false],
@@ -42,6 +42,7 @@ const C = [
   ['IfcWall', 'Basic Wall:A_Wall_Ext_150mm_CeramicPaint_V1:121472', 'Basic Wall:A_Wall_Ext_150mm_CeramicPaint_V1', false],
 ];
 C.forEach(c => { const k = A._porcelainKey(c[0], c[1], c[2]); row((c[3] ? 'IN  ' : 'OUT ') + c[0] + ' "' + c[1].slice(0, 40) + '" [' + c[2] + ']', k || '-', c[3] ? 'match' : '-', !!k === c[3]); });
+row('"tomt mönster" is an exporter placeholder name, "Porcelain - Linen" is authored', A._isAuthoredMatName('tomt mönster') + ',' + A._isAuthoredMatName('Porcelain - Linen'), 'false,true', A._isAuthoredMatName('tomt mönster') === false && A._isAuthoredMatName('Porcelain - Linen') === true);
 // finish: own colour kept, cited roughness, metal 0, no triplanar
 const want = Math.max(0.08, A.PORCELAIN_PBR.roughness);
 row('cited source + value', A.PORCELAIN_PBR.src + ' r=' + A.PORCELAIN_PBR.roughness + ' m=' + A.PORCELAIN_PBR.metalness, 'physicallybased.info Porcelain r=0 m=0', /physicallybased\.info/.test(A.PORCELAIN_PBR.src) && A.PORCELAIN_PBR.roughness === 0 && A.PORCELAIN_PBR.metalness === 0);
@@ -62,6 +63,7 @@ const root = process.env.DATA_ROOT || path.join(os.homedir(), 'bim-ootb'), per =
   L.logs.filter(l => /§PORCELAIN/.test(l)).forEach(l => console.log(l));
 });
 row('Hospital matched = 282 toilets + 119+20 sinks + 12+13 urinals + 1-sink rows (>= 446)', per.Hospital, '>= 446', per.Hospital >= 446);
+row('LTU matched = its 80 IfcFurnishingElement + 5 IfcFlowTerminal "WC" rows', per.LTU_AHouse, '85', per.LTU_AHouse === 85);
 row('every building judged (DB read)', JSON.stringify(per), 'no null', Object.values(per).every(v => v !== null));
 rows.forEach(r => { if (!r.ok) console.log('    FAILED ROW: ' + r.name + ' got=' + r.got + ' want=' + r.want); });
 console.log('§Z20_UNIT rows=' + rows.length + ' ok=' + rows.filter(r => r.ok).length + ' perBuilding=' + JSON.stringify(per) + ' roughness=' + want);
@@ -70,5 +72,7 @@ Witness('z20_porcelain')
   .schema({ type: 'object', required: ['name', 'got', 'want', 'ok'], properties: { name: { type: 'string' }, got: { type: 'string' }, want: { type: 'string' }, ok: { type: 'boolean' } } })
   .invariant('census in/out + finish + counts hold', rs => rs.length >= 30 && rs.every(r => r.ok))
   .redControl(rs => { const bent = /(^|[^a-z0-9])(lavatory|water closet|urinal|sink|basin|toilet|wc|bidet)([^a-z0-9]|$)/i;   // accessory words removed
-    C.forEach((c, i) => { if (!c[3] && !A._isAuthoredMatName(c[2]) && c[0] !== 'IfcSpace' && /Terminal|Proxy|Furnishing/.test(c[0]) && bent.test(c[1])) rs[i].ok = false; }); return rs; })
+    C.forEach((c, i) => { if (!c[3] && !A._isAuthoredMatName(c[2]) && c[0] !== 'IfcSpace' && /Terminal|Proxy|Furnishing/.test(c[0]) && bent.test(c[1])) rs[i].ok = false; });
+    const keep = A.EXPORTER_PLACEHOLDER_MAT_NAMES; A.EXPORTER_PLACEHOLDER_MAT_NAMES = {}; const ltu = C.findIndex(c => c[2] === 'tomt mönster'); rs[ltu].ok = !!A._porcelainKey(C[ltu][0], C[ltu][1], C[ltu][2]); A.EXPORTER_PLACEHOLDER_MAT_NAMES = keep;
+    return rs; })   // accessory words removed AND the placeholder-name list emptied: both must fail
   .run();

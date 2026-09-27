@@ -681,8 +681,13 @@ function setupStreaming(A) {
   // ONE owner for "is this a real authored IFC material name". The `≈ ` prefix is the EXTRACTOR's own
   // marker for a synthetic colour approximation — §CPE_MATERIAL_KEY established this test and it is
   // reused verbatim rather than re-derived (Hospital 6,664/6,664 approx, Terminal 48,428/48,428 real).
+  // §EXPORTER_PLACEHOLDER_NAMES (Z20/Z21, coordinator decision for red1 2026-09-27): names an exporter writes where NO material was
+  // assigned — ONE named list, owned here. 'tomt mönster' = Swedish Revit "empty pattern" (a fill-pattern placeholder, not a material):
+  // MEASURED LTU_AHouse elements_meta — 2,858 rows over 14 classes (IfcWindow, IfcDoor, IfcMember, IfcSlab, IfcPlate, IfcFurnishingElement,
+  // IfcFlowTerminal, ...) with dozens of different rgba values, i.e. the name carries no material identity. Lower-case, trimmed match.
+  A.EXPORTER_PLACEHOLDER_MAT_NAMES = { 'tomt mönster': 'Revit (sv) empty pattern — LTU_AHouse 2,858 rows / 14 classes' };
   A._isAuthoredMatName = function(matName) {
-    return !!matName && matName.charAt(0) !== '≈';
+    return !!matName && matName.charAt(0) !== '≈' && !A.EXPORTER_PLACEHOLDER_MAT_NAMES[String(matName).trim().toLowerCase()];
   };
   // §PLACEHOLDER_COLOUR (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z21 SPEC") — ONE owner for "is this rgba the
   // exporter's default, i.e. NO colour". Exactly (0.920, 0.900, 0.850) at 3 decimals, alpha absent or 1, and no authored
@@ -747,9 +752,20 @@ function setupStreaming(A) {
   // (r,g,b) is the albedo decided so far (the element's own IFC colour, or its STD_MAT class
   // default when it has none). `A._mepHueOff` is the witness RED CONTROL — it is deliberately NOT
   // part of _getMaterial's cacheKey, so a caller flipping it MUST clear A._matCache.
+  // §MEP_PROXY_HUE (Z21, coordinator decision for red1 2026-09-27): an IfcBuildingElementProxy whose EXTRACTED discipline is an MEP
+  // trade and which carries the exporter placeholder is MEP-hue eligible like the MEP classes (Hospital boilers, VAV valves, ...).
+  // ARC/STR proxies are not (their STD_MAT teal is a flag). ONE owner for eligibility — the bucket 'M' bit and the instanced
+  // mixed-set guard read it, so a set mixing eligible and ineligible members is still built with noMepHue.
+  var MEP_PROXY_DISC = { MEP: 1, FP: 1, PLB: 1, ELEC: 1, ACMV: 1, HVAC: 1, SAN: 1, VENT: 1, HEAT: 1 };
+  A._mepProxyDisc = MEP_PROXY_DISC;
+  A._mepHueEligible = function(ifcClass, discipline, rgbaStr, matName) {
+    if (!ifcClass) return false;
+    if (MEP_HUE_CLASSES[ifcClass]) return true;
+    return ifcClass === 'IfcBuildingElementProxy' && !A._mepProxyOff && !!MEP_PROXY_DISC[discipline] && A._isExporterPlaceholder(rgbaStr, matName);
+  };
   A._mepDiscAlbedo = function(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName) {
     if (A._mepHueOff) return null;                                   // RED CONTROL
-    if (!ifcClass || !MEP_HUE_CLASSES[ifcClass]) return null;        // tier 3 — not MEP, never touched
+    if (!A._mepHueEligible(ifcClass, discipline, rgbaStr, matName)) return null;   // tier 3 — not MEP, never touched
     if (A._isAuthoredMatName(matName)) return null;                  // tier 1a — real authored material
     var chroma = A._chromaOf(rgbaStr);
     if (chroma !== null && chroma >= A.MEP_HUE_ACHROMATIC_MAX) return null;  // tier 1b — already has a hue
@@ -1166,7 +1182,7 @@ function setupStreaming(A) {
     var hues = {}, codes = {}, minGapDist = 1, tConsulted = 0;
     for (var i = 0; i < q.length; i++) {
       var row = q[i], cls = row[11] || '';
-      if (!A._mepHueClasses[cls]) continue;
+      if (!A._mepHueEligible(cls, row[3] || '', row[2], row[16] || '')) continue;   // §MEP_PROXY_HUE
       mepPop++;
       var rgba = row[2], disc = row[3] || '', nm = row[16] || '';
       var chroma = A._chromaOf(rgba);
@@ -1232,7 +1248,7 @@ function setupStreaming(A) {
       if (!A._isExporterPlaceholder(rgba, nm)) continue;
       ph++;
       if (pk) { porcPh++; continue; }
-      if (!A._placeholderOff && A._mepHueClasses[cls] && A._mepDiscAlbedo(0.92, 0.90, 0.85, rgba, cls, row[3] || '', A._mepNameHint(row[12]), nm)) { mep++; continue; }
+      if (!A._placeholderOff && A._mepHueEligible(cls, row[3] || '', rgba, nm) && A._mepDiscAlbedo(0.92, 0.90, 0.85, rgba, cls, row[3] || '', A._mepNameHint(row[12]), nm)) { mep++; continue; }
       if (cls === 'IfcBuildingElementProxy') { proxy++; continue; }
       if (!STD[cls]) { noStd++; continue; }
       if (A._placeholderOff) continue;
@@ -2726,7 +2742,7 @@ function setupStreaming(A) {
           // Splits ONLY buckets that were already mixed: a class-pure bucket keys identically before
           // and after, so its draw-call count is unchanged.
           // Positional `key.split('|')` consumers read parts[0..2] — this stays a TRAILING field.
-          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueClasses[el.ifcClass] ? 'M' : '-') + '|' + (el.ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — §KERNEL_OPS_SCHED_AGREE (#1727) removed the staging hold that made the 1-slot batch fatal (staged 544->501, the slab is no longer in the map), so the class term is safe again and the foreign-class paint is fixed.
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueEligible(el.ifcClass, el.disc, el.rgba, el.matName) ? 'M' : '-') + '|' + (el.ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — §KERNEL_OPS_SCHED_AGREE (#1727) removed the staging hold that made the 1-slot batch fatal (staged 544->501, the slab is no longer in the map), so the class term is safe again and the foreign-class paint is fixed.
           // §MERGED_GUID: single target selection — merge bucket or batch bucket, never both.
           // Applies to §S280e's low-instance elements too: each is baked individually into the
           // merged buffer with its own index range, so identity survives exactly as for singles.
@@ -2742,9 +2758,9 @@ function setupStreaming(A) {
         // and a non-MEP class, but LTU_AHouse has 108 of 51,393 (1,386 elements). The bucket cannot
         // be split here without adding a draw call per mixed hash, so on a mixed set the trade hue
         // is SUPPRESSED (prior behaviour) and COUNTED — never applied to a set that is not all MEP.
-        var _mepU = !!A._mepHueClasses[elements[0].ifcClass];
+        var _mepU = A._mepHueEligible(elements[0].ifcClass, elements[0].disc, elements[0].rgba, elements[0].matName);   // §MEP_PROXY_HUE: one eligibility owner
         for (var _mqi = 1; _mqi < elements.length; _mqi++) {
-          if (!!A._mepHueClasses[elements[_mqi].ifcClass] !== _mepU) { _mepU = null; break; }
+          if (A._mepHueEligible(elements[_mqi].ifcClass, elements[_mqi].disc, elements[_mqi].rgba, elements[_mqi].matName) !== _mepU) { _mepU = null; break; }
         }
         if (_mepU === null) A._instMepMixed = (A._instMepMixed || 0) + 1;
         else A._instMepUniform = (A._instMepUniform || 0) + 1;
@@ -3366,7 +3382,7 @@ function setupStreaming(A) {
       if (instancedGuids.has(guid)) continue;
       if (A._r10Guids && A._r10Guids.has(guid)) continue;   // §SURFACE_R10 — a split opening never goes back into a batch
 
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-') + '|' + (ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — see the batch key above
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueEligible(ifcClass, disc, rgba, matName) ? 'M' : '-') + '|' + (ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — see the batch key above
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
