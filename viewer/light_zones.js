@@ -140,7 +140,7 @@
   // opacities), and for the field part the IRC switch. prime(A) is awaited before staging; build()/field() stay synchronous.
   // &zonecache=0 skips it (no read, no write).
   var IDB_NAME = 'bim_ootb_lightzones', IDB_STORE = 'z', primed = null, saveTimer = 0;
-  var KEYS = ['bld', 'n', 'nx', 'ny', 'nz', 'cell', 'zone', 'zones', 'sizes', 'zoneInfo', 'aperture', 'groundJ', 'glassT', 'glassCells', 'glassMats', 'stats'];
+  var KEYS = ['bld', 'n', 'nx', 'ny', 'nz', 'cell', 'zone', 'zones', 'sizes', 'zoneInfo', 'aperture', 'groundJ', 'glassT', 'glassCells', 'glassMats', 'stats', 'alb'];   // alb: §IR_COLOUR (Z19)
   var SRC = (function () { var s = String(LZMOD), h = 0x811c9dc5; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + s.length; })();
   function cacheOff() { return typeof indexedDB === 'undefined' || (typeof location !== 'undefined' && /[?&]zonecache=0/.test(location.search)); }
   function ircFlag(A) { return A._stillIrc === true || (typeof location !== 'undefined' && /[?&]irc=1/.test(location.search)); }
@@ -163,7 +163,7 @@
     saveTimer = setTimeout(function () { if (cache !== Z) return;
       var t0 = performance.now(), rec = { src: SRC, fp: Z.fp, org: [Z.org.x, Z.org.y, Z.org.z], field: Z.field || null, when: new Date().toISOString() };
       KEYS.forEach(function (k) { rec[k] = Z[k]; });
-      rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.aperture ? Z.aperture.byteLength : 0) + (Z.field ? Z.field.G.byteLength : 0) + (Z.field && Z.field.Gd ? Z.field.Gd.byteLength : 0)) / 1e6).toFixed(1);
+      rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.alb ? Z.alb.byteLength : 0) + (Z.aperture ? Z.aperture.byteLength : 0) + (Z.field ? Z.field.G.byteLength : 0) + (Z.field && Z.field.Gd ? Z.field.Gd.byteLength : 0)) / 1e6).toFixed(1);
       idb().then(function (db) { var tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).put(rec, Z.bld);
         tx.oncomplete = function () { db.close(); console.log('§ZONE_IDB_CACHE saved bld=' + Z.bld + ' MB=' + rec.mb + ' field=' + (rec.field ? 1 : 0) + ' ms=' + Math.round(performance.now() - t0)); };
         tx.onerror = tx.onabort = function () { db.close(); console.warn('§ZONE_IDB_CACHE save failed: ' + (tx.error && tx.error.message)); }; })
@@ -200,14 +200,14 @@
     var t0 = performance.now(), guids = boundaryGuids(A), bd = boundaryDraws(A, THREE, guids), draws = bd.draws;
     // bounds from the boundary geometry (skyline props / ground excluded by construction)
     var box = new THREE.Box3(), tb = new THREE.Box3();
-    var bsum = 0, idxN = 0, glN = 0, glO = 0;   // §ZONE_IDB_CACHE fingerprint parts (per-draw bounds sum catches a moved element)
+    var bsum = 0, idxN = 0, glN = 0, glO = 0, csum = 0;   // §ZONE_IDB_CACHE fingerprint parts (per-draw bounds sum catches a moved element; csum = §IR_COLOUR material colours)
     draws.forEach(function (d) { if (!d.geo.boundingBox) d.geo.computeBoundingBox(); tb.copy(d.geo.boundingBox).applyMatrix4(d.matrix); box.union(tb);
-      bsum += tb.min.x + tb.min.y + tb.min.z + tb.max.x + tb.max.y + tb.max.z; idxN += d.count; d.mats.forEach(function (m) { if (glassyMat(m)) { glN++; glO += m.opacity; } }); });
+      bsum += tb.min.x + tb.min.y + tb.min.z + tb.max.x + tb.max.y + tb.max.z; idxN += d.count; d.mats.forEach(function (m) { if (glassyMat(m)) { glN++; glO += m.opacity; } else if (m && m.color) csum += m.color.r + 2 * m.color.g + 3 * m.color.b; }); });
     if (box.isEmpty()) { console.log('§LIGHT_ZONE bld=' + A.activeBuilding + ' VACUOUS no boundary geometry (guids=' + guids.size + ')'); return null; }
     // &capcentre=0 / APP._stillCapCentre=false = the pre-attempt-1 rule (every SOLID cell roofs its column): B1 SPEC W3 A/B switch.
     // capOn + shellOn enter the §ZONE_IDB_CACHE fingerprint so flipping either switch rebuilds rather than reusing the other arm.
     var capOn = !(typeof location !== 'undefined' && /[?&]capcentre=0/.test(location.search)) && A._stillCapCentre !== false;
-    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0)]
+    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0)]
       .map(function (v) { return typeof v === 'number' ? +v.toFixed(3) : v; }).join('|');
     if (primed && primed.bld === A.activeBuilding && !opts.force) { var pr = primed; primed = null;
       if (pr.fp === fp) return restore(A, pr, THREE, t0);
@@ -224,12 +224,16 @@
     // through the cell's column centre inside the cell. Only such a cell is a ROOF for the open-sky scan below; a cell made SOLID by a
     // lip that only clips the column's edge (coping, fascia, window head) no longer covers the whole 0.5 m column under it.
     var capC = new Uint8Array(N), capTris = 0;
+    // §IR_COLOUR (Z19): per SOLID cell, the mean linear albedo (mat.color = the shader's diffuseColor) of the OPAQUE boundary triangles
+    // over their uniform barycentric samples — sample count ~ area, so the mean is area-weighted by construction. Glass not counted.
+    // Uint16 sums of 8-bit colour over <= 255 samples per cell (255 x 255 fits) + a Uint8 count: 7 bytes/cell while rasterising.
+    var albAcc = N <= 60e6 ? new Uint16Array(N * 3) : null, albN = albAcc ? new Uint8Array(N) : null;
     draws.forEach(function (d) {
       var pos = d.geo.attributes.position, ix = d.geo.index, e = d.matrix.elements, gi = 0;
       for (var t = d.start; t + 2 < d.start + d.count; t += 3) {
         var mat = d.mats[0];
         if (d.groups) { while (gi < d.groups.length - 1 && t >= d.groups[gi].start + d.groups[gi].count) gi++; mat = d.mats[d.groups[gi].materialIndex || 0]; }
-        var isG = glassyMat(mat), tq = isG ? Math.max(1, Math.round((1 - mat.opacity) * 255)) : 0;
+        var isG = glassyMat(mat), tq = isG ? Math.max(1, Math.round((1 - mat.opacity) * 255)) : 0, mc = (!isG && albAcc && mat && mat.color) ? mat.color : null;
         var i0 = ix ? ix.getX(t) : t, i1 = ix ? ix.getX(t + 1) : t + 1, i2 = ix ? ix.getX(t + 2) : t + 2;
         a.fromBufferAttribute(pos, i0).applyMatrix4(d.matrix); b.fromBufferAttribute(pos, i1).applyMatrix4(d.matrix); c.fromBufferAttribute(pos, i2).applyMatrix4(d.matrix);
         var L = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)), n = Math.max(1, Math.ceil(L / step)); tris++;
@@ -246,11 +250,13 @@
             if (jc >= 0 && jc < ny) capC[ic + jc * nx + kc * nxy] = 1; } }
         for (var u = 0; u <= n; u++) for (var v = 0; v <= n - u; v++) {
           var w = n - u - v, x = (a.x * u + b.x * v + c.x * w) / n, y = (a.y * u + b.y * v + c.y * w) / n, z = (a.z * u + b.z * v + c.z * w) / n;
-          var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; if (gHits[ci] < 255) gHits[ci]++; } else if (oHits[ci] < 255) oHits[ci]++; } samples++;
+          var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; if (gHits[ci] < 255) gHits[ci]++; } else if (oHits[ci] < 255) oHits[ci]++; if (mc && albN[ci] < 255) { var o3 = ci * 3; albAcc[o3] += Math.round(Math.min(1, mc.r) * 255); albAcc[o3 + 1] += Math.round(Math.min(1, mc.g) * 255); albAcc[o3 + 2] += Math.round(Math.min(1, mc.b) * 255); albN[ci]++; } } samples++;
         }
       }
     });
-    var rasMs = performance.now() - tRas, solid = 0, glassCells = 0;
+    var rasMs = performance.now() - tRas, solid = 0, glassCells = 0, alb = null, albCells = 0;
+    if (albAcc) { alb = new Uint8Array(N * 3); for (var ac = 0; ac < N; ac++) { var an = albN[ac]; if (!an) continue; albCells++;
+      for (var ch = 0; ch < 3; ch++) alb[ac * 3 + ch] = Math.max(1, Math.round(albAcc[ac * 3 + ch] / an)); } albAcc = albN = null; }   // 0,0,0 = no albedo; a real 0 stores 1
     // V3 (rev. after the Hospital smoke, see spec): the cell's MAJORITY surface decides — glass when its glassy samples
     // (the rasteriser's uniform barycentric samples ~ area) are at least its opaque ones. "Any opaque wins" shrank every
     // window opening by up to a cell per side (the fattened wall reveal around the pane): ADF cross-check Fwp/ADF 0.044.
@@ -345,11 +351,11 @@
     var hist = { lt2m3: 0, lt50m3: 0, lt500m3: 0, lt5000m3: 0, ge5000m3: 0 };
     zsizes.forEach(function (n) { var m3 = n * cv; if (m3 < 2) hist.lt2m3++; else if (m3 < 50) hist.lt50m3++; else if (m3 < 500) hist.lt500m3++; else if (m3 < 5000) hist.lt5000m3++; else hist.ge5000m3++; });
     cache = { dd: null, bld: A.activeBuilding, n: Object.keys(A.guidMap || {}).length, org: org, nx: nx, ny: ny, nz: nz, cell: CELL, zone: zone, zones: nzones, sizes: zsizes, zoneInfo: zoneInfo, aperture: aperture, groundJ: jg,
-      glassT: glassT, glassCells: glassCells, glassMats: Array.from(glassMat.values()) };
+      glassT: glassT, glassCells: glassCells, glassMats: Array.from(glassMat.values()), alb: alb };
     cache.stats = { cells: N, MB: +(N * 2 / 1e6).toFixed(1), solid: solid, outsideCells: openN, openSkyCells: openN, capCentre: capOn ? 1 : 0, capCells: capCells, capSkipped: capSkip, capTris: capTris, soilCells: earth, indoorCells: indoor, zones: nzones, largestZoneM3: Math.round(largest * cv),
       largestShareOfIndoor: indoor ? +(largest / indoor).toFixed(3) : 0, hist: hist, zonesWithAperture: zonesWithAp, apertureM2: +(apTotUp + apTotSide).toFixed(1), apertureUpM2: +apTotUp.toFixed(1), apertureSideM2: +apTotSide.toFixed(1),
       apertureDownFaces: apDown, skyLitCells: skyLitN, skyRayCells: skyRay, skyDirs: SKY_DIRS.length, topApertureZones: topAp, tris: tris, samples: samples, draws: bd.stats, rasMs: Math.round(rasMs), skyMs: Math.round(skyMs), ms: Math.round(performance.now() - t0),
-      innerR: INNER_R, groundY: gy == null ? null : +gy.toFixed(2), earthCells: earth, grid: [nx, ny, nz], org: [org.x, org.y, org.z].map(function (v) { return +v.toFixed(1); }) };
+      innerR: INNER_R, albCells: albCells, groundY: gy == null ? null : +gy.toFixed(2), earthCells: earth, grid: [nx, ny, nz], org: [org.x, org.y, org.z].map(function (v) { return +v.toFixed(1); }) };
     cache.stats.glare = audit(cache, surfaceInfo, cellSkyNew);
     cache.fp = fp; logBuilt(A); scheduleSave();
     return cache;

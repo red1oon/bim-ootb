@@ -432,6 +432,23 @@
   var irBase = null, irBaseTot = null, irW = 0, irH = 0, irCoveKey = null;
   var IRP = new Float32Array(4), irTex = null, dIr = null, irKey = null, irFaces = null, irLast = null, IR_FACES = 4000, IR_R = 0.5;
   function irOn(A) { return !(A._stillIr === false || /[?&]ir=0/.test(location.search)); }
+  // ══ §IR_COLOUR (Z19, bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z19 SPEC", law L2): interreflected light carries the colour
+  // of the surfaces it left. Tint = the zone's area-weighted mean albedo / its luminance, renormalised so Y(IR) is unchanged — only
+  // chromaticity moves (R/(1-R) and every luminance reader untouched). &ircol=0 / APP._stillIrColour = false = the neutral IR.
+  function irColOn(A) { return !(A._stillIrColour === false || /[?&]ircol=0/.test(location.search)); }
+  function Y3(r, g, b) { return 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+  function irTint(e, a) {   // e = [r,g,b] irradiance, a = [r,g,b] mean albedo (linear) -> tinted irradiance with Y(e)
+    var ya = a ? Y3(a[0], a[1], a[2]) : 0, ye = Y3(e[0], e[1], e[2]); if (!(ya > 0) || !(ye > 0)) return [e[0], e[1], e[2]];
+    var t = [e[0] * a[0] / ya, e[1] * a[1] / ya, e[2] * a[2] / ya], yt = Y3(t[0], t[1], t[2]); if (!(yt > 0)) return [e[0], e[1], e[2]];
+    var k = ye / yt; return [t[0] * k, t[1] * k, t[2] * k];
+  }
+  function zoneAlbedo(Z, f) {   // mean albedo of the SOLID cells behind a zone's sampled faces (equal 0.5 m faces = equal area)
+    if (!Z.alb || !f || !f.length) return null; var cl = Z.cell, nx = Z.nx, ny = Z.ny, nz = Z.nz, s0 = 0, s1 = 0, s2 = 0, n = 0;
+    for (var fi = 0; fi < f.length; fi += 6) { var i = Math.floor((f[fi] - f[fi + 3] * 0.51 * cl - Z.org.x) / cl), j = Math.floor((f[fi + 1] - f[fi + 4] * 0.51 * cl - Z.org.y) / cl), k = Math.floor((f[fi + 2] - f[fi + 5] * 0.51 * cl - Z.org.z) / cl);
+      if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) continue; var c = (i + j * nx + k * nx * ny) * 3, r = Z.alb[c], g = Z.alb[c + 1], b = Z.alb[c + 2];
+      if (!(r + g + b)) continue; s0 += r; s1 += g; s2 += b; n++; }
+    return n ? { a: [s0 / n / 255, s1 / n / 255, s2 / n / 255], n: n } : null;
+  }
   function irFacesOf(Z) {   // camera-free, per zone grid: sampled surface faces [x, y, z, nx, ny, nz] per zone
     if (irFaces && irFaces.Z === Z) return irFaces;
     var t0 = performance.now(), nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, N = nx * ny * nz, zone = Z.zone, cnt = new Int32Array(Z.zones + 1), D6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
@@ -449,9 +466,10 @@
     var THREE = global.THREE, LZ = global.LightZones, Z = LZ && LZ.get(); IRP[0] = 0;
     if (!Z || !irOn(A)) return null;
     var D = A._lampDataOn ? A._lampData : null, F = Z.field, hemi = A.hemi, hc = hemi ? [hemi.color.r * hemi.intensity, hemi.color.g * hemi.intensity, hemi.color.b * hemi.intensity] : [0, 0, 0];
-    var key = (Z.bld + ':' + Z.zones) + '|' + (D ? D.ver + ':' + D.lamps.length : 'nolamps') + '|' + hc.map(function (v) { return v.toFixed(5); }).join(',') + '|' + (F ? 1 : 0);
+    var key = (Z.bld + ':' + Z.zones) + '|' + (D ? D.ver + ':' + D.lamps.length : 'nolamps') + '|' + hc.map(function (v) { return v.toFixed(5); }).join(',') + '|' + (F ? 1 : 0) + '|col' + (irColOn(A) ? 1 : 0) + (Z.alb ? 'a' : '');   // §IR_COLOUR joins the key
     if (key === irKey && irTex) { IRP[0] = 1; return irLast; }   // IRP[1] (scale) is left alone: the meter zeroes it for its own render
     var t0 = performance.now(), fc = irFacesOf(Z), nzn = Z.zones, W = 4096, H = Math.ceil((nzn + 1) / W), buf = new Float32Array(W * H * 4), k2 = IR_R / (1 - IR_R);
+    var colOn = irColOn(A), ic0 = { zones: 0, coloured: 0, noAlb: 0, satSum: 0, satMax: 0, top: [] };   // §IR_COLOUR
     var byZ = new Map(), unb = [], lampN = 0, zl = 0, zd = 0, maxL = 0, maxD = 0; irLampZ = new Float32Array(nzn + 1); irTotZ = new Float32Array(nzn + 1);   // §LAMP_EN reads the lamp part
     if (D) D.lamps.forEach(function (q) { if (!(q.I > 0)) return; lampN++; var z = lampZone(LZ, q); if (z === 0) unb.push(q); else if (z !== OUTSIDE) { var a = byZ.get(z); if (!a) byZ.set(z, a = []); a.push(q); } });
     var dec = D ? D.decay : 2;
@@ -464,6 +482,10 @@
         er = k2 * er / nf; eg = k2 * eg / nf; eb = k2 * eb / nf; if (er + eg + eb > 0) zl++; irLampZ[z] = 0.2126 * er + 0.7152 * eg + 0.0722 * eb; maxL = Math.max(maxL, (er + eg + eb) / 3); }
       var ic = F && F.ircAll ? F.ircAll[z] : 0;
       if (ic > 0) { zd++; maxD = Math.max(maxD, ic * (hc[0] + hc[1] + hc[2]) / 3); er += ic * hc[0]; eg += ic * hc[1]; eb += ic * hc[2]; }
+      if (colOn && er + eg + eb > 0) { ic0.zones++; var za = zoneAlbedo(Z, f);   // §IR_COLOUR (Z19)
+        if (!za) ic0.noAlb++; else { var y0 = Y3(er, eg, eb), te = irTint([er, eg, eb], za.a); er = te[0]; eg = te[1]; eb = te[2]; ic0.coloured++;
+          var mxs = Math.max(er, eg, eb), sat = mxs > 0 ? (mxs - Math.min(er, eg, eb)) / mxs : 0; ic0.satSum += sat; ic0.satMax = Math.max(ic0.satMax, sat);
+          ic0.top.push({ z: z, faces: nf, a: za.a, y0: y0, y1: Y3(er, eg, eb), t: [er / (y0 || 1), eg / (y0 || 1), eb / (y0 || 1)] }); } }
       buf[z * 4] = er; buf[z * 4 + 1] = eg; buf[z * 4 + 2] = eb; buf[z * 4 + 3] = 1; irTotZ[z] = 0.2126 * er + 0.7152 * eg + 0.0722 * eb;
     }
     irBase = buf.slice(); irBaseTot = irTotZ.slice(); irW = W; irH = H; irCoveKey = null;   // §COVE_IR: irCoveApply re-adds the cove
@@ -473,6 +495,11 @@
     irLast = { zones: nzn, zonesLamp: zl, zonesDay: zd, lamps: lampN, unbound: unb.length, maxLampE: +maxL.toFixed(5), maxDayE: +maxD.toFixed(5), hemi: hc.map(function (v) { return +v.toFixed(3); }), facesMs: fc.ms, ms: Math.round(performance.now() - t0) };
     console.log('§IRC_MAX build zones=' + nzn + ' withLampIR=' + zl + ' withDayIR=' + zd + ' lamps=' + lampN + ' (unbound ' + unb.length + ') maxE lamp/day=' + irLast.maxLampE + '/' + irLast.maxDayE +
       ' R=' + IR_R + ' facesPerZone<=' + IR_FACES + ' facesMs=' + fc.ms + ' ms=' + irLast.ms + ' (E_ir = R/(1-R) x mean direct E over the zone surfaces; day = V12 irc x hemi)');
+    irLast.colour = { on: colOn, zones: ic0.zones, coloured: ic0.coloured, noAlb: ic0.noAlb, meanSat: ic0.coloured ? +(ic0.satSum / ic0.coloured).toFixed(4) : 0, maxSat: +ic0.satMax.toFixed(4) };
+    console.log('§IR_COLOUR bld=' + Z.bld + ' ' + (!colOn ? 'off (neutral IR, &ircol=0)' : 'zones=' + ic0.zones + ' coloured=' + ic0.coloured + ' neutral(noAlb)=' + ic0.noAlb + ' meanSat=' + irLast.colour.meanSat + ' maxSat=' + irLast.colour.maxSat +
+      (!Z.alb ? ' VACUOUS — the zone grid carries no albedo (rasterised without §IR_COLOUR)' : ic0.coloured === 0 ? ' VACUOUS — no zone had an albedo' : ic0.satMax < 1e-4 ? ' NO-OP — every tint is neutral' : '')));
+    ic0.top.sort(function (x, y) { return y.faces - x.faces; }).slice(0, 3).forEach(function (q) { var r3 = function (v) { return v.map(function (x) { return x.toFixed(3); }).join(','); };
+      console.log('§IR_COLOUR_ZONE z=' + q.z + ' faces=' + q.faces + ' alb=' + r3(q.a) + ' tint=' + r3(q.t) + ' Y before/after=' + q.y0.toExponential(4) + '/' + q.y1.toExponential(4)); });
     return irLast;
   }
   // share of each pixel's linear radiance that is the IR term (for gi_still's max rule): two linear renders at w x h, rows top-down
@@ -1248,5 +1275,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);
