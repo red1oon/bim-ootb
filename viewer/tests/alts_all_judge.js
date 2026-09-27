@@ -153,6 +153,14 @@ function filmJudge(bake, T, ctl) {
   // bake = { arm, lines, frames: [{i, yavg, md5}] (ffprobe, optional), tap: {...} }, ctl = { C, E, Tt, B } optional other arms
   const out = [], Lr = bake.lines || [], L = sliceAfterPurge(Lr).map(stripPrefix), add = (g, id, st, d) => out.push(row(g, id, st, d));
   const sr = swRace(Lr);
+  if (!sr.purge && bake.arm === 'altc') {
+    // instrument (GPU run 2026-09-27): the in-browser Alt+C channel has no CLI purge by design (fresh puppeteer profile per run), so the
+    // purge row was INCONCLUSIVE by construction. Its race question is "did the page initialise twice" — each §X_INIT exactly once
+    // (SFX/GRID/TRIPLANAR re-init by design, as in swRace) and no SW controller at the end tap from a stale install is not judged here.
+    const ic = {}; Lr.map(stripPrefix).forEach(l => { const t = (/^(§[A-Z_0-9]+_INIT)\b/.exec(l) || [])[1]; if (t && !/^§(SFX|GRID|TRIPLANAR)_INIT$/.test(t)) ic[t] = (ic[t] || 0) + 1; });
+    const dup = Object.keys(ic).filter(t => ic[t] > 1), n = Object.keys(ic).length;
+    add('F-G1', 'SW purge / reload race', !n ? 'INCONCLUSIVE' : (dup.length ? 'INCONCLUSIVE' : 'PASS'), 'in-browser channel, fresh profile, no purge: ' + n + ' _INIT tags, duplicated: ' + (dup.join(',') || 'none'));
+  } else
   add('F-G1', 'SW purge / reload race', !sr.purge ? 'INCONCLUSIVE' : (sr.race ? 'INCONCLUSIVE' : (sr.unregistered > 0 ? 'WARN' : 'PASS')),
     !sr.purge ? 'no §CLI_BAKE_SW_PURGE line (in-browser channel: see tap)' : 'unregistered=' + sr.unregistered + ' pre-purge _INIT also after: ' + (sr.dupInit.join(',') || 'none') + (sr.race ? ' => INCONCLUSIVE-instrument (a stale SW page initialised before the purge)' : ''));
   const env = grep1(Lr.map(stripPrefix), /§CLI_BAKE_ENV/); if (env) add('F-G1', 'bake env sw == tree', num(env, /sw=v(\d+)/) === +String(T.sw).slice(1) ? 'PASS' : 'INCONCLUSIVE', env.slice(0, 160));

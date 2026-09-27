@@ -181,7 +181,10 @@ function judgeAll(T) {
     J.g2(b, r, r.arm, noise).forEach(x => rows.push(Object.assign(x, { pose: r.pose, arm: r.arm }))); });
   // film
   const bakes = {}; ['A', 'C', 'E', 'T', 'B', 'altc'].forEach(k => { const x = k === 'altc' ? (() => { const lg = path.join(OUT, 'film', 'altc.log'); if (!fs.existsSync(lg)) return null; let tap = null; try { tap = JSON.parse(fs.readFileSync(path.join(OUT, 'film', 'altc_tap.json'), 'utf8')); } catch (e) {} return { arm: 'altc', lines: fs.readFileSync(lg, 'utf8').split('\n'), tap, frames: ffFrames(path.join(OUT, 'film', 'altc.mp4')) }; })() : loadBake(k); if (x) bakes[k] = x; });
-  const filmRows = []; Object.keys(bakes).forEach(k => { const others = k === 'A' ? { C: bakes.C, E: bakes.E, T: bakes.T, B: bakes.B } : null; J.filmJudge(bakes[k], T, others).forEach(x => filmRows.push(Object.assign(x, { pose: 'film', arm: k }))); });
+  // instrument (GPU run 2026-09-27): B is the pre-merge REFERENCE bake served from --base-tree — judging its sw/?v=/lawHash against THIS
+  // tree made it INCONCLUSIVE by construction. B's instrument rows are judged against the base tree's own facts.
+  let TB = null; if (bakes.B && arg('base-tree', null)) try { TB = treeFacts(path.resolve(arg('base-tree'))); } catch (e) { TB = null; }
+  const filmRows = []; Object.keys(bakes).forEach(k => { const others = k === 'A' ? { C: bakes.C, E: bakes.E, T: bakes.T, B: bakes.B } : null; J.filmJudge(bakes[k], k === 'B' && TB ? TB : T, others).forEach(x => filmRows.push(Object.assign(x, { pose: 'film', arm: k }))); });
   return { rows, filmRows, nRecs: Object.keys(recs).length, bakes: Object.keys(bakes) };
 }
 function report(T, R) {
