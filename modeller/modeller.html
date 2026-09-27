@@ -3115,7 +3115,13 @@ window.Bonsai.exportDb = async function (opts) {
   if (!O || !O.db || O.length === 0) { setStat('author something first'); return null; }
   const seal = await window.KernelOps.sealChain(O.db);   // the seal _persistToIdb does — never skipped
   const bytes = O.db.export();                           // same native writer as kernel_ops _persistToIdb
-  console.log('§EXPORT-NATIVE ops=' + O.length + ' sealed=' + seal.sealed + ' tip=' + seal.tip.slice(0, 12) + ' bytes=' + bytes.length);
+  // §ANCHOR (MODELLER_MASTER row 34 — Witness: W-E2E-ANCHOR-SAVE-ROUNDTRIP): the snapshot carries the
+  // void-anchor ops VERBATIM (they are links in the signed chain, and the cascade needs them after re-open);
+  // they stay anchors because the re-fold keys on params.anchorOnly. Count them from the SAME db being
+  // written so the save path is §ANCHOR-tagged, never silently folded into ops=.
+  let anchors = 0;
+  try { const r = O.db.exec("SELECT parameters FROM kernel_ops WHERE op_type='GEOM_INSERT' AND undone=0"); if (r.length) r[0].values.forEach(v => { try { if (JSON.parse(v[0]).anchorOnly) anchors++; } catch (e) { } }); } catch (e) { anchors = -1; }
+  console.log('§EXPORT-NATIVE ops=' + O.length + ' anchors=' + anchors + ' sealed=' + seal.sealed + ' tip=' + seal.tip.slice(0, 12) + ' bytes=' + bytes.length);
   if (!opts || opts.download !== false) {
     try {
       const blob = new Blob([bytes], { type: 'application/octet-stream' });   // same download idiom as bonsai_ifc.js
