@@ -156,7 +156,18 @@ function setupTools(A) {
     if (!A.ground) return;
     A._groundSolidColor = hex;   // remember the mode's intended flat color (for 'none')
     var hasMap = A._groundTexKey && A._groundTexKey !== 'none';
-    if (hasMap) {
+    // §GROUND_NOMAP_ALBEDO (2026-09-28, diagnostic press red1 …549015779: §METER_STATE ground=ffffff gain=2.30 map=0 groundShare=0.777):
+    // the white x gain branch is only right when the map IS on the material (diffuse = colour x map, map mean ~0.16). Before the
+    // texture has loaded the ground drew white x 2.3 = albedo 2.3 (reflects more than it receives), the meter exposed for it and
+    // the building went black. Intended-but-unloaded map -> the map's own measured mean albedo (opt.detailMean, else 0.16) x gain,
+    // flat; applyTex re-calls this when the texture lands.
+    if (hasMap && !A.ground.material.map) {
+      var sum0 = (hex & 0xff) + ((hex >> 8) & 0xff) + ((hex >> 16) & 0xff);
+      if (sum0 < 0x60) A.ground.material.color.setHex(0x555566);
+      else { var cfg0 = A._groundConfig || A._groundCfgDefault, op0 = ((cfg0 && cfg0.options) || []).filter(function(o) { return o.key === A._groundTexKey; })[0];
+        var m0 = (op0 && op0.detailMean) || A._groundDetailMean || 0.16, g0 = A._groundAlbedoGain || 1; A.ground.material.color.setRGB(m0 * g0, m0 * g0, m0 * g0); }
+      console.log('§GROUND_NOMAP_ALBEDO key=' + A._groundTexKey + ' map not loaded yet -> flat albedo ' + A.ground.material.color.r.toFixed(3));
+    } else if (hasMap) {
       var sum = (hex & 0xff) + ((hex >> 8) & 0xff) + ((hex >> 16) & 0xff);
       A.ground.material.color.setHex(sum < 0x60 ? 0x555566 : 0xffffff);  // dim at night, else true
       // multiplyScalar, never a >1 hex: setHex runs the sRGB->linear transfer, so scaling AFTER it

@@ -35,11 +35,12 @@
     ADAPT: { up: 3, down: 1 },
     // L1a — §COVE_LIGHT levels (audit #46, red1 exception §COVE_NO_STRIP "need not be accurate").
     COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 },
-    // L1b (red1 2026-09-27: camera torch, offset for visible shadows) — a real handheld source, rated: Petzl ACTIK STANDARD mode
-    // 100 lm, ANSI/PLATO FL1 beam distance 60 m (petzl.com/US/en/Sport/Headlamps/ACTIK). FL1 beam distance = the distance to
-    // 0.25 lx on axis, so peak I = 0.25 x 60^2 = 900 cd; uniform-cone half angle from lm = 2 pi I (1 - cos a): a = 10.8 deg.
+    // L1b (red1 2026-09-27: camera torch, offset for visible shadows; 2026-09-28: "can be more dramatic and realistic") — a real
+    // handheld source, rated: Petzl ACTIK MAX POWER mode 450 lm, ANSI/PLATO FL1 beam distance 100 m (petzl.com/US/en/Sport/Headlamps/
+    // ACTIK; the STANDARD mode 100 lm / 60 m was the first choice). FL1 beam distance = the distance to 0.25 lx on axis, so peak
+    // I = 0.25 x 100^2 = 2500 cd; uniform-cone half angle from lm = 2 pi I (1 - cos a): a = 13.7 deg.
     // Offset from the lens 0.3 m right / 0.1 m up (red1-agreed offset: a light on the lens axis hides every shadow it casts).
-    TORCH: { lm: 100, beamDistM: 60, peakCd: 900, halfAngleDeg: 10.8, offsetRightM: 0.3, offsetUpM: 0.1, color: 0xffffff, shadowMap: 1024 },
+    TORCH: { lm: 450, beamDistM: 100, peakCd: 2500, halfAngleDeg: 13.7, offsetRightM: 0.3, offsetUpM: 0.1, color: 0xffffff, shadowMap: 1024 },
     // L2 — §ZERO Z9 (audit #48): authored IFC albedos are sRGB-encoded; the still decodes them to linear (IEC 61966-2-1 EOTF,
     // three.js ColorManagement convention) before lighting. Nav keeps its own look (fixed exposure, no meter) — Alt+S only.
     ALBEDO: { authored: 'sRGB', decode: true },
