@@ -1195,8 +1195,8 @@
         // ### ALTS-ALL FIX 1 (c): a new program key served by an EXISTING GL program leaves programs.length unchanged but still swaps
         // in a fresh (dummy-texture) uniforms object — re-push any staged material whose uniforms object changed since its last push.
         // This hook runs before the draw, so the frame that created the key already drew with dummies: counted, not rescued.
-        var nRe = 0; set.forEach(function (m) { var pp = renderer.properties.get(m), U = pp && pp.uniforms; if (U && U.uSLParams && lastU.get(m) !== U) { push(A, m); if (lastU.has(m)) nRe++; lastU.set(m, U); } });
-        if (nRe) { rebinds++; console.log('§SOURCED_REBIND n=' + nRe + ' event=' + rebinds + ' (materials re-keyed since their last push: the previous frame drew them with the dummy zone texture)'); }
+        var nRe = 0, reN = []; if (renderer === A.renderer && renderer.properties) set.forEach(function (m) { var pp = renderer.properties.get(m), U = pp && pp.uniforms; if (U && U.uSLParams && lastU.get(m) !== U) { push(A, m); if (lastU.has(m)) { nRe++; if (reN.length < 4) reN.push(m.type.replace('Mesh', '').replace('Material', '') + ':' + (m.name || '-').slice(0, 20) + (m.userData && m.userData.gfOf ? '(glass)' : '') + (m.userData && m.userData.triRow ? '(tri)' : '')); } lastU.set(m, U); } });
+        if (nRe) { rebinds++; console.log('§SOURCED_REBIND n=' + nRe + ' event=' + rebinds + ' e.g. [' + reN.join(' ') + '] (materials re-keyed since their last push: the previous frame drew them with the dummy zone texture)'); }
         var line = '§SOURCED_LIGHT_BIND points=' + bb.points + ' bound=' + bb.pointsBound + ' (litOutside=' + bb.litOutside + ') litUnbound=' + bb.litUnbound + ' spots=' + bb.spots + ' portalsBound=' + bb.spotsBound;
         if (line !== lastLog) { lastLog = line; console.log(line); }
       }
@@ -1390,6 +1390,14 @@
     if (mr && mr.pixels > 0 && mr.skyPx >= mr.pixels && inside) {
       console.log('§METER final VACUOUS all-sky readback inside (skyPx=' + mr.skyPx + '/' + mr.pixels + ') — exposure back to base, EV100 ' + mr.ev100.toFixed(2) + ' rejected'); meterOff(A); mr = null; }
     A._meterLast = mr;
+    // ### ALTS-ALL FIX 1 (d): the still's accumulation frames render the scene into the composer's target WITH fog/background — a
+    // variant the meter (fog null) did not create; its first frame would draw re-keyed materials with the dummy zone texture
+    // (§SOURCED_REBIND events after the final meter, clinic smoke 2026-09-27: n=14,1,1). Prime that variant once and push.
+    try { var R = A.renderer, THREE = global.THREE, prt = new THREE.WebGLRenderTarget(64, 36, { type: THREE.HalfFloatType, depthBuffer: true }), pv = R.getRenderTarget(), pm = new Set(), pu = new Map(), nb = 0;
+      A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !pm.has(m)) { pm.add(m); var pp = R.properties.get(m); pu.set(m, pp && pp.uniforms); } }); });
+      try { R.setRenderTarget(prt); R.render(A.scene, A.camera); } finally { R.setRenderTarget(pv); prt.dispose(); }
+      pm.forEach(function (m) { var pp = R.properties.get(m); if (pp && pp.uniforms && pp.uniforms !== pu.get(m)) nb++; if (push(A, m)) lastU.set(m, pp.uniforms); });
+      console.log('§METER_PRIME_APP rebound=' + nb + ' mats=' + pm.size + ' (the accumulation frames\' variant primed + pushed before §STILL_REFINE start)'); } catch (ePA) { console.warn('§METER_PRIME_APP failed: ' + ePA.message); }
     try { LL.log(A, 'final'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); }   // §LIGHT_LAW_MODULE (log only)
   }
   function remeter(A) { meterFinal(A); }   // back-compat name (no caller left in this tree)
