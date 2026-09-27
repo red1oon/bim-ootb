@@ -263,9 +263,17 @@ function filmJudge(bake, T, ctl) {
       // d > 1 code (beyond any bake noise seen), else INCONCLUSIVE (effect too small to judge without a baseline).
       const mad = (x, y) => (x.length && x.length === y.length) ? x.reduce((s, v, i) => s + Math.abs(v - y[i]), 0) / x.length : null;
       const d = mad(la, lo), l2 = ctl.A2 ? lumaSeq(ctl.A2) : null, noise = l2 ? mad(la, l2) : null, tol = noise != null ? Math.max(0.05, 2 * noise) : null;
-      const st = !onOk ? 'FAIL' : (!offOk ? 'FAIL' : (d == null ? 'INCONCLUSIVE' : (tol != null ? (d > tol ? 'PASS' : 'NO-OP') : (d > 1 ? 'PASS' : (same(la, lo) ? 'NO-OP' : 'INCONCLUSIVE')))));
+      let st = !onOk ? 'FAIL' : (!offOk ? 'FAIL' : (d == null ? 'INCONCLUSIVE' : (tol != null ? (d > tol ? 'PASS' : 'NO-OP') : (d > 1 ? 'PASS' : (same(la, lo) ? 'NO-OP' : 'INCONCLUSIVE')))));
+      // ### ALTS-ALL FIX 4 rule carried to films (pass 3): the 900 cd torch is judged only where it CAN change a code. Upper bound of its
+      // share of the frame luminance: rho 1 x (900 / d^2) / pi / Lcd, d = camera-to-target distance (per §FILM_EXPOSURE frame); if the max over
+      // frames is < 1/255 (below one 8-bit code) a no-difference result is physics -> INFO, not NO-OP (aerial frames: 900 cd at 20+ m).
+      let phys = '';
+      if (armK === 'T' && st === 'NO-OP') { const fr = fe(L).map(q => { const c = (q.cam || '').replace(/[\[\]]/g, '').split(',').map(Number), t = (q.tgt || '').replace(/[\[\]]/g, '').split(',').map(Number), Lc = +q.Lcd; if (c.length !== 3 || t.length !== 3 || !(Lc > 0)) return null; const dd = Math.hypot(c[0] - t[0], c[1] - t[1], c[2] - t[2]); return { dd, sh: (900 / (dd * dd)) / Math.PI / Lc }; }).filter(Boolean);
+        const mx = fr.length ? Math.max(...fr.map(q => q.sh)) : null, dmin = fr.length ? Math.min(...fr.map(q => q.dd)) : null;
+        if (mx != null && mx < 1 / 255) { st = 'INFO'; phys = ' | torch share upper bound max ' + mx.toExponential(2) + ' < 1/255 (d min ' + dmin.toFixed(1) + ' m over ' + fr.length + ' frames): physics, not a dead switch (FIX 4 rule)'; }
+        else if (mx != null) phys = ' | torch share upper bound max ' + mx.toExponential(2) + ' (d min ' + dmin.toFixed(1) + ' m): it could act here'; }
       add('F-G2', id, st, (!onOk ? 'on line absent ' + onRe : !offOk ? 'off line absent in ' + armK + ' ' + offRe : 'mean luma A ' + (la.reduce((s, v) => s + v, 0) / (la.length || 1)).toFixed(2) + ' vs ' + armK + ' ' + (lo.reduce((s, v) => s + v, 0) / (lo.length || 1)).toFixed(2) +
-        ' | d=' + (d != null ? d.toFixed(3) : '-') + (tol != null ? ' noise(A vs A2)=' + noise.toFixed(3) + ' tol=' + tol.toFixed(3) : ' (no A2 noise baseline: PASS needs d > 1 code)'))); };
+        ' | d=' + (d != null ? d.toFixed(3) : '-') + (tol != null ? ' noise(A vs A2)=' + noise.toFixed(3) + ' tol=' + tol.toFixed(3) : ' (no A2 noise baseline: PASS needs d > 1 code)')) + phys); };
     cmp('C', 'film exposure + fill law vs control (--film-exposure 0 --film-fill restore)', /§FILM_EXPOSURE f=0/, /§FILM_EXPOSURE off \(control/);
     cmp('E', 'film parity vs --film-parity 0', /§FILM_PARITY on/, /§CAM_LIGHT on/);
     cmp('T', 'film torch vs --url-query &torch=0', /§CAM_TORCH film on/, /§FILM_EXPOSURE f=0 .*torch=off/);
@@ -291,7 +299,9 @@ function g6(rec) {
   const G = rec.glass;
   // ### ALTS-ALL FIX 14 (blocking): glass is not NaN-black on THIS press (fresh-page = first press): 0 NaN glass samples in the float probe
   // and < 20 % of glass samples black (<= 2 codes) in the app frame (pass 2: first press 14/14 black, NaN 7/14)
-  if (G && !G.err && G.n >= GLASS.minN && G.nanN != null) out.push(row('G6', 'glass see-through on this press (no NaN glass samples, < 20 % black)', G.nanN === 0 && G.appBlackPct < 20 ? 'PASS' : 'FAIL', 'n=' + G.n + ' NaN ' + G.nanN + ' appBlack ' + G.appBlackPct + '% appL p50 ' + G.appL));
+  // rule refined (first run: tr4 3/14 black samples with NaN 0): a black glass pixel is the defect only when what is BEHIND the pane is not
+  // black (glass-hidden linear L > 1e-3); a dark object seen through clear glass is correctly dark. Records without the split: the old 20 % rule.
+  if (G && !G.err && G.n >= GLASS.minN && G.nanN != null) { const split = G.blackGlassN != null; out.push(row('G6', 'glass see-through on this press (no NaN glass samples; no black pane over a lit background)', G.nanN === 0 && (split ? G.blackGlassN === 0 : G.appBlackPct < 20) ? 'PASS' : 'FAIL', 'n=' + G.n + ' NaN ' + G.nanN + (split ? ' blackOverLit ' + G.blackGlassN + ' blackOverDark ' + G.blackBehindN : ' appBlack ' + G.appBlackPct + '% (old record: 20 % rule)') + ' appL p50 ' + G.appL)); }
   else if (G && !G.err && G.n < GLASS.minN) out.push(row('G6', 'glass see-through on this press', 'INFO', 'n=' + G.n + ' < ' + GLASS.minN + ' glass samples in view — not judged here'));
   if (G && !G.err && G.n >= GLASS.minN) out.push(row('G6', 'glass pixels: composite vs app frame (informational)', 'INFO', 'n=' + G.n + ' keepAbs=' + G.keepAbs + ' bouncePct=' + G.bouncePct + '% (bounce shades the surface BEHIND the pane — legit) compL=' + G.compL + ' appL=' + G.appL + ' L_vis/L_hid p50 ' + G.ratioP50, { glassN: G.n }));
   return out;
