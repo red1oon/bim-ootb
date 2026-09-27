@@ -713,7 +713,7 @@
         // REFUSES every element (arc_editable buildSeedOps) — nothing is drawn as a box; say so unmistakably.
         console.error(TAG + ' §GEO-SERVED-DEGRADED ' + res.key + ' — NO real geometry substrate loaded. The building is' +
           ' NOT drawn (every element refused — LOD400 or fail hard, never bounding boxes). Cause: ' + (e && e.message), e);
-        try { if (typeof setStat === 'function') setStat(res.key + ': geometry failed to load — building not drawn (no box fallback)'); } catch (e2) { }
+        try { if (typeof window.setStat === 'function') window.setStat(res.key + ': geometry failed to load — building not drawn (no box fallback)'); } catch (e2) { }
         window.__dwGeoBuf = null;
         _seedArcEditable(O, res.key, null);
       });
