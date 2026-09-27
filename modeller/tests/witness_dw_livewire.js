@@ -9,7 +9,7 @@
  *                     bbox (a frame mismatch would silently starve every schedule placement).
  *   L1  SCHED-LIVE  — Duplex ELEC walk engages placeSchedule IN THE BROWSER (was impossible: no
  *                     shipped ARC db carried any space row, rules DBs lacked the schedule tables).
- *   L2  LOD400-LIVE — schedule fixtures render REAL mined meshes from the shared mesh.db
+ *   L2  LOD400-LIVE — schedule fixtures render REAL mined meshes from the building's own _geo.db (per-building split of the old shared mesh.db, §GEO-SERVED)
  *                     (§DW-PRIM-LOD lod400>0), not boxes — the previously-dead render seam.
  *   L3  NOSPACES    — Terminal ELEC walk takes the measured-band path live (placed>0, real z-bands).
  *   L4  FALLBACK    — SampleCastle ELEC (duplex-rules, no spaces, no mesh binding) falls back to the
@@ -56,6 +56,8 @@ async function openResident(br, key, minChildren, deadlineMs) {
   await pg.goto(`http://localhost:${server.address().port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai', { timeout: 30000 }).catch(() => {});
   await pg.click('#b-open'); await sleep(200);
+  // §NET-AUDIT (2026-09-27): wait for the row, not a fixed 200 ms (under load the panel had not rendered → crash).
+  await pg.waitForSelector(`#m-open-panel .mo-row[data-key="${key}"]`, { timeout: 30000 });
   await pg.click(`#m-open-panel .mo-row[data-key="${key}"]`);
   const deadline = Date.now() + deadlineMs;
   let lastN = -1, stable = 0, n = -1;

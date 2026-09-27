@@ -3883,7 +3883,7 @@ async function _discWalkOne(disc, ctx, opts) {
     // 5/5). A building neither path can serve (no spaces + no rule_mesh_binding → honest 0) falls back to
     // the LEGACY walk below, byte-identical to before the flip — no resident loses placements; the flip is
     // strictly additive where the mined data supports it. §-logged both ways, never silent.
-    //   opts.geoDb  — transient open of the shared mesh.db buffer (stashed __dwGeoBuf at resident-open):
+    //   opts.geoDb  — transient open of this building's _geo.db buffer (stashed __dwGeoBuf at resident-open; §GEO-SERVED split of the old shared mesh.db):
     //                 hostBind/_trueMidpoint midpoint correction now runs on REAL meshes in the live walk
     //                 (legacy live walks passed no geoDb at all — a standing correctness gap, now closed).
     //   opts.avoid  — other discs' live placements (window.__dwWalks): W7 cross-disc clearance coordination.
@@ -4062,7 +4062,7 @@ function _renderDiscWalk(disc, placements) {
   // the 0.18 marker cube fallback (never a fabricated size). The 3-material split is preserved per class.
   // §LIVEWIRE LOD400 (RESUME_DISC_WALKER_ENVELOPE_BOUND.md §LIVEWIRE item 5 — the render seam): a
   // schedule/measured-band placement carries its MINED real mesh hash (rule_space_schedule /
-  // rule_mesh_binding, projected into the shared mesh.db by project_device_meshes_to_meshdb.py).
+  // rule_mesh_binding, projected into the mesh store by project_device_meshes_to_meshdb.py; served per building in <Building>_geo.db since §GEO-SERVED — measured 2026-09-27: Duplex ELEC lod400=102).
   // Bucket by (class, hash) — one InstancedMesh geometry per REAL mesh, recentred about its own bbox
   // centre (RealGeometry.resolveHashes), exactly the centre semantics the measured box already had.
   // No hash / hash unresolvable → the pre-existing _dwPrimGeo path (LOD300 catalog match or measured
@@ -4087,7 +4087,7 @@ function _renderDiscWalk(disc, placements) {
           return { hash: h, v: _lod400[h].positions, f: _lod400[h].faces, bbox: _lod400[h].bbox, anchorOffset: [0, 0, 0] };
         }));
       }
-    } catch (e) { console.warn('§DW-PRIM-LOD mesh.db resolve failed ' + (e && e.message)); _lod400 = {}; }
+    } catch (e) { console.warn('§DW-PRIM-LOD geo db resolve failed (' + (window.__dwName || '?') + '_geo.db) ' + (e && e.message)); _lod400 = {}; }
   }
   var dims = [];
   var lod400N = 0, lod300N = 0, lod200N = 0;                                    // honesty tally (real mined mesh / catalog match / box)
@@ -4154,7 +4154,7 @@ function _renderDiscWalk(disc, placements) {
   window.__dwInstVer++;   // §I5: fresh buckets → invalidate the record→(im,i) ref map (hidden lens resets, §V1 doctrine)
   console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
   console.log('§DW-PRIM-LOD disc=' + disc + ' lod400=' + lod400N + ' lod300=' + lod300N + ' lod200=' + lod200N +
-    ' (lod400=rule-mined REAL mesh from shared mesh.db [§LIVEWIRE], lod300=matched real catalog mesh, lod200=measured POC box; honest tally, never silently "fixed")');
+    ' (lod400=rule-mined REAL mesh from the per-building _geo.db — the per-building split of the old shared mesh.db, §GEO-SERVED [§LIVEWIRE], lod300=matched real catalog mesh, lod200=measured POC box; honest tally, never silently "fixed")');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   try { _applyShadowFlags(); } catch (e) { }   // §POLISH3 §V6: new buckets get cast/receive flags (or trip the perf guard)
   // §DW-DEDUP-RENDER (DW_FIXTURE_DOUBLE_RENDER_FINDING.md G1-G3, visual z-fighting confirmed 2026-07-17
