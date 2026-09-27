@@ -48,6 +48,10 @@ function g1(rec, T) {
   add('LightZones SRC page == node', E.lzSrc === T.lzSrc, 'page ' + E.lzSrc + ' node ' + T.lzSrc);
   const errs = grepAll(L, /^PAGEERROR|§LOAD_FAIL|Shader Error|CONTEXT_LOST|Context Lost|GPUOutOfMemory/);
   add('zero page errors / §LOAD_FAIL', !errs.length, errs.length + (errs.length ? ' e.g. ' + errs[0].slice(0, 120) : ''));
+  // instrument (GPU run 2026-09-27, p2/base): the three-mesh-bvh CDN import failed (§BVH_INIT_FAIL) -> §SKY_SHELL_RAYS "no BVH",
+  // recomputed=0: the press ran without the B1/Z8 shell pass, and no other G1 row noticed. A missing dependency = the press is not the build.
+  const bvh = grepAll(L, /§BVH_INIT_FAIL/);
+  add('BVH loaded (no §BVH_INIT_FAIL: shell pass needs it)', !bvh.length, bvh.length ? bvh[0].slice(0, 140) : 'ok');
   add('fresh profile (no SW controller at load)', E.swCtlAtLoad === false, 'controllerAtLoad=' + E.swCtlAtLoad);
   const zc = grepAll(L, /§ZONE_IDB_CACHE (prime|hit|miss|saved)/).map(l => l.replace(/^.*§ZONE_IDB_CACHE /, '').slice(0, 40)).join(' | ');
   const sh = grep1(L, /§SKY_SHELL_RAYS .*cache=(built|hit)/);
