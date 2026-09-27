@@ -1047,7 +1047,9 @@ function setupStreaming(A) {
         get: function() { return arr[0][p]; }, set: function(v) { for (var i = 0; i < arr.length; i++) arr[i][p] = v; } });
     });
     Object.defineProperty(arr, 'isR10MaterialArray', { value: true, enumerable: false });
-    Object.defineProperty(arr, 'clone', { enumerable: false, value: function() { return A._r10MatArray(arr.map(function(x) { return x.clone(); })); } });
+    // §R10_CLONE_MAP_SHADOW (2026-09-28, 30 s bake §MAXQ_FAIL 'arr.map is not a function' at the film's room highlight): 'map' is
+    // forwarded above (the TEXTURE slot), which shadows Array.prototype.map on this array — clone with a plain loop.
+    Object.defineProperty(arr, 'clone', { enumerable: false, value: function() { var c = []; for (var i = 0; i < arr.length; i++) c.push(arr[i].clone()); return A._r10MatArray(c); } });
     Object.defineProperty(arr, 'dispose', { enumerable: false, value: function() { arr.forEach(function(x) { if (x.dispose) x.dispose(); }); } });
     Object.defineProperty(arr, 'setValues', { enumerable: false, value: function(v) { return arr[0].setValues(v); } });
     return arr;
