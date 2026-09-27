@@ -82,6 +82,7 @@ function pageAnchor(which) {
   return null;
 }
 
+let PIN_K = null;   // ### ALTS-ALL FIX 18 (b') one exposure for both arms: the AFTER arm's metered toilet exposure / base, applied as &stillexp with the meter off
 async function arm(port, label, posesIn) {   // posesIn: the AFTER arm's poses, so both arms render the identical cameras
   const b = await puppeteer.launch({ headless: true, protocolTimeout: 1800000, env: Object.assign({}, process.env, { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' }),
     args: ['--no-sandbox', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--window-size=1705,1054', '--user-data-dir=/tmp/ct-gpu-' + label + '-' + Date.now()] });
@@ -115,7 +116,10 @@ async function arm(port, label, posesIn) {   // posesIn: the AFTER arm's poses, 
     // ### ALTS-ALL FIX 18 (b): the toilet still again with the meter OFF, both arms (&meter=0 in the URL — honoured by both builds'
     // sourced_light.js; APP._stillMeter is reset by staging, so a page flag cannot do it): the finish comparison at ONE exposure
     if (poses.toilet && out.poses.toilet && !out.poses.toilet.error) { const q = poses.toilet;
-      await p.goto('http://127.0.0.1:' + port + '/viewer/viewer.html?db=/buildings/Hospital_extracted.db&photoseed=0.5&meter=0', { waitUntil: 'domcontentloaded' });
+      if (PIN_K == null) { const mt = (out.poses.toilet.tags || []).concat(L).filter(t => /§METER camera=\S+ tag=final/.test(t)).pop() || (out.poses.toilet.tags || []).concat(L).filter(t => /§METER camera=/.test(t)).pop() || '';
+        const me = /exposure=([0-9.e+-]+)/.exec(mt), mb = /vs base ([0-9.e+-]+)/.exec(mt); PIN_K = (me && mb) ? (+me[1] / +mb[1]) : null;
+        S('   (' + label + ' toilet exposure pin from the metered press: ' + (PIN_K ? 'k=' + PIN_K.toFixed(4) : 'NONE — the fixed row will be INCONCLUSIVE') + ')'); }
+      await p.goto('http://127.0.0.1:' + port + '/viewer/viewer.html?db=/buildings/Hospital_extracted.db&photoseed=0.5&meter=0' + (PIN_K ? '&stillexp=' + PIN_K.toFixed(6) : ''), { waitUntil: 'domcontentloaded' });
       await p.waitForFunction(w => window.APP && window.APP.guidMap && Object.keys(window.APP.guidMap).length >= w, { timeout: 600000, polling: 2000 }, +WANT); await sleep(3000);
       await p.evaluate(() => { window.__ctMeta = window.__ctMeta || null; });
       await p.evaluate(() => { const A = window.APP, rs = A.dbQuery("SELECT m.guid, m.ifc_class, coalesce(m.material_rgba,''), coalesce(m.material_name,''), coalesce(m.element_name,''), coalesce(m.discipline,'') FROM elements_meta m") || [];
@@ -196,7 +200,8 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
         const sameExp = mode === 'canvas' || (mode === 'stillFixed' ? (xA != null && xB != null && Math.abs(xA - xB) <= 0.001) : (eA != null && eB != null && Math.abs(eA - eB) <= 0.05));
         if (mode === 'still' && !sameExp) { S('   ℹ INFO Z20 toilet still (metered): arms at different exposures (EV100 after ' + eA + ' vs before ' + eB + ') — judged on the fixed-exposure press (stillFixed) instead; p99 ' + (isFinite(qa) ? qa.toFixed(1) : '-') + ' vs ' + (isFinite(qb) ? qb.toFixed(1) : '-')); }
         else
-        V(pa.n >= 5 && da.length >= 30 && db.length >= 30 && sameExp ? (pa.sat < 0.12 && qa > qb) : null, 'Z20 toilet ' + mode + ': porcelain pixels stay white (sat < 0.12) + specular highlight (p99 luma > matte arm' + (mode === 'still' ? ', same exposure only' : '') + ')', 'sat ' + pa.sat.toFixed(3) + ' p99 after ' + (isFinite(qa) ? qa.toFixed(1) : '-') + ' vs before ' + (isFinite(qb) ? qb.toFixed(1) : '-') + (mode === 'still' ? ' EV100 after ' + eA + ' vs before ' + eB : '') + (mode === 'stillFixed' ? ' fixed exposure after ' + xA + ' vs before ' + xB + ' (meter off both arms)' : '') + ' dense n ' + db.length + '/' + da.length + ' | mean before ' + f3(pb) + ' after ' + f3(pa)); }
+        V(pa.n >= 5 && da.length >= 30 && db.length >= 30 && sameExp && qa >= 5 && qb >= 5 ? (pa.sat < 0.12 && qa > qb) : null,   // GIGO: an all-black arm (p99 < 5 codes) judges nothing -> INCONCLUSIVE, never FAIL/PASS
+        'Z20 toilet ' + mode + ': porcelain pixels stay white (sat < 0.12) + specular highlight (p99 luma > matte arm' + (mode === 'still' ? ', same exposure only' : '') + ')', 'sat ' + pa.sat.toFixed(3) + ' p99 after ' + (isFinite(qa) ? qa.toFixed(1) : '-') + ' vs before ' + (isFinite(qb) ? qb.toFixed(1) : '-') + (mode === 'still' ? ' EV100 after ' + eA + ' vs before ' + eB : '') + (mode === 'stillFixed' ? ' fixed exposure after ' + xA + ' vs before ' + xB + ' (meter off both arms)' : '') + ' dense n ' + db.length + '/' + da.length + ' | mean before ' + f3(pb) + ' after ' + f3(pa)); }
       // REFS (canvas only — the still also carries the IR colour): untouched elements identical
       if (mode === 'canvas') { const byI = new Map(fa.samples.map(q => [q.i, q])), diffs = [];
         const D2C = /^Ifc(Pipe|PipeFitting|PipeSegment|FlowSegment|FlowFitting|Duct|DuctFitting|DuctSegment|Beam|Member|Plate)$/;   // FIX 11 moves these by design
