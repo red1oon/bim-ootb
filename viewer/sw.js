@@ -194,6 +194,8 @@ const CACHE_VERSION = 'v1473';   // bump on each deploy; per-change detail is th
 // v1466 (2026-09-27) §ZERO Z9 ALBEDO sRGB: Alt+S decodes flat IFC albedos sRGB->linear via LightLaw (restore on Esc).
 // v1469 (2026-09-27) §ZERO Z12: Alt+S hemi ground half = rho_g x (sun sinE + E_sky) via LightLaw; §SUN_PENUMBRA diagnostic (0.53 deg disc).
 //   viewer.html light_law.js?v=1->2, effects.js?v=109->110 in the SAME commit.
+// v1467 (2026-09-27) §ZERO Z10 AO_INDIRECT: Alt+S AO in world metres (LightLaw.AO) applied to the materials' indirect terms (aomap patch).
+//   viewer.html light_law.js?v=1->2, sourced_light.js?v=54->55, effects.js?v=109->110 in the SAME commit.
 // v1463 (2026-09-27) §LIGHT_LAW_MODULE: new viewer/light_law.js (window.LightLaw — calibration, scene sources, §METER_EV
 //   constants + formulas, cove levels, snapshot()+hash); scene.js / effects.js / sourced_light.js read it (pure refactor).
 //   viewer.html light_law.js?v=1 + sourced_light.js?v=53->54, effects.js?v=108->109, scene.js?v=64->65 in the SAME commit.

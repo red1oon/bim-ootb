@@ -5265,7 +5265,13 @@ async function setupEffects(A, renderer, scene, camera) {
           ' (§SUN_SHADOW_GRAZE_SCALE — kernel now widens per-pixel at grazing sun incidence)');
       }
 
+      // §ZERO Z10 AO_INDIRECT (PHOTOREAL_STILL_RENDER.md "### Z10 SPEC", option A): in 'shader' mode N8AO renders the AO ONLY
+      // (renderMode 1) into this private target while the screen keeps the TAA frame; the materials then read it for their
+      // indirect terms in a second TAA phase (sourced_light.js aoPatch). Half float, no depth, the composer's size.
+      var aoOnlyRT = new THREE.WebGLRenderTarget(rt.width, rt.height, { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
       var adapter = {
+        aoOnly: false,         // §ZERO Z10: true = write N8AO's AO into aoOnlyRT, pass the TAA frame through unchanged
+        aoOnlyRT: aoOnlyRT,
         enabled: false,        // §PHOTO_AO_GATE: disabled = EffectComposer skips it entirely — the
                                // zero-cost-when-off discipline everything else in this file follows
         needsSwap: true, clear: false, renderToScreen: false,
@@ -5273,6 +5279,7 @@ async function setupEffects(A, renderer, scene, camera) {
           n8.setSize(w, h);
           _stillAODepthDirty = true;
           if (aoScratchRT) aoScratchRT.setSize(w, h);
+          aoOnlyRT.setSize(w, h);   // §ZERO Z10
           if (shadowRestoreMat) shadowRestoreMat.uniforms.resolution.value.set(w, h);
         },
         render: function(renderer2, writeBuffer, readBuffer) {
@@ -5296,6 +5303,13 @@ async function setupEffects(A, renderer, scene, camera) {
           copyQuad.render(renderer2);
           renderer2.autoClear = oldAutoClear;
           n8.renderToScreen = false;
+          if (adapter.aoOnly) {   // §ZERO Z10: AO into the private target; the frame on screen stays the TAA image (no restore pass —
+            n8.render(renderer2, aoOnlyRT, readBuffer);   // direct light is never multiplied by AO in this mode, nothing to restore)
+            var oac = renderer2.autoClear; renderer2.autoClear = false;
+            copyMat.uniforms.tDiffuse.value = readBuffer.texture; renderer2.setRenderTarget(writeBuffer); copyQuad.render(renderer2);
+            renderer2.autoClear = oac;
+            return;
+          }
           // §SUN_SHADOW_RESTORE: only reroute N8AO's output into the scratch target (and pay for
           // the extra mask/blend pass) when a real sun shadow is actually available to restore —
           // otherwise this is byte-identical to the pre-existing n8.render(..., writeBuffer, ...).
@@ -5375,10 +5389,61 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   function _stopStillAOPhase(reason) {
     if (_stillAORAF) { cancelAnimationFrame(_stillAORAF); _stillAORAF = null; }
+    if (_aoIndirectBound && window.SourcedLight && window.SourcedLight.aoSet) {   // §ZERO Z10: materials back to AO 1 (dummy texture, x = 0)
+      _aoIndirectBound = false; window.SourcedLight.aoSet(A, null, false); console.log('§AO_INDIRECT released (' + reason + ')'); }
+    if (A._stillAOAdapter) A._stillAOAdapter.aoOnly = false;
     if (A._stillAOAdapter && A._stillAOAdapter.enabled) {
       A._stillAOAdapter.enabled = false;
       console.log('§PHOTO_AO off (' + reason + ') — pass disabled, zero cost during normal nav');
     }
+  }
+  // ══ §ZERO Z10 AO_INDIRECT (PHOTOREAL_STILL_RENDER.md "### Z10 SPEC") ═══════════════════════════════════════════════════════
+  // legacy    — a film (A._maxqActive) or &aoindirect=0: today's composite and today's values, re-set here every phase so a still
+  //             never leaks its config into a film (Z13 inherits the approved still later).
+  // shader    — stills with the aomap patch installed: N8AO world radius (LightLaw.AO), AO only -> materials' indirect terms.
+  // composite — stills without the patch (&sourced=0 / link-fail fallback): the old composite with the LAW radius/power only.
+  var _aoIndirectBound = false;
+  function _aoIndirectConfigure(ao) {
+    var c = ao.pass.configuration, law = window.LightLaw && window.LightLaw.AO;
+    var off = !!A._maxqActive || /[?&]aoindirect=0/.test(location.search) || !law;
+    var patched = !!(window.SourcedLight && window.SourcedLight.aoPatched && window.SourcedLight.aoPatched());
+    var mode = off ? 'legacy' : (patched ? 'shader' : 'composite');
+    if (mode === 'legacy') {
+      c.screenSpaceRadius = true; c.aoRadius = STILL_AO_RADIUS; c.distanceFalloff = 0.2; c.intensity = STILL_AO_INTENSITY; c.renderMode = 0;
+      ao.adapter.aoOnly = false;
+    } else {
+      c.screenSpaceRadius = false; c.aoRadius = law.radiusM; c.distanceFalloff = law.falloff; c.intensity = law.power;
+      c.renderMode = (mode === 'shader') ? 1 : 0; ao.adapter.aoOnly = (mode === 'shader');
+    }
+    if (!off || /[?&]aoindirect=0/.test(location.search)) console.log('§AO_INDIRECT mode=' + mode + ' radius=' + c.aoRadius + (c.screenSpaceRadius ? 'px' : 'm') +
+      ' power=' + c.intensity + ' falloff=' + c.distanceFalloff + ' patch=' + (patched ? 1 : 0) + (mode === 'composite' ? ' (world-radius step only: aomap patch not installed)' : ''));
+    return mode;
+  }
+  function _aoIndirectTaa2(ao, t0, aoFrames) {
+    ao.adapter.enabled = false; ao.adapter.aoOnly = false;   // the AO buffer is final; the frame is rebuilt with it inside the lighting
+    var SL = window.SourcedLight, rtA = ao.adapter.aoOnlyRT;
+    var nb = SL.aoSet(A, rtA.texture, false, rtA.width, rtA.height);   // bind the texture on every live program (x stays 0)
+    _aoIndirectBound = true;
+    if (nb <= 0) { console.warn('§AO_INDIRECT no patched program took the AO (bound=' + nb + ') — frame kept without AO'); A._stillRefineBusy = false; return; }
+    var taaN = _stillBudget().taa, sig = _camSig(), k = 0, t2 = performance.now();
+    A._taaPass.accumulateIndex = -1;
+    (function stepT() {
+      _stillAORAF = null;
+      if (!A._stillRefineActive || !_aoIndirectBound) return;   // torn down mid-phase
+      if (_camSig() !== sig) { console.log('§AO_INDIRECT cam-moved during the second TAA — AO buffer is stale, frame kept as rendered'); A._stillRefineBusy = false; return; }
+      SL.aoOn(true);   // x = 1 only around the composer render (no other render samples the screen AO)
+      A._composer.render();
+      k++;
+      if (A._taaPass.accumulateIndex >= taaN) {
+        // stays ON for the frozen frame (a later composer render is the TAA short-circuit of this same accumulation); released at teardown
+        console.log('§AO_INDIRECT done mode=shader boundMats=' + nb + ' aoFrames=' + aoFrames + ' taa2=' + k + ' taa2Ms=' + Math.round(performance.now() - t2) +
+          ' totalMs=' + Math.round(performance.now() - t0) + ' radiusM=' + ao.pass.configuration.aoRadius + ' power=' + ao.pass.configuration.intensity);
+        A._stillRefineBusy = false;
+        return;
+      }
+      SL.aoOn(false);
+      _stillAORAF = requestAnimationFrame(stepT);
+    })();
   }
   function _startStillAOPhase() {
     // §CINEMA_ROW_BUSY: every early-return below is a real "nothing more will converge" exit for
@@ -5393,12 +5458,13 @@ async function setupEffects(A, renderer, scene, camera) {
       // still frozen, and never fight the GI composer or the cinema loop for the canvas
       if (!A._stillRefineActive || _stillRefineRAF || A._giComposerActive || _cinemaActive) { A._stillRefineBusy = false; return; }
       _stillAODepthDirty = true;
+      var _aoMode = _aoIndirectConfigure(ao);   // §ZERO Z10 — 'shader' | 'composite' | 'legacy', config set per phase
       ao.pass.firstFrame();
       ao.adapter.enabled = true;
       var sig = _camSig(), f = 0, renderMs = 0;
       var _aoFrames = _stillBudget().ao;    // §MAXQ_FRAME_BUDGET — read once, cannot split this fold
-      console.log('§PHOTO_AO start frames=' + _aoFrames + ' radius=' + STILL_AO_RADIUS +
-        ' intensity=' + STILL_AO_INTENSITY + ' denoiseRadius=' + ao.pass.configuration.denoiseRadius +
+      console.log('§PHOTO_AO start frames=' + _aoFrames + ' radius=' + ao.pass.configuration.aoRadius + (ao.pass.configuration.screenSpaceRadius ? 'px' : 'm') +
+        ' intensity=' + ao.pass.configuration.intensity + ' mode=' + _aoMode + ' denoiseRadius=' + ao.pass.configuration.denoiseRadius +
         ' denoiseSamples=' + ao.pass.configuration.denoiseSamples + ' (still-only fold — Alt+G untouched)');
       (function stepAO() {
         _stillAORAF = null;
@@ -5413,7 +5479,8 @@ async function setupEffects(A, renderer, scene, camera) {
         if (f === 1) _stillSay('shading corners (ambient occlusion)…');   // §STILL_STATUS_STEPS
         if (f >= _aoFrames) {
           console.log('§PHOTO_AO done frames=' + f + ' totalMs=' + Math.round(performance.now() - t0) +
-            ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' (frozen with AO — stays until interaction)');
+            ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' mode=' + _aoMode + (_aoMode === 'shader' ? ' (AO buffer ready — second TAA phase next)' : ' (frozen with AO — stays until interaction)'));
+          if (_aoMode === 'shader') { _aoIndirectTaa2(ao, t0, f); return; }   // §ZERO Z10: busy stays true until the second TAA lands
           A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY: real completion — icon drops "processing"
           return;
         }
