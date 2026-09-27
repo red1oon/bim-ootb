@@ -4271,7 +4271,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // incidence); one fixture at CALIB_H m directly above a floor point gives base * mul / CALIB_H^decay (no angle term,
       // straight down). Solve mul so that equals 0.005 * sun. Replaces the §FLOOR_WASH lamps=16 for Alt+S when §SOURCED_LIGHT
       // is on; &lamps= / APP._stillLamps still override (red1's live dial). &sourced=0 keeps 16 (today's look).
-      var CALIB_LAMP_LUX = 500, CALIB_SUN_LUX = 100000, CALIB_H = 2.5;
+      var CALIB_LAMP_LUX = window.LightLaw.CALIB.lampLux, CALIB_SUN_LUX = window.LightLaw.CALIB.sunLux, CALIB_H = window.LightLaw.CALIB.refH;   // §LIGHT_LAW_MODULE
       var _calibSunI = (A._nightMode && A._nightSaved) ? A._nightSaved.sunI * PHOTO_SUN_INTENSITY_SCALE : (A.sun ? A.sun.intensity * PHOTO_SUN_INTENSITY_SCALE : 0);
       // PAUSED (watchdog red1-4b, 2026-09-25: step 1 first — zone binding + no sourceless sky may be all the washout is):
       // calibration, the camera-fill cut, physical portals and the §METER run only with &calib=1 / APP._stillCalib=true.

@@ -122,15 +122,16 @@ async function setupScene(A) {
   // §S260: shadow setup deferred entirely to toggleShadow() in tools.js
   // §S260c: ACESFilmic tone mapping — preserves color saturation, adds cinematic contrast.
   // NoToneMapping was flat/grey. ACES gives "crisp vibrant" look like Bonsai/Autodesk.
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  const LLS = window.LightLaw.SCENE;   // §LIGHT_LAW_MODULE: scene source values + tone curve from light_law.js
+  renderer.toneMapping = window.LightLaw.toneConst(THREE);
   // §PHOTO_EXPOSURE — 0.45 is DELIBERATE and stays. It has been the daytime value since the initial
   // migration, and the user recalls overexposure problems from raising it ("AFAIR before we may have
   // issue of overexposure"). Briefly set to 1.0 this session to fix "too dark drab" and reverted:
   // doubling the base brightens DAY NAVIGATION too, which is not what was being complained about.
   // The lift is applied to the frozen still ONLY — see PHOTO_EXPOSURE_LIFT in effects.js — matching
   // how bloom, ember and the 48-light budget are all still-only.
-  renderer.toneMappingExposure = 0.45;
-  console.log('§TONEMAPPING type=ACESFilmic exposure=0.45');
+  renderer.toneMappingExposure = LLS.exposure;
+  console.log('§TONEMAPPING type=' + LLS.toneMapping + ' exposure=' + LLS.exposure);
   renderer.localClippingEnabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;  // §S259: proper gamma curve for web display
   // §S276: r184 uses physically-correct lights by default (useLegacyLights removed in r165).
@@ -200,17 +201,17 @@ async function setupScene(A) {
   // >= 0.55) binds first at k=0.491 — declared conflict, clamped at the floor: achieved
   // contrast 0.255. One k scales both lights jointly to preserve the colour balance; sun and
   // envMapIntensity untouched. Witness: witness_wall_side_light_floor.js (§WWSLF_DERIVE line).
-  const ambient = new THREE.AmbientLight(0xffffff, 0.386);
+  const ambient = new THREE.AmbientLight(LLS.ambient.color, LLS.ambient.intensity);
   scene.add(ambient);
   A.ambient = ambient;
 
-  const sun = new THREE.DirectionalLight(0xfff0dd, 4.4);
+  const sun = new THREE.DirectionalLight(LLS.sun.color, LLS.sun.intensity);
   sun.position.set(200, 400, 300);
   sun.castShadow = false;
   scene.add(sun);
   A.sun = sun;
 
-  const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 0.617);
+  const hemi = new THREE.HemisphereLight(LLS.hemi.sky, LLS.hemi.ground, LLS.hemi.intensity);
   scene.add(hemi);
   A.hemi = hemi;
 

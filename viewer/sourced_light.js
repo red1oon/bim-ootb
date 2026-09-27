@@ -9,6 +9,9 @@
 // uSLParams.x = 0 (nav, and every page until an Alt+S stages it) slPass() returns 1: the picture is unchanged.
 // &sourced=0 skips the install entirely (today's shaders, for red1's A/B).
 (function (global) {
+  // §LIGHT_LAW_MODULE: the chain's values + formulas (calibration, meter, cove levels) come from light_law.js (one source).
+  var LL = global.LightLaw;
+  if (!LL) console.warn('§LIGHT_LAW MISSING light_law.js not loaded before sourced_light.js — the calibrated terms will throw');
   var MAX_PL = 256, MAX_SL = 64, SOLID = 65535, OUTSIDE = 65534;   // OUTSIDE: a light (or fragment) off the building's zones
   var orig = null, linkFailed = false, glErrFirstFrame = false;
   var installed = false, active = false, prevOBR = null, tex = null, dummy = null, texKey = null, lastLog = '';
@@ -514,7 +517,7 @@
   function enApply(A, Z, D) {
     var LZ = global.LightZones, t0 = performance.now(), vols = [];
     try { vols = A.allRoomVolumes ? (A.allRoomVolumes() || []) : []; } catch (eV) { vols = []; }
-    var sunI = A._stillCalibSunI, luxPer = sunI > 0 ? (A._stillCalibSunLux || 100000) / sunI : 0;
+    var sunI = A._stillCalibSunI, luxPer = sunI > 0 ? (A._stillCalibSunLux || LL.CALIB.sunLux) / sunI : 0;
     if (!vols.length || !(luxPer > 0)) { console.log('§LAMP_EN VACUOUS rooms=' + vols.length + ' luxPerUnit=' + luxPer + ' — lamps unscaled'); return null; }
     var L = D.lamps, n = L.length, room = new Int32Array(n).fill(-1), lzs = new Int32Array(n), dec = D.decay;
     for (var i = 0; i < n; i++) { lzs[i] = lampZone(LZ, L[i]); L[i].__r0 = L[i].r; L[i].__g0 = L[i].g; L[i].__b0 = L[i].b; L[i].__I0 = L[i].I; }
@@ -796,7 +799,7 @@
   // Returns null when the sun is not calibrated (no lux scale).
   function luxRows(A, Z) {
     if (!fieldLast) return null;
-    var S = fieldLast.stats, LZ = global.LightZones, sunI = A._stillCalibSunI, sunLux = A._stillCalibSunLux || 100000;
+    var S = fieldLast.stats, LZ = global.LightZones, sunI = A._stillCalibSunI, sunLux = A._stillCalibSunLux || LL.CALIB.sunLux;
     if (!(sunI > 0)) return null;
     var luxPer = sunLux / sunI, h = A.hemi, am = A.ambient, EskyU = (h ? lum3(h.color) * h.intensity : 0) + (am ? lum3(am.color) * am.intensity : 0), EskyLux = EskyU * luxPer;
     var lamps = new Map(), lampSrc = 'point lights';
@@ -893,7 +896,7 @@
   //    films never call stage). &cove=0 / APP._stillCove=false = off. Budget: a zone whose cells x emitters x steps exceed
   //    COVE_BUDGET is computed on a cell stride (2..4) and filled from the nearest computed cell (logged).
   var COVEP = new Float32Array(4), COVEQ = new Float32Array(4), coveTex = null, dCove = null, coveKey = null, coveLast = null, coveMesh = null;
-  var TRIM_LUX_VOID = 100, COVE_UNKNOWN_LUX = 100, COVE_R = 15, COVE_MAX_EMIT = 512, COVE_BUDGET = 30e6, COVE_COLOUR = 0xffe4b5, COVE_TYPES = ['', 'room', 'void', 'crevice', 'shaft'];
+  var TRIM_LUX_VOID = LL.COVE.trimLuxVoid, COVE_UNKNOWN_LUX = LL.COVE.unknownLux, COVE_R = 15, COVE_MAX_EMIT = 512, COVE_BUDGET = 30e6, COVE_COLOUR = LL.COVE.color, COVE_TYPES = ['', 'room', 'void', 'crevice', 'shaft'];
   // COVE_LEDGE: the UP lobe's strip height below the ceiling for the FIELD = one cell (0.5 m). The visible strip sits at the
   // spec's 0.1 m, but a source 0.1 m under the ceiling lies ABOVE every cell centre of the 0.5 m lattice (the top layer's centres
   // are 0.25 m down), so its upward Lambert lobe reached no cell and every ceiling stayed black (measured: Hospital plenum pose
@@ -1134,6 +1137,7 @@
     var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow;
     if (!/[?&]meter=0/.test(location.search) && A._stillMeter !== false) { try { A._meterLast = meter(A, inside); } catch (eM) { console.warn('§METER failed: ' + eM.message); } }
     else console.log('§METER off (&meter=0) exposure=' + A.renderer.toneMappingExposure.toFixed(3));
+    try { LL.log(A, 'stage'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); }   // §LIGHT_LAW_MODULE: the law + live state this still used (log only)
     try { luxCheck(A, Z); } catch (eL) { console.warn('§LUX_CHECK failed: ' + eL.message); }
     if (A.markDirty) A.markDirty();
     console.log('§SOURCED_LIGHT on zonesCache=' + (hit ? 'hit' : 'built') + ' zones=' + Z.zones + ' grid=' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ' cell=' + Z.cell +
@@ -1145,7 +1149,7 @@
   // One small float render of the frame as the eye receives it (real materials, glass, emitters; sky pixels = the lighting's
   // sky luminance), log-average luminance (Reinhard et al. 2002 eq. 1) over the histogram band -> EV100 -> exposure.
   // (History: the Stevens 0.33 / CIECAM02-D incident-light rules and the inside-only branch are retired — audit top-1/2.)
-  var METER_W = 160, METER_H = 90, HIST_LO = 0.70, HIST_HI = 0.95, meterSaved = null;
+  var METER_W = LL.METER.W, METER_H = LL.METER.H, HIST_LO = LL.METER.histLo, HIST_HI = LL.METER.histHi, meterSaved = null;
   function meterRead(A, opts) {
     var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [];
     A.scene.traverse(function (o) { if (!o.visible) return;
@@ -1225,16 +1229,16 @@
   // Replaces the CIECAM02-D rule (D is chromatic adaptation: §LIGHT_TRUTH_AUDIT top-1).
   function meter(A, inside) {
     var THREE = global.THREE, R = A.renderer, base = R.toneMappingExposure, cam = inside ? 'inside' : 'outside';
-    var sunIc = A._stillCalibSunI, luxPer = sunIc > 0 ? (A._stillCalibSunLux || 100000) / sunIc : null;
+    var sunIc = A._stillCalibSunI, luxPer = LL.luxPer(A._stillCalibSunLux, sunIc);
     if (!luxPer) { console.log('§METER VACUOUS camera=' + cam + ' no lux calibration (calibSunI=' + sunIc + ') — exposure unchanged ' + base.toFixed(3)); return null; }
     var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'hist';   // engines meter by histogram
     var m = meterRead(A, { mode: mode, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 });
     if (!(m.L > 0)) { console.log('§METER VACUOUS camera=' + cam + ' no luminance read — exposure unchanged ' + base.toFixed(3)); return null; }
-    var Lcd = m.L * luxPer, ev = Math.log2(Lcd * 100 / 12.5), aces = R.toneMapping === THREE.ACESFilmicToneMapping ? 0.6 : 1;
-    var exp = luxPer * aces / (1.2 * Math.pow(2, ev)), stops = Math.log2(exp / base);
+    var Lcd = m.L * luxPer, ev = LL.ev100(Lcd), aces = LL.acesDiv(R, THREE);
+    var exp = LL.exposureFromEv(ev, luxPer, aces), stops = Math.log2(exp / base);
     meterSaved = { exp: base }; R.toneMappingExposure = exp;
     console.log('§METER camera=' + cam + ' mode=' + m.mode + ' Lavg=' + Lcd.toFixed(1) + 'cd/m2 EV100=' + ev.toFixed(2) + ' exposure=' + exp.toFixed(4) +
-      ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES 0.6' : '') + ' / (1.2 x 2^EV)) vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
+      ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES ' + aces : '') + ' / (1.2 x 2^EV)) vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
     return { exposure: exp, stops: stops, ev100: ev, Lcd: Lcd };
   }
   // §METER_EV re-meter (audit #58): staging builds the lamps with the navigation near-fade floor and effects.js rebuilds them at
@@ -1244,6 +1248,7 @@
     if (!active || !meterSaved || /[?&]meter=0/.test(location.search) || A._stillMeter === false) return;
     meterOff(A); var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow;
     try { A._meterLast = meter(A, inside); } catch (eM) { console.warn('§METER remeter failed: ' + eM.message); }
+    try { LL.log(A, 'remeter'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); }   // §LIGHT_LAW_MODULE (log only)
   }
   function meterOff(A) { if (meterSaved && A.renderer) { A.renderer.toneMappingExposure = meterSaved.exp; console.log('§METER off exposure=' + meterSaved.exp.toFixed(3)); } meterSaved = null; }
 
