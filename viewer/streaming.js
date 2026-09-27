@@ -681,8 +681,42 @@ function setupStreaming(A) {
   // ONE owner for "is this a real authored IFC material name". The `≈ ` prefix is the EXTRACTOR's own
   // marker for a synthetic colour approximation — §CPE_MATERIAL_KEY established this test and it is
   // reused verbatim rather than re-derived (Hospital 6,664/6,664 approx, Terminal 48,428/48,428 real).
+  // §EXPORTER_PLACEHOLDER_NAMES (Z20/Z21, coordinator decision for red1 2026-09-27): names an exporter writes where NO material was
+  // assigned — ONE named list, owned here. 'tomt mönster' = Swedish Revit "empty pattern" (a fill-pattern placeholder, not a material):
+  // MEASURED LTU_AHouse elements_meta — 2,858 rows over 14 classes (IfcWindow, IfcDoor, IfcMember, IfcSlab, IfcPlate, IfcFurnishingElement,
+  // IfcFlowTerminal, ...) with dozens of different rgba values, i.e. the name carries no material identity. Lower-case, trimmed match.
+  A.EXPORTER_PLACEHOLDER_MAT_NAMES = { 'tomt mönster': 'Revit (sv) empty pattern — LTU_AHouse 2,858 rows / 14 classes' };
   A._isAuthoredMatName = function(matName) {
-    return !!matName && matName.charAt(0) !== '≈';
+    return !!matName && matName.charAt(0) !== '≈' && !A.EXPORTER_PLACEHOLDER_MAT_NAMES[String(matName).trim().toLowerCase()];
+  };
+  // §PLACEHOLDER_COLOUR (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z21 SPEC") — ONE owner for "is this rgba the
+  // exporter's default, i.e. NO colour". Exactly (0.920, 0.900, 0.850) at 3 decimals, alpha absent or 1, and no authored
+  // material name (empty or the extractor's `≈` approximation). Measured: every such row fleet-wide has an empty name.
+  A._isExporterPlaceholder = function(rgbaStr, matName) {
+    if (!rgbaStr || rgbaStr.indexOf(',') === -1 || A._isAuthoredMatName(matName)) return false;
+    var p = rgbaStr.split(',').map(Number);
+    if (p.length < 3 || Math.round(p[0] * 1000) !== 920 || Math.round(p[1] * 1000) !== 900 || Math.round(p[2] * 1000) !== 850) return false;
+    return p.length < 4 || Math.round(p[3] * 1000) === 1000;
+  };
+  // §PORCELAIN ("### Z20 SPEC") — ONE owner for "is this a glazed sanitary fixture". Fixture classes only; an authored material
+  // name decides alone; else IfcSanitaryTerminal, else the element name's whole-word fixture term (import_worker.js:97's list,
+  // minus the metal/accessory words) with none of the accessory words each measured as a false positive in the census.
+  // Finish from physicallybased.info "Porcelain" (https://api.physicallybased.info/materials): roughness 0, metalness 0, ior 1.5.
+  A.PORCELAIN_PBR = { roughness: 0, metalness: 0, ior: 1.5, src: 'https://api.physicallybased.info/materials#Porcelain' };
+  var PORC_CLASSES = { IfcSanitaryTerminal: 1, IfcFlowTerminal: 1, IfcBuildingElementProxy: 1, IfcFurnishingElement: 1 };
+  var PORC_NAME = /(^|[^a-z0-9])(lavatory|water closet|urinal|sink|basin|toilet|wc|bidet)([^a-z0-9]|$)/i;
+  var PORC_NOT = /faucet|(^|[^a-z])tap([^a-z]|$)|hose|partition|screen|counter|cabinet|vanity|hole|dispenser/i;
+  var PORC_MAT = /porcelain|vitreous china|ceramic/i;
+  A._porcelainKey = function(ifcClass, name, matName) {
+    if (!ifcClass || !PORC_CLASSES[ifcClass]) return '';
+    if (A._isAuthoredMatName(matName)) return PORC_MAT.test(matName) ? 'authored' : '';
+    if (ifcClass === 'IfcSanitaryTerminal') return 'class';
+    return (name && PORC_NAME.test(name) && !PORC_NOT.test(name)) ? 'name' : '';
+  };
+  A._porcelainVariant = function(ifcClass, name, matName) { return A._porcelainKey(ifcClass, name, matName) ? 'porcelain' : ''; };
+  // the element's presentation variant: §ENTOURAGE first (Alt+S shader), else §PORCELAIN (finish, both views)
+  A._elementVariant = function(ifcClass, name, matName) {
+    return A._entourageVariant(ifcClass, name) || A._porcelainVariant(ifcClass, name, matName);
   };
   // ONE owner for "which trade colour does this MEP element belong to" — the first source that
   // carries a hue. An achromatic source (the DUCT hint's galvanized grey, sat 0.052; DISC_COLORS.VOID
@@ -718,9 +752,20 @@ function setupStreaming(A) {
   // (r,g,b) is the albedo decided so far (the element's own IFC colour, or its STD_MAT class
   // default when it has none). `A._mepHueOff` is the witness RED CONTROL — it is deliberately NOT
   // part of _getMaterial's cacheKey, so a caller flipping it MUST clear A._matCache.
+  // §MEP_PROXY_HUE (Z21, coordinator decision for red1 2026-09-27): an IfcBuildingElementProxy whose EXTRACTED discipline is an MEP
+  // trade and which carries the exporter placeholder is MEP-hue eligible like the MEP classes (Hospital boilers, VAV valves, ...).
+  // ARC/STR proxies are not (their STD_MAT teal is a flag). ONE owner for eligibility — the bucket 'M' bit and the instanced
+  // mixed-set guard read it, so a set mixing eligible and ineligible members is still built with noMepHue.
+  var MEP_PROXY_DISC = { MEP: 1, FP: 1, PLB: 1, ELEC: 1, ACMV: 1, HVAC: 1, SAN: 1, VENT: 1, HEAT: 1 };
+  A._mepProxyDisc = MEP_PROXY_DISC;
+  A._mepHueEligible = function(ifcClass, discipline, rgbaStr, matName) {
+    if (!ifcClass) return false;
+    if (MEP_HUE_CLASSES[ifcClass]) return true;
+    return ifcClass === 'IfcBuildingElementProxy' && !A._mepProxyOff && !!MEP_PROXY_DISC[discipline] && A._isExporterPlaceholder(rgbaStr, matName);
+  };
   A._mepDiscAlbedo = function(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName) {
     if (A._mepHueOff) return null;                                   // RED CONTROL
-    if (!ifcClass || !MEP_HUE_CLASSES[ifcClass]) return null;        // tier 3 — not MEP, never touched
+    if (!A._mepHueEligible(ifcClass, discipline, rgbaStr, matName)) return null;   // tier 3 — not MEP, never touched
     if (A._isAuthoredMatName(matName)) return null;                  // tier 1a — real authored material
     var chroma = A._chromaOf(rgbaStr);
     if (chroma !== null && chroma >= A.MEP_HUE_ACHROMATIC_MAX) return null;  // tier 1b — already has a hue
@@ -1137,7 +1182,7 @@ function setupStreaming(A) {
     var hues = {}, codes = {}, minGapDist = 1, tConsulted = 0;
     for (var i = 0; i < q.length; i++) {
       var row = q[i], cls = row[11] || '';
-      if (!A._mepHueClasses[cls]) continue;
+      if (!A._mepHueEligible(cls, row[3] || '', row[2], row[16] || '')) continue;   // §MEP_PROXY_HUE
       mepPop++;
       var rgba = row[2], disc = row[3] || '', nm = row[16] || '';
       var chroma = A._chromaOf(rgba);
@@ -1186,6 +1231,36 @@ function setupStreaming(A) {
              noTrade: noTrade, hues: hues, codes: codes, legendSize: legendSize,
              minGapDist: minGapDist, tConsulted: tConsulted,
              instMepUniform: A._instMepUniform || 0, instMepMixed: A._instMepMixed || 0 };
+  };
+
+  // §PLACEHOLDER_COLOUR (Z21) + §PORCELAIN (Z20) — shipped §-log rollup at stream-complete, over the REAL stream queue through
+  // the REAL owners (element-level, not material-level). VACUOUS / NO-OP printed, never a bare 0 (PRIMAL LAW 4).
+  A._colourTruthRollup = function() {
+    var q = A.streamQueue || [], bld = A.activeBuilding || '?';
+    if (!q.length) { console.log('§PLACEHOLDER_COLOUR VACUOUS bld=' + bld + ' rows=0 — nothing judged'); console.log('§PORCELAIN VACUOUS bld=' + bld + ' rows=0'); return null; }
+    if (!A._stdMatClasses) { console.log('§PLACEHOLDER_COLOUR INCONCLUSIVE bld=' + bld + ' — STD_MAT not published (no material built yet)'); return null; }
+    var STD = A._stdMatClasses || {}, ph = 0, rep = 0, proxy = 0, mep = 0, noStd = 0, porcPh = 0, byCls = {};
+    var pm = 0, pCls = {}, pKey = {}, pOwn = 0, pDef = 0;
+    for (var i = 0; i < q.length; i++) {
+      var row = q[i], cls = row[11] || '', nm = row[16] || '', rgba = row[2];
+      var pk = A._porcelainKey(cls, row[12], nm);
+      if (pk) { pm++; pCls[cls] = (pCls[cls] || 0) + 1; pKey[pk] = (pKey[pk] || 0) + 1; if (!rgba || A._isExporterPlaceholder(rgba, nm)) pDef++; else pOwn++; }
+      if (!A._isExporterPlaceholder(rgba, nm)) continue;
+      ph++;
+      if (pk) { porcPh++; continue; }
+      if (!A._placeholderOff && A._mepHueEligible(cls, row[3] || '', rgba, nm) && A._mepDiscAlbedo(0.92, 0.90, 0.85, rgba, cls, row[3] || '', A._mepNameHint(row[12]), nm)) { mep++; continue; }
+      if (cls === 'IfcBuildingElementProxy') { proxy++; continue; }
+      if (!STD[cls]) { noStd++; continue; }
+      if (A._placeholderOff) continue;
+      rep++; byCls[cls] = (byCls[cls] || 0) + 1;
+    }
+    console.log('§PLACEHOLDER_COLOUR bld=' + bld + ' rows=' + q.length + ' placeholder=' + ph + ' replaced=' + rep + ' mepTier2=' + mep + ' proxyKept=' + proxy +
+      ' noStdMat=' + noStd + ' porcelain=' + porcPh + ' off=' + (A._placeholderOff ? 1 : 0) +
+      (ph === 0 ? ' VACUOUS — no placeholder row on this building, its 0 means nothing' : rep === 0 ? ' NO-OP — the rule moved no element' : ''));
+    Object.keys(byCls).sort(function(x, y) { return byCls[y] - byCls[x]; }).forEach(function(c) { console.log('§PLACEHOLDER_CLASS bld=' + bld + ' cls=' + c + ' n=' + byCls[c]); });
+    console.log('§PORCELAIN bld=' + bld + ' matched=' + pm + ' byClass=' + JSON.stringify(pCls) + ' byKey=' + JSON.stringify(pKey) + ' ownColour=' + pOwn + ' classDefault=' + pDef +
+      ' roughness=' + Math.max(0.08, A.PORCELAIN_PBR.roughness) + ' (cited ' + A.PORCELAIN_PBR.roughness + ', ' + A.PORCELAIN_PBR.src + ')' + (pm === 0 ? ' NO-OP — no sanitary fixture on this building' : ''));
+    return { placeholder: ph, replaced: rep, mep: mep, proxy: proxy, noStd: noStd, porcelainPh: porcPh, byCls: byCls, porcelain: pm, pCls: pCls, pKey: pKey, pOwn: pOwn, pDef: pDef };
   };
 
   // §CPE_MATERIAL_KEY: `matName` = elements_meta.material_name for this bucket. Measured on
@@ -1493,9 +1568,11 @@ function setupStreaming(A) {
     // `_mk.indexOf('IfcWindow') >= 0` — a SUBSTRING scan of the whole composite key. An authored
     // material literally containing an Ifc class name would otherwise silently join the bloom set.
     // Case-only change: the key stays readable, and the real name lives in mat.userData._matName.
+    if (!A._stdMatClasses) A._stdMatClasses = Object.freeze(Object.assign({}, STD_MAT));   // read-only, for the §PLACEHOLDER_COLOUR rollup + witness
     var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (matName || '').replace(/Ifc/g, 'ifc')
       + (noMepHue ? '|noMepHue' : '')
-      + (surfRow ? '|surf=' + surfRow : '');   // §SURFACE_RULES — one material per row   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
+      + (surfRow ? '|surf=' + surfRow : '')
+      + (A._placeholderOff ? '|phOff' : '');   // §PLACEHOLDER_COLOUR red control (witness only) — never served a stale material   // §SURFACE_RULES — one material per row   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
@@ -1530,13 +1607,21 @@ function setupStreaming(A) {
     // and is byte-identical. Only HUE moves: the element keeps its own V, and roughness/metalness/
     // envMapIntensity/the triplanar multiply below are all untouched, so the metallic PBR read the
     // user complimented survives.
-    var _mepAlb = noMepHue ? null : A._mepDiscAlbedo(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName);
+    // §PORCELAIN (Z20): a glazed fixture keeps its own colour; with none of its own (NULL or the exporter placeholder) it takes
+    // STD_MAT.IfcSanitaryTerminal's "ceramic", and it is never given an MEP trade hue (a toilet is not plumbing purple).
+    var _isPorc = (matVariant === 'porcelain');
+    var _isPh = !A._placeholderOff && A._isExporterPlaceholder(rgbaStr, matName);   // §PLACEHOLDER_COLOUR (Z21)
+    if (_isPorc && (!rgbaStr || _isPh)) { r = STD_MAT.IfcSanitaryTerminal.r; g = STD_MAT.IfcSanitaryTerminal.g; b = STD_MAT.IfcSanitaryTerminal.b; }
+    var _mepAlb = (noMepHue || _isPorc) ? null : A._mepDiscAlbedo(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName);
     if (_mepAlb) {
       r = _mepAlb.r; g = _mepAlb.g; b = _mepAlb.b;
       A._mepHueCounts = A._mepHueCounts || {};
       var _mhk = _mepAlb.code + '|' + _mepAlb.src;
       A._mepHueCounts[_mhk] = (A._mepHueCounts[_mhk] || 0) + 1;
     }
+    // §PLACEHOLDER_COLOUR (Z21): the exporter's cream is NO colour — MEP tier 2 (above, unchanged) had first call; otherwise the
+    // class's STD_MAT default. IfcBuildingElementProxy excluded: its STD_MAT teal is a flag colour, not a material.
+    if (_isPh && !_mepAlb && !_isPorc && stdMat && ifcClass !== 'IfcBuildingElementProxy') { r = stdMat.r; g = stdMat.g; b = stdMat.b; }
     // §S260d: Gentler near-white taming — let ACES tone mapping handle the rest
     if (r > 0.85 && g > 0.85 && b > 0.85) { r *= 0.92; g *= 0.92; b *= 0.92; }
     const opts = { color: new THREE.Color(r, g, b), flatShading: false };
@@ -1593,7 +1678,11 @@ function setupStreaming(A) {
       // unchanged): &r4rough= overrides R4's 0.35.
       if (surfRow === 'R4') { var _r4m = /[?&]r4rough=([0-9.]+)/.exec(location.search); if (_r4m) opts.roughness = Math.max(0.02, Math.min(1, parseFloat(_r4m[1]))); }
     }
+    // §PORCELAIN (Z20): physicallybased.info Porcelain roughness 0 / metalness 0, floored at the §refl 0.08 (no mirror artefact);
+    // a dielectric takes the global envMapIntensity 0.6 (the 0.05 overrides exist only for high-metalness classes)
+    if (_isPorc) { opts.roughness = Math.max(0.08, A.PORCELAIN_PBR.roughness); opts.metalness = A.PORCELAIN_PBR.metalness; if (opts.envMap) opts.envMapIntensity = 0.6; }
     const mat = new THREE.MeshStandardMaterial(opts);
+    if (_isPorc) { mat.userData._photoEnvExempt = true; mat.userData._porcelain = true; }   // Alt+S boost must not move the cited finish
     // §FLOOR_WASH: &r4envboost=0 exempts R4 floors from Alt+S's x2 env boost (roughness 0.35 <= PHOTO_GLOSSY_ROUGHNESS_MAX
     // 0.5 makes them "glossy", so their sky reflection doubles 0.3 -> 0.6 in the still), via the existing exemption flag.
     if (surfRow === 'R4' && /[?&]r4envboost=0/.test(location.search)) mat.userData._photoEnvExempt = true;
@@ -1628,13 +1717,14 @@ function setupStreaming(A) {
       triMat = _SR ? Object.assign({}, _SR[0], { contrastBoost: _SR[1] }) : null;
       _triSrc = 'surf:' + surfRow;
     }
+    if (_isPorc) { triMat = null; _triSrc = 'porcelain'; }   // §PORCELAIN: glaze is smooth — no wear texture
 
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
     // Rough surfaces (concrete, slabs, walls): coarse pebble texture.
     // Zero geometry cost. Reduces temporal aliasing shimmer on flat-color surfaces.
     var _perturbScale = 0;
-    if (!triMat && !(surfRow && surfRow !== 'R9')) {   // §SURFACE_RULES: smooth rows get no fake grain either
+    if (!triMat && !_isPorc && !(surfRow && surfRow !== 'R9')) {   // §SURFACE_RULES: smooth rows get no fake grain either; §PORCELAIN neither
       if (stdMat && stdMat.metal > 0.3) _perturbScale = 0.15;  // metal: subtle brushed grain
       else if (stdMat && stdMat.rough > 0.7) _perturbScale = 0.25;  // concrete: visible grain
     }
@@ -2070,6 +2160,7 @@ function setupStreaming(A) {
         if (A._surfTally) A._surfTally();       // §SURFACE_RULES rollup (only when ?surf=rules)
         if (A._r10Report) A._r10Report();       // §SURFACE_R10 rollup (§SURFACE_OPENING_SINGLE_STYLE / _SPLIT / _PATHS / _SHADOW)
         if (A._mepHueRollup) A._mepHueRollup();  // §MEP_COLOR_SURVIVES_PHOTOREAL rollup — same reason
+        if (A._colourTruthRollup) A._colourTruthRollup();  // §PLACEHOLDER_COLOUR (Z21) + §PORCELAIN (Z20) rollup
         // §RED_GREY_MYSTERY: DISABLED for now — the repair itself is verified correct (patches the
         // broken normal data, confirmed by direct readback) but does NOT change the rendered
         // black-pixel output at all, and costs ~12s per building load for zero visible benefit.
@@ -2322,7 +2413,7 @@ function setupStreaming(A) {
       A._pendingInstances[hash].push({ guid, hash, rgba, disc, cx, cy, cz,
         rotX: rotX || 0, rotY: rotY || 0, rotZ: rotZ || 0,
         storey: storey || '', ifcClass,
-        matVariant: A._entourageVariant(ifcClass, elementName),
+        matVariant: A._elementVariant(ifcClass, elementName, row[16] || ''),   // §ENTOURAGE / §PORCELAIN (Z20)
         mepHint: A._mepNameHint(elementName),
         matName: row[16] || '',   // §CPE_MATERIAL_KEY — fixed slot 16, after the 16-slot bbox layout
         bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });
@@ -2651,7 +2742,7 @@ function setupStreaming(A) {
           // Splits ONLY buckets that were already mixed: a class-pure bucket keys identically before
           // and after, so its draw-call count is unchanged.
           // Positional `key.split('|')` consumers read parts[0..2] — this stays a TRAILING field.
-          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueClasses[el.ifcClass] ? 'M' : '-') + '|' + (el.ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — §KERNEL_OPS_SCHED_AGREE (#1727) removed the staging hold that made the 1-slot batch fatal (staged 544->501, the slab is no longer in the map), so the class term is safe again and the foreign-class paint is fixed.
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueEligible(el.ifcClass, el.disc, el.rgba, el.matName) ? 'M' : '-') + '|' + (el.ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — §KERNEL_OPS_SCHED_AGREE (#1727) removed the staging hold that made the 1-slot batch fatal (staged 544->501, the slab is no longer in the map), so the class term is safe again and the foreign-class paint is fixed.
           // §MERGED_GUID: single target selection — merge bucket or batch bucket, never both.
           // Applies to §S280e's low-instance elements too: each is baked individually into the
           // merged buffer with its own index range, so identity survives exactly as for singles.
@@ -2667,9 +2758,9 @@ function setupStreaming(A) {
         // and a non-MEP class, but LTU_AHouse has 108 of 51,393 (1,386 elements). The bucket cannot
         // be split here without adding a draw call per mixed hash, so on a mixed set the trade hue
         // is SUPPRESSED (prior behaviour) and COUNTED — never applied to a set that is not all MEP.
-        var _mepU = !!A._mepHueClasses[elements[0].ifcClass];
+        var _mepU = A._mepHueEligible(elements[0].ifcClass, elements[0].disc, elements[0].rgba, elements[0].matName);   // §MEP_PROXY_HUE: one eligibility owner
         for (var _mqi = 1; _mqi < elements.length; _mqi++) {
-          if (!!A._mepHueClasses[elements[_mqi].ifcClass] !== _mepU) { _mepU = null; break; }
+          if (A._mepHueEligible(elements[_mqi].ifcClass, elements[_mqi].disc, elements[_mqi].rgba, elements[_mqi].matName) !== _mepU) { _mepU = null; break; }
         }
         if (_mepU === null) A._instMepMixed = (A._instMepMixed || 0) + 1;
         else A._instMepUniform = (A._instMepUniform || 0) + 1;
@@ -3283,7 +3374,7 @@ function setupStreaming(A) {
       var cx = row[4], cy = row[5], cz = row[6];
       var rotX = row[7] || 0, rotY = row[8] || 0, rotZ = row[9] || 0;
       var storey = row[10] || '', ifcClass = row[11] || '';
-      var matVariant = A._entourageVariant(ifcClass, row[12]);
+      var matVariant = A._elementVariant(ifcClass, row[12], row[16] || '');   // §ENTOURAGE / §PORCELAIN (Z20)
       var mepHint = A._mepNameHint(row[12]);
       var matName = row[16] || '';   // §CPE_MATERIAL_KEY
       if (!hash || !A.meshCache[hash]) continue;
@@ -3291,7 +3382,7 @@ function setupStreaming(A) {
       if (instancedGuids.has(guid)) continue;
       if (A._r10Guids && A._r10Guids.has(guid)) continue;   // §SURFACE_R10 — a split opening never goes back into a batch
 
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueClasses[ifcClass] ? 'M' : '-') + '|' + (ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — see the batch key above
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueEligible(ifcClass, disc, rgba, matName) ? 'M' : '-') + '|' + (ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — see the batch key above
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
