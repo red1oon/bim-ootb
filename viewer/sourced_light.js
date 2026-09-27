@@ -212,7 +212,7 @@
   function aoSet(A, texture, on, w, h) {
     if (!aoPatched || linkFailed || !A || !A.renderer) return -1;
     AOP[0] = on ? 1 : 0; if (w > 0 && h > 0) { AOP[2] = 1 / w; AOP[3] = 1 / h; }
-    aoTex = on && texture ? texture : null;
+    aoTex = texture || null;   // bound whether or not x is on (x is flipped per render by aoOn); null = release to dAo
     var n = 0, seen = new Set();
     A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
       if (!m || seen.has(m)) return; seen.add(m);

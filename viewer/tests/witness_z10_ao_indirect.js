@@ -12,7 +12,7 @@
 //
 // Command: node viewer/tests/witness_z10_ao_indirect.js
 'use strict';
-const fs = require('fs'), path = require('path');
+const fs = require('fs'), path = require('path'), vm = require('vm');
 const V = path.join(__dirname, '..');
 
 function chunk(src, name) {   // the JS string literal `name:"..."` in the minified three, decoded
@@ -26,7 +26,7 @@ try { aomap = chunk(fs.readFileSync(path.join(V, 'lib', 'three.module.min.js'), 
 try { LL = require(path.join(V, 'light_law.js')); } catch (e) {}
 try {   // sourced_light.js is a browser IIFE over window (it reads window.LightLaw at load): run it in a sandbox window
   const win = { LightLaw: LL, location: { search: '' } }; win.window = win;
-  require('vm').runInNewContext(fs.readFileSync(path.join(V, 'sourced_light.js'), 'utf8'), { window: win, console: console, location: win.location });
+  vm.runInNewContext(fs.readFileSync(path.join(V, 'sourced_light.js'), 'utf8'), { window: win, console: console, location: win.location });
   SL = win.SourcedLight;
 } catch (e) { console.log('    (sourced_light.js sandbox load failed: ' + e.message + ')'); }
 try { const mm = /var CELL = ([0-9.]+)/.exec(fs.readFileSync(path.join(V, 'light_zones.js'), 'utf8')); cell = mm ? parseFloat(mm[1]) : null; } catch (e) {}
@@ -64,13 +64,36 @@ row('legacy loses −2.06 stops of direct sun at AO 0.7; new loses none', Math.l
 const wAt = d => 32 * 2 * d * Math.tan(25 * Math.PI / 180) / 921;
 row('legacy world radius 0.097 m at 3 m, 0.97 m at 30 m (×10); law radius 0.5 m at both', wAt(3).toFixed(3) + ' / ' + wAt(30).toFixed(3) + ' vs ' + LL.AO.radiusM, '0.097 / 0.972 vs 0.5',
   near(wAt(3), 0.0972, 5e-4) && near(wAt(30), 0.972, 5e-3) && LL.AO.radiusM === 0.5);
+// (4) install + aoSet/aoOn on a sandbox THREE (the real r186 chunks, stub textures): the AO texture stays BOUND while x is off
+// (the per-render gate), a release rebinds the white dummy, and the ShaderLib entries carry the two uniforms.
+let inst = null;
+try {
+  const src3 = fs.readFileSync(path.join(V, 'lib', 'three.module.min.js'), 'utf8');
+  const SC = {}; ['lights_fragment_begin', 'lights_fragment_maps', 'lights_pars_begin', 'dithering_fragment', 'aomap_fragment'].forEach(k => { SC[k] = chunk(src3, k); });
+  function Tex() { this.isTexture = true; } Tex.prototype = {};
+  const THREE = new Proxy({ ShaderChunk: SC, ShaderLib: { standard: { uniforms: {} }, physical: { uniforms: {} }, lambert: { uniforms: {} }, phong: { uniforms: {} }, toon: { uniforms: {} } } },
+    { get: (t, k) => (k in t ? t[k] : (typeof k === 'string' && /^[A-Z]/.test(k) && /Texture$/.test(k) ? Tex : 0)) });
+  const win = { LightLaw: LL, location: { search: '' }, THREE }; win.window = win;
+  vm.runInNewContext(fs.readFileSync(path.join(V, 'sourced_light.js'), 'utf8'), { window: win, console: { log() {}, warn() {} }, location: win.location });
+  const S2 = win.SourcedLight; S2.install(THREE);
+  const U = { uSLAo: { value: null }, uSLAoT: { value: null } }, mat = {}, rt = { tag: 'aoRT' };
+  const A = { renderer: { properties: { get: m => (m === mat ? { uniforms: U } : null) } }, scene: { traverse: fn => fn({ material: mat }) } };
+  const nb = S2.aoSet(A, rt, false, 1600, 900), boundOff = U.uSLAoT.value === rt, xOff = U.uSLAo.value[0];
+  S2.aoOn(true); const xOn = U.uSLAo.value[0], zw = [U.uSLAo.value[2], U.uSLAo.value[3]];
+  S2.aoSet(A, null, false); const released = U.uSLAoT.value !== rt && !!U.uSLAoT.value && U.uSLAo.value[0] === 0;
+  inst = { patched: S2.aoPatched(), nb, boundOff, xOff, xOn, zw, released, lib: !!(THREE.ShaderLib.standard.uniforms.uSLAo && THREE.ShaderLib.toon.uniforms.uSLAoT), chunkHas: SC.aomap_fragment.indexOf('uSLAo') > 0 };
+} catch (e) { inst = { err: e.message }; }
+row('sandbox install: aomap patched + ShaderLib uniforms (standard..toon)', JSON.stringify({ p: inst.patched, lib: inst.lib, chunk: inst.chunkHas, err: inst.err }), '{"p":true,"lib":true,"chunk":true}', inst.patched === true && inst.lib && inst.chunkHas);
+row('aoSet(tex, off) binds the AO texture with x = 0 (bound before the gate opens)', 'bound=' + inst.boundOff + ' x=' + inst.xOff + ' mats=' + inst.nb, 'bound=true x=0 mats=1', inst.boundOff === true && inst.xOff === 0 && inst.nb === 1);
+row('aoOn(true) opens the gate; zw = 1/size', 'x=' + inst.xOn + ' zw=' + (inst.zw || []).map(v => v && v.toFixed(6)).join(','), 'x=1 zw=0.000625,0.001111', inst.xOn === 1 && near(inst.zw[0], 1 / 1600, 1e-9) && near(inst.zw[1], 1 / 900, 1e-9));
+row('release rebinds the white dummy and closes the gate', inst.released, true, inst.released === true);
 console.log('§Z10_AO_UNIT addedChars=' + added.length + ' terms=' + lhs.join('+') + ' radiusM=' + LL.AO.radiusM + ' cell=' + cell + ' creaseLegacy=' + legacy.toFixed(3) + ' creaseNew=' + now.toFixed(3));
 
 rows.forEach(r => { if (!r.ok) console.log('    FAILED ROW: ' + r.name + ' got=' + r.got + ' want=' + r.want); });
 Witness('z10_ao_indirect')
   .population(() => rows)
   .schema({ type: 'object', required: ['name', 'got', 'want', 'ok'], properties: { name: { type: 'string' }, got: { type: 'string' }, want: { type: 'string' }, ok: { type: 'boolean' } } })
-  .invariant('every patch / law / maths row holds', rs => rs.length >= 13 && rs.every(r => r.ok))
+  .invariant('every patch / law / maths row holds', rs => rs.length >= 17 && rs.every(r => r.ok))
   .redControl(rs => { const bad = aomap + '\nif ( uSLAo.x > 0.5 ) { reflectedLight.directDiffuse *= 0.5; }';   // a patch that occludes DIRECT light must fail
     const b = bad.slice(aomap.length); rs[3].ok = !/direct(Diffuse|Specular)/.test(b.replace(/indirect(Diffuse|Specular)/g, '')); return rs; })
   .run();
