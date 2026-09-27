@@ -26,7 +26,10 @@
     // ColorUtils; ISO 2720 K); histogram band 70/95 (Unreal auto_exposure_low/high_percent); readback W x H.
     // band 40/90 = HDRP Exposure.cs default (witness 2026-09-27 §METER_EV v2: 70/95 put sunlit aerials at EV 16.8 vs ANSI 15 and
     // interiors 1.5-2.5 stops dark; 40/90 had the smallest worst error of the documented bands).
-    METER: { K: 12.5, iso: 100, q: 1.2, histLo: 0.40, histHi: 0.90, W: 160, H: 90 },
+    // ec = exposure compensation (EV100' = EV100 - EC, Frostbite 2014 eq. 68): +1, Unreal Engine 4.25+ default — Epic raised it from
+    // 0 because "the original value was found to be too dark" (engine_light_laws.md, UE-AE427); red1 2026-09-28 found the same
+    // (Hospital/HHS outdoors and Terminal interiors too dark at EC 0). One value for stills and films.
+    METER: { K: 12.5, iso: 100, q: 1.2, histLo: 0.40, histHi: 0.90, W: 160, H: 90, ec: 1 },
     // L3 — the one tone curve; three.js ACESFilmic multiplies exposure by 1/acesDiv, so the meter takes acesDiv back out.
     TONE: { curve: 'ACESFilmic', acesDiv: 0.6 },
     // L3 — §FILM_LAW temporal adaptation (films, ALT+C R1): EV100 stops per second toward the metered target. up = target
@@ -64,7 +67,7 @@
   // EV100 from a luminance in cd/m2 — same expression order as sourced_light.js meter() @c539f129 (bit-identical).
   function ev100(Lcd) { return Math.log2(Lcd * LAW.METER.iso / LAW.METER.K); }
   // exposure (three.js toneMappingExposure) for an EV100 — same expression order as meter() @c539f129.
-  function exposureFromEv(ev, lp, acesDiv) { return lp * acesDiv / (LAW.METER.q * Math.pow(2, ev)); }
+  function exposureFromEv(ev, lp, acesDiv) { return lp * acesDiv / (LAW.METER.q * Math.pow(2, ev - (LAW.METER.ec || 0))); }
   // three's ACESFilmic 1/0.6 pre-scale is part of that operator's definition (it maps the fitted curve's middle grey); it is NOT
   // cancelled (the cancel cost 0.74 stop and made interiors dark, witness 2026-09-27). acesDiv stays in TONE for the record only.
   function acesDiv(renderer, THREE) { return 1; }
