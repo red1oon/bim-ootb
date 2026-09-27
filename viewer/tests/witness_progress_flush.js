@@ -175,7 +175,8 @@ async function runAndKill(tag, env) {
       'witness_cpe_stick_hold.js', 'witness_cpe_hose.js'];
     const rows = []; let bad = 0, judged = 0;
     targets.forEach((f) => {
-      const fp = path.join(ROOT, f);
+      // root JS tidy (bim-ootb #1786): these witnesses moved from the repo root into witness/ — look there first.
+      const fp = [path.join(ROOT, 'witness', f), path.join(ROOT, f)].find((q) => fs.existsSync(q)) || path.join(ROOT, 'witness', f);
       if (!fs.existsSync(fp)) { rows.push(f + ':ABSENT'); bad++; judged++; return; }
       const code = fs.readFileSync(fp, 'utf8').split('\n')
         .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
