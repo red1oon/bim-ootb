@@ -397,6 +397,18 @@ async function setupEffects(A, renderer, scene, camera) {
     );
   }
   A._updateCamLight = _updateCamLight;
+  // §CAM_TORCH (§LIGHT_ONE_SCALE L1b): a rated handheld torch, offset right/up of the lens, aimed at the look target, casting a
+  // shadow. Intensity in scene units = peak cd / luxPer (the one calibration), decay 2 (inverse square), no range cut. Unbound to
+  // zones (sourced_light binds only sky portals among spots) — a torch lights whatever its beam and shadow map reach.
+  function _updateCamTorch(tx, ty, tz) {
+    var T = A._camTorch; if (!T || !T.parent) return;
+    var c = A.camera.position, f = new THREE.Vector3(tx - c.x, ty - c.y, tz - c.z).normalize(), up = new THREE.Vector3(0, 1, 0);
+    var r = new THREE.Vector3().crossVectors(f, up); if (r.lengthSq() < 1e-8) r.set(1, 0, 0); r.normalize(); var u = new THREE.Vector3().crossVectors(r, f);
+    var TL = window.LightLaw.TORCH;
+    T.position.copy(c).addScaledVector(r, TL.offsetRightM).addScaledVector(u, TL.offsetUpM);
+    T.target.position.set(tx, ty, tz); T.target.updateMatrixWorld(); T.updateMatrixWorld();
+  }
+  A._updateCamTorch = _updateCamTorch;
   // §PHOTO_SKYLINE_SHADOW_FRUSTUM: shared with _enablePhotoShadows()'s frustum sizing below (search
   // the same name there) so the two can never drift apart again the way they did at introduction —
   // both the skyline ring's placement radius AND the shadow-camera frustum need the SAME multiplier
@@ -4576,6 +4588,22 @@ async function setupEffects(A, renderer, scene, camera) {
     A._camLight.intensity = _camSourcedOff ? 0 : CAM_LIGHT_INTENSITY;
     console.log('§CAM_LIGHT ' + (_camSourcedOff ? 'off (§SOURCED_LIGHT: not a real source)' : 'on') + ' intensity=' + A._camLight.intensity + ' distance=' + CAM_LIGHT_DISTANCE +
       ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
+    // §CAM_TORCH — Alt+S only for now (films: Z17 film part); &torch=0 / APP._stillTorch=false = off.
+    if (!A._maxqActive && window.LightLaw && window.LightLaw.TORCH && A._stillTorch !== false && !/[?&]torch=0/.test(location.search)) {
+      var _TL = window.LightLaw.TORCH, _lp = window.LightLaw.luxPer(A._stillCalibSunLux, A._stillCalibSunI);
+      if (_lp) {
+        if (!A._camTorch) { A._camTorch = new THREE.SpotLight(_TL.color, 0, 0, _TL.halfAngleDeg * Math.PI / 180, 0, 2);
+          A._camTorch.castShadow = true; A._camTorch.shadow.mapSize.set(_TL.shadowMap, _TL.shadowMap); A._camTorch.shadow.camera.near = 0.05; A._camTorch.shadow.camera.far = 60;
+          A._camTorch.name = 'cam_torch'; }
+        A._camTorch.intensity = _TL.peakCd / _lp;
+        A.scene.add(A._camTorch); A.scene.add(A._camTorch.target);
+        var _tg = A.controls && A.controls.target ? A.controls.target : new THREE.Vector3().copy(A.camera.position).add(A.camera.getWorldDirection(new THREE.Vector3()));
+        _updateCamTorch(_tg.x, _tg.y, _tg.z);
+        console.log('§CAM_TORCH on peakCd=' + _TL.peakCd + ' (' + _TL.lm + ' lm, FL1 ' + _TL.beamDistM + ' m) halfAngle=' + _TL.halfAngleDeg + ' offset R' + _TL.offsetRightM + '/U' + _TL.offsetUpM +
+          ' m intensityUnits=' + A._camTorch.intensity.toExponential(3) + ' (cd / luxPer ' + _lp.toFixed(1) + ') shadow=' + _TL.shadowMap);
+        if (window.SourcedLight && window.SourcedLight.remeter) window.SourcedLight.remeter(A);   // the meter sees the torch (L3)
+      } else console.log('§CAM_TORCH VACUOUS no lux calibration — off');
+    }
     _showPhotoProps(true);
     // §MIRROR_ROOM_PROBE: built LAST, after ground/lights/props are all in their staged state, so
     // the capture reflects the real staged look. The FIRST _reassertPhotoMatBoost() call above (at
@@ -4736,6 +4764,7 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     // §CAM_LIGHT: pull it back out of the scene — normal navigation never carries it.
     if (A._camLight) { A.scene.remove(A._camLight); console.log('§CAM_LIGHT off'); }
+    if (A._camTorch && A._camTorch.parent) { A.scene.remove(A._camTorch); A.scene.remove(A._camTorch.target); console.log('§CAM_TORCH off'); }
     // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
     // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
     if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
