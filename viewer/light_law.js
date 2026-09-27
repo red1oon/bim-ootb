@@ -28,7 +28,13 @@
     // L3 — the one tone curve; three.js ACESFilmic multiplies exposure by 1/acesDiv, so the meter takes acesDiv back out.
     TONE: { curve: 'ACESFilmic', acesDiv: 0.6 },
     // L1a — §COVE_LIGHT levels (audit #46, red1 exception §COVE_NO_STRIP "need not be accurate").
-    COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 }
+    COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 },
+    // L1/L2 — §ZERO Z12 (audit #21): the hemi's ground half = the ground's own reflected light, upward E = rho_g x E_g,
+    // E_g = sun x sinE x f + E_sky; f = sunlit fraction of the ground seen (1 = sunlit; per-fragment f is the open plan).
+    GROUND: { sunlitFraction: 1 },
+    // L2 — §ZERO Z12 (audit #57): the sun's angular diameter (Frostbite 2014 fn 29: 6.6-7.1e-5 sr => 0.52-0.54 deg); penumbra
+    // width w = d x tan(discDeg) for an occluder d metres from the receiver.
+    SUN: { discDeg: 0.53 }
   });
 
   // scene units -> lux (x luxPer) and -> cd/m2 for a luminance in scene units. null when there is no calibrated sun.
@@ -38,6 +44,14 @@
   // exposure (three.js toneMappingExposure) for an EV100 — same expression order as meter() @c539f129.
   function exposureFromEv(ev, lp, acesDiv) { return lp * acesDiv / (LAW.METER.q * Math.pow(2, ev)); }
   function acesDiv(renderer, THREE) { return (renderer && THREE && renderer.toneMapping === THREE.ACESFilmicToneMapping) ? LAW.TONE.acesDiv : 1; }
+  // §ZERO Z12: upward irradiance from a Lambertian ground plane (scene units), and the hemi groundColor (per channel) that makes
+  // three's hemisphere term equal it at intensity hemiI. rho: number or [r,g,b].
+  function groundIrradiance(rho, sunI, sinE, skyE, f) {
+    var Eg = (sunI > 0 ? sunI : 0) * Math.max(0, sinE) * (f == null ? LAW.GROUND.sunlitFraction : f) + (skyE > 0 ? skyE : 0);
+    return Array.isArray(rho) ? rho.map(function (r) { return r * Eg; }) : rho * Eg;
+  }
+  function groundColor(rhoRGB, Eg, hemiI) { return hemiI > 0 ? rhoRGB.map(function (r) { return r * Eg / hemiI; }) : null; }
+  function penumbra(d) { return d * Math.tan(LAW.SUN.discDeg * Math.PI / 180); }
   function toneConst(THREE) { return THREE[LAW.SCENE.toneMapping + 'ToneMapping']; }
 
   // canonical JSON (keys sorted, recursively) + FNV-1a 32 — the same string and hash in node and every browser.
@@ -78,7 +92,7 @@
     return s;
   }
 
-  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE,
+  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, GROUND: LAW.GROUND, SUN: LAW.SUN, groundIrradiance: groundIrradiance, groundColor: groundColor, penumbra: penumbra,
     luxPer: luxPer, ev100: ev100, exposureFromEv: exposureFromEv, acesDiv: acesDiv, toneConst: toneConst,
     snapshot: snapshot, log: log, hash: hash, canon: canon };
   global.LightLaw = Object.freeze(LightLaw);
