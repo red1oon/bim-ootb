@@ -21,6 +21,7 @@ const FIXES = {
   skyshell0:     { q: '&skyshell=0', on: /§SKY_SHELL_RAYS .* on shellCells=/, off: /§SKY_SHELL_RAYS .*off \(&skyshell=0/, offMustLine: true, pop: /§SKY_SHELL_RAYS .* recomputed=(\d+)/, local: true, name: 'B1 sky shell rays' },
   shellreach2:   { q: '&shellreach=2', on: /§SKY_SHELL_RAYS .*reach=air/, off: /§SKY_SHELL_RAYS .*reach=r2/, offMustLine: true, pop: /§SKY_SHELL_RAYS .* recomputedAirOnly=(\d+)/, local: true, name: 'Z8 radius-free reach' },
   gridblend1:    { q: '&gridblend=1', on: /§GRID_BLEND off/, off: /§GRID_BLEND on/, offMustLine: true, pop: null, local: true, name: 'Z18 grid blend (arm = ON)', invert: true },
+  specsmooth0:   { q: '&specsmooth=0', on: /§SPEC_SMOOTH on/, off: /§SPEC_SMOOTH off/, offMustLine: true, pop: null, local: true, name: 'Z18 spec smooth (mirror gate)' },
   meterband7095: { q: '&meterband=70,95', on: /§METER camera=/, off: /§METER camera=/, offMustLine: true, pop: /§METER camera=.* pixels=(\d+)/, local: false, name: 'meter band 40/90 vs 70/95' }
 };
 const REFS = {   // p50 / le15 / clip: §ALTS_COMBINED RESULT (torch build, first press) else §METER_EV v2 40/90 (evD), else B1
@@ -73,8 +74,15 @@ function g3(rec) {
   const gl = grep1(L, /§GLARE bld=/);
   if (!gl) out.push(row('G3', '§GLARE populations', 'INCONCLUSIVE', 'no §GLARE line'));
   else { const ef = num(gl, /exteriorFaces=(\d+)/), jt = num(gl, /junctionTested=(\d+)/); out.push(row('G3', '§GLARE populations', (ef > 0 && jt > 0) ? 'PASS' : 'VACUOUS', 'exteriorFaces=' + ef + ' junctionTested=' + jt)); }
-  const rv = grepAll(L, /§METER remeter VACUOUS/);
-  out.push(row('G3', 'torch remeter saw the scene', rv.length ? 'VACUOUS' : (grep1(L, /§CAM_TORCH on/) ? 'PASS' : 'INCONCLUSIVE'), rv.length ? rv[0].slice(0, 140) : 'no all-sky remeter'));
+  const rv = grepAll(L, /§METER remeter VACUOUS/), ms = grepAll(L, /§METER camera=/);
+  const allSky = ms.filter(l => /camera=inside/.test(l) && num(l, /skyPx=(\d+)\//) === num(l, /skyPx=\d+\/(\d+)/));
+  out.push(row('G3', 'no inside §METER reads an all-sky frame', !ms.length ? 'INCONCLUSIVE' : ((allSky.length || rv.length) ? 'VACUOUS' : 'PASS'), (allSky[0] || rv[0] || ms.length + ' meter lines, none all-sky').slice(0, 160)));
+  if (!/torch=0/.test(q)) { const it = L.findIndex(l => /§CAM_TORCH on/.test(l)), im = L.findIndex(l => /§METER camera=/.test(l));
+    out.push(row('G3', 'torch staged before the stage meter (one meter sees it)', it < 0 ? 'INCONCLUSIVE' : (im < 0 ? 'INCONCLUSIVE' : (it < im ? 'PASS' : 'FAIL')), 'torch line ' + it + ' first meter line ' + im)); }
+  if (ms.length >= 2) { const e0 = num(ms[0], /EV100=(-?[\d.]+)/), e1 = num(ms[ms.length - 1], /EV100=(-?[\d.]+)/), st = grepAll(L, /§METER_STATE/);
+    const diff = st.length >= 2 ? (() => { const kv = l => Object.fromEntries((l.match(/(\w+)=(\S+)/g) || []).map(x => x.split('='))); const a = kv(st[0]), b = kv(st[st.length - 1]); return Object.keys(b).filter(k => a[k] !== b[k] && !/^bandL$|^noGround|^groundShare/.test(k)).map(k => k + ' ' + a[k] + '->' + b[k]).join(' '); })() : 'no §METER_STATE pair';
+    const gsh = st.map(l => num(l, /groundShare=(-?[\d.]+)/)).filter(v => v != null);
+    out.push(row('G3', 'stage -> final remeter EV jump <= 1 EV', Math.abs(e1 - e0) > 1 ? 'FAIL' : 'PASS', 'EV ' + e0 + ' -> ' + e1 + ' | state changed: ' + (diff || 'nothing logged') + (gsh.length ? ' | groundShare ' + gsh.join(' -> ') : ''))); }
   return out;
 }
 // ── G4 look metrics
@@ -160,13 +168,20 @@ function filmJudge(bake, T, ctl) {
       const ev = a.map(d => +d.EV), tg = a.map(d => +d.targetEV), dt = +a[0].dt || 1 / 15, steps = ev.slice(1).map((v, i) => v - ev[i]);
       const bad = steps.map((s, i) => [s, i + 1]).filter(([s]) => s > 3 * dt + 1.1e-3 || s < -1 * dt - 1.1e-3), capU = a.filter(d => d.capped === 'up').length, capD = a.filter(d => d.capped === 'down').length;
       add('F', 'exposure step within +3/-1 stops/s', bad.length ? 'FAIL' : (capU + capD === 0 ? 'INCONCLUSIVE' : 'PASS'), 'maxUp ' + Math.max(...steps).toFixed(4) + ' maxDown ' + Math.min(...steps).toFixed(4) + ' capped up ' + capU + ' down ' + capD + (bad.length ? ' violations f=' + bad.slice(0, 5).map(x => x[1]) : '') + (capU + capD === 0 ? ' (limit never exercised)' : ''));
-      const ov = ev.map((v, i) => i).filter(i => i > 0 && Math.abs(v = ev[i] - tg[i]) > 1e-9 && (ev[i] - ev[i - 1]) * (ev[i - 1] - tg[i]) < 0 && Math.sign(ev[i] - tg[i]) === Math.sign(ev[i] - ev[i - 1]));
+      const ov = ev.map((x, i) => i).filter(i => i > 0 && Math.abs(ev[i] - tg[i]) > 1.1e-3 && Math.abs(ev[i - 1] - tg[i]) > 1.1e-3 && Math.sign(ev[i] - tg[i]) !== Math.sign(ev[i - 1] - tg[i]));   // crossed the target it was moving to
       add('F', 'no overshoot', ov.length ? 'FAIL' : 'PASS', ov.length ? 'f=' + ov.slice(0, 5) : 'none');
       const pr = a.map(d => +d.programs), warm = pr.slice(2), uniq = [...new Set(warm)];
       add('F', 'programs constant after warm-up (f>=2)', uniq.length <= 1 ? 'PASS' : 'FAIL', 'f0 ' + pr[0] + ' f1 ' + pr[1] + ' f>=2 ' + uniq.slice(0, 5).join(','));
       const tors = [...new Set(a.map(d => d.torch))], tl = grepAll(L, /§CAM_TORCH film on intensityUnits=/);
       if (bake.arm === 'T') add('F', 'torch off arm: torch=off every frame', tors.length === 1 && tors[0] === 'off' ? 'PASS' : 'FAIL', 'torch values ' + tors.join(','));
-      else add('F', 'torch constant, == the one §CAM_TORCH film line', tl.length === 1 && tors.length === 1 && tors[0] !== 'off' && (+tors[0]).toExponential(6) === (num(tl[0], /intensityUnits=([\d.e+-]+)/)).toExponential(6) ? 'PASS' : 'FAIL', 'film lines ' + tl.length + ' values ' + tors.slice(0, 3).join(','));
+      else {   // row 12 (coordinator 2026-09-27): the bake stages twice (the first staging is torn down ~125 s) -> exactly ONE §CAM_TORCH film
+        // line per CAPTURED staging = between the last §CAM_TORCH off before the first captured frame and that frame; none during capture
+        const i0 = L.findIndex(l => /§FRAME_HASH i=/.test(l)); let lo = -1; for (let k = 0; k < (i0 < 0 ? L.length : i0); k++) if (/§CAM_TORCH off/.test(L[k])) lo = k;
+        const cap = L.slice(lo + 1, i0 < 0 ? L.length : i0).filter(l => /§CAM_TORCH film on intensityUnits=/.test(l)), during = i0 < 0 ? [] : L.slice(i0).filter(l => /§CAM_TORCH film on/.test(l));
+        const X = cap.length ? num(cap[0], /intensityUnits=([\d.e+-]+)/) : null;
+        add('F', 'torch: one §CAM_TORCH film line per captured staging, torch= constant == it', cap.length === 1 && !during.length && tors.length === 1 && tors[0] !== 'off' && X != null && (+tors[0]).toExponential(6) === X.toExponential(6) ? 'PASS' : 'FAIL',
+          'all film lines ' + tl.length + ', in the captured staging ' + cap.length + ', during capture ' + during.length + ', torch values ' + tors.slice(0, 3).join(','));
+      }
       const amb = [...new Set(a.map(d => d.ambient))], drift = grepAll(L, /§FILM_FILL_CHECK/).filter(l => !/drift=none/.test(l));
       add('F', 'fill: ambient 0, §FILM_FILL_CHECK drift=none', !grep1(L, /§FILM_FILL_CHECK/) ? 'INCONCLUSIVE' : (drift.length || amb.join() !== '0.000' ? 'FAIL' : 'PASS'), 'ambient ' + amb.join(',') + ' drift lines ' + drift.length);
     }
