@@ -208,7 +208,7 @@
 <!-- §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE — zero deps, loaded first; the
      module worker imports the SAME file (self.CutMove); bonsai_ifc / gridmove / itemdrag read window.CutMove at call time. -->
 <script src="cut_move.js?v=2" onerror="console.warn('§CUT-MOVE LOAD_FAIL cut_move.js')"></script>
-<script src="bonsai_kernel.js?v=9" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="bonsai_kernel.js?v=10" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
@@ -1177,7 +1177,7 @@ function setSelectionIds(ids, primary) {
   selectedIds = new Set((ids || []).filter(x => x != null)); window.Bonsai._selSet = selectedIds;
   const g = window.Bonsai.group && window.Bonsai.group();
   selectedId = (primary != null && selectedIds.has(primary)) ? primary : (selectedIds.size ? Array.from(selectedIds).pop() : null);
-  selectedMesh = (selectedId != null && g) ? g.children.find(o => o.isMesh && o.userData.featureId === selectedId) : null;
+  selectedMesh = (selectedId != null && g) ? window.Bonsai.meshFor(selectedId) : null;
   _paintSel();
   bCut.disabled = selectedId == null;
   const bd = document.getElementById('b-del'); if (bd) bd.disabled = selectedId == null;   // Delete acts on the selection
@@ -1204,7 +1204,7 @@ function toggleSelect(mesh) {                             // shift-click: add/re
 }
 window.Bonsai.select = (fid) => {                 // witness/programmatic hook (REPLACE-select)
   const g = window.Bonsai.group && window.Bonsai.group();
-  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  const m = g && window.Bonsai.meshFor(fid);
   highlight(m || null); return selectedId;
 };
 window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids.length) ? fids[fids.length - 1] : null); return Array.from(selectedIds); };
@@ -1215,7 +1215,7 @@ window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids
 // Visibility is a session LENS: a re-walk/re-fold that rebuilds meshes resets it (documented, spec §V1).
 window.Bonsai.setFeatureVisible = (fid, vis) => {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return false;
-  const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return false;
+  const m = window.Bonsai.meshFor(fid); if (!m) return false;
   m.visible = !!vis;
   const o = _selOutlines.get(fid); if (o) o.line.visible = m.visible;   // §V5: outline follows its mesh
   if (window.A && A.requestRender) A.requestRender();
@@ -1435,7 +1435,7 @@ function _frameTo(c, diag, tag) {                          // §Q2: shared camer
 }
 window.Bonsai.frameFeature = (fid) => {
   const g = window.Bonsai.group && window.Bonsai.group();
-  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  const m = g && window.Bonsai.meshFor(fid);
   if (!m || !m.geometry) return false;
   m.geometry.computeBoundingBox();
   const bb = m.geometry.boundingBox;
@@ -1603,7 +1603,7 @@ canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(n
 // selection emissive (setHover already skips them).
 window.Bonsai.hoverFeature = (fid) => {
   const g = window.Bonsai.group && window.Bonsai.group();
-  const m = (fid != null && g) ? g.children.find(o => o.isMesh && o.userData.featureId === fid) : null;
+  const m = (fid != null && g) ? window.Bonsai.meshFor(fid) : null;
   setHover(m || null);
   return !!m;
 };
@@ -1920,7 +1920,7 @@ function gmTint(commands, riders, excludedFids, dagevu) {
   // instead of re-scanning g.children per command. Falls back to the old find() if no session is active (e.g.
   // called outside a real drag) — byte-identical result either way, just not re-derived every frame.
   const byFid = window.Bonsai.gridmove && window.Bonsai.gridmove.meshByFid ? window.Bonsai.gridmove.meshByFid() : null;
-  const meshFor = (fid) => byFid ? byFid[fid] : g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  const meshFor = (fid) => byFid ? byFid[fid] : window.Bonsai.meshFor(fid);
   gmClearTints(); let t = 0, s = 0, x = 0;
   commands.forEach(c => {
     const m = meshFor(c.featureId);
@@ -2171,7 +2171,7 @@ function idTint(fid, valid) {
   gmClearTints();
   const g = window.Bonsai.group && window.Bonsai.group();
   const byFid = window.Bonsai.gridmove && window.Bonsai.gridmove.meshByFid ? window.Bonsai.gridmove.meshByFid() : null;
-  const m = byFid ? byFid[fid] : (g && g.children.find(o => o.isMesh && o.userData.featureId === fid));
+  const m = byFid ? byFid[fid] : (g && window.Bonsai.meshFor(fid));
   if (m) _emis(m, valid ? 0x1ea83c : 0x8c1e1e);                    // green=valid / red=blocked (spec §3.3)
   if (window.A && A.requestRender) A.requestRender();
 }
@@ -6295,7 +6295,7 @@ if (qs.get('connectid') === 'demo') {
 if (qs.get('place') === 'demo') {
   (async () => {
     const out = {};
-    const meshOf = (fid) => { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { zmin: +b.min.z.toFixed(2), zmax: +b.max.z.toFixed(2), xext: +(b.max.x - b.min.x).toFixed(2), yext: +(b.max.y - b.min.y).toFixed(2) }; };
+    const meshOf = (fid) => { const m = window.Bonsai.meshFor(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { zmin: +b.min.z.toFixed(2), zmax: +b.max.z.toFixed(2), xext: +(b.max.x - b.min.x).toFixed(2), yext: +(b.max.y - b.min.y).toFixed(2) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (gx, gy) => { const v = new THREE.Vector3(gx, gy, 0).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
     const clickGround = async (gx, gy) => { const c = toClient(gx, gy); const before = window.Bonsai.oplog.length; canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...c, bubbles: true })); for (let i = 0; i < 40 && window.Bonsai.oplog.length === before; i++) await new Promise(r => setTimeout(r, 50)); };
@@ -6663,7 +6663,7 @@ if (qs.get('move') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const centreOf = (fid) => { const m = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
+    const centreOf = (fid) => { const m = window.Bonsai.meshFor(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
     try {
       window.Bonsai.grid.define({ xs: [0, 1, 2, 3, 4], ys: [0, 3], xlabels: ['A', 'B', 'C', 'D', 'E'], ylabels: ['1', '2'] });
       window.Bonsai.grid.show(true);
@@ -6710,7 +6710,7 @@ if (qs.get('move') === 'demo') {
       const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [2, 0], [2, 0.2], [0, 0.2]] }, depth: 3 } });
       await sleep(50);
       out.wallBeforeX = centreOf(wall.id) ? centreOf(wall.id).x : null;   // ~1
-      selectedId = wall.id; selectedMesh = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === wall.id);
+      selectedId = wall.id; selectedMesh = window.Bonsai.meshFor(wall.id);
       await commitMove(1, 0, 0); await sleep(300);
       out.wallAfterX = centreOf(wall.id) ? centreOf(wall.id).x : null;    // ~2 (occt shape translated)
       await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [2.6, -1, 1], c2: [2.9, 1, 2] } } });
@@ -6731,7 +6731,7 @@ if (qs.get('multiselect') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const centreOf = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
@@ -6861,7 +6861,7 @@ if (qs.get('snapgeom') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const bboxOf = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { minx: +b.min.x.toFixed(3), miny: +b.min.y.toFixed(3), maxx: +b.max.x.toFixed(3), maxy: +b.max.y.toFixed(3) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
@@ -6930,7 +6930,7 @@ if (qs.get('rotate') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const dims = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { ex: +(b.max.x - b.min.x).toFixed(3), ey: +(b.max.y - b.min.y).toFixed(3), cx: +((b.min.x + b.max.x) / 2).toFixed(3), cy: +((b.min.y + b.max.y) / 2).toFixed(3) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
@@ -6984,7 +6984,7 @@ if (qs.get('grouprot') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = fid => { const g = window.Bonsai.group(); return g && g.children.find(o => o.isMesh && o.userData.featureId === fid); };
+    const meshOf = fid => window.Bonsai.meshFor(fid);
     const dims = fid => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox;
       return { ex: +(b.max.x - b.min.x).toFixed(3), ey: +(b.max.y - b.min.y).toFixed(3), cx: +((b.min.x + b.max.x) / 2).toFixed(3), cy: +((b.min.y + b.max.y) / 2).toFixed(3) }; };
     const near = (a, b, t) => Math.abs(a - b) <= (t || 0.12);
@@ -7025,7 +7025,7 @@ if (qs.get('hover') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const emisOf = (fid) => { const m = meshOf(fid); return m && m.material && m.material.emissive ? m.material.emissive.getHex() : null; };
     const centreClient = (fid) => { const m = meshOf(fid); m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; const c = new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2); const r = canvas.getBoundingClientRect(); const v = c.project(camera); return { clientX: r.left + (v.x + 1) / 2 * r.width, clientY: r.top + (1 - v.y) / 2 * r.height }; };
     const move = (pt, buttons) => canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: pt.clientX, clientY: pt.clientY, buttons: buttons || 0, bubbles: true }));
@@ -7075,7 +7075,7 @@ if (qs.get('gmpreview') === 'demo') {
       const d = toClient(4, 1.5), m = toClient(5.5, 1.5);
       canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...d, bubbles: true })); out.grabbed = _dragGrid && _dragGrid.id;
       canvas.dispatchEvent(new PointerEvent('pointermove', { ...m, bubbles: true })); out.dragDelta = _dragGrid ? +(_dragGrid.delta || 0).toFixed(2) : null;
-      const emis = id => { const o = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === id); return o ? '#' + o.material.emissive.getHexString() : null; };
+      const emis = id => { const o = window.Bonsai.meshFor(id); return o ? '#' + o.material.emissive.getHexString() : null; };
       out.tintW1 = emis(w1.id);                          // mid-drag PREVIEW (before release): blue 1e66c8 = translate
       out.tintW2 = emis(w2.id);                          // orange c8731e = stretch
       out.opsBeforeRelease = O._geomOps().filter(o => o.op_type === 'GEOM_GRID_MOVE').length;   // 0 — preview only, not committed
