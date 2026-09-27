@@ -42,11 +42,16 @@
     // handheld source, rated: Petzl ACTIK MAX POWER mode 450 lm, ANSI/PLATO FL1 beam distance 100 m (petzl.com/US/en/Sport/Headlamps/
     // ACTIK; the STANDARD mode 100 lm / 60 m was the first choice). FL1 beam distance = the distance to 0.25 lx on axis, so peak
     // I = 0.25 x 100^2 = 2500 cd; uniform-cone half angle from lm = 2 pi I (1 - cos a): a = 13.7 deg.
+    // FLOOD BEAM (red1 2026-09-28: "Spotlight should also be soft wide angled rather than direct and sharp"): a 120 deg flood — the
+    // flood class headlamp makers sell for close work / inside buildings (e.g. Zebralight flood configurations, "120 degree beam
+    // spread"; flood beams span 45-120 deg; uwk.com / homelectrical.com beam-spread guides) — keeping the rated 450 lm. With the
+    // smoothstep profile the flux is 2 pi I (1 - cos a) x 1/2, so a = 60 deg (edge) gives peak I = 450 / (pi (1 - cos 60) x 0.5) = 573 cd.
+    // (Superseded: ACTIK MAX POWER spot 2500 cd / 19.5 deg edge — read as 'direct and sharp'.)
     // Beam profile (red1 2026-09-28: "torchlight not well applied" — a hard-edged flat disk): three's SpotLight penumbra 1 = a
     // smoothstep falloff from the axis to the edge; its flux is 2 pi I (1 - cos a) x 1/2 (smoothstep mean over its interval), so
     // keeping 450 lm at 2500 cd peak puts the edge at a = acos(1 - 450 / (pi x 2500)) = 19.5 deg. Peak unchanged, edge fades.
     // Offset from the lens 0.3 m right / 0.1 m up (red1-agreed offset: a light on the lens axis hides every shadow it casts).
-    TORCH: { lm: 450, beamDistM: 100, peakCd: 2500, halfAngleDeg: 19.5, penumbra: 1, offsetRightM: 0.3, offsetUpM: 0.1, color: 0xffffff, shadowMap: 1024 },
+    TORCH: { lm: 450, beamDistM: 100, peakCd: 573, halfAngleDeg: 60, penumbra: 1, offsetRightM: 0.3, offsetUpM: 0.1, color: 0xffffff, shadowMap: 1024 },
     // L2 — §ZERO Z9 (audit #48): authored IFC albedos are sRGB-encoded; the still decodes them to linear (IEC 61966-2-1 EOTF,
     // three.js ColorManagement convention) before lighting. Nav keeps its own look (fixed exposure, no meter) — Alt+S only.
     ALBEDO: { authored: 'sRGB', decode: true },
