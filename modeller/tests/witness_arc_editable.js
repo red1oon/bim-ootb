@@ -157,13 +157,20 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   // (Column vc=16/fc=24, Beam vc=16/fc=24, Door vc=32/fc=52 per bonsai_library.js CATALOG) differs from that.
   var matchedOps = seed.ops.filter(function (op) { return !!op.params.hash; });
   var unmatchedOps = seed.ops.filter(function (op) { return !op.params.hash; });
+  var matchedOwn = [];
   var matchedRealMesh = matchedOps.every(function (op) {
     var fid = seed.bridge.fidByGuid[op.outputGuid];
     var d = Library.foldInsert({ id: fid, op_type: 'GEOM_INSERT', parameters: op.params });
+    // §FOLD-NO-BOX (2026-09-27): bonsai_library.foldInsert's own rule — an element's OWN registered real mesh WINS over a
+    // coincidentally-dimension-matched generic catalog entry. Production registers every seeded element's real mesh, so a matched
+    // op folds its own mesh; the catalog counts apply only where no real mesh is registered.
+    var g = op.params.realGeomHash && Library._geom && Library._geom['rg:' + op.params.realGeomHash];
+    if (g) { var gv = g.v instanceof Float32Array ? g.v.length / 3 : (typeof g.v === 'string' ? Buffer.from(g.v, 'base64').length / 12 : -1); matchedOwn.push(op.params.ifc_class + ':' + (d.positions.length / 3) + 'v'); return d.positions.length / 3 === gv; }
     var c = Library.get(op.params.hash);
     return c && d.positions.length / 3 !== 8 && d.indices.length / 3 !== 12 &&
       d.positions.length / 3 === c.vc && d.indices.length / 3 === c.fc;
   });
+  console.log('  · A9 info: matched ops folding their OWN registered real mesh (wins over catalog): ' + matchedOwn.length + ' ' + matchedOwn.join(' '));
   // §FOLD-NO-BOX (2026-09-27, red1: 'no BBoxes or cubes, or LOD200 fallback. All must be LOD400 or fail hard'): this witness registers the real meshes production registers; the old box-fold geometry claims no longer describe production. unmatched ops (no catalog hash) now fold their OWN registered real mesh (realGeomHash) — never the box signature.
   var unmatchedReal = 0, unmatchedBox = 0, srcBoxShaped = [];
   unmatchedOps.forEach(function (op) {
@@ -176,7 +183,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   // The source itself authored some elements as simple 8-vert/12-tri solids — those ARE their real (registered) mesh, not a fallback.
   // Logged, not judged here: whether an authored N-layer element shipped as an envelope box is §LOD400-ENVELOPE's gate (browser layer gate).
   console.log('  · A9 info: ' + srcBoxShaped.length + ' registered real meshes are box-shaped in the SOURCE: ' + srcBoxShaped.slice(0, 6).join(' '));
-  chk('A9 matched⇒real catalog mesh (counts == catalog entry); unmatched⇒its OWN registered real mesh (no fallback box); matched+unmatched==total',
+  chk('A9 matched⇒its own registered real mesh, else the real catalog mesh (counts == catalog entry); unmatched⇒its OWN registered real mesh (no fallback box); matched+unmatched==total',
     matchedOps.length === seed.matched && unmatchedOps.length === seed.unmatched &&
     seed.matched + seed.unmatched === n && matchedRealMesh && unmatchedBox === 0 && unmatchedReal === unmatchedOps.length && matchedOps.length > 0,
     'matched=' + seed.matched + ' unmatched=' + seed.unmatched + ' (registered-real=' + unmatchedReal + ' unregistered=' + unmatchedBox + ') total=' + n);

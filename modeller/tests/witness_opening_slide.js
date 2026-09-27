@@ -10,7 +10,8 @@
  * the engine's HostFillEdge.constrain (DagevuEngine's SECOND consumer), gated per frame by the production SdgGate,
  * committed as the existing GEOM_MOVE shape — and refuses honestly where it cannot be honest.
  *
- *   S0 SUBSTRATE   — real seeded SampleHouse, real rel_fills_host rows, a real WALL-hosted filling picked live
+ *   S0 SUBSTRATE   — real seeded SampleHouse, real rel_fills_host rows. §FOLD-NO-BOX 2026-09-27: every real host carries
+ *                    a BAKED opening ⇒ the slide REFUSES on residents (proven, S0 REAL-HOSTS-REFUSE); S1-S7 then INCONCLUSIVE
  *   S1 SESSION     — the filling gets a slide session carrying the engine edge; the resolver is NEVER consulted
  *   S2 IN-BOUNDS   — a candidate off-axis + above ⇒ valid, snappedPos holds orthogonal+z, t exact, dimLabel present
  *   S3 OFF-HOST    — a candidate past the wall end ⇒ valid:false 'off-host-extent', NO snappedPos (never a clamp)
@@ -99,9 +100,34 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     var s = ItemDrag.beginItemDragSession(ctxFor(f));
     if (s && s.slide) pick = { fid: f, host: h, row: e, session: s }; else tried.push(f + ':refused');
   }
-  chk('S0 SUBSTRATE: real seeded SampleHouse + real rel_fills_host + a real WALL-hosted filling whose slide session forms',
-    !!pick, pick ? ('filling=' + pick.fid + '(' + classByFid[pick.fid] + ') host=' + pick.host + '(' + classByFid[pick.host] + ') opening=' + pick.session.slide.openingFid + ' tried=' + j(tried)) : 'tried=' + j(tried));
-  if (!pick) { console.log('W-DAGEVU-SLIDE: ' + pass + ' PASS / ' + (fail + 7) + ' FAIL (no fixture — S1-S7 not run)'); process.exit(1); }
+  // §FOLD-NO-BOX (2026-09-27): with the real meshes production registers, EVERY real SampleHouse wall host refuses the slide —
+  // its opening is BAKED into the tessellated mesh (the fold no longer draws it as a plain box). Before this, S0 "passed" only
+  // because the node fold drew unregistered hosts as boxes — geometry no user ever sees. Filling edges come ONLY from the
+  // extracted rel_fills_host (real IFC hosts), so on residents the slide is correctly inert: sliding would leave the baked hole
+  // behind. S0 now proves that refusal is the HONEST one (host mesh is genuinely non-box), and S1-S7 are INCONCLUSIVE, not PASS.
+  var refusedHosts = {}, hostTris = {};
+  tried.forEach(function (t) { var f = +t.split(':')[0]; if (!/refused$/.test(t)) return;
+    var e = fills.find(function (r) { return fbg[r.filling_guid] === f; }); var h = e && fbg[e.host_guid]; if (h == null) return;
+    refusedHosts[h] = 1;
+    if (hostTris[h] == null) hostTris[h] = Library.foldInsert({ id: +h, op_type: 'GEOM_INSERT', parameters: opByFid[h].params }, null).indices.length / 3; });
+  var hostList = Object.keys(refusedHosts), allNonBox = hostList.length > 0 && hostList.every(function (h) { return hostTris[h] > 12; });
+  console.log('  §SLIDE real hosts refused=' + hostList.length + ' tris=' + j(hostTris) + ' formed=' + (pick ? pick.fid : 'none'));
+  chk('S0 REAL-HOSTS-REFUSE: every real WALL-hosted filling of SampleHouse refuses the slide, and every refusing host mesh is genuinely non-box (>12 tris = opening baked in) — the refusal is honest, not a fixture gap',
+    !pick && tried.length > 0 && tried.every(function (t) { return /refused$/.test(t); }) && allNonBox,
+    'tried=' + j(tried) + ' hostTris=' + j(hostTris));
+  if (!pick) {
+    ['S1 SESSION', 'S2 IN-BOUNDS', 'S3 OFF-HOST', 'S4 OP', 'S5 GATE-RED', 'S6 CARVED-VOID', 'S7 NO-ENGINE'].forEach(function (n) {
+      console.log('  ⚪ INCONCLUSIVE ' + n + ' — no production path reaches a slide session (fills are extracted IFC hosts; all carry a baked opening)'); });
+    var PE0 = ItemDrag.plainExtrudeProfile;
+    chk('S8 PLAIN-EXTRUDE: 4-point axis-aligned rectangle ⇒ true; L-shape (6 pts), rotated square, degenerate 3-point, zero-width ⇒ false',
+      PE0([[0, 0], [4, 0], [4, 0.2], [0, 0.2]]) === true && PE0([[0, 0], [0, 0.2], [4, 0.2], [4, 0]]) === true &&
+      PE0([[0, 0], [4, 0], [4, 2], [2, 2], [2, 4], [0, 4]]) === false && PE0([[0, 0], [1, 1], [0, 2], [-1, 1]]) === false &&
+      PE0([[0, 0], [4, 0], [4, 0.2]]) === false && PE0([[0, 0], [4, 0], [4, 0], [0, 0]]) === false);
+    console.log('W-DAGEVU-SLIDE: ' + pass + ' PASS / ' + fail + ' FAIL / 7 INCONCLUSIVE (slide inert on real residents — S1-S7 judge nothing)');
+    process.exit(fail ? 1 : 0);
+  }
+  chk('S0 SUBSTRATE: a real WALL-hosted filling whose slide session forms (a real host WITHOUT a baked opening)', true,
+    'filling=' + pick.fid + '(' + classByFid[pick.fid] + ') host=' + pick.host + '(' + classByFid[pick.host] + ') opening=' + pick.session.slide.openingFid + ' tried=' + j(tried));
   var S = pick.session, sl = S.slide, c = S.preCentre, K = sl.axis, other = 1 - K, ax = 'xy'[K];
   var fb = boxByFid[pick.fid], hb = boxByFid[pick.host];
 

@@ -149,11 +149,39 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     var c = centreOf(boxByFid[fid]);
     return fillingGuids[gbf[fid]] && c[0] >= fp[0] && c[0] <= fp[1] && c[1] >= fp[2] && c[1] <= fp[3];
   });
-  chk('T3 leg-3: every derived-footprint member is genuinely inside the REAL footprint AABB with NO containment edge anywhere; REAL structural elements AND REAL hosted fillings inside the same footprint are both excluded (§2.3 — a filling rides its host, never the footprint, or it would divorce from a wall Q1 leaves standing)',
-    leg3AllInside && fillingInside.length > 0 &&
+  // §FOLD-NO-BOX (2026-09-27): on REAL registered meshes no SampleHouse filling's AABB centre falls inside ANY room footprint
+  // (measured: nearest are window fid 13, 6.6 mm outside, and door fid 8, 26 mm — they sit IN the boundary walls). The old
+  // "SampleHouse has one" held only while the fold drew boxes. So the real-data leg judges leg-3 + the structural exclusion,
+  // and the filling exclusion is proven by T3b below on an explicitly CONSTRUCTED input, never claimed from real data.
+  chk('T3 leg-3 (real data): every derived-footprint member is genuinely inside the REAL footprint AABB with NO containment edge anywhere; REAL structural elements inside the footprint are excluded; real fillings inside the footprint (if any) are excluded',
+    leg3AllInside && structuralInside.length > 0 &&
     structuralInside.every(function (fid) { return !res.members.some(function (m) { return String(m.featureId) === String(fid); }); }) &&
     fillingInside.every(function (fid) { return !res.members.some(function (m) { return String(m.featureId) === String(fid); }); }),
     'leg3=' + leg3.length + ' structuralInsideFootprint=' + structuralInside.length + ' fillingsInsideFootprint=' + fillingInside.length + ' (all excluded)');
+
+  // ── T3b: §2.3 filling exclusion, CONSTRUCTED counterfactual (real data has no filling centre inside a footprint) ──
+  // Move the NEAREST real filling's box so its centre sits at the footprint centre. With the real fills list it must stay
+  // out (rides its host); with the fills list withheld the SAME box must be swept — proving the guard, not geometry, excludes it.
+  var fpc = [(fp[0] + fp[1]) / 2, (fp[2] + fp[3]) / 2];
+  var fillFids = Object.keys(boxByFid).filter(function (fid) { return fillingGuids[gbf[fid]] && !cont.contained[gbf[fid]]; });
+  var nearest = fillFids.map(function (fid) { var c = centreOf(boxByFid[fid]);
+    var d = Math.max(fp[0] - c[0], c[0] - fp[1], 0) + Math.max(fp[2] - c[1], c[1] - fp[3], 0); return { fid: fid, d: d }; })
+    .sort(function (a, b) { return a.d - b.d; })[0];
+  var cf = null;
+  if (nearest) {
+    var b0 = boxByFid[nearest.fid], c0 = centreOf(b0), dx = fpc[0] - c0[0], dy = fpc[1] - c0[1];
+    var box2 = {}; Object.keys(boxByFid).forEach(function (k) { box2[k] = boxByFid[k]; });
+    box2[nearest.fid] = [b0[0] + dx, b0[1] + dx, b0[2] + dy, b0[3] + dy, b0[4], b0[5]];
+    var base = { spaceGuid: room.guid, containedGuids: containedGuids, spaceBoundary: null, footprint: room.footprint,
+      containedAny: cont.contained, boxByFid: box2, classByFid: classByFid, fidByGuid: fbg, guidByFid: gbf, ridersFor: SdgCascade.ridersFor };
+    var isM = function (r) { return r.members.some(function (m) { return String(m.featureId) === String(nearest.fid) && m.via === 'derived-footprint'; }); };
+    var withFills = RoomMove.enumerateMembers(Object.assign({}, base, { fills: fills }));
+    var noFills = RoomMove.enumerateMembers(Object.assign({}, base, { fills: [] }));
+    cf = { fid: nearest.fid, cls: classByFid[nearest.fid], realGapM: +nearest.d.toFixed(4), withFills: isM(withFills), noFills: isM(noFills) };
+  }
+  console.log('  §ROOMMOVE-T3B constructed=' + JSON.stringify(cf));
+  chk('T3b filling exclusion (§2.3, CONSTRUCTED: nearest real filling moved to the footprint centre): excluded WITH the real fills list, swept WITHOUT it',
+    !!cf && cf.withFills === false && cf.noFills === true, JSON.stringify(cf));
 
   // ── T4: real edge wins over the derivation for the same element ─────────────────────────────────
   var containedAlsoInFootprint = leg1.filter(function (m) {
