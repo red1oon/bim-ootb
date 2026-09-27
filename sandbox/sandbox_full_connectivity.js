@@ -5,10 +5,10 @@
  * (2026-07-14): "is there a simple test where every door can go to any other door via a covered
  * path, no gap?" — this IS that test; these checks prove its core logic before trusting it on
  * real data (see witness_full_connectivity.js for the real-building report).
- * Run: node sandbox_full_connectivity.js
+ * Run: node sandbox/sandbox_full_connectivity.js
  */
 'use strict';
-const RG = require('./common/room_graph.js');
+const RG = require('../common/room_graph.js');
 let pass = 0, fail = 0;
 const chk = (n, c, x) => { if (c) { pass++; console.log('  OK ' + n); } else { fail++; console.log('  FAIL ' + n + '  ' + (x || '')); } };
 

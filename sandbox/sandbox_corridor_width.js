@@ -2,10 +2,10 @@
 /**
  * SANDBOX (not a witness) — synthetic geometry, known expected values, isolates the two formula
  * fixes in common/hallway_backbone.js (§CORRIDOR-WIDTH-BOUNDS, §CORRIDOR-OVERLAP-FRACTION) from
- * any real building's data noise. Run: node sandbox_corridor_width.js
+ * any real building's data noise. Run: node sandbox/sandbox_corridor_width.js
  */
 'use strict';
-const HB = require('./common/hallway_backbone.js');
+const HB = require('../common/hallway_backbone.js');
 let pass = 0, fail = 0;
 const chk = (n, c, x) => { if (c) { pass++; console.log('  OK ' + n); } else { fail++; console.log('  FAIL ' + n + '  ' + (x || '')); } };
 
