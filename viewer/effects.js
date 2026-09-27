@@ -4794,10 +4794,10 @@ async function setupEffects(A, renderer, scene, camera) {
     if ((!A._maxqActive || _torchFilm) && window.LightLaw && window.LightLaw.TORCH && A._stillTorch !== false && !/[?&]torch=0/.test(location.search)) {
     var _TL = window.LightLaw.TORCH, _lp = window.LightLaw.luxPer(A._stillCalibSunLux, A._stillCalibSunI);
     if (_lp) {
-      if (!A._camTorch) { A._camTorch = new THREE.SpotLight(_TL.color, 0, 0, _TL.halfAngleDeg * Math.PI / 180, 0, 2);
+      if (!A._camTorch) { A._camTorch = new THREE.SpotLight(_TL.color, 0, 0, _TL.halfAngleDeg * Math.PI / 180, _TL.penumbra || 0, 2);
         A._camTorch.castShadow = true; A._camTorch.shadow.mapSize.set(_TL.shadowMap, _TL.shadowMap); A._camTorch.shadow.camera.near = 0.05; A._camTorch.shadow.camera.far = 60;
         A._camTorch.name = 'cam_torch'; }
-      A._camTorch.intensity = _TL.peakCd / _lp;
+      A._camTorch.intensity = _TL.peakCd / _lp; A._camTorch.angle = _TL.halfAngleDeg * Math.PI / 180; A._camTorch.penumbra = _TL.penumbra || 0;   // re-applied every staging (the light is reused)
       A.scene.add(A._camTorch); A.scene.add(A._camTorch.target);
       var _tg = A.controls && A.controls.target ? A.controls.target : new THREE.Vector3().copy(A.camera.position).add(A.camera.getWorldDirection(new THREE.Vector3()));
       _updateCamTorch(_tg.x, _tg.y, _tg.z);
