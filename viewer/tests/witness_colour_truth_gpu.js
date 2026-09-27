@@ -26,7 +26,7 @@ const LOG = [], S = m => { LOG.push(m); console.log(m); };
 let fails = 0, judged = 0, inconcl = 0;
 const V = (ok, l, d) => { if (ok === null) { inconcl++; S('   ⚪ INCONCLUSIVE ' + l + (d ? ' — ' + d : '')); return; } judged++; if (!ok) fails++; S('   ' + (ok ? '🟢' : '🔴') + ' ' + l + (d ? ' — ' + d : '')); };
 const PLENUM = { cam: [-20.496, -5.619, -34.439], tgt: [-23.527, -6.051, -22.952] };
-const TAGS = /§ALBEDO_SRGB srgbfix|§METAL_PBR|§PLACEHOLDER_COLOUR|§PLACEHOLDER_CLASS|§PORCELAIN|§IR_COLOUR|§IRC_MAX build|§MEP_HUE_TALLY|§GI_STILL result|§LOAD_FAIL|§METER camera|§FAULT/;
+const TAGS = /§METER off|§ALBEDO_SRGB srgbfix|§METAL_PBR|§PLACEHOLDER_COLOUR|§PLACEHOLDER_CLASS|§PORCELAIN|§IR_COLOUR|§IRC_MAX build|§MEP_HUE_TALLY|§GI_STILL result|§LOAD_FAIL|§METER camera|§FAULT/;
 
 // in-page: one measured frame. mode 'canvas' renders the app scene now; mode 'still' reads the Alt+S overlay canvas.
 function pageMeasure(mode, GX, GY) {
@@ -69,11 +69,12 @@ function pageMaterials() {
 // counts only if the element is the FIRST opaque hit on the centre ray (else the next candidate). Deterministic (guid order).
 function pageAnchor(which) {
   const A = window.APP, T = window.THREE, meta = window.__ctMeta, rows = window.__ctRows;
-  const cand = rows.filter(r => which === 'toilet' ? /^Toilet-Wall-Mounted/.test(r.n) : (r.c === 'IfcBeam' && meta[r.g].ph)).sort((a, b) => a.g < b.g ? -1 : 1).slice(0, 40);
+  const MPD = /^(MEP|FP|PLB|ELEC|ACMV|HVAC|SAN|VENT|HEAT)$/;   // ### ALTS-ALL FIX 18 (a): the MEP-trade placeholder proxy anchor (Z21 §MEP_PROXY_HUE)
+  const cand = rows.filter(r => which === 'toilet' ? /^Toilet-Wall-Mounted/.test(r.n) : which === 'proxy' ? (r.c === 'IfcBuildingElementProxy' && meta[r.g].ph && !meta[r.g].p && MPD.test(meta[r.g].d)) : (r.c === 'IfcBeam' && meta[r.g].ph)).sort((a, b) => a.g < b.g ? -1 : 1).slice(0, 80);
   const tg = []; A.scene.traverse(o => { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A._sky) tg.push(o); });
   const rc = new T.Raycaster();
   for (const r of cand) { const p = A.ifc2three(r.x, r.y, r.z), base = new T.Vector3(p.x, p.y, p.z);
-    const dirs = which === 'toilet' ? [[2.2, 0.8, 0], [-2.2, 0.8, 0], [0, 0.8, 2.2], [0, 0.8, -2.2]] : [[3, -2.5, 0], [-3, -2.5, 0], [0, -2.5, 3], [0, -2.5, -3]];
+    const dirs = which === 'toilet' ? [[2.2, 0.8, 0], [-2.2, 0.8, 0], [0, 0.8, 2.2], [0, 0.8, -2.2]] : which === 'proxy' ? [[3, 0.5, 0], [-3, 0.5, 0], [0, 0.5, 3], [0, 0.5, -3]] : [[3, -2.5, 0], [-3, -2.5, 0], [0, -2.5, 3], [0, -2.5, -3]];
     for (const d of dirs) { const cam = base.clone().add(new T.Vector3(d[0], d[1], d[2])); rc.set(cam, base.clone().sub(cam).normalize());
       const h = rc.intersectObjects(tg, false).filter(q => { const m = Array.isArray(q.object.material) ? q.object.material[0] : q.object.material; return m && !m.isMeshBasicMaterial && !(m.transparent && m.opacity < 0.95); })[0];
       if (!h) continue; const id = h.batchId != null ? h.object.id + '_' + h.batchId : h.instanceId != null ? h.object.id + '_' + h.instanceId : h.object.id;
@@ -88,7 +89,7 @@ async function arm(port, label, posesIn) {   // posesIn: the AFTER arm's poses, 
   p.on('console', m => L.push(m.text())); p.on('pageerror', e => { pe++; L.push('PAGEERROR ' + e.message); });
   const out = { label, poses: {}, L };
   try {
-    await p.goto('http://127.0.0.1:' + port + '/viewer/viewer.html?db=/buildings/Hospital_extracted.db', { waitUntil: 'domcontentloaded' });
+    await p.goto('http://127.0.0.1:' + port + '/viewer/viewer.html?db=/buildings/Hospital_extracted.db&photoseed=0.5' + (process.env.CT_EXTRA || ''), { waitUntil: 'domcontentloaded' });   // FIX 17 pin (the BEFORE build ignores it)
     await p.waitForFunction(w => window.APP && window.APP.guidMap && Object.keys(window.APP.guidMap).length >= w, { timeout: 600000, polling: 2000 }, +WANT); await sleep(3000);
     out.sw = await p.evaluate(async () => (await (await fetch('/viewer/sw.js')).text()).match(/CACHE_VERSION = '([^']+)'/)[1]);
     out.v = await p.evaluate(() => [...document.scripts].map(s => s.src).filter(s => /streaming\.js|sourced_light\.js|light_zones\.js/.test(s)).map(s => s.split('/').pop()).join(' '));
@@ -99,16 +100,22 @@ async function arm(port, label, posesIn) {   // posesIn: the AFTER arm's poses, 
       window.__ctMeta = meta; window.__ctRows = rows; });
     out.materials = await p.evaluate(pageMaterials);
     out.std = await p.evaluate(() => window.APP._stdMatClasses ? JSON.parse(JSON.stringify(window.APP._stdMatClasses)) : null);   // FIX 12: STD_MAT read from the running app
-    const poses = posesIn || { plenum: PLENUM, toilet: await p.evaluate(pageAnchor, 'toilet'), beams: await p.evaluate(pageAnchor, 'beams') };
+    const poses = posesIn || { plenum: PLENUM, toilet: await p.evaluate(pageAnchor, 'toilet'), beams: await p.evaluate(pageAnchor, 'beams'), proxy: await p.evaluate(pageAnchor, 'proxy') };
     for (const [name, pose] of Object.entries(poses)) {
       if (!pose) { out.poses[name] = { error: 'no anchor pose (element never first hit)' }; continue; }
-      await p.evaluate((q, nm) => { const A = window.APP; A.camera.position.fromArray(q.cam); A.controls.target.fromArray(q.tgt); A.controls.update(); window.__ctAnchor = (nm === 'toilet' && q.guid) ? q : null; }, pose, name); await sleep(1500);
+      await p.evaluate((q, nm) => { const A = window.APP; A.camera.position.fromArray(q.cam); A.controls.target.fromArray(q.tgt); A.controls.update(); window.__ctAnchor = ((nm === 'toilet' || nm === 'proxy') && q.guid) ? q : null; }, pose, name); await sleep(1500);
       const canvas = await p.evaluate(pageMeasure, 'canvas', 48, 27);
       const n0 = L.length; await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
       for (let i = 0; i < 400 && !L.slice(n0).some(t => /§GI_STILL result|§GI_STILL_FAIL/.test(t)); i++) await sleep(1000);
       const still = await p.evaluate(pageMeasure, 'still', 48, 27);
       out.poses[name] = { pose, canvas, still, tags: L.slice(n0).filter(t => TAGS.test(t)) };
       await p.keyboard.press('Escape'); await sleep(1500);
+      // ### ALTS-ALL FIX 18 (b): the toilet still again with the meter OFF in both arms (A._stillMeter = false, which both builds honour:
+      // exposure stays the base, logged '§METER off (&meter=0) exposure=') — the finish comparison at ONE exposure
+      if (name === 'toilet') { await p.evaluate(() => { window.APP._stillMeter = false; }); const n1 = L.length; await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
+        for (let i = 0; i < 400 && !L.slice(n1).some(t => /§GI_STILL result|§GI_STILL_FAIL/.test(t)); i++) await sleep(1000);
+        out.poses[name].stillFixed = await p.evaluate(pageMeasure, 'still', 48, 27); out.poses[name].fixedTags = L.slice(n1).filter(t => /§METER off|§METER camera=/.test(t));
+        await p.keyboard.press('Escape'); await sleep(1500); await p.evaluate(() => { delete window.APP._stillMeter; }); }
     }
   } catch (e) { out.error = e.message; }
   out.pageErrors = pe; await b.close(); return out;
@@ -122,7 +129,7 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
   const A = await arm(PA, 'after'), posesA = {}; Object.entries(A.poses).forEach(([k, v]) => { posesA[k] = v.pose || null; });
   const B = await arm(PB, 'before', posesA);
   // the BEFORE build has no porcelain owner: a before pixel is porcelain iff the AFTER pixel in the same grid cell is the same porcelain guid
-  for (const k of Object.keys(B.poses)) for (const mode of ['canvas', 'still']) { const fa = A.poses[k] && A.poses[k][mode], fb = B.poses[k][mode]; if (!fa || !fb || !fa.samples || !fb.samples) continue;
+  for (const k of Object.keys(B.poses)) for (const mode of ['canvas', 'still', 'stillFixed']) { const fa = A.poses[k] && A.poses[k][mode], fb = B.poses[k][mode]; if (!fa || !fb || !fa.samples || !fb.samples) continue;
     const pg = new Map(fa.samples.filter(q => q.porc).map(q => [q.i, q.g])); fb.samples.forEach(q => { q.porc = pg.get(q.i) === q.g; }); }
   for (const X of [B, A]) { S('── arm ' + X.label + ' sw=' + X.sw + ' scripts=' + X.v + ' pageErrors=' + X.pageErrors + (X.error ? ' ERROR ' + X.error : ''));
     X.L.filter(t => /§PLACEHOLDER_COLOUR|§PLACEHOLDER_CLASS|§PORCELAIN|§MEP_HUE_TALLY/.test(t)).forEach(t => S('   ' + t.slice(0, 400)));
@@ -138,12 +145,13 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
   V(phLine ? mt === 44246 && pk === 1293 : null, 'Z21 §MEP_PROXY_HUE: mepTier2 = 44246 (40563 MEP-class + 3683 MEP-trade proxies) and proxyKept = 1293 (ARC proxies)', 'mepTier2=' + mt + ' proxyKept=' + pk);
   V(porcLine ? pm === 554 : null, 'Z20 §PORCELAIN matched = 554 on Hospital (node census)', porcLine.slice(0, 200));
   V(B.L.some(t => /§PLACEHOLDER_COLOUR/.test(t)) ? false : true, 'BEFORE arm has no §PLACEHOLDER_COLOUR line (it is the true baseline)');
-  for (const name of ['plenum', 'toilet', 'beams']) {
+  for (const name of ['plenum', 'toilet', 'beams', 'proxy']) {
     const b = B.poses[name] || {}, a = A.poses[name] || {};
     S('── pose ' + name + ' ' + (a.pose ? 'cam ' + JSON.stringify(a.pose.cam.map(v => +v.toFixed(3))) + ' -> ' + JSON.stringify(a.pose.tgt.map(v => +v.toFixed(3))) + (a.pose.name ? ' anchor "' + a.pose.name + '" ' + a.pose.guid : '') : (a.error || b.error || 'missing')));
     if (!a.canvas || !b.canvas || a.canvas.error || b.canvas.error) { V(null, name + ': frames', (a.error || b.error || (a.canvas && a.canvas.error) || '')); continue; }
     (a.tags || []).forEach(t => S('   ' + t.slice(0, 300)));
-    for (const mode of ['canvas', 'still']) {
+    for (const mode of ['canvas', 'still', 'stillFixed']) {
+      if (mode === 'stillFixed' && name !== 'toilet') continue;   // FIX 18 (b): the fixed-exposure press exists for the toilet only
       const fb = b[mode], fa = a[mode]; if (!fb || !fa || fb.error || fa.error) { V(null, name + ' ' + mode, (fb && fb.error) || (fa && fa.error) || 'no frame'); continue; }
       S('   ' + mode + ' meanSat before ' + fb.meanSat + ' after ' + fa.meanSat + ' (samples ' + fb.samples.length + '/' + fa.samples.length + ')');
       ['IfcBeam', 'IfcMember', 'IfcColumn', 'IfcPipeSegment', 'IfcPipeFitting', 'IfcDuctSegment', 'IfcDuctFitting'].forEach(c => { const cb = byClass(fb.samples, q => q.cls === c), ca = byClass(fa.samples, q => q.cls === c);
@@ -159,7 +167,11 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
         V(ph.length >= 5 && Object.keys(stdT).length ? bad.length === 0 : null, 'Z21 ' + name + ' ' + mode + ': placeholder beam/member MATERIAL colour == STD_MAT steel' + (dec ? ' (sRGB-decoded for the still)' : ''), 'n ' + ph.length + ' off ' + bad.length + (bad[0] ? ' e.g. ' + bad[0].cls + ' ' + bad[0].mat.map(v => v.toFixed(3)).join(',') : '') + ' | lit pixels before ' + f3(sb) + ' after ' + f3(sa)); }
       // Z21 §MEP_PROXY_HUE: MEP-trade proxy placeholder pixels gain saturation (cream -> trade hue); judged where >= 5 pixels exist
       const MPD = /^(MEP|FP|PLB|ELEC|ACMV|HVAC|SAN|VENT|HEAT)$/, xb = byClass(fb.samples, q => q.cls === 'IfcBuildingElementProxy' && q.ph && !q.porc && MPD.test(q.d)), xa = byClass(fa.samples, q => q.cls === 'IfcBuildingElementProxy' && q.ph && !q.porc && MPD.test(q.d));
-      if (xa.n || xb.n) V(xa.n >= 5 && xb.n >= 5 ? xa.sat > xb.sat + 0.1 : null, 'Z21 ' + name + ' ' + mode + ': MEP-trade proxy placeholder pixels take a trade hue (sat +0.1)', 'before ' + f3(xb) + ' sat ' + xb.sat.toFixed(3) + ' after ' + f3(xa) + ' sat ' + xa.sat.toFixed(3) + ' n ' + xb.n + '/' + xa.n);
+      // ### ALTS-ALL FIX 18 (a): at the proxy pose the anchor's dense 32x32 grid carries the population (the 48x27 frame grid sampled 1-4 px)
+      if (name === 'proxy' && mode !== 'stillFixed') { const sat = arr => mean(arr.map(c => { const mx = Math.max(...c); return mx ? (mx - Math.min(...c)) / mx : 0; })), da = fa.dense || [], db = fb.dense || [];
+        V(da.length >= 5 && db.length >= 5 ? sat(da) > sat(db) + 0.1 : null, 'Z21 proxy ' + mode + ': MEP-trade placeholder proxy (anchor ' + ((a.pose && a.pose.name) || '').slice(0, 40) + ') takes a trade hue (sat +0.1, anchor dense grid)', 'sat before ' + (db.length ? sat(db).toFixed(3) : '-') + ' after ' + (da.length ? sat(da).toFixed(3) : '-') + ' n ' + db.length + '/' + da.length ); }
+      else if ((xa.n || xb.n) && (xa.n < 5 || xb.n < 5)) S('   ℹ INFO Z21 ' + name + ' ' + mode + ': ' + xb.n + '/' + xa.n + ' MEP-trade proxy pixels here (< 5; judged at the proxy pose) sat ' + xb.sat.toFixed(3) + ' -> ' + xa.sat.toFixed(3));
+      else if (xa.n || xb.n) V(xa.n >= 5 && xb.n >= 5 ? xa.sat > xb.sat + 0.1 : null, 'Z21 ' + name + ' ' + mode + ': MEP-trade proxy placeholder pixels take a trade hue (sat +0.1)', 'before ' + f3(xb) + ' sat ' + xb.sat.toFixed(3) + ' after ' + f3(xa) + ' sat ' + xa.sat.toFixed(3) + ' n ' + xb.n + '/' + xa.n);
       // Z20: porcelain pixels keep their white (mean channel within 8 % of before, low saturation)
       const pb = byClass(fb.samples, q => q.porc), pa = byClass(fa.samples, q => q.porc);
       // ### ALTS-ALL FIX 12 (D3): porcelain stays white (sat < 0.12) AND shows a specular highlight: p99 luma of the anchor's pixels (dense
@@ -172,8 +184,11 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
         // INCONCLUSIVE with the numbers (no same-exposure matte arm exists; a ratio metric was tried and dropped — no rule behind it).
         const da = fa.dense || [], db = fb.dense || [], qa = p99(da), qb = p99(db);
         const evOf = X => { const l = (X.tags || []).filter(t => /§METER camera=/.test(t)).pop(); const m = /EV100=(-?[\d.]+)/.exec(l || ''); return m ? +m[1] : null; }, eA = evOf(a), eB = evOf(b);
-        const sameExp = mode === 'canvas' || (eA != null && eB != null && Math.abs(eA - eB) <= 0.05);
-        V(pa.n >= 5 && da.length >= 30 && db.length >= 30 && sameExp ? (pa.sat < 0.12 && qa > qb) : null, 'Z20 toilet ' + mode + ': porcelain pixels stay white (sat < 0.12) + specular highlight (p99 luma > matte arm' + (mode === 'still' ? ', same exposure only' : '') + ')', 'sat ' + pa.sat.toFixed(3) + ' p99 after ' + (isFinite(qa) ? qa.toFixed(1) : '-') + ' vs before ' + (isFinite(qb) ? qb.toFixed(1) : '-') + (mode === 'still' ? ' EV100 after ' + eA + ' vs before ' + eB : '') + ' dense n ' + db.length + '/' + da.length + ' | mean before ' + f3(pb) + ' after ' + f3(pa)); }
+        const fxOf = X => { const l = (X.fixedTags || []).filter(t => /§METER off/.test(t)).pop(); const m = /exposure=([\d.]+)/.exec(l || ''); return m ? +m[1] : null; }, xA = fxOf(a), xB = fxOf(b);
+        const sameExp = mode === 'canvas' || (mode === 'stillFixed' ? (xA != null && xB != null && Math.abs(xA - xB) <= 0.001) : (eA != null && eB != null && Math.abs(eA - eB) <= 0.05));
+        if (mode === 'still' && !sameExp) { S('   ℹ INFO Z20 toilet still (metered): arms at different exposures (EV100 after ' + eA + ' vs before ' + eB + ') — judged on the fixed-exposure press (stillFixed) instead; p99 ' + (isFinite(qa) ? qa.toFixed(1) : '-') + ' vs ' + (isFinite(qb) ? qb.toFixed(1) : '-')); }
+        else
+        V(pa.n >= 5 && da.length >= 30 && db.length >= 30 && sameExp ? (pa.sat < 0.12 && qa > qb) : null, 'Z20 toilet ' + mode + ': porcelain pixels stay white (sat < 0.12) + specular highlight (p99 luma > matte arm' + (mode === 'still' ? ', same exposure only' : '') + ')', 'sat ' + pa.sat.toFixed(3) + ' p99 after ' + (isFinite(qa) ? qa.toFixed(1) : '-') + ' vs before ' + (isFinite(qb) ? qb.toFixed(1) : '-') + (mode === 'still' ? ' EV100 after ' + eA + ' vs before ' + eB : '') + (mode === 'stillFixed' ? ' fixed exposure after ' + xA + ' vs before ' + xB + ' (meter off both arms)' : '') + ' dense n ' + db.length + '/' + da.length + ' | mean before ' + f3(pb) + ' after ' + f3(pa)); }
       // REFS (canvas only — the still also carries the IR colour): untouched elements identical
       if (mode === 'canvas') { const byI = new Map(fa.samples.map(q => [q.i, q])), diffs = [];
         const D2C = /^Ifc(Pipe|PipeFitting|PipeSegment|FlowSegment|FlowFitting|Duct|DuctFitting|DuctSegment|Beam|Member|Plate)$/;   // FIX 11 moves these by design

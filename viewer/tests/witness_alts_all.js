@@ -22,6 +22,8 @@ const fs = require('fs'), path = require('path'), os = require('os'), zlib = req
 const J = require('./alts_all_judge.js');
 const argv = process.argv.slice(2), arg = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : d; }, has = n => argv.includes('--' + n);
 const TREE = path.resolve(arg('tree', path.join(__dirname, '..', '..'))), PORT = +arg('port', 8640), OUT = path.resolve(arg('out', has('judge') ? arg('judge') : '/tmp/alts_all'));
+// ### ALTS-ALL FIX 17: every press renders the SAME §PHOTO_VARIATION (skyline, puddles, paint jitter) — witness-only pin
+const SEED_Q = '&photoseed=' + arg('photoseed', '0.5');
 const EDITED = ['light_law.js', 'sourced_light.js', 'effects.js', 'gi_still.js', 'light_zones.js', 'cinema_maxq.js', 'glass_fresnel.js', 'streaming.js'];   // pass 3: + the FIX 11 / FIX 14 files
 const POSES = {
   clinic: ['Clinic', '&ghost=1', [21.243, -0.606, -1.261], [1.197, -4.155, -2.608]], inner: ['Hospital', '&ghost=1', [9.947, -7.699, 0.098], [14.735, -8.114, 2.081]],
@@ -195,7 +197,7 @@ async function pressStill(puppeteer, pose, arm, T) {
     const cdp = await p.target().createCDPSession(); await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dl });
     await p.evaluateOnNewDocument(() => { window.__swCtlAtLoad = !!(navigator.serviceWorker && navigator.serviceWorker.controller); });
     p.on('console', m => rec.lines.push(m.text().replace(/\n/g, '\\n'))); p.on('pageerror', e => rec.lines.push('PAGEERROR ' + e.message));
-    rec.url = 'http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=/buildings/' + DB + '_extracted.db' + q;
+    rec.url = 'http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=/buildings/' + DB + '_extracted.db' + q + SEED_Q;
     await p.goto(rec.url, { waitUntil: 'domcontentloaded', timeout: 180000 });
     const cnt = () => p.evaluate(() => window.APP && window.APP.guidMap ? Object.keys(window.APP.guidMap).length : 0);
     let last = -1, same = 0; for (let i = 0; i < 300 && same < 4; i++) { await new Promise(r => setTimeout(r, 2000)); const n = await cnt(); if (n > 0 && n === last) same++; else same = 0; last = n; }
@@ -301,7 +303,7 @@ async function runSequence(puppeteer) {
     const cdp = await p.target().createCDPSession(); await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dl });
     await p.evaluateOnNewDocument(() => { window.__swCtlAtLoad = !!(navigator.serviceWorker && navigator.serviceWorker.controller); });
     p.on('console', m => L.push(m.text().replace(/\n/g, '\\n'))); p.on('pageerror', e => L.push('PAGEERROR ' + e.message));
-    await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=/buildings/Terminal_extracted.db', { waitUntil: 'domcontentloaded', timeout: 180000 });
+    await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=/buildings/Terminal_extracted.db' + SEED_Q, { waitUntil: 'domcontentloaded', timeout: 180000 });
     const cnt = () => p.evaluate(() => window.APP && window.APP.guidMap ? Object.keys(window.APP.guidMap).length : 0);
     let last = -1, same = 0; for (let i = 0; i < 300 && same < 4; i++) { await new Promise(r => setTimeout(r, 2000)); const n = await cnt(); if (n > 0 && n === last) same++; else same = 0; last = n; }
     const mem0 = await p.evaluate(MEM_FACTS); log('  §ALTS_SEQ loaded elements=' + last + ' mem0=' + JSON.stringify(mem0));

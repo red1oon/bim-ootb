@@ -56,6 +56,9 @@ function g1(rec, T) {
   add('zero page errors / §LOAD_FAIL', !errs.length, errs.length + (errs.length ? ' e.g. ' + errs[0].slice(0, 120) : '') + gpu);
   // instrument (GPU run 2026-09-27, p2/base): the three-mesh-bvh CDN import failed (§BVH_INIT_FAIL) -> §SKY_SHELL_RAYS "no BVH",
   // recomputed=0: the press ran without the B1/Z8 shell pass, and no other G1 row noticed. A missing dependency = the press is not the build.
+  // ### ALTS-ALL FIX 17: the presentation variation must be pinned, else two presses of one pose differ by the roll (records from before
+  // the pin carry no line -> not judged here)
+  const ps = grep1(L, /§PHOTO_PAINT_SEED/); if (ps && /photoseed=/.test(rec.url || '')) add('variation seed pinned (§PHOTO_PAINT_SEED pinned=url)', /pinned=url/.test(ps), ps.slice(0, 100));
   const bvh = grepAll(L, /§BVH_INIT_FAIL/);
   add('BVH loaded (no §BVH_INIT_FAIL: shell pass needs it)', !bvh.length, bvh.length ? bvh[0].slice(0, 140) : 'ok');
   add('fresh profile (no SW controller at load)', E.swCtlAtLoad === false, 'controllerAtLoad=' + E.swCtlAtLoad);

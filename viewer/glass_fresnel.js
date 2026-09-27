@@ -95,7 +95,7 @@
   // HalfFloat, linear radiance, glass meshes hidden so a pane never reflects itself) becomes the clones' envMap (three's PMREM
   // prefilters it for roughness). Fresnel, the §GLASS_SPEC_GATE and the premultiplied blend are unchanged: it only changes WHAT is
   // reflected. Alt+S only; &glassenv=0 = the sky HDRI as before.
-  var capRT = null, capCam = null, CAP_SIZE = 256, pmremGen = null, pmremRT = null;
+  var capRT = null, capCam = null, CAP_SIZE = 256, pmremGen = null, pmremRT = null, captureN = 0;
   function liveClones() { var set = new Set(); swaps.forEach(function (s) { var m = s[0].material, ms = Array.isArray(m) ? m : [m]; ms.forEach(function (x) { if (x && x.userData && x.userData.gfOf) set.add(x); }); }); return set; }
   function capture(A) {
     var THREE = global.THREE; if (!THREE || !A || !A.renderer || !A.scene || !A.camera || !swaps.length) return null;
@@ -119,7 +119,11 @@
     finally { R.setRenderTarget(prevRT); A.scene.remove(capCam); hidden.forEach(function (o) { o.visible = true; }); }
     if (passes > 3) passes = 3;
     // ### ALTS-ALL FIX 14 diagnostic: non-finite texels per face (HalfFloat: exponent bits all 1 = Inf/NaN), read after the passes
-    var nf = []; try { var n0 = CAP_SIZE, hb = new Uint16Array(n0 * n0 * 4); for (var f = 0; f < 6; f++) { R.readRenderTargetPixels(capRT, 0, 0, n0, n0, hb, f); var bad = 0, inf = 0; for (var i = 0; i < hb.length; i++) { if ((i & 3) === 3) continue; if ((hb[i] & 0x7c00) === 0x7c00) { bad++; if (!(hb[i] & 0x03ff)) inf++; } } nf.push(bad + (inf ? '(inf' + inf + ')' : '')); } R.setRenderTarget(prevRT); } catch (eNF) { nf = ['err ' + eNF.message]; }
+    var nf = [], capLum = 0, capN = 0; try { var n0 = CAP_SIZE, hb = new Uint16Array(n0 * n0 * 4), h2f = function (h) { var e = (h >> 10) & 31, m = h & 1023; return e === 31 ? NaN : (e ? (1 + m / 1024) * Math.pow(2, e - 15) : m / 1024 * Math.pow(2, -14)) * (h & 0x8000 ? -1 : 1); };
+      for (var f = 0; f < 6; f++) { R.readRenderTargetPixels(capRT, 0, 0, n0, n0, hb, f); var bad = 0, inf = 0; for (var i = 0; i < hb.length; i++) { if ((i & 3) === 3) continue; if ((hb[i] & 0x7c00) === 0x7c00) { bad++; if (!(hb[i] & 0x03ff)) inf++; } }
+        for (var j = 0; j < hb.length; j += 4 * 17) { var lj = 0.2126 * h2f(hb[j]) + 0.7152 * h2f(hb[j + 1]) + 0.0722 * h2f(hb[j + 2]); if (isFinite(lj)) { capLum += lj; capN++; } }
+        nf.push(bad + (inf ? '(inf' + inf + ')' : '')); } R.setRenderTarget(prevRT); } catch (eNF) { nf = ['err ' + eNF.message]; }
+    captureN++;
     // ### ALTS-ALL FIX 14: prefilter the capture HERE, at top level, with an explicit PMREMGenerator (was: needsPMREMUpdate, which three
     // services lazily from inside the first scene render that meets the clone — on a page's first still that is a nested render
     // (the meter's prime) and the first-time PMREM target allocation there produced NaN at every glass fragment: MEASURED Terminal tr4
@@ -131,7 +135,7 @@
     var pmMs = Math.round(performance.now() - tP);
     var n = 0; liveClones().forEach(function (c) { if (c.envMap !== pmremRT.texture) { c.envMap = pmremRT.texture; c.needsUpdate = true; } n++; });
     if (A.markDirty) A.markDirty();
-    var line = '§GLASS_ENV captured ' + CAP_SIZE + 'x6 at camera [' + A.camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + '] glassMeshesHidden=' + hidden.length + ' clonesReflecting=' + n + ' passes=' + passes + ' rekeyedPerPass=[' + rekeyed.join(',') + ']' + ' nonFinitePerFace=[' + nf.join(',') + '] pmrem=explicit ' + pmMs + 'ms' + ' ms=' + Math.round(performance.now() - t0);
+    var line = '§GLASS_ENV captured ' + CAP_SIZE + 'x6 at camera [' + A.camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + '] glassMeshesHidden=' + hidden.length + ' clonesReflecting=' + n + ' passes=' + passes + ' rekeyedPerPass=[' + rekeyed.join(',') + ']' + ' nonFinitePerFace=[' + nf.join(',') + '] pmrem=explicit ' + pmMs + 'ms' + ' capture#' + captureN + ' capMeanL=' + (capN ? (capLum / capN).toExponential(3) : 'n/a') + ' exposureAtCapture=' + (R.toneMappingExposure != null ? R.toneMappingExposure.toFixed(4) : '?') + ' toneMapping=' + R.toneMapping + ' clonesEnvInt=[' + Array.from(liveClones()).map(function (c) { return c.envMapIntensity; }).join(',') + ']' + ' ms=' + Math.round(performance.now() - t0);
     console.log(line); return { clones: n, hidden: hidden.length, ms: Math.round(performance.now() - t0) };
   }
 

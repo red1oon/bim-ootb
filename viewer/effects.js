@@ -735,7 +735,10 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     for (var i = 0; i < N; i++) {
       var ang = (i / N) * Math.PI * 2;
-      var bw = 18 + Math.random() * 32, bh = 20 + Math.random() * 60;
+      // ### ALTS-ALL FIX 17: the skyline joins the §PHOTO_VARIATION owner (one seed drives every randomized presentation touch) —
+      // was Math.random, re-rolled outside the seed on every press (the backdrop behind Terminal glass changed press to press)
+      var _sk = (A._photoPaintSeed || 0) * 1000 + i * 3.1;
+      var bw = 18 + _seededRand(_sk + 0.11) * 32, bh = 20 + _seededRand(_sk + 0.23) * 60;
       var bx = cx + Math.cos(ang) * radius, by = cy + Math.sin(ang) * radius;
       var base = A.ifc2three(bx, by, groundZ);
       if (_sunClearDot) {
@@ -751,7 +754,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // ring stay exactly as dark/cool as before. General to any building/sun angle, no new query.
       var sunFacing = _sunClearDot ? Math.max(0, _dot) : 0;  // 0 (far side) .. ~0.95 (near the gap edge)
       var warmBoost = sunFacing * 0.10;
-      var shade = 0.06 + Math.random() * 0.07;
+      var shade = 0.06 + _seededRand(_sk + 0.37) * 0.07;
       var box = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bw),
         new THREE.MeshBasicMaterial({ color: new THREE.Color(
           shade * 0.9 + warmBoost * 1.3, shade * 0.85 + warmBoost * 0.9, shade * 1.15 + warmBoost * 0.5
@@ -4228,11 +4231,13 @@ async function setupEffects(A, renderer, scene, camera) {
     try { if (typeof window.ghostXrayOn === 'function' && window.ghostXrayOn() && typeof window.toggleGhostXray === 'function') { window.toggleGhostXray(); _ghostSuspendedByStill = true; } } catch (eG) {}
     console.log('§STILL_GHOST_OWNERSHIP suspended=' + (_ghostSuspendedByStill ? 1 : 0) + ' ghostOnNow=' + (typeof window.ghostXrayOn === 'function' && window.ghostXrayOn() ? 1 : 0));
     // §PHOTO_VARIATION: roll (or keep locked) the shared seed before anything below reads it.
-    if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
+    var _pinSeed = /[?&]photoseed=([0-9.]+)/.exec(location.search);   // ### ALTS-ALL FIX 17: witness-only pin (same variation every press)
+    if (_pinSeed) { A._photoPaintSeed = parseFloat(_pinSeed[1]); _photoVariationLocked = true; }
+    else if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
     _wireGroundPuddleShader();
     var _pbbox = _buildingBBoxIfc();
     if (_pbbox) _buildGroundPuddles((_pbbox.xMin + _pbbox.xMax) / 2, (_pbbox.yMin + _pbbox.yMax) / 2);
-    console.log('§PHOTO_PAINT_SEED seed=' + A._photoPaintSeed.toFixed(4) + ' locked=' + _photoVariationLocked +
+    console.log('§PHOTO_PAINT_SEED seed=' + A._photoPaintSeed.toFixed(4) + ' locked=' + _photoVariationLocked + (_pinSeed ? ' pinned=url' : '') +
       ' puddles=' + _puddleCenters.length);
     _photoGroundWasVisible = !!(A.ground && A.ground.visible);
     _photoGroundPrevKey = A._groundTexKey || null;
