@@ -205,8 +205,12 @@ function filmJudge(bake, T, ctl) {
       const ov = ev.map((x, i) => i).filter(i => i > 0 && Math.abs(ev[i] - tg[i]) > 1.1e-3 && Math.abs(ev[i - 1] - tg[i]) > 1.1e-3 && Math.sign(ev[i] - tg[i]) !== Math.sign(ev[i - 1] - tg[i]));   // crossed the target it was moving to
       add('F', 'no overshoot', ov.length ? 'FAIL' : 'PASS', ov.length ? 'f=' + ov.slice(0, 5) : 'none');
       const pr = a.map(d => +d.programs), warm = pr.slice(2), uniq = [...new Set(warm)];
-      const cen = grepAll(L, /§ALTC_PROGRAM_NEW/).filter(l => num(l, /f=(\d+)/) >= 2).map(l => (/names=(\[[^\]]*\])/.exec(l) || [])[1] || '?');
-      add('F', 'programs constant after warm-up (f>=2)', uniq.length <= 1 ? 'PASS' : 'FAIL', 'f0 ' + pr[0] + ' f1 ' + pr[1] + ' f>=2 ' + uniq.slice(0, 5).join(',') + (cen.length ? ' | new at f>=2: ' + cen.join(' ').slice(0, 160) : ''));
+      const cen = grepAll(L, /§ALTC_PROGRAM_NEW/).filter(l => num(l, /f=(\d+)/) >= 2 && (m => m && +m[2] > +m[1])(/programs=(\d+)->(\d+)/.exec(l))).map(l => (/names=(\[[^\]]*\])/.exec(l) || [])[1] || '?');
+      // ### ALTS-ALL FIX 5 decision (census 2026-09-27: f=84/85 = 2 SpriteMaterial programs — an overlay sprite first on screen late in
+      // the orbit, not a staging/lit material): new programs at f>=2 that are ALL non-lit overlay kinds (Sprite/Points/Line/MeshBasic)
+      // => WARN with the names; any lit/staging material (Standard/Physical/Lambert/Phong/Shader other than those) => FAIL.
+      const litNew = cen.some(n => /MeshStandard|MeshPhysical|MeshLambert|MeshPhong|ShaderMaterial|RawShader/.test(n));
+      add('F', 'programs constant after warm-up (f>=2)', uniq.length <= 1 ? 'PASS' : (cen.length && !litNew ? 'WARN' : 'FAIL'), 'f0 ' + pr[0] + ' f1 ' + pr[1] + ' f>=2 ' + uniq.slice(0, 5).join(',') + (cen.length ? ' | new at f>=2: ' + cen.join(' ').slice(0, 160) : ''));
       const tors = [...new Set(a.map(d => d.torch))], tl = grepAll(L, /§CAM_TORCH film on intensityUnits=/);
       if (bake.arm === 'T') add('F', 'torch off arm: torch=off every frame', tors.length === 1 && tors[0] === 'off' ? 'PASS' : 'FAIL', 'torch values ' + tors.join(','));
       else {   // row 12 (coordinator 2026-09-27): the bake stages twice (the first staging is torn down ~125 s) -> exactly ONE §CAM_TORCH film
@@ -261,11 +265,18 @@ function filmJudge(bake, T, ctl) {
   return out;
 }
 // ── DEFECT 6: glass see-through (per Terminal press) + the one-tab SEQUENCE vs fresh-page presses (S4 carried state)
-const GLASS = { minN: 10, inBandPct: 80 }, SEQB = { dp50: 5, dRatio: 0.1, dCompL: 8, heapSlope: 20, gpuSlope: 50, texGrow: 2 };
+const GLASS = { minN: 10, inBandPct: 80 }, SEQB = { dp50: 5, dRatio: 0.1, dCompL: 8, dKeep: 4, heapSlope: 20, gpuSlope: 50, texGrow: 2 };
 function g6(rec) {
   const G = rec.glass; if (!/^tr\d/.test(rec.pose)) return [];
   if (!G || G.err) return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', 'INCONCLUSIVE', G ? G.err : 'no glass facts')];
   if (!(G.n >= GLASS.minN)) return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', 'INFO', 'glass samples ' + G.n + ' < ' + GLASS.minN + ' (no glass in view at this pose)', { glassN: G.n })];
+  // ### ALTS-ALL FIX 9 row: glass pixels must KEEP the app's own pixels in the saved image (§GI_GLASS_SKIP intent) — mean |composite - app
+  // frame| at the glass samples <= 4 codes and no bounce alpha there. (Measured 2026-09-27 before the fix: the bounce painted them.)
+  if (G.keepAbs != null) return [row('G6', 'glass keeps the app pixels in the still (mean |comp - app| <= 4, bounce alpha 0 at glass)', (G.keepAbs <= 4 && G.bouncePct <= 10) ? 'PASS' : 'FAIL',
+    'n=' + G.n + ' keepAbs=' + G.keepAbs + ' bouncePct=' + G.bouncePct + '% compL=' + G.compL + ' appL=' + G.appL + ' | L_vis/L_hid p50 ' + G.ratioP50 + ' (probe render, informational) clones ' + G.clones, { glassN: G.n })];
+  // instrument guard (first GPU run 2026-09-27): ratio p10 = p50 = p90 = 1 exactly = hiding the glass changed NO sample = the float-target
+  // render did not draw the glass at all (the see-through question was never asked) => INCONCLUSIVE, never PASS/FAIL.
+  if (G.ratioP10 === 1 && G.ratioP50 === 1 && G.ratioP90 === 1) return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', 'INCONCLUSIVE', 'instrument: L_vis == L_hid at every glass sample (glass not drawn in the probe render) n=' + G.n + ' compL ' + G.compL, { glassN: G.n })];
   return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', G.inBandPct >= GLASS.inBandPct ? 'PASS' : 'FAIL', 'n=' + G.n + ' T=' + G.T + ' ratio p10/p50/p90 ' + G.ratioP10 + '/' + G.ratioP50 + '/' + G.ratioP90 + ' inBand ' + G.inBandPct + '% compL ' + G.compL + ' clones ' + G.clones + ' hidden ' + G.hidden, { glassN: G.n })];
 }
 function slope(ys) { const n = ys.length; if (n < 2) return null; const xm = (n - 1) / 2, ym = ys.reduce((a, b) => a + b, 0) / n; let nu = 0, de = 0; ys.forEach((y, i) => { nu += (i - xm) * (y - ym); de += (i - xm) * (i - xm); }); return de ? nu / de : null; }
@@ -277,7 +288,7 @@ function seqJudge(S, recs) {
   Object.keys(by).forEach(pose => { const a = by[pose], r2 = a[a.length - 1], f = recs[pose + '|base'];
     if (!f || !f.eval || !f.eval.comp || !r2.eval || !r2.eval.comp) { out.push(row('G7', 'sequence ' + pose + ': 2nd-round press vs fresh page', 'INCONCLUSIVE', 'missing ' + (!f ? 'fresh press' : 'stats'))); return; }
     const dp = Math.abs(r2.eval.comp.p50 - f.eval.comp.p50), gOk = r2.glass && f.glass && r2.glass.n >= GLASS.minN && f.glass.n >= GLASS.minN;
-    const dr = gOk ? Math.abs(r2.glass.ratioP50 - f.glass.ratioP50) : null, dc = gOk && r2.glass.compL != null && f.glass.compL != null ? Math.abs(r2.glass.compL - f.glass.compL) : null;
+    const dr = gOk && r2.glass.keepAbs == null ? Math.abs(r2.glass.ratioP50 - f.glass.ratioP50) : null, dc = gOk && r2.glass.compL != null && f.glass.compL != null ? Math.abs(r2.glass.compL - f.glass.compL) : null;
     const ok = dp <= SEQB.dp50 && (dr == null || dr <= SEQB.dRatio) && (dc == null || dc <= SEQB.dCompL);
     out.push(row('G7', 'sequence ' + pose + ': 2nd-round press (k=' + r2.k + ') vs fresh page', ok ? 'PASS' : 'FAIL', 'p50 ' + r2.eval.comp.p50 + ' vs ' + f.eval.comp.p50 + ' (1st round ' + (a[0].eval && a[0].eval.comp ? a[0].eval.comp.p50 : '-') + ')' + (gOk ? ' glass ratioP50 ' + r2.glass.ratioP50 + ' vs ' + f.glass.ratioP50 + ' compL ' + r2.glass.compL + ' vs ' + f.glass.compL : ' glass n ' + (r2.glass ? r2.glass.n : '-') + '/' + (f.glass ? f.glass.n : '-') + ' (not judged)') + ' meter ' + ((/EV100=(-?[\d.]+)/.exec(r2.meter || '') || [])[1] || '-') + ' vs ' + ((/EV100=(-?[\d.]+)/.exec(grepLast(f.lines, /§METER camera=/) || '') || [])[1] || '-'))); });
   const heap = P.map(r => r.mem && r.mem.heapMB).filter(v => v != null), gpu = P.map(r => r.gpu && r.gpu.pressPeakMB).filter(v => v != null), hs = slope(heap), gs = slope(gpu);

@@ -1179,7 +1179,7 @@
     var b = bindLights(A, A.camera);
     var gl = /[?&]glassshadow=1/.test(location.search) ? 0 : glassOn(A);   // &glassshadow=1 = glass casts as before (A/B)
     console.log('§SUN_GLASS_CASTERS fixed pureGlassMeshes=' + gl + ' (depth pass discards them: sun + portal shadows pass through glass)' + (gl ? '' : ' — &glassshadow=1 or none found'));
-    prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0, rebinds = 0; lastU = new WeakMap(); ordCache = null;
+    prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0, rebinds = 0, taaRestarts = 0; lastU = new WeakMap(); ordCache = null;
     set.forEach(function (m) { var pp = A.renderer.properties.get(m); if (pp && pp.uniforms) lastU.set(m, pp.uniforms); });
     var own = function (renderer, scene, camera) {
       if (active) {
@@ -1196,7 +1196,10 @@
         // in a fresh (dummy-texture) uniforms object — re-push any staged material whose uniforms object changed since its last push.
         // This hook runs before the draw, so the frame that created the key already drew with dummies: counted, not rescued.
         var nRe = 0, reN = []; if (renderer === A.renderer && renderer.properties) set.forEach(function (m) { var pp = renderer.properties.get(m), U = pp && pp.uniforms; if (U && U.uSLParams && lastU.get(m) !== U) { push(A, m); if (lastU.has(m)) { nRe++; if (reN.length < 4) reN.push(m.type.replace('Mesh', '').replace('Material', '') + ':' + (m.name || '-').slice(0, 20) + (m.userData && m.userData.gfOf ? '(glass)' : '') + (m.userData && m.userData.triRow ? '(tri)' : '')); } lastU.set(m, U); } });
-        if (nRe) { rebinds++; console.log('§SOURCED_REBIND n=' + nRe + ' event=' + rebinds + ' e.g. [' + reN.join(' ') + '] (materials re-keyed since their last push: the previous frame drew them with the dummy zone texture)'); }
+        // ### ALTS-ALL FIX 1 (e): a rebind DURING the still's accumulation means the previous TAA sample drew those materials with the
+        // dummy zone texture — restart the accumulation (the refine loop's own §STILL_REFINE_RESTART mechanism), at most 3 times a press.
+        var taaR = 0; if (nRe && A._stillRefineActive && A._taaPass && A._taaPass.accumulate && A._taaPass.accumulateIndex > 0 && taaRestarts < 3) { A._taaPass.accumulateIndex = -1; taaRestarts++; taaR = 1; }
+        if (nRe) { rebinds++; console.log('§SOURCED_REBIND n=' + nRe + ' event=' + rebinds + (taaR ? ' taaRestart=' + taaRestarts : '') + ' e.g. [' + reN.join(' ') + '] (materials re-keyed since their last push: the previous frame drew them with the dummy zone texture)'); }
         var line = '§SOURCED_LIGHT_BIND points=' + bb.points + ' bound=' + bb.pointsBound + ' (litOutside=' + bb.litOutside + ') litUnbound=' + bb.litUnbound + ' spots=' + bb.spots + ' portalsBound=' + bb.spotsBound;
         if (line !== lastLog) { lastLog = line; console.log(line); }
       }

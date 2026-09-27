@@ -92,6 +92,8 @@ function run() {
   const gl = (o) => Object.assign(stillRec('tr4', 'base'), { glass: Object.assign({ n: 40, T: 0.7, ratioP10: 0.6, ratioP50: 0.75, ratioP90: 0.9, inBandPct: 95, compL: 120, clones: 40, hidden: 12 }, o || {}) });
   expect('G6 see-through glass (ratio ~T) -> PASS', st(J.g6(gl()), /see-through/), 'PASS');
   expect('G6 opaque glass (ratio 3.1, inBand 10%) -> FAIL', st(J.g6(gl({ ratioP50: 3.1, inBandPct: 10 })), /see-through/), 'FAIL');
+  expect('G6 glass keeps the app pixels (keepAbs 1.2, bounce 0 %) -> PASS', st(J.g6(gl({ keepAbs: 1.2, bouncePct: 0 })), /glass keeps/), 'PASS');
+  expect('G6 bounce painted the glass (keepAbs 60, bounce 100 %) -> FAIL (### ALTS-ALL FIX 9)', st(J.g6(gl({ keepAbs: 60, bouncePct: 100 })), /glass keeps/), 'FAIL');
   expect('G6 no glass in view (n 3) -> INFO', st(J.g6(gl({ n: 3 })), /see-through/), 'INFO');
   const sp = (k, pose, p50, heap, tex, ratio) => ({ k, pose, eval: { comp: { p50 } }, glass: { n: 40, ratioP50: ratio, compL: 120 }, mem: { heapMB: heap, textures: tex, geometries: 100, glassClones: 40, programs: 90 }, gpu: { pressPeakMB: 1500 + k }, allocFail: [], meter: '' });
   const frs = { 'tr4|base': Object.assign(gl(), { eval: Object.assign(gl().eval, { comp: Object.assign({}, gl().eval.comp, { p50: 120 }) }) }) };
@@ -123,7 +125,7 @@ function run() {
   return new Promise(res => { Witness('ALTS_ALL_SELFTEST')
     .population(() => rows)
     .schema({ type: 'object', required: ['name', 'got', 'want', 'ok'], properties: { name: { type: 'string' }, got: { type: 'string' }, want: { type: 'string' }, ok: { type: 'boolean' } } })
-    .invariant('every GIGO state triggers and the GREEN fixtures pass', rs => rs.length >= 37 && rs.every(r => r.ok))
+    .invariant('every GIGO state triggers and the GREEN fixtures pass', rs => rs.length >= 39 && rs.every(r => r.ok))
     .redControl(rs => rs.map(r => /GREEN still/.test(r.name) ? Object.assign({}, r, { ok: J.gate(stillRows(stillRec('inner', 'base', { sw: 'v1' }))) === 'PASS' }) : r))
     .run(); res(process.exitCode ? 1 : 0); });
 }

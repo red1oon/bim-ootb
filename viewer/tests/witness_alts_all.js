@@ -123,11 +123,12 @@ const GLASS_FACTS = async () => {
   const hideAll = []; A.scene.traverse(o => { if (!o.visible || !o.material) return; const ms = Array.isArray(o.material) ? o.material : [o.material]; if (ms.every(isG)) hideAll.push(o); });
   let bv, bh; try { bv = rd(); hideAll.forEach(o => { o.visible = false; }); bh = rd(); } finally { hideAll.forEach(o => { o.visible = true; }); R.setRenderTarget(prev); rt.dispose(); }
   const Lat = (b, u, v) => { const x = Math.min(W - 1, Math.floor(u * W)), y = Math.min(H - 1, Math.floor((1 - v) * H)), i = (y * W + x) * 4; return 0.2126 * b[i] + 0.7152 * b[i + 1] + 0.0722 * b[i + 2]; };
-  let cw = 0, ch = 0, cd = null; if (D && D.bounce) { cw = D.bounce.width; ch = D.bounce.height; cd = D.bounce.getContext('2d').getImageData(0, 0, cw, ch).data; }
-  const rows = samp.map(s => { const lv = Lat(bv, s.u, s.v), lh = Lat(bh, s.u, s.v); let cl = null; if (cd) { const i = (Math.min(ch - 1, Math.floor(s.v * ch)) * cw + Math.min(cw - 1, Math.floor(s.u * cw))) * 4; cl = 0.2126 * cd[i] + 0.7152 * cd[i + 1] + 0.0722 * cd[i + 2]; } return { T: s.T, lv, lh, r: lh > 1e-6 ? lv / lh : null, cl, clone: s.clone }; });
+  let cw = 0, ch = 0, cd = null, ud = null; if (D && D.bounce) { cw = D.bounce.width; ch = D.bounce.height; cd = D.bounce.getContext('2d').getImageData(0, 0, cw, ch).data; if (D.under) ud = D.under.getContext('2d').getImageData(0, 0, cw, ch).data; }
+  const rows = samp.map(s => { const lv = Lat(bv, s.u, s.v), lh = Lat(bh, s.u, s.v); let cl = null; if (cd) { const i = (Math.min(ch - 1, Math.floor(s.v * ch)) * cw + Math.min(cw - 1, Math.floor(s.u * cw))) * 4; const src = cd[i + 3] > 0 ? cd : ud; cl = src ? 0.2126 * src[i] + 0.7152 * src[i + 1] + 0.0722 * src[i + 2] : null; /* the saved image: bounce where alpha > 0, else the app frame (as PAGE_FACTS) */ } let ul = null, ba = null; if (cd && ud) { const i = (Math.min(ch - 1, Math.floor(s.v * ch)) * cw + Math.min(cw - 1, Math.floor(s.u * cw))) * 4; ul = 0.2126 * ud[i] + 0.7152 * ud[i + 1] + 0.0722 * ud[i + 2]; ba = cd[i + 3]; }
+    return { T: s.T, lv, lh, r: lh > 1e-6 ? lv / lh : null, cl, ul, ba, clone: s.clone }; });
   const q = (a, f) => { const so = a.filter(x => x != null && isFinite(x)).sort((x, y) => x - y); return so.length ? +so[Math.floor(so.length * f)].toFixed(3) : null; };
   const rr = rows.map(x => x.r), okN = rows.filter(x => x.r != null && x.r >= 0.5 * x.T && x.r <= x.T + 0.5).length;
-  Object.assign(out, { T: q(rows.map(x => x.T), 0.5), ratioP10: q(rr, 0.1), ratioP50: q(rr, 0.5), ratioP90: q(rr, 0.9), inBandPct: +(100 * okN / rows.length).toFixed(1), compL: q(rows.map(x => x.cl), 0.5), clones: rows.filter(x => x.clone).length, hidden: hideAll.length, objs: gObjs.size });
+  Object.assign(out, { T: q(rows.map(x => x.T), 0.5), ratioP10: q(rr, 0.1), ratioP50: q(rr, 0.5), ratioP90: q(rr, 0.9), inBandPct: +(100 * okN / rows.length).toFixed(1), compL: q(rows.map(x => x.cl), 0.5), appL: q(rows.map(x => x.ul), 0.5), keepAbs: (() => { const d = rows.filter(x => x.cl != null && x.ul != null).map(x => Math.abs(x.cl - x.ul)); return d.length ? +(d.reduce((a, b) => a + b, 0) / d.length).toFixed(2) : null; })(), bouncePct: +(100 * rows.filter(x => x.ba > 0).length / rows.length).toFixed(1), clones: rows.filter(x => x.clone).length, hidden: hideAll.length, objs: gObjs.size });
   return out;
 };
 const MEM_FACTS = () => { const A = window.APP, R = A.renderer, m = performance.memory || {}; let clones = 0; const seen = new Set(); A.scene.traverse(o => { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(x => { if (x && !seen.has(x)) { seen.add(x); if (x.userData && x.userData.gfOf) clones++; } }); });
@@ -190,10 +191,13 @@ function runBake(armK, tree, extra) {
   const dir = path.join(OUT, 'film'); fs.mkdirSync(dir, { recursive: true }); const out = path.join(dir, armK + '.mp4'), lg = path.join(dir, armK + '.log'), tap = path.join(dir, 'tap.js'); fs.writeFileSync(tap, TAP);
   if (fs.existsSync(lg) && !has('rerun')) { log('  film ' + armK + ': persisted log reused (' + lg + ')'); return; }
   const miss = ensureFilmDbs(tree); if (miss.length) { fs.writeFileSync(lg, '§ALTS_FILM_DB MISSING ' + miss.join(',') + ' — bake not run\n'); log('  film ' + armK + ': NOT RUN, missing ' + miss.join(',')); return; }
-  const args = [path.join(tree, 'cli_silent_bake.js'), '--db', arg('db-film', 'HospitalAjaibPath'), '--gpu', 'real', '--fps', '15', '--frame-range', arg('frame-range', '0:90'), '--out', out, '--log', lg, '--tap', tap, '--port', String(+PORT + 20)].concat(extra, (arg('film-flags', '--clash --measure --label')).split(/\s+/).filter(Boolean));
+  // instrument (run 2026-09-27 film A: unregistered=1 + pre-purge _INITs = a stale SW in the CLI's persistent /tmp/silent-bake-profile-<port>):
+  // every bake gets a FRESH profile (--profile), removed afterwards.
+  const bprof = fs.mkdtempSync(path.join(os.tmpdir(), 'altsall-bake-'));
+  const args = [path.join(tree, 'cli_silent_bake.js'), '--profile', bprof, '--db', arg('db-film', 'HospitalAjaibPath'), '--gpu', 'real', '--fps', '15', '--frame-range', arg('frame-range', '0:90'), '--out', out, '--log', lg, '--tap', tap, '--port', String(+PORT + 20)].concat(extra, (arg('film-flags', '--clash --measure --label')).split(/\s+/).filter(Boolean));
   log('  film ' + armK + ': node ' + args.join(' ')); const t = Date.now();
   try { cp.execFileSync('node', args, { cwd: tree, stdio: ['ignore', 'ignore', 'ignore'], timeout: 3600e3 }); } catch (e) { log('  film ' + armK + ' exit ' + (e.status != null ? e.status : e.message)); }
-  log('  film ' + armK + ' wall ' + ((Date.now() - t) / 1000).toFixed(0) + ' s');
+  log('  film ' + armK + ' wall ' + ((Date.now() - t) / 1000).toFixed(0) + ' s'); try { fs.rmSync(bprof, { recursive: true, force: true }); } catch (e) {}
 }
 function loadBake(armK) {
   const dir = path.join(OUT, 'film'), lg = path.join(dir, armK + '.log'); if (!fs.existsSync(lg)) return null;
@@ -217,7 +221,7 @@ async function runAltc(puppeteer, N) {
       snap(); const oc = console.log.bind(console);
       console.log = function () { const t = String(arguments[0] || ''); const mm = /§FILM_EXPOSURE f=(\d+)/.exec(t); if (mm) f = +mm[1]; return oc.apply(console, arguments); };
       setInterval(() => { const k = R.info.programs.length; if (k === n) return; const nw = snap(), progs = new Set(R.info.programs.slice(n)); const hit = nw.filter(x => progs.has(x.cp));
-        oc('§ALTC_PROGRAM_NEW f=' + f + ' programs=' + n + '->' + k + ' names=[' + (hit.length ? hit : nw).slice(0, 8).map(x => x.m.type + '/' + (x.m.name || '-') + '@' + (x.o.name || x.o.type) + '{' + (x.cp.name || '') + '}').join(' ').replace(/[\[\]]/g, '') + '] newProgramNames=' + [...progs].map(q => q.name || '?').join(',')); n = k; }, 200); });
+        oc('§ALTC_PROGRAM_NEW f=' + f + ' programs=' + n + '->' + k + ' names=[' + (hit.length ? hit : nw).slice(0, 8).map(x => x.m.type + '/' + (x.m.name || '-') + '@' + (x.o.name || x.o.type) + '<' + ((x.o.parent && (x.o.parent.name || x.o.parent.type)) || '-') + ':' + Object.keys(x.o.userData || {}).slice(0, 3).join('+') + '>{' + (x.cp.name || '') + '}').join(' ').replace(/[\[\]]/g, '') + '] newProgramNames=' + [...progs].map(q => q.name || '?').join(',')); n = k; }, 200); });
     await new Promise(r => setTimeout(r, 5000)); L.push('§ALTC_ENTRY APP.startMaxQualityOrbit({frames:' + N + ', fps:15, editor:false}) — the function scene.js Alt+C calls, frames capped');
     await p.evaluate(n => { window.APP.startMaxQualityOrbit({ frames: n, fps: 15, editor: false }); }, N);   // coordinator 2026-09-27: editor:false (the OK click stays as a fallback)
     // instrument (GPU run 2026-09-27): start() opens the Cinema Path Editor (cinema_maxq.js §CINEMA_PATH_EDITOR, opts.editor !== false)
@@ -268,7 +272,7 @@ async function runSequence(puppeteer) {
       rec.allocFail = rec.lines.filter(l => /GPUOutOfMemory|OUT_OF_DEVICE_MEMORY|CONTEXT_LOST|Context Lost|allocation fail|RangeError|§LOAD_FAIL|PAGEERROR/.test(l)).slice(0, 5);
       rec.meter = (rec.lines.filter(l => /§METER camera=/.test(l)).pop() || '').slice(0, 200);
       presses.push(rec);
-      log('  §ALTS_SEQ press ' + k + ' ' + pose + ' p50=' + (rec.eval && rec.eval.comp ? rec.eval.comp.p50 : '-') + ' clip=' + (rec.eval && rec.eval.comp ? rec.eval.comp.ge250pct : '-') + ' glass n=' + rec.glass.n + ' ratioP50=' + rec.glass.ratioP50 + ' T=' + rec.glass.T + ' compL=' + rec.glass.compL +
+      log('  §ALTS_SEQ press ' + k + ' ' + pose + ' p50=' + (rec.eval && rec.eval.comp ? rec.eval.comp.p50 : '-') + ' clip=' + (rec.eval && rec.eval.comp ? rec.eval.comp.ge250pct : '-') + ' glass n=' + rec.glass.n + ' keepAbs=' + rec.glass.keepAbs + ' bouncePct=' + rec.glass.bouncePct + ' compL=' + rec.glass.compL + ' appL=' + rec.glass.appL +
         ' heapMB=' + rec.mem.heapMB + ' geo=' + rec.mem.geometries + ' tex=' + rec.mem.textures + ' prog=' + rec.mem.programs + ' clones=' + rec.mem.glassClones + ' gpuPress=' + rec.gpu.pressPeakMB + 'MiB used=' + rec.gpu.peakUsed + ' alloc=' + rec.allocFail.length + ' secs=' + rec.pressSecs);
       await p.keyboard.press('Escape'); for (let i = 0; i < 40 && !L.slice(j0).some(t => /§STILL_EXIT/.test(t)); i++) await new Promise(r => setTimeout(r, 250));
       await new Promise(r => setTimeout(r, 1500));

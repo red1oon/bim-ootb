@@ -186,7 +186,10 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1475';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1477';   // bump on each deploy; per-change detail is the git commit message.
+// v1477 (2026-09-27) ### ALTS-ALL FIX 9: gi_still glass skip also leaves out MULTI-MATERIAL objects with a glass group (Terminal R10
+//   window arrays were solid in the geometry pass -> opaque glass in Alt+S); glass-skip line per press. FIX 1(e): a §SOURCED_REBIND during
+//   the accumulation restarts it. viewer.html gi_still.js?v=31, sourced_light.js?v=61 in the SAME commit. (v1476 = fix/colour-truth.)
 // v1475 (2026-09-27) ### ALTS-ALL FIX 1: ONE §METER per still (SourcedLight.meterFinal on the final staged scene; stage() logs
 //   §METER_DIAG only); meterRead primes + pushes before the read (§METER_BIND: fresh-key uniforms carried the dummy zone texture);
 //   §SOURCED_REBIND counts re-keyed materials; §METER_BIND rendered/calls/bufHash. FIX 7: light_zones.js never persists/reuses a

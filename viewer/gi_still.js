@@ -395,14 +395,20 @@
       // OUT of the geometry pass entirely — their pixels stay exactly as the app drew them.
       // Terminal has 26 such meshes at opacity 0.25; HHS's facade is mostly glazing.
       const GLASS_MAX_OPACITY = (window.__GI_GLASS_OPACITY != null) ? window.__GI_GLASS_OPACITY : 0.9;
-      let glass = 0;
+      let glass = 0, glassArr = 0;
       s.traverse(o => {
         const m = o.material;
-        if (!o.visible || !m || Array.isArray(m)) return;
+        if (!o.visible || !m) return;
+        // ### ALTS-ALL FIX 9 (DEFECT 6, measured 2026-09-27: Terminal "§GI_STILL glass skip: 0" on every press while §GLASS_FRESNEL
+        // patched 70 glazing meshes): Terminal's panes live in MATERIAL ARRAYS (R10 window arrays, frame + pane groups) and this
+        // loop returned early on every array, so each pane went into the geometry pass as a SOLID wall and the composite replaced
+        // the app's see-through glass with bounce shading ("alt-s makes them opaque"). An object with ANY glass group is left out
+        // (its frame then keeps the app's own pixels too — a sliver, against a pane-sized opaque sheet).
+        if (Array.isArray(m)) { if (m.some(x => x && x.transparent && x.opacity < GLASS_MAX_OPACITY)) { o.visible = false; hidden.push(o); glassArr++; } return; }
         if (m.isShaderMaterial && !m.isNodeMaterial) { o.visible = false; hidden.push(o); return; }
         if (m.transparent && m.opacity < GLASS_MAX_OPACITY) { o.visible = false; hidden.push(o); glass++; }
       });
-      G.glassSkipped = glass;
+      G.glassSkipped = glass + glassArr; G.glassSkippedArr = glassArr;
       if (useSwap) {
         s.traverse(o => {
           if (!o.visible || !o.material || o.material === G.geoMat) return;
@@ -427,7 +433,9 @@
       if (G.pipeline.renderAsync) await G.pipeline.renderAsync(); else G.pipeline.render();
       G.renderer.setRenderTarget(null);
       G.hiddenCount = hidden.length;
-      if (!G.glassLogged) { G.glassLogged = true; console.log('§GI_STILL glass skip: ' + (G.glassSkipped || 0) + ' transparent meshes left out of the geometry pass (they keep the app\'s own pixels)'); }
+      // logged on EVERY press (was once per page: a carried-state change on press 2+ was invisible — DEFECT 6); the 8 passes of one
+      // press share it (the count is per pass, identical within a press)
+      if (G.glassLoggedPress !== G.pressId) { G.glassLoggedPress = G.pressId; console.log('§GI_STILL glass skip: ' + (G.glassSkipped || 0) + ' transparent meshes left out of the geometry pass (' + (G.glassSkippedArr || 0) + ' multi-material, e.g. window frame + pane; they keep the app\'s own pixels)'); }
     } finally {
       for (let i = swapped.length - 1; i >= 0; i--) swapped[i][0].material = swapped[i][1];
       s.overrideMaterial = prevOverride;
@@ -734,7 +742,7 @@
     try {
       toast('Bounce still — starting…');
       if (!built || built.w !== w || built.h !== h) { if (built) { try { built.renderer.dispose(); } catch (e) {} } built = await build(w, h); }
-      const G = built;
+      const G = built; G.pressId = (G.pressId || 0) + 1;   // ### ALTS-ALL FIX 9: per-press glass-skip log
       const enc = opts.encode || encodeMode();
       R.encode = enc;
       G.setMode(mode, enc);
