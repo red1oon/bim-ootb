@@ -295,6 +295,7 @@
       C.dithering_fragment = C.dithering_fragment + '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
         'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : ( _slSky > 0.5 ? 0.5 : 0.0 ), 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
         'if ( uSLParams.w > 11.5 && uSLParams.w < 12.5 ) { mat4 _vn = inverse( viewMatrix ); vec3 _nn = normalize( ( _vn * vec4( ( dot( normal, vViewPosition ) < 0.0 ) ? - normal : normal, 0.0 ) ).xyz ); gl_FragColor = vec4( _nn * 0.5 + 0.5, 1.0 ); }\n' +   // §COVE_LIGHT witness readback: eye-facing world normal
+        'else if ( uSLParams.w > 12.5 && uSLParams.w < 13.5 ) { gl_FragColor = vec4( material.diffuseColor, 0.75 ); }\n' +   // §ZERO Z11 albedo readback (float target): the diffuse albedo the fragment is shaded with, marker 0.75
         'else if ( uSLParams.w > 10.5 && uSLParams.w < 11.5 ) { gl_FragColor = vec4( _slCove * uSLCoveP.w, ( _slFZ > 0.5 && _slFZ < 65533.5 ) ? _slFZ : 0.0, 0.75, 1.0 ); }\n' +   // §COVE_LIGHT readback (float target): R = cove Lambert term (texel units), G = zone, B = 0.75 marker
         'else if ( uSLParams.w > 9.5 && uSLParams.w < 10.5 ) { gl_FragColor = vec4( _slGd, _slF, 0.75, 1.0 ); }\n' +   // §GROUND_VIEW_FIELD readback (float target): R = _slGd, G = _slF, B = 0.75 marker
         'else if ( uSLParams.w > 8.5 && uSLParams.w < 9.5 ) { gl_FragColor = vec4( slIr() * BRDF_Lambert( material.diffuseColor ), 0.75 ); }\n' +   // §IRC_MAX v2 readback: IR radiance (linear)
@@ -526,6 +527,26 @@
       var v = Math.round(sh * 255); out[d] = v; out[d + 1] = v; out[d + 2] = v; out[d + 3] = 255; if (sh > 0) { n++; sum += sh; if (sh > 0.5) over++; } }
     var r = { data: out, pixels: n, meanShare: n ? +(sum / n).toFixed(3) : 0, shareOver50: over, ms: Math.round(performance.now() - t0) };
     console.log('§IRC_MAX share ' + w + 'x' + h + ' pixelsWithIR=' + n + ' meanShare=' + r.meanShare + ' pixelsIRover50%=' + over + ' ms=' + r.ms + ' (share = IR radiance / total, linear; applied to the tone-mapped app colour = approximation)');
+    return r;
+  }
+  // ══ §ZERO Z11 — the receiver ALBEDO for gi_still (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z11 SPEC" (b)) ══
+  // One app render with readback mode 13 (material.diffuseColor, linear, marker alpha 0.75) at the bounce size, the irShare row
+  // flip (canvas order), sRGB-encoded bytes (the canvas texture decodes them on sample). alpha 255 = real albedo; 0 = none (sky,
+  // unpatched material, or a transparent fragment blended over another — the marker no longer reads 0.75): gi keeps its estimate.
+  function oetf(c) { c = c < 0 ? 0 : (c > 1 ? 1 : c); return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; }
+  function albedoEncode(F, w, h) {
+    var out = new Uint8ClampedArray(w * h * 4), n = 0, lum = 0;
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) { var s = (y * w + x) * 4, d = ((h - 1 - y) * w + x) * 4;
+      if (Math.abs(F[s + 3] - 0.75) < 1e-4) { out[d] = Math.round(255 * oetf(F[s])); out[d + 1] = Math.round(255 * oetf(F[s + 1])); out[d + 2] = Math.round(255 * oetf(F[s + 2])); out[d + 3] = 255;
+        n++; lum += 0.2126 * Math.min(1, F[s]) + 0.7152 * Math.min(1, F[s + 1]) + 0.0722 * Math.min(1, F[s + 2]); } }
+    return { data: out, real: n, meanAlbLum: n ? +(lum / n).toFixed(4) : 0 };
+  }
+  function albedoMap(A, w, h) {
+    var THREE = global.THREE, R = A && A.renderer; if (!installed || linkFailed || !R) return null;
+    var t0 = performance.now(), rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: true }), F = new Float32Array(w * h * 4), w0 = P[3], prev = R.getRenderTarget(), bg = A.scene.background;
+    try { A.scene.background = null; P[3] = 13; R.setRenderTarget(rt); R.clear(); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, w, h, F); }
+    finally { P[3] = w0; R.setRenderTarget(prev); A.scene.background = bg; rt.dispose(); }
+    var r = albedoEncode(F, w, h); r.ms = Math.round(performance.now() - t0);
     return r;
   }
   // ══ §LAMP_EN (red1 2026-09-26: "lamp strength should be commensurate with indoor space, a standard governs it"; "Set a standard
@@ -1297,5 +1318,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, installed: function () { return installed; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, installed: function () { return installed; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

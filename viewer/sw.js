@@ -196,6 +196,8 @@ const CACHE_VERSION = 'v1473';   // bump on each deploy; per-change detail is th
 //   viewer.html light_law.js?v=1->2, effects.js?v=109->110 in the SAME commit.
 // v1467 (2026-09-27) §ZERO Z10 AO_INDIRECT: Alt+S AO in world metres (LightLaw.AO) applied to the materials' indirect terms (aomap patch).
 //   viewer.html light_law.js?v=1->2, sourced_light.js?v=54->55, effects.js?v=109->110 in the SAME commit.
+// v1468 (2026-09-27) §ZERO Z11 BOUNCE: gi_still second AO 0 (stills), real receiver albedo (SourcedLight.albedoMap, readback mode 13).
+//   viewer.html sourced_light.js?v=54->55, gi_still.js?v=28->29 in the SAME commit.
 // v1463 (2026-09-27) §LIGHT_LAW_MODULE: new viewer/light_law.js (window.LightLaw — calibration, scene sources, §METER_EV
 //   constants + formulas, cove levels, snapshot()+hash); scene.js / effects.js / sourced_light.js read it (pure refactor).
 //   viewer.html light_law.js?v=1 + sourced_light.js?v=53->54, effects.js?v=108->109, scene.js?v=64->65 in the SAME commit.
