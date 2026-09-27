@@ -3178,7 +3178,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // shadow-only lights (colour 0). m is FIXED for the session (C1 / ALTC_FOUNDATION F8: a light-count change recompiles
   // every material) — unused cascades keep their light, get no render, and the shader never picks them.
   var CSM_M = 4, CSM_BLEND = 0.1, CSM_LAMBDA = 0.5, CSM_RB_W = 160, CSM_RB_H = 90, CSM_MEM_CAP = 512, CSM_THIN = 0.0167;
-  var _csmLights = [], _csmRT = null, _csmDM = null, _csmSingleSize = 0;
+  var _csmLights = [], _csmRT = null, _csmDM = null, _csmDMF = null, _csmDMB = null, _csmSidesLast = null, _csmSingleSize = 0;
   function _cascadeOn() {
     return !A._maxqActive && !!(window.ShadowCascade && window.ShadowCascade.installed()) && _edgeOn() &&
       !(A._stillShadowCascade === false || /[?&]shadowcascade=0/.test(location.search)) && !(A._stillShadowFit === false || /[?&]shadowfit=0/.test(location.search));
@@ -3247,13 +3247,33 @@ async function setupEffects(A, renderer, scene, camera) {
     });
     var sm = R.shadowMap, smA = sm.autoUpdate, smN = sm.needsUpdate, prevRT = R.getRenderTarget(), prevOv = A.scene.overrideMaterial,
         prevBg = A.scene.background, prevFog = A.scene.fog, cc = R.getClearColor(new THREE.Color()), ca = R.getClearAlpha(), buf = new Uint8Array(W * H * 4);
+    // ### ALTS-ALL FIX 16 (plenum sun leak): the readback must see the faces the still draws. It rendered EVERY mesh DoubleSide, but the
+    // beauty draws the §WALL_SIDE closed classes FrontSide — from a camera behind/inside walls (Hospital plenum) the readback's nearest
+    // depth was those culled BACK faces (median view depth 0.75 m vs the visible surfaces 2-10 m), the SDSM box clustered on them
+    // (cascade 0 box 1.2 x 2.6 m) and 100/101 sun-lit clipped samples fell in no cascade box -> full sun through the slab (22 % clipped;
+    // a +-80 m box: dark, = sun off). Two passes into one depth buffer: FrontSide meshes with a FrontSide depth material, then the
+    // DoubleSide/BackSide ones with their own side. &csmsides=0 = the old DoubleSide readback.
+    var sideOf = function(o) { var m0 = Array.isArray(o.material) ? o.material[0] : o.material; return m0 ? m0.side : THREE.DoubleSide; };
+    var twoPass = !/[?&]csmsides=0/.test(location.search), groups = { f: [], o: [] };
+    if (twoPass) { if (!_csmDMF) { _csmDMF = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.FrontSide }); _csmDMB = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.BackSide }); }
+      A.scene.traverse(function(o) { if (o.visible && o.isMesh) (sideOf(o) === THREE.FrontSide ? groups.f : groups.o).push(o); }); }
+    var ac = R.autoClear;
     try {
-      sm.autoUpdate = false; sm.needsUpdate = false; A.scene.overrideMaterial = _csmDM; A.scene.background = null; A.scene.fog = null;
-      R.setRenderTarget(_csmRT); R.setClearColor(0xffffff, 1); R.clear(); R.render(A.scene, cam); R.readRenderTargetPixels(_csmRT, 0, 0, W, H, buf);
+      sm.autoUpdate = false; sm.needsUpdate = false; A.scene.background = null; A.scene.fog = null;
+      R.setRenderTarget(_csmRT); R.setClearColor(0xffffff, 1); R.clear();
+      if (!twoPass) { A.scene.overrideMaterial = _csmDM; R.render(A.scene, cam); }
+      else { R.autoClear = false;
+        groups.o.forEach(function(o) { o.visible = false; }); A.scene.overrideMaterial = _csmDMF; R.render(A.scene, cam); groups.o.forEach(function(o) { o.visible = true; });
+        groups.f.forEach(function(o) { o.visible = false; });
+        var bk = groups.o.filter(function(o) { return sideOf(o) === THREE.BackSide; }); bk.forEach(function(o) { o.visible = false; }); A.scene.overrideMaterial = _csmDM; R.render(A.scene, cam); bk.forEach(function(o) { o.visible = true; });
+        var dbl = groups.o.filter(function(o) { return sideOf(o) !== THREE.BackSide; }); if (bk.length) { dbl.forEach(function(o) { o.visible = false; }); A.scene.overrideMaterial = _csmDMB; R.render(A.scene, cam); dbl.forEach(function(o) { o.visible = true; }); }
+        groups.f.forEach(function(o) { o.visible = true; }); }
+      R.readRenderTargetPixels(_csmRT, 0, 0, W, H, buf);
     } finally {
-      sm.autoUpdate = smA; sm.needsUpdate = smN; R.setRenderTarget(prevRT); A.scene.overrideMaterial = prevOv; A.scene.background = prevBg; A.scene.fog = prevFog;
+      R.autoClear = ac; sm.autoUpdate = smA; sm.needsUpdate = smN; R.setRenderTarget(prevRT); A.scene.overrideMaterial = prevOv; A.scene.background = prevBg; A.scene.fog = prevFog;
       R.setClearColor(cc, ca); hidden.forEach(function(o) { o.visible = true; });
     }
+    _csmSidesLast = twoPass ? { front: groups.f.length, other: groups.o.length } : null;
     // three r186 unpackRGBAToDepth: dot(rgba, (255/256, 255/256/256, 255/256/65536, 1/16777216)); all-255 = cleared (packDepthToRGBA(>=1))
     var k0 = 255 / 256 / 255, k1 = k0 / 256, k2 = k1 / 256, k3 = 1 / 16777216 / 255, fwd = cam.getWorldDirection(new THREE.Vector3());
     var v = new THREE.Vector3(), pts = [], zMin = Infinity, zMax = -Infinity, n = 0;
@@ -3396,7 +3416,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var f = function(a, k, d) { return '[' + a.map(function(o) { var v = typeof k === 'function' ? k(o) : o[k]; return (v == null || !isFinite(v)) ? 'NaN' : (+v).toFixed(d); }).join(',') + ']'; };
     var E = function(k) { return function(o) { return o.edge ? o.edge[k] : NaN; }; };
     cs.forEach(function(o, c) { if (o.line) console.log(o.line + ' cascade=' + c + ' slice=[' + o.sa.toFixed(2) + ',' + o.sb.toFixed(2) + ']m box=' + o.w.toFixed(1) + 'x' + o.h.toFixed(1) + 'm'); });
-    console.log('§STILL_SHADOW_CASCADE uncovered=' + unc + '/' + (P2.length / 3) + ' m=' + CSM_M + ' used=' + used + ' mode=cascades(worst ' + worst.toFixed(4) + ' <= single ' + sTexel.toFixed(4) + ' at ' + sSize + ') splits=[' + C.map(function(x) { return x.toFixed(2); }).join(',') + ']' +
+    console.log('§STILL_SHADOW_CASCADE uncovered=' + unc + '/' + (P2.length / 3) + ' readbackSides=' + (_csmSidesLast ? 'asDrawn(front ' + _csmSidesLast.front + ', double/back ' + _csmSidesLast.other + ')' : 'double(&csmsides=0)') + ' m=' + CSM_M + ' used=' + used + ' mode=cascades(worst ' + worst.toFixed(4) + ' <= single ' + sTexel.toFixed(4) + ' at ' + sSize + ') splits=[' + C.map(function(x) { return x.toFixed(2); }).join(',') + ']' +
       ' texel=' + f(cs, 'texel', 4) + ' normalBias=' + f(cs, E('nb'), 4) + ' thinCasterRisk=' + f(cs, E('nb'), 4) + ' bias=' + f(cs, E('bias'), 7) +
       ' range=' + f(cs, E('range'), 1) + ' gap45=' + f(cs, E('g45'), 4) + ' gap20=' + f(cs, E('g20'), 4) + ' texelPerPixel=' + f(cs, 'tpp', 2) +
       // §THIN_PX rule (watchdog red1-c6): thinCasterRisk <= max(0.05 m, 1.5 x the pixel footprint at the cascade's near split)

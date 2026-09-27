@@ -155,11 +155,11 @@ const CLIP_FACTS = async () => {
   const hid = [];
   try {
     A.scene.background = null; A.scene.fog = null; if (sky) sky.visible = false; R.setClearColor(0x000000, 0);
-    objs.forEach(o => { if (o.isSprite) o.material = SP; else if (o.isPoints) o.material = PT; else if (o.isLine) o.material = LN; else o.material = Array.isArray(o.material) ? o.material.map(m => M[kind(m)]) : M[kind(o.material)]; });
+    objs.forEach(o => { if (o.isSprite) o.material = SP; else if (o.isPoints) o.material = PT; else if (o.isLine) o.material = LN; else o.material = Array.isArray(o.material) ? Array.prototype.map.call(o.material, m => M[kind(m)]) : M[kind(o.material)]; });   // R10 arrays shadow .map with a texture
     R.setRenderTarget(rt); R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, cw, ch, B);
     saved.forEach(([o, m]) => { o.material = m; });
     // pass (a): glass + non-lit hidden (per material in arrays: material.visible = false), zone readback
-    const mv = new Map(); objs.forEach(o => { if (o.isSprite || o.isPoints || o.isLine) { o.visible = false; hid.push(o); return; } (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m && kind(m) !== 'o' && !mv.has(m)) { mv.set(m, m.visible); m.visible = false; } }); });
+    const mv = new Map(); objs.forEach(o => { if (o.isSprite || o.isPoints || o.isLine) { o.visible = false; hid.push(o); return; } (Array.isArray(o.material) ? Array.from(o.material) : [o.material]).forEach(m => { if (m && kind(m) !== 'o' && !mv.has(m)) { mv.set(m, m.visible); m.visible = false; } }); });
     SL.debugZones(1); R.setRenderTarget(rt); R.clear(true, true, true); R.render(A.scene, A.camera); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, cw, ch, Z);
     mv.forEach((v, m) => { m.visible = v; });
   } finally { SL.debugZones(0); saved.forEach(([o, m]) => { o.material = m; }); hid.forEach(o => { o.visible = true; }); A.scene.background = bg; A.scene.fog = fog; if (sky) sky.visible = skyV; R.setRenderTarget(prev); R.setClearColor(cc, ca); rt.dispose(); [M.o, M.g, M.e, SP, PT, LN].forEach(m => m.dispose()); }

@@ -193,6 +193,8 @@ const CACHE_VERSION = 'v1478';   // bump on each deploy; per-change detail is th
 //   0.05 dropped) streaming.js?v=79; FIX 13 GI energy bound gi_still.js?v=32 + SourcedLight.irR sourced_light.js?v=63.
 //   + ### ALTS-ALL FIX 14 (first-press black glass): zero vertex normals repaired at Alt+S staging (A._repairDegenerateNormals, O(tri)),
 //   §GLASS_ENV prefiltered by an explicit PMREMGenerator + re-capture while materials re-key; streaming.js?v=81 effects.js?v=117 glass_fresnel.js?v=9.
+//   + ### ALTS-ALL FIX 16 (plenum sun leak): the cascade depth readback draws each mesh with ITS side (was DoubleSide: culled back faces
+//   pulled the SDSM boxes onto the camera, visible surfaces fell in no box); effects.js?v=118.
 // v1476 (2026-09-27) fix/colour-truth §ZERO Z19-Z21: coloured zone IR, porcelain finish, placeholder = STD_MAT / MEP-trade proxy hue.
 // v1477 (2026-09-27) ### ALTS-ALL FIX 9: gi_still glass skip also leaves out MULTI-MATERIAL objects with a glass group (Terminal R10
 //   window arrays were solid in the geometry pass -> opaque glass in Alt+S); glass-skip line per press. FIX 1(e): a §SOURCED_REBIND during
