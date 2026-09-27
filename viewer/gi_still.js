@@ -449,7 +449,10 @@
   // §GI_STILL_GAIN_DIAL (2026-09-24, red1: bounce "MORE", tuned per press). Read at EVERY Alt+S:
   // APP._stillBounceGain, else window.__GI_STILL_GAIN, else &bounce=<0..3>, else 1.0 (was a fixed 0.6).
   // AO keeps its 0.55 default; window.__GI_STILL_AO still overrides, now per press too.
-  const GI_GAIN_DEFAULT = 1.0, GI_AO_DEFAULT = 0.55, GI_RECV_DEFAULT = 1, GI_RADIUS_DEFAULT = 12, GI_THICK_DEFAULT = 1;
+  // §ZERO Z11 (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z11 SPEC" (a)): AO ONCE — §PHOTO_AO (Z10, AO on indirect light) is the
+  // one AO; this bounce adds light only. GI_AO_DEFAULT 0.55 -> 0 (the dial stays: &ao= / APP._stillAo for A/B). Witness:
+  // viewer/tests/witness_z11_bounce_receiver.js.
+  const GI_GAIN_DEFAULT = 1.0, GI_AO_DEFAULT = 0, GI_RECV_DEFAULT = 1, GI_RADIUS_DEFAULT = 12, GI_THICK_DEFAULT = 1;
   function readGain() {
     const A = window.APP || {};
     let v = (typeof A._stillBounceGain === 'number') ? A._stillBounceGain : (typeof window.__GI_STILL_GAIN === 'number' ? window.__GI_STILL_GAIN : null);
@@ -466,8 +469,11 @@
     if (v == null) { const m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(location.search); v = m ? parseFloat(m[1]) : def; }
     return Math.max(lo, Math.min(hi, isFinite(v) ? v : def));
   }
-  function readAo() {
+  // §ZERO Z11: a FILM keeps the pre-Z11 second AO (0.55) until Z13 (§FILM_LAW S4) inherits the approved still — Alt+C is not changed here.
+  const GI_AO_FILM_PRE_Z11 = 0.55;
+  function readAo(forFilm) {
     const A = window.APP || {};
+    if (forFilm && typeof A._stillAo !== 'number' && typeof window.__GI_STILL_AO !== 'number' && !/[?&]ao=/.test(location.search)) return GI_AO_FILM_PRE_Z11;
     let v = (typeof A._stillAo === 'number') ? A._stillAo : (typeof window.__GI_STILL_AO === 'number' ? window.__GI_STILL_AO : null);
     if (v == null) { const m = /[?&]ao=([0-9.]+)/.exec(location.search); v = m ? parseFloat(m[1]) : GI_AO_DEFAULT; }
     return Math.max(0, Math.min(1, isFinite(v) ? v : GI_AO_DEFAULT));
@@ -491,7 +497,12 @@
     const Cq = T.sRGBTransferEOTF(T.clamp(T.vec3(m).add(q).div(255), 0, 1));
     const lum = T.max(T.dot(Cq, T.vec3(0.2126, 0.7152, 0.0722)), T.float(1e-3));
     const est = T.min(Cq.div(lum).mul(GI_ALBEDO_EST), T.vec3(1));
-    return T.mix(C.rgb, est, G.recvU);
+    const old = T.mix(C.rgb, est, G.recvU);
+    // §ZERO Z11 (b): the REAL albedo the app shades this pixel with (SourcedLight.albedoMap, alpha 1 = real) wins; the estimate only
+    // where there is none (sky, unpatched, blended-transparent pixels) or with &gialb=0 (G.albU = 0).
+    if (!G.albNode) return old;
+    const alb = G.albNode.sample(T.uv());
+    return alb.a.mul(G.albU).greaterThan(0.5).select(alb.rgb, old);
   }
   function outputFor(G, mode, enc) {
     const T = G.TSL, C = G.colorNode.sample(G.TSL.uv()), gi = G.gi, mask = G.maskNode;
@@ -627,6 +638,14 @@
     const shareTexNode = TSL.texture(shareTex);
     G.shareCanvas = shareCanvas; G.shareCtx = shareCtx; G.shareTex = shareTex;
     G.shareNode = TSL.sample((uv) => shareTexNode.sample(TSL.vec2(uv.x, uv.y.mul(flipSign).add(flipOff))));
+    // §ZERO Z11 (b): receiver albedo canvas (sRGB bytes from SourcedLight.albedoMap, decoded on sample; alpha = real), same flip uniforms
+    const albCanvas = document.createElement('canvas'); albCanvas.width = w; albCanvas.height = h;
+    const albCtx = albCanvas.getContext('2d', { willReadFrequently: true });
+    const albTex = new THREE.CanvasTexture(albCanvas); albTex.flipY = false; albTex.colorSpace = THREE.SRGBColorSpace; albTex.generateMipmaps = false;
+    albTex.minFilter = THREE.NearestFilter; albTex.magFilter = THREE.NearestFilter; albTex.wrapS = albTex.wrapT = THREE.ClampToEdgeWrapping;
+    const albTexNode = TSL.texture(albTex);
+    G.albCanvas = albCanvas; G.albCtx = albCtx; G.albTex = albTex; G.albU = TSL.uniform(0);
+    G.albNode = TSL.sample((uv) => albTexNode.sample(TSL.vec2(uv.x, uv.y.mul(flipSign).add(flipOff))));
     G.irMaxU = TSL.uniform(1);   // 1 = max(IR, SSGI) (watchdog rule); 0 = the old sum (&ircmax=0, A/B only)
     G.gainU = TSL.uniform(GI_GAIN_DEFAULT); G.aoU = TSL.uniform(GI_AO_DEFAULT);   // §GI_STILL_GAIN_DIAL
     G.recvU = TSL.uniform(0);   // §GI_RECEIVER, set per press
@@ -737,6 +756,14 @@
         G.shareTex.needsUpdate = true; G.irMaxU.value = /[?&]ircmax=0/.test(location.search) ? 0 : 1;
         R.irShare = sh ? { pixels: sh.pixels, meanShare: sh.meanShare, over50: sh.shareOver50 } : null;
         console.log('§IRC_MAX composite rule=' + (G.irMaxU.value ? 'max(IR, SSGI)' : 'SUM (&ircmax=0)') + ' share=' + (sh ? 'pixelsWithIR ' + sh.pixels + ' mean ' + sh.meanShare : 'none (IR off or not staged)')); }
+      // §ZERO Z11 (b) — the receiver albedo of every pixel (one app render, readback mode 13); none = the old estimate everywhere
+      { let ab = null; const off = /[?&]gialb=0/.test(location.search) || A._stillGiAlb === false;
+        if (!off) { try { ab = window.SourcedLight && window.SourcedLight.albedoMap ? window.SourcedLight.albedoMap(A, w, h) : null; } catch (eA) { console.warn('§GI_RECEIVER_ALBEDO failed: ' + eA.message); } }
+        if (ab) G.albCtx.putImageData(new ImageData(ab.data, w, h), 0, 0); else G.albCtx.clearRect(0, 0, w, h);
+        G.albTex.needsUpdate = true; G.albU.value = ab ? 1 : 0;
+        R.albedo = ab ? { real: ab.real, meanAlbLum: ab.meanAlbLum, ms: ab.ms } : null;
+        console.log('§GI_RECEIVER_ALBEDO ' + (ab ? 'real=' + ab.real + ' est=' + (w * h - ab.real) + ' realPct=' + (100 * ab.real / (w * h)).toFixed(1) + ' meanAlbLum=' + ab.meanAlbLum + ' ms=' + ab.ms
+          : 'off (' + (off ? '&gialb=0' : 'SourcedLight not installed') + ') — receiver = the hue x ' + GI_ALBEDO_EST + ' estimate everywhere') + ' (% of the whole frame, sky included)'); }
       console.log('§GI_STILL underlay mean=' + R.underMean + ' (the app frame; it is also the colour fed to SSGI — ~0 means the app canvas handed back an empty buffer)');
       let acc = null;
       const _ps0 = G.pipeStats ? Object.assign({}, G.pipeStats) : null, _passMs = [];
@@ -990,7 +1017,7 @@
       }
       const G = film.G;
       G.setMode('composite', encodeMode());
-      G.gainU.value = readGain(); G.aoU.value = readAo();
+      G.gainU.value = readGain(); G.aoU.value = readAo(true); G.albU.value = 0;   // §ZERO Z11: films unchanged (0.55, estimate receiver)
       G.recvU.value = readNum('_stillGiRecv', 'girecv', GI_RECV_DEFAULT, 0, 1);
       G.gi.radius.value = readNum('_stillGiRadius', 'girad', GI_RADIUS_DEFAULT, 0.5, 100);
       G.gi.thickness.value = readNum('_stillGiThick', 'githick', GI_THICK_DEFAULT, 0.01, 50);
