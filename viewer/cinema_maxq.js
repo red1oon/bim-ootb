@@ -3672,6 +3672,7 @@
         if (typeof window.__maxqPoseTap === 'function')
           try { window.__maxqPoseTap(i, pose.x, pose.y, pose.z, pose.tx, pose.ty, pose.tz); } catch (ePT) {}
         if (A._updateCamLight) A._updateCamLight(pose.tx, pose.ty, pose.tz);
+        if (A._updateCamTorch) A._updateCamTorch(pose.tx, pose.ty, pose.tz);   // §CAM_TORCH film (§FILM_LAW Z17, L1b) — no-op unless staged
         // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
         // only the camera, this adds construction state). _tFilm keeps the cursor on the film's own
         // parameter, so a clip samples the middle of the buildup rather than restarting it.

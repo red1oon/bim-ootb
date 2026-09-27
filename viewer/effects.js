@@ -4609,8 +4609,11 @@ async function setupEffects(A, renderer, scene, camera) {
     A._camLight.intensity = (_camSourcedOff || _camFilmOff) ? 0 : CAM_LIGHT_INTENSITY;
     console.log('§CAM_LIGHT ' + (_camSourcedOff ? 'off (§SOURCED_LIGHT: not a real source)' : _camFilmOff ? 'off (film, L1a: not a real source)' : 'on') + ' intensity=' + A._camLight.intensity + ' distance=' + CAM_LIGHT_DISTANCE +
       ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
-    // §CAM_TORCH — Alt+S only for now (films: Z17 film part); &torch=0 / APP._stillTorch=false = off.
-    if (!A._maxqActive && window.LightLaw && window.LightLaw.TORCH && A._stillTorch !== false && !/[?&]torch=0/.test(location.search)) {
+    // §CAM_TORCH — Alt+S, and (§FILM_LAW Z17 film part, L1b) parity films under the SAME gate as S3 (_camFilmOff): the film gets
+    // the Alt+S torch instead of a plain CAM_LIGHT off. Created once, added once per staging (constant light count => no program
+    // recompiles across frames); cinema_maxq.js moves it per frame via A._updateCamTorch. Control clip unchanged. &torch=0 = off.
+    var _torchFilm = !!A._maxqActive && _camFilmOff;
+    if ((!A._maxqActive || _torchFilm) && window.LightLaw && window.LightLaw.TORCH && A._stillTorch !== false && !/[?&]torch=0/.test(location.search)) {
       var _TL = window.LightLaw.TORCH, _lp = window.LightLaw.luxPer(A._stillCalibSunLux, A._stillCalibSunI);
       if (_lp) {
         if (!A._camTorch) { A._camTorch = new THREE.SpotLight(_TL.color, 0, 0, _TL.halfAngleDeg * Math.PI / 180, 0, 2);
@@ -4622,7 +4625,10 @@ async function setupEffects(A, renderer, scene, camera) {
         _updateCamTorch(_tg.x, _tg.y, _tg.z);
         console.log('§CAM_TORCH on peakCd=' + _TL.peakCd + ' (' + _TL.lm + ' lm, FL1 ' + _TL.beamDistM + ' m) halfAngle=' + _TL.halfAngleDeg + ' offset R' + _TL.offsetRightM + '/U' + _TL.offsetUpM +
           ' m intensityUnits=' + A._camTorch.intensity.toExponential(3) + ' (cd / luxPer ' + _lp.toFixed(1) + ') shadow=' + _TL.shadowMap);
-        if (window.SourcedLight && window.SourcedLight.remeter) window.SourcedLight.remeter(A);   // the meter sees the torch (L3)
+        if (_torchFilm) console.log('§CAM_TORCH film on intensityUnits=' + A._camTorch.intensity.toExponential(6) + ' peakCd=' + _TL.peakCd + ' lawHash=' + window.LightLaw.hash(window.LightLaw.LAW) +
+          ' (once per bake; moved per frame by A._updateCamTorch; the film meter S1 reads it every frame)');
+        // Alt+S re-meters with the torch (L3); a film's exposure is owned by §FILM_EXPOSURE (S1), which meters every frame with it.
+        else if (window.SourcedLight && window.SourcedLight.remeter) window.SourcedLight.remeter(A);
       } else console.log('§CAM_TORCH VACUOUS no lux calibration — off');
     }
     _showPhotoProps(true);
@@ -4761,7 +4767,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' cam=[' + (A.camera ? [A.camera.position.x, A.camera.position.y, A.camera.position.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']' +
       ' tgt=[' + (A.controls && A.controls.target ? [A.controls.target.x, A.controls.target.y, A.controls.target.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']' +
       ' sunI=' + (A.sun ? A.sun.intensity.toFixed(3) : '-') + ' ambient=' + (A.ambient ? A.ambient.intensity.toFixed(3) : '-') + ' hemi=' + (A.hemi ? A.hemi.intensity.toFixed(3) : '-') +
-      ' camLight=' + (A._camLight ? A._camLight.intensity : '-') + ' programs=' + (R.info && R.info.programs ? R.info.programs.length : '-') + ' ms=' + (performance.now() - t0).toFixed(1));
+      ' camLight=' + (A._camLight ? A._camLight.intensity : '-') + ' torch=' + (A._camTorch && A._camTorch.parent ? A._camTorch.intensity.toExponential(6) : 'off') + ' programs=' + (R.info && R.info.programs ? R.info.programs.length : '-') + ' ms=' + (performance.now() - t0).toFixed(1));
     if (a.first || frameIdx % 24 === 0) { try { LL.log(A, a.first ? 'film-first' : 'film'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); } }
     return { f: frameIdx, targetEv: tEv, ev: a.ev, exposure: exp, first: a.first, capped: a.capped };
   };
@@ -10593,6 +10599,7 @@ async function setupEffects(A, renderer, scene, camera) {
       A.controls.target.set(pose.tx, pose.ty, pose.tz);
       A.controls.update();
       _updateCamLight(pose.tx, pose.ty, pose.tz);
+      _updateCamTorch(pose.tx, pose.ty, pose.tz);   // §CAM_TORCH — no-op unless the torch is staged
       _sunArcStep(tNorm);
       _reassertPhotoShadowCoverage();
       _reassertPhotoMatBoost();

@@ -40,7 +40,8 @@ const ex = LL.exposureFromEv(ev, lp, 0.6);
 row('exposureFromEv(12.9658, 22727.27, 0.6) = 13636.36 / 9600 = 1.42045', ex, 1.42045, near(ex, 1.420454545, 1e-8));
 row('ev100(12.5 cd/m2) = log2(100) (K cancels)', LL.ev100(12.5), Math.log2(100), near(LL.ev100(12.5), Math.log2(100), 1e-12));
 const FakeTHREE = { ACESFilmicToneMapping: 4, NoToneMapping: 0 };
-row('acesDiv(ACES renderer) = 0.6', LL.acesDiv({ toneMapping: 4 }, FakeTHREE), 0.6, LL.acesDiv({ toneMapping: 4 }, FakeTHREE) === 0.6);
+// §METER_EV v3 (fix/alts-torch): three's ACESFilmic 1/0.6 pre-scale is NOT cancelled — acesDiv returns 1 for every renderer.
+row('acesDiv(ACES renderer) = 1 (pre-scale kept, §METER_EV v3)', LL.acesDiv({ toneMapping: 4 }, FakeTHREE), 1, LL.acesDiv({ toneMapping: 4 }, FakeTHREE) === 1);
 row('acesDiv(no tone map) = 1', LL.acesDiv({ toneMapping: 0 }, FakeTHREE), 1, LL.acesDiv({ toneMapping: 0 }, FakeTHREE) === 1);
 row('toneConst(THREE) = THREE.ACESFilmicToneMapping', LL.toneConst(FakeTHREE), 4, LL.toneConst(FakeTHREE) === 4);
 
@@ -57,7 +58,7 @@ row('bit-identical luxPer/ev100/exposure vs c539f129 inline (' + n + ' inputs)',
 
 // (c) constants = the literals they replaced (c539f129: effects.js:4274, sourced_light.js:896/1148/1233, scene.js:125-213)
 const want = { 'CALIB.sunLux': 100000, 'CALIB.lampLux': 500, 'CALIB.refH': 2.5, 'METER.K': 12.5, 'METER.iso': 100, 'METER.q': 1.2,
-  'METER.histLo': 0.70, 'METER.histHi': 0.95, 'METER.W': 160, 'METER.H': 90, 'TONE.acesDiv': 0.6, 'TONE.curve': 'ACESFilmic',
+  'METER.histLo': 0.40, 'METER.histHi': 0.90, 'METER.W': 160, 'METER.H': 90, 'TONE.acesDiv': 0.6, 'TONE.curve': 'ACESFilmic',
   'COVE.trimLuxVoid': 100, 'COVE.unknownLux': 100, 'COVE.color': 0xffe4b5, 'SCENE.toneMapping': 'ACESFilmic', 'SCENE.exposure': 0.45,
   'SCENE.sun.color': 0xfff0dd, 'SCENE.sun.intensity': 4.4, 'SCENE.hemi.sky': 0xb0c4de, 'SCENE.hemi.ground': 0x8b7355,
   'SCENE.hemi.intensity': 0.617, 'SCENE.ambient.color': 0xffffff, 'SCENE.ambient.intensity': 0.386 };
