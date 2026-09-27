@@ -85,7 +85,8 @@ async function measure(pg, key, walkDisc) {
   await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalk==="function"', { timeout: 30000 }).catch(() => {});
 
-  const sc = await measure(pg, 'SampleCastle', 'ELEC');
+  // §WALK-LOD400-ONLY (2026-09-27): SampleCastle's ELEC/ACMV/PLB walks now REFUSE — their placements carry no device and no mesh hash, so they rendered 366 LOD200 boxes (red1: 'All must be LOD400 or fail hard'). FP (borrowed from terminal_rules) is real LOD400 there (126), so this leg walks FP.
+  const sc = await measure(pg, 'SampleCastle', 'FP');
   // fresh reload before Duplex to avoid state bleed between residents
   await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalk==="function"', { timeout: 30000 }).catch(() => {});

@@ -14,7 +14,7 @@
  *   L3  NOSPACES    — Terminal ELEC walk takes the measured-band path live (placed>0, real z-bands).
  *   L4  FALLBACK    — SampleCastle ELEC (duplex-rules, no spaces, no mesh binding) falls back to the
  *                     LEGACY walk with placements — the flip must not cost any resident its walk.
- *   L5  FAKE-HASH falsifier — corrupting placements' hashes → lod400 drops to 0, honest boxes, no crash.
+ *   L5  FAKE-HASH falsifier — corrupting placements' hashes → lod400 drops to 0 and NOTHING is drawn (refused, logged), no crash.
  *   L6  CROSS-DISC  — a second discipline (PLB) walks after ELEC with the avoid list live, no crash.
  * PASS bar: all chk() green, zero pageerror on every page.
  */
@@ -116,8 +116,12 @@ const num = (l, k) => { const m = l && l.match(new RegExp(k + '=(-?\\d+)')); ret
     });
     await sleep(800);
     const lodF = grab(logs.slice(before), '§DW-PRIM-LOD disc=ELEC')[0];
-    chk('L5 FAKE-HASH falsifier: lod400→0, honest boxes, no crash', !!lodF && num(lodF, 'lod400') === 0 && num(lodF, 'lod200') > 0,
-      lodF ? lodF.slice(lodF.indexOf('lod400=')) : 'no re-render log');
+    // §WALK-LOD400-ONLY (2026-09-27, red1: "no BBoxes or cubes, or LOD200 fallback. All must be LOD400 or fail hard"): a hash with
+    // no real mesh is now REFUSED at render (nothing drawn, logged) — the old "honest boxes" outcome is itself the violation.
+    const refR = logs.slice(before).filter(l => /§DW-LOD400-REFUSE render disc=ELEC/.test(l)).length;
+    chk('L5 FAKE-HASH falsifier: lod400→0, NOTHING drawn (lod200=0, lod300=0), refusal logged, no crash',
+      !!lodF && num(lodF, 'lod400') === 0 && num(lodF, 'lod200') === 0 && num(lodF, 'lod300') === 0 && refR > 0,
+      (lodF ? lodF.slice(lodF.indexOf('lod400='), lodF.indexOf('lod400=') + 40) : 'no re-render log') + ' refuseRenderLines=' + refR);
     // L6 cross-disc — PLB walks after ELEC (avoid list live), places via schedule, no crash
     const w2 = await walkAndWait(pg, logs, 'PLB', 90000);
     const sched2 = grab(w2, '§WALK-SCHED disc=PLB')[0];

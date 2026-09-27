@@ -25,8 +25,10 @@ async function runOne(pg, key, shots) {
   await pg.click(`#m-open-panel .mo-row[data-key="${key}"]`);
   await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai', { timeout: 60000 }).catch(() => {});
   await sleep(4000);
-  await pg.evaluate((b) => window.discWalk('ELEC', { building: b }), key);
-  const walked = await pg.waitForFunction((d) => window.__dwLastCommitDisc === d, { timeout: 180000, polling: 250 }, 'ELEC').then(() => true).catch(() => false);
+  // §WALK-LOD400-ONLY (2026-09-27): SampleCastle's ELEC/ACMV/PLB walks now REFUSE — their placements carry no device and no mesh hash, so they rendered 366 LOD200 boxes (red1: 'All must be LOD400 or fail hard'). FP (borrowed from terminal_rules) is real LOD400 there (126), so this leg walks FP.
+  const DISC = key === 'SampleCastle' ? 'FP' : 'ELEC';
+  await pg.evaluate((b, d) => window.discWalk(d, { building: b }), key, DISC);
+  const walked = await pg.waitForFunction((d) => window.__dwLastCommitDisc === d, { timeout: 180000, polling: 250 }, DISC).then(() => true).catch(() => false);
   await sleep(1000);
 
   // snapshot material state BEFORE xray touches anything — real buildings legitimately have transparent

@@ -3848,6 +3848,32 @@ function _discWalkNow(disc, ctx) {
 // logic. Returns { refused, reason, placed } (never throws — same try/catch-and-log the original IIFE had).
 // opts.flash=true (discWalkAll only) plays the orange-flash-then-settle reveal on the just-gated placements
 // BEFORE committing (see _flashSettleDisc) — single-disc discWalk never sets it, so its visuals are unchanged.
+// §WALK-LOD400-ONLY (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md, red1 2026-09-27: "no BBoxes or cubes, or LOD200 fallback. All must
+// be LOD400 or fail hard"). A walked placement is kept ONLY if its geometry_hash resolves to a real mesh in the building's geo
+// buffer; everything else is REFUSED — never registered, rendered or committed. Measured before this gate: SampleCastle rendered
+// 366 LOD200 boxes (legacy walk placements with no device/hash — binding one would be inventing), and Duplex drew boxes when a walk
+// beat the geo fetch. Waits for the geo buffer first (cap 60 s) so a resident's own meshes never refuse from a race.
+async function _dwLod400Only(disc, w) {
+  var t0 = Date.now();
+  while (!window.__dwGeoBuf && Date.now() - t0 < 60000) await new Promise(function (r) { setTimeout(r, 200); });
+  var hashes = {}; w.placements.forEach(function (p) { if (p.geometry_hash) hashes[p.geometry_hash] = 1; });
+  var real = {};
+  if (window.__dwGeoBuf && window.RealGeometry && Object.keys(hashes).length) {
+    try { var g = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(g, Object.keys(hashes)); g.close(); }
+    catch (e) { console.warn('§DW-LOD400-REFUSE ' + disc + ' geo resolve failed ' + (e && e.message)); real = {}; }
+  }
+  var kept = [], refused = {}, nRef = 0;
+  w.placements.forEach(function (p) {
+    if (p.geometry_hash && real[p.geometry_hash]) { kept.push(p); return; }
+    var k = String(p.ifc_class || '?').replace(/^Ifc/, '') + (p.geometry_hash ? '(hash unresolved)' : '(no hash)');
+    refused[k] = (refused[k] || 0) + 1; nRef++;
+  });
+  if (nRef) console.log('§DW-LOD400-REFUSE disc=' + disc + ' refused=' + nRef + ' kept=' + kept.length + ' geoBuf=' + !!window.__dwGeoBuf +
+    ' waited=' + (Date.now() - t0) + 'ms [' + Object.keys(refused).map(function (k) { return k + '×' + refused[k]; }).join(' ') + '] (no box, no LOD200 — fail hard)');
+  w.placements = kept; w.placed = kept.length;
+  if (!kept.length) { w.refused = true; w.reason = 'no LOD400 mesh for any of ' + nRef + ' placement(s) — refused, never a box (§WALK-LOD400-ONLY)'; }
+  return w;
+}
 async function _discWalkOne(disc, ctx, opts) {
   opts = opts || {};
   var name = (ctx && ctx.building) || '';
@@ -3901,6 +3927,7 @@ async function _discWalkOne(disc, ctx, opts) {
     }
     if (gdb) { try { gdb.close(); } catch (e2) { } }
     bdb.close();
+    if (!w.refused && w.placed && !w.verdict) await _dwLod400Only(disc, w);   // §WALK-LOD400-ONLY: refuse, never box
     if (w.refused || !w.placed) {
       _clearDiscWalk(disc);
       setStat(disc + ' — no walk (' + (w.reason || 'no placements') + ')');
@@ -4107,7 +4134,10 @@ function _renderDiscWalk(disc, placements) {
       geo.userData.lod400 = true; geo.userData.hash = s.geometry_hash;
       isLod400 = true;
     } else {
-      geo = window._dwPrimGeo(prim, bx, by, bz, cls);                           // POC box (measured) or catalog-matched LOD300 mesh
+      // §WALK-LOD400-ONLY: no box / LOD300 stand-in, ever. The gate in _discWalkOne keeps only placements whose mesh
+      // resolved; reaching here means that mesh was not resolvable at redraw time → refuse the bucket, log it.
+      console.warn('§DW-LOD400-REFUSE render disc=' + disc + ' class=' + cls + ' ×' + list.length + ' — no real mesh at redraw, not drawn');
+      return;
     }
     var isLod300 = !!(geo.userData && geo.userData.lod300);
     if (isLod400) lod400N += list.length; else if (isLod300) lod300N += list.length; else lod200N += list.length;
