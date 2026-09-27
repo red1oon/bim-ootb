@@ -4659,7 +4659,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' cam=[' + (A.camera ? [A.camera.position.x, A.camera.position.y, A.camera.position.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']' +
       ' tgt=[' + (A.controls && A.controls.target ? [A.controls.target.x, A.controls.target.y, A.controls.target.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']' +
       ' sunI=' + (A.sun ? A.sun.intensity.toFixed(3) : '-') + ' ambient=' + (A.ambient ? A.ambient.intensity.toFixed(3) : '-') + ' hemi=' + (A.hemi ? A.hemi.intensity.toFixed(3) : '-') +
-      ' camLight=' + (A._camLight ? A._camLight.intensity : '-') + ' ms=' + (performance.now() - t0).toFixed(1));
+      ' camLight=' + (A._camLight ? A._camLight.intensity : '-') + ' programs=' + (R.info && R.info.programs ? R.info.programs.length : '-') + ' ms=' + (performance.now() - t0).toFixed(1));
     if (a.first || frameIdx % 24 === 0) { try { LL.log(A, a.first ? 'film-first' : 'film'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); } }
     return { f: frameIdx, targetEv: tEv, ev: a.ev, exposure: exp, first: a.first, capped: a.capped };
   };
