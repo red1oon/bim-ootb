@@ -248,7 +248,10 @@ runE2E('W-E2E-INSTHIDE', async (t) => {
 
   // ── H5..H8: the pure-instanced ASSEMBLY leg (no authored twin — W-E2E-INSTPICK P2b precedent) ───
   await pg.evaluate(() => {
-    const parts = [0, 1, 2, 3].map(i => ({ disc: 'ASMH', guid: 'ASMH_PART_' + i, ifc_class: 'IfcDuctSegment',
+    // §WALK-LOD400-ONLY (2026-09-27): an assembly part renders ONLY from a real mesh — give the parts the REAL mesh hash of
+    // this building's own ELEC walk (resolved from Duplex_geo.db by the production renderer); hashless parts are refused.
+    const gh = (function () { const W = (window.__dwWalks && window.__dwWalks.ELEC) || []; const p = W.find(q => q.geometry_hash); return p ? p.geometry_hash : null; })();
+    const parts = [0, 1, 2, 3].map(i => ({ disc: 'ASMH', guid: 'ASMH_PART_' + i, ifc_class: 'IfcDuctSegment', geometry_hash: gh,
       piece_type: 'run', pos: [30 + i * 1.5, -30, 1.2], dir: [0, 0, 1], diameter_mm: 300, length_mm: 600 }));
     window.__dwRender.assembly('ASMH', parts);
     const c = window.A.camera, ct = window.A.controls;

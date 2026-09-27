@@ -14,6 +14,7 @@
  *                         _dw GEOM_INSERT lands nearest) — the "walked fixtures are pick-dead" complaint is
  *                         dead post-commit, and identity is the op-log row, not a guess. (Measured: the
  *                         instanced bucket is a decorative twin at d+0.3 behind the folded mesh.)
+ *   P2c NO-MESH-REFUSED — hashless assembly parts are refused (0 drawn, logged); mesh-bearing ones draw the real mesh.
  *   P2b INSTANCED-PICK  — the §Q2 instanced branch itself, exercised where NO folded twin exists: assembly
  *                         parts render InstancedMesh-only (never committed). A real mouse click on a part
  *                         rendered through the PRODUCTION seam (window.__dwRender.assembly) resolves
@@ -85,7 +86,18 @@ runE2E('W-E2E-INSTPICK', async (t) => {
   // §NET-AUDIT RACE (2026-09-26): P2's click selected something → §ZOOM-SEL fly; settle it or it overwrites the camera below.
   await t.flySettle();
   const part = await t.pg.evaluate(() => {
-    const parts = [0, 1, 2].map(i => ({ disc: 'ASMW', guid: 'ASMW_PART_' + i, ifc_class: 'IfcDuctSegment',
+    // §WALK-LOD400-ONLY (2026-09-27): an assembly part renders ONLY from a real mesh. P2c first: hashless parts (what
+    // assemble() emits today — Ø/length medians only) must be REFUSED: nothing drawn, logged. Then P2b's parts carry the
+    // REAL mesh hash of this building's own ELEC walk (resolved from Duplex_geo.db by the production renderer).
+    const nomesh = [0, 1].map(i => ({ disc: 'ASMN', guid: 'ASMN_PART_' + i, ifc_class: 'IfcDuctSegment',
+      piece_type: 'run', pos: [40 + i * 1.5, -40, 1.2], dir: [0, 0, 1], diameter_mm: 300, length_mm: 600 }));
+    window.__dwRender.assembly('ASMN', nomesh);
+    const rootN = window.Bonsai.group().children.find(o => o.userData && o.userData.dwRoot);
+    window.__p2c = { drawnMeshes: rootN.children.filter(o => o.userData && o.userData.dwAsm === 'ASMN' && (o.isMesh || o.isInstancedMesh)).length,
+      stored: (window.__dwAssembly.ASMN || []).length };
+    const gh = (function () { const W = (window.__dwWalks && window.__dwWalks.ELEC) || []; const p = W.find(q => q.geometry_hash); return p ? p.geometry_hash : null; })();
+    window.__p2c.gh = gh;
+    const parts = [0, 1, 2].map(i => ({ disc: 'ASMW', guid: 'ASMW_PART_' + i, ifc_class: 'IfcDuctSegment', geometry_hash: gh,
       piece_type: 'run', pos: [30 + i * 1.5, -30, 1.2], dir: [0, 0, 1], diameter_mm: 300, length_mm: 600 }));
     window.__dwRender.assembly('ASMW', parts);
     const c = window.A.camera, ct = window.A.controls;
@@ -101,6 +113,14 @@ runE2E('W-E2E-INSTPICK', async (t) => {
     Math.abs(ip.x - part.x) < 1e-6 && Math.abs(ip.y - part.y) < 1e-6 && Math.abs(ip.z - part.z) < 1e-6;
   t.assert('P2b INSTANCED-PICK (no-twin part → instanceId → exact record, guid + xyz ≤1e-6)', !!p2b,
     ip ? 'got disc=' + ip.disc + ' i=' + ip.i + ' guid=' + ip.guid + ' xyz=(' + (+ip.x).toFixed(3) + ',' + (+ip.y).toFixed(3) + ',' + (+ip.z).toFixed(3) + ')' : 'no instance pick');
+
+  const p2c = await t.pg.evaluate(() => window.__p2c);
+  const refLog = t.slog.filter(l => /§DW-LOD400-REFUSE asm disc=ASMN refused=2 drawn=0/.test(l)).pop() || '';
+  const asmW = await t.pg.evaluate(() => { const r = window.Bonsai.group().children.find(o => o.userData && o.userData.dwRoot);
+    const im = r.children.find(o => o.isInstancedMesh && o.userData.dwAsm === 'ASMW'); return im ? { n: im.count, lod400: !!(im.geometry.userData && im.geometry.userData.lod400), v: im.geometry.attributes.position.count } : null; });
+  t.assert('P2c NO-MESH-REFUSED (hashless assembly parts: 0 meshes drawn, 0 stored, §DW-LOD400-REFUSE asm logged; mesh-bearing parts draw the REAL mesh, not a box)',
+    p2c && p2c.drawnMeshes === 0 && p2c.stored === 0 && !!refLog && !!p2c.gh && asmW && asmW.n === 3 && asmW.lod400 && asmW.v !== 24 && asmW.v !== 8,
+    JSON.stringify(p2c) + ' asmW=' + JSON.stringify(asmW) + ' log="' + refLog.slice(0, 90) + '"');
 
   // P3 — tint applied at the picked instanceId, Escape restores
   const tint = await t.pg.evaluate(() => {

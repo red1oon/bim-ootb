@@ -3980,8 +3980,8 @@ async function _discWalkOne(disc, ctx, opts) {
     }
     // §3c ASSEMBLE: when a routed network exists, instantiate the projected catalog PARTS at the real
     // routed NODES (rule_joint_piece — pose from the node, Ø from the measured catalog, orientation from
-    // the run vector) + enrich them with their connector hookup. Rendered as boxes via the _dwPrimGeo LOD
-    // seam. No network (e.g. SC FP has no duct topology) → honest REFUSE, logged, no fabricated part.
+    // the run vector) + enrich them with their connector hookup. Rendered ONLY from a real mesh (§WALK-LOD400-ONLY —
+    // a part with no resolvable geometry_hash is refused, never boxed). No network (e.g. SC FP has no duct topology) → honest REFUSE, logged, no fabricated part.
     var asmN = 0;
     try {
       if (window.DiscWalker.assemble) {
@@ -3992,7 +3992,7 @@ async function _discWalkOne(disc, ctx, opts) {
         if (asm && !asm.refused && asm.parts && asm.parts.length) {
           window.DiscWalker.connectorEnrich(asm.parts);
           _renderDiscAssembly(disc, asm.parts);
-          asmN = asm.parts.length;
+          asmN = (window.__dwAssembly[disc] || []).length;   // drawn parts only — refused ones are logged by the renderer
         }
         console.log('§DW-ASSEMBLE ' + disc + ' connectors=' + connN + '/' + w.placements.length +
           ' parts=' + asmN + (asm && asm.refused ? ' (assemble REFUSE: ' + asm.reason + ')' :
@@ -4364,8 +4364,8 @@ window.discWalkAll = async function (ctx) {
   return window.__dwAllResult;
 };
 // §3c ASSEMBLE render — catalog PARTS instantiated at the real routed NODES (disc_walker.assemble): each part
-// is a BOX via the _dwPrimGeo LOD seam, oriented by its run vector (part.dir), tinted by disc, plus its
-// connector hookup edge. This is the LANDED assembly layer (parts sit on real element endpoints — the assembly
+// renders ONLY from its own real mesh (geometry_hash resolved in the building geo — §WALK-LOD400-ONLY; a part without
+// one is refused and logged, never a box), tinted by disc, plus its connector hookup edge. This is the LANDED assembly layer (parts sit on real element endpoints — the assembly
 // analogue of the tube network); stored so a later commit re-fold redraws it. Refuses honestly when no network.
 window.__dwAssembly = window.__dwAssembly || {};   // disc -> assembled parts (for redraw-after-scrub)
 function _renderDiscAssembly(disc, parts) {
@@ -4376,26 +4376,40 @@ function _renderDiscAssembly(disc, parts) {
   if (!parts || !parts.length) { if (window.A && A.requestRender) A.requestRender(); return; }
   var base = DW_COLOR[disc] || 0xc0c0c0;
   var mat = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.4, metalness: 0.2, roughness: 0.5 });
-  var up = new THREE.Vector3(0, 0, 1), dir = new THREE.Vector3(), q = new THREE.Quaternion(), pos = new THREE.Vector3();
-  var sc = new THREE.Vector3(1, 1, 1), m = new THREE.Matrix4();
-  var byCls = {};
-  parts.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
+  var m = new THREE.Matrix4();
+  // §WALK-LOD400-ONLY (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md, red1 2026-09-27: "no BBoxes or cubes, or LOD200 fallback. All must
+  // be LOD400 or fail hard"). An assembled part used to render as a BoxGeometry(Ø, Ø, length) of the catalog's measured medians — a
+  // box standing in for a fitting. Now a part renders ONLY from a real mesh: its geometry_hash resolved in this building's geo buffer
+  // (the SAME RealGeometry seam _renderDiscWalk uses; recentred mesh, placed at the node + the walker's yaw). A part with no hash, or
+  // an unresolvable one, is REFUSED — not drawn, not given an Outliner row — and logged §DW-LOD400-REFUSE asm. Today's assemble()
+  // emits Ø/length medians only (no mesh binding), so every such part refuses; the routed node itself is already drawn by the walk.
+  var hashes = {}; parts.forEach(function (p) { if (p.geometry_hash) hashes[p.geometry_hash] = 1; });
+  var real = {};
+  if (Object.keys(hashes).length && window.__dwGeoBuf && window.RealGeometry && window.SQL) {
+    try { var gdb = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(gdb, Object.keys(hashes)); gdb.close(); }
+    catch (e) { console.warn('§DW-LOD400-REFUSE asm disc=' + disc + ' geo resolve failed ' + (e && e.message)); real = {}; }
+  }
+  var byKey = {}, refused = {}, nRef = 0, drawn = [];
+  parts.forEach(function (p) {
+    if (p.geometry_hash && real[p.geometry_hash]) { var k = p.ifc_class + '|' + p.geometry_hash; (byKey[k] = byKey[k] || []).push(p); drawn.push(p); return; }
+    var rk = String(p.ifc_class || '?').replace(/^Ifc/, '') + (p.geometry_hash ? '(hash unresolved)' : '(no mesh)');
+    refused[rk] = (refused[rk] || 0) + 1; nRef++;
+  });
+  window.__dwAssembly[disc] = drawn;   // Outliner rows / redraw carry only what is actually on screen
+  if (nRef) console.log('§DW-LOD400-REFUSE asm disc=' + disc + ' refused=' + nRef + ' drawn=' + drawn.length + ' [' +
+    Object.keys(refused).map(function (k) { return k + '×' + refused[k]; }).join(' ') + '] (no box — fail hard)');
   var verts = [];
-  Object.keys(byCls).forEach(function (cls) {
-    var list = byCls[cls];
-    var d = (list[0].diameter_mm || 100) / 1000, L = (list[0].length_mm || 200) / 1000;   // measured Ø/length → box (m)
-    // Bug-2 scope: NOT wired to the LOD300 catalog match here (deliberately, unlike _renderDiscWalk above) — this
-    // BoxGeometry(d,d,L)'s long axis is Z BY CONSTRUCTION (THREE.BoxGeometry(w,h,depth) → depth=Z=L), which the
-    // quaternion below (up=(0,0,1) → p.dir) relies on to orient the run along its real direction. The 3 catalog
-    // meshes are baked with their long axis on X (Beam/Door) — swapping one in under the SAME Z→dir quaternion
-    // would rotate it 90° off its real run direction (a WRONG, not just approximate, render) — worse than the
-    // honest box. No ifcClass passed ⇒ _dwPrimGeo's match guard short-circuits ⇒ same box as before, unchanged.
-    var geo = window._dwPrimGeo('run', d, d, L);                                            // LOD seam (POC box of catalog dims)
+  Object.keys(byKey).forEach(function (key) {
+    var list = byKey[key], d400 = real[list[0].geometry_hash];
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(d400.positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(d400.faces, 1));
+    geo.computeVertexNormals();
+    geo.userData.lod400 = true; geo.userData.hash = list[0].geometry_hash;
     var im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach(function (p, i) {
-      var v = p.dir || [0, 0, 1]; dir.set(v[0], v[1], v[2]).normalize();
-      q.setFromUnitVectors(up, dir); pos.set(p.pos[0], p.pos[1], p.pos[2]);
-      im.setMatrixAt(i, m.compose(pos, q, sc));
+      m.makeRotationZ(p.yaw || 0); m.setPosition(p.pos[0], p.pos[1], p.pos[2]);
+      im.setMatrixAt(i, m);
       if (p.connector && p.connector.faceDir) {
         var fd = p.connector.faceDir, off = (p.standoff_m > 0 ? p.standoff_m : 0.3);
         verts.push(p.pos[0], p.pos[1], p.pos[2], p.pos[0] + fd[0] * off, p.pos[1] + fd[1] * off, p.pos[2] + fd[2] * off);
@@ -4405,12 +4419,13 @@ function _renderDiscAssembly(disc, parts) {
     im.userData.dwSub = list;   // §Q2: assembled parts carry real node guids — same instanceId↔record contract
     root.add(im);
   });
+  var byCls = byKey;
   if (verts.length) {
     var cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
     var cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x9be7ff }));
     cl.userData.dwAsm = disc; root.add(cl);
   }
-  console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' classes=' + Object.keys(byCls).length +
+  console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' drawn=' + drawn.length + ' refused=' + nRef + ' buckets=' + Object.keys(byCls).length +
     ' connectorEdges=' + (verts.length / 6));
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();   // §I5d: assembly parts get Walked-Fixtures rows too
   if (window.A && A.requestRender) A.requestRender();
