@@ -21,7 +21,7 @@
 //   5. DETERMINISTIC   re-running the recompute at the same pose yields the identical assignment.
 //   6. CONTROL         with APP._facadeWarmCool = false the wash is all-warm again — a gate that
 //                      cannot fail proves nothing.
-// Run: PORT=8412 BLD=Hospital node probe_facade_warm_cool.js
+// Run: PORT=8412 BLD=Hospital node scripts/probe_facade_warm_cool.js
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8412, BLD = process.env.BLD || 'Hospital';
 const sleep = ms => new Promise(r => setTimeout(r, ms));

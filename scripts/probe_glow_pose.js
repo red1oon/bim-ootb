@@ -13,7 +13,7 @@
 //      the spot if anything is within 0.5m in any direction (that is the inside-a-wall test), then
 //      score the candidate by how many fixtures it sees UNOCCLUDED. Pure search over measured
 //      geometry — no hand-picked viewpoint, and the winner is reproducible.
-// Run: PORT=8403 BLD=Clinic node probe_glow_pose.js
+// Run: PORT=8403 BLD=Clinic node scripts/probe_glow_pose.js
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8403, BLD = process.env.BLD || 'Clinic';
 const sleep = ms => new Promise(r => setTimeout(r, ms));

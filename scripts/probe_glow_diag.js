@@ -13,7 +13,7 @@
 //      That threshold is what a corrective rule would key on.
 //   2. POSE SCAN across the whole Alt+C plan — which t has fixtures actually in line of sight? The
 //      witness must be measured somewhere the mechanism can be seen to work or fail on its merits.
-// Run: PORT=8403 BLD=Clinic node probe_glow_diag.js
+// Run: PORT=8403 BLD=Clinic node scripts/probe_glow_diag.js
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8403, BLD = process.env.BLD || 'Clinic';
 const sleep = ms => new Promise(r => setTimeout(r, ms));

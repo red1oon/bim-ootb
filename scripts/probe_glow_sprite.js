@@ -22,8 +22,8 @@
 //                                 judged on its own; it shipped attached to a broken ember
 //   C  sprites + bloom            (the mechanism)
 //
-// Run:  PORT=8403 BLD=Clinic node probe_glow_sprite.js
-//       PORT=8403 BLD=Hospital node probe_glow_sprite.js
+// Run:  PORT=8403 BLD=Clinic node scripts/probe_glow_sprite.js
+//       PORT=8403 BLD=Hospital node scripts/probe_glow_sprite.js
 // Read the LOG, not the exit code.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const fs = require('fs');

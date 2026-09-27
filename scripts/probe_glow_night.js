@@ -20,7 +20,7 @@
 // Deliberately NOT measured: frame luminance. Pixel measurement needs a camera standing where lamps
 // are in line of sight, and finding one costs a raycast search (~50ms/ray against batched meshes)
 // plus ~90s per Alt+S fold — for a question that inclusion and application already answer.
-// Run: PORT=8403 BLD=Clinic node probe_glow_night.js   |   BLD=Hospital ...
+// Run: PORT=8403 BLD=Clinic node scripts/probe_glow_night.js   |   BLD=Hospital ...
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8403, BLD = process.env.BLD || 'Clinic';
 const sleep = ms => new Promise(r => setTimeout(r, ms));

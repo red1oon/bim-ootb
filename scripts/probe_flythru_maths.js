@@ -5,13 +5,13 @@
  * PRIMITIVES against a real building DB and report the B1-B3 CANDIDATES (§3.8 rudiment set).
  * NO GPU, NO browser, NO scene: B1-B3 are pure DB reads, so the DB->scene transform (§3.9) cannot
  * corrupt these numbers. That is the point of doing this leg first.
- * RUN: node probe_flythru_maths.js <dbPath>
+ * RUN: node scripts/probe_flythru_maths.js <dbPath>
  */
 'use strict';
 const path = require('path');
 const Database = require('/home/red1/bim-compiler/node_modules/better-sqlite3');
-const M = require(path.join(__dirname, 'common', 'flythru_maths.js'));
-const SR = require(path.join(__dirname, 'common', 'storey_raster.js'));
+const M = require(path.join(__dirname, '..', 'common', 'flythru_maths.js'));
+const SR = require(path.join(__dirname, '..', 'common', 'storey_raster.js'));
 
 const DB = process.argv[2] || '/home/red1/Downloads/Hospital_silent.db';
 const log = (s) => { console.log(s); };

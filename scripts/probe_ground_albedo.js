@@ -23,7 +23,7 @@
 //   5. NOTHING ELSE the color of every other scene material, snapshotted before staging and diffed
 //                   after: only A.ground.material may differ.
 //
-// Run: PORT=8412 BLD=Hospital node probe_ground_albedo.js
+// Run: PORT=8412 BLD=Hospital node scripts/probe_ground_albedo.js
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8412, BLD = process.env.BLD || 'Hospital';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
