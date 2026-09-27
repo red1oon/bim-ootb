@@ -1142,12 +1142,20 @@
   // sky luminance), log-average luminance (Reinhard et al. 2002 eq. 1) over the histogram band -> EV100 -> exposure.
   // (History: the Stevens 0.33 / CIECAM02-D incident-light rules and the inside-only branch are retired — audit top-1/2.)
   var METER_W = 160, METER_H = 90, HIST_LO = 0.70, HIST_HI = 0.95, meterSaved = null;
+  // §METER_BANDS: the histogram bands the engines document (Unreal 70/95 docs range, Unreal 10/90 constructor, HDRP 40/90); every press
+  // logs the EV100 each band would give (same buffer), &meterband=lo,hi picks one for the exposure — the EV sanity check (ANSI: sunny
+  // exterior ~15, offices 7-8) decides the default from data, not taste.
+  var METER_BANDS = [[0.70, 0.95], [0.40, 0.90], [0.10, 0.90]];
   function meterRead(A, opts) {
     var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [];
     A.scene.traverse(function (o) { if (!o.visible) return;
       // the meter reads what reaches the eye: real materials, glass and emitters stay; only screen sprites/points/lines (flare,
       // markers) and the sky dome mesh (its shader is outside the lux calibration; its pixels take the lighting's sky luminance)
-      var glow = o.isSprite || o.isPoints || o.isLine || o === A._sky;
+      // §METER_EV v2: surfaces whose output is NOT in the lux calibration are hidden too — unlit MeshBasic / Shader emitters (lamp
+      // fixture glows, cove/sign meshes): their value 1.0 x luxPer read as ~22,700 cd/m2 and pulled the band up (witness 2026-09-27:
+      // median < 40 at 10 of 13 poses). Lit materials, glass and the sky luminance stay.
+      var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
+      var glow = o.isSprite || o.isPoints || o.isLine || o === A._sky || (ms && ms.length && ms.every(function (m) { return !m || m.isMeshBasicMaterial || m.isShaderMaterial; }));
       if (glow && (o.isMesh || o.isSprite || o.isPoints || o.isLine || o.isInstancedMesh || o.isBatchedMesh)) { o.visible = false; hidden.push(o); } });
     var rt = new THREE.WebGLRenderTarget(METER_W, METER_H, { type: THREE.FloatType, depthBuffer: true });
     var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevTM = R.toneMapping, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
@@ -1174,10 +1182,14 @@
     // luminance lies between the LOW and HIGH percentiles of the frame (Unreal Engine PostProcessSettings auto_exposure_low_percent
     // "good values 70 .. 80", auto_exposure_high_percent "80 .. 95"; widest endorsed band). Excludes the dark floor of the frame
     // that drags the plain log-average down (bimodal sun-patch frames: Clinic S1 pose, 31% sunlit / 69% dark).
-    var hLo = -Infinity, hHi = Infinity, hAll = null;
+    var hLo = -Infinity, hHi = Infinity, hAll = null, bandLo = HIST_LO, bandHi = HIST_HI, bandsLog = '', bandsL = [];
+    var mb = /[?&]meterband=(\d+),(\d+)/.exec(location.search); if (mb) { bandLo = +mb[1] / 100; bandHi = +mb[2] / 100; }
     if (mode === 'hist') { var ls = []; for (var i4 = 0; i4 < METER_W * METER_H; i4++) { if (buf[i4 * 4 + 3] < 0.5) continue;
         var L4 = 0.2126 * buf[i4 * 4] + 0.7152 * buf[i4 * 4 + 1] + 0.0722 * buf[i4 * 4 + 2]; if (isFinite(L4)) ls.push(Math.max(0, L4)); }
-      if (ls.length) { ls.sort(function (a, b) { return a - b; }); hLo = ls[Math.min(ls.length - 1, Math.floor(ls.length * HIST_LO))]; hHi = ls[Math.min(ls.length - 1, Math.floor(ls.length * HIST_HI))];
+      if (ls.length) { ls.sort(function (a, b) { return a - b; }); hLo = ls[Math.min(ls.length - 1, Math.floor(ls.length * bandLo))]; hHi = ls[Math.min(ls.length - 1, Math.floor(ls.length * bandHi))];
+        var bandLA = function (lo, hi) { var a = Math.floor(ls.length * lo), b = Math.min(ls.length, Math.max(a + 1, Math.floor(ls.length * hi) + 1)), t = 0; for (var q = a; q < b; q++) t += Math.log(delta + ls[q]); return Math.exp(t / (b - a)); };
+        bandsL = METER_BANDS.map(function (bd) { return [bd[0], bd[1], bandLA(bd[0], bd[1])]; });
+        bandsLog = METER_BANDS.map(function (bd) { return Math.round(bd[0] * 100) + '/' + Math.round(bd[1] * 100) + ':' + bandLA(bd[0], bd[1]).toExponential(3); }).join(' ');
         var sa = 0; for (var i5 = 0; i5 < ls.length; i5++) sa += Math.log(delta + ls[i5]); hAll = Math.exp(sa / ls.length); } }
     for (var i = 0; i < METER_W * METER_H; i++) {
       if (buf[i * 4 + 3] < 0.5) continue; var L = 0.2126 * buf[i * 4] + 0.7152 * buf[i * 4 + 1] + 0.0722 * buf[i * 4 + 2]; if (!isFinite(L)) continue;
@@ -1187,9 +1199,9 @@
       else if (mode === 'zone') { w = wz ? (wz[i] ? 1 : 0) : 1; }
       else if (mode === 'hist') { w = (L >= hLo && L <= hHi) ? 1 : 0; }
       if (!w) continue; sl += w * Math.log(delta + Math.max(0, L)); sw += w; n++; }
-    if (mode === 'hist') console.log('§METER_HIST low%=' + (HIST_LO * 100) + ' high%=' + (HIST_HI * 100) + ' bandL=' + (sw ? Math.exp(sl / sw).toExponential(3) : 'none') +
+    if (mode === 'hist') console.log('§METER_HIST low%=' + Math.round(bandLo * 100) + ' high%=' + Math.round(bandHi * 100) + ' bandsL[' + bandsLog + ']' + ' bandL=' + (sw ? Math.exp(sl / sw).toExponential(3) : 'none') +
       ' bandPixels=' + n + '/' + nLit + ' allLogAvg=' + (hAll != null ? hAll.toExponential(3) : 'none') + ' bandL=' + (+hLo).toExponential(2) + '..' + (+hHi).toExponential(2));
-    return { L: sw ? Math.exp(sl / sw) : null, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, ms: performance.now() - t0 };   // log-average luminance, scene units
+    return { L: sw ? Math.exp(sl / sw) : null, bandsLog: bandsLog, bandsL: bandsL, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, ms: performance.now() - t0 };   // log-average luminance, scene units
   }
   // world position per meter pixel (override MeshBasicMaterial writing its world position into the float target), then the
   // light zone at 0.3 m toward the camera; returns a 0/1 mask of pixels in camZone.
@@ -1229,7 +1241,8 @@
     var Lcd = m.L * luxPer, ev = Math.log2(Lcd * 100 / 12.5), aces = R.toneMapping === THREE.ACESFilmicToneMapping ? 0.6 : 1;
     var exp = luxPer * aces / (1.2 * Math.pow(2, ev)), stops = Math.log2(exp / base);
     meterSaved = { exp: base }; R.toneMappingExposure = exp;
-    console.log('§METER camera=' + cam + ' mode=' + m.mode + ' Lavg=' + Lcd.toFixed(1) + 'cd/m2 EV100=' + ev.toFixed(2) + ' exposure=' + exp.toFixed(4) +
+    var evBands = (m.bandsL || []).map(function (b) { return Math.round(b[0] * 100) + '/' + Math.round(b[1] * 100) + '=' + Math.log2(b[2] * luxPer * 100 / 12.5).toFixed(2); }).join(' ');
+    console.log('§METER camera=' + cam + ' mode=' + m.mode + (evBands ? ' EV100bands[' + evBands + ']' : '') + ' Lavg=' + Lcd.toFixed(1) + 'cd/m2 EV100=' + ev.toFixed(2) + ' exposure=' + exp.toFixed(4) +
       ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES 0.6' : '') + ' / (1.2 x 2^EV)) vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
     return { exposure: exp, stops: stops, ev100: ev, Lcd: Lcd };
   }
