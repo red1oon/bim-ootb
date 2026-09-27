@@ -1328,7 +1328,12 @@
     // i.e. a circle one third of the frame height across. 'zone' = only pixels whose surface is in the
     // camera's own light zone (world position from a second override render -> LightZones.at).
     var mode = opts && opts.mode || 'avg', wz = null;
-    if (mode === 'zone' && global.LightZones && global.LightZones.get()) wz = zoneMask(A, hidden, opts.camZone);
+    if ((mode === 'zone' || (opts && opts.roomOnly)) && global.LightZones && global.LightZones.get()) wz = zoneMask(A, hidden, opts.camZone);
+    // §METER_ROOM (red1 ruling 2, 2026-09-27: outside very bright through openings from an inside camera = WANTED; 2026-09-28 HHS room
+    // …553178231: 17.9 % near-black + 18.0 % clipped — the bright outside in the band pulled the room dark): an inside camera meters
+    // the surfaces of its OWN zone (the existing zone mask); openings/sky/exterior are left to clip. Falls back to the whole frame
+    // when the room covers < 5 % of the frame (logged).
+    var roomMask = null; if (opts && opts.roomOnly && wz) { var nz = 0; for (var iz = 0; iz < wz.length; iz++) if (wz[iz]) nz++; if (nz >= 0.05 * METER_W * METER_H) roomMask = wz; console.log('§METER_ROOM camZone=' + opts.camZone + ' roomPixels=' + nz + '/' + (METER_W * METER_H) + (roomMask ? ' metered=room' : ' metered=frame (room < 5 %)')); }
     var n = 0, sw = 0, sl = 0, delta = 1e-4, inC = 0, cx = METER_W / 2, cy = METER_H / 2, rC = METER_H / 6;
     for (var i2 = 0; i2 < METER_W * METER_H; i2++) { if (buf[i2 * 4 + 3] >= 0.5) { var px = i2 % METER_W, py = (i2 / METER_W) | 0; if ((px + 0.5 - cx) * (px + 0.5 - cx) + (py + 0.5 - cy) * (py + 0.5 - cy) <= rC * rC) inC++; } }
     var nLit = 0; for (var i3 = 0; i3 < METER_W * METER_H; i3++) if (buf[i3 * 4 + 3] >= 0.5) nLit++;
@@ -1338,7 +1343,7 @@
     // that drags the plain log-average down (bimodal sun-patch frames: Clinic S1 pose, 31% sunlit / 69% dark).
     var hLo = -Infinity, hHi = Infinity, hAll = null, bandLo = HIST_LO, bandHi = HIST_HI, bandsLog = '', bandsL = [];
     var mb = /[?&]meterband=(\d+),(\d+)/.exec(location.search); if (mb) { bandLo = +mb[1] / 100; bandHi = +mb[2] / 100; }
-    if (mode === 'hist') { var ls = []; for (var i4 = 0; i4 < METER_W * METER_H; i4++) { if (buf[i4 * 4 + 3] < 0.5) continue;
+    if (mode === 'hist') { var ls = []; for (var i4 = 0; i4 < METER_W * METER_H; i4++) { if (buf[i4 * 4 + 3] < 0.5 || (roomMask && !roomMask[i4])) continue;
         var L4 = 0.2126 * buf[i4 * 4] + 0.7152 * buf[i4 * 4 + 1] + 0.0722 * buf[i4 * 4 + 2]; if (isFinite(L4)) ls.push(Math.max(0, L4)); }
       if (ls.length) { ls.sort(function (a, b) { return a - b; }); hLo = ls[Math.min(ls.length - 1, Math.floor(ls.length * bandLo))]; hHi = ls[Math.min(ls.length - 1, Math.floor(ls.length * bandHi))];
         var bandLA = function (lo, hi) { var a = Math.floor(ls.length * lo), b = Math.min(ls.length, Math.max(a + 1, Math.floor(ls.length * hi) + 1)), t = 0; for (var q = a; q < b; q++) t += Math.log(delta + ls[q]); return Math.exp(t / (b - a)); };
@@ -1351,7 +1356,7 @@
       if (mode === 'centre') { var qx = i % METER_W, qy = (i / METER_W) | 0, inside = (qx + 0.5 - cx) * (qx + 0.5 - cx) + (qy + 0.5 - cy) * (qy + 0.5 - cy) <= rC * rC;
         w = inside ? 0.75 / Math.max(1, inC) : 0.25 / Math.max(1, nLit - inC); }
       else if (mode === 'zone') { w = wz ? (wz[i] ? 1 : 0) : 1; }
-      else if (mode === 'hist') { w = (L >= hLo && L <= hHi) ? 1 : 0; }
+      else if (mode === 'hist') { w = (L >= hLo && L <= hHi && (!roomMask || roomMask[i])) ? 1 : 0; }
       if (!w) continue; sl += w * Math.log(delta + Math.max(0, L)); sw += w; n++; }
     // §FILM_LAW: a film meters every frame and logs its own §FILM_EXPOSURE line — opts.quiet drops this one (the still never passes it).
     if (mode === 'hist' && !(opts && opts.quiet)) console.log('§METER_HIST low%=' + Math.round(bandLo * 100) + ' high%=' + Math.round(bandHi * 100) + ' bandsL[' + bandsLog + ']' + ' bandL=' + (sw ? Math.exp(sl / sw).toExponential(3) : 'none') +
@@ -1397,7 +1402,7 @@
     var sunIc = A._stillCalibSunI, luxPer = LL.luxPer(A._stillCalibSunLux, sunIc);
     if (!luxPer) { console.log('§METER' + (diag ? '_DIAG' : '') + ' VACUOUS camera=' + cam + ' no lux calibration (calibSunI=' + sunIc + ') — exposure unchanged ' + base.toFixed(3)); return null; }
     var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'hist';   // engines meter by histogram
-    var m = meterRead(A, { mode: mode, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 });
+    var cz0 = (A._sourcedCap && A._sourcedCap.camZone) || 0, m = meterRead(A, { mode: mode, camZone: cz0, roomOnly: !!(inside && cz0 > 0 && !/[?&]meterroom=0/.test(location.search)) });
     if (!(m.L > 0)) { console.log('§METER' + (diag ? '_DIAG' : '') + ' VACUOUS camera=' + cam + ' no luminance read — exposure unchanged ' + base.toFixed(3)); return null; }
     var Lcd = m.L * luxPer, ev = LL.ev100(Lcd), aces = LL.acesDiv(R, THREE);
     var exp = LL.exposureFromEv(ev, luxPer, aces), stops = Math.log2(exp / base);
