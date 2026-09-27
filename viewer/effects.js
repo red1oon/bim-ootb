@@ -2632,6 +2632,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var u = (tNorm >= easeEnd || easeEnd <= topoutU) ? 1 : (tNorm - topoutU) / (easeEnd - topoutU);
     return plStaged + (PL_TOPOUT_TARGET - plStaged) * u;
   }
+  var _bakeFillCheckLogged = false;   // §FILM_FILL_CHECK: first frame always logs, later frames only on drift
   function _bakeFillPin(tNorm, topoutU) {
     var base = A._photoFillBase;
     var _el = (A._sunArcElevationDeg != null) ? A._sunArcElevationDeg : _sunElevationAt(tNorm);
@@ -2643,8 +2644,20 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     var drift = [];
     function pin(label, cur, want) { if (cur !== want) drift.push(label + ':' + cur + '→' + want); return want; }
-    A.ambient.intensity = pin('ambient', A.ambient.intensity, base.ambI);
-    A.hemi.intensity = pin('hemi', A.hemi.intensity, base.hemiI);
+    // §FILM_LAW S2: a parity film (no restore opt-in) is NOT pinned — ambient/hemi are only CHECKED against the staged still base
+    // (§FILM_FILL_CHECK), so a latent writer (stopper S-LAW-8, time_machine.js applySunCycle) shows up instead of being masked.
+    var _fillCheckOnly = !!(A._maxqActive && A._filmParity && !A._filmFillRestore);
+    if (_fillCheckOnly) {
+      var _fcd = [];
+      if (A.ambient.intensity !== base.ambI) _fcd.push('ambient:' + base.ambI + '→' + A.ambient.intensity);
+      if (A.hemi.intensity !== base.hemiI) _fcd.push('hemi:' + base.hemiI + '→' + A.hemi.intensity);
+      if (_fcd.length || !_bakeFillCheckLogged) { _bakeFillCheckLogged = true;
+        console.log('§FILM_FILL_CHECK tNorm=' + (+tNorm).toFixed(3) + ' ambient=' + A.ambient.intensity + ' hemi=' + A.hemi.intensity + ' stillBase=' + base.ambI + '/' + base.hemiI +
+          ' drift=' + (_fcd.length ? _fcd.join(';') + ' (NOT corrected — a writer other than staging changed the fill)' : 'none') + ' (not pinned, §FILM_LAW S2)'); }
+    } else {
+      A.ambient.intensity = pin('ambient', A.ambient.intensity, base.ambI);
+      A.hemi.intensity = pin('hemi', A.hemi.intensity, base.hemiI);
+    }
     var plStaged = (typeof A._nightPLScaleStaged === 'number') ? A._nightPLScaleStaged : null;
     var plWant = _plTopoutWant(plStaged, tNorm, topoutU);   // §PL_TOPOUT_UNPIN — equals plStaged pre-topout / no topout
     var poolLit = 0, poolSum = 0;
@@ -2668,7 +2681,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' poolLit=' + poolLit + ' poolSum=' + poolSum.toFixed(3) +
       ' sun=' + (A.sun ? A.sun.intensity.toFixed(4) : '-') +
       ' sunPos=' + (_sp ? _sp.x.toFixed(3) + ',' + _sp.y.toFixed(3) + ',' + _sp.z.toFixed(3) : '-') +
-      ' drift=' + (drift.length ? drift.join(';') : 'none') +
+      ' drift=' + (drift.length ? drift.join(';') : 'none') + ' fill=' + (_fillCheckOnly ? 'checked-not-pinned (§FILM_LAW S2)' : 'pinned') +
       ' (pinned to the Alt+S baseline — sun and shadow untouched by this step)');
     if (A.markDirty) A.markDirty();
     return { drift: drift, poolLit: poolLit, poolSum: poolSum, plScale: A._nightPLScale, plStaged: plStaged, plWant: plWant,
@@ -4173,9 +4186,13 @@ async function setupEffects(A, renderer, scene, camera) {
     // Film fill default = RESTORE (watchdog for red1, 2026-09-25): in current films the interior lamps are off for most interior
     // shots (§116 window) while an Alt+S interior has them on; ambient 0 gives the gloomy film interiors red1 rejected
     // ("restored is better"). Parity matches the LOOK, not the ambient number. &filmfill=alts / APP._filmFillRestore=false = ambient 0.
-    A._filmFillRestore = A._filmFillRestore !== false && !/[?&]filmfill=alts/.test(location.search);
+    // §FILM_LAW S2 (bim-compiler ALTC_SHOWSTOPPERS.md §FILM_LAW; stopper S-LAW-3; §LIGHT_ONE_SCALE L1, R3) — SUPERSEDES the restore
+    // default above: the restored 0.785 ambient is a sourceless light (audit #24 = 0). A parity film now takes the §STILL_BASE
+    // result exactly as Alt+S (ambient x &base 0, hemi x &sky 2); a dark interior is answered by the §FILM_EXPOSURE meter (S1),
+    // not by added light. Back-compat opt-in only: &filmfill=restore / APP._filmFillRestore = true / cli --film-fill restore.
+    A._filmFillRestore = A._filmFillRestore === true || /[?&]filmfill=restore/.test(location.search);
     _filmExposureReset(false);   // §FILM_LAW S1 — each film staging meters its own first frame
-    if (A._maxqActive) console.log('§FILM_PARITY ' + (A._filmParity ? 'on' : 'off (control)') + ' fill=' + (!A._filmParity || A._filmFillRestore ? 'restore 0.785/1.257' : 'alt-s (ambient 0)'));
+    if (A._maxqActive) console.log('§FILM_PARITY ' + (A._filmParity ? 'on' : 'off (control)') + ' fill=' + (!A._filmParity ? 'restore 0.785/1.257 (control)' : A._filmFillRestore ? 'restore 0.785/1.257 (opt-in, NOT the law)' : 'alt-s (ambient 0, §FILM_LAW S2)'));
     // §DLOD_STILL_OWNERSHIP (2026-09-24, red1: sun shafts through the Terminal roof on Alt+S) — dlod.js
     // zero-scales instances outside the view frustum, and a zero-scaled roof casts no shadow. Pause it
     // for the whole staging cycle, same ownership rule as §DLOD_TM_OWNERSHIP: only re-enable in
@@ -4743,7 +4760,7 @@ async function setupEffects(A, renderer, scene, camera) {
   };
   function _filmExposureReset(restore) {
     if (_fe && restore && _fe.base != null && A.renderer) { A.renderer.toneMappingExposure = _fe.base; console.log('§FILM_EXPOSURE end frames=' + _fe.n + ' exposure restored ' + _fe.base.toFixed(4)); }
-    _fe = null;
+    _fe = null; _bakeFillCheckLogged = false;   // §FILM_FILL_CHECK logs the first frame of each film
   }
   function _teardownPhotoStaging() {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
