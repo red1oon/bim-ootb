@@ -15,17 +15,22 @@ function stillRec(pose, arm, o) {
     '§SKY_SHELL_RAYS bld=Hospital cache=built ' + (arm === 'skyshell0' ? 'off (&skyshell=0 / APP._stillSkyShell=false)' : 'on') + ' shellCells=31630 pretestSkipped=16621 recomputed=15009 reach=' + (arm === 'shellreach2' ? 'r2' : 'air') + ' candidates=1 near2=1 airOnly=5 recomputedAirOnly=4',
     '§COVE_QUAL (L1a) qualified=358 belowLevelWithLamps=0',
     '§CAM_TORCH ' + (arm === 'torch0' ? 'off' : 'on peakCd=900'),
-    '§METER_STATE camera=inside ground=d9c39a gain=2.30 sunI=4.400 lights point=8/1.000 hidden=1 bandL=1e-1',
-    '§METER camera=inside mode=hist EV100=9.68 exposure=23.0 skyPx=' + (o.allSkyStage ? '14400/14400 pixels=14400' : '0/14400 pixels=7206') + ' hidden=1 ms=483',
+    '§METER_BIND programs=110->120 mats=112 rebound=100 stagedLit=105 dummyAtRead=0',
+    '§METER_STATE tag=diag camera=inside ground=555566 gain=2.30 sunI=4.400 lights point=0/0.000 hidden=1 bandL=1e-1',
+    '§METER_DIAG camera=inside tag=diag mode=hist EV100=9.68 exposure=23.0 NOT APPLIED skyPx=0/14400 pixels=7206 hidden=1 ms=483',
+    '§GROUND_COLOR_ORDER_FIX reasserted color=2.30 gain=2.30'].concat(o.twoMeters ? ['§METER camera=inside tag=final mode=hist EV100=9.68 exposure=23.0 skyPx=0/14400 pixels=7206 hidden=1 ms=483'] : []).concat([
     '§ALBEDO_SRGB srgbfix=' + (arm === 'srgbfix0' ? 0 : 1) + ' decode=law converted=' + (o.converted != null ? o.converted : 108),
     arm === 'groundlaw0' ? '§GROUND_HALF off (&groundlaw=0) groundColor=0x8b7355' : '§GROUND_HALF rho=[0.3,0.3,0.3] rhoSrc=table',
     '§GRID_BLEND ' + (arm === 'gridblend1' ? 'on' : 'off'), '§SPEC_SMOOTH ' + (arm === 'specsmooth0' ? 'off' : 'on'),
     arm === 'aoindirect0' ? '§AO_INDIRECT mode=legacy radius=32px' : '§AO_INDIRECT done mode=shader boundMats=240 aoFrames=24',
     '§STILL_STAGE_MS zoneBuild=1 total=12000',
-    '§METER_STATE camera=inside ground=d9c39a gain=2.30 sunI=4.400 lights point=' + (o.jump ? '40/9.000' : '8/1.000') + ' hidden=36 bandL=1e-1',
-    '§METER camera=inside mode=hist EV100=' + (o.jump ? '12.10' : '9.60') + ' exposure=24.0 skyPx=0/14400 pixels=7206 hidden=36 ms=400',
+    '§STILL_DIALS_LAMPS lamps=1 decay=2 plScale=1',
+    '§METER_BIND programs=120->130 mats=112 rebound=100 stagedLit=105 dummyAtRead=' + (o.dummy ? 7 : 0),
+    '§METER_STATE tag=final camera=inside ground=ffffff gain=2.30 sunI=4.400 lights point=' + (o.jump ? '40/9.000' : '1/0.000') + ' hidden=36 bandL=1e-1',
+    '§METER camera=inside tag=final mode=hist EV100=' + (o.jump ? '12.10' : '7.85') + ' exposure=24.0 skyPx=' + (o.allSkyStage ? '14400/14400 pixels=14400' : '0/14400 pixels=7206') + ' hidden=36 ms=400',
+    '§STILL_REFINE start samples=16',
     arm === 'gialb0' ? '§GI_RECEIVER_ALBEDO off (&gialb=0)' : '§GI_RECEIVER_ALBEDO real=900000 est=1 realPct=90',
-    '§GI_STILL result mode=composite compositeMean=100'].concat(o.pageError ? ['PAGEERROR boom'] : []);
+    '§GI_STILL result mode=composite compositeMean=100']).concat(o.pageError ? ['PAGEERROR boom'] : []);
   const c = Object.assign({ p5: 20, p50: 120, p95: 200, mean: 110, ge250pct: 0.1, le15pct: 0.2, w: 10, h: 10 }, o.comp || {});
   return { pose, arm, q, cam: [1, 2, 3], tgt: [4, 5, 6], lines, pressSecs: 60, png: { pose: { cam: [1, 2, 3], tgt: [4, 5, 6] }, stats: {} },
     eval: { programs: 120, scripts: o.scripts || ['light_law.js?v=6', 'sourced_light.js?v=59'], fileHash: { 'light_law.js': 'aa', 'sourced_light.js': 'bb' }, swServed: o.sw || 'v1474', swCtlAtLoad: !!o.ctl,
@@ -66,19 +71,22 @@ function run() {
   expect('G3 all-sky inside meter -> VACUOUS', st(J.g3(stillRec('inner', 'base', { allSkyStage: true })), /all-sky/), 'VACUOUS');
   expect('G3 §ALBEDO_SRGB converted=0 -> VACUOUS', st(J.g3(stillRec('inner', 'base', { converted: 0 })), /ALBEDO/), 'VACUOUS');
   expect('G3 §GLARE exteriorFaces=0 -> VACUOUS', st(J.g3(stillRec('inner', 'base', { extFaces: 0 })), /GLARE/), 'VACUOUS');
-  expect('G3 stage->final remeter jump 2.4 EV -> FAIL', st(J.g3(stillRec('night', 'base', { jump: true })), /remeter EV jump/), 'FAIL');
-  expect('G3 jump row names what changed (§METER_STATE diff)', (J.g3(stillRec('night', 'base', { jump: true })).find(r => /jump/.test(r.id)) || {}).detail, d => /point 8\/1\.000->40\/9\.000/.test(d));
+  // ### ALTS-ALL FIX 1: one meter per still, read on bound uniforms; the diag -> final difference is INFO naming the §METER_STATE diff
+  expect('G3 two §METER camera= lines in one press -> FAIL', st(J.g3(stillRec('inner', 'base', { twoMeters: true })), /ONE §METER/), 'FAIL');
+  expect('G3 §METER_BIND dummyAtRead 7 -> FAIL', st(J.g3(stillRec('inner', 'base', { dummy: true })), /BOUND uniforms/), 'FAIL');
+  expect('G3 diag -> final row is INFO and names what changed (§METER_STATE diff)', (J.g3(stillRec('night', 'base', { jump: true })).find(r => /stage diag/.test(r.id)) || {}).state + ' ' + (J.g3(stillRec('night', 'base', { jump: true })).find(r => /stage diag/.test(r.id)) || {}).detail, d => /^INFO .*point 0\/0\.000->40\/9\.000/.test(d));
   // G4
   expect('G4 p50 25 -> FAIL', st(J.g4(stillRec('inner', 'base', { comp: { p50: 25 } })), /p50/), 'FAIL');
   // G2
-  const base = stillRec('inner', 'base');
-  expect('G2 torch arm moved the frame -> PASS', J.g2(base, stillRec('inner', 'torch0', { comp: { mean: 95, p50: 104 } }), 'torch0', null)[0].state, 'PASS');
-  expect('G2 torch arm identical frame -> NO-OP (global fix)', J.g2(base, stillRec('inner', 'torch0'), 'torch0', null)[0].state, 'NO-OP');
+  const base = stillRec('inner', 'base'), baseC = stillRec('inner_close', 'base');
+  expect('G2 torch arm moved the frame (close pose) -> PASS', J.g2(baseC, stillRec('inner_close', 'torch0', { comp: { mean: 95, p50: 104 } }), 'torch0', null)[0].state, 'PASS');
+  expect('G2 torch arm identical frame (close pose) -> NO-OP (global fix)', J.g2(baseC, stillRec('inner_close', 'torch0'), 'torch0', null)[0].state, 'NO-OP');
+  expect('G2 torch at a far pose (inner, 8.9 m) -> INFO, not NO-OP (### ALTS-ALL FIX 4)', J.g2(base, stillRec('inner', 'torch0'), 'torch0', null)[0].state, 'INFO');
   expect('G2 skyshell arm identical frame -> SCOPE-BLIND (local fix)', J.g2(stillRec('a202', 'base'), stillRec('a202', 'skyshell0'), 'skyshell0', null)[0].state, 'SCOPE-BLIND');
   expect('G2 srgbfix population converted=0 -> VACUOUS', J.g2(stillRec('inner', 'base', { converted: 0 }), stillRec('inner', 'srgbfix0', { comp: { mean: 80 } }), 'srgbfix0', null)[0].state, 'VACUOUS');
   const dead = stillRec('inner', 'groundlaw0', { comp: { mean: 80 } }); dead.lines = dead.lines.filter(l => !/§GROUND_HALF off/.test(l));
   expect('G2 off-switch without its off line -> FAIL (switch dead)', J.g2(base, dead, 'groundlaw0', null)[0].state, 'FAIL');
-  expect('G2 effect inside measured noise -> NO-OP', J.g2(base, stillRec('inner', 'torch0', { comp: { mean: 110.3, p50: 120.2 } }), 'torch0', 0.4)[0].state, 'NO-OP');
+  expect('G2 effect inside measured noise -> NO-OP', J.g2(baseC, stillRec('inner_close', 'torch0', { comp: { mean: 110.3, p50: 120.2 } }), 'torch0', 0.4)[0].state, 'NO-OP');
   // FILM
   const A = filmLog({ arm: 'A' }), C = filmLog({ arm: 'C' }), E = filmLog({ arm: 'E' }), Tt = filmLog({ arm: 'T' });
   const fr = J.filmJudge(A, T, { C, E, T: Tt }), fbad = fr.filter(r => J.BLOCKING.has(r.state));
@@ -91,6 +99,8 @@ function run() {
   expect('film torch arm with identical luma -> NO-OP', st(J.filmJudge(A, T, { C, E, T: filmLog({ arm: 'T', noopT: true }) }), /film torch/), 'NO-OP');
   expect('film lawHash != node -> FAIL (and the tap row INCONCLUSIVE)', st(J.filmJudge(filmLog({ arm: 'A', law: '918804c2' }), T, null), /lawHash film == still/) + '/' + st(J.filmJudge(filmLog({ arm: 'A', law: '918804c2' }), T, null), /tap: page lawHash/), 'FAIL/INCONCLUSIVE');
   expect('film with no bake log judged -> gate INCONCLUSIVE', J.gate([]), 'INCONCLUSIVE');
+  const nf = filmLog({ arm: 'A' }); nf.lines.splice(1, 0, '[con] [S203] §DB_404_OCI_FAIL url=https://x/buildings/HospitalAjaibPath.db');
+  expect('film building 404 -> building loaded INCONCLUSIVE (### ALTS-ALL FIX 2)', st(J.filmJudge(nf, T, null), /building loaded/), 'INCONCLUSIVE');
   // REAL logs (informational rows, not part of the invariant): v1 had unregistered=1 + §LEDGER_TICKER_INIT before the purge
   const S = '/tmp/claude-1000/-home-red1-bim-compiler/cdf78573-99d9-42cf-92e2-f64ba3732e60/scratchpad/';
   [['v1 film_law_new.log', S + 'film_law_new.log'], ['v2 /tmp/film_law_v2.log', '/tmp/film_law_v2.log']].forEach(([n, f]) => { if (!fs.existsSync(f)) { console.log('    (real ' + n + ' absent)'); return; }
@@ -99,7 +109,7 @@ function run() {
   return new Promise(res => { Witness('ALTS_ALL_SELFTEST')
     .population(() => rows)
     .schema({ type: 'object', required: ['name', 'got', 'want', 'ok'], properties: { name: { type: 'string' }, got: { type: 'string' }, want: { type: 'string' }, ok: { type: 'boolean' } } })
-    .invariant('every GIGO state triggers and the GREEN fixtures pass', rs => rs.length >= 26 && rs.every(r => r.ok))
+    .invariant('every GIGO state triggers and the GREEN fixtures pass', rs => rs.length >= 29 && rs.every(r => r.ok))
     .redControl(rs => rs.map(r => /GREEN still/.test(r.name) ? Object.assign({}, r, { ok: J.gate(stillRows(stillRec('inner', 'base', { sw: 'v1' }))) === 'PASS' }) : r))
     .run(); res(process.exitCode ? 1 : 0); });
 }

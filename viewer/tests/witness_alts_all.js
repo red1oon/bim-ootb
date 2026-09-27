@@ -29,9 +29,12 @@ const POSES = {
   night: ['Hospital', '&ghost=1', [33.5, 8.121, 11.498], [0, 0, 0]], p614: ['Hospital', '&ghost=1', [-23.76, 3.076, -4.558], [-20.601, 1.748, -1.316]],
   p698: ['Hospital', '&ghost=1', [-5.864, -6.079, 16.896], [-5.384, -6.921, 12.025]], p672: ['Hospital', '&ghost=1', [-13.552, 1.366, -1.289], [-10.764, 0.228, 1.354]],
   a616: ['Hospital', '&ghost=1', [26.431, 36.87, 42.209], [-4.751, -4.707, 11.027]], a202: ['Hospital', '&ghost=1', [-44.334, 20.357, 48.696], [-2.924, -11.908, 7.912]],
-  plenum: ['Hospital', '&ghost=1', [-20.496, -5.619, -34.439], [-23.527, -6.051, -22.952]], hhs_z18: ['HHS_Office_Federated', '&ghost=1', [-10.011, -4.496, -21.246], [0.306, -2.129, 0.238]]
+  plenum: ['Hospital', '&ghost=1', [-20.496, -5.619, -34.439], [-23.527, -6.051, -22.952]],
+  // ### ALTS-ALL FIX 4: the inner room camera moved along its own centre ray to 1.5 m from the centre hit (18.1,-8.4,3.5) (§LIGHT_STACK
+  // point of the inner press): 900 cd at 1.5 m = 400 lx, where the torch must act; at 8.9 m (inner) it is 11 lx = physics, not a dead switch.
+  inner_close: ['Hospital', '&ghost=1', [16.72, -8.28, 2.92], [18.1, -8.4, 3.5]], hhs_z18: ['HHS_Office_Federated', '&ghost=1', [-10.011, -4.496, -21.246], [0.306, -2.129, 0.238]]
 };
-const ARM_POSES = { torch0: ['inner', 'night'], srgbfix0: ['inner'], groundlaw0: ['night'], aoindirect0: ['inner'], gialb0: ['inner'], skyshell0: ['a202'], shellreach2: ['a202'], gridblend1: ['hhs_z18'], specsmooth0: ['hhs_z18'], meterband7095: ['inner', 'night'] };
+const ARM_POSES = { torch0: ['inner_close', 'inner', 'night'], srgbfix0: ['inner'], groundlaw0: ['night'], aoindirect0: ['inner'], gialb0: ['inner'], skyshell0: ['a202'], shellreach2: ['a202'], gridblend1: ['hhs_z18'], specsmooth0: ['hhs_z18'], meterband7095: ['inner', 'night'] };
 const log = (() => { let fd = null; return s => { console.log(s); try { if (!fd) { fs.mkdirSync(OUT, { recursive: true }); fd = fs.openSync(path.join(OUT, 'alts_all.log'), 'a'); } fs.writeSync(fd, s + '\n'); } catch (e) {} }; })();
 const fnv = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); };
 
@@ -81,14 +84,31 @@ const PAGE_FACTS = async (edited, z8) => {
   if (z8 && window.LightZones && window.LightZones.get()) { const Z = window.LightZones.get(); out.z8cells = z8.map(c => ({ cell: c, zone: Z.zone[c], F: (Z.field && Z.zone[c] !== 65535 && (Z.zone[c] & 0x3FFF) !== 0) ? Z.field.G[c] / 1e4 : null })); }
   return out;
 };
+// ### ALTS-ALL FIX 3: GPU memory per press — nvidia-smi every 3 s: total used + per-pid (the press's chrome gpu-process and every other
+// GPU process, e.g. the user's own browser). Peak + the pid table at the peak go into rec.gpu and a §ALTS_GPU_MEM log line.
+function gpuSample() {
+  try { const tot = cp.execFileSync('nvidia-smi', ['--query-gpu=memory.used,memory.total', '--format=csv,noheader,nounits'], { timeout: 5000 }).toString().trim().split(',').map(Number);
+    const apps = cp.execFileSync('nvidia-smi', ['--query-compute-apps=pid,used_memory', '--format=csv,noheader,nounits'], { timeout: 5000 }).toString().trim().split('\n').filter(Boolean).map(l => l.split(',').map(x => +x.trim()));
+    return { t: Date.now(), used: tot[0], total: tot[1], apps };
+  } catch (e) { return { t: Date.now(), err: e.message.slice(0, 80) }; }
+}
+function gpuWatch(browserPid) {
+  const S = [], desc = pid => { try { return fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').split('\0').join(' '); } catch (e) { return ''; } };
+  const tick = () => { const g = gpuSample(); if (g.apps) g.apps = g.apps.map(([pid, mb]) => { const c = desc(pid); return { pid, mb, mine: browserPid != null && c.includes('altsall-'), gpuProc: /--type=gpu-process/.test(c), who: c.includes('altsall-') ? 'press' : (c.split(' ')[0] || '?').split('/').pop() }; }); S.push(g); };
+  tick(); const h = setInterval(tick, 3000);
+  return { stop() { clearInterval(h); tick(); const ok = S.filter(g => g.used != null), pk = ok.reduce((a, g) => (!a || g.used > a.used) ? g : a, null);
+    const mine = ok.map(g => (g.apps || []).filter(a => a.mine).reduce((s, a) => s + a.mb, 0)), mpk = mine.length ? Math.max(...mine) : null;
+    return { samples: ok.length, baseline: ok.length ? ok[0].used : null, peakUsed: pk ? pk.used : null, total: pk ? pk.total : null, pressPeakMB: mpk, atPeak: pk ? pk.apps : null, err: S.find(g => g.err) ? S.find(g => g.err).err : null }; } };
+}
 async function pressStill(puppeteer, pose, arm, T) {
   const [DB, Q0, CAM, TGT] = POSES[pose], armQ = arm === 'base' || /^base_r/.test(arm) ? '' : J.FIXES[arm].q, q = Q0 + armQ;
   const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'altsall-prof-')), dl = path.join(OUT, 'png', pose + '__' + arm); fs.mkdirSync(dl, { recursive: true });
   const rec = { pose, arm, db: DB, q, cam: CAM, tgt: TGT, lines: [], started: new Date().toISOString() };
-  let b = null; const t0 = Date.now();
+  let b = null, gw = null; const t0 = Date.now();
   try {
     b = await puppeteer.launch({ headless: true, userDataDir: prof, protocolTimeout: 1800000, env: Object.assign({}, process.env, { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' }),
       args: ['--no-sandbox', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--window-size=1705,1054'].concat((arg('chrome-args', '') || '').split(/\s+/).filter(Boolean)) });
+    gw = gpuWatch(b.process() ? b.process().pid : null);
     const p = await b.newPage(); await p.setViewport({ width: 1685, height: 874 });
     const cdp = await p.target().createCDPSession(); await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dl });
     await p.evaluateOnNewDocument(() => { window.__swCtlAtLoad = !!(navigator.serviceWorker && navigator.serviceWorker.controller); });
@@ -108,7 +128,8 @@ async function pressStill(puppeteer, pose, arm, T) {
     const clicked = await p.evaluate(() => { const bt = Array.from(document.querySelectorAll('#gi-still-overlay button')).find(x => /Save PNG/.test(x.textContent)); if (bt) { bt.click(); return true; } return false; });
     if (clicked) { for (let i = 0; i < 60; i++) { const f = fs.readdirSync(dl).filter(x => /\.png$/.test(x)); if (f.length) { await new Promise(r => setTimeout(r, 800)); try { const P = readPng(fs.readFileSync(path.join(dl, f[0]))); rec.png = { file: path.join(dl, f[0]), w: P.w, h: P.h, stats: P.stats, pose: P.text['bim-still-pose'] ? JSON.parse(P.text['bim-still-pose']) : null }; } catch (e) { rec.png = { err: e.message }; } break; } await new Promise(r => setTimeout(r, 500)); } }
   } catch (e) { rec.fatal = e.message; }
-  finally { try { if (b) await b.close(); } catch (e) {} try { fs.rmSync(prof, { recursive: true, force: true }); } catch (e) {} }
+  finally { if (gw) rec.gpu = gw.stop(); try { if (b) await b.close(); } catch (e) {} try { fs.rmSync(prof, { recursive: true, force: true }); } catch (e) {} }
+  if (rec.gpu) log('  §ALTS_GPU_MEM ' + pose + '/' + arm + ' baseline=' + rec.gpu.baseline + 'MiB peakUsed=' + rec.gpu.peakUsed + '/' + rec.gpu.total + 'MiB pressPeak=' + rec.gpu.pressPeakMB + 'MiB samples=' + rec.gpu.samples + ' atPeak=' + JSON.stringify((rec.gpu.atPeak || []).map(a => a.who + ':' + a.pid + ':' + a.mb)) + (rec.gpu.err ? ' err=' + rec.gpu.err : ''));
   rec.wallSecs = (Date.now() - t0) / 1000; return rec;
 }
 // ── film channels
@@ -121,9 +142,21 @@ function ffFrames(mp4) {
 }
 const TAP = `window.__maxqTapReport = function () { var A = window.APP; return { lines: [], scripts: Array.from(document.scripts).map(function (s) { return (s.getAttribute('src') || '').split('/').pop(); }).filter(Boolean),
   lawHash: window.LightLaw ? window.LightLaw.snapshot().lawHash : null, swCtl: !!(navigator.serviceWorker && navigator.serviceWorker.controller), programs: A && A.renderer && A.renderer.info.programs ? A.renderer.info.programs.length : null }; };`;
+// ### ALTS-ALL FIX 2: cli_silent_bake.js serves only its --root; the film DBs are git-ignored, so link them into <tree>/buildings
+// from the main checkout before baking, or refuse to bake and say which file is missing (F-G1 'building loaded' -> INCONCLUSIVE).
+const FILM_DB_SRC = '/home/red1/bim-ootb/buildings';
+function ensureFilmDbs(tree) {
+  const need = [arg('db-film', 'HospitalAjaibPath') + '.db', 'Hospital_silent_local.db'], miss = [];
+  need.forEach(f => { const dst = path.join(tree, 'buildings', f), src = path.join(FILM_DB_SRC, f);
+    if (fs.existsSync(dst)) { log('  §ALTS_FILM_DB present ' + dst + ' (' + fs.statSync(dst).size + ' B)'); return; }
+    if (!fs.existsSync(src)) { miss.push(f); log('  §ALTS_FILM_DB MISSING ' + f + ' (not in ' + tree + '/buildings nor ' + FILM_DB_SRC + ')'); return; }
+    fs.mkdirSync(path.dirname(dst), { recursive: true }); fs.symlinkSync(src, dst); log('  §ALTS_FILM_DB linked ' + dst + ' -> ' + src + ' (' + fs.statSync(src).size + ' B)'); });
+  return miss;
+}
 function runBake(armK, tree, extra) {
   const dir = path.join(OUT, 'film'); fs.mkdirSync(dir, { recursive: true }); const out = path.join(dir, armK + '.mp4'), lg = path.join(dir, armK + '.log'), tap = path.join(dir, 'tap.js'); fs.writeFileSync(tap, TAP);
   if (fs.existsSync(lg) && !has('rerun')) { log('  film ' + armK + ': persisted log reused (' + lg + ')'); return; }
+  const miss = ensureFilmDbs(tree); if (miss.length) { fs.writeFileSync(lg, '§ALTS_FILM_DB MISSING ' + miss.join(',') + ' — bake not run\n'); log('  film ' + armK + ': NOT RUN, missing ' + miss.join(',')); return; }
   const args = [path.join(tree, 'cli_silent_bake.js'), '--db', arg('db-film', 'HospitalAjaibPath'), '--gpu', 'real', '--fps', '15', '--frame-range', arg('frame-range', '0:90'), '--out', out, '--log', lg, '--tap', tap, '--port', String(+PORT + 20)].concat(extra, (arg('film-flags', '--clash --measure --label')).split(/\s+/).filter(Boolean));
   log('  film ' + armK + ': node ' + args.join(' ')); const t = Date.now();
   try { cp.execFileSync('node', args, { cwd: tree, stdio: ['ignore', 'ignore', 'ignore'], timeout: 3600e3 }); } catch (e) { log('  film ' + armK + ' exit ' + (e.status != null ? e.status : e.message)); }
@@ -144,6 +177,14 @@ async function runAltc(puppeteer, N) {
     p.on('console', m => L.push(m.text().replace(/\n/g, '\\n'))); p.on('pageerror', e => L.push('PAGEERROR ' + e.message));
     await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=/buildings/' + arg('db-film', 'HospitalAjaibPath') + '.db', { waitUntil: 'domcontentloaded', timeout: 180000 });
     await p.waitForFunction(() => window.APP && typeof window.APP.startMaxQualityOrbit === 'function' && window.APP.guidMap && Object.keys(window.APP.guidMap).length > 0 && !window.APP.streaming, { timeout: 600000, polling: 2000 });
+    // ### ALTS-ALL FIX 5: program census — every time renderer.info.programs grows, log which materials now use a program they did not
+    // have before (type/name + one object name), tagged with the last §FILM_EXPOSURE frame index seen. Instrument only.
+    await p.evaluate(() => { const A = window.APP, R = A.renderer; let n = R.info.programs.length, f = -1; const seen = new WeakMap();
+      const snap = () => { const out = []; A.scene.traverse(o => { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (!m) return; const cp = R.properties.get(m).currentProgram; if (cp && seen.get(m) !== cp) { if (seen.has(m) || true) out.push({ m, o, cp }); seen.set(m, cp); } }); }); return out; };
+      snap(); const oc = console.log.bind(console);
+      console.log = function () { const t = String(arguments[0] || ''); const mm = /§FILM_EXPOSURE f=(\d+)/.exec(t); if (mm) f = +mm[1]; return oc.apply(console, arguments); };
+      setInterval(() => { const k = R.info.programs.length; if (k === n) return; const nw = snap(), progs = new Set(R.info.programs.slice(n)); const hit = nw.filter(x => progs.has(x.cp));
+        oc('§ALTC_PROGRAM_NEW f=' + f + ' programs=' + n + '->' + k + ' names=[' + (hit.length ? hit : nw).slice(0, 8).map(x => x.m.type + '/' + (x.m.name || '-') + '@' + (x.o.name || x.o.type) + '{' + (x.cp.name || '') + '}').join(' ').replace(/[\[\]]/g, '') + '] newProgramNames=' + [...progs].map(q => q.name || '?').join(',')); n = k; }, 200); });
     await new Promise(r => setTimeout(r, 5000)); L.push('§ALTC_ENTRY APP.startMaxQualityOrbit({frames:' + N + ', fps:15}) — the function scene.js Alt+C calls, frames capped');
     await p.evaluate(n => { window.APP.startMaxQualityOrbit({ frames: n, fps: 15 }); }, N);
     // instrument (GPU run 2026-09-27): start() opens the Cinema Path Editor (cinema_maxq.js §CINEMA_PATH_EDITOR, opts.editor !== false)
@@ -193,17 +234,20 @@ function report(T, R) {
   all.forEach(r => log('| ' + r.pose + ' | ' + r.arm + ' | ' + r.group + ' | ' + r.id + ' | ' + r.state + ' | ' + r.detail.replace(/\|/g, '/').slice(0, 260) + ' |'));
   const still = R.rows, stillGate = !still.length ? 'INCONCLUSIVE (no still record judged)' : J.gate(still), filmGate = !R.filmRows.length ? 'INCONCLUSIVE' : J.gate(R.filmRows);
   const incPoses = [...new Set(still.filter(r => r.id === 'pose verdict').map(r => r.pose + '/' + r.arm))];
-  log('\n§ALTS_ALL_SUMMARY tree=' + T.commit + ' sw=' + T.sw + ' lawHash=' + T.lawHash + ' records=' + R.nRecs + ' bakes=' + (R.bakes.join(',') || 'none') + ' PASS=' + cnt('PASS') + ' FAIL=' + cnt('FAIL') + ' INCONCLUSIVE=' + cnt('INCONCLUSIVE') + ' VACUOUS=' + cnt('VACUOUS') + ' NO-OP=' + cnt('NO-OP') + ' SCOPE-BLIND=' + cnt('SCOPE-BLIND') + ' WARN=' + cnt('WARN'));
+  log('\n§ALTS_ALL_SUMMARY tree=' + T.commit + ' sw=' + T.sw + ' lawHash=' + T.lawHash + ' records=' + R.nRecs + ' bakes=' + (R.bakes.join(',') || 'none') + ' PASS=' + cnt('PASS') + ' FAIL=' + cnt('FAIL') + ' INCONCLUSIVE=' + cnt('INCONCLUSIVE') + ' VACUOUS=' + cnt('VACUOUS') + ' NO-OP=' + cnt('NO-OP') + ' SCOPE-BLIND=' + cnt('SCOPE-BLIND') + ' WARN=' + cnt('WARN') + ' INFO=' + cnt('INFO'));
+  R.rows.filter(r => r.id === 'p50 40..200 & clipped < 2%').forEach(r => log('§ALTS_LOOK ' + r.pose + ' ' + r.state + ' ' + r.detail));
   log('§ALTS_ALL_VERDICT ' + stillGate + (incPoses.length ? ' inconclusivePresses=' + incPoses.join(',') : '') + ' (PASS only if no FAIL/INCONCLUSIVE/VACUOUS/NO-OP row; SCOPE-BLIND and WARN are listed, not blocking)');
   log('§BAKE_RELEASE_GATE ' + (R.filmRows.length ? filmGate : 'INCONCLUSIVE (no bake judged)') + ' — nothing ships (FF to look / any publish) unless PASS');
   fs.writeFileSync(path.join(OUT, 'alts_all.json'), JSON.stringify({ tree: T, rows: R.rows, filmRows: R.filmRows, stillGate, filmGate: R.filmRows.length ? filmGate : 'INCONCLUSIVE', when: new Date().toISOString() }, null, 1));
   return stillGate === 'PASS' && (!R.filmRows.length || filmGate === 'PASS') ? 0 : 1;
 }
+// --film (all: A,C,E,T[,B]) or --film A,C (only those arms)
+function filmSel() { const v = arg('film', null); return v ? v.split(',').map(x => x.trim().toUpperCase()).filter(x => /^[ACETB]$/.test(x)) : ['A', 'C', 'E', 'T', 'B']; }
 async function main() {
   if (has('selftest')) return require('./witness_alts_all_selftest.js').run();
   const T = treeFacts(TREE); log('§ALTS_ALL tree=' + T.tree + ' commit=' + T.commit + ' sw=' + T.sw + ' lawHash=' + T.lawHash + ' lzSrc=' + T.lzSrc + ' versions=' + JSON.stringify(T.versions));
   const jobs = has('judge') ? [] : plan(), film = has('film') || has('film-only'), altc = +arg('altc', 0);
-  const bakes = film ? ['A', 'C', 'E', 'T'].concat(arg('base-tree', null) ? ['B'] : []) : [];
+  const bakes = film ? filmSel().filter(k => k !== 'B' || arg('base-tree', null)) : [];
   log('§ALTS_ALL_PLAN presses=' + jobs.length + ' (each: fresh profile + load 60-90 s + press 15-215 s => ~2-5 min; est ' + Math.round(jobs.length * 2) + '-' + Math.round(jobs.length * 5) + ' min) bakes=' + (bakes.join(',') || 'none') + (bakes.length ? ' (~6-8 min each at 90 frames => ' + bakes.length * 6 + '-' + bakes.length * 8 + ' min)' : '') + (altc ? ' altc=' + altc + ' frames (~' + Math.round(altc * 2 / 60 + 3) + ' min)' : '') + ' full matrix = ' + Object.keys(POSES).length + ' poses x ' + (Object.keys(J.FIXES).length + 1) + ' arms = ' + Object.keys(POSES).length * (Object.keys(J.FIXES).length + 1) + ' presses');
   jobs.forEach(j => log('  press ' + j[0] + ' / ' + j[1] + ' -> ' + POSES[j[0]][0] + POSES[j[0]][1] + (J.FIXES[j[1]] ? J.FIXES[j[1]].q : '')));
   if (has('plan')) return 0;
@@ -213,7 +257,7 @@ async function main() {
       log('  pressing ' + p + '/' + a + ' ...'); const r = await pressStill(puppeteer, p, a, T); fs.writeFileSync(f, JSON.stringify(r)); log('  ' + p + '/' + a + ' done wall ' + r.wallSecs.toFixed(0) + ' s' + (r.fatal ? ' FATAL ' + r.fatal : '') + (r.timeout ? ' TIMEOUT' : '')); }
     if (altc) await runAltc(puppeteer, altc);
   }
-  if (film) { runBake('A', TREE, []); runBake('C', TREE, ['--film-exposure', '0', '--film-fill', 'restore']); runBake('E', TREE, ['--film-parity', '0']); runBake('T', TREE, ['--url-query', '&torch=0']); if (arg('base-tree', null)) runBake('B', path.resolve(arg('base-tree')), []); }
+  if (film) { const sel = filmSel(); if (sel.includes('A')) runBake('A', TREE, []); if (sel.includes('C')) runBake('C', TREE, ['--film-exposure', '0', '--film-fill', 'restore']); if (sel.includes('E')) runBake('E', TREE, ['--film-parity', '0']); if (sel.includes('T')) runBake('T', TREE, ['--url-query', '&torch=0']); if (sel.includes('B') && arg('base-tree', null)) runBake('B', path.resolve(arg('base-tree')), []); }
   return report(T, judgeAll(T));
 }
 module.exports = { readPng, treeFacts, judgeAll, report, POSES, ARM_POSES, EDITED };

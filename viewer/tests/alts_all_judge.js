@@ -1,7 +1,8 @@
 // ⚠ DO NOT REMOVE — §ALTS_ALL judge (pure, no browser). Scope: turn persisted raw records (still presses, film bake logs) into
 // verdict rows with explicit states. Read the log after every run. Spec: bim-compiler PHOTOREAL_STILL_RENDER.md "### ALTS-ALL BUILD".
 // STATES: PASS | FAIL | INCONCLUSIVE (instrument failed or data missing) | VACUOUS (population judged = 0) | NO-OP (fix line present,
-// on == off) | SCOPE-BLIND (a spatially local fix acted, but not where this pose looks) | WARN (listed, not blocking).
+// on == off) | SCOPE-BLIND (a spatially local fix acted, but not where this pose looks) | WARN (listed, not blocking) | INFO (a number
+// reported where the fix is not expected to act by physics — e.g. the 900 cd torch at 9 m; ### ALTS-ALL FIX 4 — not blocking).
 // A verdict is never PASS when nothing was judged.
 'use strict';
 const BLOCKING = new Set(['FAIL', 'INCONCLUSIVE', 'VACUOUS', 'NO-OP']);
@@ -13,7 +14,7 @@ function row(group, id, state, detail, extra) { return Object.assign({ group, id
 
 // ── fix table: each off-switch arm, its on-line in the base arm, its off-line in the arm, population regex, local or global
 const FIXES = {
-  torch0:        { q: '&torch=0', on: /§CAM_TORCH on peakCd=/, off: /§CAM_TORCH (off|VACUOUS)|^(?![\s\S]*§CAM_TORCH on)/, offMustLine: false, pop: null, local: false, name: 'L1b camera torch' },
+  torch0:        { q: '&torch=0', on: /§CAM_TORCH on peakCd=/, off: /§CAM_TORCH (off|VACUOUS)|^(?![\s\S]*§CAM_TORCH on)/, offMustLine: false, pop: null, local: false, name: 'L1b camera torch', judgedAt: ['inner_close'] },
   srgbfix0:      { q: '&srgbfix=0', on: /§ALBEDO_SRGB srgbfix=1/, off: /§ALBEDO_SRGB srgbfix=0/, offMustLine: true, pop: /§ALBEDO_SRGB srgbfix=1 .*converted=(\d+)/, local: false, name: 'Z9 albedo sRGB' },
   groundlaw0:    { q: '&groundlaw=0', on: /§GROUND_HALF rho=/, off: /§GROUND_HALF off/, offMustLine: true, pop: null, local: false, name: 'Z12 ground half' },
   aoindirect0:   { q: '&aoindirect=0', on: /§AO_INDIRECT done mode=shader/, off: /§AO_INDIRECT mode=legacy/, offMustLine: true, pop: /§AO_INDIRECT done mode=shader boundMats=(\d+)/, local: false, name: 'Z10 AO indirect' },
@@ -47,7 +48,8 @@ function g1(rec, T) {
   add('lawHash page == node', E.lawHash === T.lawHash, 'page ' + E.lawHash + ' node ' + T.lawHash);
   add('LightZones SRC page == node', E.lzSrc === T.lzSrc, 'page ' + E.lzSrc + ' node ' + T.lzSrc);
   const errs = grepAll(L, /^PAGEERROR|§LOAD_FAIL|Shader Error|CONTEXT_LOST|Context Lost|GPUOutOfMemory/);
-  add('zero page errors / §LOAD_FAIL', !errs.length, errs.length + (errs.length ? ' e.g. ' + errs[0].slice(0, 120) : ''));
+  const gpu = rec.gpu ? ' | GPU peak ' + rec.gpu.peakUsed + '/' + rec.gpu.total + ' MiB (this press ' + rec.gpu.pressPeakMB + ' MiB, baseline ' + rec.gpu.baseline + ')' : '';
+  add('zero page errors / §LOAD_FAIL', !errs.length, errs.length + (errs.length ? ' e.g. ' + errs[0].slice(0, 120) : '') + gpu);
   // instrument (GPU run 2026-09-27, p2/base): the three-mesh-bvh CDN import failed (§BVH_INIT_FAIL) -> §SKY_SHELL_RAYS "no BVH",
   // recomputed=0: the press ran without the B1/Z8 shell pass, and no other G1 row noticed. A missing dependency = the press is not the build.
   const bvh = grepAll(L, /§BVH_INIT_FAIL/);
@@ -78,15 +80,24 @@ function g3(rec) {
   const gl = grep1(L, /§GLARE bld=/);
   if (!gl) out.push(row('G3', '§GLARE populations', 'INCONCLUSIVE', 'no §GLARE line'));
   else { const ef = num(gl, /exteriorFaces=(\d+)/), jt = num(gl, /junctionTested=(\d+)/); out.push(row('G3', '§GLARE populations', (ef > 0 && jt > 0) ? 'PASS' : 'VACUOUS', 'exteriorFaces=' + ef + ' junctionTested=' + jt)); }
-  const rv = grepAll(L, /§METER remeter VACUOUS/), ms = grepAll(L, /§METER camera=/);
+  const rv = grepAll(L, /§METER (remeter|final) VACUOUS/), ms = grepAll(L, /§METER camera=/);
   const allSky = ms.filter(l => /camera=inside/.test(l) && num(l, /skyPx=(\d+)\//) === num(l, /skyPx=\d+\/(\d+)/));
   out.push(row('G3', 'no inside §METER reads an all-sky frame', !ms.length ? 'INCONCLUSIVE' : ((allSky.length || rv.length) ? 'VACUOUS' : 'PASS'), (allSky[0] || rv[0] || ms.length + ' meter lines, none all-sky').slice(0, 160)));
-  if (!/torch=0/.test(q)) { const it = L.findIndex(l => /§CAM_TORCH on/.test(l)), im = L.findIndex(l => /§METER camera=/.test(l));
-    out.push(row('G3', 'torch staged before the stage meter (one meter sees it)', it < 0 ? 'INCONCLUSIVE' : (im < 0 ? 'INCONCLUSIVE' : (it < im ? 'PASS' : 'FAIL')), 'torch line ' + it + ' first meter line ' + im)); }
-  if (ms.length >= 2) { const e0 = num(ms[0], /EV100=(-?[\d.]+)/), e1 = num(ms[ms.length - 1], /EV100=(-?[\d.]+)/), st = grepAll(L, /§METER_STATE/);
-    const diff = st.length >= 2 ? (() => { const kv = l => Object.fromEntries((l.match(/(\w+)=(\S+)/g) || []).map(x => x.split('='))); const a = kv(st[0]), b = kv(st[st.length - 1]); return Object.keys(b).filter(k => a[k] !== b[k] && !/^bandL$|^noGround|^groundShare/.test(k)).map(k => k + ' ' + a[k] + '->' + b[k]).join(' '); })() : 'no §METER_STATE pair';
+  // ### ALTS-ALL FIX 1: ONE §METER reading per still, on the final staged scene (after the lamp rebuild + ground reassert + torch)
+  const iM = L.findIndex(l => /§METER camera=/.test(l)), iG = L.findIndex(l => /§GROUND_COLOR_ORDER_FIX/.test(l)), iT = L.findIndex(l => /§CAM_TORCH on/.test(l)), iS = L.findIndex(l => /§STILL_REFINE start/.test(l));
+  const iLamp = (() => { let k = -1; L.forEach((l, i) => { if (/§NIGHT_STILL_LIGHTS raised|§STILL_DIALS_LAMPS|§LIGHT_STACK/.test(l) && (iS < 0 || i < iS)) k = i; }); return k; })();
+  const order = iM >= 0 && (iG < 0 || iG < iM) && (iLamp < 0 || iLamp < iM) && (iS < 0 || iM < iS) && (/torch=0/.test(q) || (iT >= 0 && iT < iM));
+  out.push(row('G3', 'ONE §METER per still, on the final scene (after lamps/ground/torch, before §STILL_REFINE start)', !ms.length ? 'INCONCLUSIVE' : (ms.length === 1 && order ? 'PASS' : 'FAIL'),
+    ms.length + ' §METER camera= line(s); order torch ' + iT + ' ground ' + iG + ' lamps ' + iLamp + ' meter ' + iM + ' refine ' + iS + (/tag=final/.test(ms[0] || '') ? '' : ' (no tag=final)')));
+  const bl = grepLast(L, /§METER_BIND/), dum = num(bl, /dummyAtRead=(\d+)/);
+  out.push(row('G3', 'meter read on BOUND uniforms (§METER_BIND dummyAtRead == 0)', !bl ? 'INCONCLUSIVE' : (dum === 0 && num(bl, /stagedLit=(\d+)/) > 0 ? 'PASS' : (num(bl, /stagedLit=(\d+)/) > 0 ? 'FAIL' : 'VACUOUS')), (bl || 'no §METER_BIND line').replace(/^.*§METER_BIND /, '').slice(0, 140)));
+  const dg = grep1(L, /§METER_DIAG camera=/);
+  if (dg && ms.length) { const e0 = num(dg, /EV100=(-?[\d.]+)/), e1 = num(ms[ms.length - 1], /EV100=(-?[\d.]+)/), st = grepAll(L, /§METER_STATE/);
+    const kv = l => Object.fromEntries((l.match(/(\w+)=(\S+)/g) || []).map(x => x.split('='))), sd = st.find(l => /tag=diag/.test(l)), sf = [...st].reverse().find(l => /tag=final/.test(l));
+    const diff = sd && sf ? (() => { const a = kv(sd), b = kv(sf); return Object.keys(b).filter(k => a[k] !== b[k] && !/^bandL$|^noGround|^groundShare|^tag$/.test(k)).map(k => k + ' ' + a[k] + '->' + b[k]).join(' '); })() : 'no §METER_STATE diag/final pair';
     const gsh = st.map(l => num(l, /groundShare=(-?[\d.]+)/)).filter(v => v != null);
-    out.push(row('G3', 'stage -> final remeter EV jump <= 1 EV', Math.abs(e1 - e0) > 1 ? 'FAIL' : 'PASS', 'EV ' + e0 + ' -> ' + e1 + ' | state changed: ' + (diff || 'nothing logged') + (gsh.length ? ' | groundShare ' + gsh.join(' -> ') : ''))); }
+    out.push(row('G3', 'stage diag -> final EV (diagnostic only; the exposure is the final reading)', 'INFO', 'EV ' + e0 + ' -> ' + e1 + ' | state changed: ' + (diff || 'nothing logged') + (gsh.length ? ' | groundShare ' + gsh.join(' -> ') : ''))); }
+  const rb = grepAll(L, /§SOURCED_REBIND n=/); if (rb.length) out.push(row('G3', 'app frames drawn with re-keyed (dummy) sourced uniforms', 'WARN', rb.length + ' event(s) e.g. ' + rb[0].slice(0, 100)));
   return out;
 }
 // ── G4 look metrics
@@ -133,8 +144,9 @@ function g2(base, arm, armId, noise) {
   const dm = Math.abs(a.mean - b.mean), dp = Math.abs(a.p50 - b.p50), de = (evA != null && evB != null) ? Math.abs(evA - evB) : 0;
   const tol = Math.max(0.05, noise ? 2 * noise : 0);
   const moved = dm > tol || dp > tol || de > 0.005;
-  const st = moved ? 'PASS' : (F.local ? 'SCOPE-BLIND' : 'NO-OP');
-  out.push(row('G2', F.name + ' (' + F.q + ')', st, 'mean ' + a.mean + ' vs ' + b.mean + ' p50 ' + a.p50 + ' vs ' + b.p50 + ' EV ' + evA + ' vs ' + evB + ' tol ' + tol.toFixed(3) + (noise != null ? ' (noise ' + noise + ')' : ' (noise not measured)')));
+  const far = F.judgedAt && !F.judgedAt.includes(arm.pose);   // ### ALTS-ALL FIX 4: e.g. the torch judged only at a close pose
+  const st = far ? 'INFO' : (moved ? 'PASS' : (F.local ? 'SCOPE-BLIND' : 'NO-OP'));
+  out.push(row('G2', F.name + ' (' + F.q + ')' + (far ? ' [far pose: judged at ' + F.judgedAt.join(',') + ']' : ''), st, 'mean ' + a.mean + ' vs ' + b.mean + ' p50 ' + a.p50 + ' vs ' + b.p50 + ' EV ' + evA + ' vs ' + evB + ' tol ' + tol.toFixed(3) + (noise != null ? ' (noise ' + noise + ')' : ' (noise not measured)')));
   return out;
 }
 
@@ -163,6 +175,9 @@ function filmJudge(bake, T, ctl) {
   } else
   add('F-G1', 'SW purge / reload race', !sr.purge ? 'INCONCLUSIVE' : (sr.race ? 'INCONCLUSIVE' : (sr.unregistered > 0 ? 'WARN' : 'PASS')),
     !sr.purge ? 'no §CLI_BAKE_SW_PURGE line (in-browser channel: see tap)' : 'unregistered=' + sr.unregistered + ' pre-purge _INIT also after: ' + (sr.dupInit.join(',') || 'none') + (sr.race ? ' => INCONCLUSIVE-instrument (a stale SW page initialised before the purge)' : ''));
+  // ### ALTS-ALL FIX 2: the building must load (pass 1: HospitalAjaibPath.db absent from the tree's git-ignored buildings/ -> 404 in 3 s)
+  const nf = grepAll(Lr.map(stripPrefix), /§DB_404|§CLI_BAKE_LOAD_FATAL|§ALTS_FILM_DB MISSING/);
+  add('F-G1', 'building loaded (no §DB_404 / §CLI_BAKE_LOAD_FATAL)', nf.length ? 'INCONCLUSIVE' : 'PASS', nf.length ? nf[0].slice(0, 140) : 'no 404 / load-fatal line');
   const env = grep1(Lr.map(stripPrefix), /§CLI_BAKE_ENV/); if (env) add('F-G1', 'bake env sw == tree', num(env, /sw=v(\d+)/) === +String(T.sw).slice(1) ? 'PASS' : 'INCONCLUSIVE', env.slice(0, 160));
   const tap = bake.tap; if (tap) {
     const miss = Object.keys(T.versions).filter(f => !(tap.scripts || []).includes(f + '?v=' + T.versions[f]));
@@ -183,7 +198,8 @@ function filmJudge(bake, T, ctl) {
       const ov = ev.map((x, i) => i).filter(i => i > 0 && Math.abs(ev[i] - tg[i]) > 1.1e-3 && Math.abs(ev[i - 1] - tg[i]) > 1.1e-3 && Math.sign(ev[i] - tg[i]) !== Math.sign(ev[i - 1] - tg[i]));   // crossed the target it was moving to
       add('F', 'no overshoot', ov.length ? 'FAIL' : 'PASS', ov.length ? 'f=' + ov.slice(0, 5) : 'none');
       const pr = a.map(d => +d.programs), warm = pr.slice(2), uniq = [...new Set(warm)];
-      add('F', 'programs constant after warm-up (f>=2)', uniq.length <= 1 ? 'PASS' : 'FAIL', 'f0 ' + pr[0] + ' f1 ' + pr[1] + ' f>=2 ' + uniq.slice(0, 5).join(','));
+      const cen = grepAll(L, /§ALTC_PROGRAM_NEW/).filter(l => num(l, /f=(\d+)/) >= 2).map(l => (/names=(\[[^\]]*\])/.exec(l) || [])[1] || '?');
+      add('F', 'programs constant after warm-up (f>=2)', uniq.length <= 1 ? 'PASS' : 'FAIL', 'f0 ' + pr[0] + ' f1 ' + pr[1] + ' f>=2 ' + uniq.slice(0, 5).join(',') + (cen.length ? ' | new at f>=2: ' + cen.join(' ').slice(0, 160) : ''));
       const tors = [...new Set(a.map(d => d.torch))], tl = grepAll(L, /§CAM_TORCH film on intensityUnits=/);
       if (bake.arm === 'T') add('F', 'torch off arm: torch=off every frame', tors.length === 1 && tors[0] === 'off' ? 'PASS' : 'FAIL', 'torch values ' + tors.join(','));
       else {   // row 12 (coordinator 2026-09-27): the bake stages twice (the first staging is torn down ~125 s) -> exactly ONE §CAM_TORCH film

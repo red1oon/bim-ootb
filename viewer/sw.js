@@ -186,7 +186,10 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1474';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1475';   // bump on each deploy; per-change detail is the git commit message.
+// v1475 (2026-09-27) ### ALTS-ALL FIX 1: ONE §METER per still (SourcedLight.meterFinal on the final staged scene; stage() logs
+//   §METER_DIAG only); meterRead primes + pushes before the read (§METER_BIND: fresh-key uniforms carried the dummy zone texture);
+//   §SOURCED_REBIND counts re-keyed materials. viewer.html sourced_light.js?v=60, effects.js?v=116 in the SAME commit.
 // v1474 (2026-09-27) §ALTS_ALL: fix/film-law-v2 + Z10 AO indirect + Z11 bounce albedo merged; Z8 radius-free shell rule
 //   (light_zones.js, &shellreach=2 = B1); Z18 &gridblend=1 (sourced_light.js, default off); remeter all-sky VACUOUS guard.
 //   §FRAME_QA per-frame luma line in cinema_maxq.js (bake release gate). Z18 §SPEC_SMOOTH (default on, &specsmooth=0): continuous

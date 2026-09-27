@@ -1179,7 +1179,8 @@
     var b = bindLights(A, A.camera);
     var gl = /[?&]glassshadow=1/.test(location.search) ? 0 : glassOn(A);   // &glassshadow=1 = glass casts as before (A/B)
     console.log('§SUN_GLASS_CASTERS fixed pureGlassMeshes=' + gl + ' (depth pass discards them: sun + portal shadows pass through glass)' + (gl ? '' : ' — &glassshadow=1 or none found'));
-    prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0; ordCache = null;
+    prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0, rebinds = 0; lastU = new WeakMap(); ordCache = null;
+    set.forEach(function (m) { var pp = A.renderer.properties.get(m); if (pp && pp.uniforms) lastU.set(m, pp.uniforms); });
     var own = function (renderer, scene, camera) {
       if (active) {
         if (A._lampDataOn && A._lampData && A._lampData.ver !== lampVer) { try { lampBuild(A); } catch (eLB2) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB2.message); lampFail(A, 'build threw'); }
@@ -1191,6 +1192,11 @@
         // re-push only when a program was built (a recompile clones fresh uniforms from ShaderLib; typed arrays stay shared)
         var np = (renderer && renderer.info && renderer.info.programs) ? renderer.info.programs.length : -1;
         if (np !== progN) { progN = np; var seen = new Set(); A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !seen.has(m)) { seen.add(m); push(A, m); } }); }); pushes++; }
+        // ### ALTS-ALL FIX 1 (c): a new program key served by an EXISTING GL program leaves programs.length unchanged but still swaps
+        // in a fresh (dummy-texture) uniforms object — re-push any staged material whose uniforms object changed since its last push.
+        // This hook runs before the draw, so the frame that created the key already drew with dummies: counted, not rescued.
+        var nRe = 0; set.forEach(function (m) { var pp = renderer.properties.get(m), U = pp && pp.uniforms; if (U && U.uSLParams && lastU.get(m) !== U) { push(A, m); if (lastU.has(m)) nRe++; lastU.set(m, U); } });
+        if (nRe) { rebinds++; console.log('§SOURCED_REBIND n=' + nRe + ' event=' + rebinds + ' (materials re-keyed since their last push: the previous frame drew them with the dummy zone texture)'); }
         var line = '§SOURCED_LIGHT_BIND points=' + bb.points + ' bound=' + bb.pointsBound + ' (litOutside=' + bb.litOutside + ') litUnbound=' + bb.litUnbound + ' spots=' + bb.spots + ' portalsBound=' + bb.spotsBound;
         if (line !== lastLog) { lastLog = line; console.log(line); }
       }
@@ -1202,9 +1208,12 @@
       A.scene.onAfterRender = prevOAR || function () {}; if (prevOAR) prevOAR.apply(this, arguments); };
     // §METER — inside = the camera stands in a light zone (else effects.js's _stillCamInside answer, passed in A._stillCamInsideNow)
     var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow;
-    if (!/[?&]meter=0/.test(location.search) && A._stillMeter !== false) { try { A._meterLast = meter(A, inside); } catch (eM) { console.warn('§METER failed: ' + eM.message); } }
+    // ### ALTS-ALL FIX 1: a DIAGNOSTIC reading only (exposure untouched) — the ground, lamps and glass env are not final yet; the ONE
+    // reading is SourcedLight.meterFinal(A), called by effects.js on the final staged scene.
+    A._meterLast = null;
+    if (!/[?&]meter=0/.test(location.search) && A._stillMeter !== false) { try { meter(A, inside, 'diag'); } catch (eM) { console.warn('§METER_DIAG failed: ' + eM.message); } }
     else console.log('§METER off (&meter=0) exposure=' + A.renderer.toneMappingExposure.toFixed(3));
-    try { LL.log(A, 'stage'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); }   // §LIGHT_LAW_MODULE: the law + live state this still used (log only)
+    try { LL.log(A, 'stage-diag'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); }   // §LIGHT_LAW_MODULE (log only)
     try { luxCheck(A, Z); } catch (eL) { console.warn('§LUX_CHECK failed: ' + eL.message); }
     if (A.markDirty) A.markDirty();
     console.log('§SOURCED_LIGHT on zonesCache=' + (hit ? 'hit' : 'built') + ' zones=' + Z.zones + ' grid=' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ' cell=' + Z.cell +
@@ -1216,6 +1225,7 @@
   // One small float render of the frame as the eye receives it (real materials, glass, emitters; sky pixels = the lighting's
   // sky luminance), log-average luminance (Reinhard et al. 2002 eq. 1) over the histogram band -> EV100 -> exposure.
   // (History: the Stevens 0.33 / CIECAM02-D incident-light rules and the inside-only branch are retired — audit top-1/2.)
+  var lastU = new WeakMap();   // ### ALTS-ALL FIX 1: material -> the uniforms object last pushed (own() + meterRead keep it)
   var METER_W = LL.METER.W, METER_H = LL.METER.H, HIST_LO = LL.METER.histLo, HIST_HI = LL.METER.histHi, meterSaved = null;
   // §METER_BANDS: the histogram bands the engines document (Unreal 70/95 docs range, Unreal 10/90 constructor, HDRP 40/90); every press
   // logs the EV100 each band would give (same buffer), &meterband=lo,hi picks one for the exposure — the EV sanity check (ANSI: sunny
@@ -1227,18 +1237,19 @@
   // shadow autoUpdate), visible light census by type (count / summed intensity), hemi, envMap intensity mean, hidden-by-meter count;
   // plus, for OUTSIDE cameras, the band L re-read with the ground hidden (groundShare = 1 - L_noGround / L) so the harness can say
   // WHICH term moved (ground / lamps / sun) instead of re-deriving it by hand.
-  function meterState(A, m, cam) {
+  function meterState(A, m, cam, tag) {
     var cnt = { point: [0, 0], spot: [0, 0], dir: [0, 0], hemi: [0, 0], amb: [0, 0] }, envS = 0, envN = 0, seenM = new Set();
     A.scene.traverse(function (o) { if (!o.visible) return;
       if (o.isLight) { var k = o.isPointLight ? 'point' : o.isSpotLight ? 'spot' : o.isDirectionalLight ? 'dir' : o.isHemisphereLight ? 'hemi' : o.isAmbientLight ? 'amb' : null; if (k) { cnt[k][0]++; cnt[k][1] += o.intensity; } }
       if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (mm) { if (mm && !seenM.has(mm) && mm.envMap) { seenM.add(mm); envS += mm.envMapIntensity || 0; envN++; } }); });
     var g = A.ground, gm = g && g.material, gs = '';
     if (gm) gs = 'ground=' + (gm.color ? gm.color.getHexString() : '-') + ' gain=' + (A._groundAlbedoGain != null ? (+A._groundAlbedoGain).toFixed(2) : '-') + ' map=' + (gm.map ? 1 : 0) + ' vis=' + (g.visible ? 1 : 0);
-    var line = '§METER_STATE camera=' + cam + ' ' + (gs || 'ground=none') + ' sunI=' + (A.sun ? A.sun.intensity.toFixed(3) : '-') + ' sunShadow=' + (A.sun ? (A.sun.castShadow ? 1 : 0) : '-') +
+    var line = '§METER_STATE tag=' + (tag || 'final') + ' camera=' + cam + ' ' + (gs || 'ground=none') + ' sunI=' + (A.sun ? A.sun.intensity.toFixed(3) : '-') + ' sunShadow=' + (A.sun ? (A.sun.castShadow ? 1 : 0) : '-') +
       ' shadowAuto=' + (A.renderer.shadowMap ? (A.renderer.shadowMap.autoUpdate ? 1 : 0) + '/' + (A.renderer.shadowMap.needsUpdate ? 1 : 0) : '-') +
       ' lights point=' + cnt.point[0] + '/' + cnt.point[1].toFixed(3) + ' spot=' + cnt.spot[0] + '/' + cnt.spot[1].toFixed(4) + ' dir=' + cnt.dir[0] + '/' + cnt.dir[1].toFixed(3) +
       ' hemi=' + cnt.hemi[0] + '/' + cnt.hemi[1].toFixed(3) + ' amb=' + cnt.amb[0] + '/' + cnt.amb[1].toFixed(3) + ' envMats=' + envN + ' envMean=' + (envN ? (envS / envN).toFixed(3) : '-') +
-      ' hidden=' + m.hidden + ' bandL=' + (m.L != null ? m.L.toExponential(3) : '-');
+      ' hidden=' + m.hidden + ' hiddenKinds=' + (m.hiddenKinds || '-') + ' torchShadowMap=' + (A._camTorch && A._camTorch.parent ? (A._camTorch.shadow && A._camTorch.shadow.map ? 1 : 0) : '-') +
+      ' dummyAtRead=' + (m.dummyAtRead != null ? m.dummyAtRead : '-') + ' bandL=' + (m.L != null ? m.L.toExponential(3) : '-');
     if (cam === 'outside' && g && g.visible && !A._meterIsolating) {
       A._meterIsolating = true; g.visible = false; var m2 = null;
       try { m2 = meterRead(A, { mode: m.mode, quiet: true, camZone: 0 }); } finally { g.visible = true; A._meterIsolating = false; }
@@ -1247,7 +1258,7 @@
     return line;
   }
   function meterRead(A, opts) {
-    var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [];
+    var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [], hk = { sky: 0, sprite: 0, points: 0, line: 0, basic: 0, shader: 0 }, hn = [];
     A.scene.traverse(function (o) { if (!o.visible) return;
       // the meter reads what reaches the eye: real materials, glass and emitters stay; only screen sprites/points/lines (flare,
       // markers) and the sky dome mesh (its shader is outside the lux calibration; its pixels take the lighting's sky luminance)
@@ -1256,12 +1267,23 @@
       // median < 40 at 10 of 13 poses). Lit materials, glass and the sky luminance stay.
       var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
       var glow = o.isSprite || o.isPoints || o.isLine || o === A._sky || (ms && ms.length && ms.every(function (m) { return !m || m.isMeshBasicMaterial || m.isShaderMaterial; }));
-      if (glow && (o.isMesh || o.isSprite || o.isPoints || o.isLine || o.isInstancedMesh || o.isBatchedMesh)) { o.visible = false; hidden.push(o); } });
+      if (glow && (o.isMesh || o.isSprite || o.isPoints || o.isLine || o.isInstancedMesh || o.isBatchedMesh)) { o.visible = false; hidden.push(o);
+        var kk = o === A._sky ? 'sky' : o.isSprite ? 'sprite' : o.isPoints ? 'points' : o.isLine ? 'line' : (ms && ms.some(function (m) { return m && m.isShaderMaterial; })) ? 'shader' : 'basic'; hk[kk]++;
+        if ((kk === 'basic' || kk === 'shader') && hn.length < 4) hn.push((o.name || (ms && ms[0] && ms[0].name) || o.type).slice(0, 24)); } });
     var rt = new THREE.WebGLRenderTarget(METER_W, METER_H, { type: THREE.FloatType, depthBuffer: true });
     var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevTM = R.toneMapping, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
     var buf = new Float32Array(METER_W * METER_H * 4);
     var irs = IRP[1];
+    // §METER_BIND (### ALTS-ALL FIX 1): a render that needs a program key a material has not had before (new light / shadow count,
+    // or this meter's own variant: float target + NoToneMapping + fog null) gets a FRESH uniforms clone from ShaderLib (three r186
+    // getProgram) = the §SOURCED_LIGHT DUMMY textures (zone 0 everywhere -> nav hemi/ambient indoors, no IR/cove/lamp data), and
+    // push() only ever runs before a draw. So: prime once (creates every key this exact render needs), push every material, THEN read.
+    var mats = new Set(), uB = new Map(), prog0 = R.info && R.info.programs ? R.info.programs.length : -1, prog1 = prog0, rebound = 0, dummyAt = 0, staged = 0;
+    A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !mats.has(m)) { mats.add(m); var pp = R.properties.get(m); uB.set(m, pp && pp.uniforms); } }); });
     try { A.scene.background = null; A.scene.fog = null; R.toneMapping = THREE.NoToneMapping; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
+      if (!(opts && opts.noPrime)) { R.clear(true, true, true); R.render(A.scene, A.camera); prog1 = R.info && R.info.programs ? R.info.programs.length : -1;
+        mats.forEach(function (m) { var pp = R.properties.get(m); if (pp && pp.uniforms && pp.uniforms !== uB.get(m)) rebound++; if (push(A, m)) lastU.set(m, pp.uniforms); }); }
+      mats.forEach(function (m) { var U = R.properties.get(m).uniforms; if (U && U.uSLZone && active && tex) { staged++; if (U.uSLZone.value !== tex) dummyAt++; } });
       R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); }
     finally { IRP[1] = irs; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; R.toneMapping = prevTM; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
     // sky pixels (nothing drawn, alpha < 0.5): the sky luminance the lighting itself uses — hemi sky irradiance E = pi L, so
@@ -1302,7 +1324,10 @@
     // §FILM_LAW: a film meters every frame and logs its own §FILM_EXPOSURE line — opts.quiet drops this one (the still never passes it).
     if (mode === 'hist' && !(opts && opts.quiet)) console.log('§METER_HIST low%=' + Math.round(bandLo * 100) + ' high%=' + Math.round(bandHi * 100) + ' bandsL[' + bandsLog + ']' + ' bandL=' + (sw ? Math.exp(sl / sw).toExponential(3) : 'none') +
       ' bandPixels=' + n + '/' + nLit + ' allLogAvg=' + (hAll != null ? hAll.toExponential(3) : 'none') + ' bandL=' + (+hLo).toExponential(2) + '..' + (+hHi).toExponential(2));
-    return { L: sw ? Math.exp(sl / sw) : null, bandsLog: bandsLog, bandsL: bandsL, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, ms: performance.now() - t0 };   // log-average luminance, scene units
+    var bind = 'programs=' + prog0 + '->' + prog1 + ' mats=' + mats.size + ' rebound=' + rebound + ' stagedLit=' + staged + ' dummyAtRead=' + dummyAt + (opts && opts.noPrime ? ' prime=off' : '');
+    if (!(opts && opts.quiet)) console.log('§METER_BIND ' + bind + ' (fresh-key uniforms carry the dummy zone texture; primed + pushed before the read)');
+    var hidK = Object.keys(hk).filter(function (k) { return hk[k]; }).map(function (k) { return k + ':' + hk[k]; }).join(',') + (hn.length ? '[' + hn.join('|').replace(/\s+/g, '_') + ']' : '');
+    return { L: sw ? Math.exp(sl / sw) : null, bandsLog: bandsLog, bandsL: bandsL, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, hiddenKinds: hidK, dummyAtRead: dummyAt, rebound: rebound, ms: performance.now() - t0 };   // log-average luminance, scene units
   }
   // world position per meter pixel (override MeshBasicMaterial writing its world position into the float target), then the
   // light zone at 0.3 m toward the camera; returns a 0/1 mask of pixels in camZone.
@@ -1332,39 +1357,39 @@
   // camera, inside or out. Scene units -> cd/m2 by the one calibration luxPer = calibSunLux / calibSunI; three.js ACESFilmic
   // multiplies exposure by 1/0.6, so that factor is taken back out. No base exposure, no compensation, no clamp.
   // Replaces the CIECAM02-D rule (D is chromatic adaptation: §LIGHT_TRUTH_AUDIT top-1).
-  function meter(A, inside) {
-    var THREE = global.THREE, R = A.renderer, base = R.toneMappingExposure, cam = inside ? 'inside' : 'outside';
+  // §METER one reading per still (### ALTS-ALL FIX 1): tag 'diag' = SourcedLight.stage()'s early reading — logged as §METER_DIAG,
+  // exposure untouched; tag 'final' = the ONE reading, SourcedLight.meterFinal() on the final staged scene — sets the exposure.
+  function meter(A, inside, tag) {
+    var THREE = global.THREE, R = A.renderer, base = R.toneMappingExposure, cam = inside ? 'inside' : 'outside', diag = tag === 'diag';
     var sunIc = A._stillCalibSunI, luxPer = LL.luxPer(A._stillCalibSunLux, sunIc);
-    if (!luxPer) { console.log('§METER VACUOUS camera=' + cam + ' no lux calibration (calibSunI=' + sunIc + ') — exposure unchanged ' + base.toFixed(3)); return null; }
+    if (!luxPer) { console.log('§METER' + (diag ? '_DIAG' : '') + ' VACUOUS camera=' + cam + ' no lux calibration (calibSunI=' + sunIc + ') — exposure unchanged ' + base.toFixed(3)); return null; }
     var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'hist';   // engines meter by histogram
     var m = meterRead(A, { mode: mode, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 });
-    if (!(m.L > 0)) { console.log('§METER VACUOUS camera=' + cam + ' no luminance read — exposure unchanged ' + base.toFixed(3)); return null; }
+    if (!(m.L > 0)) { console.log('§METER' + (diag ? '_DIAG' : '') + ' VACUOUS camera=' + cam + ' no luminance read — exposure unchanged ' + base.toFixed(3)); return null; }
     var Lcd = m.L * luxPer, ev = LL.ev100(Lcd), aces = LL.acesDiv(R, THREE);
     var exp = LL.exposureFromEv(ev, luxPer, aces), stops = Math.log2(exp / base);
-    meterSaved = { exp: base }; R.toneMappingExposure = exp;
+    if (!diag) { meterSaved = { exp: base }; R.toneMappingExposure = exp; }
     var evBands = (m.bandsL || []).map(function (b) { return Math.round(b[0] * 100) + '/' + Math.round(b[1] * 100) + '=' + Math.log2(b[2] * luxPer * 100 / 12.5).toFixed(2); }).join(' ');
-    try { console.log(meterState(A, m, cam)); } catch (eMS) { console.warn('§METER_STATE failed: ' + eMS.message); }
-    console.log('§METER camera=' + cam + ' mode=' + m.mode + (evBands ? ' EV100bands[' + evBands + ']' : '') + ' Lavg=' + Lcd.toFixed(1) + 'cd/m2 EV100=' + ev.toFixed(2) + ' exposure=' + exp.toFixed(4) +
-      ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES ' + aces : '') + ' / (1.2 x 2^EV)) vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
-    return { exposure: exp, stops: stops, ev100: ev, Lcd: Lcd, skyPx: m.skyPx, pixels: m.pixels };
+    try { console.log(meterState(A, m, cam, diag ? 'diag' : 'final')); } catch (eMS) { console.warn('§METER_STATE failed: ' + eMS.message); }
+    console.log((diag ? '§METER_DIAG' : '§METER') + ' camera=' + cam + ' tag=' + (diag ? 'diag' : 'final') + ' mode=' + m.mode + (evBands ? ' EV100bands[' + evBands + ']' : '') + ' Lavg=' + Lcd.toFixed(1) + 'cd/m2 EV100=' + ev.toFixed(2) + ' exposure=' + exp.toFixed(4) +
+      ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES ' + aces : '') + ' / (1.2 x 2^EV))' + (diag ? ' NOT APPLIED (diagnostic; the one reading is tag=final)' : '') + ' vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
+    return { exposure: exp, stops: stops, ev100: ev, Lcd: Lcd, skyPx: m.skyPx, pixels: m.pixels, diag: diag };
   }
-  // §METER_EV re-meter (audit #58): staging builds the lamps with the navigation near-fade floor and effects.js rebuilds them at
-  // the still floor AFTER stage() metered — so the meter read a different lamp set from the one rendered. effects.js calls this
-  // right after that rebuild: restore the base, meter again on the lamps as rendered.
-  function remeter(A) {
-    if (!active || !meterSaved || /[?&]meter=0/.test(location.search) || A._stillMeter === false) return;
-    // §ALTS_ALL GIGO guard (§ALTS_COMBINED RESULT defect: the torch remeter read skyPx=pixels=14400 at EVERY pose = an all-sky frame,
-    // not the scene): a remeter whose readback is all sky while the previous meter of this press saw scene pixels judged NOTHING —
-    // keep the previous exposure and say so (VACUOUS), never adopt it.
-    var prev = A._meterLast, prevExp = A.renderer ? A.renderer.toneMappingExposure : null, prevSaved = meterSaved;
-    meterOff(A); var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow, mr = null;
-    try { mr = meter(A, inside); } catch (eM) { console.warn('§METER remeter failed: ' + eM.message); }
-    if (mr && prev && prev.pixels > 0 && prev.skyPx < prev.pixels && mr.pixels > 0 && mr.skyPx >= mr.pixels) {
-      console.log('§METER remeter VACUOUS all-sky readback (skyPx=' + mr.skyPx + '/' + mr.pixels + ', previous ' + prev.skyPx + '/' + prev.pixels + ') — previous exposure ' + (prevExp != null ? prevExp.toFixed(4) : '?') + ' kept, EV100 ' + mr.ev100.toFixed(2) + ' rejected');
-      if (A.renderer && prevExp != null) A.renderer.toneMappingExposure = prevExp; meterSaved = prevSaved;
-    } else A._meterLast = mr;
-    try { LL.log(A, 'remeter'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); }   // §LIGHT_LAW_MODULE (log only)
+  // §METER final (### ALTS-ALL FIX 1, replaces the §METER_EV lamp remeter, audit #58): effects.js calls this ONCE per still, after the
+  // lamp rebuild, the ground reassert, torch, albedo and the glass env capture — the scene the still renders. Its reading is the only
+  // one that sets the exposure. The all-sky guard stays: an all-sky readback judged nothing -> exposure left at base, VACUOUS logged.
+  function meterFinal(A) {
+    if (!active) { console.log('§METER final skipped (sourced light not staged)'); return; }
+    if (/[?&]meter=0/.test(location.search) || A._stillMeter === false) { console.log('§METER off (&meter=0) exposure=' + A.renderer.toneMappingExposure.toFixed(3)); return; }
+    if (meterSaved) meterOff(A);
+    var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow, mr = null;
+    try { mr = meter(A, inside, 'final'); } catch (eM) { console.warn('§METER final failed: ' + eM.message); }
+    if (mr && mr.pixels > 0 && mr.skyPx >= mr.pixels && inside) {
+      console.log('§METER final VACUOUS all-sky readback inside (skyPx=' + mr.skyPx + '/' + mr.pixels + ') — exposure back to base, EV100 ' + mr.ev100.toFixed(2) + ' rejected'); meterOff(A); mr = null; }
+    A._meterLast = mr;
+    try { LL.log(A, 'final'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); }   // §LIGHT_LAW_MODULE (log only)
   }
+  function remeter(A) { meterFinal(A); }   // back-compat name (no caller left in this tree)
   function meterOff(A) { if (meterSaved && A.renderer) { A.renderer.toneMappingExposure = meterSaved.exp; console.log('§METER off exposure=' + meterSaved.exp.toFixed(3)); } meterSaved = null; }
 
   function unstage(A, quiet) {
@@ -1381,5 +1406,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);
