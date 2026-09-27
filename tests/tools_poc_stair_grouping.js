@@ -15,7 +15,7 @@
  * The candidate is deliberately dumb: single-link clustering on PLAN position. Stairs in one shaft
  * share an (x,y) footprint across storeys; separate shafts do not. No name is read at all.
  *
- * RUN:  node tools_poc_stair_grouping.js [radius_m]
+ * RUN:  node tests/tools_poc_stair_grouping.js [radius_m]
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT
  */
 'use strict';
@@ -55,7 +55,7 @@ function spanOf(rows, idxs, key) {
 
 (async () => {
   let initSqlJs;
-  try { initSqlJs = require('./tests/_sqljs.js').requireSqlJs(); }
+  try { initSqlJs = require('../tests/_sqljs.js').requireSqlJs(); }
   catch (e) { console.log('§STAIR_POC INCONCLUSIVE — sql.js unavailable: ' + e.message); process.exit(2); }
   const SQL = await initSqlJs();
 

@@ -5,15 +5,15 @@
  * how many connected components of E1 (door) edges have ZERO members touching spine/circ (E2/E6/E7)
  * — i.e. how many rooms today's `_degSoFar[lg]` guard skips because they have SOME degree, just not
  * to circulation. Uses only room_graph.js's own exported buildGraph()/edges — no engine change.
- * RUN: node poc_spine_bridge_cluster.js   (run from the repo root; needs buildings/*.db present)
+ * RUN: node tests/poc_spine_bridge_cluster.js   (run from the repo root; needs buildings/*.db present)
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const Database = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'better-sqlite3'));
-const RG = require(path.join(__dirname, 'common', 'room_graph.js'));
+const RG = require(path.join(__dirname, '..', 'common', 'room_graph.js'));
 
-const BLD = path.join(__dirname, 'buildings');
+const BLD = path.join(__dirname, '..', 'buildings');
 const PATCH = path.join(BLD, 'patches');
 const FLEET = [
   // Hospital/Clinic/Terminal ship meta/extracted SPLIT locally (extracted.db lacks
