@@ -3384,6 +3384,11 @@ async function setupEffects(A, renderer, scene, camera) {
       ' c0texelIf[m2,m3,m4]=[' + ifM.map(function(o) { return o[0].used ? o[0].texel.toFixed(4) : 'NaN'; }).concat([cs[0].texel.toFixed(4)]).join(',') + ']' +
       ' tppIfM2=' + f(ifM[0], 'tpp', 2) + ' tppIfM3=' + f(ifM[1], 'tpp', 2) + ' texelIfM3=' + f(ifM[1], 'texel', 4) +
       ' lambda=' + CSM_LAMBDA + ' blend=' + CSM_BLEND + ' R=' + R + ' programs=' + ((A.renderer.info.programs || []).length) + ' ms=' + (performance.now() - t0).toFixed(1));
+    // §ZERO Z12 SUN_PENUMBRA (diagnostic, stills): today's PCF edge = (2R+1) texels per cascade; the sun's 0.53 deg disc gives
+    // w = d x tan(0.53 deg). dMatch = the occluder->receiver distance at which they agree (nearer occluders: too soft; farther: too hard).
+    if (!A._maxqActive && window.LightLaw && window.LightLaw.penumbra) { var _p1 = window.LightLaw.penumbra(1);
+      console.log('§SUN_PENUMBRA discDeg=' + window.LightLaw.SUN.discDeg + ' perMetre=' + _p1.toFixed(5) + ' R=' + R + ' filterM=' + f(cs, function(o) { return o.used ? (2 * R + 1) * o.texel : NaN; }, 4) +
+        ' dMatch=' + f(cs, function(o) { return o.used ? (2 * R + 1) * o.texel / _p1 : NaN; }, 2) + 'm (PCSS not built — ### Z12 SPEC)'); }
   }
   A._filmParityShadowFit = function() { return _stillFitApply(true); };
   // §FILM_FIT_PER_SHOT precompute — sampler from cinema_maxq.js: { shots: [[a,b],...], sample(t): sets camera + sun for film
@@ -3610,6 +3615,9 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     var _shadowRange = A.sun.shadow.camera.far - A.sun.shadow.camera.near;
     var _texelWorld = Math.max(_boxW, _boxH) / A.sun.shadow.mapSize.width;
+    if (!A._maxqActive && window.LightLaw && window.LightLaw.penumbra) { var _pf = (2 * A.sun.shadow.radius + 1) * _texelWorld;   // §ZERO Z12 SUN_PENUMBRA, single map
+      console.log('§SUN_PENUMBRA map=single discDeg=' + window.LightLaw.SUN.discDeg + ' R=' + A.sun.shadow.radius + ' texelM=' + _texelWorld.toFixed(4) + ' filterM=' + _pf.toFixed(4) +
+        ' dMatch=' + (_pf / window.LightLaw.penumbra(1)).toFixed(2) + 'm (cascades, if used, log their own)'); }
     // ══ §129.45 (2026-09-19, red1: "all i want is that it is realistic, not cut off at the base of
     // each column") — THE GRAZING TERM IS WHAT CUT THE SHADOWS OFF AT THE BASE. ══════════════════
     // A depth bias is a push ALONG THE LIGHT RAY, so on the ground it moves the shadow away from
@@ -4087,6 +4095,43 @@ async function setupEffects(A, renderer, scene, camera) {
     A._stillCamSrc = A._stillCamSrc || { rooms: 0, ray: 0 }; A._stillCamSrc.ray++;
     return { inside: !!hit, src: _roomMiss + 'up-ray fallback (an overhang can fool it) hit=' + (hit ? hit.distance.toFixed(1) + 'm' : 'none') + ' uses=' + JSON.stringify(A._stillCamSrc) };
   }
+  // ══ §ZERO Z12 GROUND HALF (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z12 SPEC"; witness viewer/tests/witness_z12_ground_penumbra.js)
+  // The hemi's ground half = the light the ground itself reflects: groundColor x hemiI = rho_g x (sun x sinE x f + E_sky) (L2).
+  // rho_g = the ground AS SHOWN: the map's mean linear RGB (measured now, 32x32, sRGB-decoded) x the §GROUND_ALBEDO gain; table grey
+  // fallback (earth 0.1599 / paved 0.155 — the measured means quoted in §GROUND_ALBEDO) when the image cannot be read. Stills only.
+  var GROUND_TEX_MEAN_LUM = { earth: 0.1599, paved: GROUND_TEX_AVG_LUM };
+  function _groundTexMeanRGB(map) {
+    var img = map && map.image; if (!img || !(img.width > 0)) return null;
+    var c = document.createElement('canvas'); c.width = 32; c.height = 32; var x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0, 32, 32); var d = x.getImageData(0, 0, 32, 32).data, sum = [0, 0, 0], LL = window.LightLaw;
+    var dec = LL && LL.srgbToLinear ? LL.srgbToLinear : function(v) { return v < 0.04045 ? 0.0773993808 * v : Math.pow(0.9478672986 * v + 0.0521327014, 2.4); };
+    for (var i = 0; i < d.length; i += 4) { sum[0] += dec(d[i] / 255); sum[1] += dec(d[i + 1] / 255); sum[2] += dec(d[i + 2] / 255); }
+    return sum.map(function(v) { return v / 1024; });
+  }
+  function _groundHalfLaw() {
+    var LL = window.LightLaw;
+    if (/[?&]groundlaw=0/.test(location.search) || A._stillGroundLaw === false || !LL || !LL.groundIrradiance || !A.hemi || !A.sun) {
+      console.log('§GROUND_HALF off (' + (!LL || !LL.groundIrradiance ? 'LightLaw.groundIrradiance missing' : '&groundlaw=0') + ') groundColor=0x' + (A.hemi ? A.hemi.groundColor.getHexString() : '-')); return; }
+    var key = A._groundTexKey, gain = A._groundAlbedoGain || 1, map = A.ground && A.ground.material && A.ground.material.map, rho = null, src = 'texture';
+    if (key && key !== 'none') { var m = null; try { m = _groundTexMeanRGB(map); } catch (eT) { m = null; }
+      if (m) rho = m.map(function(v) { return v * gain; });
+      else { var l = GROUND_TEX_MEAN_LUM[key] != null ? GROUND_TEX_MEAN_LUM[key] : GROUND_TEX_AVG_LUM; rho = [l * gain, l * gain, l * gain]; src = 'table(' + key + ')'; } }
+    else if (A.ground && A.ground.material && A.ground.material.color) { var gc = A.ground.material.color; rho = [gc.r, gc.g, gc.b]; src = 'solid'; }
+    if (!rho) { console.log('§GROUND_HALF VACUOUS no ground — hemi ground kept'); return; }
+    var sp = A.sun.position, st = A.sun.target ? A.sun.target.position : { x: 0, y: 0, z: 0 };
+    var dx = sp.x - st.x, dy = sp.y - st.y, dz = sp.z - st.z, dl = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1, sinE = dy / dl;
+    var sky = A.hemi.color, skyE = (0.2126 * sky.r + 0.7152 * sky.g + 0.0722 * sky.b) * A.hemi.intensity;
+    var f = LL.GROUND.sunlitFraction, Eg = LL.groundIrradiance(1, A.sun.intensity, sinE, skyE, f), gcol = LL.groundColor(rho, Eg, A.hemi.intensity);
+    if (!gcol) { console.log('§GROUND_HALF VACUOUS hemi intensity 0 — hemi ground kept'); return; }
+    var was = A.hemi.groundColor, wasUp = (0.2126 * was.r + 0.7152 * was.g + 0.0722 * was.b) * A.hemi.intensity;
+    _stillBaseSaved.ground = [was.r, was.g, was.b];
+    var wasHex = was.getHexString();
+    A.hemi.groundColor.setRGB(gcol[0], gcol[1], gcol[2]);
+    var up = (0.2126 * rho[0] + 0.7152 * rho[1] + 0.0722 * rho[2]) * Eg;
+    console.log('§GROUND_HALF rho=[' + rho.map(function(v) { return v.toFixed(3); }).join(',') + '] rhoSrc=' + src + ' gain=' + gain + ' sunI=' + A.sun.intensity.toFixed(3) +
+      ' sinE=' + sinE.toFixed(4) + ' skyE=' + skyE.toFixed(3) + ' f=' + f + ' Eg=' + Eg.toFixed(3) + ' upward=' + up.toFixed(3) + 'u (' + Math.round(up * (A._stillCalibSunLux || 100000) / (A._stillCalibSunI || 4.4)) + ' lx)' +
+      ' groundColor=[' + gcol.map(function(v) { return v.toFixed(3); }).join(',') + '] was=0x' + wasHex + ' (upward ' + wasUp.toFixed(3) + 'u) ratio=' + (wasUp > 0 ? (up / wasUp).toFixed(2) : 'inf'));
+  }
   function _applyPhotoStaging() {
     // §STILL_STAGE_MS (watchdog red1-c6, 2026-09-25: a Terminal press took ~120 s vs ~13 s, cause not guessed) — where the
     // staging time goes, one line per press; the first frame after staging (program link) is timed by a one-shot render wrap.
@@ -4407,6 +4452,7 @@ async function setupEffects(A, renderer, scene, camera) {
         (typeof _gIn !== 'undefined' && _gIn && _gIn.inside != null ? (_gIn.inside ? 1 : 0) : '-') +
         ' lampsOn=' + (A._stillLampsOff ? '0 (daylight, outside)' : _lampOn + '/' + _sll.length) + (A._lampDataOn ? ' (lamp data)' : '') +
         ' lampSum=' + _lampSum.toFixed(3) + ' (at staging; §STILL_DIALS_LAMPS logs the refined set)');
+      if (!A._maxqActive) { try { _groundHalfLaw(); } catch (eGH) { console.warn('§GROUND_HALF failed: ' + eGH.message + ' — hemi ground kept'); } }   // §ZERO Z12
     }
     if (A._concreteStrength) { var _r3 = (A._triplanarMaterials || []).filter(function(m) { return m && m.userData && m.userData.triRow === 'R3'; }).length;
       console.log('§CONCRETE_TONE strength=' + A._concreteStrength() + ' contrast=' + (1.1 * A._concreteStrength()).toFixed(3) + ' (R3 was 1.1)' +
@@ -4677,6 +4723,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // §STILL_BASE — hand navigation its own base light back.
     if (_stillBaseSaved && A.ambient && A.hemi) {
       A.ambient.intensity = _stillBaseSaved.ambI; A.hemi.intensity = _stillBaseSaved.hemiI;
+      if (_stillBaseSaved.ground) { A.hemi.groundColor.setRGB(_stillBaseSaved.ground[0], _stillBaseSaved.ground[1], _stillBaseSaved.ground[2]); console.log('§GROUND_HALF restored groundColor=0x' + A.hemi.groundColor.getHexString()); }   // §ZERO Z12
       console.log('§STILL_BASE restored ambient=' + _stillBaseSaved.ambI.toFixed(3) + ' hemi=' + _stillBaseSaved.hemiI.toFixed(3));
       _stillBaseSaved = null;
     }

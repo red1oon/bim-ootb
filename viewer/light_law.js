@@ -33,7 +33,13 @@
     COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 },
     // L2 — §ZERO Z9 (audit #48): authored IFC albedos are sRGB-encoded; the still decodes them to linear (IEC 61966-2-1 EOTF,
     // three.js ColorManagement convention) before lighting. Nav keeps its own look (fixed exposure, no meter) — Alt+S only.
-    ALBEDO: { authored: 'sRGB', decode: true }
+    ALBEDO: { authored: 'sRGB', decode: true },
+    // L1/L2 — §ZERO Z12 (audit #21): the hemi's ground half = the ground's own reflected light, upward E = rho_g x E_g,
+    // E_g = sun x sinE x f + E_sky; f = sunlit fraction of the ground seen (1 = sunlit; per-fragment f is the open plan).
+    GROUND: { sunlitFraction: 1 },
+    // L2 — §ZERO Z12 (audit #57): the sun's angular diameter (Frostbite 2014 fn 29: 6.6-7.1e-5 sr => 0.52-0.54 deg); penumbra
+    // width w = d x tan(discDeg) for an occluder d metres from the receiver.
+    SUN: { discDeg: 0.53 }
   });
 
   // scene units -> lux (x luxPer) and -> cd/m2 for a luminance in scene units. null when there is no calibrated sun.
@@ -57,6 +63,14 @@
     color.r = srgbToLinear(color.r); color.g = srgbToLinear(color.g); color.b = srgbToLinear(color.b);
     return orig;
   }
+  // §ZERO Z12: upward irradiance from a Lambertian ground plane (scene units), and the hemi groundColor (per channel) that makes
+  // three's hemisphere term equal it at intensity hemiI. rho: number or [r,g,b].
+  function groundIrradiance(rho, sunI, sinE, skyE, f) {
+    var Eg = (sunI > 0 ? sunI : 0) * Math.max(0, sinE) * (f == null ? LAW.GROUND.sunlitFraction : f) + (skyE > 0 ? skyE : 0);
+    return Array.isArray(rho) ? rho.map(function (r) { return r * Eg; }) : rho * Eg;
+  }
+  function groundColor(rhoRGB, Eg, hemiI) { return hemiI > 0 ? rhoRGB.map(function (r) { return r * Eg / hemiI; }) : null; }
+  function penumbra(d) { return d * Math.tan(LAW.SUN.discDeg * Math.PI / 180); }
   function toneConst(THREE) { return THREE[LAW.SCENE.toneMapping + 'ToneMapping']; }
 
   // canonical JSON (keys sorted, recursively) + FNV-1a 32 — the same string and hash in node and every browser.
@@ -97,8 +111,8 @@
     return s;
   }
 
-  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, ALBEDO: LAW.ALBEDO,
-    srgbToLinear: srgbToLinear, decodeAlbedo: decodeAlbedo, luxPer: luxPer, ev100: ev100, exposureFromEv: exposureFromEv, acesDiv: acesDiv, toneConst: toneConst,
+  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, ALBEDO: LAW.ALBEDO, GROUND: LAW.GROUND, SUN: LAW.SUN, groundIrradiance: groundIrradiance, groundColor: groundColor, penumbra: penumbra,
+    srgbToLinear: srgbToLinear, decodeAlbedo: decodeAlbedo,    luxPer: luxPer, ev100: ev100, exposureFromEv: exposureFromEv, acesDiv: acesDiv, toneConst: toneConst,
     snapshot: snapshot, log: log, hash: hash, canon: canon };
   global.LightLaw = Object.freeze(LightLaw);
   if (typeof module !== 'undefined' && module.exports) module.exports = global.LightLaw;
