@@ -342,10 +342,11 @@
       const d = (kernelOps.length || hasSeed) ? await this._foldChain(kernelOps, hasSeed ? seedBoxes : undefined, hasLayerSeed ? seedLayers : undefined) : { meshes: [] };
       const meshes = (d.meshes || []).slice();
       if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
+      this._byFid = new Map();   // §B1-ROW6: the fid→mesh index is rebuilt with the group
       let totalTris = 0, anchorN = 0;   // §ANCHOR: anchors are counted SEPARATELY, never in solids/tris
       // PER-MESH colour wins over the fold-level colour: a folded insert (RouteWalker fixture) carries md.color
       // (its discipline hex from parameters.color); B-rep solids have none → fall back to the fold-level opts.color.
-      meshes.forEach(md => { const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color, opacity: md.opacity }); totalTris += md.triangleCount; if (g) g.add(m); });
+      meshes.forEach(md => { const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color, opacity: md.opacity }); totalTris += md.triangleCount; if (g) { g.add(m); this._fidNote(m); } });
 
       // §LOD400-STALL: GEOM_INSERT folds HOST-side (bonsai.library) — CHUNKED + YIELDED above CHUNK ops so a
       // Terminal-scale open (tens of thousands of raw-bbox ARC inserts) actually PAINTS PROGRESSIVELY between
@@ -360,7 +361,7 @@
           meshes.push(md);
           const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color, opacity: md.opacity });
           if (md.anchor) anchorN++; else totalTris += md.triangleCount;   // §ANCHOR: excluded from every count
-          if (g) g.add(m);
+          if (g) { g.add(m); this._fidNote(m); }
         };
         if (insertOps.length > CHUNK) {
           for (let i = 0; i < insertOps.length; i += CHUNK) {
@@ -398,6 +399,34 @@
       return new Promise((resolve) => { this._pending.set(id, { resolve, reject: resolve }); this._worker.postMessage({ id, clearCache: true }); });
     },
 
+    // §B1-ROW6 (pattern review row 6): featureId → mesh, maintained where the kernel adds meshes to the authored
+    // group, so a lookup is O(1) instead of a linear `g.children.find` over every mesh (16 call sites in
+    // modeller.html). meshFor() returns EXACTLY what `g.children.find(o => o.isMesh && o.userData.featureId === fid)`
+    // returns: an entry is trusted only while it is still a child of the group carrying that featureId; anything
+    // else (a clear done outside the kernel, a fid never indexed) falls back to that same scan and repairs the entry.
+    // First-wins on insert, like Array.find (children only ever get appended; removals are whole-group clears).
+    _byFid: null,
+    _meshForStats: { hit: 0, scan: 0 },
+    _fidNote(m) {
+      if (!m || !m.isMesh) return;
+      const f = m.userData.featureId; if (f == null) return;
+      if (!this._byFid) this._byFid = new Map();
+      const cur = this._byFid.get(f);
+      if (cur && cur.parent === this._group && cur.userData.featureId === f) return;
+      this._byFid.set(f, m);
+    },
+    meshFor(fid) {
+      const g = this.group(); if (!g) return undefined;
+      if (fid != null && this._byFid) {
+        const m = this._byFid.get(fid);
+        if (m && m.parent === g && m.userData.featureId === fid) { this._meshForStats.hit++; return m; }
+      }
+      this._meshForStats.scan++;
+      const s = g.children.find(o => o.isMesh && o.userData.featureId === fid);
+      if (s && fid != null) { if (!this._byFid) this._byFid = new Map(); this._byFid.set(fid, s); }
+      return s;
+    },
+
     group() {
       if (!this._group && window.A && A.scene && window.THREE) {
         this._group = new THREE.Group(); this._group.name = 'BonsaiAuthored'; A.scene.add(this._group);
@@ -424,7 +453,7 @@
       mesh.userData.bonsaiOp = op;
       if (opts.featureId != null) mesh.userData.featureId = opts.featureId;   // match chain-built meshes → pick-select + cut-target work on an optimistically-appended feature
       const g = this.group();
-      if (g) g.add(mesh);
+      if (g) { g.add(mesh); this._fidNote(mesh); }
       const ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
       const r = (n) => Math.round(n * 1e3) / 1e3;
       const bbox = [r(bb.min.x), r(bb.min.y), r(bb.min.z), r(bb.max.x), r(bb.max.y), r(bb.max.z)].join(',');

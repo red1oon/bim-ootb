@@ -83,7 +83,17 @@
   // When geoDb === db (every OTHER resident — SampleHouse/Duplex/SampleCastle/SampleCastle-ARC, all single-
   // file), this produces the EXACT same byGuid/resolved sets as the old one-shot JOIN — same skip rules
   // (null hash / missing blob / degenerate vert-or-face count all stay unresolved, same as before).
+  // §GEOIDX (pattern review row 3, 2026-09-27): every build is logged with a running count + ms, so how many
+  // times one Open re-derives the SAME index is a number in the log, not a guess.
+  var _geoIdxN = 0;
   function buildGeometryIndex(db, geoDb) {
+    var _t0 = Date.now(), _n = ++_geoIdxN, _split = !!geoDb && geoDb !== db;
+    var out = _buildGeometryIndex(db, geoDb);
+    _log(TAG + ' §GEOIDX build #' + _n + ' table=' + out.table + ' split=' + _split + ' guids=' + Object.keys(out.byGuid).length +
+      ' meshes=' + Object.keys(out.resolved).length + ' ms=' + (Date.now() - _t0));
+    return out;
+  }
+  function _buildGeometryIndex(db, geoDb) {
     geoDb = geoDb || db;
     var table = geometryTable(geoDb);
     var out = { table: table, byGuid: {}, resolved: {} };

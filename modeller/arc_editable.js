@@ -211,7 +211,8 @@
       (hasAnchor ? "m.is_anchor" : "0") + " FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid = m.guid WHERE " + where + " ORDER BY " + (hasId ? 'm.id' : 'm.guid');
     var r = db.exec(sql), ops = [], skipped = [], matched = 0, unmatched = 0, tilted = 0, colorN = { real: 0, palette: 0 };
-    var geomIdx = RealGeometry ? RealGeometry.buildGeometryIndex(db, geoDb || db) : { table: null, byGuid: {}, resolved: {} };
+    // §B1-ROW3: reuse the Open's index for this same (building, geometry) pair when the caller hands it in.
+    var geomIdx = (opts && opts.geoIndex) || (RealGeometry ? RealGeometry.buildGeometryIndex(db, geoDb || db) : { table: null, byGuid: {}, resolved: {} });
     var geomAssets = [], geomSeen = {}, realResolved = 0, hardfail = 0;
     // §LAYER-GATE: arm only where the ARC db ships multi-layer edges AND a geometry substrate exists
     // (a meta-only seed renders honest raw boxes and already logs that degradation loudly upstream).
@@ -429,7 +430,9 @@
     var name = io.building || 'building';
     // io.classify (OPTIONAL, §GEOMAP-WIRE): threaded straight through to buildSeedOps's audit channel —
     // absent for every pre-existing caller, and provably incapable of altering the committed ops (W1).
-    var built = buildSeedOps(buildingDb, io.geoDb, io.classify ? { classify: io.classify } : undefined);
+    var bo = io.classify ? { classify: io.classify } : undefined;
+    if (io.geoIndex) { bo = bo || {}; bo.geoIndex = io.geoIndex; }   // §B1-ROW3
+    var built = buildSeedOps(buildingDb, io.geoDb, bo);
     if (io.registerGeometry && built.geomAssets.length) {
       try { io.registerGeometry(built.geomAssets); } catch (e) { _log(TAG + ' §REAL-GEOM registerGeometry failed ' + (e && e.message)); }
     }

@@ -35,7 +35,7 @@
     var C = _getCrossEdges(), out = {};
     if (!C) return out;
     var boxes;
-    try { boxes = C.readBoxes(db, opts && opts.geoDb); } catch (e) { return out; }
+    try { boxes = C.readBoxes(db, opts && opts.geoDb, opts && opts.geoIndex); } catch (e) { return out; }   // §B1-ROW3: reuse the caller's index
     boxes.forEach(function (b) {
       if (!b.real) return;
       var a = b.aabb;
