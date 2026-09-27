@@ -25,6 +25,8 @@ const FIXES = {
   specsmooth0:   { q: '&specsmooth=0', on: /§SPEC_SMOOTH on/, off: /§SPEC_SMOOTH off/, offMustLine: true, pop: null, local: true, name: 'Z18 spec smooth (mirror gate)' },
   gibound0:      { q: '&gibound=0', on: /§GI_BOUND on/, off: /§GI_BOUND off \(&gibound=0/, offMustLine: true, pop: null, local: false, name: 'FIX 13 GI energy bound' },
   metalpbr0:     { q: '&metalpbr=0', on: /§METAL_PBR on/, off: /§METAL_PBR off/, offMustLine: true, pop: null, local: true, name: 'FIX 11 MEP trade hue + PBR metalness' },
+  csmsides0:     { q: '&csmsides=0', on: /readbackSides=asDrawn/, off: /readbackSides=double/, offMustLine: true, pop: null, local: false, name: 'FIX 16 cascade readback sides as drawn' },
+  normrepair0:   { q: '&normrepair=0', on: /§NORMAL_REPAIR meshesScanned=/, off: /§NORMAL_REPAIR off/, offMustLine: true, pop: /§NORMAL_REPAIR meshesScanned=\d+ meshesAffected=(\d+)/, local: true, name: 'FIX 14 zero-normal repair' },
   meterband7095: { q: '&meterband=70,95', on: /§METER camera=/, off: /§METER camera=/, offMustLine: true, pop: /§METER camera=.* pixels=(\d+)/, local: false, name: 'meter band 40/90 vs 70/95' }
 };
 const REFS = {   // p50 / le15 / clip: §ALTS_COMBINED RESULT (torch build, first press) else §METER_EV v2 40/90 (evD), else B1

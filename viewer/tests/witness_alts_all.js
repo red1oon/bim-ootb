@@ -39,7 +39,7 @@ const POSES = {
   tr3: ['Terminal', '', [13.795, -12.718, 8.441], [11.243, -14.311, 3.019]], tr4: ['Terminal', '', [-7.989, -16.079, 11.597], [-9.975, -14.634, 8.118]],
   tr5: ['Terminal', '', [-24.776, -10.142, -8.08], [-9.975, -14.634, 8.118]], tr6: ['Terminal', '', [-18.614, -11.684, -12.335], [-9.975, -14.634, 8.118]], hhs_z18: ['HHS_Office_Federated', '&ghost=1', [-10.011, -4.496, -21.246], [0.306, -2.129, 0.238]]
 };
-const ARM_POSES = { torch0: ['inner_close', 'inner', 'night'], srgbfix0: ['inner'], groundlaw0: ['night'], aoindirect0: ['inner'], gialb0: ['inner'], skyshell0: ['a202'], shellreach2: ['a202'], gridblend1: ['hhs_z18'], specsmooth0: ['hhs_z18'], meterband7095: ['inner', 'night'], gibound0: ['plenum'], metalpbr0: ['plenum'] };
+const ARM_POSES = { torch0: ['inner_close', 'inner', 'night'], srgbfix0: ['inner'], groundlaw0: ['night'], aoindirect0: ['inner'], gialb0: ['inner'], skyshell0: ['a202'], shellreach2: ['a202'], gridblend1: ['hhs_z18'], specsmooth0: ['hhs_z18'], meterband7095: ['inner', 'night'], gibound0: ['plenum'], metalpbr0: ['plenum'], csmsides0: ['plenum'], normrepair0: ['tr4'] };
 const log = (() => { let fd = null; return s => { console.log(s); try { if (!fd) { fs.mkdirSync(OUT, { recursive: true }); fd = fs.openSync(path.join(OUT, 'alts_all.log'), 'a'); } fs.writeSync(fd, s + '\n'); } catch (e) {} }; })();
 const fnv = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); };
 
