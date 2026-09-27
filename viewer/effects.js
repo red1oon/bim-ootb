@@ -4763,6 +4763,7 @@ async function setupEffects(A, renderer, scene, camera) {
   };
   function _filmExposureReset(restore) {
     if (_fe && restore && _fe.base != null && A.renderer) { A.renderer.toneMappingExposure = _fe.base; console.log('§FILM_EXPOSURE end frames=' + _fe.n + ' exposure restored ' + _fe.base.toFixed(4)); }
+    if (restore && A._meterLast && A._meterLast.film) A._meterLast = null;   // a later still must not read the film's meter
     _fe = null; _bakeFillCheckLogged = false;   // §FILM_FILL_CHECK logs the first frame of each film
   }
   function _teardownPhotoStaging() {
