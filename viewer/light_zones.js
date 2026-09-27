@@ -158,10 +158,15 @@
     // never hold Alt+S on a slow or blocked store: after 3 s staging builds as before
     return Promise.race([rd, new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })]);
   }
+  function shellSkipped(F) { var sh = F && F.shell; return (sh && !sh.on && /no BVH|failed/.test(sh.why || '')) ? sh.why : ''; }
   function scheduleSave() {
     if (cacheOff() || !cache || !cache.fp) return; clearTimeout(saveTimer); var Z = cache;
     saveTimer = setTimeout(function () { if (cache !== Z) return;
-      var t0 = performance.now(), rec = { src: SRC, fp: Z.fp, org: [Z.org.x, Z.org.y, Z.org.z], field: Z.field || null, when: new Date().toISOString() };
+      // ### ALTS-ALL FIX 7 (GPU run 2026-09-27, p2): a field whose shell pass was WANTED but did not run (three-mesh-bvh CDN import
+      // failed -> 'no BVH', or the pass threw) is not the build's field — never persist it (the zone grid itself is still saved).
+      var shBad = shellSkipped(Z.field);
+      if (shBad) console.log('§ZONE_IDB_CACHE field NOT saved bld=' + Z.bld + ' (shell pass skipped: ' + shBad + ') — the next press rebuilds the field');
+      var t0 = performance.now(), rec = { src: SRC, fp: Z.fp, org: [Z.org.x, Z.org.y, Z.org.z], field: shBad ? null : (Z.field || null), when: new Date().toISOString() };
       KEYS.forEach(function (k) { rec[k] = Z[k]; });
       rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.aperture ? Z.aperture.byteLength : 0) + (Z.field ? Z.field.G.byteLength : 0) + (Z.field && Z.field.Gd ? Z.field.Gd.byteLength : 0)) / 1e6).toFixed(1);
       idb().then(function (db) { var tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).put(rec, Z.bld);
@@ -189,7 +194,8 @@
     cache = { dd: null, org: new THREE.Vector3(r.org[0], r.org[1], r.org[2]), fp: r.fp }; KEYS.forEach(function (k) { cache[k] = r[k]; });
     var ms = Math.round(performance.now() - t0);
     cache.stats = Object.assign({}, r.stats, { ms: ms, rasMs: 0, skyMs: 0, cached: 1, glare: Object.assign({}, r.stats.glare, { ms: 0 }) });
-    var fOk = !!(r.field && r.field.irc && r.field.irc.on === ircFlag(A)), fMs = r.field ? r.field.ms : 0;
+    var fOk = !!(r.field && r.field.irc && r.field.irc.on === ircFlag(A)) && !shellSkipped(r.field), fMs = r.field ? r.field.ms : 0;   // ### ALTS-ALL FIX 7: a pre-fix record saved without its shell pass is rebuilt
+    if (r.field && shellSkipped(r.field)) console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored without the shell pass: ' + shellSkipped(r.field) + ') — rebuilding the field');
     if (fOk) { cache.field = Object.assign(r.field, { ms: 0, cached: 1 }); if (r.field.shell) logShell(A.activeBuilding, r.field.shell, 'hit'); else console.log('§SKY_SHELL_RAYS bld=' + A.activeBuilding + ' cache=hit record has no shell stats'); }
     console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none') +
       ' ground=' + (fOk && r.field.Gd ? 'hit (was ' + (r.field.ground ? r.field.ground.ms : '?') + ' ms)' : 'none (built on demand)'));

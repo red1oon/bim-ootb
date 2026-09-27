@@ -189,7 +189,8 @@
 const CACHE_VERSION = 'v1475';   // bump on each deploy; per-change detail is the git commit message.
 // v1475 (2026-09-27) ### ALTS-ALL FIX 1: ONE §METER per still (SourcedLight.meterFinal on the final staged scene; stage() logs
 //   §METER_DIAG only); meterRead primes + pushes before the read (§METER_BIND: fresh-key uniforms carried the dummy zone texture);
-//   §SOURCED_REBIND counts re-keyed materials. viewer.html sourced_light.js?v=60, effects.js?v=116 in the SAME commit.
+//   §SOURCED_REBIND counts re-keyed materials; §METER_BIND rendered/calls/bufHash. FIX 7: light_zones.js never persists/reuses a
+//   field whose shell pass was skipped (no BVH). viewer.html sourced_light.js?v=60, effects.js?v=116, light_zones.js?v=18 in the SAME commit.
 // v1474 (2026-09-27) §ALTS_ALL: fix/film-law-v2 + Z10 AO indirect + Z11 bounce albedo merged; Z8 radius-free shell rule
 //   (light_zones.js, &shellreach=2 = B1); Z18 &gridblend=1 (sourced_light.js, default off); remeter all-sky VACUOUS guard.
 //   §FRAME_QA per-frame luma line in cinema_maxq.js (bake release gate). Z18 §SPEC_SMOOTH (default on, &specsmooth=0): continuous

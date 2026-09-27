@@ -91,11 +91,18 @@ function g3(rec) {
     ms.length + ' §METER camera= line(s); order torch ' + iT + ' ground ' + iG + ' lamps ' + iLamp + ' meter ' + iM + ' refine ' + iS + (/tag=final/.test(ms[0] || '') ? '' : ' (no tag=final)')));
   const bl = grepLast(L, /§METER_BIND/), dum = num(bl, /dummyAtRead=(\d+)/);
   out.push(row('G3', 'meter read on BOUND uniforms (§METER_BIND dummyAtRead == 0)', !bl ? 'INCONCLUSIVE' : (dum === 0 && num(bl, /stagedLit=(\d+)/) > 0 ? 'PASS' : (num(bl, /stagedLit=(\d+)/) > 0 ? 'FAIL' : 'VACUOUS')), (bl || 'no §METER_BIND line').replace(/^.*§METER_BIND /, '').slice(0, 140)));
+  // coordinator 2026-09-27: the <= 1 EV row was blind to an IDENTICAL re-read — the final meter must prove it rendered (frame advanced,
+  // draw calls > 0); a final buffer byte-identical to the diag buffer while the §METER_STATE changed is flagged (WARN: legit only if
+  // every change is off-screen).
+  const binds = grepAll(L, /§METER_BIND/), bf = binds[binds.length - 1] || '', bd = binds.length >= 2 ? binds[0] : '';
+  out.push(row('G3', 'final meter re-rendered the scene (rendered=1, calls > 0)', !bf ? 'INCONCLUSIVE' : (/rendered=1/.test(bf) && num(bf, /calls=(\d+)/) > 0 ? 'PASS' : 'FAIL'), 'rendered=' + num(bf, /rendered=(\d)/) + ' calls=' + num(bf, /calls=(-?\d+)/) + ' bufHash ' + ((/bufHash=(\w+)/.exec(bd) || [])[1] || '-') + ' -> ' + ((/bufHash=(\w+)/.exec(bf) || [])[1] || '-')));
   const dg = grep1(L, /§METER_DIAG camera=/);
   if (dg && ms.length) { const e0 = num(dg, /EV100=(-?[\d.]+)/), e1 = num(ms[ms.length - 1], /EV100=(-?[\d.]+)/), st = grepAll(L, /§METER_STATE/);
     const kv = l => Object.fromEntries((l.match(/(\w+)=(\S+)/g) || []).map(x => x.split('='))), sd = st.find(l => /tag=diag/.test(l)), sf = [...st].reverse().find(l => /tag=final/.test(l));
     const diff = sd && sf ? (() => { const a = kv(sd), b = kv(sf); return Object.keys(b).filter(k => a[k] !== b[k] && !/^bandL$|^noGround|^groundShare|^tag$/.test(k)).map(k => k + ' ' + a[k] + '->' + b[k]).join(' '); })() : 'no §METER_STATE diag/final pair';
     const gsh = st.map(l => num(l, /groundShare=(-?[\d.]+)/)).filter(v => v != null);
+    const hd = (/bufHash=(\w+)/.exec(bd) || [])[1], hf = (/bufHash=(\w+)/.exec(bf) || [])[1];
+    if (hd && hf && hd === hf && diff && diff !== 'nothing logged' && !/^no /.test(diff)) out.push(row('G3', 'final buffer identical to the diag buffer while the scene state changed', 'WARN', 'bufHash ' + hf + ' both | changed: ' + diff.slice(0, 120)));
     out.push(row('G3', 'stage diag -> final EV (diagnostic only; the exposure is the final reading)', 'INFO', 'EV ' + e0 + ' -> ' + e1 + ' | state changed: ' + (diff || 'nothing logged') + (gsh.length ? ' | groundShare ' + gsh.join(' -> ') : ''))); }
   const rb = grepAll(L, /§SOURCED_REBIND n=/); if (rb.length) out.push(row('G3', 'app frames drawn with re-keyed (dummy) sourced uniforms', 'WARN', rb.length + ' event(s) e.g. ' + rb[0].slice(0, 100)));
   return out;
@@ -233,8 +240,14 @@ function filmJudge(bake, T, ctl) {
   if (bake.arm === 'A' && ctl) {
     const cmp = (armK, id, onRe, offRe) => { const O = ctl[armK]; if (!O) { add('F-G2', id, 'INCONCLUSIVE', 'arm ' + armK + ' not run'); return; }
       const OL = sliceAfterPurge(O.lines).map(stripPrefix), onOk = grep1(L, onRe), offOk = grep1(OL, offRe), la = lumaSeq(bake), lo = lumaSeq(O);
-      add('F-G2', id, !onOk ? 'FAIL' : (!offOk ? 'FAIL' : (!la.length || !lo.length ? 'INCONCLUSIVE' : (same(la, lo) ? 'NO-OP' : 'PASS'))),
-        (!onOk ? 'on line absent ' + onRe : !offOk ? 'off line absent in ' + armK + ' ' + offRe : 'mean luma A ' + (la.reduce((s, v) => s + v, 0) / (la.length || 1)).toFixed(2) + ' vs ' + armK + ' ' + (lo.reduce((s, v) => s + v, 0) / (lo.length || 1)).toFixed(2))); };
+      // coordinator 2026-09-27: a fixed 0.01 threshold passed a 0.28/255 difference. Noise baseline = a repeat bake A2 (same flags as A):
+      // d = mean per-frame |A - arm|, noise = mean per-frame |A - A2|; PASS iff d > max(0.05, 2 x noise). Without A2: PASS only when
+      // d > 1 code (beyond any bake noise seen), else INCONCLUSIVE (effect too small to judge without a baseline).
+      const mad = (x, y) => (x.length && x.length === y.length) ? x.reduce((s, v, i) => s + Math.abs(v - y[i]), 0) / x.length : null;
+      const d = mad(la, lo), l2 = ctl.A2 ? lumaSeq(ctl.A2) : null, noise = l2 ? mad(la, l2) : null, tol = noise != null ? Math.max(0.05, 2 * noise) : null;
+      const st = !onOk ? 'FAIL' : (!offOk ? 'FAIL' : (d == null ? 'INCONCLUSIVE' : (tol != null ? (d > tol ? 'PASS' : 'NO-OP') : (d > 1 ? 'PASS' : (same(la, lo) ? 'NO-OP' : 'INCONCLUSIVE')))));
+      add('F-G2', id, st, (!onOk ? 'on line absent ' + onRe : !offOk ? 'off line absent in ' + armK + ' ' + offRe : 'mean luma A ' + (la.reduce((s, v) => s + v, 0) / (la.length || 1)).toFixed(2) + ' vs ' + armK + ' ' + (lo.reduce((s, v) => s + v, 0) / (lo.length || 1)).toFixed(2) +
+        ' | d=' + (d != null ? d.toFixed(3) : '-') + (tol != null ? ' noise(A vs A2)=' + noise.toFixed(3) + ' tol=' + tol.toFixed(3) : ' (no A2 noise baseline: PASS needs d > 1 code)'))); };
     cmp('C', 'film exposure + fill law vs control (--film-exposure 0 --film-fill restore)', /§FILM_EXPOSURE f=0/, /§FILM_EXPOSURE off \(control/);
     cmp('E', 'film parity vs --film-parity 0', /§FILM_PARITY on/, /§CAM_LIGHT on/);
     cmp('T', 'film torch vs --url-query &torch=0', /§CAM_TORCH film on/, /§FILM_EXPOSURE f=0 .*torch=off/);
@@ -247,5 +260,32 @@ function filmJudge(bake, T, ctl) {
   }
   return out;
 }
+// ── DEFECT 6: glass see-through (per Terminal press) + the one-tab SEQUENCE vs fresh-page presses (S4 carried state)
+const GLASS = { minN: 10, inBandPct: 80 }, SEQB = { dp50: 5, dRatio: 0.1, dCompL: 8, heapSlope: 20, gpuSlope: 50, texGrow: 2 };
+function g6(rec) {
+  const G = rec.glass; if (!/^tr\d/.test(rec.pose)) return [];
+  if (!G || G.err) return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', 'INCONCLUSIVE', G ? G.err : 'no glass facts')];
+  if (!(G.n >= GLASS.minN)) return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', 'INFO', 'glass samples ' + G.n + ' < ' + GLASS.minN + ' (no glass in view at this pose)', { glassN: G.n })];
+  return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', G.inBandPct >= GLASS.inBandPct ? 'PASS' : 'FAIL', 'n=' + G.n + ' T=' + G.T + ' ratio p10/p50/p90 ' + G.ratioP10 + '/' + G.ratioP50 + '/' + G.ratioP90 + ' inBand ' + G.inBandPct + '% compL ' + G.compL + ' clones ' + G.clones + ' hidden ' + G.hidden, { glassN: G.n })];
+}
+function slope(ys) { const n = ys.length; if (n < 2) return null; const xm = (n - 1) / 2, ym = ys.reduce((a, b) => a + b, 0) / n; let nu = 0, de = 0; ys.forEach((y, i) => { nu += (i - xm) * (y - ym); de += (i - xm) * (i - xm); }); return de ? nu / de : null; }
+function seqJudge(S, recs) {
+  const out = [], P = (S && S.presses) || [], by = {}; P.forEach(r => { (by[r.pose] = by[r.pose] || []).push(r); });
+  if (!P.length) return [row('G7', 'sequence', 'INCONCLUSIVE', 'no sequence presses' + (S && S.errors && S.errors.length ? ' ' + S.errors[0].slice(0, 100) : ''))];
+  const errs = P.reduce((a, r) => a.concat(r.allocFail || []), []);
+  out.push(row('G7', 'sequence: no allocation failure / OOM / page error in 12 presses', errs.length ? 'FAIL' : 'PASS', errs.length + (errs[0] ? ' e.g. ' + errs[0].slice(0, 120) : '')));
+  Object.keys(by).forEach(pose => { const a = by[pose], r2 = a[a.length - 1], f = recs[pose + '|base'];
+    if (!f || !f.eval || !f.eval.comp || !r2.eval || !r2.eval.comp) { out.push(row('G7', 'sequence ' + pose + ': 2nd-round press vs fresh page', 'INCONCLUSIVE', 'missing ' + (!f ? 'fresh press' : 'stats'))); return; }
+    const dp = Math.abs(r2.eval.comp.p50 - f.eval.comp.p50), gOk = r2.glass && f.glass && r2.glass.n >= GLASS.minN && f.glass.n >= GLASS.minN;
+    const dr = gOk ? Math.abs(r2.glass.ratioP50 - f.glass.ratioP50) : null, dc = gOk && r2.glass.compL != null && f.glass.compL != null ? Math.abs(r2.glass.compL - f.glass.compL) : null;
+    const ok = dp <= SEQB.dp50 && (dr == null || dr <= SEQB.dRatio) && (dc == null || dc <= SEQB.dCompL);
+    out.push(row('G7', 'sequence ' + pose + ': 2nd-round press (k=' + r2.k + ') vs fresh page', ok ? 'PASS' : 'FAIL', 'p50 ' + r2.eval.comp.p50 + ' vs ' + f.eval.comp.p50 + ' (1st round ' + (a[0].eval && a[0].eval.comp ? a[0].eval.comp.p50 : '-') + ')' + (gOk ? ' glass ratioP50 ' + r2.glass.ratioP50 + ' vs ' + f.glass.ratioP50 + ' compL ' + r2.glass.compL + ' vs ' + f.glass.compL : ' glass n ' + (r2.glass ? r2.glass.n : '-') + '/' + (f.glass ? f.glass.n : '-') + ' (not judged)') + ' meter ' + ((/EV100=(-?[\d.]+)/.exec(r2.meter || '') || [])[1] || '-') + ' vs ' + ((/EV100=(-?[\d.]+)/.exec(grepLast(f.lines, /§METER camera=/) || '') || [])[1] || '-'))); });
+  const heap = P.map(r => r.mem && r.mem.heapMB).filter(v => v != null), gpu = P.map(r => r.gpu && r.gpu.pressPeakMB).filter(v => v != null), hs = slope(heap), gs = slope(gpu);
+  const grow = Object.keys(by).map(pose => { const a = by[pose]; return a.length >= 2 && a[0].mem && a[a.length - 1].mem ? Math.max(a[a.length - 1].mem.textures - a[0].mem.textures, a[a.length - 1].mem.geometries - a[0].mem.geometries) : null; }).filter(v => v != null), gmax = grow.length ? Math.max(...grow) : null;
+  out.push(row('G7', 'sequence: growth per press (heap <= ' + SEQB.heapSlope + ' MB, gpu-process <= ' + SEQB.gpuSlope + ' MiB, textures/geometries round2-round1 <= ' + SEQB.texGrow + ')',
+    (hs == null || gs == null || gmax == null) ? 'INCONCLUSIVE' : (hs <= SEQB.heapSlope && gs <= SEQB.gpuSlope && gmax <= SEQB.texGrow ? 'PASS' : 'FAIL'),
+    'heap slope ' + (hs != null ? hs.toFixed(1) : '-') + ' MB/press [' + heap.join(',') + '] gpu slope ' + (gs != null ? gs.toFixed(1) : '-') + ' MiB/press [' + gpu.join(',') + '] tex/geo growth max ' + gmax + ' clones [' + P.map(r => r.mem && r.mem.glassClones).join(',') + '] programs [' + P.map(r => r.mem && r.mem.programs).join(',') + ']'));
+  return out;
+}
 function gate(rows) { if (!rows.length) return 'INCONCLUSIVE'; if (rows.some(r => r.state === 'INCONCLUSIVE')) return 'INCONCLUSIVE'; return rows.some(r => BLOCKING.has(r.state)) ? 'FAIL' : 'PASS'; }
-module.exports = { FIXES, REFS, BAND, BLOCKING, g1, g2, g3, g4, g5, gz, filmJudge, swRace, gate, grep1, grepAll, num, fe, sliceAfterPurge, stripPrefix };
+module.exports = { FIXES, REFS, BAND, BLOCKING, g1, g2, g3, g4, g5, gz, g6, seqJudge, GLASS, SEQB, filmJudge, swRace, gate, grep1, grepAll, num, fe, sliceAfterPurge, stripPrefix };

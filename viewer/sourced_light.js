@@ -1284,7 +1284,9 @@
       if (!(opts && opts.noPrime)) { R.clear(true, true, true); R.render(A.scene, A.camera); prog1 = R.info && R.info.programs ? R.info.programs.length : -1;
         mats.forEach(function (m) { var pp = R.properties.get(m); if (pp && pp.uniforms && pp.uniforms !== uB.get(m)) rebound++; if (push(A, m)) lastU.set(m, pp.uniforms); }); }
       mats.forEach(function (m) { var U = R.properties.get(m).uniforms; if (U && U.uSLZone && active && tex) { staged++; if (U.uSLZone.value !== tex) dummyAt++; } });
-      R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); }
+      var fr0 = R.info && R.info.render ? R.info.render.frame : -1;
+      R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf);
+      var calls = R.info && R.info.render ? R.info.render.calls : -1, fr1 = R.info && R.info.render ? R.info.render.frame : -1; }
     finally { IRP[1] = irs; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; R.toneMapping = prevTM; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
     // sky pixels (nothing drawn, alpha < 0.5): the sky luminance the lighting itself uses — hemi sky irradiance E = pi L, so
     // L = luminance(hemi.color) x hemi.intensity / pi (scene units; x luxPer = cd/m2). One sky, lit and seen alike (L1).
@@ -1324,7 +1326,8 @@
     // §FILM_LAW: a film meters every frame and logs its own §FILM_EXPOSURE line — opts.quiet drops this one (the still never passes it).
     if (mode === 'hist' && !(opts && opts.quiet)) console.log('§METER_HIST low%=' + Math.round(bandLo * 100) + ' high%=' + Math.round(bandHi * 100) + ' bandsL[' + bandsLog + ']' + ' bandL=' + (sw ? Math.exp(sl / sw).toExponential(3) : 'none') +
       ' bandPixels=' + n + '/' + nLit + ' allLogAvg=' + (hAll != null ? hAll.toExponential(3) : 'none') + ' bandL=' + (+hLo).toExponential(2) + '..' + (+hHi).toExponential(2));
-    var bind = 'programs=' + prog0 + '->' + prog1 + ' mats=' + mats.size + ' rebound=' + rebound + ' stagedLit=' + staged + ' dummyAtRead=' + dummyAt + (opts && opts.noPrime ? ' prime=off' : '');
+    var bh = 0x811c9dc5, bu = new Uint32Array(buf.buffer); for (var ih = 0; ih < bu.length; ih++) { bh ^= bu[ih]; bh = Math.imul(bh, 16777619); }
+    var bind = 'rendered=' + (fr1 > fr0 ? 1 : 0) + ' calls=' + calls + ' bufHash=' + (bh >>> 0).toString(16) + ' programs=' + prog0 + '->' + prog1 + ' mats=' + mats.size + ' rebound=' + rebound + ' stagedLit=' + staged + ' dummyAtRead=' + dummyAt + (opts && opts.noPrime ? ' prime=off' : '');
     if (!(opts && opts.quiet)) console.log('§METER_BIND ' + bind + ' (fresh-key uniforms carry the dummy zone texture; primed + pushed before the read)');
     var hidK = Object.keys(hk).filter(function (k) { return hk[k]; }).map(function (k) { return k + ':' + hk[k]; }).join(',') + (hn.length ? '[' + hn.join('|').replace(/\s+/g, '_') + ']' : '');
     return { L: sw ? Math.exp(sl / sw) : null, bandsLog: bandsLog, bandsL: bandsL, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, hiddenKinds: hidK, dummyAtRead: dummyAt, rebound: rebound, ms: performance.now() - t0 };   // log-average luminance, scene units

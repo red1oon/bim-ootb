@@ -32,7 +32,12 @@ const POSES = {
   plenum: ['Hospital', '&ghost=1', [-20.496, -5.619, -34.439], [-23.527, -6.051, -22.952]],
   // ### ALTS-ALL FIX 4: the inner room camera moved along its own centre ray to 1.5 m from the centre hit (18.1,-8.4,3.5) (§LIGHT_STACK
   // point of the inner press): 900 cd at 1.5 m = 400 lx, where the torch must act; at 8.9 m (inner) it is 11 lx = physics, not a dead switch.
-  inner_close: ['Hospital', '&ghost=1', [16.72, -8.28, 2.92], [18.1, -8.4, 3.5]], hhs_z18: ['HHS_Office_Federated', '&ghost=1', [-10.011, -4.496, -21.246], [0.306, -2.129, 0.238]]
+  inner_close: ['Hospital', '&ghost=1', [16.72, -8.28, 2.92], [18.1, -8.4, 3.5]],
+  // DEFECT 6 (red1, v1464): Terminal interior stills where the glass went opaque in a long-lived tab (poses from the PNG tEXt of
+  // ~/Downloads/bounce_still_17904958084 84/…6624063/…6658867/…6698786/…6721496/…6748431, in press order)
+  tr1: ['Terminal', '', [24.432, -3.418, -6.092], [20.064, -5.41, -6.429]], tr2: ['Terminal', '', [14.751, -8.142, -10.258], [15.154, -7.431, -5.685]],
+  tr3: ['Terminal', '', [13.795, -12.718, 8.441], [11.243, -14.311, 3.019]], tr4: ['Terminal', '', [-7.989, -16.079, 11.597], [-9.975, -14.634, 8.118]],
+  tr5: ['Terminal', '', [-24.776, -10.142, -8.08], [-9.975, -14.634, 8.118]], tr6: ['Terminal', '', [-18.614, -11.684, -12.335], [-9.975, -14.634, 8.118]], hhs_z18: ['HHS_Office_Federated', '&ghost=1', [-10.011, -4.496, -21.246], [0.306, -2.129, 0.238]]
 };
 const ARM_POSES = { torch0: ['inner_close', 'inner', 'night'], srgbfix0: ['inner'], groundlaw0: ['night'], aoindirect0: ['inner'], gialb0: ['inner'], skyshell0: ['a202'], shellreach2: ['a202'], gridblend1: ['hhs_z18'], specsmooth0: ['hhs_z18'], meterband7095: ['inner', 'night'] };
 const log = (() => { let fd = null; return s => { console.log(s); try { if (!fd) { fs.mkdirSync(OUT, { recursive: true }); fd = fs.openSync(path.join(OUT, 'alts_all.log'), 'a'); } fs.writeSync(fd, s + '\n'); } catch (e) {} }; })();
@@ -100,6 +105,33 @@ function gpuWatch(browserPid) {
     const mine = ok.map(g => (g.apps || []).filter(a => a.mine).reduce((s, a) => s + a.mb, 0)), mpk = mine.length ? Math.max(...mine) : null;
     return { samples: ok.length, baseline: ok.length ? ok[0].used : null, peakUsed: pk ? pk.used : null, total: pk ? pk.total : null, pressPeakMB: mpk, atPeak: pk ? pk.apps : null, err: S.find(g => g.err) ? S.find(g => g.err).err : null }; } };
 }
+// DEFECT 6: glass see-through. Glass pixels = a 32x18 ray grid whose FIRST hit is a glass material (a §GLASS_FRESNEL clone, or
+// transparent with opacity < 0.95, or transmission > 0). At those pixels: the staged scene rendered linear into a float target with the
+// glass visible vs hidden (prime render first: a new program key gets fresh uniforms, ### ALTS-ALL FIX 1) -> ratio = L_vis / L_hid;
+// physical: T x background + Fresnel x env, no diffuse => ratio in [0.5 T, T + 0.5] (T = 1 - opacity). Plus the composite luma there.
+const GLASS_FACTS = async () => {
+  const A = window.APP, R = A.renderer, THREE = window.THREE, D = window.__giStillDebugCanvas, out = { n: 0 };
+  const isG = m => m && ((m.userData && m.userData.gfOf) || (m.transparent && m.opacity < 0.95) || m.transmission > 0);
+  const meshes = []; A.scene.traverse(o => { if (o.visible && (o.isMesh || o.isBatchedMesh || o.isInstancedMesh) && o !== A._sky) meshes.push(o); });
+  const rc = new THREE.Raycaster(), GX = 32, GY = 18, samp = [], gObjs = new Set(); let tRay = performance.now();
+  for (let gy = 0; gy < GY; gy++) for (let gx = 0; gx < GX; gx++) { const u = (gx + 0.5) / GX, v = (gy + 0.5) / GY; rc.setFromCamera(new THREE.Vector2(u * 2 - 1, 1 - v * 2), A.camera);
+    const h = rc.intersectObjects(meshes, false)[0]; if (!h) continue; const ms = Array.isArray(h.object.material) ? h.object.material : [h.object.material]; const m = ms[(h.face && h.face.materialIndex) || 0] || ms[0];
+    if (isG(m)) { samp.push({ u, v, T: 1 - (m.opacity != null ? m.opacity : 1), clone: !!(m.userData && m.userData.gfOf), d: +h.distance.toFixed(2) }); gObjs.add(h.object); } }
+  out.rayMs = Math.round(performance.now() - tRay); out.n = samp.length; if (!samp.length) return out;
+  const W = 320, H = 180, rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType, depthBuffer: true }), prev = R.getRenderTarget();
+  const rd = () => { R.setRenderTarget(rt); R.clear(true, true, true); R.render(A.scene, A.camera); R.clear(true, true, true); R.render(A.scene, A.camera); const b = new Float32Array(W * H * 4); R.readRenderTargetPixels(rt, 0, 0, W, H, b); return b; };
+  const hideAll = []; A.scene.traverse(o => { if (!o.visible || !o.material) return; const ms = Array.isArray(o.material) ? o.material : [o.material]; if (ms.every(isG)) hideAll.push(o); });
+  let bv, bh; try { bv = rd(); hideAll.forEach(o => { o.visible = false; }); bh = rd(); } finally { hideAll.forEach(o => { o.visible = true; }); R.setRenderTarget(prev); rt.dispose(); }
+  const Lat = (b, u, v) => { const x = Math.min(W - 1, Math.floor(u * W)), y = Math.min(H - 1, Math.floor((1 - v) * H)), i = (y * W + x) * 4; return 0.2126 * b[i] + 0.7152 * b[i + 1] + 0.0722 * b[i + 2]; };
+  let cw = 0, ch = 0, cd = null; if (D && D.bounce) { cw = D.bounce.width; ch = D.bounce.height; cd = D.bounce.getContext('2d').getImageData(0, 0, cw, ch).data; }
+  const rows = samp.map(s => { const lv = Lat(bv, s.u, s.v), lh = Lat(bh, s.u, s.v); let cl = null; if (cd) { const i = (Math.min(ch - 1, Math.floor(s.v * ch)) * cw + Math.min(cw - 1, Math.floor(s.u * cw))) * 4; cl = 0.2126 * cd[i] + 0.7152 * cd[i + 1] + 0.0722 * cd[i + 2]; } return { T: s.T, lv, lh, r: lh > 1e-6 ? lv / lh : null, cl, clone: s.clone }; });
+  const q = (a, f) => { const so = a.filter(x => x != null && isFinite(x)).sort((x, y) => x - y); return so.length ? +so[Math.floor(so.length * f)].toFixed(3) : null; };
+  const rr = rows.map(x => x.r), okN = rows.filter(x => x.r != null && x.r >= 0.5 * x.T && x.r <= x.T + 0.5).length;
+  Object.assign(out, { T: q(rows.map(x => x.T), 0.5), ratioP10: q(rr, 0.1), ratioP50: q(rr, 0.5), ratioP90: q(rr, 0.9), inBandPct: +(100 * okN / rows.length).toFixed(1), compL: q(rows.map(x => x.cl), 0.5), clones: rows.filter(x => x.clone).length, hidden: hideAll.length, objs: gObjs.size });
+  return out;
+};
+const MEM_FACTS = () => { const A = window.APP, R = A.renderer, m = performance.memory || {}; let clones = 0; const seen = new Set(); A.scene.traverse(o => { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(x => { if (x && !seen.has(x)) { seen.add(x); if (x.userData && x.userData.gfOf) clones++; } }); });
+  return { heapMB: m.usedJSHeapSize ? +(m.usedJSHeapSize / 1048576).toFixed(1) : null, geometries: R.info.memory.geometries, textures: R.info.memory.textures, programs: R.info.programs ? R.info.programs.length : null, materials: seen.size, glassClones: clones }; };
 async function pressStill(puppeteer, pose, arm, T) {
   const [DB, Q0, CAM, TGT] = POSES[pose], armQ = arm === 'base' || /^base_r/.test(arm) ? '' : J.FIXES[arm].q, q = Q0 + armQ;
   const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'altsall-prof-')), dl = path.join(OUT, 'png', pose + '__' + arm); fs.mkdirSync(dl, { recursive: true });
@@ -127,6 +159,7 @@ async function pressStill(puppeteer, pose, arm, T) {
     rec.eval = await p.evaluate(PAGE_FACTS, EDITED, pose === 'a202' ? [9911662, 9911663] : null);
     const clicked = await p.evaluate(() => { const bt = Array.from(document.querySelectorAll('#gi-still-overlay button')).find(x => /Save PNG/.test(x.textContent)); if (bt) { bt.click(); return true; } return false; });
     if (clicked) { for (let i = 0; i < 60; i++) { const f = fs.readdirSync(dl).filter(x => /\.png$/.test(x)); if (f.length) { await new Promise(r => setTimeout(r, 800)); try { const P = readPng(fs.readFileSync(path.join(dl, f[0]))); rec.png = { file: path.join(dl, f[0]), w: P.w, h: P.h, stats: P.stats, pose: P.text['bim-still-pose'] ? JSON.parse(P.text['bim-still-pose']) : null }; } catch (e) { rec.png = { err: e.message }; } break; } await new Promise(r => setTimeout(r, 500)); } }
+    if (/^tr\d/.test(pose)) { try { rec.glass = await p.evaluate(GLASS_FACTS); rec.mem = await p.evaluate(MEM_FACTS); } catch (e) { rec.glass = { err: e.message }; } }   // DEFECT 6 (after the PNG is saved)
   } catch (e) { rec.fatal = e.message; }
   finally { if (gw) rec.gpu = gw.stop(); try { if (b) await b.close(); } catch (e) {} try { fs.rmSync(prof, { recursive: true, force: true }); } catch (e) {} }
   if (rec.gpu) log('  §ALTS_GPU_MEM ' + pose + '/' + arm + ' baseline=' + rec.gpu.baseline + 'MiB peakUsed=' + rec.gpu.peakUsed + '/' + rec.gpu.total + 'MiB pressPeak=' + rec.gpu.pressPeakMB + 'MiB samples=' + rec.gpu.samples + ' atPeak=' + JSON.stringify((rec.gpu.atPeak || []).map(a => a.who + ':' + a.pid + ':' + a.mb)) + (rec.gpu.err ? ' err=' + rec.gpu.err : ''));
@@ -185,8 +218,8 @@ async function runAltc(puppeteer, N) {
       console.log = function () { const t = String(arguments[0] || ''); const mm = /§FILM_EXPOSURE f=(\d+)/.exec(t); if (mm) f = +mm[1]; return oc.apply(console, arguments); };
       setInterval(() => { const k = R.info.programs.length; if (k === n) return; const nw = snap(), progs = new Set(R.info.programs.slice(n)); const hit = nw.filter(x => progs.has(x.cp));
         oc('§ALTC_PROGRAM_NEW f=' + f + ' programs=' + n + '->' + k + ' names=[' + (hit.length ? hit : nw).slice(0, 8).map(x => x.m.type + '/' + (x.m.name || '-') + '@' + (x.o.name || x.o.type) + '{' + (x.cp.name || '') + '}').join(' ').replace(/[\[\]]/g, '') + '] newProgramNames=' + [...progs].map(q => q.name || '?').join(',')); n = k; }, 200); });
-    await new Promise(r => setTimeout(r, 5000)); L.push('§ALTC_ENTRY APP.startMaxQualityOrbit({frames:' + N + ', fps:15}) — the function scene.js Alt+C calls, frames capped');
-    await p.evaluate(n => { window.APP.startMaxQualityOrbit({ frames: n, fps: 15 }); }, N);
+    await new Promise(r => setTimeout(r, 5000)); L.push('§ALTC_ENTRY APP.startMaxQualityOrbit({frames:' + N + ', fps:15, editor:false}) — the function scene.js Alt+C calls, frames capped');
+    await p.evaluate(n => { window.APP.startMaxQualityOrbit({ frames: n, fps: 15, editor: false }); }, N);   // coordinator 2026-09-27: editor:false (the OK click stays as a fallback)
     // instrument (GPU run 2026-09-27): start() opens the Cinema Path Editor (cinema_maxq.js §CINEMA_PATH_EDITOR, opts.editor !== false)
     // and awaits its OK — the harness waited 25 min on §CPE_OPEN with no frame. The real Alt+C flow is ONE click: "OK — record this"
     // (#cpe-ok; OK with no edit = the derived plan, guardrail 2). Click it when the editor opens; end on every terminal §MAXQ tag; stall
@@ -197,9 +230,52 @@ async function runAltc(puppeteer, N) {
       if (L.length !== lastN) { lastN = L.length; lastT = Date.now(); } else if (Date.now() - lastT > 900e3) { L.push('PAGEERROR harness: altc stalled 15 min with no console line (last: ' + (L[L.length - 1] || '').slice(0, 100) + ')'); break; }
       await new Promise(r => setTimeout(r, 500)); }
     await new Promise(r => setTimeout(r, 5000)); const tap = await p.evaluate(new Function(TAP + ' return window.__maxqTapReport();')); fs.writeFileSync(path.join(dir, 'altc_tap.json'), JSON.stringify(tap));
-    const f = fs.readdirSync(dir).filter(x => /\.(mp4|webm)$/.test(x) && !/^[ACETB]\.mp4$/.test(x)).map(x => path.join(dir, x)).sort((a, c) => fs.statSync(c).mtimeMs - fs.statSync(a).mtimeMs)[0];
+    const f = fs.readdirSync(dir).filter(x => /\.(mp4|webm)$/.test(x) && !/^(A2|[ACETB])\.mp4$/.test(x)).map(x => path.join(dir, x)).sort((a, c) => fs.statSync(c).mtimeMs - fs.statSync(a).mtimeMs)[0];
     if (f) fs.renameSync(f, path.join(dir, 'altc.mp4'));
   } catch (e) { L.push('PAGEERROR harness: ' + e.message); } finally { try { if (b) await b.close(); } catch (e) {} fs.writeFileSync(lg, L.join('\n')); try { fs.rmSync(prof, { recursive: true, force: true }); } catch (e) {} }
+}
+// ── DEFECT 6 SEQUENCE (S4 carried state): ONE tab on Terminal, the six red1 poses twice (12 presses, Esc between), per press:
+// composite look + glass see-through + JS heap + renderer.info (geometries/textures/programs) + glass clones + GPU memory of this
+// tab's gpu-process + any allocation failure line. The fresh-page presses tr1..tr6 (normal base presses) are the control.
+const SEQ = ['tr1', 'tr2', 'tr3', 'tr4', 'tr5', 'tr6'];
+async function runSequence(puppeteer) {
+  const dir = path.join(OUT, 'seq'); fs.mkdirSync(dir, { recursive: true }); const sf = path.join(dir, 'seq.json'); if (fs.existsSync(sf) && !has('rerun')) { log('  sequence: persisted record reused'); return; }
+  const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'altsall-seq-')), L = [], presses = []; let b = null; const t0 = Date.now();
+  try {
+    b = await puppeteer.launch({ headless: true, userDataDir: prof, protocolTimeout: 3600000, env: Object.assign({}, process.env, { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' }), args: ['--no-sandbox', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--window-size=1705,1054'] });
+    const p = await b.newPage(); await p.setViewport({ width: 1685, height: 874 }); const dl = path.join(OUT, 'png', 'seq'); fs.mkdirSync(dl, { recursive: true });
+    const cdp = await p.target().createCDPSession(); await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dl });
+    await p.evaluateOnNewDocument(() => { window.__swCtlAtLoad = !!(navigator.serviceWorker && navigator.serviceWorker.controller); });
+    p.on('console', m => L.push(m.text().replace(/\n/g, '\\n'))); p.on('pageerror', e => L.push('PAGEERROR ' + e.message));
+    await p.goto('http://127.0.0.1:' + PORT + '/viewer/viewer.html?db=/buildings/Terminal_extracted.db', { waitUntil: 'domcontentloaded', timeout: 180000 });
+    const cnt = () => p.evaluate(() => window.APP && window.APP.guidMap ? Object.keys(window.APP.guidMap).length : 0);
+    let last = -1, same = 0; for (let i = 0; i < 300 && same < 4; i++) { await new Promise(r => setTimeout(r, 2000)); const n = await cnt(); if (n > 0 && n === last) same++; else same = 0; last = n; }
+    const mem0 = await p.evaluate(MEM_FACTS); log('  §ALTS_SEQ loaded elements=' + last + ' mem0=' + JSON.stringify(mem0));
+    const order = SEQ.concat(SEQ);
+    for (let k = 0; k < order.length; k++) {
+      const pose = order[k], [, , CAM, TGT] = POSES[pose], j0 = L.length, gw = gpuWatch(1), tp = Date.now();
+      await p.evaluate((c, t) => { const A = window.APP; A.camera.position.fromArray(c); A.controls.target.fromArray(t); A.controls.update(); }, CAM, TGT);
+      await new Promise(r => setTimeout(r, 800));
+      await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
+      let ok = false; for (let i = 0; i < 2800 && !ok; i++) { ok = L.slice(j0).some(t => /§GI_STILL result|§GI_STILL_FAIL|§GI_STILL_OFF/.test(t)); if (!ok) await new Promise(r => setTimeout(r, 250)); }
+      if (ok && L.slice(j0).some(t => /§GI_STILL_OFF/.test(t))) for (let i = 0; i < 1200 && !L.slice(j0).some(t => /§STILL_REFINE done/.test(t)); i++) await new Promise(r => setTimeout(r, 250));
+      await new Promise(r => setTimeout(r, 1500));
+      const rec = { k, pose, cam: CAM, tgt: TGT, pressSecs: +((Date.now() - tp) / 1000).toFixed(1), timeout: !ok };
+      try { rec.eval = await p.evaluate(PAGE_FACTS, EDITED, null); } catch (e) { rec.evalErr = e.message; }
+      try { rec.glass = await p.evaluate(GLASS_FACTS); } catch (e) { rec.glass = { err: e.message }; }
+      try { rec.mem = await p.evaluate(MEM_FACTS); } catch (e) { rec.mem = { err: e.message }; }
+      rec.gpu = gw.stop(); rec.lines = L.slice(j0);
+      rec.allocFail = rec.lines.filter(l => /GPUOutOfMemory|OUT_OF_DEVICE_MEMORY|CONTEXT_LOST|Context Lost|allocation fail|RangeError|§LOAD_FAIL|PAGEERROR/.test(l)).slice(0, 5);
+      rec.meter = (rec.lines.filter(l => /§METER camera=/.test(l)).pop() || '').slice(0, 200);
+      presses.push(rec);
+      log('  §ALTS_SEQ press ' + k + ' ' + pose + ' p50=' + (rec.eval && rec.eval.comp ? rec.eval.comp.p50 : '-') + ' clip=' + (rec.eval && rec.eval.comp ? rec.eval.comp.ge250pct : '-') + ' glass n=' + rec.glass.n + ' ratioP50=' + rec.glass.ratioP50 + ' T=' + rec.glass.T + ' compL=' + rec.glass.compL +
+        ' heapMB=' + rec.mem.heapMB + ' geo=' + rec.mem.geometries + ' tex=' + rec.mem.textures + ' prog=' + rec.mem.programs + ' clones=' + rec.mem.glassClones + ' gpuPress=' + rec.gpu.pressPeakMB + 'MiB used=' + rec.gpu.peakUsed + ' alloc=' + rec.allocFail.length + ' secs=' + rec.pressSecs);
+      await p.keyboard.press('Escape'); for (let i = 0; i < 40 && !L.slice(j0).some(t => /§STILL_EXIT/.test(t)); i++) await new Promise(r => setTimeout(r, 250));
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  } catch (e) { L.push('PAGEERROR harness: ' + e.message); log('  §ALTS_SEQ FATAL ' + e.message); }
+  finally { try { if (b) await b.close(); } catch (e) {} try { fs.rmSync(prof, { recursive: true, force: true }); } catch (e) {} }
+  fs.writeFileSync(sf, JSON.stringify({ presses, wallSecs: (Date.now() - t0) / 1000, errors: L.filter(l => /^PAGEERROR/.test(l)).slice(0, 5) }));
 }
 // ── plan + judge + report
 function plan() {
@@ -215,17 +291,19 @@ function judgeAll(T) {
   Object.values(recs).forEach(r => { const g1 = J.g1(r, T), inst = g1.some(x => x.state !== 'PASS'); poseState[r.pose + '|' + r.arm] = inst ? 'INCONCLUSIVE' : 'OK';
     g1.forEach(x => rows.push(Object.assign(x, { pose: r.pose, arm: r.arm })));
     if (inst) { rows.push({ group: 'G1', id: 'pose verdict', state: 'INCONCLUSIVE', detail: 'instrument sanity failed — no look/fix row judged for this press', pose: r.pose, arm: r.arm }); return; }
-    if (r.arm === 'base') [].concat(J.g3(r), J.g4(r), J.g5(r), J.gz(r)).forEach(x => rows.push(Object.assign(x, { pose: r.pose, arm: r.arm }))); });
+    if (r.arm === 'base') [].concat(J.g3(r), J.g4(r), J.g5(r), J.gz(r), J.g6(r)).forEach(x => rows.push(Object.assign(x, { pose: r.pose, arm: r.arm }))); });
   Object.values(recs).filter(r => J.FIXES[r.arm]).forEach(r => { const b = recs[r.pose + '|base'], b2 = recs[r.pose + '|base_r2'];
     if (poseState[r.pose + '|' + r.arm] !== 'OK' || !b || poseState[r.pose + '|base'] !== 'OK') { rows.push({ group: 'G2', id: J.FIXES[r.arm].name, state: 'INCONCLUSIVE', detail: 'base or arm press failed instrument sanity / missing', pose: r.pose, arm: r.arm }); return; }
     const noise = (b2 && b2.eval && b.eval && poseState[r.pose + '|base_r2'] === 'OK') ? +Math.max(Math.abs(b.eval.comp.mean - b2.eval.comp.mean), Math.abs(b.eval.comp.p50 - b2.eval.comp.p50)).toFixed(3) : null;
     J.g2(b, r, r.arm, noise).forEach(x => rows.push(Object.assign(x, { pose: r.pose, arm: r.arm }))); });
   // film
-  const bakes = {}; ['A', 'C', 'E', 'T', 'B', 'altc'].forEach(k => { const x = k === 'altc' ? (() => { const lg = path.join(OUT, 'film', 'altc.log'); if (!fs.existsSync(lg)) return null; let tap = null; try { tap = JSON.parse(fs.readFileSync(path.join(OUT, 'film', 'altc_tap.json'), 'utf8')); } catch (e) {} return { arm: 'altc', lines: fs.readFileSync(lg, 'utf8').split('\n'), tap, frames: ffFrames(path.join(OUT, 'film', 'altc.mp4')) }; })() : loadBake(k); if (x) bakes[k] = x; });
+  const bakes = {}; ['A', 'A2', 'C', 'E', 'T', 'B', 'altc'].forEach(k => { const x = k === 'altc' ? (() => { const lg = path.join(OUT, 'film', 'altc.log'); if (!fs.existsSync(lg)) return null; let tap = null; try { tap = JSON.parse(fs.readFileSync(path.join(OUT, 'film', 'altc_tap.json'), 'utf8')); } catch (e) {} return { arm: 'altc', lines: fs.readFileSync(lg, 'utf8').split('\n'), tap, frames: ffFrames(path.join(OUT, 'film', 'altc.mp4')) }; })() : loadBake(k); if (x) bakes[k] = x; });
   // instrument (GPU run 2026-09-27): B is the pre-merge REFERENCE bake served from --base-tree — judging its sw/?v=/lawHash against THIS
   // tree made it INCONCLUSIVE by construction. B's instrument rows are judged against the base tree's own facts.
   let TB = null; if (bakes.B && arg('base-tree', null)) try { TB = treeFacts(path.resolve(arg('base-tree'))); } catch (e) { TB = null; }
-  const filmRows = []; Object.keys(bakes).forEach(k => { const others = k === 'A' ? { C: bakes.C, E: bakes.E, T: bakes.T, B: bakes.B } : null; J.filmJudge(bakes[k], k === 'B' && TB ? TB : T, others).forEach(x => filmRows.push(Object.assign(x, { pose: 'film', arm: k }))); });
+  const filmRows = []; Object.keys(bakes).forEach(k => { const others = k === 'A' ? { C: bakes.C, E: bakes.E, T: bakes.T, B: bakes.B, A2: bakes.A2 } : null; J.filmJudge(bakes[k], k === 'B' && TB ? TB : T, others).forEach(x => filmRows.push(Object.assign(x, { pose: 'film', arm: k }))); });
+  const g6r = rows.filter(r => r.group === 'G6'); if (g6r.length && !g6r.some(r => r.state === 'PASS' || r.state === 'FAIL')) rows.push({ group: 'G6', id: 'glass see-through judged at >= 1 Terminal pose', state: 'VACUOUS', detail: 'no Terminal press had >= ' + J.GLASS.minN + ' glass samples', pose: 'tr*', arm: 'base' });
+  const sf = path.join(OUT, 'seq', 'seq.json'); if (fs.existsSync(sf)) { const S = JSON.parse(fs.readFileSync(sf, 'utf8')); J.seqJudge(S, recs).forEach(x => rows.push(Object.assign(x, { pose: 'seq', arm: 'terminal' }))); }
   return { rows, filmRows, nRecs: Object.keys(recs).length, bakes: Object.keys(bakes) };
 }
 function report(T, R) {
@@ -242,7 +320,7 @@ function report(T, R) {
   return stillGate === 'PASS' && (!R.filmRows.length || filmGate === 'PASS') ? 0 : 1;
 }
 // --film (all: A,C,E,T[,B]) or --film A,C (only those arms)
-function filmSel() { const v = arg('film', null); return v ? v.split(',').map(x => x.trim().toUpperCase()).filter(x => /^[ACETB]$/.test(x)) : ['A', 'C', 'E', 'T', 'B']; }
+function filmSel() { const v = arg('film', null); return v ? v.split(',').map(x => x.trim().toUpperCase()).filter(x => /^(A2|[ACETB])$/.test(x)) : ['A', 'C', 'E', 'T', 'B']; }
 async function main() {
   if (has('selftest')) return require('./witness_alts_all_selftest.js').run();
   const T = treeFacts(TREE); log('§ALTS_ALL tree=' + T.tree + ' commit=' + T.commit + ' sw=' + T.sw + ' lawHash=' + T.lawHash + ' lzSrc=' + T.lzSrc + ' versions=' + JSON.stringify(T.versions));
@@ -251,13 +329,14 @@ async function main() {
   log('§ALTS_ALL_PLAN presses=' + jobs.length + ' (each: fresh profile + load 60-90 s + press 15-215 s => ~2-5 min; est ' + Math.round(jobs.length * 2) + '-' + Math.round(jobs.length * 5) + ' min) bakes=' + (bakes.join(',') || 'none') + (bakes.length ? ' (~6-8 min each at 90 frames => ' + bakes.length * 6 + '-' + bakes.length * 8 + ' min)' : '') + (altc ? ' altc=' + altc + ' frames (~' + Math.round(altc * 2 / 60 + 3) + ' min)' : '') + ' full matrix = ' + Object.keys(POSES).length + ' poses x ' + (Object.keys(J.FIXES).length + 1) + ' arms = ' + Object.keys(POSES).length * (Object.keys(J.FIXES).length + 1) + ' presses');
   jobs.forEach(j => log('  press ' + j[0] + ' / ' + j[1] + ' -> ' + POSES[j[0]][0] + POSES[j[0]][1] + (J.FIXES[j[1]] ? J.FIXES[j[1]].q : '')));
   if (has('plan')) return 0;
-  if (jobs.length || altc) {
+  if (jobs.length || altc || has('sequence')) {
     const puppeteer = require(process.env.PUPPETEER_PATH || '/home/red1/bim-compiler/node_modules/puppeteer'); fs.mkdirSync(path.join(OUT, 'raw'), { recursive: true });
     for (const [p, a] of jobs) { const f = path.join(OUT, 'raw', p + '__' + a + '.json'); if (fs.existsSync(f) && !has('rerun')) { log('  ' + p + '/' + a + ': persisted record reused'); continue; }
       log('  pressing ' + p + '/' + a + ' ...'); const r = await pressStill(puppeteer, p, a, T); fs.writeFileSync(f, JSON.stringify(r)); log('  ' + p + '/' + a + ' done wall ' + r.wallSecs.toFixed(0) + ' s' + (r.fatal ? ' FATAL ' + r.fatal : '') + (r.timeout ? ' TIMEOUT' : '')); }
     if (altc) await runAltc(puppeteer, altc);
+    if (has('sequence')) await runSequence(puppeteer);
   }
-  if (film) { const sel = filmSel(); if (sel.includes('A')) runBake('A', TREE, []); if (sel.includes('C')) runBake('C', TREE, ['--film-exposure', '0', '--film-fill', 'restore']); if (sel.includes('E')) runBake('E', TREE, ['--film-parity', '0']); if (sel.includes('T')) runBake('T', TREE, ['--url-query', '&torch=0']); if (sel.includes('B') && arg('base-tree', null)) runBake('B', path.resolve(arg('base-tree')), []); }
+  if (film) { const sel = filmSel(); if (sel.includes('A')) runBake('A', TREE, []); if (sel.includes('A2')) runBake('A2', TREE, []); if (sel.includes('C')) runBake('C', TREE, ['--film-exposure', '0', '--film-fill', 'restore']); if (sel.includes('E')) runBake('E', TREE, ['--film-parity', '0']); if (sel.includes('T')) runBake('T', TREE, ['--url-query', '&torch=0']); if (sel.includes('B') && arg('base-tree', null)) runBake('B', path.resolve(arg('base-tree')), []); }
   return report(T, judgeAll(T));
 }
 module.exports = { readPng, treeFacts, judgeAll, report, POSES, ARM_POSES, EDITED };
