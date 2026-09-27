@@ -22,7 +22,7 @@ const fs = require('fs'), path = require('path'), os = require('os'), zlib = req
 const J = require('./alts_all_judge.js');
 const argv = process.argv.slice(2), arg = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : d; }, has = n => argv.includes('--' + n);
 const TREE = path.resolve(arg('tree', path.join(__dirname, '..', '..'))), PORT = +arg('port', 8640), OUT = path.resolve(arg('out', has('judge') ? arg('judge') : '/tmp/alts_all'));
-const EDITED = ['light_law.js', 'sourced_light.js', 'effects.js', 'gi_still.js', 'light_zones.js', 'cinema_maxq.js'];
+const EDITED = ['light_law.js', 'sourced_light.js', 'effects.js', 'gi_still.js', 'light_zones.js', 'cinema_maxq.js', 'glass_fresnel.js', 'streaming.js'];   // pass 3: + the FIX 11 / FIX 14 files
 const POSES = {
   clinic: ['Clinic', '&ghost=1', [21.243, -0.606, -1.261], [1.197, -4.155, -2.608]], inner: ['Hospital', '&ghost=1', [9.947, -7.699, 0.098], [14.735, -8.114, 2.081]],
   term: ['Terminal', '', [7.473, -7.532, 1.036], [6.397, -8.016, 3.054]], p2: ['Hospital', '&ghost=1', [-7.307, -6.507, 12.017], [-2.403, -7.682, 3.378]],
@@ -128,7 +128,7 @@ const GLASS_FACTS = async () => {
     return { T: s.T, lv, lh, r: lh > 1e-6 ? lv / lh : null, cl, ul, ba, clone: s.clone }; });
   const q = (a, f) => { const so = a.filter(x => x != null && isFinite(x)).sort((x, y) => x - y); return so.length ? +so[Math.floor(so.length * f)].toFixed(3) : null; };
   const rr = rows.map(x => x.r), okN = rows.filter(x => x.r != null && x.r >= 0.5 * x.T && x.r <= x.T + 0.5).length;
-  Object.assign(out, { T: q(rows.map(x => x.T), 0.5), ratioP10: q(rr, 0.1), ratioP50: q(rr, 0.5), ratioP90: q(rr, 0.9), inBandPct: +(100 * okN / rows.length).toFixed(1), compL: q(rows.map(x => x.cl), 0.5), appL: q(rows.map(x => x.ul), 0.5), keepAbs: (() => { const d = rows.filter(x => x.cl != null && x.ul != null).map(x => Math.abs(x.cl - x.ul)); return d.length ? +(d.reduce((a, b) => a + b, 0) / d.length).toFixed(2) : null; })(), bouncePct: +(100 * rows.filter(x => x.ba > 0).length / rows.length).toFixed(1), clones: rows.filter(x => x.clone).length, hidden: hideAll.length, objs: gObjs.size });
+  Object.assign(out, { T: q(rows.map(x => x.T), 0.5), ratioP10: q(rr, 0.1), ratioP50: q(rr, 0.5), ratioP90: q(rr, 0.9), inBandPct: +(100 * okN / rows.length).toFixed(1), compL: q(rows.map(x => x.cl), 0.5), appL: q(rows.map(x => x.ul), 0.5), keepAbs: (() => { const d = rows.filter(x => x.cl != null && x.ul != null).map(x => Math.abs(x.cl - x.ul)); return d.length ? +(d.reduce((a, b) => a + b, 0) / d.length).toFixed(2) : null; })(), bouncePct: +(100 * rows.filter(x => x.ba > 0).length / rows.length).toFixed(1), nanN: rows.filter(x => !isFinite(x.lv)).length, appBlackPct: +(100 * rows.filter(x => x.ul != null && x.ul <= 2).length / rows.length).toFixed(1),   /* ### ALTS-ALL FIX 14 */ clones: rows.filter(x => x.clone).length, hidden: hideAll.length, objs: gObjs.size });
   return out;
 };
 // ### ALTS-ALL FIX 10 (D1, red1 ruling 2): classify every CLIPPED pixel (L >= 250) of the saved composite by the surface under it, read

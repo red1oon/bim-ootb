@@ -4538,6 +4538,10 @@ async function setupEffects(A, renderer, scene, camera) {
     var _stS = performance.now();
     if ((!A._maxqActive || A._filmParity) && window.SkyPortal) { try { window.SkyPortal.stage(A); } catch (eSP) { console.warn('§SKY_PORTAL failed: ' + eSP.message); } }
     _stMs.portals = performance.now() - _stS; _stS = performance.now();   // after the lamps; budget set before them
+    // ### ALTS-ALL FIX 14 (F11): zero-length vertex normals -> NaN fragments (normalize(0)) that the §GLASS_ENV capture spreads over every
+    // glass pixel. Repaired at staging (O(triangles) on affected meshes only; a clean scene = one scan). &normrepair=0 = off.
+    if (!A._maxqActive && A._repairDegenerateNormals && !/[?&]normrepair=0/.test(location.search)) { try { A._repairDegenerateNormals(); } catch (eNR) { console.warn('§NORMAL_REPAIR failed: ' + eNR.message); } }
+    else if (!A._maxqActive && /[?&]normrepair=0/.test(location.search)) console.log('§NORMAL_REPAIR off (&normrepair=0)');
     if ((!A._maxqActive || A._filmParity) && window.GlassFresnel) { try { window.GlassFresnel.stage(A); } catch (eGF) { console.warn('§GLASS_FRESNEL failed: ' + eGF.message); } }   // §GLASS_FRESNEL
     if (!A._maxqActive) { try { _camTorchStage(false); } catch (eT) { console.warn('§CAM_TORCH failed: ' + eT.message); } }   // §ALTS_ALL: torch in the scene before the stage meter
     if (!A._maxqActive && window.SourcedLight) { try { window.SourcedLight.stage(A); } catch (eSL) { console.warn('§SOURCED_LIGHT failed: ' + eSL.message); } }

@@ -287,6 +287,10 @@ function g6(rec) {
   const patched = gf ? Object.values(JSON.parse((/patched=(\{[^}]*\})/.exec(gf) || [, '{}'])[1])).reduce((a, b) => a + b, 0) : null, skip = num(gs, /glass skip: (\d+)/);
   out.push(row('G6', 'every staged glazing mesh left out of the GI geometry pass (glass skip >= §GLASS_FRESNEL patched)', patched == null || skip == null ? 'INCONCLUSIVE' : (patched === 0 ? 'VACUOUS' : (skip >= patched ? 'PASS' : 'FAIL')), 'glass skip ' + skip + ' vs patched ' + patched + (gs ? ' | ' + gs.replace(/^.*glass skip: /, '').slice(0, 90) : '')));
   const G = rec.glass;
+  // ### ALTS-ALL FIX 14 (blocking): glass is not NaN-black on THIS press (fresh-page = first press): 0 NaN glass samples in the float probe
+  // and < 20 % of glass samples black (<= 2 codes) in the app frame (pass 2: first press 14/14 black, NaN 7/14)
+  if (G && !G.err && G.n >= GLASS.minN && G.nanN != null) out.push(row('G6', 'glass see-through on this press (no NaN glass samples, < 20 % black)', G.nanN === 0 && G.appBlackPct < 20 ? 'PASS' : 'FAIL', 'n=' + G.n + ' NaN ' + G.nanN + ' appBlack ' + G.appBlackPct + '% appL p50 ' + G.appL));
+  else if (G && !G.err && G.n < GLASS.minN) out.push(row('G6', 'glass see-through on this press', 'INFO', 'n=' + G.n + ' < ' + GLASS.minN + ' glass samples in view — not judged here'));
   if (G && !G.err && G.n >= GLASS.minN) out.push(row('G6', 'glass pixels: composite vs app frame (informational)', 'INFO', 'n=' + G.n + ' keepAbs=' + G.keepAbs + ' bouncePct=' + G.bouncePct + '% (bounce shades the surface BEHIND the pane — legit) compL=' + G.compL + ' appL=' + G.appL + ' L_vis/L_hid p50 ' + G.ratioP50, { glassN: G.n }));
   return out;
 }

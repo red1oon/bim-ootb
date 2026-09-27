@@ -95,7 +95,7 @@
   // HalfFloat, linear radiance, glass meshes hidden so a pane never reflects itself) becomes the clones' envMap (three's PMREM
   // prefilters it for roughness). Fresnel, the §GLASS_SPEC_GATE and the premultiplied blend are unchanged: it only changes WHAT is
   // reflected. Alt+S only; &glassenv=0 = the sky HDRI as before.
-  var capRT = null, capCam = null, CAP_SIZE = 256;
+  var capRT = null, capCam = null, CAP_SIZE = 256, pmremGen = null, pmremRT = null;
   function liveClones() { var set = new Set(); swaps.forEach(function (s) { var m = s[0].material, ms = Array.isArray(m) ? m : [m]; ms.forEach(function (x) { if (x && x.userData && x.userData.gfOf) set.add(x); }); }); return set; }
   function capture(A) {
     var THREE = global.THREE; if (!THREE || !A || !A.renderer || !A.scene || !A.camera || !swaps.length) return null;
@@ -107,11 +107,31 @@
       if (ms.some(function (m) { return m && ((m.userData && m.userData.gfOf) || isGlass(m)); })) { o.visible = false; hidden.push(o); } });
     capCam.position.copy(A.camera.position); capCam.layers.mask = A.camera.layers.mask; A.scene.add(capCam); capCam.updateMatrixWorld(true);
     var prevRT = R.getRenderTarget();
-    try { capCam.update(R, A.scene); } finally { R.setRenderTarget(prevRT); A.scene.remove(capCam); hidden.forEach(function (o) { o.visible = true; }); }
-    capRT.texture.needsPMREMUpdate = true;
-    var n = 0; liveClones().forEach(function (c) { if (c.envMap !== capRT.texture) { c.envMap = capRT.texture; c.needsUpdate = true; } n++; });
+    // ### ALTS-ALL FIX 14 (F11, first-press black glass): the cube faces are a render-target variant the scene has not drawn before on a
+    // page's first still; a material served a NEW program key gets a fresh uniforms object carrying the §SOURCED_LIGHT dummy textures
+    // (### ALTS-ALL FIX 1 class), and the staged scene's onBeforeRender re-pushes it only before the NEXT face — so the faces that first
+    // drew it hold garbage (MEASURED Terminal tr4 press 1: the clones rendered NaN at 1208 float-probe pixels, envMapIntensity 0 did not
+    // clear it = NaN in the env; a second capture cleared it: 0). Rule: capture again while any scene material's uniforms object changed
+    // during the capture (max 3 passes; a later press with every key bound = 1 pass, cost unchanged).
+    var props = R.properties, snap = function () { var m = new Map(); A.scene.traverse(function (o) { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (x) { if (x && !m.has(x)) { var pp = props.get(x); m.set(x, pp && pp.uniforms); } }); }); return m; };
+    var passes = 0, rekeyed = [];
+    try { for (passes = 1; passes <= 3; passes++) { var s0 = snap(); capCam.update(R, A.scene); var ch = 0; s0.forEach(function (u, x) { var pp = props.get(x); if (pp && pp.uniforms !== u) ch++; }); rekeyed.push(ch); if (!ch) break; } }
+    finally { R.setRenderTarget(prevRT); A.scene.remove(capCam); hidden.forEach(function (o) { o.visible = true; }); }
+    if (passes > 3) passes = 3;
+    // ### ALTS-ALL FIX 14 diagnostic: non-finite texels per face (HalfFloat: exponent bits all 1 = Inf/NaN), read after the passes
+    var nf = []; try { var n0 = CAP_SIZE, hb = new Uint16Array(n0 * n0 * 4); for (var f = 0; f < 6; f++) { R.readRenderTargetPixels(capRT, 0, 0, n0, n0, hb, f); var bad = 0, inf = 0; for (var i = 0; i < hb.length; i++) { if ((i & 3) === 3) continue; if ((hb[i] & 0x7c00) === 0x7c00) { bad++; if (!(hb[i] & 0x03ff)) inf++; } } nf.push(bad + (inf ? '(inf' + inf + ')' : '')); } R.setRenderTarget(prevRT); } catch (eNF) { nf = ['err ' + eNF.message]; }
+    // ### ALTS-ALL FIX 14: prefilter the capture HERE, at top level, with an explicit PMREMGenerator (was: needsPMREMUpdate, which three
+    // services lazily from inside the first scene render that meets the clone — on a page's first still that is a nested render
+    // (the meter's prime) and the first-time PMREM target allocation there produced NaN at every glass fragment: MEASURED Terminal tr4
+    // press 1 = 1208 NaN float-probe pixels on the clones, envMapIntensity 0 still NaN (NaN x 0), a second capture (target already
+    // allocated) = 0; presses 2+ = 0). The clones take the prefiltered CubeUV texture directly (no lazy conversion left).
+    var tP = performance.now();
+    if (!pmremGen) pmremGen = new THREE.PMREMGenerator(R);
+    pmremRT = pmremGen.fromCubemap(capRT.texture, pmremRT); R.setRenderTarget(prevRT);
+    var pmMs = Math.round(performance.now() - tP);
+    var n = 0; liveClones().forEach(function (c) { if (c.envMap !== pmremRT.texture) { c.envMap = pmremRT.texture; c.needsUpdate = true; } n++; });
     if (A.markDirty) A.markDirty();
-    var line = '§GLASS_ENV captured ' + CAP_SIZE + 'x6 at camera [' + A.camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + '] glassMeshesHidden=' + hidden.length + ' clonesReflecting=' + n + ' ms=' + Math.round(performance.now() - t0);
+    var line = '§GLASS_ENV captured ' + CAP_SIZE + 'x6 at camera [' + A.camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + '] glassMeshesHidden=' + hidden.length + ' clonesReflecting=' + n + ' passes=' + passes + ' rekeyedPerPass=[' + rekeyed.join(',') + ']' + ' nonFinitePerFace=[' + nf.join(',') + '] pmrem=explicit ' + pmMs + 'ms' + ' ms=' + Math.round(performance.now() - t0);
     console.log(line); return { clones: n, hidden: hidden.length, ms: Math.round(performance.now() - t0) };
   }
 

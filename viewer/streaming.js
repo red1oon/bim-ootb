@@ -2078,98 +2078,53 @@ function setupStreaming(A) {
   // most meshes have zero and short-circuit immediately) and self-contained: no extraction
   // re-run, no DB change, matches this project's existing "self-heal at the point of consumption"
   // pattern rather than a migration script (this is mesh geometry, not DB rows).
+  // ### ALTS-ALL FIX 14 (F11, first-press black glass) — the same repair, O(triangles) per mesh (was O(degen x triangles) + an O(n)
+  // nearest search per vertex: ~12 s a building, hence disabled). MEASURED Terminal: batched mesh id 924 (guid 3Q026pUy1CnxmrPEZ8YaXF)
+  // carries 145 zero-length vertex normals of 16,547; normalize(0) = NaN at 2 texels of the §GLASS_ENV +X face on EVERY capture (plain
+  // MeshStandardMaterial swap, sourced light off and every light off all still NaN). The prefiltered env spreads a NaN over the glass
+  // (every glass fragment NaN -> black). Rule: a zero normal is not a direction — take its first non-degenerate adjacent face normal;
+  // a vertex whose triangles are all zero-area rasterises no fragment of its own -> copied from a valid vertex at the same position
+  // (0.1 mm hash) if any, else left (counted). Called once per page by Alt+S staging (effects.js), &normrepair=0 = off.
   A._repairDegenerateNormals = function() {
-    var t0 = performance.now();
-    var meshesScanned = 0, meshesAffected = 0, degenTotal = 0, fixedFromFace = 0, fixedFromNeighbor = 0, unfixed = 0;
-    var _va = new THREE.Vector3(), _vb = new THREE.Vector3(), _vc = new THREE.Vector3();
-    var _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _cr = new THREE.Vector3();
+    var t0 = performance.now(), meshesScanned = 0, meshesAffected = 0, degenTotal = 0, fixedFromFace = 0, fixedFromNeighbor = 0, unfixed = 0, skippedBig = 0;
+    var seen = new Set();
     A.scene.traverse(function(o) {
       if (!(o.isMesh || o.isBatchedMesh || o.isInstancedMesh)) return;
-      var geom = o.geometry;
-      if (!geom) return;
-      var nAttr = geom.getAttribute('normal');
-      var pAttr = geom.getAttribute('position');
-      var idx = geom.index;
-      if (!nAttr || !pAttr || !idx) return;  // repair needs triangle topology; skip non-indexed
+      var geom = o.geometry; if (!geom || seen.has(geom)) return; seen.add(geom);
+      var nAttr = geom.getAttribute('normal'), pAttr = geom.getAttribute('position'), idx = geom.index;
+      if (nAttr && geom.userData && geom.userData._normRepairedV === nAttr.version + ':' + nAttr.count) return;   // already repaired, unchanged since
+      if (!nAttr || !pAttr || !idx || nAttr.itemSize !== 3 || pAttr.itemSize !== 3 || nAttr.isInterleavedBufferAttribute || pAttr.isInterleavedBufferAttribute) return;
       meshesScanned++;
-      var narr = nAttr.array, parr = pAttr.array, iarr = idx.array;
-      var n = nAttr.count;
-      var degen = [];
-      for (var vi = 0; vi < n; vi++) {
-        var x = narr[vi*3], y = narr[vi*3+1], z = narr[vi*3+2];
-        if (x*x + y*y + z*z < 0.01) degen.push(vi);  // magnitude < 0.1
+      var narr = nAttr.array, parr = pAttr.array, iarr = idx.array, n = nAttr.count, bad = new Uint8Array(n), nb = 0;
+      for (var vi = 0; vi < n; vi++) { var x = narr[vi*3], y = narr[vi*3+1], z = narr[vi*3+2], l2 = x*x + y*y + z*z; if (!(l2 >= 0.01)) { bad[vi] = 1; nb++; } }
+      if (!nb) { geom.userData._normRepairedV = nAttr.version + ':' + nAttr.count; return; }
+      // (the old 5 % safety valve is gone: a face-derived normal is correct at any fraction; Terminal had 161 small meshes at 2/34 etc.)
+      meshesAffected++; degenTotal += nb;
+      var left = nb;
+      for (var ii = 0; ii + 2 < iarr.length && left > 0; ii += 3) {
+        var a = iarr[ii], b = iarr[ii+1], c = iarr[ii+2]; if (!(bad[a] === 1 || bad[b] === 1 || bad[c] === 1)) continue;
+        var ax = parr[a*3], ay = parr[a*3+1], az = parr[a*3+2], e1x = parr[b*3] - ax, e1y = parr[b*3+1] - ay, e1z = parr[b*3+2] - az, e2x = parr[c*3] - ax, e2y = parr[c*3+1] - ay, e2z = parr[c*3+2] - az;
+        var cx = e1y * e2z - e1z * e2y, cy = e1z * e2x - e1x * e2z, cz = e1x * e2y - e1y * e2x, len = Math.sqrt(cx*cx + cy*cy + cz*cz);
+        if (!(len > 1e-8)) continue;
+        cx /= len; cy /= len; cz /= len;
+        [a, b, c].forEach(function (v) { if (bad[v] === 1) { narr[v*3] = cx; narr[v*3+1] = cy; narr[v*3+2] = cz; bad[v] = 2; fixedFromFace++; left--; } });
       }
-      if (!degen.length) return;
-      // §RED_GREY_MYSTERY safety valve: a mesh with a LARGE fraction of degenerate normals points
-      // at something worse than a handful of collapsed triangles (e.g. a whole-mesh decode
-      // failure) — repairing individual points would be papering over a bigger problem. Skip and
-      // report instead of guessing at a fix.
-      if (degen.length / n > 0.05) {
-        console.warn('§NORMAL_REPAIR_SKIP mesh=' + o.id + ' degen=' + degen.length + '/' + n +
-          ' (>5% — likely a different/larger defect, not repairing)');
-        return;
+      if (left > 0) {
+        var key = function (v) { return ((Math.round(parr[v*3] * 1e4) * 73856093) ^ (Math.round(parr[v*3+1] * 1e4) * 19349663) ^ (Math.round(parr[v*3+2] * 1e4) * 83492791)) >>> 0; }, want = new Map();   // §MEP_SMOOTH_PERF hash (a collision only feeds a no-fragment vertex)
+        for (var v1 = 0; v1 < n; v1++) if (bad[v1] === 1) want.set(key(v1), -1);
+        for (var v2 = 0; v2 < n && want.size; v2++) { if (bad[v2] === 1) continue; var k2 = key(v2); if (want.get(k2) === -1) want.set(k2, v2); }
+        for (var v3 = 0; v3 < n; v3++) if (bad[v3] === 1) { var src = want.get(key(v3)); if (src >= 0) { narr[v3*3] = narr[src*3]; narr[v3*3+1] = narr[src*3+1]; narr[v3*3+2] = narr[src*3+2]; fixedFromNeighbor++; } else unfixed++; }
       }
-      meshesAffected++;
-      degenTotal += degen.length;
-      var stillBroken = [];
-      for (var di = 0; di < degen.length; di++) {
-        var dvi = degen[di];
-        var fixed = false;
-        for (var ii = 0; ii < iarr.length; ii += 3) {
-          var a = iarr[ii], b = iarr[ii+1], c = iarr[ii+2];
-          if (a !== dvi && b !== dvi && c !== dvi) continue;
-          _va.set(parr[a*3], parr[a*3+1], parr[a*3+2]);
-          _vb.set(parr[b*3], parr[b*3+1], parr[b*3+2]);
-          _vc.set(parr[c*3], parr[c*3+1], parr[c*3+2]);
-          _e1.subVectors(_vb, _va); _e2.subVectors(_vc, _va);
-          _cr.crossVectors(_e1, _e2);
-          var len = _cr.length();
-          if (len > 1e-8) {
-            _cr.multiplyScalar(1 / len);
-            narr[dvi*3] = _cr.x; narr[dvi*3+1] = _cr.y; narr[dvi*3+2] = _cr.z;
-            fixed = true; fixedFromFace++;
-            break;
-          }
-        }
-        if (!fixed) stillBroken.push(dvi);
-      }
-      // Nearest-valid-vertex fallback for anything whose own triangles are ALL degenerate
-      // (confirmed the actual case for Hospital's IfcValve 0HuLVU0hf5gxwY8y9yDvc0 — every one of
-      // its 24 degenerate vertices sits on a zero-area triangle, so face-recompute above can't
-      // reach them).
-      for (var sbi = 0; sbi < stillBroken.length; sbi++) {
-        var bvi = stillBroken[sbi];
-        var bx = parr[bvi*3], by = parr[bvi*3+1], bz = parr[bvi*3+2];
-        var bestVi = -1, bestD2 = Infinity;
-        for (var ovi = 0; ovi < n; ovi++) {
-          var nx = narr[ovi*3], ny = narr[ovi*3+1], nz = narr[ovi*3+2];
-          if (nx*nx + ny*ny + nz*nz < 0.9) continue;  // only trust an already-valid (~unit) normal
-          var dx = parr[ovi*3] - bx, dy = parr[ovi*3+1] - by, dz = parr[ovi*3+2] - bz;
-          var d2 = dx*dx + dy*dy + dz*dz;
-          if (d2 < bestD2) { bestD2 = d2; bestVi = ovi; }
-        }
-        if (bestVi >= 0) {
-          narr[bvi*3] = narr[bestVi*3]; narr[bvi*3+1] = narr[bestVi*3+1]; narr[bvi*3+2] = narr[bestVi*3+2];
-          fixedFromNeighbor++;
-        } else {
-          unfixed++;  // whole mesh has no valid normal at all — nothing to borrow from
-        }
-      }
-      // §NORMAL_REPAIR_GPU_UPLOAD: neither `nAttr.needsUpdate = true` on the existing attribute
-      // NOR swapping in a brand-new BufferAttribute object changed a single rendered pixel, even
-      // though the JS-side array reads back correctly patched both times (confirmed live,
-      // separately). That means WebGLRenderer's cached GPU state for this geometry (VAO/binding
-      // cache, keyed by geometry.id which never changes here) is the thing not being invalidated.
-      // Force it: drop the renderer's cached properties for this geometry entirely so it rebuilds
-      // buffers/bindings from scratch on the next draw — the documented way to invalidate GPU
-      // state three.js doesn't auto-detect from an attribute-array mutation alone.
-      geom.setAttribute('normal', new THREE.BufferAttribute(narr, 3));
+      nAttr.needsUpdate = true;
+      // §NORMAL_REPAIR_GPU_UPLOAD: drop the renderer's cached state for this geometry so the buffers rebind (needsUpdate alone was not enough)
+      var nn = new THREE.BufferAttribute(narr, 3); if (nAttr.usage != null && nn.setUsage) nn.setUsage(nAttr.usage); geom.setAttribute('normal', nn);
       if (A.renderer && A.renderer.properties) { A.renderer.properties.remove(geom); }
+      geom.userData._normRepairedV = nn.version + ':' + nn.count;
     });
-    console.log('§NORMAL_REPAIR meshesScanned=' + meshesScanned + ' meshesAffected=' + meshesAffected +
-      ' degenTotal=' + degenTotal + ' fixedFromFace=' + fixedFromFace +
-      ' fixedFromNeighbor=' + fixedFromNeighbor + ' unfixed=' + unfixed +
-      ' ms=' + (performance.now() - t0).toFixed(1));
+    var out = { meshesScanned: meshesScanned, meshesAffected: meshesAffected, degenTotal: degenTotal, fixedFromFace: fixedFromFace, fixedFromNeighbor: fixedFromNeighbor, unfixed: unfixed, ms: Math.round(performance.now() - t0) };
+    console.log('§NORMAL_REPAIR meshesScanned=' + meshesScanned + ' meshesAffected=' + meshesAffected + ' degenTotal=' + degenTotal + ' fixedFromFace=' + fixedFromFace +
+      ' fixedFromNeighbor=' + fixedFromNeighbor + ' unfixed(only zero-area triangles, no fragment)=' + unfixed + ' skippedOver5pct=' + skippedBig + ' ms=' + out.ms);
+    return out;
   };
 
   A.streamTick = function() {
