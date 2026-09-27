@@ -1232,10 +1232,13 @@
   }
   function meter(A, inside) {
     var R = A.renderer, base = R.toneMappingExposure;
-    if (!inside) { console.log('§METER camera=outside exposure=' + base.toFixed(3) + ' stops=0 (base ' + base.toFixed(3) + ', unchanged outside)'); return null; }
+    // §METER_ONE_RULE (red1 2026-09-27: "for outside or in, the exposure rule must be consistent based on condition of light reaching
+    // the eye"): one meter for every camera — no outside branch (it kept the base exposure, so a shade-side view read as night);
+    // inside is only logged. Clamp symmetric at METER_MAX_STOPS.
+    var cam = inside ? 'inside' : 'outside';
     var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'avg';   // watchdog 2026-09-25: frame average by default (centre and zone each worse on one reference)
     var m = meterRead(A, { mode: mode, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 });
-    if (!m.Ein) { console.log('§METER camera=inside VACUOUS no lit surface pixels — exposure unchanged ' + base.toFixed(3)); return null; }
+    if (!m.Ein) { console.log('§METER camera=' + cam + ' VACUOUS no lit surface pixels — exposure unchanged ' + base.toFixed(3)); return null; }
     var o = outdoorE(A), ratio = m.Ein / o.E;
     // §METER_ADAPT (red1 2026-09-26: "Make it a dynamic lever derived from such data"): the degree of adaptation is no longer the
     // fixed Stevens 0.33 but CIECAM02's D (CIE 159:2004, eq. 7.4; F = 1.0 average surround): D = F [1 - (1/3.6) e^((-LA - 42) / 92)],
@@ -1245,9 +1248,9 @@
     var sunIc = A._stillCalibSunI, luxPerU = sunIc > 0 ? (A._stillCalibSunLux || 100000) / sunIc : null, adapt = 'stevens', Dd = 1 - STEVENS, Elx = null, LA = null;
     if (luxPerU && !/[?&]adapt=stevens/.test(location.search)) { Elx = m.Ein * luxPerU; LA = 0.2 * Elx / Math.PI; Dd = Math.max(0, Math.min(1, 1 - (1 / 3.6) * Math.exp((-LA - 42) / 92))); adapt = 'ciecam02'; }
     var exp = base * Math.pow(ratio, -Dd), stops = Math.log2(exp / base);
-    if (stops < 0) { exp = base; stops = 0; } if (stops > METER_MAX_STOPS) { exp = base * Math.pow(2, METER_MAX_STOPS); stops = METER_MAX_STOPS; }
+    if (Math.abs(stops) > METER_MAX_STOPS) { stops = Math.sign(stops) * METER_MAX_STOPS; exp = base * Math.pow(2, stops); }
     meterSaved = { exp: base }; R.toneMappingExposure = exp;
-    console.log('§METER camera=inside logAvgEin=' + m.Ein.toExponential(3) + ' Eout=' + o.E.toFixed(3) + ' (sun ' + o.sunI.toFixed(2) + ' x sinElev ' + o.sinE.toFixed(3) + ' + sky ' + o.skyL.toFixed(3) + ')' + o.note +
+    console.log('§METER camera=' + cam + ' logAvgEin=' + m.Ein.toExponential(3) + ' Eout=' + o.E.toFixed(3) + ' (sun ' + o.sunI.toFixed(2) + ' x sinElev ' + o.sinE.toFixed(3) + ' + sky ' + o.skyL.toFixed(3) + ')' + o.note +
       ' mode=' + m.mode + ' indoor/outdoor=' + ratio.toExponential(3) + ' adapt=' + adapt + ' D=' + Dd.toFixed(3) + (Elx != null ? ' Ein=' + Elx.toFixed(1) + 'lx LA=' + LA.toFixed(2) + 'cd/m2' : '') + ' exposure=' + exp.toFixed(3) + ' stops=' + stops.toFixed(2) + ' (base ' + base.toFixed(3) + ') pixels=' + m.pixels + '/' + (METER_W * METER_H) + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
     return { exposure: exp, stops: stops, Ein: m.Ein, Eout: o.E };
   }
