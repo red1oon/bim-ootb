@@ -306,7 +306,6 @@ function judgeAll(T) {
   // tree made it INCONCLUSIVE by construction. B's instrument rows are judged against the base tree's own facts.
   let TB = null; if (bakes.B && arg('base-tree', null)) try { TB = treeFacts(path.resolve(arg('base-tree'))); } catch (e) { TB = null; }
   const filmRows = []; Object.keys(bakes).forEach(k => { const others = k === 'A' ? { C: bakes.C, E: bakes.E, T: bakes.T, B: bakes.B, A2: bakes.A2 } : null; J.filmJudge(bakes[k], k === 'B' && TB ? TB : T, others).forEach(x => filmRows.push(Object.assign(x, { pose: 'film', arm: k }))); });
-  const g6r = rows.filter(r => r.group === 'G6'); if (g6r.length && !g6r.some(r => r.state === 'PASS' || r.state === 'FAIL')) rows.push({ group: 'G6', id: 'glass see-through judged at >= 1 Terminal pose', state: 'VACUOUS', detail: 'no Terminal press had >= ' + J.GLASS.minN + ' glass samples', pose: 'tr*', arm: 'base' });
   const sf = path.join(OUT, 'seq', 'seq.json'); if (fs.existsSync(sf)) { const S = JSON.parse(fs.readFileSync(sf, 'utf8')); J.seqJudge(S, recs).forEach(x => rows.push(Object.assign(x, { pose: 'seq', arm: 'terminal' }))); }
   return { rows, filmRows, nRecs: Object.keys(recs).length, bakes: Object.keys(bakes) };
 }

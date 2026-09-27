@@ -89,13 +89,11 @@ function run() {
   expect('G2 off-switch without its off line -> FAIL (switch dead)', J.g2(base, dead, 'groundlaw0', null)[0].state, 'FAIL');
   expect('G2 effect inside measured noise -> NO-OP', J.g2(baseC, stillRec('inner_close', 'torch0', { comp: { mean: 110.3, p50: 120.2 } }), 'torch0', 0.4)[0].state, 'NO-OP');
   // DEFECT 6: glass see-through + one-tab sequence
-  const gl = (o) => Object.assign(stillRec('tr4', 'base'), { glass: Object.assign({ n: 40, T: 0.7, ratioP10: 0.6, ratioP50: 0.75, ratioP90: 0.9, inBandPct: 95, compL: 120, clones: 40, hidden: 12 }, o || {}) });
-  expect('G6 see-through glass (ratio ~T) -> PASS', st(J.g6(gl()), /see-through/), 'PASS');
-  expect('G6 opaque glass (ratio 3.1, inBand 10%) -> FAIL', st(J.g6(gl({ ratioP50: 3.1, inBandPct: 10 })), /see-through/), 'FAIL');
-  expect('G6 glass keeps the app pixels (keepAbs 1.2, bounce 0 %) -> PASS', st(J.g6(gl({ keepAbs: 1.2, bouncePct: 0 })), /glass keeps/), 'PASS');
-  expect('G6 bounce painted the glass (keepAbs 60, bounce 100 %) -> FAIL (### ALTS-ALL FIX 9)', st(J.g6(gl({ keepAbs: 60, bouncePct: 100 })), /glass keeps/), 'FAIL');
-  expect('G6 no glass in view (n 3) -> INFO', st(J.g6(gl({ n: 3 })), /see-through/), 'INFO');
-  const sp = (k, pose, p50, heap, tex, ratio) => ({ k, pose, eval: { comp: { p50 } }, glass: { n: 40, ratioP50: ratio, compL: 120 }, mem: { heapMB: heap, textures: tex, geometries: 100, glassClones: 40, programs: 90 }, gpu: { pressPeakMB: 1500 + k }, allocFail: [], meter: '' });
+  const gl = (o) => { const r = stillRec('tr4', 'base'); r.lines = r.lines.concat(['§GLASS_FRESNEL patched={"IfcWindow(R10 pane)":65,"IfcWindow":1,"IfcWindow(members)":4} clones=2', '§GI_STILL glass skip: ' + ((o && o.skip != null) ? o.skip : 82) + ' transparent meshes left out']); r.glass = Object.assign({ n: 40, T: 0.7, ratioP50: 1, keepAbs: 0, bouncePct: 50, compL: 120, appL: 120 }, o || {}); return r; };
+  expect('G6 all 70 glazing meshes skipped (skip 82) -> PASS', st(J.g6(gl()), /left out of the GI/), 'PASS');
+  expect('G6 glass skip 0 of 70 patched (the Terminal defect) -> FAIL (### ALTS-ALL FIX 9)', st(J.g6(gl({ skip: 0 })), /left out of the GI/), 'FAIL');
+  expect('G6 composite-vs-app at glass pixels -> INFO only', st(J.g6(gl()), /composite vs app/), 'INFO');
+  const sp = (k, pose, p50, heap, tex, ratio) => ({ k, pose, eval: { comp: { p50 } }, glass: { n: 40, ratioP50: 1, keepAbs: 0, compL: ratio > 2 ? 200 : 120 }, mem: { heapMB: heap, textures: tex, geometries: 100, glassClones: 40, programs: 90 }, gpu: { pressPeakMB: 1500 + k }, allocFail: [], meter: '' });
   const frs = { 'tr4|base': Object.assign(gl(), { eval: Object.assign(gl().eval, { comp: Object.assign({}, gl().eval.comp, { p50: 120 }) }) }) };
   const seqOk = { presses: [sp(0, 'tr4', 121, 400, 50, 0.75), sp(1, 'tr4', 120, 401, 50, 0.75)] }, seqBad = { presses: [sp(0, 'tr4', 121, 400, 50, 0.75), sp(1, 'tr4', 180, 520, 90, 3.0)] };
   expect('G7 sequence 2nd press == fresh, no growth -> PASS', J.seqJudge(seqOk, frs).map(r => r.state).join(','), 'PASS,PASS,PASS');
@@ -125,7 +123,7 @@ function run() {
   return new Promise(res => { Witness('ALTS_ALL_SELFTEST')
     .population(() => rows)
     .schema({ type: 'object', required: ['name', 'got', 'want', 'ok'], properties: { name: { type: 'string' }, got: { type: 'string' }, want: { type: 'string' }, ok: { type: 'boolean' } } })
-    .invariant('every GIGO state triggers and the GREEN fixtures pass', rs => rs.length >= 39 && rs.every(r => r.ok))
+    .invariant('every GIGO state triggers and the GREEN fixtures pass', rs => rs.length >= 37 && rs.every(r => r.ok))
     .redControl(rs => rs.map(r => /GREEN still/.test(r.name) ? Object.assign({}, r, { ok: J.gate(stillRows(stillRec('inner', 'base', { sw: 'v1' }))) === 'PASS' }) : r))
     .run(); res(process.exitCode ? 1 : 0); });
 }

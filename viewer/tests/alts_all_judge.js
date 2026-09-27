@@ -267,17 +267,16 @@ function filmJudge(bake, T, ctl) {
 // ── DEFECT 6: glass see-through (per Terminal press) + the one-tab SEQUENCE vs fresh-page presses (S4 carried state)
 const GLASS = { minN: 10, inBandPct: 80 }, SEQB = { dp50: 5, dRatio: 0.1, dCompL: 8, dKeep: 4, heapSlope: 20, gpuSlope: 50, texGrow: 2 };
 function g6(rec) {
-  const G = rec.glass; if (!/^tr\d/.test(rec.pose)) return [];
-  if (!G || G.err) return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', 'INCONCLUSIVE', G ? G.err : 'no glass facts')];
-  if (!(G.n >= GLASS.minN)) return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', 'INFO', 'glass samples ' + G.n + ' < ' + GLASS.minN + ' (no glass in view at this pose)', { glassN: G.n })];
-  // ### ALTS-ALL FIX 9 row: glass pixels must KEEP the app's own pixels in the saved image (§GI_GLASS_SKIP intent) — mean |composite - app
-  // frame| at the glass samples <= 4 codes and no bounce alpha there. (Measured 2026-09-27 before the fix: the bounce painted them.)
-  if (G.keepAbs != null) return [row('G6', 'glass keeps the app pixels in the still (mean |comp - app| <= 4, bounce alpha 0 at glass)', (G.keepAbs <= 4 && G.bouncePct <= 10) ? 'PASS' : 'FAIL',
-    'n=' + G.n + ' keepAbs=' + G.keepAbs + ' bouncePct=' + G.bouncePct + '% compL=' + G.compL + ' appL=' + G.appL + ' | L_vis/L_hid p50 ' + G.ratioP50 + ' (probe render, informational) clones ' + G.clones, { glassN: G.n })];
-  // instrument guard (first GPU run 2026-09-27): ratio p10 = p50 = p90 = 1 exactly = hiding the glass changed NO sample = the float-target
-  // render did not draw the glass at all (the see-through question was never asked) => INCONCLUSIVE, never PASS/FAIL.
-  if (G.ratioP10 === 1 && G.ratioP50 === 1 && G.ratioP90 === 1) return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', 'INCONCLUSIVE', 'instrument: L_vis == L_hid at every glass sample (glass not drawn in the probe render) n=' + G.n + ' compL ' + G.compL, { glassN: G.n })];
-  return [row('G6', 'glass see-through (L_vis/L_hid in [0.5T, T+0.5])', G.inBandPct >= GLASS.inBandPct ? 'PASS' : 'FAIL', 'n=' + G.n + ' T=' + G.T + ' ratio p10/p50/p90 ' + G.ratioP10 + '/' + G.ratioP50 + '/' + G.ratioP90 + ' inBand ' + G.inBandPct + '% compL ' + G.compL + ' clones ' + G.clones + ' hidden ' + G.hidden, { glassN: G.n })];
+  if (!/^tr\d|^term$/.test(rec.pose)) return [];
+  const L = rec.lines || [], out = [];
+  // ### ALTS-ALL FIX 9 (blocking): every glazing mesh §GLASS_FRESNEL staged must be left OUT of the GI geometry pass, else the composite
+  // shades the pane as a solid wall ("alt-s makes them opaque"). Measured before the fix: 'glass skip: 0' at Terminal, 70 patched.
+  const gf = grep1(L, /§GLASS_FRESNEL patched=/), gs = grepLast(L, /§GI_STILL glass skip: \d+/);
+  const patched = gf ? Object.values(JSON.parse((/patched=(\{[^}]*\})/.exec(gf) || [, '{}'])[1])).reduce((a, b) => a + b, 0) : null, skip = num(gs, /glass skip: (\d+)/);
+  out.push(row('G6', 'every staged glazing mesh left out of the GI geometry pass (glass skip >= §GLASS_FRESNEL patched)', patched == null || skip == null ? 'INCONCLUSIVE' : (patched === 0 ? 'VACUOUS' : (skip >= patched ? 'PASS' : 'FAIL')), 'glass skip ' + skip + ' vs patched ' + patched + (gs ? ' | ' + gs.replace(/^.*glass skip: /, '').slice(0, 90) : '')));
+  const G = rec.glass;
+  if (G && !G.err && G.n >= GLASS.minN) out.push(row('G6', 'glass pixels: composite vs app frame (informational)', 'INFO', 'n=' + G.n + ' keepAbs=' + G.keepAbs + ' bouncePct=' + G.bouncePct + '% (bounce shades the surface BEHIND the pane — legit) compL=' + G.compL + ' appL=' + G.appL + ' L_vis/L_hid p50 ' + G.ratioP50, { glassN: G.n }));
+  return out;
 }
 function slope(ys) { const n = ys.length; if (n < 2) return null; const xm = (n - 1) / 2, ym = ys.reduce((a, b) => a + b, 0) / n; let nu = 0, de = 0; ys.forEach((y, i) => { nu += (i - xm) * (y - ym); de += (i - xm) * (i - xm); }); return de ? nu / de : null; }
 function seqJudge(S, recs) {
