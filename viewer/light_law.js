@@ -28,7 +28,11 @@
     // L3 — the one tone curve; three.js ACESFilmic multiplies exposure by 1/acesDiv, so the meter takes acesDiv back out.
     TONE: { curve: 'ACESFilmic', acesDiv: 0.6 },
     // L1a — §COVE_LIGHT levels (audit #46, red1 exception §COVE_NO_STRIP "need not be accurate").
-    COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 }
+    COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 },
+    // L2 — §ZERO Z10 (audit #54): AO is the visibility of INDIRECT light (Frostbite 2014 §4.10.3; Filament; UE "non direct
+    // lighting"), world radius = the sky-view field's cell (light_zones.js CELL 0.5 m: the field carries >= one cell, AO the sub-cell
+    // band), power 1 (a visibility, no exponent), n8ao distanceFalloff default 1.
+    AO: { radiusM: 0.5, power: 1, falloff: 1, appliesTo: 'indirect' }
   });
 
   // scene units -> lux (x luxPer) and -> cd/m2 for a luminance in scene units. null when there is no calibrated sun.
@@ -78,7 +82,7 @@
     return s;
   }
 
-  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE,
+  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, AO: LAW.AO,
     luxPer: luxPer, ev100: ev100, exposureFromEv: exposureFromEv, acesDiv: acesDiv, toneConst: toneConst,
     snapshot: snapshot, log: log, hash: hash, canon: canon };
   global.LightLaw = Object.freeze(LightLaw);

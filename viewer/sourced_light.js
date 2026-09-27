@@ -130,6 +130,7 @@
     '  return ( _slFZ < -0.5 || abs( _slFZ - lz ) < 0.5 ) ? 1.0 : 0.0;',
     '}',
     'float _slSpec = -1.0;',
+    'uniform vec4 uSLAo; uniform sampler2D uSLAoT;',   // §ZERO Z10 AO_INDIRECT: x = on, zw = 1 / drawing-buffer size; uSLAoT = N8AO visibility (r)
     'uniform vec4 uSLIrP; uniform highp sampler2D uSLIr;',   // §IRC_MAX v2: per-zone interreflected irradiance (lamps + daylight), x = on, y = scale   // §GLASS_SPEC_GATE readback: the reflection gate slSpecKeep returned
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
@@ -193,12 +194,42 @@
   var ONCE = '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
     '_slFZ = ( uSLParams.x > 0.5 || uSLParams.w > 0.5 ) ? slFragZone( geometryPosition, geometryNormal ) : -1.0;\n#endif\n';
 
+  // ══ §ZERO Z10 — AO = visibility of INDIRECT light (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z10 SPEC", option A) ══
+  // three's own aoMap maths (indirect diffuse x AO; Lagarde specular occlusion on indirect specular, STANDARD + envmap), fed by a
+  // screen-space AO texture (N8AO, world radius) instead of a UV map. Appended AFTER the original chunk (untouched), gated by
+  // uSLAo.x (0 everywhere except the still's second TAA phase), lit materials only. Direct light (RE_Direct) is never touched.
+  var AOP = new Float32Array(4), dAo = null, aoPatched = false;
+  var AO_BLOCK = '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
+    'if ( uSLAo.x > 0.5 ) {\n\tfloat _slAo = texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r;\n\treflectedLight.indirectDiffuse *= _slAo;\n' +
+    '\t#if defined( USE_ENVMAP ) && defined( STANDARD )\n\t\treflectedLight.indirectSpecular *= computeSpecularOcclusion( saturate( dot( geometryNormal, geometryViewDir ) ), _slAo, material.roughness );\n\t#endif\n' +
+    '}\n#endif\n';
+  function aoPatch(src) { return (typeof src === 'string' && src.indexOf('uSLAo') < 0) ? src + AO_BLOCK : src; }
+  // effects.js §AO_INDIRECT: bind the AO texture for the next composer renders (on) / release it (off). Uniform values only — no
+  // recompile. three CLONES a Texture uniform per program (UniformsUtils.clone), so the texture is set on every live material's
+  // program uniforms (renderer.properties), exactly like push() does for the zone textures; a program born later gets dAo (AO 1).
+  var aoTex = null;
+  function aoOn(on) { if (aoPatched && !linkFailed) AOP[0] = on ? 1 : 0; }   // the per-render gate (typed array shared by every program)
+  function aoSet(A, texture, on, w, h) {
+    if (!aoPatched || linkFailed || !A || !A.renderer) return -1;
+    AOP[0] = on ? 1 : 0; if (w > 0 && h > 0) { AOP[2] = 1 / w; AOP[3] = 1 / h; }
+    aoTex = on && texture ? texture : null;
+    var n = 0, seen = new Set();
+    A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
+      if (!m || seen.has(m)) return; seen.add(m);
+      var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLAoT) return;
+      U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; n++; }); });
+    return n;
+  }
   function install(THREE) {
     if (installed) return;
     if (/[?&]sourced=0/.test(location.search)) { console.log('§SOURCED_LIGHT not installed (&sourced=0 — today\'s shaders)'); return; }
     if (!THREE || !THREE.ShaderChunk) { console.warn('§SOURCED_LIGHT install skipped: THREE.ShaderChunk missing'); return; }
     var C = THREE.ShaderChunk, ok = 0, fb = C.lights_fragment_begin;
-    orig = { lights_fragment_begin: C.lights_fragment_begin, lights_fragment_maps: C.lights_fragment_maps, lights_pars_begin: C.lights_pars_begin, dithering_fragment: C.dithering_fragment };
+    orig = { lights_fragment_begin: C.lights_fragment_begin, lights_fragment_maps: C.lights_fragment_maps, lights_pars_begin: C.lights_pars_begin, dithering_fragment: C.dithering_fragment, aomap_fragment: C.aomap_fragment };
+    // §ZERO Z10: &aoindirect=0 = today's chunk (the A/B switch); the still then runs the legacy composite
+    if (!/[?&]aoindirect=0/.test(location.search) && C.aomap_fragment && C.aomap_fragment.indexOf('reflectedLight.indirectDiffuse') >= 0) {
+      C.aomap_fragment = aoPatch(C.aomap_fragment); aoPatched = true;
+    }
     // §SOURCED_LIGHT_LINK: the once-per-fragment zone, before the point loop (must land, or slPass/slSkyKeep see -1 = as today)
     var d0 = 'IncidentLight directLight;';
     if (fb.indexOf(d0) >= 0) { fb = fb.replace(d0, d0 + ONCE); ok++; } else console.warn('§SOURCED_LIGHT_LINK anchor "IncidentLight directLight;" missing: zones inert');
@@ -285,8 +316,11 @@
     dIr = lampTex2D(THREE, new Float32Array(4), 1, 1);   // §IRC_MAX v2 dummy
     dCove = coveTex3D(THREE, new Uint8Array(4), 1, 1, 1);   // §COVE_LIGHT dummy (RGBA8UI: an integer sampler needs an integer texture on its unit)
     dLamp = lampTex2D(THREE, new Float32Array(8), 2, 1); dIdx = idxTex2D(THREE, new Uint16Array(1), 1, 1); dClu = cluTex3D(THREE, new Uint32Array(2), 1, 1, 1);
+    // §ZERO Z10: a 1x1 white AO (visibility 1) so the sampler always has a texture of its kind (aoSet swaps it per program).
+    dAo = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); dAo.needsUpdate = true;
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
+      U.uSLAo = { value: AOP }; U.uSLAoT = { value: dAo };
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
       U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy }; U.uSLGround = { value: dGround };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
@@ -309,6 +343,7 @@
       };
       A.renderer.debug.__slGuard = true;
     };
+    console.log('§AO_INDIRECT installed patch=' + (aoPatched ? 1 : 0) + (aoPatched ? '' : ' (&aoindirect=0 or anchor missing — the still keeps the legacy AO composite)'));
     console.log('§SOURCED_LIGHT installed patchedLines=' + ok + '/9 (zone-once, point, lamp-data, spot, ambient, hemi, env irradiance, env radiance, zone-debug) — inert until an Alt+S stages it');
   }
 
@@ -662,6 +697,7 @@
     var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLParams) return false;
     U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; if (U.uSLSky) U.uSLSky.value = SKY; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
     if (U.uSLGround) U.uSLGround.value = (active && gtex && SKY[1] > 0.5) ? gtex : dGround;
+    if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; }   // §ZERO Z10
     if (U.uSLIrP) { U.uSLIrP.value = IRP; U.uSLIr.value = (active && IRP[0] > 0.5 && irTex) ? irTex : dIr; }
     if (U.uSLCoveP) { U.uSLCoveP.value = COVEP; U.uSLCoveQ.value = COVEQ; U.uSLCove.value = (active && COVEP[3] > 0.5 && coveTex) ? coveTex : dCove; }   // §COVE_LIGHT
     if (U.uSLLamp) { var lo = active && LAMP[0] > 0.5 && lampTex; U.uSLLamp.value = LAMP; U.uSLCluDim.value = CDIM; U.uSLLampT.value = lo ? lampTex : dLamp; U.uSLLIdx.value = lo ? idxTex : dIdx; U.uSLClu.value = lo ? cluTex : dClu; }
@@ -679,7 +715,7 @@
     if (linkFailed || !orig) return; linkFailed = true;
     var C = global.THREE.ShaderChunk; Object.keys(orig).forEach(function (k) { C[k] = orig[k]; });
     try { unstage(A, true); } catch (e) {}
-    installed = false; P[0] = 0; LAMP[0] = 0;
+    installed = false; P[0] = 0; LAMP[0] = 0; AOP[0] = 0; aoPatched = false;
     if (A._lampDataOn) { A._lampDataOn = false; A._lampData = null; try { if (typeof A._nightUpdateLights === 'function') A._nightUpdateLights(); } catch (eF) {} }
     var n = 0; A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !m.__slRe) { m.__slRe = true; m.needsUpdate = true; n++; } }); });
     if (A.markDirty) A.markDirty();
@@ -1266,5 +1302,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, installed: function () { return installed; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);
