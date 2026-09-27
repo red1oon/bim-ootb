@@ -10,7 +10,7 @@
   function freeze(o) { Object.keys(o).forEach(function (k) { if (o[k] && typeof o[k] === 'object') freeze(o[k]); }); return Object.freeze(o); }
 
   var LAW = freeze({
-    version: 1,
+    version: 2,   // 2 = §FILM_LAW: ADAPT added (films)
     // L1 — the ONE calibration (§SOURCED_LIGHT_CALIB, effects.js; audit #14/#15): the scene sun = sunLux lx; one fixture at
     // refH m above a floor point gives lampLux (EN 12464-1 office; Wikipedia "Lux" after Schlyter).
     CALIB: { sunLux: 100000, lampLux: 500, refH: 2.5 },
@@ -27,6 +27,10 @@
     METER: { K: 12.5, iso: 100, q: 1.2, histLo: 0.70, histHi: 0.95, W: 160, H: 90 },
     // L3 — the one tone curve; three.js ACESFilmic multiplies exposure by 1/acesDiv, so the meter takes acesDiv back out.
     TONE: { curve: 'ACESFilmic', acesDiv: 0.6 },
+    // L3 — §FILM_LAW temporal adaptation (films, ALT+C R1): EV100 stops per second toward the metered target. up = target
+    // above current (scene brighter, eye dark->light), down = below. Unreal speed_up 3.0 / speed_down 1.0; HDRP dark->light 3 /
+    // light->dark 1 (prompts/photoreal_probes/engine_light_laws.md [UE-CES] [HDRP-EXP]).
+    ADAPT: { up: 3, down: 1 },
     // L1a — §COVE_LIGHT levels (audit #46, red1 exception §COVE_NO_STRIP "need not be accurate").
     COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 }
   });
@@ -37,6 +41,18 @@
   function ev100(Lcd) { return Math.log2(Lcd * LAW.METER.iso / LAW.METER.K); }
   // exposure (three.js toneMappingExposure) for an EV100 — same expression order as meter() @c539f129.
   function exposureFromEv(ev, lp, acesDiv) { return lp * acesDiv / (LAW.METER.q * Math.pow(2, ev)); }
+  // §FILM_LAW: one frame of eye adaptation. First frame (evPrev null) = its target (no ramp-in); after that the EV moves toward
+  // the target by at most ADAPT.up x dt (rising) / ADAPT.down x dt (falling) — linear capped, so it cannot overshoot.
+  // dt = 1 / film fps (frame clock, never the wall clock). Returns { ev, capped: 'up'|'down'|null, first }.
+  function adaptEv(evPrev, evTarget, dt) {
+    if (evPrev == null || !isFinite(evPrev)) return { ev: evTarget, capped: null, first: true };
+    // TOL 1e-9 EV: summing k capped steps in floating point leaves the EV ~1e-14 short of the target, which would cost one
+    // extra frame (witness_film_exposure_unit caught 41 vs 40 frames); a billionth of a stop is below any visible change.
+    var TOL = 1e-9, d = evTarget - evPrev, upMax = LAW.ADAPT.up * dt, dnMax = LAW.ADAPT.down * dt;
+    if (d > upMax + TOL) return { ev: evPrev + upMax, capped: 'up', first: false };
+    if (d < -dnMax - TOL) return { ev: evPrev - dnMax, capped: 'down', first: false };
+    return { ev: evTarget, capped: null, first: false };
+  }
   function acesDiv(renderer, THREE) { return (renderer && THREE && renderer.toneMapping === THREE.ACESFilmicToneMapping) ? LAW.TONE.acesDiv : 1; }
   function toneConst(THREE) { return THREE[LAW.SCENE.toneMapping + 'ToneMapping']; }
 
@@ -78,7 +94,7 @@
     return s;
   }
 
-  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE,
+  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, ADAPT: LAW.ADAPT, adaptEv: adaptEv,
     luxPer: luxPer, ev100: ev100, exposureFromEv: exposureFromEv, acesDiv: acesDiv, toneConst: toneConst,
     snapshot: snapshot, log: log, hash: hash, canon: canon };
   global.LightLaw = Object.freeze(LightLaw);

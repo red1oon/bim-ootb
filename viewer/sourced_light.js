@@ -1195,7 +1195,8 @@
       else if (mode === 'zone') { w = wz ? (wz[i] ? 1 : 0) : 1; }
       else if (mode === 'hist') { w = (L >= hLo && L <= hHi) ? 1 : 0; }
       if (!w) continue; sl += w * Math.log(delta + Math.max(0, L)); sw += w; n++; }
-    if (mode === 'hist') console.log('§METER_HIST low%=' + (HIST_LO * 100) + ' high%=' + (HIST_HI * 100) + ' bandL=' + (sw ? Math.exp(sl / sw).toExponential(3) : 'none') +
+    // §FILM_LAW: a film meters every frame and logs its own §FILM_EXPOSURE line — opts.quiet drops this one (the still never passes it).
+    if (mode === 'hist' && !(opts && opts.quiet)) console.log('§METER_HIST low%=' + (HIST_LO * 100) + ' high%=' + (HIST_HI * 100) + ' bandL=' + (sw ? Math.exp(sl / sw).toExponential(3) : 'none') +
       ' bandPixels=' + n + '/' + nLit + ' allLogAvg=' + (hAll != null ? hAll.toExponential(3) : 'none') + ' bandL=' + (+hLo).toExponential(2) + '..' + (+hHi).toExponential(2));
     return { L: sw ? Math.exp(sl / sw) : null, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, ms: performance.now() - t0 };   // log-average luminance, scene units
   }

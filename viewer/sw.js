@@ -186,7 +186,10 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1463';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1465';   // bump on each deploy; per-change detail is the git commit message.
+// v1465 (2026-09-27) §FILM_LAW (bim-compiler ALTC_SHOWSTOPPERS.md): films meter every frame + ease at LightLaw.ADAPT (S1),
+//   no sourceless film fill (S2), CAM_LIGHT off in parity films (S3). viewer.html light_law.js?v=1->2, sourced_light.js?v=54->55,
+//   effects.js?v=109->110, cinema_maxq.js?v=8->9 in the SAME branch.
 // v1463 (2026-09-27) §LIGHT_LAW_MODULE: new viewer/light_law.js (window.LightLaw — calibration, scene sources, §METER_EV
 //   constants + formulas, cove levels, snapshot()+hash); scene.js / effects.js / sourced_light.js read it (pure refactor).
 //   viewer.html light_law.js?v=1 + sourced_light.js?v=53->54, effects.js?v=108->109, scene.js?v=64->65 in the SAME commit.
