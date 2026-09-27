@@ -141,7 +141,10 @@
       var r = window.RoomWalker.walk(db, { write: true });
       console.log(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" source=walker rooms=' + (r.roomsWritten || 0) + ' rel=' + (r.relWritten || 0) +
         ' suspect=' + (r.suspectTotal || 0) + ' ms=' + (Date.now() - t0) + ' (compiled RM_ rooms, approximate — never presented as real)');
-      return (r.roomsWritten > 0) ? db.export().buffer : buf;
+      if (!(r.roomsWritten > 0)) return buf;
+      var tx = Date.now(), out = db.export().buffer;
+      console.log(TAG + ' §MODELLER-ROOM-COST "' + name + '" walkMs=' + (tx - t0) + ' exportMs=' + (Date.now() - tx) + ' bytes=' + out.byteLength);
+      return out;
     } catch (e) { console.warn(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" walker failed ' + (e && e.message) + ' — no rooms'); return buf; }
   }
 
