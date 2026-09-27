@@ -4174,6 +4174,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // shots (§116 window) while an Alt+S interior has them on; ambient 0 gives the gloomy film interiors red1 rejected
     // ("restored is better"). Parity matches the LOOK, not the ambient number. &filmfill=alts / APP._filmFillRestore=false = ambient 0.
     A._filmFillRestore = A._filmFillRestore !== false && !/[?&]filmfill=alts/.test(location.search);
+    _filmExposureReset(false);   // §FILM_LAW S1 — each film staging meters its own first frame
     if (A._maxqActive) console.log('§FILM_PARITY ' + (A._filmParity ? 'on' : 'off (control)') + ' fill=' + (!A._filmParity || A._filmFillRestore ? 'restore 0.785/1.257' : 'alt-s (ambient 0)'));
     // §DLOD_STILL_OWNERSHIP (2026-09-24, red1: sun shafts through the Terminal roof on Alt+S) — dlod.js
     // zero-scales instances outside the view frustum, and a zero-scaled roof casts no shadow. Pause it
@@ -4705,6 +4706,45 @@ async function setupEffects(A, renderer, scene, camera) {
         (out.fit ? ' fit=' + out.fit : '') + (out.portal ? ' portal=' + out.portal : '') + ' ms=' + out.ms); }
     return out;
   };
+  // ══ §FILM_EXPOSURE — §FILM_LAW S1 (bim-compiler prompts/ALTC_SHOWSTOPPERS.md §FILM_LAW; ALT+C R1; §LIGHT_ONE_SCALE L3 via
+  // §METER_EV). Implementing §FILM_LAW S1 — Witness: viewer/tests/witness_film_exposure_unit.js (node) + the §FILM_LAW GPU witness.
+  // A film meters every frame with the SAME chain as the still (SourcedLight.meterRead 160x90 -> cd/m2 via luxPer -> EV100) and
+  // eases toward it at the engine adaptation speeds (LightLaw.ADAPT, frame clock dt = 1/fps, first frame = its target). Parity
+  // films only; &filmexp=0 / APP._filmExpOff = the fixed staging exposure (control). Exposure only — nothing drawn changes.
+  var _fe = null;   // { ev, base, n } — per film staging
+  A._filmExposureStep = function(frameIdx, fps) {
+    if (!A._filmParity || !A._maxqActive || !A.renderer) return null;
+    var LL = window.LightLaw, SL = window.SourcedLight, R = A.renderer;
+    if (A._filmExpOff === true || /[?&]filmexp=0/.test(location.search)) {
+      if (!_fe) { _fe = { ev: null, base: null, n: 0, off: true }; console.log('§FILM_EXPOSURE off (control: &filmexp=0) exposure=' + R.toneMappingExposure.toFixed(4) + ' fixed'); }
+      return null;
+    }
+    if (!_fe || _fe.off) _fe = { ev: null, base: R.toneMappingExposure, n: 0 };
+    var t0 = performance.now(), lp = LL && LL.luxPer(A._stillCalibSunLux, A._stillCalibSunI);
+    if (!lp || !SL || !SL.meterRead || !LL.adaptEv) {
+      console.log('§FILM_EXPOSURE VACUOUS f=' + frameIdx + ' reason=' + (!lp ? 'no lux calibration (calibSunI=' + A._stillCalibSunI + ')' : 'no meter/LightLaw.adaptEv') +
+        ' exposure=' + R.toneMappingExposure.toFixed(4) + ' held');
+      return null;
+    }
+    var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'hist';   // same rule as the still's meter()
+    var m = SL.meterRead(A, { mode: mode, quiet: true, camZone: 0 });
+    if (!(m && m.L > 0)) {
+      console.log('§FILM_EXPOSURE VACUOUS f=' + frameIdx + ' reason=no luminance read (pixels=' + (m ? m.pixels : '-') + ') exposure=' + R.toneMappingExposure.toFixed(4) + ' held');
+      return null;
+    }
+    var Lcd = m.L * lp, tEv = LL.ev100(Lcd), dt = 1 / (fps > 0 ? fps : 15), a = LL.adaptEv(_fe.ev, tEv, dt);
+    var exp = LL.exposureFromEv(a.ev, lp, LL.acesDiv(R, THREE));
+    _fe.ev = a.ev; _fe.n++; R.toneMappingExposure = exp;
+    A._meterLast = { exposure: exp, stops: Math.log2(exp / _fe.base), ev100: a.ev, Lcd: Lcd, targetEv100: tEv, film: true };
+    console.log('§FILM_EXPOSURE f=' + frameIdx + ' targetEV=' + tEv.toFixed(3) + ' EV=' + a.ev.toFixed(3) + ' exposure=' + exp.toFixed(5) + ' Lcd=' + Lcd.toFixed(1) +
+      ' first=' + (a.first ? 1 : 0) + ' capped=' + (a.capped || '-') + ' dt=' + dt.toFixed(4) + ' mode=' + m.mode + ' skyPx=' + m.skyPx + ' ms=' + (performance.now() - t0).toFixed(1));
+    if (a.first || frameIdx % 24 === 0) { try { LL.log(A, a.first ? 'film-first' : 'film'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); } }
+    return { f: frameIdx, targetEv: tEv, ev: a.ev, exposure: exp, first: a.first, capped: a.capped };
+  };
+  function _filmExposureReset(restore) {
+    if (_fe && restore && _fe.base != null && A.renderer) { A.renderer.toneMappingExposure = _fe.base; console.log('§FILM_EXPOSURE end frames=' + _fe.n + ' exposure restored ' + _fe.base.toFixed(4)); }
+    _fe = null;
+  }
   function _teardownPhotoStaging() {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
     _photoStagingOn = false;
@@ -4743,6 +4783,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_albedoSaved.length) { var _nMoved = 0; _albedoSaved.forEach(function(r) { if (r[5] != null && r[0].color.getHex() !== r[5]) _nMoved++; r[0].color.setRGB(r[2], r[3], r[4]); });
       console.log('§ALBEDO_SRGB restored mats=' + _albedoSaved.length + ' lateDecoded=' + _albedoLateN + ' changedDuringStill=' + _nMoved); _albedoSaved = []; }
     _albedoDecSet = null;
+    _filmExposureReset(true);   // §FILM_LAW S1 — the staging exposure back before the still/night restores below
     if (_expSaved != null && A.renderer) { A.renderer.toneMappingExposure = _expSaved; _expSaved = null; }
     A._stillLampRangeNow = null;
     if (typeof A._nightSyncPads === 'function') { try { A._nightSyncPads(); } catch (ePad) {} }   // §STILL_LIGHT_PAD — pads go with the still
