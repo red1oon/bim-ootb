@@ -225,7 +225,7 @@ function filmJudge(bake, T, ctl) {
     const B = ctl.B || ctl.C, BL = B ? sliceAfterPurge(B.lines).map(stripPrefix) : null, lab = ctl.B ? 'base tree' : 'control C (same tree; overlays must not depend on fill/exposure)';
     const OV = /^(§CLASH_\w*|§MEASURE_\w*|§FINDINGS_\w*|§HUD_\w*|§CPE_REVEAL\w*|§CPE_TAIL\w*|§LOADPATH_\w*|§ROOM_TITLE\w*|§CAPTION\w*|§LABEL\w*|§FLYTHRU_\w*|§RULE_FINDINGS\w*|§BILLBOARD\w*|§STOREY_REVEAL\w*|§FILM_BOXES\w*)/;
     const EXCL = /^(§CLASH_MEM|§LOADPATH_PIXEL_DIAG\w*)/;
-    const ov = X => X.filter(l => OV.test(l) && !EXCL.test(l)).map(l => l.replace(/\b(\w*[mM]s|msPerPair|secs?|t|elapsed|wall\w*|time)=[0-9.]+/g, '$1=_').replace(/in \d+ ms/g, 'in _ ms'));
+    const ov = X => X.filter(l => OV.test(l) && !EXCL.test(l)).map(l => l.replace(/\b(\w*[mM]s|msPerPair|secs?|t|elapsed|wall\w*|time)=[0-9.]+/g, '$1=_').replace(/in \d+ ?ms\b/g, 'in _ ms'));   // instrument (GPU run 2026-09-27): '§CLASH_RTREE ready … in 1085ms' (no space) was the only A-vs-B overlay difference
     if (!BL) add('F-G2', 'overlay identity', 'INCONCLUSIVE', 'no base/control log');
     else { const oa = ov(L), ob = ov(BL); add('F-G2', 'overlay identity vs ' + lab, !ob.length ? 'VACUOUS' : (JSON.stringify(oa) === JSON.stringify(ob) ? 'PASS' : 'FAIL'), 'lines A ' + oa.length + ' ref ' + ob.length + ' EXCLUDED: §CLASH_MEM (heap), §LOADPATH_PIXEL_DIAG* (scene pixels before the HUD: exposure-dependent); timings stripped (ms/secs/t/elapsed/time)'); }
   }
