@@ -130,6 +130,22 @@
 
   // Open core (shared by local-file + resident fetch): init the walker from a DB's bytes. The bridge
   // swbInit AUTO-PICKS column-framed (STR columns) vs wall-bearing (ARC-only → semi-grid) — §STRWALK-INIT.
+  // §FOLD-NO-BOX (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md §WALK-LOD400-ONLY): walked fixtures are committed with realGeomHash and the
+  // mesh registry is filled only by a LIVE walk render — so a reopened building folded every saved walk op as a box (Duplex: 102/102).
+  // On geo arrival, resolve every realGeomHash named by a saved walk op (_dw) from THIS building's geo and register it (walk convention:
+  // recentred mesh, anchorOffset [0,0,0]) so the fold renders the real mesh; unresolvable ones stay refused by the fold.
+  function _registerWalkRealGeom(geoBuf) {
+    try {
+      var O = window.Bonsai && window.Bonsai.oplog, L = window.Bonsai && window.Bonsai.library;
+      if (!geoBuf || !O || !O._geomOps || !L || !L.registerRealGeometry || !window.RealGeometry) return;
+      var hs = {}; O._geomOps().forEach(function (o) { var P = o.parameters; if (P && P._dw && P.realGeomHash) hs[P.realGeomHash] = 1; });
+      var list = Object.keys(hs); if (!list.length) return;
+      var g = new window.SQL.Database(new Uint8Array(geoBuf)); var got = window.RealGeometry.resolveHashes(g, list); g.close();
+      var n = L.registerRealGeometry(Object.keys(got).map(function (h) { return { hash: h, v: got[h].positions, f: got[h].faces, bbox: got[h].bbox, anchorOffset: [0, 0, 0] }; }));
+      console.log(TAG + ' §FOLD-NO-BOX walk meshes named=' + list.length + ' resolved=' + Object.keys(got).length + ' registered=' + n + ' (unresolved stay refused, never boxed)');
+    } catch (e) { console.warn(TAG + ' §FOLD-NO-BOX register failed ' + (e && e.message)); }
+  }
+
   function _injectRoomsIfNone(db, buf, name, from) {
     var n = 0;
     try { n = db.exec("SELECT COUNT(*) FROM spatial_structure WHERE type='IfcSpace'")[0].values[0][0]; } catch (e) { n = 0; }   // no table = zero
@@ -689,6 +705,7 @@
         var geoIdx = _reDeriveXEdgesWithGeo(geoBuf);
         // §ROW7-TRUE-CENTRE: the STR walk, too, was initialised before this fetch — re-init it on true centres.
         _reinitStrWalkWithGeo(geoBuf, geoIdx);
+        _registerWalkRealGeom(geoBuf);   // §FOLD-NO-BOX: saved walk ops name their mesh — register it before the seed's re-fold
         _seedArcEditable(O, res.key, geoBuf, geoIdx);
       }).catch(function (e) {
         // §GEO-SERVED: console.error, NOT console.warn — DevTools' default filter hides warn, which is how the

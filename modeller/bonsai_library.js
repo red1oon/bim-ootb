@@ -432,6 +432,11 @@
       // folds EXACTLY as before. When present, it WINS over both the box and the generic 3-item catalog — this
       // element's OWN scanned shape is always more faithful than a coincidentally-dimension-matched generic.
       const realMesh = (P.realGeomHash && this._geom && this._geom['rg:' + P.realGeomHash]) ? this._geom['rg:' + P.realGeomHash] : null;
+      // §WALK-LOD400-ONLY / §FOLD-NO-BOX (red1 2026-09-27: "no BBoxes or cubes, or LOD200 fallback. All must be LOD400 or fail hard"):
+      // an op that NAMES its real mesh (realGeomHash) but whose mesh is not registered used to fold as boxArrays(bbox) — measured: a
+      // reopened Duplex drew all 102 walked fixtures as boxes. Refuse instead: the throw is caught per op by the fold (logged
+      // 'insert fold fail', not rendered) — the existing hard-fail convention. The mesh is registered on open once the geo arrives.
+      if (P.realGeomHash && !realMesh && !P.anchorOnly) throw new Error('§LOD400-REFUSE realGeomHash ' + P.realGeomHash + ' not registered — refused, never a box');
       const lod = this.lodFor(op.id, P.lod);
       let base = realMesh
         ? { positions: realMesh.v instanceof Float32Array ? realMesh.v : new Float32Array(b64ToBuf(realMesh.v)),

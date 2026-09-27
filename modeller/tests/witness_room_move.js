@@ -70,8 +70,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
 
   // ── §ARC-1 substrate: seed the REAL building into a signed op-log, giving us the fid↔guid bridge ──
   var oplog = new SQL.Database();
-  var seed = await ArcEditable.seedArc(bdb, {
-    commitGroup: function (ops, gid) { return KernelOps.commitGroup(oplog, ops, { gid: gid, baseTs: 1700000000000 }); },
+  var seed = await ArcEditable.seedArc(bdb, { registerGeometry: function (a) { global.window.Bonsai.library.registerRealGeometry(a); } /* §FOLD-NO-BOX 2026-09-27: register what production registers — the fold now refuses (never boxes) an unregistered realGeomHash */, commitGroup: function (ops, gid) { return KernelOps.commitGroup(oplog, ops, { gid: gid, baseTs: 1700000000000 }); },
     building: 'SampleHouse'
   });
   var fbg = seed.bridge.fidByGuid, gbf = seed.bridge.guidByFid;

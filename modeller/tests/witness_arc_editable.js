@@ -78,7 +78,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   var commitGroup = function (opsArray, gid) {
     return KernelOps.commitGroup(oplog, opsArray, { gid: gid, baseTs: 1700000000000 });
   };
-  var seed = await ArcEditable.seedArc(bdb, { commitGroup: commitGroup, building: 'SampleHouse' });
+  var seed = await ArcEditable.seedArc(bdb, { registerGeometry: function (a) { global.window.Bonsai.library.registerRealGeometry(a); } /* §FOLD-NO-BOX 2026-09-27: register what production registers — the fold now refuses (never boxes) an unregistered realGeomHash */, commitGroup: commitGroup, building: 'SampleHouse' });
 
   // A1 — count
   chk('A1 every ARC element seeded (N db ⇒ N GEOM_INSERT ops, no silent drop)',
@@ -116,9 +116,13 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     }
     if (d.featureId === fid) fidOk++;
   });
-  chk('A3 folded mesh world-centre == measured center_xyz within 1e-6 (NO invented offset)', posOk === n, posOk + '/' + n);
-  chk('A4 seed box extent == measured bbox (exact) + rot≈0 unmatched AABB extent == measured', boxConstrOk === n && foldExtentOk === rotZeroN && rotZeroN > 0,
-    'boxConstr=' + boxConstrOk + '/' + n + ' foldExtent=' + foldExtentOk + '/' + rotZeroN + ' (matched-LOD300 excluded: ' + matchedN + ')');
+  // A3 RETIRED as a verdict — §FOLD-NO-BOX (2026-09-27, red1: 'no BBoxes or cubes, or LOD200 fallback. All must be LOD400 or fail hard'): this witness registers the real meshes production registers; the old box-fold geometry claims no longer describe production. center_xyz is the IFC local-placement ANCHOR (§ARC-ANCHOR), so a real mesh's world centre is
+  // center + R·blobCentre, not center_xyz; that placement is proven by W-ANCHOR-SWEEP (32/0, all 8 residents, maxDC ≤ 1e-5 m).
+  console.log('  · A3 info (retired verdict, see W-ANCHOR-SWEEP): centre==center_xyz on ' + posOk + '/' + n + ' (holds only for box folds)');
+  // A4: the construction-level check stays (seed op bbox == measured, the audit trail); the fold-extent half was box-only (real meshes
+  // have their own extent) — logged as info. §FOLD-NO-BOX (2026-09-27, red1: 'no BBoxes or cubes, or LOD200 fallback. All must be LOD400 or fail hard'): this witness registers the real meshes production registers; the old box-fold geometry claims no longer describe production. 
+  chk('A4 seed box extent == measured bbox (exact, construction audit trail)', boxConstrOk === n, 'boxConstr=' + boxConstrOk + '/' + n);
+  console.log('  · A4 info: rot≈0 unmatched fold extent == measured on ' + foldExtentOk + '/' + rotZeroN + ' (box-only property)');
   chk('A5 each folded mesh carries featureId == its op id (gizmo-selectable + GEOM_MOVE-able)', fidOk === n, fidOk + '/' + n);
 
   // A6 — output_guid persisted on kernel_ops, queryable by featureId(=id)
@@ -132,7 +136,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   chk('A6 kernel_ops.output_guid == real guid for every seed op (replay-stable bridge)', persistOk && persisted === n, persisted + '/' + n);
 
   // A7 — idempotent re-seed (same gid → no double-seed, bridge unchanged)
-  var seed2 = await ArcEditable.seedArc(bdb, { commitGroup: commitGroup, building: 'SampleHouse' });
+  var seed2 = await ArcEditable.seedArc(bdb, { registerGeometry: function (a) { global.window.Bonsai.library.registerRealGeometry(a); } /* §FOLD-NO-BOX 2026-09-27: register what production registers — the fold now refuses (never boxes) an unregistered realGeomHash */, commitGroup: commitGroup, building: 'SampleHouse' });
   var rowCount = oplog.exec('SELECT COUNT(*) FROM kernel_ops')[0].values[0][0];
   var bridgeSame = JSON.stringify(seed2.bridge.fidByGuid) === JSON.stringify(seed.bridge.fidByGuid);
   chk('A7 idempotent re-seed: same op count, idempotent flag, bridge unchanged',
@@ -160,15 +164,22 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     return c && d.positions.length / 3 !== 8 && d.indices.length / 3 !== 12 &&
       d.positions.length / 3 === c.vc && d.indices.length / 3 === c.fc;
   });
-  var unmatchedIsBox = unmatchedOps.every(function (op) {
+  // §FOLD-NO-BOX (2026-09-27, red1: 'no BBoxes or cubes, or LOD200 fallback. All must be LOD400 or fail hard'): this witness registers the real meshes production registers; the old box-fold geometry claims no longer describe production. unmatched ops (no catalog hash) now fold their OWN registered real mesh (realGeomHash) — never the box signature.
+  var unmatchedReal = 0, unmatchedBox = 0, srcBoxShaped = [];
+  unmatchedOps.forEach(function (op) {
     var fid = seed.bridge.fidByGuid[op.outputGuid];
     var d = Library.foldInsert({ id: fid, op_type: 'GEOM_INSERT', parameters: op.params });
-    return d.positions.length / 3 === 8 && d.indices.length / 3 === 12;
+    var g = op.params.realGeomHash && Library._geom && Library._geom['rg:' + op.params.realGeomHash];
+    if (g) { unmatchedReal++; if (d.positions.length / 3 === 8 && d.indices.length / 3 === 12) srcBoxShaped.push(op.params.ifc_class + ':' + op.params.realGeomHash); }
+    else unmatchedBox++;   // folded without a registered real mesh — impossible now (the fold refuses), counted to prove it
   });
-  chk('A9 matched⇒real catalog mesh (NOT box signature, vert/face counts == matched catalog entry); unmatched⇒still box signature; matched+unmatched==total',
+  // The source itself authored some elements as simple 8-vert/12-tri solids — those ARE their real (registered) mesh, not a fallback.
+  // Logged, not judged here: whether an authored N-layer element shipped as an envelope box is §LOD400-ENVELOPE's gate (browser layer gate).
+  console.log('  · A9 info: ' + srcBoxShaped.length + ' registered real meshes are box-shaped in the SOURCE: ' + srcBoxShaped.slice(0, 6).join(' '));
+  chk('A9 matched⇒real catalog mesh (counts == catalog entry); unmatched⇒its OWN registered real mesh (no fallback box); matched+unmatched==total',
     matchedOps.length === seed.matched && unmatchedOps.length === seed.unmatched &&
-    seed.matched + seed.unmatched === n && matchedRealMesh && unmatchedIsBox && matchedOps.length > 0,
-    'matched=' + seed.matched + ' unmatched=' + seed.unmatched + ' total=' + n);
+    seed.matched + seed.unmatched === n && matchedRealMesh && unmatchedBox === 0 && unmatchedReal === unmatchedOps.length && matchedOps.length > 0,
+    'matched=' + seed.matched + ' unmatched=' + seed.unmatched + ' (registered-real=' + unmatchedReal + ' unregistered=' + unmatchedBox + ') total=' + n);
 
   // A10 — §ARC-ROT-UNIT regression guard: element_transforms.rotation_z is RADIANS; an UNMATCHED (still
   // raw-bbox) rotated element's folded world AABB must match the analytic rotated-box extent (halfX=hx|cosθ|+
@@ -180,14 +191,12 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     var T = truth[op.outputGuid];
     if (approx(T.rz, 0, 1e-6)) return;                          // true zero rotation — nothing to distinguish
     rotN++;
-    var fid = seed.bridge.fidByGuid[op.outputGuid];
-    var d = Library.foldInsert({ id: fid, op_type: 'GEOM_INSERT', parameters: op.params });
-    var bb = aabb(d.positions);
-    var c = Math.abs(Math.cos(T.rz)), s = Math.abs(Math.sin(T.rz));
-    var expEx = T.bx * c + T.by * s, expEy = T.bx * s + T.by * c;
-    if (approx(bb.ex, expEx, 1e-3) && approx(bb.ey, expEy, 1e-3)) rotOk++;
+    // §FOLD-NO-BOX (2026-09-27, red1: 'no BBoxes or cubes, or LOD200 fallback. All must be LOD400 or fail hard'): this witness registers the real meshes production registers; the old box-fold geometry claims no longer describe production. The guard is the UNIT conversion at the seed boundary (radians in the db → degrees in placement.rot);
+    // the box-AABB formula it used to check folded geometry against is box-only. A radians-as-degrees bug fails this exactly as before.
+    var rot = op.params.placement && op.params.placement.rot;
+    if (rot != null && approx(rot, T.rz * 180 / Math.PI, 1e-6)) rotOk++;
   });
-  chk('A10 unmatched rotated element folds to the ANALYTIC true-angle AABB (radians-as-degrees bug would fail this)',
+  chk('A10 rotated element: seed placement.rot == rotation_z (radians) × 180/π (radians-as-degrees bug would fail this)',
     rotOk === rotN && rotN > 0, rotOk + '/' + rotN);
 
   console.log('W-ARC-EDITABLE: ' + pass + ' PASS / ' + fail + ' FAIL');
