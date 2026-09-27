@@ -146,8 +146,12 @@ runE2E('W-E2E-CUT-LAYERS', async (t) => {
     after.len === before.len + 1 && last && last.op_type === 'GEOM_CUT' && last.parameters && last.parameters.parent === target.fid,
     'len ' + before.len + '→' + after.len + ' op=' + (last && last.op_type) + ' parent=' + (last && last.parameters && last.parameters.parent));
   t.assert('L5 CHAIN-OK (verifyChain)', chain === true, 'verifyChain=' + chain);
-  t.assert('L6 VISIBLE (framebuffer changed + tri count changed — real void subtracted)',
-    pix0 !== pix1 && tw0 !== tw1, 'pix ' + pix0 + '→' + pix1 + ' tris ' + tw0 + '→' + tw1);
+  // §NET-AUDIT PIXEL-AS-PROOF (2026-09-26): a whole-frame pixel sum is not a verdict (Primal Law). Measured flipping with no code change
+  // — 09-26 serial runs: cut C4 red on main / green on the branch, cut_layers L6 the reverse, sketch K5b red only under load.
+  // The claim stands on the element's own rendered triangles; the pixel sum stays in the log as info.
+  console.log('  §CUT-LAYERS L6-PIX info pix ' + pix0 + '→' + pix1);
+  t.assert('L6 VISIBLE (the element\'s rendered tri count changed — real void subtracted)',
+    tw0 > 0 && tw1 > 0 && tw0 !== tw1, 'tris ' + tw0 + '→' + tw1 + ' (pix ' + pix0 + '→' + pix1 + ', info)');
 
   // L7: Fillet-edge PREREQUISITE (§CHAIN-SURVIVES-LAYER-CUT) — real edges must resolve off the layer-cut solid.
   // §L3-AIM: bCut.onclick ends in highlight(null) (deselect by design, see witness_e2e_cut.js C6 note) and

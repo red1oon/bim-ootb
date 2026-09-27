@@ -83,7 +83,8 @@ const server = http.createServer((q, r) => {
   const flashOk = flashParsed.length === flashLines.length && flashParsed.every(f => f.ms <= f.budget + 4000);
   // T5: every chain-commit line is a single signed group
   const chainLines = slog.filter(l => /§ROUTER-CHAIN-COMMIT disc=/.test(l));
-  const chainOk = chainLines.every(l => / \(1 signed group\)/.test(l));
+  // §NET-AUDIT VACUOUS (2026-09-26): [].every() is true — with ZERO chain-commit lines T5 passed having judged nothing.
+  const chainOk = chainLines.length > 0 && chainLines.every(l => / \(1 signed group\)/.test(l));
 
   chk('T1 SCENE-SCALE (>30k group children — real Terminal, not a fixture)', pre.sceneTotal > 30000, 'sceneTotal=' + pre.sceneTotal + ' threshold=' + pre.threshold);
   chk('T2 GUARD-DECISION (proxyMode == sceneTotal>threshold arithmetic)', result && result.proxyMode === expectedProxy, 'proxyMode=' + (result && result.proxyMode) + ' expected=' + expectedProxy);

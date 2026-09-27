@@ -55,6 +55,13 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     // 1) lay the real ARC shell + stash its bytes for the walker to re-open
     var abuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_arcstr_proof.db')).arrayBuffer();
     window.__dwBuf = abuf; window.__dwName = 'TE';
+    // §WALK-LOD400-ONLY (2026-09-27): the walk render draws ONLY real LOD400 meshes resolved from the geo buffer; before this the
+    // witness had none, so every 'rendered fixture' was a measured box (red1: "All must be LOD400 or fail hard"). Load Terminal's
+    // own _geo.db exactly as the app does — from the resident registry's geoBase/geoDb/geoV.
+    var _te = (window.STRWalkerOutliner._residents || []).filter(function (r) { return r.key === 'Terminal'; })[0];
+    var _gr = await fetch(_te.geoBase + _te.geoDb + '?v=' + _te.geoV);
+    window.__dwGeoBuf = _gr.ok ? await _gr.arrayBuffer() : null;
+    console.log('§TE-GEO ' + _te.geoDb + ' http=' + _gr.status + ' bytes=' + (window.__dwGeoBuf ? window.__dwGeoBuf.byteLength : 0));
     var adb = new window.SQL.Database(new Uint8Array(abuf));
     var ar = await window.ArcEditable.seedArc(adb, {
       commitGroup: function (ops, gid) { return O.commitSeedGroup(ops, gid); },
@@ -122,7 +129,14 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     var out = {};
     DISCS.forEach(function (disc) {
       var bdb = new window.SQL.Database(new Uint8Array(abuf));
-      var w = window.DiscWalker.dwWalk(disc, bdb, 'TE');
+      // §NET-AUDIT WRONG-PATH (2026-09-27): production (_discWalkOne) walks with { schedule: true, geoDb } and falls back to the legacy
+      // walk only on 0; this witness called the bare legacy walk, whose placements carry no mesh hash — i.e. it measured a walk users
+      // never get, and every fixture it 'rendered' was a box. Same call as production now; mesh-less placements are refused (§WALK-LOD400-ONLY).
+      var _g = window.__dwGeoBuf ? new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)) : null;
+      var w = window.DiscWalker.dwWalk(disc, bdb, 'TE', { schedule: true, geoDb: _g || undefined });
+      if ((w.refused || !w.placed) && !w.verdict) w = window.DiscWalker.dwWalk(disc, bdb, 'TE', { geoDb: _g || undefined });
+      if (_g) _g.close();
+      w.placements = (w.placements || []).filter(function (p) { return !!p.geometry_hash; }); w.placed = w.placements.length;
       bdb.close();
       var pl = (w.placements || []);
       window.__renderDiscWalk(disc, pl);                 // production render into _dwRoot
@@ -176,12 +190,17 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
   chk('D2 §READPIXELS — MEP layer rasterizes over the laid ARC (A/B-isolated > 2000px)', paintOk,
     DISCS.map(function (d) { return d + ':' + probes[d].dwPainted + 'px'; }).join(' '));
   // D3 envelope — every placement inside the recomputed ARC occupancy envelope
-  var envOk = DISCS.every(function (d) { var x = R.discs[d]; return x.envChecked === 0 || x.inEnv / x.envChecked >= 0.99; });
+  // §NET-AUDIT VACUOUS (2026-09-26): envChecked===0 used to count as a pass, so a disc that placed fixtures but had
+  // none graded (or an empty run) passed D3 on nothing. Now: a disc may skip grading ONLY if it placed nothing,
+  // and at least one placement across all discs must actually be graded.
+  var envTotal = DISCS.reduce(function (a, d) { return a + R.discs[d].envChecked; }, 0);
+  var envOk = envTotal > 0 && DISCS.every(function (d) { var x = R.discs[d]; return x.envChecked === 0 ? x.walked === 0 : x.inEnv / x.envChecked >= 0.99; });
   chk('D3 ENVELOPE — placements land inside the ARC occupancy envelope (≥99%, no void fixtures)', envOk,
     DISCS.map(function (d) { var x = R.discs[d]; return d + ':' + x.inEnv + '/' + x.envChecked; }).join(' '));
   // D4 count — area-distributed discs same-order bounded; ACMV+FP tight
   var areaDiscs = DISCS.filter(function (d) { return R.discs[d].arrayN > 0; });
-  var bounded = areaDiscs.every(function (d) { var x = R.discs[d]; var r = x.walked / x.real; return r >= 0.3 && r <= 3; });
+  // §NET-AUDIT VACUOUS (2026-09-26): [].every() passed when no disc was area-distributed.
+  var bounded = areaDiscs.length > 0 && areaDiscs.every(function (d) { var x = R.discs[d]; var r = x.walked / x.real; return r >= 0.3 && r <= 3; });
   chk('D4 COUNT — area-distributed discs same-order vs oracle [0.3×–3×] (generative tolerance)', bounded,
     areaDiscs.map(function (d) { var x = R.discs[d]; return d + ' ' + x.walked + '/' + x.real + '=' + (x.walked / x.real).toFixed(2) + '×'; }).join('  '));
   var acmv = R.discs.ACMV, fp = R.discs.FP;

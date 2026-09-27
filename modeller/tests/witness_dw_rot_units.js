@@ -124,10 +124,27 @@ async function openResident(page, key) {
     // 1) a shim:host-* placement with |yaw| ≈ π/2 (hostBind Math.PI/2 vertical-run branch, 6 on SampleHouse ELEC)
     var recs = (window.__dwWalks && window.__dwWalks.ELEC) || [];
     var idx = -1, rec = null;
+    // §NET-AUDIT (2026-09-26): the FIRST |yaw|≈π/2 record now folds a SQUARE catalog box (0.4×0.4 exhaust), where yaw
+    // is unmeasurable (R5 guard red, R4 read 0° vs 90°). Prefer the first such record whose signed twin's catalog
+    // footprint is non-square (≥1.15); only if none exists fall back to the first and let R5 say so.
+    var ops0 = window.Bonsai.oplog._geomOps() || [], nCand = 0, nNonSq = 0;
+    function twinHashAspect(r) {
+      var kx = (+r.x).toFixed(4), ky = (+r.y).toFixed(4), kz = (+r.z).toFixed(4);
+      for (var j = 0; j < ops0.length; j++) { var pm = ops0[j].parameters;
+        if (ops0[j].op_type === 'GEOM_INSERT' && pm && pm._dw && pm._dw.disc === 'ELEC' && pm.placement &&
+            (+pm.placement.x).toFixed(4) === kx && (+pm.placement.y).toFixed(4) === ky && (+pm.placement.z).toFixed(4) === kz) {
+          var c = window.Bonsai.library.get(pm.hash); if (!c || !c.bbox) return 0;
+          var a = c.bbox[1] - c.bbox[0], b = c.bbox[3] - c.bbox[2]; return Math.min(a, b) > 1e-9 ? Math.max(a, b) / Math.min(a, b) : 0; } }
+      return 0;
+    }
     for (var i = 0; i < recs.length; i++) {
       var r = recs[i];
-      if (r.prov && r.prov.indexOf('shim:host-') === 0 && r.yaw != null && Math.abs(Math.abs(r.yaw) - Math.PI / 2) < 1e-6) { idx = i; rec = r; break; }
+      if (r.prov && r.prov.indexOf('shim:host-') === 0 && r.yaw != null && Math.abs(Math.abs(r.yaw) - Math.PI / 2) < 1e-6) {
+        nCand++; if (!rec) { idx = i; rec = r; }
+        if (twinHashAspect(r) >= 1.15) { nNonSq++; idx = i; rec = r; break; }
+      }
     }
+    out.cands = nCand; out.nonSquare = nNonSq;
     if (!rec) { out.err = 'no shim placement with |yaw|≈π/2 (recs=' + recs.length + ')'; return out; }
     out.recYawRad = rec.yaw; out.recXYZ = [rec.x, rec.y, rec.z]; out.host = rec.host;
     // 2) preview on-screen yaw — the dwRoot InstancedMesh instance matrix for THIS record
@@ -177,7 +194,7 @@ async function openResident(page, key) {
     (yawDeg != null ? yawDeg.toFixed(2) : '—') + '°) op=' + m.opId + ' placement.rot=' + (m.opRot != null ? (+m.opRot).toFixed(6) : '—') +
     ' previewYaw=' + (m.previewYawDeg != null ? m.previewYawDeg.toFixed(2) : '—') + '° foldedYaw=' +
     (m.foldedYawDeg != null ? m.foldedYawDeg.toFixed(2) : '—') + '° aspect=' + (m.aspect != null ? m.aspect.toFixed(2) : '—') +
-    ' hash=' + String(m.hash).slice(0, 12));
+    ' hash=' + String(m.hash).slice(0, 12) + ' candidates=' + m.cands + ' nonSquare=' + m.nonSquare);
 
   chk('R1 SHIM-YAW ≥1 shim:host-* placement with |yaw|≈π/2 rad', !m.err && m.recYawRad != null,
     m.err || ('yaw=' + m.recYawRad.toFixed(6) + ' rad, host=' + String(m.host).slice(0, 14) + '…'));
@@ -190,7 +207,9 @@ async function openResident(page, key) {
     'rot=' + (m.opRot != null ? (+m.opRot).toFixed(4) : '—') + ' expected(deg)=' + (yawDeg != null ? yawDeg.toFixed(4) : '—'));
   chk('R5 NON-SQUARE folded footprint aspect ≥1.15 (rotation measurable)', m.aspect != null && m.aspect >= 1.15,
     'aspect=' + (m.aspect != null ? m.aspect.toFixed(2) : '—') + ' bboxXY=' + JSON.stringify(m.compBBoxXY));
-  chk('R4 FOLD==PREVIEW folded on-screen yaw == preview on-screen yaw (±2°, mod 180)',
+  // §NET-AUDIT (2026-09-26): on a square footprint yaw is unmeasurable — say INCONCLUSIVE, not a yaw mismatch. Measured today:
+  // all 5 |yaw|≈π/2 records fold square catalog boxes (nonSquare=0), so R5 is red and R4 judges nothing.
+  chk('R4 FOLD==PREVIEW folded on-screen yaw == preview on-screen yaw (±2°, mod 180)' + (m.aspect != null && m.aspect < 1.15 ? ' — INCONCLUSIVE (square footprint, see R5)' : ''),
     m.foldedYawDeg != null && m.previewYawDeg != null && angDiff(m.foldedYawDeg, m.previewYawDeg) < 2,
     'folded=' + (m.foldedYawDeg != null ? m.foldedYawDeg.toFixed(2) : '—') + '° preview=' +
     (m.previewYawDeg != null ? m.previewYawDeg.toFixed(2) : '—') + '° Δ=' +

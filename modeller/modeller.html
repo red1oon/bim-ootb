@@ -208,7 +208,7 @@
 <!-- §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE — zero deps, loaded first; the
      module worker imports the SAME file (self.CutMove); bonsai_ifc / gridmove / itemdrag read window.CutMove at call time. -->
 <script src="cut_move.js?v=2" onerror="console.warn('§CUT-MOVE LOAD_FAIL cut_move.js')"></script>
-<script src="bonsai_kernel.js?v=9" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="bonsai_kernel.js?v=10" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
@@ -247,16 +247,16 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
 <script src="bonsai_gridmove.js?v=3" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=14" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=15" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
 <script src="bom_tree.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
 <script src="bom_tree_outliner.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
 <!-- Cross-edges: the typed SDG lateral edges (abuts/...) derived on-the-fly from the bbox substrate. -->
-<script src="cross_edges.js?v=4" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
+<script src="cross_edges.js?v=5" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
 <!-- Real per-element geometry (component_geometries/base_geometries) — read+recentre, no THREE/DOM deps.
      Loaded BEFORE arc_editable.js (its factory takes window.RealGeometry as a dependency). -->
-<script src="real_geometry.js?v=1" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
-<script src="arc_editable.js?v=6" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
+<script src="real_geometry.js?v=2" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
+<script src="arc_editable.js?v=7" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
 <script src="sdg_gate.js?v=3" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- §DAGEVU: relationship-edge engine (anchor-default hosted openings) — wraps sdg_cascade + sdg_gate above. -->
@@ -275,10 +275,11 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      window.GeomapBridge && gmReady(), so a missing/failed script just means "no audit", never a broken seed. -->
 <script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
 <script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
-<script src="str_walker_bridge.js?v=7" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=18" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_bridge.js?v=8" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
+<script src="../viewer/lib/room_walker.js?v=3" onerror="console.warn('§MODELLER-ROOM-INJECT LOAD_FAIL room_walker.js')"></script>
+<script src="str_walker_outliner.js?v=22" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=20" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=21" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -651,6 +652,37 @@ async function xrayReveal(on) {
   return { on: true, glass: glass, glow: glow, stackDepth: stackDepth, glassOpacity: glassOpacity };
 }
 window.__xrayReveal = xrayReveal;
+// ── §B1-ROW1 (pattern review row 1 — Witness: W-PATTERN-DECOR-REFOLD): ONE view-decoration registry. A re-fold
+// (bonsai_kernel.foldChainToScene) rebuilds every mesh with default material and visible=true, then announces
+// 'bonsai:refold'. Every piece of per-mesh VIEW state registers its re-apply here instead of hooking the event on its
+// own; one listener runs them all in registration order (x-ray, selection tint, eye/instance hide, find-box dim,
+// shadows — the source order of their definitions below). Before this, x-ray/tint/shadows each had their own listener
+// and eye-hide + dim had NONE, so after a history scrub the Outliner still said hidden/filtered while the scene did not.
+const _decor = [];
+window.Bonsai.decor = {
+  register(name, fn) { _decor.push({ name, fn }); },
+  names() { return _decor.map(d => d.name); },
+  reapply(src) {
+    const out = [];
+    _decor.forEach(d => { try { const r = d.fn(src); out.push(d.name + (r != null ? '=' + r : '')); } catch (e) { out.push(d.name + '!' + (e && e.message)); } });
+    console.log('§DECOR-REFOLD src=' + src + ' applied=[' + out.join(' ') + ']');
+    return out;
+  }
+};
+window.addEventListener('bonsai:refold', () => window.Bonsai.decor.reapply('refold'));
+// §XRAY-REFOLD (§NET-AUDIT 2026-09-27, W-XRAY-SC-LIVE root cause): a re-fold rebuilds every mesh with its default
+// material and the walked buckets are rebuilt by _redrawAllDiscWalks — nothing re-applied x-ray, so any commit/undo
+// (or a walk's late GEOM_SWEEP commits) while x-ray was ON left the building opaque with the button still lit.
+// Measured on SampleCastle: 4 ops + 3 refolds landed mid-x-ray → structureLeaked=3144, fixtures glowing 0/274.
+// Same choke point the selection tint and shadows use; deferred one tick so the bucket redraw has run too.
+let _xrayReapplyPending = false;
+function _xrayReapply(src) {
+  if (!_xrayOn || _xrayReapplyPending) return;
+  _xrayReapplyPending = true;
+  setTimeout(() => { _xrayReapplyPending = false; if (!_xrayOn) return;
+    xrayReveal(true).then(r => console.log('§XRAY-REFOLD reapplied src=' + src + ' glass=' + r.glass + ' glow=' + r.glow)); }, 0);
+}
+window.Bonsai.decor.register('xray', () => { _xrayReapply('refold'); return _xrayOn ? 'on' : 'off'; });   // §B1-ROW1 (was its own listener)
 const bXray = document.getElementById('b-xray');
 function paintXray() { if (bXray) bXray.classList.toggle('on', _xrayOn); }
 if (bXray) bXray.onclick = async () => {
@@ -1084,7 +1116,7 @@ window.addEventListener('bonsai:oplog', () => { try { _paintSel(); } catch (e) {
 // 000000 while _selSet still held it. foldChainToScene now announces 'bonsai:refold' after the rebuilt
 // meshes land; repaint through _paintSel — the ONE existing tinting path, membership re-resolved by
 // featureId (meshes are NEW objects after a re-fold). Idempotent + cheap on the paths bonsai:oplog covers.
-window.addEventListener('bonsai:refold', () => { try { if (selectedIds.size) console.log('§SEL-TINT-REFOLD repaint n=' + selectedIds.size); _paintSel(); } catch (e) { } });
+window.Bonsai.decor.register('selTint', () => { if (selectedIds.size) console.log('§SEL-TINT-REFOLD repaint n=' + selectedIds.size); _paintSel(); return selectedIds.size; });   // §B1-ROW1 (was its own listener)
 // ── §ZOOM-SEL (MODELLER_ZOOM_TO_SELECTION.md — Witness: W-E2E-ZOOMSEL): port of the Viewer Find panel's
 // zoom-to-frame mechanism (viewer/navigate_find.js _lerpCam/_fitDistForBox/_zoomToBoxFill — the frustum-fit
 // variant, not the naive maxDim*factor one). Fires automatically on every real selection change via
@@ -1163,7 +1195,7 @@ function setSelectionIds(ids, primary) {
   selectedIds = new Set((ids || []).filter(x => x != null)); window.Bonsai._selSet = selectedIds;
   const g = window.Bonsai.group && window.Bonsai.group();
   selectedId = (primary != null && selectedIds.has(primary)) ? primary : (selectedIds.size ? Array.from(selectedIds).pop() : null);
-  selectedMesh = (selectedId != null && g) ? g.children.find(o => o.isMesh && o.userData.featureId === selectedId) : null;
+  selectedMesh = (selectedId != null && g) ? window.Bonsai.meshFor(selectedId) : null;
   _paintSel();
   bCut.disabled = selectedId == null;
   const bd = document.getElementById('b-del'); if (bd) bd.disabled = selectedId == null;   // Delete acts on the selection
@@ -1190,7 +1222,7 @@ function toggleSelect(mesh) {                             // shift-click: add/re
 }
 window.Bonsai.select = (fid) => {                 // witness/programmatic hook (REPLACE-select)
   const g = window.Bonsai.group && window.Bonsai.group();
-  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  const m = g && window.Bonsai.meshFor(fid);
   highlight(m || null); return selectedId;
 };
 window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids.length) ? fids[fids.length - 1] : null); return Array.from(selectedIds); };
@@ -1201,7 +1233,7 @@ window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids
 // Visibility is a session LENS: a re-walk/re-fold that rebuilds meshes resets it (documented, spec §V1).
 window.Bonsai.setFeatureVisible = (fid, vis) => {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return false;
-  const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return false;
+  const m = window.Bonsai.meshFor(fid); if (!m) return false;
   m.visible = !!vis;
   const o = _selOutlines.get(fid); if (o) o.line.visible = m.visible;   // §V5: outline follows its mesh
   if (window.A && A.requestRender) A.requestRender();
@@ -1329,7 +1361,7 @@ window.Bonsai.setAllVisible = () => {                     // reset before determ
 // (materials are per-mesh MeshStandardMaterial — no shared-material bleed); a walked bucket dims whole-bucket
 // when NO leaf of its discipline matches (bucket granularity, same §DECISIONS-2 rule). null restores exactly
 // from the saved pre-dim snapshot. DIM (not hide) keeps spatial context and stays out of the raycaster's way.
-let _dimActive = false;
+let _dimActive = false, _dimLastSel = null;   // §B1-ROW1: last selection, re-applied after a re-fold
 function _dimMat(mat, keep) {
   if (!mat) return;
   if (!mat.userData._preDim) mat.userData._preDim = { t: mat.transparent, o: mat.opacity, dw: mat.depthWrite };
@@ -1352,11 +1384,18 @@ window.Bonsai.dimExcept = (sel) => {
     const keep = !sel || sel.discs.has(disc);
     _dimMat(o.material, keep); if (!keep) dimmed++;
   });
-  _dimActive = !!sel;
+  _dimActive = !!sel; _dimLastSel = sel || null;
   if (window.A && A.requestRender) A.requestRender();
   console.log('§MODELLER §OLFILTER-DIM ' + (sel ? ('dimmed=' + dimmed + ' keepFids=' + sel.fids.size + ' keepDiscs=' + sel.discs.size) : 'restored'));
   return dimmed;
 };
+// §B1-ROW1: eye-hide (+ §I5 instance-hide + disc-bucket hide) and the find-box dim follow the Outliner's state through a
+// re-fold. _applyHidden already resets-then-re-applies deterministically and never reveals an anchor (setAllVisible).
+window.Bonsai.decor.register('hidden', () => {
+  const O = window.Bonsai.outliner; if (!(O && O._hidden && Object.keys(O._hidden).length && O._applyHidden)) return 0;
+  return O._applyHidden();
+});
+window.Bonsai.decor.register('dim', () => (_dimActive && _dimLastSel) ? window.Bonsai.dimExcept(_dimLastSel) : 0);
 // ── §POLISH3 §V6 (Witness: W-E2E-SHADOWS): event-driven shadow flags + the PERF GUARD. Same doctrine as
 // DW_ALL_PROXY_THRESHOLD: above SHADOW_MAX_ELEMENTS total elements (authored meshes + walked instances) the
 // shadow pass auto-disables — Terminal-scale walks never pay a per-frame shadow render. Flags are applied on
@@ -1395,7 +1434,7 @@ window.addEventListener('bonsai:oplog', () => { try { _applyShadowFlags(); } cat
 // re-fold (history slider, x-ray restore, Connect timeline) rebuilds every mesh with castShadow/receiveShadow
 // FALSE and never fires bonsai:oplog — so the scene renders subtly unshadowed until the next commit. Re-apply
 // at the same 'bonsai:refold' choke point the selection repaint uses (event from foldChainToScene).
-window.addEventListener('bonsai:refold', () => { try { _applyShadowFlags(); } catch (e) { } });
+window.Bonsai.decor.register('shadow', () => _applyShadowFlags() ? 'on' : 'off');   // §B1-ROW1 (was its own listener)
 // ── Outliner→scene camera fly-to (2026-07-02, RESUME §3): click an Outliner row → besides the existing
 // select/highlight (window.Bonsai.select → setActive), smoothly orbit the camera in CLOSER, framed on that
 // element's own bbox centre — mirrors viewer/measure.js's _flyToClash/_animFly easing pattern (ease-in-out
@@ -1421,7 +1460,7 @@ function _frameTo(c, diag, tag) {                          // §Q2: shared camer
 }
 window.Bonsai.frameFeature = (fid) => {
   const g = window.Bonsai.group && window.Bonsai.group();
-  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  const m = g && window.Bonsai.meshFor(fid);
   if (!m || !m.geometry) return false;
   m.geometry.computeBoundingBox();
   const bb = m.geometry.boundingBox;
@@ -1589,7 +1628,7 @@ canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(n
 // selection emissive (setHover already skips them).
 window.Bonsai.hoverFeature = (fid) => {
   const g = window.Bonsai.group && window.Bonsai.group();
-  const m = (fid != null && g) ? g.children.find(o => o.isMesh && o.userData.featureId === fid) : null;
+  const m = (fid != null && g) ? window.Bonsai.meshFor(fid) : null;
   setHover(m || null);
   return !!m;
 };
@@ -1906,7 +1945,7 @@ function gmTint(commands, riders, excludedFids, dagevu) {
   // instead of re-scanning g.children per command. Falls back to the old find() if no session is active (e.g.
   // called outside a real drag) — byte-identical result either way, just not re-derived every frame.
   const byFid = window.Bonsai.gridmove && window.Bonsai.gridmove.meshByFid ? window.Bonsai.gridmove.meshByFid() : null;
-  const meshFor = (fid) => byFid ? byFid[fid] : g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  const meshFor = (fid) => byFid ? byFid[fid] : window.Bonsai.meshFor(fid);
   gmClearTints(); let t = 0, s = 0, x = 0;
   commands.forEach(c => {
     const m = meshFor(c.featureId);
@@ -2157,7 +2196,7 @@ function idTint(fid, valid) {
   gmClearTints();
   const g = window.Bonsai.group && window.Bonsai.group();
   const byFid = window.Bonsai.gridmove && window.Bonsai.gridmove.meshByFid ? window.Bonsai.gridmove.meshByFid() : null;
-  const m = byFid ? byFid[fid] : (g && g.children.find(o => o.isMesh && o.userData.featureId === fid));
+  const m = byFid ? byFid[fid] : (g && window.Bonsai.meshFor(fid));
   if (m) _emis(m, valid ? 0x1ea83c : 0x8c1e1e);                    // green=valid / red=blocked (spec §3.3)
   if (window.A && A.requestRender) A.requestRender();
 }
@@ -3317,8 +3356,9 @@ async function autoRouteMEP(asm, leaves) {
     if (xs.refused) { refusedMEP.push({ disc: s.disc, reason: xs.reason }); return; }
     ops.push({
       op_type: 'GEOM_SWEEP',
-      parameters: { profile: { w: xs.w, h: xs.h }, path: [toWorld(s.from), toWorld(s.to)] },
-      _rw: { disc: s.disc, storey: s.storey, crossSection: xs.product }
+      // §RW-TAG-SIGNED (§NET-AUDIT 2026-09-27): oplog.commit signs ONLY {op_type, parameters} — a top-level _rw was dropped
+      // before it reached the log, so nothing downstream could ever read it. Carry it inside parameters, like DiscWalker's _dw.
+      parameters: { profile: { w: xs.w, h: xs.h }, path: [toWorld(s.from), toWorld(s.to)], _rw: { disc: s.disc, storey: s.storey, crossSection: xs.product } }
     });
   });
   const _refByDisc = {}; refusedMEP.forEach(r => { _refByDisc[r.disc] = (_refByDisc[r.disc] || 0) + 1; });
@@ -3361,8 +3401,10 @@ async function autoRouteMEP(asm, leaves) {
     const c = L.get(hash); const ch = c ? c.h : 0.4;
     const w = toWorld([f.x, f.y, f.z]);
     const op = { op_type:'GEOM_INSERT',
-      parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200', color: rgbaHex(f.rgba) },
-      _rw: { fixture: true, disc: f.disc, product: f.product, ifc: f.ifcClass, room: f.room } };
+      // §RW-TAG-SIGNED: _rw inside parameters so it is SIGNED (a top-level _rw never reached the log) — x-ray's
+      // _fixtureColorMap reads parameters._rw.fixture; before this every route-walk fixture read as structure (glow=0/21).
+      parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200', color: rgbaHex(f.rgba),
+        _rw: { fixture: true, disc: f.disc, product: f.product, ifc: f.ifcClass, room: f.room } } };
     try { const res = await window.Bonsai.oplog.commit(op); if (res) placedFx++; }
     catch (e) { console.warn('§MODELLER fixture commit fail ' + (e && e.message || e)); }
     setStat('placing fixtures… ' + placedFx + '/' + fixtures.length);
@@ -3379,6 +3421,9 @@ async function autoRouteMEP(asm, leaves) {
   // Step E: the placed fixtures POP in room-by-room over ~1.5s (whoosh → ticks → chord) — the "all systems go" reveal.
   // (__suppressWalk lets the colour/x-ray self-tests inspect the static placed scene without the animation racing them.)
   if (placedFx > 0 && typeof revealWalk === 'function' && !window.__suppressWalk) revealWalk();
+  // §NET-AUDIT (2026-09-27): the routewalk self-tests hardcoded 23 fixtures, but §WALKERDOCTRINE-11 refuses products with no
+  // real catalog box (SampleHouse: AIRCON_POINT ×2 → 21 placed). Expose the plan so a self-test checks placed == planned − refused.
+  window.__rwLastRoute = { planned: fixtures.length, placed: placedFx, refused: refusedFx.length };
   return { found: segs.length, routed: routed, emitted: ops.length, fixtures: placedFx, fxDisc: fxDisc, bmin: bmin.map(v => +v.toFixed(3)) };
 }
 async function placeAssembly(x, y) {
@@ -3809,6 +3854,32 @@ function _discWalkNow(disc, ctx) {
 // logic. Returns { refused, reason, placed } (never throws — same try/catch-and-log the original IIFE had).
 // opts.flash=true (discWalkAll only) plays the orange-flash-then-settle reveal on the just-gated placements
 // BEFORE committing (see _flashSettleDisc) — single-disc discWalk never sets it, so its visuals are unchanged.
+// §WALK-LOD400-ONLY (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md, red1 2026-09-27: "no BBoxes or cubes, or LOD200 fallback. All must
+// be LOD400 or fail hard"). A walked placement is kept ONLY if its geometry_hash resolves to a real mesh in the building's geo
+// buffer; everything else is REFUSED — never registered, rendered or committed. Measured before this gate: SampleCastle rendered
+// 366 LOD200 boxes (legacy walk placements with no device/hash — binding one would be inventing), and Duplex drew boxes when a walk
+// beat the geo fetch. Waits for the geo buffer first (cap 60 s) so a resident's own meshes never refuse from a race.
+async function _dwLod400Only(disc, w) {
+  var t0 = Date.now();
+  while (!window.__dwGeoBuf && Date.now() - t0 < 60000) await new Promise(function (r) { setTimeout(r, 200); });
+  var hashes = {}; w.placements.forEach(function (p) { if (p.geometry_hash) hashes[p.geometry_hash] = 1; });
+  var real = {};
+  if (window.__dwGeoBuf && window.RealGeometry && Object.keys(hashes).length) {
+    try { var g = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(g, Object.keys(hashes)); g.close(); }
+    catch (e) { console.warn('§DW-LOD400-REFUSE ' + disc + ' geo resolve failed ' + (e && e.message)); real = {}; }
+  }
+  var kept = [], refused = {}, nRef = 0;
+  w.placements.forEach(function (p) {
+    if (p.geometry_hash && real[p.geometry_hash]) { kept.push(p); return; }
+    var k = String(p.ifc_class || '?').replace(/^Ifc/, '') + (p.geometry_hash ? '(hash unresolved)' : '(no hash)');
+    refused[k] = (refused[k] || 0) + 1; nRef++;
+  });
+  if (nRef) console.log('§DW-LOD400-REFUSE disc=' + disc + ' refused=' + nRef + ' kept=' + kept.length + ' geoBuf=' + !!window.__dwGeoBuf +
+    ' waited=' + (Date.now() - t0) + 'ms [' + Object.keys(refused).map(function (k) { return k + '×' + refused[k]; }).join(' ') + '] (no box, no LOD200 — fail hard)');
+  w.placements = kept; w.placed = kept.length;
+  if (!kept.length) { w.refused = true; w.reason = 'no LOD400 mesh for any of ' + nRef + ' placement(s) — refused, never a box (§WALK-LOD400-ONLY)'; }
+  return w;
+}
 async function _discWalkOne(disc, ctx, opts) {
   opts = opts || {};
   var name = (ctx && ctx.building) || '';
@@ -3844,7 +3915,7 @@ async function _discWalkOne(disc, ctx, opts) {
     // 5/5). A building neither path can serve (no spaces + no rule_mesh_binding → honest 0) falls back to
     // the LEGACY walk below, byte-identical to before the flip — no resident loses placements; the flip is
     // strictly additive where the mined data supports it. §-logged both ways, never silent.
-    //   opts.geoDb  — transient open of the shared mesh.db buffer (stashed __dwGeoBuf at resident-open):
+    //   opts.geoDb  — transient open of this building's _geo.db buffer (stashed __dwGeoBuf at resident-open; §GEO-SERVED split of the old shared mesh.db):
     //                 hostBind/_trueMidpoint midpoint correction now runs on REAL meshes in the live walk
     //                 (legacy live walks passed no geoDb at all — a standing correctness gap, now closed).
     //   opts.avoid  — other discs' live placements (window.__dwWalks): W7 cross-disc clearance coordination.
@@ -3862,6 +3933,7 @@ async function _discWalkOne(disc, ctx, opts) {
     }
     if (gdb) { try { gdb.close(); } catch (e2) { } }
     bdb.close();
+    if (!w.refused && w.placed && !w.verdict) await _dwLod400Only(disc, w);   // §WALK-LOD400-ONLY: refuse, never box
     if (w.refused || !w.placed) {
       _clearDiscWalk(disc);
       setStat(disc + ' — no walk (' + (w.reason || 'no placements') + ')');
@@ -3908,8 +3980,8 @@ async function _discWalkOne(disc, ctx, opts) {
     }
     // §3c ASSEMBLE: when a routed network exists, instantiate the projected catalog PARTS at the real
     // routed NODES (rule_joint_piece — pose from the node, Ø from the measured catalog, orientation from
-    // the run vector) + enrich them with their connector hookup. Rendered as boxes via the _dwPrimGeo LOD
-    // seam. No network (e.g. SC FP has no duct topology) → honest REFUSE, logged, no fabricated part.
+    // the run vector) + enrich them with their connector hookup. Rendered ONLY from a real mesh (§WALK-LOD400-ONLY —
+    // a part with no resolvable geometry_hash is refused, never boxed). No network (e.g. SC FP has no duct topology) → honest REFUSE, logged, no fabricated part.
     var asmN = 0;
     try {
       if (window.DiscWalker.assemble) {
@@ -3920,7 +3992,7 @@ async function _discWalkOne(disc, ctx, opts) {
         if (asm && !asm.refused && asm.parts && asm.parts.length) {
           window.DiscWalker.connectorEnrich(asm.parts);
           _renderDiscAssembly(disc, asm.parts);
-          asmN = asm.parts.length;
+          asmN = (window.__dwAssembly[disc] || []).length;   // drawn parts only — refused ones are logged by the renderer
         }
         console.log('§DW-ASSEMBLE ' + disc + ' connectors=' + connN + '/' + w.placements.length +
           ' parts=' + asmN + (asm && asm.refused ? ' (assemble REFUSE: ' + asm.reason + ')' :
@@ -4023,7 +4095,7 @@ function _renderDiscWalk(disc, placements) {
   // the 0.18 marker cube fallback (never a fabricated size). The 3-material split is preserved per class.
   // §LIVEWIRE LOD400 (RESUME_DISC_WALKER_ENVELOPE_BOUND.md §LIVEWIRE item 5 — the render seam): a
   // schedule/measured-band placement carries its MINED real mesh hash (rule_space_schedule /
-  // rule_mesh_binding, projected into the shared mesh.db by project_device_meshes_to_meshdb.py).
+  // rule_mesh_binding, projected into the mesh store by project_device_meshes_to_meshdb.py; served per building in <Building>_geo.db since §GEO-SERVED — measured 2026-09-27: Duplex ELEC lod400=102).
   // Bucket by (class, hash) — one InstancedMesh geometry per REAL mesh, recentred about its own bbox
   // centre (RealGeometry.resolveHashes), exactly the centre semantics the measured box already had.
   // No hash / hash unresolvable → the pre-existing _dwPrimGeo path (LOD300 catalog match or measured
@@ -4048,7 +4120,7 @@ function _renderDiscWalk(disc, placements) {
           return { hash: h, v: _lod400[h].positions, f: _lod400[h].faces, bbox: _lod400[h].bbox, anchorOffset: [0, 0, 0] };
         }));
       }
-    } catch (e) { console.warn('§DW-PRIM-LOD mesh.db resolve failed ' + (e && e.message)); _lod400 = {}; }
+    } catch (e) { console.warn('§DW-PRIM-LOD geo db resolve failed (' + (window.__dwName || '?') + '_geo.db) ' + (e && e.message)); _lod400 = {}; }
   }
   var dims = [];
   var lod400N = 0, lod300N = 0, lod200N = 0;                                    // honesty tally (real mined mesh / catalog match / box)
@@ -4068,7 +4140,10 @@ function _renderDiscWalk(disc, placements) {
       geo.userData.lod400 = true; geo.userData.hash = s.geometry_hash;
       isLod400 = true;
     } else {
-      geo = window._dwPrimGeo(prim, bx, by, bz, cls);                           // POC box (measured) or catalog-matched LOD300 mesh
+      // §WALK-LOD400-ONLY: no box / LOD300 stand-in, ever. The gate in _discWalkOne keeps only placements whose mesh
+      // resolved; reaching here means that mesh was not resolvable at redraw time → refuse the bucket, log it.
+      console.warn('§DW-LOD400-REFUSE render disc=' + disc + ' class=' + cls + ' ×' + list.length + ' — no real mesh at redraw, not drawn');
+      return;
     }
     var isLod300 = !!(geo.userData && geo.userData.lod300);
     if (isLod400) lod400N += list.length; else if (isLod300) lod300N += list.length; else lod200N += list.length;
@@ -4115,7 +4190,7 @@ function _renderDiscWalk(disc, placements) {
   window.__dwInstVer++;   // §I5: fresh buckets → invalidate the record→(im,i) ref map (hidden lens resets, §V1 doctrine)
   console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
   console.log('§DW-PRIM-LOD disc=' + disc + ' lod400=' + lod400N + ' lod300=' + lod300N + ' lod200=' + lod200N +
-    ' (lod400=rule-mined REAL mesh from shared mesh.db [§LIVEWIRE], lod300=matched real catalog mesh, lod200=measured POC box; honest tally, never silently "fixed")');
+    ' (lod400=rule-mined REAL mesh from the per-building _geo.db — the per-building split of the old shared mesh.db, §GEO-SERVED [§LIVEWIRE], lod300=matched real catalog mesh, lod200=measured POC box; honest tally, never silently "fixed")');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   try { _applyShadowFlags(); } catch (e) { }   // §POLISH3 §V6: new buckets get cast/receive flags (or trip the perf guard)
   // §DW-DEDUP-RENDER (DW_FIXTURE_DOUBLE_RENDER_FINDING.md G1-G3, visual z-fighting confirmed 2026-07-17
@@ -4289,8 +4364,8 @@ window.discWalkAll = async function (ctx) {
   return window.__dwAllResult;
 };
 // §3c ASSEMBLE render — catalog PARTS instantiated at the real routed NODES (disc_walker.assemble): each part
-// is a BOX via the _dwPrimGeo LOD seam, oriented by its run vector (part.dir), tinted by disc, plus its
-// connector hookup edge. This is the LANDED assembly layer (parts sit on real element endpoints — the assembly
+// renders ONLY from its own real mesh (geometry_hash resolved in the building geo — §WALK-LOD400-ONLY; a part without
+// one is refused and logged, never a box), tinted by disc, plus its connector hookup edge. This is the LANDED assembly layer (parts sit on real element endpoints — the assembly
 // analogue of the tube network); stored so a later commit re-fold redraws it. Refuses honestly when no network.
 window.__dwAssembly = window.__dwAssembly || {};   // disc -> assembled parts (for redraw-after-scrub)
 function _renderDiscAssembly(disc, parts) {
@@ -4301,26 +4376,40 @@ function _renderDiscAssembly(disc, parts) {
   if (!parts || !parts.length) { if (window.A && A.requestRender) A.requestRender(); return; }
   var base = DW_COLOR[disc] || 0xc0c0c0;
   var mat = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.4, metalness: 0.2, roughness: 0.5 });
-  var up = new THREE.Vector3(0, 0, 1), dir = new THREE.Vector3(), q = new THREE.Quaternion(), pos = new THREE.Vector3();
-  var sc = new THREE.Vector3(1, 1, 1), m = new THREE.Matrix4();
-  var byCls = {};
-  parts.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
+  var m = new THREE.Matrix4();
+  // §WALK-LOD400-ONLY (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md, red1 2026-09-27: "no BBoxes or cubes, or LOD200 fallback. All must
+  // be LOD400 or fail hard"). An assembled part used to render as a BoxGeometry(Ø, Ø, length) of the catalog's measured medians — a
+  // box standing in for a fitting. Now a part renders ONLY from a real mesh: its geometry_hash resolved in this building's geo buffer
+  // (the SAME RealGeometry seam _renderDiscWalk uses; recentred mesh, placed at the node + the walker's yaw). A part with no hash, or
+  // an unresolvable one, is REFUSED — not drawn, not given an Outliner row — and logged §DW-LOD400-REFUSE asm. Today's assemble()
+  // emits Ø/length medians only (no mesh binding), so every such part refuses; the routed node itself is already drawn by the walk.
+  var hashes = {}; parts.forEach(function (p) { if (p.geometry_hash) hashes[p.geometry_hash] = 1; });
+  var real = {};
+  if (Object.keys(hashes).length && window.__dwGeoBuf && window.RealGeometry && window.SQL) {
+    try { var gdb = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(gdb, Object.keys(hashes)); gdb.close(); }
+    catch (e) { console.warn('§DW-LOD400-REFUSE asm disc=' + disc + ' geo resolve failed ' + (e && e.message)); real = {}; }
+  }
+  var byKey = {}, refused = {}, nRef = 0, drawn = [];
+  parts.forEach(function (p) {
+    if (p.geometry_hash && real[p.geometry_hash]) { var k = p.ifc_class + '|' + p.geometry_hash; (byKey[k] = byKey[k] || []).push(p); drawn.push(p); return; }
+    var rk = String(p.ifc_class || '?').replace(/^Ifc/, '') + (p.geometry_hash ? '(hash unresolved)' : '(no mesh)');
+    refused[rk] = (refused[rk] || 0) + 1; nRef++;
+  });
+  window.__dwAssembly[disc] = drawn;   // Outliner rows / redraw carry only what is actually on screen
+  if (nRef) console.log('§DW-LOD400-REFUSE asm disc=' + disc + ' refused=' + nRef + ' drawn=' + drawn.length + ' [' +
+    Object.keys(refused).map(function (k) { return k + '×' + refused[k]; }).join(' ') + '] (no box — fail hard)');
   var verts = [];
-  Object.keys(byCls).forEach(function (cls) {
-    var list = byCls[cls];
-    var d = (list[0].diameter_mm || 100) / 1000, L = (list[0].length_mm || 200) / 1000;   // measured Ø/length → box (m)
-    // Bug-2 scope: NOT wired to the LOD300 catalog match here (deliberately, unlike _renderDiscWalk above) — this
-    // BoxGeometry(d,d,L)'s long axis is Z BY CONSTRUCTION (THREE.BoxGeometry(w,h,depth) → depth=Z=L), which the
-    // quaternion below (up=(0,0,1) → p.dir) relies on to orient the run along its real direction. The 3 catalog
-    // meshes are baked with their long axis on X (Beam/Door) — swapping one in under the SAME Z→dir quaternion
-    // would rotate it 90° off its real run direction (a WRONG, not just approximate, render) — worse than the
-    // honest box. No ifcClass passed ⇒ _dwPrimGeo's match guard short-circuits ⇒ same box as before, unchanged.
-    var geo = window._dwPrimGeo('run', d, d, L);                                            // LOD seam (POC box of catalog dims)
+  Object.keys(byKey).forEach(function (key) {
+    var list = byKey[key], d400 = real[list[0].geometry_hash];
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(d400.positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(d400.faces, 1));
+    geo.computeVertexNormals();
+    geo.userData.lod400 = true; geo.userData.hash = list[0].geometry_hash;
     var im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach(function (p, i) {
-      var v = p.dir || [0, 0, 1]; dir.set(v[0], v[1], v[2]).normalize();
-      q.setFromUnitVectors(up, dir); pos.set(p.pos[0], p.pos[1], p.pos[2]);
-      im.setMatrixAt(i, m.compose(pos, q, sc));
+      m.makeRotationZ(p.yaw || 0); m.setPosition(p.pos[0], p.pos[1], p.pos[2]);
+      im.setMatrixAt(i, m);
       if (p.connector && p.connector.faceDir) {
         var fd = p.connector.faceDir, off = (p.standoff_m > 0 ? p.standoff_m : 0.3);
         verts.push(p.pos[0], p.pos[1], p.pos[2], p.pos[0] + fd[0] * off, p.pos[1] + fd[1] * off, p.pos[2] + fd[2] * off);
@@ -4330,12 +4419,13 @@ function _renderDiscAssembly(disc, parts) {
     im.userData.dwSub = list;   // §Q2: assembled parts carry real node guids — same instanceId↔record contract
     root.add(im);
   });
+  var byCls = byKey;
   if (verts.length) {
     var cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
     var cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x9be7ff }));
     cl.userData.dwAsm = disc; root.add(cl);
   }
-  console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' classes=' + Object.keys(byCls).length +
+  console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' drawn=' + drawn.length + ' refused=' + nRef + ' buckets=' + Object.keys(byCls).length +
     ' connectorEdges=' + (verts.length / 6));
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();   // §I5d: assembly parts get Walked-Fixtures rows too
   if (window.A && A.requestRender) A.requestRender();
@@ -4704,6 +4794,7 @@ function _redrawAllDiscWalks() {
   if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
   if (window.__dwTrunk) Object.keys(window.__dwTrunk).forEach(function (d) { if (window.__dwTrunk[d]) _renderSeedTrunk(d, window.__dwTrunk[d]); });   // seed→trunk
   _hideUndoneWalkLayers();
+  _xrayReapply('dw-redraw');   // §XRAY-REFOLD: fresh buckets come back without the x-ray glow
 }
 // §WALK-GESTURE-DRAW (2026-09-24, §STRATEGY L4): the decorative walk layer (markers, run tubes, assembly parts,
 // trunk) is drawn from JS state (__dwWalks/__dwChains/…), not from the op-log. So after a walk is undone its
@@ -6040,8 +6131,10 @@ if (qs.get('routewalk') === 'sh') {
       out.colouredFixtures = coloured; out.miscolouredFixtures = miscoloured; out.distinctColours = Object.keys(hexSet).length;
       console.log('§MODELLER routewalk-sh-colour coloured=' + coloured + '/' + fxOps.length + ' miscoloured=' + miscoloured +
         ' distinct=' + out.distinctColours + ' hex=' + Object.keys(hexSet).map(h => (+h).toString(16)).join(','));
-      out.pass = out.fixtures === 23 && out.fixtureOps === 23 && out.hasELEC && out.hasACMV && out.noWetRoom && out.verify &&
-        out.colouredFixtures === 23 && out.miscolouredFixtures === 0 && out.distinctColours >= 3;
+      const _rwN = window.__rwLastRoute ? window.__rwLastRoute.planned - window.__rwLastRoute.refused : -1;   // §NET-AUDIT: was a literal 23
+      out.expectedFixtures = _rwN;
+      out.pass = _rwN > 0 && out.fixtures === _rwN && out.fixtureOps === _rwN && out.hasELEC && out.hasACMV && out.noWetRoom && out.verify &&
+        out.colouredFixtures === _rwN && out.miscolouredFixtures === 0 && out.distinctColours >= 3;
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk sh fail ' + e); }
     window.__routewalkShResult = out;
     window.__routewalkShDone = true;
@@ -6094,9 +6187,11 @@ if (qs.get('routewalk') === 'xray') {
       });
       out.structureRestored = restored; out.stillGlowing = stillGlowing; out.fixturesColouredAfter = fixturesColoured;
       out.verify = (await O.verify()).ok;
-      out.pass = out.fixtures === 23 && out.glow === 23 && out.glass >= 50 &&
-        out.glassOK === out.glass && out.glowOK === 23 && out.glowColourOK === 23 && out.shineThrough === 23 &&
-        out.structureRestored === out.glass && out.stillGlowing === 0 && out.fixturesColouredAfter === 23 && out.verify;
+      const _rwN = window.__rwLastRoute ? window.__rwLastRoute.planned - window.__rwLastRoute.refused : -1;   // §NET-AUDIT: was a literal 23
+      out.expectedFixtures = _rwN;
+      out.pass = _rwN > 0 && out.fixtures === _rwN && out.glow === _rwN && out.glass >= 50 &&
+        out.glassOK === out.glass && out.glowOK === _rwN && out.glowColourOK === _rwN && out.shineThrough === _rwN &&
+        out.structureRestored === out.glass && out.stillGlowing === 0 && out.fixturesColouredAfter === _rwN && out.verify;
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk xray fail ' + e); }
     window.__xrayResult = out;
     window.__xrayDone = true;
@@ -6276,7 +6371,7 @@ if (qs.get('connectid') === 'demo') {
 if (qs.get('place') === 'demo') {
   (async () => {
     const out = {};
-    const meshOf = (fid) => { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { zmin: +b.min.z.toFixed(2), zmax: +b.max.z.toFixed(2), xext: +(b.max.x - b.min.x).toFixed(2), yext: +(b.max.y - b.min.y).toFixed(2) }; };
+    const meshOf = (fid) => { const m = window.Bonsai.meshFor(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { zmin: +b.min.z.toFixed(2), zmax: +b.max.z.toFixed(2), xext: +(b.max.x - b.min.x).toFixed(2), yext: +(b.max.y - b.min.y).toFixed(2) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (gx, gy) => { const v = new THREE.Vector3(gx, gy, 0).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
     const clickGround = async (gx, gy) => { const c = toClient(gx, gy); const before = window.Bonsai.oplog.length; canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...c, bubbles: true })); for (let i = 0; i < 40 && window.Bonsai.oplog.length === before; i++) await new Promise(r => setTimeout(r, 50)); };
@@ -6644,7 +6739,7 @@ if (qs.get('move') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const centreOf = (fid) => { const m = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
+    const centreOf = (fid) => { const m = window.Bonsai.meshFor(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
     try {
       window.Bonsai.grid.define({ xs: [0, 1, 2, 3, 4], ys: [0, 3], xlabels: ['A', 'B', 'C', 'D', 'E'], ylabels: ['1', '2'] });
       window.Bonsai.grid.show(true);
@@ -6691,7 +6786,7 @@ if (qs.get('move') === 'demo') {
       const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [2, 0], [2, 0.2], [0, 0.2]] }, depth: 3 } });
       await sleep(50);
       out.wallBeforeX = centreOf(wall.id) ? centreOf(wall.id).x : null;   // ~1
-      selectedId = wall.id; selectedMesh = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === wall.id);
+      selectedId = wall.id; selectedMesh = window.Bonsai.meshFor(wall.id);
       await commitMove(1, 0, 0); await sleep(300);
       out.wallAfterX = centreOf(wall.id) ? centreOf(wall.id).x : null;    // ~2 (occt shape translated)
       await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [2.6, -1, 1], c2: [2.9, 1, 2] } } });
@@ -6712,7 +6807,7 @@ if (qs.get('multiselect') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const centreOf = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
@@ -6842,7 +6937,7 @@ if (qs.get('snapgeom') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const bboxOf = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { minx: +b.min.x.toFixed(3), miny: +b.min.y.toFixed(3), maxx: +b.max.x.toFixed(3), maxy: +b.max.y.toFixed(3) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
@@ -6911,7 +7006,7 @@ if (qs.get('rotate') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const dims = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { ex: +(b.max.x - b.min.x).toFixed(3), ey: +(b.max.y - b.min.y).toFixed(3), cx: +((b.min.x + b.max.x) / 2).toFixed(3), cy: +((b.min.y + b.max.y) / 2).toFixed(3) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
@@ -6965,7 +7060,7 @@ if (qs.get('grouprot') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = fid => { const g = window.Bonsai.group(); return g && g.children.find(o => o.isMesh && o.userData.featureId === fid); };
+    const meshOf = fid => window.Bonsai.meshFor(fid);
     const dims = fid => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox;
       return { ex: +(b.max.x - b.min.x).toFixed(3), ey: +(b.max.y - b.min.y).toFixed(3), cx: +((b.min.x + b.max.x) / 2).toFixed(3), cy: +((b.min.y + b.max.y) / 2).toFixed(3) }; };
     const near = (a, b, t) => Math.abs(a - b) <= (t || 0.12);
@@ -7006,7 +7101,7 @@ if (qs.get('hover') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const emisOf = (fid) => { const m = meshOf(fid); return m && m.material && m.material.emissive ? m.material.emissive.getHex() : null; };
     const centreClient = (fid) => { const m = meshOf(fid); m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; const c = new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2); const r = canvas.getBoundingClientRect(); const v = c.project(camera); return { clientX: r.left + (v.x + 1) / 2 * r.width, clientY: r.top + (1 - v.y) / 2 * r.height }; };
     const move = (pt, buttons) => canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: pt.clientX, clientY: pt.clientY, buttons: buttons || 0, bubbles: true }));
@@ -7056,7 +7151,7 @@ if (qs.get('gmpreview') === 'demo') {
       const d = toClient(4, 1.5), m = toClient(5.5, 1.5);
       canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...d, bubbles: true })); out.grabbed = _dragGrid && _dragGrid.id;
       canvas.dispatchEvent(new PointerEvent('pointermove', { ...m, bubbles: true })); out.dragDelta = _dragGrid ? +(_dragGrid.delta || 0).toFixed(2) : null;
-      const emis = id => { const o = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === id); return o ? '#' + o.material.emissive.getHexString() : null; };
+      const emis = id => { const o = window.Bonsai.meshFor(id); return o ? '#' + o.material.emissive.getHexString() : null; };
       out.tintW1 = emis(w1.id);                          // mid-drag PREVIEW (before release): blue 1e66c8 = translate
       out.tintW2 = emis(w2.id);                          // orange c8731e = stretch
       out.opsBeforeRelease = O._geomOps().filter(o => o.op_type === 'GEOM_GRID_MOVE').length;   // 0 — preview only, not committed

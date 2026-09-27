@@ -76,9 +76,13 @@ runE2E('W-E2E-INSTHIDE', async (t) => {
         const ops = window.Bonsai.oplog._geomOps() || [];
         const kx = (+rec.x).toFixed(4), ky = (+rec.y).toFixed(4), kz = (+rec.z).toFixed(4);
         return ops.filter(o => { const pm = o.parameters;
+          // §NET-AUDIT (2026-09-26): the rendered record's z is the fixture CENTRE; the signed op keeps the BASE in
+          // placement.z and the centre in _dw.cz (measured: all 40 outlets dz=-0.05718 = half the 0.1143 m mesh). The
+          // old exact placement.z match found 0 of 480 twins. Match the centre field.
+          const cz = pm && pm._dw && pm._dw.cz != null ? pm._dw.cz : (pm && pm.placement ? pm.placement.z : NaN);
           return pm && pm._dw && pm._dw.disc === 'ELEC' && pm.placement &&
             (+pm.placement.x).toFixed(4) === kx && (+pm.placement.y).toFixed(4) === ky &&
-            (+pm.placement.z).toFixed(4) === kz; }).map(o => o.id);
+            (+cz).toFixed(4) === kz; }).map(o => o.id);
       },
       // Find a FIXED camera pose + 5 walked placements (same big InstancedMesh) whose authored twin is the
       // frontmost raycast hit at its own projected spot (⇒ hiding the placement must change those pixels),
@@ -146,7 +150,7 @@ runE2E('W-E2E-INSTHIDE', async (t) => {
   const dset = await pg.evaluate(() => window.__ih.discover());
   console.log('  §IH-DISCOVER ' + JSON.stringify(dset && dset.found.map(f => ({ idx: f.idx, i: f.i, twins: f.twins }))));
   t.assert('H1-rig discovery found 5 twin-frontmost placements in ONE InstancedMesh (count=' + (dset && dset.count) + ')',
-    !!dset && dset.found.length === 5, dset ? '' : 'no pose found');
+    !!dset && dset.found.length === 5, dset ? '' : 'INCONCLUSIVE — fixture absent: no pose shows 5 unoccluded twins ≥70px apart (§NET-AUDIT 2026-09-26 measured: best=2 on the 40-outlet bucket over 4 azimuths, 0 over every ELEC bucket x 4 azimuths x above/below; walls and slabs occlude). Needs a fixture redesign, not a product fix.');
   if (!dset) return;
   const [T, S, K, M2, M3] = dset.found;
 
@@ -244,7 +248,10 @@ runE2E('W-E2E-INSTHIDE', async (t) => {
 
   // ── H5..H8: the pure-instanced ASSEMBLY leg (no authored twin — W-E2E-INSTPICK P2b precedent) ───
   await pg.evaluate(() => {
-    const parts = [0, 1, 2, 3].map(i => ({ disc: 'ASMH', guid: 'ASMH_PART_' + i, ifc_class: 'IfcDuctSegment',
+    // §WALK-LOD400-ONLY (2026-09-27): an assembly part renders ONLY from a real mesh — give the parts the REAL mesh hash of
+    // this building's own ELEC walk (resolved from Duplex_geo.db by the production renderer); hashless parts are refused.
+    const gh = (function () { const W = (window.__dwWalks && window.__dwWalks.ELEC) || []; const p = W.find(q => q.geometry_hash); return p ? p.geometry_hash : null; })();
+    const parts = [0, 1, 2, 3].map(i => ({ disc: 'ASMH', guid: 'ASMH_PART_' + i, ifc_class: 'IfcDuctSegment', geometry_hash: gh,
       piece_type: 'run', pos: [30 + i * 1.5, -30, 1.2], dir: [0, 0, 1], diameter_mm: 300, length_mm: 600 }));
     window.__dwRender.assembly('ASMH', parts);
     const c = window.A.camera, ct = window.A.controls;

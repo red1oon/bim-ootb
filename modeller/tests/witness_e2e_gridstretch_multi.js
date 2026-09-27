@@ -67,7 +67,11 @@ const CASES = [
     await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && !!window.THREE', { timeout: 30000 }).catch(() => {});
     await pg.click('#b-open'); await sleep(200);
     await pg.click(c.selector);
-    const opened = await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).then(() => true).catch(() => false);
+    // §NET-AUDIT (2026-09-27): 30 s was too tight for the SampleHouse IFC parse under 3-parallel load (X1 opened=false, then
+    // opened a moment later — dwName was set). Condition-based wait, so the higher cap costs nothing when it's fast.
+    const tOpen = Date.now();
+    const opened = await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 90000 }).then(() => true).catch(() => false);
+    console.log('  §GSM-OPEN ' + c.resident + '/' + c.mode + ' opened=' + opened + ' after ' + (Date.now() - tOpen) + 'ms');
     await sleep(c.mode === 'ifc' ? 4000 : 2000);
     const dwName = await pg.evaluate(() => window.__dwName || '');
 

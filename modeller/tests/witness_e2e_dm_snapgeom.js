@@ -57,6 +57,13 @@ runE2E('W-E2E-DM-SNAPGEOM', async (t) => {
   await pg.mouse.click(pa[0], pa[1]); await t.sleep(250);
   const selected = await pg.evaluate(() => window.Bonsai._selSet ? Array.from(window.Bonsai._selSet) : []);
   await pg.click('#b-move'); await t.sleep(300);
+  // §NET-AUDIT RACE (2026-09-26): the select click auto-flies the camera (§ZOOM-SEL); the hub/target pixels below are
+  // only valid on the settled frame. The fly also lands close on A (cam ≈(2.4,-1.4,3.9)), which puts the +4 m drag
+  // target off-canvas so the release never reaches the canvas and nothing commits (red since ≤2026-09-25, moves=[]).
+  // After it settles, put back this witness's oblique camera — a user's orbit/zoom, same as the one set above.
+  await t.flySettle();
+  await pg.evaluate(() => { const cam = window.A.camera, ctl = window.A.controls; cam.position.set(10, -5, 13); ctl.target.set(3, 3, 0); ctl.update(); if (window.A.requestRender) window.A.requestRender(); });
+  await t.sleep(350);
   const armed = await pg.evaluate(() => ({ on: !!document.querySelector('#b-move.on'), gizmo: !!window.A.scene.getObjectByName('MoveGizmo') }));
   console.log('§DM-SNAP selected=' + JSON.stringify(selected) + ' armed=' + JSON.stringify(armed));
   t.assert('G1 SELECT+ARM (real click selects A; real #b-move click arms the gizmo)',

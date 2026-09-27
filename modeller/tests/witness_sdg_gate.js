@@ -52,7 +52,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   console.log('═══ W-SDG-GATE — §GATE-1 RED/ORANGE conformity (node, REAL SampleHouse) ═══');
   var bdb = new SQL.Database(fs.readFileSync(DBPATH));
   var oplog = new SQL.Database();
-  var seed = await ArcEditable.seedArc(bdb, { commitGroup: function (ops, gid) { return KernelOps.commitGroup(oplog, ops, { gid: gid, baseTs: 1700000000000 }); }, building: 'SampleHouse' });
+  var seed = await ArcEditable.seedArc(bdb, { registerGeometry: function (a) { global.window.Bonsai.library.registerRealGeometry(a); } /* §FOLD-NO-BOX 2026-09-27: register what production registers — the fold now refuses (never boxes) an unregistered realGeomHash */, commitGroup: function (ops, gid) { return KernelOps.commitGroup(oplog, ops, { gid: gid, baseTs: 1700000000000 }); }, building: 'SampleHouse' });
   var fbg = seed.bridge.fidByGuid, gbf = seed.bridge.guidByFid;
   var opByFid = {}; seed.ops.forEach(function (o) { opByFid[fbg[o.outputGuid]] = o; });
   var xedges = CrossEdges.deriveAll(bdb);
@@ -73,11 +73,18 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   var walls = Object.keys(opByFid).filter(function (fid) { var c = opByFid[fid].params.ifc_class; return c === 'IfcWall' || c === 'IfcWallStandardCase'; }).map(Number);
   var A = walls[0], B = walls[1], C = walls[2];
 
-  // A1 — clean: lift wall A +10m into open space
+  // A1 — clean: lift wall A +10m into open space. §FOLD-NO-BOX (2026-09-27): the fold now uses the REAL meshes (box fallback refused);
+  // on real geometry every SampleHouse wall genuinely abuts a neighbour (measured: 5/5), so lifting one correctly leaves its real
+  // neighbours behind (ORANGE abuts-realign — A8's own semantics). "Clean" therefore means: no RED, no clearance ORANGE, and any
+  // ORANGE is abuts-realign against a REAL abutting neighbour of A (from the recovered abuts edges) — nothing invented.
+  var A1w = A;
+  var nbrOfA = {}; abutsPairs.forEach(function (p) { if (p.a === A) nbrOfA[p.b] = 1; if (p.b === A) nbrOfA[p.a] = 1; });
   var b1 = {}; Object.keys(base).forEach(function (f) { b1[f] = base[f]; });
-  var a1 = {}; Object.keys(base).forEach(function (f) { a1[f] = (+f === A) ? tr(base[f], [0, 0, 10]) : base[f]; });
-  var g1 = SdgGate.evaluate(b1, a1, [A], rel, {});
-  chk('A1 clean move (lift into open space) → no flags', g1.red.length === 0 && g1.orange.length === 0, 'red=' + g1.red.length + ' orange=' + g1.orange.length);
+  var a1 = {}; Object.keys(base).forEach(function (f) { a1[f] = (+f === A1w) ? tr(base[f], [0, 0, 10]) : base[f]; });
+  var g1 = SdgGate.evaluate(b1, a1, [A1w], rel, {});
+  var a1Stray = g1.orange.filter(function (o) { return !(o.kind === 'abuts-realign' && ((o.a === A && nbrOfA[o.b]) || (o.b === A && nbrOfA[o.a]))); });
+  chk('A1 clean move (lift into open space) → no RED, no clearance ORANGE; only abuts-realign vs A\'s REAL neighbours', g1.red.length === 0 && a1Stray.length === 0,
+    'wall=' + A + ' red=' + g1.red.length + ' orange=' + g1.orange.length + ' (abuts-realign vs real nbrs=' + (g1.orange.length - a1Stray.length) + ', stray=' + JSON.stringify(a1Stray) + ')');
 
   // A2 — RED clash: drive wall A onto wall B (delta = B.centre − A.centre)
   var dAB = [ctr(base[B])[0] - ctr(base[A])[0], ctr(base[B])[1] - ctr(base[A])[1], ctr(base[B])[2] - ctr(base[A])[2]];

@@ -103,6 +103,10 @@ const EXTRACT_FN = () => {
     const opened = await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).then(() => true).catch(() => false);
     // IFC-open runs a Worker (web-ifc wasm parse) — needs real headroom, same margin witness_e2e_walk_ifcopen.js uses.
     await sleep(mode === 'ifc' ? 5000 : 3000);
+    // §NET-AUDIT RACE (2026-09-27): the db path's ARC seed waits on the resident's _geo.db from object storage, so a fixed
+    // 3 s read 0 rendered / oplog 0 (G2 red on SampleHouse + Duplex). Wait for the seed to commit (cap 60 s), log the time.
+    { const t0 = Date.now(); await pg.waitForFunction(() => window.Bonsai && window.Bonsai.oplog && window.Bonsai.oplog.length > 0, { timeout: 60000, polling: 250 }).catch(() => {});
+      console.log('  §ARCSP-SEED-WAIT ' + mode + ' ' + resident + ' ' + (Date.now() - t0) + 'ms'); }
     const data = opened ? await pg.evaluate(EXTRACT_FN) : { count: 0, geoTable: null, byGuid: {} };
     const rendered = opened ? await pg.evaluate(() => ({
       groupChildren: window.Bonsai && window.Bonsai.group() ? window.Bonsai.group().children.length : -1,

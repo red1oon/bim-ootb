@@ -48,7 +48,11 @@ const EXPECT_ZERO = { FP: { SampleCastle: 'routewalker clash-skip leaves ~2 surv
   // same JUNCTION→JUNCTION steps give CW 2/2 on Duplex). Measured 2026-09-26.
   ELEC: { Duplex: 'mains-only pattern, 0/0@283 — no junction hop survives routewalker clash-skip (2026-09-26)',
           Terminal: 'mains-only pattern, 0/0@4231 — no junction hop survives routewalker clash-skip (2026-09-26)' } };
-const PLB_BASE = { Duplex: [18, 18], SampleCastle: [18, 18], Terminal: [2915, 2915] };   // M7: runs / signed; Terminal signed 60 → 2,915 by §MEP-SIGN-ALL (NEXT #3, 2026-09-26)
+// §WALK-LOD400-ONLY (2026-09-27, red1: "no BBoxes or cubes, or LOD200 fallback. All must be LOD400 or fail hard"): these walks now
+// REFUSE — their legacy placements carry no device and no mesh hash (SampleCastle ELEC 270 · ACMV 12 · PLB 84 boxes before), so
+// there are no LOD400 fixtures to route between. Asserted as refused (the §DW-LOD400-REFUSE line) with 0 runs; RED if boxes return.
+const REFUSED_LOD400 = { SampleCastle: { PLB: true, ELEC: true, ACMV: true } };
+const PLB_BASE = { Duplex: [18, 18], Terminal: [2915, 2915] };   // SampleCastle removed: PLB refused under §WALK-LOD400-ONLY   // M7: runs / signed; Terminal signed 60 → 2,915 by §MEP-SIGN-ALL (NEXT #3, 2026-09-26)
 const RESIDENTS = process.argv[2] === 'ALL' ? ['SampleHouse', 'Duplex', 'SampleCastle', 'HHS', 'Clinic', 'Hospital', 'HospitalGarage', 'Terminal'] : process.argv[2] ? process.argv[2].split(',') : ['Duplex', 'SampleCastle', 'Terminal'];
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.sql': 'text/plain' };
 const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/modeller/modeller.html';
@@ -67,7 +71,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850 });
     const errs = [], lines = []; let tWalk = 0;   // captured lines carry [+s] since the Walk click, so per-discipline cost is MEASURED
     pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
-    pg.on('console', m => { const t = m.text(); if (/§WALK |§WALK-PATTERN|§WALK-SCHED|§WALK-NOSPACES|§SCHED-FALLBACK|§ROUTER-CHAIN|§MEP-REROUTE|§DISC-WALK [A-Za-z]+ placed/.test(t)) lines.push((tWalk ? '[+' + ((Date.now() - tWalk) / 1000).toFixed(1) + 's] ' : '') + t); });
+    pg.on('console', m => { const t = m.text(); if (/§WALK |§WALK-PATTERN|§WALK-SCHED|§WALK-NOSPACES|§SCHED-FALLBACK|§ROUTER-CHAIN|§MEP-REROUTE|§DISC-WALK [A-Za-z]+ placed|§DW-LOD400-REFUSE disc=/.test(t)) lines.push((tWalk ? '[+' + ((Date.now() - tWalk) / 1000).toFixed(1) + 's] ' : '') + t); });
     await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
     await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalkAll==="function" && !!window.SQL', { timeout: 60000 });
     await pg.click('#b-open');
@@ -128,13 +132,19 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     chk('M1 NO-ERROR ' + k + ' (opened, walked, 0 pageerror, op-log verifies)', r.opened && r.walked && r.errs.length === 0 && r.chain === true,
       'opened=' + r.opened + ' walked=' + r.walked + ' errs=' + r.errs.length + ' chain=' + r.chain + (r.errs.length ? ' ' + r.errs[0] : ''));
     const p = r.D.PLB || { segs: 0, tubes: 0, sweeps: 0 };
-    chk('M2 ROUTED ' + k + ' (a user Walk routes ≥1 PLB run)', p.segs > 0, 'PLB segs=' + p.segs + ' (bridge ' + (p.bridge || 0) + ')');
+    const refusedLine = (d) => (r.lines || []).some(l => new RegExp('§DW-LOD400-REFUSE disc=' + d + ' refused=\\d+ kept=0').test(l));
+    const refMap = REFUSED_LOD400[k] || {};
+    if (refMap.PLB) chk('M2 REFUSED-PLB ' + k + ' (EXPECTED: no LOD400 fixtures → walk refused, 0 runs; RED if boxes return)', p.segs === 0 && refusedLine('PLB'), 'PLB segs=' + p.segs + ' refuseLine=' + refusedLine('PLB'));
+    else chk('M2 ROUTED ' + k + ' (a user Walk routes ≥1 PLB run)', p.segs > 0, 'PLB segs=' + p.segs + ' (bridge ' + (p.bridge || 0) + ')');
     const allSegs = Object.values(r.D).reduce((s, x) => s + x.segs, 0), allTubes = Object.values(r.D).reduce((s, x) => s + x.tubes, 0);
     chk('M3 RENDERED ' + k + ' (every routed run drawn: tubes == segs)', allTubes === allSegs, 'segs=' + allSegs + ' tubes=' + allTubes);
     const allSw = Object.values(r.D).reduce((s, x) => s + x.sweeps, 0);
-    chk('M4 SIGNED ' + k + ' (≥1 routed run is a GEOM_SWEEP in the signed op-log)', allSw > 0, 'sweeps=' + allSw);
+    const expectAnyRun = ['PLB'].concat(NEW_DISCS).some(d => !refMap[d] && !(EXPECT_ZERO[d] || {})[k]);
+    if (expectAnyRun) chk('M4 SIGNED ' + k + ' (≥1 routed run is a GEOM_SWEEP in the signed op-log)', allSw > 0, 'sweeps=' + allSw);
+    else console.log('  · M4/M8 ' + k + ' not applicable: every discipline here is refused (§WALK-LOD400-ONLY) or measured-zero — sweeps=' + allSw);
     for (const d of NEW_DISCS) {
       const x = r.D[d] || { placed: 0, segs: 0, bridge: 0, tubes: 0, sweeps: 0 };
+      if (refMap[d]) { chk('M5 REFUSED-' + d + ' ' + k + ' (EXPECTED: no LOD400 fixtures → walk refused, 0 runs; RED if boxes return)', x.segs === 0 && refusedLine(d), d + ' segs=' + x.segs + ' refuseLine=' + refusedLine(d)); continue; }
       const zero = (EXPECT_ZERO[d] || {})[k];
       if (zero) {
         // the bridge's own EMPTY line carries kept/survivors@anchors per rule — read the engine's number, not ours
@@ -150,7 +160,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     if (PLB_BASE[k]) chk('M7 PLB-HELD ' + k + ' (PLB runs/signed == baseline; the new disciplines did not move PLB)',
       p.segs === PLB_BASE[k][0] && p.sweeps === PLB_BASE[k][1], 'PLB segs=' + p.segs + ' sweeps=' + p.sweeps + ' base=' + PLB_BASE[k].join('/'));
     const allSeg = Object.values(r.D).reduce((s, x) => s + (x.segs || 0), 0);
-    chk('M8 ALL-SIGNED ' + k + ' (every routed run is a signed GEOM_SWEEP, not a capped sample)', allSeg > 0 && allSw === allSeg, 'sweeps=' + allSw + '/' + allSeg + ' runs');
+    if (expectAnyRun) chk('M8 ALL-SIGNED ' + k + ' (every routed run is a signed GEOM_SWEEP, not a capped sample)', allSeg > 0 && allSw === allSeg, 'sweeps=' + allSw + '/' + allSeg + ' runs');
   }
   console.log('W-MEP-OPENPATH: ' + pass + ' PASS / ' + fail + ' FAIL');
   await br.close(); server.close();
