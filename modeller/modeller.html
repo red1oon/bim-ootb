@@ -652,6 +652,24 @@ async function xrayReveal(on) {
   return { on: true, glass: glass, glow: glow, stackDepth: stackDepth, glassOpacity: glassOpacity };
 }
 window.__xrayReveal = xrayReveal;
+// ── §B1-ROW1 (pattern review row 1 — Witness: W-PATTERN-DECOR-REFOLD): ONE view-decoration registry. A re-fold
+// (bonsai_kernel.foldChainToScene) rebuilds every mesh with default material and visible=true, then announces
+// 'bonsai:refold'. Every piece of per-mesh VIEW state registers its re-apply here instead of hooking the event on its
+// own; one listener runs them all in registration order (x-ray, selection tint, eye/instance hide, find-box dim,
+// shadows — the source order of their definitions below). Before this, x-ray/tint/shadows each had their own listener
+// and eye-hide + dim had NONE, so after a history scrub the Outliner still said hidden/filtered while the scene did not.
+const _decor = [];
+window.Bonsai.decor = {
+  register(name, fn) { _decor.push({ name, fn }); },
+  names() { return _decor.map(d => d.name); },
+  reapply(src) {
+    const out = [];
+    _decor.forEach(d => { try { const r = d.fn(src); out.push(d.name + (r != null ? '=' + r : '')); } catch (e) { out.push(d.name + '!' + (e && e.message)); } });
+    console.log('§DECOR-REFOLD src=' + src + ' applied=[' + out.join(' ') + ']');
+    return out;
+  }
+};
+window.addEventListener('bonsai:refold', () => window.Bonsai.decor.reapply('refold'));
 // §XRAY-REFOLD (§NET-AUDIT 2026-09-27, W-XRAY-SC-LIVE root cause): a re-fold rebuilds every mesh with its default
 // material and the walked buckets are rebuilt by _redrawAllDiscWalks — nothing re-applied x-ray, so any commit/undo
 // (or a walk's late GEOM_SWEEP commits) while x-ray was ON left the building opaque with the button still lit.
@@ -664,7 +682,7 @@ function _xrayReapply(src) {
   setTimeout(() => { _xrayReapplyPending = false; if (!_xrayOn) return;
     xrayReveal(true).then(r => console.log('§XRAY-REFOLD reapplied src=' + src + ' glass=' + r.glass + ' glow=' + r.glow)); }, 0);
 }
-window.addEventListener('bonsai:refold', () => _xrayReapply('refold'));
+window.Bonsai.decor.register('xray', () => { _xrayReapply('refold'); return _xrayOn ? 'on' : 'off'; });   // §B1-ROW1 (was its own listener)
 const bXray = document.getElementById('b-xray');
 function paintXray() { if (bXray) bXray.classList.toggle('on', _xrayOn); }
 if (bXray) bXray.onclick = async () => {
@@ -1098,7 +1116,7 @@ window.addEventListener('bonsai:oplog', () => { try { _paintSel(); } catch (e) {
 // 000000 while _selSet still held it. foldChainToScene now announces 'bonsai:refold' after the rebuilt
 // meshes land; repaint through _paintSel — the ONE existing tinting path, membership re-resolved by
 // featureId (meshes are NEW objects after a re-fold). Idempotent + cheap on the paths bonsai:oplog covers.
-window.addEventListener('bonsai:refold', () => { try { if (selectedIds.size) console.log('§SEL-TINT-REFOLD repaint n=' + selectedIds.size); _paintSel(); } catch (e) { } });
+window.Bonsai.decor.register('selTint', () => { if (selectedIds.size) console.log('§SEL-TINT-REFOLD repaint n=' + selectedIds.size); _paintSel(); return selectedIds.size; });   // §B1-ROW1 (was its own listener)
 // ── §ZOOM-SEL (MODELLER_ZOOM_TO_SELECTION.md — Witness: W-E2E-ZOOMSEL): port of the Viewer Find panel's
 // zoom-to-frame mechanism (viewer/navigate_find.js _lerpCam/_fitDistForBox/_zoomToBoxFill — the frustum-fit
 // variant, not the naive maxDim*factor one). Fires automatically on every real selection change via
@@ -1343,7 +1361,7 @@ window.Bonsai.setAllVisible = () => {                     // reset before determ
 // (materials are per-mesh MeshStandardMaterial — no shared-material bleed); a walked bucket dims whole-bucket
 // when NO leaf of its discipline matches (bucket granularity, same §DECISIONS-2 rule). null restores exactly
 // from the saved pre-dim snapshot. DIM (not hide) keeps spatial context and stays out of the raycaster's way.
-let _dimActive = false;
+let _dimActive = false, _dimLastSel = null;   // §B1-ROW1: last selection, re-applied after a re-fold
 function _dimMat(mat, keep) {
   if (!mat) return;
   if (!mat.userData._preDim) mat.userData._preDim = { t: mat.transparent, o: mat.opacity, dw: mat.depthWrite };
@@ -1366,11 +1384,18 @@ window.Bonsai.dimExcept = (sel) => {
     const keep = !sel || sel.discs.has(disc);
     _dimMat(o.material, keep); if (!keep) dimmed++;
   });
-  _dimActive = !!sel;
+  _dimActive = !!sel; _dimLastSel = sel || null;
   if (window.A && A.requestRender) A.requestRender();
   console.log('§MODELLER §OLFILTER-DIM ' + (sel ? ('dimmed=' + dimmed + ' keepFids=' + sel.fids.size + ' keepDiscs=' + sel.discs.size) : 'restored'));
   return dimmed;
 };
+// §B1-ROW1: eye-hide (+ §I5 instance-hide + disc-bucket hide) and the find-box dim follow the Outliner's state through a
+// re-fold. _applyHidden already resets-then-re-applies deterministically and never reveals an anchor (setAllVisible).
+window.Bonsai.decor.register('hidden', () => {
+  const O = window.Bonsai.outliner; if (!(O && O._hidden && Object.keys(O._hidden).length && O._applyHidden)) return 0;
+  return O._applyHidden();
+});
+window.Bonsai.decor.register('dim', () => (_dimActive && _dimLastSel) ? window.Bonsai.dimExcept(_dimLastSel) : 0);
 // ── §POLISH3 §V6 (Witness: W-E2E-SHADOWS): event-driven shadow flags + the PERF GUARD. Same doctrine as
 // DW_ALL_PROXY_THRESHOLD: above SHADOW_MAX_ELEMENTS total elements (authored meshes + walked instances) the
 // shadow pass auto-disables — Terminal-scale walks never pay a per-frame shadow render. Flags are applied on
@@ -1409,7 +1434,7 @@ window.addEventListener('bonsai:oplog', () => { try { _applyShadowFlags(); } cat
 // re-fold (history slider, x-ray restore, Connect timeline) rebuilds every mesh with castShadow/receiveShadow
 // FALSE and never fires bonsai:oplog — so the scene renders subtly unshadowed until the next commit. Re-apply
 // at the same 'bonsai:refold' choke point the selection repaint uses (event from foldChainToScene).
-window.addEventListener('bonsai:refold', () => { try { _applyShadowFlags(); } catch (e) { } });
+window.Bonsai.decor.register('shadow', () => _applyShadowFlags() ? 'on' : 'off');   // §B1-ROW1 (was its own listener)
 // ── Outliner→scene camera fly-to (2026-07-02, RESUME §3): click an Outliner row → besides the existing
 // select/highlight (window.Bonsai.select → setActive), smoothly orbit the camera in CLOSER, framed on that
 // element's own bbox centre — mirrors viewer/measure.js's _flyToClash/_animFly easing pattern (ease-in-out
