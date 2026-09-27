@@ -28,7 +28,10 @@
     // L3 — the one tone curve; three.js ACESFilmic multiplies exposure by 1/acesDiv, so the meter takes acesDiv back out.
     TONE: { curve: 'ACESFilmic', acesDiv: 0.6 },
     // L1a — §COVE_LIGHT levels (audit #46, red1 exception §COVE_NO_STRIP "need not be accurate").
-    COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 }
+    COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 },
+    // L2 — §ZERO Z9 (audit #48): authored IFC albedos are sRGB-encoded; the still decodes them to linear (IEC 61966-2-1 EOTF,
+    // three.js ColorManagement convention) before lighting. Nav keeps its own look (fixed exposure, no meter) — Alt+S only.
+    ALBEDO: { authored: 'sRGB', decode: true }
   });
 
   // scene units -> lux (x luxPer) and -> cd/m2 for a luminance in scene units. null when there is no calibrated sun.
@@ -38,6 +41,18 @@
   // exposure (three.js toneMappingExposure) for an EV100 — same expression order as meter() @c539f129.
   function exposureFromEv(ev, lp, acesDiv) { return lp * acesDiv / (LAW.METER.q * Math.pow(2, ev)); }
   function acesDiv(renderer, THREE) { return (renderer && THREE && renderer.toneMapping === THREE.ACESFilmicToneMapping) ? LAW.TONE.acesDiv : 1; }
+  // IEC 61966-2-1 sRGB EOTF — the exact expression (constants + order) of three r186 SRGBToLinear, so bit-identical to
+  // Color.convertSRGBToLinear (witness_z9_albedo_srgb.js extracts the r186 text and compares 4097 inputs).
+  function srgbToLinear(c) { return c < 0.04045 ? 0.0773993808 * c : Math.pow(0.9478672986 * c + 0.0521327014, 2.4); }
+  // Z9: decode one material colour {r,g,b} in place. Returns null when skipped (a GAIN: any channel > 1, e.g. the ground's
+  // §GROUND_ALBEDO 2.3 over an already-linear map mean; or opts.isGround), else the original [r,g,b] for restore.
+  function decodeAlbedo(color, opts) {
+    if (!color || (opts && opts.isGround)) return null;
+    if (color.r > 1 || color.g > 1 || color.b > 1) return null;
+    var orig = [color.r, color.g, color.b];
+    color.r = srgbToLinear(color.r); color.g = srgbToLinear(color.g); color.b = srgbToLinear(color.b);
+    return orig;
+  }
   function toneConst(THREE) { return THREE[LAW.SCENE.toneMapping + 'ToneMapping']; }
 
   // canonical JSON (keys sorted, recursively) + FNV-1a 32 — the same string and hash in node and every browser.
@@ -78,8 +93,8 @@
     return s;
   }
 
-  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE,
-    luxPer: luxPer, ev100: ev100, exposureFromEv: exposureFromEv, acesDiv: acesDiv, toneConst: toneConst,
+  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, ALBEDO: LAW.ALBEDO,
+    srgbToLinear: srgbToLinear, decodeAlbedo: decodeAlbedo, luxPer: luxPer, ev100: ev100, exposureFromEv: exposureFromEv, acesDiv: acesDiv, toneConst: toneConst,
     snapshot: snapshot, log: log, hash: hash, canon: canon };
   global.LightLaw = Object.freeze(LightLaw);
   if (typeof module !== 'undefined' && module.exports) module.exports = global.LightLaw;

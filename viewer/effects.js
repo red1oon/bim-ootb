@@ -2937,7 +2937,22 @@ async function setupEffects(A, renderer, scene, camera) {
       }
     });
   }
+  // §ZERO Z9 late decode: a material streamed in AFTER staging (the S4 "pushed materials 105->109" class) is decoded on the
+  // same per-tick walk, so a still never mixes decoded and raw albedos. Same saved-list / restore as the staging walk.
+  var _albedoDecSet = null, _albedoLateN = 0;
+  function _albedoLateDecode() {
+    if (!_albedoDecSet || !A._matCache || !window.LightLaw || !window.LightLaw.decodeAlbedo) return;
+    var gm = A.ground && A.ground.material;
+    Object.keys(A._matCache).forEach(function(k) {
+      var m = A._matCache[k];
+      if (!m || _albedoDecSet.has(m) || !m.color || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
+      _albedoDecSet.add(m);
+      var sv = [m, m.color.getHex(), m.color.r, m.color.g, m.color.b];
+      if (window.LightLaw.decodeAlbedo(m.color, { isGround: m === gm })) { sv[5] = m.color.getHex(); _albedoSaved.push(sv); _albedoLateN++; }
+    });
+  }
   function _reassertPhotoMatBoost() {
+    _albedoLateDecode();
     if (!_photoMatBoostActive || !A._matCache) return;
     var mirrorMats = _mirrorReflectMats();  // §MIRROR_TRUE_REFLECT — cached per building, cheap to call every tick
     Object.keys(A._matCache).forEach(function(k) {
@@ -4406,27 +4421,40 @@ async function setupEffects(A, renderer, scene, camera) {
     // multiplies the still's tone-mapping exposure. Defaults: all off (red1/watcher pick from the sheet).
     if (!A._maxqActive) {
       _albedoSaved = [];
-      var _fix = (typeof A._stillSrgbFix === 'boolean') ? A._stillSrgbFix : /[?&]srgbfix=1/.test(location.search);   // default OFF again: it darkened the exterior refs (courtyard_a 73.2 -> 45.0); &srgbfix=1 to try
+      // §ZERO Z9 (PHOTOREAL_STILL_RENDER.md "### Z9 SPEC"; witness viewer/tests/witness_z9_albedo_srgb.js): default ON from the law
+      // (LightLaw.ALBEDO.decode). The 2026-09-24 "darkened the exterior refs" objection predates §METER_EV: the eye meter runs inside
+      // SourcedLight.stage AFTER this block and meters the real (decoded) materials, so the law re-exposes. Off: &srgbfix=0 / APP._stillSrgbFix=false.
+      var _lawDec = !!(window.LightLaw && window.LightLaw.ALBEDO && window.LightLaw.ALBEDO.decode && window.LightLaw.decodeAlbedo);
+      var _fix = (typeof A._stillSrgbFix === 'boolean') ? A._stillSrgbFix : (/[?&]srgbfix=0/.test(location.search) ? false : (/[?&]srgbfix=1/.test(location.search) || _lawDec));
+      var _nSkipG = 0, _nSkipGain = 0, _lumB = 0, _lumA = 0, _groundMat = A.ground && A.ground.material;
       var _capM = /[?&]albedocap=([0-9.]+)/.exec(location.search), _cap = (typeof A._stillAlbedoCap === 'number') ? A._stillAlbedoCap : (_capM ? parseFloat(_capM[1]) : null);
       var _nConv = 0, _nCap = 0, _wallBefore = null, _wallAfter = null;
+      _albedoDecSet = (_fix && _lawDec) ? new Set() : null; _albedoLateN = 0;
       if (_fix || _cap != null) {
         var _seen = new Set();
         A.scene.traverse(function(o) {
           if (!o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return;
           (Array.isArray(o.material) ? o.material : [o.material]).forEach(function(m) {
             if (!m || _seen.has(m) || !m.color || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
-            _seen.add(m); _albedoSaved.push([m, m.color.getHex(), m.color.r, m.color.g, m.color.b]);
+            _seen.add(m); if (_fix && _lawDec) _albedoDecSet.add(m); var _sv = [m, m.color.getHex(), m.color.r, m.color.g, m.color.b], _chg = false;   // Z9: saved only if changed (the ground/gains are never touched, so never "restored")
             var isWall = !_wallBefore && o.userData && o.userData.ifcClass === 'IfcWallStandardCase';
             if (isWall) _wallBefore = m.color.r.toFixed(3) + ',' + m.color.g.toFixed(3) + ',' + m.color.b.toFixed(3);
-            if (_fix) { m.color.convertSRGBToLinear(); _nConv++; }
-            if (_cap != null) { var mx = Math.max(m.color.r, m.color.g, m.color.b); if (mx > _cap) { m.color.multiplyScalar(_cap / mx); _nCap++; } }
+            if (_fix) {
+              var _lb = 0.2126 * m.color.r + 0.7152 * m.color.g + 0.0722 * m.color.b;
+              var _dec = _lawDec ? window.LightLaw.decodeAlbedo(m.color, { isGround: m === _groundMat }) : (m.color.convertSRGBToLinear(), true);
+              if (_dec) { _chg = true; _nConv++; _lumB += _lb; _lumA += 0.2126 * m.color.r + 0.7152 * m.color.g + 0.0722 * m.color.b; }
+              else if (m === _groundMat) _nSkipG++; else _nSkipGain++;
+            }
+            if (_cap != null) { var mx = Math.max(m.color.r, m.color.g, m.color.b); if (mx > _cap) { m.color.multiplyScalar(_cap / mx); _nCap++; _chg = true; } }
+            if (_chg) { _sv[5] = m.color.getHex(); _albedoSaved.push(_sv); }   // [5] = the staged colour, to detect a foreign change at restore
             if (isWall) _wallAfter = m.color.r.toFixed(3) + ',' + m.color.g.toFixed(3) + ',' + m.color.b.toFixed(3);
           });
         });
       }
       var _em = /[?&]stillexp=([0-9.]+)/.exec(location.search), _eMul = (typeof A._stillExpMul === 'number') ? A._stillExpMul : (_em ? parseFloat(_em[1]) : 1);
       _expSaved = A.renderer.toneMappingExposure; if (_eMul !== 1) A.renderer.toneMappingExposure = _expSaved * _eMul;
-      console.log('§ALBEDO_SRGB srgbfix=' + (_fix ? 1 : 0) + ' converted=' + _nConv + ' albedoCap=' + (_cap == null ? 'off' : _cap) + ' capped=' + _nCap +
+      console.log('§ALBEDO_SRGB srgbfix=' + (_fix ? 1 : 0) + ' decode=' + (_lawDec ? 'law' : 'three') + ' converted=' + _nConv + ' skippedGround=' + _nSkipG +
+        ' skippedGain=' + _nSkipGain + ' meanLumBefore=' + (_nConv ? (_lumB / _nConv).toFixed(4) : 'n/a') + ' meanLumAfter=' + (_nConv ? (_lumA / _nConv).toFixed(4) : 'n/a') + ' albedoCap=' + (_cap == null ? 'off' : _cap) + ' capped=' + _nCap +
         ' wallColour(IfcWallStandardCase) before=' + _wallBefore + ' after=' + _wallAfter + ' exposure=' + A.renderer.toneMappingExposure.toFixed(3) +
         ' (x' + _eMul + ') lampRange=' + (A._stillLampRangeNow == null ? '0(inf)' : A._stillLampRangeNow) + ' lampDecay=' + A._stillLampDecayNow);
     }
@@ -4638,7 +4666,9 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     if (window.SkyPortal) { try { window.SkyPortal.unstage(A); } catch (eSU) {} }   // §SKY_PORTAL
     if (window.GlassFresnel) { try { window.GlassFresnel.unstage(A); } catch (eGU) {} }   // §GLASS_FRESNEL
-    if (_albedoSaved.length) { _albedoSaved.forEach(function(r) { r[0].color.setRGB(r[2], r[3], r[4]); }); console.log('§ALBEDO_SRGB restored mats=' + _albedoSaved.length); _albedoSaved = []; }
+    if (_albedoSaved.length) { var _nMoved = 0; _albedoSaved.forEach(function(r) { if (r[5] != null && r[0].color.getHex() !== r[5]) _nMoved++; r[0].color.setRGB(r[2], r[3], r[4]); });
+      console.log('§ALBEDO_SRGB restored mats=' + _albedoSaved.length + ' lateDecoded=' + _albedoLateN + ' changedDuringStill=' + _nMoved); _albedoSaved = []; }
+    _albedoDecSet = null;
     if (_expSaved != null && A.renderer) { A.renderer.toneMappingExposure = _expSaved; _expSaved = null; }
     A._stillLampRangeNow = null;
     if (typeof A._nightSyncPads === 'function') { try { A._nightSyncPads(); } catch (ePad) {} }   // §STILL_LIGHT_PAD — pads go with the still
