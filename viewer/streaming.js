@@ -714,15 +714,45 @@ function setupStreaming(A) {
     return (name && PORC_NAME.test(name) && !PORC_NOT.test(name)) ? 'name' : '';
   };
   A._porcelainVariant = function(ifcClass, name, matName) { return A._porcelainKey(ifcClass, name, matName) ? 'porcelain' : ''; };
+  // ### ALTS-ALL FIX 11 (b) (D2): PBR metallic workflow — metalness is near-binary (Filament "Standard parameters": Metallic "Often used
+  // as a binary value (0 or 1)"). Pipes / ducts / structural steel default to metal 0 (painted/coated: the data states no bare metal);
+  // BARE METAL only when the authored material name or the element name says so. Base colours: physicallybased.info v2 materials
+  // (schema 2.2, updated 202609010742), srgb-linear, metalness 1 — used only when the element has no colour of its own.
+  A.METAL_PBR_CLASSES = { IfcPipe: 1, IfcPipeFitting: 1, IfcPipeSegment: 1, IfcFlowSegment: 1, IfcFlowFitting: 1,
+    IfcDuct: 1, IfcDuctFitting: 1, IfcDuctSegment: 1, IfcBeam: 1, IfcMember: 1, IfcPlate: 1 };
+  A.BARE_METAL_PBR = {
+    zinc: { lin: [0.808, 0.844, 0.865], src: 'physicallybased.info Zinc' }, stainless: { lin: [0.669, 0.639, 0.598], src: 'physicallybased.info Stainless Steel' },
+    copper: { lin: [0.932, 0.623, 0.522], src: 'physicallybased.info Copper' }, aluminum: { lin: [0.916, 0.923, 0.924], src: 'physicallybased.info Aluminum' } };
+  A._bareMetalKey = function(ifcClass, name, matName) {
+    if (A._metalPbrOff || !ifcClass || !A.METAL_PBR_CLASSES[ifcClass]) return '';
+    var t = ((A._isAuthoredMatName && A._isAuthoredMatName(matName) ? matName : '') + ' ' + (name || '')).toLowerCase();
+    if (/galvani[sz]|zinc/.test(t)) return 'zinc';
+    if (/stainless/.test(t)) return 'stainless';
+    if (/copper/.test(t)) return 'copper';
+    if (/alumin(i)?um/.test(t)) return 'aluminum';
+    return '';
+  };
   // the element's presentation variant: §ENTOURAGE first (Alt+S shader), else §PORCELAIN (finish, both views)
   A._elementVariant = function(ifcClass, name, matName) {
-    return A._entourageVariant(ifcClass, name) || A._porcelainVariant(ifcClass, name, matName);
+    var bm = A._bareMetalKey(ifcClass, name, matName);
+    return A._entourageVariant(ifcClass, name) || A._porcelainVariant(ifcClass, name, matName) || (bm ? 'metal:' + bm : '');
   };
   // ONE owner for "which trade colour does this MEP element belong to" — the first source that
   // carries a hue. An achromatic source (the DUCT hint's galvanized grey, sat 0.052; DISC_COLORS.VOID
   // 0x666666, sat 0) supplies no trade hue and is passed over. Returns null when none does.
+  // ### ALTS-ALL FIX 11 (a) (D2, bim-compiler PHOTOREAL_STILL_RENDER.md): a SPECIFIC-trade discipline (FP/PLB/ELEC/ACMV/HVAC/SAN/
+  // VENT/HEAT) with a chromatic DISC_COLORS entry decides first; the Revit element-name hint decides only when the discipline is the
+  // generic 'MEP' or absent (HHS, the case the hint was built for). Measured (MEP GREY): Hospital's 6,228 FP pipes carried the 'pipe'
+  // hint (PLB purple). &metalpbr=0 / A._metalPbrOff = the old order (hint first) — part of the material cache key.
+  var MEP_SPECIFIC_TRADE = { FP: 1, PLB: 1, ELEC: 1, ACMV: 1, HVAC: 1, SAN: 1, VENT: 1, HEAT: 1 };
+  A._mepSpecificTrade = MEP_SPECIFIC_TRADE;
+  A._metalPbrOff = /[?&]metalpbr=0/.test(typeof location !== 'undefined' ? location.search : '');
   A._mepTradeHue = function(discipline, mepHint) {
     var T = A.MEP_HUE_ACHROMATIC_MAX;
+    if (!A._metalPbrOff && discipline && MEP_SPECIFIC_TRADE[discipline] && A.DISC_COLORS && A.DISC_COLORS[discipline] != null) {
+      var d0 = _hexToRgb(discipline, A.DISC_COLORS[discipline]), ds0 = A._chromaOf(d0.r + ',' + d0.g + ',' + d0.b);
+      if (ds0 !== null && ds0 >= T) return { code: discipline, r: d0.r, g: d0.g, b: d0.b, src: 'discipline' };
+    }
     if (mepHint) {
       var hs = A._chromaOf(mepHint.r + ',' + mepHint.g + ',' + mepHint.b);
       if (hs !== null && hs >= T) return { code: mepHint.code, r: mepHint.r, g: mepHint.g, b: mepHint.b, src: 'name-hint' };
@@ -1572,6 +1602,7 @@ function setupStreaming(A) {
     var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (matName || '').replace(/Ifc/g, 'ifc')
       + (noMepHue ? '|noMepHue' : '')
       + (surfRow ? '|surf=' + surfRow : '')
+      + (A._metalPbrOff ? '|metalOld' : '')   // ### ALTS-ALL FIX 11 A/B switch (&metalpbr=0) — never served across arms
       + (A._placeholderOff ? '|phOff' : '');   // §PLACEHOLDER_COLOUR red control (witness only) — never served a stale material   // §SURFACE_RULES — one material per row   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
@@ -1583,6 +1614,18 @@ function setupStreaming(A) {
     // §S265c: Trust IFC data. Only NULL (no color assigned) gets class fallback.
     // For grey buildings (Terminal/LTU), user applies Sunglasses slider on demand.
     var stdMat = (ifcClass && STD_MAT[ifcClass]) ? STD_MAT[ifcClass] : null;
+    // ### ALTS-ALL FIX 11 (b)/(c) (D2): pipes / ducts / structural steel = dielectric (painted/coated) metal 0, or bare metal 1 when the
+    // name says so ('metal:<key>' variant); the pipe/duct envInt 0.05 (§PIPE_DUCT_BLUE_TINT — a metalness artefact) is dropped -> the
+    // global 0.6; IfcBeam envInt 0 (red1 2026-08-15) and IfcMember/IfcPlate 0.05 are kept. &metalpbr=0 = the old table.
+    var _bareKey = (typeof matVariant === 'string' && matVariant.indexOf('metal:') === 0) ? matVariant.slice(6) : '';
+    var _bare = _bareKey ? A.BARE_METAL_PBR[_bareKey] : null;
+    if (stdMat && A.METAL_PBR_CLASSES[ifcClass] && A._metalPbrLogged !== !!A._metalPbrOff) { A._metalPbrLogged = !!A._metalPbrOff;
+      console.log('§METAL_PBR ' + (A._metalPbrOff ? 'off (&metalpbr=0: old STD_MAT metal/envInt, name hint first)' : 'on (pipes/ducts/steel metal 0 unless bare-metal named -> 1; pipe/duct envInt 0.05 dropped; specific-trade discipline before the name hint)')); }
+    if (stdMat && !A._metalPbrOff && A.METAL_PBR_CLASSES[ifcClass]) {
+      var _pd = /^Ifc(Pipe|Duct|FlowSegment|FlowFitting)/.test(ifcClass);
+      stdMat = Object.assign({}, stdMat, { metal: _bare ? 1 : 0 });
+      if (_pd && stdMat.envInt === 0.05) delete stdMat.envInt;
+    }
     if (!rgbaStr && stdMat) {
       r = stdMat.r; g = stdMat.g; b = stdMat.b;
       // §MEP_DISC_TINT (2026-08-14, CINEMA_DISCIPLINE_REVEAL.md §Findings): IFC2x3's 3 generic
@@ -1612,7 +1655,9 @@ function setupStreaming(A) {
     var _isPorc = (matVariant === 'porcelain');
     var _isPh = !A._placeholderOff && A._isExporterPlaceholder(rgbaStr, matName);   // §PLACEHOLDER_COLOUR (Z21)
     if (_isPorc && (!rgbaStr || _isPh)) { r = STD_MAT.IfcSanitaryTerminal.r; g = STD_MAT.IfcSanitaryTerminal.g; b = STD_MAT.IfcSanitaryTerminal.b; }
-    var _mepAlb = (noMepHue || _isPorc) ? null : A._mepDiscAlbedo(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName);
+    if (_bare && (!rgbaStr || _isPh)) { var _oe = function (c) { return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
+      r = _oe(_bare.lin[0]); g = _oe(_bare.lin[1]); b = _oe(_bare.lin[2]); }   // cited srgb-linear, stored sRGB-encoded (Z9 decodes at stage)
+    var _mepAlb = (noMepHue || _isPorc || _bare) ? null : A._mepDiscAlbedo(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName);
     if (_mepAlb) {
       r = _mepAlb.r; g = _mepAlb.g; b = _mepAlb.b;
       A._mepHueCounts = A._mepHueCounts || {};
@@ -1621,7 +1666,7 @@ function setupStreaming(A) {
     }
     // §PLACEHOLDER_COLOUR (Z21): the exporter's cream is NO colour — MEP tier 2 (above, unchanged) had first call; otherwise the
     // class's STD_MAT default. IfcBuildingElementProxy excluded: its STD_MAT teal is a flag colour, not a material.
-    if (_isPh && !_mepAlb && !_isPorc && stdMat && ifcClass !== 'IfcBuildingElementProxy') { r = stdMat.r; g = stdMat.g; b = stdMat.b; }
+    if (_isPh && !_mepAlb && !_isPorc && !_bare && stdMat && ifcClass !== 'IfcBuildingElementProxy') { r = stdMat.r; g = stdMat.g; b = stdMat.b; }
     // §S260d: Gentler near-white taming — let ACES tone mapping handle the rest
     if (r > 0.85 && g > 0.85 && b > 0.85) { r *= 0.92; g *= 0.92; b *= 0.92; }
     const opts = { color: new THREE.Color(r, g, b), flatShading: false };

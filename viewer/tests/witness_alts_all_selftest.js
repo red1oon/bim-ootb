@@ -32,7 +32,7 @@ function stillRec(pose, arm, o) {
     arm === 'gialb0' ? '§GI_RECEIVER_ALBEDO off (&gialb=0)' : '§GI_RECEIVER_ALBEDO real=900000 est=1 realPct=90',
     '§GI_STILL result mode=composite compositeMean=100']).concat(o.pageError ? ['PAGEERROR boom'] : []);
   const c = Object.assign({ p5: 20, p50: 120, p95: 200, mean: 110, ge250pct: 0.1, le15pct: 0.2, w: 10, h: 10 }, o.comp || {});
-  return { pose, arm, q, cam: [1, 2, 3], tgt: [4, 5, 6], lines, pressSecs: 60, png: { pose: { cam: [1, 2, 3], tgt: [4, 5, 6] }, stats: {} },
+  return { pose, arm, q, cam: [1, 2, 3], tgt: [4, 5, 6], lines, pressSecs: 60, clip: o.clip, png: { pose: { cam: [1, 2, 3], tgt: [4, 5, 6] }, stats: {} },
     eval: { programs: 120, scripts: o.scripts || ['light_law.js?v=6', 'sourced_light.js?v=59'], fileHash: { 'light_law.js': 'aa', 'sourced_light.js': 'bb' }, swServed: o.sw || 'v1474', swCtlAtLoad: !!o.ctl,
       lawHash: o.lawHash || 'dc0e8638', lzSrc: 'k:1', pose: { cam: [1, 2, 3], tgt: [4, 5, 6] }, compSrc: 'bounce', comp: c, steps: { n: 100, per1000: 1 } } };
 }
@@ -40,7 +40,7 @@ function stillRows(r) { const g1 = J.g1(r, T); return g1.some(x => x.state !== '
 function filmLog(o) {
   o = o || {}; const L = ['00:00:00.000 +    0.0s §CLI_BAKE_ENV root=/x commit=f sw=v1474 db=H gpu=real', '00:00:00.100 +    0.1s [con] §CPE_LOADED v25'];
   if (o.race) L.push('00:00:00.200 +    0.2s [con] §LEDGER_TICKER_INIT wired');
-  L.push('00:00:00.300 +    0.3s §CLI_BAKE_SW_PURGE unregistered=' + (o.race ? 1 : 0) + ' cachesDeleted=0 — reloading');
+  L.push('00:00:00.300 +    0.3s §CLI_BAKE_SW_PURGE unregistered=' + (o.race ? 1 : 0) + ' cachesDeleted=0' + (o.ctl != null ? ' controllerAtLoad=' + o.ctl : '') + ' — reloading');
   L.push('00:00:00.400 +    0.4s [con] §LEDGER_TICKER_INIT wired');
   if (o.arm === 'C') L.push('[con] §FILM_EXPOSURE off (control: &filmexp=0) exposure=0.3825 fixed');
   L.push('[con] ' + (o.arm === 'E' ? '§CAM_LIGHT on intensity=3' : '§FILM_PARITY on fill=alt-s (ambient 0, §FILM_LAW S2)'));
@@ -107,6 +107,16 @@ function run() {
   const race = J.filmJudge(filmLog({ arm: 'A', race: true }), T, { C, E, T: Tt });
   expect('film SW-race double init (unregistered=1, _INIT before and after the purge) -> INCONCLUSIVE', st(race, /SW purge/), 'INCONCLUSIVE');
   expect('film SW race -> §BAKE_RELEASE_GATE INCONCLUSIVE (never PASS)', J.gate(race), 'INCONCLUSIVE');
+  // ### ALTS-ALL FIX 15 (F12): the same double init with controllerAtLoad=0 (fresh profile, page from the network = this tree) is no race;
+  // controllerAtLoad=1 (a SW served the pre-purge page) stays INCONCLUSIVE
+  expect('film fresh-profile purge (unregistered=1, dup _INIT, controllerAtLoad=0) -> PASS', st(J.filmJudge(filmLog({ arm: 'A', race: true, ctl: 0 }), T, { C, E, T: Tt }), /SW purge/), 'PASS');
+  expect('film SW-controlled pre-purge page (controllerAtLoad=1) -> INCONCLUSIVE', st(J.filmJudge(filmLog({ arm: 'A', race: true, ctl: 1 }), T, { C, E, T: Tt }), /SW purge/), 'INCONCLUSIVE');
+  // ### ALTS-ALL FIX 10 (D1): inside camera, whole-frame clip 5 %: interior-opaque 3 % -> FAIL; all exterior (through openings) -> PASS + INFO;
+  // no classification readback -> INCONCLUSIVE (never PASS on a missing readback)
+  const K0 = { clipped: 50, clipPct: 5, exteriorPct: 0, glassBackedPct: 0, emitterPct: 0, unclassifiedPct: 0, topZones: [] };
+  expect('D1 inside, clipped pixels on INTERIOR opaque surfaces 3 % -> band FAIL', st(J.g4(stillRec('inner', 'base', { comp: { ge250pct: 5 }, clip: Object.assign({}, K0, { interiorPct: 3, exteriorPct: 2 }) })), /p50 40/), 'FAIL');
+  expect('D1 inside, all clipped pixels EXTERIOR through openings -> band PASS', st(J.g4(stillRec('inner', 'base', { comp: { ge250pct: 5 }, clip: Object.assign({}, K0, { interiorPct: 0.1, exteriorPct: 4.9, glassBackedPct: 3 }) })), /p50 40/), 'PASS');
+  expect('D1 inside, clip 5 % with no classification readback -> INCONCLUSIVE', st(J.g4(stillRec('inner', 'base', { comp: { ge250pct: 5 }, clip: { err: 'no composite canvas' } })), /p50 40/), 'INCONCLUSIVE');
   expect('film torch arm with identical luma -> NO-OP', st(J.filmJudge(A, T, { C, E, T: filmLog({ arm: 'T', noopT: true }) }), /film torch/), 'NO-OP');
   expect('film lawHash != node -> FAIL (and the tap row INCONCLUSIVE)', st(J.filmJudge(filmLog({ arm: 'A', law: '918804c2' }), T, null), /lawHash film == still/) + '/' + st(J.filmJudge(filmLog({ arm: 'A', law: '918804c2' }), T, null), /tap: page lawHash/), 'FAIL/INCONCLUSIVE');
   expect('film with no bake log judged -> gate INCONCLUSIVE', J.gate([]), 'INCONCLUSIVE');
@@ -123,7 +133,7 @@ function run() {
   return new Promise(res => { Witness('ALTS_ALL_SELFTEST')
     .population(() => rows)
     .schema({ type: 'object', required: ['name', 'got', 'want', 'ok'], properties: { name: { type: 'string' }, got: { type: 'string' }, want: { type: 'string' }, ok: { type: 'boolean' } } })
-    .invariant('every GIGO state triggers and the GREEN fixtures pass', rs => rs.length >= 37 && rs.every(r => r.ok))
+    .invariant('every GIGO state triggers and the GREEN fixtures pass', rs => rs.length >= 42 && rs.every(r => r.ok))
     .redControl(rs => rs.map(r => /GREEN still/.test(r.name) ? Object.assign({}, r, { ok: J.gate(stillRows(stillRec('inner', 'base', { sw: 'v1' }))) === 'PASS' }) : r))
     .run(); res(process.exitCode ? 1 : 0); });
 }

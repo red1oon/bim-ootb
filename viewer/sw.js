@@ -189,6 +189,8 @@
 const CACHE_VERSION = 'v1478';   // bump on each deploy; per-change detail is the git commit message.
 // v1478 (2026-09-27) fix/alts-all-3 = fix/alts-all-2 (v1477) + fix/colour-truth (v1476, §ZERO Z19-Z21) merged; ### ALTS-ALL FIX 10+ on top.
 //   viewer.html light_zones.js?v=19, sourced_light.js?v=62 in the SAME commit (both sides edited them).
+//   + ### ALTS-ALL FIX 11 (MEP trade hue before the name hint; pipes/ducts/steel metal 0 unless bare-metal named; pipe/duct envInt
+//   0.05 dropped) streaming.js?v=79; FIX 13 GI energy bound gi_still.js?v=32 + SourcedLight.irR sourced_light.js?v=63.
 // v1476 (2026-09-27) fix/colour-truth §ZERO Z19-Z21: coloured zone IR, porcelain finish, placeholder = STD_MAT / MEP-trade proxy hue.
 // v1477 (2026-09-27) ### ALTS-ALL FIX 9: gi_still glass skip also leaves out MULTI-MATERIAL objects with a glass group (Terminal R10
 //   window arrays were solid in the geometry pass -> opaque glass in Alt+S); glass-skip line per press. FIX 1(e): a §SOURCED_REBIND during

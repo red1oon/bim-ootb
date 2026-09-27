@@ -543,7 +543,13 @@
       // §IRC_MAX v2: the app colour already carries the zone interreflection (IR); the bounce adds only what exceeds it:
       // added = max(0, bounce - IR_px), IR_px = colour x share (share = the IR part of the pixel's linear radiance)
       const giT = receiver(G, C).mul(gi.getGINode().rgb).mul(gain), irPx = C.rgb.mul(G.shareNode.sample(T.uv()).r);
-      rgb = C.rgb.mul(ao).add(T.mix(giT, T.max(giT.sub(irPx), T.vec3(0)), G.irMaxU));
+      const addRaw = T.mix(giT, T.max(giT.sub(irPx), T.vec3(0)), G.irMaxU);
+      // ### ALTS-ALL FIX 13 (F10, law L2): the interreflected light at a pixel cannot exceed k2 x its direct light, k2 = R/(1-R) at the R
+      // the zone IR uses (SourcedLight IR_R) — the bound's zone mean is k2 x mean direct = the Sumpner total the IR already carries.
+      // D = C x (1 - share) (sun/sky/lamps/cove), IR_px = C x share, both on the display colour (the §IRC_MAX approximation).
+      // added <= max(0, k2 x D - IR_px). G.boundU = 0 (&gibound=0, and films until Z13) = unbounded.
+      const shr = G.shareNode.sample(T.uv()).r, room = T.max(C.rgb.mul(T.float(1).sub(shr)).mul(G.boundK2).sub(irPx), T.vec3(0));
+      rgb = C.rgb.mul(ao).add(T.mix(addRaw, T.min(addRaw, room), G.boundU));
     }
     // enc 'linear' (§GI_STILL_TERM): no transfer at all, so coloronly/giterm/aoloss means ADD up in linear light.
     if (enc === 'linear') { G.pipeline.outputColorTransform = false; return T.vec4(rgb, mask); }
@@ -655,6 +661,7 @@
     const albTexNode = TSL.texture(albTex);
     G.albCanvas = albCanvas; G.albCtx = albCtx; G.albTex = albTex; G.albU = TSL.uniform(0);
     G.albNode = TSL.sample((uv) => albTexNode.sample(TSL.vec2(uv.x, uv.y.mul(flipSign).add(flipOff))));
+    G.boundU = TSL.uniform(0); G.boundK2 = TSL.uniform(1);   // ### ALTS-ALL FIX 13 energy bound (set per press)
     G.irMaxU = TSL.uniform(1);   // 1 = max(IR, SSGI) (watchdog rule); 0 = the old sum (&ircmax=0, A/B only)
     G.gainU = TSL.uniform(GI_GAIN_DEFAULT); G.aoU = TSL.uniform(GI_AO_DEFAULT);   // §GI_STILL_GAIN_DIAL
     G.recvU = TSL.uniform(0);   // §GI_RECEIVER, set per press
@@ -767,7 +774,11 @@
         if (sh) G.shareCtx.putImageData(new ImageData(sh.data, w, h), 0, 0); else { G.shareCtx.fillStyle = '#000'; G.shareCtx.fillRect(0, 0, w, h); }
         G.shareTex.needsUpdate = true; G.irMaxU.value = /[?&]ircmax=0/.test(location.search) ? 0 : 1;
         R.irShare = sh ? { pixels: sh.pixels, meanShare: sh.meanShare, over50: sh.shareOver50 } : null;
-        console.log('§IRC_MAX composite rule=' + (G.irMaxU.value ? 'max(IR, SSGI)' : 'SUM (&ircmax=0)') + ' share=' + (sh ? 'pixelsWithIR ' + sh.pixels + ' mean ' + sh.meanShare : 'none (IR off or not staged)')); }
+        console.log('§IRC_MAX composite rule=' + (G.irMaxU.value ? 'max(IR, SSGI)' : 'SUM (&ircmax=0)') + ' share=' + (sh ? 'pixelsWithIR ' + sh.pixels + ' mean ' + sh.meanShare : 'none (IR off or not staged)'));
+        // ### ALTS-ALL FIX 13: energy bound k2 = R/(1-R), R = the zone IR's own R
+        const bOff = /[?&]gibound=0/.test(location.search) || A._stillGiBound === false, Rr = (window.SourcedLight && window.SourcedLight.irR) ? window.SourcedLight.irR() : null;
+        G.boundU.value = (bOff || !(Rr > 0 && Rr < 1)) ? 0 : 1; G.boundK2.value = (Rr > 0 && Rr < 1) ? Rr / (1 - Rr) : 1;
+        console.log('§GI_BOUND ' + (G.boundU.value ? 'on' : 'off' + (bOff ? ' (&gibound=0)' : ' (no IR_R published)')) + ' R=' + Rr + ' k2=' + G.boundK2.value.toFixed(3) + ' rule=added<=max(0,k2*C*(1-share)-C*share) share=' + (sh ? sh.meanShare : 'none')); }
       // §ZERO Z11 (b) — the receiver albedo of every pixel (one app render, readback mode 13); none = the old estimate everywhere
       { let ab = null; const off = /[?&]gialb=0/.test(location.search) || A._stillGiAlb === false;
         if (!off) { try { ab = window.SourcedLight && window.SourcedLight.albedoMap ? window.SourcedLight.albedoMap(A, w, h) : null; } catch (eA) { console.warn('§GI_RECEIVER_ALBEDO failed: ' + eA.message); } }
@@ -1030,7 +1041,7 @@
       }
       const G = film.G;
       G.setMode('composite', encodeMode());
-      G.gainU.value = readGain(); G.aoU.value = readAo(true); G.albU.value = 0;   // §ZERO Z11: films unchanged (0.55, estimate receiver)
+      G.gainU.value = readGain(); G.aoU.value = readAo(true); G.albU.value = 0; G.boundU.value = 0;   // FIX 13: films unbounded until Z13   // §ZERO Z11: films unchanged (0.55, estimate receiver)
       G.recvU.value = readNum('_stillGiRecv', 'girecv', GI_RECV_DEFAULT, 0, 1);
       G.gi.radius.value = readNum('_stillGiRadius', 'girad', GI_RADIUS_DEFAULT, 0.5, 100);
       G.gi.thickness.value = readNum('_stillGiThick', 'githick', GI_THICK_DEFAULT, 0.01, 50);

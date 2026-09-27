@@ -23,6 +23,8 @@ const FIXES = {
   shellreach2:   { q: '&shellreach=2', on: /§SKY_SHELL_RAYS .*reach=air/, off: /§SKY_SHELL_RAYS .*reach=r2/, offMustLine: true, pop: /§SKY_SHELL_RAYS .* recomputedAirOnly=(\d+)/, local: true, name: 'Z8 radius-free reach' },
   gridblend1:    { q: '&gridblend=1', on: /§GRID_BLEND off/, off: /§GRID_BLEND on/, offMustLine: true, pop: null, local: true, name: 'Z18 grid blend (arm = ON)', invert: true },
   specsmooth0:   { q: '&specsmooth=0', on: /§SPEC_SMOOTH on/, off: /§SPEC_SMOOTH off/, offMustLine: true, pop: null, local: true, name: 'Z18 spec smooth (mirror gate)' },
+  gibound0:      { q: '&gibound=0', on: /§GI_BOUND on/, off: /§GI_BOUND off \(&gibound=0/, offMustLine: true, pop: null, local: false, name: 'FIX 13 GI energy bound' },
+  metalpbr0:     { q: '&metalpbr=0', on: /§METAL_PBR on/, off: /§METAL_PBR off/, offMustLine: true, pop: null, local: true, name: 'FIX 11 MEP trade hue + PBR metalness' },
   meterband7095: { q: '&meterband=70,95', on: /§METER camera=/, off: /§METER camera=/, offMustLine: true, pop: /§METER camera=.* pixels=(\d+)/, local: false, name: 'meter band 40/90 vs 70/95' }
 };
 const REFS = {   // p50 / le15 / clip: §ALTS_COMBINED RESULT (torch build, first press) else §METER_EV v2 40/90 (evD), else B1
@@ -112,10 +114,19 @@ function g4(rec) {
   const E = rec.eval || {}, c = E.comp, L = rec.lines || [], out = [];
   if (!c) return [row('G4', 'look metrics', 'INCONCLUSIVE', 'no composite stats')];
   const gl = grep1(L, /§GLARE bld=/), g = (/black_exterior=(\d+) junction_zone_flip=(\d+) covered_open_side_black=(\d+)/.exec(gl || '') || []).slice(1).join('/');
-  const inBand = c.p50 >= BAND.p50Lo && c.p50 <= BAND.p50Hi && c.ge250pct < BAND.clipMax;
+  // ### ALTS-ALL FIX 10 (D1, red1 ruling 2): from an INSIDE camera the band counts clipping only on INTERIOR opaque surfaces; exterior
+  // seen through glass/openings (eye adaptation, WANTED) and emitters (the source itself) print as INFO. Outside camera: all clipping.
+  const mline = grepLast(L, /§METER camera=/), inside = /camera=inside/.test(mline || ''), K = rec.clip;
+  const kOk = K && !K.err && K.interiorPct != null;
+  const clipJ = (inside && kOk) ? K.interiorPct : c.ge250pct;
+  const inBand = c.p50 >= BAND.p50Lo && c.p50 <= BAND.p50Hi && clipJ < BAND.clipMax;
   const src = E.compSrc === 'bounce' ? 'composite' : 'APP FRAME (no bounce canvas: not the saved image)';
-  out.push(row('G4', 'p50 40..200 & clipped < 2%', !inBand ? 'FAIL' : (E.compSrc === 'bounce' ? 'PASS' : 'SCOPE-BLIND'),
-    'p5/p50/p95 ' + c.p5 + '/' + c.p50 + '/' + c.p95 + ' le15 ' + c.le15pct + '% clip ' + c.ge250pct + '% [' + src + ']', { metrics: c }));
+  const noCls = inside && !kOk && c.ge250pct >= BAND.clipMax;   // never PASS on a missing readback
+  out.push(row('G4', 'p50 40..200 & clipped < 2%', noCls ? 'INCONCLUSIVE' : (!inBand ? 'FAIL' : (E.compSrc === 'bounce' ? 'PASS' : 'SCOPE-BLIND')),
+    'p5/p50/p95 ' + c.p5 + '/' + c.p50 + '/' + c.p95 + ' le15 ' + c.le15pct + '% clip ' + (inside ? (kOk ? 'interior-opaque ' + K.interiorPct + '% (whole frame ' + c.ge250pct + '%)' : c.ge250pct + '% (whole frame: clip classification ' + (K ? K.err : 'missing') + ')') : c.ge250pct + '% (outside camera: all counted)') + ' [' + src + ']', { metrics: c, clipJudged: clipJ }));
+  if (kOk && K.clipped) out.push(row('G4', 'clip by surface (D1: exterior through openings = WANTED eye adaptation; emitters = sources)', 'INFO',
+    'camera ' + (inside ? 'inside' : 'outside') + ' clipped ' + K.clipPct + '% = interior ' + K.interiorPct + '% + exterior ' + K.exteriorPct + '% (glass-backed ' + K.glassBackedPct + '%) + emitter ' + K.emitterPct + '% + unclassified ' + K.unclassifiedPct + '%' + (K.topZones && K.topZones.length ? ' | interior zones ' + JSON.stringify(K.topZones) : '')));
+  if (kOk && K.unclassifiedPct > 0.2) out.push(row('G4', 'clip classification readback exact (unclassified <= 0.2 %)', 'INCONCLUSIVE', 'unclassified ' + K.unclassifiedPct + '% of the frame'));
   out.push(row('G4', '§GLARE 0/0/0', g === '0/0/0' ? 'PASS' : (g ? 'FAIL' : 'INCONCLUSIVE'), g || 'no line'));
   out.push(row('G4', 'programs / press time', 'WARN', 'programs=' + E.programs + ' pressSecs=' + rec.pressSecs + ' stageTotal=' + num(grep1(L, /§STILL_STAGE_MS/), /total=(\d+)/)));
   return out;
@@ -163,10 +174,11 @@ function stripPrefix(l) { return l.replace(/^\S+ \+\s*[\d.]+s /, '').replace(/^\
 function fe(L) { return grepAll(L, /§FILM_EXPOSURE f=\d+/).map(l => { const d = { f: num(l, /f=(\d+)/) }; (l.match(/(\w+)=(\[[^\]]*\]|\S+)/g) || []).forEach(kv => { const i = kv.indexOf('='); d[kv.slice(0, i)] = kv.slice(i + 1); }); return d; }); }
 function swRace(Lraw) {
   const L = Lraw.map(stripPrefix), k = L.findIndex(l => /§CLI_BAKE_SW_PURGE/.test(l)); if (k < 0) return { purge: false };
-  const unreg = num(L[k], /unregistered=(\d+)/), tag = l => (/^(§[A-Z_0-9]+_INIT)\b/.exec(l) || [])[1];
+  const unreg = num(L[k], /unregistered=(\d+)/), ctl = num(L[k], /controllerAtLoad=(-?\d+)/), tag = l => (/^(§[A-Z_0-9]+_INIT)\b/.exec(l) || [])[1];
   const before = new Set(L.slice(0, k).map(tag).filter(Boolean)), after = new Set(L.slice(k + 1).filter(l => !/^§CLAIM/.test(l)).map(tag).filter(Boolean));
   const dup = [...before].filter(t => after.has(t) && !/^§(SFX|GRID|TRIPLANAR)_INIT$/.test(t));
-  return { purge: true, unregistered: unreg, dupInit: dup, race: unreg > 0 && dup.length > 0 };
+  // ### ALTS-ALL FIX 15 (F12): a race needs a SW-CONTROLLED pre-purge page; controllerAtLoad=0 = served by the network (this tree)
+  return { purge: true, unregistered: unreg, dupInit: dup, controllerAtLoad: ctl, race: unreg > 0 && dup.length > 0 && ctl !== 0 };
 }
 function filmJudge(bake, T, ctl) {
   // bake = { arm, lines, frames: [{i, yavg, md5}] (ffprobe, optional), tap: {...} }, ctl = { C, E, Tt, B } optional other arms
@@ -180,8 +192,8 @@ function filmJudge(bake, T, ctl) {
     const dup = Object.keys(ic).filter(t => ic[t] > 1), n = Object.keys(ic).length;
     add('F-G1', 'SW purge / reload race', !n ? 'INCONCLUSIVE' : (dup.length ? 'INCONCLUSIVE' : 'PASS'), 'in-browser channel, fresh profile, no purge: ' + n + ' _INIT tags, duplicated: ' + (dup.join(',') || 'none'));
   } else
-  add('F-G1', 'SW purge / reload race', !sr.purge ? 'INCONCLUSIVE' : (sr.race ? 'INCONCLUSIVE' : (sr.unregistered > 0 ? 'WARN' : 'PASS')),
-    !sr.purge ? 'no §CLI_BAKE_SW_PURGE line (in-browser channel: see tap)' : 'unregistered=' + sr.unregistered + ' pre-purge _INIT also after: ' + (sr.dupInit.join(',') || 'none') + (sr.race ? ' => INCONCLUSIVE-instrument (a stale SW page initialised before the purge)' : ''));
+  add('F-G1', 'SW purge / reload race', !sr.purge ? 'INCONCLUSIVE' : (sr.race ? 'INCONCLUSIVE' : (sr.unregistered > 0 && sr.controllerAtLoad !== 0 ? 'WARN' : 'PASS')),
+    !sr.purge ? 'no §CLI_BAKE_SW_PURGE line (in-browser channel: see tap)' : 'unregistered=' + sr.unregistered + ' controllerAtLoad=' + (sr.controllerAtLoad == null ? 'n/a (old CLI)' : sr.controllerAtLoad) + ' pre-purge _INIT also after: ' + (sr.dupInit.join(',') || 'none') + (sr.unregistered > 0 && sr.controllerAtLoad === 0 ? ' (pre-purge page came from the network = this tree: its own fresh SW install was unregistered, not stale JS)' : '') + (sr.race ? ' => INCONCLUSIVE-instrument (a stale SW page initialised before the purge)' : ''));
   // ### ALTS-ALL FIX 2: the building must load (pass 1: HospitalAjaibPath.db absent from the tree's git-ignored buildings/ -> 404 in 3 s)
   const nf = grepAll(Lr.map(stripPrefix), /§DB_404|§CLI_BAKE_LOAD_FATAL|§ALTS_FILM_DB MISSING/);
   add('F-G1', 'building loaded (no §DB_404 / §CLI_BAKE_LOAD_FATAL)', nf.length ? 'INCONCLUSIVE' : 'PASS', nf.length ? nf[0].slice(0, 140) : 'no 404 / load-fatal line');

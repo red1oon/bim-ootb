@@ -26,7 +26,7 @@ const LOG = [], S = m => { LOG.push(m); console.log(m); };
 let fails = 0, judged = 0, inconcl = 0;
 const V = (ok, l, d) => { if (ok === null) { inconcl++; S('   ⚪ INCONCLUSIVE ' + l + (d ? ' — ' + d : '')); return; } judged++; if (!ok) fails++; S('   ' + (ok ? '🟢' : '🔴') + ' ' + l + (d ? ' — ' + d : '')); };
 const PLENUM = { cam: [-20.496, -5.619, -34.439], tgt: [-23.527, -6.051, -22.952] };
-const TAGS = /§PLACEHOLDER_COLOUR|§PLACEHOLDER_CLASS|§PORCELAIN|§IR_COLOUR|§IRC_MAX build|§MEP_HUE_TALLY|§GI_STILL result|§LOAD_FAIL|§METER camera|§FAULT/;
+const TAGS = /§ALBEDO_SRGB srgbfix|§METAL_PBR|§PLACEHOLDER_COLOUR|§PLACEHOLDER_CLASS|§PORCELAIN|§IR_COLOUR|§IRC_MAX build|§MEP_HUE_TALLY|§GI_STILL result|§LOAD_FAIL|§METER camera|§FAULT/;
 
 // in-page: one measured frame. mode 'canvas' renders the app scene now; mode 'still' reads the Alt+S overlay canvas.
 function pageMeasure(mode, GX, GY) {
@@ -44,9 +44,19 @@ function pageMeasure(mode, GX, GY) {
     if (!h) continue; const o = h.object, id = h.batchId != null ? o.id + '_' + h.batchId : h.instanceId != null ? o.id + '_' + h.instanceId : o.id;
     const guid = A.guidMap[id] || A.guidMap[o.id]; const m = guid && meta[guid]; if (!m) continue;
     const x = Math.min(src.width - 1, Math.floor(u * src.width)), y = Math.min(src.height - 1, Math.floor(v * src.height)), k = (y * src.width + x) * 4;
-    samples.push({ i: gy * GX + gx, g: guid, cls: m.c, d: m.d, ph: m.ph, porc: m.p, rgb: [px[k], px[k + 1], px[k + 2]] });
+    // ### ALTS-ALL FIX 12 (D3): the hit's MATERIAL colour (x instance / batch colour when present) — the Z21 claim is about the material
+    const ms = Array.isArray(o.material) ? o.material : [o.material], mm = ms[(h.face && h.face.materialIndex) || 0] || ms[0], mc = mm && mm.color ? [mm.color.r, mm.color.g, mm.color.b] : null;
+    let ic = null; try { const tc = new T.Color(); if (o.isInstancedMesh && o.instanceColor && h.instanceId != null) { o.getColorAt(h.instanceId, tc); ic = [tc.r, tc.g, tc.b]; } else if (o.isBatchedMesh && h.batchId != null && o.getColorAt) { o.getColorAt(h.batchId, tc); ic = [tc.r, tc.g, tc.b]; } } catch (e) {}
+    samples.push({ i: gy * GX + gx, g: guid, cls: m.c, d: m.d, ph: m.ph, porc: m.p, rgb: [px[k], px[k + 1], px[k + 2]], mat: mc && ic ? mc.map((v, q) => v * ic[q]) : mc, metal: mm ? mm.metalness : null });
   }
-  return { mode, w: src.width, h: src.height, meanSat: +(ss / n).toFixed(4), samples };
+  // ### ALTS-ALL FIX 12 (D3): a dense 32x32 grid inside the anchor's screen box (toilet specular p99)
+  let dense = null; if (window.__ctAnchor) { const g0 = window.__ctAnchor, ob = []; A.scene.traverse(o => { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible) ob.push(o); });
+    const c = new T.Vector3(...g0.tgt).project(A.camera), half = 0.12; dense = [];
+    for (let yy = 0; yy < 32; yy++) for (let xx = 0; xx < 32; xx++) { const nx = c.x - half + 2 * half * (xx + 0.5) / 32, ny = c.y - half + 2 * half * (yy + 0.5) / 32; rc.setFromCamera(new T.Vector2(nx, ny), A.camera);
+      const h = rc.intersectObjects(tg, false).filter(q => { const m = Array.isArray(q.object.material) ? q.object.material[0] : q.object.material; return m && !m.isMeshBasicMaterial && !(m.transparent && m.opacity < 0.95); })[0]; if (!h) continue;
+      const id = h.batchId != null ? h.object.id + '_' + h.batchId : h.instanceId != null ? h.object.id + '_' + h.instanceId : h.object.id; if ((A.guidMap[id] || A.guidMap[h.object.id]) !== g0.guid) continue;
+      const x = Math.min(src.width - 1, Math.floor((nx + 1) / 2 * src.width)), y = Math.min(src.height - 1, Math.floor((1 - ny) / 2 * src.height)), k = (y * src.width + x) * 4; dense.push([px[k], px[k + 1], px[k + 2]]); } }
+  return { mode, w: src.width, h: src.height, meanSat: +(ss / n).toFixed(4), samples, dense };
 }
 // in-page: CPU census of the built materials per class (the real THREE objects)
 function pageMaterials() {
@@ -88,10 +98,11 @@ async function arm(port, label, posesIn) {   // posesIn: the AFTER arm's poses, 
         const po = A._porcelainKey ? !!A._porcelainKey(r[1], r[4], r[3]) : false; meta[r[0]] = { c: r[1], ph, p: po, d: r[8] }; rows.push({ g: r[0], c: r[1], n: r[4], x: r[5], y: r[6], z: r[7] }); });
       window.__ctMeta = meta; window.__ctRows = rows; });
     out.materials = await p.evaluate(pageMaterials);
+    out.std = await p.evaluate(() => window.APP._stdMatClasses ? JSON.parse(JSON.stringify(window.APP._stdMatClasses)) : null);   // FIX 12: STD_MAT read from the running app
     const poses = posesIn || { plenum: PLENUM, toilet: await p.evaluate(pageAnchor, 'toilet'), beams: await p.evaluate(pageAnchor, 'beams') };
     for (const [name, pose] of Object.entries(poses)) {
       if (!pose) { out.poses[name] = { error: 'no anchor pose (element never first hit)' }; continue; }
-      await p.evaluate(q => { const A = window.APP; A.camera.position.fromArray(q.cam); A.controls.target.fromArray(q.tgt); A.controls.update(); }, pose); await sleep(1500);
+      await p.evaluate((q, nm) => { const A = window.APP; A.camera.position.fromArray(q.cam); A.controls.target.fromArray(q.tgt); A.controls.update(); window.__ctAnchor = (nm === 'toilet' && q.guid) ? q : null; }, pose, name); await sleep(1500);
       const canvas = await p.evaluate(pageMeasure, 'canvas', 48, 27);
       const n0 = L.length; await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
       for (let i = 0; i < 400 && !L.slice(n0).some(t => /§GI_STILL result|§GI_STILL_FAIL/.test(t)); i++) await sleep(1000);
@@ -116,8 +127,10 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
   for (const X of [B, A]) { S('── arm ' + X.label + ' sw=' + X.sw + ' scripts=' + X.v + ' pageErrors=' + X.pageErrors + (X.error ? ' ERROR ' + X.error : ''));
     X.L.filter(t => /§PLACEHOLDER_COLOUR|§PLACEHOLDER_CLASS|§PORCELAIN|§MEP_HUE_TALLY/.test(t)).forEach(t => S('   ' + t.slice(0, 400)));
     ['IfcBeam', 'IfcMember', 'IfcColumn', 'IfcPipeSegment', 'IfcDuctSegment', 'porcelain'].forEach(c => S('   §MATERIALS ' + X.label + ' ' + c + ' ' + JSON.stringify(X.materials ? X.materials[c] || {} : 'n/a'))); }
-  const boot = !B.error && !A.error && A.sw === 'v1476' && /streaming\.js\?v=78/.test(A.v || '') && !B.pageErrors && !A.pageErrors;
-  V(boot ? true : null, 'instrument: both arms booted, AFTER serves sw v1476 + streaming.js?v=78, no page errors', 'before ' + B.sw + ' / after ' + A.sw + ' ' + A.v);
+  // ### ALTS-ALL FIX 12 (4): the AFTER arm must serve the tree this witness runs in (was hard-coded v1476 / ?v=78)
+  const TSW = (/CACHE_VERSION = '([^']+)'/.exec(fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8')) || [])[1], TSV = (/streaming\.js\?v=(\d+)/.exec(fs.readFileSync(path.join(__dirname, '..', 'viewer.html'), 'utf8')) || [])[1];
+  const boot = !B.error && !A.error && A.sw === TSW && new RegExp('streaming\\.js\\?v=' + TSV + '\\b').test(A.v || '') && !B.pageErrors && !A.pageErrors;
+  V(boot ? true : null, 'instrument: both arms booted, AFTER serves this tree (sw ' + TSW + ' + streaming.js?v=' + TSV + '), no page errors', 'before ' + B.sw + ' / after ' + A.sw + ' ' + A.v);
   const phLine = A.L.find(t => /^§PLACEHOLDER_COLOUR bld=Hospital/.test(t)) || '', porcLine = A.L.find(t => /^§PORCELAIN bld=Hospital/.test(t)) || '';
   const rep = +((/replaced=(\d+)/.exec(phLine) || [])[1] || NaN), pm = +((/matched=(\d+)/.exec(porcLine) || [])[1] || NaN);
   V(phLine ? rep === 10947 : null, 'Z21 §PLACEHOLDER_COLOUR replaced = 10947 (node census: Member 6635, Beam 1970, WallStd 1226, Column 506, Footing 444, Covering 152, Door 5, Railing 4, Wall 3, Slab 2)', phLine.slice(0, 200));
@@ -137,19 +150,33 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
         if (cb.n || ca.n) S('   ' + mode + ' ' + c + ' n ' + cb.n + '/' + ca.n + ' rgb before ' + f3(cb) + ' after ' + f3(ca) + ' sat ' + cb.sat.toFixed(3) + '/' + ca.sat.toFixed(3)); });
       // Z21: steel classes flip from cream (r > b) to steel (b >= r) at placeholder pixels
       const sb = byClass(fb.samples, q => q.ph && (q.cls === 'IfcBeam' || q.cls === 'IfcMember')), sa = byClass(fa.samples, q => q.ph && (q.cls === 'IfcBeam' || q.cls === 'IfcMember'));
-      if (name === 'beams' || sa.n >= 5) V(sa.n >= 5 && sb.n >= 5 ? (sb.rgb[0] > sb.rgb[2] && sa.rgb[2] >= sa.rgb[0]) : null, 'Z21 ' + name + ' ' + mode + ': placeholder beam/member pixels cream (r>b) -> steel (b>=r)', 'before ' + f3(sb) + ' after ' + f3(sa) + ' n ' + sb.n + '/' + sa.n);
+      // ### ALTS-ALL FIX 12 (D3): Z21 is a MATERIAL claim — the hit material colour must be the class's STD_MAT steel (still: LightLaw
+      // sRGB-decoded when §ALBEDO_SRGB srgbfix=1). The lit-pixel "b >= r" test is dropped: warm lamps / the cove legitimately warm a
+      // neutral surface (pass 2 failed the plenum still on exactly that). Lit pixel means stay printed as information.
+      if (name === 'beams' || sa.n >= 5) { const stdT = A.std || {}, dec = mode === 'still' && (a.tags || []).some(t => /§ALBEDO_SRGB srgbfix=1/.test(t));
+        const eo = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        const ph = fa.samples.filter(q => q.ph && (q.cls === 'IfcBeam' || q.cls === 'IfcMember') && q.mat), bad = ph.filter(q => { const s0 = stdT[q.cls]; if (!s0) return true; const w = [s0.r, s0.g, s0.b].map(v => dec ? eo(v) : v); return Math.max(...w.map((v, k) => Math.abs(v - q.mat[k]))) > 0.01; });
+        V(ph.length >= 5 && Object.keys(stdT).length ? bad.length === 0 : null, 'Z21 ' + name + ' ' + mode + ': placeholder beam/member MATERIAL colour == STD_MAT steel' + (dec ? ' (sRGB-decoded for the still)' : ''), 'n ' + ph.length + ' off ' + bad.length + (bad[0] ? ' e.g. ' + bad[0].cls + ' ' + bad[0].mat.map(v => v.toFixed(3)).join(',') : '') + ' | lit pixels before ' + f3(sb) + ' after ' + f3(sa)); }
       // Z21 §MEP_PROXY_HUE: MEP-trade proxy placeholder pixels gain saturation (cream -> trade hue); judged where >= 5 pixels exist
       const MPD = /^(MEP|FP|PLB|ELEC|ACMV|HVAC|SAN|VENT|HEAT)$/, xb = byClass(fb.samples, q => q.cls === 'IfcBuildingElementProxy' && q.ph && !q.porc && MPD.test(q.d)), xa = byClass(fa.samples, q => q.cls === 'IfcBuildingElementProxy' && q.ph && !q.porc && MPD.test(q.d));
       if (xa.n || xb.n) V(xa.n >= 5 && xb.n >= 5 ? xa.sat > xb.sat + 0.1 : null, 'Z21 ' + name + ' ' + mode + ': MEP-trade proxy placeholder pixels take a trade hue (sat +0.1)', 'before ' + f3(xb) + ' sat ' + xb.sat.toFixed(3) + ' after ' + f3(xa) + ' sat ' + xa.sat.toFixed(3) + ' n ' + xb.n + '/' + xa.n);
       // Z20: porcelain pixels keep their white (mean channel within 8 % of before, low saturation)
       const pb = byClass(fb.samples, q => q.porc), pa = byClass(fa.samples, q => q.porc);
-      if (name === 'toilet') V(pa.n >= 5 && pb.n >= 5 ? (pa.sat < 0.12 && Math.abs(mean(pa.rgb) - mean(pb.rgb)) / Math.max(1, mean(pb.rgb)) < 0.08) : null, 'Z20 toilet ' + mode + ': porcelain pixels stay white (sat < 0.12, mean within 8 %)', 'before ' + f3(pb) + ' sat ' + pb.sat.toFixed(3) + ' after ' + f3(pa) + ' sat ' + pa.sat.toFixed(3) + ' n ' + pb.n + '/' + pa.n);
+      // ### ALTS-ALL FIX 12 (D3): porcelain stays white (sat < 0.12) AND shows a specular highlight: p99 luma of the anchor's pixels (dense
+      // 32x32 grid in its screen box) above the matte arm's (BEFORE = the old roughness 0.375 finish). "Mean within 8 %" dropped: a glossy
+      // white correctly reads brighter.
+      if (name === 'toilet') { const lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2], p99 = arr => { const so = arr.map(lum).sort((x, y) => x - y); return so.length ? so[Math.min(so.length - 1, Math.floor(so.length * 0.99))] : NaN; };
+        const da = fa.dense || [], db = fb.dense || [], qa = p99(da), qb = p99(db);
+        V(pa.n >= 5 && da.length >= 30 && db.length >= 30 ? (pa.sat < 0.12 && qa > qb) : null, 'Z20 toilet ' + mode + ': porcelain pixels stay white (sat < 0.12) + specular highlight (p99 luma > matte arm)', 'sat ' + pa.sat.toFixed(3) + ' p99 after ' + (isFinite(qa) ? qa.toFixed(1) : '-') + ' vs before ' + (isFinite(qb) ? qb.toFixed(1) : '-') + ' dense n ' + db.length + '/' + da.length + ' | mean before ' + f3(pb) + ' after ' + f3(pa)); }
       // REFS (canvas only — the still also carries the IR colour): untouched elements identical
       if (mode === 'canvas') { const byI = new Map(fa.samples.map(q => [q.i, q])), diffs = [];
-        fb.samples.forEach(q => { const r = byI.get(q.i); if (r && r.g === q.g && !q.ph && !q.porc) diffs.push((Math.abs(q.rgb[0] - r.rgb[0]) + Math.abs(q.rgb[1] - r.rgb[1]) + Math.abs(q.rgb[2] - r.rgb[2])) / 3); });
-        const md = []; fb.samples.forEach(q => { const r = byI.get(q.i); if (r && r.g === q.g && q.ph && /^Ifc(Pipe|Duct)/.test(q.cls)) md.push((Math.abs(q.rgb[0] - r.rgb[0]) + Math.abs(q.rgb[1] - r.rgb[1]) + Math.abs(q.rgb[2] - r.rgb[2])) / 3); });
-        if (name === 'plenum') V(md.length >= 20 ? mean(md) <= 2 : null, 'Z21 plenum canvas: MEP placeholder pipes/ducts keep their tier-2 colour (mean abs <= 2 codes)', 'n=' + md.length + ' meanAbs=' + (md.length ? mean(md).toFixed(2) : '-'));
-        V(diffs.length >= 20 ? mean(diffs) <= 2 : null, 'REFS ' + name + ' canvas: untouched-element pixels unchanged (mean abs <= 2 codes, same grid cell + same guid)', 'n=' + diffs.length + ' meanAbs=' + (diffs.length ? mean(diffs).toFixed(2) : '-')); }
+        const D2C = /^Ifc(Pipe|PipeFitting|PipeSegment|FlowSegment|FlowFitting|Duct|DuctFitting|DuctSegment|Beam|Member|Plate)$/;   // FIX 11 moves these by design
+        fb.samples.forEach(q => { const r = byI.get(q.i); if (r && r.g === q.g && !q.ph && !q.porc && !D2C.test(q.cls)) diffs.push((Math.abs(q.rgb[0] - r.rgb[0]) + Math.abs(q.rgb[1] - r.rgb[1]) + Math.abs(q.rgb[2] - r.rgb[2])) / 3); });
+        // ### ALTS-ALL FIX 12 (3): FIX 11 moves pipes by design — FP/PLB pipe MATERIAL hue == its discipline's DISC_COLORS hue (±6°)
+        const DC = { FP: 0xcc8844, PLB: 0x8844cc }, hueOf = c => { const mx = Math.max(...c), mn = Math.min(...c), dd = mx - mn; if (!dd) return null; let hh = mx === c[0] ? ((c[1] - c[2]) / dd) % 6 : mx === c[1] ? (c[2] - c[0]) / dd + 2 : (c[0] - c[1]) / dd + 4; return (hh * 60 + 360) % 360; };
+        const pq = fa.samples.filter(q => /^IfcPipe/.test(q.cls) && DC[q.d] && q.mat), pbad = pq.filter(q => { const h0 = hueOf(q.mat), hd = hueOf([(DC[q.d] >> 16 & 255) / 255, (DC[q.d] >> 8 & 255) / 255, (DC[q.d] & 255) / 255]); return h0 == null || Math.min(Math.abs(h0 - hd), 360 - Math.abs(h0 - hd)) > 6; });
+        if (name === 'plenum') V(pq.length >= 10 ? pbad.length === 0 : null, 'FIX 11 plenum canvas: FP/PLB pipe material hue == its discipline hue (±6°)', 'n=' + pq.length + ' (FP ' + pq.filter(q => q.d === 'FP').length + ', PLB ' + pq.filter(q => q.d === 'PLB').length + ') off ' + pbad.length + (pbad[0] ? ' e.g. ' + pbad[0].d + ' ' + pbad[0].mat.map(v => v.toFixed(3)).join(',') : '') + ' metal ' + [...new Set(pq.map(q => q.metal))].join(','));
+        V(diffs.length >= 20 ? mean(diffs) <= 2 : null, 'REFS ' + name + ' canvas: untouched-element pixels unchanged (mean abs <= 2 codes, same grid cell + same guid; FIX 11 classes excluded)', 'n=' + diffs.length + ' meanAbs=' + (diffs.length ? mean(diffs).toFixed(2) : '-')); }
       // Z19: Alt+S saturation rises (canvas does not carry IR)
       if (mode === 'still' && name !== 'toilet') { const irc = (a.tags || []).find(t => /^§IR_COLOUR bld=/.test(t)) || '';
         V(irc && !/VACUOUS|off/.test(irc) ? fa.meanSat > fb.meanSat : null, 'Z19 ' + name + ' still: mean saturation rises with coloured IR', 'before ' + fb.meanSat + ' after ' + fa.meanSat + ' | ' + irc.slice(0, 160)); }

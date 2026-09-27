@@ -451,6 +451,9 @@ const server = http.createServer((req, res) => {
     sink.end(() => { log(`§CLI_BAKE_SINK end bytes=${sinkBytes}`); res(); });
   }));
 
+  // ### ALTS-ALL FIX 15 (F12): was THIS document served by a service worker? (a fresh --profile's first navigation is not: it comes
+  // from the network = this tree; its own SW install is what the purge then unregisters — not stale JS)
+  await page.evaluateOnNewDocument(() => { try { window.__swCtlAtLoad = !!(navigator.serviceWorker && navigator.serviceWorker.controller); } catch (e) { window.__swCtlAtLoad = null; } });
   await page.evaluateOnNewDocument((flagsJson) => {
     window.__MAXQ_SILENT = true;                       // gates window.__maxqBake (dev-only)
     window.__maxqPoseLog = [];                          // §CLI_SILENT_BAKE item 4 — pose record
@@ -498,13 +501,13 @@ const server = http.createServer((req, res) => {
   // §STATUS_BOX / §MEASURE_BOX / §SLAB_BEAT_AREA at all — 8 minutes of GPU spent testing code that
   // was not in the film. Every witness_*.js already does exactly this; the bake runner never did.
   const _swPurge = await page.evaluate(async () => {
-    let regs = 0, ks = 0;
+    let regs = 0, ks = 0, urls = [];
     try { if (navigator.serviceWorker) { const rs = await navigator.serviceWorker.getRegistrations();
-      regs = rs.length; for (const r of rs) await r.unregister(); } } catch (e) {}
+      regs = rs.length; for (const r of rs) { const w = r.active || r.waiting || r.installing; urls.push(w ? w.scriptURL.split('/').pop() : '?'); await r.unregister(); } } } catch (e) {}
     try { if (window.caches) { const k = await caches.keys(); ks = k.length; for (const n of k) await caches.delete(n); } } catch (e) {}
-    return { regs, ks };
+    return { regs, ks, ctl: window.__swCtlAtLoad === true ? 1 : (window.__swCtlAtLoad === false ? 0 : -1), urls };
   });
-  log(`§CLI_BAKE_SW_PURGE unregistered=${_swPurge.regs} cachesDeleted=${_swPurge.ks} — reloading so the bake runs THIS build, not the precached one`);
+  log(`§CLI_BAKE_SW_PURGE unregistered=${_swPurge.regs} cachesDeleted=${_swPurge.ks} controllerAtLoad=${_swPurge.ctl} regs=[${_swPurge.urls.join(',')}] — reloading so the bake runs THIS build, not the precached one`);
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.APP && window.APP.renderer && window.APP.camera &&
     typeof window.APP.startMaxQualityOrbit === 'function' && typeof window.__maxqBake === 'function',

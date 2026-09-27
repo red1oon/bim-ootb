@@ -39,7 +39,7 @@ const POSES = {
   tr3: ['Terminal', '', [13.795, -12.718, 8.441], [11.243, -14.311, 3.019]], tr4: ['Terminal', '', [-7.989, -16.079, 11.597], [-9.975, -14.634, 8.118]],
   tr5: ['Terminal', '', [-24.776, -10.142, -8.08], [-9.975, -14.634, 8.118]], tr6: ['Terminal', '', [-18.614, -11.684, -12.335], [-9.975, -14.634, 8.118]], hhs_z18: ['HHS_Office_Federated', '&ghost=1', [-10.011, -4.496, -21.246], [0.306, -2.129, 0.238]]
 };
-const ARM_POSES = { torch0: ['inner_close', 'inner', 'night'], srgbfix0: ['inner'], groundlaw0: ['night'], aoindirect0: ['inner'], gialb0: ['inner'], skyshell0: ['a202'], shellreach2: ['a202'], gridblend1: ['hhs_z18'], specsmooth0: ['hhs_z18'], meterband7095: ['inner', 'night'] };
+const ARM_POSES = { torch0: ['inner_close', 'inner', 'night'], srgbfix0: ['inner'], groundlaw0: ['night'], aoindirect0: ['inner'], gialb0: ['inner'], skyshell0: ['a202'], shellreach2: ['a202'], gridblend1: ['hhs_z18'], specsmooth0: ['hhs_z18'], meterband7095: ['inner', 'night'], gibound0: ['plenum'], metalpbr0: ['plenum'] };
 const log = (() => { let fd = null; return s => { console.log(s); try { if (!fd) { fs.mkdirSync(OUT, { recursive: true }); fd = fs.openSync(path.join(OUT, 'alts_all.log'), 'a'); } fs.writeSync(fd, s + '\n'); } catch (e) {} }; })();
 const fnv = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); };
 
@@ -131,6 +131,50 @@ const GLASS_FACTS = async () => {
   Object.assign(out, { T: q(rows.map(x => x.T), 0.5), ratioP10: q(rr, 0.1), ratioP50: q(rr, 0.5), ratioP90: q(rr, 0.9), inBandPct: +(100 * okN / rows.length).toFixed(1), compL: q(rows.map(x => x.cl), 0.5), appL: q(rows.map(x => x.ul), 0.5), keepAbs: (() => { const d = rows.filter(x => x.cl != null && x.ul != null).map(x => Math.abs(x.cl - x.ul)); return d.length ? +(d.reduce((a, b) => a + b, 0) / d.length).toFixed(2) : null; })(), bouncePct: +(100 * rows.filter(x => x.ba > 0).length / rows.length).toFixed(1), clones: rows.filter(x => x.clone).length, hidden: hideAll.length, objs: gObjs.size });
   return out;
 };
+// ### ALTS-ALL FIX 10 (D1, red1 ruling 2): classify every CLIPPED pixel (L >= 250) of the saved composite by the surface under it, read
+// from the staged scene: pass (b) first surface — lit opaque -> black, glass -> blue (after opaque, no depth write), any non-lit
+// material (MeshBasic emitters, sprites, points, lines, raw shaders) -> red, background off; pass (a) — glass + non-lit hidden,
+// SourcedLight.debugZones(1) (§SOURCED_LIGHT_ZONE_DEBUG: R,G = slFragZone zone) into a float target. EMITTER | EXTERIOR (sky, zone 0
+// = outdoors, 65534 = off-grid) | INTERIOR (zone > 0). Percentages are of ALL frame pixels (the band's clip % is too).
+const CLIP_FACTS = async () => {
+  const A = window.APP, R = A.renderer, THREE = window.THREE, D = window.__giStillDebugCanvas, SL = window.SourcedLight, out = {};
+  let cw, ch, img; if (D && D.bounce && D.under) { cw = D.under.width; ch = D.under.height; const fin = D.bounce.getContext('2d').getImageData(0, 0, cw, ch).data, app = D.under.getContext('2d').getImageData(0, 0, cw, ch).data; img = new Uint8ClampedArray(cw * ch * 4); for (let i = 0; i < img.length; i += 4) { const s = fin[i + 3] > 0 ? fin : app; img[i] = s[i]; img[i + 1] = s[i + 1]; img[i + 2] = s[i + 2]; } }
+  else return { err: 'no composite canvas' };
+  const clipIdx = []; for (let p = 0, i = 0; p < cw * ch; p++, i += 4) if (0.2126 * img[i] + 0.7152 * img[i + 1] + 0.0722 * img[i + 2] >= 250) clipIdx.push(p);
+  out.w = cw; out.h = ch; out.clipped = clipIdx.length; out.clipPct = +(100 * clipIdx.length / (cw * ch)).toFixed(3);
+  if (!clipIdx.length) { out.interiorPct = 0; out.exteriorPct = 0; out.emitterPct = 0; out.glassBackedPct = 0; return out; }
+  if (!SL || !SL.debugZones || !(SL.isActive && SL.isActive())) return Object.assign(out, { err: 'sourced light not staged (no zone readback)' });
+  const LIT = m => m && (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshToonMaterial);
+  const GLS = m => m && ((m.userData && m.userData.gfOf) || (m.transparent && m.opacity < 0.95) || m.transmission > 0);
+  const objs = []; A.scene.traverse(o => { if (o.visible && o.material && (o.isMesh || o.isInstancedMesh || o.isBatchedMesh || o.isSprite || o.isPoints || o.isLine)) objs.push(o); });
+  const mk = (c, tr) => new THREE.MeshBasicMaterial({ color: c, transparent: !!tr, opacity: 1, depthWrite: !tr, side: THREE.DoubleSide });
+  const M = { o: mk(0x000000), g: mk(0x0000ff, true), e: mk(0xff0000) }, SP = new THREE.SpriteMaterial({ color: 0xff0000 }), PT = new THREE.PointsMaterial({ color: 0xff0000 }), LN = new THREE.LineBasicMaterial({ color: 0xff0000 });
+  const kind = m => GLS(m) ? 'g' : (LIT(m) ? 'o' : 'e');
+  const saved = objs.map(o => [o, o.material]), bg = A.scene.background, fog = A.scene.fog, sky = A._sky, skyV = sky ? sky.visible : null, prev = R.getRenderTarget(), cc = R.getClearColor(new THREE.Color()), ca = R.getClearAlpha();
+  const rt = new THREE.WebGLRenderTarget(cw, ch, { type: THREE.FloatType, depthBuffer: true }), B = new Float32Array(cw * ch * 4), Z = new Float32Array(cw * ch * 4);
+  const hid = [];
+  try {
+    A.scene.background = null; A.scene.fog = null; if (sky) sky.visible = false; R.setClearColor(0x000000, 0);
+    objs.forEach(o => { if (o.isSprite) o.material = SP; else if (o.isPoints) o.material = PT; else if (o.isLine) o.material = LN; else o.material = Array.isArray(o.material) ? o.material.map(m => M[kind(m)]) : M[kind(o.material)]; });
+    R.setRenderTarget(rt); R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, cw, ch, B);
+    saved.forEach(([o, m]) => { o.material = m; });
+    // pass (a): glass + non-lit hidden (per material in arrays: material.visible = false), zone readback
+    const mv = new Map(); objs.forEach(o => { if (o.isSprite || o.isPoints || o.isLine) { o.visible = false; hid.push(o); return; } (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m && kind(m) !== 'o' && !mv.has(m)) { mv.set(m, m.visible); m.visible = false; } }); });
+    SL.debugZones(1); R.setRenderTarget(rt); R.clear(true, true, true); R.render(A.scene, A.camera); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, cw, ch, Z);
+    mv.forEach((v, m) => { m.visible = v; });
+  } finally { SL.debugZones(0); saved.forEach(([o, m]) => { o.material = m; }); hid.forEach(o => { o.visible = true; }); A.scene.background = bg; A.scene.fog = fog; if (sky) sky.visible = skyV; R.setRenderTarget(prev); R.setClearColor(cc, ca); rt.dispose(); [M.o, M.g, M.e, SP, PT, LN].forEach(m => m.dispose()); }
+  let nI = 0, nX = 0, nE = 0, nG = 0, nU = 0; const zs = {};
+  clipIdx.forEach(p => { const x = p % cw, y = (p / cw) | 0, i = ((ch - 1 - y) * cw + x) * 4;   // float target rows are bottom-up
+    const r = B[i], g = B[i + 1], b = B[i + 2], a = B[i + 3], glassFront = a > 0.5 && b > 0.5 && b > r;
+    if (a > 0.5 && r > 0.5 && r >= b) { nE++; return; }
+    if (Z[i + 3] < 0.5) { nX++; if (glassFront) nG++; return; }   // no opaque surface: sky
+    const zr = Math.round(Z[i] * 255), zg = Math.round(Z[i + 1] * 255), zone = zr + 256 * zg, exact = Math.abs(Z[i] * 255 - zr) < 0.02 && Math.abs(Z[i + 1] * 255 - zg) < 0.02;
+    if (!exact) { nU++; return; }
+    if (zone === 0 || zone === 65534) { nX++; if (glassFront) nG++; } else { nI++; zs[zone] = (zs[zone] || 0) + 1; } });
+  const pc = n => +(100 * n / (cw * ch)).toFixed(3);
+  Object.assign(out, { interiorPct: pc(nI), exteriorPct: pc(nX), glassBackedPct: pc(nG), emitterPct: pc(nE), unclassifiedPct: pc(nU), topZones: Object.entries(zs).sort((a, b) => b[1] - a[1]).slice(0, 4) });
+  return out;
+};
 const MEM_FACTS = () => { const A = window.APP, R = A.renderer, m = performance.memory || {}; let clones = 0; const seen = new Set(); A.scene.traverse(o => { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(x => { if (x && !seen.has(x)) { seen.add(x); if (x.userData && x.userData.gfOf) clones++; } }); });
   return { heapMB: m.usedJSHeapSize ? +(m.usedJSHeapSize / 1048576).toFixed(1) : null, geometries: R.info.memory.geometries, textures: R.info.memory.textures, programs: R.info.programs ? R.info.programs.length : null, materials: seen.size, glassClones: clones }; };
 async function pressStill(puppeteer, pose, arm, T) {
@@ -160,6 +204,7 @@ async function pressStill(puppeteer, pose, arm, T) {
     rec.eval = await p.evaluate(PAGE_FACTS, EDITED, pose === 'a202' ? [9911662, 9911663] : null);
     const clicked = await p.evaluate(() => { const bt = Array.from(document.querySelectorAll('#gi-still-overlay button')).find(x => /Save PNG/.test(x.textContent)); if (bt) { bt.click(); return true; } return false; });
     if (clicked) { for (let i = 0; i < 60; i++) { const f = fs.readdirSync(dl).filter(x => /\.png$/.test(x)); if (f.length) { await new Promise(r => setTimeout(r, 800)); try { const P = readPng(fs.readFileSync(path.join(dl, f[0]))); rec.png = { file: path.join(dl, f[0]), w: P.w, h: P.h, stats: P.stats, pose: P.text['bim-still-pose'] ? JSON.parse(P.text['bim-still-pose']) : null }; } catch (e) { rec.png = { err: e.message }; } break; } await new Promise(r => setTimeout(r, 500)); } }
+    try { rec.clip = await p.evaluate(CLIP_FACTS); } catch (e) { rec.clip = { err: e.message }; }   // ### ALTS-ALL FIX 10 (after the PNG is saved)
     if (/^tr\d/.test(pose)) { try { rec.glass = await p.evaluate(GLASS_FACTS); rec.mem = await p.evaluate(MEM_FACTS); } catch (e) { rec.glass = { err: e.message }; } }   // DEFECT 6 (after the PNG is saved)
   } catch (e) { rec.fatal = e.message; }
   finally { if (gw) rec.gpu = gw.stop(); try { if (b) await b.close(); } catch (e) {} try { fs.rmSync(prof, { recursive: true, force: true }); } catch (e) {} }
