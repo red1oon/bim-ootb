@@ -5620,6 +5620,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // the bake's fill compensation scales from; stashed here, where the rule lives, not re-derived.
       A._nightPLScaleStaged = A._nightPLScale;
       A._nightUpdateLights();
+      if (!A._maxqActive && window.SourcedLight && window.SourcedLight.remeter) { try { window.SourcedLight.remeter(A); } catch (eRM) {} }   // §METER_EV: meter the lamps as rendered (audit #58)
       if (!A._maxqActive) {
         // §LIGHT_STACK (red1: "or the points of light are added up?"): at the floor point under the view centre, how many
         // lamps reach it above 5% of the strongest, and the summed lamp irradiance vs the single strongest (three's own

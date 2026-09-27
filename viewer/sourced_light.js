@@ -805,7 +805,7 @@
     if (A._lampDataOn && A._lampData && LAMP[0] > 0.5) { lampSrc = 'lamp data'; A._lampData.lamps.forEach(function (q) { if (!(q.I > 0)) return; var z = lampZone(LZ, q); if (!(z > 0) || z === OUTSIDE) return;
         var a = lamps.get(z); if (!a) { a = []; lamps.set(z, a); } a.push({ position: { x: q.x, y: q.y, z: q.z }, color: { r: q.r, g: q.g, b: q.b }, intensity: 1, distance: q.range, decay: A._lampData.decay }); }); }
     else A.scene.traverse(function (l) { if (!l.isPointLight || !l.visible || !(l.intensity > 0) || l === A._camLight) return; var z = l.userData && l.userData.sourcedZone; if (!(z > 0)) return; var a = lamps.get(z); if (!a) { a = []; lamps.set(z, a); } a.push(l); });
-    var nx = Z.nx, nxy = nx * Z.ny, cl = Z.cell, rows = [], nzn = Z.zones, existing = new Float32Array(nzn + 1), en = new Array(nzn + 1), use = new Array(nzn + 1);
+    var nx = Z.nx, nxy = nx * Z.ny, cl = Z.cell, rows = [], nzn = Z.zones, existing = new Float32Array(nzn + 1), lampsN = new Uint16Array(nzn + 1), skyE = new Float32Array(nzn + 1), en = new Array(nzn + 1), use = new Array(nzn + 1);
     var att = function (d, cut, decay) { var f = 1 / Math.max(Math.pow(d, decay), 0.01); if (cut > 0) { var x = Math.max(0, Math.min(1, 1 - Math.pow(d / cut, 4))); f *= x * x; } return f; };
     for (var z = 1; z <= nzn; z++) { var r = S.zones[z], L = lamps.get(z) || [], El = 0, wp = !!(r && r.wpCells);
       if (wp && L.length && r.samples.length) { r.samples.forEach(function (c) { var px = Z.org.x + (c % nx + 0.5) * cl, py = Z.org.y + ((((c / nx) | 0) % Z.ny) + 0.5) * cl, pz = Z.org.z + (((c / nxy) | 0) + 0.5) * cl;
@@ -813,9 +813,9 @@
         El = El / r.samples.length * luxPer; }
       var Eir = (irLampZ && IRP[0] > 0.5 && L.length) ? irLampZ[z] * luxPer : 0; El += Eir;   // EN maintained illuminance includes interreflection
       var u = S.uses.byZone.get(z), Es = (r ? (wp ? r.Fwp : r.Fmean) : 0) * EskyLux;
-      existing[z] = Es + El; en[z] = u ? u.en : null; use[z] = u ? u.use : null;
+      existing[z] = Es + El; lampsN[z] = Math.min(65535, L.length); skyE[z] = Es; en[z] = u ? u.en : null; use[z] = u ? u.use : null;
       if (wp) rows.push({ z: z, floorM2: r.floorM2, Fwp: r.Fwp, Esky: Es, Elamps: El, Ecove: 0, Etotal: Es + El, lamps: L.length, use: use[z], en: en[z] }); }
-    return { rows: rows, existing: existing, en: en, use: use, EskyLux: EskyLux, luxPer: luxPer, lampSrc: lampSrc, sunI: sunI, sunLux: sunLux, S: S };
+    return { rows: rows, existing: existing, lampsN: lampsN, skyE: skyE, en: en, use: use, EskyLux: EskyLux, luxPer: luxPer, lampSrc: lampSrc, sunI: sunI, sunLux: sunLux, S: S };
   }
   // §LUX_CHECK — per zone, lux on the working plane: sky + zone-bound lamps (+ IR) + the §COVE_LIGHT cove; verdict vs the EN row
   function luxCheck(A, Z) {
@@ -993,8 +993,11 @@
     coveStripOff(A); if (coveLast && coveLast.geom) coveLast.geom.dispose();   // a rebuild (lamp set / level changed) replaces the strip too
     var t0 = performance.now(), T = coveTypes(Z), nzn = Z.zones, S = X.S, nx = Z.nx, nxy = nx * Z.ny, N = Z.zone.length, luxPer = X.luxPer;
     var zones = new Array(nzn + 1), irAdd = new Float32Array(nzn + 1), wpE = new Float32Array(nzn + 1), qual = [], byQ = { room: 0, void: 0, crevice: 0, shaft: 0 }, defs = [], noEmit = 0, emitters = 0, perimM = 0, cellsN = 0, work = 0, strided = 0, strip = [], vs = [], fieldBuilt = 0;
-    var CF = Z.coveF || (Z.coveF = new Map());
+    var CF = Z.coveF || (Z.coveF = new Map()), qLamp = 0, qSky = 0;   // §LIGHT_ONE_SCALE L1a: below-level zones left to their real sources
     for (var z = 1; z <= nzn; z++) { var t = T.type[z], lv = t === 1 ? (X.en[z] != null ? X.en[z] : COVE_UNKNOWN_LUX) : TRIM_LUX_VOID, ex = X.existing[z], df = Math.max(0, lv - ex);
+      // §LIGHT_ONE_SCALE L1a (red1 2026-09-27): the cove is the one added source, ONLY where the compartment has no real source —
+      // no zone-bound lamp and no sky reaching it (F x sky > 0). A lit compartment below its EN row keeps its real light only.
+      if (df > 0.5 && (X.lampsN[z] > 0 || X.skyE[z] > 0)) { if (X.lampsN[z] > 0) qLamp++; else qSky++; continue; }
       if (!(df > 0.5)) continue;
       // the unit-output field of a zone depends on the grid only: cached on the zone cache (Z.coveF) so a lamp-set change
       // (the §LAMP_EN ver bump in the first staged frame) re-scales and re-encodes without marching again
@@ -1019,6 +1022,7 @@
       qual.push(z); byQ[COVE_TYPES[t]]++; defs.push(df); emitters += E.e.length / 4; perimM += E.perimM; cellsN += n; for (var s0 = 0; s0 < E.strip.length; s0++) strip.push(E.strip[s0]);
       zones[z] = { z: z, type: COVE_TYPES[t], existingE: +ex.toFixed(1), level: lv, deficit: +df.toFixed(1), coveE: +(calib === 'wp' ? df : mean * luxPer + irAdd[z] * luxPer).toFixed(1), coveIR: +(irAdd[z] * luxPer).toFixed(1), calib: calib, emitters: E.e.length / 4, perimeterM: +E.perimM.toFixed(1), cells: n, litCells: nz0, upCells: upN, cv: +cvv.toFixed(3), maxE: +(mx * luxPer).toFixed(1), maxUpE: +(upMx * luxPer).toFixed(1), stride: st, m3: Z.zoneInfo[z - 1].m3 };
       vs.push([z, V, scale, Math.max(mx, upMx), U]); }
+    console.log('§COVE_QUAL (L1a) qualified=' + qual.length + ' belowLevelWithLamps=' + qLamp + ' belowLevelWithSkyOnly=' + qSky + ' (left to their real sources; cove only where lamps = 0 and sky = 0)');
     var tf = performance.now(), maxAll = 0; vs.forEach(function (v) { if (v[3] > maxAll) maxAll = v[3]; });
     if (!qual.length || !(maxAll > 0)) { coveLast = { key: key, zones: null, wpE: wpE, qualified: 0 }; coveKey = key;
       console.log('§COVE_LIGHT VACUOUS bld=' + Z.bld + ' zones=' + nzn + ' qualified=0 (no zone below its level' + (noEmit ? '; ' + noEmit + ' below level but without a ceiling edge' : '') + ') types ' + JSON.stringify(T.by) + ' ms=' + Math.round(performance.now() - t0)); return coveLast; }
@@ -1233,6 +1237,14 @@
       ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES 0.6' : '') + ' / (1.2 x 2^EV)) vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
     return { exposure: exp, stops: stops, ev100: ev, Lcd: Lcd };
   }
+  // §METER_EV re-meter (audit #58): staging builds the lamps with the navigation near-fade floor and effects.js rebuilds them at
+  // the still floor AFTER stage() metered — so the meter read a different lamp set from the one rendered. effects.js calls this
+  // right after that rebuild: restore the base, meter again on the lamps as rendered.
+  function remeter(A) {
+    if (!active || !meterSaved || /[?&]meter=0/.test(location.search) || A._stillMeter === false) return;
+    meterOff(A); var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow;
+    try { A._meterLast = meter(A, inside); } catch (eM) { console.warn('§METER remeter failed: ' + eM.message); }
+  }
   function meterOff(A) { if (meterSaved && A.renderer) { A.renderer.toneMappingExposure = meterSaved.exp; console.log('§METER off exposure=' + meterSaved.exp.toFixed(3)); } meterSaved = null; }
 
   function unstage(A, quiet) {
@@ -1249,5 +1261,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

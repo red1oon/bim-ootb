@@ -1097,7 +1097,8 @@ function setupTools(A) {
   // yet nav Night Mode is now tuned and liked — so this cut is STAGING-SCOPED only: 0.5× during
   // the still/bake boost, reset to 1.0 at teardown. Nav Night Mode is byte-identical.
   A._nightPLScale = 1.0;           // CURRENT multiplier on every night PL's intensity
-  A._nightPLScaleStill = 0.5;      // staging (Alt+S/Alt+C) value — §STAGED_PL_CUT
+  A._nightPLScaleStill = 1.0;      // staging value — §STAGED_PL_CUT RETIRED (§LIGHT_ONE_SCALE L1, audit #37: a 0.5 cut after the lux
+                                   // calibration left room-less lamps at 250 lx vs the cited 500; lamps now carry their calibrated output)
   // §NIGHT_LIGHT_MIX (2026-07-27, user: "if we can have a mix of amber, and bluish etc").
   // One flat 0xffe4b5 for every fixture is what makes a lit building read as a single lamp repeated
   // N times. Real interiors mix colour temperature by FITTING TYPE, so derive it from the fitting
