@@ -102,14 +102,17 @@
     if (drawnOpaque.size) out.plates.lostSample = Array.from(drawnOpaque).slice(0, 3);
     // §GLASS_SPEC_GATE — glassReflDark: camera OUTSIDE, glass hit first on a 32x18 ray grid, reflection gate (CPU mirror of the
     // shader's slSpecKeep) < 0.3 = the pane's sky reflection is suppressed: the "black glass from outside" red1 found (Clinic)
-    out.glassReflDark = 0; out.glassReflSamples = 0; out.glassReflDarkOldGate = 0;
+    // Z26 (2026-09-28): the CPU mirror follows the shader's §SPEC_SMOOTH switch (it marched binary while the shader defaulted to
+    // smooth) and, like the shader, reads a glass cell's §GLASS_REFL_OPEN table before marching; glassReflOpen = samples that table decided
+    out.glassReflDark = 0; out.glassReflSamples = 0; out.glassReflDarkOldGate = 0; out.glassReflOpen = 0;
+    var specSmooth = !!(global.SourcedLight && global.SourcedLight.specSmoothOn && global.SourcedLight.specSmoothOn(A));
     if (camOutside && LZ && LZ.specVis && Z && Z.field) { try {
       var rcg = new THREE.Raycaster(), tgg = []; A.scene.traverse(function (o) { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A._sky) tgg.push(o); });
       for (var gy = 0; gy < 18; gy++) for (var gx = 0; gx < 32; gx++) { rcg.setFromCamera(new THREE.Vector2((gx + 0.5) / 32 * 2 - 1, 1 - (gy + 0.5) / 18 * 2), cam);
         var hh = rcg.intersectObjects(tgg, false)[0]; if (!hh) continue; var ob = hh.object, mm = Array.isArray(ob.material) ? (hh.face && ob.material[hh.face.materialIndex]) || ob.material[0] : ob.material;
         if (!(mm && mm.transparent && mm.opacity < 0.95 && !mm.map && mm.type !== 'MeshBasicMaterial')) continue;
-        var nn = hh.face ? hh.face.normal.clone().transformDirection(ob.matrixWorld) : new THREE.Vector3(0, 1, 0), sv = LZ.specVis(hh.point, nn, cp); if (!sv) continue;
-        out.glassReflSamples++; if (sv.spec < 0.3) out.glassReflDark++; if (sv.base < 0.3) out.glassReflDarkOldGate++; } } catch (eG) { console.warn('§FAULT glassReflDark failed: ' + eG.message); } }
+        var nn = hh.face ? hh.face.normal.clone().transformDirection(ob.matrixWorld) : new THREE.Vector3(0, 1, 0), sv = LZ.specVis(hh.point, nn, cp, specSmooth); if (!sv) continue;
+        out.glassReflSamples++; if (sv.spec < 0.3) out.glassReflDark++; if (sv.base < 0.3) out.glassReflDarkOldGate++; if (sv.glassOpen != null) out.glassReflOpen++; } } catch (eG) { console.warn('§FAULT glassReflDark failed: ' + eG.message); } }
     // portals
     out.portalsRetired = (global.SkyPortal && global.SkyPortal.placedCount && global.SkyPortal.placedCount() === 0) ? 1 : 0;
     // exposure step
@@ -168,7 +171,7 @@
     out.csmUncovered = (global.ShadowCascade && global.ShadowCascade.state().csm[0] > 0.5 && A._csmUncovered != null) ? A._csmUncovered : null;   // §CSM_NEAR_LEAK (null = not judged: cascades off / single / VACUOUS)
     var fault = out.csmUncovered > 0 || out.unlit > 0 || out.fieldBad > 0 || out.glassOpaque > 0 || out.glassPlateLost > 0 || out.glassReflDark > 0 || out.glassStock > 0 || out.capDropNear > 0 || out.extLightsDay > 0 || out.glassLow > 0 || out.guard > 0;
     var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' irOnly=' + out.irOnly + ' (ceil ' + out.irOnlyCeil + ') fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay + ' torch=' + out.torch + ' (exempt)' +
-      (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassPlateLost=' + out.glassPlateLost + ' (see-through plates db=' + out.plates.glassDb + ' drawnGlass=' + out.plates.glassDrawn + ' drawnOpaque=' + out.plates.lost + ' notDrawn=' + out.plates.notDrawn + (out.plates.lostSample ? ' e.g. ' + out.plates.lostSample.join(',') : '') + ')' + ' glassReflDark=' + out.glassReflDark + '/' + out.glassReflSamples + ' (old sky-view gate: ' + out.glassReflDarkOldGate + ')' + ' glassStock=' + out.glassStock + ' (untagged ' + out.glassStockUntagged + ')' + ' portalsRetired=' + out.portalsRetired +
+      (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassPlateLost=' + out.glassPlateLost + ' (see-through plates db=' + out.plates.glassDb + ' drawnGlass=' + out.plates.glassDrawn + ' drawnOpaque=' + out.plates.lost + ' notDrawn=' + out.plates.notDrawn + (out.plates.lostSample ? ' e.g. ' + out.plates.lostSample.join(',') : '') + ')' + ' glassReflDark=' + out.glassReflDark + '/' + out.glassReflSamples + ' (old sky-view gate: ' + out.glassReflDarkOldGate + '; ' + (specSmooth ? 'smooth' : 'binary') + ' march; glassOpen decided ' + out.glassReflOpen + ')' + ' glassStock=' + out.glassStock + ' (untagged ' + out.glassStockUntagged + ')' + ' portalsRetired=' + out.portalsRetired +
       ' expStep=' + out.expStep + ' csmUncovered=' + (out.csmUncovered == null ? 'n/a' : out.csmUncovered) + ' guard=' + out.guard + (out.lampListMean != null ? ' lampList mean/max=' + out.lampListMean + '/' + out.lampListMax + ' zonePass=' + out.lampPassMean : '') + ' ms=' + (performance.now() - t0).toFixed(1);
     if (fault) console.warn(line); else console.log(line);
     out.fault = fault; A._stillFaultLast = out; A._stillUnlitPts = unlitPts;   // §STILL_POSE_PNG copies it into the saved still

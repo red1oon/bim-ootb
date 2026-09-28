@@ -72,6 +72,7 @@
     '  float t = max( - v.y, 0.0 ); v.x += ( v.x >= 0.0 ) ? - t : t; v.z += ( v.z >= 0.0 ) ? - t : t; return normalize( v ); }',
     'vec3 _slWP = vec3( 0.0 );',
     'uniform vec4 uSLIrP; uniform highp sampler2D uSLIr;',   // §IRC_MAX v2: per-zone interreflected irradiance (lamps + daylight), x = on, y = scale   // §GLASS_SPEC_GATE readback: the reflection gate slSpecKeep returned
+    'uniform vec4 uSLGOP; uniform highp usampler2D uSLGO;',   // §GLASS_REFL_OPEN (Z26): x = on, y = &glassblock=0 (a hit sample reads 0); the RGBA32UI cell-table + side-slot texture (light_zones.js glassOpenPass)
     'vec3 _slIrB = vec3( -1.0 );',   // §ZERO Z18 &gridblend=1: the fragment's IR blended across zones by the field stencil (x < 0 = not blended: per-zone value)
     'float _slLN = -1.0; float _slLNP = 0.0;',   // §LAMP_UNCAPPED_COST readback: the fragment's list length / lamps passing the zone test
     // raw cell: -1 off grid, 65535 solid, 0 outside, 1.. zone
@@ -164,12 +165,31 @@
     // surface; leaving the grid or reaching an OPEN cell = it sees the sky (1); a SOLID cell first = as before (slSkyKeep). The
     // first 1 m may cross the surface's own solid cells (a pane rasterises 1-3 cells thick). Indoors the mirror ray meets the
     // room's walls: unchanged. CPU mirror: LightZones.specVis.
+    // §GLASS_REFL_OPEN sample (k, i) of side slot tx: byte v = k * 25 + i of the slot's 75 words (19 texels, linear over the 4096-wide texture)
+    'float slGoVal( int tx, int k, int i ) { int v = k * 25 + i; int w = v >> 2; int t = tx + ( w >> 2 ); uvec4 q4 = texelFetch( uSLGO, ivec2( t & 4095, t >> 12 ), 0 ); uint u = ( ( w & 3 ) == 0 ) ? q4.r : ( ( ( w & 3 ) == 1 ) ? q4.g : ( ( ( w & 3 ) == 2 ) ? q4.b : q4.a ) );',
+    '  uint b = ( u >> uint( ( v & 3 ) * 8 ) ) & 255u; return ( uSLGOP.y > 0.5 && ( b & 128u ) != 0u ) ? 0.0 : float( b & 127u ) / 127.0; }',
     'float slSpecKeep( vec3 posView, vec3 nView, vec3 viewDir ) {',
     '  float base = slSkyKeep( posView, nView ); _slSpec = base;',
     '  if ( uSLParams.x < 0.5 || uSLSky.x < 0.5 || base >= 0.999 || _slFZ < -0.5 ) return base;',
     '  vec3 nf = ( dot( nView, viewDir ) < 0.0 ) ? - nView : nView;',
     '  vec3 rw = normalize( ( vec4( reflect( - viewDir, nf ), 0.0 ) * viewMatrix ).xyz ); vec3 nw = normalize( ( vec4( nf, 0.0 ) * viewMatrix ).xyz );',
     '  float st = 0.5 * uSLParams.y; vec3 q = _slWP + nw * st; ivec3 dim = ivec3( uSLDim.xyz );',
+    // §GLASS_REFL_OPEN (Z26, light_zones.js glassOpenPass): a computed glass cell's G texel = its cell-table index + 1 (SOLID
+    // cells carry no F there). Read the fragment's own cell, then the cell half a cell behind the surface; the cell table (b =
+    // pane axis, r / g = the side+ / side- slot texel, 0xFFFFFFFF = that side keeps the march) must match the eye-facing normal's
+    // dominant axis; then the side by the normal's sign. The slot = 12 azimuth x 25 elevation (7.5 deg) samples, 8 bits each
+    // (bit7 = an opaque hit; uSLGOP.y = &glassblock=0 reads those as 0), bilinear at the reflected direction's (azimuth, elevation)
+    // in the pane frame — exact against the geometry, built once per building. Opaque surfaces (no cell entry) march as before.
+    '  if ( uSLGOP.x > 0.5 ) { vec3 an = abs( nw ); int fax = ( an.x >= an.y && an.x >= an.z ) ? 0 : ( an.y >= an.z ? 1 : 2 ); float ns = ( fax == 0 ) ? nw.x : ( ( fax == 1 ) ? nw.y : nw.z );',
+    '    for ( int gk = 0; gk < 2; gk ++ ) { vec3 gp = ( gk == 0 ) ? _slWP : ( _slWP - nw * st ); ivec3 gc = ivec3( floor( ( gp - uSLOrg.xyz ) / uSLParams.y ) );',
+    '      if ( any( lessThan( gc, ivec3( 0 ) ) ) || any( greaterThanEqual( gc, dim ) ) ) continue; uvec2 tg = texelFetch( uSLZone, gc, 0 ).rg; if ( tg.r != 65535u || tg.g == 0u ) continue;',
+    '      int ci = int( tg.g ) - 1; uvec4 ct = texelFetch( uSLGO, ivec2( ci & 4095, ci >> 12 ), 0 ); if ( int( ct.b ) != fax ) continue; uint sl = ( ns > 0.0 ) ? ct.r : ct.g; if ( sl == 0xFFFFFFFFu ) continue; int tx = int( sl );',
+    '      float e = degrees( asin( clamp( rw.y, -1.0, 1.0 ) ) ); float fAz; int k0; int k1;',
+    '      if ( fax == 1 ) { fAz = degrees( atan( rw.z, rw.x ) ) / 30.0; if ( fAz < 0.0 ) fAz += 12.0; if ( fAz >= 12.0 ) fAz -= 12.0; k0 = int( floor( fAz ) ) % 12; k1 = ( k0 + 1 ) % 12; }',
+    '      else { float dn = ( ( fax == 0 ) ? rw.x : rw.z ) * sign( ns ); float tt = ( fax == 0 ) ? rw.z : rw.x; fAz = clamp( ( degrees( atan( tt, dn ) ) + 90.0 ) / 15.0 - 0.5, 0.0, 11.0 ); k0 = int( floor( fAz ) ); k1 = min( k0 + 1, 11 ); }',
+    '      float fEl = clamp( ( e + 90.0 ) / 7.5, 0.0, 24.0 ); int i0 = int( floor( fEl ) ); int i1 = min( i0 + 1, 24 ); float ta = fAz - float( k0 ); float te = fEl - float( i0 );',
+    '      float op = mix( mix( slGoVal( tx, k0, i0 ), slGoVal( tx, k0, i1 ), te ), mix( slGoVal( tx, k1, i0 ), slGoVal( tx, k1, i1 ), te ), ta );',
+    '      _slSpec = base + ( 1.0 - base ) * op; return _slSpec; } }',
     // §ZERO Z18 §SPEC_SMOOTH (### Z18 DIAGNOSIS: the binary cell test of this march = the floor/duct teeth, ~0.2 m apart, x1.49):
     // uSLSky.w = 1 (default; &specsmooth=0 = the binary march below) -> each sample reads the 8 texels around q with trilinear
     // weights: o = weight of OPEN / off-grid texels, s = weight of SOLID texels (ignored for the first 4 samples, as the binary
@@ -341,6 +361,7 @@
     // §LAMP_UNCAPPED dummies: every declared sampler must see a texture of its own kind (an integer sampler on a float unit is
     // GL_INVALID_OPERATION at draw time), same reason as `dummy` above
     dIr = lampTex2D(THREE, new Float32Array(4), 1, 1);   // §IRC_MAX v2 dummy
+    dGO = goTex2D(THREE, new Uint32Array(4), 1, 1);   // §GLASS_REFL_OPEN dummy (RGBA32UI: an integer sampler needs an integer texture on its unit)
     dCove = coveTex3D(THREE, new Uint8Array(4), 1, 1, 1);   // §COVE_LIGHT dummy (RGBA8UI: an integer sampler needs an integer texture on its unit)
     dLamp = lampTex2D(THREE, new Float32Array(8), 2, 1); dIdx = idxTex2D(THREE, new Uint16Array(1), 1, 1); dClu = cluTex3D(THREE, new Uint32Array(2), 1, 1, 1);
     // §ZERO Z10: a 1x1 white AO (visibility 1) so the sampler always has a texture of its kind (aoSet swaps it per program).
@@ -352,6 +373,7 @@
       U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy }; U.uSLGround = { value: dGround };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
       U.uSLIrP = { value: IRP }; U.uSLIr = { value: dIr };
+      U.uSLGOP = { value: GOP }; U.uSLGO = { value: dGO };   // §GLASS_REFL_OPEN
       U.uSLCoveP = { value: COVEP }; U.uSLCoveQ = { value: COVEQ }; U.uSLCove = { value: dCove };   // §COVE_LIGHT (RGBA8UI dummy)
       U.uSLLamp = { value: LAMP }; U.uSLCluDim = { value: CDIM }; U.uSLLampT = { value: dLamp }; U.uSLLIdx = { value: dIdx }; U.uSLClu = { value: dClu };
     });
@@ -392,6 +414,9 @@
   var LAMP = new Float32Array(4), CDIM = new Float32Array(4), CLU = 4, IDX_W = 4096, lampTex = null, idxTex = null, cluTex = null, dLamp = null, dIdx = null, dClu = null;
   var lampVer = -1, lampListKey = null, lampLast = null, lampPushAll = false;
   function lampTex2D(THREE, data, w, h) { var t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType); t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t; }
+  // §GLASS_REFL_OPEN (Z26): the cell-table + side-slot texture, RGBA32UI, 4096 wide (light_zones.js glassOpenPass builds the words)
+  var GOP = new Float32Array(4), goTex = null, goKey = null, dGO = null;
+  function goTex2D(THREE, data, w, h) { var t = new THREE.DataTexture(data, w, h, THREE.RGBAIntegerFormat, THREE.UnsignedIntType); t.internalFormat = 'RGBA32UI'; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
   function idxTex2D(THREE, data, w, h) { var t = new THREE.DataTexture(data, w, h, THREE.RedIntegerFormat, THREE.UnsignedShortType); t.internalFormat = 'R16UI'; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
   function cluTex3D(THREE, data, w, h, d) { var t = new THREE.Data3DTexture(data, w, h, d); t.format = THREE.RGIntegerFormat; t.type = THREE.UnsignedIntType; t.internalFormat = 'RG32UI'; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
   // effects.js asks before the lamps are born: the data path needs the patched chunks, this building's zones, and a still
@@ -773,6 +798,7 @@
     if (U.uSLGround) U.uSLGround.value = (active && gtex && SKY[1] > 0.5) ? gtex : dGround;
     if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; }   // §ZERO Z10
     if (U.uSLIrP) { U.uSLIrP.value = IRP; U.uSLIr.value = (active && IRP[0] > 0.5 && irTex) ? irTex : dIr; }
+    if (U.uSLGOP) { U.uSLGOP.value = GOP; U.uSLGO.value = (active && GOP[0] > 0.5 && goTex) ? goTex : dGO; }   // §GLASS_REFL_OPEN
     if (U.uSLCoveP) { U.uSLCoveP.value = COVEP; U.uSLCoveQ.value = COVEQ; U.uSLCove.value = (active && COVEP[3] > 0.5 && coveTex) ? coveTex : dCove; }   // §COVE_LIGHT
     if (U.uSLLamp) { var lo = active && LAMP[0] > 0.5 && lampTex; U.uSLLamp.value = LAMP; U.uSLCluDim.value = CDIM; U.uSLLampT.value = lo ? lampTex : dLamp; U.uSLLIdx.value = lo ? idxTex : dIdx; U.uSLClu.value = lo ? cluTex : dClu; }
     return true;
@@ -870,7 +896,20 @@
     var LZ = global.LightZones, SP = global.SkyPortal, t0 = performance.now();
     if (!fieldOn(A) || !LZ.field) { SKY[0] = 0; SKY[1] = 0; SKY[2] = 0; SKY[3] = 0; console.log('§SKY_VIEW_FIELD off (' + (A._maxqActive ? 'film' : '&skyfield=0 / APP._stillSkyField=false') + ') — binary SKY_BIT path'); return null; }
     var hit = !!Z.field, ghit = !!(Z.field && Z.field.Gd && Z.field.ground && Z.field.ground.mode === LZ.groundMode(A)), F = LZ.field(A), key = texKey, uploadMs = 0;
-    if (rgFieldKey !== key) { if (!rg) { rg = zoneRG(Z); tex.image.data = rg; } for (var i = 0; i < F.G.length; i++) rg[i * 2 + 1] = F.G[i]; var tU = performance.now(); tex.needsUpdate = true; A.renderer.initTexture(tex); uploadMs = performance.now() - tU; rgFieldKey = key; }
+    // §GLASS_REFL_OPEN (Z26): with the switch on, the G texel of every computed glass cell = its cell-table index + 1 and the slot
+    // texture is uploaded; &glassopen=0 re-uploads G without them (the voxel march for every cell). goKey tracks the switch per zone texture.
+    var GO = F.glassOpen, goOn = !!(LZ.glassOpenOn && LZ.glassOpenOn(A) && GO && GO.n && GO.data && GO.data.length), gk = key + '|go' + (goOn ? 1 : 0), goN = 0, goUp = 0;
+    if (rgFieldKey !== key || goKey !== gk) { if (!rg) { rg = zoneRG(Z); tex.image.data = rg; } for (var i = 0; i < F.G.length; i++) rg[i * 2 + 1] = F.G[i];
+      if (goOn) { var goC = GO.cells; for (var gi = 0; gi < goC.length; gi++) { rg[goC[gi] * 2 + 1] = gi + 1; goN++; } }
+      var tU = performance.now(); tex.needsUpdate = true; A.renderer.initTexture(tex); uploadMs = performance.now() - tU; rgFieldKey = key; goKey = gk; }
+    else if (goOn) goN = GO.cells.length;
+    if (goOn) { if (!goTex || goTex.userData.goKey !== key) { if (goTex) goTex.dispose(); goTex = goTex2D(global.THREE, GO.data, GO.w, GO.h); goTex.userData.goKey = key; var tGo = performance.now(); A.renderer.initTexture(goTex); goUp = performance.now() - tGo; }
+      GOP[0] = 1; GOP[1] = (LZ.glassBlockOff && LZ.glassBlockOff(A)) ? 1 : 0; }
+    else { GOP[0] = 0; GOP[1] = 0; }
+    if (LZ.glassOpenActive) LZ.glassOpenActive(goOn, GOP[1] > 0.5);
+    console.log('§GLASS_REFL_OPEN staged ' + (goOn ? 'on' : 'off') + ' cells=' + goN + ' sides=' + (goOn ? GO.sides : 0) + ' slotTex=' + (goOn ? GO.w + 'x' + GO.h + ' (' + (GO.data.byteLength / 1e6).toFixed(1) + ' MB) uploadMs=' + goUp.toFixed(0) : 'none') + ' blockedAsZero=' + (GOP[1] > 0.5 ? 1 : 0) +
+      (goOn ? '' : (LZ.glassOpenOn && !LZ.glassOpenOn(A)) ? ' (&glassopen=0 / APP._stillGlassOpen=false: the mirror-ray march for every cell)' : ' (no glass-open data on the field: ' + (GO && GO.stats ? (GO.stats.why || 'computed=0') : 'none') + ')') +
+      ' (G of a computed SOLID glass cell = cell-table index + 1; shader slSpecKeep + LightZones.specVis read the pane-frame table before the march; &glassblock=0 = opaque hits read 0)');
     SKY[0] = 1;
     // §ZERO Z18 switch: &gridblend=1 / APP._stillGridBlend = true -> the field stencil blends across zones (F, Gd, IR); default OFF
     // until the GPU diagnosis (### Z18 DIAGNOSIS) confirms the zone-grid cause
@@ -1192,6 +1231,7 @@
     if (texKey !== key) {
       if (tex) tex.dispose(); rgFieldKey = null;
       if (gtex) { gtex.dispose(); gtex = null; } gKey = null;   // §GROUND_VIEW_FIELD: its texture follows the zone texture's key
+      if (goTex) { goTex.dispose(); goTex = null; } goKey = null; GOP[0] = 0;   // §GLASS_REFL_OPEN: same
       // §SOURCED_DAYLIGHT: RG16UI — R = zone | SKY_BIT (as before), G = the still's daylight fraction x 10000 (0 until daylight())
       rg = zoneRG(Z); rgKey = key;
       tex = new THREE.Data3DTexture(rg, Z.nx, Z.ny, Z.nz);
@@ -1207,7 +1247,7 @@
     // (Hospital 41 MB). Drop it; stageField rebuilds it from those two when the field must be written again, and a restored
     // WebGL context re-stages from scratch (texKey cleared below).
     if (rg && tex && (rgFieldKey === texKey || !SKY[0])) { rg = null; rgKey = null; tex.image.data = null; }
-    if (!ctxHooked && A.renderer.domElement) { ctxHooked = true; A.renderer.domElement.addEventListener('webglcontextrestored', function () { texKey = null; rgFieldKey = null; gKey = null; coveKey = null; }); }
+    if (!ctxHooked && A.renderer.domElement) { ctxHooked = true; A.renderer.domElement.addEventListener('webglcontextrestored', function () { texKey = null; rgFieldKey = null; gKey = null; goKey = null; coveKey = null; }); }
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
     console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (&skyfield=0 = the binary SKY_BIT path)');
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;

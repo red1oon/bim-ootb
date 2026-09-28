@@ -140,7 +140,7 @@
   // opacities), and for the field part the IRC switch. prime(A) is awaited before staging; build()/field() stay synchronous.
   // &zonecache=0 skips it (no read, no write).
   var IDB_NAME = 'bim_ootb_lightzones', IDB_STORE = 'z', primed = null, saveTimer = 0;
-  var KEYS = ['bld', 'n', 'nx', 'ny', 'nz', 'cell', 'zone', 'zones', 'sizes', 'zoneInfo', 'aperture', 'groundJ', 'glassT', 'glassCells', 'glassMats', 'stats', 'alb'];   // alb: §IR_COLOUR (Z19)
+  var KEYS = ['bld', 'n', 'nx', 'ny', 'nz', 'cell', 'zone', 'zones', 'sizes', 'zoneInfo', 'aperture', 'groundJ', 'glassT', 'glassCells', 'glassMats', 'stats', 'alb', 'glassIdx', 'glassAx'];   // alb: §IR_COLOUR (Z19); glassIdx/glassAx: §GLASS_REFL_OPEN (Z26)
   var SRC = (function () { var s = String(LZMOD), h = 0x811c9dc5; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + s.length; })();
   function cacheOff() { return typeof indexedDB === 'undefined' || (typeof location !== 'undefined' && /[?&]zonecache=0/.test(location.search)); }
   function ircFlag(A) { return A._stillIrc === true || (typeof location !== 'undefined' && /[?&]irc=1/.test(location.search)); }
@@ -196,7 +196,10 @@
     cache.stats = Object.assign({}, r.stats, { ms: ms, rasMs: 0, skyMs: 0, cached: 1, glare: Object.assign({}, r.stats.glare, { ms: 0 }) });
     var fOk = !!(r.field && r.field.irc && r.field.irc.on === ircFlag(A)) && !shellSkipped(r.field), fMs = r.field ? r.field.ms : 0;   // ### ALTS-ALL FIX 7: a pre-fix record saved without its shell pass is rebuilt
     if (r.field && shellSkipped(r.field)) console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored without the shell pass: ' + shellSkipped(r.field) + ') — rebuilding the field');
-    if (fOk) { cache.field = Object.assign(r.field, { ms: 0, cached: 1 }); if (r.field.shell) logShell(A.activeBuilding, r.field.shell, 'hit'); else console.log('§SKY_SHELL_RAYS bld=' + A.activeBuilding + ' cache=hit record has no shell stats'); }
+    // §GLASS_REFL_OPEN: a record whose glass pass was skipped by &glassopen=0 is rebuilt once the switch is on again
+    if (fOk && glassOpenOn(A) && r.field.glassOpen && r.field.glassOpen.stats && /^not run \(&glassopen=0/.test(r.field.glassOpen.stats.why || '')) { fOk = false; console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored with the glass-open pass skipped by &glassopen=0) — rebuilding the field'); }
+    if (fOk) { cache.field = Object.assign(r.field, { ms: 0, cached: 1 }); if (r.field.shell) logShell(A.activeBuilding, r.field.shell, 'hit'); else console.log('§SKY_SHELL_RAYS bld=' + A.activeBuilding + ' cache=hit record has no shell stats');
+      if (r.field.glassOpen && r.field.glassOpen.stats) logGlassOpen(A.activeBuilding, r.field.glassOpen, 'hit'); else console.log('§GLASS_REFL_OPEN bld=' + A.activeBuilding + ' cache=hit record has no glass-open data (the march stays for every cell)'); }   // §GLASS_REFL_OPEN (Z26)
     console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none') +
       ' ground=' + (fOk && r.field.Gd ? 'hit (was ' + (r.field.ground ? r.field.ground.ms : '?') + ' ms)' : 'none (built on demand)'));
     logBuilt(A);
@@ -237,6 +240,9 @@
     // over their uniform barycentric samples — sample count ~ area, so the mean is area-weighted by construction. Glass not counted.
     // Uint16 sums of 8-bit colour over <= 255 samples per cell (255 x 255 fits) + a Uint8 count: 7 bytes/cell while rasterising.
     var albAcc = N <= 60e6 ? new Uint16Array(N * 3) : null, albN = albAcc ? new Uint8Array(N) : null;
+    // §GLASS_REFL_OPEN (Z26): per glass cell the PANE AXIS (0 x / 1 y / 2 z = the dominant component of its glass triangles'
+    // normals, one vote per rasterised sample) — the reflection pass in field() walks that axis to each side's air cell
+    var gAx = new Map(), gax = 0;
     draws.forEach(function (d) {
       var pos = d.geo.attributes.position, ix = d.geo.index, e = d.matrix.elements, gi = 0;
       for (var t = d.start; t + 2 < d.start + d.count; t += 3) {
@@ -247,7 +253,8 @@
         a.fromBufferAttribute(pos, i0).applyMatrix4(d.matrix); b.fromBufferAttribute(pos, i1).applyMatrix4(d.matrix); c.fromBufferAttribute(pos, i2).applyMatrix4(d.matrix);
         var L = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)), n = Math.max(1, Math.ceil(L / step)); tris++;
         if (isG) { var gm = glassMat.get(mat); if (!gm) { gm = { name: mat.name || mat.uuid.slice(0, 8), opacity: mat.opacity, T: +(1 - mat.opacity).toFixed(3), m2: 0 }; glassMat.set(mat, gm); }
-          var cr = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)); gm.m2 += cr.length() / 2; }
+          var cr = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)); gm.m2 += cr.length() / 2;
+          var crx = Math.abs(cr.x), cry = Math.abs(cr.y), crz = Math.abs(cr.z); gax = (crx >= cry && crx >= crz) ? 0 : (cry >= crz ? 1 : 2); }
         // plan-view point-in-triangle over the column centres inside the triangle's XZ box (the test a mesh up-ray from the centre makes)
         var d2 = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
         if (Math.abs(d2) > 1e-9) { capTris++;
@@ -259,7 +266,7 @@
             if (jc >= 0 && jc < ny) capC[ic + jc * nx + kc * nxy] = 1; } }
         for (var u = 0; u <= n; u++) for (var v = 0; v <= n - u; v++) {
           var w = n - u - v, x = (a.x * u + b.x * v + c.x * w) / n, y = (a.y * u + b.y * v + c.y * w) / n, z = (a.z * u + b.z * v + c.z * w) / n;
-          var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; if (gHits[ci] < 255) gHits[ci]++; } else if (oHits[ci] < 255) oHits[ci]++; if (mc && albN[ci] < 255) { var o3 = ci * 3; albAcc[o3] += Math.round(Math.min(1, mc.r) * 255); albAcc[o3 + 1] += Math.round(Math.min(1, mc.g) * 255); albAcc[o3 + 2] += Math.round(Math.min(1, mc.b) * 255); albN[ci]++; } } samples++;
+          var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; if (gHits[ci] < 255) gHits[ci]++; var gv = gAx.get(ci); if (!gv) { gv = [0, 0, 0]; gAx.set(ci, gv); } gv[gax]++; } else if (oHits[ci] < 255) oHits[ci]++; if (mc && albN[ci] < 255) { var o3 = ci * 3; albAcc[o3] += Math.round(Math.min(1, mc.r) * 255); albAcc[o3 + 1] += Math.round(Math.min(1, mc.g) * 255); albAcc[o3 + 2] += Math.round(Math.min(1, mc.b) * 255); albN[ci]++; } } samples++;
         }
       }
     });
@@ -271,6 +278,12 @@
     // window opening by up to a cell per side (the fattened wall reveal around the pane): ADF cross-check Fwp/ADF 0.044.
     for (var gc = 0; gc < N; gc++) { if (glassT[gc] && oHits[gc] > gHits[gc]) glassT[gc] = 0; if (glassT[gc]) glassCells++; }
     gHits = oHits = null;
+    // §GLASS_REFL_OPEN: every cell that holds ANY glass sample (ascending) + its pane axis by the vote above. Not only the
+    // glass-majority cells: the Clinic clerestory's top / bottom rows are opaque-majority (the eave / roof triangles outnumber
+    // the pane's in the cell) yet the fragments there are the pane — the reflection table must exist for them too
+    var glassAny = Array.from(gAx.keys()).sort(function (p, q) { return p - q; }), glassIdx = Int32Array.from(glassAny), glassAx = new Uint8Array(glassAny.length), glassMaj = 0;
+    for (var gq = 0; gq < glassAny.length; gq++) { var gv2 = gAx.get(glassAny[gq]); glassAx[gq] = (gv2[0] >= gv2[1] && gv2[0] >= gv2[2]) ? 0 : (gv2[1] >= gv2[2] ? 1 : 2); if (glassT[glassAny[gq]]) glassMaj++; }
+    gAx = glassAny = null;
     for (var s0 = 0; s0 < N; s0++) if (zone[s0] === SOLID) solid++;
     // §ZONE_OPEN_SKY — one top-down scan per column: an empty cell with no SOLID above it is OPEN-TO-SKY (label 1 here,
     // written as 0 at the end); every other empty cell is COVERED (stays 0, labelled below). No closing radius, no
@@ -360,7 +373,7 @@
     var hist = { lt2m3: 0, lt50m3: 0, lt500m3: 0, lt5000m3: 0, ge5000m3: 0 };
     zsizes.forEach(function (n) { var m3 = n * cv; if (m3 < 2) hist.lt2m3++; else if (m3 < 50) hist.lt50m3++; else if (m3 < 500) hist.lt500m3++; else if (m3 < 5000) hist.lt5000m3++; else hist.ge5000m3++; });
     cache = { dd: null, bld: A.activeBuilding, n: Object.keys(A.guidMap || {}).length, org: org, nx: nx, ny: ny, nz: nz, cell: CELL, zone: zone, zones: nzones, sizes: zsizes, zoneInfo: zoneInfo, aperture: aperture, groundJ: jg,
-      glassT: glassT, glassCells: glassCells, glassMats: Array.from(glassMat.values()), alb: alb };
+      glassT: glassT, glassCells: glassCells, glassMats: Array.from(glassMat.values()), alb: alb, glassIdx: glassIdx, glassAx: glassAx };
     cache.stats = { cells: N, MB: +(N * 2 / 1e6).toFixed(1), solid: solid, outsideCells: openN, openSkyCells: openN, capCentre: capOn ? 1 : 0, capCells: capCells, capSkipped: capSkip, capTris: capTris, soilCells: earth, indoorCells: indoor, zones: nzones, largestZoneM3: Math.round(largest * cv),
       largestShareOfIndoor: indoor ? +(largest / indoor).toFixed(3) : 0, hist: hist, zonesWithAperture: zonesWithAp, apertureM2: +(apTotUp + apTotSide).toFixed(1), apertureUpM2: +apTotUp.toFixed(1), apertureSideM2: +apTotSide.toFixed(1),
       apertureDownFaces: apDown, skyLitCells: skyLitN, skyRayCells: skyRay, skyDirs: SKY_DIRS.length, topApertureZones: topAp, tris: tris, samples: samples, draws: bd.stats, rasMs: Math.round(rasMs), skyMs: Math.round(skyMs), ms: Math.round(performance.now() - t0),
@@ -709,6 +722,111 @@
     return { O: O.subarray(0, op), nO: (op / 9) | 0, G: GL.length ? new Float32Array(GL) : null, GT: GT.length ? Uint8Array.from(GT) : null, nG: GT.length,
       boundaryTris: nB, occluderTris: nOc, occluderCulled: culled, occluderSkipped: occSkipped, occluderDraws: od.stats, ms: Math.round(performance.now() - t0) };
   }
+  // ══ §GLASS_REFL_OPEN (Z26, bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "Z26 MEASURED / Z26 SPEC", 2026-09-28) ══
+  // MEASURED (Clinic ext still …495545980): 24 of 159 glass hits dark by the §GLASS_SPEC_GATE mirror-ray march — all vertical
+  // clerestory panes; the march met SOLID cells 0.25-2 m out where a real raycast along the same reflected ray is clear (the
+  // 0.5 m voxel thickening of eave / roof edges grazing the ray). A discarded first attempt (uncommitted rev. 1-3) added two
+  // facts: (a) choosing ONE outward side per cell by cell class took the room side for half the panes; (b) many reflected rays
+  // REALLY meet the next roof step 1-5 m out or terrain 130 m out — a real pane then reflects that lit surface, not black.
+  // MECHANISM: per glass cell, per SIDE whose first air cell along the pane axis (within 4 cells) is open-to-sky or sky-lit
+  // (a window's room side keeps the march), ONCE at field build over the shell pass's BVH (the same boundary + occluder
+  // triangles): a 12-azimuth x 25-elevation (7.5 deg) table of the reflection openness in the pane frame, from the pane's
+  // outer face (the nearest glass triangle on the probe from the air cell back to the glass cell, + 2 cm). Per ray:
+  //   no opaque hit           -> the T product through any other pane (1 = clear sky)
+  //   opaque hit, any range   -> T x rho_hit x F_hit: the blocker's own brightness relative to the sky it replaces (a diffuse
+  //                              surface of albedo rho under a sky it sees with cosine-weighted fraction F radiates rho F L_sky);
+  //                              rho = Z.alb of the hit cell (§IR_COLOUR, Z19; none -> R_BRE, counted), F = the last air cell's
+  //                              sky-view before the hit (open 1 / the field's acc)
+  //   &glassblock=0 / APP._stillGlassBlock=false = the spec's literal "opaque hit = 0" (bit7 of the sample marks a hit; a uniform)
+  // STORE: 8 bits per sample (bit7 hit, bits 0-6 value x 127), 300 bytes = 75 words = 19 RGBA32UI texels per side; a cell table
+  // (r = side+ slot texel, g = side- slot texel, 0xFFFFFFFF none, b = pane axis) at the head of the same 4096-wide texture; the
+  // zone texture's G of the glass cell (SOLID, so G is free there) = cell-table index + 1 (0 = none), written at staging only
+  // with the switch on (&glassopen=0 / APP._stillGlassOpen=false = the march for every cell). The shader (sourced_light.js
+  // slSpecKeep) and the CPU mirror (specVis -> glassOpenAt) read the fragment's own cell, then the cell half a cell behind the
+  // surface; on a match of the pane axis (the eye-facing normal's dominant axis) the side by the normal's sign; bilinear over
+  // (azimuth, elevation) of the reflected direction. Opaque surfaces (no cell entry) march as before.
+  // RAY BUDGET: GO_RAY_BUDGET rays per build; over it the pass samples every other elevation (level 1), then every other azimuth
+  // too (level 2) and interpolates the missing nodes — logged. Cached with the field (§ZONE_IDB_CACHE, SRC-keyed).
+  var GO_AZ = 12, GO_EL = 25, GO_W = 4096, GO_TEX = 19, GO_RAY_BUDGET = 3.5e6, GO_MAX_CELLS = 65535, GO_AIR_REACH = 8;
+  function glassOpenOn(A) { return !!(A && A._stillGlassOpen !== false && !(typeof location !== 'undefined' && /[?&]glassopen=0(?!\d)/.test(location.search))); }
+  function glassBlockOff(A) { return !!(A && (A._stillGlassBlock === false || (typeof location !== 'undefined' && /[?&]glassblock=0(?!\d)/.test(location.search)))); }
+  // sample (k, i) of the pane frame -> world direction: elevation -90 + 7.5 i; vertical pane (ax 0 / 2): azimuth -82.5 + 15 k
+  // from the outward normal in the horizontal plane (tangent = the other horizontal axis); horizontal pane (ax 1): compass 30 k
+  function goDir(ax, sg, k, i, o) { var e = (-90 + 7.5 * i) * Math.PI / 180, ce = Math.cos(e), se = Math.sin(e);
+    if (ax === 1) { var ph = k * Math.PI / 6; o[0] = ce * Math.cos(ph); o[1] = se; o[2] = ce * Math.sin(ph); }
+    else { var pv = (-82.5 + 15 * k) * Math.PI / 180, dn = ce * Math.cos(pv) * sg, tt = ce * Math.sin(pv); if (ax === 0) { o[0] = dn; o[1] = se; o[2] = tt; } else { o[0] = tt; o[1] = se; o[2] = dn; } } return o; }
+  // the table read for a reflected direction r (the shader's exact order): data = the texture words, base = the side slot's first
+  // word, sgn = the eye-facing normal's sign on the pane axis, blockOff = &glassblock=0
+  function goLookup(data, base, ax, sgn, blockOff, rx, ry, rz) {
+    var e = Math.asin(Math.max(-1, Math.min(1, ry))) * 180 / Math.PI, fAz, k0, k1;
+    if (ax === 1) { fAz = Math.atan2(rz, rx) * 6 / Math.PI; if (fAz < 0) fAz += 12; if (fAz >= 12) fAz -= 12; k0 = Math.floor(fAz) % 12; k1 = (k0 + 1) % 12; }
+    else { var dn = (ax === 0 ? rx : rz) * sgn, tt = ax === 0 ? rz : rx; fAz = Math.max(0, Math.min(11, (Math.atan2(tt, dn) * 180 / Math.PI + 90) / 15 - 0.5)); k0 = Math.floor(fAz); k1 = Math.min(k0 + 1, 11); }
+    var fEl = Math.max(0, Math.min(24, (e + 90) / 7.5)), i0 = Math.floor(fEl), i1 = Math.min(i0 + 1, 24), ta = fAz - k0, te = fEl - i0;
+    var S = function (k, i) { var v = k * GO_EL + i, b = (data[base + (v >> 2)] >>> ((v & 3) * 8)) & 255; return (blockOff && (b & 128)) ? 0 : (b & 127) / 127; };
+    var a0 = S(k0, i0) * (1 - te) + S(k0, i1) * te, a1 = S(k1, i0) * (1 - te) + S(k1, i1) * te; return a0 * (1 - ta) + a1 * ta; }
+  function glassOpenPass(Z, A, R) {
+    var t0 = performance.now(), nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, idx = Z.glassIdx, axs = Z.glassAx, n = idx.length, cl = Z.cell, DIM = [nx, ny, nz], STR = [1, nx, nxy];
+    var st = { glassCells: n, glassMajority: Z.glassCells, cells: 0, sides: 0, sideOpen: 0, sideSkylit: 0, sideOffGrid: 0, farAir: 0, skippedInterior: 0, buried: 0, buriedKept: 0, buriedDropped: 0, capped: 0, refined: 0, rays: 0, clear: 0, throughGlass: 0, blocked: 0, noAlbedo: 0, sumVal: 0, sumBlk: 0, hitDist: [0, 0, 0, 0], level: 0, elStride: 1, azStride: 1, axis: [0, 0, 0], ms: 0 };
+    // pass 1: the sides to compute (per side: the first air cell within 4 cells along the pane axis is open-to-sky (3) or sky-lit (2))
+    var sides = [], cellIx = new Map();
+    for (var q = 0; q < n; q++) { var c = idx[q], ax = axs[q], ijk = [c % nx, ((c / nx) | 0) % ny, (c / nxy) | 0];
+      for (var s = 0; s < 2; s++) { var sg = s ? -1 : 1, air = -2, cls = 0;
+        // the first air cell along the pane axis within GO_AIR_REACH cells: the Clinic clerestory panes sit behind 5-8 grid-SOLID
+        // cells (the fattened eave / roof band the mirror march also met) before open air — a 4-cell reach left them to the march
+        for (var t = 1; t <= GO_AIR_REACH; t++) { var p = ijk[ax] + sg * t; if (p < 0 || p >= DIM[ax]) { air = -1; cls = 3; break; } var cc = c + sg * t * STR[ax], v = zone[cc]; if (v === SOLID) continue; air = cc; cls = v === 0 ? 3 : (v & SKY_BIT) ? 2 : 1; if (t > 4) st.farAir++; break; }
+        // BURIED (solid for the whole reach: the fattened sawtooth roof slope rising in front of a low Clinic pane is 4+ m of grid
+        // SOLID along +x): the exact rays decide — the side is computed and KEPT only if at least one ray reaches the sky
+        if (air === -2) { st.buried++; cls = 4; } else if (cls < 2) { st.skippedInterior++; continue; }
+        if (!cellIx.has(c)) { if (cellIx.size >= GO_MAX_CELLS) { st.capped++; continue; } cellIx.set(c, cellIx.size); st.axis[ax]++; }
+        if (cls === 3) { if (air < 0) st.sideOffGrid++; else st.sideOpen++; } else if (cls === 2) st.sideSkylit++;
+        sides.push({ c: c, ax: ax, sg: sg, air: air, ijk: ijk, buried: cls === 4 }); } }
+    st.cells = cellIx.size; st.sides = sides.length;
+    var per = [GO_AZ * GO_EL, GO_AZ * 13, 6 * 13], lvl = 0; while (lvl < 2 && sides.length * per[lvl] > GO_RAY_BUDGET) lvl++;
+    st.level = lvl; var elS = st.elStride = lvl >= 1 ? 2 : 1, azS = st.azStride = lvl >= 2 ? 2 : 1;
+    var nC = st.cells, OFF = Math.ceil(nC / GO_W) * GO_W, nTex = OFF + sides.length * GO_TEX, H = Math.max(1, Math.ceil(nTex / GO_W)), data = new Uint32Array(GO_W * H * 4);
+    var cells = new Int32Array(nC); cellIx.forEach(function (ci, c0) { cells[ci] = c0; data[ci * 4] = 0xFFFFFFFF; data[ci * 4 + 1] = 0xFFFFFFFF; });
+    var D = [0, 0, 0], samp = new Uint8Array(GO_AZ * GO_EL), mid = function (a, b) { return (a & b & 128) | Math.round(((a & 127) + (b & 127)) / 2); };
+    for (var si = 0; si < sides.length; si++) { var S = sides[si], ci2 = cellIx.get(S.c), tex = OFF + si * GO_TEX, ax2 = S.ax, sg2 = S.sg;
+      data[ci2 * 4 + (sg2 > 0 ? 0 : 1)] = tex; data[ci2 * 4 + 2] = ax2;
+      // the ray origin = the pane's outer face on this side: the first glass triangle from the glass cell centre OUTWARD along the
+      // pane axis (the face lies ahead of the centre, up to 1.5 cells: a pane rasterises 1-3 cells thick), else the nearest one
+      // INWARD within the cell (the face lies behind the centre), else the cell face; + 2 cm outward
+      var gx = Z.org.x + (S.ijk[0] + 0.5) * cl, gy = Z.org.y + (S.ijk[1] + 0.5) * cl, gz = Z.org.z + (S.ijk[2] + 0.5) * cl, nrm = [0, 0, 0], ox, oy, oz; nrm[ax2] = sg2;
+      var fh = R.glassFirst(gx, gy, gz, nrm[0], nrm[1], nrm[2], 1.5 * cl) || R.glassFirst(gx, gy, gz, -nrm[0], -nrm[1], -nrm[2], 0.75 * cl);
+      if (fh) { ox = fh.x + nrm[0] * 0.02; oy = fh.y + nrm[1] * 0.02; oz = fh.z + nrm[2] * 0.02; st.refined++; } else { ox = gx + nrm[0] * (0.5 * cl + 0.02); oy = gy + nrm[1] * (0.5 * cl + 0.02); oz = gz + nrm[2] * (0.5 * cl + 0.02); }
+      samp.fill(0); var anyClear = false;
+      for (var k = 0; k < GO_AZ; k += azS) for (var i = 0; i < GO_EL; i += elS) {
+        if (ax2 === 1 && ((sg2 > 0 && i < 12) || (sg2 < 0 && i > 12))) continue;   // a horizontal pane: only its outward half
+        goDir(ax2, sg2, k, i, D); st.rays++; var r = R.trace(ox, oy, oz, D[0], D[1], D[2]), val, hit = 0;
+        if (!r.hit) { val = r.T; st.clear++; anyClear = true; if (r.T < 0.999) st.throughGlass++; }
+        else { hit = 128; var B = R.blocker(r.hit, D); val = r.T * B.b; st.blocked++; st.sumBlk += B.b; if (B.noAlb) st.noAlbedo++; st.hitDist[r.hit.d < 2 ? 0 : r.hit.d < 10 ? 1 : r.hit.d < 60 ? 2 : 3]++; }
+        st.sumVal += val; samp[k * GO_EL + i] = hit | Math.round(Math.max(0, Math.min(1, val)) * 127); }
+      if (S.buried && !anyClear) { data[ci2 * 4 + (sg2 > 0 ? 0 : 1)] = 0xFFFFFFFF; st.buriedDropped++; continue; }   // no sky from a buried side: it was the room side, the march keeps it
+      if (S.buried) st.buriedKept++;
+      if (elS > 1) for (var k2 = 0; k2 < GO_AZ; k2 += azS) for (var i2 = 1; i2 < GO_EL; i2 += 2) samp[k2 * GO_EL + i2] = mid(samp[k2 * GO_EL + i2 - 1], samp[k2 * GO_EL + i2 + 1]);
+      if (azS > 1) for (var k3 = 1; k3 < GO_AZ; k3 += 2) { var ka = k3 - 1, kb = ax2 === 1 ? (k3 + 1) % GO_AZ : Math.min(k3 + 1, GO_AZ - 2); for (var i3 = 0; i3 < GO_EL; i3++) samp[k3 * GO_EL + i3] = mid(samp[ka * GO_EL + i3], samp[kb * GO_EL + i3]); }
+      var w0 = tex * 4; for (var w = 0; w < 75; w++) data[w0 + w] = (samp[w * 4] | (samp[w * 4 + 1] << 8) | (samp[w * 4 + 2] << 16) | (samp[w * 4 + 3] << 24)) >>> 0; }
+    st.ms = Math.round(performance.now() - t0); st.usPerRay = st.rays ? +(st.ms * 1000 / st.rays).toFixed(2) : 0; st.meanOpen = st.rays ? +(st.sumVal / st.rays).toFixed(3) : 0; st.meanBlk = st.blocked ? +(st.sumBlk / st.blocked).toFixed(3) : 0; st.texMB = +(data.byteLength / 1e6).toFixed(1);
+    delete st.sumVal; delete st.sumBlk;
+    return { n: nC, cells: cells, data: data, w: GO_W, h: H, sides: sides.length, stats: st };
+  }
+  function logGlassOpen(bld, go, how) { var s = go.stats;
+    var verdict = s.why ? s.why : !s.glassCells ? 'VACUOUS (no glass cell in the grid)' : !s.sides ? 'VACUOUS (no glass cell has an exterior side: nothing computed, the march stays everywhere)' : 'built';
+    console.log('§GLASS_REFL_OPEN bld=' + bld + ' cache=' + how + ' ' + verdict + ' glassCells(any/majority)=' + s.glassCells + '/' + (s.glassMajority != null ? s.glassMajority : '?') + ' cells=' + s.cells + ' sides=' + s.sides + ' (open/skylit/offgrid ' + (s.sideOpen || 0) + '/' + (s.sideSkylit || 0) + '/' + (s.sideOffGrid || 0) + ') airBeyond4Cells=' + (s.farAir || 0) + ' interiorSides(march)=' + (s.skippedInterior || 0) + ' buried(>' + GO_AIR_REACH + ' cells solid: kept/dropped)=' + (s.buried || 0) + ':' + (s.buriedKept || 0) + '/' + (s.buriedDropped || 0) + ' capped=' + (s.capped || 0) +
+      ' axis(x/y/z)=' + (s.axis ? s.axis.join('/') : '?') + ' refinedToPane=' + (s.refined || 0) + '/' + s.sides + ' level=' + (s.level || 0) + ' (el stride ' + (s.elStride || 1) + ', az stride ' + (s.azStride || 1) + ') rays=' + s.rays + ' usPerRay=' + (s.usPerRay || 0) + ' ms=' + s.ms +
+      ' clear=' + (s.clear || 0) + ' (throughGlass ' + (s.throughGlass || 0) + ') blocked=' + (s.blocked || 0) + ' hitDist(<2/<10/<60/far m)=' + (s.hitDist ? s.hitDist.join('/') : '?') + ' meanOpen=' + (s.meanOpen || 0) + ' meanBlockerTerm=' + (s.meanBlk || 0) + ' noAlbedo=' + (s.noAlbedo || 0) + ' noBlockerF=' + (s.noBlockerF || 0) + ' texMB=' + (s.texMB || 0) +
+      ' (exact rays vs the shell pass BVH from each exterior pane face, 12 az x 25 el per side; blocked = T x rho_hit x F_hit, &glassblock=0 = 0; &glassopen=0 = the voxel march for every cell)'); }
+  // CPU read of the stored value (the shader's order: the surface cell, then the cell half a cell behind it); n = the eye-facing
+  // normal (world), r = the reflected direction. null = no value (not a computed glass cell / axis mismatch / that side not computed) -> the march.
+  function glassOpenAt(Z, n, p, r) {
+    var go = Z.field && Z.field.glassOpen; if (!go || !go.n) return null;
+    if (!Z.goMap) { Z.goMap = new Map(); for (var i = 0; i < go.cells.length; i++) Z.goMap.set(go.cells[i], i); }
+    var an = [Math.abs(n.x), Math.abs(n.y), Math.abs(n.z)], fax = (an[0] >= an[1] && an[0] >= an[2]) ? 0 : (an[1] >= an[2] ? 1 : 2), ns = fax === 0 ? n.x : fax === 1 ? n.y : n.z, hc = 0.5 * Z.cell, Dd = go.data;
+    for (var k = 0; k < 2; k++) { var c = k === 0 ? cellOf(Z, p.x, p.y, p.z) : cellOf(Z, p.x - n.x * hc, p.y - n.y * hc, p.z - n.z * hc); if (c < 0 || Z.zone[c] !== SOLID) continue;
+      var ci = Z.goMap.get(c); if (ci == null) continue; if (Dd[ci * 4 + 2] !== fax) continue; var sl = Dd[ci * 4 + (ns > 0 ? 0 : 1)]; if (sl === 0xFFFFFFFF) continue;
+      return goLookup(Dd, sl * 4, fax, ns > 0 ? 1 : -1, !!Z.glassBlockOff, r.x, r.y, r.z); }
+    return null;
+  }
   function field(A) {
     var Z = cache; if (!Z) return null;
     if (Z.field) { if (groundOn(A) && (!Z.field.Gd || !Z.field.ground || Z.field.ground.mode !== groundMode(A))) { groundBuild(A, Z); scheduleSave(); } return Z.field; }
@@ -757,6 +875,9 @@
       selStats.candidates = nCand; for (var q3 = 0; q3 < nCand; q3++) if (near2[q3]) selStats.near2++; }
     if (!shellWhy && !nCand) shellWhy = 'VACUOUS (no shell cells: no covered cell beside a wall near open air)';
     var shellSelMs = Math.round(performance.now() - tSel);
+    // HHS_LEAK instrument (debug only, no behaviour change): APP._fieldTrace = [cell indices] -> Z.field.trace = per cell the
+    // lattice directions that contributed [di, vt, gmin(256 = no glass on the path)] — reads which direction leaks sky
+    var fTrace = (A && A._fieldTrace && A._fieldTrace.length) ? new Map(A._fieldTrace.map(function (c) { return [Array.isArray(c) ? cellOf(Z, c[0], c[1], c[2]) : c, []]; })) : null;   // cell indices or world points
     FIELD_DIRS.forEach(function (d, di) {
       var dx = d.dx, dz = d.dz, off = dx + nx + dz * nxy, M = d.mids, nm = M.length, mo = new Int32Array(nm), mx = new Int32Array(nm), my = new Int32Array(nm), mz = new Int32Array(nm), w = d.w, ux = d.u[0], uy = d.u[1], uz = d.u[2];
       for (var m = 0; m < nm; m++) { mx[m] = M[m][0]; my[m] = M[m][1]; mz[m] = M[m][2]; mo[m] = M[m][0] + M[m][1] * nx + M[m][2] * nxy; }
@@ -769,7 +890,7 @@
           // one pane = one T: the fattened glass layer spans 1-3 cells, so T is applied ONCE when a ray enters glass from air
           // (a segment that touches glass: target or mid cells), never between glass cells; a second pane after air counts again
           if (!inG && gmin < 256) vt *= T[gmin]; }
-        val[c] = vt; if (zc !== SOLID && vt > 0) { acc[c] += w * vt; var zz = (zc & ZONE_MASK) * 3; zb[zz] += w * vt * ux; zb[zz + 1] += w * vt * uy; zb[zz + 2] += w * vt * uz; }
+        val[c] = vt; if (zc !== SOLID && vt > 0) { acc[c] += w * vt; var zz = (zc & ZONE_MASK) * 3; zb[zz] += w * vt * ux; zb[zz + 1] += w * vt * uy; zb[zz + 2] += w * vt * uz; if (fTrace && fTrace.has(c)) fTrace.get(c).push([di, +vt.toFixed(4), gmin, +(w * vt).toFixed(4)]); }
         if (isCand && isCand[c]) { var sq = candSlot.get(c); if (vt > 0 && zc !== SOLID) { latS[sq * 3] += w * vt * ux; latS[sq * 3 + 1] += w * vt * uy; latS[sq * 3 + 2] += w * vt * uz; }
           if (preOf[di] >= 0) latP[sq * 5 + preOf[di]] = vt; if (vt === 1) airV[sq] = 1; } } });
     // §ZERO Z8: the final shell = near2 OR (rule 'air' AND an air-only lattice direction)
@@ -781,6 +902,8 @@
       if (!shellWhy && !nShell) shellWhy = 'VACUOUS (no shell cells: no covered cell beside a wall near open air)'; }
     var SHELL_MC = 64, shell = { on: !shellWhy, why: shellWhy, cells: nShell, reach: selStats.rule, candidates: selStats.candidates, near2: selStats.near2, airOnly: selStats.airOnly, airOnlySample: selStats.airOnlySample || [], trace: selStats.trace || null, recomputedAirOnly: 0, airOnlyDSum: 0, airOnlyLifted: 0, pretestSkipped: 0, recomputed: 0, rays: 0, lifted: 0, lowered: 0, dSum: 0, dAbsSum: 0, maxLift: 0, maxDrop: 0,
       boundaryTris: 0, occluderTris: 0, occluderSkipped: 0, glassTris: 0, soupMs: 0, bvhMs: 0, passMs: 0, selMs: shellSelMs, mc: SHELL_MC, usPerRay: 0 };
+    // §GLASS_REFL_OPEN (Z26): the glass reflection pass shares the shell pass's BVH (built below), so it needs the shell pass on
+    var glassOpen = null, glassWhy = shellWhy ? 'not run (' + shellWhy + ')' : !glassOpenOn(A) ? 'not run (&glassopen=0 / APP._stillGlassOpen=false: the build is skipped too; a later press with the switch on rebuilds the field)' : !Z.glassIdx ? 'not run (grid record has no glass index)' : !Z.glassIdx.length ? 'VACUOUS (no glass cell in the grid)' : '';
     if (!shellWhy) { var geoO = null, geoG = null; try {
       var cullOn = A._stillShellCull !== false && !(typeof location !== 'undefined' && /[?&]shellcull=0/.test(location.search)), ogx = Z.org.x, ogy = Z.org.y, ogz = Z.org.z, icl = 1 / Z.cell;
       var keepOcc = cullOn ? function (x, y, z) { var i = Math.floor((x - ogx) * icl), j = Math.floor((y - ogy) * icl), k = Math.floor((z - ogz) * icl); if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return true;
@@ -813,6 +936,31 @@
         shell.fSum = (shell.fSum || 0) + fNew; var dF = fNew - fOld; shell.dSum += dF; shell.dAbsSum += Math.abs(dF); if (dF > 0.05) shell.lifted++; if (dF < -0.05) shell.lowered++; if (dF > shell.maxLift) shell.maxLift = dF; if (dF < shell.maxDrop) shell.maxDrop = dF;
         if (airOnly5) { shell.recomputedAirOnly++; shell.airOnlyDSum += dF; if (dF > 0.05) shell.airOnlyLifted++; } }
       shell.passMs = Math.round(performance.now() - tP); shell.usPerRay = shell.rays ? +(shell.passMs * 1000 / shell.rays).toFixed(2) : 0;
+      // §GLASS_REFL_OPEN (Z26): exact rays from each exterior pane face over the same BVH (its own try: a glass failure never flags the shell)
+      if (!glassWhy) try {
+        var goR = { trace: function (x, y, z, dx, dy, dz) { ray.origin.set(x, y, z); ray.direction.set(dx, dy, dz); var ho = bvhO.raycastFirst(ray, DS), far = ho ? ho.distance : Infinity, Tg = 1;
+            if (bvhG) { var hs = bvhG.raycast(ray, DS, 0, far); if (hs.length > 1) hs.sort(byD); var last = -1; for (var h = 0; h < hs.length; h++) { if (hs[h].distance >= far) break; if (last < 0 || hs[h].distance - last > 0.3) Tg *= GT[hs[h].faceIndex] / 255; last = hs[h].distance + 0.01; } }
+            return { T: Tg, hit: ho ? { x: ho.point.x, y: ho.point.y, z: ho.point.z, d: ho.distance } : null }; },
+          glassFirst: function (x, y, z, dx, dy, dz, dmax) { if (!bvhG) return null; ray.origin.set(x, y, z); ray.direction.set(dx, dy, dz); var hg = bvhG.raycastFirst(ray, DS, 0, dmax); return hg ? { x: hg.point.x, y: hg.point.y, z: hg.point.z } : null; },
+          // the blocker's brightness relative to the sky it replaces: rho (Z.alb of the hit cell, §IR_COLOUR) x F (the last air cell's sky-view before the hit: open 1 / the field's acc)
+          blocker: function (hp, dd) { var rho = -1, alb = Z.alb;
+            if (alb) { var cA = -1, cs1 = cellOf(Z, hp.x + dd[0] * 0.01, hp.y + dd[1] * 0.01, hp.z + dd[2] * 0.01), cs2 = cellOf(Z, hp.x - dd[0] * 0.01, hp.y - dd[1] * 0.01, hp.z - dd[2] * 0.01);
+              if (cs1 >= 0 && alb[cs1 * 3] + alb[cs1 * 3 + 1] + alb[cs1 * 3 + 2] > 0) cA = cs1; else if (cs2 >= 0 && alb[cs2 * 3] + alb[cs2 * 3 + 1] + alb[cs2 * 3 + 2] > 0) cA = cs2;
+              if (cA >= 0) rho = (0.2126 * alb[cA * 3] + 0.7152 * alb[cA * 3 + 1] + 0.0722 * alb[cA * 3 + 2]) / 255; }
+            var noAlb = rho < 0; if (noAlb) rho = R_BRE;
+            // the blocker's own sky-view = the F the renderer lights that surface with: the nearest non-solid cell around the hit
+            // on the ray's near side (3x3x3, then 5x5x5 — a ray grazing a fattened roof band has SOLID cells along itself for
+            // metres, so a walk back along the ray read 0 there): open 1, covered = the field's acc; none found -> 0
+            var Fh = -1, hc = cellOf(Z, hp.x - dd[0] * 0.01, hp.y - dd[1] * 0.01, hp.z - dd[2] * 0.01);
+            if (hc < 0) Fh = 1; else { var hi = hc % nx, hj = ((hc / nx) | 0) % ny, hk = (hc / nxy) | 0, bestD = Infinity;
+              for (var rad = 1; rad <= 2 && Fh < 0; rad++) for (var dz = -rad; dz <= rad; dz++) for (var dy = -rad; dy <= rad; dy++) for (var dx = -rad; dx <= rad; dx++) {
+                var ii = hi + dx, jj = hj + dy, kk = hk + dz; if (ii < 0 || jj < 0 || kk < 0 || ii >= nx || jj >= ny || kk >= nz) continue; var cq = ii + jj * nx + kk * nxy, vq = zone[cq]; if (vq === SOLID) continue;
+                var ex = Z.org.x + (ii + 0.5) * cl - hp.x, ey = Z.org.y + (jj + 0.5) * cl - hp.y, ez = Z.org.z + (kk + 0.5) * cl - hp.z; if (ex * dd[0] + ey * dd[1] + ez * dd[2] > 0) continue;   // beyond the blocker: its far side
+                var dq = ex * ex + ey * ey + ez * ez; if (dq < bestD) { bestD = dq; Fh = vq === 0 ? 1 : acc[cq]; } } }
+            if (Fh < 0) { Fh = 0; st_noF++; }
+            return { b: Math.min(1, rho * Fh), noAlb: noAlb }; } }, st_noF = 0;
+        glassOpen = glassOpenPass(Z, A, goR); glassOpen.stats.noBlockerF = st_noF;
+      } catch (eGo) { glassWhy = 'failed: ' + (eGo && eGo.message); console.warn('§GLASS_REFL_OPEN failed: ' + (eGo && eGo.stack)); }
     } catch (eSh) { shell.on = false; shell.why = 'failed: ' + (eSh && eSh.message); console.warn('§SKY_SHELL_RAYS failed: ' + (eSh && eSh.stack)); }
       try { if (geoO) { geoO.disposeBoundsTree(); geoO.dispose(); } if (geoG) { geoG.disposeBoundsTree(); geoG.dispose(); } } catch (eD) {} }
     isCand = candSlot = candCells = near2 = latS = latP = airV = shellCells = shellOf = null;
@@ -837,8 +985,10 @@
       var f = Math.min(1, sc + irc[v2 & ZONE_MASK]); if (f > maxF) maxF = f; G[c2] = Math.round(f * 10000); }
     val = acc = null;
     var minElev = FIELD_DIRS.reduce(function (m, d) { return Math.min(m, d.elev); }, 90);
+    if (!glassOpen) glassOpen = { n: 0, cells: new Int32Array(0), data: new Uint32Array(0), w: GO_W, h: 0, sides: 0, stats: { why: glassWhy || 'not run', glassCells: Z.glassIdx ? Z.glassIdx.length : 0, cells: 0, sides: 0, rays: 0, ms: 0 } };
+    logGlassOpen(Z.bld, glassOpen, 'built'); Z.goMap = null;
     Z.field = { G: G, maxF: maxF, maxSC: maxSC, ircZ: irc, ircAll: ircAll, irc: { on: ircOn, zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
-      weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }), shell: shell };
+      weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }), shell: shell, glassOpen: glassOpen, trace: fTrace ? Array.from(fTrace.entries()) : null };
     if (groundOn(A)) groundBuild(A, Z);   // §GROUND_VIEW_FIELD: Gd beside G, same cache record
     scheduleSave();
     return Z.field;
@@ -871,6 +1021,8 @@
     var nx = nrm.x, ny = nrm.y, nz = nrm.z; if (nx * vx + ny * vy + nz * vz > 0) { nx = -nx; ny = -ny; nz = -nz; }
     var sf = skyField(p, { x: nx, y: ny, z: nz }), base = sf.F == null ? 0 : sf.F; if (base >= 0.999) return { base: base, spec: base };
     var d = vx * nx + vy * ny + vz * nz, rx = vx - 2 * d * nx, ry = vy - 2 * d * ny, rz = vz - 2 * d * nz, st = 0.5 * Z.cell, qx = p.x + nx * st, qy = p.y + ny * st, qz = p.z + nz * st;
+    // §GLASS_REFL_OPEN (Z26): a glass cell's stored reflection openness replaces the march (the shader's slSpecKeep, same order)
+    if (Z.glassOpenActive) { var go = glassOpenAt(Z, { x: nx, y: ny, z: nz }, p, { x: rx, y: ry, z: rz }); if (go != null) return { base: base, spec: base + (1 - base) * go, glassOpen: go }; }
     if (smooth) { var P = 0, Tr = 1, cl2 = Z.cell, nxy2 = Z.nx * Z.ny;
       for (var k2 = 0; k2 < 32; k2++) { var gx = (qx - Z.org.x) / cl2 - 0.5, gy = (qy - Z.org.y) / cl2 - 0.5, gz = (qz - Z.org.z) / cl2 - 0.5, bx = Math.floor(gx), by = Math.floor(gy), bz = Math.floor(gz), fx = gx - bx, fy = gy - by, fz = gz - bz, o = 0, so = 0;
         for (var n = 0; n < 8; n++) { var dx = n & 1, dy = (n >> 1) & 1, dz = (n >> 2) & 1, i = bx + dx, j = by + dy, kk = bz + dz, w = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * (dz ? fz : 1 - fz);
@@ -883,7 +1035,9 @@
       qx += rx * st; qy += ry * st; qz += rz * st; }
     return { base: base, spec: base };
   }
-  global.LightZones = { shellOn: shellOn, groundField: groundField, groundOn: groundOn, groundMode: groundMode, GROUND_DIRS: GROUND_DIRS, specVis: specVis, prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
+  global.LightZones = { glassOpenOn: glassOpenOn, glassBlockOff: glassBlockOff, glassOpenAt: glassOpenAt, goDir: goDir, goLookup: goLookup, GO_W: GO_W, GO_AZ: GO_AZ, GO_EL: GO_EL, GO_TEX: GO_TEX,
+    glassOpenActive: function (on, blockOff) { if (cache) { cache.glassOpenActive = !!on; cache.glassBlockOff = !!blockOff; } return !!(cache && cache.glassOpenActive); },   // §GLASS_REFL_OPEN: set at staging (the CPU mirror follows the shader's switches)
+    shellOn: shellOn, groundField: groundField, groundOn: groundOn, groundMode: groundMode, GROUND_DIRS: GROUND_DIRS, specVis: specVis, prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
     SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL, shellReach: shellReach,
     // §ZERO Z8 node witness hook: run the REAL field() over a caller-built zone grid (no THREE / no BVH: selection is judged, the ray pass is skipped)
     _testField: function (A, Z) { cache = Z; Z.field = null; return field(A); } };
