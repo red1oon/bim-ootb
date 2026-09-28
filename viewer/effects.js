@@ -5303,9 +5303,12 @@ async function setupEffects(A, renderer, scene, camera) {
       // (renderMode 1) into this private target while the screen keeps the TAA frame; the materials then read it for their
       // indirect terms in a second TAA phase (sourced_light.js aoPatch). Half float, no depth, the composer's size.
       var aoOnlyRT = new THREE.WebGLRenderTarget(rt.width, rt.height, { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
+      // §AO_LAMP_BUF: the lamps' own AO (LightLaw.AO_LAMP, working-plane radius) — 8-bit like a UV aoMap (a visibility), read back for the § mean
+      var aoLampRT = new THREE.WebGLRenderTarget(rt.width, rt.height, { type: THREE.UnsignedByteType, depthBuffer: false, stencilBuffer: false });
       var adapter = {
         aoOnly: false,         // §ZERO Z10: true = write N8AO's AO into aoOnlyRT, pass the TAA frame through unchanged
         aoOnlyRT: aoOnlyRT,
+        aoLampRT: aoLampRT, aoTarget: null,   // §AO_LAMP_BUF: aoTarget = the target of the current AO-only accumulation (null = aoOnlyRT)
         enabled: false,        // §PHOTO_AO_GATE: disabled = EffectComposer skips it entirely — the
                                // zero-cost-when-off discipline everything else in this file follows
         needsSwap: true, clear: false, renderToScreen: false,
@@ -5314,6 +5317,7 @@ async function setupEffects(A, renderer, scene, camera) {
           _stillAODepthDirty = true;
           if (aoScratchRT) aoScratchRT.setSize(w, h);
           aoOnlyRT.setSize(w, h);   // §ZERO Z10
+          aoLampRT.setSize(w, h);   // §AO_LAMP_BUF
           if (shadowRestoreMat) shadowRestoreMat.uniforms.resolution.value.set(w, h);
         },
         render: function(renderer2, writeBuffer, readBuffer) {
@@ -5338,7 +5342,7 @@ async function setupEffects(A, renderer, scene, camera) {
           renderer2.autoClear = oldAutoClear;
           n8.renderToScreen = false;
           if (adapter.aoOnly) {   // §ZERO Z10: AO into the private target; the frame on screen stays the TAA image (no restore pass —
-            n8.render(renderer2, aoOnlyRT, readBuffer);   // direct light is never multiplied by AO in this mode, nothing to restore)
+            n8.render(renderer2, adapter.aoTarget || aoOnlyRT, readBuffer);   // direct light is never multiplied by AO in this mode, nothing to restore)
             var oac = renderer2.autoClear; renderer2.autoClear = false;
             copyMat.uniforms.tDiffuse.value = readBuffer.texture; renderer2.setRenderTarget(writeBuffer); copyQuad.render(renderer2);
             renderer2.autoClear = oac;
@@ -5425,7 +5429,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_stillAORAF) { cancelAnimationFrame(_stillAORAF); _stillAORAF = null; }
     if (_aoIndirectBound && window.SourcedLight && window.SourcedLight.aoSet) {   // §ZERO Z10: materials back to AO 1 (dummy texture, x = 0)
       _aoIndirectBound = false; window.SourcedLight.aoSet(A, null, false); console.log('§AO_INDIRECT released (' + reason + ')'); }
-    if (A._stillAOAdapter) A._stillAOAdapter.aoOnly = false;
+    if (A._stillAOAdapter) { A._stillAOAdapter.aoOnly = false; A._stillAOAdapter.aoTarget = null; }
     if (A._stillAOAdapter && A._stillAOAdapter.enabled) {
       A._stillAOAdapter.enabled = false;
       console.log('§PHOTO_AO off (' + reason + ') — pass disabled, zero cost during normal nav');
@@ -5453,10 +5457,46 @@ async function setupEffects(A, renderer, scene, camera) {
       ' power=' + c.intensity + ' falloff=' + c.distanceFalloff + ' patch=' + (patched ? 1 : 0) + (mode === 'composite' ? ' (world-radius step only: aomap patch not installed)' : ''));
     return mode;
   }
-  function _aoIndirectTaa2(ao, t0, aoFrames) {
+  // ══ §AO_LAMP_BUF (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md OPEN(1) §CONTACT_BOUNCE RESULT -> proposal) ═══════════════════
+  // A SECOND N8AO accumulation after §PHOTO_AO, radius = the working-plane height (LightLaw.AO_LAMP: EN 12464-1 0.75 m >= EN 527-1
+  // desk 0.74 m), into aoLampRT; read ONLY by the lamps' direct term (sourced_light.js uSLAoL). The indirect term keeps the 0.5 m
+  // buffer (uSLAoT) — different terms, no double count. Same primed depth, no scene render: cost = STILL_AO_FRAMES AO-only frames.
+  // &lampao=0 = the lamps read the indirect buffer (the pre-v1497 path, A/B); &aolamps=0 = lamps not AO'd at all (§AO_LAMPS);
+  // &lampaof=<n> = falloff dial for probes (n8ao world kernel: an occluder counts within 0.2 x r x falloff of the sample along the view ray).
+  function _aoLampPhase(ao, t0, aoFrames, then) {
+    var law = window.LightLaw && window.LightLaw.AO_LAMP, c = ao.pass.configuration, rtL = ao.adapter.aoLampRT;
+    var reason = !law ? 'LightLaw.AO_LAMP missing' : !rtL ? 'no target' : /[?&]lampao=0/.test(location.search) ? '&lampao=0' : null;
+    if (reason) { console.log('§AO_LAMP off (' + reason + ' — the lamps read the indirect AO buffer, radius ' + c.aoRadius + 'm)'); then(null); return; }
+    var fm = /[?&]lampaof=([0-9.]+)/.exec(location.search), falloff = fm ? parseFloat(fm[1]) : law.falloff;
+    c.aoRadius = law.radiusM; c.distanceFalloff = falloff;   // the n8ao Proxy calls firstFrame() on a change: the accumulation restarts on the next render
+    ao.adapter.aoTarget = rtL; ao.adapter.aoOnly = true; ao.adapter.enabled = true; ao.pass.firstFrame();
+    var sig = _camSig(), f = 0, t1 = performance.now();
+    (function stepL() {
+      _stillAORAF = null;
+      if (!A._stillRefineActive || !ao.adapter.enabled) return;   // torn down mid-phase
+      if (_camSig() !== sig) { console.log('§AO_LAMP cam-moved during the lamp AO — buffer abandoned, the lamps read the indirect buffer'); ao.adapter.aoTarget = null; then(null); return; }
+      A._composer.render(); f++;
+      if (f === 1) _stillSay('contact shadows under furniture (lamp AO)…');   // §STILL_STATUS_STEPS
+      if (f >= aoFrames) {
+        var ms = Math.round(performance.now() - t1), m = _aoLampMean(rtL);
+        ao.adapter.aoTarget = null;
+        console.log('§AO_LAMP radius=' + c.aoRadius + 'm falloff=' + c.distanceFalloff + ' frames=' + f + ' ms=' + ms + ' meanAO=' + m.mean + ' minAO=' + m.min +
+          ' readMs=' + m.ms + ' (' + law.source + (fm ? '; &lampaof dial' : '') + ')');
+        then(rtL.texture); return;
+      }
+      _stillAORAF = requestAnimationFrame(stepL);
+    })();
+  }
+  function _aoLampMean(rtL) {   // strided read-back (every 4th pixel of every row) — the § line's mean/min; a VACUOUS mean is named, never 1
+    var t = performance.now(), w = rtL.width, h = rtL.height, buf = new Uint8Array(w * h * 4), s = 0, n = 0, mn = 255;
+    try { A.renderer.readRenderTargetPixels(rtL, 0, 0, w, h, buf); for (var i = 0; i < buf.length; i += 16) { var v = buf[i]; s += v; n++; if (v < mn) mn = v; } }
+    catch (e) { return { mean: 'n/a(' + e.message + ')', min: 'n/a', ms: Math.round(performance.now() - t) }; }
+    return { mean: n ? (s / n / 255).toFixed(3) : 'VACUOUS', min: n ? (mn / 255).toFixed(3) : 'VACUOUS', ms: Math.round(performance.now() - t) };
+  }
+  function _aoIndirectTaa2(ao, t0, aoFrames, lampTex) {
     ao.adapter.enabled = false; ao.adapter.aoOnly = false;   // the AO buffer is final; the frame is rebuilt with it inside the lighting
     var SL = window.SourcedLight, rtA = ao.adapter.aoOnlyRT;
-    var nb = SL.aoSet(A, rtA.texture, false, rtA.width, rtA.height);   // bind the texture on every live program (x stays 0)
+    var nb = SL.aoSet(A, rtA.texture, false, rtA.width, rtA.height, lampTex || null);   // bind the texture(s) on every live program (x stays 0); §AO_LAMP_BUF: lampTex
     _aoIndirectBound = true;
     if (nb <= 0) { console.warn('§AO_INDIRECT no patched program took the AO (bound=' + nb + ') — frame kept without AO'); A._stillRefineBusy = false; return; }
     var taaN = _stillBudget().taa, sig = _camSig(), k = 0, t2 = performance.now();
@@ -5471,7 +5511,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (A._taaPass.accumulateIndex >= taaN) {
         // stays ON for the frozen frame (a later composer render is the TAA short-circuit of this same accumulation); released at teardown
         console.log('§AO_INDIRECT done mode=shader boundMats=' + nb + ' aoFrames=' + aoFrames + ' taa2=' + k + ' taa2Ms=' + Math.round(performance.now() - t2) +
-          ' totalMs=' + Math.round(performance.now() - t0) + ' radiusM=' + ao.pass.configuration.aoRadius + ' power=' + ao.pass.configuration.intensity);
+          ' totalMs=' + Math.round(performance.now() - t0) + ' radiusM=' + (window.LightLaw && window.LightLaw.AO ? window.LightLaw.AO.radiusM : ao.pass.configuration.aoRadius) + ' power=' + ao.pass.configuration.intensity + ' lampBuf=' + (lampTex ? 1 : 0));
         A._stillRefineBusy = false;
         return;
       }
@@ -5514,7 +5554,7 @@ async function setupEffects(A, renderer, scene, camera) {
         if (f >= _aoFrames) {
           console.log('§PHOTO_AO done frames=' + f + ' totalMs=' + Math.round(performance.now() - t0) +
             ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' mode=' + _aoMode + (_aoMode === 'shader' ? ' (AO buffer ready — second TAA phase next)' : ' (frozen with AO — stays until interaction)'));
-          if (_aoMode === 'shader') { _aoIndirectTaa2(ao, t0, f); return; }   // §ZERO Z10: busy stays true until the second TAA lands
+          if (_aoMode === 'shader') { _aoLampPhase(ao, t0, f, function (lampTex) { _aoIndirectTaa2(ao, t0, f, lampTex); }); return; }   // §ZERO Z10 (+ §AO_LAMP_BUF between): busy stays true until the second TAA lands
           A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY: real completion — icon drops "processing"
           return;
         }

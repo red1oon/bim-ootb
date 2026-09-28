@@ -64,7 +64,13 @@
     // L2 — §ZERO Z10 (audit #54): AO is the visibility of INDIRECT light (Frostbite 2014 §4.10.3; Filament; UE "non direct
     // lighting"), world radius = the sky-view field's cell (light_zones.js CELL 0.5 m: the field carries >= one cell, AO the sub-cell
     // band), power 1 (a visibility, no exponent), n8ao distanceFalloff default 1.
-    AO: { radiusM: 0.5, power: 1, falloff: 1, appliesTo: 'indirect' }
+    AO: { radiusM: 0.5, power: 1, falloff: 1, appliesTo: 'indirect' },
+    // L2 — §AO_LAMP_BUF (2026-09-28, OPEN(1) §CONTACT_BOUNCE): the ceiling lamps' DIRECT term is occluded by a SECOND N8AO buffer
+    // whose radius is the working-plane height: EN 12464-1 horizontal reference plane for offices/desks 0.75 m (>= EN 527-1:2011
+    // type-C desk 740 +/- 20 mm) — the floor must see the desk top above it. The indirect term keeps AO (0.5 m = the field cell);
+    // the two buffers multiply DIFFERENT terms, so no occluder is counted twice. falloff 1 = n8ao's library default (its world-mode
+    // kernel accepts an occluder within 0.2 x r x falloff of the sample ALONG THE VIEW RAY) — UNSOURCED beyond that default.
+    AO_LAMP: { radiusM: 0.75, falloff: 1, power: 1, appliesTo: 'lamps', source: 'EN 12464-1 ref plane 0.75 m; EN 527-1:2011 desk 0.74 m' }
   });
 
   // scene units -> lux (x luxPer) and -> cd/m2 for a luminance in scene units. null when there is no calibrated sun.
@@ -148,7 +154,7 @@
     return s;
   }
 
-  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, TORCH: LAW.TORCH, ADAPT: LAW.ADAPT, adaptEv: adaptEv, ALBEDO: LAW.ALBEDO, GROUND: LAW.GROUND, SUN: LAW.SUN, AO: LAW.AO, groundIrradiance: groundIrradiance, groundColor: groundColor, penumbra: penumbra,
+  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, TORCH: LAW.TORCH, ADAPT: LAW.ADAPT, adaptEv: adaptEv, ALBEDO: LAW.ALBEDO, GROUND: LAW.GROUND, SUN: LAW.SUN, AO: LAW.AO, AO_LAMP: LAW.AO_LAMP, groundIrradiance: groundIrradiance, groundColor: groundColor, penumbra: penumbra,
     srgbToLinear: srgbToLinear, decodeAlbedo: decodeAlbedo,    luxPer: luxPer, ev100: ev100, exposureFromEv: exposureFromEv, acesDiv: acesDiv, toneConst: toneConst,
     snapshot: snapshot, log: log, hash: hash, canon: canon };
   global.LightLaw = Object.freeze(LightLaw);
