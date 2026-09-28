@@ -1230,6 +1230,9 @@ async function initViewer() {
       } else {
         console.log('§SCENE_STATE_RESTORE none (no scene_state table)');
       }
+      // §LIGHT_FIELD_DB (light_zones.js SPEC S4): read the saved Alt+S light field out of the .db now, off the press path, so the
+      // first Alt+S restores it (cache=hit src=db) instead of building it. Async; prime() at staging joins the same read.
+      if (window.LightZones && window.LightZones.primeDb) { try { window.LightZones.primeDb(APP); } catch (eLF) { console.warn('§LIGHT_FIELD_DB prime failed: ' + eLF.message); } }
     }
   }).catch(e => {
     APP.status.textContent = `Error: ${e.message}`;

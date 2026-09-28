@@ -148,6 +148,8 @@
     rq.onupgradeneeded = function () { rq.result.createObjectStore(IDB_STORE); }; rq.onsuccess = function () { res(rq.result); }; rq.onerror = function () { rej(rq.error); }; rq.onblocked = function () { rej(new Error('blocked')); }; }); }
   function prime(A) {
     if (cacheOff() || !A || !A.activeBuilding || (cache && cache.bld === A.activeBuilding) || (primed && primed.bld === A.activeBuilding)) return Promise.resolve(primed);
+    // §LIGHT_FIELD_DB S4: the .db's own row (primeDb, started at open by main.js) is awaited first; only without one is IndexedDB read
+    if (A.db && (!dbPrime || dbPrime.db !== A.db || dbPrime.p)) return primeDb(A).then(function (r) { return (r && primed === r) ? r : prime(A); });
     var bld = A.activeBuilding, t0 = performance.now();
     var rd = idb().then(function (db) { return new Promise(function (res) { var tx = db.transaction(IDB_STORE, 'readonly'), g = tx.objectStore(IDB_STORE).get(bld);
       g.onsuccess = function () { res(g.result || null); }; g.onerror = function () { res(null); }; tx.oncomplete = tx.onabort = function () { db.close(); }; }); })
@@ -166,9 +168,7 @@
       // failed -> 'no BVH', or the pass threw) is not the build's field — never persist it (the zone grid itself is still saved).
       var shBad = shellSkipped(Z.field);
       if (shBad) console.log('§ZONE_IDB_CACHE field NOT saved bld=' + Z.bld + ' (shell pass skipped: ' + shBad + ') — the next press rebuilds the field');
-      var t0 = performance.now(), rec = { src: SRC, fp: Z.fp, org: [Z.org.x, Z.org.y, Z.org.z], field: shBad ? null : (Z.field || null), when: new Date().toISOString() };
-      KEYS.forEach(function (k) { rec[k] = Z[k]; });
-      rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.alb ? Z.alb.byteLength : 0) + (Z.aperture ? Z.aperture.byteLength : 0) + (Z.field ? Z.field.G.byteLength : 0) + (Z.field && Z.field.Gd ? Z.field.Gd.byteLength : 0)) / 1e6).toFixed(1);
+      var t0 = performance.now(), rec = idbRecord(Z, shBad ? null : (Z.field || null));
       idb().then(function (db) { var tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).put(rec, Z.bld);
         tx.oncomplete = function () { db.close(); console.log('§ZONE_IDB_CACHE saved bld=' + Z.bld + ' MB=' + rec.mb + ' field=' + (rec.field ? 1 : 0) + ' ms=' + Math.round(performance.now() - t0)); };
         tx.onerror = tx.onabort = function () { db.close(); console.warn('§ZONE_IDB_CACHE save failed: ' + (tx.error && tx.error.message)); }; })
@@ -192,6 +192,7 @@
   }
   function restore(A, r, THREE, t0) {
     cache = { dd: null, org: new THREE.Vector3(r.org[0], r.org[1], r.org[2]), fp: r.fp }; KEYS.forEach(function (k) { cache[k] = r[k]; });
+    cache.bld = A.activeBuilding;   // §LIGHT_FIELD_DB: a record read from the .db may carry the name it was saved under
     var ms = Math.round(performance.now() - t0);
     cache.stats = Object.assign({}, r.stats, { ms: ms, rasMs: 0, skyMs: 0, cached: 1, glare: Object.assign({}, r.stats.glare, { ms: 0 }) });
     var fOk = !!(r.field && r.field.irc && r.field.irc.on === ircFlag(A)) && !shellSkipped(r.field), fMs = r.field ? r.field.ms : 0;   // ### ALTS-ALL FIX 7: a pre-fix record saved without its shell pass is rebuilt
@@ -200,11 +201,113 @@
     if (fOk && glassOpenOn(A) && r.field.glassOpen && r.field.glassOpen.stats && /^not run \(&glassopen=0/.test(r.field.glassOpen.stats.why || '')) { fOk = false; console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored with the glass-open pass skipped by &glassopen=0) — rebuilding the field'); }
     if (fOk) { cache.field = Object.assign(r.field, { ms: 0, cached: 1 }); if (r.field.shell) logShell(A.activeBuilding, r.field.shell, 'hit'); else console.log('§SKY_SHELL_RAYS bld=' + A.activeBuilding + ' cache=hit record has no shell stats');
       if (r.field.glassOpen && r.field.glassOpen.stats) logGlassOpen(A.activeBuilding, r.field.glassOpen, 'hit'); else console.log('§GLASS_REFL_OPEN bld=' + A.activeBuilding + ' cache=hit record has no glass-open data (the march stays for every cell)'); }   // §GLASS_REFL_OPEN (Z26)
-    console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none') +
+    console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' src=' + (r.from || 'idb') + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none') +
       ' ground=' + (fOk && r.field.Gd ? 'hit (was ' + (r.field.ground ? r.field.ground.ms : '?') + ' ms)' : 'none (built on demand)'));
     logBuilt(A);
     return cache;
   }
+
+  // the persisted record (IndexedDB and §LIGHT_FIELD_DB share it): KEYS + org + fp + field; transient members never enter it
+  function idbRecord(Z, field) {
+    var rec = { src: SRC, fp: Z.fp, org: [Z.org.x, Z.org.y, Z.org.z], field: field, when: new Date().toISOString() };
+    KEYS.forEach(function (k) { rec[k] = Z[k]; });
+    rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.alb ? Z.alb.byteLength : 0) + (Z.aperture ? Z.aperture.byteLength : 0) + (field ? field.G.byteLength : 0) + (field && field.Gd ? field.Gd.byteLength : 0)) / 1e6).toFixed(1);
+    return rec;
+  }
+
+  // ══ §LIGHT_FIELD_DB (red1 2026-09-29: "If it is only 11Mb, and can be recalled from database much faster then yes put it as part
+  // of the one time DB save. I can save the DB again as a silent_bake.db version to test it is working.") — the Alt+S light-zone
+  // field (zone grid + sky-view field + ground field + the Z26 §GLASS_REFL_OPEN glass table) persisted INSIDE the building .db the
+  // viewer saves (Ctrl+S) and restored on open, so nobody pays the build again (Hospital: ~16 s shell + ~67 s glass).
+  // SPEC
+  //  S1 TABLE light_field_cache(key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT), ONE row,
+  //     written by scene.js _writeLightFieldTable at the same choke point as staffage_instances / cinema_path / scene_state:
+  //     viewer-authored derived data travelling in the user's own file — CLAUDE.md "DB CHANGES = MIGRATION SCRIPT + SELF-HEAL
+  //     LOADER": no binary in git, the table is written by the save and read back by the loader below (primeDb).
+  //  S2 RECORD = the §ZONE_IDB_CACHE record itself (idbRecord: KEYS + org + fp + field), packed as ONE container: 'LFC1' magic,
+  //     u32 header length, a JSON header (every scalar / stats / zoneInfo / field stats + the typed-array manifest {path, type, n}),
+  //     then the typed arrays 8-byte aligned; gzip through the browser's CompressionStream. dayBuf/day0/dayG/dayZones/goMap/dd/
+  //     trace are transient and never stored (they are not in KEYS either).
+  //  S3 KEY = SRC (this file's code hash, the same key the IndexedDB record uses) AND fp (the boundary-geometry fingerprint, checked
+  //     in build() exactly as an IndexedDB record is; the leading building-name component of fp and the record's bld are rewritten
+  //     to the current A.activeBuilding so a file saved under another name still matches its own geometry). key !== SRC => stale:
+  //     ignored, the ordinary IndexedDB / rebuild path runs; both logged as §LIGHT_FIELD_DB restore|skip|stale key= bytes= ms=.
+  //  S4 OPEN: main.js calls LightZones.primeDb(A) once A.db is loaded (async, off the press path); prime(A) (awaited by the Alt+S
+  //     staging) joins the same promise. A db record fills `primed`, so the first press restores through the SAME restore() the
+  //     IndexedDB path uses: §ZONE_IDB_CACHE hit ... src=db, §SKY_SHELL_RAYS / §GLASS_REFL_OPEN cache=hit, §SKY_VIEW_FIELD cache=hit.
+  //  S5 SAVE: A.saveModelDb awaits LightZones.dbPack(A) (pack + gzip, ~1-2 s) and _exportBuildingDb writes the row from dbRecord().
+  //     Nothing in memory (no Alt+S this session, no IndexedDB record) => the row is SKIPPED and logged — a save never forces the
+  //     build. An existing row is carried only when its key is current, else dropped.
+  //  S6 MEMORY: a restore holds exactly what the IndexedDB restore holds (zone 2N, glassT N, alb 3N, aperture N, G 2N, Gd 2N bytes +
+  //     the glass table); the unpack copies each array out of the inflated buffer (no view keeps the whole buffer alive) and the
+  //     pack is released right after the write (no permanent second copy).
+  // WITNESS: witness_light_field_db.js (headless, GPU-locked) — build, save, reopen in a fresh profile, first press src=db + glass
+  //     cache=hit, §FAULT / §FAULT_GI identical to the built run, .db size delta, a stale key falls back to a rebuild.
+  var LFC_MAGIC = 0x3143464C, TA = { Uint8Array: Uint8Array, Uint16Array: Uint16Array, Uint32Array: Uint32Array, Int8Array: Int8Array, Int16Array: Int16Array, Int32Array: Int32Array, Float32Array: Float32Array, Float64Array: Float64Array };
+  var dbPrime = null, dbPackLast = null;   // dbPrime = { db: the A.db the read was made on, p: the in-flight promise (null once settled) }
+  function taName(a) { return (a && ArrayBuffer.isView(a) && !(a instanceof DataView) && TA[a.constructor.name]) ? a.constructor.name : null; }
+  function packRecord(rec) {
+    var arrays = [], man = [];
+    function walk(v, path) {
+      if (v == null) return v; var t = taName(v); if (t) { arrays.push(v); man.push({ p: path, t: t, n: v.length }); return { $a: man.length - 1 }; }
+      if (Array.isArray(v)) return v.map(function (e, i) { return walk(e, path + '.' + i); });
+      if (typeof v === 'object') { if (v instanceof Map || v instanceof Set) return undefined; var o = {}; Object.keys(v).forEach(function (k) { var w = walk(v[k], path + '.' + k); if (w !== undefined) o[k] = w; }); return o; }
+      return typeof v === 'function' ? undefined : v;
+    }
+    var body = walk(rec, ''), hdr = new TextEncoder().encode(JSON.stringify({ v: 1, arrays: man, rec: body })), hl = (hdr.length + 7) & ~7, tot = 8 + hl;
+    arrays.forEach(function (a) { tot += (a.byteLength + 7) & ~7; });
+    var out = new Uint8Array(tot), dv = new DataView(out.buffer); dv.setUint32(0, LFC_MAGIC, true); dv.setUint32(4, hdr.length, true); out.set(hdr, 8);
+    var off = 8 + hl; arrays.forEach(function (a) { out.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), off); off += (a.byteLength + 7) & ~7; });
+    return out;
+  }
+  function unpackRecord(raw) {
+    var dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength); if (dv.getUint32(0, true) !== LFC_MAGIC) throw new Error('bad magic');
+    var hn = dv.getUint32(4, true), H = JSON.parse(new TextDecoder().decode(raw.subarray(8, 8 + hn))), off = 8 + ((hn + 7) & ~7), arrays = [];
+    H.arrays.forEach(function (m) { var T = TA[m.t], bytes = m.n * T.BYTES_PER_ELEMENT; arrays.push(new T(raw.buffer.slice(raw.byteOffset + off, raw.byteOffset + off + bytes))); off += (bytes + 7) & ~7; });   // slice = an owned copy per array (S6)
+    function walk(v) { if (v == null) return v; if (Array.isArray(v)) return v.map(walk); if (typeof v === 'object') { if (typeof v.$a === 'number' && Object.keys(v).length === 1) return arrays[v.$a]; var o = {}; Object.keys(v).forEach(function (k) { o[k] = walk(v[k]); }); return o; } return v; }
+    return walk(H.rec);
+  }
+  function gzipU8(u8, mode) { var cs = new (mode === 'inflate' ? DecompressionStream : CompressionStream)('gzip'), w = cs.writable.getWriter(); w.write(u8).catch(function () {}); w.close().catch(function () {});
+    return new Response(cs.readable).arrayBuffer().then(function (b) { return new Uint8Array(b); }); }
+  function dbTable(A) { try { var r = A.db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='light_field_cache'"); return !!(r && r[0] && r[0].values.length); } catch (e) { return false; } }
+  // the loader (S4): read the row, check the key, inflate + unpack into `primed` — the same slot the IndexedDB prime fills
+  function primeDb(A) {
+    if (!A || !A.db || cacheOff()) { console.log('§LIGHT_FIELD_DB skip reason=' + (!A || !A.db ? 'no-db' : '&zonecache=0')); return Promise.resolve(null); }
+    if (dbPrime && dbPrime.db === A.db) return dbPrime.p || Promise.resolve(primed && primed.from === 'db' ? primed : null);   // one read per opened db
+    var t0 = performance.now(), me = { db: A.db, p: null }; dbPrime = me;
+    me.p = (function () {
+      var w = 0; return new Promise(function (res) { (function tick() { if (A.activeBuilding || w++ >= 40) return res(); setTimeout(tick, 250); })(); });   // activeBuilding lands early in the load; never block on it
+    })().then(function () {
+      if (!dbTable(A)) { console.log('§LIGHT_FIELD_DB skip reason=no-table bld=' + A.activeBuilding); return null; }
+      var rows = A.db.exec("SELECT key, bld, fp, bytes, raw_bytes, blob, created FROM light_field_cache LIMIT 1"), r = rows && rows[0] && rows[0].values[0];
+      if (!r) { console.log('§LIGHT_FIELD_DB skip reason=empty-table bld=' + A.activeBuilding); return null; }
+      var key = r[0], bld = r[1], blob = r[5];
+      if (key !== SRC) { console.log('§LIGHT_FIELD_DB stale key=' + key + ' now=' + SRC + ' bld=' + bld + ' bytes=' + r[3] + ' created=' + r[6] + ' ms=' + Math.round(performance.now() - t0) + ' — ignored, the IndexedDB / rebuild path runs'); return null; }
+      if (!blob || !blob.byteLength) { console.log('§LIGHT_FIELD_DB skip reason=empty-blob key=' + key); return null; }
+      return gzipU8(blob, 'inflate').then(function (raw) { var t1 = performance.now(), rec = unpackRecord(raw), t2 = performance.now();
+        rec.from = 'db'; rec.bld = A.activeBuilding; rec.fp = A.activeBuilding + rec.fp.slice(rec.fp.indexOf('|'));   // S3: the name component follows the open file
+        if (rec.field) rec.field.trace = null;
+        primed = rec;
+        console.log('§LIGHT_FIELD_DB restore key=' + key + ' bld=' + A.activeBuilding + (bld !== A.activeBuilding ? ' (saved as ' + bld + ')' : '') + ' bytes=' + blob.byteLength + ' raw=' + raw.byteLength + ' inflateMs=' + Math.round(t1 - t0) + ' unpackMs=' + Math.round(t2 - t1) + ' ms=' + Math.round(t2 - t0) +
+          ' field=' + (rec.field ? 1 : 0) + ' ground=' + (rec.field && rec.field.Gd ? 1 : 0) + ' glassOpen=' + (rec.field && rec.field.glassOpen ? rec.field.glassOpen.n : 0) + ' MB=' + rec.mb + ' created=' + r[6] + (typeof performance !== 'undefined' && performance.memory ? ' heapMB=' + Math.round(performance.memory.usedJSHeapSize / 1e6) : '') + ' (primed: the first Alt+S restores it after the geometry fingerprint check)');
+        return rec; });
+    }).catch(function (e) { console.warn('§LIGHT_FIELD_DB skip reason=error ' + (e && e.message)); return null; })
+      .then(function (r) { me.p = null; return r; });
+    return me.p;
+  }
+  // the writer side (S5): pack what this session holds; scene.js _writeLightFieldTable takes dbRecord() synchronously inside the export
+  function dbPack(A) {
+    dbPackLast = null; var t0 = performance.now(), Z = (cache && A && cache.bld === A.activeBuilding && cache.field) ? cache : null, rec = null, src = '';
+    if (Z) { var shBad = shellSkipped(Z.field); if (shBad) { console.log('§LIGHT_FIELD_DB pack skipped reason=field-without-shell (' + shBad + ')'); return Promise.resolve(null); } rec = idbRecord(Z, Z.field); src = 'built'; }
+    else if (primed && A && primed.bld === A.activeBuilding && primed.field) { rec = primed; src = primed.from || 'idb'; }
+    if (!rec) { console.log('§LIGHT_FIELD_DB pack skipped reason=' + (cache && cache.bld === (A && A.activeBuilding) ? 'no-field' : 'no-zone-grid') + ' (press Alt+S once, then save)'); return Promise.resolve(null); }
+    var raw; try { var keep = rec.field.trace; rec.field.trace = null; raw = packRecord(rec); rec.field.trace = keep; } catch (e) { console.warn('§LIGHT_FIELD_DB pack failed: ' + e.message); return Promise.resolve(null); }
+    var t1 = performance.now();
+    return gzipU8(raw, 'deflate').then(function (gz) { dbPackLast = { key: SRC, bld: rec.bld, fp: rec.fp, bytes: gz.byteLength, rawBytes: raw.byteLength, blob: gz, created: new Date().toISOString(), src: src, packMs: Math.round(t1 - t0), gzipMs: Math.round(performance.now() - t1) };
+      console.log('§LIGHT_FIELD_DB packed src=' + src + ' bld=' + rec.bld + ' raw=' + raw.byteLength + ' gz=' + gz.byteLength + ' ratio=' + (raw.byteLength / gz.byteLength).toFixed(1) + ' packMs=' + dbPackLast.packMs + ' gzipMs=' + dbPackLast.gzipMs); raw = null; return dbPackLast; })
+      .catch(function (e) { console.warn('§LIGHT_FIELD_DB gzip failed: ' + e.message); return null; });
+  }
+  function dbRecord(consume) { var p = dbPackLast; if (consume) dbPackLast = null; return p; }
 
   function build(A, opts) {
     var THREE = global.THREE; opts = opts || {};
@@ -1035,7 +1138,8 @@
       qx += rx * st; qy += ry * st; qz += rz * st; }
     return { base: base, spec: base };
   }
-  global.LightZones = { glassOpenOn: glassOpenOn, glassBlockOff: glassBlockOff, glassOpenAt: glassOpenAt, goDir: goDir, goLookup: goLookup, GO_W: GO_W, GO_AZ: GO_AZ, GO_EL: GO_EL, GO_TEX: GO_TEX,
+  global.LightZones = { primeDb: primeDb, dbPack: dbPack, dbRecord: dbRecord, _packRecord: packRecord, _unpackRecord: unpackRecord,   // §LIGHT_FIELD_DB (S4 loader / S5 writer; _pack/_unpack = node round-trip test hooks)
+    glassOpenOn: glassOpenOn, glassBlockOff: glassBlockOff, glassOpenAt: glassOpenAt, goDir: goDir, goLookup: goLookup, GO_W: GO_W, GO_AZ: GO_AZ, GO_EL: GO_EL, GO_TEX: GO_TEX,
     glassOpenActive: function (on, blockOff) { if (cache) { cache.glassOpenActive = !!on; cache.glassBlockOff = !!blockOff; } return !!(cache && cache.glassOpenActive); },   // §GLASS_REFL_OPEN: set at staging (the CPU mirror follows the shader's switches)
     shellOn: shellOn, groundField: groundField, groundOn: groundOn, groundMode: groundMode, GROUND_DIRS: GROUND_DIRS, specVis: specVis, prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
     SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL, shellReach: shellReach,
