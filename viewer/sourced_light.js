@@ -1358,6 +1358,11 @@
     var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevTM = R.toneMapping, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
     var buf = new Float32Array(METER_W * METER_H * 4);
     var irs = IRP[1];
+    // §METER_FIXFACE (2026-09-29, red1 Clinic corridor still …628230228 "went dark"): §METER_EV v2 keeps light SOURCES out of the meter
+    // (the MeshBasic fixture glows were hidden). §FIXTURE_FACE turned those glows into calibrated emissive faces on lit materials, so the
+    // meter began reading every lamp face (4I/A_face, thousands of cd/m2): meter 117 cd/m2 at that pose, frame mean 22/255. The faces keep
+    // their emission in the picture; for the meter pass only their emission is 0 (uFixFace 2), i.e. the same rule as before Z25.
+    var ffU = A._fixFaceU, ffPrev = ffU ? ffU.value : null; if (ffU && ffPrev > 0.5) ffU.value = 2;
     // §METER_BIND (### ALTS-ALL FIX 1): a render that needs a program key a material has not had before (new light / shadow count,
     // or this meter's own variant: float target + NoToneMapping + fog null) gets a FRESH uniforms clone from ShaderLib (three r186
     // getProgram) = the §SOURCED_LIGHT DUMMY textures (zone 0 everywhere -> nav hemi/ambient indoors, no IR/cove/lamp data), and
@@ -1371,7 +1376,7 @@
       var fr0 = R.info && R.info.render ? R.info.render.frame : -1;
       R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf);
       var calls = R.info && R.info.render ? R.info.render.calls : -1, fr1 = R.info && R.info.render ? R.info.render.frame : -1; }
-    finally { IRP[1] = irs; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; R.toneMapping = prevTM; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
+    finally { IRP[1] = irs; if (ffU && ffPrev != null) ffU.value = ffPrev; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; R.toneMapping = prevTM; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
     // sky pixels (nothing drawn, alpha < 0.5): the sky luminance the lighting itself uses — hemi sky irradiance E = pi L, so
     // L = luminance(hemi.color) x hemi.intensity / pi (scene units; x luxPer = cd/m2). One sky, lit and seen alike (L1).
     var skyPx = 0, Lsky = A.hemi ? (0.2126 * A.hemi.color.r + 0.7152 * A.hemi.color.g + 0.0722 * A.hemi.color.b) * A.hemi.intensity / Math.PI : 0;
@@ -1419,7 +1424,7 @@
     var bind = 'rendered=' + (fr1 > fr0 ? 1 : 0) + ' calls=' + calls + ' bufHash=' + (bh >>> 0).toString(16) + ' programs=' + prog0 + '->' + prog1 + ' mats=' + mats.size + ' rebound=' + rebound + ' stagedLit=' + staged + ' dummyAtRead=' + dummyAt + (opts && opts.noPrime ? ' prime=off' : '');
     if (!(opts && opts.quiet)) console.log('§METER_BIND ' + bind + ' (fresh-key uniforms carry the dummy zone texture; primed + pushed before the read)');
     var hidK = Object.keys(hk).filter(function (k) { return hk[k]; }).map(function (k) { return k + ':' + hk[k]; }).join(',') + (hn.length ? '[' + hn.join('|').replace(/\s+/g, '_') + ']' : '');
-    return { L: sw ? Math.exp(sl / sw) : null, bandsLog: bandsLog, bandsL: bandsL, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, hiddenKinds: hidK, dummyAtRead: dummyAt, rebound: rebound, ms: performance.now() - t0 };   // log-average luminance, scene units
+    return { L: sw ? Math.exp(sl / sw) : null, bandsLog: bandsLog, bandsL: bandsL, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, hiddenKinds: hidK, dummyAtRead: dummyAt, rebound: rebound, fixFaceMasked: !!(ffU && ffPrev > 0.5), ms: performance.now() - t0 };   // log-average luminance, scene units
   }
   // world position per meter pixel (override MeshBasicMaterial writing its world position into the float target), then the
   // light zone at 0.3 m toward the camera; returns a 0/1 mask of pixels in camZone.
@@ -1464,7 +1469,7 @@
     var evBands = (m.bandsL || []).map(function (b) { return Math.round(b[0] * 100) + '/' + Math.round(b[1] * 100) + '=' + Math.log2(b[2] * luxPer * 100 / 12.5).toFixed(2); }).join(' ');
     try { console.log(meterState(A, m, cam, diag ? 'diag' : 'final')); } catch (eMS) { console.warn('§METER_STATE failed: ' + eMS.message); }
     console.log((diag ? '§METER_DIAG' : '§METER') + ' camera=' + cam + ' tag=' + (diag ? 'diag' : 'final') + ' mode=' + m.mode + (evBands ? ' EV100bands[' + evBands + ']' : '') + ' Lavg=' + Lcd.toFixed(1) + 'cd/m2 EV100=' + ev.toFixed(2) + ' exposure=' + exp.toFixed(4) +
-      ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES ' + aces : '') + ' / (1.2 x 2^EV))' + (diag ? ' NOT APPLIED (diagnostic; the one reading is tag=final)' : '') + ' vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
+      ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES ' + aces : '') + ' / (1.2 x 2^EV))' + (diag ? ' NOT APPLIED (diagnostic; the one reading is tag=final)' : '') + ' vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' fixFaceMasked=' + (m.fixFaceMasked ? 1 : 0) + ' ms=' + m.ms.toFixed(0));
     return { exposure: exp, stops: stops, ev100: ev, Lcd: Lcd, skyPx: m.skyPx, pixels: m.pixels, diag: diag };
   }
   // §METER final (### ALTS-ALL FIX 1, replaces the §METER_EV lamp remeter, audit #58): effects.js calls this ONCE per still, after the

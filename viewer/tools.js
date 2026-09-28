@@ -1335,7 +1335,7 @@ function setupTools(A) {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n{ float _ff = aFixFace; float _fi = 1.0;\n#ifdef USE_INSTANCING\n_fi = aFixInst;\n#endif\nvFixEmit = ( _ff <= 0.0 ) ? 1.0 : max( 0.0, _ff - 1.0 ) * _fi; }');
       sh.fragmentShader = f0
         .replace('#include <common>', '#include <common>\nuniform float uFixFace;\nvarying float vFixEmit;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif ( uFixFace > 0.5 ) totalEmissiveRadiance *= vFixEmit;');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif ( uFixFace > 1.5 ) totalEmissiveRadiance = vec3( 0.0 ); else if ( uFixFace > 0.5 ) totalEmissiveRadiance *= vFixEmit;');   // 2 = §METER_FIXFACE (meter pass only)
       if (sh.vertexShader.indexOf('vFixEmit =') < 0 || sh.fragmentShader.indexOf('*= vFixEmit') < 0) {
         console.warn('§FIXTURE_FACE_PATCH_MISS mat=' + (m.name || m.type) + ' vert=' + (sh.vertexShader.indexOf('vFixEmit =') >= 0) + ' frag=' + (sh.fragmentShader.indexOf('*= vFixEmit') >= 0) + ' (anchors not found — this material keeps whole-mesh emissive)');
       }
