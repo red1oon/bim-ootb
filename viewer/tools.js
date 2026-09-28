@@ -1267,6 +1267,213 @@ function setupTools(A) {
     var f = _fixtureFaceFill(A.meshCache[gh]);
     return (_lampShapeByHash[gh] = f ? f.shape : 'ambiguous');
   };
+  // ══ §FIXTURE_FACE (Z25, 2026-09-28 — bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "Z25 SPEC", audit #43) ═══════
+  // MEASURED (HHS pose …583845329, §FIXTURE_PIXELS): every fixture pixel = emissive ffe4b5 x 0.3 = 6818 cd/m2 at the still's
+  // exposure (meter 51 cd/m2) -> 944/955 samples clipped white; faces down 539 / side 379 / up 37 ALL glow — the whole mesh
+  // emits, housing included. HOW FIXTURES ARE DRAWN (§FIXTURE_DRAW probe, HHS): 410/416 lamps drawn — 345 in 9 BatchedMesh
+  // (one addGeometry range PER ELEMENT, 342 geometry hashes) + 65 in 1 InstancedMesh (one hash, 65 instances) — all 10
+  // objects on ONE shared MeshStandardMaterial (emissive ffe4b5 x 0.3). So the material cannot say which face emits (that is
+  // per GEOMETRY: the §LAMP_SHAPE_FACE call per hash) nor how bright (that is per LAMP: its own I). Hence:
+  //  (a) a per-vertex attribute aFixFace on the DRAWN geometry — 0 = no data (drawn as today), 1 = housing (emissive 0),
+  //      1 + s = the emitting face at s x the material's emissive. BatchedMesh: written over the element's own vertex range
+  //      (_geometryInfo[_instanceInfo[slot].geometryIndex], r186) so s is per lamp; InstancedMesh: the mask on the shared
+  //      geometry (1 / 2) and s per instance in aFixInst (InstancedBufferAttribute); a single Mesh: 1 / 1 + s. Triangle rule
+  //      from the face §LAMP_SHAPE_FACE picked for the hash: plan -> horizontal triangles (|n.y| > FIXFACE_COS, sign-free:
+  //      IFC meshes wind either way) whose centroid lies in the body slice (bottom LAMP_BODY_SLICE of the height, local -Y);
+  //      xy -> |n.z| > FIXFACE_COS either sign; zy -> |n.x| > FIXFACE_COS either sign. Ambiguous shape / no mesh -> the whole
+  //      mesh as today (value 2), counted. A vertex on both a face and a housing triangle takes the face (max).
+  //  (b) L = Phi / (pi A_face): Phi = the lamp's own flux exactly as the shader lights the room with it — an omni point source
+  //      (audit #40) of intensity I = A._lampData.lamps[].I after §LAMP_EN, I x luxPer = cd, so Phi = 4 pi I luxPer lm and
+  //      emissive = L / luxPer = 4 I / A_face (luxPer cancels; the calibration is the same one the lamps use). A_face = the
+  //      hull area _fixtureFaceFill computes for the picked face. s = emissive / the material's emissiveIntensity. A lamp with
+  //      no I (not in the lamp data: pool path, capped, film) keeps s = 1 (the 0.3, face only) and is counted UNSOURCED.
+  //  (c) §FIXTURE_FACE per press. Alt+S only: uFixFace (ONE shared uniform) = 1 for the still, 0 at teardown — navigation and
+  //      films draw the whole mesh exactly as before (the attribute is inert at 0, no recompile either way: the patch is
+  //      installed when night glow first touches the material, which recompiles it anyway).
+  var FIXFACE_COS = 0.7;
+  A._fixFaceU = { value: 0 };   // shared by every patched lamp material's program (sourced_light's uniform pattern)
+  var _fixFaceByHash = {};      // ghash -> { face, area, mask: Uint8Array, faceTris, tris } | null (ambiguous / no face area)
+  A._fixFacePatch = function(m) {
+    if (!m || m.__fixFace || !m.emissive) return false;
+    m.__fixFace = true;
+    var prev = m.onBeforeCompile, prevKeyFn = Object.prototype.hasOwnProperty.call(m, 'customProgramCacheKey') ? m.customProgramCacheKey : null;
+    // the default program key is onBeforeCompile.toString(): wrapping every material with the same wrapper would key two
+    // different inner hooks (triplanar vs grain) to ONE program — keep the inner hook's own key text under ours
+    var innerKey = prevKeyFn ? null : (prev ? prev.toString() : '');
+    m.customProgramCacheKey = function() { return (prevKeyFn ? prevKeyFn.call(m) : innerKey) + '|fixface'; };
+    m.onBeforeCompile = function(sh, renderer) {
+      if (prev) prev.call(this, sh, renderer);
+      sh.uniforms.uFixFace = A._fixFaceU;
+      var v0 = sh.vertexShader, f0 = sh.fragmentShader;
+      sh.vertexShader = v0
+        .replace('#include <common>', '#include <common>\nattribute float aFixFace;\n#ifdef USE_INSTANCING\nattribute float aFixInst;\n#endif\nvarying float vFixEmit;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n{ float _ff = aFixFace; float _fi = 1.0;\n#ifdef USE_INSTANCING\n_fi = aFixInst;\n#endif\nvFixEmit = ( _ff <= 0.0 ) ? 1.0 : max( 0.0, _ff - 1.0 ) * _fi; }');
+      sh.fragmentShader = f0
+        .replace('#include <common>', '#include <common>\nuniform float uFixFace;\nvarying float vFixEmit;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif ( uFixFace > 0.5 ) totalEmissiveRadiance *= vFixEmit;');
+      if (sh.vertexShader.indexOf('vFixEmit =') < 0 || sh.fragmentShader.indexOf('*= vFixEmit') < 0) {
+        console.warn('§FIXTURE_FACE_PATCH_MISS mat=' + (m.name || m.type) + ' vert=' + (sh.vertexShader.indexOf('vFixEmit =') >= 0) + ' frag=' + (sh.fragmentShader.indexOf('*= vFixEmit') >= 0) + ' (anchors not found — this material keeps whole-mesh emissive)');
+      }
+    };
+    return true;
+  };
+  // per hash: the face + its hull area (from _fixtureFaceFill) and the per-vertex mask by the triangle rule above
+  function _fixtureFaceInfo(gh, geo) {
+    if (Object.prototype.hasOwnProperty.call(_fixFaceByHash, gh)) return _fixFaceByHash[gh];
+    var out = null, ff = geo ? _fixtureFaceFill(geo) : null, pos = geo && geo.attributes && geo.attributes.position;
+    if (ff && pos && ff.shape !== 'ambiguous' && (ff.face === 'plan' || ff.face === 'xy' || ff.face === 'zy') && ff.faces[ff.face] && ff.faces[ff.face].area > 0) {
+      var idx = geo.index, nV = pos.count, nT = Math.floor((idx ? idx.count : nV) / 3), mask = new Uint8Array(nV), faceTris = 0, face = ff.face;
+      var minY = Infinity, maxY = -Infinity;
+      for (var i = 0; i < nV; i++) { var y = pos.getY(i); if (y < minY) minY = y; if (y > maxY) maxY = y; }
+      var cut = minY + (maxY - minY) * LAMP_BODY_SLICE;
+      for (var t = 0; t < nT; t++) {
+        var ia = idx ? idx.getX(t * 3) : t * 3, ib = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, ic = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+        var ax = pos.getX(ia), ay = pos.getY(ia), az = pos.getZ(ia);
+        var bx = pos.getX(ib) - ax, by = pos.getY(ib) - ay, bz = pos.getZ(ib) - az, cx = pos.getX(ic) - ax, cy = pos.getY(ic) - ay, cz = pos.getZ(ic) - az;
+        var nx = by * cz - bz * cy, ny = bz * cx - bx * cz, nz = bx * cy - by * cx, l = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        if (!(l > 0)) continue;
+        nx /= l; ny /= l; nz /= l;
+        var hit = false;
+        if (face === 'plan') hit = Math.abs(ny) > FIXFACE_COS && (ay + pos.getY(ib) + pos.getY(ic)) / 3 <= cut + 1e-6;
+        else if (face === 'xy') hit = Math.abs(nz) > FIXFACE_COS;
+        else hit = Math.abs(nx) > FIXFACE_COS;
+        if (hit) { faceTris++; mask[ia] = 1; mask[ib] = 1; mask[ic] = 1; }
+      }
+      out = faceTris > 0 ? { face: face, area: ff.faces[face].area, mask: mask, faceTris: faceTris, tris: nT } : null;
+    }
+    return (_fixFaceByHash[gh] = out);
+  }
+  function _pq(a) { if (!a.length) return '-'; a = a.slice().sort(function(x, y) { return x - y; }); var f = function(v) { return v >= 100 ? Math.round(v) : +v.toPrecision(3); }; return f(a[0]) + '/' + f(a[a.length >> 1]) + '/' + f(a[a.length - 1]); }
+  // Alt+S: write the attributes for every drawn lamp and switch the faces on. Returns the §FIXTURE_FACE record (null = not applied).
+  A._fixtureFaceApply = function() {
+    var t0 = performance.now();
+    if (!A._nightGlowMats || !A.scene || !A.guidMap) { console.log('§FIXTURE_FACE INCONCLUSIVE — no night glow materials (night mode off?)'); return null; }
+    if (A._stillLampsOff) { console.log('§FIXTURE_FACE skipped — lamps off for this still (§STILL_GLOW), fixture emissive is 0'); return null; }
+    if (A._stillFixFace === false || /[?&]fixface=0/.test(location.search)) { console.log('§FIXTURE_FACE off (&fixface=0 / APP._stillFixFace=false) — whole-mesh emissive as before (A/B)'); return null; }
+    var lamps = A._nightFixtureWorldPositions() || [];
+    var lp = (window.LightLaw && LightLaw.luxPer) ? LightLaw.luxPer(A._stillCalibSunLux, A._stillCalibSunI) : ((A._stillCalibSunI > 0) ? (A._stillCalibSunLux || 0) / A._stillCalibSunI : null);
+    var glow = new Set(), eIs = [];
+    A._nightGlowMats.forEach(function(g) { if (g && g.mat && !g.win) { glow.add(g.mat); if (eIs.indexOf(g.mat.emissiveIntensity) < 0) eIs.push(g.mat.emissiveIntensity); } });
+    var byGuid = {}, k;
+    for (k in A.guidMap) { var g0 = A.guidMap[k]; if (g0) (byGuid[g0] || (byGuid[g0] = [])).push(k); }
+    var IbyGuid = {}, LD = A._lampData && A._lampData.lamps;
+    if (LD) for (var li = 0; li < LD.length; li++) if (LD[li].guid) IbyGuid[LD[li].guid] = LD[li].I;
+    var R = { fixtures: 0, faceEmit: 0, housingDark: 0, ambiguous: 0, unsourced: 0, synthetic: 0, notDrawn: 0, noGlowMat: 0, misaligned: 0, hashes: 0,
+      byFace: { plan: 0, xy: 0, zy: 0 }, byType: { batched: 0, instanced: 0, mesh: 0 }, faceTris: 0, tris: 0, L: [], phi: [], area: [], s: [] };
+    var touched = new Set(), seenHash = {};
+    lamps.forEach(function(p) {
+      if (!p.__guid) { R.synthetic++; return; }
+      var ks = byGuid[p.__guid]; if (!ks) { R.notDrawn++; return; }
+      R.fixtures++;
+      var gh = p.__ghash, ff = null, wrote = 0;
+      ks.forEach(function(key) {
+        var us = key.indexOf('_'), oid = parseInt(us >= 0 ? key.slice(0, us) : key, 10), slot = us >= 0 ? parseInt(key.slice(us + 1), 10) : -1;
+        var o = A.scene.getObjectById(oid); if (!o || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+        var ms = Array.isArray(o.material) ? o.material : [o.material];
+        if (!ms.some(function(m) { return glow.has(m); })) { R.noGlowMat++; return; }
+        var eI = 0; ms.forEach(function(m) { if (glow.has(m) && m.emissiveIntensity > eI) eI = m.emissiveIntensity; });
+        var G = o.geometry, nVg = G.attributes.position.count, attr = G.getAttribute('aFixFace'), v;
+        if (!attr || attr.count !== nVg) { attr = new THREE.BufferAttribute(new Float32Array(nVg), 1); G.setAttribute('aFixFace', attr); }
+        var arr = attr.array;
+        // the face from the fixture's own geometry: the instanced mesh's geometry IS the hash; batched/mesh read the hash's cache
+        var src = o.isInstancedMesh ? G : (gh && A.meshCache ? A.meshCache[gh] : null), hk = o.isInstancedMesh ? (o.userData && o.userData.hash) || gh : gh;
+        ff = (src && hk) ? _fixtureFaceInfo(hk, src) : null;
+        if (hk && !seenHash[hk]) { seenHash[hk] = 1; R.hashes++; }
+        var I = IbyGuid[p.__guid], s = 1, sourced = !!(ff && I != null && I > 0 && lp > 0 && eI > 0);
+        if (sourced) { var em = 4 * I / ff.area; s = em / eI; R.L.push(em * lp); R.phi.push(4 * Math.PI * I * lp); R.area.push(ff.area); R.s.push(s); }
+        if (o.isBatchedMesh) {
+          var ii = o._instanceInfo && o._instanceInfo[slot], gi = ii && o._geometryInfo && o._geometryInfo[ii.geometryIndex];
+          if (!gi || !(gi.vertexStart >= 0) || !(gi.vertexCount > 0) || gi.vertexStart + gi.vertexCount > nVg) { R.misaligned++; return; }
+          var vs = gi.vertexStart, vc = gi.vertexCount;
+          if (ff && vc !== ff.mask.length) { R.misaligned++; ff = null; }
+          if (!ff) { for (v = 0; v < vc; v++) arr[vs + v] = 2; }
+          else { for (v = 0; v < vc; v++) arr[vs + v] = ff.mask[v] ? 1 + s : 1; }
+          R.byType.batched++; touched.add(attr); wrote++;
+        } else if (o.isInstancedMesh) {
+          if (!attr.__fixFilled) {   // the mask once per shared geometry
+            attr.__fixFilled = true;
+            if (!ff || nVg !== ff.mask.length) { for (v = 0; v < nVg; v++) arr[v] = 2; } else { for (v = 0; v < nVg; v++) arr[v] = ff.mask[v] ? 2 : 1; }
+            touched.add(attr);
+          }
+          var ia = G.getAttribute('aFixInst');
+          if (!ia || ia.count < o.count) { var fa = new Float32Array(o.count); fa.fill(1); ia = new THREE.InstancedBufferAttribute(fa, 1); G.setAttribute('aFixInst', ia); }
+          if (slot >= 0 && slot < ia.count) { ia.array[slot] = ff ? s : 1; touched.add(ia); }
+          R.byType.instanced++; wrote++;
+        } else if (o.isMesh) {
+          if (!ff || nVg !== ff.mask.length) { if (ff) R.misaligned++; ff = null; for (v = 0; v < nVg; v++) arr[v] = 2; }
+          else { for (v = 0; v < nVg; v++) arr[v] = ff.mask[v] ? 1 + s : 1; }
+          R.byType.mesh++; touched.add(attr); wrote++;
+        }
+        if (ff && !sourced) R.unsourced++;
+      });
+      if (!wrote) return;
+      if (ff) { R.faceEmit++; if (ff.faceTris < ff.tris) R.housingDark++; R.byFace[ff.face]++; R.faceTris += ff.faceTris; R.tris += ff.tris; }
+      else R.ambiguous++;
+    });
+    // §FIXTURE_FACE_NONLUM — MEASURED at the same HHS pose (GREEN 1): 515 of the 539 down-facing emissive pixels sat on elements
+    // that are NOT in the fixture list at all (HHS has no IfcLightFixture, so the glow is keyed to '|IfcFlowTerminal': ceiling
+    // diffusers and grilles glow at 0.3 — the pre-existing "others got accidentally lighted" spill named at
+    // _applyNightGlowToMatCache). §NIGHT_FIXTURE_VOCAB is the ONE selector of luminaires; the shared material cannot apply it,
+    // the per-element attribute can: every element drawn with a lamp glow material that the vocabulary did not select is drawn
+    // with emissive 0 (attribute 1) for the still — lit like any surface. Counted (nonLuminaire=). &fixnonlum=0 = the spill as before.
+    var nonLum = 0, nonLumObjs = 0, nonLumOn = !(A._stillFixNonLum === false || /[?&]fixnonlum=0/.test(location.search));
+    if (nonLumOn) {
+      var lampGuid = {}; lamps.forEach(function(p) { if (p.__guid) lampGuid[p.__guid] = 1; });
+      A.scene.traverse(function(o) {
+        if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+        var ms = Array.isArray(o.material) ? o.material : [o.material];
+        if (!ms.some(function(m) { return glow.has(m); })) return;
+        var G = o.geometry, nVg = G.attributes.position.count, attr = G.getAttribute('aFixFace'), v, n0 = nonLum;
+        if (!attr || attr.count !== nVg) { attr = new THREE.BufferAttribute(new Float32Array(nVg), 1); G.setAttribute('aFixFace', attr); }
+        var arr = attr.array;
+        if (o.isBatchedMesh) {
+          var II = o._instanceInfo || [], GI = o._geometryInfo || [];
+          for (var si = 0; si < II.length; si++) {
+            if (!II[si] || II[si].active === false) continue;
+            if (lampGuid[A.guidMap[o.id + '_' + si]]) continue;
+            var gi2 = GI[II[si].geometryIndex]; if (!gi2 || !(gi2.vertexStart >= 0) || !(gi2.vertexCount > 0) || gi2.vertexStart + gi2.vertexCount > nVg) continue;
+            for (v = 0; v < gi2.vertexCount; v++) arr[gi2.vertexStart + v] = 1;
+            nonLum++;
+          }
+          if (nonLum > n0) touched.add(attr);
+        } else if (o.isInstancedMesh) {
+          var ia2 = G.getAttribute('aFixInst');
+          if (!ia2 || ia2.count < o.count) { var fa2 = new Float32Array(o.count); fa2.fill(1); ia2 = new THREE.InstancedBufferAttribute(fa2, 1); G.setAttribute('aFixInst', ia2); }
+          if (!attr.__fixFilled) { attr.__fixFilled = true; for (v = 0; v < nVg; v++) arr[v] = 2; touched.add(attr); }   // no lamp of this hash: whole mesh x aFixInst
+          for (var ii2 = 0; ii2 < o.count && ii2 < ia2.count; ii2++) { if (lampGuid[A.guidMap[o.id + '_' + ii2]]) continue; ia2.array[ii2] = 0; nonLum++; }
+          if (nonLum > n0) touched.add(ia2);
+        } else if (o.isMesh) {
+          if (lampGuid[A.guidMap[o.id]] || lampGuid[o.userData && o.userData.guid]) return;
+          for (v = 0; v < nVg; v++) arr[v] = 1;
+          nonLum++; touched.add(attr);
+        }
+        if (nonLum > n0) nonLumObjs++;
+      });
+    }
+    R.nonLuminaire = nonLum; R.nonLuminaireObjs = nonLumObjs; R.nonLumOn = nonLumOn;
+    touched.forEach(function(a) { a.needsUpdate = true; });
+    A._fixFaceU.value = 1;
+    if (A.markDirty) A.markDirty();
+    R.ms = Math.round(performance.now() - t0);
+    var line = '§FIXTURE_FACE fixtures=' + R.fixtures + ' faceEmit=' + R.faceEmit + ' housingDark=' + R.housingDark + ' ambiguous(wholeMesh)=' + R.ambiguous +
+      ' unsourced(0.3 kept)=' + R.unsourced + ' byFace=plan:' + R.byFace.plan + '/xy:' + R.byFace.xy + '/zy:' + R.byFace.zy +
+      ' byType=batched:' + R.byType.batched + '/instanced:' + R.byType.instanced + '/mesh:' + R.byType.mesh + ' hashes=' + R.hashes +
+      ' faceTris/tris=' + R.faceTris + '/' + R.tris + ' L(cd/m2) min/p50/max=' + _pq(R.L) + ' Phi(lm)=' + _pq(R.phi) + ' A_face(m2)=' + _pq(R.area) + ' s=' + _pq(R.s) +
+      ' luxPer=' + (lp ? lp.toFixed(1) : '-') + ' eI=' + eIs.join(',') + ' glowMats=' + glow.size + ' synthetic=' + R.synthetic + ' notDrawn=' + R.notDrawn + ' noGlowMat=' + R.noGlowMat +
+      ' misaligned=' + R.misaligned + ' nonLuminaire(glow material, not in the fixture list -> emissive 0)=' + (nonLumOn ? R.nonLuminaire + ' in ' + R.nonLuminaireObjs + ' objs' : 'off (&fixnonlum=0)') +
+      ' lampData=' + (LD ? LD.length + (A._lampData.enDone ? ' (EN applied)' : ' (EN NOT applied)') : 'none') + ' ms=' + R.ms +
+      ' (Phi = 4 pi I luxPer: the omni point source the shader lights with, audit #40; L = Phi/(pi A); emissive = L/luxPer = 4I/A)';
+    if (!R.fixtures) line = '§FIXTURE_FACE VACUOUS ' + line.slice('§FIXTURE_FACE '.length);
+    console.log(line);
+    A._fixtureFaceLast = R;
+    return R;
+  };
+  A._fixtureFaceRestore = function() {
+    if (!A._fixFaceU.value) return;
+    A._fixFaceU.value = 0;
+    if (A.markDirty) A.markDirty();
+    console.log('§FIXTURE_FACE restored uFixFace=0 (whole-mesh emissive as before; attributes stay, inert)');
+  };
   // The one colour for a fixture's light (see _nightFixtureWorldPositions).
   A.nightFixtureColor = function(p) {
     var base = (p && p.__color !== undefined) ? p.__color : NIGHT_AMBER;
@@ -1384,7 +1591,7 @@ function setupTools(A) {
       // switched off altogether, which is a different question from the film's own relight.
       var _lp = A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity,
                                         glowE: 0, glowEI: 0 }) - 1;
-      if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.3; _glowCount++; } // reduced 0.8->0.65->0.45->0.3 2026-08-08
+      if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.3; _glowCount++; A._fixFacePatch(m); } // reduced 0.8->0.65->0.45->0.3 2026-08-08; §FIXTURE_FACE patch rides the recompile below
       else { m.emissive.setHex(0xfff8ec); m.emissiveIntensity = 0.55; _windowGlowCount++; }
       // §129.48 — captured AFTER the set, so it is whatever night glow actually chose, not a second
       // copy of those constants that could drift from them.

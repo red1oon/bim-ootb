@@ -5602,6 +5602,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // emissive left on would follow the user back into navigation.
     if (A._bloomPass) A._bloomPass.enabled = false;
     _emberOff();
+    if (typeof A._fixtureFaceRestore === 'function') A._fixtureFaceRestore();   // §FIXTURE_FACE (Z25): whole-mesh emissive back for nav/films
     // §NIGHT_STILL_LIGHTS: hand the navigation budget back, or the still's raised set follows the
     // user into their next orbit and the frame rate goes with it. Compares against the CURRENT nav
     // default (A._nightMaxLightsNav), not a stale literal, so §NIGHT_LIGHT_BUDGET_UP-style tuning
@@ -5980,6 +5981,11 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!A._maxqActive && window.GlassFresnel && window.GlassFresnel.capture) { try { window.GlassFresnel.capture(A); } catch (eGE) { console.warn('§GLASS_ENV failed: ' + eGE.message); } }   // §GLASS_ENV: staged scene, lights final
     // §METER one reading per still (### ALTS-ALL FIX 1): the ONE exposure reading, on the FINAL staged scene — after the lamp rebuild,
     // the ground reassert (§GROUND_COLOR_ORDER_FIX), torch, albedo and the glass env capture; SourcedLight.stage() only logged a §METER_DIAG.
+    // §FIXTURE_FACE (Z25): the lamps were just reborn (ver bump above) — sync the lamp texture NOW (§LAMP_EN scales the I the
+    // faces read) instead of on the first rendered frame, then write the emitting faces; both before the meter and the first
+    // TAA sample, so the meter reads the final scene and no sample carries the whole-mesh glow. Alt+S only (films: uFixFace 0).
+    if (!A._maxqActive && window.SourcedLight && window.SourcedLight.lampSync) { try { window.SourcedLight.lampSync(A); } catch (eLS2) { console.warn('§FIXTURE_FACE lampSync failed: ' + eLS2.message); } }
+    if (!A._maxqActive && typeof A._fixtureFaceApply === 'function') { try { A._fixtureFaceApply(); } catch (eFF) { console.warn('§FIXTURE_FACE failed: ' + eFF.message); } }
     if (!A._maxqActive && window.SourcedLight && window.SourcedLight.meterFinal) { try { window.SourcedLight.meterFinal(A); } catch (eMF) { console.warn('§METER final failed: ' + eMF.message); } }
     console.log('§STILL_REFINE start samples=' + _taaFrames + ' triplanarMaterials=' + _triCount +
       (A._stillBudget ? ' §MAXQ_FRAME_BUDGET taa=' + _taaFrames + ' ao=' + _stillBudget().ao +
