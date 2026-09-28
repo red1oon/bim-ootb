@@ -40,12 +40,18 @@ async function session(tag, dbFile, opts) {
     R.primeLine = pick(L, /§LIGHT_FIELD_DB (restore|skip|stale)/); R.primeKind = (/§LIGHT_FIELD_DB (restore|skip|stale)/.exec(R.primeLine || '') || [])[1] || 'none';
     R.primeMs = num(R.primeLine, 'ms'); R.primeBytes = num(R.primeLine, 'bytes');
     await p.evaluate((c, t) => { const A = window.APP; A.camera.position.fromArray(c); A.controls.target.fromArray(t); A.controls.update(); }, POSE.cam, POSE.tgt);
+    // CONTROL: DLOD off in every phase. A saved .db carries scene_state, so on reopen the camera lands on the still pose BEFORE the first
+    // DLOD tick and that tick hides the far instances (measured Hospital B: imHid=559 vs A: imHid=0 at the default camera) — a visibility
+    // difference that moved §FAULT_GI dark 0.21% -> 0.2% while §FAULT (the field-level line) stayed byte-identical. The light field is
+    // independent of DLOD, so both phases render with every instance visible.
+    R.dlod = await p.evaluate(() => { const A = window.APP; const was = !!A._dlodEnabled; if (A.dlodDisable) A.dlodDisable('witness_light_field_db: identical visibility in every phase'); return { was, now: !!A._dlodEnabled }; });
+    L.push('§WIT dlod was=' + R.dlod.was + ' now=' + R.dlod.now);
     await sleep(500); const j0 = L.length, tP = Date.now(); await p.keyboard.down('Alt'); await p.keyboard.press('s'); await p.keyboard.up('Alt');
     for (let i = 0; i < 900 && !L.slice(j0).some(t => /§GI_STILL result|§GI_STILL_FAIL/.test(t)); i++) await sleep(1000); await sleep(1500);
     R.pressWallMs = Date.now() - tP; const S = L.slice(j0);
     R.stage = pick(S, /§STILL_STAGE_MS/); R.stagingTotal = num(R.stage, 'stagingTotal'); R.sourcedStage = num(R.stage, 'sourcedStage'); R.zoneBuild = num(R.stage, 'zoneBuild');
     R.idb = pick(S, /§ZONE_IDB_CACHE (hit|miss|prime)/); R.shell = pick(S, /§SKY_SHELL_RAYS bld=/); R.glass = pick(S, /§GLASS_REFL_OPEN bld=/); R.field = pick(S, /§SKY_VIEW_FIELD on/); R.ground = pick(S, /§GROUND_VIEW_FIELD (on|off)/); R.glassStaged = pick(S, /§GLASS_REFL_OPEN staged/);
-    R.fault = pick(S, /^§FAULT /); R.faultGi = pick(S, /^§FAULT_GI /); R.gi = pick(S, /§GI_STILL result/);
+    R.fault = pick(S, /^§FAULT /); R.faultGi = pick(S, /^§FAULT_GI /); R.gi = pick(S, /§GI_STILL result/); R.dlodTick = pick(L, /§DLOD_TICK/);
     R.fieldSweepMs = num(R.field, 'sweepMs'); R.shellPassMs = num(R.shell, 'passMs'); R.shellBvhMs = num(R.shell, 'bvhMs'); R.glassMs = num(R.glass, 'ms'); R.glassSides = num(R.glass, 'sides');
     R.glassCache = tok(R.glass, 'cache'); R.fieldCache = tok(R.field, 'cache'); R.groundCache = tok(R.ground, 'cache'); R.shellCache = tok(R.shell, 'cache'); R.idbSrc = tok(R.idb, 'src'); R.idbKind = (/§ZONE_IDB_CACHE (hit|miss|prime)/.exec(R.idb || '') || [])[1];
     R.glassReflDark = tok(R.fault, 'glassReflDark'); R.giDark = tok(R.faultGi, 'dark'); R.giBlown = tok(R.faultGi, 'blown');
