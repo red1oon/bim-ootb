@@ -553,7 +553,13 @@
       // IR and removed the local surfacing): the bounced light is counted once as the LOCAL estimate instead of the flat zone mean —
       // pixel = C - IR_px + min(bounce, k2 x D). Where the local bounce exceeds the zone's flat IR (lit areas) it adds; where it is
       // lower (corners, under furniture) it subtracts; never above the physical k2 x direct. &giredist=0 = the FIX 13 add-only bound.
-      const bRedist = T.max(C.rgb.mul(ao).sub(irPx).add(T.min(giT, C.rgb.mul(T.float(1).sub(shr)).mul(G.boundK2))), T.vec3(0));
+      // §GI_REDIST_EVIDENCE (2026-09-28, red1's HHS still …583845329: black ceiling corners + blotches; A/B at that pose: redistribute
+      // dark 1.29% vs 0%, mean 129.6 -> 104.2, &giredist=0 no blotch): SSGI is SCREEN-SPACE — a surface whose bounce sources are off-frame
+      // reads bounce ~0 AND AO ~1 (no occluder seen), and the rule then took its whole zone IR away. A low bounce is evidence of local
+      // shadowing only where SSGI saw an occluder, so the IR is removed in proportion to the occlusion it saw: w = 1 - AO_ssgi.
+      // w = 0 (nothing seen) -> the FIX 13 add-only bound; w = 1 (fully occluded) -> the full redistribute.
+      const lb = T.min(giT, C.rgb.mul(T.float(1).sub(shr)).mul(G.boundK2)), wEv = T.clamp(T.float(1).sub(gi.getAONode()), 0, 1);
+      const bRedist = T.max(C.rgb.mul(ao).add(T.mix(T.max(lb.sub(irPx), T.vec3(0)), lb.sub(irPx), wEv)), T.vec3(0));
       const bAdd = C.rgb.mul(ao).add(T.mix(addRaw, T.min(addRaw, room), G.boundU));
       rgb = T.mix(bAdd, bRedist, G.boundU.mul(G.redistU));
     }
