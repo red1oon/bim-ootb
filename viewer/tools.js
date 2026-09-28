@@ -68,6 +68,31 @@ function setupTools(A) {
         }
       }
 
+      // §GROUND_DOOR_CHECK (Z24, 2026-09-28, red1 HITOS "ground level is miscalculated"): the picked slab must be one the picked
+      // storey's own doors stand on. The storey's door-sill mode (0.25 m bins of door bbox bottoms) BELOW the picked slab by more than
+      // the slab-thickness bound (1.0 m, the same bound the slab filter uses) = the name bucket bled a higher slab into the storey
+      // (HITOS: u.etg slabs at 27.6-28.0 = 1.etg's own level; its 62 doors stand at 24.25). Then ground = the largest slab of that
+      // storey whose bottom lies within one slab-thickness below the door level. Fleet (sqlite3, 10 buildings): only HITOS changes
+      // (27.63 -> 24.15); Clinic/Duplex/HHS/Hospital/JKR/LTU/Terminal/Castle/SampleHouse keep their value.
+      var _gStorey = (/\((.*)\)$/.exec(_gSrc) || [])[1];
+      if (_gStorey && _gSrc !== '?') {
+        var _gSq = "'" + _gStorey.replace(/'/g, "''") + "'";
+        var _dz = A.db.exec("SELECT ROUND((t.center_z - t.bbox_z/2)*4)/4.0 AS b, COUNT(*) AS n FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid " +
+          "WHERE m.ifc_class='IfcDoor' AND t.bbox_z IS NOT NULL AND m.storey=" + _gSq + " GROUP BY b ORDER BY n DESC, b ASC LIMIT 1");
+        var _dm = (_dz.length && _dz[0].values.length) ? _dz[0].values[0] : null, _dChk = 'no doors';
+        if (_dm) {
+          _dChk = 'doorMode=' + _dm[0].toFixed(2) + ' (' + _dm[1] + ' doors)';
+          if (_dm[0] < _gLvl - 1.0) {
+            var _ds = A.db.exec("SELECT t.center_z - t.bbox_z/2 AS bottom, t.bbox_x * t.bbox_y AS area FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid " +
+              "WHERE m.ifc_class='IfcSlab' AND t.bbox_z IS NOT NULL AND t.bbox_z < 1.0 AND t.bbox_x IS NOT NULL AND t.bbox_y IS NOT NULL AND m.storey=" + _gSq + " " +
+              "AND (t.center_z - t.bbox_z/2) BETWEEN " + (_dm[0] - 1.0) + " AND " + _dm[0] + " ORDER BY area DESC LIMIT 1");
+            if (_ds.length && _ds[0].values.length) { _dChk += ' below picked ' + _gLvl.toFixed(2) + ' -> slab under the doors ' + _ds[0].values[0][0].toFixed(2) + ' (area ' + _ds[0].values[0][1].toFixed(0) + ')'; _gLvl = _ds[0].values[0][0]; _gSrc += '+doors'; }
+            else _dChk += ' below picked, no slab under them — kept';
+          } else _dChk += ' consistent';
+        }
+        console.log('§GROUND_DOOR_CHECK storey=' + _gStorey + ' ' + _dChk);
+      }
+
       // Step 3: Fallback — average bottom of all elements on named ground floor
       if (_gSrc === '?') {
         zr = A.db.exec("SELECT AVG(t.center_z - COALESCE(t.bbox_z/2, 0)) FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid WHERE m.storey='Ground Floor'");
