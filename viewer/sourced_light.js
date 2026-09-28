@@ -266,7 +266,7 @@
         var blockEnd = le + '#pragma unroll_loop_end'.length;
         fb = fb.slice(0, ls) + '#if defined( USE_SHADOWMAP ) && NUM_POINT_LIGHT_SHADOWS > 0\n\t' + fb.slice(ls, blockEnd) + '\n\t#else\n' +
           '\tfor ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {\n\t\tpointLight = pointLights[ i ];\n\t\tgetPointLightInfo( pointLight, geometryPosition, directLight );\n' +
-          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
+          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * ( uSLAo.x > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
         console.log('§LAMP_LOOP dynamic (point lights: one loop body per program, not one per lamp; &lamploop=0 = unrolled)');
       } else console.warn('§LAMP_LOOP anchor missing — point-light loop stays unrolled');
     }
@@ -274,6 +274,10 @@
     // light (getPointLightInfo: direction, getDistanceAttenuation(d, range, decay); RE_Direct: the material's own BRDF) and
     // the same zone rule as slPass (unbound 0 / unknown fragment pass; else lamp zone == fragment zone). The lists are built
     // on the CPU per zone, so a lamp behind a wall is not even in the list. uSLLamp.x = 0 (nav, films, &lampdata=0): skipped.
+    // §AO_LAMPS (red1 2026-09-28 …555139481: "indoor objects do not cast shadows anymore" after Z10 made AO indirect-only): the ceiling
+    // lamps have no shadow maps. Many distributed ceiling luminaires act as one broad overhead source, and cosine-weighted hemisphere
+    // visibility (what AO measures) is exactly the visibility of a broad uniform source — so AO also multiplies the LAMPS' direct light
+    // (data path + pool loop). The sun and the torch keep their real shadow maps and are not AO'd. Same second-TAA gate (uSLAo.x).
     var sp = '#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )';
     if (fb.indexOf(sp) >= 0) {
       fb = fb.replace(sp, '#if defined( RE_Direct ) && ( defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON ) )\n' +
@@ -281,12 +285,13 @@
         '\tivec3 _cc = ivec3( floor( ( _slWP - uSLOrg.xyz ) / ( uSLParams.y * uSLLamp.z ) ) );\n' +
         '\tif ( all( greaterThanEqual( _cc, ivec3( 0 ) ) ) && all( lessThan( _cc, ivec3( uSLCluDim.xyz ) ) ) ) {\n' +
         '\t\tuvec2 _oc = texelFetch( uSLClu, _cc, 0 ).rg; uint _iw = uint( uSLLamp.w ); _slLN = float( _oc.y );\n' +
+        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +   // §AO_LAMPS (below)
         '\t\tfor ( uint _k = 0u; _k < _oc.y; _k ++ ) {\n' +
         '\t\t\tuint _g = _oc.x + _k; int _li = int( texelFetch( uSLLIdx, ivec2( int( _g % _iw ), int( _g / _iw ) ), 0 ).r );\n' +
         '\t\t\tvec4 _la = texelFetch( uSLLampT, ivec2( 0, _li ), 0 ); vec4 _lb = texelFetch( uSLLampT, ivec2( 1, _li ), 0 );\n' +
         '\t\t\tif ( !( _slFZ < -0.5 || _la.w < 0.5 || abs( _slFZ - _la.w ) < 0.5 ) ) continue; _slLNP += 1.0;\n' +
         '\t\t\tvec3 _lv = ( viewMatrix * vec4( _la.xyz, 1.0 ) ).xyz - geometryPosition; float _ld = length( _lv );\n' +
-        '\t\t\tdirectLight.direction = _lv / max( _ld, 1e-6 ); directLight.color = _lb.rgb * getDistanceAttenuation( _ld, _lb.w, uSLLamp.y ); directLight.visible = true;\n' +
+        '\t\t\tdirectLight.direction = _lv / max( _ld, 1e-6 ); directLight.color = _lb.rgb * getDistanceAttenuation( _ld, _lb.w, uSLLamp.y ) * _slAoL; directLight.visible = true;\n' +
         '\t\t\tRE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );\n' +
         '\t\t}\n\t}\n}\n#endif\n' + sp);
       ok++;

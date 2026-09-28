@@ -549,7 +549,13 @@
       // D = C x (1 - share) (sun/sky/lamps/cove), IR_px = C x share, both on the display colour (the §IRC_MAX approximation).
       // added <= max(0, k2 x D - IR_px). G.boundU = 0 (&gibound=0, and films until Z13) = unbounded.
       const shr = G.shareNode.sample(T.uv()).r, room = T.max(C.rgb.mul(T.float(1).sub(shr)).mul(G.boundK2).sub(irPx), T.vec3(0));
-      rgb = C.rgb.mul(ao).add(T.mix(addRaw, T.min(addRaw, room), G.boundU));
+      // §GI_REDISTRIBUTE (red1 2026-09-28: "i suspect bounce is reduced"; log: meanAbsDiff 0.92 levels — the FIX 13 bound left the flat zone
+      // IR and removed the local surfacing): the bounced light is counted once as the LOCAL estimate instead of the flat zone mean —
+      // pixel = C - IR_px + min(bounce, k2 x D). Where the local bounce exceeds the zone's flat IR (lit areas) it adds; where it is
+      // lower (corners, under furniture) it subtracts; never above the physical k2 x direct. &giredist=0 = the FIX 13 add-only bound.
+      const bRedist = T.max(C.rgb.mul(ao).sub(irPx).add(T.min(giT, C.rgb.mul(T.float(1).sub(shr)).mul(G.boundK2))), T.vec3(0));
+      const bAdd = C.rgb.mul(ao).add(T.mix(addRaw, T.min(addRaw, room), G.boundU));
+      rgb = T.mix(bAdd, bRedist, G.boundU.mul(G.redistU));
     }
     // enc 'linear' (§GI_STILL_TERM): no transfer at all, so coloronly/giterm/aoloss means ADD up in linear light.
     if (enc === 'linear') { G.pipeline.outputColorTransform = false; return T.vec4(rgb, mask); }
@@ -661,7 +667,7 @@
     const albTexNode = TSL.texture(albTex);
     G.albCanvas = albCanvas; G.albCtx = albCtx; G.albTex = albTex; G.albU = TSL.uniform(0);
     G.albNode = TSL.sample((uv) => albTexNode.sample(TSL.vec2(uv.x, uv.y.mul(flipSign).add(flipOff))));
-    G.boundU = TSL.uniform(0); G.boundK2 = TSL.uniform(1);   // ### ALTS-ALL FIX 13 energy bound (set per press)
+    G.boundU = TSL.uniform(0); G.boundK2 = TSL.uniform(1); G.redistU = TSL.uniform(1);   // §GI_REDISTRIBUTE switch   // ### ALTS-ALL FIX 13 energy bound (set per press)
     G.irMaxU = TSL.uniform(1);   // 1 = max(IR, SSGI) (watchdog rule); 0 = the old sum (&ircmax=0, A/B only)
     G.gainU = TSL.uniform(GI_GAIN_DEFAULT); G.aoU = TSL.uniform(GI_AO_DEFAULT);   // §GI_STILL_GAIN_DIAL
     G.recvU = TSL.uniform(0);   // §GI_RECEIVER, set per press
@@ -777,8 +783,9 @@
         console.log('§IRC_MAX composite rule=' + (G.irMaxU.value ? 'max(IR, SSGI)' : 'SUM (&ircmax=0)') + ' share=' + (sh ? 'pixelsWithIR ' + sh.pixels + ' mean ' + sh.meanShare : 'none (IR off or not staged)'));
         // ### ALTS-ALL FIX 13: energy bound k2 = R/(1-R), R = the zone IR's own R
         const bOff = /[?&]gibound=0/.test(location.search) || A._stillGiBound === false, Rr = (window.SourcedLight && window.SourcedLight.irR) ? window.SourcedLight.irR() : null;
+        G.redistU.value = /[?&]giredist=0/.test(location.search) ? 0 : 1;
         G.boundU.value = (bOff || !(Rr > 0 && Rr < 1)) ? 0 : 1; G.boundK2.value = (Rr > 0 && Rr < 1) ? Rr / (1 - Rr) : 1;
-        console.log('§GI_BOUND ' + (G.boundU.value ? 'on' : 'off' + (bOff ? ' (&gibound=0)' : ' (no IR_R published)')) + ' R=' + Rr + ' k2=' + G.boundK2.value.toFixed(3) + ' rule=added<=max(0,k2*C*(1-share)-C*share) share=' + (sh ? sh.meanShare : 'none')); }
+        console.log('§GI_BOUND ' + (G.boundU.value ? 'on' : 'off' + (bOff ? ' (&gibound=0)' : ' (no IR_R published)')) + ' R=' + Rr + ' k2=' + G.boundK2.value.toFixed(3) + ' rule=' + (G.redistU.value ? 'redistribute: C-IR+min(bounce,k2*C*(1-share))' : 'added<=max(0,k2*C*(1-share)-C*share)') + ' share=' + (sh ? sh.meanShare : 'none')); }
       // §ZERO Z11 (b) — the receiver albedo of every pixel (one app render, readback mode 13); none = the old estimate everywhere
       { let ab = null; const off = /[?&]gialb=0/.test(location.search) || A._stillGiAlb === false;
         if (!off) { try { ab = window.SourcedLight && window.SourcedLight.albedoMap ? window.SourcedLight.albedoMap(A, w, h) : null; } catch (eA) { console.warn('§GI_RECEIVER_ALBEDO failed: ' + eA.message); } }
