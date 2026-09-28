@@ -60,6 +60,7 @@
                                           // bounces at the still's own buffer size (already bounded by MAX_RENDERBUFFER_SIZE in effects.js)
   const GEOM_MASK_T = 0.5;          // hard-mask threshold on the geometry mask (see §GI_STILL_DOUBLE)
   let busy = false, built = null;
+  let carryPrev = null;             // §GI_CARRY: the previous press's first-pass fingerprint + camera (page lifetime, survives a release)
   function toast(msg, ms) {
     let el = document.getElementById('gi-still-toast');
     if (!el) {
@@ -129,17 +130,45 @@
   // §GI_READBACK_CHURN (red1 2026-09-26: Alt+S "stalls and hangs the chrome browser badly"; leak audit: ~370 MB of
   // short-lived float arrays per press). The accumulation passes add the padded readback straight into one kept
   // accumulator (G.acc) — no unpadded copy and no Float32Array.from per pass. Same rows, same sums as readRT + add.
+  // Returns the §GI_CARRY fingerprint of THIS pass as read back (see fingerprint() below) — computed on the padded buffer's
+  // unpadded rows, no copy.
   async function readRTAdd(G, acc, first) {
-    if (window.__GI_STILL_INJECT_READBACK_FLIP) { const fb = await readRT(G); if (first) acc.set(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k]; return; }
+    if (window.__GI_STILL_INJECT_READBACK_FLIP) { const fb = await readRT(G); if (first) acc.set(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k]; return fingerprint(fb); }
     const rw = G.w, rh = G.h, b = await G.renderer.readRenderTargetPixelsAsync(G.rt, 0, 0, rw, rh);
     const stride = (b.length === rw * rh * 4) ? rw : (b.length / 4 - rw) / (rh - 1);
     if (!Number.isInteger(stride) || stride < rw) throw new Error('readback length ' + b.length + ' fits no row stride for ' + rw + 'x' + rh);
     const row = rw * 4;
+    const u32 = (b instanceof Float32Array) ? new Uint32Array(b.buffer, b.byteOffset, b.length) : null;
+    let h = 0x811c9dc5, clear = 0, np = 0;
     for (let y = 0; y < rh; y++) {
       const s0 = y * stride * 4, d0 = y * row;
       if (first) { for (let x = 0; x < row; x++) acc[d0 + x] = b[s0 + x]; }
       else { for (let x = 0; x < row; x++) acc[d0 + x] += b[s0 + x]; }
+      for (let x = (y * 7) % 61; x < row; x += 61) { h ^= u32 ? u32[s0 + x] : ((b[s0 + x] * 1048576) | 0); h = Math.imul(h, 0x01000193) >>> 0; }
+      for (let x = 3; x < row; x += 28) { np++; if (b[s0 + x] < 0.02) clear++; }
     }
+    return { hash: ('00000000' + h.toString(16)).slice(-8), clearPct: +(100 * clear / np).toFixed(2) };
+  }
+  // §GI_CARRY fingerprint of a readback (unpadded RGBA float rows): FNV-1a over every 61st 32-bit word (~1.3 % of the buffer,
+  // every row and column touched) + the share of pixels whose alpha (the geometry mask) is clear. Consecutive passes never share
+  // it when something was drawn: SSGINode rotates its sample pattern by frame.frameId (k and k+1 differ mod 6 and mod 4), so the
+  // FIRST pass of a press equals the LAST pass of the previous press only when the target was never redrawn — measured with the
+  // __GI_STILL_INJECT_GEOM_DROP hook: first-vs-first differed (f97e833e vs ea011b79, the last pass of press 1 was what sat in the
+  // target) while the composite was the stale paste (meanAbsDiff 55.27); first-vs-last is the comparison that catches it.
+  function fingerprint(acc) {
+    const u32 = new Uint32Array(acc.buffer, acc.byteOffset, acc.length);
+    let h = 0x811c9dc5, clear = 0, np = 0;
+    for (let k = 0; k < u32.length; k += 61) { h ^= u32[k]; h = Math.imul(h, 0x01000193) >>> 0; }
+    for (let k = 3; k < acc.length; k += 28) { np++; if (acc[k] < 0.02) clear++; }
+    return { hash: ('00000000' + h.toString(16)).slice(-8), clearPct: +(100 * clear / np).toFixed(2) };
+  }
+  // ONE release path (Alt+Shift+S, __giStillRelease, §GI_CARRY FAIL/STALE): the next press rebuilds from scratch.
+  function release(why) {
+    if (!built) return false;
+    try { built.rt.dispose(); built.renderer.dispose(); } catch (e) {}
+    built = null; WIDE = new WeakMap();
+    console.log('§GI_STILL released (' + why + ')');
+    return true;
   }
   // §GI_STILL_ORIENT — DECIDE THE ORIENTATION BY MATCHING, NEVER BY ASSUMPTION.
   // There are two independent unknowns and a brightness test cannot separate them: whether the
@@ -429,9 +458,13 @@
       // per pass rebuilt the SSGI quad's program — the most expensive shader in the graph — on every
       // one of the 8 passes. The temporal filter does not need it: SSGINode reads frame.frameId,
       // which advances on its own (vendor/SSGINode.js:363).
-      G.renderer.setRenderTarget(G.rt);
-      if (G.pipeline.renderAsync) await G.pipeline.renderAsync(); else G.pipeline.render();
-      G.renderer.setRenderTarget(null);
+      // __GI_STILL_INJECT_GEOM_DROP is a TEST HOOK (like __GI_STILL_INJECT_READBACK_FLIP): it does what a WebGPU error does to a
+      // pass — the command buffer is dropped, nothing is drawn, the render target keeps the previous pass. §GI_CARRY must catch it.
+      if (!window.__GI_STILL_INJECT_GEOM_DROP) {
+        G.renderer.setRenderTarget(G.rt);
+        if (G.pipeline.renderAsync) await G.pipeline.renderAsync(); else G.pipeline.render();
+        G.renderer.setRenderTarget(null);
+      }
       G.hiddenCount = hidden.length;
       // logged on EVERY press (was once per page: a carried-state change on press 2+ was invisible — DEFECT 6); the 8 passes of one
       // press share it (the count is per pass, identical within a press)
@@ -576,6 +609,16 @@
     const { ssgi } = await import('./lib/gi/SSGINode.appbound.js');
     const renderer = new THREE.WebGPURenderer({ antialias: false, forceWebGL: false, trackTimestamp: false });
     renderer.setPixelRatio(1); renderer.setSize(w, h);
+    // §GI_GPU_ERRORS (Z14/S4 carried state, 2026-09-28, bim-compiler prompts/PHOTOREAL_STILL_RENDER.md S4/Z14): a WebGPU error
+    // inside a pass — VK_ERROR_OUT_OF_DEVICE_MEMORY while the card is shared, then "[Invalid CommandBuffer ...] is invalid due to
+    // a previous error" — drops the whole command buffer WITHOUT throwing. three r186 only console.errors each one (55,910 lines
+    // in one press, read by nobody) and this kept renderer's render target keeps whatever the PREVIOUS press drew: measured, a
+    // Terminal exterior press after an interior press logged the interior press's mask to the digit (clear 21.73% / solid
+    // 78.27% twice; 10.74 / 89.26 in a second run) against 4.99 / 95.01 on a fresh page, and composited the interior still onto
+    // the exterior picture (meanAbsDiff 41-48 vs 4.7 fresh) — red1's "odd frames that clear on reload". The errors are COUNTED
+    // per press here and judged by §GI_CARRY in run(); the first message is kept verbatim for the log line.
+    const gpuErr = { n: 0, first: null };
+    renderer.onError = function (info) { gpuErr.n++; if (!gpuErr.first) gpuErr.first = (info && info.type || 'GPUError') + ': ' + String(info && info.message || '').split('\n')[0].slice(0, 160); };
     // §GI_PRESS_COST (measured 2026-09-24): with the app's lights visible to this renderer, every Alt+S after the first
     // rebuilt 3,034 pipelines + 2,799 shader modules (35 s) — the lights are new objects each press (portals, pads, lamps)
     // and the pipelines are keyed on the scene's light set. Nothing this renderer draws is lit (the geometry pass is an
@@ -655,7 +698,7 @@
     gi.useTemporalFiltering = true;                 // high preset
     pipeline.outputColorTransform = true;
     const rt = new THREE.RenderTarget(w, h, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true });
-    const G = { THREE, TSL, renderer, pipeline, rt, w, h, cam, geoMat, colorCanvas, colorCtx, colorTex, colorNode, geomTexNode, maskNode, gi, pipeStats, mode: null, flipTex: false, flipOut: false };
+    const G = { THREE, TSL, renderer, pipeline, rt, w, h, cam, geoMat, colorCanvas, colorCtx, colorTex, colorNode, geomTexNode, maskNode, gi, pipeStats, gpuErr, mode: null, flipTex: false, flipOut: false };
     // §IRC_MAX v2 — the app's per-pixel IR share (SourcedLight.irShare: IR radiance / total, linear), same canvas row order as the
     // app frame and read through the SAME flip uniforms as colorNode, so share and colour cannot disagree about orientation
     const shareCanvas = document.createElement('canvas'); shareCanvas.width = w; shareCanvas.height = h;
@@ -760,8 +803,11 @@
     const R = { mode: mode, w: w, h: h };
     try {
       toast('Bounce still — starting…');
+      // §GI_GPU_ERRORS: counted per press, INCLUDING a build (copying the building / orientation) done for this press (§GI_CARRY)
+      const gpuErrAt0 = built ? built.gpuErr.n : 0, gpuFirstAt0 = built ? built.gpuErr.first : null;
       if (!built || built.w !== w || built.h !== h) { if (built) { try { built.renderer.dispose(); } catch (e) {} } built = await build(w, h); }
       const G = built; G.pressId = (G.pressId || 0) + 1;   // ### ALTS-ALL FIX 9: per-press glass-skip log
+      if (G.gpuErr.n === gpuErrAt0) G.gpuErr.first = null;   // nothing failed yet this press: the next error is this press's first
       const enc = opts.encode || encodeMode();
       R.encode = enc;
       G.setMode(mode, enc);
@@ -809,7 +855,8 @@
           await renderGeom(G);
           _passMs.push(Math.round(performance.now() - _tp));
           if (!G.acc || G.acc.length !== G.w * G.h * 4) G.acc = new Float32Array(G.w * G.h * 4);   // §GI_READBACK_CHURN: kept across presses
-          await readRTAdd(G, G.acc, i === 0); acc = G.acc;
+          const pf = await readRTAdd(G, G.acc, i === 0); acc = G.acc;
+          if (i === 0) G.fpFirst = pf; G.fpLast = pf;   // §GI_CARRY: this press's first pass (judged) and last pass (what the target holds afterwards)
           toast('Bounce still — adding bounce light, pass ' + (i + 1) + ' of ' + N + '…');
           await new Promise(r => requestAnimationFrame(() => r()));   // hand the main thread back between passes
         }
@@ -818,6 +865,33 @@
       // §GI_PRESS_COST — what the bounce passes created THIS press (a kept renderer should create ~0 new pipelines).
       if (_ps0) console.log('§GI_PRESS_COST newPipelines=' + (G.pipeStats.sync - _ps0.sync) + ' (' + (G.pipeStats.syncMs - _ps0.syncMs).toFixed(0) + 'ms)' +
         ' newShaderModules=' + (G.pipeStats.modules - _ps0.modules) + ' geomPassMs=' + JSON.stringify(_passMs) + ' sceneLights=' + (function () { let n = 0; window.APP.scene.traverse(o => { if (o.isLight) n++; }); return n; })());
+      // §GI_CARRY — the carried-state check, EVERY press (Z14/S4; see §GI_GPU_ERRORS in build()). This press's FIRST bounce pass
+      // as read back (fingerprint(): FNV-1a over a stride of its bits + the share of clear pixels) is compared with the previous
+      // press's LAST pass — the pixels the kept render target holds when this press begins. Equal means nothing was drawn and the
+      // target still holds the previous press — STALE; any WebGPU error during this press means Dawn dropped command buffers — FAIL.
+      // Both end the press without a composite (the app's own still stays on screen) and RELEASE the renderer so the next press
+      // rebuilds it from scratch. First press on the page, or two consecutive all-clear passes (nothing drawn in either, e.g. sky
+      // only), is INCONCLUSIVE, never OK: nothing was judged. (first-vs-first was the first cut and missed the hook run: the target
+      // holds the LAST pass, and consecutive passes differ by SSGINode's frameId rotation.)
+      {
+        const camKey = A.camera.position.toArray().map(v => v.toFixed(2)).join(',') + '|' + A.camera.quaternion.toArray().map(v => v.toFixed(3)).join(',') + '|' + A.camera.fov;
+        const prev = carryPrev, fp = G.fpFirst || { hash: '-', clearPct: -1 }, moved = prev ? (prev.camKey !== camKey) : null;   // carryPrev outlives a release: the rebuilt renderer is still judged against the last press
+        const errN = G.gpuErr.n - gpuErrAt0, lost = !!G.renderer._isDeviceLost;
+        let verdict, why;
+        if (lost) { verdict = 'FAIL'; why = 'WebGPU device lost'; }
+        else if (errN > 0) { verdict = 'FAIL'; why = errN + ' WebGPU error(s) during this press (the passes were dropped)'; }
+        else if (!prev) { verdict = 'INCONCLUSIVE'; why = 'first press on this page, nothing to compare'; }
+        else if (fp.hash === prev.last.hash && fp.clearPct >= 99.9) { verdict = 'INCONCLUSIVE'; why = 'nothing drawn in this pass or the previous press\'s last (all clear)'; }
+        else if (fp.hash === prev.last.hash) { verdict = 'STALE'; why = 'the first pass read back the previous press\'s last pass — nothing was drawn, the target still holds the previous still'; }
+        else { verdict = 'OK'; why = 'a fresh geometry pass'; }
+        const line = '§GI_CARRY press=' + G.pressId + ' verdict=' + verdict + ' fp=' + fp.hash + ' prevLast=' + (prev ? prev.last.hash : '-') + ' prevFirst=' + (prev ? prev.first.hash : '-') + ' maskClear=' + fp.clearPct + '% prevMaskClear=' + (prev ? prev.first.clearPct + '%' : '-') +
+          ' camMoved=' + (moved === null ? '-' : (moved ? 1 : 0)) + ' gpuErrors=' + errN + (G.gpuErr.first ? ' first="' + G.gpuErr.first + '"' : '') + (gpuErrAt0 ? ' (earlier presses: ' + gpuErrAt0 + (gpuFirstAt0 ? ', ' + gpuFirstAt0 : '') + ')' : '') + ' — ' + why;
+        if (verdict === 'OK' || verdict === 'INCONCLUSIVE') console.log(line); else console.warn(line);
+        carryPrev = { first: fp, last: G.fpLast || fp, camKey: camKey };
+        R.carry = { verdict: verdict, fp: fp.hash, prevLast: prev ? prev.last.hash : null, maskClear: fp.clearPct, gpuErrors: errN };
+        A._stillCarryLast = R.carry;
+        if (verdict === 'FAIL' || verdict === 'STALE') { release('§GI_CARRY ' + verdict); throw new Error('bounce pass unreliable — ' + verdict + ': ' + why + '. The app\'s own still is kept; the bounce renderer was released and rebuilds on the next press'); }
+      }
 
       // ── COMPOSITE ────────────────────────────────────────────────────────────────────────────
       // The app's own frame first (it is already in colorCanvas), then the bounce layer over it
@@ -1012,7 +1086,7 @@
   window.addEventListener('keydown', function (e) {
     if (e.altKey && e.shiftKey && (e.key === 'S' || e.key === 's')) {
       e.preventDefault();
-      if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (err) {} built = null; WIDE = new WeakMap(); toast('Bounce renderer released', 2500); console.log('§GI_STILL released on request'); }
+      if (release('on request')) toast('Bounce renderer released', 2500);
       else toast('Nothing to release', 2000);
     }
   }, true);
@@ -1113,7 +1187,7 @@
   }
   function giSupportedQuiet() { return !giOffReason(); }
   window.__giStillShoot = shoot;
-  window.__giStillRelease = function () { if (built) { try { built.rt.dispose(); built.renderer.dispose(); } catch (e) {} built = null; WIDE = new WeakMap(); console.log('§GI_STILL released on request'); return true; } return false; };
+  window.__giStillRelease = function () { return release('on request'); };
   // §GI_STILL_DOUBLE WITNESS — renders the SAME geometry pass with only the partly-transparent
   // (glazed) meshes left visible, so the glazing gets a real measured mask instead of a rectangle
   // drawn by eye. Returns per-region means for the app frame, the bounce layer and the finished
