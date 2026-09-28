@@ -45,7 +45,7 @@
     A.scene.traverse(function (o) {
       if (!o.visible) return;
       if (o.isPointLight && o !== A._camLight) nLampAll++;   // §FAULT lamps: loaded (the shader cost), lit below
-      if ((o.isPointLight || o.isSpotLight) && o.intensity > 0 && o !== A._camLight) { if (o.isPointLight) { nLamp++; lamps.push(o); } else nSpot++; }   // the camera fill travels with the eye: not a lamp
+      if ((o.isPointLight || o.isSpotLight) && o.intensity > 0 && o !== A._camLight && o !== A._camTorch) { if (o.isPointLight) { nLamp++; lamps.push(o); } else nSpot++; }   // the camera fill travels with the eye: not a lamp
       if ((o.isSprite || o.isPoints) && o.material && o.material.blending === THREE.AdditiveBlending) nSprite++;
     });
     // §LAMP_UNCAPPED: on the data path the still has no lamp point lights; its lamps are A._lampData (every placed fixture)
@@ -54,6 +54,10 @@
       A._lampData.lamps.forEach(function (q) { nLampAll++; if (!(q.I > 0)) return; nLamp++; var v = LZ.atLamp({ x: q.x, y: q.y, z: q.z });
         lamps.push({ position: new THREE.Vector3(q.x, q.y, q.z), distance: q.range, intensity: q.I, userData: { sourcedZone: (v > 0 && v !== LZ.SOLID) ? v : ((v === 0 || v === -1) ? 65534 : 0) } }); }); }
     // indoor lamps stay on outside by day since red1 2026-09-26 (&lampsout default 1): they count here only when that switch says off
+    // §FAULT_TORCH_EXEMPT (2026-09-28): the camera torch (§CAM_TORCH, L1b 573 cd) travels with the eye like _camLight — it is not an
+    // exterior fixture. red1's two exterior stills …582731985 / …582785182 were FAULT on extLightsDay=1 and the one light was cam_torch.
+    // Against sun daylight it is ~573 cd / d^2 lux: 5.7 lx at 10 m vs ~1e5 lx sun. Reported as torch=, never counted.
+    out.torch = (A._camTorch && A._camTorch.parent && A._camTorch.intensity > 0) ? 1 : 0;
     if (camOutside && sunUp) out.extLightsDay = (A._stillLampsOff ? nLamp : 0) + nSpot + nSprite;
     out.lampsLoaded = nLampAll; out.lampsLit = nLamp; out.lampCap = dataOn ? 'none (lamp data)' : (typeof A._stillLampCap === 'number') ? A._stillLampCap : null;
     // glass
@@ -163,7 +167,7 @@
     if (dataOn) { try { var lc = global.SourcedLight.lampCost(A); if (lc) { out.lampListMean = lc.meanList; out.lampListMax = lc.maxList; out.lampPassMean = lc.meanLit; } } catch (eLC) { console.warn('§LAMP_UNCAPPED_COST failed: ' + eLC.message); } }
     out.csmUncovered = (global.ShadowCascade && global.ShadowCascade.state().csm[0] > 0.5 && A._csmUncovered != null) ? A._csmUncovered : null;   // §CSM_NEAR_LEAK (null = not judged: cascades off / single / VACUOUS)
     var fault = out.csmUncovered > 0 || out.unlit > 0 || out.fieldBad > 0 || out.glassOpaque > 0 || out.glassPlateLost > 0 || out.glassReflDark > 0 || out.glassStock > 0 || out.capDropNear > 0 || out.extLightsDay > 0 || out.glassLow > 0 || out.guard > 0;
-    var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' irOnly=' + out.irOnly + ' (ceil ' + out.irOnlyCeil + ') fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay +
+    var line = '§FAULT ' + (fault ? 'FAULT' : 'OK') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' irOnly=' + out.irOnly + ' (ceil ' + out.irOnlyCeil + ') fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay + ' torch=' + out.torch + ' (exempt)' +
       (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassPlateLost=' + out.glassPlateLost + ' (see-through plates db=' + out.plates.glassDb + ' drawnGlass=' + out.plates.glassDrawn + ' drawnOpaque=' + out.plates.lost + ' notDrawn=' + out.plates.notDrawn + (out.plates.lostSample ? ' e.g. ' + out.plates.lostSample.join(',') : '') + ')' + ' glassReflDark=' + out.glassReflDark + '/' + out.glassReflSamples + ' (old sky-view gate: ' + out.glassReflDarkOldGate + ')' + ' glassStock=' + out.glassStock + ' (untagged ' + out.glassStockUntagged + ')' + ' portalsRetired=' + out.portalsRetired +
       ' expStep=' + out.expStep + ' csmUncovered=' + (out.csmUncovered == null ? 'n/a' : out.csmUncovered) + ' guard=' + out.guard + (out.lampListMean != null ? ' lampList mean/max=' + out.lampListMean + '/' + out.lampListMax + ' zonePass=' + out.lampPassMean : '') + ' ms=' + (performance.now() - t0).toFixed(1);
     if (fault) console.warn(line); else console.log(line);

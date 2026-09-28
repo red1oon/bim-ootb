@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1487';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1488';   // bump on each deploy; per-change detail is the git commit message.
 // v1478 (2026-09-27) fix/alts-all-3 = fix/alts-all-2 (v1477) + fix/colour-truth (v1476, §ZERO Z19-Z21) merged; ### ALTS-ALL FIX 10+ on top.
 //   viewer.html light_zones.js?v=19, sourced_light.js?v=62 in the SAME commit (both sides edited them).
 //   + ### ALTS-ALL FIX 11 (MEP trade hue before the name hint; pipes/ducts/steel metal 0 unless bare-metal named; pipe/duct envInt
