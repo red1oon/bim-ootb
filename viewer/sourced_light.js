@@ -219,6 +219,7 @@
   // screen-space AO texture (N8AO, world radius) instead of a UV map. Appended AFTER the original chunk (untouched), gated by
   // uSLAo.x (0 everywhere except the still's second TAA phase), lit materials only. Direct light (RE_Direct) is never touched.
   var AOP = new Float32Array(4), dAo = null, aoPatched = false;
+  AOP[1] = /[?&]aolamps=0/.test((typeof location !== 'undefined' && location.search) || '') ? 0 : 1;   // §AO_LAMPS A/B switch: y = AO on the lamps' direct light (&aolamps=0 = off; indirect AO unchanged)
   var AO_BLOCK = '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
     'if ( uSLAo.x > 0.5 ) {\n\tfloat _slAo = texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r;\n\treflectedLight.indirectDiffuse *= _slAo;\n' +
     '\t#if defined( USE_ENVMAP ) && defined( STANDARD )\n\t\treflectedLight.indirectSpecular *= computeSpecularOcclusion( saturate( dot( geometryNormal, geometryViewDir ) ), _slAo, material.roughness );\n\t#endif\n' +
@@ -266,7 +267,7 @@
         var blockEnd = le + '#pragma unroll_loop_end'.length;
         fb = fb.slice(0, ls) + '#if defined( USE_SHADOWMAP ) && NUM_POINT_LIGHT_SHADOWS > 0\n\t' + fb.slice(ls, blockEnd) + '\n\t#else\n' +
           '\tfor ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {\n\t\tpointLight = pointLights[ i ];\n\t\tgetPointLightInfo( pointLight, geometryPosition, directLight );\n' +
-          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * ( uSLAo.x > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
+          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
         console.log('§LAMP_LOOP dynamic (point lights: one loop body per program, not one per lamp; &lamploop=0 = unrolled)');
       } else console.warn('§LAMP_LOOP anchor missing — point-light loop stays unrolled');
     }
@@ -285,7 +286,7 @@
         '\tivec3 _cc = ivec3( floor( ( _slWP - uSLOrg.xyz ) / ( uSLParams.y * uSLLamp.z ) ) );\n' +
         '\tif ( all( greaterThanEqual( _cc, ivec3( 0 ) ) ) && all( lessThan( _cc, ivec3( uSLCluDim.xyz ) ) ) ) {\n' +
         '\t\tuvec2 _oc = texelFetch( uSLClu, _cc, 0 ).rg; uint _iw = uint( uSLLamp.w ); _slLN = float( _oc.y );\n' +
-        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +   // §AO_LAMPS (below)
+        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +   // §AO_LAMPS (below)
         '\t\tfor ( uint _k = 0u; _k < _oc.y; _k ++ ) {\n' +
         '\t\t\tuint _g = _oc.x + _k; int _li = int( texelFetch( uSLLIdx, ivec2( int( _g % _iw ), int( _g / _iw ) ), 0 ).r );\n' +
         '\t\t\tvec4 _la = texelFetch( uSLLampT, ivec2( 0, _li ), 0 ); vec4 _lb = texelFetch( uSLLampT, ivec2( 1, _li ), 0 );\n' +
