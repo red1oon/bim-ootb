@@ -327,20 +327,37 @@
     for (var i = 0; i < L.length; i++) { var q = L[i]; if (!(q.I > 0)) continue; var lz = lampZone(LZ, q); if (!(lz > 0) || lz === OUTSIDE) continue; var arr = byZ.get(lz); if (!arr) byZ.set(lz, arr = []); arr.push(q); }
     var cand = (cz > 0 ? [cz] : Array.from(vis.entries()).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) { return e[0]; })).filter(function (z) { return byZ.has(z); });
     if (!cand.length) { console.log('§LAMP_SHADOW VACUOUS camZone=' + cz + ' visibleZones=' + vis.size + ' — none of them has a lit lamp (nothing to shadow; lamps keep the screen AO)'); return null; }
-    // zone bounds + floor cells from the grid (one pass)
-    var B = new Map(); cand.forEach(function (z) { B.set(z, { i0: nx, i1: -1, k0: nz, k1: -1, jf: ny, cells: 0, floor: [] }); });
+    // STOREY SLAB (Hospital: zone 1 is 26,184 m2 over several storeys, lamps y -13..8 — a zone is not a storey): the empty column
+    // run [floorY, ceilY] (§LIGHT_ZONE_BAND, LZ.band) at the camera when inside, else at the first frustum hit on a candidate zone's
+    // surface. The map spans that slab only; zone cells, floor cells, lamps and the theta samples are restricted to it.
+    var cam = A.camera, cp = cam.position, bandAt = function (p) { for (var dy = 0; dy <= 2.01; dy += 0.25) { var bq = LZ.band({ x: p.x, y: p.y - dy, z: p.z }); if (bq) return bq; } return null; };
+    var slab = cz > 0 ? bandAt(cp) : null, slabSrc = slab ? 'camera column' : '', slabRays = 0;
+    if (!slab) { var tg = []; A.scene.traverse(function (o) { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && drawnBy(o) && o !== A._sky && !(o.userData && (o.userData.excludeFromShadow || o.userData.skyPortal))) tg.push(o); });
+      var rc = new THREE.Raycaster(), M = new THREE.Matrix4(), mi = new THREE.Matrix4();
+      outer: for (var gy = 0; gy < 3 && !slab; gy++) for (var gx = 0; gx < 5; gx++) { slabRays++; rc.setFromCamera(new THREE.Vector2(-0.8 + gx * 0.4, -0.6 + gy * 0.6), cam);
+        var hh0 = rc.intersectObjects(tg, false)[0]; if (!hh0 || !hh0.face) continue;
+        M.copy(hh0.object.matrixWorld); if (hh0.object.isInstancedMesh && hh0.instanceId != null) { hh0.object.getMatrixAt(hh0.instanceId, mi); M.multiply(mi); } else if (hh0.object.isBatchedMesh && hh0.batchId != null) { hh0.object.getMatrixAt(hh0.batchId, mi); M.multiply(mi); }
+        var hn = hh0.face.normal.clone().transformDirection(M); if (hn.dot(rc.ray.direction) > 0) hn.negate(); var hz = LZ.atSurface(hh0.point, hn);
+        if (cand.indexOf(hz) >= 0) { slab = bandAt(hh0.point.clone().add(hn.multiplyScalar(0.3))); if (slab) { slabSrc = 'frustum hit (ray ' + slabRays + ', zone ' + hz + ')'; break outer; } } } }
+    if (!slab) { console.log('§LAMP_SHADOW VACUOUS no storey slab (camZone=' + cz + ', frustum rays ' + slabRays + ' hit no candidate zone surface) — lamps keep the screen AO'); return null; }
+    var jLo = Math.max(0, Math.floor((slab.floorY - org.y) / cl)), jHi = Math.min(ny - 1, Math.ceil((slab.ceilY - org.y) / cl) - 1);
+    // zone bounds + floor cells inside the slab (one pass over the grid)
+    var B = new Map(); cand.forEach(function (z) { B.set(z, { i0: nx, i1: -1, k0: nz, k1: -1, cells: 0, floor: [] }); });
     for (var c = 0; c < zone.length; c++) { var v = zone[c]; if (v === SOLID) continue; var b = B.get(v & MASK); if (!b) continue;
-      var ii = c % nx, jj = ((c / nx) | 0) % ny, kk = (c / nxy) | 0; b.cells++; if (ii < b.i0) b.i0 = ii; if (ii > b.i1) b.i1 = ii; if (kk < b.k0) b.k0 = kk; if (kk > b.k1) b.k1 = kk;
-      if (jj === 0 || zone[c - nx] === SOLID) { if (jj < b.jf) b.jf = jj; b.floor.push(c); } }
-    var y0 = org.y + B.get(cand[0]).jf * cl, kept = cand.filter(function (z) { return Math.abs(org.y + B.get(z).jf * cl - y0) <= cl && B.get(z).floor.length; }), dropped = cand.length - kept.length;
-    if (!kept.length) { console.log('§LAMP_SHADOW VACUOUS zone ' + cand[0] + ' has no floor cells'); return null; }
-    var lamps = []; kept.forEach(function (z) { byZ.get(z).forEach(function (q) { lamps.push(q); }); });
-    var ys = lamps.map(function (q) { return q.y; }).sort(function (a, b) { return a - b; }), yMed = ys[ys.length >> 1], yTop = yMed - 0.01, yBot = Math.min.apply(null, kept.map(function (z) { return org.y + B.get(z).jf * cl; })) - 0.05;
+      var jj = ((c / nx) | 0) % ny; if (jj < jLo || jj > jHi) continue; var ii = c % nx, kk = (c / nxy) | 0; b.cells++; if (ii < b.i0) b.i0 = ii; if (ii > b.i1) b.i1 = ii; if (kk < b.k0) b.k0 = kk; if (kk > b.k1) b.k1 = kk;
+      if (jj === 0 || zone[c - nx] === SOLID) b.floor.push(c); }
+    var kept = cand.filter(function (z) { return B.get(z).floor.length > 0; }), dropped = cand.length - kept.length;
+    if (!kept.length) { console.log('§LAMP_SHADOW VACUOUS zones ' + cand.join(',') + ' have no floor cell in the slab ' + slab.floorY.toFixed(2) + '..' + slab.ceilY.toFixed(2) + ' (' + slabSrc + ')'); return null; }
+    // the slab's lamps: bound to a kept zone, y inside [floorY - cell, ceilY + 1.5] (atLamp binds a fixture up to 1.5 m above its panel)
+    var lampsAll = 0, lamps = []; kept.forEach(function (z) { byZ.get(z).forEach(function (q) { lampsAll++; if (q.y >= slab.floorY - cl && q.y <= slab.ceilY + 1.5) lamps.push(q); }); });
+    if (!lamps.length) { console.log('§LAMP_SHADOW VACUOUS no lit lamp inside the slab ' + slab.floorY.toFixed(2) + '..' + slab.ceilY.toFixed(2) + ' of zones ' + kept.join(',') + ' (' + lampsAll + ' lamps on other storeys)'); return null; }
+    byZ = new Map(); lamps.forEach(function (q) { var lz2 = lampZone(LZ, q); var a2 = byZ.get(lz2); if (!a2) byZ.set(lz2, a2 = []); a2.push(q); });
+    var ys = lamps.map(function (q) { return q.y; }).sort(function (a, b) { return a - b; }), yMed = ys[ys.length >> 1], yTop = Math.min(yMed, slab.ceilY) - 0.01, yBot = slab.floorY - 0.05;
     var below = ys.filter(function (y) { return y < yTop; }).length;
     if (!(yTop - yBot > 0.5)) { console.log('§LAMP_SHADOW VACUOUS lamp plane ' + yTop.toFixed(2) + ' not above the floor ' + yBot.toFixed(2)); return null; }
     // tan(theta): irradiance-weighted zenith tangent of each zone's lamps from its floor cells + wpM (<= wpSamplesMax samples)
     var tot = 0; kept.forEach(function (z) { tot += B.get(z).floor.length; }); var every = Math.max(1, Math.ceil(tot / LAW.wpSamplesMax)), sw = 0, st = 0, ns = 0;
-    kept.forEach(function (z) { var fl = B.get(z).floor, ql = byZ.get(z);
+    kept.forEach(function (z) { var fl = B.get(z).floor, ql = byZ.get(z) || [];
       for (var f = 0; f < fl.length; f += every) { var cc = fl[f], px = org.x + (cc % nx + 0.5) * cl, py = org.y + (((cc / nx) | 0) % ny) * cl + LAW.wpM, pz = org.z + (((cc / nxy) | 0) + 0.5) * cl; ns++;
         for (var l = 0; l < ql.length; l++) { var qq = ql[l], dy = qq.y - py; if (dy <= 0.05) continue; var dx = qq.x - px, dz = qq.z - pz, hh = Math.sqrt(dx * dx + dz * dz), d = Math.sqrt(hh * hh + dy * dy); if (rng > 0 && d > rng) continue;
           var w = qq.I * (dy / d) / Math.pow(d, dec); sw += w; st += w * (hh / dy); } } });
@@ -349,7 +366,7 @@
     var kMax = (yTop - yBot) * tanT;
     // xz box: zone cells ∩ the frustum footprint on the slab, grown by the kernel reach
     var zx0 = 1e9, zx1 = -1e9, zz0 = 1e9, zz1 = -1e9; kept.forEach(function (z) { var b = B.get(z); zx0 = Math.min(zx0, org.x + b.i0 * cl); zx1 = Math.max(zx1, org.x + (b.i1 + 1) * cl); zz0 = Math.min(zz0, org.z + b.k0 * cl); zz1 = Math.max(zz1, org.z + (b.k1 + 1) * cl); });
-    var cam = A.camera, cp = cam.position, fx0 = cp.x, fx1 = cp.x, fz0 = cp.z, fz1 = cp.z, fpts = 0, ivp = new THREE.Vector3();
+    var fx0 = cp.x, fx1 = cp.x, fz0 = cp.z, fz1 = cp.z, fpts = 0, ivp = new THREE.Vector3();
     [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]].forEach(function (nd) { ivp.set(nd[0], nd[1], 0.5).unproject(cam).sub(cp).normalize();
       [yTop, yBot].forEach(function (yp) { var t = Math.abs(ivp.y) > 1e-4 ? (yp - cp.y) / ivp.y : 300; if (!(t > 0)) return; t = Math.min(t, 300); var x = cp.x + ivp.x * t, zz = cp.z + ivp.z * t; fx0 = Math.min(fx0, x); fx1 = Math.max(fx1, x); fz0 = Math.min(fz0, zz); fz1 = Math.max(fz1, zz); fpts++; }); });
     var bx0 = Math.max(zx0, fx0) - kMax, bx1 = Math.min(zx1, fx1) + kMax, bz0 = Math.max(zz0, fz0) - kMax, bz1 = Math.min(zz1, fz1) + kMax, fit = 'zone∩frustum';
@@ -383,10 +400,10 @@
     var depthMs = performance.now() - tR; if (!lsRT) return null;
     LSP[0] = 1; LSP[1] = tanT; LSP[2] = texel; LSP[3] = LAW.biasM; LSB[0] = cx; LSB[1] = czc; LSB[2] = 1 / E; LSB[3] = 1 / E; LSY[0] = yTop; LSY[1] = 1 / (yTop - yBot); LSY[2] = yTop - yBot; LSY[3] = kMax; lsTex = lsRT.texture;
     var nb = lampShadowBind(A);
-    lsLast = { zones: kept, dropped: dropped, camZone: cz, box: [+bx0.toFixed(2), +bx1.toFixed(2), +bz0.toFixed(2), +bz1.toFixed(2)], E: +E.toFixed(2), centre: [+cx.toFixed(2), +czc.toFixed(2)], fit: fit, yTop: +yTop.toFixed(3), yBot: +yBot.toFixed(3), lampY: [+ys[0].toFixed(2), +yMed.toFixed(2), +ys[ys.length - 1].toFixed(2)], lampsBelowPlane: below,
+    lsLast = { zones: kept, dropped: dropped, camZone: cz, slab: [+slab.floorY.toFixed(2), +slab.ceilY.toFixed(2)], slabSrc: slabSrc, lampsOtherStoreys: lampsAll - lamps.length, box: [+bx0.toFixed(2), +bx1.toFixed(2), +bz0.toFixed(2), +bz1.toFixed(2)], E: +E.toFixed(2), centre: [+cx.toFixed(2), +czc.toFixed(2)], fit: fit, yTop: +yTop.toFixed(3), yBot: +yBot.toFixed(3), lampY: [+ys[0].toFixed(2), +yMed.toFixed(2), +ys[ys.length - 1].toFixed(2)], lampsBelowPlane: below,
       size: N, texelM: +texel.toFixed(4), tanTheta: +tanT.toFixed(3), tanRaw: +(tanRaw || 0).toFixed(3), tanDial: tanDial > 0 ? tanDial : 0, lamps: lamps.length, wpSamples: ns, kernelMaxM: +kMax.toFixed(3), biasM: LAW.biasM, casters: casters, hiddenFixtures: fixHid, hidden: hidden.length, depthMs: Math.round(depthMs), bound: nb, map: hist, ms: Math.round(performance.now() - t0) };
-    console.log('§LAMP_SHADOW zones=' + kept.join(',') + (dropped ? '(+' + dropped + ' dropped: other floor level / no floor)' : '') + ' camZone=' + cz + ' fit=' + fit + ' box=x' + lsLast.box[0] + '..' + lsLast.box[1] + ' z' + lsLast.box[2] + '..' + lsLast.box[3] + ' (' + lsLast.E + ' m square, +kernel ' + lsLast.kernelMaxM + ' m)' +
-      ' lampPlane=' + lsLast.yTop + ' (lamp y min/median/max ' + lsLast.lampY.join('/') + ', below plane ' + below + '/' + lamps.length + ') floor=' + lsLast.yBot + ' size=' + N + ' texel=' + lsLast.texelM + 'm tanTheta=' + lsLast.tanTheta + (tanDial > 0 ? ' (&lampsh_tan dial; derived ' + lsLast.tanRaw + ')' : ' (irradiance-weighted zenith of ' + lamps.length + ' lamps from ' + ns + ' working-plane samples at +' + LAW.wpM + ' m, decay ' + dec + ')') +
+    console.log('§LAMP_SHADOW zones=' + kept.join(',') + (dropped ? '(+' + dropped + ' dropped: no floor cell in the slab)' : '') + ' camZone=' + cz + ' slab=' + lsLast.slab[0] + '..' + lsLast.slab[1] + ' (' + slabSrc + ') fit=' + fit + ' box=x' + lsLast.box[0] + '..' + lsLast.box[1] + ' z' + lsLast.box[2] + '..' + lsLast.box[3] + ' (' + lsLast.E + ' m square, +kernel ' + lsLast.kernelMaxM + ' m)' +
+      ' lampPlane=' + lsLast.yTop + ' (lamp y min/median/max ' + lsLast.lampY.join('/') + ', below plane ' + below + '/' + lamps.length + ', other storeys ' + (lampsAll - lamps.length) + ') floor=' + lsLast.yBot + ' size=' + N + ' texel=' + lsLast.texelM + 'm tanTheta=' + lsLast.tanTheta + (tanDial > 0 ? ' (&lampsh_tan dial; derived ' + lsLast.tanRaw + ')' : ' (irradiance-weighted zenith of ' + lamps.length + ' lamps from ' + ns + ' working-plane samples at +' + LAW.wpM + ' m, decay ' + dec + ')') +
       ' bias=' + LAW.biasM + 'm casters=' + casters + ' hiddenFixtures=' + fixHid + ' depthMs=' + Math.round(depthMs) + ' map(central ' + (hist ? hist.S : 0) + '²)=clear ' + (hist ? hist.clearPct : '-') + '% floor ' + (hist ? hist.floorPct : '-') + '% occluders ' + (hist ? hist.occluderPct : '-') + '% bound=' + nb + ' ms=' + lsLast.ms +
       (hist && hist.occluderPct === 0 ? ' NO-OP (no occluder between the lamp plane and the floor in the central map)' : '') + ' (PCSS, Fernando 2005; plane = EN 12464-1 wp; texel/bias UNSOURCED)');
     return lsLast;
