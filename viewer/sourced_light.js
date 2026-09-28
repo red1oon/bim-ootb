@@ -1172,6 +1172,16 @@
     console.log('§COVE_LIGHT_ZONE [z:type:existingE+cove=level lx:emitters:perimM:cells:litCells/upCells:cv:calib:stride:m3] ' + top.map(function (z) { var r = zones[z]; return z + ':' + r.type + ':' + r.existingE + '+' + r.coveE + '=' + r.level + ':' + r.emitters + ':' + r.perimeterM + ':' + r.cells + ':' + r.litCells + '/' + r.upCells + ':' + r.cv + ':' + r.calib + ':' + r.stride + ':' + r.m3; }).join(' ') + (cz ? ' camZone=' + cz + (zones[cz] ? '' : ' (no cove: existingE=' + X.existing[cz].toFixed(1) + ' lx >= level)') : ''));
     return coveLast;
   }
+  // a new A._lampData version (tools.js bumps it per _nightUpdateLights) -> lamp texture rebuilt (§LAMP_EN applied on the first
+  // build), IR + cove + cove-IR follow (a lamp change moves the deficit). The per-frame hook calls it; effects.js calls it once
+  // right after the still's lamps are born so §FIXTURE_FACE reads the EN-scaled I before the meter and the first TAA sample.
+  function lampSync(A) {
+    if (!(active && A._lampDataOn && A._lampData && A._lampData.ver !== lampVer)) return false;
+    try { lampBuild(A); } catch (eLB2) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB2.message); lampFail(A, 'build threw'); }
+    try { irBuild(A); coveBuild(A, global.LightZones.get()); } catch (eCV2) { COVEP[3] = 0; console.warn('§COVE_LIGHT rebuild failed: ' + eCV2.message); }
+    try { irCoveApply(A); } catch (eCI2) { console.warn('§COVE_IR failed: ' + eCI2.message); }
+    return true;
+  }
   function stage(A) {
     var THREE = global.THREE, LZ = global.LightZones;
     if (!installed || !THREE || !LZ || !A || !A.scene || !A.renderer) { console.log('§SOURCED_LIGHT skipped installed=' + installed + ' zones=' + !!LZ); return; }
@@ -1216,9 +1226,7 @@
     set.forEach(function (m) { var pp = A.renderer.properties.get(m); if (pp && pp.uniforms) lastU.set(m, pp.uniforms); });
     var own = function (renderer, scene, camera) {
       if (active) {
-        if (A._lampDataOn && A._lampData && A._lampData.ver !== lampVer) { try { lampBuild(A); } catch (eLB2) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB2.message); lampFail(A, 'build threw'); }
-          try { irBuild(A); coveBuild(A, LZ.get()); } catch (eCV2) { COVEP[3] = 0; console.warn('§COVE_LIGHT rebuild failed: ' + eCV2.message); } try { irCoveApply(A); } catch (eCI2) { console.warn('§COVE_IR failed: ' + eCI2.message); } }   // §COVE_LIGHT: a lamp change moves the deficit
-        else if (!A._lampDataOn && LAMP[0] > 0.5) { LAMP[0] = 0; lampPushAll = true; }
+        if (!lampSync(A) && !A._lampDataOn && LAMP[0] > 0.5) { LAMP[0] = 0; lampPushAll = true; }
         try { irBuild(A); } catch (eIR2) { IRP[0] = 0; }   // cheap when nothing changed (key compare)
         var bb = bindLights(A, camera);
         if (lampPushAll) { lampPushAll = false; progN = -3; }
@@ -1458,5 +1466,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { irR: function () { return IR_R; }, irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { irR: function () { return IR_R; }, irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampSync: lampSync, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);
