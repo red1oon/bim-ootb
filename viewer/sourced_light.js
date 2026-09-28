@@ -139,6 +139,36 @@
     '}',
     'float _slSpec = -1.0;',
     'uniform vec4 uSLAo; uniform sampler2D uSLAoT;',   // §ZERO Z10 AO_INDIRECT: x = on, zw = 1 / drawing-buffer size; uSLAoT = N8AO visibility (r)
+    // §LAMP_SHADOW (LightLaw.LAMP_SHADOW; effects.js binds it for the still's second TAA): one orthographic depth map rendered
+    // straight DOWN over the fitted zone box, from the lamp plane (depth 0) to the floor (depth 1), three's RGBADepthPacking
+    // (unpackRGBAToDepth: r most significant). uSLLsP = ( on, tan theta, texel m, bias m ); uSLLsB = ( centre x, centre z,
+    // 1 / width, 1 / depth ) with the map's u = +x, v = -z (camera up = (0,0,-1)); uSLLsY = ( yTop, 1 / (yTop - yBot),
+    // yTop - yBot, max kernel m ). slLampShadow = PCSS (Fernando 2005): 16-tap Vogel blocker search over the widest possible
+    // penumbra, mean blocker depth, penumbra = (receiver - blocker) x tan theta, 16-tap Vogel PCF, per-pixel rotation (the TAA
+    // averages it). Returns -1 where the map cannot judge (outside the box / above the lamp plane): the caller keeps the AO.
+    'uniform vec4 uSLLsP; uniform vec4 uSLLsB; uniform vec4 uSLLsY; uniform sampler2D uSLLsT;',
+    'float _slLsV = 2.0; float _slLsAo = 1.0;',   // readback mode 14: the fragment\'s shadow visibility (2 = not in the map) and the AO it would have used
+    'float slLsDepth( vec2 uv ) { return dot( texture2D( uSLLsT, uv ), vec4( 255.0 / 256.0, 255.0 / 65536.0, 255.0 / 16777216.0, 1.0 / 16777216.0 ) ); }',
+    'vec2 slVogel( int i, float rot ) { float r = sqrt( ( float( i ) + 0.5 ) / 16.0 ); float a = float( i ) * 2.39996323 + rot; return vec2( r * cos( a ), r * sin( a ) ); }',
+    'float slLampShadow( vec3 wp, vec3 wn ) {',
+    '  vec3 p = wp + wn * uSLLsP.z * 1.5;',
+    '  vec2 uv = vec2( 0.5 + ( p.x - uSLLsB.x ) * uSLLsB.z, 0.5 - ( p.z - uSLLsB.y ) * uSLLsB.w );',
+    '  if ( any( lessThan( uv, vec2( 0.0 ) ) ) || any( greaterThan( uv, vec2( 1.0 ) ) ) ) return -1.0;',
+    '  float zr = ( uSLLsY.x - p.y ) * uSLLsY.y; if ( zr <= 0.0 ) return -1.0;',
+    '  float bias = uSLLsP.w * uSLLsY.y; float tanT = uSLLsP.y; float rot = 6.2831853 * fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );',
+    '  float rs = min( zr * uSLLsY.z * tanT, uSLLsY.w ); vec2 su = vec2( rs * uSLLsB.z, rs * uSLLsB.w );',
+    '  float zb = 0.0; float nb = 0.0;',
+    '  for ( int i = 0; i < 16; i ++ ) { float d = slLsDepth( uv + slVogel( i, rot ) * su ); if ( d < zr - bias ) { zb += d; nb += 1.0; } }',
+    '  if ( nb < 0.5 ) return 1.0;',
+    '  zb /= nb; float rp = clamp( ( zr - zb ) * uSLLsY.z * tanT, uSLLsP.z, uSLLsY.w ); vec2 pu = vec2( rp * uSLLsB.z, rp * uSLLsB.w );',
+    '  float vis = 0.0;',
+    '  for ( int i = 0; i < 16; i ++ ) { float d = slLsDepth( uv + slVogel( i, rot + 1.0 ) * pu ); vis += ( d < zr - bias ) ? 0.0 : 1.0; }',
+    '  return vis / 16.0; }',
+    // the lamps' visibility for the direct term: §LAMP_SHADOW where the map covers the fragment, else §AO_LAMPS (screen AO)
+    'float slLampVis( vec3 posView, vec3 nView ) {',
+    '  _slLsAo = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ) ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0;',
+    '  if ( uSLLsP.x > 0.5 && uSLAo.x > 0.5 && _slFZ > -0.5 ) { vec3 wn = normalize( ( vec4( ( dot( nView, - posView ) < 0.0 ) ? - nView : nView, 0.0 ) * viewMatrix ).xyz ); _slLsV = slLampShadow( _slWP, wn ); if ( _slLsV >= 0.0 ) return _slLsV; _slLsV = 2.0; }',
+    '  return _slLsAo; }',
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
     // sky only where the sampled cell sees it (_slSky, §ZONE_OPEN_SKY). Unknown (-1: a fully solid column above) is a building
@@ -226,6 +256,7 @@
     'vec3 slIr() { return vec3( 0.0 ); }',
     'float slSpecKeep( vec3 posView, vec3 nView, vec3 viewDir ) { return 1.0; }',
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
+    'float slLampVis( vec3 posView, vec3 nView ) { return 1.0; }',   // §LAMP_SHADOW stub (unlit materials)
     'float slSkyKeep( vec3 posView, vec3 nView ) { return 1.0; }',
     'vec3 slHemi( vec3 sky, vec3 ground, vec3 dir, vec3 posView, vec3 nView ) { return mix( ground, sky, 0.5 * dot( nView, dir ) + 0.5 ); }',   // three's own formula
     '#endif', ''].join('\n');
@@ -258,8 +289,118 @@
     A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
       if (!m || seen.has(m)) return; seen.add(m);
       var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLAoT) return;
-      U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; n++; }); });
+      U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; if (U.uSLLsT) U.uSLLsT.value = (LSP[0] > 0.5 && lsTex) ? lsTex : dAo; n++; }); });   // + §LAMP_SHADOW
     return n;
+  }
+  // ══ §LAMP_SHADOW (LightLaw.LAMP_SHADOW; bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §AO_LAMP_BUF "STANDARD MECHANISM") ══
+  // The ceiling lamps of the still's zone(s) as ONE broad overhead source: an orthographic depth map rendered straight DOWN
+  // (three's MeshDepthMaterial + RGBADepthPacking, the _csmReadback path) from the lamp plane to the floor, PCSS-filtered in
+  // the lamp loops (slLampShadow). Staged by effects.js right before the second TAA (with the AO buffer), released with it.
+  // FIT: zones = the camera zone, else the §SOURCED_LIGHT_CAP visible zones on the most-seen zone's floor level (within one
+  // cell); lamp plane = the median lamp height of those zones' lit lamps; xz box = zone cells ∩ the frustum's footprint on the
+  // slab, grown by the kernel's reach; square map, texel LAW.texelM target, size [sizeMin, sizeMax].
+  // KERNEL: tan(theta) = the irradiance-weighted (I cos / d^decay, the lamp term's own attenuation) mean zenith tangent of each
+  // zone's lamps seen from its floor cells + LAW.wpM (EN 12464-1 working plane); PCSS penumbra = (receiver - blocker) x tan(theta).
+  // &lampshadow=0 / APP._stillLampShadow=false = today's path (lamps x screen AO). &lampsh_tan=<x> / &lampsh_size=<n> = probe dials.
+  var LSP = new Float32Array(4), LSB = new Float32Array(4), LSY = new Float32Array(4), lsTex = null, lsRT = null, lsDM = null, lsCam = null, lsLast = null;
+  function lampShadowOn(A) { return !(A && A._stillLampShadow === false) && !/[?&]lampshadow=0(?!\d)/.test((typeof location !== 'undefined' && location.search) || ''); }
+  function lampShadowBind(A) {
+    var n = 0, seen = new Set();
+    A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
+      if (!m || seen.has(m)) return; seen.add(m); var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLLsT) return;
+      U.uSLLsP.value = LSP; U.uSLLsB.value = LSB; U.uSLLsY.value = LSY; U.uSLLsT.value = (LSP[0] > 0.5 && lsTex) ? lsTex : dAo; n++; }); });
+    return n;
+  }
+  function lampShadowRelease(A, quiet) {
+    var was = LSP[0] > 0.5; LSP[0] = 0; lsTex = null;
+    if (lsRT) { lsRT.dispose(); lsRT = null; }
+    if (was && A && A.renderer) { lampShadowBind(A); if (!quiet) console.log('§LAMP_SHADOW released (lamps x screen AO again; map freed)'); }
+  }
+  function lampShadowStage(A) {
+    var THREE = global.THREE, LZ = global.LightZones, LAW = global.LightLaw && global.LightLaw.LAMP_SHADOW, t0 = performance.now(), qs = (typeof location !== 'undefined' && location.search) || '';
+    lampShadowRelease(A, true); lsLast = null;
+    if (!lampShadowOn(A)) { console.log('§LAMP_SHADOW off (&lampshadow=0 / APP._stillLampShadow=false: the lamps keep the §AO_LAMPS screen AO)'); return null; }
+    if (!installed || linkFailed || !active || !LAW || !LZ || !LZ.get() || !A || !A.renderer || !A._lampData || !A._lampData.lamps) { console.log('§LAMP_SHADOW off (not staged / no LightLaw.LAMP_SHADOW / no zones / no lamp data)'); return null; }
+    var Z = LZ.get(), nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, cl = Z.cell, org = Z.org, MASK = LZ.ZONE_MASK;
+    var cap = A._sourcedCap || {}, cz = cap.camZone || 0, vis = cap.vis || new Map();
+    var LD = A._lampData, L = LD.lamps, dec = (typeof LD.decay === 'number') ? LD.decay : 1, rng = LD.range > 0 ? LD.range : 0, byZ = new Map();
+    for (var i = 0; i < L.length; i++) { var q = L[i]; if (!(q.I > 0)) continue; var lz = lampZone(LZ, q); if (!(lz > 0) || lz === OUTSIDE) continue; var arr = byZ.get(lz); if (!arr) byZ.set(lz, arr = []); arr.push(q); }
+    var cand = (cz > 0 ? [cz] : Array.from(vis.entries()).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) { return e[0]; })).filter(function (z) { return byZ.has(z); });
+    if (!cand.length) { console.log('§LAMP_SHADOW VACUOUS camZone=' + cz + ' visibleZones=' + vis.size + ' — none of them has a lit lamp (nothing to shadow; lamps keep the screen AO)'); return null; }
+    // zone bounds + floor cells from the grid (one pass)
+    var B = new Map(); cand.forEach(function (z) { B.set(z, { i0: nx, i1: -1, k0: nz, k1: -1, jf: ny, cells: 0, floor: [] }); });
+    for (var c = 0; c < zone.length; c++) { var v = zone[c]; if (v === SOLID) continue; var b = B.get(v & MASK); if (!b) continue;
+      var ii = c % nx, jj = ((c / nx) | 0) % ny, kk = (c / nxy) | 0; b.cells++; if (ii < b.i0) b.i0 = ii; if (ii > b.i1) b.i1 = ii; if (kk < b.k0) b.k0 = kk; if (kk > b.k1) b.k1 = kk;
+      if (jj === 0 || zone[c - nx] === SOLID) { if (jj < b.jf) b.jf = jj; b.floor.push(c); } }
+    var y0 = org.y + B.get(cand[0]).jf * cl, kept = cand.filter(function (z) { return Math.abs(org.y + B.get(z).jf * cl - y0) <= cl && B.get(z).floor.length; }), dropped = cand.length - kept.length;
+    if (!kept.length) { console.log('§LAMP_SHADOW VACUOUS zone ' + cand[0] + ' has no floor cells'); return null; }
+    var lamps = []; kept.forEach(function (z) { byZ.get(z).forEach(function (q) { lamps.push(q); }); });
+    var ys = lamps.map(function (q) { return q.y; }).sort(function (a, b) { return a - b; }), yMed = ys[ys.length >> 1], yTop = yMed - 0.01, yBot = Math.min.apply(null, kept.map(function (z) { return org.y + B.get(z).jf * cl; })) - 0.05;
+    var below = ys.filter(function (y) { return y < yTop; }).length;
+    if (!(yTop - yBot > 0.5)) { console.log('§LAMP_SHADOW VACUOUS lamp plane ' + yTop.toFixed(2) + ' not above the floor ' + yBot.toFixed(2)); return null; }
+    // tan(theta): irradiance-weighted zenith tangent of each zone's lamps from its floor cells + wpM (<= wpSamplesMax samples)
+    var tot = 0; kept.forEach(function (z) { tot += B.get(z).floor.length; }); var every = Math.max(1, Math.ceil(tot / LAW.wpSamplesMax)), sw = 0, st = 0, ns = 0;
+    kept.forEach(function (z) { var fl = B.get(z).floor, ql = byZ.get(z);
+      for (var f = 0; f < fl.length; f += every) { var cc = fl[f], px = org.x + (cc % nx + 0.5) * cl, py = org.y + (((cc / nx) | 0) % ny) * cl + LAW.wpM, pz = org.z + (((cc / nxy) | 0) + 0.5) * cl; ns++;
+        for (var l = 0; l < ql.length; l++) { var qq = ql[l], dy = qq.y - py; if (dy <= 0.05) continue; var dx = qq.x - px, dz = qq.z - pz, hh = Math.sqrt(dx * dx + dz * dz), d = Math.sqrt(hh * hh + dy * dy); if (rng > 0 && d > rng) continue;
+          var w = qq.I * (dy / d) / Math.pow(d, dec); sw += w; st += w * (hh / dy); } } });
+    var tanRaw = sw > 0 ? st / sw : NaN, tanDial = +((/[?&]lampsh_tan=([0-9.]+)/.exec(qs) || [])[1]), tanT = tanDial > 0 ? tanDial : Math.min(3, Math.max(0.05, tanRaw));
+    if (!(tanRaw > 0) && !(tanDial > 0)) { console.log('§LAMP_SHADOW VACUOUS no lamp above the working plane of zones ' + kept.join(',') + ' (samples=' + ns + ')'); return null; }
+    var kMax = (yTop - yBot) * tanT;
+    // xz box: zone cells ∩ the frustum footprint on the slab, grown by the kernel reach
+    var zx0 = 1e9, zx1 = -1e9, zz0 = 1e9, zz1 = -1e9; kept.forEach(function (z) { var b = B.get(z); zx0 = Math.min(zx0, org.x + b.i0 * cl); zx1 = Math.max(zx1, org.x + (b.i1 + 1) * cl); zz0 = Math.min(zz0, org.z + b.k0 * cl); zz1 = Math.max(zz1, org.z + (b.k1 + 1) * cl); });
+    var cam = A.camera, cp = cam.position, fx0 = cp.x, fx1 = cp.x, fz0 = cp.z, fz1 = cp.z, fpts = 0, ivp = new THREE.Vector3();
+    [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]].forEach(function (nd) { ivp.set(nd[0], nd[1], 0.5).unproject(cam).sub(cp).normalize();
+      [yTop, yBot].forEach(function (yp) { var t = Math.abs(ivp.y) > 1e-4 ? (yp - cp.y) / ivp.y : 300; if (!(t > 0)) return; t = Math.min(t, 300); var x = cp.x + ivp.x * t, zz = cp.z + ivp.z * t; fx0 = Math.min(fx0, x); fx1 = Math.max(fx1, x); fz0 = Math.min(fz0, zz); fz1 = Math.max(fz1, zz); fpts++; }); });
+    var bx0 = Math.max(zx0, fx0) - kMax, bx1 = Math.min(zx1, fx1) + kMax, bz0 = Math.max(zz0, fz0) - kMax, bz1 = Math.min(zz1, fz1) + kMax, fit = 'zone∩frustum';
+    if (!(bx1 - bx0 > 1) || !(bz1 - bz0 > 1)) { bx0 = zx0 - kMax; bx1 = zx1 + kMax; bz0 = zz0 - kMax; bz1 = zz1 + kMax; fit = 'zone(frustum miss)'; }
+    var E = Math.max(bx1 - bx0, bz1 - bz0), cx = (bx0 + bx1) / 2, czc = (bz0 + bz1) / 2, sizeDial = +((/[?&]lampsh_size=(\d+)/.exec(qs) || [])[1]);
+    var N = sizeDial >= 256 ? sizeDial : Math.min(LAW.sizeMax, Math.max(LAW.sizeMin, Math.pow(2, Math.ceil(Math.log2(E / LAW.texelM))))), texel = E / N;
+    // the depth render (the _csmReadback caster set: no sky / sprites / basic / shader / glassy meshes / sky portals; plus no lamp fixtures)
+    var glow = new Set(); (A._nightGlowMats || []).forEach(function (g) { if (g && g.mat && !g.win) glow.add(g.mat); });
+    var hidden = [], casters = 0, fixHid = 0;
+    A.scene.traverse(function (o) { if (!o.visible || !(o.isMesh || o.isSprite || o.isPoints || o.isLine)) return;
+      var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      var isFix = ms.length && ms.every(function (m) { return m && glow.has(m); });
+      var skip = o === A._sky || o.isSprite || o.isPoints || o.isLine || (o.userData && (o.userData.skyPortal || o.userData.excludeFromShadow)) || isFix ||
+        ms.every(function (m) { return !m || m.visible === false || m.isMeshBasicMaterial || m.isShaderMaterial || m.isRawShaderMaterial || (m.transparent && m.opacity < 0.95); });
+      if (skip) { o.visible = false; hidden.push(o); if (isFix) fixHid++; } else casters++; });
+    var R = A.renderer, sm = R.shadowMap, smA = sm.autoUpdate, smN = sm.needsUpdate, prevRT = R.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background, prevFog = A.scene.fog, cc = R.getClearColor(new THREE.Color()), ca = R.getClearAlpha(), ac = R.autoClear, tR = performance.now(), hist = null;
+    if (!lsDM) lsDM = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+    if (!lsCam) lsCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    lsCam.left = -E / 2; lsCam.right = E / 2; lsCam.top = E / 2; lsCam.bottom = -E / 2; lsCam.near = 0; lsCam.far = yTop - yBot; lsCam.updateProjectionMatrix();
+    lsCam.position.set(cx, yTop, czc); lsCam.up.set(0, 0, -1); lsCam.lookAt(cx, yTop - 1, czc); lsCam.updateMatrixWorld(true);
+    lsRT = new THREE.WebGLRenderTarget(N, N, { depthBuffer: true, stencilBuffer: false }); lsRT.texture.minFilter = THREE.NearestFilter; lsRT.texture.magFilter = THREE.NearestFilter; lsRT.texture.generateMipmaps = false;
+    try {
+      sm.autoUpdate = false; sm.needsUpdate = false; A.scene.background = null; A.scene.fog = null;
+      R.setRenderTarget(lsRT); R.setClearColor(0xffffff, 1); R.clear(); A.scene.overrideMaterial = lsDM; R.render(A.scene, lsCam);
+      // self-check: the central 512x512 texels — cleared (no caster) / floor band / occluders between the lamp plane and the floor
+      var S = Math.min(512, N), buf = new Uint8Array(S * S * 4); R.readRenderTargetPixels(lsRT, (N - S) >> 1, (N - S) >> 1, S, S, buf);
+      var nClr = 0, nFlr = 0, nOcc = 0, zf = (yTop - yBot - 0.15) / (yTop - yBot); for (var p = 0; p < buf.length; p += 4) { var dd = (buf[p] * 255 / 256 + buf[p + 1] * 255 / 65536 + buf[p + 2] * 255 / 16777216 + buf[p + 3] / 16777216) / 255; if (dd >= 0.9999) nClr++; else if (dd >= zf) nFlr++; else nOcc++; }
+      hist = { clearPct: +(100 * nClr / (S * S)).toFixed(1), floorPct: +(100 * nFlr / (S * S)).toFixed(1), occluderPct: +(100 * nOcc / (S * S)).toFixed(1), S: S };
+    } catch (eR) { console.warn('§LAMP_SHADOW render failed: ' + eR.message + ' — lamps keep the screen AO'); lsRT.dispose(); lsRT = null; }
+    finally { R.autoClear = ac; sm.autoUpdate = smA; sm.needsUpdate = smN; R.setRenderTarget(prevRT); A.scene.overrideMaterial = prevOv; A.scene.background = prevBg; A.scene.fog = prevFog; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); }
+    var depthMs = performance.now() - tR; if (!lsRT) return null;
+    LSP[0] = 1; LSP[1] = tanT; LSP[2] = texel; LSP[3] = LAW.biasM; LSB[0] = cx; LSB[1] = czc; LSB[2] = 1 / E; LSB[3] = 1 / E; LSY[0] = yTop; LSY[1] = 1 / (yTop - yBot); LSY[2] = yTop - yBot; LSY[3] = kMax; lsTex = lsRT.texture;
+    var nb = lampShadowBind(A);
+    lsLast = { zones: kept, dropped: dropped, camZone: cz, box: [+bx0.toFixed(2), +bx1.toFixed(2), +bz0.toFixed(2), +bz1.toFixed(2)], E: +E.toFixed(2), centre: [+cx.toFixed(2), +czc.toFixed(2)], fit: fit, yTop: +yTop.toFixed(3), yBot: +yBot.toFixed(3), lampY: [+ys[0].toFixed(2), +yMed.toFixed(2), +ys[ys.length - 1].toFixed(2)], lampsBelowPlane: below,
+      size: N, texelM: +texel.toFixed(4), tanTheta: +tanT.toFixed(3), tanRaw: +(tanRaw || 0).toFixed(3), tanDial: tanDial > 0 ? tanDial : 0, lamps: lamps.length, wpSamples: ns, kernelMaxM: +kMax.toFixed(3), biasM: LAW.biasM, casters: casters, hiddenFixtures: fixHid, hidden: hidden.length, depthMs: Math.round(depthMs), bound: nb, map: hist, ms: Math.round(performance.now() - t0) };
+    console.log('§LAMP_SHADOW zones=' + kept.join(',') + (dropped ? '(+' + dropped + ' dropped: other floor level / no floor)' : '') + ' camZone=' + cz + ' fit=' + fit + ' box=x' + lsLast.box[0] + '..' + lsLast.box[1] + ' z' + lsLast.box[2] + '..' + lsLast.box[3] + ' (' + lsLast.E + ' m square, +kernel ' + lsLast.kernelMaxM + ' m)' +
+      ' lampPlane=' + lsLast.yTop + ' (lamp y min/median/max ' + lsLast.lampY.join('/') + ', below plane ' + below + '/' + lamps.length + ') floor=' + lsLast.yBot + ' size=' + N + ' texel=' + lsLast.texelM + 'm tanTheta=' + lsLast.tanTheta + (tanDial > 0 ? ' (&lampsh_tan dial; derived ' + lsLast.tanRaw + ')' : ' (irradiance-weighted zenith of ' + lamps.length + ' lamps from ' + ns + ' working-plane samples at +' + LAW.wpM + ' m, decay ' + dec + ')') +
+      ' bias=' + LAW.biasM + 'm casters=' + casters + ' hiddenFixtures=' + fixHid + ' depthMs=' + Math.round(depthMs) + ' map(central ' + (hist ? hist.S : 0) + '²)=clear ' + (hist ? hist.clearPct : '-') + '% floor ' + (hist ? hist.floorPct : '-') + '% occluders ' + (hist ? hist.occluderPct : '-') + '% bound=' + nb + ' ms=' + lsLast.ms +
+      (hist && hist.occluderPct === 0 ? ' NO-OP (no occluder between the lamp plane and the floor in the central map)' : '') + ' (PCSS, Fernando 2005; plane = EN 12464-1 wp; texel/bias UNSOURCED)');
+    return lsLast;
+  }
+  // §LAMP_SHADOW readback (witness): one app render in mode 14 (float target) -> per pixel the shadow visibility the lamp term
+  // used (2 = not in the map / no lamp loop) and the screen AO it would have used. Rows bottom-up (readRenderTargetPixels).
+  function lampShadowRead(A, w, h) {
+    var THREE = global.THREE, R = A && A.renderer; if (!installed || linkFailed || !R) return null;
+    var t0 = performance.now(), rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: true }), F = new Float32Array(w * h * 4), w0 = P[3], a0 = AOP[0], prev = R.getRenderTarget(), bg = A.scene.background;
+    try { A.scene.background = null; P[3] = 14; AOP[0] = 1; R.setRenderTarget(rt); R.clear(); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, w, h, F); }
+    finally { P[3] = w0; AOP[0] = a0; R.setRenderTarget(prev); A.scene.background = bg; rt.dispose(); }
+    var vis = new Float32Array(w * h), ao = new Float32Array(w * h), n = 0, inMap = 0, sum = 0;
+    for (var i = 0; i < w * h; i++) { var s = i * 4; if (Math.abs(F[s + 2] - 0.75) < 1e-4) { vis[i] = F[s]; ao[i] = F[s + 1]; n++; if (F[s] <= 1.0) { inMap++; sum += F[s]; } } else { vis[i] = -1; ao[i] = -1; } }
+    return { vis: vis, ao: ao, w: w, h: h, judged: n, inMap: inMap, meanVisInMap: inMap ? +(sum / inMap).toFixed(4) : null, staged: lsLast, on: LSP[0] > 0.5, ms: Math.round(performance.now() - t0) };
   }
   function install(THREE) {
     if (installed) return;
@@ -286,8 +427,8 @@
       if (reDirect) {
         var blockEnd = le + '#pragma unroll_loop_end'.length;
         fb = fb.slice(0, ls) + '#if defined( USE_SHADOWMAP ) && NUM_POINT_LIGHT_SHADOWS > 0\n\t' + fb.slice(ls, blockEnd) + '\n\t#else\n' +
-          '\tfor ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {\n\t\tpointLight = pointLights[ i ];\n\t\tgetPointLightInfo( pointLight, geometryPosition, directLight );\n' +
-          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
+          '\tfloat _slPLV = slLampVis( geometryPosition, geometryNormal );\n\tfor ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {\n\t\tpointLight = pointLights[ i ];\n\t\tgetPointLightInfo( pointLight, geometryPosition, directLight );\n' +
+          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * _slPLV;\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);   // §AO_LAMPS / §LAMP_SHADOW (one visibility per fragment)
         console.log('§LAMP_LOOP dynamic (point lights: one loop body per program, not one per lamp; &lamploop=0 = unrolled)');
       } else console.warn('§LAMP_LOOP anchor missing — point-light loop stays unrolled');
     }
@@ -306,7 +447,7 @@
         '\tivec3 _cc = ivec3( floor( ( _slWP - uSLOrg.xyz ) / ( uSLParams.y * uSLLamp.z ) ) );\n' +
         '\tif ( all( greaterThanEqual( _cc, ivec3( 0 ) ) ) && all( lessThan( _cc, ivec3( uSLCluDim.xyz ) ) ) ) {\n' +
         '\t\tuvec2 _oc = texelFetch( uSLClu, _cc, 0 ).rg; uint _iw = uint( uSLLamp.w ); _slLN = float( _oc.y );\n' +
-        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +   // §AO_LAMPS (below)
+        '\t\tfloat _slAoL = slLampVis( geometryPosition, geometryNormal );\n' +   // §AO_LAMPS (below) / §LAMP_SHADOW (the overhead lamp shadow map where it covers the fragment)
         '\t\tfor ( uint _k = 0u; _k < _oc.y; _k ++ ) {\n' +
         '\t\t\tuint _g = _oc.x + _k; int _li = int( texelFetch( uSLLIdx, ivec2( int( _g % _iw ), int( _g / _iw ) ), 0 ).r );\n' +
         '\t\t\tvec4 _la = texelFetch( uSLLampT, ivec2( 0, _li ), 0 ); vec4 _lb = texelFetch( uSLLampT, ivec2( 1, _li ), 0 );\n' +
@@ -342,6 +483,7 @@
         'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : ( _slSky > 0.5 ? 0.5 : 0.0 ), 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
         'if ( uSLParams.w > 11.5 && uSLParams.w < 12.5 ) { mat4 _vn = inverse( viewMatrix ); vec3 _nn = normalize( ( _vn * vec4( ( dot( normal, vViewPosition ) < 0.0 ) ? - normal : normal, 0.0 ) ).xyz ); gl_FragColor = vec4( _nn * 0.5 + 0.5, 1.0 ); }\n' +   // §COVE_LIGHT witness readback: eye-facing world normal
         'else if ( uSLParams.w > 12.5 && uSLParams.w < 13.5 ) { gl_FragColor = vec4( material.diffuseColor, 0.75 ); }\n' +   // §ZERO Z11 albedo readback (float target): the diffuse albedo the fragment is shaded with, marker 0.75
+        'else if ( uSLParams.w > 13.5 && uSLParams.w < 14.5 ) { gl_FragColor = vec4( _slLsV, _slLsAo, 0.75, 1.0 ); }\n' +   // §LAMP_SHADOW readback (float target): R = shadow visibility (2 = not in the map), G = the AO the lamp term would use, B = 0.75 marker
         'else if ( uSLParams.w > 10.5 && uSLParams.w < 11.5 ) { gl_FragColor = vec4( _slCove * uSLCoveP.w, ( _slFZ > 0.5 && _slFZ < 65533.5 ) ? _slFZ : 0.0, 0.75, 1.0 ); }\n' +   // §COVE_LIGHT readback (float target): R = cove Lambert term (texel units), G = zone, B = 0.75 marker
         'else if ( uSLParams.w > 9.5 && uSLParams.w < 10.5 ) { gl_FragColor = vec4( _slGd, _slF, 0.75, 1.0 ); }\n' +   // §GROUND_VIEW_FIELD readback (float target): R = _slGd, G = _slF, B = 0.75 marker
         'else if ( uSLParams.w > 8.5 && uSLParams.w < 9.5 ) { gl_FragColor = vec4( slIr() * BRDF_Lambert( material.diffuseColor ), 0.75 ); }\n' +   // §IRC_MAX v2 readback: IR radiance (linear)
@@ -369,6 +511,7 @@
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
       U.uSLAo = { value: AOP }; U.uSLAoT = { value: dAo };
+      U.uSLLsP = { value: LSP }; U.uSLLsB = { value: LSB }; U.uSLLsY = { value: LSY }; U.uSLLsT = { value: dAo };   // §LAMP_SHADOW (white = depth 1 = no blocker)
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
       U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy }; U.uSLGround = { value: dGround };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
@@ -797,6 +940,7 @@
     U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; if (U.uSLSky) U.uSLSky.value = SKY; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
     if (U.uSLGround) U.uSLGround.value = (active && gtex && SKY[1] > 0.5) ? gtex : dGround;
     if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; }   // §ZERO Z10
+    if (U.uSLLsT) { U.uSLLsP.value = LSP; U.uSLLsB.value = LSB; U.uSLLsY.value = LSY; U.uSLLsT.value = (LSP[0] > 0.5 && lsTex) ? lsTex : dAo; }   // §LAMP_SHADOW
     if (U.uSLIrP) { U.uSLIrP.value = IRP; U.uSLIr.value = (active && IRP[0] > 0.5 && irTex) ? irTex : dIr; }
     if (U.uSLGOP) { U.uSLGOP.value = GOP; U.uSLGO.value = (active && GOP[0] > 0.5 && goTex) ? goTex : dGO; }   // §GLASS_REFL_OPEN
     if (U.uSLCoveP) { U.uSLCoveP.value = COVEP; U.uSLCoveQ.value = COVEQ; U.uSLCove.value = (active && COVEP[3] > 0.5 && coveTex) ? coveTex : dCove; }   // §COVE_LIGHT
@@ -1497,6 +1641,7 @@
     glassOff(A, quiet); meterOff(A);
     if (!active) return;
     active = false; P[0] = 0; LAMP[0] = 0; lampVer = -1; IRP[0] = 0; irKey = null;
+    lampShadowRelease(A, true);   // §LAMP_SHADOW: map freed, lamps x screen AO again
     COVEP[3] = 0;   // §COVE_LIGHT: the texture is kept for the next press (key compare)
     if (!quiet) { A._lampDataOn = false; A._lampData = null; }
     if (A.scene.onBeforeRender && A.scene.onBeforeRender._sourced) A.scene.onBeforeRender = prevOBR || function () {};
@@ -1506,5 +1651,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { irR: function () { return IR_R; }, irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampSync: lampSync, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { irR: function () { return IR_R; }, irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampSync: lampSync, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, lampShadowStage: lampShadowStage, lampShadowRelease: lampShadowRelease, lampShadowRead: lampShadowRead, lampShadowOn: lampShadowOn, lampShadow: function () { return LSP[0] > 0.5 ? lsLast : null; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

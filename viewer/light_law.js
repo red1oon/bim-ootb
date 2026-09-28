@@ -64,7 +64,15 @@
     // L2 — §ZERO Z10 (audit #54): AO is the visibility of INDIRECT light (Frostbite 2014 §4.10.3; Filament; UE "non direct
     // lighting"), world radius = the sky-view field's cell (light_zones.js CELL 0.5 m: the field carries >= one cell, AO the sub-cell
     // band), power 1 (a visibility, no exponent), n8ao distanceFalloff default 1.
-    AO: { radiusM: 0.5, power: 1, falloff: 1, appliesTo: 'indirect' }
+    AO: { radiusM: 0.5, power: 1, falloff: 1, appliesTo: 'indirect' },
+    // L2 — §LAMP_SHADOW (audit #40 lamps as one broad overhead source; §AO_LAMP_BUF proved screen AO cannot reach the raycast
+    // truth): the ceiling lamps' direct term is shadowed by ONE orthographic depth map rendered straight down over the still's
+    // zone(s), lamp plane -> floor, and softened by PCSS (Fernando 2005, "Percentage-Closer Soft Shadows", NVIDIA): blocker
+    // search + penumbra = (receiver - blocker) x tan(theta). theta = the lamp spread = the irradiance-weighted zenith angle of the
+    // zone's in-range lamps seen from the working plane wpM (EN 12464-1 reference plane 0.75 m); the weight is the lamp term's
+    // own attenuation (I cos / d^decay). texelM (map resolution target), biasM (depth bias) and the 1.5-texel normal offset are
+    // UNSOURCED shadow-map practice; taps = 16 Vogel per pass. wpSamplesMax caps the CPU derivation of theta per press.
+    LAMP_SHADOW: { wpM: 0.75, texelM: 0.02, sizeMin: 1024, sizeMax: 4096, biasM: 0.02, normalOffsetTexels: 1.5, taps: 16, wpSamplesMax: 400, appliesTo: 'lamps' }
   });
 
   // scene units -> lux (x luxPer) and -> cd/m2 for a luminance in scene units. null when there is no calibrated sun.
@@ -148,7 +156,7 @@
     return s;
   }
 
-  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, TORCH: LAW.TORCH, ADAPT: LAW.ADAPT, adaptEv: adaptEv, ALBEDO: LAW.ALBEDO, GROUND: LAW.GROUND, SUN: LAW.SUN, AO: LAW.AO, groundIrradiance: groundIrradiance, groundColor: groundColor, penumbra: penumbra,
+  var LightLaw = { LAW: LAW, CALIB: LAW.CALIB, SCENE: LAW.SCENE, METER: LAW.METER, TONE: LAW.TONE, COVE: LAW.COVE, TORCH: LAW.TORCH, ADAPT: LAW.ADAPT, adaptEv: adaptEv, ALBEDO: LAW.ALBEDO, GROUND: LAW.GROUND, SUN: LAW.SUN, AO: LAW.AO, LAMP_SHADOW: LAW.LAMP_SHADOW, groundIrradiance: groundIrradiance, groundColor: groundColor, penumbra: penumbra,
     srgbToLinear: srgbToLinear, decodeAlbedo: decodeAlbedo,    luxPer: luxPer, ev100: ev100, exposureFromEv: exposureFromEv, acesDiv: acesDiv, toneConst: toneConst,
     snapshot: snapshot, log: log, hash: hash, canon: canon };
   global.LightLaw = Object.freeze(LightLaw);

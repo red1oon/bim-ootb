@@ -5424,7 +5424,8 @@ async function setupEffects(A, renderer, scene, camera) {
   function _stopStillAOPhase(reason) {
     if (_stillAORAF) { cancelAnimationFrame(_stillAORAF); _stillAORAF = null; }
     if (_aoIndirectBound && window.SourcedLight && window.SourcedLight.aoSet) {   // §ZERO Z10: materials back to AO 1 (dummy texture, x = 0)
-      _aoIndirectBound = false; window.SourcedLight.aoSet(A, null, false); console.log('§AO_INDIRECT released (' + reason + ')'); }
+      _aoIndirectBound = false; window.SourcedLight.aoSet(A, null, false); console.log('§AO_INDIRECT released (' + reason + ')');
+      if (window.SourcedLight.lampShadowRelease) window.SourcedLight.lampShadowRelease(A); }   // §LAMP_SHADOW: same lifetime as the AO buffer
     if (A._stillAOAdapter) A._stillAOAdapter.aoOnly = false;
     if (A._stillAOAdapter && A._stillAOAdapter.enabled) {
       A._stillAOAdapter.enabled = false;
@@ -5456,6 +5457,9 @@ async function setupEffects(A, renderer, scene, camera) {
   function _aoIndirectTaa2(ao, t0, aoFrames) {
     ao.adapter.enabled = false; ao.adapter.aoOnly = false;   // the AO buffer is final; the frame is rebuilt with it inside the lighting
     var SL = window.SourcedLight, rtA = ao.adapter.aoOnlyRT;
+    // §LAMP_SHADOW: the overhead lamp shadow map (one depth render per press) staged with the AO buffer for the same second TAA;
+    // the lamp loops read it instead of the screen AO where it covers the fragment. Released with the AO (_stopStillAOPhase).
+    if (SL.lampShadowStage) { try { SL.lampShadowStage(A); } catch (eLS) { console.warn('§LAMP_SHADOW failed: ' + eLS.message + ' — lamps keep the screen AO'); } }
     var nb = SL.aoSet(A, rtA.texture, false, rtA.width, rtA.height);   // bind the texture on every live program (x stays 0)
     _aoIndirectBound = true;
     if (nb <= 0) { console.warn('§AO_INDIRECT no patched program took the AO (bound=' + nb + ') — frame kept without AO'); A._stillRefineBusy = false; return; }
