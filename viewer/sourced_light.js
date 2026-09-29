@@ -238,7 +238,10 @@
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
     'float slSkyKeep( vec3 posView, vec3 nView ) { return 1.0; }',
     'vec3 slHemi( vec3 sky, vec3 ground, vec3 dir, vec3 posView, vec3 nView ) { return mix( ground, sky, 0.5 * dot( nView, dir ) + 0.5 ); }',   // three's own formula
-    '#endif', ''].join('\n');
+    '#endif',
+    // §MIRROR_OWN_MAT (bim-compiler PHOTOREAL_STILL_RENDER.md §MIRROR_OWN_MAT): a mirror's env IS the per-still room capture (staged light
+    // already in it), so its IBL radiance skips the sky-view gate; every other material keeps slSpecKeep
+    'float slMirK( vec3 posView, vec3 nView, vec3 viewDir ) {', '#ifdef SL_MIRROR', '  return 1.0;', '#else', '  return slSpecKeep( posView, nView, viewDir );', '#endif', '}', ''].join('\n');
   // §SOURCED_LIGHT_LINK: the one slFragZone call per fragment, before three's light loops (geometryPosition/geometryNormal
   // are declared at the top of lights_fragment_begin). Staged (x) or zone-debug (w) only: nav pays nothing.
   var ONCE = '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
@@ -342,7 +345,7 @@
     // every weakly lamp-lit surface (Clinic corridor / Hospital café, 2026-09-25).
     var fm = C.lights_fragment_maps, e0 = 'iblIrradiance += getIBLIrradiance(', r0 = 'radiance += getIBLRadiance(';
     if (fm.indexOf(e0) >= 0) { fm = fm.replace(e0, 'iblIrradiance += slSkyKeep( geometryPosition, geometryNormal ) * getIBLIrradiance('); ok++; }
-    if (fm.indexOf(r0) >= 0) { fm = fm.replace(r0, 'radiance += slSpecKeep( geometryPosition, geometryNormal, geometryViewDir ) * getIBLRadiance('); ok++; }   // §GLASS_SPEC_GATE
+    if (fm.indexOf(r0) >= 0) { fm = fm.replace(r0, 'radiance += slMirK( geometryPosition, geometryNormal, geometryViewDir ) * getIBLRadiance('); ok++; }   // §GLASS_SPEC_GATE
     C.lights_fragment_maps = fm;
     // §SOURCED_LIGHT_ZONE_DEBUG (witness only): uSLParams.w = 1 writes the fragment's zone as the colour, after every other
     // output chunk (R = zone mod 256, G = zone / 256, B = 1 when unknown / 0.5 when the sky is kept / 0 sky off), so a

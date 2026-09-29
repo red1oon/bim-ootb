@@ -98,13 +98,13 @@
   var capRT = null, capCam = null, CAP_SIZE = 256, pmremGen = null, pmremRT = null, captureN = 0;
   function liveClones() { var set = new Set(); swaps.forEach(function (s) { var m = s[0].material, ms = Array.isArray(m) ? m : [m]; ms.forEach(function (x) { if (x && x.userData && x.userData.gfOf) set.add(x); }); }); return set; }
   function capture(A) {
-    var THREE = global.THREE; if (!THREE || !A || !A.renderer || !A.scene || !A.camera || !swaps.length) return null;
+    var THREE = global.THREE; var mirM = A && A._mirrorOwnMats || []; if (!THREE || !A || !A.renderer || !A.scene || !A.camera || (!swaps.length && !mirM.length)) return null;   // §MIRROR_OWN_MAT: mirrors take the capture too
     if (A._stillGlassEnv === false || /[?&]glassenv=0/.test(location.search)) { console.log('§GLASS_ENV off (&glassenv=0) — panes reflect the sky HDRI'); return null; }
     var t0 = performance.now(), R = A.renderer;
     if (!capRT) { capRT = new THREE.WebGLCubeRenderTarget(CAP_SIZE, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter }); capCam = new THREE.CubeCamera(0.05, 5000, capRT); }
     var hidden = [];
     A.scene.traverse(function (o) { if (!o.visible || !o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return; var ms = Array.isArray(o.material) ? o.material : [o.material];
-      if (ms.some(function (m) { return m && ((m.userData && m.userData.gfOf) || isGlass(m)); })) { o.visible = false; hidden.push(o); } });
+      if (ms.some(function (m) { return m && ((m.userData && (m.userData.gfOf || m.userData.slMirror)) || isGlass(m)); })) { o.visible = false; hidden.push(o); } });
     capCam.position.copy(A.camera.position); capCam.layers.mask = A.camera.layers.mask; A.scene.add(capCam); capCam.updateMatrixWorld(true);
     var prevRT = R.getRenderTarget();
     // ### ALTS-ALL FIX 14 (F11, first-press black glass): the cube faces are a render-target variant the scene has not drawn before on a
@@ -134,6 +134,8 @@
     pmremRT = pmremGen.fromCubemap(capRT.texture, pmremRT); R.setRenderTarget(prevRT);
     var pmMs = Math.round(performance.now() - tP);
     var n = 0; liveClones().forEach(function (c) { if (c.envMap !== pmremRT.texture) { c.envMap = pmremRT.texture; c.needsUpdate = true; } n++; });
+    mirM.forEach(function (c) { if (c.envMap !== pmremRT.texture) { c.envMap = pmremRT.texture; c.needsUpdate = true; } });
+    console.log('§MIRROR_OWN_MAT envFromCapture mats=' + mirM.length + ' capture#' + (captureN));
     if (A.markDirty) A.markDirty();
     var line = '§GLASS_ENV captured ' + CAP_SIZE + 'x6 at camera [' + A.camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + '] glassMeshesHidden=' + hidden.length + ' clonesReflecting=' + n + ' passes=' + passes + ' rekeyedPerPass=[' + rekeyed.join(',') + ']' + ' nonFinitePerFace=[' + nf.join(',') + '] pmrem=explicit ' + pmMs + 'ms' + ' capture#' + captureN + ' capMeanL=' + (capN ? (capLum / capN).toExponential(3) : 'n/a') + ' exposureAtCapture=' + (R.toneMappingExposure != null ? R.toneMappingExposure.toFixed(4) : '?') + ' toneMapping=' + R.toneMapping + ' clonesEnvInt=[' + Array.from(liveClones()).map(function (c) { return c.envMapIntensity; }).join(',') + ']' + ' ms=' + Math.round(performance.now() - t0);
     console.log(line); return { clones: n, hidden: hidden.length, ms: Math.round(performance.now() - t0) };

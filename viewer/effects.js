@@ -2754,7 +2754,29 @@ async function setupEffects(A, renderer, scene, camera) {
   // this is a genuinely exclusive material — excluding it from the exemption cannot leak into
   // diffusers/grilles/any other fixture sharing the class. Lookup uses the same
   // name-keyword-query-via-elements_meta pattern as §PHOTO_EMBER's EMBER_WORDS, cached per building.
-  var _mirrorMatSet = null, _mirrorMatBuilding = null;
+  var _mirrorMatSet = null, _mirrorMatBuilding = null, _mirrorMeshList = [], _mirrorOwnSaved = [];
+  // §MIRROR_OWN_MAT (bim-compiler PHOTOREAL_STILL_RENDER.md §MIRROR_OWN_MAT, red1 2026-09-30 "exploit [the glass reflection quality] and
+  // use the mirror finishing on those IFCs"). MEASURED …720801650: the mirror shared the MEP material (10ad10), which §MIRROR_TRUE_REFLECT
+  // mirror-finished for every element on it, and reflected one building-centre probe x the sky-view gate (F 0) -> black. Each mirror mesh
+  // (Clinic: 5 meshes holding only the 22 mirrors) gets ONE dedicated material for the still: IFC colour, metal 1, roughness 0.02,
+  // env = the §GLASS_ENV capture of this press, SL_MIRROR (sourced_light.js slMirK: no sky gate).
+  function _mirrorOwnApply() {
+    _mirrorReflectMats(); if (!_mirrorMeshList.length || _mirrorOwnSaved.length) return;
+    var byCol = Object.create(null), mats = [], ok = 0;
+    _mirrorMeshList.forEach(function(o) {
+      var g = null, rgba = null; for (var k in A.guidMap) if (String(k).split('_')[0] === String(o.id)) { g = A.guidMap[k]; break; }
+      try { var r = g && A.dbQuery ? A.dbQuery("SELECT material_rgba FROM elements_meta WHERE guid='" + String(g).replace(/'/g, "''") + "'") : null; rgba = r && r[0] && r[0][0]; } catch (e) {}
+      var c = (rgba ? String(rgba).split(',').slice(0, 3).map(Number) : [0.85, 0.85, 0.85]), key = c.join(',');
+      var mm = byCol[key]; if (!mm) { mm = new THREE.MeshStandardMaterial({ metalness: 1, roughness: 0.02, envMapIntensity: 1 }); mm.color.setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace);
+        mm.defines = { SL_MIRROR: '' }; mm.userData.slMirror = true; mm.userData._photoEnvExempt = true; mm.envMap = A._envMap || null; byCol[key] = mm; mats.push(mm); }
+      _mirrorOwnSaved.push([o, o.material]); o.material = Array.isArray(o.material) ? o.material.map(function() { return mm; }) : mm; ok++; });
+    A._mirrorOwnMats = mats;
+    console.log('§MIRROR_OWN_MAT applied meshes=' + ok + ' materials=' + mats.length + ' colours=[' + Object.keys(byCol).join(' | ') + '] (IFC material_rgba, metal 1, rough 0.02, env = §GLASS_ENV capture, no sky gate)');
+  }
+  function _mirrorOwnRestore() {
+    if (!_mirrorOwnSaved.length) return; _mirrorOwnSaved.forEach(function(s) { s[0].material = s[1]; });
+    console.log('§MIRROR_OWN_MAT restored meshes=' + _mirrorOwnSaved.length); _mirrorOwnSaved = []; A._mirrorOwnMats = [];
+  }
   function _mirrorReflectMats() {
     if (_mirrorMatSet && _mirrorMatBuilding === A.activeBuilding) return _mirrorMatSet;
     _mirrorMatSet = Object.create(null);
@@ -2769,13 +2791,12 @@ async function setupEffects(A, renderer, scene, camera) {
     for (var i = 0; i < rows.length; i++) want[rows[i][0]] = 1;
     var ids = Object.create(null), hits = 0;
     for (var k in A.guidMap) if (want[A.guidMap[k]]) { ids[parseInt(String(k).split('_')[0], 10)] = 1; hits++; }
-    var meshes = 0, mats = 0;
+    var meshes = 0, mats = 0; _mirrorMeshList = [];
     A.collectMeshes(function(o) { return o.isMesh; }).forEach(function(o) {
       if (!ids[o.id]) return;
-      meshes++;
+      meshes++; _mirrorMeshList.push(o);
       (Array.isArray(o.material) ? o.material : [o.material]).forEach(function(m) {
-        if (!m || _mirrorMatSet[m.uuid]) return;
-        _mirrorMatSet[m.uuid] = m; mats++;
+        if (!m) return; mats++;   // §MIRROR_OWN_MAT: the shared material is NOT mirror-finished any more (it also carries grab bars etc.)
       });
     });
     console.log('§MIRROR_TRUE_REFLECT bld=' + A.activeBuilding + ' guids=' + rows.length +
@@ -4358,6 +4379,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoEnvBoostedMats = [];
     _photoMatBoostActive = true;
     _reassertPhotoMatBoost();
+    _mirrorOwnApply();   // §MIRROR_OWN_MAT
     _enablePhotoShadows();  // real/current sun position (unless _duskMood) — see §PHOTO_SUN_SEPARATION
     _stillCascadeLightsAdd();   // §STILL_SHADOW_CASCADE C2: before the first staged compile (boxes are fitted at the end of staging)
     // §PHOTO_SUN_SEPARATION_FIX (2026-08-16, user: beam/railing went dark/no-sheen after the
@@ -4921,6 +4943,7 @@ async function setupEffects(A, renderer, scene, camera) {
       }
     }
     _photoMatBoostActive = false;
+    _mirrorOwnRestore();   // §MIRROR_OWN_MAT
     _photoEnvBoostedMats.forEach(function(m) {
       m.envMapIntensity = m.userData._photoOrigEnvMapIntensity;
       delete m.userData._photoOrigEnvMapIntensity;

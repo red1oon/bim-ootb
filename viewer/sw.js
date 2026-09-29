@@ -186,7 +186,9 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1507';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1508';   // bump on each deploy; per-change detail is the git commit message.
+// v1508 (2026-09-30) §MIRROR_OWN_MAT: IFC mirrors get their own material at Alt+S (IFC colour, metal 1, rough 0.02, env = the §GLASS_ENV
+//   capture, no sky gate); the shared MEP material is no longer mirror-finished. sourced_light.js?v=72 effects.js?v=125 glass_fresnel.js?v=10.
 // v1507 (2026-09-30) §SKY_FIELD_SMOOTH: covered cells := same-zone 3x3x3 mean F (the lattice's 0.5 m tiles, Terminal hall wall);
 //   &skysmooth=0 = v1506. light_zones.js?v=26.
 // v1506 (2026-09-30) §SKY_FIELD_EXACT_OPEN: the exact-all pass keeps only OPEN cells under stairs/beams; covered cells back to the
