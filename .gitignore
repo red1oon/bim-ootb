@@ -87,3 +87,4 @@ IFC/KUL/*
 # the STORED zip against its source directory on every CI run.
 out/
 sandbox/spike_ssgi_webgpu/out/
+buildings/patches/*.lightfield.bin
