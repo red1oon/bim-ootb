@@ -5855,6 +5855,15 @@ async function setupEffects(A, renderer, scene, camera) {
     // the canvas — Alt+S's own RAF renders A._composer while the main loop prefers _giComposer,
     // so both active at once fight over every frame. One at a time.
     if (A._giComposerActive && typeof A.toggleGIPreview === 'function') A.toggleGIPreview(false);
+    // §STILL_OVERLAY_GUARD (red1 2026-09-29: "a guard not to allow the canvas to be in x-ray or other overlay mode"): a still is
+    // lighting truth, so it never renders through X-Ray (transparent geometry) or the ghost bbox shell (Alt+Z cycle / Find lens) —
+    // the same reset the film path does (cinema_maxq.js §CINEMA_XRAY_RESET / §CINEMA_GHOST_RESET). Logged every press.
+    var _ovX = !!A.xrayOn, _ovG = typeof window.ghostXrayOn === 'function' && !!window.ghostXrayOn();
+    if (_ovG && typeof A.resetCinemaGhostLens === 'function') A.resetCinemaGhostLens();
+    if (A.xrayOn && typeof A.toggleXray === 'function') A.toggleXray();
+    var _ovGAfter = typeof window.ghostXrayOn === 'function' && !!window.ghostXrayOn();
+    console.log('§STILL_OVERLAY_GUARD xray=' + (_ovX ? 'on->' + (A.xrayOn ? 'STILL ON' : 'off') : 'off') + ' ghost=' + (_ovG ? 'on->' + (_ovGAfter ? 'STILL ON' : 'off') : 'off') +
+      ((A.xrayOn || _ovGAfter) ? ' FAIL (overlay could not be cleared)' : ' OK'));
     A._stillRefineActive = true;
     // §CINEMA_ROW_BUSY (2026-07-18, user ask: "processing..." feedback, slower machines take a
     // few secs): distinct from _stillRefineActive, which stays true for the WHOLE frozen-still

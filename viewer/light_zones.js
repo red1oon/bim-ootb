@@ -190,6 +190,13 @@
       (sh.reach === 'air' && sh.on && !sh.airOnly ? ' Z8_NOOP (the air rule added no cell beyond the B1 radius)' : '') +
       ' (shell = covered wall-side cells within 2 cells of open air' + (sh.reach === 'air' ? ' OR with an air-only lattice sky direction (§ZERO Z8, radius-free)' : ' (B1 rule, &shellreach=2)') + '; F = ' + sh.mc + ' CIE-cos rays vs boundary + occluder triangles; other cells keep the lattice)');
   }
+  function logSkyExact(bld, s, how) {
+    var rays = s.rays1 + s.rays2;
+    console.log('§SKY_FIELD_EXACT bld=' + bld + ' cache=' + how + ' ' + (s.on ? 'on' : s.why) + (s.on && !s.pairs ? ' VACUOUS (no lattice contribution on a read cell)' : '') + ' readCells=' + s.readCells + ' pairs=' + s.pairs + (s.pairCapped ? ' CAPPED(+' + s.pairCapped + ' not recorded)' : '') +
+      ' skipShell=' + s.skipShell + ' belowMin(w vt<' + SX_MIN + ')=' + s.small + ' stand=' + s.stand + ' pairsLowered=' + s.pairsLowered + ' wouldRaise=' + s.wouldRaise + ' rays=' + rays + ' (stage1/2 ' + s.rays1 + '/' + s.rays2 + ') ms=' + s.ms + ' readMs=' + s.readMs +
+      ' usPerRay=' + (rays ? (s.ms * 1000 / rays).toFixed(2) : 0) + ' cellsLowered(>0.005)=' + s.lowered + ' meanDF=' + (s.lowered ? (-s.dSum / s.lowered).toFixed(4) : 0) + ' maxDrop=' + (-s.maxDrop).toFixed(4) +
+      ' (lattice contribution w vt bounded by w x mean exact T over 8 of the direction\'s 16 sub-directions; lower only)');
+  }
   function restore(A, r, THREE, t0) {
     cache = { dd: null, org: new THREE.Vector3(r.org[0], r.org[1], r.org[2]), fp: r.fp }; KEYS.forEach(function (k) { cache[k] = r[k]; });
     var ms = Math.round(performance.now() - t0);
@@ -198,7 +205,7 @@
     if (r.field && shellSkipped(r.field)) console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored without the shell pass: ' + shellSkipped(r.field) + ') — rebuilding the field');
     // §GLASS_REFL_OPEN: a record whose glass pass was skipped by &glassopen=0 is rebuilt once the switch is on again
     if (fOk && glassOpenOn(A) && r.field.glassOpen && r.field.glassOpen.stats && /^not run \(&glassopen=0/.test(r.field.glassOpen.stats.why || '')) { fOk = false; console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored with the glass-open pass skipped by &glassopen=0) — rebuilding the field'); }
-    if (fOk) { cache.field = Object.assign(r.field, { ms: 0, cached: 1 }); if (r.field.shell) logShell(A.activeBuilding, r.field.shell, 'hit'); else console.log('§SKY_SHELL_RAYS bld=' + A.activeBuilding + ' cache=hit record has no shell stats');
+    if (fOk) { cache.field = Object.assign(r.field, { ms: 0, cached: 1 }); if (r.field.shell) logShell(A.activeBuilding, r.field.shell, 'hit'); if (r.field.skyExact) logSkyExact(A.activeBuilding, r.field.skyExact, 'hit'); else console.log('§SKY_SHELL_RAYS bld=' + A.activeBuilding + ' cache=hit record has no shell stats');
       if (r.field.glassOpen && r.field.glassOpen.stats) logGlassOpen(A.activeBuilding, r.field.glassOpen, 'hit'); else console.log('§GLASS_REFL_OPEN bld=' + A.activeBuilding + ' cache=hit record has no glass-open data (the march stays for every cell)'); }   // §GLASS_REFL_OPEN (Z26)
     console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none') +
       ' ground=' + (fOk && r.field.Gd ? 'hit (was ' + (r.field.ground ? r.field.ground.ms : '?') + ' ms)' : 'none (built on demand)'));
@@ -219,7 +226,7 @@
     // &capcentre=0 / APP._stillCapCentre=false = the pre-attempt-1 rule (every SOLID cell roofs its column): B1 SPEC W3 A/B switch.
     // capOn + shellOn enter the §ZONE_IDB_CACHE fingerprint so flipping either switch rebuilds rather than reusing the other arm.
     var capOn = !(typeof location !== 'undefined' && /[?&]capcentre=0/.test(location.search)) && A._stillCapCentre !== false;
-    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A)]
+    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A), 'sx' + (skyExactOn(A) ? 1 : 0)]
       .map(function (v) { return typeof v === 'number' ? +v.toFixed(3) : v; }).join('|');
     if (primed && primed.bld === A.activeBuilding && !opts.force) { var pr = primed; primed = null;
       if (pr.fp === fp) return restore(A, pr, THREE, t0);
@@ -643,6 +650,24 @@
     return out; })();
   // §SKY_SHELL_RAYS switch (B1 SPEC): &skyshell=0 / APP._stillSkyShell=false = the pure lattice field
   function shellOn(A) { return !!(A && A._stillSkyShell !== false && !(typeof location !== 'undefined' && /[?&]skyshell=0/.test(location.search))); }
+  // §SKY_FIELD_EXACT switch (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_EXACT — SPEC"): &skyexact=0 / APP._stillSkyExact=false = no bound
+  function skyExactOn(A) { return !!(A && A._stillSkyExact !== false && !(typeof location !== 'undefined' && /[?&]skyexact=0/.test(location.search))); }
+  // §SKY_FIELD_EXACT sub-directions: per FIELD_DIRS d, K = 16 fixed directions inside d's own quadrature cell (the plane-y=1 points,
+  // 0.05 step, that pick d as nearest — the same integrand cos x (1 + 2 sin elev) dOmega that makes w_d), stratified 4 x 4 by
+  // cumulative weight (x quartiles, then z quartiles inside each). Flat [ux,uy,uz] x 16 per d; stage 1 = SUB_S1 (one per x quartile).
+  var SUB_K = 16, SUB_S1 = [1, 7, 8, 14], SUB_S2 = [2, 4, 11, 13], SX_MIN = 0.005, FIELD_SUB = null;   // S2: stage-2 set (Latin square with S1: 8 of the 16); SX_MIN: w vt below it is not checked (the 16 lowest dirs sum to w 0.029)
+  function fieldSub() { if (FIELD_SUB) return FIELD_SUB; var nd = FIELD_DIRS.length, P = []; for (var d0 = 0; d0 < nd; d0++) P.push([]);
+    var st = 0.05; for (var x = -6 + st / 2; x < 6; x += st) for (var z = -6 + st / 2; z < 6; z += st) {
+      var r = Math.sqrt(x * x + 1 + z * z), ux = x / r, uy = 1 / r, uz = z / r, best = -2, bi = 0;
+      for (var i = 0; i < nd; i++) { var U = FIELD_DIRS[i].u, dd = ux * U[0] + uy * U[1] + uz * U[2]; if (dd > best) { best = dd; bi = i; } }
+      P[bi].push([x, z, uy * (1 + 2 * uy) / (r * r * r)]); }
+    var pick = function (arr, key, n) { arr.sort(function (a, b) { return a[key] - b[key]; }); var tot = 0; arr.forEach(function (p) { tot += p[2]; }); var out = [], acc = 0, q = 0;
+      for (var g = 0; g < n; g++) { var lo = g / n * tot, hi = (g + 1) / n * tot, grp = []; while (q < arr.length && acc + arr[q][2] <= hi + 1e-12) { grp.push(arr[q]); acc += arr[q][2]; q++; } if (!grp.length && q < arr.length) { grp.push(arr[q]); acc += arr[q][2]; q++; } out.push(grp); } return out; };
+    FIELD_SUB = new Float32Array(nd * SUB_K * 3);
+    for (var d = 0; d < nd; d++) { var gx = pick(P[d].slice(), 0, 4), k = 0;
+      gx.forEach(function (grp) { var gz = pick(grp, 1, 4); gz.forEach(function (g2) { var tw = 0, mx = 0, mz = 0; g2.forEach(function (p) { tw += p[2]; mx += p[0] * p[2]; mz += p[1] * p[2]; });
+        if (!g2.length) { mx = FIELD_DIRS[d].dx; mz = FIELD_DIRS[d].dz; tw = 1; } var px = mx / tw, pz = mz / tw, rr = Math.sqrt(px * px + 1 + pz * pz), o = (d * SUB_K + k) * 3; FIELD_SUB[o] = px / rr; FIELD_SUB[o + 1] = 1 / rr; FIELD_SUB[o + 2] = pz / rr; k++; }); }); }
+    return FIELD_SUB; }
   // §ZERO Z8 switch: 'air' (default, radius-free rule) | 'r2' (&shellreach=2 / APP._stillShellReach = 2: the B1 rule exactly)
   function shellReach(A) { return (A && (A._stillShellReach === 2 || A._stillShellReach === 'r2')) || (typeof location !== 'undefined' && /[?&]shellreach=2(?!\d)/.test(location.search)) ? 'r2' : 'air'; }
   function groundOn(A) { return !!(A && A._stillGroundView !== false && !(typeof location !== 'undefined' && /[?&]groundview=0/.test(location.search))); }
@@ -877,6 +902,15 @@
     var shellSelMs = Math.round(performance.now() - tSel);
     // HHS_LEAK instrument (debug only, no behaviour change): APP._fieldTrace = [cell indices] -> Z.field.trace = per cell the
     // lattice directions that contributed [di, vt, gmin(256 = no glass on the path)] — reads which direction leaks sky
+    // §SKY_FIELD_EXACT: READ cells (non-solid, covered, Chebyshev <= 2 from a SOLID cell: fieldRead's 2x2x2 texels around p + 0.5 cell x n)
+    // and the (cell, dir, vt) lattice contributions recorded during the sweep for them
+    var sxOn = skyExactOn(A) && shellOn(A), isRead = null, nRead = 0, PAIR_CAP = 16000000, pC = null, pD = null, pV = null, nPair = 0, pairCapped = 0, tRd = performance.now();
+    if (sxOn) { var dl = new Uint8Array(N), dl2 = new Uint8Array(N); for (var cS = 0; cS < N; cS++) if (zone[cS] === SOLID) dl[cS] = 1;
+      var dil = function (src, dst, stride, len, idx) { for (var c9 = 0; c9 < N; c9++) { if (!src[c9]) continue; var p9 = idx(c9); for (var o9 = -2; o9 <= 2; o9++) { var q9 = p9 + o9; if (q9 >= 0 && q9 < len) dst[c9 + o9 * stride] = 1; } } };
+      dil(dl, dl2, 1, nx, function (c) { return c % nx; }); dl.fill(0); dil(dl2, dl, nx, ny, function (c) { return ((c / nx) | 0) % ny; }); dl2.fill(0); dil(dl, dl2, nxy, nz, function (c) { return (c / nxy) | 0; }); dl = null;
+      isRead = dl2; for (var cR = 0; cR < N; cR++) { var vR = zone[cR]; if (!isRead[cR]) continue; if (vR === SOLID || vR === 0) isRead[cR] = 0; else nRead++; }
+      pC = new Int32Array(1 << 20); pD = new Uint8Array(1 << 20); pV = new Float32Array(1 << 20); }
+    var readMs = Math.round(performance.now() - tRd);
     var fTrace = (A && A._fieldTrace && A._fieldTrace.length) ? new Map(A._fieldTrace.map(function (c) { return [Array.isArray(c) ? cellOf(Z, c[0], c[1], c[2]) : c, []]; })) : null;   // cell indices or world points
     FIELD_DIRS.forEach(function (d, di) {
       var dx = d.dx, dz = d.dz, off = dx + nx + dz * nxy, M = d.mids, nm = M.length, mo = new Int32Array(nm), mx = new Int32Array(nm), my = new Int32Array(nm), mz = new Int32Array(nm), w = d.w, ux = d.u[0], uy = d.u[1], uz = d.u[2];
@@ -890,7 +924,9 @@
           // one pane = one T: the fattened glass layer spans 1-3 cells, so T is applied ONCE when a ray enters glass from air
           // (a segment that touches glass: target or mid cells), never between glass cells; a second pane after air counts again
           if (!inG && gmin < 256) vt *= T[gmin]; }
-        val[c] = vt; if (zc !== SOLID && vt > 0) { acc[c] += w * vt; var zz = (zc & ZONE_MASK) * 3; zb[zz] += w * vt * ux; zb[zz + 1] += w * vt * uy; zb[zz + 2] += w * vt * uz; if (fTrace && fTrace.has(c)) fTrace.get(c).push([di, +vt.toFixed(4), gmin, +(w * vt).toFixed(4)]); }
+        val[c] = vt; if (zc !== SOLID && vt > 0) { acc[c] += w * vt; var zz = (zc & ZONE_MASK) * 3; zb[zz] += w * vt * ux; zb[zz + 1] += w * vt * uy; zb[zz + 2] += w * vt * uz; if (fTrace && fTrace.has(c)) fTrace.get(c).push([di, +vt.toFixed(4), gmin, +(w * vt).toFixed(4)]);
+          if (isRead && isRead[c]) { if (nPair === pC.length) { if (nPair >= PAIR_CAP) pairCapped++; else { var nC = new Int32Array(nPair * 2), nD = new Uint8Array(nPair * 2), nV = new Float32Array(nPair * 2); nC.set(pC); nD.set(pD); nV.set(pV); pC = nC; pD = nD; pV = nV; } }
+            if (nPair < pC.length) { pC[nPair] = c; pD[nPair] = di; pV[nPair] = vt; nPair++; } } }
         if (isCand && isCand[c]) { var sq = candSlot.get(c); if (vt > 0 && zc !== SOLID) { latS[sq * 3] += w * vt * ux; latS[sq * 3 + 1] += w * vt * uy; latS[sq * 3 + 2] += w * vt * uz; }
           if (preOf[di] >= 0) latP[sq * 5 + preOf[di]] = vt; if (vt === 1) airV[sq] = 1; } } });
     // §ZERO Z8: the final shell = near2 OR (rule 'air' AND an air-only lattice direction)
@@ -902,6 +938,7 @@
       if (!shellWhy && !nShell) shellWhy = 'VACUOUS (no shell cells: no covered cell beside a wall near open air)'; }
     var SHELL_MC = 64, shell = { on: !shellWhy, why: shellWhy, cells: nShell, reach: selStats.rule, candidates: selStats.candidates, near2: selStats.near2, airOnly: selStats.airOnly, airOnlySample: selStats.airOnlySample || [], trace: selStats.trace || null, recomputedAirOnly: 0, airOnlyDSum: 0, airOnlyLifted: 0, pretestSkipped: 0, recomputed: 0, rays: 0, lifted: 0, lowered: 0, dSum: 0, dAbsSum: 0, maxLift: 0, maxDrop: 0,
       boundaryTris: 0, occluderTris: 0, occluderSkipped: 0, glassTris: 0, soupMs: 0, bvhMs: 0, passMs: 0, selMs: shellSelMs, mc: SHELL_MC, usPerRay: 0 };
+    var sxS = { on: sxOn && !shellWhy, why: !skyExactOn(A) ? 'off (&skyexact=0 / APP._stillSkyExact=false)' : shellWhy ? 'off (needs the shell BVH: ' + shellWhy + ')' : '', readCells: nRead, readMs: readMs, pairs: nPair, pairCapped: pairCapped, skipShell: 0, small: 0, rays1: 0, rays2: 0, stand: 0, pairsLowered: 0, wouldRaise: 0, lowered: 0, dSum: 0, maxDrop: 0, ms: 0 };
     // §GLASS_REFL_OPEN (Z26): the glass reflection pass shares the shell pass's BVH (built below), so it needs the shell pass on
     var glassOpen = null, glassWhy = shellWhy ? 'not run (' + shellWhy + ')' : !glassOpenOn(A) ? 'not run (&glassopen=0 / APP._stillGlassOpen=false: the build is skipped too; a later press with the switch on rebuilds the field)' : !Z.glassIdx ? 'not run (grid record has no glass index)' : !Z.glassIdx.length ? 'VACUOUS (no glass cell in the grid)' : '';
     if (!shellWhy) { var geoO = null, geoG = null; try {
@@ -932,10 +969,23 @@
           var v5 = exact(x5, y5, z5, dx5, mu, dz5); shell.rays++; if (v5 > 0) { sum += v5; sx += v5 * dx5; sy += v5 * mu; sz += v5 * dz5; } }
         var fNew = sum / nMC, fOld = acc[c5], zz5 = (zone[c5] & ZONE_MASK) * 3;
         zb[zz5] -= latS[q5 * 3]; zb[zz5 + 1] -= latS[q5 * 3 + 1]; zb[zz5 + 2] -= latS[q5 * 3 + 2];   // the lattice's bent-normal share of this cell, summed during the sweep
-        zb[zz5] += sx / nMC; zb[zz5 + 1] += sy / nMC; zb[zz5 + 2] += sz / nMC; acc[c5] = fNew; shell.recomputed++;
+        zb[zz5] += sx / nMC; zb[zz5 + 1] += sy / nMC; zb[zz5 + 2] += sz / nMC; acc[c5] = fNew; shell.recomputed++; if (isRead) isRead[c5] = 0;   // §SKY_FIELD_EXACT: already exact
         shell.fSum = (shell.fSum || 0) + fNew; var dF = fNew - fOld; shell.dSum += dF; shell.dAbsSum += Math.abs(dF); if (dF > 0.05) shell.lifted++; if (dF < -0.05) shell.lowered++; if (dF > shell.maxLift) shell.maxLift = dF; if (dF < shell.maxDrop) shell.maxDrop = dF;
         if (airOnly5) { shell.recomputedAirOnly++; shell.airOnlyDSum += dF; if (dF > 0.05) shell.airOnlyLifted++; } }
       shell.passMs = Math.round(performance.now() - tP); shell.usPerRay = shell.rays ? +(shell.passMs * 1000 / shell.rays).toFixed(2) : 0;
+      // §SKY_FIELD_EXACT (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_EXACT — SPEC"): per recorded (READ cell, dir) lattice
+      // contribution w vt -> min(w vt, w E), E = mean exact T over 8 of d's 16 sub-directions (stage 1: 4; all >= vt -> stands; w vt < SX_MIN unchecked). LOWER ONLY.
+      if (sxOn && nPair) { var tX = performance.now(), SUB = fieldSub(), drop = val; drop.fill(0);
+        for (var pp = 0; pp < nPair; pp++) { var cX = pC[pp]; if (!isRead[cX]) { sxS.skipShell++; continue; } var dX = pD[pp], vX = pV[pp]; if (FIELD_DIRS[dX].w * vX < SX_MIN) { sxS.small++; continue; } var iX = cX % nx, jX = ((cX / nx) | 0) % ny, kX = (cX / nxy) | 0;
+          var xX = ox + (iX + 0.5) * cl, yX = oy + (jX + 0.5) * cl, zX = oz + (kX + 0.5) * cl, b0 = dX * SUB_K * 3, ok1 = true, s1 = 0;
+          for (var q1 = 0; q1 < 4; q1++) { var o1 = b0 + SUB_S1[q1] * 3, e1 = exact(xX, yX, zX, SUB[o1], SUB[o1 + 1], SUB[o1 + 2]); sxS.rays1++; s1 += e1; if (e1 < vX - 0.02) ok1 = false; }
+          if (ok1) { sxS.stand++; continue; }
+          var sE = s1; for (var q2 = 0; q2 < 4; q2++) { var o2 = b0 + SUB_S2[q2] * 3; sE += exact(xX, yX, zX, SUB[o2], SUB[o2 + 1], SUB[o2 + 2]); sxS.rays2++; }
+          var E = sE / 8; if (E > vX + 0.05) sxS.wouldRaise++; if (E >= vX) continue;
+          var wX = FIELD_DIRS[dX].w, rm = wX * (vX - E), uX = FIELD_DIRS[dX].u, zzX = (zone[cX] & ZONE_MASK) * 3; acc[cX] -= rm; if (acc[cX] < 0) acc[cX] = 0; drop[cX] += rm; sxS.pairsLowered++;
+          zb[zzX] -= rm * uX[0]; zb[zzX + 1] -= rm * uX[1]; zb[zzX + 2] -= rm * uX[2]; }
+        for (var cY = 0; cY < N; cY++) { var dY = drop[cY]; if (dY > 0.005) { sxS.lowered++; sxS.dSum += dY; if (dY > sxS.maxDrop) sxS.maxDrop = dY; } }
+        sxS.ms = Math.round(performance.now() - tX); }
       // §GLASS_REFL_OPEN (Z26): exact rays from each exterior pane face over the same BVH (its own try: a glass failure never flags the shell)
       if (!glassWhy) try {
         var goR = { trace: function (x, y, z, dx, dy, dz) { ray.origin.set(x, y, z); ray.direction.set(dx, dy, dz); var ho = bvhO.raycastFirst(ray, DS), far = ho ? ho.distance : Infinity, Tg = 1;
@@ -966,7 +1016,7 @@
     isCand = candSlot = candCells = near2 = latS = latP = airV = shellCells = shellOf = null;
     shell.airOnlyDMean = shell.recomputedAirOnly ? +(shell.airOnlyDSum / shell.recomputedAirOnly).toFixed(4) : 0;
     shell.dMean = shell.recomputed ? +(shell.dSum / shell.recomputed).toFixed(4) : 0; shell.dMeanAbs = shell.recomputed ? +(shell.dAbsSum / shell.recomputed).toFixed(4) : 0; shell.maxLift = +shell.maxLift.toFixed(3); shell.maxDrop = +shell.maxDrop.toFixed(3);
-    logShell(Z.bld, shell, 'built');
+    logShell(Z.bld, shell, 'built'); if (sxS.on && !shell.on) { sxS.on = false; sxS.why = 'off (shell pass failed: ' + shell.why + ')'; } pC = pD = pV = isRead = null; logSkyExact(Z.bld, sxS, 'built');
     // V12 interreflected component per zone (flux balance, Sumpner; the relation BRE's ADF is derived from):
     // F_ir = R (mean working-plane F x floor m2) / (A_z (1 - R)), R = R_BRE, A_z = surfaceM2 + apertureM2; uniform over the zone
     var nzn = Z.zones, up = Math.floor(0.8 / Z.cell) * nx, fl = new Float64Array(nzn + 1), wpS = new Float64Array(nzn + 1), wpN = new Int32Array(nzn + 1), cf = Z.cell * Z.cell;
@@ -988,7 +1038,7 @@
     if (!glassOpen) glassOpen = { n: 0, cells: new Int32Array(0), data: new Uint32Array(0), w: GO_W, h: 0, sides: 0, stats: { why: glassWhy || 'not run', glassCells: Z.glassIdx ? Z.glassIdx.length : 0, cells: 0, sides: 0, rays: 0, ms: 0 } };
     logGlassOpen(Z.bld, glassOpen, 'built'); Z.goMap = null;
     Z.field = { G: G, maxF: maxF, maxSC: maxSC, ircZ: irc, ircAll: ircAll, irc: { on: ircOn, zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
-      weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }), shell: shell, glassOpen: glassOpen, trace: fTrace ? Array.from(fTrace.entries()) : null };
+      weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }), shell: shell, skyExact: sxS, glassOpen: glassOpen, trace: fTrace ? Array.from(fTrace.entries()) : null };
     if (groundOn(A)) groundBuild(A, Z);   // §GROUND_VIEW_FIELD: Gd beside G, same cache record
     scheduleSave();
     return Z.field;

@@ -1078,8 +1078,10 @@
     if (A._stillRefineActive) return;        // this press is the app's own toggle-OFF; leave it alone
     setTimeout(async () => {
       toast('Alt+S still — waiting for the app to finish refining, then adding bounce…');
-      const ok = await waitForStill(120000);
-      if (!ok) { toast('Still was cancelled — no bounce pass', 3000); return; }
+      // §GI_WAIT_BUDGET: the first press builds the light field inside staging (Hospital 109-138 s headless), so a fixed 120 s cap
+      // gave up on a still that was only slow — silently. Wait while the still stays active (900 s safety cap); log every give-up.
+      const tW = performance.now(), ok = await waitForStill(900000);
+      if (!ok) { console.warn('§GI_STILL_FAIL reason=' + (A._stillRefineActive ? 'wait-timeout (still busy after 900 s)' : 'still-cancelled') + ' waitedMs=' + Math.round(performance.now() - tW)); toast('Still was cancelled — no bounce pass', 3000); return; }
       shoot();
     }, 0);
   }, false);     // NOT capture: the app's own handler runs first and does its normal work
