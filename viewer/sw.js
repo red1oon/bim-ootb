@@ -186,7 +186,9 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1505';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1507c4';   // bump on each deploy; per-change detail is the git commit message.
+// v1507c4 (2026-09-30) §CSM_READBACK_GLASS: effects.js cascade depth readback leaves out objects with ANY glass group (R10 window
+// arrays were drawn solid, capping the readback at the room's glass -> the hall behind it sat in no cascade box -> unshadowed sun).
 // v1505 (2026-09-30) §FIELD_KEY_CODE: the field key hashes light_zones.js CODE (comments/whitespace stripped) — comment edits no longer
 //   stale every sidecar; §EXACT_WHEN_BAKED: the heavy exact sky pass runs only when forced (bake: APP._stillSkyExactAll = true /
 //   &skyexactall=1) or when the loaded record was built with it; imports / unbaked buildings get the fast field. light_zones.js?v=24.
