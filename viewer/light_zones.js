@@ -331,7 +331,7 @@
     // &capcentre=0 / APP._stillCapCentre=false = the pre-attempt-1 rule (every SOLID cell roofs its column): B1 SPEC W3 A/B switch.
     // capOn + shellOn enter the §ZONE_IDB_CACHE fingerprint so flipping either switch rebuilds rather than reusing the other arm.
     var capOn = !(typeof location !== 'undefined' && /[?&]capcentre=0/.test(location.search)) && A._stillCapCentre !== false;
-    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A), 'sx' + (skyExactOn(A) ? 1 : 0), 'sa' + (skyExactAllOn(A) ? saCount(A) + (saShellOn(A) ? 's' : '') : 0)]
+    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A), 'sx' + (skyExactOn(A) ? 1 : 0), 'sa' + (skyExactAllOn(A) ? saCount(A) + (saShellOn(A) ? 's' : '') + (skyExactCovOn(A) ? 'c' : '') : 0)]
       .map(function (v) { return typeof v === 'number' ? +v.toFixed(3) : v; }).join('|');
     if (primed && primed.bld === A.activeBuilding && !opts.force) { var pr = primed; primed = null;
       if (pr.fp === fp) return restore(A, pr, THREE, t0);
@@ -782,6 +782,12 @@
   // measurement switch (off by default, in the fingerprint): &skyexactallshell=1 / APP._stillSkyExactAllShell = true also redoes the
   // §SKY_SHELL_RAYS cells (64 per-cell seeded rays) with the fixed set. MEASURED Clinic: floor skyJump 10 -> 7, walls 12/3 -> 11/1 over/under
   // (957 shell cells) — marginal, so the spec's rule (shell cells keep their shell value) stands.
+  // §SKY_FIELD_EXACT_OPEN (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_EXACT_OPEN — SPEC", red1 2026-09-30). MEASURED (Clinic, 5
+  // poses, walle truth): replacing COVERED cells lifts small F on many interior surfaces (floors over-read 110-163 px vs 3-10 lattice)
+  // and the +8.5-stop interior meter answers with -0.5..-1 EV (…713186729 exposure 42.8 -> 22.0). The pass keeps only its OPEN
+  // targets (F = 1 under stairs / beams); covered cells keep the lattice + the §SKY_FIELD_EXACT lower bound.
+  // &skyexactcov=1 / APP._stillSkyExactCov = true = the v1503 covered replacement (measurement; in the fingerprint).
+  function skyExactCovOn(A) { return !!(A && (A._stillSkyExactCov === true || (typeof location !== 'undefined' && /[?&]skyexactcov=1/.test(location.search)))); }
   function saShellOn(A) { return !!(A && (A._stillSkyExactAllShell === true || (typeof location !== 'undefined' && /[?&]skyexactallshell=1/.test(location.search)))); }
   var SA_N = 256, SA_IN = 0.3, SA_OCC_UP = 12, SA_DIRS = {};
   function muCIE(u) { var m = Math.sqrt(u); for (var i = 0; i < 12; i++) { var f = (m * m / 2 + 2 * m * m * m / 3) * 6 / 7 - u, df = (m + 2 * m * m) * 6 / 7; m -= f / (df || 1e-6); if (m < 0) m = 0; if (m > 1) m = 1; } return m; }
@@ -803,7 +809,7 @@
     console.log('§SKY_FIELD_EXACT_ALL bld=' + bld + ' cache=' + how + ' ' + (s.on ? 'on' : s.why) + (s.on && !s.cells ? ' VACUOUS (no target cell)' : '') + ' N=' + s.n + ' cells=' + s.cells + ' (readCovered ' + s.cRead + ' / shellRedone ' + (s.cShell || 0) + ' / nearOccluderCovered ' + s.cOccCov + ' / openUnderOccluder ' + s.cOpen + ') occluderTris=' + s.occTris + ' occluderCells=' + s.occCells +
       ' rays=' + s.rays + ' insideRays=' + s.inRays + ' ms=' + s.ms + ' usPerRay=' + s.usPerRay + ' startedInside=' + s.inside + ' (nudged ' + s.nudged + ', unresolved ' + s.unresolved + ' kept old value)' +
       ' covered: raised(>0.005)=' + s.raised + ' lowered(>0.005)=' + s.lowered + ' meanAbsDF=' + s.meanAbs + ' maxRaise=' + s.maxRaise + ' maxDrop=' + s.maxDrop + ' bentSkipped=' + s.bentSkipped +
-      ' open: openCellsRecomputed=' + s.cOpen + ' lowered(>0.005)=' + s.openLowered + ' meanF=' + s.openMeanF + ' (lattice value replaced; open cells beside boundary walls only keep F 1)'); }
+      ' open: openCellsRecomputed=' + s.cOpen + ' lowered(>0.005)=' + s.openLowered + ' meanF=' + s.openMeanF + ' (lattice value replaced; open cells beside boundary walls only keep F 1)' + (s.cov === false ? ' covered=off (open-only §SKY_FIELD_EXACT_OPEN, read cells kept ' + s.covKept + '; &skyexactcov=1 replaces covered)' : s.cov ? ' covered=on (&skyexactcov=1)' : '')); }
   // §SKY_FIELD_EXACT sub-directions: per FIELD_DIRS d, K = 16 fixed directions inside d's own quadrature cell (the plane-y=1 points,
   // 0.05 step, that pick d as nearest — the same integrand cos x (1 + 2 sin elev) dOmega that makes w_d), stratified 4 x 4 by
   // cumulative weight (x quartiles, then z quartiles inside each). Flat [ux,uy,uz] x 16 per d; stage 1 = SUB_S1 (one per x quartile).
@@ -1058,7 +1064,7 @@
     // lattice directions that contributed [di, vt, gmin(256 = no glass on the path)] — reads which direction leaks sky
     // §SKY_FIELD_EXACT: READ cells (non-solid, covered, Chebyshev <= 2 from a SOLID cell: fieldRead's 2x2x2 texels around p + 0.5 cell x n)
     // and the (cell, dir, vt) lattice contributions recorded during the sweep for them
-    var saOn = skyExactAllOn(A) && shellOn(A), sxOn = skyExactOn(A) && shellOn(A) && !saOn, isRead = null, nRead = 0, PAIR_CAP = 16000000, pC = null, pD = null, pV = null, nPair = 0, pairCapped = 0, tRd = performance.now();
+    var saOn = skyExactAllOn(A) && shellOn(A), sxOn = skyExactOn(A) && shellOn(A) && !(saOn && skyExactCovOn(A)), isRead = null, nRead = 0, PAIR_CAP = 16000000, pC = null, pD = null, pV = null, nPair = 0, pairCapped = 0, tRd = performance.now();
     var rSlot = null, latB = null;   // §SKY_FIELD_EXACT_ALL: per READ cell slot + the lattice's bent-normal share (summed in the sweep, swapped for the exact rays' own)
     if (sxOn || saOn) { var dl = new Uint8Array(N), dl2 = new Uint8Array(N); for (var cS = 0; cS < N; cS++) if (zone[cS] === SOLID) dl[cS] = 1;
       var dil = function (src, dst, stride, len, idx) { for (var c9 = 0; c9 < N; c9++) { if (!src[c9]) continue; var p9 = idx(c9); for (var o9 = -2; o9 <= 2; o9++) { var q9 = p9 + o9; if (q9 >= 0 && q9 < len) dst[c9 + o9 * stride] = 1; } } };
@@ -1095,9 +1101,9 @@
       if (!shellWhy && !nShell) shellWhy = 'VACUOUS (no shell cells: no covered cell beside a wall near open air)'; }
     var SHELL_MC = 64, shell = { on: !shellWhy, why: shellWhy, cells: nShell, reach: selStats.rule, candidates: selStats.candidates, near2: selStats.near2, airOnly: selStats.airOnly, airOnlySample: selStats.airOnlySample || [], trace: selStats.trace || null, recomputedAirOnly: 0, airOnlyDSum: 0, airOnlyLifted: 0, pretestSkipped: 0, recomputed: 0, rays: 0, lifted: 0, lowered: 0, dSum: 0, dAbsSum: 0, maxLift: 0, maxDrop: 0,
       boundaryTris: 0, occluderTris: 0, occluderSkipped: 0, glassTris: 0, soupMs: 0, bvhMs: 0, passMs: 0, selMs: shellSelMs, mc: SHELL_MC, usPerRay: 0 };
-    var sxS = { on: sxOn && !shellWhy, why: !skyExactOn(A) ? 'off (&skyexact=0 / APP._stillSkyExact=false)' : saOn ? 'superseded (§SKY_FIELD_EXACT_ALL on: every read cell is replaced, not bounded)' : shellWhy ? 'off (needs the shell BVH: ' + shellWhy + ')' : '', readCells: nRead, readMs: readMs, pairs: nPair, pairCapped: pairCapped, skipShell: 0, small: 0, rays1: 0, rays2: 0, stand: 0, pairsLowered: 0, wouldRaise: 0, lowered: 0, dSum: 0, maxDrop: 0, ms: 0 };
+    var sxS = { on: sxOn && !shellWhy, why: !skyExactOn(A) ? 'off (&skyexact=0 / APP._stillSkyExact=false)' : (saOn && skyExactCovOn(A)) ? 'superseded (§SKY_FIELD_EXACT_ALL &skyexactcov=1: every read cell is replaced, not bounded)' : shellWhy ? 'off (needs the shell BVH: ' + shellWhy + ')' : '', readCells: nRead, readMs: readMs, pairs: nPair, pairCapped: pairCapped, skipShell: 0, small: 0, rays1: 0, rays2: 0, stand: 0, pairsLowered: 0, wouldRaise: 0, lowered: 0, dSum: 0, maxDrop: 0, ms: 0 };
     var saS = { on: saOn && !shellWhy, why: !skyExactAllOn(A) ? skyExactAllWhy(A) : shellWhy ? 'off (needs the shell BVH: ' + shellWhy + ')' : '', n: saOn ? saCount(A) : 0, cells: 0, cShell: 0, cRead: 0, cOccCov: 0, cOpen: 0, occTris: 0, occCells: 0, rays: 0, inRays: 0, ms: 0, usPerRay: 0, inside: 0, nudged: 0, unresolved: 0,
-      raised: 0, lowered: 0, meanAbs: 0, maxRaise: 0, maxDrop: 0, bentSkipped: 0, openLowered: 0, openMeanF: 0 }, saTg = null;
+      raised: 0, lowered: 0, meanAbs: 0, maxRaise: 0, maxDrop: 0, bentSkipped: 0, openLowered: 0, openMeanF: 0, cov: saOn && skyExactCovOn(A), covKept: 0 }, saTg = null;
     // §GLASS_REFL_OPEN (Z26): the glass reflection pass shares the shell pass's BVH (built below), so it needs the shell pass on
     var glassOpen = null, glassWhy = shellWhy ? 'not run (' + shellWhy + ')' : !glassOpenOn(A) ? 'not run (&glassopen=0 / APP._stillGlassOpen=false: the build is skipped too; a later press with the switch on rebuilds the field)' : !Z.glassIdx ? 'not run (grid record has no glass index)' : !Z.glassIdx.length ? 'VACUOUS (no glass cell in the grid)' : '';
     if (!shellWhy) { var geoO = null, geoG = null; try {
@@ -1135,7 +1141,7 @@
         if (airOnly5) { shell.recomputedAirOnly++; shell.airOnlyDSum += dF; if (dF > 0.05) shell.airOnlyLifted++; } }
       shell.passMs = Math.round(performance.now() - tP); shell.usPerRay = shell.rays ? +(shell.passMs * 1000 / shell.rays).toFixed(2) : 0;
       // §SKY_FIELD_EXACT_ALL pass (spec above saDirs): targets -> saTg (1 covered read, 3 covered near an occluder, 2 open under/beside one)
-      if (saOn && occM) { var saShell = saShellOn(A), tA = performance.now(), OM = occM.M, M2 = new Uint8Array(N); saS.occTris = occM.tris; saS.occCells = occM.cells;
+      if (saOn && occM) { var saShell = saShellOn(A), saCov = skyExactCovOn(A), tA = performance.now(), OM = occM.M, M2 = new Uint8Array(N); saS.occTris = occM.tris; saS.occCells = occM.cells;
         // occluder cells dilated by 2 in x and z (Chebyshev 2 in plan)
         for (var cO = 0; cO < N; cO++) { if (!OM[cO]) continue; var iO = cO % nx, kO = (cO / nxy) | 0; for (var ddz = -2; ddz <= 2; ddz++) for (var ddx = -2; ddx <= 2; ddx++) { var i2 = iO + ddx, k2 = kO + ddz; if (i2 >= 0 && k2 >= 0 && i2 < nx && k2 < nz) M2[cO + ddx + ddz * nxy] = 1; } }
         OM = occM = null; saTg = new Uint8Array(N);
@@ -1143,6 +1149,7 @@
           for (var jT = ny - 1; jT >= 0; jT--) { var cT = iT + jT * nx + kT * nxy; if (M2[cT]) above = jT; var vT = zone[cT]; if (vT === SOLID) continue;
             var near = (above - jT) <= 2 || (jT >= 1 && M2[cT - nx]) || (jT >= 2 && M2[cT - 2 * nx]);
             if (vT === 0) { if (near || (above - jT) <= SA_OCC_UP) { saTg[cT] = 2; saS.cOpen++; } }
+            else if (!saCov) { if (isRead && isRead[cT]) saS.covKept++; }   // §SKY_FIELD_EXACT_OPEN: covered cells keep the lattice (+ lower bound)
             else if (isRead && isRead[cT]) { saTg[cT] = 1; saS.cRead++; }
             else if (saShell && rSlot && rSlot[cT] >= 0) { saTg[cT] = 4; saS.cShell++; }   // a shell-recomputed read cell, redone with the fixed set
             else if (near && !(isRead && rSlot && rSlot[cT] >= 0)) { saTg[cT] = 3; saS.cOccCov++; } } }   // (a shell-recomputed read cell keeps its shell value)
