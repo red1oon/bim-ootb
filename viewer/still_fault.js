@@ -177,6 +177,53 @@
     out.fault = fault; A._stillFaultLast = out; A._stillUnlitPts = unlitPts;   // §STILL_POSE_PNG copies it into the saved still
     return out;
   }
-  global.StillFault = { report: report, hook: hook, guard: function () { return guard; } };
+  // ══ §LIGHT_WITNESS (bim-compiler PHOTOREAL_STILL_RENDER.md "§LIGHT_WITNESS — SPEC", 2026-09-29) ══
+  // Per press, on the FINISHED pixels (gi_still.js calls this beside §FAULT_GI): 16x9 samples, first opaque hit, eye-facing normal.
+  // L = final luminance; F = lattice sky-view; E = exact sky (16 stratified CIE-overcast x cos rays, glass x (1 - opacity), other hit
+  // = 0 — the integrand the field approximates); sun = exact ray to the sun; up = class of the first hit straight up. A leak shows as
+  // skyOver, as a bright E~0 bin, or as a non-monotonic brightness table. Budget 6 s (n done is logged). Logged, not in §FAULT's verdict.
+  function lightWitness(A, fin, w, h) {
+    var THREE = global.THREE, LZ = global.LightZones; if (!THREE || !A || !LZ || !LZ.skyField || !fin) return null;
+    var t0 = performance.now(), BUDGET = +(A._lightWitnessMs || 6000), GW = 16, GH = 9, cam = A.camera, cp = cam.position;
+    var tg = []; A.scene.traverse(function (o) { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A._sky) { var m = Array.isArray(o.material) ? o.material[0] : o.material; if (m && !m.isMeshBasicMaterial) tg.push(o); } });
+    var matOf = function (q) { var o = q.object; return Array.isArray(o.material) ? o.material[(q.face && q.face.materialIndex) || 0] : o.material; };
+    var glassy = function (m) { return !!(m && m.transparent && m.opacity < 0.95 && !m.map); };
+    var clsOf = function (q) { var o = q.object, id = o.isBatchedMesh ? q.batchId : o.isInstancedMesh ? q.instanceId : null, g = A.guidMap && A.guidMap[o.id + '_' + id], mt = g && A.metaByGuid ? A.metaByGuid[g] : null;
+      return (mt && (mt.ifc_class || mt.cls)) || (o.userData && (o.userData.ifcClass || o.userData.disc)) || o.type; };
+    var rc = new THREE.Raycaster(), sd = A.sun ? A.sun.position.clone().sub(A.sun.target.position).normalize() : null, sunUp = !!(sd && sd.y > 0 && A.sun.intensity > 0);
+    var muOf = function (u) { var m = Math.sqrt(u); for (var i = 0; i < 12; i++) { var f = (m * m / 2 + 2 * m * m * m / 3) * 6 / 7 - u, df = (m + 2 * m * m) * 6 / 7; m -= f / (df || 1e-6); if (m < 0) m = 0; if (m > 1) m = 1; } return m; };
+    var trans = function (P, d) { rc.set(P, d); rc.far = 500; var hs = rc.intersectObjects(tg, false), T = 1; for (var i = 0; i < hs.length; i++) { var m = matOf(hs[i]); if (glassy(m)) { T *= 1 - m.opacity; continue; } return { T: 0, hit: hs[i] }; } return { T: T, hit: null }; };
+    var rows = [], done = 0, seed = 12345, rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }, order = [];
+    for (var k = 0; k < GW * GH; k++) order.push(k); for (var k2 = order.length - 1; k2 > 0; k2--) { var j2 = Math.floor(rnd() * (k2 + 1)), tt = order[k2]; order[k2] = order[j2]; order[j2] = tt; }   // random order: a cut budget still samples the whole frame
+    var basis = new THREE.Vector3(), t1 = new THREE.Vector3(), t2 = new THREE.Vector3(), dd = new THREE.Vector3();
+    for (var oi = 0; oi < order.length; oi++) { if (performance.now() - t0 > BUDGET) break; var gx = order[oi] % GW, gy = (order[oi] / GW) | 0;
+      rc.setFromCamera(new THREE.Vector2((gx + 0.5) / GW * 2 - 1, 1 - (gy + 0.5) / GH * 2), cam); rc.far = cam.far || 1000;
+      var hs = rc.intersectObjects(tg, false), q = null; for (var hi = 0; hi < hs.length; hi++) if (!glassy(matOf(hs[hi]))) { q = hs[hi]; break; } if (!q || !q.face) continue;
+      var n = q.face.normal.clone().transformDirection(q.object.matrixWorld); if (n.dot(cp.clone().sub(q.point)) < 0) n.negate(); done++;
+      var P = q.point.clone().addScaledVector(n, 0.03), sf = LZ.skyField(q.point, n);
+      // E: 16 stratified rays of cos x (1 + 2 cos zenith) about the surface normal (the field's integrand, lit side only)
+      basis.copy(n); t1.set(Math.abs(n.y) < 0.9 ? 0 : 1, Math.abs(n.y) < 0.9 ? 1 : 0, 0).cross(n).normalize(); t2.crossVectors(n, t1);
+      var E = 0, NE = 0; for (var a = 0; a < 4; a++) for (var b = 0; b < 4; b++) { var mu = muOf((a + rnd()) / 4), ph = 2 * Math.PI * (b + rnd()) / 4, r = Math.sqrt(1 - mu * mu);
+        dd.copy(n).multiplyScalar(mu).addScaledVector(t1, r * Math.cos(ph)).addScaledVector(t2, r * Math.sin(ph)); NE++; if (dd.y <= 0) continue; E += trans(P, dd).T; }   // below the horizon = ground, not sky
+      E /= NE; var sun = null; if (sunUp && n.dot(sd) > 0) { var st = trans(P, sd); sun = st.T > 0 ? 'open' : clsOf(st.hit); }
+      rc.set(P, new THREE.Vector3(0, 1, 0)); rc.far = 15; var u0 = rc.intersectObjects(tg, false)[0];
+      var X = Math.min(w - 1, Math.floor((gx + 0.5) / GW * w)), Y = Math.min(h - 1, Math.floor((gy + 0.5) / GH * h)), pi = (Y * w + X) * 4, L = Math.round((fin[pi] + fin[pi + 1] + fin[pi + 2]) / 3);
+      rows.push({ g: [gx, gy], p: [+q.point.x.toFixed(2), +q.point.y.toFixed(2), +q.point.z.toFixed(2)], k: n.y > 0.7 ? 'floor' : n.y < -0.7 ? 'ceil' : 'wall', L: L, F: sf.F == null ? null : +sf.F.toFixed(4), E: +E.toFixed(4), sun: sun, up: u0 ? clsOf(u0) : null, zone: sf.zone }); }
+    var out = { n: rows.length, ms: Math.round(performance.now() - t0), budgetCut: done < GW * GH && performance.now() - t0 > BUDGET, skyOver: 0, skyUnder: 0, sunBlocked: 0, sunOpen: 0, bins: [], worst: [] };
+    rows.forEach(function (r) { if (r.F == null) return; if (r.F - r.E > 0.02 && r.F > 1.5 * r.E) out.skyOver++; if (r.E - r.F > 0.02 && r.E > 1.5 * r.F) out.skyUnder++; if (r.sun === 'open') out.sunOpen++; else if (r.sun) out.sunBlocked++; });
+    var med = function (v) { v = v.slice().sort(function (x, y) { return x - y; }); return v.length ? v[v.length >> 1] : null; }, p90 = function (v) { v = v.slice().sort(function (x, y) { return x - y; }); return v.length ? v[Math.min(v.length - 1, Math.floor(0.9 * v.length))] : null; };
+    var noSun = rows.filter(function (r) { return r.sun !== 'open'; }), edges = [0, 0.001, 0.01, 0.03, 0.1, 1.01];
+    for (var e = 0; e < 5; e++) { var bs = noSun.filter(function (r) { return r.E >= edges[e] && r.E < edges[e + 1]; }).map(function (r) { return r.L; }); out.bins.push([edges[e], bs.length, med(bs), p90(bs)]); }
+    var nonMono = false, lastMed = -1; out.bins.forEach(function (bb) { if (bb[1] >= 3) { if (bb[2] < lastMed - 10) nonMono = true; lastMed = bb[2]; } });
+    var b0 = out.bins[0], b1 = out.bins.filter(function (bb, i) { return i > 0 && bb[1] >= 3; })[0], darkBright = !!(b0 && b1 && b0[1] >= 3 && b0[3] > b1[2]);
+    out.worst = rows.filter(function (r) { return r.F != null && r.F - r.E > 0.02; }).sort(function (x, y) { return (y.F - y.E) - (x.F - x.E); }).slice(0, 3).map(function (r) { return { p: r.p, k: r.k, F: r.F, E: r.E, L: r.L, up: r.up }; });
+    out.nonMono = nonMono; out.darkBright = darkBright;
+    out.verdict = !out.n ? 'INCONCLUSIVE' : (out.skyOver > 0 || nonMono || darkBright) ? 'WARN' : 'OK';
+    var line = '§LIGHT_WITNESS ' + out.verdict + ' n=' + out.n + '/' + (GW * GH) + ' ms=' + out.ms + (out.budgetCut ? ' (budget cut)' : '') + ' skyOver=' + out.skyOver + ' skyUnder=' + out.skyUnder + ' sun open/blocked=' + out.sunOpen + '/' + out.sunBlocked +
+      ' noSunBins[Emin,n,medL,p90L]=' + JSON.stringify(out.bins) + (nonMono ? ' NON_MONOTONIC' : '') + (darkBright ? ' DARK_BIN_BRIGHT (E~0 p90 > next bin median)' : '') + ' worstOver=' + JSON.stringify(out.worst);
+    if (out.verdict === 'WARN') console.warn(line); else console.log(line);
+    A._lightWitnessRows = rows;   // probes read the per-sample rows; the PNG carries the summary
+    return out; }
+  global.StillFault = { report: report, hook: hook, lightWitness: lightWitness, guard: function () { return guard; } };
   try { hook(); } catch (e) {}
 })(typeof window !== 'undefined' ? window : this);

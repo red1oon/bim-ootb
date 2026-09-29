@@ -970,7 +970,8 @@
           R.fault.hueCls = cls; } catch (eHC) { R.fault.hueCls = { error: String(eHC && eHC.message || eHC) }; } }
         R.fault.giAdapter = G.adapter || null;
         const fl = '§FAULT_GI ' + (nh > 0 ? 'FAULT' : 'OK') + ' hueNoise=' + nh + (R.fault.hueCls ? ' hueCls=' + JSON.stringify(R.fault.hueCls) : '') + ' giAdapter=' + (R.fault.giAdapter || 'n/a') + ' blown=' + R.fault.blownPct + '% dark=' + R.fault.darkPct + '% (' + w + 'x' + h + ')';
-        if (nh > 0) console.warn(fl); else console.log(fl); A._stillFaultGiLast = R.fault; }
+        if (nh > 0) console.warn(fl); else console.log(fl); A._stillFaultGiLast = R.fault;
+        try { if (window.StillFault && window.StillFault.lightWitness) R.fault.lw = window.StillFault.lightWitness(A, fin, w, h); } catch (eLW) { console.warn('§LIGHT_WITNESS failed: ' + (eLW && eLW.message)); } }   // §LIGHT_WITNESS: stamped into the PNG with faultGi
       R.secs = +((performance.now() - t0) / 1000).toFixed(1);
       R.orient = G.orient || null;
       R.pipelines = G.pipeStats ? { sync: G.pipeStats.sync, syncMs: +G.pipeStats.syncMs.toFixed(0), async: G.pipeStats.async, modules: G.pipeStats.modules, moduleMs: +G.pipeStats.moduleMs.toFixed(0) } : null;

@@ -4661,6 +4661,9 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!A._maxqActive) { if (_fitOn()) _stillFitApply(false); else if (_fitState) console.log('§STILL_SHADOW_FIT off (&shadowfit=0, APP._stillShadowFit=false, or the user\'s own Shadow mode) env=' + _fitState.env); }
     _stMs.shadowFit = performance.now() - _stS;
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
+    // §SUN_OFF_AB (debug A/B only, bim-compiler PHOTOREAL_STILL_RENDER.md SUN_SHADOW_LEAK): &sunoff=1 zeroes the sun AFTER staging (calibration, luxPer
+    // and lamp mul already taken from it) so a still minus its &sunoff=1 twin (with &meter=0) = the sun's share per pixel. Default unchanged.
+    if (/[?&]sunoff=1/.test(location.search) && A.sun) { A.sun.intensity = 0; console.log('§SUN_OFF_AB sun.intensity=0 (debug twin)'); }
     try { var _stTot = performance.now() - _stT0; A._stillStageMsLast = _stTot; var _stR = A.renderer, _stProg0 = (_stR && _stR.info && _stR.info.programs) ? _stR.info.programs.length : -1, _stRender = _stR && _stR.render;
       var _stLine = '§STILL_STAGE_MS zoneBuild=' + Math.round(_stMs.zoneBuild) + ' skySweep=' + Math.round(_stMs.skySweep) + ' audit=' + Math.round(_stMs.audit) + ' zoneCap=' + Math.round(_stMs.zoneCap) +
         ' portals=' + Math.round(_stMs.portals) + ' sourcedStage=' + Math.round(_stMs.sourcedStage) + ' shadowFit=' + Math.round(_stMs.shadowFit) + ' other=' + Math.round(_stTot - _stMs.zoneBuild - _stMs.zoneCap - _stMs.portals - _stMs.sourcedStage - _stMs.shadowFit) + ' (staging steps not named above) stagingTotal=' + Math.round(_stTot);
