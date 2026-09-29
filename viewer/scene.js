@@ -866,6 +866,27 @@ async function setupScene(A) {
   // Terminal/JKR/Clinic but 166.8 s for LTU_AHouse_extracted — a three-minute stall inside Ctrl+S.
   // Offline patch generation costs the user nothing and makes the raster a property of the building
   // rather than of whoever last saved it.
+  // §LIGHT_FIELD_DB (light_zones.js SPEC S1/S5, red1 2026-09-29 "put it as part of the one time DB save"): the Alt+S light-zone
+  // field (zone grid + sky field + ground field + the Z26 glass table), gzip-packed by LightZones.dbPack (awaited in saveModelDb,
+  // the export here is synchronous) — the same choke point and the same viewer-authored-derived-data pattern as the three tables
+  // above. No field in memory => skipped and logged, never built here (Hospital: 16 s shell + 67 s glass). A row carried in from
+  // the source file is kept only while its key (light_zones.js code hash) is current, else dropped: a stale row is never re-shipped.
+  function _writeLightFieldTable(db) {
+    var LZ = window.LightZones, rec = (LZ && LZ.dbRecord) ? LZ.dbRecord(true) : null, cur = (LZ && LZ.cacheKey) ? LZ.cacheKey() : null;
+    try {
+      if (!rec) {
+        var row = null; try { var r0 = db.exec("SELECT key, bytes FROM light_field_cache LIMIT 1"); row = r0 && r0[0] && r0[0].values[0]; } catch (eR) {}
+        if (row && row[0] === cur) { console.log('§LIGHT_FIELD_DB save kept existing row key=' + row[0] + ' bytes=' + row[1] + ' (nothing newer in memory)'); return; }
+        if (row) { db.run("DROP TABLE IF EXISTS light_field_cache"); console.log('§LIGHT_FIELD_DB save dropped stale row key=' + row[0] + ' now=' + cur); return; }
+        console.log('§LIGHT_FIELD_DB save skipped reason=no-field-in-memory (press Alt+S once before saving; the save never builds it)'); return;
+      }
+      db.run("DROP TABLE IF EXISTS light_field_cache");
+      db.run("CREATE TABLE light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
+      var stmt = db.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)");
+      stmt.run([rec.key, rec.bld, rec.fp, rec.bytes, rec.rawBytes, rec.blob, rec.created]); stmt.free();
+      console.log('§LIGHT_FIELD_DB save key=' + rec.key + ' bld=' + rec.bld + ' bytes=' + rec.bytes + ' raw=' + rec.rawBytes + ' src=' + rec.src + ' packMs=' + rec.packMs + ' gzipMs=' + rec.gzipMs + ' created=' + rec.created);
+    } catch (e) { console.warn('§LIGHT_FIELD_DB_SAVE_FAIL ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
@@ -873,6 +894,7 @@ async function setupScene(A) {
       _writeStaffageTable(A.db);
       _writeCinemaPathTable(A.db);
       _writeSceneStateTable(A.db);
+      _writeLightFieldTable(A.db);
       return A.db.export();
     }
     // Split → build a monolith: clone meta, copy every geometry table not already present.
@@ -900,6 +922,7 @@ async function setupScene(A) {
     _writeStaffageTable(mono);
     _writeCinemaPathTable(mono);
     _writeSceneStateTable(mono);
+    _writeLightFieldTable(mono);
     var bytes = mono.export();
     mono.close();
     return bytes;
@@ -909,6 +932,8 @@ async function setupScene(A) {
     if (!A.db) { if (A.status) A.status.textContent = 'Open a building first'; console.log('§SAVE_SKIP no A.db'); return; }
     var name = (A.activeBuilding || 'building').replace(/\.(ifc|db)$/i, '') + '.db';
     var bytes;
+    // §LIGHT_FIELD_DB S5: pack + gzip the light field first (async, ~1-2 s on Hospital); _exportBuildingDb writes it synchronously
+    if (window.LightZones && window.LightZones.dbPack) { try { await window.LightZones.dbPack(A); } catch (eLF) { console.warn('§LIGHT_FIELD_DB pack failed: ' + eLF.message); } }
     try { bytes = A._exportBuildingDb(); }
     catch (e) { if (A.status) A.status.textContent = 'Save failed: ' + e.message; console.log('§SAVE_ERR ' + e.message); return; }
     if (!bytes) { console.log('§SAVE_SKIP export null'); return; }
