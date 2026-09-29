@@ -208,7 +208,7 @@
     if (r.field && shellSkipped(r.field)) console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored without the shell pass: ' + shellSkipped(r.field) + ') — rebuilding the field');
     // §GLASS_REFL_OPEN: a record whose glass pass was skipped by &glassopen=0 is rebuilt once the switch is on again
     if (fOk && glassOpenOn(A) && r.field.glassOpen && r.field.glassOpen.stats && /^not run \(&glassopen=0/.test(r.field.glassOpen.stats.why || '')) { fOk = false; console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored with the glass-open pass skipped by &glassopen=0) — rebuilding the field'); }
-    if (fOk) { cache.field = Object.assign(r.field, { ms: 0, cached: 1 }); if (r.field.shell) logShell(A.activeBuilding, r.field.shell, 'hit'); if (r.field.skyExact) logSkyExact(A.activeBuilding, r.field.skyExact, 'hit'); if (r.field.skyExactAll) logSkyExactAll(A.activeBuilding, r.field.skyExactAll, 'hit'); else console.log('§SKY_SHELL_RAYS bld=' + A.activeBuilding + ' cache=hit record has no shell stats');
+    if (fOk) { cache.field = Object.assign(r.field, { ms: 0, cached: 1 }); if (r.field.shell) logShell(A.activeBuilding, r.field.shell, 'hit'); if (r.field.skyExact) logSkyExact(A.activeBuilding, r.field.skyExact, 'hit'); logSkySmooth(A.activeBuilding, r.field.skySmooth, 'hit'); if (r.field.skyExactAll) logSkyExactAll(A.activeBuilding, r.field.skyExactAll, 'hit'); else console.log('§SKY_SHELL_RAYS bld=' + A.activeBuilding + ' cache=hit record has no shell stats');
       if (r.field.glassOpen && r.field.glassOpen.stats) logGlassOpen(A.activeBuilding, r.field.glassOpen, 'hit'); else console.log('§GLASS_REFL_OPEN bld=' + A.activeBuilding + ' cache=hit record has no glass-open data (the march stays for every cell)'); }   // §GLASS_REFL_OPEN (Z26)
     console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' src=' + (r.from || 'idb') + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none') +
       ' ground=' + (fOk && r.field.Gd ? 'hit (was ' + (r.field.ground ? r.field.ground.ms : '?') + ' ms)' : 'none (built on demand)'));
@@ -331,7 +331,7 @@
     // &capcentre=0 / APP._stillCapCentre=false = the pre-attempt-1 rule (every SOLID cell roofs its column): B1 SPEC W3 A/B switch.
     // capOn + shellOn enter the §ZONE_IDB_CACHE fingerprint so flipping either switch rebuilds rather than reusing the other arm.
     var capOn = !(typeof location !== 'undefined' && /[?&]capcentre=0/.test(location.search)) && A._stillCapCentre !== false;
-    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A), 'sx' + (skyExactOn(A) ? 1 : 0), 'sa' + (skyExactAllOn(A) ? saCount(A) + (saShellOn(A) ? 's' : '') + (skyExactCovOn(A) ? 'c' : '') : 0)]
+    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A), 'sx' + (skyExactOn(A) ? 1 : 0), 'sm' + (skySmoothOn(A) ? 1 : 0), 'sa' + (skyExactAllOn(A) ? saCount(A) + (saShellOn(A) ? 's' : '') + (skyExactCovOn(A) ? 'c' : '') : 0)]
       .map(function (v) { return typeof v === 'number' ? +v.toFixed(3) : v; }).join('|');
     if (primed && primed.bld === A.activeBuilding && !opts.force) { var pr = primed; primed = null;
       if (pr.fp === fp) return restore(A, pr, THREE, t0);
@@ -787,6 +787,13 @@
   // and the +8.5-stop interior meter answers with -0.5..-1 EV (…713186729 exposure 42.8 -> 22.0). The pass keeps only its OPEN
   // targets (F = 1 under stairs / beams); covered cells keep the lattice + the §SKY_FIELD_EXACT lower bound.
   // &skyexactcov=1 / APP._stillSkyExactCov = true = the v1503 covered replacement (measurement; in the fingerprint).
+  // §SKY_FIELD_SMOOTH (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_SMOOTH — SPEC", 2026-09-30). MEASURED (Terminal hall wall
+  // …709239282): the lattice's 0.5 m cell steps = the "tiles" (Lf jumps 738, F steps 1229 vs 360 / 1039 with exact cells, which cost
+  // Clinic -0.5..-1 EV). Every COVERED cell := mean F over same-zone non-solid covered cells of its 3x3x3 block (open / solid / other
+  // zones excluded: nothing crosses a wall; open-cell exact values untouched). &skysmooth=0 / APP._stillSkySmooth=false = off (fingerprint).
+  function skySmoothOn(A) { return !!(A && A._stillSkySmooth !== false && !(typeof location !== 'undefined' && /[?&]skysmooth=0/.test(location.search))); }
+  function logSkySmooth(bld, s, how) { console.log('§SKY_FIELD_SMOOTH bld=' + bld + ' cache=' + how + ' ' + (!s ? 'absent (record built before §SKY_FIELD_SMOOTH)' : !s.on ? 'off (&skysmooth=0 / APP._stillSkySmooth=false)' :
+    'on cells=' + s.cells + (s.cells ? '' : ' VACUOUS') + ' meanAbsDF=' + s.meanAbs + ' maxDF=' + s.maxDF + ' sumF before/after=' + s.sum0 + '/' + s.sum1 + ' ratio=' + s.ratio + ' ms=' + s.ms)); }
   function skyExactCovOn(A) { return !!(A && (A._stillSkyExactCov === true || (typeof location !== 'undefined' && /[?&]skyexactcov=1/.test(location.search)))); }
   function saShellOn(A) { return !!(A && (A._stillSkyExactAllShell === true || (typeof location !== 'undefined' && /[?&]skyexactallshell=1/.test(location.search)))); }
   var SA_N = 256, SA_IN = 0.3, SA_OCC_UP = 12, SA_DIRS = {};
@@ -1216,6 +1223,15 @@
     shell.dMean = shell.recomputed ? +(shell.dSum / shell.recomputed).toFixed(4) : 0; shell.dMeanAbs = shell.recomputed ? +(shell.dAbsSum / shell.recomputed).toFixed(4) : 0; shell.maxLift = +shell.maxLift.toFixed(3); shell.maxDrop = +shell.maxDrop.toFixed(3);
     logShell(Z.bld, shell, 'built'); if (sxS.on && !shell.on) { sxS.on = false; sxS.why = 'off (shell pass failed: ' + shell.why + ')'; } pC = pD = pV = isRead = rSlot = latB = null; logSkyExact(Z.bld, sxS, 'built');
     if (saS.on && !shell.on) { saS.on = false; saS.why = 'off (shell pass failed: ' + shell.why + ')'; } logSkyExactAll(Z.bld, saS, 'built');
+    // §SKY_FIELD_SMOOTH pass (spec above skySmoothOn): same-zone covered 3x3x3 mean, one pass, from a copy
+    var smS = { on: skySmoothOn(A), cells: 0, meanAbs: 0, maxDF: 0, sum0: 0, sum1: 0, ratio: 1, ms: 0 };
+    if (smS.on) { var tSm = performance.now(), src0 = Float32Array.from(acc), dAbsSm = 0, s0 = 0, s1 = 0;
+      for (var cM = 0; cM < N; cM++) { var vM = zone[cM]; if (vM === SOLID || vM === 0) continue; var zM = vM & ZONE_MASK, iM = cM % nx, jM = ((cM / nx) | 0) % ny, kM = (cM / nxy) | 0, sM = 0, nM = 0;
+        for (var dk = -1; dk <= 1; dk++) { var k2 = kM + dk; if (k2 < 0 || k2 >= nz) continue; for (var dj = -1; dj <= 1; dj++) { var j2 = jM + dj; if (j2 < 0 || j2 >= ny) continue; for (var di = -1; di <= 1; di++) { var i2 = iM + di; if (i2 < 0 || i2 >= nx) continue;
+          var cN = i2 + j2 * nx + k2 * nxy, vN = zone[cN]; if (vN === SOLID || vN === 0 || (vN & ZONE_MASK) !== zM) continue; sM += src0[cN]; nM++; } } }
+        var fM = nM ? sM / nM : src0[cM], dM = fM - src0[cM]; acc[cM] = fM; smS.cells++; dAbsSm += Math.abs(dM); if (Math.abs(dM) > smS.maxDF) smS.maxDF = Math.abs(dM); s0 += src0[cM]; s1 += fM; }
+      src0 = null; smS.meanAbs = smS.cells ? +(dAbsSm / smS.cells).toFixed(5) : 0; smS.maxDF = +smS.maxDF.toFixed(4); smS.sum0 = +s0.toFixed(1); smS.sum1 = +s1.toFixed(1); smS.ratio = s0 > 0 ? +(s1 / s0).toFixed(4) : 1; smS.ms = Math.round(performance.now() - tSm); }
+    logSkySmooth(Z.bld, smS, 'built');
     // V12 interreflected component per zone (flux balance, Sumpner; the relation BRE's ADF is derived from):
     // F_ir = R (mean working-plane F x floor m2) / (A_z (1 - R)), R = R_BRE, A_z = surfaceM2 + apertureM2; uniform over the zone
     var nzn = Z.zones, up = Math.floor(0.8 / Z.cell) * nx, fl = new Float64Array(nzn + 1), wpS = new Float64Array(nzn + 1), wpN = new Int32Array(nzn + 1), cf = Z.cell * Z.cell;
@@ -1238,7 +1254,7 @@
     if (!glassOpen) glassOpen = { n: 0, cells: new Int32Array(0), data: new Uint32Array(0), w: GO_W, h: 0, sides: 0, stats: { why: glassWhy || 'not run', glassCells: Z.glassIdx ? Z.glassIdx.length : 0, cells: 0, sides: 0, rays: 0, ms: 0 } };
     logGlassOpen(Z.bld, glassOpen, 'built'); Z.goMap = null;
     Z.field = { G: G, maxF: maxF, maxSC: maxSC, ircZ: irc, ircAll: ircAll, irc: { on: ircOn, zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
-      weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }), shell: shell, skyExact: sxS, skyExactAll: saS, glassOpen: glassOpen, trace: fTrace ? Array.from(fTrace.entries()) : null };
+      weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }), shell: shell, skyExact: sxS, skyExactAll: saS, skySmooth: smS, glassOpen: glassOpen, trace: fTrace ? Array.from(fTrace.entries()) : null };
     if (groundOn(A)) groundBuild(A, Z);   // §GROUND_VIEW_FIELD: Gd beside G, same cache record
     scheduleSave();
     return Z.field;
