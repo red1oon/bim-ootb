@@ -95,13 +95,23 @@
     '  ivec3 c0 = ivec3( floor( ( wp + wn * 0.25 - uSLOrg.xyz ) / uSLParams.y ) ); ivec3 dim = ivec3( uSLDim.xyz );',
     '  if ( any( lessThan( c0, ivec3( 0 ) ) ) || any( greaterThanEqual( c0, dim ) ) ) { _slSky = 1.0; return 65534.0; }',
     '  float best = 1e30; uint bt = 65535u; uint bg = 0u; ivec3 bcc = c0;',
+    // §ZONE_EYE (uSLOrg.w = 1; bim-compiler PHOTOREAL_STILL_RENDER.md "§ZONE_EYE — SPEC"): the room of a VISIBLE surface point is the
+    // room the eye ray reached it through — step back from wp toward the camera 0.25 m at a time (12 steps, 3 m: a view down past a 0.5 m-fattened partition stays solid for > 1.5 m, measured): the first
+    // non-solid cell wins. The eye ray cannot have crossed a partition to reach the point, so a floor strip beside a thin
+    // (0.5 m-fattened) partition keeps its own room instead of the nearest cell on the far side (Clinic toilet corner bands,
+    // TERMINAL_CORNER, Castle speckle). Nothing found in 1.5 m (grazing view along a wall) -> the nearest-cell rule below.
+    '  if ( uSLOrg.w > 0.5 ) { vec3 te = normalize( ( vi * vec4( - posView, 0.0 ) ).xyz );',
+    '    for ( int s = 1; s <= 12; s ++ ) { ivec3 c = ivec3( floor( ( wp + te * ( 0.25 * float( s ) ) - uSLOrg.xyz ) / uSLParams.y ) );',
+    '      if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) break;',
+    '      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u ) { bt = t2.r; bg = t2.g; bcc = c; break; } } }',
+    '  if ( bt == 65535u ) {',
     '  for ( int dz = -1; dz <= 1; dz ++ ) { for ( int dy = -1; dy <= 1; dy ++ ) { for ( int dx = -1; dx <= 1; dx ++ ) {',
     '    ivec3 c = c0 + ivec3( dx, dy, dz );',
     '    if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
     '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; uint t = t2.r; if ( t == 65535u ) continue;',
     '    vec3 e = uSLOrg.xyz + ( vec3( c ) + 0.5 ) * uSLParams.y - wp; if ( dot( e, wn ) <= 0.0 ) continue;',
     '    float l = dot( e, e ); if ( l < best ) { best = l; bt = t; bg = t2.g; bcc = c; }',
-    '  } } }',
+    '  } } } }',
     '  if ( bt == 65535u ) { bt = 0u; bg = 0u; for ( int j = 1; j < 4096; j ++ ) { ivec3 c = c0 + ivec3( 0, j, 0 ); if ( c.y >= dim.y ) break;',
     '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u ) { bt = t2.r; bg = t2.g; bcc = c; break; } if ( c.y == dim.y - 1 ) bt = 65535u; } }',
     '  if ( bt == 65535u ) { _slSky = 0.0; _slF = 0.0; _slGd = 0.0; return -1.0; }',
@@ -891,6 +901,7 @@
     return { zones: zones, uses: spaceUses(A, Z) };
   }
   function specSmoothOn(A) { return !!(A && A._stillSpecSmooth !== false && !(typeof location !== 'undefined' && /[?&]specsmooth=0(?!\d)/.test(location.search))); }
+  function zoneEyeOn(A) { return !!(A && A._stillZoneEye !== false && !(typeof location !== 'undefined' && /[?&]zoneeye=0/.test(location.search))); }   // §ZONE_EYE switch
   function gridBlendOn(A) { return !!(A && (A._stillGridBlend === true || (A._stillGridBlend !== false && typeof location !== 'undefined' && /[?&]gridblend=1(?!\d)/.test(location.search)))); }
   function stageField(A, Z) {
     var LZ = global.LightZones, SP = global.SkyPortal, t0 = performance.now();
@@ -1251,7 +1262,7 @@
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
     console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (&skyfield=0 = the binary SKY_BIT path)');
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;
-    ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
+    ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; ORG[3] = zoneEyeOn(A) ? 1 : 0; console.log('§ZONE_EYE ' + (ORG[3] > 0.5 ? 'on' : 'off (&zoneeye=0 / APP._stillZoneEye=false)') + ' (surface room = first non-solid cell stepping back along the eye ray, 12 x 0.25 m; else nearest-cell rule)'); DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
     active = true;
     try { lampBuild(A); } catch (eLB) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB.message); lampFail(A, 'build threw'); }
     try { irBuild(A); } catch (eIR) { IRP[0] = 0; console.warn('§IRC_MAX build failed: ' + eIR.message); }
