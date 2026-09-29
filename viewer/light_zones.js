@@ -141,7 +141,9 @@
   // &zonecache=0 skips it (no read, no write).
   var IDB_NAME = 'bim_ootb_lightzones', IDB_STORE = 'z', primed = null, saveTimer = 0;
   var KEYS = ['bld', 'n', 'nx', 'ny', 'nz', 'cell', 'zone', 'zones', 'sizes', 'zoneInfo', 'aperture', 'groundJ', 'glassT', 'glassCells', 'glassMats', 'stats', 'alb', 'glassIdx', 'glassAx'];   // alb: §IR_COLOUR (Z19); glassIdx/glassAx: §GLASS_REFL_OPEN (Z26)
-  var SRC = (function () { var s = String(LZMOD), h = 0x811c9dc5; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + s.length; })();
+  // §FIELD_KEY_CODE (2026-09-30, red1 "impact and bloat ops"): the key hashes this file's CODE — comments and whitespace stripped —
+  // so a comment or layout edit no longer makes every baked sidecar / IndexedDB record stale (a real code change still does: safe).
+  var SRC = (function () { var s = String(LZMOD).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1').replace(/\s+/g, ''), h = 0x811c9dc5; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + s.length; })();
   function cacheOff() { return typeof indexedDB === 'undefined' || (typeof location !== 'undefined' && /[?&]zonecache=0/.test(location.search)); }
   function ircFlag(A) { return A._stillIrc === true || (typeof location !== 'undefined' && /[?&]irc=1/.test(location.search)); }
   function idb() { return new Promise(function (res, rej) { var rq; try { rq = indexedDB.open(IDB_NAME, 1); } catch (e) { return rej(e); }
@@ -768,7 +770,13 @@
   // ORIGIN: a cell centre inside an un-rasterised solid (column / beam / stair waist) is detected by the 6 axis rays (>= 2 opposite
   // pairs closed within SA_IN m) and moved just past the nearest face along that axis (re-tested); unresolved -> keeps its old value.
   // &skyexactall=0 / APP._stillSkyExactAll=false = today's field (enters the §ZONE_IDB_CACHE fingerprint). Supersedes §SKY_FIELD_EXACT.
-  function skyExactAllOn(A) { return !!(A && A._stillSkyExactAll !== false && !(typeof location !== 'undefined' && /[?&]skyexactall=0/.test(location.search))); }
+  // §EXACT_WHEN_BAKED (2026-09-30, red1 "impact and bloat ops"): the heavy exact pass (Hospital 33 min unbaked) runs only when FORCED
+  // (APP._stillSkyExactAll = true / &skyexactall=1 — the bake script) or when the loaded record for this building (sidecar / saved .db /
+  // IndexedDB) was itself built with it; otherwise (imports, unbaked buildings) the fast v1502 field. &skyexactall=0 / false = never.
+  function skyExactAllOn(A) { if (!A) return false; var q = typeof location !== 'undefined' ? location.search : '';
+    if (A._stillSkyExactAll === false || /[?&]skyexactall=0/.test(q)) return false; if (A._stillSkyExactAll === true || /[?&]skyexactall=1/.test(q)) return true;
+    var r = primed && primed.bld === A.activeBuilding ? primed : null; return !!(r && r.field && r.field.skyExactAll && r.field.skyExactAll.on); }
+  function skyExactAllWhy(A) { var q = typeof location !== 'undefined' ? location.search : ''; return (A && (A._stillSkyExactAll === false || /[?&]skyexactall=0/.test(q))) ? 'off (&skyexactall=0 / APP._stillSkyExactAll=false)' : 'off (no baked exact field for this building — imports / unbaked get the fast field; &skyexactall=1 / APP._stillSkyExactAll=true forces it)'; }
   // direction count: fixed by measurement (APP._stillSkyExactAllN / &skyexactalln= are measurement switches, in the fingerprint)
   function saCount(A) { var m = typeof location !== 'undefined' && /[?&]skyexactalln=(\d+)/.exec(location.search), n = (A && A._stillSkyExactAllN) || (m ? +m[1] : 0) || SA_N; var s = Math.max(4, Math.round(Math.sqrt(n))); return s * s; }
   // measurement switch (off by default, in the fingerprint): &skyexactallshell=1 / APP._stillSkyExactAllShell = true also redoes the
@@ -1088,7 +1096,7 @@
     var SHELL_MC = 64, shell = { on: !shellWhy, why: shellWhy, cells: nShell, reach: selStats.rule, candidates: selStats.candidates, near2: selStats.near2, airOnly: selStats.airOnly, airOnlySample: selStats.airOnlySample || [], trace: selStats.trace || null, recomputedAirOnly: 0, airOnlyDSum: 0, airOnlyLifted: 0, pretestSkipped: 0, recomputed: 0, rays: 0, lifted: 0, lowered: 0, dSum: 0, dAbsSum: 0, maxLift: 0, maxDrop: 0,
       boundaryTris: 0, occluderTris: 0, occluderSkipped: 0, glassTris: 0, soupMs: 0, bvhMs: 0, passMs: 0, selMs: shellSelMs, mc: SHELL_MC, usPerRay: 0 };
     var sxS = { on: sxOn && !shellWhy, why: !skyExactOn(A) ? 'off (&skyexact=0 / APP._stillSkyExact=false)' : saOn ? 'superseded (§SKY_FIELD_EXACT_ALL on: every read cell is replaced, not bounded)' : shellWhy ? 'off (needs the shell BVH: ' + shellWhy + ')' : '', readCells: nRead, readMs: readMs, pairs: nPair, pairCapped: pairCapped, skipShell: 0, small: 0, rays1: 0, rays2: 0, stand: 0, pairsLowered: 0, wouldRaise: 0, lowered: 0, dSum: 0, maxDrop: 0, ms: 0 };
-    var saS = { on: saOn && !shellWhy, why: !skyExactAllOn(A) ? 'off (&skyexactall=0 / APP._stillSkyExactAll=false)' : shellWhy ? 'off (needs the shell BVH: ' + shellWhy + ')' : '', n: saOn ? saCount(A) : 0, cells: 0, cShell: 0, cRead: 0, cOccCov: 0, cOpen: 0, occTris: 0, occCells: 0, rays: 0, inRays: 0, ms: 0, usPerRay: 0, inside: 0, nudged: 0, unresolved: 0,
+    var saS = { on: saOn && !shellWhy, why: !skyExactAllOn(A) ? skyExactAllWhy(A) : shellWhy ? 'off (needs the shell BVH: ' + shellWhy + ')' : '', n: saOn ? saCount(A) : 0, cells: 0, cShell: 0, cRead: 0, cOccCov: 0, cOpen: 0, occTris: 0, occCells: 0, rays: 0, inRays: 0, ms: 0, usPerRay: 0, inside: 0, nudged: 0, unresolved: 0,
       raised: 0, lowered: 0, meanAbs: 0, maxRaise: 0, maxDrop: 0, bentSkipped: 0, openLowered: 0, openMeanF: 0 }, saTg = null;
     // §GLASS_REFL_OPEN (Z26): the glass reflection pass shares the shell pass's BVH (built below), so it needs the shell pass on
     var glassOpen = null, glassWhy = shellWhy ? 'not run (' + shellWhy + ')' : !glassOpenOn(A) ? 'not run (&glassopen=0 / APP._stillGlassOpen=false: the build is skipped too; a later press with the switch on rebuilds the field)' : !Z.glassIdx ? 'not run (grid record has no glass index)' : !Z.glassIdx.length ? 'VACUOUS (no glass cell in the grid)' : '';
