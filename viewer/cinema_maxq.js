@@ -4590,6 +4590,12 @@
             _frameReuseRun = 0;
           }
           if (typeof window.__maxqPreCaptureTap === 'function') { try { window.__maxqPreCaptureTap(i); } catch (ePC) {} }   // dev-only witness seam (--tap), like __maxqPoseTap
+          // §LOADPATH_HOLD_CAMDIR (red1 2026-10-01: "the cam still pivot or pan around" in the freeze): the camera AS CAPTURED, every
+          // 15th hold frame + the first and last — position and view direction, so a pan/pivot during the freeze is a number, not a look.
+          if (A._loadPathMidHoldThisFrame && A.camera && A.camera.getWorldDirection) { try {
+            A._lpCamDirN = (A._lpCamDirN || 0) + 1; var _cdv = A.camera.getWorldDirection(new THREE.Vector3());
+            if (A._lpCamDirN === 1 || A._lpCamDirN % 15 === 0) console.log('§LOADPATH_HOLD_CAMDIR n=' + A._lpCamDirN + ' i=' + i + ' pos=[' + A.camera.position.x.toFixed(2) + ',' + A.camera.position.y.toFixed(2) + ',' + A.camera.position.z.toFixed(2) + '] dir=[' + _cdv.x.toFixed(3) + ',' + _cdv.y.toFixed(3) + ',' + _cdv.z.toFixed(3) + '] yawDeg=' + (Math.atan2(_cdv.x, _cdv.z) * 180 / Math.PI).toFixed(2) + ' pitchDeg=' + (Math.asin(Math.max(-1, Math.min(1, _cdv.y))) * 180 / Math.PI).toFixed(2) + ' frameRange=' + (_frameRange ? 1 : 0));
+          } catch (eCD) {} }
           blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo, _escCardInfo);
           _lastFrameKey = _reuseKey; _lastFrameBlob = blob;
         }
