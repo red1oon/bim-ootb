@@ -449,7 +449,8 @@
     if (n >= 65535) { console.warn('§LAMP_UNCAPPED FAIL lamps=' + n + ' >= 65535 (R16UI index) — pool path kept'); return lampFail(A, 'too many lamps'); }
     var ld = new Float32Array(Math.max(1, n) * 8), lz = new Uint16Array(n), ph = 0, lit = 0, sumI = 0, byZ = [0, 0, 0];
     for (var i = 0; i < n; i++) { var q = L[i], z = lampZone(LZ, q); lz[i] = z;
-      ld.set([q.x, q.y, q.z, z, q.r, q.g, q.b, q.range > 0 ? q.range : 0], i * 8); ph += q.x * 1.3 + q.y * 1.7 + q.z * 1.9;
+      var sh = q.__shadowLight; if (sh) sh.color.setRGB(q.r, q.g, q.b);   // §LAMP_SHADOW_TOPK: a real shadowed PointLight carries this lamp (post-§LAMP_EN colour); the loop gets 0
+      ld.set([q.x, q.y, q.z, z, sh ? 0 : q.r, sh ? 0 : q.g, sh ? 0 : q.b, q.range > 0 ? q.range : 0], i * 8); ph += q.x * 1.3 + q.y * 1.7 + q.z * 1.9;
       if (q.I > 0) { lit++; sumI += q.I; } byZ[z === 0 ? 0 : (z === OUTSIDE ? 2 : 1)]++; }
     if (lampTex) lampTex.dispose(); lampTex = lampTex2D(THREE, ld, 2, Math.max(1, n));
     var key = Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + n + ':' + R + ':' + ph.toFixed(3), tl = performance.now(), S = lampLast && lampLast.lists;
