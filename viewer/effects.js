@@ -2768,7 +2768,22 @@ async function setupEffects(A, renderer, scene, camera) {
       try { var r = g && A.dbQuery ? A.dbQuery("SELECT material_rgba FROM elements_meta WHERE guid='" + String(g).replace(/'/g, "''") + "'") : null; rgba = r && r[0] && r[0][0]; } catch (e) {}
       var c = (rgba ? String(rgba).split(',').slice(0, 3).map(Number) : [0.85, 0.85, 0.85]), key = c.join(',');
       var mm = byCol[key]; if (!mm) { mm = new THREE.MeshStandardMaterial({ metalness: 1, roughness: 0.02, envMapIntensity: 1 }); mm.color.setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace);
-        mm.defines = { SL_MIRROR: '' }; mm.userData.slMirror = true; mm.userData._photoEnvExempt = true; mm.envMap = A._envMap || null; byCol[key] = mm; mats.push(mm); }
+        mm.defines = { SL_MIRROR: '' }; mm.userData.slMirror = true; mm.userData._photoEnvExempt = true; mm.envMap = A._envMap || null; byCol[key] = mm; mats.push(mm);
+        // §MIRROR_PARALLAX (red1 2026-09-30 "yes"): the capture is one cube at the camera, looked up by DIRECTION (infinite distance) -> in a
+        // small room the mirror shows the wrong part of it and does not follow the view. Box projection (the standard local-probe
+        // correction): the reflected ray from the fragment's WORLD point is intersected with the capture room's box (glass_fresnel.js
+        // capture sets uMirBoxMin/Max/CapPos from the zone grid around the camera); the cube is read toward that hit from the capture point.
+        mm.userData.mirU = { uMirBoxMin: { value: new THREE.Vector3() }, uMirBoxMax: { value: new THREE.Vector3() }, uMirCapPos: { value: new THREE.Vector3() }, uMirBoxOn: { value: 0 } };
+        mm.onBeforeCompile = function(sh) { var U = this.userData.mirU; for (var u in U) sh.uniforms[u] = U[u];
+          sh.fragmentShader = sh.fragmentShader.replace('#include <envmap_physical_pars_fragment>', '#include <envmap_physical_pars_fragment>\n' +
+            'uniform vec3 uMirBoxMin; uniform vec3 uMirBoxMax; uniform vec3 uMirCapPos; uniform float uMirBoxOn;\n' +
+            'vec3 slMirBoxRad( vec3 posView, vec3 viewDir, vec3 normal, float roughness ) {\n#ifdef ENVMAP_TYPE_CUBE_UV\n' +
+            '  vec3 r = normalize( transformDirectionByInverseViewMatrix( reflect( - viewDir, normal ), viewMatrix ) );\n' +
+            '  if ( uMirBoxOn > 0.5 ) { vec3 wp = ( inverse( viewMatrix ) * vec4( posView, 1.0 ) ).xyz; vec3 rs = sign( r ) * max( abs( r ), vec3( 1e-5 ) ); vec3 tf = max( ( uMirBoxMax - wp ) / rs, ( uMirBoxMin - wp ) / rs );\n' +
+            '    float d = min( min( tf.x, tf.y ), tf.z ); if ( d > 0.0 ) r = normalize( wp + r * d - uMirCapPos ); }\n' +
+            '  return textureCubeUV( envMap, envMapRotation * r, roughness ).rgb * envMapIntensity;\n#else\n  return vec3( 0.0 );\n#endif\n}\n')
+            .replace('#include <lights_fragment_maps>', THREE.ShaderChunk.lights_fragment_maps.replace('getIBLRadiance( geometryViewDir, geometryNormal, material.roughness )', 'slMirBoxRad( geometryPosition, geometryViewDir, geometryNormal, material.roughness )')); };
+        mm.customProgramCacheKey = function() { return 'slMirrorBox'; }; }
       _mirrorOwnSaved.push([o, o.material]); o.material = Array.isArray(o.material) ? o.material.map(function() { return mm; }) : mm; ok++; });
     A._mirrorOwnMats = mats;
     console.log('§MIRROR_OWN_MAT applied meshes=' + ok + ' materials=' + mats.length + ' colours=[' + Object.keys(byCol).join(' | ') + '] (IFC material_rgba, metal 1, rough 0.02, env = §GLASS_ENV capture, no sky gate)');

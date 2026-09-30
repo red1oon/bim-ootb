@@ -835,7 +835,10 @@
         console.log('§IRC_MAX composite rule=' + (G.irMaxU.value ? 'max(IR, SSGI)' : 'SUM (&ircmax=0)') + ' share=' + (sh ? 'pixelsWithIR ' + sh.pixels + ' mean ' + sh.meanShare : 'none (IR off or not staged)'));
         // ### ALTS-ALL FIX 13: energy bound k2 = R/(1-R), R = the zone IR's own R
         const bOff = /[?&]gibound=0/.test(location.search) || A._stillGiBound === false, Rr = (window.SourcedLight && window.SourcedLight.irR) ? window.SourcedLight.irR() : null;
-        G.redistU.value = /[?&]giredist=0/.test(location.search) ? 0 : 1;
+        // §GI_REDIST_DEFAULT_OFF (red1 2026-09-30 "yes"; bim-compiler PHOTOREAL_STILL_RENDER.md "BLOCKS … MEASURED"): on red1's 8 v1507 Clinic
+        // poses redistribute turned 16 app-frame zone steps into 77 at …720125219 (zone 0 has no IR to remove, the zone side loses it) and
+        // darkened occluded areas (compositeMean -0.2..-11); off: steps 16, blown / dark unchanged. &giredist=1 / APP._stillGiRedist = true = on.
+        G.redistU.value = (/[?&]giredist=1/.test(location.search) || A._stillGiRedist === true) ? 1 : 0;
         G.boundU.value = (bOff || !(Rr > 0 && Rr < 1)) ? 0 : 1; G.boundK2.value = (Rr > 0 && Rr < 1) ? Rr / (1 - Rr) : 1;
         console.log('§GI_BOUND ' + (G.boundU.value ? 'on' : 'off' + (bOff ? ' (&gibound=0)' : ' (no IR_R published)')) + ' R=' + Rr + ' k2=' + G.boundK2.value.toFixed(3) + ' rule=' + (G.redistU.value ? 'redistribute: C-IR+min(bounce,k2*C*(1-share))' : 'added<=max(0,k2*C*(1-share)-C*share)') + ' share=' + (sh ? sh.meanShare : 'none')); }
       // §ZERO Z11 (b) — the receiver albedo of every pixel (one app render, readback mode 13); none = the old estimate everywhere

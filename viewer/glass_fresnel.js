@@ -135,6 +135,20 @@
     var pmMs = Math.round(performance.now() - tP);
     var n = 0; liveClones().forEach(function (c) { if (c.envMap !== pmremRT.texture) { c.envMap = pmremRT.texture; c.needsUpdate = true; } n++; });
     mirM.forEach(function (c) { if (c.envMap !== pmremRT.texture) { c.envMap = pmremRT.texture; c.needsUpdate = true; } });
+    // §MIRROR_PARALLAX: the capture room's box = per axis (+-x/+-y/+-z) the FARTHEST opaque hit of a 9-ray fan (+-15 deg) from the capture
+    // point, capped 40 m (a sink / toilet / rail stops some rays, the wall behind it stops the rest). MEASURED v1: the zone-grid walk gave
+    // 0.30 m on 5 of 6 axes (the camera sits among fattened wall cells in a 1.x m toilet) -> real geometry, not the grid. Mirrors / glass skipped.
+    if (mirM.length) { var cp = A.camera.position, bx = null;
+      try { var tg = [], rcB = new THREE.Raycaster(); A.scene.traverse(function (o) { if (!o.visible || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || o === A._sky) return; var ms = Array.isArray(o.material) ? o.material : [o.material];
+          if (ms.some(function (m) { return m && ((m.userData && (m.userData.slMirror || m.userData.gfOf)) || isGlass(m) || m.isMeshBasicMaterial); })) return; tg.push(o); });
+        var ext = [], AXS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], sp = Math.tan(15 * Math.PI / 180);
+        AXS.forEach(function (e) { var u = Math.abs(e[1]) > 0.5 ? [1, 0, 0] : [0, 1, 0], w = [e[1] * u[2] - e[2] * u[1], e[2] * u[0] - e[0] * u[2], e[0] * u[1] - e[1] * u[0]], far = 0;
+          for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) { var d = new THREE.Vector3(e[0] + sp * (i * u[0] + j * w[0]), e[1] + sp * (i * u[1] + j * w[1]), e[2] + sp * (i * u[2] + j * w[2])).normalize();
+            rcB.set(cp, d); rcB.far = 40; var h = rcB.intersectObjects(tg, false)[0], along = h ? h.distance * (d.x * e[0] + d.y * e[1] + d.z * e[2]) : 40; if (along > far) far = along; }
+          ext.push(Math.max(0.3, far)); });
+        bx = { min: [cp.x - ext[1], cp.y - ext[3], cp.z - ext[5]], max: [cp.x + ext[0], cp.y + ext[2], cp.z + ext[4]], ext: ext, targets: tg.length }; } catch (eB) { console.warn('§MIRROR_PARALLAX box failed: ' + eB.message); }
+      mirM.forEach(function (c) { var U = c.userData.mirU; if (!U) return; U.uMirCapPos.value.copy(cp); if (bx) { U.uMirBoxMin.value.fromArray(bx.min); U.uMirBoxMax.value.fromArray(bx.max); U.uMirBoxOn.value = 1; } else U.uMirBoxOn.value = 0; });
+      console.log('§MIRROR_PARALLAX ' + (bx ? 'on box ext[+x,-x,+y,-y,+z,-z]=[' + bx.ext.map(function (v) { return v.toFixed(2); }).join(',') + '] m targets=' + bx.targets : 'off (box failed)') + ' capPos=[' + cp.toArray().map(function (v) { return v.toFixed(2); }).join(',') + ']'); }
     console.log('§MIRROR_OWN_MAT envFromCapture mats=' + mirM.length + ' capture#' + (captureN));
     if (A.markDirty) A.markDirty();
     var line = '§GLASS_ENV captured ' + CAP_SIZE + 'x6 at camera [' + A.camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + '] glassMeshesHidden=' + hidden.length + ' clonesReflecting=' + n + ' passes=' + passes + ' rekeyedPerPass=[' + rekeyed.join(',') + ']' + ' nonFinitePerFace=[' + nf.join(',') + '] pmrem=explicit ' + pmMs + 'ms' + ' capture#' + captureN + ' capMeanL=' + (capN ? (capLum / capN).toExponential(3) : 'n/a') + ' exposureAtCapture=' + (R.toneMappingExposure != null ? R.toneMappingExposure.toFixed(4) : '?') + ' toneMapping=' + R.toneMapping + ' clonesEnvInt=[' + Array.from(liveClones()).map(function (c) { return c.envMapIntensity; }).join(',') + ']' + ' ms=' + Math.round(performance.now() - t0);
