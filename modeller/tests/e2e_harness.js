@@ -73,12 +73,13 @@ async function runE2E(NAME, body, opts) {
     pg, sleep, slog, errs,
     assert(n, c, x) { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } },
     async shot(label) { try { await pg.screenshot({ path: path.join(SHOTS, NAME + '-' + label + '.png') }); } catch (e) {} },
-    async open(key) {
-      await pg.click('#b-open'); await sleep(200);
+    async open(key, oo) {
+      oo = oo || {};   // §GUIDE-POC additive: {panelOpen:true} = caller already clicked #b-open; {noFit:true} = leave the camera as Open left it
+      if (!oo.panelOpen) await pg.click('#b-open'); await sleep(200);
       await pg.click('#m-open-panel .mo-row[data-key="' + key + '"]');
       await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => {});
       await sleep(2200);
-      const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(600); }
+      if (!oo.noFit) { const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(600); } }
       await pg.evaluate(() => {
         window.__e2e = {
           proj(x, y, z) { const v = new window.THREE.Vector3(x, y, z).project(window.A.camera); const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect(); return [(v.x * 0.5 + 0.5) * r.width + r.left, (-v.y * 0.5 + 0.5) * r.height + r.top, v.z]; },
@@ -216,7 +217,7 @@ async function runE2E(NAME, body, opts) {
       // is camera-timing flake, not an app bug (mesh/candidate DATA is present throughout — see diag capture
       // in RESUME_MODELLER_GUIDE_SCREENSHOT_FIX.md 2026-08-07). Poll instead of trusting the fixed sleep so
       // t.pick() never starts its scan against a transiently-empty candidate list.
-      { const t0 = Date.now(); let n = 0;
+      if (!oo.noFit) { const t0 = Date.now(); let n = 0;
         while (Date.now() - t0 < 6000) { n = await pg.evaluate(() => window.__e2e.candidates().length); if (n > 0) break; await sleep(200); }
         console.log('  §OPEN-SETTLE candidates=' + n + ' waitedMs=' + (Date.now() - t0)); }
     },
@@ -416,7 +417,8 @@ async function runE2E(NAME, body, opts) {
   };
 
   console.log('═══ ' + NAME + ' — real-user, maths-asserted (headless swiftshader) ═══');
-  await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
+  // §GUIDE-POC additive: opts.url / env E2E_URL points the SAME rig at a deployed page (the live site) instead of the local server.
+  await pg.goto(opts.url || process.env.E2E_URL || `http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady===true && !!window.THREE && !!window.A && !!window.Bonsai', { timeout: 30000 }).catch(() => {});
 
   let fatal = null;
