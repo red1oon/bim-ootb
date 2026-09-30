@@ -162,19 +162,21 @@ async function openResident(page, key) {
     JSON.stringify(g5.active) === JSON.stringify(wantOld), 'active=' + JSON.stringify(g5.active) + ' want=' + JSON.stringify(wantOld));
 
   // G6 — switch DIRECTLY from one abandoned branch's tip to a DIFFERENT branch's tip (skipping the
-  // trunk). KNOWN GAP (see MODELLER_GIT_FAITHFUL_HISTORY.md "Found: multi-branch switchToId gap"):
+  // trunk). WAS a KNOWN GAP (MODELLER_GIT_FAITHFUL_HISTORY.md "Found: multi-branch switchToId gap"):
   // _switchToNode's undo-to-ancestor walk (undoing C,B) leaves {B,C} freshly undone ALONGSIDE D's
-  // pre-existing undone flag, so the kernel's lowest-id-undone-first redo (Phase 1's own fix — correct
-  // for the single-abandoned-branch case G5 just proved) picks B, not D. Not attempted to "fix" here —
-  // a real fix needs a TARGETED redo(id) primitive in the shared kernel (viewer/kernel_ops.js AND
-  // modeller/kernel_ops.js), out of scope for a Modeller-only pass. Kept RED and documented, not hidden.
+  // pre-existing undone flag, so the kernel's lowest-id-undone-first redo picked B, not D — RED on main
+  // 8311ba5f: active=[1,2] want=[1,4]. FIXED 2026-09-30 (§MHIST-SWITCH-TARGETED, modeller_history.js
+  // _restore): the targeted primitive already existed as Bonsai.oplog.setUndone (§MHIST-ROWS); a commit
+  // node now replays its OWN ids through it whenever the boundary pick is not one of its rows, and stays
+  // on the boundary walk otherwise (gridundo U6's one-O.undo()-per-Ctrl+Z is untouched). The log line
+  // §MHIST_TARGETED names the divergence when it fires.
   var g6 = await page.evaluate(function (tipSeq) {
     window.ModellerHistory.switchToId(tipSeq);
     var O = window.Bonsai.oplog;
     return { active: O._allGeom().filter(function (o) { return !o.undone; }).map(function (o) { return o.id; }).sort(function (a, b) { return a - b; }) };
   }, newTip && newTip.id);
   var wantNew = withBase([g2.a, g4a.d]);
-  chk('G6 [KNOWN GAP, not fixed] switch DIRECTLY between two non-trunk branches picks the wrong row', !!newTip &&
+  chk('G6 switch DIRECTLY between two non-trunk branches restores EXACTLY baseline+{A,D} (§MHIST-SWITCH-TARGETED; was RED: picked B)', !!newTip &&
     JSON.stringify(g6.active) === JSON.stringify(wantNew), 'active=' + JSON.stringify(g6.active) + ' want=' + JSON.stringify(wantNew));
 
   // G7 — the signed chain still verifies after all this toggling (undone flag is outside the signed payload)
