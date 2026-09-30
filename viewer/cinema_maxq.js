@@ -3876,7 +3876,10 @@
         var _srOn = !!(plan && plan.storeyReveal && plan.storeyReveal.on);
         var _geoTop = (_buildup && plan && plan.beats) ? _buildupTopoutU(plan).u : null;
         var _geoWhy = (_buildup && !(_geoTop != null && _tnFilm >= _geoTop)) ? 'buildup' :
-          (_srOn && !(plan.beats && typeof plan.beats.rise === 'number' && _tnFilm >= plan.beats.rise)) ? 'storey-reveal' :
+          // storeys are cut only INSIDE the reveal's own window (rise - windowFrac, rise] — cpe_storey_reveal.js:635-637, same
+          // arithmetic; not called directly because storeyRevealVisualAt counts parade-wait frames as a side effect.
+          (_srOn && plan.beats && typeof plan.beats.rise === 'number' && plan.storeyReveal.windowFrac > 0 &&
+            _tnFilm > plan.beats.rise - plan.storeyReveal.windowFrac && _tnFilm <= plan.beats.rise) ? 'storey-reveal' :
           (A.hiddenDiscs && A.hiddenDiscs.size) ? 'discs-hidden:' + Array.from(A.hiddenDiscs).join('+') : '';
         A._filmGeomWhole = !_geoWhy;
         if (_geoWhy !== A._filmGeomWhyLast) { A._filmGeomWhyLast = _geoWhy;
