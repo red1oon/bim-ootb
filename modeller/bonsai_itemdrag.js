@@ -294,7 +294,10 @@
     if (GK._isObliqueYaw(pose.yawRad) || GK._hasTilt(pose.tiltX, pose.tiltY))
       return refuse('host is obliquely yawed / tilted (§ROTATION-GUARD, yaw=' + pose.yawRad + ') — its AABB long edge is not its plane; refusing rather than sliding along an unreal axis');
     if (typeof ctx.plainBoxOf !== 'function') return refuse('no plainBoxOf oracle supplied — cannot verify the host body carries no baked opening');
-    if (!ctx.plainBoxOf(fe.hostFid)) return refuse('host body is not a plain axis-aligned box (Bonsai._insertCutBox rule) — a real blob may carry a baked opening no op can translate; refusing rather than leaving a hole behind');
+    // §SLIDE-SEED (§SLIDE-REAL-WALLS Phase B): a real host seeded from its UNCUT body (slide_hosts patch, Library.isUncutBody)
+    // carries no baked opening either — its holes are GEOM_CUT rows, which ride below as GEOM_CUT_MOVE riders (§CUT-MOVE).
+    var uncutHost = typeof ctx.uncutHostOf === 'function' && !!ctx.uncutHostOf(fe.hostFid);
+    if (!ctx.plainBoxOf(fe.hostFid) && !uncutHost) return refuse('host body is not a plain axis-aligned box (Bonsai._insertCutBox rule) and not an UNCUT slide host — a real blob may carry a baked opening no op can translate; refusing rather than leaving a hole behind');
     if (!Array.isArray(ctx.cutOps)) return refuse('no cutOps (active GEOM_CUT rows) supplied — cannot verify whether a carved void is tied to this filling');
     // §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md §4): a REAL carved void over the filling used to REFUSE here ("no op
     // exists to translate a committed void"). It now RIDES — every overlapping active GEOM_CUT (cut_move.js cutsOver,
@@ -546,6 +549,14 @@
         if (op.op_type === 'GEOM_EXTRUDE_POLY') { var P = op.parameters || {}; return plainExtrudeProfile(P.profile && P.profile.points); }
         return false;                                              // any other body → unknown → refuse
       },
+      // §SLIDE-SEED: is this fid's insert a host seeded from its UNCUT body (Library.isUncutBody on its realGeomHash)?
+      _uncutHostOf: function (fid) {
+        var O = window.Bonsai && window.Bonsai.oplog, L = window.Bonsai && window.Bonsai.library;
+        if (!O || !O._geomOps || !L || !L.isUncutBody) return false;
+        var op = O._geomOps().filter(function (o) { return String(o.id) === String(fid); })[0];
+        var P = op && op.op_type === 'GEOM_INSERT' ? op.parameters : null;
+        return !!(P && P.realGeomHash && L.isUncutBody(P.realGeomHash));
+      },
       _insertParams: function (fid) {
         var O = window.Bonsai && window.Bonsai.oplog;
         if (!O || !O.db) return {};
@@ -578,6 +589,7 @@
           cutOps: this._cutOps(),
           geomOps: this._geomOps(),                              // §CUT-MOVE: the full active log for frameScale
           plainBoxOf: function (f) { return self._plainBoxOf(f); },
+          uncutHostOf: function (f) { return self._uncutHostOf(f); },   // §SLIDE-SEED
           rel: (typeof window.__gateRel === 'function') ? window.__gateRel() : null,
           anchorFids: window.__arcAnchorFids || null
         });

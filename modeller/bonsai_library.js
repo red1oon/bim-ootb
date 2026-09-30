@@ -379,10 +379,18 @@
         const key = 'rg:' + e.hash;
         // §LAYER-SOLID-SEED: e.layers (from arc_editable.js's _layerGate.layerRanges) rides the SAME
         // hash-keyed entry as the mesh it slices — additive field, absent/null for every non-layered hash.
-        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox, anchorOffset: e.anchorOffset, layers: e.layers || null }; n++; }
+        // §SLIDE-SEED (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md §SLIDE-REAL-WALLS Phase B): e.uncut marks a host body
+        // tessellated with its IfcRelVoidsElement subtraction DISABLED (slide_hosts patch table) — the openings are
+        // GEOM_CUT rows instead, so a hole can travel with its door (§CUT-MOVE). Additive flag, false for every other hash.
+        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox, anchorOffset: e.anchorOffset, layers: e.layers || null, uncut: !!e.uncut }; n++; }
       });
       console.log(TAG + ' §REAL-GEOM registered ' + n + ' distinct element mesh(es) (of ' + entries.length + ' offered)');
       return n;
+    },
+    // §SLIDE-SEED: is this registered real mesh an UNCUT host body (no baked opening — its holes are GEOM_CUT rows)?
+    isUncutBody(hash) {
+      const g = hash && this._geom && this._geom['rg:' + hash];
+      return !!(g && g.uncut);
     },
 
     // §LAYER-SOLID-SEED (CUT_GATE_CSG_SPEC.md §THE CALL): the real per-layer (face_start,face_count)

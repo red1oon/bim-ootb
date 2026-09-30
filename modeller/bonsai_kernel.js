@@ -32,7 +32,7 @@
     init() {
       if (this._worker) return this._worker;
       if (!this.isSupported()) { console.warn(TAG + ' unsupported host (needs WASM tail-calls + Worker)'); return null; }
-      const url = new URL('bonsai_kernel_worker.js?v=9', _self);   // v9: §CUT-RESIZE GEOM_CUT_RESIZE fold override (cut_move.js netOverrides/applyOverrides) · v8: §CUT-MOVE GEOM_CUT_MOVE fold override (cut_move.js) · v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b) · v6: §CUT-ON-ARC seedBoxes (promote box-like insert to B-rep for GEOM_CUT/FILLET) · v7: Tier 1 shoulders GEOM_REVOLVE/SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT + listFaces
+      const url = new URL('bonsai_kernel_worker.js?v=10', _self);   // v10: §CUT-THROUGH flush void faces pushed past the parent face · v9: §CUT-RESIZE GEOM_CUT_RESIZE fold override (cut_move.js netOverrides/applyOverrides) · v8: §CUT-MOVE GEOM_CUT_MOVE fold override (cut_move.js) · v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b) · v6: §CUT-ON-ARC seedBoxes (promote box-like insert to B-rep for GEOM_CUT/FILLET) · v7: Tier 1 shoulders GEOM_REVOLVE/SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT + listFaces
       this._worker = new Worker(url.href, { type: 'module' });
       this._worker.onmessage = (e) => {
         const d = e.data || {};
@@ -222,10 +222,16 @@
       if (!window.Bonsai.library) return null;
       const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
       if (!P || !P.realGeomHash) return null;
-      const layers = window.Bonsai.library.layersFor(P.realGeomHash);
-      if (!layers || !layers.length) return null;
+      let layers = window.Bonsai.library.layersFor(P.realGeomHash);
+      // §SLIDE-SEED (§SLIDE-REAL-WALLS Phase B): an UNCUT host body (slide_hosts patch — its authored openings are GEOM_CUT
+      // rows) has no layer index but IS one closed real solid, so it seeds as a SINGLE range through the same
+      // buildTriFace+sewAndSolidify path a layered wall takes — the "single-range seed opens it to plain walls" the
+      // Phase M verdict named. Every vertex is the extractor's own (opening subtraction disabled), nothing idealized.
+      const uncut = (!layers || !layers.length) && window.Bonsai.library.isUncutBody && window.Bonsai.library.isUncutBody(P.realGeomHash);
+      if ((!layers || !layers.length) && !uncut) return null;
       let fold; try { fold = window.Bonsai.library.foldInsert(op, null, null); } catch (e) { return null; }
       if (!fold || !fold.positions || !fold.indices || !fold.positions.length || !fold.indices.length) return null;
+      if (uncut) layers = [{ start: 0, count: fold.indices.length / 3 }];
       return { positions: fold.positions, indices: fold.indices, layers: layers.map(l => ({ start: l.start, count: l.count })) };
     },
 
