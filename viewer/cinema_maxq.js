@@ -3901,9 +3901,16 @@
         if (_geoWhy !== A._filmGeomWhyLast) { A._filmGeomWhyLast = _geoWhy;
           console.log('§FILM_GEOM_WHOLE f=' + i + ' tn=' + _tnFilm.toFixed(4) + ' whole=' + (_geoWhy ? 0 : 1) + (_geoWhy ? ' why=' + _geoWhy : '') +
             ' topoutU=' + (_geoTop != null ? _geoTop.toFixed(4) : '-') + ' riseU=' + (plan && plan.beats && typeof plan.beats.rise === 'number' ? plan.beats.rise.toFixed(4) : '-') + ' storeyReveal=' + (_srOn ? 1 : 0)); }
-        A._interiorLightsOff = A._ilPastStick &&
-          !(A._ilPastTopout && !(typeof window !== 'undefined' && window.__ilNoRelight)) &&
-          !(typeof window !== 'undefined' && window.__ilForceOn);
+        // §INTERIOR_LIGHTS_ARC (red1 2026-10-01, correcting the reading of §116/§129.47: "It is only to be off during freeze, no ARC but
+        // to resume when ARC returns. Now this is in conflict with alt-s benefit. Bring it back on."): interior fixtures are OFF only on
+        // frames with no architecture on screen — the load-path freeze (this frame's _lpHoldCtl) or a reveal round hiding ARC
+        // (A.hiddenDiscs, set above by cpeRevealApplyVisual) — and ON whenever ARC is there. Replaces the film-time window
+        // [beats.out, beats.rise). __ilForceOn still defeats the gate (control).
+        var _ilNoArc = !!(_lpHoldCtl && _lpHoldCtl.inHold) || !!(A.hiddenDiscs && A.hiddenDiscs.has && A.hiddenDiscs.has('ARC'));
+        A._interiorLightsOff = _ilNoArc && !(typeof window !== 'undefined' && window.__ilForceOn);
+        if (A._interiorLightsOff !== A._ilArcOffLast) { A._ilArcOffLast = A._interiorLightsOff;
+          console.log('§INTERIOR_LIGHTS_ARC f=' + i + ' tn=' + _tnFilm.toFixed(4) + ' lights=' + (A._interiorLightsOff ? 'OFF' : 'ON') +
+            ' (' + (A._interiorLightsOff ? ((_lpHoldCtl && _lpHoldCtl.inHold) ? 'freeze' : 'ARC hidden by the reveal round') : 'ARC on screen') + ')'); }
         // §117's witness runs just before capture (search §INTERIOR_LIGHTS_WITNESS), not here:
         // sampled at this point it would read the PREVIOUS frame's lighting and report a phantom
         // FAIL on the first gated frame. Measured — that is exactly what the first version did.
@@ -4495,7 +4502,7 @@
               // A family with members and none lit is now a FAIL on its own, named. Each family
               // prints over its own denominator so a zero can still be told from an absent family:
               // absent (denominator 0) is not judged, which is the VACUOUS case, not a pass.
-              (A._ilPastTopout
+              (!A._interiorLightsOff   // §INTERIOR_LIGHTS_ARC: expect lit whenever ARC is on screen, dark only when the gate is off
                 ? ((function () {
                     var fam = [['pool', _wPool, (A._nightBakePool && A._nightBakePool.length) || 0],
                                ['nav', _wNav, (A._nightLightByPos && A._nightLightByPos.size) || 0],
