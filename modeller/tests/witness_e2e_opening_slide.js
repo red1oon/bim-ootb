@@ -6,10 +6,11 @@
  * Two scenarios, both on the real production path (the Drag-Item tool's own grab — window.__armItemDrag is the
  * same grabItem the canvas pick calls — a REAL mouse down→move→up, the real pointerup commit, the real gate):
  *
- *   O0 REAL-REFUSAL (SampleHouse) — every real rel_fills_host filling REFUSES the slide, and for the honest reason:
- *      the §ARC-1 seed resolves REAL LOD-300 wall meshes whose door holes are BAKED INTO the mesh; no op can move a
- *      baked hole, so a slide would leave it behind. Measured 2026-09-10: 7/7 refuse at Bonsai._insertCutBox. This
- *      is asserted (not skipped) so the guard is proven live on real data, never a dead branch.
+ *   O0 REAL-SPLIT (SampleHouse) — re-pointed 2026-09-30b (§SLIDE-REAL-WALLS Phase B, M5): the 5 fillings on the two
+ *      IfcFacetedBrep hosts (bodies that CARRY their openings) still REFUSE for the honest baked-hole reason, and the 2
+ *      doors on the uncut host (slide_hosts patch) now FORM a slide. Before Phase B this was "7/7 refuse" (measured
+ *      2026-09-10) — that claim is now W-SLIDE-REAL-WALL W0 (main's substrate). The full real slide (drag, hole moves,
+ *      undo) is W-E2E-SLIDE-REAL; this scenario keeps the refusal guard proven live on real data.
  *   O1-O6 SKETCHED (fixture, same pattern as witness_e2e_grid_greenorange.js scenario B) — a sketched rectangular
  *      wall (GEOM_EXTRUDE_POLY, the tool's primary use case) hosting a sketched door, with a rel_fills_host row
  *      injected in the exact shape the real §ARC-1/CrossEdges pipeline produces. The constraint/gate/commit MATH is
@@ -44,7 +45,7 @@ runE2E('W-E2E-OPENING-SLIDE', async (t) => {
       const ok = window.__armItemDrag(f, {});
       const s = window.Bonsai.itemdrag._session;
       out.push({ fid: f, host: h, slide: !!(ok && s && s.slide) });
-      if (typeof exitItemDrag === 'function') exitItemDrag();
+      document.getElementById('b-itemdrag').click();   // exit the armed mode (exitItemDrag is module-scoped)
     }
     return out;
   });
@@ -52,8 +53,12 @@ runE2E('W-E2E-OPENING-SLIDE', async (t) => {
   const bakedReason = refusalLines.filter(l => /not a plain axis-aligned box/.test(l)).length;
   console.log('  §SLIDE O0 real fillings=' + JSON.stringify(real));
   refusalLines.forEach(l => console.log('    ' + l.slice(0, 220)));
-  t.assert('O0 REAL-REFUSAL (SampleHouse: every real filling refuses the slide — host is a real LOD-300 mesh with baked holes, Bonsai._insertCutBox says not a plain box)',
-    real.length >= 1 && real.every(r => !r.slide) && bakedReason === real.length, 'fillings=' + real.length + ' refusals(plain-box)=' + bakedReason);
+  const uncutHosts = await t.pg.evaluate(() => { const O = window.Bonsai.oplog; return O._geomOps().filter(o => o.op_type === 'GEOM_INSERT' && window.Bonsai.itemdrag._uncutHostOf(o.id)).map(o => o.id); });
+  const onUncut = real.filter(r => uncutHosts.indexOf(r.host) >= 0), onBaked = real.filter(r => uncutHosts.indexOf(r.host) < 0);
+  console.log('  §SLIDE O0 uncutHosts=' + JSON.stringify(uncutHosts) + ' onUncut=' + onUncut.length + ' onBaked=' + onBaked.length);
+  t.assert('O0 REAL-SPLIT (SampleHouse: the 5 fillings on baked/brep hosts REFUSE for the baked-hole reason; the 2 on the uncut slide host FORM a slide)',
+    onBaked.length === 5 && onBaked.every(r => !r.slide) && bakedReason === onBaked.length && onUncut.length === 2 && onUncut.every(r => r.slide),
+    'baked=' + onBaked.length + ' refusals(plain-box)=' + bakedReason + ' uncut=' + onUncut.length + ' formed=' + onUncut.filter(r => r.slide).length);
 
   // ── FIXTURE: sketched rectangular wall + sketched door + injected fills row (greenorange scenario-B pattern) ──
   await t.clickSel('#b-clear').catch(() => {}); await t.sleep(400);

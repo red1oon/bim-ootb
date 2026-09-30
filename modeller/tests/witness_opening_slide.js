@@ -10,8 +10,14 @@
  * the engine's HostFillEdge.constrain (DagevuEngine's SECOND consumer), gated per frame by the production SdgGate,
  * committed as the existing GEOM_MOVE shape — and refuses honestly where it cannot be honest.
  *
- *   S0 SUBSTRATE   — real seeded SampleHouse, real rel_fills_host rows. §FOLD-NO-BOX 2026-09-27: every real host carries
- *                    a BAKED opening ⇒ the slide REFUSES on residents (proven, S0 REAL-HOSTS-REFUSE); S1-S7 then INCONCLUSIVE
+ *   S0 SUBSTRATE   — real seeded SampleHouse, real rel_fills_host rows, WITHOUT the §SLIDE-REAL-WALLS uncut bodies
+ *                    (SampleHouse_extracted.db never receives the ARC patch): every real host carries a BAKED opening ⇒ the
+ *                    slide REFUSES (S0 REAL-HOSTS-REFUSE — the control for the baked-hole gate).
+ *   §SKETCHED-HOST RE-POINT (2026-09-30b, MODELLER_MASTER §HANDOFF-SLIDE-SH step 4): real residents now slide through the
+ *                    uncut-host seed — that claim is W-SLIDE-REAL-WALL (witness_slide_real_wall.js, W0-W6) + W-E2E-SLIDE-REAL.
+ *                    S1-S7 here judge the tool's OTHER host: a SKETCHED plain-extrude wall (GEOM_EXTRUDE_POLY, 4-point
+ *                    axis-aligned profile ⇒ plainExtrudeProfile true) hosting a door, wired with a rel_fills_host row in the
+ *                    shape CrossEdges produces. Before this they were INCONCLUSIVE on every run (judged nothing).
  *   S1 SESSION     — the filling gets a slide session carrying the engine edge; the resolver is NEVER consulted
  *   S2 IN-BOUNDS   — a candidate off-axis + above ⇒ valid, snappedPos holds orthogonal+z, t exact, dimLabel present
  *   S3 OFF-HOST    — a candidate past the wall end ⇒ valid:false 'off-host-extent', NO snappedPos (never a clamp)
@@ -115,6 +121,22 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   chk('S0 REAL-HOSTS-REFUSE: every real WALL-hosted filling of SampleHouse refuses the slide, and every refusing host mesh is genuinely non-box (>12 tris = opening baked in) — the refusal is honest, not a fixture gap',
     !pick && tried.length > 0 && tried.every(function (t) { return /refused$/.test(t); }) && allNonBox,
     'tried=' + j(tried) + ' hostTris=' + j(hostTris));
+  // §SKETCHED-HOST: S1-S7 judge a sketched plain-extrude wall (the fixture shape W-E2E-OPENING-SLIDE O1-O6 uses in the browser)
+  if (!pick && !process.env.SLIDE_S0_LEGACY) {
+    var SK = { host: 9001, fill: 9002 };
+    var skProfile = [[0, 0], [4, 0], [4, 0.2], [0, 0.2]];
+    var skOp = { id: SK.host, op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: skProfile }, height: 2.7 } };
+    opByFid = {}; opByFid[SK.host] = { params: skOp.parameters }; opByFid[SK.fill] = { params: { ifc_class: 'IfcDoor' } };
+    boxByFid = {}; boxByFid[SK.host] = [0, 4, 0, 0.2, 0, 2.7]; boxByFid[SK.fill] = [1.5, 2.4, 0, 0.2, 0, 2.1];
+    classByFid = {}; classByFid[SK.host] = 'IfcWall'; classByFid[SK.fill] = 'IfcDoor';
+    placementByFid = {};
+    fbg = { SKH: SK.host, SKF: SK.fill }; gbf = {}; gbf[SK.host] = 'SKH'; gbf[SK.fill] = 'SKF';
+    fills = [{ opening_guid: 'SKO', host_guid: 'SKH', filling_guid: 'SKF', host_class: 'IfcWall', filling_class: 'IfcDoor', provenance: 'fixture:sketched' }];
+    plainBoxOf = function (fid) { return +fid === SK.host && ItemDrag.plainExtrudeProfile(skProfile); };   // the production _plainBoxOf rule for GEOM_EXTRUDE_POLY
+    var sks = ItemDrag.beginItemDragSession(ctxFor(SK.fill));
+    if (sks && sks.slide) pick = { fid: SK.fill, host: SK.host, row: fills[0], session: sks };
+    console.log('  §SLIDE sketched host=' + SK.host + ' profile=' + j(skProfile) + ' plainExtrude=' + ItemDrag.plainExtrudeProfile(skProfile) + ' session=' + !!pick);
+  }
   if (!pick) {
     ['S1 SESSION', 'S2 IN-BOUNDS', 'S3 OFF-HOST', 'S4 OP', 'S5 GATE-RED', 'S6 CARVED-VOID', 'S7 NO-ENGINE'].forEach(function (n) {
       console.log('  ⚪ INCONCLUSIVE ' + n + ' — no production path reaches a slide session (fills are extracted IFC hosts; all carry a baked opening)'); });
@@ -126,7 +148,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     console.log('W-DAGEVU-SLIDE: ' + pass + ' PASS / ' + fail + ' FAIL / 7 INCONCLUSIVE (slide inert on real residents — S1-S7 judge nothing)');
     process.exit(fail ? 1 : 0);
   }
-  chk('S0 SUBSTRATE: a real WALL-hosted filling whose slide session forms (a real host WITHOUT a baked opening)', true,
+  chk('S0 SUBSTRATE: a WALL-hosted filling whose slide session forms (§SKETCHED-HOST: a sketched plain-extrude wall — no baked opening)', true,
     'filling=' + pick.fid + '(' + classByFid[pick.fid] + ') host=' + pick.host + '(' + classByFid[pick.host] + ') opening=' + pick.session.slide.openingFid + ' tried=' + j(tried));
   var S = pick.session, sl = S.slide, c = S.preCentre, K = sl.axis, other = 1 - K, ax = 'xy'[K];
   var fb = boxByFid[pick.fid], hb = boxByFid[pick.host];
