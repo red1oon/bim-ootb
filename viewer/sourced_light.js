@@ -279,7 +279,7 @@
   function csSet(A, depthTex, camera) {
     if (!aoPatched || linkFailed || !A || !A.renderer) return -1;
     var q = location.search, dial = function (n, d) { var m = new RegExp('[?&]' + n + '=([0-9.]+)').exec(q); var v = m ? parseFloat(m[1]) : d; return isFinite(v) ? v : d; };
-    var on = !!depthTex && camera && camera.isPerspectiveCamera && !/[?&]contact=0/.test(q) && A._stillContact !== false;
+    var on = !!depthTex && camera && camera.isPerspectiveCamera && (/[?&]contact=1/.test(q) || A._stillContact === true);   // OFF by default (red1 2026-10-01: hard, jagged patches under Terminal tables) until the soft version passes
     CSP[0] = on ? 1 : 0; CSP[1] = Math.max(0.05, Math.min(2, dial('contactlen', 0.5))); CSP[2] = Math.max(0.02, Math.min(2, dial('contactthick', 0.5))); CSP[3] = 16;
     if (camera) { CSM.set(camera.projectionMatrix.elements); CSN[0] = camera.near; CSN[1] = camera.far; }
     csTex = on ? depthTex : null;
@@ -289,7 +289,7 @@
       var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLCsT) return;
       U.uSLCs.value = CSP; U.uSLCsT.value = csTex || dAo; U.uSLCsP.value = CSM; U.uSLCsNF.value = CSN; n++; }); });
     console.log('§LAMP_CONTACT ' + (on ? 'on' : 'off') + ' len=' + CSP[1] + ' thick=' + CSP[2] + ' steps=' + CSP[3] + ' near=' + CSN[0] + ' far=' + CSN[1] + ' mats=' + n +
-      (on ? '' : ' (' + (!depthTex ? 'no depth' : /[?&]contact=0/.test(q) ? '&contact=0' : 'camera') + ')'));
+      (on ? '' : ' (' + (!depthTex ? 'no depth' : 'default off; &contact=1 = on') + ')'));
     return n;
   }
   function aoOn(on) { if (aoPatched && !linkFailed) AOP[0] = on ? 1 : 0; }   // the per-render gate (typed array shared by every program)
