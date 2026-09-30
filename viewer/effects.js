@@ -3276,13 +3276,23 @@ async function setupEffects(A, renderer, scene, camera) {
   function _csmReadback(cam, inv) {
     var R = A.renderer, W = CSM_RB_W, H = CSM_RB_H;
     if (!_csmRT) { _csmRT = new THREE.WebGLRenderTarget(W, H); _csmDM = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide }); }
-    var hidden = [];
+    var hidden = [], glassArr = 0;
     A.scene.traverse(function(o) {
       if (!o.visible || !(o.isMesh || o.isSprite || o.isPoints || o.isLine)) return;
       var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
-      var skip = o === A._sky || o.isSprite || o.isPoints || o.isLine || (o.userData && o.userData.skyPortal) ||
+      // §CSM_READBACK_GLASS (2026-09-30, bim-compiler PHOTOREAL_STILL_RENDER.md §DEV RESUME 2026-09-30 PM case 4, Terminal
+      // …709411794): this predicate hid an object only when EVERY material was glass, so Terminal's R10 window arrays (opaque
+      // frame + transparent pane) were drawn SOLID by the depth override — the readback stopped at the room's glass wall
+      // (zMax 6.6 m), every cascade box ended there, and the hall behind it (columns at 16-26 m) sat in no box: the shader's
+      // D3 fallback (shadow_cascade.js, no box -> _csmS = 1.0) lit it with the UNSHADOWED sun. Sun-facing hall faces read
+      // 252 (raycast: sun blocked by the ceiling at 1.8-4.1 m) and the edge-on concrete column got sun on its normal-mapped
+      // fragments only = red1's "column behind glass looks concrete" (Lu 99..180 blotches; 99..107 with &concrete=0).
+      // Same `every`-vs-`some` class as ALTS-ALL FIX 9 (gi_still.js): an object with ANY glass group is left out (its frame
+      // is a sliver against a pane-sized sheet). Witness: §CSM_READBACK_GLASS glassArr > 0 and zMax past the glass on this pose.
+      var anyGlass = ms.some(function(m) { return m && m.transparent && m.opacity < 0.95; });
+      var skip = o === A._sky || o.isSprite || o.isPoints || o.isLine || (o.userData && o.userData.skyPortal) || anyGlass ||
         ms.every(function(m) { return !m || m.visible === false || m.isMeshBasicMaterial || m.isShaderMaterial || m.isRawShaderMaterial || (m.transparent && m.opacity < 0.95); });
-      if (skip) { o.visible = false; hidden.push(o); }
+      if (skip) { o.visible = false; hidden.push(o); if (anyGlass && ms.length > 1) glassArr++; }
     });
     var sm = R.shadowMap, smA = sm.autoUpdate, smN = sm.needsUpdate, prevRT = R.getRenderTarget(), prevOv = A.scene.overrideMaterial,
         prevBg = A.scene.background, prevFog = A.scene.fog, cc = R.getClearColor(new THREE.Color()), ca = R.getClearAlpha(), buf = new Uint8Array(W * H * 4);
@@ -3324,7 +3334,8 @@ async function setupEffects(A, renderer, scene, camera) {
       if (!(z > 0) || !isFinite(z)) continue;
       v.applyMatrix4(inv); pts.push(v.x, v.y, z); n++; zMin = Math.min(zMin, z); zMax = Math.max(zMax, z);
     }
-    return { pts: pts, n: n, zMin: zMin, zMax: zMax, hidden: hidden.length };
+    console.log('§CSM_READBACK_GLASS glassArr=' + glassArr + ' (multi-material objects with a glass group left out of the cascade depth readback; was drawn solid) hidden=' + hidden.length + ' zMax=' + (isFinite(zMax) ? zMax.toFixed(1) : 'NaN') + 'm points=' + n);
+    return { pts: pts, n: n, zMin: zMin, zMax: zMax, hidden: hidden.length, glassArr: glassArr };
   }
   // PSSM practical split over [zMin, zMax] (Zhang et al. 2006): C_i = lambda zMin (zMax/zMin)^(i/m) + (1-lambda)(zMin + (zMax-zMin) i/m)
   function _csmSplits(zMin, zMax, m) {
@@ -3455,6 +3466,10 @@ async function setupEffects(A, renderer, scene, camera) {
     var f = function(a, k, d) { return '[' + a.map(function(o) { var v = typeof k === 'function' ? k(o) : o[k]; return (v == null || !isFinite(v)) ? 'NaN' : (+v).toFixed(d); }).join(',') + ']'; };
     var E = function(k) { return function(o) { return o.edge ? o.edge[k] : NaN; }; };
     cs.forEach(function(o, c) { if (o.line) console.log(o.line + ' cascade=' + c + ' slice=[' + o.sa.toFixed(2) + ',' + o.sb.toFixed(2) + ']m box=' + o.w.toFixed(1) + 'x' + o.h.toFixed(1) + 'm'); });
+    // §CSM_READBACK_GLASS witness record (plain data, survives teardown): the used boxes in light space + the light-space
+    // transform, so a probe can say whether a given world point (e.g. a column behind glass) sits in any cascade box.
+    A._csmLastFit = { zMin: zMin, zMax: zMax, rbZMax: rb.zMax, glassArr: rb.glassArr, inv: F.inv.toArray(),
+      boxes: cs.map(function(o) { return { used: !!o.used, l: o.l, r: o.r, b: o.b, t: o.t, sa: o.sa, sb: o.sb }; }) };
     console.log('§STILL_SHADOW_CASCADE uncovered=' + unc + '/' + (P2.length / 3) + ' readbackSides=' + (_csmSidesLast ? 'asDrawn(front ' + _csmSidesLast.front + ', double/back ' + _csmSidesLast.other + ')' : 'double(&csmsides=0)') + ' m=' + CSM_M + ' used=' + used + ' mode=cascades(worst ' + worst.toFixed(4) + ' <= single ' + sTexel.toFixed(4) + ' at ' + sSize + ') splits=[' + C.map(function(x) { return x.toFixed(2); }).join(',') + ']' +
       ' texel=' + f(cs, 'texel', 4) + ' normalBias=' + f(cs, E('nb'), 4) + ' thinCasterRisk=' + f(cs, E('nb'), 4) + ' bias=' + f(cs, E('bias'), 7) +
       ' range=' + f(cs, E('range'), 1) + ' gap45=' + f(cs, E('g45'), 4) + ' gap20=' + f(cs, E('g20'), 4) + ' texelPerPixel=' + f(cs, 'tpp', 2) +
