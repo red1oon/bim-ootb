@@ -2760,9 +2760,10 @@ async function setupEffects(A, renderer, scene, camera) {
   // mirror-finished for every element on it, and reflected one building-centre probe x the sky-view gate (F 0) -> black. Each mirror mesh
   // (Clinic: 5 meshes holding only the 22 mirrors) gets ONE dedicated material for the still: IFC colour, metal 1, roughness 0.02,
   // env = the §GLASS_ENV capture of this press, SL_MIRROR (sourced_light.js slMirK: no sky gate).
-  function _mirrorOwnApply() {
-    // stills only: films (MaxQ) skip the §GLASS_ENV capture, and with SL_MIRROR (no sky gate) a film mirror would show the sky HDRI indoors
-    if (A._maxqActive) { console.log('§MIRROR_OWN_MAT skipped (film: no per-frame room capture yet — Alt+C lane)'); return; }
+  function _mirrorOwnApply(filmCaptured) {
+    // stills; films only once §FILM_GLASS_ENV (A._filmParityStep) has captured the room — without a capture, SL_MIRROR (no sky gate)
+    // would show the sky HDRI indoors
+    if (A._maxqActive && !filmCaptured) { console.log('§MIRROR_OWN_MAT skipped (film: waits for its first §FILM_GLASS_ENV capture)'); return; }
     _mirrorReflectMats(); if (!_mirrorMeshList.length || _mirrorOwnSaved.length) return;
     var byCol = Object.create(null), mats = [], ok = 0;
     _mirrorMeshList.forEach(function(o) {
@@ -3148,6 +3149,20 @@ async function setupEffects(A, renderer, scene, camera) {
     var texel = Math.max(w, h) / mz;
     A.sun.shadow.normalBias = (window.__noNormalBias ? 0 : 2 * texel);
     var edgeLine = (!film && _edgeOn()) ? _stillEdgeDepth(sc, inv, l, r, b, t, props, texel) : '';
+    // §FILM_SHADOW_EDGE (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT" item 2): the same edge rule in films, on the per-shot
+    // box. The depth range is held per SHOT and only grows (union of every frame's range in that shot), so near/far — and with them
+    // the depth precision — cannot shimmer frame to frame; bias = -1/65536 and normalBias = (R+1.5) texels are constant per shot anyway.
+    // &filmshadowedge=0 = the previous film values (2 x texel, sun-distance range).
+    if (film && shot && _edgeOn() && !/[?&]filmshadowedge=0/.test(location.search)) {
+      var _eLine = _stillEdgeDepth(sc, inv, l, r, b, t, props, texel), _eL = _stillEdgeDepth.last;
+      if (_eL) {
+        var _grow = !shot.edge || _eL.near < shot.edge.near || _eL.far > shot.edge.far;
+        shot.edge = shot.edge ? { near: Math.min(shot.edge.near, _eL.near), far: Math.max(shot.edge.far, _eL.far), grows: shot.edge.grows + (_grow ? 1 : 0) } : { near: _eL.near, far: _eL.far, grows: 0 };
+        sc.near = shot.edge.near; sc.far = shot.edge.far;
+        if (_grow) console.log('§FILM_SHADOW_EDGE shot=' + shot.i + ' near=' + sc.near.toFixed(1) + ' far=' + sc.far.toFixed(1) + ' range=' + (sc.far - sc.near).toFixed(1) + 'm normalBias=' + A.sun.shadow.normalBias.toFixed(4) +
+          ' bias=' + A.sun.shadow.bias.toExponential(3) + ' grows=' + shot.edge.grows + ' (held per shot, grow-only; was the sun-distance range + 2 x texel)');
+      } else if (_eLine && !shot.edgeVacuousLogged) { shot.edgeVacuousLogged = true; console.log(_eLine); }
+    }
     // §STILL_SHADOW_CASCADE: the union, kept props and this single box are the cascades' inputs (_cascadeFit); with cascades
     // on this single-map edge line is superseded — printed as _SINGLE so one §STILL_SHADOW_EDGE answer exists per cascade
     var csmRun = !film && _csmLights.length && _cascadeOn();
@@ -4801,11 +4816,28 @@ async function setupEffects(A, renderer, scene, camera) {
     A._filmFieldOn = _slOk && A._filmGeomWhole !== false && !(A._filmInheritOff === true || /[?&]filminherit=0/.test(location.search));
     if (_slOk) out.sl = window.SourcedLight.filmGate(A._filmFieldOn, frameIdx);
     if (window.SkyPortal && typeof window.SkyPortal.frame === 'function') { try { out.portal = window.SkyPortal.frame(A); } catch (eP) { out.portal = 'err ' + eP.message; } }
+    // §FILM_GLASS_ENV (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT" item 4): the still's room capture (GlassFresnel.capture:
+    // 6-face cube at the camera + §MIRROR_PARALLAX box) once per SHOT while the new lighting is on — on the first such frame and at every
+    // shot change (_fitState.shotNow, set by the fit above). Mirrors get their own finish after the first capture (§MIRROR_OWN_MAT).
+    // &filmglassenv=0 = off (panes keep the sky HDRI, mirrors stay plain).
+    if (A._filmFieldOn && window.GlassFresnel && window.GlassFresnel.capture && !/[?&]filmglassenv=0/.test(location.search)) {
+      var _envShot = (_fitState && _fitState.shotNow) ? _fitState.shotNow.i : -1;
+      if (A._filmEnvShot !== _envShot) {
+        A._filmEnvShot = _envShot; var _eT = performance.now();
+        try { window.GlassFresnel.capture(A); A._filmEnvCaptures = (A._filmEnvCaptures || 0) + 1;
+          if (!A._filmMirrorOn) { A._filmMirrorOn = true; _mirrorOwnApply(true); }
+          console.log('§FILM_GLASS_ENV f=' + frameIdx + ' shot=' + _envShot + ' capture#' + A._filmEnvCaptures + ' ms=' + Math.round(performance.now() - _eT) + ' (once per shot while the new lighting is on)'); }
+        catch (eGE) { console.warn('§FILM_GLASS_ENV failed: ' + (eGE && eGE.message)); }
+      }
+    }
     out.ms = +(performance.now() - t0).toFixed(1);
     var key = JSON.stringify([out.day, out.inside, out.lampsOff]);
     if (key !== _fpLast || frameIdx % 24 === 0) { _fpLast = key;
       console.log('§FILM_PARITY_FRAME f=' + frameIdx + ' sunElev=' + out.elev + ' daylight=' + out.day + ' camInside=' + out.inside + ' lampsOff=' + out.lampsOff +
-        (out.fit ? ' fit=' + out.fit : '') + (out.portal ? ' portal=' + out.portal : '') + ' sourced=' + (out.sl || 'not-staged') + ' ms=' + out.ms); }
+        (out.fit ? ' fit=' + out.fit : '') + (out.portal ? ' portal=' + out.portal : '') + ' sourced=' + (out.sl || 'not-staged') +
+        // §FILM_LAMP_DATA witness: lamps in the data path vs pool slots lit on the PREVIOUS frame (the pool updates after this step);
+        // on a whole-building frame poolLitPrev must be 0 once the data path has taken over (no lamp counted twice).
+        ' lampData=' + (A._filmFieldOn ? (A._filmLampDataN || 0) : 'off') + ' poolLitPrev=' + (A._nightBakePool ? A._nightBakePool.filter(function (l) { return l.intensity > 0; }).length : '-') + ' ms=' + out.ms); }
     return out;
   };
   // ══ §FILM_EXPOSURE — §FILM_LAW S1 (bim-compiler prompts/ALTC_SHOWSTOPPERS.md §FILM_LAW; ALT+C R1; §LIGHT_ONE_SCALE L3 via

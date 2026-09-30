@@ -1897,7 +1897,10 @@ async function setupScene(A) {
       console.log('§PREBAKE sidecar loaded ' + own + ' parts=[' + Object.keys(j).filter(function (k) { return k !== 'v' && k !== 'created'; }).join(',') + '] created=' + j.created + ' ms=' + Math.round(performance.now() - t0));
     } catch (e) { A._prebake = null; console.warn('§PREBAKE sidecar failed ' + (e && e.message) + ' — computing as usual'); }
   };
-  A._prebakeRecord = function () { var o = { v: 1, created: new Date().toISOString() }, n = 0; Object.keys(A._prebakeOut || {}).forEach(function (k) { o[k] = A._prebakeOut[k]; n++; }); return n ? JSON.stringify(o) : null; };
+  // merged with the loaded sidecar: parts served from it are kept, parts computed this session replace theirs (never drop a part)
+  A._prebakeRecord = function () { var o = { v: 1, created: new Date().toISOString() }, n = 0;
+    if (A._prebake) Object.keys(A._prebake).forEach(function (k) { if (k !== 'v' && k !== 'created') o[k] = A._prebake[k]; });
+    Object.keys(A._prebakeOut || {}).forEach(function (k) { o[k] = A._prebakeOut[k]; n++; }); return n ? JSON.stringify(o) : null; };
   A._lightFieldByBuilding = async function() {
     var t0 = performance.now();
     try {

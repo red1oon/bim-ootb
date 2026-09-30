@@ -2463,17 +2463,27 @@ function setupTools(A) {
     // identical). Interactive navigation and Alt+S keep the churn-fix path below, untouched.
     // §LAMP_UNCAPPED — the still's lamps become data (colour x intensity with the pool's own formula below, range, decay); the
     // point-light path then runs with nothing needed, so every pool light is removed (no pads either: A._nightSyncPads)
-    if (A._lampDataOn && A._stillRefineActive && !A._maxqActive) {
+    // §FILM_LAMP_DATA (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT" item 1): a parity film on a whole-building frame
+    // (A._filmFieldOn, effects.js A._filmParityStep, set before this runs) takes the SAME lamp-data path; the frozen bake pool below
+    // then gets needed=[] and rides at intensity 0 (count unchanged, no recompile). Camera-FREE in films (no near fade, no cap fade):
+    // the data then changes only when the placed set or the lamps-off state changes, so SourcedLight.lampSync rebuilds rarely.
+    var _filmLD = !!(A._maxqActive && A._filmFieldOn);
+    if (A._lampDataOn && A._stillRefineActive && (!A._maxqActive || _filmLD)) {
       var _ldL = [], _ldC = new THREE.Color();
       needed.forEach(function(f) {
-        var _d = camPos.distanceTo(f.pos), _fl = A._nightNearFadeFloor, _fd = Math.min(1.0, _d / 15);
-        var _I = NIGHT_LIGHT_INTENSITY * (_fl + (1 - _fl) * _fd) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() * (f.pos.__intensityMult || 1) * _lampCapFade(_d);
+        var _d = camPos.distanceTo(f.pos), _fl = A._nightNearFadeFloor, _fd = _filmLD ? 1 : Math.min(1.0, _d / 15);
+        var _I = NIGHT_LIGHT_INTENSITY * (_fl + (1 - _fl) * _fd) * (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) * _stillLampMul() * (f.pos.__intensityMult || 1) * (_filmLD ? 1 : _lampCapFade(_d));
         _ldC.set(A.nightFixtureColor(f.pos));   // same Color path as PointLight.color (sRGB hex -> working space)
         _ldL.push({ guid: f.pos.__guid || null, x: f.pos.x, y: f.pos.y, z: f.pos.z, r: _ldC.r * _I, g: _ldC.g * _I, b: _ldC.b * _I, I: _I, range: _stillLampRange() });
       });
       A._lampDataUsed = true;
-      A._lampData = { lamps: _ldL, decay: _stillLampDecay(), range: _stillLampRange(), ver: (A._lampData ? A._lampData.ver : 0) + 1 };
-      var _ldLine = '§LAMP_DATA lamps=' + _ldL.length + ' lit=' + _ldL.filter(function(q) { return q.I > 0; }).length + ' placed=' + visPos.length + ' total=' + allPos.length + ' range=' + _stillLampRange() + ' decay=' + _stillLampDecay() +
+      var _ldKey = _filmLD ? _ldL.map(function (q) { return (q.guid || (q.x.toFixed(2) + ',' + q.y.toFixed(2) + ',' + q.z.toFixed(2))) + ':' + q.I.toFixed(4); }).join('|') : null;
+      if (!_filmLD || !A._lampData || A._lampDataKey !== _ldKey) {   // films: a new version only when the lamp data really changed
+        A._lampDataKey = _ldKey;
+        A._lampData = { lamps: _ldL, decay: _stillLampDecay(), range: _stillLampRange(), ver: (A._lampData ? A._lampData.ver : 0) + 1 };
+      }
+      if (_filmLD) A._filmLampDataN = _ldL.length;
+      var _ldLine = '§LAMP_DATA' + (_filmLD ? ' film=1' : '') + ' lamps=' + _ldL.length + ' lit=' + _ldL.filter(function(q) { return q.I > 0; }).length + ' placed=' + visPos.length + ' total=' + allPos.length + ' range=' + _stillLampRange() + ' decay=' + _stillLampDecay() +
         ' plScale=' + (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) + ' lampMul=' + _stillLampMul();
       if (_ldLine !== A._lampDataLastLine) { A._lampDataLastLine = _ldLine; console.log(_ldLine + ' ver=' + A._lampData.ver); }
       needed = [];

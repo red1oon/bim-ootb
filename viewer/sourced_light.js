@@ -435,7 +435,8 @@
   // effects.js asks before the lamps are born: the data path needs the patched chunks, this building's zones, and a still
   function lampWanted(A) {
     var LZ = global.LightZones, Z = LZ && LZ.get();
-    return !!(installed && !linkFailed && orig && Z && Z.bld === A.activeBuilding && !A._maxqActive && A._stillLampData !== false && !/[?&]lampdata=0/.test(location.search));
+    // §FILM_LAMP_DATA: parity films take the data path too (tools.js feeds it only on whole-building frames; the pool covers the rest)
+    return !!(installed && !linkFailed && orig && Z && Z.bld === A.activeBuilding && (!A._maxqActive || (A._filmParity && !/[?&]filminherit=0/.test(location.search))) && A._stillLampData !== false && !/[?&]lampdata=0/.test(location.search));
   }
   function lampZone(LZ, p) { var v = LZ.atLamp(p); return (v > 0 && v !== SOLID) ? v : ((v === 0 || v === -1) ? OUTSIDE : 0); }
   // BUILD — returns the stats (logged §LAMP_UNCAPPED); lists rebuilt only when the lamp SET changes, the lamp texture on every

@@ -1681,6 +1681,15 @@
     // PHOTON actually changed. This reads the real encoded pixels themselves, a 5x5 median sample at
     // 5 fixed fractional points across the frame (building-heavy regions in the sighted stills), on
     // hold frames only, so a real change (or its total absence) is undeniable either way.
+    // §FILM_WINDOW_PULL (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT" item 3): the still's window pull, per frame, on the
+    // composited scene before any HUD — only while the new lighting is on (A._filmFieldOn) AND the camera stands inside a zone (its
+    // mask depends on where the camera looks, so it cannot be reused per shot). Outside frames pay one zone lookup and nothing else.
+    // &filmwindowpull=0 = off.
+    if (A._filmFieldOn && window.GiFilm && window.GiFilm.windowPull && window.LightZones && window.LightZones.atRaw && !/[?&]filmwindowpull=0/.test(location.search)) {
+      try { var _wpc = A.camera.position, _wpz = window.LightZones.atRaw({ x: _wpc.x, y: _wpc.y, z: _wpc.z });
+        if (_wpz !== 0 && _wpz !== -1) { var _wpR = {}; window.GiFilm.windowPull(A, ctx, w, h, _wpR); A._filmWinPullN = (A._filmWinPullN || 0) + (_wpR.windowPull ? 1 : 0); } }
+      catch (eWP) { if (!A._filmWinPullErr) { A._filmWinPullErr = true; console.warn('§FILM_WINDOW_PULL failed ' + (eWP && eWP.message)); } }
+    }
     // §FRAME_COST S4 (2026-10-01): its own spec above says "on hold frames only" but it ran on EVERY frame (255 lines in a 255-frame
     // clip, mid2.log) — 16 getImageData readbacks per frame on a canvas without willReadFrequently (Chrome's own warning in the log).
     if (A._loadPathHoldFrameActive) try {

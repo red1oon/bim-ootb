@@ -1225,6 +1225,7 @@
     } finally { A._sceneBorrowed = false; }
   }
   window.GiFilm = {
+    windowPull: windowPull,   // §FILM_WINDOW_PULL (cinema_maxq.js _captureFrame): the SAME function, called per inside frame
     arm: function () {
       const A = window.APP;
       let reason = null;
