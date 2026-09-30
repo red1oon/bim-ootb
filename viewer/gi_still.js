@@ -940,6 +940,12 @@
       const bounce = document.createElement('canvas'); bounce.width = w; bounce.height = h;
       bounce.getContext('2d').drawImage(tmp, 0, 0);
       octx.drawImage(tmp, 0, 0);
+      // §WINDOW_PULL (bim-compiler PHOTOREAL_STILL_RENDER.md §WINDOW_PULL, red1 2026-09-30 "outside light too overwhelming, can't make
+      // out the outside view"; MEASURED Terminal …753057418: far windows 255 under ACES AND AgX, interior exposure 106 = the view out ~7x over).
+      // Architectural photography's window pull: pixels whose camera ray passes glass and then reaches OUTSIDE (sky, or a surface in an open
+      // zone) are re-rendered at the daylight exposure the light law gives EV 15 ("sunny 16", = this model's 100 klx sun; exterior stills
+      // meter EV ~14-15) and blended in through a soft mask. Interior pixels untouched. &windowpull=0 / APP._stillWindowPull=false = off.
+      try { windowPull(A, octx, w, h, R); } catch (eWP) { console.warn('§WINDOW_PULL failed: ' + (eWP && eWP.message)); }
       const under = document.createElement('canvas'); under.width = w; under.height = h;
       under.getContext('2d').drawImage(G.colorCanvas, 0, 0);
       window.__giStillDebugCanvas = { bounce: bounce, under: under };
@@ -994,6 +1000,60 @@
       window.__giStillDebug = R;
       return R;
     } finally { busy = false; if (window.APP) { window.APP._sceneBorrowed = false; if (window.APP.markDirty) window.APP.markDirty(); } }
+  }
+  function windowPull(A, octx, w, h, R) {
+    const THREE = window.THREE, LZ = window.LightZones, LL = window.LightLaw, t0 = performance.now();
+    if (/[?&]windowpull=0/.test(location.search) || A._stillWindowPull === false) { console.log('§WINDOW_PULL off (&windowpull=0 / APP._stillWindowPull=false)'); return; }
+    if (!LZ || !LZ.atRaw || !LL || !LL.exposureFromEv) { console.log('§WINDOW_PULL VACUOUS (no LightZones / LightLaw)'); return; }
+    const cp = A.camera.position, cz = LZ.atRaw({ x: cp.x, y: cp.y, z: cp.z });
+    if (cz === 0 || cz === -1) { console.log('§WINDOW_PULL skip (camera outside: zone ' + cz + ')'); return; }
+    const Rg = A.renderer, e0 = Rg.toneMappingExposure, lp = LL.luxPer(A._stillCalibSunLux, A._stillCalibSunI), eOut = lp ? LL.exposureFromEv(15, lp, LL.acesDiv(Rg, THREE)) : 0;
+    if (!(eOut > 0) || eOut >= e0) { console.log('§WINDOW_PULL skip (outside exposure ' + eOut.toFixed(3) + ' >= inside ' + e0.toFixed(3) + ')'); return; }
+    // mask at 1/S resolution on the GPU (MEASURED v1: CPU raycasts did 2378 rays in 30 s on Terminal): depth WITH glass vs WITHOUT glass
+    // (glass is the nearest surface where they differ) x the room-debug readback with glass hidden (SourcedLight.debugZones: zone 0 = outside,
+    // or no geometry at all = sky). An interior glass partition shows a room behind it -> not a view out.
+    const S = 4, mw = Math.ceil(w / S), mh = Math.ceil(h / S), M = new Float32Array(mw * mh), SL = window.SourcedLight;
+    if (!SL || !SL.debugZones) { console.log('§WINDOW_PULL VACUOUS (no SourcedLight.debugZones)'); return; }
+    const glassy = m => !!(m && m.transparent && m.opacity < 0.95), glassObjs = [];
+    A.scene.traverse(o => { if (!o.visible || !o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return; if ([].concat(o.material).some(glassy)) glassObjs.push(o); });
+    if (!glassObjs.length) { console.log('§WINDOW_PULL VACUOUS (no glass in the scene)'); return; }
+    const rtF = new THREE.WebGLRenderTarget(mw, mh, { type: THREE.FloatType }), rtB = new THREE.WebGLRenderTarget(mw, mh), dMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.BasicDepthPacking });
+    const prevRT = Rg.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background, cc = Rg.getClearColor(new THREE.Color()), ca = Rg.getClearAlpha(), sky = A._sky, skyVis = sky ? sky.visible : false;
+    const d1 = new Float32Array(mw * mh * 4), d2 = new Float32Array(mw * mh * 4), zb = new Uint8Array(mw * mh * 4);
+    try { A.scene.background = null; if (sky) sky.visible = false; Rg.setClearColor(0x000000, 0);
+      A.scene.overrideMaterial = dMat; Rg.setRenderTarget(rtF); Rg.clear(); Rg.render(A.scene, A.camera); Rg.readRenderTargetPixels(rtF, 0, 0, mw, mh, d1);
+      glassObjs.forEach(o => { o.visible = false; }); Rg.clear(); Rg.render(A.scene, A.camera); Rg.readRenderTargetPixels(rtF, 0, 0, mw, mh, d2);
+      A.scene.overrideMaterial = prevOv; SL.debugZones(1); Rg.setRenderTarget(rtB); Rg.clear(); Rg.render(A.scene, A.camera); Rg.readRenderTargetPixels(rtB, 0, 0, mw, mh, zb); }
+    finally { SL.debugZones(0); glassObjs.forEach(o => { o.visible = true; }); A.scene.overrideMaterial = prevOv; A.scene.background = prevBg; if (sky) sky.visible = skyVis; Rg.setClearColor(cc, ca); Rg.setRenderTarget(prevRT); rtF.dispose(); rtB.dispose(); dMat.dispose(); }
+    let nWin = 0, nGlass = 0; const nRay = mw * mh;
+    for (let yy = 0; yy < mh; yy++) for (let x = 0; x < mw; x++) { const si = (yy * mw + x) * 4, my = mh - 1 - yy;   // render targets are bottom-up
+      const a1 = d1[si + 3], a2 = d2[si + 3], z1 = d1[si], z2 = d2[si];   // BasicDepthPacking: r = 1 - z (nearer = larger)
+      if (!(a1 > 0) || !(z1 > z2 + 1e-6)) continue; nGlass++;
+      const out = !(a2 > 0) || zb[si + 3] === 0 || (zb[si] === 0 && zb[si + 1] === 0 && zb[si + 2] > 100 && zb[si + 2] < 160);   // zone 0 (outside, sky kept) or no geometry
+      if (out) { M[my * mw + x] = 1; nWin++; } }
+    const capped = false;
+    if (!nWin) { console.log('§WINDOW_PULL VACUOUS (no view-out pixels) glassNearest=' + nGlass + ' of ' + nRay + ' ms=' + Math.round(performance.now() - t0)); return; }
+    // the outside render: the staged scene once more at eOut (single frame, no post), read off the app canvas, exposure restored
+    Rg.toneMappingExposure = eOut; Rg.render(A.scene, A.camera);
+    const oc = document.createElement('canvas'); oc.width = w; oc.height = h; const ox = oc.getContext('2d', { willReadFrequently: true }); ox.drawImage(Rg.domElement, 0, 0, w, h);
+    Rg.toneMappingExposure = e0; if (A.markDirty) A.markDirty();
+    const O = ox.getImageData(0, 0, w, h).data, F = octx.getImageData(0, 0, w, h), D = F.data;
+    // soft mask: bilinear over the 1/S grid, then a 1-cell box blur (edge width ~S px)
+    const B = new Float32Array(mw * mh); for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) { let sm = 0, c = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= mw || yy >= mh) continue; sm += M[yy * mw + xx]; c++; } B[y * mw + x] = sm / c; }
+    let nPx = 0, nCore = 0, sO = 0, sB = 0, sA = 0, clipB = 0, clipA = 0;   // self-witness over the core (mask > 0.5): mean luminance + clipped share before / after
+    for (let y = 0; y < h; y++) { const gy = Math.min(mh - 1.001, Math.max(0, y / S - 0.5)), y0 = Math.floor(gy), fy = gy - y0;
+      for (let x = 0; x < w; x++) { const gx = Math.min(mw - 1.001, Math.max(0, x / S - 0.5)), x0 = Math.floor(gx), fx = gx - x0;
+        const m = (B[y0 * mw + x0] * (1 - fx) + B[y0 * mw + x0 + 1] * fx) * (1 - fy) + (B[(y0 + 1) * mw + x0] * (1 - fx) + B[(y0 + 1) * mw + x0 + 1] * fx) * fy;
+        if (m <= 0.001) continue; const i0 = (y * w + x) * 4, lb0 = (D[i0] + D[i0 + 1] + D[i0 + 2]) / 3;
+        // highlight recovery only: a view out that is not blown keeps its pixels (MEASURED Clinic …735402935: an open-zone atrium behind glass,
+        // mean 72, went to 7 at EV15); weight ramps 0 at luminance 200 -> 1 at 250
+        const hw = Math.max(0, Math.min(1, (lb0 - 200) / 50)); if (hw <= 0) continue; const mm = m * hw;
+        nPx++; const i = i0; if (m > 0.5) { nCore++; sO += (O[i] + O[i + 1] + O[i + 2]) / 3; sB += (D[i] + D[i + 1] + D[i + 2]) / 3; if (D[i] === 255 && D[i + 1] === 255 && D[i + 2] === 255) clipB++; }
+          D[i] += (O[i] - D[i]) * mm; D[i + 1] += (O[i + 1] - D[i + 1]) * mm; D[i + 2] += (O[i + 2] - D[i + 2]) * mm;
+          if (m > 0.5) { sA += (D[i] + D[i + 1] + D[i + 2]) / 3; if (D[i] >= 254.5 && D[i + 1] >= 254.5 && D[i + 2] >= 254.5) clipA++; } } }
+    octx.putImageData(F, 0, 0);
+    R.windowPull = { viewOutPct: +(100 * nWin / nRay).toFixed(2), blendedPct: +(100 * nPx / (w * h)).toFixed(2), eIn: +e0.toFixed(3), eOut: +eOut.toFixed(3), stops: +Math.log2(e0 / eOut).toFixed(2), corePx: nCore, meanBefore: nCore ? +(sB / nCore).toFixed(1) : null, meanAfter: nCore ? +(sA / nCore).toFixed(1) : null, meanPullRender: nCore ? +(sO / nCore).toFixed(1) : null, clippedBefore: nCore ? +(100 * clipB / nCore).toFixed(1) : null, clippedAfter: nCore ? +(100 * clipA / nCore).toFixed(1) : null, rays: nRay, capped: capped, ms: Math.round(performance.now() - t0) };
+    console.log('§WINDOW_PULL on viewOut=' + R.windowPull.viewOutPct + '% of rays blended=' + R.windowPull.blendedPct + '% px exposure in/out=' + R.windowPull.eIn + '/' + R.windowPull.eOut + ' (' + R.windowPull.stops + ' stops) core ' + R.windowPull.corePx + 'px mean ' + R.windowPull.meanBefore + ' -> ' + R.windowPull.meanAfter + ' (pull render ' + R.windowPull.meanPullRender + ') clipped ' + R.windowPull.clippedBefore + '% -> ' + R.windowPull.clippedAfter + '% (EV15 via LightLaw) maskPx=' + nRay + ' glassNearest=' + nGlass + (capped ? ' CAPPED' : '') + ' ms=' + R.windowPull.ms);
   }
   // PNG tEXt chunk: length(4) 'tEXt' keyword NUL text crc32(type+data); inserted before the IEND chunk (last 12 bytes)
   let _crcT = null;
