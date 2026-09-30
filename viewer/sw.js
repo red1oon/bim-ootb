@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1513';
+const CACHE_VERSION = 'v1514';
+// v1514 (2026-09-30) §STILL_RES_DEFAULT_1440: Alt+S default 1440p (measured +10..70 % press time, 4k fails the bounce). effects.js?v=128.
 // v1513 (2026-09-30) merge fix/case4-column (§CSM_READBACK_GLASS) into fix/sky-surface. effects.js?v=127.   // bump on each deploy; per-change detail is the git commit message.
 // v1512 (2026-09-30) §WINDOW_PULL: view-out pixels (glass then outside) re-rendered at the EV15 daylight exposure and blended. gi_still.js?v=37.
 // v1511 (2026-09-30) §SKY_FIELD_OPEN_ROOF: open cells under a roof/canopy get exact F + exact ground-view Gd (were 1). light_zones.js?v=27.

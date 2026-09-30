@@ -5613,7 +5613,10 @@ async function setupEffects(A, renderer, scene, camera) {
   function _stillResApply() {
     if (A._maxqActive || !A.renderer || !A._composer) return;
     var m = /[?&]stillres=([a-z0-9]+)/i.exec(location.search);
-    var preset = String((typeof A._stillRes === 'string') ? A._stillRes : (m ? m[1] : 'window')).toLowerCase();
+    // §STILL_RES_DEFAULT_1440 (red1 2026-09-30 "hi res still as default if it cost little"; MEASURED on the 8 GB card, v1513, OOM 0):
+    // window 1685x874 vs 1440p 2776x1440 — Terminal press 114 -> 194 s, Hospital 271 -> 298 s, bounce 9.2 -> 11.0 s / 97 -> 94 s, blown
+    // unchanged; 4k FAILS the bounce pass (15 / 358,369 WebGPU errors) -> default 1440p, &stillres=window for the quick size.
+    var preset = String((typeof A._stillRes === 'string') ? A._stillRes : (m ? m[1] : '1440p')).toLowerCase();
     var pr0 = A.renderer.getPixelRatio(), cssW = window.innerWidth, cssH = window.innerHeight;
     var tH = STILL_RES_H[preset] || 0, pr = Math.max(pr0, tH ? tH / cssH : pr0);
     A._stillResPreset = tH ? preset : 'window';   // gi_still.js keeps today's bounce cap for `window`
