@@ -5359,6 +5359,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // indirect terms in a second TAA phase (sourced_light.js aoPatch). Half float, no depth, the composer's size.
       var aoOnlyRT = new THREE.WebGLRenderTarget(rt.width, rt.height, { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
       var adapter = {
+        n8: n8,                // §LAMP_CONTACT_SHADOW: the phase-1 depth (n8.beautyRenderTarget.depthTexture) feeds the lamp contact march
         aoOnly: false,         // §ZERO Z10: true = write N8AO's AO into aoOnlyRT, pass the TAA frame through unchanged
         aoOnlyRT: aoOnlyRT,
         enabled: false,        // §PHOTO_AO_GATE: disabled = EffectComposer skips it entirely — the
@@ -5479,7 +5480,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _stopStillAOPhase(reason) {
     if (_stillAORAF) { cancelAnimationFrame(_stillAORAF); _stillAORAF = null; }
     if (_aoIndirectBound && window.SourcedLight && window.SourcedLight.aoSet) {   // §ZERO Z10: materials back to AO 1 (dummy texture, x = 0)
-      _aoIndirectBound = false; window.SourcedLight.aoSet(A, null, false); console.log('§AO_INDIRECT released (' + reason + ')'); }
+      _aoIndirectBound = false; window.SourcedLight.aoSet(A, null, false); if (window.SourcedLight.csSet) window.SourcedLight.csSet(A, null, null); console.log('§AO_INDIRECT released (' + reason + ')'); }
     if (A._stillAOAdapter) A._stillAOAdapter.aoOnly = false;
     if (A._stillAOAdapter && A._stillAOAdapter.enabled) {
       A._stillAOAdapter.enabled = false;
@@ -5512,6 +5513,7 @@ async function setupEffects(A, renderer, scene, camera) {
     ao.adapter.enabled = false; ao.adapter.aoOnly = false;   // the AO buffer is final; the frame is rebuilt with it inside the lighting
     var SL = window.SourcedLight, rtA = ao.adapter.aoOnlyRT;
     var nb = SL.aoSet(A, rtA.texture, false, rtA.width, rtA.height);   // bind the texture on every live program (x stays 0)
+    if (SL.csSet) { try { SL.csSet(A, ao.adapter.n8 && ao.adapter.n8.beautyRenderTarget && ao.adapter.n8.beautyRenderTarget.depthTexture, A.camera); } catch (eCS) { console.warn('§LAMP_CONTACT failed: ' + eCS.message); } }
     _aoIndirectBound = true;
     if (nb <= 0) { console.warn('§AO_INDIRECT no patched program took the AO (bound=' + nb + ') — frame kept without AO'); A._stillRefineBusy = false; return; }
     var taaN = _stillBudget().taa, sig = _camSig(), k = 0, t2 = performance.now();
