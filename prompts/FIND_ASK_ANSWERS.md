@@ -116,6 +116,25 @@ storey/phase/trade filters only after a timeline exists (the whole-building sent
   count = witness's own kernel_ops filter; count-by-storey = witness SQL; exit from the worst room =
   the worst-case record's exit.
 
+## §I Escape route with alternatives — one owner shared with the Alt-C film (user, 2026-09-30)
+> *"What about best escape route, with alternatives?"* … *"During alt-c film baking, at last part
+> 'Escape Route', we made use of the same?"* — yes: the film's §ESCAPE_ROUTE_REVEAL record
+> (`cpe_escape_route.js escapeRouteBuild`) already computes the alternatives (escapeRoutes +
+> divergenceFrom, §13.1). Ask must read THAT, not a second copy.
+
+- The §13.1 alternates block moves VERBATIM out of `escapeRouteBuild()` into
+  `_computeAlternates(RG, graph, node, esc, poly, _rec)`; the film calls it exactly as before.
+- New `A.escapeRouteFor(roomGuid)` — the same passes the film makes for its winner (escapeRoute →
+  shortestPath polyline measured in three-space → `_computeAlternates`), for one named room. Read-only,
+  does not touch the film's cached record. Logs `§ESCAPE_ROUTE_FOR`.
+- Ask `exit_path` answer = best route (exit, walk m, doors) + every reachable alternative exit in the
+  engine's rank order (walk m each) + the no-choice shared length (`commonPathM`) and where routes
+  split. Ranking stays the engine's route cost (NOT re-sorted by metres); nothing is rated safer.
+- **W8 FILM-PARITY** — issue: Ask's alternatives could disagree with the film. The worst-case Ask
+  answer's exitsReachable / commonPath / split node / alternate count = the film's own
+  `§ESCAPE_ROUTE_ALTERNATES` line; `escapeRouteFor(worst room)` = the film record (same exit, walk,
+  common path, alternate exits in order); every alternate is a graph exit node ≠ the best exit.
+
 ## §G Status
 - 2026-09-30 spec written. Branch `feat/find-ask-answers` (bim-ootb). Built: `viewer/find_ask.js`,
   2 hooks in `navigate_find.js` (mount after panel append; `_handleInput` delegates while Ask is
@@ -158,3 +177,13 @@ storey/phase/trade filters only after a timeline exists (the whole-building sent
   - Known limit: "clash plumbing structure" → no sentence, because `clash_rules.json` has no PLB rule;
     the hint line does not yet say that a rule is missing.
 
+- **2026-09-30 §I escape alternates built** (branch `feat/ask-escape-alternates`):
+  - **Hospital `§ASKW_VERDICT PASS judgedOK=6/6 pass=11 fail=0`** — W8: film `exits=8 common=180.28 m
+    split="Corridor — Level 1" drawn=7` = Ask `exits=8 common=180.28 split="Corridor — Level 1" alts=7`;
+    `escapeRouteFor(worst room)` = film record (same exit, walk, common path, alternate order); every
+    alternate is a graph exit ≠ best. Answer: "Best: ≈ Level 4 R26 → …766840, 202.6 m walk, 8 doors. 7
+    alternative exits (210, 225, 261, 241, 241, … m); the first 180.3 m has no choice of route (routes split
+    at Corridor — Level 1)."
+  - Alternatives are in the ENGINE's order (route cost, which penalises utility rooms), so walk metres
+    are not monotonic (261 before 241) — by design, not re-sorted.
+  - **Clinic `§ASKW_VERDICT PASS judgedOK=4/6 pass=11 fail=0`** — W8 n/a (no walk raster).

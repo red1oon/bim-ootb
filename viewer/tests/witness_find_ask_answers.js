@@ -13,6 +13,9 @@
 //                       record; neither may be OK with a null value.
 //  W4 SAVE-ROUNDTRIP    the saved file could differ from the screen → the workbook buffer is parsed in
 //                       node: Answers rows = answers, each verdict/summary equal to the in-page answer.
+//  W8 FILM-PARITY      Ask's escape alternatives could disagree with the Alt-C film's Escape Route beat →
+//                       the worst-case answer must equal the film's own §ESCAPE_ROUTE_ALTERNATES line, and
+//                       escapeRouteFor(worst room) must reproduce the film record (one shared function).
 //  W5 UI-WIRED          a working API behind a dead button → Ask pill → type "clash" → Run → exactly
 //                       one new .ask-card whose text holds that answer's summary.
 // Verdict: INCONCLUSIVE (exit 2) when nothing was judged OK — never PASS on an empty population.
@@ -153,7 +156,8 @@ async function grammarProbe(rulePairs) {
     args: ['--no-sandbox', '--hide-crash-restore-bubble', '--window-size=1300,840'].concat(gpuArgs) });
   const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 720 });
   const consoleTags = new Set();
-  page.on('console', m => { const t = m.text(); logRaw('[con] ' + t); (t.match(/§[A-Z0-9_]+/g) || []).forEach(x => consoleTags.add(x));
+  const altLines = [];
+  page.on('console', m => { const t = m.text(); logRaw('[con] ' + t); if (t.indexOf('§ESCAPE_ROUTE_ALTERNATES exitsReachable=') >= 0) altLines.push(t); (t.match(/§[A-Z0-9_]+/g) || []).forEach(x => consoleTags.add(x));
     if (/§ASK_|§4D_REAL_TASKS |§ESCAPE_ROUTE_BUILD|§NLP_DEC|§ROOM_VOL_COUNT|§CLASH_NARROWPHASE pair/.test(t)) console.log('  ' + t.slice(0, 240)); });
   page.on('pageerror', e => logRaw('[pageerror] ' + e.message));
   let rows = [], verdictLine = 'INCONCLUSIVE';
@@ -235,7 +239,25 @@ async function grammarProbe(rulePairs) {
     const w7keys = Object.keys(G.w7), w7ok = w7keys.length > 0 && w7keys.every(k => G.w7[k].ok);
     w7keys.forEach(k => log(`§ASKW_W7 ${k} ${G.w7[k].ok ? 'PASS' : 'FAIL'} ${JSON.stringify(G.w7[k])}`));
     log(`§ASKW_W7 ${w7ok ? 'PASS' : (w7keys.length ? 'FAIL' : 'INCONCLUSIVE')} judged=${w7keys.join(',')}`);
-    rows.forEach(r => { r.w6 = w6ok; r.w7 = w7ok; });
+    // W8 — film parity for escape alternatives (only judgeable where an exit route exists)
+    const exitAns = answers.find(a => a.id === 'exit_path');
+    let w8 = null;
+    if (exitAns && exitAns.verdict === 'OK') {
+      const v = exitAns.value, line = altLines[0] || '';
+      const num = (re) => { const m = line.match(re); return m ? m[1] : null; };
+      const film = { exits: +num(/exitsReachable=(\d+)/), common: +num(/commonPathRED=([\d.]+)m/), split: num(/divergence="([^"]+)"/), drawn: +num(/blueAlternates=(\d+)\//) };
+      const per = await page.evaluate((g) => { const A = window.APP, a = A.escapeRouteRecord(), b = A.escapeRouteFor(g);
+        const ex = (r) => (r.alternates || []).map(x => x.exitGuid);
+        const G = A.getRoomGraph();
+        return { same: !!b && b.exitGuid === a.exitGuid && Math.abs(b.walkM - a.walkM) < 1e-6 && b.commonPathM === a.commonPathM && JSON.stringify(ex(b)) === JSON.stringify(ex(a)),
+          altsAreExits: ex(a).every(e => G.nodesByGuid[e] && G.nodesByGuid[e].kind === 'exit' && e !== a.exitGuid),
+          ranksAsc: (a.alternates || []).every((x, i, arr) => i === 0 || arr[i - 1].rank < x.rank) }; }, v.roomGuid);
+      const ok = !!line && v.exitsReachable === film.exits && Math.abs(v.commonPathM - film.common) < 0.006 && (v.splitAt || null) === (film.split || null) &&
+        v.alternates.length === film.drawn && per.same && per.altsAreExits && per.ranksAsc;
+      log(`§ASKW_W8 ${ok ? 'PASS' : 'FAIL'} film=${JSON.stringify(film)} ask={exits:${v.exitsReachable},common:${v.commonPathM},split:"${v.splitAt}",alts:${v.alternates.length}} perRoom=${JSON.stringify(per)}`);
+      w8 = ok;
+    } else log('§ASKW_W8 n/a — no exit route in this building (nothing to compare)');
+    rows.forEach(r => { r.w6 = w6ok; r.w7 = w7ok; r.w8 = w8 !== false; });
     const judged = rows.filter(r => r.verdict === 'OK').length;
     if (judged === 0) { log('§ASKW_VERDICT INCONCLUSIVE — no answer came back OK, nothing was judged'); process.exitCode = 2; }
     else {
@@ -249,6 +271,7 @@ async function grammarProbe(rulePairs) {
         .invariant('W5 ui-wired', rs => rs.every(r => r.w5))
         .invariant('W6 grammar-from-data', rs => rs.every(r => r.w6))
         .invariant('W7 filter-parity', rs => rs.every(r => r.w7))
+        .invariant('W8 film-parity (escape alternates)', rs => rs.every(r => r.w8))
         .redControl(rs => rs.map(r => r.verdict === 'OK' ? Object.assign({}, r, { parity: false }) : r))
         .run();
       verdictLine = res.fail ? 'FAIL' : 'PASS';
